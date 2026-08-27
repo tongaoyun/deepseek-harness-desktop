@@ -60,20 +60,12 @@ $nodeStage = Join-Path $stage "node"
 New-Item -ItemType Directory -Force -Path $nodeStage | Out-Null
 Copy-Item -LiteralPath $nodeExecutable -Destination (Join-Path $nodeStage "node.exe")
 
-$nodeDirectory = Split-Path -Parent $nodeExecutable
 $licenseDestination = Join-Path $nodeStage "LICENSE"
-$licenseCandidates = @(
-  (Join-Path $nodeDirectory "LICENSE"),
-  (Join-Path $nodeDirectory "LICENSE.txt")
-)
-$nodeLicense = $licenseCandidates | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
-if ($nodeLicense) {
-  Copy-Item -LiteralPath $nodeLicense -Destination $licenseDestination
-} else {
-  $licenseUri = "https://raw.githubusercontent.com/nodejs/node/$nodeVersion/LICENSE"
-  Write-Output "Node.js MSI did not install LICENSE; downloading the pinned official notice from $licenseUri"
-  Invoke-WebRequest -Uri $licenseUri -OutFile $licenseDestination -UseBasicParsing -TimeoutSec 60
+$nodeLicense = Join-Path $repository "third-party\node-v24.19.0\LICENSE"
+if (-not (Test-Path -LiteralPath $nodeLicense -PathType Leaf)) {
+  throw "Pinned Node.js license notice is missing: $nodeLicense"
 }
+Copy-Item -LiteralPath $nodeLicense -Destination $licenseDestination
 $expectedLicenseSha256 = "148eacf7863ef4329224a29398623077200a27194aa075569faf4a0a85566ca5"
 $licenseSha256 = (Get-FileHash -LiteralPath $licenseDestination -Algorithm SHA256).Hash.ToLowerInvariant()
 if ($licenseSha256 -ne $expectedLicenseSha256) {

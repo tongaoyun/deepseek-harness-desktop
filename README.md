@@ -40,6 +40,8 @@ pnpm tauri:dev
 
 本仓库不部署到 K3s，也不调用 `node-k3s.yml`。Windows 安装包把 Node 24、`harness-host` 及其生产依赖作为 Tauri Resource 一并安装，员工电脑不依赖全局 Node；嵌入式 Node 继续作为 Harness 子进程的运行时。
 
+Node.js v24.19.0 的官方许可证及第三方声明固定保存在 `third-party/node-v24.19.0/LICENSE`，构建时会校验 SHA-256 后随 Runtime 一并发布，Windows Runner 不依赖 GitHub 下载。
+
 `.gitea/workflows/windows-installer.yml` 使用公司 `windows-x64` Runner 构建 MSI 与 NSIS。构建前会生成并健康检查可移植 Harness Runtime，手动运行默认还会在隔离目录完成安装、调用安装目录内的 Harness、启动桌面端和卸载烟测。构建产物附带 `SHA256SUMS.txt`，当前尚未配置企业代码签名证书。
 
 在 Windows 构建机本地可执行：
