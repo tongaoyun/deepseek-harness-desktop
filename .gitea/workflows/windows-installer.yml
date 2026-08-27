@@ -15,6 +15,10 @@ permissions:
   contents: read
   actions: write
 
+concurrency:
+  group: windows-installer-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build-windows-x64:
     runs-on: windows-x64
@@ -71,6 +75,10 @@ jobs:
           cargo fmt --check
           cargo clippy --all-targets -- -D warnings
           cargo test
+
+      - name: 准备 Tauri Windows 打包工具
+        shell: powershell
+        run: .\scripts\prepare-tauri-windows-tools.ps1
 
       - name: 构建 MSI 与 NSIS 安装包
         shell: powershell

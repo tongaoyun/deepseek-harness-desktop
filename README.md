@@ -44,11 +44,14 @@ Node.js v24.19.0 的官方许可证及第三方声明固定保存在 `third-part
 
 `.gitea/workflows/windows-installer.yml` 使用公司 `windows-x64` Runner 构建 MSI 与 NSIS。构建前会生成并健康检查可移植 Harness Runtime，手动运行默认还会在隔离目录完成安装、调用安装目录内的 Harness、启动桌面端和卸载烟测。构建产物附带 `SHA256SUMS.txt`，当前尚未配置企业代码签名证书。
 
+WiX 3.14、NSIS 3.11 与 Tauri NSIS 插件镜像在公司 Gitea Generic Package Registry。`prepare-tauri-windows-tools.ps1` 只从内网下载，并使用 Tauri 2.11.4 固定的官方 SHA-256/SHA-1 校验后写入 `CARGO_TARGET_DIR\.tauri`；Runner 无需访问 GitHub，且后续构建复用已校验缓存。
+
 在 Windows 构建机本地可执行：
 
 ```powershell
 pnpm install --frozen-lockfile
 .\scripts\prepare-harness-runtime.ps1
+.\scripts\prepare-tauri-windows-tools.ps1
 pnpm tauri build
 ```
 
