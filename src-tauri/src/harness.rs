@@ -3,7 +3,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::{
-    env,
     io::{BufRead, BufReader, Write},
     path::{Path, PathBuf},
     process::{Child, ChildStdin, ChildStdout, Command, Stdio},
@@ -333,6 +332,7 @@ fn resolve_runtime_paths(_app: &tauri::AppHandle) -> Result<HarnessRuntimePaths,
     }
 }
 
+#[cfg(not(all(target_os = "windows", not(debug_assertions))))]
 fn development_runtime_paths() -> Result<HarnessRuntimePaths, String> {
     let repository = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -354,15 +354,16 @@ fn packaged_runtime_paths(resource_dir: &Path) -> HarnessRuntimePaths {
     }
 }
 
+#[cfg(not(all(target_os = "windows", not(debug_assertions))))]
 fn configured_path(variable: &str, fallback: PathBuf) -> Result<PathBuf, String> {
-    if let Ok(value) = env::var(variable)
+    if let Ok(value) = std::env::var(variable)
         && !value.trim().is_empty()
     {
         let path = PathBuf::from(value);
         return if path.is_absolute() {
             Ok(path)
         } else {
-            env::current_dir()
+            std::env::current_dir()
                 .map(|directory| directory.join(path))
                 .map_err(|error| format!("无法解析 {variable}：{error}"))
         };
