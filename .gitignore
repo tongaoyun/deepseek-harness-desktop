@@ -1,0 +1,14 @@
+.DS_Store
+.env
+.env.local
+node_modules/
+harness-host/node_modules/
+dist/
+harness-host/dist/
+src-tauri/target/
+src-tauri/gen/schemas/
+src-tauri/resources/harness-runtime/
+*.tsbuildinfo
+vite.config.js
+vite.config.d.ts
+.xiaoyin/

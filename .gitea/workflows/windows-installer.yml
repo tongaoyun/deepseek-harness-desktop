@@ -1,0 +1,121 @@
+name: Windows installer
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      run_install_smoke:
+        description: "在隔离目录执行 NSIS 安装、内置 Harness、启动和卸载烟测"
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  build-windows-x64:
+    runs-on: windows-x64
+    timeout-minutes: 120
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_TARGET_DIR: C:\xiaoyin-desktop-builder\target
+      CARGO_REGISTRIES_CRATES_IO_INDEX: sparse+https://rsproxy.cn/index/
+      NPM_CONFIG_REGISTRY: http://192.168.2.9:4873/
+      NPM_CONFIG_FETCH_RETRIES: 4
+      NPM_CONFIG_FETCH_TIMEOUT: 120000
+      NPM_CONFIG_UPDATE_NOTIFIER: "false"
+
+    steps:
+      - name: 检出代码
+        uses: http://192.168.2.66:3300/instudio/checkout@v4
+
+      - name: 验证 Windows 构建环境
+        shell: powershell
+        run: |
+          git --version
+          node --version
+          npm --version
+          rustc --version
+          cargo --version
+          if ((node --version) -notmatch '^v24\.') { throw "Node.js 24.x is required" }
+          if ((node -p "process.arch") -ne 'x64') { throw "x64 Node.js is required" }
+          $VsWhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $Installation = & $VsWhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (-not $Installation) { throw "Microsoft Visual C++ Build Tools is missing" }
+          Write-Output "Visual C++ Build Tools: $Installation"
+
+      - name: 安装锁定依赖
+        shell: powershell
+        run: |
+          npm install -g pnpm@10.33.0 --prefer-offline --no-audit --fund=false --registry=http://192.168.2.9:4873/
+          pnpm install --frozen-lockfile --registry=http://192.168.2.9:4873/
+
+      - name: 前端与 Harness 质量门禁
+        shell: powershell
+        run: |
+          pnpm typecheck
+          pnpm test
+          pnpm build
+
+      - name: Rust 质量门禁
+        working-directory: src-tauri
+        shell: powershell
+        run: |
+          cargo fmt --check
+          cargo clippy --all-targets -- -D warnings
+          cargo test
+
+      - name: 准备内置 Harness Runtime
+        shell: powershell
+        run: .\scripts\prepare-harness-runtime.ps1
+
+      - name: 构建 MSI 与 NSIS 安装包
+        shell: powershell
+        run: |
+          $Bundle = Join-Path $env:CARGO_TARGET_DIR "release\bundle"
+          if (Test-Path -LiteralPath $Bundle) { Remove-Item -LiteralPath $Bundle -Recurse -Force }
+          pnpm tauri build
+
+      - name: NSIS 安装与内置 Harness 烟测
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_install_smoke }}
+        shell: powershell
+        env:
+          XIAOYIN_WINDOWS_SMOKE: "1"
+        run: |
+          $Bundle = Join-Path $env:CARGO_TARGET_DIR "release\bundle\nsis"
+          $ExpectedVersion = (Get-Content "package.json" -Raw | ConvertFrom-Json).version
+          $Installers = @(Get-ChildItem $Bundle -Recurse -File -Filter "*.exe" | Where-Object { $_.Name -like "*_${ExpectedVersion}_*" })
+          if ($Installers.Count -ne 1) { throw "Expected one NSIS installer, found $($Installers.Count)" }
+          .\scripts\test-windows-installer.ps1 -InstallerPath $Installers[0].FullName
+
+      - name: 收集安装包并生成 SHA-256 清单
+        shell: powershell
+        run: |
+          $Bundle = Join-Path $env:CARGO_TARGET_DIR "release\bundle"
+          $Output = Join-Path (Get-Location).Path "windows-artifacts"
+          $ExpectedVersion = (Get-Content "package.json" -Raw | ConvertFrom-Json).version
+          $Files = @(Get-ChildItem $Bundle -Recurse -File | Where-Object {
+            $_.Extension -in @(".exe", ".msi") -and $_.Name -like "*_${ExpectedVersion}_*"
+          })
+          if ($Files.Count -ne 2) { throw "Expected MSI and NSIS installers, found $($Files.Count)" }
+          if (Test-Path -LiteralPath $Output) { Remove-Item -LiteralPath $Output -Recurse -Force }
+          New-Item -ItemType Directory -Force -Path $Output | Out-Null
+          foreach ($File in $Files) { Copy-Item -LiteralPath $File.FullName -Destination (Join-Path $Output $File.Name) }
+          $ChecksumLines = @(Get-ChildItem $Output -File | Get-FileHash -Algorithm SHA256 |
+            ForEach-Object { "$($_.Hash.ToLowerInvariant())  $(Split-Path $_.Path -Leaf)" })
+          $Utf8WithoutBom = [System.Text.UTF8Encoding]::new($false)
+          [System.IO.File]::WriteAllText((Join-Path $Output "SHA256SUMS.txt"), (($ChecksumLines -join "`n") + "`n"), $Utf8WithoutBom)
+
+      - name: 上传 Windows 安装包
+        uses: http://192.168.2.66:3300/instudio/gitea-upload-artifact@v4
+        with:
+          name: xiaoyin-desktop-windows-x64-${{ github.sha }}
+          path: |
+            windows-artifacts/*.exe
+            windows-artifacts/*.msi
+            windows-artifacts/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 30

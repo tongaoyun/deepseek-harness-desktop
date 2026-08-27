@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  web-and-harness:
+    runs-on: ci-node
+    container:
+      image: ci-node:1.0.0
+      volumes:
+        - /data/ci-cache/pnpm/xiaoyin-desktop:/pnpm-store
+    steps:
+      - name: 检出代码
+        uses: http://192.168.2.66:3300/instudio/checkout@v4
+      - name: 安装 pnpm 依赖
+        run: |
+          npm install -g pnpm@10.33.0 --prefer-offline --no-audit --fund=false \
+            --registry=http://192.168.2.9:4873/
+          pnpm config set store-dir /pnpm-store
+          pnpm install --frozen-lockfile --registry=http://192.168.2.9:4873/
+      - name: 类型、测试和构建
+        run: |
+          pnpm typecheck
+          pnpm test
+          pnpm build
