@@ -27,8 +27,9 @@ if ($stage -ne $expectedRoot) {
 $nodeCommand = Get-Command node.exe -ErrorAction Stop
 $nodeExecutable = [System.IO.Path]::GetFullPath($nodeCommand.Source)
 $nodeVersion = (& $nodeExecutable --version).Trim()
-if ($nodeVersion -notmatch '^v24\.') {
-  throw "Node.js 24.x is required; found $nodeVersion at $nodeExecutable"
+$expectedNodeVersion = "v24.19.0"
+if ($nodeVersion -ne $expectedNodeVersion) {
+  throw "Node.js $expectedNodeVersion is required; found $nodeVersion at $nodeExecutable"
 }
 
 if (Test-Path -LiteralPath $stage) {
@@ -60,15 +61,24 @@ New-Item -ItemType Directory -Force -Path $nodeStage | Out-Null
 Copy-Item -LiteralPath $nodeExecutable -Destination (Join-Path $nodeStage "node.exe")
 
 $nodeDirectory = Split-Path -Parent $nodeExecutable
+$licenseDestination = Join-Path $nodeStage "LICENSE"
 $licenseCandidates = @(
   (Join-Path $nodeDirectory "LICENSE"),
   (Join-Path $nodeDirectory "LICENSE.txt")
 )
 $nodeLicense = $licenseCandidates | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
-if (-not $nodeLicense) {
-  throw "Node.js LICENSE was not found beside $nodeExecutable; refusing to publish an incomplete runtime."
+if ($nodeLicense) {
+  Copy-Item -LiteralPath $nodeLicense -Destination $licenseDestination
+} else {
+  $licenseUri = "https://raw.githubusercontent.com/nodejs/node/$nodeVersion/LICENSE"
+  Write-Output "Node.js MSI did not install LICENSE; downloading the pinned official notice from $licenseUri"
+  Invoke-WebRequest -Uri $licenseUri -OutFile $licenseDestination -UseBasicParsing -TimeoutSec 60
 }
-Copy-Item -LiteralPath $nodeLicense -Destination (Join-Path $nodeStage "LICENSE")
+$expectedLicenseSha256 = "148eacf7863ef4329224a29398623077200a27194aa075569faf4a0a85566ca5"
+$licenseSha256 = (Get-FileHash -LiteralPath $licenseDestination -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($licenseSha256 -ne $expectedLicenseSha256) {
+  throw "Node.js $nodeVersion LICENSE SHA-256 mismatch: $licenseSha256"
+}
 
 $stagedNode = Join-Path $nodeStage "node.exe"
 $stagedEntry = Join-Path $stage "harness-host\dist\index.js"

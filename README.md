@@ -26,7 +26,7 @@ ERP MCP Bridge 使用官方 TypeScript MCP Client 做工具发现与调用，只
 
 ## 开发验证
 
-需要 Node.js 24、pnpm 10.33.0 和 Rust 1.97+：
+需要 Node.js 24.19.0、pnpm 10.33.0 和 Rust 1.97+：
 
 ```bash
 pnpm install

@@ -40,7 +40,7 @@ jobs:
           npm --version
           rustc --version
           cargo --version
-          if ((node --version) -notmatch '^v24\.') { throw "Node.js 24.x is required" }
+          if ((node --version) -ne 'v24.19.0') { throw "Node.js v24.19.0 is required" }
           if ((node -p "process.arch") -ne 'x64') { throw "x64 Node.js is required" }
           $VsWhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
           $Installation = & $VsWhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
