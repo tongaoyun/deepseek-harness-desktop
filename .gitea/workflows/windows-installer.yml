@@ -60,6 +60,10 @@ jobs:
           pnpm test
           pnpm build
 
+      - name: 准备内置 Harness Runtime
+        shell: powershell
+        run: .\scripts\prepare-harness-runtime.ps1
+
       - name: Rust 质量门禁
         working-directory: src-tauri
         shell: powershell
@@ -67,10 +71,6 @@ jobs:
           cargo fmt --check
           cargo clippy --all-targets -- -D warnings
           cargo test
-
-      - name: 准备内置 Harness Runtime
-        shell: powershell
-        run: .\scripts\prepare-harness-runtime.ps1
 
       - name: 构建 MSI 与 NSIS 安装包
         shell: powershell
