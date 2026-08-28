@@ -8,6 +8,7 @@ export interface HarnessRunInput {
   litellmBaseUrl: string
   erpMcpUrl: string
   model: string
+  modelApiKey: string
   accessToken: string
   localFileRootIds: string[]
 }

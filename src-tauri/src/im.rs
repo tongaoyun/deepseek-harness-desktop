@@ -1,11 +1,10 @@
 use crate::{
     expert_kits,
-    harness::{HarnessProcess, RuntimeFingerprint},
+    harness::{HarnessProcess, RuntimeFingerprint, credential_digest},
 };
 use keyring::Entry;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
 use std::{
     fs::{self, OpenOptions},
     io::Write,
@@ -45,6 +44,7 @@ pub struct HarnessContext {
     litellm_base_url: String,
     erp_mcp_url: String,
     model: String,
+    model_api_key: String,
     access_token: String,
 }
 
@@ -219,7 +219,7 @@ impl LocalImManager {
             litellm_base_url: context.litellm_base_url,
             erp_mcp_url: context.erp_mcp_url,
             model: context.model,
-            credential_digest: format!("{:x}", Sha256::digest(context.access_token.as_bytes())),
+            credential_digest: credential_digest(&context.model_api_key, &context.access_token),
         };
         let mut guard = self
             .process
@@ -236,6 +236,7 @@ impl LocalImManager {
             *guard = Some(HarnessProcess::start(
                 app,
                 fingerprint,
+                context.model_api_key,
                 context.access_token,
             )?);
         }
@@ -454,6 +455,12 @@ fn validate_harness_context(value: &HarnessContext) -> Result<(), String> {
     validate_http_url("ERP MCP", &value.erp_mcp_url)?;
     if value.model.trim().is_empty() || value.model.len() > 200 {
         return Err("模型名称无效".to_string());
+    }
+    if value.model_api_key.trim().is_empty()
+        || value.model_api_key.len() > 16 * 1024
+        || value.model_api_key.chars().any(char::is_control)
+    {
+        return Err("模型访问凭据无效".to_string());
     }
     if value.access_token.len() > 16 * 1024 || value.access_token.chars().any(char::is_control) {
         return Err("ERP 访问凭据无效".to_string());

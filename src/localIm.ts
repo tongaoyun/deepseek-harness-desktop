@@ -6,6 +6,7 @@ export interface LocalImHarnessContext {
   litellmBaseUrl: string
   erpMcpUrl: string
   model: string
+  modelApiKey: string
   accessToken: string
 }
 

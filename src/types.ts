@@ -1,6 +1,7 @@
 export interface BootstrapResponse {
   protocolVersion: string
   employeeId: string
+  modelApiKey: string
   endpoints: {
     litellm: string
     erpMcp: string

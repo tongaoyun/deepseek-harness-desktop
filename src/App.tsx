@@ -158,6 +158,7 @@ export default function App() {
       litellmBaseUrl: bootstrap.endpoints.litellm,
       erpMcpUrl: bootstrap.endpoints.erpMcp,
       model: bootstrap.models[0] ?? 'deepseek-v4-flash',
+      modelApiKey: bootstrap.modelApiKey,
       accessToken,
     }).catch(() => undefined)
   }, [accessToken, authState, bootstrap, user])
@@ -283,6 +284,7 @@ export default function App() {
         litellmBaseUrl: bootstrap.endpoints.litellm,
         erpMcpUrl: bootstrap.endpoints.erpMcp,
         model: bootstrap.models[0] ?? 'deepseek-v4-flash',
+        modelApiKey: bootstrap.modelApiKey,
         accessToken,
         localFileRootIds: localDirectories.map((directory) => directory.id),
       })
@@ -510,6 +512,7 @@ export default function App() {
               erpMcpUrl={bootstrap.endpoints.erpMcp}
               litellmBaseUrl={bootstrap.endpoints.litellm}
               model={bootstrap.models[0] ?? 'deepseek-v4-flash'}
+              modelApiKey={bootstrap.modelApiKey}
             />}
           </section>
         )}

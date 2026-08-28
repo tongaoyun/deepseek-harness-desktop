@@ -25,6 +25,7 @@ pub struct HarnessRunRequest {
     litellm_base_url: String,
     erp_mcp_url: String,
     model: String,
+    model_api_key: String,
     access_token: String,
     #[serde(default)]
     local_file_root_ids: Vec<String>,
@@ -103,13 +104,21 @@ pub async fn run_harness(
         litellm_base_url: request.litellm_base_url,
         erp_mcp_url: request.erp_mcp_url,
         model: request.model,
-        credential_digest: format!("{:x}", Sha256::digest(request.access_token.as_bytes())),
+        credential_digest: credential_digest(&request.model_api_key, &request.access_token),
     };
     let session_id = request.session_id;
+    let model_api_key = request.model_api_key;
     let access_token = request.access_token;
     let manager = manager.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        manager.run(&app, fingerprint, profile.prompt, session_id, access_token)
+        manager.run(
+            &app,
+            fingerprint,
+            profile.prompt,
+            session_id,
+            model_api_key,
+            access_token,
+        )
     })
     .await
     .map_err(|error| format!("Harness 执行线程异常：{error}"))?
@@ -130,6 +139,7 @@ impl HarnessManager {
         fingerprint: RuntimeFingerprint,
         prompt: String,
         session_id: Option<String>,
+        model_api_key: String,
         access_token: String,
     ) -> Result<HarnessRunResult, String> {
         let mut guard = self
@@ -144,7 +154,12 @@ impl HarnessManager {
             process.shutdown();
         }
         if guard.is_none() {
-            *guard = Some(HarnessProcess::start(app, fingerprint, access_token)?);
+            *guard = Some(HarnessProcess::start(
+                app,
+                fingerprint,
+                model_api_key,
+                access_token,
+            )?);
         }
         let process = guard.as_mut().expect("Harness process was initialized");
         match process.run(app, prompt, session_id) {
@@ -173,6 +188,7 @@ impl HarnessProcess {
     pub(crate) fn start(
         app: &tauri::AppHandle,
         fingerprint: RuntimeFingerprint,
+        model_api_key: String,
         access_token: String,
     ) -> Result<Self, String> {
         let runtime = resolve_runtime_paths(app)?;
@@ -221,6 +237,7 @@ impl HarnessProcess {
                 fingerprint.allow_erp_write.to_string(),
             )
             .env("DEEPSEEK_BASE_URL", &fingerprint.litellm_base_url)
+            .env("DEEPSEEK_API_KEY", model_api_key)
             .env("DSH_MODEL", &fingerprint.model)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -518,11 +535,26 @@ fn validate_run_request(request: &HarnessRunRequest) -> Result<(), String> {
     if request.model.trim().is_empty() || request.model.len() > 200 {
         return Err("模型名称无效".to_string());
     }
+    if request.model_api_key.trim().is_empty()
+        || request.model_api_key.len() > 16 * 1024
+        || request.model_api_key.chars().any(char::is_control)
+    {
+        return Err("模型访问凭据无效".to_string());
+    }
     if request.access_token.len() > 16 * 1024 || request.access_token.chars().any(char::is_control)
     {
         return Err("ERP 访问凭据无效".to_string());
     }
     Ok(())
+}
+
+pub(crate) fn credential_digest(model_api_key: &str, access_token: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update((model_api_key.len() as u64).to_be_bytes());
+    hasher.update(model_api_key.as_bytes());
+    hasher.update((access_token.len() as u64).to_be_bytes());
+    hasher.update(access_token.as_bytes());
+    format!("{:x}", hasher.finalize())
 }
 
 fn validate_http_url(name: &str, value: &str) -> Result<(), String> {
@@ -547,6 +579,7 @@ mod tests {
             litellm_base_url: "http://litellm.internal/v1".to_string(),
             erp_mcp_url: "http://erp.internal/mcp".to_string(),
             model: "deepseek-chat".to_string(),
+            model_api_key: "model-token".to_string(),
             access_token: "erp-token".to_string(),
             local_file_root_ids: Vec::new(),
         };

@@ -12,10 +12,11 @@ import {
 describe('loadBootstrap', () => {
   afterEach(() => vi.unstubAllGlobals())
 
-  it('loads non-secret desktop configuration from the control plane', async () => {
+  it('loads the memory-only model credential from the control plane', async () => {
     const payload = {
       protocolVersion: '1',
       employeeId: 'local-development',
+      modelApiKey: 'test-model-key',
       endpoints: {
         litellm: 'http://litellm.local/v1',
         erpMcp: 'http://erp.local/mcp',

@@ -20,7 +20,7 @@ describe('local IM native bridge', () => {
       accessPolicy: 'pairing',
       harness: {
         litellmBaseUrl: 'http://litellm/v1', erpMcpUrl: 'http://erp/mcp',
-        model: 'deepseek-v4-flash', accessToken: 'employee-token',
+        model: 'deepseek-v4-flash', modelApiKey: 'model-token', accessToken: 'employee-token',
       },
     })
     expect(invoke).toHaveBeenCalledWith('configure_local_dingtalk', {
@@ -33,7 +33,7 @@ describe('local IM native bridge', () => {
     const { startLocalIm } = await import('./localIm')
     await startLocalIm({
       litellmBaseUrl: 'http://litellm/v1', erpMcpUrl: 'http://erp/mcp',
-      model: 'deepseek-v4-flash', accessToken: 'employee-token',
+      model: 'deepseek-v4-flash', modelApiKey: 'model-token', accessToken: 'employee-token',
     })
     expect(invoke).toHaveBeenCalledWith('start_local_im', {
       harness: expect.not.objectContaining({ clientSecret: expect.anything() }),
