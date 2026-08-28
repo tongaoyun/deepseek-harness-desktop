@@ -486,6 +486,9 @@ fn load_and_validate_manifest(
         if !valid_tool_name(tool) || !tools.insert(tool) {
             return Err(format!("专家套件工具声明无效：{tool}"));
         }
+        if tool.starts_with("office.") && !DESKTOP_OFFICE_TOOLS.contains(&tool.as_str()) {
+            return Err(format!("桌面不支持该 Office 工具：{tool}"));
+        }
     }
     let mut connectors = HashSet::new();
     for connector in &manifest.connector_refs {
@@ -610,6 +613,8 @@ mod tests {
         assert!(validate_identifier("CrossBorder").is_err());
         assert!(valid_tool_name("office.xlsx.create"));
         assert!(!valid_tool_name("Office create"));
+        assert!(DESKTOP_OFFICE_TOOLS.contains(&"office.xlsx.create"));
+        assert!(!DESKTOP_OFFICE_TOOLS.contains(&"office.pptx.create"));
     }
 
     #[test]
