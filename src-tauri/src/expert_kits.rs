@@ -99,6 +99,8 @@ pub struct ExpertKitHarnessProfile {
     pub allowed_erp_tools: Vec<String>,
     pub required_erp_tools: Vec<String>,
     pub allow_local_files: bool,
+    pub allow_shell: bool,
+    pub allow_erp_write: bool,
     pub prompt: String,
 }
 
@@ -240,6 +242,8 @@ pub fn harness_profile(
             allowed_erp_tools: Vec::new(),
             required_erp_tools: Vec::new(),
             allow_local_files: true,
+            allow_shell: true,
+            allow_erp_write: false,
             prompt: user_prompt.to_string(),
         });
     };
@@ -253,8 +257,11 @@ pub fn harness_profile(
         .filter(|tool| !tool.starts_with("office."))
         .cloned()
         .collect::<Vec<_>>();
-    if !erp_tools.is_empty() && kit.manifest.permissions.erp_read == PermissionMode::Deny {
-        return Err("该专家套件声明了 ERP 工具，但禁止 ERP 读取权限".to_string());
+    if !erp_tools.is_empty()
+        && kit.manifest.permissions.erp_read == PermissionMode::Deny
+        && kit.manifest.permissions.erp_write == PermissionMode::Deny
+    {
+        return Err("该专家套件声明了 ERP 工具，但禁止 ERP 权限".to_string());
     }
     let commands = load_command_context(kit)?;
     let skills = kit
@@ -273,6 +280,8 @@ pub fn harness_profile(
         allowed_erp_tools: erp_tools.clone(),
         required_erp_tools: erp_tools,
         allow_local_files: kit.manifest.permissions.local_files != PermissionMode::Deny,
+        allow_shell: kit.manifest.permissions.shell != PermissionMode::Deny,
+        allow_erp_write: kit.manifest.permissions.erp_write != PermissionMode::Deny,
         prompt,
     })
 }

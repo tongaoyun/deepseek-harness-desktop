@@ -26,6 +26,8 @@ const moduleDirectory = dirname(fileURLToPath(import.meta.url))
 export class DeepSeekHarnessRuntime implements HarnessRuntime {
   private harness: DeepSeekHarness | undefined
 
+  constructor(private readonly extraEnv: NodeJS.ProcessEnv = {}) {}
+
   async health(): Promise<{ status: string; runtime: string; version: string }> {
     return {
       status: 'ready',
@@ -80,6 +82,7 @@ export class DeepSeekHarnessRuntime implements HarnessRuntime {
         cwd: workspace,
         env: {
           ...process.env,
+          ...this.extraEnv,
           DSH_CORDIS_CONFIG: configPath,
           DSH_CWD: workspace,
         },

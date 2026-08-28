@@ -28,18 +28,40 @@
     toolBash: false
     toolJobs: false
 
+- id: user-approval
+  name: '@deepseek-ai/dsh-user-approval'
+  config:
+    policy: ask
+
+- id: desktop-approval
+  name: '../dist/desktop-approval-plugin.js'
+
 - id: erp-mcp
   name: '../dist/erp-mcp-plugin.js'
   config:
     url: !!js process.env.ERP_MCP_URL ?? ''
     allowedTools: !!js JSON.parse(process.env.ERP_MCP_ALLOWED_TOOLS ?? '[]')
     requiredTools: !!js JSON.parse(process.env.ERP_MCP_REQUIRED_TOOLS ?? '[]')
+    allowWrite: !!js process.env.ERP_MCP_ALLOW_WRITE === 'true'
     bearerTokenEnv: ERP_MCP_BEARER_TOKEN
 
 - id: local-files
   name: '../dist/local-files-plugin.js'
   config:
     roots: !!js JSON.parse(process.env.XIAOYIN_LOCAL_FILE_ROOTS ?? '[]')
+    enabled: !!js process.env.XIAOYIN_ALLOW_LOCAL_FILES !== 'false'
+
+- id: local-documents
+  name: '../dist/local-documents-plugin.js'
+  config:
+    roots: !!js JSON.parse(process.env.XIAOYIN_LOCAL_FILE_ROOTS ?? '[]')
+    enabled: !!js process.env.XIAOYIN_ALLOW_LOCAL_FILES !== 'false'
+
+- id: local-shell
+  name: '../dist/local-shell-plugin.js'
+  config:
+    roots: !!js JSON.parse(process.env.XIAOYIN_LOCAL_FILE_ROOTS ?? '[]')
+    enabled: !!js process.env.XIAOYIN_ALLOW_SHELL === 'true'
 
 - id: sessions
   name: '@deepseek-ai/dsh-session-persistence-jsonl'

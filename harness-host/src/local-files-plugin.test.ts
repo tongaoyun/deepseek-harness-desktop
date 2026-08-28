@@ -53,6 +53,27 @@ describe('LocalFileBridge', () => {
 
     await expect(bridge.readText('local-root-1', 'outside-link.txt')).rejects.toThrow('symlink escapes')
   })
+
+  it('creates, writes, copies, moves and deletes only below the authorized root', async () => {
+    const root = await temporaryDirectory()
+    const bridge = new LocalFileBridge(await discoverAuthorizedRoots([root]))
+
+    await bridge.createDirectory('local-root-1', 'exports/daily')
+    await bridge.writeText('local-root-1', 'exports/daily/report.md', '# report', false)
+    await bridge.copy('local-root-1', 'exports/daily/report.md', 'exports/report-copy.md', false)
+    await bridge.move('local-root-1', 'exports/report-copy.md', 'exports/report-final.md')
+    expect((await bridge.readText('local-root-1', 'exports/report-final.md')).content).toBe('# report')
+    await bridge.delete('local-root-1', 'exports/report-final.md', false)
+    await expect(bridge.readText('local-root-1', 'exports/report-final.md')).rejects.toThrow()
+  })
+
+  it('blocks mutation of credential files and traversal destinations', async () => {
+    const root = await temporaryDirectory()
+    const bridge = new LocalFileBridge(await discoverAuthorizedRoots([root]))
+
+    await expect(bridge.writeText('local-root-1', '.env', 'SECRET=x', false)).rejects.toThrow('Credential')
+    await expect(bridge.writeText('local-root-1', '../outside.txt', 'outside', false)).rejects.toThrow('escapes')
+  })
 })
 
 async function temporaryDirectory(): Promise<string> {

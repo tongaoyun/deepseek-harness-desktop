@@ -13,6 +13,7 @@ export class HostServer {
   constructor(
     private readonly runtime: HarnessRuntime,
     private readonly emit: (output: JsonRpcOutput) => void,
+    private readonly respondToApproval?: (approvalId: string, decision: 'allow' | 'reject') => boolean,
   ) {}
 
   async handle(value: unknown): Promise<void> {
@@ -28,6 +29,15 @@ export class HostServer {
       }
 
       switch (value.method) {
+        case 'approval.respond': {
+          const response = parseApprovalResponse(value.params)
+          if (this.respondToApproval === undefined || !this.respondToApproval(response.approvalId, response.decision)) {
+            this.emit(failure(value.id, -32004, 'Approval request is no longer pending'))
+          } else {
+            this.emit(success(value.id, { status: 'accepted' }))
+          }
+          return
+        }
         case 'host.health':
           this.emit(success(value.id, await this.runtime.health()))
           return
@@ -59,6 +69,20 @@ export class HostServer {
       this.emit(failure(value.id, -32001, message))
     }
   }
+}
+
+function parseApprovalResponse(params: unknown): { approvalId: string; decision: 'allow' | 'reject' } {
+  if (typeof params !== 'object' || params === null || Array.isArray(params)) {
+    throw new Error('approval.respond params must be an object')
+  }
+  const record = params as Record<string, unknown>
+  if (typeof record.approvalId !== 'string' || record.approvalId.length === 0 || record.approvalId.length > 200) {
+    throw new Error('approval.respond params.approvalId must be a string')
+  }
+  if (record.decision !== 'allow' && record.decision !== 'reject') {
+    throw new Error('approval.respond params.decision must be allow or reject')
+  }
+  return { approvalId: record.approvalId, decision: record.decision }
 }
 
 function parseRunInput(params: unknown): RunInput {

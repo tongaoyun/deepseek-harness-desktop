@@ -4,7 +4,8 @@
 
 - 正式接入公司内网小胤控制中心，启动后直接加载企业配置、Skills、连接器和专家套件。
 - 完成控制中心、Temporal Worker、ERP MCP、PostgreSQL 与 MinIO 的生产链路联调。
-- 增加任务级本地文件夹授权和 Harness 只读文件工具，默认不开放 Office 写入或 Shell。
+- 增加任务级本地目录授权，支持受控文件读写、DOCX/XLSX/PDF 解析与生成。
+- 增加桌面原生逐次审批，接入受控 Shell 和专家套件授权的 ERP 写工具。
 
 ## 0.1.0
 

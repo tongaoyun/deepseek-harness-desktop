@@ -39,6 +39,16 @@ describe('HostServer', () => {
       result: { sessionId: 'session-1', finalResponse: '完成' },
     })
   })
+
+  it('accepts a pending approval response independently of a model turn', async () => {
+    const output: JsonRpcOutput[] = []
+    const server = new HostServer(fakeRuntime(), (value) => output.push(value), (id, decision) => id === 'approval-1' && decision === 'allow')
+    await server.handle({
+      jsonrpc: '2.0', id: 9, method: 'approval.respond',
+      params: { approvalId: 'approval-1', decision: 'allow' },
+    })
+    expect(output).toEqual([{ jsonrpc: '2.0', id: 9, result: { status: 'accepted' } }])
+  })
 })
 
 function fakeRuntime(): HarnessRuntime {

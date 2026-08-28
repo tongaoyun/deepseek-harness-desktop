@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Tool } from '@modelcontextprotocol/client'
-import { selectReadOnlyTools } from './erp-mcp-plugin.js'
+import { selectReadOnlyTools, selectTools } from './erp-mcp-plugin.js'
 
 const tools: Tool[] = [
   {
@@ -27,5 +27,10 @@ describe('ERP MCP tool selection', () => {
       .toThrow('inventory_risk')
     expect(() => selectReadOnlyTools(tools, ['order_cancel'], ['order_cancel']))
       .toThrow('order_cancel')
+  })
+
+  it('includes mutating tools only when the expert kit permits ERP writes', () => {
+    expect(selectTools(tools, ['order_cancel'], ['order_cancel'], true).map((tool) => tool.name))
+      .toEqual(['order_cancel'])
   })
 })

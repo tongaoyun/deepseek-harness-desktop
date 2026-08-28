@@ -9,6 +9,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 use tauri::{Emitter, Manager};
+use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 
 #[derive(Clone, Default)]
 pub struct HarnessManager {
@@ -49,6 +50,9 @@ struct RuntimeFingerprint {
     allowed_erp_tools: Vec<String>,
     required_erp_tools: Vec<String>,
     local_file_roots: Vec<String>,
+    allow_local_files: bool,
+    allow_shell: bool,
+    allow_erp_write: bool,
     litellm_base_url: String,
     erp_mcp_url: String,
     model: String,
@@ -83,8 +87,9 @@ pub async fn run_harness(
         request.expert_kit_id.as_deref(),
         request.prompt.trim(),
     )?;
-    if !profile.allow_local_files && !request.local_file_root_ids.is_empty() {
-        return Err("当前专家套件禁止读取本地文件".to_string());
+    if !profile.allow_local_files && !profile.allow_shell && !request.local_file_root_ids.is_empty()
+    {
+        return Err("当前专家套件禁止使用本地目录".to_string());
     }
     let local_file_roots = local_files.resolve(&request.local_file_root_ids)?;
     let fingerprint = RuntimeFingerprint {
@@ -92,6 +97,9 @@ pub async fn run_harness(
         allowed_erp_tools: profile.allowed_erp_tools,
         required_erp_tools: profile.required_erp_tools,
         local_file_roots,
+        allow_local_files: profile.allow_local_files,
+        allow_shell: profile.allow_shell,
+        allow_erp_write: profile.allow_erp_write,
         litellm_base_url: request.litellm_base_url,
         erp_mcp_url: request.erp_mcp_url,
         model: request.model,
@@ -199,6 +207,15 @@ impl HarnessProcess {
             .env("ERP_MCP_REQUIRED_TOOLS", required_tools)
             .env("ERP_MCP_BEARER_TOKEN", access_token)
             .env("XIAOYIN_LOCAL_FILE_ROOTS", local_file_roots)
+            .env(
+                "XIAOYIN_ALLOW_LOCAL_FILES",
+                fingerprint.allow_local_files.to_string(),
+            )
+            .env("XIAOYIN_ALLOW_SHELL", fingerprint.allow_shell.to_string())
+            .env(
+                "ERP_MCP_ALLOW_WRITE",
+                fingerprint.allow_erp_write.to_string(),
+            )
             .env("DEEPSEEK_BASE_URL", &fingerprint.litellm_base_url)
             .env("DSH_MODEL", &fingerprint.model)
             .stdin(Stdio::piped())
@@ -272,6 +289,23 @@ impl HarnessProcess {
             let output: Value = serde_json::from_str(&line)
                 .map_err(|error| format!("Harness 输出不是有效 JSON-RPC：{error}"))?;
             if output.get("method").is_some() {
+                if output.get("method").and_then(Value::as_str) == Some("approval.request") {
+                    let approval = parse_approval_request(output.get("params"))?;
+                    let decision = if let Some(app) = app {
+                        let confirmed = app
+                            .dialog()
+                            .message(approval_message(&approval))
+                            .title("小胤操作确认")
+                            .kind(MessageDialogKind::Warning)
+                            .buttons(MessageDialogButtons::YesNo)
+                            .blocking_show();
+                        if confirmed { "allow" } else { "reject" }
+                    } else {
+                        "reject"
+                    };
+                    self.send_approval_response(&approval.approval_id, decision)?;
+                    continue;
+                }
                 if let Some(app) = app {
                     let event = output.get("params").cloned().unwrap_or(Value::Null);
                     let _ = app.emit(
@@ -298,6 +332,23 @@ impl HarnessProcess {
         }
     }
 
+    fn send_approval_response(&mut self, approval_id: &str, decision: &str) -> Result<(), String> {
+        let request_id = self.next_id;
+        self.next_id += 1;
+        let request = json!({
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "method": "approval.respond",
+            "params": { "approvalId": approval_id, "decision": decision },
+        });
+        serde_json::to_writer(&mut self.stdin, &request)
+            .map_err(|error| format!("无法序列化 Harness 授权响应：{error}"))?;
+        self.stdin
+            .write_all(b"\n")
+            .and_then(|_| self.stdin.flush())
+            .map_err(|error| format!("无法向 Harness 发送授权响应：{error}"))
+    }
+
     fn shutdown(&mut self) {
         let _ = self.request("host.shutdown", None, None);
         let _ = self.child.kill();
@@ -308,6 +359,62 @@ impl HarnessProcess {
         let _ = self.child.kill();
         let _ = self.child.wait();
     }
+}
+
+#[derive(Debug, Eq, PartialEq)]
+struct ApprovalPrompt {
+    approval_id: String,
+    tool_name: String,
+    reason: String,
+}
+
+fn parse_approval_request(params: Option<&Value>) -> Result<ApprovalPrompt, String> {
+    let value = params.ok_or_else(|| "Harness 授权请求缺少参数".to_string())?;
+    let approval_id = value
+        .get("approvalId")
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty() && value.len() <= 200)
+        .ok_or_else(|| "Harness 授权请求 ID 无效".to_string())?;
+    let tool_name = value
+        .get("toolName")
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty() && value.len() <= 200)
+        .ok_or_else(|| "Harness 授权工具名称无效".to_string())?;
+    let reason = value
+        .get("reason")
+        .and_then(Value::as_str)
+        .unwrap_or("该操作需要员工确认。");
+    Ok(ApprovalPrompt {
+        approval_id: approval_id.to_string(),
+        tool_name: sanitize_dialog_text(tool_name, 200),
+        reason: sanitize_dialog_text(reason, 8 * 1024),
+    })
+}
+
+fn sanitize_dialog_text(value: &str, max_chars: usize) -> String {
+    let filtered = value
+        .chars()
+        .map(|character| {
+            if character == '\n' || character == '\t' || !character.is_control() {
+                character
+            } else {
+                ' '
+            }
+        })
+        .take(max_chars)
+        .collect::<String>();
+    if value.chars().count() > max_chars {
+        format!("{filtered}\n…内容已截断")
+    } else {
+        filtered
+    }
+}
+
+fn approval_message(approval: &ApprovalPrompt) -> String {
+    format!(
+        "工具：{}\n\n{}\n\n仅本次允许该操作？",
+        approval.tool_name, approval.reason
+    )
 }
 
 impl Drop for HarnessProcess {
@@ -465,5 +572,19 @@ mod tests {
             PathBuf::from(r"C:\Program Files\xiaoyin")
                 .join("resources/harness-runtime/harness-host/runtime/cordis.yml")
         );
+    }
+
+    #[test]
+    fn approval_requests_are_validated_and_control_characters_are_removed() {
+        let value = json!({
+            "approvalId": "approval-1",
+            "toolName": "local_shell_run",
+            "reason": "运行命令\u{0007}\nls"
+        });
+        let approval = parse_approval_request(Some(&value)).expect("approval should parse");
+        assert_eq!(approval.approval_id, "approval-1");
+        assert_eq!(approval.tool_name, "local_shell_run");
+        assert_eq!(approval.reason, "运行命令 \nls");
+        assert!(approval_message(&approval).contains("仅本次允许"));
     }
 }

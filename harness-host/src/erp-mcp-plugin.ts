@@ -15,6 +15,7 @@ export interface Config {
   url?: string
   allowedTools?: string[]
   requiredTools?: string[]
+  allowWrite?: boolean
   bearerTokenEnv?: string
 }
 
@@ -22,6 +23,7 @@ export const Config = z.object({
   url: z.string().default(''),
   allowedTools: z.array(z.string()).default([]),
   requiredTools: z.array(z.string()).default([]),
+  allowWrite: z.boolean().default(false),
   bearerTokenEnv: z.string().default('ERP_MCP_BEARER_TOKEN'),
 })
 
@@ -50,13 +52,23 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     await client.connect(transport)
 
     const discovered = await client.listTools()
-    const tools = selectReadOnlyTools(
+    const tools = selectTools(
       discovered.tools,
       config.allowedTools ?? [],
       config.requiredTools ?? [],
+      config.allowWrite === true,
     )
+    const mutatingToolNames = new Set(tools.filter((tool) => tool.annotations?.readOnlyHint !== true).map((tool) => tool.name))
     const unregister = tools.map((tool) => ctx.tools.register(toHarnessTool(client, tool)))
+    const stopApprovalPolicy = ctx.on('tools/pre-execute', (exec, next) => {
+      if (!mutatingToolNames.has(exec.name)) return next()
+      return Promise.resolve({
+        kind: 'ask' as const,
+        reason: `调用 ERP 修改工具：${exec.name}\n参数：${safeArguments(exec.arguments)}`,
+      })
+    })
     ctx.effect(() => async () => {
+      stopApprovalPolicy()
       for (const dispose of unregister.reverse()) dispose()
       await client.close()
     }, 'xiaoyin ERP MCP bridge')
@@ -71,17 +83,35 @@ export function selectReadOnlyTools(
   allowedTools: string[],
   requiredTools: string[],
 ): Tool[] {
+  return selectTools(discovered, allowedTools, requiredTools, false)
+}
+
+export function selectTools(
+  discovered: Tool[],
+  allowedTools: string[],
+  requiredTools: string[],
+  allowWrite: boolean,
+): Tool[] {
   const allowed = new Set(allowedTools)
   const selected = discovered.filter((tool) => {
     const explicitlyAllowed = allowed.size === 0 || allowed.has(tool.name)
-    return explicitlyAllowed && tool.annotations?.readOnlyHint === true
+    return explicitlyAllowed && (tool.annotations?.readOnlyHint === true || allowWrite)
   })
   const selectedNames = new Set(selected.map((tool) => tool.name))
   const missing = [...new Set(requiredTools)].filter((tool) => !selectedNames.has(tool))
   if (missing.length > 0) {
-    throw new Error(`ERP MCP is missing required read-only tools: ${missing.join(', ')}`)
+    throw new Error(`ERP MCP is missing required permitted tools: ${missing.join(', ')}`)
   }
   return selected
+}
+
+function safeArguments(value: unknown): string {
+  try {
+    const serialized = JSON.stringify(value)
+    return serialized.length <= 4_000 ? serialized : `${serialized.slice(0, 4_000)}…`
+  } catch {
+    return '参数无法展示'
+  }
 }
 
 function toHarnessTool(client: Client, tool: Tool): ToolDefinition {

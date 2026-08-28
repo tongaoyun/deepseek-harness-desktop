@@ -341,7 +341,7 @@ export default function App() {
                     <button aria-label={`移除 ${directory.name}`} disabled={harnessRunning} onClick={() => void removeLocalDirectory(directory.id)} type="button"><X size={11} /></button>
                   </span>)}
               </div>
-              <span><ShieldCheck size={14} /> 仅可读取已授权目录</span>
+              <span><ShieldCheck size={14} /> 仅访问已授权目录 · 修改与 Shell 逐次确认</span>
             </div>
           </section>
         ) : (
