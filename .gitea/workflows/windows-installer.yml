@@ -63,7 +63,9 @@ jobs:
             [ref]$Errors
           ) | Out-Null
           if ($Errors.Count -gt 0) {
-            $Errors | ForEach-Object { Write-Error $_.Message }
+            $Errors | ForEach-Object {
+              Write-Host "$($_.Extent.StartLineNumber):$($_.Extent.StartColumnNumber) $($_.Message) [$($_.Extent.Text)]"
+            }
             throw "PowerShell release script syntax validation failed"
           }
 
