@@ -73,8 +73,8 @@ WiX 3.14、NSIS 3.11 与 Tauri NSIS 插件镜像在公司 Gitea Generic Package 
 发布前同时更新 `package.json`、`src-tauri/tauri.conf.json` 和 `src-tauri/Cargo.toml` 的版本，再创建并推送标签：
 
 ```bash
-git tag -a v0.1.1 -m "小胤 0.1.1"
-git push origin v0.1.1
+git tag -a v0.1.2 -m "小胤 0.1.2"
+git push origin v0.1.2
 ```
 
 在 Windows 构建机本地可执行：
