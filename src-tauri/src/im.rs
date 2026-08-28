@@ -92,11 +92,16 @@ pub async fn configure_local_dingtalk(
     validate_client_id(&request.client_id)?;
     validate_client_secret(&request.client_secret)?;
     validate_harness_context(&request.harness)?;
+    let existing = load_configuration(&app)?;
+    let client_id = request.client_id.trim().to_string();
     let stored = StoredDingTalkConfiguration {
-        client_id: request.client_id.trim().to_string(),
+        paired_conversations: existing
+            .filter(|value| value.client_id == client_id)
+            .map(|value| value.paired_conversations)
+            .unwrap_or_default(),
+        client_id,
         enabled: request.enabled,
         access_policy: request.access_policy,
-        paired_conversations: Vec::new(),
     };
     store_secret(&request.client_secret)?;
     save_configuration(&app, &stored)?;
@@ -152,7 +157,8 @@ pub fn local_im_status(
         return Ok(status);
     }
     let stored = load_configuration(&app)?;
-    Ok(stopped_status(stored.as_ref(), secret_exists()))
+    let secret_configured = stored.is_some() && secret_exists();
+    Ok(stopped_status(stored.as_ref(), secret_configured))
 }
 
 #[tauri::command]

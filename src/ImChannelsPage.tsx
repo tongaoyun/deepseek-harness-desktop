@@ -1,5 +1,5 @@
 import { Bot, Check, MessageCircle, MoreHorizontal, RefreshCw, ShieldCheck, X } from 'lucide-react'
-import { type FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
+import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   allowLocalImPairing,
   configureLocalDingTalk,
@@ -30,13 +30,17 @@ export function ImChannelsPage(harness: Props) {
   const [clientId, setClientId] = useState('')
   const [clientSecret, setClientSecret] = useState('')
   const [accessPolicy, setAccessPolicy] = useState<ImAccessPolicy>('pairing')
+  const initialized = useRef(false)
 
   const refresh = useCallback(async () => {
     try {
       const value = await loadLocalImStatus()
       setStatus(value)
+      if (!initialized.current) {
+        initialized.current = true
+        setAccessPolicy(value.accessPolicy)
+      }
       setClientId((current) => current || value.clientId)
-      setAccessPolicy(value.accessPolicy)
       setError('')
     } catch (reason) {
       setError(message(reason))
@@ -117,6 +121,11 @@ export function ImChannelsPage(harness: Props) {
     }
   }
 
+  const openConfiguration = () => {
+    setAccessPolicy(status?.accessPolicy ?? 'pairing')
+    setConfiguring(true)
+  }
+
   return <div className="im-channel-page local-im-page">
     <header className="local-im-intro">
       <div className="im-hero-avatars"><span>AI</span><i><MessageCircle size={18} /></i></div>
@@ -133,9 +142,9 @@ export function ImChannelsPage(harness: Props) {
         <div className="im-provider-copy"><div><h3>{provider.name}</h3>{connected && <em>已连接</em>}</div><p>{provider.summary}</p></div>
         {dingTalk && status?.configured ? <div className="im-provider-actions">
           {status.accessPolicy === 'pairing' && <button onClick={() => setPairingOpen(true)} type="button">配对管理{status.pendingPairings.length > 0 ? ` (${status.pendingPairings.length})` : ''}</button>}
-          <button aria-label="重新配置" onClick={() => setConfiguring(true)} title="重新配置" type="button"><MoreHorizontal size={17} /></button>
+          <button aria-label="重新配置" onClick={openConfiguration} title="重新配置" type="button"><MoreHorizontal size={17} /></button>
           <button aria-label={status.enabled ? '关闭频道' : '开启频道'} className={`im-switch ${status.enabled ? 'on' : ''}`} disabled={loading} onClick={() => void toggle()} type="button"><i /></button>
-        </div> : <button className="im-configure" disabled={!dingTalk} onClick={() => setConfiguring(true)} type="button">{dingTalk ? '配置' : '即将支持'}</button>}
+        </div> : <button className="im-configure" disabled={!dingTalk} onClick={openConfiguration} type="button">{dingTalk ? '配置' : '即将支持'}</button>}
       </article>
     })}</div>
 
