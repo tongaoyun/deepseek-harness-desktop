@@ -117,16 +117,17 @@ $versionPackageBase = "$packageApi/xiaoyin-desktop/$version"
 $updaterMetadataUrl = "$packageApi/xiaoyin-desktop-updater/latest/latest.json"
 $nsisReleaseFile = $releaseFiles | Where-Object { $_.Role -eq "nsis-installer" } | Select-Object -First 1
 $signature = (Get-Content -LiteralPath $nsisSignature.FullName -Raw).Trim()
+$windowsPlatform = [ordered]@{
+  signature = $signature
+  url = "$versionPackageBase/$($nsisReleaseFile.Name)"
+}
+$platforms = [ordered]@{}
+$platforms.Add("windows-x86_64", $windowsPlatform)
 $latest = [ordered]@{
   version = $version
   notes = "小胤 $version 正式版"
   pub_date = $publishedAt
-  platforms = [ordered]@{
-    "windows-x86_64" = [ordered]@{
-      signature = $signature
-      url = "$versionPackageBase/$($nsisReleaseFile.Name)"
-    }
-  }
+  platforms = $platforms
 }
 $latestPath = Join-Path $artifactDirectory "latest.json"
 Write-JsonFile -Path $latestPath -Value $latest
@@ -212,8 +213,9 @@ catch {
 Invoke-BinaryUpload -Method Put -Uri $updaterMetadataUrl -Path $latestPath
 
 $publishedMetadata = Invoke-RestMethod -Uri $updaterMetadataUrl -Method Get -UseBasicParsing
+$publishedWindows = $publishedMetadata.platforms.PSObject.Properties["windows-x86_64"].Value
 if ($publishedMetadata.version -ne $version -or
-    $publishedMetadata.platforms."windows-x86_64".signature -ne $signature) {
+    $publishedWindows.signature -ne $signature) {
   throw "Published updater metadata did not pass the anonymous read-back check."
 }
 
