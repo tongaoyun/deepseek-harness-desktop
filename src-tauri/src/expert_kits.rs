@@ -17,6 +17,12 @@ const MAX_EXTRACTED_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_ARCHIVE_ENTRIES: usize = 1024;
 const MANIFEST_PATH: &str = ".xiaoyin-plugin/plugin.json";
 const INSTALL_RECORD_PATH: &str = ".xiaoyin-plugin/install.json";
+const DESKTOP_OFFICE_TOOLS: [&str; 4] = [
+    "office.document.read",
+    "office.docx.create",
+    "office.xlsx.create",
+    "office.pdf.create",
+];
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -250,6 +256,27 @@ pub fn harness_profile(
     let kit = newest
         .get(selected_kit_id)
         .ok_or_else(|| format!("专家套件尚未安装：{selected_kit_id}"))?;
+    let office_tools = kit
+        .manifest
+        .required_tools
+        .iter()
+        .filter(|tool| tool.starts_with("office."))
+        .cloned()
+        .collect::<Vec<_>>();
+    let unsupported_office_tools = office_tools
+        .iter()
+        .filter(|tool| !DESKTOP_OFFICE_TOOLS.contains(&tool.as_str()))
+        .cloned()
+        .collect::<Vec<_>>();
+    if !unsupported_office_tools.is_empty() {
+        return Err(format!(
+            "专家套件声明了桌面不支持的 Office 工具：{}",
+            unsupported_office_tools.join(", ")
+        ));
+    }
+    if !office_tools.is_empty() && kit.manifest.permissions.local_files == PermissionMode::Deny {
+        return Err("该专家套件声明了 Office 工具，但禁止本地文件权限".to_string());
+    }
     let erp_tools = kit
         .manifest
         .required_tools

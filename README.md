@@ -22,7 +22,7 @@ harness-host/     DeepSeek Harness JSON-RPC Sidecar
 
 ERP MCP Bridge 使用官方 TypeScript MCP Client 做工具发现与调用。通用模式只开放 `readOnlyHint: true` 的工具；专家套件声明 ERP 写权限后才注册写工具，并且每次调用都由桌面原生确认。
 
-本地能力仅作用于员工通过系统选择器授权的任务目录，绝对路径不会进入模型上下文。平台提供目录浏览、UTF-8 文本读写、建目录、复制、移动和删除，以及 DOCX、XLSX、PDF 解析与生成。目录穿越、越界符号链接、凭据文件、超限内容和未授权目录会被拒绝；新建任务或退出登录会清空授权。
+本地能力仅作用于员工通过系统选择器授权的任务目录，绝对路径不会进入模型上下文。平台提供目录浏览、UTF-8 文本读写、建目录、复制、移动和删除，以及 `office.document.read`、`office.docx.create`、`office.xlsx.create`、`office.pdf.create` 四个稳定的文档工具。目录穿越、越界符号链接、凭据文件、超限内容和未授权目录会被拒绝；新建任务或退出登录会清空授权。
 
 专家套件声明 Shell 权限后，可从授权目录启动 PowerShell/Bash 命令。Shell 使用去敏环境变量、两分钟超时和输出上限，不继承 ERP、模型或审批令牌；它仍以员工操作系统账号运行，因此确认框会完整展示用途、工作目录和命令。文件修改、文档生成、Shell 与 ERP 写调用统一进入 DeepSeek Harness 标准审批服务，由 Tauri 弹出原生“一次允许/拒绝”确认，并在 Harness 会话中记录审批审计事件。
 
