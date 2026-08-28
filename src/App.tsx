@@ -59,6 +59,7 @@ import { useEnterpriseSession } from './useEnterpriseSession'
 import { XiaoyinMascot } from './XiaoyinMascot'
 import { ScheduledTasksPage } from './ScheduledTasksPage'
 import { TaskCenterPage } from './TaskCenterPage'
+import { ImChannelsPage } from './ImChannelsPage'
 import { loadLocalTasks, saveLocalTask } from './taskHistory'
 import type { LocalTaskRun, TaskMessage } from './types'
 import './styles.css'
@@ -409,6 +410,8 @@ export default function App() {
                 ? '公司沉淀的独立工作方法，可由 Agent 自动识别或在对话中明确调用。'
                 : page === 'connectors'
                   ? '连接公司数据和员工电脑能力；账号、地址和令牌由公司统一管理。'
+                  : page === 'im'
+                    ? '把钉钉等公司消息入口连接到云端小胤 Worker，集中查看连接和处理状态。'
                   : page === 'tasks'
                     ? '统一查看小胤桌面任务、Temporal 云端执行和可下载的结果产物。'
                   : page === 'schedules'
@@ -490,6 +493,11 @@ export default function App() {
               endpoint={bootstrap.endpoints.taskRuns}
               localTasks={localTasks}
               onOpenLocalTask={openLocalTask}
+            />}
+            {page === 'im' && bootstrap && user && <ImChannelsPage
+              accessToken={accessToken}
+              employeeId={user.userId}
+              endpoint={bootstrap.endpoints.imChannels}
             />}
           </section>
         )}

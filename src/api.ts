@@ -2,6 +2,7 @@ import type {
   BootstrapResponse,
   ArtifactDownload,
   CloudTaskRun,
+  ImChannel,
   ConnectorCatalogEntry,
   CreateScheduledTaskRequest,
   ExpertKitCatalogEntry,
@@ -68,6 +69,15 @@ export async function loadConnectors(
   signal?: AbortSignal,
 ): Promise<ConnectorCatalogEntry[]> {
   return loadCatalog(endpoint, employeeId, accessToken, '连接器目录', signal)
+}
+
+export async function loadImChannels(
+  endpoint: string,
+  employeeId: string,
+  accessToken: string,
+  signal?: AbortSignal,
+): Promise<ImChannel[]> {
+  return loadCatalog(endpoint, employeeId, accessToken, 'IM 频道', signal)
 }
 
 export async function loadScheduledTasks(

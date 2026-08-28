@@ -32,6 +32,8 @@ ERP MCP Bridge 使用官方 TypeScript MCP Client 做工具发现与调用。通
 
 任务中心在员工电脑本地保存桌面 Agent 的对话和执行状态，并与控制中心返回的 Temporal 执行记录合并展示。本机任务可继续打开对话；云端任务完成后以 runId 请求短期 MinIO 下载地址，桌面端不能自行指定对象键。
 
+IM 频道页只展示控制中心汇总的钉钉 Stream 和云端 Worker 状态。机器人账号与凭据不下发桌面；员工发到钉钉的消息由独立 `xiaoyin-im-worker` 提交 Temporal 并在云端 Harness 中处理，关闭桌面不会中断。
+
 ## 开发验证
 
 需要 Node.js 24.19.0、pnpm 10.33.0 和 Rust 1.97+：
