@@ -36,6 +36,11 @@
     requiredTools: !!js JSON.parse(process.env.ERP_MCP_REQUIRED_TOOLS ?? '[]')
     bearerTokenEnv: ERP_MCP_BEARER_TOKEN
 
+- id: local-files
+  name: '../dist/local-files-plugin.js'
+  config:
+    roots: !!js JSON.parse(process.env.XIAOYIN_LOCAL_FILE_ROOTS ?? '[]')
+
 - id: sessions
   name: '@deepseek-ai/dsh-session-persistence-jsonl'
   config:

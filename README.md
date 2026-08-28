@@ -20,7 +20,9 @@ harness-host/     DeepSeek Harness JSON-RPC Sidecar
 
 已安装套件的 Skill 根目录会由 Tauri 注入 Harness。选择专家套件后，桌面同时注入其命令说明、限制本次 Agent 可见的 ERP 工具，并复用同一个 Harness 会话执行后续消息。
 
-ERP MCP Bridge 使用官方 TypeScript MCP Client 做工具发现与调用，只将服务端明确标注 `readOnlyHint: true` 的工具注册到 Harness。写工具在桌面审批通道完成前默认不可见；本地 Office/File Tool Bridge 也尚未启用。
+ERP MCP Bridge 使用官方 TypeScript MCP Client 做工具发现与调用，只将服务端明确标注 `readOnlyHint: true` 的工具注册到 Harness。写工具在桌面审批通道完成前默认不可见。
+
+本地文件 Bridge 当前提供只读目录浏览和 UTF-8 文本读取。员工必须通过系统文件夹选择器逐个授权，Harness 只获得临时根目录；绝对路径不会进入模型上下文。目录穿越、越界符号链接、凭据文件、二进制文件、超大文件和未授权目录会被拒绝，新建任务或退出登录会清空授权。DOCX、XLSX、PDF 解析及本地写入仍未启用。
 
 桌面由 Tauri 持有一个长期运行的 Harness Host 进程，模型请求走控制中心下发的 LiteLLM 地址，运行状态和工具事件通过 Tauri Event 返回聊天界面。界面只展示阶段与工具调用，不展示模型的隐藏推理原文。
 

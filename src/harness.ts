@@ -9,6 +9,7 @@ export interface HarnessRunInput {
   erpMcpUrl: string
   model: string
   accessToken: string
+  localFileRootIds: string[]
 }
 
 export interface HarnessRunResult {
@@ -21,9 +22,34 @@ export interface HarnessNotification {
   event: unknown
 }
 
+export interface AuthorizedLocalDirectory {
+  id: string
+  name: string
+}
+
 export async function runHarness(input: HarnessRunInput): Promise<HarnessRunResult> {
   if (!isTauri()) throw new Error('真实 Agent 执行只能在小胤桌面客户端中运行')
   return invoke<HarnessRunResult>('run_harness', { request: input })
+}
+
+export async function authorizeLocalDirectory(): Promise<AuthorizedLocalDirectory | null> {
+  if (!isTauri()) throw new Error('本地文件夹授权只能在小胤桌面客户端中使用')
+  return invoke<AuthorizedLocalDirectory | null>('authorize_local_directory')
+}
+
+export async function revokeLocalDirectory(id: string): Promise<void> {
+  if (!isTauri()) return
+  await invoke('revoke_local_directory', { id })
+}
+
+export async function clearLocalDirectories(): Promise<void> {
+  if (!isTauri()) return
+  await invoke('clear_local_directories')
+}
+
+export async function shutdownHarness(): Promise<void> {
+  if (!isTauri()) return
+  await invoke('shutdown_harness')
 }
 
 export async function listenHarnessNotifications(

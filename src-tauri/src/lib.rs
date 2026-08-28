@@ -5,6 +5,7 @@ use tauri::Manager;
 
 mod expert_kits;
 mod harness;
+mod local_files;
 
 const ERP_LOGIN_URL: &str = "http://www.instudio.me:6206/eshop/manager/login.jsp";
 const ERP_EXCHANGE_URL: &str = "http://www.instudio.me:6206/apisix/xiaoyin-sso/api/auth/exchange";
@@ -363,8 +364,10 @@ async fn clear_erp_session(app: tauri::AppHandle) -> Result<(), String> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(harness::HarnessManager::default())
+        .manage(local_files::LocalFileAuthorizations::default())
         .on_window_event(|window, event| {
             if window.label() == "erp-login"
                 && let tauri::WindowEvent::CloseRequested { api, .. } = event
@@ -387,6 +390,9 @@ pub fn run() {
             poll_erp_qr_login,
             expert_kits::list_installed_expert_kits,
             expert_kits::install_expert_kit,
+            local_files::authorize_local_directory,
+            local_files::revoke_local_directory,
+            local_files::clear_local_directories,
             harness::run_harness,
             harness::shutdown_harness
         ])

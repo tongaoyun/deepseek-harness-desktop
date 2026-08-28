@@ -5,6 +5,7 @@ import {
   CalendarClock,
   ChevronDown,
   CirclePlus,
+  FolderOpen,
   HelpCircle,
   LogOut,
   MessageSquare,
@@ -20,6 +21,7 @@ import {
   SquareCheckBig,
   Store,
   WandSparkles,
+  X,
 } from 'lucide-react'
 import { type FormEvent, useEffect, useMemo, useState } from 'react'
 import {
@@ -37,7 +39,16 @@ import {
   mergeExpertKits,
   type ExpertKitView,
 } from './expertKits'
-import { harnessActivityLabel, listenHarnessNotifications, runHarness } from './harness'
+import {
+  authorizeLocalDirectory,
+  clearLocalDirectories,
+  harnessActivityLabel,
+  listenHarnessNotifications,
+  revokeLocalDirectory,
+  runHarness,
+  shutdownHarness,
+  type AuthorizedLocalDirectory,
+} from './harness'
 import type {
   BootstrapResponse,
   ConnectorCatalogEntry,
@@ -79,6 +90,8 @@ export default function App() {
   const [harnessSessionId, setHarnessSessionId] = useState('')
   const [harnessRunning, setHarnessRunning] = useState(false)
   const [harnessActivity, setHarnessActivity] = useState('')
+  const [localDirectories, setLocalDirectories] = useState<AuthorizedLocalDirectory[]>([])
+  const [localFileError, setLocalFileError] = useState('')
 
   useEffect(() => {
     if (authState !== 'authenticated' || !user) return
@@ -134,6 +147,12 @@ export default function App() {
     return () => { disposed = true; unlisten() }
   }, [])
 
+  useEffect(() => {
+    if (authState === 'authenticated') return
+    setLocalDirectories([])
+    void Promise.all([clearLocalDirectories(), shutdownHarness()])
+  }, [authState])
+
   const statusLabel = useMemo(() => ({
     connecting: '正在连接企业服务',
     ready: '企业服务已连接',
@@ -145,7 +164,47 @@ export default function App() {
   }
 
   const selectedExpertKit = expertKits.find((kit) => kit.id === selectedExpertKitId && kit.installState === 'installed')
-  const newTask = () => { setPage('chat'); setMessages([]); setPrompt(''); setHarnessSessionId(''); setHarnessActivity('') }
+  const newTask = () => {
+    setPage('chat')
+    setMessages([])
+    setPrompt('')
+    setHarnessSessionId('')
+    setHarnessActivity('')
+    setLocalDirectories([])
+    setLocalFileError('')
+    void Promise.all([clearLocalDirectories(), shutdownHarness()])
+  }
+  const addLocalDirectory = async () => {
+    setLocalFileError('')
+    try {
+      const authorization = await authorizeLocalDirectory()
+      if (!authorization) return
+      setLocalDirectories((current) => current.some((item) => item.id === authorization.id)
+        ? current
+        : [...current, authorization])
+      setHarnessSessionId('')
+      await shutdownHarness()
+    } catch (error) {
+      setLocalFileError(error instanceof Error ? error.message : String(error))
+    }
+  }
+  const removeLocalDirectory = async (id: string) => {
+    setLocalFileError('')
+    try {
+      await revokeLocalDirectory(id)
+      await shutdownHarness()
+      setLocalDirectories((current) => current.filter((item) => item.id !== id))
+      setHarnessSessionId('')
+    } catch (error) {
+      setLocalFileError(error instanceof Error ? error.message : String(error))
+    }
+  }
+  const logoutWithCleanup = async () => {
+    await clearLocalDirectories()
+    await shutdownHarness()
+    setLocalDirectories([])
+    await logout()
+  }
   const submit = async (event: FormEvent) => {
     event.preventDefault()
     const input = prompt.trim()
@@ -163,6 +222,7 @@ export default function App() {
         erpMcpUrl: bootstrap.endpoints.erpMcp,
         model: bootstrap.models[0] ?? 'deepseek-v4-flash',
         accessToken,
+        localFileRootIds: localDirectories.map((directory) => directory.id),
       })
       setHarnessSessionId(result.sessionId)
       setMessages((current) => current.map((message, index) => index === current.length - 1
@@ -248,7 +308,7 @@ export default function App() {
           <span className={`connection-state ${runtimeStatus}`}><i /> 马帮 ERP · {statusLabel}</span>
           <DesktopUpdater />
           <button type="button"><HelpCircle size={15} /> 问题反馈</button>
-          <button onClick={() => void logout()} type="button"><LogOut size={15} /> 退出登录</button>
+          <button onClick={() => void logoutWithCleanup()} type="button"><LogOut size={15} /> 退出登录</button>
         </header>
 
         {page === 'chat' ? (
@@ -264,14 +324,25 @@ export default function App() {
             <form className="composer" onSubmit={submit}>
               <textarea aria-label="给小胤发送消息" onChange={(event) => setPrompt(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit() } }} placeholder="描述任务，/ 选择专家套件或技能，@ 添加业务上下文" value={prompt} />
               <div className="composer-actions">
-                <button aria-label="添加上下文" className="circle-button" type="button"><CirclePlus size={18} /></button>
+                <button aria-label="授权本地文件夹" className="circle-button" disabled={harnessRunning} onClick={() => void addLocalDirectory()} title="授权本地文件夹" type="button"><CirclePlus size={18} /></button>
                 <button className="mode-button" onClick={() => setPage('experts')} type="button"><Sparkles size={14} /> {selectedExpertKit?.name ?? '运营通用'} <ChevronDown size={13} /></button>
                 <button className="model-label" type="button"><Bot size={14} /> {bootstrap?.models[0] ?? '企业模型'} <ChevronDown size={13} /></button>
                 <button aria-label="语音输入" className="circle-button" type="button"><Mic size={17} /></button>
                 <button aria-label="发送" className="send-button" disabled={!prompt.trim() || harnessRunning || !bootstrap} type="submit"><Send size={17} /></button>
               </div>
             </form>
-            <div className="context-bar"><span>ERP MCP · 本地文件 · 云端工作流</span><span><ShieldCheck size={14} /> 敏感操作需审批</span></div>
+            {localFileError && <div className="local-file-error">{localFileError}</div>}
+            <div className="context-bar">
+              <div className="local-contexts">
+                {localDirectories.length === 0
+                  ? <span>ERP MCP · 本地文件未授权 · 云端工作流</span>
+                  : localDirectories.map((directory) => <span className="local-context" key={directory.id}>
+                    <FolderOpen size={12} />{directory.name}
+                    <button aria-label={`移除 ${directory.name}`} disabled={harnessRunning} onClick={() => void removeLocalDirectory(directory.id)} type="button"><X size={11} /></button>
+                  </span>)}
+              </div>
+              <span><ShieldCheck size={14} /> 仅可读取已授权目录</span>
+            </div>
           </section>
         ) : (
           <section className="capability-page">

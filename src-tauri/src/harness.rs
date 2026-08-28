@@ -1,4 +1,4 @@
-use crate::expert_kits;
+use crate::{expert_kits, local_files::LocalFileAuthorizations};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -25,6 +25,8 @@ pub struct HarnessRunRequest {
     erp_mcp_url: String,
     model: String,
     access_token: String,
+    #[serde(default)]
+    local_file_root_ids: Vec<String>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -46,6 +48,7 @@ struct RuntimeFingerprint {
     skill_directories: Vec<String>,
     allowed_erp_tools: Vec<String>,
     required_erp_tools: Vec<String>,
+    local_file_roots: Vec<String>,
     litellm_base_url: String,
     erp_mcp_url: String,
     model: String,
@@ -71,6 +74,7 @@ struct HarnessRuntimePaths {
 pub async fn run_harness(
     app: tauri::AppHandle,
     manager: tauri::State<'_, HarnessManager>,
+    local_files: tauri::State<'_, LocalFileAuthorizations>,
     request: HarnessRunRequest,
 ) -> Result<HarnessRunResult, String> {
     validate_run_request(&request)?;
@@ -79,10 +83,15 @@ pub async fn run_harness(
         request.expert_kit_id.as_deref(),
         request.prompt.trim(),
     )?;
+    if !profile.allow_local_files && !request.local_file_root_ids.is_empty() {
+        return Err("当前专家套件禁止读取本地文件".to_string());
+    }
+    let local_file_roots = local_files.resolve(&request.local_file_root_ids)?;
     let fingerprint = RuntimeFingerprint {
         skill_directories: profile.skill_directories,
         allowed_erp_tools: profile.allowed_erp_tools,
         required_erp_tools: profile.required_erp_tools,
+        local_file_roots,
         litellm_base_url: request.litellm_base_url,
         erp_mcp_url: request.erp_mcp_url,
         model: request.model,
@@ -175,6 +184,8 @@ impl HarnessProcess {
             .map_err(|error| format!("无法生成 ERP 工具配置：{error}"))?;
         let required_tools = serde_json::to_string(&fingerprint.required_erp_tools)
             .map_err(|error| format!("无法生成 ERP 工具配置：{error}"))?;
+        let local_file_roots = serde_json::to_string(&fingerprint.local_file_roots)
+            .map_err(|error| format!("无法生成本地文件授权配置：{error}"))?;
         let mut child = Command::new(&runtime.node)
             .arg(&runtime.entry)
             .current_dir(&workspace)
@@ -187,6 +198,7 @@ impl HarnessProcess {
             .env("ERP_MCP_ALLOWED_TOOLS", allowed_tools)
             .env("ERP_MCP_REQUIRED_TOOLS", required_tools)
             .env("ERP_MCP_BEARER_TOKEN", access_token)
+            .env("XIAOYIN_LOCAL_FILE_ROOTS", local_file_roots)
             .env("DEEPSEEK_BASE_URL", &fingerprint.litellm_base_url)
             .env("DSH_MODEL", &fingerprint.model)
             .stdin(Stdio::piped())
@@ -425,6 +437,7 @@ mod tests {
             erp_mcp_url: "http://erp.internal/mcp".to_string(),
             model: "deepseek-chat".to_string(),
             access_token: "erp-token".to_string(),
+            local_file_root_ids: Vec::new(),
         };
         assert!(validate_run_request(&valid).is_ok());
         let invalid = HarnessRunRequest {

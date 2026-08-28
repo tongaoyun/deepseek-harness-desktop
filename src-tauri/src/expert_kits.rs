@@ -98,6 +98,7 @@ pub struct ExpertKitHarnessProfile {
     pub skill_directories: Vec<String>,
     pub allowed_erp_tools: Vec<String>,
     pub required_erp_tools: Vec<String>,
+    pub allow_local_files: bool,
     pub prompt: String,
 }
 
@@ -238,6 +239,7 @@ pub fn harness_profile(
             skill_directories,
             allowed_erp_tools: Vec::new(),
             required_erp_tools: Vec::new(),
+            allow_local_files: true,
             prompt: user_prompt.to_string(),
         });
     };
@@ -270,6 +272,7 @@ pub fn harness_profile(
         skill_directories,
         allowed_erp_tools: erp_tools.clone(),
         required_erp_tools: erp_tools,
+        allow_local_files: kit.manifest.permissions.local_files != PermissionMode::Deny,
         prompt,
     })
 }
