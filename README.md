@@ -30,6 +30,8 @@ ERP MCP Bridge 使用官方 TypeScript MCP Client 做工具发现与调用。通
 
 定时任务页根据专家套件的 `serverWorkflows` 动态生成输入表单，通过控制中心管理 Temporal Schedule，支持创建、暂停、恢复、立即运行、删除和查看最近执行记录。任务在云端 Worker 执行，桌面关闭不影响运行。
 
+任务中心在员工电脑本地保存桌面 Agent 的对话和执行状态，并与控制中心返回的 Temporal 执行记录合并展示。本机任务可继续打开对话；云端任务完成后以 runId 请求短期 MinIO 下载地址，桌面端不能自行指定对象键。
+
 ## 开发验证
 
 需要 Node.js 24.19.0、pnpm 10.33.0 和 Rust 1.97+：

@@ -58,6 +58,9 @@ import type {
 import { useEnterpriseSession } from './useEnterpriseSession'
 import { XiaoyinMascot } from './XiaoyinMascot'
 import { ScheduledTasksPage } from './ScheduledTasksPage'
+import { TaskCenterPage } from './TaskCenterPage'
+import { loadLocalTasks, saveLocalTask } from './taskHistory'
+import type { LocalTaskRun, TaskMessage } from './types'
 import './styles.css'
 
 const extensionNav = [
@@ -80,7 +83,9 @@ export default function App() {
   const [prompt, setPrompt] = useState('')
   const [page, setPage] = useState('chat')
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
-  const [messages, setMessages] = useState<Array<{ role: 'assistant' | 'user'; text: string; pending?: boolean }>>([])
+  const [messages, setMessages] = useState<TaskMessage[]>([])
+  const [localTasks, setLocalTasks] = useState<LocalTaskRun[]>([])
+  const [currentLocalTaskId, setCurrentLocalTaskId] = useState('')
   const [expertKits, setExpertKits] = useState<ExpertKitView[]>([])
   const [skills, setSkills] = useState<SkillCatalogEntry[]>([])
   const [connectors, setConnectors] = useState<ConnectorCatalogEntry[]>([])
@@ -103,6 +108,15 @@ export default function App() {
       .catch(() => setRuntimeStatus('offline'))
     return () => controller.abort()
   }, [accessToken, authState, user])
+
+  useEffect(() => {
+    if (authState !== 'authenticated' || !user) {
+      setLocalTasks([])
+      setCurrentLocalTaskId('')
+      return
+    }
+    setLocalTasks(loadLocalTasks(user.userId))
+  }, [authState, user])
 
   useEffect(() => {
     if (!bootstrap || !user) return
@@ -170,6 +184,23 @@ export default function App() {
     setMessages([])
     setPrompt('')
     setHarnessSessionId('')
+    setCurrentLocalTaskId('')
+    setHarnessActivity('')
+    setLocalDirectories([])
+    setLocalFileError('')
+    void Promise.all([clearLocalDirectories(), shutdownHarness()])
+  }
+  const persistLocalTask = (task: LocalTaskRun) => {
+    if (!user) return
+    setLocalTasks(saveLocalTask(user.userId, task))
+  }
+  const openLocalTask = (task: LocalTaskRun) => {
+    setPage('chat')
+    setMessages(task.messages.map((message) => ({ ...message, pending: false })))
+    setCurrentLocalTaskId(task.id)
+    setHarnessSessionId(task.sessionId ?? '')
+    setSelectedExpertKitId(task.expertKitId ?? '')
+    setPrompt('')
     setHarnessActivity('')
     setLocalDirectories([])
     setLocalFileError('')
@@ -210,7 +241,25 @@ export default function App() {
     event.preventDefault()
     const input = prompt.trim()
     if (!input || !bootstrap || harnessRunning) return
-    setMessages((current) => [...current, { role: 'user', text: input }, { role: 'assistant', text: '正在分析任务…', pending: true }])
+    const now = new Date().toISOString()
+    const taskId = currentLocalTaskId || crypto.randomUUID()
+    const existingTask = localTasks.find((task) => task.id === taskId)
+    const pendingMessages: TaskMessage[] = [...messages, { role: 'user', text: input },
+      { role: 'assistant', text: '正在分析任务…', pending: true }]
+    const runningTask: LocalTaskRun = {
+      id: taskId,
+      source: 'DESKTOP',
+      name: existingTask?.name ?? input.slice(0, 60),
+      status: 'RUNNING',
+      createdAt: existingTask?.createdAt ?? now,
+      updatedAt: now,
+      sessionId: harnessSessionId || existingTask?.sessionId,
+      expertKitId: selectedExpertKit?.id ?? existingTask?.expertKitId,
+      messages: pendingMessages,
+    }
+    setCurrentLocalTaskId(taskId)
+    setMessages(pendingMessages)
+    persistLocalTask(runningTask)
     setPrompt('')
     setHarnessRunning(true)
     setHarnessActivity('正在启动本地 Agent')
@@ -226,14 +275,19 @@ export default function App() {
         localFileRootIds: localDirectories.map((directory) => directory.id),
       })
       setHarnessSessionId(result.sessionId)
-      setMessages((current) => current.map((message, index) => index === current.length - 1
+      const completedMessages = pendingMessages.map((message, index) => index === pendingMessages.length - 1
         ? { role: 'assistant', text: result.finalResponse || '任务已执行完成，但模型没有返回文本。' }
-        : message))
+        : message) as TaskMessage[]
+      setMessages(completedMessages)
+      persistLocalTask({ ...runningTask, status: 'COMPLETED', updatedAt: new Date().toISOString(),
+        sessionId: result.sessionId, messages: completedMessages })
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
-      setMessages((current) => current.map((item, index) => index === current.length - 1
+      const failedMessages = pendingMessages.map((item, index) => index === pendingMessages.length - 1
         ? { role: 'assistant', text: `执行失败：${message}` }
-        : item))
+        : item) as TaskMessage[]
+      setMessages(failedMessages)
+      persistLocalTask({ ...runningTask, status: 'FAILED', updatedAt: new Date().toISOString(), messages: failedMessages })
     } finally {
       setHarnessRunning(false)
       setHarnessActivity('')
@@ -294,11 +348,11 @@ export default function App() {
           <button className={page === 'im' ? 'nav-item active' : 'nav-item'} onClick={() => setPage('im')} type="button"><MessageSquare size={17} /><span>IM 频道</span></button>
           <button className={page === 'admin' ? 'nav-item active' : 'nav-item'} onClick={() => setPage('admin')} type="button"><ShieldCheck size={17} /><span>管理中心</span></button>
         </nav>
-        <div className="sidebar-segments"><button className="active" type="button"><SquareCheckBig size={14} />任务</button><button type="button"><MessageSquare size={14} />频道</button></div>
+        <div className="sidebar-segments"><button className={page === 'tasks' ? 'active' : ''} onClick={() => setPage('tasks')} type="button"><SquareCheckBig size={14} />任务</button><button className={page === 'im' ? 'active' : ''} onClick={() => setPage('im')} type="button"><MessageSquare size={14} />频道</button></div>
         <div className="recent-tasks">
           <p className="nav-label">最近</p>
-          <button className="recent-task" type="button"><span>昨日店铺经营日报</span><small>已完成</small></button>
-          <button className="recent-task" type="button"><span>低库存商品排查</span><small>等待继续</small></button>
+          {localTasks.slice(0, 5).map((task) => <button className="recent-task" key={task.id} onClick={() => openLocalTask(task)} type="button"><span>{task.name}</span><small>{task.status === 'RUNNING' ? '运行中' : task.status === 'COMPLETED' ? '已完成' : '执行失败'}</small></button>)}
+          {localTasks.length === 0 && <small className="recent-empty">暂无本机任务</small>}
         </div>
         <div className="sidebar-spacer" />
         <button className="account" type="button"><span>{user?.displayName.slice(0, 1) ?? '员'}</span><div><strong>{user?.displayName ?? '企业员工'} · {user?.department || '跨境运营'}</strong><small>{user?.companyName || '企业内部版'}</small></div><i className={`status-dot ${runtimeStatus}`} /></button>
@@ -348,13 +402,15 @@ export default function App() {
         ) : (
           <section className="capability-page">
             <span className="page-kicker">企业能力中心</span>
-            <h1>{extensionNav.find((item) => item.id === page)?.label ?? ({ schedules: '定时任务', im: 'IM 频道', admin: '管理中心' } as Record<string, string>)[page]}</h1>
+            <h1>{extensionNav.find((item) => item.id === page)?.label ?? ({ tasks: '任务中心', schedules: '定时任务', im: 'IM 频道', admin: '管理中心' } as Record<string, string>)[page]}</h1>
             <p>{page === 'experts'
               ? '面向岗位的一整套工作方案，统一组合命令、技能、连接器和后台工作流。'
               : page === 'skills'
                 ? '公司沉淀的独立工作方法，可由 Agent 自动识别或在对话中明确调用。'
                 : page === 'connectors'
                   ? '连接公司数据和员工电脑能力；账号、地址和令牌由公司统一管理。'
+                  : page === 'tasks'
+                    ? '统一查看小胤桌面任务、Temporal 云端执行和可下载的结果产物。'
                   : page === 'schedules'
                     ? '按专家套件声明的后台工作流创建任务；任务由 Temporal 托管，关闭电脑后仍会运行。'
                   : '这里将由控制中心下发公司自己的能力与权限配置。'}</p>
@@ -427,6 +483,13 @@ export default function App() {
               employeeId={user.userId}
               endpoint={bootstrap.endpoints.schedules}
               expertKits={expertKits}
+            />}
+            {page === 'tasks' && bootstrap && user && <TaskCenterPage
+              accessToken={accessToken}
+              employeeId={user.userId}
+              endpoint={bootstrap.endpoints.taskRuns}
+              localTasks={localTasks}
+              onOpenLocalTask={openLocalTask}
             />}
           </section>
         )}

@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   createExpertKitDownload,
+  createTaskRunArtifactDownload,
   loadBootstrap,
   loadConnectors,
   loadExpertKits,
   loadSkills,
+  loadCloudTaskRuns,
 } from './api'
 
 describe('loadBootstrap', () => {
@@ -22,6 +24,7 @@ describe('loadBootstrap', () => {
         skills: '/api/v1/skills',
         connectors: '/api/v1/connectors',
         schedules: '/api/v1/schedules',
+        taskRuns: '/api/v1/task-runs',
       },
       capabilities: ['chat'],
       models: [],
@@ -78,5 +81,22 @@ describe('loadBootstrap', () => {
       'X-Xiaoyin-Employee-Id': 'employee-1',
       Authorization: 'Bearer token-1',
     })
+  })
+
+  it('loads task runs and requests an employee-scoped artifact by run id', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response('[]', { status: 200, headers: { 'Content-Type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ objectKey: 'workflows/result.json' }), {
+        status: 200, headers: { 'Content-Type': 'application/json' },
+      }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await loadCloudTaskRuns('/api/v1/task-runs', 'employee-1', 'token-1')
+    await createTaskRunArtifactDownload('/api/v1/task-runs', 'employee-1', 'token-1', 'run one')
+
+    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
+      'http://192.168.2.67:30081/api/v1/task-runs',
+      'http://192.168.2.67:30081/api/v1/task-runs/run%20one/artifact',
+    ])
   })
 })

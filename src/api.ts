@@ -1,5 +1,7 @@
 import type {
   BootstrapResponse,
+  ArtifactDownload,
+  CloudTaskRun,
   ConnectorCatalogEntry,
   CreateScheduledTaskRequest,
   ExpertKitCatalogEntry,
@@ -118,6 +120,28 @@ export async function loadScheduledTaskExecutions(
 ): Promise<ScheduledTaskExecution[]> {
   return loadCatalog(`${endpoint.replace(/\/$/, '')}/${encodeURIComponent(id)}/executions`,
     employeeId, accessToken, '执行记录')
+}
+
+export async function loadCloudTaskRuns(
+  endpoint: string,
+  employeeId: string,
+  accessToken: string,
+  signal?: AbortSignal,
+): Promise<CloudTaskRun[]> {
+  return loadCatalog(endpoint, employeeId, accessToken, '任务记录', signal)
+}
+
+export async function createTaskRunArtifactDownload(
+  endpoint: string,
+  employeeId: string,
+  accessToken: string,
+  runId: string,
+): Promise<ArtifactDownload> {
+  const response = await fetch(controlPlaneUrl(`${endpoint.replace(/\/$/, '')}/${encodeURIComponent(runId)}/artifact`), {
+    headers: enterpriseHeaders(employeeId, accessToken),
+  })
+  if (!response.ok) throw new Error(`任务产物下载授权返回 ${response.status}`)
+  return response.json() as Promise<ArtifactDownload>
 }
 
 async function scheduleRequest(

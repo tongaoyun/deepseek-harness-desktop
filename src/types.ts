@@ -9,6 +9,7 @@ export interface BootstrapResponse {
     skills: string
     connectors: string
     schedules: string
+    taskRuns: string
   }
   capabilities: string[]
   models: string[]
@@ -70,6 +71,47 @@ export interface ScheduledTaskExecution {
   runId: string
   status: string
   closedAt?: string
+  artifactObjectKey?: string
+}
+
+export interface CloudTaskRun {
+  id: string
+  source: 'SCHEDULE'
+  name: string
+  expertKitId: string
+  workflowId: string
+  scheduleId: string
+  temporalWorkflowId: string
+  runId: string
+  status: string
+  scheduledAt: string
+  startedAt: string
+  closedAt?: string
+  artifactObjectKey?: string
+}
+
+export interface TaskMessage {
+  role: 'assistant' | 'user'
+  text: string
+  pending?: boolean
+}
+
+export interface LocalTaskRun {
+  id: string
+  source: 'DESKTOP'
+  name: string
+  status: 'RUNNING' | 'COMPLETED' | 'FAILED'
+  createdAt: string
+  updatedAt: string
+  sessionId?: string
+  expertKitId?: string
+  messages: TaskMessage[]
+}
+
+export interface ArtifactDownload {
+  objectKey: string
+  url: string
+  expiresAt: string
 }
 
 export interface CreateScheduledTaskRequest {
