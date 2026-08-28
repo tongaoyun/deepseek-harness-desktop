@@ -35,7 +35,8 @@ export function ScheduledTasksPage({ endpoint, employeeId, accessToken, expertKi
 
   useEffect(() => {
     if (!selection && workflows.length > 0) {
-      setSelection(`${workflows[0].kit.id}:${workflows[0].workflow.id}`)
+      const first = workflows.find(({ kit }) => kit.readiness === 'ready') ?? workflows[0]
+      setSelection(`${first.kit.id}:${first.workflow.id}`)
     }
   }, [selection, workflows])
 
@@ -53,7 +54,7 @@ export function ScheduledTasksPage({ endpoint, employeeId, accessToken, expertKi
 
   const submit = async (event: FormEvent) => {
     event.preventDefault()
-    if (!selected || saving) return
+    if (!selected || selected.kit.readiness !== 'ready' || saving) return
     setSaving(true)
     setError('')
     try {
@@ -113,8 +114,9 @@ export function ScheduledTasksPage({ endpoint, employeeId, accessToken, expertKi
       <div className="schedule-section-title"><CalendarPlus size={17} /><span><strong>新建定时任务</strong><small>任务在公司服务器运行，关闭电脑后仍会继续。</small></span></div>
       {workflows.length === 0 ? <div className="kit-empty">已发布的专家套件尚未声明后台工作流</div> : <>
         <label>专家工作流<select value={selection} onChange={(event) => { setSelection(event.target.value); setInputs({}) }}>
-          {workflows.map(({ kit, workflow }) => <option key={`${kit.id}:${workflow.id}`} value={`${kit.id}:${workflow.id}`}>{kit.name} · {workflow.name}</option>)}
+          {workflows.map(({ kit, workflow }) => <option disabled={kit.readiness !== 'ready'} key={`${kit.id}:${workflow.id}`} value={`${kit.id}:${workflow.id}`}>{kit.name} · {workflow.name}{kit.readiness !== 'ready' ? '（依赖未就绪）' : ''}</option>)}
         </select></label>
+        {selected?.kit.readiness !== 'ready' && <div className="schedule-dependency-warning">暂不可创建：{selected?.kit.connectorIssues.join('；')}</div>}
         <label>任务名称<input maxLength={100} onChange={(event) => setName(event.target.value)} placeholder={selected?.workflow.name} value={name} /></label>
         <div className="schedule-fields">
           <label>Cron 表达式<input onChange={(event) => setCronExpression(event.target.value)} value={cronExpression} /></label>
@@ -122,7 +124,7 @@ export function ScheduledTasksPage({ endpoint, employeeId, accessToken, expertKi
         </div>
         {selected?.workflow.inputs.map((input) => <WorkflowInputField input={input} key={input.name} value={inputs[input.name]} onChange={(value) => setInputs((current) => ({ ...current, [input.name]: value }))} />)}
         <small className="cron-hint">示例：工作日每天 9:00 为 <code>0 9 * * 1-5</code></small>
-        <button className="schedule-primary" disabled={saving} type="submit">{saving ? '正在创建…' : '创建任务'}</button>
+        <button className="schedule-primary" disabled={saving || selected?.kit.readiness !== 'ready'} type="submit">{saving ? '正在创建…' : '创建任务'}</button>
       </>}
     </form>
 
