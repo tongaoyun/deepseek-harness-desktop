@@ -6,7 +6,7 @@ import type {
   SkillCatalogEntry,
 } from './types'
 
-const DEFAULT_CONTROL_PLANE = 'http://127.0.0.1:8080'
+const DEFAULT_CONTROL_PLANE = 'http://192.168.2.67:30081'
 
 export async function loadBootstrap(employeeId = 'local-development', accessToken = '', signal?: AbortSignal): Promise<BootstrapResponse> {
   const response = await fetch(controlPlaneUrl('/api/v1/bootstrap'), {

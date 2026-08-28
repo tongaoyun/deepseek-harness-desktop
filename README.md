@@ -36,6 +36,8 @@ pnpm tauri:dev
 
 浏览器开发模式使用本地预览身份；真实钉钉二维码、ERP Cookie 和系统权限只能在 Tauri 原生窗口验证。
 
+正式安装包默认连接公司内网控制中心 `http://192.168.2.67:30081`。本地开发需要连接其他环境时，可在构建前设置 `VITE_CONTROL_PLANE_BASE_URL` 覆盖。
+
 ## 发布边界
 
 本仓库不部署到 K3s，也不调用 `node-k3s.yml`。Windows 安装包把 Node 24、`harness-host` 及其生产依赖作为 Tauri Resource 一并安装，员工电脑不依赖全局 Node；嵌入式 Node 继续作为 Harness 子进程的运行时。
@@ -59,8 +61,8 @@ WiX 3.14、NSIS 3.11 与 Tauri NSIS 插件镜像在公司 Gitea Generic Package 
 发布前同时更新 `package.json`、`src-tauri/tauri.conf.json` 和 `src-tauri/Cargo.toml` 的版本，再创建并推送标签：
 
 ```bash
-git tag -a v0.1.0 -m "小胤 0.1.0"
-git push origin v0.1.0
+git tag -a v0.1.1 -m "小胤 0.1.1"
+git push origin v0.1.1
 ```
 
 在 Windows 构建机本地可执行：
