@@ -59,7 +59,7 @@ export class DeepSeekHarnessRuntime implements HarnessRuntime {
       throw new Error('prompt must not be blank')
     }
     const harness = this.getOrCreateHarness()
-    const result = await harness.run(input.prompt, {
+    const result = await harness.run(applyMemoryContext(input.prompt, process.env.XIAOYIN_MEMORY_CONTEXT), {
       ...(input.sessionId === undefined ? {} : { sessionId: input.sessionId }),
       onNotification,
     })
@@ -105,6 +105,12 @@ export class DeepSeekHarnessRuntime implements HarnessRuntime {
     })
     return this.harness
   }
+}
+
+export function applyMemoryContext(prompt: string, memoryContext: string | undefined): string {
+  const memory = memoryContext?.trim()
+  if (!memory) return prompt
+  return `<xiaoyin-memory>\n${memory}\n</xiaoyin-memory>\n\n当前任务：\n${prompt}`
 }
 
 function positiveInteger(value: string | undefined): number | undefined {

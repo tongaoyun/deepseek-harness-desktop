@@ -1,6 +1,7 @@
 use crate::{
     expert_kits,
     harness::{HarnessProcess, RuntimeFingerprint, credential_digest},
+    memory,
 };
 use keyring::Entry;
 use serde::{Deserialize, Serialize};
@@ -41,6 +42,7 @@ enum AccessPolicy {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HarnessContext {
+    employee_id: String,
     litellm_base_url: String,
     erp_mcp_url: String,
     model: String,
@@ -219,6 +221,7 @@ impl LocalImManager {
             litellm_base_url: context.litellm_base_url,
             erp_mcp_url: context.erp_mcp_url,
             model: context.model,
+            memory_context: memory::context(app, &context.employee_id)?,
             credential_digest: credential_digest(&context.model_api_key, &context.access_token),
         };
         let mut guard = self
@@ -451,6 +454,12 @@ fn validate_client_secret(value: &str) -> Result<(), String> {
 }
 
 fn validate_harness_context(value: &HarnessContext) -> Result<(), String> {
+    if value.employee_id.trim().is_empty()
+        || value.employee_id.len() > 512
+        || value.employee_id.chars().any(char::is_control)
+    {
+        return Err("员工标识无效".to_string());
+    }
     validate_http_url("LiteLLM", &value.litellm_base_url)?;
     validate_http_url("ERP MCP", &value.erp_mcp_url)?;
     if value.model.trim().is_empty() || value.model.len() > 200 {

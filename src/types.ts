@@ -106,6 +106,7 @@ export interface LocalTaskRun {
   updatedAt: string
   sessionId?: string
   expertKitId?: string
+  model?: string
   messages: TaskMessage[]
 }
 

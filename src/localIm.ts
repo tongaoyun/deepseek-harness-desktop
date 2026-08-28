@@ -3,6 +3,7 @@ import { invoke, isTauri } from '@tauri-apps/api/core'
 export type ImAccessPolicy = 'open' | 'pairing'
 
 export interface LocalImHarnessContext {
+  employeeId: string
   litellmBaseUrl: string
   erpMcpUrl: string
   model: string

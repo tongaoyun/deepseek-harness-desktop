@@ -1,4 +1,4 @@
-use crate::{expert_kits, local_files::LocalFileAuthorizations};
+use crate::{expert_kits, local_files::LocalFileAuthorizations, memory};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -20,6 +20,7 @@ pub struct HarnessManager {
 #[serde(rename_all = "camelCase")]
 pub struct HarnessRunRequest {
     prompt: String,
+    employee_id: String,
     session_id: Option<String>,
     expert_kit_id: Option<String>,
     litellm_base_url: String,
@@ -57,6 +58,7 @@ pub(crate) struct RuntimeFingerprint {
     pub(crate) litellm_base_url: String,
     pub(crate) erp_mcp_url: String,
     pub(crate) model: String,
+    pub(crate) memory_context: String,
     pub(crate) credential_digest: String,
 }
 
@@ -104,6 +106,7 @@ pub async fn run_harness(
         litellm_base_url: request.litellm_base_url,
         erp_mcp_url: request.erp_mcp_url,
         model: request.model,
+        memory_context: memory::context(&app, &request.employee_id)?,
         credential_digest: credential_digest(&request.model_api_key, &request.access_token),
     };
     let session_id = request.session_id;
@@ -239,6 +242,7 @@ impl HarnessProcess {
             .env("DEEPSEEK_BASE_URL", &fingerprint.litellm_base_url)
             .env("DEEPSEEK_API_KEY", model_api_key)
             .env("DSH_MODEL", &fingerprint.model)
+            .env("XIAOYIN_MEMORY_CONTEXT", &fingerprint.memory_context)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
@@ -525,6 +529,12 @@ fn validate_runtime_paths(paths: &HarnessRuntimePaths) -> Result<(), String> {
 }
 
 fn validate_run_request(request: &HarnessRunRequest) -> Result<(), String> {
+    if request.employee_id.trim().is_empty()
+        || request.employee_id.len() > 512
+        || request.employee_id.chars().any(char::is_control)
+    {
+        return Err("员工标识无效".to_string());
+    }
     if request.prompt.trim().is_empty() || request.prompt.len() > 1024 * 1024 {
         return Err("消息不能为空且不能超过 1 MiB".to_string());
     }
@@ -574,6 +584,7 @@ mod tests {
     fn run_request_requires_safe_endpoints_and_model() {
         let valid = HarnessRunRequest {
             prompt: "分析库存".to_string(),
+            employee_id: "employee-1".to_string(),
             session_id: None,
             expert_kit_id: None,
             litellm_base_url: "http://litellm.internal/v1".to_string(),

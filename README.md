@@ -20,6 +20,12 @@ harness-host/     DeepSeek Harness JSON-RPC Sidecar
 
 已安装套件的 Skill 根目录会由 Tauri 注入 Harness。选择专家套件后，桌面同时注入其命令说明、限制本次 Agent 可见的 ERP 工具，并复用同一个 Harness 会话执行后续消息。
 
+聊天输入 `/` 会列出已安装专家套件的快捷命令与 Skill；选择后自动绑定所属套件及权限上下文。当前每个会话只激活一个专家套件，避免不同套件的 ERP 写权限和工具白名单相互扩大。
+
+模型选择器只展示控制中心下发且 LiteLLM 已开放的模型。员工选择按账号保存在本机，切换模型只影响后续消息，不清空当前会话；当前生产环境只发布 `deepseek-v4-flash`，增加模型时无需升级桌面端。
+
+“意识”在本机保存协作风格和长期工作手册，启用后同时注入桌面对话与本机 IM。该内容不会上传控制中心，也不能覆盖公司权限、安全策略或专家套件规则；保存后桌面会重启对应 Harness 进程使新设置立即生效。
+
 ERP MCP Bridge 使用官方 TypeScript MCP Client 做工具发现与调用。通用模式只开放 `readOnlyHint: true` 的工具；专家套件声明 ERP 写权限后才注册写工具，并且每次调用都由桌面原生确认。
 
 本地能力仅作用于员工通过系统选择器授权的任务目录，绝对路径不会进入模型上下文。平台提供目录浏览、UTF-8 文本读写、建目录、复制、移动和删除，以及 `office.document.read`、`office.docx.create`、`office.xlsx.create`、`office.pdf.create` 四个稳定的文档工具。目录穿越、越界符号链接、凭据文件、超限内容和未授权目录会被拒绝；新建任务或退出登录会清空授权。
@@ -73,8 +79,8 @@ WiX 3.14、NSIS 3.11 与 Tauri NSIS 插件镜像在公司 Gitea Generic Package 
 发布前同时更新 `package.json`、`src-tauri/tauri.conf.json` 和 `src-tauri/Cargo.toml` 的版本，再创建并推送标签：
 
 ```bash
-git tag -a v0.1.2 -m "小胤 0.1.2"
-git push origin v0.1.2
+git tag -a v0.1.3 -m "小胤 0.1.3"
+git push origin v0.1.3
 ```
 
 在 Windows 构建机本地可执行：
@@ -86,4 +92,4 @@ pnpm install --frozen-lockfile
 pnpm tauri build
 ```
 
-生产密钥不得写入 `.env`、前端产物或安装包；员工 LiteLLM 虚拟 Key 使用系统 Keychain 保存。
+生产密钥不得写入 `.env`、前端产物或安装包；员工 LiteLLM 虚拟 Key 只在当前桌面进程内使用，不持久化到本机。

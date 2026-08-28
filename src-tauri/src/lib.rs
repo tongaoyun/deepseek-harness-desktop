@@ -11,6 +11,7 @@ mod expert_kits;
 mod harness;
 mod im;
 mod local_files;
+mod memory;
 
 const ERP_LOGIN_URL: &str = "http://www.instudio.me:6206/eshop/manager/login.jsp";
 const ERP_EXCHANGE_URL: &str = "http://www.instudio.me:6206/apisix/xiaoyin-sso/api/auth/exchange";
@@ -433,7 +434,9 @@ pub fn run() {
             im::local_im_status,
             im::allow_local_im_pairing,
             im::stop_local_im_runtime,
-            im::remove_local_dingtalk
+            im::remove_local_dingtalk,
+            memory::load_memory_profile,
+            memory::save_memory_profile
         ])
         .run(tauri::generate_context!())
         .expect("error while running Xiaoyin desktop");

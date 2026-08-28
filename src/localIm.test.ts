@@ -19,6 +19,7 @@ describe('local IM native bridge', () => {
       enabled: true,
       accessPolicy: 'pairing',
       harness: {
+        employeeId: 'employee-1',
         litellmBaseUrl: 'http://litellm/v1', erpMcpUrl: 'http://erp/mcp',
         model: 'deepseek-v4-flash', modelApiKey: 'model-token', accessToken: 'employee-token',
       },
@@ -32,6 +33,7 @@ describe('local IM native bridge', () => {
     invoke.mockResolvedValue({ configured: true })
     const { startLocalIm } = await import('./localIm')
     await startLocalIm({
+      employeeId: 'employee-1',
       litellmBaseUrl: 'http://litellm/v1', erpMcpUrl: 'http://erp/mcp',
       model: 'deepseek-v4-flash', modelApiKey: 'model-token', accessToken: 'employee-token',
     })

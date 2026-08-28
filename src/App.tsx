@@ -2,6 +2,7 @@ import {
   BookOpenCheck,
   Bot,
   Boxes,
+  BrainCircuit,
   CalendarClock,
   ChevronDown,
   CirclePlus,
@@ -63,6 +64,9 @@ import { ImChannelsPage } from './ImChannelsPage'
 import { loadLocalTasks, saveLocalTask } from './taskHistory'
 import { startLocalIm, stopLocalImRuntime } from './localIm'
 import type { LocalTaskRun, TaskMessage } from './types'
+import { MemoryPage } from './MemoryPage'
+import { modelDisplayName, modelStorageKey, resolveSelectedModel } from './modelSelection'
+import { buildInvocationOptions, filterInvocationOptions, type InvocationOption } from './invocations'
 import './styles.css'
 
 const extensionNav = [
@@ -100,6 +104,8 @@ export default function App() {
   const [harnessActivity, setHarnessActivity] = useState('')
   const [localDirectories, setLocalDirectories] = useState<AuthorizedLocalDirectory[]>([])
   const [localFileError, setLocalFileError] = useState('')
+  const [selectedModel, setSelectedModel] = useState('')
+  const [modelMenuOpen, setModelMenuOpen] = useState(false)
 
   useEffect(() => {
     if (authState !== 'authenticated' || !user) return
@@ -110,6 +116,14 @@ export default function App() {
       .catch(() => setRuntimeStatus('offline'))
     return () => controller.abort()
   }, [accessToken, authState, user])
+
+  useEffect(() => {
+    if (!bootstrap || !user) return
+    setSelectedModel(resolveSelectedModel(
+      bootstrap.models,
+      window.localStorage.getItem(modelStorageKey(user.userId)),
+    ))
+  }, [bootstrap, user])
 
   useEffect(() => {
     if (authState !== 'authenticated' || !user) {
@@ -155,13 +169,14 @@ export default function App() {
   useEffect(() => {
     if (!bootstrap || !user || authState !== 'authenticated') return
     void startLocalIm({
+      employeeId: user.userId,
       litellmBaseUrl: bootstrap.endpoints.litellm,
       erpMcpUrl: bootstrap.endpoints.erpMcp,
-      model: bootstrap.models[0] ?? 'deepseek-v4-flash',
+      model: selectedModel || bootstrap.models[0] || 'deepseek-v4-flash',
       modelApiKey: bootstrap.modelApiKey,
       accessToken,
     }).catch(() => undefined)
-  }, [accessToken, authState, bootstrap, user])
+  }, [accessToken, authState, bootstrap, selectedModel, user])
 
   useEffect(() => {
     let disposed = false
@@ -192,6 +207,9 @@ export default function App() {
   }
 
   const selectedExpertKit = expertKits.find((kit) => kit.id === selectedExpertKitId && kit.installState === 'installed')
+  const invocationOptions = buildInvocationOptions(expertKits, skills)
+  const visibleInvocations = filterInvocationOptions(invocationOptions, prompt)
+  const activeModel = selectedModel || bootstrap?.models[0] || 'deepseek-v4-flash'
   const newTask = () => {
     setPage('chat')
     setMessages([])
@@ -213,6 +231,7 @@ export default function App() {
     setCurrentLocalTaskId(task.id)
     setHarnessSessionId(task.sessionId ?? '')
     setSelectedExpertKitId(task.expertKitId ?? '')
+    setSelectedModel(resolveSelectedModel(bootstrap?.models ?? [], task.model ?? selectedModel))
     setPrompt('')
     setHarnessActivity('')
     setLocalDirectories([])
@@ -268,6 +287,7 @@ export default function App() {
       updatedAt: now,
       sessionId: harnessSessionId || existingTask?.sessionId,
       expertKitId: selectedExpertKit?.id ?? existingTask?.expertKitId,
+      model: activeModel,
       messages: pendingMessages,
     }
     setCurrentLocalTaskId(taskId)
@@ -279,11 +299,12 @@ export default function App() {
     try {
       const result = await runHarness({
         prompt: input,
+        employeeId: user!.userId,
         ...(harnessSessionId ? { sessionId: harnessSessionId } : {}),
         ...(selectedExpertKit ? { expertKitId: selectedExpertKit.id } : {}),
         litellmBaseUrl: bootstrap.endpoints.litellm,
         erpMcpUrl: bootstrap.endpoints.erpMcp,
-        model: bootstrap.models[0] ?? 'deepseek-v4-flash',
+        model: activeModel,
         modelApiKey: bootstrap.modelApiKey,
         accessToken,
         localFileRootIds: localDirectories.map((directory) => directory.id),
@@ -341,6 +362,35 @@ export default function App() {
     setPrompt('')
   }
 
+  const selectModel = (model: string) => {
+    setSelectedModel(model)
+    setModelMenuOpen(false)
+    if (user) window.localStorage.setItem(modelStorageKey(user.userId), model)
+  }
+
+  const selectInvocation = (option: InvocationOption) => {
+    setSelectedExpertKitId(option.expertKitId)
+    setHarnessSessionId('')
+    setPrompt(option.kind === 'command'
+      ? `/${option.id} `
+      : `请使用 skill "${option.id}" 完成：`)
+    void shutdownHarness()
+  }
+
+  const memorySaved = async () => {
+    await Promise.all([shutdownHarness(), stopLocalImRuntime()])
+    if (bootstrap) {
+      await startLocalIm({
+        employeeId: user!.userId,
+        litellmBaseUrl: bootstrap.endpoints.litellm,
+        erpMcpUrl: bootstrap.endpoints.erpMcp,
+        model: activeModel,
+        modelApiKey: bootstrap.modelApiKey,
+        accessToken,
+      }).catch(() => undefined)
+    }
+  }
+
   return (
     <div className={`app-shell${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
       <aside className="sidebar">
@@ -358,6 +408,7 @@ export default function App() {
           {extensionNav.map(({ id, label, icon: Icon }) => <button className={page === id ? 'nav-item active' : 'nav-item'} key={id} onClick={() => setPage(id)} type="button"><Icon size={17} /><span>{label}</span>{id === 'skills' && skills.length > 0 && <em>{skills.length}</em>}</button>)}
         </nav>
         <nav className="office-nav">
+          <button className={page === 'memory' ? 'nav-item active' : 'nav-item'} onClick={() => setPage('memory')} type="button"><BrainCircuit size={17} /><span>意识</span></button>
           <button className={page === 'schedules' ? 'nav-item active' : 'nav-item'} onClick={() => setPage('schedules')} type="button"><CalendarClock size={17} /><span>定时任务</span></button>
           <button className={page === 'im' ? 'nav-item active' : 'nav-item'} onClick={() => setPage('im')} type="button"><MessageSquare size={17} /><span>IM 频道</span></button>
           <button className={page === 'admin' ? 'nav-item active' : 'nav-item'} onClick={() => setPage('admin')} type="button"><ShieldCheck size={17} /><span>管理中心</span></button>
@@ -395,10 +446,14 @@ export default function App() {
               <div className="composer-actions">
                 <button aria-label="授权本地文件夹" className="circle-button" disabled={harnessRunning} onClick={() => void addLocalDirectory()} title="授权本地文件夹" type="button"><CirclePlus size={18} /></button>
                 <button className="mode-button" onClick={() => setPage('experts')} type="button"><Sparkles size={14} /> {selectedExpertKit?.name ?? '运营通用'} <ChevronDown size={13} /></button>
-                <button className="model-label" type="button"><Bot size={14} /> {bootstrap?.models[0] ?? '企业模型'} <ChevronDown size={13} /></button>
+                <div className="model-picker">
+                  <button aria-expanded={modelMenuOpen} className="model-label" onClick={() => setModelMenuOpen((value) => !value)} type="button"><Bot size={14} /> {modelDisplayName(activeModel)} <ChevronDown size={13} /></button>
+                  {modelMenuOpen && <div className="model-menu"><small>公司可用模型</small>{(bootstrap?.models.length ? bootstrap.models : [activeModel]).map((model) => <button className={model === activeModel ? 'active' : ''} key={model} onClick={() => selectModel(model)} type="button"><span><strong>{modelDisplayName(model)}</strong><small>{model}</small></span>{model === activeModel && <SquareCheckBig size={14} />}</button>)}</div>}
+                </div>
                 <button aria-label="语音输入" className="circle-button" type="button"><Mic size={17} /></button>
                 <button aria-label="发送" className="send-button" disabled={!prompt.trim() || harnessRunning || !bootstrap} type="submit"><Send size={17} /></button>
               </div>
+              {visibleInvocations.length > 0 && <div className="slash-menu"><small>快捷调用</small>{visibleInvocations.map((option) => <button key={`${option.kind}-${option.expertKitId}-${option.id}`} onClick={() => selectInvocation(option)} type="button"><span><strong>{option.label}</strong><small>{option.description}</small></span><em>{option.expertKitName}</em></button>)}</div>}
             </form>
             {localFileError && <div className="local-file-error">{localFileError}</div>}
             <div className="context-bar">
@@ -416,7 +471,7 @@ export default function App() {
         ) : (
           <section className="capability-page">
             <span className="page-kicker">企业能力中心</span>
-            <h1>{extensionNav.find((item) => item.id === page)?.label ?? ({ tasks: '任务中心', schedules: '定时任务', im: 'IM 频道', admin: '管理中心' } as Record<string, string>)[page]}</h1>
+            <h1>{extensionNav.find((item) => item.id === page)?.label ?? ({ memory: '意识', tasks: '任务中心', schedules: '定时任务', im: 'IM 频道', admin: '管理中心' } as Record<string, string>)[page]}</h1>
             <p>{page === 'experts'
               ? '面向岗位的一整套工作方案，统一组合命令、技能、连接器和后台工作流。'
               : page === 'skills'
@@ -429,7 +484,10 @@ export default function App() {
                     ? '统一查看小胤桌面任务、Temporal 云端执行和可下载的结果产物。'
                   : page === 'schedules'
                     ? '按专家套件声明的后台工作流创建任务；任务由 Temporal 托管，关闭电脑后仍会运行。'
-                  : '这里将由控制中心下发公司自己的能力与权限配置。'}</p>
+                  : page === 'memory'
+                    ? '跨会话保留你的协作风格和长期有效的业务工作手册。'
+                    : '这里将由控制中心下发公司自己的能力与权限配置。'}</p>
+            {page === 'memory' && user && <MemoryPage employeeId={user.userId} onSaved={memorySaved} />}
             {page === 'experts' && <>
               {expertKitsLoading && <div className="kit-empty">正在同步公司专家套件…</div>}
               {!expertKitsLoading && expertKits.length === 0 && <div className="kit-empty">控制中心尚未发布专家套件</div>}
@@ -492,6 +550,7 @@ export default function App() {
                 </div>
                 {connector.toolNames.length > 0 && <div className="connector-tools">{connector.toolNames.join(' · ')}</div>}
                 <button className="kit-install" disabled type="button">{connector.managed ? '由公司统一管理' : '配置连接器'}</button>
+                <small className="connector-activation-note">连接器配置或启停后，对新会话生效</small>
               </article>)}</div>
             </>}
             {page === 'schedules' && bootstrap && user && <ScheduledTasksPage
@@ -509,9 +568,10 @@ export default function App() {
             />}
             {page === 'im' && bootstrap && user && <ImChannelsPage
               accessToken={accessToken}
+              employeeId={user.userId}
               erpMcpUrl={bootstrap.endpoints.erpMcp}
               litellmBaseUrl={bootstrap.endpoints.litellm}
-              model={bootstrap.models[0] ?? 'deepseek-v4-flash'}
+              model={activeModel}
               modelApiKey={bootstrap.modelApiKey}
             />}
           </section>
