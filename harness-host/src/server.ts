@@ -1,4 +1,5 @@
 import type { HarnessRuntime, RunInput } from './runtime.js'
+import type { DingTalkImConfiguration, LocalImRuntime } from './im-runtime.js'
 import {
   failure,
   isJsonRpcRequest,
@@ -14,6 +15,7 @@ export class HostServer {
     private readonly runtime: HarnessRuntime,
     private readonly emit: (output: JsonRpcOutput) => void,
     private readonly respondToApproval?: (approvalId: string, decision: 'allow' | 'reject') => boolean,
+    private readonly imRuntime?: LocalImRuntime,
   ) {}
 
   async handle(value: unknown): Promise<void> {
@@ -44,6 +46,22 @@ export class HostServer {
         case 'host.initialize':
           this.emit(success(value.id, await this.runtime.initialize()))
           return
+        case 'im.configure':
+          if (this.imRuntime === undefined) throw new Error('Local IM runtime is unavailable')
+          this.emit(success(value.id, await this.imRuntime.configure(parseImConfiguration(value.params))))
+          return
+        case 'im.status':
+          if (this.imRuntime === undefined) throw new Error('Local IM runtime is unavailable')
+          this.emit(success(value.id, this.imRuntime.status()))
+          return
+        case 'im.allow-pairing':
+          if (this.imRuntime === undefined) throw new Error('Local IM runtime is unavailable')
+          this.emit(success(value.id, this.imRuntime.allowPairing(parseConversationKey(value.params))))
+          return
+        case 'im.stop':
+          await this.imRuntime?.stop()
+          this.emit(success(value.id, { status: 'stopped' }))
+          return
         case 'session.run': {
           const input = parseRunInput(value.params)
           const result = await this.runtime.run(input, (event) => {
@@ -58,6 +76,7 @@ export class HostServer {
         }
         case 'host.shutdown':
           this.shuttingDown = true
+          await this.imRuntime?.stop()
           await this.runtime.close()
           this.emit(success(value.id, { status: 'closed' }))
           return
@@ -69,6 +88,39 @@ export class HostServer {
       this.emit(failure(value.id, -32001, message))
     }
   }
+}
+
+function parseImConfiguration(params: unknown): DingTalkImConfiguration {
+  if (typeof params !== 'object' || params === null || Array.isArray(params)) {
+    throw new Error('im.configure params must be an object')
+  }
+  const value = params as Record<string, unknown>
+  if (typeof value.clientId !== 'string' || typeof value.clientSecret !== 'string') {
+    throw new Error('im.configure requires DingTalk credentials')
+  }
+  if (value.accessPolicy !== 'open' && value.accessPolicy !== 'pairing') {
+    throw new Error('im.configure accessPolicy must be open or pairing')
+  }
+  if (!Array.isArray(value.pairedConversations) || value.pairedConversations.some((item) => typeof item !== 'string')) {
+    throw new Error('im.configure pairedConversations must be a string array')
+  }
+  return {
+    clientId: value.clientId,
+    clientSecret: value.clientSecret,
+    accessPolicy: value.accessPolicy,
+    pairedConversations: value.pairedConversations as string[],
+  }
+}
+
+function parseConversationKey(params: unknown): string {
+  if (typeof params !== 'object' || params === null || Array.isArray(params)) {
+    throw new Error('im.allow-pairing params must be an object')
+  }
+  const value = (params as Record<string, unknown>).conversationKey
+  if (typeof value !== 'string' || !value.trim() || value.length > 1_024) {
+    throw new Error('im.allow-pairing conversationKey is invalid')
+  }
+  return value
 }
 
 function parseApprovalResponse(params: unknown): { approvalId: string; decision: 'allow' | 'reject' } {

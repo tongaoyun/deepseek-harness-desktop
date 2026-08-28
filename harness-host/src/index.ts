@@ -3,6 +3,7 @@ import { HostServer } from './server.js'
 import { DeepSeekHarnessRuntime } from './runtime.js'
 import type { JsonRpcOutput } from './protocol.js'
 import { ApprovalBridge } from './approval-bridge.js'
+import { LocalImRuntime } from './im-runtime.js'
 
 const emit = (output: JsonRpcOutput): void => {
   process.stdout.write(`${JSON.stringify(output)}\n`)
@@ -14,7 +15,13 @@ const runtime = new DeepSeekHarnessRuntime({
   XIAOYIN_APPROVAL_BRIDGE_URL: approvalEndpoint.url,
   XIAOYIN_APPROVAL_BRIDGE_TOKEN: approvalEndpoint.token,
 })
-const server = new HostServer(runtime, emit, (approvalId, decision) => approvalBridge.respond(approvalId, decision))
+const imRuntime = new LocalImRuntime(runtime)
+const server = new HostServer(
+  runtime,
+  emit,
+  (approvalId, decision) => approvalBridge.respond(approvalId, decision),
+  imRuntime,
+)
 let chain = Promise.resolve()
 
 const lines = createInterface({ input: process.stdin, crlfDelay: Infinity })
@@ -49,6 +56,7 @@ function isApprovalResponse(value: unknown): boolean {
 }
 
 async function close(): Promise<void> {
+  await imRuntime.stop()
   await runtime.close()
   await approvalBridge.close()
 }

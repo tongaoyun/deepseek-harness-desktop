@@ -61,6 +61,7 @@ import { ScheduledTasksPage } from './ScheduledTasksPage'
 import { TaskCenterPage } from './TaskCenterPage'
 import { ImChannelsPage } from './ImChannelsPage'
 import { loadLocalTasks, saveLocalTask } from './taskHistory'
+import { startLocalIm, stopLocalImRuntime } from './localIm'
 import type { LocalTaskRun, TaskMessage } from './types'
 import './styles.css'
 
@@ -152,6 +153,16 @@ export default function App() {
   }, [accessToken, bootstrap, user])
 
   useEffect(() => {
+    if (!bootstrap || !user || authState !== 'authenticated') return
+    void startLocalIm({
+      litellmBaseUrl: bootstrap.endpoints.litellm,
+      erpMcpUrl: bootstrap.endpoints.erpMcp,
+      model: bootstrap.models[0] ?? 'deepseek-v4-flash',
+      accessToken,
+    }).catch(() => undefined)
+  }, [accessToken, authState, bootstrap, user])
+
+  useEffect(() => {
     let disposed = false
     let unlisten: () => void = () => undefined
     void listenHarnessNotifications((notification) => {
@@ -166,7 +177,7 @@ export default function App() {
   useEffect(() => {
     if (authState === 'authenticated') return
     setLocalDirectories([])
-    void Promise.all([clearLocalDirectories(), shutdownHarness()])
+    void Promise.all([clearLocalDirectories(), shutdownHarness(), stopLocalImRuntime()])
   }, [authState])
 
   const statusLabel = useMemo(() => ({
@@ -234,7 +245,7 @@ export default function App() {
   }
   const logoutWithCleanup = async () => {
     await clearLocalDirectories()
-    await shutdownHarness()
+    await Promise.all([shutdownHarness(), stopLocalImRuntime()])
     setLocalDirectories([])
     await logout()
   }
@@ -496,8 +507,9 @@ export default function App() {
             />}
             {page === 'im' && bootstrap && user && <ImChannelsPage
               accessToken={accessToken}
-              employeeId={user.userId}
-              endpoint={bootstrap.endpoints.imChannels}
+              erpMcpUrl={bootstrap.endpoints.erpMcp}
+              litellmBaseUrl={bootstrap.endpoints.litellm}
+              model={bootstrap.models[0] ?? 'deepseek-v4-flash'}
             />}
           </section>
         )}

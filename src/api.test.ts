@@ -7,7 +7,6 @@ import {
   loadExpertKits,
   loadSkills,
   loadCloudTaskRuns,
-  loadImChannels,
 } from './api'
 
 describe('loadBootstrap', () => {
@@ -26,7 +25,6 @@ describe('loadBootstrap', () => {
         connectors: '/api/v1/connectors',
         schedules: '/api/v1/schedules',
         taskRuns: '/api/v1/task-runs',
-        imChannels: '/api/v1/im-channels',
       },
       capabilities: ['chat'],
       models: [],
@@ -102,17 +100,4 @@ describe('loadBootstrap', () => {
     ])
   })
 
-  it('loads IM channel status from the control plane', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response('[]', {
-      status: 200, headers: { 'Content-Type': 'application/json' },
-    }))
-    vi.stubGlobal('fetch', fetchMock)
-
-    await loadImChannels('/api/v1/im-channels', 'employee-1', 'token-1')
-
-    expect(fetchMock).toHaveBeenCalledWith(
-      'http://192.168.2.67:30081/api/v1/im-channels',
-      expect.objectContaining({ headers: expect.objectContaining({ Authorization: 'Bearer token-1' }) }),
-    )
-  })
 })

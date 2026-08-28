@@ -1,10 +1,15 @@
 use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 use serde::{Deserialize, Serialize};
 use std::{env, time::Duration};
-use tauri::Manager;
+use tauri::{
+    Manager,
+    menu::{Menu, MenuItem},
+    tray::TrayIconBuilder,
+};
 
 mod expert_kits;
 mod harness;
+mod im;
 mod local_files;
 
 const ERP_LOGIN_URL: &str = "http://www.instudio.me:6206/eshop/manager/login.jsp";
@@ -367,7 +372,31 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(harness::HarnessManager::default())
+        .manage(im::LocalImManager::default())
         .manage(local_files::LocalFileAuthorizations::default())
+        .setup(|app| {
+            let show = MenuItem::with_id(app, "show", "打开小胤", true, None::<&str>)?;
+            let quit = MenuItem::with_id(app, "quit", "退出小胤", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&show, &quit])?;
+            let mut tray = TrayIconBuilder::with_id("xiaoyin")
+                .menu(&menu)
+                .tooltip("小胤")
+                .on_menu_event(|app, event| match event.id.as_ref() {
+                    "show" => show_main_window(app),
+                    "quit" => app.exit(0),
+                    _ => {}
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if matches!(event, tauri::tray::TrayIconEvent::DoubleClick { .. }) {
+                        show_main_window(tray.app_handle());
+                    }
+                });
+            if let Some(icon) = app.default_window_icon() {
+                tray = tray.icon(icon.clone());
+            }
+            tray.build(app)?;
+            Ok(())
+        })
         .on_window_event(|window, event| {
             if window.label() == "erp-login"
                 && let tauri::WindowEvent::CloseRequested { api, .. } = event
@@ -375,10 +404,13 @@ pub fn run() {
                 api.prevent_close();
                 let _ = window.hide();
             } else if window.label() == "main"
-                && matches!(event, tauri::WindowEvent::CloseRequested { .. })
-                && let Some(login_window) = window.app_handle().get_webview_window("erp-login")
+                && let tauri::WindowEvent::CloseRequested { api, .. } = event
             {
-                let _ = login_window.destroy();
+                api.prevent_close();
+                let _ = window.hide();
+                if let Some(login_window) = window.app_handle().get_webview_window("erp-login") {
+                    let _ = login_window.hide();
+                }
             }
         })
         .invoke_handler(tauri::generate_handler![
@@ -394,10 +426,25 @@ pub fn run() {
             local_files::revoke_local_directory,
             local_files::clear_local_directories,
             harness::run_harness,
-            harness::shutdown_harness
+            harness::shutdown_harness,
+            im::configure_local_dingtalk,
+            im::start_local_im,
+            im::set_local_im_enabled,
+            im::local_im_status,
+            im::allow_local_im_pairing,
+            im::stop_local_im_runtime,
+            im::remove_local_dingtalk
         ])
         .run(tauri::generate_context!())
         .expect("error while running Xiaoyin desktop");
+}
+
+fn show_main_window(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+    }
 }
 
 #[cfg(test)]

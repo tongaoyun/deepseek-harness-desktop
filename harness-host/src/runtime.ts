@@ -25,6 +25,7 @@ const moduleDirectory = dirname(fileURLToPath(import.meta.url))
 
 export class DeepSeekHarnessRuntime implements HarnessRuntime {
   private harness: DeepSeekHarness | undefined
+  private runTail: Promise<void> = Promise.resolve()
 
   constructor(private readonly extraEnv: NodeJS.ProcessEnv = {}) {}
 
@@ -45,6 +46,15 @@ export class DeepSeekHarnessRuntime implements HarnessRuntime {
     input: RunInput,
     onNotification: (value: HarnessNotification) => void,
   ): Promise<HarnessRunResult> {
+    const execution = this.runTail.then(() => this.runNow(input, onNotification))
+    this.runTail = execution.then(() => undefined, () => undefined)
+    return execution
+  }
+
+  private async runNow(
+    input: RunInput,
+    onNotification: (value: HarnessNotification) => void,
+  ): Promise<HarnessRunResult> {
     if (input.prompt.trim().length === 0) {
       throw new Error('prompt must not be blank')
     }
@@ -60,6 +70,7 @@ export class DeepSeekHarnessRuntime implements HarnessRuntime {
   }
 
   async close(): Promise<void> {
+    await this.runTail
     const current = this.harness
     this.harness = undefined
     await current?.close()

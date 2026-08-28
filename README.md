@@ -32,7 +32,9 @@ ERP MCP Bridge 使用官方 TypeScript MCP Client 做工具发现与调用。通
 
 任务中心在员工电脑本地保存桌面 Agent 的对话和执行状态，并与控制中心返回的 Temporal 执行记录合并展示。本机任务可继续打开对话；云端任务完成后以 runId 请求短期 MinIO 下载地址，桌面端不能自行指定对象键。
 
-IM 频道页只展示控制中心汇总的钉钉 Stream 和云端 Worker 状态。机器人账号与凭据不下发桌面；员工发到钉钉的消息由独立 `xiaoyin-im-worker` 提交 Temporal 并在云端 Harness 中处理，关闭桌面不会中断。
+IM 频道是桌面本地能力。钉钉 Client ID 保存在应用数据目录，Client Secret 保存在 Windows Credential Manager 或 macOS Keychain，不上传控制中心。桌面内置 Harness Host 使用钉钉官方 Stream SDK 接收消息，按群聊或私聊隔离会话，并通过同一个本地 DeepSeek Harness 调用 Skills 与只读 ERP MCP 后回复原会话。
+
+钉钉支持开放模式和配对模式；配对请求由 IM 频道页本机审批。主窗口关闭后小胤驻留系统托盘，频道继续运行；显式退出小胤或电脑关机后停止。当前提供 Client ID/Secret 手动配置，扫码自动注册需要后续接入公司授权服务。飞书、Lark、微信和企业微信已预留频道入口，尚未启用运行时。
 
 ## 开发验证
 

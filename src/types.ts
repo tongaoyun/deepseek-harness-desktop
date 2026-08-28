@@ -10,7 +10,6 @@ export interface BootstrapResponse {
     connectors: string
     schedules: string
     taskRuns: string
-    imChannels: string
   }
   capabilities: string[]
   models: string[]
@@ -113,16 +112,6 @@ export interface ArtifactDownload {
   objectKey: string
   url: string
   expiresAt: string
-}
-
-export interface ImChannel {
-  id: string
-  name: string
-  provider: 'DINGTALK' | string
-  botId: string
-  status: 'READY' | 'WAITING_CLIENT' | 'DEGRADED' | 'DISABLED' | 'UNAVAILABLE'
-  connected: boolean
-  onlineClients: number
 }
 
 export interface CreateScheduledTaskRequest {

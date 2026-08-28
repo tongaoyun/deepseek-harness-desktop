@@ -45,26 +45,26 @@ struct HarnessUiNotification {
 }
 
 #[derive(Clone, Eq, PartialEq)]
-struct RuntimeFingerprint {
-    skill_directories: Vec<String>,
-    allowed_erp_tools: Vec<String>,
-    required_erp_tools: Vec<String>,
-    local_file_roots: Vec<String>,
-    allow_local_files: bool,
-    allow_shell: bool,
-    allow_erp_write: bool,
-    litellm_base_url: String,
-    erp_mcp_url: String,
-    model: String,
-    credential_digest: String,
+pub(crate) struct RuntimeFingerprint {
+    pub(crate) skill_directories: Vec<String>,
+    pub(crate) allowed_erp_tools: Vec<String>,
+    pub(crate) required_erp_tools: Vec<String>,
+    pub(crate) local_file_roots: Vec<String>,
+    pub(crate) allow_local_files: bool,
+    pub(crate) allow_shell: bool,
+    pub(crate) allow_erp_write: bool,
+    pub(crate) litellm_base_url: String,
+    pub(crate) erp_mcp_url: String,
+    pub(crate) model: String,
+    pub(crate) credential_digest: String,
 }
 
-struct HarnessProcess {
+pub(crate) struct HarnessProcess {
     child: Child,
     stdin: ChildStdin,
     stdout: BufReader<ChildStdout>,
     next_id: u64,
-    fingerprint: RuntimeFingerprint,
+    pub(crate) fingerprint: RuntimeFingerprint,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -170,7 +170,7 @@ impl HarnessManager {
 }
 
 impl HarnessProcess {
-    fn start(
+    pub(crate) fn start(
         app: &tauri::AppHandle,
         fingerprint: RuntimeFingerprint,
         access_token: String,
@@ -201,6 +201,10 @@ impl HarnessProcess {
             .env("DSH_CWD", &workspace)
             .env("DSH_HOME", &dsh_home)
             .env("DSH_SESSION_ROOT", dsh_home.join("sessions"))
+            .env(
+                "XIAOYIN_IM_STATE_PATH",
+                app_data.join("im-channels/dingtalk-sessions.json"),
+            )
             .env("DSH_CUSTOM_SKILL_DIRS", skill_directories)
             .env("ERP_MCP_URL", &fingerprint.erp_mcp_url)
             .env("ERP_MCP_ALLOWED_TOOLS", allowed_tools)
@@ -256,7 +260,7 @@ impl HarnessProcess {
         serde_json::from_value(result).map_err(|error| format!("Harness 结果无效：{error}"))
     }
 
-    fn request(
+    pub(crate) fn request(
         &mut self,
         method: &str,
         params: Option<Value>,
@@ -349,7 +353,7 @@ impl HarnessProcess {
             .map_err(|error| format!("无法向 Harness 发送授权响应：{error}"))
     }
 
-    fn shutdown(&mut self) {
+    pub(crate) fn shutdown(&mut self) {
         let _ = self.request("host.shutdown", None, None);
         let _ = self.child.kill();
         let _ = self.child.wait();
