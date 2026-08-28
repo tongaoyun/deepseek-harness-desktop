@@ -8,6 +8,7 @@ export interface BootstrapResponse {
     expertKits: string
     skills: string
     connectors: string
+    schedules: string
   }
   capabilities: string[]
   models: string[]
@@ -25,7 +26,59 @@ export interface ExpertKitCatalogEntry {
   skillIds: string[]
   connectorRefs: string[]
   requiredTools: string[]
+  serverWorkflows: ServerWorkflowDefinition[]
   sha256: string
+}
+
+export interface ServerWorkflowDefinition {
+  id: string
+  name: string
+  workflowType: string
+  version: string
+  inputs: ServerWorkflowInput[]
+  steps: Array<{ id: string; tool: string; arguments: Record<string, unknown> }>
+}
+
+export interface ServerWorkflowInput {
+  name: string
+  label: string
+  type: 'string' | 'date' | 'integer' | 'boolean'
+  required: boolean
+  description?: string
+}
+
+export interface ScheduledTask {
+  id: string
+  name: string
+  expertKitId: string
+  expertKitVersion: string
+  workflowId: string
+  workflowType: string
+  workflowVersion: string
+  cronExpression: string
+  timeZone: string
+  inputs: Record<string, unknown>
+  status: 'ACTIVE' | 'PAUSED'
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ScheduledTaskExecution {
+  scheduledAt: string
+  startedAt: string
+  workflowId: string
+  runId: string
+  status: string
+  closedAt?: string
+}
+
+export interface CreateScheduledTaskRequest {
+  name: string
+  expertKitId: string
+  workflowId: string
+  cronExpression: string
+  timeZone: string
+  inputs: Record<string, unknown>
 }
 
 export interface SkillCatalogEntry {
@@ -77,7 +130,7 @@ export interface ExpertKitManifest {
     erpRead: PermissionMode
     erpWrite: PermissionMode
   }
-  serverWorkflows: Array<{ name: string; workflowType: string; version: string }>
+  serverWorkflows: ServerWorkflowDefinition[]
 }
 
 export interface InstalledExpertKit {

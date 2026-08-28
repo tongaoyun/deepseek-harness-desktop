@@ -21,6 +21,7 @@ describe('loadBootstrap', () => {
         expertKits: '/api/v1/expert-kits',
         skills: '/api/v1/skills',
         connectors: '/api/v1/connectors',
+        schedules: '/api/v1/schedules',
       },
       capabilities: ['chat'],
       models: [],

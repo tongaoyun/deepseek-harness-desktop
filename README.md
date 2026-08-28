@@ -28,6 +28,8 @@ ERP MCP Bridge 使用官方 TypeScript MCP Client 做工具发现与调用。通
 
 桌面由 Tauri 持有一个长期运行的 Harness Host 进程，模型请求走控制中心下发的 LiteLLM 地址，运行状态和工具事件通过 Tauri Event 返回聊天界面。界面只展示阶段与工具调用，不展示模型的隐藏推理原文。
 
+定时任务页根据专家套件的 `serverWorkflows` 动态生成输入表单，通过控制中心管理 Temporal Schedule，支持创建、暂停、恢复、立即运行、删除和查看最近执行记录。任务在云端 Worker 执行，桌面关闭不影响运行。
+
 ## 开发验证
 
 需要 Node.js 24.19.0、pnpm 10.33.0 和 Rust 1.97+：

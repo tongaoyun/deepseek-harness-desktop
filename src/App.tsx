@@ -57,6 +57,7 @@ import type {
 } from './types'
 import { useEnterpriseSession } from './useEnterpriseSession'
 import { XiaoyinMascot } from './XiaoyinMascot'
+import { ScheduledTasksPage } from './ScheduledTasksPage'
 import './styles.css'
 
 const extensionNav = [
@@ -354,6 +355,8 @@ export default function App() {
                 ? '公司沉淀的独立工作方法，可由 Agent 自动识别或在对话中明确调用。'
                 : page === 'connectors'
                   ? '连接公司数据和员工电脑能力；账号、地址和令牌由公司统一管理。'
+                  : page === 'schedules'
+                    ? '按专家套件声明的后台工作流创建任务；任务由 Temporal 托管，关闭电脑后仍会运行。'
                   : '这里将由控制中心下发公司自己的能力与权限配置。'}</p>
             {page === 'experts' && <>
               {expertKitsLoading && <div className="kit-empty">正在同步公司专家套件…</div>}
@@ -419,6 +422,12 @@ export default function App() {
                 <button className="kit-install" disabled type="button">{connector.managed ? '由公司统一管理' : '配置连接器'}</button>
               </article>)}</div>
             </>}
+            {page === 'schedules' && bootstrap && user && <ScheduledTasksPage
+              accessToken={accessToken}
+              employeeId={user.userId}
+              endpoint={bootstrap.endpoints.schedules}
+              expertKits={expertKits}
+            />}
           </section>
         )}
       </main>

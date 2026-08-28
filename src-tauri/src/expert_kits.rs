@@ -82,9 +82,35 @@ enum PermissionMode {
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ServerWorkflow {
+    id: String,
     name: String,
     workflow_type: String,
     version: String,
+    #[serde(default)]
+    inputs: Vec<ServerWorkflowInput>,
+    #[serde(default)]
+    steps: Vec<ServerWorkflowStep>,
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ServerWorkflowInput {
+    name: String,
+    label: String,
+    #[serde(rename = "type")]
+    input_type: String,
+    required: bool,
+    #[serde(default)]
+    description: String,
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ServerWorkflowStep {
+    id: String,
+    tool: String,
+    #[serde(default)]
+    arguments: serde_json::Map<String, serde_json::Value>,
 }
 
 #[derive(Deserialize, Serialize)]

@@ -1,9 +1,12 @@
 import type {
   BootstrapResponse,
   ConnectorCatalogEntry,
+  CreateScheduledTaskRequest,
   ExpertKitCatalogEntry,
   ExpertKitDownload,
   SkillCatalogEntry,
+  ScheduledTask,
+  ScheduledTaskExecution,
 } from './types'
 
 const DEFAULT_CONTROL_PLANE = 'http://192.168.2.67:30081'
@@ -63,6 +66,75 @@ export async function loadConnectors(
   signal?: AbortSignal,
 ): Promise<ConnectorCatalogEntry[]> {
   return loadCatalog(endpoint, employeeId, accessToken, '连接器目录', signal)
+}
+
+export async function loadScheduledTasks(
+  endpoint: string,
+  employeeId: string,
+  accessToken: string,
+  signal?: AbortSignal,
+): Promise<ScheduledTask[]> {
+  return loadCatalog(endpoint, employeeId, accessToken, '定时任务', signal)
+}
+
+export async function createScheduledTask(
+  endpoint: string,
+  employeeId: string,
+  accessToken: string,
+  request: CreateScheduledTaskRequest,
+): Promise<ScheduledTask> {
+  return scheduleRequest(endpoint, employeeId, accessToken, '', 'POST', request)
+}
+
+export async function changeScheduledTask(
+  endpoint: string,
+  employeeId: string,
+  accessToken: string,
+  id: string,
+  action: 'pause' | 'resume' | 'run',
+): Promise<ScheduledTask> {
+  return scheduleRequest(endpoint, employeeId, accessToken,
+    `/${encodeURIComponent(id)}/${action}`, 'POST')
+}
+
+export async function deleteScheduledTask(
+  endpoint: string,
+  employeeId: string,
+  accessToken: string,
+  id: string,
+): Promise<void> {
+  const response = await fetch(controlPlaneUrl(`${endpoint.replace(/\/$/, '')}/${encodeURIComponent(id)}`), {
+    method: 'DELETE',
+    headers: enterpriseHeaders(employeeId, accessToken),
+  })
+  if (!response.ok) throw new Error(`删除定时任务返回 ${response.status}`)
+}
+
+export async function loadScheduledTaskExecutions(
+  endpoint: string,
+  employeeId: string,
+  accessToken: string,
+  id: string,
+): Promise<ScheduledTaskExecution[]> {
+  return loadCatalog(`${endpoint.replace(/\/$/, '')}/${encodeURIComponent(id)}/executions`,
+    employeeId, accessToken, '执行记录')
+}
+
+async function scheduleRequest(
+  endpoint: string,
+  employeeId: string,
+  accessToken: string,
+  suffix: string,
+  method: 'POST',
+  request?: CreateScheduledTaskRequest,
+): Promise<ScheduledTask> {
+  const response = await fetch(controlPlaneUrl(`${endpoint.replace(/\/$/, '')}${suffix}`), {
+    method,
+    headers: { ...enterpriseHeaders(employeeId, accessToken), ...(request ? { 'Content-Type': 'application/json' } : {}) },
+    ...(request ? { body: JSON.stringify(request) } : {}),
+  })
+  if (!response.ok) throw new Error(`定时任务操作返回 ${response.status}`)
+  return response.json() as Promise<ScheduledTask>
 }
 
 async function loadCatalog<T>(
