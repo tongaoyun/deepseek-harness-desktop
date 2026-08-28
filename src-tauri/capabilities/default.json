@@ -3,5 +3,10 @@
   "identifier": "default",
   "description": "Minimum permissions for the main Xiaoyin window",
   "windows": ["main", "erp-login"],
-  "permissions": ["core:default", "core:window:allow-close"]
+  "permissions": [
+    "core:default",
+    "core:window:allow-close",
+    "process:default",
+    "updater:default"
+  ]
 }

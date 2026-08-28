@@ -29,6 +29,7 @@ import {
   loadExpertKits,
   loadSkills,
 } from './api'
+import { DesktopUpdater } from './DesktopUpdater'
 import { ErpAuthScreen } from './ErpAuthScreen'
 import {
   installExpertKit,
@@ -245,6 +246,7 @@ export default function App() {
       <main className="workspace">
         <header className="topbar">
           <span className={`connection-state ${runtimeStatus}`}><i /> 马帮 ERP · {statusLabel}</span>
+          <DesktopUpdater />
           <button type="button"><HelpCircle size={15} /> 问题反馈</button>
           <button onClick={() => void logout()} type="button"><LogOut size={15} /> 退出登录</button>
         </header>

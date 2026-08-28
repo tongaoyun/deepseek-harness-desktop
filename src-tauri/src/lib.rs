@@ -362,6 +362,8 @@ async fn clear_erp_session(app: tauri::AppHandle) -> Result<(), String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(harness::HarnessManager::default())
         .on_window_event(|window, event| {
             if window.label() == "erp-login"

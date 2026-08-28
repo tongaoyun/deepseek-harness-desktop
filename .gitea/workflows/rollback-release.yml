@@ -1,0 +1,30 @@
+name: Roll back desktop release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "切回的已发布正式版本，例如 0.1.0"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: xiaoyin-desktop-release-pointer
+  cancel-in-progress: false
+
+jobs:
+  rollback:
+    runs-on: ci-node
+    container:
+      image: ci-node:1.0.0
+    steps:
+      - name: 检出代码
+        uses: http://192.168.2.66:3300/instudio/checkout@v4
+      - name: 验证并切换正式版本
+        env:
+          RELEASE_USERNAME: ${{ secrets.RELEASE_USERNAME }}
+          RELEASE_CREDENTIAL: ${{ secrets.RELEASE_CREDENTIAL }}
+        run: node scripts/rollback-release.mjs "${{ inputs.version }}"

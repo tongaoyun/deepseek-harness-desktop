@@ -46,6 +46,23 @@ Node.js v24.19.0 的官方许可证及第三方声明固定保存在 `third-part
 
 WiX 3.14、NSIS 3.11 与 Tauri NSIS 插件镜像在公司 Gitea Generic Package Registry。`prepare-tauri-windows-tools.ps1` 只从内网下载，并使用 Tauri 2.11.4 固定的官方 SHA-256/SHA-1 校验后写入 `CARGO_TARGET_DIR\.tauri`；Runner 无需访问 GitHub，且后续构建复用已校验缓存。
 
+## 正式发布与自动更新
+
+推送与 `package.json` 版本一致的 `v*` 标签会触发唯一的正式发布流程。Windows Runner 会执行质量门禁、生成带 Tauri 更新签名的 MSI/NSIS、完成安装与卸载烟测，并将安装包、签名、SHA-256 清单、`release-manifest.json` 和 `latest.json` 写入永久 Gitea Release。
+
+员工客户端从公司 Gitea Generic Package Registry 匿名读取 `xiaoyin-desktop-updater/latest/latest.json`，下载安装包后必须通过内置公钥验签才能安装。版本安装包同时保存到不可覆盖的 `xiaoyin-desktop/<version>` 包版本；`latest` 只负责指向当前正式版，不设置测试或灰度通道。
+
+需要回滚时，手动运行 `Roll back desktop release` 工作流并输入已经正式发布的版本号。工作流只接受该版本不可变包中的签名元数据，验证安装包仍可匿名读取后才会切换 `latest`；客户端允许安装公司明确指向的旧版签名包。Gitea 工作流运行记录就是回滚审计记录。
+
+更新签名私钥和密码保存在仓库 Actions Secret 中，不得写入代码、日志或安装包。本机加密私钥备份位于 `~/.config/xiaoyin/release/tauri-updater.key`，密码保存在 macOS Keychain 的 `com.instudio.xiaoyin.tauri-updater.password` 项。丢失签名私钥后，已经安装的客户端将无法信任后续更新。
+
+发布前同时更新 `package.json`、`src-tauri/tauri.conf.json` 和 `src-tauri/Cargo.toml` 的版本，再创建并推送标签：
+
+```bash
+git tag -a v0.1.0 -m "小胤 0.1.0"
+git push origin v0.1.0
+```
+
 在 Windows 构建机本地可执行：
 
 ```powershell

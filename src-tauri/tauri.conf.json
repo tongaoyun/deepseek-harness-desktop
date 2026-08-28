@@ -42,6 +42,7 @@
   },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -50,5 +51,17 @@
       "icons/icon.ico"
     ],
     "targets": "all"
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDUwQkExMDIwODJBQTg4QjAKUldTd2lLcUNJQkM2VUtGUkJBMHl3OUFsRGJkZnV6L2U1K2RsSnhlaytyemx1K0tRUEZISkhDRW8K",
+      "endpoints": [
+        "http://192.168.2.66:3300/api/packages/instudio/generic/xiaoyin-desktop-updater/latest/latest.json"
+      ],
+      "dangerousInsecureTransportProtocol": true,
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }
