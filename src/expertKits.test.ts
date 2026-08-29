@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { mergeExpertKits } from './expertKits'
-import type { ConnectorCatalogEntry, ExpertKitCatalogEntry, InstalledExpertKit } from './types'
+import type { ConnectorCatalogEntry, ExpertKitCatalogEntry, InstalledExpertKit, KnowledgeBaseEntry } from './types'
 
 const installed: InstalledExpertKit = {
   installPath: '/app/expert-kits/store-kit/1.0.0',
@@ -25,6 +25,7 @@ const catalogEntry: ExpertKitCatalogEntry = {
   connectorRefs: ['erp-mcp'],
   knowledgeBaseRefs: [],
   requiredTools: ['sales_summary'],
+  permissions: { localFiles: 'approval', shell: 'deny', connectorRead: 'allow', connectorWrite: 'approval' },
   serverWorkflows: [],
   sha256: 'a'.repeat(64),
 }
@@ -38,6 +39,11 @@ const erpConnector: ConnectorCatalogEntry = {
   status: 'ready',
   managed: true,
   toolNames: ['sales_summary'],
+}
+
+const knowledgeBase: KnowledgeBaseEntry = {
+  id: 'kb-1', referenceKey: 'operations', reference: 'organization:operations', scope: 'ORGANIZATION',
+  name: '运营手册', description: '公司运营知识', createdAt: '2026-08-29T00:00:00Z', updatedAt: '2026-08-29T00:00:00Z',
 }
 
 describe('mergeExpertKits', () => {
@@ -73,5 +79,14 @@ describe('mergeExpertKits', () => {
       '本地 Office：当前不可用',
       'office.xlsx.create 无可用连接器',
     ])
+  })
+
+  it('reports knowledge bases that are missing or inaccessible', () => {
+    const partial = mergeExpertKits([
+      { ...catalogEntry, knowledgeBaseRefs: ['organization:operations', 'team:restricted'] },
+    ], [], [erpConnector], [knowledgeBase])
+
+    expect(partial[0].readiness).toBe('partial')
+    expect(partial[0].knowledgeIssues).toEqual(['team:restricted 不存在或无访问权限'])
   })
 })

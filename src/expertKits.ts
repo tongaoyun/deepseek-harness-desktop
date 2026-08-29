@@ -3,7 +3,9 @@ import type {
   ConnectorCatalogEntry,
   ExpertKitCatalogEntry,
   ExpertKitDownload,
+  ExpertKitPermissions,
   InstalledExpertKit,
+  KnowledgeBaseEntry,
 } from './types'
 
 export type ExpertKitInstallState = 'available' | 'installed' | 'update'
@@ -12,6 +14,7 @@ export interface ExpertKitView extends ExpertKitCatalogEntry {
   installState: ExpertKitInstallState
   readiness: 'ready' | 'partial'
   connectorIssues: string[]
+  knowledgeIssues: string[]
   installedVersion?: string
   installed?: InstalledExpertKit
 }
@@ -37,6 +40,7 @@ export function mergeExpertKits(
   catalog: ExpertKitCatalogEntry[],
   installed: InstalledExpertKit[],
   connectors: ConnectorCatalogEntry[] = [],
+  knowledgeBases: KnowledgeBaseEntry[] = [],
 ): ExpertKitView[] {
   const newestInstalled = new Map<string, InstalledExpertKit>()
   for (const kit of installed) {
@@ -44,7 +48,8 @@ export function mergeExpertKits(
   }
 
   const connectorById = new Map(connectors.map((connector) => [connector.id, connector]))
-  const readiness = (refs: string[], requiredTools: string[]) => {
+  const knowledgeReferences = new Set(knowledgeBases.map((knowledgeBase) => knowledgeBase.reference))
+  const readiness = (refs: string[], requiredTools: string[], knowledgeBaseRefs: string[]) => {
     const referencedConnectors = refs
       .map((id) => connectorById.get(id))
       .filter((connector): connector is ConnectorCatalogEntry => connector !== undefined)
@@ -58,7 +63,14 @@ export function mergeExpertKits(
     for (const tool of requiredTools) {
       if (!providedTools.has(tool)) connectorIssues.push(`${tool} 无可用连接器`)
     }
-    return { readiness: connectorIssues.length > 0 ? 'partial' as const : 'ready' as const, connectorIssues }
+    const knowledgeIssues = knowledgeBaseRefs
+      .filter((reference) => !knowledgeReferences.has(reference))
+      .map((reference) => `${reference} 不存在或无访问权限`)
+    return {
+      readiness: connectorIssues.length > 0 || knowledgeIssues.length > 0 ? 'partial' as const : 'ready' as const,
+      connectorIssues,
+      knowledgeIssues,
+    }
   }
 
   const views = catalog.map((kit): ExpertKitView => {
@@ -70,8 +82,9 @@ export function mergeExpertKits(
       connectorRefs: kit.connectorRefs ?? [],
       requiredTools: kit.requiredTools ?? [],
       knowledgeBaseRefs: kit.knowledgeBaseRefs ?? [],
+      permissions: normalizePermissions(kit.permissions),
       serverWorkflows: kit.serverWorkflows ?? [],
-      ...readiness(kit.connectorRefs ?? [], kit.requiredTools ?? []),
+      ...readiness(kit.connectorRefs ?? [], kit.requiredTools ?? [], kit.knowledgeBaseRefs ?? []),
       installed: local,
       installedVersion: local?.manifest.version,
       installState: local?.manifest.version === kit.version
@@ -93,15 +106,27 @@ export function mergeExpertKits(
       connectorRefs: local.manifest.connectorRefs,
       requiredTools: local.manifest.requiredTools,
       knowledgeBaseRefs: local.manifest.knowledgeBaseRefs ?? [],
+      permissions: normalizePermissions(local.manifest.permissions),
       serverWorkflows: local.manifest.serverWorkflows,
       sha256: '',
-      ...readiness(local.manifest.connectorRefs, local.manifest.requiredTools),
+      ...readiness(local.manifest.connectorRefs, local.manifest.requiredTools, local.manifest.knowledgeBaseRefs ?? []),
       installState: 'installed',
       installedVersion: local.manifest.version,
       installed: local,
     })
   }
   return views
+}
+
+export function normalizePermissions(
+  value: ExpertKitCatalogEntry['permissions'] | InstalledExpertKit['manifest']['permissions'] | undefined,
+): ExpertKitPermissions {
+  return {
+    localFiles: value?.localFiles ?? 'deny',
+    shell: value?.shell ?? 'deny',
+    connectorRead: value?.connectorRead ?? value?.erpRead ?? 'deny',
+    connectorWrite: value?.connectorWrite ?? value?.erpWrite ?? 'deny',
+  }
 }
 
 function connectorStatusLabel(status: ConnectorCatalogEntry['status']): string {

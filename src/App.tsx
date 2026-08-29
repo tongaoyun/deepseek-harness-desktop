@@ -30,11 +30,13 @@ import {
   loadBootstrap,
   loadConnectors,
   loadExpertKits,
+  loadKnowledgeBases,
   loadSkills,
   resolveControlPlaneEndpoint,
 } from './api'
 import { DesktopUpdater } from './DesktopUpdater'
 import { ErpAuthScreen } from './ErpAuthScreen'
+import { ExpertKitDetailsModal } from './ExpertKitDetailsModal'
 import {
   installExpertKit,
   listInstalledExpertKits,
@@ -56,6 +58,7 @@ import { ExecutionTrace } from './ExecutionTrace'
 import type {
   BootstrapResponse,
   ConnectorCatalogEntry,
+  KnowledgeBaseEntry,
   RuntimeStatus,
   SkillCatalogEntry,
 } from './types'
@@ -100,9 +103,11 @@ export default function App() {
   const [expertKits, setExpertKits] = useState<ExpertKitView[]>([])
   const [skills, setSkills] = useState<SkillCatalogEntry[]>([])
   const [connectors, setConnectors] = useState<ConnectorCatalogEntry[]>([])
+  const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBaseEntry[]>([])
   const [expertKitsLoading, setExpertKitsLoading] = useState(false)
   const [expertKitError, setExpertKitError] = useState('')
   const [installingKitId, setInstallingKitId] = useState('')
+  const [activeExpertKitId, setActiveExpertKitId] = useState('')
   const [selectedExpertKitId, setSelectedExpertKitId] = useState('')
   const [harnessSessionId, setHarnessSessionId] = useState('')
   const [harnessRunning, setHarnessRunning] = useState(false)
@@ -151,17 +156,20 @@ export default function App() {
       listInstalledExpertKits(),
       loadSkills(bootstrap.endpoints.skills, user.userId, accessToken, controller.signal),
       loadConnectors(bootstrap.endpoints.connectors, user.userId, accessToken, controller.signal),
+      loadKnowledgeBases(bootstrap.endpoints.knowledge, user.userId, user.department, accessToken, controller.signal),
     ])
-      .then(([catalogResult, installedResult, skillsResult, connectorsResult]) => {
+      .then(([catalogResult, installedResult, skillsResult, connectorsResult, knowledgeResult]) => {
         if (controller.signal.aborted) return
         const catalog = catalogResult.status === 'fulfilled' ? catalogResult.value : []
         const installed = installedResult.status === 'fulfilled' ? installedResult.value : []
         const skillCatalog = skillsResult.status === 'fulfilled' ? skillsResult.value : []
         const connectorCatalog = connectorsResult.status === 'fulfilled' ? connectorsResult.value : []
+        const knowledgeCatalog = knowledgeResult.status === 'fulfilled' ? knowledgeResult.value : []
         setSkills(skillCatalog)
         setConnectors(connectorCatalog)
-        setExpertKits(mergeExpertKits(catalog, installed, connectorCatalog))
-        const failures = [catalogResult, installedResult, skillsResult, connectorsResult]
+        setKnowledgeBases(knowledgeCatalog)
+        setExpertKits(mergeExpertKits(catalog, installed, connectorCatalog, knowledgeCatalog))
+        const failures = [catalogResult, installedResult, skillsResult, connectorsResult, knowledgeResult]
           .flatMap((result) => result.status === 'rejected'
             ? [result.reason instanceof Error ? result.reason.message : String(result.reason)]
             : [])
@@ -223,6 +231,7 @@ export default function App() {
   }
 
   const selectedExpertKit = expertKits.find((kit) => kit.id === selectedExpertKitId && kit.installState === 'installed')
+  const activeExpertKit = expertKits.find((kit) => kit.id === activeExpertKitId)
   const runtimeConnectors = buildRuntimeConnectorCatalog(connectors, bootstrap?.endpoints.erpMcp ?? '')
   const invocationOptions = buildInvocationOptions(expertKits, skills)
   const visibleInvocations = filterInvocationOptions(invocationOptions, prompt)
@@ -386,6 +395,7 @@ export default function App() {
     setHarnessSessionId('')
     setPage('chat')
     setPrompt('')
+    setActiveExpertKitId('')
   }
 
   const selectModel = (model: string) => {
@@ -537,16 +547,16 @@ export default function App() {
                   </div>
                   <div className={`kit-readiness ${kit.readiness}`}>
                     {kit.readiness === 'ready'
-                      ? '所需连接器已就绪'
-                      : `部分能力待启用：${kit.connectorIssues.join('；')}`}
+                      ? '连接器、工具和知识库已就绪'
+                      : `部分能力待启用：${[...kit.connectorIssues, ...kit.knowledgeIssues].join('；')}`}
                   </div>
                   {kit.installState === 'update' && <div className="kit-version-note">已安装 v{kit.installedVersion}</div>}
                   <button
                     className="kit-install"
                     disabled={installing || (!kit.sha256 && kit.installState !== 'installed')}
-                    onClick={() => kit.installState === 'installed' ? useExpertKit(kit) : void installKit(kit)}
+                    onClick={() => setActiveExpertKitId(kit.id)}
                     type="button"
-                  >{installing ? '正在校验并安装…' : kit.installState === 'installed' ? selectedExpertKitId === kit.id ? '正在使用' : '使用套件' : kit.installState === 'update' ? '更新套件' : '安装套件'}</button>
+                  >{installing ? '正在校验并安装…' : kit.installState === 'installed' ? '查看详情' : kit.installState === 'update' ? '查看更新' : '查看并安装'}</button>
                 </article>
               })}</div>
             </>}
@@ -616,6 +626,18 @@ export default function App() {
           </section>
         )}
       </main>
+      {activeExpertKit && <ExpertKitDetailsModal
+        kit={activeExpertKit}
+        skills={skills}
+        connectors={connectors}
+        knowledgeBases={knowledgeBases}
+        installing={installingKitId === activeExpertKit.id}
+        selected={selectedExpertKitId === activeExpertKit.id}
+        onClose={() => setActiveExpertKitId('')}
+        onInstall={() => void installKit(activeExpertKit)}
+        onSchedule={() => { setActiveExpertKitId(''); setPage('schedules') }}
+        onUse={() => useExpertKit(activeExpertKit)}
+      />}
     </div>
   )
 }

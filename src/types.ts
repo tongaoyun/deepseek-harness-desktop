@@ -30,6 +30,7 @@ export interface ExpertKitCatalogEntry {
   connectorRefs: string[]
   requiredTools: string[]
   knowledgeBaseRefs: string[]
+  permissions: ExpertKitPermissions
   serverWorkflows: ServerWorkflowDefinition[]
   sha256: string
 }
@@ -223,6 +224,13 @@ export interface ExpertKitDownload {
 }
 
 export type PermissionMode = 'deny' | 'allow' | 'approval'
+
+export interface ExpertKitPermissions {
+  localFiles: PermissionMode
+  shell: PermissionMode
+  connectorRead: PermissionMode
+  connectorWrite: PermissionMode
+}
 
 export interface ExpertKitManifest {
   schemaVersion: string

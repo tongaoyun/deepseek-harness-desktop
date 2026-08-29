@@ -5,7 +5,8 @@ import type { ExpertKitView } from './expertKits'
 const kit = {
   id: 'ops', name: '运营专家', version: '1.0.0', summary: '运营', minimumDesktopVersion: '0.1.0',
   commandIds: ['daily-report'], skillIds: ['inventory'], connectorRefs: [], knowledgeBaseRefs: [], requiredTools: [],
-  serverWorkflows: [], sha256: 'x', installState: 'installed', readiness: 'ready', connectorIssues: [],
+  permissions: { localFiles: 'deny', shell: 'deny', connectorRead: 'deny', connectorWrite: 'deny' },
+  serverWorkflows: [], sha256: 'x', installState: 'installed', readiness: 'ready', connectorIssues: [], knowledgeIssues: [],
 } as ExpertKitView
 
 describe('slash invocation options', () => {
