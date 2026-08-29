@@ -24,6 +24,8 @@ harness-host/     DeepSeek Harness JSON-RPC Sidecar
 
 已安装套件的 Skill 根目录会由 Tauri 注入 Harness。选择专家套件后，桌面同时注入其命令说明，只挂载套件引用的连接器、工具和知识库，然后复用同一个 Harness 会话执行后续消息。未声明 `knowledgeBaseRefs` 的旧套件保持原有可见范围；显式声明后，服务端会再次按员工和团队权限取交集，不能借套件越权检索。
 
+业务团队发布前可将 `XIAOYIN_ENABLE_DEVELOPER_KIT_INSTALL=true` 注入桌面进程，扩展中心会显示“安装本地验收包”。本地包仍执行摘要、解包、Manifest、版本和权限校验，明确标记为本地验收并可单独移除；它不会上传控制中心或进入公司目录。正式启动默认关闭该入口。
+
 聊天消息会记录“分析、加载 Skill、调用业务工具、生成回复”的结构化执行步骤，可在本机任务历史中回看；只展示阶段、工具名和成功/失败状态，不展示隐藏推理、工具参数或业务返回原文。
 
 聊天输入 `/` 会列出已安装专家套件的快捷命令与 Skill；选择后自动绑定所属套件及权限上下文。当前每个会话只激活一个专家套件，避免不同套件的写权限和工具白名单相互扩大。
@@ -87,8 +89,8 @@ WiX 3.14、NSIS 3.11 与 Tauri NSIS 插件镜像在公司 Gitea Generic Package 
 发布前同时更新 `package.json`、`src-tauri/tauri.conf.json` 和 `src-tauri/Cargo.toml` 的版本，再创建并推送标签：
 
 ```bash
-git tag -a v0.1.9 -m "小胤 0.1.9"
-git push origin v0.1.9
+git tag -a v0.1.10 -m "小胤 0.1.10"
+git push origin v0.1.10
 ```
 
 在 Windows 构建机本地可执行：

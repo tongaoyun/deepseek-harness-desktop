@@ -13,6 +13,7 @@ import {
   Mic,
   PanelLeftClose,
   PanelLeftOpen,
+  PackagePlus,
   Plus,
   PlugZap,
   Search,
@@ -38,9 +39,12 @@ import { DesktopUpdater } from './DesktopUpdater'
 import { ErpAuthScreen } from './ErpAuthScreen'
 import { ExpertKitDetailsModal } from './ExpertKitDetailsModal'
 import {
+  developerExpertKitInstallEnabled,
+  installDeveloperExpertKit,
   installExpertKit,
   listInstalledExpertKits,
   mergeExpertKits,
+  removeDeveloperExpertKit,
   type ExpertKitView,
 } from './expertKits'
 import {
@@ -58,6 +62,7 @@ import { ExecutionTrace } from './ExecutionTrace'
 import type {
   BootstrapResponse,
   ConnectorCatalogEntry,
+  ExpertKitCatalogEntry,
   KnowledgeBaseEntry,
   RuntimeStatus,
   SkillCatalogEntry,
@@ -101,11 +106,14 @@ export default function App() {
   const [localTasks, setLocalTasks] = useState<LocalTaskRun[]>([])
   const [currentLocalTaskId, setCurrentLocalTaskId] = useState('')
   const [expertKits, setExpertKits] = useState<ExpertKitView[]>([])
+  const [expertKitCatalog, setExpertKitCatalog] = useState<ExpertKitCatalogEntry[]>([])
   const [skills, setSkills] = useState<SkillCatalogEntry[]>([])
   const [connectors, setConnectors] = useState<ConnectorCatalogEntry[]>([])
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBaseEntry[]>([])
   const [expertKitsLoading, setExpertKitsLoading] = useState(false)
   const [expertKitError, setExpertKitError] = useState('')
+  const [developerKitMode, setDeveloperKitMode] = useState(false)
+  const [developerKitBusy, setDeveloperKitBusy] = useState(false)
   const [installingKitId, setInstallingKitId] = useState('')
   const [activeExpertKitId, setActiveExpertKitId] = useState('')
   const [selectedExpertKitId, setSelectedExpertKitId] = useState('')
@@ -118,6 +126,10 @@ export default function App() {
   const [localFileError, setLocalFileError] = useState('')
   const [selectedModel, setSelectedModel] = useState('')
   const [modelMenuOpen, setModelMenuOpen] = useState(false)
+
+  useEffect(() => {
+    void developerExpertKitInstallEnabled().then(setDeveloperKitMode).catch(() => undefined)
+  }, [])
 
   useEffect(() => {
     if (authState !== 'authenticated' || !user) return
@@ -165,6 +177,7 @@ export default function App() {
         const skillCatalog = skillsResult.status === 'fulfilled' ? skillsResult.value : []
         const connectorCatalog = connectorsResult.status === 'fulfilled' ? connectorsResult.value : []
         const knowledgeCatalog = knowledgeResult.status === 'fulfilled' ? knowledgeResult.value : []
+        setExpertKitCatalog(catalog)
         setSkills(skillCatalog)
         setConnectors(connectorCatalog)
         setKnowledgeBases(knowledgeCatalog)
@@ -389,6 +402,47 @@ export default function App() {
     }
   }
 
+  const refreshInstalledKits = async () => {
+    const installed = await listInstalledExpertKits()
+    setExpertKits(mergeExpertKits(expertKitCatalog, installed, connectors, knowledgeBases))
+  }
+
+  const installLocalAcceptanceKit = async () => {
+    if (developerKitBusy) return
+    setDeveloperKitBusy(true)
+    setExpertKitError('')
+    try {
+      const installed = await installDeveloperExpertKit()
+      if (!installed) return
+      await refreshInstalledKits()
+      setActiveExpertKitId(installed.manifest.id)
+    } catch (error) {
+      setExpertKitError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setDeveloperKitBusy(false)
+    }
+  }
+
+  const removeLocalAcceptanceKit = async (kit: ExpertKitView) => {
+    if (!kit.localOnly || developerKitBusy) return
+    setDeveloperKitBusy(true)
+    setExpertKitError('')
+    try {
+      if (selectedExpertKitId === kit.id) {
+        await shutdownHarness()
+        setSelectedExpertKitId('')
+        setHarnessSessionId('')
+      }
+      await removeDeveloperExpertKit(kit.id, kit.version)
+      setActiveExpertKitId('')
+      await refreshInstalledKits()
+    } catch (error) {
+      setExpertKitError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setDeveloperKitBusy(false)
+    }
+  }
+
   const useExpertKit = (kit: ExpertKitView) => {
     if (kit.installState !== 'installed') return
     setSelectedExpertKitId(kit.id)
@@ -532,9 +586,13 @@ export default function App() {
               {expertKitsLoading && <div className="kit-empty">正在同步公司专家套件…</div>}
               {!expertKitsLoading && expertKits.length === 0 && <div className="kit-empty">控制中心尚未发布专家套件</div>}
               {expertKitError && <div className="kit-error">{expertKitError}</div>}
+              {developerKitMode && <div className="developer-kit-bar">
+                <span><strong>开发者验收模式</strong><small>本地套件不会上传或进入公司目录，仍受权限和逐次审批约束。</small></span>
+                <button disabled={developerKitBusy} onClick={() => void installLocalAcceptanceKit()} type="button"><PackagePlus size={14} />{developerKitBusy ? '正在处理…' : '安装本地验收包'}</button>
+              </div>}
               <div className="kit-grid">{expertKits.map((kit) => {
                 const installing = installingKitId === kit.id
-                const stateLabel = kit.installState === 'installed' ? '已安装' : kit.installState === 'update' ? '可更新' : '可安装'
+                const stateLabel = kit.localOnly ? '本地验收' : kit.installState === 'installed' ? '已安装' : kit.installState === 'update' ? '可更新' : '可安装'
                 return <article key={kit.id}>
                   <div className="kit-card-head"><span className={`kit-state ${kit.installState}`}>{stateLabel}</span><small>v{kit.version}</small></div>
                   <h3>{kit.name}</h3>
@@ -632,9 +690,11 @@ export default function App() {
         connectors={connectors}
         knowledgeBases={knowledgeBases}
         installing={installingKitId === activeExpertKit.id}
+        removing={developerKitBusy && activeExpertKit.localOnly}
         selected={selectedExpertKitId === activeExpertKit.id}
         onClose={() => setActiveExpertKitId('')}
         onInstall={() => void installKit(activeExpertKit)}
+        onRemove={activeExpertKit.localOnly ? () => void removeLocalAcceptanceKit(activeExpertKit) : undefined}
         onSchedule={() => { setActiveExpertKitId(''); setPage('schedules') }}
         onUse={() => useExpertKit(activeExpertKit)}
       />}

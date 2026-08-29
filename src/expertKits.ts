@@ -17,7 +17,21 @@ export interface ExpertKitView extends ExpertKitCatalogEntry {
   knowledgeIssues: string[]
   installedVersion?: string
   installed?: InstalledExpertKit
+  localOnly: boolean
 }
+
+export const desktopToolNames = new Set([
+  'office.document.read',
+  'office.docx.create',
+  'office.xlsx.create',
+  'office.pdf.create',
+  'local_shell_run',
+  'computer_use_observe',
+  'computer_use_click',
+  'computer_use_type',
+  'computer_use_key',
+  'computer_use_scroll',
+])
 
 export async function listInstalledExpertKits(): Promise<InstalledExpertKit[]> {
   if (!isTauri()) return []
@@ -34,6 +48,21 @@ export async function installExpertKit(download: ExpertKitDownload): Promise<Ins
       url: download.url,
     },
   })
+}
+
+export async function developerExpertKitInstallEnabled(): Promise<boolean> {
+  if (!isTauri()) return false
+  return invoke<boolean>('developer_expert_kit_install_enabled')
+}
+
+export async function installDeveloperExpertKit(): Promise<InstalledExpertKit | null> {
+  if (!isTauri()) throw new Error('请在小胤桌面客户端中安装本地验收套件')
+  return invoke<InstalledExpertKit | null>('install_developer_expert_kit')
+}
+
+export async function removeDeveloperExpertKit(id: string, version: string): Promise<void> {
+  if (!isTauri()) throw new Error('请在小胤桌面客户端中移除本地验收套件')
+  await invoke('remove_developer_expert_kit', { id, version })
 }
 
 export function mergeExpertKits(
@@ -60,7 +89,7 @@ export function mergeExpertKits(
       return [`${connector.name}：${connectorStatusLabel(connector.status)}`]
     })
     const providedTools = new Set(referencedConnectors.flatMap((connector) => connector.toolNames))
-    for (const tool of requiredTools) {
+    for (const tool of requiredTools.filter((name) => !desktopToolNames.has(name))) {
       if (!providedTools.has(tool)) connectorIssues.push(`${tool} 无可用连接器`)
     }
     const knowledgeIssues = knowledgeBaseRefs
@@ -86,6 +115,7 @@ export function mergeExpertKits(
       serverWorkflows: kit.serverWorkflows ?? [],
       ...readiness(kit.connectorRefs ?? [], kit.requiredTools ?? [], kit.knowledgeBaseRefs ?? []),
       installed: local,
+      localOnly: false,
       installedVersion: local?.manifest.version,
       installState: local?.manifest.version === kit.version
         ? 'installed'
@@ -113,6 +143,7 @@ export function mergeExpertKits(
       installState: 'installed',
       installedVersion: local.manifest.version,
       installed: local,
+      localOnly: local.source === 'developer',
     })
   }
   return views

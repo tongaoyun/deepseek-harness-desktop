@@ -1,6 +1,6 @@
 # 小胤桌面端架构与能力
 
-本文描述 `xiaoyin-desktop v0.1.9` 当前已经实现的架构与能力。
+本文描述 `xiaoyin-desktop v0.1.10` 当前已经实现的架构与能力。
 
 ## 总体架构
 
@@ -98,6 +98,7 @@ Workflow Worker 按 PDF 页、Excel 工作表或正文解析和分块 → Postgr
 | 模型选择 | 已实现，当前控制中心发布 `deepseek-v4-flash` |
 | DeepSeek Harness | 已内置到 Windows 安装包，无需员工安装 Node.js |
 | 专家套件 | 已实现目录、详情、依赖检查、安装/更新权限确认、版本差异、下载校验、选择、命令入口和知识库绑定 |
+| 发布前验收 | 已实现环境开关保护的本地套件安装、来源标记和移除，不进入控制中心目录 |
 | Skills | 已实现套件 Skill 发现、加载与执行 |
 | MCP 连接器 | 已实现 Streamable HTTP/SSE、工具白名单和读写权限控制 |
 | ERP MCP | 已接入 `order_get`、`sales_summary`、`inventory_risk` |

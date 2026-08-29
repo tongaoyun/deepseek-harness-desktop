@@ -260,4 +260,5 @@ export interface ExpertKitManifest {
 export interface InstalledExpertKit {
   manifest: ExpertKitManifest
   installPath: string
+  source: 'catalog' | 'developer'
 }

@@ -11,6 +11,7 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tauri::Manager;
+use tauri_plugin_dialog::DialogExt;
 
 const MAX_PACKAGE_BYTES: usize = 32 * 1024 * 1024;
 const MAX_EXTRACTED_BYTES: u64 = 64 * 1024 * 1024;
@@ -88,7 +89,7 @@ struct Permissions {
     erp_write: Option<PermissionMode>,
 }
 
-#[derive(Clone, Copy, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
 enum PermissionMode {
     Deny,
@@ -165,10 +166,30 @@ struct ServerWorkflowStep {
     arguments: serde_json::Map<String, serde_json::Value>,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+enum InstallSource {
+    Catalog,
+    Developer,
+}
+
+fn catalog_install_source() -> InstallSource {
+    InstallSource::Catalog
+}
+
+fn is_catalog_install_source(source: &InstallSource) -> bool {
+    *source == InstallSource::Catalog
+}
+
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct InstallRecord {
     package_sha256: String,
+    #[serde(
+        default = "catalog_install_source",
+        skip_serializing_if = "is_catalog_install_source"
+    )]
+    source: InstallSource,
 }
 
 #[derive(Serialize)]
@@ -176,6 +197,7 @@ struct InstallRecord {
 pub struct InstalledExpertKit {
     manifest: ExpertKitManifest,
     install_path: String,
+    source: InstallSource,
 }
 
 pub struct ExpertKitHarnessProfile {
@@ -216,7 +238,7 @@ pub fn list_installed_expert_kits(
                 load_install_record(&version_directory),
             ) && validate_sha256(&record.package_sha256).is_ok()
             {
-                installed.push(installed_kit(manifest, &version_directory));
+                installed.push(installed_kit(manifest, &version_directory, record.source));
             }
         }
     }
@@ -251,38 +273,156 @@ pub async fn install_expert_kit(
         if record.package_sha256 != request.sha256.to_ascii_lowercase() {
             return Err("本地同版本套件与控制中心摘要不一致，请联系管理员".to_string());
         }
-        return Ok(installed_kit(manifest, &final_directory));
+        return Ok(installed_kit(manifest, &final_directory, record.source));
     }
 
     let bytes = download_package(&request.url).await?;
-    let digest = format!("{:x}", Sha256::digest(&bytes));
-    if digest != request.sha256.to_ascii_lowercase() {
+    install_package_bytes(
+        &root,
+        &bytes,
+        Some(&request.id),
+        Some(&request.version),
+        Some(&request.sha256),
+        InstallSource::Catalog,
+    )
+}
+
+#[tauri::command]
+pub fn developer_expert_kit_install_enabled() -> bool {
+    std::env::var("XIAOYIN_ENABLE_DEVELOPER_KIT_INSTALL")
+        .is_ok_and(|value| value.eq_ignore_ascii_case("true"))
+}
+
+#[tauri::command]
+pub async fn install_developer_expert_kit(
+    app: tauri::AppHandle,
+) -> Result<Option<InstalledExpertKit>, String> {
+    require_developer_install()?;
+    let dialog_app = app.clone();
+    let selected = tauri::async_runtime::spawn_blocking(move || {
+        dialog_app
+            .dialog()
+            .file()
+            .set_title("选择本地专家套件验收包")
+            .add_filter("小胤专家套件", &["gz"])
+            .blocking_pick_file()
+    })
+    .await
+    .map_err(|error| format!("打开专家套件选择器失败：{error}"))?;
+    let Some(selected) = selected else {
+        return Ok(None);
+    };
+    let path = selected
+        .into_path()
+        .map_err(|error| format!("选择的专家套件路径无效：{error}"))?;
+    let metadata = fs::metadata(&path).map_err(|error| format!("无法读取专家套件：{error}"))?;
+    if !metadata.is_file() || metadata.len() > MAX_PACKAGE_BYTES as u64 {
+        return Err("本地专家套件不是普通文件或超过 32 MiB 限制".to_string());
+    }
+    let bytes = fs::read(&path).map_err(|error| format!("无法读取专家套件：{error}"))?;
+    install_package_bytes(
+        &expert_kits_root(&app)?,
+        &bytes,
+        None,
+        None,
+        None,
+        InstallSource::Developer,
+    )
+    .map(Some)
+}
+
+#[tauri::command]
+pub fn remove_developer_expert_kit(
+    app: tauri::AppHandle,
+    id: String,
+    version: String,
+) -> Result<(), String> {
+    require_developer_install()?;
+    validate_identifier(&id)?;
+    Version::parse(&version).map_err(|error| format!("专家套件版本无效：{error}"))?;
+    let root = expert_kits_root(&app)?;
+    let directory = root.join(&id).join(&version);
+    let record = load_install_record(&directory)?;
+    if record.source != InstallSource::Developer {
+        return Err("只能通过开发者入口移除本地验收套件".to_string());
+    }
+    fs::remove_dir_all(&directory).map_err(|error| format!("无法移除本地验收套件：{error}"))?;
+    let kit_directory = root.join(id);
+    if kit_directory.exists()
+        && fs::read_dir(&kit_directory)
+            .map_err(|error| format!("无法检查专家套件目录：{error}"))?
+            .next()
+            .is_none()
+    {
+        fs::remove_dir(&kit_directory).map_err(|error| format!("无法清理专家套件目录：{error}"))?;
+    }
+    Ok(())
+}
+
+fn require_developer_install() -> Result<(), String> {
+    developer_expert_kit_install_enabled()
+        .then_some(())
+        .ok_or_else(|| "本地专家套件安装未启用".to_string())
+}
+
+fn install_package_bytes(
+    root: &Path,
+    bytes: &[u8],
+    expected_id: Option<&str>,
+    expected_version: Option<&str>,
+    expected_sha256: Option<&str>,
+    source: InstallSource,
+) -> Result<InstalledExpertKit, String> {
+    if bytes.is_empty() || bytes.len() > MAX_PACKAGE_BYTES {
+        return Err("专家套件超过 32 MiB 限制".to_string());
+    }
+    let digest = format!("{:x}", Sha256::digest(bytes));
+    if expected_sha256.is_some_and(|expected| digest != expected.to_ascii_lowercase()) {
         return Err("专家套件 SHA-256 校验失败，安装已取消".to_string());
     }
-
-    fs::create_dir_all(&root).map_err(|error| format!("无法创建专家套件目录：{error}"))?;
-    let staging_directory = staging_directory(&root, &request.id, &request.version);
+    fs::create_dir_all(root).map_err(|error| format!("无法创建专家套件目录：{error}"))?;
+    let staging_directory = staging_directory(
+        root,
+        expected_id.unwrap_or("developer-kit"),
+        expected_version.unwrap_or("local"),
+    );
     fs::create_dir(&staging_directory).map_err(|error| format!("无法创建安装暂存目录：{error}"))?;
 
     let result = (|| {
-        extract_package(&bytes, &staging_directory)?;
-        let manifest = load_and_validate_manifest(
-            &staging_directory,
-            Some(&request.id),
-            Some(&request.version),
-        )?;
+        extract_package(bytes, &staging_directory)?;
+        let manifest =
+            load_and_validate_manifest(&staging_directory, expected_id, expected_version)?;
         ensure_supported_desktop_version(Some(&manifest.minimum_desktop_version))?;
-        write_install_record(&staging_directory, &digest)?;
+        let final_directory = root.join(&manifest.id).join(&manifest.version);
+        if final_directory.exists() {
+            let existing_record = load_install_record(&final_directory)?;
+            if existing_record.package_sha256 != digest {
+                return Err(
+                    "本地已存在内容不同的同版本套件，请提升 Manifest 版本后重试".to_string()
+                );
+            }
+            let existing = load_and_validate_manifest(
+                &final_directory,
+                Some(&manifest.id),
+                Some(&manifest.version),
+            )?;
+            return Ok(installed_kit(
+                existing,
+                &final_directory,
+                existing_record.source,
+            ));
+        }
+        write_install_record(&staging_directory, &digest, source)?;
         let parent = final_directory
             .parent()
             .ok_or_else(|| "专家套件安装路径无效".to_string())?;
         fs::create_dir_all(parent).map_err(|error| format!("无法创建套件版本目录：{error}"))?;
         fs::rename(&staging_directory, &final_directory)
             .map_err(|error| format!("无法完成专家套件安装：{error}"))?;
-        Ok(installed_kit(manifest, &final_directory))
+        Ok(installed_kit(manifest, &final_directory, source))
     })();
 
-    if result.is_err() && staging_directory.exists() {
+    if staging_directory.exists() {
         let _ = fs::remove_dir_all(&staging_directory);
     }
     result
@@ -452,9 +592,10 @@ fn load_install_record(root: &Path) -> Result<InstallRecord, String> {
     serde_json::from_str(&value).map_err(|error| format!("专家套件安装记录无效：{error}"))
 }
 
-fn write_install_record(root: &Path, sha256: &str) -> Result<(), String> {
+fn write_install_record(root: &Path, sha256: &str, source: InstallSource) -> Result<(), String> {
     let value = serde_json::to_vec_pretty(&InstallRecord {
         package_sha256: sha256.to_string(),
+        source,
     })
     .map_err(|error| format!("无法生成专家套件安装记录：{error}"))?;
     fs::write(root.join(INSTALL_RECORD_PATH), value)
@@ -713,10 +854,15 @@ fn child_directories(root: &Path) -> Result<Vec<PathBuf>, String> {
         .collect::<Vec<_>>())
 }
 
-fn installed_kit(manifest: ExpertKitManifest, directory: &Path) -> InstalledExpertKit {
+fn installed_kit(
+    manifest: ExpertKitManifest,
+    directory: &Path,
+    source: InstallSource,
+) -> InstalledExpertKit {
     InstalledExpertKit {
         manifest,
         install_path: directory.to_string_lossy().into_owned(),
+        source,
     }
 }
 
@@ -819,6 +965,63 @@ mod tests {
         let loaded = load_and_validate_manifest(&root, Some("report-kit"), Some("1.0.0")).unwrap();
         assert_eq!(loaded.skills[0].id, "report");
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn developer_package_records_source_and_rejects_same_version_collision() {
+        assert!(
+            !serde_json::to_string(&InstallRecord {
+                package_sha256: "a".repeat(64),
+                source: InstallSource::Catalog,
+            })
+            .unwrap()
+            .contains("source")
+        );
+        let root = std::env::temp_dir().join(format!(
+            "xiaoyin-developer-kit-test-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir(&root).unwrap();
+        let manifest = r#"{
+          "schemaVersion":"1","id":"platform-acceptance","name":"平台验收","version":"1.0.0",
+          "summary":"验证平台能力","minimumDesktopVersion":"0.1.9",
+          "skills":[{"id":"platform-check","path":"skills/platform-check/SKILL.md"}],
+          "permissions":{"localFiles":"approval","shell":"approval","computerUse":"approval","connectorRead":"deny","connectorWrite":"deny"}
+        }"#;
+        let package = test_package(manifest, b"# Platform check");
+        let installed =
+            install_package_bytes(&root, &package, None, None, None, InstallSource::Developer)
+                .unwrap();
+        assert_eq!(installed.source, InstallSource::Developer);
+        assert_eq!(
+            load_install_record(Path::new(&installed.install_path))
+                .unwrap()
+                .source,
+            InstallSource::Developer
+        );
+
+        let changed = test_package(
+            &manifest.replace("验证平台能力", "不同内容"),
+            b"# Platform check",
+        );
+        let collision =
+            install_package_bytes(&root, &changed, None, None, None, InstallSource::Developer)
+                .err()
+                .unwrap();
+        assert!(collision.contains("同版本套件"));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    fn test_package(manifest: &str, skill: &[u8]) -> Vec<u8> {
+        let encoder = GzEncoder::new(Vec::new(), Compression::default());
+        let mut archive = tar::Builder::new(encoder);
+        append_archive_file(&mut archive, MANIFEST_PATH, manifest.as_bytes());
+        append_archive_file(&mut archive, "skills/platform-check/SKILL.md", skill);
+        archive.into_inner().unwrap().finish().unwrap()
     }
 
     fn append_archive_file<W: Write>(archive: &mut tar::Builder<W>, path: &str, bytes: &[u8]) {

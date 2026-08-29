@@ -8,9 +8,10 @@ const update: ExpertKitView = {
   knowledgeBaseRefs: ['organization:operations'],
   permissions: { localFiles: 'approval', shell: 'deny', computerUse: 'approval', connectorRead: 'allow', connectorWrite: 'approval' },
   serverWorkflows: [], sha256: 'a'.repeat(64), installState: 'update', readiness: 'ready', connectorIssues: [],
-  knowledgeIssues: [], installedVersion: '1.0.0',
+  knowledgeIssues: [], installedVersion: '1.0.0', localOnly: false,
   installed: {
     installPath: '/expert-kits/operations/1.0.0',
+    source: 'catalog',
     manifest: {
       schemaVersion: '1', id: 'operations', name: '运营专家', version: '1.0.0', summary: '运营工作',
       minimumDesktopVersion: '0.1.7', commands: [{ id: 'review', path: 'commands/review.md' }],

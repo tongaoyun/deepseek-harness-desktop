@@ -4,6 +4,7 @@ import type { ConnectorCatalogEntry, ExpertKitCatalogEntry, InstalledExpertKit, 
 
 const installed: InstalledExpertKit = {
   installPath: '/app/expert-kits/store-kit/1.0.0',
+  source: 'catalog',
   manifest: {
     schemaVersion: '1', id: 'store-kit', name: '店铺专家', version: '1.0.0', summary: '店铺分析',
     minimumDesktopVersion: '0.1.0', commands: [], skills: [{ id: 'diagnosis', path: 'skills/diagnosis/SKILL.md' }],
@@ -57,7 +58,9 @@ describe('mergeExpertKits', () => {
   })
 
   it('keeps locally installed kits that are no longer in the catalog', () => {
-    expect(mergeExpertKits([], [installed], [erpConnector])[0]).toMatchObject({ id: 'store-kit', installState: 'installed' })
+    expect(mergeExpertKits([], [{ ...installed, source: 'developer' }], [erpConnector])[0]).toMatchObject({
+      id: 'store-kit', installState: 'installed', localOnly: true,
+    })
   })
 
   it('reports unavailable connectors and tools missing from referenced connectors', () => {
@@ -77,8 +80,16 @@ describe('mergeExpertKits', () => {
     expect(partial[0].readiness).toBe('partial')
     expect(partial[0].connectorIssues).toEqual([
       '本地 Office：当前不可用',
-      'office.xlsx.create 无可用连接器',
     ])
+  })
+
+  it('does not require MCP connectors for built-in Shell and Computer Use tools', () => {
+    const result = mergeExpertKits([{
+      ...catalogEntry,
+      connectorRefs: [],
+      requiredTools: ['local_shell_run', 'computer_use_observe', 'computer_use_click'],
+    }], [])
+    expect(result[0]).toMatchObject({ readiness: 'ready', connectorIssues: [] })
   })
 
   it('reports knowledge bases that are missing or inaccessible', () => {

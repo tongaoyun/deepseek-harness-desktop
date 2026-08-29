@@ -6,6 +6,7 @@ import {
   Command,
   PlugZap,
   ShieldCheck,
+  Trash2,
   WandSparkles,
   Workflow,
   X,
@@ -21,21 +22,23 @@ interface ExpertKitDetailsModalProps {
   connectors: ConnectorCatalogEntry[]
   knowledgeBases: KnowledgeBaseEntry[]
   installing: boolean
+  removing: boolean
   selected: boolean
   onClose: () => void
   onInstall: () => void
+  onRemove?: () => void
   onSchedule: () => void
   onUse: () => void
 }
 
 export function ExpertKitDetailsModal({
-  kit, skills, connectors, knowledgeBases, installing, selected, onClose, onInstall, onSchedule, onUse,
+  kit, skills, connectors, knowledgeBases, installing, removing, selected, onClose, onInstall, onRemove, onSchedule, onUse,
 }: ExpertKitDetailsModalProps) {
   const skillById = new Map(skills.map((skill) => [skill.id, skill]))
   const connectorById = new Map(connectors.map((connector) => [connector.id, connector]))
   const knowledgeByReference = new Map(knowledgeBases.map((knowledgeBase) => [knowledgeBase.reference, knowledgeBase]))
   const changes = expertKitChanges(kit)
-  const stateLabel = kit.installState === 'installed' ? '已安装' : kit.installState === 'update' ? '更新确认' : '安装确认'
+  const stateLabel = kit.localOnly ? '本地验收套件' : kit.installState === 'installed' ? '已安装' : kit.installState === 'update' ? '更新确认' : '安装确认'
   const issues = [...kit.connectorIssues, ...kit.knowledgeIssues]
 
   return <div className="expert-modal-backdrop" role="presentation" onMouseDown={(event) => {
@@ -80,6 +83,7 @@ export function ExpertKitDetailsModal({
       </section>
 
       <div className="expert-modal-actions">
+        {onRemove && <button className="danger" disabled={removing} onClick={onRemove} type="button"><Trash2 size={14} />{removing ? '正在移除…' : '移除本地套件'}</button>}
         <button className="secondary" onClick={onClose} type="button">关闭</button>
         {kit.installState === 'installed' ? <>
           {kit.serverWorkflows.length > 0 && <button className="secondary" onClick={onSchedule} type="button"><CalendarClock size={14} /> 创建定时任务</button>}
