@@ -10,6 +10,8 @@ src-tauri/        Tauri 原生壳、扫码登录与本地能力边界
 harness-host/     DeepSeek Harness JSON-RPC Sidecar
 ```
 
+完整的当前架构、请求链路、能力清单和系统边界见 [架构与能力](docs/architecture.md)。
+
 ## 专家套件
 
 桌面端从控制中心读取专家套件目录和一次性下载地址，由 Tauri 原生层完成下载、SHA-256 校验、安全解包和 Manifest 校验。套件安装到操作系统应用数据目录下的 `expert-kits/<kit-id>/<version>`，不会写入用户当前工作目录。
@@ -81,8 +83,8 @@ WiX 3.14、NSIS 3.11 与 Tauri NSIS 插件镜像在公司 Gitea Generic Package 
 发布前同时更新 `package.json`、`src-tauri/tauri.conf.json` 和 `src-tauri/Cargo.toml` 的版本，再创建并推送标签：
 
 ```bash
-git tag -a v0.1.4 -m "小胤 0.1.4"
-git push origin v0.1.4
+git tag -a v0.1.5 -m "小胤 0.1.5"
+git push origin v0.1.5
 ```
 
 在 Windows 构建机本地可执行：
