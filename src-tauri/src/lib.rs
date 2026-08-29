@@ -7,8 +7,8 @@ use tauri::{
     tray::TrayIconBuilder,
 };
 
-mod expert_kits;
 mod device_capabilities;
+mod expert_kits;
 mod harness;
 mod im;
 mod local_files;

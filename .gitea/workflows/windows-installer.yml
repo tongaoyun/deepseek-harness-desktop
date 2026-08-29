@@ -89,8 +89,11 @@ jobs:
         shell: powershell
         run: |
           pnpm typecheck
+          if ($LASTEXITCODE -ne 0) { throw "typecheck failed with exit code $LASTEXITCODE" }
           pnpm test
+          if ($LASTEXITCODE -ne 0) { throw "tests failed with exit code $LASTEXITCODE" }
           pnpm build
+          if ($LASTEXITCODE -ne 0) { throw "build failed with exit code $LASTEXITCODE" }
 
       - name: 准备内置 Harness Runtime
         shell: powershell
@@ -101,8 +104,11 @@ jobs:
         shell: powershell
         run: |
           cargo fmt --check
+          if ($LASTEXITCODE -ne 0) { throw "cargo fmt failed with exit code $LASTEXITCODE" }
           cargo clippy --all-targets -- -D warnings
+          if ($LASTEXITCODE -ne 0) { throw "cargo clippy failed with exit code $LASTEXITCODE" }
           cargo test
+          if ($LASTEXITCODE -ne 0) { throw "cargo test failed with exit code $LASTEXITCODE" }
 
       - name: 准备 Tauri Windows 打包工具
         shell: powershell

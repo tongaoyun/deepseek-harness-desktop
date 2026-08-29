@@ -44,13 +44,15 @@ pub fn inspect_device_capabilities(app: tauri::AppHandle) -> Result<DeviceProbe,
 fn load_or_create_device_id(root: &Path) -> Result<String, String> {
     let path = root.join(DEVICE_ID_PATH);
     if path.exists() {
-        let value = fs::read_to_string(&path)
-            .map_err(|error| format!("无法读取设备标识：{error}"))?;
+        let value =
+            fs::read_to_string(&path).map_err(|error| format!("无法读取设备标识：{error}"))?;
         let normalized = value.trim();
         Uuid::parse_str(normalized).map_err(|_| "本机设备标识无效".to_string())?;
         return Ok(normalized.to_string());
     }
-    let parent = path.parent().ok_or_else(|| "设备配置目录无效".to_string())?;
+    let parent = path
+        .parent()
+        .ok_or_else(|| "设备配置目录无效".to_string())?;
     fs::create_dir_all(parent).map_err(|error| format!("无法创建设备配置目录：{error}"))?;
     let value = Uuid::new_v4().to_string();
     fs::write(&path, format!("{value}\n")).map_err(|error| format!("无法保存设备标识：{error}"))?;
