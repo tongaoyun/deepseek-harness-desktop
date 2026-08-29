@@ -67,6 +67,20 @@ export async function loadSkills(
   return loadCatalog(endpoint, employeeId, accessToken, '技能目录', signal)
 }
 
+export async function createSkillDownload(
+  endpoint: string,
+  skillId: string,
+  employeeId: string,
+  accessToken: string,
+): Promise<ExpertKitDownload> {
+  const base = endpoint.replace(/\/$/, '')
+  const response = await fetch(controlPlaneUrl(`${base}/${encodeURIComponent(skillId)}/download`), {
+    headers: enterpriseHeaders(employeeId, accessToken),
+  })
+  if (!response.ok) throw new Error(`Skill 下载授权返回 ${response.status}`)
+  return response.json() as Promise<ExpertKitDownload>
+}
+
 export async function loadConnectors(
   endpoint: string,
   employeeId: string,

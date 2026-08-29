@@ -1,6 +1,6 @@
 # 小胤桌面端架构与能力
 
-本文描述 `xiaoyin-desktop v0.1.13` 当前已经实现的架构与能力。
+本文描述 `xiaoyin-desktop v0.1.14` 当前已经实现的架构与能力。
 
 ## 总体架构
 
@@ -74,6 +74,10 @@
 
 业务仓库固定 `xiaoyin-expert-kit-sdk` 标签 → 校验 Manifest、Skill、权限、工作流、敏感信息和可复现包 → 核对线上连接器、工具与公司知识库 → 控制中心权威评估 → 一次性 MinIO 上传 → 摘要复核 → 原子发布。控制中心阻止缺失依赖、版本回退和同版本内容变更，并提示桌面基线超前、权限扩大及命令、Skill、连接器、工具或知识库移除。
 
+### 独立 Skill 安装与运行
+
+`xiaoyin-skills` 内容仓 → SDK 校验和跨平台可复现打包 → Skills 管理接口 → `skills/<id>/<version>` MinIO 制品 → 桌面 Skills 页面展示触发场景、依赖、权限和更新 → Tauri 原生校验并安装 → Harness 挂载。独立 Skill 与专家套件共用安全制品协议，但使用独立目录、接口、内容仓和产品页面；选中后只开放其声明的连接器和工具权限。
+
 套件只声明连接器 ID、工具、知识库引用和权限，不携带服务地址、账号或令牌。
 
 ### 云端定时任务
@@ -111,6 +115,7 @@ Workflow Worker 按 PDF 页、Excel 工作表或正文解析和分块 → Postgr
 | 模型选择 | 已实现，当前控制中心发布 `deepseek-v4-flash` |
 | DeepSeek Harness | 已内置到 Windows 安装包，无需员工安装 Node.js |
 | 专家套件 | 已实现开发校验、线上依赖预检、控制中心发布评估、不可变发布、目录、详情、安装/更新权限确认、版本差异、下载校验、选择、命令入口和知识库绑定 |
+| 独立 Skills | 已实现独立内容仓、版本治理、不可变发布、目录、详情、依赖与权限确认、安装、更新、选择和斜杠入口 |
 | 发布前验收 | 已实现环境开关保护的本地套件安装、来源标记和移除，不进入控制中心目录 |
 | Skills | 已实现套件 Skill 发现、加载与执行 |
 | MCP 连接器 | 已实现 Streamable HTTP/SSE、工具白名单和读写权限控制 |
@@ -155,5 +160,6 @@ Workflow Worker 按 PDF 页、Excel 工作表或正文解析和分块 → Postgr
 | `erp-mcp-gateway` | ERP 业务工具 MCP 服务 |
 | `xiaoyin-connectors` | 企业连接器目录与 Nacos 发布 |
 | `xiaoyin-expert-kits` | 公司专家套件内容仓 |
+| `xiaoyin-skills` | 公司独立 Skills 内容仓 |
 | `xiaoyin-expert-kit-sdk` | 套件校验、可复现打包、平台预检和发布评估输出 |
 | `xiaoyin-expert-kit-template` | 各团队创建单套件项目的模板 |

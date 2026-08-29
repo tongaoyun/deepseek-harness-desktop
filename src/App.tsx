@@ -28,6 +28,7 @@ import {
 import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import {
   createExpertKitDownload,
+  createSkillDownload,
   loadBootstrap,
   loadConnectors,
   loadExpertKits,
@@ -38,6 +39,7 @@ import {
 import { DesktopUpdater } from './DesktopUpdater'
 import { ErpAuthScreen } from './ErpAuthScreen'
 import { ExpertKitDetailsModal } from './ExpertKitDetailsModal'
+import { SkillDetailsModal } from './SkillDetailsModal'
 import {
   developerExpertKitInstallEnabled,
   installDeveloperExpertKit,
@@ -81,6 +83,7 @@ import { buildInvocationOptions, filterInvocationOptions, type InvocationOption 
 import { buildRuntimeConnectorCatalog } from './connectors'
 import { KnowledgeBasePage } from './KnowledgeBasePage'
 import { DeviceCapabilitiesPage } from './DeviceCapabilitiesPage'
+import { mergeSkills, type SkillView } from './skills'
 import './styles.css'
 
 const extensionNav = [
@@ -109,6 +112,7 @@ export default function App() {
   const [expertKits, setExpertKits] = useState<ExpertKitView[]>([])
   const [expertKitCatalog, setExpertKitCatalog] = useState<ExpertKitCatalogEntry[]>([])
   const [skills, setSkills] = useState<SkillCatalogEntry[]>([])
+  const [skillViews, setSkillViews] = useState<SkillView[]>([])
   const [connectors, setConnectors] = useState<ConnectorCatalogEntry[]>([])
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBaseEntry[]>([])
   const [expertKitsLoading, setExpertKitsLoading] = useState(false)
@@ -116,8 +120,11 @@ export default function App() {
   const [developerKitMode, setDeveloperKitMode] = useState(false)
   const [developerKitBusy, setDeveloperKitBusy] = useState(false)
   const [installingKitId, setInstallingKitId] = useState('')
+  const [installingSkillId, setInstallingSkillId] = useState('')
   const [activeExpertKitId, setActiveExpertKitId] = useState('')
+  const [activeSkillId, setActiveSkillId] = useState('')
   const [selectedExpertKitId, setSelectedExpertKitId] = useState('')
+  const [selectedSkillId, setSelectedSkillId] = useState('')
   const [harnessSessionId, setHarnessSessionId] = useState('')
   const [harnessRunning, setHarnessRunning] = useState(false)
   const [harnessActivity, setHarnessActivity] = useState('')
@@ -180,6 +187,7 @@ export default function App() {
         const knowledgeCatalog = knowledgeResult.status === 'fulfilled' ? knowledgeResult.value : []
         setExpertKitCatalog(catalog)
         setSkills(skillCatalog)
+        setSkillViews(mergeSkills(skillCatalog, installed, connectorCatalog, knowledgeCatalog))
         setConnectors(connectorCatalog)
         setKnowledgeBases(knowledgeCatalog)
         setExpertKits(mergeExpertKits(catalog, installed, connectorCatalog, knowledgeCatalog))
@@ -245,9 +253,11 @@ export default function App() {
   }
 
   const selectedExpertKit = expertKits.find((kit) => kit.id === selectedExpertKitId && kit.installState === 'installed')
+  const selectedSkill = skillViews.find((skill) => skill.id === selectedSkillId && skill.installState === 'installed')
   const activeExpertKit = expertKits.find((kit) => kit.id === activeExpertKitId)
+  const activeSkill = skillViews.find((skill) => skill.id === activeSkillId)
   const runtimeConnectors = buildRuntimeConnectorCatalog(connectors, bootstrap?.endpoints.erpMcp ?? '')
-  const invocationOptions = buildInvocationOptions(expertKits, skills)
+  const invocationOptions = buildInvocationOptions(expertKits, skillViews)
   const visibleInvocations = filterInvocationOptions(invocationOptions, prompt)
   const activeModel = selectedModel || bootstrap?.models[0] || 'deepseek-v4-flash'
   const newTask = () => {
@@ -273,6 +283,7 @@ export default function App() {
     setCurrentLocalTaskId(task.id)
     setHarnessSessionId(task.sessionId ?? '')
     setSelectedExpertKitId(task.expertKitId ?? '')
+    setSelectedSkillId(task.skillId ?? '')
     setSelectedModel(resolveSelectedModel(bootstrap?.models ?? [], task.model ?? selectedModel))
     setPrompt('')
     setHarnessActivity('')
@@ -330,7 +341,8 @@ export default function App() {
       createdAt: existingTask?.createdAt ?? now,
       updatedAt: now,
       sessionId: harnessSessionId || existingTask?.sessionId,
-      expertKitId: selectedExpertKit?.id ?? existingTask?.expertKitId,
+      expertKitId: selectedExpertKit?.id,
+      skillId: selectedSkill?.id,
       model: activeModel,
       messages: pendingMessages,
     }
@@ -348,7 +360,7 @@ export default function App() {
         employeeId: user!.userId,
         teamId: user!.department,
         ...(harnessSessionId ? { sessionId: harnessSessionId } : {}),
-        ...(selectedExpertKit ? { expertKitId: selectedExpertKit.id } : {}),
+        ...(selectedExpertKit || selectedSkill ? { expertKitId: (selectedExpertKit ?? selectedSkill)!.id } : {}),
         litellmBaseUrl: bootstrap.endpoints.litellm,
         knowledgeEndpoint: resolveControlPlaneEndpoint(bootstrap.endpoints.knowledge),
         connectors: runtimeConnectors,
@@ -406,6 +418,25 @@ export default function App() {
   const refreshInstalledKits = async () => {
     const installed = await listInstalledExpertKits()
     setExpertKits(mergeExpertKits(expertKitCatalog, installed, connectors, knowledgeBases))
+    setSkillViews(mergeSkills(skills, installed, connectors, knowledgeBases))
+  }
+
+  const installSkill = async (skill: SkillView) => {
+    if (!bootstrap || !user || skill.installState === 'installed') return
+    setInstallingSkillId(skill.id)
+    setExpertKitError('')
+    try {
+      const download = await createSkillDownload(bootstrap.endpoints.skills, skill.id, user.userId, accessToken)
+      if (download.version !== skill.version || download.sha256 !== skill.sha256) {
+        throw new Error('Skill 目录在安装期间发生变化，请刷新后重试')
+      }
+      await installExpertKit(download)
+      await refreshInstalledKits()
+    } catch (error) {
+      setExpertKitError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setInstallingSkillId('')
+    }
   }
 
   const installLocalAcceptanceKit = async () => {
@@ -447,10 +478,22 @@ export default function App() {
   const useExpertKit = (kit: ExpertKitView) => {
     if (kit.installState !== 'installed') return
     setSelectedExpertKitId(kit.id)
+    setSelectedSkillId('')
     setHarnessSessionId('')
     setPage('chat')
     setPrompt('')
     setActiveExpertKitId('')
+  }
+
+  const useSkill = (skill: SkillView) => {
+    if (skill.installState !== 'installed') return
+    setSelectedSkillId(skill.id)
+    setSelectedExpertKitId('')
+    setHarnessSessionId('')
+    setPage('chat')
+    setPrompt(`请使用 skill "${skill.id}" 完成：`)
+    setActiveSkillId('')
+    void shutdownHarness()
   }
 
   const selectModel = (model: string) => {
@@ -460,7 +503,8 @@ export default function App() {
   }
 
   const selectInvocation = (option: InvocationOption) => {
-    setSelectedExpertKitId(option.expertKitId)
+    setSelectedExpertKitId(option.profileKind === 'expert-kit' ? option.profileId : '')
+    setSelectedSkillId(option.profileKind === 'skill' ? option.profileId : '')
     setHarnessSessionId('')
     setPrompt(option.kind === 'command'
       ? `/${option.id} `
@@ -538,7 +582,7 @@ export default function App() {
               <textarea aria-label="给小胤发送消息" onChange={(event) => setPrompt(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit() } }} placeholder="描述任务，/ 选择专家套件或技能，@ 添加业务上下文" value={prompt} />
               <div className="composer-actions">
                 <button aria-label="授权本地文件夹" className="circle-button" disabled={harnessRunning} onClick={() => void addLocalDirectory()} title="授权本地文件夹" type="button"><CirclePlus size={18} /></button>
-                <button className="mode-button" onClick={() => setPage('experts')} type="button"><Sparkles size={14} /> {selectedExpertKit?.name ?? '运营通用'} <ChevronDown size={13} /></button>
+                <button className="mode-button" onClick={() => setPage(selectedSkill ? 'skills' : 'experts')} type="button"><Sparkles size={14} /> {selectedExpertKit?.name ?? selectedSkill?.name ?? '运营通用'} <ChevronDown size={13} /></button>
                 <div className="model-picker">
                   <button aria-expanded={modelMenuOpen} className="model-label" onClick={() => setModelMenuOpen((value) => !value)} type="button"><Bot size={14} /> {modelDisplayName(activeModel)} <ChevronDown size={13} /></button>
                   {modelMenuOpen && <div className="model-menu"><small>公司可用模型</small>{(bootstrap?.models.length ? bootstrap.models : [activeModel]).map((model) => <button className={model === activeModel ? 'active' : ''} key={model} onClick={() => selectModel(model)} type="button"><span><strong>{modelDisplayName(model)}</strong><small>{model}</small></span>{model === activeModel && <SquareCheckBig size={14} />}</button>)}</div>}
@@ -546,7 +590,7 @@ export default function App() {
                 <button aria-label="语音输入" className="circle-button" type="button"><Mic size={17} /></button>
                 <button aria-label="发送" className="send-button" disabled={!prompt.trim() || harnessRunning || !bootstrap} type="submit"><Send size={17} /></button>
               </div>
-              {visibleInvocations.length > 0 && <div className="slash-menu"><small>快捷调用</small>{visibleInvocations.map((option) => <button key={`${option.kind}-${option.expertKitId}-${option.id}`} onClick={() => selectInvocation(option)} type="button"><span><strong>{option.label}</strong><small>{option.description}</small></span><em>{option.expertKitName}</em></button>)}</div>}
+              {visibleInvocations.length > 0 && <div className="slash-menu"><small>快捷调用</small>{visibleInvocations.map((option) => <button key={`${option.kind}-${option.profileId}-${option.id}`} onClick={() => selectInvocation(option)} type="button"><span><strong>{option.label}</strong><small>{option.description}</small></span><em>{option.profileName}</em></button>)}</div>}
             </form>
             {localFileError && <div className="local-file-error">{localFileError}</div>}
             <div className="context-bar">
@@ -623,19 +667,21 @@ export default function App() {
             </>}
             {page === 'skills' && <>
               {expertKitsLoading && <div className="kit-empty">正在同步公司技能…</div>}
-              {!expertKitsLoading && skills.length === 0 && <div className="kit-empty">控制中心尚未发布独立技能</div>}
+              {!expertKitsLoading && skillViews.length === 0 && <div className="kit-empty">控制中心尚未发布独立技能</div>}
               {expertKitError && <div className="kit-error">{expertKitError}</div>}
-              <div className="kit-grid">{skills.map((skill) => {
-                const installed = expertKits.some((kit) => kit.installState === 'installed'
-                  && kit.installed?.manifest.skills.some((item) => item.id === skill.id))
-                const source = expertKits.find((kit) => kit.id === skill.sourceKitId)
+              <div className="kit-grid">{skillViews.map((skill) => {
+                const installed = skill.installState === 'installed'
+                const stateLabel = installed ? '已安装' : skill.installState === 'update' ? '可更新' : '可安装'
                 return <article key={skill.id}>
-                  <div className="kit-card-head"><span className={`kit-state ${installed ? '' : 'available'}`}>{installed ? '已加载' : '企业技能'}</span><small>v{skill.version}</small></div>
+                  <div className="kit-card-head"><span className={`kit-state ${skill.installState}`}>{stateLabel}</span><small>v{skill.version}</small></div>
                   <h3>{skill.name}</h3>
                   <p>{skill.summary}</p>
                   <div className="kit-capabilities">{skill.triggers.slice(0, 3).map((trigger) => <small key={trigger}>{trigger}</small>)}</div>
-                  <div className="kit-source">{source ? `来自《${source.name}》` : '公司独立 Skill'}</div>
-                  {source && <button className="kit-install" onClick={() => setPage('experts')} type="button">{installed ? '查看套件' : '安装所属套件'}</button>}
+                  <div className={`kit-readiness ${skill.readiness}`}>{skill.readiness === 'ready' ? '所需能力已就绪' : '部分依赖暂不可用'}</div>
+                  {skill.installState === 'update' && <div className="kit-version-note">已安装 v{skill.installedVersion}</div>}
+                  <button className="kit-install" onClick={() => setActiveSkillId(skill.id)} type="button">
+                    {installed ? '查看详情' : skill.installState === 'update' ? '查看更新' : '查看并安装'}
+                  </button>
                 </article>
               })}</div>
             </>}
@@ -708,6 +754,16 @@ export default function App() {
         onRemove={activeExpertKit.localOnly ? () => void removeLocalAcceptanceKit(activeExpertKit) : undefined}
         onSchedule={() => { setActiveExpertKitId(''); setPage('schedules') }}
         onUse={() => useExpertKit(activeExpertKit)}
+      />}
+      {activeSkill && <SkillDetailsModal
+        skill={activeSkill}
+        connectors={connectors}
+        knowledgeBases={knowledgeBases}
+        installing={installingSkillId === activeSkill.id}
+        selected={selectedSkillId === activeSkill.id}
+        onClose={() => setActiveSkillId('')}
+        onInstall={() => void installSkill(activeSkill)}
+        onUse={() => useSkill(activeSkill)}
       />}
     </div>
   )

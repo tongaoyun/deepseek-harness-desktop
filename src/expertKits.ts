@@ -73,6 +73,7 @@ export function mergeExpertKits(
 ): ExpertKitView[] {
   const newestInstalled = new Map<string, InstalledExpertKit>()
   for (const kit of installed) {
+    if (kit.manifest.kind === 'skill') continue
     if (!newestInstalled.has(kit.manifest.id)) newestInstalled.set(kit.manifest.id, kit)
   }
 

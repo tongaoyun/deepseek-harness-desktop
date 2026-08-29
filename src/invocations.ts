@@ -1,37 +1,44 @@
 import type { ExpertKitView } from './expertKits'
 import type { SkillCatalogEntry } from './types'
+import type { SkillView } from './skills'
 
 export interface InvocationOption {
   id: string
   kind: 'command' | 'skill'
   label: string
   description: string
-  expertKitId: string
-  expertKitName: string
+  profileKind: 'expert-kit' | 'skill'
+  profileId: string
+  profileName: string
 }
 
-export function buildInvocationOptions(kits: ExpertKitView[], skills: SkillCatalogEntry[]): InvocationOption[] {
+export function buildInvocationOptions(kits: ExpertKitView[], skills: Array<SkillCatalogEntry | SkillView>): InvocationOption[] {
   const installed = kits.filter((kit) => kit.installState === 'installed')
-  const options: InvocationOption[] = installed.flatMap((kit) => kit.commandIds.map((id): InvocationOption => ({
-    id,
-    kind: 'command' as const,
-    label: `/${id}`,
-    description: `运行《${kit.name}》快捷命令`,
-    expertKitId: kit.id,
-    expertKitName: kit.name,
-  })))
-  for (const skill of skills) {
-    const kit = installed.find((item) => item.id === skill.sourceKitId
-      || item.skillIds.includes(skill.id))
-    if (!kit) continue
-    options.push({
-      id: skill.id,
+  const options: InvocationOption[] = installed.flatMap((kit) => [
+    ...kit.commandIds.map((id): InvocationOption => ({
+      id,
+      kind: 'command',
+      label: `/${id}`,
+      description: `运行《${kit.name}》快捷命令`,
+      profileKind: 'expert-kit',
+      profileId: kit.id,
+      profileName: kit.name,
+    })),
+    ...kit.skillIds.map((id): InvocationOption => ({
+      id,
       kind: 'skill',
-      label: `/${skill.id}`,
-      description: `${skill.summary} · Skill`,
-      expertKitId: kit.id,
-      expertKitName: kit.name,
-    })
+      label: `/${id}`,
+      description: `使用《${kit.name}》中的 Skill`,
+      profileKind: 'expert-kit',
+      profileId: kit.id,
+      profileName: kit.name,
+    })),
+  ])
+  for (const skill of skills) {
+    if ('installState' in skill && skill.installState === 'installed') {
+      options.push({ id: skill.id, kind: 'skill', label: `/${skill.id}`,
+        description: `${skill.summary} · 独立 Skill`, profileKind: 'skill', profileId: skill.id, profileName: skill.name })
+    }
   }
   return options.sort((left, right) => left.label.localeCompare(right.label, 'zh-CN'))
 }
@@ -43,5 +50,5 @@ export function filterInvocationOptions(options: InvocationOption[], prompt: str
   const query = rawQuery.toLowerCase()
   return options.filter((option) => !query
     || option.id.toLowerCase().includes(query)
-    || option.expertKitName.toLowerCase().includes(query)).slice(0, 8)
+    || option.profileName.toLowerCase().includes(query)).slice(0, 8)
 }

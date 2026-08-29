@@ -16,7 +16,7 @@ const permissionDefinitions: Array<Omit<PermissionDetail, 'mode'>> = [
   { key: 'connectorWrite', label: '企业数据写入', description: '通过连接器修改公司系统中的业务数据' },
 ]
 
-export function expertKitPermissionDetails(kit: ExpertKitView): PermissionDetail[] {
+export function expertKitPermissionDetails(kit: Pick<ExpertKitView, 'permissions'>): PermissionDetail[] {
   const permissions = normalizePermissions(kit.permissions)
   return permissionDefinitions.map((definition) => ({ ...definition, mode: permissions[definition.key] }))
 }

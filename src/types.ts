@@ -121,6 +121,7 @@ export interface LocalTaskRun {
   updatedAt: string
   sessionId?: string
   expertKitId?: string
+  skillId?: string
   model?: string
   messages: TaskMessage[]
 }
@@ -184,6 +185,12 @@ export interface SkillCatalogEntry {
   summary: string
   sourceKitId: string
   triggers: string[]
+  minimumDesktopVersion: string
+  connectorRefs: string[]
+  requiredTools: string[]
+  knowledgeBaseRefs: string[]
+  permissions: ExpertKitPermissions
+  sha256: string
 }
 
 export type ConnectorStatus = 'ready' | 'needs-configuration' | 'unavailable' | 'disabled'
@@ -236,10 +243,12 @@ export interface ExpertKitPermissions {
 
 export interface ExpertKitManifest {
   schemaVersion: string
+  kind?: 'expert-kit' | 'skill'
   id: string
   name: string
   version: string
   summary: string
+  triggers?: string[]
   minimumDesktopVersion: string
   commands: Array<{ id: string; path: string }>
   skills: Array<{ id: string; path: string }>

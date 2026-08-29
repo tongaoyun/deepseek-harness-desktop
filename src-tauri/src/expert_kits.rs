@@ -45,10 +45,14 @@ pub struct ExpertKitInstallRequest {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ExpertKitManifest {
     schema_version: String,
+    #[serde(default = "expert_kit_kind")]
+    kind: String,
     id: String,
     name: String,
     version: String,
     summary: String,
+    #[serde(default)]
+    triggers: Vec<String>,
     #[serde(default)]
     minimum_desktop_version: String,
     #[serde(default)]
@@ -63,6 +67,10 @@ pub struct ExpertKitManifest {
     permissions: Permissions,
     #[serde(default)]
     server_workflows: Vec<ServerWorkflow>,
+}
+
+fn expert_kit_kind() -> String {
+    "expert-kit".to_string()
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -439,32 +447,12 @@ pub fn harness_profile(
         newest.entry(kit.manifest.id.clone()).or_insert(kit);
     }
 
-    let mut skill_directories = Vec::new();
-    let mut skill_ids = HashSet::new();
-    for kit in newest.values() {
-        let root = Path::new(&kit.install_path);
-        for skill in &kit.manifest.skills {
-            if !skill_ids.insert(skill.id.clone()) {
-                return Err(format!("已安装专家套件存在重复 Skill ID：{}", skill.id));
-            }
-            let skill_path = root.join(&skill.path);
-            let directory = if skill_path
-                .file_name()
-                .is_some_and(|name| name == "SKILL.md")
-            {
-                skill_path.parent().and_then(Path::parent)
-            } else {
-                skill_path.parent()
-            }
-            .ok_or_else(|| format!("Skill 路径无效：{}", skill.path))?;
-            let directory = directory.to_string_lossy().into_owned();
-            if !skill_directories.contains(&directory) {
-                skill_directories.push(directory);
-            }
-        }
-    }
-
     let Some(selected_kit_id) = selected_kit_id else {
+        let mut skill_directories = Vec::new();
+        let mut skill_ids = HashSet::new();
+        for kit in newest.values() {
+            append_skill_directories(kit, &mut skill_directories, &mut skill_ids)?;
+        }
         return Ok(ExpertKitHarnessProfile {
             skill_directories,
             connector_refs: Vec::new(),
@@ -482,6 +470,8 @@ pub fn harness_profile(
     let kit = newest
         .get(selected_kit_id)
         .ok_or_else(|| format!("专家套件尚未安装：{selected_kit_id}"))?;
+    let mut skill_directories = Vec::new();
+    append_skill_directories(kit, &mut skill_directories, &mut HashSet::new())?;
     let office_tools = kit
         .manifest
         .required_tools
@@ -549,9 +539,20 @@ pub fn harness_profile(
         .map(|skill| skill.id.as_str())
         .collect::<Vec<_>>()
         .join(", ");
+    let profile_label = if kit.manifest.kind == "skill" {
+        "独立 Skill"
+    } else {
+        "专家套件"
+    };
     let prompt = format!(
-        "你正在使用公司专家套件《{}》（ID: {}，版本: {}）。\n可用技能：{}。需要时必须先通过 skill 工具加载对应技能。{}\n\n员工任务：\n{}",
-        kit.manifest.name, kit.manifest.id, kit.manifest.version, skills, commands, user_prompt,
+        "你正在使用公司{}《{}》（ID: {}，版本: {}）。\n可用技能：{}。需要时必须先通过 skill 工具加载对应技能。{}\n\n员工任务：\n{}",
+        profile_label,
+        kit.manifest.name,
+        kit.manifest.id,
+        kit.manifest.version,
+        skills,
+        commands,
+        user_prompt,
     );
     Ok(ExpertKitHarnessProfile {
         skill_directories,
@@ -567,6 +568,35 @@ pub fn harness_profile(
         allow_connector_write: kit.manifest.permissions.connector_write() != PermissionMode::Deny,
         prompt,
     })
+}
+
+fn append_skill_directories(
+    kit: &InstalledExpertKit,
+    directories: &mut Vec<String>,
+    skill_ids: &mut HashSet<String>,
+) -> Result<(), String> {
+    let root = Path::new(&kit.install_path);
+    for skill in &kit.manifest.skills {
+        if !skill_ids.insert(skill.id.clone()) {
+            return Err(format!("已安装扩展存在重复 Skill ID：{}", skill.id));
+        }
+        let skill_path = root.join(&skill.path);
+        let directory = if skill_path
+            .file_name()
+            .is_some_and(|name| name == "SKILL.md")
+        {
+            skill_path.parent().and_then(Path::parent)
+        } else {
+            skill_path.parent()
+        }
+        .ok_or_else(|| format!("Skill 路径无效：{}", skill.path))?
+        .to_string_lossy()
+        .into_owned();
+        if !directories.contains(&directory) {
+            directories.push(directory);
+        }
+    }
+    Ok(())
 }
 
 fn load_command_context(kit: &InstalledExpertKit) -> Result<String, String> {
@@ -712,6 +742,9 @@ fn load_and_validate_manifest(
     if manifest.schema_version != "1" {
         return Err("不支持的专家套件 Schema 版本".to_string());
     }
+    if !matches!(manifest.kind.as_str(), "expert-kit" | "skill") {
+        return Err("不支持的扩展制品类型".to_string());
+    }
     validate_identifier(&manifest.id)?;
     Version::parse(&manifest.version).map_err(|error| format!("专家套件版本无效：{error}"))?;
     if expected_id.is_some_and(|id| id != manifest.id) {
@@ -727,6 +760,24 @@ fn load_and_validate_manifest(
         return Err("专家套件名称、简介和 Skills 不能为空".to_string());
     }
     manifest.permissions.validate()?;
+
+    if manifest.kind == "skill" {
+        if manifest.skills.len() != 1 || manifest.skills[0].id != manifest.id {
+            return Err("独立 Skill 必须只包含一个与 Manifest ID 相同的 Skill".to_string());
+        }
+        if !manifest.commands.is_empty() || !manifest.server_workflows.is_empty() {
+            return Err("独立 Skill 不能包含快捷命令或后台工作流".to_string());
+        }
+        let mut triggers = HashSet::new();
+        if manifest.triggers.is_empty()
+            || manifest.triggers.len() > 20
+            || manifest.triggers.iter().any(|trigger| {
+                trigger.trim().len() < 2 || trigger.len() > 120 || !triggers.insert(trigger)
+            })
+        {
+            return Err("独立 Skill 触发场景声明无效".to_string());
+        }
+    }
 
     let mut reference_ids = HashSet::new();
     for reference in manifest.commands.iter().chain(&manifest.skills) {
