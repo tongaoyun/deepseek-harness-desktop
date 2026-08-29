@@ -95,6 +95,17 @@ export interface TaskMessage {
   role: 'assistant' | 'user'
   text: string
   pending?: boolean
+  executionSteps?: TaskExecutionStep[]
+}
+
+export interface TaskExecutionStep {
+  id: string
+  kind: 'analysis' | 'tool' | 'response'
+  label: string
+  status: 'running' | 'completed' | 'failed'
+  toolName?: string
+  startedAt: string
+  completedAt?: string
 }
 
 export interface LocalTaskRun {

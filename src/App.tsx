@@ -24,7 +24,7 @@ import {
   WandSparkles,
   X,
 } from 'lucide-react'
-import { type FormEvent, useEffect, useMemo, useState } from 'react'
+import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import {
   createExpertKitDownload,
   loadBootstrap,
@@ -42,6 +42,7 @@ import {
 } from './expertKits'
 import {
   authorizeLocalDirectory,
+  applyHarnessNotification,
   clearLocalDirectories,
   harnessActivityLabel,
   listenHarnessNotifications,
@@ -50,6 +51,7 @@ import {
   shutdownHarness,
   type AuthorizedLocalDirectory,
 } from './harness'
+import { ExecutionTrace } from './ExecutionTrace'
 import type {
   BootstrapResponse,
   ConnectorCatalogEntry,
@@ -63,7 +65,7 @@ import { TaskCenterPage } from './TaskCenterPage'
 import { ImChannelsPage } from './ImChannelsPage'
 import { loadLocalTasks, saveLocalTask } from './taskHistory'
 import { startLocalIm, stopLocalImRuntime } from './localIm'
-import type { LocalTaskRun, TaskMessage } from './types'
+import type { LocalTaskRun, TaskExecutionStep, TaskMessage } from './types'
 import { MemoryPage } from './MemoryPage'
 import { modelDisplayName, modelStorageKey, resolveSelectedModel } from './modelSelection'
 import { buildInvocationOptions, filterInvocationOptions, type InvocationOption } from './invocations'
@@ -103,6 +105,8 @@ export default function App() {
   const [harnessSessionId, setHarnessSessionId] = useState('')
   const [harnessRunning, setHarnessRunning] = useState(false)
   const [harnessActivity, setHarnessActivity] = useState('')
+  const [harnessSteps, setHarnessSteps] = useState<TaskExecutionStep[]>([])
+  const harnessStepsRef = useRef<TaskExecutionStep[]>([])
   const [localDirectories, setLocalDirectories] = useState<AuthorizedLocalDirectory[]>([])
   const [localFileError, setLocalFileError] = useState('')
   const [selectedModel, setSelectedModel] = useState('')
@@ -183,7 +187,14 @@ export default function App() {
     let disposed = false
     let unlisten: () => void = () => undefined
     void listenHarnessNotifications((notification) => {
-      if (!disposed) setHarnessActivity(harnessActivityLabel(notification))
+      if (!disposed) {
+        setHarnessActivity(harnessActivityLabel(notification))
+        setHarnessSteps((current) => {
+          const next = applyHarnessNotification(current, notification)
+          harnessStepsRef.current = next
+          return next
+        })
+      }
     }).then((dispose) => {
       if (disposed) dispose()
       else unlisten = dispose
@@ -219,6 +230,8 @@ export default function App() {
     setHarnessSessionId('')
     setCurrentLocalTaskId('')
     setHarnessActivity('')
+    harnessStepsRef.current = []
+    setHarnessSteps([])
     setLocalDirectories([])
     setLocalFileError('')
     void Promise.all([clearLocalDirectories(), shutdownHarness()])
@@ -236,6 +249,8 @@ export default function App() {
     setSelectedModel(resolveSelectedModel(bootstrap?.models ?? [], task.model ?? selectedModel))
     setPrompt('')
     setHarnessActivity('')
+    harnessStepsRef.current = []
+    setHarnessSteps([])
     setLocalDirectories([])
     setLocalFileError('')
     void Promise.all([clearLocalDirectories(), shutdownHarness()])
@@ -298,6 +313,8 @@ export default function App() {
     setPrompt('')
     setHarnessRunning(true)
     setHarnessActivity('正在启动本地 Agent')
+    harnessStepsRef.current = []
+    setHarnessSteps([])
     try {
       const result = await runHarness({
         prompt: input,
@@ -313,7 +330,8 @@ export default function App() {
       })
       setHarnessSessionId(result.sessionId)
       const completedMessages = pendingMessages.map((message, index) => index === pendingMessages.length - 1
-        ? { role: 'assistant', text: result.finalResponse || '任务已执行完成，但模型没有返回文本。' }
+        ? { role: 'assistant', text: result.finalResponse || '任务已执行完成，但模型没有返回文本。',
+          executionSteps: harnessStepsRef.current }
         : message) as TaskMessage[]
       setMessages(completedMessages)
       persistLocalTask({ ...runningTask, status: 'COMPLETED', updatedAt: new Date().toISOString(),
@@ -321,7 +339,7 @@ export default function App() {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       const failedMessages = pendingMessages.map((item, index) => index === pendingMessages.length - 1
-        ? { role: 'assistant', text: `执行失败：${message}` }
+        ? { role: 'assistant', text: `执行失败：${message}`, executionSteps: harnessStepsRef.current }
         : item) as TaskMessage[]
       setMessages(failedMessages)
       persistLocalTask({ ...runningTask, status: 'FAILED', updatedAt: new Date().toISOString(), messages: failedMessages })
@@ -442,7 +460,7 @@ export default function App() {
               <p>连接 ERP 数据，让专家 Agent 安全地完成查询、分析与内容生产</p>
               <div className="starter-actions">{starterTasks.map(({ icon: Icon, title, detail, prompt: value }) => <button key={title} onClick={() => setPrompt(value)} type="button"><Icon size={16} /><span><strong>{title}</strong><small>{detail}</small></span></button>)}</div>
             </div>}
-            {messages.length > 0 && <div className="message-list">{messages.map((message, index) => <article className={`message ${message.role}${message.pending ? ' pending' : ''}`} key={`${message.role}-${index}`}><span className="message-avatar">{message.role === 'user' ? '你' : <XiaoyinMascot size={29} variant="avatar" />}</span><div><small>{message.role === 'user' ? '你' : '小胤'}</small><p>{message.pending && harnessActivity ? harnessActivity : message.text}</p></div></article>)}</div>}
+            {messages.length > 0 && <div className="message-list">{messages.map((message, index) => <article className={`message ${message.role}${message.pending ? ' pending' : ''}`} key={`${message.role}-${index}`}><span className="message-avatar">{message.role === 'user' ? '你' : <XiaoyinMascot size={29} variant="avatar" />}</span><div><small>{message.role === 'user' ? '你' : '小胤'}</small><p>{message.pending && harnessActivity ? harnessActivity : message.text}</p>{message.role === 'assistant' && <ExecutionTrace steps={message.pending ? harnessSteps : message.executionSteps ?? []} />}</div></article>)}</div>}
             <form className="composer" onSubmit={submit}>
               <textarea aria-label="给小胤发送消息" onChange={(event) => setPrompt(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit() } }} placeholder="描述任务，/ 选择专家套件或技能，@ 添加业务上下文" value={prompt} />
               <div className="composer-actions">

@@ -32,4 +32,24 @@ describe('task history', () => {
     storage.setItem('xiaoyin.task-history.employee-1', '{broken')
     expect(loadLocalTasks('employee-1', storage)).toEqual([])
   })
+
+  it('persists the safe execution timeline with the assistant message', () => {
+    const storage = new MemoryStorage()
+    const task: LocalTaskRun = {
+      id: 'task-trace', source: 'DESKTOP', name: '店铺日报', status: 'COMPLETED',
+      createdAt: '2026-08-29T01:00:00Z', updatedAt: '2026-08-29T01:01:00Z',
+      messages: [{
+        role: 'assistant', text: '分析完成', executionSteps: [{
+          id: 'tool:call-1', kind: 'tool', label: '查询销售汇总', status: 'completed',
+          toolName: 'sales_summary', startedAt: '2026-08-29T01:00:10Z',
+          completedAt: '2026-08-29T01:00:11Z',
+        }],
+      }],
+    }
+
+    saveLocalTask('employee-1', task, storage)
+
+    expect(loadLocalTasks('employee-1', storage)[0].messages[0].executionSteps)
+      .toEqual(task.messages[0].executionSteps)
+  })
 })
