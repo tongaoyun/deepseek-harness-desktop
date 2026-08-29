@@ -38,6 +38,8 @@ harness-host/     DeepSeek Harness JSON-RPC Sidecar
 
 专家套件声明 Shell 权限后，可从授权目录启动 PowerShell/Bash 命令。Shell 使用去敏环境变量、两分钟超时和输出上限，不继承 ERP、模型或审批令牌；它仍以员工操作系统账号运行，因此确认框会完整展示用途、工作目录和命令。文件修改、文档生成、Shell 与 ERP 写调用统一进入 DeepSeek Harness 标准审批服务，由 Tauri 弹出原生“一次允许/拒绝”确认，并在 Harness 会话中记录审批审计事件。
 
+专家套件声明 `computerUse` 权限和对应工具后，Windows Harness 可截取当前桌面、读取活动窗口的 UI Automation 元素，并执行坐标点击、Unicode 输入、受限按键和滚动。五类操作都必须经过原生单次审批，操作后返回新截图；未声明的 Computer Use 工具不会注册。截图只保存在本机 Harness 附件目录，不上传控制中心。
+
 桌面由 Tauri 持有一个长期运行的 Harness Host 进程，模型请求走控制中心下发的 LiteLLM 地址。模型网关凭据只在当前进程内使用，不写入本地配置或日志。运行状态和工具事件通过 Tauri Event 返回聊天界面；界面只展示阶段与工具调用，不展示模型的隐藏推理原文。
 
 定时任务页根据专家套件的 `serverWorkflows` 动态生成输入表单，通过控制中心管理 Temporal Schedule，支持创建、暂停、恢复、立即运行、删除和查看最近执行记录。任务在云端 Worker 执行，桌面关闭不影响运行。
@@ -85,8 +87,8 @@ WiX 3.14、NSIS 3.11 与 Tauri NSIS 插件镜像在公司 Gitea Generic Package 
 发布前同时更新 `package.json`、`src-tauri/tauri.conf.json` 和 `src-tauri/Cargo.toml` 的版本，再创建并推送标签：
 
 ```bash
-git tag -a v0.1.8 -m "小胤 0.1.8"
-git push origin v0.1.8
+git tag -a v0.1.9 -m "小胤 0.1.9"
+git push origin v0.1.9
 ```
 
 在 Windows 构建机本地可执行：

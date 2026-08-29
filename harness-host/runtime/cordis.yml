@@ -6,6 +6,11 @@
   config:
     maxTokensAsSuccess: true
 
+- id: local-attachments
+  name: '../dist/local-attachment-store-plugin.js'
+  config:
+    root: !!js process.env.XIAOYIN_ATTACHMENT_ROOT ?? './.xiaoyin/attachments'
+
 - id: llm-deepseek
   name: '@deepseek-ai/dsh-llm-deepseek'
   config:
@@ -66,6 +71,12 @@
   config:
     roots: !!js JSON.parse(process.env.XIAOYIN_LOCAL_FILE_ROOTS ?? '[]')
     enabled: !!js process.env.XIAOYIN_ALLOW_SHELL === 'true'
+
+- id: local-computer-use
+  name: '../dist/local-computer-use-plugin.js'
+  config:
+    enabled: !!js process.env.XIAOYIN_ALLOW_COMPUTER_USE === 'true'
+    tools: !!js JSON.parse(process.env.XIAOYIN_COMPUTER_USE_TOOLS ?? '[]')
 
 - id: sessions
   name: '@deepseek-ai/dsh-session-persistence-jsonl'

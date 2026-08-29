@@ -124,6 +124,7 @@ export function normalizePermissions(
   return {
     localFiles: value?.localFiles ?? 'deny',
     shell: value?.shell ?? 'deny',
+    computerUse: value?.computerUse ?? 'deny',
     connectorRead: value?.connectorRead ?? value?.erpRead ?? 'deny',
     connectorWrite: value?.connectorWrite ?? value?.erpWrite ?? 'deny',
   }

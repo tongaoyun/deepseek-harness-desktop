@@ -25,7 +25,7 @@ const catalogEntry: ExpertKitCatalogEntry = {
   connectorRefs: ['erp-mcp'],
   knowledgeBaseRefs: [],
   requiredTools: ['sales_summary'],
-  permissions: { localFiles: 'approval', shell: 'deny', connectorRead: 'allow', connectorWrite: 'approval' },
+  permissions: { localFiles: 'approval', shell: 'deny', computerUse: 'deny', connectorRead: 'allow', connectorWrite: 'approval' },
   serverWorkflows: [],
   sha256: 'a'.repeat(64),
 }

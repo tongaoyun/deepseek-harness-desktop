@@ -86,6 +86,8 @@ pub(crate) struct RuntimeFingerprint {
     pub(crate) local_file_roots: Vec<String>,
     pub(crate) allow_local_files: bool,
     pub(crate) allow_shell: bool,
+    pub(crate) allow_computer_use: bool,
+    pub(crate) allowed_computer_tools: Vec<String>,
     pub(crate) litellm_base_url: String,
     pub(crate) knowledge_endpoint: String,
     pub(crate) employee_id: String,
@@ -140,6 +142,8 @@ pub async fn run_harness(
         local_file_roots,
         allow_local_files: profile.allow_local_files,
         allow_shell: profile.allow_shell,
+        allow_computer_use: profile.allow_computer_use,
+        allowed_computer_tools: profile.allowed_computer_tools,
         litellm_base_url: request.litellm_base_url,
         knowledge_endpoint: request.knowledge_endpoint,
         employee_id: request.employee_id.clone(),
@@ -253,6 +257,8 @@ impl HarnessProcess {
             .map_err(|error| format!("无法生成本地文件授权配置：{error}"))?;
         let knowledge_base_refs = serde_json::to_string(&fingerprint.knowledge_base_refs)
             .map_err(|error| format!("无法生成知识库范围配置：{error}"))?;
+        let computer_tools = serde_json::to_string(&fingerprint.allowed_computer_tools)
+            .map_err(|error| format!("无法生成 Computer Use 工具配置：{error}"))?;
         let mut child = Command::new(&runtime.node)
             .arg(&runtime.entry)
             .current_dir(&workspace)
@@ -269,14 +275,23 @@ impl HarnessProcess {
             .env("XIAOYIN_EMPLOYEE_BEARER_TOKEN", access_token)
             .env("XIAOYIN_EMPLOYEE_ID", &fingerprint.employee_id)
             .env("XIAOYIN_TEAM_ID", &fingerprint.team_id)
-            .env("XIAOYIN_KNOWLEDGE_ENDPOINT", &fingerprint.knowledge_endpoint)
+            .env(
+                "XIAOYIN_KNOWLEDGE_ENDPOINT",
+                &fingerprint.knowledge_endpoint,
+            )
             .env("XIAOYIN_KNOWLEDGE_BASE_REFS", knowledge_base_refs)
             .env("XIAOYIN_LOCAL_FILE_ROOTS", local_file_roots)
+            .env("XIAOYIN_ATTACHMENT_ROOT", dsh_home.join("attachments"))
             .env(
                 "XIAOYIN_ALLOW_LOCAL_FILES",
                 fingerprint.allow_local_files.to_string(),
             )
             .env("XIAOYIN_ALLOW_SHELL", fingerprint.allow_shell.to_string())
+            .env(
+                "XIAOYIN_ALLOW_COMPUTER_USE",
+                fingerprint.allow_computer_use.to_string(),
+            )
+            .env("XIAOYIN_COMPUTER_USE_TOOLS", computer_tools)
             .env("DEEPSEEK_BASE_URL", &fingerprint.litellm_base_url)
             .env("DEEPSEEK_API_KEY", model_api_key)
             .env("DSH_MODEL", &fingerprint.model)
@@ -853,6 +868,8 @@ mod tests {
             required_connector_tools: vec!["sales_summary".to_string()],
             allow_local_files: false,
             allow_shell: false,
+            allow_computer_use: false,
+            allowed_computer_tools: Vec::new(),
             allow_connector_write: false,
             prompt: String::new(),
         };

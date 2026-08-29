@@ -1,6 +1,6 @@
 # 小胤桌面端架构与能力
 
-本文描述 `xiaoyin-desktop v0.1.8` 当前已经实现的架构与能力。
+本文描述 `xiaoyin-desktop v0.1.9` 当前已经实现的架构与能力。
 
 ## 总体架构
 
@@ -19,7 +19,7 @@
 │ DeepSeek Harness Host                        │
 │ ├─ Skills 与专家套件命令                     │
 │ ├─ 企业 MCP Client                           │
-│ ├─ 本地文件、Office、Shell 工具              │
+│ ├─ 本地文件、Office、Shell、Computer Use     │
 │ ├─ 审批桥接与会话持久化                      │
 │ └─ 钉钉 Stream 本地频道                      │
 └───────────────┬──────────────────────────────┘
@@ -59,7 +59,7 @@
 3. Tauri 校验套件权限、连接器、工具白名单和知识库引用，然后启动或复用 Harness Host。
 4. Harness 加载套件 Skill，通过 LiteLLM 请求模型。
 5. 模型只能看到本次套件允许的本地工具、MCP 工具和知识库。
-6. Harness 调用 ERP MCP 或本地 Office/文件工具；写入、Shell 和非只读 MCP 调用进入原生审批。
+6. Harness 调用 ERP MCP 或本地文件、Office、Shell、Computer Use 工具；高风险操作进入原生审批。
 7. Harness 只把阶段、工具名和成功/失败状态发送给工作台，不发送隐藏推理、工具参数或业务返回原文。
 8. 最终回复与安全执行步骤保存在员工电脑的任务历史中。
 
@@ -104,6 +104,7 @@ Workflow Worker 按 PDF 页、Excel 工作表或正文解析和分块 → Postgr
 | 本地文件 | 已实现授权目录内浏览、文本读写、复制、移动、删除和建目录 |
 | Office | 已实现文档读取及 DOCX、XLSX、PDF 生成 |
 | Shell | 已实现授权目录内 PowerShell/Bash，带原生单次审批 |
+| Windows Computer Use | 已实现截图、活动窗口 UI 元素、点击、输入、受限按键和滚动，全部逐次审批 |
 | 执行过程 | 已实现安全时间线和任务历史回放，不展示隐藏推理 |
 | 本地记忆 | 已实现按员工保存协作风格和工作手册 |
 | 定时任务 | 已接入 Temporal，支持创建、暂停、恢复、立即运行和执行记录 |
@@ -115,7 +116,7 @@ Workflow Worker 按 PDF 页、Excel 工作表或正文解析和分块 → Postgr
 
 ## 当前边界
 
-- 尚未提供屏幕级 Computer Use；当前桌面能力是本地文件、Office 和 Shell。
+- Computer Use 当前只支持 Windows 交互桌面，不支持锁屏、远程无桌面会话或 macOS。
 - 钉钉当前使用 Client ID/Secret 手动配置，扫码自动注册尚未接入公司授权服务。
 - 当前只发布 Windows x64 正式安装包，未发布 macOS 正式安装包。
 - ERP 写工具尚未在 `erp-mcp-gateway` 对外发布。

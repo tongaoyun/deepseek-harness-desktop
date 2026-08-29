@@ -223,6 +223,8 @@ impl LocalImManager {
             local_file_roots: Vec::new(),
             allow_local_files: false,
             allow_shell: false,
+            allow_computer_use: false,
+            allowed_computer_tools: Vec::new(),
             litellm_base_url: context.litellm_base_url,
             knowledge_endpoint: context.knowledge_endpoint,
             employee_id: context.employee_id.clone(),

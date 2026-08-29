@@ -23,6 +23,13 @@ const DESKTOP_OFFICE_TOOLS: [&str; 4] = [
     "office.xlsx.create",
     "office.pdf.create",
 ];
+const DESKTOP_COMPUTER_TOOLS: [&str; 5] = [
+    "computer_use_observe",
+    "computer_use_click",
+    "computer_use_type",
+    "computer_use_key",
+    "computer_use_scroll",
+];
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -69,6 +76,8 @@ struct FileReference {
 struct Permissions {
     local_files: PermissionMode,
     shell: PermissionMode,
+    #[serde(default = "deny_permission")]
+    computer_use: PermissionMode,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     connector_read: Option<PermissionMode>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -85,6 +94,10 @@ enum PermissionMode {
     Deny,
     Allow,
     Approval,
+}
+
+fn deny_permission() -> PermissionMode {
+    PermissionMode::Deny
 }
 
 impl Permissions {
@@ -173,6 +186,8 @@ pub struct ExpertKitHarnessProfile {
     pub required_connector_tools: Vec<String>,
     pub allow_local_files: bool,
     pub allow_shell: bool,
+    pub allow_computer_use: bool,
+    pub allowed_computer_tools: Vec<String>,
     pub allow_connector_write: bool,
     pub prompt: String,
 }
@@ -318,6 +333,8 @@ pub fn harness_profile(
             required_connector_tools: Vec::new(),
             allow_local_files: true,
             allow_shell: true,
+            allow_computer_use: false,
+            allowed_computer_tools: Vec::new(),
             allow_connector_write: false,
             prompt: user_prompt.to_string(),
         });
@@ -346,14 +363,39 @@ pub fn harness_profile(
     if !office_tools.is_empty() && kit.manifest.permissions.local_files == PermissionMode::Deny {
         return Err("该专家套件声明了 Office 工具，但禁止本地文件权限".to_string());
     }
-    let erp_tools = kit
+    let computer_tools = kit
         .manifest
         .required_tools
         .iter()
-        .filter(|tool| !tool.starts_with("office."))
+        .filter(|tool| tool.starts_with("computer_use_"))
         .cloned()
         .collect::<Vec<_>>();
-    if !erp_tools.is_empty()
+    let unsupported_computer_tools = computer_tools
+        .iter()
+        .filter(|tool| !DESKTOP_COMPUTER_TOOLS.contains(&tool.as_str()))
+        .cloned()
+        .collect::<Vec<_>>();
+    if !unsupported_computer_tools.is_empty() {
+        return Err(format!(
+            "专家套件声明了桌面不支持的 Computer Use 工具：{}",
+            unsupported_computer_tools.join(", ")
+        ));
+    }
+    if !computer_tools.is_empty() && kit.manifest.permissions.computer_use == PermissionMode::Deny {
+        return Err("该专家套件声明了 Computer Use 工具，但禁止屏幕与键鼠权限".to_string());
+    }
+    let connector_tools = kit
+        .manifest
+        .required_tools
+        .iter()
+        .filter(|tool| {
+            !tool.starts_with("office.")
+                && !tool.starts_with("computer_use_")
+                && tool.as_str() != "local_shell_run"
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    if !connector_tools.is_empty()
         && kit.manifest.permissions.connector_read() == PermissionMode::Deny
         && kit.manifest.permissions.connector_write() == PermissionMode::Deny
     {
@@ -375,10 +417,13 @@ pub fn harness_profile(
         skill_directories,
         connector_refs: kit.manifest.connector_refs.clone(),
         knowledge_base_refs: kit.manifest.knowledge_base_refs.clone(),
-        allowed_connector_tools: erp_tools.clone(),
-        required_connector_tools: erp_tools,
+        allowed_connector_tools: connector_tools.clone(),
+        required_connector_tools: connector_tools,
         allow_local_files: kit.manifest.permissions.local_files != PermissionMode::Deny,
         allow_shell: kit.manifest.permissions.shell != PermissionMode::Deny,
+        allow_computer_use: !computer_tools.is_empty()
+            && kit.manifest.permissions.computer_use != PermissionMode::Deny,
+        allowed_computer_tools: computer_tools,
         allow_connector_write: kit.manifest.permissions.connector_write() != PermissionMode::Deny,
         prompt,
     })

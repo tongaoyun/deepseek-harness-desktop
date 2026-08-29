@@ -228,6 +228,7 @@ export type PermissionMode = 'deny' | 'allow' | 'approval'
 export interface ExpertKitPermissions {
   localFiles: PermissionMode
   shell: PermissionMode
+  computerUse: PermissionMode
   connectorRead: PermissionMode
   connectorWrite: PermissionMode
 }
@@ -247,6 +248,7 @@ export interface ExpertKitManifest {
   permissions: {
     localFiles: PermissionMode
     shell: PermissionMode
+    computerUse?: PermissionMode
     connectorRead?: PermissionMode
     connectorWrite?: PermissionMode
     erpRead?: PermissionMode

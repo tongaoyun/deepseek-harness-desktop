@@ -11,6 +11,7 @@ export interface PermissionDetail {
 const permissionDefinitions: Array<Omit<PermissionDetail, 'mode'>> = [
   { key: 'localFiles', label: '本地文件与 Office', description: '读取或写入已由员工授权的文件目录' },
   { key: 'shell', label: 'Shell 命令', description: '在员工电脑的受控运行环境中执行命令' },
+  { key: 'computerUse', label: '屏幕与键鼠控制', description: '查看当前屏幕并操作 Windows 鼠标和键盘' },
   { key: 'connectorRead', label: '企业数据读取', description: '通过连接器查询 ERP 等公司系统' },
   { key: 'connectorWrite', label: '企业数据写入', description: '通过连接器修改公司系统中的业务数据' },
 ]
