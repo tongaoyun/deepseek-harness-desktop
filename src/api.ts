@@ -12,6 +12,8 @@ import type {
   KnowledgeBaseEntry,
   KnowledgeDocumentEntry,
   KnowledgeSearchHit,
+  DeviceCapabilityReport,
+  SubmitDeviceCapabilityReport,
 } from './types'
 
 const DEFAULT_CONTROL_PLANE = 'http://192.168.2.67:30081'
@@ -145,6 +147,30 @@ export async function createTaskRunArtifactDownload(
   })
   if (!response.ok) throw new Error(`任务产物下载授权返回 ${response.status}`)
   return response.json() as Promise<ArtifactDownload>
+}
+
+export async function loadDeviceCapabilityReports(
+  endpoint: string,
+  employeeId: string,
+  accessToken: string,
+  signal?: AbortSignal,
+): Promise<DeviceCapabilityReport[]> {
+  return loadCatalog(endpoint, employeeId, accessToken, '设备能力记录', signal)
+}
+
+export async function submitDeviceCapabilityReport(
+  endpoint: string,
+  employeeId: string,
+  accessToken: string,
+  request: SubmitDeviceCapabilityReport,
+): Promise<DeviceCapabilityReport> {
+  const response = await fetch(controlPlaneUrl(endpoint), {
+    method: 'POST',
+    headers: { ...enterpriseHeaders(employeeId, accessToken), 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  })
+  if (!response.ok) throw new Error(`设备能力上报返回 ${response.status}`)
+  return response.json() as Promise<DeviceCapabilityReport>
 }
 
 export async function loadKnowledgeBases(

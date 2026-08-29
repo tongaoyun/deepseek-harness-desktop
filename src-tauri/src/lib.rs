@@ -8,6 +8,7 @@ use tauri::{
 };
 
 mod expert_kits;
+mod device_capabilities;
 mod harness;
 mod im;
 mod local_files;
@@ -421,6 +422,7 @@ pub fn run() {
             open_erp_login,
             erp_qr_login_configuration,
             poll_erp_qr_login,
+            device_capabilities::inspect_device_capabilities,
             expert_kits::list_installed_expert_kits,
             expert_kits::install_expert_kit,
             expert_kits::developer_expert_kit_install_enabled,

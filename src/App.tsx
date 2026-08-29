@@ -80,6 +80,7 @@ import { modelDisplayName, modelStorageKey, resolveSelectedModel } from './model
 import { buildInvocationOptions, filterInvocationOptions, type InvocationOption } from './invocations'
 import { buildRuntimeConnectorCatalog } from './connectors'
 import { KnowledgeBasePage } from './KnowledgeBasePage'
+import { DeviceCapabilitiesPage } from './DeviceCapabilitiesPage'
 import './styles.css'
 
 const extensionNav = [
@@ -563,7 +564,7 @@ export default function App() {
         ) : (
           <section className="capability-page">
             <span className="page-kicker">企业能力中心</span>
-            <h1>{extensionNav.find((item) => item.id === page)?.label ?? ({ memory: '意识', tasks: '任务中心', schedules: '定时任务', im: 'IM 频道', admin: '管理中心' } as Record<string, string>)[page]}</h1>
+            <h1>{extensionNav.find((item) => item.id === page)?.label ?? ({ memory: '意识', tasks: '任务中心', schedules: '定时任务', im: 'IM 频道', admin: '设备能力' } as Record<string, string>)[page]}</h1>
             <p>{page === 'experts'
               ? '面向岗位的一整套工作方案，统一组合命令、技能、连接器和后台工作流。'
               : page === 'skills'
@@ -580,7 +581,9 @@ export default function App() {
                     ? '按专家套件声明的后台工作流创建任务；任务由 Temporal 托管，关闭电脑后仍会运行。'
                   : page === 'memory'
                     ? '跨会话保留你的协作风格和长期有效的业务工作手册。'
-                    : '这里将由控制中心下发公司自己的能力与权限配置。'}</p>
+                    : page === 'admin'
+                      ? '检测当前电脑能否安全运行本地文件、Office、Shell、Computer Use 和企业连接器，并保留去敏验收记录。'
+                      : '这里将由控制中心下发公司自己的能力与权限配置。'}</p>
             {page === 'memory' && user && <MemoryPage employeeId={user.userId} onSaved={memorySaved} />}
             {page === 'experts' && <>
               {expertKitsLoading && <div className="kit-empty">正在同步公司专家套件…</div>}
@@ -680,6 +683,14 @@ export default function App() {
               knowledgeEndpoint={resolveControlPlaneEndpoint(bootstrap.endpoints.knowledge)}
               model={activeModel}
               modelApiKey={bootstrap.modelApiKey}
+            />}
+            {page === 'admin' && bootstrap && user && <DeviceCapabilitiesPage
+              endpoint={bootstrap.endpoints.deviceCapabilities ?? '/api/v1/device-capabilities'}
+              employeeId={user.userId}
+              accessToken={accessToken}
+              connectors={connectors}
+              authorizedDirectoryCount={localDirectories.length}
+              runtimeStatus={runtimeStatus}
             />}
           </section>
         )}

@@ -12,6 +12,7 @@ export interface BootstrapResponse {
     schedules: string
     taskRuns: string
     knowledge: string
+    deviceCapabilities?: string
   }
   capabilities: string[]
   models: string[]
@@ -261,4 +262,34 @@ export interface InstalledExpertKit {
   manifest: ExpertKitManifest
   installPath: string
   source: 'catalog' | 'developer'
+}
+
+export type DeviceCapabilityStatus = 'READY' | 'DEGRADED' | 'UNSUPPORTED'
+
+export interface DeviceCapabilityResult {
+  key: string
+  status: DeviceCapabilityStatus
+  detail: string
+}
+
+export interface DeviceCapabilityReport {
+  id: string
+  deviceId: string
+  desktopVersion: string
+  platform: string
+  architecture: string
+  displayCount: number
+  displayScalePercents: number[]
+  capabilities: DeviceCapabilityResult[]
+  createdAt: string
+}
+
+export interface SubmitDeviceCapabilityReport {
+  deviceId: string
+  desktopVersion: string
+  platform: string
+  architecture: string
+  displayCount: number
+  displayScalePercents: number[]
+  capabilities: DeviceCapabilityResult[]
 }

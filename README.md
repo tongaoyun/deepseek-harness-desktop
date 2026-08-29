@@ -52,6 +52,8 @@ IM 频道是桌面本地能力。钉钉 Client ID 保存在应用数据目录，
 
 钉钉支持开放模式和配对模式；配对请求由 IM 频道页本机审批。主窗口关闭后小胤驻留系统托盘，频道继续运行；显式退出小胤或电脑关机后停止。当前提供 Client ID/Secret 手动配置，扫码自动注册需要后续接入公司授权服务。飞书、Lark、微信和企业微信已预留频道入口，尚未启用运行时。
 
+管理中心提供设备能力预检：检测桌面运行时、本地文件授权、Office、Shell、Windows Computer Use、控制中心和企业连接器状态，并将最近记录保存到控制中心。设备 ID 在本机首次生成且不包含硬件指纹；上报只包含版本、平台、架构、显示器数量/缩放及固定能力状态，不包含主机名、用户名、路径、截图、Token、Shell 输出或业务数据。自动预检用于判断运行条件，不代替 Computer Use 在不同缩放和多显示器上的人工交互验收。
+
 ## 开发验证
 
 需要 Node.js 24.19.0、pnpm 10.33.0 和 Rust 1.97+：
@@ -89,8 +91,8 @@ WiX 3.14、NSIS 3.11 与 Tauri NSIS 插件镜像在公司 Gitea Generic Package 
 发布前同时更新 `package.json`、`src-tauri/tauri.conf.json` 和 `src-tauri/Cargo.toml` 的版本，再创建并推送标签：
 
 ```bash
-git tag -a v0.1.10 -m "小胤 0.1.10"
-git push origin v0.1.10
+git tag -a v0.1.11 -m "小胤 0.1.11"
+git push origin v0.1.11
 ```
 
 在 Windows 构建机本地可执行：
