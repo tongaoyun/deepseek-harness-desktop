@@ -150,44 +150,56 @@ export async function createTaskRunArtifactDownload(
 export async function loadKnowledgeBases(
   endpoint: string,
   employeeId: string,
+  teamId: string,
   accessToken: string,
   signal?: AbortSignal,
 ): Promise<KnowledgeBaseEntry[]> {
-  return loadCatalog(endpoint, employeeId, accessToken, '知识库', signal)
+  const response = await fetch(controlPlaneUrl(endpoint), {
+    headers: knowledgeHeaders(employeeId, teamId, accessToken), signal,
+  })
+  if (!response.ok) throw new Error(`知识库返回 ${response.status}`)
+  return response.json() as Promise<KnowledgeBaseEntry[]>
 }
 
 export async function createKnowledgeBase(
   endpoint: string,
   employeeId: string,
+  teamId: string,
   accessToken: string,
-  request: { name: string; description: string },
+  request: { name: string; description: string; referenceKey: string; scope: KnowledgeBaseEntry['scope'] },
 ): Promise<KnowledgeBaseEntry> {
-  return knowledgeRequest(endpoint, employeeId, accessToken, '', 'POST', request)
+  return knowledgeRequest(endpoint, employeeId, teamId, accessToken, '', 'POST', request)
 }
 
 export async function deleteKnowledgeBase(
   endpoint: string,
   employeeId: string,
+  teamId: string,
   accessToken: string,
   knowledgeBaseId: string,
 ): Promise<void> {
-  await knowledgeVoidRequest(endpoint, employeeId, accessToken, `/${encodeURIComponent(knowledgeBaseId)}`, 'DELETE')
+  await knowledgeVoidRequest(endpoint, employeeId, teamId, accessToken, `/${encodeURIComponent(knowledgeBaseId)}`, 'DELETE')
 }
 
 export async function loadKnowledgeDocuments(
   endpoint: string,
   employeeId: string,
+  teamId: string,
   accessToken: string,
   knowledgeBaseId: string,
   signal?: AbortSignal,
 ): Promise<KnowledgeDocumentEntry[]> {
-  return loadCatalog(`${endpoint.replace(/\/$/, '')}/${encodeURIComponent(knowledgeBaseId)}/documents`,
-    employeeId, accessToken, '知识库文档', signal)
+  const response = await fetch(controlPlaneUrl(`${endpoint.replace(/\/$/, '')}/${encodeURIComponent(knowledgeBaseId)}/documents`), {
+    headers: knowledgeHeaders(employeeId, teamId, accessToken), signal,
+  })
+  if (!response.ok) throw new Error(`知识库文档返回 ${response.status}`)
+  return response.json() as Promise<KnowledgeDocumentEntry[]>
 }
 
 export async function uploadKnowledgeDocument(
   endpoint: string,
   employeeId: string,
+  teamId: string,
   accessToken: string,
   knowledgeBaseId: string,
   file: File,
@@ -195,7 +207,7 @@ export async function uploadKnowledgeDocument(
   const form = new FormData()
   form.append('file', file, file.name)
   const response = await fetch(controlPlaneUrl(`${endpoint.replace(/\/$/, '')}/${encodeURIComponent(knowledgeBaseId)}/documents`), {
-    method: 'POST', headers: enterpriseHeaders(employeeId, accessToken), body: form,
+    method: 'POST', headers: knowledgeHeaders(employeeId, teamId, accessToken), body: form,
   })
   if (!response.ok) throw new Error(`知识库文档上传返回 ${response.status}`)
   return response.json() as Promise<KnowledgeDocumentEntry>
@@ -204,40 +216,45 @@ export async function uploadKnowledgeDocument(
 export async function reindexKnowledgeDocument(
   endpoint: string,
   employeeId: string,
+  teamId: string,
   accessToken: string,
   knowledgeBaseId: string,
   documentId: string,
 ): Promise<KnowledgeDocumentEntry> {
-  return knowledgeRequest(endpoint, employeeId, accessToken,
+  return knowledgeRequest(endpoint, employeeId, teamId, accessToken,
     `/${encodeURIComponent(knowledgeBaseId)}/documents/${encodeURIComponent(documentId)}/reindex`, 'POST')
 }
 
 export async function deleteKnowledgeDocument(
   endpoint: string,
   employeeId: string,
+  teamId: string,
   accessToken: string,
   knowledgeBaseId: string,
   documentId: string,
 ): Promise<void> {
-  await knowledgeVoidRequest(endpoint, employeeId, accessToken,
+  await knowledgeVoidRequest(endpoint, employeeId, teamId, accessToken,
     `/${encodeURIComponent(knowledgeBaseId)}/documents/${encodeURIComponent(documentId)}`, 'DELETE')
 }
 
 export async function searchKnowledge(
   endpoint: string,
   employeeId: string,
+  teamId: string,
   accessToken: string,
   query: string,
   knowledgeBaseIds: string[],
+  knowledgeBaseRefs: string[] = [],
 ): Promise<KnowledgeSearchHit[]> {
-  return knowledgeRequest(endpoint, employeeId, accessToken, '/search', 'POST', {
-    query, knowledgeBaseIds, limit: 8,
+  return knowledgeRequest(endpoint, employeeId, teamId, accessToken, '/search', 'POST', {
+    query, knowledgeBaseIds, knowledgeBaseRefs, restrictToKnowledgeBaseRefs: false, limit: 8,
   })
 }
 
 async function knowledgeRequest<T>(
   endpoint: string,
   employeeId: string,
+  teamId: string,
   accessToken: string,
   suffix: string,
   method: 'POST',
@@ -245,7 +262,7 @@ async function knowledgeRequest<T>(
 ): Promise<T> {
   const response = await fetch(controlPlaneUrl(`${endpoint.replace(/\/$/, '')}${suffix}`), {
     method,
-    headers: { ...enterpriseHeaders(employeeId, accessToken), ...(request ? { 'Content-Type': 'application/json' } : {}) },
+    headers: { ...knowledgeHeaders(employeeId, teamId, accessToken), ...(request ? { 'Content-Type': 'application/json' } : {}) },
     ...(request ? { body: JSON.stringify(request) } : {}),
   })
   if (!response.ok) throw new Error(`知识库操作返回 ${response.status}`)
@@ -255,12 +272,13 @@ async function knowledgeRequest<T>(
 async function knowledgeVoidRequest(
   endpoint: string,
   employeeId: string,
+  teamId: string,
   accessToken: string,
   suffix: string,
   method: 'DELETE',
 ): Promise<void> {
   const response = await fetch(controlPlaneUrl(`${endpoint.replace(/\/$/, '')}${suffix}`), {
-    method, headers: enterpriseHeaders(employeeId, accessToken),
+    method, headers: knowledgeHeaders(employeeId, teamId, accessToken),
   })
   if (!response.ok) throw new Error(`知识库删除操作返回 ${response.status}`)
 }
@@ -310,5 +328,12 @@ function enterpriseHeaders(employeeId: string, accessToken: string): Record<stri
   return {
     'X-Xiaoyin-Employee-Id': employeeId,
     ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+  }
+}
+
+function knowledgeHeaders(employeeId: string, teamId: string, accessToken: string): Record<string, string> {
+  return {
+    ...enterpriseHeaders(employeeId, accessToken),
+    ...(teamId.trim() ? { 'X-Xiaoyin-Team-Id': teamId.trim() } : {}),
   }
 }

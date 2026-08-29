@@ -46,6 +46,7 @@ enum AccessPolicy {
 #[serde(rename_all = "camelCase")]
 pub struct HarnessContext {
     employee_id: String,
+    team_id: String,
     litellm_base_url: String,
     knowledge_endpoint: String,
     #[serde(default)]
@@ -225,6 +226,8 @@ impl LocalImManager {
             litellm_base_url: context.litellm_base_url,
             knowledge_endpoint: context.knowledge_endpoint,
             employee_id: context.employee_id.clone(),
+            team_id: context.team_id,
+            knowledge_base_refs: profile.knowledge_base_refs,
             model: context.model,
             memory_context: memory::context(app, &context.employee_id)?,
             credential_digest: credential_digest(&context.model_api_key, &context.access_token),
@@ -464,6 +467,9 @@ fn validate_harness_context(value: &HarnessContext) -> Result<(), String> {
         || value.employee_id.chars().any(char::is_control)
     {
         return Err("员工标识无效".to_string());
+    }
+    if value.team_id.len() > 512 || value.team_id.chars().any(char::is_control) {
+        return Err("团队标识无效".to_string());
     }
     validate_http_url("LiteLLM", &value.litellm_base_url)?;
     validate_http_url("知识库", &value.knowledge_endpoint)?;

@@ -5,6 +5,7 @@ import type { ConnectorRuntimeDefinition, TaskExecutionStep } from './types'
 export interface HarnessRunInput {
   prompt: string
   employeeId: string
+  teamId: string
   sessionId?: string
   expertKitId?: string
   litellmBaseUrl: string

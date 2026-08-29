@@ -22,6 +22,7 @@ pub struct HarnessManager {
 pub struct HarnessRunRequest {
     prompt: String,
     employee_id: String,
+    team_id: String,
     session_id: Option<String>,
     expert_kit_id: Option<String>,
     litellm_base_url: String,
@@ -88,6 +89,8 @@ pub(crate) struct RuntimeFingerprint {
     pub(crate) litellm_base_url: String,
     pub(crate) knowledge_endpoint: String,
     pub(crate) employee_id: String,
+    pub(crate) team_id: String,
+    pub(crate) knowledge_base_refs: Option<Vec<String>>,
     pub(crate) model: String,
     pub(crate) memory_context: String,
     pub(crate) credential_digest: String,
@@ -140,6 +143,8 @@ pub async fn run_harness(
         litellm_base_url: request.litellm_base_url,
         knowledge_endpoint: request.knowledge_endpoint,
         employee_id: request.employee_id.clone(),
+        team_id: request.team_id,
+        knowledge_base_refs: profile.knowledge_base_refs,
         model: request.model,
         memory_context: memory::context(&app, &request.employee_id)?,
         credential_digest: credential_digest(&request.model_api_key, &request.access_token),
@@ -246,6 +251,8 @@ impl HarnessProcess {
             .map_err(|error| format!("无法生成连接器配置：{error}"))?;
         let local_file_roots = serde_json::to_string(&fingerprint.local_file_roots)
             .map_err(|error| format!("无法生成本地文件授权配置：{error}"))?;
+        let knowledge_base_refs = serde_json::to_string(&fingerprint.knowledge_base_refs)
+            .map_err(|error| format!("无法生成知识库范围配置：{error}"))?;
         let mut child = Command::new(&runtime.node)
             .arg(&runtime.entry)
             .current_dir(&workspace)
@@ -261,7 +268,9 @@ impl HarnessProcess {
             .env("XIAOYIN_MCP_CONNECTORS", connectors)
             .env("XIAOYIN_EMPLOYEE_BEARER_TOKEN", access_token)
             .env("XIAOYIN_EMPLOYEE_ID", &fingerprint.employee_id)
+            .env("XIAOYIN_TEAM_ID", &fingerprint.team_id)
             .env("XIAOYIN_KNOWLEDGE_ENDPOINT", &fingerprint.knowledge_endpoint)
+            .env("XIAOYIN_KNOWLEDGE_BASE_REFS", knowledge_base_refs)
             .env("XIAOYIN_LOCAL_FILE_ROOTS", local_file_roots)
             .env(
                 "XIAOYIN_ALLOW_LOCAL_FILES",
@@ -564,6 +573,9 @@ fn validate_run_request(request: &HarnessRunRequest) -> Result<(), String> {
     {
         return Err("员工标识无效".to_string());
     }
+    if request.team_id.len() > 512 || request.team_id.chars().any(char::is_control) {
+        return Err("团队标识无效".to_string());
+    }
     if request.prompt.trim().is_empty() || request.prompt.len() > 1024 * 1024 {
         return Err("消息不能为空且不能超过 1 MiB".to_string());
     }
@@ -773,6 +785,7 @@ mod tests {
         let valid = HarnessRunRequest {
             prompt: "分析库存".to_string(),
             employee_id: "employee-1".to_string(),
+            team_id: "crossborder".to_string(),
             session_id: None,
             expert_kit_id: None,
             litellm_base_url: "http://litellm.internal/v1".to_string(),
@@ -835,6 +848,7 @@ mod tests {
         let profile = expert_kits::ExpertKitHarnessProfile {
             skill_directories: Vec::new(),
             connector_refs: vec!["erp-mcp".to_string()],
+            knowledge_base_refs: Some(vec!["organization:operations-sop".to_string()]),
             allowed_connector_tools: vec!["sales_summary".to_string()],
             required_connector_tools: vec!["sales_summary".to_string()],
             allow_local_files: false,

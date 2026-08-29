@@ -12,18 +12,17 @@ harness-host/     DeepSeek Harness JSON-RPC Sidecar
 
 完整的当前架构、请求链路、能力清单和系统边界见 [架构与能力](docs/architecture.md)。
 
-知识库页面支持上传 PDF、DOCX、XLSX、TXT 和 Markdown。解析由 Temporal 后台工作流完成；
-桌面与钉钉 Harness 通过只读工具检索，并保留文件名、页码或工作表引用。
+知识库分为个人、团队和公司三个范围，支持上传 PDF、DOCX、XLSX、TXT 和 Markdown。解析由 Temporal 后台工作流完成；桌面与钉钉 Harness 通过只读工具检索，并保留文件名、页码或工作表引用。
 
 ## 专家套件
 
 桌面端从控制中心读取专家套件目录和一次性下载地址，由 Tauri 原生层完成下载、SHA-256 校验、安全解包和 Manifest 校验。套件安装到操作系统应用数据目录下的 `expert-kits/<kit-id>/<version>`，不会写入用户当前工作目录。
 
-扩展中心分别读取控制中心下发的 `/api/v1/expert-kits`、`/api/v1/skills` 和 `/api/v1/connectors`。专家套件只声明连接器 ID 和所需工具，不携带地址、账号或令牌；桌面会将声明与企业连接器目录匹配，并显示“已就绪”或具体缺失项。公司托管连接器不向员工提供修改凭据的入口。
+扩展中心分别读取控制中心下发的 `/api/v1/expert-kits`、`/api/v1/skills` 和 `/api/v1/connectors`。专家套件只声明连接器 ID、所需工具和知识库引用，不携带地址、账号或令牌；桌面会将声明与企业目录匹配。公司托管连接器不向员工提供修改凭据的入口。
 
 安装器只接受 HTTP(S) 下载地址、普通文件和目录，并限制压缩包大小、解压大小及文件数量；路径穿越、符号链接、摘要不一致、Manifest 引用缺失或桌面版本不兼容都会终止安装。前端不会接触 MinIO 凭据。
 
-已安装套件的 Skill 根目录会由 Tauri 注入 Harness。选择专家套件后，桌面同时注入其命令说明，只挂载套件引用的连接器并限制本次 Agent 可见的工具，然后复用同一个 Harness 会话执行后续消息。
+已安装套件的 Skill 根目录会由 Tauri 注入 Harness。选择专家套件后，桌面同时注入其命令说明，只挂载套件引用的连接器、工具和知识库，然后复用同一个 Harness 会话执行后续消息。未声明 `knowledgeBaseRefs` 的旧套件保持原有可见范围；显式声明后，服务端会再次按员工和团队权限取交集，不能借套件越权检索。
 
 聊天消息会记录“分析、加载 Skill、调用业务工具、生成回复”的结构化执行步骤，可在本机任务历史中回看；只展示阶段、工具名和成功/失败状态，不展示隐藏推理、工具参数或业务返回原文。
 
@@ -86,8 +85,8 @@ WiX 3.14、NSIS 3.11 与 Tauri NSIS 插件镜像在公司 Gitea Generic Package 
 发布前同时更新 `package.json`、`src-tauri/tauri.conf.json` 和 `src-tauri/Cargo.toml` 的版本，再创建并推送标签：
 
 ```bash
-git tag -a v0.1.6 -m "小胤 0.1.6"
-git push origin v0.1.6
+git tag -a v0.1.7 -m "小胤 0.1.7"
+git push origin v0.1.7
 ```
 
 在 Windows 构建机本地可执行：

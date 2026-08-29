@@ -8,13 +8,17 @@ export const inject = ['tools']
 export interface Config {
   endpoint?: string
   employeeIdEnv?: string
+  teamIdEnv?: string
   employeeTokenEnv?: string
+  knowledgeBaseRefsEnv?: string
 }
 
 export const Config = z.object({
   endpoint: z.string().default(''),
   employeeIdEnv: z.string().default('XIAOYIN_EMPLOYEE_ID'),
+  teamIdEnv: z.string().default('XIAOYIN_TEAM_ID'),
   employeeTokenEnv: z.string().default('XIAOYIN_EMPLOYEE_BEARER_TOKEN'),
+  knowledgeBaseRefsEnv: z.string().default('XIAOYIN_KNOWLEDGE_BASE_REFS'),
 })
 
 export function apply(ctx: Context, config: Config = {}): void {
@@ -25,21 +29,43 @@ export function apply(ctx: Context, config: Config = {}): void {
   const client = new KnowledgeClient(
     url.toString().replace(/\/$/, ''),
     process.env[config.employeeIdEnv ?? 'XIAOYIN_EMPLOYEE_ID']?.trim() || 'local-development',
+    process.env[config.teamIdEnv ?? 'XIAOYIN_TEAM_ID']?.trim() || '',
     process.env[config.employeeTokenEnv ?? 'XIAOYIN_EMPLOYEE_BEARER_TOKEN']?.trim() || '',
+    parseKnowledgeBaseRefs(process.env[config.knowledgeBaseRefsEnv ?? 'XIAOYIN_KNOWLEDGE_BASE_REFS']),
   )
   const unregister = [ctx.tools.register(listTool(client)), ctx.tools.register(searchTool(client))]
   ctx.effect(() => () => unregister.reverse().forEach((dispose) => dispose()), 'xiaoyin knowledge tools')
 }
 
 export class KnowledgeClient {
-  constructor(private readonly endpoint: string, private readonly employeeId: string, private readonly token: string) {}
+  constructor(
+    private readonly endpoint: string,
+    private readonly employeeId: string,
+    private readonly teamId: string,
+    private readonly token: string,
+    private readonly knowledgeBaseRefs: string[] | null,
+  ) {}
 
-  async list(): Promise<unknown> { return this.request('') }
+  async list(): Promise<unknown> {
+    const result = await this.request('')
+    if (this.knowledgeBaseRefs === null || !Array.isArray(result)) return result
+    const allowed = new Set(this.knowledgeBaseRefs)
+    return result.filter((item) => {
+      if (typeof item !== 'object' || item === null || Array.isArray(item)) return false
+      return allowed.has((item as Record<string, unknown>).reference as string)
+    })
+  }
 
   async search(query: string, knowledgeBaseIds: string[], limit: number): Promise<unknown> {
     return this.request('/search', {
       method: 'POST',
-      body: JSON.stringify({ query, knowledgeBaseIds, limit }),
+      body: JSON.stringify({
+        query,
+        knowledgeBaseIds: this.knowledgeBaseRefs === null ? knowledgeBaseIds : [],
+        knowledgeBaseRefs: this.knowledgeBaseRefs ?? [],
+        restrictToKnowledgeBaseRefs: this.knowledgeBaseRefs !== null,
+        limit,
+      }),
       headers: { 'Content-Type': 'application/json' },
     })
   }
@@ -50,6 +76,7 @@ export class KnowledgeClient {
       signal: AbortSignal.timeout(30_000),
       headers: {
         'X-Xiaoyin-Employee-Id': this.employeeId,
+        ...(this.teamId ? { 'X-Xiaoyin-Team-Id': this.teamId } : {}),
         ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}),
         ...init.headers,
       },
@@ -59,10 +86,22 @@ export class KnowledgeClient {
   }
 }
 
+export function parseKnowledgeBaseRefs(value: string | undefined): string[] | null {
+  if (value === undefined || !value.trim() || value.trim() === 'null') return null
+  let parsed: unknown
+  try { parsed = JSON.parse(value) } catch { throw new Error('Knowledge base scope must be valid JSON') }
+  if (!Array.isArray(parsed) || parsed.length > 32) throw new Error('Knowledge base scope is invalid')
+  const pattern = /^(personal|team|organization):[a-z][a-z0-9-]{2,63}$/
+  if (parsed.some((item) => typeof item !== 'string' || !pattern.test(item)) || new Set(parsed).size !== parsed.length) {
+    throw new Error('Knowledge base scope contains an invalid or duplicate reference')
+  }
+  return parsed
+}
+
 function listTool(client: KnowledgeClient): ToolDefinition {
   return {
     name: 'knowledge_list',
-    description: 'List the enterprise knowledge bases that the current employee is allowed to search.',
+    description: 'List the knowledge bases allowed for the current employee and selected expert kit.',
     parameters: { type: 'object', properties: {}, additionalProperties: false },
     output: { schema: {}, render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }] },
     execute: () => client.list(),

@@ -29,6 +29,7 @@ export interface ExpertKitCatalogEntry {
   skillIds: string[]
   connectorRefs: string[]
   requiredTools: string[]
+  knowledgeBaseRefs: string[]
   serverWorkflows: ServerWorkflowDefinition[]
   sha256: string
 }
@@ -130,6 +131,9 @@ export interface ArtifactDownload {
 
 export interface KnowledgeBaseEntry {
   id: string
+  referenceKey: string
+  reference: string
+  scope: 'PERSONAL' | 'TEAM' | 'ORGANIZATION'
   name: string
   description: string
   createdAt: string
@@ -231,6 +235,7 @@ export interface ExpertKitManifest {
   skills: Array<{ id: string; path: string }>
   requiredTools: string[]
   connectorRefs: string[]
+  knowledgeBaseRefs?: string[]
   permissions: {
     localFiles: PermissionMode
     shell: PermissionMode

@@ -23,6 +23,7 @@ const catalogEntry: ExpertKitCatalogEntry = {
   commandIds: [],
   skillIds: ['diagnosis'],
   connectorRefs: ['erp-mcp'],
+  knowledgeBaseRefs: [],
   requiredTools: ['sales_summary'],
   serverWorkflows: [],
   sha256: 'a'.repeat(64),

@@ -15,15 +15,18 @@ import type { KnowledgeBaseEntry, KnowledgeDocumentEntry, KnowledgeSearchHit } f
 interface KnowledgeBasePageProps {
   endpoint: string
   employeeId: string
+  teamId: string
   accessToken: string
 }
 
-export function KnowledgeBasePage({ endpoint, employeeId, accessToken }: KnowledgeBasePageProps) {
+export function KnowledgeBasePage({ endpoint, employeeId, teamId, accessToken }: KnowledgeBasePageProps) {
   const [bases, setBases] = useState<KnowledgeBaseEntry[]>([])
   const [selectedId, setSelectedId] = useState('')
   const [documents, setDocuments] = useState<KnowledgeDocumentEntry[]>([])
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
+  const [referenceKey, setReferenceKey] = useState('')
+  const [scope, setScope] = useState<KnowledgeBaseEntry['scope']>('PERSONAL')
   const [query, setQuery] = useState('')
   const [hits, setHits] = useState<KnowledgeSearchHit[]>([])
   const [busy, setBusy] = useState(false)
@@ -32,15 +35,15 @@ export function KnowledgeBasePage({ endpoint, employeeId, accessToken }: Knowled
   const selected = bases.find((item) => item.id === selectedId)
 
   const refreshBases = useCallback(async (signal?: AbortSignal) => {
-    const values = await loadKnowledgeBases(endpoint, employeeId, accessToken, signal)
+    const values = await loadKnowledgeBases(endpoint, employeeId, teamId, accessToken, signal)
     setBases(values)
     setSelectedId((current) => values.some((item) => item.id === current) ? current : values[0]?.id ?? '')
-  }, [accessToken, employeeId, endpoint])
+  }, [accessToken, employeeId, endpoint, teamId])
 
   const refreshDocuments = useCallback(async (signal?: AbortSignal) => {
     if (!selectedId) { setDocuments([]); return }
-    setDocuments(await loadKnowledgeDocuments(endpoint, employeeId, accessToken, selectedId, signal))
-  }, [accessToken, employeeId, endpoint, selectedId])
+    setDocuments(await loadKnowledgeDocuments(endpoint, employeeId, teamId, accessToken, selectedId, signal))
+  }, [accessToken, employeeId, endpoint, selectedId, teamId])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -70,8 +73,10 @@ export function KnowledgeBasePage({ endpoint, employeeId, accessToken }: Knowled
     if (!name.trim() || busy) return
     setBusy(true); setError('')
     try {
-      const value = await createKnowledgeBase(endpoint, employeeId, accessToken, { name: name.trim(), description: description.trim() })
-      setBases((current) => [value, ...current]); setSelectedId(value.id); setName(''); setDescription('')
+      const value = await createKnowledgeBase(endpoint, employeeId, teamId, accessToken, {
+        name: name.trim(), description: description.trim(), referenceKey: referenceKey.trim(), scope,
+      })
+      setBases((current) => [value, ...current]); setSelectedId(value.id); setName(''); setDescription(''); setReferenceKey('')
     } catch (reason) { setError(message(reason)) } finally { setBusy(false) }
   }
 
@@ -79,7 +84,7 @@ export function KnowledgeBasePage({ endpoint, employeeId, accessToken }: Knowled
     if (!selected || busy || !window.confirm(`删除知识库“${selected.name}”及其中全部文档？`)) return
     setBusy(true); setError('')
     try {
-      await deleteKnowledgeBase(endpoint, employeeId, accessToken, selected.id)
+      await deleteKnowledgeBase(endpoint, employeeId, teamId, accessToken, selected.id)
       setBases((current) => current.filter((item) => item.id !== selected.id)); setSelectedId(''); setDocuments([]); setHits([])
     } catch (reason) { setError(message(reason)) } finally { setBusy(false) }
   }
@@ -88,7 +93,7 @@ export function KnowledgeBasePage({ endpoint, employeeId, accessToken }: Knowled
     if (!selectedId || !file || busy) return
     setBusy(true); setError('')
     try {
-      const value = await uploadKnowledgeDocument(endpoint, employeeId, accessToken, selectedId, file)
+      const value = await uploadKnowledgeDocument(endpoint, employeeId, teamId, accessToken, selectedId, file)
       setDocuments((current) => [value, ...current])
     } catch (reason) { setError(message(reason)) } finally {
       setBusy(false); if (fileInput.current) fileInput.current.value = ''
@@ -99,7 +104,7 @@ export function KnowledgeBasePage({ endpoint, employeeId, accessToken }: Knowled
     if (busy || !window.confirm(`删除文档“${document.filename}”？`)) return
     setBusy(true); setError('')
     try {
-      await deleteKnowledgeDocument(endpoint, employeeId, accessToken, document.knowledgeBaseId, document.id)
+      await deleteKnowledgeDocument(endpoint, employeeId, teamId, accessToken, document.knowledgeBaseId, document.id)
       setDocuments((current) => current.filter((item) => item.id !== document.id))
     } catch (reason) { setError(message(reason)) } finally { setBusy(false) }
   }
@@ -108,7 +113,7 @@ export function KnowledgeBasePage({ endpoint, employeeId, accessToken }: Knowled
     if (busy) return
     setBusy(true); setError('')
     try {
-      const value = await reindexKnowledgeDocument(endpoint, employeeId, accessToken, document.knowledgeBaseId, document.id)
+      const value = await reindexKnowledgeDocument(endpoint, employeeId, teamId, accessToken, document.knowledgeBaseId, document.id)
       setDocuments((current) => current.map((item) => item.id === value.id ? value : item))
     } catch (reason) { setError(message(reason)) } finally { setBusy(false) }
   }
@@ -117,7 +122,7 @@ export function KnowledgeBasePage({ endpoint, employeeId, accessToken }: Knowled
     event.preventDefault()
     if (!query.trim() || busy) return
     setBusy(true); setError('')
-    try { setHits(await searchKnowledge(endpoint, employeeId, accessToken, query.trim(), selectedId ? [selectedId] : [])) }
+    try { setHits(await searchKnowledge(endpoint, employeeId, teamId, accessToken, query.trim(), selectedId ? [selectedId] : [])) }
     catch (reason) { setError(message(reason)) } finally { setBusy(false) }
   }
 
@@ -126,13 +131,17 @@ export function KnowledgeBasePage({ endpoint, employeeId, accessToken }: Knowled
       <form onSubmit={create}>
         <strong><Plus size={14} />新建知识库</strong>
         <input aria-label="知识库名称" maxLength={120} onChange={(event) => setName(event.target.value)} placeholder="例如：跨境运营 SOP" value={name} />
+        <input aria-label="知识库引用标识" maxLength={64} onChange={(event) => setReferenceKey(event.target.value.toLowerCase())} pattern="[a-z][a-z0-9-]{2,63}" placeholder="引用标识，如 operations-sop" value={referenceKey} />
+        <select aria-label="知识库范围" onChange={(event) => setScope(event.target.value as KnowledgeBaseEntry['scope'])} value={scope}>
+          <option value="PERSONAL">个人</option><option disabled={!teamId.trim()} value="TEAM">团队 · {teamId || '未识别'}</option><option value="ORGANIZATION">全公司</option>
+        </select>
         <textarea aria-label="知识库说明" maxLength={1000} onChange={(event) => setDescription(event.target.value)} placeholder="说明该知识库包含什么内容" value={description} />
         <button disabled={busy || !name.trim()} type="submit">创建</button>
       </form>
       <div className="knowledge-base-list">
-        <small>我的知识库 · {bases.length}</small>
+        <small>可见知识库 · {bases.length}</small>
         {bases.map((item) => <button className={item.id === selectedId ? 'active' : ''} key={item.id} onClick={() => { setSelectedId(item.id); setHits([]) }} type="button">
-          <BookOpenCheck size={15} /><span><strong>{item.name}</strong><small>{item.description || '暂无说明'}</small></span>
+          <BookOpenCheck size={15} /><span><strong>{item.name}</strong><small>{scopeLabel(item.scope)} · {item.reference}</small></span>
         </button>)}
         {bases.length === 0 && <div className="kit-empty">先创建一个知识库</div>}
       </div>
@@ -159,5 +168,6 @@ export function KnowledgeBasePage({ endpoint, employeeId, accessToken }: Knowled
 function statusLabel(status: KnowledgeDocumentEntry['status']): string {
   return ({ QUEUED: '等待索引', PROCESSING: '解析中', READY: '可检索', FAILED: '索引失败' })[status]
 }
+function scopeLabel(scope: KnowledgeBaseEntry['scope']): string { return ({ PERSONAL: '个人', TEAM: '团队', ORGANIZATION: '公司' })[scope] }
 function formatBytes(bytes: number): string { return bytes < 1024 * 1024 ? `${Math.ceil(bytes / 1024)} KiB` : `${(bytes / 1024 / 1024).toFixed(1)} MiB` }
 function message(reason: unknown): string { return reason instanceof Error ? reason.message : String(reason) }

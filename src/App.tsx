@@ -177,6 +177,7 @@ export default function App() {
     if (!bootstrap || !user || authState !== 'authenticated') return
     void startLocalIm({
       employeeId: user.userId,
+      teamId: user.department,
       litellmBaseUrl: bootstrap.endpoints.litellm,
       knowledgeEndpoint: resolveControlPlaneEndpoint(bootstrap.endpoints.knowledge),
       connectors: buildRuntimeConnectorCatalog(connectors, bootstrap.endpoints.erpMcp),
@@ -322,6 +323,7 @@ export default function App() {
       const result = await runHarness({
         prompt: input,
         employeeId: user!.userId,
+        teamId: user!.department,
         ...(harnessSessionId ? { sessionId: harnessSessionId } : {}),
         ...(selectedExpertKit ? { expertKitId: selectedExpertKit.id } : {}),
         litellmBaseUrl: bootstrap.endpoints.litellm,
@@ -406,6 +408,7 @@ export default function App() {
     if (bootstrap) {
       await startLocalIm({
         employeeId: user!.userId,
+        teamId: user!.department,
         litellmBaseUrl: bootstrap.endpoints.litellm,
         knowledgeEndpoint: resolveControlPlaneEndpoint(bootstrap.endpoints.knowledge),
         connectors: runtimeConnectors,
@@ -506,7 +509,7 @@ export default function App() {
                   : page === 'knowledge'
                     ? '集中管理公司文档；索引任务由 Temporal 托管，回答可引用文件与页码或工作表。'
                   : page === 'im'
-                    ? '把钉钉等公司消息入口连接到云端小胤 Worker，集中查看连接和处理状态。'
+                    ? '把钉钉等公司消息入口连接到本机小胤 Harness，集中查看连接和处理状态。'
                   : page === 'tasks'
                     ? '统一查看小胤桌面任务、Temporal 云端执行和可下载的结果产物。'
                   : page === 'schedules'
@@ -529,6 +532,7 @@ export default function App() {
                   <div className="kit-capabilities">
                     <small>{kit.skillIds.length} 个技能</small>
                     <small>{kit.connectorRefs.length} 个连接器</small>
+                    <small>{kit.knowledgeBaseRefs.length} 个知识库</small>
                     <small>{kit.requiredTools.length} 个工具依赖</small>
                   </div>
                   <div className={`kit-readiness ${kit.readiness}`}>
@@ -583,6 +587,7 @@ export default function App() {
             {page === 'knowledge' && bootstrap && user && <KnowledgeBasePage
               accessToken={accessToken}
               employeeId={user.userId}
+              teamId={user.department}
               endpoint={bootstrap.endpoints.knowledge}
             />}
             {page === 'schedules' && bootstrap && user && <ScheduledTasksPage
@@ -601,6 +606,7 @@ export default function App() {
             {page === 'im' && bootstrap && user && <ImChannelsPage
               accessToken={accessToken}
               employeeId={user.userId}
+              teamId={user.department}
               connectors={runtimeConnectors}
               litellmBaseUrl={bootstrap.endpoints.litellm}
               knowledgeEndpoint={resolveControlPlaneEndpoint(bootstrap.endpoints.knowledge)}

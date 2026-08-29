@@ -1,6 +1,6 @@
 # 小胤桌面端架构与能力
 
-本文描述 `xiaoyin-desktop v0.1.6` 当前已经实现的架构与能力。
+本文描述 `xiaoyin-desktop v0.1.7` 当前已经实现的架构与能力。
 
 ## 总体架构
 
@@ -56,9 +56,9 @@
 
 1. 桌面通过控制中心 Bootstrap 获取可用模型、LiteLLM 地址和能力端点。
 2. 员工选择已安装专家套件并发送任务。
-3. Tauri 校验套件权限、连接器引用和工具白名单，然后启动或复用 Harness Host。
+3. Tauri 校验套件权限、连接器、工具白名单和知识库引用，然后启动或复用 Harness Host。
 4. Harness 加载套件 Skill，通过 LiteLLM 请求模型。
-5. 模型只能看到本次套件允许的本地工具和 MCP 工具。
+5. 模型只能看到本次套件允许的本地工具、MCP 工具和知识库。
 6. Harness 调用 ERP MCP 或本地 Office/文件工具；写入、Shell 和非只读 MCP 调用进入原生审批。
 7. Harness 只把阶段、工具名和成功/失败状态发送给工作台，不发送隐藏推理、工具参数或业务返回原文。
 8. 最终回复与安全执行步骤保存在员工电脑的任务历史中。
@@ -69,7 +69,7 @@
 
 控制中心目录 → 一次性下载地址 → Tauri 下载 → SHA-256 校验 → 安全解包 → Manifest/版本/引用校验 → 应用数据目录。
 
-套件只声明连接器 ID、工具和权限，不携带服务地址、账号或令牌。
+套件只声明连接器 ID、工具、知识库引用和权限，不携带服务地址、账号或令牌。
 
 ### 云端定时任务
 
@@ -82,8 +82,7 @@
 桌面上传文档 → 控制中心写入 MinIO 并创建文档记录 → Temporal `KnowledgeIndexWorkflow` →
 Workflow Worker 按 PDF 页、Excel 工作表或正文解析和分块 → PostgreSQL 检索索引。
 
-桌面和钉钉 Harness 通过只读 `knowledge_list`、`knowledge_search` 工具检索员工自己的知识库；
-结果带文件名与页码、工作表或正文位置。支持删除、失败重试和重建索引，桌面关闭不影响解析。
+知识库具有 `personal:<key>`、`team:<key>`、`organization:<key>` 稳定引用。桌面和钉钉 Harness 通过只读 `knowledge_list`、`knowledge_search` 工具检索当前员工可见范围；选中专家套件后，再与 Manifest 的 `knowledgeBaseRefs` 取交集。结果带文件名与页码、工作表或正文位置。支持删除、失败重试和重建索引，桌面关闭不影响解析。
 
 ### 钉钉频道
 
@@ -98,7 +97,7 @@ Workflow Worker 按 PDF 页、Excel 工作表或正文解析和分块 → Postgr
 | ERP 扫码登录 | 已实现，使用独立原生登录窗口 |
 | 模型选择 | 已实现，当前控制中心发布 `deepseek-v4-flash` |
 | DeepSeek Harness | 已内置到 Windows 安装包，无需员工安装 Node.js |
-| 专家套件 | 已实现目录、下载、校验、安装、更新、选择和命令入口 |
+| 专家套件 | 已实现目录、下载、校验、安装、更新、选择、命令入口和知识库绑定 |
 | Skills | 已实现套件 Skill 发现、加载与执行 |
 | MCP 连接器 | 已实现 Streamable HTTP/SSE、工具白名单和读写权限控制 |
 | ERP MCP | 已接入 `order_get`、`sales_summary`、`inventory_risk` |
@@ -109,7 +108,7 @@ Workflow Worker 按 PDF 页、Excel 工作表或正文解析和分块 → Postgr
 | 本地记忆 | 已实现按员工保存协作风格和工作手册 |
 | 定时任务 | 已接入 Temporal，支持创建、暂停、恢复、立即运行和执行记录 |
 | 任务中心 | 已合并本地 Agent 任务和云端 Temporal 任务 |
-| 企业知识库 | 已实现创建、上传、状态轮询、重建、删除、检索和来源引用 |
+| 企业知识库 | 已实现个人/团队/公司范围、稳定引用、上传、索引、检索和来源引用 |
 | IM 频道 | 钉钉已实现；飞书、Lark、微信、企业微信当前仅为预留入口 |
 | 自动更新 | 已实现正式单通道、签名校验、不可变版本包和回滚 |
 | Windows 发布 | 已实现 MSI/NSIS、内置 Runtime、安装/启动/卸载烟测 |

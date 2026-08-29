@@ -50,6 +50,8 @@ pub struct ExpertKitManifest {
     required_tools: Vec<String>,
     #[serde(default)]
     connector_refs: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    knowledge_base_refs: Option<Vec<String>>,
     permissions: Permissions,
     #[serde(default)]
     server_workflows: Vec<ServerWorkflow>,
@@ -166,6 +168,7 @@ pub struct InstalledExpertKit {
 pub struct ExpertKitHarnessProfile {
     pub skill_directories: Vec<String>,
     pub connector_refs: Vec<String>,
+    pub knowledge_base_refs: Option<Vec<String>>,
     pub allowed_connector_tools: Vec<String>,
     pub required_connector_tools: Vec<String>,
     pub allow_local_files: bool,
@@ -310,6 +313,7 @@ pub fn harness_profile(
         return Ok(ExpertKitHarnessProfile {
             skill_directories,
             connector_refs: Vec::new(),
+            knowledge_base_refs: None,
             allowed_connector_tools: Vec::new(),
             required_connector_tools: Vec::new(),
             allow_local_files: true,
@@ -370,6 +374,7 @@ pub fn harness_profile(
     Ok(ExpertKitHarnessProfile {
         skill_directories,
         connector_refs: kit.manifest.connector_refs.clone(),
+        knowledge_base_refs: kit.manifest.knowledge_base_refs.clone(),
         allowed_connector_tools: erp_tools.clone(),
         required_connector_tools: erp_tools,
         allow_local_files: kit.manifest.permissions.local_files != PermissionMode::Deny,
@@ -563,6 +568,22 @@ fn load_and_validate_manifest(
             return Err(format!("专家套件连接器引用无效：{connector}"));
         }
     }
+    if let Some(knowledge_base_refs) = &manifest.knowledge_base_refs {
+        if knowledge_base_refs.len() > 32 {
+            return Err("专家套件知识库引用不能超过 32 个".to_string());
+        }
+        let minimum = Version::parse(&manifest.minimum_desktop_version)
+            .map_err(|error| format!("最低桌面版本无效：{error}"))?;
+        if minimum < Version::new(0, 1, 7) {
+            return Err("使用知识库引用的专家套件必须要求桌面端 0.1.7 或更高版本".to_string());
+        }
+        let mut references = HashSet::new();
+        for reference in knowledge_base_refs {
+            if !valid_knowledge_base_reference(reference) || !references.insert(reference) {
+                return Err(format!("专家套件知识库引用无效或重复：{reference}"));
+            }
+        }
+    }
     Ok(manifest)
 }
 
@@ -618,6 +639,18 @@ fn valid_tool_name(value: &str) -> bool {
             character.is_ascii_lowercase()
                 || character.is_ascii_digit()
                 || matches!(character, b'_' | b'.' | b'-')
+        })
+}
+
+fn valid_knowledge_base_reference(value: &str) -> bool {
+    let Some((scope, key)) = value.split_once(':') else {
+        return false;
+    };
+    matches!(scope, "personal" | "team" | "organization")
+        && (3..=64).contains(&key.len())
+        && key.as_bytes().first().is_some_and(u8::is_ascii_lowercase)
+        && key.bytes().all(|character| {
+            character.is_ascii_lowercase() || character.is_ascii_digit() || character == b'-'
         })
 }
 
