@@ -294,7 +294,18 @@ export interface SubmitDeviceCapabilityReport {
   capabilities: DeviceCapabilityResult[]
 }
 
-export type DeviceFleetStatus = 'READY' | 'DEGRADED' | 'STALE'
+export type DeviceFleetStatus = 'READY' | 'DEGRADED' | 'NON_COMPLIANT' | 'STALE'
+
+export interface DeviceComplianceIssue {
+  key: string
+  detail: string
+}
+
+export interface DevicePolicy {
+  minimumDesktopVersion: string
+  staleAfterDays: number
+  requiredCapabilities: string[]
+}
 
 export interface DeviceFleetEntry {
   employeeId: string
@@ -306,6 +317,7 @@ export interface DeviceFleetEntry {
   displayScalePercents: number[]
   status: DeviceFleetStatus
   degradedCapabilities: string[]
+  complianceIssues: DeviceComplianceIssue[]
   reportedAt: string
 }
 
@@ -313,7 +325,9 @@ export interface DeviceFleetOverview {
   totalDevices: number
   readyDevices: number
   degradedDevices: number
+  nonCompliantDevices: number
   staleDevices: number
+  policy: DevicePolicy
   generatedAt: string
   devices: DeviceFleetEntry[]
 }

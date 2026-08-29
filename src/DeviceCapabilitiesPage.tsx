@@ -98,20 +98,22 @@ export function DeviceCapabilitiesPage({
       {fleet && <div className="device-fleet-summary">
         <article><Laptop size={17} /><strong>{fleet.totalDevices}</strong><small>设备总数</small></article>
         <article><CheckCircle2 size={17} /><strong>{fleet.readyDevices}</strong><small>状态正常</small></article>
+        <article><ShieldCheck size={17} /><strong>{fleet.nonCompliantDevices}</strong><small>不符合基线</small></article>
         <article><TriangleAlert size={17} /><strong>{fleet.degradedDevices}</strong><small>需要处理</small></article>
-        <article><Clock3 size={17} /><strong>{fleet.staleDevices}</strong><small>超过 7 天</small></article>
+        <article><Clock3 size={17} /><strong>{fleet.staleDevices}</strong><small>超过 {fleet.policy.staleAfterDays} 天</small></article>
       </div>}
+      {fleet && <div className="device-policy-bar"><ShieldCheck size={15} /><span><strong>公司设备基线</strong><small>最低桌面版本 v{fleet.policy.minimumDesktopVersion} · {fleet.policy.requiredCapabilities.length} 项必需能力 · {fleet.policy.staleAfterDays} 天未上报视为过期</small></span><em>{fleet.policy.requiredCapabilities.map((key) => capabilityLabel(key, connectors)).join('、') || '未设置必需能力'}</em></div>}
       <div className="device-fleet-filters">
-        {(['', 'READY', 'DEGRADED', 'STALE'] as const).map((value) => <button className={fleetStatus === value ? 'active' : ''} key={value || 'all'} onClick={() => setFleetStatus(value)} type="button">{fleetFilterLabel(value)}</button>)}
+        {(['', 'READY', 'NON_COMPLIANT', 'DEGRADED', 'STALE'] as const).map((value) => <button className={fleetStatus === value ? 'active' : ''} key={value || 'all'} onClick={() => setFleetStatus(value)} type="button">{fleetFilterLabel(value)}</button>)}
       </div>
       {fleetLoading && <div className="kit-empty">正在汇总团队设备…</div>}
       {!fleetLoading && fleet?.devices.length === 0 && <div className="kit-empty">没有符合条件的设备。</div>}
       {!fleetLoading && fleet && fleet.devices.length > 0 && <div className="device-fleet-table">
-        <div className="device-fleet-row heading"><span>员工与设备</span><span>环境</span><span>待处理能力</span><span>最近上报</span><span>状态</span></div>
+        <div className="device-fleet-row heading"><span>员工与设备</span><span>环境</span><span>整改原因</span><span>最近上报</span><span>状态</span></div>
         {fleet.devices.map((device) => <div className="device-fleet-row" key={`${device.employeeId}:${device.deviceId}`}>
           <span><strong>{device.employeeId}</strong><small>{device.deviceId.slice(0, 8)}</small></span>
           <span><strong>v{device.desktopVersion} · {platformLabel(device.platform)}</strong><small>{device.architecture} · {device.displayCount} 屏 · {device.displayScalePercents.join('% / ')}%</small></span>
-          <span><strong>{device.degradedCapabilities.length || '—'}</strong><small>{device.degradedCapabilities.map((key) => capabilityLabel(key, connectors)).join('、') || '无'}</small></span>
+          <span><strong>{device.complianceIssues.length + device.degradedCapabilities.length || '—'}</strong><small>{deviceIssueText(device, connectors)}</small></span>
           <span><strong>{formatTime(device.reportedAt)}</strong><small>{relativeReportAge(device.reportedAt)}</small></span>
           <em className={device.status.toLowerCase()}>{fleetStatusLabel(device.status)}</em>
         </div>)}
@@ -133,7 +135,13 @@ function fleetFilterLabel(status: '' | DeviceFleetStatus): string {
 }
 
 function fleetStatusLabel(status: DeviceFleetStatus): string {
-  return ({ READY: '正常', DEGRADED: '待处理', STALE: '长期未上报' })[status]
+  return ({ READY: '正常', DEGRADED: '待处理', NON_COMPLIANT: '不合规', STALE: '长期未上报' })[status]
+}
+
+function deviceIssueText(device: DeviceFleetOverview['devices'][number], connectors: ConnectorCatalogEntry[]): string {
+  const compliance = device.complianceIssues.map(({ detail }) => detail)
+  const degraded = device.degradedCapabilities.map((key) => capabilityLabel(key, connectors))
+  return [...compliance, ...degraded].join('、') || '无'
 }
 
 function relativeReportAge(value: string): string {
