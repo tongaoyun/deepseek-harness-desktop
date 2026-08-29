@@ -1,6 +1,6 @@
 import { invoke, isTauri } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
-import type { ConnectorRuntimeDefinition, TaskExecutionStep } from './types'
+import type { AllowedExtensionArtifact, ConnectorRuntimeDefinition, TaskExecutionStep } from './types'
 
 export interface HarnessRunInput {
   prompt: string
@@ -8,6 +8,7 @@ export interface HarnessRunInput {
   teamId: string
   sessionId?: string
   expertKitId?: string
+  allowedArtifacts: AllowedExtensionArtifact[]
   litellmBaseUrl: string
   knowledgeEndpoint: string
   connectors: ConnectorRuntimeDefinition[]

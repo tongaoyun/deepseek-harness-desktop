@@ -38,7 +38,7 @@ export function ExpertKitDetailsModal({
   const connectorById = new Map(connectors.map((connector) => [connector.id, connector]))
   const knowledgeByReference = new Map(knowledgeBases.map((knowledgeBase) => [knowledgeBase.reference, knowledgeBase]))
   const changes = expertKitChanges(kit)
-  const stateLabel = kit.localOnly ? '本地验收套件' : kit.installState === 'installed' ? '已安装' : kit.installState === 'update' ? '更新确认' : '安装确认'
+  const stateLabel = kit.localOnly ? '本地验收套件' : kit.installState === 'retired' ? '已下架' : kit.installState === 'installed' ? '已安装' : kit.installState === 'update' ? '更新确认' : '安装确认'
   const issues = [...kit.connectorIssues, ...kit.knowledgeIssues]
 
   return <div className="expert-modal-backdrop" role="presentation" onMouseDown={(event) => {
@@ -56,6 +56,11 @@ export function ExpertKitDetailsModal({
           ? <><CheckCircle2 size={15} /><span>当前员工所需的连接器、工具和知识库均已就绪</span></>
           : <><PlugZap size={15} /><span>安装后部分能力暂不可用：{issues.join('；')}</span></>}
       </div>
+
+      {kit.installState === 'retired' && <section className="expert-detail-section update-changes">
+        <strong>该专家套件已从公司目录下架，桌面端和 IM 均不会再加载或执行它。</strong>
+        <p>本地文件仅用于显示状态，可安全卸载；历史任务记录不会删除。</p>
+      </section>}
 
       {kit.installState === 'update' && <section className="expert-detail-section update-changes">
         <h3>从 v{kit.installedVersion} 更新的变化</h3>
@@ -83,9 +88,9 @@ export function ExpertKitDetailsModal({
       </section>
 
       <div className="expert-modal-actions">
-        {onRemove && <button className="danger" disabled={removing} onClick={onRemove} type="button"><Trash2 size={14} />{removing ? '正在移除…' : '移除本地套件'}</button>}
+        {onRemove && <button className="danger" disabled={removing} onClick={onRemove} type="button"><Trash2 size={14} />{removing ? '正在卸载…' : kit.localOnly ? '移除本地套件' : '卸载套件'}</button>}
         <button className="secondary" onClick={onClose} type="button">关闭</button>
-        {kit.installState === 'installed' ? <>
+        {kit.installState === 'retired' ? null : kit.installState === 'installed' ? <>
           {kit.serverWorkflows.length > 0 && <button className="secondary" onClick={onSchedule} type="button"><CalendarClock size={14} /> 创建定时任务</button>}
           <button onClick={onUse} type="button">{selected ? '正在使用' : '立即使用'}</button>
         </> : <button disabled={installing || !kit.sha256} onClick={onInstall} type="button">

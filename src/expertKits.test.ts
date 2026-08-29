@@ -63,6 +63,12 @@ describe('mergeExpertKits', () => {
     })
   })
 
+  it('marks a catalog kit removed from the control plane as retired', () => {
+    expect(mergeExpertKits([], [installed], [erpConnector])[0]).toMatchObject({
+      id: 'store-kit', installState: 'retired', localOnly: false,
+    })
+  })
+
   it('reports unavailable connectors and tools missing from referenced connectors', () => {
     const partial = mergeExpertKits([
       { ...catalogEntry, connectorRefs: ['erp-mcp', 'desktop-office'], requiredTools: ['sales_summary', 'office.xlsx.create'] },

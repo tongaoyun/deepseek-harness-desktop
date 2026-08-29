@@ -51,6 +51,8 @@ pub struct HarnessContext {
     knowledge_endpoint: String,
     #[serde(default)]
     connectors: Vec<ConnectorDefinition>,
+    #[serde(default)]
+    allowed_artifacts: Vec<expert_kits::AllowedExtensionArtifact>,
     model: String,
     model_api_key: String,
     access_token: String,
@@ -215,7 +217,7 @@ impl LocalImManager {
         client_secret: String,
         context: HarnessContext,
     ) -> Result<LocalImStatus, String> {
-        let profile = expert_kits::harness_profile(app, None, "")?;
+        let profile = expert_kits::harness_profile(app, None, "", &context.allowed_artifacts)?;
         let connectors = runtime_connectors(&context.connectors, &profile, false)?;
         let fingerprint = RuntimeFingerprint {
             skill_directories: profile.skill_directories,
@@ -475,6 +477,7 @@ fn validate_harness_context(value: &HarnessContext) -> Result<(), String> {
     }
     validate_http_url("LiteLLM", &value.litellm_base_url)?;
     validate_http_url("知识库", &value.knowledge_endpoint)?;
+    expert_kits::validate_allowed_artifacts(&value.allowed_artifacts)?;
     if value.model.trim().is_empty() || value.model.len() > 200 {
         return Err("模型名称无效".to_string());
     }

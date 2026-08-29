@@ -1,4 +1,4 @@
-import { BookOpenCheck, CheckCircle2, PlugZap, ShieldCheck, WandSparkles, X } from 'lucide-react'
+import { BookOpenCheck, CheckCircle2, PlugZap, ShieldCheck, Trash2, WandSparkles, X } from 'lucide-react'
 import { expertKitPermissionDetails, permissionModeLabel } from './expertKitDetails'
 import { skillPermissionExpansion, type SkillView } from './skills'
 import type { ConnectorCatalogEntry, KnowledgeBaseEntry } from './types'
@@ -8,19 +8,21 @@ interface SkillDetailsModalProps {
   connectors: ConnectorCatalogEntry[]
   knowledgeBases: KnowledgeBaseEntry[]
   installing: boolean
+  removing: boolean
   selected: boolean
   onClose: () => void
   onInstall: () => void
+  onRemove?: () => void
   onUse: () => void
 }
 
 export function SkillDetailsModal({
-  skill, connectors, knowledgeBases, installing, selected, onClose, onInstall, onUse,
+  skill, connectors, knowledgeBases, installing, removing, selected, onClose, onInstall, onRemove, onUse,
 }: SkillDetailsModalProps) {
   const connectorById = new Map(connectors.map((connector) => [connector.id, connector]))
   const knowledgeByReference = new Map(knowledgeBases.map((entry) => [entry.reference, entry]))
   const issues = [...skill.connectorIssues, ...skill.knowledgeIssues]
-  const state = skill.installState === 'installed' ? '已安装' : skill.installState === 'update' ? '更新确认' : '安装确认'
+  const state = skill.installState === 'retired' ? '已下架' : skill.installState === 'installed' ? '已安装' : skill.installState === 'update' ? '更新确认' : '安装确认'
   return <div className="expert-modal-backdrop" role="presentation" onMouseDown={(event) => {
     if (event.target === event.currentTarget) onClose()
   }}>
@@ -39,6 +41,10 @@ export function SkillDetailsModal({
         <h3>从 v{skill.installedVersion} 更新</h3>
         {skillPermissionExpansion(skill) && <strong>本次更新扩大了权限范围，请重点确认。</strong>}
         <p>独立 Skill 制品内容或触发场景已更新，安装后对新会话生效。</p>
+      </section>}
+      {skill.installState === 'retired' && <section className="expert-detail-section update-changes">
+        <strong>该 Skill 已从公司目录下架，桌面端和 IM 均不会再加载或执行它。</strong>
+        <p>本地文件仅用于显示状态，可安全卸载；历史任务记录不会删除。</p>
       </section>}
       <section className="expert-detail-section">
         <h3><ShieldCheck size={15} /> 权限声明</h3>
@@ -60,8 +66,9 @@ export function SkillDetailsModal({
         </div>
       </section>
       <div className="expert-modal-actions">
+        {onRemove && <button className="danger" disabled={removing} onClick={onRemove} type="button"><Trash2 size={14} />{removing ? '正在卸载…' : '卸载 Skill'}</button>}
         <button className="secondary" onClick={onClose} type="button">关闭</button>
-        {skill.installState === 'installed'
+        {skill.installState === 'retired' ? null : skill.installState === 'installed'
           ? <button onClick={onUse} type="button">{selected ? '正在使用' : '立即使用'}</button>
           : <button disabled={installing || !skill.sha256} onClick={onInstall} type="button">
             {installing ? '正在校验并安装…' : skill.installState === 'update' ? '确认更新' : '确认安装'}

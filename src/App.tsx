@@ -46,6 +46,7 @@ import {
   installExpertKit,
   listInstalledExpertKits,
   mergeExpertKits,
+  removeCatalogExtension,
   removeDeveloperExpertKit,
   type ExpertKitView,
 } from './expertKits'
@@ -84,6 +85,7 @@ import { buildRuntimeConnectorCatalog } from './connectors'
 import { KnowledgeBasePage } from './KnowledgeBasePage'
 import { DeviceCapabilitiesPage } from './DeviceCapabilitiesPage'
 import { mergeSkills, type SkillView } from './skills'
+import { allowedExtensionArtifacts } from './extensionPolicy'
 import './styles.css'
 
 const extensionNav = [
@@ -117,10 +119,12 @@ export default function App() {
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBaseEntry[]>([])
   const [expertKitsLoading, setExpertKitsLoading] = useState(false)
   const [expertKitError, setExpertKitError] = useState('')
+  const [extensionSyncError, setExtensionSyncError] = useState('')
   const [developerKitMode, setDeveloperKitMode] = useState(false)
   const [developerKitBusy, setDeveloperKitBusy] = useState(false)
   const [installingKitId, setInstallingKitId] = useState('')
   const [installingSkillId, setInstallingSkillId] = useState('')
+  const [removingCatalogId, setRemovingCatalogId] = useState('')
   const [activeExpertKitId, setActiveExpertKitId] = useState('')
   const [activeSkillId, setActiveSkillId] = useState('')
   const [selectedExpertKitId, setSelectedExpertKitId] = useState('')
@@ -134,6 +138,10 @@ export default function App() {
   const [localFileError, setLocalFileError] = useState('')
   const [selectedModel, setSelectedModel] = useState('')
   const [modelMenuOpen, setModelMenuOpen] = useState(false)
+  const allowedArtifacts = useMemo(
+    () => allowedExtensionArtifacts(expertKitCatalog, skills),
+    [expertKitCatalog, skills],
+  )
 
   useEffect(() => {
     void developerExpertKitInstallEnabled().then(setDeveloperKitMode).catch(() => undefined)
@@ -169,16 +177,20 @@ export default function App() {
   useEffect(() => {
     if (!bootstrap || !user) return
     const controller = new AbortController()
-    setExpertKitsLoading(true)
-    setExpertKitError('')
-    Promise.allSettled([
-      loadExpertKits(bootstrap.endpoints.expertKits, user.userId, accessToken, controller.signal),
-      listInstalledExpertKits(),
-      loadSkills(bootstrap.endpoints.skills, user.userId, accessToken, controller.signal),
-      loadConnectors(bootstrap.endpoints.connectors, user.userId, accessToken, controller.signal),
-      loadKnowledgeBases(bootstrap.endpoints.knowledge, user.userId, user.department, accessToken, controller.signal),
-    ])
-      .then(([catalogResult, installedResult, skillsResult, connectorsResult, knowledgeResult]) => {
+    let syncing = false
+    const syncExtensions = async (showLoading: boolean) => {
+      if (syncing) return
+      syncing = true
+      if (showLoading) setExpertKitsLoading(true)
+      setExtensionSyncError('')
+      const [catalogResult, installedResult, skillsResult, connectorsResult, knowledgeResult] = await Promise.allSettled([
+        loadExpertKits(bootstrap.endpoints.expertKits, user.userId, accessToken, controller.signal),
+        listInstalledExpertKits(),
+        loadSkills(bootstrap.endpoints.skills, user.userId, accessToken, controller.signal),
+        loadConnectors(bootstrap.endpoints.connectors, user.userId, accessToken, controller.signal),
+        loadKnowledgeBases(bootstrap.endpoints.knowledge, user.userId, user.department, accessToken, controller.signal),
+      ])
+      try {
         if (controller.signal.aborted) return
         const catalog = catalogResult.status === 'fulfilled' ? catalogResult.value : []
         const installed = installedResult.status === 'fulfilled' ? installedResult.value : []
@@ -196,11 +208,16 @@ export default function App() {
             ? [result.reason instanceof Error ? result.reason.message : String(result.reason)]
             : [])
         if (failures.length > 0) {
-          setExpertKitError(`部分企业能力同步失败：${failures.join('；')}`)
+          setExtensionSyncError(`部分企业能力同步失败：${failures.join('；')}`)
         }
-      })
-      .finally(() => { if (!controller.signal.aborted) setExpertKitsLoading(false) })
-    return () => controller.abort()
+      } finally {
+        syncing = false
+        if (showLoading && !controller.signal.aborted) setExpertKitsLoading(false)
+      }
+    }
+    void syncExtensions(true)
+    const timer = window.setInterval(() => void syncExtensions(false), 60_000)
+    return () => { window.clearInterval(timer); controller.abort() }
   }, [accessToken, bootstrap, user])
 
   useEffect(() => {
@@ -211,11 +228,12 @@ export default function App() {
       litellmBaseUrl: bootstrap.endpoints.litellm,
       knowledgeEndpoint: resolveControlPlaneEndpoint(bootstrap.endpoints.knowledge),
       connectors: buildRuntimeConnectorCatalog(connectors, bootstrap.endpoints.erpMcp),
+      allowedArtifacts,
       model: selectedModel || bootstrap.models[0] || 'deepseek-v4-flash',
       modelApiKey: bootstrap.modelApiKey,
       accessToken,
     }).catch(() => undefined)
-  }, [accessToken, authState, bootstrap, connectors, selectedModel, user])
+  }, [accessToken, allowedArtifacts, authState, bootstrap, connectors, selectedModel, user])
 
   useEffect(() => {
     let disposed = false
@@ -364,6 +382,7 @@ export default function App() {
         litellmBaseUrl: bootstrap.endpoints.litellm,
         knowledgeEndpoint: resolveControlPlaneEndpoint(bootstrap.endpoints.knowledge),
         connectors: runtimeConnectors,
+        allowedArtifacts,
         model: activeModel,
         modelApiKey: bootstrap.modelApiKey,
         accessToken,
@@ -460,18 +479,66 @@ export default function App() {
     setDeveloperKitBusy(true)
     setExpertKitError('')
     try {
+      await Promise.all([shutdownHarness(), stopLocalImRuntime()])
       if (selectedExpertKitId === kit.id) {
-        await shutdownHarness()
         setSelectedExpertKitId('')
         setHarnessSessionId('')
       }
       await removeDeveloperExpertKit(kit.id, kit.version)
       setActiveExpertKitId('')
       await refreshInstalledKits()
+      if (bootstrap && user) {
+        await startLocalIm({
+          employeeId: user.userId,
+          teamId: user.department,
+          litellmBaseUrl: bootstrap.endpoints.litellm,
+          knowledgeEndpoint: resolveControlPlaneEndpoint(bootstrap.endpoints.knowledge),
+          connectors: runtimeConnectors,
+          allowedArtifacts,
+          model: activeModel,
+          modelApiKey: bootstrap.modelApiKey,
+          accessToken,
+        }).catch(() => undefined)
+      }
     } catch (error) {
       setExpertKitError(error instanceof Error ? error.message : String(error))
     } finally {
       setDeveloperKitBusy(false)
+    }
+  }
+
+  const removeCatalogArtifact = async (kind: 'expert-kit' | 'skill', id: string) => {
+    if (removingCatalogId) return
+    const label = kind === 'skill' ? 'Skill' : '专家套件'
+    if (!window.confirm(`卸载这个${label}及其所有本地正式版本？历史任务记录不会删除。`)) return
+    setRemovingCatalogId(id)
+    setExpertKitError('')
+    try {
+      await Promise.all([shutdownHarness(), stopLocalImRuntime()])
+      await removeCatalogExtension(id, kind)
+      if (selectedExpertKitId === id) setSelectedExpertKitId('')
+      if (selectedSkillId === id) setSelectedSkillId('')
+      setHarnessSessionId('')
+      setActiveExpertKitId('')
+      setActiveSkillId('')
+      await refreshInstalledKits()
+      if (bootstrap && user) {
+        await startLocalIm({
+          employeeId: user.userId,
+          teamId: user.department,
+          litellmBaseUrl: bootstrap.endpoints.litellm,
+          knowledgeEndpoint: resolveControlPlaneEndpoint(bootstrap.endpoints.knowledge),
+          connectors: runtimeConnectors,
+          allowedArtifacts,
+          model: activeModel,
+          modelApiKey: bootstrap.modelApiKey,
+          accessToken,
+        }).catch(() => undefined)
+      }
+    } catch (error) {
+      setExpertKitError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setRemovingCatalogId('')
     }
   }
 
@@ -521,6 +588,7 @@ export default function App() {
         litellmBaseUrl: bootstrap.endpoints.litellm,
         knowledgeEndpoint: resolveControlPlaneEndpoint(bootstrap.endpoints.knowledge),
         connectors: runtimeConnectors,
+        allowedArtifacts,
         model: activeModel,
         modelApiKey: bootstrap.modelApiKey,
         accessToken,
@@ -633,13 +701,14 @@ export default function App() {
               {expertKitsLoading && <div className="kit-empty">正在同步公司专家套件…</div>}
               {!expertKitsLoading && expertKits.length === 0 && <div className="kit-empty">控制中心尚未发布专家套件</div>}
               {expertKitError && <div className="kit-error">{expertKitError}</div>}
+              {extensionSyncError && <div className="kit-error">{extensionSyncError}</div>}
               {developerKitMode && <div className="developer-kit-bar">
                 <span><strong>开发者验收模式</strong><small>本地套件不会上传或进入公司目录，仍受权限和逐次审批约束。</small></span>
                 <button disabled={developerKitBusy} onClick={() => void installLocalAcceptanceKit()} type="button"><PackagePlus size={14} />{developerKitBusy ? '正在处理…' : '安装本地验收包'}</button>
               </div>}
               <div className="kit-grid">{expertKits.map((kit) => {
                 const installing = installingKitId === kit.id
-                const stateLabel = kit.localOnly ? '本地验收' : kit.installState === 'installed' ? '已安装' : kit.installState === 'update' ? '可更新' : '可安装'
+                const stateLabel = kit.localOnly ? '本地验收' : kit.installState === 'retired' ? '已下架' : kit.installState === 'installed' ? '已安装' : kit.installState === 'update' ? '可更新' : '可安装'
                 return <article key={kit.id}>
                   <div className="kit-card-head"><span className={`kit-state ${kit.installState}`}>{stateLabel}</span><small>v{kit.version}</small></div>
                   <h3>{kit.name}</h3>
@@ -656,12 +725,13 @@ export default function App() {
                       : `部分能力待启用：${[...kit.connectorIssues, ...kit.knowledgeIssues].join('；')}`}
                   </div>
                   {kit.installState === 'update' && <div className="kit-version-note">已安装 v{kit.installedVersion}</div>}
+                  {kit.installState === 'retired' && <div className="kit-version-note">已停止加载，可卸载本地文件</div>}
                   <button
                     className="kit-install"
-                    disabled={installing || (!kit.sha256 && kit.installState !== 'installed')}
+                    disabled={installing || (!kit.sha256 && !['installed', 'retired'].includes(kit.installState))}
                     onClick={() => setActiveExpertKitId(kit.id)}
                     type="button"
-                  >{installing ? '正在校验并安装…' : kit.installState === 'installed' ? '查看详情' : kit.installState === 'update' ? '查看更新' : '查看并安装'}</button>
+                  >{installing ? '正在校验并安装…' : kit.installState === 'retired' ? '查看并卸载' : kit.installState === 'installed' ? '查看详情' : kit.installState === 'update' ? '查看更新' : '查看并安装'}</button>
                 </article>
               })}</div>
             </>}
@@ -669,9 +739,10 @@ export default function App() {
               {expertKitsLoading && <div className="kit-empty">正在同步公司技能…</div>}
               {!expertKitsLoading && skillViews.length === 0 && <div className="kit-empty">控制中心尚未发布独立技能</div>}
               {expertKitError && <div className="kit-error">{expertKitError}</div>}
+              {extensionSyncError && <div className="kit-error">{extensionSyncError}</div>}
               <div className="kit-grid">{skillViews.map((skill) => {
                 const installed = skill.installState === 'installed'
-                const stateLabel = installed ? '已安装' : skill.installState === 'update' ? '可更新' : '可安装'
+                const stateLabel = skill.installState === 'retired' ? '已下架' : installed ? '已安装' : skill.installState === 'update' ? '可更新' : '可安装'
                 return <article key={skill.id}>
                   <div className="kit-card-head"><span className={`kit-state ${skill.installState}`}>{stateLabel}</span><small>v{skill.version}</small></div>
                   <h3>{skill.name}</h3>
@@ -679,8 +750,9 @@ export default function App() {
                   <div className="kit-capabilities">{skill.triggers.slice(0, 3).map((trigger) => <small key={trigger}>{trigger}</small>)}</div>
                   <div className={`kit-readiness ${skill.readiness}`}>{skill.readiness === 'ready' ? '所需能力已就绪' : '部分依赖暂不可用'}</div>
                   {skill.installState === 'update' && <div className="kit-version-note">已安装 v{skill.installedVersion}</div>}
+                  {skill.installState === 'retired' && <div className="kit-version-note">已停止加载，可卸载本地文件</div>}
                   <button className="kit-install" onClick={() => setActiveSkillId(skill.id)} type="button">
-                    {installed ? '查看详情' : skill.installState === 'update' ? '查看更新' : '查看并安装'}
+                    {skill.installState === 'retired' ? '查看并卸载' : installed ? '查看详情' : skill.installState === 'update' ? '查看更新' : '查看并安装'}
                   </button>
                 </article>
               })}</div>
@@ -689,6 +761,7 @@ export default function App() {
               {expertKitsLoading && <div className="kit-empty">正在同步企业连接器…</div>}
               {!expertKitsLoading && connectors.length === 0 && <div className="kit-empty">控制中心尚未配置连接器</div>}
               {expertKitError && <div className="kit-error">{expertKitError}</div>}
+              {extensionSyncError && <div className="kit-error">{extensionSyncError}</div>}
               <div className="kit-grid">{connectors.map((connector) => <article key={connector.id}>
                 <div className="kit-card-head"><span className={`connector-state ${connector.status}`}>{connectorStatusLabel(connector.status)}</span><small>{connector.managed ? '公司托管' : '员工配置'}</small></div>
                 <h3>{connector.name}</h3>
@@ -725,6 +798,7 @@ export default function App() {
               employeeId={user.userId}
               teamId={user.department}
               connectors={runtimeConnectors}
+              allowedArtifacts={allowedArtifacts}
               litellmBaseUrl={bootstrap.endpoints.litellm}
               knowledgeEndpoint={resolveControlPlaneEndpoint(bootstrap.endpoints.knowledge)}
               model={activeModel}
@@ -747,11 +821,13 @@ export default function App() {
         connectors={connectors}
         knowledgeBases={knowledgeBases}
         installing={installingKitId === activeExpertKit.id}
-        removing={developerKitBusy && activeExpertKit.localOnly}
+        removing={(developerKitBusy && activeExpertKit.localOnly) || removingCatalogId === activeExpertKit.id}
         selected={selectedExpertKitId === activeExpertKit.id}
         onClose={() => setActiveExpertKitId('')}
         onInstall={() => void installKit(activeExpertKit)}
-        onRemove={activeExpertKit.localOnly ? () => void removeLocalAcceptanceKit(activeExpertKit) : undefined}
+        onRemove={activeExpertKit.localOnly
+          ? () => void removeLocalAcceptanceKit(activeExpertKit)
+          : activeExpertKit.installed ? () => void removeCatalogArtifact('expert-kit', activeExpertKit.id) : undefined}
         onSchedule={() => { setActiveExpertKitId(''); setPage('schedules') }}
         onUse={() => useExpertKit(activeExpertKit)}
       />}
@@ -760,9 +836,11 @@ export default function App() {
         connectors={connectors}
         knowledgeBases={knowledgeBases}
         installing={installingSkillId === activeSkill.id}
+        removing={removingCatalogId === activeSkill.id}
         selected={selectedSkillId === activeSkill.id}
         onClose={() => setActiveSkillId('')}
         onInstall={() => void installSkill(activeSkill)}
+        onRemove={activeSkill.installed ? () => void removeCatalogArtifact('skill', activeSkill.id) : undefined}
         onUse={() => useSkill(activeSkill)}
       />}
     </div>

@@ -34,4 +34,10 @@ describe('standalone skill catalog', () => {
     const expert = { ...installed, manifest: { ...installed.manifest, kind: 'expert-kit' as const } }
     expect(mergeSkills([catalog], [expert])[0].installState).toBe('available')
   })
+
+  it('keeps a removed catalog Skill visible but marks it retired', () => {
+    expect(mergeSkills([], [installed])[0]).toMatchObject({
+      id: 'document-insight', installState: 'retired', installedVersion: '1.0.0',
+    })
+  })
 })

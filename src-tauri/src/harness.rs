@@ -25,6 +25,8 @@ pub struct HarnessRunRequest {
     team_id: String,
     session_id: Option<String>,
     expert_kit_id: Option<String>,
+    #[serde(default)]
+    allowed_artifacts: Vec<expert_kits::AllowedExtensionArtifact>,
     litellm_base_url: String,
     knowledge_endpoint: String,
     #[serde(default)]
@@ -125,6 +127,7 @@ pub async fn run_harness(
         &app,
         request.expert_kit_id.as_deref(),
         request.prompt.trim(),
+        &request.allowed_artifacts,
     )?;
     if !profile.allow_local_files && !profile.allow_shell && !request.local_file_root_ids.is_empty()
     {
@@ -597,6 +600,7 @@ fn validate_run_request(request: &HarnessRunRequest) -> Result<(), String> {
     validate_http_url("LiteLLM", &request.litellm_base_url)?;
     validate_http_url("知识库", &request.knowledge_endpoint)?;
     validate_connector_catalog(&request.connectors)?;
+    expert_kits::validate_allowed_artifacts(&request.allowed_artifacts)?;
     if request.model.trim().is_empty() || request.model.len() > 200 {
         return Err("模型名称无效".to_string());
     }
@@ -803,6 +807,7 @@ mod tests {
             team_id: "crossborder".to_string(),
             session_id: None,
             expert_kit_id: None,
+            allowed_artifacts: Vec::new(),
             litellm_base_url: "http://litellm.internal/v1".to_string(),
             knowledge_endpoint: "http://control-plane.internal/api/v1/knowledge-bases".to_string(),
             connectors: vec![ConnectorDefinition {

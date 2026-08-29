@@ -7,7 +7,7 @@ import type {
   SkillCatalogEntry,
 } from './types'
 
-export type SkillInstallState = 'available' | 'installed' | 'update'
+export type SkillInstallState = 'available' | 'installed' | 'update' | 'retired'
 
 export interface SkillView extends SkillCatalogEntry {
   installState: SkillInstallState
@@ -31,10 +31,7 @@ export function mergeSkills(
   }
   const connectorById = new Map(connectors.map((connector) => [connector.id, connector]))
   const knowledgeReferences = new Set(knowledgeBases.map((entry) => entry.reference))
-  return catalog.map((skill) => {
-    const connectorRefs = skill.connectorRefs ?? []
-    const requiredTools = skill.requiredTools ?? []
-    const knowledgeBaseRefs = skill.knowledgeBaseRefs ?? []
+  const dependencyState = (connectorRefs: string[], requiredTools: string[], knowledgeBaseRefs: string[]) => {
     const referenced = connectorRefs.flatMap((id) => connectorById.get(id) ? [connectorById.get(id)!] : [])
     const connectorIssues = connectorRefs.flatMap((id) => {
       const connector = connectorById.get(id)
@@ -47,6 +44,16 @@ export function mergeSkills(
     }
     const knowledgeIssues = knowledgeBaseRefs.filter((reference) => !knowledgeReferences.has(reference))
       .map((reference) => `${reference} 不存在或无访问权限`)
+    return {
+      readiness: connectorIssues.length || knowledgeIssues.length ? 'partial' as const : 'ready' as const,
+      connectorIssues,
+      knowledgeIssues,
+    }
+  }
+  const views = catalog.map((skill): SkillView => {
+    const connectorRefs = skill.connectorRefs ?? []
+    const requiredTools = skill.requiredTools ?? []
+    const knowledgeBaseRefs = skill.knowledgeBaseRefs ?? []
     const local = localById.get(skill.id)
     return {
       ...skill,
@@ -56,14 +63,39 @@ export function mergeSkills(
       requiredTools,
       knowledgeBaseRefs,
       permissions: normalizePermissions(skill.permissions),
-      readiness: connectorIssues.length || knowledgeIssues.length ? 'partial' : 'ready',
-      connectorIssues,
-      knowledgeIssues,
+      ...dependencyState(connectorRefs, requiredTools, knowledgeBaseRefs),
       installed: local,
       installedVersion: local?.manifest.version,
       installState: local?.manifest.version === skill.version ? 'installed' : local ? 'update' : 'available',
     }
   })
+  const catalogIds = new Set(catalog.map((skill) => skill.id))
+  for (const local of localById.values()) {
+    if (catalogIds.has(local.manifest.id)) continue
+    const manifest = local.manifest
+    const connectorRefs = manifest.connectorRefs ?? []
+    const requiredTools = manifest.requiredTools ?? []
+    const knowledgeBaseRefs = manifest.knowledgeBaseRefs ?? []
+    views.push({
+      id: manifest.id,
+      name: manifest.name,
+      version: manifest.version,
+      summary: manifest.summary,
+      sourceKitId: '',
+      triggers: manifest.triggers ?? [],
+      minimumDesktopVersion: manifest.minimumDesktopVersion,
+      connectorRefs,
+      requiredTools,
+      knowledgeBaseRefs,
+      permissions: normalizePermissions(manifest.permissions),
+      sha256: '',
+      installed: local,
+      installedVersion: manifest.version,
+      installState: 'retired',
+      ...dependencyState(connectorRefs, requiredTools, knowledgeBaseRefs),
+    })
+  }
+  return views
 }
 
 export function skillPermissionExpansion(skill: SkillView): boolean {

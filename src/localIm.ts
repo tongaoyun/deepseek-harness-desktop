@@ -1,5 +1,5 @@
 import { invoke, isTauri } from '@tauri-apps/api/core'
-import type { ConnectorRuntimeDefinition } from './types'
+import type { AllowedExtensionArtifact, ConnectorRuntimeDefinition } from './types'
 
 export type ImAccessPolicy = 'open' | 'pairing'
 
@@ -9,6 +9,7 @@ export interface LocalImHarnessContext {
   litellmBaseUrl: string
   knowledgeEndpoint: string
   connectors: ConnectorRuntimeDefinition[]
+  allowedArtifacts: AllowedExtensionArtifact[]
   model: string
   modelApiKey: string
   accessToken: string

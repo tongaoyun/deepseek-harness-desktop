@@ -8,7 +8,7 @@ import type {
   KnowledgeBaseEntry,
 } from './types'
 
-export type ExpertKitInstallState = 'available' | 'installed' | 'update'
+export type ExpertKitInstallState = 'available' | 'installed' | 'update' | 'retired'
 
 export interface ExpertKitView extends ExpertKitCatalogEntry {
   installState: ExpertKitInstallState
@@ -63,6 +63,11 @@ export async function installDeveloperExpertKit(): Promise<InstalledExpertKit | 
 export async function removeDeveloperExpertKit(id: string, version: string): Promise<void> {
   if (!isTauri()) throw new Error('请在小胤桌面客户端中移除本地验收套件')
   await invoke('remove_developer_expert_kit', { id, version })
+}
+
+export async function removeCatalogExtension(id: string, kind: 'expert-kit' | 'skill'): Promise<void> {
+  if (!isTauri()) throw new Error('请在小胤桌面客户端中卸载扩展')
+  await invoke('remove_catalog_extension', { id, kind })
 }
 
 export function mergeExpertKits(
@@ -141,7 +146,7 @@ export function mergeExpertKits(
       serverWorkflows: local.manifest.serverWorkflows,
       sha256: '',
       ...readiness(local.manifest.connectorRefs, local.manifest.requiredTools, local.manifest.knowledgeBaseRefs ?? []),
-      installState: 'installed',
+      installState: local.source === 'developer' ? 'installed' : 'retired',
       installedVersion: local.manifest.version,
       installed: local,
       localOnly: local.source === 'developer',

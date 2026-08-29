@@ -61,10 +61,11 @@ export function ImChannelsPage(harness: Props) {
     litellmBaseUrl: harness.litellmBaseUrl,
     knowledgeEndpoint: harness.knowledgeEndpoint,
     connectors: harness.connectors,
+    allowedArtifacts: harness.allowedArtifacts,
     model: harness.model,
     modelApiKey: harness.modelApiKey,
     accessToken: harness.accessToken,
-  }), [harness.accessToken, harness.connectors, harness.employeeId, harness.knowledgeEndpoint, harness.litellmBaseUrl, harness.model, harness.modelApiKey, harness.teamId])
+  }), [harness.accessToken, harness.allowedArtifacts, harness.connectors, harness.employeeId, harness.knowledgeEndpoint, harness.litellmBaseUrl, harness.model, harness.modelApiKey, harness.teamId])
 
   const save = async (event: FormEvent) => {
     event.preventDefault()

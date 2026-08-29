@@ -428,6 +428,7 @@ pub fn run() {
             expert_kits::developer_expert_kit_install_enabled,
             expert_kits::install_developer_expert_kit,
             expert_kits::remove_developer_expert_kit,
+            expert_kits::remove_catalog_extension,
             local_files::authorize_local_directory,
             local_files::revoke_local_directory,
             local_files::clear_local_directories,

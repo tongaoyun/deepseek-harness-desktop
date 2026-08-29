@@ -231,6 +231,13 @@ export interface ExpertKitDownload {
   expiresAt: string
 }
 
+export interface AllowedExtensionArtifact {
+  kind: 'expert-kit' | 'skill'
+  id: string
+  version: string
+  sha256: string
+}
+
 export type PermissionMode = 'deny' | 'allow' | 'approval'
 
 export interface ExpertKitPermissions {

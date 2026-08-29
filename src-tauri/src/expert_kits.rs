@@ -41,6 +41,15 @@ pub struct ExpertKitInstallRequest {
     url: String,
 }
 
+#[derive(Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AllowedExtensionArtifact {
+    kind: String,
+    id: String,
+    version: String,
+    sha256: String,
+}
+
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ExpertKitManifest {
@@ -367,6 +376,49 @@ pub fn remove_developer_expert_kit(
     Ok(())
 }
 
+#[tauri::command]
+pub fn remove_catalog_extension(
+    app: tauri::AppHandle,
+    id: String,
+    kind: String,
+) -> Result<(), String> {
+    validate_identifier(&id)?;
+    validate_artifact_kind(&kind)?;
+    let root = expert_kits_root(&app)?;
+    let extension_directory = root.join(&id);
+    if !extension_directory.exists() {
+        return Ok(());
+    }
+    let mut removals = Vec::new();
+    for version_directory in child_directories(&extension_directory)? {
+        let Ok(record) = load_install_record(&version_directory) else {
+            continue;
+        };
+        if record.source != InstallSource::Catalog {
+            continue;
+        }
+        let manifest = load_and_validate_manifest(&version_directory, Some(&id), None)?;
+        if manifest.kind != kind {
+            return Err("本地扩展类型与卸载请求不一致".to_string());
+        }
+        removals.push(version_directory);
+    }
+    for version_directory in removals {
+        fs::remove_dir_all(&version_directory)
+            .map_err(|error| format!("无法卸载本地扩展：{error}"))?;
+    }
+    if extension_directory.exists()
+        && fs::read_dir(&extension_directory)
+            .map_err(|error| format!("无法检查扩展目录：{error}"))?
+            .next()
+            .is_none()
+    {
+        fs::remove_dir(&extension_directory)
+            .map_err(|error| format!("无法清理扩展目录：{error}"))?;
+    }
+    Ok(())
+}
+
 fn require_developer_install() -> Result<(), String> {
     developer_expert_kit_install_enabled()
         .then_some(())
@@ -440,8 +492,13 @@ pub fn harness_profile(
     app: &tauri::AppHandle,
     selected_kit_id: Option<&str>,
     user_prompt: &str,
+    allowed_artifacts: &[AllowedExtensionArtifact],
 ) -> Result<ExpertKitHarnessProfile, String> {
-    let installed = list_installed_expert_kits(app.clone())?;
+    validate_allowed_artifacts(allowed_artifacts)?;
+    let installed = list_installed_expert_kits(app.clone())?
+        .into_iter()
+        .filter(|artifact| artifact_is_executable(artifact, allowed_artifacts))
+        .collect::<Vec<_>>();
     let mut newest = std::collections::BTreeMap::<String, InstalledExpertKit>::new();
     for kit in installed {
         newest.entry(kit.manifest.id.clone()).or_insert(kit);
@@ -469,7 +526,7 @@ pub fn harness_profile(
     };
     let kit = newest
         .get(selected_kit_id)
-        .ok_or_else(|| format!("专家套件尚未安装：{selected_kit_id}"))?;
+        .ok_or_else(|| format!("扩展已下架、待更新或尚未安装：{selected_kit_id}"))?;
     let mut skill_directories = Vec::new();
     append_skill_directories(kit, &mut skill_directories, &mut HashSet::new())?;
     let office_tools = kit
@@ -567,6 +624,50 @@ pub fn harness_profile(
         allowed_computer_tools: computer_tools,
         allow_connector_write: kit.manifest.permissions.connector_write() != PermissionMode::Deny,
         prompt,
+    })
+}
+
+pub fn validate_allowed_artifacts(artifacts: &[AllowedExtensionArtifact]) -> Result<(), String> {
+    if artifacts.len() > 256 {
+        return Err("允许执行的扩展数量不能超过 256 个".to_string());
+    }
+    let mut coordinates = HashSet::new();
+    for artifact in artifacts {
+        validate_artifact_kind(&artifact.kind)?;
+        validate_identifier(&artifact.id)?;
+        Version::parse(&artifact.version).map_err(|error| format!("扩展版本无效：{error}"))?;
+        validate_sha256(&artifact.sha256)?;
+        if !coordinates.insert((artifact.kind.as_str(), artifact.id.as_str())) {
+            return Err(format!("允许执行的扩展重复：{}", artifact.id));
+        }
+    }
+    Ok(())
+}
+
+fn validate_artifact_kind(kind: &str) -> Result<(), String> {
+    if matches!(kind, "expert-kit" | "skill") {
+        Ok(())
+    } else {
+        Err("扩展类型无效".to_string())
+    }
+}
+
+fn artifact_is_executable(
+    artifact: &InstalledExpertKit,
+    allowed_artifacts: &[AllowedExtensionArtifact],
+) -> bool {
+    if artifact.source == InstallSource::Developer {
+        return developer_expert_kit_install_enabled();
+    }
+    let Some(allowed) = allowed_artifacts.iter().find(|allowed| {
+        allowed.kind == artifact.manifest.kind
+            && allowed.id == artifact.manifest.id
+            && allowed.version == artifact.manifest.version
+    }) else {
+        return false;
+    };
+    load_install_record(Path::new(&artifact.install_path)).is_ok_and(|record| {
+        record.source == InstallSource::Catalog && record.package_sha256 == allowed.sha256
     })
 }
 
@@ -1064,6 +1165,45 @@ mod tests {
                 .err()
                 .unwrap();
         assert!(collision.contains("同版本套件"));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn catalog_artifacts_require_an_exact_active_coordinate_and_digest() {
+        let root = std::env::temp_dir().join(format!(
+            "xiaoyin-policy-test-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(root.join(".xiaoyin-plugin")).unwrap();
+        write_install_record(&root, &"a".repeat(64), InstallSource::Catalog).unwrap();
+        let manifest: ExpertKitManifest = serde_json::from_str(r#"{
+          "schemaVersion":"1","kind":"skill","id":"document-insight","name":"文档洞察",
+          "version":"1.0.0","summary":"分析文档","skills":[{"id":"document-insight","path":"skills/document-insight/SKILL.md"}],
+          "permissions":{"localFiles":"approval","shell":"deny","connectorRead":"deny","connectorWrite":"deny"}
+        }"#).unwrap();
+        let installed = installed_kit(manifest, &root, InstallSource::Catalog);
+        let allowed = AllowedExtensionArtifact {
+            kind: "skill".to_string(),
+            id: "document-insight".to_string(),
+            version: "1.0.0".to_string(),
+            sha256: "a".repeat(64),
+        };
+        assert!(validate_allowed_artifacts(std::slice::from_ref(&allowed)).is_ok());
+        assert!(artifact_is_executable(
+            &installed,
+            std::slice::from_ref(&allowed)
+        ));
+        assert!(!artifact_is_executable(
+            &installed,
+            &[AllowedExtensionArtifact {
+                version: "1.1.0".to_string(),
+                ..allowed
+            }],
+        ));
         fs::remove_dir_all(root).unwrap();
     }
 

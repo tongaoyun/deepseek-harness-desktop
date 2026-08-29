@@ -21,7 +21,7 @@ describe('local IM native bridge', () => {
       harness: {
         employeeId: 'employee-1',
         teamId: '跨境运营',
-        litellmBaseUrl: 'http://litellm/v1', knowledgeEndpoint: 'http://control-plane/api/v1/knowledge-bases', connectors: [],
+        litellmBaseUrl: 'http://litellm/v1', knowledgeEndpoint: 'http://control-plane/api/v1/knowledge-bases', connectors: [], allowedArtifacts: [],
         model: 'deepseek-v4-flash', modelApiKey: 'model-token', accessToken: 'employee-token',
       },
     })
@@ -36,7 +36,7 @@ describe('local IM native bridge', () => {
     await startLocalIm({
       employeeId: 'employee-1',
       teamId: '跨境运营',
-      litellmBaseUrl: 'http://litellm/v1', knowledgeEndpoint: 'http://control-plane/api/v1/knowledge-bases', connectors: [],
+      litellmBaseUrl: 'http://litellm/v1', knowledgeEndpoint: 'http://control-plane/api/v1/knowledge-bases', connectors: [], allowedArtifacts: [],
       model: 'deepseek-v4-flash', modelApiKey: 'model-token', accessToken: 'employee-token',
     })
     expect(invoke).toHaveBeenCalledWith('start_local_im', {
