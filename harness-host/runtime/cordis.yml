@@ -36,14 +36,11 @@
 - id: desktop-approval
   name: '../dist/desktop-approval-plugin.js'
 
-- id: erp-mcp
-  name: '../dist/erp-mcp-plugin.js'
+- id: managed-mcp
+  name: '../dist/managed-mcp-plugin.js'
   config:
-    url: !!js process.env.ERP_MCP_URL ?? ''
-    allowedTools: !!js JSON.parse(process.env.ERP_MCP_ALLOWED_TOOLS ?? '[]')
-    requiredTools: !!js JSON.parse(process.env.ERP_MCP_REQUIRED_TOOLS ?? '[]')
-    allowWrite: !!js process.env.ERP_MCP_ALLOW_WRITE === 'true'
-    bearerTokenEnv: ERP_MCP_BEARER_TOKEN
+    connectors: !!js JSON.parse(process.env.XIAOYIN_MCP_CONNECTORS ?? '[]')
+    employeeBearerTokenEnv: XIAOYIN_EMPLOYEE_BEARER_TOKEN
 
 - id: local-files
   name: '../dist/local-files-plugin.js'

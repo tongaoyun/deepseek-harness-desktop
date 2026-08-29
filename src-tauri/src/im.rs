@@ -1,6 +1,9 @@
 use crate::{
     expert_kits,
-    harness::{HarnessProcess, RuntimeFingerprint, credential_digest},
+    harness::{
+        ConnectorDefinition, HarnessProcess, RuntimeFingerprint, credential_digest,
+        runtime_connectors,
+    },
     memory,
 };
 use keyring::Entry;
@@ -44,7 +47,8 @@ enum AccessPolicy {
 pub struct HarnessContext {
     employee_id: String,
     litellm_base_url: String,
-    erp_mcp_url: String,
+    #[serde(default)]
+    connectors: Vec<ConnectorDefinition>,
     model: String,
     model_api_key: String,
     access_token: String,
@@ -210,16 +214,14 @@ impl LocalImManager {
         context: HarnessContext,
     ) -> Result<LocalImStatus, String> {
         let profile = expert_kits::harness_profile(app, None, "")?;
+        let connectors = runtime_connectors(&context.connectors, &profile, false)?;
         let fingerprint = RuntimeFingerprint {
             skill_directories: profile.skill_directories,
-            allowed_erp_tools: Vec::new(),
-            required_erp_tools: Vec::new(),
+            connectors,
             local_file_roots: Vec::new(),
             allow_local_files: false,
             allow_shell: false,
-            allow_erp_write: false,
             litellm_base_url: context.litellm_base_url,
-            erp_mcp_url: context.erp_mcp_url,
             model: context.model,
             memory_context: memory::context(app, &context.employee_id)?,
             credential_digest: credential_digest(&context.model_api_key, &context.access_token),
@@ -461,7 +463,6 @@ fn validate_harness_context(value: &HarnessContext) -> Result<(), String> {
         return Err("员工标识无效".to_string());
     }
     validate_http_url("LiteLLM", &value.litellm_base_url)?;
-    validate_http_url("ERP MCP", &value.erp_mcp_url)?;
     if value.model.trim().is_empty() || value.model.len() > 200 {
         return Err("模型名称无效".to_string());
     }

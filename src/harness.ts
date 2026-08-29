@@ -1,5 +1,6 @@
 import { invoke, isTauri } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
+import type { ConnectorRuntimeDefinition } from './types'
 
 export interface HarnessRunInput {
   prompt: string
@@ -7,7 +8,7 @@ export interface HarnessRunInput {
   sessionId?: string
   expertKitId?: string
   litellmBaseUrl: string
-  erpMcpUrl: string
+  connectors: ConnectorRuntimeDefinition[]
   model: string
   modelApiKey: string
   accessToken: string

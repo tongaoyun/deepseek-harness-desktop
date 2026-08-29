@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::{
+    collections::{HashMap, HashSet},
     io::{BufRead, BufReader, Write},
     path::{Path, PathBuf},
     process::{Child, ChildStdin, ChildStdout, Command, Stdio},
@@ -24,12 +25,42 @@ pub struct HarnessRunRequest {
     session_id: Option<String>,
     expert_kit_id: Option<String>,
     litellm_base_url: String,
-    erp_mcp_url: String,
+    #[serde(default)]
+    connectors: Vec<ConnectorDefinition>,
     model: String,
     model_api_key: String,
     access_token: String,
     #[serde(default)]
     local_file_root_ids: Vec<String>,
+}
+
+#[derive(Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ConnectorDefinition {
+    id: String,
+    name: String,
+    status: String,
+    version: String,
+    transport: String,
+    url: String,
+    auth_mode: String,
+    #[serde(default)]
+    tool_names: Vec<String>,
+}
+
+#[derive(Clone, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RuntimeConnector {
+    id: String,
+    name: String,
+    version: String,
+    transport: String,
+    url: String,
+    auth_mode: String,
+    allowed_tools: Vec<String>,
+    required_tools: Vec<String>,
+    allow_write: bool,
+    required: bool,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -49,14 +80,11 @@ struct HarnessUiNotification {
 #[derive(Clone, Eq, PartialEq)]
 pub(crate) struct RuntimeFingerprint {
     pub(crate) skill_directories: Vec<String>,
-    pub(crate) allowed_erp_tools: Vec<String>,
-    pub(crate) required_erp_tools: Vec<String>,
+    pub(crate) connectors: Vec<RuntimeConnector>,
     pub(crate) local_file_roots: Vec<String>,
     pub(crate) allow_local_files: bool,
     pub(crate) allow_shell: bool,
-    pub(crate) allow_erp_write: bool,
     pub(crate) litellm_base_url: String,
-    pub(crate) erp_mcp_url: String,
     pub(crate) model: String,
     pub(crate) memory_context: String,
     pub(crate) credential_digest: String,
@@ -95,16 +123,18 @@ pub async fn run_harness(
         return Err("当前专家套件禁止使用本地目录".to_string());
     }
     let local_file_roots = local_files.resolve(&request.local_file_root_ids)?;
+    let connectors = runtime_connectors(
+        &request.connectors,
+        &profile,
+        request.expert_kit_id.is_some(),
+    )?;
     let fingerprint = RuntimeFingerprint {
         skill_directories: profile.skill_directories,
-        allowed_erp_tools: profile.allowed_erp_tools,
-        required_erp_tools: profile.required_erp_tools,
+        connectors,
         local_file_roots,
         allow_local_files: profile.allow_local_files,
         allow_shell: profile.allow_shell,
-        allow_erp_write: profile.allow_erp_write,
         litellm_base_url: request.litellm_base_url,
-        erp_mcp_url: request.erp_mcp_url,
         model: request.model,
         memory_context: memory::context(&app, &request.employee_id)?,
         credential_digest: credential_digest(&request.model_api_key, &request.access_token),
@@ -207,10 +237,8 @@ impl HarnessProcess {
 
         let skill_directories = serde_json::to_string(&fingerprint.skill_directories)
             .map_err(|error| format!("无法生成 Skill 配置：{error}"))?;
-        let allowed_tools = serde_json::to_string(&fingerprint.allowed_erp_tools)
-            .map_err(|error| format!("无法生成 ERP 工具配置：{error}"))?;
-        let required_tools = serde_json::to_string(&fingerprint.required_erp_tools)
-            .map_err(|error| format!("无法生成 ERP 工具配置：{error}"))?;
+        let connectors = serde_json::to_string(&fingerprint.connectors)
+            .map_err(|error| format!("无法生成连接器配置：{error}"))?;
         let local_file_roots = serde_json::to_string(&fingerprint.local_file_roots)
             .map_err(|error| format!("无法生成本地文件授权配置：{error}"))?;
         let mut child = Command::new(&runtime.node)
@@ -225,20 +253,14 @@ impl HarnessProcess {
                 app_data.join("im-channels/dingtalk-sessions.json"),
             )
             .env("DSH_CUSTOM_SKILL_DIRS", skill_directories)
-            .env("ERP_MCP_URL", &fingerprint.erp_mcp_url)
-            .env("ERP_MCP_ALLOWED_TOOLS", allowed_tools)
-            .env("ERP_MCP_REQUIRED_TOOLS", required_tools)
-            .env("ERP_MCP_BEARER_TOKEN", access_token)
+            .env("XIAOYIN_MCP_CONNECTORS", connectors)
+            .env("XIAOYIN_EMPLOYEE_BEARER_TOKEN", access_token)
             .env("XIAOYIN_LOCAL_FILE_ROOTS", local_file_roots)
             .env(
                 "XIAOYIN_ALLOW_LOCAL_FILES",
                 fingerprint.allow_local_files.to_string(),
             )
             .env("XIAOYIN_ALLOW_SHELL", fingerprint.allow_shell.to_string())
-            .env(
-                "ERP_MCP_ALLOW_WRITE",
-                fingerprint.allow_erp_write.to_string(),
-            )
             .env("DEEPSEEK_BASE_URL", &fingerprint.litellm_base_url)
             .env("DEEPSEEK_API_KEY", model_api_key)
             .env("DSH_MODEL", &fingerprint.model)
@@ -539,9 +561,7 @@ fn validate_run_request(request: &HarnessRunRequest) -> Result<(), String> {
         return Err("消息不能为空且不能超过 1 MiB".to_string());
     }
     validate_http_url("LiteLLM", &request.litellm_base_url)?;
-    if !request.erp_mcp_url.trim().is_empty() {
-        validate_http_url("ERP MCP", &request.erp_mcp_url)?;
-    }
+    validate_connector_catalog(&request.connectors)?;
     if request.model.trim().is_empty() || request.model.len() > 200 {
         return Err("模型名称无效".to_string());
     }
@@ -556,6 +576,166 @@ fn validate_run_request(request: &HarnessRunRequest) -> Result<(), String> {
         return Err("ERP 访问凭据无效".to_string());
     }
     Ok(())
+}
+
+pub(crate) fn runtime_connectors(
+    catalog: &[ConnectorDefinition],
+    profile: &expert_kits::ExpertKitHarnessProfile,
+    expert_kit_selected: bool,
+) -> Result<Vec<RuntimeConnector>, String> {
+    validate_connector_catalog(catalog)?;
+    let by_id = catalog
+        .iter()
+        .map(|connector| (connector.id.as_str(), connector))
+        .collect::<HashMap<_, _>>();
+    let selected = if expert_kit_selected {
+        let mut values = Vec::new();
+        for connector_id in &profile.connector_refs {
+            let connector = by_id
+                .get(connector_id.as_str())
+                .ok_or_else(|| format!("专家套件引用了未发布的连接器：{connector_id}"))?;
+            if connector.transport == "desktop" {
+                continue;
+            }
+            if connector.status != "ready" {
+                return Err(format!("专家套件连接器尚未就绪：{}", connector.name));
+            }
+            values.push(*connector);
+        }
+        values
+    } else {
+        catalog
+            .iter()
+            .filter(|connector| connector.transport != "desktop" && connector.status == "ready")
+            .collect::<Vec<_>>()
+    };
+
+    let allowed_tools = profile
+        .allowed_connector_tools
+        .iter()
+        .cloned()
+        .collect::<HashSet<_>>();
+    let connector_tools = selected
+        .iter()
+        .map(|connector| {
+            let tools = connector
+                .tool_names
+                .iter()
+                .filter(|tool| !expert_kit_selected || allowed_tools.contains(*tool))
+                .cloned()
+                .collect::<Vec<_>>();
+            (connector.id.as_str(), tools)
+        })
+        .collect::<HashMap<_, _>>();
+    let mut claimed_tools = HashMap::<String, String>::new();
+    for connector in &selected {
+        for tool in connector_tools
+            .get(connector.id.as_str())
+            .expect("selected connector tools were computed")
+        {
+            if let Some(owner) = claimed_tools.insert(tool.clone(), connector.id.clone()) {
+                return Err(format!(
+                    "连接器工具名冲突：{tool} 同时由 {owner} 和 {} 提供",
+                    connector.id
+                ));
+            }
+        }
+    }
+    let available_tools = claimed_tools.keys().cloned().collect::<HashSet<_>>();
+    let missing = profile
+        .required_connector_tools
+        .iter()
+        .filter(|tool| !available_tools.contains(*tool))
+        .cloned()
+        .collect::<Vec<_>>();
+    if !missing.is_empty() {
+        return Err(format!(
+            "专家套件缺少可用连接器工具：{}",
+            missing.join(", ")
+        ));
+    }
+
+    Ok(selected
+        .into_iter()
+        .map(|connector| RuntimeConnector {
+            id: connector.id.clone(),
+            name: connector.name.clone(),
+            version: connector.version.clone(),
+            transport: connector.transport.clone(),
+            url: connector.url.clone(),
+            auth_mode: connector.auth_mode.clone(),
+            allowed_tools: connector_tools
+                .get(connector.id.as_str())
+                .expect("selected connector tools were computed")
+                .clone(),
+            required_tools: profile
+                .required_connector_tools
+                .iter()
+                .filter(|tool| connector.tool_names.contains(*tool))
+                .cloned()
+                .collect(),
+            allow_write: expert_kit_selected && profile.allow_connector_write,
+            required: expert_kit_selected,
+        })
+        .collect())
+}
+
+fn validate_connector_catalog(connectors: &[ConnectorDefinition]) -> Result<(), String> {
+    if connectors.len() > 32 {
+        return Err("连接器数量不能超过 32 个".to_string());
+    }
+    let mut connector_ids = HashSet::new();
+    for connector in connectors {
+        if !valid_identifier(&connector.id) || !connector_ids.insert(connector.id.as_str()) {
+            return Err(format!("连接器 ID 无效或重复：{}", connector.id));
+        }
+        if connector.name.trim().is_empty() || connector.name.len() > 200 {
+            return Err(format!("连接器名称无效：{}", connector.id));
+        }
+        if connector.version.trim().is_empty() || connector.version.len() > 100 {
+            return Err(format!("连接器版本无效：{}", connector.id));
+        }
+        if !matches!(
+            connector.status.as_str(),
+            "ready" | "needs-configuration" | "unavailable" | "disabled"
+        ) {
+            return Err(format!("连接器状态无效：{}", connector.id));
+        }
+        if !matches!(
+            connector.transport.as_str(),
+            "streamable-http" | "sse" | "desktop"
+        ) {
+            return Err(format!("连接器传输方式无效：{}", connector.id));
+        }
+        if !matches!(connector.auth_mode.as_str(), "employee-bearer" | "none") {
+            return Err(format!("连接器认证方式无效：{}", connector.id));
+        }
+        if connector.transport == "desktop" {
+            if !connector.url.is_empty() {
+                return Err(format!("桌面内置连接器不能配置远程地址：{}", connector.id));
+            }
+        } else if connector.status == "ready" {
+            validate_http_url("连接器", &connector.url)?;
+        }
+        if connector.tool_names.len() > 512 {
+            return Err(format!("连接器工具数量超限：{}", connector.id));
+        }
+        let mut tools = HashSet::new();
+        for tool in &connector.tool_names {
+            if !valid_identifier(tool) || !tools.insert(tool.as_str()) {
+                return Err(format!("连接器工具名称无效或重复：{tool}"));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn valid_identifier(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 128
+        && value
+            .bytes()
+            .all(|value| value.is_ascii_alphanumeric() || matches!(value, b'.' | b'_' | b'-'))
 }
 
 pub(crate) fn credential_digest(model_api_key: &str, access_token: &str) -> String {
@@ -588,7 +768,16 @@ mod tests {
             session_id: None,
             expert_kit_id: None,
             litellm_base_url: "http://litellm.internal/v1".to_string(),
-            erp_mcp_url: "http://erp.internal/mcp".to_string(),
+            connectors: vec![ConnectorDefinition {
+                id: "erp-mcp".to_string(),
+                name: "ERP".to_string(),
+                status: "ready".to_string(),
+                version: "1".to_string(),
+                transport: "streamable-http".to_string(),
+                url: "http://erp.internal/mcp".to_string(),
+                auth_mode: "employee-bearer".to_string(),
+                tool_names: vec!["sales_summary".to_string()],
+            }],
             model: "deepseek-chat".to_string(),
             model_api_key: "model-token".to_string(),
             access_token: "erp-token".to_string(),
@@ -620,6 +809,38 @@ mod tests {
             PathBuf::from(r"C:\Program Files\xiaoyin")
                 .join("resources/harness-runtime/harness-host/runtime/cordis.yml")
         );
+    }
+
+    #[test]
+    fn expert_kit_connectors_expose_only_manifest_tools() {
+        let catalog = vec![ConnectorDefinition {
+            id: "erp-mcp".to_string(),
+            name: "ERP".to_string(),
+            status: "ready".to_string(),
+            version: "1".to_string(),
+            transport: "streamable-http".to_string(),
+            url: "http://erp.internal/mcp".to_string(),
+            auth_mode: "employee-bearer".to_string(),
+            tool_names: vec!["sales_summary".to_string(), "order_cancel".to_string()],
+        }];
+        let profile = expert_kits::ExpertKitHarnessProfile {
+            skill_directories: Vec::new(),
+            connector_refs: vec!["erp-mcp".to_string()],
+            allowed_connector_tools: vec!["sales_summary".to_string()],
+            required_connector_tools: vec!["sales_summary".to_string()],
+            allow_local_files: false,
+            allow_shell: false,
+            allow_connector_write: false,
+            prompt: String::new(),
+        };
+
+        let runtime =
+            runtime_connectors(&catalog, &profile, true).expect("connector should resolve");
+        assert_eq!(runtime.len(), 1);
+        assert_eq!(runtime[0].allowed_tools, vec!["sales_summary"]);
+        assert_eq!(runtime[0].required_tools, vec!["sales_summary"]);
+        assert!(runtime[0].required);
+        assert!(!runtime[0].allow_write);
     }
 
     #[test]

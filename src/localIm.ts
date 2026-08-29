@@ -1,11 +1,12 @@
 import { invoke, isTauri } from '@tauri-apps/api/core'
+import type { ConnectorRuntimeDefinition } from './types'
 
 export type ImAccessPolicy = 'open' | 'pairing'
 
 export interface LocalImHarnessContext {
   employeeId: string
   litellmBaseUrl: string
-  erpMcpUrl: string
+  connectors: ConnectorRuntimeDefinition[]
   model: string
   modelApiKey: string
   accessToken: string

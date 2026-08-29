@@ -67,16 +67,53 @@ struct FileReference {
 struct Permissions {
     local_files: PermissionMode,
     shell: PermissionMode,
-    erp_read: PermissionMode,
-    erp_write: PermissionMode,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    connector_read: Option<PermissionMode>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    connector_write: Option<PermissionMode>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    erp_read: Option<PermissionMode>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    erp_write: Option<PermissionMode>,
 }
 
-#[derive(Clone, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Copy, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
 enum PermissionMode {
     Deny,
     Allow,
     Approval,
+}
+
+impl Permissions {
+    fn validate(&self) -> Result<(), String> {
+        let connector_pair = self.connector_read.zip(self.connector_write);
+        let legacy_pair = self.erp_read.zip(self.erp_write);
+        if connector_pair.is_none() && legacy_pair.is_none() {
+            return Err("专家套件必须声明 connectorRead/connectorWrite 权限".to_string());
+        }
+        if self.connector_read.is_some() != self.connector_write.is_some()
+            || self.erp_read.is_some() != self.erp_write.is_some()
+        {
+            return Err("专家套件连接器读写权限必须成对声明".to_string());
+        }
+        if connector_pair.is_some() && legacy_pair.is_some() && connector_pair != legacy_pair {
+            return Err("专家套件新旧连接器权限声明冲突".to_string());
+        }
+        Ok(())
+    }
+
+    fn connector_read(&self) -> PermissionMode {
+        self.connector_read
+            .or(self.erp_read)
+            .unwrap_or(PermissionMode::Deny)
+    }
+
+    fn connector_write(&self) -> PermissionMode {
+        self.connector_write
+            .or(self.erp_write)
+            .unwrap_or(PermissionMode::Deny)
+    }
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -128,11 +165,12 @@ pub struct InstalledExpertKit {
 
 pub struct ExpertKitHarnessProfile {
     pub skill_directories: Vec<String>,
-    pub allowed_erp_tools: Vec<String>,
-    pub required_erp_tools: Vec<String>,
+    pub connector_refs: Vec<String>,
+    pub allowed_connector_tools: Vec<String>,
+    pub required_connector_tools: Vec<String>,
     pub allow_local_files: bool,
     pub allow_shell: bool,
-    pub allow_erp_write: bool,
+    pub allow_connector_write: bool,
     pub prompt: String,
 }
 
@@ -271,11 +309,12 @@ pub fn harness_profile(
     let Some(selected_kit_id) = selected_kit_id else {
         return Ok(ExpertKitHarnessProfile {
             skill_directories,
-            allowed_erp_tools: Vec::new(),
-            required_erp_tools: Vec::new(),
+            connector_refs: Vec::new(),
+            allowed_connector_tools: Vec::new(),
+            required_connector_tools: Vec::new(),
             allow_local_files: true,
             allow_shell: true,
-            allow_erp_write: false,
+            allow_connector_write: false,
             prompt: user_prompt.to_string(),
         });
     };
@@ -311,8 +350,8 @@ pub fn harness_profile(
         .cloned()
         .collect::<Vec<_>>();
     if !erp_tools.is_empty()
-        && kit.manifest.permissions.erp_read == PermissionMode::Deny
-        && kit.manifest.permissions.erp_write == PermissionMode::Deny
+        && kit.manifest.permissions.connector_read() == PermissionMode::Deny
+        && kit.manifest.permissions.connector_write() == PermissionMode::Deny
     {
         return Err("该专家套件声明了 ERP 工具，但禁止 ERP 权限".to_string());
     }
@@ -330,11 +369,12 @@ pub fn harness_profile(
     );
     Ok(ExpertKitHarnessProfile {
         skill_directories,
-        allowed_erp_tools: erp_tools.clone(),
-        required_erp_tools: erp_tools,
+        connector_refs: kit.manifest.connector_refs.clone(),
+        allowed_connector_tools: erp_tools.clone(),
+        required_connector_tools: erp_tools,
         allow_local_files: kit.manifest.permissions.local_files != PermissionMode::Deny,
         allow_shell: kit.manifest.permissions.shell != PermissionMode::Deny,
-        allow_erp_write: kit.manifest.permissions.erp_write != PermissionMode::Deny,
+        allow_connector_write: kit.manifest.permissions.connector_write() != PermissionMode::Deny,
         prompt,
     })
 }
@@ -495,6 +535,7 @@ fn load_and_validate_manifest(
     {
         return Err("专家套件名称、简介和 Skills 不能为空".to_string());
     }
+    manifest.permissions.validate()?;
 
     let mut reference_ids = HashSet::new();
     for reference in manifest.commands.iter().chain(&manifest.skills) {
@@ -662,7 +703,7 @@ mod tests {
               "schemaVersion":"1","id":"report-kit","name":"日报","version":"1.0.0",
               "summary":"生成日报","skills":[{"id":"report","path":"skills/report/SKILL.md"}],
               "requiredTools":["sales_summary"],
-              "permissions":{"localFiles":"approval","shell":"deny","erpRead":"allow","erpWrite":"approval"}
+              "permissions":{"localFiles":"approval","shell":"deny","connectorRead":"allow","connectorWrite":"approval"}
             }"#,
         )
         .unwrap();

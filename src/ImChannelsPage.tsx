@@ -58,11 +58,11 @@ export function ImChannelsPage(harness: Props) {
   const harnessContext = useMemo<LocalImHarnessContext>(() => ({
     employeeId: harness.employeeId,
     litellmBaseUrl: harness.litellmBaseUrl,
-    erpMcpUrl: harness.erpMcpUrl,
+    connectors: harness.connectors,
     model: harness.model,
     modelApiKey: harness.modelApiKey,
     accessToken: harness.accessToken,
-  }), [harness.accessToken, harness.employeeId, harness.erpMcpUrl, harness.litellmBaseUrl, harness.model, harness.modelApiKey])
+  }), [harness.accessToken, harness.connectors, harness.employeeId, harness.litellmBaseUrl, harness.model, harness.modelApiKey])
 
   const save = async (event: FormEvent) => {
     event.preventDefault()

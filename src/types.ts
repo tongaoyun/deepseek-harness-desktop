@@ -135,6 +135,8 @@ export interface SkillCatalogEntry {
 }
 
 export type ConnectorStatus = 'ready' | 'needs-configuration' | 'unavailable' | 'disabled'
+export type ConnectorTransport = 'streamable-http' | 'sse' | 'desktop'
+export type ConnectorAuthMode = 'employee-bearer' | 'none'
 
 export interface ConnectorCatalogEntry {
   id: string
@@ -144,6 +146,21 @@ export interface ConnectorCatalogEntry {
   scope: string
   status: ConnectorStatus
   managed: boolean
+  version?: string
+  transport?: ConnectorTransport
+  url?: string
+  authMode?: ConnectorAuthMode
+  toolNames: string[]
+}
+
+export interface ConnectorRuntimeDefinition {
+  id: string
+  name: string
+  status: ConnectorStatus
+  version: string
+  transport: ConnectorTransport
+  url: string
+  authMode: ConnectorAuthMode
   toolNames: string[]
 }
 
@@ -171,8 +188,10 @@ export interface ExpertKitManifest {
   permissions: {
     localFiles: PermissionMode
     shell: PermissionMode
-    erpRead: PermissionMode
-    erpWrite: PermissionMode
+    connectorRead?: PermissionMode
+    connectorWrite?: PermissionMode
+    erpRead?: PermissionMode
+    erpWrite?: PermissionMode
   }
   serverWorkflows: ServerWorkflowDefinition[]
 }

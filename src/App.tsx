@@ -67,6 +67,7 @@ import type { LocalTaskRun, TaskMessage } from './types'
 import { MemoryPage } from './MemoryPage'
 import { modelDisplayName, modelStorageKey, resolveSelectedModel } from './modelSelection'
 import { buildInvocationOptions, filterInvocationOptions, type InvocationOption } from './invocations'
+import { buildRuntimeConnectorCatalog } from './connectors'
 import './styles.css'
 
 const extensionNav = [
@@ -171,12 +172,12 @@ export default function App() {
     void startLocalIm({
       employeeId: user.userId,
       litellmBaseUrl: bootstrap.endpoints.litellm,
-      erpMcpUrl: bootstrap.endpoints.erpMcp,
+      connectors: buildRuntimeConnectorCatalog(connectors, bootstrap.endpoints.erpMcp),
       model: selectedModel || bootstrap.models[0] || 'deepseek-v4-flash',
       modelApiKey: bootstrap.modelApiKey,
       accessToken,
     }).catch(() => undefined)
-  }, [accessToken, authState, bootstrap, selectedModel, user])
+  }, [accessToken, authState, bootstrap, connectors, selectedModel, user])
 
   useEffect(() => {
     let disposed = false
@@ -207,6 +208,7 @@ export default function App() {
   }
 
   const selectedExpertKit = expertKits.find((kit) => kit.id === selectedExpertKitId && kit.installState === 'installed')
+  const runtimeConnectors = buildRuntimeConnectorCatalog(connectors, bootstrap?.endpoints.erpMcp ?? '')
   const invocationOptions = buildInvocationOptions(expertKits, skills)
   const visibleInvocations = filterInvocationOptions(invocationOptions, prompt)
   const activeModel = selectedModel || bootstrap?.models[0] || 'deepseek-v4-flash'
@@ -303,7 +305,7 @@ export default function App() {
         ...(harnessSessionId ? { sessionId: harnessSessionId } : {}),
         ...(selectedExpertKit ? { expertKitId: selectedExpertKit.id } : {}),
         litellmBaseUrl: bootstrap.endpoints.litellm,
-        erpMcpUrl: bootstrap.endpoints.erpMcp,
+        connectors: runtimeConnectors,
         model: activeModel,
         modelApiKey: bootstrap.modelApiKey,
         accessToken,
@@ -383,7 +385,7 @@ export default function App() {
       await startLocalIm({
         employeeId: user!.userId,
         litellmBaseUrl: bootstrap.endpoints.litellm,
-        erpMcpUrl: bootstrap.endpoints.erpMcp,
+        connectors: runtimeConnectors,
         model: activeModel,
         modelApiKey: bootstrap.modelApiKey,
         accessToken,
@@ -459,7 +461,7 @@ export default function App() {
             <div className="context-bar">
               <div className="local-contexts">
                 {localDirectories.length === 0
-                  ? <span>ERP MCP · 本地文件未授权 · 云端工作流</span>
+                  ? <span>企业连接器 · 本地文件未授权 · 云端工作流</span>
                   : localDirectories.map((directory) => <span className="local-context" key={directory.id}>
                     <FolderOpen size={12} />{directory.name}
                     <button aria-label={`移除 ${directory.name}`} disabled={harnessRunning} onClick={() => void removeLocalDirectory(directory.id)} type="button"><X size={11} /></button>
@@ -546,7 +548,7 @@ export default function App() {
                 <h3>{connector.name}</h3>
                 <p>{connector.summary}</p>
                 <div className="kit-capabilities">
-                  <small>{connector.kind}</small><small>{connector.scope}</small><small>{connector.toolNames.length} 个工具</small>
+                  <small>{connector.transport ?? connector.kind}</small><small>v{connector.version ?? '1'}</small><small>{connector.scope}</small><small>{connector.toolNames.length} 个工具</small>
                 </div>
                 {connector.toolNames.length > 0 && <div className="connector-tools">{connector.toolNames.join(' · ')}</div>}
                 <button className="kit-install" disabled type="button">{connector.managed ? '由公司统一管理' : '配置连接器'}</button>
@@ -569,7 +571,7 @@ export default function App() {
             {page === 'im' && bootstrap && user && <ImChannelsPage
               accessToken={accessToken}
               employeeId={user.userId}
-              erpMcpUrl={bootstrap.endpoints.erpMcp}
+              connectors={runtimeConnectors}
               litellmBaseUrl={bootstrap.endpoints.litellm}
               model={activeModel}
               modelApiKey={bootstrap.modelApiKey}
