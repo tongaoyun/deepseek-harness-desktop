@@ -1,8 +1,8 @@
-import { Activity, CheckCircle2, Monitor, RefreshCw, Server, ShieldCheck, TriangleAlert } from 'lucide-react'
+import { Activity, CheckCircle2, Clock3, Laptop, Monitor, RefreshCw, Search, Server, ShieldCheck, TriangleAlert, Users } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
-import { loadDeviceCapabilityReports, submitDeviceCapabilityReport } from './api'
+import { loadDeviceCapabilityReports, loadDeviceFleetOverview, submitDeviceCapabilityReport } from './api'
 import { buildDeviceCapabilityReport, inspectDeviceCapabilities } from './deviceCapabilities'
-import type { ConnectorCatalogEntry, DeviceCapabilityReport, DeviceCapabilityStatus, RuntimeStatus } from './types'
+import type { ConnectorCatalogEntry, DeviceCapabilityReport, DeviceCapabilityStatus, DeviceFleetOverview, DeviceFleetStatus, RuntimeStatus } from './types'
 
 interface DeviceCapabilitiesPageProps {
   endpoint: string
@@ -20,6 +20,10 @@ export function DeviceCapabilitiesPage({
   const [loading, setLoading] = useState(true)
   const [probing, setProbing] = useState(false)
   const [error, setError] = useState('')
+  const [fleet, setFleet] = useState<DeviceFleetOverview>()
+  const [fleetLoading, setFleetLoading] = useState(true)
+  const [fleetQuery, setFleetQuery] = useState('')
+  const [fleetStatus, setFleetStatus] = useState<'' | DeviceFleetStatus>('')
 
   useEffect(() => {
     const controller = new AbortController()
@@ -30,6 +34,18 @@ export function DeviceCapabilitiesPage({
       .finally(() => { if (!controller.signal.aborted) setLoading(false) })
     return () => controller.abort()
   }, [accessToken, employeeId, endpoint])
+
+  useEffect(() => {
+    const controller = new AbortController()
+    const timer = window.setTimeout(() => {
+      setFleetLoading(true)
+      loadDeviceFleetOverview(endpoint, employeeId, accessToken, fleetQuery, fleetStatus, controller.signal)
+        .then(setFleet)
+        .catch((value) => { if (!controller.signal.aborted) setError(value instanceof Error ? value.message : String(value)) })
+        .finally(() => { if (!controller.signal.aborted) setFleetLoading(false) })
+    }, 200)
+    return () => { window.clearTimeout(timer); controller.abort() }
+  }, [accessToken, employeeId, endpoint, fleetQuery, fleetStatus, reports])
 
   const latest = reports[0]
   const counts = useMemo(() => latest?.capabilities.reduce((values, capability) => {
@@ -76,6 +92,31 @@ export function DeviceCapabilitiesPage({
         {reports.slice(0, 10).map((report) => <article key={report.id}><span>{formatTime(report.createdAt)}</span><small>v{report.desktopVersion} · {platformLabel(report.platform)} · {report.displayCount} 屏</small><em>{overallLabel(report)}</em></article>)}
       </section>
     </>}
+    <section className="device-fleet">
+      <header><div><span><Users size={15} />组织设备</span><h2>团队设备健康度</h2><p>每位员工、每台设备只展示最近一次去敏上报。</p></div>
+        <label><Search size={14} /><input aria-label="搜索团队设备" onChange={(event) => setFleetQuery(event.target.value)} placeholder="员工、设备、版本或平台" value={fleetQuery} /></label></header>
+      {fleet && <div className="device-fleet-summary">
+        <article><Laptop size={17} /><strong>{fleet.totalDevices}</strong><small>设备总数</small></article>
+        <article><CheckCircle2 size={17} /><strong>{fleet.readyDevices}</strong><small>状态正常</small></article>
+        <article><TriangleAlert size={17} /><strong>{fleet.degradedDevices}</strong><small>需要处理</small></article>
+        <article><Clock3 size={17} /><strong>{fleet.staleDevices}</strong><small>超过 7 天</small></article>
+      </div>}
+      <div className="device-fleet-filters">
+        {(['', 'READY', 'DEGRADED', 'STALE'] as const).map((value) => <button className={fleetStatus === value ? 'active' : ''} key={value || 'all'} onClick={() => setFleetStatus(value)} type="button">{fleetFilterLabel(value)}</button>)}
+      </div>
+      {fleetLoading && <div className="kit-empty">正在汇总团队设备…</div>}
+      {!fleetLoading && fleet?.devices.length === 0 && <div className="kit-empty">没有符合条件的设备。</div>}
+      {!fleetLoading && fleet && fleet.devices.length > 0 && <div className="device-fleet-table">
+        <div className="device-fleet-row heading"><span>员工与设备</span><span>环境</span><span>待处理能力</span><span>最近上报</span><span>状态</span></div>
+        {fleet.devices.map((device) => <div className="device-fleet-row" key={`${device.employeeId}:${device.deviceId}`}>
+          <span><strong>{device.employeeId}</strong><small>{device.deviceId.slice(0, 8)}</small></span>
+          <span><strong>v{device.desktopVersion} · {platformLabel(device.platform)}</strong><small>{device.architecture} · {device.displayCount} 屏 · {device.displayScalePercents.join('% / ')}%</small></span>
+          <span><strong>{device.degradedCapabilities.length || '—'}</strong><small>{device.degradedCapabilities.map((key) => capabilityLabel(key, connectors)).join('、') || '无'}</small></span>
+          <span><strong>{formatTime(device.reportedAt)}</strong><small>{relativeReportAge(device.reportedAt)}</small></span>
+          <em className={device.status.toLowerCase()}>{fleetStatusLabel(device.status)}</em>
+        </div>)}
+      </div>}
+    </section>
   </div>
 }
 
@@ -85,6 +126,20 @@ function overallLabel(report: DeviceCapabilityReport): string {
 
 function statusLabel(status: DeviceCapabilityStatus): string {
   return ({ READY: '已就绪', DEGRADED: '待处理', UNSUPPORTED: '不适用' })[status]
+}
+
+function fleetFilterLabel(status: '' | DeviceFleetStatus): string {
+  return status ? fleetStatusLabel(status) : '全部设备'
+}
+
+function fleetStatusLabel(status: DeviceFleetStatus): string {
+  return ({ READY: '正常', DEGRADED: '待处理', STALE: '长期未上报' })[status]
+}
+
+function relativeReportAge(value: string): string {
+  const days = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 86_400_000))
+  if (days === 0) return '今天上报'
+  return `${days} 天前上报`
 }
 
 function platformLabel(platform: string): string {

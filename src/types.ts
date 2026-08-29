@@ -293,3 +293,27 @@ export interface SubmitDeviceCapabilityReport {
   displayScalePercents: number[]
   capabilities: DeviceCapabilityResult[]
 }
+
+export type DeviceFleetStatus = 'READY' | 'DEGRADED' | 'STALE'
+
+export interface DeviceFleetEntry {
+  employeeId: string
+  deviceId: string
+  desktopVersion: string
+  platform: string
+  architecture: string
+  displayCount: number
+  displayScalePercents: number[]
+  status: DeviceFleetStatus
+  degradedCapabilities: string[]
+  reportedAt: string
+}
+
+export interface DeviceFleetOverview {
+  totalDevices: number
+  readyDevices: number
+  degradedDevices: number
+  staleDevices: number
+  generatedAt: string
+  devices: DeviceFleetEntry[]
+}

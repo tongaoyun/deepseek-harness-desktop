@@ -13,6 +13,7 @@ import type {
   KnowledgeDocumentEntry,
   KnowledgeSearchHit,
   DeviceCapabilityReport,
+  DeviceFleetOverview,
   SubmitDeviceCapabilityReport,
 } from './types'
 
@@ -171,6 +172,25 @@ export async function submitDeviceCapabilityReport(
   })
   if (!response.ok) throw new Error(`设备能力上报返回 ${response.status}`)
   return response.json() as Promise<DeviceCapabilityReport>
+}
+
+export async function loadDeviceFleetOverview(
+  endpoint: string,
+  employeeId: string,
+  accessToken: string,
+  query = '',
+  status = '',
+  signal?: AbortSignal,
+): Promise<DeviceFleetOverview> {
+  const parameters = new URLSearchParams()
+  if (query.trim()) parameters.set('query', query.trim())
+  if (status) parameters.set('status', status)
+  const suffix = parameters.size > 0 ? `?${parameters}` : ''
+  const response = await fetch(controlPlaneUrl(`${endpoint.replace(/\/$/, '')}/overview${suffix}`), {
+    headers: enterpriseHeaders(employeeId, accessToken), signal,
+  })
+  if (!response.ok) throw new Error(`团队设备总览返回 ${response.status}`)
+  return response.json() as Promise<DeviceFleetOverview>
 }
 
 export async function loadKnowledgeBases(
