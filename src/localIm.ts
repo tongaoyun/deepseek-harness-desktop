@@ -6,6 +6,7 @@ export type ImAccessPolicy = 'open' | 'pairing'
 export interface LocalImHarnessContext {
   employeeId: string
   litellmBaseUrl: string
+  knowledgeEndpoint: string
   connectors: ConnectorRuntimeDefinition[]
   model: string
   modelApiKey: string

@@ -47,6 +47,7 @@ enum AccessPolicy {
 pub struct HarnessContext {
     employee_id: String,
     litellm_base_url: String,
+    knowledge_endpoint: String,
     #[serde(default)]
     connectors: Vec<ConnectorDefinition>,
     model: String,
@@ -222,6 +223,8 @@ impl LocalImManager {
             allow_local_files: false,
             allow_shell: false,
             litellm_base_url: context.litellm_base_url,
+            knowledge_endpoint: context.knowledge_endpoint,
+            employee_id: context.employee_id.clone(),
             model: context.model,
             memory_context: memory::context(app, &context.employee_id)?,
             credential_digest: credential_digest(&context.model_api_key, &context.access_token),
@@ -463,6 +466,7 @@ fn validate_harness_context(value: &HarnessContext) -> Result<(), String> {
         return Err("员工标识无效".to_string());
     }
     validate_http_url("LiteLLM", &value.litellm_base_url)?;
+    validate_http_url("知识库", &value.knowledge_endpoint)?;
     if value.model.trim().is_empty() || value.model.len() > 200 {
         return Err("模型名称无效".to_string());
     }

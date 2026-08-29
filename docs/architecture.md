@@ -1,6 +1,6 @@
 # 小胤桌面端架构与能力
 
-本文描述 `xiaoyin-desktop v0.1.5` 当前已经实现的架构与能力。
+本文描述 `xiaoyin-desktop v0.1.6` 当前已经实现的架构与能力。
 
 ## 总体架构
 
@@ -28,14 +28,15 @@
 ┌───────────────▼──────────────────────────────┐
 │ xiaoyin-control-plane                        │
 │ ├─ Bootstrap、模型、连接器、Skill/套件目录   │
-│ ├─ Temporal 定时任务与执行记录               │
-│ └─ MinIO 短期下载地址                        │
+│ ├─ Temporal 定时任务、知识索引与执行记录     │
+│ └─ 知识库、MinIO 文件与检索引用              │
 │                                              │
 │ LiteLLM ───────────────▶ DeepSeek            │
 │ ERP MCP Gateway ───────▶ 订单/销售/库存      │
 │ Temporal ──────────────▶ Workflow Worker     │
 │ Nacos ─────────────────▶ Java 配置与目录发布 │
-│ MinIO ─────────────────▶ 套件包与任务产物    │
+│ MinIO ─────────────────▶ 套件、产物、知识文档│
+│ PostgreSQL ─────────────▶ 元数据与检索片段    │
 └──────────────────────────────────────────────┘
 ```
 
@@ -76,6 +77,14 @@
 
 任务在服务端运行，桌面关闭后不会中断。
 
+### 企业知识库
+
+桌面上传文档 → 控制中心写入 MinIO 并创建文档记录 → Temporal `KnowledgeIndexWorkflow` →
+Workflow Worker 按 PDF 页、Excel 工作表或正文解析和分块 → PostgreSQL 检索索引。
+
+桌面和钉钉 Harness 通过只读 `knowledge_list`、`knowledge_search` 工具检索员工自己的知识库；
+结果带文件名与页码、工作表或正文位置。支持删除、失败重试和重建索引，桌面关闭不影响解析。
+
 ### 钉钉频道
 
 钉钉 Stream → 员工电脑上的 Harness Host → Skills/LiteLLM/企业只读 MCP → 回复原会话。
@@ -100,13 +109,13 @@
 | 本地记忆 | 已实现按员工保存协作风格和工作手册 |
 | 定时任务 | 已接入 Temporal，支持创建、暂停、恢复、立即运行和执行记录 |
 | 任务中心 | 已合并本地 Agent 任务和云端 Temporal 任务 |
+| 企业知识库 | 已实现创建、上传、状态轮询、重建、删除、检索和来源引用 |
 | IM 频道 | 钉钉已实现；飞书、Lark、微信、企业微信当前仅为预留入口 |
 | 自动更新 | 已实现正式单通道、签名校验、不可变版本包和回滚 |
 | Windows 发布 | 已实现 MSI/NSIS、内置 Runtime、安装/启动/卸载烟测 |
 
 ## 当前边界
 
-- 知识库页面尚未接入实际检索服务。
 - 尚未提供屏幕级 Computer Use；当前桌面能力是本地文件、Office 和 Shell。
 - 钉钉当前使用 Client ID/Secret 手动配置，扫码自动注册尚未接入公司授权服务。
 - 当前只发布 Windows x64 正式安装包，未发布 macOS 正式安装包。
@@ -118,7 +127,7 @@
 
 - LiteLLM：`http://192.168.2.67:32000/v1`
 - ERP MCP：`http://192.168.2.67:30083/mcp`
-- 专家套件、Skills、连接器、定时任务和任务记录 API
+- 专家套件、Skills、连接器、知识库、定时任务和任务记录 API
 
 这些地址由控制中心管理；连接器目录由 Nacos 动态刷新，桌面端不硬编码具体业务 MCP 工具。
 
@@ -133,4 +142,3 @@
 | `xiaoyin-expert-kits` | 公司专家套件内容仓 |
 | `xiaoyin-expert-kit-sdk` | 套件校验、打包、发布和平台预检 |
 | `xiaoyin-expert-kit-template` | 各团队创建单套件项目的模板 |
-

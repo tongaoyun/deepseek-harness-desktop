@@ -25,6 +25,7 @@ pub struct HarnessRunRequest {
     session_id: Option<String>,
     expert_kit_id: Option<String>,
     litellm_base_url: String,
+    knowledge_endpoint: String,
     #[serde(default)]
     connectors: Vec<ConnectorDefinition>,
     model: String,
@@ -85,6 +86,8 @@ pub(crate) struct RuntimeFingerprint {
     pub(crate) allow_local_files: bool,
     pub(crate) allow_shell: bool,
     pub(crate) litellm_base_url: String,
+    pub(crate) knowledge_endpoint: String,
+    pub(crate) employee_id: String,
     pub(crate) model: String,
     pub(crate) memory_context: String,
     pub(crate) credential_digest: String,
@@ -135,6 +138,8 @@ pub async fn run_harness(
         allow_local_files: profile.allow_local_files,
         allow_shell: profile.allow_shell,
         litellm_base_url: request.litellm_base_url,
+        knowledge_endpoint: request.knowledge_endpoint,
+        employee_id: request.employee_id.clone(),
         model: request.model,
         memory_context: memory::context(&app, &request.employee_id)?,
         credential_digest: credential_digest(&request.model_api_key, &request.access_token),
@@ -255,6 +260,8 @@ impl HarnessProcess {
             .env("DSH_CUSTOM_SKILL_DIRS", skill_directories)
             .env("XIAOYIN_MCP_CONNECTORS", connectors)
             .env("XIAOYIN_EMPLOYEE_BEARER_TOKEN", access_token)
+            .env("XIAOYIN_EMPLOYEE_ID", &fingerprint.employee_id)
+            .env("XIAOYIN_KNOWLEDGE_ENDPOINT", &fingerprint.knowledge_endpoint)
             .env("XIAOYIN_LOCAL_FILE_ROOTS", local_file_roots)
             .env(
                 "XIAOYIN_ALLOW_LOCAL_FILES",
@@ -561,6 +568,7 @@ fn validate_run_request(request: &HarnessRunRequest) -> Result<(), String> {
         return Err("消息不能为空且不能超过 1 MiB".to_string());
     }
     validate_http_url("LiteLLM", &request.litellm_base_url)?;
+    validate_http_url("知识库", &request.knowledge_endpoint)?;
     validate_connector_catalog(&request.connectors)?;
     if request.model.trim().is_empty() || request.model.len() > 200 {
         return Err("模型名称无效".to_string());
@@ -768,6 +776,7 @@ mod tests {
             session_id: None,
             expert_kit_id: None,
             litellm_base_url: "http://litellm.internal/v1".to_string(),
+            knowledge_endpoint: "http://control-plane.internal/api/v1/knowledge-bases".to_string(),
             connectors: vec![ConnectorDefinition {
                 id: "erp-mcp".to_string(),
                 name: "ERP".to_string(),

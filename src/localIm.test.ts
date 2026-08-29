@@ -20,7 +20,7 @@ describe('local IM native bridge', () => {
       accessPolicy: 'pairing',
       harness: {
         employeeId: 'employee-1',
-        litellmBaseUrl: 'http://litellm/v1', connectors: [],
+        litellmBaseUrl: 'http://litellm/v1', knowledgeEndpoint: 'http://control-plane/api/v1/knowledge-bases', connectors: [],
         model: 'deepseek-v4-flash', modelApiKey: 'model-token', accessToken: 'employee-token',
       },
     })
@@ -34,7 +34,7 @@ describe('local IM native bridge', () => {
     const { startLocalIm } = await import('./localIm')
     await startLocalIm({
       employeeId: 'employee-1',
-      litellmBaseUrl: 'http://litellm/v1', connectors: [],
+      litellmBaseUrl: 'http://litellm/v1', knowledgeEndpoint: 'http://control-plane/api/v1/knowledge-bases', connectors: [],
       model: 'deepseek-v4-flash', modelApiKey: 'model-token', accessToken: 'employee-token',
     })
     expect(invoke).toHaveBeenCalledWith('start_local_im', {

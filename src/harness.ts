@@ -8,6 +8,7 @@ export interface HarnessRunInput {
   sessionId?: string
   expertKitId?: string
   litellmBaseUrl: string
+  knowledgeEndpoint: string
   connectors: ConnectorRuntimeDefinition[]
   model: string
   modelApiKey: string
@@ -202,6 +203,8 @@ function toolActivityLabel(toolName: string): string {
     order_get: '查询订单',
     sales_summary: '查询销售汇总',
     inventory_risk: '查询库存风险',
+    knowledge_list: '读取知识库目录',
+    knowledge_search: '检索企业知识库',
     'office.document.read': '读取 Office 文档',
     'office.docx.create': '生成 Word 文档',
     'office.xlsx.create': '生成 Excel 表格',

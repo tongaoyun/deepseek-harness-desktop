@@ -11,6 +11,7 @@ export interface BootstrapResponse {
     connectors: string
     schedules: string
     taskRuns: string
+    knowledge: string
   }
   capabilities: string[]
   models: string[]
@@ -125,6 +126,40 @@ export interface ArtifactDownload {
   objectKey: string
   url: string
   expiresAt: string
+}
+
+export interface KnowledgeBaseEntry {
+  id: string
+  name: string
+  description: string
+  createdAt: string
+  updatedAt: string
+}
+
+export type KnowledgeDocumentStatus = 'QUEUED' | 'PROCESSING' | 'READY' | 'FAILED'
+
+export interface KnowledgeDocumentEntry {
+  id: string
+  knowledgeBaseId: string
+  filename: string
+  mediaType: string
+  sizeBytes: number
+  status: KnowledgeDocumentStatus
+  chunkCount: number
+  failureMessage?: string
+  temporalWorkflowId?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface KnowledgeSearchHit {
+  knowledgeBaseId: string
+  knowledgeBaseName: string
+  documentId: string
+  filename: string
+  locator: string
+  content: string
+  score: number
 }
 
 export interface CreateScheduledTaskRequest {

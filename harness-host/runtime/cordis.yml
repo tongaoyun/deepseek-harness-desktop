@@ -42,6 +42,13 @@
     connectors: !!js JSON.parse(process.env.XIAOYIN_MCP_CONNECTORS ?? '[]')
     employeeBearerTokenEnv: XIAOYIN_EMPLOYEE_BEARER_TOKEN
 
+- id: enterprise-knowledge
+  name: '../dist/knowledge-plugin.js'
+  config:
+    endpoint: !!js process.env.XIAOYIN_KNOWLEDGE_ENDPOINT ?? ''
+    employeeIdEnv: XIAOYIN_EMPLOYEE_ID
+    employeeTokenEnv: XIAOYIN_EMPLOYEE_BEARER_TOKEN
+
 - id: local-files
   name: '../dist/local-files-plugin.js'
   config:

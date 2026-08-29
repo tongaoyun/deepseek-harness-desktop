@@ -26,6 +26,7 @@ describe('loadBootstrap', () => {
         connectors: '/api/v1/connectors',
         schedules: '/api/v1/schedules',
         taskRuns: '/api/v1/task-runs',
+        knowledge: '/api/v1/knowledge-bases',
       },
       capabilities: ['chat'],
       models: [],

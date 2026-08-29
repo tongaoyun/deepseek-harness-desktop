@@ -31,6 +31,7 @@ import {
   loadConnectors,
   loadExpertKits,
   loadSkills,
+  resolveControlPlaneEndpoint,
 } from './api'
 import { DesktopUpdater } from './DesktopUpdater'
 import { ErpAuthScreen } from './ErpAuthScreen'
@@ -70,6 +71,7 @@ import { MemoryPage } from './MemoryPage'
 import { modelDisplayName, modelStorageKey, resolveSelectedModel } from './modelSelection'
 import { buildInvocationOptions, filterInvocationOptions, type InvocationOption } from './invocations'
 import { buildRuntimeConnectorCatalog } from './connectors'
+import { KnowledgeBasePage } from './KnowledgeBasePage'
 import './styles.css'
 
 const extensionNav = [
@@ -176,6 +178,7 @@ export default function App() {
     void startLocalIm({
       employeeId: user.userId,
       litellmBaseUrl: bootstrap.endpoints.litellm,
+      knowledgeEndpoint: resolveControlPlaneEndpoint(bootstrap.endpoints.knowledge),
       connectors: buildRuntimeConnectorCatalog(connectors, bootstrap.endpoints.erpMcp),
       model: selectedModel || bootstrap.models[0] || 'deepseek-v4-flash',
       modelApiKey: bootstrap.modelApiKey,
@@ -322,6 +325,7 @@ export default function App() {
         ...(harnessSessionId ? { sessionId: harnessSessionId } : {}),
         ...(selectedExpertKit ? { expertKitId: selectedExpertKit.id } : {}),
         litellmBaseUrl: bootstrap.endpoints.litellm,
+        knowledgeEndpoint: resolveControlPlaneEndpoint(bootstrap.endpoints.knowledge),
         connectors: runtimeConnectors,
         model: activeModel,
         modelApiKey: bootstrap.modelApiKey,
@@ -403,6 +407,7 @@ export default function App() {
       await startLocalIm({
         employeeId: user!.userId,
         litellmBaseUrl: bootstrap.endpoints.litellm,
+        knowledgeEndpoint: resolveControlPlaneEndpoint(bootstrap.endpoints.knowledge),
         connectors: runtimeConnectors,
         model: activeModel,
         modelApiKey: bootstrap.modelApiKey,
@@ -496,8 +501,10 @@ export default function App() {
               ? '面向岗位的一整套工作方案，统一组合命令、技能、连接器和后台工作流。'
               : page === 'skills'
                 ? '公司沉淀的独立工作方法，可由 Agent 自动识别或在对话中明确调用。'
-                : page === 'connectors'
-                  ? '连接公司数据和员工电脑能力；账号、地址和令牌由公司统一管理。'
+                  : page === 'connectors'
+                    ? '连接公司数据和员工电脑能力；账号、地址和令牌由公司统一管理。'
+                  : page === 'knowledge'
+                    ? '集中管理公司文档；索引任务由 Temporal 托管，回答可引用文件与页码或工作表。'
                   : page === 'im'
                     ? '把钉钉等公司消息入口连接到云端小胤 Worker，集中查看连接和处理状态。'
                   : page === 'tasks'
@@ -573,6 +580,11 @@ export default function App() {
                 <small className="connector-activation-note">连接器配置或启停后，对新会话生效</small>
               </article>)}</div>
             </>}
+            {page === 'knowledge' && bootstrap && user && <KnowledgeBasePage
+              accessToken={accessToken}
+              employeeId={user.userId}
+              endpoint={bootstrap.endpoints.knowledge}
+            />}
             {page === 'schedules' && bootstrap && user && <ScheduledTasksPage
               accessToken={accessToken}
               employeeId={user.userId}
@@ -591,6 +603,7 @@ export default function App() {
               employeeId={user.userId}
               connectors={runtimeConnectors}
               litellmBaseUrl={bootstrap.endpoints.litellm}
+              knowledgeEndpoint={resolveControlPlaneEndpoint(bootstrap.endpoints.knowledge)}
               model={activeModel}
               modelApiKey={bootstrap.modelApiKey}
             />}

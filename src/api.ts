@@ -9,6 +9,9 @@ import type {
   SkillCatalogEntry,
   ScheduledTask,
   ScheduledTaskExecution,
+  KnowledgeBaseEntry,
+  KnowledgeDocumentEntry,
+  KnowledgeSearchHit,
 } from './types'
 
 const DEFAULT_CONTROL_PLANE = 'http://192.168.2.67:30081'
@@ -144,6 +147,124 @@ export async function createTaskRunArtifactDownload(
   return response.json() as Promise<ArtifactDownload>
 }
 
+export async function loadKnowledgeBases(
+  endpoint: string,
+  employeeId: string,
+  accessToken: string,
+  signal?: AbortSignal,
+): Promise<KnowledgeBaseEntry[]> {
+  return loadCatalog(endpoint, employeeId, accessToken, '知识库', signal)
+}
+
+export async function createKnowledgeBase(
+  endpoint: string,
+  employeeId: string,
+  accessToken: string,
+  request: { name: string; description: string },
+): Promise<KnowledgeBaseEntry> {
+  return knowledgeRequest(endpoint, employeeId, accessToken, '', 'POST', request)
+}
+
+export async function deleteKnowledgeBase(
+  endpoint: string,
+  employeeId: string,
+  accessToken: string,
+  knowledgeBaseId: string,
+): Promise<void> {
+  await knowledgeVoidRequest(endpoint, employeeId, accessToken, `/${encodeURIComponent(knowledgeBaseId)}`, 'DELETE')
+}
+
+export async function loadKnowledgeDocuments(
+  endpoint: string,
+  employeeId: string,
+  accessToken: string,
+  knowledgeBaseId: string,
+  signal?: AbortSignal,
+): Promise<KnowledgeDocumentEntry[]> {
+  return loadCatalog(`${endpoint.replace(/\/$/, '')}/${encodeURIComponent(knowledgeBaseId)}/documents`,
+    employeeId, accessToken, '知识库文档', signal)
+}
+
+export async function uploadKnowledgeDocument(
+  endpoint: string,
+  employeeId: string,
+  accessToken: string,
+  knowledgeBaseId: string,
+  file: File,
+): Promise<KnowledgeDocumentEntry> {
+  const form = new FormData()
+  form.append('file', file, file.name)
+  const response = await fetch(controlPlaneUrl(`${endpoint.replace(/\/$/, '')}/${encodeURIComponent(knowledgeBaseId)}/documents`), {
+    method: 'POST', headers: enterpriseHeaders(employeeId, accessToken), body: form,
+  })
+  if (!response.ok) throw new Error(`知识库文档上传返回 ${response.status}`)
+  return response.json() as Promise<KnowledgeDocumentEntry>
+}
+
+export async function reindexKnowledgeDocument(
+  endpoint: string,
+  employeeId: string,
+  accessToken: string,
+  knowledgeBaseId: string,
+  documentId: string,
+): Promise<KnowledgeDocumentEntry> {
+  return knowledgeRequest(endpoint, employeeId, accessToken,
+    `/${encodeURIComponent(knowledgeBaseId)}/documents/${encodeURIComponent(documentId)}/reindex`, 'POST')
+}
+
+export async function deleteKnowledgeDocument(
+  endpoint: string,
+  employeeId: string,
+  accessToken: string,
+  knowledgeBaseId: string,
+  documentId: string,
+): Promise<void> {
+  await knowledgeVoidRequest(endpoint, employeeId, accessToken,
+    `/${encodeURIComponent(knowledgeBaseId)}/documents/${encodeURIComponent(documentId)}`, 'DELETE')
+}
+
+export async function searchKnowledge(
+  endpoint: string,
+  employeeId: string,
+  accessToken: string,
+  query: string,
+  knowledgeBaseIds: string[],
+): Promise<KnowledgeSearchHit[]> {
+  return knowledgeRequest(endpoint, employeeId, accessToken, '/search', 'POST', {
+    query, knowledgeBaseIds, limit: 8,
+  })
+}
+
+async function knowledgeRequest<T>(
+  endpoint: string,
+  employeeId: string,
+  accessToken: string,
+  suffix: string,
+  method: 'POST',
+  request?: object,
+): Promise<T> {
+  const response = await fetch(controlPlaneUrl(`${endpoint.replace(/\/$/, '')}${suffix}`), {
+    method,
+    headers: { ...enterpriseHeaders(employeeId, accessToken), ...(request ? { 'Content-Type': 'application/json' } : {}) },
+    ...(request ? { body: JSON.stringify(request) } : {}),
+  })
+  if (!response.ok) throw new Error(`知识库操作返回 ${response.status}`)
+  return response.json() as Promise<T>
+}
+
+async function knowledgeVoidRequest(
+  endpoint: string,
+  employeeId: string,
+  accessToken: string,
+  suffix: string,
+  method: 'DELETE',
+): Promise<void> {
+  const response = await fetch(controlPlaneUrl(`${endpoint.replace(/\/$/, '')}${suffix}`), {
+    method, headers: enterpriseHeaders(employeeId, accessToken),
+  })
+  if (!response.ok) throw new Error(`知识库删除操作返回 ${response.status}`)
+}
+
 async function scheduleRequest(
   endpoint: string,
   employeeId: string,
@@ -179,6 +300,10 @@ async function loadCatalog<T>(
 function controlPlaneUrl(path: string): string {
   const baseUrl = import.meta.env.VITE_CONTROL_PLANE_BASE_URL ?? DEFAULT_CONTROL_PLANE
   return new URL(path, `${baseUrl.replace(/\/$/, '')}/`).toString()
+}
+
+export function resolveControlPlaneEndpoint(path: string): string {
+  return controlPlaneUrl(path)
 }
 
 function enterpriseHeaders(employeeId: string, accessToken: string): Record<string, string> {
