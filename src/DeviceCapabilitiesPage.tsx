@@ -2,19 +2,21 @@ import { Activity, CheckCircle2, Clock3, Laptop, Monitor, RefreshCw, Search, Ser
 import { useEffect, useMemo, useState } from 'react'
 import { loadDeviceCapabilityReports, loadDeviceFleetOverview, submitDeviceCapabilityReport } from './api'
 import { buildDeviceCapabilityReport, inspectDeviceCapabilities } from './deviceCapabilities'
-import type { ConnectorCatalogEntry, DeviceCapabilityReport, DeviceCapabilityStatus, DeviceFleetOverview, DeviceFleetStatus, RuntimeStatus } from './types'
+import { connectorDiagnosticsAvailable, diagnoseConnectors } from './harness'
+import type { ConnectorCatalogEntry, ConnectorDiagnosticResult, ConnectorRuntimeDefinition, DeviceCapabilityReport, DeviceCapabilityStatus, DeviceFleetOverview, DeviceFleetStatus, RuntimeStatus } from './types'
 
 interface DeviceCapabilitiesPageProps {
   endpoint: string
   employeeId: string
   accessToken: string
   connectors: ConnectorCatalogEntry[]
+  runtimeConnectors: ConnectorRuntimeDefinition[]
   authorizedDirectoryCount: number
   runtimeStatus: RuntimeStatus
 }
 
 export function DeviceCapabilitiesPage({
-  endpoint, employeeId, accessToken, connectors, authorizedDirectoryCount, runtimeStatus,
+  endpoint, employeeId, accessToken, connectors, runtimeConnectors, authorizedDirectoryCount, runtimeStatus,
 }: DeviceCapabilitiesPageProps) {
   const [reports, setReports] = useState<DeviceCapabilityReport[]>([])
   const [loading, setLoading] = useState(true)
@@ -58,8 +60,13 @@ export function DeviceCapabilitiesPage({
     setProbing(true)
     setError('')
     try {
-      const probe = await inspectDeviceCapabilities()
-      const request = buildDeviceCapabilityReport(probe, { connectors, authorizedDirectoryCount, runtimeStatus })
+      const [probe, connectorDiagnostics] = await Promise.all([
+        inspectDeviceCapabilities(),
+        inspectConnectors(runtimeConnectors, accessToken),
+      ])
+      const request = buildDeviceCapabilityReport(probe, {
+        connectors, connectorDiagnostics, authorizedDirectoryCount, runtimeStatus,
+      })
       const report = await submitDeviceCapabilityReport(endpoint, employeeId, accessToken, request)
       setReports((current) => [report, ...current].slice(0, 50))
     } catch (value) {
@@ -120,6 +127,27 @@ export function DeviceCapabilitiesPage({
       </div>}
     </section>
   </div>
+}
+
+async function inspectConnectors(
+  connectors: ConnectorRuntimeDefinition[],
+  accessToken: string,
+): Promise<ConnectorDiagnosticResult[]> {
+  if (!connectorDiagnosticsAvailable()) return []
+  const targets = connectors.filter((connector) => connector.status === 'ready' && connector.transport !== 'desktop')
+  if (targets.length === 0) return []
+  try {
+    return await diagnoseConnectors({ connectors: targets, accessToken })
+  } catch {
+    return targets.map((connector) => ({
+      id: connector.id,
+      status: 'unavailable',
+      latencyMs: 0,
+      discoveredTools: [],
+      missingTools: [],
+      undeclaredTools: [],
+    }))
+  }
 }
 
 function overallLabel(report: DeviceCapabilityReport): string {

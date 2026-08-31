@@ -803,6 +803,7 @@ export default function App() {
               employeeId={user.userId}
               accessToken={accessToken}
               connectors={connectors}
+              runtimeConnectors={runtimeConnectors}
               authorizedDirectoryCount={localDirectories.length}
               runtimeStatus={runtimeStatus}
             />}

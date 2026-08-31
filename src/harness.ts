@@ -55,6 +55,10 @@ export async function diagnoseConnectors(
   return invoke<ConnectorDiagnosticResult[]>('diagnose_connectors', { request: input })
 }
 
+export function connectorDiagnosticsAvailable(): boolean {
+  return isTauri()
+}
+
 export async function authorizeLocalDirectory(): Promise<AuthorizedLocalDirectory | null> {
   if (!isTauri()) throw new Error('本地文件夹授权只能在小胤桌面客户端中使用')
   return invoke<AuthorizedLocalDirectory | null>('authorize_local_directory')

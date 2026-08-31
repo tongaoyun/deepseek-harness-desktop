@@ -1,175 +1,111 @@
-# 小胤桌面端架构与能力
+# 小胤架构与能力
 
-本文描述 `xiaoyin-desktop v0.1.16` 当前已经实现的架构与能力。
+本文描述 `xiaoyin-desktop v0.1.17` 的已实现状态。
 
 ## 总体架构
 
 ```text
 员工电脑
-┌──────────────────────────────────────────────┐
-│ xiaoyin-desktop                              │
-│ React 工作台                                 │
-│        │ Tauri Command / Event               │
-│ Tauri 原生层                                 │
-│ ├─ ERP 扫码登录与系统凭据                    │
-│ ├─ 专家套件安装与本地目录授权                │
-│ ├─ 原生审批、任务历史、自动更新              │
-│ └─ 启动并隔离 Harness Host                   │
-│        │ JSON-RPC / stdio                     │
-│ DeepSeek Harness Host                        │
-│ ├─ Skills 与专家套件命令                     │
-│ ├─ 企业 MCP Client                           │
-│ ├─ 本地文件、Office、Shell、Computer Use     │
-│ ├─ 审批桥接与会话持久化                      │
-│ └─ 钉钉 Stream 本地频道                      │
-└───────────────┬──────────────────────────────┘
-                │ 公司内网 HTTP(S)
-公司服务端      │
-┌───────────────▼──────────────────────────────┐
-│ xiaoyin-control-plane                        │
-│ ├─ Bootstrap、模型、连接器、Skill/套件目录   │
-│ ├─ Temporal 定时任务、知识索引与执行记录     │
-│ ├─ 知识库、MinIO 文件与检索引用              │
-│ └─ 设备能力、组织总览与去敏验收记录          │
-│                                              │
-│ LiteLLM ───────────────▶ DeepSeek            │
-│ ERP MCP Gateway ───────▶ 订单/销售/库存      │
-│ Temporal ──────────────▶ Workflow Worker     │
-│ Nacos ─────────────────▶ Java 配置与目录发布 │
-│ MinIO ─────────────────▶ 套件、产物、知识文档│
-│ PostgreSQL ─────────────▶ 元数据与检索片段    │
-└──────────────────────────────────────────────┘
+┌─────────────────────────────────────┐
+│ xiaoyin-desktop                     │
+│ React 工作台                        │
+│   │ Tauri Command / Event           │
+│ Tauri 原生层                        │
+│ ├─ 登录、凭据、权限与审批           │
+│ ├─ 套件安装、文件授权与自动更新     │
+│ └─ Harness Host 进程管理            │
+│   │ JSON-RPC / stdio                │
+│ DeepSeek Harness Host               │
+│ ├─ Skills、MCP 与知识库             │
+│ ├─ 文件、Office、Shell、Computer Use│
+│ └─ 本地钉钉频道                     │
+└────────────────┬────────────────────┘
+                 │ 公司内网 HTTP(S)
+公司服务端       │
+┌────────────────▼────────────────────┐
+│ xiaoyin-control-plane               │
+│ ├─ Bootstrap、模型和扩展目录        │
+│ ├─ 知识库、任务、设备验收           │
+│ └─ 短期制品上传/下载授权            │
+│ LiteLLM ─────────▶ 模型              │
+│ ERP MCP ─────────▶ 订单/销售/库存    │
+│ Temporal ────────▶ Workflow Worker   │
+│ Nacos / MinIO / PostgreSQL           │
+└─────────────────────────────────────┘
 ```
 
-桌面端不直连 Nacos、Temporal、PostgreSQL 或 MinIO 管理接口。它只使用控制中心下发的运行时目录、LiteLLM、MCP 地址和短期下载地址。
+桌面不直连 Nacos、Temporal、PostgreSQL 或 MinIO 管理接口。服务地址和短期制品 URL 均由控制中心下发。
 
-## 项目内部结构
+## 仓库结构
 
 | 目录 | 职责 |
-| --- | --- |
-| `src/` | React 工作台、能力页面、任务历史与执行时间线 |
-| `src-tauri/` | Tauri 原生壳、扫码登录、权限边界、套件安装和 Harness 进程管理 |
-| `harness-host/` | DeepSeek Harness Runtime、MCP Client、本地工具和钉钉 Stream Runtime |
-| `scripts/` | Windows Runtime 准备、安装烟测、正式发布和回滚 |
-| `.gitea/workflows/` | CI、Windows 安装包、正式 Release 与回滚 |
+|---|---|
+| `src/` | React 工作台与能力页面 |
+| `src-tauri/` | 原生安全边界、安装器和进程管理 |
+| `harness-host/` | Agent Runtime、MCP Client、本地工具和 IM |
+| `scripts/` | Windows 构建、烟测、发布和回滚 |
+| `.gitea/workflows/` | CI、安装包与正式 Release |
 
-## 一次桌面对话的请求链路
+## 核心链路
 
-1. 桌面通过控制中心 Bootstrap 获取可用模型、LiteLLM 地址和能力端点。
-2. 员工选择已安装专家套件并发送任务。
-3. Tauri 校验套件权限、连接器、工具白名单和知识库引用，然后启动或复用 Harness Host。
-4. Harness 加载套件 Skill，通过 LiteLLM 请求模型。
-5. 模型只能看到本次套件允许的本地工具、MCP 工具和知识库。
-6. Harness 调用 ERP MCP 或本地文件、Office、Shell、Computer Use 工具；高风险操作进入原生审批。
-7. Harness 只把阶段、工具名和成功/失败状态发送给工作台，不发送隐藏推理、工具参数或业务返回原文。
-8. 最终回复与安全执行步骤保存在员工电脑的任务历史中。
+| 场景 | 链路 |
+|---|---|
+| 桌面对话 | Bootstrap → Tauri 校验权限 → Harness → LiteLLM/MCP/本地工具 → 安全时间线 |
+| 套件安装 | 控制中心目录 → 短期下载地址 → SHA-256/Manifest/权限校验 → 应用数据目录 |
+| 套件发布 | SDK 校验 → 依赖预检 → MinIO 上传 → 控制中心原子发布 |
+| MCP 接入 | 项目模板 → 公共准入 CI → 部署 → 注册目录 → Nacos 动态下发 |
+| 连接器诊断 | 一次性 Harness Host → MCP 握手和 `tools/list` → 登记清单对比 → 立即关闭 |
+| 设备预检 | 原生探针 + 实时 MCP 诊断 → 去敏能力报告 → 控制中心组织总览 |
+| 定时任务 | 桌面 → 控制中心 → Temporal Schedule → Workflow Worker → MinIO 产物 |
+| 知识库 | 文档上传 → MinIO → Temporal 解析 → PostgreSQL 检索片段 |
+| 钉钉频道 | 钉钉 Stream → 本机 Harness → Skills/只读 MCP → 原会话 |
 
-## 其他请求链路
-
-### 专家套件安装
-
-控制中心目录 → 桌面解析技能、连接器和知识库名称 → 员工查看权限、依赖与版本变化并确认 → 一次性下载地址 → Tauri 下载 → SHA-256 校验 → 安全解包 → Manifest/版本/引用校验 → 应用数据目录。
-
-### 专家套件发布
-
-业务仓库固定 `@xiaoyin/expert-kit-sdk` 正式版本 → 校验 Manifest、Skill、权限、工作流、敏感信息和可复现包 → 核对线上连接器、工具与公司知识库 → 控制中心权威评估 → 一次性 MinIO 上传 → 摘要复核 → 原子发布。SDK 由 `xiaoyin-extensions` 发布到公司 Gitea Packages。控制中心阻止缺失依赖、版本回退和同版本内容变更，并提示桌面基线超前、权限扩大及命令、Skill、连接器、工具或知识库移除。
-
-### 团队扩展开发
-
-专家套件团队从 `xiaoyin-extensions` 一键生成已初始化的独立项目 → 公共 `expert-kit-conformance` 校验 Manifest、Skills 与可复现制品 → 平台依赖预检 → 控制中心发布。MCP 团队从 `xiaoyin-connectors` 一键生成带 COLA、Spring AI MCP、Nacos、Dockerfile、K3s 清单和 CI 的独立 Java 项目 → 公共 `mcp-conformance` 校验 Manifest 并可对测试环境执行无副作用探测 → 部署 → 向连接器注册目录提交审核。两类项目都不复制桌面 Harness 或平台服务端代码。
-
-### 连接器实时诊断
-
-控制中心连接器目录 → Tauri 校验最多 32 个连接器和工具声明 → 启动独立的一次性 Harness Host → 使用员工当前令牌逐个执行 MCP 初始化握手与 `tools/list` → 对比 Nacos 登记清单 → 页面展示握手耗时、缺失工具、未登记工具或去敏错误 → 关闭诊断进程。诊断不初始化模型、不调用业务工具、不复用或重启聊天 Harness，也不持久化令牌和结果。
-
-### 独立 Skill 安装与运行
-
-`xiaoyin-extensions/skills` 内容目录 → SDK 校验和跨平台可复现打包 → Skills 管理接口 → `skills/<id>/<version>` MinIO 制品 → 桌面 Skills 页面展示触发场景、依赖、权限和更新 → Tauri 原生校验并安装 → Harness 挂载。独立 Skill 与专家套件共用安全制品协议，但使用独立目录、接口和产品页面；选中后只开放其声明的连接器和工具权限。桌面每 60 秒同步目录，原生层只接受类型、ID、当前正式版本和 SHA-256 均匹配的执行白名单；下架、待更新或摘要不一致的正式制品不会进入普通会话或 IM Harness，本地仅保留“已下架”状态供员工卸载。
-
-套件只声明连接器 ID、工具、知识库引用和权限，不携带服务地址、账号或令牌。
-
-### 云端定时任务
-
-桌面任务表单 → 控制中心 → Temporal Schedule → `xiaoyin-workflow-worker` → ERP MCP → MinIO 任务产物 → 控制中心短期下载地址。
-
-任务在服务端运行，桌面关闭后不会中断。
-
-### 企业知识库
-
-桌面上传文档 → 控制中心写入 MinIO 并创建文档记录 → Temporal `KnowledgeIndexWorkflow` →
-Workflow Worker 按 PDF 页、Excel 工作表或正文解析和分块 → PostgreSQL 检索索引。
-
-知识库具有 `personal:<key>`、`team:<key>`、`organization:<key>` 稳定引用。桌面和钉钉 Harness 通过只读 `knowledge_list`、`knowledge_search` 工具检索当前员工可见范围；选中专家套件后，再与 Manifest 的 `knowledgeBaseRefs` 取交集。结果带文件名与页码、工作表或正文位置。支持删除、失败重试和重建索引，桌面关闭不影响解析。
-
-### 钉钉频道
-
-钉钉 Stream → 员工电脑上的 Harness Host → Skills/LiteLLM/企业只读 MCP → 回复原会话。
-
-IM 运行时只存在于员工桌面端，不部署云端 IM Worker；桌面显式退出或电脑关机后频道停止。
-
-频道配置保存在本机，Client Secret 使用系统凭据库；显式退出程序或电脑关机后停止。
-
-### 设备能力预检
-
-桌面原生探针 → 随机持久化设备 ID、版本、平台、架构、显示器数量与缩放 → 前端合并本地授权和企业连接器状态 → 控制中心结构化校验 → PostgreSQL 最近验收记录。
-
-上报契约不包含主机名、用户名、绝对路径、截图、Token、Shell 输出或业务数据。自动预检只确认能力是否内置、授权或连接就绪；Computer Use 在 100%/125%/150% 缩放和多显示器上的动作正确性仍通过发布前验收套件人工确认。
-
-控制中心按 `employeeId + deviceId` 提取最近一次报告形成组织设备总览。Nacos 动态配置最低桌面版本、必需能力和未上报期限；过期设备标记为长期未上报，版本过低或必需能力未就绪标记为不合规，其他 `DEGRADED` 能力标记为待处理，平台声明为 `UNSUPPORTED` 的非必需能力不计为异常。总览最多返回最近 500 台设备，可按员工、设备、版本、平台和状态筛选。
+连接器诊断不初始化模型、不调用业务工具，也不复用或重启聊天 Harness。设备上报只保留握手状态和工具差异数量，不上传端点、工具名、令牌或错误原文。
 
 ## 当前能力
 
-| 能力 | 当前状态 |
-| --- | --- |
-| ERP 扫码登录 | 已实现，使用独立原生登录窗口 |
-| 模型选择 | 已实现，当前控制中心发布 `deepseek-v4-flash` |
-| DeepSeek Harness | 已内置到 Windows 安装包，无需员工安装 Node.js |
-| 专家套件 | 已实现开发校验、线上依赖预检、控制中心发布评估、不可变发布、目录、详情、安装/更新权限确认、版本差异、下载校验、选择、命令入口和知识库绑定 |
-| 独立 Skills | 已实现独立内容仓、版本治理、不可变发布、目录、详情、依赖与权限确认、安装、更新、卸载、下架阻断、选择和斜杠入口 |
-| 发布前验收 | 已实现环境开关保护的本地套件安装、来源标记和移除，不进入控制中心目录 |
-| Skills | 已实现套件 Skill 发现、加载与执行 |
-| MCP 连接器 | 已实现 Streamable HTTP/SSE、工具白名单、读写权限控制，以及不调用模型/业务工具的实时握手与工具漂移诊断 |
-| ERP MCP | 已接入 `order_get`、`sales_summary`、`inventory_risk` |
-| 本地文件 | 已实现授权目录内浏览、文本读写、复制、移动、删除和建目录 |
-| Office | 已实现文档读取及 DOCX、XLSX、PDF 生成 |
-| Shell | 已实现授权目录内 PowerShell/Bash，带原生单次审批 |
-| Windows Computer Use | 已实现截图、活动窗口 UI 元素、点击、输入、受限按键和滚动，全部逐次审批 |
-| 执行过程 | 已实现安全时间线和任务历史回放，不展示隐藏推理 |
-| 本地记忆 | 已实现按员工保存协作风格和工作手册 |
-| 定时任务 | 已接入 Temporal，支持创建、暂停、恢复、立即运行和执行记录 |
-| 任务中心 | 已合并本地 Agent 任务和云端 Temporal 任务 |
-| 企业知识库 | 已实现个人/团队/公司范围、稳定引用、上传、索引、检索和来源引用 |
-| IM 频道 | 钉钉已实现；飞书、Lark、微信、企业微信当前仅为预留入口 |
-| 自动更新 | 已实现正式单通道、签名校验、不可变版本包和回滚 |
-| Windows 发布 | 已实现 MSI/NSIS、内置 Runtime、安装/启动/卸载烟测 |
-| 设备能力中心 | 已实现本机预检、公司动态基线、合规整改原因、组织设备筛选和去敏历史上报 |
-| 团队扩展开发 | 已实现专家套件与 Java MCP 一键生成、锁定 SDK/Archetype、公共准入 CI 和独立发布链路 |
+| 领域 | 已实现能力 |
+|---|---|
+| 身份与模型 | ERP 扫码登录、控制中心模型目录、LiteLLM |
+| Agent | 内置 DeepSeek Harness、会话持久化、安全执行时间线 |
+| 扩展 | 专家套件、独立 Skills、命令入口、版本与权限治理 |
+| 连接器 | Streamable HTTP/SSE、白名单、写审批、实时诊断 |
+| ERP | `order_get`、`sales_summary`、`inventory_risk` |
+| 本地工具 | 文件、DOCX/XLSX/PDF、Shell、Windows Computer Use |
+| 知识 | 本地记忆、个人/团队/公司知识库和来源引用 |
+| 云端任务 | Temporal 定时任务、执行记录和产物下载 |
+| IM | 本地钉钉 Stream、开放/配对模式、系统托盘驻留 |
+| 运维 | 设备基线、组织总览、签名更新、正式版本回滚 |
+| 团队开发 | 专家套件和 Java MCP 脚手架、公共准入 CI |
+
+## 安全规则
+
+- 套件只声明连接器 ID、工具、知识库引用和权限，不携带地址或凭据。
+- 普通会话默认只开放 MCP 只读工具；写工具必须由套件声明并逐次审批。
+- 本地工具只能访问员工授权目录；目录穿越、越界符号链接和敏感文件被拒绝。
+- 模型凭据、员工令牌和 IM Secret 只存在于受控进程或系统凭据库。
+- UI 和设备报告不包含隐藏推理、工具参数、业务返回、绝对路径或截图。
+- 云端无人值守工作流不执行声明为破坏性的 MCP 工具。
 
 ## 当前边界
 
-- Computer Use 当前只支持 Windows 交互桌面，不支持锁屏、远程无桌面会话或 macOS。
-- 钉钉当前使用 Client ID/Secret 手动配置，扫码自动注册尚未接入公司授权服务。
-- 当前只发布 Windows x64 正式安装包，未发布 macOS 正式安装包。
-- ERP 写工具尚未在 `erp-mcp-gateway` 对外发布。
+- Computer Use 仅支持 Windows 交互桌面，不支持锁屏或无桌面会话。
+- 钉钉使用 Client ID/Secret 手动配置；扫码自动注册尚未接入公司授权服务。
+- 正式安装包仅发布 Windows x64；企业代码签名证书暂未接入。
+- ERP MCP 当前只发布只读工具。
 
 ## 运行配置
 
-当前桌面正式环境通过控制中心 `http://192.168.2.67:30081` 启动，运行时目录中包含：
+正式控制中心为 `http://192.168.2.67:30081`。LiteLLM、ERP MCP、扩展目录、知识库和任务端点由 Bootstrap 返回；连接器目录由 Nacos 动态刷新，桌面不硬编码业务 MCP。
 
-- LiteLLM：`http://192.168.2.67:32000/v1`
-- ERP MCP：`http://192.168.2.67:30083/mcp`
-- 专家套件、Skills、连接器、知识库、定时任务和任务记录 API
+## 相关仓库
 
-这些地址由控制中心管理；连接器目录由 Nacos 动态刷新，桌面端不硬编码具体业务 MCP 工具。
+| 仓库 | 职责 |
+|---|---|
+| `xiaoyin-desktop` | Windows 桌面、Harness、本地工具和本地 IM |
+| `xiaoyin-server` | 控制中心与 Workflow Worker |
+| `xiaoyin-extensions` | SDK、专家套件、Skills 和模板 |
+| `xiaoyin-connectors` | 连接器目录、准入工具和 Java MCP 模板 |
+| `erp-mcp-gateway` | ERP 业务 MCP 工具 |
 
-## 相关项目
-
-| 项目 | 职责 |
-| --- | --- |
-| `xiaoyin-desktop` | Windows 桌面、Harness Host、本地工具与本地 IM Runtime |
-| `xiaoyin-server` | `xiaoyin-control-plane` 与 `xiaoyin-workflow-worker` 两个独立部署单元 |
-| `xiaoyin-extensions` | 公司专家套件、独立 Skills、专家套件 SDK 与项目模板 |
-| `xiaoyin-connectors` | 企业连接器目录、准入工具与 Java MCP 项目模板 |
-| `erp-mcp-gateway` | ERP 业务工具 MCP 服务 |
-
-平台固定为以上 4 个 `xiaoyin-*` 主仓库。各团队通过模板生成的业务 MCP 和专家套件仍使用独立仓库，不纳入平台主仓数量。
+平台固定维护 4 个 `xiaoyin-*` 主仓库；业务团队生成的 MCP 和专家套件使用独立仓库。

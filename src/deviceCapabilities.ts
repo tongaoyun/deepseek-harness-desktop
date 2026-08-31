@@ -1,6 +1,7 @@
 import { invoke, isTauri } from '@tauri-apps/api/core'
 import type {
   ConnectorCatalogEntry,
+  ConnectorDiagnosticResult,
   DeviceCapabilityResult,
   RuntimeStatus,
   SubmitDeviceCapabilityReport,
@@ -17,6 +18,7 @@ export interface DeviceProbe {
 
 export interface DeviceCapabilityContext {
   connectors: ConnectorCatalogEntry[]
+  connectorDiagnostics?: ConnectorDiagnosticResult[]
   authorizedDirectoryCount: number
   runtimeStatus: RuntimeStatus
 }
@@ -54,9 +56,11 @@ export function buildDeviceCapabilityReport(
       context.runtimeStatus === 'ready' ? '控制中心连接正常' : '控制中心当前不可用'),
   ]
   const uniqueConnectors = new Map(context.connectors.map((connector) => [connector.id, connector]))
+  const diagnostics = new Map((context.connectorDiagnostics ?? []).map((diagnostic) => [diagnostic.id, diagnostic]))
   for (const connector of uniqueConnectors.values()) {
-    capabilities.push(result(`connector.${normalizeKey(connector.id)}`, connectorCapabilityStatus(connector.status),
-      connectorDetail(connector.status)))
+    const diagnostic = diagnostics.get(connector.id)
+    capabilities.push(result(`connector.${normalizeKey(connector.id)}`,
+      connectorCapabilityStatus(connector.status, diagnostic), connectorDetail(connector.status, diagnostic)))
   }
   return {
     deviceId: probe.deviceId,
@@ -70,13 +74,25 @@ export function buildDeviceCapabilityReport(
   }
 }
 
-function connectorCapabilityStatus(status: ConnectorCatalogEntry['status']): DeviceCapabilityResult['status'] {
+function connectorCapabilityStatus(
+  status: ConnectorCatalogEntry['status'],
+  diagnostic?: ConnectorDiagnosticResult,
+): DeviceCapabilityResult['status'] {
+  if (diagnostic) return diagnostic.status === 'ready' ? 'READY' : 'DEGRADED'
   if (status === 'ready') return 'READY'
   if (status === 'disabled') return 'UNSUPPORTED'
   return 'DEGRADED'
 }
 
-function connectorDetail(status: ConnectorCatalogEntry['status']): string {
+function connectorDetail(
+  status: ConnectorCatalogEntry['status'],
+  diagnostic?: ConnectorDiagnosticResult,
+): string {
+  if (diagnostic?.status === 'ready') return 'MCP 握手正常，工具清单一致'
+  if (diagnostic?.status === 'drift') {
+    return `MCP 握手正常，工具清单不一致（缺少 ${diagnostic.missingTools.length}，未登记 ${diagnostic.undeclaredTools.length}）`
+  }
+  if (diagnostic?.status === 'unavailable') return 'MCP 握手失败或连接器不可达'
   return ({
     ready: '公司连接器已就绪',
     'needs-configuration': '公司连接器需要配置',
