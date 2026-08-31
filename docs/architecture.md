@@ -72,11 +72,11 @@
 
 ### 专家套件发布
 
-业务仓库固定 `xiaoyin-expert-kit-sdk` 标签 → 校验 Manifest、Skill、权限、工作流、敏感信息和可复现包 → 核对线上连接器、工具与公司知识库 → 控制中心权威评估 → 一次性 MinIO 上传 → 摘要复核 → 原子发布。控制中心阻止缺失依赖、版本回退和同版本内容变更，并提示桌面基线超前、权限扩大及命令、Skill、连接器、工具或知识库移除。
+业务仓库固定 `@xiaoyin/expert-kit-sdk` 正式版本 → 校验 Manifest、Skill、权限、工作流、敏感信息和可复现包 → 核对线上连接器、工具与公司知识库 → 控制中心权威评估 → 一次性 MinIO 上传 → 摘要复核 → 原子发布。SDK 由 `xiaoyin-extensions` 发布到公司 Gitea Packages。控制中心阻止缺失依赖、版本回退和同版本内容变更，并提示桌面基线超前、权限扩大及命令、Skill、连接器、工具或知识库移除。
 
 ### 独立 Skill 安装与运行
 
-`xiaoyin-skills` 内容仓 → SDK 校验和跨平台可复现打包 → Skills 管理接口 → `skills/<id>/<version>` MinIO 制品 → 桌面 Skills 页面展示触发场景、依赖、权限和更新 → Tauri 原生校验并安装 → Harness 挂载。独立 Skill 与专家套件共用安全制品协议，但使用独立目录、接口、内容仓和产品页面；选中后只开放其声明的连接器和工具权限。桌面每 60 秒同步目录，原生层只接受类型、ID、当前正式版本和 SHA-256 均匹配的执行白名单；下架、待更新或摘要不一致的正式制品不会进入普通会话或 IM Harness，本地仅保留“已下架”状态供员工卸载。
+`xiaoyin-extensions/skills` 内容目录 → SDK 校验和跨平台可复现打包 → Skills 管理接口 → `skills/<id>/<version>` MinIO 制品 → 桌面 Skills 页面展示触发场景、依赖、权限和更新 → Tauri 原生校验并安装 → Harness 挂载。独立 Skill 与专家套件共用安全制品协议，但使用独立目录、接口和产品页面；选中后只开放其声明的连接器和工具权限。桌面每 60 秒同步目录，原生层只接受类型、ID、当前正式版本和 SHA-256 均匹配的执行白名单；下架、待更新或摘要不一致的正式制品不会进入普通会话或 IM Harness，本地仅保留“已下架”状态供员工卸载。
 
 套件只声明连接器 ID、工具、知识库引用和权限，不携带服务地址、账号或令牌。
 
@@ -157,11 +157,10 @@ IM 运行时只存在于员工桌面端，不部署云端 IM Worker；桌面显�
 
 | 项目 | 职责 |
 | --- | --- |
-| `xiaoyin-control-plane` | 桌面控制中心与 Temporal Schedule 管理 |
-| `xiaoyin-workflow-worker` | 云端确定性工作流执行 |
+| `xiaoyin-desktop` | Windows 桌面、Harness Host、本地工具与本地 IM Runtime |
+| `xiaoyin-server` | `xiaoyin-control-plane` 与 `xiaoyin-workflow-worker` 两个独立部署单元 |
+| `xiaoyin-extensions` | 公司专家套件、独立 Skills、专家套件 SDK 与项目模板 |
+| `xiaoyin-connectors` | 企业连接器目录、准入工具与 Java MCP 项目模板 |
 | `erp-mcp-gateway` | ERP 业务工具 MCP 服务 |
-| `xiaoyin-connectors` | 企业连接器目录与 Nacos 发布 |
-| `xiaoyin-expert-kits` | 公司专家套件内容仓 |
-| `xiaoyin-skills` | 公司独立 Skills 内容仓 |
-| `xiaoyin-expert-kit-sdk` | 套件校验、可复现打包、平台预检和发布评估输出 |
-| `xiaoyin-expert-kit-template` | 各团队创建单套件项目的模板 |
+
+平台固定为以上 4 个 `xiaoyin-*` 主仓库。各团队通过模板生成的业务 MCP 和专家套件仍使用独立仓库，不纳入平台主仓数量。
