@@ -74,6 +74,10 @@
 
 业务仓库固定 `@xiaoyin/expert-kit-sdk` 正式版本 → 校验 Manifest、Skill、权限、工作流、敏感信息和可复现包 → 核对线上连接器、工具与公司知识库 → 控制中心权威评估 → 一次性 MinIO 上传 → 摘要复核 → 原子发布。SDK 由 `xiaoyin-extensions` 发布到公司 Gitea Packages。控制中心阻止缺失依赖、版本回退和同版本内容变更，并提示桌面基线超前、权限扩大及命令、Skill、连接器、工具或知识库移除。
 
+### 团队扩展开发
+
+专家套件团队从 `xiaoyin-extensions` 一键生成已初始化的独立项目 → 公共 `expert-kit-conformance` 校验 Manifest、Skills 与可复现制品 → 平台依赖预检 → 控制中心发布。MCP 团队从 `xiaoyin-connectors` 一键生成带 COLA、Spring AI MCP、Nacos、Dockerfile、K3s 清单和 CI 的独立 Java 项目 → 公共 `mcp-conformance` 校验 Manifest 并可对测试环境执行无副作用探测 → 部署 → 向连接器注册目录提交审核。两类项目都不复制桌面 Harness 或平台服务端代码。
+
 ### 独立 Skill 安装与运行
 
 `xiaoyin-extensions/skills` 内容目录 → SDK 校验和跨平台可复现打包 → Skills 管理接口 → `skills/<id>/<version>` MinIO 制品 → 桌面 Skills 页面展示触发场景、依赖、权限和更新 → Tauri 原生校验并安装 → Harness 挂载。独立 Skill 与专家套件共用安全制品协议，但使用独立目录、接口和产品页面；选中后只开放其声明的连接器和工具权限。桌面每 60 秒同步目录，原生层只接受类型、ID、当前正式版本和 SHA-256 均匹配的执行白名单；下架、待更新或摘要不一致的正式制品不会进入普通会话或 IM Harness，本地仅保留“已下架”状态供员工卸载。
@@ -135,6 +139,7 @@ IM 运行时只存在于员工桌面端，不部署云端 IM Worker；桌面显�
 | 自动更新 | 已实现正式单通道、签名校验、不可变版本包和回滚 |
 | Windows 发布 | 已实现 MSI/NSIS、内置 Runtime、安装/启动/卸载烟测 |
 | 设备能力中心 | 已实现本机预检、公司动态基线、合规整改原因、组织设备筛选和去敏历史上报 |
+| 团队扩展开发 | 已实现专家套件与 Java MCP 一键生成、锁定 SDK/Archetype、公共准入 CI 和独立发布链路 |
 
 ## 当前边界
 
