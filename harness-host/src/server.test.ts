@@ -17,6 +17,22 @@ describe('HostServer', () => {
     }])
   })
 
+  it('diagnoses configured connectors without starting the model runtime', async () => {
+    const output: JsonRpcOutput[] = []
+    const runtime = fakeRuntime()
+    const server = new HostServer(runtime, (value) => output.push(value))
+    const previous = process.env.XIAOYIN_MCP_CONNECTORS
+    process.env.XIAOYIN_MCP_CONNECTORS = '[]'
+    try {
+      await server.handle({ jsonrpc: '2.0', id: 2, method: 'connectors.diagnose' })
+    } finally {
+      if (previous === undefined) delete process.env.XIAOYIN_MCP_CONNECTORS
+      else process.env.XIAOYIN_MCP_CONNECTORS = previous
+    }
+
+    expect(output).toEqual([{ jsonrpc: '2.0', id: 2, result: [] }])
+  })
+
   it('streams a notification before the final result', async () => {
     const output: JsonRpcOutput[] = []
     const server = new HostServer(fakeRuntime(), (value) => output.push(value))

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { applyHarnessNotification, harnessActivityLabel } from './harness'
+import { applyHarnessNotification, diagnoseConnectors, harnessActivityLabel } from './harness'
 
 describe('harnessActivityLabel', () => {
   it('shows safe progress labels without exposing reasoning content', () => {
@@ -53,6 +53,13 @@ describe('harnessActivityLabel', () => {
 
     expect(steps.map((step) => step.status)).toEqual(['failed', 'failed'])
     expect(steps.at(-1)?.label).toBe('执行未完成')
+  })
+})
+
+describe('diagnoseConnectors', () => {
+  it('does not fall back to browser network access outside Tauri', async () => {
+    await expect(diagnoseConnectors({ connectors: [], accessToken: '' }))
+      .rejects.toThrow('只能在小胤桌面客户端中运行')
   })
 })
 

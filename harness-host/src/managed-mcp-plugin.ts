@@ -31,6 +31,18 @@ export interface Config {
   employeeBearerTokenEnv?: string
 }
 
+export type ConnectorDiagnosticStatus = 'ready' | 'drift' | 'unavailable'
+
+export interface ConnectorDiagnosticResult {
+  id: string
+  status: ConnectorDiagnosticStatus
+  latencyMs: number
+  discoveredTools: string[]
+  missingTools: string[]
+  undeclaredTools: string[]
+  error?: string
+}
+
 const ConnectorConfig = z.object({
   id: z.string().required(),
   name: z.string().required(),
@@ -110,6 +122,71 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     stopApprovalPolicy()
     await cleanup(unregisterTools, activeClients)
   }, 'xiaoyin managed MCP connectors')
+}
+
+export async function diagnoseConfiguredConnectors(
+  timeoutMs = 10_000,
+): Promise<ConnectorDiagnosticResult[]> {
+  const connectors = configuredConnectors(process.env.XIAOYIN_MCP_CONNECTORS)
+  const employeeToken = process.env.XIAOYIN_EMPLOYEE_BEARER_TOKEN?.trim()
+  return Promise.all(connectors.map((connector) => diagnoseConnector(connector, employeeToken, timeoutMs)))
+}
+
+export async function diagnoseConnector(
+  connector: ManagedConnectorConfig,
+  employeeToken: string | undefined,
+  timeoutMs = 10_000,
+): Promise<ConnectorDiagnosticResult> {
+  const startedAt = performance.now()
+  let client: Client | undefined
+  try {
+    validateConnector(connector, employeeToken)
+    client = new Client({ name: `xiaoyin-diagnostics-${connector.id}`, version: '0.1.0' })
+    await client.connect(createTransport(connector, employeeToken), {
+      timeout: timeoutMs,
+      maxTotalTimeout: timeoutMs,
+    })
+    const discovered = await client.listTools({}, {
+      timeout: timeoutMs,
+      maxTotalTimeout: timeoutMs,
+    })
+    const comparison = compareConnectorTools(connector.allowedTools, discovered.tools.map((tool) => tool.name))
+    return {
+      id: connector.id,
+      status: comparison.missingTools.length > 0 || comparison.undeclaredTools.length > 0 ? 'drift' : 'ready',
+      latencyMs: elapsedMilliseconds(startedAt),
+      discoveredTools: comparison.discoveredTools,
+      missingTools: comparison.missingTools,
+      undeclaredTools: comparison.undeclaredTools,
+    }
+  } catch (error) {
+    return {
+      id: connector.id,
+      status: 'unavailable',
+      latencyMs: elapsedMilliseconds(startedAt),
+      discoveredTools: [],
+      missingTools: uniqueSorted(connector.allowedTools),
+      undeclaredTools: [],
+      error: diagnosticError(error, employeeToken),
+    }
+  } finally {
+    if (client) await closeQuietly(client)
+  }
+}
+
+export function compareConnectorTools(
+  declaredTools: string[],
+  discoveredTools: string[],
+): Pick<ConnectorDiagnosticResult, 'discoveredTools' | 'missingTools' | 'undeclaredTools'> {
+  const declared = uniqueSorted(declaredTools)
+  const discovered = uniqueSorted(discoveredTools)
+  const declaredSet = new Set(declared)
+  const discoveredSet = new Set(discovered)
+  return {
+    discoveredTools: discovered,
+    missingTools: declared.filter((tool) => !discoveredSet.has(tool)),
+    undeclaredTools: discovered.filter((tool) => !declaredSet.has(tool)),
+  }
 }
 
 export function selectTools(
@@ -230,4 +307,29 @@ function debug(message: string): void {
 
 function safeError(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+function configuredConnectors(value: string | undefined): ManagedConnectorConfig[] {
+  if (!value?.trim()) return []
+  const parsed: unknown = JSON.parse(value)
+  if (!Array.isArray(parsed) || parsed.length > 32) throw new Error('连接器诊断配置无效')
+  return parsed as ManagedConnectorConfig[]
+}
+
+function elapsedMilliseconds(startedAt: number): number {
+  return Math.max(0, Math.round(performance.now() - startedAt))
+}
+
+function uniqueSorted(values: string[]): string[] {
+  return [...new Set(values)].sort((left, right) => left.localeCompare(right))
+}
+
+export function diagnosticError(error: unknown, employeeToken: string | undefined): string {
+  const message = safeError(error)
+  if (/abort|timeout|timed out/i.test(message)) return '连接或 MCP 握手超时'
+  if (/\b401\b|\b403\b|unauthori[sz]ed|forbidden/i.test(message)) return '员工身份未获连接器授权'
+  const redacted = employeeToken ? message.replaceAll(employeeToken, '[REDACTED]') : message
+  const withoutEndpoints = redacted.replace(/https?:\/\/[^\s"'<>]+/giu, '连接器端点')
+  return [...withoutEndpoints].filter((character) => !/\p{Cc}/u.test(character)).join('').slice(0, 500)
+    || '连接器诊断失败'
 }

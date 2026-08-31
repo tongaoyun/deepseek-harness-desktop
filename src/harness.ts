@@ -1,6 +1,11 @@
 import { invoke, isTauri } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
-import type { AllowedExtensionArtifact, ConnectorRuntimeDefinition, TaskExecutionStep } from './types'
+import type {
+  AllowedExtensionArtifact,
+  ConnectorDiagnosticResult,
+  ConnectorRuntimeDefinition,
+  TaskExecutionStep,
+} from './types'
 
 export interface HarnessRunInput {
   prompt: string
@@ -23,6 +28,11 @@ export interface HarnessRunResult {
   finalResponse: string
 }
 
+export interface ConnectorDiagnosticInput {
+  connectors: ConnectorRuntimeDefinition[]
+  accessToken: string
+}
+
 export interface HarnessNotification {
   requestId: number
   event: unknown
@@ -36,6 +46,13 @@ export interface AuthorizedLocalDirectory {
 export async function runHarness(input: HarnessRunInput): Promise<HarnessRunResult> {
   if (!isTauri()) throw new Error('真实 Agent 执行只能在小胤桌面客户端中运行')
   return invoke<HarnessRunResult>('run_harness', { request: input })
+}
+
+export async function diagnoseConnectors(
+  input: ConnectorDiagnosticInput,
+): Promise<ConnectorDiagnosticResult[]> {
+  if (!isTauri()) throw new Error('实时连接器诊断只能在小胤桌面客户端中运行')
+  return invoke<ConnectorDiagnosticResult[]>('diagnose_connectors', { request: input })
 }
 
 export async function authorizeLocalDirectory(): Promise<AuthorizedLocalDirectory | null> {

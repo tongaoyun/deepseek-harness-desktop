@@ -84,6 +84,7 @@ import { buildInvocationOptions, filterInvocationOptions, type InvocationOption 
 import { buildRuntimeConnectorCatalog } from './connectors'
 import { KnowledgeBasePage } from './KnowledgeBasePage'
 import { DeviceCapabilitiesPage } from './DeviceCapabilitiesPage'
+import { ConnectorsPage } from './ConnectorsPage'
 import { mergeSkills, type SkillView } from './skills'
 import { allowedExtensionArtifacts } from './extensionPolicy'
 import './styles.css'
@@ -758,21 +759,14 @@ export default function App() {
               })}</div>
             </>}
             {page === 'connectors' && <>
-              {expertKitsLoading && <div className="kit-empty">正在同步企业连接器…</div>}
-              {!expertKitsLoading && connectors.length === 0 && <div className="kit-empty">控制中心尚未配置连接器</div>}
-              {expertKitError && <div className="kit-error">{expertKitError}</div>}
-              {extensionSyncError && <div className="kit-error">{extensionSyncError}</div>}
-              <div className="kit-grid">{connectors.map((connector) => <article key={connector.id}>
-                <div className="kit-card-head"><span className={`connector-state ${connector.status}`}>{connectorStatusLabel(connector.status)}</span><small>{connector.managed ? '公司托管' : '员工配置'}</small></div>
-                <h3>{connector.name}</h3>
-                <p>{connector.summary}</p>
-                <div className="kit-capabilities">
-                  <small>{connector.transport ?? connector.kind}</small><small>v{connector.version ?? '1'}</small><small>{connector.scope}</small><small>{connector.toolNames.length} 个工具</small>
-                </div>
-                {connector.toolNames.length > 0 && <div className="connector-tools">{connector.toolNames.join(' · ')}</div>}
-                <button className="kit-install" disabled type="button">{connector.managed ? '由公司统一管理' : '配置连接器'}</button>
-                <small className="connector-activation-note">连接器配置或启停后，对新会话生效</small>
-              </article>)}</div>
+              <ConnectorsPage
+                accessToken={accessToken}
+                catalog={connectors}
+                catalogError={expertKitError}
+                loading={expertKitsLoading}
+                runtime={runtimeConnectors}
+                syncError={extensionSyncError}
+              />
             </>}
             {page === 'knowledge' && bootstrap && user && <KnowledgeBasePage
               accessToken={accessToken}
@@ -845,13 +839,4 @@ export default function App() {
       />}
     </div>
   )
-}
-
-function connectorStatusLabel(status: ConnectorCatalogEntry['status']): string {
-  return ({
-    ready: '已就绪',
-    'needs-configuration': '需要配置',
-    unavailable: '暂不可用',
-    disabled: '已停用',
-  })[status]
 }

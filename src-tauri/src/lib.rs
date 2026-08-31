@@ -433,6 +433,7 @@ pub fn run() {
             local_files::revoke_local_directory,
             local_files::clear_local_directories,
             harness::run_harness,
+            harness::diagnose_connectors,
             harness::shutdown_harness,
             im::configure_local_dingtalk,
             im::start_local_im,

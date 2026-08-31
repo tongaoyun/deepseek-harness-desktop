@@ -223,6 +223,18 @@ export interface ConnectorRuntimeDefinition {
   toolNames: string[]
 }
 
+export type ConnectorDiagnosticStatus = 'ready' | 'drift' | 'unavailable'
+
+export interface ConnectorDiagnosticResult {
+  id: string
+  status: ConnectorDiagnosticStatus
+  latencyMs: number
+  discoveredTools: string[]
+  missingTools: string[]
+  undeclaredTools: string[]
+  error?: string
+}
+
 export interface ExpertKitDownload {
   id: string
   version: string

@@ -38,6 +38,14 @@ pub struct HarnessRunRequest {
     local_file_root_ids: Vec<String>,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConnectorDiagnosticRequest {
+    #[serde(default)]
+    connectors: Vec<ConnectorDefinition>,
+    access_token: String,
+}
+
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ConnectorDefinition {
@@ -72,6 +80,18 @@ pub(crate) struct RuntimeConnector {
 pub struct HarnessRunResult {
     session_id: String,
     final_response: String,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConnectorDiagnosticResult {
+    id: String,
+    status: String,
+    latency_ms: u64,
+    discovered_tools: Vec<String>,
+    missing_tools: Vec<String>,
+    undeclared_tools: Vec<String>,
+    error: Option<String>,
 }
 
 #[derive(Clone, Serialize)]
@@ -182,6 +202,68 @@ pub async fn shutdown_harness(manager: tauri::State<'_, HarnessManager>) -> Resu
         .map_err(|error| format!("Harness 关闭线程异常：{error}"))?
 }
 
+#[tauri::command]
+pub async fn diagnose_connectors(
+    app: tauri::AppHandle,
+    request: ConnectorDiagnosticRequest,
+) -> Result<Vec<ConnectorDiagnosticResult>, String> {
+    validate_access_token(&request.access_token)?;
+    let connectors = diagnostic_connectors(&request.connectors)?;
+    if connectors.is_empty() {
+        return Ok(Vec::new());
+    }
+    let fingerprint = RuntimeFingerprint {
+        skill_directories: Vec::new(),
+        connectors,
+        local_file_roots: Vec::new(),
+        allow_local_files: false,
+        allow_shell: false,
+        allow_computer_use: false,
+        allowed_computer_tools: Vec::new(),
+        litellm_base_url: String::new(),
+        knowledge_endpoint: String::new(),
+        employee_id: String::new(),
+        team_id: String::new(),
+        knowledge_base_refs: Some(Vec::new()),
+        model: "connector-diagnostics".to_string(),
+        memory_context: String::new(),
+        credential_digest: credential_digest("", &request.access_token),
+    };
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut process = HarnessProcess::start_uninitialized(
+            &app,
+            fingerprint,
+            String::new(),
+            request.access_token,
+        )?;
+        let result = process.request("connectors.diagnose", None, None);
+        process.shutdown();
+        serde_json::from_value(result?).map_err(|error| format!("连接器诊断结果无效：{error}"))
+    })
+    .await
+    .map_err(|error| format!("连接器诊断线程异常：{error}"))?
+}
+
+fn diagnostic_connectors(catalog: &[ConnectorDefinition]) -> Result<Vec<RuntimeConnector>, String> {
+    validate_connector_catalog(catalog)?;
+    Ok(catalog
+        .iter()
+        .filter(|connector| connector.status == "ready" && connector.transport != "desktop")
+        .map(|connector| RuntimeConnector {
+            id: connector.id.clone(),
+            name: connector.name.clone(),
+            version: connector.version.clone(),
+            transport: connector.transport.clone(),
+            url: connector.url.clone(),
+            auth_mode: connector.auth_mode.clone(),
+            allowed_tools: connector.tool_names.clone(),
+            required_tools: connector.tool_names.clone(),
+            allow_write: true,
+            required: true,
+        })
+        .collect())
+}
+
 impl HarnessManager {
     fn run(
         &self,
@@ -240,6 +322,25 @@ impl HarnessProcess {
         fingerprint: RuntimeFingerprint,
         model_api_key: String,
         access_token: String,
+    ) -> Result<Self, String> {
+        Self::start_internal(app, fingerprint, model_api_key, access_token, true)
+    }
+
+    fn start_uninitialized(
+        app: &tauri::AppHandle,
+        fingerprint: RuntimeFingerprint,
+        model_api_key: String,
+        access_token: String,
+    ) -> Result<Self, String> {
+        Self::start_internal(app, fingerprint, model_api_key, access_token, false)
+    }
+
+    fn start_internal(
+        app: &tauri::AppHandle,
+        fingerprint: RuntimeFingerprint,
+        model_api_key: String,
+        access_token: String,
+        initialize: bool,
     ) -> Result<Self, String> {
         let runtime = resolve_runtime_paths(app)?;
         let app_data = app
@@ -319,7 +420,9 @@ impl HarnessProcess {
             next_id: 1,
             fingerprint,
         };
-        process.request("host.initialize", None, None)?;
+        if initialize {
+            process.request("host.initialize", None, None)?;
+        }
         Ok(process)
     }
 
@@ -769,6 +872,13 @@ fn validate_connector_catalog(connectors: &[ConnectorDefinition]) -> Result<(), 
     Ok(())
 }
 
+fn validate_access_token(access_token: &str) -> Result<(), String> {
+    if access_token.len() > 16 * 1024 || access_token.chars().any(char::is_control) {
+        return Err("ERP 访问凭据无效".to_string());
+    }
+    Ok(())
+}
+
 fn valid_identifier(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= 128
@@ -886,6 +996,40 @@ mod tests {
         assert_eq!(runtime[0].required_tools, vec!["sales_summary"]);
         assert!(runtime[0].required);
         assert!(!runtime[0].allow_write);
+    }
+
+    #[test]
+    fn diagnostics_include_only_ready_remote_connectors_and_all_declared_tools() {
+        let catalog = vec![
+            ConnectorDefinition {
+                id: "erp-mcp".to_string(),
+                name: "ERP".to_string(),
+                status: "ready".to_string(),
+                version: "2".to_string(),
+                transport: "streamable-http".to_string(),
+                url: "http://erp.internal/mcp".to_string(),
+                auth_mode: "employee-bearer".to_string(),
+                tool_names: vec!["sales_summary".to_string(), "inventory_risk".to_string()],
+            },
+            ConnectorDefinition {
+                id: "local-files".to_string(),
+                name: "本地文件".to_string(),
+                status: "ready".to_string(),
+                version: "1".to_string(),
+                transport: "desktop".to_string(),
+                url: String::new(),
+                auth_mode: "none".to_string(),
+                tool_names: vec!["local_file_read".to_string()],
+            },
+        ];
+
+        let diagnostics = diagnostic_connectors(&catalog).expect("catalog should be valid");
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].id, "erp-mcp");
+        assert_eq!(
+            diagnostics[0].required_tools,
+            vec!["sales_summary", "inventory_risk"]
+        );
     }
 
     #[test]

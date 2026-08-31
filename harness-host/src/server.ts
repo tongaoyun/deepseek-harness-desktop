@@ -1,5 +1,6 @@
 import type { HarnessRuntime, RunInput } from './runtime.js'
 import type { DingTalkImConfiguration, LocalImRuntime } from './im-runtime.js'
+import { diagnoseConfiguredConnectors } from './managed-mcp-plugin.js'
 import {
   failure,
   isJsonRpcRequest,
@@ -45,6 +46,9 @@ export class HostServer {
           return
         case 'host.initialize':
           this.emit(success(value.id, await this.runtime.initialize()))
+          return
+        case 'connectors.diagnose':
+          this.emit(success(value.id, await diagnoseConfiguredConnectors()))
           return
         case 'im.configure':
           if (this.imRuntime === undefined) throw new Error('Local IM runtime is unavailable')
