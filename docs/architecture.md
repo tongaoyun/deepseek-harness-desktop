@@ -97,6 +97,8 @@ Workflow Worker 按 PDF 页、Excel 工作表或正文解析和分块 → Postgr
 
 钉钉 Stream → 员工电脑上的 Harness Host → Skills/LiteLLM/企业只读 MCP → 回复原会话。
 
+IM 运行时只存在于员工桌面端，不部署云端 IM Worker；桌面显式退出或电脑关机后频道停止。
+
 频道配置保存在本机，Client Secret 使用系统凭据库；显式退出程序或电脑关机后停止。
 
 ### 设备能力预检
