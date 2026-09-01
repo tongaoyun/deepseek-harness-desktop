@@ -233,3 +233,8 @@ button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 2px
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
+
+.fatal-state { min-width: 900px; min-height: 100vh; padding: 42px; display: grid; place-content: center; justify-items: center; color: #26352d; background: radial-gradient(circle at 50% 36%, #e2f7e9, #f7faf8 55%); text-align: center; }
+.fatal-state h1 { margin: 17px 0 7px; font-size: 25px; letter-spacing: -.025em; }
+.fatal-state p { max-width: 440px; margin: 0; color: #728079; font-size: 11px; line-height: 1.7; }
+.fatal-state button { margin-top: 22px; padding: 10px 17px; border: 0; border-radius: 9px; color: #fff; background: #347b4d; cursor: pointer; font-size: 11px; font-weight: 750; }
