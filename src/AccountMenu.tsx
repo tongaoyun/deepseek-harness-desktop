@@ -70,7 +70,7 @@ export function AccountMenu({ companyName, department, displayName, runtimeStatu
     {feedbackOpen && <div className="feedback-overlay" role="presentation"><form aria-modal="true" className="feedback-dialog" onSubmit={submitFeedback} role="dialog">
       <button aria-label="关闭反馈" className="feedback-close" onClick={() => setFeedbackOpen(false)} type="button"><X size={16} /></button>
       <span className="feedback-icon"><MessageSquareWarning size={22} /></span><small>反馈与帮助</small><h2>告诉我们哪里需要改进</h2>
-      <p>反馈会发送到公司控制中心，并附带当前客户端版本与运行状态，不上传聊天内容或本地文件。</p>
+      <p>反馈会发送到公司控制中心，不上传聊天内容、本地文件或隐藏的模型上下文。</p>
       {feedbackState === 'sent' ? <div className="feedback-success">反馈已收到，谢谢。我们会在控制中心跟进。</div> : <><textarea autoFocus maxLength={400} onChange={(event) => setFeedback(event.target.value)} placeholder="请描述遇到的问题、期望结果或建议…" value={feedback} />{feedbackState === 'error' && <div className="feedback-error">暂时无法提交，请检查企业服务连接后重试。</div>}</>}
       <div className="feedback-actions"><button className="secondary" onClick={() => setFeedbackOpen(false)} type="button">{feedbackState === 'sent' ? '完成' : '取消'}</button>{feedbackState !== 'sent' && <button disabled={!feedback.trim() || feedbackState === 'sending'} type="submit">{feedbackState === 'sending' ? '正在提交' : '提交反馈'}</button>}</div>
     </form></div>}
