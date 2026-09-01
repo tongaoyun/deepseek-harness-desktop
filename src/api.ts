@@ -24,7 +24,7 @@ const DEFAULT_CONTROL_PLANE = 'http://192.168.2.67:30081'
 export async function loadBootstrap(employeeId = 'local-development', accessToken = '', signal?: AbortSignal): Promise<BootstrapResponse> {
   const response = await fetch(controlPlaneUrl('/api/v1/bootstrap'), {
     headers: enterpriseHeaders(employeeId, accessToken),
-    signal,
+    signal: boundedSignal(signal),
   })
   if (!response.ok) {
     throw new Error(`控制中心返回 ${response.status}`)
@@ -40,7 +40,7 @@ export async function loadExpertKits(
 ): Promise<ExpertKitCatalogEntry[]> {
   const response = await fetch(controlPlaneUrl(endpoint), {
     headers: enterpriseHeaders(employeeId, accessToken),
-    signal,
+    signal: boundedSignal(signal),
   })
   if (!response.ok) throw new Error(`专家套件目录返回 ${response.status}`)
   return response.json() as Promise<ExpertKitCatalogEntry[]>
@@ -203,7 +203,7 @@ export async function loadDeviceFleetOverview(
   if (status) parameters.set('status', status)
   const suffix = parameters.size > 0 ? `?${parameters}` : ''
   const response = await fetch(controlPlaneUrl(`${endpoint.replace(/\/$/, '')}/overview${suffix}`), {
-    headers: enterpriseHeaders(employeeId, accessToken), signal,
+    headers: enterpriseHeaders(employeeId, accessToken), signal: boundedSignal(signal),
   })
   if (!response.ok) throw new Error(`团队设备总览返回 ${response.status}`)
   return response.json() as Promise<DeviceFleetOverview>
@@ -255,7 +255,7 @@ export async function loadKnowledgeBases(
   signal?: AbortSignal,
 ): Promise<KnowledgeBaseEntry[]> {
   const response = await fetch(controlPlaneUrl(endpoint), {
-    headers: knowledgeHeaders(employeeId, teamId, accessToken), signal,
+    headers: knowledgeHeaders(employeeId, teamId, accessToken), signal: boundedSignal(signal),
   })
   if (!response.ok) throw new Error(`知识库返回 ${response.status}`)
   return response.json() as Promise<KnowledgeBaseEntry[]>
@@ -290,7 +290,7 @@ export async function loadKnowledgeDocuments(
   signal?: AbortSignal,
 ): Promise<KnowledgeDocumentEntry[]> {
   const response = await fetch(controlPlaneUrl(`${endpoint.replace(/\/$/, '')}/${encodeURIComponent(knowledgeBaseId)}/documents`), {
-    headers: knowledgeHeaders(employeeId, teamId, accessToken), signal,
+    headers: knowledgeHeaders(employeeId, teamId, accessToken), signal: boundedSignal(signal),
   })
   if (!response.ok) throw new Error(`知识库文档返回 ${response.status}`)
   return response.json() as Promise<KnowledgeDocumentEntry[]>
@@ -409,7 +409,7 @@ async function loadCatalog<T>(
 ): Promise<T[]> {
   const response = await fetch(controlPlaneUrl(endpoint), {
     headers: enterpriseHeaders(employeeId, accessToken),
-    signal,
+    signal: boundedSignal(signal),
   })
   if (!response.ok) throw new Error(`${label}返回 ${response.status}`)
   return response.json() as Promise<T[]>
@@ -418,6 +418,11 @@ async function loadCatalog<T>(
 function controlPlaneUrl(path: string): string {
   const baseUrl = import.meta.env.VITE_CONTROL_PLANE_BASE_URL ?? DEFAULT_CONTROL_PLANE
   return new URL(path, `${baseUrl.replace(/\/$/, '')}/`).toString()
+}
+
+function boundedSignal(signal?: AbortSignal, timeoutMs = 12_000): AbortSignal {
+  const timeout = AbortSignal.timeout(timeoutMs)
+  return signal ? AbortSignal.any([signal, timeout]) : timeout
 }
 
 export function resolveControlPlaneEndpoint(path: string): string {

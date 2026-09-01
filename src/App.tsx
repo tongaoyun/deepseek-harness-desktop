@@ -61,9 +61,9 @@ import {
   connectorDiagnosticsAvailable,
   harnessActivityLabel,
   listenHarnessNotifications,
+  probeHarnessHost,
   revokeLocalDirectory,
   runHarness,
-  selfTestLocalCapabilities,
   shutdownHarness,
   type AuthorizedLocalDirectory,
 } from './harness'
@@ -117,6 +117,7 @@ interface ExtensionSyncIssue {
 }
 
 type HarnessHealth = 'checking' | 'ready' | 'degraded'
+type ExtensionFilter = 'all' | 'installed' | 'available' | 'attention'
 
 export default function App() {
   const { accessToken, error: authError, logout, reopen, state: authState, user } = useEnterpriseSession()
@@ -154,6 +155,7 @@ export default function App() {
   const [harnessHealth, setHarnessHealth] = useState<HarnessHealth>('checking')
   const [harnessHealthDetail, setHarnessHealthDetail] = useState('正在检查本地 Agent')
   const [harnessHealthAttempt, setHarnessHealthAttempt] = useState(0)
+  const [localImError, setLocalImError] = useState('')
   const [harnessSteps, setHarnessSteps] = useState<TaskExecutionStep[]>([])
   const harnessStepsRef = useRef<TaskExecutionStep[]>([])
   const [localDirectories, setLocalDirectories] = useState<AuthorizedLocalDirectory[]>([])
@@ -165,6 +167,8 @@ export default function App() {
   const [connectionAttempt, setConnectionAttempt] = useState(0)
   const [notificationOpen, setNotificationOpen] = useState(false)
   const [dragActive, setDragActive] = useState(false)
+  const [extensionQuery, setExtensionQuery] = useState('')
+  const [extensionFilter, setExtensionFilter] = useState<ExtensionFilter>('all')
   const composerRef = useRef<HTMLTextAreaElement>(null)
   const messageListRef = useRef<HTMLDivElement>(null)
   const modelPickerRef = useRef<HTMLDivElement>(null)
@@ -222,13 +226,13 @@ export default function App() {
     }
     let disposed = false
     setHarnessHealth('checking')
-    setHarnessHealthDetail('正在检查 Harness Host 与本地工具')
-    void selfTestLocalCapabilities()
+    setHarnessHealthDetail('正在检查 Harness Host')
+    void probeHarnessHost()
       .then((result) => {
         if (disposed) return
-        const failed = result.checks.filter((check) => !check.passed)
-        setHarnessHealth(failed.length ? 'degraded' : 'ready')
-        setHarnessHealthDetail(failed.length ? failed.map((check) => check.detail).join('；') : 'Harness Host 与本地工具已就绪')
+        const ready = result.status === 'ready'
+        setHarnessHealth(ready ? 'ready' : 'degraded')
+        setHarnessHealthDetail(ready ? `Harness Host 已就绪 · ${result.version}` : `Harness Host 状态异常：${result.status}`)
       })
       .catch((reason) => {
         if (disposed) return
@@ -329,7 +333,8 @@ export default function App() {
       model: selectedModel || bootstrap.models[0] || 'deepseek-v4-flash',
       modelApiKey: bootstrap.modelApiKey,
       accessToken,
-    }).catch(() => undefined)
+    }).then((status) => setLocalImError(status.lastError ?? ''))
+      .catch((reason) => setLocalImError(reason instanceof Error ? reason.message : String(reason)))
   }, [accessToken, allowedArtifacts, authState, bootstrap, connectors, selectedModel, user])
 
   useEffect(() => {
@@ -391,7 +396,7 @@ export default function App() {
   useEffect(() => {
     if (!notificationOpen) return
     const dismiss = (event: MouseEvent) => {
-      if (!(event.target as Element).closest('.notification-center')) setNotificationOpen(false)
+      if (!(event.target instanceof Element) || !event.target.closest('.notification-center')) setNotificationOpen(false)
     }
     document.addEventListener('mousedown', dismiss)
     return () => document.removeEventListener('mousedown', dismiss)
@@ -420,6 +425,14 @@ export default function App() {
     ready: '企业服务已连接',
     offline: '企业服务暂不可用',
   })[runtimeStatus], [runtimeStatus])
+  const visibleExpertKits = useMemo(
+    () => expertKits.filter((item) => extensionMatches(item, extensionQuery, extensionFilter)),
+    [expertKits, extensionFilter, extensionQuery],
+  )
+  const visibleSkillViews = useMemo(
+    () => skillViews.filter((item) => extensionMatches(item, extensionQuery, extensionFilter)),
+    [extensionFilter, extensionQuery, skillViews],
+  )
 
   if (authState !== 'authenticated') {
     return <ErpAuthScreen checking={authState === 'checking'} error={authError} onReopen={() => void reopen()} />
@@ -515,7 +528,7 @@ export default function App() {
   const submit = async (event: FormEvent) => {
     event.preventDefault()
     const input = prompt.trim()
-    if (!input || !bootstrap || harnessRunning) return
+    if (!input || !bootstrap || runtimeStatus !== 'ready' || harnessRunning) return
     const remembered = memoryInstruction(input)
     if (remembered) {
       setPrompt('')
@@ -850,6 +863,7 @@ export default function App() {
   const notifications = [
     ...(runtimeStatus === 'offline' ? [{ key: 'control-plane', title: '企业服务连接失败', detail: '点击顶部连接状态可立即重试。', tone: 'danger' }] : []),
     ...(harnessHealth === 'degraded' ? [{ key: 'harness', title: '本地 Agent 需要恢复', detail: harnessHealthDetail, tone: 'danger' }] : []),
+    ...(localImError ? [{ key: 'local-im', title: '本机 IM 频道异常', detail: localImError, tone: 'danger' }] : []),
     ...extensionSyncIssues.map((issue) => ({ key: `sync-${issue.key}`, title: `${issue.label}同步失败`, detail: issue.message, tone: 'warning' })),
   ]
 
@@ -897,7 +911,7 @@ export default function App() {
               {notificationOpen && <section className="notification-popover"><header><strong>通知中心</strong><small>{notifications.length ? `${notifications.length} 项需要处理` : '当前运行正常'}</small></header>{notifications.length
                 ? notifications.map((item) => <article className={item.tone} key={item.key}><i /><span><strong>{item.title}</strong><small>{item.detail}</small></span></article>)
                 : <div className="notification-empty"><SquareCheckBig size={20} />暂无待处理事项</div>}
-                {notifications.length > 0 && <footer><button onClick={() => { setNotificationOpen(false); setPage('settings') }} type="button">打开运行诊断</button></footer>}
+                {notifications.length > 0 && <footer><button onClick={() => { setNotificationOpen(false); setPage(localImError ? 'im' : 'settings') }} type="button">{localImError ? '打开 IM 频道' : '打开运行诊断'}</button></footer>}
               </section>}
             </div>
           </div>
@@ -928,7 +942,7 @@ export default function App() {
                 </div>
                 {harnessRunning
                   ? <button aria-label="取消当前任务" className="cancel-button" onClick={() => void cancelCurrentTask()} title="取消当前任务" type="button"><CircleStop size={17} /></button>
-                  : <button aria-label="发送" className="send-button" disabled={!prompt.trim() || !bootstrap || harnessHealth === 'degraded'} title={!bootstrap ? '企业服务未连接' : harnessHealth === 'degraded' ? '请先恢复本地 Agent' : '发送'} type="submit"><Send size={17} /></button>}
+                  : <button aria-label="发送" className="send-button" disabled={!prompt.trim() || !bootstrap || runtimeStatus !== 'ready' || harnessHealth === 'degraded'} title={runtimeStatus !== 'ready' ? '企业服务未连接' : harnessHealth === 'degraded' ? '请先恢复本地 Agent' : '发送'} type="submit"><Send size={17} /></button>}
               </div>
               {visibleInvocations.length > 0 && <div className="slash-menu"><small>快捷调用</small>{visibleInvocations.map((option) => <button key={`${option.kind}-${option.profileId}-${option.id}`} onClick={() => selectInvocation(option)} type="button"><span><strong>{option.label}</strong><small>{option.description}</small></span><em>{option.profileName}</em></button>)}</div>}
             </form>
@@ -993,7 +1007,9 @@ export default function App() {
                 <span><strong>开发者验收模式</strong><small>本地套件不会上传或进入公司目录，仍受权限和逐次审批约束。</small></span>
                 <button disabled={developerKitBusy} onClick={() => void installLocalAcceptanceKit()} type="button"><PackagePlus size={14} />{developerKitBusy ? '正在处理…' : '安装本地验收包'}</button>
               </div>}
-              <div className="kit-grid">{expertKits.map((kit) => {
+              <ExtensionToolbar filter={extensionFilter} query={extensionQuery} onFilter={setExtensionFilter} onQuery={setExtensionQuery} />
+              {!expertKitsLoading && expertKits.length > 0 && visibleExpertKits.length === 0 && <div className="kit-empty">没有匹配的专家套件</div>}
+              <div className="kit-grid">{visibleExpertKits.map((kit) => {
                 const installing = installingKitId === kit.id
                 const stateLabel = kit.localOnly ? '本地验收' : kit.installState === 'retired' ? '已下架' : kit.installState === 'installed' ? '已安装' : kit.installState === 'update' ? '可更新' : '可安装'
                 return <article key={kit.id}>
@@ -1026,7 +1042,9 @@ export default function App() {
               {expertKitsLoading && <div className="kit-empty">正在同步公司技能…</div>}
               {!expertKitsLoading && skillViews.length === 0 && <div className="kit-empty">控制中心尚未发布独立技能</div>}
               {expertKitError && <div className="kit-error">{expertKitError}</div>}
-              <div className="kit-grid">{skillViews.map((skill) => {
+              <ExtensionToolbar filter={extensionFilter} query={extensionQuery} onFilter={setExtensionFilter} onQuery={setExtensionQuery} />
+              {!expertKitsLoading && skillViews.length > 0 && visibleSkillViews.length === 0 && <div className="kit-empty">没有匹配的 Skill</div>}
+              <div className="kit-grid">{visibleSkillViews.map((skill) => {
                 const installed = skill.installState === 'installed'
                 const stateLabel = skill.installState === 'retired' ? '已下架' : installed ? '已安装' : skill.installState === 'update' ? '可更新' : '可安装'
                 return <article key={skill.id}>
@@ -1116,4 +1134,33 @@ export default function App() {
       />}
     </div>
   )
+}
+
+function ExtensionToolbar({ filter, query, onFilter, onQuery }: {
+  filter: ExtensionFilter
+  query: string
+  onFilter: (value: ExtensionFilter) => void
+  onQuery: (value: string) => void
+}) {
+  const filters: Array<{ id: ExtensionFilter; label: string }> = [
+    { id: 'all', label: '全部' }, { id: 'installed', label: '已安装' },
+    { id: 'available', label: '可安装 / 更新' }, { id: 'attention', label: '需要处理' },
+  ]
+  return <div className="extension-toolbar">
+    <label><Search size={14} /><input aria-label="搜索扩展" onChange={(event) => onQuery(event.target.value)} placeholder="搜索名称、说明或 ID" value={query} />{query && <button aria-label="清空搜索" onClick={() => onQuery('')} type="button"><X size={12} /></button>}</label>
+    <div>{filters.map((item) => <button className={filter === item.id ? 'active' : ''} key={item.id} onClick={() => onFilter(item.id)} type="button">{item.label}</button>)}</div>
+  </div>
+}
+
+function extensionMatches(
+  item: { id: string; name: string; summary: string; installState: string; readiness: string },
+  query: string,
+  filter: ExtensionFilter,
+): boolean {
+  const value = query.trim().toLocaleLowerCase('zh-CN')
+  if (value && !`${item.name} ${item.summary} ${item.id}`.toLocaleLowerCase('zh-CN').includes(value)) return false
+  if (filter === 'installed') return item.installState === 'installed'
+  if (filter === 'available') return item.installState === 'available' || item.installState === 'update'
+  if (filter === 'attention') return item.installState === 'retired' || item.installState === 'update' || item.readiness === 'partial'
+  return true
 }

@@ -44,6 +44,12 @@ export interface LocalCapabilitySelfTestResult {
   checks: LocalCapabilityCheck[]
 }
 
+export interface HarnessHostHealth {
+  status: string
+  runtime: string
+  version: string
+}
+
 export interface HarnessNotification {
   requestId: number
   event: unknown
@@ -69,6 +75,11 @@ export async function diagnoseConnectors(
 export async function selfTestLocalCapabilities(): Promise<LocalCapabilitySelfTestResult> {
   if (!isTauri()) throw new Error('本地能力自检只能在小胤桌面客户端中运行')
   return invoke<LocalCapabilitySelfTestResult>('self_test_local_capabilities')
+}
+
+export async function probeHarnessHost(): Promise<HarnessHostHealth> {
+  if (!isTauri()) throw new Error('Harness Host 仅在小胤桌面客户端中运行')
+  return invoke<HarnessHostHealth>('probe_harness_host')
 }
 
 export function connectorDiagnosticsAvailable(): boolean {

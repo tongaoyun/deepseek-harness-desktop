@@ -3,6 +3,9 @@ packages:
 
 injectWorkspacePackages: true
 
+overrides:
+  uuid: 11.1.1
+
 onlyBuiltDependencies:
   - '@deepseek-ai/dsh-subprocess-local'
   - '@google/genai'

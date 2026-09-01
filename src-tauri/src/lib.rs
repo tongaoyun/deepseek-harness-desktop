@@ -586,6 +586,7 @@ pub fn run() {
             local_files::clear_local_directories,
             harness::run_harness,
             harness::diagnose_connectors,
+            harness::probe_harness_host,
             harness::self_test_local_capabilities,
             harness::cancel_harness,
             harness::shutdown_harness,
