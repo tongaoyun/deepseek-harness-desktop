@@ -47,6 +47,22 @@ function Find-Uninstaller {
     Select-Object -First 1
 }
 
+function Get-PeSubsystem {
+  param([Parameter(Mandatory = $true)][string]$Path)
+  $stream = [System.IO.File]::OpenRead($Path)
+  $reader = [System.IO.BinaryReader]::new($stream)
+  try {
+    $stream.Seek(0x3c, [System.IO.SeekOrigin]::Begin) | Out-Null
+    $peOffset = $reader.ReadInt32()
+    $stream.Seek($peOffset + 24 + 68, [System.IO.SeekOrigin]::Begin) | Out-Null
+    return $reader.ReadUInt16()
+  }
+  finally {
+    $reader.Dispose()
+    $stream.Dispose()
+  }
+}
+
 try {
   $installer = Start-Process -FilePath $resolvedInstaller -ArgumentList @("/S", "/D=$resolvedRoot") -PassThru -Wait
   if ($installer.ExitCode -ne 0) { throw "Installer exited with code $($installer.ExitCode)." }
@@ -104,6 +120,9 @@ try {
     Where-Object { $_.Name -notmatch "^(uninstall|unins.*)\.exe$" } |
     Select-Object -First 1
   if (-not $application) { throw "Installed application executable was not found in $resolvedRoot." }
+  if ((Get-PeSubsystem -Path $application.FullName) -ne 2) {
+    throw "Installed application is not a Windows GUI executable and would open a console window."
+  }
 
   $previousApiBaseUrl = $env:XIAOYIN_API_BASE_URL
   $env:XIAOYIN_API_BASE_URL = "http://127.0.0.1:9"

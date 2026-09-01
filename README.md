@@ -16,6 +16,7 @@
 ## 当前能力
 
 - ERP 扫码登录、LiteLLM 模型选择和跨设备意识同步。
+- Windows 以纯桌面模式启动；扫码授权窗口完成后自动收起并切回小胤工作台。
 - 专家套件、独立 Skills、连接器和企业知识库。
 - 本地文件、DOCX/XLSX/PDF、受审批 Shell 和 Windows Computer Use。
 - MCP 实时握手、工具清单漂移诊断和设备能力上报。

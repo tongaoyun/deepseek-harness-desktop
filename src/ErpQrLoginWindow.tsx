@@ -39,7 +39,7 @@ export function ErpQrLoginWindow() {
         const result = await invoke<PollResult>('poll_erp_qr_login', { qrSessionCode: configuration.qrSessionCode })
         if (cancelled) return
         if (result.status === 'confirmed') {
-          setStatus('登录成功，正在进入 ERP…')
+          setStatus('登录成功，正在返回小胤工作台…')
           return
         }
         if (result.status === 'expired' || result.status === 'error') {

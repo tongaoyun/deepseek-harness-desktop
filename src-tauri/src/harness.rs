@@ -2,6 +2,8 @@ use crate::{expert_kits, local_files::LocalFileAuthorizations, memory};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
 use std::{
     collections::{HashMap, HashSet},
     io::{BufRead, BufReader, Write},
@@ -410,7 +412,10 @@ impl HarnessProcess {
             .map_err(|error| format!("无法生成知识库范围配置：{error}"))?;
         let computer_tools = serde_json::to_string(&fingerprint.allowed_computer_tools)
             .map_err(|error| format!("无法生成 Computer Use 工具配置：{error}"))?;
-        let mut child = Command::new(&runtime.node)
+        let mut command = Command::new(&runtime.node);
+        #[cfg(target_os = "windows")]
+        command.creation_flags(0x0800_0000);
+        let mut child = command
             .arg(&runtime.entry)
             .current_dir(&workspace)
             .env("DSH_CORDIS_CONFIG", &runtime.config)

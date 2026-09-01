@@ -16,7 +16,7 @@ mod memory;
 
 const ERP_LOGIN_URL: &str = "http://www.instudio.me:6206/eshop/manager/login.jsp";
 const ERP_EXCHANGE_URL: &str = "http://www.instudio.me:6206/apisix/xiaoyin-sso/api/auth/exchange";
-const ERP_COOKIE_URL: &str = "http://www.instudio.me:6206/";
+const ERP_COOKIE_URL: &str = "http://www.instudio.me:6206/eshop/";
 const ERP_DINGTALK_APP_ID: &str = "dingoa43wafbtpeg2czybj";
 const ERP_DINGTALK_CALLBACK_URL: &str =
     "http://www.instudio.me:6206/eshop/login.do?method=qrcodelogin";
@@ -164,14 +164,36 @@ fn runtime_info() -> RuntimeInfo {
 
 #[tauri::command]
 fn open_erp_login(app: tauri::AppHandle) -> Result<(), String> {
+    let login_url = erp_login_window_url(&app)?;
     let window = app
         .get_webview_window("erp-login")
         .ok_or_else(|| "找不到 ERP 扫码窗口".to_string())?;
-    window
-        .reload()
-        .map_err(|error| format!("无法刷新 ERP 扫码页面：{error}"))?;
+    if window.url().ok().as_ref() == Some(&login_url) {
+        window
+            .reload()
+            .map_err(|error| format!("无法刷新 ERP 扫码页面：{error}"))?;
+    } else {
+        window
+            .navigate(login_url)
+            .map_err(|error| format!("无法重置 ERP 扫码页面：{error}"))?;
+    }
     window.show().map_err(|error| error.to_string())?;
     window.set_focus().map_err(|error| error.to_string())
+}
+
+fn erp_login_window_url(app: &tauri::AppHandle) -> Result<tauri::Url, String> {
+    let main = app
+        .get_webview_window("main")
+        .ok_or_else(|| "找不到小胤工作台".to_string())?;
+    main.url()
+        .map(login_window_url_from_main_url)
+        .map_err(|error| format!("无法确定 ERP 扫码页面：{error}"))
+}
+
+fn login_window_url_from_main_url(mut url: tauri::Url) -> tauri::Url {
+    url.set_query(Some("window=erp-login"));
+    url.set_fragment(None);
+    url
 }
 
 #[tauri::command]
@@ -224,10 +246,16 @@ fn navigate_erp_qr_login(app: &tauri::AppHandle, login_tmp_code: &str) -> Result
     let url = target
         .parse()
         .map_err(|error| format!("钉钉授权地址无效：{error}"))?;
-    app.get_webview_window("erp-login")
-        .ok_or_else(|| "找不到 ERP 扫码窗口".to_string())?
+    let window = app
+        .get_webview_window("erp-login")
+        .ok_or_else(|| "找不到 ERP 扫码窗口".to_string())?;
+    show_main_window(app);
+    window
+        .hide()
+        .map_err(|error| format!("无法收起 ERP 扫码窗口：{error}"))?;
+    window
         .navigate(url)
-        .map_err(|error| format!("无法进入 ERP 授权确认页：{error}"))
+        .map_err(|error| format!("无法完成 ERP 授权：{error}"))
 }
 
 #[tauri::command]
@@ -337,8 +365,12 @@ async fn erp_session(app: tauri::AppHandle) -> Result<ErpSessionStatus, String> 
         .await
         .map_err(|error| format!("ERP 会话响应无效：{error}"))?;
     if let Some(window) = app.get_webview_window("erp-login") {
-        let _ = window.close();
+        let _ = window.hide();
+        if let Ok(url) = erp_login_window_url(&app) {
+            let _ = window.navigate(url);
+        }
     }
+    show_main_window(&app);
     Ok(ErpSessionStatus {
         authenticated: true,
         access_token: session.access_token,
@@ -351,7 +383,8 @@ async fn erp_session(app: tauri::AppHandle) -> Result<ErpSessionStatus, String> 
 #[tauri::command]
 async fn clear_erp_session(app: tauri::AppHandle) -> Result<(), String> {
     let webview = app
-        .get_webview_window("main")
+        .get_webview_window("erp-login")
+        .or_else(|| app.get_webview_window("main"))
         .ok_or_else(|| "找不到桌面 WebView".to_string())?;
     let cookie_url = erp_cookie_url()
         .parse()
@@ -479,5 +512,19 @@ mod tests {
             .unwrap(),
             "code+with/symbols",
         );
+    }
+
+    #[test]
+    fn login_window_url_always_returns_to_the_desktop_qr_page() {
+        let url = login_window_url_from_main_url(
+            "http://tauri.localhost/index.html?stale=1#erp"
+                .parse()
+                .unwrap(),
+        );
+        assert_eq!(
+            url.as_str(),
+            "http://tauri.localhost/index.html?window=erp-login"
+        );
+        assert!(erp_cookie_url().ends_with("/eshop/"));
     }
 }
