@@ -1,6 +1,6 @@
 # 小胤架构与能力
 
-本文描述 `xiaoyin-desktop v0.1.23` 的已实现状态。
+本文描述 `xiaoyin-desktop v0.1.24` 的已实现状态。
 
 ## 总体架构
 
@@ -50,7 +50,7 @@
 
 | 场景 | 链路 |
 |---|---|
-| ERP 登录 | 钉钉扫码 → 隐藏 ERP WebView 建立 Cookie 会话 → 公司现有身份接口校验 → 小胤工作台 |
+| ERP 登录 | 钉钉扫码 → 隐藏 ERP WebView 建立 Cookie 会话 → 公司身份接口或旧 ERP 权限接口校验 → 小胤工作台 |
 | 桌面对话 | Bootstrap → Tauri 校验权限 → Harness → LiteLLM/MCP/本地工具 → 安全时间线 |
 | 套件安装 | 控制中心目录 → 短期下载地址 → SHA-256/Manifest/权限校验 → 应用数据目录 |
 | 套件发布 | SDK 校验 → 依赖预检 → MinIO 上传 → 控制中心原子发布 |
@@ -91,7 +91,7 @@
 - 审计只保存事件分类、动作、结果、资源标识和安全摘要，不保存工具参数或业务原文。
 - 云端无人值守工作流不执行声明为破坏性的 MCP 工具。
 - Windows 主程序和 Harness 子进程不创建控制台窗口；ERP 授权 WebView 完成扫码后立即隐藏并重置为小胤二维码页。
-- ERP Cookie 只留在系统 WebView；桌面通过公司现有身份接口校验，并在内网信任模式生成不包含 Cookie 的短期运行凭据。
+- ERP Cookie 只留在系统 WebView；优先使用公司身份接口，旧 ERP 会话回退到 `managerstats` 校验，并生成不包含 Cookie 的短期运行凭据。
 
 ## 当前边界
 

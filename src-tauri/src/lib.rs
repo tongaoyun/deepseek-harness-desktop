@@ -21,6 +21,8 @@ mod memory;
 const ERP_LOGIN_URL: &str = "http://www.instudio.me:6206/eshop/manager/login.jsp";
 const ERP_USER_URL: &str =
     "http://www.instudio.me:6206/gateway/tiktok-product-publish-service/auth/user";
+const ERP_PERMISSION_URL: &str =
+    "http://www.instudio.me:6206/erpaccount/erpaccount/dashboard/managerstats";
 const ERP_COOKIE_URL: &str = "http://www.instudio.me:6206/eshop/";
 const ERP_DINGTALK_APP_ID: &str = "dingoa43wafbtpeg2czybj";
 const ERP_DINGTALK_CALLBACK_URL: &str =
@@ -60,6 +62,11 @@ struct ErpIdentity {
     department_id: Option<i64>,
     #[serde(default)]
     data_permission: String,
+}
+
+#[derive(Deserialize)]
+struct ErpPermission {
+    code: Option<i64>,
 }
 
 #[derive(Serialize)]
@@ -112,6 +119,10 @@ fn erp_login_url() -> String {
 
 fn erp_user_url() -> String {
     setting("XIAOYIN_ERP_USER_URL", ERP_USER_URL)
+}
+
+fn erp_permission_url() -> String {
+    setting("XIAOYIN_ERP_PERMISSION_URL", ERP_PERMISSION_URL)
 }
 
 fn erp_cookie_url() -> String {
@@ -349,11 +360,12 @@ async fn erp_session(app: tauri::AppHandle) -> Result<ErpSessionStatus, String> 
         return Ok(unauthenticated_erp_session());
     }
 
-    let response = reqwest::Client::builder()
+    let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(5))
         .redirect(reqwest::redirect::Policy::none())
         .build()
-        .map_err(|error| format!("无法创建 ERP 会话客户端：{error}"))?
+        .map_err(|error| format!("无法创建 ERP 会话客户端：{error}"))?;
+    let response = client
         .get(erp_user_url())
         .header("Accept", "application/json")
         .header("X-Requested-With", "XMLHttpRequest")
@@ -362,18 +374,18 @@ async fn erp_session(app: tauri::AppHandle) -> Result<ErpSessionStatus, String> 
         .await
         .map_err(|error| format!("ERP 登录状态检查失败：{error}"))?;
 
-    if response.status() == reqwest::StatusCode::UNAUTHORIZED || response.status().is_redirection()
-    {
-        return Ok(unauthenticated_erp_session());
-    }
-    if !response.status().is_success() {
-        return Err(format!("ERP 身份校验失败：HTTP {}", response.status()));
-    }
-    let identity: ErpIdentity = response
-        .json()
-        .await
-        .map_err(|error| format!("ERP 身份响应无效：{error}"))?;
-    let user = erp_user_from_identity(&identity)?;
+    let user = if response.status().is_success() {
+        let identity: ErpIdentity = response
+            .json()
+            .await
+            .map_err(|error| format!("ERP 身份响应无效：{error}"))?;
+        erp_user_from_identity(&identity)?
+    } else {
+        match legacy_erp_user(&client, &cookie_header).await? {
+            Some(user) => user,
+            None => return Ok(unauthenticated_erp_session()),
+        }
+    };
     let access_token = trusted_internal_token(&cookie_header);
     if let Some(window) = app.get_webview_window("erp-login") {
         let _ = window.hide();
@@ -389,6 +401,28 @@ async fn erp_session(app: tauri::AppHandle) -> Result<ErpSessionStatus, String> 
         user: Some(user),
         login_url: erp_login_url(),
     })
+}
+
+async fn legacy_erp_user(
+    client: &reqwest::Client,
+    cookie_header: &str,
+) -> Result<Option<ErpUser>, String> {
+    let response = client
+        .post(erp_permission_url())
+        .header("Accept", "application/json")
+        .header("X-Requested-With", "XMLHttpRequest")
+        .header("Cookie", cookie_header)
+        .send()
+        .await
+        .map_err(|error| format!("ERP 权限校验失败：{error}"))?;
+    if !response.status().is_success() {
+        return Err(format!("ERP 权限校验失败：HTTP {}", response.status()));
+    }
+    let permission: ErpPermission = response
+        .json()
+        .await
+        .map_err(|error| format!("ERP 权限响应无效：{error}"))?;
+    Ok((permission.code == Some(200)).then(|| trusted_erp_user(cookie_header)))
 }
 
 fn unauthenticated_erp_session() -> ErpSessionStatus {
@@ -428,11 +462,26 @@ fn erp_user_from_identity(identity: &ErpIdentity) -> Result<ErpUser, String> {
     })
 }
 
+fn trusted_erp_user(cookie_header: &str) -> ErpUser {
+    let digest = cookie_digest(cookie_header);
+    ErpUser {
+        user_id: format!("erp-{}", &digest[..16]),
+        display_name: "ERP 员工".to_string(),
+        department: "企业内部".to_string(),
+        position: String::new(),
+        data_permission: "erp-manager".to_string(),
+        company_id: "internal".to_string(),
+        company_name: "企业内部版".to_string(),
+        role: "admin".to_string(),
+    }
+}
+
+fn cookie_digest(cookie_header: &str) -> String {
+    format!("{:x}", Sha256::digest(cookie_header.as_bytes()))
+}
+
 fn trusted_internal_token(cookie_header: &str) -> String {
-    format!(
-        "internal-trust:{:x}",
-        Sha256::digest(cookie_header.as_bytes())
-    )
+    format!("internal-trust:{}", cookie_digest(cookie_header))
 }
 
 fn trusted_session_expiry() -> Option<i64> {
@@ -589,6 +638,7 @@ mod tests {
         );
         assert!(erp_cookie_url().ends_with("/eshop/"));
         assert!(erp_user_url().ends_with("/auth/user"));
+        assert!(erp_permission_url().ends_with("/dashboard/managerstats"));
     }
 
     #[test]
@@ -617,5 +667,9 @@ mod tests {
         assert!(token.starts_with("internal-trust:"));
         assert!(!token.contains(cookie));
         assert_eq!(token, trusted_internal_token(cookie));
+        let user = trusted_erp_user(cookie);
+        assert!(user.user_id.starts_with("erp-"));
+        assert!(!user.user_id.contains("secret-session"));
+        assert_eq!(user.role, "admin");
     }
 }
