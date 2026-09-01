@@ -34,6 +34,7 @@ import {
   loadSkills,
   resolveControlPlaneEndpoint,
   submitAuditEvent,
+  submitFeedback,
 } from './api'
 import { AccountMenu } from './AccountMenu'
 import { ErpAuthScreen } from './ErpAuthScreen'
@@ -346,11 +347,7 @@ export default function App() {
 
   const submitDesktopFeedback = async (message: string) => {
     if (!bootstrap || !user) throw new Error('企业服务尚未连接')
-    await submitAuditEvent(bootstrap.endpoints.auditEvents ?? '/api/v1/audit-events', user.userId, accessToken, {
-      source: 'DESKTOP', category: 'AGENT', action: 'desktop.feedback.submit', outcome: 'SUCCEEDED',
-      resourceType: 'desktop-client', resourceId: user.userId,
-      summary: message.slice(0, 400), occurredAt: new Date().toISOString(),
-    })
+    await submitFeedback(user.userId, accessToken, message.slice(0, 400))
   }
   const submit = async (event: FormEvent) => {
     event.preventDefault()

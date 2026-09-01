@@ -234,6 +234,19 @@ export async function submitAuditEvent(
   return response.json() as Promise<AuditEventEntry>
 }
 
+export async function submitFeedback(
+  employeeId: string,
+  accessToken: string,
+  message: string,
+): Promise<void> {
+  const response = await fetch(controlPlaneUrl('/api/v1/feedback'), {
+    method: 'POST',
+    headers: { ...enterpriseHeaders(employeeId, accessToken), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message }),
+  })
+  if (!response.ok) throw new Error(`反馈提交返回 ${response.status}`)
+}
+
 export async function loadKnowledgeBases(
   endpoint: string,
   employeeId: string,
