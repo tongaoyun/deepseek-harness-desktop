@@ -78,12 +78,20 @@ try {
   }
   $health = @($runtimeOutput) | ForEach-Object { $_ | ConvertFrom-Json } |
     Where-Object { $_.id -eq 1 } | Select-Object -First 1
-  if (-not $health -or $health.result.status -ne "ready") {
+  if (-not $health) { throw "Installed Harness runtime did not return a health response." }
+  if ($health.PSObject.Properties.Name -contains "error") {
+    throw "Installed Harness runtime health check failed: $($health.error.message)"
+  }
+  if (-not ($health.PSObject.Properties.Name -contains "result") -or $health.result.status -ne "ready") {
     throw "Installed Harness runtime health check failed."
   }
   $selfTest = @($runtimeOutput) | ForEach-Object { $_ | ConvertFrom-Json } |
     Where-Object { $_.id -eq 2 } | Select-Object -First 1
-  if (-not $selfTest -or $selfTest.result.status -ne "passed") {
+  if (-not $selfTest) { throw "Installed Harness runtime did not return a capability self-test response." }
+  if ($selfTest.PSObject.Properties.Name -contains "error") {
+    throw "Installed local capability self-test failed: $($selfTest.error.message)"
+  }
+  if (-not ($selfTest.PSObject.Properties.Name -contains "result") -or $selfTest.result.status -ne "passed") {
     throw "Installed local capability self-test failed."
   }
   $requiredChecks = @("local-files", "office-docx", "office-xlsx", "office-pdf", "local-shell", "computer-use")
