@@ -3,14 +3,18 @@ import { DownloadCloud, RefreshCw, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useDesktopUpdater } from './updater'
 
-export function DesktopUpdater() {
+interface DesktopUpdaterProps {
+  onAvailabilityChange?: (available: boolean) => void
+  variant?: 'toolbar' | 'menu'
+}
+
+export function DesktopUpdater({ onAvailabilityChange, variant = 'toolbar' }: DesktopUpdaterProps) {
   const { state, checkForUpdates, install } = useDesktopUpdater()
   const [dialogOpen, setDialogOpen] = useState(false)
 
   useEffect(() => {
-    if (state.phase === 'available') setDialogOpen(true)
-    if (state.phase === 'current') setDialogOpen(false)
-  }, [state.phase])
+    onAvailabilityChange?.(state.phase === 'available')
+  }, [onAvailabilityChange, state.phase])
 
   if (!isTauri()) return null
 
@@ -31,8 +35,9 @@ export function DesktopUpdater() {
   }
 
   return <>
-    <button className={`updater-trigger ${state.phase}`} disabled={busy} onClick={openOrCheck} type="button">
-      <RefreshCw className={state.phase === 'checking' ? 'spin' : ''} size={14} /> {buttonLabel}
+    <button className={`updater-trigger ${variant} ${state.phase}`} disabled={busy} onClick={openOrCheck} type="button">
+      <RefreshCw className={state.phase === 'checking' ? 'spin' : ''} size={variant === 'menu' ? 16 : 14} />
+      {variant === 'menu' ? <span><strong>{buttonLabel}</strong><small>{state.phase === 'available' ? '点击查看版本说明并安装' : '获取最新正式版客户端'}</small></span> : buttonLabel}
     </button>
     {dialogOpen && <div aria-modal="true" className="update-overlay" role="dialog">
       <section className="update-dialog">

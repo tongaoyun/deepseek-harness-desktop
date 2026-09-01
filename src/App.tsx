@@ -7,8 +7,6 @@ import {
   ChevronDown,
   CirclePlus,
   FolderOpen,
-  HelpCircle,
-  LogOut,
   MessageSquare,
   Mic,
   PanelLeftClose,
@@ -38,7 +36,7 @@ import {
   resolveControlPlaneEndpoint,
   submitAuditEvent,
 } from './api'
-import { DesktopUpdater } from './DesktopUpdater'
+import { AccountMenu } from './AccountMenu'
 import { ErpAuthScreen } from './ErpAuthScreen'
 import { ExpertKitDetailsModal } from './ExpertKitDetailsModal'
 import { SkillDetailsModal } from './SkillDetailsModal'
@@ -346,6 +344,15 @@ export default function App() {
     await Promise.all([shutdownHarness(), stopLocalImRuntime()])
     setLocalDirectories([])
     await logout()
+  }
+
+  const submitDesktopFeedback = async (message: string) => {
+    if (!bootstrap || !user) throw new Error('企业服务尚未连接')
+    await submitAuditEvent(bootstrap.endpoints.auditEvents ?? '/api/v1/audit-events', user.userId, accessToken, {
+      source: 'DESKTOP', category: 'AGENT', action: 'desktop.feedback.submit', outcome: 'SUCCEEDED',
+      resourceType: 'desktop-client', resourceId: user.userId,
+      summary: message.slice(0, 400), occurredAt: new Date().toISOString(),
+    })
   }
   const submit = async (event: FormEvent) => {
     event.preventDefault()
@@ -676,15 +683,12 @@ export default function App() {
           {localTasks.length === 0 && <small className="recent-empty">暂无本机任务</small>}
         </div>
         <div className="sidebar-spacer" />
-        <button className="account" type="button"><span>{user?.displayName.slice(0, 1) ?? '员'}</span><div><strong>{user?.displayName ?? '企业员工'} · {user?.department || '跨境运营'}</strong><small>{user?.companyName || '企业内部版'}</small></div><i className={`status-dot ${runtimeStatus}`} /></button>
+        <AccountMenu companyName={user?.companyName} department={user?.department} displayName={user?.displayName} onFeedback={submitDesktopFeedback} onLogout={logoutWithCleanup} onSettings={() => setPage('admin')} runtimeStatus={runtimeStatus} />
       </aside>
 
       <main className="workspace">
         <header className="topbar">
           <span className={`connection-state ${runtimeStatus}`}><i /> 马帮 ERP · {statusLabel}</span>
-          <DesktopUpdater />
-          <button type="button"><HelpCircle size={15} /> 问题反馈</button>
-          <button onClick={() => void logoutWithCleanup()} type="button"><LogOut size={15} /> 退出登录</button>
         </header>
 
         {page === 'chat' ? (
