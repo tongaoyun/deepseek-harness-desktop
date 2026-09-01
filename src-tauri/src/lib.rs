@@ -1,6 +1,10 @@
 use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 use serde::{Deserialize, Serialize};
-use std::{env, time::Duration};
+use sha2::{Digest, Sha256};
+use std::{
+    env,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 use tauri::{
     Manager,
     menu::{Menu, MenuItem},
@@ -15,7 +19,8 @@ mod local_files;
 mod memory;
 
 const ERP_LOGIN_URL: &str = "http://www.instudio.me:6206/eshop/manager/login.jsp";
-const ERP_EXCHANGE_URL: &str = "http://www.instudio.me:6206/apisix/xiaoyin-sso/api/auth/exchange";
+const ERP_USER_URL: &str =
+    "http://www.instudio.me:6206/gateway/tiktok-product-publish-service/auth/user";
 const ERP_COOKIE_URL: &str = "http://www.instudio.me:6206/eshop/";
 const ERP_DINGTALK_APP_ID: &str = "dingoa43wafbtpeg2czybj";
 const ERP_DINGTALK_CALLBACK_URL: &str =
@@ -45,10 +50,16 @@ struct ErpUser {
 }
 
 #[derive(Deserialize)]
-struct ExchangedSession {
-    access_token: String,
-    expires_at: i64,
-    user: ErpUser,
+#[serde(rename_all = "camelCase")]
+struct ErpIdentity {
+    oper_id: String,
+    oper: String,
+    #[serde(default)]
+    depart: String,
+    group_company_id: Option<i64>,
+    department_id: Option<i64>,
+    #[serde(default)]
+    data_permission: String,
 }
 
 #[derive(Serialize)]
@@ -99,8 +110,8 @@ fn erp_login_url() -> String {
     setting("XIAOYIN_ERP_LOGIN_URL", ERP_LOGIN_URL)
 }
 
-fn erp_exchange_url() -> String {
-    setting("XIAOYIN_ERP_EXCHANGE_URL", ERP_EXCHANGE_URL)
+fn erp_user_url() -> String {
+    setting("XIAOYIN_ERP_USER_URL", ERP_USER_URL)
 }
 
 fn erp_cookie_url() -> String {
@@ -334,36 +345,36 @@ async fn erp_session(app: tauri::AppHandle) -> Result<ErpSessionStatus, String> 
         .collect::<Vec<_>>()
         .join("; ");
 
+    if cookie_header.is_empty() {
+        return Ok(unauthenticated_erp_session());
+    }
+
     let response = reqwest::Client::builder()
         .timeout(Duration::from_secs(5))
         .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|error| format!("无法创建 ERP 会话客户端：{error}"))?
-        .post(erp_exchange_url())
+        .get(erp_user_url())
         .header("Accept", "application/json")
         .header("X-Requested-With", "XMLHttpRequest")
-        .header("Cookie", cookie_header)
+        .header("Cookie", &cookie_header)
         .send()
         .await
         .map_err(|error| format!("ERP 登录状态检查失败：{error}"))?;
 
     if response.status() == reqwest::StatusCode::UNAUTHORIZED || response.status().is_redirection()
     {
-        return Ok(ErpSessionStatus {
-            authenticated: false,
-            access_token: String::new(),
-            expires_at: None,
-            user: None,
-            login_url: erp_login_url(),
-        });
+        return Ok(unauthenticated_erp_session());
     }
     if !response.status().is_success() {
-        return Err(format!("ERP 会话交换失败：HTTP {}", response.status()));
+        return Err(format!("ERP 身份校验失败：HTTP {}", response.status()));
     }
-    let session: ExchangedSession = response
+    let identity: ErpIdentity = response
         .json()
         .await
-        .map_err(|error| format!("ERP 会话响应无效：{error}"))?;
+        .map_err(|error| format!("ERP 身份响应无效：{error}"))?;
+    let user = erp_user_from_identity(&identity)?;
+    let access_token = trusted_internal_token(&cookie_header);
     if let Some(window) = app.get_webview_window("erp-login") {
         let _ = window.hide();
         if let Ok(url) = erp_login_window_url(&app) {
@@ -373,11 +384,62 @@ async fn erp_session(app: tauri::AppHandle) -> Result<ErpSessionStatus, String> 
     show_main_window(&app);
     Ok(ErpSessionStatus {
         authenticated: true,
-        access_token: session.access_token,
-        expires_at: Some(session.expires_at),
-        user: Some(session.user),
+        access_token,
+        expires_at: trusted_session_expiry(),
+        user: Some(user),
         login_url: erp_login_url(),
     })
+}
+
+fn unauthenticated_erp_session() -> ErpSessionStatus {
+    ErpSessionStatus {
+        authenticated: false,
+        access_token: String::new(),
+        expires_at: None,
+        user: None,
+        login_url: erp_login_url(),
+    }
+}
+
+fn erp_user_from_identity(identity: &ErpIdentity) -> Result<ErpUser, String> {
+    if identity.oper_id.trim().is_empty() || identity.oper.trim().is_empty() {
+        return Err("ERP 身份响应缺少员工信息".to_string());
+    }
+    let company_id = identity
+        .group_company_id
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| "internal".to_string());
+    Ok(ErpUser {
+        user_id: identity.oper_id.clone(),
+        display_name: identity.oper.clone(),
+        department: identity.depart.clone(),
+        position: identity
+            .department_id
+            .map(|value| value.to_string())
+            .unwrap_or_default(),
+        data_permission: identity.data_permission.clone(),
+        company_id,
+        company_name: "企业内部版".to_string(),
+        role: if identity.depart.contains("总经办") {
+            "admin".to_string()
+        } else {
+            "operator".to_string()
+        },
+    })
+}
+
+fn trusted_internal_token(cookie_header: &str) -> String {
+    format!(
+        "internal-trust:{:x}",
+        Sha256::digest(cookie_header.as_bytes())
+    )
+}
+
+fn trusted_session_expiry() -> Option<i64> {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .map(|value| value.as_secs() as i64 + 30 * 60)
 }
 
 #[tauri::command]
@@ -526,5 +588,34 @@ mod tests {
             "http://tauri.localhost/index.html?window=erp-login"
         );
         assert!(erp_cookie_url().ends_with("/eshop/"));
+        assert!(erp_user_url().ends_with("/auth/user"));
+    }
+
+    #[test]
+    fn erp_identity_is_mapped_to_the_desktop_user() {
+        let identity: ErpIdentity = serde_json::from_value(serde_json::json!({
+            "operId": "1001",
+            "oper": "测试员工",
+            "depart": "跨境运营部",
+            "groupCompanyId": 7,
+            "departmentId": 21,
+            "dataPermission": "department"
+        }))
+        .unwrap();
+        let user = erp_user_from_identity(&identity).unwrap();
+        assert_eq!(user.user_id, "1001");
+        assert_eq!(user.display_name, "测试员工");
+        assert_eq!(user.department, "跨境运营部");
+        assert_eq!(user.company_id, "7");
+        assert_eq!(user.role, "operator");
+    }
+
+    #[test]
+    fn internal_trust_token_does_not_expose_the_cookie() {
+        let cookie = "SESSION=secret-session";
+        let token = trusted_internal_token(cookie);
+        assert!(token.starts_with("internal-trust:"));
+        assert!(!token.contains(cookie));
+        assert_eq!(token, trusted_internal_token(cookie));
     }
 }
