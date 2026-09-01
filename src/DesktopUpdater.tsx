@@ -16,6 +16,15 @@ export function DesktopUpdater({ onAvailabilityChange, variant = 'toolbar' }: De
     onAvailabilityChange?.(state.phase === 'available')
   }, [onAvailabilityChange, state.phase])
 
+  useEffect(() => {
+    if (!dialogOpen) return
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !['checking', 'downloading', 'installing'].includes(state.phase)) setDialogOpen(false)
+    }
+    document.addEventListener('keydown', escape)
+    return () => document.removeEventListener('keydown', escape)
+  }, [dialogOpen, state.phase])
+
   if (!isTauri()) return null
 
   const busy = state.phase === 'checking' || state.phase === 'downloading' || state.phase === 'installing'
@@ -39,12 +48,12 @@ export function DesktopUpdater({ onAvailabilityChange, variant = 'toolbar' }: De
       <RefreshCw className={state.phase === 'checking' ? 'spin' : ''} size={variant === 'menu' ? 16 : 14} />
       {variant === 'menu' ? <span><strong>{buttonLabel}</strong><small>{state.phase === 'available' ? '点击查看版本说明并安装' : '获取最新正式版客户端'}</small></span> : buttonLabel}
     </button>
-    {dialogOpen && <div aria-modal="true" className="update-overlay" role="dialog">
-      <section className="update-dialog">
+    {dialogOpen && <div className="update-overlay" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) setDialogOpen(false) }} role="presentation">
+      <section aria-labelledby="update-title" aria-modal="true" className="update-dialog" onMouseDown={(event) => event.stopPropagation()} role="dialog">
         {!busy && <button aria-label="稍后更新" className="update-close" onClick={() => setDialogOpen(false)} type="button"><X size={16} /></button>}
         <span className="update-icon"><DownloadCloud size={25} /></span>
         <small>小胤桌面更新</small>
-        <h2>{state.phase === 'error'
+        <h2 id="update-title">{state.phase === 'error'
           ? '更新没有完成'
           : state.phase === 'checking'
             ? '正在检查更新'

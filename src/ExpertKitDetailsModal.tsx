@@ -11,7 +11,7 @@ import {
   Workflow,
   X,
 } from 'lucide-react'
-import type { ReactNode } from 'react'
+import { type ReactNode, useEffect } from 'react'
 import { expertKitChanges, expertKitHasPermissionExpansion, expertKitPermissionDetails, permissionModeLabel } from './expertKitDetails'
 import type { ExpertKitView } from './expertKits'
 import type { ConnectorCatalogEntry, KnowledgeBaseEntry, SkillCatalogEntry } from './types'
@@ -34,6 +34,12 @@ interface ExpertKitDetailsModalProps {
 export function ExpertKitDetailsModal({
   kit, skills, connectors, knowledgeBases, installing, removing, selected, onClose, onInstall, onRemove, onSchedule, onUse,
 }: ExpertKitDetailsModalProps) {
+  useEffect(() => {
+    const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose() }
+    document.addEventListener('keydown', escape)
+    return () => document.removeEventListener('keydown', escape)
+  }, [onClose])
+
   const skillById = new Map(skills.map((skill) => [skill.id, skill]))
   const connectorById = new Map(connectors.map((connector) => [connector.id, connector]))
   const knowledgeByReference = new Map(knowledgeBases.map((knowledgeBase) => [knowledgeBase.reference, knowledgeBase]))
@@ -44,7 +50,7 @@ export function ExpertKitDetailsModal({
   return <div className="expert-modal-backdrop" role="presentation" onMouseDown={(event) => {
     if (event.target === event.currentTarget) onClose()
   }}>
-    <section aria-labelledby="expert-kit-title" aria-modal="true" className="expert-kit-modal" role="dialog">
+    <section aria-labelledby="expert-kit-title" aria-modal="true" className="expert-kit-modal" onMouseDown={(event) => event.stopPropagation()} role="dialog">
       <button aria-label="关闭" className="expert-modal-close" onClick={onClose} type="button"><X size={16} /></button>
       <div className="expert-modal-heading">
         <span><Boxes size={22} /></span>

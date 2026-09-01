@@ -20,6 +20,7 @@ export function AccountMenu({ companyName, department, displayName, runtimeStatu
   const [feedbackState, setFeedbackState] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle')
   const [updateAvailable, setUpdateAvailable] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
+  const accountButtonRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
     if (!menuOpen) return
@@ -36,6 +37,18 @@ export function AccountMenu({ companyName, department, displayName, runtimeStatu
       document.removeEventListener('keydown', escape)
     }
   }, [menuOpen])
+
+  useEffect(() => {
+    if (!feedbackOpen) return
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setFeedbackOpen(false)
+    }
+    document.addEventListener('keydown', escape)
+    return () => {
+      document.removeEventListener('keydown', escape)
+      accountButtonRef.current?.focus()
+    }
+  }, [feedbackOpen])
 
   const submitFeedback = async (event: FormEvent) => {
     event.preventDefault()
@@ -62,14 +75,14 @@ export function AccountMenu({ companyName, department, displayName, runtimeStatu
         </div>
         <button className="account-logout" onClick={() => void onLogout()} type="button"><LogOut size={16} />退出登录</button>
       </section>}
-      <button aria-expanded={menuOpen} className="account" onClick={() => setMenuOpen((value) => !value)} type="button">
+      <button aria-expanded={menuOpen} className="account" onClick={() => setMenuOpen((value) => !value)} ref={accountButtonRef} type="button">
         <span>{displayName?.slice(0, 1) ?? '员'}</span><div><strong>{displayName ?? '企业员工'} · {department || '跨境运营'}</strong><small>{companyName || '企业内部版'}</small></div>
         <span className="account-indicators">{updateAvailable && <i aria-label="发现新版本" className="update-dot" />}<i className={`status-dot ${runtimeStatus}`} /><ChevronUp className={menuOpen ? 'open' : ''} size={14} /></span>
       </button>
     </div>
-    {feedbackOpen && <div className="feedback-overlay" role="presentation"><form aria-modal="true" className="feedback-dialog" onSubmit={submitFeedback} role="dialog">
+    {feedbackOpen && <div className="feedback-overlay" onMouseDown={(event) => { if (event.target === event.currentTarget) setFeedbackOpen(false) }} role="presentation"><form aria-labelledby="feedback-title" aria-modal="true" className="feedback-dialog" onMouseDown={(event) => event.stopPropagation()} onSubmit={submitFeedback} role="dialog">
       <button aria-label="关闭反馈" className="feedback-close" onClick={() => setFeedbackOpen(false)} type="button"><X size={16} /></button>
-      <span className="feedback-icon"><MessageSquareWarning size={22} /></span><small>反馈与帮助</small><h2>告诉我们哪里需要改进</h2>
+      <span className="feedback-icon"><MessageSquareWarning size={22} /></span><small>反馈与帮助</small><h2 id="feedback-title">告诉我们哪里需要改进</h2>
       <p>反馈会发送到公司控制中心，不上传聊天内容、本地文件或隐藏的模型上下文。</p>
       {feedbackState === 'sent' ? <div className="feedback-success">反馈已收到，谢谢。我们会在控制中心跟进。</div> : <><textarea autoFocus maxLength={400} onChange={(event) => setFeedback(event.target.value)} placeholder="请描述遇到的问题、期望结果或建议…" value={feedback} />{feedbackState === 'error' && <div className="feedback-error">暂时无法提交，请检查企业服务连接后重试。</div>}</>}
       <div className="feedback-actions"><button className="secondary" onClick={() => setFeedbackOpen(false)} type="button">{feedbackState === 'sent' ? '完成' : '取消'}</button>{feedbackState !== 'sent' && <button disabled={!feedback.trim() || feedbackState === 'sending'} type="submit">{feedbackState === 'sending' ? '正在提交' : '提交反馈'}</button>}</div>

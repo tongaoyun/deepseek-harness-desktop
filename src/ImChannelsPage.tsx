@@ -10,6 +10,7 @@ import {
   type LocalImHarnessContext,
   type LocalImStatus,
 } from './localIm'
+import { XiaoyinMascot } from './XiaoyinMascot'
 
 interface Props extends LocalImHarnessContext {}
 
@@ -54,6 +55,17 @@ export function ImChannelsPage(harness: Props) {
     const timer = window.setInterval(() => void refresh(), 3_000)
     return () => window.clearInterval(timer)
   }, [refresh])
+
+  useEffect(() => {
+    if (!configuring && !pairingOpen) return
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      if (pairingOpen) setPairingOpen(false)
+      else setConfiguring(false)
+    }
+    document.addEventListener('keydown', escape)
+    return () => document.removeEventListener('keydown', escape)
+  }, [configuring, pairingOpen])
 
   const harnessContext = useMemo<LocalImHarnessContext>(() => ({
     employeeId: harness.employeeId,
@@ -133,7 +145,7 @@ export function ImChannelsPage(harness: Props) {
 
   return <div className="im-channel-page local-im-page">
     <header className="local-im-intro">
-      <div className="im-hero-avatars"><span>AI</span><i><MessageCircle size={18} /></i></div>
+      <div className="im-hero-avatars"><span><XiaoyinMascot size={38} variant="avatar" /></span><i><MessageCircle size={18} /></i></div>
       <h2>IM 频道</h2>
       <p>配置 IM 频道，让小胤接收来自钉钉、飞书等平台的消息。</p>
       <small>频道凭据仅保存在本机系统凭据库，不上传到控制中心。</small>
@@ -156,10 +168,10 @@ export function ImChannelsPage(harness: Props) {
     {status?.lastError && <div className="kit-error">钉钉连接异常：{status.lastError}</div>}
     {error && <div className="kit-error">{error}</div>}
 
-    {configuring && <div className="im-modal-backdrop"><form className="im-config-modal" onSubmit={(event) => void save(event)}>
+    {configuring && <div className="im-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setConfiguring(false) }}><form aria-labelledby="im-config-title" aria-modal="true" className="im-config-modal" onMouseDown={(event) => event.stopPropagation()} onSubmit={(event) => void save(event)} role="dialog">
       <button aria-label="关闭" className="im-modal-close" onClick={() => setConfiguring(false)} type="button"><X size={18} /></button>
       <div className="im-modal-logo dingtalk"><Bot size={24} /></div>
-      <h2>{status?.configured ? '重新配置钉钉' : '配置钉钉'}</h2>
+      <h2 id="im-config-title">{status?.configured ? '重新配置钉钉' : '配置钉钉'}</h2>
       <p>在钉钉开放平台创建企业内部应用并启用机器人与 Stream 模式，然后填写应用凭据。</p>
       <label>Client ID（AppKey）<input autoComplete="off" onChange={(event) => setClientId(event.target.value)} required value={clientId} /></label>
       <label>Client Secret（AppSecret）<input autoComplete="new-password" onChange={(event) => setClientSecret(event.target.value)} placeholder={status?.secretConfigured ? '重新配置时必须重新填写' : ''} required type="password" value={clientSecret} /></label>
@@ -171,9 +183,9 @@ export function ImChannelsPage(harness: Props) {
       <div className="im-modal-actions">{status?.configured && <button className="danger" onClick={() => void remove()} type="button">移除配置</button>}<button disabled={loading} type="submit">{loading ? '正在连接…' : '保存并连接'}</button></div>
     </form></div>}
 
-    {pairingOpen && <div className="im-modal-backdrop"><section className="im-config-modal pairing-modal">
+    {pairingOpen && <div className="im-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setPairingOpen(false) }}><section aria-labelledby="im-pairing-title" aria-modal="true" className="im-config-modal pairing-modal" onMouseDown={(event) => event.stopPropagation()} role="dialog">
       <button aria-label="关闭" className="im-modal-close" onClick={() => setPairingOpen(false)} type="button"><X size={18} /></button>
-      <h2>钉钉配对管理</h2><p>员工私聊机器人或在群中 @机器人后，会在这里产生配对请求。</p>
+      <h2 id="im-pairing-title">钉钉配对管理</h2><p>员工私聊机器人或在群中 @机器人后，会在这里产生配对请求。</p>
       <div className="pairing-list">{status?.pendingPairings.map((request) => <article key={request.conversationKey}>
         <span><strong>{request.conversationType === 'group' ? request.conversationTitle || '未命名群' : request.senderNick || '钉钉用户'}</strong><small>{request.conversationType === 'group' ? '群聊' : '私聊'} · {new Date(request.requestedAt).toLocaleString()}</small></span>
         <button disabled={loading} onClick={() => void allowPairing(request.conversationKey)} type="button">允许</button>

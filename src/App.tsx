@@ -7,7 +7,6 @@ import {
   CirclePlus,
   FolderOpen,
   MessageSquare,
-  Mic,
   PanelLeftClose,
   PanelLeftOpen,
   PackagePlus,
@@ -140,6 +139,14 @@ export default function App() {
   const [localFileError, setLocalFileError] = useState('')
   const [selectedModel, setSelectedModel] = useState('')
   const [modelMenuOpen, setModelMenuOpen] = useState(false)
+  const [taskSearchOpen, setTaskSearchOpen] = useState(false)
+  const [taskQuery, setTaskQuery] = useState('')
+  const [connectionAttempt, setConnectionAttempt] = useState(0)
+  const composerRef = useRef<HTMLTextAreaElement>(null)
+  const messageListRef = useRef<HTMLDivElement>(null)
+  const modelPickerRef = useRef<HTMLDivElement>(null)
+  const taskSearchInputRef = useRef<HTMLInputElement>(null)
+  const workspaceRef = useRef<HTMLElement>(null)
   const allowedArtifacts = useMemo(
     () => allowedExtensionArtifacts(expertKitCatalog, skills),
     [expertKitCatalog, skills],
@@ -157,7 +164,7 @@ export default function App() {
       .then((value) => { setBootstrap(value); setRuntimeStatus('ready') })
       .catch(() => setRuntimeStatus('offline'))
     return () => controller.abort()
-  }, [accessToken, authState, user])
+  }, [accessToken, authState, connectionAttempt, user])
 
   useEffect(() => {
     if (!bootstrap || !user) return
@@ -262,6 +269,54 @@ export default function App() {
     void Promise.all([clearLocalDirectories(), shutdownHarness(), stopLocalImRuntime()])
   }, [authState])
 
+  useEffect(() => {
+    if (!taskSearchOpen) return
+    taskSearchInputRef.current?.focus()
+  }, [taskSearchOpen])
+
+  useEffect(() => {
+    const handleShortcut = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault()
+        setSidebarCollapsed(false)
+        setTaskSearchOpen(true)
+      }
+      if (event.key === 'Escape') {
+        setTaskSearchOpen(false)
+        setModelMenuOpen(false)
+      }
+    }
+    document.addEventListener('keydown', handleShortcut)
+    return () => document.removeEventListener('keydown', handleShortcut)
+  }, [])
+
+  useEffect(() => {
+    if (!modelMenuOpen) return
+    const dismiss = (event: MouseEvent) => {
+      if (!modelPickerRef.current?.contains(event.target as Node)) setModelMenuOpen(false)
+    }
+    document.addEventListener('mousedown', dismiss)
+    return () => document.removeEventListener('mousedown', dismiss)
+  }, [modelMenuOpen])
+
+  useEffect(() => {
+    const textarea = composerRef.current
+    if (!textarea) return
+    textarea.style.height = 'auto'
+    textarea.style.height = `${Math.max(83, Math.min(textarea.scrollHeight, 180))}px`
+  }, [prompt])
+
+  useEffect(() => {
+    const list = messageListRef.current
+    if (!list) return
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    list.scrollTo({ top: list.scrollHeight, behavior: reducedMotion ? 'auto' : 'smooth' })
+  }, [harnessActivity, harnessSteps, messages])
+
+  useEffect(() => {
+    workspaceRef.current?.scrollTo({ top: 0, behavior: 'auto' })
+  }, [page])
+
   const statusLabel = useMemo(() => ({
     connecting: '正在连接企业服务',
     ready: '企业服务已连接',
@@ -280,8 +335,14 @@ export default function App() {
   const invocationOptions = buildInvocationOptions(expertKits, skillViews)
   const visibleInvocations = filterInvocationOptions(invocationOptions, prompt)
   const activeModel = selectedModel || bootstrap?.models[0] || 'deepseek-v4-flash'
+  const visibleLocalTasks = taskQuery.trim()
+    ? localTasks.filter((task) => task.name.toLocaleLowerCase().includes(taskQuery.trim().toLocaleLowerCase()))
+    : localTasks
+  const focusComposer = () => window.requestAnimationFrame(() => composerRef.current?.focus())
   const newTask = () => {
     setPage('chat')
+    setTaskSearchOpen(false)
+    setTaskQuery('')
     setMessages([])
     setPrompt('')
     setHarnessSessionId('')
@@ -292,6 +353,7 @@ export default function App() {
     setLocalDirectories([])
     setLocalFileError('')
     void Promise.all([clearLocalDirectories(), shutdownHarness()])
+    focusComposer()
   }
   const persistLocalTask = (task: LocalTaskRun) => {
     if (!user) return
@@ -299,6 +361,8 @@ export default function App() {
   }
   const openLocalTask = (task: LocalTaskRun) => {
     setPage('chat')
+    setTaskSearchOpen(false)
+    setTaskQuery('')
     setMessages(task.messages.map((message) => ({ ...message, pending: false })))
     setCurrentLocalTaskId(task.id)
     setHarnessSessionId(task.sessionId ?? '')
@@ -312,6 +376,7 @@ export default function App() {
     setLocalDirectories([])
     setLocalFileError('')
     void Promise.all([clearLocalDirectories(), shutdownHarness()])
+    focusComposer()
   }
   const addLocalDirectory = async () => {
     setLocalFileError('')
@@ -602,6 +667,7 @@ export default function App() {
     setPage('chat')
     setPrompt('')
     setActiveExpertKitId('')
+    focusComposer()
   }
 
   const useSkill = (skill: SkillView) => {
@@ -613,6 +679,7 @@ export default function App() {
     setPrompt(`请使用 skill "${skill.id}" 完成：`)
     setActiveSkillId('')
     void shutdownHarness()
+    focusComposer()
   }
 
   const selectModel = (model: string) => {
@@ -629,6 +696,7 @@ export default function App() {
       ? `/${option.id} `
       : `请使用 skill "${option.id}" 完成：`)
     void shutdownHarness()
+    focusComposer()
   }
 
   const memorySaved = async () => {
@@ -652,36 +720,38 @@ export default function App() {
     <div className={`app-shell${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
       <aside className="sidebar">
         <div className="sidebar-brand">
-          <button className="brand-home" onClick={newTask} type="button"><XiaoyinMascot size={38} variant="avatar" /></button>
+          <button aria-label="返回新任务" className="brand-home" onClick={newTask} title="返回新任务" type="button"><XiaoyinMascot size={38} variant="avatar" /></button>
           <div><strong>小胤</strong><small>跨境电商 AI 工作台</small></div>
           <div className="sidebar-toolbar">
-            <button aria-label="搜索任务" title="搜索任务" type="button"><Search size={15} /></button>
+            <button aria-expanded={taskSearchOpen} aria-label="搜索任务" onClick={() => { setTaskSearchOpen((value) => !value); setTaskQuery('') }} title="搜索任务（Ctrl/⌘ K）" type="button"><Search size={15} /></button>
             <button aria-label={sidebarCollapsed ? '展开侧栏' : '收起侧栏'} onClick={() => setSidebarCollapsed((value) => !value)} type="button">{sidebarCollapsed ? <PanelLeftOpen size={15} /> : <PanelLeftClose size={15} />}</button>
           </div>
         </div>
-        <button className="new-task" onClick={newTask} type="button"><Plus size={17} /><span>新建任务</span></button>
+        {taskSearchOpen && <label className="task-search"><Search size={14} /><input aria-label="搜索最近任务" onChange={(event) => setTaskQuery(event.target.value)} placeholder="搜索最近任务" ref={taskSearchInputRef} value={taskQuery} /><button aria-label="关闭搜索" onClick={() => { setTaskSearchOpen(false); setTaskQuery('') }} type="button"><X size={13} /></button></label>}
+        <button className="new-task" onClick={newTask} title={sidebarCollapsed ? '新建任务' : undefined} type="button"><Plus size={17} /><span>新建任务</span></button>
         <p className="nav-label extension-label"><Boxes size={13} />扩展</p>
         <nav className="extension-nav">
-          {extensionNav.map(({ id, label, icon: Icon }) => <button className={page === id ? 'nav-item active' : 'nav-item'} key={id} onClick={() => setPage(id)} type="button"><Icon size={17} /><span>{label}</span>{id === 'skills' && skills.length > 0 && <em>{skills.length}</em>}</button>)}
+          {extensionNav.map(({ id, label, icon: Icon }) => <button aria-current={page === id ? 'page' : undefined} className={page === id ? 'nav-item active' : 'nav-item'} key={id} onClick={() => setPage(id)} title={sidebarCollapsed ? label : undefined} type="button"><Icon size={17} /><span>{label}</span>{id === 'skills' && skills.length > 0 && <em>{skills.length}</em>}</button>)}
         </nav>
         <nav className="office-nav">
-          <button className={page === 'schedules' ? 'nav-item active' : 'nav-item'} onClick={() => setPage('schedules')} type="button"><CalendarClock size={17} /><span>定时任务</span></button>
-          <button className={page === 'im' ? 'nav-item active' : 'nav-item'} onClick={() => setPage('im')} type="button"><MessageSquare size={17} /><span>IM 频道</span></button>
-          <button className={page === 'audit' ? 'nav-item active' : 'nav-item'} onClick={() => setPage('audit')} type="button"><ScrollText size={17} /><span>审计记录</span></button>
+          <button aria-current={page === 'tasks' ? 'page' : undefined} className={page === 'tasks' ? 'nav-item active' : 'nav-item'} onClick={() => setPage('tasks')} title={sidebarCollapsed ? '任务中心' : undefined} type="button"><SquareCheckBig size={17} /><span>任务中心</span></button>
+          <button aria-current={page === 'schedules' ? 'page' : undefined} className={page === 'schedules' ? 'nav-item active' : 'nav-item'} onClick={() => setPage('schedules')} title={sidebarCollapsed ? '定时任务' : undefined} type="button"><CalendarClock size={17} /><span>定时任务</span></button>
+          <button aria-current={page === 'im' ? 'page' : undefined} className={page === 'im' ? 'nav-item active' : 'nav-item'} onClick={() => setPage('im')} title={sidebarCollapsed ? 'IM 频道' : undefined} type="button"><MessageSquare size={17} /><span>IM 频道</span></button>
+          <button aria-current={page === 'audit' ? 'page' : undefined} className={page === 'audit' ? 'nav-item active' : 'nav-item'} onClick={() => setPage('audit')} title={sidebarCollapsed ? '审计记录' : undefined} type="button"><ScrollText size={17} /><span>审计记录</span></button>
         </nav>
-        <div className="sidebar-segments"><button className={page === 'tasks' ? 'active' : ''} onClick={() => setPage('tasks')} type="button"><SquareCheckBig size={14} />任务</button><button className={page === 'im' ? 'active' : ''} onClick={() => setPage('im')} type="button"><MessageSquare size={14} />频道</button></div>
         <div className="recent-tasks">
           <p className="nav-label">最近</p>
-          {localTasks.slice(0, 5).map((task) => <button className="recent-task" key={task.id} onClick={() => openLocalTask(task)} type="button"><span>{task.name}</span><small>{task.status === 'RUNNING' ? '运行中' : task.status === 'COMPLETED' ? '已完成' : '执行失败'}</small></button>)}
+          {visibleLocalTasks.slice(0, 5).map((task) => <button className="recent-task" key={task.id} onClick={() => openLocalTask(task)} type="button"><span>{task.name}</span><small>{task.status === 'RUNNING' ? '运行中' : task.status === 'COMPLETED' ? '已完成' : '执行失败'}</small></button>)}
           {localTasks.length === 0 && <small className="recent-empty">暂无本机任务</small>}
+          {localTasks.length > 0 && visibleLocalTasks.length === 0 && <small className="recent-empty">没有匹配的任务</small>}
         </div>
         <div className="sidebar-spacer" />
         <AccountMenu companyName={user?.companyName} department={user?.department} displayName={user?.displayName} onFeedback={submitDesktopFeedback} onLogout={logoutWithCleanup} onSettings={() => setPage('settings')} runtimeStatus={runtimeStatus} />
       </aside>
 
-      <main className="workspace">
+      <main className="workspace" ref={workspaceRef}>
         <header className="topbar">
-          <span className={`connection-state ${runtimeStatus}`}><i /> 马帮 ERP · {statusLabel}</span>
+          <button className={`connection-state ${runtimeStatus}`} disabled={runtimeStatus === 'connecting'} onClick={() => runtimeStatus === 'offline' && setConnectionAttempt((value) => value + 1)} title={runtimeStatus === 'offline' ? '点击重新连接' : undefined} type="button"><i /> 马帮 ERP · {statusLabel}</button>
         </header>
 
         {page === 'chat' ? (
@@ -691,20 +761,19 @@ export default function App() {
               <div className="hero-greeting">嗨，我是小胤</div>
               <h1>今天想先处理什么？</h1>
               <p>连接 ERP 数据，让专家 Agent 安全地完成查询、分析与内容生产</p>
-              <div className="starter-actions">{starterTasks.map(({ icon: Icon, title, detail, prompt: value }) => <button key={title} onClick={() => setPrompt(value)} type="button"><Icon size={16} /><span><strong>{title}</strong><small>{detail}</small></span></button>)}</div>
+              <div className="starter-actions">{starterTasks.map(({ icon: Icon, title, detail, prompt: value }) => <button key={title} onClick={() => { setPrompt(value); focusComposer() }} type="button"><Icon size={16} /><span><strong>{title}</strong><small>{detail}</small></span></button>)}</div>
             </div>}
-            {messages.length > 0 && <div className="message-list">{messages.map((message, index) => <article className={`message ${message.role}${message.pending ? ' pending' : ''}`} key={`${message.role}-${index}`}><span className="message-avatar">{message.role === 'user' ? '你' : <XiaoyinMascot size={29} variant="avatar" />}</span><div><small>{message.role === 'user' ? '你' : '小胤'}</small><p>{message.pending && harnessActivity ? harnessActivity : message.text}</p>{message.role === 'assistant' && <ExecutionTrace steps={message.pending ? harnessSteps : message.executionSteps ?? []} />}</div></article>)}</div>}
+            {messages.length > 0 && <div className="message-list" ref={messageListRef}>{messages.map((message, index) => <article className={`message ${message.role}${message.pending ? ' pending' : ''}`} key={`${message.role}-${index}`}><span className="message-avatar">{message.role === 'user' ? '你' : <XiaoyinMascot size={29} variant="avatar" />}</span><div><small>{message.role === 'user' ? '你' : '小胤'}</small><p>{message.pending && harnessActivity ? harnessActivity : message.text}</p>{message.role === 'assistant' && <ExecutionTrace steps={message.pending ? harnessSteps : message.executionSteps ?? []} />}</div></article>)}</div>}
             <form className="composer" onSubmit={submit}>
-              <textarea aria-label="给小胤发送消息" onChange={(event) => setPrompt(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit() } }} placeholder="描述任务，/ 选择专家套件或技能，@ 添加业务上下文" value={prompt} />
+              <textarea aria-label="给小胤发送消息" onChange={(event) => setPrompt(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); event.currentTarget.form?.requestSubmit() } }} placeholder="描述任务，/ 选择专家套件或技能，@ 添加业务上下文" ref={composerRef} value={prompt} />
               <div className="composer-actions">
                 <button aria-label="授权本地文件夹" className="circle-button" disabled={harnessRunning} onClick={() => void addLocalDirectory()} title="授权本地文件夹" type="button"><CirclePlus size={18} /></button>
                 <button className="mode-button" onClick={() => setPage(selectedSkill ? 'skills' : 'experts')} type="button"><Sparkles size={14} /> {selectedExpertKit?.name ?? selectedSkill?.name ?? '运营通用'} <ChevronDown size={13} /></button>
-                <div className="model-picker">
+                <div className="model-picker" ref={modelPickerRef}>
                   <button aria-expanded={modelMenuOpen} className="model-label" onClick={() => setModelMenuOpen((value) => !value)} type="button"><Bot size={14} /> {modelDisplayName(activeModel)} <ChevronDown size={13} /></button>
                   {modelMenuOpen && <div className="model-menu"><small>公司可用模型</small>{(bootstrap?.models.length ? bootstrap.models : [activeModel]).map((model) => <button className={model === activeModel ? 'active' : ''} key={model} onClick={() => selectModel(model)} type="button"><span><strong>{modelDisplayName(model)}</strong><small>{model}</small></span>{model === activeModel && <SquareCheckBig size={14} />}</button>)}</div>}
                 </div>
-                <button aria-label="语音输入" className="circle-button" type="button"><Mic size={17} /></button>
-                <button aria-label="发送" className="send-button" disabled={!prompt.trim() || harnessRunning || !bootstrap} type="submit"><Send size={17} /></button>
+                <button aria-label="发送" className="send-button" disabled={!prompt.trim() || harnessRunning || !bootstrap} title={!bootstrap ? '企业服务未连接' : harnessRunning ? '当前任务正在执行' : '发送'} type="submit"><Send size={17} /></button>
               </div>
               {visibleInvocations.length > 0 && <div className="slash-menu"><small>快捷调用</small>{visibleInvocations.map((option) => <button key={`${option.kind}-${option.profileId}-${option.id}`} onClick={() => selectInvocation(option)} type="button"><span><strong>{option.label}</strong><small>{option.description}</small></span><em>{option.profileName}</em></button>)}</div>}
             </form>

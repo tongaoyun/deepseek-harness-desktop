@@ -1,4 +1,5 @@
 import { BookOpenCheck, CheckCircle2, PlugZap, ShieldCheck, Trash2, WandSparkles, X } from 'lucide-react'
+import { useEffect } from 'react'
 import { expertKitPermissionDetails, permissionModeLabel } from './expertKitDetails'
 import { skillPermissionExpansion, type SkillView } from './skills'
 import type { ConnectorCatalogEntry, KnowledgeBaseEntry } from './types'
@@ -19,6 +20,12 @@ interface SkillDetailsModalProps {
 export function SkillDetailsModal({
   skill, connectors, knowledgeBases, installing, removing, selected, onClose, onInstall, onRemove, onUse,
 }: SkillDetailsModalProps) {
+  useEffect(() => {
+    const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose() }
+    document.addEventListener('keydown', escape)
+    return () => document.removeEventListener('keydown', escape)
+  }, [onClose])
+
   const connectorById = new Map(connectors.map((connector) => [connector.id, connector]))
   const knowledgeByReference = new Map(knowledgeBases.map((entry) => [entry.reference, entry]))
   const issues = [...skill.connectorIssues, ...skill.knowledgeIssues]
@@ -26,7 +33,7 @@ export function SkillDetailsModal({
   return <div className="expert-modal-backdrop" role="presentation" onMouseDown={(event) => {
     if (event.target === event.currentTarget) onClose()
   }}>
-    <section aria-labelledby="skill-title" aria-modal="true" className="expert-kit-modal" role="dialog">
+    <section aria-labelledby="skill-title" aria-modal="true" className="expert-kit-modal" onMouseDown={(event) => event.stopPropagation()} role="dialog">
       <button aria-label="关闭" className="expert-modal-close" onClick={onClose} type="button"><X size={16} /></button>
       <div className="expert-modal-heading">
         <span><WandSparkles size={22} /></span>
