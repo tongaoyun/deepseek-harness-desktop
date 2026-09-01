@@ -2,7 +2,7 @@ import { Activity, CheckCircle2, Clock3, Laptop, Monitor, RefreshCw, Search, Ser
 import { useEffect, useMemo, useState } from 'react'
 import { loadDeviceCapabilityReports, loadDeviceFleetOverview, submitDeviceCapabilityReport } from './api'
 import { buildDeviceCapabilityReport, inspectDeviceCapabilities } from './deviceCapabilities'
-import { connectorDiagnosticsAvailable, diagnoseConnectors } from './harness'
+import { connectorDiagnosticsAvailable, diagnoseConnectors, selfTestLocalCapabilities, type LocalCapabilityCheck } from './harness'
 import type { ConnectorCatalogEntry, ConnectorDiagnosticResult, ConnectorRuntimeDefinition, DeviceCapabilityReport, DeviceCapabilityStatus, DeviceFleetOverview, DeviceFleetStatus, RuntimeStatus } from './types'
 
 interface DeviceCapabilitiesPageProps {
@@ -60,12 +60,13 @@ export function DeviceCapabilitiesPage({
     setProbing(true)
     setError('')
     try {
-      const [probe, connectorDiagnostics] = await Promise.all([
+      const [probe, connectorDiagnostics, localCapabilityChecks] = await Promise.all([
         inspectDeviceCapabilities(),
         inspectConnectors(runtimeConnectors, accessToken),
+        inspectLocalCapabilities(),
       ])
       const request = buildDeviceCapabilityReport(probe, {
-        connectors, connectorDiagnostics, authorizedDirectoryCount, runtimeStatus,
+        connectors, connectorDiagnostics, localCapabilityChecks, authorizedDirectoryCount, runtimeStatus,
       })
       const report = await submitDeviceCapabilityReport(endpoint, employeeId, accessToken, request)
       setReports((current) => [report, ...current].slice(0, 50))
@@ -127,6 +128,16 @@ export function DeviceCapabilitiesPage({
       </div>}
     </section>
   </div>
+}
+
+async function inspectLocalCapabilities(): Promise<LocalCapabilityCheck[] | undefined> {
+  if (!connectorDiagnosticsAvailable()) return undefined
+  try {
+    const result = await selfTestLocalCapabilities()
+    return result.status === 'passed' ? result.checks : undefined
+  } catch {
+    return undefined
+  }
 }
 
 async function inspectConnectors(

@@ -33,6 +33,17 @@ export interface ConnectorDiagnosticInput {
   accessToken: string
 }
 
+export interface LocalCapabilityCheck {
+  key: string
+  passed: boolean
+  detail: string
+}
+
+export interface LocalCapabilitySelfTestResult {
+  status: 'passed'
+  checks: LocalCapabilityCheck[]
+}
+
 export interface HarnessNotification {
   requestId: number
   event: unknown
@@ -53,6 +64,11 @@ export async function diagnoseConnectors(
 ): Promise<ConnectorDiagnosticResult[]> {
   if (!isTauri()) throw new Error('实时连接器诊断只能在小胤桌面客户端中运行')
   return invoke<ConnectorDiagnosticResult[]>('diagnose_connectors', { request: input })
+}
+
+export async function selfTestLocalCapabilities(): Promise<LocalCapabilitySelfTestResult> {
+  if (!isTauri()) throw new Error('本地能力自检只能在小胤桌面客户端中运行')
+  return invoke<LocalCapabilitySelfTestResult>('self_test_local_capabilities')
 }
 
 export function connectorDiagnosticsAvailable(): boolean {

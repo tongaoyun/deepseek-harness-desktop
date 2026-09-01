@@ -6,6 +6,7 @@ import type {
   RuntimeStatus,
   SubmitDeviceCapabilityReport,
 } from './types'
+import type { LocalCapabilityCheck } from './harness'
 
 export interface DeviceProbe {
   deviceId: string
@@ -21,6 +22,7 @@ export interface DeviceCapabilityContext {
   connectorDiagnostics?: ConnectorDiagnosticResult[]
   authorizedDirectoryCount: number
   runtimeStatus: RuntimeStatus
+  localCapabilityChecks?: LocalCapabilityCheck[]
 }
 
 export async function inspectDeviceCapabilities(): Promise<DeviceProbe> {
@@ -43,15 +45,25 @@ export function buildDeviceCapabilityReport(
   context: DeviceCapabilityContext,
 ): SubmitDeviceCapabilityReport {
   const localPlatform = probe.platform === 'windows' || probe.platform === 'macos'
+  const localChecks = context.localCapabilityChecks === undefined
+    ? undefined
+    : new Map(context.localCapabilityChecks.map((check) => [check.key, check.passed]))
+  const localFileVerified = verified(localChecks, 'local-files')
+  const officeVerified = ['office-docx', 'office-xlsx', 'office-pdf'].every((key) => verified(localChecks, key))
+  const shellVerified = verified(localChecks, 'local-shell')
+  const computerUseVerified = verified(localChecks, 'computer-use')
   const capabilities: DeviceCapabilityResult[] = [
     result('desktop.runtime', 'READY', '桌面原生运行时已启动'),
-    result('local.files', context.authorizedDirectoryCount > 0 ? 'READY' : 'DEGRADED',
-      context.authorizedDirectoryCount > 0 ? '当前任务已授权本地目录' : '当前任务尚未授权本地目录'),
-    result('office.documents', 'READY', 'DOCX、XLSX 与 PDF 本机工具已内置'),
-    result('local.shell', localPlatform ? 'READY' : 'UNSUPPORTED',
-      localPlatform ? '受审批 Shell 能力已内置' : '当前平台不支持受审批 Shell'),
-    result('computer.use', probe.platform === 'windows' ? 'READY' : 'UNSUPPORTED',
-      probe.platform === 'windows' ? 'Windows Computer Use 能力已内置' : 'Computer Use 当前仅支持 Windows'),
+    result('local.files', localFileVerified && context.authorizedDirectoryCount > 0 ? 'READY' : 'DEGRADED',
+      localFileDetail(localFileVerified, context.authorizedDirectoryCount)),
+    result('office.documents', officeVerified ? 'READY' : 'DEGRADED',
+      officeVerified ? 'DOCX、XLSX 与 PDF 创建解析自检通过' : 'Office 文档创建解析自检未通过'),
+    result('local.shell', !localPlatform ? 'UNSUPPORTED' : shellVerified ? 'READY' : 'DEGRADED',
+      !localPlatform ? '当前平台不支持受审批 Shell'
+        : shellVerified ? '受审批 Shell 隔离命令自检通过' : '受审批 Shell 自检未通过'),
+    result('computer.use', probe.platform !== 'windows' ? 'UNSUPPORTED' : computerUseVerified ? 'READY' : 'DEGRADED',
+      probe.platform !== 'windows' ? 'Computer Use 当前仅支持 Windows'
+        : computerUseVerified ? computerUseDetail(context.localCapabilityChecks ?? []) : 'Computer Use 原生桥接自检未通过'),
     result('control.plane', context.runtimeStatus === 'ready' ? 'READY' : 'DEGRADED',
       context.runtimeStatus === 'ready' ? '控制中心连接正常' : '控制中心当前不可用'),
   ]
@@ -72,6 +84,22 @@ export function buildDeviceCapabilityReport(
       .map((value) => Math.min(500, Math.max(50, Math.round(value)))),
     capabilities,
   }
+}
+
+function verified(checks: Map<string, boolean> | undefined, key: string): boolean {
+  return checks?.get(key) === true
+}
+
+function localFileDetail(verifiedCapability: boolean, authorizedDirectoryCount: number): string {
+  if (!verifiedCapability) return '本地文件写入与读取自检未通过'
+  return authorizedDirectoryCount > 0 ? '本地文件读写自检通过，当前任务已授权目录' : '本地文件读写自检通过，当前任务尚未授权目录'
+}
+
+function computerUseDetail(checks: LocalCapabilityCheck[]): string {
+  const check = checks.find(({ key }) => key === 'computer-use')
+  return check?.detail.includes('desktop screenshot')
+    ? '已完成桌面截图与可访问性观察'
+    : '原生桥接依赖已通过；当前会话未执行交互式观察'
 }
 
 function connectorCapabilityStatus(

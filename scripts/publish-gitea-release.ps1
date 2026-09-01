@@ -62,7 +62,7 @@ function Write-JsonFile {
 
 function Invoke-JsonRequest {
   param(
-    [Parameter(Mandatory = $true)][ValidateSet("Get", "Post", "Patch")][string]$Method,
+    [Parameter(Mandatory = $true)][ValidateSet("Get", "Post", "Patch", "Delete")][string]$Method,
     [Parameter(Mandatory = $true)][string]$Uri,
     $Body,
     [switch]$AllowNotFound
@@ -173,6 +173,23 @@ if (-not $release) {
     prerelease = $false
   })
 }
+else {
+  $draftAssets = @(Invoke-JsonRequest -Method Get -Uri "$api/releases/$($release.id)/assets")
+  foreach ($asset in $draftAssets) {
+    Invoke-JsonRequest -Method Delete -Uri "$api/releases/assets/$($asset.id)" | Out-Null
+    Write-Output "Removed incomplete draft asset: $($asset.name)"
+  }
+}
+
+$versionPackageApi = "$server/api/v1/packages/$owner/generic/xiaoyin-desktop/$version"
+try {
+  Invoke-WebRequest -Uri $versionPackageApi -Method Delete -Headers $headers -UseBasicParsing | Out-Null
+  Write-Output "Removed incomplete version package: $version"
+}
+catch {
+  $statusCode = if ($_.Exception.Response) { [int]$_.Exception.Response.StatusCode } else { 0 }
+  if ($statusCode -ne 404) { throw }
+}
 
 $releaseAssets = @(
   $releaseFiles +
@@ -227,6 +244,35 @@ $release = Invoke-JsonRequest -Method Patch -Uri "$api/releases/$($release.id)" 
   draft = $false
   prerelease = $false
 })
+
+$publishedRelease = Invoke-JsonRequest -Method Get -Uri "$api/releases/tags/$([Uri]::EscapeDataString($Tag))"
+if ($publishedRelease.draft -or $publishedRelease.prerelease -or $publishedRelease.tag_name -ne $Tag) {
+  throw "Published release metadata did not pass the read-back check."
+}
+$publishedAssets = @($publishedRelease.assets)
+if ($publishedAssets.Count -ne $releaseAssets.Count) {
+  throw "Published release contains $($publishedAssets.Count) assets; expected $($releaseAssets.Count)."
+}
+foreach ($expected in $releaseAssets) {
+  $expectedFile = Get-Item -LiteralPath $expected.Path
+  $actual = @($publishedAssets | Where-Object { $_.name -eq $expected.Name })
+  if ($actual.Count -ne 1 -or [long]$actual[0].size -ne $expectedFile.Length) {
+    throw "Published release asset did not pass the size read-back check: $($expected.Name)"
+  }
+}
+$publishedManifest = $publishedAssets | Where-Object { $_.name -eq "release-manifest.json" } | Select-Object -First 1
+$manifestReadBack = Join-Path $env:TEMP ("xiaoyin-release-manifest-" + [guid]::NewGuid().ToString("N") + ".json")
+try {
+  Invoke-WebRequest -Uri $publishedManifest.browser_download_url -Headers $headers -OutFile $manifestReadBack -UseBasicParsing
+  $expectedManifestHash = (Get-FileHash -LiteralPath $manifestPath -Algorithm SHA256).Hash
+  $actualManifestHash = (Get-FileHash -LiteralPath $manifestReadBack -Algorithm SHA256).Hash
+  if ($actualManifestHash -ne $expectedManifestHash) {
+    throw "Published release manifest did not pass the SHA-256 read-back check."
+  }
+}
+finally {
+  Remove-Item -LiteralPath $manifestReadBack -Force -ErrorAction SilentlyContinue
+}
 
 Write-Output "Published Gitea release: $($release.html_url)"
 Write-Output "Updater metadata: $updaterMetadataUrl"

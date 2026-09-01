@@ -45,6 +45,7 @@ pnpm tauri:dev
 
 - `main`：执行完整质量门禁并生成 MSI、NSIS 和 SHA-256 制品。
 - `v*` 标签：实际验收文件、Office 和 Shell；交互会话实际验收 Computer Use，服务型 Runner 验证桥接依赖，再执行安装/启动/卸载并发布正式 Gitea Release。
+- 发布失败保留草稿时可直接重跑同一标签；流水线会清理未完成资产，并在公开 Release 后回读校验资产和发布清单。
 - 自动更新：只使用正式单通道和 Tauri 签名，不设置 `stable`/`beta` 通道。
 - 回滚：运行 `Roll back desktop release`，目标必须是已发布的不可变版本。
 

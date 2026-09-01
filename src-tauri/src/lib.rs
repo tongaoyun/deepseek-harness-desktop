@@ -434,6 +434,7 @@ pub fn run() {
             local_files::clear_local_directories,
             harness::run_harness,
             harness::diagnose_connectors,
+            harness::self_test_local_capabilities,
             harness::shutdown_harness,
             im::configure_local_dingtalk,
             im::start_local_im,

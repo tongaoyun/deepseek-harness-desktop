@@ -94,6 +94,21 @@ pub struct ConnectorDiagnosticResult {
     error: Option<String>,
 }
 
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalCapabilityCheck {
+    key: String,
+    passed: bool,
+    detail: String,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalCapabilitySelfTestResult {
+    status: String,
+    checks: Vec<LocalCapabilityCheck>,
+}
+
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct HarnessUiNotification {
@@ -242,6 +257,38 @@ pub async fn diagnose_connectors(
     })
     .await
     .map_err(|error| format!("连接器诊断线程异常：{error}"))?
+}
+
+#[tauri::command]
+pub async fn self_test_local_capabilities(
+    app: tauri::AppHandle,
+) -> Result<LocalCapabilitySelfTestResult, String> {
+    let fingerprint = RuntimeFingerprint {
+        skill_directories: Vec::new(),
+        connectors: Vec::new(),
+        local_file_roots: Vec::new(),
+        allow_local_files: false,
+        allow_shell: false,
+        allow_computer_use: false,
+        allowed_computer_tools: Vec::new(),
+        litellm_base_url: String::new(),
+        knowledge_endpoint: String::new(),
+        employee_id: String::new(),
+        team_id: String::new(),
+        knowledge_base_refs: Some(Vec::new()),
+        model: "capability-self-test".to_string(),
+        memory_context: String::new(),
+        credential_digest: credential_digest("", ""),
+    };
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut process =
+            HarnessProcess::start_uninitialized(&app, fingerprint, String::new(), String::new())?;
+        let result = process.request("host.self-test", None, None);
+        process.shutdown();
+        serde_json::from_value(result?).map_err(|error| format!("本地能力自检结果无效：{error}"))
+    })
+    .await
+    .map_err(|error| format!("本地能力自检线程异常：{error}"))?
 }
 
 fn diagnostic_connectors(catalog: &[ConnectorDefinition]) -> Result<Vec<RuntimeConnector>, String> {

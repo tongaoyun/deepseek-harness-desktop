@@ -11,9 +11,10 @@ describe('device capability report', () => {
         id: 'erp-mcp', name: 'ERP', summary: '', kind: 'mcp', scope: 'company', status: 'ready',
         managed: true, toolNames: [],
       }],
+      localCapabilityChecks: passedLocalChecks('desktop screenshot and accessibility observation'),
     })
     expect(report.capabilities).toContainEqual({
-      key: 'computer.use', status: 'READY', detail: 'Windows Computer Use 能力已内置',
+      key: 'computer.use', status: 'READY', detail: '已完成桌面截图与可访问性观察',
     })
     expect(report.capabilities).toContainEqual({
       key: 'connector.erp-mcp', status: 'READY', detail: '公司连接器已就绪',
@@ -25,7 +26,7 @@ describe('device capability report', () => {
     const report = buildDeviceCapabilityReport({
       deviceId: '7a925f18-df33-4aad-8c9e-24742940a864', desktopVersion: '0.1.11',
       platform: 'macos', architecture: 'aarch64', displayCount: 1, displayScalePercents: [200],
-    }, { authorizedDirectoryCount: 0, runtimeStatus: 'offline', connectors: [] })
+    }, { authorizedDirectoryCount: 0, runtimeStatus: 'offline', connectors: [], localCapabilityChecks: passedLocalChecks() })
     expect(report.capabilities.find(({ key }) => key === 'computer.use')?.status).toBe('UNSUPPORTED')
     expect(report.capabilities.find(({ key }) => key === 'local.files')?.status).toBe('DEGRADED')
     expect(report.capabilities.find(({ key }) => key === 'control.plane')?.status).toBe('DEGRADED')
@@ -38,6 +39,7 @@ describe('device capability report', () => {
     }, {
       authorizedDirectoryCount: 1,
       runtimeStatus: 'ready',
+      localCapabilityChecks: passedLocalChecks(),
       connectors: [{
         id: 'erp-mcp', name: 'ERP', summary: '', kind: 'mcp', scope: 'company', status: 'ready',
         managed: true, toolNames: ['order_get', 'sales_summary'],
@@ -64,6 +66,7 @@ describe('device capability report', () => {
     }, {
       authorizedDirectoryCount: 1,
       runtimeStatus: 'ready',
+      localCapabilityChecks: passedLocalChecks(),
       connectors: [{
         id: 'erp-mcp', name: 'ERP', summary: '', kind: 'mcp', scope: 'company', status: 'ready',
         managed: true, toolNames: [],
@@ -79,4 +82,25 @@ describe('device capability report', () => {
     })
     expect(JSON.stringify(report)).not.toContain('secret internal error')
   })
+
+  it('does not report built-in local tools ready without an actual Harness self-test', () => {
+    const report = buildDeviceCapabilityReport({
+      deviceId: '7a925f18-df33-4aad-8c9e-24742940a864', desktopVersion: '0.1.18',
+      platform: 'windows', architecture: 'x86_64', displayCount: 1, displayScalePercents: [100],
+    }, { authorizedDirectoryCount: 1, runtimeStatus: 'ready', connectors: [] })
+    expect(report.capabilities.filter(({ key }) => [
+      'local.files', 'office.documents', 'local.shell', 'computer.use',
+    ].includes(key)).every(({ status }) => status === 'DEGRADED')).toBe(true)
+  })
 })
+
+function passedLocalChecks(computerDetail = 'bridge dependencies ready'): Array<{ key: string; passed: boolean; detail: string }> {
+  return [
+    { key: 'local-files', passed: true, detail: 'write and read' },
+    { key: 'office-docx', passed: true, detail: 'create and parse' },
+    { key: 'office-xlsx', passed: true, detail: 'create and parse' },
+    { key: 'office-pdf', passed: true, detail: 'create and parse' },
+    { key: 'local-shell', passed: true, detail: 'isolated command' },
+    { key: 'computer-use', passed: true, detail: computerDetail },
+  ]
+}

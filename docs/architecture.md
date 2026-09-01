@@ -1,6 +1,6 @@
 # 小胤架构与能力
 
-本文描述 `xiaoyin-desktop v0.1.18` 的已实现状态。
+本文描述 `xiaoyin-desktop main` 的已实现状态，当前正式基线为 `v0.1.18`。
 
 ## 总体架构
 
@@ -55,7 +55,7 @@
 | 套件发布 | SDK 校验 → 依赖预检 → MinIO 上传 → 控制中心原子发布 |
 | MCP 接入 | 项目模板 → 公共准入 CI → 部署 → 注册目录 → Nacos 动态下发 |
 | 连接器诊断 | 一次性 Harness Host → MCP 握手和 `tools/list` → 登记清单对比 → 立即关闭 |
-| 设备预检 | 原生探针 + 实时 MCP 诊断 → 去敏能力报告 → 控制中心组织总览 |
+| 设备预检 | 原生探针 + Harness 本地工具自检 + 实时 MCP 诊断 → 去敏能力报告 → 控制中心组织总览 |
 | 定时任务 | 桌面 → 控制中心 → Temporal Schedule → Workflow Worker → MinIO 产物 |
 | 知识库 | 文档上传 → MinIO → Temporal 解析 → PostgreSQL 检索片段 |
 | 钉钉频道 | 钉钉 Stream → 本机 Harness → Skills/只读 MCP → 原会话 |
@@ -92,7 +92,7 @@
 
 ## 当前边界
 
-- Computer Use 仅支持 Windows 交互桌面，不支持锁屏或无桌面会话；发布 Runner 在 Session 0 验证桥接依赖，员工桌面预检实际验证截图与可访问性观察。
+- Computer Use 仅支持 Windows 交互桌面，不支持锁屏或无桌面会话；发布 Runner 在 Session 0 验证桥接依赖，员工桌面预检通过安装包内 Harness 实际验证截图与可访问性观察。
 - 钉钉使用 Client ID/Secret 手动配置；扫码自动注册尚未接入公司授权服务。
 - 飞书、Lark、微信和企业微信仍需各平台应用、接收模式与凭据，未伪装为可用连接。
 - 正式安装包仅发布 Windows x64；企业代码签名证书暂未接入。
