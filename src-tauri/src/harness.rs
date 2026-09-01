@@ -433,7 +433,7 @@ impl HarnessManager {
                 .stderr(Stdio::null())
                 .status()
                 .map_err(|error| format!("无法取消当前任务：{error}"))?;
-            return Ok(status.success());
+            Ok(status.success())
         }
         #[cfg(not(target_os = "windows"))]
         {
