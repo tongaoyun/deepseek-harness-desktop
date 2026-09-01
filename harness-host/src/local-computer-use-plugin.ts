@@ -102,6 +102,31 @@ interface ComputerObservation {
 
 type PowerShellRunner = (script: string, signal: AbortSignal) => Promise<string>
 
+export interface ComputerUsePreflight {
+  interactiveDesktop: boolean
+  sessionId: number
+  screen: { width: number; height: number }
+}
+
+export async function runComputerUsePreflight(
+  signal: AbortSignal,
+  runner: PowerShellRunner = runPowerShell,
+): Promise<ComputerUsePreflight> {
+  const stdout = await runner(`${WINDOWS_INPUT}\n${WINDOWS_PREFLIGHT}`, signal)
+  const encoded = stdout.trim().split(/\r?\n/).filter(Boolean).at(-1)
+  if (!encoded || !/^[A-Za-z0-9+/=]+$/.test(encoded)) {
+    throw new Error('Windows Computer Use preflight did not return a valid result')
+  }
+  const result = JSON.parse(Buffer.from(encoded, 'base64').toString('utf8')) as ComputerUsePreflight
+  if (!Number.isSafeInteger(result.sessionId)
+    || !Number.isSafeInteger(result.screen?.width)
+    || !Number.isSafeInteger(result.screen?.height)
+    || typeof result.interactiveDesktop !== 'boolean') {
+    throw new Error('Windows Computer Use preflight returned an invalid result')
+  }
+  return result
+}
+
 function computerUseTools(bridge: ComputerUseBridge): ToolDefinition[] {
   return [
     tool('computer_use_observe', 'Capture the current Windows desktop and list visible accessibility elements using screenshot pixel coordinates.', {
@@ -278,6 +303,20 @@ function Get-XiaoyinObservation([string]$ScreenshotPath, [int]$MaxElements) {
   }
   [ordered]@{ screen=[ordered]@{width=$width;height=$height}; activeWindow=[ordered]@{title=$title;processId=$processId}; elements=$items; truncated=$truncated }
 }`
+
+const WINDOWS_PREFLIGHT = String.raw`
+Add-Type -AssemblyName System.Drawing
+Add-Type -AssemblyName UIAutomationClient
+Add-Type -AssemblyName UIAutomationTypes
+$xiaoyinBounds = [System.Windows.Forms.SystemInformation]::VirtualScreen
+$xiaoyinSessionId = (Get-Process -Id $PID).SessionId
+$xiaoyinPreflight = [ordered]@{
+  interactiveDesktop = [Environment]::UserInteractive -and $xiaoyinSessionId -ne 0
+  sessionId = $xiaoyinSessionId
+  screen = [ordered]@{ width = $xiaoyinBounds.Width; height = $xiaoyinBounds.Height }
+}
+$xiaoyinJson = $xiaoyinPreflight | ConvertTo-Json -Depth 3 -Compress
+[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($xiaoyinJson))`
 
 function purposeProperty() { return { type: 'string', minLength: 1, maxLength: 500, description: 'Plain-language purpose shown in the native approval dialog.' } }
 function maxElementsProperty() { return { type: 'integer', minimum: 1, maximum: MAX_ELEMENTS, default: 100 } }

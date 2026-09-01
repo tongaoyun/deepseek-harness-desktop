@@ -4,7 +4,7 @@ import ExcelJS from 'exceljs'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { ComputerUseBridge } from './local-computer-use-plugin.js'
+import { ComputerUseBridge, runComputerUsePreflight } from './local-computer-use-plugin.js'
 import { parseDocx, parsePdf, parseXlsx, renderPdf, selectPdfFont } from './local-documents-plugin.js'
 import { discoverAuthorizedRoots, LocalFileBridge } from './local-files-plugin.js'
 import { runCommand } from './local-shell-plugin.js'
@@ -56,15 +56,26 @@ export async function runLocalCapabilitySelfTest(): Promise<{ status: 'passed'; 
     ]
 
     if (process.platform === 'win32') {
-      let capturedBytes = 0
-      const context = { attachments: { saveImage: async ({ data }: { data: Buffer }) => {
-        capturedBytes = data.length
-        return { id: 'self-test-image', mediaType: 'image/png' }
-      } } } as unknown as Context
-      const observation = await new ComputerUseBridge(context).observe(20, new AbortController().signal)
-      ensure(observation.screen.width > 0 && observation.screen.height > 0 && capturedBytes > 0,
-        'Windows Computer Use observation failed')
-      checks.push({ key: 'computer-use', passed: true, detail: 'desktop screenshot and accessibility observation' })
+      const signal = new AbortController().signal
+      const preflight = await runComputerUsePreflight(signal)
+      ensure(preflight.screen.width > 0 && preflight.screen.height > 0, 'Windows Computer Use screen discovery failed')
+      if (preflight.interactiveDesktop) {
+        let capturedBytes = 0
+        const context = { attachments: { saveImage: async ({ data }: { data: Buffer }) => {
+          capturedBytes = data.length
+          return { id: 'self-test-image', mediaType: 'image/png' }
+        } } } as unknown as Context
+        const observation = await new ComputerUseBridge(context).observe(20, signal)
+        ensure(observation.screen.width > 0 && observation.screen.height > 0 && capturedBytes > 0,
+          'Windows Computer Use observation failed')
+        checks.push({ key: 'computer-use', passed: true, detail: 'desktop screenshot and accessibility observation' })
+      } else {
+        checks.push({
+          key: 'computer-use',
+          passed: true,
+          detail: `bridge dependencies ready; interactive observation deferred outside Windows session ${preflight.sessionId}`,
+        })
+      }
     }
 
     for (const file of ['self-test.docx', 'self-test.xlsx', 'self-test.pdf']) {

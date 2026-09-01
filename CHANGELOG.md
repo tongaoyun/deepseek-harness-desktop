@@ -4,7 +4,7 @@
 
 - 新增中央审计页，去敏记录 Agent、工具与员工授权结果。
 - 意识支持控制中心同步，并可通过“记住：……”显式沉淀长期规则。
-- Windows 正式发布实际验收文件、DOCX/XLSX/PDF、Shell 和 Computer Use。
+- Windows 正式发布实际验收文件、DOCX/XLSX/PDF、Shell 和 Computer Use 桥接；交互式员工桌面实际验收截图与可访问性观察。
 
 ## 0.1.13
 
