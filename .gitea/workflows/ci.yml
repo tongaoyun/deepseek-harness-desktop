@@ -6,6 +6,10 @@ on:
   pull_request:
   workflow_dispatch:
 
+concurrency:
+  group: xiaoyin-desktop-ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   web-and-harness:
     runs-on: ci-node
