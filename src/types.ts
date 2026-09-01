@@ -118,7 +118,7 @@ export interface LocalTaskRun {
   id: string
   source: 'DESKTOP'
   name: string
-  status: 'RUNNING' | 'COMPLETED' | 'FAILED'
+  status: 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELED'
   createdAt: string
   updatedAt: string
   sessionId?: string

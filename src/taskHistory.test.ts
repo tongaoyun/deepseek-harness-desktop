@@ -33,6 +33,16 @@ describe('task history', () => {
     expect(loadLocalTasks('employee-1', storage)).toEqual([])
   })
 
+  it('keeps user-cancelled tasks available for retry', () => {
+    const storage = new MemoryStorage()
+    const task: LocalTaskRun = {
+      id: 'task-cancelled', source: 'DESKTOP', name: '广告诊断', status: 'CANCELED',
+      createdAt: '2026-08-28T01:00:00Z', updatedAt: '2026-08-28T01:01:00Z', messages: [],
+    }
+    saveLocalTask('employee-1', task, storage)
+    expect(loadLocalTasks('employee-1', storage)[0].status).toBe('CANCELED')
+  })
+
   it('persists the safe execution timeline with the assistant message', () => {
     const storage = new MemoryStorage()
     const task: LocalTaskRun = {

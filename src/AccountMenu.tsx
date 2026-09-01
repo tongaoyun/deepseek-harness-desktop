@@ -65,7 +65,7 @@ export function AccountMenu({ companyName, department, displayName, runtimeStatu
 
   return <>
     <div className="account-area" ref={rootRef}>
-      {menuOpen && <section aria-label="账户菜单" className="account-menu">
+      <section aria-label="账户菜单" className="account-menu" hidden={!menuOpen}>
         <header><span>{displayName?.slice(0, 1) ?? '员'}</span><div><strong>{displayName ?? '企业员工'}</strong><small>{department || '跨境运营'} · {companyName || '企业内部版'}</small></div></header>
         <div className="account-runtime"><i className={`status-dot ${runtimeStatus}`} /><span>{runtimeStatus === 'ready' ? '企业服务已连接' : runtimeStatus === 'offline' ? '企业服务离线' : '企业服务连接中'}</span></div>
         <div className="account-menu-items">
@@ -74,7 +74,7 @@ export function AccountMenu({ companyName, department, displayName, runtimeStatu
           <button onClick={() => { setMenuOpen(false); setFeedbackState('idle'); setFeedbackOpen(true) }} type="button"><HelpCircle size={16} /><span><strong>反馈与帮助</strong><small>提交问题或改进建议</small></span></button>
         </div>
         <button className="account-logout" onClick={() => void onLogout()} type="button"><LogOut size={16} />退出登录</button>
-      </section>}
+      </section>
       <button aria-expanded={menuOpen} className="account" onClick={() => setMenuOpen((value) => !value)} ref={accountButtonRef} type="button">
         <span>{displayName?.slice(0, 1) ?? '员'}</span><div><strong>{displayName ?? '企业员工'} · {department || '跨境运营'}</strong><small>{companyName || '企业内部版'}</small></div>
         <span className="account-indicators">{updateAvailable && <i aria-label="发现新版本" className="update-dot" />}<i className={`status-dot ${runtimeStatus}`} /><ChevronUp className={menuOpen ? 'open' : ''} size={14} /></span>

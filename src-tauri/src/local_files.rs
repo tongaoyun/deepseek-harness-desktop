@@ -51,6 +51,39 @@ pub async fn authorize_local_directory(
 }
 
 #[tauri::command]
+pub fn authorize_dropped_paths(
+    authorizations: tauri::State<'_, LocalFileAuthorizations>,
+    paths: Vec<String>,
+) -> Result<Vec<AuthorizedDirectoryView>, String> {
+    if paths.is_empty() {
+        return Ok(Vec::new());
+    }
+    if paths.len() > 32 {
+        return Err("单次最多拖入 32 个文件或文件夹".to_string());
+    }
+    let mut directories = Vec::new();
+    for value in paths {
+        let selected = PathBuf::from(value);
+        let directory = if selected.is_dir() {
+            selected
+        } else {
+            selected
+                .parent()
+                .map(Path::to_path_buf)
+                .ok_or_else(|| "拖入的文件路径无效".to_string())?
+        };
+        let view = authorizations.authorize(directory)?;
+        if !directories
+            .iter()
+            .any(|item: &AuthorizedDirectoryView| item.id == view.id)
+        {
+            directories.push(view);
+        }
+    }
+    Ok(directories)
+}
+
+#[tauri::command]
 pub fn revoke_local_directory(
     authorizations: tauri::State<'_, LocalFileAuthorizations>,
     id: String,

@@ -238,3 +238,60 @@ button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 2px
 .fatal-state h1 { margin: 17px 0 7px; font-size: 25px; letter-spacing: -.025em; }
 .fatal-state p { max-width: 440px; margin: 0; color: #728079; font-size: 11px; line-height: 1.7; }
 .fatal-state button { margin-top: 22px; padding: 10px 17px; border: 0; border-radius: 9px; color: #fff; background: #347b4d; cursor: pointer; font-size: 11px; font-weight: 750; }
+
+/* Runtime recovery, notifications and local-file drop affordances. */
+.account-menu[hidden] { display: none; }
+.topbar-tools { display: flex; align-items: center; gap: 5px; }
+.harness-state i { width: 7px; height: 7px; border-radius: 50%; background: #53a36b; }
+.harness-state.checking i { background: #dda147; animation: connection-pulse 1.3s ease-in-out infinite; }
+.harness-state.degraded { color: #9c4f46 !important; background: #fff3f1 !important; }
+.harness-state.degraded i { background: #c96558; }
+.notification-center { position: relative; }
+.notification-trigger { position: relative; display: grid !important; width: 31px; height: 31px; place-items: center; }
+.notification-trigger > span { position: absolute; top: 1px; right: 0; display: grid; min-width: 14px; height: 14px; place-items: center; padding: 0 3px; border: 2px solid #fff; border-radius: 999px; color: #fff; background: #c65f52; font-size: 7px; font-weight: 800; }
+.notification-popover { position: absolute; z-index: 90; top: 38px; right: 0; width: 330px; overflow: hidden; border: 1px solid #dce3dd; border-radius: 13px; background: #fff; box-shadow: 0 18px 48px #17241a26; animation: popover-enter .15s ease-out; }
+.notification-popover header { display: flex; align-items: baseline; justify-content: space-between; padding: 14px 15px; border-bottom: 1px solid #edf0ed; }
+.notification-popover header strong { font-size: 12px; }
+.notification-popover header small { color: #8b938c; font-size: 8px; }
+.notification-popover article { display: flex; gap: 9px; padding: 12px 15px; border-bottom: 1px solid #f0f2f0; }
+.notification-popover article > i { width: 7px; height: 7px; flex: none; margin-top: 4px; border-radius: 50%; background: #d49b45; }
+.notification-popover article.danger > i { background: #c65f52; }
+.notification-popover article span, .notification-popover article strong, .notification-popover article small { display: block; }
+.notification-popover article strong { color: #39443c; font-size: 10px; }
+.notification-popover article small { margin-top: 4px; color: #7e887f; font-size: 8px; line-height: 1.5; }
+.notification-popover footer { padding: 8px; }
+.notification-popover footer button { width: 100%; justify-content: center; color: #347b4d; background: #edf6ef; }
+.notification-empty { display: flex; align-items: center; justify-content: center; gap: 7px; padding: 28px 15px; color: #718077; font-size: 10px; }
+.cancel-button { display: grid; width: 32px; height: 32px; place-items: center; border: 0; border-radius: 50%; color: #fff; background: #b8584e; cursor: pointer; }
+.cancel-button:hover { background: #9e473f; }
+.retry-task { margin-top: 7px; padding: 6px 9px; border: 1px solid #cdddcf; border-radius: 7px; color: #347b4d; background: #f7fbf8; cursor: pointer; font-size: 9px; }
+.runtime-recovery { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; margin-bottom: 10px; padding: 10px 12px; border: 1px solid #efceca; border-radius: 10px; color: #9c4f46; background: #fff8f7; }
+.runtime-recovery span, .runtime-recovery strong, .runtime-recovery small { display: block; }
+.runtime-recovery strong { font-size: 10px; }
+.runtime-recovery small { margin-top: 2px; color: #a26b64; font-size: 8px; }
+.runtime-recovery button { padding: 6px 9px; border: 0; border-radius: 7px; color: #fff; background: #a9574e; cursor: pointer; font-size: 9px; }
+.sync-diagnostics { margin-top: 18px; overflow: hidden; border: 1px solid #efd9aa; border-radius: 11px; color: #7e6327; background: #fffaf0; }
+.sync-diagnostics > div { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 9px; padding: 11px 13px; }
+.sync-diagnostics span, .sync-diagnostics strong, .sync-diagnostics small { display: block; }
+.sync-diagnostics strong { font-size: 10px; }
+.sync-diagnostics small { margin-top: 2px; color: #9a824f; font-size: 8px; }
+.sync-diagnostics button { padding: 6px 9px; border: 0; border-radius: 7px; color: #755a20; background: #f5e4b8; cursor: pointer; font-size: 9px; }
+.sync-diagnostics details { padding: 0 13px 11px 39px; }
+.sync-diagnostics summary { cursor: pointer; font-size: 9px; }
+.sync-diagnostics details p { display: grid; grid-template-columns: 110px 1fr; gap: 8px; min-height: 0; margin: 8px 0 0; font-size: 8px; }
+.file-drop-overlay { position: fixed; z-index: 300; inset: 18px; display: grid; place-items: center; align-content: center; gap: 9px; border: 2px dashed #55a66f; border-radius: 20px; color: #347b4d; background: #eff9f2ed; box-shadow: 0 0 0 100vmax #17241a35; pointer-events: none; }
+.file-drop-overlay strong { font-size: 16px; }
+.file-drop-overlay span { color: #66806d; font-size: 10px; }
+.shortcut-settings { overflow: hidden; border: 1px solid #dfe6e1; border-radius: 14px; background: #fbfcfb; }
+.shortcut-settings > header { display: flex; align-items: center; gap: 12px; padding: 17px 18px; border-bottom: 1px solid #e6ebe7; }
+.shortcut-settings > header > span { display: grid; width: 38px; height: 38px; place-items: center; border-radius: 11px; color: #347b4d; background: #e6f4ea; }
+.shortcut-settings h2, .shortcut-settings p { margin: 0; }
+.shortcut-settings h2 { font-size: 14px; }
+.shortcut-settings p { margin-top: 3px; color: #849087; font-size: 9px; }
+.shortcut-settings dl { margin: 0; }
+.shortcut-settings dl > div { display: grid; grid-template-columns: minmax(150px, 1fr) 1.2fr; align-items: center; gap: 18px; padding: 13px 18px; border-bottom: 1px solid #edf0ed; }
+.shortcut-settings dl > div:last-child { border-bottom: 0; }
+.shortcut-settings dt { color: #48564d; font-size: 10px; font-weight: 650; }
+.shortcut-settings dd { display: flex; align-items: center; gap: 6px; margin: 0; color: #67736a; font-size: 9px; }
+.shortcut-settings kbd { min-width: 27px; padding: 4px 7px; border: 1px solid #d8ded9; border-bottom-width: 2px; border-radius: 6px; color: #3d4941; background: #fff; box-shadow: 0 1px 1px #00000008; font-family: inherit; font-size: 9px; text-align: center; }
+.shortcut-settings dd small { margin-left: auto; color: #929b94; font-size: 8px; }

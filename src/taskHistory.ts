@@ -30,6 +30,6 @@ function isLocalTask(value: unknown): value is LocalTaskRun {
   if (!value || typeof value !== 'object') return false
   const task = value as Partial<LocalTaskRun>
   return typeof task.id === 'string' && task.source === 'DESKTOP' && typeof task.name === 'string'
-    && ['RUNNING', 'COMPLETED', 'FAILED'].includes(task.status ?? '')
+    && ['RUNNING', 'COMPLETED', 'FAILED', 'CANCELED'].includes(task.status ?? '')
     && typeof task.createdAt === 'string' && typeof task.updatedAt === 'string' && Array.isArray(task.messages)
 }

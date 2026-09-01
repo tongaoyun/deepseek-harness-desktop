@@ -95,6 +95,16 @@ export async function shutdownHarness(): Promise<void> {
   await invoke('shutdown_harness')
 }
 
+export async function cancelHarness(): Promise<boolean> {
+  if (!isTauri()) return false
+  return invoke<boolean>('cancel_harness')
+}
+
+export async function authorizeDroppedPaths(paths: string[]): Promise<AuthorizedLocalDirectory[]> {
+  if (!isTauri() || paths.length === 0) return []
+  return invoke<AuthorizedLocalDirectory[]>('authorize_dropped_paths', { paths })
+}
+
 export async function listenHarnessNotifications(
   listener: (event: HarnessNotification) => void,
 ): Promise<UnlistenFn> {

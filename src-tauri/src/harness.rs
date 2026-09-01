@@ -9,7 +9,10 @@ use std::{
     io::{BufRead, BufReader, Read, Write},
     path::{Path, PathBuf},
     process::{Child, ChildStdin, ChildStdout, Command, Stdio},
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicU32, Ordering},
+    },
     thread::JoinHandle,
 };
 use tauri::{Emitter, Manager};
@@ -18,6 +21,7 @@ use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 #[derive(Clone, Default)]
 pub struct HarnessManager {
     process: Arc<Mutex<Option<HarnessProcess>>>,
+    active_pid: Arc<AtomicU32>,
 }
 
 #[derive(Deserialize)]
@@ -223,6 +227,11 @@ pub async fn shutdown_harness(manager: tauri::State<'_, HarnessManager>) -> Resu
 }
 
 #[tauri::command]
+pub fn cancel_harness(manager: tauri::State<'_, HarnessManager>) -> Result<bool, String> {
+    manager.cancel()
+}
+
+#[tauri::command]
 pub async fn diagnose_connectors(
     app: tauri::AppHandle,
     request: ConnectorDiagnosticRequest,
@@ -346,7 +355,10 @@ impl HarnessManager {
             )?);
         }
         let process = guard.as_mut().expect("Harness process was initialized");
-        match process.run(app, prompt, session_id) {
+        self.active_pid.store(process.child.id(), Ordering::Release);
+        let result = process.run(app, prompt, session_id);
+        self.active_pid.store(0, Ordering::Release);
+        match result {
             Ok(result) => Ok(result),
             Err(error) => {
                 process.kill();
@@ -365,6 +377,35 @@ impl HarnessManager {
             process.shutdown();
         }
         Ok(())
+    }
+
+    fn cancel(&self) -> Result<bool, String> {
+        let pid = self.active_pid.load(Ordering::Acquire);
+        if pid == 0 {
+            return Ok(false);
+        }
+        #[cfg(target_os = "windows")]
+        {
+            let mut command = Command::new("taskkill");
+            command.creation_flags(0x0800_0000);
+            let status = command
+                .args(["/PID", &pid.to_string(), "/T", "/F"])
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .map_err(|error| format!("无法取消当前任务：{error}"))?;
+            return Ok(status.success());
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            let status = Command::new("kill")
+                .args(["-TERM", &pid.to_string()])
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .map_err(|error| format!("无法取消当前任务：{error}"))?;
+            Ok(status.success())
+        }
     }
 }
 
@@ -1101,6 +1142,11 @@ fn validate_http_url(name: &str, value: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cancel_without_active_run_is_a_noop() {
+        assert_eq!(HarnessManager::default().cancel(), Ok(false));
+    }
 
     #[test]
     fn run_request_requires_safe_endpoints_and_model() {

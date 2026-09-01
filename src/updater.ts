@@ -115,7 +115,14 @@ export function useDesktopUpdater() {
   useEffect(() => {
     if (!isTauri()) return
     const timer = window.setTimeout(() => void checkForUpdates(true), 2_000)
-    return () => window.clearTimeout(timer)
+    const interval = window.setInterval(() => void checkForUpdates(true), 6 * 60 * 60_000)
+    const visible = () => { if (document.visibilityState === 'visible') void checkForUpdates(true) }
+    document.addEventListener('visibilitychange', visible)
+    return () => {
+      window.clearTimeout(timer)
+      window.clearInterval(interval)
+      document.removeEventListener('visibilitychange', visible)
+    }
   }, [checkForUpdates])
 
   return {

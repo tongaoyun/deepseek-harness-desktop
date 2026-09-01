@@ -1,10 +1,12 @@
 import {
+  Bell,
   BookOpenCheck,
   Bot,
   Boxes,
   CalendarClock,
   ChevronDown,
   CirclePlus,
+  CircleStop,
   FolderOpen,
   MessageSquare,
   PanelLeftClose,
@@ -22,6 +24,7 @@ import {
   WandSparkles,
   X,
 } from 'lucide-react'
+import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import {
   createExpertKitDownload,
@@ -51,12 +54,16 @@ import {
 } from './expertKits'
 import {
   authorizeLocalDirectory,
+  authorizeDroppedPaths,
   applyHarnessNotification,
+  cancelHarness,
   clearLocalDirectories,
+  connectorDiagnosticsAvailable,
   harnessActivityLabel,
   listenHarnessNotifications,
   revokeLocalDirectory,
   runHarness,
+  selfTestLocalCapabilities,
   shutdownHarness,
   type AuthorizedLocalDirectory,
 } from './harness'
@@ -66,6 +73,7 @@ import type {
   ConnectorCatalogEntry,
   ExpertKitCatalogEntry,
   KnowledgeBaseEntry,
+  InstalledExpertKit,
   RuntimeStatus,
   SkillCatalogEntry,
 } from './types'
@@ -102,6 +110,14 @@ const starterTasks = [
   { icon: Store, title: 'Listing 优化', detail: '生成更专业的商品内容', prompt: '帮我优化这个商品的 Listing 内容' },
 ]
 
+interface ExtensionSyncIssue {
+  key: string
+  label: string
+  message: string
+}
+
+type HarnessHealth = 'checking' | 'ready' | 'degraded'
+
 export default function App() {
   const { accessToken, error: authError, logout, reopen, state: authState, user } = useEnterpriseSession()
   const [bootstrap, setBootstrap] = useState<BootstrapResponse>()
@@ -120,7 +136,9 @@ export default function App() {
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBaseEntry[]>([])
   const [expertKitsLoading, setExpertKitsLoading] = useState(false)
   const [expertKitError, setExpertKitError] = useState('')
-  const [extensionSyncError, setExtensionSyncError] = useState('')
+  const [extensionSyncIssues, setExtensionSyncIssues] = useState<ExtensionSyncIssue[]>([])
+  const [extensionSyncAttempt, setExtensionSyncAttempt] = useState(0)
+  const [extensionSyncedAt, setExtensionSyncedAt] = useState<Date>()
   const [developerKitMode, setDeveloperKitMode] = useState(false)
   const [developerKitBusy, setDeveloperKitBusy] = useState(false)
   const [installingKitId, setInstallingKitId] = useState('')
@@ -133,6 +151,9 @@ export default function App() {
   const [harnessSessionId, setHarnessSessionId] = useState('')
   const [harnessRunning, setHarnessRunning] = useState(false)
   const [harnessActivity, setHarnessActivity] = useState('')
+  const [harnessHealth, setHarnessHealth] = useState<HarnessHealth>('checking')
+  const [harnessHealthDetail, setHarnessHealthDetail] = useState('正在检查本地 Agent')
+  const [harnessHealthAttempt, setHarnessHealthAttempt] = useState(0)
   const [harnessSteps, setHarnessSteps] = useState<TaskExecutionStep[]>([])
   const harnessStepsRef = useRef<TaskExecutionStep[]>([])
   const [localDirectories, setLocalDirectories] = useState<AuthorizedLocalDirectory[]>([])
@@ -142,11 +163,21 @@ export default function App() {
   const [taskSearchOpen, setTaskSearchOpen] = useState(false)
   const [taskQuery, setTaskQuery] = useState('')
   const [connectionAttempt, setConnectionAttempt] = useState(0)
+  const [notificationOpen, setNotificationOpen] = useState(false)
+  const [dragActive, setDragActive] = useState(false)
   const composerRef = useRef<HTMLTextAreaElement>(null)
   const messageListRef = useRef<HTMLDivElement>(null)
   const modelPickerRef = useRef<HTMLDivElement>(null)
   const taskSearchInputRef = useRef<HTMLInputElement>(null)
   const workspaceRef = useRef<HTMLElement>(null)
+  const cancellationRequestedRef = useRef(false)
+  const extensionCacheRef = useRef<{
+    catalog: ExpertKitCatalogEntry[]
+    installed: InstalledExpertKit[]
+    skills: SkillCatalogEntry[]
+    connectors: ConnectorCatalogEntry[]
+    knowledge: KnowledgeBaseEntry[]
+  }>({ catalog: [], installed: [], skills: [], connectors: [], knowledge: [] })
   const allowedArtifacts = useMemo(
     () => allowedExtensionArtifacts(expertKitCatalog, skills),
     [expertKitCatalog, skills],
@@ -184,6 +215,30 @@ export default function App() {
   }, [authState, user])
 
   useEffect(() => {
+    if (authState !== 'authenticated' || !connectorDiagnosticsAvailable()) {
+      setHarnessHealth('ready')
+      setHarnessHealthDetail('本地 Agent 仅在桌面客户端启用')
+      return
+    }
+    let disposed = false
+    setHarnessHealth('checking')
+    setHarnessHealthDetail('正在检查 Harness Host 与本地工具')
+    void selfTestLocalCapabilities()
+      .then((result) => {
+        if (disposed) return
+        const failed = result.checks.filter((check) => !check.passed)
+        setHarnessHealth(failed.length ? 'degraded' : 'ready')
+        setHarnessHealthDetail(failed.length ? failed.map((check) => check.detail).join('；') : 'Harness Host 与本地工具已就绪')
+      })
+      .catch((reason) => {
+        if (disposed) return
+        setHarnessHealth('degraded')
+        setHarnessHealthDetail(reason instanceof Error ? reason.message : String(reason))
+      })
+    return () => { disposed = true }
+  }, [authState, harnessHealthAttempt])
+
+  useEffect(() => {
     if (!bootstrap || !user) return
     const controller = new AbortController()
     let syncing = false
@@ -191,7 +246,7 @@ export default function App() {
       if (syncing) return
       syncing = true
       if (showLoading) setExpertKitsLoading(true)
-      setExtensionSyncError('')
+      setExtensionSyncIssues([])
       const [catalogResult, installedResult, skillsResult, connectorsResult, knowledgeResult] = await Promise.allSettled([
         loadExpertKits(bootstrap.endpoints.expertKits, user.userId, accessToken, controller.signal),
         listInstalledExpertKits(),
@@ -201,24 +256,30 @@ export default function App() {
       ])
       try {
         if (controller.signal.aborted) return
-        const catalog = catalogResult.status === 'fulfilled' ? catalogResult.value : []
-        const installed = installedResult.status === 'fulfilled' ? installedResult.value : []
-        const skillCatalog = skillsResult.status === 'fulfilled' ? skillsResult.value : []
-        const connectorCatalog = connectorsResult.status === 'fulfilled' ? connectorsResult.value : []
-        const knowledgeCatalog = knowledgeResult.status === 'fulfilled' ? knowledgeResult.value : []
-        setExpertKitCatalog(catalog)
-        setSkills(skillCatalog)
-        setSkillViews(mergeSkills(skillCatalog, installed, connectorCatalog, knowledgeCatalog))
-        setConnectors(connectorCatalog)
-        setKnowledgeBases(knowledgeCatalog)
-        setExpertKits(mergeExpertKits(catalog, installed, connectorCatalog, knowledgeCatalog))
-        const failures = [catalogResult, installedResult, skillsResult, connectorsResult, knowledgeResult]
-          .flatMap((result) => result.status === 'rejected'
-            ? [result.reason instanceof Error ? result.reason.message : String(result.reason)]
-            : [])
-        if (failures.length > 0) {
-          setExtensionSyncError(`部分企业能力同步失败：${failures.join('；')}`)
-        }
+        const cache = extensionCacheRef.current
+        if (catalogResult.status === 'fulfilled') cache.catalog = catalogResult.value
+        if (installedResult.status === 'fulfilled') cache.installed = installedResult.value
+        if (skillsResult.status === 'fulfilled') cache.skills = skillsResult.value
+        if (connectorsResult.status === 'fulfilled') cache.connectors = connectorsResult.value
+        if (knowledgeResult.status === 'fulfilled') cache.knowledge = knowledgeResult.value
+        setExpertKitCatalog(cache.catalog)
+        setSkills(cache.skills)
+        setSkillViews(mergeSkills(cache.skills, cache.installed, cache.connectors, cache.knowledge))
+        setConnectors(cache.connectors)
+        setKnowledgeBases(cache.knowledge)
+        setExpertKits(mergeExpertKits(cache.catalog, cache.installed, cache.connectors, cache.knowledge))
+        const sources = [
+          ['expert-kits', '专家套件目录', catalogResult],
+          ['installed', '本机已安装能力', installedResult],
+          ['skills', 'Skills 目录', skillsResult],
+          ['connectors', '连接器目录', connectorsResult],
+          ['knowledge', '知识库目录', knowledgeResult],
+        ] as const
+        const issues = sources.flatMap(([key, label, result]) => result.status === 'rejected'
+          ? [{ key, label, message: result.reason instanceof Error ? result.reason.message : String(result.reason) }]
+          : [])
+        setExtensionSyncIssues(issues)
+        setExtensionSyncedAt(new Date())
       } finally {
         syncing = false
         if (showLoading && !controller.signal.aborted) setExpertKitsLoading(false)
@@ -227,7 +288,34 @@ export default function App() {
     void syncExtensions(true)
     const timer = window.setInterval(() => void syncExtensions(false), 60_000)
     return () => { window.clearInterval(timer); controller.abort() }
-  }, [accessToken, bootstrap, user])
+  }, [accessToken, bootstrap, extensionSyncAttempt, user])
+
+  useEffect(() => {
+    if (authState !== 'authenticated' || !connectorDiagnosticsAvailable()) return
+    let disposed = false
+    let unlisten: () => void = () => undefined
+    void getCurrentWebviewWindow().onDragDropEvent((event) => {
+      if (disposed) return
+      if (event.payload.type === 'over') setDragActive(true)
+      if (event.payload.type === 'leave') setDragActive(false)
+      if (event.payload.type !== 'drop') return
+      setDragActive(false)
+      if (harnessRunning) {
+        setLocalFileError('请先取消或等待当前任务完成，再拖入文件')
+        return
+      }
+      const paths = event.payload.paths
+      void authorizeDroppedPaths(paths).then(async (directories) => {
+        setLocalDirectories((current) => [...current, ...directories.filter((next) => !current.some((item) => item.id === next.id))])
+        setHarnessSessionId('')
+        await shutdownHarness()
+        const names = paths.map((path) => path.split(/[\\/]/).pop()).filter(Boolean)
+        setPrompt((current) => `${current}${current.trim() ? '\n' : ''}请处理本地文件：${names.join('、')}`)
+        focusComposer()
+      }).catch((reason) => setLocalFileError(reason instanceof Error ? reason.message : String(reason)))
+    }).then((dispose) => { if (disposed) dispose(); else unlisten = dispose })
+    return () => { disposed = true; unlisten() }
+  }, [authState, harnessRunning])
 
   useEffect(() => {
     if (!bootstrap || !user || authState !== 'authenticated') return
@@ -284,6 +372,7 @@ export default function App() {
       if (event.key === 'Escape') {
         setTaskSearchOpen(false)
         setModelMenuOpen(false)
+        setNotificationOpen(false)
       }
     }
     document.addEventListener('keydown', handleShortcut)
@@ -298,6 +387,15 @@ export default function App() {
     document.addEventListener('mousedown', dismiss)
     return () => document.removeEventListener('mousedown', dismiss)
   }, [modelMenuOpen])
+
+  useEffect(() => {
+    if (!notificationOpen) return
+    const dismiss = (event: MouseEvent) => {
+      if (!(event.target as Element).closest('.notification-center')) setNotificationOpen(false)
+    }
+    document.addEventListener('mousedown', dismiss)
+    return () => document.removeEventListener('mousedown', dismiss)
+  }, [notificationOpen])
 
   useEffect(() => {
     const textarea = composerRef.current
@@ -462,6 +560,7 @@ export default function App() {
     }).catch(() => undefined)
     setPrompt('')
     setHarnessRunning(true)
+    cancellationRequestedRef.current = false
     setHarnessActivity('正在启动本地 Agent')
     harnessStepsRef.current = []
     setHarnessSteps([])
@@ -492,16 +591,47 @@ export default function App() {
       await reportTaskAudit('SUCCEEDED', taskId, harnessStepsRef.current)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
+      const canceled = cancellationRequestedRef.current
       const failedMessages = pendingMessages.map((item, index) => index === pendingMessages.length - 1
-        ? { role: 'assistant', text: `执行失败：${message}`, executionSteps: harnessStepsRef.current }
+        ? { role: 'assistant', text: canceled ? '任务已取消，可修改要求后重新执行。' : `执行失败：${message}`, executionSteps: harnessStepsRef.current }
         : item) as TaskMessage[]
       setMessages(failedMessages)
-      persistLocalTask({ ...runningTask, status: 'FAILED', updatedAt: new Date().toISOString(), messages: failedMessages })
+      persistLocalTask({ ...runningTask, status: canceled ? 'CANCELED' : 'FAILED', updatedAt: new Date().toISOString(), messages: failedMessages })
+      if (!canceled) {
+        setHarnessHealth('degraded')
+        setHarnessHealthDetail(`Harness 执行异常：${message}`)
+      }
+      void shutdownHarness()
       await reportTaskAudit('FAILED', taskId, harnessStepsRef.current)
     } finally {
       setHarnessRunning(false)
       setHarnessActivity('')
+      cancellationRequestedRef.current = false
     }
+  }
+
+  const cancelCurrentTask = async () => {
+    if (!harnessRunning || cancellationRequestedRef.current) return
+    cancellationRequestedRef.current = true
+    setHarnessActivity('正在取消当前任务')
+    try {
+      const canceled = await cancelHarness()
+      if (!canceled) {
+        cancellationRequestedRef.current = false
+        setHarnessActivity('当前任务即将完成，暂时无法取消')
+      }
+    } catch (reason) {
+      cancellationRequestedRef.current = false
+      setHarnessActivity('取消失败，任务仍在执行')
+      setLocalFileError(reason instanceof Error ? reason.message : String(reason))
+    }
+  }
+
+  const prepareRetry = () => {
+    const previous = [...messages].reverse().find((message) => message.role === 'user')
+    if (!previous) return
+    setPrompt(previous.text)
+    focusComposer()
   }
 
   const reportTaskAudit = async (
@@ -553,6 +683,7 @@ export default function App() {
 
   const refreshInstalledKits = async () => {
     const installed = await listInstalledExpertKits()
+    extensionCacheRef.current.installed = installed
     setExpertKits(mergeExpertKits(expertKitCatalog, installed, connectors, knowledgeBases))
     setSkillViews(mergeSkills(skills, installed, connectors, knowledgeBases))
   }
@@ -716,8 +847,15 @@ export default function App() {
     }
   }
 
+  const notifications = [
+    ...(runtimeStatus === 'offline' ? [{ key: 'control-plane', title: '企业服务连接失败', detail: '点击顶部连接状态可立即重试。', tone: 'danger' }] : []),
+    ...(harnessHealth === 'degraded' ? [{ key: 'harness', title: '本地 Agent 需要恢复', detail: harnessHealthDetail, tone: 'danger' }] : []),
+    ...extensionSyncIssues.map((issue) => ({ key: `sync-${issue.key}`, title: `${issue.label}同步失败`, detail: issue.message, tone: 'warning' })),
+  ]
+
   return (
     <div className={`app-shell${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
+      {dragActive && <div className="file-drop-overlay"><FolderOpen size={34} /><strong>松开即可添加到当前任务</strong><span>文件只会授权其所在目录，执行时仍遵循专家套件权限</span></div>}
       <aside className="sidebar">
         <div className="sidebar-brand">
           <button aria-label="返回新任务" className="brand-home" onClick={newTask} title="返回新任务" type="button"><XiaoyinMascot size={38} variant="avatar" /></button>
@@ -741,7 +879,7 @@ export default function App() {
         </nav>
         <div className="recent-tasks">
           <p className="nav-label">最近</p>
-          {visibleLocalTasks.slice(0, 5).map((task) => <button className="recent-task" key={task.id} onClick={() => openLocalTask(task)} type="button"><span>{task.name}</span><small>{task.status === 'RUNNING' ? '运行中' : task.status === 'COMPLETED' ? '已完成' : '执行失败'}</small></button>)}
+          {visibleLocalTasks.slice(0, 5).map((task) => <button className="recent-task" key={task.id} onClick={() => openLocalTask(task)} type="button"><span>{task.name}</span><small>{task.status === 'RUNNING' ? '运行中' : task.status === 'COMPLETED' ? '已完成' : task.status === 'CANCELED' ? '已取消' : '执行失败'}</small></button>)}
           {localTasks.length === 0 && <small className="recent-empty">暂无本机任务</small>}
           {localTasks.length > 0 && visibleLocalTasks.length === 0 && <small className="recent-empty">没有匹配的任务</small>}
         </div>
@@ -752,6 +890,17 @@ export default function App() {
       <main className="workspace" ref={workspaceRef}>
         <header className="topbar">
           <button className={`connection-state ${runtimeStatus}`} disabled={runtimeStatus === 'connecting'} onClick={() => runtimeStatus === 'offline' && setConnectionAttempt((value) => value + 1)} title={runtimeStatus === 'offline' ? '点击重新连接' : undefined} type="button"><i /> 马帮 ERP · {statusLabel}</button>
+          <div className="topbar-tools">
+            <button className={`harness-state ${harnessHealth}`} disabled={harnessHealth === 'checking'} onClick={() => harnessHealth === 'degraded' && setHarnessHealthAttempt((value) => value + 1)} title={harnessHealthDetail} type="button"><i /> {harnessHealth === 'checking' ? 'Agent 检查中' : harnessHealth === 'ready' ? 'Agent 已就绪' : 'Agent 待恢复'}</button>
+            <div className="notification-center">
+              <button aria-expanded={notificationOpen} aria-label="通知中心" className="notification-trigger" onClick={() => setNotificationOpen((value) => !value)} type="button"><Bell size={16} />{notifications.length > 0 && <span>{notifications.length}</span>}</button>
+              {notificationOpen && <section className="notification-popover"><header><strong>通知中心</strong><small>{notifications.length ? `${notifications.length} 项需要处理` : '当前运行正常'}</small></header>{notifications.length
+                ? notifications.map((item) => <article className={item.tone} key={item.key}><i /><span><strong>{item.title}</strong><small>{item.detail}</small></span></article>)
+                : <div className="notification-empty"><SquareCheckBig size={20} />暂无待处理事项</div>}
+                {notifications.length > 0 && <footer><button onClick={() => { setNotificationOpen(false); setPage('settings') }} type="button">打开运行诊断</button></footer>}
+              </section>}
+            </div>
+          </div>
         </header>
 
         {page === 'chat' ? (
@@ -763,7 +912,11 @@ export default function App() {
               <p>连接 ERP 数据，让专家 Agent 安全地完成查询、分析与内容生产</p>
               <div className="starter-actions">{starterTasks.map(({ icon: Icon, title, detail, prompt: value }) => <button key={title} onClick={() => { setPrompt(value); focusComposer() }} type="button"><Icon size={16} /><span><strong>{title}</strong><small>{detail}</small></span></button>)}</div>
             </div>}
-            {messages.length > 0 && <div className="message-list" ref={messageListRef}>{messages.map((message, index) => <article className={`message ${message.role}${message.pending ? ' pending' : ''}`} key={`${message.role}-${index}`}><span className="message-avatar">{message.role === 'user' ? '你' : <XiaoyinMascot size={29} variant="avatar" />}</span><div><small>{message.role === 'user' ? '你' : '小胤'}</small><p>{message.pending && harnessActivity ? harnessActivity : message.text}</p>{message.role === 'assistant' && <ExecutionTrace steps={message.pending ? harnessSteps : message.executionSteps ?? []} />}</div></article>)}</div>}
+            {messages.length > 0 && <div className="message-list" ref={messageListRef}>{messages.map((message, index) => {
+              const retryable = message.role === 'assistant' && index === messages.length - 1 && !message.pending && (message.text.startsWith('执行失败：') || message.text.startsWith('任务已取消'))
+              return <article className={`message ${message.role}${message.pending ? ' pending' : ''}`} key={`${message.role}-${index}`}><span className="message-avatar">{message.role === 'user' ? '你' : <XiaoyinMascot size={29} variant="avatar" />}</span><div><small>{message.role === 'user' ? '你' : '小胤'}</small><p>{message.pending && harnessActivity ? harnessActivity : message.text}</p>{message.role === 'assistant' && <ExecutionTrace steps={message.pending ? harnessSteps : message.executionSteps ?? []} />}{retryable && <button className="retry-task" onClick={prepareRetry} type="button">修改后重新执行</button>}</div></article>
+            })}</div>}
+            {harnessHealth === 'degraded' && <div className="runtime-recovery"><CircleStop size={17} /><span><strong>本地 Agent 暂不可用</strong><small>{harnessHealthDetail}</small></span><button onClick={() => setHarnessHealthAttempt((value) => value + 1)} type="button">重新检测</button></div>}
             <form className="composer" onSubmit={submit}>
               <textarea aria-label="给小胤发送消息" onChange={(event) => setPrompt(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); event.currentTarget.form?.requestSubmit() } }} placeholder="描述任务，/ 选择专家套件或技能，@ 添加业务上下文" ref={composerRef} value={prompt} />
               <div className="composer-actions">
@@ -773,7 +926,9 @@ export default function App() {
                   <button aria-expanded={modelMenuOpen} className="model-label" onClick={() => setModelMenuOpen((value) => !value)} type="button"><Bot size={14} /> {modelDisplayName(activeModel)} <ChevronDown size={13} /></button>
                   {modelMenuOpen && <div className="model-menu"><small>公司可用模型</small>{(bootstrap?.models.length ? bootstrap.models : [activeModel]).map((model) => <button className={model === activeModel ? 'active' : ''} key={model} onClick={() => selectModel(model)} type="button"><span><strong>{modelDisplayName(model)}</strong><small>{model}</small></span>{model === activeModel && <SquareCheckBig size={14} />}</button>)}</div>}
                 </div>
-                <button aria-label="发送" className="send-button" disabled={!prompt.trim() || harnessRunning || !bootstrap} title={!bootstrap ? '企业服务未连接' : harnessRunning ? '当前任务正在执行' : '发送'} type="submit"><Send size={17} /></button>
+                {harnessRunning
+                  ? <button aria-label="取消当前任务" className="cancel-button" onClick={() => void cancelCurrentTask()} title="取消当前任务" type="button"><CircleStop size={17} /></button>
+                  : <button aria-label="发送" className="send-button" disabled={!prompt.trim() || !bootstrap || harnessHealth === 'degraded'} title={!bootstrap ? '企业服务未连接' : harnessHealth === 'degraded' ? '请先恢复本地 Agent' : '发送'} type="submit"><Send size={17} /></button>}
               </div>
               {visibleInvocations.length > 0 && <div className="slash-menu"><small>快捷调用</small>{visibleInvocations.map((option) => <button key={`${option.kind}-${option.profileId}-${option.id}`} onClick={() => selectInvocation(option)} type="button"><span><strong>{option.label}</strong><small>{option.description}</small></span><em>{option.profileName}</em></button>)}</div>}
             </form>
@@ -813,6 +968,7 @@ export default function App() {
                     : page === 'audit'
                       ? '集中查看桌面 Agent 和工具的去敏执行记录，便于追溯成功、失败与授权结果。'
                     : '这里将由控制中心下发公司自己的能力与权限配置。'}</p>
+            {extensionSyncIssues.length > 0 && <div className="sync-diagnostics"><div><CircleStop size={17} /><span><strong>部分企业能力同步失败，已保留上次成功数据</strong><small>{extensionSyncedAt ? `最近尝试 ${extensionSyncedAt.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}` : '刚刚尝试同步'}</small></span><button onClick={() => setExtensionSyncAttempt((value) => value + 1)} type="button">重新同步</button></div><details><summary>查看 {extensionSyncIssues.length} 项失败详情</summary>{extensionSyncIssues.map((issue) => <p key={issue.key}><strong>{issue.label}</strong><span>{issue.message}</span></p>)}</details></div>}
             {page === 'settings' && bootstrap && user && <DesktopSettingsPage
               accessToken={accessToken}
               authorizedDirectoryCount={localDirectories.length}
@@ -833,7 +989,6 @@ export default function App() {
               {expertKitsLoading && <div className="kit-empty">正在同步公司专家套件…</div>}
               {!expertKitsLoading && expertKits.length === 0 && <div className="kit-empty">控制中心尚未发布专家套件</div>}
               {expertKitError && <div className="kit-error">{expertKitError}</div>}
-              {extensionSyncError && <div className="kit-error">{extensionSyncError}</div>}
               {developerKitMode && <div className="developer-kit-bar">
                 <span><strong>开发者验收模式</strong><small>本地套件不会上传或进入公司目录，仍受权限和逐次审批约束。</small></span>
                 <button disabled={developerKitBusy} onClick={() => void installLocalAcceptanceKit()} type="button"><PackagePlus size={14} />{developerKitBusy ? '正在处理…' : '安装本地验收包'}</button>
@@ -871,7 +1026,6 @@ export default function App() {
               {expertKitsLoading && <div className="kit-empty">正在同步公司技能…</div>}
               {!expertKitsLoading && skillViews.length === 0 && <div className="kit-empty">控制中心尚未发布独立技能</div>}
               {expertKitError && <div className="kit-error">{expertKitError}</div>}
-              {extensionSyncError && <div className="kit-error">{extensionSyncError}</div>}
               <div className="kit-grid">{skillViews.map((skill) => {
                 const installed = skill.installState === 'installed'
                 const stateLabel = skill.installState === 'retired' ? '已下架' : installed ? '已安装' : skill.installState === 'update' ? '可更新' : '可安装'
@@ -896,7 +1050,7 @@ export default function App() {
                 catalogError={expertKitError}
                 loading={expertKitsLoading}
                 runtime={runtimeConnectors}
-                syncError={extensionSyncError}
+                syncError=""
               />
             </>}
             {page === 'knowledge' && bootstrap && user && <KnowledgeBasePage
