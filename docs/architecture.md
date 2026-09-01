@@ -1,6 +1,6 @@
 # 小胤架构与能力
 
-本文描述 `xiaoyin-desktop main` 的已实现状态，当前正式基线为 `v0.1.18`。
+本文描述 `xiaoyin-desktop v0.1.19` 的已实现状态。
 
 ## 总体架构
 
