@@ -4,6 +4,7 @@ export type ErpUser = {
   userId: string
   displayName: string
   department: string
+  teamId: string
   position: string
   dataPermission: string
   companyId: string
@@ -33,6 +34,7 @@ export async function resolveErpSession(): Promise<ErpSessionStatus> {
         userId: 'local-development',
         displayName: '本地员工',
         department: '跨境运营',
+        teamId: 'local',
         position: '开发预览',
         dataPermission: 'development',
         companyId: 'local',

@@ -193,7 +193,7 @@ export default function App() {
         listInstalledExpertKits(),
         loadSkills(bootstrap.endpoints.skills, user.userId, accessToken, controller.signal),
         loadConnectors(bootstrap.endpoints.connectors, user.userId, accessToken, controller.signal),
-        loadKnowledgeBases(bootstrap.endpoints.knowledge, user.userId, user.department, accessToken, controller.signal),
+        loadKnowledgeBases(bootstrap.endpoints.knowledge, user.userId, user.teamId, accessToken, controller.signal),
       ])
       try {
         if (controller.signal.aborted) return
@@ -229,7 +229,7 @@ export default function App() {
     if (!bootstrap || !user || authState !== 'authenticated') return
     void startLocalIm({
       employeeId: user.userId,
-      teamId: user.department,
+      teamId: user.teamId,
       litellmBaseUrl: bootstrap.endpoints.litellm,
       knowledgeEndpoint: resolveControlPlaneEndpoint(bootstrap.endpoints.knowledge),
       connectors: buildRuntimeConnectorCatalog(connectors, bootstrap.endpoints.erpMcp),
@@ -402,7 +402,7 @@ export default function App() {
       const result = await runHarness({
         prompt: input,
         employeeId: user!.userId,
-        teamId: user!.department,
+        teamId: user!.teamId,
         ...(harnessSessionId ? { sessionId: harnessSessionId } : {}),
         ...(selectedExpertKit || selectedSkill ? { expertKitId: (selectedExpertKit ?? selectedSkill)!.id } : {}),
         litellmBaseUrl: bootstrap.endpoints.litellm,
@@ -540,7 +540,7 @@ export default function App() {
       if (bootstrap && user) {
         await startLocalIm({
           employeeId: user.userId,
-          teamId: user.department,
+          teamId: user.teamId,
           litellmBaseUrl: bootstrap.endpoints.litellm,
           knowledgeEndpoint: resolveControlPlaneEndpoint(bootstrap.endpoints.knowledge),
           connectors: runtimeConnectors,
@@ -575,7 +575,7 @@ export default function App() {
       if (bootstrap && user) {
         await startLocalIm({
           employeeId: user.userId,
-          teamId: user.department,
+          teamId: user.teamId,
           litellmBaseUrl: bootstrap.endpoints.litellm,
           knowledgeEndpoint: resolveControlPlaneEndpoint(bootstrap.endpoints.knowledge),
           connectors: runtimeConnectors,
@@ -634,7 +634,7 @@ export default function App() {
     if (bootstrap) {
       await startLocalIm({
         employeeId: user!.userId,
-        teamId: user!.department,
+        teamId: user!.teamId,
         litellmBaseUrl: bootstrap.endpoints.litellm,
         knowledgeEndpoint: resolveControlPlaneEndpoint(bootstrap.endpoints.knowledge),
         connectors: runtimeConnectors,
@@ -833,7 +833,7 @@ export default function App() {
             {page === 'knowledge' && bootstrap && user && <KnowledgeBasePage
               accessToken={accessToken}
               employeeId={user.userId}
-              teamId={user.department}
+              teamId={user.teamId}
               endpoint={bootstrap.endpoints.knowledge}
             />}
             {page === 'schedules' && bootstrap && user && <ScheduledTasksPage
@@ -852,7 +852,7 @@ export default function App() {
             {page === 'im' && bootstrap && user && <ImChannelsPage
               accessToken={accessToken}
               employeeId={user.userId}
-              teamId={user.department}
+              teamId={user.teamId}
               connectors={runtimeConnectors}
               allowedArtifacts={allowedArtifacts}
               litellmBaseUrl={bootstrap.endpoints.litellm}

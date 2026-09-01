@@ -44,6 +44,7 @@ struct ErpUser {
     user_id: String,
     display_name: String,
     department: String,
+    team_id: String,
     position: String,
     data_permission: String,
     company_id: String,
@@ -443,10 +444,15 @@ fn erp_user_from_identity(identity: &ErpIdentity) -> Result<ErpUser, String> {
         .group_company_id
         .map(|value| value.to_string())
         .unwrap_or_else(|| "internal".to_string());
+    let team_id = identity
+        .department_id
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| company_id.clone());
     Ok(ErpUser {
         user_id: identity.oper_id.clone(),
         display_name: identity.oper.clone(),
         department: identity.depart.clone(),
+        team_id,
         position: identity
             .department_id
             .map(|value| value.to_string())
@@ -468,6 +474,7 @@ fn trusted_erp_user(cookie_header: &str) -> ErpUser {
         user_id: format!("erp-{}", &digest[..16]),
         display_name: "ERP 员工".to_string(),
         department: "企业内部".to_string(),
+        team_id: "internal".to_string(),
         position: String::new(),
         data_permission: "erp-manager".to_string(),
         company_id: "internal".to_string(),
@@ -656,6 +663,7 @@ mod tests {
         assert_eq!(user.user_id, "1001");
         assert_eq!(user.display_name, "测试员工");
         assert_eq!(user.department, "跨境运营部");
+        assert_eq!(user.team_id, "21");
         assert_eq!(user.company_id, "7");
         assert_eq!(user.role, "operator");
     }

@@ -6,10 +6,11 @@ use sha2::{Digest, Sha256};
 use std::os::windows::process::CommandExt;
 use std::{
     collections::{HashMap, HashSet},
-    io::{BufRead, BufReader, Write},
+    io::{BufRead, BufReader, Read, Write},
     path::{Path, PathBuf},
     process::{Child, ChildStdin, ChildStdout, Command, Stdio},
     sync::{Arc, Mutex},
+    thread::JoinHandle,
 };
 use tauri::{Emitter, Manager};
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
@@ -141,6 +142,8 @@ pub(crate) struct HarnessProcess {
     child: Child,
     stdin: ChildStdin,
     stdout: BufReader<ChildStdout>,
+    stderr_tail: Arc<Mutex<String>>,
+    stderr_reader: Option<JoinHandle<()>>,
     next_id: u64,
     pub(crate) fingerprint: RuntimeFingerprint,
 }
@@ -454,7 +457,7 @@ impl HarnessProcess {
             .env("XIAOYIN_MEMORY_CONTEXT", &fingerprint.memory_context)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::inherit())
+            .stderr(Stdio::piped())
             .spawn()
             .map_err(|error| format!("无法启动 Harness Host：{error}"))?;
         let stdin = child
@@ -465,10 +468,18 @@ impl HarnessProcess {
             .stdout
             .take()
             .ok_or_else(|| "无法连接 Harness stdout".to_string())?;
+        let stderr = child
+            .stderr
+            .take()
+            .ok_or_else(|| "无法连接 Harness stderr".to_string())?;
+        let stderr_tail = Arc::new(Mutex::new(String::new()));
+        let stderr_reader = Some(capture_stderr(stderr, Arc::clone(&stderr_tail)));
         let mut process = Self {
             child,
             stdin,
             stdout: BufReader::new(stdout),
+            stderr_tail,
+            stderr_reader,
             next_id: 1,
             fingerprint,
         };
@@ -520,7 +531,16 @@ impl HarnessProcess {
                 .read_line(&mut line)
                 .map_err(|error| format!("无法读取 Harness 响应：{error}"))?;
             if bytes == 0 {
-                return Err("Harness Host 意外退出".to_string());
+                let status = self.child.try_wait().ok().flatten();
+                if status.is_some() {
+                    self.finish_stderr_capture();
+                }
+                let detail = self
+                    .stderr_tail
+                    .lock()
+                    .map(|value| value.clone())
+                    .unwrap_or_default();
+                return Err(unexpected_exit_message(status, &detail));
             }
             let output: Value = serde_json::from_str(&line)
                 .map_err(|error| format!("Harness 输出不是有效 JSON-RPC：{error}"))?;
@@ -608,12 +628,114 @@ impl HarnessProcess {
         let _ = self.request("host.shutdown", None, None);
         let _ = self.child.kill();
         let _ = self.child.wait();
+        self.finish_stderr_capture();
     }
 
     fn kill(&mut self) {
         let _ = self.child.kill();
         let _ = self.child.wait();
+        self.finish_stderr_capture();
     }
+
+    fn finish_stderr_capture(&mut self) {
+        if let Some(reader) = self.stderr_reader.take() {
+            let _ = reader.join();
+        }
+    }
+}
+
+const MAX_HARNESS_STDERR_CHARS: usize = 16 * 1024;
+const MAX_HARNESS_ERROR_CHARS: usize = 1_200;
+
+fn capture_stderr<R>(mut stderr: R, tail: Arc<Mutex<String>>) -> JoinHandle<()>
+where
+    R: Read + Send + 'static,
+{
+    std::thread::spawn(move || {
+        let mut buffer = [0_u8; 4096];
+        while let Ok(bytes) = stderr.read(&mut buffer) {
+            if bytes == 0 {
+                break;
+            }
+            let chunk = String::from_utf8_lossy(&buffer[..bytes]);
+            let Ok(mut output) = tail.lock() else {
+                break;
+            };
+            output.push_str(&chunk);
+            let count = output.chars().count();
+            if count > MAX_HARNESS_STDERR_CHARS {
+                *output = output
+                    .chars()
+                    .skip(count - MAX_HARNESS_STDERR_CHARS)
+                    .collect();
+            }
+        }
+    })
+}
+
+fn unexpected_exit_message(status: Option<std::process::ExitStatus>, stderr: &str) -> String {
+    let status = status
+        .and_then(|value| value.code())
+        .map(|value| format!("（退出码 {value}）"))
+        .unwrap_or_default();
+    let detail = sanitize_harness_error(stderr);
+    if detail.is_empty() {
+        format!("Harness Host 意外退出{status}")
+    } else {
+        format!("Harness Host 意外退出{status}：{detail}")
+    }
+}
+
+fn sanitize_harness_error(value: &str) -> String {
+    let lines = value
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ");
+    let safe = redact_secret_prefixes(&lines)
+        .chars()
+        .map(|character| {
+            if character.is_control() {
+                ' '
+            } else {
+                character
+            }
+        })
+        .collect::<String>();
+    let count = safe.chars().count();
+    if count > MAX_HARNESS_ERROR_CHARS {
+        format!(
+            "…{}",
+            safe.chars()
+                .skip(count - MAX_HARNESS_ERROR_CHARS)
+                .collect::<String>()
+        )
+    } else {
+        safe
+    }
+}
+
+fn redact_secret_prefixes(value: &str) -> String {
+    let mut output = value.to_string();
+    for prefix in ["sk-"] {
+        let mut offset = 0;
+        while let Some(relative) = output[offset..].find(prefix) {
+            let start = offset + relative;
+            let end = output[start..]
+                .char_indices()
+                .skip(prefix.chars().count())
+                .find(|(_, character)| {
+                    !(character.is_ascii_alphanumeric()
+                        || matches!(character, '-' | '_' | '.' | '~' | '+' | '/' | '='))
+                })
+                .map(|(index, _)| start + index)
+                .unwrap_or(output.len());
+            output.replace_range(start..end, "[REDACTED]");
+            offset = start + "[REDACTED]".len();
+        }
+    }
+    output
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -1115,5 +1237,17 @@ mod tests {
         assert_eq!(approval.tool_name, "local_shell_run");
         assert_eq!(approval.reason, "运行命令 \nls");
         assert!(approval_message(&approval).contains("仅本次允许"));
+    }
+
+    #[test]
+    fn unexpected_exit_includes_a_bounded_sanitized_cause() {
+        let message = unexpected_exit_message(None, "\n fatal\u{0007}: key sk-secret-value\n");
+        assert_eq!(message, "Harness Host 意外退出：fatal : key [REDACTED]");
+        assert!(!message.contains("secret-value"));
+
+        let long = "x".repeat(MAX_HARNESS_ERROR_CHARS + 20);
+        let message = unexpected_exit_message(None, &long);
+        assert!(message.ends_with(&"x".repeat(MAX_HARNESS_ERROR_CHARS)));
+        assert!(message.contains('…'));
     }
 }
