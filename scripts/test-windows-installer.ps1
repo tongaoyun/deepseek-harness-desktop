@@ -68,7 +68,8 @@ try {
   try {
     $runtimeOutput = @(
       '{"jsonrpc":"2.0","id":1,"method":"host.health"}',
-      '{"jsonrpc":"2.0","id":2,"method":"host.shutdown"}'
+      '{"jsonrpc":"2.0","id":2,"method":"host.self-test"}',
+      '{"jsonrpc":"2.0","id":3,"method":"host.shutdown"}'
     ) | & $runtimeNode $runtimeEntry
     if ($LASTEXITCODE -ne 0) { throw "Installed Harness runtime exited with $LASTEXITCODE." }
   }
@@ -79,6 +80,16 @@ try {
     Where-Object { $_.id -eq 1 } | Select-Object -First 1
   if (-not $health -or $health.result.status -ne "ready") {
     throw "Installed Harness runtime health check failed."
+  }
+  $selfTest = @($runtimeOutput) | ForEach-Object { $_ | ConvertFrom-Json } |
+    Where-Object { $_.id -eq 2 } | Select-Object -First 1
+  if (-not $selfTest -or $selfTest.result.status -ne "passed") {
+    throw "Installed local capability self-test failed."
+  }
+  $requiredChecks = @("local-files", "office-docx", "office-xlsx", "office-pdf", "local-shell", "computer-use")
+  $passedChecks = @($selfTest.result.checks | Where-Object { $_.passed } | ForEach-Object { $_.key })
+  foreach ($requiredCheck in $requiredChecks) {
+    if ($requiredCheck -notin $passedChecks) { throw "Installed capability was not verified: $requiredCheck" }
   }
 
   $application = Get-ChildItem -LiteralPath $resolvedRoot -File -Filter "*.exe" |
@@ -106,7 +117,7 @@ try {
   if ($uninstall.ExitCode -ne 0) { throw "Uninstaller exited with code $($uninstall.ExitCode)." }
   Wait-PathState -Path $resolvedRoot -ShouldExist $false
   $uninstallCompleted = $true
-  Write-Output "Windows installer and embedded Harness smoke tests passed."
+  Write-Output "Windows installer, embedded Harness and local capability smoke tests passed."
 }
 finally {
   if ($launchedProcess -and -not $launchedProcess.HasExited) {

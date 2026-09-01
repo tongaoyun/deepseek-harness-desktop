@@ -13,6 +13,8 @@ export interface BootstrapResponse {
     taskRuns: string
     knowledge: string
     deviceCapabilities?: string
+    auditEvents?: string
+    memoryProfile?: string
   }
   capabilities: string[]
   models: string[]
@@ -104,7 +106,7 @@ export interface TaskMessage {
 
 export interface TaskExecutionStep {
   id: string
-  kind: 'analysis' | 'tool' | 'response'
+  kind: 'analysis' | 'tool' | 'approval' | 'response'
   label: string
   status: 'running' | 'completed' | 'failed'
   toolName?: string
@@ -358,4 +360,32 @@ export interface DeviceFleetOverview {
   policy: DevicePolicy
   generatedAt: string
   devices: DeviceFleetEntry[]
+}
+
+export type AuditEventSource = 'DESKTOP' | 'SERVER' | 'IM'
+export type AuditEventCategory = 'AGENT' | 'TOOL' | 'APPROVAL' | 'SCHEDULE' | 'KNOWLEDGE' | 'EXTENSION'
+export type AuditEventOutcome = 'STARTED' | 'SUCCEEDED' | 'FAILED' | 'DENIED'
+
+export interface AuditEventEntry {
+  id: string
+  source: AuditEventSource
+  category: AuditEventCategory
+  action: string
+  outcome: AuditEventOutcome
+  resourceType: string
+  resourceId: string
+  summary: string
+  occurredAt: string
+  receivedAt: string
+}
+
+export interface SubmitAuditEvent {
+  source: AuditEventSource
+  category: AuditEventCategory
+  action: string
+  outcome: AuditEventOutcome
+  resourceType?: string
+  resourceId?: string
+  summary?: string
+  occurredAt?: string
 }

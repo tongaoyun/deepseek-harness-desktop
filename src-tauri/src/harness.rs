@@ -488,6 +488,25 @@ impl HarnessProcess {
                         "reject"
                     };
                     self.send_approval_response(&approval.approval_id, decision)?;
+                    if let Some(app) = app {
+                        let event = json!({
+                            "event": {
+                                "method": "session.event",
+                                "params": { "event": {
+                                    "type": "approval/decision",
+                                    "data": {
+                                        "approvalId": approval.approval_id,
+                                        "name": approval.tool_name,
+                                        "decision": decision
+                                    }
+                                }}
+                            }
+                        });
+                        let _ = app.emit(
+                            "xiaoyin://harness-notification",
+                            HarnessUiNotification { request_id, event },
+                        );
+                    }
                     continue;
                 }
                 if let Some(app) = app {

@@ -1,34 +1,36 @@
 import { BrainCircuit, Save, ShieldCheck } from 'lucide-react'
 import { type FormEvent, useEffect, useState } from 'react'
-import { emptyMemoryProfile, loadMemoryProfile, saveMemoryProfile, type MemoryProfile } from './memory'
+import { emptyMemoryProfile, loadSyncedMemoryProfile, saveSyncedMemoryProfile, type MemoryProfile } from './memory'
 
 interface Props {
   employeeId: string
+  endpoint: string
+  accessToken: string
   onSaved: (profile: MemoryProfile) => Promise<void> | void
 }
 
-export function MemoryPage({ employeeId, onSaved }: Props) {
+export function MemoryPage({ employeeId, endpoint, accessToken, onSaved }: Props) {
   const [profile, setProfile] = useState<MemoryProfile>(emptyMemoryProfile)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
 
   useEffect(() => {
-    void loadMemoryProfile(employeeId)
+    void loadSyncedMemoryProfile(employeeId, endpoint, accessToken)
       .then(setProfile)
       .catch((error) => setMessage(error instanceof Error ? error.message : String(error)))
       .finally(() => setLoading(false))
-  }, [employeeId])
+  }, [employeeId, endpoint, accessToken])
 
   const submit = async (event: FormEvent) => {
     event.preventDefault()
     setSaving(true)
     setMessage('')
     try {
-      const saved = await saveMemoryProfile(employeeId, profile)
+      const saved = await saveSyncedMemoryProfile(employeeId, endpoint, accessToken, profile)
       setProfile(saved)
       await onSaved(saved)
-      setMessage('已保存，后续桌面对话和 IM 消息都会使用这份工作手册。')
+      setMessage('已保存并同步，后续桌面对话、本机 IM 和其他电脑都会使用这份工作手册。')
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error))
     } finally {
@@ -52,7 +54,7 @@ export function MemoryPage({ employeeId, onSaved }: Props) {
         <em>{profile.workManual.length} / 16000</em>
       </label>
     </div>
-    <div className="memory-footer"><span><ShieldCheck size={14} />仅保存在本机，不上传控制中心；启用后自动作用于桌面对话和本机 IM。</span><button disabled={loading || saving} type="submit"><Save size={14} />{saving ? '正在保存…' : '保存设置'}</button></div>
+    <div className="memory-footer"><span><ShieldCheck size={14} />本机保留副本并同步到公司控制中心；输入“记住：规则”可快速沉淀。</span><button disabled={loading || saving} type="submit"><Save size={14} />{saving ? '正在保存…' : '保存设置'}</button></div>
     {message && <div className="memory-message">{message}</div>}
   </form>
 }

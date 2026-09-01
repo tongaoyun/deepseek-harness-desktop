@@ -1,6 +1,7 @@
 import type { HarnessRuntime, RunInput } from './runtime.js'
 import type { DingTalkImConfiguration, LocalImRuntime } from './im-runtime.js'
 import { diagnoseConfiguredConnectors } from './managed-mcp-plugin.js'
+import { runLocalCapabilitySelfTest } from './self-test.js'
 import {
   failure,
   isJsonRpcRequest,
@@ -46,6 +47,9 @@ export class HostServer {
           return
         case 'host.initialize':
           this.emit(success(value.id, await this.runtime.initialize()))
+          return
+        case 'host.self-test':
+          this.emit(success(value.id, await runLocalCapabilitySelfTest()))
           return
         case 'connectors.diagnose':
           this.emit(success(value.id, await diagnoseConfiguredConnectors()))

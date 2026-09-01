@@ -17,6 +17,7 @@ import {
   Plus,
   PlugZap,
   Search,
+  ScrollText,
   Send,
   ShieldCheck,
   Sparkles,
@@ -35,6 +36,7 @@ import {
   loadKnowledgeBases,
   loadSkills,
   resolveControlPlaneEndpoint,
+  submitAuditEvent,
 } from './api'
 import { DesktopUpdater } from './DesktopUpdater'
 import { ErpAuthScreen } from './ErpAuthScreen'
@@ -79,11 +81,13 @@ import { loadLocalTasks, saveLocalTask } from './taskHistory'
 import { startLocalIm, stopLocalImRuntime } from './localIm'
 import type { LocalTaskRun, TaskExecutionStep, TaskMessage } from './types'
 import { MemoryPage } from './MemoryPage'
+import { memoryInstruction, rememberInstruction } from './memory'
 import { modelDisplayName, modelStorageKey, resolveSelectedModel } from './modelSelection'
 import { buildInvocationOptions, filterInvocationOptions, type InvocationOption } from './invocations'
 import { buildRuntimeConnectorCatalog } from './connectors'
 import { KnowledgeBasePage } from './KnowledgeBasePage'
 import { DeviceCapabilitiesPage } from './DeviceCapabilitiesPage'
+import { AuditEventsPage } from './AuditEventsPage'
 import { ConnectorsPage } from './ConnectorsPage'
 import { mergeSkills, type SkillView } from './skills'
 import { allowedExtensionArtifacts } from './extensionPolicy'
@@ -347,6 +351,22 @@ export default function App() {
     event.preventDefault()
     const input = prompt.trim()
     if (!input || !bootstrap || harnessRunning) return
+    const remembered = memoryInstruction(input)
+    if (remembered) {
+      setPrompt('')
+      try {
+        await rememberInstruction(user!.userId, bootstrap.endpoints.memoryProfile ?? '/api/v1/memory-profile', accessToken, remembered)
+        const rememberedMessages: TaskMessage[] = [{ role: 'user', text: input }, { role: 'assistant', text: `已记住：${remembered}` }]
+        const timestamp = new Date().toISOString()
+        const task: LocalTaskRun = { id: crypto.randomUUID(), source: 'DESKTOP', name: input.slice(0, 60),
+          status: 'COMPLETED', createdAt: timestamp, updatedAt: timestamp, messages: rememberedMessages }
+        setMessages(rememberedMessages)
+        persistLocalTask(task)
+      } catch (error) {
+        setMessages([{ role: 'user', text: input }, { role: 'assistant', text: `记忆失败：${error instanceof Error ? error.message : String(error)}` }])
+      }
+      return
+    }
     const now = new Date().toISOString()
     const taskId = currentLocalTaskId || crypto.randomUUID()
     const existingTask = localTasks.find((task) => task.id === taskId)
@@ -368,6 +388,11 @@ export default function App() {
     setCurrentLocalTaskId(taskId)
     setMessages(pendingMessages)
     persistLocalTask(runningTask)
+    void submitAuditEvent(bootstrap.endpoints.auditEvents ?? '/api/v1/audit-events', user!.userId, accessToken, {
+      source: 'DESKTOP', category: 'AGENT', action: 'desktop.agent.run', outcome: 'STARTED',
+      resourceType: 'desktop-task', resourceId: taskId,
+      summary: [selectedExpertKit?.id, selectedSkill?.id, activeModel].filter(Boolean).join(' · '), occurredAt: now,
+    }).catch(() => undefined)
     setPrompt('')
     setHarnessRunning(true)
     setHarnessActivity('正在启动本地 Agent')
@@ -397,6 +422,7 @@ export default function App() {
       setMessages(completedMessages)
       persistLocalTask({ ...runningTask, status: 'COMPLETED', updatedAt: new Date().toISOString(),
         sessionId: result.sessionId, messages: completedMessages })
+      await reportTaskAudit('SUCCEEDED', taskId, harnessStepsRef.current)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       const failedMessages = pendingMessages.map((item, index) => index === pendingMessages.length - 1
@@ -404,10 +430,33 @@ export default function App() {
         : item) as TaskMessage[]
       setMessages(failedMessages)
       persistLocalTask({ ...runningTask, status: 'FAILED', updatedAt: new Date().toISOString(), messages: failedMessages })
+      await reportTaskAudit('FAILED', taskId, harnessStepsRef.current)
     } finally {
       setHarnessRunning(false)
       setHarnessActivity('')
     }
+  }
+
+  const reportTaskAudit = async (
+    outcome: 'SUCCEEDED' | 'FAILED',
+    taskId: string,
+    steps: TaskExecutionStep[],
+  ) => {
+    if (!bootstrap || !user) return
+    const endpoint = bootstrap.endpoints.auditEvents ?? '/api/v1/audit-events'
+    const events = [{
+      source: 'DESKTOP' as const, category: 'AGENT' as const, action: 'desktop.agent.run', outcome,
+      resourceType: 'desktop-task', resourceId: taskId,
+      summary: outcome === 'SUCCEEDED' ? '桌面 Agent 执行完成' : '桌面 Agent 执行失败',
+    }, ...steps.filter((step) => ['tool', 'approval'].includes(step.kind) && step.toolName).map((step) => ({
+      source: 'DESKTOP' as const, category: step.kind === 'approval' ? 'APPROVAL' as const : 'TOOL' as const,
+      action: step.toolName!, outcome: step.status === 'failed'
+        ? step.kind === 'approval' ? 'DENIED' as const : 'FAILED' as const
+        : 'SUCCEEDED' as const,
+      resourceType: 'desktop-task', resourceId: taskId,
+      summary: step.label.slice(0, 500), occurredAt: step.completedAt ?? step.startedAt,
+    }))]
+    await Promise.allSettled(events.map((value) => submitAuditEvent(endpoint, user.userId, accessToken, value)))
   }
 
   const installKit = async (kit: ExpertKitView) => {
@@ -618,6 +667,7 @@ export default function App() {
           <button className={page === 'schedules' ? 'nav-item active' : 'nav-item'} onClick={() => setPage('schedules')} type="button"><CalendarClock size={17} /><span>定时任务</span></button>
           <button className={page === 'im' ? 'nav-item active' : 'nav-item'} onClick={() => setPage('im')} type="button"><MessageSquare size={17} /><span>IM 频道</span></button>
           <button className={page === 'admin' ? 'nav-item active' : 'nav-item'} onClick={() => setPage('admin')} type="button"><ShieldCheck size={17} /><span>管理中心</span></button>
+          <button className={page === 'audit' ? 'nav-item active' : 'nav-item'} onClick={() => setPage('audit')} type="button"><ScrollText size={17} /><span>审计记录</span></button>
         </nav>
         <div className="sidebar-segments"><button className={page === 'tasks' ? 'active' : ''} onClick={() => setPage('tasks')} type="button"><SquareCheckBig size={14} />任务</button><button className={page === 'im' ? 'active' : ''} onClick={() => setPage('im')} type="button"><MessageSquare size={14} />频道</button></div>
         <div className="recent-tasks">
@@ -677,7 +727,7 @@ export default function App() {
         ) : (
           <section className="capability-page">
             <span className="page-kicker">企业能力中心</span>
-            <h1>{extensionNav.find((item) => item.id === page)?.label ?? ({ memory: '意识', tasks: '任务中心', schedules: '定时任务', im: 'IM 频道', admin: '设备能力' } as Record<string, string>)[page]}</h1>
+            <h1>{extensionNav.find((item) => item.id === page)?.label ?? ({ memory: '意识', tasks: '任务中心', schedules: '定时任务', im: 'IM 频道', admin: '设备能力', audit: '审计记录' } as Record<string, string>)[page]}</h1>
             <p>{page === 'experts'
               ? '面向岗位的一整套工作方案，统一组合命令、技能、连接器和后台工作流。'
               : page === 'skills'
@@ -694,10 +744,22 @@ export default function App() {
                     ? '按专家套件声明的后台工作流创建任务；任务由 Temporal 托管，关闭电脑后仍会运行。'
                   : page === 'memory'
                     ? '跨会话保留你的协作风格和长期有效的业务工作手册。'
+                    : page === 'audit'
+                      ? '集中查看桌面 Agent 和工具的去敏执行记录，便于追溯成功、失败与授权结果。'
                     : page === 'admin'
                       ? '检测当前电脑能否安全运行本地文件、Office、Shell、Computer Use 和企业连接器，并保留去敏验收记录。'
                       : '这里将由控制中心下发公司自己的能力与权限配置。'}</p>
-            {page === 'memory' && user && <MemoryPage employeeId={user.userId} onSaved={memorySaved} />}
+            {page === 'memory' && bootstrap && user && <MemoryPage
+              employeeId={user.userId}
+              endpoint={bootstrap.endpoints.memoryProfile ?? '/api/v1/memory-profile'}
+              accessToken={accessToken}
+              onSaved={memorySaved}
+            />}
+            {page === 'audit' && bootstrap && user && <AuditEventsPage
+              endpoint={bootstrap.endpoints.auditEvents ?? '/api/v1/audit-events'}
+              employeeId={user.userId}
+              accessToken={accessToken}
+            />}
             {page === 'experts' && <>
               {expertKitsLoading && <div className="kit-empty">正在同步公司专家套件…</div>}
               {!expertKitsLoading && expertKits.length === 0 && <div className="kit-empty">控制中心尚未发布专家套件</div>}

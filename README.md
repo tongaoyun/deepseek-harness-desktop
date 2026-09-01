@@ -15,11 +15,11 @@
 
 ## 当前能力
 
-- ERP 扫码登录、LiteLLM 模型选择和本地会话记忆。
+- ERP 扫码登录、LiteLLM 模型选择和跨设备意识同步。
 - 专家套件、独立 Skills、连接器和企业知识库。
 - 本地文件、DOCX/XLSX/PDF、受审批 Shell 和 Windows Computer Use。
 - MCP 实时握手、工具清单漂移诊断和设备能力上报。
-- Temporal 定时任务、任务中心、本地钉钉频道和签名自动更新。
+- Temporal 定时任务、任务中心、本地钉钉频道、中央审计和签名自动更新。
 
 ## 安全边界
 
@@ -44,7 +44,7 @@ pnpm tauri:dev
 ## Windows 发布
 
 - `main`：执行完整质量门禁并生成 MSI、NSIS 和 SHA-256 制品。
-- `v*` 标签：执行安装/启动/卸载烟测并发布正式 Gitea Release。
+- `v*` 标签：实际验收文件、Office、Shell、Computer Use，再执行安装/启动/卸载并发布正式 Gitea Release。
 - 自动更新：只使用正式单通道和 Tauri 签名，不设置 `stable`/`beta` 通道。
 - 回滚：运行 `Roll back desktop release`，目标必须是已发布的不可变版本。
 

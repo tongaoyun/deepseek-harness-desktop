@@ -149,6 +149,23 @@ export function applyHarnessNotification(
     return completeStep(current, `tool:${result.callId}`, result.failed ? 'failed' : 'completed', occurredAt)
   }
 
+  if (parsed.type === 'approval/decision') {
+    const approvalId = text(parsed.data.approvalId)
+    const toolName = text(parsed.data.name)
+    const decision = text(parsed.data.decision)
+    if (!approvalId || !toolName || !['allow', 'reject'].includes(decision ?? '')) return current
+    const allowed = decision === 'allow'
+    return upsertStep(current, {
+      id: `approval:${approvalId}`,
+      kind: 'approval',
+      label: `${allowed ? '已允许' : '已拒绝'}${toolActivityLabel(toolName)}`,
+      status: allowed ? 'completed' : 'failed',
+      toolName,
+      startedAt: occurredAt,
+      completedAt: occurredAt,
+    })
+  }
+
   if (parsed.type === 'turn/end' && turn !== undefined) {
     const reason = text(asRecord(parsed.data.reason)?.kind)
     const status = reason === 'completed' ? 'completed' : 'failed'

@@ -12,6 +12,8 @@ pub struct MemoryProfile {
     enabled: bool,
     collaboration_style: String,
     work_manual: String,
+    #[serde(default)]
+    updated_at: String,
 }
 
 impl Default for MemoryProfile {
@@ -20,6 +22,7 @@ impl Default for MemoryProfile {
             enabled: true,
             collaboration_style: String::new(),
             work_manual: String::new(),
+            updated_at: String::new(),
         }
     }
 }

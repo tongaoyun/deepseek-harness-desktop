@@ -54,6 +54,15 @@ describe('harnessActivityLabel', () => {
     expect(steps.map((step) => step.status)).toEqual(['failed', 'failed'])
     expect(steps.at(-1)?.label).toBe('执行未完成')
   })
+
+  it('records only the approval decision and tool name', () => {
+    const steps = [event('approval/decision', {
+      approvalId: 'approval-1', name: 'local_shell_run', decision: 'reject', reason: 'sensitive command',
+    }, 1)].reduce(applyHarnessNotification, [])
+
+    expect(steps).toMatchObject([{ kind: 'approval', toolName: 'local_shell_run', status: 'failed' }])
+    expect(JSON.stringify(steps)).not.toContain('sensitive command')
+  })
 })
 
 describe('diagnoseConnectors', () => {

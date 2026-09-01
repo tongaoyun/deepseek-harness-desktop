@@ -15,6 +15,8 @@ import type {
   DeviceCapabilityReport,
   DeviceFleetOverview,
   SubmitDeviceCapabilityReport,
+  AuditEventEntry,
+  SubmitAuditEvent,
 } from './types'
 
 const DEFAULT_CONTROL_PLANE = 'http://192.168.2.67:30081'
@@ -205,6 +207,31 @@ export async function loadDeviceFleetOverview(
   })
   if (!response.ok) throw new Error(`团队设备总览返回 ${response.status}`)
   return response.json() as Promise<DeviceFleetOverview>
+}
+
+export async function loadAuditEvents(
+  endpoint: string,
+  employeeId: string,
+  accessToken: string,
+  signal?: AbortSignal,
+): Promise<AuditEventEntry[]> {
+  const separator = endpoint.includes('?') ? '&' : '?'
+  return loadCatalog(`${endpoint}${separator}limit=200`, employeeId, accessToken, '审计记录', signal)
+}
+
+export async function submitAuditEvent(
+  endpoint: string,
+  employeeId: string,
+  accessToken: string,
+  event: SubmitAuditEvent,
+): Promise<AuditEventEntry> {
+  const response = await fetch(controlPlaneUrl(endpoint), {
+    method: 'POST',
+    headers: { ...enterpriseHeaders(employeeId, accessToken), 'Content-Type': 'application/json' },
+    body: JSON.stringify(event),
+  })
+  if (!response.ok) throw new Error(`审计事件上报返回 ${response.status}`)
+  return response.json() as Promise<AuditEventEntry>
 }
 
 export async function loadKnowledgeBases(
