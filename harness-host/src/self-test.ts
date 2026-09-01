@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ComputerUseBridge } from './local-computer-use-plugin.js'
 import { parseDocx, parsePdf, parseXlsx, renderPdf, selectPdfFont } from './local-documents-plugin.js'
-import { LocalFileBridge } from './local-files-plugin.js'
+import { discoverAuthorizedRoots, LocalFileBridge } from './local-files-plugin.js'
 import { runCommand } from './local-shell-plugin.js'
 
 const { Workbook } = ExcelJS
@@ -22,9 +22,11 @@ export async function runLocalCapabilitySelfTest(): Promise<{ status: 'passed'; 
   const previousDshHome = process.env.DSH_HOME
   process.env.DSH_HOME = root
   try {
-    const bridge = new LocalFileBridge([{ id: 'self-test', name: 'self-test', path: root }])
-    await bridge.writeText('self-test', 'local-file.txt', 'xiaoyin local file', false)
-    const localFile = await bridge.readText('self-test', 'local-file.txt')
+    const [authorizedRoot] = await discoverAuthorizedRoots([root])
+    if (!authorizedRoot) throw new Error('Self-test directory authorization failed')
+    const bridge = new LocalFileBridge([authorizedRoot])
+    await bridge.writeText(authorizedRoot.id, 'local-file.txt', 'xiaoyin local file', false)
+    const localFile = await bridge.readText(authorizedRoot.id, 'local-file.txt')
     ensure(localFile.content === 'xiaoyin local file', 'Local file content mismatch')
 
     const docxBytes = await Packer.toBuffer(new Document({ sections: [{ children: [new Paragraph('xiaoyin docx')] }] }))
