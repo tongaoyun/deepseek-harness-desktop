@@ -56,7 +56,7 @@ export function AccountMenu({ companyName, department, displayName, runtimeStatu
         <header><span>{displayName?.slice(0, 1) ?? '员'}</span><div><strong>{displayName ?? '企业员工'}</strong><small>{department || '跨境运营'} · {companyName || '企业内部版'}</small></div></header>
         <div className="account-runtime"><i className={`status-dot ${runtimeStatus}`} /><span>{runtimeStatus === 'ready' ? '企业服务已连接' : runtimeStatus === 'offline' ? '企业服务离线' : '企业服务连接中'}</span></div>
         <div className="account-menu-items">
-          <button onClick={() => { setMenuOpen(false); onSettings() }} type="button"><Settings size={16} /><span><strong>桌面设置</strong><small>本地能力、目录与运行环境</small></span></button>
+          <button onClick={() => { setMenuOpen(false); onSettings() }} type="button"><Settings size={16} /><span><strong>桌面设置</strong><small>记忆、设备能力与运行环境</small></span></button>
           <DesktopUpdater onAvailabilityChange={setUpdateAvailable} variant="menu" />
           <button onClick={() => { setMenuOpen(false); setFeedbackState('idle'); setFeedbackOpen(true) }} type="button"><HelpCircle size={16} /><span><strong>反馈与帮助</strong><small>提交问题或改进建议</small></span></button>
         </div>

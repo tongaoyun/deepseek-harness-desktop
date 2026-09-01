@@ -21,7 +21,7 @@ export async function loadMemoryProfile(employeeId: string): Promise<MemoryProfi
 }
 
 export async function saveMemoryProfile(employeeId: string, profile: MemoryProfile): Promise<MemoryProfile> {
-  if (!isTauri()) throw new Error('意识设置只能在小胤桌面客户端中保存')
+  if (!isTauri()) throw new Error('记忆设置只能在小胤桌面客户端中保存')
   return cacheMemoryProfile(employeeId, { ...profile, updatedAt: new Date().toISOString() })
 }
 
@@ -93,7 +93,7 @@ async function requestMemoryProfile(endpoint: string, employeeId: string, access
   const response = await fetch(resolveControlPlaneEndpoint(endpoint), {
     headers: enterpriseHeaders(employeeId, accessToken),
   })
-  if (!response.ok) throw new Error(`意识同步返回 ${response.status}`)
+  if (!response.ok) throw new Error(`记忆同步返回 ${response.status}`)
   return response.json() as Promise<MemoryProfile>
 }
 
@@ -107,7 +107,7 @@ async function putMemoryProfile(
     method: 'PUT', headers: { ...enterpriseHeaders(employeeId, accessToken), 'Content-Type': 'application/json' },
     body: JSON.stringify(profile),
   })
-  if (!response.ok) throw new Error(`意识同步返回 ${response.status}`)
+  if (!response.ok) throw new Error(`记忆同步返回 ${response.status}`)
   return response.json() as Promise<MemoryProfile>
 }
 

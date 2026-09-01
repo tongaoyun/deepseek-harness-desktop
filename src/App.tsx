@@ -2,7 +2,6 @@ import {
   BookOpenCheck,
   Bot,
   Boxes,
-  BrainCircuit,
   CalendarClock,
   ChevronDown,
   CirclePlus,
@@ -78,13 +77,12 @@ import { ImChannelsPage } from './ImChannelsPage'
 import { loadLocalTasks, saveLocalTask } from './taskHistory'
 import { startLocalIm, stopLocalImRuntime } from './localIm'
 import type { LocalTaskRun, TaskExecutionStep, TaskMessage } from './types'
-import { MemoryPage } from './MemoryPage'
 import { memoryInstruction, rememberInstruction } from './memory'
 import { modelDisplayName, modelStorageKey, resolveSelectedModel } from './modelSelection'
 import { buildInvocationOptions, filterInvocationOptions, type InvocationOption } from './invocations'
 import { buildRuntimeConnectorCatalog } from './connectors'
 import { KnowledgeBasePage } from './KnowledgeBasePage'
-import { DeviceCapabilitiesPage } from './DeviceCapabilitiesPage'
+import { DesktopSettingsPage } from './DesktopSettingsPage'
 import { AuditEventsPage } from './AuditEventsPage'
 import { ConnectorsPage } from './ConnectorsPage'
 import { mergeSkills, type SkillView } from './skills'
@@ -670,10 +668,8 @@ export default function App() {
           {extensionNav.map(({ id, label, icon: Icon }) => <button className={page === id ? 'nav-item active' : 'nav-item'} key={id} onClick={() => setPage(id)} type="button"><Icon size={17} /><span>{label}</span>{id === 'skills' && skills.length > 0 && <em>{skills.length}</em>}</button>)}
         </nav>
         <nav className="office-nav">
-          <button className={page === 'memory' ? 'nav-item active' : 'nav-item'} onClick={() => setPage('memory')} type="button"><BrainCircuit size={17} /><span>意识</span></button>
           <button className={page === 'schedules' ? 'nav-item active' : 'nav-item'} onClick={() => setPage('schedules')} type="button"><CalendarClock size={17} /><span>定时任务</span></button>
           <button className={page === 'im' ? 'nav-item active' : 'nav-item'} onClick={() => setPage('im')} type="button"><MessageSquare size={17} /><span>IM 频道</span></button>
-          <button className={page === 'admin' ? 'nav-item active' : 'nav-item'} onClick={() => setPage('admin')} type="button"><ShieldCheck size={17} /><span>管理中心</span></button>
           <button className={page === 'audit' ? 'nav-item active' : 'nav-item'} onClick={() => setPage('audit')} type="button"><ScrollText size={17} /><span>审计记录</span></button>
         </nav>
         <div className="sidebar-segments"><button className={page === 'tasks' ? 'active' : ''} onClick={() => setPage('tasks')} type="button"><SquareCheckBig size={14} />任务</button><button className={page === 'im' ? 'active' : ''} onClick={() => setPage('im')} type="button"><MessageSquare size={14} />频道</button></div>
@@ -683,7 +679,7 @@ export default function App() {
           {localTasks.length === 0 && <small className="recent-empty">暂无本机任务</small>}
         </div>
         <div className="sidebar-spacer" />
-        <AccountMenu companyName={user?.companyName} department={user?.department} displayName={user?.displayName} onFeedback={submitDesktopFeedback} onLogout={logoutWithCleanup} onSettings={() => setPage('admin')} runtimeStatus={runtimeStatus} />
+        <AccountMenu companyName={user?.companyName} department={user?.department} displayName={user?.displayName} onFeedback={submitDesktopFeedback} onLogout={logoutWithCleanup} onSettings={() => setPage('settings')} runtimeStatus={runtimeStatus} />
       </aside>
 
       <main className="workspace">
@@ -731,7 +727,7 @@ export default function App() {
         ) : (
           <section className="capability-page">
             <span className="page-kicker">企业能力中心</span>
-            <h1>{extensionNav.find((item) => item.id === page)?.label ?? ({ memory: '意识', tasks: '任务中心', schedules: '定时任务', im: 'IM 频道', admin: '设备能力', audit: '审计记录' } as Record<string, string>)[page]}</h1>
+            <h1>{extensionNav.find((item) => item.id === page)?.label ?? ({ settings: '桌面设置', tasks: '任务中心', schedules: '定时任务', im: 'IM 频道', audit: '审计记录' } as Record<string, string>)[page]}</h1>
             <p>{page === 'experts'
               ? '面向岗位的一整套工作方案，统一组合命令、技能、连接器和后台工作流。'
               : page === 'skills'
@@ -746,18 +742,21 @@ export default function App() {
                     ? '统一查看小胤桌面任务、Temporal 云端执行和可下载的结果产物。'
                   : page === 'schedules'
                     ? '按专家套件声明的后台工作流创建任务；任务由 Temporal 托管，关闭电脑后仍会运行。'
-                  : page === 'memory'
-                    ? '跨会话保留你的协作风格和长期有效的业务工作手册。'
+                  : page === 'settings'
+                    ? '管理个人记忆与当前电脑的本地能力；软件更新和反馈仍可从左下角头像打开。'
                     : page === 'audit'
                       ? '集中查看桌面 Agent 和工具的去敏执行记录，便于追溯成功、失败与授权结果。'
-                    : page === 'admin'
-                      ? '检测当前电脑能否安全运行本地文件、Office、Shell、Computer Use 和企业连接器，并保留去敏验收记录。'
-                      : '这里将由控制中心下发公司自己的能力与权限配置。'}</p>
-            {page === 'memory' && bootstrap && user && <MemoryPage
-              employeeId={user.userId}
-              endpoint={bootstrap.endpoints.memoryProfile ?? '/api/v1/memory-profile'}
+                    : '这里将由控制中心下发公司自己的能力与权限配置。'}</p>
+            {page === 'settings' && bootstrap && user && <DesktopSettingsPage
               accessToken={accessToken}
-              onSaved={memorySaved}
+              authorizedDirectoryCount={localDirectories.length}
+              connectors={connectors}
+              deviceEndpoint={bootstrap.endpoints.deviceCapabilities ?? '/api/v1/device-capabilities'}
+              employeeId={user.userId}
+              memoryEndpoint={bootstrap.endpoints.memoryProfile ?? '/api/v1/memory-profile'}
+              onMemorySaved={memorySaved}
+              runtimeConnectors={runtimeConnectors}
+              runtimeStatus={runtimeStatus}
             />}
             {page === 'audit' && bootstrap && user && <AuditEventsPage
               endpoint={bootstrap.endpoints.auditEvents ?? '/api/v1/audit-events'}
@@ -863,15 +862,6 @@ export default function App() {
               knowledgeEndpoint={resolveControlPlaneEndpoint(bootstrap.endpoints.knowledge)}
               model={activeModel}
               modelApiKey={bootstrap.modelApiKey}
-            />}
-            {page === 'admin' && bootstrap && user && <DeviceCapabilitiesPage
-              endpoint={bootstrap.endpoints.deviceCapabilities ?? '/api/v1/device-capabilities'}
-              employeeId={user.userId}
-              accessToken={accessToken}
-              connectors={connectors}
-              runtimeConnectors={runtimeConnectors}
-              authorizedDirectoryCount={localDirectories.length}
-              runtimeStatus={runtimeStatus}
             />}
           </section>
         )}

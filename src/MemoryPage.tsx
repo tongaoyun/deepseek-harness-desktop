@@ -41,7 +41,7 @@ export function MemoryPage({ employeeId, endpoint, accessToken, onSaved }: Props
   return <form className="memory-page" onSubmit={(event) => void submit(event)}>
     <header className="memory-intro">
       <span><BrainCircuit size={22} /></span>
-      <div><h2>意识</h2><p>定制小胤与你长期协作的方式，并把稳定的业务偏好带到后续会话。</p></div>
+      <div><h2>记忆</h2><p>定制小胤与你长期协作的方式，并把稳定的业务偏好带到后续会话。</p></div>
       <button aria-pressed={profile.enabled} className={`memory-switch ${profile.enabled ? 'on' : ''}`} disabled={loading || saving} onClick={() => setProfile((value) => ({ ...value, enabled: !value.enabled }))} type="button"><i /></button>
     </header>
     <div className="memory-grid">

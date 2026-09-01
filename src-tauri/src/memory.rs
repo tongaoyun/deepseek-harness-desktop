@@ -46,11 +46,11 @@ pub fn save_memory_profile(
     let path = profile_path(&app, &employee_id)?;
     let parent = path
         .parent()
-        .ok_or_else(|| "意识配置路径无效".to_string())?;
-    fs::create_dir_all(parent).map_err(|error| format!("无法创建意识配置目录：{error}"))?;
+        .ok_or_else(|| "记忆配置路径无效".to_string())?;
+    fs::create_dir_all(parent).map_err(|error| format!("无法创建记忆配置目录：{error}"))?;
     let temporary = path.with_extension("json.tmp");
     let bytes = serde_json::to_vec_pretty(&profile)
-        .map_err(|error| format!("无法生成意识配置：{error}"))?;
+        .map_err(|error| format!("无法生成记忆配置：{error}"))?;
     let mut options = fs::OpenOptions::new();
     options.create(true).truncate(true).write(true);
     #[cfg(unix)]
@@ -60,11 +60,11 @@ pub fn save_memory_profile(
     }
     let mut file = options
         .open(&temporary)
-        .map_err(|error| format!("无法保存意识配置：{error}"))?;
+        .map_err(|error| format!("无法保存记忆配置：{error}"))?;
     file.write_all(&bytes)
         .and_then(|_| file.sync_all())
-        .map_err(|error| format!("无法保存意识配置：{error}"))?;
-    fs::rename(temporary, path).map_err(|error| format!("无法提交意识配置：{error}"))?;
+        .map_err(|error| format!("无法保存记忆配置：{error}"))?;
+    fs::rename(temporary, path).map_err(|error| format!("无法提交记忆配置：{error}"))?;
     Ok(profile)
 }
 
@@ -94,9 +94,9 @@ fn load(app: &tauri::AppHandle, employee_id: &str) -> Result<MemoryProfile, Stri
     if !path.exists() {
         return Ok(MemoryProfile::default());
     }
-    let bytes = fs::read(path).map_err(|error| format!("无法读取意识配置：{error}"))?;
+    let bytes = fs::read(path).map_err(|error| format!("无法读取记忆配置：{error}"))?;
     let profile: MemoryProfile =
-        serde_json::from_slice(&bytes).map_err(|error| format!("意识配置无效：{error}"))?;
+        serde_json::from_slice(&bytes).map_err(|error| format!("记忆配置无效：{error}"))?;
     validate(&profile)?;
     Ok(profile)
 }
@@ -106,7 +106,7 @@ fn profile_path(app: &tauri::AppHandle, employee_id: &str) -> Result<PathBuf, St
     app.path()
         .app_data_dir()
         .map(|root| root.join("memory").join(account).join("profile.json"))
-        .map_err(|error| format!("无法确定意识配置目录：{error}"))
+        .map_err(|error| format!("无法确定记忆配置目录：{error}"))
 }
 
 fn validate_employee_id(value: &str) -> Result<(), String> {
@@ -125,7 +125,7 @@ fn validate(profile: &MemoryProfile) -> Result<(), String> {
         return Err("工作手册不能超过 16000 个字符".to_string());
     }
     if profile.collaboration_style.contains('\0') || profile.work_manual.contains('\0') {
-        return Err("意识配置包含无效字符".to_string());
+        return Err("记忆配置包含无效字符".to_string());
     }
     Ok(())
 }

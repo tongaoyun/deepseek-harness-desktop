@@ -1,6 +1,6 @@
 # 小胤架构与能力
 
-本文描述 `xiaoyin-desktop v0.1.25` 的已实现状态。
+本文描述 `xiaoyin-desktop v0.1.26` 的已实现状态。
 
 ## 总体架构
 
@@ -60,7 +60,7 @@
 | 定时任务 | 桌面 → 控制中心 → Temporal Schedule → Workflow Worker → MinIO 产物 |
 | 知识库 | 文档上传 → MinIO → Temporal 解析 → PostgreSQL 检索片段 |
 | 钉钉频道 | 钉钉 Stream → 本机 Harness → Skills/只读 MCP → 原会话 |
-| 意识同步 | 本机副本 ↔ 控制中心员工档案 → 桌面对话与本机 IM |
+| 记忆同步 | 桌面设置 ↔ 本机副本 ↔ 控制中心员工档案 → 桌面对话与本机 IM |
 | 审计 | 桌面/服务端 → 去敏事件 API → PostgreSQL → 桌面审计页 |
 
 连接器诊断不初始化模型、不调用业务工具，也不复用或重启聊天 Harness。设备上报只保留握手状态和工具差异数量，不上传端点、工具名、令牌或错误原文。
@@ -75,7 +75,7 @@
 | 连接器 | Streamable HTTP/SSE、白名单、写审批、实时诊断 |
 | ERP | `order_get`、`sales_summary`、`inventory_risk` |
 | 本地工具 | 文件、DOCX/XLSX/PDF、Shell、Windows Computer Use |
-| 知识 | 跨设备意识、`记住：`显式沉淀、个人/团队/公司知识库和来源引用 |
+| 知识 | 桌面设置中的跨设备记忆、`记住：`显式沉淀、个人/团队/公司知识库和来源引用 |
 | 云端任务 | Temporal 定时任务、执行记录和产物下载 |
 | IM | 本地钉钉 Stream、开放/配对模式、系统托盘驻留 |
 | 运维 | 中央审计、设备基线、组织总览、签名更新、正式版本回滚 |
