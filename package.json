@@ -1,6 +1,6 @@
 {
   "name": "@xiaoyin/desktop",
-  "version": "0.1.20",
+  "version": "0.1.21",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@10.33.0",
@@ -13,7 +13,8 @@
     "build:ui": "tsc -b && vite build",
     "test": "vitest run && pnpm --dir harness-host test",
     "typecheck": "tsc -b --pretty false && pnpm --dir harness-host typecheck",
-    "check": "pnpm typecheck && pnpm test && pnpm build && cargo test --manifest-path src-tauri/Cargo.toml",
+    "check": "pnpm verify:version && pnpm typecheck && pnpm test && pnpm build && cargo test --manifest-path src-tauri/Cargo.toml",
+    "verify:version": "node scripts/verify-version-consistency.mjs",
     "harness:prepare:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-harness-runtime.ps1",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",

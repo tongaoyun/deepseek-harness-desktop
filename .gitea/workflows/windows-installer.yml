@@ -88,6 +88,8 @@ jobs:
       - name: 前端与 Harness 质量门禁
         shell: powershell
         run: |
+          pnpm verify:version
+          if ($LASTEXITCODE -ne 0) { throw "version consistency check failed with exit code $LASTEXITCODE" }
           pnpm typecheck
           if ($LASTEXITCODE -ne 0) { throw "typecheck failed with exit code $LASTEXITCODE" }
           pnpm test

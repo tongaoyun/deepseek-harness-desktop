@@ -1,6 +1,6 @@
 # 小胤架构与能力
 
-本文描述 `xiaoyin-desktop v0.1.20` 的已实现状态。
+本文描述 `xiaoyin-desktop v0.1.21` 的已实现状态。
 
 ## 总体架构
 
