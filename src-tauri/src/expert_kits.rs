@@ -16,8 +16,9 @@ use tauri_plugin_dialog::DialogExt;
 const MAX_PACKAGE_BYTES: usize = 32 * 1024 * 1024;
 const MAX_EXTRACTED_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_ARCHIVE_ENTRIES: usize = 1024;
-const MANIFEST_PATH: &str = ".xiaoyin-plugin/plugin.json";
-const INSTALL_RECORD_PATH: &str = ".xiaoyin-plugin/install.json";
+const KIT_MANIFEST_PATH: &str = ".xiaoyin-kit/kit.json";
+const SKILL_MANIFEST_PATH: &str = ".xiaoyin-skill/skill.json";
+const INSTALL_RECORD_PATH: &str = ".xiaoyin/install.json";
 const DESKTOP_OFFICE_TOOLS: [&str; 4] = [
     "office.document.read",
     "office.docx.create",
@@ -35,6 +36,7 @@ const DESKTOP_COMPUTER_TOOLS: [&str; 5] = [
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExpertKitInstallRequest {
+    kind: String,
     id: String,
     version: String,
     sha256: String,
@@ -54,7 +56,6 @@ pub struct AllowedExtensionArtifact {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ExpertKitManifest {
     schema_version: String,
-    #[serde(default = "expert_kit_kind")]
     kind: String,
     id: String,
     name: String,
@@ -78,10 +79,6 @@ pub struct ExpertKitManifest {
     server_workflows: Vec<ServerWorkflow>,
 }
 
-fn expert_kit_kind() -> String {
-    "expert-kit".to_string()
-}
-
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct FileReference {
@@ -96,14 +93,8 @@ struct Permissions {
     shell: PermissionMode,
     #[serde(default = "deny_permission")]
     computer_use: PermissionMode,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    connector_read: Option<PermissionMode>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    connector_write: Option<PermissionMode>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    erp_read: Option<PermissionMode>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    erp_write: Option<PermissionMode>,
+    connector_read: PermissionMode,
+    connector_write: PermissionMode,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
@@ -120,32 +111,7 @@ fn deny_permission() -> PermissionMode {
 
 impl Permissions {
     fn validate(&self) -> Result<(), String> {
-        let connector_pair = self.connector_read.zip(self.connector_write);
-        let legacy_pair = self.erp_read.zip(self.erp_write);
-        if connector_pair.is_none() && legacy_pair.is_none() {
-            return Err("专家套件必须声明 connectorRead/connectorWrite 权限".to_string());
-        }
-        if self.connector_read.is_some() != self.connector_write.is_some()
-            || self.erp_read.is_some() != self.erp_write.is_some()
-        {
-            return Err("专家套件连接器读写权限必须成对声明".to_string());
-        }
-        if connector_pair.is_some() && legacy_pair.is_some() && connector_pair != legacy_pair {
-            return Err("专家套件新旧连接器权限声明冲突".to_string());
-        }
         Ok(())
-    }
-
-    fn connector_read(&self) -> PermissionMode {
-        self.connector_read
-            .or(self.erp_read)
-            .unwrap_or(PermissionMode::Deny)
-    }
-
-    fn connector_write(&self) -> PermissionMode {
-        self.connector_write
-            .or(self.erp_write)
-            .unwrap_or(PermissionMode::Deny)
     }
 }
 
@@ -221,7 +187,6 @@ pub struct ExpertKitHarnessProfile {
     pub skill_directories: Vec<String>,
     pub connector_refs: Vec<String>,
     pub knowledge_base_refs: Option<Vec<String>>,
-    pub allowed_connector_tools: Vec<String>,
     pub required_connector_tools: Vec<String>,
     pub allow_local_files: bool,
     pub allow_shell: bool,
@@ -235,27 +200,28 @@ pub struct ExpertKitHarnessProfile {
 pub fn list_installed_expert_kits(
     app: tauri::AppHandle,
 ) -> Result<Vec<InstalledExpertKit>, String> {
-    let root = expert_kits_root(&app)?;
+    let root = extensions_root(&app)?;
     if !root.exists() {
         return Ok(Vec::new());
     }
 
     let mut installed = Vec::new();
-    for kit_directory in child_directories(&root)? {
-        let Some(directory_name) = kit_directory.file_name().and_then(|value| value.to_str())
-        else {
+    for kind_directory in child_directories(&root)? {
+        let Some(kind) = kind_directory.file_name().and_then(|value| value.to_str()) else {
             continue;
         };
-        if directory_name.starts_with('.') {
+        if validate_artifact_kind(kind).is_err() {
             continue;
         }
-        for version_directory in child_directories(&kit_directory)? {
-            if let (Ok(manifest), Ok(record)) = (
-                load_and_validate_manifest(&version_directory, None, None),
-                load_install_record(&version_directory),
-            ) && validate_sha256(&record.package_sha256).is_ok()
-            {
-                installed.push(installed_kit(manifest, &version_directory, record.source));
+        for extension_directory in child_directories(&kind_directory)? {
+            for version_directory in child_directories(&extension_directory)? {
+                if let (Ok(manifest), Ok(record)) = (
+                    load_and_validate_manifest(&version_directory, Some(kind), None, None),
+                    load_install_record(&version_directory),
+                ) && validate_sha256(&record.package_sha256).is_ok()
+                {
+                    installed.push(installed_kit(manifest, &version_directory, record.source));
+                }
             }
         }
     }
@@ -273,16 +239,18 @@ pub async fn install_expert_kit(
     app: tauri::AppHandle,
     request: ExpertKitInstallRequest,
 ) -> Result<InstalledExpertKit, String> {
+    validate_artifact_kind(&request.kind)?;
     validate_identifier(&request.id)?;
     Version::parse(&request.version).map_err(|error| format!("专家套件版本无效：{error}"))?;
     validate_sha256(&request.sha256)?;
     ensure_supported_desktop_version(None)?;
 
-    let root = expert_kits_root(&app)?;
+    let root = extensions_root(&app)?.join(&request.kind);
     let final_directory = root.join(&request.id).join(&request.version);
     if final_directory.exists() {
         let manifest = load_and_validate_manifest(
             &final_directory,
+            Some(&request.kind),
             Some(&request.id),
             Some(&request.version),
         )?;
@@ -297,6 +265,7 @@ pub async fn install_expert_kit(
     install_package_bytes(
         &root,
         &bytes,
+        Some(&request.kind),
         Some(&request.id),
         Some(&request.version),
         Some(&request.sha256),
@@ -338,8 +307,9 @@ pub async fn install_developer_expert_kit(
     }
     let bytes = fs::read(&path).map_err(|error| format!("无法读取专家套件：{error}"))?;
     install_package_bytes(
-        &expert_kits_root(&app)?,
+        &extensions_root(&app)?.join("expert-kit"),
         &bytes,
+        Some("expert-kit"),
         None,
         None,
         None,
@@ -357,7 +327,7 @@ pub fn remove_developer_expert_kit(
     require_developer_install()?;
     validate_identifier(&id)?;
     Version::parse(&version).map_err(|error| format!("专家套件版本无效：{error}"))?;
-    let root = expert_kits_root(&app)?;
+    let root = extensions_root(&app)?.join("expert-kit");
     let directory = root.join(&id).join(&version);
     let record = load_install_record(&directory)?;
     if record.source != InstallSource::Developer {
@@ -384,7 +354,7 @@ pub fn remove_catalog_extension(
 ) -> Result<(), String> {
     validate_identifier(&id)?;
     validate_artifact_kind(&kind)?;
-    let root = expert_kits_root(&app)?;
+    let root = extensions_root(&app)?.join(&kind);
     let extension_directory = root.join(&id);
     if !extension_directory.exists() {
         return Ok(());
@@ -397,7 +367,8 @@ pub fn remove_catalog_extension(
         if record.source != InstallSource::Catalog {
             continue;
         }
-        let manifest = load_and_validate_manifest(&version_directory, Some(&id), None)?;
+        let manifest =
+            load_and_validate_manifest(&version_directory, Some(&kind), Some(&id), None)?;
         if manifest.kind != kind {
             return Err("本地扩展类型与卸载请求不一致".to_string());
         }
@@ -428,6 +399,7 @@ fn require_developer_install() -> Result<(), String> {
 fn install_package_bytes(
     root: &Path,
     bytes: &[u8],
+    expected_kind: Option<&str>,
     expected_id: Option<&str>,
     expected_version: Option<&str>,
     expected_sha256: Option<&str>,
@@ -450,8 +422,12 @@ fn install_package_bytes(
 
     let result = (|| {
         extract_package(bytes, &staging_directory)?;
-        let manifest =
-            load_and_validate_manifest(&staging_directory, expected_id, expected_version)?;
+        let manifest = load_and_validate_manifest(
+            &staging_directory,
+            expected_kind,
+            expected_id,
+            expected_version,
+        )?;
         ensure_supported_desktop_version(Some(&manifest.minimum_desktop_version))?;
         let final_directory = root.join(&manifest.id).join(&manifest.version);
         if final_directory.exists() {
@@ -463,6 +439,7 @@ fn install_package_bytes(
             }
             let existing = load_and_validate_manifest(
                 &final_directory,
+                Some(&manifest.kind),
                 Some(&manifest.id),
                 Some(&manifest.version),
             )?;
@@ -490,139 +467,121 @@ fn install_package_bytes(
 
 pub fn harness_profile(
     app: &tauri::AppHandle,
-    selected_kit_id: Option<&str>,
+    selected_kind: Option<&str>,
+    selected_id: Option<&str>,
+    requested_knowledge_base_refs: &[String],
     user_prompt: &str,
     allowed_artifacts: &[AllowedExtensionArtifact],
 ) -> Result<ExpertKitHarnessProfile, String> {
+    if selected_kind.is_some() != selected_id.is_some() {
+        return Err("扩展选择坐标不完整".to_string());
+    }
+    if let Some(kind) = selected_kind {
+        validate_artifact_kind(kind)?;
+    }
+    if let Some(id) = selected_id {
+        validate_identifier(id)?;
+    }
     validate_allowed_artifacts(allowed_artifacts)?;
     let installed = list_installed_expert_kits(app.clone())?
         .into_iter()
         .filter(|artifact| artifact_is_executable(artifact, allowed_artifacts))
         .collect::<Vec<_>>();
     let mut newest = std::collections::BTreeMap::<String, InstalledExpertKit>::new();
-    for kit in installed {
-        newest.entry(kit.manifest.id.clone()).or_insert(kit);
+    for artifact in installed {
+        let coordinate = format!("{}:{}", artifact.manifest.kind, artifact.manifest.id);
+        newest.entry(coordinate).or_insert(artifact);
     }
-
-    let Some(selected_kit_id) = selected_kit_id else {
-        let mut skill_directories = Vec::new();
-        let mut skill_ids = HashSet::new();
-        for kit in newest.values() {
-            append_skill_directories(kit, &mut skill_directories, &mut skill_ids)?;
-        }
-        return Ok(ExpertKitHarnessProfile {
-            skill_directories,
-            connector_refs: Vec::new(),
-            knowledge_base_refs: None,
-            allowed_connector_tools: Vec::new(),
-            required_connector_tools: Vec::new(),
-            allow_local_files: true,
-            allow_shell: true,
-            allow_computer_use: false,
-            allowed_computer_tools: Vec::new(),
-            allow_connector_write: false,
-            prompt: user_prompt.to_string(),
-        });
-    };
-    let kit = newest
-        .get(selected_kit_id)
-        .ok_or_else(|| format!("扩展已下架、待更新或尚未安装：{selected_kit_id}"))?;
-    let mut skill_directories = Vec::new();
-    append_skill_directories(kit, &mut skill_directories, &mut HashSet::new())?;
-    let office_tools = kit
-        .manifest
-        .required_tools
-        .iter()
-        .filter(|tool| tool.starts_with("office."))
-        .cloned()
-        .collect::<Vec<_>>();
-    let unsupported_office_tools = office_tools
-        .iter()
-        .filter(|tool| !DESKTOP_OFFICE_TOOLS.contains(&tool.as_str()))
-        .cloned()
-        .collect::<Vec<_>>();
-    if !unsupported_office_tools.is_empty() {
-        return Err(format!(
-            "专家套件声明了桌面不支持的 Office 工具：{}",
-            unsupported_office_tools.join(", ")
-        ));
-    }
-    if !office_tools.is_empty() && kit.manifest.permissions.local_files == PermissionMode::Deny {
-        return Err("该专家套件声明了 Office 工具，但禁止本地文件权限".to_string());
-    }
-    let computer_tools = kit
-        .manifest
-        .required_tools
-        .iter()
-        .filter(|tool| tool.starts_with("computer_use_"))
-        .cloned()
-        .collect::<Vec<_>>();
-    let unsupported_computer_tools = computer_tools
-        .iter()
-        .filter(|tool| !DESKTOP_COMPUTER_TOOLS.contains(&tool.as_str()))
-        .cloned()
-        .collect::<Vec<_>>();
-    if !unsupported_computer_tools.is_empty() {
-        return Err(format!(
-            "专家套件声明了桌面不支持的 Computer Use 工具：{}",
-            unsupported_computer_tools.join(", ")
-        ));
-    }
-    if !computer_tools.is_empty() && kit.manifest.permissions.computer_use == PermissionMode::Deny {
-        return Err("该专家套件声明了 Computer Use 工具，但禁止屏幕与键鼠权限".to_string());
-    }
-    let connector_tools = kit
-        .manifest
-        .required_tools
-        .iter()
-        .filter(|tool| {
-            !tool.starts_with("office.")
-                && !tool.starts_with("computer_use_")
-                && tool.as_str() != "local_shell_run"
+    let selected_coordinate = selected_kind
+        .zip(selected_id)
+        .map(|(kind, id)| format!("{kind}:{id}"));
+    let selected = selected_coordinate
+        .as_ref()
+        .map(|coordinate| {
+            newest
+                .get(coordinate)
+                .ok_or_else(|| format!("扩展已下架、待更新或尚未安装：{coordinate}"))
         })
-        .cloned()
-        .collect::<Vec<_>>();
-    if !connector_tools.is_empty()
-        && kit.manifest.permissions.connector_read() == PermissionMode::Deny
-        && kit.manifest.permissions.connector_write() == PermissionMode::Deny
-    {
-        return Err("该专家套件声明了 ERP 工具，但禁止 ERP 权限".to_string());
+        .transpose()?;
+    let mut skill_directories = Vec::new();
+    let mut skill_ids = HashSet::new();
+    if let Some(artifact) = selected {
+        append_skill_directories(artifact, &mut skill_directories, &mut skill_ids)?;
     }
-    let commands = load_command_context(kit)?;
-    let skills = kit
-        .manifest
-        .skills
-        .iter()
-        .map(|skill| skill.id.as_str())
-        .collect::<Vec<_>>()
-        .join(", ");
-    let profile_label = if kit.manifest.kind == "skill" {
-        "独立 Skill"
+    for artifact in newest
+        .values()
+        .filter(|artifact| artifact.manifest.kind == "skill")
+    {
+        append_skill_directories(artifact, &mut skill_directories, &mut skill_ids)?;
+    }
+    for artifact in newest
+        .values()
+        .filter(|artifact| artifact.manifest.kind == "expert-kit")
+    {
+        append_skill_directories(artifact, &mut skill_directories, &mut skill_ids)?;
+    }
+    let connector_tools = selected.map_or_else(Vec::new, |artifact| {
+        artifact
+            .manifest
+            .required_tools
+            .iter()
+            .filter(|tool| {
+                !tool.starts_with("office.")
+                    && !tool.starts_with("computer_use_")
+                    && tool.as_str() != "local_shell_run"
+            })
+            .cloned()
+            .collect::<Vec<_>>()
+    });
+    let connector_refs = selected.map_or_else(Vec::new, |artifact| {
+        artifact.manifest.connector_refs.clone()
+    });
+    let mut knowledge_base_refs = selected
+        .and_then(|artifact| artifact.manifest.knowledge_base_refs.clone())
+        .unwrap_or_default();
+    for reference in requested_knowledge_base_refs {
+        if !valid_knowledge_base_reference(reference) {
+            return Err(format!("任务知识库引用无效：{reference}"));
+        }
+        if !knowledge_base_refs.contains(reference) {
+            knowledge_base_refs.push(reference.clone());
+        }
+    }
+    if knowledge_base_refs.len() > 32 {
+        return Err("任务知识库引用不能超过 32 个".to_string());
+    }
+    let prompt = if let Some(artifact) = selected {
+        let commands = load_command_context(artifact)?;
+        let profile_label = if artifact.manifest.kind == "skill" {
+            "独立 Skill"
+        } else {
+            "专家套件"
+        };
+        format!(
+            "本任务明确使用公司{}《{}》（ID: {}，版本: {}）。所有已安装 Skill 仍可按需加载；优先遵循本扩展的工作方法和命令。{}\n\n员工任务：\n{}",
+            profile_label,
+            artifact.manifest.name,
+            artifact.manifest.id,
+            artifact.manifest.version,
+            commands,
+            user_prompt,
+        )
     } else {
-        "专家套件"
+        user_prompt.to_string()
     };
-    let prompt = format!(
-        "你正在使用公司{}《{}》（ID: {}，版本: {}）。\n可用技能：{}。需要时必须先通过 skill 工具加载对应技能。{}\n\n员工任务：\n{}",
-        profile_label,
-        kit.manifest.name,
-        kit.manifest.id,
-        kit.manifest.version,
-        skills,
-        commands,
-        user_prompt,
-    );
     Ok(ExpertKitHarnessProfile {
         skill_directories,
-        connector_refs: kit.manifest.connector_refs.clone(),
-        knowledge_base_refs: kit.manifest.knowledge_base_refs.clone(),
-        allowed_connector_tools: connector_tools.clone(),
+        connector_refs,
+        knowledge_base_refs: Some(knowledge_base_refs),
         required_connector_tools: connector_tools,
-        allow_local_files: kit.manifest.permissions.local_files != PermissionMode::Deny,
-        allow_shell: kit.manifest.permissions.shell != PermissionMode::Deny,
-        allow_computer_use: !computer_tools.is_empty()
-            && kit.manifest.permissions.computer_use != PermissionMode::Deny,
-        allowed_computer_tools: computer_tools,
-        allow_connector_write: kit.manifest.permissions.connector_write() != PermissionMode::Deny,
+        allow_local_files: true,
+        allow_shell: true,
+        allow_computer_use: true,
+        allowed_computer_tools: DESKTOP_COMPUTER_TOOLS
+            .iter()
+            .map(|tool| (*tool).to_string())
+            .collect(),
+        allow_connector_write: true,
         prompt,
     })
 }
@@ -677,9 +636,24 @@ fn append_skill_directories(
     skill_ids: &mut HashSet<String>,
 ) -> Result<(), String> {
     let root = Path::new(&kit.install_path);
+    if kit.manifest.kind == "skill" {
+        let skill = kit
+            .manifest
+            .skills
+            .first()
+            .ok_or_else(|| "独立 Skill 缺少入口".to_string())?;
+        if !skill_ids.insert(skill.id.clone()) {
+            return Ok(());
+        }
+        let directory = root.to_string_lossy().into_owned();
+        if !directories.contains(&directory) {
+            directories.push(directory);
+        }
+        return Ok(());
+    }
     for skill in &kit.manifest.skills {
         if !skill_ids.insert(skill.id.clone()) {
-            return Err(format!("已安装扩展存在重复 Skill ID：{}", skill.id));
+            continue;
         }
         let skill_path = root.join(&skill.path);
         let directory = if skill_path
@@ -729,15 +703,18 @@ fn write_install_record(root: &Path, sha256: &str, source: InstallSource) -> Res
         source,
     })
     .map_err(|error| format!("无法生成专家套件安装记录：{error}"))?;
+    let metadata_directory = root.join(".xiaoyin");
+    fs::create_dir_all(&metadata_directory)
+        .map_err(|error| format!("无法创建扩展安装记录目录：{error}"))?;
     fs::write(root.join(INSTALL_RECORD_PATH), value)
         .map_err(|error| format!("无法保存专家套件安装记录：{error}"))
 }
 
-fn expert_kits_root(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+fn extensions_root(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     app.path()
         .app_data_dir()
-        .map(|path| path.join("expert-kits"))
-        .map_err(|error| format!("无法确定专家套件目录：{error}"))
+        .map(|path| path.join("extensions"))
+        .map_err(|error| format!("无法确定扩展目录：{error}"))
 }
 
 async fn download_package(url: &str) -> Result<Vec<u8>, String> {
@@ -828,24 +805,58 @@ fn extract_package(bytes: &[u8], destination: &Path) -> Result<(), String> {
 
 fn load_and_validate_manifest(
     root: &Path,
+    expected_kind: Option<&str>,
     expected_id: Option<&str>,
     expected_version: Option<&str>,
 ) -> Result<ExpertKitManifest, String> {
-    let manifest_path = root.join(MANIFEST_PATH);
-    let file = File::open(&manifest_path).map_err(|_| "专家套件缺少 Manifest".to_string())?;
+    let kit_manifest = root.join(KIT_MANIFEST_PATH);
+    let skill_manifest = root.join(SKILL_MANIFEST_PATH);
+    let (kind, manifest_path) = match (kit_manifest.is_file(), skill_manifest.is_file()) {
+        (true, false) => ("expert-kit", kit_manifest),
+        (false, true) => ("skill", skill_manifest),
+        (true, true) => return Err("扩展不能同时包含专家套件和独立 Skill 清单".to_string()),
+        (false, false) => {
+            return Err("扩展缺少 .xiaoyin-kit/kit.json 或 .xiaoyin-skill/skill.json".to_string());
+        }
+    };
+    if expected_kind.is_some_and(|expected| expected != kind) {
+        return Err("扩展类型与目录记录不一致".to_string());
+    }
+    let file = File::open(&manifest_path).map_err(|_| "无法打开扩展清单".to_string())?;
     let mut json = String::new();
     file.take(1024 * 1024)
         .read_to_string(&mut json)
-        .map_err(|error| format!("无法读取专家套件 Manifest：{error}"))?;
+        .map_err(|error| format!("无法读取扩展清单：{error}"))?;
+    let mut value: serde_json::Value =
+        serde_json::from_str(&json).map_err(|error| format!("扩展清单无效：{error}"))?;
+    let object = value
+        .as_object_mut()
+        .ok_or_else(|| "扩展清单必须是 JSON 对象".to_string())?;
+    if object.contains_key("kind")
+        || object.contains_key("commands") && kind == "skill"
+        || object.contains_key("skills") && kind == "skill"
+        || object.contains_key("serverWorkflows") && kind == "skill"
+    {
+        return Err("独立 Skill 与专家套件字段不能混用".to_string());
+    }
+    let schema = object
+        .get("schemaVersion")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default();
+    if (kind == "expert-kit" && schema != "2") || (kind == "skill" && schema != "1") {
+        return Err("不支持的扩展 Schema 版本".to_string());
+    }
+    object.insert(
+        "kind".to_string(),
+        serde_json::Value::String(kind.to_string()),
+    );
+    if kind == "skill" {
+        object.insert("commands".to_string(), serde_json::json!([]));
+        object.insert("skills".to_string(), serde_json::json!([{ "id": object.get("id").cloned().unwrap_or_default(), "path": "SKILL.md" }]));
+        object.insert("serverWorkflows".to_string(), serde_json::json!([]));
+    }
     let manifest: ExpertKitManifest =
-        serde_json::from_str(&json).map_err(|error| format!("专家套件 Manifest 无效：{error}"))?;
-
-    if manifest.schema_version != "1" {
-        return Err("不支持的专家套件 Schema 版本".to_string());
-    }
-    if !matches!(manifest.kind.as_str(), "expert-kit" | "skill") {
-        return Err("不支持的扩展制品类型".to_string());
-    }
+        serde_json::from_value(value).map_err(|error| format!("扩展清单字段无效：{error}"))?;
     validate_identifier(&manifest.id)?;
     Version::parse(&manifest.version).map_err(|error| format!("专家套件版本无效：{error}"))?;
     if expected_id.is_some_and(|id| id != manifest.id) {
@@ -863,12 +874,6 @@ fn load_and_validate_manifest(
     manifest.permissions.validate()?;
 
     if manifest.kind == "skill" {
-        if manifest.skills.len() != 1 || manifest.skills[0].id != manifest.id {
-            return Err("独立 Skill 必须只包含一个与 Manifest ID 相同的 Skill".to_string());
-        }
-        if !manifest.commands.is_empty() || !manifest.server_workflows.is_empty() {
-            return Err("独立 Skill 不能包含快捷命令或后台工作流".to_string());
-        }
         let mut triggers = HashSet::new();
         if manifest.triggers.is_empty()
             || manifest.triggers.len() > 20
@@ -889,6 +894,18 @@ fn load_and_validate_manifest(
         validate_relative_path(path)?;
         if !root.join(path).is_file() {
             return Err(format!("专家套件引用文件不存在：{}", reference.path));
+        }
+        if manifest.kind == "skill" && reference.path != "SKILL.md" {
+            return Err("独立 Skill 的入口必须是根目录 SKILL.md".to_string());
+        }
+        if manifest.kind == "expert-kit"
+            && manifest.skills.iter().any(|skill| skill.id == reference.id)
+            && reference.path != format!("skills/{}/SKILL.md", reference.id)
+        {
+            return Err(format!(
+                "套件 Skill 路径必须是 skills/{}/SKILL.md",
+                reference.id
+            ));
         }
     }
     let mut tools = HashSet::new();
@@ -1070,22 +1087,27 @@ mod tests {
                 .unwrap()
                 .as_nanos()
         ));
-        fs::create_dir_all(root.join(".xiaoyin-plugin")).unwrap();
+        fs::create_dir_all(root.join(".xiaoyin-kit")).unwrap();
         fs::create_dir_all(root.join("skills/report")).unwrap();
         fs::write(root.join("skills/report/SKILL.md"), "# Report").unwrap();
         fs::write(
-            root.join(MANIFEST_PATH),
+            root.join(KIT_MANIFEST_PATH),
             r#"{
-              "schemaVersion":"1","id":"report-kit","name":"日报","version":"1.0.0",
+              "schemaVersion":"2","id":"report-kit","name":"日报","version":"1.0.0",
               "summary":"生成日报","skills":[{"id":"report","path":"skills/report/SKILL.md"}],
               "requiredTools":["sales_summary"],
-              "permissions":{"localFiles":"approval","shell":"deny","connectorRead":"allow","connectorWrite":"approval"}
+              "permissions":{"localFiles":"approval","shell":"deny","computerUse":"deny","connectorRead":"allow","connectorWrite":"approval"}
             }"#,
         )
         .unwrap();
 
-        let manifest =
-            load_and_validate_manifest(&root, Some("report-kit"), Some("1.0.0")).unwrap();
+        let manifest = load_and_validate_manifest(
+            &root,
+            Some("expert-kit"),
+            Some("report-kit"),
+            Some("1.0.0"),
+        )
+        .unwrap();
         assert_eq!(manifest.id, "report-kit");
         fs::remove_dir_all(root).unwrap();
     }
@@ -1093,13 +1115,13 @@ mod tests {
     #[test]
     fn real_tar_gzip_package_is_safely_extracted_and_validated() {
         let manifest = r#"{
-          "schemaVersion":"1","id":"report-kit","name":"日报","version":"1.0.0",
+          "schemaVersion":"2","id":"report-kit","name":"日报","version":"1.0.0",
           "summary":"生成日报","skills":[{"id":"report","path":"skills/report/SKILL.md"}],
-          "permissions":{"localFiles":"approval","shell":"deny","erpRead":"allow","erpWrite":"approval"}
+          "permissions":{"localFiles":"approval","shell":"deny","computerUse":"deny","connectorRead":"allow","connectorWrite":"approval"}
         }"#;
         let encoder = GzEncoder::new(Vec::new(), Compression::default());
         let mut archive = tar::Builder::new(encoder);
-        append_archive_file(&mut archive, MANIFEST_PATH, manifest.as_bytes());
+        append_archive_file(&mut archive, KIT_MANIFEST_PATH, manifest.as_bytes());
         append_archive_file(&mut archive, "skills/report/SKILL.md", b"# Report");
         let encoder = archive.into_inner().unwrap();
         let package = encoder.finish().unwrap();
@@ -1114,8 +1136,49 @@ mod tests {
         fs::create_dir(&root).unwrap();
 
         extract_package(&package, &root).unwrap();
-        let loaded = load_and_validate_manifest(&root, Some("report-kit"), Some("1.0.0")).unwrap();
+        let loaded = load_and_validate_manifest(
+            &root,
+            Some("expert-kit"),
+            Some("report-kit"),
+            Some("1.0.0"),
+        )
+        .unwrap();
         assert_eq!(loaded.skills[0].id, "report");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn standalone_skill_uses_its_own_manifest_and_root_skill_file() {
+        let manifest = r#"{
+          "schemaVersion":"1","id":"document-insight","name":"文档洞察","version":"1.0.0",
+          "summary":"分析员工授权的文档","triggers":["总结文档"],"minimumDesktopVersion":"0.1.9",
+          "requiredTools":["office.document.read"],"connectorRefs":[],"knowledgeBaseRefs":[],
+          "permissions":{"localFiles":"approval","shell":"deny","computerUse":"deny","connectorRead":"deny","connectorWrite":"deny"}
+        }"#;
+        let encoder = GzEncoder::new(Vec::new(), Compression::default());
+        let mut archive = tar::Builder::new(encoder);
+        append_archive_file(&mut archive, SKILL_MANIFEST_PATH, manifest.as_bytes());
+        append_archive_file(
+            &mut archive,
+            "SKILL.md",
+            b"---\nname: document-insight\ndescription: Analyze documents.\n---\n# Skill",
+        );
+        let package = archive.into_inner().unwrap().finish().unwrap();
+        let root = std::env::temp_dir().join(format!("xiaoyin-skill-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir(&root).unwrap();
+        let installed = install_package_bytes(
+            &root,
+            &package,
+            Some("skill"),
+            Some("document-insight"),
+            Some("1.0.0"),
+            None,
+            InstallSource::Catalog,
+        )
+        .unwrap();
+        assert_eq!(installed.manifest.kind, "skill");
+        assert_eq!(installed.manifest.skills[0].path, "SKILL.md");
         fs::remove_dir_all(root).unwrap();
     }
 
@@ -1139,15 +1202,22 @@ mod tests {
         ));
         fs::create_dir(&root).unwrap();
         let manifest = r#"{
-          "schemaVersion":"1","id":"platform-acceptance","name":"平台验收","version":"1.0.0",
+          "schemaVersion":"2","id":"platform-acceptance","name":"平台验收","version":"1.0.0",
           "summary":"验证平台能力","minimumDesktopVersion":"0.1.9",
           "skills":[{"id":"platform-check","path":"skills/platform-check/SKILL.md"}],
           "permissions":{"localFiles":"approval","shell":"approval","computerUse":"approval","connectorRead":"deny","connectorWrite":"deny"}
         }"#;
         let package = test_package(manifest, b"# Platform check");
-        let installed =
-            install_package_bytes(&root, &package, None, None, None, InstallSource::Developer)
-                .unwrap();
+        let installed = install_package_bytes(
+            &root,
+            &package,
+            Some("expert-kit"),
+            None,
+            None,
+            None,
+            InstallSource::Developer,
+        )
+        .unwrap();
         assert_eq!(installed.source, InstallSource::Developer);
         assert_eq!(
             load_install_record(Path::new(&installed.install_path))
@@ -1160,10 +1230,17 @@ mod tests {
             &manifest.replace("验证平台能力", "不同内容"),
             b"# Platform check",
         );
-        let collision =
-            install_package_bytes(&root, &changed, None, None, None, InstallSource::Developer)
-                .err()
-                .unwrap();
+        let collision = install_package_bytes(
+            &root,
+            &changed,
+            Some("expert-kit"),
+            None,
+            None,
+            None,
+            InstallSource::Developer,
+        )
+        .err()
+        .unwrap();
         assert!(collision.contains("同版本套件"));
         fs::remove_dir_all(root).unwrap();
     }
@@ -1178,12 +1255,12 @@ mod tests {
                 .unwrap()
                 .as_nanos()
         ));
-        fs::create_dir_all(root.join(".xiaoyin-plugin")).unwrap();
+        fs::create_dir_all(root.join(".xiaoyin")).unwrap();
         write_install_record(&root, &"a".repeat(64), InstallSource::Catalog).unwrap();
         let manifest: ExpertKitManifest = serde_json::from_str(r#"{
           "schemaVersion":"1","kind":"skill","id":"document-insight","name":"文档洞察",
           "version":"1.0.0","summary":"分析文档","skills":[{"id":"document-insight","path":"skills/document-insight/SKILL.md"}],
-          "permissions":{"localFiles":"approval","shell":"deny","connectorRead":"deny","connectorWrite":"deny"}
+          "permissions":{"localFiles":"approval","shell":"deny","computerUse":"deny","connectorRead":"deny","connectorWrite":"deny"}
         }"#).unwrap();
         let installed = installed_kit(manifest, &root, InstallSource::Catalog);
         let allowed = AllowedExtensionArtifact {
@@ -1210,7 +1287,7 @@ mod tests {
     fn test_package(manifest: &str, skill: &[u8]) -> Vec<u8> {
         let encoder = GzEncoder::new(Vec::new(), Compression::default());
         let mut archive = tar::Builder::new(encoder);
-        append_archive_file(&mut archive, MANIFEST_PATH, manifest.as_bytes());
+        append_archive_file(&mut archive, KIT_MANIFEST_PATH, manifest.as_bytes());
         append_archive_file(&mut archive, "skills/platform-check/SKILL.md", skill);
         archive.into_inner().unwrap().finish().unwrap()
     }

@@ -31,7 +31,9 @@ pub struct HarnessRunRequest {
     employee_id: String,
     team_id: String,
     session_id: Option<String>,
-    expert_kit_id: Option<String>,
+    selected_extension: Option<ExtensionSelection>,
+    #[serde(default)]
+    knowledge_base_refs: Vec<String>,
     #[serde(default)]
     allowed_artifacts: Vec<expert_kits::AllowedExtensionArtifact>,
     litellm_base_url: String,
@@ -43,6 +45,13 @@ pub struct HarnessRunRequest {
     access_token: String,
     #[serde(default)]
     local_file_root_ids: Vec<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ExtensionSelection {
+    kind: String,
+    id: String,
 }
 
 #[derive(Deserialize)]
@@ -177,7 +186,15 @@ pub async fn run_harness(
     validate_run_request(&request)?;
     let profile = expert_kits::harness_profile(
         &app,
-        request.expert_kit_id.as_deref(),
+        request
+            .selected_extension
+            .as_ref()
+            .map(|selection| selection.kind.as_str()),
+        request
+            .selected_extension
+            .as_ref()
+            .map(|selection| selection.id.as_str()),
+        &request.knowledge_base_refs,
         request.prompt.trim(),
         &request.allowed_artifacts,
     )?;
@@ -186,11 +203,7 @@ pub async fn run_harness(
         return Err("当前专家套件禁止使用本地目录".to_string());
     }
     let local_file_roots = local_files.resolve(&request.local_file_root_ids)?;
-    let connectors = runtime_connectors(
-        &request.connectors,
-        &profile,
-        request.expert_kit_id.is_some(),
-    )?;
+    let connectors = runtime_connectors(&request.connectors, &profile)?;
     let fingerprint = RuntimeFingerprint {
         skill_directories: profile.skill_directories,
         connectors,
@@ -996,49 +1009,28 @@ fn validate_run_request(request: &HarnessRunRequest) -> Result<(), String> {
 pub(crate) fn runtime_connectors(
     catalog: &[ConnectorDefinition],
     profile: &expert_kits::ExpertKitHarnessProfile,
-    expert_kit_selected: bool,
 ) -> Result<Vec<RuntimeConnector>, String> {
     validate_connector_catalog(catalog)?;
     let by_id = catalog
         .iter()
         .map(|connector| (connector.id.as_str(), connector))
         .collect::<HashMap<_, _>>();
-    let selected = if expert_kit_selected {
-        let mut values = Vec::new();
-        for connector_id in &profile.connector_refs {
-            let connector = by_id
-                .get(connector_id.as_str())
-                .ok_or_else(|| format!("专家套件引用了未发布的连接器：{connector_id}"))?;
-            if connector.transport == "desktop" {
-                continue;
-            }
-            if connector.status != "ready" {
-                return Err(format!("专家套件连接器尚未就绪：{}", connector.name));
-            }
-            values.push(*connector);
+    for connector_id in &profile.connector_refs {
+        let connector = by_id
+            .get(connector_id.as_str())
+            .ok_or_else(|| format!("扩展引用了未发布的连接器：{connector_id}"))?;
+        if connector.status != "ready" {
+            return Err(format!("扩展依赖的连接器尚未就绪：{}", connector.name));
         }
-        values
-    } else {
-        catalog
-            .iter()
-            .filter(|connector| connector.transport != "desktop" && connector.status == "ready")
-            .collect::<Vec<_>>()
-    };
-
-    let allowed_tools = profile
-        .allowed_connector_tools
+    }
+    let selected = catalog
         .iter()
-        .cloned()
-        .collect::<HashSet<_>>();
+        .filter(|connector| connector.transport != "desktop" && connector.status == "ready")
+        .collect::<Vec<_>>();
     let connector_tools = selected
         .iter()
         .map(|connector| {
-            let tools = connector
-                .tool_names
-                .iter()
-                .filter(|tool| !expert_kit_selected || allowed_tools.contains(*tool))
-                .cloned()
-                .collect::<Vec<_>>();
+            let tools = connector.tool_names.iter().cloned().collect::<Vec<_>>();
             (connector.id.as_str(), tools)
         })
         .collect::<HashMap<_, _>>();
@@ -1089,8 +1081,8 @@ pub(crate) fn runtime_connectors(
                 .filter(|tool| connector.tool_names.contains(*tool))
                 .cloned()
                 .collect(),
-            allow_write: expert_kit_selected && profile.allow_connector_write,
-            required: expert_kit_selected,
+            allow_write: profile.allow_connector_write,
+            required: profile.connector_refs.contains(&connector.id),
         })
         .collect())
 }
@@ -1194,7 +1186,8 @@ mod tests {
             employee_id: "employee-1".to_string(),
             team_id: "crossborder".to_string(),
             session_id: None,
-            expert_kit_id: None,
+            selected_extension: None,
+            knowledge_base_refs: Vec::new(),
             allowed_artifacts: Vec::new(),
             litellm_base_url: "http://litellm.internal/v1".to_string(),
             knowledge_endpoint: "http://control-plane.internal/api/v1/knowledge-bases".to_string(),
@@ -1242,7 +1235,7 @@ mod tests {
     }
 
     #[test]
-    fn expert_kit_connectors_expose_only_manifest_tools() {
+    fn ready_connectors_are_session_capabilities_and_selected_dependencies_remain_required() {
         let catalog = vec![ConnectorDefinition {
             id: "erp-mcp".to_string(),
             name: "ERP".to_string(),
@@ -1257,7 +1250,6 @@ mod tests {
             skill_directories: Vec::new(),
             connector_refs: vec!["erp-mcp".to_string()],
             knowledge_base_refs: Some(vec!["organization:operations-sop".to_string()]),
-            allowed_connector_tools: vec!["sales_summary".to_string()],
             required_connector_tools: vec!["sales_summary".to_string()],
             allow_local_files: false,
             allow_shell: false,
@@ -1267,10 +1259,12 @@ mod tests {
             prompt: String::new(),
         };
 
-        let runtime =
-            runtime_connectors(&catalog, &profile, true).expect("connector should resolve");
+        let runtime = runtime_connectors(&catalog, &profile).expect("connector should resolve");
         assert_eq!(runtime.len(), 1);
-        assert_eq!(runtime[0].allowed_tools, vec!["sales_summary"]);
+        assert_eq!(
+            runtime[0].allowed_tools,
+            vec!["sales_summary", "order_cancel"]
+        );
         assert_eq!(runtime[0].required_tools, vec!["sales_summary"]);
         assert!(runtime[0].required);
         assert!(!runtime[0].allow_write);

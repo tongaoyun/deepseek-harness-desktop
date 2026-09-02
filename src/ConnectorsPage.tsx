@@ -24,6 +24,7 @@ export function ConnectorsPage({
   const [results, setResults] = useState<Map<string, ConnectorDiagnosticResult>>(new Map())
   const [checkedAt, setCheckedAt] = useState('')
   const [query, setQuery] = useState('')
+  const [view, setView] = useState<'enterprise' | 'connected' | 'builtin'>('enterprise')
   const [statusFilter, setStatusFilter] = useState<'all' | ConnectorCatalogEntry['status']>('all')
   const targets = useMemo(
     () => runtime.filter((connector) => connector.status === 'ready' && connector.transport !== 'desktop'),
@@ -34,9 +35,14 @@ export function ConnectorsPage({
     .join('|')
   const visibleCatalog = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase('zh-CN')
-    return catalog.filter((connector) => (statusFilter === 'all' || connector.status === statusFilter)
-      && (!needle || `${connector.name} ${connector.summary} ${connector.id} ${connector.toolNames.join(' ')}`.toLocaleLowerCase('zh-CN').includes(needle)))
-  }, [catalog, query, statusFilter])
+    return catalog.filter((connector) => {
+      const builtIn = (connector.transport ?? connector.kind) === 'desktop' || connector.kind === 'desktop-builtin'
+      const matchesView = view === 'builtin' ? builtIn : view === 'connected' ? connector.status === 'ready' : !builtIn
+      return matchesView
+        && (statusFilter === 'all' || connector.status === statusFilter)
+        && (!needle || `${connector.name} ${connector.summary} ${connector.id} ${connector.toolNames.join(' ')}`.toLocaleLowerCase('zh-CN').includes(needle))
+    })
+  }, [catalog, query, statusFilter, view])
 
   useEffect(() => {
     setResults(new Map())
@@ -61,6 +67,11 @@ export function ConnectorsPage({
   }
 
   return <>
+    <div className="connector-market-tabs" role="tablist" aria-label="连接器分类">
+      <button aria-selected={view === 'enterprise'} className={view === 'enterprise' ? 'active' : ''} onClick={() => setView('enterprise')} role="tab" type="button">企业连接器</button>
+      <button aria-selected={view === 'connected'} className={view === 'connected' ? 'active' : ''} onClick={() => setView('connected')} role="tab" type="button">已连接</button>
+      <button aria-selected={view === 'builtin'} className={view === 'builtin' ? 'active' : ''} onClick={() => setView('builtin')} role="tab" type="button">桌面内置</button>
+    </div>
     <div className="connector-diagnostics-toolbar">
       <span><Activity size={14} /><strong>运行时诊断</strong><small>执行 MCP 握手与工具发现，不调用模型或业务工具</small></span>
       {checkedAt && <em>最近检测 {checkedAt}</em>}
@@ -95,7 +106,7 @@ export function ConnectorsPage({
           && <div className="connector-diagnostic ready">桌面内置能力，无需远程握手</div>}
         {!diagnostic && connector.status !== 'ready'
           && <div className="connector-diagnostic skipped">静态状态未就绪，未发起远程连接</div>}
-        <small className="connector-activation-note">配置或启停后，对新会话生效</small>
+        <small className="connector-activation-note">{connector.status === 'ready' ? '已加入新任务的能力快照' : '启用后将加入新任务，不影响进行中的任务'}</small>
       </article>
     })}</div>
   </>

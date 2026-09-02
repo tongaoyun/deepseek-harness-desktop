@@ -12,7 +12,8 @@ export interface HarnessRunInput {
   employeeId: string
   teamId: string
   sessionId?: string
-  expertKitId?: string
+  selectedExtension?: { kind: 'expert-kit' | 'skill'; id: string }
+  knowledgeBaseRefs: string[]
   allowedArtifacts: AllowedExtensionArtifact[]
   litellmBaseUrl: string
   knowledgeEndpoint: string

@@ -33,15 +33,16 @@ export const desktopToolNames = new Set([
   'computer_use_scroll',
 ])
 
-export async function listInstalledExpertKits(): Promise<InstalledExpertKit[]> {
+export async function listInstalledExtensions(): Promise<InstalledExpertKit[]> {
   if (!isTauri()) return []
   return invoke<InstalledExpertKit[]>('list_installed_expert_kits')
 }
 
-export async function installExpertKit(download: ExpertKitDownload): Promise<InstalledExpertKit> {
-  if (!isTauri()) throw new Error('请在小胤桌面客户端中安装专家套件')
+export async function installExtension(download: ExpertKitDownload, kind: 'expert-kit' | 'skill'): Promise<InstalledExpertKit> {
+  if (!isTauri()) throw new Error('请在小胤桌面客户端中安装扩展')
   return invoke<InstalledExpertKit>('install_expert_kit', {
     request: {
+      kind,
       id: download.id,
       version: download.version,
       sha256: download.sha256,
@@ -162,8 +163,8 @@ export function normalizePermissions(
     localFiles: value?.localFiles ?? 'deny',
     shell: value?.shell ?? 'deny',
     computerUse: value?.computerUse ?? 'deny',
-    connectorRead: value?.connectorRead ?? value?.erpRead ?? 'deny',
-    connectorWrite: value?.connectorWrite ?? value?.erpWrite ?? 'deny',
+    connectorRead: value?.connectorRead ?? 'deny',
+    connectorWrite: value?.connectorWrite ?? 'deny',
   }
 }
 

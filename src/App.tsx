@@ -47,8 +47,8 @@ import { SkillDetailsModal } from './SkillDetailsModal'
 import {
   developerExpertKitInstallEnabled,
   installDeveloperExpertKit,
-  installExpertKit,
-  listInstalledExpertKits,
+  installExtension,
+  listInstalledExtensions,
   mergeExpertKits,
   removeCatalogExtension,
   removeDeveloperExpertKit,
@@ -98,6 +98,7 @@ import { AuditEventsPage } from './AuditEventsPage'
 import { ConnectorsPage } from './ConnectorsPage'
 import { mergeSkills, type SkillView } from './skills'
 import { allowedExtensionArtifacts } from './extensionPolicy'
+import { connectorsForSnapshot, createCapabilitySnapshot } from './capabilitySnapshot'
 import { cacheAge, loadEnterpriseCatalogCache, saveEnterpriseCatalogCache } from './enterpriseCache'
 import { inspectDeviceCapabilities } from './deviceCapabilities'
 import './styles.css'
@@ -124,7 +125,7 @@ interface ExtensionSyncIssue {
 }
 
 type HarnessHealth = 'checking' | 'ready' | 'degraded'
-type ExtensionFilter = 'all' | 'installed' | 'available' | 'attention'
+type ExtensionFilter = 'market' | 'installed' | 'updates' | 'attention'
 
 export default function App() {
   const { accessToken, error: authError, logout, reopen, state: authState, user } = useEnterpriseSession()
@@ -159,6 +160,8 @@ export default function App() {
   const [selectedExpertKitId, setSelectedExpertKitId] = useState('')
   const [selectedSkillId, setSelectedSkillId] = useState('')
   const [harnessSessionId, setHarnessSessionId] = useState('')
+  const [currentCapabilitySnapshot, setCurrentCapabilitySnapshot] = useState<import('./types').CapabilitySnapshot>()
+  const [selectedKnowledgeBaseRefs, setSelectedKnowledgeBaseRefs] = useState<string[]>([])
   const [harnessRunning, setHarnessRunning] = useState(false)
   const [harnessActivity, setHarnessActivity] = useState('')
   const [harnessHealth, setHarnessHealth] = useState<HarnessHealth>('checking')
@@ -178,7 +181,7 @@ export default function App() {
   const [notificationOpen, setNotificationOpen] = useState(false)
   const [dragActive, setDragActive] = useState(false)
   const [extensionQuery, setExtensionQuery] = useState('')
-  const [extensionFilter, setExtensionFilter] = useState<ExtensionFilter>('all')
+  const [extensionFilter, setExtensionFilter] = useState<ExtensionFilter>('market')
   const composerRef = useRef<HTMLTextAreaElement>(null)
   const messageListRef = useRef<HTMLDivElement>(null)
   const modelPickerRef = useRef<HTMLDivElement>(null)
@@ -282,7 +285,7 @@ export default function App() {
       }
       const [catalogResult, installedResult, skillsResult, connectorsResult, knowledgeResult] = await Promise.allSettled([
         loadExpertKits(bootstrap.endpoints.expertKits, user.userId, accessToken, controller.signal),
-        listInstalledExpertKits(),
+        listInstalledExtensions(),
         loadSkills(bootstrap.endpoints.skills, user.userId, accessToken, controller.signal),
         loadConnectors(bootstrap.endpoints.connectors, user.userId, accessToken, controller.signal),
         loadKnowledgeBases(bootstrap.endpoints.knowledge, user.userId, user.teamId, accessToken, controller.signal),
@@ -514,6 +517,12 @@ export default function App() {
   const runtimeConnectors = buildRuntimeConnectorCatalog(connectors, bootstrap?.endpoints.erpMcp ?? '')
   const invocationOptions = buildInvocationOptions(expertKits, skillViews)
   const visibleInvocations = filterInvocationOptions(invocationOptions, prompt)
+  const contextQuery = prompt.startsWith('@') && !/\s/.test(prompt.slice(1))
+    ? prompt.slice(1).toLocaleLowerCase('zh-CN') : undefined
+  const visibleKnowledgeContexts = contextQuery === undefined || currentCapabilitySnapshot ? [] : knowledgeBases
+    .filter((item) => !selectedKnowledgeBaseRefs.includes(item.reference)
+      && (!contextQuery || `${item.name} ${item.description} ${item.reference}`.toLocaleLowerCase('zh-CN').includes(contextQuery)))
+    .slice(0, 8)
   const activeModel = selectedModel || bootstrap?.models[0] || 'deepseek-v4-flash'
   const selectedEnterpriseCapability = Boolean(selectedExpertKit || selectedSkill)
   const selectedCapabilityExecutable = !selectedEnterpriseCapability || !catalogCacheStale
@@ -529,6 +538,10 @@ export default function App() {
     setMessages([])
     setPrompt('')
     setHarnessSessionId('')
+    setCurrentCapabilitySnapshot(undefined)
+    setSelectedKnowledgeBaseRefs([])
+    setSelectedExpertKitId('')
+    setSelectedSkillId('')
     setCurrentLocalTaskId('')
     setHarnessActivity('')
     harnessStepsRef.current = []
@@ -552,6 +565,8 @@ export default function App() {
     setMessages(task.messages.map((message) => ({ ...message, pending: false })))
     setCurrentLocalTaskId(task.id)
     setHarnessSessionId(task.sessionId ?? '')
+    setCurrentCapabilitySnapshot(task.capabilitySnapshot)
+    setSelectedKnowledgeBaseRefs(task.capabilitySnapshot?.knowledgeBaseRefs ?? [])
     setSelectedExpertKitId(task.expertKitId ?? '')
     setSelectedSkillId(task.skillId ?? '')
     setSelectedModel(resolveSelectedModel(bootstrap?.models ?? [], task.model ?? selectedModel))
@@ -629,6 +644,9 @@ export default function App() {
       return
     }
     const now = new Date().toISOString()
+    const capabilitySnapshot = currentCapabilitySnapshot
+      ?? createCapabilitySnapshot(expertKits, skillViews, runtimeConnectors, selectedKnowledgeBaseRefs, now)
+    if (!currentCapabilitySnapshot) setCurrentCapabilitySnapshot(capabilitySnapshot)
     const taskId = currentLocalTaskId || crypto.randomUUID()
     const existingTask = localTasks.find((task) => task.id === taskId)
     const pendingMessages: TaskMessage[] = [...messages, { role: 'user', text: input },
@@ -644,6 +662,7 @@ export default function App() {
       expertKitId: selectedExpertKit?.id,
       skillId: selectedSkill?.id,
       model: activeModel,
+      capabilitySnapshot,
       messages: pendingMessages,
     }
     setCurrentLocalTaskId(taskId)
@@ -666,11 +685,14 @@ export default function App() {
         employeeId: user!.userId,
         teamId: user!.teamId,
         ...(harnessSessionId ? { sessionId: harnessSessionId } : {}),
-        ...(selectedExpertKit || selectedSkill ? { expertKitId: (selectedExpertKit ?? selectedSkill)!.id } : {}),
+        ...(selectedExpertKit
+          ? { selectedExtension: { kind: 'expert-kit' as const, id: selectedExpertKit.id } }
+          : selectedSkill ? { selectedExtension: { kind: 'skill' as const, id: selectedSkill.id } } : {}),
         litellmBaseUrl: bootstrap.endpoints.litellm,
         knowledgeEndpoint: resolveControlPlaneEndpoint(bootstrap.endpoints.knowledge),
-        connectors: runtimeConnectors,
-        allowedArtifacts,
+        connectors: connectorsForSnapshot(capabilitySnapshot),
+        allowedArtifacts: capabilitySnapshot.extensions,
+        knowledgeBaseRefs: capabilitySnapshot.knowledgeBaseRefs,
         model: activeModel,
         modelApiKey: bootstrap.modelApiKey,
         accessToken,
@@ -766,7 +788,7 @@ export default function App() {
       if (download.version !== kit.version || download.sha256 !== kit.sha256) {
         throw new Error('专家套件目录在安装期间发生变化，请刷新后重试')
       }
-      const installed = await installExpertKit(download)
+      const installed = await installExtension(download, 'expert-kit')
       setExpertKits((current) => current.map((item) => item.id === kit.id
         ? { ...item, installed, installedVersion: installed.manifest.version, installState: 'installed' }
         : item))
@@ -778,7 +800,7 @@ export default function App() {
   }
 
   const refreshInstalledKits = async () => {
-    const installed = await listInstalledExpertKits()
+    const installed = await listInstalledExtensions()
     extensionCacheRef.current.installed = installed
     setExpertKits(mergeExpertKits(expertKitCatalog, installed, connectors, knowledgeBases))
     setSkillViews(mergeSkills(skills, installed, connectors, knowledgeBases))
@@ -793,7 +815,7 @@ export default function App() {
       if (download.version !== skill.version || download.sha256 !== skill.sha256) {
         throw new Error('Skill 目录在安装期间发生变化，请刷新后重试')
       }
-      await installExpertKit(download)
+      await installExtension(download, 'skill')
       await refreshInstalledKits()
     } catch (error) {
       setExpertKitError(error instanceof Error ? error.message : String(error))
@@ -888,9 +910,15 @@ export default function App() {
 
   const useExpertKit = (kit: ExpertKitView) => {
     if (kit.installState !== 'installed') return
+    if (messages.length > 0) {
+      setMessages([])
+      setCurrentLocalTaskId('')
+      setSelectedKnowledgeBaseRefs([])
+    }
     setSelectedExpertKitId(kit.id)
     setSelectedSkillId('')
     setHarnessSessionId('')
+    setCurrentCapabilitySnapshot(undefined)
     setPage('chat')
     setPrompt('')
     setActiveExpertKitId('')
@@ -899,9 +927,15 @@ export default function App() {
 
   const useSkill = (skill: SkillView) => {
     if (skill.installState !== 'installed') return
+    if (messages.length > 0) {
+      setMessages([])
+      setCurrentLocalTaskId('')
+      setSelectedKnowledgeBaseRefs([])
+    }
     setSelectedSkillId(skill.id)
     setSelectedExpertKitId('')
     setHarnessSessionId('')
+    setCurrentCapabilitySnapshot(undefined)
     setPage('chat')
     setPrompt(`请使用 skill "${skill.id}" 完成：`)
     setActiveSkillId('')
@@ -916,9 +950,15 @@ export default function App() {
   }
 
   const selectInvocation = (option: InvocationOption) => {
+    if (messages.length > 0) {
+      setMessages([])
+      setCurrentLocalTaskId('')
+      setSelectedKnowledgeBaseRefs([])
+    }
     setSelectedExpertKitId(option.profileKind === 'expert-kit' ? option.profileId : '')
     setSelectedSkillId(option.profileKind === 'skill' ? option.profileId : '')
     setHarnessSessionId('')
+    setCurrentCapabilitySnapshot(undefined)
     setPrompt(option.kind === 'command'
       ? `/${option.id} `
       : `请使用 skill "${option.id}" 完成：`)
@@ -1029,12 +1069,19 @@ export default function App() {
                   : <button aria-label="发送" className="send-button" disabled={!prompt.trim() || !bootstrap || runtimeStatus !== 'ready' || harnessHealth === 'degraded' || !selectedCapabilityExecutable} title={runtimeStatus !== 'ready' ? '企业服务未连接' : harnessHealth === 'degraded' ? '请先恢复本地 Agent' : !selectedCapabilityExecutable ? '企业目录缓存已过期，请先重新同步' : '发送'} type="submit"><Send size={17} /></button>}
               </div>
               {visibleInvocations.length > 0 && <div className="slash-menu"><small>快捷调用</small>{visibleInvocations.map((option) => <button key={`${option.kind}-${option.profileId}-${option.id}`} onClick={() => selectInvocation(option)} type="button"><span><strong>{option.label}</strong><small>{option.description}</small></span><em>{option.profileName}</em></button>)}</div>}
+              {contextQuery !== undefined && <div className="slash-menu"><small>添加业务上下文</small>{visibleKnowledgeContexts.map((item) => <button key={item.reference} onClick={() => { setSelectedKnowledgeBaseRefs((current) => [...current, item.reference]); setPrompt(''); focusComposer() }} type="button"><span><strong>@{item.name}</strong><small>{item.description || item.reference}</small></span><em>{knowledgeScopeLabel(item.scope)}</em></button>)}{visibleKnowledgeContexts.length === 0 && <span className="context-menu-empty">{currentCapabilitySnapshot ? '当前任务能力已固定，请新建任务后添加' : '没有匹配的可用知识库'}</span>}</div>}
             </form>
             {localFileError && <div className="local-file-error">{localFileError}</div>}
             <div className="context-bar">
               <div className="local-contexts">
+                {selectedKnowledgeBaseRefs.map((reference) => <span className="local-context" key={reference}>
+                  @{knowledgeBases.find((item) => item.reference === reference)?.name ?? reference}
+                  <button aria-label={`移除 ${reference}`} disabled={harnessRunning || Boolean(currentCapabilitySnapshot)} onClick={() => setSelectedKnowledgeBaseRefs((current) => current.filter((item) => item !== reference))} type="button"><X size={11} /></button>
+                </span>)}
                 {localDirectories.length === 0
-                  ? <span>企业连接器 · 本地文件未授权 · 云端工作流</span>
+                  ? <span>{currentCapabilitySnapshot
+                    ? `${currentCapabilitySnapshot.extensions.length} 个扩展 · ${currentCapabilitySnapshot.connectors.length} 个连接器 · 本任务能力已固定`
+                    : '已启用连接器将在发送首条消息时固定到本任务'}{localDirectories.length === 0 ? ' · 本地文件未授权' : ''}</span>
                   : localDirectories.map((directory) => <span className="local-context" key={directory.id}>
                     <FolderOpen size={12} />{directory.name}
                     <button aria-label={`移除 ${directory.name}`} disabled={harnessRunning} onClick={() => void removeLocalDirectory(directory.id)} type="button"><X size={11} /></button>
@@ -1229,8 +1276,8 @@ function ExtensionToolbar({ filter, query, onFilter, onQuery }: {
   onQuery: (value: string) => void
 }) {
   const filters: Array<{ id: ExtensionFilter; label: string }> = [
-    { id: 'all', label: '全部' }, { id: 'installed', label: '已安装' },
-    { id: 'available', label: '可安装 / 更新' }, { id: 'attention', label: '需要处理' },
+    { id: 'market', label: '企业市场' }, { id: 'installed', label: '已安装' },
+    { id: 'updates', label: '可更新' }, { id: 'attention', label: '需要处理' },
   ]
   return <div className="extension-toolbar">
     <label><Search size={14} /><input aria-label="搜索扩展" onChange={(event) => onQuery(event.target.value)} placeholder="搜索名称、说明或 ID" value={query} />{query && <button aria-label="清空搜索" onClick={() => onQuery('')} type="button"><X size={12} /></button>}</label>
@@ -1246,7 +1293,11 @@ function extensionMatches(
   const value = query.trim().toLocaleLowerCase('zh-CN')
   if (value && !`${item.name} ${item.summary} ${item.id}`.toLocaleLowerCase('zh-CN').includes(value)) return false
   if (filter === 'installed') return item.installState === 'installed'
-  if (filter === 'available') return item.installState === 'available' || item.installState === 'update'
+  if (filter === 'updates') return item.installState === 'update'
   if (filter === 'attention') return item.installState === 'retired' || item.installState === 'update' || item.readiness === 'partial'
-  return true
+  return item.installState !== 'retired'
+}
+
+function knowledgeScopeLabel(scope: KnowledgeBaseEntry['scope']): string {
+  return ({ PERSONAL: '个人', TEAM: '团队', ORGANIZATION: '公司' })[scope]
 }

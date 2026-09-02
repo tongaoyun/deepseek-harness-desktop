@@ -127,7 +127,15 @@ export interface LocalTaskRun {
   expertKitId?: string
   skillId?: string
   model?: string
+  capabilitySnapshot?: CapabilitySnapshot
   messages: TaskMessage[]
+}
+
+export interface CapabilitySnapshot {
+  createdAt: string
+  extensions: AllowedExtensionArtifact[]
+  connectors: ConnectorRuntimeDefinition[]
+  knowledgeBaseRefs: string[]
 }
 
 export interface ArtifactDownload {
@@ -266,7 +274,7 @@ export interface ExpertKitPermissions {
 
 export interface ExpertKitManifest {
   schemaVersion: string
-  kind?: 'expert-kit' | 'skill'
+  kind: 'expert-kit' | 'skill'
   id: string
   name: string
   version: string
@@ -284,8 +292,6 @@ export interface ExpertKitManifest {
     computerUse?: PermissionMode
     connectorRead?: PermissionMode
     connectorWrite?: PermissionMode
-    erpRead?: PermissionMode
-    erpWrite?: PermissionMode
   }
   serverWorkflows: ServerWorkflowDefinition[]
 }

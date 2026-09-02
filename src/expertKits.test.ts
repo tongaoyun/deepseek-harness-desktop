@@ -6,11 +6,11 @@ const installed: InstalledExpertKit = {
   installPath: '/app/expert-kits/store-kit/1.0.0',
   source: 'catalog',
   manifest: {
-    schemaVersion: '1', id: 'store-kit', name: '店铺专家', version: '1.0.0', summary: '店铺分析',
+    schemaVersion: '2', kind: 'expert-kit', id: 'store-kit', name: '店铺专家', version: '1.0.0', summary: '店铺分析',
     minimumDesktopVersion: '0.1.0', commands: [], skills: [{ id: 'diagnosis', path: 'skills/diagnosis/SKILL.md' }],
     connectorRefs: ['erp-mcp'],
     requiredTools: ['sales_summary'],
-    permissions: { localFiles: 'approval', shell: 'deny', erpRead: 'allow', erpWrite: 'approval' },
+    permissions: { localFiles: 'approval', shell: 'deny', computerUse: 'deny', connectorRead: 'allow', connectorWrite: 'approval' },
     serverWorkflows: [],
   },
 }

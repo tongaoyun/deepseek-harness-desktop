@@ -238,8 +238,9 @@ impl LocalImManager {
         client_secret: String,
         context: HarnessContext,
     ) -> Result<LocalImStatus, String> {
-        let profile = expert_kits::harness_profile(app, None, "", &context.allowed_artifacts)?;
-        let connectors = runtime_connectors(&context.connectors, &profile, false)?;
+        let profile =
+            expert_kits::harness_profile(app, None, None, &[], "", &context.allowed_artifacts)?;
+        let connectors = runtime_connectors(&context.connectors, &profile)?;
         let fingerprint = RuntimeFingerprint {
             skill_directories: profile.skill_directories,
             connectors,
