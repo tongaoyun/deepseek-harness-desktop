@@ -43,6 +43,9 @@ jobs:
     steps:
       - name: 检出代码
         uses: http://192.168.2.66:3300/instudio/checkout@v4
+      - name: 准备 Tauri 静态检查资源目录
+        shell: powershell
+        run: New-Item -ItemType Directory -Force src-tauri\resources\harness-runtime | Out-Null
       - name: Rust 格式、静态检查和测试
         working-directory: src-tauri
         shell: powershell
