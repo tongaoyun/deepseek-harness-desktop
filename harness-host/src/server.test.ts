@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { HarnessRuntime } from './runtime.js'
 import type { JsonRpcOutput } from './protocol.js'
 import { HostServer } from './server.js'
+import { LocalImRuntime } from './im-runtime.js'
 
 describe('HostServer', () => {
   it('returns health without starting a model turn', async () => {
@@ -64,6 +65,20 @@ describe('HostServer', () => {
       params: { approvalId: 'approval-1', decision: 'allow' },
     })
     expect(output).toEqual([{ jsonrpc: '2.0', id: 9, result: { status: 'accepted' } }])
+  })
+
+  it('binds and unbinds a DingTalk conversation to a desktop task session', async () => {
+    const output: JsonRpcOutput[] = []
+    const runtime = new LocalImRuntime(fakeRuntime())
+    const server = new HostServer(fakeRuntime(), (value) => output.push(value), undefined, runtime)
+    await server.handle({ jsonrpc: '2.0', id: 10, method: 'im.bind-task', params: {
+      conversationKey: 'ding:private:user-1', taskId: 'task-1', taskName: '店铺日报', sessionId: 'session-1',
+    } })
+    await server.handle({ jsonrpc: '2.0', id: 11, method: 'im.unbind-task', params: {
+      conversationKey: 'ding:private:user-1',
+    } })
+    expect(output).toHaveLength(2)
+    expect(output.map((item) => 'id' in item ? item.id : undefined)).toEqual([10, 11])
   })
 })
 

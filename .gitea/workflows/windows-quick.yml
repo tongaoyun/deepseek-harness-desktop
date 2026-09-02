@@ -56,15 +56,23 @@ jobs:
         shell: powershell
         run: .\scripts\prepare-tauri-windows-tools.ps1 -Bundles nsis
 
+      - name: 准备 Windows Authenticode 证书
+        shell: powershell
+        env:
+          WINDOWS_AUTHENTICODE_PFX_BASE64: ${{ secrets.WINDOWS_AUTHENTICODE_PFX_BASE64 }}
+          WINDOWS_AUTHENTICODE_PFX_PASSWORD: ${{ secrets.WINDOWS_AUTHENTICODE_PFX_PASSWORD }}
+        run: .\scripts\prepare-authenticode.ps1
+
       - name: 构建快速 NSIS 安装包
         shell: powershell
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          WINDOWS_AUTHENTICODE_PFX_PASSWORD: ${{ secrets.WINDOWS_AUTHENTICODE_PFX_PASSWORD }}
         run: |
           $Bundle = Join-Path $env:CARGO_TARGET_DIR "debug\bundle\nsis"
           if (Test-Path -LiteralPath $Bundle) { Remove-Item -LiteralPath $Bundle -Recurse -Force }
-          pnpm tauri build --debug --features windows-no-console --bundles nsis --config src-tauri/tauri.quick.windows.conf.json
+          pnpm tauri build --debug --features windows-no-console --bundles nsis --config src-tauri/tauri.quick.windows.conf.json --config src-tauri/tauri.authenticode.conf.json
           if ($LASTEXITCODE -ne 0) { throw "NSIS build failed with exit code $LASTEXITCODE" }
 
       - name: 收集安装包并生成 SHA-256
@@ -77,6 +85,8 @@ jobs:
             $_.Name -like "*_${ExpectedVersion}_*"
           })
           if ($Installers.Count -ne 1) { throw "Expected one NSIS installer, found $($Installers.Count)" }
+          $Authenticode = Get-AuthenticodeSignature -LiteralPath $Installers[0].FullName
+          if ($Authenticode.Status -ne "Valid") { throw "Invalid Authenticode signature: $($Authenticode.Status)" }
           if (Test-Path -LiteralPath $Output) { Remove-Item -LiteralPath $Output -Recurse -Force }
           New-Item -ItemType Directory -Force -Path $Output | Out-Null
           Copy-Item -LiteralPath $Installers[0].FullName -Destination $Output
@@ -88,6 +98,11 @@ jobs:
             ForEach-Object { "$($_.Hash.ToLowerInvariant())  $(Split-Path $_.Path -Leaf)" })
           $Utf8WithoutBom = [System.Text.UTF8Encoding]::new($false)
           [System.IO.File]::WriteAllText((Join-Path $Output "SHA256SUMS.txt"), (($ChecksumLines -join "`n") + "`n"), $Utf8WithoutBom)
+
+      - name: 清理 Authenticode 证书
+        if: ${{ always() }}
+        shell: powershell
+        run: if ($env:XIAOYIN_AUTHENTICODE_PFX_PATH -and (Test-Path -LiteralPath $env:XIAOYIN_AUTHENTICODE_PFX_PATH)) { Remove-Item -LiteralPath $env:XIAOYIN_AUTHENTICODE_PFX_PATH -Force }
 
       - name: 上传快速安装包
         uses: http://192.168.2.66:3300/instudio/gitea-upload-artifact@v4

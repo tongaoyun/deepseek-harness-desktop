@@ -49,6 +49,8 @@ export interface LocalImConversationSummary {
   messageCount: number
   status: 'RUNNING' | 'COMPLETED' | 'FAILED'
   updatedAt: string
+  boundTaskId?: string
+  boundTaskName?: string
 }
 
 export interface ConfigureDingTalkInput {
@@ -83,6 +85,21 @@ export async function setLocalImEnabled(enabled: boolean, harness: LocalImHarnes
 export async function allowLocalImPairing(conversationKey: string): Promise<LocalImStatus> {
   if (!isTauri()) throw new Error('配对管理只能在小胤桌面客户端中使用')
   return invoke<LocalImStatus>('allow_local_im_pairing', { conversationKey })
+}
+
+export async function bindLocalImTask(
+  conversationKey: string,
+  task: { id: string; name: string; sessionId: string },
+): Promise<LocalImStatus> {
+  if (!isTauri()) throw new Error('任务接管只能在小胤桌面客户端中使用')
+  return invoke<LocalImStatus>('bind_local_im_task', {
+    conversationKey, taskId: task.id, taskName: task.name, sessionId: task.sessionId,
+  })
+}
+
+export async function unbindLocalImTask(conversationKey: string): Promise<LocalImStatus> {
+  if (!isTauri()) throw new Error('任务接管只能在小胤桌面客户端中使用')
+  return invoke<LocalImStatus>('unbind_local_im_task', { conversationKey })
 }
 
 export async function removeLocalDingTalk(): Promise<LocalImStatus> {

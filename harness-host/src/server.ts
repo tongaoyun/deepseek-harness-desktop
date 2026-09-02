@@ -1,5 +1,5 @@
 import type { HarnessRuntime, RunInput } from './runtime.js'
-import type { DingTalkImConfiguration, LocalImRuntime } from './im-runtime.js'
+import type { DingTalkImConfiguration, LocalImRuntime, TaskBinding } from './im-runtime.js'
 import { diagnoseConfiguredConnectors } from './managed-mcp-plugin.js'
 import { runLocalCapabilitySelfTest } from './self-test.js'
 import {
@@ -65,6 +65,14 @@ export class HostServer {
         case 'im.allow-pairing':
           if (this.imRuntime === undefined) throw new Error('Local IM runtime is unavailable')
           this.emit(success(value.id, this.imRuntime.allowPairing(parseConversationKey(value.params))))
+          return
+        case 'im.bind-task':
+          if (this.imRuntime === undefined) throw new Error('Local IM runtime is unavailable')
+          this.emit(success(value.id, await this.imRuntime.bindTask(parseTaskBinding(value.params))))
+          return
+        case 'im.unbind-task':
+          if (this.imRuntime === undefined) throw new Error('Local IM runtime is unavailable')
+          this.emit(success(value.id, await this.imRuntime.unbindTask(parseConversationKey(value.params))))
           return
         case 'im.stop':
           await this.imRuntime?.stop()
@@ -133,6 +141,17 @@ function parseConversationKey(params: unknown): string {
     throw new Error('im.allow-pairing conversationKey is invalid')
   }
   return value
+}
+
+function parseTaskBinding(params: unknown): TaskBinding {
+  if (typeof params !== 'object' || params === null || Array.isArray(params)) {
+    throw new Error('im.bind-task params must be an object')
+  }
+  const value = params as Record<string, unknown>
+  for (const field of ['conversationKey', 'taskId', 'taskName', 'sessionId'] as const) {
+    if (typeof value[field] !== 'string') throw new Error(`im.bind-task params.${field} must be a string`)
+  }
+  return value as unknown as TaskBinding
 }
 
 function parseApprovalResponse(params: unknown): { approvalId: string; decision: 'allow' | 'reject' } {

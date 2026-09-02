@@ -13,7 +13,8 @@
     "build:ui": "tsc -b && vite build",
     "test": "vitest run && pnpm --dir harness-host test",
     "typecheck": "tsc -b --pretty false && pnpm --dir harness-host typecheck",
-    "check": "pnpm verify:version && pnpm typecheck && pnpm test && pnpm build && cargo test --manifest-path src-tauri/Cargo.toml",
+    "lint": "oxlint --deny-warnings src harness-host/src",
+    "check": "pnpm verify:version && pnpm lint && pnpm typecheck && pnpm test && pnpm build && cargo fmt --check --manifest-path src-tauri/Cargo.toml && cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings && cargo test --manifest-path src-tauri/Cargo.toml --all-targets",
     "verify:version": "node scripts/verify-version-consistency.mjs",
     "harness:prepare:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-harness-runtime.ps1",
     "tauri": "tauri",
@@ -38,6 +39,7 @@
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "6.0.1",
     "jsdom": "28.1.0",
+    "oxlint": "1.80.0",
     "typescript": "7.0.2",
     "vite": "8.2.2",
     "vitest": "4.1.11"

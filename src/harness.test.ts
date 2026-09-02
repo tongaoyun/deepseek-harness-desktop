@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { applyHarnessNotification, authorizeDroppedPaths, cancelHarness, diagnoseConnectors, harnessActivityLabel, probeHarnessHost, selfTestLocalCapabilities } from './harness'
+import { applyHarnessNotification, authorizeDroppedPaths, cancelHarness, createTaskMonitor, diagnoseConnectors, harnessActivityLabel, probeHarnessHost, selfTestLocalCapabilities } from './harness'
 
 describe('harnessActivityLabel', () => {
   it('shows safe progress labels without exposing reasoning content', () => {
@@ -33,35 +33,60 @@ describe('harnessActivityLabel', () => {
       ] } }, 4),
       event('turn/end', { turn: 1, reason: { kind: 'completed' } }, 5),
     ]
-    const steps = notifications.reduce(applyHarnessNotification, [])
+    const monitor = notifications.reduce(applyHarnessNotification, createTaskMonitor('2026-08-29T00:00:00Z'))
 
-    expect(steps.map(({ kind, label, status, toolName }) => ({ kind, label, status, toolName }))).toEqual([
+    expect(monitor.steps.map(({ kind, label, status, toolName }) => ({ kind, label, status, toolName }))).toEqual([
       { kind: 'analysis', label: '分析任务', status: 'completed', toolName: undefined },
       { kind: 'tool', label: '查询库存风险', status: 'completed', toolName: 'inventory_risk' },
       { kind: 'response', label: '完成回复', status: 'completed', toolName: undefined },
     ])
-    expect(JSON.stringify(steps)).not.toContain('hidden chain')
-    expect(JSON.stringify(steps)).not.toContain('private ERP result')
-    expect(JSON.stringify(steps)).not.toContain('sensitive')
+    expect(JSON.stringify(monitor)).not.toContain('hidden chain')
+    expect(JSON.stringify(monitor)).not.toContain('private ERP result')
+    expect(JSON.stringify(monitor)).not.toContain('sensitive')
   })
 
   it('marks unfinished steps failed when the turn ends with an error', () => {
-    const steps = [
+    const monitor = [
       event('step/start', { turn: 2, step: 1 }, 1),
       event('turn/end', { turn: 2, reason: { kind: 'error' } }, 2),
-    ].reduce(applyHarnessNotification, [])
+    ].reduce(applyHarnessNotification, createTaskMonitor())
 
-    expect(steps.map((step) => step.status)).toEqual(['failed', 'failed'])
-    expect(steps.at(-1)?.label).toBe('执行未完成')
+    expect(monitor.steps.map((step) => step.status)).toEqual(['failed', 'failed'])
+    expect(monitor.steps.at(-1)?.label).toBe('执行未完成')
+    expect(monitor.status).toBe('failed')
   })
 
   it('records only the approval decision and tool name', () => {
-    const steps = [event('approval/decision', {
+    const monitor = [event('approval/decision', {
       approvalId: 'approval-1', name: 'local_shell_run', decision: 'reject', reason: 'sensitive command',
-    }, 1)].reduce(applyHarnessNotification, [])
+    }, 1)].reduce(applyHarnessNotification, createTaskMonitor())
 
-    expect(steps).toMatchObject([{ kind: 'approval', toolName: 'local_shell_run', status: 'failed' }])
-    expect(JSON.stringify(steps)).not.toContain('sensitive command')
+    expect(monitor.steps).toMatchObject([{ kind: 'approval', toolName: 'local_shell_run', status: 'failed' }])
+    expect(JSON.stringify(monitor)).not.toContain('sensitive command')
+  })
+
+  it('records artifacts only from structured results of file-producing tools', () => {
+    const monitor = [
+      event('tool/call', { callId: 'call-doc', name: 'office.docx.create' }, 1),
+      event('tool/result', { message: { content: [{
+        type: 'tool-result', toolCallId: 'call-doc', isError: false, content: [{
+          type: 'text', text: JSON.stringify({ rootId: 'local-1', rootName: '报表', path: 'output/daily.docx', size: 1200 }),
+        }],
+      }] } }, 2),
+    ].reduce(applyHarnessNotification, createTaskMonitor())
+
+    expect(monitor.artifacts).toMatchObject([{
+      rootId: 'local-1', path: 'output/daily.docx', name: 'daily.docx', kind: 'document', sizeBytes: 1200,
+    }])
+
+    const ignored = [
+      event('tool/call', { callId: 'call-erp', name: 'sales_summary' }, 1),
+      event('tool/result', { message: { content: [{
+        type: 'tool-result', toolCallId: 'call-erp', isError: false,
+        content: [{ type: 'text', text: JSON.stringify({ rootId: 'secret', rootName: 'secret', path: 'leak.pdf' }) }],
+      }] } }, 2),
+    ].reduce(applyHarnessNotification, createTaskMonitor())
+    expect(ignored.artifacts).toEqual([])
   })
 })
 

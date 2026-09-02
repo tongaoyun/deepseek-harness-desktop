@@ -1,9 +1,16 @@
+use crate::local_files::LocalFileAuthorizations;
 use std::{path::Path, process::Command};
 
 const ALLOWED_EXTENSIONS: &[&str] = &["doc", "docx", "xls", "xlsx", "pdf", "csv", "txt", "md"];
 
 #[tauri::command]
-pub fn open_local_artifact(path: String, reveal: bool) -> Result<(), String> {
+pub fn open_local_artifact(
+    authorizations: tauri::State<'_, LocalFileAuthorizations>,
+    root_id: String,
+    path: String,
+    reveal: bool,
+) -> Result<(), String> {
+    let path = authorizations.resolve_artifact(&root_id, &path)?;
     let path = validate_artifact_path(&path)?;
     let status = platform_open(&path, reveal)?;
     if status.success() {
@@ -16,14 +23,8 @@ pub fn open_local_artifact(path: String, reveal: bool) -> Result<(), String> {
     }
 }
 
-fn validate_artifact_path(value: &str) -> Result<std::path::PathBuf, String> {
-    if value.trim().is_empty()
-        || value.len() > 4_096
-        || value.chars().any(|character| character == '\0')
-    {
-        return Err("文件路径无效".to_string());
-    }
-    let path = Path::new(value)
+fn validate_artifact_path(value: &Path) -> Result<std::path::PathBuf, String> {
+    let path = value
         .canonicalize()
         .map_err(|_| "文件不存在或已被移动".to_string())?;
     if !path.is_file() {
@@ -81,7 +82,7 @@ mod tests {
 
     #[test]
     fn rejects_missing_and_unsupported_artifacts() {
-        assert!(validate_artifact_path("").is_err());
-        assert!(validate_artifact_path("/definitely/missing/report.pdf").is_err());
+        assert!(validate_artifact_path(Path::new("")).is_err());
+        assert!(validate_artifact_path(Path::new("/definitely/missing/report.pdf")).is_err());
     }
 }

@@ -94,6 +94,8 @@ pub struct ImConversationSummary {
     message_count: u64,
     status: String,
     updated_at: String,
+    bound_task_id: Option<String>,
+    bound_task_name: Option<String>,
 }
 
 #[derive(Clone, Serialize)]
@@ -212,6 +214,29 @@ pub fn allow_local_im_pairing(
 }
 
 #[tauri::command]
+pub fn bind_local_im_task(
+    manager: tauri::State<'_, LocalImManager>,
+    conversation_key: String,
+    task_id: String,
+    task_name: String,
+    session_id: String,
+) -> Result<LocalImStatus, String> {
+    manager
+        .bind_task(&conversation_key, &task_id, &task_name, &session_id)?
+        .ok_or_else(|| "钉钉频道当前未运行".to_string())
+}
+
+#[tauri::command]
+pub fn unbind_local_im_task(
+    manager: tauri::State<'_, LocalImManager>,
+    conversation_key: String,
+) -> Result<LocalImStatus, String> {
+    manager
+        .unbind_task(&conversation_key)?
+        .ok_or_else(|| "钉钉频道当前未运行".to_string())
+}
+
+#[tauri::command]
 pub fn stop_local_im_runtime(manager: tauri::State<'_, LocalImManager>) -> Result<(), String> {
     manager.stop()
 }
@@ -319,6 +344,54 @@ impl LocalImManager {
         };
         let value = process.request(
             "im.allow-pairing",
+            Some(json!({ "conversationKey": conversation_key })),
+            None,
+        )?;
+        parse_runtime_status(value, true, true).map(Some)
+    }
+
+    fn bind_task(
+        &self,
+        conversation_key: &str,
+        task_id: &str,
+        task_name: &str,
+        session_id: &str,
+    ) -> Result<Option<LocalImStatus>, String> {
+        validate_binding_field("IM 会话标识", conversation_key, 1_024)?;
+        validate_binding_field("任务标识", task_id, 200)?;
+        validate_binding_field("任务名称", task_name, 200)?;
+        validate_binding_field("Harness 会话标识", session_id, 1_024)?;
+        let mut guard = self
+            .process
+            .lock()
+            .map_err(|_| "本地 IM 状态不可用".to_string())?;
+        let Some(process) = guard.as_mut() else {
+            return Ok(None);
+        };
+        let value = process.request(
+            "im.bind-task",
+            Some(json!({
+                "conversationKey": conversation_key,
+                "taskId": task_id,
+                "taskName": task_name,
+                "sessionId": session_id,
+            })),
+            None,
+        )?;
+        parse_runtime_status(value, true, true).map(Some)
+    }
+
+    fn unbind_task(&self, conversation_key: &str) -> Result<Option<LocalImStatus>, String> {
+        validate_binding_field("IM 会话标识", conversation_key, 1_024)?;
+        let mut guard = self
+            .process
+            .lock()
+            .map_err(|_| "本地 IM 状态不可用".to_string())?;
+        let Some(process) = guard.as_mut() else {
+            return Ok(None);
+        };
+        let value = process.request(
+            "im.unbind-task",
             Some(json!({ "conversationKey": conversation_key })),
             None,
         )?;
@@ -494,6 +567,14 @@ fn validate_client_id(value: &str) -> Result<(), String> {
 fn validate_client_secret(value: &str) -> Result<(), String> {
     if value.trim().is_empty() || value.len() > 1_024 || value.chars().any(char::is_control) {
         Err("钉钉 Client Secret 无效".to_string())
+    } else {
+        Ok(())
+    }
+}
+
+fn validate_binding_field(name: &str, value: &str, limit: usize) -> Result<(), String> {
+    if value.trim().is_empty() || value.len() > limit || value.chars().any(char::is_control) {
+        Err(format!("{name}无效"))
     } else {
         Ok(())
     }

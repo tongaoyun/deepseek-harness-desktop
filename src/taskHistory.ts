@@ -74,4 +74,13 @@ function isLocalTask(value: unknown): value is LocalTaskRun {
   return typeof task.id === 'string' && task.source === 'DESKTOP' && typeof task.name === 'string'
     && ['RUNNING', 'COMPLETED', 'FAILED', 'CANCELED'].includes(task.status ?? '')
     && typeof task.createdAt === 'string' && typeof task.updatedAt === 'string' && Array.isArray(task.messages)
+    && isTaskMonitor(task.monitor)
+}
+
+function isTaskMonitor(value: unknown): boolean {
+  if (!value || typeof value !== 'object') return false
+  const monitor = value as Partial<LocalTaskRun['monitor']>
+  return ['idle', 'running', 'completed', 'failed', 'canceled'].includes(monitor.status ?? '')
+    && typeof monitor.activity === 'string' && typeof monitor.updatedAt === 'string'
+    && Array.isArray(monitor.steps) && Array.isArray(monitor.artifacts)
 }

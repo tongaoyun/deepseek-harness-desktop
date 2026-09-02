@@ -78,6 +78,12 @@
     enabled: !!js process.env.XIAOYIN_ALLOW_COMPUTER_USE === 'true'
     tools: !!js JSON.parse(process.env.XIAOYIN_COMPUTER_USE_TOOLS ?? '[]')
 
+- id: local-browser
+  name: '../dist/local-browser-plugin.js'
+  config:
+    enabled: true
+    executable: !!js process.env.XIAOYIN_BROWSER_EXECUTABLE ?? ''
+
 - id: sessions
   name: '@deepseek-ai/dsh-session-persistence-jsonl'
   config:

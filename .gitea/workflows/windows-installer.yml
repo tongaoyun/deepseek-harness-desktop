@@ -90,6 +90,8 @@ jobs:
         run: |
           pnpm verify:version
           if ($LASTEXITCODE -ne 0) { throw "version consistency check failed with exit code $LASTEXITCODE" }
+          pnpm lint
+          if ($LASTEXITCODE -ne 0) { throw "lint failed with exit code $LASTEXITCODE" }
           pnpm typecheck
           if ($LASTEXITCODE -ne 0) { throw "typecheck failed with exit code $LASTEXITCODE" }
           pnpm test
@@ -114,15 +116,23 @@ jobs:
         shell: powershell
         run: .\scripts\prepare-tauri-windows-tools.ps1
 
+      - name: 准备 Windows Authenticode 证书
+        shell: powershell
+        env:
+          WINDOWS_AUTHENTICODE_PFX_BASE64: ${{ secrets.WINDOWS_AUTHENTICODE_PFX_BASE64 }}
+          WINDOWS_AUTHENTICODE_PFX_PASSWORD: ${{ secrets.WINDOWS_AUTHENTICODE_PFX_PASSWORD }}
+        run: .\scripts\prepare-authenticode.ps1
+
       - name: 构建 MSI 与 NSIS 安装包
         shell: powershell
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          WINDOWS_AUTHENTICODE_PFX_PASSWORD: ${{ secrets.WINDOWS_AUTHENTICODE_PFX_PASSWORD }}
         run: |
           $Bundle = Join-Path $env:CARGO_TARGET_DIR "release\bundle"
           if (Test-Path -LiteralPath $Bundle) { Remove-Item -LiteralPath $Bundle -Recurse -Force }
-          pnpm tauri build
+          pnpm tauri build --config src-tauri/tauri.authenticode.conf.json
 
       - name: NSIS 安装与内置 Harness 烟测
         if: ${{ startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.run_install_smoke) }}
@@ -146,6 +156,10 @@ jobs:
             $_.Extension -in @(".exe", ".msi") -and $_.Name -like "*_${ExpectedVersion}_*"
           })
           if ($Files.Count -ne 2) { throw "Expected MSI and NSIS installers, found $($Files.Count)" }
+          foreach ($File in $Files) {
+            $Signature = Get-AuthenticodeSignature -LiteralPath $File.FullName
+            if ($Signature.Status -ne "Valid") { throw "Invalid Authenticode signature for $($File.Name): $($Signature.Status)" }
+          }
           if (Test-Path -LiteralPath $Output) { Remove-Item -LiteralPath $Output -Recurse -Force }
           New-Item -ItemType Directory -Force -Path $Output | Out-Null
           foreach ($File in $Files) {
@@ -160,6 +174,11 @@ jobs:
             ForEach-Object { "$($_.Hash.ToLowerInvariant())  $(Split-Path $_.Path -Leaf)" })
           $Utf8WithoutBom = [System.Text.UTF8Encoding]::new($false)
           [System.IO.File]::WriteAllText((Join-Path $Output "SHA256SUMS.txt"), (($ChecksumLines -join "`n") + "`n"), $Utf8WithoutBom)
+
+      - name: 清理 Authenticode 证书
+        if: ${{ always() }}
+        shell: powershell
+        run: if ($env:XIAOYIN_AUTHENTICODE_PFX_PATH -and (Test-Path -LiteralPath $env:XIAOYIN_AUTHENTICODE_PFX_PATH)) { Remove-Item -LiteralPath $env:XIAOYIN_AUTHENTICODE_PFX_PATH -Force }
 
       - name: 发布正式版本到 Gitea Release
         if: ${{ startsWith(github.ref, 'refs/tags/v') }}

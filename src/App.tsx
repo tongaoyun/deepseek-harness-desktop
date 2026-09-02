@@ -1,31 +1,19 @@
 import {
   Bell,
   BookOpenCheck,
-  Bot,
   Boxes,
-  CalendarClock,
-  ChevronDown,
-  CirclePlus,
   CircleStop,
   FolderOpen,
-  MessageSquare,
-  PanelLeftClose,
-  PanelLeftOpen,
   PackagePlus,
-  Plus,
   PlugZap,
   Search,
-  ScrollText,
-  Send,
   ShieldCheck,
-  Sparkles,
   SquareCheckBig,
-  Store,
   WandSparkles,
   X,
 } from 'lucide-react'
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
-import { lazy, Suspense, type FormEvent, useEffect, useMemo, useRef, useState } from 'react'
+import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import {
   createExpertKitDownload,
   createSkillDownload,
@@ -40,7 +28,6 @@ import {
   submitFeedback,
   submitDeviceHeartbeat,
 } from './api'
-import { AccountMenu } from './AccountMenu'
 import { ErpAuthScreen } from './ErpAuthScreen'
 import { ExpertKitDetailsModal } from './ExpertKitDetailsModal'
 import { SkillDetailsModal } from './SkillDetailsModal'
@@ -61,7 +48,7 @@ import {
   cancelHarness,
   clearLocalDirectories,
   connectorDiagnosticsAvailable,
-  harnessActivityLabel,
+  createTaskMonitor,
   listenHarnessNotifications,
   probeHarnessHost,
   revokeLocalDirectory,
@@ -69,7 +56,6 @@ import {
   shutdownHarness,
   type AuthorizedLocalDirectory,
 } from './harness'
-import { ExecutionTrace } from './ExecutionTrace'
 import type {
   BootstrapResponse,
   ConnectorCatalogEntry,
@@ -81,17 +67,16 @@ import type {
   SkillCatalogEntry,
 } from './types'
 import { useEnterpriseSession } from './useEnterpriseSession'
-import { XiaoyinMascot } from './XiaoyinMascot'
 import { ScheduledTasksPage } from './ScheduledTasksPage'
 import { TaskCenterPage } from './TaskCenterPage'
 import { ImChannelsPage } from './ImChannelsPage'
 import { loadTaskHistory, persistTaskHistory } from './taskHistory'
 import { startLocalIm, stopLocalImRuntime } from './localIm'
-import type { LocalTaskRun, TaskExecutionStep, TaskMessage } from './types'
+import type { LocalTaskRun, TaskExecutionStep, TaskMessage, TaskMonitorState } from './types'
 import { memoryInstruction, rememberInstruction } from './memory'
-import { modelDisplayName, modelStorageKey, resolveSelectedModel } from './modelSelection'
+import { modelStorageKey, resolveSelectedModel } from './modelSelection'
 import { buildInvocationOptions, filterInvocationOptions, type InvocationOption } from './invocations'
-import { buildRuntimeConnectorCatalog } from './connectors'
+import { buildRuntimeConnectorCatalog, withDesktopBuiltinConnectors } from './connectors'
 import { KnowledgeBasePage } from './KnowledgeBasePage'
 import { DesktopSettingsPage } from './DesktopSettingsPage'
 import { AuditEventsPage } from './AuditEventsPage'
@@ -99,6 +84,8 @@ import { ConnectorsPage } from './ConnectorsPage'
 import { mergeSkills, type SkillView } from './skills'
 import { allowedExtensionArtifacts } from './extensionPolicy'
 import { connectorsForSnapshot, createCapabilitySnapshot } from './capabilitySnapshot'
+import { DesktopSidebar } from './DesktopSidebar'
+import { ChatPage } from './ChatPage'
 import { cacheAge, loadEnterpriseCatalogCache, saveEnterpriseCatalogCache } from './enterpriseCache'
 import { inspectDeviceCapabilities } from './deviceCapabilities'
 import './styles.css'
@@ -108,14 +95,6 @@ const extensionNav = [
   { id: 'skills', label: '技能', icon: WandSparkles },
   { id: 'connectors', label: '连接器', icon: PlugZap },
   { id: 'knowledge', label: '知识库', icon: BookOpenCheck },
-]
-
-const RichMessage = lazy(() => import('./RichMessage').then((module) => ({ default: module.RichMessage })))
-
-const starterTasks = [
-  { icon: SquareCheckBig, title: '订单异常诊断', detail: '定位履约风险与待办', prompt: '分析昨天的订单异常，并给出处理优先级' },
-  { icon: Boxes, title: '库存风险分析', detail: '识别缺货与滞销商品', prompt: '分析本周库存风险，列出需要补货的商品' },
-  { icon: Store, title: 'Listing 优化', detail: '生成更专业的商品内容', prompt: '帮我优化这个商品的 Listing 内容' },
 ]
 
 interface ExtensionSyncIssue {
@@ -163,14 +142,13 @@ export default function App() {
   const [currentCapabilitySnapshot, setCurrentCapabilitySnapshot] = useState<import('./types').CapabilitySnapshot>()
   const [selectedKnowledgeBaseRefs, setSelectedKnowledgeBaseRefs] = useState<string[]>([])
   const [harnessRunning, setHarnessRunning] = useState(false)
-  const [harnessActivity, setHarnessActivity] = useState('')
   const [harnessHealth, setHarnessHealth] = useState<HarnessHealth>('checking')
   const [harnessHealthDetail, setHarnessHealthDetail] = useState('正在检查本地 Agent')
   const [harnessHealthAttempt, setHarnessHealthAttempt] = useState(0)
   const [localImError, setLocalImError] = useState('')
   const [failedCloudRuns, setFailedCloudRuns] = useState<CloudTaskRun[]>([])
-  const [harnessSteps, setHarnessSteps] = useState<TaskExecutionStep[]>([])
-  const harnessStepsRef = useRef<TaskExecutionStep[]>([])
+  const [taskMonitor, setTaskMonitor] = useState<TaskMonitorState>(createTaskMonitor)
+  const taskMonitorRef = useRef<TaskMonitorState>(taskMonitor)
   const [localDirectories, setLocalDirectories] = useState<AuthorizedLocalDirectory[]>([])
   const [localFileError, setLocalFileError] = useState('')
   const [selectedModel, setSelectedModel] = useState('')
@@ -277,10 +255,12 @@ export default function App() {
           setCatalogCacheStale(age.stale)
           setExpertKitCatalog(cached.catalog)
           setSkills(cached.skills)
-          setConnectors(cached.connectors)
+          const cachedConnectors = withDesktopBuiltinConnectors(cached.connectors)
+          extensionCacheRef.current.connectors = cachedConnectors
+          setConnectors(cachedConnectors)
           setKnowledgeBases(cached.knowledge)
-          setSkillViews(mergeSkills(cached.skills, extensionCacheRef.current.installed, cached.connectors, cached.knowledge))
-          setExpertKits(mergeExpertKits(cached.catalog, extensionCacheRef.current.installed, cached.connectors, cached.knowledge))
+          setSkillViews(mergeSkills(cached.skills, extensionCacheRef.current.installed, cachedConnectors, cached.knowledge))
+          setExpertKits(mergeExpertKits(cached.catalog, extensionCacheRef.current.installed, cachedConnectors, cached.knowledge))
         }
       }
       const [catalogResult, installedResult, skillsResult, connectorsResult, knowledgeResult] = await Promise.allSettled([
@@ -296,7 +276,7 @@ export default function App() {
         if (catalogResult.status === 'fulfilled') cache.catalog = catalogResult.value
         if (installedResult.status === 'fulfilled') cache.installed = installedResult.value
         if (skillsResult.status === 'fulfilled') cache.skills = skillsResult.value
-        if (connectorsResult.status === 'fulfilled') cache.connectors = connectorsResult.value
+        if (connectorsResult.status === 'fulfilled') cache.connectors = withDesktopBuiltinConnectors(connectorsResult.value)
         if (knowledgeResult.status === 'fulfilled') cache.knowledge = knowledgeResult.value
         setExpertKitCatalog(cache.catalog)
         setSkills(cache.skills)
@@ -382,12 +362,9 @@ export default function App() {
     let unlisten: () => void = () => undefined
     void listenHarnessNotifications((notification) => {
       if (!disposed) {
-        setHarnessActivity(harnessActivityLabel(notification))
-        setHarnessSteps((current) => {
-          const next = applyHarnessNotification(current, notification)
-          harnessStepsRef.current = next
-          return next
-        })
+        const next = applyHarnessNotification(taskMonitorRef.current, notification)
+        taskMonitorRef.current = next
+        setTaskMonitor(next)
       }
     }).then((dispose) => {
       if (disposed) dispose()
@@ -454,7 +431,7 @@ export default function App() {
     if (!list) return
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
     list.scrollTo({ top: list.scrollHeight, behavior: reducedMotion ? 'auto' : 'smooth' })
-  }, [harnessActivity, harnessSteps, messages])
+  }, [messages, taskMonitor.updatedAt])
 
   useEffect(() => {
     workspaceRef.current?.scrollTo({ top: 0, behavior: 'auto' })
@@ -531,6 +508,11 @@ export default function App() {
     ? activeLocalTasks.filter((task) => task.name.toLocaleLowerCase().includes(taskQuery.trim().toLocaleLowerCase()))
     : activeLocalTasks
   const focusComposer = () => window.requestAnimationFrame(() => composerRef.current?.focus())
+  const setTaskMonitorActivity = (activity: string) => {
+    const next = { ...taskMonitorRef.current, activity, updatedAt: new Date().toISOString() }
+    taskMonitorRef.current = next
+    setTaskMonitor(next)
+  }
   const newTask = () => {
     setPage('chat')
     setTaskSearchOpen(false)
@@ -543,9 +525,9 @@ export default function App() {
     setSelectedExpertKitId('')
     setSelectedSkillId('')
     setCurrentLocalTaskId('')
-    setHarnessActivity('')
-    harnessStepsRef.current = []
-    setHarnessSteps([])
+    const monitor = createTaskMonitor()
+    taskMonitorRef.current = monitor
+    setTaskMonitor(monitor)
     setLocalDirectories([])
     setLocalFileError('')
     void Promise.all([clearLocalDirectories(), shutdownHarness()])
@@ -571,9 +553,8 @@ export default function App() {
     setSelectedSkillId(task.skillId ?? '')
     setSelectedModel(resolveSelectedModel(bootstrap?.models ?? [], task.model ?? selectedModel))
     setPrompt('')
-    setHarnessActivity('')
-    harnessStepsRef.current = []
-    setHarnessSteps([])
+    taskMonitorRef.current = task.monitor
+    setTaskMonitor(task.monitor)
     setLocalDirectories([])
     setLocalFileError('')
     void Promise.all([clearLocalDirectories(), shutdownHarness()])
@@ -634,9 +615,12 @@ export default function App() {
         await rememberInstruction(user!.userId, bootstrap.endpoints.memoryProfile ?? '/api/v1/memory-profile', accessToken, remembered)
         const rememberedMessages: TaskMessage[] = [{ role: 'user', text: input }, { role: 'assistant', text: `已记住：${remembered}` }]
         const timestamp = new Date().toISOString()
+        const monitor: TaskMonitorState = { ...createTaskMonitor(timestamp), status: 'completed', activity: '记忆已保存' }
         const task: LocalTaskRun = { id: crypto.randomUUID(), source: 'DESKTOP', name: input.slice(0, 60),
-          status: 'COMPLETED', createdAt: timestamp, updatedAt: timestamp, messages: rememberedMessages }
+          status: 'COMPLETED', createdAt: timestamp, updatedAt: timestamp, monitor, messages: rememberedMessages }
         setMessages(rememberedMessages)
+        taskMonitorRef.current = monitor
+        setTaskMonitor(monitor)
         persistLocalTask(task)
       } catch (error) {
         setMessages([{ role: 'user', text: input }, { role: 'assistant', text: `记忆失败：${error instanceof Error ? error.message : String(error)}` }])
@@ -651,6 +635,12 @@ export default function App() {
     const existingTask = localTasks.find((task) => task.id === taskId)
     const pendingMessages: TaskMessage[] = [...messages, { role: 'user', text: input },
       { role: 'assistant', text: '正在分析任务…', pending: true }]
+    const runningMonitor: TaskMonitorState = {
+      ...(existingTask?.monitor ?? createTaskMonitor(now)),
+      status: 'running',
+      activity: '正在启动本地 Agent',
+      updatedAt: now,
+    }
     const runningTask: LocalTaskRun = {
       id: taskId,
       source: 'DESKTOP',
@@ -663,6 +653,7 @@ export default function App() {
       skillId: selectedSkill?.id,
       model: activeModel,
       capabilitySnapshot,
+      monitor: runningMonitor,
       messages: pendingMessages,
     }
     setCurrentLocalTaskId(taskId)
@@ -676,9 +667,8 @@ export default function App() {
     setPrompt('')
     setHarnessRunning(true)
     cancellationRequestedRef.current = false
-    setHarnessActivity('正在启动本地 Agent')
-    harnessStepsRef.current = []
-    setHarnessSteps([])
+    taskMonitorRef.current = runningMonitor
+    setTaskMonitor(runningMonitor)
     try {
       const result = await runHarness({
         prompt: input,
@@ -700,30 +690,41 @@ export default function App() {
       })
       setHarnessSessionId(result.sessionId)
       const completedMessages = pendingMessages.map((message, index) => index === pendingMessages.length - 1
-        ? { role: 'assistant', text: result.finalResponse || '任务已执行完成，但模型没有返回文本。',
-          executionSteps: harnessStepsRef.current }
+        ? { role: 'assistant', text: result.finalResponse || '任务已执行完成，但模型没有返回文本。' }
         : message) as TaskMessage[]
+      const completedMonitor: TaskMonitorState = {
+        ...taskMonitorRef.current, status: 'completed', activity: '任务已完成', updatedAt: new Date().toISOString(),
+      }
+      taskMonitorRef.current = completedMonitor
+      setTaskMonitor(completedMonitor)
       setMessages(completedMessages)
       persistLocalTask({ ...runningTask, status: 'COMPLETED', updatedAt: new Date().toISOString(),
-        sessionId: result.sessionId, messages: completedMessages })
-      await reportTaskAudit('SUCCEEDED', taskId, harnessStepsRef.current)
+        sessionId: result.sessionId, monitor: completedMonitor, messages: completedMessages })
+      await reportTaskAudit('SUCCEEDED', taskId, completedMonitor.steps)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       const canceled = cancellationRequestedRef.current
       const failedMessages = pendingMessages.map((item, index) => index === pendingMessages.length - 1
-        ? { role: 'assistant', text: canceled ? '任务已取消，可修改要求后重新执行。' : `执行失败：${message}`, executionSteps: harnessStepsRef.current }
+        ? { role: 'assistant', text: canceled ? '任务已取消，可修改要求后重新执行。' : `执行失败：${message}` }
         : item) as TaskMessage[]
+      const failedMonitor: TaskMonitorState = {
+        ...taskMonitorRef.current,
+        status: canceled ? 'canceled' : 'failed',
+        activity: canceled ? '任务已取消' : '任务执行失败',
+        updatedAt: new Date().toISOString(),
+      }
+      taskMonitorRef.current = failedMonitor
+      setTaskMonitor(failedMonitor)
       setMessages(failedMessages)
-      persistLocalTask({ ...runningTask, status: canceled ? 'CANCELED' : 'FAILED', updatedAt: new Date().toISOString(), messages: failedMessages })
+      persistLocalTask({ ...runningTask, status: canceled ? 'CANCELED' : 'FAILED', updatedAt: new Date().toISOString(), monitor: failedMonitor, messages: failedMessages })
       if (!canceled) {
         setHarnessHealth('degraded')
         setHarnessHealthDetail(`Harness 执行异常：${message}`)
       }
       void shutdownHarness()
-      await reportTaskAudit('FAILED', taskId, harnessStepsRef.current)
+      await reportTaskAudit('FAILED', taskId, failedMonitor.steps)
     } finally {
       setHarnessRunning(false)
-      setHarnessActivity('')
       cancellationRequestedRef.current = false
     }
   }
@@ -731,16 +732,16 @@ export default function App() {
   const cancelCurrentTask = async () => {
     if (!harnessRunning || cancellationRequestedRef.current) return
     cancellationRequestedRef.current = true
-    setHarnessActivity('正在取消当前任务')
+    setTaskMonitorActivity('正在取消当前任务')
     try {
       const canceled = await cancelHarness()
       if (!canceled) {
         cancellationRequestedRef.current = false
-        setHarnessActivity('当前任务即将完成，暂时无法取消')
+        setTaskMonitorActivity('当前任务即将完成，暂时无法取消')
       }
     } catch (reason) {
       cancellationRequestedRef.current = false
-      setHarnessActivity('取消失败，任务仍在执行')
+      setTaskMonitorActivity('取消失败，任务仍在执行')
       setLocalFileError(reason instanceof Error ? reason.message : String(reason))
     }
   }
@@ -994,36 +995,27 @@ export default function App() {
   return (
     <div className={`app-shell${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
       {dragActive && <div className="file-drop-overlay"><FolderOpen size={34} /><strong>松开即可添加到当前任务</strong><span>文件只会授权其所在目录，执行时仍遵循专家套件权限</span></div>}
-      <aside className="sidebar">
-        <div className="sidebar-brand">
-          <button aria-label="返回新任务" className="brand-home" onClick={newTask} title="返回新任务" type="button"><XiaoyinMascot size={38} variant="avatar" /></button>
-          <div><strong>小胤</strong><small>跨境电商 AI 工作台</small></div>
-          <div className="sidebar-toolbar">
-            <button aria-expanded={taskSearchOpen} aria-label="搜索任务" onClick={() => { setTaskSearchOpen((value) => !value); setTaskQuery('') }} title="搜索任务（Ctrl/⌘ K）" type="button"><Search size={15} /></button>
-            <button aria-label={sidebarCollapsed ? '展开侧栏' : '收起侧栏'} onClick={() => setSidebarCollapsed((value) => !value)} type="button">{sidebarCollapsed ? <PanelLeftOpen size={15} /> : <PanelLeftClose size={15} />}</button>
-          </div>
-        </div>
-        {taskSearchOpen && <label className="task-search"><Search size={14} /><input aria-label="搜索最近任务" onChange={(event) => setTaskQuery(event.target.value)} placeholder="搜索最近任务" ref={taskSearchInputRef} value={taskQuery} /><button aria-label="关闭搜索" onClick={() => { setTaskSearchOpen(false); setTaskQuery('') }} type="button"><X size={13} /></button></label>}
-        <button className="new-task" onClick={newTask} title={sidebarCollapsed ? '新建任务' : undefined} type="button"><Plus size={17} /><span>新建任务</span></button>
-        <p className="nav-label extension-label"><Boxes size={13} />扩展</p>
-        <nav className="extension-nav">
-          {extensionNav.map(({ id, label, icon: Icon }) => <button aria-current={page === id ? 'page' : undefined} className={page === id ? 'nav-item active' : 'nav-item'} key={id} onClick={() => setPage(id)} title={sidebarCollapsed ? label : undefined} type="button"><Icon size={17} /><span>{label}</span>{id === 'skills' && skills.length > 0 && <em>{skills.length}</em>}</button>)}
-        </nav>
-        <nav className="office-nav">
-          <button aria-current={page === 'tasks' ? 'page' : undefined} className={page === 'tasks' ? 'nav-item active' : 'nav-item'} onClick={() => setPage('tasks')} title={sidebarCollapsed ? '任务中心' : undefined} type="button"><SquareCheckBig size={17} /><span>任务中心</span></button>
-          <button aria-current={page === 'schedules' ? 'page' : undefined} className={page === 'schedules' ? 'nav-item active' : 'nav-item'} onClick={() => setPage('schedules')} title={sidebarCollapsed ? '定时任务' : undefined} type="button"><CalendarClock size={17} /><span>定时任务</span></button>
-          <button aria-current={page === 'im' ? 'page' : undefined} className={page === 'im' ? 'nav-item active' : 'nav-item'} onClick={() => setPage('im')} title={sidebarCollapsed ? 'IM 频道' : undefined} type="button"><MessageSquare size={17} /><span>IM 频道</span></button>
-          <button aria-current={page === 'audit' ? 'page' : undefined} className={page === 'audit' ? 'nav-item active' : 'nav-item'} onClick={() => setPage('audit')} title={sidebarCollapsed ? '审计记录' : undefined} type="button"><ScrollText size={17} /><span>审计记录</span></button>
-        </nav>
-        <div className="recent-tasks">
-          <p className="nav-label">最近</p>
-          {visibleLocalTasks.slice(0, 5).map((task) => <button className="recent-task" key={task.id} onClick={() => openLocalTask(task)} type="button"><span>{task.name}</span><small>{task.status === 'RUNNING' ? '运行中' : task.status === 'COMPLETED' ? '已完成' : task.status === 'CANCELED' ? '已取消' : '执行失败'}</small></button>)}
-          {localTasks.length === 0 && <small className="recent-empty">暂无本机任务</small>}
-          {localTasks.length > 0 && visibleLocalTasks.length === 0 && <small className="recent-empty">没有匹配的任务</small>}
-        </div>
-        <div className="sidebar-spacer" />
-        <AccountMenu companyName={user?.companyName} department={user?.department} displayName={user?.displayName} onFeedback={submitDesktopFeedback} onLogout={logoutWithCleanup} onSettings={() => setPage('settings')} runtimeStatus={runtimeStatus} />
-      </aside>
+      <DesktopSidebar
+        collapsed={sidebarCollapsed}
+        onCloseSearch={() => { setTaskSearchOpen(false); setTaskQuery('') }}
+        onFeedback={submitDesktopFeedback}
+        onLogout={logoutWithCleanup}
+        onNewTask={newTask}
+        onOpenTask={openLocalTask}
+        onPage={setPage}
+        onTaskQuery={setTaskQuery}
+        onToggleCollapsed={() => setSidebarCollapsed((value) => !value)}
+        onToggleSearch={() => { setTaskSearchOpen((value) => !value); setTaskQuery('') }}
+        page={page}
+        runtimeStatus={runtimeStatus}
+        skillsCount={skills.length}
+        taskQuery={taskQuery}
+        taskSearchInputRef={taskSearchInputRef}
+        taskSearchOpen={taskSearchOpen}
+        tasks={localTasks}
+        user={user ?? undefined}
+        visibleTasks={visibleLocalTasks}
+      />
 
       <main className="workspace" ref={workspaceRef}>
         <header className="topbar">
@@ -1042,54 +1034,44 @@ export default function App() {
         </header>
 
         {page === 'chat' ? (
-          <section className={messages.length > 0 ? 'chat-page conversation' : 'chat-page'}>
-            {messages.length === 0 && <div className="hero-copy">
-              <XiaoyinMascot size={82} variant="hero" />
-              <div className="hero-greeting">嗨，我是小胤</div>
-              <h1>今天想先处理什么？</h1>
-              <p>连接 ERP 数据，让专家 Agent 安全地完成查询、分析与内容生产</p>
-              <div className="starter-actions">{starterTasks.map(({ icon: Icon, title, detail, prompt: value }) => <button key={title} onClick={() => { setPrompt(value); focusComposer() }} type="button"><Icon size={16} /><span><strong>{title}</strong><small>{detail}</small></span></button>)}</div>
-            </div>}
-            {messages.length > 0 && <div className="message-list" ref={messageListRef}>{messages.map((message, index) => {
-              const retryable = message.role === 'assistant' && index === messages.length - 1 && !message.pending && (message.text.startsWith('执行失败：') || message.text.startsWith('任务已取消'))
-              return <article className={`message ${message.role}${message.pending ? ' pending' : ''}`} key={`${message.role}-${index}`}><span className="message-avatar">{message.role === 'user' ? '你' : <XiaoyinMascot size={29} variant="avatar" />}</span><div><small>{message.role === 'user' ? '你' : '小胤'}</small><Suspense fallback={<p>{message.pending && harnessActivity ? harnessActivity : message.text}</p>}><RichMessage assistant={message.role === 'assistant'} onRegenerate={message.role === 'assistant' && !message.pending ? prepareRetry : undefined} text={message.pending && harnessActivity ? harnessActivity : message.text} /></Suspense>{message.role === 'assistant' && <ExecutionTrace steps={message.pending ? harnessSteps : message.executionSteps ?? []} />}{retryable && <button className="retry-task" onClick={prepareRetry} type="button">修改后重新执行</button>}</div></article>
-            })}</div>}
-            {harnessHealth === 'degraded' && <div className="runtime-recovery"><CircleStop size={17} /><span><strong>本地 Agent 暂不可用</strong><small>{harnessHealthDetail}</small></span><button onClick={() => setHarnessHealthAttempt((value) => value + 1)} type="button">重新检测</button></div>}
-            <form className="composer" onSubmit={submit}>
-              <textarea aria-label="给小胤发送消息" onChange={(event) => setPrompt(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); event.currentTarget.form?.requestSubmit() } }} placeholder="描述任务，/ 选择专家套件或技能，@ 添加业务上下文" ref={composerRef} value={prompt} />
-              <div className="composer-actions">
-                <button aria-label="授权本地文件夹" className="circle-button" disabled={harnessRunning} onClick={() => void addLocalDirectory()} title="授权本地文件夹" type="button"><CirclePlus size={18} /></button>
-                <button className="mode-button" onClick={() => setPage(selectedSkill ? 'skills' : 'experts')} type="button"><Sparkles size={14} /> {selectedExpertKit?.name ?? selectedSkill?.name ?? '运营通用'} <ChevronDown size={13} /></button>
-                <div className="model-picker" ref={modelPickerRef}>
-                  <button aria-expanded={modelMenuOpen} className="model-label" onClick={() => setModelMenuOpen((value) => !value)} type="button"><Bot size={14} /> {modelDisplayName(activeModel)} <ChevronDown size={13} /></button>
-                  {modelMenuOpen && <div className="model-menu"><small>公司可用模型</small>{(bootstrap?.models.length ? bootstrap.models : [activeModel]).map((model) => <button className={model === activeModel ? 'active' : ''} key={model} onClick={() => selectModel(model)} type="button"><span><strong>{modelDisplayName(model)}</strong><small>{model}</small></span>{model === activeModel && <SquareCheckBig size={14} />}</button>)}</div>}
-                </div>
-                {harnessRunning
-                  ? <button aria-label="取消当前任务" className="cancel-button" onClick={() => void cancelCurrentTask()} title="取消当前任务" type="button"><CircleStop size={17} /></button>
-                  : <button aria-label="发送" className="send-button" disabled={!prompt.trim() || !bootstrap || runtimeStatus !== 'ready' || harnessHealth === 'degraded' || !selectedCapabilityExecutable} title={runtimeStatus !== 'ready' ? '企业服务未连接' : harnessHealth === 'degraded' ? '请先恢复本地 Agent' : !selectedCapabilityExecutable ? '企业目录缓存已过期，请先重新同步' : '发送'} type="submit"><Send size={17} /></button>}
-              </div>
-              {visibleInvocations.length > 0 && <div className="slash-menu"><small>快捷调用</small>{visibleInvocations.map((option) => <button key={`${option.kind}-${option.profileId}-${option.id}`} onClick={() => selectInvocation(option)} type="button"><span><strong>{option.label}</strong><small>{option.description}</small></span><em>{option.profileName}</em></button>)}</div>}
-              {contextQuery !== undefined && <div className="slash-menu"><small>添加业务上下文</small>{visibleKnowledgeContexts.map((item) => <button key={item.reference} onClick={() => { setSelectedKnowledgeBaseRefs((current) => [...current, item.reference]); setPrompt(''); focusComposer() }} type="button"><span><strong>@{item.name}</strong><small>{item.description || item.reference}</small></span><em>{knowledgeScopeLabel(item.scope)}</em></button>)}{visibleKnowledgeContexts.length === 0 && <span className="context-menu-empty">{currentCapabilitySnapshot ? '当前任务能力已固定，请新建任务后添加' : '没有匹配的可用知识库'}</span>}</div>}
-            </form>
-            {localFileError && <div className="local-file-error">{localFileError}</div>}
-            <div className="context-bar">
-              <div className="local-contexts">
-                {selectedKnowledgeBaseRefs.map((reference) => <span className="local-context" key={reference}>
-                  @{knowledgeBases.find((item) => item.reference === reference)?.name ?? reference}
-                  <button aria-label={`移除 ${reference}`} disabled={harnessRunning || Boolean(currentCapabilitySnapshot)} onClick={() => setSelectedKnowledgeBaseRefs((current) => current.filter((item) => item !== reference))} type="button"><X size={11} /></button>
-                </span>)}
-                {localDirectories.length === 0
-                  ? <span>{currentCapabilitySnapshot
-                    ? `${currentCapabilitySnapshot.extensions.length} 个扩展 · ${currentCapabilitySnapshot.connectors.length} 个连接器 · 本任务能力已固定`
-                    : '已启用连接器将在发送首条消息时固定到本任务'}{localDirectories.length === 0 ? ' · 本地文件未授权' : ''}</span>
-                  : localDirectories.map((directory) => <span className="local-context" key={directory.id}>
-                    <FolderOpen size={12} />{directory.name}
-                    <button aria-label={`移除 ${directory.name}`} disabled={harnessRunning} onClick={() => void removeLocalDirectory(directory.id)} type="button"><X size={11} /></button>
-                  </span>)}
-              </div>
-              <span><ShieldCheck size={14} /> 仅访问已授权目录 · 修改与 Shell 逐次确认</span>
-            </div>
-          </section>
+          <ChatPage
+            activeModel={activeModel}
+            capabilitySnapshot={currentCapabilitySnapshot}
+            composerRef={composerRef}
+            contextQuery={contextQuery}
+            harnessHealth={harnessHealth}
+            harnessHealthDetail={harnessHealthDetail}
+            harnessRunning={harnessRunning}
+            knowledgeBases={knowledgeBases}
+            localDirectories={localDirectories}
+            localFileError={localFileError}
+            messageListRef={messageListRef}
+            messages={messages}
+            modelMenuOpen={modelMenuOpen}
+            modelPickerRef={modelPickerRef}
+            models={bootstrap?.models ?? []}
+            onAddKnowledge={(reference) => { setSelectedKnowledgeBaseRefs((current) => [...current, reference]); setPrompt(''); focusComposer() }}
+            onAddLocalDirectory={() => void addLocalDirectory()}
+            onCancel={() => void cancelCurrentTask()}
+            onCapabilityPage={() => setPage(selectedSkill ? 'skills' : 'experts')}
+            onPrepareRetry={prepareRetry}
+            onPrompt={(value) => { setPrompt(value); focusComposer() }}
+            onRecoverHarness={() => setHarnessHealthAttempt((value) => value + 1)}
+            onRemoveKnowledge={(reference) => setSelectedKnowledgeBaseRefs((current) => current.filter((item) => item !== reference))}
+            onRemoveLocalDirectory={(id) => void removeLocalDirectory(id)}
+            onSelectInvocation={selectInvocation}
+            onSelectModel={selectModel}
+            onSubmit={(event) => void submit(event)}
+            onToggleModelMenu={() => setModelMenuOpen((value) => !value)}
+            prompt={prompt}
+            runtimeStatus={runtimeStatus}
+            selectedCapabilityExecutable={Boolean(bootstrap) && selectedCapabilityExecutable}
+            selectedCapabilityName={selectedExpertKit?.name ?? selectedSkill?.name ?? '运营通用'}
+            selectedKnowledgeBaseRefs={selectedKnowledgeBaseRefs}
+            taskMonitor={taskMonitor}
+            visibleInvocations={visibleInvocations}
+            visibleKnowledgeContexts={visibleKnowledgeContexts}
+          />
         ) : (
           <section className="capability-page">
             <span className="page-kicker">企业能力中心</span>
@@ -1233,6 +1215,7 @@ export default function App() {
               knowledgeEndpoint={resolveControlPlaneEndpoint(bootstrap.endpoints.knowledge)}
               model={activeModel}
               modelApiKey={bootstrap.modelApiKey}
+              localTasks={localTasks}
             />}
           </section>
         )}
@@ -1296,8 +1279,4 @@ function extensionMatches(
   if (filter === 'updates') return item.installState === 'update'
   if (filter === 'attention') return item.installState === 'retired' || item.installState === 'update' || item.readiness === 'partial'
   return item.installState !== 'retired'
-}
-
-function knowledgeScopeLabel(scope: KnowledgeBaseEntry['scope']): string {
-  return ({ PERSONAL: '个人', TEAM: '团队', ORGANIZATION: '公司' })[scope]
 }

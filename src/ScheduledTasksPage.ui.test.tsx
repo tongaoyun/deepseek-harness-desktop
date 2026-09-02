@@ -46,6 +46,17 @@ describe('scheduled task user flow', () => {
     await act(async () => preset!.click())
     expect(container.querySelector<HTMLInputElement>('input[value="0 18 * * *"]')).not.toBeNull()
     expect(container.querySelector('.cron-hint')?.textContent).toContain('接下来：')
+
+    const natural = container.querySelector<HTMLTextAreaElement>('textarea')!
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!
+      setter.call(natural, '每个工作日下午 6:30 生成日报')
+      natural.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    const parse = [...container.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent === '解析任务')!
+    await act(async () => parse.click())
+    expect(container.querySelector<HTMLInputElement>('input[value="30 18 * * 1-5"]')).not.toBeNull()
+    expect(container.querySelector('.schedule-parse-result')?.textContent).toContain('18:30')
     await act(async () => root.unmount())
   })
 })
