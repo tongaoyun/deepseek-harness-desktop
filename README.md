@@ -1,6 +1,6 @@
 # xiaoyin-desktop
 
-小胤 Windows 企业桌面端。React 提供工作台，Tauri 管理本地权限和进程，`harness-host` 运行 DeepSeek Harness、Skills、MCP 与本地工具。
+小胤企业桌面端。当前发布 Windows x64 安装包。React 提供工作台，Tauri 管理本地权限和进程，`harness-host` 运行 DeepSeek Harness、Skills、MCP 与本地工具。
 
 ## 目录
 
@@ -13,26 +13,15 @@
 
 架构、请求链路、能力和边界见 [架构与能力](docs/architecture.md)。
 
-## 当前能力
+## 能力
 
-- ERP 扫码登录、LiteLLM 模型选择和跨设备记忆同步；个人记忆位于桌面设置，支持确认、版本恢复和导入导出。
-- Windows 以纯桌面模式启动；扫码授权窗口完成后自动收起并切回小胤工作台。
-- 企业市场分别管理专家套件和独立 Skills；专家套件组合命令、多个 Skill、连接器和后台工作流，独立 Skill 可自动触发或通过 `/` 调用。
-- 连接器作为任务的基础工具层；已启用连接器、已安装扩展和通过 `@` 选择的知识库会在发送首条消息时固化为能力快照，目录更新不改变进行中的任务。
-- 专家套件与 Skills 支持按名称、说明、ID 和安装状态检索；连接器支持按企业、已连接、桌面内置分类，以及按状态、工具检索和实时 MCP 握手诊断。
+- ERP 扫码登录、LiteLLM 模型选择、个人记忆和本机 SQLite 会话。
+- 专家套件、独立 Skill、Nacos MCP 连接器和个人、团队、公司知识库。
+- `/` 调用命令或 Skill，`@` 挂载知识库；任务启动时固化能力快照。
 - 本地文件、DOCX/XLSX/PDF、受审批 Shell 和 Windows Computer Use。
-- Agent 异常进入通知中心并支持重新检测；任务可取消，失败后可重新执行；会话由本机 SQLite 保存并支持搜索、分页和归档。
-- MCP 实时握手、工具清单漂移诊断和设备能力上报；企业能力同步失败时保留上次成功数据并展示分项原因。
-- Temporal 定时任务提供常用时间模板和下次执行预览；任务失败进入通知中心，桌面关闭后云端仍继续执行。
-- 本地钉钉频道使用持久队列、会话隔离和失败重试，支持 DOCX/XLSX/PDF/TXT 附件解析，并可按配置向已建立会话推送新任务结果。
-- 回复支持 Markdown、表格、代码块及 Office/PDF 产物卡片，可打开文件或在文件夹中定位。
-- 左下角头像统一提供桌面设置、正式版更新、反馈与帮助和退出登录；桌面设置包含个人记忆和设备能力，反馈进入控制中心审计链路。
-- 启动时只做轻量 Harness Host 健康探测；Office、Shell 和 Computer Use 完整自检由“设备能力”页按需执行，避免拖慢工作台。
-- 安装包图标与工作台共用同一套小胤形象；任务搜索支持 `Ctrl/Cmd + K`，弹层支持 `Esc` 和点击遮罩关闭，并兼容系统“减少动态效果”设置。
-- 顶层异常会进入可恢复页面，不显示可能包含本地路径或业务上下文的异常详情。
-- 文件和文件夹可直接拖入工作台，自动授权所在目录并加入当前任务；设置页集中展示快捷键。
-- 对话输入 `/` 可调用专家套件命令或 Skill，输入 `@` 可搜索并挂载个人、团队或公司知识库。
-- 桌面每 6 小时发送一次去敏设备心跳；完整能力探测仍只在设备页按需运行。
+- Temporal 定时任务、执行记录、失败通知和产物下载；桌面关闭后任务继续运行。
+- 本地钉钉 Stream、会话隔离、持久队列、附件解析和任务结果推送。
+- MCP 握手、Tool 清单诊断、设备能力检测、反馈、审计和正式版自动更新。
 
 ## 安全边界
 
@@ -56,14 +45,15 @@ pnpm tauri:dev
 
 ## Windows 发布
 
-- 日常桌面调试：在 Windows 工作机运行 `pnpm tauri:dev`，不经过安装包流水线。
-- `main`：执行前端与 Harness 门禁，不占用 Windows 打包 Runner；Windows Rust CI 在 Pull Request 或手动触发时执行。
-- 快速安装包：手动运行 `Windows quick installer`，使用 Debug 编译和 zlib 快速压缩，仅供开发安装验证；不执行重复门禁、MSI、安装烟测或正式发布，制品保留 7 天。
-- 完整安装包：手动运行 `Windows installer`，生成 MSI 与 NSIS，可选择安装烟测，不创建正式 Release。
-- `v*` 标签：实际验收文件、Office 和 Shell；交互会话实际验收 Computer Use，服务型 Runner 验证桥接依赖，再执行安装/启动/卸载并发布正式 Gitea Release。
-- 发布失败保留草稿时可直接重跑同一标签；流水线会清理未完成资产，并在公开 Release 后回读校验资产和发布清单。
-- 自动更新：只使用正式单通道和 Tauri 签名，不设置 `stable`/`beta` 通道；启动、重新激活和每 6 小时自动检查。
-- 回滚：运行 `Roll back desktop release`，目标必须是已发布的不可变版本。
+| 场景 | 工作流 |
+|---|---|
+| 日常调试 | Windows 工作机运行 `pnpm tauri:dev` |
+| 快速安装验证 | `Windows quick installer`，生成 Debug NSIS，制品保留 7 天 |
+| 完整安装验证 | `Windows installer`，生成 MSI 与 NSIS，并按配置执行烟测 |
+| 正式发布 | 推送 `v*` 标签，执行门禁、烟测、签名和 Gitea Release |
+| 回滚 | `Roll back desktop release`，选择已发布版本 |
+
+`main` 执行前端与 Harness 门禁。Windows Rust CI 在 Pull Request 或手动触发时执行。自动更新使用正式单通道和 Tauri 签名。
 
 发布前同步更新 `package.json`、`src-tauri/Cargo.toml` 和 `src-tauri/tauri.conf.json` 的版本。本仓库不部署到 K3s；Windows 安装包内置 Node 与 Harness Runtime，员工电脑无需安装开发环境。
 
