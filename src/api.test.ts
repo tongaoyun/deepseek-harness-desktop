@@ -7,7 +7,6 @@ import {
   loadExpertKits,
   loadSkills,
   loadCloudTaskRuns,
-  loadAuditEvents,
   submitAuditEvent,
 } from './api'
 
@@ -104,22 +103,20 @@ describe('loadBootstrap', () => {
     ])
   })
 
-  it('reads and submits redacted audit events', async () => {
+  it('submits redacted audit events without exposing a desktop audit feed', async () => {
     const fetchMock = vi.fn()
-      .mockResolvedValueOnce(new Response('[]', { status: 200, headers: { 'Content-Type': 'application/json' } }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ id: 'audit-1' }), {
         status: 201, headers: { 'Content-Type': 'application/json' },
       }))
     vi.stubGlobal('fetch', fetchMock)
 
-    await loadAuditEvents('/api/v1/audit-events', 'employee-1', 'token-1')
     await submitAuditEvent('/api/v1/audit-events', 'employee-1', 'token-1', {
       source: 'DESKTOP', category: 'TOOL', action: 'local_file_read', outcome: 'SUCCEEDED',
       resourceType: 'desktop-task', resourceId: 'task-1', summary: '读取完成',
     })
 
-    expect(fetchMock.mock.calls[0][0]).toContain('/api/v1/audit-events?limit=200')
-    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).not.toHaveProperty('arguments')
+    expect(fetchMock.mock.calls[0][0]).toContain('/api/v1/audit-events')
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).not.toHaveProperty('arguments')
   })
 
 })
