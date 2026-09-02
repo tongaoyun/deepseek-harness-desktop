@@ -1,11 +1,6 @@
 name: Windows Rust CI
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "src-tauri/**"
-      - ".gitea/workflows/windows-rust.yml"
   pull_request:
     paths:
       - "src-tauri/**"
