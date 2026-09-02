@@ -4,7 +4,9 @@ import type {
   AllowedExtensionArtifact,
   ConnectorDiagnosticResult,
   ConnectorRuntimeDefinition,
+  TaskArtifact,
   TaskExecutionStep,
+  TaskMonitorState,
 } from './types'
 
 export interface HarnessRunInput {
@@ -141,27 +143,29 @@ export function harnessActivityLabel(notification: HarnessNotification): string 
 }
 
 export function applyHarnessNotification(
-  current: TaskExecutionStep[],
+  current: TaskMonitorState,
   notification: HarnessNotification,
-): TaskExecutionStep[] {
+): TaskMonitorState {
   const parsed = parseHarnessEvent(notification)
   if (!parsed) return current
   const occurredAt = eventTime(parsed.event)
   const turn = integer(parsed.data.turn)
   const step = integer(parsed.data.step)
+  const activity = harnessActivityLabel(notification)
 
   if (parsed.type === 'step/start' && turn !== undefined && step !== undefined) {
-    return upsertStep(current, {
+    return updateMonitor(current, activity, upsertStep(current.steps, {
       id: `analysis:${turn}:${step}`,
       kind: 'analysis',
       label: step === 1 ? '分析任务' : '整理工具结果',
       status: 'running',
       startedAt: occurredAt,
-    })
+    }), occurredAt)
   }
 
   if (parsed.type === 'assistant/message' && turn !== undefined && step !== undefined) {
-    return completeStep(current, `analysis:${turn}:${step}`, 'completed', occurredAt)
+    return updateMonitor(current, activity,
+      completeStep(current.steps, `analysis:${turn}:${step}`, 'completed', occurredAt), occurredAt)
   }
 
   if (parsed.type === 'tool/call') {
@@ -169,22 +173,33 @@ export function applyHarnessNotification(
     const toolName = text(parsed.data.name)
     if (!callId || !toolName) return current
     const analysisCompleted = turn === undefined || step === undefined
-      ? current
-      : completeStep(current, `analysis:${turn}:${step}`, 'completed', occurredAt)
-    return upsertStep(analysisCompleted, {
+      ? current.steps
+      : completeStep(current.steps, `analysis:${turn}:${step}`, 'completed', occurredAt)
+    return updateMonitor(current, activity, upsertStep(analysisCompleted, {
       id: `tool:${callId}`,
       kind: 'tool',
       label: toolActivityLabel(toolName),
       status: 'running',
       toolName,
       startedAt: occurredAt,
-    })
+    }), occurredAt)
   }
 
   if (parsed.type === 'tool/result') {
     const result = toolResult(parsed.data)
     if (!result) return current
-    return completeStep(current, `tool:${result.callId}`, result.failed ? 'failed' : 'completed', occurredAt)
+    const toolName = current.steps.find((item) => item.id === `tool:${result.callId}`)?.toolName
+    const artifact = !result.failed && toolName
+      ? artifactFromToolResult(toolName, result.content, occurredAt)
+      : undefined
+    const artifacts = artifact
+      ? [...current.artifacts.filter((item) => item.id !== artifact.id), artifact].slice(-50)
+      : current.artifacts
+    return {
+      ...updateMonitor(current, activity,
+        completeStep(current.steps, `tool:${result.callId}`, result.failed ? 'failed' : 'completed', occurredAt), occurredAt),
+      artifacts,
+    }
   }
 
   if (parsed.type === 'approval/decision') {
@@ -193,7 +208,7 @@ export function applyHarnessNotification(
     const decision = text(parsed.data.decision)
     if (!approvalId || !toolName || !['allow', 'reject'].includes(decision ?? '')) return current
     const allowed = decision === 'allow'
-    return upsertStep(current, {
+    return updateMonitor(current, activity, upsertStep(current.steps, {
       id: `approval:${approvalId}`,
       kind: 'approval',
       label: `${allowed ? '已允许' : '已拒绝'}${toolActivityLabel(toolName)}`,
@@ -201,26 +216,45 @@ export function applyHarnessNotification(
       toolName,
       startedAt: occurredAt,
       completedAt: occurredAt,
-    })
+    }), occurredAt)
   }
 
   if (parsed.type === 'turn/end' && turn !== undefined) {
     const reason = text(asRecord(parsed.data.reason)?.kind)
     const status = reason === 'completed' ? 'completed' : 'failed'
-    const settled = current.map((item): TaskExecutionStep => item.status === 'running'
+    const settled = current.steps.map((item): TaskExecutionStep => item.status === 'running'
       ? { ...item, status, completedAt: occurredAt }
       : item)
-    return upsertStep(settled, {
+    return {
+      ...current,
+      status,
+      activity: status === 'completed' ? '任务已完成' : '任务执行失败',
+      updatedAt: occurredAt,
+      steps: upsertStep(settled, {
       id: `response:${turn}`,
       kind: 'response',
       label: status === 'completed' ? '完成回复' : '执行未完成',
       status,
       startedAt: occurredAt,
       completedAt: occurredAt,
-    })
+      }),
+    }
   }
 
   return current
+}
+
+export function createTaskMonitor(now = new Date().toISOString()): TaskMonitorState {
+  return { status: 'idle', activity: '等待开始', updatedAt: now, steps: [], artifacts: [] }
+}
+
+function updateMonitor(
+  current: TaskMonitorState,
+  activity: string,
+  steps: TaskExecutionStep[],
+  updatedAt: string,
+): TaskMonitorState {
+  return { ...current, status: 'running', activity, steps, updatedAt }
 }
 
 function parseHarnessEvent(notification: HarnessNotification): {
@@ -244,14 +278,70 @@ function parseHarnessEvent(notification: HarnessNotification): {
   }
 }
 
-function toolResult(data: Record<string, unknown>): { callId: string; failed: boolean } | undefined {
+function toolResult(data: Record<string, unknown>): { callId: string; failed: boolean; content: unknown } | undefined {
   const message = asRecord(data.message)
   const content = Array.isArray(message?.content) ? message.content : []
   for (const blockValue of content) {
     const block = asRecord(blockValue)
     if (block?.type !== 'tool-result') continue
     const callId = text(block.toolCallId)
-    if (callId) return { callId, failed: block.isError === true }
+    if (callId) return { callId, failed: block.isError === true, content: block.content }
+  }
+  return undefined
+}
+
+const ARTIFACT_TOOLS = new Set([
+  'office.docx.create', 'office.xlsx.create', 'office.pdf.create',
+  'local_files_write_text', 'local_files_copy', 'local_files_move',
+])
+
+function artifactFromToolResult(toolName: string, content: unknown, createdAt: string): TaskArtifact | undefined {
+  if (!ARTIFACT_TOOLS.has(toolName)) return undefined
+  const value = toolResultValue(content)
+  if (!value) return undefined
+  const rootId = text(value.rootId)
+  const rootName = text(value.rootName)
+  const path = text(value.path) ?? text(value.destination)
+  if (!rootId || !rootName || !path || path === '.' || path.startsWith('/') || /^[A-Za-z]:[\\/]/.test(path)) return undefined
+  const name = path.split('/').filter(Boolean).at(-1)
+  if (!name) return undefined
+  const extension = name.split('.').at(-1)?.toLowerCase()
+  const kind = extension === 'xlsx' || extension === 'xls' || extension === 'csv'
+    ? 'spreadsheet'
+    : extension === 'pdf'
+      ? 'pdf'
+      : extension === 'doc' || extension === 'docx'
+        ? 'document'
+        : extension === 'txt' || extension === 'md'
+          ? 'text'
+          : 'file'
+  const sizeBytes = typeof value.size === 'number' && Number.isSafeInteger(value.size) && value.size >= 0
+    ? value.size
+    : undefined
+  return {
+    id: `${rootId}:${path}`,
+    rootId,
+    rootName,
+    path,
+    name,
+    kind,
+    sourceTool: toolName,
+    ...(sizeBytes === undefined ? {} : { sizeBytes }),
+    createdAt,
+  }
+}
+
+function toolResultValue(content: unknown): Record<string, unknown> | undefined {
+  const blocks = Array.isArray(content) ? content : []
+  for (const value of blocks) {
+    const block = asRecord(value)
+    const serialized = text(block?.text)
+    if (!serialized) continue
+    try {
+      const parsed = JSON.parse(serialized)
+      const record = asRecord(parsed)
+      if (record) return record
+    } catch { /* only structured JSON emitted by an allowlisted local tool is accepted */ }
   }
   return undefined
 }
@@ -261,7 +351,7 @@ function upsertStep(current: TaskExecutionStep[], next: TaskExecutionStep): Task
   const updated = index < 0
     ? [...current, next]
     : current.map((item, itemIndex) => itemIndex === index ? { ...item, ...next } : item)
-  return updated.slice(-24)
+  return updated.slice(-100)
 }
 
 function completeStep(

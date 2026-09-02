@@ -124,6 +124,36 @@ impl LocalFileAuthorizations {
             .collect()
     }
 
+    pub fn resolve_artifact(&self, id: &str, value: &str) -> Result<PathBuf, String> {
+        if value.trim().is_empty()
+            || value.len() > 4_096
+            || value.chars().any(|character| character == '\0')
+        {
+            return Err("文件路径无效".to_string());
+        }
+        let relative = Path::new(value);
+        if relative.is_absolute() {
+            return Err("产物路径必须位于已授权目录内".to_string());
+        }
+        let guard = self
+            .directories
+            .lock()
+            .map_err(|_| "本地文件夹授权状态不可用".to_string())?;
+        let directory = guard
+            .iter()
+            .find(|directory| directory.id == id)
+            .ok_or_else(|| format!("本地文件夹授权已失效：{id}"))?;
+        let target = directory
+            .path
+            .join(relative)
+            .canonicalize()
+            .map_err(|_| "文件不存在或已被移动".to_string())?;
+        if !target.starts_with(&directory.path) {
+            return Err("产物路径超出已授权目录".to_string());
+        }
+        Ok(target)
+    }
+
     fn authorize(&self, selected: PathBuf) -> Result<AuthorizedDirectoryView, String> {
         let path = canonical_directory(&selected)?;
         let name = path
@@ -214,6 +244,20 @@ mod tests {
             vec![directory.canonicalize().unwrap().to_string_lossy()]
         );
         assert!(authorizations.resolve(&["missing".to_string()]).is_err());
+
+        let artifact = directory.join("report.md");
+        std::fs::write(&artifact, "report").unwrap();
+        assert_eq!(
+            authorizations
+                .resolve_artifact(&view.id, "report.md")
+                .unwrap(),
+            artifact.canonicalize().unwrap()
+        );
+        assert!(
+            authorizations
+                .resolve_artifact(&view.id, "../outside.md")
+                .is_err()
+        );
 
         std::fs::remove_dir_all(directory).unwrap();
     }

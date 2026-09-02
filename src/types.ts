@@ -102,7 +102,6 @@ export interface TaskMessage {
   role: 'assistant' | 'user'
   text: string
   pending?: boolean
-  executionSteps?: TaskExecutionStep[]
 }
 
 export interface TaskExecutionStep {
@@ -113,6 +112,28 @@ export interface TaskExecutionStep {
   toolName?: string
   startedAt: string
   completedAt?: string
+}
+
+export type TaskArtifactKind = 'document' | 'spreadsheet' | 'pdf' | 'text' | 'file'
+
+export interface TaskArtifact {
+  id: string
+  rootId: string
+  rootName: string
+  path: string
+  name: string
+  kind: TaskArtifactKind
+  sourceTool: string
+  sizeBytes?: number
+  createdAt: string
+}
+
+export interface TaskMonitorState {
+  status: 'idle' | 'running' | 'completed' | 'failed' | 'canceled'
+  activity: string
+  updatedAt: string
+  steps: TaskExecutionStep[]
+  artifacts: TaskArtifact[]
 }
 
 export interface LocalTaskRun {
@@ -128,6 +149,7 @@ export interface LocalTaskRun {
   skillId?: string
   model?: string
   capabilitySnapshot?: CapabilitySnapshot
+  monitor: TaskMonitorState
   messages: TaskMessage[]
 }
 

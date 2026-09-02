@@ -26,9 +26,10 @@ jobs:
             --registry=http://192.168.2.9:4873/
           pnpm config set store-dir /pnpm-store
           pnpm install --frozen-lockfile --registry=http://192.168.2.9:4873/
-      - name: 类型、测试和构建
+      - name: Lint、类型、测试和构建
         run: |
           pnpm verify:version
+          pnpm lint
           pnpm typecheck
           pnpm test
           pnpm build

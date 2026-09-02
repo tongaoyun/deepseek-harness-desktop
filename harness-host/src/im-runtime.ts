@@ -57,6 +57,8 @@ export interface ImConversationSummary {
   messageCount: number
   status: 'RUNNING' | 'COMPLETED' | 'FAILED'
   updatedAt: string
+  boundTaskId?: string
+  boundTaskName?: string
 }
 
 interface DingTalkEvent {
@@ -87,6 +89,14 @@ interface SessionState {
   knownTaskRunIds?: string[]
   taskRunBaselineInitialized?: boolean
   knownTaskDeliveryIds?: string[]
+  taskBindings?: TaskBinding[]
+}
+
+export interface TaskBinding {
+  conversationKey: string
+  taskId: string
+  taskName: string
+  sessionId: string
 }
 
 interface ImDeliveryTarget {
@@ -124,6 +134,7 @@ export class LocalImRuntime {
   private knownTaskRunIds = new Set<string>()
   private taskRunBaselineInitialized = false
   private knownTaskDeliveryIds = new Set<string>()
+  private taskBindings = new Map<string, TaskBinding>()
   private conversationWork = new Map<string, Promise<void>>()
   private persistTail = Promise.resolve()
   private connectionWatch: NodeJS.Timeout | undefined
@@ -211,6 +222,32 @@ export class LocalImRuntime {
     return this.status()
   }
 
+  async bindTask(binding: TaskBinding): Promise<LocalImStatus> {
+    validateTaskBinding(binding)
+    this.taskBindings.set(binding.conversationKey, { ...binding })
+    this.sessions.set(binding.conversationKey, binding.sessionId)
+    const existing = this.conversations.get(binding.conversationKey)
+    if (existing) this.conversations.set(binding.conversationKey, {
+      ...existing, sessionId: binding.sessionId, boundTaskId: binding.taskId,
+      boundTaskName: binding.taskName, updatedAt: new Date().toISOString(),
+    })
+    await this.persistSessions()
+    return this.status()
+  }
+
+  async unbindTask(conversationKey: string): Promise<LocalImStatus> {
+    if (!conversationKey.trim() || conversationKey.length > 1_024) throw new Error('conversationKey is invalid')
+    this.taskBindings.delete(conversationKey)
+    this.sessions.delete(conversationKey)
+    const existing = this.conversations.get(conversationKey)
+    if (existing) {
+      const { boundTaskId: _taskId, boundTaskName: _taskName, ...unbound } = existing
+      this.conversations.set(conversationKey, { ...unbound, sessionId: '', updatedAt: new Date().toISOString() })
+    }
+    await this.persistSessions()
+    return this.status()
+  }
+
   async stop(): Promise<void> {
     if (this.connectionWatch !== undefined) clearInterval(this.connectionWatch)
     if (this.taskRunWatch !== undefined) clearInterval(this.taskRunWatch)
@@ -220,7 +257,7 @@ export class LocalImRuntime {
     const client = this.client
     this.client = undefined
     client?.disconnect()
-    await Promise.allSettled([...this.conversationWork.values()])
+    await Promise.allSettled(this.conversationWork.values())
     await this.persistTail.catch(() => undefined)
   }
 
@@ -319,6 +356,7 @@ export class LocalImRuntime {
     }
 
     const currentSession = this.sessions.get(conversationKey)
+    const binding = this.taskBindings.get(conversationKey)
     this.deliveryTargets.set(conversationKey, {
       conversationKey,
       conversationType: event.conversationType,
@@ -330,6 +368,7 @@ export class LocalImRuntime {
       conversationKey, conversationType: event.conversationType, conversationTitle: event.conversationTitle,
       senderNick: event.senderNick, lastMessage: messageSummary(event).slice(0, 500), lastResponse: existing?.lastResponse ?? '',
       sessionId: currentSession ?? '', messageCount: (existing?.messageCount ?? 0) + 1, status: 'RUNNING', updatedAt: new Date().toISOString(),
+      ...(binding ? { boundTaskId: binding.taskId, boundTaskName: binding.taskName } : {}),
     })
     await this.persistSessions()
     const attachmentContext = await this.loadAttachmentContext(event)
@@ -340,6 +379,7 @@ export class LocalImRuntime {
     const response = result.finalResponse.trim()
     if (!response) throw new Error('Harness returned an empty IM response')
     this.sessions.set(conversationKey, result.sessionId)
+    if (binding) this.taskBindings.set(conversationKey, { ...binding, sessionId: result.sessionId })
     this.conversations.set(conversationKey, {
       ...this.conversations.get(conversationKey)!, sessionId: result.sessionId,
       lastResponse: response.slice(0, 500), status: 'COMPLETED', updatedAt: new Date().toISOString(),
@@ -502,6 +542,7 @@ export class LocalImRuntime {
     this.knownTaskRunIds.clear()
     this.taskRunBaselineInitialized = false
     this.knownTaskDeliveryIds.clear()
+    this.taskBindings.clear()
     if (!this.statePath) return
     try {
       const value = JSON.parse(await readFile(this.statePath, 'utf8')) as SessionState
@@ -527,6 +568,9 @@ export class LocalImRuntime {
       for (const deliveryId of value.knownTaskDeliveryIds ?? []) {
         if (deliveryId) this.knownTaskDeliveryIds.add(deliveryId)
       }
+      for (const binding of value.taskBindings ?? []) {
+        try { validateTaskBinding(binding); this.taskBindings.set(binding.conversationKey, binding) } catch { /* discard invalid state */ }
+      }
       for (const eventId of this.pendingEvents.keys()) this.knownEvents.add(eventId)
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
@@ -546,6 +590,7 @@ export class LocalImRuntime {
       knownTaskRunIds: [...this.knownTaskRunIds].slice(-MAX_KNOWN_EVENTS),
       taskRunBaselineInitialized: this.taskRunBaselineInitialized,
       knownTaskDeliveryIds: [...this.knownTaskDeliveryIds].slice(-(MAX_KNOWN_EVENTS * 5)),
+      taskBindings: [...this.taskBindings.values()],
     })
     this.persistTail = this.persistTail.then(async () => {
       await mkdir(dirname(this.statePath), { recursive: true })
@@ -555,6 +600,13 @@ export class LocalImRuntime {
     })
     await this.persistTail
   }
+}
+
+function validateTaskBinding(value: TaskBinding): void {
+  if (!value.conversationKey?.trim() || value.conversationKey.length > 1_024) throw new Error('conversationKey is invalid')
+  if (!value.taskId?.trim() || value.taskId.length > 200) throw new Error('taskId is invalid')
+  if (!value.taskName?.trim() || value.taskName.length > 200) throw new Error('taskName is invalid')
+  if (!value.sessionId?.trim() || value.sessionId.length > 1_024) throw new Error('sessionId is invalid')
 }
 
 export function parseDingTalkEvent(message: DWClientDownStream): DingTalkEvent {

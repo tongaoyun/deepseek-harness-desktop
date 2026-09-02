@@ -10,6 +10,7 @@ import {
 import type { ExpertKitView } from './expertKits'
 import type { ScheduledTask, ScheduledTaskExecution, ServerWorkflowInput } from './types'
 import { cronPresets, nextCronRuns } from './cronPreview'
+import { parseNaturalSchedule } from './scheduleLanguage'
 
 interface Props {
   endpoint: string
@@ -24,6 +25,8 @@ export function ScheduledTasksPage({ endpoint, employeeId, accessToken, expertKi
   const [tasks, setTasks] = useState<ScheduledTask[]>([])
   const [selection, setSelection] = useState('')
   const [name, setName] = useState('')
+  const [naturalLanguage, setNaturalLanguage] = useState('')
+  const [parseSummary, setParseSummary] = useState('')
   const [cronExpression, setCronExpression] = useState('0 9 * * 1-5')
   const [timeZone, setTimeZone] = useState(() => Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Shanghai')
   const [inputs, setInputs] = useState<Record<string, unknown>>({})
@@ -78,6 +81,22 @@ export function ScheduledTasksPage({ endpoint, employeeId, accessToken, expertKi
     }
   }
 
+  const parseSchedule = () => {
+    setError('')
+    try {
+      const parsed = parseNaturalSchedule(naturalLanguage)
+      const matched = workflows.find(({ workflow }) => naturalLanguage.includes(workflow.name))
+        ?? workflows.find(({ kit }) => naturalLanguage.includes(kit.name))
+      if (matched) setSelection(`${matched.kit.id}:${matched.workflow.id}`)
+      setName(parsed.name)
+      setCronExpression(parsed.cronExpression)
+      setParseSummary(`已理解：${parsed.summary}${matched ? ` · ${matched.kit.name} / ${matched.workflow.name}` : ''}`)
+    } catch (reason) {
+      setParseSummary('')
+      setError(message(reason))
+    }
+  }
+
   const operate = async (task: ScheduledTask, action: 'pause' | 'resume' | 'run' | 'delete') => {
     setBusyId(task.id)
     setError('')
@@ -115,6 +134,9 @@ export function ScheduledTasksPage({ endpoint, employeeId, accessToken, expertKi
     <form className="schedule-form" onSubmit={submit}>
       <div className="schedule-section-title"><CalendarPlus size={17} /><span><strong>新建定时任务</strong><small>任务在公司服务器运行，关闭电脑后仍会继续。</small></span></div>
       {workflows.length === 0 ? <div className="kit-empty">已发布的专家套件尚未声明后台工作流</div> : <>
+        <label>用自然语言描述<textarea maxLength={500} onChange={(event) => setNaturalLanguage(event.target.value)} placeholder="例如：每个工作日上午 9 点生成店铺日报" value={naturalLanguage} /></label>
+        <button className="schedule-parse" disabled={!naturalLanguage.trim()} onClick={parseSchedule} type="button">解析任务</button>
+        {parseSummary && <div className="schedule-parse-result">{parseSummary}</div>}
         <label>专家工作流<select value={selection} onChange={(event) => { setSelection(event.target.value); setInputs({}) }}>
           {workflows.map(({ kit, workflow }) => <option disabled={kit.connectorIssues.length > 0} key={`${kit.id}:${workflow.id}`} value={`${kit.id}:${workflow.id}`}>{kit.name} · {workflow.name}{kit.connectorIssues.length > 0 ? '（连接器未就绪）' : ''}</option>)}
         </select></label>
