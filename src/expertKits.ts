@@ -5,6 +5,7 @@ import type {
   ExpertKitDownload,
   ExpertKitPermissions,
   InstalledExpertKit,
+  ExpertKitManifest,
   KnowledgeBaseEntry,
 } from './types'
 
@@ -59,6 +60,11 @@ export async function developerExpertKitInstallEnabled(): Promise<boolean> {
 export async function installDeveloperExpertKit(): Promise<InstalledExpertKit | null> {
   if (!isTauri()) throw new Error('请在小胤桌面客户端中安装本地验收套件')
   return invoke<InstalledExpertKit | null>('install_developer_expert_kit')
+}
+
+export async function createDeveloperExtension(manifest: ExpertKitManifest, instructions: string): Promise<{ installed: InstalledExpertKit; bytes: number[] }> {
+  if (!isTauri()) throw new Error('请在小胤桌面客户端中创建扩展')
+  return invoke('create_developer_extension', { request: { manifest, instructions } })
 }
 
 export async function createExpertKitTemplate(id: string, name: string): Promise<string | null> {

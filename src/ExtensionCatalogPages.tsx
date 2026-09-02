@@ -40,7 +40,7 @@ export function SkillCatalogPage(props: CommonProps & { all: SkillView[]; visibl
     {!props.loading && props.all.length > 0 && props.visible.length === 0 && <div className="kit-empty">没有匹配的 Skill</div>}
     <div className="kit-grid">{props.visible.map((skill) => {
       const installed = skill.installState === 'installed'
-      const stateLabel = skill.installState === 'retired' ? '已下架' : installed ? '已安装' : skill.installState === 'update' ? '可更新' : '可安装'
+      const stateLabel = skill.localOnly ? '个人创作' : skill.installState === 'retired' ? '已下架' : installed ? '已安装' : skill.installState === 'update' ? '可更新' : '可安装'
       return <article key={skill.id}><div className="kit-card-head"><span className={`kit-state ${skill.installState}`}>{stateLabel}</span><small>v{skill.version}</small></div><h3>{skill.name}</h3><p>{skill.summary}</p><div className="kit-capabilities">{skill.triggers.slice(0, 3).map((trigger) => <small key={trigger}>{trigger}</small>)}</div><div className={`kit-readiness ${skill.readiness}`}>{skill.readiness === 'ready' ? '所需能力已就绪' : '部分依赖暂不可用'}</div>{skill.installState === 'update' && <div className="kit-version-note">已安装 v{skill.installedVersion}</div>}{skill.installState === 'retired' && <div className="kit-version-note">已停止加载，可卸载本地文件</div>}<button className="kit-install" onClick={() => props.onOpen(skill.id)} type="button">{skill.installState === 'retired' ? '查看并卸载' : installed ? '查看详情' : skill.installState === 'update' ? '查看更新' : '查看并安装'}</button></article>
     })}</div>
   </>
