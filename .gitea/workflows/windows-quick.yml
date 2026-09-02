@@ -62,15 +62,15 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
-          $Bundle = Join-Path $env:CARGO_TARGET_DIR "release\bundle\nsis"
+          $Bundle = Join-Path $env:CARGO_TARGET_DIR "debug\bundle\nsis"
           if (Test-Path -LiteralPath $Bundle) { Remove-Item -LiteralPath $Bundle -Recurse -Force }
-          pnpm tauri build --bundles nsis
+          pnpm tauri build --debug --features windows-no-console --bundles nsis --config src-tauri/tauri.quick.windows.conf.json
           if ($LASTEXITCODE -ne 0) { throw "NSIS build failed with exit code $LASTEXITCODE" }
 
       - name: 收集安装包并生成 SHA-256
         shell: powershell
         run: |
-          $Bundle = Join-Path $env:CARGO_TARGET_DIR "release\bundle\nsis"
+          $Bundle = Join-Path $env:CARGO_TARGET_DIR "debug\bundle\nsis"
           $Output = Join-Path (Get-Location).Path "windows-quick-artifacts"
           $ExpectedVersion = (Get-Content "package.json" -Raw | ConvertFrom-Json).version
           $Installers = @(Get-ChildItem $Bundle -Recurse -File -Filter "*.exe" | Where-Object {

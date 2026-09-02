@@ -10,6 +10,9 @@ rust-version = "1.97"
 name = "xiaoyin_desktop_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[features]
+windows-no-console = []
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
