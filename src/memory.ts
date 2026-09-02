@@ -8,6 +8,12 @@ export interface MemoryProfile {
   updatedAt?: string
 }
 
+export interface MemoryRevision {
+  id: string
+  savedAt: string
+  profile: MemoryProfile
+}
+
 export const emptyMemoryProfile: MemoryProfile = {
   enabled: true,
   collaborationStyle: '',
@@ -23,6 +29,11 @@ export async function loadMemoryProfile(employeeId: string): Promise<MemoryProfi
 export async function saveMemoryProfile(employeeId: string, profile: MemoryProfile): Promise<MemoryProfile> {
   if (!isTauri()) throw new Error('记忆设置只能在小胤桌面客户端中保存')
   return cacheMemoryProfile(employeeId, { ...profile, updatedAt: new Date().toISOString() })
+}
+
+export async function loadMemoryHistory(employeeId: string): Promise<MemoryRevision[]> {
+  if (!isTauri()) return []
+  return invoke<MemoryRevision[]>('load_memory_history', { employeeId })
 }
 
 export async function loadSyncedMemoryProfile(

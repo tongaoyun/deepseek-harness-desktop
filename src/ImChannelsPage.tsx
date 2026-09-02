@@ -1,4 +1,4 @@
-import { Bot, Check, MessageCircle, MoreHorizontal, RefreshCw, ShieldCheck, X } from 'lucide-react'
+import { Bot, Check, Clock3, MessageCircle, MoreHorizontal, RefreshCw, ShieldCheck, X } from 'lucide-react'
 import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   allowLocalImPairing,
@@ -167,6 +167,8 @@ export function ImChannelsPage(harness: Props) {
 
     {status?.lastError && <div className="kit-error">钉钉连接异常：{status.lastError}</div>}
     {error && <div className="kit-error">{error}</div>}
+
+    {status?.configured && <section className="im-conversation-center"><header><div><h3>IM 会话</h3><p>每个私聊或群聊使用独立 Harness 会话，历史状态保存在本机。</p></div><span>{status.conversations.length} 个会话</span></header><div>{status.conversations.map((conversation) => <article key={conversation.conversationKey}><span className="conversation-avatar"><MessageCircle size={16} /></span><div><strong>{conversation.conversationType === 'group' ? conversation.conversationTitle || '未命名群' : conversation.senderNick || '钉钉用户'}</strong><p>{conversation.lastMessage}</p><small><Clock3 size={11} />{new Date(conversation.updatedAt).toLocaleString()} · {conversation.messageCount} 条消息</small></div><em className={conversation.status.toLowerCase()}>{conversation.status === 'RUNNING' ? '处理中' : conversation.status === 'FAILED' ? '失败' : '已回复'}</em></article>)}{status.conversations.length === 0 && <div className="kit-empty"><MessageCircle size={17} />暂无 IM 会话，员工发送消息后会显示在这里</div>}</div></section>}
 
     {configuring && <div className="im-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setConfiguring(false) }}><form aria-labelledby="im-config-title" aria-modal="true" className="im-config-modal" onMouseDown={(event) => event.stopPropagation()} onSubmit={(event) => void save(event)} role="dialog">
       <button aria-label="关闭" className="im-modal-close" onClick={() => setConfiguring(false)} type="button"><X size={18} /></button>

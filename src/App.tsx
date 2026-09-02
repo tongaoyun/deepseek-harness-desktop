@@ -25,7 +25,7 @@ import {
   X,
 } from 'lucide-react'
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
-import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, type FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import {
   createExpertKitDownload,
   createSkillDownload,
@@ -82,7 +82,7 @@ import { XiaoyinMascot } from './XiaoyinMascot'
 import { ScheduledTasksPage } from './ScheduledTasksPage'
 import { TaskCenterPage } from './TaskCenterPage'
 import { ImChannelsPage } from './ImChannelsPage'
-import { loadLocalTasks, saveLocalTask } from './taskHistory'
+import { loadTaskHistory, persistTaskHistory } from './taskHistory'
 import { startLocalIm, stopLocalImRuntime } from './localIm'
 import type { LocalTaskRun, TaskExecutionStep, TaskMessage } from './types'
 import { memoryInstruction, rememberInstruction } from './memory'
@@ -95,6 +95,7 @@ import { AuditEventsPage } from './AuditEventsPage'
 import { ConnectorsPage } from './ConnectorsPage'
 import { mergeSkills, type SkillView } from './skills'
 import { allowedExtensionArtifacts } from './extensionPolicy'
+import { cacheAge, loadEnterpriseCatalogCache, saveEnterpriseCatalogCache } from './enterpriseCache'
 import './styles.css'
 
 const extensionNav = [
@@ -103,6 +104,8 @@ const extensionNav = [
   { id: 'connectors', label: '连接器', icon: PlugZap },
   { id: 'knowledge', label: '知识库', icon: BookOpenCheck },
 ]
+
+const RichMessage = lazy(() => import('./RichMessage').then((module) => ({ default: module.RichMessage })))
 
 const starterTasks = [
   { icon: SquareCheckBig, title: '订单异常诊断', detail: '定位履约风险与待办', prompt: '分析昨天的订单异常，并给出处理优先级' },
@@ -140,6 +143,8 @@ export default function App() {
   const [extensionSyncIssues, setExtensionSyncIssues] = useState<ExtensionSyncIssue[]>([])
   const [extensionSyncAttempt, setExtensionSyncAttempt] = useState(0)
   const [extensionSyncedAt, setExtensionSyncedAt] = useState<Date>()
+  const [catalogCacheSavedAt, setCatalogCacheSavedAt] = useState('')
+  const [catalogCacheStale, setCatalogCacheStale] = useState(false)
   const [developerKitMode, setDeveloperKitMode] = useState(false)
   const [developerKitBusy, setDeveloperKitBusy] = useState(false)
   const [installingKitId, setInstallingKitId] = useState('')
@@ -215,7 +220,11 @@ export default function App() {
       setCurrentLocalTaskId('')
       return
     }
-    setLocalTasks(loadLocalTasks(user.userId))
+    let disposed = false
+    void loadTaskHistory(user.userId)
+      .then((tasks) => { if (!disposed) setLocalTasks(tasks) })
+      .catch((reason) => { if (!disposed) setLocalFileError(reason instanceof Error ? reason.message : String(reason)) })
+    return () => { disposed = true }
   }, [authState, user])
 
   useEffect(() => {
@@ -251,6 +260,21 @@ export default function App() {
       syncing = true
       if (showLoading) setExpertKitsLoading(true)
       setExtensionSyncIssues([])
+      if (showLoading) {
+        const cached = await loadEnterpriseCatalogCache(user.userId).catch(() => undefined)
+        if (cached && extensionCacheRef.current.catalog.length === 0) {
+          const age = cacheAge(cached.savedAt)
+          extensionCacheRef.current = { ...extensionCacheRef.current, ...cached }
+          setCatalogCacheSavedAt(cached.savedAt)
+          setCatalogCacheStale(age.stale)
+          setExpertKitCatalog(cached.catalog)
+          setSkills(cached.skills)
+          setConnectors(cached.connectors)
+          setKnowledgeBases(cached.knowledge)
+          setSkillViews(mergeSkills(cached.skills, extensionCacheRef.current.installed, cached.connectors, cached.knowledge))
+          setExpertKits(mergeExpertKits(cached.catalog, extensionCacheRef.current.installed, cached.connectors, cached.knowledge))
+        }
+      }
       const [catalogResult, installedResult, skillsResult, connectorsResult, knowledgeResult] = await Promise.allSettled([
         loadExpertKits(bootstrap.endpoints.expertKits, user.userId, accessToken, controller.signal),
         listInstalledExpertKits(),
@@ -284,6 +308,14 @@ export default function App() {
           : [])
         setExtensionSyncIssues(issues)
         setExtensionSyncedAt(new Date())
+        if ([catalogResult, skillsResult, connectorsResult, knowledgeResult].every((result) => result.status === 'fulfilled')) {
+          const savedAt = new Date().toISOString()
+          setCatalogCacheSavedAt(savedAt)
+          setCatalogCacheStale(false)
+          void saveEnterpriseCatalogCache(user.userId, {
+            savedAt, catalog: cache.catalog, skills: cache.skills, connectors: cache.connectors, knowledge: cache.knowledge,
+          }).catch(() => undefined)
+        }
       } finally {
         syncing = false
         if (showLoading && !controller.signal.aborted) setExpertKitsLoading(false)
@@ -446,9 +478,12 @@ export default function App() {
   const invocationOptions = buildInvocationOptions(expertKits, skillViews)
   const visibleInvocations = filterInvocationOptions(invocationOptions, prompt)
   const activeModel = selectedModel || bootstrap?.models[0] || 'deepseek-v4-flash'
+  const selectedEnterpriseCapability = Boolean(selectedExpertKit || selectedSkill)
+  const selectedCapabilityExecutable = !selectedEnterpriseCapability || !catalogCacheStale
+  const activeLocalTasks = localTasks.filter((task) => !task.archivedAt)
   const visibleLocalTasks = taskQuery.trim()
-    ? localTasks.filter((task) => task.name.toLocaleLowerCase().includes(taskQuery.trim().toLocaleLowerCase()))
-    : localTasks
+    ? activeLocalTasks.filter((task) => task.name.toLocaleLowerCase().includes(taskQuery.trim().toLocaleLowerCase()))
+    : activeLocalTasks
   const focusComposer = () => window.requestAnimationFrame(() => composerRef.current?.focus())
   const newTask = () => {
     setPage('chat')
@@ -468,7 +503,10 @@ export default function App() {
   }
   const persistLocalTask = (task: LocalTaskRun) => {
     if (!user) return
-    setLocalTasks(saveLocalTask(user.userId, task))
+    setLocalTasks((current) => [task, ...current.filter((item) => item.id !== task.id)]
+      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)).slice(0, 200))
+    void persistTaskHistory(user.userId, task)
+      .catch((reason) => setLocalFileError(reason instanceof Error ? reason.message : String(reason)))
   }
   const openLocalTask = (task: LocalTaskRun) => {
     setPage('chat')
@@ -488,6 +526,10 @@ export default function App() {
     setLocalFileError('')
     void Promise.all([clearLocalDirectories(), shutdownHarness()])
     focusComposer()
+  }
+  const archiveLocalTask = (task: LocalTaskRun, archived: boolean) => {
+    persistLocalTask({ ...task, archivedAt: archived ? new Date().toISOString() : undefined, updatedAt: new Date().toISOString() })
+    if (archived && currentLocalTaskId === task.id) newTask()
   }
   const addLocalDirectory = async () => {
     setLocalFileError('')
@@ -528,10 +570,14 @@ export default function App() {
   const submit = async (event: FormEvent) => {
     event.preventDefault()
     const input = prompt.trim()
-    if (!input || !bootstrap || runtimeStatus !== 'ready' || harnessRunning) return
+    if (!input || !bootstrap || runtimeStatus !== 'ready' || harnessRunning || !selectedCapabilityExecutable) return
     const remembered = memoryInstruction(input)
     if (remembered) {
       setPrompt('')
+      if (!window.confirm(`是否将以下内容保存为长期记忆？\n\n${remembered}`)) {
+        setMessages((current) => [...current, { role: 'user', text: input }, { role: 'assistant', text: '未保存到长期记忆。' }])
+        return
+      }
       try {
         await rememberInstruction(user!.userId, bootstrap.endpoints.memoryProfile ?? '/api/v1/memory-profile', accessToken, remembered)
         const rememberedMessages: TaskMessage[] = [{ role: 'user', text: input }, { role: 'assistant', text: `已记住：${remembered}` }]
@@ -928,7 +974,7 @@ export default function App() {
             </div>}
             {messages.length > 0 && <div className="message-list" ref={messageListRef}>{messages.map((message, index) => {
               const retryable = message.role === 'assistant' && index === messages.length - 1 && !message.pending && (message.text.startsWith('执行失败：') || message.text.startsWith('任务已取消'))
-              return <article className={`message ${message.role}${message.pending ? ' pending' : ''}`} key={`${message.role}-${index}`}><span className="message-avatar">{message.role === 'user' ? '你' : <XiaoyinMascot size={29} variant="avatar" />}</span><div><small>{message.role === 'user' ? '你' : '小胤'}</small><p>{message.pending && harnessActivity ? harnessActivity : message.text}</p>{message.role === 'assistant' && <ExecutionTrace steps={message.pending ? harnessSteps : message.executionSteps ?? []} />}{retryable && <button className="retry-task" onClick={prepareRetry} type="button">修改后重新执行</button>}</div></article>
+              return <article className={`message ${message.role}${message.pending ? ' pending' : ''}`} key={`${message.role}-${index}`}><span className="message-avatar">{message.role === 'user' ? '你' : <XiaoyinMascot size={29} variant="avatar" />}</span><div><small>{message.role === 'user' ? '你' : '小胤'}</small><Suspense fallback={<p>{message.pending && harnessActivity ? harnessActivity : message.text}</p>}><RichMessage assistant={message.role === 'assistant'} onRegenerate={message.role === 'assistant' && !message.pending ? prepareRetry : undefined} text={message.pending && harnessActivity ? harnessActivity : message.text} /></Suspense>{message.role === 'assistant' && <ExecutionTrace steps={message.pending ? harnessSteps : message.executionSteps ?? []} />}{retryable && <button className="retry-task" onClick={prepareRetry} type="button">修改后重新执行</button>}</div></article>
             })}</div>}
             {harnessHealth === 'degraded' && <div className="runtime-recovery"><CircleStop size={17} /><span><strong>本地 Agent 暂不可用</strong><small>{harnessHealthDetail}</small></span><button onClick={() => setHarnessHealthAttempt((value) => value + 1)} type="button">重新检测</button></div>}
             <form className="composer" onSubmit={submit}>
@@ -942,7 +988,7 @@ export default function App() {
                 </div>
                 {harnessRunning
                   ? <button aria-label="取消当前任务" className="cancel-button" onClick={() => void cancelCurrentTask()} title="取消当前任务" type="button"><CircleStop size={17} /></button>
-                  : <button aria-label="发送" className="send-button" disabled={!prompt.trim() || !bootstrap || runtimeStatus !== 'ready' || harnessHealth === 'degraded'} title={runtimeStatus !== 'ready' ? '企业服务未连接' : harnessHealth === 'degraded' ? '请先恢复本地 Agent' : '发送'} type="submit"><Send size={17} /></button>}
+                  : <button aria-label="发送" className="send-button" disabled={!prompt.trim() || !bootstrap || runtimeStatus !== 'ready' || harnessHealth === 'degraded' || !selectedCapabilityExecutable} title={runtimeStatus !== 'ready' ? '企业服务未连接' : harnessHealth === 'degraded' ? '请先恢复本地 Agent' : !selectedCapabilityExecutable ? '企业目录缓存已过期，请先重新同步' : '发送'} type="submit"><Send size={17} /></button>}
               </div>
               {visibleInvocations.length > 0 && <div className="slash-menu"><small>快捷调用</small>{visibleInvocations.map((option) => <button key={`${option.kind}-${option.profileId}-${option.id}`} onClick={() => selectInvocation(option)} type="button"><span><strong>{option.label}</strong><small>{option.description}</small></span><em>{option.profileName}</em></button>)}</div>}
             </form>
@@ -983,6 +1029,7 @@ export default function App() {
                       ? '集中查看桌面 Agent 和工具的去敏执行记录，便于追溯成功、失败与授权结果。'
                     : '这里将由控制中心下发公司自己的能力与权限配置。'}</p>
             {extensionSyncIssues.length > 0 && <div className="sync-diagnostics"><div><CircleStop size={17} /><span><strong>部分企业能力同步失败，已保留上次成功数据</strong><small>{extensionSyncedAt ? `最近尝试 ${extensionSyncedAt.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}` : '刚刚尝试同步'}</small></span><button onClick={() => setExtensionSyncAttempt((value) => value + 1)} type="button">重新同步</button></div><details><summary>查看 {extensionSyncIssues.length} 项失败详情</summary>{extensionSyncIssues.map((issue) => <p key={issue.key}><strong>{issue.label}</strong><span>{issue.message}</span></p>)}</details></div>}
+            {catalogCacheSavedAt && extensionSyncIssues.length > 0 && <div className={`catalog-cache-state ${catalogCacheStale ? 'stale' : ''}`}><ShieldCheck size={15} /><span>{catalogCacheStale ? '本机企业目录缓存已超过 7 天，浏览仍可用，但相关能力暂停执行。' : `当前显示本机缓存 · ${new Date(catalogCacheSavedAt).toLocaleString('zh-CN', { hour12: false })}`}</span></div>}
             {page === 'settings' && bootstrap && user && <DesktopSettingsPage
               accessToken={accessToken}
               authorizedDirectoryCount={localDirectories.length}
@@ -1089,6 +1136,7 @@ export default function App() {
               endpoint={bootstrap.endpoints.taskRuns}
               localTasks={localTasks}
               onOpenLocalTask={openLocalTask}
+              onArchiveLocalTask={archiveLocalTask}
             />}
             {page === 'im' && bootstrap && user && <ImChannelsPage
               accessToken={accessToken}

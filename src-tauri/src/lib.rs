@@ -15,7 +15,9 @@ mod device_capabilities;
 mod expert_kits;
 mod harness;
 mod im;
+mod local_artifacts;
 mod local_files;
+mod local_store;
 mod memory;
 
 const ERP_LOGIN_URL: &str = "http://www.instudio.me:6206/eshop/manager/login.jsp";
@@ -580,10 +582,16 @@ pub fn run() {
             expert_kits::install_developer_expert_kit,
             expert_kits::remove_developer_expert_kit,
             expert_kits::remove_catalog_extension,
+            local_artifacts::open_local_artifact,
             local_files::authorize_local_directory,
             local_files::authorize_dropped_paths,
             local_files::revoke_local_directory,
             local_files::clear_local_directories,
+            local_store::load_local_tasks,
+            local_store::save_local_task,
+            local_store::delete_local_task,
+            local_store::load_enterprise_catalog_cache,
+            local_store::save_enterprise_catalog_cache,
             harness::run_harness,
             harness::diagnose_connectors,
             harness::probe_harness_host,
@@ -598,6 +606,7 @@ pub fn run() {
             im::stop_local_im_runtime,
             im::remove_local_dingtalk,
             memory::load_memory_profile,
+            memory::load_memory_history,
             memory::save_memory_profile
         ])
         .run(tauri::generate_context!())

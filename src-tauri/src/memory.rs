@@ -6,7 +6,7 @@ use tauri::Manager;
 const MAX_STYLE_CHARS: usize = 8_000;
 const MAX_MANUAL_CHARS: usize = 16_000;
 
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct MemoryProfile {
     enabled: bool,
@@ -14,6 +14,14 @@ pub struct MemoryProfile {
     work_manual: String,
     #[serde(default)]
     updated_at: String,
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MemoryRevision {
+    id: String,
+    saved_at: String,
+    profile: MemoryProfile,
 }
 
 impl Default for MemoryProfile {
@@ -43,6 +51,7 @@ pub fn save_memory_profile(
 ) -> Result<MemoryProfile, String> {
     validate_employee_id(&employee_id)?;
     validate(&profile)?;
+    let previous = load(&app, &employee_id).ok();
     let path = profile_path(&app, &employee_id)?;
     let parent = path
         .parent()
@@ -64,8 +73,20 @@ pub fn save_memory_profile(
     file.write_all(&bytes)
         .and_then(|_| file.sync_all())
         .map_err(|error| format!("无法保存记忆配置：{error}"))?;
-    fs::rename(temporary, path).map_err(|error| format!("无法提交记忆配置：{error}"))?;
+    replace_file(&temporary, &path).map_err(|error| format!("无法提交记忆配置：{error}"))?;
+    if previous.as_ref() != Some(&profile) {
+        append_history(&app, &employee_id, &profile)?;
+    }
     Ok(profile)
+}
+
+#[tauri::command]
+pub fn load_memory_history(
+    app: tauri::AppHandle,
+    employee_id: String,
+) -> Result<Vec<MemoryRevision>, String> {
+    validate_employee_id(&employee_id)?;
+    load_history(&app, &employee_id)
 }
 
 pub fn context(app: &tauri::AppHandle, employee_id: &str) -> Result<String, String> {
@@ -107,6 +128,72 @@ fn profile_path(app: &tauri::AppHandle, employee_id: &str) -> Result<PathBuf, St
         .app_data_dir()
         .map(|root| root.join("memory").join(account).join("profile.json"))
         .map_err(|error| format!("无法确定记忆配置目录：{error}"))
+}
+
+fn history_path(app: &tauri::AppHandle, employee_id: &str) -> Result<PathBuf, String> {
+    profile_path(app, employee_id).map(|path| path.with_file_name("history.json"))
+}
+
+fn append_history(
+    app: &tauri::AppHandle,
+    employee_id: &str,
+    profile: &MemoryProfile,
+) -> Result<(), String> {
+    let mut history = load_history(app, employee_id)?;
+    history.insert(
+        0,
+        MemoryRevision {
+            id: format!("memory-{}", timestamp_millis()),
+            saved_at: profile.updated_at.clone(),
+            profile: profile.clone(),
+        },
+    );
+    history.truncate(50);
+    let path = history_path(app, employee_id)?;
+    let temporary = path.with_extension("json.tmp");
+    let bytes = serde_json::to_vec_pretty(&history)
+        .map_err(|error| format!("无法生成记忆历史：{error}"))?;
+    let mut options = fs::OpenOptions::new();
+    options.create(true).truncate(true).write(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options
+        .open(&temporary)
+        .map_err(|error| format!("无法保存记忆历史：{error}"))?;
+    file.write_all(&bytes)
+        .and_then(|_| file.sync_all())
+        .map_err(|error| format!("无法保存记忆历史：{error}"))?;
+    replace_file(&temporary, &path).map_err(|error| format!("无法提交记忆历史：{error}"))
+}
+
+fn load_history(app: &tauri::AppHandle, employee_id: &str) -> Result<Vec<MemoryRevision>, String> {
+    let path = history_path(app, employee_id)?;
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    let bytes = fs::read(path).map_err(|error| format!("无法读取记忆历史：{error}"))?;
+    let mut history: Vec<MemoryRevision> =
+        serde_json::from_slice(&bytes).map_err(|error| format!("记忆历史无效：{error}"))?;
+    history.truncate(50);
+    Ok(history)
+}
+
+fn timestamp_millis() -> u128 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_millis())
+        .unwrap_or_default()
+}
+
+fn replace_file(temporary: &std::path::Path, destination: &std::path::Path) -> std::io::Result<()> {
+    #[cfg(windows)]
+    if destination.exists() {
+        fs::remove_file(destination)?;
+    }
+    fs::rename(temporary, destination)
 }
 
 fn validate_employee_id(value: &str) -> Result<(), String> {

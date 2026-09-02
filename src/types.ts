@@ -121,6 +121,7 @@ export interface LocalTaskRun {
   status: 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELED'
   createdAt: string
   updatedAt: string
+  archivedAt?: string
   sessionId?: string
   expertKitId?: string
   skillId?: string

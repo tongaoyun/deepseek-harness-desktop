@@ -78,6 +78,21 @@ pub struct PairingRequest {
     requested_at: String,
 }
 
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImConversationSummary {
+    conversation_key: String,
+    conversation_type: String,
+    conversation_title: String,
+    sender_nick: String,
+    last_message: String,
+    last_response: String,
+    session_id: String,
+    message_count: u64,
+    status: String,
+    updated_at: String,
+}
+
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LocalImStatus {
@@ -90,6 +105,7 @@ pub struct LocalImStatus {
     secret_configured: bool,
     access_policy: AccessPolicy,
     pending_pairings: Vec<PairingRequest>,
+    conversations: Vec<ImConversationSummary>,
     last_error: Option<String>,
 }
 
@@ -331,6 +347,8 @@ fn parse_runtime_status(
         access_policy: AccessPolicy,
         #[serde(default)]
         pending_pairings: Vec<PairingRequest>,
+        #[serde(default)]
+        conversations: Vec<ImConversationSummary>,
         last_error: Option<String>,
     }
     let status: RuntimeStatus =
@@ -345,6 +363,7 @@ fn parse_runtime_status(
         secret_configured,
         access_policy: status.access_policy,
         pending_pairings: status.pending_pairings,
+        conversations: status.conversations,
         last_error: status.last_error,
     })
 }
@@ -367,6 +386,7 @@ fn stopped_status(
             .map(|value| value.access_policy.clone())
             .unwrap_or(AccessPolicy::Pairing),
         pending_pairings: Vec::new(),
+        conversations: Vec::new(),
         last_error: None,
     }
 }
@@ -416,6 +436,10 @@ fn save_configuration(
     file.write_all(&bytes)
         .and_then(|_| file.sync_all())
         .map_err(|error| format!("无法保存本地钉钉配置：{error}"))?;
+    #[cfg(windows)]
+    if path.exists() {
+        fs::remove_file(&path).map_err(|error| format!("无法替换本地钉钉配置：{error}"))?;
+    }
     fs::rename(temporary, path).map_err(|error| format!("无法提交本地钉钉配置：{error}"))
 }
 

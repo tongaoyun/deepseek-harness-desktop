@@ -37,7 +37,21 @@ export interface LocalImStatus {
   clientId: string
   accessPolicy: ImAccessPolicy
   pendingPairings: PairingRequest[]
+  conversations: ImConversationSummary[]
   lastError?: string
+}
+
+export interface ImConversationSummary {
+  conversationKey: string
+  conversationType: 'group' | 'private'
+  conversationTitle: string
+  senderNick: string
+  lastMessage: string
+  lastResponse: string
+  sessionId: string
+  messageCount: number
+  status: 'RUNNING' | 'COMPLETED' | 'FAILED'
+  updatedAt: string
 }
 
 interface DingTalkEvent {
@@ -54,6 +68,7 @@ interface DingTalkEvent {
 
 interface SessionState {
   sessions: Record<string, string>
+  conversations?: ImConversationSummary[]
 }
 
 export class LocalImRuntime {
@@ -65,6 +80,7 @@ export class LocalImRuntime {
   private pairedConversations = new Set<string>()
   private knownEvents = new Set<string>()
   private sessions = new Map<string, string>()
+  private conversations = new Map<string, ImConversationSummary>()
   private work = Promise.resolve()
   private connectionWatch: NodeJS.Timeout | undefined
 
@@ -118,7 +134,7 @@ export class LocalImRuntime {
     if (configuration === undefined) {
       return {
         provider: 'DINGTALK', configured: false, connected: false,
-        state: 'DISABLED', clientId: '', accessPolicy: 'pairing', pendingPairings: [],
+        state: 'DISABLED', clientId: '', accessPolicy: 'pairing', pendingPairings: [], conversations: [],
       }
     }
     return {
@@ -129,6 +145,7 @@ export class LocalImRuntime {
       clientId: configuration.clientId,
       accessPolicy: configuration.accessPolicy,
       pendingPairings: [...this.pendingPairings.values()],
+      conversations: [...this.conversations.values()].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)).slice(0, 100),
       ...(this.lastError === undefined ? {} : { lastError: this.lastError }),
     }
   }
@@ -199,6 +216,13 @@ export class LocalImRuntime {
     }
 
     const currentSession = this.sessions.get(conversationKey)
+    const existing = this.conversations.get(conversationKey)
+    this.conversations.set(conversationKey, {
+      conversationKey, conversationType: event.conversationType, conversationTitle: event.conversationTitle,
+      senderNick: event.senderNick, lastMessage: event.text.slice(0, 500), lastResponse: existing?.lastResponse ?? '',
+      sessionId: currentSession ?? '', messageCount: (existing?.messageCount ?? 0) + 1, status: 'RUNNING', updatedAt: new Date().toISOString(),
+    })
+    await this.persistSessions()
     const result = await this.harness.run({
       prompt: buildPrompt(event),
       ...(currentSession === undefined ? {} : { sessionId: currentSession }),
@@ -206,6 +230,10 @@ export class LocalImRuntime {
     const response = result.finalResponse.trim()
     if (!response) throw new Error('Harness returned an empty IM response')
     this.sessions.set(conversationKey, result.sessionId)
+    this.conversations.set(conversationKey, {
+      ...this.conversations.get(conversationKey)!, sessionId: result.sessionId,
+      lastResponse: response.slice(0, 500), status: 'COMPLETED', updatedAt: new Date().toISOString(),
+    })
     await this.persistSessions()
     await this.reply(event, response.slice(0, MAX_REPLY_CHARS))
   }
@@ -239,11 +267,15 @@ export class LocalImRuntime {
 
   private async loadSessions(): Promise<void> {
     this.sessions.clear()
+    this.conversations.clear()
     if (!this.statePath) return
     try {
       const value = JSON.parse(await readFile(this.statePath, 'utf8')) as SessionState
       for (const [key, sessionId] of Object.entries(value.sessions ?? {})) {
         if (key && typeof sessionId === 'string' && sessionId) this.sessions.set(key, sessionId)
+      }
+      for (const conversation of value.conversations ?? []) {
+        if (conversation.conversationKey && conversation.sessionId) this.conversations.set(conversation.conversationKey, conversation)
       }
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
@@ -256,7 +288,7 @@ export class LocalImRuntime {
     if (!this.statePath) return
     await mkdir(dirname(this.statePath), { recursive: true })
     const temporary = `${this.statePath}.tmp`
-    await writeFile(temporary, JSON.stringify({ sessions: Object.fromEntries(this.sessions) }), { mode: 0o600 })
+    await writeFile(temporary, JSON.stringify({ sessions: Object.fromEntries(this.sessions), conversations: [...this.conversations.values()] }), { mode: 0o600 })
     await rename(temporary, this.statePath)
   }
 }

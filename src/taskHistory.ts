@@ -1,6 +1,44 @@
+import { invoke, isTauri } from '@tauri-apps/api/core'
 import type { LocalTaskRun } from './types'
 
-const LIMIT = 100
+const LIMIT = 200
+
+interface LocalTaskPage {
+  items: LocalTaskRun[]
+  total: number
+  offset: number
+  limit: number
+}
+
+export async function loadTaskHistory(employeeId: string): Promise<LocalTaskRun[]> {
+  if (!isTauri()) return loadLocalTasks(employeeId)
+  const localStorageTasks = loadLocalTasks(employeeId)
+  const page = await invoke<LocalTaskPage>('load_local_tasks', {
+    employeeId,
+    query: { query: '', offset: 0, limit: LIMIT },
+  })
+  if (page.items.length > 0 || localStorageTasks.length === 0) return validTasks(page.items)
+  await Promise.all(localStorageTasks.map((task) => invoke('save_local_task', { employeeId, task })))
+  window.localStorage.removeItem(storageKey(employeeId))
+  return localStorageTasks
+}
+
+export async function persistTaskHistory(employeeId: string, task: LocalTaskRun): Promise<void> {
+  if (!isTauri()) {
+    saveLocalTask(employeeId, task)
+    return
+  }
+  await invoke('save_local_task', { employeeId, task })
+}
+
+export async function removeTaskHistory(employeeId: string, id: string): Promise<void> {
+  if (!isTauri()) {
+    const values = loadLocalTasks(employeeId).filter((task) => task.id !== id)
+    window.localStorage.setItem(storageKey(employeeId), JSON.stringify(values))
+    return
+  }
+  await invoke('delete_local_task', { employeeId, id })
+}
 
 export function loadLocalTasks(employeeId: string, storage: Storage = window.localStorage): LocalTaskRun[] {
   try {
@@ -10,6 +48,10 @@ export function loadLocalTasks(employeeId: string, storage: Storage = window.loc
   } catch {
     return []
   }
+}
+
+function validTasks(values: unknown[]): LocalTaskRun[] {
+  return values.filter(isLocalTask).sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)).slice(0, LIMIT)
 }
 
 export function saveLocalTask(employeeId: string, task: LocalTaskRun,

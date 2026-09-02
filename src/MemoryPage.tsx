@@ -1,6 +1,6 @@
-import { BrainCircuit, Save, ShieldCheck } from 'lucide-react'
+import { BrainCircuit, Download, History, Save, ShieldCheck, Upload } from 'lucide-react'
 import { type FormEvent, useEffect, useState } from 'react'
-import { emptyMemoryProfile, loadSyncedMemoryProfile, saveSyncedMemoryProfile, type MemoryProfile } from './memory'
+import { emptyMemoryProfile, loadMemoryHistory, loadSyncedMemoryProfile, saveSyncedMemoryProfile, type MemoryProfile, type MemoryRevision } from './memory'
 
 interface Props {
   employeeId: string
@@ -14,10 +14,11 @@ export function MemoryPage({ employeeId, endpoint, accessToken, onSaved }: Props
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
+  const [history, setHistory] = useState<MemoryRevision[]>([])
 
   useEffect(() => {
-    void loadSyncedMemoryProfile(employeeId, endpoint, accessToken)
-      .then(setProfile)
+    void Promise.all([loadSyncedMemoryProfile(employeeId, endpoint, accessToken), loadMemoryHistory(employeeId)])
+      .then(([value, revisions]) => { setProfile(value); setHistory(revisions) })
       .catch((error) => setMessage(error instanceof Error ? error.message : String(error)))
       .finally(() => setLoading(false))
   }, [employeeId, endpoint, accessToken])
@@ -29,12 +30,36 @@ export function MemoryPage({ employeeId, endpoint, accessToken, onSaved }: Props
     try {
       const saved = await saveSyncedMemoryProfile(employeeId, endpoint, accessToken, profile)
       setProfile(saved)
+      setHistory(await loadMemoryHistory(employeeId))
       await onSaved(saved)
       setMessage('已保存并同步，后续桌面对话、本机 IM 和其他电脑都会使用这份工作手册。')
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error))
     } finally {
       setSaving(false)
+    }
+  }
+
+  const exportMemory = () => {
+    const payload = JSON.stringify({ schemaVersion: '1', exportedAt: new Date().toISOString(), profile }, null, 2)
+    const url = URL.createObjectURL(new Blob([payload], { type: 'application/json' }))
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = `xiaoyin-memory-${new Date().toISOString().slice(0, 10)}.json`
+    anchor.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const importMemory = async (file?: File) => {
+    if (!file) return
+    try {
+      const value = JSON.parse(await file.text()) as { profile?: MemoryProfile }
+      const imported = value.profile
+      if (!imported || typeof imported.collaborationStyle !== 'string' || typeof imported.workManual !== 'string' || typeof imported.enabled !== 'boolean') throw new Error('记忆文件格式无效')
+      setProfile({ ...imported, updatedAt: profile.updatedAt })
+      setMessage('已读取记忆文件，请检查内容后点击“保存设置”生效。')
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error))
     }
   }
 
@@ -54,7 +79,8 @@ export function MemoryPage({ employeeId, endpoint, accessToken, onSaved }: Props
         <em>{profile.workManual.length} / 16000</em>
       </label>
     </div>
-    <div className="memory-footer"><span><ShieldCheck size={14} />本机保留副本并同步到公司控制中心；输入“记住：规则”可快速沉淀。</span><button disabled={loading || saving} type="submit"><Save size={14} />{saving ? '正在保存…' : '保存设置'}</button></div>
+    <section className="memory-history"><header><div><History size={16} /><span><strong>版本与迁移</strong><small>{profile.updatedAt ? `当前版本 ${new Date(profile.updatedAt).toLocaleString()}` : '尚未保存'}</small></span></div><div><label><Upload size={13} />导入<input accept="application/json,.json" onChange={(event) => void importMemory(event.target.files?.[0])} type="file" /></label><button onClick={exportMemory} type="button"><Download size={13} />导出</button></div></header>{history.slice(0, 5).map((revision) => <article key={revision.id}><span><strong>{new Date(revision.savedAt).toLocaleString()}</strong><small>{revision.profile.workManual.slice(0, 80) || revision.profile.collaborationStyle.slice(0, 80) || '空白记忆'}</small></span><button onClick={() => { setProfile(revision.profile); setMessage('已载入历史版本，点击“保存设置”后生效。') }} type="button">恢复</button></article>)}{history.length === 0 && <p>保存后会在本机保留最近 50 个版本。</p>}</section>
+    <div className="memory-footer"><span><ShieldCheck size={14} />本机保留版本并同步到公司控制中心；“记住：规则”会先征求确认。</span><button disabled={loading || saving} type="submit"><Save size={14} />{saving ? '正在保存…' : '保存设置'}</button></div>
     {message && <div className="memory-message">{message}</div>}
   </form>
 }
