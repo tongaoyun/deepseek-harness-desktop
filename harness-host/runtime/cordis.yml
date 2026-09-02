@@ -59,30 +59,35 @@
   config:
     roots: !!js JSON.parse(process.env.XIAOYIN_LOCAL_FILE_ROOTS ?? '[]')
     enabled: !!js process.env.XIAOYIN_ALLOW_LOCAL_FILES !== 'false'
+    requireWriteApproval: !!js process.env.XIAOYIN_APPROVE_LOCAL_FILE_WRITES !== 'false'
 
 - id: local-documents
   name: '../dist/local-documents-plugin.js'
   config:
     roots: !!js JSON.parse(process.env.XIAOYIN_LOCAL_FILE_ROOTS ?? '[]')
     enabled: !!js process.env.XIAOYIN_ALLOW_LOCAL_FILES !== 'false'
+    requireWriteApproval: !!js process.env.XIAOYIN_APPROVE_LOCAL_FILE_WRITES !== 'false'
 
 - id: local-shell
   name: '../dist/local-shell-plugin.js'
   config:
     roots: !!js JSON.parse(process.env.XIAOYIN_LOCAL_FILE_ROOTS ?? '[]')
     enabled: !!js process.env.XIAOYIN_ALLOW_SHELL === 'true'
+    requireApproval: !!js process.env.XIAOYIN_APPROVE_SHELL !== 'false'
 
 - id: local-computer-use
   name: '../dist/local-computer-use-plugin.js'
   config:
     enabled: !!js process.env.XIAOYIN_ALLOW_COMPUTER_USE === 'true'
     tools: !!js JSON.parse(process.env.XIAOYIN_COMPUTER_USE_TOOLS ?? '[]')
+    requireApproval: !!js process.env.XIAOYIN_APPROVE_COMPUTER_USE !== 'false'
 
 - id: local-browser
   name: '../dist/local-browser-plugin.js'
   config:
-    enabled: true
+    enabled: !!js process.env.XIAOYIN_ALLOW_BROWSER === 'true'
     executable: !!js process.env.XIAOYIN_BROWSER_EXECUTABLE ?? ''
+    debugUrl: !!js process.env.XIAOYIN_BROWSER_DEBUG_URL ?? ''
 
 - id: sessions
   name: '@deepseek-ai/dsh-session-persistence-jsonl'

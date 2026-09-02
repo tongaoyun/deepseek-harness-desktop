@@ -14,6 +14,8 @@ pub struct ConnectorDefinition {
     pub(crate) auth_mode: String,
     #[serde(default)]
     pub(crate) tool_names: Vec<String>,
+    #[serde(default)]
+    pub(crate) enabled: bool,
 }
 
 #[derive(Clone, Eq, PartialEq, Serialize)]
@@ -28,6 +30,7 @@ pub struct RuntimeConnector {
     pub(crate) allowed_tools: Vec<String>,
     pub(crate) required_tools: Vec<String>,
     pub(crate) allow_write: bool,
+    pub(crate) require_write_approval: bool,
     pub(crate) required: bool,
 }
 
@@ -48,6 +51,7 @@ pub(crate) fn diagnostic_connectors(
             allowed_tools: connector.tool_names.clone(),
             required_tools: connector.tool_names.clone(),
             allow_write: true,
+            require_write_approval: false,
             required: true,
         })
         .collect())
@@ -58,6 +62,12 @@ pub(crate) fn runtime_connectors(
     profile: &expert_kits::ExpertKitHarnessProfile,
 ) -> Result<Vec<RuntimeConnector>, String> {
     validate_connector_catalog(catalog)?;
+    if !profile.allow_connector_read {
+        if !profile.connector_refs.is_empty() || !profile.required_connector_tools.is_empty() {
+            return Err("专家套件禁止读取连接器，但同时声明了连接器依赖".to_string());
+        }
+        return Ok(Vec::new());
+    }
     let by_id = catalog
         .iter()
         .map(|connector| (connector.id.as_str(), connector))
@@ -69,10 +79,15 @@ pub(crate) fn runtime_connectors(
         if connector.status != "ready" {
             return Err(format!("扩展依赖的连接器尚未就绪：{}", connector.name));
         }
+        if !connector.enabled {
+            return Err(format!("请先为当前员工启用连接器：{}", connector.name));
+        }
     }
     let selected = catalog
         .iter()
-        .filter(|connector| connector.transport != "desktop" && connector.status == "ready")
+        .filter(|connector| {
+            connector.enabled && connector.transport != "desktop" && connector.status == "ready"
+        })
         .collect::<Vec<_>>();
     let connector_tools = selected
         .iter()
@@ -80,7 +95,9 @@ pub(crate) fn runtime_connectors(
         .collect::<HashMap<_, _>>();
     let desktop_tools = catalog
         .iter()
-        .filter(|connector| connector.transport == "desktop" && connector.status == "ready")
+        .filter(|connector| {
+            connector.enabled && connector.transport == "desktop" && connector.status == "ready"
+        })
         .flat_map(|connector| connector.tool_names.iter().cloned())
         .collect::<HashSet<_>>();
     let mut claimed_tools = HashMap::<String, String>::new();
@@ -135,6 +152,7 @@ pub(crate) fn runtime_connectors(
                 .cloned()
                 .collect(),
             allow_write: profile.allow_connector_write,
+            require_write_approval: profile.approve_connector_write,
             required: profile.connector_refs.contains(&connector.id),
         })
         .collect())
@@ -188,6 +206,15 @@ pub(crate) fn validate_connector_catalog(connectors: &[ConnectorDefinition]) -> 
         }
     }
     Ok(())
+}
+
+pub(crate) fn desktop_connector_enabled(catalog: &[ConnectorDefinition], id: &str) -> bool {
+    catalog.iter().any(|connector| {
+        connector.id == id
+            && connector.enabled
+            && connector.status == "ready"
+            && connector.transport == "desktop"
+    })
 }
 
 pub(crate) fn validate_http_url(name: &str, value: &str) -> Result<(), String> {

@@ -6,6 +6,7 @@ import ExcelJS from 'exceljs'
 import mammoth from 'mammoth'
 import { PDFParse } from 'pdf-parse'
 import PDFDocument from 'pdfkit'
+import { unzipSync } from 'fflate'
 import { access, readFile, stat, writeFile } from 'node:fs/promises'
 import { extname } from 'node:path'
 import { LocalFileBridge, discoverAuthorizedRoots } from './local-files-plugin.js'
@@ -24,8 +25,11 @@ const CREATE_TOOLS = new Set([
   'office.docx.create', 'office.xlsx.create', 'office.pdf.create',
 ])
 
-export interface Config { roots?: string[]; enabled?: boolean }
-export const Config = z.object({ roots: z.array(z.string()).default([]), enabled: z.boolean().default(true) })
+export interface Config { roots?: string[]; enabled?: boolean; requireWriteApproval?: boolean }
+export const Config = z.object({
+  roots: z.array(z.string()).default([]), enabled: z.boolean().default(true),
+  requireWriteApproval: z.boolean().default(true),
+})
 
 export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   if (config.enabled === false) return
@@ -39,6 +43,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     ctx.tools.register(createPdfTool(bridge)),
   ]
   const stopApprovalPolicy = ctx.on('tools/pre-execute', (exec, next) => {
+    if (config.requireWriteApproval === false) return next()
     if (!CREATE_TOOLS.has(exec.name)) return next()
     const input = record(exec.arguments)
     const path = typeof input.path === 'string' ? input.path : '未指定路径'
@@ -51,8 +56,8 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
 }
 
 function readDocumentTool(bridge: LocalFileBridge): ToolDefinition {
-  return tool('office.document.read', 'Extract text and tables from a DOCX, XLSX or PDF in an authorized directory.', {
-    rootId: stringProperty('Authorized root ID.'), path: stringProperty('Relative DOCX, XLSX or PDF path.'),
+  return tool('office.document.read', 'Extract text and tables from a DOCX, XLSX, PPTX or PDF in an authorized directory.', {
+    rootId: stringProperty('Authorized root ID.'), path: stringProperty('Relative DOCX, XLSX, PPTX or PDF path.'),
   }, ['rootId', 'path'], async (input) => {
     const rootId = requiredString(input.rootId, 'rootId')
     const requestedPath = requiredString(input.path, 'path')
@@ -66,7 +71,8 @@ function readDocumentTool(bridge: LocalFileBridge): ToolDefinition {
     if (extension === '.docx') return { ...base, type: 'docx', ...(await parseDocx(bytes)) }
     if (extension === '.xlsx') return { ...base, type: 'xlsx', ...(await parseXlsx(bytes)) }
     if (extension === '.pdf') return { ...base, type: 'pdf', ...(await parsePdf(bytes)) }
-    throw new Error('Only DOCX, XLSX and PDF documents are supported')
+    if (extension === '.pptx') return { ...base, type: 'pptx', ...(await parsePptx(bytes)) }
+    throw new Error('Only DOCX, XLSX, PPTX and PDF documents are supported')
   })
 }
 
@@ -158,6 +164,41 @@ export async function parsePdf(bytes: Buffer): Promise<object> {
   } finally {
     await parser.destroy()
   }
+}
+
+export async function parsePptx(bytes: Buffer): Promise<object> {
+  let archive: Record<string, Uint8Array>
+  let extractedBytes = 0
+  let slideCount = 0
+  try {
+    archive = unzipSync(bytes, { filter(file) {
+      if (!/^ppt\/slides\/slide\d+\.xml$/u.test(file.name)) return false
+      slideCount += 1
+      extractedBytes += file.originalSize
+      if (slideCount > 300 || extractedBytes > MAX_TEXT_CHARS * 4) throw new Error('PPTX slide content exceeds limits')
+      return true
+    } })
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('exceeds limits')) throw error
+    throw new Error('PPTX archive is invalid')
+  }
+  const slideNames = Object.keys(archive).filter((name) => /^ppt\/slides\/slide\d+\.xml$/u.test(name))
+    .sort((left, right) => slideNumber(left) - slideNumber(right)).slice(0, 300)
+  if (slideNames.length === 0) throw new Error('PPTX contains no slides')
+  const decoder = new TextDecoder()
+  const slides = slideNames.map((name, index) => {
+    const xml = decoder.decode(archive[name])
+    const text = [...xml.matchAll(/<a:t(?:\s[^>]*)?>([\s\S]*?)<\/a:t>/gu)]
+      .map((match) => decodeXmlText(match[1] ?? '')).filter(Boolean).join('\n')
+    return { slide: index + 1, text: truncateText(text, 20_000) }
+  })
+  return { slideCount: slideNames.length, text: truncateText(slides.map((slide) => slide.text).join('\n\n')), slides }
+}
+
+function slideNumber(name: string): number { return Number(name.match(/slide(\d+)\.xml$/u)?.[1] ?? 0) }
+function decodeXmlText(value: string): string {
+  return value.replaceAll('&lt;', '<').replaceAll('&gt;', '>').replaceAll('&quot;', '"')
+    .replaceAll('&apos;', "'").replaceAll('&amp;', '&').trim()
 }
 
 type Target = Awaited<ReturnType<LocalFileBridge['resolveTarget']>>

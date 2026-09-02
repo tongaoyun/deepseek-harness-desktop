@@ -7,6 +7,7 @@ import {
   ImageVariantId,
   type ImageAttachmentLimits,
   type ImageAttachmentRef,
+  type ImageMediaType,
   type ImageRequestPolicy,
   type RequestImageAttachment,
   type SaveImageAttachment,
@@ -27,7 +28,7 @@ export default class LocalAttachmentStore extends AttachmentStore {
     maxMessageImageBytes: 12 * 1024 * 1024,
     maxImagePixels: 4_000_000,
     maxImageDimension: 2560,
-    mediaTypes: ['image/png'],
+    mediaTypes: ['image/png', 'image/jpeg'],
   }
 
   private readonly root: string
@@ -39,11 +40,11 @@ export default class LocalAttachmentStore extends AttachmentStore {
   }
 
   async validateImage(input: SaveImageAttachment): Promise<void> {
-    if (input.mediaType !== 'image/png') throw new AttachmentError('Only PNG screenshots are supported.', 'UNSUPPORTED_IMAGE_TYPE')
+    if (!this.imageLimits.mediaTypes.includes(input.mediaType)) throw new AttachmentError('Only PNG and JPEG images are supported.', 'UNSUPPORTED_IMAGE_TYPE')
     if (input.data.byteLength === 0 || input.data.byteLength > this.imageLimits.maxImageBytes) {
       throw new AttachmentError('Screenshot exceeds the configured byte limit.', 'IMAGE_TOO_LARGE')
     }
-    const metadata = pngMetadata(input.data)
+    const metadata = imageMetadata(input.data, input.mediaType)
     if (metadata.width > this.imageLimits.maxImageDimension || metadata.height > this.imageLimits.maxImageDimension) {
       throw new AttachmentError('Screenshot dimensions exceed the configured limit.', 'IMAGE_DIMENSION_TOO_LARGE')
     }
@@ -69,10 +70,10 @@ export default class LocalAttachmentStore extends AttachmentStore {
         throw new AttachmentError('Unable to persist screenshot.', 'ATTACHMENT_WRITE_FAILED', { cause: error })
       }
     }
-    const metadata = pngMetadata(input.data)
+    const metadata = imageMetadata(input.data, input.mediaType)
     return {
       attachmentId: AttachmentId(`sha256:${hash}`),
-      mediaType: 'image/png',
+      mediaType: input.mediaType,
       bytes: input.data.byteLength,
       width: metadata.width,
       height: metadata.height,
@@ -91,8 +92,11 @@ export default class LocalAttachmentStore extends AttachmentStore {
     }
     signal?.throwIfAborted()
     if (digest(data) !== hash) throw new AttachmentError('Screenshot attachment digest mismatch.', 'ATTACHMENT_CORRUPT')
-    const metadata = pngMetadata(data)
-    if (ref.mediaType !== 'image/png' || ref.bytes !== data.byteLength || ref.width !== metadata.width || ref.height !== metadata.height) {
+    if (ref.mediaType !== 'image/png' && ref.mediaType !== 'image/jpeg') {
+      throw new AttachmentError('Stored image media type is unsupported.', 'INVALID_ATTACHMENT_REF')
+    }
+    const metadata = imageMetadata(data, ref.mediaType)
+    if (ref.bytes !== data.byteLength || ref.width !== metadata.width || ref.height !== metadata.height) {
       throw new AttachmentError('Screenshot attachment metadata mismatch.', 'INVALID_ATTACHMENT_REF')
     }
     return { ref, data }
@@ -114,11 +118,17 @@ export default class LocalAttachmentStore extends AttachmentStore {
       height: ref.height,
       depth: 'uchar',
       space: 'srgb',
-      hasAlpha: pngMetadata(stored.data).hasAlpha,
+      hasAlpha: imageMetadata(stored.data, ref.mediaType).hasAlpha,
     }
   }
 
-  private objectPath(hash: string): string { return resolve(this.root, `${hash}.png`) }
+  private objectPath(hash: string): string { return resolve(this.root, `${hash}.image`) }
+}
+
+export function imageMetadata(data: Uint8Array, mediaType: ImageMediaType): { width: number; height: number; hasAlpha: boolean } {
+  if (mediaType === 'image/png') return pngMetadata(data)
+  if (mediaType === 'image/jpeg') return jpegMetadata(data)
+  throw new AttachmentError('Stored image media type is unsupported.', 'INVALID_ATTACHMENT_REF')
 }
 
 export function pngMetadata(data: Uint8Array): { width: number; height: number; hasAlpha: boolean } {
@@ -134,6 +144,28 @@ export function pngMetadata(data: Uint8Array): { width: number; height: number; 
     throw new AttachmentError('Screenshot PNG header is invalid.', 'INVALID_IMAGE')
   }
   return { width, height, hasAlpha: colorType === 4 || colorType === 6 }
+}
+
+export function jpegMetadata(data: Uint8Array): { width: number; height: number; hasAlpha: boolean } {
+  const bytes = Buffer.from(data.buffer, data.byteOffset, data.byteLength)
+  if (bytes.length < 4 || bytes[0] !== 0xff || bytes[1] !== 0xd8) {
+    throw new AttachmentError('Image is not a valid JPEG.', 'INVALID_IMAGE')
+  }
+  let offset = 2
+  while (offset + 9 < bytes.length) {
+    if (bytes[offset] !== 0xff) { offset += 1; continue }
+    const marker = bytes[offset + 1]!
+    if (marker === 0xd9 || marker === 0xda) break
+    const length = bytes.readUInt16BE(offset + 2)
+    if (length < 2 || offset + length + 2 > bytes.length) break
+    if ([0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf].includes(marker)) {
+      const height = bytes.readUInt16BE(offset + 5)
+      const width = bytes.readUInt16BE(offset + 7)
+      if (width > 0 && height > 0) return { width, height, hasAlpha: false }
+    }
+    offset += length + 2
+  }
+  throw new AttachmentError('JPEG dimensions are invalid.', 'INVALID_IMAGE')
 }
 
 function attachmentHash(ref: ImageAttachmentRef): string {

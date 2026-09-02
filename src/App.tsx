@@ -4,13 +4,10 @@ import {
   Boxes,
   CircleStop,
   FolderOpen,
-  PackagePlus,
   PlugZap,
-  Search,
   ShieldCheck,
   SquareCheckBig,
   WandSparkles,
-  X,
 } from 'lucide-react'
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react'
@@ -32,7 +29,10 @@ import { ErpAuthScreen } from './ErpAuthScreen'
 import { ExpertKitDetailsModal } from './ExpertKitDetailsModal'
 import { SkillDetailsModal } from './SkillDetailsModal'
 import {
+  createExpertKitTemplate,
+  customizeExpertKit,
   developerExpertKitInstallEnabled,
+  exportExpertKit,
   installDeveloperExpertKit,
   installExtension,
   listInstalledExtensions,
@@ -71,12 +71,14 @@ import { ScheduledTasksPage } from './ScheduledTasksPage'
 import { TaskCenterPage } from './TaskCenterPage'
 import { ImChannelsPage } from './ImChannelsPage'
 import { loadTaskHistory, persistTaskHistory } from './taskHistory'
-import { startLocalIm, stopLocalImRuntime } from './localIm'
+import { loadLocalImStatus, startLocalIm, stopLocalImRuntime, syncLocalImTasks } from './localIm'
+import { mergeImStatusIntoTasks } from './imTaskSync'
 import type { LocalTaskRun, TaskExecutionStep, TaskMessage, TaskMonitorState } from './types'
 import { memoryInstruction, rememberInstruction } from './memory'
 import { modelStorageKey, resolveSelectedModel } from './modelSelection'
 import { buildInvocationOptions, filterInvocationOptions, type InvocationOption } from './invocations'
 import { buildRuntimeConnectorCatalog, withDesktopBuiltinConnectors } from './connectors'
+import { loadEnabledConnectorIds, saveEnabledConnectorIds } from './connectorPreferences'
 import { KnowledgeBasePage } from './KnowledgeBasePage'
 import { DesktopSettingsPage } from './DesktopSettingsPage'
 import { AuditEventsPage } from './AuditEventsPage'
@@ -88,6 +90,8 @@ import { DesktopSidebar } from './DesktopSidebar'
 import { ChatPage } from './ChatPage'
 import { cacheAge, loadEnterpriseCatalogCache, saveEnterpriseCatalogCache } from './enterpriseCache'
 import { inspectDeviceCapabilities } from './deviceCapabilities'
+import { extensionMatches, type ExtensionFilter } from './ExtensionToolbar'
+import { ExpertCatalogPage, SkillCatalogPage } from './ExtensionCatalogPages'
 import './styles.css'
 
 const extensionNav = [
@@ -104,7 +108,6 @@ interface ExtensionSyncIssue {
 }
 
 type HarnessHealth = 'checking' | 'ready' | 'degraded'
-type ExtensionFilter = 'market' | 'installed' | 'updates' | 'attention'
 
 export default function App() {
   const { accessToken, error: authError, logout, reopen, state: authState, user } = useEnterpriseSession()
@@ -121,6 +124,7 @@ export default function App() {
   const [skills, setSkills] = useState<SkillCatalogEntry[]>([])
   const [skillViews, setSkillViews] = useState<SkillView[]>([])
   const [connectors, setConnectors] = useState<ConnectorCatalogEntry[]>([])
+  const [enabledConnectorIds, setEnabledConnectorIds] = useState<string[]>([])
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBaseEntry[]>([])
   const [expertKitsLoading, setExpertKitsLoading] = useState(false)
   const [expertKitError, setExpertKitError] = useState('')
@@ -201,6 +205,14 @@ export default function App() {
   }, [bootstrap, user])
 
   useEffect(() => {
+    if (!user) {
+      setEnabledConnectorIds([])
+      return
+    }
+    setEnabledConnectorIds(loadEnabledConnectorIds(user.userId))
+  }, [user])
+
+  useEffect(() => {
     if (authState !== 'authenticated' || !user) {
       setLocalTasks([])
       setCurrentLocalTaskId('')
@@ -259,8 +271,8 @@ export default function App() {
           extensionCacheRef.current.connectors = cachedConnectors
           setConnectors(cachedConnectors)
           setKnowledgeBases(cached.knowledge)
-          setSkillViews(mergeSkills(cached.skills, extensionCacheRef.current.installed, cachedConnectors, cached.knowledge))
-          setExpertKits(mergeExpertKits(cached.catalog, extensionCacheRef.current.installed, cachedConnectors, cached.knowledge))
+          setSkillViews(mergeSkills(cached.skills, extensionCacheRef.current.installed, cachedConnectors, cached.knowledge, enabledConnectorIds))
+          setExpertKits(mergeExpertKits(cached.catalog, extensionCacheRef.current.installed, cachedConnectors, cached.knowledge, enabledConnectorIds))
         }
       }
       const [catalogResult, installedResult, skillsResult, connectorsResult, knowledgeResult] = await Promise.allSettled([
@@ -280,10 +292,10 @@ export default function App() {
         if (knowledgeResult.status === 'fulfilled') cache.knowledge = knowledgeResult.value
         setExpertKitCatalog(cache.catalog)
         setSkills(cache.skills)
-        setSkillViews(mergeSkills(cache.skills, cache.installed, cache.connectors, cache.knowledge))
+        setSkillViews(mergeSkills(cache.skills, cache.installed, cache.connectors, cache.knowledge, enabledConnectorIds))
         setConnectors(cache.connectors)
         setKnowledgeBases(cache.knowledge)
-        setExpertKits(mergeExpertKits(cache.catalog, cache.installed, cache.connectors, cache.knowledge))
+        setExpertKits(mergeExpertKits(cache.catalog, cache.installed, cache.connectors, cache.knowledge, enabledConnectorIds))
         const sources = [
           ['expert-kits', '专家套件目录', catalogResult],
           ['installed', '本机已安装能力', installedResult],
@@ -312,7 +324,7 @@ export default function App() {
     void syncExtensions(true)
     const timer = window.setInterval(() => void syncExtensions(false), 60_000)
     return () => { window.clearInterval(timer); controller.abort() }
-  }, [accessToken, bootstrap, extensionSyncAttempt, user])
+  }, [accessToken, bootstrap, enabledConnectorIds, extensionSyncAttempt, user])
 
   useEffect(() => {
     if (authState !== 'authenticated' || !connectorDiagnosticsAvailable()) return
@@ -348,14 +360,47 @@ export default function App() {
       teamId: user.teamId,
       litellmBaseUrl: bootstrap.endpoints.litellm,
       knowledgeEndpoint: resolveControlPlaneEndpoint(bootstrap.endpoints.knowledge),
-      connectors: buildRuntimeConnectorCatalog(connectors, bootstrap.endpoints.erpMcp),
+      connectors: buildRuntimeConnectorCatalog(connectors, bootstrap.endpoints.erpMcp, enabledConnectorIds),
       allowedArtifacts,
       model: selectedModel || bootstrap.models[0] || 'deepseek-v4-flash',
       modelApiKey: bootstrap.modelApiKey,
       accessToken,
-    }).then((status) => setLocalImError(status.lastError ?? ''))
+    }).then(async (status) => {
+      setLocalImError(status.lastError ?? '')
+      if (status.enabled) await syncLocalImTasks(localTasks.filter((task) => task.sessionId && !task.archivedAt)
+        .map((task) => ({ id: task.id, name: task.name, sessionId: task.sessionId! })))
+    })
       .catch((reason) => setLocalImError(reason instanceof Error ? reason.message : String(reason)))
-  }, [accessToken, allowedArtifacts, authState, bootstrap, connectors, selectedModel, user])
+  }, [accessToken, allowedArtifacts, authState, bootstrap, connectors, enabledConnectorIds, selectedModel, user])
+
+  useEffect(() => {
+    if (authState !== 'authenticated' || !user) return
+    let disposed = false
+    const synchronize = async () => {
+      try {
+        await syncLocalImTasks(localTasks.filter((task) => task.sessionId && !task.archivedAt)
+          .map((task) => ({ id: task.id, name: task.name, sessionId: task.sessionId! })))
+        const status = await loadLocalImStatus()
+        if (disposed || !status.enabled) return
+        const merged = mergeImStatusIntoTasks(localTasks, status)
+        if (merged.changed.length === 0) return
+        setLocalTasks(merged.tasks)
+        for (const task of merged.changed) void persistTaskHistory(user.userId, task)
+        const current = merged.changed.find((task) => task.id === currentLocalTaskId)
+        if (current) {
+          setMessages(current.messages)
+          setHarnessSessionId(current.sessionId ?? '')
+          taskMonitorRef.current = current.monitor
+          setTaskMonitor(current.monitor)
+        }
+      } catch {
+        // Runtime may be disabled or restarting; the next poll retries.
+      }
+    }
+    void synchronize()
+    const timer = window.setInterval(() => void synchronize(), 3_000)
+    return () => { disposed = true; window.clearInterval(timer) }
+  }, [authState, currentLocalTaskId, localTasks, user])
 
   useEffect(() => {
     let disposed = false
@@ -491,7 +536,17 @@ export default function App() {
   const selectedSkill = skillViews.find((skill) => skill.id === selectedSkillId && skill.installState === 'installed')
   const activeExpertKit = expertKits.find((kit) => kit.id === activeExpertKitId)
   const activeSkill = skillViews.find((skill) => skill.id === activeSkillId)
-  const runtimeConnectors = buildRuntimeConnectorCatalog(connectors, bootstrap?.endpoints.erpMcp ?? '')
+  const runtimeConnectors = buildRuntimeConnectorCatalog(
+    connectors, bootstrap?.endpoints.erpMcp ?? '', enabledConnectorIds,
+  )
+  const toggleConnector = (connectorId: string, enabled: boolean) => {
+    if (!user) return
+    setEnabledConnectorIds((current) => saveEnabledConnectorIds(
+      user.userId,
+      enabled ? [...current, connectorId] : current.filter((id) => id !== connectorId),
+    ))
+    void shutdownHarness()
+  }
   const invocationOptions = buildInvocationOptions(expertKits, skillViews)
   const visibleInvocations = filterInvocationOptions(invocationOptions, prompt)
   const contextQuery = prompt.startsWith('@') && !/\s/.test(prompt.slice(1))
@@ -803,8 +858,8 @@ export default function App() {
   const refreshInstalledKits = async () => {
     const installed = await listInstalledExtensions()
     extensionCacheRef.current.installed = installed
-    setExpertKits(mergeExpertKits(expertKitCatalog, installed, connectors, knowledgeBases))
-    setSkillViews(mergeSkills(skills, installed, connectors, knowledgeBases))
+    setExpertKits(mergeExpertKits(expertKitCatalog, installed, connectors, knowledgeBases, enabledConnectorIds))
+    setSkillViews(mergeSkills(skills, installed, connectors, knowledgeBases, enabledConnectorIds))
   }
 
   const installSkill = async (skill: SkillView) => {
@@ -839,6 +894,31 @@ export default function App() {
     } finally {
       setDeveloperKitBusy(false)
     }
+  }
+
+  const createLocalExpertKit = async () => {
+    const id = window.prompt('专家套件 ID（小写字母、数字和连字符，例如 shop-report）')?.trim()
+    if (!id) return
+    const name = window.prompt('专家套件名称')?.trim()
+    if (!name) return
+    try {
+      const path = await createExpertKitTemplate(id, name)
+      if (path) window.alert(`专家套件模板已创建：\n${path}`)
+    } catch (error) { setExpertKitError(error instanceof Error ? error.message : String(error)) }
+  }
+
+  const customizeLocalExpertKit = async (kit: ExpertKitView) => {
+    try {
+      const path = await customizeExpertKit(kit.id, kit.version)
+      if (path) window.alert(`定制副本已创建，请修改版本号后重新导入：\n${path}`)
+    } catch (error) { setExpertKitError(error instanceof Error ? error.message : String(error)) }
+  }
+
+  const exportLocalExpertKit = async (kit: ExpertKitView) => {
+    try {
+      const path = await exportExpertKit(kit.id, kit.version)
+      if (path) window.alert(`专家套件已导出：\n${path}`)
+    } catch (error) { setExpertKitError(error instanceof Error ? error.message : String(error)) }
   }
 
   const removeLocalAcceptanceKit = async (kit: ExpertKitView) => {
@@ -1113,68 +1193,8 @@ export default function App() {
               employeeId={user.userId}
               accessToken={accessToken}
             />}
-            {page === 'experts' && <>
-              {expertKitsLoading && <div className="kit-empty">正在同步公司专家套件…</div>}
-              {!expertKitsLoading && expertKits.length === 0 && <div className="kit-empty">控制中心尚未发布专家套件</div>}
-              {expertKitError && <div className="kit-error">{expertKitError}</div>}
-              {developerKitMode && <div className="developer-kit-bar">
-                <span><strong>开发者验收模式</strong><small>本地套件不会上传或进入公司目录，仍受权限和逐次审批约束。</small></span>
-                <button disabled={developerKitBusy} onClick={() => void installLocalAcceptanceKit()} type="button"><PackagePlus size={14} />{developerKitBusy ? '正在处理…' : '安装本地验收包'}</button>
-              </div>}
-              <ExtensionToolbar filter={extensionFilter} query={extensionQuery} onFilter={setExtensionFilter} onQuery={setExtensionQuery} />
-              {!expertKitsLoading && expertKits.length > 0 && visibleExpertKits.length === 0 && <div className="kit-empty">没有匹配的专家套件</div>}
-              <div className="kit-grid">{visibleExpertKits.map((kit) => {
-                const installing = installingKitId === kit.id
-                const stateLabel = kit.localOnly ? '本地验收' : kit.installState === 'retired' ? '已下架' : kit.installState === 'installed' ? '已安装' : kit.installState === 'update' ? '可更新' : '可安装'
-                return <article key={kit.id}>
-                  <div className="kit-card-head"><span className={`kit-state ${kit.installState}`}>{stateLabel}</span><small>v{kit.version}</small></div>
-                  <h3>{kit.name}</h3>
-                  <p>{kit.summary}</p>
-                  <div className="kit-capabilities">
-                    <small>{kit.skillIds.length} 个技能</small>
-                    <small>{kit.connectorRefs.length} 个连接器</small>
-                    <small>{kit.knowledgeBaseRefs.length} 个知识库</small>
-                    <small>{kit.requiredTools.length} 个工具依赖</small>
-                  </div>
-                  <div className={`kit-readiness ${kit.readiness}`}>
-                    {kit.readiness === 'ready'
-                      ? '连接器、工具和知识库已就绪'
-                      : `部分能力待启用：${[...kit.connectorIssues, ...kit.knowledgeIssues].join('；')}`}
-                  </div>
-                  {kit.installState === 'update' && <div className="kit-version-note">已安装 v{kit.installedVersion}</div>}
-                  {kit.installState === 'retired' && <div className="kit-version-note">已停止加载，可卸载本地文件</div>}
-                  <button
-                    className="kit-install"
-                    disabled={installing || (!kit.sha256 && !['installed', 'retired'].includes(kit.installState))}
-                    onClick={() => setActiveExpertKitId(kit.id)}
-                    type="button"
-                  >{installing ? '正在校验并安装…' : kit.installState === 'retired' ? '查看并卸载' : kit.installState === 'installed' ? '查看详情' : kit.installState === 'update' ? '查看更新' : '查看并安装'}</button>
-                </article>
-              })}</div>
-            </>}
-            {page === 'skills' && <>
-              {expertKitsLoading && <div className="kit-empty">正在同步公司技能…</div>}
-              {!expertKitsLoading && skillViews.length === 0 && <div className="kit-empty">控制中心尚未发布独立技能</div>}
-              {expertKitError && <div className="kit-error">{expertKitError}</div>}
-              <ExtensionToolbar filter={extensionFilter} query={extensionQuery} onFilter={setExtensionFilter} onQuery={setExtensionQuery} />
-              {!expertKitsLoading && skillViews.length > 0 && visibleSkillViews.length === 0 && <div className="kit-empty">没有匹配的 Skill</div>}
-              <div className="kit-grid">{visibleSkillViews.map((skill) => {
-                const installed = skill.installState === 'installed'
-                const stateLabel = skill.installState === 'retired' ? '已下架' : installed ? '已安装' : skill.installState === 'update' ? '可更新' : '可安装'
-                return <article key={skill.id}>
-                  <div className="kit-card-head"><span className={`kit-state ${skill.installState}`}>{stateLabel}</span><small>v{skill.version}</small></div>
-                  <h3>{skill.name}</h3>
-                  <p>{skill.summary}</p>
-                  <div className="kit-capabilities">{skill.triggers.slice(0, 3).map((trigger) => <small key={trigger}>{trigger}</small>)}</div>
-                  <div className={`kit-readiness ${skill.readiness}`}>{skill.readiness === 'ready' ? '所需能力已就绪' : '部分依赖暂不可用'}</div>
-                  {skill.installState === 'update' && <div className="kit-version-note">已安装 v{skill.installedVersion}</div>}
-                  {skill.installState === 'retired' && <div className="kit-version-note">已停止加载，可卸载本地文件</div>}
-                  <button className="kit-install" onClick={() => setActiveSkillId(skill.id)} type="button">
-                    {skill.installState === 'retired' ? '查看并卸载' : installed ? '查看详情' : skill.installState === 'update' ? '查看更新' : '查看并安装'}
-                  </button>
-                </article>
-              })}</div>
-            </>}
+            {page === 'experts' && <ExpertCatalogPage all={expertKits} developerBusy={developerKitBusy} developerMode={developerKitMode} error={expertKitError} filter={extensionFilter} installingId={installingKitId} loading={expertKitsLoading} onCreate={() => void createLocalExpertKit()} onFilter={setExtensionFilter} onImport={() => void installLocalAcceptanceKit()} onOpen={setActiveExpertKitId} onQuery={setExtensionQuery} query={extensionQuery} visible={visibleExpertKits} />}
+            {page === 'skills' && <SkillCatalogPage all={skillViews} error={expertKitError} filter={extensionFilter} loading={expertKitsLoading} onFilter={setExtensionFilter} onOpen={setActiveSkillId} onQuery={setExtensionQuery} query={extensionQuery} visible={visibleSkillViews} />}
             {page === 'connectors' && <>
               <ConnectorsPage
                 accessToken={accessToken}
@@ -1183,6 +1203,7 @@ export default function App() {
                 loading={expertKitsLoading}
                 runtime={runtimeConnectors}
                 syncError=""
+                onToggle={toggleConnector}
               />
             </>}
             {page === 'knowledge' && bootstrap && user && <KnowledgeBasePage
@@ -1235,6 +1256,8 @@ export default function App() {
           : activeExpertKit.installed ? () => void removeCatalogArtifact('expert-kit', activeExpertKit.id) : undefined}
         onSchedule={() => { setActiveExpertKitId(''); setPage('schedules') }}
         onUse={() => useExpertKit(activeExpertKit)}
+        onCustomize={activeExpertKit.installState === 'installed' ? () => void customizeLocalExpertKit(activeExpertKit) : undefined}
+        onExport={activeExpertKit.installState === 'installed' ? () => void exportLocalExpertKit(activeExpertKit) : undefined}
       />}
       {activeSkill && <SkillDetailsModal
         skill={activeSkill}
@@ -1250,33 +1273,4 @@ export default function App() {
       />}
     </div>
   )
-}
-
-function ExtensionToolbar({ filter, query, onFilter, onQuery }: {
-  filter: ExtensionFilter
-  query: string
-  onFilter: (value: ExtensionFilter) => void
-  onQuery: (value: string) => void
-}) {
-  const filters: Array<{ id: ExtensionFilter; label: string }> = [
-    { id: 'market', label: '企业市场' }, { id: 'installed', label: '已安装' },
-    { id: 'updates', label: '可更新' }, { id: 'attention', label: '需要处理' },
-  ]
-  return <div className="extension-toolbar">
-    <label><Search size={14} /><input aria-label="搜索扩展" onChange={(event) => onQuery(event.target.value)} placeholder="搜索名称、说明或 ID" value={query} />{query && <button aria-label="清空搜索" onClick={() => onQuery('')} type="button"><X size={12} /></button>}</label>
-    <div>{filters.map((item) => <button className={filter === item.id ? 'active' : ''} key={item.id} onClick={() => onFilter(item.id)} type="button">{item.label}</button>)}</div>
-  </div>
-}
-
-function extensionMatches(
-  item: { id: string; name: string; summary: string; installState: string; readiness: string },
-  query: string,
-  filter: ExtensionFilter,
-): boolean {
-  const value = query.trim().toLocaleLowerCase('zh-CN')
-  if (value && !`${item.name} ${item.summary} ${item.id}`.toLocaleLowerCase('zh-CN').includes(value)) return false
-  if (filter === 'installed') return item.installState === 'installed'
-  if (filter === 'updates') return item.installState === 'update'
-  if (filter === 'attention') return item.installState === 'retired' || item.installState === 'update' || item.readiness === 'partial'
-  return item.installState !== 'retired'
 }

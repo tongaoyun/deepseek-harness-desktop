@@ -11,7 +11,11 @@ const DESKTOP_BROWSER: ConnectorCatalogEntry = {
   version: '1',
   transport: 'desktop',
   authMode: 'none',
-  toolNames: ['browser_open', 'browser_snapshot', 'browser_click', 'browser_type', 'browser_screenshot'],
+  toolNames: [
+    'browser_open', 'browser_snapshot', 'browser_tabs', 'browser_switch_tab', 'browser_close_tab',
+    'browser_click', 'browser_type', 'browser_select', 'browser_scroll', 'browser_back',
+    'browser_downloads', 'browser_human_takeover', 'browser_screenshot',
+  ],
 }
 
 export function withDesktopBuiltinConnectors(connectors: ConnectorCatalogEntry[]): ConnectorCatalogEntry[] {
@@ -21,7 +25,9 @@ export function withDesktopBuiltinConnectors(connectors: ConnectorCatalogEntry[]
 export function buildRuntimeConnectorCatalog(
   connectors: ConnectorCatalogEntry[],
   legacyErpMcpUrl: string,
+  enabledConnectorIds: Iterable<string> = [],
 ): ConnectorRuntimeDefinition[] {
+  const enabled = new Set(enabledConnectorIds)
   return connectors.map((connector) => {
     const legacyErp = connector.id === 'erp-mcp' && !connector.transport && Boolean(legacyErpMcpUrl)
     return {
@@ -34,6 +40,7 @@ export function buildRuntimeConnectorCatalog(
       url: connector.url || (legacyErp ? legacyErpMcpUrl : ''),
       authMode: connector.authMode ?? (legacyErp ? 'employee-bearer' : 'none'),
       toolNames: [...new Set(connector.toolNames)],
+      enabled: enabled.has(connector.id),
     }
   })
 }

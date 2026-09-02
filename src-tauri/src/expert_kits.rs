@@ -1,4 +1,6 @@
-use flate2::read::GzDecoder;
+mod archive;
+
+use archive::{extract_package, package_root};
 use futures_util::StreamExt;
 use semver::Version;
 use serde::{Deserialize, Serialize};
@@ -6,7 +8,7 @@ use sha2::{Digest, Sha256};
 use std::{
     collections::HashSet,
     fs::{self, File},
-    io::{Cursor, Read},
+    io::{Read, Write},
     path::{Component, Path, PathBuf},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -14,8 +16,6 @@ use tauri::Manager;
 use tauri_plugin_dialog::DialogExt;
 
 const MAX_PACKAGE_BYTES: usize = 32 * 1024 * 1024;
-const MAX_EXTRACTED_BYTES: u64 = 64 * 1024 * 1024;
-const MAX_ARCHIVE_ENTRIES: usize = 1024;
 const KIT_MANIFEST_PATH: &str = ".xiaoyin-kit/kit.json";
 const SKILL_MANIFEST_PATH: &str = ".xiaoyin-skill/skill.json";
 const INSTALL_RECORD_PATH: &str = ".xiaoyin/install.json";
@@ -144,6 +144,7 @@ struct ServerWorkflowInput {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ServerWorkflowStep {
     id: String,
+    connector_id: String,
     tool: String,
     #[serde(default)]
     arguments: serde_json::Map<String, serde_json::Value>,
@@ -189,10 +190,15 @@ pub struct ExpertKitHarnessProfile {
     pub knowledge_base_refs: Option<Vec<String>>,
     pub required_connector_tools: Vec<String>,
     pub allow_local_files: bool,
+    pub approve_local_file_writes: bool,
     pub allow_shell: bool,
+    pub approve_shell: bool,
     pub allow_computer_use: bool,
+    pub approve_computer_use: bool,
     pub allowed_computer_tools: Vec<String>,
+    pub allow_connector_read: bool,
     pub allow_connector_write: bool,
+    pub approve_connector_write: bool,
     pub prompt: String,
 }
 
@@ -275,8 +281,7 @@ pub async fn install_expert_kit(
 
 #[tauri::command]
 pub fn developer_expert_kit_install_enabled() -> bool {
-    std::env::var("XIAOYIN_ENABLE_DEVELOPER_KIT_INSTALL")
-        .is_ok_and(|value| value.eq_ignore_ascii_case("true"))
+    true
 }
 
 #[tauri::command]
@@ -289,8 +294,8 @@ pub async fn install_developer_expert_kit(
         dialog_app
             .dialog()
             .file()
-            .set_title("选择本地专家套件验收包")
-            .add_filter("小胤专家套件", &["gz"])
+            .set_title("导入本地专家套件")
+            .add_filter("小胤专家套件", &["zip", "gz"])
             .blocking_pick_file()
     })
     .await
@@ -316,6 +321,213 @@ pub async fn install_developer_expert_kit(
         InstallSource::Developer,
     )
     .map(Some)
+}
+
+#[tauri::command]
+pub async fn create_expert_kit_template(
+    app: tauri::AppHandle,
+    id: String,
+    name: String,
+) -> Result<Option<String>, String> {
+    validate_identifier(&id)?;
+    if name.trim().is_empty() || name.len() > 200 {
+        return Err("专家套件名称无效".to_string());
+    }
+    let dialog_app = app.clone();
+    let selected = tauri::async_runtime::spawn_blocking(move || {
+        dialog_app
+            .dialog()
+            .file()
+            .set_title("选择专家套件工作目录")
+            .blocking_pick_folder()
+    })
+    .await
+    .map_err(|error| format!("打开目录选择器失败：{error}"))?;
+    let Some(selected) = selected else {
+        return Ok(None);
+    };
+    let parent = selected
+        .into_path()
+        .map_err(|error| format!("选择的目录无效：{error}"))?;
+    let root = parent.join(&id);
+    if root.exists() {
+        return Err("目标目录已存在，请更换套件 ID 或目录".to_string());
+    }
+    fs::create_dir_all(root.join(".xiaoyin-kit"))
+        .and_then(|_| fs::create_dir_all(root.join("skills/main")))
+        .map_err(|error| format!("无法创建专家套件模板：{error}"))?;
+    let manifest = serde_json::json!({
+        "schemaVersion": "2", "id": id, "name": name.trim(), "version": "1.0.0",
+        "summary": "请填写专家套件说明", "minimumDesktopVersion": env!("CARGO_PKG_VERSION"),
+        "commands": [], "skills": [{ "id": "main", "path": "skills/main/SKILL.md" }],
+        "requiredTools": [], "connectorRefs": [], "permissions": {
+            "localFiles": "approval", "shell": "deny", "computerUse": "deny",
+            "connectorRead": "deny", "connectorWrite": "deny"
+        }, "serverWorkflows": []
+    });
+    fs::write(
+        root.join(KIT_MANIFEST_PATH),
+        serde_json::to_vec_pretty(&manifest).unwrap(),
+    )
+    .and_then(|_| {
+        fs::write(
+            root.join("skills/main/SKILL.md"),
+            format!("# {}\n\n在这里编写专家工作方法。\n", name.trim()),
+        )
+    })
+    .map_err(|error| format!("无法写入专家套件模板：{error}"))?;
+    Ok(Some(root.to_string_lossy().into_owned()))
+}
+
+#[tauri::command]
+pub async fn customize_expert_kit(
+    app: tauri::AppHandle,
+    id: String,
+    version: String,
+) -> Result<Option<String>, String> {
+    validate_identifier(&id)?;
+    Version::parse(&version).map_err(|error| format!("专家套件版本无效：{error}"))?;
+    let source = extensions_root(&app)?
+        .join("expert-kit")
+        .join(&id)
+        .join(&version);
+    load_and_validate_manifest(&source, Some("expert-kit"), Some(&id), Some(&version))?;
+    let dialog_app = app.clone();
+    let selected = tauri::async_runtime::spawn_blocking(move || {
+        dialog_app
+            .dialog()
+            .file()
+            .set_title("选择定制副本工作目录")
+            .blocking_pick_folder()
+    })
+    .await
+    .map_err(|error| format!("打开目录选择器失败：{error}"))?;
+    let Some(selected) = selected else {
+        return Ok(None);
+    };
+    let destination = selected
+        .into_path()
+        .map_err(|error| format!("选择的目录无效：{error}"))?
+        .join(format!("{}-custom", id));
+    if destination.exists() {
+        return Err("定制副本目录已存在".to_string());
+    }
+    copy_extension_tree(&source, &destination, true)?;
+    Ok(Some(destination.to_string_lossy().into_owned()))
+}
+
+#[tauri::command]
+pub async fn export_expert_kit(
+    app: tauri::AppHandle,
+    id: String,
+    version: String,
+) -> Result<Option<String>, String> {
+    validate_identifier(&id)?;
+    Version::parse(&version).map_err(|error| format!("专家套件版本无效：{error}"))?;
+    let source = extensions_root(&app)?
+        .join("expert-kit")
+        .join(&id)
+        .join(&version);
+    load_and_validate_manifest(&source, Some("expert-kit"), Some(&id), Some(&version))?;
+    let file_name = format!("{}-{}.zip", id, version);
+    let dialog_app = app.clone();
+    let selected = tauri::async_runtime::spawn_blocking(move || {
+        dialog_app
+            .dialog()
+            .file()
+            .set_title("导出专家套件 ZIP")
+            .set_file_name(&file_name)
+            .add_filter("ZIP", &["zip"])
+            .blocking_save_file()
+    })
+    .await
+    .map_err(|error| format!("打开保存选择器失败：{error}"))?;
+    let Some(selected) = selected else {
+        return Ok(None);
+    };
+    let destination = selected
+        .into_path()
+        .map_err(|error| format!("保存路径无效：{error}"))?;
+    write_extension_zip(&source, &destination)?;
+    Ok(Some(destination.to_string_lossy().into_owned()))
+}
+
+fn copy_extension_tree(
+    source: &Path,
+    destination: &Path,
+    skip_install_record: bool,
+) -> Result<(), String> {
+    fs::create_dir_all(destination).map_err(|error| format!("无法创建定制副本：{error}"))?;
+    for entry in fs::read_dir(source).map_err(|error| format!("无法读取套件目录：{error}"))?
+    {
+        let entry = entry.map_err(|error| format!("无法读取套件文件：{error}"))?;
+        let relative_name = entry.file_name();
+        let child_source = entry.path();
+        let child_destination = destination.join(&relative_name);
+        if skip_install_record && child_source.ends_with(INSTALL_RECORD_PATH) {
+            continue;
+        }
+        if entry
+            .file_type()
+            .map_err(|error| format!("无法读取套件文件类型：{error}"))?
+            .is_dir()
+        {
+            copy_extension_tree(&child_source, &child_destination, skip_install_record)?;
+        } else {
+            fs::copy(&child_source, &child_destination)
+                .map_err(|error| format!("无法复制套件文件：{error}"))?;
+        }
+    }
+    let install_record = destination.join(INSTALL_RECORD_PATH);
+    if skip_install_record && install_record.exists() {
+        fs::remove_file(install_record).map_err(|error| format!("无法清理安装记录：{error}"))?;
+    }
+    Ok(())
+}
+
+fn write_extension_zip(source: &Path, destination: &Path) -> Result<(), String> {
+    let file = File::create(destination).map_err(|error| format!("无法创建 ZIP：{error}"))?;
+    let mut zip = zip::ZipWriter::new(file);
+    let options = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
+    append_directory_to_zip(&mut zip, source, source, options)?;
+    zip.finish()
+        .map_err(|error| format!("无法完成 ZIP：{error}"))?;
+    Ok(())
+}
+
+fn append_directory_to_zip(
+    zip: &mut zip::ZipWriter<File>,
+    root: &Path,
+    directory: &Path,
+    options: zip::write::SimpleFileOptions,
+) -> Result<(), String> {
+    for entry in fs::read_dir(directory).map_err(|error| format!("无法读取套件目录：{error}"))?
+    {
+        let entry = entry.map_err(|error| format!("无法读取套件文件：{error}"))?;
+        let path = entry.path();
+        if path.ends_with(INSTALL_RECORD_PATH) {
+            continue;
+        }
+        if entry
+            .file_type()
+            .map_err(|error| format!("无法读取套件文件类型：{error}"))?
+            .is_dir()
+        {
+            append_directory_to_zip(zip, root, &path, options)?;
+        } else {
+            let name = path
+                .strip_prefix(root)
+                .map_err(|_| "套件导出路径无效".to_string())?
+                .to_string_lossy()
+                .replace('\\', "/");
+            zip.start_file(name, options)
+                .map_err(|error| format!("无法写入 ZIP：{error}"))?;
+            zip.write_all(&fs::read(&path).map_err(|error| format!("无法读取套件文件：{error}"))?)
+                .map_err(|error| format!("无法写入 ZIP：{error}"))?;
+        }
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -570,19 +782,33 @@ pub fn harness_profile(
     } else {
         user_prompt.to_string()
     };
+    let permissions = selected.map(|artifact| &artifact.manifest.permissions);
+    let permission = |select: fn(&Permissions) -> PermissionMode| {
+        permissions.map(select).unwrap_or(PermissionMode::Approval)
+    };
+    let local_files = permission(|value| value.local_files);
+    let shell = permission(|value| value.shell);
+    let computer_use = permission(|value| value.computer_use);
+    let connector_read = permission(|value| value.connector_read);
+    let connector_write = permission(|value| value.connector_write);
     Ok(ExpertKitHarnessProfile {
         skill_directories,
         connector_refs,
         knowledge_base_refs: Some(knowledge_base_refs),
         required_connector_tools: connector_tools,
-        allow_local_files: true,
-        allow_shell: true,
-        allow_computer_use: true,
+        allow_local_files: local_files != PermissionMode::Deny,
+        approve_local_file_writes: local_files == PermissionMode::Approval,
+        allow_shell: shell != PermissionMode::Deny,
+        approve_shell: shell == PermissionMode::Approval,
+        allow_computer_use: computer_use != PermissionMode::Deny,
+        approve_computer_use: computer_use == PermissionMode::Approval,
         allowed_computer_tools: DESKTOP_COMPUTER_TOOLS
             .iter()
             .map(|tool| (*tool).to_string())
             .collect(),
-        allow_connector_write: true,
+        allow_connector_read: connector_read != PermissionMode::Deny,
+        allow_connector_write: connector_write != PermissionMode::Deny,
+        approve_connector_write: connector_write == PermissionMode::Approval,
         prompt,
     })
 }
@@ -753,125 +979,6 @@ async fn download_package(url: &str) -> Result<Vec<u8>, String> {
     Ok(bytes)
 }
 
-fn extract_package(bytes: &[u8], destination: &Path) -> Result<(), String> {
-    if bytes.starts_with(b"PK\x03\x04") {
-        return extract_zip_package(bytes, destination);
-    }
-    extract_tar_gzip_package(bytes, destination)
-}
-
-fn extract_tar_gzip_package(bytes: &[u8], destination: &Path) -> Result<(), String> {
-    let decoder = GzDecoder::new(Cursor::new(bytes));
-    let mut archive = tar::Archive::new(decoder);
-    let entries = archive
-        .entries()
-        .map_err(|error| format!("专家套件压缩包无效：{error}"))?;
-    let mut count = 0usize;
-    let mut extracted_bytes = 0u64;
-
-    for entry in entries {
-        count += 1;
-        if count > MAX_ARCHIVE_ENTRIES {
-            return Err("专家套件文件数量超过限制".to_string());
-        }
-        let mut entry = entry.map_err(|error| format!("读取专家套件条目失败：{error}"))?;
-        let entry_type = entry.header().entry_type();
-        if !entry_type.is_file() && !entry_type.is_dir() {
-            return Err("专家套件不能包含符号链接或特殊文件".to_string());
-        }
-        let path = entry
-            .path()
-            .map_err(|error| format!("专家套件路径无效：{error}"))?
-            .into_owned();
-        validate_relative_path(&path)?;
-        let output = destination.join(&path);
-
-        if entry_type.is_dir() {
-            fs::create_dir_all(&output).map_err(|error| format!("无法创建套件目录：{error}"))?;
-            continue;
-        }
-        let size = entry
-            .header()
-            .size()
-            .map_err(|error| format!("套件文件大小无效：{error}"))?;
-        extracted_bytes = extracted_bytes
-            .checked_add(size)
-            .ok_or_else(|| "专家套件解压大小无效".to_string())?;
-        if extracted_bytes > MAX_EXTRACTED_BYTES {
-            return Err("专家套件解压后超过 64 MiB 限制".to_string());
-        }
-        if let Some(parent) = output.parent() {
-            fs::create_dir_all(parent).map_err(|error| format!("无法创建套件文件目录：{error}"))?;
-        }
-        let mut file =
-            File::create(&output).map_err(|error| format!("无法创建套件文件：{error}"))?;
-        std::io::copy(&mut entry, &mut file)
-            .map_err(|error| format!("无法写入套件文件：{error}"))?;
-    }
-    Ok(())
-}
-
-fn extract_zip_package(bytes: &[u8], destination: &Path) -> Result<(), String> {
-    let reader = Cursor::new(bytes);
-    let mut archive =
-        zip::ZipArchive::new(reader).map_err(|error| format!("Skill ZIP 压缩包无效：{error}"))?;
-    if archive.len() > MAX_ARCHIVE_ENTRIES {
-        return Err("Skill 文件数量超过限制".to_string());
-    }
-    let mut extracted_bytes = 0u64;
-    for index in 0..archive.len() {
-        let mut entry = archive
-            .by_index(index)
-            .map_err(|error| format!("读取 Skill ZIP 条目失败：{error}"))?;
-        if entry
-            .unix_mode()
-            .is_some_and(|mode| mode & 0o170000 == 0o120000)
-        {
-            return Err("Skill 不能包含符号链接".to_string());
-        }
-        let path = entry
-            .enclosed_name()
-            .ok_or_else(|| "Skill ZIP 路径无效".to_string())?
-            .to_path_buf();
-        validate_relative_path(&path)?;
-        let output = destination.join(&path);
-        if entry.is_dir() {
-            fs::create_dir_all(&output).map_err(|error| format!("无法创建 Skill 目录：{error}"))?;
-            continue;
-        }
-        extracted_bytes = extracted_bytes
-            .checked_add(entry.size())
-            .ok_or_else(|| "Skill 解压大小无效".to_string())?;
-        if extracted_bytes > MAX_EXTRACTED_BYTES {
-            return Err("Skill 解压后超过 64 MiB 限制".to_string());
-        }
-        if let Some(parent) = output.parent() {
-            fs::create_dir_all(parent)
-                .map_err(|error| format!("无法创建 Skill 文件目录：{error}"))?;
-        }
-        let mut file =
-            File::create(&output).map_err(|error| format!("无法创建 Skill 文件：{error}"))?;
-        std::io::copy(&mut entry, &mut file)
-            .map_err(|error| format!("无法写入 Skill 文件：{error}"))?;
-    }
-    Ok(())
-}
-
-fn package_root(staging_directory: &Path) -> Result<PathBuf, String> {
-    if has_extension_manifest(staging_directory) {
-        return Ok(staging_directory.to_path_buf());
-    }
-    let children = child_directories(staging_directory)?;
-    if children.len() == 1 && has_extension_manifest(&children[0]) {
-        return Ok(children[0].clone());
-    }
-    Err("扩展缺少根级清单，或压缩包目录结构无效".to_string())
-}
-
-fn has_extension_manifest(root: &Path) -> bool {
-    root.join(KIT_MANIFEST_PATH).is_file() || root.join(SKILL_MANIFEST_PATH).is_file()
-}
-
 fn load_and_validate_manifest(
     root: &Path,
     expected_kind: Option<&str>,
@@ -990,6 +1097,38 @@ fn load_and_validate_manifest(
     for connector in &manifest.connector_refs {
         if validate_identifier(connector).is_err() || !connectors.insert(connector) {
             return Err(format!("专家套件连接器引用无效：{connector}"));
+        }
+    }
+    let mut workflow_ids = HashSet::new();
+    for workflow in &manifest.server_workflows {
+        if validate_identifier(&workflow.id).is_err() || !workflow_ids.insert(&workflow.id) {
+            return Err(format!("后台工作流 ID 无效或重复：{}", workflow.id));
+        }
+        if workflow.name.trim().is_empty()
+            || workflow.name.len() > 200
+            || workflow.version.trim().is_empty()
+            || workflow.workflow_type.trim().is_empty()
+            || workflow.steps.is_empty()
+        {
+            return Err(format!("后台工作流定义不完整：{}", workflow.id));
+        }
+        let mut step_ids = HashSet::new();
+        for step in &workflow.steps {
+            if step.id.trim().is_empty()
+                || !step_ids.insert(&step.id)
+                || !valid_tool_name(&step.tool)
+            {
+                return Err(format!("后台工作流步骤无效：{} / {}", workflow.id, step.id));
+            }
+            if !manifest.connector_refs.contains(&step.connector_id) {
+                return Err(format!(
+                    "后台工作流步骤引用未声明连接器：{}",
+                    step.connector_id
+                ));
+            }
+            if !manifest.required_tools.contains(&step.tool) {
+                return Err(format!("后台工作流步骤使用未声明工具：{}", step.tool));
+            }
         }
     }
     if let Some(knowledge_base_refs) = &manifest.knowledge_base_refs {
@@ -1126,6 +1265,7 @@ fn compare_versions(left: &str, right: &str) -> std::cmp::Ordering {
 mod tests {
     use super::*;
     use flate2::{Compression, write::GzEncoder};
+    use std::io::Cursor;
     use std::io::Write;
     use zip::{ZipWriter, write::SimpleFileOptions};
 

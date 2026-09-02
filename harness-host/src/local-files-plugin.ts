@@ -28,11 +28,13 @@ const BLOCKED_FILE_NAMES = new Set([
 export interface Config {
   roots?: string[]
   enabled?: boolean
+  requireWriteApproval?: boolean
 }
 
 export const Config = z.object({
   roots: z.array(z.string()).default([]),
   enabled: z.boolean().default(true),
+  requireWriteApproval: z.boolean().default(true),
 })
 
 export interface AuthorizedRoot {
@@ -64,6 +66,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     ctx.tools.register(deleteTool(bridge)),
   ]
   const stopApprovalPolicy = ctx.on('tools/pre-execute', (exec, next) => {
+    if (config.requireWriteApproval === false) return next()
     if (!MUTATING_TOOLS.has(exec.name)) return next()
     return Promise.resolve({
       kind: 'ask' as const,

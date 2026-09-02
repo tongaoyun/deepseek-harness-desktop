@@ -12,8 +12,11 @@ const MAX_COMMAND_CHARS = 16 * 1024
 const MAX_OUTPUT_BYTES = 512 * 1024
 const MAX_TIMEOUT_MS = 120_000
 
-export interface Config { roots?: string[]; enabled?: boolean }
-export const Config = z.object({ roots: z.array(z.string()).default([]), enabled: z.boolean().default(false) })
+export interface Config { roots?: string[]; enabled?: boolean; requireApproval?: boolean }
+export const Config = z.object({
+  roots: z.array(z.string()).default([]), enabled: z.boolean().default(false),
+  requireApproval: z.boolean().default(true),
+})
 
 export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   if (config.enabled !== true) return
@@ -22,6 +25,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   const bridge = new LocalFileBridge(roots)
   const unregister = ctx.tools.register(shellTool(bridge))
   const stopApprovalPolicy = ctx.on('tools/pre-execute', (exec, next) => {
+    if (config.requireApproval === false) return next()
     if (exec.name !== 'local_shell_run') return next()
     const input = asRecord(exec.arguments)
     return Promise.resolve({

@@ -29,10 +29,12 @@ interface ExpertKitDetailsModalProps {
   onRemove?: () => void
   onSchedule: () => void
   onUse: () => void
+  onCustomize?: () => void
+  onExport?: () => void
 }
 
 export function ExpertKitDetailsModal({
-  kit, skills, connectors, knowledgeBases, installing, removing, selected, onClose, onInstall, onRemove, onSchedule, onUse,
+  kit, skills, connectors, knowledgeBases, installing, removing, selected, onClose, onInstall, onRemove, onSchedule, onUse, onCustomize, onExport,
 }: ExpertKitDetailsModalProps) {
   useEffect(() => {
     const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose() }
@@ -97,6 +99,8 @@ export function ExpertKitDetailsModal({
         {onRemove && <button className="danger" disabled={removing} onClick={onRemove} type="button"><Trash2 size={14} />{removing ? '正在卸载…' : kit.localOnly ? '移除本地套件' : '卸载套件'}</button>}
         <button className="secondary" onClick={onClose} type="button">关闭</button>
         {kit.installState === 'retired' ? null : kit.installState === 'installed' ? <>
+          {onCustomize && <button className="secondary" onClick={onCustomize} type="button">创建定制副本</button>}
+          {onExport && <button className="secondary" onClick={onExport} type="button">导出 ZIP</button>}
           {kit.serverWorkflows.length > 0 && <button className="secondary" onClick={onSchedule} type="button"><CalendarClock size={14} /> 创建定时任务</button>}
           <button onClick={onUse} type="button">{selected ? '正在使用' : '立即使用'}</button>
         </> : <button disabled={installing || !kit.sha256} onClick={onInstall} type="button">

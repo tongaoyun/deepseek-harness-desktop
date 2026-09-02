@@ -1,5 +1,5 @@
 import { readFile, rename, writeFile } from 'node:fs/promises'
-import { dirname, extname } from 'node:path'
+import { basename, dirname, extname, relative, resolve } from 'node:path'
 import { mkdir } from 'node:fs/promises'
 import {
   DWClient,
@@ -8,7 +8,8 @@ import {
   type DWClientDownStream,
 } from 'dingtalk-stream'
 import type { HarnessRuntime } from './runtime.js'
-import { parseDocx, parsePdf, parseXlsx } from './local-documents-plugin.js'
+import { parseDocx, parsePdf, parsePptx, parseXlsx } from './local-documents-plugin.js'
+import type { ImageRunInput } from './runtime.js'
 
 const MAX_REPLY_CHARS = 16_000
 const MAX_KNOWN_EVENTS = 1_000
@@ -59,6 +60,27 @@ export interface ImConversationSummary {
   updatedAt: string
   boundTaskId?: string
   boundTaskName?: string
+  messages: ImConversationMessage[]
+  taskEvents: ImTaskEvent[]
+}
+
+export interface ImConversationMessage {
+  id: string
+  role: 'user' | 'assistant'
+  text: string
+  createdAt: string
+}
+
+export interface ImTaskEvent {
+  id: string
+  event: unknown
+  createdAt: string
+}
+
+export interface BindableTask {
+  id: string
+  name: string
+  sessionId: string
 }
 
 interface DingTalkEvent {
@@ -90,6 +112,7 @@ interface SessionState {
   taskRunBaselineInitialized?: boolean
   knownTaskDeliveryIds?: string[]
   taskBindings?: TaskBinding[]
+  scheduleRoutes?: ScheduleRoute[]
 }
 
 export interface TaskBinding {
@@ -112,6 +135,12 @@ interface CloudTaskRunEvent {
   status: string
   startedAt: string
   artifactObjectKey?: string
+  scheduleId?: string
+}
+
+export interface ScheduleRoute {
+  scheduleId: string
+  conversationKey: string
 }
 
 interface QueuedEvent {
@@ -135,6 +164,8 @@ export class LocalImRuntime {
   private taskRunBaselineInitialized = false
   private knownTaskDeliveryIds = new Set<string>()
   private taskBindings = new Map<string, TaskBinding>()
+  private availableTasks: BindableTask[] = []
+  private scheduleRoutes = new Map<string, string>()
   private conversationWork = new Map<string, Promise<void>>()
   private persistTail = Promise.resolve()
   private connectionWatch: NodeJS.Timeout | undefined
@@ -231,6 +262,19 @@ export class LocalImRuntime {
       ...existing, sessionId: binding.sessionId, boundTaskId: binding.taskId,
       boundTaskName: binding.taskName, updatedAt: new Date().toISOString(),
     })
+    await this.persistSessions()
+    return this.status()
+  }
+
+  syncTasks(tasks: BindableTask[]): LocalImStatus {
+    this.availableTasks = tasks.filter(validBindableTask).slice(0, 200)
+    return this.status()
+  }
+
+  async routeSchedule(route: ScheduleRoute): Promise<LocalImStatus> {
+    if (!route.scheduleId?.trim() || route.scheduleId.length > 200) throw new Error('scheduleId is invalid')
+    if (!this.deliveryTargets.has(route.conversationKey)) throw new Error('IM conversation is not available')
+    this.scheduleRoutes.set(route.scheduleId, route.conversationKey)
     await this.persistSessions()
     return this.status()
   }
@@ -355,8 +399,6 @@ export class LocalImRuntime {
       return
     }
 
-    const currentSession = this.sessions.get(conversationKey)
-    const binding = this.taskBindings.get(conversationKey)
     this.deliveryTargets.set(conversationKey, {
       conversationKey,
       conversationType: event.conversationType,
@@ -364,54 +406,134 @@ export class LocalImRuntime {
       senderStaffId: event.senderStaffId,
     })
     const existing = this.conversations.get(conversationKey)
+    const receivedAt = new Date().toISOString()
     this.conversations.set(conversationKey, {
       conversationKey, conversationType: event.conversationType, conversationTitle: event.conversationTitle,
       senderNick: event.senderNick, lastMessage: messageSummary(event).slice(0, 500), lastResponse: existing?.lastResponse ?? '',
-      sessionId: currentSession ?? '', messageCount: (existing?.messageCount ?? 0) + 1, status: 'RUNNING', updatedAt: new Date().toISOString(),
-      ...(binding ? { boundTaskId: binding.taskId, boundTaskName: binding.taskName } : {}),
+      sessionId: this.sessions.get(conversationKey) ?? '', messageCount: (existing?.messageCount ?? 0) + 1,
+      status: 'RUNNING', updatedAt: receivedAt,
+      messages: appendMessage(existing?.messages, { id: event.eventId, role: 'user', text: messageSummary(event), createdAt: receivedAt }),
+      taskEvents: existing?.taskEvents ?? [],
+      ...(this.taskBindings.get(conversationKey) ? {
+        boundTaskId: this.taskBindings.get(conversationKey)!.taskId,
+        boundTaskName: this.taskBindings.get(conversationKey)!.taskName,
+      } : {}),
     })
     await this.persistSessions()
-    const attachmentContext = await this.loadAttachmentContext(event)
+    const commandResponse = await this.handleTaskCommand(conversationKey, event.text)
+    if (commandResponse !== undefined) {
+      await this.completeConversationReply(conversationKey, event, commandResponse)
+      return
+    }
+    const currentSession = this.sessions.get(conversationKey)
+    const binding = this.taskBindings.get(conversationKey)
+    const attachment = await this.loadAttachmentContext(event)
+    const generatedFiles = new Set<string>()
     const result = await this.harness.run({
-      prompt: buildPrompt(event, attachmentContext),
+      prompt: buildPrompt(event, attachment.context),
+      ...(attachment.image ? { images: [attachment.image] } : {}),
       ...(currentSession === undefined ? {} : { sessionId: currentSession }),
-    }, () => undefined)
+    }, (notification) => {
+      const conversation = this.conversations.get(conversationKey)
+      if (!conversation) return
+      const createdAt = new Date().toISOString()
+      this.conversations.set(conversationKey, {
+        ...conversation,
+        taskEvents: [...conversation.taskEvents, {
+          id: `${event.eventId}:${conversation.taskEvents.length + 1}`,
+          event: safeEvent(notification),
+          createdAt,
+        }].slice(-200),
+        updatedAt: createdAt,
+      })
+      const generated = generatedArtifactPath(notification)
+      if (generated) generatedFiles.add(generated)
+    })
     const response = result.finalResponse.trim()
     if (!response) throw new Error('Harness returned an empty IM response')
     this.sessions.set(conversationKey, result.sessionId)
     if (binding) this.taskBindings.set(conversationKey, { ...binding, sessionId: result.sessionId })
-    this.conversations.set(conversationKey, {
-      ...this.conversations.get(conversationKey)!, sessionId: result.sessionId,
-      lastResponse: response.slice(0, 500), status: 'COMPLETED', updatedAt: new Date().toISOString(),
-    })
-    await this.persistSessions()
-    await this.reply(event, response.slice(0, MAX_REPLY_CHARS))
+    await this.completeConversationReply(conversationKey, event, response.slice(0, MAX_REPLY_CHARS), result.sessionId)
+    const target = this.deliveryTargets.get(conversationKey)
+    if (target) {
+      for (const file of [...generatedFiles].slice(0, 5)) {
+        await this.sendGeneratedFile(target, file).catch((error) => {
+          process.stderr.write(`Unable to return generated DingTalk file: ${safeError(error)}\n`)
+        })
+      }
+    }
   }
 
-  private async loadAttachmentContext(event: DingTalkEvent): Promise<string> {
-    const attachment = event.attachment
-    if (attachment === undefined) return ''
-    if (attachment.kind === 'image') {
-      return `用户发送了一张图片附件：${attachment.fileName}。当前 IM 通道未对图片内容做文字识别，请根据用户文字提问；需要看图时明确请用户在桌面会话中上传。`
+  private async handleTaskCommand(conversationKey: string, text: string): Promise<string | undefined> {
+    const command = parseTaskCommand(text)
+    if (!command) return undefined
+    if (command.kind === 'unbind') {
+      await this.unbindTask(conversationKey)
+      return '已解除当前钉钉会话与桌面任务的绑定。后续消息会创建独立会话。'
     }
+    const requested = command.index
+    if (!requested) {
+      if (this.availableTasks.length === 0) return '当前没有可接管的桌面任务。请先在小胤桌面端创建任务。'
+      return ['可接管的桌面任务：', ...this.availableTasks.map((task, index) => `${index + 1}. ${task.name}`), '', '发送 `/bind 序号` 完成接管。'].join('\n')
+    }
+    const task = this.availableTasks[requested - 1]
+    if (!task) return `没有序号 ${requested} 的任务，请发送 \`/bind\` 查看最新列表。`
+    await this.bindTask({ conversationKey, taskId: task.id, taskName: task.name, sessionId: task.sessionId })
+    return `已接管桌面任务“${task.name}”，后续消息与桌面端继续使用同一个任务上下文。`
+  }
+
+  private async completeConversationReply(
+    conversationKey: string, event: DingTalkEvent, response: string, sessionId?: string,
+  ): Promise<void> {
+    const current = this.conversations.get(conversationKey)
+    if (!current) return
+    const createdAt = new Date().toISOString()
+    if (sessionId) {
+      this.sessions.set(conversationKey, sessionId)
+      const binding = this.taskBindings.get(conversationKey)
+      if (binding) this.taskBindings.set(conversationKey, { ...binding, sessionId })
+    }
+    const binding = this.taskBindings.get(conversationKey)
+    this.conversations.set(conversationKey, {
+      ...current,
+      sessionId: sessionId ?? current.sessionId,
+      lastResponse: response.slice(0, 500), status: 'COMPLETED', updatedAt: createdAt,
+      messages: appendMessage(current.messages, { id: `${event.eventId}:reply`, role: 'assistant', text: response, createdAt }),
+      ...(binding ? { boundTaskId: binding.taskId, boundTaskName: binding.taskName } : {}),
+    })
+    await this.persistSessions()
+    await this.reply(event, response)
+  }
+
+  private async loadAttachmentContext(event: DingTalkEvent): Promise<{ context: string; image?: ImageRunInput }> {
+    const attachment = event.attachment
+    if (attachment === undefined) return { context: '' }
     const token = String(await this.client?.getAccessToken() ?? '')
     if (!token) throw new Error('DingTalk access token is unavailable')
     const downloadUrl = await requestAttachmentDownloadUrl(token, this.configuration!.clientId, attachment.downloadCode)
     const bytes = await downloadAttachment(downloadUrl)
+    if (attachment.kind === 'image') {
+      return {
+        context: `用户发送了一张图片附件：${attachment.fileName}。请直接识别图片内容并结合用户问题回答。`,
+        image: { data: bytes, mediaType: detectImageMediaType(bytes), name: attachment.fileName },
+      }
+    }
     const extension = extname(attachment.fileName).toLowerCase()
     const extracted = extension === '.docx'
       ? await parseDocx(bytes)
       : extension === '.xlsx'
         ? await parseXlsx(bytes)
+        : extension === '.pptx'
+          ? await parsePptx(bytes)
         : extension === '.pdf'
           ? await parsePdf(bytes)
           : extension === '.txt' || extension === '.csv' || extension === '.md'
             ? { text: bytes.toString('utf8') }
             : undefined
     if (extracted === undefined) {
-      return `用户发送了附件：${attachment.fileName}（${bytes.length} 字节）。当前仅支持解析 DOCX、XLSX、PDF、TXT、CSV、Markdown。`
+      return { context: `用户发送了附件：${attachment.fileName}（${bytes.length} 字节）。当前仅支持解析 DOCX、XLSX、PPTX、PDF、TXT、CSV、Markdown。` }
     }
-    return `附件名称：${attachment.fileName}\n附件解析结果：\n${JSON.stringify(extracted).slice(0, MAX_ATTACHMENT_PROMPT_CHARS)}`
+    return { context: `附件名称：${attachment.fileName}\n附件解析结果：\n${JSON.stringify(extracted).slice(0, MAX_ATTACHMENT_PROMPT_CHARS)}` }
   }
 
   private async reply(event: DingTalkEvent, content: string): Promise<void> {
@@ -490,23 +612,19 @@ export class LocalImRuntime {
   private async pushTaskRun(run: CloudTaskRunEvent): Promise<void> {
     const configuration = this.configuration
     if (configuration === undefined) return
-    const targets = [...this.deliveryTargets.values()].filter((target) =>
-      (configuration.accessPolicy === 'open' || this.pairedConversations.has(target.conversationKey))
-      && !this.knownTaskDeliveryIds.has(`${run.runId}:${target.conversationKey}`))
-    if (targets.length === 0) return
+    if (!run.scheduleId) return
+    const conversationKey = this.scheduleRoutes.get(run.scheduleId)
+    if (!conversationKey) return
+    const target = this.deliveryTargets.get(conversationKey)
+    if (!target || (configuration.accessPolicy === 'pairing' && !this.pairedConversations.has(conversationKey))) return
+    if (this.knownTaskDeliveryIds.has(`${run.runId}:${conversationKey}`)) return
     const status = run.status === 'COMPLETED' ? '已完成' : '执行失败'
     const artifact = run.artifactObjectKey ? '，结果文件可在小胤任务中心下载' : ''
     const content = `云端任务“${run.name || '未命名任务'}”${status}${artifact}。\n执行时间：${new Date(run.startedAt).toLocaleString('zh-CN')}`
-    const deliveries = await Promise.allSettled(targets.map((target) => this.proactiveSend(target, content)))
-    deliveries.forEach((delivery, index) => {
-      if (delivery.status === 'fulfilled') {
-        this.knownTaskDeliveryIds.add(`${run.runId}:${targets[index]!.conversationKey}`)
-      }
-    })
+    const delivery = await Promise.allSettled([this.proactiveSend(target, content)])
+    if (delivery[0]?.status === 'fulfilled') this.knownTaskDeliveryIds.add(`${run.runId}:${conversationKey}`)
     await this.persistSessions()
-    if (deliveries.some((delivery) => delivery.status === 'rejected')) {
-      throw new Error('One or more DingTalk task result deliveries failed')
-    }
+    if (delivery[0]?.status === 'rejected') throw new Error('DingTalk task result delivery failed')
   }
 
   private async proactiveSend(target: ImDeliveryTarget, content: string): Promise<void> {
@@ -533,6 +651,47 @@ export class LocalImRuntime {
     if (!response.ok) throw new Error(`DingTalk proactive message returned HTTP ${response.status}`)
   }
 
+  private async sendGeneratedFile(target: ImDeliveryTarget, file: string): Promise<void> {
+    const configuration = this.configuration
+    if (!configuration) return
+    const bytes = await readFile(file)
+    if (bytes.length === 0 || bytes.length > MAX_ATTACHMENT_BYTES) throw new Error('Generated file exceeds DingTalk upload limits')
+    const token = String(await this.client?.getAccessToken() ?? '')
+    if (!token) throw new Error('DingTalk access token is unavailable')
+    const name = basename(file).slice(0, 255)
+    const extension = extname(name).slice(1).toLowerCase()
+    if (!['xlsx', 'pdf', 'zip', 'rar', 'doc', 'docx'].includes(extension)) {
+      throw new Error(`DingTalk does not support generated .${extension || 'unknown'} files`)
+    }
+    const uploadUrl = new URL('https://oapi.dingtalk.com/media/upload')
+    uploadUrl.searchParams.set('access_token', token)
+    uploadUrl.searchParams.set('type', 'file')
+    uploadUrl.searchParams.set('robotCode', configuration.clientId)
+    const form = new FormData()
+    form.append('media', new Blob([bytes]), name)
+    const upload = await fetch(uploadUrl, { method: 'POST', body: form, redirect: 'error', signal: AbortSignal.timeout(30_000) })
+    if (!upload.ok) throw new Error(`DingTalk media upload returned HTTP ${upload.status}`)
+    const uploadBody = await upload.json() as { media_id?: unknown; errcode?: unknown; errmsg?: unknown }
+    const mediaId = typeof uploadBody.media_id === 'string' ? uploadBody.media_id : ''
+    if (!mediaId) throw new Error(`DingTalk media upload failed: ${String(uploadBody.errmsg ?? uploadBody.errcode ?? 'missing media_id')}`)
+    const group = target.conversationType === 'group'
+    const endpoint = group
+      ? 'https://api.dingtalk.com/v1.0/robot/groupMessages/send'
+      : 'https://api.dingtalk.com/v1.0/robot/oToMessages/batchSend'
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-acs-dingtalk-access-token': token },
+      body: JSON.stringify({
+        robotCode: configuration.clientId,
+        msgKey: 'sampleFile',
+        msgParam: JSON.stringify({ mediaId, fileName: name, fileType: extension }),
+        ...(group ? { openConversationId: target.conversationId } : { userIds: [target.senderStaffId] }),
+      }),
+      redirect: 'error', signal: AbortSignal.timeout(20_000),
+    })
+    if (!response.ok) throw new Error(`DingTalk generated file send returned HTTP ${response.status}`)
+  }
+
   private async loadSessions(): Promise<void> {
     this.sessions.clear()
     this.conversations.clear()
@@ -543,6 +702,7 @@ export class LocalImRuntime {
     this.taskRunBaselineInitialized = false
     this.knownTaskDeliveryIds.clear()
     this.taskBindings.clear()
+    this.scheduleRoutes.clear()
     if (!this.statePath) return
     try {
       const value = JSON.parse(await readFile(this.statePath, 'utf8')) as SessionState
@@ -550,7 +710,11 @@ export class LocalImRuntime {
         if (key && typeof sessionId === 'string' && sessionId) this.sessions.set(key, sessionId)
       }
       for (const conversation of value.conversations ?? []) {
-        if (conversation.conversationKey) this.conversations.set(conversation.conversationKey, conversation)
+        if (conversation.conversationKey) this.conversations.set(conversation.conversationKey, {
+          ...conversation,
+          messages: conversation.messages ?? [],
+          taskEvents: conversation.taskEvents ?? [],
+        })
       }
       for (const queued of value.pendingEvents ?? []) {
         if (queued.event?.eventId) this.pendingEvents.set(queued.event.eventId, queued)
@@ -570,6 +734,9 @@ export class LocalImRuntime {
       }
       for (const binding of value.taskBindings ?? []) {
         try { validateTaskBinding(binding); this.taskBindings.set(binding.conversationKey, binding) } catch { /* discard invalid state */ }
+      }
+      for (const route of value.scheduleRoutes ?? []) {
+        if (route.scheduleId && route.conversationKey) this.scheduleRoutes.set(route.scheduleId, route.conversationKey)
       }
       for (const eventId of this.pendingEvents.keys()) this.knownEvents.add(eventId)
     } catch (error) {
@@ -591,6 +758,7 @@ export class LocalImRuntime {
       taskRunBaselineInitialized: this.taskRunBaselineInitialized,
       knownTaskDeliveryIds: [...this.knownTaskDeliveryIds].slice(-(MAX_KNOWN_EVENTS * 5)),
       taskBindings: [...this.taskBindings.values()],
+      scheduleRoutes: [...this.scheduleRoutes].map(([scheduleId, conversationKey]) => ({ scheduleId, conversationKey })),
     })
     this.persistTail = this.persistTail.then(async () => {
       await mkdir(dirname(this.statePath), { recursive: true })
@@ -600,6 +768,65 @@ export class LocalImRuntime {
     })
     await this.persistTail
   }
+}
+
+export function parseTaskCommand(text: string): { kind: 'bind'; index?: number } | { kind: 'unbind' } | undefined {
+  const match = text.trim().match(/^\/(bind|unbind)(?:\s+(\d+))?$/i)
+  if (!match) return undefined
+  if (match[1]!.toLowerCase() === 'unbind') return match[2] === undefined ? { kind: 'unbind' } : undefined
+  const index = match[2] === undefined ? undefined : Number(match[2])
+  return index === undefined ? { kind: 'bind' } : { kind: 'bind', index }
+}
+
+function validBindableTask(value: BindableTask): boolean {
+  return Boolean(value.id?.trim() && value.name?.trim() && value.sessionId?.trim())
+    && value.id.length <= 200 && value.name.length <= 200 && value.sessionId.length <= 1_024
+}
+
+function appendMessage(messages: ImConversationMessage[] | undefined, message: ImConversationMessage): ImConversationMessage[] {
+  return [...(messages ?? []).filter((item) => item.id !== message.id), message].slice(-200)
+}
+
+function safeEvent(value: unknown): unknown {
+  try {
+    const json = JSON.stringify(value)
+    if (json.length > 100_000) return { type: 'truncated', size: json.length }
+    return JSON.parse(json) as unknown
+  } catch {
+    return { type: 'unavailable' }
+  }
+}
+
+function generatedArtifactPath(notification: unknown): string | undefined {
+  const wire = recordValue(notification)
+  const params = recordValue(wire?.params)
+  const event = recordValue(params?.event)
+  if (event?.type !== 'tool/result') return undefined
+  const data = recordValue(event.data)
+  const message = recordValue(data?.message)
+  const blocks = Array.isArray(message?.content) ? message.content : []
+  for (const blockValue of blocks) {
+    const block = recordValue(blockValue)
+    if (block?.type !== 'tool-result' || block.isError === true || !Array.isArray(block.content)) continue
+    for (const contentValue of block.content) {
+      const content = recordValue(contentValue)
+      if (content?.type !== 'text' || typeof content.text !== 'string') continue
+      try {
+        const output = recordValue(JSON.parse(content.text))
+        const rootId = stringValue(output?.rootId)
+        const path = stringValue(output?.path || output?.destination)
+        const index = Number(rootId.match(/^local-root-(\d+)$/u)?.[1] ?? 0) - 1
+        const roots = JSON.parse(process.env.XIAOYIN_LOCAL_FILE_ROOTS ?? '[]') as unknown
+        if (!Array.isArray(roots) || typeof roots[index] !== 'string' || !path) continue
+        const root = resolve(roots[index])
+        const candidate = resolve(root, path)
+        const relation = relative(root, candidate)
+        if (!relation || relation.startsWith('..') || resolve(root, relation) !== candidate) continue
+        return candidate
+      } catch { /* ignore non-structured tool output */ }
+    }
+  }
+  return undefined
 }
 
 function validateTaskBinding(value: TaskBinding): void {
@@ -691,6 +918,12 @@ async function downloadAttachment(url: string): Promise<Buffer> {
   const bytes = Buffer.from(await response.arrayBuffer())
   if (bytes.length > MAX_ATTACHMENT_BYTES) throw new Error(`DingTalk attachment exceeds the ${MAX_ATTACHMENT_BYTES} byte limit`)
   return bytes
+}
+
+function detectImageMediaType(bytes: Buffer): 'image/png' | 'image/jpeg' {
+  if (bytes.length >= 8 && bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) return 'image/png'
+  if (bytes.length >= 2 && bytes[0] === 0xff && bytes[1] === 0xd8) return 'image/jpeg'
+  throw new Error('DingTalk image must be PNG or JPEG')
 }
 
 function messageSummary(event: DingTalkEvent): string {

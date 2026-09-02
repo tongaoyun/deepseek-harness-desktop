@@ -2,7 +2,7 @@ pub(crate) use crate::harness_connectors::{
     ConnectorDefinition, RuntimeConnector, runtime_connectors,
 };
 use crate::harness_connectors::{
-    diagnostic_connectors, validate_connector_catalog, validate_http_url,
+    desktop_connector_enabled, diagnostic_connectors, validate_connector_catalog, validate_http_url,
 };
 use crate::{expert_kits, local_files::LocalFileAuthorizations, memory};
 use serde::{Deserialize, Serialize};
@@ -122,8 +122,12 @@ pub(crate) struct RuntimeFingerprint {
     pub(crate) connectors: Vec<RuntimeConnector>,
     pub(crate) local_file_roots: Vec<String>,
     pub(crate) allow_local_files: bool,
+    pub(crate) approve_local_file_writes: bool,
     pub(crate) allow_shell: bool,
+    pub(crate) approve_shell: bool,
     pub(crate) allow_computer_use: bool,
+    pub(crate) approve_computer_use: bool,
+    pub(crate) allow_browser: bool,
     pub(crate) allowed_computer_tools: Vec<String>,
     pub(crate) litellm_base_url: String,
     pub(crate) knowledge_endpoint: String,
@@ -179,14 +183,19 @@ pub async fn run_harness(
         return Err("当前专家套件禁止使用本地目录".to_string());
     }
     let local_file_roots = local_files.resolve(&request.local_file_root_ids)?;
+    let allow_browser = desktop_connector_enabled(&request.connectors, "desktop-browser");
     let connectors = runtime_connectors(&request.connectors, &profile)?;
     let fingerprint = RuntimeFingerprint {
         skill_directories: profile.skill_directories,
         connectors,
         local_file_roots,
         allow_local_files: profile.allow_local_files,
+        approve_local_file_writes: profile.approve_local_file_writes,
         allow_shell: profile.allow_shell,
+        approve_shell: profile.approve_shell,
         allow_computer_use: profile.allow_computer_use,
+        approve_computer_use: profile.approve_computer_use,
+        allow_browser,
         allowed_computer_tools: profile.allowed_computer_tools,
         litellm_base_url: request.litellm_base_url,
         knowledge_endpoint: request.knowledge_endpoint,
@@ -243,8 +252,12 @@ pub async fn diagnose_connectors(
         connectors,
         local_file_roots: Vec::new(),
         allow_local_files: false,
+        approve_local_file_writes: true,
         allow_shell: false,
+        approve_shell: true,
         allow_computer_use: false,
+        approve_computer_use: true,
+        allow_browser: false,
         allowed_computer_tools: Vec::new(),
         litellm_base_url: String::new(),
         knowledge_endpoint: String::new(),
@@ -279,8 +292,12 @@ pub async fn self_test_local_capabilities(
         connectors: Vec::new(),
         local_file_roots: Vec::new(),
         allow_local_files: false,
+        approve_local_file_writes: true,
         allow_shell: false,
+        approve_shell: true,
         allow_computer_use: false,
+        approve_computer_use: true,
+        allow_browser: false,
         allowed_computer_tools: Vec::new(),
         litellm_base_url: String::new(),
         knowledge_endpoint: String::new(),
@@ -309,8 +326,12 @@ pub async fn probe_harness_host(app: tauri::AppHandle) -> Result<HarnessHostHeal
         connectors: Vec::new(),
         local_file_roots: Vec::new(),
         allow_local_files: false,
+        approve_local_file_writes: true,
         allow_shell: false,
+        approve_shell: true,
         allow_computer_use: false,
+        approve_computer_use: true,
+        allow_browser: false,
         allowed_computer_tools: Vec::new(),
         litellm_base_url: String::new(),
         knowledge_endpoint: String::new(),
@@ -494,10 +515,26 @@ impl HarnessProcess {
                 "XIAOYIN_ALLOW_LOCAL_FILES",
                 fingerprint.allow_local_files.to_string(),
             )
+            .env(
+                "XIAOYIN_APPROVE_LOCAL_FILE_WRITES",
+                fingerprint.approve_local_file_writes.to_string(),
+            )
             .env("XIAOYIN_ALLOW_SHELL", fingerprint.allow_shell.to_string())
+            .env(
+                "XIAOYIN_APPROVE_SHELL",
+                fingerprint.approve_shell.to_string(),
+            )
             .env(
                 "XIAOYIN_ALLOW_COMPUTER_USE",
                 fingerprint.allow_computer_use.to_string(),
+            )
+            .env(
+                "XIAOYIN_ALLOW_BROWSER",
+                fingerprint.allow_browser.to_string(),
+            )
+            .env(
+                "XIAOYIN_APPROVE_COMPUTER_USE",
+                fingerprint.approve_computer_use.to_string(),
             )
             .env("XIAOYIN_COMPUTER_USE_TOOLS", computer_tools)
             .env("DEEPSEEK_BASE_URL", &fingerprint.litellm_base_url)
@@ -1008,6 +1045,7 @@ mod tests {
                 url: "http://erp.internal/mcp".to_string(),
                 auth_mode: "employee-bearer".to_string(),
                 tool_names: vec!["sales_summary".to_string()],
+                enabled: true,
             }],
             model: "deepseek-chat".to_string(),
             model_api_key: "model-token".to_string(),
@@ -1054,6 +1092,7 @@ mod tests {
                 url: "http://erp.internal/mcp".to_string(),
                 auth_mode: "employee-bearer".to_string(),
                 tool_names: vec!["sales_summary".to_string(), "order_cancel".to_string()],
+                enabled: true,
             },
             ConnectorDefinition {
                 id: "desktop-browser".to_string(),
@@ -1064,6 +1103,7 @@ mod tests {
                 url: String::new(),
                 auth_mode: "none".to_string(),
                 tool_names: vec!["browser_open".to_string()],
+                enabled: true,
             },
         ];
         let profile = expert_kits::ExpertKitHarnessProfile {
@@ -1072,10 +1112,15 @@ mod tests {
             knowledge_base_refs: Some(vec!["organization:operations-sop".to_string()]),
             required_connector_tools: vec!["sales_summary".to_string(), "browser_open".to_string()],
             allow_local_files: false,
+            approve_local_file_writes: true,
             allow_shell: false,
+            approve_shell: true,
             allow_computer_use: false,
+            approve_computer_use: true,
             allowed_computer_tools: Vec::new(),
+            allow_connector_read: true,
             allow_connector_write: false,
+            approve_connector_write: false,
             prompt: String::new(),
         };
 
@@ -1102,6 +1147,7 @@ mod tests {
                 url: "http://erp.internal/mcp".to_string(),
                 auth_mode: "employee-bearer".to_string(),
                 tool_names: vec!["sales_summary".to_string(), "inventory_risk".to_string()],
+                enabled: false,
             },
             ConnectorDefinition {
                 id: "local-files".to_string(),
@@ -1112,6 +1158,7 @@ mod tests {
                 url: String::new(),
                 auth_mode: "none".to_string(),
                 tool_names: vec!["local_file_read".to_string()],
+                enabled: false,
             },
         ];
 

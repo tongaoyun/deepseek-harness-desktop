@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { buildConversationKey, parseDingTalkEvent } from './im-runtime.js'
+import { buildConversationKey, parseDingTalkEvent, parseTaskCommand } from './im-runtime.js'
 
 describe('local DingTalk runtime', () => {
+  it('parses in-channel task takeover commands exactly', () => {
+    expect(parseTaskCommand('/bind')).toEqual({ kind: 'bind' })
+    expect(parseTaskCommand('/bind 2')).toEqual({ kind: 'bind', index: 2 })
+    expect(parseTaskCommand('/unbind')).toEqual({ kind: 'unbind' })
+    expect(parseTaskCommand('/unbind 2')).toBeUndefined()
+    expect(parseTaskCommand('please /bind 2')).toBeUndefined()
+  })
+
   it('normalizes a DingTalk Stream text message without exposing raw payload', () => {
     const event = parseDingTalkEvent({
       specVersion: '1.0', type: 'CALLBACK',

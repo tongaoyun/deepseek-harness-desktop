@@ -1,3 +1,4 @@
+use crate::harness_connectors::desktop_connector_enabled;
 use crate::{
     expert_kits,
     harness::{
@@ -96,6 +97,35 @@ pub struct ImConversationSummary {
     updated_at: String,
     bound_task_id: Option<String>,
     bound_task_name: Option<String>,
+    #[serde(default)]
+    messages: Vec<ImConversationMessage>,
+    #[serde(default)]
+    task_events: Vec<ImTaskEvent>,
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImConversationMessage {
+    id: String,
+    role: String,
+    text: String,
+    created_at: String,
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImTaskEvent {
+    id: String,
+    event: Value,
+    created_at: String,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BindableTask {
+    id: String,
+    name: String,
+    session_id: String,
 }
 
 #[derive(Clone, Serialize)]
@@ -237,6 +267,25 @@ pub fn unbind_local_im_task(
 }
 
 #[tauri::command]
+pub fn sync_local_im_tasks(
+    manager: tauri::State<'_, LocalImManager>,
+    tasks: Vec<BindableTask>,
+) -> Result<Option<LocalImStatus>, String> {
+    manager.sync_tasks(tasks)
+}
+
+#[tauri::command]
+pub fn route_local_im_schedule(
+    manager: tauri::State<'_, LocalImManager>,
+    schedule_id: String,
+    conversation_key: String,
+) -> Result<LocalImStatus, String> {
+    manager
+        .route_schedule(&schedule_id, &conversation_key)?
+        .ok_or_else(|| "钉钉频道当前未运行".to_string())
+}
+
+#[tauri::command]
 pub fn stop_local_im_runtime(manager: tauri::State<'_, LocalImManager>) -> Result<(), String> {
     manager.stop()
 }
@@ -265,14 +314,26 @@ impl LocalImManager {
     ) -> Result<LocalImStatus, String> {
         let profile =
             expert_kits::harness_profile(app, None, None, &[], "", &context.allowed_artifacts)?;
+        let im_workspace = app
+            .path()
+            .app_data_dir()
+            .map_err(|error| format!("无法确定 IM 工作目录：{error}"))?
+            .join("im-workspace");
+        fs::create_dir_all(&im_workspace)
+            .map_err(|error| format!("无法创建 IM 工作目录：{error}"))?;
+        let allow_browser = desktop_connector_enabled(&context.connectors, "desktop-browser");
         let connectors = runtime_connectors(&context.connectors, &profile)?;
         let fingerprint = RuntimeFingerprint {
             skill_directories: profile.skill_directories,
             connectors,
-            local_file_roots: Vec::new(),
-            allow_local_files: false,
+            local_file_roots: vec![im_workspace.to_string_lossy().into_owned()],
+            allow_local_files: true,
+            approve_local_file_writes: false,
             allow_shell: false,
+            approve_shell: true,
             allow_computer_use: false,
+            approve_computer_use: true,
+            allow_browser,
             allowed_computer_tools: Vec::new(),
             litellm_base_url: context.litellm_base_url,
             knowledge_endpoint: context.knowledge_endpoint,
@@ -393,6 +454,40 @@ impl LocalImManager {
         let value = process.request(
             "im.unbind-task",
             Some(json!({ "conversationKey": conversation_key })),
+            None,
+        )?;
+        parse_runtime_status(value, true, true).map(Some)
+    }
+
+    fn sync_tasks(&self, tasks: Vec<BindableTask>) -> Result<Option<LocalImStatus>, String> {
+        let mut guard = self
+            .process
+            .lock()
+            .map_err(|_| "本地 IM 状态不可用".to_string())?;
+        let Some(process) = guard.as_mut() else {
+            return Ok(None);
+        };
+        let value = process.request("im.sync-tasks", Some(json!({ "tasks": tasks })), None)?;
+        parse_runtime_status(value, true, true).map(Some)
+    }
+
+    fn route_schedule(
+        &self,
+        schedule_id: &str,
+        conversation_key: &str,
+    ) -> Result<Option<LocalImStatus>, String> {
+        validate_binding_field("定时任务标识", schedule_id, 200)?;
+        validate_binding_field("IM 会话标识", conversation_key, 1_024)?;
+        let mut guard = self
+            .process
+            .lock()
+            .map_err(|_| "本地 IM 状态不可用".to_string())?;
+        let Some(process) = guard.as_mut() else {
+            return Ok(None);
+        };
+        let value = process.request(
+            "im.route-schedule",
+            Some(json!({ "scheduleId": schedule_id, "conversationKey": conversation_key })),
             None,
         )?;
         parse_runtime_status(value, true, true).map(Some)

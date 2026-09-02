@@ -102,6 +102,8 @@ export interface TaskMessage {
   role: 'assistant' | 'user'
   text: string
   pending?: boolean
+  id?: string
+  source?: 'desktop' | 'dingtalk'
 }
 
 export interface TaskExecutionStep {
@@ -151,6 +153,7 @@ export interface LocalTaskRun {
   capabilitySnapshot?: CapabilitySnapshot
   monitor: TaskMonitorState
   messages: TaskMessage[]
+  processedImEventIds?: string[]
 }
 
 export interface CapabilitySnapshot {
@@ -255,6 +258,7 @@ export interface ConnectorRuntimeDefinition {
   url: string
   authMode: ConnectorAuthMode
   toolNames: string[]
+  enabled: boolean
 }
 
 export type ConnectorDiagnosticStatus = 'ready' | 'drift' | 'unavailable'

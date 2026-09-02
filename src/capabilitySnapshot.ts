@@ -20,7 +20,7 @@ export function createCapabilitySnapshot(
   return {
     createdAt,
     extensions,
-    connectors: connectors.filter((item) => item.status === 'ready')
+    connectors: connectors.filter((item) => item.status === 'ready' && item.enabled)
       .map((item) => ({ ...item, toolNames: [...item.toolNames] }))
       .sort((left, right) => left.id.localeCompare(right.id)),
     knowledgeBaseRefs: [...new Set(knowledgeBaseRefs)].sort(),

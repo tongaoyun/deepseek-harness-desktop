@@ -61,6 +61,21 @@ export async function installDeveloperExpertKit(): Promise<InstalledExpertKit | 
   return invoke<InstalledExpertKit | null>('install_developer_expert_kit')
 }
 
+export async function createExpertKitTemplate(id: string, name: string): Promise<string | null> {
+  if (!isTauri()) throw new Error('请在小胤桌面客户端中创建专家套件')
+  return invoke<string | null>('create_expert_kit_template', { id, name })
+}
+
+export async function customizeExpertKit(id: string, version: string): Promise<string | null> {
+  if (!isTauri()) throw new Error('请在小胤桌面客户端中定制专家套件')
+  return invoke<string | null>('customize_expert_kit', { id, version })
+}
+
+export async function exportExpertKit(id: string, version: string): Promise<string | null> {
+  if (!isTauri()) throw new Error('请在小胤桌面客户端中导出专家套件')
+  return invoke<string | null>('export_expert_kit', { id, version })
+}
+
 export async function removeDeveloperExpertKit(id: string, version: string): Promise<void> {
   if (!isTauri()) throw new Error('请在小胤桌面客户端中移除本地验收套件')
   await invoke('remove_developer_expert_kit', { id, version })
@@ -76,6 +91,7 @@ export function mergeExpertKits(
   installed: InstalledExpertKit[],
   connectors: ConnectorCatalogEntry[] = [],
   knowledgeBases: KnowledgeBaseEntry[] = [],
+  enabledConnectorIds?: Iterable<string>,
 ): ExpertKitView[] {
   const newestInstalled = new Map<string, InstalledExpertKit>()
   for (const kit of installed) {
@@ -85,6 +101,7 @@ export function mergeExpertKits(
 
   const connectorById = new Map(connectors.map((connector) => [connector.id, connector]))
   const knowledgeReferences = new Set(knowledgeBases.map((knowledgeBase) => knowledgeBase.reference))
+  const enabled = enabledConnectorIds === undefined ? undefined : new Set(enabledConnectorIds)
   const readiness = (refs: string[], requiredTools: string[], knowledgeBaseRefs: string[]) => {
     const referencedConnectors = refs
       .map((id) => connectorById.get(id))
@@ -92,6 +109,7 @@ export function mergeExpertKits(
     const connectorIssues = refs.flatMap((id) => {
       const connector = connectorById.get(id)
       if (!connector) return [`${id} 未发布`]
+      if (connector.status === 'ready' && enabled?.has(id) === false) return [`${connector.name}：当前员工未启用`]
       if (connector.status === 'ready') return []
       return [`${connector.name}：${connectorStatusLabel(connector.status)}`]
     })
