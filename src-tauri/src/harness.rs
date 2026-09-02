@@ -1030,7 +1030,7 @@ pub(crate) fn runtime_connectors(
     let connector_tools = selected
         .iter()
         .map(|connector| {
-            let tools = connector.tool_names.iter().cloned().collect::<Vec<_>>();
+            let tools = connector.tool_names.to_vec();
             (connector.id.as_str(), tools)
         })
         .collect::<HashMap<_, _>>();
