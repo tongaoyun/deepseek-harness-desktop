@@ -1,0 +1,101 @@
+name: Windows quick installer
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: xiaoyin-desktop-windows-quick
+  cancel-in-progress: true
+
+jobs:
+  build-windows-x64:
+    runs-on: windows-x64
+    timeout-minutes: 60
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_TARGET_DIR: C:\xiaoyin-desktop-builder\quick-target
+      CARGO_REGISTRIES_CRATES_IO_INDEX: sparse+https://rsproxy.cn/index/
+      NPM_CONFIG_REGISTRY: http://192.168.2.9:4873/
+      NPM_CONFIG_FETCH_RETRIES: 4
+      NPM_CONFIG_FETCH_TIMEOUT: 120000
+      NPM_CONFIG_UPDATE_NOTIFIER: "false"
+      VITE_CONTROL_PLANE_BASE_URL: http://192.168.2.67:30081
+
+    steps:
+      - name: 检出代码
+        uses: http://192.168.2.66:3300/instudio/checkout@v4
+
+      - name: 验证 Windows 构建环境
+        shell: powershell
+        run: |
+          if ((node --version) -ne 'v24.19.0') { throw "Node.js v24.19.0 is required" }
+          if ((node -p "process.arch") -ne 'x64') { throw "x64 Node.js is required" }
+          rustc --version
+          cargo --version
+
+      - name: 安装锁定依赖
+        shell: powershell
+        run: |
+          .\scripts\ensure-pnpm.ps1
+          pnpm config set store-dir C:\xiaoyin-desktop-builder\pnpm-store
+          pnpm install --frozen-lockfile --registry=http://192.168.2.9:4873/
+
+      - name: 验证版本一致性
+        shell: powershell
+        run: pnpm verify:version
+
+      - name: 准备内置 Harness Runtime
+        shell: powershell
+        run: .\scripts\prepare-harness-runtime.ps1
+
+      - name: 准备 NSIS 打包工具
+        shell: powershell
+        run: .\scripts\prepare-tauri-windows-tools.ps1 -Bundles nsis
+
+      - name: 构建快速 NSIS 安装包
+        shell: powershell
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          $Bundle = Join-Path $env:CARGO_TARGET_DIR "release\bundle\nsis"
+          if (Test-Path -LiteralPath $Bundle) { Remove-Item -LiteralPath $Bundle -Recurse -Force }
+          pnpm tauri build --bundles nsis
+          if ($LASTEXITCODE -ne 0) { throw "NSIS build failed with exit code $LASTEXITCODE" }
+
+      - name: 收集安装包并生成 SHA-256
+        shell: powershell
+        run: |
+          $Bundle = Join-Path $env:CARGO_TARGET_DIR "release\bundle\nsis"
+          $Output = Join-Path (Get-Location).Path "windows-quick-artifacts"
+          $ExpectedVersion = (Get-Content "package.json" -Raw | ConvertFrom-Json).version
+          $Installers = @(Get-ChildItem $Bundle -Recurse -File -Filter "*.exe" | Where-Object {
+            $_.Name -like "*_${ExpectedVersion}_*"
+          })
+          if ($Installers.Count -ne 1) { throw "Expected one NSIS installer, found $($Installers.Count)" }
+          if (Test-Path -LiteralPath $Output) { Remove-Item -LiteralPath $Output -Recurse -Force }
+          New-Item -ItemType Directory -Force -Path $Output | Out-Null
+          Copy-Item -LiteralPath $Installers[0].FullName -Destination $Output
+          $Signature = "$($Installers[0].FullName).sig"
+          if (Test-Path -LiteralPath $Signature -PathType Leaf) {
+            Copy-Item -LiteralPath $Signature -Destination $Output
+          }
+          $ChecksumLines = @(Get-ChildItem $Output -File | Get-FileHash -Algorithm SHA256 |
+            ForEach-Object { "$($_.Hash.ToLowerInvariant())  $(Split-Path $_.Path -Leaf)" })
+          $Utf8WithoutBom = [System.Text.UTF8Encoding]::new($false)
+          [System.IO.File]::WriteAllText((Join-Path $Output "SHA256SUMS.txt"), (($ChecksumLines -join "`n") + "`n"), $Utf8WithoutBom)
+
+      - name: 上传快速安装包
+        uses: http://192.168.2.66:3300/instudio/gitea-upload-artifact@v4
+        with:
+          name: xiaoyin-desktop-windows-quick-${{ github.sha }}
+          path: |
+            windows-quick-artifacts/*.exe
+            windows-quick-artifacts/*.sig
+            windows-quick-artifacts/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 7

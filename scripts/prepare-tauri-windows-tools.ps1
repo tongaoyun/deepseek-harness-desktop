@@ -1,6 +1,8 @@
 [CmdletBinding()]
 param(
-  [string]$PackageBaseUrl = "http://192.168.2.66:3300/api/packages/instudio/generic/tauri-bundler-tools/2.11.4"
+  [string]$PackageBaseUrl = "http://192.168.2.66:3300/api/packages/instudio/generic/tauri-bundler-tools/2.11.4",
+  [ValidateSet("all", "nsis")]
+  [string]$Bundles = "all"
 )
 
 $ErrorActionPreference = "Stop"
@@ -90,48 +92,74 @@ $wixRequired = @("candle.exe", "light.exe", "darice.cub", "WixUIExtension.dll")
 $nsisRequired = @("makensis.exe", "Plugins\x86-unicode\additional\nsis_tauri_utils.dll")
 New-Item -ItemType Directory -Force -Path $downloadRoot | Out-Null
 $baseUrl = $PackageBaseUrl.TrimEnd("/")
-Get-VerifiedFile -Uri "$baseUrl/wix314-binaries.zip" -Destination $wixArchive -Algorithm SHA256 -ExpectedHash $wixSha256
-Get-VerifiedFile -Uri "$baseUrl/nsis-3.11.zip" -Destination $nsisArchive -Algorithm SHA1 -ExpectedHash $nsisSha1
-Get-VerifiedFile -Uri "$baseUrl/nsis_tauri_utils.dll" -Destination $nsisPlugin -Algorithm SHA1 -ExpectedHash $nsisPluginSha1
 
-$wixStage = Assert-ToolsChildPath -Path (Join-Path $toolsRoot ("stage-wix-" + [guid]::NewGuid().ToString("N")))
-$nsisStage = Assert-ToolsChildPath -Path (Join-Path $toolsRoot ("stage-nsis-" + [guid]::NewGuid().ToString("N")))
-try {
-  Expand-Archive -LiteralPath $wixArchive -DestinationPath $wixStage
-  Expand-Archive -LiteralPath $nsisArchive -DestinationPath $nsisStage
-
-  $expandedNsis = Join-Path $nsisStage "nsis-3.11"
-  $pluginDestination = Join-Path $expandedNsis "Plugins\x86-unicode\additional\nsis_tauri_utils.dll"
-  New-Item -ItemType Directory -Force -Path (Split-Path $pluginDestination -Parent) | Out-Null
-  Copy-Item -LiteralPath $nsisPlugin -Destination $pluginDestination
-
-  if (-not (Test-RequiredFiles -Root $wixStage -RelativePaths $wixRequired)) {
-    throw "The verified WiX archive did not contain the files required by Tauri."
-  }
-  if (-not (Test-RequiredFiles -Root $expandedNsis -RelativePaths $nsisRequired)) {
-    throw "The verified NSIS archive did not contain the files required by Tauri."
+function Install-WixTools {
+  if (Test-RequiredFiles -Root $wixRoot -RelativePaths $wixRequired) {
+    Write-Output "Using prepared WiX tools: $wixRoot"
+    return
   }
 
-  foreach ($existingRoot in @($wixRoot, $nsisRoot)) {
-    $safeRoot = Assert-ToolsChildPath -Path $existingRoot
+  Get-VerifiedFile -Uri "$baseUrl/wix314-binaries.zip" -Destination $wixArchive -Algorithm SHA256 -ExpectedHash $wixSha256
+  $stage = Assert-ToolsChildPath -Path (Join-Path $toolsRoot ("stage-wix-" + [guid]::NewGuid().ToString("N")))
+  try {
+    Expand-Archive -LiteralPath $wixArchive -DestinationPath $stage
+    if (-not (Test-RequiredFiles -Root $stage -RelativePaths $wixRequired)) {
+      throw "The verified WiX archive did not contain the files required by Tauri."
+    }
+    $safeRoot = Assert-ToolsChildPath -Path $wixRoot
     if (Test-Path -LiteralPath $safeRoot) {
       Remove-Item -LiteralPath $safeRoot -Recurse -Force
     }
+    Move-Item -LiteralPath $stage -Destination $wixRoot
   }
-  Move-Item -LiteralPath $wixStage -Destination $wixRoot
-  Move-Item -LiteralPath $expandedNsis -Destination $nsisRoot
-}
-finally {
-  foreach ($stageRoot in @($wixStage, $nsisStage)) {
-    if (Test-Path -LiteralPath $stageRoot) {
-      Remove-Item -LiteralPath $stageRoot -Recurse -Force
+  finally {
+    if (Test-Path -LiteralPath $stage) {
+      Remove-Item -LiteralPath $stage -Recurse -Force
     }
   }
 }
 
-if (-not ((Test-RequiredFiles -Root $wixRoot -RelativePaths $wixRequired) -and
-          (Test-RequiredFiles -Root $nsisRoot -RelativePaths $nsisRequired))) {
-  throw "Tauri Windows bundler tool preparation was incomplete."
+function Install-NsisTools {
+  if (Test-RequiredFiles -Root $nsisRoot -RelativePaths $nsisRequired) {
+    Write-Output "Using prepared NSIS tools: $nsisRoot"
+    return
+  }
+
+  Get-VerifiedFile -Uri "$baseUrl/nsis-3.11.zip" -Destination $nsisArchive -Algorithm SHA1 -ExpectedHash $nsisSha1
+  Get-VerifiedFile -Uri "$baseUrl/nsis_tauri_utils.dll" -Destination $nsisPlugin -Algorithm SHA1 -ExpectedHash $nsisPluginSha1
+  $stage = Assert-ToolsChildPath -Path (Join-Path $toolsRoot ("stage-nsis-" + [guid]::NewGuid().ToString("N")))
+  try {
+    Expand-Archive -LiteralPath $nsisArchive -DestinationPath $stage
+    $expandedNsis = Join-Path $stage "nsis-3.11"
+    $pluginDestination = Join-Path $expandedNsis "Plugins\x86-unicode\additional\nsis_tauri_utils.dll"
+    New-Item -ItemType Directory -Force -Path (Split-Path $pluginDestination -Parent) | Out-Null
+    Copy-Item -LiteralPath $nsisPlugin -Destination $pluginDestination
+    if (-not (Test-RequiredFiles -Root $expandedNsis -RelativePaths $nsisRequired)) {
+      throw "The verified NSIS archive did not contain the files required by Tauri."
+    }
+    $safeRoot = Assert-ToolsChildPath -Path $nsisRoot
+    if (Test-Path -LiteralPath $safeRoot) {
+      Remove-Item -LiteralPath $safeRoot -Recurse -Force
+    }
+    Move-Item -LiteralPath $expandedNsis -Destination $nsisRoot
+  }
+  finally {
+    if (Test-Path -LiteralPath $stage) {
+      Remove-Item -LiteralPath $stage -Recurse -Force
+    }
+  }
+}
+
+if ($Bundles -eq "all") {
+  Install-WixTools
+}
+Install-NsisTools
+
+if (($Bundles -eq "all") -and -not (Test-RequiredFiles -Root $wixRoot -RelativePaths $wixRequired)) {
+  throw "Tauri WiX tool preparation was incomplete."
+}
+if (-not (Test-RequiredFiles -Root $nsisRoot -RelativePaths $nsisRequired)) {
+  throw "Tauri NSIS tool preparation was incomplete."
 }
 
 Write-Output "Tauri Windows bundler tools are ready: $toolsRoot"

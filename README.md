@@ -56,8 +56,10 @@ pnpm tauri:dev
 
 ## Windows 发布
 
-- `main`：执行前端、Harness 和 Windows Rust 的类型、测试、静态检查与构建，不生成安装包；连续提交时自动取消旧任务。
-- 手动构建：按需运行 `Windows installer`，可选择是否执行安装烟测，不创建正式 Release。
+- 日常桌面调试：在 Windows 工作机运行 `pnpm tauri:dev`，不经过安装包流水线。
+- `main`：Linux 执行前端与 Harness 门禁；只有 `src-tauri/` 变化时才启动 Windows Rust CI。
+- 快速安装包：手动运行 `Windows quick installer`，仅生成 NSIS，不执行重复门禁、MSI、安装烟测或正式发布，制品保留 7 天。
+- 完整安装包：手动运行 `Windows installer`，生成 MSI 与 NSIS，可选择安装烟测，不创建正式 Release。
 - `v*` 标签：实际验收文件、Office 和 Shell；交互会话实际验收 Computer Use，服务型 Runner 验证桥接依赖，再执行安装/启动/卸载并发布正式 Gitea Release。
 - 发布失败保留草稿时可直接重跑同一标签；流水线会清理未完成资产，并在公开 Release 后回读校验资产和发布清单。
 - 自动更新：只使用正式单通道和 Tauri 签名，不设置 `stable`/`beta` 通道；启动、重新激活和每 6 小时自动检查。

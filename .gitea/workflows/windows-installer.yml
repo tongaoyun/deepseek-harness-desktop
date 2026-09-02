@@ -72,7 +72,8 @@ jobs:
       - name: 安装锁定依赖
         shell: powershell
         run: |
-          npm install -g pnpm@10.33.0 --prefer-offline --no-audit --fund=false --registry=http://192.168.2.9:4873/
+          .\scripts\ensure-pnpm.ps1
+          pnpm config set store-dir C:\xiaoyin-desktop-builder\pnpm-store
           pnpm install --frozen-lockfile --registry=http://192.168.2.9:4873/
 
       - name: 验证正式版本标签
@@ -93,8 +94,6 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "typecheck failed with exit code $LASTEXITCODE" }
           pnpm test
           if ($LASTEXITCODE -ne 0) { throw "tests failed with exit code $LASTEXITCODE" }
-          pnpm build
-          if ($LASTEXITCODE -ne 0) { throw "build failed with exit code $LASTEXITCODE" }
 
       - name: 准备内置 Harness Runtime
         shell: powershell
