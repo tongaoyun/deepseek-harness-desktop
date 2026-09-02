@@ -23,6 +23,7 @@ export interface ManagedConnectorConfig {
   allowedTools: string[]
   requiredTools: string[]
   allowWrite: boolean
+  requireWriteApproval: boolean
   required: boolean
 }
 
@@ -53,6 +54,7 @@ const ConnectorConfig = z.object({
   allowedTools: z.array(z.string()).default([]),
   requiredTools: z.array(z.string()).default([]),
   allowWrite: z.boolean().default(false),
+  requireWriteApproval: z.boolean().default(true),
   required: z.boolean().default(false),
 })
 
@@ -94,7 +96,9 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
       for (const tool of tools) {
         unregisterTools.push(ctx.tools.register(toHarnessTool(client, tool, connector)))
         registeredNames.add(tool.name)
-        if (tool.annotations?.readOnlyHint !== true) mutatingTools.set(tool.name, connector.name)
+        if (tool.annotations?.readOnlyHint !== true && connector.requireWriteApproval) {
+          mutatingTools.set(tool.name, connector.name)
+        }
       }
       activeClients.push(client)
       debug(`${connector.name}: connected, registered=${tools.length}`)

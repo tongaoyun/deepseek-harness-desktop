@@ -14,10 +14,11 @@ interface ConnectorsPageProps {
   loading: boolean
   catalogError: string
   syncError: string
+  onToggle: (connectorId: string, enabled: boolean) => void
 }
 
 export function ConnectorsPage({
-  accessToken, catalog, runtime, loading, catalogError, syncError,
+  accessToken, catalog, runtime, loading, catalogError, syncError, onToggle,
 }: ConnectorsPageProps) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -37,12 +38,13 @@ export function ConnectorsPage({
     const needle = query.trim().toLocaleLowerCase('zh-CN')
     return catalog.filter((connector) => {
       const builtIn = (connector.transport ?? connector.kind) === 'desktop' || connector.kind === 'desktop-builtin'
-      const matchesView = view === 'builtin' ? builtIn : view === 'connected' ? connector.status === 'ready' : !builtIn
+      const matchesView = view === 'builtin' ? builtIn : view === 'connected'
+        ? runtime.find((item) => item.id === connector.id)?.enabled === true : !builtIn
       return matchesView
         && (statusFilter === 'all' || connector.status === statusFilter)
         && (!needle || `${connector.name} ${connector.summary} ${connector.id} ${connector.toolNames.join(' ')}`.toLocaleLowerCase('zh-CN').includes(needle))
     })
-  }, [catalog, query, statusFilter, view])
+  }, [catalog, query, runtime, statusFilter, view])
 
   useEffect(() => {
     setResults(new Map())
@@ -93,6 +95,8 @@ export function ConnectorsPage({
     {error && <div className="kit-error">{error}</div>}
     <div className="kit-grid">{visibleCatalog.map((connector) => {
       const diagnostic = results.get(connector.id)
+      const enabled = runtime.find((item) => item.id === connector.id)?.enabled === true
+      const canEnable = connector.status === 'ready'
       return <article key={connector.id}>
         <div className="kit-card-head"><span className={`connector-state ${connector.status}`}>{connectorStatusLabel(connector.status)}</span><small>{connector.managed ? '公司托管' : '员工配置'}</small></div>
         <h3>{connector.name}</h3>
@@ -106,7 +110,13 @@ export function ConnectorsPage({
           && <div className="connector-diagnostic ready">桌面内置能力，无需远程握手</div>}
         {!diagnostic && connector.status !== 'ready'
           && <div className="connector-diagnostic skipped">静态状态未就绪，未发起远程连接</div>}
-        <small className="connector-activation-note">{connector.status === 'ready' ? '已加入新任务的能力快照' : '启用后将加入新任务，不影响进行中的任务'}</small>
+        <button
+          className={`kit-install ${enabled ? 'active' : ''}`}
+          disabled={!canEnable}
+          onClick={() => onToggle(connector.id, !enabled)}
+          type="button"
+        >{enabled ? '已为我启用' : canEnable ? '为我启用' : '当前不可启用'}</button>
+        <small className="connector-activation-note">{enabled ? '会加入新任务的能力快照；既有任务保持原快照' : '未启用，不会暴露给 Agent'}</small>
       </article>
     })}</div>
   </>

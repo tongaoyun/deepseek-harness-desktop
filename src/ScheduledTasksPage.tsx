@@ -11,6 +11,7 @@ import type { ExpertKitView } from './expertKits'
 import type { ScheduledTask, ScheduledTaskExecution, ServerWorkflowInput } from './types'
 import { cronPresets, nextCronRuns } from './cronPreview'
 import { parseNaturalSchedule } from './scheduleLanguage'
+import { loadLocalImStatus, routeLocalImSchedule, type LocalImConversationSummary } from './localIm'
 
 interface Props {
   endpoint: string
@@ -36,6 +37,8 @@ export function ScheduledTasksPage({ endpoint, employeeId, accessToken, expertKi
   const [expandedId, setExpandedId] = useState('')
   const [executions, setExecutions] = useState<Record<string, ScheduledTaskExecution[]>>({})
   const [error, setError] = useState('')
+  const [imConversations, setImConversations] = useState<LocalImConversationSummary[]>([])
+  const [deliveryConversationKey, setDeliveryConversationKey] = useState('')
 
   useEffect(() => {
     if (!selection && workflows.length > 0) {
@@ -53,6 +56,11 @@ export function ScheduledTasksPage({ endpoint, employeeId, accessToken, expertKi
       .finally(() => { if (!controller.signal.aborted) setLoading(false) })
     return () => controller.abort()
   }, [accessToken, employeeId, endpoint])
+
+  useEffect(() => {
+    void loadLocalImStatus().then((status) => setImConversations(status.enabled ? status.conversations : []))
+      .catch(() => setImConversations([]))
+  }, [])
 
   const selected = workflows.find(({ kit, workflow }) => `${kit.id}:${workflow.id}` === selection)
   const upcomingRuns = useMemo(() => nextCronRuns(cronExpression, timeZone), [cronExpression, timeZone])
@@ -72,6 +80,7 @@ export function ScheduledTasksPage({ endpoint, employeeId, accessToken, expertKi
         inputs: normalizeInputs(selected.workflow.inputs, inputs),
       })
       setTasks((current) => [task, ...current])
+      if (deliveryConversationKey) await routeLocalImSchedule(task.id, deliveryConversationKey)
       setName('')
       setInputs({})
     } catch (reason) {
@@ -147,6 +156,10 @@ export function ScheduledTasksPage({ endpoint, employeeId, accessToken, expertKi
           <label>时区<input onChange={(event) => setTimeZone(event.target.value)} value={timeZone} /></label>
         </div>
         <div className="cron-presets" aria-label="常用执行时间">{cronPresets.map((preset) => <button className={cronExpression === preset.expression ? 'active' : ''} key={preset.expression} onClick={() => setCronExpression(preset.expression)} type="button">{preset.label}</button>)}</div>
+        <label>完成后推送到<select onChange={(event) => setDeliveryConversationKey(event.target.value)} value={deliveryConversationKey}>
+          <option value="">不推送到 IM</option>
+          {imConversations.map((conversation) => <option key={conversation.conversationKey} value={conversation.conversationKey}>{conversation.conversationType === 'group' ? conversation.conversationTitle || '未命名群' : conversation.senderNick || '钉钉用户'}</option>)}
+        </select><small>每个定时任务只投递到这里指定的会话，不会广播。</small></label>
         {selected?.workflow.inputs.map((input) => <WorkflowInputField input={input} key={input.name} value={inputs[input.name]} onChange={(value) => setInputs((current) => ({ ...current, [input.name]: value }))} />)}
         <small className="cron-hint">{upcomingRuns.length > 0 ? `接下来：${upcomingRuns.map((value) => value.toLocaleString('zh-CN', { timeZone, hour12: false })).join('、')}` : 'Cron 或时区无效，请检查后再创建'}</small>
         <button className="schedule-primary" disabled={saving || (selected?.kit.connectorIssues.length ?? 0) > 0} type="submit">{saving ? '正在创建…' : '创建任务'}</button>

@@ -23,6 +23,7 @@ export function mergeSkills(
   installed: InstalledExpertKit[],
   connectors: ConnectorCatalogEntry[] = [],
   knowledgeBases: KnowledgeBaseEntry[] = [],
+  enabledConnectorIds?: Iterable<string>,
 ): SkillView[] {
   const localById = new Map<string, InstalledExpertKit>()
   for (const artifact of installed) {
@@ -31,11 +32,13 @@ export function mergeSkills(
   }
   const connectorById = new Map(connectors.map((connector) => [connector.id, connector]))
   const knowledgeReferences = new Set(knowledgeBases.map((entry) => entry.reference))
+  const enabled = enabledConnectorIds === undefined ? undefined : new Set(enabledConnectorIds)
   const dependencyState = (connectorRefs: string[], requiredTools: string[], knowledgeBaseRefs: string[]) => {
     const referenced = connectorRefs.flatMap((id) => connectorById.get(id) ? [connectorById.get(id)!] : [])
     const connectorIssues = connectorRefs.flatMap((id) => {
       const connector = connectorById.get(id)
       if (!connector) return [`${id} 未发布`]
+      if (connector.status === 'ready' && enabled?.has(id) === false) return [`${connector.name} 当前员工未启用`]
       return connector.status === 'ready' ? [] : [`${connector.name} 未就绪`]
     })
     const tools = new Set(referenced.flatMap((connector) => connector.toolNames))

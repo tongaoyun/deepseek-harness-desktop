@@ -6,6 +6,7 @@ import type { ConnectorRuntimeDefinition } from './types'
 
 const connector = (id: string, version = '1', status: ConnectorRuntimeDefinition['status'] = 'ready'): ConnectorRuntimeDefinition => ({
   id, version, status, name: id, transport: 'streamable-http', url: `http://${id}/mcp`, authMode: 'employee-bearer', toolNames: [],
+  enabled: true,
 })
 
 describe('capability snapshot', () => {
@@ -24,5 +25,10 @@ describe('capability snapshot', () => {
   it('does not silently switch an existing task to a newer connector version', () => {
     const snapshot = createCapabilitySnapshot([], [], [connector('erp', '1')])
     expect(connectorsForSnapshot(snapshot)).toEqual([connector('erp', '1')])
+  })
+
+  it('excludes connectors the employee has not enabled', () => {
+    const disabled = { ...connector('erp'), enabled: false }
+    expect(createCapabilitySnapshot([], [], [disabled]).connectors).toEqual([])
   })
 })

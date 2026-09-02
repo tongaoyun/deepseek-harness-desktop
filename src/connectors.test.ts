@@ -8,12 +8,13 @@ describe('runtime connector catalog', () => {
         status: 'needs-configuration', managed: true, toolNames: ['sales_summary'] },
       { id: 'desktop-office', name: 'Office', summary: '', kind: 'desktop-builtin', scope: 'device',
         status: 'ready', managed: true, toolNames: ['office.xlsx.create'] },
-    ], 'http://erp.internal/mcp')
+    ], 'http://erp.internal/mcp', ['erp-mcp'])
 
     expect(result[0]).toMatchObject({
       status: 'ready', transport: 'streamable-http', url: 'http://erp.internal/mcp',
       authMode: 'employee-bearer',
+      enabled: true,
     })
-    expect(result[1]).toMatchObject({ transport: 'desktop', url: '' })
+    expect(result[1]).toMatchObject({ transport: 'desktop', url: '', enabled: false })
   })
 })

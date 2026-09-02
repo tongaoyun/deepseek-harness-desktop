@@ -1,12 +1,19 @@
 import { createRequire } from 'node:module'
+import { createHash } from 'node:crypto'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { DeepSeekHarness, type HarnessNotification } from '@deepseek-ai/dsh-sdk-client'
+import { mkdir, writeFile } from 'node:fs/promises'
+import { DeepSeekHarness, type ContentBlock, type HarnessNotification } from '@deepseek-ai/dsh-sdk-client'
+import { AttachmentId, type ImageAttachmentRef, type ImageMediaType } from '@deepseek-ai/dsh-attachment'
+import { imageMetadata } from './local-attachment-store-plugin.js'
 
 export interface RunInput {
   prompt: string
   sessionId?: string
+  images?: ImageRunInput[]
 }
+
+export interface ImageRunInput { data: Buffer; mediaType: 'image/png' | 'image/jpeg'; name: string }
 
 export interface HarnessRunResult {
   sessionId: string
@@ -59,7 +66,12 @@ export class DeepSeekHarnessRuntime implements HarnessRuntime {
       throw new Error('prompt must not be blank')
     }
     const harness = this.getOrCreateHarness()
-    const result = await harness.run(applyMemoryContext(input.prompt, process.env.XIAOYIN_MEMORY_CONTEXT), {
+    const prompt = applyMemoryContext(input.prompt, process.env.XIAOYIN_MEMORY_CONTEXT)
+    const images = await Promise.all((input.images ?? []).slice(0, 4).map(persistInputImage))
+    const content: string | ContentBlock[] = images.length === 0 ? prompt : [
+      { type: 'text', text: prompt }, ...images.map((attachment) => ({ type: 'image' as const, attachment })),
+    ]
+    const result = await harness.run(content, {
       ...(input.sessionId === undefined ? {} : { sessionId: input.sessionId }),
       onNotification,
     })
@@ -104,6 +116,25 @@ export class DeepSeekHarnessRuntime implements HarnessRuntime {
       ...(maxTokens === undefined ? {} : { maxTokens }),
     })
     return this.harness
+  }
+}
+
+async function persistInputImage(input: ImageRunInput): Promise<ImageAttachmentRef> {
+  if (input.data.length === 0 || input.data.length > 5 * 1024 * 1024) throw new Error('IM image exceeds the supported size')
+  const metadata = imageMetadata(input.data, input.mediaType)
+  if (metadata.width > 2_560 || metadata.height > 2_560 || metadata.width * metadata.height > 4_000_000) {
+    throw new Error('IM image dimensions exceed the selected model policy')
+  }
+  const hash = createHash('sha256').update(input.data).digest('hex')
+  const root = resolve(process.env.XIAOYIN_ATTACHMENT_ROOT ?? './.xiaoyin/attachments')
+  await mkdir(root, { recursive: true })
+  await writeFile(resolve(root, `${hash}.image`), input.data, { flag: 'wx' }).catch((error: NodeJS.ErrnoException) => {
+    if (error.code !== 'EEXIST') throw error
+  })
+  return {
+    attachmentId: AttachmentId(`sha256:${hash}`), mediaType: input.mediaType as ImageMediaType,
+    bytes: input.data.length, width: metadata.width, height: metadata.height,
+    name: input.name.replaceAll(/[\\/]/g, '').slice(0, 100),
   }
 }
 

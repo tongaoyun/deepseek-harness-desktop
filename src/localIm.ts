@@ -51,6 +51,21 @@ export interface LocalImConversationSummary {
   updatedAt: string
   boundTaskId?: string
   boundTaskName?: string
+  messages: LocalImConversationMessage[]
+  taskEvents: LocalImTaskEvent[]
+}
+
+export interface LocalImConversationMessage {
+  id: string
+  role: 'user' | 'assistant'
+  text: string
+  createdAt: string
+}
+
+export interface LocalImTaskEvent {
+  id: string
+  event: unknown
+  createdAt: string
 }
 
 export interface ConfigureDingTalkInput {
@@ -100,6 +115,20 @@ export async function bindLocalImTask(
 export async function unbindLocalImTask(conversationKey: string): Promise<LocalImStatus> {
   if (!isTauri()) throw new Error('任务接管只能在小胤桌面客户端中使用')
   return invoke<LocalImStatus>('unbind_local_im_task', { conversationKey })
+}
+
+export async function syncLocalImTasks(
+  tasks: Array<{ id: string; name: string; sessionId: string }>,
+): Promise<LocalImStatus | null> {
+  if (!isTauri()) return null
+  return invoke<LocalImStatus | null>('sync_local_im_tasks', { tasks })
+}
+
+export async function routeLocalImSchedule(
+  scheduleId: string, conversationKey: string,
+): Promise<LocalImStatus> {
+  if (!isTauri()) throw new Error('定时任务 IM 投递只能在小胤桌面客户端中配置')
+  return invoke<LocalImStatus>('route_local_im_schedule', { scheduleId, conversationKey })
 }
 
 export async function removeLocalDingTalk(): Promise<LocalImStatus> {

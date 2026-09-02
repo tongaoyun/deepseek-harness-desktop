@@ -14,6 +14,8 @@ import {
 } from './localIm'
 import { XiaoyinMascot } from './XiaoyinMascot'
 import type { LocalTaskRun } from './types'
+import { applyHarnessNotification, createTaskMonitor } from './harness'
+import { TaskMonitor } from './TaskMonitor'
 
 interface Props extends LocalImHarnessContext { localTasks: LocalTaskRun[] }
 
@@ -36,6 +38,7 @@ export function ImChannelsPage(harness: Props) {
   const [accessPolicy, setAccessPolicy] = useState<ImAccessPolicy>('pairing')
   const [notifyTaskResults, setNotifyTaskResults] = useState(false)
   const [taskSelections, setTaskSelections] = useState<Record<string, string>>({})
+  const [activeConversationKey, setActiveConversationKey] = useState('')
   const initialized = useRef(false)
 
   const refresh = useCallback(async () => {
@@ -201,7 +204,7 @@ export function ImChannelsPage(harness: Props) {
     {status?.lastError && <div className="kit-error">钉钉连接异常：{status.lastError}</div>}
     {error && <div className="kit-error">{error}</div>}
 
-    {status?.configured && <section className="im-conversation-center"><header><div><h3>IM 会话</h3><p>可将钉钉会话接管到已有桌面任务，继续使用同一个 Harness 上下文。</p></div><span>{status.conversations.length} 个会话</span></header><div>{status.conversations.map((conversation) => <article key={conversation.conversationKey}><span className="conversation-avatar"><MessageCircle size={16} /></span><div><strong>{conversation.conversationType === 'group' ? conversation.conversationTitle || '未命名群' : conversation.senderNick || '钉钉用户'}</strong><p>{conversation.lastMessage}</p><small><Clock3 size={11} />{new Date(conversation.updatedAt).toLocaleString()} · {conversation.messageCount} 条消息</small>{conversation.boundTaskId
+    {status?.configured && <section className="im-conversation-center"><header><div><h3>IM 会话</h3><p>可将钉钉会话接管到已有桌面任务，继续使用同一个 Harness 上下文。钉钉内也可发送 /bind、/bind 序号、/unbind。</p></div><span>{status.conversations.length} 个会话</span></header><div>{status.conversations.map((conversation) => <article key={conversation.conversationKey}><span className="conversation-avatar"><MessageCircle size={16} /></span><div><button className="im-conversation-open" onClick={() => setActiveConversationKey(conversation.conversationKey)} type="button"><strong>{conversation.conversationType === 'group' ? conversation.conversationTitle || '未命名群' : conversation.senderNick || '钉钉用户'}</strong></button><p>{conversation.lastMessage}</p><small><Clock3 size={11} />{new Date(conversation.updatedAt).toLocaleString()} · {conversation.messageCount} 条消息</small>{conversation.boundTaskId
       ? <div className="im-task-binding"><span>已接管：{conversation.boundTaskName}</span><button disabled={loading} onClick={() => void unbindTask(conversation.conversationKey)} type="button">解除</button></div>
       : <div className="im-task-binding"><select aria-label="选择接管任务" onChange={(event) => setTaskSelections((current) => ({ ...current, [conversation.conversationKey]: event.target.value }))} value={taskSelections[conversation.conversationKey] ?? ''}><option value="">选择桌面任务</option>{harness.localTasks.filter((task) => task.sessionId && !task.archivedAt).map((task) => <option key={task.id} value={task.id}>{task.name}</option>)}</select><button disabled={loading || !taskSelections[conversation.conversationKey]} onClick={() => void bindTask(conversation.conversationKey)} type="button">接管</button></div>}</div><em className={conversation.status.toLowerCase()}>{conversation.status === 'RUNNING' ? '处理中' : conversation.status === 'FAILED' ? '失败' : '已回复'}</em></article>)}{status.conversations.length === 0 && <div className="kit-empty"><MessageCircle size={17} />暂无 IM 会话，员工发送消息后会显示在这里</div>}</div></section>}
 
@@ -216,7 +219,7 @@ export function ImChannelsPage(harness: Props) {
         <button className={accessPolicy === 'pairing' ? 'active' : ''} onClick={() => setAccessPolicy('pairing')} type="button"><span><strong>配对模式</strong><small>需经您允许后，对应会话才能使用</small></span>{accessPolicy === 'pairing' && <Check size={16} />}</button>
         <button className={accessPolicy === 'open' ? 'active' : ''} onClick={() => setAccessPolicy('open')} type="button"><span><strong>开放模式</strong><small>所有人和群可直接对话</small></span>{accessPolicy === 'open' && <Check size={16} />}</button>
       </fieldset>
-      <label className="im-notification-toggle"><input checked={notifyTaskResults} onChange={(event) => setNotifyTaskResults(event.target.checked)} type="checkbox" /><span><strong>推送云端任务结果</strong><small>仅向已建立且符合准入策略的会话推送新任务完成或失败通知</small></span></label>
+      <label className="im-notification-toggle"><input checked={notifyTaskResults} onChange={(event) => setNotifyTaskResults(event.target.checked)} type="checkbox" /><span><strong>推送云端任务结果</strong><small>仅投递到创建定时任务时明确选择的钉钉会话；未选择则不推送</small></span></label>
       <div className="im-security-note"><ShieldCheck size={15} />Client Secret 只写入 Windows Credential Manager 或 macOS Keychain。</div>
       <div className="im-modal-actions">{status?.configured && <button className="danger" onClick={() => void remove()} type="button">移除配置</button>}<button disabled={loading} type="submit">{loading ? '正在连接…' : '保存并连接'}</button></div>
     </form></div>}
@@ -229,6 +232,25 @@ export function ImChannelsPage(harness: Props) {
         <button disabled={loading} onClick={() => void allowPairing(request.conversationKey)} type="button">允许</button>
       </article>)}{status?.pendingPairings.length === 0 && <div className="kit-empty"><RefreshCw size={16} />暂无待处理的配对请求</div>}</div>
     </section></div>}
+
+    {activeConversationKey && status && (() => {
+      const conversation = status.conversations.find((item) => item.conversationKey === activeConversationKey)
+      if (!conversation) return null
+      const boundTask = harness.localTasks.find((task) => task.id === conversation.boundTaskId)
+      const monitor = boundTask?.monitor ?? (conversation.taskEvents ?? []).reduce(
+        (current, item) => applyHarnessNotification(current, { requestId: 0, event: { event: item.event } }),
+        createTaskMonitor(conversation.updatedAt),
+      )
+      return <div className="im-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setActiveConversationKey('') }}><section aria-modal="true" className="im-config-modal im-conversation-modal" role="dialog">
+        <button aria-label="关闭" className="im-modal-close" onClick={() => setActiveConversationKey('')} type="button"><X size={18} /></button>
+        <h2>{conversation.conversationType === 'group' ? conversation.conversationTitle || '未命名群' : conversation.senderNick || '钉钉用户'}</h2>
+        <p>{conversation.boundTaskName ? `已接管桌面任务：${conversation.boundTaskName}` : '独立钉钉任务'}</p>
+        <div className="im-message-history">{(conversation.messages ?? []).map((item) => <article className={item.role} key={item.id}><small>{item.role === 'user' ? conversation.senderNick || '员工' : '小胤'} · {new Date(item.createdAt).toLocaleString()}</small><p>{item.text}</p></article>)}
+          {(conversation.messages ?? []).length === 0 && <div className="kit-empty">暂无可显示的历史消息</div>}
+        </div>
+        <TaskMonitor capabilitySnapshot={boundTask?.capabilitySnapshot} monitor={monitor} />
+      </section></div>
+    })()}
   </div>
 }
 

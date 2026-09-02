@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { Document, Packer, Paragraph } from 'docx'
 import ExcelJS from 'exceljs'
-import { parseDocx, parsePdf, parseXlsx, renderPdf, selectPdfFont } from './local-documents-plugin.js'
+import { zipSync, strToU8 } from 'fflate'
+import { parseDocx, parsePdf, parsePptx, parseXlsx, renderPdf, selectPdfFont } from './local-documents-plugin.js'
 
 const { Workbook } = ExcelJS
 
@@ -25,6 +26,17 @@ describe('local document formats', () => {
     await expect(parsePdf(bytes)).resolves.toMatchObject({
       pageCount: 1,
       text: expect.stringContaining('Total sales: 8'),
+    })
+  })
+
+  it('extracts ordered slide text from PPTX', async () => {
+    const bytes = Buffer.from(zipSync({
+      'ppt/slides/slide2.xml': strToU8('<p:sld><a:t>Second &amp; final</a:t></p:sld>'),
+      'ppt/slides/slide1.xml': strToU8('<p:sld><a:t>First slide</a:t></p:sld>'),
+    }))
+    await expect(parsePptx(bytes)).resolves.toMatchObject({
+      slideCount: 2,
+      slides: [{ slide: 1, text: 'First slide' }, { slide: 2, text: 'Second & final' }],
     })
   })
 

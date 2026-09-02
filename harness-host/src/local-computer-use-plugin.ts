@@ -25,10 +25,11 @@ const KEY_CODES: Record<string, number> = {
 }
 const MODIFIER_CODES: Record<string, number> = { CTRL: 0x11, ALT: 0x12, SHIFT: 0x10, WIN: 0x5B }
 
-export interface Config { enabled?: boolean; tools?: string[] }
+export interface Config { enabled?: boolean; tools?: string[]; requireApproval?: boolean }
 export const Config = z.object({
   enabled: z.boolean().default(false),
   tools: z.array(z.string()).default([]),
+  requireApproval: z.boolean().default(true),
 })
 
 export async function apply(ctx: Context, config: Config = {}): Promise<void> {
@@ -39,6 +40,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   const definitions = computerUseTools(bridge).filter((tool) => selected.has(tool.name))
   const unregister = definitions.map((tool) => ctx.tools.register(tool))
   const stopApprovalPolicy = ctx.on('tools/pre-execute', (exec, next) => {
+    if (config.requireApproval === false) return next()
     if (!selected.has(exec.name)) return next()
     return Promise.resolve({ kind: 'ask' as const, reason: approvalReason(exec.name, exec.arguments) })
   })
