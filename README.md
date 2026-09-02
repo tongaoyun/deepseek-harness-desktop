@@ -51,17 +51,15 @@ pnpm tauri:dev
 | 日常调试 | Windows 工作机运行 `pnpm tauri:dev` |
 | 快速安装验证 | `Windows quick installer`，生成 Debug NSIS，制品保留 7 天 |
 | 完整安装验证 | `Windows installer`，生成 MSI 与 NSIS，并按配置执行烟测 |
-| 正式发布 | 推送 `v*` 标签，执行门禁、烟测、签名和 Gitea Release |
+| 正式发布 | 推送 `v*` 标签，执行门禁、烟测、Updater 签名和 Gitea Release |
 | 回滚 | `Roll back desktop release`，选择已发布版本 |
 
 `main` 执行 lint、类型、测试与构建门禁。Windows Rust CI 在 `main`、Pull Request 或手动触发时执行。自动更新使用正式单通道和 Tauri 签名。
 
 发布前同步更新 `package.json`、`src-tauri/Cargo.toml` 和 `src-tauri/tauri.conf.json` 的版本。本仓库不部署到 K3s；Windows 安装包内置 Node 与 Harness Runtime，员工电脑无需安装开发环境。
 
-正式和快速 Windows 安装包都强制执行 Authenticode 与 Tauri Updater 双签名。Actions 需要配置：
+正式 Windows 发布使用 Tauri Updater 签名校验更新文件，Actions 需要配置：
 
-- `WINDOWS_AUTHENTICODE_PFX_BASE64`：代码签名 PFX 的 Base64 内容。
-- `WINDOWS_AUTHENTICODE_PFX_PASSWORD`：PFX 密码。
 - `TAURI_SIGNING_PRIVATE_KEY`、`TAURI_SIGNING_PRIVATE_KEY_PASSWORD`：Updater 签名密钥。
 
-签名私钥只保存在 Actions Secret 和受保护备份中，不得提交到仓库、`.env` 或安装包。
+Updater 私钥只保存在 Actions Secret 和受保护备份中，不得提交到仓库、`.env` 或安装包。Windows 安装包不执行 Authenticode 证书签名。
