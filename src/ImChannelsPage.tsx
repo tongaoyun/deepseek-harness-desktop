@@ -31,6 +31,7 @@ export function ImChannelsPage(harness: Props) {
   const [clientId, setClientId] = useState('')
   const [clientSecret, setClientSecret] = useState('')
   const [accessPolicy, setAccessPolicy] = useState<ImAccessPolicy>('pairing')
+  const [notifyTaskResults, setNotifyTaskResults] = useState(false)
   const initialized = useRef(false)
 
   const refresh = useCallback(async () => {
@@ -40,6 +41,7 @@ export function ImChannelsPage(harness: Props) {
       if (!initialized.current) {
         initialized.current = true
         setAccessPolicy(value.accessPolicy)
+        setNotifyTaskResults(value.notifyTaskResults)
       }
       setClientId((current) => current || value.clientId)
       setError('')
@@ -85,7 +87,7 @@ export function ImChannelsPage(harness: Props) {
     setError('')
     try {
       const value = await configureLocalDingTalk({
-        clientId, clientSecret, enabled: true, accessPolicy, harness: harnessContext,
+        clientId, clientSecret, enabled: true, accessPolicy, notifyTaskResults, harness: harnessContext,
       })
       setStatus(value)
       setClientSecret('')
@@ -140,6 +142,7 @@ export function ImChannelsPage(harness: Props) {
 
   const openConfiguration = () => {
     setAccessPolicy(status?.accessPolicy ?? 'pairing')
+    setNotifyTaskResults(status?.notifyTaskResults ?? false)
     setConfiguring(true)
   }
 
@@ -181,6 +184,7 @@ export function ImChannelsPage(harness: Props) {
         <button className={accessPolicy === 'pairing' ? 'active' : ''} onClick={() => setAccessPolicy('pairing')} type="button"><span><strong>配对模式</strong><small>需经您允许后，对应会话才能使用</small></span>{accessPolicy === 'pairing' && <Check size={16} />}</button>
         <button className={accessPolicy === 'open' ? 'active' : ''} onClick={() => setAccessPolicy('open')} type="button"><span><strong>开放模式</strong><small>所有人和群可直接对话</small></span>{accessPolicy === 'open' && <Check size={16} />}</button>
       </fieldset>
+      <label className="im-notification-toggle"><input checked={notifyTaskResults} onChange={(event) => setNotifyTaskResults(event.target.checked)} type="checkbox" /><span><strong>推送云端任务结果</strong><small>仅向已建立且符合准入策略的会话推送新任务完成或失败通知</small></span></label>
       <div className="im-security-note"><ShieldCheck size={15} />Client Secret 只写入 Windows Credential Manager 或 macOS Keychain。</div>
       <div className="im-modal-actions">{status?.configured && <button className="danger" onClick={() => void remove()} type="button">移除配置</button>}<button disabled={loading} type="submit">{loading ? '正在连接…' : '保存并连接'}</button></div>
     </form></div>}

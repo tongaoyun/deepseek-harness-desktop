@@ -9,6 +9,7 @@ import {
 } from './api'
 import type { ExpertKitView } from './expertKits'
 import type { ScheduledTask, ScheduledTaskExecution, ServerWorkflowInput } from './types'
+import { cronPresets, nextCronRuns } from './cronPreview'
 
 interface Props {
   endpoint: string
@@ -51,6 +52,7 @@ export function ScheduledTasksPage({ endpoint, employeeId, accessToken, expertKi
   }, [accessToken, employeeId, endpoint])
 
   const selected = workflows.find(({ kit, workflow }) => `${kit.id}:${workflow.id}` === selection)
+  const upcomingRuns = useMemo(() => nextCronRuns(cronExpression, timeZone), [cronExpression, timeZone])
 
   const submit = async (event: FormEvent) => {
     event.preventDefault()
@@ -122,8 +124,9 @@ export function ScheduledTasksPage({ endpoint, employeeId, accessToken, expertKi
           <label>Cron 表达式<input onChange={(event) => setCronExpression(event.target.value)} value={cronExpression} /></label>
           <label>时区<input onChange={(event) => setTimeZone(event.target.value)} value={timeZone} /></label>
         </div>
+        <div className="cron-presets" aria-label="常用执行时间">{cronPresets.map((preset) => <button className={cronExpression === preset.expression ? 'active' : ''} key={preset.expression} onClick={() => setCronExpression(preset.expression)} type="button">{preset.label}</button>)}</div>
         {selected?.workflow.inputs.map((input) => <WorkflowInputField input={input} key={input.name} value={inputs[input.name]} onChange={(value) => setInputs((current) => ({ ...current, [input.name]: value }))} />)}
-        <small className="cron-hint">示例：工作日每天 9:00 为 <code>0 9 * * 1-5</code></small>
+        <small className="cron-hint">{upcomingRuns.length > 0 ? `接下来：${upcomingRuns.map((value) => value.toLocaleString('zh-CN', { timeZone, hour12: false })).join('、')}` : 'Cron 或时区无效，请检查后再创建'}</small>
         <button className="schedule-primary" disabled={saving || (selected?.kit.connectorIssues.length ?? 0) > 0} type="submit">{saving ? '正在创建…' : '创建任务'}</button>
       </>}
     </form>

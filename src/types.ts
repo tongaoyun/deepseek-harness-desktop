@@ -44,7 +44,7 @@ export interface ServerWorkflowDefinition {
   workflowType: string
   version: string
   inputs: ServerWorkflowInput[]
-  steps: Array<{ id: string; tool: string; arguments: Record<string, unknown> }>
+  steps: Array<{ id: string; connectorId: string; tool: string; arguments: Record<string, unknown> }>
 }
 
 export interface ServerWorkflowInput {
@@ -84,6 +84,7 @@ export interface ScheduledTaskExecution {
 export interface CloudTaskRun {
   id: string
   source: 'SCHEDULE'
+  employeeId?: string
   name: string
   expertKitId: string
   workflowId: string

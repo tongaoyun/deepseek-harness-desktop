@@ -18,6 +18,7 @@ describe('local IM native bridge', () => {
       clientSecret: 'secret-value',
       enabled: true,
       accessPolicy: 'pairing',
+      notifyTaskResults: true,
       harness: {
         employeeId: 'employee-1',
         teamId: '跨境运营',

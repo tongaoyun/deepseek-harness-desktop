@@ -33,4 +33,20 @@ describe('local DingTalk runtime', () => {
         sessionWebhook: 'https://evil.example/steal' }),
     })).toThrow('not trusted')
   })
+
+  it('normalizes a DingTalk document attachment without retaining paths', () => {
+    const event = parseDingTalkEvent({
+      specVersion: '1.0', type: 'CALLBACK',
+      headers: {
+        appId: 'app', connectionId: 'connection', contentType: 'application/json',
+        messageId: 'event-3', time: '0', topic: '/v1.0/im/bot/messages/get',
+      },
+      data: JSON.stringify({
+        msgtype: 'file', content: JSON.stringify({ downloadCode: 'download-1', fileName: '../库存.xlsx' }),
+        senderStaffId: 'staff-1', sessionWebhook: 'https://api.dingtalk.com/robot/reply',
+      }),
+    })
+    expect(event.text).toBe('')
+    expect(event.attachment).toEqual({ downloadCode: 'download-1', fileName: '库存.xlsx', kind: 'document' })
+  })
 })

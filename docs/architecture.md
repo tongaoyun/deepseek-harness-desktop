@@ -1,6 +1,6 @@
 # 小胤架构与能力
 
-本文描述 `xiaoyin-desktop v0.1.27` 的已实现状态。
+本文描述 `xiaoyin-desktop v0.1.28` 的已实现状态。
 
 ## 总体架构
 
@@ -60,9 +60,9 @@
 | MCP 接入 | 项目模板 → 公共准入 CI → 部署 → 注册目录 → Nacos 动态下发 |
 | 连接器诊断 | 一次性 Harness Host → MCP 握手和 `tools/list` → 登记清单对比 → 立即关闭 |
 | 设备预检 | 原生探针 + Harness 本地工具自检 + 实时 MCP 诊断 → 去敏能力报告 → 控制中心组织总览 |
-| 定时任务 | 桌面 → 控制中心 → Temporal Schedule → Workflow Worker → MinIO 产物 |
-| 知识库 | 文档上传 → MinIO → Temporal 解析 → PostgreSQL 检索片段 |
-| 钉钉频道 | 钉钉 Stream → 按私聊/群聊隔离 Harness Session → Skills/只读 MCP → 原会话；摘要写入本机状态 |
+| 定时任务 | 模板/下次执行预览 → 控制中心 → Temporal Schedule → Workflow Worker → PostgreSQL 运行投影/MinIO 产物 → 桌面通知 |
+| 知识库 | 文档上传 → MinIO → Temporal 解析/OCR → PostgreSQL 全文、同义词与模糊混合检索 |
+| 钉钉频道 | 钉钉 Stream → 本机持久队列/会话隔离 → Harness；Office/PDF 附件本机解析，任务结果按配置主动推送 |
 | 记忆同步 | 桌面设置 ↔ 本机版本历史 ↔ 控制中心员工档案 → 确认后进入桌面对话与本机 IM |
 | 审计 | 桌面/服务端 → 去敏事件 API → PostgreSQL → 桌面审计页 |
 
@@ -79,8 +79,8 @@
 | ERP | `order_get`、`sales_summary`、`inventory_risk` |
 | 本地工具 | 文件、DOCX/XLSX/PDF、Shell、Windows Computer Use |
 | 知识 | 跨设备记忆、保存确认、本机 50 版历史与导入导出、个人/团队/公司知识库和来源引用 |
-| 云端任务 | Temporal 定时任务、执行记录和产物下载 |
-| IM | 本地钉钉 Stream、开放/配对模式、私聊/群聊隔离会话与本机摘要、系统托盘驻留 |
+| 云端任务 | Temporal 定时任务、常用时间模板、执行预览、失败通知、执行记录和产物下载 |
+| IM | 本地钉钉 Stream、持久队列、重试、开放/配对模式、会话隔离、文档附件解析、任务结果推送和系统托盘驻留 |
 | 运维 | 运行通知、中央审计、设备基线、组织总览、定时签名更新检查、正式版本回滚 |
 | 团队开发 | 专家套件和 Java MCP 脚手架、公共准入 CI |
 
@@ -100,6 +100,7 @@
 
 - Computer Use 仅支持 Windows 交互桌面，不支持锁屏或无桌面会话；发布 Runner 在 Session 0 验证桥接依赖，员工桌面预检通过安装包内 Harness 实际验证截图与可访问性观察。
 - 钉钉使用 Client ID/Secret 手动配置；扫码自动注册尚未接入公司授权服务。
+- 钉钉任务结果推送依赖开放平台“机器人主动发消息”权限；桌面离线时云端任务继续执行，本地频道恢复后只推送新结果，不补发启用前历史记录。
 - 飞书、Lark、微信和企业微信仍需各平台应用、接收模式与凭据，未伪装为可用连接。
 - 正式安装包仅发布 Windows x64；企业代码签名证书暂未接入。
 - ERP MCP 当前只发布只读工具。

@@ -32,6 +32,7 @@ export interface LocalImStatus {
   clientId: string
   secretConfigured: boolean
   accessPolicy: ImAccessPolicy
+  notifyTaskResults: boolean
   pendingPairings: LocalImPairingRequest[]
   conversations: LocalImConversationSummary[]
   lastError?: string
@@ -55,6 +56,7 @@ export interface ConfigureDingTalkInput {
   clientSecret: string
   enabled: boolean
   accessPolicy: ImAccessPolicy
+  notifyTaskResults: boolean
   harness: LocalImHarnessContext
 }
 
@@ -97,6 +99,6 @@ function emptyStatus(): LocalImStatus {
   return {
     provider: 'DINGTALK', configured: false, enabled: false, connected: false,
     state: 'DISABLED', clientId: '', secretConfigured: false,
-    accessPolicy: 'pairing', pendingPairings: [], conversations: [],
+    accessPolicy: 'pairing', notifyTaskResults: false, pendingPairings: [], conversations: [],
   }
 }

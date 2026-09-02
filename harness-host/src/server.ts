@@ -112,11 +112,15 @@ function parseImConfiguration(params: unknown): DingTalkImConfiguration {
   if (!Array.isArray(value.pairedConversations) || value.pairedConversations.some((item) => typeof item !== 'string')) {
     throw new Error('im.configure pairedConversations must be a string array')
   }
+  if (typeof value.notifyTaskResults !== 'boolean') {
+    throw new Error('im.configure notifyTaskResults must be a boolean')
+  }
   return {
     clientId: value.clientId,
     clientSecret: value.clientSecret,
     accessPolicy: value.accessPolicy,
     pairedConversations: value.pairedConversations as string[],
+    notifyTaskResults: value.notifyTaskResults,
   }
 }
 

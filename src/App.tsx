@@ -30,6 +30,7 @@ import {
   createExpertKitDownload,
   createSkillDownload,
   loadBootstrap,
+  loadCloudTaskRuns,
   loadConnectors,
   loadExpertKits,
   loadKnowledgeBases,
@@ -37,6 +38,7 @@ import {
   resolveControlPlaneEndpoint,
   submitAuditEvent,
   submitFeedback,
+  submitDeviceHeartbeat,
 } from './api'
 import { AccountMenu } from './AccountMenu'
 import { ErpAuthScreen } from './ErpAuthScreen'
@@ -73,6 +75,7 @@ import type {
   ConnectorCatalogEntry,
   ExpertKitCatalogEntry,
   KnowledgeBaseEntry,
+  CloudTaskRun,
   InstalledExpertKit,
   RuntimeStatus,
   SkillCatalogEntry,
@@ -96,6 +99,7 @@ import { ConnectorsPage } from './ConnectorsPage'
 import { mergeSkills, type SkillView } from './skills'
 import { allowedExtensionArtifacts } from './extensionPolicy'
 import { cacheAge, loadEnterpriseCatalogCache, saveEnterpriseCatalogCache } from './enterpriseCache'
+import { inspectDeviceCapabilities } from './deviceCapabilities'
 import './styles.css'
 
 const extensionNav = [
@@ -161,6 +165,7 @@ export default function App() {
   const [harnessHealthDetail, setHarnessHealthDetail] = useState('正在检查本地 Agent')
   const [harnessHealthAttempt, setHarnessHealthAttempt] = useState(0)
   const [localImError, setLocalImError] = useState('')
+  const [failedCloudRuns, setFailedCloudRuns] = useState<CloudTaskRun[]>([])
   const [harnessSteps, setHarnessSteps] = useState<TaskExecutionStep[]>([])
   const harnessStepsRef = useRef<TaskExecutionStep[]>([])
   const [localDirectories, setLocalDirectories] = useState<AuthorizedLocalDirectory[]>([])
@@ -451,6 +456,38 @@ export default function App() {
   useEffect(() => {
     workspaceRef.current?.scrollTo({ top: 0, behavior: 'auto' })
   }, [page])
+
+  useEffect(() => {
+    if (authState !== 'authenticated' || runtimeStatus !== 'ready' || !bootstrap || !user) return
+    let stopped = false
+    const heartbeat = async () => {
+      try {
+        const probe = await inspectDeviceCapabilities()
+        if (!stopped && /^\d+\.\d+\.\d+$/.test(probe.desktopVersion)) {
+          await submitDeviceHeartbeat(bootstrap.endpoints.deviceCapabilities ?? '/api/v1/device-capabilities',
+            user.userId, accessToken, probe)
+        }
+      } catch { /* heartbeat is best-effort and must not interrupt employee work */ }
+    }
+    void heartbeat()
+    const timer = window.setInterval(() => void heartbeat(), 6 * 60 * 60 * 1000)
+    return () => { stopped = true; window.clearInterval(timer) }
+  }, [accessToken, authState, bootstrap, runtimeStatus, user])
+
+  useEffect(() => {
+    if (authState !== 'authenticated' || runtimeStatus !== 'ready' || !bootstrap || !user) return
+    let stopped = false
+    const refreshFailures = async () => {
+      try {
+        const values = await loadCloudTaskRuns(bootstrap.endpoints.taskRuns, user.userId, accessToken)
+        const cutoff = Date.now() - 24 * 60 * 60 * 1_000
+        if (!stopped) setFailedCloudRuns(values.filter((run) => run.status === 'FAILED' && Date.parse(run.startedAt) >= cutoff).slice(0, 5))
+      } catch { /* the task center remains the source of truth when background polling is unavailable */ }
+    }
+    void refreshFailures()
+    const timer = window.setInterval(() => void refreshFailures(), 60_000)
+    return () => { stopped = true; window.clearInterval(timer) }
+  }, [accessToken, authState, bootstrap, runtimeStatus, user])
 
   const statusLabel = useMemo(() => ({
     connecting: '正在连接企业服务',
@@ -910,6 +947,7 @@ export default function App() {
     ...(runtimeStatus === 'offline' ? [{ key: 'control-plane', title: '企业服务连接失败', detail: '点击顶部连接状态可立即重试。', tone: 'danger' }] : []),
     ...(harnessHealth === 'degraded' ? [{ key: 'harness', title: '本地 Agent 需要恢复', detail: harnessHealthDetail, tone: 'danger' }] : []),
     ...(localImError ? [{ key: 'local-im', title: '本机 IM 频道异常', detail: localImError, tone: 'danger' }] : []),
+    ...failedCloudRuns.map((run) => ({ key: `run-${run.runId}`, title: `定时任务失败：${run.name}`, detail: new Date(run.startedAt).toLocaleString(), tone: 'danger' })),
     ...extensionSyncIssues.map((issue) => ({ key: `sync-${issue.key}`, title: `${issue.label}同步失败`, detail: issue.message, tone: 'warning' })),
   ]
 
@@ -957,7 +995,7 @@ export default function App() {
               {notificationOpen && <section className="notification-popover"><header><strong>通知中心</strong><small>{notifications.length ? `${notifications.length} 项需要处理` : '当前运行正常'}</small></header>{notifications.length
                 ? notifications.map((item) => <article className={item.tone} key={item.key}><i /><span><strong>{item.title}</strong><small>{item.detail}</small></span></article>)
                 : <div className="notification-empty"><SquareCheckBig size={20} />暂无待处理事项</div>}
-                {notifications.length > 0 && <footer><button onClick={() => { setNotificationOpen(false); setPage(localImError ? 'im' : 'settings') }} type="button">{localImError ? '打开 IM 频道' : '打开运行诊断'}</button></footer>}
+                {notifications.length > 0 && <footer><button onClick={() => { setNotificationOpen(false); setPage(localImError ? 'im' : failedCloudRuns.length ? 'tasks' : 'settings') }} type="button">{localImError ? '打开 IM 频道' : failedCloudRuns.length ? '打开任务中心' : '打开运行诊断'}</button></footer>}
               </section>}
             </div>
           </div>

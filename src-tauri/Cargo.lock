@@ -5631,7 +5631,7 @@ dependencies = [
 
 [[package]]
 name = "xiaoyin-desktop"
-version = "0.1.27"
+version = "0.1.28"
 dependencies = [
  "flate2",
  "futures-util",

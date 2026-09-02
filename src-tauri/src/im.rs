@@ -32,6 +32,8 @@ struct StoredDingTalkConfiguration {
     enabled: bool,
     access_policy: AccessPolicy,
     #[serde(default)]
+    notify_task_results: bool,
+    #[serde(default)]
     paired_conversations: Vec<String>,
 }
 
@@ -65,6 +67,7 @@ pub struct ConfigureDingTalkRequest {
     client_secret: String,
     enabled: bool,
     access_policy: AccessPolicy,
+    notify_task_results: bool,
     harness: HarnessContext,
 }
 
@@ -104,6 +107,7 @@ pub struct LocalImStatus {
     client_id: String,
     secret_configured: bool,
     access_policy: AccessPolicy,
+    notify_task_results: bool,
     pending_pairings: Vec<PairingRequest>,
     conversations: Vec<ImConversationSummary>,
     last_error: Option<String>,
@@ -128,6 +132,7 @@ pub async fn configure_local_dingtalk(
         client_id,
         enabled: request.enabled,
         access_policy: request.access_policy,
+        notify_task_results: request.notify_task_results,
     };
     store_secret(&request.client_secret)?;
     save_configuration(&app, &stored)?;
@@ -278,6 +283,7 @@ impl LocalImManager {
                 "clientSecret": client_secret,
                 "accessPolicy": match configuration.access_policy { AccessPolicy::Open => "open", AccessPolicy::Pairing => "pairing" },
                 "pairedConversations": configuration.paired_conversations,
+                "notifyTaskResults": configuration.notify_task_results,
             })),
             None,
         )?;
@@ -345,6 +351,7 @@ fn parse_runtime_status(
         state: String,
         client_id: String,
         access_policy: AccessPolicy,
+        notify_task_results: bool,
         #[serde(default)]
         pending_pairings: Vec<PairingRequest>,
         #[serde(default)]
@@ -362,6 +369,7 @@ fn parse_runtime_status(
         client_id: status.client_id,
         secret_configured,
         access_policy: status.access_policy,
+        notify_task_results: status.notify_task_results,
         pending_pairings: status.pending_pairings,
         conversations: status.conversations,
         last_error: status.last_error,
@@ -385,6 +393,7 @@ fn stopped_status(
         access_policy: configuration
             .map(|value| value.access_policy.clone())
             .unwrap_or(AccessPolicy::Pairing),
+        notify_task_results: configuration.is_some_and(|value| value.notify_task_results),
         pending_pairings: Vec::new(),
         conversations: Vec::new(),
         last_error: None,
@@ -543,6 +552,7 @@ mod tests {
             client_id: "ding-app".to_string(),
             enabled: true,
             access_policy: AccessPolicy::Pairing,
+            notify_task_results: true,
             paired_conversations: Vec::new(),
         };
         let value = serde_json::to_value(stopped_status(Some(&config), true)).unwrap();
