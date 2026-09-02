@@ -422,8 +422,9 @@ fn install_package_bytes(
 
     let result = (|| {
         extract_package(bytes, &staging_directory)?;
+        let package_directory = package_root(&staging_directory)?;
         let manifest = load_and_validate_manifest(
-            &staging_directory,
+            &package_directory,
             expected_kind,
             expected_id,
             expected_version,
@@ -449,12 +450,12 @@ fn install_package_bytes(
                 existing_record.source,
             ));
         }
-        write_install_record(&staging_directory, &digest, source)?;
+        write_install_record(&package_directory, &digest, source)?;
         let parent = final_directory
             .parent()
             .ok_or_else(|| "专家套件安装路径无效".to_string())?;
         fs::create_dir_all(parent).map_err(|error| format!("无法创建套件版本目录：{error}"))?;
-        fs::rename(&staging_directory, &final_directory)
+        fs::rename(&package_directory, &final_directory)
             .map_err(|error| format!("无法完成专家套件安装：{error}"))?;
         Ok(installed_kit(manifest, &final_directory, source))
     })();
@@ -753,6 +754,13 @@ async fn download_package(url: &str) -> Result<Vec<u8>, String> {
 }
 
 fn extract_package(bytes: &[u8], destination: &Path) -> Result<(), String> {
+    if bytes.starts_with(b"PK\x03\x04") {
+        return extract_zip_package(bytes, destination);
+    }
+    extract_tar_gzip_package(bytes, destination)
+}
+
+fn extract_tar_gzip_package(bytes: &[u8], destination: &Path) -> Result<(), String> {
     let decoder = GzDecoder::new(Cursor::new(bytes));
     let mut archive = tar::Archive::new(decoder);
     let entries = archive
@@ -801,6 +809,65 @@ fn extract_package(bytes: &[u8], destination: &Path) -> Result<(), String> {
             .map_err(|error| format!("无法写入套件文件：{error}"))?;
     }
     Ok(())
+}
+
+fn extract_zip_package(bytes: &[u8], destination: &Path) -> Result<(), String> {
+    let reader = Cursor::new(bytes);
+    let mut archive = zip::ZipArchive::new(reader)
+        .map_err(|error| format!("Skill ZIP 压缩包无效：{error}"))?;
+    if archive.len() > MAX_ARCHIVE_ENTRIES {
+        return Err("Skill 文件数量超过限制".to_string());
+    }
+    let mut extracted_bytes = 0u64;
+    for index in 0..archive.len() {
+        let mut entry = archive
+            .by_index(index)
+            .map_err(|error| format!("读取 Skill ZIP 条目失败：{error}"))?;
+        if entry
+            .unix_mode()
+            .is_some_and(|mode| mode & 0o170000 == 0o120000)
+        {
+            return Err("Skill 不能包含符号链接".to_string());
+        }
+        let path = entry
+            .enclosed_name()
+            .ok_or_else(|| "Skill ZIP 路径无效".to_string())?
+            .to_path_buf();
+        validate_relative_path(&path)?;
+        let output = destination.join(&path);
+        if entry.is_dir() {
+            fs::create_dir_all(&output).map_err(|error| format!("无法创建 Skill 目录：{error}"))?;
+            continue;
+        }
+        extracted_bytes = extracted_bytes
+            .checked_add(entry.size())
+            .ok_or_else(|| "Skill 解压大小无效".to_string())?;
+        if extracted_bytes > MAX_EXTRACTED_BYTES {
+            return Err("Skill 解压后超过 64 MiB 限制".to_string());
+        }
+        if let Some(parent) = output.parent() {
+            fs::create_dir_all(parent).map_err(|error| format!("无法创建 Skill 文件目录：{error}"))?;
+        }
+        let mut file = File::create(&output).map_err(|error| format!("无法创建 Skill 文件：{error}"))?;
+        std::io::copy(&mut entry, &mut file)
+            .map_err(|error| format!("无法写入 Skill 文件：{error}"))?;
+    }
+    Ok(())
+}
+
+fn package_root(staging_directory: &Path) -> Result<PathBuf, String> {
+    if has_extension_manifest(staging_directory) {
+        return Ok(staging_directory.to_path_buf());
+    }
+    let children = child_directories(staging_directory)?;
+    if children.len() == 1 && has_extension_manifest(&children[0]) {
+        return Ok(children[0].clone());
+    }
+    Err("扩展缺少根级清单，或压缩包目录结构无效".to_string())
+}
+
+fn has_extension_manifest(root: &Path) -> bool {
+    root.join(KIT_MANIFEST_PATH).is_file() || root.join(SKILL_MANIFEST_PATH).is_file()
 }
 
 fn load_and_validate_manifest(
@@ -1058,6 +1125,7 @@ mod tests {
     use super::*;
     use flate2::{Compression, write::GzEncoder};
     use std::io::Write;
+    use zip::{ZipWriter, write::SimpleFileOptions};
 
     #[test]
     fn unsafe_paths_are_rejected() {
@@ -1179,6 +1247,56 @@ mod tests {
         .unwrap();
         assert_eq!(installed.manifest.kind, "skill");
         assert_eq!(installed.manifest.skills[0].path, "SKILL.md");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn nacos_skill_zip_with_top_level_directory_is_installed() {
+        let manifest = r#"{
+          "schemaVersion":"1","id":"document-insight","name":"文档洞察","version":"1.0.0",
+          "summary":"分析员工授权的文档","triggers":["总结文档"],"minimumDesktopVersion":"0.1.9",
+          "requiredTools":["office.document.read"],"connectorRefs":[],"knowledgeBaseRefs":[],
+          "permissions":{"localFiles":"approval","shell":"deny","computerUse":"deny","connectorRead":"deny","connectorWrite":"deny"}
+        }"#;
+        let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
+        zip.start_file(
+            "document-insight/.xiaoyin-skill/skill.json",
+            SimpleFileOptions::default(),
+        )
+        .unwrap();
+        zip.write_all(manifest.as_bytes()).unwrap();
+        zip.start_file(
+            "document-insight/SKILL.md",
+            SimpleFileOptions::default(),
+        )
+        .unwrap();
+        zip.write_all(b"---\nname: document-insight\nversion: 1.0.0\n---\n# Skill")
+            .unwrap();
+        let package = zip.finish().unwrap().into_inner();
+        let root = std::env::temp_dir().join(format!(
+            "xiaoyin-nacos-skill-test-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir(&root).unwrap();
+
+        let installed = install_package_bytes(
+            &root,
+            &package,
+            Some("skill"),
+            Some("document-insight"),
+            Some("1.0.0"),
+            None,
+            InstallSource::Catalog,
+        )
+        .unwrap();
+
+        assert_eq!(installed.manifest.id, "document-insight");
+        assert!(Path::new(&installed.install_path).join("SKILL.md").is_file());
+        assert!(!Path::new(&installed.install_path).join("document-insight").exists());
         fs::remove_dir_all(root).unwrap();
     }
 

@@ -36,7 +36,7 @@
 
 ## 安全边界
 
-- 桌面只使用控制中心下发的地址和短期制品 URL，不直连 Nacos、Temporal、PostgreSQL 或 MinIO 管理接口。
+- 桌面只使用控制中心下发的地址和制品 URL，不自行查询 Nacos、Temporal、PostgreSQL 或 MinIO 管理接口。
 - 套件和 Skill 必须通过版本、SHA-256、Manifest、权限和路径校验。
 - 写文件、生成文档、Shell、Computer Use 和业务写工具均需原生单次确认。
 - 模型凭据、员工令牌和钉钉 Secret 不进入前端日志或业务制品。
