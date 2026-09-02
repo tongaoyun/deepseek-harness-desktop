@@ -813,8 +813,8 @@ fn extract_tar_gzip_package(bytes: &[u8], destination: &Path) -> Result<(), Stri
 
 fn extract_zip_package(bytes: &[u8], destination: &Path) -> Result<(), String> {
     let reader = Cursor::new(bytes);
-    let mut archive = zip::ZipArchive::new(reader)
-        .map_err(|error| format!("Skill ZIP 压缩包无效：{error}"))?;
+    let mut archive =
+        zip::ZipArchive::new(reader).map_err(|error| format!("Skill ZIP 压缩包无效：{error}"))?;
     if archive.len() > MAX_ARCHIVE_ENTRIES {
         return Err("Skill 文件数量超过限制".to_string());
     }
@@ -846,9 +846,11 @@ fn extract_zip_package(bytes: &[u8], destination: &Path) -> Result<(), String> {
             return Err("Skill 解压后超过 64 MiB 限制".to_string());
         }
         if let Some(parent) = output.parent() {
-            fs::create_dir_all(parent).map_err(|error| format!("无法创建 Skill 文件目录：{error}"))?;
+            fs::create_dir_all(parent)
+                .map_err(|error| format!("无法创建 Skill 文件目录：{error}"))?;
         }
-        let mut file = File::create(&output).map_err(|error| format!("无法创建 Skill 文件：{error}"))?;
+        let mut file =
+            File::create(&output).map_err(|error| format!("无法创建 Skill 文件：{error}"))?;
         std::io::copy(&mut entry, &mut file)
             .map_err(|error| format!("无法写入 Skill 文件：{error}"))?;
     }
@@ -1265,11 +1267,8 @@ mod tests {
         )
         .unwrap();
         zip.write_all(manifest.as_bytes()).unwrap();
-        zip.start_file(
-            "document-insight/SKILL.md",
-            SimpleFileOptions::default(),
-        )
-        .unwrap();
+        zip.start_file("document-insight/SKILL.md", SimpleFileOptions::default())
+            .unwrap();
         zip.write_all(b"---\nname: document-insight\nversion: 1.0.0\n---\n# Skill")
             .unwrap();
         let package = zip.finish().unwrap().into_inner();
@@ -1295,8 +1294,16 @@ mod tests {
         .unwrap();
 
         assert_eq!(installed.manifest.id, "document-insight");
-        assert!(Path::new(&installed.install_path).join("SKILL.md").is_file());
-        assert!(!Path::new(&installed.install_path).join("document-insight").exists());
+        assert!(
+            Path::new(&installed.install_path)
+                .join("SKILL.md")
+                .is_file()
+        );
+        assert!(
+            !Path::new(&installed.install_path)
+                .join("document-insight")
+                .exists()
+        );
         fs::remove_dir_all(root).unwrap();
     }
 
