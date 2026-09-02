@@ -16,6 +16,7 @@ export interface SkillView extends SkillCatalogEntry {
   readiness: 'ready' | 'partial'
   connectorIssues: string[]
   knowledgeIssues: string[]
+  localOnly?: boolean
 }
 
 export function mergeSkills(
@@ -70,6 +71,7 @@ export function mergeSkills(
       installed: local,
       installedVersion: local?.manifest.version,
       installState: local?.manifest.version === skill.version ? 'installed' : local ? 'update' : 'available',
+      localOnly: false,
     }
   })
   const catalogIds = new Set(catalog.map((skill) => skill.id))
@@ -94,7 +96,8 @@ export function mergeSkills(
       sha256: '',
       installed: local,
       installedVersion: manifest.version,
-      installState: 'retired',
+      installState: local.source === 'developer' ? 'installed' : 'retired',
+      localOnly: local.source === 'developer',
       ...dependencyState(connectorRefs, requiredTools, knowledgeBaseRefs),
     })
   }

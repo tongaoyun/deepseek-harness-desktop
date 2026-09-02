@@ -5,6 +5,7 @@ import {
   CircleStop,
   FolderOpen,
   PlugZap,
+  Plus,
   ShieldCheck,
   SquareCheckBig,
   WandSparkles,
@@ -91,6 +92,8 @@ import { cacheAge, loadEnterpriseCatalogCache, saveEnterpriseCatalogCache } from
 import { inspectDeviceCapabilities } from './deviceCapabilities'
 import { extensionMatches, type ExtensionFilter } from './ExtensionToolbar'
 import { ExpertCatalogPage, SkillCatalogPage } from './ExtensionCatalogPages'
+import { ExtensionAuthoringModal } from './ExtensionAuthoringModal'
+import { loadPersonalConnectors, type ExtensionKind } from './extensionSubmissions'
 import './styles.css'
 
 const extensionNav = [
@@ -123,6 +126,7 @@ export default function App() {
   const [skills, setSkills] = useState<SkillCatalogEntry[]>([])
   const [skillViews, setSkillViews] = useState<SkillView[]>([])
   const [connectors, setConnectors] = useState<ConnectorCatalogEntry[]>([])
+  const [authoringKind, setAuthoringKind] = useState<ExtensionKind>()
   const [enabledConnectorIds, setEnabledConnectorIds] = useState<string[]>([])
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBaseEntry[]>([])
   const [expertKitsLoading, setExpertKitsLoading] = useState(false)
@@ -266,7 +270,7 @@ export default function App() {
           setCatalogCacheStale(age.stale)
           setExpertKitCatalog(cached.catalog)
           setSkills(cached.skills)
-          const cachedConnectors = withDesktopBuiltinConnectors(cached.connectors)
+          const cachedConnectors = withDesktopBuiltinConnectors([...loadPersonalConnectors(user.userId), ...cached.connectors.filter((item) => !loadPersonalConnectors(user.userId).some((personal) => personal.id === item.id))])
           extensionCacheRef.current.connectors = cachedConnectors
           setConnectors(cachedConnectors)
           setKnowledgeBases(cached.knowledge)
@@ -287,7 +291,10 @@ export default function App() {
         if (catalogResult.status === 'fulfilled') cache.catalog = catalogResult.value
         if (installedResult.status === 'fulfilled') cache.installed = installedResult.value
         if (skillsResult.status === 'fulfilled') cache.skills = skillsResult.value
-        if (connectorsResult.status === 'fulfilled') cache.connectors = withDesktopBuiltinConnectors(connectorsResult.value)
+        if (connectorsResult.status === 'fulfilled') {
+          const personal = loadPersonalConnectors(user.userId)
+          cache.connectors = withDesktopBuiltinConnectors([...personal, ...connectorsResult.value.filter((item) => !personal.some((value) => value.id === item.id))])
+        }
         if (knowledgeResult.status === 'fulfilled') cache.knowledge = knowledgeResult.value
         setExpertKitCatalog(cache.catalog)
         setSkills(cache.skills)
@@ -1153,7 +1160,7 @@ export default function App() {
           />
         ) : (
           <section className="capability-page">
-            <span className="page-kicker">企业能力中心</span>
+            <div className="capability-page-heading"><div><span className="page-kicker">企业能力中心</span>
             <h1>{extensionNav.find((item) => item.id === page)?.label ?? ({ settings: '桌面设置', tasks: '任务中心', schedules: '定时任务', im: 'IM 频道' } as Record<string, string>)[page]}</h1>
             <p>{page === 'experts'
               ? '面向岗位的一整套工作方案，统一组合命令、技能、连接器和后台工作流。'
@@ -1171,7 +1178,7 @@ export default function App() {
                     ? '按专家套件声明的后台工作流创建任务；任务由 Temporal 托管，关闭电脑后仍会运行。'
                   : page === 'settings'
                     ? '管理个人记忆与当前电脑的本地能力；软件更新和反馈仍可从左下角头像打开。'
-                    : '这里将由控制中心下发公司自己的能力与权限配置。'}</p>
+                    : '这里将由控制中心下发公司自己的能力与权限配置。'}</p></div>{(page === 'experts' || page === 'skills' || page === 'connectors') && <button className="add-extension-button" onClick={() => setAuthoringKind(page === 'experts' ? 'expert-kit' : page === 'skills' ? 'skill' : 'connector')} type="button"><Plus size={15} />添加</button>}</div>
             {extensionSyncIssues.length > 0 && <div className="sync-diagnostics"><div><CircleStop size={17} /><span><strong>部分企业能力同步失败，已保留上次成功数据</strong><small>{extensionSyncedAt ? `最近尝试 ${extensionSyncedAt.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}` : '刚刚尝试同步'}</small></span><button onClick={() => setExtensionSyncAttempt((value) => value + 1)} type="button">重新同步</button></div><details><summary>查看 {extensionSyncIssues.length} 项失败详情</summary>{extensionSyncIssues.map((issue) => <p key={issue.key}><strong>{issue.label}</strong><span>{issue.message}</span></p>)}</details></div>}
             {catalogCacheSavedAt && extensionSyncIssues.length > 0 && <div className={`catalog-cache-state ${catalogCacheStale ? 'stale' : ''}`}><ShieldCheck size={15} /><span>{catalogCacheStale ? '本机企业目录缓存已超过 7 天，浏览仍可用，但相关能力暂停执行。' : `当前显示本机缓存 · ${new Date(catalogCacheSavedAt).toLocaleString('zh-CN', { hour12: false })}`}</span></div>}
             {page === 'settings' && bootstrap && user && <DesktopSettingsPage
@@ -1233,6 +1240,14 @@ export default function App() {
           </section>
         )}
       </main>
+      {authoringKind && user && <ExtensionAuthoringModal accessToken={accessToken} employeeId={user.userId} initialKind={authoringKind} onClose={() => setAuthoringKind(undefined)} onSaved={async (connector) => {
+        if (connector) {
+          const next = [connector, ...connectors.filter((item) => item.id !== connector.id)]
+          extensionCacheRef.current.connectors = next
+          setConnectors(next)
+          setEnabledConnectorIds((current) => saveEnabledConnectorIds(user.userId, [...current, connector.id]))
+        } else await refreshInstalledKits()
+      }} />}
       {activeExpertKit && <ExpertKitDetailsModal
         kit={activeExpertKit}
         skills={skills}

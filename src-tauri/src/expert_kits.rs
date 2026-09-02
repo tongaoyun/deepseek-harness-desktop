@@ -1,6 +1,7 @@
 mod archive;
 
 use archive::{extract_package, package_root};
+use flate2::{Compression, write::GzEncoder};
 use futures_util::StreamExt;
 use semver::Version;
 use serde::{Deserialize, Serialize};
@@ -184,6 +185,20 @@ pub struct InstalledExpertKit {
     source: InstallSource,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateDeveloperExtensionRequest {
+    manifest: ExpertKitManifest,
+    instructions: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeveloperExtensionPackage {
+    installed: InstalledExpertKit,
+    bytes: Vec<u8>,
+}
+
 pub struct ExpertKitHarnessProfile {
     pub skill_directories: Vec<String>,
     pub connector_refs: Vec<String>,
@@ -321,6 +336,69 @@ pub async fn install_developer_expert_kit(
         InstallSource::Developer,
     )
     .map(Some)
+}
+
+#[tauri::command]
+pub fn create_developer_extension(
+    app: tauri::AppHandle,
+    request: CreateDeveloperExtensionRequest,
+) -> Result<DeveloperExtensionPackage, String> {
+    let manifest = request.manifest;
+    validate_artifact_kind(&manifest.kind)?;
+    let manifest_path = if manifest.kind == "skill" {
+        SKILL_MANIFEST_PATH
+    } else {
+        KIT_MANIFEST_PATH
+    };
+    let instruction_path = if manifest.kind == "skill" {
+        "SKILL.md".to_string()
+    } else {
+        let skill = manifest
+            .skills
+            .first()
+            .ok_or_else(|| "专家套件至少需要一个 Skill".to_string())?;
+        skill.path.clone()
+    };
+    let manifest_bytes = serde_json::to_vec_pretty(&manifest)
+        .map_err(|error| format!("无法生成扩展清单：{error}"))?;
+    let encoder = GzEncoder::new(Vec::new(), Compression::default());
+    let mut archive = tar::Builder::new(encoder);
+    append_generated_file(&mut archive, manifest_path, &manifest_bytes)?;
+    append_generated_file(
+        &mut archive,
+        &instruction_path,
+        request.instructions.as_bytes(),
+    )?;
+    let encoder = archive
+        .into_inner()
+        .map_err(|error| format!("无法生成扩展制品：{error}"))?;
+    let bytes = encoder
+        .finish()
+        .map_err(|error| format!("无法压缩扩展制品：{error}"))?;
+    let installed = install_package_bytes(
+        &extensions_root(&app)?.join(&manifest.kind),
+        &bytes,
+        Some(&manifest.kind),
+        Some(&manifest.id),
+        Some(&manifest.version),
+        None,
+        InstallSource::Developer,
+    )?;
+    Ok(DeveloperExtensionPackage { installed, bytes })
+}
+
+fn append_generated_file<W: Write>(
+    archive: &mut tar::Builder<W>,
+    path: &str,
+    bytes: &[u8],
+) -> Result<(), String> {
+    let mut header = tar::Header::new_gnu();
+    header.set_size(bytes.len() as u64);
+    header.set_mode(0o644);
+    header.set_cksum();
+    archive
+        .append_data(&mut header, path, bytes)
+        .map_err(|error| format!("无法写入扩展制品：{error}"))
 }
 
 #[tauri::command]
