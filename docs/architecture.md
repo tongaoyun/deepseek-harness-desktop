@@ -57,7 +57,7 @@
 | 本地拖入 | 原生拖放事件 → 授权文件所在目录 → 加入当前任务上下文 |
 | 套件安装 | 控制中心目录 → 短期下载地址 → SHA-256/Manifest/权限校验 → 应用数据目录 |
 | 套件发布 | SDK 校验 → 依赖预检 → MinIO 上传 → 控制中心原子发布 |
-| MCP 接入 | 项目模板 → 公共准入 CI → 部署 → 注册目录 → Nacos 动态下发 |
+| MCP 接入 | `erp-mcp-gateway` 新增 Tool → 契约测试 → 部署 → 更新 `erp-mcp` 注册目录 → Nacos 动态下发 |
 | 连接器诊断 | 一次性 Harness Host → MCP 握手和 `tools/list` → 登记清单对比 → 立即关闭 |
 | 设备预检 | 原生探针 + Harness 本地工具自检 + 实时 MCP 诊断 → 去敏能力报告 → 控制中心组织总览 |
 | 定时任务 | 模板/下次执行预览 → 控制中心 → Temporal Schedule → Workflow Worker → PostgreSQL 运行投影/MinIO 产物 → 桌面通知 |
@@ -82,7 +82,7 @@
 | 云端任务 | Temporal 定时任务、常用时间模板、执行预览、失败通知、执行记录和产物下载 |
 | IM | 本地钉钉 Stream、持久队列、重试、开放/配对模式、会话隔离、文档附件解析、任务结果推送和系统托盘驻留 |
 | 运维 | 运行通知、中央审计、设备基线、组织总览、定时签名更新检查、正式版本回滚 |
-| 团队开发 | 专家套件和 Java MCP 脚手架、公共准入 CI |
+| 团队开发 | 独立专家套件模板；ERP MCP Tool 统一在 `erp-mcp-gateway` 开发 |
 
 ## 安全规则
 
@@ -116,7 +116,7 @@
 | `xiaoyin-desktop` | Windows 桌面、Harness、本地工具和本地 IM |
 | `xiaoyin-server` | 控制中心与 Workflow Worker |
 | `xiaoyin-extensions` | SDK、专家套件、Skills 和模板 |
-| `xiaoyin-connectors` | 连接器目录、准入工具和 Java MCP 模板 |
-| `erp-mcp-gateway` | ERP 业务 MCP 工具 |
+| `xiaoyin-connectors` | `erp-mcp` 连接器目录、契约校验、在线探测和 Nacos 发布 |
+| `erp-mcp-gateway` | 全部 ERP MCP Tool 的统一开发与运行入口 |
 
-平台固定维护 4 个 `xiaoyin-*` 主仓库；业务团队生成的 MCP 和专家套件使用独立仓库。
+平台固定维护 4 个 `xiaoyin-*` 主仓库。业务专家套件可以使用独立仓库；MCP 不拆分项目，所有 ERP Tool 统一提交到 `erp-mcp-gateway`。
