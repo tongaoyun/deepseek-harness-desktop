@@ -81,7 +81,6 @@ import { buildRuntimeConnectorCatalog, withDesktopBuiltinConnectors } from './co
 import { loadEnabledConnectorIds, saveEnabledConnectorIds } from './connectorPreferences'
 import { KnowledgeBasePage } from './KnowledgeBasePage'
 import { DesktopSettingsPage } from './DesktopSettingsPage'
-import { AuditEventsPage } from './AuditEventsPage'
 import { ConnectorsPage } from './ConnectorsPage'
 import { mergeSkills, type SkillView } from './skills'
 import { allowedExtensionArtifacts } from './extensionPolicy'
@@ -1155,7 +1154,7 @@ export default function App() {
         ) : (
           <section className="capability-page">
             <span className="page-kicker">企业能力中心</span>
-            <h1>{extensionNav.find((item) => item.id === page)?.label ?? ({ settings: '桌面设置', tasks: '任务中心', schedules: '定时任务', im: 'IM 频道', audit: '审计记录' } as Record<string, string>)[page]}</h1>
+            <h1>{extensionNav.find((item) => item.id === page)?.label ?? ({ settings: '桌面设置', tasks: '任务中心', schedules: '定时任务', im: 'IM 频道' } as Record<string, string>)[page]}</h1>
             <p>{page === 'experts'
               ? '面向岗位的一整套工作方案，统一组合命令、技能、连接器和后台工作流。'
               : page === 'skills'
@@ -1172,8 +1171,6 @@ export default function App() {
                     ? '按专家套件声明的后台工作流创建任务；任务由 Temporal 托管，关闭电脑后仍会运行。'
                   : page === 'settings'
                     ? '管理个人记忆与当前电脑的本地能力；软件更新和反馈仍可从左下角头像打开。'
-                    : page === 'audit'
-                      ? '集中查看桌面 Agent 和工具的去敏执行记录，便于追溯成功、失败与授权结果。'
                     : '这里将由控制中心下发公司自己的能力与权限配置。'}</p>
             {extensionSyncIssues.length > 0 && <div className="sync-diagnostics"><div><CircleStop size={17} /><span><strong>部分企业能力同步失败，已保留上次成功数据</strong><small>{extensionSyncedAt ? `最近尝试 ${extensionSyncedAt.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}` : '刚刚尝试同步'}</small></span><button onClick={() => setExtensionSyncAttempt((value) => value + 1)} type="button">重新同步</button></div><details><summary>查看 {extensionSyncIssues.length} 项失败详情</summary>{extensionSyncIssues.map((issue) => <p key={issue.key}><strong>{issue.label}</strong><span>{issue.message}</span></p>)}</details></div>}
             {catalogCacheSavedAt && extensionSyncIssues.length > 0 && <div className={`catalog-cache-state ${catalogCacheStale ? 'stale' : ''}`}><ShieldCheck size={15} /><span>{catalogCacheStale ? '本机企业目录缓存已超过 7 天，浏览仍可用，但相关能力暂停执行。' : `当前显示本机缓存 · ${new Date(catalogCacheSavedAt).toLocaleString('zh-CN', { hour12: false })}`}</span></div>}
@@ -1187,11 +1184,6 @@ export default function App() {
               onMemorySaved={memorySaved}
               runtimeConnectors={runtimeConnectors}
               runtimeStatus={runtimeStatus}
-            />}
-            {page === 'audit' && bootstrap && user && <AuditEventsPage
-              endpoint={bootstrap.endpoints.auditEvents ?? '/api/v1/audit-events'}
-              employeeId={user.userId}
-              accessToken={accessToken}
             />}
             {page === 'experts' && <ExpertCatalogPage all={expertKits} developerBusy={developerKitBusy} developerMode={developerKitMode} error={expertKitError} filter={extensionFilter} installingId={installingKitId} loading={expertKitsLoading} onCreate={() => void createLocalExpertKit()} onFilter={setExtensionFilter} onImport={() => void installLocalAcceptanceKit()} onOpen={setActiveExpertKitId} onQuery={setExtensionQuery} query={extensionQuery} visible={visibleExpertKits} />}
             {page === 'skills' && <SkillCatalogPage all={skillViews} error={expertKitError} filter={extensionFilter} loading={expertKitsLoading} onFilter={setExtensionFilter} onOpen={setActiveSkillId} onQuery={setExtensionQuery} query={extensionQuery} visible={visibleSkillViews} />}

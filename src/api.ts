@@ -223,16 +223,6 @@ export async function loadDeviceFleetOverview(
   return response.json() as Promise<DeviceFleetOverview>
 }
 
-export async function loadAuditEvents(
-  endpoint: string,
-  employeeId: string,
-  accessToken: string,
-  signal?: AbortSignal,
-): Promise<AuditEventEntry[]> {
-  const separator = endpoint.includes('?') ? '&' : '?'
-  return loadCatalog(`${endpoint}${separator}limit=200`, employeeId, accessToken, '审计记录', signal)
-}
-
 export async function submitAuditEvent(
   endpoint: string,
   employeeId: string,

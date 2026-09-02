@@ -1,4 +1,4 @@
-import { BookOpenCheck, Boxes, CalendarClock, MessageSquare, PanelLeftClose, PanelLeftOpen, PlugZap, Plus, ScrollText, Search, SquareCheckBig, WandSparkles, X } from 'lucide-react'
+import { BookOpenCheck, Boxes, CalendarClock, MessageSquare, PanelLeftClose, PanelLeftOpen, PlugZap, Plus, Search, SquareCheckBig, WandSparkles, X } from 'lucide-react'
 import type { RefObject } from 'react'
 import { AccountMenu } from './AccountMenu'
 import type { LocalTaskRun, RuntimeStatus } from './types'
@@ -52,7 +52,6 @@ export function DesktopSidebar(props: Props) {
       {navItem('tasks', '任务中心', SquareCheckBig)}
       {navItem('schedules', '定时任务', CalendarClock)}
       {navItem('im', 'IM 频道', MessageSquare)}
-      {navItem('audit', '审计记录', ScrollText)}
     </nav>
     <div className="recent-tasks">
       <p className="nav-label">最近</p>
