@@ -2,8 +2,6 @@ import { invoke, isTauri } from '@tauri-apps/api/core'
 import type { ConnectorCatalogEntry, ExpertKitCatalogEntry, KnowledgeBaseEntry, SkillCatalogEntry } from './types'
 import { connectorSecretTemplate } from './connectorSecrets'
 
-export const ENTERPRISE_CACHE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1_000
-
 export interface EnterpriseCatalogCache {
   savedAt: string
   catalog: ExpertKitCatalogEntry[]
@@ -32,13 +30,6 @@ export async function saveEnterpriseCatalogCache(employeeId: string, cache: Ente
     return
   }
   window.localStorage.setItem(key(employeeId), JSON.stringify(sanitized))
-}
-
-export function cacheAge(savedAt: string, now = Date.now()): { stale: boolean; ageDays: number } {
-  const timestamp = Date.parse(savedAt)
-  if (!Number.isFinite(timestamp)) return { stale: true, ageDays: Number.POSITIVE_INFINITY }
-  const age = Math.max(0, now - timestamp)
-  return { stale: age > ENTERPRISE_CACHE_MAX_AGE_MS, ageDays: Math.floor(age / 86_400_000) }
 }
 
 function isCache(value: unknown): value is EnterpriseCatalogCache {

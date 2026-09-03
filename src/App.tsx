@@ -13,10 +13,6 @@ import {
   createExpertKitDownload,
   createSkillDownload,
   loadBootstrap,
-  loadConnectors,
-  loadExpertKits,
-  loadKnowledgeBases,
-  loadSkills,
   resolveControlPlaneEndpoint,
   submitAuditEvent,
   submitDeviceHeartbeat,
@@ -32,7 +28,6 @@ import {
   installExtension,
   installedExtensionSnapshot,
   listInstalledExtensions,
-  mergeExpertKits,
   removeCatalogExtension,
   removeDeveloperExpertKit,
   type ExpertKitView,
@@ -59,13 +54,8 @@ import {
 } from './harness'
 import type {
   BootstrapResponse,
-  ConnectorCatalogEntry,
-  ExpertKitCatalogEntry,
-  KnowledgeBaseEntry,
   LocalTaskAttachment,
-  InstalledExpertKit,
   RuntimeStatus,
-  SkillCatalogEntry,
 } from './types'
 import { useEnterpriseSession } from './useEnterpriseSession'
 import { ScheduledTasksPage } from './ScheduledTasksPage'
@@ -79,7 +69,7 @@ import { modelStorageKey, resolveSelectedModel } from './modelSelection'
 import { buildInvocationOptions, filterInvocationOptions, type InvocationOption } from './invocations'
 import { needsLocalDirectoryAuthorization, standardLocalDirectories } from './localFileIntent'
 import { creationPrompt, type XiaoyinCreationKind } from './creationPrompts'
-import { buildRuntimeConnectorCatalog, withDesktopBuiltinConnectors } from './connectors'
+import { buildRuntimeConnectorCatalog } from './connectors'
 import { loadEnabledConnectorIds, saveEnabledConnectorIds } from './connectorPreferences'
 import {
   connectorSecretTemplate,
@@ -92,19 +82,19 @@ import {
 import { KnowledgeBasePage } from './KnowledgeBasePage'
 import { DesktopSettingsPage } from './DesktopSettingsPage'
 import { ConnectorsPage } from './ConnectorsPage'
-import { mergeSkills, type SkillView } from './skills'
+import type { SkillView } from './skills'
 import { allowedExtensionArtifacts } from './extensionPolicy'
 import { connectorsForSnapshot, createCapabilitySnapshot } from './capabilitySnapshot'
 import { DesktopSidebar } from './DesktopSidebar'
 import { ChatPage } from './ChatPage'
-import { cacheAge, loadEnterpriseCatalogCache, saveEnterpriseCatalogCache } from './enterpriseCache'
 import { inspectDeviceHeartbeatContext } from './deviceHeartbeat'
 import { extensionMatches, type ExtensionFilter } from './ExtensionToolbar'
 import type { ExtensionCategoryFilter } from './extensionCategories'
 import { ExpertCatalogPage, SkillCatalogPage } from './ExtensionCatalogPages'
 import { ExtensionAuthoringModal } from './ExtensionAuthoringModal'
-import { loadPersonalConnectors, savePersonalConnector, type ExtensionKind } from './extensionSubmissions'
+import { savePersonalConnector, type ExtensionKind } from './extensionSubmissions'
 import { ExtensionPageActions } from './ExtensionPageActions'
+import { useEnterpriseCatalog } from './useEnterpriseCatalog'
 import './styles.css'
 
 const extensionNav = [
@@ -113,12 +103,6 @@ const extensionNav = [
   { id: 'connectors', label: '连接器', icon: PlugZap },
   { id: 'knowledge', label: '知识库', icon: BookOpenCheck },
 ]
-
-interface ExtensionSyncIssue {
-  key: string
-  label: string
-  message: string
-}
 
 type HarnessHealth = 'checking' | 'ready' | 'degraded'
 
@@ -132,22 +116,25 @@ export default function App() {
   const [messages, setMessages] = useState<TaskMessage[]>([])
   const [localTasks, setLocalTasks] = useState<LocalTaskRun[]>([])
   const [currentLocalTaskId, setCurrentLocalTaskId] = useState('')
-  const [expertKits, setExpertKits] = useState<ExpertKitView[]>([])
-  const [expertKitCatalog, setExpertKitCatalog] = useState<ExpertKitCatalogEntry[]>([])
-  const [skills, setSkills] = useState<SkillCatalogEntry[]>([])
-  const [skillViews, setSkillViews] = useState<SkillView[]>([])
-  const [connectors, setConnectors] = useState<ConnectorCatalogEntry[]>([])
   const [authoringKind, setAuthoringKind] = useState<ExtensionKind>()
   const [enabledConnectorIds, setEnabledConnectorIds] = useState<string[]>([])
   const [connectorSecrets, setConnectorSecrets] = useState<ConnectorSecretStore>({})
-  const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBaseEntry[]>([])
-  const [expertKitsLoading, setExpertKitsLoading] = useState(false)
   const [expertKitError, setExpertKitError] = useState('')
-  const [extensionSyncIssues, setExtensionSyncIssues] = useState<ExtensionSyncIssue[]>([])
-  const [extensionSyncAttempt, setExtensionSyncAttempt] = useState(0)
-  const [extensionSyncedAt, setExtensionSyncedAt] = useState<Date>()
-  const [catalogCacheSavedAt, setCatalogCacheSavedAt] = useState('')
-  const [catalogCacheStale, setCatalogCacheStale] = useState(false)
+  const {
+    cacheSavedAt: catalogCacheSavedAt,
+    connectors,
+    expertKitCatalog,
+    expertKits,
+    knowledgeBases,
+    loading: expertKitsLoading,
+    refresh: refreshEnterpriseCatalog,
+    refreshInstalled: refreshCatalogInstalled,
+    replaceConnectors,
+    skills,
+    skillViews,
+    syncIssues: extensionSyncIssues,
+    syncedAt: extensionSyncedAt,
+  } = useEnterpriseCatalog({ accessToken, bootstrap, enabledConnectorIds, user })
   const [developerKitBusy, setDeveloperKitBusy] = useState(false)
   const [installingKitId, setInstallingKitId] = useState('')
   const [installingSkillId, setInstallingSkillId] = useState('')
@@ -187,13 +174,6 @@ export default function App() {
   const streamingTaskIdRef = useRef('')
   const streamingResponseKeyRef = useRef('')
   const enabledConnectorIdsRef = useRef<string[]>([])
-  const extensionCacheRef = useRef<{
-    catalog: ExpertKitCatalogEntry[]
-    installed: InstalledExpertKit[]
-    skills: SkillCatalogEntry[]
-    connectors: ConnectorCatalogEntry[]
-    knowledge: KnowledgeBaseEntry[]
-  }>({ catalog: [], installed: [], skills: [], connectors: [], knowledge: [] })
   const allowedArtifacts = useMemo(
     () => allowedExtensionArtifacts(expertKitCatalog, skills),
     [expertKitCatalog, skills],
@@ -273,89 +253,6 @@ export default function App() {
       })
     return () => { disposed = true }
   }, [authState, harnessHealthAttempt])
-
-  useEffect(() => {
-    if (!bootstrap || !user) return
-    const controller = new AbortController()
-    let syncing = false
-    const syncExtensions = async (showLoading: boolean) => {
-      if (syncing) return
-      syncing = true
-      if (showLoading) setExpertKitsLoading(true)
-      setExtensionSyncIssues([])
-      if (showLoading) {
-        const cached = await loadEnterpriseCatalogCache(user.userId).catch(() => undefined)
-        if (cached && extensionCacheRef.current.catalog.length === 0) {
-          const age = cacheAge(cached.savedAt)
-          extensionCacheRef.current = { ...extensionCacheRef.current, ...cached }
-          setCatalogCacheSavedAt(cached.savedAt)
-          setCatalogCacheStale(age.stale)
-          setExpertKitCatalog(cached.catalog)
-          setSkills(cached.skills)
-          const personal = loadPersonalConnectors(user.userId)
-          setConnectorSecrets(loadConnectorSecrets(user.userId))
-          const cachedConnectors = withDesktopBuiltinConnectors([...personal, ...cached.connectors.filter((item) => !personal.some((value) => value.id === item.id))])
-          extensionCacheRef.current.connectors = cachedConnectors
-          setConnectors(cachedConnectors)
-          setKnowledgeBases(cached.knowledge)
-          setSkillViews(mergeSkills(cached.skills, extensionCacheRef.current.installed, cachedConnectors, cached.knowledge, enabledConnectorIdsRef.current))
-          setExpertKits(mergeExpertKits(cached.catalog, extensionCacheRef.current.installed, cachedConnectors, cached.knowledge, enabledConnectorIdsRef.current))
-        }
-      }
-      const [catalogResult, installedResult, skillsResult, connectorsResult, knowledgeResult] = await Promise.allSettled([
-        loadExpertKits(bootstrap.endpoints.expertKits, user.userId, accessToken, controller.signal),
-        listInstalledExtensions(),
-        loadSkills(bootstrap.endpoints.skills, user.userId, accessToken, controller.signal),
-        loadConnectors(bootstrap.endpoints.connectors, user.userId, accessToken, controller.signal),
-        loadKnowledgeBases(bootstrap.endpoints.knowledge, user.userId, user.teamId, accessToken, controller.signal),
-      ])
-      try {
-        if (controller.signal.aborted) return
-        const cache = extensionCacheRef.current
-        if (catalogResult.status === 'fulfilled') cache.catalog = catalogResult.value
-        if (installedResult.status === 'fulfilled') cache.installed = installedResult.value
-        if (skillsResult.status === 'fulfilled') cache.skills = skillsResult.value
-        if (connectorsResult.status === 'fulfilled') {
-          const personal = loadPersonalConnectors(user.userId)
-          setConnectorSecrets(loadConnectorSecrets(user.userId))
-          cache.connectors = withDesktopBuiltinConnectors([...personal, ...connectorsResult.value.filter((item) => !personal.some((value) => value.id === item.id))])
-        }
-        if (knowledgeResult.status === 'fulfilled') cache.knowledge = knowledgeResult.value
-        setExpertKitCatalog(cache.catalog)
-        setSkills(cache.skills)
-        setSkillViews(mergeSkills(cache.skills, cache.installed, cache.connectors, cache.knowledge, enabledConnectorIdsRef.current))
-        setConnectors(cache.connectors)
-        setKnowledgeBases(cache.knowledge)
-        setExpertKits(mergeExpertKits(cache.catalog, cache.installed, cache.connectors, cache.knowledge, enabledConnectorIdsRef.current))
-        const sources = [
-          ['expert-kits', '专家套件目录', catalogResult],
-          ['installed', '本机已安装能力', installedResult],
-          ['skills', 'Skills 目录', skillsResult],
-          ['connectors', '连接器目录', connectorsResult],
-          ['knowledge', '知识库目录', knowledgeResult],
-        ] as const
-        const issues = sources.flatMap(([key, label, result]) => result.status === 'rejected'
-          ? [{ key, label, message: result.reason instanceof Error ? result.reason.message : String(result.reason) }]
-          : [])
-        setExtensionSyncIssues(issues)
-        setExtensionSyncedAt(new Date())
-        if ([catalogResult, skillsResult, connectorsResult, knowledgeResult].every((result) => result.status === 'fulfilled')) {
-          const savedAt = new Date().toISOString()
-          setCatalogCacheSavedAt(savedAt)
-          setCatalogCacheStale(false)
-          void saveEnterpriseCatalogCache(user.userId, {
-            savedAt, catalog: cache.catalog, skills: cache.skills, connectors: cache.connectors, knowledge: cache.knowledge,
-          }).catch(() => undefined)
-        }
-      } finally {
-        syncing = false
-        if (showLoading && !controller.signal.aborted) setExpertKitsLoading(false)
-      }
-    }
-    void syncExtensions(true)
-    const timer = window.setInterval(() => void syncExtensions(false), 60_000)
-    return () => { window.clearInterval(timer); controller.abort() }
-  }, [accessToken, bootstrap, extensionSyncAttempt, user])
 
   useEffect(() => {
     if (authState !== 'authenticated' || !connectorDiagnosticsAvailable()) return
@@ -575,8 +472,6 @@ export default function App() {
       && (!contextQuery || `${item.name} ${item.description} ${item.reference}`.toLocaleLowerCase('zh-CN').includes(contextQuery)))
     .slice(0, 8)
   const activeModel = selectedModel || bootstrap?.models[0] || 'deepseek-v4-flash'
-  const selectedEnterpriseCapability = Boolean(selectedExpertKit || selectedSkill)
-  const selectedCapabilityExecutable = !selectedEnterpriseCapability || !catalogCacheStale
   const activeLocalTasks = localTasks.filter((task) => !task.archivedAt)
   const visibleLocalTasks = taskQuery.trim()
     ? activeLocalTasks.filter((task) => task.name.toLocaleLowerCase().includes(taskQuery.trim().toLocaleLowerCase()))
@@ -689,7 +584,7 @@ export default function App() {
     event.preventDefault()
     const messageAttachments = pendingAttachments
     const input = prompt.trim() || (messageAttachments.length > 0 ? '请查看并处理这些附件。' : '')
-    if (!input || !bootstrap || runtimeStatus !== 'ready' || harnessRunning || !selectedCapabilityExecutable) return
+    if (!input || !bootstrap || runtimeStatus !== 'ready' || harnessRunning) return
     const remembered = messageAttachments.length === 0 ? memoryInstruction(input) : undefined
     if (remembered) {
       setPrompt('')
@@ -911,10 +806,8 @@ export default function App() {
       if (download.version !== kit.version || download.sha256 !== kit.sha256) {
         throw new Error('专家套件目录在安装期间发生变化，请刷新后重试')
       }
-      const installed = await installExtension(download, 'expert-kit')
-      setExpertKits((current) => current.map((item) => item.id === kit.id
-        ? { ...item, installed, installedVersion: installed.manifest.version, installState: 'installed' }
-        : item))
+      await installExtension(download, 'expert-kit')
+      await refreshInstalledKits()
     } catch (error) {
       setExpertKitError(error instanceof Error ? error.message : String(error))
     } finally {
@@ -923,10 +816,7 @@ export default function App() {
   }
 
   const refreshInstalledKits = async () => {
-    const installed = await listInstalledExtensions()
-    extensionCacheRef.current.installed = installed
-    setExpertKits(mergeExpertKits(expertKitCatalog, installed, connectors, knowledgeBases, enabledConnectorIds))
-    setSkillViews(mergeSkills(skills, installed, connectors, knowledgeBases, enabledConnectorIds))
+    const installed = await refreshCatalogInstalled()
     if (bootstrap && user) {
       const context = await inspectDeviceHeartbeatContext()
       if (/^\d+\.\d+\.\d+$/.test(context.desktopVersion)) {
@@ -1190,7 +1080,6 @@ export default function App() {
             onToggleModelMenu={() => setModelMenuOpen((value) => !value)}
             prompt={prompt}
             runtimeStatus={runtimeStatus}
-            selectedCapabilityExecutable={Boolean(bootstrap) && selectedCapabilityExecutable}
             selectedCapabilityId={selectedExpertKit?.id ?? ''}
             selectedCapabilityName={selectedExpertKit?.name ?? selectedSkill?.name ?? '通用'}
             selectedKnowledgeBaseRefs={selectedKnowledgeBaseRefs}
@@ -1227,18 +1116,17 @@ export default function App() {
                 savePersonalConnector(user.userId, connector)
                 setConnectorSecrets(saveConnectorSecrets(user.userId, connector.id, values))
                 const next = [template, ...connectors.filter((item) => item.id !== connector.id)]
-                extensionCacheRef.current.connectors = next
-                setConnectors(next)
+                replaceConnectors(next)
                 setEnabledConnectorIds((current) => saveEnabledConnectorIds(user.userId, [...new Set([...current, connector.id])]))
               }}
               onQuery={setExtensionQuery}
-              onRefresh={() => setExtensionSyncAttempt((value) => value + 1)}
+              onRefresh={refreshEnterpriseCatalog}
               onUpload={() => void installLocalExtension(page === 'skills' ? 'skill' : 'expert-kit')}
               page={page}
               query={extensionQuery}
             />}</div>}
-            {extensionSyncIssues.length > 0 && <div className="sync-diagnostics"><div><CircleStop size={17} /><span><strong>部分企业能力同步失败，已保留上次成功数据</strong><small>{extensionSyncedAt ? `最近尝试 ${extensionSyncedAt.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}` : '刚刚尝试同步'}</small></span><button onClick={() => setExtensionSyncAttempt((value) => value + 1)} type="button">重新同步</button></div><details><summary>查看 {extensionSyncIssues.length} 项失败详情</summary>{extensionSyncIssues.map((issue) => <p key={issue.key}><strong>{issue.label}</strong><span>{issue.message}</span></p>)}</details></div>}
-            {catalogCacheSavedAt && extensionSyncIssues.length > 0 && <div className={`catalog-cache-state ${catalogCacheStale ? 'stale' : ''}`}><ShieldCheck size={15} /><span>{catalogCacheStale ? '本机企业目录缓存已超过 7 天，浏览仍可用，但相关能力暂停执行。' : `当前显示本机缓存 · ${new Date(catalogCacheSavedAt).toLocaleString('zh-CN', { hour12: false })}`}</span></div>}
+            {extensionSyncIssues.length > 0 && <div className="sync-diagnostics"><div><CircleStop size={17} /><span><strong>部分企业能力同步失败，已保留上次成功数据</strong><small>{extensionSyncedAt ? `最近尝试 ${extensionSyncedAt.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}` : '刚刚尝试同步'}</small></span><button onClick={refreshEnterpriseCatalog} type="button">重新同步</button></div><details><summary>查看 {extensionSyncIssues.length} 项失败详情</summary>{extensionSyncIssues.map((issue) => <p key={issue.key}><strong>{issue.label}</strong><span>{issue.message}</span></p>)}</details></div>}
+            {catalogCacheSavedAt && extensionSyncIssues.length > 0 && <div className="catalog-cache-state"><ShieldCheck size={15} /><span>当前使用本机缓存，可继续执行 · {new Date(catalogCacheSavedAt).toLocaleString('zh-CN', { hour12: false })}</span></div>}
             {page === 'settings' && bootstrap && user && <DesktopSettingsPage
               accessToken={accessToken}
               companyName={user.companyName}
@@ -1332,8 +1220,7 @@ export default function App() {
             const connector = change.connector
             setConnectorSecrets(saveConnectorSecrets(user.userId, connector.id, change.secrets))
             const next = [connector, ...connectors.filter((item) => item.id !== connector.id)]
-            extensionCacheRef.current.connectors = next
-            setConnectors(next)
+            replaceConnectors(next)
             setEnabledConnectorIds((current) => {
               const enabled = saveEnabledConnectorIds(user.userId, [...current, connector.id])
               enabledConnectorIdsRef.current = enabled
@@ -1342,8 +1229,7 @@ export default function App() {
           } else if (change.type === 'connector-delete') {
             setConnectorSecrets(deleteConnectorSecrets(user.userId, change.id))
             const next = connectors.filter((item) => item.id !== change.id)
-            extensionCacheRef.current.connectors = next
-            setConnectors(next)
+            replaceConnectors(next)
             setEnabledConnectorIds((current) => {
               const enabled = saveEnabledConnectorIds(user.userId, current.filter((id) => id !== change.id))
               enabledConnectorIdsRef.current = enabled
