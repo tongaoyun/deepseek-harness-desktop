@@ -20,7 +20,7 @@ describe('ChatPage conversation', () => {
       onPrepareRetry={() => undefined} onPrompt={() => undefined} onReconnect={() => undefined} onRecoverHarness={() => undefined}
       onRemoveAttachment={() => undefined} onRemoveKnowledge={() => undefined} onRemoveLocalDirectory={() => undefined} onSelectInvocation={() => undefined}
       onSelectModel={() => undefined} onSubmit={() => undefined} onToggleModelMenu={() => undefined} prompt=""
-      runtimeStatus="ready" selectedCapabilityExecutable selectedCapabilityId="" selectedCapabilityName="通用" selectedKnowledgeBaseRefs={[]}
+      runtimeStatus="ready" selectedCapabilityId="" selectedCapabilityName="通用" selectedKnowledgeBaseRefs={[]}
       taskMonitor={monitor} visibleInvocations={[]} visibleKnowledgeContexts={[]}
     />)
 
@@ -49,7 +49,7 @@ describe('ChatPage conversation', () => {
       onSelectInvocation={() => undefined} onSelectModel={() => undefined} onSubmit={() => undefined}
       onToggleModelMenu={() => undefined} pendingAttachments={[{
         id: 'download:image.png', rootId: 'download', rootName: '下载', path: 'image.png', name: 'image.png', kind: 'image', mediaType: 'image/png',
-      }]} prompt="" runtimeStatus="ready" selectedCapabilityExecutable selectedCapabilityId="" selectedCapabilityName="通用"
+      }]} prompt="" runtimeStatus="ready" selectedCapabilityId="" selectedCapabilityName="通用"
       selectedKnowledgeBaseRefs={[]} taskMonitor={monitor} visibleInvocations={[]} visibleKnowledgeContexts={[]}
     />)
 

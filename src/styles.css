@@ -143,7 +143,6 @@ button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 2px
 .message-actions button.active { color: #32784a; background: #edf5ef; }
 .scroll-to-latest { position: absolute; z-index: 20; right: 50%; bottom: 133px; display: grid; width: 34px; height: 34px; place-items: center; transform: translateX(50%); border: 1px solid #dfe2df; border-radius: 50%; color: #323834; background: #fff; box-shadow: 0 5px 16px #1720191a; cursor: pointer; }
 .catalog-cache-state { display: flex; align-items: center; gap: 8px; margin: 0 0 14px; padding: 9px 11px; border: 1px solid #dbe8df; border-radius: 9px; color: #54705f; background: #f5faf7; font-size: 11px; }
-.catalog-cache-state.stale { border-color: #efd5b9; color: #8b5727; background: #fff8ef; }
 .im-conversation-center { margin-top: 18px; border: 1px solid #e0e6e2; border-radius: 14px; background: white; overflow: hidden; }
 .im-conversation-center > header { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid #edf0ee; }
 .im-conversation-center h3, .im-conversation-center p { margin: 0; }.im-conversation-center header p { margin-top: 3px; color: #849087; font-size: 11px; }.im-conversation-center header > span { color: #708077; font-size: 11px; }

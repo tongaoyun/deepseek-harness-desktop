@@ -91,7 +91,6 @@ pub fn run() {
             erp_auth::complete_erp_qr_login,
             expert_kits::list_installed_expert_kits,
             expert_kits::install_expert_kit,
-            expert_kits::developer_expert_kit_install_enabled,
             expert_kits::install_developer_extension,
             expert_kits::create_developer_extension,
             expert_kits::read_developer_extension,

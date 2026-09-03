@@ -330,16 +330,10 @@ pub async fn install_expert_kit(
 }
 
 #[tauri::command]
-pub fn developer_expert_kit_install_enabled() -> bool {
-    true
-}
-
-#[tauri::command]
 pub async fn install_developer_extension(
     app: tauri::AppHandle,
     kind: String,
 ) -> Result<Option<InstalledExpertKit>, String> {
-    require_developer_install()?;
     if kind != "expert-kit" && kind != "skill" {
         return Err("仅支持导入专家套件或技能".to_string());
     }
@@ -549,7 +543,6 @@ pub fn read_developer_extension(
     id: String,
     version: String,
 ) -> Result<DeveloperExtensionDraft, String> {
-    require_developer_install()?;
     validate_artifact_kind(&kind)?;
     validate_identifier(&id)?;
     Version::parse(&version).map_err(|error| format!("扩展版本无效：{error}"))?;
@@ -766,7 +759,6 @@ pub fn remove_developer_expert_kit(
     id: String,
     version: String,
 ) -> Result<(), String> {
-    require_developer_install()?;
     validate_identifier(&id)?;
     Version::parse(&version).map_err(|error| format!("专家套件版本无效：{error}"))?;
     let root = extensions_root(&app)?.join("expert-kit");
@@ -795,7 +787,6 @@ pub fn remove_developer_extension(
     id: String,
     version: String,
 ) -> Result<(), String> {
-    require_developer_install()?;
     validate_artifact_kind(&kind)?;
     validate_identifier(&id)?;
     Version::parse(&version).map_err(|error| format!("扩展版本无效：{error}"))?;
@@ -861,12 +852,6 @@ pub fn remove_catalog_extension(
             .map_err(|error| format!("无法清理扩展目录：{error}"))?;
     }
     Ok(())
-}
-
-fn require_developer_install() -> Result<(), String> {
-    developer_expert_kit_install_enabled()
-        .then_some(())
-        .ok_or_else(|| "本地专家套件安装未启用".to_string())
 }
 
 fn install_package_bytes(
@@ -1130,7 +1115,7 @@ fn artifact_is_executable(
     allowed_artifacts: &[AllowedExtensionArtifact],
 ) -> bool {
     if artifact.source == InstallSource::Developer {
-        return developer_expert_kit_install_enabled();
+        return true;
     }
     let Some(allowed) = allowed_artifacts.iter().find(|allowed| {
         allowed.kind == artifact.manifest.kind
