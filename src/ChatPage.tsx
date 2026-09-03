@@ -6,7 +6,6 @@ import { InlineTaskActivity } from './InlineTaskActivity'
 import { modelDisplayName } from './modelSelection'
 import { TaskArtifacts } from './TaskArtifacts'
 import type { CapabilitySnapshot, KnowledgeBaseEntry, LocalTaskAttachment, RuntimeStatus, TaskMessage, TaskMonitorState } from './types'
-import { XiaoyinMascot } from './XiaoyinMascot'
 
 const RichMessage = lazy(() => import('./RichMessage').then((module) => ({ default: module.RichMessage })))
 interface Props {
@@ -39,6 +38,7 @@ interface Props {
   onPrompt: (value: string) => void
   onSubmit: (event: FormEvent) => void
   onPrepareRetry: () => void
+  onReconnect: () => void
   onRecoverHarness: () => void
   onAddLocalDirectory: () => void
   onSelectCapability: (id: string) => void
@@ -97,9 +97,7 @@ export function ChatPage(props: Props) {
 
   return <section className={props.messages.length > 0 ? 'chat-page conversation' : 'chat-page'}>
     {props.messages.length === 0 && <div className="hero-copy">
-      <XiaoyinMascot size={62} variant="hero" />
-      <h1>不止聊天，搞定一切</h1>
-      <p>本地运行、自主规划、安全可控的 AI 工作搭子</p>
+      <h1>今天想做什么？</h1>
     </div>}
     {props.messages.length > 0 && <div aria-live="polite" className="message-list" onScroll={trackScroll} ref={props.messageListRef}>{props.messages.map((message, index) => {
       const monitor = message.monitor ?? (message.role === 'assistant' && index === props.messages.length - 1 ? props.taskMonitor : undefined)
@@ -119,7 +117,9 @@ export function ChatPage(props: Props) {
       </article>
     })}</div>}
     {showScrollDown && <button aria-label="滚动到最新消息" className="scroll-to-latest" onClick={() => scrollToBottom()} title="滚动到最新消息" type="button"><ArrowDown size={18} /></button>}
-    {props.harnessHealth === 'degraded' && <div className="runtime-recovery"><CircleStop size={17} /><span><strong>本地 Agent 暂不可用</strong><small>{props.harnessHealthDetail}</small></span><button onClick={props.onRecoverHarness} type="button">重新检测</button></div>}
+    {props.runtimeStatus === 'offline'
+      ? <div className="runtime-recovery"><CircleStop size={17} /><span><strong>企业服务暂不可用</strong><small>请检查内网连接后重试</small></span><button onClick={props.onReconnect} type="button">重新连接</button></div>
+      : props.harnessHealth === 'degraded' && <div className="runtime-recovery"><CircleStop size={17} /><span><strong>本地 Agent 暂不可用</strong><small>{props.harnessHealthDetail}</small></span><button onClick={props.onRecoverHarness} type="button">重新检测</button></div>}
     <form className="composer" onSubmit={props.onSubmit}>
       <textarea aria-label="给小胤发送消息" onChange={(event) => props.onPrompt(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); event.currentTarget.form?.requestSubmit() } }} placeholder="描述任务；@ 引用知识库，/ 使用快捷指令" ref={props.composerRef} value={props.prompt} />
       <div className="composer-actions">
@@ -145,7 +145,7 @@ export function ChatPage(props: Props) {
         </div>
         <div className="model-picker" ref={props.modelPickerRef}>
           <button aria-expanded={props.modelMenuOpen} className="model-label" onClick={props.onToggleModelMenu} type="button"><Bot size={14} /> {modelDisplayName(props.activeModel)} <ChevronDown size={13} /></button>
-          {props.modelMenuOpen && <div className="model-menu"><small>公司可用模型</small>{(props.models.length ? props.models : [props.activeModel]).map((model) => <button className={model === props.activeModel ? 'active' : ''} key={model} onClick={() => props.onSelectModel(model)} type="button"><span><strong>{modelDisplayName(model)}</strong><small>{model}</small></span>{model === props.activeModel && <SquareCheckBig size={14} />}</button>)}</div>}
+          {props.modelMenuOpen && <div className="model-menu"><small>公司可用模型</small>{(props.models.length ? props.models : [props.activeModel]).map((model) => <button className={model === props.activeModel ? 'active' : ''} key={model} onClick={() => props.onSelectModel(model)} title={model} type="button"><span><strong>{modelDisplayName(model)}</strong></span>{model === props.activeModel && <SquareCheckBig size={14} />}</button>)}</div>}
         </div>
         {props.harnessRunning
           ? <button aria-label="取消当前任务" className="cancel-button" onClick={props.onCancel} title="取消当前任务" type="button"><CircleStop size={17} /></button>

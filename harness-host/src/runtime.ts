@@ -39,10 +39,7 @@ const moduleDirectory = dirname(fileURLToPath(import.meta.url))
 
 export class DeepSeekHarnessRuntime implements HarnessRuntime {
   private harness: DeepSeekHarness | undefined
-  private readonly sessionTails = new Map<string, Promise<void>>()
-  private readonly pendingRuns = new Set<Promise<unknown>>()
-  private activeRuns = 0
-  private readonly concurrencyWaiters: Array<() => void> = []
+  private runTail: Promise<void> = Promise.resolve()
 
   constructor(private readonly extraEnv: NodeJS.ProcessEnv = {}) {}
 
@@ -64,22 +61,8 @@ export class DeepSeekHarnessRuntime implements HarnessRuntime {
     onNotification: (value: HarnessNotification) => void,
   ): Promise<HarnessRunResult> {
     const sessionId = input.sessionId ?? `session-${randomUUID().replaceAll('-', '')}`
-    const previous = this.sessionTails.get(sessionId) ?? Promise.resolve()
-    const execution = previous.then(async () => {
-      await this.acquireConcurrencySlot()
-      try {
-        return await this.runNow({ ...input, sessionId }, onNotification)
-      } finally {
-        this.releaseConcurrencySlot()
-      }
-    })
-    const settled = execution.then(() => undefined, () => undefined)
-    this.sessionTails.set(sessionId, settled)
-    this.pendingRuns.add(execution)
-    void settled.finally(() => {
-      this.pendingRuns.delete(execution)
-      if (this.sessionTails.get(sessionId) === settled) this.sessionTails.delete(sessionId)
-    })
+    const execution = this.runTail.then(() => this.runNow({ ...input, sessionId }, onNotification))
+    this.runTail = execution.then(() => undefined, () => undefined)
     return execution
   }
 
@@ -116,25 +99,10 @@ export class DeepSeekHarnessRuntime implements HarnessRuntime {
   }
 
   async close(): Promise<void> {
-    await Promise.allSettled(this.pendingRuns)
+    await this.runTail
     const current = this.harness
     this.harness = undefined
     await current?.close()
-  }
-
-  private async acquireConcurrencySlot(): Promise<void> {
-    const limit = positiveInteger(process.env.XIAOYIN_MAX_CONCURRENT_TURNS) ?? 2
-    if (this.activeRuns < limit) {
-      this.activeRuns += 1
-      return
-    }
-    await new Promise<void>((resolveWaiter) => this.concurrencyWaiters.push(resolveWaiter))
-    this.activeRuns += 1
-  }
-
-  private releaseConcurrencySlot(): void {
-    this.activeRuns = Math.max(0, this.activeRuns - 1)
-    this.concurrencyWaiters.shift()?.()
   }
 
   private getOrCreateHarness(): DeepSeekHarness {

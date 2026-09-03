@@ -96,11 +96,6 @@ export async function removeDeveloperExtension(kind: 'expert-kit' | 'skill', id:
   await invoke('remove_developer_extension', { kind, id, version })
 }
 
-export async function createExpertKitTemplate(id: string, name: string): Promise<string | null> {
-  if (!isTauri()) throw new Error('请在小胤桌面客户端中创建专家套件')
-  return invoke<string | null>('create_expert_kit_template', { id, name })
-}
-
 export async function customizeExpertKit(id: string, version: string): Promise<string | null> {
   if (!isTauri()) throw new Error('请在小胤桌面客户端中定制专家套件')
   return invoke<string | null>('customize_expert_kit', { id, version })

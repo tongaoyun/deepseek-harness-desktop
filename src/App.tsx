@@ -1,12 +1,10 @@
 import {
-  Bell,
   BookOpenCheck,
   Boxes,
   CircleStop,
   FolderOpen,
   PlugZap,
   ShieldCheck,
-  SquareCheckBig,
   WandSparkles,
 } from 'lucide-react'
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
@@ -15,7 +13,6 @@ import {
   createExpertKitDownload,
   createSkillDownload,
   loadBootstrap,
-  loadCloudTaskRuns,
   loadConnectors,
   loadExpertKits,
   loadKnowledgeBases,
@@ -66,7 +63,6 @@ import type {
   ExpertKitCatalogEntry,
   KnowledgeBaseEntry,
   LocalTaskAttachment,
-  CloudTaskRun,
   InstalledExpertKit,
   RuntimeStatus,
   SkillCatalogEntry,
@@ -167,8 +163,6 @@ export default function App() {
   const [harnessHealth, setHarnessHealth] = useState<HarnessHealth>('checking')
   const [harnessHealthDetail, setHarnessHealthDetail] = useState('正在检查本地 Agent')
   const [harnessHealthAttempt, setHarnessHealthAttempt] = useState(0)
-  const [localImError, setLocalImError] = useState('')
-  const [failedCloudRuns, setFailedCloudRuns] = useState<CloudTaskRun[]>([])
   const [taskMonitor, setTaskMonitor] = useState<TaskMonitorState>(createTaskMonitor)
   const taskMonitorRef = useRef<TaskMonitorState>(taskMonitor)
   const extensionPreviewRunningRef = useRef(false)
@@ -180,7 +174,6 @@ export default function App() {
   const [taskSearchOpen, setTaskSearchOpen] = useState(false)
   const [taskQuery, setTaskQuery] = useState('')
   const [connectionAttempt, setConnectionAttempt] = useState(0)
-  const [notificationOpen, setNotificationOpen] = useState(false)
   const [dragActive, setDragActive] = useState(false)
   const [extensionQuery, setExtensionQuery] = useState('')
   const [extensionFilter, setExtensionFilter] = useState<ExtensionFilter>('market')
@@ -404,11 +397,10 @@ export default function App() {
       modelApiKey: bootstrap.modelApiKey,
       accessToken,
     }).then(async (status) => {
-      setLocalImError(status.lastError ?? '')
       if (status.enabled) await syncLocalImTasks(localTasks.filter((task) => task.sessionId && !task.archivedAt)
         .map((task) => ({ id: task.id, name: task.name, sessionId: task.sessionId! })))
     })
-      .catch((reason) => setLocalImError(reason instanceof Error ? reason.message : String(reason)))
+      .catch(() => undefined)
   }, [accessToken, allowedArtifacts, authState, bootstrap, connectors, connectorSecrets, enabledConnectorIds, selectedModel, user])
 
   useEffect(() => {
@@ -491,7 +483,6 @@ export default function App() {
       if (event.key === 'Escape') {
         setTaskSearchOpen(false)
         setModelMenuOpen(false)
-        setNotificationOpen(false)
       }
     }
     document.addEventListener('keydown', handleShortcut)
@@ -506,15 +497,6 @@ export default function App() {
     document.addEventListener('mousedown', dismiss)
     return () => document.removeEventListener('mousedown', dismiss)
   }, [modelMenuOpen])
-
-  useEffect(() => {
-    if (!notificationOpen) return
-    const dismiss = (event: MouseEvent) => {
-      if (!(event.target instanceof Element) || !event.target.closest('.notification-center')) setNotificationOpen(false)
-    }
-    document.addEventListener('mousedown', dismiss)
-    return () => document.removeEventListener('mousedown', dismiss)
-  }, [notificationOpen])
 
   useEffect(() => {
     const textarea = composerRef.current
@@ -547,21 +529,6 @@ export default function App() {
     const timer = window.setInterval(() => void heartbeat(), 6 * 60 * 60 * 1000)
     return () => { stopped = true; window.clearInterval(timer) }
   }, [accessToken, authState, bootstrap, expertKitCatalog, runtimeStatus, skills, user])
-
-  useEffect(() => {
-    if (authState !== 'authenticated' || runtimeStatus !== 'ready' || !bootstrap || !user) return
-    let stopped = false
-    const refreshFailures = async () => {
-      try {
-        const values = await loadCloudTaskRuns(bootstrap.endpoints.taskRuns, user.userId, accessToken)
-        const cutoff = Date.now() - 24 * 60 * 60 * 1_000
-        if (!stopped) setFailedCloudRuns(values.filter((run) => run.status === 'FAILED' && Date.parse(run.startedAt) >= cutoff).slice(0, 5))
-      } catch { /* scheduled task history remains available when background polling is unavailable */ }
-    }
-    void refreshFailures()
-    const timer = window.setInterval(() => void refreshFailures(), 60_000)
-    return () => { stopped = true; window.clearInterval(timer) }
-  }, [accessToken, authState, bootstrap, runtimeStatus, user])
 
   const visibleExpertKits = useMemo(
     () => expertKits.filter((item) => extensionMatches(item, extensionQuery, extensionFilter, extensionCategory)),
@@ -1163,16 +1130,6 @@ export default function App() {
     }
   }
 
-  const notifications = [
-    ...(runtimeStatus === 'offline' ? [{ key: 'control-plane', title: '服务连接失败', detail: '请检查内网连接后重试。', tone: 'danger' }] : []),
-    ...(harnessHealth === 'degraded' ? [{ key: 'harness', title: '本地 Agent 需要恢复', detail: harnessHealthDetail, tone: 'danger' }] : []),
-    ...(localImError ? [{ key: 'local-im', title: '本机 IM 频道异常', detail: localImError, tone: 'danger' }] : []),
-    ...failedCloudRuns.map((run) => ({ key: `run-${run.runId}`, title: `定时任务失败：${run.name}`, detail: new Date(run.startedAt).toLocaleString(), tone: 'danger' })),
-    ...extensionSyncIssues.map((issue) => ({ key: `sync-${issue.key}`, title: `${issue.label}同步失败`, detail: issue.message, tone: 'warning' })),
-    ...(expertKits.some((kit) => kit.installState === 'update') ? [{ key: 'expert-updates', title: '专家套件有可用更新', detail: `${expertKits.filter((kit) => kit.installState === 'update').length} 个套件等待确认`, tone: 'warning' }] : []),
-    ...(skillViews.some((skill) => skill.installState === 'update') ? [{ key: 'skill-updates', title: 'Skills 有可用更新', detail: `${skillViews.filter((skill) => skill.installState === 'update').length} 个 Skill 等待确认`, tone: 'warning' }] : []),
-  ]
-
   return (
     <div className={`app-shell${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
       {dragActive && <div className="file-drop-overlay"><FolderOpen size={34} /><strong>松开即可添加到当前任务</strong><span>文件只会授权其所在目录，执行时仍遵循专家套件权限</span></div>}
@@ -1197,19 +1154,6 @@ export default function App() {
       />
 
       <main className="workspace" ref={workspaceRef}>
-        {page === 'chat' && <header className="topbar">
-          <div className="topbar-tools">
-            <div className="notification-center">
-              <button aria-expanded={notificationOpen} aria-label="通知中心" className="notification-trigger" onClick={() => setNotificationOpen((value) => !value)} type="button"><Bell size={16} />{notifications.length > 0 && <span>{notifications.length}</span>}</button>
-              {notificationOpen && <section className="notification-popover"><header><strong>通知中心</strong><small>{notifications.length ? `${notifications.length} 项需要处理` : '当前运行正常'}</small></header>{notifications.length
-                ? notifications.map((item) => <article className={item.tone} key={item.key}><i /><span><strong>{item.title}</strong><small>{item.detail}</small></span></article>)
-                : <div className="notification-empty"><SquareCheckBig size={20} />暂无待处理事项</div>}
-                {notifications.length > 0 && <footer><button onClick={() => { setNotificationOpen(false); if (runtimeStatus === 'offline') setConnectionAttempt((value) => value + 1); else if (harnessHealth === 'degraded') setHarnessHealthAttempt((value) => value + 1); else setPage(localImError ? 'im' : failedCloudRuns.length ? 'schedules' : expertKits.some((kit) => kit.installState === 'update') ? 'experts' : skillViews.some((skill) => skill.installState === 'update') ? 'skills' : 'settings') }} type="button">{runtimeStatus === 'offline' ? '重新连接' : harnessHealth === 'degraded' ? '恢复本地 Agent' : localImError ? '打开 IM 频道' : failedCloudRuns.length ? '查看定时任务' : expertKits.some((kit) => kit.installState === 'update') ? '查看套件更新' : skillViews.some((skill) => skill.installState === 'update') ? '查看 Skill 更新' : '打开设置'}</button></footer>}
-              </section>}
-            </div>
-          </div>
-        </header>}
-
         {page === 'chat' ? (
           <ChatPage
             activeModel={activeModel}
@@ -1235,6 +1179,7 @@ export default function App() {
             onSelectCapability={selectChatCapability}
             onPrepareRetry={prepareRetry}
             onPrompt={(value) => { setPrompt(value); focusComposer() }}
+            onReconnect={() => setConnectionAttempt((value) => value + 1)}
             onRecoverHarness={() => setHarnessHealthAttempt((value) => value + 1)}
             onRemoveKnowledge={(reference) => setSelectedKnowledgeBaseRefs((current) => current.filter((item) => item !== reference))}
             onRemoveLocalDirectory={(id) => void removeLocalDirectory(id)}
