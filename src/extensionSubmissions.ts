@@ -13,6 +13,20 @@ export interface ExtensionSubmission {
   status: SubmissionStatus
   reviewNote: string
   updatedAt: string
+  validationReport?: ExtensionValidationReport
+}
+
+export interface ExtensionValidationReport {
+  type: 'HARNESS' | 'CONNECTOR_DIAGNOSTIC'
+  status: 'PASSED' | 'FAILED' | 'CANCELED'
+  prompt: string
+  model: string
+  latencyMs?: number
+  discoveredTools: string[]
+  steps: Array<{ kind: string; label: string; status: string; toolName: string }>
+  artifacts: Array<{ name: string; kind: string; sourceTool: string }>
+  finalResponse: string
+  completedAt: string
 }
 
 function headers(employeeId: string, accessToken: string, json = false): Record<string, string> {
@@ -31,7 +45,7 @@ export async function loadMySubmissions(employeeId: string, accessToken: string)
   return checked(await fetch(resolveControlPlaneEndpoint('/api/v1/extension-submissions'), { headers: headers(employeeId, accessToken) }), '加载我的创作失败')
 }
 
-export async function submitPackage(manifest: ExpertKitManifest, bytes: number[], employeeId: string, accessToken: string): Promise<ExtensionSubmission> {
+export async function submitPackage(manifest: ExpertKitManifest, bytes: number[], employeeId: string, accessToken: string, validationReport?: ExtensionValidationReport): Promise<ExtensionSubmission> {
   const file = new Uint8Array(bytes)
   const digest = await crypto.subtle.digest('SHA-256', file)
   const sha256 = [...new Uint8Array(digest)].map((value) => value.toString(16).padStart(2, '0')).join('')
@@ -47,15 +61,24 @@ export async function submitPackage(manifest: ExpertKitManifest, bytes: number[]
   }), '创建审核版本失败')
   const upload = await fetch(prepared.uploadUrl, { method: 'PUT', body: file, headers: { 'Content-Type': 'application/gzip' } })
   if (!upload.ok) throw new Error(`上传扩展制品失败（${upload.status}）`)
+  if (validationReport) await saveValidationReport(manifest.kind, manifest.id, manifest.version, validationReport, employeeId, accessToken)
   return checked(await fetch(resolveControlPlaneEndpoint(`/api/v1/extension-submissions/${manifest.kind}/${encodeURIComponent(manifest.id)}/versions/${encodeURIComponent(manifest.version)}/submit`), {
     method: 'POST', headers: headers(employeeId, accessToken),
   }), '提交审核失败')
 }
 
-export async function submitConnector(connector: ConnectorCatalogEntry, employeeId: string, accessToken: string): Promise<ExtensionSubmission> {
-  return checked(await fetch(resolveControlPlaneEndpoint('/api/v1/extension-submissions/connectors'), {
+export async function submitConnector(connector: ConnectorCatalogEntry, employeeId: string, accessToken: string, validationReport?: ExtensionValidationReport): Promise<ExtensionSubmission> {
+  const submission = await checked<ExtensionSubmission>(await fetch(resolveControlPlaneEndpoint('/api/v1/extension-submissions/connectors'), {
     method: 'POST', headers: headers(employeeId, accessToken, true), body: JSON.stringify(connector),
   }), '提交连接器审核失败')
+  if (validationReport) await saveValidationReport('connector', connector.id, connector.version ?? '1.0.0', validationReport, employeeId, accessToken)
+  return { ...submission, validationReport }
+}
+
+export async function saveValidationReport(kind: ExtensionKind, id: string, version: string, report: ExtensionValidationReport, employeeId: string, accessToken: string): Promise<ExtensionValidationReport> {
+  return checked(await fetch(resolveControlPlaneEndpoint(`/api/v1/extension-submissions/${kind}/${encodeURIComponent(id)}/versions/${encodeURIComponent(version)}/validation-report`), {
+    method: 'POST', headers: headers(employeeId, accessToken, true), body: JSON.stringify(report),
+  }), '保存发布前验证结果失败')
 }
 
 const storageKey = (employeeId: string) => `xiaoyin.personal-connectors.${employeeId}`

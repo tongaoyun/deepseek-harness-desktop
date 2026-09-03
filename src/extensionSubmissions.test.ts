@@ -1,6 +1,14 @@
-import { beforeEach, describe, expect, it } from 'vitest'
-import { deletePersonalConnector, loadPersonalConnectors, savePersonalConnector } from './extensionSubmissions'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  deletePersonalConnector,
+  loadPersonalConnectors,
+  savePersonalConnector,
+  saveValidationReport,
+  type ExtensionValidationReport,
+} from './extensionSubmissions'
 import type { ConnectorCatalogEntry } from './types'
+
+afterEach(() => vi.unstubAllGlobals())
 
 const values = new Map<string, string>()
 
@@ -51,5 +59,27 @@ describe('personal connector drafts', () => {
 
     expect(deletePersonalConnector('employee-1', 'first').map((item) => item.id)).toEqual(['second'])
     expect(loadPersonalConnectors('employee-2')[0].version).toBe('2.0.0')
+  })
+})
+
+describe('extension validation report api', () => {
+  it('saves the structured report under the exact extension coordinate', async () => {
+    const report: ExtensionValidationReport = {
+      type: 'HARNESS', status: 'PASSED', prompt: '验证订单分析', model: 'qwen3', latencyMs: 42,
+      discoveredTools: ['orders.list'],
+      steps: [{ kind: 'tool', label: '查询订单', status: 'completed', toolName: 'orders.list' }],
+      artifacts: [{ name: '订单报告.md', kind: 'document', sourceTool: 'document.write' }],
+      finalResponse: '验证完成', completedAt: '2026-09-03T01:00:00Z',
+    }
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(report), {
+      status: 200, headers: { 'Content-Type': 'application/json' },
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(saveValidationReport('skill', 'order review', '1.0.0', report, 'employee-7', 'token')).resolves.toEqual(report)
+    const [url, options] = fetchMock.mock.calls[0]
+    expect(url).toBe('http://192.168.2.67:30081/api/v1/extension-submissions/skill/order%20review/versions/1.0.0/validation-report')
+    expect(options.headers).toMatchObject({ 'X-Xiaoyin-Employee-Id': 'employee-7', Authorization: 'Bearer token' })
+    expect(JSON.parse(options.body)).toEqual(report)
   })
 })
