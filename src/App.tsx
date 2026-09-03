@@ -70,7 +70,6 @@ import type {
 } from './types'
 import { useEnterpriseSession } from './useEnterpriseSession'
 import { ScheduledTasksPage } from './ScheduledTasksPage'
-import { TaskCenterPage } from './TaskCenterPage'
 import { ImChannelsPage } from './ImChannelsPage'
 import { loadTaskHistory, persistTaskHistory } from './taskHistory'
 import { loadLocalImStatus, startLocalIm, stopLocalImRuntime, syncLocalImTasks } from './localIm'
@@ -102,6 +101,7 @@ import type { ExtensionCategoryFilter } from './extensionCategories'
 import { ExpertCatalogPage, SkillCatalogPage } from './ExtensionCatalogPages'
 import { ExtensionAuthoringModal } from './ExtensionAuthoringModal'
 import { loadPersonalConnectors, type ExtensionKind } from './extensionSubmissions'
+import { FeedbackButton } from './FeedbackButton'
 import './styles.css'
 
 const extensionNav = [
@@ -533,18 +533,13 @@ export default function App() {
         const values = await loadCloudTaskRuns(bootstrap.endpoints.taskRuns, user.userId, accessToken)
         const cutoff = Date.now() - 24 * 60 * 60 * 1_000
         if (!stopped) setFailedCloudRuns(values.filter((run) => run.status === 'FAILED' && Date.parse(run.startedAt) >= cutoff).slice(0, 5))
-      } catch { /* the task center remains the source of truth when background polling is unavailable */ }
+      } catch { /* scheduled task history remains available when background polling is unavailable */ }
     }
     void refreshFailures()
     const timer = window.setInterval(() => void refreshFailures(), 60_000)
     return () => { stopped = true; window.clearInterval(timer) }
   }, [accessToken, authState, bootstrap, runtimeStatus, user])
 
-  const statusLabel = useMemo(() => ({
-    connecting: '正在连接企业服务',
-    ready: '企业服务已连接',
-    offline: '企业服务暂不可用',
-  })[runtimeStatus], [runtimeStatus])
   const visibleExpertKits = useMemo(
     () => expertKits.filter((item) => extensionMatches(item, extensionQuery, extensionFilter, extensionCategory)),
     [expertKits, extensionCategory, extensionFilter, extensionQuery],
@@ -642,10 +637,6 @@ export default function App() {
     setLocalFileError('')
     void Promise.all([clearLocalDirectories(), shutdownHarness()])
     focusComposer()
-  }
-  const archiveLocalTask = (task: LocalTaskRun, archived: boolean) => {
-    persistLocalTask({ ...task, archivedAt: archived ? new Date().toISOString() : undefined, updatedAt: new Date().toISOString() })
-    if (archived && currentLocalTaskId === task.id) newTask()
   }
   const addLocalDirectory = async () => {
     setLocalFileError('')
@@ -1104,7 +1095,7 @@ export default function App() {
   }
 
   const notifications = [
-    ...(runtimeStatus === 'offline' ? [{ key: 'control-plane', title: '企业服务连接失败', detail: '点击顶部连接状态可立即重试。', tone: 'danger' }] : []),
+    ...(runtimeStatus === 'offline' ? [{ key: 'control-plane', title: '服务连接失败', detail: '请检查内网连接后重试。', tone: 'danger' }] : []),
     ...(harnessHealth === 'degraded' ? [{ key: 'harness', title: '本地 Agent 需要恢复', detail: harnessHealthDetail, tone: 'danger' }] : []),
     ...(localImError ? [{ key: 'local-im', title: '本机 IM 频道异常', detail: localImError, tone: 'danger' }] : []),
     ...failedCloudRuns.map((run) => ({ key: `run-${run.runId}`, title: `定时任务失败：${run.name}`, detail: new Date(run.startedAt).toLocaleString(), tone: 'danger' })),
@@ -1128,7 +1119,6 @@ export default function App() {
         onToggleCollapsed={() => setSidebarCollapsed((value) => !value)}
         onToggleSearch={() => { setTaskSearchOpen((value) => !value); setTaskQuery('') }}
         page={page}
-        runtimeStatus={runtimeStatus}
         skillsCount={skills.length}
         taskQuery={taskQuery}
         taskSearchInputRef={taskSearchInputRef}
@@ -1140,15 +1130,14 @@ export default function App() {
 
       <main className="workspace" ref={workspaceRef}>
         <header className="topbar">
-          <button className={`connection-state ${runtimeStatus}`} disabled={runtimeStatus === 'connecting'} onClick={() => runtimeStatus === 'offline' && setConnectionAttempt((value) => value + 1)} title={runtimeStatus === 'offline' ? '点击重新连接' : undefined} type="button"><i /> 马帮 ERP · {statusLabel}</button>
           <div className="topbar-tools">
-            <button className={`harness-state ${harnessHealth}`} disabled={harnessHealth === 'checking'} onClick={() => harnessHealth === 'degraded' && setHarnessHealthAttempt((value) => value + 1)} title={harnessHealthDetail} type="button"><i /> {harnessHealth === 'checking' ? 'Agent 检查中' : harnessHealth === 'ready' ? 'Agent 已就绪' : 'Agent 待恢复'}</button>
+            <FeedbackButton onFeedback={submitDesktopFeedback} variant="topbar" />
             <div className="notification-center">
               <button aria-expanded={notificationOpen} aria-label="通知中心" className="notification-trigger" onClick={() => setNotificationOpen((value) => !value)} type="button"><Bell size={16} />{notifications.length > 0 && <span>{notifications.length}</span>}</button>
               {notificationOpen && <section className="notification-popover"><header><strong>通知中心</strong><small>{notifications.length ? `${notifications.length} 项需要处理` : '当前运行正常'}</small></header>{notifications.length
                 ? notifications.map((item) => <article className={item.tone} key={item.key}><i /><span><strong>{item.title}</strong><small>{item.detail}</small></span></article>)
                 : <div className="notification-empty"><SquareCheckBig size={20} />暂无待处理事项</div>}
-                {notifications.length > 0 && <footer><button onClick={() => { setNotificationOpen(false); setPage(localImError ? 'im' : failedCloudRuns.length ? 'tasks' : expertKits.some((kit) => kit.installState === 'update') ? 'experts' : skillViews.some((skill) => skill.installState === 'update') ? 'skills' : 'settings') }} type="button">{localImError ? '打开 IM 频道' : failedCloudRuns.length ? '打开任务中心' : expertKits.some((kit) => kit.installState === 'update') ? '查看套件更新' : skillViews.some((skill) => skill.installState === 'update') ? '查看 Skill 更新' : '打开运行诊断'}</button></footer>}
+                {notifications.length > 0 && <footer><button onClick={() => { setNotificationOpen(false); if (runtimeStatus === 'offline') setConnectionAttempt((value) => value + 1); else if (harnessHealth === 'degraded') setHarnessHealthAttempt((value) => value + 1); else setPage(localImError ? 'im' : failedCloudRuns.length ? 'schedules' : expertKits.some((kit) => kit.installState === 'update') ? 'experts' : skillViews.some((skill) => skill.installState === 'update') ? 'skills' : 'settings') }} type="button">{runtimeStatus === 'offline' ? '重新连接' : harnessHealth === 'degraded' ? '恢复本地 Agent' : localImError ? '打开 IM 频道' : failedCloudRuns.length ? '查看定时任务' : expertKits.some((kit) => kit.installState === 'update') ? '查看套件更新' : skillViews.some((skill) => skill.installState === 'update') ? '查看 Skill 更新' : '打开设置'}</button></footer>}
               </section>}
             </div>
           </div>
@@ -1187,7 +1176,7 @@ export default function App() {
             prompt={prompt}
             runtimeStatus={runtimeStatus}
             selectedCapabilityExecutable={Boolean(bootstrap) && selectedCapabilityExecutable}
-            selectedCapabilityName={selectedExpertKit?.name ?? selectedSkill?.name ?? '运营通用'}
+            selectedCapabilityName={selectedExpertKit?.name ?? selectedSkill?.name ?? '通用'}
             selectedKnowledgeBaseRefs={selectedKnowledgeBaseRefs}
             taskMonitor={taskMonitor}
             visibleInvocations={visibleInvocations}
@@ -1196,7 +1185,7 @@ export default function App() {
         ) : (
           <section className="capability-page">
             <div className="capability-page-heading"><div><span className="page-kicker">企业能力中心</span>
-            <h1>{extensionNav.find((item) => item.id === page)?.label ?? ({ settings: '桌面设置', tasks: '任务中心', schedules: '定时任务', im: 'IM 频道' } as Record<string, string>)[page]}</h1>
+            <h1>{extensionNav.find((item) => item.id === page)?.label ?? ({ settings: '桌面设置', schedules: '定时任务', im: 'IM 频道' } as Record<string, string>)[page]}</h1>
             <p>{page === 'experts'
               ? '面向岗位的一整套工作方案，统一组合命令、技能、连接器和后台工作流。'
               : page === 'skills'
@@ -1207,8 +1196,6 @@ export default function App() {
                     ? '集中管理公司文档；索引任务由 Temporal 托管，回答可引用文件与页码或工作表。'
                   : page === 'im'
                     ? '把钉钉等公司消息入口连接到本机小胤 Harness，集中查看连接和处理状态。'
-                  : page === 'tasks'
-                    ? '统一查看小胤桌面任务、Temporal 云端执行和可下载的结果产物。'
                   : page === 'schedules'
                     ? '按专家套件声明的后台工作流创建任务；任务由 Temporal 托管，关闭电脑后仍会运行。'
                   : page === 'settings'
@@ -1256,14 +1243,6 @@ export default function App() {
               employeeId={user.userId}
               endpoint={bootstrap.endpoints.schedules}
               expertKits={expertKits}
-            />}
-            {page === 'tasks' && bootstrap && user && <TaskCenterPage
-              accessToken={accessToken}
-              employeeId={user.userId}
-              endpoint={bootstrap.endpoints.taskRuns}
-              localTasks={localTasks}
-              onOpenLocalTask={openLocalTask}
-              onArchiveLocalTask={archiveLocalTask}
             />}
             {page === 'im' && bootstrap && user && <ImChannelsPage
               accessToken={accessToken}

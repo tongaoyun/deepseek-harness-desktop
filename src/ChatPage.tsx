@@ -1,4 +1,4 @@
-import { Bot, Boxes, ChevronDown, CirclePlus, CircleStop, FolderOpen, Send, ShieldCheck, Sparkles, SquareCheckBig, Store, X } from 'lucide-react'
+import { Bot, ChevronDown, CirclePlus, CircleStop, FolderOpen, Send, Sparkles, SquareCheckBig, X } from 'lucide-react'
 import { lazy, Suspense, type FormEvent, type RefObject } from 'react'
 import type { AuthorizedLocalDirectory } from './harness'
 import type { InvocationOption } from './invocations'
@@ -8,12 +8,6 @@ import type { CapabilitySnapshot, KnowledgeBaseEntry, RuntimeStatus, TaskMessage
 import { XiaoyinMascot } from './XiaoyinMascot'
 
 const RichMessage = lazy(() => import('./RichMessage').then((module) => ({ default: module.RichMessage })))
-const starterTasks = [
-  { icon: SquareCheckBig, title: '订单异常诊断', detail: '定位履约风险与待办', prompt: '分析昨天的订单异常，并给出处理优先级' },
-  { icon: Boxes, title: '库存风险分析', detail: '识别缺货与滞销商品', prompt: '分析本周库存风险，列出需要补货的商品' },
-  { icon: Store, title: 'Listing 优化', detail: '生成更专业的商品内容', prompt: '帮我优化这个商品的 Listing 内容' },
-]
-
 interface Props {
   messages: TaskMessage[]
   prompt: string
@@ -56,11 +50,9 @@ interface Props {
 export function ChatPage(props: Props) {
   return <section className={props.messages.length > 0 ? 'chat-page conversation' : 'chat-page'}>
     {props.messages.length === 0 && <div className="hero-copy">
-      <XiaoyinMascot size={82} variant="hero" />
-      <div className="hero-greeting">嗨，我是小胤</div>
-      <h1>今天想先处理什么？</h1>
-      <p>连接 ERP 数据，让专家 Agent 安全地完成查询、分析与内容生产</p>
-      <div className="starter-actions">{starterTasks.map(({ icon: Icon, title, detail, prompt }) => <button key={title} onClick={() => props.onPrompt(prompt)} type="button"><Icon size={16} /><span><strong>{title}</strong><small>{detail}</small></span></button>)}</div>
+      <XiaoyinMascot size={62} variant="hero" />
+      <h1>不止聊天，搞定一切</h1>
+      <p>本地运行、自主规划、安全可控的 AI 工作搭子</p>
     </div>}
     {props.messages.length > 0 && <div className="message-list" ref={props.messageListRef}>{props.messages.map((message, index) => {
       const retryable = message.role === 'assistant' && index === props.messages.length - 1 && !message.pending && (message.text.startsWith('执行失败：') || message.text.startsWith('任务已取消'))
@@ -70,7 +62,7 @@ export function ChatPage(props: Props) {
     {props.messages.length > 0 && <TaskMonitor capabilitySnapshot={props.capabilitySnapshot} monitor={props.taskMonitor} />}
     {props.harnessHealth === 'degraded' && <div className="runtime-recovery"><CircleStop size={17} /><span><strong>本地 Agent 暂不可用</strong><small>{props.harnessHealthDetail}</small></span><button onClick={props.onRecoverHarness} type="button">重新检测</button></div>}
     <form className="composer" onSubmit={props.onSubmit}>
-      <textarea aria-label="给小胤发送消息" onChange={(event) => props.onPrompt(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); event.currentTarget.form?.requestSubmit() } }} placeholder="描述任务，/ 选择专家套件或技能，@ 添加业务上下文" ref={props.composerRef} value={props.prompt} />
+      <textarea aria-label="给小胤发送消息" onChange={(event) => props.onPrompt(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); event.currentTarget.form?.requestSubmit() } }} placeholder="描述任务，/ 快捷调用，@ 添加上下文" ref={props.composerRef} value={props.prompt} />
       <div className="composer-actions">
         <button aria-label="授权本地文件夹" className="circle-button" disabled={props.harnessRunning} onClick={props.onAddLocalDirectory} title="授权本地文件夹" type="button"><CirclePlus size={18} /></button>
         <button className="mode-button" onClick={props.onCapabilityPage} type="button"><Sparkles size={14} /> {props.selectedCapabilityName} <ChevronDown size={13} /></button>
@@ -90,10 +82,10 @@ export function ChatPage(props: Props) {
       <div className="local-contexts">
         {props.selectedKnowledgeBaseRefs.map((reference) => <span className="local-context" key={reference}>@{props.knowledgeBases.find((item) => item.reference === reference)?.name ?? reference}<button aria-label={`移除 ${reference}`} disabled={props.harnessRunning || Boolean(props.capabilitySnapshot)} onClick={() => props.onRemoveKnowledge(reference)} type="button"><X size={11} /></button></span>)}
         {props.localDirectories.length === 0
-          ? <span>{props.capabilitySnapshot ? `${props.capabilitySnapshot.extensions.length} 个扩展 · ${props.capabilitySnapshot.connectors.length} 个连接器 · 本任务能力已固定` : '已启用连接器将在发送首条消息时固定到本任务'} · 本地文件未授权</span>
+          ? <span><FolderOpen size={12} />选择工作目录</span>
           : props.localDirectories.map((directory) => <span className="local-context" key={directory.id}><FolderOpen size={12} />{directory.name}<button aria-label={`移除 ${directory.name}`} disabled={props.harnessRunning} onClick={() => props.onRemoveLocalDirectory(directory.id)} type="button"><X size={11} /></button></span>)}
       </div>
-      <span><ShieldCheck size={14} /> 仅访问已授权目录 · 修改与 Shell 逐次确认</span>
+      <span>内容由 AI 生成，请注意核实</span>
     </div>
   </section>
 }

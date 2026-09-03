@@ -619,7 +619,7 @@ export class LocalImRuntime {
     if (!target || (configuration.accessPolicy === 'pairing' && !this.pairedConversations.has(conversationKey))) return
     if (this.knownTaskDeliveryIds.has(`${run.runId}:${conversationKey}`)) return
     const status = run.status === 'COMPLETED' ? '已完成' : '执行失败'
-    const artifact = run.artifactObjectKey ? '，结果文件可在小胤任务中心下载' : ''
+    const artifact = run.artifactObjectKey ? '，结果文件可在定时任务的执行记录中查看' : ''
     const content = `云端任务“${run.name || '未命名任务'}”${status}${artifact}。\n执行时间：${new Date(run.startedAt).toLocaleString('zh-CN')}`
     const delivery = await Promise.allSettled([this.proactiveSend(target, content)])
     if (delivery[0]?.status === 'fulfilled') this.knownTaskDeliveryIds.add(`${run.runId}:${conversationKey}`)
