@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 import { type ReactNode, useEffect } from 'react'
 import { expertKitChanges, expertKitHasPermissionExpansion, expertKitPermissionDetails, permissionModeLabel } from './expertKitDetails'
+import { extensionCategoryLabel } from './extensionCategories'
 import type { ExpertKitView } from './expertKits'
 import type { ConnectorCatalogEntry, KnowledgeBaseEntry, SkillCatalogEntry } from './types'
 
@@ -56,7 +57,7 @@ export function ExpertKitDetailsModal({
       <button aria-label="关闭" className="expert-modal-close" onClick={onClose} type="button"><X size={16} /></button>
       <div className="expert-modal-heading">
         <span><Boxes size={22} /></span>
-        <div><small>{stateLabel} · v{kit.version}</small><h2 id="expert-kit-title">{kit.name}</h2><p>{kit.summary}</p></div>
+        <div><small>{stateLabel} · {extensionCategoryLabel(kit.category)} · v{kit.version}</small><h2 id="expert-kit-title">{kit.name}</h2><p>{kit.summary}</p></div>
       </div>
 
       <div className={`expert-dependency-state ${kit.readiness}`}>

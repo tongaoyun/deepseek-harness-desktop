@@ -3,7 +3,7 @@ import { mergeSkills } from './skills'
 import type { InstalledExpertKit, SkillCatalogEntry } from './types'
 
 const catalog: SkillCatalogEntry = {
-  id: 'document-insight', name: '文档洞察', version: '1.1.0', summary: '分析文档', sourceKitId: '',
+  id: 'document-insight', name: '文档洞察', version: '1.1.0', summary: '分析文档', category: 'knowledge-research', sourceKitId: '',
   triggers: ['总结文档'], minimumDesktopVersion: '0.1.13', connectorRefs: [],
   requiredTools: ['office.document.read'], knowledgeBaseRefs: [],
   permissions: { localFiles: 'approval', shell: 'deny', computerUse: 'deny', connectorRead: 'deny', connectorWrite: 'deny' },
@@ -14,7 +14,7 @@ const installed: InstalledExpertKit = {
   source: 'catalog', installPath: '/skills/document-insight/1.0.0',
   manifest: {
     schemaVersion: '1', kind: 'skill', id: 'document-insight', name: '文档洞察', version: '1.0.0',
-    summary: '分析文档', triggers: ['总结文档'], minimumDesktopVersion: '0.1.13', commands: [],
+    summary: '分析文档', category: 'knowledge-research', triggers: ['总结文档'], minimumDesktopVersion: '0.1.13', commands: [],
     skills: [{ id: 'document-insight', path: 'skills/document-insight/SKILL.md' }],
     requiredTools: ['office.document.read'], connectorRefs: [], knowledgeBaseRefs: [],
     permissions: { localFiles: 'approval', shell: 'deny', computerUse: 'deny', connectorRead: 'deny', connectorWrite: 'deny' },

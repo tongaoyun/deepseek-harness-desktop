@@ -188,6 +188,7 @@ export function mergeExpertKits(
       name: local.manifest.name,
       version: local.manifest.version,
       summary: local.manifest.summary,
+      category: local.manifest.category,
       minimumDesktopVersion: local.manifest.minimumDesktopVersion,
       commandIds: local.manifest.commands.map((command) => command.id),
       skillIds: local.manifest.skills.map((skill) => skill.id),

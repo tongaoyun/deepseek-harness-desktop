@@ -4,6 +4,7 @@ const DESKTOP_BROWSER: ConnectorCatalogEntry = {
   id: 'desktop-browser',
   name: '浏览器',
   summary: '使用独立的 Chrome 或 Edge 会话打开网页、读取语义结构、点击、输入并截图。',
+  category: 'recommended-system',
   kind: 'desktop-builtin',
   scope: 'DEVICE',
   status: 'ready',

@@ -30,6 +30,7 @@ const connector = (id: string, version: string): ConnectorCatalogEntry => ({
   name: id,
   version,
   summary: '测试连接器',
+  category: 'developer-tools',
   kind: 'managed-mcp',
   scope: 'PERSONAL',
   status: 'ready',

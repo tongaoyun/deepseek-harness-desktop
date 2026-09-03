@@ -27,6 +27,7 @@ export interface ExpertKitCatalogEntry {
   name: string
   version: string
   summary: string
+  category: import('./extensionCategories').ExtensionCategory
   minimumDesktopVersion: string
   commandIds: string[]
   skillIds: string[]
@@ -220,6 +221,7 @@ export interface SkillCatalogEntry {
   name: string
   version: string
   summary: string
+  category: import('./extensionCategories').ExtensionCategory
   sourceKitId: string
   triggers: string[]
   minimumDesktopVersion: string
@@ -238,6 +240,7 @@ export interface ConnectorCatalogEntry {
   id: string
   name: string
   summary: string
+  category: import('./extensionCategories').ConnectorCategory
   kind: string
   scope: string
   status: ConnectorStatus
@@ -305,6 +308,7 @@ export interface ExpertKitManifest {
   name: string
   version: string
   summary: string
+  category: import('./extensionCategories').ExtensionCategory
   triggers?: string[]
   minimumDesktopVersion: string
   commands: Array<{ id: string; path: string }>

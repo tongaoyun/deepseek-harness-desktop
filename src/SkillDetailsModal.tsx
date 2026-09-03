@@ -1,6 +1,7 @@
 import { BookOpenCheck, CheckCircle2, PlugZap, ShieldCheck, Trash2, WandSparkles, X } from 'lucide-react'
 import { useEffect } from 'react'
 import { expertKitPermissionDetails, permissionModeLabel } from './expertKitDetails'
+import { extensionCategoryLabel } from './extensionCategories'
 import { skillPermissionExpansion, type SkillView } from './skills'
 import type { ConnectorCatalogEntry, KnowledgeBaseEntry } from './types'
 
@@ -37,7 +38,7 @@ export function SkillDetailsModal({
       <button aria-label="关闭" className="expert-modal-close" onClick={onClose} type="button"><X size={16} /></button>
       <div className="expert-modal-heading">
         <span><WandSparkles size={22} /></span>
-        <div><small>{state} · 独立 Skill · v{skill.version}</small><h2 id="skill-title">{skill.name}</h2><p>{skill.summary}</p></div>
+        <div><small>{state} · 独立 Skill · {extensionCategoryLabel(skill.category)} · v{skill.version}</small><h2 id="skill-title">{skill.name}</h2><p>{skill.summary}</p></div>
       </div>
       <div className={`expert-dependency-state ${skill.readiness}`}>
         {skill.readiness === 'ready'
