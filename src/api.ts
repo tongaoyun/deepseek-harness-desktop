@@ -12,6 +12,8 @@ import type {
   KnowledgeBaseEntry,
   KnowledgeDocumentEntry,
   KnowledgeSearchHit,
+  DeviceHeartbeatContext,
+  InstalledExtensionSnapshot,
   AuditEventEntry,
   SubmitAuditEvent,
 } from './types'
@@ -161,6 +163,20 @@ export async function createTaskRunArtifactDownload(
   })
   if (!response.ok) throw new Error(`任务产物下载授权返回 ${response.status}`)
   return response.json() as Promise<ArtifactDownload>
+}
+
+export async function submitDeviceHeartbeat(
+  endpoint: string,
+  employeeId: string,
+  accessToken: string,
+  request: DeviceHeartbeatContext & { installedExtensions: InstalledExtensionSnapshot[] },
+): Promise<void> {
+  const response = await fetch(controlPlaneUrl(`${endpoint.replace(/\/$/, '')}/heartbeat`), {
+    method: 'POST',
+    headers: { ...enterpriseHeaders(employeeId, accessToken), 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  })
+  if (!response.ok) throw new Error(`设备心跳上报返回 ${response.status}`)
 }
 
 export async function submitAuditEvent(

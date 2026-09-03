@@ -12,6 +12,7 @@ export interface BootstrapResponse {
     schedules: string
     taskRuns: string
     knowledge: string
+    deviceCapabilities?: string
     auditEvents?: string
     memoryProfile?: string
   }
@@ -338,6 +339,22 @@ export interface InstalledExpertKit {
   installPath: string
   source: 'catalog' | 'developer'
   packageSha256?: string
+}
+
+export interface InstalledExtensionSnapshot {
+  kind: 'expert-kit' | 'skill'
+  id: string
+  version: string
+  source: 'catalog' | 'developer'
+}
+
+export interface DeviceHeartbeatContext {
+  deviceId: string
+  desktopVersion: string
+  platform: string
+  architecture: string
+  displayCount: number
+  displayScalePercents: number[]
 }
 
 export type AuditEventSource = 'DESKTOP' | 'SERVER' | 'IM'

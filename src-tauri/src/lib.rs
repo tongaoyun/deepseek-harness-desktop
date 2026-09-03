@@ -5,6 +5,7 @@ use tauri::{
     tray::TrayIconBuilder,
 };
 
+mod device_identity;
 mod erp_auth;
 mod expert_kits;
 mod harness;
@@ -81,6 +82,7 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            device_identity::inspect_device_identity,
             runtime_info,
             erp_auth::erp_session,
             erp_auth::clear_erp_session,

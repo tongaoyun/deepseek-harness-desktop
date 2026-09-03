@@ -26,6 +26,7 @@ import {
   loadSkills,
   resolveControlPlaneEndpoint,
   submitAuditEvent,
+  submitDeviceHeartbeat,
   submitFeedback,
 } from './api'
 import { ErpAuthScreen } from './ErpAuthScreen'
@@ -38,6 +39,7 @@ import {
   exportExpertKit,
   installDeveloperExpertKit,
   installExtension,
+  installedExtensionSnapshot,
   listInstalledExtensions,
   mergeExpertKits,
   removeCatalogExtension,
@@ -96,6 +98,7 @@ import { connectorsForSnapshot, createCapabilitySnapshot } from './capabilitySna
 import { DesktopSidebar } from './DesktopSidebar'
 import { ChatPage } from './ChatPage'
 import { cacheAge, loadEnterpriseCatalogCache, saveEnterpriseCatalogCache } from './enterpriseCache'
+import { inspectDeviceHeartbeatContext } from './deviceHeartbeat'
 import { extensionMatches, type ExtensionFilter } from './ExtensionToolbar'
 import type { ExtensionCategoryFilter } from './extensionCategories'
 import { ExpertCatalogPage, SkillCatalogPage } from './ExtensionCatalogPages'
@@ -506,6 +509,27 @@ export default function App() {
   useEffect(() => {
     if (authState !== 'authenticated' || runtimeStatus !== 'ready' || !bootstrap || !user) return
     let stopped = false
+    const heartbeat = async () => {
+      try {
+        const context = await inspectDeviceHeartbeatContext()
+        const installed = await listInstalledExtensions()
+        if (!stopped && /^\d+\.\d+\.\d+$/.test(context.desktopVersion)) {
+          await submitDeviceHeartbeat(bootstrap.endpoints.deviceCapabilities ?? '/api/v1/device-capabilities',
+            user.userId, accessToken, { ...context, installedExtensions: installedExtensionSnapshot(installed, [
+              ...expertKitCatalog.map(({ id, version }) => ({ kind: 'expert-kit' as const, id, version })),
+              ...skills.map(({ id, version }) => ({ kind: 'skill' as const, id, version })),
+            ]) })
+        }
+      } catch { /* best effort: control-plane inventory must never interrupt employee work */ }
+    }
+    void heartbeat()
+    const timer = window.setInterval(() => void heartbeat(), 6 * 60 * 60 * 1000)
+    return () => { stopped = true; window.clearInterval(timer) }
+  }, [accessToken, authState, bootstrap, expertKitCatalog, runtimeStatus, skills, user])
+
+  useEffect(() => {
+    if (authState !== 'authenticated' || runtimeStatus !== 'ready' || !bootstrap || !user) return
+    let stopped = false
     const refreshFailures = async () => {
       try {
         const values = await loadCloudTaskRuns(bootstrap.endpoints.taskRuns, user.userId, accessToken)
@@ -857,6 +881,17 @@ export default function App() {
     extensionCacheRef.current.installed = installed
     setExpertKits(mergeExpertKits(expertKitCatalog, installed, connectors, knowledgeBases, enabledConnectorIds))
     setSkillViews(mergeSkills(skills, installed, connectors, knowledgeBases, enabledConnectorIds))
+    if (bootstrap && user) {
+      const context = await inspectDeviceHeartbeatContext()
+      if (/^\d+\.\d+\.\d+$/.test(context.desktopVersion)) {
+        await submitDeviceHeartbeat(bootstrap.endpoints.deviceCapabilities ?? '/api/v1/device-capabilities',
+          user.userId, accessToken, { ...context, installedExtensions: installedExtensionSnapshot(installed, [
+            ...expertKitCatalog.map(({ id, version }) => ({ kind: 'expert-kit' as const, id, version })),
+            ...skills.map(({ id, version }) => ({ kind: 'skill' as const, id, version })),
+          ]) })
+          .catch(() => undefined)
+      }
+    }
   }
 
   const installSkill = async (skill: SkillView) => {
