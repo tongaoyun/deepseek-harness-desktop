@@ -59,6 +59,24 @@ describe('harnessActivityLabel', () => {
     expect(monitor.status).toBe('failed')
   })
 
+  it('streams only visible text into the conversation timeline', () => {
+    const monitor = [
+      event('step/start', { turn: 3, step: 1 }, 1),
+      event('reasoning-chunks', { turn: 3, step: 1, texts: ['private reasoning'] }, 2),
+      event('text-chunks', { turn: 3, step: 1, texts: ['我先', '查看目录。'] }, 3),
+      event('text-chunks', { turn: 3, step: 1, texts: ['正在处理。'] }, 4),
+      event('assistant/message', { turn: 3, step: 1, message: { content: [
+        { type: 'reasoning', text: 'private reasoning' },
+        { type: 'text', text: '我先查看目录。正在处理。' },
+      ] } }, 5),
+    ].reduce(applyHarnessNotification, createTaskMonitor())
+
+    expect(monitor.timeline).toMatchObject([{
+      kind: 'assistant', text: '我先查看目录。正在处理。', status: 'completed',
+    }])
+    expect(JSON.stringify(monitor)).not.toContain('private reasoning')
+  })
+
   it('records only the approval decision and tool name', () => {
     const monitor = [event('approval/decision', {
       approvalId: 'approval-1', name: 'local_shell_run', decision: 'reject', reason: 'sensitive command',

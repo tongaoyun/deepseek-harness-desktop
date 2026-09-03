@@ -29,5 +29,6 @@ describe('ChatPage conversation', () => {
     expect(html).toContain('已处理 2秒')
     expect(html).not.toContain('message-avatar')
     expect(html).not.toContain('>小胤<')
+    expect(html).toContain('选择工作目录')
   })
 })

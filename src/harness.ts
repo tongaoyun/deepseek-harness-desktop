@@ -139,7 +139,7 @@ export function harnessActivityLabel(notification: HarnessNotification): string 
     const status = text(parsed.params.status)
     if (status === 'idle') return '正在整理结果'
   }
-  if (parsed.type === 'assistant/message' || parsed.method.includes('message')) return '正在生成回复'
+  if (parsed.type === 'assistant/message' || parsed.type === 'text-chunks' || parsed.method.includes('message')) return '正在生成回复'
   return '正在分析任务'
 }
 
@@ -162,6 +162,17 @@ export function applyHarnessNotification(
       status: 'running',
       startedAt: occurredAt,
     }), occurredAt)
+  }
+
+  if (parsed.type === 'text-chunks' && turn !== undefined && step !== undefined) {
+    const delta = Array.isArray(parsed.data.texts)
+      ? parsed.data.texts.filter((value): value is string => typeof value === 'string').join('')
+      : ''
+    if (!delta) return current
+    return {
+      ...updateMonitor(current, activity, current.steps, occurredAt),
+      timeline: appendTimelineText(current.timeline ?? [], `assistant:${turn}:${step}`, delta, occurredAt),
+    }
   }
 
   if (parsed.type === 'assistant/message' && turn !== undefined && step !== undefined) {
@@ -426,8 +437,25 @@ function completeTimeline(
   return current.map((item) => item.id === id ? { ...item, status } : item)
 }
 
+function appendTimelineText(
+  current: TaskTimelineEntry[],
+  id: string,
+  delta: string,
+  occurredAt: string,
+): TaskTimelineEntry[] {
+  const existing = current.find((item) => item.id === id)
+  return upsertTimeline(current, {
+    id,
+    kind: 'assistant',
+    label: '回复',
+    status: 'running',
+    text: `${existing?.text ?? ''}${delta}`,
+    occurredAt: existing?.occurredAt ?? occurredAt,
+  })
+}
+
 function toolActivityLabel(toolName: string): string {
-  return ({
+  const known = ({
     skill: '加载专家技能',
     order_get: '查询订单',
     sales_summary: '查询销售汇总',
@@ -442,8 +470,27 @@ function toolActivityLabel(toolName: string): string {
     office_docx_create: '生成 Word 文档',
     office_xlsx_create: '生成 Excel 表格',
     office_pdf_create: '生成 PDF 文档',
+    local_files_roots: '检查工作目录',
+    local_files_list: '查看目录内容',
+    local_files_read_text: '读取本地文件',
+    local_files_write_text: '修改本地文件',
+    local_files_create_directory: '新建文件夹',
+    local_files_copy: '复制本地文件',
+    local_files_move: '移动本地文件',
+    local_files_delete: '删除本地文件',
     local_shell_run: '运行本地命令',
-  } as Record<string, string>)[toolName] ?? `调用 ${toolName}`
+    browser_open: '打开网页',
+    browser_snapshot: '读取网页',
+    browser_click: '操作网页',
+    browser_type: '填写网页内容',
+    browser_downloads: '查看下载文件',
+  } as Record<string, string>)[toolName]
+  if (known) return known
+  if (toolName.startsWith('mcp_')) {
+    const connector = toolName.slice(4).split('_')[0]
+    return connector ? `使用 ${connector} 连接器` : '调用连接器'
+  }
+  return `调用 ${toolName}`
 }
 
 function eventTime(event: Record<string, unknown>): string {

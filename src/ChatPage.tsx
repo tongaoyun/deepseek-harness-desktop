@@ -102,7 +102,7 @@ export function ChatPage(props: Props) {
     <form className="composer" onSubmit={props.onSubmit}>
       <textarea aria-label="给小胤发送消息" onChange={(event) => props.onPrompt(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); event.currentTarget.form?.requestSubmit() } }} placeholder="描述任务，/ 快捷调用，@ 添加上下文" ref={props.composerRef} value={props.prompt} />
       <div className="composer-actions">
-        <button aria-label="授权本地文件夹" className="circle-button" disabled={props.harnessRunning} onClick={props.onAddLocalDirectory} title="授权本地文件夹" type="button"><CirclePlus size={18} /></button>
+        <button className="workspace-button" disabled={props.harnessRunning} onClick={props.onAddLocalDirectory} title="选择允许小胤操作的工作目录" type="button"><CirclePlus size={17} /><span>选择工作目录</span></button>
         <button className="mode-button" onClick={props.onCapabilityPage} type="button"><Sparkles size={14} /> {props.selectedCapabilityName} <ChevronDown size={13} /></button>
         <div className="model-picker" ref={props.modelPickerRef}>
           <button aria-expanded={props.modelMenuOpen} className="model-label" onClick={props.onToggleModelMenu} type="button"><Bot size={14} /> {modelDisplayName(props.activeModel)} <ChevronDown size={13} /></button>
@@ -119,9 +119,7 @@ export function ChatPage(props: Props) {
     <div className="context-bar">
       <div className="local-contexts">
         {props.selectedKnowledgeBaseRefs.map((reference) => <span className="local-context" key={reference}>@{props.knowledgeBases.find((item) => item.reference === reference)?.name ?? reference}<button aria-label={`移除 ${reference}`} disabled={props.harnessRunning || Boolean(props.capabilitySnapshot)} onClick={() => props.onRemoveKnowledge(reference)} type="button"><X size={11} /></button></span>)}
-        {props.localDirectories.length === 0
-          ? <span><FolderOpen size={12} />选择工作目录</span>
-          : props.localDirectories.map((directory) => <span className="local-context" key={directory.id}><FolderOpen size={12} />{directory.name}<button aria-label={`移除 ${directory.name}`} disabled={props.harnessRunning} onClick={() => props.onRemoveLocalDirectory(directory.id)} type="button"><X size={11} /></button></span>)}
+        {props.localDirectories.map((directory) => <span className="local-context" key={directory.id}><FolderOpen size={12} />{directory.name}<button aria-label={`移除 ${directory.name}`} disabled={props.harnessRunning} onClick={() => props.onRemoveLocalDirectory(directory.id)} type="button"><X size={11} /></button></span>)}
       </div>
     </div>
   </section>
