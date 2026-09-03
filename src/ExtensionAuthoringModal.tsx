@@ -18,7 +18,14 @@ import {
   type ExtensionSubmission,
   type ExtensionValidationReport,
 } from './extensionSubmissions'
-import { composerIssues, deriveSkillDependencies, ExpertKitComposer } from './ExpertKitComposer'
+import { deriveSkillDependencies, ExpertKitComposer } from './ExpertKitComposer'
+import {
+  applyConnectorSecrets,
+  connectorSecretTemplate,
+  connectorSecretValues,
+  loadConnectorSecrets,
+  type ConnectorSecretValues,
+} from './connectorSecrets'
 import { ExtensionPreviewPanel, type ExtensionPreviewConfig } from './ExtensionPreviewPanel'
 import { diagnoseConnectors } from './harness'
 import {
@@ -40,7 +47,7 @@ import type {
 } from './types'
 
 export type AuthoringChange =
-  | { type: 'connector-upsert'; connector: ConnectorCatalogEntry }
+  | { type: 'connector-upsert'; connector: ConnectorCatalogEntry; secrets: ConnectorSecretValues }
   | { type: 'connector-delete'; id: string }
   | { type: 'extension-change' }
 
@@ -78,6 +85,10 @@ interface AuthoringForm {
   connectorRefs: string
   requiredTools: string
   url: string
+  command: string
+  arguments: string
+  environment: string
+  headers: string
   toolNames: string
   transport: Exclude<ConnectorTransport, 'desktop'>
   authMode: ConnectorAuthMode
@@ -86,7 +97,8 @@ interface AuthoringForm {
 const defaults: AuthoringForm = {
   id: '', name: '', version: '1.0.0', summary: '', category: 'other',
   instructions: '# 使用说明\n\n请在这里描述执行步骤、输入和输出。',
-  triggers: '', connectorRefs: '', requiredTools: '', url: '', toolNames: '',
+  triggers: '', connectorRefs: '', requiredTools: '', url: '', command: '', arguments: '',
+  environment: '', headers: '', toolNames: '',
   transport: 'streamable-http',
   authMode: 'none',
 }
@@ -183,6 +195,7 @@ export function ExtensionAuthoringModal({
   }
 
   const fillConnector = (connector: ConnectorCatalogEntry, mode: 'edit' | 'copy' | 'upgrade') => {
+    const configured = applyConnectorSecrets(connector, loadConnectorSecrets(employeeId)[connector.id])
     const version = mode === 'upgrade' ? bumpVersion(connector.version ?? '1.0.0') : mode === 'copy' ? '1.0.0' : connector.version ?? '1.0.0'
     setKind('connector')
     setForm({
@@ -192,9 +205,11 @@ export function ExtensionAuthoringModal({
       version,
       summary: connector.summary,
       category: connector.category,
-      url: connector.url ?? '',
+      url: configured.url ?? '', command: configured.command ?? '',
+      arguments: (configured.arguments ?? []).join('\n'),
+      environment: formatRecord(configured.environment), headers: formatRecord(configured.headers),
       toolNames: connector.toolNames.join(', '),
-      transport: connector.transport === 'sse' ? 'sse' : 'streamable-http',
+      transport: connector.transport === 'sse' || connector.transport === 'stdio' ? connector.transport : 'streamable-http',
       authMode: connector.authMode ?? 'none',
     })
     setEditing(mode === 'edit' ? { kind: 'connector', id: connector.id, version: connector.version ?? '1.0.0' } : undefined)
@@ -246,17 +261,14 @@ export function ExtensionAuthoringModal({
     try {
       if (kind === 'connector') {
         const connector = connectorFromForm(form)
-        savePersonalConnector(employeeId, connector)
+        const template = connectorSecretTemplate(connector)
+        const secrets = connectorSecretValues(connector)
+        savePersonalConnector(employeeId, template)
         setSavedConnector(connector)
         setSavedFingerprint(draftFingerprint)
         setEditing({ kind, id: connector.id, version: connector.version! })
-        await onChanged({ type: 'connector-upsert', connector })
+        await onChanged({ type: 'connector-upsert', connector: template, secrets })
       } else {
-        if (kind === 'skill' && split(form.triggers).length === 0) throw new Error('Skill 至少需要一个触发词')
-        if (kind === 'expert-kit' && selectedSkillIds.length > 0) {
-          const issues = composerIssues(skills, connectors, selectedSkillIds, split(form.connectorRefs), split(form.requiredTools))
-          if (issues.length > 0) throw new Error(`专家套件依赖未完成：${issues[0]}`)
-        }
         const manifest = manifestFromForm(kind, form, permissions, selectedSkillIds)
         const skillSources = kind === 'expert-kit' ? selectedSkillIds.map((id) => {
           const skill = skills.find((item) => item.id === id && item.installed)
@@ -343,7 +355,9 @@ export function ExtensionAuthoringModal({
     setError('')
     setDiagnostic(undefined)
     try {
-      if (!form.url.trim()) throw new Error('请先填写 MCP 地址')
+      if (form.transport === 'stdio' ? !form.command.trim() : !form.url.trim()) {
+        throw new Error(form.transport === 'stdio' ? '请先填写启动命令' : '请先填写 MCP 地址')
+      }
       const id = form.id.trim() || 'connector-draft'
       const [result] = await diagnoseConnectors({
         accessToken,
@@ -422,9 +436,16 @@ export function ExtensionAuthoringModal({
           <label>分类<select value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value as AuthoringForm['category'] })}>{(kind === 'connector' ? connectorCategories : extensionCategories).map((category) => <option key={category.id} value={category.id}>{category.label}</option>)}</select></label>
           <label className="wide">说明<input required value={form.summary} onChange={(event) => setForm({ ...form, summary: event.target.value })} /></label>
           {kind === 'connector' ? <>
-            <label>传输<select value={form.transport} onChange={(event) => setForm({ ...form, transport: event.target.value as typeof form.transport })}><option value="streamable-http">Streamable HTTP</option><option value="sse">SSE</option></select></label>
-            <label>认证<select value={form.authMode} onChange={(event) => setForm({ ...form, authMode: event.target.value as typeof form.authMode })}><option value="none">无</option><option value="employee-bearer">员工 Bearer Token</option></select></label>
-            <label className="wide">MCP 地址<input placeholder="https://mcp.example.com/mcp" required type="url" value={form.url} onChange={(event) => { setForm({ ...form, url: event.target.value }); setDiagnostic(undefined); setValidationEvidence(undefined) }} /></label>
+            <label>传输<select value={form.transport} onChange={(event) => setForm({ ...form, transport: event.target.value as typeof form.transport })}><option value="streamable-http">Streamable HTTP</option><option value="sse">SSE</option><option value="stdio">stdio 本地进程</option></select></label>
+            {form.transport !== 'stdio' && <label>认证<select value={form.authMode} onChange={(event) => setForm({ ...form, authMode: event.target.value as typeof form.authMode })}><option value="none">无</option><option value="employee-bearer">员工 Bearer Token</option></select></label>}
+            {form.transport === 'stdio' ? <>
+              <label className="wide">启动命令<input placeholder="例如 npx" required value={form.command} onChange={(event) => { setForm({ ...form, command: event.target.value }); setDiagnostic(undefined); setValidationEvidence(undefined) }} /></label>
+              <label className="wide">命令参数<textarea placeholder={'每行一个参数，例如：\n-y\n@modelcontextprotocol/server-filesystem'} value={form.arguments} onChange={(event) => setForm({ ...form, arguments: event.target.value })} /><small>参数会随连接器发布；Token 等敏感值请放到环境变量中。</small></label>
+              <label className="wide">环境变量（JSON）<textarea placeholder={'例如：{\n  "API_KEY": "..."\n}'} value={form.environment} onChange={(event) => setForm({ ...form, environment: event.target.value })} /></label>
+            </> : <>
+              <label className="wide">MCP 地址<input placeholder="https://mcp.example.com/mcp" required type="url" value={form.url} onChange={(event) => { setForm({ ...form, url: event.target.value }); setDiagnostic(undefined); setValidationEvidence(undefined) }} /><small>地址会随连接器发布，请勿把 Token 放在 URL 查询参数中。</small></label>
+              <label className="wide">自定义 Headers（JSON）<textarea placeholder={'例如：{\n  "Authorization": "Bearer ..."\n}'} value={form.headers} onChange={(event) => setForm({ ...form, headers: event.target.value })} /></label>
+            </>}
             <label className="wide">工具名称<input placeholder="测试连接后自动回填，也可手工修改" value={form.toolNames} onChange={(event) => setForm({ ...form, toolNames: event.target.value })} /></label>
             <div className="connector-authoring-test wide"><button disabled={testing || busy} onClick={() => void testConnector()} type="button"><RefreshCw className={testing ? 'spin' : ''} size={13} />{testing ? '正在连接…' : '测试连接并发现工具'}</button>{diagnostic && diagnostic.status !== 'unavailable' && <span>{diagnostic.status === 'ready' ? '连接成功' : '连接成功，登记工具有变化'} · {diagnostic.latencyMs} ms · 发现 {diagnostic.discoveredTools.length} 个工具</span>}</div>
           </> : <>
@@ -469,7 +490,7 @@ export function ExtensionAuthoringModal({
 }
 
 function connectorFromForm(form: AuthoringForm): ConnectorCatalogEntry {
-  return { id: form.id, name: form.name, version: form.version, summary: form.summary, category: form.category as ConnectorCategory, kind: 'managed-mcp', scope: 'PERSONAL', status: 'ready', managed: false, transport: form.transport, url: form.url, authMode: form.authMode, toolNames: split(form.toolNames) }
+  return { id: form.id, name: form.name, version: form.version, summary: form.summary, category: form.category as ConnectorCategory, kind: 'managed-mcp', scope: 'PERSONAL', status: 'ready', managed: false, transport: form.transport, url: form.transport === 'stdio' ? '' : form.url.trim(), authMode: form.transport === 'stdio' ? 'none' : form.authMode, toolNames: split(form.toolNames), command: form.transport === 'stdio' ? form.command.trim() : '', arguments: form.transport === 'stdio' ? lines(form.arguments) : [], environment: form.transport === 'stdio' ? parseRecord(form.environment, '环境变量') : {}, headers: form.transport === 'stdio' ? {} : parseRecord(form.headers, 'Headers') }
 }
 
 function manifestFromForm(kind: 'expert-kit' | 'skill', form: AuthoringForm, permissions: Record<string, PermissionMode>, selectedSkillIds: string[]): ExpertKitManifest {
@@ -485,6 +506,16 @@ function manifestFromForm(kind: 'expert-kit' | 'skill', form: AuthoringForm, per
 }
 
 function split(value: string) { return value.split(',').map((item) => item.trim()).filter(Boolean) }
+function lines(value: string) { return value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean) }
+function parseRecord(value: string, label: string): Record<string, string> {
+  if (!value.trim()) return {}
+  let parsed: unknown
+  try { parsed = JSON.parse(value) } catch { throw new Error(`${label} 必须是 JSON 对象`) }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)
+    || Object.values(parsed).some((item) => typeof item !== 'string')) throw new Error(`${label} 的键和值必须是字符串`)
+  return parsed as Record<string, string>
+}
+function formatRecord(value?: Record<string, string>) { return value && Object.keys(value).length > 0 ? JSON.stringify(value, null, 2) : '' }
 function unique(values: string[]) { return [...new Set(values)] }
 function coordinate(value: Pick<LocalCreation, 'kind' | 'id' | 'version'>) { return `${value.kind}:${value.id}:${value.version}` }
 function bumpVersion(value: string) { const match = /^(\d+)\.(\d+)\.(\d+)/.exec(value); return match ? `${match[1]}.${match[2]}.${Number(match[3]) + 1}` : '1.0.0' }

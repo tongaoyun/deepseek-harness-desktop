@@ -42,7 +42,7 @@ export function ScheduledTasksPage({ endpoint, employeeId, accessToken, expertKi
 
   useEffect(() => {
     if (!selection && workflows.length > 0) {
-      const first = workflows.find(({ kit }) => kit.connectorIssues.length === 0) ?? workflows[0]
+      const first = workflows[0]
       setSelection(`${first.kit.id}:${first.workflow.id}`)
     }
   }, [selection, workflows])
@@ -67,7 +67,7 @@ export function ScheduledTasksPage({ endpoint, employeeId, accessToken, expertKi
 
   const submit = async (event: FormEvent) => {
     event.preventDefault()
-    if (!selected || selected.kit.connectorIssues.length > 0 || saving) return
+    if (!selected || saving) return
     setSaving(true)
     setError('')
     try {
@@ -147,9 +147,9 @@ export function ScheduledTasksPage({ endpoint, employeeId, accessToken, expertKi
         <button className="schedule-parse" disabled={!naturalLanguage.trim()} onClick={parseSchedule} type="button">解析任务</button>
         {parseSummary && <div className="schedule-parse-result">{parseSummary}</div>}
         <label>专家工作流<select value={selection} onChange={(event) => { setSelection(event.target.value); setInputs({}) }}>
-          {workflows.map(({ kit, workflow }) => <option disabled={kit.connectorIssues.length > 0} key={`${kit.id}:${workflow.id}`} value={`${kit.id}:${workflow.id}`}>{kit.name} · {workflow.name}{kit.connectorIssues.length > 0 ? '（连接器未就绪）' : ''}</option>)}
+          {workflows.map(({ kit, workflow }) => <option key={`${kit.id}:${workflow.id}`} value={`${kit.id}:${workflow.id}`}>{kit.name} · {workflow.name}{kit.connectorIssues.length > 0 ? '（存在依赖提醒）' : ''}</option>)}
         </select></label>
-        {(selected?.kit.connectorIssues.length ?? 0) > 0 && <div className="schedule-dependency-warning">暂不可创建：{selected?.kit.connectorIssues.join('；')}</div>}
+        {(selected?.kit.connectorIssues.length ?? 0) > 0 && <div className="schedule-dependency-warning">依赖提醒（仍可创建）：{selected?.kit.connectorIssues.join('；')}</div>}
         <label>任务名称<input maxLength={100} onChange={(event) => setName(event.target.value)} placeholder={selected?.workflow.name} value={name} /></label>
         <div className="schedule-fields">
           <label>Cron 表达式<input onChange={(event) => setCronExpression(event.target.value)} value={cronExpression} /></label>
@@ -162,7 +162,7 @@ export function ScheduledTasksPage({ endpoint, employeeId, accessToken, expertKi
         </select><small>每个定时任务只投递到这里指定的会话，不会广播。</small></label>
         {selected?.workflow.inputs.map((input) => <WorkflowInputField input={input} key={input.name} value={inputs[input.name]} onChange={(value) => setInputs((current) => ({ ...current, [input.name]: value }))} />)}
         <small className="cron-hint">{upcomingRuns.length > 0 ? `接下来：${upcomingRuns.map((value) => value.toLocaleString('zh-CN', { timeZone, hour12: false })).join('、')}` : 'Cron 或时区无效，请检查后再创建'}</small>
-        <button className="schedule-primary" disabled={saving || (selected?.kit.connectorIssues.length ?? 0) > 0} type="submit">{saving ? '正在创建…' : '创建任务'}</button>
+        <button className="schedule-primary" disabled={saving} type="submit">{saving ? '正在创建…' : '创建任务'}</button>
       </>}
     </form>
 

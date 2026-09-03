@@ -20,12 +20,6 @@ const MAX_PACKAGE_BYTES: usize = 32 * 1024 * 1024;
 const KIT_MANIFEST_PATH: &str = ".xiaoyin-kit/kit.json";
 const SKILL_MANIFEST_PATH: &str = ".xiaoyin-skill/skill.json";
 const INSTALL_RECORD_PATH: &str = ".xiaoyin/install.json";
-const DESKTOP_OFFICE_TOOLS: [&str; 4] = [
-    "office.document.read",
-    "office.docx.create",
-    "office.xlsx.create",
-    "office.pdf.create",
-];
 const DESKTOP_COMPUTER_TOOLS: [&str; 5] = [
     "computer_use_observe",
     "computer_use_click",
@@ -211,6 +205,7 @@ pub struct InstalledExpertKit {
     manifest: ExpertKitManifest,
     install_path: String,
     source: InstallSource,
+    package_sha256: String,
 }
 
 #[derive(Deserialize)]
@@ -245,7 +240,6 @@ pub struct DeveloperExtensionDraft {
 
 pub struct ExpertKitHarnessProfile {
     pub skill_directories: Vec<String>,
-    pub connector_refs: Vec<String>,
     pub knowledge_base_refs: Option<Vec<String>>,
     pub required_connector_tools: Vec<String>,
     pub allow_local_files: bool,
@@ -1043,7 +1037,7 @@ pub fn harness_profile(
         .map(|coordinate| {
             newest
                 .get(coordinate)
-                .ok_or_else(|| format!("扩展已下架、待更新或尚未安装：{coordinate}"))
+                .ok_or_else(|| format!("扩展已下架、未获准或尚未安装：{coordinate}"))
         })
         .transpose()?;
     let mut skill_directories = Vec::new();
@@ -1075,9 +1069,6 @@ pub fn harness_profile(
             })
             .cloned()
             .collect::<Vec<_>>()
-    });
-    let connector_refs = selected.map_or_else(Vec::new, |artifact| {
-        artifact.manifest.connector_refs.clone()
     });
     let mut knowledge_base_refs = selected
         .and_then(|artifact| artifact.manifest.knowledge_base_refs.clone())
@@ -1123,7 +1114,6 @@ pub fn harness_profile(
     let connector_write = permission(|value| value.connector_write);
     Ok(ExpertKitHarnessProfile {
         skill_directories,
-        connector_refs,
         knowledge_base_refs: Some(knowledge_base_refs),
         required_connector_tools: connector_tools,
         allow_local_files: local_files != PermissionMode::Deny,
@@ -1361,7 +1351,7 @@ fn load_and_validate_manifest(
         object.insert("skills".to_string(), serde_json::json!([{ "id": object.get("id").cloned().unwrap_or_default(), "path": "SKILL.md" }]));
         object.insert("serverWorkflows".to_string(), serde_json::json!([]));
     }
-    let manifest: ExpertKitManifest =
+    let mut manifest: ExpertKitManifest =
         serde_json::from_value(value).map_err(|error| format!("扩展清单字段无效：{error}"))?;
     validate_identifier(&manifest.id)?;
     Version::parse(&manifest.version).map_err(|error| format!("专家套件版本无效：{error}"))?;
@@ -1378,16 +1368,15 @@ fn load_and_validate_manifest(
         return Err("专家套件名称、简介和 Skills 不能为空".to_string());
     }
     if !EXTENSION_CATEGORIES.contains(&manifest.category.as_str()) {
-        return Err(format!("扩展分类无效：{}", manifest.category));
+        manifest.category = default_extension_category();
     }
     manifest.permissions.validate()?;
 
     if manifest.kind == "skill" {
         let mut triggers = HashSet::new();
-        if manifest.triggers.is_empty()
-            || manifest.triggers.len() > 20
+        if manifest.triggers.len() > 20
             || manifest.triggers.iter().any(|trigger| {
-                trigger.trim().len() < 2 || trigger.len() > 120 || !triggers.insert(trigger)
+                trigger.trim().is_empty() || trigger.len() > 120 || !triggers.insert(trigger)
             })
         {
             return Err("独立 Skill 触发场景声明无效".to_string());
@@ -1422,9 +1411,6 @@ fn load_and_validate_manifest(
         if !valid_tool_name(tool) || !tools.insert(tool) {
             return Err(format!("专家套件工具声明无效：{tool}"));
         }
-        if tool.starts_with("office.") && !DESKTOP_OFFICE_TOOLS.contains(&tool.as_str()) {
-            return Err(format!("桌面不支持该 Office 工具：{tool}"));
-        }
     }
     let mut connectors = HashSet::new();
     for connector in &manifest.connector_refs {
@@ -1441,7 +1427,6 @@ fn load_and_validate_manifest(
             || workflow.name.len() > 200
             || workflow.version.trim().is_empty()
             || workflow.workflow_type.trim().is_empty()
-            || workflow.steps.is_empty()
         {
             return Err(format!("后台工作流定义不完整：{}", workflow.id));
         }
@@ -1573,6 +1558,9 @@ fn installed_kit(
         manifest,
         install_path: directory.to_string_lossy().into_owned(),
         source,
+        package_sha256: load_install_record(directory)
+            .map(|record| record.package_sha256)
+            .unwrap_or_default(),
     }
 }
 
@@ -1616,8 +1604,6 @@ mod tests {
         assert!(validate_identifier("CrossBorder").is_err());
         assert!(valid_tool_name("office.xlsx.create"));
         assert!(!valid_tool_name("Office create"));
-        assert!(DESKTOP_OFFICE_TOOLS.contains(&"office.xlsx.create"));
-        assert!(!DESKTOP_OFFICE_TOOLS.contains(&"office.pptx.create"));
     }
 
     #[test]

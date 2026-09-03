@@ -81,6 +81,12 @@ import { modelStorageKey, resolveSelectedModel } from './modelSelection'
 import { buildInvocationOptions, filterInvocationOptions, type InvocationOption } from './invocations'
 import { buildRuntimeConnectorCatalog, withDesktopBuiltinConnectors } from './connectors'
 import { loadEnabledConnectorIds, saveEnabledConnectorIds } from './connectorPreferences'
+import {
+  deleteConnectorSecrets,
+  loadConnectorSecrets,
+  saveConnectorSecrets,
+  type ConnectorSecretStore,
+} from './connectorSecrets'
 import { KnowledgeBasePage } from './KnowledgeBasePage'
 import { DesktopSettingsPage } from './DesktopSettingsPage'
 import { ConnectorsPage } from './ConnectorsPage'
@@ -130,6 +136,7 @@ export default function App() {
   const [connectors, setConnectors] = useState<ConnectorCatalogEntry[]>([])
   const [authoringKind, setAuthoringKind] = useState<ExtensionKind>()
   const [enabledConnectorIds, setEnabledConnectorIds] = useState<string[]>([])
+  const [connectorSecrets, setConnectorSecrets] = useState<ConnectorSecretStore>({})
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBaseEntry[]>([])
   const [expertKitsLoading, setExpertKitsLoading] = useState(false)
   const [expertKitError, setExpertKitError] = useState('')
@@ -214,9 +221,11 @@ export default function App() {
   useEffect(() => {
     if (!user) {
       setEnabledConnectorIds([])
+      setConnectorSecrets({})
       return
     }
     setEnabledConnectorIds(loadEnabledConnectorIds(user.userId))
+    setConnectorSecrets(loadConnectorSecrets(user.userId))
   }, [user])
 
   useEffect(() => {
@@ -274,7 +283,9 @@ export default function App() {
           setCatalogCacheStale(age.stale)
           setExpertKitCatalog(cached.catalog)
           setSkills(cached.skills)
-          const cachedConnectors = withDesktopBuiltinConnectors([...loadPersonalConnectors(user.userId), ...cached.connectors.filter((item) => !loadPersonalConnectors(user.userId).some((personal) => personal.id === item.id))])
+          const personal = loadPersonalConnectors(user.userId)
+          setConnectorSecrets(loadConnectorSecrets(user.userId))
+          const cachedConnectors = withDesktopBuiltinConnectors([...personal, ...cached.connectors.filter((item) => !personal.some((value) => value.id === item.id))])
           extensionCacheRef.current.connectors = cachedConnectors
           setConnectors(cachedConnectors)
           setKnowledgeBases(cached.knowledge)
@@ -297,6 +308,7 @@ export default function App() {
         if (skillsResult.status === 'fulfilled') cache.skills = skillsResult.value
         if (connectorsResult.status === 'fulfilled') {
           const personal = loadPersonalConnectors(user.userId)
+          setConnectorSecrets(loadConnectorSecrets(user.userId))
           cache.connectors = withDesktopBuiltinConnectors([...personal, ...connectorsResult.value.filter((item) => !personal.some((value) => value.id === item.id))])
         }
         if (knowledgeResult.status === 'fulfilled') cache.knowledge = knowledgeResult.value
@@ -370,7 +382,7 @@ export default function App() {
       teamId: user.teamId,
       litellmBaseUrl: bootstrap.endpoints.litellm,
       knowledgeEndpoint: resolveControlPlaneEndpoint(bootstrap.endpoints.knowledge),
-      connectors: buildRuntimeConnectorCatalog(connectors, bootstrap.endpoints.erpMcp, enabledConnectorIds),
+      connectors: buildRuntimeConnectorCatalog(connectors, bootstrap.endpoints.erpMcp, enabledConnectorIds, connectorSecrets),
       allowedArtifacts,
       model: selectedModel || bootstrap.models[0] || 'deepseek-v4-flash',
       modelApiKey: bootstrap.modelApiKey,
@@ -381,7 +393,7 @@ export default function App() {
         .map((task) => ({ id: task.id, name: task.name, sessionId: task.sessionId! })))
     })
       .catch((reason) => setLocalImError(reason instanceof Error ? reason.message : String(reason)))
-  }, [accessToken, allowedArtifacts, authState, bootstrap, connectors, enabledConnectorIds, selectedModel, user])
+  }, [accessToken, allowedArtifacts, authState, bootstrap, connectors, connectorSecrets, enabledConnectorIds, selectedModel, user])
 
   useEffect(() => {
     if (authState !== 'authenticated' || !user) return
@@ -546,12 +558,14 @@ export default function App() {
     return <ErpAuthScreen checking={authState === 'checking'} error={authError} onReopen={() => void reopen()} />
   }
 
-  const selectedExpertKit = expertKits.find((kit) => kit.id === selectedExpertKitId && kit.installState === 'installed')
-  const selectedSkill = skillViews.find((skill) => skill.id === selectedSkillId && skill.installState === 'installed')
+  const selectedExpertKit = expertKits.find((kit) => kit.id === selectedExpertKitId
+    && (kit.installState === 'installed' || kit.installState === 'update'))
+  const selectedSkill = skillViews.find((skill) => skill.id === selectedSkillId
+    && (skill.installState === 'installed' || skill.installState === 'update'))
   const activeExpertKit = expertKits.find((kit) => kit.id === activeExpertKitId)
   const activeSkill = skillViews.find((skill) => skill.id === activeSkillId)
   const runtimeConnectors = buildRuntimeConnectorCatalog(
-    connectors, bootstrap?.endpoints.erpMcp ?? '', enabledConnectorIds,
+    connectors, bootstrap?.endpoints.erpMcp ?? '', enabledConnectorIds, connectorSecrets,
   )
   const toggleConnector = (connectorId: string, enabled: boolean) => {
     if (!user) return
@@ -749,7 +763,7 @@ export default function App() {
           : selectedSkill ? { selectedExtension: { kind: 'skill' as const, id: selectedSkill.id } } : {}),
         litellmBaseUrl: bootstrap.endpoints.litellm,
         knowledgeEndpoint: resolveControlPlaneEndpoint(bootstrap.endpoints.knowledge),
-        connectors: connectorsForSnapshot(capabilitySnapshot),
+        connectors: connectorsForSnapshot(capabilitySnapshot, connectorSecrets),
         allowedArtifacts: capabilitySnapshot.extensions,
         knowledgeBaseRefs: capabilitySnapshot.knowledgeBaseRefs,
         model: activeModel,
@@ -934,14 +948,14 @@ export default function App() {
 
   const customizeLocalExpertKit = async (kit: ExpertKitView) => {
     try {
-      const path = await customizeExpertKit(kit.id, kit.version)
+      const path = await customizeExpertKit(kit.id, kit.installed?.manifest.version ?? kit.version)
       if (path) window.alert(`定制副本已创建，请修改版本号后重新导入：\n${path}`)
     } catch (error) { setExpertKitError(error instanceof Error ? error.message : String(error)) }
   }
 
   const exportLocalExpertKit = async (kit: ExpertKitView) => {
     try {
-      const path = await exportExpertKit(kit.id, kit.version)
+      const path = await exportExpertKit(kit.id, kit.installed?.manifest.version ?? kit.version)
       if (path) window.alert(`专家套件已导出：\n${path}`)
     } catch (error) { setExpertKitError(error instanceof Error ? error.message : String(error)) }
   }
@@ -1015,7 +1029,7 @@ export default function App() {
   }
 
   const useExpertKit = (kit: ExpertKitView) => {
-    if (kit.installState !== 'installed') return
+    if (!['installed', 'update'].includes(kit.installState)) return
     if (messages.length > 0) {
       setMessages([])
       setCurrentLocalTaskId('')
@@ -1032,7 +1046,7 @@ export default function App() {
   }
 
   const useSkill = (skill: SkillView) => {
-    if (skill.installState !== 'installed') return
+    if (!['installed', 'update'].includes(skill.installState)) return
     if (messages.length > 0) {
       setMessages([])
       setCurrentLocalTaskId('')
@@ -1224,6 +1238,11 @@ export default function App() {
                 runtime={runtimeConnectors}
                 syncError=""
                 onToggle={toggleConnector}
+                secrets={connectorSecrets}
+                onSaveSecrets={(connectorId, values) => {
+                  if (!user) return
+                  setConnectorSecrets(saveConnectorSecrets(user.userId, connectorId, values))
+                }}
               />
             </>}
             {page === 'knowledge' && bootstrap && user && <KnowledgeBasePage
@@ -1285,11 +1304,13 @@ export default function App() {
         onChanged={async (change) => {
           if (change.type === 'connector-upsert') {
             const connector = change.connector
+            setConnectorSecrets(saveConnectorSecrets(user.userId, connector.id, change.secrets))
             const next = [connector, ...connectors.filter((item) => item.id !== connector.id)]
             extensionCacheRef.current.connectors = next
             setConnectors(next)
             setEnabledConnectorIds((current) => saveEnabledConnectorIds(user.userId, [...current, connector.id]))
           } else if (change.type === 'connector-delete') {
+            setConnectorSecrets(deleteConnectorSecrets(user.userId, change.id))
             const next = connectors.filter((item) => item.id !== change.id)
             extensionCacheRef.current.connectors = next
             setConnectors(next)
@@ -1312,8 +1333,8 @@ export default function App() {
           : activeExpertKit.installed ? () => void removeCatalogArtifact('expert-kit', activeExpertKit.id) : undefined}
         onSchedule={() => { setActiveExpertKitId(''); setPage('schedules') }}
         onUse={() => useExpertKit(activeExpertKit)}
-        onCustomize={activeExpertKit.installState === 'installed' ? () => void customizeLocalExpertKit(activeExpertKit) : undefined}
-        onExport={activeExpertKit.installState === 'installed' ? () => void exportLocalExpertKit(activeExpertKit) : undefined}
+        onCustomize={['installed', 'update'].includes(activeExpertKit.installState) ? () => void customizeLocalExpertKit(activeExpertKit) : undefined}
+        onExport={['installed', 'update'].includes(activeExpertKit.installState) ? () => void exportLocalExpertKit(activeExpertKit) : undefined}
       />}
       {activeSkill && <SkillDetailsModal
         skill={activeSkill}

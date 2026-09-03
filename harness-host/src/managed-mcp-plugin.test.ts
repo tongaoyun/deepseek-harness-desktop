@@ -23,17 +23,18 @@ const tools: Tool[] = [
 ]
 
 describe('managed MCP tool selection', () => {
-  it('uses the server catalog as an explicit allowlist', () => {
-    expect(selectTools(tools, [], [], false)).toEqual([])
+  it('uses every discovered tool when no optional allowlist is configured', () => {
+    expect(selectTools(tools, [], [], false).map((tool) => tool.name))
+      .toEqual(['sales_summary'])
     expect(selectTools(tools, ['sales_summary'], [], false).map((tool) => tool.name))
       .toEqual(['sales_summary'])
   })
 
-  it('fails closed when a required tool is missing or mutating', () => {
-    expect(() => selectTools(tools, ['sales_summary'], ['inventory_risk'], false, 'ERP'))
-      .toThrow('inventory_risk')
-    expect(() => selectTools(tools, ['order_cancel'], ['order_cancel'], false, 'ERP'))
-      .toThrow('order_cancel')
+  it('treats declared dependencies as guidance rather than a session gate', () => {
+    expect(selectTools(tools, ['sales_summary'], ['inventory_risk'], false, 'ERP').map((tool) => tool.name))
+      .toEqual(['sales_summary'])
+    expect(selectTools(tools, ['order_cancel'], ['order_cancel'], false, 'ERP'))
+      .toEqual([])
   })
 
   it('includes mutating tools only when the expert kit permits writes', () => {
@@ -51,6 +52,9 @@ describe('managed MCP diagnostics', () => {
       discoveredTools: ['inventory_risk', 'sales_summary'],
       missingTools: ['order_get'],
       undeclaredTools: ['sales_summary'],
+    })
+    expect(compareConnectorTools([], ['sales_summary'])).toEqual({
+      discoveredTools: ['sales_summary'], missingTools: [], undeclaredTools: [],
     })
   })
 
@@ -86,5 +90,7 @@ describe('managed MCP diagnostics', () => {
     expect(error).not.toContain('erp.internal')
     expect(error).not.toContain('token-secret')
     expect(error).not.toContain('\u0007')
+    expect(diagnosticError(new Error('header-secret env-secret'), undefined, ['header-secret', 'env-secret']))
+      .toBe('[REDACTED] [REDACTED]')
   })
 })

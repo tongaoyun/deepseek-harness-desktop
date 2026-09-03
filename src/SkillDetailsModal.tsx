@@ -63,7 +63,7 @@ export function SkillDetailsModal({
       </section>
       <section className="expert-detail-section">
         <h3>触发场景</h3>
-        <div className="connector-tools">{skill.triggers.join(' · ')}</div>
+        <div className="connector-tools">{skill.triggers.join(' · ') || '未设置自动触发词，可手动调用'}</div>
       </section>
       <section className="expert-detail-section">
         <h3>依赖能力</h3>
@@ -78,9 +78,10 @@ export function SkillDetailsModal({
         <button className="secondary" onClick={onClose} type="button">关闭</button>
         {skill.installState === 'retired' ? null : skill.installState === 'installed'
           ? <button onClick={onUse} type="button">{selected ? '正在使用' : '立即使用'}</button>
-          : <button disabled={installing || !skill.sha256} onClick={onInstall} type="button">
-            {installing ? '正在校验并安装…' : skill.installState === 'update' ? '确认更新' : '确认安装'}
-          </button>}
+          : skill.installState === 'update' ? <>
+            <button className="secondary" onClick={onUse} type="button">{selected ? `正在使用 v${skill.installedVersion}` : `继续使用 v${skill.installedVersion}`}</button>
+            <button disabled={installing || !skill.sha256} onClick={onInstall} type="button">{installing ? '正在校验并安装…' : '确认更新'}</button>
+          </> : <button disabled={installing || !skill.sha256} onClick={onInstall} type="button">{installing ? '正在校验并安装…' : '确认安装'}</button>}
       </div>
     </section>
   </div>

@@ -9,6 +9,7 @@ import {
   type Tool,
   type Transport,
 } from '@modelcontextprotocol/client'
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio'
 
 export const name = 'xiaoyin-managed-mcp'
 export const inject = ['tools']
@@ -17,9 +18,13 @@ export interface ManagedConnectorConfig {
   id: string
   name: string
   version: string
-  transport: 'streamable-http' | 'sse'
+  transport: 'streamable-http' | 'sse' | 'stdio'
   url: string
   authMode: 'employee-bearer' | 'none'
+  command: string
+  arguments: string[]
+  environment: Record<string, string>
+  headers: Record<string, string>
   allowedTools: string[]
   requiredTools: string[]
   allowWrite: boolean
@@ -48,9 +53,13 @@ const ConnectorConfig = z.object({
   id: z.string().required(),
   name: z.string().required(),
   version: z.string().default('1'),
-  transport: z.union(['streamable-http', 'sse']).default('streamable-http'),
-  url: z.string().required(),
+  transport: z.union(['streamable-http', 'sse', 'stdio']).default('streamable-http'),
+  url: z.string().default(''),
   authMode: z.union(['employee-bearer', 'none']).default('none'),
+  command: z.string().default(''),
+  arguments: z.array(z.string()).default([]),
+  environment: z.dict(z.string()).default({}),
+  headers: z.dict(z.string()).default({}),
   allowedTools: z.array(z.string()).default([]),
   requiredTools: z.array(z.string()).default([]),
   allowWrite: z.boolean().default(false),
@@ -88,16 +97,12 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
         connector.allowWrite,
         connector.name,
       )
-      const collisions = tools.map((tool) => tool.name).filter((tool) => registeredNames.has(tool))
-      if (collisions.length > 0) {
-        throw new Error(`工具名与其他连接器冲突：${collisions.join(', ')}`)
-      }
-
       for (const tool of tools) {
-        unregisterTools.push(ctx.tools.register(toHarnessTool(client, tool, connector)))
-        registeredNames.add(tool.name)
+        const registeredName = registeredNames.has(tool.name) ? `${connector.id}.${tool.name}` : tool.name
+        unregisterTools.push(ctx.tools.register(toHarnessTool(client, tool, connector, registeredName)))
+        registeredNames.add(registeredName)
         if (tool.annotations?.readOnlyHint !== true && connector.requireWriteApproval) {
-          mutatingTools.set(tool.name, connector.name)
+          mutatingTools.set(registeredName, connector.name)
         }
       }
       activeClients.push(client)
@@ -171,7 +176,10 @@ export async function diagnoseConnector(
       discoveredTools: [],
       missingTools: uniqueSorted(connector.allowedTools),
       undeclaredTools: [],
-      error: diagnosticError(error, employeeToken),
+      error: diagnosticError(error, employeeToken, [
+        ...Object.values(connector.headers ?? {}),
+        ...Object.values(connector.environment ?? {}),
+      ]),
     }
   } finally {
     if (client) await closeQuietly(client)
@@ -189,7 +197,7 @@ export function compareConnectorTools(
   return {
     discoveredTools: discovered,
     missingTools: declared.filter((tool) => !discoveredSet.has(tool)),
-    undeclaredTools: discovered.filter((tool) => !declaredSet.has(tool)),
+    undeclaredTools: declared.length === 0 ? [] : discovered.filter((tool) => !declaredSet.has(tool)),
   }
 }
 
@@ -202,20 +210,21 @@ export function selectTools(
 ): Tool[] {
   const allowed = new Set(allowedTools)
   const selected = discovered.filter((tool) =>
-    allowed.has(tool.name) && (tool.annotations?.readOnlyHint === true || allowWrite),
+    (allowed.size === 0 || allowed.has(tool.name)) && (tool.annotations?.readOnlyHint === true || allowWrite),
   )
-  const selectedNames = new Set(selected.map((tool) => tool.name))
-  const missing = [...new Set(requiredTools)].filter((tool) => !selectedNames.has(tool))
-  if (missing.length > 0) {
-    throw new Error(`${connectorName} 缺少专家套件要求且获准使用的工具：${missing.join(', ')}`)
-  }
+  void requiredTools
+  void connectorName
   return selected
 }
 
 function validateConnector(connector: ManagedConnectorConfig, employeeToken: string | undefined): void {
   if (!connector.id.trim() || !connector.name.trim()) throw new Error('连接器标识或名称为空')
-  if (!['streamable-http', 'sse'].includes(connector.transport)) {
+  if (!['streamable-http', 'sse', 'stdio'].includes(connector.transport)) {
     throw new Error(`不支持传输协议 ${connector.transport}`)
+  }
+  if (connector.transport === 'stdio') {
+    if (!connector.command.trim()) throw new Error('stdio 连接器缺少启动命令')
+    return
   }
   const url = new URL(connector.url)
   if (!['http:', 'https:'].includes(url.protocol)) throw new Error('连接器地址必须使用 HTTP(S)')
@@ -225,8 +234,20 @@ function validateConnector(connector: ManagedConnectorConfig, employeeToken: str
 }
 
 function createTransport(connector: ManagedConnectorConfig, employeeToken: string | undefined): Transport {
+  if (connector.transport === 'stdio') {
+    return new StdioClientTransport({
+      command: connector.command,
+      args: connector.arguments ?? [],
+      env: connector.environment ?? {},
+      stderr: 'pipe',
+    })
+  }
   const token = connector.authMode === 'employee-bearer' ? employeeToken : undefined
-  const options = token ? { authProvider: { token: async () => token } } : undefined
+  const headers = connector.headers ?? {}
+  const options = {
+    ...(token ? { authProvider: { token: async () => token } } : {}),
+    ...(Object.keys(headers).length > 0 ? { requestInit: { headers } } : {}),
+  }
   return connector.transport === 'sse'
     ? new SSEClientTransport(new URL(connector.url), options)
     : new StreamableHTTPClientTransport(new URL(connector.url), options)
@@ -245,9 +266,10 @@ function toHarnessTool(
   client: Client,
   tool: Tool,
   connector: ManagedConnectorConfig,
+  registeredName = tool.name,
 ): ToolDefinition {
   return {
-    name: tool.name,
+    name: registeredName,
     description: tool.description ?? `${connector.name} MCP 工具 ${tool.name}`,
     parameters: tool.inputSchema,
     output: {
@@ -316,7 +338,7 @@ function safeError(error: unknown): string {
 function configuredConnectors(value: string | undefined): ManagedConnectorConfig[] {
   if (!value?.trim()) return []
   const parsed: unknown = JSON.parse(value)
-  if (!Array.isArray(parsed) || parsed.length > 32) throw new Error('连接器诊断配置无效')
+  if (!Array.isArray(parsed)) throw new Error('连接器诊断配置无效')
   return parsed as ManagedConnectorConfig[]
 }
 
@@ -328,11 +350,13 @@ function uniqueSorted(values: string[]): string[] {
   return [...new Set(values)].sort((left, right) => left.localeCompare(right))
 }
 
-export function diagnosticError(error: unknown, employeeToken: string | undefined): string {
+export function diagnosticError(error: unknown, employeeToken: string | undefined, connectorSecrets: string[] = []): string {
   const message = safeError(error)
   if (/abort|timeout|timed out/i.test(message)) return '连接或 MCP 握手超时'
   if (/\b401\b|\b403\b|unauthori[sz]ed|forbidden/i.test(message)) return '员工身份未获连接器授权'
-  const redacted = employeeToken ? message.replaceAll(employeeToken, '[REDACTED]') : message
+  const redacted = [employeeToken, ...connectorSecrets]
+    .filter((secret): secret is string => Boolean(secret))
+    .reduce((value, secret) => value.replaceAll(secret, '[REDACTED]'), message)
   const withoutEndpoints = redacted.replace(/https?:\/\/[^\s"'<>]+/giu, '连接器端点')
   return [...withoutEndpoints].filter((character) => !/\p{Cc}/u.test(character)).join('').slice(0, 500)
     || '连接器诊断失败'

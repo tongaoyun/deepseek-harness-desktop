@@ -233,7 +233,7 @@ export interface SkillCatalogEntry {
 }
 
 export type ConnectorStatus = 'ready' | 'needs-configuration' | 'unavailable' | 'disabled'
-export type ConnectorTransport = 'streamable-http' | 'sse' | 'desktop'
+export type ConnectorTransport = 'streamable-http' | 'sse' | 'stdio' | 'desktop'
 export type ConnectorAuthMode = 'employee-bearer' | 'none'
 
 export interface ConnectorCatalogEntry {
@@ -250,6 +250,10 @@ export interface ConnectorCatalogEntry {
   url?: string
   authMode?: ConnectorAuthMode
   toolNames: string[]
+  command?: string
+  arguments?: string[]
+  environment?: Record<string, string>
+  headers?: Record<string, string>
 }
 
 export interface ConnectorRuntimeDefinition {
@@ -261,6 +265,10 @@ export interface ConnectorRuntimeDefinition {
   url: string
   authMode: ConnectorAuthMode
   toolNames: string[]
+  command?: string
+  arguments?: string[]
+  environment?: Record<string, string>
+  headers?: Record<string, string>
   enabled: boolean
 }
 
@@ -330,6 +338,7 @@ export interface InstalledExpertKit {
   manifest: ExpertKitManifest
   installPath: string
   source: 'catalog' | 'developer'
+  packageSha256?: string
 }
 
 export interface InstalledExtensionSnapshot {

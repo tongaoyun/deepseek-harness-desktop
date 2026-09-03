@@ -1045,6 +1045,10 @@ mod tests {
                 url: "http://erp.internal/mcp".to_string(),
                 auth_mode: "employee-bearer".to_string(),
                 tool_names: vec!["sales_summary".to_string()],
+                command: String::new(),
+                arguments: Vec::new(),
+                environment: std::collections::HashMap::new(),
+                headers: std::collections::HashMap::new(),
                 enabled: true,
             }],
             model: "deepseek-chat".to_string(),
@@ -1081,7 +1085,7 @@ mod tests {
     }
 
     #[test]
-    fn ready_connectors_are_session_capabilities_and_selected_dependencies_remain_required() {
+    fn ready_connectors_are_session_capabilities_and_declared_dependencies_are_advisory() {
         let catalog = vec![
             ConnectorDefinition {
                 id: "erp-mcp".to_string(),
@@ -1092,6 +1096,10 @@ mod tests {
                 url: "http://erp.internal/mcp".to_string(),
                 auth_mode: "employee-bearer".to_string(),
                 tool_names: vec!["sales_summary".to_string(), "order_cancel".to_string()],
+                command: String::new(),
+                arguments: Vec::new(),
+                environment: std::collections::HashMap::new(),
+                headers: std::collections::HashMap::new(),
                 enabled: true,
             },
             ConnectorDefinition {
@@ -1103,12 +1111,15 @@ mod tests {
                 url: String::new(),
                 auth_mode: "none".to_string(),
                 tool_names: vec!["browser_open".to_string()],
-                enabled: true,
+                command: String::new(),
+                arguments: Vec::new(),
+                environment: std::collections::HashMap::new(),
+                headers: std::collections::HashMap::new(),
+                enabled: false,
             },
         ];
         let profile = expert_kits::ExpertKitHarnessProfile {
             skill_directories: Vec::new(),
-            connector_refs: vec!["erp-mcp".to_string(), "desktop-browser".to_string()],
             knowledge_base_refs: Some(vec!["organization:operations-sop".to_string()]),
             required_connector_tools: vec!["sales_summary".to_string(), "browser_open".to_string()],
             allow_local_files: false,
@@ -1131,7 +1142,7 @@ mod tests {
             vec!["sales_summary", "order_cancel"]
         );
         assert_eq!(runtime[0].required_tools, vec!["sales_summary"]);
-        assert!(runtime[0].required);
+        assert!(!runtime[0].required);
         assert!(!runtime[0].allow_write);
     }
 
@@ -1147,6 +1158,10 @@ mod tests {
                 url: "http://erp.internal/mcp".to_string(),
                 auth_mode: "employee-bearer".to_string(),
                 tool_names: vec!["sales_summary".to_string(), "inventory_risk".to_string()],
+                command: String::new(),
+                arguments: Vec::new(),
+                environment: std::collections::HashMap::new(),
+                headers: std::collections::HashMap::new(),
                 enabled: false,
             },
             ConnectorDefinition {
@@ -1158,6 +1173,10 @@ mod tests {
                 url: String::new(),
                 auth_mode: "none".to_string(),
                 tool_names: vec!["local_file_read".to_string()],
+                command: String::new(),
+                arguments: Vec::new(),
+                environment: std::collections::HashMap::new(),
+                headers: std::collections::HashMap::new(),
                 enabled: false,
             },
         ];
