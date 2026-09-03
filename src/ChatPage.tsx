@@ -85,7 +85,6 @@ export function ChatPage(props: Props) {
           ? <span><FolderOpen size={12} />选择工作目录</span>
           : props.localDirectories.map((directory) => <span className="local-context" key={directory.id}><FolderOpen size={12} />{directory.name}<button aria-label={`移除 ${directory.name}`} disabled={props.harnessRunning} onClick={() => props.onRemoveLocalDirectory(directory.id)} type="button"><X size={11} /></button></span>)}
       </div>
-      <span>内容由 AI 生成，请注意核实</span>
     </div>
   </section>
 }

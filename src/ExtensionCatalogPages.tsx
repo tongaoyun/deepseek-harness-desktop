@@ -8,10 +8,8 @@ interface CommonProps {
   loading: boolean
   error: string
   filter: ExtensionFilter
-  query: string
   category: ExtensionCategoryFilter
   onFilter: (value: ExtensionFilter) => void
-  onQuery: (value: string) => void
   onCategory: (value: ExtensionCategoryFilter) => void
 }
 
@@ -24,7 +22,7 @@ export function ExpertCatalogPage(props: CommonProps & {
     {!props.loading && props.all.length === 0 && <div className="kit-empty">控制中心尚未发布专家套件</div>}
     {props.error && <div className="kit-error">{props.error}</div>}
     {props.developerMode && <div className="developer-kit-bar"><span><strong>专家套件工作台</strong><small>可新建模板或导入 ZIP / tar.gz；本地套件不会上传到公司目录。</small></span><button onClick={props.onCreate} type="button">新建套件</button><button disabled={props.developerBusy} onClick={props.onImport} type="button"><PackagePlus size={14} />{props.developerBusy ? '正在处理…' : '导入本地套件'}</button></div>}
-    <ExtensionToolbar filter={props.filter} query={props.query} onFilter={props.onFilter} onQuery={props.onQuery} />
+    <ExtensionToolbar filter={props.filter} onFilter={props.onFilter} />
     <ExtensionCategoryBar onChange={props.onCategory} value={props.category} />
     {!props.loading && props.all.length > 0 && props.visible.length === 0 && <div className="kit-empty">没有匹配的专家套件</div>}
     <div className="kit-grid">{props.visible.map((kit) => {
@@ -40,7 +38,7 @@ export function SkillCatalogPage(props: CommonProps & { all: SkillView[]; visibl
     {props.loading && <div className="kit-empty">正在同步公司技能…</div>}
     {!props.loading && props.all.length === 0 && <div className="kit-empty">控制中心尚未发布独立技能</div>}
     {props.error && <div className="kit-error">{props.error}</div>}
-    <ExtensionToolbar filter={props.filter} query={props.query} onFilter={props.onFilter} onQuery={props.onQuery} />
+    <ExtensionToolbar filter={props.filter} onFilter={props.onFilter} />
     <ExtensionCategoryBar onChange={props.onCategory} value={props.category} />
     {!props.loading && props.all.length > 0 && props.visible.length === 0 && <div className="kit-empty">没有匹配的 Skill</div>}
     <div className="kit-grid">{props.visible.map((skill) => {

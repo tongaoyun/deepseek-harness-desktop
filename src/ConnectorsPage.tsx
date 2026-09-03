@@ -1,4 +1,4 @@
-import { Activity, KeyRound, RefreshCw, Search, X } from 'lucide-react'
+import { Activity, KeyRound, RefreshCw, X } from 'lucide-react'
 import { type FormEvent, useEffect, useMemo, useState } from 'react'
 import { diagnoseConnectors } from './harness'
 import { connectorCategories } from './extensionCategories'
@@ -21,19 +21,19 @@ interface ConnectorsPageProps {
   loading: boolean
   catalogError: string
   syncError: string
+  query: string
   onToggle: (connectorId: string, enabled: boolean) => void
   secrets: ConnectorSecretStore
   onSaveSecrets: (connectorId: string, values: ConnectorSecretValues) => void
 }
 
 export function ConnectorsPage({
-  accessToken, catalog, runtime, loading, catalogError, syncError, onToggle, secrets, onSaveSecrets,
+  accessToken, catalog, runtime, loading, catalogError, syncError, query, onToggle, secrets, onSaveSecrets,
 }: ConnectorsPageProps) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [results, setResults] = useState<Map<string, ConnectorDiagnosticResult>>(new Map())
   const [checkedAt, setCheckedAt] = useState('')
-  const [query, setQuery] = useState('')
   const [view, setView] = useState<'enterprise' | 'connected' | 'builtin'>('enterprise')
   const [statusFilter, setStatusFilter] = useState<'all' | ConnectorCatalogEntry['status']>('all')
   const [configuring, setConfiguring] = useState<ConnectorCatalogEntry>()
@@ -124,7 +124,6 @@ export function ConnectorsPage({
       </button>
     </div>
     <div className="extension-toolbar connector-filter-toolbar">
-      <label><Search size={14} /><input aria-label="搜索连接器" onChange={(event) => setQuery(event.target.value)} placeholder="搜索连接器或工具" value={query} />{query && <button aria-label="清空搜索" onClick={() => setQuery('')} type="button"><X size={12} /></button>}</label>
       <div>{([
         ['all', '全部'], ['ready', '已就绪'], ['needs-configuration', '需要配置'], ['unavailable', '不可用'], ['disabled', '已停用'],
       ] as const).map(([id, label]) => <button className={statusFilter === id ? 'active' : ''} key={id} onClick={() => setStatusFilter(id)} type="button">{label}</button>)}</div>

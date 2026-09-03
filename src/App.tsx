@@ -6,9 +6,12 @@ import {
   FolderOpen,
   PlugZap,
   Plus,
+  RefreshCw,
+  Search,
   ShieldCheck,
   SquareCheckBig,
   WandSparkles,
+  X,
 } from 'lucide-react'
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react'
@@ -1119,7 +1122,6 @@ export default function App() {
         onToggleCollapsed={() => setSidebarCollapsed((value) => !value)}
         onToggleSearch={() => { setTaskSearchOpen((value) => !value); setTaskQuery('') }}
         page={page}
-        skillsCount={skills.length}
         taskQuery={taskQuery}
         taskSearchInputRef={taskSearchInputRef}
         taskSearchOpen={taskSearchOpen}
@@ -1129,7 +1131,7 @@ export default function App() {
       />
 
       <main className="workspace" ref={workspaceRef}>
-        <header className="topbar">
+        {page === 'chat' && <header className="topbar">
           <div className="topbar-tools">
             <FeedbackButton onFeedback={submitDesktopFeedback} variant="topbar" />
             <div className="notification-center">
@@ -1141,7 +1143,7 @@ export default function App() {
               </section>}
             </div>
           </div>
-        </header>
+        </header>}
 
         {page === 'chat' ? (
           <ChatPage
@@ -1200,7 +1202,11 @@ export default function App() {
                     ? '按专家套件声明的后台工作流创建任务；任务由 Temporal 托管，关闭电脑后仍会运行。'
                   : page === 'settings'
                     ? '管理个人记忆与当前电脑的本地能力；软件更新和反馈仍可从左下角头像打开。'
-                    : '这里将由控制中心下发公司自己的能力与权限配置。'}</p></div>{(page === 'experts' || page === 'skills' || page === 'connectors') && <button className="add-extension-button" onClick={() => setAuthoringKind(page === 'experts' ? 'expert-kit' : page === 'skills' ? 'skill' : 'connector')} type="button"><Plus size={15} />添加</button>}</div>
+                    : '这里将由控制中心下发公司自己的能力与权限配置。'}</p></div>{(page === 'experts' || page === 'skills' || page === 'connectors') && <div className="capability-page-actions">
+              <button aria-label="刷新目录" className="refresh-extension-button" disabled={expertKitsLoading} onClick={() => setExtensionSyncAttempt((value) => value + 1)} title="刷新目录" type="button"><RefreshCw className={expertKitsLoading ? 'spin' : ''} size={15} /></button>
+              <label className="capability-page-search"><Search size={14} /><input aria-label={`搜索${page === 'experts' ? '专家套件' : page === 'skills' ? '技能' : '连接器'}`} onChange={(event) => setExtensionQuery(event.target.value)} placeholder={`搜索${page === 'experts' ? '套件' : page === 'skills' ? '技能' : '连接器'}…`} value={extensionQuery} />{extensionQuery && <button aria-label="清空搜索" onClick={() => setExtensionQuery('')} type="button"><X size={12} /></button>}</label>
+              <button className="add-extension-button" onClick={() => setAuthoringKind(page === 'experts' ? 'expert-kit' : page === 'skills' ? 'skill' : 'connector')} type="button"><Plus size={15} />添加</button>
+            </div>}</div>
             {extensionSyncIssues.length > 0 && <div className="sync-diagnostics"><div><CircleStop size={17} /><span><strong>部分企业能力同步失败，已保留上次成功数据</strong><small>{extensionSyncedAt ? `最近尝试 ${extensionSyncedAt.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}` : '刚刚尝试同步'}</small></span><button onClick={() => setExtensionSyncAttempt((value) => value + 1)} type="button">重新同步</button></div><details><summary>查看 {extensionSyncIssues.length} 项失败详情</summary>{extensionSyncIssues.map((issue) => <p key={issue.key}><strong>{issue.label}</strong><span>{issue.message}</span></p>)}</details></div>}
             {catalogCacheSavedAt && extensionSyncIssues.length > 0 && <div className={`catalog-cache-state ${catalogCacheStale ? 'stale' : ''}`}><ShieldCheck size={15} /><span>{catalogCacheStale ? '本机企业目录缓存已超过 7 天，浏览仍可用，但相关能力暂停执行。' : `当前显示本机缓存 · ${new Date(catalogCacheSavedAt).toLocaleString('zh-CN', { hour12: false })}`}</span></div>}
             {page === 'settings' && bootstrap && user && <DesktopSettingsPage
@@ -1214,8 +1220,8 @@ export default function App() {
               runtimeConnectors={runtimeConnectors}
               runtimeStatus={runtimeStatus}
             />}
-            {page === 'experts' && <ExpertCatalogPage all={expertKits} category={extensionCategory} developerBusy={developerKitBusy} developerMode={developerKitMode} error={expertKitError} filter={extensionFilter} installingId={installingKitId} loading={expertKitsLoading} onCategory={setExtensionCategory} onCreate={() => void createLocalExpertKit()} onFilter={setExtensionFilter} onImport={() => void installLocalAcceptanceKit()} onOpen={setActiveExpertKitId} onQuery={setExtensionQuery} query={extensionQuery} visible={visibleExpertKits} />}
-            {page === 'skills' && <SkillCatalogPage all={skillViews} category={extensionCategory} error={expertKitError} filter={extensionFilter} loading={expertKitsLoading} onCategory={setExtensionCategory} onFilter={setExtensionFilter} onOpen={setActiveSkillId} onQuery={setExtensionQuery} query={extensionQuery} visible={visibleSkillViews} />}
+            {page === 'experts' && <ExpertCatalogPage all={expertKits} category={extensionCategory} developerBusy={developerKitBusy} developerMode={developerKitMode} error={expertKitError} filter={extensionFilter} installingId={installingKitId} loading={expertKitsLoading} onCategory={setExtensionCategory} onCreate={() => void createLocalExpertKit()} onFilter={setExtensionFilter} onImport={() => void installLocalAcceptanceKit()} onOpen={setActiveExpertKitId} visible={visibleExpertKits} />}
+            {page === 'skills' && <SkillCatalogPage all={skillViews} category={extensionCategory} error={expertKitError} filter={extensionFilter} loading={expertKitsLoading} onCategory={setExtensionCategory} onFilter={setExtensionFilter} onOpen={setActiveSkillId} visible={visibleSkillViews} />}
             {page === 'connectors' && <>
               <ConnectorsPage
                 accessToken={accessToken}
@@ -1224,6 +1230,7 @@ export default function App() {
                 loading={expertKitsLoading}
                 runtime={runtimeConnectors}
                 syncError=""
+                query={extensionQuery}
                 onToggle={toggleConnector}
                 secrets={connectorSecrets}
                 onSaveSecrets={(connectorId, values) => {

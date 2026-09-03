@@ -1,4 +1,4 @@
-import { Boxes, CalendarClock, MessageSquare, PanelLeftClose, PanelLeftOpen, PlugZap, Plus, Search, WandSparkles, X } from 'lucide-react'
+import { BookOpenCheck, Boxes, CalendarClock, MessageSquare, PanelLeftClose, PanelLeftOpen, PlugZap, Plus, Search, WandSparkles, X } from 'lucide-react'
 import { type RefObject, useState } from 'react'
 import { AccountMenu } from './AccountMenu'
 import type { LocalTaskRun } from './types'
@@ -7,6 +7,7 @@ const extensions = [
   { id: 'experts', label: '专家套件', icon: Boxes },
   { id: 'skills', label: '技能', icon: WandSparkles },
   { id: 'connectors', label: '连接器', icon: PlugZap },
+  { id: 'knowledge', label: '知识库', icon: BookOpenCheck },
 ]
 
 interface Props {
@@ -17,7 +18,6 @@ interface Props {
   taskSearchInputRef: RefObject<HTMLInputElement | null>
   tasks: LocalTaskRun[]
   visibleTasks: LocalTaskRun[]
-  skillsCount: number
   user?: { companyName?: string; department?: string; displayName?: string }
   onNewTask: () => void
   onToggleCollapsed: () => void
@@ -32,7 +32,7 @@ interface Props {
 
 export function DesktopSidebar(props: Props) {
   const [historyView, setHistoryView] = useState<'tasks' | 'channels'>('tasks')
-  const navItem = (id: string, label: string, Icon: typeof Boxes) => <button aria-current={props.page === id ? 'page' : undefined} className={props.page === id ? 'nav-item active' : 'nav-item'} onClick={() => props.onPage(id)} title={props.collapsed ? label : undefined} type="button"><Icon size={17} /><span>{label}</span>{id === 'skills' && props.skillsCount > 0 && <em>{props.skillsCount}</em>}</button>
+  const navItem = (id: string, label: string, Icon: typeof Boxes) => <button aria-current={props.page === id ? 'page' : undefined} className={props.page === id ? 'nav-item active' : 'nav-item'} onClick={() => props.onPage(id)} title={props.collapsed ? label : undefined} type="button"><Icon size={17} /><span>{label}</span></button>
   return <aside className="sidebar">
     <div className="sidebar-brand">
       <div className="sidebar-toolbar">
