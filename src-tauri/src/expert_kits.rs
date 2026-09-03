@@ -610,62 +610,6 @@ fn append_generated_file<W: Write>(
 }
 
 #[tauri::command]
-pub async fn create_expert_kit_template(
-    app: tauri::AppHandle,
-    id: String,
-    name: String,
-) -> Result<Option<String>, String> {
-    validate_identifier(&id)?;
-    if name.trim().is_empty() || name.len() > 200 {
-        return Err("专家套件名称无效".to_string());
-    }
-    let dialog_app = app.clone();
-    let selected = tauri::async_runtime::spawn_blocking(move || {
-        dialog_app
-            .dialog()
-            .file()
-            .set_title("选择专家套件工作目录")
-            .blocking_pick_folder()
-    })
-    .await
-    .map_err(|error| format!("打开目录选择器失败：{error}"))?;
-    let Some(selected) = selected else {
-        return Ok(None);
-    };
-    let parent = selected
-        .into_path()
-        .map_err(|error| format!("选择的目录无效：{error}"))?;
-    let root = parent.join(&id);
-    if root.exists() {
-        return Err("目标目录已存在，请更换套件 ID 或目录".to_string());
-    }
-    fs::create_dir_all(root.join(".xiaoyin-kit"))
-        .and_then(|_| fs::create_dir_all(root.join("skills/main")))
-        .map_err(|error| format!("无法创建专家套件模板：{error}"))?;
-    let manifest = serde_json::json!({
-        "schemaVersion": "2", "id": id, "name": name.trim(), "version": "1.0.0",
-        "summary": "请填写专家套件说明", "category": "other", "minimumDesktopVersion": env!("CARGO_PKG_VERSION"),
-        "commands": [], "skills": [{ "id": "main", "path": "skills/main/SKILL.md" }],
-        "requiredTools": [], "connectorRefs": [], "permissions": {
-            "localFiles": "approval", "shell": "deny", "computerUse": "deny",
-            "connectorRead": "deny", "connectorWrite": "deny"
-        }, "serverWorkflows": []
-    });
-    fs::write(
-        root.join(KIT_MANIFEST_PATH),
-        serde_json::to_vec_pretty(&manifest).unwrap(),
-    )
-    .and_then(|_| {
-        fs::write(
-            root.join("skills/main/SKILL.md"),
-            format!("# {}\n\n在这里编写专家工作方法。\n", name.trim()),
-        )
-    })
-    .map_err(|error| format!("无法写入专家套件模板：{error}"))?;
-    Ok(Some(root.to_string_lossy().into_owned()))
-}
-
-#[tauri::command]
 pub async fn customize_expert_kit(
     app: tauri::AppHandle,
     id: String,

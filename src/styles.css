@@ -72,12 +72,11 @@ button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 2px
 .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #d7a24c; }.status-dot.ready { background: #50a96c; }.status-dot.offline { background: #c96558; }
 
 .workspace { position: relative; min-width: 0; overflow: auto; background: #fff; }
-.topbar { position: sticky; z-index: 5; top: 0; display: flex; justify-content: flex-end; gap: 8px; height: 48px; padding: 8px 18px; background: #ffffffeb; backdrop-filter: blur(10px); }.topbar button { display: flex; align-items: center; gap: 5px; padding: 6px 8px; border: 0; border-radius: 7px; color: #6f766f; background: transparent; cursor: pointer; font-size: 11px; }.topbar button:hover { background: #f0f3ef; }
 .connection-state { display: flex; align-items: center; gap: 6px; margin-right: auto; color: #5f6a61; font-size: 10px; }.connection-state:disabled { cursor: wait; }.connection-state i { width: 7px; height: 7px; border-radius: 50%; background: #dda147; }.connection-state.connecting i { animation: connection-pulse 1.3s ease-in-out infinite; }.connection-state.ready i { background: #4fa46a; }.connection-state.offline i { background: #c96558; }.connection-state.offline:hover { color: #9c4f46; background: #faecea; }
 @keyframes connection-pulse { 50% { box-shadow: 0 0 0 4px #dda14728; opacity: .62; } }
 .chat-page { display: flex; flex-direction: column; width: min(900px, calc(100% - 80px)); min-height: calc(100vh - 48px); margin: 0 auto; padding: 145px 0 40px; }
 .chat-page.conversation { position: relative; width: min(960px, calc(100% - 64px)); height: calc(100vh - 48px); min-height: 0; padding: 0 0 16px; }
-.hero-copy { margin-bottom: 24px; }.hero-copy h1 { margin: 12px 0 0; font-size: 30px; line-height: 1.25; letter-spacing: -.045em; }.hero-copy p { margin: 9px 0 0; color: #858b85; font-size: 13px; }.hero-copy .xiaoyin-mascot { margin-bottom: 0; }
+.hero-copy { margin-bottom: 24px; }.hero-copy h1 { margin: 0; font-size: 30px; line-height: 1.25; letter-spacing: -.045em; }
 @keyframes surface-enter { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: translateY(0); } }
 .message-list { display: flex; min-height: 0; flex: 1; flex-direction: column; gap: 34px; overflow-y: auto; padding: 28px 4px 36px; scrollbar-gutter: stable; }
 .conversation-turn { width: 100%; min-width: 0; animation: surface-enter .28s ease-out; }
@@ -305,29 +304,12 @@ button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 2px
 .fatal-state p { max-width: 440px; margin: 0; color: #728079; font-size: 11px; line-height: 1.7; }
 .fatal-state button { margin-top: 22px; padding: 10px 17px; border: 0; border-radius: 9px; color: #fff; background: #347b4d; cursor: pointer; font-size: 11px; font-weight: 750; }
 
-/* Runtime recovery, notifications and local-file drop affordances. */
+/* Runtime recovery and local-file drop affordances. */
 .account-menu[hidden] { display: none; }
-.topbar-tools { display: flex; align-items: center; gap: 5px; }
 .harness-state i { width: 7px; height: 7px; border-radius: 50%; background: #53a36b; }
 .harness-state.checking i { background: #dda147; animation: connection-pulse 1.3s ease-in-out infinite; }
 .harness-state.degraded { color: #9c4f46 !important; background: #fff3f1 !important; }
 .harness-state.degraded i { background: #c96558; }
-.notification-center { position: relative; }
-.notification-trigger { position: relative; display: grid !important; width: 31px; height: 31px; place-items: center; }
-.notification-trigger > span { position: absolute; top: 1px; right: 0; display: grid; min-width: 14px; height: 14px; place-items: center; padding: 0 3px; border: 2px solid #fff; border-radius: 999px; color: #fff; background: #c65f52; font-size: 7px; font-weight: 800; }
-.notification-popover { position: absolute; z-index: 90; top: 38px; right: 0; width: 330px; overflow: hidden; border: 1px solid #dce3dd; border-radius: 13px; background: #fff; box-shadow: 0 18px 48px #17241a26; animation: popover-enter .15s ease-out; }
-.notification-popover header { display: flex; align-items: baseline; justify-content: space-between; padding: 14px 15px; border-bottom: 1px solid #edf0ed; }
-.notification-popover header strong { font-size: 12px; }
-.notification-popover header small { color: #8b938c; font-size: 8px; }
-.notification-popover article { display: flex; gap: 9px; padding: 12px 15px; border-bottom: 1px solid #f0f2f0; }
-.notification-popover article > i { width: 7px; height: 7px; flex: none; margin-top: 4px; border-radius: 50%; background: #d49b45; }
-.notification-popover article.danger > i { background: #c65f52; }
-.notification-popover article span, .notification-popover article strong, .notification-popover article small { display: block; }
-.notification-popover article strong { color: #39443c; font-size: 10px; }
-.notification-popover article small { margin-top: 4px; color: #7e887f; font-size: 8px; line-height: 1.5; }
-.notification-popover footer { padding: 8px; }
-.notification-popover footer button { width: 100%; justify-content: center; color: #347b4d; background: #edf6ef; }
-.notification-empty { display: flex; align-items: center; justify-content: center; gap: 7px; padding: 28px 15px; color: #718077; font-size: 10px; }
 .cancel-button { display: grid; width: 32px; height: 32px; place-items: center; border: 0; border-radius: 50%; color: #fff; background: #b8584e; cursor: pointer; }
 .cancel-button:hover { background: #9e473f; }
 .retry-task { margin-top: 7px; padding: 6px 9px; border: 1px solid #cdddcf; border-radius: 7px; color: #347b4d; background: #f7fbf8; cursor: pointer; font-size: 9px; }

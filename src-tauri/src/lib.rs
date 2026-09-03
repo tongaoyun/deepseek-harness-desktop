@@ -96,7 +96,6 @@ pub fn run() {
             expert_kits::create_developer_extension,
             expert_kits::read_developer_extension,
             expert_kits::package_developer_extension,
-            expert_kits::create_expert_kit_template,
             expert_kits::customize_expert_kit,
             expert_kits::export_expert_kit,
             expert_kits::remove_developer_expert_kit,

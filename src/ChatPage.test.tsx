@@ -17,7 +17,7 @@ describe('ChatPage conversation', () => {
         { role: 'assistant', text: '冒泡排序会比较相邻元素。', monitor },
       ]} modelMenuOpen={false} modelPickerRef={{ current: null }} models={[]} onAddKnowledge={() => undefined}
       onAddLocalDirectory={() => undefined} onCancel={() => undefined} onSelectCapability={() => undefined}
-      onPrepareRetry={() => undefined} onPrompt={() => undefined} onRecoverHarness={() => undefined}
+      onPrepareRetry={() => undefined} onPrompt={() => undefined} onReconnect={() => undefined} onRecoverHarness={() => undefined}
       onRemoveAttachment={() => undefined} onRemoveKnowledge={() => undefined} onRemoveLocalDirectory={() => undefined} onSelectInvocation={() => undefined}
       onSelectModel={() => undefined} onSubmit={() => undefined} onToggleModelMenu={() => undefined} prompt=""
       runtimeStatus="ready" selectedCapabilityExecutable selectedCapabilityId="" selectedCapabilityName="通用" selectedKnowledgeBaseRefs={[]}
@@ -44,7 +44,7 @@ describe('ChatPage conversation', () => {
         { role: 'assistant', text: '正在列出下载目录中的文件', pending: true, monitor },
       ]} modelMenuOpen={false} modelPickerRef={{ current: null }} models={[]} onAddKnowledge={() => undefined}
       onAddLocalDirectory={() => undefined} onCancel={() => undefined} onSelectCapability={() => undefined}
-      onPrepareRetry={() => undefined} onPrompt={() => undefined} onRecoverHarness={() => undefined}
+      onPrepareRetry={() => undefined} onPrompt={() => undefined} onReconnect={() => undefined} onRecoverHarness={() => undefined}
       onRemoveAttachment={() => undefined} onRemoveKnowledge={() => undefined} onRemoveLocalDirectory={() => undefined}
       onSelectInvocation={() => undefined} onSelectModel={() => undefined} onSubmit={() => undefined}
       onToggleModelMenu={() => undefined} pendingAttachments={[{

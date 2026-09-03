@@ -1,4 +1,4 @@
-import { Bot, Check, Clock3, MessageCircle, MoreHorizontal, RefreshCw, ShieldCheck, X } from 'lucide-react'
+import { Bot, Clock3, MessageCircle, MoreHorizontal, RefreshCw, ShieldCheck, X } from 'lucide-react'
 import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   allowLocalImPairing,
@@ -8,7 +8,6 @@ import {
   removeLocalDingTalk,
   setLocalImEnabled,
   unbindLocalImTask,
-  type ImAccessPolicy,
   type LocalImHarnessContext,
   type LocalImStatus,
 } from './localIm'
@@ -31,7 +30,6 @@ export function ImChannelsPage(harness: Props) {
   const [pairingOpen, setPairingOpen] = useState(false)
   const [clientId, setClientId] = useState('')
   const [clientSecret, setClientSecret] = useState('')
-  const [accessPolicy, setAccessPolicy] = useState<ImAccessPolicy>('pairing')
   const [notifyTaskResults, setNotifyTaskResults] = useState(false)
   const [taskSelections, setTaskSelections] = useState<Record<string, string>>({})
   const [activeConversationKey, setActiveConversationKey] = useState('')
@@ -43,7 +41,6 @@ export function ImChannelsPage(harness: Props) {
       setStatus(value)
       if (!initialized.current) {
         initialized.current = true
-        setAccessPolicy(value.accessPolicy)
         setNotifyTaskResults(value.notifyTaskResults)
       }
       setClientId((current) => current || value.clientId)
@@ -91,7 +88,7 @@ export function ImChannelsPage(harness: Props) {
     setError('')
     try {
       const value = await configureLocalDingTalk({
-        clientId, clientSecret, enabled: true, accessPolicy, notifyTaskResults, harness: harnessContext,
+        clientId, clientSecret, enabled: true, accessPolicy: 'open', notifyTaskResults, harness: harnessContext,
       })
       setStatus(value)
       setClientSecret('')
@@ -171,7 +168,6 @@ export function ImChannelsPage(harness: Props) {
   }
 
   const openConfiguration = () => {
-    setAccessPolicy(status?.accessPolicy ?? 'pairing')
     setNotifyTaskResults(status?.notifyTaskResults ?? false)
     setConfiguring(true)
   }
@@ -211,10 +207,7 @@ export function ImChannelsPage(harness: Props) {
       <p>在钉钉开放平台创建企业内部应用并启用机器人与 Stream 模式，然后填写应用凭据。</p>
       <label>Client ID（AppKey）<input autoComplete="off" onChange={(event) => setClientId(event.target.value)} required value={clientId} /></label>
       <label>Client Secret（AppSecret）<input autoComplete="new-password" onChange={(event) => setClientSecret(event.target.value)} placeholder={status?.secretConfigured ? '重新配置时必须重新填写' : ''} required type="password" value={clientSecret} /></label>
-      <fieldset><legend>准入策略</legend>
-        <button className={accessPolicy === 'pairing' ? 'active' : ''} onClick={() => setAccessPolicy('pairing')} type="button"><span><strong>配对模式</strong><small>需经您允许后，对应会话才能使用</small></span>{accessPolicy === 'pairing' && <Check size={16} />}</button>
-        <button className={accessPolicy === 'open' ? 'active' : ''} onClick={() => setAccessPolicy('open')} type="button"><span><strong>开放模式</strong><small>所有人和群可直接对话</small></span>{accessPolicy === 'open' && <Check size={16} />}</button>
-      </fieldset>
+      {status?.accessPolicy === 'pairing' && <div className="im-security-note">重新保存后将切换为公司内开放使用，不再需要逐个配对。</div>}
       <label className="im-notification-toggle"><input checked={notifyTaskResults} onChange={(event) => setNotifyTaskResults(event.target.checked)} type="checkbox" /><span><strong>推送云端任务结果</strong><small>仅投递到创建定时任务时明确选择的钉钉会话；未选择则不推送</small></span></label>
       <div className="im-security-note"><ShieldCheck size={15} />Client Secret 只写入 Windows Credential Manager 或 macOS Keychain。</div>
       <div className="im-modal-actions">{status?.configured && <button className="danger" onClick={() => void remove()} type="button">移除配置</button>}<button disabled={loading} type="submit">{loading ? '正在连接…' : '保存并连接'}</button></div>

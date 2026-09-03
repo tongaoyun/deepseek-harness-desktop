@@ -43,7 +43,6 @@ import type {
   ConnectorAuthMode,
   ConnectorTransport,
   ExpertKitManifest,
-  PermissionMode,
 } from './types'
 
 export type AuthoringChange =
@@ -103,8 +102,9 @@ const defaults: AuthoringForm = {
   authMode: 'none',
 }
 
-const defaultPermissions: Record<string, PermissionMode> = {
-  localFiles: 'deny', shell: 'deny', computerUse: 'deny', connectorRead: 'allow', connectorWrite: 'approval',
+const standardPermissions: ExpertKitManifest['permissions'] = {
+  localFiles: 'approval', shell: 'approval', computerUse: 'approval',
+  connectorRead: 'allow', connectorWrite: 'approval',
 }
 
 export function ExtensionAuthoringModal({
@@ -114,7 +114,6 @@ export function ExtensionAuthoringModal({
   const [kind, setKind] = useState<ExtensionKind>(initialKind)
   const [tab, setTab] = useState<'create' | 'mine'>('create')
   const [form, setForm] = useState(defaults)
-  const [permissions, setPermissions] = useState<Record<string, PermissionMode>>(defaultPermissions)
   const [submissions, setSubmissions] = useState<ExtensionSubmission[]>([])
   const [localCreations, setLocalCreations] = useState<LocalCreation[]>([])
   const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>([])
@@ -128,7 +127,7 @@ export function ExtensionAuthoringModal({
   const [savedConnector, setSavedConnector] = useState<ConnectorCatalogEntry>()
   const [savedFingerprint, setSavedFingerprint] = useState('')
   const [validationEvidence, setValidationEvidence] = useState<{ fingerprint: string; report: ExtensionValidationReport }>()
-  const draftFingerprint = JSON.stringify({ kind, form, permissions, selectedSkillIds })
+  const draftFingerprint = JSON.stringify({ kind, form, selectedSkillIds })
   const currentDraftSaved = savedFingerprint === draftFingerprint
 
   const refreshMine = async () => {
@@ -187,7 +186,6 @@ export function ExtensionAuthoringModal({
   const startNew = (nextKind = kind) => {
     setKind(nextKind)
     setForm(defaults)
-    setPermissions(defaultPermissions)
     setSelectedSkillIds([])
     setEditing(undefined)
     resetDraftState()
@@ -238,7 +236,6 @@ export function ExtensionAuthoringModal({
         connectorRefs: manifest.connectorRefs.join(', '),
         requiredTools: manifest.requiredTools.join(', '),
       })
-      setPermissions({ ...defaultPermissions, ...manifest.permissions })
       setSelectedSkillIds(local.kind === 'expert-kit'
         ? manifest.skills.map((skill) => skill.id).filter((id) => id !== 'main')
         : [])
@@ -269,7 +266,7 @@ export function ExtensionAuthoringModal({
         setEditing({ kind, id: connector.id, version: connector.version! })
         await onChanged({ type: 'connector-upsert', connector: template, secrets })
       } else {
-        const manifest = manifestFromForm(kind, form, permissions, selectedSkillIds)
+        const manifest = manifestFromForm(kind, form, selectedSkillIds)
         const skillSources = kind === 'expert-kit' ? selectedSkillIds.map((id) => {
           const skill = skills.find((item) => item.id === id && item.installed)
           if (!skill?.installedVersion) throw new Error(`Skill ${id} 尚未安装到本机`)
@@ -372,7 +369,7 @@ export function ExtensionAuthoringModal({
       const nextForm = result.discoveredTools.length > 0 ? { ...form, toolNames: result.discoveredTools.join(', ') } : form
       if (nextForm !== form) setForm(nextForm)
       setValidationEvidence({
-        fingerprint: JSON.stringify({ kind, form: nextForm, permissions, selectedSkillIds }),
+        fingerprint: JSON.stringify({ kind, form: nextForm, selectedSkillIds }),
         report: {
           type: 'CONNECTOR_DIAGNOSTIC', status: 'PASSED', prompt: '', model: '',
           latencyMs: result.latencyMs, discoveredTools: result.discoveredTools,
@@ -464,7 +461,6 @@ export function ExtensionAuthoringModal({
             {kind === 'skill' && <label className="wide">所需工具<input value={form.requiredTools} onChange={(event) => setForm({ ...form, requiredTools: event.target.value })} /></label>}
             {(kind === 'skill' || selectedSkillIds.length === 0) && <label className="wide">{kind === 'skill' ? '执行说明' : '内置 Skill 执行说明'}<textarea required value={form.instructions} onChange={(event) => setForm({ ...form, instructions: event.target.value })} /></label>}
             {kind === 'expert-kit' && selectedSkillIds.length > 0 && <div className="expert-composer-packaging wide">保存时会把 {selectedSkillIds.length} 个已安装 Skill 的执行说明复制进套件制品，套件可独立安装和审核。</div>}
-            <fieldset className="wide"><legend>权限</legend>{Object.keys(permissions).map((key) => <label key={key}>{permissionLabel(key)}<select value={permissions[key]} onChange={(event) => setPermissions({ ...permissions, [key]: event.target.value as PermissionMode })}><option value="deny">禁止</option><option value="approval">需确认</option><option value="allow">允许</option></select></label>)}</fieldset>
           </>}
         </div>
         {kind !== 'connector' && <ExtensionPreviewPanel
@@ -493,7 +489,7 @@ function connectorFromForm(form: AuthoringForm): ConnectorCatalogEntry {
   return { id: form.id, name: form.name, version: form.version, summary: form.summary, category: form.category as ConnectorCategory, kind: 'managed-mcp', scope: 'PERSONAL', status: 'ready', managed: false, transport: form.transport, url: form.transport === 'stdio' ? '' : form.url.trim(), authMode: form.transport === 'stdio' ? 'none' : form.authMode, toolNames: split(form.toolNames), command: form.transport === 'stdio' ? form.command.trim() : '', arguments: form.transport === 'stdio' ? lines(form.arguments) : [], environment: form.transport === 'stdio' ? parseRecord(form.environment, '环境变量') : {}, headers: form.transport === 'stdio' ? {} : parseRecord(form.headers, 'Headers') }
 }
 
-function manifestFromForm(kind: 'expert-kit' | 'skill', form: AuthoringForm, permissions: Record<string, PermissionMode>, selectedSkillIds: string[]): ExpertKitManifest {
+function manifestFromForm(kind: 'expert-kit' | 'skill', form: AuthoringForm, selectedSkillIds: string[]): ExpertKitManifest {
   return {
     schemaVersion: kind === 'expert-kit' ? '2' : '1', kind, id: form.id, name: form.name, version: form.version, summary: form.summary, category: form.category as ExtensionCategory,
     triggers: split(form.triggers), minimumDesktopVersion: '0.1.30', commands: [],
@@ -501,7 +497,7 @@ function manifestFromForm(kind: 'expert-kit' | 'skill', form: AuthoringForm, per
       ? selectedSkillIds.map((id) => ({ id, path: `skills/${id}/SKILL.md` }))
       : [{ id: kind === 'skill' ? form.id : 'main', path: kind === 'skill' ? 'SKILL.md' : 'skills/main/SKILL.md' }],
     requiredTools: split(form.requiredTools), connectorRefs: split(form.connectorRefs), knowledgeBaseRefs: [],
-    permissions: permissions as ExpertKitManifest['permissions'], serverWorkflows: [],
+    permissions: standardPermissions, serverWorkflows: [],
   }
 }
 
@@ -522,4 +518,3 @@ function bumpVersion(value: string) { const match = /^(\d+)\.(\d+)\.(\d+)/.exec(
 function kindLabel(value: ExtensionKind) { return value === 'expert-kit' ? '专家套件' : value === 'skill' ? 'Skill' : 'MCP 连接器' }
 function categoryLabel(kind: ExtensionKind, value: string) { return kind === 'connector' ? connectorCategoryLabel(value) : extensionCategoryLabel(value) }
 function statusLabel(value: ExtensionSubmission['status']) { return { DRAFT: '个人草稿', SUBMITTED: '待审核', CHANGES_REQUESTED: '待修改', REJECTED: '已拒绝', PUBLISHED: '已发布', UNPUBLISHED: '已下架' }[value] }
-function permissionLabel(value: string) { return ({ localFiles: '本地文件', shell: 'Shell', computerUse: '电脑操作', connectorRead: '连接器读取', connectorWrite: '连接器写入' } as Record<string, string>)[value] }
