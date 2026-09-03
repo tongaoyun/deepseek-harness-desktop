@@ -3,10 +3,9 @@ import { type FormEvent, useEffect, useState } from 'react'
 
 interface Props {
   onFeedback: (message: string) => Promise<void>
-  variant: 'menu' | 'topbar'
 }
 
-export function FeedbackButton({ onFeedback, variant }: Props) {
+export function FeedbackButton({ onFeedback }: Props) {
   const [open, setOpen] = useState(false)
   const [feedback, setFeedback] = useState('')
   const [state, setState] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle')
@@ -38,9 +37,7 @@ export function FeedbackButton({ onFeedback, variant }: Props) {
   }
 
   return <>
-    {variant === 'topbar'
-      ? <button className="topbar-feedback" onClick={show} type="button"><HelpCircle size={15} />问题反馈</button>
-      : <button onClick={show} type="button"><HelpCircle size={16} /><span><strong>反馈与帮助</strong><small>提交问题或改进建议</small></span></button>}
+    <button onClick={show} type="button"><HelpCircle size={16} /><span><strong>反馈与帮助</strong><small>提交问题或改进建议</small></span></button>
     {open && <div className="feedback-overlay" onMouseDown={(event) => { if (event.target === event.currentTarget) setOpen(false) }} role="presentation"><form aria-labelledby="feedback-title" aria-modal="true" className="feedback-dialog" onMouseDown={(event) => event.stopPropagation()} onSubmit={submit} role="dialog">
       <button aria-label="关闭反馈" className="feedback-close" onClick={() => setOpen(false)} type="button"><X size={16} /></button>
       <span className="feedback-icon"><MessageSquareWarning size={22} /></span><small>反馈与帮助</small><h2 id="feedback-title">告诉我们哪里需要改进</h2>

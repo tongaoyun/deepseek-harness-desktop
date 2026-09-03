@@ -40,7 +40,7 @@ export function AccountMenu({ companyName, department, displayName, onFeedback, 
         <div className="account-menu-items">
           <button onClick={() => { setMenuOpen(false); onSettings() }} type="button"><Settings size={16} /><span><strong>桌面设置</strong><small>记忆、设备能力与运行环境</small></span></button>
           <DesktopUpdater onAvailabilityChange={setUpdateAvailable} variant="menu" />
-          <FeedbackButton onFeedback={onFeedback} variant="menu" />
+          <FeedbackButton onFeedback={onFeedback} />
         </div>
         <button className="account-logout" onClick={() => void onLogout()} type="button"><LogOut size={16} />退出登录</button>
       </section>

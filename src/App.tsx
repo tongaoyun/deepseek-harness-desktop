@@ -104,7 +104,6 @@ import type { ExtensionCategoryFilter } from './extensionCategories'
 import { ExpertCatalogPage, SkillCatalogPage } from './ExtensionCatalogPages'
 import { ExtensionAuthoringModal } from './ExtensionAuthoringModal'
 import { loadPersonalConnectors, type ExtensionKind } from './extensionSubmissions'
-import { FeedbackButton } from './FeedbackButton'
 import './styles.css'
 
 const extensionNav = [
@@ -1133,7 +1132,6 @@ export default function App() {
       <main className="workspace" ref={workspaceRef}>
         {page === 'chat' && <header className="topbar">
           <div className="topbar-tools">
-            <FeedbackButton onFeedback={submitDesktopFeedback} variant="topbar" />
             <div className="notification-center">
               <button aria-expanded={notificationOpen} aria-label="通知中心" className="notification-trigger" onClick={() => setNotificationOpen((value) => !value)} type="button"><Bell size={16} />{notifications.length > 0 && <span>{notifications.length}</span>}</button>
               {notificationOpen && <section className="notification-popover"><header><strong>通知中心</strong><small>{notifications.length ? `${notifications.length} 项需要处理` : '当前运行正常'}</small></header>{notifications.length
