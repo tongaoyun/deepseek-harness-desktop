@@ -1,9 +1,9 @@
 import { createRequire } from 'node:module'
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { mkdir, writeFile } from 'node:fs/promises'
-import { DeepSeekHarness, type ContentBlock, type HarnessNotification } from '@deepseek-ai/dsh-sdk-client'
+import { DeepSeekHarness, type ContentBlock, type HarnessClient, type HarnessNotification } from '@deepseek-ai/dsh-sdk-client'
 import { AttachmentId, type ImageAttachmentRef, type ImageMediaType } from '@deepseek-ai/dsh-attachment'
 import { imageMetadata } from './local-attachment-store-plugin.js'
 
@@ -71,14 +71,9 @@ export class DeepSeekHarnessRuntime implements HarnessRuntime {
     const content: string | ContentBlock[] = images.length === 0 ? prompt : [
       { type: 'text', text: prompt }, ...images.map((attachment) => ({ type: 'image' as const, attachment })),
     ]
-    const result = await harness.run(content, {
-      ...(input.sessionId === undefined ? {} : { sessionId: input.sessionId }),
-      onNotification,
-    })
-    return {
-      sessionId: result.sessionId,
-      finalResponse: result.finalResponse,
-    }
+    const sessionId = input.sessionId ?? `session-${randomUUID().replaceAll('-', '')}`
+    await harness.start()
+    return runSessionTurn(harness.client, sessionId, normalizeContent(content), onNotification)
   }
 
   async close(): Promise<void> {
@@ -117,6 +112,87 @@ export class DeepSeekHarnessRuntime implements HarnessRuntime {
     })
     return this.harness
   }
+}
+
+interface SessionSubscription {
+  next(): Promise<HarnessNotification>
+  close(): void
+}
+
+interface SessionClient {
+  prompt(sessionId: string, contentBlocks: ContentBlock[]): Promise<string>
+  subscribeSessionTree(sessionId: string): SessionSubscription
+}
+
+/**
+ * Collect one real turn. The upstream SDK currently treats a stale `idle`
+ * emitted while restoring a persisted session as the end of the new prompt.
+ * Waiting for `turn/start` prevents successful-but-empty follow-up results.
+ */
+export async function runSessionTurn(
+  client: Pick<HarnessClient, 'prompt' | 'subscribeSessionTree'> | SessionClient,
+  sessionId: string,
+  content: ContentBlock[],
+  onNotification: (value: HarnessNotification) => void,
+): Promise<HarnessRunResult> {
+  const subscription = client.subscribeSessionTree(sessionId)
+  let receivedPrompt = false
+  let turnStarted = false
+  let finalResponse = ''
+  try {
+    const messageId = await client.prompt(sessionId, content)
+    for (;;) {
+      const notification = await subscription.next()
+      if (!receivedPrompt) {
+        if (!isPromptReceipt(notification, sessionId, messageId)) continue
+        receivedPrompt = true
+      }
+      onNotification(notification)
+      const event = sessionEvent(notification, sessionId)
+      if (event?.type === 'turn/start') turnStarted = true
+      if (event?.type === 'assistant/message') {
+        turnStarted = true
+        finalResponse = assistantText(event)
+      }
+      if (turnStarted && notification.method === 'session.status'
+        && notification.params.sessionId === sessionId && notification.params.status === 'idle') break
+    }
+  } finally {
+    subscription.close()
+  }
+  if (!finalResponse.trim()) throw new Error('模型本轮没有返回可显示文本，请重试')
+  return { sessionId, finalResponse }
+}
+
+function normalizeContent(content: string | ContentBlock[]): ContentBlock[] {
+  return typeof content === 'string' ? [{ type: 'text', text: content }] : content
+}
+
+function isPromptReceipt(notification: HarnessNotification, sessionId: string, messageId: string): boolean {
+  const event = sessionEvent(notification, sessionId)
+  if (event?.type !== 'agent/inbox/spliced') return false
+  const data = record(event.data)
+  return Array.isArray(data?.inserted) && data.inserted.some((item) => record(item)?.id === messageId)
+}
+
+function sessionEvent(notification: HarnessNotification, sessionId: string): Record<string, unknown> | undefined {
+  if (notification.method !== 'session.event' || notification.params.sessionId !== sessionId) return undefined
+  return record(notification.params.event)
+}
+
+function assistantText(event: Record<string, unknown>): string {
+  const message = record(record(event.data)?.message)
+  const content = message?.content
+  if (!Array.isArray(content)) return ''
+  return content.map((block) => {
+    const value = record(block)
+    return value?.type === 'text' && typeof value.text === 'string' ? value.text : ''
+  }).join('')
+}
+
+function record(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown> : undefined
 }
 
 async function persistInputImage(input: ImageRunInput): Promise<ImageAttachmentRef> {

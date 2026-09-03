@@ -787,9 +787,10 @@ export default function App() {
         accessToken,
         localFileRootIds: taskDirectories.map((directory) => directory.id),
       })
+      if (!result.finalResponse.trim()) throw new Error('模型本轮没有返回可显示文本，请重试')
       setHarnessSessionId(result.sessionId)
       const completedMessages = pendingMessages.map((message, index) => index === pendingMessages.length - 1
-        ? { role: 'assistant', text: result.finalResponse || '任务已执行完成，但模型没有返回文本。' }
+        ? { role: 'assistant', text: result.finalResponse }
         : message) as TaskMessage[]
       const completedMonitor: TaskMonitorState = {
         ...taskMonitorRef.current, status: 'completed', activity: '任务已完成', updatedAt: new Date().toISOString(),
