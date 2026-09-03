@@ -36,6 +36,7 @@ import {
   exportExpertKit,
   installDeveloperExpertKit,
   installExtension,
+  installedExtensionSnapshot,
   listInstalledExtensions,
   mergeExpertKits,
   removeCatalogExtension,
@@ -495,16 +496,20 @@ export default function App() {
     const heartbeat = async () => {
       try {
         const probe = await inspectDeviceCapabilities()
+        const installed = await listInstalledExtensions()
         if (!stopped && /^\d+\.\d+\.\d+$/.test(probe.desktopVersion)) {
           await submitDeviceHeartbeat(bootstrap.endpoints.deviceCapabilities ?? '/api/v1/device-capabilities',
-            user.userId, accessToken, probe)
+            user.userId, accessToken, { ...probe, installedExtensions: installedExtensionSnapshot(installed, [
+              ...expertKitCatalog.map(({ id, version }) => ({ kind: 'expert-kit' as const, id, version })),
+              ...skills.map(({ id, version }) => ({ kind: 'skill' as const, id, version })),
+            ]) })
         }
       } catch { /* heartbeat is best-effort and must not interrupt employee work */ }
     }
     void heartbeat()
     const timer = window.setInterval(() => void heartbeat(), 6 * 60 * 60 * 1000)
     return () => { stopped = true; window.clearInterval(timer) }
-  }, [accessToken, authState, bootstrap, runtimeStatus, user])
+  }, [accessToken, authState, bootstrap, expertKitCatalog, runtimeStatus, skills, user])
 
   useEffect(() => {
     if (authState !== 'authenticated' || runtimeStatus !== 'ready' || !bootstrap || !user) return
@@ -867,6 +872,17 @@ export default function App() {
     extensionCacheRef.current.installed = installed
     setExpertKits(mergeExpertKits(expertKitCatalog, installed, connectors, knowledgeBases, enabledConnectorIds))
     setSkillViews(mergeSkills(skills, installed, connectors, knowledgeBases, enabledConnectorIds))
+    if (bootstrap && user) {
+      const probe = await inspectDeviceCapabilities()
+      if (/^\d+\.\d+\.\d+$/.test(probe.desktopVersion)) {
+        await submitDeviceHeartbeat(bootstrap.endpoints.deviceCapabilities ?? '/api/v1/device-capabilities',
+          user.userId, accessToken, { ...probe, installedExtensions: installedExtensionSnapshot(installed, [
+            ...expertKitCatalog.map(({ id, version }) => ({ kind: 'expert-kit' as const, id, version })),
+            ...skills.map(({ id, version }) => ({ kind: 'skill' as const, id, version })),
+          ]) })
+          .catch(() => undefined)
+      }
+    }
   }
 
   const installSkill = async (skill: SkillView) => {
@@ -1077,6 +1093,8 @@ export default function App() {
     ...(localImError ? [{ key: 'local-im', title: '本机 IM 频道异常', detail: localImError, tone: 'danger' }] : []),
     ...failedCloudRuns.map((run) => ({ key: `run-${run.runId}`, title: `定时任务失败：${run.name}`, detail: new Date(run.startedAt).toLocaleString(), tone: 'danger' })),
     ...extensionSyncIssues.map((issue) => ({ key: `sync-${issue.key}`, title: `${issue.label}同步失败`, detail: issue.message, tone: 'warning' })),
+    ...(expertKits.some((kit) => kit.installState === 'update') ? [{ key: 'expert-updates', title: '专家套件有可用更新', detail: `${expertKits.filter((kit) => kit.installState === 'update').length} 个套件等待确认`, tone: 'warning' }] : []),
+    ...(skillViews.some((skill) => skill.installState === 'update') ? [{ key: 'skill-updates', title: 'Skills 有可用更新', detail: `${skillViews.filter((skill) => skill.installState === 'update').length} 个 Skill 等待确认`, tone: 'warning' }] : []),
   ]
 
   return (
@@ -1114,7 +1132,7 @@ export default function App() {
               {notificationOpen && <section className="notification-popover"><header><strong>通知中心</strong><small>{notifications.length ? `${notifications.length} 项需要处理` : '当前运行正常'}</small></header>{notifications.length
                 ? notifications.map((item) => <article className={item.tone} key={item.key}><i /><span><strong>{item.title}</strong><small>{item.detail}</small></span></article>)
                 : <div className="notification-empty"><SquareCheckBig size={20} />暂无待处理事项</div>}
-                {notifications.length > 0 && <footer><button onClick={() => { setNotificationOpen(false); setPage(localImError ? 'im' : failedCloudRuns.length ? 'tasks' : 'settings') }} type="button">{localImError ? '打开 IM 频道' : failedCloudRuns.length ? '打开任务中心' : '打开运行诊断'}</button></footer>}
+                {notifications.length > 0 && <footer><button onClick={() => { setNotificationOpen(false); setPage(localImError ? 'im' : failedCloudRuns.length ? 'tasks' : expertKits.some((kit) => kit.installState === 'update') ? 'experts' : skillViews.some((skill) => skill.installState === 'update') ? 'skills' : 'settings') }} type="button">{localImError ? '打开 IM 频道' : failedCloudRuns.length ? '打开任务中心' : expertKits.some((kit) => kit.installState === 'update') ? '查看套件更新' : skillViews.some((skill) => skill.installState === 'update') ? '查看 Skill 更新' : '打开运行诊断'}</button></footer>}
               </section>}
             </div>
           </div>
