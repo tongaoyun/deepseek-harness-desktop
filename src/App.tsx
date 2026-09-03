@@ -120,7 +120,7 @@ interface ExtensionSyncIssue {
 type HarnessHealth = 'checking' | 'ready' | 'degraded'
 
 export default function App() {
-  const { accessToken, error: authError, logout, reopen, state: authState, user } = useEnterpriseSession()
+  const { accessToken, authorizing, error: authError, logout, reopen, state: authState, user } = useEnterpriseSession()
   const [bootstrap, setBootstrap] = useState<BootstrapResponse>()
   const [runtimeStatus, setRuntimeStatus] = useState<RuntimeStatus>('connecting')
   const [prompt, setPrompt] = useState('')
@@ -555,7 +555,7 @@ export default function App() {
   )
 
   if (authState !== 'authenticated') {
-    return <ErpAuthScreen checking={authState === 'checking'} error={authError} onReopen={() => void reopen()} />
+    return <ErpAuthScreen authorizing={authorizing} checking={authState === 'checking'} error={authError} onReopen={() => void reopen()} />
   }
 
   const selectedExpertKit = expertKits.find((kit) => kit.id === selectedExpertKitId

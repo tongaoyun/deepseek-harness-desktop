@@ -87,7 +87,7 @@ pub fn run() {
             erp_auth::clear_erp_session,
             erp_auth::open_erp_login,
             erp_auth::erp_qr_login_configuration,
-            erp_auth::poll_erp_qr_login,
+            erp_auth::complete_erp_qr_login,
             device_capabilities::inspect_device_capabilities,
             expert_kits::list_installed_expert_kits,
             expert_kits::install_expert_kit,
