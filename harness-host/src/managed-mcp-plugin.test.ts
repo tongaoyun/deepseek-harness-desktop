@@ -5,6 +5,7 @@ import {
   diagnoseConnector,
   diagnosticError,
   selectTools,
+  uniqueHarnessToolName,
 } from './managed-mcp-plugin.js'
 
 const tools: Tool[] = [
@@ -23,6 +24,17 @@ const tools: Tool[] = [
 ]
 
 describe('managed MCP tool selection', () => {
+  it('exposes provider-safe unique names without changing the upstream MCP name', () => {
+    const used = new Set<string>()
+    const first = uniqueHarnessToolName('github.com', 'repos/list:all', used)
+    used.add(first)
+    const second = uniqueHarnessToolName('github.com', 'repos/list:all', used)
+
+    expect(first).toBe('mcp_github_com_repos_list_all')
+    expect(second).toBe('mcp_github_com_repos_list_all_2')
+    expect(first).toMatch(/^[a-zA-Z0-9_-]+$/)
+  })
+
   it('uses every discovered tool when no optional allowlist is configured', () => {
     expect(selectTools(tools, [], [], false).map((tool) => tool.name))
       .toEqual(['sales_summary'])

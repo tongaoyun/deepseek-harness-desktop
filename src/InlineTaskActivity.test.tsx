@@ -11,10 +11,11 @@ describe('InlineTaskActivity', () => {
       activity: '正在读取已授权目录',
       updatedAt: '2026-09-03T10:00:00.000Z',
       steps: [{ id: '1', kind: 'tool', label: '读取本地目录', status: 'running', toolName: 'local_files_list', startedAt: '2026-09-03T10:00:00.000Z' }],
+      timeline: [{ id: '1', kind: 'tool', label: '读取本地目录', status: 'running', toolName: 'local_files_list', occurredAt: '2026-09-03T10:00:00.000Z' }],
       artifacts: [{ id: 'a', rootId: 'root', rootName: 'Downloads', path: 'report.xlsx', name: 'report.xlsx', kind: 'spreadsheet', sourceTool: 'office.xlsx.create', createdAt: '2026-09-03T10:00:00.000Z' }],
     }} />)
 
-    expect(html).toContain('正在读取已授权目录')
+    expect(html).toContain('正在处理')
     expect(html).toContain('local_files_list')
     expect(html).not.toContain('Task Monitor')
     expect(html).not.toContain('思考过程')

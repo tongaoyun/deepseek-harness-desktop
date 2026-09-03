@@ -37,6 +37,32 @@ describe('persisted session follow-ups', () => {
     await expect(runSessionTurn(fakeClient(notifications), 'session-1', [{ type: 'text', text: '继续' }], () => undefined))
       .rejects.toThrow('没有返回可显示文本')
   })
+
+  it('surfaces a safe provider failure instead of misreporting an empty answer', async () => {
+    const notifications: HarnessNotification[] = [
+      event('agent/inbox/spliced', { inserted: [{ id: 'message-2' }] }),
+      event('turn/start', { turn: 2 }),
+      event('turn/end', { turn: 2, reason: { kind: 'error', error: {
+        message: "Invalid 'tools[24].function.name': expected ^[a-zA-Z0-9_-]+$",
+      } } }),
+      status('idle'),
+    ]
+    await expect(runSessionTurn(fakeClient(notifications), 'session-1', [{ type: 'text', text: '继续' }], () => undefined))
+      .rejects.toThrow('模型工具配置不兼容')
+  })
+
+  it('keeps the last visible assistant text when a later tool-only message arrives', async () => {
+    const notifications: HarnessNotification[] = [
+      event('agent/inbox/spliced', { inserted: [{ id: 'message-2' }] }),
+      event('turn/start', { turn: 2 }),
+      event('assistant/message', { message: { content: [{ type: 'text', text: '我先检查文件。' }] } }),
+      event('assistant/message', { message: { content: [{ type: 'tool-call', name: 'local_files_list' }] } }),
+      event('turn/end', { turn: 2, reason: { kind: 'completed' } }),
+      status('idle'),
+    ]
+    await expect(runSessionTurn(fakeClient(notifications), 'session-1', [{ type: 'text', text: '继续' }], () => undefined))
+      .resolves.toMatchObject({ finalResponse: '我先检查文件。' })
+  })
 })
 
 function fakeClient(notifications: HarnessNotification[]) {

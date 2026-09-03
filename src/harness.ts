@@ -7,6 +7,7 @@ import type {
   TaskArtifact,
   TaskExecutionStep,
   TaskMonitorState,
+  TaskTimelineEntry,
 } from './types'
 
 export interface HarnessRunInput {
@@ -164,8 +165,20 @@ export function applyHarnessNotification(
   }
 
   if (parsed.type === 'assistant/message' && turn !== undefined && step !== undefined) {
-    return updateMonitor(current, activity,
+    const message = assistantMessageText(parsed.data)
+    const next = updateMonitor(current, activity,
       completeStep(current.steps, `analysis:${turn}:${step}`, 'completed', occurredAt), occurredAt)
+    return message ? {
+      ...next,
+      timeline: upsertTimeline(current.timeline ?? [], {
+        id: `assistant:${turn}:${step}`,
+        kind: 'assistant',
+        label: '说明',
+        text: message,
+        status: 'completed',
+        occurredAt,
+      }),
+    } : next
   }
 
   if (parsed.type === 'tool/call') {
@@ -175,14 +188,24 @@ export function applyHarnessNotification(
     const analysisCompleted = turn === undefined || step === undefined
       ? current.steps
       : completeStep(current.steps, `analysis:${turn}:${step}`, 'completed', occurredAt)
-    return updateMonitor(current, activity, upsertStep(analysisCompleted, {
+    return {
+      ...updateMonitor(current, activity, upsertStep(analysisCompleted, {
       id: `tool:${callId}`,
       kind: 'tool',
       label: toolActivityLabel(toolName),
       status: 'running',
       toolName,
       startedAt: occurredAt,
-    }), occurredAt)
+      }), occurredAt),
+      timeline: upsertTimeline(current.timeline ?? [], {
+        id: `tool:${callId}`,
+        kind: 'tool',
+        label: toolActivityLabel(toolName),
+        status: 'running',
+        toolName,
+        occurredAt,
+      }),
+    }
   }
 
   if (parsed.type === 'tool/result') {
@@ -198,6 +221,7 @@ export function applyHarnessNotification(
     return {
       ...updateMonitor(current, activity,
         completeStep(current.steps, `tool:${result.callId}`, result.failed ? 'failed' : 'completed', occurredAt), occurredAt),
+      timeline: completeTimeline(current.timeline ?? [], `tool:${result.callId}`, result.failed ? 'failed' : 'completed'),
       artifacts,
     }
   }
@@ -208,7 +232,8 @@ export function applyHarnessNotification(
     const decision = text(parsed.data.decision)
     if (!approvalId || !toolName || !['allow', 'reject'].includes(decision ?? '')) return current
     const allowed = decision === 'allow'
-    return updateMonitor(current, activity, upsertStep(current.steps, {
+    return {
+      ...updateMonitor(current, activity, upsertStep(current.steps, {
       id: `approval:${approvalId}`,
       kind: 'approval',
       label: `${allowed ? '已允许' : '已拒绝'}${toolActivityLabel(toolName)}`,
@@ -216,7 +241,16 @@ export function applyHarnessNotification(
       toolName,
       startedAt: occurredAt,
       completedAt: occurredAt,
-    }), occurredAt)
+      }), occurredAt),
+      timeline: upsertTimeline(current.timeline ?? [], {
+        id: `approval:${approvalId}`,
+        kind: 'approval',
+        label: `${allowed ? '已允许' : '已拒绝'}${toolActivityLabel(toolName)}`,
+        status: allowed ? 'completed' : 'failed',
+        toolName,
+        occurredAt,
+      }),
+    }
   }
 
   if (parsed.type === 'turn/end' && turn !== undefined) {
@@ -231,6 +265,7 @@ export function applyHarnessNotification(
       activity: status === 'completed' ? '任务已完成' : '任务执行失败',
       updatedAt: occurredAt,
       completedAt: occurredAt,
+      timeline: (current.timeline ?? []).map((item) => item.status === 'running' ? { ...item, status } : item),
       steps: upsertStep(settled, {
       id: `response:${turn}`,
       kind: 'response',
@@ -246,7 +281,7 @@ export function applyHarnessNotification(
 }
 
 export function createTaskMonitor(now = new Date().toISOString()): TaskMonitorState {
-  return { status: 'idle', activity: '等待开始', updatedAt: now, steps: [], artifacts: [] }
+  return { status: 'idle', activity: '等待开始', updatedAt: now, steps: [], timeline: [], artifacts: [] }
 }
 
 function updateMonitor(
@@ -293,6 +328,7 @@ function toolResult(data: Record<string, unknown>): { callId: string; failed: bo
 
 const ARTIFACT_TOOLS = new Set([
   'office.docx.create', 'office.xlsx.create', 'office.pdf.create',
+  'office_docx_create', 'office_xlsx_create', 'office_pdf_create',
   'local_files_write_text', 'local_files_copy', 'local_files_move',
 ])
 
@@ -366,6 +402,30 @@ function completeStep(
     : item)
 }
 
+function assistantMessageText(data: Record<string, unknown>): string {
+  const message = asRecord(data.message)
+  const content = Array.isArray(message?.content) ? message.content : []
+  return content.map((value) => {
+    const block = asRecord(value)
+    return block?.type === 'text' ? text(block.text) ?? '' : ''
+  }).join('').trim()
+}
+
+function upsertTimeline(current: TaskTimelineEntry[], next: TaskTimelineEntry): TaskTimelineEntry[] {
+  const index = current.findIndex((item) => item.id === next.id)
+  return (index < 0
+    ? [...current, next]
+    : current.map((item, itemIndex) => itemIndex === index ? { ...item, ...next } : item)).slice(-100)
+}
+
+function completeTimeline(
+  current: TaskTimelineEntry[],
+  id: string,
+  status: 'completed' | 'failed',
+): TaskTimelineEntry[] {
+  return current.map((item) => item.id === id ? { ...item, status } : item)
+}
+
 function toolActivityLabel(toolName: string): string {
   return ({
     skill: '加载专家技能',
@@ -378,6 +438,10 @@ function toolActivityLabel(toolName: string): string {
     'office.docx.create': '生成 Word 文档',
     'office.xlsx.create': '生成 Excel 表格',
     'office.pdf.create': '生成 PDF 文档',
+    office_document_read: '读取 Office 文档',
+    office_docx_create: '生成 Word 文档',
+    office_xlsx_create: '生成 Excel 表格',
+    office_pdf_create: '生成 PDF 文档',
     local_shell_run: '运行本地命令',
   } as Record<string, string>)[toolName] ?? `调用 ${toolName}`
 }

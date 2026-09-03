@@ -26,7 +26,7 @@ describe('ChatPage conversation', () => {
 
     expect(html).toContain('conversation-turn user-turn')
     expect(html).toContain('conversation-turn assistant-turn')
-    expect(html).toContain('用时 2秒')
+    expect(html).toContain('已处理 2秒')
     expect(html).not.toContain('message-avatar')
     expect(html).not.toContain('>小胤<')
   })

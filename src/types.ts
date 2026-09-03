@@ -118,6 +118,16 @@ export interface TaskExecutionStep {
   completedAt?: string
 }
 
+export interface TaskTimelineEntry {
+  id: string
+  kind: 'assistant' | 'tool' | 'approval'
+  label: string
+  status: 'running' | 'completed' | 'failed'
+  text?: string
+  toolName?: string
+  occurredAt: string
+}
+
 export type TaskArtifactKind = 'document' | 'spreadsheet' | 'pdf' | 'text' | 'file'
 
 export interface TaskArtifact {
@@ -139,6 +149,7 @@ export interface TaskMonitorState {
   startedAt?: string
   completedAt?: string
   steps: TaskExecutionStep[]
+  timeline?: TaskTimelineEntry[]
   artifacts: TaskArtifact[]
 }
 

@@ -40,6 +40,9 @@ describe('harnessActivityLabel', () => {
       { kind: 'tool', label: '查询库存风险', status: 'completed', toolName: 'inventory_risk' },
       { kind: 'response', label: '完成回复', status: 'completed', toolName: undefined },
     ])
+    expect(monitor.timeline).toMatchObject([
+      { kind: 'tool', label: '查询库存风险', status: 'completed', toolName: 'inventory_risk' },
+    ])
     expect(JSON.stringify(monitor)).not.toContain('hidden chain')
     expect(JSON.stringify(monitor)).not.toContain('private ERP result')
     expect(JSON.stringify(monitor)).not.toContain('sensitive')

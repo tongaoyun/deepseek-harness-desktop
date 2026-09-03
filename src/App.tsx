@@ -184,6 +184,7 @@ export default function App() {
   const taskSearchInputRef = useRef<HTMLInputElement>(null)
   const workspaceRef = useRef<HTMLElement>(null)
   const cancellationRequestedRef = useRef(false)
+  const enabledConnectorIdsRef = useRef<string[]>([])
   const extensionCacheRef = useRef<{
     catalog: ExpertKitCatalogEntry[]
     installed: InstalledExpertKit[]
@@ -223,11 +224,14 @@ export default function App() {
 
   useEffect(() => {
     if (!user) {
+      enabledConnectorIdsRef.current = []
       setEnabledConnectorIds([])
       setConnectorSecrets({})
       return
     }
-    setEnabledConnectorIds(loadEnabledConnectorIds(user.userId))
+    const enabled = loadEnabledConnectorIds(user.userId)
+    enabledConnectorIdsRef.current = enabled
+    setEnabledConnectorIds(enabled)
     setConnectorSecrets(loadConnectorSecrets(user.userId))
   }, [user])
 
@@ -292,8 +296,8 @@ export default function App() {
           extensionCacheRef.current.connectors = cachedConnectors
           setConnectors(cachedConnectors)
           setKnowledgeBases(cached.knowledge)
-          setSkillViews(mergeSkills(cached.skills, extensionCacheRef.current.installed, cachedConnectors, cached.knowledge, enabledConnectorIds))
-          setExpertKits(mergeExpertKits(cached.catalog, extensionCacheRef.current.installed, cachedConnectors, cached.knowledge, enabledConnectorIds))
+          setSkillViews(mergeSkills(cached.skills, extensionCacheRef.current.installed, cachedConnectors, cached.knowledge, enabledConnectorIdsRef.current))
+          setExpertKits(mergeExpertKits(cached.catalog, extensionCacheRef.current.installed, cachedConnectors, cached.knowledge, enabledConnectorIdsRef.current))
         }
       }
       const [catalogResult, installedResult, skillsResult, connectorsResult, knowledgeResult] = await Promise.allSettled([
@@ -317,10 +321,10 @@ export default function App() {
         if (knowledgeResult.status === 'fulfilled') cache.knowledge = knowledgeResult.value
         setExpertKitCatalog(cache.catalog)
         setSkills(cache.skills)
-        setSkillViews(mergeSkills(cache.skills, cache.installed, cache.connectors, cache.knowledge, enabledConnectorIds))
+        setSkillViews(mergeSkills(cache.skills, cache.installed, cache.connectors, cache.knowledge, enabledConnectorIdsRef.current))
         setConnectors(cache.connectors)
         setKnowledgeBases(cache.knowledge)
-        setExpertKits(mergeExpertKits(cache.catalog, cache.installed, cache.connectors, cache.knowledge, enabledConnectorIds))
+        setExpertKits(mergeExpertKits(cache.catalog, cache.installed, cache.connectors, cache.knowledge, enabledConnectorIdsRef.current))
         const sources = [
           ['expert-kits', '专家套件目录', catalogResult],
           ['installed', '本机已安装能力', installedResult],
@@ -349,7 +353,7 @@ export default function App() {
     void syncExtensions(true)
     const timer = window.setInterval(() => void syncExtensions(false), 60_000)
     return () => { window.clearInterval(timer); controller.abort() }
-  }, [accessToken, bootstrap, enabledConnectorIds, extensionSyncAttempt, user])
+  }, [accessToken, bootstrap, extensionSyncAttempt, user])
 
   useEffect(() => {
     if (authState !== 'authenticated' || !connectorDiagnosticsAvailable()) return
@@ -560,10 +564,14 @@ export default function App() {
   )
   const toggleConnector = (connectorId: string, enabled: boolean) => {
     if (!user) return
-    setEnabledConnectorIds((current) => saveEnabledConnectorIds(
-      user.userId,
-      enabled ? [...current, connectorId] : current.filter((id) => id !== connectorId),
-    ))
+    setEnabledConnectorIds((current) => {
+      const next = saveEnabledConnectorIds(
+        user.userId,
+        enabled ? [...current, connectorId] : current.filter((id) => id !== connectorId),
+      )
+      enabledConnectorIdsRef.current = next
+      return next
+    })
     void shutdownHarness()
   }
   const invocationOptions = buildInvocationOptions(expertKits, skillViews)
@@ -815,11 +823,12 @@ export default function App() {
       setTaskMonitor(failedMonitor)
       setMessages(failedMessages)
       persistLocalTask({ ...runningTask, status: canceled ? 'CANCELED' : 'FAILED', updatedAt: new Date().toISOString(), monitor: failedMonitor, messages: failedMessages })
-      if (!canceled) {
+      const infrastructureFailure = isHarnessInfrastructureFailure(message)
+      if (!canceled && infrastructureFailure) {
         setHarnessHealth('degraded')
         setHarnessHealthDetail(`Harness 执行异常：${message}`)
       }
-      void shutdownHarness()
+      if (canceled || infrastructureFailure) void shutdownHarness()
       await reportTaskAudit('FAILED', taskId, failedMonitor.steps)
     } finally {
       setHarnessRunning(false)
@@ -1319,13 +1328,21 @@ export default function App() {
             const next = [connector, ...connectors.filter((item) => item.id !== connector.id)]
             extensionCacheRef.current.connectors = next
             setConnectors(next)
-            setEnabledConnectorIds((current) => saveEnabledConnectorIds(user.userId, [...current, connector.id]))
+            setEnabledConnectorIds((current) => {
+              const enabled = saveEnabledConnectorIds(user.userId, [...current, connector.id])
+              enabledConnectorIdsRef.current = enabled
+              return enabled
+            })
           } else if (change.type === 'connector-delete') {
             setConnectorSecrets(deleteConnectorSecrets(user.userId, change.id))
             const next = connectors.filter((item) => item.id !== change.id)
             extensionCacheRef.current.connectors = next
             setConnectors(next)
-            setEnabledConnectorIds((current) => saveEnabledConnectorIds(user.userId, current.filter((id) => id !== change.id)))
+            setEnabledConnectorIds((current) => {
+              const enabled = saveEnabledConnectorIds(user.userId, current.filter((id) => id !== change.id))
+              enabledConnectorIdsRef.current = enabled
+              return enabled
+            })
           } else await refreshInstalledKits()
         }}
       />}
@@ -1361,4 +1378,8 @@ export default function App() {
       />}
     </div>
   )
+}
+
+function isHarnessInfrastructureFailure(message: string): boolean {
+  return /Harness Host|ECONNRESET|ECONNREFUSED|broken pipe|socket hang up|进程.*退出|connection.*closed/iu.test(message)
 }

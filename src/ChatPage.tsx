@@ -91,7 +91,7 @@ export function ChatPage(props: Props) {
         <div className="user-prompt"><Suspense fallback={<p>{message.text}</p>}><RichMessage assistant={false} text={message.text} /></Suspense></div>
       </article>
       return <article aria-busy={message.pending} className={`conversation-turn assistant-turn${message.pending ? ' pending' : ''}`} key={`${message.role}-${index}`}>
-        {monitor && <InlineTaskActivity monitor={monitor} />}
+        {monitor && <InlineTaskActivity finalResponse={message.pending ? '' : message.text} monitor={monitor} />}
         {!message.pending && <Suspense fallback={<p>{message.text}</p>}><RichMessage assistant onRegenerate={index === props.messages.length - 1 ? props.onPrepareRetry : undefined} text={message.text} /></Suspense>}
         {!message.pending && monitor && monitor.artifacts.length > 0 && <TaskArtifacts artifacts={monitor.artifacts} conversation />}
         {retryable && <button className="retry-task" onClick={props.onPrepareRetry} type="button">修改后重新执行</button>}

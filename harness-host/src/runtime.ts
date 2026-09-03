@@ -139,6 +139,7 @@ export async function runSessionTurn(
   let receivedPrompt = false
   let turnStarted = false
   let finalResponse = ''
+  let turnFailure = ''
   try {
     const messageId = await client.prompt(sessionId, content)
     for (;;) {
@@ -152,7 +153,12 @@ export async function runSessionTurn(
       if (event?.type === 'turn/start') turnStarted = true
       if (event?.type === 'assistant/message') {
         turnStarted = true
-        finalResponse = assistantText(event)
+        const nextText = assistantText(event)
+        if (nextText.trim()) finalResponse = nextText
+      }
+      if (event?.type === 'turn/end') {
+        const reason = record(record(event.data)?.reason)
+        if (reason?.kind === 'error') turnFailure = providerFailureMessage(reason)
       }
       if (turnStarted && notification.method === 'session.status'
         && notification.params.sessionId === sessionId && notification.params.status === 'idle') break
@@ -160,8 +166,19 @@ export async function runSessionTurn(
   } finally {
     subscription.close()
   }
-  if (!finalResponse.trim()) throw new Error('模型本轮没有返回可显示文本，请重试')
+  if (!finalResponse.trim()) throw new Error(turnFailure || '模型本轮没有返回可显示文本，请重试')
   return { sessionId, finalResponse }
+}
+
+function providerFailureMessage(reason: Record<string, unknown>): string {
+  const error = record(reason.error) ?? record(reason.failure)
+  const message = typeof error?.message === 'string' ? error.message : ''
+  if (message.includes("function.name") || message.includes("tools[")) {
+    return '模型工具配置不兼容，请重新启动小胤后再试'
+  }
+  if (message.includes('401') || message.toLowerCase().includes('unauthorized')) return '模型服务认证失败，请联系管理员检查配置'
+  if (message.includes('429') || message.toLowerCase().includes('rate limit')) return '模型服务繁忙，请稍后重试'
+  return message ? '模型服务未能完成本轮请求，请重试' : ''
 }
 
 function normalizeContent(content: string | ContentBlock[]): ContentBlock[] {
