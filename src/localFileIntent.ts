@@ -2,6 +2,7 @@ const LOCAL_LOCATION = /(?:下载(?:目录|文件夹)?|Downloads?|桌面|Desktop
 const FILE_ACTION = /(?:看(?:下|看)?|查看|列出|读取|打开|查找|搜索|整理|分析|扫描|修改|写入|创建|新建|生成|保存|导出|删除|复制|移动|重命名|有(?:什么|啥))/i
 const EXPLICIT_PATH = /(?:^|\s)(?:~[\\/]|\/(?:Users|home|tmp|Volumes)\/|[A-Za-z]:[\\/])/i
 const FILE_OUTPUT = /(?:生成|保存|导出|创建|新建).{0,16}(?:文件|文档|表格|PDF|Excel|Word|PPT)/i
+const CAPABILITY_QUESTION = /(?:你能|能不能|能否|是否(?:可以|能够)?|支持不支持|有没有.{0,6}(?:能力|功能)|可以吗|行不行)/i
 
 export type StandardLocalDirectory = 'downloads' | 'desktop' | 'documents'
 
@@ -18,6 +19,8 @@ export function standardLocalDirectories(input: string): StandardLocalDirectory[
 export function needsLocalDirectoryAuthorization(input: string): boolean {
   const normalized = input.trim()
   if (!normalized) return false
+  if (CAPABILITY_QUESTION.test(normalized) && !EXPLICIT_PATH.test(normalized)
+    && standardLocalDirectories(normalized).length === 0) return false
   return EXPLICIT_PATH.test(normalized)
     || (LOCAL_LOCATION.test(normalized) && FILE_ACTION.test(normalized))
     || FILE_OUTPUT.test(normalized)

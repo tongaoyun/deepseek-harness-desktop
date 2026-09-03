@@ -120,12 +120,19 @@ export interface TaskExecutionStep {
 
 export interface TaskTimelineEntry {
   id: string
-  kind: 'assistant' | 'tool' | 'approval'
+  kind: 'assistant' | 'command' | 'file' | 'connector' | 'browser' | 'tool' | 'approval' | 'error' | 'warning'
   label: string
   status: 'running' | 'completed' | 'failed'
   text?: string
   toolName?: string
+  detail?: string
+  output?: string
+  path?: string
+  secondaryPath?: string
+  connectorName?: string
+  itemCount?: number
   occurredAt: string
+  completedAt?: string
 }
 
 export type TaskArtifactKind = 'document' | 'spreadsheet' | 'pdf' | 'text' | 'file'

@@ -209,6 +209,7 @@ export function applyHarnessNotification(
     const analysisCompleted = turn === undefined || step === undefined
       ? current.steps
       : completeStep(current.steps, `analysis:${turn}:${step}`, 'completed', occurredAt)
+    const presentation = toolPresentation(toolName, parsed.data.arguments)
     return {
       ...updateMonitor(current, activity, upsertStep(analysisCompleted, {
       id: `tool:${callId}`,
@@ -220,8 +221,7 @@ export function applyHarnessNotification(
       }), occurredAt),
       timeline: upsertTimeline(current.timeline ?? [], {
         id: `tool:${callId}`,
-        kind: 'tool',
-        label: toolActivityLabel(toolName),
+        ...presentation,
         status: 'running',
         toolName,
         occurredAt,
@@ -239,11 +239,33 @@ export function applyHarnessNotification(
     const artifacts = artifact
       ? [...current.artifacts.filter((item) => item.id !== artifact.id), artifact].slice(-50)
       : current.artifacts
+    const presentation = toolName ? toolResultPresentation(toolName, result.content, result.failed) : {}
     return {
       ...updateMonitor(current, activity,
         completeStep(current.steps, `tool:${result.callId}`, result.failed ? 'failed' : 'completed', occurredAt), occurredAt),
-      timeline: completeTimeline(current.timeline ?? [], `tool:${result.callId}`, result.failed ? 'failed' : 'completed'),
+      timeline: completeTimeline(
+        current.timeline ?? [], `tool:${result.callId}`, result.failed ? 'failed' : 'completed', occurredAt, presentation,
+      ),
       artifacts,
+    }
+  }
+
+  if (parsed.type === 'error' || parsed.type === 'warning' || parsed.type.endsWith('/error')) {
+    const detail = publicEventError(parsed.data)
+    const kind = parsed.type === 'warning' ? 'warning' : 'error'
+    return {
+      ...current,
+      activity: kind === 'error' ? '任务执行遇到问题' : current.activity,
+      updatedAt: occurredAt,
+      timeline: upsertTimeline(current.timeline ?? [], {
+        id: `${kind}:${turn ?? 'session'}:${step ?? Date.parse(occurredAt)}`,
+        kind,
+        label: kind === 'error' ? '执行遇到问题' : '注意',
+        status: kind === 'error' ? 'failed' : 'completed',
+        ...(detail ? { detail } : {}),
+        occurredAt,
+        completedAt: occurredAt,
+      }),
     }
   }
 
@@ -280,13 +302,24 @@ export function applyHarnessNotification(
     const settled = current.steps.map((item): TaskExecutionStep => item.status === 'running'
       ? { ...item, status, completedAt: occurredAt }
       : item)
+    const timeline = (current.timeline ?? []).map((item): TaskTimelineEntry => item.status === 'running'
+      ? { ...item, status }
+      : item)
     return {
       ...current,
       status,
       activity: status === 'completed' ? '任务已完成' : '任务执行失败',
       updatedAt: occurredAt,
       completedAt: occurredAt,
-      timeline: (current.timeline ?? []).map((item) => item.status === 'running' ? { ...item, status } : item),
+      timeline: status === 'failed' ? upsertTimeline(timeline, {
+        id: `error:turn:${turn}`,
+        kind: 'error',
+        label: '执行未完成',
+        status: 'failed',
+        detail: '本轮任务在完成回复前中断，可以调整要求后重试。',
+        occurredAt,
+        completedAt: occurredAt,
+      }) : timeline,
       steps: upsertStep(settled, {
       id: `response:${turn}`,
       kind: 'response',
@@ -443,8 +476,10 @@ function completeTimeline(
   current: TaskTimelineEntry[],
   id: string,
   status: 'completed' | 'failed',
+  completedAt: string,
+  patch: Partial<TaskTimelineEntry> = {},
 ): TaskTimelineEntry[] {
-  return current.map((item) => item.id === id ? { ...item, status } : item)
+  return current.map((item) => item.id === id ? { ...item, ...patch, status, completedAt } : item)
 }
 
 function appendTimelineText(
@@ -501,6 +536,129 @@ function toolActivityLabel(toolName: string): string {
     return connector ? `使用 ${connector} 连接器` : '调用连接器'
   }
   return `调用 ${toolName}`
+}
+
+function toolPresentation(toolName: string, rawArguments: unknown): Pick<TaskTimelineEntry,
+  'kind' | 'label' | 'detail' | 'text' | 'path' | 'secondaryPath' | 'connectorName'> {
+  const args = toolArguments(rawArguments)
+  const path = firstText(args, 'path', 'workdir')
+  const destination = firstText(args, 'destinationPath')
+  if (toolName === 'local_shell_run') return compact({
+    kind: 'command', label: '运行命令', detail: firstText(args, 'description'), path,
+    text: bounded(firstText(args, 'command'), 16_000),
+  })
+  const fileLabels: Record<string, string> = {
+    local_files_roots: '检查可用工作目录',
+    local_files_list: path ? `查看 ${path === '.' ? '目录' : path}` : '查看目录',
+    local_files_read_text: path ? `读取 ${path}` : '读取文件',
+    local_files_write_text: path ? `写入 ${path}` : '写入文件',
+    local_files_create_directory: path ? `创建 ${path}` : '创建文件夹',
+    local_files_copy: destination ? `复制到 ${destination}` : '复制文件',
+    local_files_move: destination ? `移动到 ${destination}` : '移动文件',
+    local_files_delete: path ? `删除 ${path}` : '删除文件',
+    office_document_read: path ? `读取 ${path}` : '读取 Office 文档',
+    office_docx_create: path ? `生成 ${path}` : '生成 Word 文档',
+    office_xlsx_create: path ? `生成 ${path}` : '生成 Excel 表格',
+    office_pdf_create: path ? `生成 ${path}` : '生成 PDF 文档',
+  }
+  if (fileLabels[toolName]) return compact({
+    kind: 'file', label: fileLabels[toolName], path: firstText(args, 'path', 'sourcePath'), secondaryPath: destination,
+  })
+  if (toolName.startsWith('browser_')) return compact({
+    kind: 'browser', label: toolActivityLabel(toolName), detail: firstText(args, 'url'),
+  })
+  if (toolName.startsWith('mcp_')) {
+    const connectorName = connectorNameFromTool(toolName)
+    return compact({ kind: 'connector', label: `使用 ${connectorName}`, connectorName, detail: connectorAction(toolName) })
+  }
+  return { kind: 'tool', label: toolActivityLabel(toolName) }
+}
+
+function toolResultPresentation(
+  toolName: string,
+  content: unknown,
+  failed: boolean,
+): Partial<TaskTimelineEntry> {
+  const value = toolResultValue(content)
+  if (toolName === 'local_shell_run') {
+    if (!value) return failed ? { detail: publicToolError(content) } : {}
+    const stdout = text(value.stdout)?.trim()
+    const stderr = text(value.stderr)?.trim()
+    const exitCode = typeof value.exitCode === 'number' ? value.exitCode : undefined
+    return compact({
+      output: bounded([stdout, stderr].filter(Boolean).join('\n'), 12_000),
+      detail: exitCode === undefined ? undefined : `退出码 ${exitCode}${value.truncated === true ? ' · 输出已截断' : ''}`,
+      path: text(value.workdir),
+    })
+  }
+  if (toolName === 'local_files_list' && value) {
+    const entries = Array.isArray(value.entries) ? value.entries : []
+    return compact({
+      path: text(value.directory), itemCount: entries.length,
+      detail: `${entries.length} 项${value.truncated === true ? '（仅显示部分）' : ''}`,
+    })
+  }
+  if (toolName.startsWith('local_files_') || toolName.startsWith('office_')) {
+    if (!value) return failed ? { detail: publicToolError(content) } : {}
+    return compact({
+      path: text(value.path) ?? text(value.source), secondaryPath: text(value.destination),
+      detail: typeof value.size === 'number' ? formatBytes(value.size) : undefined,
+    })
+  }
+  return failed ? compact({ detail: publicToolError(content) }) : {}
+}
+
+function toolArguments(value: unknown): Record<string, unknown> {
+  if (typeof value === 'object' && value !== null && !Array.isArray(value)) return value as Record<string, unknown>
+  if (typeof value !== 'string' || value.length > 100_000) return {}
+  try { return asRecord(JSON.parse(value)) ?? {} } catch { return {} }
+}
+
+function firstText(value: Record<string, unknown>, ...keys: string[]): string | undefined {
+  for (const key of keys) {
+    const found = text(value[key])
+    if (found) return found
+  }
+  return undefined
+}
+
+function connectorNameFromTool(toolName: string): string {
+  const value = toolName.slice(4).split('_')[0]?.trim()
+  return value ? humanize(value) : '连接器'
+}
+
+function connectorAction(toolName: string): string | undefined {
+  const parts = toolName.slice(4).split('_')
+  return parts.length > 1 ? humanize(parts.slice(1).join(' ')) : undefined
+}
+
+function humanize(value: string): string {
+  return value.replaceAll(/[-_]+/g, ' ').trim()
+}
+
+function publicEventError(data: Record<string, unknown>): string | undefined {
+  return bounded(firstText(data, 'message', 'error', 'detail'), 1_000)
+}
+
+function publicToolError(content: unknown): string | undefined {
+  const blocks = Array.isArray(content) ? content : []
+  const value = blocks.map((item) => text(asRecord(item)?.text)).filter(Boolean).join('\n')
+  return bounded(value, 1_000)
+}
+
+function bounded(value: string | undefined, length: number): string | undefined {
+  if (!value) return undefined
+  return value.length <= length ? value : `${value.slice(0, length)}…`
+}
+
+function formatBytes(value: number): string {
+  if (value < 1_024) return `${value} B`
+  if (value < 1_048_576) return `${(value / 1_024).toFixed(1)} KB`
+  return `${(value / 1_048_576).toFixed(1)} MB`
+}
+
+function compact<T extends object>(value: T): T {
+  return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined && item !== '')) as T
 }
 
 function eventTime(event: Record<string, unknown>): string {

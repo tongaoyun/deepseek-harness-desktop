@@ -1097,6 +1097,7 @@ pub fn harness_profile(
     if knowledge_base_refs.len() > 32 {
         return Err("任务知识库引用不能超过 32 个".to_string());
     }
+    let desktop_agent_guidance = "你正在小胤桌面端中工作，是能实际完成任务的 Agent，不是只能回答问题的聊天机器人。涉及本地目录、文件读写、命令、浏览器或已连接系统时，应先使用当前可用工具行动并根据真实结果回答；不要在尚未尝试工具前声称无法访问。若已有授权工作目录，先调用 local_files_roots 查明目录，再继续读取或操作。仅在缺少继续执行所必需的授权、目标或业务参数时追问。工具过程使用简短自然的进度说明，最终回答聚焦结果、变更和仍需用户处理的事项。";
     let prompt = if let Some(artifact) = selected {
         let commands = load_command_context(artifact)?;
         let profile_label = if artifact.manifest.kind == "skill" {
@@ -1120,7 +1121,8 @@ pub fn harness_profile(
             format!("本独立 Skill 的可加载 ID 是 {}。", artifact.manifest.id)
         };
         format!(
-            "本任务明确使用公司{}《{}》（ID: {}，版本: {}）。{}所有已安装 Skill 仍可按需加载；优先遵循本扩展的工作方法和命令。不要先向员工汇报泛化的资源盘点，不要因为任务未用到知识库或连接器而阻塞；只有具体任务确实需要时才检查对应能力。面对简短或口语化输入，先按最可能的意图自然回答，仅在无法继续行动时追问。{}\n\n员工任务：\n{}",
+            "{}\n\n本任务明确使用公司{}《{}》（ID: {}，版本: {}）。{}所有已安装 Skill 仍可按需加载；优先遵循本扩展的工作方法和命令。不要先向员工汇报泛化的资源盘点，不要因为任务未用到知识库或连接器而阻塞；只有具体任务确实需要时才检查对应能力。面对简短或口语化输入，先按最可能的意图自然回答，仅在无法继续行动时追问。{}\n\n员工任务：\n{}",
+            desktop_agent_guidance,
             profile_label,
             artifact.manifest.name,
             artifact.manifest.id,
@@ -1130,7 +1132,7 @@ pub fn harness_profile(
             user_prompt,
         )
     } else {
-        user_prompt.to_string()
+        format!("{}\n\n员工任务：\n{}", desktop_agent_guidance, user_prompt)
     };
     let permissions = selected.map(|artifact| &artifact.manifest.permissions);
     let permission = |select: fn(&Permissions) -> PermissionMode| {

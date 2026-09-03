@@ -109,6 +109,36 @@ describe('harnessActivityLabel', () => {
     ].reduce(applyHarnessNotification, createTaskMonitor())
     expect(ignored.artifacts).toEqual([])
   })
+
+  it('maps local files, commands and connectors into distinct conversation blocks', () => {
+    const monitor = [
+      event('tool/call', { callId: 'files', name: 'local_files_list', arguments: JSON.stringify({ rootId: 'r1', path: 'reports' }) }, 1),
+      event('tool/result', { message: { content: [{
+        type: 'tool-result', toolCallId: 'files', isError: false, content: [{ type: 'text', text: JSON.stringify({
+          rootId: 'r1', rootName: 'Downloads', directory: 'reports', entries: [{ path: 'reports/a.md', type: 'file' }], truncated: false,
+        }) }],
+      }] } }, 2),
+      event('tool/call', { callId: 'shell', name: 'local_shell_run', arguments: JSON.stringify({ command: 'pnpm test', description: '运行测试', workdir: 'app' }) }, 3),
+      event('tool/result', { message: { content: [{
+        type: 'tool-result', toolCallId: 'shell', isError: false, content: [{ type: 'text', text: JSON.stringify({ exitCode: 0, stdout: '42 tests passed', stderr: '' }) }],
+      }] } }, 4),
+      event('tool/call', { callId: 'github', name: 'mcp_github_list_pull_requests', arguments: JSON.stringify({ owner: 'private' }) }, 5),
+    ].reduce(applyHarnessNotification, createTaskMonitor())
+
+    expect(monitor.timeline).toMatchObject([
+      { kind: 'file', label: '查看 reports', path: 'reports', itemCount: 1, status: 'completed' },
+      { kind: 'command', label: '运行命令', text: 'pnpm test', detail: '退出码 0', output: '42 tests passed', status: 'completed' },
+      { kind: 'connector', label: '使用 github', connectorName: 'github', status: 'running' },
+    ])
+    expect(JSON.stringify(monitor)).not.toContain('private')
+  })
+
+  it('renders public runtime errors without exposing reasoning', () => {
+    const monitor = [event('error', { message: '连接器暂时不可用', reasoning: 'hidden chain' }, 1)]
+      .reduce(applyHarnessNotification, createTaskMonitor())
+    expect(monitor.timeline).toMatchObject([{ kind: 'error', detail: '连接器暂时不可用', status: 'failed' }])
+    expect(JSON.stringify(monitor)).not.toContain('hidden chain')
+  })
 })
 
 describe('diagnoseConnectors', () => {

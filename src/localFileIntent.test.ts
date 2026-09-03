@@ -17,6 +17,8 @@ describe('needsLocalDirectoryAuthorization', () => {
     '在知识库中搜索退款流程',
     '介绍一下连接器',
     '帮我写一份周报',
+    '你能改本地文件么，或者查看吗',
+    '是否支持操作电脑里的文件',
   ])('does not interrupt a non-file task: %s', (input) => {
     expect(needsLocalDirectoryAuthorization(input)).toBe(false)
   })
