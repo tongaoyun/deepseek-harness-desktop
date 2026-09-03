@@ -328,6 +328,13 @@ export interface InstalledExpertKit {
   source: 'catalog' | 'developer'
 }
 
+export interface InstalledExtensionSnapshot {
+  kind: 'expert-kit' | 'skill'
+  id: string
+  version: string
+  source: 'catalog' | 'developer'
+}
+
 export type DeviceCapabilityStatus = 'READY' | 'DEGRADED' | 'UNSUPPORTED'
 
 export interface DeviceCapabilityResult {

@@ -15,6 +15,7 @@ import type {
   DeviceCapabilityReport,
   DeviceFleetOverview,
   SubmitDeviceCapabilityReport,
+  InstalledExtensionSnapshot,
   AuditEventEntry,
   SubmitAuditEvent,
 } from './types'
@@ -194,7 +195,7 @@ export async function submitDeviceHeartbeat(
   endpoint: string,
   employeeId: string,
   accessToken: string,
-  request: Omit<SubmitDeviceCapabilityReport, 'capabilities'>,
+  request: Omit<SubmitDeviceCapabilityReport, 'capabilities'> & { installedExtensions: InstalledExtensionSnapshot[] },
 ): Promise<void> {
   const response = await fetch(controlPlaneUrl(`${endpoint.replace(/\/$/, '')}/heartbeat`), {
     method: 'POST',

@@ -58,7 +58,9 @@ export function mergeSkills(
     const connectorRefs = skill.connectorRefs ?? []
     const requiredTools = skill.requiredTools ?? []
     const knowledgeBaseRefs = skill.knowledgeBaseRefs ?? []
-    const local = localById.get(skill.id)
+    const local = installed.find((value) => value.manifest.kind === 'skill'
+      && value.manifest.id === skill.id && value.manifest.version === skill.version)
+      ?? localById.get(skill.id)
     return {
       ...skill,
       triggers: skill.triggers ?? [],
