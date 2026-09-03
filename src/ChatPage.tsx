@@ -1,4 +1,4 @@
-import { ArrowDown, Bot, ChevronDown, CirclePlus, CircleStop, FolderOpen, Send, Sparkles, SquareCheckBig, X } from 'lucide-react'
+import { ArrowDown, BookOpen, Bot, Check, ChevronDown, CirclePlus, CircleStop, FolderOpen, Send, Sparkles, SquareCheckBig, X } from 'lucide-react'
 import { lazy, Suspense, useEffect, useRef, useState, type FormEvent, type RefObject, type UIEvent } from 'react'
 import type { AuthorizedLocalDirectory } from './harness'
 import type { InvocationOption } from './invocations'
@@ -20,6 +20,8 @@ interface Props {
   runtimeStatus: RuntimeStatus
   selectedCapabilityExecutable: boolean
   selectedCapabilityName: string
+  selectedCapabilityId: string
+  capabilityOptions: Array<{ id: string; name: string; summary: string }>
   activeModel: string
   models: string[]
   modelMenuOpen: boolean
@@ -38,7 +40,7 @@ interface Props {
   onPrepareRetry: () => void
   onRecoverHarness: () => void
   onAddLocalDirectory: () => void
-  onCapabilityPage: () => void
+  onSelectCapability: (id: string) => void
   onToggleModelMenu: () => void
   onSelectModel: (model: string) => void
   onCancel: () => void
@@ -50,8 +52,12 @@ interface Props {
 
 export function ChatPage(props: Props) {
   const [showScrollDown, setShowScrollDown] = useState(false)
+  const [capabilityMenuOpen, setCapabilityMenuOpen] = useState(false)
+  const [contextMenuOpen, setContextMenuOpen] = useState(false)
   const pinnedToBottom = useRef(true)
   const previousMessageCount = useRef(props.messages.length)
+  const capabilityPickerRef = useRef<HTMLDivElement>(null)
+  const contextPickerRef = useRef<HTMLDivElement>(null)
   const lastMessage = props.messages.at(-1)
 
   const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
@@ -78,6 +84,15 @@ export function ChatPage(props: Props) {
     return () => window.cancelAnimationFrame(frame)
   }, [props.messages.length, lastMessage?.pending, lastMessage?.text, props.taskMonitor.updatedAt])
 
+  useEffect(() => {
+    const dismiss = (event: PointerEvent) => {
+      if (!capabilityPickerRef.current?.contains(event.target as Node)) setCapabilityMenuOpen(false)
+      if (!contextPickerRef.current?.contains(event.target as Node)) setContextMenuOpen(false)
+    }
+    document.addEventListener('pointerdown', dismiss)
+    return () => document.removeEventListener('pointerdown', dismiss)
+  }, [])
+
   return <section className={props.messages.length > 0 ? 'chat-page conversation' : 'chat-page'}>
     {props.messages.length === 0 && <div className="hero-copy">
       <XiaoyinMascot size={62} variant="hero" />
@@ -100,10 +115,28 @@ export function ChatPage(props: Props) {
     {showScrollDown && <button aria-label="滚动到最新消息" className="scroll-to-latest" onClick={() => scrollToBottom()} title="滚动到最新消息" type="button"><ArrowDown size={18} /></button>}
     {props.harnessHealth === 'degraded' && <div className="runtime-recovery"><CircleStop size={17} /><span><strong>本地 Agent 暂不可用</strong><small>{props.harnessHealthDetail}</small></span><button onClick={props.onRecoverHarness} type="button">重新检测</button></div>}
     <form className="composer" onSubmit={props.onSubmit}>
-      <textarea aria-label="给小胤发送消息" onChange={(event) => props.onPrompt(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); event.currentTarget.form?.requestSubmit() } }} placeholder="描述任务，/ 快捷调用，@ 添加上下文" ref={props.composerRef} value={props.prompt} />
+      <textarea aria-label="给小胤发送消息" onChange={(event) => props.onPrompt(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); event.currentTarget.form?.requestSubmit() } }} placeholder="描述任务；@ 引用知识库，/ 使用快捷指令" ref={props.composerRef} value={props.prompt} />
       <div className="composer-actions">
-        <button className="workspace-button" disabled={props.harnessRunning} onClick={props.onAddLocalDirectory} title="选择允许小胤操作的工作目录" type="button"><CirclePlus size={17} /><span>选择工作目录</span></button>
-        <button className="mode-button" onClick={props.onCapabilityPage} type="button"><Sparkles size={14} /> {props.selectedCapabilityName} <ChevronDown size={13} /></button>
+        <div className="context-picker" ref={contextPickerRef}>
+          <button aria-expanded={contextMenuOpen} className="workspace-button" disabled={props.harnessRunning} onClick={() => { setContextMenuOpen((value) => !value); setCapabilityMenuOpen(false) }} title="添加文件或知识库" type="button"><CirclePlus size={17} /><span>添加</span></button>
+          {contextMenuOpen && <div className="composer-popover context-menu">
+            <small>添加到当前任务</small>
+            <button onClick={() => { setContextMenuOpen(false); props.onAddLocalDirectory() }} type="button"><FolderOpen size={16} /><span><strong>工作目录</strong><small>允许小胤读取和处理本地文件</small></span></button>
+            {props.knowledgeBases.filter((item) => !props.selectedKnowledgeBaseRefs.includes(item.reference)).length > 0 && <>
+              <small>知识库</small>
+              {props.knowledgeBases.filter((item) => !props.selectedKnowledgeBaseRefs.includes(item.reference)).slice(0, 6).map((item) => <button disabled={Boolean(props.capabilitySnapshot)} key={item.reference} onClick={() => { props.onAddKnowledge(item.reference); setContextMenuOpen(false) }} type="button"><BookOpen size={16} /><span><strong>{item.name}</strong><small>{item.description || knowledgeScopeLabel(item.scope)}</small></span></button>)}
+            </>}
+          </div>}
+        </div>
+        <div className="capability-picker" ref={capabilityPickerRef}>
+          <button aria-expanded={capabilityMenuOpen} className="mode-button" disabled={props.harnessRunning || Boolean(props.capabilitySnapshot)} onClick={() => { setCapabilityMenuOpen((value) => !value); setContextMenuOpen(false) }} title={props.capabilitySnapshot ? '当前对话的工作模式已固定，新建任务后可切换' : '选择工作模式'} type="button"><Sparkles size={14} /> {props.selectedCapabilityName} <ChevronDown size={13} /></button>
+          {capabilityMenuOpen && <div className="composer-popover capability-menu">
+            <small>工作模式</small>
+            <button className={!props.selectedCapabilityId ? 'active' : ''} onClick={() => { props.onSelectCapability(''); setCapabilityMenuOpen(false) }} type="button"><Sparkles size={16} /><span><strong>通用</strong><small>小胤根据任务自动选择技能和工具</small></span>{!props.selectedCapabilityId && <Check size={15} />}</button>
+            {props.capabilityOptions.length > 0 && <small>专家套件</small>}
+            {props.capabilityOptions.map((option) => <button className={props.selectedCapabilityId === option.id ? 'active' : ''} key={option.id} onClick={() => { props.onSelectCapability(option.id); setCapabilityMenuOpen(false) }} type="button"><Sparkles size={16} /><span><strong>{option.name}</strong><small>{option.summary}</small></span>{props.selectedCapabilityId === option.id && <Check size={15} />}</button>)}
+          </div>}
+        </div>
         <div className="model-picker" ref={props.modelPickerRef}>
           <button aria-expanded={props.modelMenuOpen} className="model-label" onClick={props.onToggleModelMenu} type="button"><Bot size={14} /> {modelDisplayName(props.activeModel)} <ChevronDown size={13} /></button>
           {props.modelMenuOpen && <div className="model-menu"><small>公司可用模型</small>{(props.models.length ? props.models : [props.activeModel]).map((model) => <button className={model === props.activeModel ? 'active' : ''} key={model} onClick={() => props.onSelectModel(model)} type="button"><span><strong>{modelDisplayName(model)}</strong><small>{model}</small></span>{model === props.activeModel && <SquareCheckBig size={14} />}</button>)}</div>}
@@ -112,8 +145,8 @@ export function ChatPage(props: Props) {
           ? <button aria-label="取消当前任务" className="cancel-button" onClick={props.onCancel} title="取消当前任务" type="button"><CircleStop size={17} /></button>
           : <button aria-label="发送" className="send-button" disabled={!props.prompt.trim() || props.runtimeStatus !== 'ready' || props.harnessHealth === 'degraded' || !props.selectedCapabilityExecutable} title={props.runtimeStatus !== 'ready' ? '企业服务未连接' : props.harnessHealth === 'degraded' ? '请先恢复本地 Agent' : !props.selectedCapabilityExecutable ? '企业目录缓存已过期，请先重新同步' : '发送'} type="submit"><Send size={17} /></button>}
       </div>
-      {props.visibleInvocations.length > 0 && <div className="slash-menu"><small>快捷调用</small>{props.visibleInvocations.map((option) => <button key={`${option.kind}-${option.profileId}-${option.id}`} onClick={() => props.onSelectInvocation(option)} type="button"><span><strong>{option.label}</strong><small>{option.description}</small></span><em>{option.profileName}</em></button>)}</div>}
-      {props.contextQuery !== undefined && <div className="slash-menu"><small>添加业务上下文</small>{props.visibleKnowledgeContexts.map((item) => <button key={item.reference} onClick={() => props.onAddKnowledge(item.reference)} type="button"><span><strong>@{item.name}</strong><small>{item.description || item.reference}</small></span><em>{knowledgeScopeLabel(item.scope)}</em></button>)}{props.visibleKnowledgeContexts.length === 0 && <span className="context-menu-empty">{props.capabilitySnapshot ? '当前任务能力已固定，请新建任务后添加' : '没有匹配的可用知识库'}</span>}</div>}
+      {props.visibleInvocations.length > 0 && <div className="slash-menu"><small>快捷指令</small>{props.visibleInvocations.map((option) => <button key={`${option.profileKind}-${option.profileId}-${option.id}`} onClick={() => props.onSelectInvocation(option)} type="button"><span><strong>{option.label}</strong><small>{option.description}</small></span></button>)}</div>}
+      {props.contextQuery !== undefined && <div className="slash-menu"><small>引用知识库</small>{props.visibleKnowledgeContexts.map((item) => <button key={item.reference} onClick={() => props.onAddKnowledge(item.reference)} type="button"><span><strong>@{item.name}</strong><small>{item.description || item.reference}</small></span><em>{knowledgeScopeLabel(item.scope)}</em></button>)}{props.visibleKnowledgeContexts.length === 0 && <span className="context-menu-empty">{props.capabilitySnapshot ? '当前对话已开始，请新建任务后添加知识库' : '没有匹配的知识库'}</span>}</div>}
     </form>
     {props.localFileError && <div className="local-file-error">{props.localFileError}</div>}
     <div className="context-bar">

@@ -575,7 +575,9 @@ export default function App() {
     })
     void shutdownHarness()
   }
-  const invocationOptions = buildInvocationOptions(expertKits, skillViews)
+  const invocationOptions = buildInvocationOptions(currentCapabilitySnapshot
+    ? selectedExpertKit ? [selectedExpertKit] : []
+    : expertKits)
   const visibleInvocations = filterInvocationOptions(invocationOptions, prompt)
   const contextQuery = prompt.startsWith('@') && !/\s/.test(prompt.slice(1))
     ? prompt.slice(1).toLocaleLowerCase('zh-CN') : undefined
@@ -1059,24 +1061,6 @@ export default function App() {
     focusComposer()
   }
 
-  const useSkill = (skill: SkillView) => {
-    if (!['installed', 'update'].includes(skill.installState)) return
-    if (messages.length > 0) {
-      setMessages([])
-      setCurrentLocalTaskId('')
-      setSelectedKnowledgeBaseRefs([])
-    }
-    setSelectedSkillId(skill.id)
-    setSelectedExpertKitId('')
-    setHarnessSessionId('')
-    setCurrentCapabilitySnapshot(undefined)
-    setPage('chat')
-    setPrompt(`请使用 skill "${skill.id}" 完成：`)
-    setActiveSkillId('')
-    void shutdownHarness()
-    focusComposer()
-  }
-
   const selectModel = (model: string) => {
     setSelectedModel(model)
     setModelMenuOpen(false)
@@ -1084,18 +1068,31 @@ export default function App() {
   }
 
   const selectInvocation = (option: InvocationOption) => {
-    if (messages.length > 0) {
-      setMessages([])
-      setCurrentLocalTaskId('')
-      setSelectedKnowledgeBaseRefs([])
+    if (!currentCapabilitySnapshot) {
+      setSelectedExpertKitId(option.profileId)
+      setSelectedSkillId('')
+      setHarnessSessionId('')
     }
-    setSelectedExpertKitId(option.profileKind === 'expert-kit' ? option.profileId : '')
-    setSelectedSkillId(option.profileKind === 'skill' ? option.profileId : '')
+    setPrompt(`/${option.id} `)
+    if (!currentCapabilitySnapshot) void shutdownHarness()
+    focusComposer()
+  }
+
+  const selectChatCapability = (id: string) => {
+    const kit = expertKits.find((item) => item.id === id && ['installed', 'update'].includes(item.installState))
+    if (kit) {
+      setSelectedExpertKitId(kit.id)
+      setSelectedSkillId('')
+      setHarnessSessionId('')
+      setCurrentCapabilitySnapshot(undefined)
+      void shutdownHarness()
+      focusComposer()
+      return
+    }
+    setSelectedExpertKitId('')
+    setSelectedSkillId('')
     setHarnessSessionId('')
     setCurrentCapabilitySnapshot(undefined)
-    setPrompt(option.kind === 'command'
-      ? `/${option.id} `
-      : `请使用 skill "${option.id}" 完成：`)
     void shutdownHarness()
     focusComposer()
   }
@@ -1167,6 +1164,7 @@ export default function App() {
         {page === 'chat' ? (
           <ChatPage
             activeModel={activeModel}
+            capabilityOptions={expertKits.filter((item) => ['installed', 'update'].includes(item.installState)).map((item) => ({ id: item.id, name: item.name, summary: item.summary }))}
             capabilitySnapshot={currentCapabilitySnapshot}
             composerRef={composerRef}
             contextQuery={contextQuery}
@@ -1184,7 +1182,7 @@ export default function App() {
             onAddKnowledge={(reference) => { setSelectedKnowledgeBaseRefs((current) => [...current, reference]); setPrompt(''); focusComposer() }}
             onAddLocalDirectory={() => void addLocalDirectory()}
             onCancel={() => void cancelCurrentTask()}
-            onCapabilityPage={() => setPage(selectedSkill ? 'skills' : 'experts')}
+            onSelectCapability={selectChatCapability}
             onPrepareRetry={prepareRetry}
             onPrompt={(value) => { setPrompt(value); focusComposer() }}
             onRecoverHarness={() => setHarnessHealthAttempt((value) => value + 1)}
@@ -1197,6 +1195,7 @@ export default function App() {
             prompt={prompt}
             runtimeStatus={runtimeStatus}
             selectedCapabilityExecutable={Boolean(bootstrap) && selectedCapabilityExecutable}
+            selectedCapabilityId={selectedExpertKit?.id ?? ''}
             selectedCapabilityName={selectedExpertKit?.name ?? selectedSkill?.name ?? '通用'}
             selectedKnowledgeBaseRefs={selectedKnowledgeBaseRefs}
             taskMonitor={taskMonitor}
@@ -1208,9 +1207,9 @@ export default function App() {
             {page !== 'schedules' && <div className="capability-page-heading"><div>
             <h1>{extensionNav.find((item) => item.id === page)?.label ?? ({ settings: '桌面设置', schedules: '定时任务', im: 'IM 频道' } as Record<string, string>)[page]}</h1>
             <p>{page === 'experts'
-              ? '专家套件是面向角色或行业的工具套件，在对话框中输入 @ 或 / 即可使用。'
+              ? '专家套件提供面向角色或行业的完整工作方式，可在新任务的工作模式菜单中选择。'
               : page === 'skills'
-                ? '安装与管理技能，在对话中扩展小胤的能力。'
+                ? '安装后的技能由小胤根据任务自动调用，无需在聊天中手动选择。'
                   : page === 'connectors'
                     ? '连接外部应用、日历与服务，让你的工作流更顺畅。'
                   : page === 'knowledge'
@@ -1370,11 +1369,9 @@ export default function App() {
         knowledgeBases={knowledgeBases}
         installing={installingSkillId === activeSkill.id}
         removing={removingCatalogId === activeSkill.id}
-        selected={selectedSkillId === activeSkill.id}
         onClose={() => setActiveSkillId('')}
         onInstall={() => void installSkill(activeSkill)}
         onRemove={activeSkill.installed ? () => void removeCatalogArtifact('skill', activeSkill.id) : undefined}
-        onUse={() => useSkill(activeSkill)}
       />}
     </div>
   )

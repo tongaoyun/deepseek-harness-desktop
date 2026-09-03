@@ -1,50 +1,31 @@
 import type { ExpertKitView } from './expertKits'
-import type { SkillCatalogEntry } from './types'
-import type { SkillView } from './skills'
 
 export interface InvocationOption {
   id: string
-  kind: 'command' | 'skill'
+  kind: 'command'
   label: string
   description: string
-  profileKind: 'expert-kit' | 'skill'
+  profileKind: 'expert-kit'
   profileId: string
   profileName: string
 }
 
-export function buildInvocationOptions(kits: ExpertKitView[], skills: Array<SkillCatalogEntry | SkillView>): InvocationOption[] {
+export function buildInvocationOptions(kits: ExpertKitView[]): InvocationOption[] {
   const installed = kits.filter((kit) => kit.installState === 'installed' || kit.installState === 'update')
   const options: InvocationOption[] = installed.flatMap((kit) => {
     const usingOlderVersion = kit.installState === 'update' && kit.installed
     const commandIds = usingOlderVersion ? kit.installed!.manifest.commands.map((command) => command.id) : kit.commandIds
-    const skillIds = usingOlderVersion ? kit.installed!.manifest.skills.map((skill) => skill.id) : kit.skillIds
     const profileName = usingOlderVersion ? kit.installed!.manifest.name : kit.name
-    return [
-    ...commandIds.map((id): InvocationOption => ({
+    return commandIds.map((id): InvocationOption => ({
       id,
       kind: 'command',
       label: `/${id}`,
-      description: `运行《${profileName}》快捷命令`,
+      description: `${profileName} · 快捷指令`,
       profileKind: 'expert-kit',
       profileId: kit.id,
       profileName,
-    })),
-    ...skillIds.map((id): InvocationOption => ({
-      id,
-      kind: 'skill',
-      label: `/${id}`,
-      description: `使用《${profileName}》中的 Skill`,
-      profileKind: 'expert-kit',
-      profileId: kit.id,
-      profileName,
-    })),
-  ]})
-  for (const skill of skills) {
-    if ('installState' in skill && (skill.installState === 'installed' || skill.installState === 'update')) {
-      options.push({ id: skill.id, kind: 'skill', label: `/${skill.id}`,
-        description: `${skill.summary} · 独立 Skill`, profileKind: 'skill', profileId: skill.id, profileName: skill.name })
-    }
-  }
+    }))
+  })
   return options.sort((left, right) => left.label.localeCompare(right.label, 'zh-CN'))
 }
 
