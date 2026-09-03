@@ -90,8 +90,8 @@ export function ConnectorsPage({
     const configured = applyConnectorSecrets(connector, secrets[connector.id])
     setConfiguring(connector)
     setSecretDraft({
-      environment: { ...(configured.environment ?? {}) },
-      headers: { ...(configured.headers ?? {}) },
+      environment: { ...configured.environment },
+      headers: { ...configured.headers },
     })
     setEnableAfterSave(enableWhenSaved)
     setSecretError('')

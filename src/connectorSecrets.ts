@@ -19,8 +19,8 @@ export function connectorSecretTemplate(connector: ConnectorCatalogEntry): Conne
 
 export function connectorSecretValues(connector: ConnectorCatalogEntry): ConnectorSecretValues {
   return {
-    environment: { ...(connector.environment ?? {}) },
-    headers: { ...(connector.headers ?? {}) },
+    environment: { ...connector.environment },
+    headers: { ...connector.headers },
   }
 }
 
