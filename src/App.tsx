@@ -1199,7 +1199,7 @@ export default function App() {
                   : page === 'schedules'
                     ? '按专家套件声明的后台工作流创建任务；任务由 Temporal 托管，关闭电脑后仍会运行。'
                   : page === 'settings'
-                    ? '管理个人记忆与当前电脑的本地能力；软件更新和反馈仍可从左下角头像打开。'
+                    ? '管理企业身份、个人记忆、当前电脑能力与应用更新。'
                     : '这里将由控制中心下发公司自己的能力与权限配置。'}</p></div>{(page === 'experts' || page === 'skills' || page === 'connectors') && <div className="capability-page-actions">
               <button aria-label="刷新目录" className="refresh-extension-button" disabled={expertKitsLoading} onClick={() => setExtensionSyncAttempt((value) => value + 1)} title="刷新目录" type="button"><RefreshCw className={expertKitsLoading ? 'spin' : ''} size={15} /></button>
               <label className="capability-page-search"><Search size={14} /><input aria-label={`搜索${page === 'experts' ? '专家套件' : page === 'skills' ? '技能' : '连接器'}`} onChange={(event) => setExtensionQuery(event.target.value)} placeholder={`搜索${page === 'experts' ? '套件' : page === 'skills' ? '技能' : '连接器'}…`} value={extensionQuery} />{extensionQuery && <button aria-label="清空搜索" onClick={() => setExtensionQuery('')} type="button"><X size={12} /></button>}</label>
@@ -1210,11 +1210,15 @@ export default function App() {
             {page === 'settings' && bootstrap && user && <DesktopSettingsPage
               accessToken={accessToken}
               authorizedDirectoryCount={localDirectories.length}
+              companyName={user.companyName}
               connectors={connectors}
+              department={user.department}
               deviceEndpoint={bootstrap.endpoints.deviceCapabilities ?? '/api/v1/device-capabilities'}
+              displayName={user.displayName}
               employeeId={user.userId}
               memoryEndpoint={bootstrap.endpoints.memoryProfile ?? '/api/v1/memory-profile'}
               onMemorySaved={memorySaved}
+              position={user.position}
               runtimeConnectors={runtimeConnectors}
               runtimeStatus={runtimeStatus}
             />}
