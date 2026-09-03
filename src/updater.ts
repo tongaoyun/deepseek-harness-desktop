@@ -3,7 +3,7 @@ import { relaunch } from '@tauri-apps/plugin-process'
 import { check, type DownloadEvent, type Update } from '@tauri-apps/plugin-updater'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-export type UpdaterPhase = 'idle' | 'checking' | 'current' | 'available' | 'downloading' | 'installing' | 'error'
+export type UpdaterPhase = 'idle' | 'checking' | 'current' | 'unsupported' | 'available' | 'downloading' | 'installing' | 'error'
 
 export interface DownloadProgress {
   downloadedBytes: number
@@ -22,6 +22,21 @@ export interface DesktopUpdaterState extends DownloadProgress {
 const initialState: DesktopUpdaterState = {
   phase: 'idle',
   downloadedBytes: 0,
+}
+
+export function isUnsupportedUpdaterPlatformError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+  return message.includes('None of the fallback platforms')
+    && message.includes('darwin-')
+    && message.includes('platforms')
+}
+
+function updaterErrorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error)
+  if (/timed?\s*out|network|fetch|connect|dns/i.test(message)) {
+    return '暂时无法连接更新服务，请检查网络后重试。'
+  }
+  return '更新服务暂时不可用，请稍后重试。'
 }
 
 export function updateDownloadProgress(
@@ -60,7 +75,7 @@ export function useDesktopUpdater() {
     checkingRef.current = true
     if (!silent) setState((current) => ({ ...current, phase: 'checking', error: undefined }))
     try {
-      const available = await check({ timeout: 15_000, allowDowngrades: true })
+      const available = await check({ timeout: 15_000, allowDowngrades: false })
       if (updateRef.current && updateRef.current !== available) await updateRef.current.close()
       updateRef.current = available
       if (!available) {
@@ -75,11 +90,13 @@ export function useDesktopUpdater() {
         notes: available.body,
       })
     } catch (error) {
-      if (!silent) {
+      if (isUnsupportedUpdaterPlatformError(error)) {
+        setState({ phase: 'unsupported', downloadedBytes: 0 })
+      } else if (!silent) {
         setState({
           phase: 'error',
           downloadedBytes: 0,
-          error: error instanceof Error ? error.message : String(error),
+          error: updaterErrorMessage(error),
         })
       }
     } finally {
@@ -107,7 +124,7 @@ export function useDesktopUpdater() {
       setState((current) => ({
         ...current,
         phase: 'error',
-        error: error instanceof Error ? error.message : String(error),
+        error: updaterErrorMessage(error),
       }))
     }
   }, [state.phase])
