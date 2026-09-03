@@ -11,15 +11,13 @@ interface SkillDetailsModalProps {
   knowledgeBases: KnowledgeBaseEntry[]
   installing: boolean
   removing: boolean
-  selected: boolean
   onClose: () => void
   onInstall: () => void
   onRemove?: () => void
-  onUse: () => void
 }
 
 export function SkillDetailsModal({
-  skill, connectors, knowledgeBases, installing, removing, selected, onClose, onInstall, onRemove, onUse,
+  skill, connectors, knowledgeBases, installing, removing, onClose, onInstall, onRemove,
 }: SkillDetailsModalProps) {
   useEffect(() => {
     const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose() }
@@ -63,7 +61,7 @@ export function SkillDetailsModal({
       </section>
       <section className="expert-detail-section">
         <h3>触发场景</h3>
-        <div className="connector-tools">{skill.triggers.join(' · ') || '未设置自动触发词，可手动调用'}</div>
+        <div className="connector-tools">{skill.triggers.join(' · ') || '未设置关键词，由小胤按任务语义自动匹配'}</div>
       </section>
       <section className="expert-detail-section">
         <h3>依赖能力</h3>
@@ -77,11 +75,10 @@ export function SkillDetailsModal({
         {onRemove && <button className="danger" disabled={removing} onClick={onRemove} type="button"><Trash2 size={14} />{removing ? '正在卸载…' : '卸载 Skill'}</button>}
         <button className="secondary" onClick={onClose} type="button">关闭</button>
         {skill.installState === 'retired' ? null : skill.installState === 'installed'
-          ? <button onClick={onUse} type="button">{selected ? '正在使用' : '立即使用'}</button>
-          : skill.installState === 'update' ? <>
-            <button className="secondary" onClick={onUse} type="button">{selected ? `正在使用 v${skill.installedVersion}` : `继续使用 v${skill.installedVersion}`}</button>
-            <button disabled={installing || !skill.sha256} onClick={onInstall} type="button">{installing ? '正在校验并安装…' : '确认更新'}</button>
-          </> : <button disabled={installing || !skill.sha256} onClick={onInstall} type="button">{installing ? '正在校验并安装…' : '确认安装'}</button>}
+          ? <span className="skill-enabled-note"><CheckCircle2 size={14} />已启用，将按任务自动使用</span>
+          : skill.installState === 'update'
+            ? <button disabled={installing || !skill.sha256} onClick={onInstall} type="button">{installing ? '正在校验并安装…' : '确认更新'}</button>
+            : <button disabled={installing || !skill.sha256} onClick={onInstall} type="button">{installing ? '正在校验并安装…' : '确认安装'}</button>}
       </div>
     </section>
   </div>

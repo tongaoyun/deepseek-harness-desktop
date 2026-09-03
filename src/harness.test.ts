@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { applyHarnessNotification, authorizeDroppedPaths, cancelHarness, createTaskMonitor, diagnoseConnectors, harnessActivityLabel, probeHarnessHost, selfTestLocalCapabilities } from './harness'
+import { applyHarnessNotification, authorizeDroppedPaths, cancelHarness, createTaskMonitor, diagnoseConnectors, harnessActivityLabel, harnessResponseUpdate, probeHarnessHost, selfTestLocalCapabilities } from './harness'
 
 describe('harnessActivityLabel', () => {
   it('shows safe progress labels without exposing reasoning content', () => {
@@ -40,6 +40,9 @@ describe('harnessActivityLabel', () => {
       { kind: 'tool', label: '查询库存风险', status: 'completed', toolName: 'inventory_risk' },
       { kind: 'response', label: '完成回复', status: 'completed', toolName: undefined },
     ])
+    expect(monitor.timeline).toMatchObject([
+      { kind: 'tool', label: '查询库存风险', status: 'completed', toolName: 'inventory_risk' },
+    ])
     expect(JSON.stringify(monitor)).not.toContain('hidden chain')
     expect(JSON.stringify(monitor)).not.toContain('private ERP result')
     expect(JSON.stringify(monitor)).not.toContain('sensitive')
@@ -54,6 +57,35 @@ describe('harnessActivityLabel', () => {
     expect(monitor.steps.map((step) => step.status)).toEqual(['failed', 'failed'])
     expect(monitor.steps.at(-1)?.label).toBe('执行未完成')
     expect(monitor.status).toBe('failed')
+  })
+
+  it('streams only visible text into the conversation timeline', () => {
+    const monitor = [
+      event('step/start', { turn: 3, step: 1 }, 1),
+      event('reasoning-chunks', { turn: 3, step: 1, texts: ['private reasoning'] }, 2),
+      event('text-chunks', { turn: 3, step: 1, texts: ['我先', '查看目录。'] }, 3),
+      event('text-chunks', { turn: 3, step: 1, texts: ['正在处理。'] }, 4),
+      event('assistant/message', { turn: 3, step: 1, message: { content: [
+        { type: 'reasoning', text: 'private reasoning' },
+        { type: 'text', text: '我先查看目录。正在处理。' },
+      ] } }, 5),
+    ].reduce(applyHarnessNotification, createTaskMonitor())
+
+    expect(monitor.timeline).toMatchObject([{
+      kind: 'assistant', text: '我先查看目录。正在处理。', status: 'completed',
+    }])
+    expect(JSON.stringify(monitor)).not.toContain('private reasoning')
+  })
+
+  it('projects visible response chunks without exposing reasoning', () => {
+    expect(harnessResponseUpdate(event('reasoning-chunks', { turn: 1, step: 1, texts: ['private'] }, 1))).toBeUndefined()
+    expect(harnessResponseUpdate(event('text-chunks', { turn: 1, step: 2, texts: ['正在', '回答'] }, 2)))
+      .toEqual({ key: 'assistant:1:2', mode: 'append', text: '正在回答' })
+    expect(harnessResponseUpdate(event('assistant/message', { turn: 1, step: 2, message: { content: [
+      { type: 'reasoning', text: 'private' }, { type: 'text', text: '完整回答' },
+    ] } }, 3))).toEqual({ key: 'assistant:1:2', mode: 'replace', text: '完整回答' })
+    expect(harnessResponseUpdate(event('tool/call', { callId: '1', name: 'local_files_list' }, 4)))
+      .toEqual({ key: '', mode: 'clear', text: '' })
   })
 
   it('records only the approval decision and tool name', () => {
@@ -88,6 +120,36 @@ describe('harnessActivityLabel', () => {
     ].reduce(applyHarnessNotification, createTaskMonitor())
     expect(ignored.artifacts).toEqual([])
   })
+
+  it('maps local files, commands and connectors into distinct conversation blocks', () => {
+    const monitor = [
+      event('tool/call', { callId: 'files', name: 'local_files_list', arguments: JSON.stringify({ rootId: 'r1', path: 'reports' }) }, 1),
+      event('tool/result', { message: { content: [{
+        type: 'tool-result', toolCallId: 'files', isError: false, content: [{ type: 'text', text: JSON.stringify({
+          rootId: 'r1', rootName: 'Downloads', directory: 'reports', entries: [{ path: 'reports/a.md', type: 'file' }], truncated: false,
+        }) }],
+      }] } }, 2),
+      event('tool/call', { callId: 'shell', name: 'local_shell_run', arguments: JSON.stringify({ command: 'pnpm test', description: '运行测试', workdir: 'app' }) }, 3),
+      event('tool/result', { message: { content: [{
+        type: 'tool-result', toolCallId: 'shell', isError: false, content: [{ type: 'text', text: JSON.stringify({ exitCode: 0, stdout: '42 tests passed', stderr: '' }) }],
+      }] } }, 4),
+      event('tool/call', { callId: 'github', name: 'mcp_github_list_pull_requests', arguments: JSON.stringify({ owner: 'private' }) }, 5),
+    ].reduce(applyHarnessNotification, createTaskMonitor())
+
+    expect(monitor.timeline).toMatchObject([
+      { kind: 'file', label: '查看 reports', path: 'reports', itemCount: 1, status: 'completed' },
+      { kind: 'command', label: '运行命令', text: 'pnpm test', detail: '退出码 0', output: '42 tests passed', status: 'completed' },
+      { kind: 'connector', label: '使用 github', connectorName: 'github', status: 'running' },
+    ])
+    expect(JSON.stringify(monitor)).not.toContain('private')
+  })
+
+  it('renders public runtime errors without exposing reasoning', () => {
+    const monitor = [event('error', { message: '连接器暂时不可用', reasoning: 'hidden chain' }, 1)]
+      .reduce(applyHarnessNotification, createTaskMonitor())
+    expect(monitor.timeline).toMatchObject([{ kind: 'error', detail: '连接器暂时不可用', status: 'failed' }])
+    expect(JSON.stringify(monitor)).not.toContain('hidden chain')
+  })
 })
 
 describe('diagnoseConnectors', () => {
@@ -106,7 +168,7 @@ describe('diagnoseConnectors', () => {
 
   it('keeps cancellation and empty drops safe outside Tauri', async () => {
     await expect(cancelHarness()).resolves.toBe(false)
-    await expect(authorizeDroppedPaths([])).resolves.toEqual([])
+    await expect(authorizeDroppedPaths([])).resolves.toEqual({ directories: [], attachments: [] })
   })
 })
 

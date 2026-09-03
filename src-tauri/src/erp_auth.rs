@@ -6,7 +6,7 @@ use std::{
     env,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 const ERP_LOGIN_URL: &str = "http://www.instudio.me:6206/eshop/manager/login.jsp";
 const ERP_USER_URL: &str =
@@ -17,8 +17,7 @@ const ERP_COOKIE_URL: &str = "http://www.instudio.me:6206/eshop/";
 const ERP_DINGTALK_APP_ID: &str = "dingoa43wafbtpeg2czybj";
 const ERP_DINGTALK_CALLBACK_URL: &str =
     "http://www.instudio.me:6206/eshop/login.do?method=qrcodelogin";
-const DINGTALK_QR_GENERATE_URL: &str = "https://login.dingtalk.com/user/qrcode/generate";
-const DINGTALK_QR_POLL_URL: &str = "https://login.dingtalk.com/login/login_with_qr";
+const DINGTALK_QR_LOGIN_URL: &str = "https://login.dingtalk.com/login/qrcode.htm";
 
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all(serialize = "camelCase", deserialize = "snake_case"))]
@@ -65,31 +64,7 @@ pub(crate) struct ErpSessionStatus {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ErpQrLoginConfiguration {
-    qr_code_content: String,
-    qr_session_code: String,
-    poll_interval_seconds: u64,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct ErpQrLoginPollResult {
-    status: String,
-    error_message: Option<String>,
-}
-
-#[derive(Deserialize)]
-struct DingTalkQrGenerateResponse {
-    success: bool,
-    result: Option<String>,
-    message: Option<String>,
-}
-
-#[derive(Deserialize)]
-struct DingTalkQrPollResponse {
-    success: bool,
-    code: Option<String>,
-    data: Option<String>,
-    message: Option<String>,
+    login_url: String,
 }
 
 fn setting(name: &str, fallback: &str) -> String {
@@ -128,34 +103,21 @@ fn erp_dingtalk_auth_url() -> String {
     )
 }
 
-fn erp_dingtalk_qr_content(session_code: &str) -> String {
-    let callback_url = setting(
-        "XIAOYIN_ERP_DINGTALK_CALLBACK_URL",
-        ERP_DINGTALK_CALLBACK_URL,
-    );
+fn erp_dingtalk_qr_login_url() -> String {
+    let goto = erp_dingtalk_auth_url();
     format!(
-        "https://oapi.dingtalk.com/connect/qrcommit?showmenu=false&code={}&appid={}&redirect_uri={}",
-        utf8_percent_encode(session_code, NON_ALPHANUMERIC),
-        utf8_percent_encode(&dingtalk_app_id(), NON_ALPHANUMERIC),
-        utf8_percent_encode(&callback_url, NON_ALPHANUMERIC),
+        "{}?goto={}&style={}",
+        DINGTALK_QR_LOGIN_URL,
+        utf8_percent_encode(&goto, NON_ALPHANUMERIC),
+        utf8_percent_encode("border:none;background-color:#FFFFFF;", NON_ALPHANUMERIC),
     )
 }
 
-fn validated_qr_session_code(value: &str) -> Result<&str, String> {
+fn validated_login_tmp_code(value: &str) -> Result<&str, String> {
     if value.is_empty() || value.len() > 1024 || value.chars().any(char::is_control) {
-        return Err("钉钉二维码会话无效".to_string());
+        return Err("钉钉扫码凭据无效".to_string());
     }
     Ok(value)
-}
-
-fn login_tmp_code_from_url(value: &str) -> Result<String, String> {
-    let url = value
-        .parse::<tauri::Url>()
-        .map_err(|error| format!("钉钉扫码结果无效：{error}"))?;
-    url.query_pairs()
-        .find_map(|(key, value)| (key == "loginTmpCode").then(|| value.into_owned()))
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| "钉钉扫码结果缺少临时授权码".to_string())
 }
 
 #[tauri::command]
@@ -193,47 +155,18 @@ fn login_window_url_from_main_url(mut url: tauri::Url) -> tauri::Url {
 }
 
 #[tauri::command]
-pub(crate) async fn erp_qr_login_configuration() -> Result<ErpQrLoginConfiguration, String> {
-    let app_id = dingtalk_app_id();
-    let response = reqwest::Client::builder()
-        .timeout(Duration::from_secs(12))
-        .build()
-        .map_err(|error| format!("无法创建钉钉二维码客户端：{error}"))?
-        .get(DINGTALK_QR_GENERATE_URL)
-        .query(&[
-            ("bizScene", "http_third_party"),
-            ("sceneId", app_id.as_str()),
-        ])
-        .send()
-        .await
-        .map_err(|error| format!("获取钉钉二维码失败：{error}"))?
-        .error_for_status()
-        .map_err(|error| format!("获取钉钉二维码失败：{error}"))?
-        .json::<DingTalkQrGenerateResponse>()
-        .await
-        .map_err(|error| format!("钉钉二维码响应无效：{error}"))?;
-    let session_code = response
-        .result
-        .filter(|value| response.success && validated_qr_session_code(value).is_ok())
-        .ok_or_else(|| {
-            response
-                .message
-                .unwrap_or_else(|| "钉钉未返回二维码会话".to_string())
-        })?;
-    Ok(ErpQrLoginConfiguration {
-        qr_code_content: erp_dingtalk_qr_content(&session_code),
-        qr_session_code: session_code,
-        poll_interval_seconds: 2,
-    })
+pub(crate) fn erp_qr_login_configuration() -> ErpQrLoginConfiguration {
+    ErpQrLoginConfiguration {
+        login_url: erp_dingtalk_qr_login_url(),
+    }
 }
 
-fn navigate_erp_qr_login(app: &tauri::AppHandle, login_tmp_code: &str) -> Result<(), String> {
-    if login_tmp_code.is_empty()
-        || login_tmp_code.len() > 1024
-        || login_tmp_code.chars().any(char::is_control)
-    {
-        return Err("钉钉扫码凭据无效".to_string());
-    }
+#[tauri::command]
+pub(crate) fn complete_erp_qr_login(
+    app: tauri::AppHandle,
+    login_tmp_code: String,
+) -> Result<(), String> {
+    let login_tmp_code = validated_login_tmp_code(&login_tmp_code)?;
     let target = format!(
         "{}&loginTmpCode={}",
         erp_dingtalk_auth_url(),
@@ -245,70 +178,14 @@ fn navigate_erp_qr_login(app: &tauri::AppHandle, login_tmp_code: &str) -> Result
     let window = app
         .get_webview_window("erp-login")
         .ok_or_else(|| "找不到 ERP 扫码窗口".to_string())?;
-    show_main_window(app);
-    window
-        .hide()
-        .map_err(|error| format!("无法收起 ERP 扫码窗口：{error}"))?;
     window
         .navigate(url)
-        .map_err(|error| format!("无法完成 ERP 授权：{error}"))
-}
-
-#[tauri::command]
-pub(crate) async fn poll_erp_qr_login(
-    app: tauri::AppHandle,
-    qr_session_code: String,
-) -> Result<ErpQrLoginPollResult, String> {
-    let qr_session_code = validated_qr_session_code(&qr_session_code)?;
-    let app_id = dingtalk_app_id();
-    let goto = erp_dingtalk_auth_url();
-    let response = reqwest::Client::builder()
-        .timeout(Duration::from_secs(12))
-        .build()
-        .map_err(|error| format!("无法创建钉钉扫码状态客户端：{error}"))?
-        .post(DINGTALK_QR_POLL_URL)
-        .form(&[
-            ("qrCode", qr_session_code),
-            ("goto", goto.as_str()),
-            ("pdmToken", ""),
-            ("bizScene", "http_third_party"),
-            ("sceneId", app_id.as_str()),
-        ])
-        .send()
-        .await
-        .map_err(|error| format!("查询钉钉扫码状态失败：{error}"))?
-        .error_for_status()
-        .map_err(|error| format!("查询钉钉扫码状态失败：{error}"))?
-        .json::<DingTalkQrPollResponse>()
-        .await
-        .map_err(|error| format!("钉钉扫码状态响应无效：{error}"))?;
-
-    if response.success {
-        let login_tmp_code = response
-            .data
-            .as_deref()
-            .ok_or_else(|| "钉钉扫码成功但未返回授权结果".to_string())
-            .and_then(login_tmp_code_from_url)?;
-        navigate_erp_qr_login(&app, &login_tmp_code)?;
-        return Ok(ErpQrLoginPollResult {
-            status: "confirmed".to_string(),
-            error_message: None,
-        });
-    }
-    let status = match response.code.as_deref() {
-        Some("11021") => "waiting",
-        Some("11041") => "scanned",
-        Some("11019") => "expired",
-        _ => "error",
-    };
-    Ok(ErpQrLoginPollResult {
-        status: status.to_string(),
-        error_message: (status == "error").then(|| {
-            response
-                .message
-                .unwrap_or_else(|| "钉钉扫码状态异常".to_string())
-        }),
-    })
+        .map_err(|error| format!("无法完成 ERP 授权：{error}"))?;
+    let _ = app.emit_to("main", "erp-login-progress", "authorizing");
+    show_main_window(&app);
+    window
+        .hide()
+        .map_err(|error| format!("无法收起 ERP 扫码窗口：{error}"))
 }
 
 #[tauri::command]
@@ -496,22 +373,23 @@ mod tests {
     use super::*;
 
     #[test]
-    fn qr_session_code_is_validated() {
-        assert_eq!(validated_qr_session_code("session-123"), Ok("session-123"));
-        assert!(validated_qr_session_code("").is_err());
-        assert!(validated_qr_session_code("session\n123").is_err());
-        assert!(validated_qr_session_code(&"a".repeat(1025)).is_err());
+    fn login_tmp_code_is_validated() {
+        assert_eq!(validated_login_tmp_code("session-123"), Ok("session-123"));
+        assert!(validated_login_tmp_code("").is_err());
+        assert!(validated_login_tmp_code("session\n123").is_err());
+        assert!(validated_login_tmp_code(&"a".repeat(1025)).is_err());
     }
 
     #[test]
-    fn login_tmp_code_is_extracted_and_decoded() {
-        assert_eq!(
-            login_tmp_code_from_url(
-                "https://erp.example/callback?loginTmpCode=code%2Bwith%2Fsymbols"
-            )
-            .unwrap(),
-            "code+with/symbols",
-        );
+    fn qr_login_uses_the_official_dingtalk_page() {
+        let url = tauri::Url::parse(&erp_dingtalk_qr_login_url()).unwrap();
+        assert_eq!(url.host_str(), Some("login.dingtalk.com"));
+        assert_eq!(url.path(), "/login/qrcode.htm");
+        let goto = url
+            .query_pairs()
+            .find_map(|(key, value)| (key == "goto").then(|| value.into_owned()))
+            .unwrap();
+        assert_eq!(goto, erp_dingtalk_auth_url());
     }
 
     #[test]

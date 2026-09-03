@@ -1,5 +1,20 @@
 import { describe, expect, it } from 'vitest'
-import { updateDownloadProgress } from './updater'
+import { isUnsupportedUpdaterPlatformError, updateDownloadProgress } from './updater'
+
+describe('isUnsupportedUpdaterPlatformError', () => {
+  it('recognizes the expected macOS error from a Windows-only update feed', () => {
+    expect(isUnsupportedUpdaterPlatformError(new Error(
+      'None of the fallback platforms `["darwin-aarch64-app", "darwin-aarch64"]` were found in the response `platforms` object',
+    ))).toBe(true)
+  })
+
+  it('does not hide Windows feed or network errors', () => {
+    expect(isUnsupportedUpdaterPlatformError(
+      'None of the fallback platforms `["windows-x86_64"]` were found in the response `platforms` object',
+    )).toBe(false)
+    expect(isUnsupportedUpdaterPlatformError(new Error('network timeout'))).toBe(false)
+  })
+})
 
 describe('updateDownloadProgress', () => {
   it('tracks bounded download progress from Tauri updater events', () => {

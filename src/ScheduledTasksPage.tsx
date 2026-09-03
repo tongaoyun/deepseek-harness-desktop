@@ -1,113 +1,96 @@
-import { CalendarPlus, CirclePause, CirclePlay, Play, Trash2 } from 'lucide-react'
+import { CalendarClock, Check, ChevronDown, Clock3, MoreHorizontal, Play, Plus, RefreshCw, Server, Trash2, X } from 'lucide-react'
 import { type FormEvent, useEffect, useMemo, useState } from 'react'
-import {
-  changeScheduledTask,
-  createScheduledTask,
-  deleteScheduledTask,
-  loadScheduledTasks,
-  loadScheduledTaskExecutions,
-} from './api'
-import type { ExpertKitView } from './expertKits'
-import type { ScheduledTask, ScheduledTaskExecution, ServerWorkflowInput } from './types'
+import { changeScheduledTask, createScheduledTask, deleteScheduledTask, loadScheduledTaskExecutions, loadScheduledTasks } from './api'
 import { cronPresets, nextCronRuns } from './cronPreview'
-import { parseNaturalSchedule } from './scheduleLanguage'
 import { loadLocalImStatus, routeLocalImSchedule, type LocalImConversationSummary } from './localIm'
+import { parseNaturalSchedule } from './scheduleLanguage'
+import type { ScheduledTask, ScheduledTaskExecution } from './types'
 
 interface Props {
   endpoint: string
   employeeId: string
   accessToken: string
-  expertKits: ExpertKitView[]
+  onCreateWithXiaoyin: () => void
 }
 
-export function ScheduledTasksPage({ endpoint, employeeId, accessToken, expertKits }: Props) {
-  const workflows = useMemo(() => expertKits.flatMap((kit) =>
-    (kit.serverWorkflows ?? []).map((workflow) => ({ kit, workflow }))), [expertKits])
+type ScheduleView = 'tasks' | 'executions'
+type SortOrder = 'created-desc' | 'created-asc' | 'name'
+
+export function ScheduledTasksPage({ endpoint, employeeId, accessToken, onCreateWithXiaoyin }: Props) {
   const [tasks, setTasks] = useState<ScheduledTask[]>([])
-  const [selection, setSelection] = useState('')
   const [name, setName] = useState('')
   const [naturalLanguage, setNaturalLanguage] = useState('')
   const [parseSummary, setParseSummary] = useState('')
   const [cronExpression, setCronExpression] = useState('0 9 * * 1-5')
   const [timeZone, setTimeZone] = useState(() => Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Shanghai')
-  const [inputs, setInputs] = useState<Record<string, unknown>>({})
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [busyId, setBusyId] = useState('')
-  const [expandedId, setExpandedId] = useState('')
   const [executions, setExecutions] = useState<Record<string, ScheduledTaskExecution[]>>({})
+  const [executionsLoading, setExecutionsLoading] = useState(false)
   const [error, setError] = useState('')
   const [imConversations, setImConversations] = useState<LocalImConversationSummary[]>([])
   const [deliveryConversationKey, setDeliveryConversationKey] = useState('')
+  const [createOpen, setCreateOpen] = useState(false)
+  const [view, setView] = useState<ScheduleView>('tasks')
+  const [sort, setSort] = useState<SortOrder>('created-desc')
+  const [menuId, setMenuId] = useState('')
 
-  useEffect(() => {
-    if (!selection && workflows.length > 0) {
-      const first = workflows[0]
-      setSelection(`${first.kit.id}:${first.workflow.id}`)
-    }
-  }, [selection, workflows])
-
-  useEffect(() => {
-    const controller = new AbortController()
+  const refresh = async () => {
     setLoading(true)
-    loadScheduledTasks(endpoint, employeeId, accessToken, controller.signal)
-      .then(setTasks)
-      .catch((reason) => { if (!controller.signal.aborted) setError(message(reason)) })
-      .finally(() => { if (!controller.signal.aborted) setLoading(false) })
-    return () => controller.abort()
-  }, [accessToken, employeeId, endpoint])
+    setError('')
+    try { setTasks(await loadScheduledTasks(endpoint, employeeId, accessToken)) }
+    catch (reason) { setError(message(reason)) }
+    finally { setLoading(false) }
+  }
 
-  useEffect(() => {
-    void loadLocalImStatus().then((status) => setImConversations(status.enabled ? status.conversations : []))
-      .catch(() => setImConversations([]))
-  }, [])
+  useEffect(() => { void refresh() }, [accessToken, employeeId, endpoint])
+  useEffect(() => { void loadLocalImStatus().then((status) => setImConversations(status.enabled ? status.conversations : [])).catch(() => setImConversations([])) }, [])
 
-  const selected = workflows.find(({ kit, workflow }) => `${kit.id}:${workflow.id}` === selection)
   const upcomingRuns = useMemo(() => nextCronRuns(cronExpression, timeZone), [cronExpression, timeZone])
+  const sortedTasks = useMemo(() => [...tasks].sort((left, right) => {
+    if (sort === 'name') return left.name.localeCompare(right.name, 'zh-CN')
+    const difference = new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime()
+    return sort === 'created-desc' ? difference : -difference
+  }), [sort, tasks])
+  const executionRows = useMemo(() => tasks.flatMap((task) => (executions[task.id] ?? []).map((execution) => ({ task, execution })))
+    .sort((left, right) => new Date(right.execution.startedAt).getTime() - new Date(left.execution.startedAt).getTime()), [executions, tasks])
 
   const submit = async (event: FormEvent) => {
     event.preventDefault()
-    if (!selected || saving) return
+    if (!naturalLanguage.trim() || saving) return
     setSaving(true)
     setError('')
     try {
       const task = await createScheduledTask(endpoint, employeeId, accessToken, {
-        name: name.trim() || selected.workflow.name,
-        expertKitId: selected.kit.id,
-        workflowId: selected.workflow.id,
+        name: name.trim() || '定时任务',
+        expertKitId: 'xiaoyin-agent',
+        workflowId: 'agent-prompt',
         cronExpression: cronExpression.trim(),
         timeZone: timeZone.trim(),
-        inputs: normalizeInputs(selected.workflow.inputs, inputs),
+        inputs: { prompt: naturalLanguage.trim() },
       })
       setTasks((current) => [task, ...current])
       if (deliveryConversationKey) await routeLocalImSchedule(task.id, deliveryConversationKey)
-      setName('')
-      setInputs({})
-    } catch (reason) {
-      setError(message(reason))
-    } finally {
-      setSaving(false)
-    }
+      resetForm()
+      setCreateOpen(false)
+    } catch (reason) { setError(message(reason)) }
+    finally { setSaving(false) }
   }
 
   const parseSchedule = () => {
     setError('')
     try {
       const parsed = parseNaturalSchedule(naturalLanguage)
-      const matched = workflows.find(({ workflow }) => naturalLanguage.includes(workflow.name))
-        ?? workflows.find(({ kit }) => naturalLanguage.includes(kit.name))
-      if (matched) setSelection(`${matched.kit.id}:${matched.workflow.id}`)
-      setName(parsed.name)
+      if (!name.trim()) setName(parsed.name)
       setCronExpression(parsed.cronExpression)
-      setParseSummary(`已理解：${parsed.summary}${matched ? ` · ${matched.kit.name} / ${matched.workflow.name}` : ''}`)
-    } catch (reason) {
-      setParseSummary('')
-      setError(message(reason))
-    }
+      setParseSummary(`已识别：${parsed.summary}`)
+    } catch (reason) { setParseSummary(''); setError(message(reason)) }
   }
 
   const operate = async (task: ScheduledTask, action: 'pause' | 'resume' | 'run' | 'delete') => {
     setBusyId(task.id)
+    setMenuId('')
     setError('')
     try {
       if (action === 'delete') {
@@ -117,117 +100,67 @@ export function ScheduledTasksPage({ endpoint, employeeId, accessToken, expertKi
         const updated = await changeScheduledTask(endpoint, employeeId, accessToken, task.id, action)
         setTasks((current) => current.map((item) => item.id === task.id ? updated : item))
       }
-    } catch (reason) {
-      setError(message(reason))
-    } finally {
-      setBusyId('')
-    }
+    } catch (reason) { setError(message(reason)) }
+    finally { setBusyId('') }
   }
 
-  const toggleExecutions = async (task: ScheduledTask) => {
-    if (expandedId === task.id) { setExpandedId(''); return }
-    setExpandedId(task.id)
-    if (executions[task.id]) return
-    setBusyId(task.id)
+  const showExecutions = async () => {
+    setView('executions')
+    const missing = tasks.filter((task) => !executions[task.id])
+    if (missing.length === 0) return
+    setExecutionsLoading(true)
     try {
-      const values = await loadScheduledTaskExecutions(endpoint, employeeId, accessToken, task.id)
-      setExecutions((current) => ({ ...current, [task.id]: values }))
-    } catch (reason) {
-      setError(message(reason))
-    } finally {
-      setBusyId('')
-    }
+      const values = await Promise.all(missing.map(async (task) => [task.id, await loadScheduledTaskExecutions(endpoint, employeeId, accessToken, task.id)] as const))
+      setExecutions((current) => ({ ...current, ...Object.fromEntries(values) }))
+    } catch (reason) { setError(message(reason)) }
+    finally { setExecutionsLoading(false) }
   }
 
-  return <div className="schedule-layout">
-    <form className="schedule-form" onSubmit={submit}>
-      <div className="schedule-section-title"><CalendarPlus size={17} /><span><strong>新建定时任务</strong><small>任务在公司服务器运行，关闭电脑后仍会继续。</small></span></div>
-      {workflows.length === 0 ? <div className="kit-empty">已发布的专家套件尚未声明后台工作流</div> : <>
-        <label>用自然语言描述<textarea maxLength={500} onChange={(event) => setNaturalLanguage(event.target.value)} placeholder="例如：每个工作日上午 9 点生成店铺日报" value={naturalLanguage} /></label>
-        <button className="schedule-parse" disabled={!naturalLanguage.trim()} onClick={parseSchedule} type="button">解析任务</button>
-        {parseSummary && <div className="schedule-parse-result">{parseSummary}</div>}
-        <label>专家工作流<select value={selection} onChange={(event) => { setSelection(event.target.value); setInputs({}) }}>
-          {workflows.map(({ kit, workflow }) => <option key={`${kit.id}:${workflow.id}`} value={`${kit.id}:${workflow.id}`}>{kit.name} · {workflow.name}{kit.connectorIssues.length > 0 ? '（存在依赖提醒）' : ''}</option>)}
-        </select></label>
-        {(selected?.kit.connectorIssues.length ?? 0) > 0 && <div className="schedule-dependency-warning">依赖提醒（仍可创建）：{selected?.kit.connectorIssues.join('；')}</div>}
-        <label>任务名称<input maxLength={100} onChange={(event) => setName(event.target.value)} placeholder={selected?.workflow.name} value={name} /></label>
-        <div className="schedule-fields">
-          <label>Cron 表达式<input onChange={(event) => setCronExpression(event.target.value)} value={cronExpression} /></label>
-          <label>时区<input onChange={(event) => setTimeZone(event.target.value)} value={timeZone} /></label>
-        </div>
-        <div className="cron-presets" aria-label="常用执行时间">{cronPresets.map((preset) => <button className={cronExpression === preset.expression ? 'active' : ''} key={preset.expression} onClick={() => setCronExpression(preset.expression)} type="button">{preset.label}</button>)}</div>
-        <label>完成后推送到<select onChange={(event) => setDeliveryConversationKey(event.target.value)} value={deliveryConversationKey}>
-          <option value="">不推送到 IM</option>
-          {imConversations.map((conversation) => <option key={conversation.conversationKey} value={conversation.conversationKey}>{conversation.conversationType === 'group' ? conversation.conversationTitle || '未命名群' : conversation.senderNick || '钉钉用户'}</option>)}
-        </select><small>每个定时任务只投递到这里指定的会话，不会广播。</small></label>
-        {selected?.workflow.inputs.map((input) => <WorkflowInputField input={input} key={input.name} value={inputs[input.name]} onChange={(value) => setInputs((current) => ({ ...current, [input.name]: value }))} />)}
-        <small className="cron-hint">{upcomingRuns.length > 0 ? `接下来：${upcomingRuns.map((value) => value.toLocaleString('zh-CN', { timeZone, hour12: false })).join('、')}` : 'Cron 或时区无效，请检查后再创建'}</small>
-        <button className="schedule-primary" disabled={saving} type="submit">{saving ? '正在创建…' : '创建任务'}</button>
-      </>}
-    </form>
+  const resetForm = () => {
+    setName('')
+    setNaturalLanguage('')
+    setParseSummary('')
+    setDeliveryConversationKey('')
+  }
 
-    <div className="schedule-list">
-      <div className="schedule-list-head"><strong>我的任务</strong><small>{tasks.length} 个</small></div>
-      {loading && <div className="kit-empty">正在读取云端任务…</div>}
-      {!loading && tasks.length === 0 && <div className="kit-empty">还没有定时任务</div>}
-      {tasks.map((task) => <article className="schedule-card" key={task.id}>
-        <div><span className={`schedule-status ${task.status.toLowerCase()}`}>{task.status === 'ACTIVE' ? '运行中' : '已暂停'}</span><small>{task.expertKitId} · {task.workflowId}</small></div>
-        <h3>{task.name}</h3>
-        <p><code>{task.cronExpression}</code><span>{task.timeZone}</span></p>
-        <div className="schedule-actions">
-          <button disabled={busyId === task.id} onClick={() => void operate(task, 'run')} title="立即运行" type="button"><Play size={14} />立即运行</button>
-          <button disabled={busyId === task.id} onClick={() => void operate(task, task.status === 'ACTIVE' ? 'pause' : 'resume')} type="button">{task.status === 'ACTIVE' ? <CirclePause size={14} /> : <CirclePlay size={14} />}{task.status === 'ACTIVE' ? '暂停' : '恢复'}</button>
-          <button disabled={busyId === task.id} onClick={() => void toggleExecutions(task)} type="button">执行记录</button>
-          <button className="danger" disabled={busyId === task.id} onClick={() => void operate(task, 'delete')} title="删除" type="button"><Trash2 size={14} /></button>
-        </div>
-        {expandedId === task.id && <div className="execution-list">
-          {!executions[task.id] && <small>正在读取…</small>}
-          {executions[task.id]?.length === 0 && <small>尚无执行记录</small>}
-          {executions[task.id]?.map((execution) => <div key={execution.runId}>
-            <span className={`execution-status ${execution.status.toLowerCase()}`}>{executionStatus(execution.status)}</span>
-            <time>{new Date(execution.startedAt).toLocaleString()}</time>
-          </div>)}
-        </div>}
-      </article>)}
-    </div>
+  return <div className="schedule-page">
+    <header className="schedule-page-heading"><div><h1>定时任务</h1><p>按计划自动执行任务，也可随时手动触发。在任意对话中描述你想定期做的事，即可快速创建。</p></div><div><button aria-label="刷新任务" className="refresh-extension-button" disabled={loading} onClick={() => void refresh()} type="button"><RefreshCw className={loading ? 'spin' : ''} size={17} /></button><button className="schedule-create-with-ai" onClick={onCreateWithXiaoyin} type="button"><CalendarClock size={16} />通过小胤创建</button><button className="schedule-new-button" onClick={() => setCreateOpen(true)} type="button"><Plus size={17} />新建定时任务</button></div></header>
+    <div className="schedule-server-note"><span><Server size={16} />任务在公司服务器运行，关闭电脑后仍会继续</span><strong><Check size={15} />云端持续运行</strong></div>
+    <div className="schedule-toolbar"><div role="tablist"><button aria-selected={view === 'tasks'} className={view === 'tasks' ? 'active' : ''} onClick={() => setView('tasks')} role="tab" type="button">我的定时任务</button><button aria-selected={view === 'executions'} className={view === 'executions' ? 'active' : ''} onClick={() => void showExecutions()} role="tab" type="button">执行记录</button></div>{view === 'tasks' && <label className="schedule-sort"><select aria-label="任务排序" onChange={(event) => setSort(event.target.value as SortOrder)} value={sort}><option value="created-desc">按创建时间倒序</option><option value="created-asc">按创建时间正序</option><option value="name">按名称排序</option></select><ChevronDown size={14} /></label>}</div>
     {error && <div className="kit-error schedule-error">{error}</div>}
+    {view === 'tasks' ? <div className="schedule-list">
+      {loading && <div className="kit-empty">正在读取云端任务…</div>}
+      {!loading && tasks.length === 0 && <div className="kit-empty">还没有定时任务，点击右上角创建第一个。</div>}
+      {sortedTasks.map((task) => <article className="schedule-card" key={task.id}>
+        <div className="schedule-card-top"><button aria-label={task.status === 'ACTIVE' ? '暂停任务' : '恢复任务'} className={`schedule-toggle ${task.status === 'ACTIVE' ? 'active' : ''}`} disabled={busyId === task.id} onClick={() => void operate(task, task.status === 'ACTIVE' ? 'pause' : 'resume')} type="button"><i /></button><div className="schedule-card-menu"><button aria-label="任务操作" onClick={() => setMenuId((current) => current === task.id ? '' : task.id)} type="button"><MoreHorizontal size={19} /></button>{menuId === task.id && <div><button disabled={busyId === task.id} onClick={() => void operate(task, 'run')} type="button"><Play size={15} />立即执行</button><button className="danger" disabled={busyId === task.id} onClick={() => void operate(task, 'delete')} type="button"><Trash2 size={15} />删除任务</button></div>}</div></div>
+        <h3>{task.name}</h3><p>{taskDescription(task)}</p><footer><span><Clock3 size={15} />{cronLabel(task.cronExpression)} · {task.timeZone}</span><small>{task.expertKitId} / {task.workflowId}</small></footer>
+      </article>)}
+    </div> : <div className="schedule-execution-page">
+      {executionsLoading && <div className="kit-empty">正在读取执行记录…</div>}
+      {!executionsLoading && executionRows.length === 0 && <div className="kit-empty">还没有执行记录</div>}
+      {executionRows.map(({ task, execution }) => <article key={`${task.id}:${execution.runId}`}><span className={`execution-status ${execution.status.toLowerCase()}`}>{executionStatus(execution.status)}</span><div><strong>{task.name}</strong><small>{execution.runId}</small></div><time>{new Date(execution.startedAt).toLocaleString('zh-CN', { hour12: false })}</time></article>)}
+    </div>}
+    {createOpen && <div className="schedule-modal-backdrop" onMouseDown={() => setCreateOpen(false)} role="presentation"><form aria-modal="true" className="schedule-modal" onMouseDown={(event) => event.stopPropagation()} onSubmit={submit} role="dialog">
+      <button aria-label="关闭" className="schedule-modal-close" onClick={() => setCreateOpen(false)} type="button"><X size={20} /></button><header><h2>新建定时任务</h2><p>按计划自动执行任务，也可随时手动触发。</p></header>
+      <label>任务名称<input maxLength={100} onChange={(event) => setName(event.target.value)} placeholder="描述你的任务" value={name} /></label>
+        <div className="schedule-modal-time"><label>计划时间<select aria-label="计划频率" onChange={(event) => setCronExpression(event.target.value)} value={cronExpression}>{cronPresets.map((preset) => <option key={preset.expression} value={preset.expression}>{preset.label}</option>)}{!cronPresets.some((preset) => preset.expression === cronExpression) && <option value={cronExpression}>自然语言识别时间</option>}</select></label><label>时区<input onChange={(event) => setTimeZone(event.target.value)} value={timeZone} /></label></div>
+        <label className="schedule-prompt-label"><span>让小胤帮你做什么… <button disabled={!naturalLanguage.trim()} onClick={parseSchedule} type="button">识别时间</button></span><textarea maxLength={10000} onChange={(event) => setNaturalLanguage(event.target.value)} placeholder="例如：每个工作日下午 6:30 汇总最新业务数据并给出异常提醒" required value={naturalLanguage} /></label>
+        {parseSummary && <div className="schedule-parse-result">{parseSummary}</div>}
+        <label>完成后推送到<select onChange={(event) => setDeliveryConversationKey(event.target.value)} value={deliveryConversationKey}><option value="">不推送到 IM</option>{imConversations.map((conversation) => <option key={conversation.conversationKey} value={conversation.conversationKey}>{conversation.conversationType === 'group' ? conversation.conversationTitle || '未命名群' : conversation.senderNick || '钉钉用户'}</option>)}</select></label>
+        <small className="cron-hint">{upcomingRuns.length > 0 ? `接下来：${upcomingRuns.map((value) => value.toLocaleString('zh-CN', { timeZone, hour12: false })).join('、')}` : '执行时间或时区无效，请检查后再保存'}</small>
+      <footer><button className="secondary" onClick={() => setCreateOpen(false)} type="button">取消</button><button disabled={saving || !naturalLanguage.trim() || upcomingRuns.length === 0} type="submit">{saving ? '正在保存…' : '保存'}</button></footer>
+    </form></div>}
   </div>
 }
 
-function WorkflowInputField({ input, value, onChange }: {
-  input: ServerWorkflowInput
-  value: unknown
-  onChange: (value: unknown) => void
-}) {
-  if (input.type === 'boolean') {
-    return <label className="schedule-checkbox"><input checked={Boolean(value)} onChange={(event) => onChange(event.target.checked)} type="checkbox" />{input.label}</label>
-  }
-  return <label>{input.label}{input.required && <em>*</em>}<input
-    onChange={(event) => onChange(event.target.value)}
-    placeholder={input.description}
-    required={input.required}
-    type={input.type === 'date' ? 'date' : input.type === 'integer' ? 'number' : 'text'}
-    value={typeof value === 'string' || typeof value === 'number' ? value : ''}
-  /></label>
+function taskDescription(task: ScheduledTask): string {
+  const text = Object.values(task.inputs).find((value) => typeof value === 'string' && value.trim())
+  return typeof text === 'string' ? text : `按计划执行 ${task.workflowId}`
 }
 
-function normalizeInputs(definitions: ServerWorkflowInput[], values: Record<string, unknown>): Record<string, unknown> {
-  const normalized: Record<string, unknown> = {}
-  for (const input of definitions) {
-    const value = values[input.name]
-    if (value === undefined || value === '') {
-      if (input.required) normalized[input.name] = value
-      continue
-    }
-    normalized[input.name] = input.type === 'integer' ? Number(value) : value
-  }
-  return normalized
+function cronLabel(expression: string): string {
+  return cronPresets.find((preset) => preset.expression === expression)?.label ?? expression
 }
 
-function message(reason: unknown): string {
-  return reason instanceof Error ? reason.message : String(reason)
-}
-
-function executionStatus(status: string): string {
-  return ({ RUNNING: '运行中', COMPLETED: '已完成', FAILED: '失败', CANCELED: '已取消', TERMINATED: '已终止' } as Record<string, string>)[status] ?? status
-}
+function message(reason: unknown): string { return reason instanceof Error ? reason.message : String(reason) }
+function executionStatus(status: string): string { return ({ RUNNING: '运行中', COMPLETED: '已完成', FAILED: '失败', CANCELED: '已取消', TERMINATED: '已终止' } as Record<string, string>)[status] ?? status }

@@ -81,7 +81,6 @@ describe('mergeExpertKits', () => {
 
   it('reports the catalog version that is active after a rollback', () => {
     const newer = { ...installed, manifest: { ...installed.manifest, version: '1.1.0' } }
-
     expect(installedExtensionSnapshot([newer, installed], [
       { kind: 'expert-kit', id: 'store-kit', version: '1.0.0' },
     ])).toEqual([

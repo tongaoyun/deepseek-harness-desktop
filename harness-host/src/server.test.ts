@@ -57,6 +57,27 @@ describe('HostServer', () => {
     })
   })
 
+  it('decodes desktop image attachments before starting the model turn', async () => {
+    const output: JsonRpcOutput[] = []
+    const runtime = fakeRuntime()
+    let receivedText = ''
+    runtime.run = async (input) => {
+      receivedText = input.images?.[0]?.data.toString('utf8') ?? ''
+      return { sessionId: 'session-image', finalResponse: '已查看图片' }
+    }
+    const server = new HostServer(runtime, (value) => output.push(value))
+
+    await server.handle({
+      jsonrpc: '2.0', id: 'turn-image', method: 'session.run', params: {
+        prompt: '看看这张图',
+        images: [{ dataBase64: Buffer.from('image-bytes').toString('base64'), mediaType: 'image/png', name: 'screen.png' }],
+      },
+    })
+
+    expect(receivedText).toBe('image-bytes')
+    expect(output.at(-1)).toMatchObject({ result: { finalResponse: '已查看图片' } })
+  })
+
   it('accepts a pending approval response independently of a model turn', async () => {
     const output: JsonRpcOutput[] = []
     const server = new HostServer(fakeRuntime(), (value) => output.push(value), (id, decision) => id === 'approval-1' && decision === 'allow')

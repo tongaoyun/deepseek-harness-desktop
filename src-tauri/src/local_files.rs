@@ -1,10 +1,11 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
     collections::HashSet,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
 };
+use tauri::Manager;
 use tauri_plugin_dialog::DialogExt;
 
 const MAX_AUTHORIZED_DIRECTORIES: usize = 8;
@@ -26,6 +27,32 @@ struct AuthorizedDirectory {
 pub struct AuthorizedDirectoryView {
     id: String,
     name: String,
+    path: String,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalTaskAttachmentView {
+    id: String,
+    root_id: String,
+    root_name: String,
+    path: String,
+    name: String,
+    kind: String,
+    media_type: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DroppedPathAuthorization {
+    directories: Vec<AuthorizedDirectoryView>,
+    attachments: Vec<LocalTaskAttachmentView>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StandardDirectoryRequest {
+    directories: Vec<String>,
 }
 
 #[tauri::command]
@@ -51,21 +78,55 @@ pub async fn authorize_local_directory(
 }
 
 #[tauri::command]
+pub fn authorize_standard_local_directories(
+    app: tauri::AppHandle,
+    authorizations: tauri::State<'_, LocalFileAuthorizations>,
+    request: StandardDirectoryRequest,
+) -> Result<Vec<AuthorizedDirectoryView>, String> {
+    if request.directories.len() > 3 {
+        return Err("系统目录请求数量无效".to_string());
+    }
+    let mut views = Vec::new();
+    for directory in request.directories {
+        let path = match directory.as_str() {
+            "downloads" => app.path().download_dir(),
+            "desktop" => app.path().desktop_dir(),
+            "documents" => app.path().document_dir(),
+            _ => return Err(format!("不支持的系统目录：{directory}")),
+        }
+        .map_err(|error| format!("无法确定系统目录：{error}"))?;
+        let view = authorizations.authorize(path)?;
+        if !views
+            .iter()
+            .any(|item: &AuthorizedDirectoryView| item.id == view.id)
+        {
+            views.push(view);
+        }
+    }
+    Ok(views)
+}
+
+#[tauri::command]
 pub fn authorize_dropped_paths(
     authorizations: tauri::State<'_, LocalFileAuthorizations>,
     paths: Vec<String>,
-) -> Result<Vec<AuthorizedDirectoryView>, String> {
+) -> Result<DroppedPathAuthorization, String> {
     if paths.is_empty() {
-        return Ok(Vec::new());
+        return Ok(DroppedPathAuthorization {
+            directories: Vec::new(),
+            attachments: Vec::new(),
+        });
     }
     if paths.len() > 32 {
         return Err("单次最多拖入 32 个文件或文件夹".to_string());
     }
     let mut directories = Vec::new();
+    let mut attachments = Vec::new();
     for value in paths {
         let selected = PathBuf::from(value);
-        let directory = if selected.is_dir() {
-            selected
+        let is_directory = selected.is_dir();
+        let directory = if is_directory {
+            selected.clone()
         } else {
             selected
                 .parent()
@@ -77,10 +138,69 @@ pub fn authorize_dropped_paths(
             .iter()
             .any(|item: &AuthorizedDirectoryView| item.id == view.id)
         {
-            directories.push(view);
+            directories.push(view.clone());
+        }
+        if !is_directory {
+            let canonical = selected
+                .canonicalize()
+                .map_err(|error| format!("无法读取拖入的文件：{error}"))?;
+            if !canonical.is_file() {
+                return Err("拖入的路径不是文件或文件夹".to_string());
+            }
+            let relative = canonical
+                .strip_prefix(Path::new(&view.path))
+                .map_err(|_| "拖入的文件超出授权目录".to_string())?
+                .to_string_lossy()
+                .replace('\\', "/");
+            let name = canonical
+                .file_name()
+                .and_then(|value| value.to_str())
+                .unwrap_or("附件")
+                .to_string();
+            let media_type = image_media_type(&canonical).map(str::to_string);
+            attachments.push(LocalTaskAttachmentView {
+                id: format!("{}:{}", view.id, relative),
+                root_id: view.id,
+                root_name: view.name,
+                path: relative,
+                name,
+                kind: if media_type.is_some() {
+                    "image"
+                } else {
+                    "file"
+                }
+                .to_string(),
+                media_type,
+            });
         }
     }
-    Ok(directories)
+    Ok(DroppedPathAuthorization {
+        directories,
+        attachments,
+    })
+}
+
+#[tauri::command]
+pub fn restore_local_directories(
+    authorizations: tauri::State<'_, LocalFileAuthorizations>,
+    paths: Vec<String>,
+) -> Result<Vec<AuthorizedDirectoryView>, String> {
+    if paths.len() > MAX_AUTHORIZED_DIRECTORIES {
+        return Err(format!(
+            "单次任务最多恢复 {MAX_AUTHORIZED_DIRECTORIES} 个本地文件夹"
+        ));
+    }
+    let mut restored = Vec::new();
+    for path in paths {
+        if let Ok(view) = authorizations.authorize(PathBuf::from(path))
+            && !restored
+                .iter()
+                .any(|item: &AuthorizedDirectoryView| item.id == view.id)
+        {
+            restored.push(view);
+        }
+    }
+    Ok(restored)
 }
 
 #[tauri::command]
@@ -207,7 +327,16 @@ impl AuthorizedDirectory {
         AuthorizedDirectoryView {
             id: self.id.clone(),
             name: self.name.clone(),
+            path: self.path.to_string_lossy().into_owned(),
         }
+    }
+}
+
+fn image_media_type(path: &Path) -> Option<&'static str> {
+    match path.extension()?.to_str()?.to_ascii_lowercase().as_str() {
+        "png" => Some("image/png"),
+        "jpg" | "jpeg" => Some("image/jpeg"),
+        _ => None,
     }
 }
 

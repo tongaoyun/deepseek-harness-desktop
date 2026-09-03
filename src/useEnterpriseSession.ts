@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { listen } from '@tauri-apps/api/event'
 import {
   clearErpSession,
   isTauriRuntime,
@@ -7,7 +8,7 @@ import {
   type ErpUser,
 } from './auth'
 
-type AuthState = 'checking' | 'required' | 'authenticated' | 'error'
+type AuthState = 'checking' | 'required' | 'authorizing' | 'authenticated' | 'error'
 
 export function useEnterpriseSession() {
   const [state, setState] = useState<AuthState>('checking')
@@ -38,6 +39,26 @@ export function useEnterpriseSession() {
   }, [])
 
   useEffect(() => {
+    if (!isTauriRuntime()) return
+    let cancelled = false
+    let unlisten: (() => void) | undefined
+    void listen<string>('erp-login-progress', (event) => {
+      if (event.payload !== 'authorizing') return
+      setState('authorizing')
+      setError('')
+    }).then((dispose) => {
+      if (cancelled) dispose()
+      else unlisten = dispose
+    }).catch((cause) => {
+      if (!cancelled) setError(cause instanceof Error ? cause.message : '无法监听 ERP 登录进度')
+    })
+    return () => {
+      cancelled = true
+      unlisten?.()
+    }
+  }, [])
+
+  useEffect(() => {
     let cancelled = false
     void resolveErpSession()
       .then(async (session) => {
@@ -59,6 +80,28 @@ export function useEnterpriseSession() {
       })
     return () => { cancelled = true }
   }, [acceptSession])
+
+  useEffect(() => {
+    if (state !== 'authorizing') return
+    let cancelled = false
+    const timer = window.setTimeout(() => {
+      void resolveErpSession()
+        .then((session) => {
+          if (cancelled || acceptSession(session)) return
+          setState('required')
+          setError('钉钉已确认，但 ERP 会话未建立，请重新扫码。')
+        })
+        .catch(() => {
+          if (cancelled) return
+          setState('required')
+          setError('ERP 登录确认超时，请重新扫码。')
+        })
+    }, 20_000)
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [acceptSession, state])
 
   useEffect(() => {
     if (!isTauriRuntime() || state === 'authenticated') return
@@ -101,5 +144,5 @@ export function useEnterpriseSession() {
     await reopen()
   }, [reopen])
 
-  return { accessToken, error, logout, reopen, state, user }
+  return { accessToken, authorizing: state === 'authorizing', error, logout, reopen, state, user }
 }

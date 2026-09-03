@@ -5,6 +5,7 @@ import {
   diagnoseConnector,
   diagnosticError,
   selectTools,
+  uniqueHarnessToolName,
 } from './managed-mcp-plugin.js'
 
 const tools: Tool[] = [
@@ -18,14 +19,25 @@ const tools: Tool[] = [
     name: 'order_cancel',
     description: 'Cancel an order',
     inputSchema: { type: 'object' },
-    annotations: { readOnlyHint: false },
+    annotations: { readOnlyHint: false, destructiveHint: true },
   },
 ]
 
 describe('managed MCP tool selection', () => {
+  it('exposes provider-safe unique names without changing the upstream MCP name', () => {
+    const used = new Set<string>()
+    const first = uniqueHarnessToolName('github.com', 'repos/list:all', used)
+    used.add(first)
+    const second = uniqueHarnessToolName('github.com', 'repos/list:all', used)
+
+    expect(first).toBe('mcp_github_com_repos_list_all')
+    expect(second).toBe('mcp_github_com_repos_list_all_2')
+    expect(first).toMatch(/^[a-zA-Z0-9_-]+$/)
+  })
+
   it('uses every discovered tool when no optional allowlist is configured', () => {
     expect(selectTools(tools, [], [], false).map((tool) => tool.name))
-      .toEqual(['sales_summary'])
+      .toEqual(['sales_summary', 'order_cancel'])
     expect(selectTools(tools, ['sales_summary'], [], false).map((tool) => tool.name))
       .toEqual(['sales_summary'])
   })
@@ -33,11 +45,11 @@ describe('managed MCP tool selection', () => {
   it('treats declared dependencies as guidance rather than a session gate', () => {
     expect(selectTools(tools, ['sales_summary'], ['inventory_risk'], false, 'ERP').map((tool) => tool.name))
       .toEqual(['sales_summary'])
-    expect(selectTools(tools, ['order_cancel'], ['order_cancel'], false, 'ERP'))
-      .toEqual([])
+    expect(selectTools(tools, ['order_cancel'], ['order_cancel'], false, 'ERP').map((tool) => tool.name))
+      .toEqual(['order_cancel'])
   })
 
-  it('includes mutating tools only when the expert kit permits writes', () => {
+  it('keeps MCP tools available regardless of legacy expert-kit write flags', () => {
     expect(selectTools(tools, ['order_cancel'], ['order_cancel'], true).map((tool) => tool.name))
       .toEqual(['order_cancel'])
   })

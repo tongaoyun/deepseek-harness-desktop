@@ -249,9 +249,6 @@ pub struct ExpertKitHarnessProfile {
     pub allow_computer_use: bool,
     pub approve_computer_use: bool,
     pub allowed_computer_tools: Vec<String>,
-    pub allow_connector_read: bool,
-    pub allow_connector_write: bool,
-    pub approve_connector_write: bool,
     pub prompt: String,
 }
 
@@ -338,17 +335,27 @@ pub fn developer_expert_kit_install_enabled() -> bool {
 }
 
 #[tauri::command]
-pub async fn install_developer_expert_kit(
+pub async fn install_developer_extension(
     app: tauri::AppHandle,
+    kind: String,
 ) -> Result<Option<InstalledExpertKit>, String> {
     require_developer_install()?;
+    if kind != "expert-kit" && kind != "skill" {
+        return Err("仅支持导入专家套件或技能".to_string());
+    }
     let dialog_app = app.clone();
+    let dialog_kind = kind.clone();
     let selected = tauri::async_runtime::spawn_blocking(move || {
+        let (title, filter) = if dialog_kind == "skill" {
+            ("导入本地技能", "小胤技能")
+        } else {
+            ("导入本地专家套件", "小胤专家套件")
+        };
         dialog_app
             .dialog()
             .file()
-            .set_title("导入本地专家套件")
-            .add_filter("小胤专家套件", &["zip", "gz"])
+            .set_title(title)
+            .add_filter(filter, &["zip", "gz"])
             .blocking_pick_file()
     })
     .await
@@ -365,9 +372,9 @@ pub async fn install_developer_expert_kit(
     }
     let bytes = fs::read(&path).map_err(|error| format!("无法读取专家套件：{error}"))?;
     install_package_bytes(
-        &extensions_root(&app)?.join("expert-kit"),
+        &extensions_root(&app)?.join(&kind),
         &bytes,
-        Some("expert-kit"),
+        Some(&kind),
         None,
         None,
         None,
@@ -1040,6 +1047,9 @@ pub fn harness_profile(
                 .ok_or_else(|| format!("扩展已下架、未获准或尚未安装：{coordinate}"))
         })
         .transpose()?;
+    for artifact in newest.values() {
+        prepare_skill_runtime_files(artifact)?;
+    }
     let mut skill_directories = Vec::new();
     let mut skill_ids = HashSet::new();
     if let Some(artifact) = selected {
@@ -1084,6 +1094,7 @@ pub fn harness_profile(
     if knowledge_base_refs.len() > 32 {
         return Err("任务知识库引用不能超过 32 个".to_string());
     }
+    let desktop_agent_guidance = "你正在小胤桌面端中工作，是能实际完成任务的 Agent，不是只能回答问题的聊天机器人。涉及本地目录、文件读写、命令、浏览器或已连接系统时，应先使用当前可用工具行动并根据真实结果回答；不要在尚未尝试工具前声称无法访问。若已有授权工作目录，先调用 local_files_roots 查明目录，再继续读取或操作。仅在缺少继续执行所必需的授权、目标或业务参数时追问。工具过程使用简短自然的进度说明，最终回答聚焦结果、变更和仍需用户处理的事项。";
     let prompt = if let Some(artifact) = selected {
         let commands = load_command_context(artifact)?;
         let profile_label = if artifact.manifest.kind == "skill" {
@@ -1091,17 +1102,34 @@ pub fn harness_profile(
         } else {
             "专家套件"
         };
+        let skill_guidance = if artifact.manifest.kind == "expert-kit" {
+            format!(
+                "专家套件 ID 不是 Skill 名称。该套件包含以下可加载 Skill：{}。需要加载工作方法时，只能使用这些 Skill ID，不要把 {} 当作 Skill ID。",
+                artifact
+                    .manifest
+                    .skills
+                    .iter()
+                    .map(|skill| skill.id.as_str())
+                    .collect::<Vec<_>>()
+                    .join("、"),
+                artifact.manifest.id,
+            )
+        } else {
+            format!("本独立 Skill 的可加载 ID 是 {}。", artifact.manifest.id)
+        };
         format!(
-            "本任务明确使用公司{}《{}》（ID: {}，版本: {}）。所有已安装 Skill 仍可按需加载；优先遵循本扩展的工作方法和命令。{}\n\n员工任务：\n{}",
+            "{}\n\n本任务明确使用公司{}《{}》（ID: {}，版本: {}）。{}所有已安装 Skill 仍可按需加载；优先遵循本扩展的工作方法和命令。不要先向员工汇报泛化的资源盘点，不要因为任务未用到知识库或连接器而阻塞；只有具体任务确实需要时才检查对应能力。面对简短或口语化输入，先按最可能的意图自然回答，仅在无法继续行动时追问。{}\n\n员工任务：\n{}",
+            desktop_agent_guidance,
             profile_label,
             artifact.manifest.name,
             artifact.manifest.id,
             artifact.manifest.version,
+            skill_guidance,
             commands,
             user_prompt,
         )
     } else {
-        user_prompt.to_string()
+        format!("{}\n\n员工任务：\n{}", desktop_agent_guidance, user_prompt)
     };
     let permissions = selected.map(|artifact| &artifact.manifest.permissions);
     let permission = |select: fn(&Permissions) -> PermissionMode| {
@@ -1110,8 +1138,6 @@ pub fn harness_profile(
     let local_files = permission(|value| value.local_files);
     let shell = permission(|value| value.shell);
     let computer_use = permission(|value| value.computer_use);
-    let connector_read = permission(|value| value.connector_read);
-    let connector_write = permission(|value| value.connector_write);
     Ok(ExpertKitHarnessProfile {
         skill_directories,
         knowledge_base_refs: Some(knowledge_base_refs),
@@ -1126,9 +1152,6 @@ pub fn harness_profile(
             .iter()
             .map(|tool| (*tool).to_string())
             .collect(),
-        allow_connector_read: connector_read != PermissionMode::Deny,
-        allow_connector_write: connector_write != PermissionMode::Deny,
-        approve_connector_write: connector_write == PermissionMode::Approval,
         prompt,
     })
 }
@@ -1219,6 +1242,70 @@ fn append_skill_directories(
         }
     }
     Ok(())
+}
+
+fn prepare_skill_runtime_files(kit: &InstalledExpertKit) -> Result<(), String> {
+    let root = Path::new(&kit.install_path);
+    for skill in &kit.manifest.skills {
+        let path = root.join(&skill.path);
+        let content = fs::read_to_string(&path)
+            .map_err(|error| format!("无法读取 Skill {}：{error}", skill.id))?;
+        let normalized = normalize_skill_document(&content, &skill.id, &kit.manifest.summary);
+        if normalized != content {
+            fs::write(&path, normalized)
+                .map_err(|error| format!("无法准备 Skill {}：{error}", skill.id))?;
+        }
+    }
+    Ok(())
+}
+
+fn normalize_skill_document(content: &str, id: &str, fallback_description: &str) -> String {
+    let description = serde_json::to_string(fallback_description)
+        .unwrap_or_else(|_| "\"企业工作方法\"".to_string());
+    let lines = content
+        .lines()
+        .map(|line| line.trim_end_matches('\r').to_string())
+        .collect::<Vec<_>>();
+    let frontmatter_end = (lines.first().is_some_and(|line| line.trim() == "---"))
+        .then(|| {
+            lines
+                .iter()
+                .enumerate()
+                .skip(1)
+                .find_map(|(index, line)| (line.trim() == "---").then_some(index))
+        })
+        .flatten();
+    let Some(frontmatter_end) = frontmatter_end else {
+        return format!("---\nname: {id}\ndescription: {description}\n---\n\n{content}");
+    };
+
+    let mut metadata = lines[1..frontmatter_end].to_vec();
+    let mut has_name = false;
+    let mut has_description = false;
+    for line in &mut metadata {
+        if line.starts_with("name:") {
+            *line = format!("name: {id}");
+            has_name = true;
+        } else if line.starts_with("description:") {
+            has_description = true;
+        }
+    }
+    if !has_name {
+        metadata.push(format!("name: {id}"));
+    }
+    if !has_description {
+        metadata.push(format!("description: {description}"));
+    }
+    let mut normalized = Vec::with_capacity(lines.len() + 2);
+    normalized.push("---".to_string());
+    normalized.extend(metadata);
+    normalized.push("---".to_string());
+    normalized.extend_from_slice(&lines[frontmatter_end + 1..]);
+    let mut result = normalized.join("\n");
+    if content.ends_with('\n') {
+        result.push('\n');
+    }
+    result
 }
 
 fn load_command_context(kit: &InstalledExpertKit) -> Result<String, String> {
@@ -1604,6 +1691,18 @@ mod tests {
         assert!(validate_identifier("CrossBorder").is_err());
         assert!(valid_tool_name("office.xlsx.create"));
         assert!(!valid_tool_name("Office create"));
+    }
+
+    #[test]
+    fn skill_runtime_metadata_uses_the_manifest_id() {
+        let qoder_skill = "---\nname: API接口设计\nversion: 1.0.0\ndescription: Design APIs\n---\n\n# API接口设计\n";
+        let normalized = normalize_skill_document(qoder_skill, "api-design", "设计企业 API");
+        assert!(normalized.contains("\nname: api-design\n"));
+        assert!(normalized.contains("\ndescription: Design APIs\n"));
+        assert!(!normalized.contains("name: API接口设计"));
+
+        let plain = normalize_skill_document("# 工作方法", "plain-skill", "普通工作方法");
+        assert!(plain.starts_with("---\nname: plain-skill\ndescription: \"普通工作方法\"\n---\n"));
     }
 
     #[test]

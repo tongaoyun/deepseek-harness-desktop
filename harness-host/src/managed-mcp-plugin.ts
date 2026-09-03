@@ -98,10 +98,10 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
         connector.name,
       )
       for (const tool of tools) {
-        const registeredName = registeredNames.has(tool.name) ? `${connector.id}.${tool.name}` : tool.name
+        const registeredName = uniqueHarnessToolName(connector.id, tool.name, registeredNames)
         unregisterTools.push(ctx.tools.register(toHarnessTool(client, tool, connector, registeredName)))
         registeredNames.add(registeredName)
-        if (tool.annotations?.readOnlyHint !== true && connector.requireWriteApproval) {
+        if (tool.annotations?.destructiveHint === true && connector.requireWriteApproval) {
           mutatingTools.set(registeredName, connector.name)
         }
       }
@@ -131,6 +131,26 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     stopApprovalPolicy()
     await cleanup(unregisterTools, activeClients)
   }, 'xiaoyin managed MCP connectors')
+}
+
+/**
+ * Provider-facing function names have a stricter grammar than MCP tool names.
+ * Keep the original MCP name inside `execute`, while exposing a stable safe name
+ * to the model. Prefixing also prevents collisions with Xiaoyin's local tools.
+ */
+export function uniqueHarnessToolName(connectorId: string, toolName: string, used: Set<string>): string {
+  const normalized = `mcp_${connectorId}_${toolName}`
+    .replaceAll(/[^a-zA-Z0-9_-]+/g, '_')
+    .replaceAll(/_+/g, '_')
+    .replace(/^_+|_+$/g, '')
+  const base = (normalized || 'mcp_tool').slice(0, 60)
+  let candidate = base
+  let suffix = 2
+  while (used.has(candidate)) {
+    candidate = `${base.slice(0, 55)}_${suffix}`
+    suffix += 1
+  }
+  return candidate
 }
 
 export async function diagnoseConfiguredConnectors(
@@ -205,13 +225,11 @@ export function selectTools(
   discovered: Tool[],
   allowedTools: string[],
   requiredTools: string[],
-  allowWrite: boolean,
+  _allowWrite: boolean,
   connectorName = 'MCP',
 ): Tool[] {
   const allowed = new Set(allowedTools)
-  const selected = discovered.filter((tool) =>
-    (allowed.size === 0 || allowed.has(tool.name)) && (tool.annotations?.readOnlyHint === true || allowWrite),
-  )
+  const selected = discovered.filter((tool) => allowed.size === 0 || allowed.has(tool.name))
   void requiredTools
   void connectorName
   return selected

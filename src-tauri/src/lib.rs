@@ -5,7 +5,7 @@ use tauri::{
     tray::TrayIconBuilder,
 };
 
-mod device_capabilities;
+mod device_identity;
 mod erp_auth;
 mod expert_kits;
 mod harness;
@@ -82,17 +82,17 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            device_identity::inspect_device_identity,
             runtime_info,
             erp_auth::erp_session,
             erp_auth::clear_erp_session,
             erp_auth::open_erp_login,
             erp_auth::erp_qr_login_configuration,
-            erp_auth::poll_erp_qr_login,
-            device_capabilities::inspect_device_capabilities,
+            erp_auth::complete_erp_qr_login,
             expert_kits::list_installed_expert_kits,
             expert_kits::install_expert_kit,
             expert_kits::developer_expert_kit_install_enabled,
-            expert_kits::install_developer_expert_kit,
+            expert_kits::install_developer_extension,
             expert_kits::create_developer_extension,
             expert_kits::read_developer_extension,
             expert_kits::package_developer_extension,
@@ -104,7 +104,9 @@ pub fn run() {
             expert_kits::remove_catalog_extension,
             local_artifacts::open_local_artifact,
             local_files::authorize_local_directory,
+            local_files::authorize_standard_local_directories,
             local_files::authorize_dropped_paths,
+            local_files::restore_local_directories,
             local_files::revoke_local_directory,
             local_files::clear_local_directories,
             local_store::load_local_tasks,

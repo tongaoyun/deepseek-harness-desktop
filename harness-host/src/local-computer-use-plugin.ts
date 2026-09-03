@@ -42,6 +42,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   const stopApprovalPolicy = ctx.on('tools/pre-execute', (exec, next) => {
     if (config.requireApproval === false) return next()
     if (!selected.has(exec.name)) return next()
+    if (exec.name === 'computer_use_observe' || exec.name === 'computer_use_scroll') return next()
     return Promise.resolve({ kind: 'ask' as const, reason: approvalReason(exec.name, exec.arguments) })
   })
   ctx.effect(() => () => {

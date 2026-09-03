@@ -22,7 +22,7 @@ const MAX_SHEETS = 20
 const MAX_ROWS = 2_000
 const MAX_COLUMNS = 100
 const CREATE_TOOLS = new Set([
-  'office.docx.create', 'office.xlsx.create', 'office.pdf.create',
+  'office_docx_create', 'office_xlsx_create', 'office_pdf_create',
 ])
 
 export interface Config { roots?: string[]; enabled?: boolean; requireWriteApproval?: boolean }
@@ -56,7 +56,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
 }
 
 function readDocumentTool(bridge: LocalFileBridge): ToolDefinition {
-  return tool('office.document.read', 'Extract text and tables from a DOCX, XLSX, PPTX or PDF in an authorized directory.', {
+  return tool('office_document_read', 'Extract text and tables from a DOCX, XLSX, PPTX or PDF in an authorized directory.', {
     rootId: stringProperty('Authorized root ID.'), path: stringProperty('Relative DOCX, XLSX, PPTX or PDF path.'),
   }, ['rootId', 'path'], async (input) => {
     const rootId = requiredString(input.rootId, 'rootId')
@@ -77,7 +77,7 @@ function readDocumentTool(bridge: LocalFileBridge): ToolDefinition {
 }
 
 function createDocxTool(bridge: LocalFileBridge): ToolDefinition {
-  return tool('office.docx.create', 'Create a DOCX document from a title, paragraphs and simple tables.', {
+  return tool('office_docx_create', 'Create a DOCX document from a title, paragraphs and simple tables.', {
     rootId: stringProperty('Authorized root ID.'), path: stringProperty('Relative .docx destination.'),
     title: { type: 'string', maxLength: 500 }, paragraphs: { type: 'array', items: { type: 'string', maxLength: 20_000 }, maxItems: 2_000 },
     tables: tableArraySchema(), overwrite: { type: 'boolean', default: false },
@@ -98,7 +98,7 @@ function createDocxTool(bridge: LocalFileBridge): ToolDefinition {
 }
 
 function createXlsxTool(bridge: LocalFileBridge): ToolDefinition {
-  return tool('office.xlsx.create', 'Create an XLSX workbook from structured sheets and rows.', {
+  return tool('office_xlsx_create', 'Create an XLSX workbook from structured sheets and rows.', {
     rootId: stringProperty('Authorized root ID.'), path: stringProperty('Relative .xlsx destination.'),
     sheets: { type: 'array', minItems: 1, maxItems: MAX_SHEETS, items: { type: 'object', properties: {
       name: { type: 'string', minLength: 1, maxLength: 31 }, rows: { type: 'array', maxItems: MAX_ROWS, items: { type: 'array', maxItems: MAX_COLUMNS, items: { type: ['string', 'number', 'boolean', 'null'] } } },
@@ -120,7 +120,7 @@ function createXlsxTool(bridge: LocalFileBridge): ToolDefinition {
 }
 
 function createPdfTool(bridge: LocalFileBridge): ToolDefinition {
-  return tool('office.pdf.create', 'Create a PDF document from a title and paragraphs.', {
+  return tool('office_pdf_create', 'Create a PDF document from a title and paragraphs.', {
     rootId: stringProperty('Authorized root ID.'), path: stringProperty('Relative .pdf destination.'),
     title: { type: 'string', maxLength: 500 }, paragraphs: { type: 'array', items: { type: 'string', maxLength: 20_000 }, maxItems: 2_000 },
     overwrite: { type: 'boolean', default: false },

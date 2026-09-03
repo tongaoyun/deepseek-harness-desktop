@@ -102,9 +102,21 @@ export interface CloudTaskRun {
 export interface TaskMessage {
   role: 'assistant' | 'user'
   text: string
+  attachments?: LocalTaskAttachment[]
   pending?: boolean
+  monitor?: TaskMonitorState
   id?: string
   source?: 'desktop' | 'dingtalk'
+}
+
+export interface LocalTaskAttachment {
+  id: string
+  rootId: string
+  rootName: string
+  path: string
+  name: string
+  kind: 'file' | 'image'
+  mediaType?: 'image/png' | 'image/jpeg'
 }
 
 export interface TaskExecutionStep {
@@ -114,6 +126,23 @@ export interface TaskExecutionStep {
   status: 'running' | 'completed' | 'failed'
   toolName?: string
   startedAt: string
+  completedAt?: string
+}
+
+export interface TaskTimelineEntry {
+  id: string
+  kind: 'assistant' | 'command' | 'file' | 'connector' | 'browser' | 'tool' | 'approval' | 'error' | 'warning'
+  label: string
+  status: 'running' | 'completed' | 'failed'
+  text?: string
+  toolName?: string
+  detail?: string
+  output?: string
+  path?: string
+  secondaryPath?: string
+  connectorName?: string
+  itemCount?: number
+  occurredAt: string
   completedAt?: string
 }
 
@@ -135,7 +164,10 @@ export interface TaskMonitorState {
   status: 'idle' | 'running' | 'completed' | 'failed' | 'canceled'
   activity: string
   updatedAt: string
+  startedAt?: string
+  completedAt?: string
   steps: TaskExecutionStep[]
+  timeline?: TaskTimelineEntry[]
   artifacts: TaskArtifact[]
 }
 
@@ -151,6 +183,7 @@ export interface LocalTaskRun {
   expertKitId?: string
   skillId?: string
   model?: string
+  localDirectories?: Array<{ id: string; name: string; path?: string }>
   capabilitySnapshot?: CapabilitySnapshot
   monitor: TaskMonitorState
   messages: TaskMessage[]
@@ -348,72 +381,13 @@ export interface InstalledExtensionSnapshot {
   source: 'catalog' | 'developer'
 }
 
-export type DeviceCapabilityStatus = 'READY' | 'DEGRADED' | 'UNSUPPORTED'
-
-export interface DeviceCapabilityResult {
-  key: string
-  status: DeviceCapabilityStatus
-  detail: string
-}
-
-export interface DeviceCapabilityReport {
-  id: string
+export interface DeviceHeartbeatContext {
   deviceId: string
   desktopVersion: string
   platform: string
   architecture: string
   displayCount: number
   displayScalePercents: number[]
-  capabilities: DeviceCapabilityResult[]
-  createdAt: string
-}
-
-export interface SubmitDeviceCapabilityReport {
-  deviceId: string
-  desktopVersion: string
-  platform: string
-  architecture: string
-  displayCount: number
-  displayScalePercents: number[]
-  capabilities: DeviceCapabilityResult[]
-}
-
-export type DeviceFleetStatus = 'READY' | 'DEGRADED' | 'NON_COMPLIANT' | 'STALE'
-
-export interface DeviceComplianceIssue {
-  key: string
-  detail: string
-}
-
-export interface DevicePolicy {
-  minimumDesktopVersion: string
-  staleAfterDays: number
-  requiredCapabilities: string[]
-}
-
-export interface DeviceFleetEntry {
-  employeeId: string
-  deviceId: string
-  desktopVersion: string
-  platform: string
-  architecture: string
-  displayCount: number
-  displayScalePercents: number[]
-  status: DeviceFleetStatus
-  degradedCapabilities: string[]
-  complianceIssues: DeviceComplianceIssue[]
-  reportedAt: string
-}
-
-export interface DeviceFleetOverview {
-  totalDevices: number
-  readyDevices: number
-  degradedDevices: number
-  nonCompliantDevices: number
-  staleDevices: number
-  policy: DevicePolicy
-  generatedAt: string
-  devices: DeviceFleetEntry[]
 }
 
 export type AuditEventSource = 'DESKTOP' | 'SERVER' | 'IM'

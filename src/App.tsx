@@ -5,7 +5,6 @@ import {
   CircleStop,
   FolderOpen,
   PlugZap,
-  Plus,
   ShieldCheck,
   SquareCheckBig,
   WandSparkles,
@@ -23,18 +22,16 @@ import {
   loadSkills,
   resolveControlPlaneEndpoint,
   submitAuditEvent,
-  submitFeedback,
   submitDeviceHeartbeat,
+  submitFeedback,
 } from './api'
 import { ErpAuthScreen } from './ErpAuthScreen'
 import { ExpertKitDetailsModal } from './ExpertKitDetailsModal'
 import { SkillDetailsModal } from './SkillDetailsModal'
 import {
-  createExpertKitTemplate,
   customizeExpertKit,
-  developerExpertKitInstallEnabled,
   exportExpertKit,
-  installDeveloperExpertKit,
+  installDeveloperExtension,
   installExtension,
   installedExtensionSnapshot,
   listInstalledExtensions,
@@ -46,13 +43,16 @@ import {
 import {
   authorizeLocalDirectory,
   authorizeDroppedPaths,
+  authorizeStandardLocalDirectories,
   applyHarnessNotification,
   cancelHarness,
   clearLocalDirectories,
   connectorDiagnosticsAvailable,
   createTaskMonitor,
+  harnessResponseUpdate,
   listenHarnessNotifications,
   probeHarnessHost,
+  restoreLocalDirectories,
   revokeLocalDirectory,
   runHarness,
   shutdownHarness,
@@ -63,6 +63,7 @@ import type {
   ConnectorCatalogEntry,
   ExpertKitCatalogEntry,
   KnowledgeBaseEntry,
+  LocalTaskAttachment,
   CloudTaskRun,
   InstalledExpertKit,
   RuntimeStatus,
@@ -70,7 +71,6 @@ import type {
 } from './types'
 import { useEnterpriseSession } from './useEnterpriseSession'
 import { ScheduledTasksPage } from './ScheduledTasksPage'
-import { TaskCenterPage } from './TaskCenterPage'
 import { ImChannelsPage } from './ImChannelsPage'
 import { loadTaskHistory, persistTaskHistory } from './taskHistory'
 import { loadLocalImStatus, startLocalIm, stopLocalImRuntime, syncLocalImTasks } from './localIm'
@@ -79,9 +79,13 @@ import type { LocalTaskRun, TaskExecutionStep, TaskMessage, TaskMonitorState } f
 import { memoryInstruction, rememberInstruction } from './memory'
 import { modelStorageKey, resolveSelectedModel } from './modelSelection'
 import { buildInvocationOptions, filterInvocationOptions, type InvocationOption } from './invocations'
+import { needsLocalDirectoryAuthorization, standardLocalDirectories } from './localFileIntent'
+import { creationPrompt, type XiaoyinCreationKind } from './creationPrompts'
 import { buildRuntimeConnectorCatalog, withDesktopBuiltinConnectors } from './connectors'
 import { loadEnabledConnectorIds, saveEnabledConnectorIds } from './connectorPreferences'
 import {
+  connectorSecretTemplate,
+  connectorSecretValues,
   deleteConnectorSecrets,
   loadConnectorSecrets,
   saveConnectorSecrets,
@@ -96,12 +100,13 @@ import { connectorsForSnapshot, createCapabilitySnapshot } from './capabilitySna
 import { DesktopSidebar } from './DesktopSidebar'
 import { ChatPage } from './ChatPage'
 import { cacheAge, loadEnterpriseCatalogCache, saveEnterpriseCatalogCache } from './enterpriseCache'
-import { inspectDeviceCapabilities } from './deviceCapabilities'
+import { inspectDeviceHeartbeatContext } from './deviceHeartbeat'
 import { extensionMatches, type ExtensionFilter } from './ExtensionToolbar'
 import type { ExtensionCategoryFilter } from './extensionCategories'
 import { ExpertCatalogPage, SkillCatalogPage } from './ExtensionCatalogPages'
 import { ExtensionAuthoringModal } from './ExtensionAuthoringModal'
-import { loadPersonalConnectors, type ExtensionKind } from './extensionSubmissions'
+import { loadPersonalConnectors, savePersonalConnector, type ExtensionKind } from './extensionSubmissions'
+import { ExtensionPageActions } from './ExtensionPageActions'
 import './styles.css'
 
 const extensionNav = [
@@ -120,7 +125,7 @@ interface ExtensionSyncIssue {
 type HarnessHealth = 'checking' | 'ready' | 'degraded'
 
 export default function App() {
-  const { accessToken, error: authError, logout, reopen, state: authState, user } = useEnterpriseSession()
+  const { accessToken, authorizing, error: authError, logout, reopen, state: authState, user } = useEnterpriseSession()
   const [bootstrap, setBootstrap] = useState<BootstrapResponse>()
   const [runtimeStatus, setRuntimeStatus] = useState<RuntimeStatus>('connecting')
   const [prompt, setPrompt] = useState('')
@@ -145,7 +150,6 @@ export default function App() {
   const [extensionSyncedAt, setExtensionSyncedAt] = useState<Date>()
   const [catalogCacheSavedAt, setCatalogCacheSavedAt] = useState('')
   const [catalogCacheStale, setCatalogCacheStale] = useState(false)
-  const [developerKitMode, setDeveloperKitMode] = useState(false)
   const [developerKitBusy, setDeveloperKitBusy] = useState(false)
   const [installingKitId, setInstallingKitId] = useState('')
   const [installingSkillId, setInstallingSkillId] = useState('')
@@ -167,6 +171,7 @@ export default function App() {
   const taskMonitorRef = useRef<TaskMonitorState>(taskMonitor)
   const extensionPreviewRunningRef = useRef(false)
   const [localDirectories, setLocalDirectories] = useState<AuthorizedLocalDirectory[]>([])
+  const [pendingAttachments, setPendingAttachments] = useState<LocalTaskAttachment[]>([])
   const [localFileError, setLocalFileError] = useState('')
   const [selectedModel, setSelectedModel] = useState('')
   const [modelMenuOpen, setModelMenuOpen] = useState(false)
@@ -184,6 +189,9 @@ export default function App() {
   const taskSearchInputRef = useRef<HTMLInputElement>(null)
   const workspaceRef = useRef<HTMLElement>(null)
   const cancellationRequestedRef = useRef(false)
+  const streamingTaskIdRef = useRef('')
+  const streamingResponseKeyRef = useRef('')
+  const enabledConnectorIdsRef = useRef<string[]>([])
   const extensionCacheRef = useRef<{
     catalog: ExpertKitCatalogEntry[]
     installed: InstalledExpertKit[]
@@ -197,8 +205,11 @@ export default function App() {
   )
 
   useEffect(() => {
-    void developerExpertKitInstallEnabled().then(setDeveloperKitMode).catch(() => undefined)
-  }, [])
+    if (!['experts', 'skills', 'connectors'].includes(page)) return
+    setExtensionQuery('')
+    setExtensionFilter('market')
+    setExtensionCategory('all')
+  }, [page])
 
   useEffect(() => {
     if (authState !== 'authenticated' || !user) return
@@ -220,11 +231,14 @@ export default function App() {
 
   useEffect(() => {
     if (!user) {
+      enabledConnectorIdsRef.current = []
       setEnabledConnectorIds([])
       setConnectorSecrets({})
       return
     }
-    setEnabledConnectorIds(loadEnabledConnectorIds(user.userId))
+    const enabled = loadEnabledConnectorIds(user.userId)
+    enabledConnectorIdsRef.current = enabled
+    setEnabledConnectorIds(enabled)
     setConnectorSecrets(loadConnectorSecrets(user.userId))
   }, [user])
 
@@ -289,8 +303,8 @@ export default function App() {
           extensionCacheRef.current.connectors = cachedConnectors
           setConnectors(cachedConnectors)
           setKnowledgeBases(cached.knowledge)
-          setSkillViews(mergeSkills(cached.skills, extensionCacheRef.current.installed, cachedConnectors, cached.knowledge, enabledConnectorIds))
-          setExpertKits(mergeExpertKits(cached.catalog, extensionCacheRef.current.installed, cachedConnectors, cached.knowledge, enabledConnectorIds))
+          setSkillViews(mergeSkills(cached.skills, extensionCacheRef.current.installed, cachedConnectors, cached.knowledge, enabledConnectorIdsRef.current))
+          setExpertKits(mergeExpertKits(cached.catalog, extensionCacheRef.current.installed, cachedConnectors, cached.knowledge, enabledConnectorIdsRef.current))
         }
       }
       const [catalogResult, installedResult, skillsResult, connectorsResult, knowledgeResult] = await Promise.allSettled([
@@ -314,10 +328,10 @@ export default function App() {
         if (knowledgeResult.status === 'fulfilled') cache.knowledge = knowledgeResult.value
         setExpertKitCatalog(cache.catalog)
         setSkills(cache.skills)
-        setSkillViews(mergeSkills(cache.skills, cache.installed, cache.connectors, cache.knowledge, enabledConnectorIds))
+        setSkillViews(mergeSkills(cache.skills, cache.installed, cache.connectors, cache.knowledge, enabledConnectorIdsRef.current))
         setConnectors(cache.connectors)
         setKnowledgeBases(cache.knowledge)
-        setExpertKits(mergeExpertKits(cache.catalog, cache.installed, cache.connectors, cache.knowledge, enabledConnectorIds))
+        setExpertKits(mergeExpertKits(cache.catalog, cache.installed, cache.connectors, cache.knowledge, enabledConnectorIdsRef.current))
         const sources = [
           ['expert-kits', '专家套件目录', catalogResult],
           ['installed', '本机已安装能力', installedResult],
@@ -346,7 +360,7 @@ export default function App() {
     void syncExtensions(true)
     const timer = window.setInterval(() => void syncExtensions(false), 60_000)
     return () => { window.clearInterval(timer); controller.abort() }
-  }, [accessToken, bootstrap, enabledConnectorIds, extensionSyncAttempt, user])
+  }, [accessToken, bootstrap, extensionSyncAttempt, user])
 
   useEffect(() => {
     if (authState !== 'authenticated' || !connectorDiagnosticsAvailable()) return
@@ -363,12 +377,11 @@ export default function App() {
         return
       }
       const paths = event.payload.paths
-      void authorizeDroppedPaths(paths).then(async (directories) => {
+      void authorizeDroppedPaths(paths).then(async ({ directories, attachments }) => {
         setLocalDirectories((current) => [...current, ...directories.filter((next) => !current.some((item) => item.id === next.id))])
+        setPendingAttachments((current) => [...current, ...attachments.filter((next) => !current.some((item) => item.id === next.id))].slice(0, 16))
         setHarnessSessionId('')
         await shutdownHarness()
-        const names = paths.map((path) => path.split(/[\\/]/).pop()).filter(Boolean)
-        setPrompt((current) => `${current}${current.trim() ? '\n' : ''}请处理本地文件：${names.join('、')}`)
         focusComposer()
       }).catch((reason) => setLocalFileError(reason instanceof Error ? reason.message : String(reason)))
     }).then((dispose) => { if (disposed) dispose(); else unlisten = dispose })
@@ -382,6 +395,7 @@ export default function App() {
       teamId: user.teamId,
       litellmBaseUrl: bootstrap.endpoints.litellm,
       knowledgeEndpoint: resolveControlPlaneEndpoint(bootstrap.endpoints.knowledge),
+      scheduleEndpoint: resolveControlPlaneEndpoint(bootstrap.endpoints.schedules),
       connectors: buildRuntimeConnectorCatalog(connectors, bootstrap.endpoints.erpMcp, enabledConnectorIds, connectorSecrets),
       allowedArtifacts,
       model: selectedModel || bootstrap.models[0] || 'deepseek-v4-flash',
@@ -432,6 +446,19 @@ export default function App() {
         const next = applyHarnessNotification(taskMonitorRef.current, notification)
         taskMonitorRef.current = next
         setTaskMonitor(next)
+        const response = harnessResponseUpdate(notification)
+        if (response && streamingTaskIdRef.current) {
+          setMessages((current) => current.map((message, index) => {
+            if (index !== current.length - 1 || message.role !== 'assistant' || !message.pending) return message
+            if (response.mode === 'clear') {
+              streamingResponseKeyRef.current = ''
+              return { ...message, text: '' }
+            }
+            const sameMessage = streamingResponseKeyRef.current === response.key
+            streamingResponseKeyRef.current = response.key
+            return { ...message, text: response.mode === 'append' && sameMessage ? `${message.text}${response.text}` : response.text }
+          }))
+        }
       }
     }).then((dispose) => {
       if (disposed) dispose()
@@ -443,6 +470,7 @@ export default function App() {
   useEffect(() => {
     if (authState === 'authenticated') return
     setLocalDirectories([])
+    setPendingAttachments([])
     void Promise.all([clearLocalDirectories(), shutdownHarness(), stopLocalImRuntime()])
   }, [authState])
 
@@ -494,13 +522,6 @@ export default function App() {
   }, [prompt])
 
   useEffect(() => {
-    const list = messageListRef.current
-    if (!list) return
-    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    list.scrollTo({ top: list.scrollHeight, behavior: reducedMotion ? 'auto' : 'smooth' })
-  }, [messages, taskMonitor.updatedAt])
-
-  useEffect(() => {
     workspaceRef.current?.scrollTo({ top: 0, behavior: 'auto' })
   }, [page])
 
@@ -509,16 +530,16 @@ export default function App() {
     let stopped = false
     const heartbeat = async () => {
       try {
-        const probe = await inspectDeviceCapabilities()
+        const context = await inspectDeviceHeartbeatContext()
         const installed = await listInstalledExtensions()
-        if (!stopped && /^\d+\.\d+\.\d+$/.test(probe.desktopVersion)) {
+        if (!stopped && /^\d+\.\d+\.\d+$/.test(context.desktopVersion)) {
           await submitDeviceHeartbeat(bootstrap.endpoints.deviceCapabilities ?? '/api/v1/device-capabilities',
-            user.userId, accessToken, { ...probe, installedExtensions: installedExtensionSnapshot(installed, [
+            user.userId, accessToken, { ...context, installedExtensions: installedExtensionSnapshot(installed, [
               ...expertKitCatalog.map(({ id, version }) => ({ kind: 'expert-kit' as const, id, version })),
               ...skills.map(({ id, version }) => ({ kind: 'skill' as const, id, version })),
             ]) })
         }
-      } catch { /* heartbeat is best-effort and must not interrupt employee work */ }
+      } catch { /* best effort: control-plane inventory must never interrupt employee work */ }
     }
     void heartbeat()
     const timer = window.setInterval(() => void heartbeat(), 6 * 60 * 60 * 1000)
@@ -533,18 +554,13 @@ export default function App() {
         const values = await loadCloudTaskRuns(bootstrap.endpoints.taskRuns, user.userId, accessToken)
         const cutoff = Date.now() - 24 * 60 * 60 * 1_000
         if (!stopped) setFailedCloudRuns(values.filter((run) => run.status === 'FAILED' && Date.parse(run.startedAt) >= cutoff).slice(0, 5))
-      } catch { /* the task center remains the source of truth when background polling is unavailable */ }
+      } catch { /* scheduled task history remains available when background polling is unavailable */ }
     }
     void refreshFailures()
     const timer = window.setInterval(() => void refreshFailures(), 60_000)
     return () => { stopped = true; window.clearInterval(timer) }
   }, [accessToken, authState, bootstrap, runtimeStatus, user])
 
-  const statusLabel = useMemo(() => ({
-    connecting: '正在连接企业服务',
-    ready: '企业服务已连接',
-    offline: '企业服务暂不可用',
-  })[runtimeStatus], [runtimeStatus])
   const visibleExpertKits = useMemo(
     () => expertKits.filter((item) => extensionMatches(item, extensionQuery, extensionFilter, extensionCategory)),
     [expertKits, extensionCategory, extensionFilter, extensionQuery],
@@ -555,7 +571,7 @@ export default function App() {
   )
 
   if (authState !== 'authenticated') {
-    return <ErpAuthScreen checking={authState === 'checking'} error={authError} onReopen={() => void reopen()} />
+    return <ErpAuthScreen authorizing={authorizing} checking={authState === 'checking'} error={authError} onReopen={() => void reopen()} />
   }
 
   const selectedExpertKit = expertKits.find((kit) => kit.id === selectedExpertKitId
@@ -569,13 +585,19 @@ export default function App() {
   )
   const toggleConnector = (connectorId: string, enabled: boolean) => {
     if (!user) return
-    setEnabledConnectorIds((current) => saveEnabledConnectorIds(
-      user.userId,
-      enabled ? [...current, connectorId] : current.filter((id) => id !== connectorId),
-    ))
+    setEnabledConnectorIds((current) => {
+      const next = saveEnabledConnectorIds(
+        user.userId,
+        enabled ? [...current, connectorId] : current.filter((id) => id !== connectorId),
+      )
+      enabledConnectorIdsRef.current = next
+      return next
+    })
     void shutdownHarness()
   }
-  const invocationOptions = buildInvocationOptions(expertKits, skillViews)
+  const invocationOptions = buildInvocationOptions(currentCapabilitySnapshot
+    ? selectedExpertKit ? [selectedExpertKit] : []
+    : expertKits)
   const visibleInvocations = filterInvocationOptions(invocationOptions, prompt)
   const contextQuery = prompt.startsWith('@') && !/\s/.test(prompt.slice(1))
     ? prompt.slice(1).toLocaleLowerCase('zh-CN') : undefined
@@ -596,18 +618,19 @@ export default function App() {
     taskMonitorRef.current = next
     setTaskMonitor(next)
   }
-  const newTask = () => {
+  const startNewTask = (initialPrompt = '') => {
     setPage('chat')
     setTaskSearchOpen(false)
     setTaskQuery('')
     setMessages([])
-    setPrompt('')
+    setPrompt(initialPrompt)
     setHarnessSessionId('')
     setCurrentCapabilitySnapshot(undefined)
     setSelectedKnowledgeBaseRefs([])
     setSelectedExpertKitId('')
     setSelectedSkillId('')
     setCurrentLocalTaskId('')
+    setPendingAttachments([])
     const monitor = createTaskMonitor()
     taskMonitorRef.current = monitor
     setTaskMonitor(monitor)
@@ -616,6 +639,8 @@ export default function App() {
     void Promise.all([clearLocalDirectories(), shutdownHarness()])
     focusComposer()
   }
+  const newTask = () => startNewTask()
+  const createWithXiaoyin = (kind: XiaoyinCreationKind) => startNewTask(creationPrompt(kind))
   const persistLocalTask = (task: LocalTaskRun) => {
     if (!user) return
     setLocalTasks((current) => [task, ...current.filter((item) => item.id !== task.id)]
@@ -636,16 +661,23 @@ export default function App() {
     setSelectedSkillId(task.skillId ?? '')
     setSelectedModel(resolveSelectedModel(bootstrap?.models ?? [], task.model ?? selectedModel))
     setPrompt('')
+    setPendingAttachments([])
     taskMonitorRef.current = task.monitor
     setTaskMonitor(task.monitor)
     setLocalDirectories([])
     setLocalFileError('')
-    void Promise.all([clearLocalDirectories(), shutdownHarness()])
+    void Promise.all([clearLocalDirectories(), shutdownHarness()]).then(async () => {
+      const paths = (task.localDirectories ?? []).flatMap((directory) => directory.path ? [directory.path] : [])
+      if (paths.length === 0) return
+      try {
+        const restored = await restoreLocalDirectories(paths)
+        setLocalDirectories(restored)
+        if (restored.length < paths.length) setLocalFileError('部分历史工作目录已移动或不可用，请重新添加。')
+      } catch (reason) {
+        setLocalFileError(reason instanceof Error ? reason.message : String(reason))
+      }
+    })
     focusComposer()
-  }
-  const archiveLocalTask = (task: LocalTaskRun, archived: boolean) => {
-    persistLocalTask({ ...task, archivedAt: archived ? new Date().toISOString() : undefined, updatedAt: new Date().toISOString() })
-    if (archived && currentLocalTaskId === task.id) newTask()
   }
   const addLocalDirectory = async () => {
     setLocalFileError('')
@@ -667,6 +699,7 @@ export default function App() {
       await revokeLocalDirectory(id)
       await shutdownHarness()
       setLocalDirectories((current) => current.filter((item) => item.id !== id))
+      setPendingAttachments((current) => current.filter((item) => item.rootId !== id))
       setHarnessSessionId('')
     } catch (error) {
       setLocalFileError(error instanceof Error ? error.message : String(error))
@@ -685,9 +718,10 @@ export default function App() {
   }
   const submit = async (event: FormEvent) => {
     event.preventDefault()
-    const input = prompt.trim()
+    const messageAttachments = pendingAttachments
+    const input = prompt.trim() || (messageAttachments.length > 0 ? '请查看并处理这些附件。' : '')
     if (!input || !bootstrap || runtimeStatus !== 'ready' || harnessRunning || !selectedCapabilityExecutable) return
-    const remembered = memoryInstruction(input)
+    const remembered = messageAttachments.length === 0 ? memoryInstruction(input) : undefined
     if (remembered) {
       setPrompt('')
       if (!window.confirm(`是否将以下内容保存为长期记忆？\n\n${remembered}`)) {
@@ -710,19 +744,39 @@ export default function App() {
       }
       return
     }
+    let taskDirectories = localDirectories
+    const taskSessionId = harnessSessionId
+    const standardDirectories = standardLocalDirectories(input)
+    if (standardDirectories.length > 0) {
+      setLocalFileError('')
+      try {
+        const authorizations = await authorizeStandardLocalDirectories(standardDirectories)
+        const additions = authorizations.filter((next) => !taskDirectories.some((item) => item.id === next.id))
+        taskDirectories = [...taskDirectories, ...additions]
+        setLocalDirectories(taskDirectories)
+        if (additions.length > 0) await shutdownHarness()
+      } catch (error) {
+        setLocalFileError(error instanceof Error ? error.message : String(error))
+        return
+      }
+    } else if (taskDirectories.length === 0 && needsLocalDirectoryAuthorization(input)) {
+      setLocalFileError('请先在输入框下方选择工作目录，任务内容已保留。')
+      return
+    }
     const now = new Date().toISOString()
     const capabilitySnapshot = currentCapabilitySnapshot
       ?? createCapabilitySnapshot(expertKits, skillViews, runtimeConnectors, selectedKnowledgeBaseRefs, now)
     if (!currentCapabilitySnapshot) setCurrentCapabilitySnapshot(capabilitySnapshot)
     const taskId = currentLocalTaskId || crypto.randomUUID()
     const existingTask = localTasks.find((task) => task.id === taskId)
-    const pendingMessages: TaskMessage[] = [...messages, { role: 'user', text: input },
-      { role: 'assistant', text: '正在分析任务…', pending: true }]
+    const pendingMessages: TaskMessage[] = [...messages, { role: 'user', text: input, ...(messageAttachments.length > 0 ? { attachments: messageAttachments } : {}) },
+      { role: 'assistant', text: '', pending: true }]
     const runningMonitor: TaskMonitorState = {
-      ...(existingTask?.monitor ?? createTaskMonitor(now)),
+      ...createTaskMonitor(now),
       status: 'running',
       activity: '正在启动本地 Agent',
       updatedAt: now,
+      startedAt: now,
     }
     const runningTask: LocalTaskRun = {
       id: taskId,
@@ -731,10 +785,11 @@ export default function App() {
       status: 'RUNNING',
       createdAt: existingTask?.createdAt ?? now,
       updatedAt: now,
-      sessionId: harnessSessionId || existingTask?.sessionId,
+      sessionId: taskSessionId || existingTask?.sessionId,
       expertKitId: selectedExpertKit?.id,
       skillId: selectedSkill?.id,
       model: activeModel,
+      localDirectories: taskDirectories,
       capabilitySnapshot,
       monitor: runningMonitor,
       messages: pendingMessages,
@@ -748,7 +803,10 @@ export default function App() {
       summary: [selectedExpertKit?.id, selectedSkill?.id, activeModel].filter(Boolean).join(' · '), occurredAt: now,
     }).catch(() => undefined)
     setPrompt('')
+    setPendingAttachments([])
     setHarnessRunning(true)
+    streamingTaskIdRef.current = taskId
+    streamingResponseKeyRef.current = ''
     cancellationRequestedRef.current = false
     taskMonitorRef.current = runningMonitor
     setTaskMonitor(runningMonitor)
@@ -757,27 +815,32 @@ export default function App() {
         prompt: input,
         employeeId: user!.userId,
         teamId: user!.teamId,
-        ...(harnessSessionId ? { sessionId: harnessSessionId } : {}),
+        ...(taskSessionId ? { sessionId: taskSessionId } : {}),
         ...(selectedExpertKit
           ? { selectedExtension: { kind: 'expert-kit' as const, id: selectedExpertKit.id } }
           : selectedSkill ? { selectedExtension: { kind: 'skill' as const, id: selectedSkill.id } } : {}),
         litellmBaseUrl: bootstrap.endpoints.litellm,
         knowledgeEndpoint: resolveControlPlaneEndpoint(bootstrap.endpoints.knowledge),
+        scheduleEndpoint: resolveControlPlaneEndpoint(bootstrap.endpoints.schedules),
         connectors: connectorsForSnapshot(capabilitySnapshot, connectorSecrets),
         allowedArtifacts: capabilitySnapshot.extensions,
         knowledgeBaseRefs: capabilitySnapshot.knowledgeBaseRefs,
         model: activeModel,
         modelApiKey: bootstrap.modelApiKey,
         accessToken,
-        localFileRootIds: localDirectories.map((directory) => directory.id),
+        localFileRootIds: taskDirectories.map((directory) => directory.id),
+        attachments: messageAttachments,
       })
+      if (!result.finalResponse.trim()) throw new Error('模型本轮没有返回可显示文本，请重试')
       setHarnessSessionId(result.sessionId)
-      const completedMessages = pendingMessages.map((message, index) => index === pendingMessages.length - 1
-        ? { role: 'assistant', text: result.finalResponse || '任务已执行完成，但模型没有返回文本。' }
-        : message) as TaskMessage[]
+      const completedAt = new Date().toISOString()
       const completedMonitor: TaskMonitorState = {
-        ...taskMonitorRef.current, status: 'completed', activity: '任务已完成', updatedAt: new Date().toISOString(),
+        ...taskMonitorRef.current, status: 'completed', activity: '任务已完成', updatedAt: completedAt,
+        completedAt,
       }
+      const completedMessages = pendingMessages.map((message, index) => index === pendingMessages.length - 1
+        ? { role: 'assistant', text: result.finalResponse, monitor: completedMonitor }
+        : message) as TaskMessage[]
       taskMonitorRef.current = completedMonitor
       setTaskMonitor(completedMonitor)
       setMessages(completedMessages)
@@ -787,28 +850,33 @@ export default function App() {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       const canceled = cancellationRequestedRef.current
-      const failedMessages = pendingMessages.map((item, index) => index === pendingMessages.length - 1
-        ? { role: 'assistant', text: canceled ? '任务已取消，可修改要求后重新执行。' : `执行失败：${message}` }
-        : item) as TaskMessage[]
+      const completedAt = new Date().toISOString()
       const failedMonitor: TaskMonitorState = {
         ...taskMonitorRef.current,
         status: canceled ? 'canceled' : 'failed',
         activity: canceled ? '任务已取消' : '任务执行失败',
-        updatedAt: new Date().toISOString(),
+        updatedAt: completedAt,
+        completedAt,
       }
+      const failedMessages = pendingMessages.map((item, index) => index === pendingMessages.length - 1
+        ? { role: 'assistant', text: canceled ? '任务已取消，可修改要求后重新执行。' : `执行失败：${message}`, monitor: failedMonitor }
+        : item) as TaskMessage[]
       taskMonitorRef.current = failedMonitor
       setTaskMonitor(failedMonitor)
       setMessages(failedMessages)
       persistLocalTask({ ...runningTask, status: canceled ? 'CANCELED' : 'FAILED', updatedAt: new Date().toISOString(), monitor: failedMonitor, messages: failedMessages })
-      if (!canceled) {
+      const infrastructureFailure = isHarnessInfrastructureFailure(message)
+      if (!canceled && infrastructureFailure) {
         setHarnessHealth('degraded')
         setHarnessHealthDetail(`Harness 执行异常：${message}`)
       }
-      void shutdownHarness()
+      if (canceled || infrastructureFailure) void shutdownHarness()
       await reportTaskAudit('FAILED', taskId, failedMonitor.steps)
     } finally {
       setHarnessRunning(false)
       cancellationRequestedRef.current = false
+      streamingTaskIdRef.current = ''
+      streamingResponseKeyRef.current = ''
     }
   }
 
@@ -833,6 +901,7 @@ export default function App() {
     const previous = [...messages].reverse().find((message) => message.role === 'user')
     if (!previous) return
     setPrompt(previous.text)
+    setPendingAttachments(previous.attachments ?? [])
     focusComposer()
   }
 
@@ -889,10 +958,10 @@ export default function App() {
     setExpertKits(mergeExpertKits(expertKitCatalog, installed, connectors, knowledgeBases, enabledConnectorIds))
     setSkillViews(mergeSkills(skills, installed, connectors, knowledgeBases, enabledConnectorIds))
     if (bootstrap && user) {
-      const probe = await inspectDeviceCapabilities()
-      if (/^\d+\.\d+\.\d+$/.test(probe.desktopVersion)) {
+      const context = await inspectDeviceHeartbeatContext()
+      if (/^\d+\.\d+\.\d+$/.test(context.desktopVersion)) {
         await submitDeviceHeartbeat(bootstrap.endpoints.deviceCapabilities ?? '/api/v1/device-capabilities',
-          user.userId, accessToken, { ...probe, installedExtensions: installedExtensionSnapshot(installed, [
+          user.userId, accessToken, { ...context, installedExtensions: installedExtensionSnapshot(installed, [
             ...expertKitCatalog.map(({ id, version }) => ({ kind: 'expert-kit' as const, id, version })),
             ...skills.map(({ id, version }) => ({ kind: 'skill' as const, id, version })),
           ]) })
@@ -919,31 +988,21 @@ export default function App() {
     }
   }
 
-  const installLocalAcceptanceKit = async () => {
+  const installLocalExtension = async (kind: 'expert-kit' | 'skill') => {
     if (developerKitBusy) return
     setDeveloperKitBusy(true)
     setExpertKitError('')
     try {
-      const installed = await installDeveloperExpertKit()
+      const installed = await installDeveloperExtension(kind)
       if (!installed) return
       await refreshInstalledKits()
-      setActiveExpertKitId(installed.manifest.id)
+      if (kind === 'expert-kit') setActiveExpertKitId(installed.manifest.id)
+      else setActiveSkillId(installed.manifest.id)
     } catch (error) {
       setExpertKitError(error instanceof Error ? error.message : String(error))
     } finally {
       setDeveloperKitBusy(false)
     }
-  }
-
-  const createLocalExpertKit = async () => {
-    const id = window.prompt('专家套件 ID（小写字母、数字和连字符，例如 shop-report）')?.trim()
-    if (!id) return
-    const name = window.prompt('专家套件名称')?.trim()
-    if (!name) return
-    try {
-      const path = await createExpertKitTemplate(id, name)
-      if (path) window.alert(`专家套件模板已创建：\n${path}`)
-    } catch (error) { setExpertKitError(error instanceof Error ? error.message : String(error)) }
   }
 
   const customizeLocalExpertKit = async (kit: ExpertKitView) => {
@@ -979,6 +1038,7 @@ export default function App() {
           teamId: user.teamId,
           litellmBaseUrl: bootstrap.endpoints.litellm,
           knowledgeEndpoint: resolveControlPlaneEndpoint(bootstrap.endpoints.knowledge),
+          scheduleEndpoint: resolveControlPlaneEndpoint(bootstrap.endpoints.schedules),
           connectors: runtimeConnectors,
           allowedArtifacts,
           model: activeModel,
@@ -1014,6 +1074,7 @@ export default function App() {
           teamId: user.teamId,
           litellmBaseUrl: bootstrap.endpoints.litellm,
           knowledgeEndpoint: resolveControlPlaneEndpoint(bootstrap.endpoints.knowledge),
+          scheduleEndpoint: resolveControlPlaneEndpoint(bootstrap.endpoints.schedules),
           connectors: runtimeConnectors,
           allowedArtifacts,
           model: activeModel,
@@ -1045,24 +1106,6 @@ export default function App() {
     focusComposer()
   }
 
-  const useSkill = (skill: SkillView) => {
-    if (!['installed', 'update'].includes(skill.installState)) return
-    if (messages.length > 0) {
-      setMessages([])
-      setCurrentLocalTaskId('')
-      setSelectedKnowledgeBaseRefs([])
-    }
-    setSelectedSkillId(skill.id)
-    setSelectedExpertKitId('')
-    setHarnessSessionId('')
-    setCurrentCapabilitySnapshot(undefined)
-    setPage('chat')
-    setPrompt(`请使用 skill "${skill.id}" 完成：`)
-    setActiveSkillId('')
-    void shutdownHarness()
-    focusComposer()
-  }
-
   const selectModel = (model: string) => {
     setSelectedModel(model)
     setModelMenuOpen(false)
@@ -1070,18 +1113,31 @@ export default function App() {
   }
 
   const selectInvocation = (option: InvocationOption) => {
-    if (messages.length > 0) {
-      setMessages([])
-      setCurrentLocalTaskId('')
-      setSelectedKnowledgeBaseRefs([])
+    if (!currentCapabilitySnapshot) {
+      setSelectedExpertKitId(option.profileId)
+      setSelectedSkillId('')
+      setHarnessSessionId('')
     }
-    setSelectedExpertKitId(option.profileKind === 'expert-kit' ? option.profileId : '')
-    setSelectedSkillId(option.profileKind === 'skill' ? option.profileId : '')
+    setPrompt(`/${option.id} `)
+    if (!currentCapabilitySnapshot) void shutdownHarness()
+    focusComposer()
+  }
+
+  const selectChatCapability = (id: string) => {
+    const kit = expertKits.find((item) => item.id === id && ['installed', 'update'].includes(item.installState))
+    if (kit) {
+      setSelectedExpertKitId(kit.id)
+      setSelectedSkillId('')
+      setHarnessSessionId('')
+      setCurrentCapabilitySnapshot(undefined)
+      void shutdownHarness()
+      focusComposer()
+      return
+    }
+    setSelectedExpertKitId('')
+    setSelectedSkillId('')
     setHarnessSessionId('')
     setCurrentCapabilitySnapshot(undefined)
-    setPrompt(option.kind === 'command'
-      ? `/${option.id} `
-      : `请使用 skill "${option.id}" 完成：`)
     void shutdownHarness()
     focusComposer()
   }
@@ -1094,6 +1150,7 @@ export default function App() {
         teamId: user!.teamId,
         litellmBaseUrl: bootstrap.endpoints.litellm,
         knowledgeEndpoint: resolveControlPlaneEndpoint(bootstrap.endpoints.knowledge),
+        scheduleEndpoint: resolveControlPlaneEndpoint(bootstrap.endpoints.schedules),
         connectors: runtimeConnectors,
         allowedArtifacts,
         model: activeModel,
@@ -1104,7 +1161,7 @@ export default function App() {
   }
 
   const notifications = [
-    ...(runtimeStatus === 'offline' ? [{ key: 'control-plane', title: '企业服务连接失败', detail: '点击顶部连接状态可立即重试。', tone: 'danger' }] : []),
+    ...(runtimeStatus === 'offline' ? [{ key: 'control-plane', title: '服务连接失败', detail: '请检查内网连接后重试。', tone: 'danger' }] : []),
     ...(harnessHealth === 'degraded' ? [{ key: 'harness', title: '本地 Agent 需要恢复', detail: harnessHealthDetail, tone: 'danger' }] : []),
     ...(localImError ? [{ key: 'local-im', title: '本机 IM 频道异常', detail: localImError, tone: 'danger' }] : []),
     ...failedCloudRuns.map((run) => ({ key: `run-${run.runId}`, title: `定时任务失败：${run.name}`, detail: new Date(run.startedAt).toLocaleString(), tone: 'danger' })),
@@ -1128,8 +1185,6 @@ export default function App() {
         onToggleCollapsed={() => setSidebarCollapsed((value) => !value)}
         onToggleSearch={() => { setTaskSearchOpen((value) => !value); setTaskQuery('') }}
         page={page}
-        runtimeStatus={runtimeStatus}
-        skillsCount={skills.length}
         taskQuery={taskQuery}
         taskSearchInputRef={taskSearchInputRef}
         taskSearchOpen={taskSearchOpen}
@@ -1139,24 +1194,23 @@ export default function App() {
       />
 
       <main className="workspace" ref={workspaceRef}>
-        <header className="topbar">
-          <button className={`connection-state ${runtimeStatus}`} disabled={runtimeStatus === 'connecting'} onClick={() => runtimeStatus === 'offline' && setConnectionAttempt((value) => value + 1)} title={runtimeStatus === 'offline' ? '点击重新连接' : undefined} type="button"><i /> 马帮 ERP · {statusLabel}</button>
+        {page === 'chat' && <header className="topbar">
           <div className="topbar-tools">
-            <button className={`harness-state ${harnessHealth}`} disabled={harnessHealth === 'checking'} onClick={() => harnessHealth === 'degraded' && setHarnessHealthAttempt((value) => value + 1)} title={harnessHealthDetail} type="button"><i /> {harnessHealth === 'checking' ? 'Agent 检查中' : harnessHealth === 'ready' ? 'Agent 已就绪' : 'Agent 待恢复'}</button>
             <div className="notification-center">
               <button aria-expanded={notificationOpen} aria-label="通知中心" className="notification-trigger" onClick={() => setNotificationOpen((value) => !value)} type="button"><Bell size={16} />{notifications.length > 0 && <span>{notifications.length}</span>}</button>
               {notificationOpen && <section className="notification-popover"><header><strong>通知中心</strong><small>{notifications.length ? `${notifications.length} 项需要处理` : '当前运行正常'}</small></header>{notifications.length
                 ? notifications.map((item) => <article className={item.tone} key={item.key}><i /><span><strong>{item.title}</strong><small>{item.detail}</small></span></article>)
                 : <div className="notification-empty"><SquareCheckBig size={20} />暂无待处理事项</div>}
-                {notifications.length > 0 && <footer><button onClick={() => { setNotificationOpen(false); setPage(localImError ? 'im' : failedCloudRuns.length ? 'tasks' : expertKits.some((kit) => kit.installState === 'update') ? 'experts' : skillViews.some((skill) => skill.installState === 'update') ? 'skills' : 'settings') }} type="button">{localImError ? '打开 IM 频道' : failedCloudRuns.length ? '打开任务中心' : expertKits.some((kit) => kit.installState === 'update') ? '查看套件更新' : skillViews.some((skill) => skill.installState === 'update') ? '查看 Skill 更新' : '打开运行诊断'}</button></footer>}
+                {notifications.length > 0 && <footer><button onClick={() => { setNotificationOpen(false); if (runtimeStatus === 'offline') setConnectionAttempt((value) => value + 1); else if (harnessHealth === 'degraded') setHarnessHealthAttempt((value) => value + 1); else setPage(localImError ? 'im' : failedCloudRuns.length ? 'schedules' : expertKits.some((kit) => kit.installState === 'update') ? 'experts' : skillViews.some((skill) => skill.installState === 'update') ? 'skills' : 'settings') }} type="button">{runtimeStatus === 'offline' ? '重新连接' : harnessHealth === 'degraded' ? '恢复本地 Agent' : localImError ? '打开 IM 频道' : failedCloudRuns.length ? '查看定时任务' : expertKits.some((kit) => kit.installState === 'update') ? '查看套件更新' : skillViews.some((skill) => skill.installState === 'update') ? '查看 Skill 更新' : '打开设置'}</button></footer>}
               </section>}
             </div>
           </div>
-        </header>
+        </header>}
 
         {page === 'chat' ? (
           <ChatPage
             activeModel={activeModel}
+            capabilityOptions={expertKits.filter((item) => ['installed', 'update'].includes(item.installState)).map((item) => ({ id: item.id, name: item.name, summary: item.summary }))}
             capabilitySnapshot={currentCapabilitySnapshot}
             composerRef={composerRef}
             contextQuery={contextQuery}
@@ -1165,6 +1219,7 @@ export default function App() {
             harnessRunning={harnessRunning}
             knowledgeBases={knowledgeBases}
             localDirectories={localDirectories}
+            pendingAttachments={pendingAttachments}
             localFileError={localFileError}
             messageListRef={messageListRef}
             messages={messages}
@@ -1174,12 +1229,13 @@ export default function App() {
             onAddKnowledge={(reference) => { setSelectedKnowledgeBaseRefs((current) => [...current, reference]); setPrompt(''); focusComposer() }}
             onAddLocalDirectory={() => void addLocalDirectory()}
             onCancel={() => void cancelCurrentTask()}
-            onCapabilityPage={() => setPage(selectedSkill ? 'skills' : 'experts')}
+            onSelectCapability={selectChatCapability}
             onPrepareRetry={prepareRetry}
             onPrompt={(value) => { setPrompt(value); focusComposer() }}
             onRecoverHarness={() => setHarnessHealthAttempt((value) => value + 1)}
             onRemoveKnowledge={(reference) => setSelectedKnowledgeBaseRefs((current) => current.filter((item) => item !== reference))}
             onRemoveLocalDirectory={(id) => void removeLocalDirectory(id)}
+            onRemoveAttachment={(id) => setPendingAttachments((current) => current.filter((item) => item.id !== id))}
             onSelectInvocation={selectInvocation}
             onSelectModel={selectModel}
             onSubmit={(event) => void submit(event)}
@@ -1187,7 +1243,8 @@ export default function App() {
             prompt={prompt}
             runtimeStatus={runtimeStatus}
             selectedCapabilityExecutable={Boolean(bootstrap) && selectedCapabilityExecutable}
-            selectedCapabilityName={selectedExpertKit?.name ?? selectedSkill?.name ?? '运营通用'}
+            selectedCapabilityId={selectedExpertKit?.id ?? ''}
+            selectedCapabilityName={selectedExpertKit?.name ?? selectedSkill?.name ?? '通用'}
             selectedKnowledgeBaseRefs={selectedKnowledgeBaseRefs}
             taskMonitor={taskMonitor}
             visibleInvocations={visibleInvocations}
@@ -1195,48 +1252,65 @@ export default function App() {
           />
         ) : (
           <section className="capability-page">
-            <div className="capability-page-heading"><div><span className="page-kicker">企业能力中心</span>
-            <h1>{extensionNav.find((item) => item.id === page)?.label ?? ({ settings: '桌面设置', tasks: '任务中心', schedules: '定时任务', im: 'IM 频道' } as Record<string, string>)[page]}</h1>
+            {page !== 'schedules' && <div className="capability-page-heading"><div>
+            <h1>{extensionNav.find((item) => item.id === page)?.label ?? ({ settings: '桌面设置', schedules: '定时任务', im: 'IM 频道' } as Record<string, string>)[page]}</h1>
             <p>{page === 'experts'
-              ? '面向岗位的一整套工作方案，统一组合命令、技能、连接器和后台工作流。'
+              ? '专家套件提供面向角色或行业的完整工作方式，可在新任务的工作模式菜单中选择。'
               : page === 'skills'
-                ? '公司沉淀的独立工作方法，可由 Agent 自动识别或在对话中明确调用。'
+                ? '安装后的技能由小胤根据任务自动调用，无需在聊天中手动选择。'
                   : page === 'connectors'
-                    ? '连接公司数据和员工电脑能力；账号、地址和令牌由公司统一管理。'
+                    ? '连接外部应用、日历与服务，让你的工作流更顺畅。'
                   : page === 'knowledge'
                     ? '集中管理公司文档；索引任务由 Temporal 托管，回答可引用文件与页码或工作表。'
                   : page === 'im'
                     ? '把钉钉等公司消息入口连接到本机小胤 Harness，集中查看连接和处理状态。'
-                  : page === 'tasks'
-                    ? '统一查看小胤桌面任务、Temporal 云端执行和可下载的结果产物。'
-                  : page === 'schedules'
-                    ? '按专家套件声明的后台工作流创建任务；任务由 Temporal 托管，关闭电脑后仍会运行。'
                   : page === 'settings'
-                    ? '管理个人记忆与当前电脑的本地能力；软件更新和反馈仍可从左下角头像打开。'
-                    : '这里将由控制中心下发公司自己的能力与权限配置。'}</p></div>{(page === 'experts' || page === 'skills' || page === 'connectors') && <button className="add-extension-button" onClick={() => setAuthoringKind(page === 'experts' ? 'expert-kit' : page === 'skills' ? 'skill' : 'connector')} type="button"><Plus size={15} />添加</button>}</div>
+                    ? '管理企业身份、个人记忆、快捷键与应用更新。'
+                    : '这里将由控制中心下发公司自己的能力与权限配置。'}</p></div>{(page === 'experts' || page === 'skills' || page === 'connectors') && <ExtensionPageActions
+              loading={expertKitsLoading}
+              onCreate={() => {
+                if (page === 'experts' || page === 'skills') createWithXiaoyin(page === 'experts' ? 'expert-kit' : 'skill')
+                else setAuthoringKind('connector')
+              }}
+              onImportConnector={(connector) => {
+                if (!user) return
+                const values = connectorSecretValues(connector)
+                const template = connectorSecretTemplate(connector)
+                savePersonalConnector(user.userId, connector)
+                setConnectorSecrets(saveConnectorSecrets(user.userId, connector.id, values))
+                const next = [template, ...connectors.filter((item) => item.id !== connector.id)]
+                extensionCacheRef.current.connectors = next
+                setConnectors(next)
+                setEnabledConnectorIds((current) => saveEnabledConnectorIds(user.userId, [...new Set([...current, connector.id])]))
+              }}
+              onQuery={setExtensionQuery}
+              onRefresh={() => setExtensionSyncAttempt((value) => value + 1)}
+              onUpload={() => void installLocalExtension(page === 'skills' ? 'skill' : 'expert-kit')}
+              page={page}
+              query={extensionQuery}
+            />}</div>}
             {extensionSyncIssues.length > 0 && <div className="sync-diagnostics"><div><CircleStop size={17} /><span><strong>部分企业能力同步失败，已保留上次成功数据</strong><small>{extensionSyncedAt ? `最近尝试 ${extensionSyncedAt.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}` : '刚刚尝试同步'}</small></span><button onClick={() => setExtensionSyncAttempt((value) => value + 1)} type="button">重新同步</button></div><details><summary>查看 {extensionSyncIssues.length} 项失败详情</summary>{extensionSyncIssues.map((issue) => <p key={issue.key}><strong>{issue.label}</strong><span>{issue.message}</span></p>)}</details></div>}
             {catalogCacheSavedAt && extensionSyncIssues.length > 0 && <div className={`catalog-cache-state ${catalogCacheStale ? 'stale' : ''}`}><ShieldCheck size={15} /><span>{catalogCacheStale ? '本机企业目录缓存已超过 7 天，浏览仍可用，但相关能力暂停执行。' : `当前显示本机缓存 · ${new Date(catalogCacheSavedAt).toLocaleString('zh-CN', { hour12: false })}`}</span></div>}
             {page === 'settings' && bootstrap && user && <DesktopSettingsPage
               accessToken={accessToken}
-              authorizedDirectoryCount={localDirectories.length}
-              connectors={connectors}
-              deviceEndpoint={bootstrap.endpoints.deviceCapabilities ?? '/api/v1/device-capabilities'}
+              companyName={user.companyName}
+              department={user.department}
+              displayName={user.displayName}
               employeeId={user.userId}
               memoryEndpoint={bootstrap.endpoints.memoryProfile ?? '/api/v1/memory-profile'}
               onMemorySaved={memorySaved}
-              runtimeConnectors={runtimeConnectors}
-              runtimeStatus={runtimeStatus}
+              position={user.position}
             />}
-            {page === 'experts' && <ExpertCatalogPage all={expertKits} category={extensionCategory} developerBusy={developerKitBusy} developerMode={developerKitMode} error={expertKitError} filter={extensionFilter} installingId={installingKitId} loading={expertKitsLoading} onCategory={setExtensionCategory} onCreate={() => void createLocalExpertKit()} onFilter={setExtensionFilter} onImport={() => void installLocalAcceptanceKit()} onOpen={setActiveExpertKitId} onQuery={setExtensionQuery} query={extensionQuery} visible={visibleExpertKits} />}
-            {page === 'skills' && <SkillCatalogPage all={skillViews} category={extensionCategory} error={expertKitError} filter={extensionFilter} loading={expertKitsLoading} onCategory={setExtensionCategory} onFilter={setExtensionFilter} onOpen={setActiveSkillId} onQuery={setExtensionQuery} query={extensionQuery} visible={visibleSkillViews} />}
+            {page === 'experts' && <ExpertCatalogPage all={expertKits} category={extensionCategory} error={expertKitError} filter={extensionFilter} installingId={installingKitId} loading={expertKitsLoading} onCategory={setExtensionCategory} onFilter={setExtensionFilter} onOpen={setActiveExpertKitId} visible={visibleExpertKits} />}
+            {page === 'skills' && <SkillCatalogPage all={skillViews} category={extensionCategory} error={expertKitError} filter={extensionFilter} loading={expertKitsLoading} onCategory={setExtensionCategory} onFilter={setExtensionFilter} onOpen={setActiveSkillId} visible={visibleSkillViews} />}
             {page === 'connectors' && <>
               <ConnectorsPage
-                accessToken={accessToken}
                 catalog={connectors}
                 catalogError={expertKitError}
                 loading={expertKitsLoading}
                 runtime={runtimeConnectors}
                 syncError=""
+                query={extensionQuery}
                 onToggle={toggleConnector}
                 secrets={connectorSecrets}
                 onSaveSecrets={(connectorId, values) => {
@@ -1255,15 +1329,7 @@ export default function App() {
               accessToken={accessToken}
               employeeId={user.userId}
               endpoint={bootstrap.endpoints.schedules}
-              expertKits={expertKits}
-            />}
-            {page === 'tasks' && bootstrap && user && <TaskCenterPage
-              accessToken={accessToken}
-              employeeId={user.userId}
-              endpoint={bootstrap.endpoints.taskRuns}
-              localTasks={localTasks}
-              onOpenLocalTask={openLocalTask}
-              onArchiveLocalTask={archiveLocalTask}
+              onCreateWithXiaoyin={() => createWithXiaoyin('schedule')}
             />}
             {page === 'im' && bootstrap && user && <ImChannelsPage
               accessToken={accessToken}
@@ -1273,6 +1339,7 @@ export default function App() {
               allowedArtifacts={allowedArtifacts}
               litellmBaseUrl={bootstrap.endpoints.litellm}
               knowledgeEndpoint={resolveControlPlaneEndpoint(bootstrap.endpoints.knowledge)}
+              scheduleEndpoint={resolveControlPlaneEndpoint(bootstrap.endpoints.schedules)}
               model={activeModel}
               modelApiKey={bootstrap.modelApiKey}
               localTasks={localTasks}
@@ -1292,6 +1359,7 @@ export default function App() {
           teamId: user.teamId,
           litellmBaseUrl: bootstrap.endpoints.litellm,
           knowledgeEndpoint: resolveControlPlaneEndpoint(bootstrap.endpoints.knowledge),
+          scheduleEndpoint: resolveControlPlaneEndpoint(bootstrap.endpoints.schedules),
           connectors: runtimeConnectors,
           allowedArtifacts,
           model: activeModel,
@@ -1308,13 +1376,21 @@ export default function App() {
             const next = [connector, ...connectors.filter((item) => item.id !== connector.id)]
             extensionCacheRef.current.connectors = next
             setConnectors(next)
-            setEnabledConnectorIds((current) => saveEnabledConnectorIds(user.userId, [...current, connector.id]))
+            setEnabledConnectorIds((current) => {
+              const enabled = saveEnabledConnectorIds(user.userId, [...current, connector.id])
+              enabledConnectorIdsRef.current = enabled
+              return enabled
+            })
           } else if (change.type === 'connector-delete') {
             setConnectorSecrets(deleteConnectorSecrets(user.userId, change.id))
             const next = connectors.filter((item) => item.id !== change.id)
             extensionCacheRef.current.connectors = next
             setConnectors(next)
-            setEnabledConnectorIds((current) => saveEnabledConnectorIds(user.userId, current.filter((id) => id !== change.id)))
+            setEnabledConnectorIds((current) => {
+              const enabled = saveEnabledConnectorIds(user.userId, current.filter((id) => id !== change.id))
+              enabledConnectorIdsRef.current = enabled
+              return enabled
+            })
           } else await refreshInstalledKits()
         }}
       />}
@@ -1342,12 +1418,14 @@ export default function App() {
         knowledgeBases={knowledgeBases}
         installing={installingSkillId === activeSkill.id}
         removing={removingCatalogId === activeSkill.id}
-        selected={selectedSkillId === activeSkill.id}
         onClose={() => setActiveSkillId('')}
         onInstall={() => void installSkill(activeSkill)}
         onRemove={activeSkill.installed ? () => void removeCatalogArtifact('skill', activeSkill.id) : undefined}
-        onUse={() => useSkill(activeSkill)}
       />}
     </div>
   )
+}
+
+function isHarnessInfrastructureFailure(message: string): boolean {
+  return /Harness Host|ECONNRESET|ECONNREFUSED|broken pipe|socket hang up|进程.*退出|connection.*closed/iu.test(message)
 }

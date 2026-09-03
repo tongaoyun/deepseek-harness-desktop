@@ -15,4 +15,10 @@ describe('extension category filtering', () => {
   it('keeps legacy entries in the other category', () => {
     expect(extensionMatches({ ...extension, category: undefined }, '', 'market', 'other')).toBe(true)
   })
+
+  it('separates local built-ins and keeps updates in installed', () => {
+    expect(extensionMatches({ ...extension, localOnly: true }, '', 'market')).toBe(false)
+    expect(extensionMatches({ ...extension, localOnly: true }, '', 'builtin')).toBe(true)
+    expect(extensionMatches({ ...extension, installState: 'update' }, '', 'installed')).toBe(true)
+  })
 })

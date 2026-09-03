@@ -3,7 +3,7 @@ use flate2::read::GzDecoder;
 use std::{
     fs::{self, File},
     io::Cursor,
-    path::{Path, PathBuf},
+    path::{Component, Path, PathBuf},
 };
 
 const MAX_EXTRACTED_BYTES: u64 = 64 * 1024 * 1024;
@@ -38,6 +38,12 @@ fn extract_tar_gzip_package(bytes: &[u8], destination: &Path) -> Result<(), Stri
             .path()
             .map_err(|error| format!("专家套件路径无效：{error}"))?
             .into_owned();
+        let Some(path) = normalized_archive_entry_path(&path)? else {
+            if entry_type.is_dir() {
+                continue;
+            }
+            return Err("专家套件根路径不能是文件".to_string());
+        };
         validate_relative_path(&path)?;
         let output = destination.join(&path);
         if entry_type.is_dir() {
@@ -86,6 +92,12 @@ fn extract_zip_package(bytes: &[u8], destination: &Path) -> Result<(), String> {
             .enclosed_name()
             .ok_or_else(|| "Skill ZIP 路径无效".to_string())?
             .to_path_buf();
+        let Some(path) = normalized_archive_entry_path(&path)? else {
+            if entry.is_dir() {
+                continue;
+            }
+            return Err("Skill ZIP 根路径不能是文件".to_string());
+        };
         validate_relative_path(&path)?;
         let output = destination.join(&path);
         if entry.is_dir() {
@@ -123,4 +135,32 @@ pub(super) fn package_root(staging_directory: &Path) -> Result<PathBuf, String> 
 
 fn has_extension_manifest(root: &Path) -> bool {
     root.join(KIT_MANIFEST_PATH).is_file() || root.join(SKILL_MANIFEST_PATH).is_file()
+}
+
+fn normalized_archive_entry_path(path: &Path) -> Result<Option<PathBuf>, String> {
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::Normal(value) => normalized.push(value),
+            _ => return Err("专家套件包含不安全路径".to_string()),
+        }
+    }
+    Ok((!normalized.as_os_str().is_empty()).then_some(normalized))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn archive_root_markers_are_normalized_without_weakening_traversal_checks() {
+        assert_eq!(
+            normalized_archive_entry_path(Path::new("./skills/report/SKILL.md")).unwrap(),
+            Some(PathBuf::from("skills/report/SKILL.md"))
+        );
+        assert_eq!(normalized_archive_entry_path(Path::new(".")).unwrap(), None);
+        assert!(normalized_archive_entry_path(Path::new("../outside")).is_err());
+        assert!(normalized_archive_entry_path(Path::new("/absolute")).is_err());
+    }
 }

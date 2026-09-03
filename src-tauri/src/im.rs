@@ -53,6 +53,8 @@ pub struct HarnessContext {
     litellm_base_url: String,
     knowledge_endpoint: String,
     #[serde(default)]
+    schedule_endpoint: String,
+    #[serde(default)]
     connectors: Vec<ConnectorDefinition>,
     #[serde(default)]
     allowed_artifacts: Vec<expert_kits::AllowedExtensionArtifact>,
@@ -337,6 +339,7 @@ impl LocalImManager {
             allowed_computer_tools: Vec::new(),
             litellm_base_url: context.litellm_base_url,
             knowledge_endpoint: context.knowledge_endpoint,
+            schedule_endpoint: context.schedule_endpoint,
             employee_id: context.employee_id.clone(),
             team_id: context.team_id,
             knowledge_base_refs: profile.knowledge_base_refs,
@@ -687,6 +690,7 @@ fn validate_harness_context(value: &HarnessContext) -> Result<(), String> {
     }
     validate_http_url("LiteLLM", &value.litellm_base_url)?;
     validate_http_url("知识库", &value.knowledge_endpoint)?;
+    validate_http_url("定时任务", &value.schedule_endpoint)?;
     expert_kits::validate_allowed_artifacts(&value.allowed_artifacts)?;
     if value.model.trim().is_empty() || value.model.len() > 200 {
         return Err("模型名称无效".to_string());

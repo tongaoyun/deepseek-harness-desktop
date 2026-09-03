@@ -7,7 +7,7 @@ const DEVICE_ID_PATH: &str = "device/device-id";
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct DeviceProbe {
+pub struct DeviceIdentity {
     device_id: String,
     desktop_version: &'static str,
     platform: &'static str,
@@ -17,7 +17,7 @@ pub struct DeviceProbe {
 }
 
 #[tauri::command]
-pub fn inspect_device_capabilities(app: tauri::AppHandle) -> Result<DeviceProbe, String> {
+pub fn inspect_device_identity(app: tauri::AppHandle) -> Result<DeviceIdentity, String> {
     let root = app
         .path()
         .app_data_dir()
@@ -31,7 +31,7 @@ pub fn inspect_device_capabilities(app: tauri::AppHandle) -> Result<DeviceProbe,
         .map(|monitor| (monitor.scale_factor() * 100.0).round() as u32)
         .collect::<Vec<_>>();
     display_scale_percents.sort_unstable();
-    Ok(DeviceProbe {
+    Ok(DeviceIdentity {
         device_id,
         desktop_version: env!("CARGO_PKG_VERSION"),
         platform: std::env::consts::OS,
