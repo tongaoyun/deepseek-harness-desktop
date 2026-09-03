@@ -31,7 +31,7 @@ describe('scheduled task user flow', () => {
         employeeId="employee-1"
         endpoint="/api/v1/schedules"
         expertKits={[{
-          id: 'operations', name: '运营专家', version: '1.0.0', summary: '', minimumDesktopVersion: '0.1.0',
+          id: 'operations', name: '运营专家', version: '1.0.0', summary: '', category: 'ecommerce-retail', minimumDesktopVersion: '0.1.0',
           commandIds: [], skillIds: [], requiredTools: [], connectorRefs: [], knowledgeBaseRefs: [],
           permissions: { localFiles: 'deny', shell: 'deny', computerUse: 'deny', connectorRead: 'allow', connectorWrite: 'deny' },
           sha256: 'fixture', connectorIssues: [], knowledgeIssues: [], installState: 'installed', readiness: 'ready', localOnly: false,

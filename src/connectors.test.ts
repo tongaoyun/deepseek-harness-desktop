@@ -4,9 +4,9 @@ import { buildRuntimeConnectorCatalog } from './connectors'
 describe('runtime connector catalog', () => {
   it('adapts the legacy ERP catalog while preserving desktop built-ins', () => {
     const result = buildRuntimeConnectorCatalog([
-      { id: 'erp-mcp', name: 'ERP', summary: '', kind: 'managed-mcp', scope: 'organization',
+      { id: 'erp-mcp', name: 'ERP', summary: '', category: 'industry-data', kind: 'managed-mcp', scope: 'organization',
         status: 'needs-configuration', managed: true, toolNames: ['sales_summary'] },
-      { id: 'desktop-office', name: 'Office', summary: '', kind: 'desktop-builtin', scope: 'device',
+      { id: 'desktop-office', name: 'Office', summary: '', category: 'recommended-system', kind: 'desktop-builtin', scope: 'device',
         status: 'ready', managed: true, toolNames: ['office.xlsx.create'] },
     ], 'http://erp.internal/mcp', ['erp-mcp'])
 

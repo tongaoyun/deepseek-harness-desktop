@@ -4,7 +4,7 @@ import type { ExpertKitView } from './expertKits'
 import type { SkillView } from './skills'
 
 const kit = {
-  id: 'ops', name: '运营专家', version: '1.0.0', summary: '运营', minimumDesktopVersion: '0.1.0',
+  id: 'ops', name: '运营专家', version: '1.0.0', summary: '运营', category: 'ecommerce-retail', minimumDesktopVersion: '0.1.0',
   commandIds: ['daily-report'], skillIds: ['inventory'], connectorRefs: [], knowledgeBaseRefs: [], requiredTools: [],
   permissions: { localFiles: 'deny', shell: 'deny', computerUse: 'deny', connectorRead: 'deny', connectorWrite: 'deny' },
   serverWorkflows: [], sha256: 'x', installState: 'installed', readiness: 'ready', connectorIssues: [], knowledgeIssues: [], localOnly: false,
@@ -20,7 +20,7 @@ describe('slash invocation options', () => {
 
   it('exposes an installed standalone Skill without selecting an expert kit', () => {
     const standalone = {
-      id: 'document-insight', name: '文档洞察', version: '1.0.0', summary: '总结文档', sourceKitId: '',
+      id: 'document-insight', name: '文档洞察', version: '1.0.0', summary: '总结文档', category: 'knowledge-research', sourceKitId: '',
       triggers: ['总结文档'], minimumDesktopVersion: '0.1.13', connectorRefs: [], requiredTools: [],
       knowledgeBaseRefs: [], permissions: { localFiles: 'approval', shell: 'deny', computerUse: 'deny', connectorRead: 'deny', connectorWrite: 'deny' },
       sha256: 'a'.repeat(64), installState: 'installed', readiness: 'ready', connectorIssues: [], knowledgeIssues: [],

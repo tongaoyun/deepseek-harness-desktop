@@ -10,6 +10,7 @@ export interface ExtensionSubmission {
   name: string
   version: string
   summary: string
+  category: string
   status: SubmissionStatus
   reviewNote: string
   updatedAt: string
@@ -51,7 +52,7 @@ export async function submitPackage(manifest: ExpertKitManifest, bytes: number[]
   const sha256 = [...new Uint8Array(digest)].map((value) => value.toString(16).padStart(2, '0')).join('')
   const prepared = await checked<{ uploadUrl: string }>(await fetch(resolveControlPlaneEndpoint('/api/v1/extension-submissions/releases'), {
     method: 'POST', headers: headers(employeeId, accessToken, true), body: JSON.stringify({
-      kind: manifest.kind, id: manifest.id, name: manifest.name, version: manifest.version, summary: manifest.summary,
+      kind: manifest.kind, id: manifest.id, name: manifest.name, version: manifest.version, summary: manifest.summary, category: manifest.category,
       triggers: manifest.triggers ?? [], minimumDesktopVersion: manifest.minimumDesktopVersion,
       commandIds: manifest.commands.map((item) => item.id), skillIds: manifest.skills.map((item) => item.id),
       connectorRefs: manifest.connectorRefs, requiredTools: manifest.requiredTools,
@@ -84,7 +85,10 @@ export async function saveValidationReport(kind: ExtensionKind, id: string, vers
 const storageKey = (employeeId: string) => `xiaoyin.personal-connectors.${employeeId}`
 
 export function loadPersonalConnectors(employeeId: string): ConnectorCatalogEntry[] {
-  try { return JSON.parse(window.localStorage.getItem(storageKey(employeeId)) || '[]') as ConnectorCatalogEntry[] } catch { return [] }
+  try {
+    const values = JSON.parse(window.localStorage.getItem(storageKey(employeeId)) || '[]') as Array<ConnectorCatalogEntry & { category?: ConnectorCatalogEntry['category'] }>
+    return values.map((item) => ({ ...item, category: item.category ?? 'other' }))
+  } catch { return [] }
 }
 
 export function savePersonalConnector(employeeId: string, connector: ConnectorCatalogEntry): ConnectorCatalogEntry[] {

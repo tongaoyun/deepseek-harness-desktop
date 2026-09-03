@@ -21,6 +21,14 @@ import {
 import { composerIssues, deriveSkillDependencies, ExpertKitComposer } from './ExpertKitComposer'
 import { ExtensionPreviewPanel, type ExtensionPreviewConfig } from './ExtensionPreviewPanel'
 import { diagnoseConnectors } from './harness'
+import {
+  connectorCategories,
+  connectorCategoryLabel,
+  extensionCategories,
+  extensionCategoryLabel,
+  type ConnectorCategory,
+  type ExtensionCategory,
+} from './extensionCategories'
 import type { SkillView } from './skills'
 import type {
   ConnectorCatalogEntry,
@@ -55,6 +63,7 @@ interface LocalCreation {
   name: string
   version: string
   summary: string
+  category: ExtensionCategory | ConnectorCategory
   connector?: ConnectorCatalogEntry
 }
 
@@ -63,6 +72,7 @@ interface AuthoringForm {
   name: string
   version: string
   summary: string
+  category: ExtensionCategory | ConnectorCategory
   instructions: string
   triggers: string
   connectorRefs: string
@@ -74,7 +84,7 @@ interface AuthoringForm {
 }
 
 const defaults: AuthoringForm = {
-  id: '', name: '', version: '1.0.0', summary: '',
+  id: '', name: '', version: '1.0.0', summary: '', category: 'other',
   instructions: '# 使用说明\n\n请在这里描述执行步骤、输入和输出。',
   triggers: '', connectorRefs: '', requiredTools: '', url: '', toolNames: '',
   transport: 'streamable-http',
@@ -126,11 +136,12 @@ export function ExtensionAuthoringModal({
           name: item.manifest.name,
           version: item.manifest.version,
           summary: item.manifest.summary,
+          category: item.manifest.category,
         }))
         : []
       const connectors = loadPersonalConnectors(employeeId).map((connector): LocalCreation => ({
         kind: 'connector', id: connector.id, name: connector.name,
-        version: connector.version ?? '1.0.0', summary: connector.summary, connector,
+        version: connector.version ?? '1.0.0', summary: connector.summary, category: connector.category, connector,
       }))
       setLocalCreations([...connectors, ...installed])
     } finally {
@@ -180,6 +191,7 @@ export function ExtensionAuthoringModal({
       name: mode === 'copy' ? `${connector.name} 副本` : connector.name,
       version,
       summary: connector.summary,
+      category: connector.category,
       url: connector.url ?? '',
       toolNames: connector.toolNames.join(', '),
       transport: connector.transport === 'sse' ? 'sse' : 'streamable-http',
@@ -205,6 +217,7 @@ export function ExtensionAuthoringModal({
         name: mode === 'copy' ? `${manifest.name} 副本` : manifest.name,
         version: nextVersion,
         summary: manifest.summary,
+        category: manifest.category,
         instructions: draft.instructions,
         triggers: (manifest.triggers ?? []).join(', '),
         connectorRefs: manifest.connectorRefs.join(', '),
@@ -386,7 +399,7 @@ export function ExtensionAuthoringModal({
         {rows.map(({ submission, local }) => {
           const item = submission ?? local!
           return <article key={coordinate(item)}>
-            <span><strong>{item.name}</strong><small>{kindLabel(item.kind)} · v{item.version}{local ? ' · 本机可用' : ' · 本机草稿已删除'}{submission?.validationReport?.status === 'PASSED' ? ' · 已附验证结果' : ''}</small></span>
+            <span><strong>{item.name}</strong><small>{kindLabel(item.kind)} · {categoryLabel(item.kind, item.category)} · v{item.version}{local ? ' · 本机可用' : ' · 本机草稿已删除'}{submission?.validationReport?.status === 'PASSED' ? ' · 已附验证结果' : ''}</small></span>
             <em className={(submission?.status ?? 'DRAFT').toLowerCase()}>{statusLabel(submission?.status ?? 'DRAFT')}</em>
             {submission?.reviewNote && <p>审核意见：{submission.reviewNote}</p>}
             {local && <div className="submission-actions">
@@ -406,6 +419,7 @@ export function ExtensionAuthoringModal({
           <label>ID<input disabled={Boolean(editing)} pattern="[A-Za-z0-9._-]+" required value={form.id} onChange={(event) => setForm({ ...form, id: event.target.value })} /></label>
           <label>名称<input required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} /></label>
           <label>版本<input disabled={Boolean(editing)} pattern="[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?" required value={form.version} onChange={(event) => setForm({ ...form, version: event.target.value })} /></label>
+          <label>分类<select value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value as AuthoringForm['category'] })}>{(kind === 'connector' ? connectorCategories : extensionCategories).map((category) => <option key={category.id} value={category.id}>{category.label}</option>)}</select></label>
           <label className="wide">说明<input required value={form.summary} onChange={(event) => setForm({ ...form, summary: event.target.value })} /></label>
           {kind === 'connector' ? <>
             <label>传输<select value={form.transport} onChange={(event) => setForm({ ...form, transport: event.target.value as typeof form.transport })}><option value="streamable-http">Streamable HTTP</option><option value="sse">SSE</option></select></label>
@@ -455,12 +469,12 @@ export function ExtensionAuthoringModal({
 }
 
 function connectorFromForm(form: AuthoringForm): ConnectorCatalogEntry {
-  return { id: form.id, name: form.name, version: form.version, summary: form.summary, kind: 'managed-mcp', scope: 'PERSONAL', status: 'ready', managed: false, transport: form.transport, url: form.url, authMode: form.authMode, toolNames: split(form.toolNames) }
+  return { id: form.id, name: form.name, version: form.version, summary: form.summary, category: form.category as ConnectorCategory, kind: 'managed-mcp', scope: 'PERSONAL', status: 'ready', managed: false, transport: form.transport, url: form.url, authMode: form.authMode, toolNames: split(form.toolNames) }
 }
 
 function manifestFromForm(kind: 'expert-kit' | 'skill', form: AuthoringForm, permissions: Record<string, PermissionMode>, selectedSkillIds: string[]): ExpertKitManifest {
   return {
-    schemaVersion: kind === 'expert-kit' ? '2' : '1', kind, id: form.id, name: form.name, version: form.version, summary: form.summary,
+    schemaVersion: kind === 'expert-kit' ? '2' : '1', kind, id: form.id, name: form.name, version: form.version, summary: form.summary, category: form.category as ExtensionCategory,
     triggers: split(form.triggers), minimumDesktopVersion: '0.1.29', commands: [],
     skills: kind === 'expert-kit' && selectedSkillIds.length > 0
       ? selectedSkillIds.map((id) => ({ id, path: `skills/${id}/SKILL.md` }))
@@ -475,5 +489,6 @@ function unique(values: string[]) { return [...new Set(values)] }
 function coordinate(value: Pick<LocalCreation, 'kind' | 'id' | 'version'>) { return `${value.kind}:${value.id}:${value.version}` }
 function bumpVersion(value: string) { const match = /^(\d+)\.(\d+)\.(\d+)/.exec(value); return match ? `${match[1]}.${match[2]}.${Number(match[3]) + 1}` : '1.0.0' }
 function kindLabel(value: ExtensionKind) { return value === 'expert-kit' ? '专家套件' : value === 'skill' ? 'Skill' : 'MCP 连接器' }
+function categoryLabel(kind: ExtensionKind, value: string) { return kind === 'connector' ? connectorCategoryLabel(value) : extensionCategoryLabel(value) }
 function statusLabel(value: ExtensionSubmission['status']) { return { DRAFT: '个人草稿', SUBMITTED: '待审核', CHANGES_REQUESTED: '待修改', REJECTED: '已拒绝', PUBLISHED: '已发布', UNPUBLISHED: '已下架' }[value] }
 function permissionLabel(value: string) { return ({ localFiles: '本地文件', shell: 'Shell', computerUse: '电脑操作', connectorRead: '连接器读取', connectorWrite: '连接器写入' } as Record<string, string>)[value] }

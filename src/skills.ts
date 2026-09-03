@@ -88,6 +88,7 @@ export function mergeSkills(
       name: manifest.name,
       version: manifest.version,
       summary: manifest.summary,
+      category: manifest.category,
       sourceKitId: '',
       triggers: manifest.triggers ?? [],
       minimumDesktopVersion: manifest.minimumDesktopVersion,

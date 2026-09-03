@@ -1,6 +1,7 @@
 import { Activity, RefreshCw, Search, X } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { diagnoseConnectors } from './harness'
+import { connectorCategories } from './extensionCategories'
 import type {
   ConnectorCatalogEntry,
   ConnectorDiagnosticResult,
@@ -45,6 +46,10 @@ export function ConnectorsPage({
         && (!needle || `${connector.name} ${connector.summary} ${connector.id} ${connector.toolNames.join(' ')}`.toLocaleLowerCase('zh-CN').includes(needle))
     })
   }, [catalog, query, runtime, statusFilter, view])
+  const groupedCatalog = useMemo(() => connectorCategories.map((category) => ({
+    ...category,
+    connectors: visibleCatalog.filter((connector) => (connector.category ?? 'other') === category.id),
+  })).filter((category) => category.connectors.length > 0), [visibleCatalog])
 
   useEffect(() => {
     setResults(new Map())
@@ -93,7 +98,8 @@ export function ConnectorsPage({
     {catalogError && <div className="kit-error">{catalogError}</div>}
     {syncError && <div className="kit-error">{syncError}</div>}
     {error && <div className="kit-error">{error}</div>}
-    <div className="kit-grid">{visibleCatalog.map((connector) => {
+    <div className="connector-category-list">{groupedCatalog.map((category) => <section className="connector-category-section" key={category.id}>
+      <h2>{category.label}</h2><div className="kit-grid">{category.connectors.map((connector) => {
       const diagnostic = results.get(connector.id)
       const enabled = runtime.find((item) => item.id === connector.id)?.enabled === true
       const canEnable = connector.status === 'ready'
@@ -118,7 +124,8 @@ export function ConnectorsPage({
         >{enabled ? '已为我启用' : canEnable ? '为我启用' : '当前不可启用'}</button>
         <small className="connector-activation-note">{enabled ? '会加入新任务的能力快照；既有任务保持原快照' : '未启用，不会暴露给 Agent'}</small>
       </article>
-    })}</div>
+      })}</div>
+    </section>)}</div>
   </>
 }
 

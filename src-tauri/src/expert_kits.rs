@@ -33,6 +33,28 @@ const DESKTOP_COMPUTER_TOOLS: [&str; 5] = [
     "computer_use_key",
     "computer_use_scroll",
 ];
+const EXTENSION_CATEGORIES: [&str; 20] = [
+    "office-productivity",
+    "content-creation",
+    "marketing",
+    "ecommerce-retail",
+    "finance",
+    "legal",
+    "recruiting",
+    "code-development",
+    "code-review",
+    "security-testing",
+    "database-analysis",
+    "operations-deployment",
+    "developer-tools",
+    "design",
+    "product-management",
+    "knowledge-research",
+    "workflow",
+    "agent-evolution",
+    "communication",
+    "other",
+];
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -62,6 +84,8 @@ pub struct ExpertKitManifest {
     name: String,
     version: String,
     summary: String,
+    #[serde(default = "default_extension_category")]
+    category: String,
     #[serde(default)]
     triggers: Vec<String>,
     #[serde(default)]
@@ -78,6 +102,10 @@ pub struct ExpertKitManifest {
     permissions: Permissions,
     #[serde(default)]
     server_workflows: Vec<ServerWorkflow>,
+}
+
+fn default_extension_category() -> String {
+    "other".to_string()
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -615,7 +643,7 @@ pub async fn create_expert_kit_template(
         .map_err(|error| format!("无法创建专家套件模板：{error}"))?;
     let manifest = serde_json::json!({
         "schemaVersion": "2", "id": id, "name": name.trim(), "version": "1.0.0",
-        "summary": "请填写专家套件说明", "minimumDesktopVersion": env!("CARGO_PKG_VERSION"),
+        "summary": "请填写专家套件说明", "category": "other", "minimumDesktopVersion": env!("CARGO_PKG_VERSION"),
         "commands": [], "skills": [{ "id": "main", "path": "skills/main/SKILL.md" }],
         "requiredTools": [], "connectorRefs": [], "permissions": {
             "localFiles": "approval", "shell": "deny", "computerUse": "deny",
@@ -1348,6 +1376,9 @@ fn load_and_validate_manifest(
         || manifest.skills.is_empty()
     {
         return Err("专家套件名称、简介和 Skills 不能为空".to_string());
+    }
+    if !EXTENSION_CATEGORIES.contains(&manifest.category.as_str()) {
+        return Err(format!("扩展分类无效：{}", manifest.category));
     }
     manifest.permissions.validate()?;
 

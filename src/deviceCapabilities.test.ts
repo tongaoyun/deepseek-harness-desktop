@@ -8,7 +8,7 @@ describe('device capability report', () => {
       platform: 'windows', architecture: 'x86_64', displayCount: 2, displayScalePercents: [100, 125],
     }, {
       authorizedDirectoryCount: 1, runtimeStatus: 'ready', connectors: [{
-        id: 'erp-mcp', name: 'ERP', summary: '', kind: 'mcp', scope: 'company', status: 'ready',
+        id: 'erp-mcp', name: 'ERP', summary: '', category: 'industry-data', kind: 'mcp', scope: 'company', status: 'ready',
         managed: true, toolNames: [],
       }],
       localCapabilityChecks: passedLocalChecks('desktop screenshot and accessibility observation'),
@@ -41,7 +41,7 @@ describe('device capability report', () => {
       runtimeStatus: 'ready',
       localCapabilityChecks: passedLocalChecks(),
       connectors: [{
-        id: 'erp-mcp', name: 'ERP', summary: '', kind: 'mcp', scope: 'company', status: 'ready',
+        id: 'erp-mcp', name: 'ERP', summary: '', category: 'industry-data', kind: 'mcp', scope: 'company', status: 'ready',
         managed: true, toolNames: ['order_get', 'sales_summary'],
       }],
       connectorDiagnostics: [{
@@ -68,7 +68,7 @@ describe('device capability report', () => {
       runtimeStatus: 'ready',
       localCapabilityChecks: passedLocalChecks(),
       connectors: [{
-        id: 'erp-mcp', name: 'ERP', summary: '', kind: 'mcp', scope: 'company', status: 'ready',
+        id: 'erp-mcp', name: 'ERP', summary: '', category: 'industry-data', kind: 'mcp', scope: 'company', status: 'ready',
         managed: true, toolNames: [],
       }],
       connectorDiagnostics: [{

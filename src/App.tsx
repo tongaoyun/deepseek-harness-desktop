@@ -92,6 +92,7 @@ import { ChatPage } from './ChatPage'
 import { cacheAge, loadEnterpriseCatalogCache, saveEnterpriseCatalogCache } from './enterpriseCache'
 import { inspectDeviceCapabilities } from './deviceCapabilities'
 import { extensionMatches, type ExtensionFilter } from './ExtensionToolbar'
+import type { ExtensionCategoryFilter } from './extensionCategories'
 import { ExpertCatalogPage, SkillCatalogPage } from './ExtensionCatalogPages'
 import { ExtensionAuthoringModal } from './ExtensionAuthoringModal'
 import { loadPersonalConnectors, type ExtensionKind } from './extensionSubmissions'
@@ -169,6 +170,7 @@ export default function App() {
   const [dragActive, setDragActive] = useState(false)
   const [extensionQuery, setExtensionQuery] = useState('')
   const [extensionFilter, setExtensionFilter] = useState<ExtensionFilter>('market')
+  const [extensionCategory, setExtensionCategory] = useState<ExtensionCategoryFilter>('all')
   const composerRef = useRef<HTMLTextAreaElement>(null)
   const messageListRef = useRef<HTMLDivElement>(null)
   const modelPickerRef = useRef<HTMLDivElement>(null)
@@ -532,12 +534,12 @@ export default function App() {
     offline: '企业服务暂不可用',
   })[runtimeStatus], [runtimeStatus])
   const visibleExpertKits = useMemo(
-    () => expertKits.filter((item) => extensionMatches(item, extensionQuery, extensionFilter)),
-    [expertKits, extensionFilter, extensionQuery],
+    () => expertKits.filter((item) => extensionMatches(item, extensionQuery, extensionFilter, extensionCategory)),
+    [expertKits, extensionCategory, extensionFilter, extensionQuery],
   )
   const visibleSkillViews = useMemo(
-    () => skillViews.filter((item) => extensionMatches(item, extensionQuery, extensionFilter)),
-    [extensionFilter, extensionQuery, skillViews],
+    () => skillViews.filter((item) => extensionMatches(item, extensionQuery, extensionFilter, extensionCategory)),
+    [extensionCategory, extensionFilter, extensionQuery, skillViews],
   )
 
   if (authState !== 'authenticated') {
@@ -1211,8 +1213,8 @@ export default function App() {
               runtimeConnectors={runtimeConnectors}
               runtimeStatus={runtimeStatus}
             />}
-            {page === 'experts' && <ExpertCatalogPage all={expertKits} developerBusy={developerKitBusy} developerMode={developerKitMode} error={expertKitError} filter={extensionFilter} installingId={installingKitId} loading={expertKitsLoading} onCreate={() => void createLocalExpertKit()} onFilter={setExtensionFilter} onImport={() => void installLocalAcceptanceKit()} onOpen={setActiveExpertKitId} onQuery={setExtensionQuery} query={extensionQuery} visible={visibleExpertKits} />}
-            {page === 'skills' && <SkillCatalogPage all={skillViews} error={expertKitError} filter={extensionFilter} loading={expertKitsLoading} onFilter={setExtensionFilter} onOpen={setActiveSkillId} onQuery={setExtensionQuery} query={extensionQuery} visible={visibleSkillViews} />}
+            {page === 'experts' && <ExpertCatalogPage all={expertKits} category={extensionCategory} developerBusy={developerKitBusy} developerMode={developerKitMode} error={expertKitError} filter={extensionFilter} installingId={installingKitId} loading={expertKitsLoading} onCategory={setExtensionCategory} onCreate={() => void createLocalExpertKit()} onFilter={setExtensionFilter} onImport={() => void installLocalAcceptanceKit()} onOpen={setActiveExpertKitId} onQuery={setExtensionQuery} query={extensionQuery} visible={visibleExpertKits} />}
+            {page === 'skills' && <SkillCatalogPage all={skillViews} category={extensionCategory} error={expertKitError} filter={extensionFilter} loading={expertKitsLoading} onCategory={setExtensionCategory} onFilter={setExtensionFilter} onOpen={setActiveSkillId} onQuery={setExtensionQuery} query={extensionQuery} visible={visibleSkillViews} />}
             {page === 'connectors' && <>
               <ConnectorsPage
                 accessToken={accessToken}
