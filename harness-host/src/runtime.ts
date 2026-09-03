@@ -27,12 +27,22 @@ export interface HarnessRuntime {
   close(): Promise<void>
 }
 
+export class TurnTimeoutError extends Error {
+  constructor(readonly timeoutMs: number) {
+    super(`任务执行超过 ${formatDuration(timeoutMs)}，已停止本轮任务，请缩小任务范围后重试`)
+    this.name = 'TurnTimeoutError'
+  }
+}
+
 const require = createRequire(import.meta.url)
 const moduleDirectory = dirname(fileURLToPath(import.meta.url))
 
 export class DeepSeekHarnessRuntime implements HarnessRuntime {
   private harness: DeepSeekHarness | undefined
-  private runTail: Promise<void> = Promise.resolve()
+  private readonly sessionTails = new Map<string, Promise<void>>()
+  private readonly pendingRuns = new Set<Promise<unknown>>()
+  private activeRuns = 0
+  private readonly concurrencyWaiters: Array<() => void> = []
 
   constructor(private readonly extraEnv: NodeJS.ProcessEnv = {}) {}
 
@@ -53,8 +63,23 @@ export class DeepSeekHarnessRuntime implements HarnessRuntime {
     input: RunInput,
     onNotification: (value: HarnessNotification) => void,
   ): Promise<HarnessRunResult> {
-    const execution = this.runTail.then(() => this.runNow(input, onNotification))
-    this.runTail = execution.then(() => undefined, () => undefined)
+    const sessionId = input.sessionId ?? `session-${randomUUID().replaceAll('-', '')}`
+    const previous = this.sessionTails.get(sessionId) ?? Promise.resolve()
+    const execution = previous.then(async () => {
+      await this.acquireConcurrencySlot()
+      try {
+        return await this.runNow({ ...input, sessionId }, onNotification)
+      } finally {
+        this.releaseConcurrencySlot()
+      }
+    })
+    const settled = execution.then(() => undefined, () => undefined)
+    this.sessionTails.set(sessionId, settled)
+    this.pendingRuns.add(execution)
+    void settled.finally(() => {
+      this.pendingRuns.delete(execution)
+      if (this.sessionTails.get(sessionId) === settled) this.sessionTails.delete(sessionId)
+    })
     return execution
   }
 
@@ -73,14 +98,43 @@ export class DeepSeekHarnessRuntime implements HarnessRuntime {
     ]
     const sessionId = input.sessionId ?? `session-${randomUUID().replaceAll('-', '')}`
     await harness.start()
-    return runSessionTurn(harness.client, sessionId, normalizeContent(content), onNotification)
+    try {
+      return await runSessionTurn(
+        harness.client,
+        sessionId,
+        normalizeContent(content),
+        onNotification,
+        turnTimeoutMs(process.env.XIAOYIN_TURN_TIMEOUT_MS),
+      )
+    } catch (error) {
+      if (error instanceof TurnTimeoutError && this.harness === harness) {
+        this.harness = undefined
+        await harness.close().catch(() => undefined)
+      }
+      throw error
+    }
   }
 
   async close(): Promise<void> {
-    await this.runTail
+    await Promise.allSettled(this.pendingRuns)
     const current = this.harness
     this.harness = undefined
     await current?.close()
+  }
+
+  private async acquireConcurrencySlot(): Promise<void> {
+    const limit = positiveInteger(process.env.XIAOYIN_MAX_CONCURRENT_TURNS) ?? 2
+    if (this.activeRuns < limit) {
+      this.activeRuns += 1
+      return
+    }
+    await new Promise<void>((resolveWaiter) => this.concurrencyWaiters.push(resolveWaiter))
+    this.activeRuns += 1
+  }
+
+  private releaseConcurrencySlot(): void {
+    this.activeRuns = Math.max(0, this.activeRuns - 1)
+    this.concurrencyWaiters.shift()?.()
   }
 
   private getOrCreateHarness(): DeepSeekHarness {
@@ -134,16 +188,18 @@ export async function runSessionTurn(
   sessionId: string,
   content: ContentBlock[],
   onNotification: (value: HarnessNotification) => void,
+  timeoutMs = 15 * 60_000,
 ): Promise<HarnessRunResult> {
   const subscription = client.subscribeSessionTree(sessionId)
   let receivedPrompt = false
   let turnStarted = false
   let finalResponse = ''
   let turnFailure = ''
+  const deadline = Date.now() + timeoutMs
   try {
     const messageId = await client.prompt(sessionId, content)
     for (;;) {
-      const notification = await subscription.next()
+      const notification = await nextBeforeDeadline(subscription, deadline, timeoutMs)
       if (!receivedPrompt) {
         if (!isPromptReceipt(notification, sessionId, messageId)) continue
         receivedPrompt = true
@@ -168,6 +224,27 @@ export async function runSessionTurn(
   }
   if (!finalResponse.trim()) throw new Error(turnFailure || '模型本轮没有返回可显示文本，请重试')
   return { sessionId, finalResponse }
+}
+
+async function nextBeforeDeadline(
+  subscription: SessionSubscription,
+  deadline: number,
+  timeoutMs: number,
+): Promise<HarnessNotification> {
+  const remaining = deadline - Date.now()
+  if (remaining <= 0) throw new TurnTimeoutError(timeoutMs)
+  let timer: NodeJS.Timeout | undefined
+  try {
+    return await Promise.race([
+      subscription.next(),
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new TurnTimeoutError(timeoutMs)), remaining)
+        timer.unref()
+      }),
+    ])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
 }
 
 function providerFailureMessage(reason: Record<string, unknown>): string {
@@ -244,4 +321,17 @@ function positiveInteger(value: string | undefined): number | undefined {
     throw new Error('DSH_MAX_TOKENS must be a positive integer')
   }
   return parsed
+}
+
+function turnTimeoutMs(value: string | undefined): number {
+  const timeout = positiveInteger(value) ?? 15 * 60_000
+  if (timeout < 10_000 || timeout > 2 * 60 * 60_000) {
+    throw new Error('XIAOYIN_TURN_TIMEOUT_MS must be between 10000 and 7200000')
+  }
+  return timeout
+}
+
+function formatDuration(value: number): string {
+  if (value >= 60_000 && value % 60_000 === 0) return `${value / 60_000} 分钟`
+  return `${Math.ceil(value / 1_000)} 秒`
 }

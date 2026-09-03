@@ -47,8 +47,10 @@ import {
   applyHarnessNotification,
   cancelHarness,
   clearLocalDirectories,
+  classifyHarnessFailure,
   connectorDiagnosticsAvailable,
   createTaskMonitor,
+  diagnoseConnectors,
   harnessResponseUpdate,
   listenHarnessNotifications,
   probeHarnessHost,
@@ -848,7 +850,8 @@ export default function App() {
         sessionId: result.sessionId, monitor: completedMonitor, messages: completedMessages })
       await reportTaskAudit('SUCCEEDED', taskId, completedMonitor.steps)
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
+      const failure = classifyHarnessFailure(error)
+      const message = failure.message
       const canceled = cancellationRequestedRef.current
       const completedAt = new Date().toISOString()
       const failedMonitor: TaskMonitorState = {
@@ -859,13 +862,13 @@ export default function App() {
         completedAt,
       }
       const failedMessages = pendingMessages.map((item, index) => index === pendingMessages.length - 1
-        ? { role: 'assistant', text: canceled ? '任务已取消，可修改要求后重新执行。' : `执行失败：${message}`, monitor: failedMonitor }
+        ? { role: 'assistant', text: canceled ? '任务已取消，可修改要求后重新执行。' : `${failure.title}：${message}`, monitor: failedMonitor }
         : item) as TaskMessage[]
       taskMonitorRef.current = failedMonitor
       setTaskMonitor(failedMonitor)
       setMessages(failedMessages)
       persistLocalTask({ ...runningTask, status: canceled ? 'CANCELED' : 'FAILED', updatedAt: new Date().toISOString(), monitor: failedMonitor, messages: failedMessages })
-      const infrastructureFailure = isHarnessInfrastructureFailure(message)
+      const infrastructureFailure = failure.infrastructure
       if (!canceled && infrastructureFailure) {
         setHarnessHealth('degraded')
         setHarnessHealthDetail(`Harness 执行异常：${message}`)
@@ -1317,6 +1320,16 @@ export default function App() {
                   if (!user) return
                   setConnectorSecrets(saveConnectorSecrets(user.userId, connectorId, values))
                 }}
+                onDiagnose={async (connectorId) => {
+                  const connector = runtimeConnectors.find((item) => item.id === connectorId)
+                  if (!connector || !connectorDiagnosticsAvailable()) return undefined
+                  const hydrated = connectorsForSnapshot({
+                    createdAt: new Date().toISOString(), extensions: [], knowledgeBaseRefs: [],
+                    connectors: [{ ...connector, enabled: true }],
+                  }, connectorSecrets)
+                  const [result] = await diagnoseConnectors({ accessToken, connectors: hydrated })
+                  return result
+                }}
               />
             </>}
             {page === 'knowledge' && bootstrap && user && <KnowledgeBasePage
@@ -1424,8 +1437,4 @@ export default function App() {
       />}
     </div>
   )
-}
-
-function isHarnessInfrastructureFailure(message: string): boolean {
-  return /Harness Host|ECONNRESET|ECONNREFUSED|broken pipe|socket hang up|进程.*退出|connection.*closed/iu.test(message)
 }

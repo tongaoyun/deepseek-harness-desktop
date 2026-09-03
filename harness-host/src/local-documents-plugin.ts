@@ -6,12 +6,30 @@ import ExcelJS from 'exceljs'
 import mammoth from 'mammoth'
 import { PDFParse } from 'pdf-parse'
 import PDFDocument from 'pdfkit'
+import { createRequire } from 'node:module'
 import { unzipSync } from 'fflate'
 import { access, readFile, stat, writeFile } from 'node:fs/promises'
 import { extname } from 'node:path'
 import { LocalFileBridge, discoverAuthorizedRoots } from './local-files-plugin.js'
 
 const { Workbook } = ExcelJS
+const require = createRequire(import.meta.url)
+interface PptxSlide {
+  background: { color: string }
+  addShape(shape: unknown, options: Record<string, unknown>): void
+  addText(text: string | Array<{ text: string; options: Record<string, unknown> }>, options: Record<string, unknown>): void
+  addNotes(notes: string): void
+}
+interface PptxPresentation {
+  layout: string
+  author: string
+  subject: string
+  theme: { headFontFace: string; bodyFontFace: string; lang: string }
+  ShapeType: { rect: unknown }
+  addSlide(): PptxSlide
+  write(options: { outputType: 'nodebuffer' }): Promise<Buffer | ArrayBuffer>
+}
+const PptxGenJS = require('pptxgenjs') as { new(): PptxPresentation }
 
 export const name = 'xiaoyin-local-documents'
 export const inject = ['tools']
@@ -22,7 +40,7 @@ const MAX_SHEETS = 20
 const MAX_ROWS = 2_000
 const MAX_COLUMNS = 100
 const CREATE_TOOLS = new Set([
-  'office_docx_create', 'office_xlsx_create', 'office_pdf_create',
+  'office_docx_create', 'office_xlsx_create', 'office_xlsx_update_cells', 'office_pptx_create', 'office_pdf_create',
 ])
 
 export interface Config { roots?: string[]; enabled?: boolean; requireWriteApproval?: boolean }
@@ -40,6 +58,8 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     ctx.tools.register(readDocumentTool(bridge)),
     ctx.tools.register(createDocxTool(bridge)),
     ctx.tools.register(createXlsxTool(bridge)),
+    ctx.tools.register(updateXlsxCellsTool(bridge)),
+    ctx.tools.register(createPptxTool(bridge)),
     ctx.tools.register(createPdfTool(bridge)),
   ]
   const stopApprovalPolicy = ctx.on('tools/pre-execute', (exec, next) => {
@@ -92,8 +112,8 @@ function createDocxTool(bridge: LocalFileBridge): ToolDefinition {
       ...tables.map((rows) => new Table({ rows: rows.map((cells) => new TableRow({ children: cells.map((text) => new TableCell({ children: [new Paragraph({ text })] })) })) })),
     ]
     const bytes = await Packer.toBuffer(new Document({ sections: [{ children }] }))
-    await safeDocumentWrite(target.target, bytes, optionalBoolean(input.overwrite, false, 'overwrite'))
-    return outputTarget(target, bytes.length)
+    const backupPath = await safeDocumentWrite(bridge, target, bytes, optionalBoolean(input.overwrite, false, 'overwrite'))
+    return outputTarget(target, bytes.length, backupPath)
   })
 }
 
@@ -114,9 +134,84 @@ function createXlsxTool(bridge: LocalFileBridge): ToolDefinition {
       worksheet.columns.forEach((column) => { column.width = Math.min(60, Math.max(10, measuredWidth(column.values ?? []))) })
     }
     const bytes = Buffer.from(await workbook.xlsx.writeBuffer())
-    await safeDocumentWrite(target.target, bytes, optionalBoolean(input.overwrite, false, 'overwrite'))
-    return outputTarget(target, bytes.length)
+    const backupPath = await safeDocumentWrite(bridge, target, bytes, optionalBoolean(input.overwrite, false, 'overwrite'))
+    return outputTarget(target, bytes.length, backupPath)
   })
+}
+
+function updateXlsxCellsTool(bridge: LocalFileBridge): ToolDefinition {
+  return tool('office_xlsx_update_cells', 'Update specific cells in an existing XLSX workbook while preserving the rest of the workbook.', {
+    rootId: stringProperty('Authorized root ID.'), path: stringProperty('Relative .xlsx file path.'),
+    updates: { type: 'array', minItems: 1, maxItems: 2_000, items: { type: 'object', properties: {
+      sheet: { type: 'string', minLength: 1, maxLength: 31 }, cell: { type: 'string', pattern: '^[A-Za-z]{1,3}[1-9][0-9]{0,6}$' },
+      value: { type: ['string', 'number', 'boolean', 'null'] },
+    }, required: ['sheet', 'cell', 'value'], additionalProperties: false } },
+  }, ['rootId', 'path', 'updates'], async (input) => {
+    const rootId = requiredString(input.rootId, 'rootId')
+    const requestedPath = requiredString(input.path, 'path')
+    const { root, target } = await bridge.resolveExisting(rootId, requestedPath)
+    if (extname(target).toLowerCase() !== '.xlsx') throw new Error('Workbook path must end with .xlsx')
+    const metadata = await stat(target)
+    if (!metadata.isFile() || metadata.size > MAX_DOCUMENT_BYTES) throw new Error('Workbook is unavailable or exceeds the size limit')
+    const updates = cellUpdatesInput(input.updates)
+    const workbook = new Workbook()
+    await workbook.xlsx.readFile(target)
+    for (const update of updates) {
+      const worksheet = workbook.getWorksheet(update.sheet)
+      if (!worksheet) throw new Error(`Worksheet does not exist: ${update.sheet}`)
+      worksheet.getCell(update.cell).value = update.value
+    }
+    const backupPath = await bridge.backupExisting(rootId, requestedPath)
+    await workbook.xlsx.writeFile(target)
+    return { rootId: root.id, rootName: root.name, path: bridge.visiblePath(root, target), size: (await stat(target)).size, updatedCells: updates.length, ...(backupPath ? { backupPath } : {}) }
+  })
+}
+
+function createPptxTool(bridge: LocalFileBridge): ToolDefinition {
+  return tool('office_pptx_create', 'Create an editable PPTX presentation from structured slides.', {
+    rootId: stringProperty('Authorized root ID.'), path: stringProperty('Relative .pptx destination.'),
+    title: { type: 'string', maxLength: 500 },
+    slides: { type: 'array', minItems: 1, maxItems: 100, items: { type: 'object', properties: {
+      title: { type: 'string', maxLength: 500 },
+      bullets: { type: 'array', maxItems: 30, items: { type: 'string', maxLength: 2_000 } },
+      speakerNotes: { type: 'string', maxLength: 10_000 },
+    }, required: ['title'], additionalProperties: false } },
+    overwrite: { type: 'boolean', default: false },
+  }, ['rootId', 'path', 'slides'], async (input) => {
+    const target = await documentTarget(bridge, input, '.pptx')
+    const bytes = await renderPptx(
+      presentationSlidesInput(input.slides),
+      optionalString(input.title, 'title', 500),
+    )
+    const backupPath = await safeDocumentWrite(bridge, target, bytes, optionalBoolean(input.overwrite, false, 'overwrite'))
+    return outputTarget(target, bytes.length, backupPath)
+  })
+}
+
+export async function renderPptx(
+  slides: Array<{ title: string; bullets: string[]; speakerNotes?: string }>,
+  title = '',
+): Promise<Buffer> {
+  const presentation = new PptxGenJS()
+  presentation.layout = 'LAYOUT_WIDE'
+  presentation.author = '小胤'
+  presentation.subject = title || '小胤生成演示文稿'
+  presentation.theme = { headFontFace: 'Microsoft YaHei', bodyFontFace: 'Microsoft YaHei', lang: 'zh-CN' }
+  for (const item of slides) {
+    const slide = presentation.addSlide()
+    slide.background = { color: 'F7FAF8' }
+    slide.addShape(presentation.ShapeType.rect, { x: 0, y: 0, w: 0.16, h: 7.5, fill: { color: '4F9366' }, line: { color: '4F9366' } })
+    slide.addText(item.title, { x: 0.65, y: 0.55, w: 11.7, h: 0.7, fontFace: 'Microsoft YaHei', fontSize: 27, bold: true, color: '202522', margin: 0 })
+    if (item.bullets.length > 0) {
+      slide.addText(item.bullets.map((text) => ({ text, options: { bullet: { indent: 18 }, breakLine: true } })), {
+        x: 0.75, y: 1.65, w: 11.6, h: 4.9, fontFace: 'Microsoft YaHei', fontSize: 18, color: '3F4741', breakLine: false,
+        margin: 0.08, paraSpaceAfterPt: 14, valign: 'top',
+      })
+    }
+    if (item.speakerNotes) slide.addNotes(item.speakerNotes)
+  }
+  const raw = await presentation.write({ outputType: 'nodebuffer' })
+  return Buffer.isBuffer(raw) ? raw : Buffer.from(raw)
 }
 
 function createPdfTool(bridge: LocalFileBridge): ToolDefinition {
@@ -131,8 +226,8 @@ function createPdfTool(bridge: LocalFileBridge): ToolDefinition {
     const content = [title, ...paragraphs].join('\n')
     const font = await selectPdfFont(content)
     const bytes = await renderPdf(title, paragraphs, font)
-    await safeDocumentWrite(target.target, bytes, optionalBoolean(input.overwrite, false, 'overwrite'))
-    return outputTarget(target, bytes.length)
+    const backupPath = await safeDocumentWrite(bridge, target, bytes, optionalBoolean(input.overwrite, false, 'overwrite'))
+    return outputTarget(target, bytes.length, backupPath)
   })
 }
 
@@ -209,13 +304,16 @@ async function documentTarget(bridge: LocalFileBridge, input: Record<string, unk
   return target
 }
 
-async function safeDocumentWrite(path: string, bytes: Buffer, overwrite: boolean): Promise<void> {
+async function safeDocumentWrite(bridge: LocalFileBridge, target: Target, bytes: Buffer, overwrite: boolean): Promise<string | undefined> {
   if (bytes.length > MAX_DOCUMENT_BYTES) throw new Error(`Generated document exceeds the ${MAX_DOCUMENT_BYTES} byte limit`)
-  await writeFile(path, bytes, { flag: overwrite ? 'w' : 'wx' })
+  const requestedPath = target.target.slice(target.root.path.length + 1)
+  const backupPath = overwrite ? await bridge.backupExisting(target.root.id, requestedPath) : undefined
+  await writeFile(target.target, bytes, { flag: overwrite ? 'w' : 'wx' })
+  return backupPath
 }
 
-function outputTarget(target: Target, size: number): object {
-  return { rootId: target.root.id, rootName: target.root.name, path: target.target.slice(target.root.path.length + 1).replaceAll('\\', '/'), size }
+function outputTarget(target: Target, size: number, backupPath?: string): object {
+  return { rootId: target.root.id, rootName: target.root.name, path: target.target.slice(target.root.path.length + 1).replaceAll('\\', '/'), size, ...(backupPath ? { backupPath } : {}) }
 }
 
 interface PdfFont { path: string; family?: string }
@@ -281,3 +379,5 @@ function measuredWidth(values: readonly unknown[]): number { return Math.max(0, 
 function tableArraySchema(): object { return { type: 'array', maxItems: 100, items: { type: 'array', maxItems: MAX_ROWS, items: { type: 'array', maxItems: MAX_COLUMNS, items: { type: 'string', maxLength: 20_000 } } } } }
 function tablesInput(value: unknown): string[][][] { if (value === undefined) return []; if (!Array.isArray(value) || value.length > 100) throw new Error('tables is invalid'); return value.map((table) => { if (!Array.isArray(table) || table.length > MAX_ROWS) throw new Error('table rows are invalid'); return table.map((row) => { if (!Array.isArray(row) || row.length > MAX_COLUMNS || row.some((cell) => typeof cell !== 'string' || cell.length > 20_000)) throw new Error('table cells are invalid'); return row as string[] }) }) }
 function sheetsInput(value: unknown): Array<{ name: string; rows: Array<Array<string | number | boolean | null>> }> { if (!Array.isArray(value) || value.length === 0 || value.length > MAX_SHEETS) throw new Error('sheets is invalid'); const names = new Set<string>(); return value.map((item) => { const sheet = record(item); const name = requiredString(sheet.name, 'sheet.name'); if (name.length > 31 || names.has(name)) throw new Error('Sheet names must be unique and at most 31 characters'); names.add(name); if (!Array.isArray(sheet.rows) || sheet.rows.length > MAX_ROWS) throw new Error('sheet.rows is invalid'); const rows = sheet.rows.map((row) => { if (!Array.isArray(row) || row.length > MAX_COLUMNS || row.some((cell) => cell !== null && !['string', 'number', 'boolean'].includes(typeof cell))) throw new Error('sheet row is invalid'); return row as Array<string | number | boolean | null> }); return { name, rows } }) }
+function cellUpdatesInput(value: unknown): Array<{ sheet: string; cell: string; value: string | number | boolean | null }> { if (!Array.isArray(value) || value.length === 0 || value.length > 2_000) throw new Error('updates is invalid'); return value.map((item) => { const update = record(item); const sheet = requiredString(update.sheet, 'update.sheet'); const cell = requiredString(update.cell, 'update.cell').toUpperCase(); if (!/^[A-Z]{1,3}[1-9][0-9]{0,6}$/u.test(cell)) throw new Error(`Invalid cell reference: ${cell}`); if (update.value !== null && !['string', 'number', 'boolean'].includes(typeof update.value)) throw new Error('update.value is invalid'); return { sheet, cell, value: update.value as string | number | boolean | null } }) }
+function presentationSlidesInput(value: unknown): Array<{ title: string; bullets: string[]; speakerNotes: string }> { if (!Array.isArray(value) || value.length === 0 || value.length > 100) throw new Error('slides is invalid'); return value.map((item) => { const slide = record(item); return { title: requiredString(slide.title, 'slide.title'), bullets: stringArray(slide.bullets, 'slide.bullets', 30, 2_000), speakerNotes: optionalString(slide.speakerNotes, 'slide.speakerNotes', 10_000) } }) }

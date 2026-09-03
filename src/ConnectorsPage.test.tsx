@@ -31,6 +31,7 @@ describe('connector local configuration', () => {
       catalogError=""
       loading={false}
       query=""
+      onDiagnose={async () => undefined}
       onSaveSecrets={onSaveSecrets}
       onToggle={onToggle}
       runtime={[{ ...catalog, enabled: false } as ConnectorRuntimeDefinition]}

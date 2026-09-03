@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { applyHarnessNotification, authorizeDroppedPaths, cancelHarness, createTaskMonitor, diagnoseConnectors, harnessActivityLabel, harnessResponseUpdate, probeHarnessHost, selfTestLocalCapabilities } from './harness'
+import { applyHarnessNotification, authorizeDroppedPaths, cancelHarness, classifyHarnessFailure, createTaskMonitor, diagnoseConnectors, harnessActivityLabel, harnessResponseUpdate, probeHarnessHost, selfTestLocalCapabilities } from './harness'
 
 describe('harnessActivityLabel', () => {
+  it('classifies runtime failures into actionable user-facing groups', () => {
+    expect(classifyHarnessFailure(new Error('任务执行超过 15 分钟')).category).toBe('timeout')
+    expect(classifyHarnessFailure(new Error('MCP connector unavailable')).category).toBe('connector')
+    expect(classifyHarnessFailure(new Error('Harness Host 意外退出')).infrastructure).toBe(true)
+  })
+
   it('shows safe progress labels without exposing reasoning content', () => {
     const label = harnessActivityLabel({
       requestId: 1,

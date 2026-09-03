@@ -1,8 +1,8 @@
-import { Check, KeyRound, PlugZap, Plus, X } from 'lucide-react'
+import { Check, CircleAlert, KeyRound, PlugZap, Plus, RefreshCw, X } from 'lucide-react'
 import { type FormEvent, useMemo, useState } from 'react'
 import { connectorCategories } from './extensionCategories'
 import { applyConnectorSecrets, missingConnectorSecretKeys, type ConnectorSecretStore, type ConnectorSecretValues } from './connectorSecrets'
-import type { ConnectorCatalogEntry, ConnectorRuntimeDefinition } from './types'
+import type { ConnectorCatalogEntry, ConnectorDiagnosticResult, ConnectorRuntimeDefinition } from './types'
 import { XiaoyinMascot } from './XiaoyinMascot'
 
 interface ConnectorsPageProps {
@@ -15,14 +15,17 @@ interface ConnectorsPageProps {
   onToggle: (connectorId: string, enabled: boolean) => void
   secrets: ConnectorSecretStore
   onSaveSecrets: (connectorId: string, values: ConnectorSecretValues) => void
+  onDiagnose: (connectorId: string) => Promise<ConnectorDiagnosticResult | undefined>
 }
 
-export function ConnectorsPage({ catalog, runtime, loading, catalogError, syncError, query, onToggle, secrets, onSaveSecrets }: ConnectorsPageProps) {
+export function ConnectorsPage({ catalog, runtime, loading, catalogError, syncError, query, onToggle, secrets, onSaveSecrets, onDiagnose }: ConnectorsPageProps) {
   const [view, setView] = useState<'market' | 'connected'>('market')
   const [configuring, setConfiguring] = useState<ConnectorCatalogEntry>()
   const [secretDraft, setSecretDraft] = useState<ConnectorSecretValues>({ environment: {}, headers: {} })
   const [enableAfterSave, setEnableAfterSave] = useState(false)
   const [secretError, setSecretError] = useState('')
+  const [diagnostics, setDiagnostics] = useState<Record<string, ConnectorDiagnosticResult>>({})
+  const [testingId, setTestingId] = useState('')
   const visibleCatalog = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase('zh-CN')
     return catalog.filter((connector) => {
@@ -55,6 +58,27 @@ export function ConnectorsPage({ catalog, runtime, loading, catalogError, syncEr
     setConfiguring(undefined)
   }
 
+  async function diagnose(connectorId: string) {
+    if (testingId) return
+    setTestingId(connectorId)
+    try {
+      const result = await onDiagnose(connectorId)
+      if (result) setDiagnostics((current) => ({ ...current, [connectorId]: result }))
+    } catch (reason) {
+      setDiagnostics((current) => ({ ...current, [connectorId]: {
+        id: connectorId,
+        status: 'unavailable',
+        latencyMs: 0,
+        discoveredTools: [],
+        missingTools: [],
+        undeclaredTools: [],
+        error: reason instanceof Error ? reason.message : String(reason),
+      } }))
+    } finally {
+      setTestingId('')
+    }
+  }
+
   return <>
     <section className="catalog-hero connectors"><div><strong>连接你的应用，释放生产力</strong><p>把企业服务、开发工具和日常应用接入小胤。</p></div><div className="connector-hero-art"><span><PlugZap size={31} /></span><XiaoyinMascot size={82} variant="hero" /></div></section>
     <div className="catalog-heading-row connector-heading-row"><div className="catalog-tabs" role="tablist"><button aria-selected={view === 'market'} className={view === 'market' ? 'active' : ''} onClick={() => setView('market')} role="tab" type="button">市场</button><button aria-selected={view === 'connected'} className={view === 'connected' ? 'active' : ''} onClick={() => setView('connected')} role="tab" type="button">已安装 <em>{connectedCount}</em></button></div></div>
@@ -69,8 +93,9 @@ export function ConnectorsPage({ catalog, runtime, loading, catalogError, syncEr
         const canEnable = connector.status === 'ready'
         const missingSecrets = missingConnectorSecretKeys(connector, secrets[connector.id])
         const hasSecretRequirements = Object.keys(connector.environment ?? {}).length + Object.keys(connector.headers ?? {}).length > 0
+        const diagnostic = diagnostics[connector.id]
         return <article className="connector-market-card" key={connector.id}>
-          <span className="market-card-icon"><PlugZap size={18} /></span><div><h3>{connector.name}</h3><p>{connector.summary}</p>{hasSecretRequirements && <button className="connector-inline-config" onClick={() => openSecretConfiguration(connector)} type="button"><KeyRound size={12} />{missingSecrets.length > 0 ? '需要本机配置' : '修改本机配置'}</button>}</div>
+          <span className="market-card-icon"><PlugZap size={18} /></span><div><h3>{connector.name}</h3><p>{connectorSummary(connector)}</p><div className="connector-card-controls">{hasSecretRequirements && <button className="connector-inline-config" onClick={() => openSecretConfiguration(connector)} type="button"><KeyRound size={12} />{missingSecrets.length > 0 ? '需要本机配置' : '修改本机配置'}</button>}{enabled && connector.transport !== 'desktop' && <button className="connector-inline-config" disabled={testingId === connector.id} onClick={() => void diagnose(connector.id)} type="button"><RefreshCw className={testingId === connector.id ? 'spin' : ''} size={12} />测试连接</button>}</div>{diagnostic && <small className={`connector-health ${diagnostic.status}`}>{diagnostic.status === 'ready' ? <Check size={11} /> : <CircleAlert size={11} />}{diagnostic.status === 'ready' ? `连接正常 · ${diagnostic.latencyMs} ms · ${diagnostic.discoveredTools.length} 个工具` : diagnostic.error || '连接器工具与配置不一致'}</small>}</div>
           <button aria-label={enabled ? '已安装' : canEnable ? '安装连接器' : '暂不可用'} className={`connector-add ${enabled ? 'installed' : ''}`} disabled={!canEnable} onClick={() => { if (!enabled && missingSecrets.length > 0) openSecretConfiguration(connector, true); else onToggle(connector.id, !enabled) }} type="button">{enabled ? <Check size={19} /> : <Plus size={22} />}<span className="sr-only">{enabled ? '已为我启用' : canEnable ? '为我启用' : '当前不可启用'}</span></button>
         </article>
       })}</div>
@@ -87,4 +112,10 @@ export function ConnectorsPage({ catalog, runtime, loading, catalogError, syncEr
       </form>
     </section></div>}
   </>
+}
+
+function connectorSummary(connector: ConnectorCatalogEntry): string {
+  if (connector.id === 'erp-mcp') return '连接公司 ERP，查询订单、销售与库存等经营数据。'
+  if (connector.id === 'local-office' || connector.id === 'desktop-local-files') return '读取和处理经你授权的本地文件与 Office 文档。'
+  return connector.summary
 }

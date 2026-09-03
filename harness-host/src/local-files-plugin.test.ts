@@ -36,6 +36,36 @@ describe('LocalFileBridge', () => {
     expect(file.rootName).toBeTruthy()
   })
 
+  it('searches names and text content without traversing dependency folders', async () => {
+    const root = await temporaryDirectory()
+    await mkdir(join(root, 'reports'))
+    await mkdir(join(root, 'node_modules'))
+    await writeFile(join(root, 'reports', 'weekly.md'), '库存正常\nSKU-A 库存偏低\n')
+    await writeFile(join(root, 'node_modules', 'ignored.md'), 'SKU-A')
+    const bridge = new LocalFileBridge(await discoverAuthorizedRoots([root]))
+
+    const result = await bridge.search('local-root-1', 'sku-a')
+
+    expect(result.matches).toHaveLength(1)
+    expect(result.matches[0]).toMatchObject({ path: 'reports/weekly.md', type: 'file' })
+    expect(result.matches[0]?.matches[0]).toMatchObject({ line: 2, text: 'SKU-A 库存偏低' })
+  })
+
+  it('reads large text files in deterministic chunks', async () => {
+    const root = await temporaryDirectory()
+    await writeFile(join(root, 'large.txt'), 'a'.repeat(300_000))
+    const bridge = new LocalFileBridge(await discoverAuthorizedRoots([root]))
+
+    const first = await bridge.readText('local-root-1', 'large.txt')
+    const second = await bridge.readText('local-root-1', 'large.txt', first.nextOffset!)
+
+    expect(first.content).toHaveLength(256 * 1024)
+    expect(first.truncated).toBe(true)
+    expect(second.content).toHaveLength(300_000 - 256 * 1024)
+    expect(second.truncated).toBe(true)
+    expect(second.nextOffset).toBeUndefined()
+  })
+
   it('rejects traversal, unapproved types and credential files', async () => {
     const parent = await temporaryDirectory()
     const root = join(parent, 'authorized')
@@ -74,6 +104,17 @@ describe('LocalFileBridge', () => {
     expect((await bridge.readText('local-root-1', 'exports/report-final.md')).content).toBe('# report')
     await bridge.delete('local-root-1', 'exports/report-final.md', false)
     await expect(bridge.readText('local-root-1', 'exports/report-final.md')).rejects.toThrow()
+  })
+
+  it('keeps recoverable copies before overwriting and deleting files', async () => {
+    const root = await temporaryDirectory()
+    await writeFile(join(root, 'report.md'), 'before')
+    const bridge = new LocalFileBridge(await discoverAuthorizedRoots([root]))
+
+    const overwritten = await bridge.writeText('local-root-1', 'report.md', 'after', true) as { backupPath: string }
+    expect((await bridge.readText('local-root-1', overwritten.backupPath)).content).toBe('before')
+    const deleted = await bridge.delete('local-root-1', 'report.md', false) as { backupPath: string }
+    expect((await bridge.readText('local-root-1', deleted.backupPath)).content).toBe('after')
   })
 
   it('blocks mutation of credential files and traversal destinations', async () => {

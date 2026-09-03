@@ -144,6 +144,8 @@ pub struct LocalImStatus {
     notify_task_results: bool,
     pending_pairings: Vec<PairingRequest>,
     conversations: Vec<ImConversationSummary>,
+    pending_event_count: usize,
+    last_heartbeat_at: Option<String>,
     last_error: Option<String>,
 }
 
@@ -528,6 +530,9 @@ fn parse_runtime_status(
         pending_pairings: Vec<PairingRequest>,
         #[serde(default)]
         conversations: Vec<ImConversationSummary>,
+        #[serde(default)]
+        pending_event_count: usize,
+        last_heartbeat_at: Option<String>,
         last_error: Option<String>,
     }
     let status: RuntimeStatus =
@@ -544,6 +549,8 @@ fn parse_runtime_status(
         notify_task_results: status.notify_task_results,
         pending_pairings: status.pending_pairings,
         conversations: status.conversations,
+        pending_event_count: status.pending_event_count,
+        last_heartbeat_at: status.last_heartbeat_at,
         last_error: status.last_error,
     })
 }
@@ -568,6 +575,8 @@ fn stopped_status(
         notify_task_results: configuration.is_some_and(|value| value.notify_task_results),
         pending_pairings: Vec::new(),
         conversations: Vec::new(),
+        pending_event_count: 0,
+        last_heartbeat_at: None,
         last_error: None,
     }
 }

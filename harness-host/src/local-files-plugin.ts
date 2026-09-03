@@ -2,7 +2,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 import { constants as fsConstants } from 'node:fs'
-import { copyFile, mkdir, readFile, readdir, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { copyFile, cp, mkdir, open, readFile, readdir, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { basename, extname, isAbsolute, relative, resolve, sep } from 'node:path'
 
 export const name = 'xiaoyin-local-files'
@@ -11,8 +11,13 @@ export const inject = ['tools']
 const MAX_ROOTS = 8
 const MAX_ENTRIES = 200
 const MAX_DEPTH = 3
-const MAX_TEXT_BYTES = 256 * 1024
+const MAX_TEXT_WINDOW_BYTES = 256 * 1024
+const MAX_SEARCH_FILES = 2_000
+const MAX_SEARCH_RESULTS = 100
+const MAX_SEARCH_FILE_BYTES = 2 * 1024 * 1024
 const MAX_WRITE_BYTES = 2 * 1024 * 1024
+const BACKUP_DIRECTORY = '.xiaoyin-backups'
+const IGNORED_SEARCH_DIRECTORIES = new Set(['.git', '.idea', '.next', '.venv', 'node_modules', 'target', 'dist', BACKUP_DIRECTORY])
 const ALLOWED_TEXT_EXTENSIONS = new Set([
   '.txt', '.md', '.markdown', '.csv', '.tsv', '.json', '.yaml', '.yml', '.xml',
   '.html', '.css', '.js', '.jsx', '.ts', '.tsx', '.py', '.java', '.sql', '.log',
@@ -45,6 +50,13 @@ export interface LocalFileEntry {
   size?: number
 }
 
+export interface LocalFileSearchMatch {
+  path: string
+  type: 'file' | 'directory'
+  size?: number
+  matches: Array<{ line: number; text: string }>
+}
+
 export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   if (config.enabled === false) return
   const roots = await discoverAuthorizedRoots(config.roots ?? [])
@@ -54,6 +66,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   const unregister = [
     ctx.tools.register(rootsTool(bridge)),
     ctx.tools.register(listTool(bridge)),
+    ctx.tools.register(searchTool(bridge)),
     ctx.tools.register(readTextTool(bridge)),
     ctx.tools.register(writeTextTool(bridge)),
     ctx.tools.register(createDirectoryTool(bridge)),
@@ -132,12 +145,15 @@ export class LocalFileBridge {
     }
   }
 
-  async readText(rootId: string, requestedPath: string): Promise<{
+  async readText(rootId: string, requestedPath: string, offset = 0, maxBytes = MAX_TEXT_WINDOW_BYTES): Promise<{
     rootId: string
     rootName: string
     path: string
     size: number
     content: string
+    offset: number
+    nextOffset?: number
+    truncated: boolean
   }> {
     const root = this.root(rootId)
     const file = await this.resolveInsideRoot(root, requestedPath)
@@ -150,10 +166,17 @@ export class LocalFileBridge {
     }
     const metadata = await stat(file)
     if (!metadata.isFile()) throw new Error('Requested local path is not a file')
-    if (metadata.size > MAX_TEXT_BYTES) {
-      throw new Error(`Local text file exceeds the ${MAX_TEXT_BYTES} byte limit`)
+    if (!Number.isSafeInteger(offset) || offset < 0 || offset > metadata.size) throw new Error('offset is outside the file')
+    if (!Number.isSafeInteger(maxBytes) || maxBytes < 1 || maxBytes > MAX_TEXT_WINDOW_BYTES) {
+      throw new Error(`maxBytes must be between 1 and ${MAX_TEXT_WINDOW_BYTES}`)
     }
-    const bytes = await readFile(file)
+    const handle = await open(file, 'r')
+    const bytes = Buffer.alloc(Math.min(maxBytes, Math.max(0, metadata.size - offset)))
+    try {
+      await handle.read(bytes, 0, bytes.length, offset)
+    } finally {
+      await handle.close()
+    }
     if (bytes.includes(0)) throw new Error('Binary files cannot be read as text')
     let content: string
     try {
@@ -167,7 +190,72 @@ export class LocalFileBridge {
       path: this.displayPath(root, file),
       size: metadata.size,
       content,
+      offset,
+      ...(offset + bytes.length < metadata.size ? { nextOffset: offset + bytes.length } : {}),
+      truncated: offset > 0 || offset + bytes.length < metadata.size,
     }
+  }
+
+  async search(rootId: string, query: string, requestedPath = '', includeContent = true, limit = 30): Promise<{
+    rootId: string
+    rootName: string
+    query: string
+    matches: LocalFileSearchMatch[]
+    searchedFiles: number
+    truncated: boolean
+  }> {
+    const normalizedQuery = query.trim().toLocaleLowerCase()
+    if (!normalizedQuery || normalizedQuery.length > 500) throw new Error('query must be between 1 and 500 characters')
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > MAX_SEARCH_RESULTS) {
+      throw new Error(`limit must be between 1 and ${MAX_SEARCH_RESULTS}`)
+    }
+    const root = this.root(rootId)
+    const directory = await this.resolveInsideRoot(root, requestedPath)
+    if (!(await stat(directory)).isDirectory()) throw new Error('Requested local search path is not a directory')
+    const matches: LocalFileSearchMatch[] = []
+    let searchedFiles = 0
+    let exhausted = false
+    const walk = async (current: string): Promise<void> => {
+      if (matches.length >= limit || searchedFiles >= MAX_SEARCH_FILES) { exhausted = true; return }
+      const children = await readdir(current, { withFileTypes: true })
+      children.sort((left, right) => left.name.localeCompare(right.name, 'zh-CN'))
+      for (const child of children) {
+        if (matches.length >= limit || searchedFiles >= MAX_SEARCH_FILES) { exhausted = true; return }
+        if (child.isSymbolicLink() || isBlockedFileName(child.name)) continue
+        const target = resolve(current, child.name)
+        const displayPath = this.displayPath(root, target)
+        if (child.isDirectory()) {
+          if (IGNORED_SEARCH_DIRECTORIES.has(child.name)) continue
+          if (child.name.toLocaleLowerCase().includes(normalizedQuery)) {
+            matches.push({ path: displayPath, type: 'directory', matches: [] })
+          }
+          await walk(target)
+          continue
+        }
+        if (!child.isFile()) continue
+        searchedFiles += 1
+        const metadata = await stat(target)
+        const nameMatched = child.name.toLocaleLowerCase().includes(normalizedQuery)
+        const lineMatches: Array<{ line: number; text: string }> = []
+        if (includeContent && ALLOWED_TEXT_EXTENSIONS.has(extname(child.name).toLowerCase()) && metadata.size <= MAX_SEARCH_FILE_BYTES) {
+          const bytes = await readFile(target)
+          if (!bytes.includes(0)) {
+            const content = bytes.toString('utf8')
+            content.split(/\r?\n/u).some((line, index) => {
+              if (line.toLocaleLowerCase().includes(normalizedQuery)) {
+                lineMatches.push({ line: index + 1, text: line.trim().slice(0, 500) })
+              }
+              return lineMatches.length >= 5
+            })
+          }
+        }
+        if (nameMatched || lineMatches.length > 0) {
+          matches.push({ path: displayPath, type: 'file', size: metadata.size, matches: lineMatches })
+        }
+      }
+    }
+    await walk(directory)
+    return { rootId: root.id, rootName: root.name, query, matches, searchedFiles, truncated: exhausted }
   }
 
   async writeText(rootId: string, requestedPath: string, content: string, overwrite: boolean): Promise<object> {
@@ -176,8 +264,9 @@ export class LocalFileBridge {
     const bytes = Buffer.byteLength(content, 'utf8')
     if (bytes > MAX_WRITE_BYTES) throw new Error(`Text content exceeds the ${MAX_WRITE_BYTES} byte limit`)
     const target = await this.resolveTargetInsideRoot(root, requestedPath)
+    const backupPath = overwrite ? await this.backupIfExists(root, target) : undefined
     await writeFile(target, content, { encoding: 'utf8', flag: overwrite ? 'w' : 'wx' })
-    return { rootId: root.id, rootName: root.name, path: this.displayPath(root, target), size: bytes }
+    return { rootId: root.id, rootName: root.name, path: this.displayPath(root, target), size: bytes, ...(backupPath ? { backupPath } : {}) }
   }
 
   async createDirectory(rootId: string, requestedPath: string): Promise<object> {
@@ -197,8 +286,9 @@ export class LocalFileBridge {
     if (!(await stat(source)).isFile()) throw new Error('Only individual files can be copied')
     this.ensureWritableFileName(destinationPath, false)
     const destination = await this.resolveTargetInsideRoot(root, destinationPath)
+    const backupPath = overwrite ? await this.backupIfExists(root, destination) : undefined
     await copyFile(source, destination, overwrite ? 0 : fsConstants.COPYFILE_EXCL)
-    return { rootId: root.id, rootName: root.name, source: this.displayPath(root, source), destination: this.displayPath(root, destination) }
+    return { rootId: root.id, rootName: root.name, source: this.displayPath(root, source), destination: this.displayPath(root, destination), ...(backupPath ? { backupPath } : {}) }
   }
 
   async move(rootId: string, sourcePath: string, destinationPath: string): Promise<object> {
@@ -225,8 +315,9 @@ export class LocalFileBridge {
     if (target === root.path) throw new Error('The authorized root directory cannot be deleted')
     const metadata = await stat(target)
     if (metadata.isDirectory() && !recursive) throw new Error('recursive must be true to delete a directory')
+    const backupPath = await this.backupIfExists(root, target)
     await rm(target, { recursive, force: false })
-    return { rootId: root.id, rootName: root.name, path: this.displayPath(root, target), deleted: true }
+    return { rootId: root.id, rootName: root.name, path: this.displayPath(root, target), deleted: true, ...(backupPath ? { backupPath } : {}) }
   }
 
   async resolveExisting(rootId: string, requestedPath: string): Promise<{ root: AuthorizedRoot; target: string }> {
@@ -241,6 +332,27 @@ export class LocalFileBridge {
 
   visiblePath(root: AuthorizedRoot, target: string): string {
     return this.displayPath(root, target)
+  }
+
+  async backupExisting(rootId: string, requestedPath: string): Promise<string | undefined> {
+    const root = this.root(rootId)
+    const target = await this.resolveTargetInsideRoot(root, requestedPath)
+    return this.backupIfExists(root, target)
+  }
+
+  private async backupIfExists(root: AuthorizedRoot, target: string): Promise<string | undefined> {
+    try {
+      const metadata = await stat(target)
+      const stamp = new Date().toISOString().replaceAll(/[:.]/gu, '-')
+      const original = this.displayPath(root, target)
+      const backup = resolve(root.path, BACKUP_DIRECTORY, stamp, original)
+      await mkdir(resolve(backup, '..'), { recursive: true })
+      await cp(target, backup, { recursive: metadata.isDirectory(), errorOnExist: true })
+      return this.displayPath(root, backup)
+    } catch (error) {
+      if (isNotFound(error)) return undefined
+      throw error
+    }
   }
 
   private root(rootId: string): AuthorizedRoot {
@@ -314,6 +426,7 @@ export class LocalFileBridge {
     for (const child of children) {
       if (entries.length >= MAX_ENTRIES) return
       if (child.isSymbolicLink()) continue
+      if (child.name === BACKUP_DIRECTORY) continue
       const childPath = resolve(directory, child.name)
       if (child.isDirectory()) {
         entries.push({ path: this.displayPath(root, childPath), type: 'directory' })
@@ -366,6 +479,37 @@ function listTool(bridge: LocalFileBridge): ToolDefinition {
   }
 }
 
+function searchTool(bridge: LocalFileBridge): ToolDefinition {
+  return {
+    name: 'local_files_search',
+    description: 'Search file and directory names, and optionally text content, below an employee-authorized local directory.',
+    parameters: {
+      type: 'object',
+      properties: {
+        rootId: { type: 'string', description: 'Authorized root ID returned by local_files_roots.' },
+        query: { type: 'string', minLength: 1, maxLength: 500 },
+        path: { type: 'string', description: 'Optional relative directory to search.' },
+        includeContent: { type: 'boolean', default: true },
+        limit: { type: 'integer', minimum: 1, maximum: MAX_SEARCH_RESULTS, default: 30 },
+      },
+      required: ['rootId', 'query'],
+      additionalProperties: false,
+    },
+    output: { schema: {}, render: (_args, value) => [{ type: 'text', text: renderValue(value) }] },
+    async execute(args) {
+      const input = asRecord(args)
+      return bridge.search(
+        requiredString(input.rootId, 'rootId'),
+        requiredString(input.query, 'query'),
+        optionalString(input.path, 'path'),
+        optionalBoolean(input.includeContent, true, 'includeContent'),
+        optionalLimit(input.limit),
+      )
+    },
+    isConcurrencySafe: () => true,
+  }
+}
+
 function readTextTool(bridge: LocalFileBridge): ToolDefinition {
   return {
     name: 'local_files_read_text',
@@ -375,6 +519,8 @@ function readTextTool(bridge: LocalFileBridge): ToolDefinition {
       properties: {
         rootId: { type: 'string', description: 'Authorized root ID returned by local_files_roots.' },
         path: { type: 'string', description: 'Relative file path returned by local_files_list.' },
+        offset: { type: 'integer', minimum: 0, default: 0, description: 'Byte offset for reading the next chunk of a large file.' },
+        maxBytes: { type: 'integer', minimum: 1, maximum: MAX_TEXT_WINDOW_BYTES, default: MAX_TEXT_WINDOW_BYTES },
       },
       required: ['rootId', 'path'],
       additionalProperties: false,
@@ -382,7 +528,12 @@ function readTextTool(bridge: LocalFileBridge): ToolDefinition {
     output: { schema: {}, render: (_args, value) => [{ type: 'text', text: renderValue(value) }] },
     async execute(args) {
       const input = asRecord(args)
-      return bridge.readText(requiredString(input.rootId, 'rootId'), requiredString(input.path, 'path'))
+      return bridge.readText(
+        requiredString(input.rootId, 'rootId'),
+        requiredString(input.path, 'path'),
+        optionalNonNegativeInteger(input.offset, 0, 'offset'),
+        optionalPositiveInteger(input.maxBytes, MAX_TEXT_WINDOW_BYTES, 'maxBytes'),
+      )
     },
     isConcurrencySafe: () => true,
   }
@@ -484,6 +635,22 @@ function optionalString(value: unknown, name: string): string {
 function optionalDepth(value: unknown): number {
   if (value === undefined) return 1
   if (typeof value !== 'number') throw new Error('depth must be a number')
+  return value
+}
+
+function optionalLimit(value: unknown): number {
+  return optionalPositiveInteger(value, 30, 'limit')
+}
+
+function optionalPositiveInteger(value: unknown, fallback: number, name: string): number {
+  if (value === undefined) return fallback
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 1) throw new Error(`${name} must be a positive integer`)
+  return value
+}
+
+function optionalNonNegativeInteger(value: unknown, fallback: number, name: string): number {
+  if (value === undefined) return fallback
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) throw new Error(`${name} must be a non-negative integer`)
   return value
 }
 

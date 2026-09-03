@@ -36,6 +36,8 @@ export interface LocalImStatus {
   notifyTaskResults: boolean
   pendingPairings: LocalImPairingRequest[]
   conversations: LocalImConversationSummary[]
+  pendingEventCount: number
+  lastHeartbeatAt?: string
   lastError?: string
 }
 
@@ -147,5 +149,6 @@ function emptyStatus(): LocalImStatus {
     provider: 'DINGTALK', configured: false, enabled: false, connected: false,
     state: 'DISABLED', clientId: '', secretConfigured: false,
     accessPolicy: 'pairing', notifyTaskResults: false, pendingPairings: [], conversations: [],
+    pendingEventCount: 0,
   }
 }

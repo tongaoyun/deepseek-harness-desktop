@@ -102,8 +102,9 @@ export function ChatPage(props: Props) {
       <p>本地运行、自主规划、安全可控的 AI 工作搭子</p>
     </div>}
     {props.messages.length > 0 && <div aria-live="polite" className="message-list" onScroll={trackScroll} ref={props.messageListRef}>{props.messages.map((message, index) => {
-      const retryable = message.role === 'assistant' && index === props.messages.length - 1 && !message.pending && (message.text.startsWith('执行失败：') || message.text.startsWith('任务已取消'))
       const monitor = message.monitor ?? (message.role === 'assistant' && index === props.messages.length - 1 ? props.taskMonitor : undefined)
+      const retryable = message.role === 'assistant' && index === props.messages.length - 1 && !message.pending
+        && (monitor?.status === 'failed' || monitor?.status === 'canceled')
       if (message.role === 'user') return <article className="conversation-turn user-turn" key={`${message.role}-${index}`}>
         <div className="user-prompt">
           {message.attachments && message.attachments.length > 0 && <AttachmentList attachments={message.attachments} />}
@@ -114,7 +115,7 @@ export function ChatPage(props: Props) {
         {monitor && <InlineTaskActivity finalResponse={message.text} monitor={monitor} />}
         {(!message.pending || message.text) && <div className={message.pending ? 'streaming-response' : undefined}><Suspense fallback={<p>{message.text}</p>}><RichMessage assistant={!message.pending} onRegenerate={!message.pending && index === props.messages.length - 1 ? props.onPrepareRetry : undefined} text={message.text} /></Suspense></div>}
         {!message.pending && monitor && monitor.artifacts.length > 0 && <TaskArtifacts artifacts={monitor.artifacts} conversation />}
-        {retryable && <button className="retry-task" onClick={props.onPrepareRetry} type="button">修改后重新执行</button>}
+        {retryable && <button className="retry-task" onClick={props.onPrepareRetry} type="button">重试这个任务</button>}
       </article>
     })}</div>}
     {showScrollDown && <button aria-label="滚动到最新消息" className="scroll-to-latest" onClick={() => scrollToBottom()} title="滚动到最新消息" type="button"><ArrowDown size={18} /></button>}

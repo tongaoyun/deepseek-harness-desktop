@@ -34,7 +34,8 @@
     "fflate": "0.8.2",
     "mammoth": "1.12.1",
     "pdf-parse": "2.4.5",
-    "pdfkit": "0.20.1"
+    "pdfkit": "0.20.1",
+    "pptxgenjs": "4.0.1"
   },
   "devDependencies": {
     "@types/node": "24.10.13",

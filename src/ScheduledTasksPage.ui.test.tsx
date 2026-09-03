@@ -2,15 +2,17 @@
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createScheduledTask } from './api'
+import { createScheduledTask, loadScheduledTasks, updateScheduledTask } from './api'
 import { ScheduledTasksPage } from './ScheduledTasksPage'
 
 vi.mock('./api', () => ({
   changeScheduledTask: vi.fn(),
   createScheduledTask: vi.fn(),
+  createTaskRunArtifactDownload: vi.fn(),
   deleteScheduledTask: vi.fn(),
   loadScheduledTaskExecutions: vi.fn().mockResolvedValue([]),
   loadScheduledTasks: vi.fn().mockResolvedValue([]),
+  updateScheduledTask: vi.fn(),
 }))
 
 describe('scheduled task user flow', () => {
@@ -112,6 +114,37 @@ describe('scheduled task user flow', () => {
       name: '竞品追踪', expertKitId: 'xiaoyin-agent', workflowId: 'agent-prompt',
       inputs: { prompt: '整理竞品动态' },
     }))
+    await act(async () => root.unmount())
+  })
+
+  it('edits an existing schedule in place', async () => {
+    const task = {
+      id: 'schedule-1', name: '竞品追踪',
+      expertKitId: 'xiaoyin-agent', expertKitVersion: '1', workflowId: 'agent-prompt',
+      workflowType: 'AgentPromptWorkflow', workflowVersion: '1', cronExpression: '0 9 * * 1-5',
+      timeZone: 'Asia/Shanghai', inputs: { prompt: '整理竞品动态' }, status: 'PAUSED' as const,
+      createdAt: '2026-09-03T00:00:00Z', updatedAt: '2026-09-03T00:00:00Z',
+    }
+    vi.mocked(loadScheduledTasks).mockResolvedValue([task])
+    vi.mocked(updateScheduledTask).mockResolvedValue({ ...task, name: '午间竞品追踪', cronExpression: '0 12 * * 1-5' })
+    const root = createRoot(container)
+    await act(async () => {
+      root.render(<ScheduledTasksPage accessToken="token" employeeId="employee-1"
+        endpoint="/api/v1/schedules" onCreateWithXiaoyin={() => undefined} />)
+      await Promise.resolve()
+    })
+    await act(async () => container.querySelector<HTMLButtonElement>('button[aria-label="任务操作"]')!.click())
+    await act(async () => [...container.querySelectorAll<HTMLButtonElement>('button')]
+      .find((button) => button.textContent === '编辑任务')!.click())
+    expect(container.querySelector('.schedule-modal h2')?.textContent).toBe('编辑定时任务')
+    const name = container.querySelector<HTMLInputElement>('input[placeholder="描述你的任务"]')!
+    await act(async () => setValue(name, '午间竞品追踪'))
+    await act(async () => container.querySelector<HTMLFormElement>('form.schedule-modal')!
+      .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
+
+    expect(updateScheduledTask).toHaveBeenCalledWith('/api/v1/schedules', 'employee-1', 'token', 'schedule-1',
+      expect.objectContaining({ name: '午间竞品追踪', inputs: { prompt: '整理竞品动态' } }))
+    expect(container.textContent).toContain('午间竞品追踪')
     await act(async () => root.unmount())
   })
 })

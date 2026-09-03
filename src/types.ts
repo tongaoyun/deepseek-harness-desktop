@@ -146,7 +146,7 @@ export interface TaskTimelineEntry {
   completedAt?: string
 }
 
-export type TaskArtifactKind = 'document' | 'spreadsheet' | 'pdf' | 'text' | 'file'
+export type TaskArtifactKind = 'document' | 'spreadsheet' | 'presentation' | 'pdf' | 'text' | 'file'
 
 export interface TaskArtifact {
   id: string
@@ -156,6 +156,8 @@ export interface TaskArtifact {
   name: string
   kind: TaskArtifactKind
   sourceTool: string
+  action?: 'created' | 'updated' | 'copied' | 'moved'
+  backupPath?: string
   sizeBytes?: number
   createdAt: string
 }
