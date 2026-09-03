@@ -58,6 +58,29 @@ export interface HarnessHostHealth {
   version: string
 }
 
+export type HarnessFailureCategory = 'timeout' | 'authentication' | 'capacity' | 'permission' | 'connector' | 'local-agent' | 'model' | 'unknown'
+
+export interface HarnessFailure {
+  category: HarnessFailureCategory
+  title: string
+  message: string
+  infrastructure: boolean
+}
+
+export function classifyHarnessFailure(reason: unknown): HarnessFailure {
+  const message = reason instanceof Error ? reason.message : String(reason)
+  if (/任务执行超过|timed?\s*out|timeout/iu.test(message)) return { category: 'timeout', title: '任务运行超时', message, infrastructure: false }
+  if (/401|unauthorized|认证失败|invalid.*key/iu.test(message)) return { category: 'authentication', title: '模型认证失败', message, infrastructure: false }
+  if (/429|rate.?limit|服务繁忙|capacity|overloaded/iu.test(message)) return { category: 'capacity', title: '模型服务繁忙', message, infrastructure: false }
+  if (/permission|denied|权限|未授权|approval.*reject/iu.test(message)) return { category: 'permission', title: '操作未获授权', message, infrastructure: false }
+  if (/MCP|connector|连接器|tool.*(unavailable|not found)|unknown tool/iu.test(message)) return { category: 'connector', title: '连接器调用失败', message, infrastructure: false }
+  if (/Harness Host|ECONNRESET|ECONNREFUSED|broken pipe|socket hang up|进程.*退出|connection.*closed/iu.test(message)) {
+    return { category: 'local-agent', title: '本地 Agent 异常', message, infrastructure: true }
+  }
+  if (/模型|provider|assistant|turn/iu.test(message)) return { category: 'model', title: '模型未能完成任务', message, infrastructure: false }
+  return { category: 'unknown', title: '任务执行失败', message, infrastructure: false }
+}
+
 export interface HarnessNotification {
   requestId: number
   event: unknown
@@ -424,7 +447,7 @@ function toolResult(data: Record<string, unknown>): { callId: string; failed: bo
 
 const ARTIFACT_TOOLS = new Set([
   'office.docx.create', 'office.xlsx.create', 'office.pdf.create',
-  'office_docx_create', 'office_xlsx_create', 'office_pdf_create',
+  'office_docx_create', 'office_xlsx_create', 'office_xlsx_update_cells', 'office_pptx_create', 'office_pdf_create',
   'local_files_write_text', 'local_files_copy', 'local_files_move',
 ])
 
@@ -441,7 +464,9 @@ function artifactFromToolResult(toolName: string, content: unknown, createdAt: s
   const extension = name.split('.').at(-1)?.toLowerCase()
   const kind = extension === 'xlsx' || extension === 'xls' || extension === 'csv'
     ? 'spreadsheet'
-    : extension === 'pdf'
+    : extension === 'pptx'
+      ? 'presentation'
+      : extension === 'pdf'
       ? 'pdf'
       : extension === 'doc' || extension === 'docx'
         ? 'document'
@@ -459,9 +484,17 @@ function artifactFromToolResult(toolName: string, content: unknown, createdAt: s
     name,
     kind,
     sourceTool: toolName,
+    action: artifactAction(toolName, value),
+    ...(text(value.backupPath) ? { backupPath: text(value.backupPath) } : {}),
     ...(sizeBytes === undefined ? {} : { sizeBytes }),
     createdAt,
   }
+}
+
+function artifactAction(toolName: string, value: Record<string, unknown>): TaskArtifact['action'] {
+  if (toolName === 'local_files_copy') return 'copied'
+  if (toolName === 'local_files_move') return 'moved'
+  return text(value.backupPath) ? 'updated' : 'created'
 }
 
 function toolResultValue(content: unknown): Record<string, unknown> | undefined {
@@ -556,9 +589,12 @@ function toolActivityLabel(toolName: string): string {
     office_document_read: '读取 Office 文档',
     office_docx_create: '生成 Word 文档',
     office_xlsx_create: '生成 Excel 表格',
+    office_xlsx_update_cells: '修改 Excel 表格',
+    office_pptx_create: '生成 PowerPoint 演示文稿',
     office_pdf_create: '生成 PDF 文档',
     local_files_roots: '检查工作目录',
     local_files_list: '查看目录内容',
+    local_files_search: '搜索本地文件',
     local_files_read_text: '读取本地文件',
     local_files_write_text: '修改本地文件',
     local_files_create_directory: '新建文件夹',
@@ -592,6 +628,7 @@ function toolPresentation(toolName: string, rawArguments: unknown): Pick<TaskTim
   const fileLabels: Record<string, string> = {
     local_files_roots: '检查可用工作目录',
     local_files_list: path ? `查看 ${path === '.' ? '目录' : path}` : '查看目录',
+    local_files_search: `搜索“${firstText(args, 'query') ?? '文件'}”`,
     local_files_read_text: path ? `读取 ${path}` : '读取文件',
     local_files_write_text: path ? `写入 ${path}` : '写入文件',
     local_files_create_directory: path ? `创建 ${path}` : '创建文件夹',
@@ -601,6 +638,8 @@ function toolPresentation(toolName: string, rawArguments: unknown): Pick<TaskTim
     office_document_read: path ? `读取 ${path}` : '读取 Office 文档',
     office_docx_create: path ? `生成 ${path}` : '生成 Word 文档',
     office_xlsx_create: path ? `生成 ${path}` : '生成 Excel 表格',
+    office_xlsx_update_cells: path ? `修改 ${path}` : '修改 Excel 表格',
+    office_pptx_create: path ? `生成 ${path}` : '生成 PowerPoint 演示文稿',
     office_pdf_create: path ? `生成 ${path}` : '生成 PDF 文档',
   }
   if (fileLabels[toolName]) return compact({
@@ -638,6 +677,13 @@ function toolResultPresentation(
     return compact({
       path: text(value.directory), itemCount: entries.length,
       detail: `${entries.length} 项${value.truncated === true ? '（仅显示部分）' : ''}`,
+    })
+  }
+  if (toolName === 'local_files_search' && value) {
+    const matches = Array.isArray(value.matches) ? value.matches : []
+    return compact({
+      path: text(value.directory), itemCount: matches.length,
+      detail: `找到 ${matches.length} 项${value.truncated === true ? '（仅显示部分）' : ''}`,
     })
   }
   if (toolName.startsWith('local_files_') || toolName.startsWith('office_')) {

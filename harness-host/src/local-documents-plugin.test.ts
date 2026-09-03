@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { Document, Packer, Paragraph } from 'docx'
 import ExcelJS from 'exceljs'
 import { zipSync, strToU8 } from 'fflate'
-import { parseDocx, parsePdf, parsePptx, parseXlsx, renderPdf, selectPdfFont } from './local-documents-plugin.js'
+import { parseDocx, parsePdf, parsePptx, parseXlsx, renderPdf, renderPptx, selectPdfFont } from './local-documents-plugin.js'
 
 const { Workbook } = ExcelJS
 
@@ -37,6 +37,14 @@ describe('local document formats', () => {
     await expect(parsePptx(bytes)).resolves.toMatchObject({
       slideCount: 2,
       slides: [{ slide: 1, text: 'First slide' }, { slide: 2, text: 'Second & final' }],
+    })
+  })
+
+  it('creates an editable PPTX that can be parsed again', async () => {
+    const bytes = await renderPptx([{ title: '库存周报', bullets: ['SKU-A 偏低', '建议补货'] }], '运营汇报')
+    await expect(parsePptx(bytes)).resolves.toMatchObject({
+      slideCount: 1,
+      text: expect.stringContaining('库存周报'),
     })
   })
 

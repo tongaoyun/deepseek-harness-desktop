@@ -1,5 +1,5 @@
 import { BookOpenCheck, FileText, Plus, RefreshCw, Search, Trash2, Upload } from 'lucide-react'
-import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { type DragEvent, type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   createKnowledgeBase,
   deleteKnowledgeBase,
@@ -25,11 +25,11 @@ export function KnowledgeBasePage({ endpoint, employeeId, teamId, accessToken }:
   const [documents, setDocuments] = useState<KnowledgeDocumentEntry[]>([])
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
-  const [referenceKey, setReferenceKey] = useState('')
   const [scope, setScope] = useState<KnowledgeBaseEntry['scope']>('PERSONAL')
   const [query, setQuery] = useState('')
   const [hits, setHits] = useState<KnowledgeSearchHit[]>([])
   const [busy, setBusy] = useState(false)
+  const [dragging, setDragging] = useState(false)
   const [error, setError] = useState('')
   const fileInput = useRef<HTMLInputElement>(null)
   const selected = bases.find((item) => item.id === selectedId)
@@ -74,9 +74,9 @@ export function KnowledgeBasePage({ endpoint, employeeId, teamId, accessToken }:
     setBusy(true); setError('')
     try {
       const value = await createKnowledgeBase(endpoint, employeeId, teamId, accessToken, {
-        name: name.trim(), description: description.trim(), referenceKey: referenceKey.trim(), scope,
+        name: name.trim(), description: description.trim(), referenceKey: '', scope,
       })
-      setBases((current) => [value, ...current]); setSelectedId(value.id); setName(''); setDescription(''); setReferenceKey('')
+      setBases((current) => [value, ...current]); setSelectedId(value.id); setName(''); setDescription('')
     } catch (reason) { setError(message(reason)) } finally { setBusy(false) }
   }
 
@@ -89,15 +89,24 @@ export function KnowledgeBasePage({ endpoint, employeeId, teamId, accessToken }:
     } catch (reason) { setError(message(reason)) } finally { setBusy(false) }
   }
 
-  const upload = async (file: File | undefined) => {
-    if (!selectedId || !file || busy) return
+  const upload = async (files: File[]) => {
+    if (!selectedId || files.length === 0 || busy) return
     setBusy(true); setError('')
     try {
-      const value = await uploadKnowledgeDocument(endpoint, employeeId, teamId, accessToken, selectedId, file)
-      setDocuments((current) => [value, ...current])
+      const values: KnowledgeDocumentEntry[] = []
+      for (const file of files.slice(0, 20)) {
+        values.push(await uploadKnowledgeDocument(endpoint, employeeId, teamId, accessToken, selectedId, file))
+      }
+      setDocuments((current) => [...values.reverse(), ...current])
     } catch (reason) { setError(message(reason)) } finally {
       setBusy(false); if (fileInput.current) fileInput.current.value = ''
     }
+  }
+
+  const dropFiles = (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    setDragging(false)
+    void upload([...event.dataTransfer.files])
   }
 
   const removeDocument = async (document: KnowledgeDocumentEntry) => {
@@ -131,7 +140,6 @@ export function KnowledgeBasePage({ endpoint, employeeId, teamId, accessToken }:
       <form onSubmit={create}>
         <strong><Plus size={14} />新建知识库</strong>
         <input aria-label="知识库名称" maxLength={120} onChange={(event) => setName(event.target.value)} placeholder="例如：跨境运营 SOP" value={name} />
-        <input aria-label="知识库引用标识" maxLength={64} onChange={(event) => setReferenceKey(event.target.value.toLowerCase())} pattern="[a-z][a-z0-9-]{2,63}" placeholder="引用标识，如 operations-sop" value={referenceKey} />
         <select aria-label="知识库范围" onChange={(event) => setScope(event.target.value as KnowledgeBaseEntry['scope'])} value={scope}>
           <option value="PERSONAL">个人</option><option disabled={!teamId.trim()} value="TEAM">团队 · {teamId || '未识别'}</option><option value="ORGANIZATION">全公司</option>
         </select>
@@ -149,12 +157,15 @@ export function KnowledgeBasePage({ endpoint, employeeId, teamId, accessToken }:
     <section className="knowledge-main">
       {!selected ? <div className="knowledge-welcome"><BookOpenCheck size={30} /><h2>企业知识库</h2><p>上传公司资料，让小胤在回答时引用可追溯的原文。</p></div> : <>
         <header><div><h2>{selected.name}</h2><p>{selected.description || '集中管理该主题的公司资料。'}</p></div><div>
-          <input accept=".pdf,.docx,.xlsx,.txt,.md,.markdown" onChange={(event) => void upload(event.target.files?.[0])} ref={fileInput} type="file" />
+          <input accept=".pdf,.docx,.xlsx,.txt,.md,.markdown" multiple onChange={(event) => void upload([...(event.target.files ?? [])])} ref={fileInput} type="file" />
           <button disabled={busy} onClick={() => fileInput.current?.click()} type="button"><Upload size={14} />上传文档</button>
           <button className="danger" disabled={busy} onClick={() => void removeBase()} title="删除知识库" type="button"><Trash2 size={14} /></button>
         </div></header>
         <form className="knowledge-search" onSubmit={search}><Search size={14} /><input onChange={(event) => setQuery(event.target.value)} placeholder="搜索当前知识库，验证索引与引用" value={query} /><button disabled={busy || !query.trim()} type="submit">检索</button></form>
         {hits.length > 0 && <div className="knowledge-hits">{hits.map((hit, index) => <article key={`${hit.documentId}-${index}`}><small>{hit.filename} · {hit.locator}</small><p>{hit.content}</p></article>)}</div>}
+        <div className={`knowledge-drop-zone${dragging ? ' dragging' : ''}`} onDragEnter={(event) => { event.preventDefault(); setDragging(true) }} onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false) }} onDragOver={(event) => event.preventDefault()} onDrop={dropFiles}>
+          <Upload size={17} /><span><strong>拖入文件即可上传</strong><small>一次最多 20 个文件，上传后自动索引</small></span>
+        </div>
         <div className="knowledge-documents"><div><strong>文档</strong><small>{documents.length} 个</small></div>
           {documents.map((document) => <article key={document.id}><FileText size={17} /><span><strong>{document.filename}</strong><small>{formatBytes(document.sizeBytes)} · {document.chunkCount} 个片段{document.failureMessage ? ` · ${document.failureMessage}` : ''}</small></span><em className={document.status.toLowerCase()}>{statusLabel(document.status)}</em><button disabled={busy || document.status === 'PROCESSING'} onClick={() => void reindex(document)} title="重建索引" type="button"><RefreshCw size={13} /></button><button className="danger" disabled={busy} onClick={() => void removeDocument(document)} title="删除文档" type="button"><Trash2 size={13} /></button></article>)}
           {documents.length === 0 && <div className="kit-empty">支持 PDF、DOCX、XLSX、TXT 和 Markdown，单个文件不超过 25 MiB</div>}

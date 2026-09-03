@@ -496,7 +496,7 @@ function connectorFromForm(form: AuthoringForm): ConnectorCatalogEntry {
 function manifestFromForm(kind: 'expert-kit' | 'skill', form: AuthoringForm, permissions: Record<string, PermissionMode>, selectedSkillIds: string[]): ExpertKitManifest {
   return {
     schemaVersion: kind === 'expert-kit' ? '2' : '1', kind, id: form.id, name: form.name, version: form.version, summary: form.summary, category: form.category as ExtensionCategory,
-    triggers: split(form.triggers), minimumDesktopVersion: '0.1.29', commands: [],
+    triggers: split(form.triggers), minimumDesktopVersion: '0.1.30', commands: [],
     skills: kind === 'expert-kit' && selectedSkillIds.length > 0
       ? selectedSkillIds.map((id) => ({ id, path: `skills/${id}/SKILL.md` }))
       : [{ id: kind === 'skill' ? form.id : 'main', path: kind === 'skill' ? 'SKILL.md' : 'skills/main/SKILL.md' }],

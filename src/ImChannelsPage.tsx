@@ -15,16 +15,12 @@ import {
 import { XiaoyinMascot } from './XiaoyinMascot'
 import type { LocalTaskRun } from './types'
 import { applyHarnessNotification, createTaskMonitor } from './harness'
-import { TaskMonitor } from './TaskMonitor'
+import { InlineTaskActivity } from './InlineTaskActivity'
 
 interface Props extends LocalImHarnessContext { localTasks: LocalTaskRun[] }
 
 const providers = [
   { id: 'DINGTALK', name: '钉钉', summary: '通过钉钉机器人接收并回复用户消息', tone: 'dingtalk' },
-  { id: 'FEISHU', name: '飞书', summary: '通过飞书机器人接收并回复用户消息', tone: 'feishu' },
-  { id: 'LARK', name: 'Lark', summary: '通过 Lark 机器人接收并回复用户消息', tone: 'feishu' },
-  { id: 'WECHAT', name: '微信', summary: '通过微信机器人接收并回复用户消息', tone: 'wechat' },
-  { id: 'WECOM', name: '企业微信', summary: '通过企业微信机器人接收并回复用户消息', tone: 'wecom' },
 ]
 
 export function ImChannelsPage(harness: Props) {
@@ -183,8 +179,7 @@ export function ImChannelsPage(harness: Props) {
   return <div className="im-channel-page local-im-page">
     <header className="local-im-intro">
       <div className="im-hero-avatars"><span><XiaoyinMascot size={38} variant="avatar" /></span><i><MessageCircle size={18} /></i></div>
-      <h2>IM 频道</h2>
-      <p>配置 IM 频道，让小胤接收来自钉钉、飞书等平台的消息。</p>
+      <p>连接钉钉机器人，让员工直接在公司 IM 中使用小胤。</p>
       <small>频道凭据仅保存在本机系统凭据库，不上传到控制中心。</small>
     </header>
 
@@ -193,7 +188,7 @@ export function ImChannelsPage(harness: Props) {
       const connected = dingTalk && status?.connected
       return <article key={provider.id}>
         <div className={`im-provider-icon ${provider.tone}`}><Bot size={20} /></div>
-        <div className="im-provider-copy"><div><h3>{provider.name}</h3>{connected && <em>已连接</em>}</div><p>{provider.summary}</p></div>
+        <div className="im-provider-copy"><div><h3>{provider.name}</h3>{connected && <em>已连接</em>}</div><p>{provider.summary}</p>{dingTalk && status?.configured && <small>{status.lastHeartbeatAt ? `最近心跳 ${new Date(status.lastHeartbeatAt).toLocaleTimeString('zh-CN', { hour12: false })}` : '正在等待连接心跳'}{status.pendingEventCount > 0 ? ` · ${status.pendingEventCount} 条消息待重试` : ''}</small>}</div>
         {dingTalk && status?.configured ? <div className="im-provider-actions">
           {status.accessPolicy === 'pairing' && <button onClick={() => setPairingOpen(true)} type="button">配对管理{status.pendingPairings.length > 0 ? ` (${status.pendingPairings.length})` : ''}</button>}
           <button aria-label="重新配置" onClick={openConfiguration} title="重新配置" type="button"><MoreHorizontal size={17} /></button>
@@ -249,7 +244,7 @@ export function ImChannelsPage(harness: Props) {
         <div className="im-message-history">{(conversation.messages ?? []).map((item) => <article className={item.role} key={item.id}><small>{item.role === 'user' ? conversation.senderNick || '员工' : '小胤'} · {new Date(item.createdAt).toLocaleString()}</small><p>{item.text}</p></article>)}
           {(conversation.messages ?? []).length === 0 && <div className="kit-empty">暂无可显示的历史消息</div>}
         </div>
-        <TaskMonitor capabilitySnapshot={boundTask?.capabilitySnapshot} monitor={monitor} />
+        <InlineTaskActivity finalResponse={conversation.lastMessage} monitor={monitor} />
       </section></div>
     })()}
   </div>

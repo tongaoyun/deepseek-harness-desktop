@@ -10,6 +10,8 @@ export function InlineTaskActivity({ monitor, finalResponse = '' }: { monitor: T
 
   useEffect(() => {
     if (monitor.status === 'running') setOpen(true)
+    else if (monitor.status === 'completed') setOpen(false)
+    else if (monitor.status === 'failed') setOpen(true)
   }, [monitor.status])
 
   useEffect(() => {

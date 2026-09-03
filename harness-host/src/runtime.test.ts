@@ -11,6 +11,16 @@ describe('local cross-session memory', () => {
 })
 
 describe('persisted session follow-ups', () => {
+  it('stops waiting when a turn never produces activity', async () => {
+    const client = {
+      prompt: async () => 'message-2',
+      subscribeSessionTree: () => ({ next: async () => new Promise<HarnessNotification>(() => undefined), close: () => undefined }),
+    }
+
+    await expect(runSessionTurn(client, 'session-1', [{ type: 'text', text: '继续' }], () => undefined, 10))
+      .rejects.toThrow('任务执行超过 1 秒')
+  })
+
   it('ignores a stale idle status until the new turn has actually started', async () => {
     const notifications: HarnessNotification[] = [
       event('agent/inbox/spliced', { inserted: [{ id: 'message-2' }] }),

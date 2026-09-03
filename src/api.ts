@@ -109,6 +109,16 @@ export async function createScheduledTask(
   return scheduleRequest(endpoint, employeeId, accessToken, '', 'POST', request)
 }
 
+export async function updateScheduledTask(
+  endpoint: string,
+  employeeId: string,
+  accessToken: string,
+  id: string,
+  request: CreateScheduledTaskRequest,
+): Promise<ScheduledTask> {
+  return scheduleRequest(endpoint, employeeId, accessToken, `/${encodeURIComponent(id)}`, 'PUT', request)
+}
+
 export async function changeScheduledTask(
   endpoint: string,
   employeeId: string,
@@ -348,7 +358,7 @@ async function scheduleRequest(
   employeeId: string,
   accessToken: string,
   suffix: string,
-  method: 'POST',
+  method: 'POST' | 'PUT',
   request?: CreateScheduledTaskRequest,
 ): Promise<ScheduledTask> {
   const response = await fetch(controlPlaneUrl(`${endpoint.replace(/\/$/, '')}${suffix}`), {

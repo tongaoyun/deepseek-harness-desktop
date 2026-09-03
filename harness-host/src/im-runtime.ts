@@ -44,6 +44,8 @@ export interface LocalImStatus {
   notifyTaskResults: boolean
   pendingPairings: PairingRequest[]
   conversations: ImConversationSummary[]
+  pendingEventCount: number
+  lastHeartbeatAt?: string
   lastError?: string
 }
 
@@ -153,6 +155,7 @@ export class LocalImRuntime {
   private configuration: DingTalkImConfiguration | undefined
   private connected = false
   private lastError: string | undefined
+  private lastHeartbeatAt: string | undefined
   private pendingPairings = new Map<string, PairingRequest>()
   private pairedConversations = new Set<string>()
   private knownEvents = new Set<string>()
@@ -204,6 +207,7 @@ export class LocalImRuntime {
       await client.connect()
       this.connected = client.connected
       this.lastError = undefined
+      this.lastHeartbeatAt = new Date().toISOString()
     } catch (error) {
       this.connected = false
       this.lastError = safeError(error)
@@ -211,7 +215,10 @@ export class LocalImRuntime {
     }
     this.connectionWatch = setInterval(() => {
       this.connected = Boolean(this.client?.connected)
-      if (this.connected) this.lastError = undefined
+      if (this.connected) {
+        this.lastError = undefined
+        this.lastHeartbeatAt = new Date().toISOString()
+      }
     }, 2_000)
     this.connectionWatch.unref()
     if (this.configuration.notifyTaskResults) {
@@ -230,6 +237,7 @@ export class LocalImRuntime {
         provider: 'DINGTALK', configured: false, connected: false,
         state: 'DISABLED', clientId: '', accessPolicy: 'pairing', pendingPairings: [], conversations: [],
         notifyTaskResults: false,
+        pendingEventCount: 0,
       }
     }
     return {
@@ -242,6 +250,8 @@ export class LocalImRuntime {
       notifyTaskResults: configuration.notifyTaskResults,
       pendingPairings: [...this.pendingPairings.values()],
       conversations: [...this.conversations.values()].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)).slice(0, 100),
+      pendingEventCount: this.pendingEvents.size,
+      ...(this.lastHeartbeatAt === undefined ? {} : { lastHeartbeatAt: this.lastHeartbeatAt }),
       ...(this.lastError === undefined ? {} : { lastError: this.lastError }),
     }
   }

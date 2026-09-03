@@ -32,7 +32,7 @@ describe('InlineTaskActivity', () => {
     const html = renderToStaticMarkup(<TaskArtifacts conversation artifacts={[
       { id: 'a', rootId: 'root', rootName: 'Downloads', path: 'report.xlsx', name: 'report.xlsx', kind: 'spreadsheet', sourceTool: 'office.xlsx.create', createdAt: '2026-09-03T10:00:00.000Z' },
     ]} />)
-    expect(html).toContain('处理了 1 个文件')
+    expect(html).toContain('生成了 1 个文件')
     expect(html).toContain('report.xlsx')
   })
 })

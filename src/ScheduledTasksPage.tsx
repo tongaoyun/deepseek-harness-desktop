@@ -1,6 +1,6 @@
-import { CalendarClock, Check, ChevronDown, Clock3, MoreHorizontal, Play, Plus, RefreshCw, Server, Trash2, X } from 'lucide-react'
+import { CalendarClock, Check, ChevronDown, Clock3, Download, MoreHorizontal, Pencil, Play, Plus, RefreshCw, Server, Trash2, X } from 'lucide-react'
 import { type FormEvent, useEffect, useMemo, useState } from 'react'
-import { changeScheduledTask, createScheduledTask, deleteScheduledTask, loadScheduledTaskExecutions, loadScheduledTasks } from './api'
+import { changeScheduledTask, createScheduledTask, createTaskRunArtifactDownload, deleteScheduledTask, loadScheduledTaskExecutions, loadScheduledTasks, updateScheduledTask } from './api'
 import { cronPresets, nextCronRuns } from './cronPreview'
 import { loadLocalImStatus, routeLocalImSchedule, type LocalImConversationSummary } from './localIm'
 import { parseNaturalSchedule } from './scheduleLanguage'
@@ -32,6 +32,7 @@ export function ScheduledTasksPage({ endpoint, employeeId, accessToken, onCreate
   const [imConversations, setImConversations] = useState<LocalImConversationSummary[]>([])
   const [deliveryConversationKey, setDeliveryConversationKey] = useState('')
   const [createOpen, setCreateOpen] = useState(false)
+  const [editingTask, setEditingTask] = useState<ScheduledTask>()
   const [view, setView] = useState<ScheduleView>('tasks')
   const [sort, setSort] = useState<SortOrder>('created-desc')
   const [menuId, setMenuId] = useState('')
@@ -62,15 +63,22 @@ export function ScheduledTasksPage({ endpoint, employeeId, accessToken, onCreate
     setSaving(true)
     setError('')
     try {
-      const task = await createScheduledTask(endpoint, employeeId, accessToken, {
+      const request = {
         name: name.trim() || '定时任务',
-        expertKitId: 'xiaoyin-agent',
-        workflowId: 'agent-prompt',
+        expertKitId: editingTask?.expertKitId ?? 'xiaoyin-agent',
+        workflowId: editingTask?.workflowId ?? 'agent-prompt',
         cronExpression: cronExpression.trim(),
         timeZone: timeZone.trim(),
-        inputs: { prompt: naturalLanguage.trim() },
-      })
-      setTasks((current) => [task, ...current])
+        inputs: editingTask && editingTask.workflowId !== 'agent-prompt'
+          ? editingTask.inputs
+          : { prompt: naturalLanguage.trim() },
+      }
+      const task = editingTask
+        ? await updateScheduledTask(endpoint, employeeId, accessToken, editingTask.id, request)
+        : await createScheduledTask(endpoint, employeeId, accessToken, request)
+      setTasks((current) => editingTask
+        ? current.map((item) => item.id === task.id ? task : item)
+        : [task, ...current])
       if (deliveryConversationKey) await routeLocalImSchedule(task.id, deliveryConversationKey)
       resetForm()
       setCreateOpen(false)
@@ -121,10 +129,33 @@ export function ScheduledTasksPage({ endpoint, employeeId, accessToken, onCreate
     setNaturalLanguage('')
     setParseSummary('')
     setDeliveryConversationKey('')
+    setEditingTask(undefined)
+  }
+
+  const openCreate = () => { resetForm(); setCreateOpen(true) }
+  const openEdit = (task: ScheduledTask) => {
+    setEditingTask(task)
+    setName(task.name)
+    setNaturalLanguage(taskDescription(task))
+    setCronExpression(task.cronExpression)
+    setTimeZone(task.timeZone)
+    setParseSummary('')
+    setDeliveryConversationKey('')
+    setMenuId('')
+    setCreateOpen(true)
+  }
+
+  const downloadArtifact = async (execution: ScheduledTaskExecution) => {
+    if (!execution.artifactObjectKey) return
+    setError('')
+    try {
+      const download = await createTaskRunArtifactDownload('/api/v1/task-runs', employeeId, accessToken, execution.runId)
+      window.open(download.url, '_blank', 'noopener,noreferrer')
+    } catch (reason) { setError(message(reason)) }
   }
 
   return <div className="schedule-page">
-    <header className="schedule-page-heading"><div><h1>定时任务</h1><p>按计划自动执行任务，也可随时手动触发。在任意对话中描述你想定期做的事，即可快速创建。</p></div><div><button aria-label="刷新任务" className="refresh-extension-button" disabled={loading} onClick={() => void refresh()} type="button"><RefreshCw className={loading ? 'spin' : ''} size={17} /></button><button className="schedule-create-with-ai" onClick={onCreateWithXiaoyin} type="button"><CalendarClock size={16} />通过小胤创建</button><button className="schedule-new-button" onClick={() => setCreateOpen(true)} type="button"><Plus size={17} />新建定时任务</button></div></header>
+    <header className="schedule-page-heading"><div><h1>定时任务</h1><p>按计划自动执行任务，也可随时手动触发。在任意对话中描述你想定期做的事，即可快速创建。</p></div><div><button aria-label="刷新任务" className="refresh-extension-button" disabled={loading} onClick={() => void refresh()} type="button"><RefreshCw className={loading ? 'spin' : ''} size={17} /></button><button className="schedule-create-with-ai" onClick={onCreateWithXiaoyin} type="button"><CalendarClock size={16} />通过小胤创建</button><button className="schedule-new-button" onClick={openCreate} type="button"><Plus size={17} />新建定时任务</button></div></header>
     <div className="schedule-server-note"><span><Server size={16} />任务在公司服务器运行，关闭电脑后仍会继续</span><strong><Check size={15} />云端持续运行</strong></div>
     <div className="schedule-toolbar"><div role="tablist"><button aria-selected={view === 'tasks'} className={view === 'tasks' ? 'active' : ''} onClick={() => setView('tasks')} role="tab" type="button">我的定时任务</button><button aria-selected={view === 'executions'} className={view === 'executions' ? 'active' : ''} onClick={() => void showExecutions()} role="tab" type="button">执行记录</button></div>{view === 'tasks' && <label className="schedule-sort"><select aria-label="任务排序" onChange={(event) => setSort(event.target.value as SortOrder)} value={sort}><option value="created-desc">按创建时间倒序</option><option value="created-asc">按创建时间正序</option><option value="name">按名称排序</option></select><ChevronDown size={14} /></label>}</div>
     {error && <div className="kit-error schedule-error">{error}</div>}
@@ -132,23 +163,23 @@ export function ScheduledTasksPage({ endpoint, employeeId, accessToken, onCreate
       {loading && <div className="kit-empty">正在读取云端任务…</div>}
       {!loading && tasks.length === 0 && <div className="kit-empty">还没有定时任务，点击右上角创建第一个。</div>}
       {sortedTasks.map((task) => <article className="schedule-card" key={task.id}>
-        <div className="schedule-card-top"><button aria-label={task.status === 'ACTIVE' ? '暂停任务' : '恢复任务'} className={`schedule-toggle ${task.status === 'ACTIVE' ? 'active' : ''}`} disabled={busyId === task.id} onClick={() => void operate(task, task.status === 'ACTIVE' ? 'pause' : 'resume')} type="button"><i /></button><div className="schedule-card-menu"><button aria-label="任务操作" onClick={() => setMenuId((current) => current === task.id ? '' : task.id)} type="button"><MoreHorizontal size={19} /></button>{menuId === task.id && <div><button disabled={busyId === task.id} onClick={() => void operate(task, 'run')} type="button"><Play size={15} />立即执行</button><button className="danger" disabled={busyId === task.id} onClick={() => void operate(task, 'delete')} type="button"><Trash2 size={15} />删除任务</button></div>}</div></div>
+        <div className="schedule-card-top"><button aria-label={task.status === 'ACTIVE' ? '暂停任务' : '恢复任务'} className={`schedule-toggle ${task.status === 'ACTIVE' ? 'active' : ''}`} disabled={busyId === task.id} onClick={() => void operate(task, task.status === 'ACTIVE' ? 'pause' : 'resume')} type="button"><i /></button><div className="schedule-card-menu"><button aria-label="任务操作" onClick={() => setMenuId((current) => current === task.id ? '' : task.id)} type="button"><MoreHorizontal size={19} /></button>{menuId === task.id && <div><button onClick={() => openEdit(task)} type="button"><Pencil size={15} />编辑任务</button><button disabled={busyId === task.id} onClick={() => void operate(task, 'run')} type="button"><Play size={15} />立即执行</button><button className="danger" disabled={busyId === task.id} onClick={() => void operate(task, 'delete')} type="button"><Trash2 size={15} />删除任务</button></div>}</div></div>
         <h3>{task.name}</h3><p>{taskDescription(task)}</p><footer><span><Clock3 size={15} />{cronLabel(task.cronExpression)} · {task.timeZone}</span><small>{task.expertKitId} / {task.workflowId}</small></footer>
       </article>)}
     </div> : <div className="schedule-execution-page">
       {executionsLoading && <div className="kit-empty">正在读取执行记录…</div>}
       {!executionsLoading && executionRows.length === 0 && <div className="kit-empty">还没有执行记录</div>}
-      {executionRows.map(({ task, execution }) => <article key={`${task.id}:${execution.runId}`}><span className={`execution-status ${execution.status.toLowerCase()}`}>{executionStatus(execution.status)}</span><div><strong>{task.name}</strong><small>{execution.runId}</small></div><time>{new Date(execution.startedAt).toLocaleString('zh-CN', { hour12: false })}</time></article>)}
+      {executionRows.map(({ task, execution }) => <article key={`${task.id}:${execution.runId}`}><span className={`execution-status ${execution.status.toLowerCase()}`}>{executionStatus(execution.status)}</span><div><strong>{task.name}</strong><small>{execution.runId}</small></div><time>{new Date(execution.startedAt).toLocaleString('zh-CN', { hour12: false })}</time>{execution.artifactObjectKey && <button aria-label="下载任务产物" onClick={() => void downloadArtifact(execution)} title="下载任务产物" type="button"><Download size={15} /></button>}</article>)}
     </div>}
     {createOpen && <div className="schedule-modal-backdrop" onMouseDown={() => setCreateOpen(false)} role="presentation"><form aria-modal="true" className="schedule-modal" onMouseDown={(event) => event.stopPropagation()} onSubmit={submit} role="dialog">
-      <button aria-label="关闭" className="schedule-modal-close" onClick={() => setCreateOpen(false)} type="button"><X size={20} /></button><header><h2>新建定时任务</h2><p>按计划自动执行任务，也可随时手动触发。</p></header>
+      <button aria-label="关闭" className="schedule-modal-close" onClick={() => { setCreateOpen(false); resetForm() }} type="button"><X size={20} /></button><header><h2>{editingTask ? '编辑定时任务' : '新建定时任务'}</h2><p>按计划自动执行任务，也可随时手动触发。</p></header>
       <label>任务名称<input maxLength={100} onChange={(event) => setName(event.target.value)} placeholder="描述你的任务" value={name} /></label>
         <div className="schedule-modal-time"><label>计划时间<select aria-label="计划频率" onChange={(event) => setCronExpression(event.target.value)} value={cronExpression}>{cronPresets.map((preset) => <option key={preset.expression} value={preset.expression}>{preset.label}</option>)}{!cronPresets.some((preset) => preset.expression === cronExpression) && <option value={cronExpression}>自然语言识别时间</option>}</select></label><label>时区<input onChange={(event) => setTimeZone(event.target.value)} value={timeZone} /></label></div>
         <label className="schedule-prompt-label"><span>让小胤帮你做什么… <button disabled={!naturalLanguage.trim()} onClick={parseSchedule} type="button">识别时间</button></span><textarea maxLength={10000} onChange={(event) => setNaturalLanguage(event.target.value)} placeholder="例如：每个工作日下午 6:30 汇总最新业务数据并给出异常提醒" required value={naturalLanguage} /></label>
         {parseSummary && <div className="schedule-parse-result">{parseSummary}</div>}
         <label>完成后推送到<select onChange={(event) => setDeliveryConversationKey(event.target.value)} value={deliveryConversationKey}><option value="">不推送到 IM</option>{imConversations.map((conversation) => <option key={conversation.conversationKey} value={conversation.conversationKey}>{conversation.conversationType === 'group' ? conversation.conversationTitle || '未命名群' : conversation.senderNick || '钉钉用户'}</option>)}</select></label>
         <small className="cron-hint">{upcomingRuns.length > 0 ? `接下来：${upcomingRuns.map((value) => value.toLocaleString('zh-CN', { timeZone, hour12: false })).join('、')}` : '执行时间或时区无效，请检查后再保存'}</small>
-      <footer><button className="secondary" onClick={() => setCreateOpen(false)} type="button">取消</button><button disabled={saving || !naturalLanguage.trim() || upcomingRuns.length === 0} type="submit">{saving ? '正在保存…' : '保存'}</button></footer>
+      <footer><button className="secondary" onClick={() => { setCreateOpen(false); resetForm() }} type="button">取消</button><button disabled={saving || !naturalLanguage.trim() || upcomingRuns.length === 0} type="submit">{saving ? '正在保存…' : editingTask ? '保存修改' : '保存'}</button></footer>
     </form></div>}
   </div>
 }
