@@ -199,6 +199,13 @@ pub struct DeveloperExtensionPackage {
     bytes: Vec<u8>,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeveloperExtensionDraft {
+    manifest: ExpertKitManifest,
+    instructions: String,
+}
+
 pub struct ExpertKitHarnessProfile {
     pub skill_directories: Vec<String>,
     pub connector_refs: Vec<String>,
@@ -344,6 +351,23 @@ pub fn create_developer_extension(
     request: CreateDeveloperExtensionRequest,
 ) -> Result<DeveloperExtensionPackage, String> {
     let manifest = request.manifest;
+    let bytes = build_developer_package(&manifest, &request.instructions)?;
+    let installed = install_package_bytes(
+        &extensions_root(&app)?.join(&manifest.kind),
+        &bytes,
+        Some(&manifest.kind),
+        Some(&manifest.id),
+        Some(&manifest.version),
+        None,
+        InstallSource::Developer,
+    )?;
+    Ok(DeveloperExtensionPackage { installed, bytes })
+}
+
+fn build_developer_package(
+    manifest: &ExpertKitManifest,
+    instructions: &str,
+) -> Result<Vec<u8>, String> {
     validate_artifact_kind(&manifest.kind)?;
     let manifest_path = if manifest.kind == "skill" {
         SKILL_MANIFEST_PATH
@@ -364,27 +388,64 @@ pub fn create_developer_extension(
     let encoder = GzEncoder::new(Vec::new(), Compression::default());
     let mut archive = tar::Builder::new(encoder);
     append_generated_file(&mut archive, manifest_path, &manifest_bytes)?;
-    append_generated_file(
-        &mut archive,
-        &instruction_path,
-        request.instructions.as_bytes(),
-    )?;
+    append_generated_file(&mut archive, &instruction_path, instructions.as_bytes())?;
     let encoder = archive
         .into_inner()
         .map_err(|error| format!("无法生成扩展制品：{error}"))?;
-    let bytes = encoder
+    encoder
         .finish()
-        .map_err(|error| format!("无法压缩扩展制品：{error}"))?;
-    let installed = install_package_bytes(
-        &extensions_root(&app)?.join(&manifest.kind),
-        &bytes,
-        Some(&manifest.kind),
-        Some(&manifest.id),
-        Some(&manifest.version),
-        None,
-        InstallSource::Developer,
-    )?;
-    Ok(DeveloperExtensionPackage { installed, bytes })
+        .map_err(|error| format!("无法压缩扩展制品：{error}"))
+}
+
+#[tauri::command]
+pub fn read_developer_extension(
+    app: tauri::AppHandle,
+    kind: String,
+    id: String,
+    version: String,
+) -> Result<DeveloperExtensionDraft, String> {
+    require_developer_install()?;
+    validate_artifact_kind(&kind)?;
+    validate_identifier(&id)?;
+    Version::parse(&version).map_err(|error| format!("扩展版本无效：{error}"))?;
+    let directory = extensions_root(&app)?.join(&kind).join(&id).join(&version);
+    let record = load_install_record(&directory)?;
+    if record.source != InstallSource::Developer {
+        return Err("只能编辑本机创建的扩展".to_string());
+    }
+    let manifest = load_and_validate_manifest(&directory, Some(&kind), Some(&id), Some(&version))?;
+    let instruction_path = if kind == "skill" {
+        directory.join("SKILL.md")
+    } else {
+        let skill = manifest
+            .skills
+            .first()
+            .ok_or_else(|| "专家套件至少需要一个 Skill".to_string())?;
+        validate_relative_path(Path::new(&skill.path))?;
+        directory.join(&skill.path)
+    };
+    let instructions = fs::read_to_string(&instruction_path)
+        .map_err(|error| format!("无法读取扩展说明：{error}"))?;
+    Ok(DeveloperExtensionDraft {
+        manifest,
+        instructions,
+    })
+}
+
+#[tauri::command]
+pub fn package_developer_extension(
+    app: tauri::AppHandle,
+    kind: String,
+    id: String,
+    version: String,
+) -> Result<DeveloperExtensionPackage, String> {
+    let directory = extensions_root(&app)?.join(&kind).join(&id).join(&version);
+    let draft = read_developer_extension(app, kind, id, version)?;
+    let bytes = build_developer_package(&draft.manifest, &draft.instructions)?;
+    Ok(DeveloperExtensionPackage {
+        installed: installed_kit(draft.manifest, &directory, InstallSource::Developer),
+        bytes,
+    })
 }
 
 fn append_generated_file<W: Write>(
@@ -637,6 +698,37 @@ pub fn remove_developer_expert_kit(
 }
 
 #[tauri::command]
+pub fn remove_developer_extension(
+    app: tauri::AppHandle,
+    kind: String,
+    id: String,
+    version: String,
+) -> Result<(), String> {
+    require_developer_install()?;
+    validate_artifact_kind(&kind)?;
+    validate_identifier(&id)?;
+    Version::parse(&version).map_err(|error| format!("扩展版本无效：{error}"))?;
+    let root = extensions_root(&app)?.join(&kind);
+    let directory = root.join(&id).join(&version);
+    let record = load_install_record(&directory)?;
+    if record.source != InstallSource::Developer {
+        return Err("只能删除本机创建的扩展".to_string());
+    }
+    fs::remove_dir_all(&directory).map_err(|error| format!("无法删除本地扩展：{error}"))?;
+    let extension_directory = root.join(id);
+    if extension_directory.exists()
+        && fs::read_dir(&extension_directory)
+            .map_err(|error| format!("无法检查扩展目录：{error}"))?
+            .next()
+            .is_none()
+    {
+        fs::remove_dir(&extension_directory)
+            .map_err(|error| format!("无法清理扩展目录：{error}"))?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
 pub fn remove_catalog_extension(
     app: tauri::AppHandle,
     id: String,
@@ -724,9 +816,23 @@ fn install_package_bytes(
         if final_directory.exists() {
             let existing_record = load_install_record(&final_directory)?;
             if existing_record.package_sha256 != digest {
-                return Err(
-                    "本地已存在内容不同的同版本套件，请提升 Manifest 版本后重试".to_string()
-                );
+                if source != InstallSource::Developer
+                    || existing_record.source != InstallSource::Developer
+                {
+                    return Err(
+                        "本地已存在内容不同的同版本套件，请提升 Manifest 版本后重试".to_string()
+                    );
+                }
+                write_install_record(&package_directory, &digest, source)?;
+                let backup = staging_directory.join("previous-version");
+                fs::rename(&final_directory, &backup)
+                    .map_err(|error| format!("无法暂存原本地扩展：{error}"))?;
+                if let Err(error) = fs::rename(&package_directory, &final_directory) {
+                    let _ = fs::rename(&backup, &final_directory);
+                    return Err(format!("无法更新本地扩展：{error}"));
+                }
+                let _ = fs::remove_dir_all(backup);
+                return Ok(installed_kit(manifest, &final_directory, source));
             }
             let existing = load_and_validate_manifest(
                 &final_directory,
@@ -1526,7 +1632,7 @@ mod tests {
     }
 
     #[test]
-    fn developer_package_records_source_and_rejects_same_version_collision() {
+    fn developer_package_records_source_and_replaces_same_version_draft() {
         assert!(
             !serde_json::to_string(&InstallRecord {
                 package_sha256: "a".repeat(64),
@@ -1573,7 +1679,7 @@ mod tests {
             &manifest.replace("验证平台能力", "不同内容"),
             b"# Platform check",
         );
-        let collision = install_package_bytes(
+        let updated = install_package_bytes(
             &root,
             &changed,
             Some("expert-kit"),
@@ -1582,9 +1688,22 @@ mod tests {
             None,
             InstallSource::Developer,
         )
+        .unwrap();
+        assert_eq!(updated.manifest.summary, "不同内容");
+        assert_eq!(updated.source, InstallSource::Developer);
+
+        let catalog_collision = install_package_bytes(
+            &root,
+            &package,
+            Some("expert-kit"),
+            None,
+            None,
+            None,
+            InstallSource::Catalog,
+        )
         .err()
         .unwrap();
-        assert!(collision.contains("同版本套件"));
+        assert!(catalog_collision.contains("同版本套件"));
         fs::remove_dir_all(root).unwrap();
     }
 

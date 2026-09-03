@@ -69,3 +69,9 @@ export function savePersonalConnector(employeeId: string, connector: ConnectorCa
   window.localStorage.setItem(storageKey(employeeId), JSON.stringify(values))
   return values
 }
+
+export function deletePersonalConnector(employeeId: string, id: string): ConnectorCatalogEntry[] {
+  const values = loadPersonalConnectors(employeeId).filter((item) => item.id !== id)
+  window.localStorage.setItem(storageKey(employeeId), JSON.stringify(values))
+  return values
+}
