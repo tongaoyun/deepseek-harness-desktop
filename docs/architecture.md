@@ -34,7 +34,7 @@
 └─────────────────────────────────────┘
 ```
 
-桌面不查询 Nacos、Temporal、PostgreSQL 或 MinIO 管理接口。目录与下载 URL 均由控制中心下发；独立 Skill 的下载流量可以使用控制中心提供的 Nacos 公开下载地址。
+桌面不查询 Nacos、Temporal、PostgreSQL 或 MinIO 管理接口。目录与 MinIO 短期下载 URL 均由控制中心下发。
 
 ## 仓库结构
 
@@ -55,8 +55,8 @@
 | 运行恢复 | 启动轻量 Host 探测 → 异常通知 → Harness 进程中止/清理 → 用户重新检测或重试任务；完整本地工具自检按需执行 |
 | 能力同步 | 并行拉取目录 → 分项诊断 → SQLite 持久缓存；失败项使用最近成功数据，缓存超过 7 天时阻止执行 |
 | 本地拖入 | 原生拖放事件 → 授权文件所在目录 → 加入当前任务上下文 |
-| 扩展安装 | 控制中心目录 → MinIO 专家套件或 Nacos Skill ZIP → SHA-256/Manifest/权限校验 → `extensions/<kind>/<id>/<version>` |
-| 扩展发布 | SDK 校验与依赖预检 → 专家套件发布到控制中心/MinIO；独立 Skill 发布到 Nacos Skill Registry |
+| 扩展安装 | 控制中心目录 → MinIO 专家套件或 Skill 制品 → SHA-256/Manifest/权限校验 → `extensions/<kind>/<id>/<version>` |
+| 扩展发布 | 桌面创作与试运行 → 控制中心审核 → 专家套件或 Skill 不可变制品发布到 MinIO |
 | MCP 接入 | `erp-mcp-gateway` 新增 Tool → 契约测试 → 部署并自动注册 Nacos MCP Registry → 控制中心动态投影 |
 | 连接器诊断 | 一次性 Harness Host → MCP 握手和 `tools/list` → 登记清单对比 → 立即关闭 |
 | 设备预检 | 原生探针 + Harness 本地工具自检 + 实时 MCP 诊断 → 去敏能力报告 → 控制中心组织总览 |
@@ -109,7 +109,7 @@
 
 ## 运行配置
 
-正式控制中心为 `http://192.168.2.67:30081`。LiteLLM、ERP MCP、扩展目录、知识库和任务端点由 Bootstrap 返回；MCP 与独立 Skill 目录由 Nacos AI Registry 动态刷新，桌面不硬编码业务 MCP。
+正式控制中心为 `http://192.168.2.67:30081`。LiteLLM、ERP MCP、扩展目录、知识库和任务端点由 Bootstrap 返回；仅 MCP 目录由 Nacos AI Registry 动态刷新，桌面不硬编码业务 MCP。
 
 ## 相关仓库
 

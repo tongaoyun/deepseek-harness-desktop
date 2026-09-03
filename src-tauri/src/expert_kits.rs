@@ -1863,7 +1863,7 @@ mod tests {
     }
 
     #[test]
-    fn nacos_skill_zip_with_top_level_directory_is_installed() {
+    fn skill_zip_with_top_level_directory_is_installed() {
         let manifest = r#"{
           "schemaVersion":"1","id":"document-insight","name":"文档洞察","version":"1.0.0",
           "summary":"分析员工授权的文档","triggers":["总结文档"],"minimumDesktopVersion":"0.1.9",
@@ -1883,7 +1883,7 @@ mod tests {
             .unwrap();
         let package = zip.finish().unwrap().into_inner();
         let root = std::env::temp_dir().join(format!(
-            "xiaoyin-nacos-skill-test-{}-{}",
+            "xiaoyin-skill-zip-test-{}-{}",
             std::process::id(),
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
