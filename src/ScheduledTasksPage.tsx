@@ -12,12 +12,13 @@ interface Props {
   employeeId: string
   accessToken: string
   expertKits: ExpertKitView[]
+  onCreateWithXiaoyin: () => void
 }
 
 type ScheduleView = 'tasks' | 'executions'
 type SortOrder = 'created-desc' | 'created-asc' | 'name'
 
-export function ScheduledTasksPage({ endpoint, employeeId, accessToken, expertKits }: Props) {
+export function ScheduledTasksPage({ endpoint, employeeId, accessToken, expertKits, onCreateWithXiaoyin }: Props) {
   const workflows = useMemo(() => expertKits.flatMap((kit) => (kit.serverWorkflows ?? []).map((workflow) => ({ kit, workflow }))), [expertKits])
   const [tasks, setTasks] = useState<ScheduledTask[]>([])
   const [selection, setSelection] = useState('')
@@ -136,7 +137,7 @@ export function ScheduledTasksPage({ endpoint, employeeId, accessToken, expertKi
   }
 
   return <div className="schedule-page">
-    <header className="schedule-page-heading"><div><h1>定时任务</h1><p>按计划自动执行任务，也可随时手动触发。在任意对话中描述你想定期做的事，即可快速创建。</p></div><div><button aria-label="刷新任务" className="refresh-extension-button" disabled={loading} onClick={() => void refresh()} type="button"><RefreshCw className={loading ? 'spin' : ''} size={17} /></button><button className="schedule-create-with-ai" onClick={() => setCreateOpen(true)} type="button"><CalendarClock size={16} />通过小胤创建</button><button className="schedule-new-button" onClick={() => setCreateOpen(true)} type="button"><Plus size={17} />新建定时任务</button></div></header>
+    <header className="schedule-page-heading"><div><h1>定时任务</h1><p>按计划自动执行任务，也可随时手动触发。在任意对话中描述你想定期做的事，即可快速创建。</p></div><div><button aria-label="刷新任务" className="refresh-extension-button" disabled={loading} onClick={() => void refresh()} type="button"><RefreshCw className={loading ? 'spin' : ''} size={17} /></button><button className="schedule-create-with-ai" onClick={onCreateWithXiaoyin} type="button"><CalendarClock size={16} />通过小胤创建</button><button className="schedule-new-button" onClick={() => setCreateOpen(true)} type="button"><Plus size={17} />新建定时任务</button></div></header>
     <div className="schedule-server-note"><span><Server size={16} />任务在公司服务器运行，关闭电脑后仍会继续</span><strong><Check size={15} />云端持续运行</strong></div>
     <div className="schedule-toolbar"><div role="tablist"><button aria-selected={view === 'tasks'} className={view === 'tasks' ? 'active' : ''} onClick={() => setView('tasks')} role="tab" type="button">我的定时任务</button><button aria-selected={view === 'executions'} className={view === 'executions' ? 'active' : ''} onClick={() => void showExecutions()} role="tab" type="button">执行记录</button></div>{view === 'tasks' && <label className="schedule-sort"><select aria-label="任务排序" onChange={(event) => setSort(event.target.value as SortOrder)} value={sort}><option value="created-desc">按创建时间倒序</option><option value="created-asc">按创建时间正序</option><option value="name">按名称排序</option></select><ChevronDown size={14} /></label>}</div>
     {error && <div className="kit-error schedule-error">{error}</div>}

@@ -76,6 +76,7 @@ import { memoryInstruction, rememberInstruction } from './memory'
 import { modelStorageKey, resolveSelectedModel } from './modelSelection'
 import { buildInvocationOptions, filterInvocationOptions, type InvocationOption } from './invocations'
 import { needsLocalDirectoryAuthorization } from './localFileIntent'
+import { creationPrompt, type XiaoyinCreationKind } from './creationPrompts'
 import { buildRuntimeConnectorCatalog, withDesktopBuiltinConnectors } from './connectors'
 import { loadEnabledConnectorIds, saveEnabledConnectorIds } from './connectorPreferences'
 import {
@@ -593,12 +594,12 @@ export default function App() {
     taskMonitorRef.current = next
     setTaskMonitor(next)
   }
-  const newTask = () => {
+  const startNewTask = (initialPrompt = '') => {
     setPage('chat')
     setTaskSearchOpen(false)
     setTaskQuery('')
     setMessages([])
-    setPrompt('')
+    setPrompt(initialPrompt)
     setHarnessSessionId('')
     setCurrentCapabilitySnapshot(undefined)
     setSelectedKnowledgeBaseRefs([])
@@ -613,6 +614,8 @@ export default function App() {
     void Promise.all([clearLocalDirectories(), shutdownHarness()])
     focusComposer()
   }
+  const newTask = () => startNewTask()
+  const createWithXiaoyin = (kind: XiaoyinCreationKind) => startNewTask(creationPrompt(kind))
   const persistLocalTask = (task: LocalTaskRun) => {
     if (!user) return
     setLocalTasks((current) => [task, ...current.filter((item) => item.id !== task.id)]
@@ -1210,7 +1213,10 @@ export default function App() {
                     ? '管理企业身份、个人记忆、快捷键与应用更新。'
                     : '这里将由控制中心下发公司自己的能力与权限配置。'}</p></div>{(page === 'experts' || page === 'skills' || page === 'connectors') && <ExtensionPageActions
               loading={expertKitsLoading}
-              onCreate={() => setAuthoringKind(page === 'experts' ? 'expert-kit' : page === 'skills' ? 'skill' : 'connector')}
+              onCreate={() => {
+                if (page === 'experts' || page === 'skills') createWithXiaoyin(page === 'experts' ? 'expert-kit' : 'skill')
+                else setAuthoringKind('connector')
+              }}
               onImportConnector={(connector) => {
                 if (!user) return
                 const values = connectorSecretValues(connector)
@@ -1269,6 +1275,7 @@ export default function App() {
               employeeId={user.userId}
               endpoint={bootstrap.endpoints.schedules}
               expertKits={expertKits}
+              onCreateWithXiaoyin={() => createWithXiaoyin('schedule')}
             />}
             {page === 'im' && bootstrap && user && <ImChannelsPage
               accessToken={accessToken}

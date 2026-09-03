@@ -23,6 +23,29 @@ describe('scheduled task user flow', () => {
 
   afterEach(() => container.remove())
 
+  it('routes AI creation into a new Xiaoyin conversation', async () => {
+    const onCreateWithXiaoyin = vi.fn()
+    const root = createRoot(container)
+    await act(async () => {
+      root.render(<ScheduledTasksPage
+        accessToken="token"
+        employeeId="employee-1"
+        endpoint="/api/v1/schedules"
+        expertKits={[]}
+        onCreateWithXiaoyin={onCreateWithXiaoyin}
+      />)
+      await Promise.resolve()
+    })
+
+    const createWithAI = [...container.querySelectorAll<HTMLButtonElement>('button')]
+      .find((button) => button.textContent === '通过小胤创建')!
+    await act(async () => createWithAI.click())
+
+    expect(onCreateWithXiaoyin).toHaveBeenCalledOnce()
+    expect(container.querySelector('.schedule-modal')).toBeNull()
+    await act(async () => root.unmount())
+  })
+
   it('selects a preset and previews upcoming executions', async () => {
     const root = createRoot(container)
     await act(async () => {
@@ -30,6 +53,7 @@ describe('scheduled task user flow', () => {
         accessToken="token"
         employeeId="employee-1"
         endpoint="/api/v1/schedules"
+        onCreateWithXiaoyin={() => undefined}
         expertKits={[{
           id: 'operations', name: '运营专家', version: '1.0.0', summary: '', category: 'ecommerce-retail', minimumDesktopVersion: '0.1.0',
           commandIds: [], skillIds: [], requiredTools: [], connectorRefs: [], knowledgeBaseRefs: [],
