@@ -2,6 +2,7 @@
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createScheduledTask } from './api'
 import { ScheduledTasksPage } from './ScheduledTasksPage'
 
 vi.mock('./api', () => ({
@@ -16,6 +17,7 @@ describe('scheduled task user flow', () => {
   let container: HTMLDivElement
 
   beforeEach(() => {
+    vi.clearAllMocks()
     Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
     container = document.createElement('div')
     document.body.append(container)
@@ -31,7 +33,6 @@ describe('scheduled task user flow', () => {
         accessToken="token"
         employeeId="employee-1"
         endpoint="/api/v1/schedules"
-        expertKits={[]}
         onCreateWithXiaoyin={onCreateWithXiaoyin}
       />)
       await Promise.resolve()
@@ -54,13 +55,6 @@ describe('scheduled task user flow', () => {
         employeeId="employee-1"
         endpoint="/api/v1/schedules"
         onCreateWithXiaoyin={() => undefined}
-        expertKits={[{
-          id: 'operations', name: '运营专家', version: '1.0.0', summary: '', category: 'ecommerce-retail', minimumDesktopVersion: '0.1.0',
-          commandIds: [], skillIds: [], requiredTools: [], connectorRefs: [], knowledgeBaseRefs: [],
-          permissions: { localFiles: 'deny', shell: 'deny', computerUse: 'deny', connectorRead: 'allow', connectorWrite: 'deny' },
-          sha256: 'fixture', connectorIssues: [], knowledgeIssues: [], installState: 'installed', readiness: 'ready', localOnly: false,
-          serverWorkflows: [{ id: 'daily', name: '日报', workflowType: 'StoreDailyReportWorkflow', version: '1', inputs: [], steps: [] }],
-        }]}
       />)
       await Promise.resolve()
     })
@@ -88,4 +82,42 @@ describe('scheduled task user flow', () => {
     expect(container.querySelector('.schedule-parse-result')?.textContent).toContain('18:30')
     await act(async () => root.unmount())
   })
+
+  it('creates a generic agent schedule without selecting an expert kit', async () => {
+    vi.mocked(createScheduledTask).mockResolvedValue({
+      id: 'schedule-1', name: '竞品追踪',
+      expertKitId: 'xiaoyin-agent', expertKitVersion: '1', workflowId: 'agent-prompt',
+      workflowType: 'AgentPromptWorkflow', workflowVersion: '1', cronExpression: '0 9 * * 1-5',
+      timeZone: 'Asia/Shanghai', inputs: { prompt: '整理竞品动态' }, status: 'ACTIVE',
+      createdAt: '2026-09-03T00:00:00Z', updatedAt: '2026-09-03T00:00:00Z',
+    })
+    const root = createRoot(container)
+    await act(async () => {
+      root.render(<ScheduledTasksPage accessToken="token" employeeId="employee-1"
+        endpoint="/api/v1/schedules" onCreateWithXiaoyin={() => undefined} />)
+      await Promise.resolve()
+    })
+    await act(async () => [...container.querySelectorAll<HTMLButtonElement>('button')]
+      .find((button) => button.textContent === '新建定时任务')!.click())
+    const name = container.querySelector<HTMLInputElement>('input[placeholder="描述你的任务"]')!
+    const prompt = container.querySelector<HTMLTextAreaElement>('textarea')!
+    await act(async () => {
+      setValue(name, '竞品追踪')
+      setValue(prompt, '整理竞品动态')
+    })
+    await act(async () => container.querySelector<HTMLFormElement>('form.schedule-modal')!
+      .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
+
+    expect(createScheduledTask).toHaveBeenCalledWith('/api/v1/schedules', 'employee-1', 'token', expect.objectContaining({
+      name: '竞品追踪', expertKitId: 'xiaoyin-agent', workflowId: 'agent-prompt',
+      inputs: { prompt: '整理竞品动态' },
+    }))
+    await act(async () => root.unmount())
+  })
 })
+
+function setValue(element: HTMLInputElement | HTMLTextAreaElement, value: string): void {
+  const prototype = element instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype
+  Object.getOwnPropertyDescriptor(prototype, 'value')!.set!.call(element, value)
+  element.dispatchEvent(new Event('input', { bubbles: true }))
+}

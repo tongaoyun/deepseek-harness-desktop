@@ -45,6 +45,8 @@ pub struct HarnessRunRequest {
     litellm_base_url: String,
     knowledge_endpoint: String,
     #[serde(default)]
+    schedule_endpoint: String,
+    #[serde(default)]
     connectors: Vec<ConnectorDefinition>,
     model: String,
     model_api_key: String,
@@ -161,6 +163,7 @@ pub(crate) struct RuntimeFingerprint {
     pub(crate) allowed_computer_tools: Vec<String>,
     pub(crate) litellm_base_url: String,
     pub(crate) knowledge_endpoint: String,
+    pub(crate) schedule_endpoint: String,
     pub(crate) employee_id: String,
     pub(crate) team_id: String,
     pub(crate) knowledge_base_refs: Option<Vec<String>>,
@@ -235,6 +238,7 @@ pub async fn run_harness(
         allowed_computer_tools: profile.allowed_computer_tools,
         litellm_base_url: request.litellm_base_url,
         knowledge_endpoint: request.knowledge_endpoint,
+        schedule_endpoint: request.schedule_endpoint,
         employee_id: request.employee_id.clone(),
         team_id: request.team_id,
         knowledge_base_refs: profile.knowledge_base_refs,
@@ -294,6 +298,7 @@ pub async fn diagnose_connectors(
         allowed_computer_tools: Vec::new(),
         litellm_base_url: String::new(),
         knowledge_endpoint: String::new(),
+        schedule_endpoint: String::new(),
         employee_id: String::new(),
         team_id: String::new(),
         knowledge_base_refs: Some(Vec::new()),
@@ -334,6 +339,7 @@ pub async fn self_test_local_capabilities(
         allowed_computer_tools: Vec::new(),
         litellm_base_url: String::new(),
         knowledge_endpoint: String::new(),
+        schedule_endpoint: String::new(),
         employee_id: String::new(),
         team_id: String::new(),
         knowledge_base_refs: Some(Vec::new()),
@@ -368,6 +374,7 @@ pub async fn probe_harness_host(app: tauri::AppHandle) -> Result<HarnessHostHeal
         allowed_computer_tools: Vec::new(),
         litellm_base_url: String::new(),
         knowledge_endpoint: String::new(),
+        schedule_endpoint: String::new(),
         employee_id: String::new(),
         team_id: String::new(),
         knowledge_base_refs: Some(Vec::new()),
@@ -540,6 +547,7 @@ impl HarnessProcess {
                 "XIAOYIN_KNOWLEDGE_ENDPOINT",
                 &fingerprint.knowledge_endpoint,
             )
+            .env("XIAOYIN_SCHEDULE_ENDPOINT", &fingerprint.schedule_endpoint)
             .env("XIAOYIN_KNOWLEDGE_BASE_REFS", knowledge_base_refs)
             .env("XIAOYIN_LOCAL_FILE_ROOTS", local_file_roots)
             .env("XIAOYIN_ATTACHMENT_ROOT", dsh_home.join("attachments"))
@@ -1014,6 +1022,7 @@ fn validate_run_request(request: &HarnessRunRequest) -> Result<(), String> {
     }
     validate_http_url("LiteLLM", &request.litellm_base_url)?;
     validate_http_url("知识库", &request.knowledge_endpoint)?;
+    validate_http_url("定时任务", &request.schedule_endpoint)?;
     validate_connector_catalog(&request.connectors)?;
     expert_kits::validate_allowed_artifacts(&request.allowed_artifacts)?;
     if request.attachments.len() > 16 {
@@ -1130,6 +1139,7 @@ mod tests {
             allowed_artifacts: Vec::new(),
             litellm_base_url: "http://litellm.internal/v1".to_string(),
             knowledge_endpoint: "http://control-plane.internal/api/v1/knowledge-bases".to_string(),
+            schedule_endpoint: "http://control-plane.internal/api/v1/schedules".to_string(),
             connectors: vec![ConnectorDefinition {
                 id: "erp-mcp".to_string(),
                 name: "ERP".to_string(),

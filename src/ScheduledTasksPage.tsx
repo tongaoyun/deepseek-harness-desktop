@@ -2,32 +2,27 @@ import { CalendarClock, Check, ChevronDown, Clock3, MoreHorizontal, Play, Plus, 
 import { type FormEvent, useEffect, useMemo, useState } from 'react'
 import { changeScheduledTask, createScheduledTask, deleteScheduledTask, loadScheduledTaskExecutions, loadScheduledTasks } from './api'
 import { cronPresets, nextCronRuns } from './cronPreview'
-import type { ExpertKitView } from './expertKits'
 import { loadLocalImStatus, routeLocalImSchedule, type LocalImConversationSummary } from './localIm'
 import { parseNaturalSchedule } from './scheduleLanguage'
-import type { ScheduledTask, ScheduledTaskExecution, ServerWorkflowInput } from './types'
+import type { ScheduledTask, ScheduledTaskExecution } from './types'
 
 interface Props {
   endpoint: string
   employeeId: string
   accessToken: string
-  expertKits: ExpertKitView[]
   onCreateWithXiaoyin: () => void
 }
 
 type ScheduleView = 'tasks' | 'executions'
 type SortOrder = 'created-desc' | 'created-asc' | 'name'
 
-export function ScheduledTasksPage({ endpoint, employeeId, accessToken, expertKits, onCreateWithXiaoyin }: Props) {
-  const workflows = useMemo(() => expertKits.flatMap((kit) => (kit.serverWorkflows ?? []).map((workflow) => ({ kit, workflow }))), [expertKits])
+export function ScheduledTasksPage({ endpoint, employeeId, accessToken, onCreateWithXiaoyin }: Props) {
   const [tasks, setTasks] = useState<ScheduledTask[]>([])
-  const [selection, setSelection] = useState('')
   const [name, setName] = useState('')
   const [naturalLanguage, setNaturalLanguage] = useState('')
   const [parseSummary, setParseSummary] = useState('')
   const [cronExpression, setCronExpression] = useState('0 9 * * 1-5')
   const [timeZone, setTimeZone] = useState(() => Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Shanghai')
-  const [inputs, setInputs] = useState<Record<string, unknown>>({})
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [busyId, setBusyId] = useState('')
@@ -41,10 +36,6 @@ export function ScheduledTasksPage({ endpoint, employeeId, accessToken, expertKi
   const [sort, setSort] = useState<SortOrder>('created-desc')
   const [menuId, setMenuId] = useState('')
 
-  useEffect(() => {
-    if (!selection && workflows.length > 0) setSelection(`${workflows[0].kit.id}:${workflows[0].workflow.id}`)
-  }, [selection, workflows])
-
   const refresh = async () => {
     setLoading(true)
     setError('')
@@ -56,7 +47,6 @@ export function ScheduledTasksPage({ endpoint, employeeId, accessToken, expertKi
   useEffect(() => { void refresh() }, [accessToken, employeeId, endpoint])
   useEffect(() => { void loadLocalImStatus().then((status) => setImConversations(status.enabled ? status.conversations : [])).catch(() => setImConversations([])) }, [])
 
-  const selected = workflows.find(({ kit, workflow }) => `${kit.id}:${workflow.id}` === selection)
   const upcomingRuns = useMemo(() => nextCronRuns(cronExpression, timeZone), [cronExpression, timeZone])
   const sortedTasks = useMemo(() => [...tasks].sort((left, right) => {
     if (sort === 'name') return left.name.localeCompare(right.name, 'zh-CN')
@@ -68,17 +58,17 @@ export function ScheduledTasksPage({ endpoint, employeeId, accessToken, expertKi
 
   const submit = async (event: FormEvent) => {
     event.preventDefault()
-    if (!selected || saving) return
+    if (!naturalLanguage.trim() || saving) return
     setSaving(true)
     setError('')
     try {
       const task = await createScheduledTask(endpoint, employeeId, accessToken, {
-        name: name.trim() || selected.workflow.name,
-        expertKitId: selected.kit.id,
-        workflowId: selected.workflow.id,
+        name: name.trim() || '定时任务',
+        expertKitId: 'xiaoyin-agent',
+        workflowId: 'agent-prompt',
         cronExpression: cronExpression.trim(),
         timeZone: timeZone.trim(),
-        inputs: normalizeInputs(selected.workflow.inputs, inputs, naturalLanguage),
+        inputs: { prompt: naturalLanguage.trim() },
       })
       setTasks((current) => [task, ...current])
       if (deliveryConversationKey) await routeLocalImSchedule(task.id, deliveryConversationKey)
@@ -92,11 +82,9 @@ export function ScheduledTasksPage({ endpoint, employeeId, accessToken, expertKi
     setError('')
     try {
       const parsed = parseNaturalSchedule(naturalLanguage)
-      const matched = workflows.find(({ workflow }) => naturalLanguage.includes(workflow.name)) ?? workflows.find(({ kit }) => naturalLanguage.includes(kit.name))
-      if (matched) setSelection(`${matched.kit.id}:${matched.workflow.id}`)
       if (!name.trim()) setName(parsed.name)
       setCronExpression(parsed.cronExpression)
-      setParseSummary(`已识别：${parsed.summary}${matched ? ` · ${matched.kit.name} / ${matched.workflow.name}` : ''}`)
+      setParseSummary(`已识别：${parsed.summary}`)
     } catch (reason) { setParseSummary(''); setError(message(reason)) }
   }
 
@@ -132,7 +120,6 @@ export function ScheduledTasksPage({ endpoint, employeeId, accessToken, expertKi
     setName('')
     setNaturalLanguage('')
     setParseSummary('')
-    setInputs({})
     setDeliveryConversationKey('')
   }
 
@@ -155,37 +142,15 @@ export function ScheduledTasksPage({ endpoint, employeeId, accessToken, expertKi
     </div>}
     {createOpen && <div className="schedule-modal-backdrop" onMouseDown={() => setCreateOpen(false)} role="presentation"><form aria-modal="true" className="schedule-modal" onMouseDown={(event) => event.stopPropagation()} onSubmit={submit} role="dialog">
       <button aria-label="关闭" className="schedule-modal-close" onClick={() => setCreateOpen(false)} type="button"><X size={20} /></button><header><h2>新建定时任务</h2><p>按计划自动执行任务，也可随时手动触发。</p></header>
-      {workflows.length === 0 ? <div className="kit-empty">已发布的专家套件尚未声明后台工作流</div> : <>
-        <label>任务名称<input maxLength={100} onChange={(event) => setName(event.target.value)} placeholder="描述你的任务" value={name} /></label>
-        <label>执行工作流<select value={selection} onChange={(event) => { setSelection(event.target.value); setInputs({}) }}>{workflows.map(({ kit, workflow }) => <option key={`${kit.id}:${workflow.id}`} value={`${kit.id}:${workflow.id}`}>{kit.name} · {workflow.name}</option>)}</select></label>
-        {(selected?.kit.connectorIssues.length ?? 0) > 0 && <div className="schedule-dependency-warning">依赖提醒（仍可创建）：{selected?.kit.connectorIssues.join('；')}</div>}
+      <label>任务名称<input maxLength={100} onChange={(event) => setName(event.target.value)} placeholder="描述你的任务" value={name} /></label>
         <div className="schedule-modal-time"><label>计划时间<select aria-label="计划频率" onChange={(event) => setCronExpression(event.target.value)} value={cronExpression}>{cronPresets.map((preset) => <option key={preset.expression} value={preset.expression}>{preset.label}</option>)}{!cronPresets.some((preset) => preset.expression === cronExpression) && <option value={cronExpression}>自然语言识别时间</option>}</select></label><label>时区<input onChange={(event) => setTimeZone(event.target.value)} value={timeZone} /></label></div>
-        <label className="schedule-prompt-label"><span>让小胤帮你做什么… <button disabled={!naturalLanguage.trim()} onClick={parseSchedule} type="button">识别时间</button></span><textarea maxLength={1000} onChange={(event) => setNaturalLanguage(event.target.value)} placeholder="例如：每个工作日下午 6:30 生成店铺日报，并把结果发到运营群" value={naturalLanguage} /></label>
+        <label className="schedule-prompt-label"><span>让小胤帮你做什么… <button disabled={!naturalLanguage.trim()} onClick={parseSchedule} type="button">识别时间</button></span><textarea maxLength={10000} onChange={(event) => setNaturalLanguage(event.target.value)} placeholder="例如：每个工作日下午 6:30 汇总最新业务数据并给出异常提醒" required value={naturalLanguage} /></label>
         {parseSummary && <div className="schedule-parse-result">{parseSummary}</div>}
-        {selected?.workflow.inputs.map((input) => <WorkflowInputField input={input} key={input.name} onChange={(value) => setInputs((current) => ({ ...current, [input.name]: value }))} value={inputs[input.name]} />)}
         <label>完成后推送到<select onChange={(event) => setDeliveryConversationKey(event.target.value)} value={deliveryConversationKey}><option value="">不推送到 IM</option>{imConversations.map((conversation) => <option key={conversation.conversationKey} value={conversation.conversationKey}>{conversation.conversationType === 'group' ? conversation.conversationTitle || '未命名群' : conversation.senderNick || '钉钉用户'}</option>)}</select></label>
         <small className="cron-hint">{upcomingRuns.length > 0 ? `接下来：${upcomingRuns.map((value) => value.toLocaleString('zh-CN', { timeZone, hour12: false })).join('、')}` : '执行时间或时区无效，请检查后再保存'}</small>
-      </>}
-      <footer><button className="secondary" onClick={() => setCreateOpen(false)} type="button">取消</button><button disabled={saving || workflows.length === 0} type="submit">{saving ? '正在保存…' : '保存'}</button></footer>
+      <footer><button className="secondary" onClick={() => setCreateOpen(false)} type="button">取消</button><button disabled={saving || !naturalLanguage.trim() || upcomingRuns.length === 0} type="submit">{saving ? '正在保存…' : '保存'}</button></footer>
     </form></div>}
   </div>
-}
-
-function WorkflowInputField({ input, value, onChange }: { input: ServerWorkflowInput; value: unknown; onChange: (value: unknown) => void }) {
-  if (input.type === 'boolean') return <label className="schedule-checkbox"><input checked={Boolean(value)} onChange={(event) => onChange(event.target.checked)} type="checkbox" />{input.label}</label>
-  return <label>{input.label}{input.required && <em>*</em>}<input onChange={(event) => onChange(event.target.value)} placeholder={input.description} required={input.required} type={input.type === 'date' ? 'date' : input.type === 'integer' ? 'number' : 'text'} value={typeof value === 'string' || typeof value === 'number' ? value : ''} /></label>
-}
-
-function normalizeInputs(definitions: ServerWorkflowInput[], values: Record<string, unknown>, prompt: string): Record<string, unknown> {
-  const normalized: Record<string, unknown> = {}
-  let promptAssigned = false
-  for (const input of definitions) {
-    let value = values[input.name]
-    if ((value === undefined || value === '') && input.type === 'string' && prompt.trim() && !promptAssigned) { value = prompt.trim(); promptAssigned = true }
-    if (value === undefined || value === '') { if (input.required) normalized[input.name] = value; continue }
-    normalized[input.name] = input.type === 'integer' ? Number(value) : value
-  }
-  return normalized
 }
 
 function taskDescription(task: ScheduledTask): string {

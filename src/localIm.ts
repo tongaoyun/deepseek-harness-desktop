@@ -8,6 +8,7 @@ export interface LocalImHarnessContext {
   teamId: string
   litellmBaseUrl: string
   knowledgeEndpoint: string
+  scheduleEndpoint: string
   connectors: ConnectorRuntimeDefinition[]
   allowedArtifacts: AllowedExtensionArtifact[]
   model: string

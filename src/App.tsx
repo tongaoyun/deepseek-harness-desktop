@@ -395,6 +395,7 @@ export default function App() {
       teamId: user.teamId,
       litellmBaseUrl: bootstrap.endpoints.litellm,
       knowledgeEndpoint: resolveControlPlaneEndpoint(bootstrap.endpoints.knowledge),
+      scheduleEndpoint: resolveControlPlaneEndpoint(bootstrap.endpoints.schedules),
       connectors: buildRuntimeConnectorCatalog(connectors, bootstrap.endpoints.erpMcp, enabledConnectorIds, connectorSecrets),
       allowedArtifacts,
       model: selectedModel || bootstrap.models[0] || 'deepseek-v4-flash',
@@ -820,6 +821,7 @@ export default function App() {
           : selectedSkill ? { selectedExtension: { kind: 'skill' as const, id: selectedSkill.id } } : {}),
         litellmBaseUrl: bootstrap.endpoints.litellm,
         knowledgeEndpoint: resolveControlPlaneEndpoint(bootstrap.endpoints.knowledge),
+        scheduleEndpoint: resolveControlPlaneEndpoint(bootstrap.endpoints.schedules),
         connectors: connectorsForSnapshot(capabilitySnapshot, connectorSecrets),
         allowedArtifacts: capabilitySnapshot.extensions,
         knowledgeBaseRefs: capabilitySnapshot.knowledgeBaseRefs,
@@ -1036,6 +1038,7 @@ export default function App() {
           teamId: user.teamId,
           litellmBaseUrl: bootstrap.endpoints.litellm,
           knowledgeEndpoint: resolveControlPlaneEndpoint(bootstrap.endpoints.knowledge),
+          scheduleEndpoint: resolveControlPlaneEndpoint(bootstrap.endpoints.schedules),
           connectors: runtimeConnectors,
           allowedArtifacts,
           model: activeModel,
@@ -1071,6 +1074,7 @@ export default function App() {
           teamId: user.teamId,
           litellmBaseUrl: bootstrap.endpoints.litellm,
           knowledgeEndpoint: resolveControlPlaneEndpoint(bootstrap.endpoints.knowledge),
+          scheduleEndpoint: resolveControlPlaneEndpoint(bootstrap.endpoints.schedules),
           connectors: runtimeConnectors,
           allowedArtifacts,
           model: activeModel,
@@ -1146,6 +1150,7 @@ export default function App() {
         teamId: user!.teamId,
         litellmBaseUrl: bootstrap.endpoints.litellm,
         knowledgeEndpoint: resolveControlPlaneEndpoint(bootstrap.endpoints.knowledge),
+        scheduleEndpoint: resolveControlPlaneEndpoint(bootstrap.endpoints.schedules),
         connectors: runtimeConnectors,
         allowedArtifacts,
         model: activeModel,
@@ -1324,7 +1329,6 @@ export default function App() {
               accessToken={accessToken}
               employeeId={user.userId}
               endpoint={bootstrap.endpoints.schedules}
-              expertKits={expertKits}
               onCreateWithXiaoyin={() => createWithXiaoyin('schedule')}
             />}
             {page === 'im' && bootstrap && user && <ImChannelsPage
@@ -1335,6 +1339,7 @@ export default function App() {
               allowedArtifacts={allowedArtifacts}
               litellmBaseUrl={bootstrap.endpoints.litellm}
               knowledgeEndpoint={resolveControlPlaneEndpoint(bootstrap.endpoints.knowledge)}
+              scheduleEndpoint={resolveControlPlaneEndpoint(bootstrap.endpoints.schedules)}
               model={activeModel}
               modelApiKey={bootstrap.modelApiKey}
               localTasks={localTasks}
@@ -1354,6 +1359,7 @@ export default function App() {
           teamId: user.teamId,
           litellmBaseUrl: bootstrap.endpoints.litellm,
           knowledgeEndpoint: resolveControlPlaneEndpoint(bootstrap.endpoints.knowledge),
+          scheduleEndpoint: resolveControlPlaneEndpoint(bootstrap.endpoints.schedules),
           connectors: runtimeConnectors,
           allowedArtifacts,
           model: activeModel,

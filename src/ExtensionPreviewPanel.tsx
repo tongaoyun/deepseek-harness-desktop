@@ -15,6 +15,7 @@ export interface ExtensionPreviewConfig {
   teamId: string
   litellmBaseUrl: string
   knowledgeEndpoint: string
+  scheduleEndpoint: string
   connectors: ConnectorRuntimeDefinition[]
   allowedArtifacts: AllowedExtensionArtifact[]
   model: string
@@ -111,6 +112,7 @@ export function ExtensionPreviewPanel({ target, config, unavailableReason, onRun
         allowedArtifacts: config.allowedArtifacts,
         litellmBaseUrl: config.litellmBaseUrl,
         knowledgeEndpoint: config.knowledgeEndpoint,
+        scheduleEndpoint: config.scheduleEndpoint,
         connectors: config.connectors,
         model: config.model,
         modelApiKey: config.modelApiKey,

@@ -22,6 +22,7 @@ export interface HarnessRunInput {
   allowedArtifacts: AllowedExtensionArtifact[]
   litellmBaseUrl: string
   knowledgeEndpoint: string
+  scheduleEndpoint: string
   connectors: ConnectorRuntimeDefinition[]
   model: string
   modelApiKey: string
