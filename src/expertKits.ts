@@ -62,9 +62,14 @@ export async function installDeveloperExpertKit(): Promise<InstalledExpertKit | 
   return invoke<InstalledExpertKit | null>('install_developer_expert_kit')
 }
 
-export async function createDeveloperExtension(manifest: ExpertKitManifest, instructions: string): Promise<{ installed: InstalledExpertKit; bytes: number[] }> {
+export interface DeveloperSkillSource {
+  id: string
+  version: string
+}
+
+export async function createDeveloperExtension(manifest: ExpertKitManifest, instructions: string, skillSources: DeveloperSkillSource[] = []): Promise<{ installed: InstalledExpertKit; bytes: number[] }> {
   if (!isTauri()) throw new Error('请在小胤桌面客户端中创建扩展')
-  return invoke('create_developer_extension', { request: { manifest, instructions } })
+  return invoke('create_developer_extension', { request: { manifest, instructions, skillSources } })
 }
 
 export interface DeveloperExtensionDraft {
