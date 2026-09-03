@@ -43,6 +43,7 @@ import {
 import {
   authorizeLocalDirectory,
   authorizeDroppedPaths,
+  authorizeStandardLocalDirectories,
   applyHarnessNotification,
   cancelHarness,
   clearLocalDirectories,
@@ -75,7 +76,7 @@ import type { LocalTaskRun, TaskExecutionStep, TaskMessage, TaskMonitorState } f
 import { memoryInstruction, rememberInstruction } from './memory'
 import { modelStorageKey, resolveSelectedModel } from './modelSelection'
 import { buildInvocationOptions, filterInvocationOptions, type InvocationOption } from './invocations'
-import { needsLocalDirectoryAuthorization } from './localFileIntent'
+import { needsLocalDirectoryAuthorization, standardLocalDirectories } from './localFileIntent'
 import { creationPrompt, type XiaoyinCreationKind } from './creationPrompts'
 import { buildRuntimeConnectorCatalog, withDesktopBuiltinConnectors } from './connectors'
 import { loadEnabledConnectorIds, saveEnabledConnectorIds } from './connectorPreferences'
@@ -708,24 +709,23 @@ export default function App() {
       return
     }
     let taskDirectories = localDirectories
-    let taskSessionId = harnessSessionId
-    if (taskDirectories.length === 0 && needsLocalDirectoryAuthorization(input)) {
+    const taskSessionId = harnessSessionId
+    const standardDirectories = standardLocalDirectories(input)
+    if (standardDirectories.length > 0) {
       setLocalFileError('')
       try {
-        const authorization = await authorizeLocalDirectory()
-        if (!authorization) {
-          setLocalFileError('需要先选择允许小胤访问的文件夹，任务内容已保留。')
-          return
-        }
-        taskDirectories = [authorization]
-        taskSessionId = ''
+        const authorizations = await authorizeStandardLocalDirectories(standardDirectories)
+        const additions = authorizations.filter((next) => !taskDirectories.some((item) => item.id === next.id))
+        taskDirectories = [...taskDirectories, ...additions]
         setLocalDirectories(taskDirectories)
-        setHarnessSessionId('')
-        await shutdownHarness()
+        if (additions.length > 0) await shutdownHarness()
       } catch (error) {
         setLocalFileError(error instanceof Error ? error.message : String(error))
         return
       }
+    } else if (taskDirectories.length === 0 && needsLocalDirectoryAuthorization(input)) {
+      setLocalFileError('请先在输入框下方选择工作目录，任务内容已保留。')
+      return
     }
     const now = new Date().toISOString()
     const capabilitySnapshot = currentCapabilitySnapshot

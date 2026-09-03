@@ -1,10 +1,11 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
     collections::HashSet,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
 };
+use tauri::Manager;
 use tauri_plugin_dialog::DialogExt;
 
 const MAX_AUTHORIZED_DIRECTORIES: usize = 8;
@@ -28,6 +29,12 @@ pub struct AuthorizedDirectoryView {
     name: String,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StandardDirectoryRequest {
+    directories: Vec<String>,
+}
+
 #[tauri::command]
 pub async fn authorize_local_directory(
     app: tauri::AppHandle,
@@ -48,6 +55,35 @@ pub async fn authorize_local_directory(
         .into_path()
         .map_err(|error| format!("选择的文件夹路径无效：{error}"))?;
     authorizations.authorize(path).map(Some)
+}
+
+#[tauri::command]
+pub fn authorize_standard_local_directories(
+    app: tauri::AppHandle,
+    authorizations: tauri::State<'_, LocalFileAuthorizations>,
+    request: StandardDirectoryRequest,
+) -> Result<Vec<AuthorizedDirectoryView>, String> {
+    if request.directories.len() > 3 {
+        return Err("系统目录请求数量无效".to_string());
+    }
+    let mut views = Vec::new();
+    for directory in request.directories {
+        let path = match directory.as_str() {
+            "downloads" => app.path().download_dir(),
+            "desktop" => app.path().desktop_dir(),
+            "documents" => app.path().document_dir(),
+            _ => return Err(format!("不支持的系统目录：{directory}")),
+        }
+        .map_err(|error| format!("无法确定系统目录：{error}"))?;
+        let view = authorizations.authorize(path)?;
+        if !views
+            .iter()
+            .any(|item: &AuthorizedDirectoryView| item.id == view.id)
+        {
+            views.push(view);
+        }
+    }
+    Ok(views)
 }
 
 #[tauri::command]

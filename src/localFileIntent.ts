@@ -3,6 +3,17 @@ const FILE_ACTION = /(?:看(?:下|看)?|查看|列出|读取|打开|查找|搜�
 const EXPLICIT_PATH = /(?:^|\s)(?:~[\\/]|\/(?:Users|home|tmp|Volumes)\/|[A-Za-z]:[\\/])/i
 const FILE_OUTPUT = /(?:生成|保存|导出|创建|新建).{0,16}(?:文件|文档|表格|PDF|Excel|Word|PPT)/i
 
+export type StandardLocalDirectory = 'downloads' | 'desktop' | 'documents'
+
+/** A named system directory in the prompt is itself an explicit task scope. */
+export function standardLocalDirectories(input: string): StandardLocalDirectory[] {
+  const directories: StandardLocalDirectory[] = []
+  if (/(?:下载(?:目录|文件夹)?|Downloads?)/i.test(input)) directories.push('downloads')
+  if (/(?:桌面|Desktop)/i.test(input)) directories.push('desktop')
+  if (/(?:文档(?:目录|文件夹)?|Documents?)/i.test(input)) directories.push('documents')
+  return directories
+}
+
 /** Returns true when a task cannot proceed without a user-approved local directory. */
 export function needsLocalDirectoryAuthorization(input: string): boolean {
   const normalized = input.trim()

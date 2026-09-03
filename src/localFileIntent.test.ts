@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { needsLocalDirectoryAuthorization } from './localFileIntent'
+import { needsLocalDirectoryAuthorization, standardLocalDirectories } from './localFileIntent'
 
 describe('needsLocalDirectoryAuthorization', () => {
   it.each([
@@ -19,5 +19,11 @@ describe('needsLocalDirectoryAuthorization', () => {
     '帮我写一份周报',
   ])('does not interrupt a non-file task: %s', (input) => {
     expect(needsLocalDirectoryAuthorization(input)).toBe(false)
+  })
+
+  it('resolves named system directories without a folder picker', () => {
+    expect(standardLocalDirectories('看下下载目录和桌面有哪些文件')).toEqual(['downloads', 'desktop'])
+    expect(standardLocalDirectories('read Documents')).toEqual(['documents'])
+    expect(standardLocalDirectories('看看本地文件')).toEqual([])
   })
 })

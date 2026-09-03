@@ -9,6 +9,7 @@ import type {
   TaskMonitorState,
   TaskTimelineEntry,
 } from './types'
+import type { StandardLocalDirectory } from './localFileIntent'
 
 export interface HarnessRunInput {
   prompt: string
@@ -93,6 +94,15 @@ export function connectorDiagnosticsAvailable(): boolean {
 export async function authorizeLocalDirectory(): Promise<AuthorizedLocalDirectory | null> {
   if (!isTauri()) throw new Error('本地文件夹授权只能在小胤桌面客户端中使用')
   return invoke<AuthorizedLocalDirectory | null>('authorize_local_directory')
+}
+
+export async function authorizeStandardLocalDirectories(
+  directories: StandardLocalDirectory[],
+): Promise<AuthorizedLocalDirectory[]> {
+  if (!isTauri() || directories.length === 0) return []
+  return invoke<AuthorizedLocalDirectory[]>('authorize_standard_local_directories', {
+    request: { directories },
+  })
 }
 
 export async function revokeLocalDirectory(id: string): Promise<void> {
