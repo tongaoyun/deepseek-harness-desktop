@@ -75,6 +75,7 @@ import type { LocalTaskRun, TaskExecutionStep, TaskMessage, TaskMonitorState } f
 import { memoryInstruction, rememberInstruction } from './memory'
 import { modelStorageKey, resolveSelectedModel } from './modelSelection'
 import { buildInvocationOptions, filterInvocationOptions, type InvocationOption } from './invocations'
+import { needsLocalDirectoryAuthorization } from './localFileIntent'
 import { buildRuntimeConnectorCatalog, withDesktopBuiltinConnectors } from './connectors'
 import { loadEnabledConnectorIds, saveEnabledConnectorIds } from './connectorPreferences'
 import {
@@ -702,6 +703,26 @@ export default function App() {
       }
       return
     }
+    let taskDirectories = localDirectories
+    let taskSessionId = harnessSessionId
+    if (taskDirectories.length === 0 && needsLocalDirectoryAuthorization(input)) {
+      setLocalFileError('')
+      try {
+        const authorization = await authorizeLocalDirectory()
+        if (!authorization) {
+          setLocalFileError('需要先选择允许小胤访问的文件夹，任务内容已保留。')
+          return
+        }
+        taskDirectories = [authorization]
+        taskSessionId = ''
+        setLocalDirectories(taskDirectories)
+        setHarnessSessionId('')
+        await shutdownHarness()
+      } catch (error) {
+        setLocalFileError(error instanceof Error ? error.message : String(error))
+        return
+      }
+    }
     const now = new Date().toISOString()
     const capabilitySnapshot = currentCapabilitySnapshot
       ?? createCapabilitySnapshot(expertKits, skillViews, runtimeConnectors, selectedKnowledgeBaseRefs, now)
@@ -723,7 +744,7 @@ export default function App() {
       status: 'RUNNING',
       createdAt: existingTask?.createdAt ?? now,
       updatedAt: now,
-      sessionId: harnessSessionId || existingTask?.sessionId,
+      sessionId: taskSessionId || existingTask?.sessionId,
       expertKitId: selectedExpertKit?.id,
       skillId: selectedSkill?.id,
       model: activeModel,
@@ -749,7 +770,7 @@ export default function App() {
         prompt: input,
         employeeId: user!.userId,
         teamId: user!.teamId,
-        ...(harnessSessionId ? { sessionId: harnessSessionId } : {}),
+        ...(taskSessionId ? { sessionId: taskSessionId } : {}),
         ...(selectedExpertKit
           ? { selectedExtension: { kind: 'expert-kit' as const, id: selectedExpertKit.id } }
           : selectedSkill ? { selectedExtension: { kind: 'skill' as const, id: selectedSkill.id } } : {}),
@@ -761,7 +782,7 @@ export default function App() {
         model: activeModel,
         modelApiKey: bootstrap.modelApiKey,
         accessToken,
-        localFileRootIds: localDirectories.map((directory) => directory.id),
+        localFileRootIds: taskDirectories.map((directory) => directory.id),
       })
       setHarnessSessionId(result.sessionId)
       const completedMessages = pendingMessages.map((message, index) => index === pendingMessages.length - 1

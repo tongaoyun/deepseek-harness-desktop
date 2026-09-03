@@ -2,8 +2,8 @@ import { Bot, ChevronDown, CirclePlus, CircleStop, FolderOpen, Send, Sparkles, S
 import { lazy, Suspense, type FormEvent, type RefObject } from 'react'
 import type { AuthorizedLocalDirectory } from './harness'
 import type { InvocationOption } from './invocations'
+import { InlineTaskActivity } from './InlineTaskActivity'
 import { modelDisplayName } from './modelSelection'
-import { TaskMonitor } from './TaskMonitor'
 import type { CapabilitySnapshot, KnowledgeBaseEntry, RuntimeStatus, TaskMessage, TaskMonitorState } from './types'
 import { XiaoyinMascot } from './XiaoyinMascot'
 
@@ -56,10 +56,10 @@ export function ChatPage(props: Props) {
     </div>}
     {props.messages.length > 0 && <div className="message-list" ref={props.messageListRef}>{props.messages.map((message, index) => {
       const retryable = message.role === 'assistant' && index === props.messages.length - 1 && !message.pending && (message.text.startsWith('执行失败：') || message.text.startsWith('任务已取消'))
-      const visibleText = message.pending ? props.taskMonitor.activity : message.text
-      return <article className={`message ${message.role}${message.pending ? ' pending' : ''}`} key={`${message.role}-${index}`}><span className="message-avatar">{message.role === 'user' ? '你' : <XiaoyinMascot size={29} variant="avatar" />}</span><div><small>{message.role === 'user' ? '你' : '小胤'}</small><Suspense fallback={<p>{visibleText}</p>}><RichMessage assistant={message.role === 'assistant'} onRegenerate={message.role === 'assistant' && !message.pending ? props.onPrepareRetry : undefined} text={visibleText} /></Suspense>{retryable && <button className="retry-task" onClick={props.onPrepareRetry} type="button">修改后重新执行</button>}</div></article>
+      const visibleText = message.pending ? '正在处理…' : message.text
+      const showTaskActivity = message.role === 'assistant' && index === props.messages.length - 1
+      return <article className={`message ${message.role}${message.pending ? ' pending' : ''}`} key={`${message.role}-${index}`}><span className="message-avatar">{message.role === 'user' ? '你' : <XiaoyinMascot size={29} variant="avatar" />}</span><div><small>{message.role === 'user' ? '你' : '小胤'}</small><Suspense fallback={<p>{visibleText}</p>}><RichMessage assistant={message.role === 'assistant'} onRegenerate={message.role === 'assistant' && !message.pending ? props.onPrepareRetry : undefined} text={visibleText} /></Suspense>{showTaskActivity && <InlineTaskActivity monitor={props.taskMonitor} />}{retryable && <button className="retry-task" onClick={props.onPrepareRetry} type="button">修改后重新执行</button>}</div></article>
     })}</div>}
-    {props.messages.length > 0 && <TaskMonitor capabilitySnapshot={props.capabilitySnapshot} monitor={props.taskMonitor} />}
     {props.harnessHealth === 'degraded' && <div className="runtime-recovery"><CircleStop size={17} /><span><strong>本地 Agent 暂不可用</strong><small>{props.harnessHealthDetail}</small></span><button onClick={props.onRecoverHarness} type="button">重新检测</button></div>}
     <form className="composer" onSubmit={props.onSubmit}>
       <textarea aria-label="给小胤发送消息" onChange={(event) => props.onPrompt(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); event.currentTarget.form?.requestSubmit() } }} placeholder="描述任务，/ 快捷调用，@ 添加上下文" ref={props.composerRef} value={props.prompt} />
