@@ -156,6 +156,7 @@ export default function App() {
   const [failedCloudRuns, setFailedCloudRuns] = useState<CloudTaskRun[]>([])
   const [taskMonitor, setTaskMonitor] = useState<TaskMonitorState>(createTaskMonitor)
   const taskMonitorRef = useRef<TaskMonitorState>(taskMonitor)
+  const extensionPreviewRunningRef = useRef(false)
   const [localDirectories, setLocalDirectories] = useState<AuthorizedLocalDirectory[]>([])
   const [localFileError, setLocalFileError] = useState('')
   const [selectedModel, setSelectedModel] = useState('')
@@ -412,7 +413,7 @@ export default function App() {
     let disposed = false
     let unlisten: () => void = () => undefined
     void listenHarnessNotifications((notification) => {
-      if (!disposed) {
+      if (!disposed && !extensionPreviewRunningRef.current) {
         const next = applyHarnessNotification(taskMonitorRef.current, notification)
         taskMonitorRef.current = next
         setTaskMonitor(next)
@@ -1240,20 +1241,42 @@ export default function App() {
           </section>
         )}
       </main>
-      {authoringKind && user && <ExtensionAuthoringModal accessToken={accessToken} connectors={connectors} employeeId={user.userId} initialKind={authoringKind} skills={skillViews} onClose={() => setAuthoringKind(undefined)} onChanged={async (change) => {
-        if (change.type === 'connector-upsert') {
-          const connector = change.connector
-          const next = [connector, ...connectors.filter((item) => item.id !== connector.id)]
-          extensionCacheRef.current.connectors = next
-          setConnectors(next)
-          setEnabledConnectorIds((current) => saveEnabledConnectorIds(user.userId, [...current, connector.id]))
-        } else if (change.type === 'connector-delete') {
-          const next = connectors.filter((item) => item.id !== change.id)
-          extensionCacheRef.current.connectors = next
-          setConnectors(next)
-          setEnabledConnectorIds((current) => saveEnabledConnectorIds(user.userId, current.filter((id) => id !== change.id)))
-        } else await refreshInstalledKits()
-      }} />}
+      {authoringKind && user && <ExtensionAuthoringModal
+        accessToken={accessToken}
+        connectors={connectors}
+        employeeId={user.userId}
+        initialKind={authoringKind}
+        onClose={() => setAuthoringKind(undefined)}
+        onPreviewRunningChange={(running) => { extensionPreviewRunningRef.current = running }}
+        previewConfig={!harnessRunning && runtimeStatus === 'ready' && bootstrap ? {
+          employeeId: user.userId,
+          teamId: user.teamId,
+          litellmBaseUrl: bootstrap.endpoints.litellm,
+          knowledgeEndpoint: resolveControlPlaneEndpoint(bootstrap.endpoints.knowledge),
+          connectors: runtimeConnectors,
+          allowedArtifacts,
+          model: activeModel,
+          modelApiKey: bootstrap.modelApiKey,
+          accessToken,
+          localFileRootIds: localDirectories.map((directory) => directory.id),
+        } : undefined}
+        previewUnavailableReason={harnessRunning ? '当前已有本地任务在运行，请完成或停止后再试运行。' : runtimeStatus !== 'ready' ? '企业服务尚未连接，暂时不能试运行。' : undefined}
+        skills={skillViews}
+        onChanged={async (change) => {
+          if (change.type === 'connector-upsert') {
+            const connector = change.connector
+            const next = [connector, ...connectors.filter((item) => item.id !== connector.id)]
+            extensionCacheRef.current.connectors = next
+            setConnectors(next)
+            setEnabledConnectorIds((current) => saveEnabledConnectorIds(user.userId, [...current, connector.id]))
+          } else if (change.type === 'connector-delete') {
+            const next = connectors.filter((item) => item.id !== change.id)
+            extensionCacheRef.current.connectors = next
+            setConnectors(next)
+            setEnabledConnectorIds((current) => saveEnabledConnectorIds(user.userId, current.filter((id) => id !== change.id)))
+          } else await refreshInstalledKits()
+        }}
+      />}
       {activeExpertKit && <ExpertKitDetailsModal
         kit={activeExpertKit}
         skills={skills}

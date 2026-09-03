@@ -18,6 +18,7 @@ import {
   type ExtensionSubmission,
 } from './extensionSubmissions'
 import { composerIssues, deriveSkillDependencies, ExpertKitComposer } from './ExpertKitComposer'
+import { ExtensionPreviewPanel, type ExtensionPreviewConfig } from './ExtensionPreviewPanel'
 import { diagnoseConnectors } from './harness'
 import type { SkillView } from './skills'
 import type {
@@ -40,6 +41,9 @@ interface Props {
   accessToken: string
   skills: SkillView[]
   connectors: ConnectorCatalogEntry[]
+  previewConfig?: ExtensionPreviewConfig
+  previewUnavailableReason?: string
+  onPreviewRunningChange: (running: boolean) => void
   onClose: () => void
   onChanged: (change: AuthoringChange) => Promise<void> | void
 }
@@ -80,7 +84,10 @@ const defaultPermissions: Record<string, PermissionMode> = {
   localFiles: 'deny', shell: 'deny', computerUse: 'deny', connectorRead: 'allow', connectorWrite: 'approval',
 }
 
-export function ExtensionAuthoringModal({ initialKind, employeeId, accessToken, skills, connectors, onClose, onChanged }: Props) {
+export function ExtensionAuthoringModal({
+  initialKind, employeeId, accessToken, skills, connectors, previewConfig,
+  previewUnavailableReason, onPreviewRunningChange, onClose, onChanged,
+}: Props) {
   const [kind, setKind] = useState<ExtensionKind>(initialKind)
   const [tab, setTab] = useState<'create' | 'mine'>('create')
   const [form, setForm] = useState(defaults)
@@ -91,10 +98,14 @@ export function ExtensionAuthoringModal({ initialKind, employeeId, accessToken, 
   const [editing, setEditing] = useState<{ kind: ExtensionKind; id: string; version: string }>()
   const [busy, setBusy] = useState(false)
   const [testing, setTesting] = useState(false)
+  const [previewRunning, setPreviewRunning] = useState(false)
   const [error, setError] = useState('')
   const [diagnostic, setDiagnostic] = useState<ConnectorDiagnosticResult>()
   const [created, setCreated] = useState<{ manifest: ExpertKitManifest; bytes: number[] }>()
   const [savedConnector, setSavedConnector] = useState<ConnectorCatalogEntry>()
+  const [savedFingerprint, setSavedFingerprint] = useState('')
+  const draftFingerprint = JSON.stringify({ kind, form, permissions, selectedSkillIds })
+  const currentDraftSaved = savedFingerprint === draftFingerprint
 
   const refreshMine = async () => {
     setBusy(true)
@@ -144,6 +155,7 @@ export function ExtensionAuthoringModal({ initialKind, employeeId, accessToken, 
     setSavedConnector(undefined)
     setDiagnostic(undefined)
     setError('')
+    setSavedFingerprint('')
   }
 
   const startNew = (nextKind = kind) => {
@@ -220,6 +232,7 @@ export function ExtensionAuthoringModal({ initialKind, employeeId, accessToken, 
         const connector = connectorFromForm(form)
         savePersonalConnector(employeeId, connector)
         setSavedConnector(connector)
+        setSavedFingerprint(draftFingerprint)
         setEditing({ kind, id: connector.id, version: connector.version! })
         await onChanged({ type: 'connector-upsert', connector })
       } else {
@@ -236,6 +249,7 @@ export function ExtensionAuthoringModal({ initialKind, employeeId, accessToken, 
         }) : []
         const value = await createDeveloperExtension(manifest, form.instructions, skillSources)
         setCreated({ manifest, bytes: value.bytes })
+        setSavedFingerprint(draftFingerprint)
         setEditing({ kind, id: manifest.id, version: manifest.version })
         await onChanged({ type: 'extension-change' })
       }
@@ -250,6 +264,7 @@ export function ExtensionAuthoringModal({ initialKind, employeeId, accessToken, 
     setBusy(true)
     setError('')
     try {
+      if (!currentDraftSaved) throw new Error('当前内容有修改，请先重新保存到本机')
       if (kind === 'connector') {
         if (!savedConnector) throw new Error('请先保存到本机，再提交审核')
         await submitConnector(savedConnector, employeeId, accessToken)
@@ -402,8 +417,22 @@ export function ExtensionAuthoringModal({ initialKind, employeeId, accessToken, 
             <fieldset className="wide"><legend>权限</legend>{Object.keys(permissions).map((key) => <label key={key}>{permissionLabel(key)}<select value={permissions[key]} onChange={(event) => setPermissions({ ...permissions, [key]: event.target.value as PermissionMode })}><option value="deny">禁止</option><option value="approval">需确认</option><option value="allow">允许</option></select></label>)}</fieldset>
           </>}
         </div>
+        {kind !== 'connector' && <ExtensionPreviewPanel
+          config={previewConfig}
+          onRunningChange={(running) => {
+            setPreviewRunning(running)
+            onPreviewRunningChange(running)
+          }}
+          target={created && currentDraftSaved ? {
+            kind: created.manifest.kind,
+            id: created.manifest.id,
+            knowledgeBaseRefs: created.manifest.knowledgeBaseRefs ?? [],
+            allowLocalFiles: created.manifest.permissions.localFiles !== 'deny',
+          } : undefined}
+          unavailableReason={previewUnavailableReason}
+        />}
         {error && <div className="authoring-error">{error}</div>}
-        <footer><button disabled={busy || testing} type="submit">{busy ? '正在保存…' : editing ? '更新本机草稿' : '保存到本机'}</button><button className="primary" disabled={busy || testing || (kind === 'connector' ? !savedConnector : !created)} onClick={() => void publish()} type="button"><Send size={14} />提交审核</button></footer>
+        <footer><button disabled={busy || testing || previewRunning} type="submit">{busy ? '正在保存…' : editing ? '更新本机草稿' : '保存到本机'}</button><button className="primary" disabled={busy || testing || previewRunning || !currentDraftSaved || (kind === 'connector' ? !savedConnector : !created)} onClick={() => void publish()} type="button"><Send size={14} />提交审核</button></footer>
       </form>}
     </section>
   </div>
