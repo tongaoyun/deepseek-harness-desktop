@@ -5,6 +5,7 @@ use crate::harness_connectors::{
     desktop_connector_enabled, diagnostic_connectors, validate_connector_catalog, validate_http_url,
 };
 use crate::{expert_kits, local_files::LocalFileAuthorizations, memory};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -50,6 +51,35 @@ pub struct HarnessRunRequest {
     access_token: String,
     #[serde(default)]
     local_file_root_ids: Vec<String>,
+    #[serde(default)]
+    attachments: Vec<LocalTaskAttachment>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct LocalTaskAttachment {
+    root_id: String,
+    root_name: String,
+    path: String,
+    name: String,
+    kind: String,
+    media_type: Option<String>,
+    #[serde(default, rename = "id")]
+    _id: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct HarnessImageInput {
+    data_base64: String,
+    media_type: String,
+    name: String,
+}
+
+struct HarnessTurnInput {
+    prompt: String,
+    session_id: Option<String>,
+    images: Vec<HarnessImageInput>,
 }
 
 #[derive(Deserialize)]
@@ -164,6 +194,12 @@ pub async fn run_harness(
     request: HarnessRunRequest,
 ) -> Result<HarnessRunResult, String> {
     validate_run_request(&request)?;
+    let (attachment_context, images) = prepare_attachments(&local_files, &request.attachments)?;
+    let user_prompt = if attachment_context.is_empty() {
+        request.prompt.trim().to_string()
+    } else {
+        format!("{}\n\n{}", request.prompt.trim(), attachment_context)
+    };
     let profile = expert_kits::harness_profile(
         &app,
         request
@@ -175,7 +211,7 @@ pub async fn run_harness(
             .as_ref()
             .map(|selection| selection.id.as_str()),
         &request.knowledge_base_refs,
-        request.prompt.trim(),
+        &user_prompt,
         &request.allowed_artifacts,
     )?;
     if !profile.allow_local_files && !profile.allow_shell && !request.local_file_root_ids.is_empty()
@@ -206,19 +242,16 @@ pub async fn run_harness(
         memory_context: memory::context(&app, &request.employee_id)?,
         credential_digest: credential_digest(&request.model_api_key, &request.access_token),
     };
-    let session_id = request.session_id;
+    let turn = HarnessTurnInput {
+        prompt: profile.prompt,
+        session_id: request.session_id,
+        images,
+    };
     let model_api_key = request.model_api_key;
     let access_token = request.access_token;
     let manager = manager.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        manager.run(
-            &app,
-            fingerprint,
-            profile.prompt,
-            session_id,
-            model_api_key,
-            access_token,
-        )
+        manager.run(&app, fingerprint, turn, model_api_key, access_token)
     })
     .await
     .map_err(|error| format!("Harness 执行线程异常：{error}"))?
@@ -359,8 +392,7 @@ impl HarnessManager {
         &self,
         app: &tauri::AppHandle,
         fingerprint: RuntimeFingerprint,
-        prompt: String,
-        session_id: Option<String>,
+        turn: HarnessTurnInput,
         model_api_key: String,
         access_token: String,
     ) -> Result<HarnessRunResult, String> {
@@ -385,7 +417,7 @@ impl HarnessManager {
         }
         let process = guard.as_mut().expect("Harness process was initialized");
         self.active_pid.store(process.child.id(), Ordering::Release);
-        let result = process.run(app, prompt, session_id);
+        let result = process.run(app, turn.prompt, turn.session_id, turn.images);
         self.active_pid.store(0, Ordering::Release);
         match result {
             Ok(result) => Ok(result),
@@ -580,8 +612,9 @@ impl HarnessProcess {
         app: &tauri::AppHandle,
         prompt: String,
         session_id: Option<String>,
+        images: Vec<HarnessImageInput>,
     ) -> Result<HarnessRunResult, String> {
-        let mut params = json!({ "prompt": prompt });
+        let mut params = json!({ "prompt": prompt, "images": images });
         if let Some(session_id) = session_id {
             params["sessionId"] = Value::String(session_id);
         }
@@ -983,6 +1016,9 @@ fn validate_run_request(request: &HarnessRunRequest) -> Result<(), String> {
     validate_http_url("知识库", &request.knowledge_endpoint)?;
     validate_connector_catalog(&request.connectors)?;
     expert_kits::validate_allowed_artifacts(&request.allowed_artifacts)?;
+    if request.attachments.len() > 16 {
+        return Err("单条消息最多添加 16 个附件".to_string());
+    }
     if request.model.trim().is_empty() || request.model.len() > 200 {
         return Err("模型名称无效".to_string());
     }
@@ -997,6 +1033,64 @@ fn validate_run_request(request: &HarnessRunRequest) -> Result<(), String> {
         return Err("ERP 访问凭据无效".to_string());
     }
     Ok(())
+}
+
+fn prepare_attachments(
+    local_files: &LocalFileAuthorizations,
+    attachments: &[LocalTaskAttachment],
+) -> Result<(String, Vec<HarnessImageInput>), String> {
+    if attachments.is_empty() {
+        return Ok((String::new(), Vec::new()));
+    }
+    let mut lines = vec![
+        "用户已明确添加以下本地附件。优先使用给出的 rootId 和相对路径，不要重新要求选择目录："
+            .to_string(),
+    ];
+    let mut images = Vec::new();
+    for attachment in attachments {
+        if attachment.root_id.trim().is_empty()
+            || attachment.path.trim().is_empty()
+            || attachment.name.trim().is_empty()
+            || attachment.name.len() > 255
+            || attachment.path.len() > 4_096
+            || !matches!(attachment.kind.as_str(), "file" | "image")
+        {
+            return Err("附件信息无效".to_string());
+        }
+        let path = local_files.resolve_artifact(&attachment.root_id, &attachment.path)?;
+        let metadata =
+            std::fs::metadata(&path).map_err(|error| format!("无法读取附件：{error}"))?;
+        if !metadata.is_file() {
+            return Err(format!("附件不是文件：{}", attachment.name));
+        }
+        lines.push(format!(
+            "- {}（rootId: {}，path: {}，目录: {}）",
+            attachment.name, attachment.root_id, attachment.path, attachment.root_name
+        ));
+        if attachment.kind == "image" {
+            if images.len() >= 4 {
+                return Err("单条消息最多添加 4 张图片".to_string());
+            }
+            let media_type = attachment
+                .media_type
+                .as_deref()
+                .ok_or_else(|| "图片附件缺少格式".to_string())?;
+            if !matches!(media_type, "image/png" | "image/jpeg") {
+                return Err("图片附件只支持 PNG 或 JPEG".to_string());
+            }
+            if metadata.len() > 5 * 1024 * 1024 {
+                return Err(format!("图片附件超过 5 MB：{}", attachment.name));
+            }
+            let bytes =
+                std::fs::read(path).map_err(|error| format!("无法读取图片附件：{error}"))?;
+            images.push(HarnessImageInput {
+                data_base64: BASE64.encode(bytes),
+                media_type: media_type.to_string(),
+                name: attachment.name.clone(),
+            });
+        }
+    }
+    Ok((lines.join("\n"), images))
 }
 
 fn validate_access_token(access_token: &str) -> Result<(), String> {
@@ -1055,6 +1149,7 @@ mod tests {
             model_api_key: "model-token".to_string(),
             access_token: "erp-token".to_string(),
             local_file_root_ids: Vec::new(),
+            attachments: Vec::new(),
         };
         assert!(validate_run_request(&valid).is_ok());
         let invalid = HarnessRunRequest {

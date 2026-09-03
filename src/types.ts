@@ -102,10 +102,21 @@ export interface CloudTaskRun {
 export interface TaskMessage {
   role: 'assistant' | 'user'
   text: string
+  attachments?: LocalTaskAttachment[]
   pending?: boolean
   monitor?: TaskMonitorState
   id?: string
   source?: 'desktop' | 'dingtalk'
+}
+
+export interface LocalTaskAttachment {
+  id: string
+  rootId: string
+  rootName: string
+  path: string
+  name: string
+  kind: 'file' | 'image'
+  mediaType?: 'image/png' | 'image/jpeg'
 }
 
 export interface TaskExecutionStep {
@@ -172,6 +183,7 @@ export interface LocalTaskRun {
   expertKitId?: string
   skillId?: string
   model?: string
+  localDirectories?: Array<{ id: string; name: string; path?: string }>
   capabilitySnapshot?: CapabilitySnapshot
   monitor: TaskMonitorState
   messages: TaskMessage[]

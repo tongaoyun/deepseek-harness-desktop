@@ -4,6 +4,7 @@ import type {
   AllowedExtensionArtifact,
   ConnectorDiagnosticResult,
   ConnectorRuntimeDefinition,
+  LocalTaskAttachment,
   TaskArtifact,
   TaskExecutionStep,
   TaskMonitorState,
@@ -26,6 +27,7 @@ export interface HarnessRunInput {
   modelApiKey: string
   accessToken: string
   localFileRootIds: string[]
+  attachments: LocalTaskAttachment[]
 }
 
 export interface HarnessRunResult {
@@ -63,6 +65,12 @@ export interface HarnessNotification {
 export interface AuthorizedLocalDirectory {
   id: string
   name: string
+  path?: string
+}
+
+export interface DroppedPathAuthorization {
+  directories: AuthorizedLocalDirectory[]
+  attachments: LocalTaskAttachment[]
 }
 
 export async function runHarness(input: HarnessRunInput): Promise<HarnessRunResult> {
@@ -115,6 +123,11 @@ export async function clearLocalDirectories(): Promise<void> {
   await invoke('clear_local_directories')
 }
 
+export async function restoreLocalDirectories(paths: string[]): Promise<AuthorizedLocalDirectory[]> {
+  if (!isTauri() || paths.length === 0) return []
+  return invoke<AuthorizedLocalDirectory[]>('restore_local_directories', { paths })
+}
+
 export async function shutdownHarness(): Promise<void> {
   if (!isTauri()) return
   await invoke('shutdown_harness')
@@ -125,9 +138,9 @@ export async function cancelHarness(): Promise<boolean> {
   return invoke<boolean>('cancel_harness')
 }
 
-export async function authorizeDroppedPaths(paths: string[]): Promise<AuthorizedLocalDirectory[]> {
-  if (!isTauri() || paths.length === 0) return []
-  return invoke<AuthorizedLocalDirectory[]>('authorize_dropped_paths', { paths })
+export async function authorizeDroppedPaths(paths: string[]): Promise<DroppedPathAuthorization> {
+  if (!isTauri() || paths.length === 0) return { directories: [], attachments: [] }
+  return invoke<DroppedPathAuthorization>('authorize_dropped_paths', { paths })
 }
 
 export async function listenHarnessNotifications(
@@ -151,6 +164,34 @@ export function harnessActivityLabel(notification: HarnessNotification): string 
   }
   if (parsed.type === 'assistant/message' || parsed.type === 'text-chunks' || parsed.method.includes('message')) return '正在生成回复'
   return '正在分析任务'
+}
+
+export interface HarnessResponseUpdate {
+  key: string
+  mode: 'append' | 'replace' | 'clear'
+  text: string
+}
+
+/** Visible assistant text only. Reasoning events and tool payloads never enter the reply. */
+export function harnessResponseUpdate(notification: HarnessNotification): HarnessResponseUpdate | undefined {
+  const parsed = parseHarnessEvent(notification)
+  if (!parsed) return undefined
+  const turn = integer(parsed.data.turn)
+  const step = integer(parsed.data.step)
+  if (parsed.type === 'tool/call') return { key: '', mode: 'clear', text: '' }
+  if (turn === undefined || step === undefined) return undefined
+  const key = `assistant:${turn}:${step}`
+  if (parsed.type === 'text-chunks') {
+    const delta = Array.isArray(parsed.data.texts)
+      ? parsed.data.texts.filter((value): value is string => typeof value === 'string').join('')
+      : ''
+    return delta ? { key, mode: 'append', text: delta } : undefined
+  }
+  if (parsed.type === 'assistant/message') {
+    const message = assistantMessageText(parsed.data)
+    return message ? { key, mode: 'replace', text: message } : undefined
+  }
+  return undefined
 }
 
 export function applyHarnessNotification(

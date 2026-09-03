@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { applyHarnessNotification, authorizeDroppedPaths, cancelHarness, createTaskMonitor, diagnoseConnectors, harnessActivityLabel, probeHarnessHost, selfTestLocalCapabilities } from './harness'
+import { applyHarnessNotification, authorizeDroppedPaths, cancelHarness, createTaskMonitor, diagnoseConnectors, harnessActivityLabel, harnessResponseUpdate, probeHarnessHost, selfTestLocalCapabilities } from './harness'
 
 describe('harnessActivityLabel', () => {
   it('shows safe progress labels without exposing reasoning content', () => {
@@ -75,6 +75,17 @@ describe('harnessActivityLabel', () => {
       kind: 'assistant', text: '我先查看目录。正在处理。', status: 'completed',
     }])
     expect(JSON.stringify(monitor)).not.toContain('private reasoning')
+  })
+
+  it('projects visible response chunks without exposing reasoning', () => {
+    expect(harnessResponseUpdate(event('reasoning-chunks', { turn: 1, step: 1, texts: ['private'] }, 1))).toBeUndefined()
+    expect(harnessResponseUpdate(event('text-chunks', { turn: 1, step: 2, texts: ['正在', '回答'] }, 2)))
+      .toEqual({ key: 'assistant:1:2', mode: 'append', text: '正在回答' })
+    expect(harnessResponseUpdate(event('assistant/message', { turn: 1, step: 2, message: { content: [
+      { type: 'reasoning', text: 'private' }, { type: 'text', text: '完整回答' },
+    ] } }, 3))).toEqual({ key: 'assistant:1:2', mode: 'replace', text: '完整回答' })
+    expect(harnessResponseUpdate(event('tool/call', { callId: '1', name: 'local_files_list' }, 4)))
+      .toEqual({ key: '', mode: 'clear', text: '' })
   })
 
   it('records only the approval decision and tool name', () => {
@@ -157,7 +168,7 @@ describe('diagnoseConnectors', () => {
 
   it('keeps cancellation and empty drops safe outside Tauri', async () => {
     await expect(cancelHarness()).resolves.toBe(false)
-    await expect(authorizeDroppedPaths([])).resolves.toEqual([])
+    await expect(authorizeDroppedPaths([])).resolves.toEqual({ directories: [], attachments: [] })
   })
 })
 

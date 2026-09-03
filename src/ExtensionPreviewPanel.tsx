@@ -116,6 +116,7 @@ export function ExtensionPreviewPanel({ target, config, unavailableReason, onRun
         modelApiKey: config.modelApiKey,
         accessToken: config.accessToken,
         localFileRootIds: target.allowLocalFiles ? config.localFileRootIds : [],
+        attachments: [],
       })
       const completed: TaskMonitorState = {
         ...monitorRef.current,

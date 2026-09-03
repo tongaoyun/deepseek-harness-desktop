@@ -1,11 +1,11 @@
-import { ArrowDown, BookOpen, Bot, Check, ChevronDown, CirclePlus, CircleStop, FolderOpen, Send, Sparkles, SquareCheckBig, X } from 'lucide-react'
+import { ArrowDown, BookOpen, Bot, Check, ChevronDown, CirclePlus, CircleStop, FileImage, FileText, FolderOpen, Send, Sparkles, SquareCheckBig, X } from 'lucide-react'
 import { lazy, Suspense, useEffect, useRef, useState, type FormEvent, type RefObject, type UIEvent } from 'react'
 import type { AuthorizedLocalDirectory } from './harness'
 import type { InvocationOption } from './invocations'
 import { InlineTaskActivity } from './InlineTaskActivity'
 import { modelDisplayName } from './modelSelection'
 import { TaskArtifacts } from './TaskArtifacts'
-import type { CapabilitySnapshot, KnowledgeBaseEntry, RuntimeStatus, TaskMessage, TaskMonitorState } from './types'
+import type { CapabilitySnapshot, KnowledgeBaseEntry, LocalTaskAttachment, RuntimeStatus, TaskMessage, TaskMonitorState } from './types'
 import { XiaoyinMascot } from './XiaoyinMascot'
 
 const RichMessage = lazy(() => import('./RichMessage').then((module) => ({ default: module.RichMessage })))
@@ -31,6 +31,7 @@ interface Props {
   knowledgeBases: KnowledgeBaseEntry[]
   selectedKnowledgeBaseRefs: string[]
   localDirectories: AuthorizedLocalDirectory[]
+  pendingAttachments: LocalTaskAttachment[]
   localFileError: string
   messageListRef: RefObject<HTMLDivElement | null>
   composerRef: RefObject<HTMLTextAreaElement | null>
@@ -48,6 +49,7 @@ interface Props {
   onAddKnowledge: (reference: string) => void
   onRemoveKnowledge: (reference: string) => void
   onRemoveLocalDirectory: (id: string) => void
+  onRemoveAttachment: (id: string) => void
 }
 
 export function ChatPage(props: Props) {
@@ -103,11 +105,14 @@ export function ChatPage(props: Props) {
       const retryable = message.role === 'assistant' && index === props.messages.length - 1 && !message.pending && (message.text.startsWith('执行失败：') || message.text.startsWith('任务已取消'))
       const monitor = message.monitor ?? (message.role === 'assistant' && index === props.messages.length - 1 ? props.taskMonitor : undefined)
       if (message.role === 'user') return <article className="conversation-turn user-turn" key={`${message.role}-${index}`}>
-        <div className="user-prompt"><Suspense fallback={<p>{message.text}</p>}><RichMessage assistant={false} text={message.text} /></Suspense></div>
+        <div className="user-prompt">
+          {message.attachments && message.attachments.length > 0 && <AttachmentList attachments={message.attachments} />}
+          <Suspense fallback={<p>{message.text}</p>}><RichMessage assistant={false} text={message.text} /></Suspense>
+        </div>
       </article>
       return <article aria-busy={message.pending} className={`conversation-turn assistant-turn${message.pending ? ' pending' : ''}`} key={`${message.role}-${index}`}>
-        {monitor && <InlineTaskActivity finalResponse={message.pending ? '' : message.text} monitor={monitor} />}
-        {!message.pending && <Suspense fallback={<p>{message.text}</p>}><RichMessage assistant onRegenerate={index === props.messages.length - 1 ? props.onPrepareRetry : undefined} text={message.text} /></Suspense>}
+        {monitor && <InlineTaskActivity finalResponse={message.text} monitor={monitor} />}
+        {(!message.pending || message.text) && <div className={message.pending ? 'streaming-response' : undefined}><Suspense fallback={<p>{message.text}</p>}><RichMessage assistant={!message.pending} onRegenerate={!message.pending && index === props.messages.length - 1 ? props.onPrepareRetry : undefined} text={message.text} /></Suspense></div>}
         {!message.pending && monitor && monitor.artifacts.length > 0 && <TaskArtifacts artifacts={monitor.artifacts} conversation />}
         {retryable && <button className="retry-task" onClick={props.onPrepareRetry} type="button">修改后重新执行</button>}
       </article>
@@ -143,7 +148,7 @@ export function ChatPage(props: Props) {
         </div>
         {props.harnessRunning
           ? <button aria-label="取消当前任务" className="cancel-button" onClick={props.onCancel} title="取消当前任务" type="button"><CircleStop size={17} /></button>
-          : <button aria-label="发送" className="send-button" disabled={!props.prompt.trim() || props.runtimeStatus !== 'ready' || props.harnessHealth === 'degraded' || !props.selectedCapabilityExecutable} title={props.runtimeStatus !== 'ready' ? '企业服务未连接' : props.harnessHealth === 'degraded' ? '请先恢复本地 Agent' : !props.selectedCapabilityExecutable ? '企业目录缓存已过期，请先重新同步' : '发送'} type="submit"><Send size={17} /></button>}
+          : <button aria-label="发送" className="send-button" disabled={(!props.prompt.trim() && props.pendingAttachments.length === 0) || props.runtimeStatus !== 'ready' || props.harnessHealth === 'degraded' || !props.selectedCapabilityExecutable} title={props.runtimeStatus !== 'ready' ? '企业服务未连接' : props.harnessHealth === 'degraded' ? '请先恢复本地 Agent' : !props.selectedCapabilityExecutable ? '企业目录缓存已过期，请先重新同步' : '发送'} type="submit"><Send size={17} /></button>}
       </div>
       {props.visibleInvocations.length > 0 && <div className="slash-menu"><small>快捷指令</small>{props.visibleInvocations.map((option) => <button key={`${option.profileKind}-${option.profileId}-${option.id}`} onClick={() => props.onSelectInvocation(option)} type="button"><span><strong>{option.label}</strong><small>{option.description}</small></span></button>)}</div>}
       {props.contextQuery !== undefined && <div className="slash-menu"><small>引用知识库</small>{props.visibleKnowledgeContexts.map((item) => <button key={item.reference} onClick={() => props.onAddKnowledge(item.reference)} type="button"><span><strong>@{item.name}</strong><small>{item.description || item.reference}</small></span><em>{knowledgeScopeLabel(item.scope)}</em></button>)}{props.visibleKnowledgeContexts.length === 0 && <span className="context-menu-empty">{props.capabilitySnapshot ? '当前对话已开始，请新建任务后添加知识库' : '没有匹配的知识库'}</span>}</div>}
@@ -153,9 +158,20 @@ export function ChatPage(props: Props) {
       <div className="local-contexts">
         {props.selectedKnowledgeBaseRefs.map((reference) => <span className="local-context" key={reference}>@{props.knowledgeBases.find((item) => item.reference === reference)?.name ?? reference}<button aria-label={`移除 ${reference}`} disabled={props.harnessRunning || Boolean(props.capabilitySnapshot)} onClick={() => props.onRemoveKnowledge(reference)} type="button"><X size={11} /></button></span>)}
         {props.localDirectories.map((directory) => <span className="local-context" key={directory.id}><FolderOpen size={12} />{directory.name}<button aria-label={`移除 ${directory.name}`} disabled={props.harnessRunning} onClick={() => props.onRemoveLocalDirectory(directory.id)} type="button"><X size={11} /></button></span>)}
+        {props.pendingAttachments.length > 0 && <AttachmentList attachments={props.pendingAttachments} onRemove={props.onRemoveAttachment} />}
       </div>
     </div>
   </section>
+}
+
+function AttachmentList({ attachments, onRemove }: { attachments: LocalTaskAttachment[]; onRemove?: (id: string) => void }) {
+  return <div className={`message-attachments${onRemove ? ' removable' : ''}`}>
+    {attachments.map((attachment) => <span className="attachment-chip" key={attachment.id} title={`${attachment.rootName}/${attachment.path}`}>
+      {attachment.kind === 'image' ? <FileImage size={14} /> : <FileText size={14} />}
+      <span><strong>{attachment.name}</strong><small>{attachment.rootName}</small></span>
+      {onRemove && <button aria-label={`移除 ${attachment.name}`} type="button" onClick={() => onRemove(attachment.id)}><X size={11} /></button>}
+    </span>)}
+  </div>
 }
 
 function knowledgeScopeLabel(scope: KnowledgeBaseEntry['scope']): string {

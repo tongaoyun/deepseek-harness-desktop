@@ -106,6 +106,7 @@ pub fn run() {
             local_files::authorize_local_directory,
             local_files::authorize_standard_local_directories,
             local_files::authorize_dropped_paths,
+            local_files::restore_local_directories,
             local_files::revoke_local_directory,
             local_files::clear_local_directories,
             local_store::load_local_tasks,

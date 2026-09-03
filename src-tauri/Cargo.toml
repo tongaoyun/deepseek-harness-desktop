@@ -17,6 +17,7 @@ windows-no-console = []
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+base64 = "0.22.1"
 flate2 = "1.1.2"
 futures-util = "0.3.31"
 percent-encoding = "2.3.2"

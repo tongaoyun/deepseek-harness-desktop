@@ -1,4 +1,4 @@
-import type { HarnessRuntime, RunInput } from './runtime.js'
+import type { HarnessRuntime, ImageRunInput, RunInput } from './runtime.js'
 import type { BindableTask, DingTalkImConfiguration, LocalImRuntime, ScheduleRoute, TaskBinding } from './im-runtime.js'
 import { diagnoseConfiguredConnectors } from './managed-mcp-plugin.js'
 import { runLocalCapabilitySelfTest } from './self-test.js'
@@ -217,5 +217,29 @@ function parseRunInput(params: unknown): RunInput {
   return {
     prompt: record.prompt,
     ...(record.sessionId === undefined ? {} : { sessionId: record.sessionId as string }),
+    images: parseRunImages(record.images),
   }
+}
+
+function parseRunImages(value: unknown): ImageRunInput[] {
+  if (value === undefined) return []
+  if (!Array.isArray(value) || value.length > 4) throw new Error('session.run params.images is invalid')
+  return value.map((item) => {
+    if (typeof item !== 'object' || item === null || Array.isArray(item)) {
+      throw new Error('session.run image is invalid')
+    }
+    const image = item as Record<string, unknown>
+    if (image.mediaType !== 'image/png' && image.mediaType !== 'image/jpeg') {
+      throw new Error('session.run image mediaType is invalid')
+    }
+    if (typeof image.dataBase64 !== 'string' || image.dataBase64.length === 0 || image.dataBase64.length > 7_000_000) {
+      throw new Error('session.run image data is invalid')
+    }
+    if (typeof image.name !== 'string' || image.name.length === 0 || image.name.length > 255) {
+      throw new Error('session.run image name is invalid')
+    }
+    const data = Buffer.from(image.dataBase64, 'base64')
+    if (data.length === 0) throw new Error('session.run image data is invalid')
+    return { data, mediaType: image.mediaType, name: image.name }
+  })
 }

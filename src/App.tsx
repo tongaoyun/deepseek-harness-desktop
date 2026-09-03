@@ -49,8 +49,10 @@ import {
   clearLocalDirectories,
   connectorDiagnosticsAvailable,
   createTaskMonitor,
+  harnessResponseUpdate,
   listenHarnessNotifications,
   probeHarnessHost,
+  restoreLocalDirectories,
   revokeLocalDirectory,
   runHarness,
   shutdownHarness,
@@ -61,6 +63,7 @@ import type {
   ConnectorCatalogEntry,
   ExpertKitCatalogEntry,
   KnowledgeBaseEntry,
+  LocalTaskAttachment,
   CloudTaskRun,
   InstalledExpertKit,
   RuntimeStatus,
@@ -168,6 +171,7 @@ export default function App() {
   const taskMonitorRef = useRef<TaskMonitorState>(taskMonitor)
   const extensionPreviewRunningRef = useRef(false)
   const [localDirectories, setLocalDirectories] = useState<AuthorizedLocalDirectory[]>([])
+  const [pendingAttachments, setPendingAttachments] = useState<LocalTaskAttachment[]>([])
   const [localFileError, setLocalFileError] = useState('')
   const [selectedModel, setSelectedModel] = useState('')
   const [modelMenuOpen, setModelMenuOpen] = useState(false)
@@ -185,6 +189,8 @@ export default function App() {
   const taskSearchInputRef = useRef<HTMLInputElement>(null)
   const workspaceRef = useRef<HTMLElement>(null)
   const cancellationRequestedRef = useRef(false)
+  const streamingTaskIdRef = useRef('')
+  const streamingResponseKeyRef = useRef('')
   const enabledConnectorIdsRef = useRef<string[]>([])
   const extensionCacheRef = useRef<{
     catalog: ExpertKitCatalogEntry[]
@@ -371,12 +377,11 @@ export default function App() {
         return
       }
       const paths = event.payload.paths
-      void authorizeDroppedPaths(paths).then(async (directories) => {
+      void authorizeDroppedPaths(paths).then(async ({ directories, attachments }) => {
         setLocalDirectories((current) => [...current, ...directories.filter((next) => !current.some((item) => item.id === next.id))])
+        setPendingAttachments((current) => [...current, ...attachments.filter((next) => !current.some((item) => item.id === next.id))].slice(0, 16))
         setHarnessSessionId('')
         await shutdownHarness()
-        const names = paths.map((path) => path.split(/[\\/]/).pop()).filter(Boolean)
-        setPrompt((current) => `${current}${current.trim() ? '\n' : ''}请处理本地文件：${names.join('、')}`)
         focusComposer()
       }).catch((reason) => setLocalFileError(reason instanceof Error ? reason.message : String(reason)))
     }).then((dispose) => { if (disposed) dispose(); else unlisten = dispose })
@@ -440,6 +445,19 @@ export default function App() {
         const next = applyHarnessNotification(taskMonitorRef.current, notification)
         taskMonitorRef.current = next
         setTaskMonitor(next)
+        const response = harnessResponseUpdate(notification)
+        if (response && streamingTaskIdRef.current) {
+          setMessages((current) => current.map((message, index) => {
+            if (index !== current.length - 1 || message.role !== 'assistant' || !message.pending) return message
+            if (response.mode === 'clear') {
+              streamingResponseKeyRef.current = ''
+              return { ...message, text: '' }
+            }
+            const sameMessage = streamingResponseKeyRef.current === response.key
+            streamingResponseKeyRef.current = response.key
+            return { ...message, text: response.mode === 'append' && sameMessage ? `${message.text}${response.text}` : response.text }
+          }))
+        }
       }
     }).then((dispose) => {
       if (disposed) dispose()
@@ -451,6 +469,7 @@ export default function App() {
   useEffect(() => {
     if (authState === 'authenticated') return
     setLocalDirectories([])
+    setPendingAttachments([])
     void Promise.all([clearLocalDirectories(), shutdownHarness(), stopLocalImRuntime()])
   }, [authState])
 
@@ -610,6 +629,7 @@ export default function App() {
     setSelectedExpertKitId('')
     setSelectedSkillId('')
     setCurrentLocalTaskId('')
+    setPendingAttachments([])
     const monitor = createTaskMonitor()
     taskMonitorRef.current = monitor
     setTaskMonitor(monitor)
@@ -640,11 +660,22 @@ export default function App() {
     setSelectedSkillId(task.skillId ?? '')
     setSelectedModel(resolveSelectedModel(bootstrap?.models ?? [], task.model ?? selectedModel))
     setPrompt('')
+    setPendingAttachments([])
     taskMonitorRef.current = task.monitor
     setTaskMonitor(task.monitor)
     setLocalDirectories([])
     setLocalFileError('')
-    void Promise.all([clearLocalDirectories(), shutdownHarness()])
+    void Promise.all([clearLocalDirectories(), shutdownHarness()]).then(async () => {
+      const paths = (task.localDirectories ?? []).flatMap((directory) => directory.path ? [directory.path] : [])
+      if (paths.length === 0) return
+      try {
+        const restored = await restoreLocalDirectories(paths)
+        setLocalDirectories(restored)
+        if (restored.length < paths.length) setLocalFileError('部分历史工作目录已移动或不可用，请重新添加。')
+      } catch (reason) {
+        setLocalFileError(reason instanceof Error ? reason.message : String(reason))
+      }
+    })
     focusComposer()
   }
   const addLocalDirectory = async () => {
@@ -667,6 +698,7 @@ export default function App() {
       await revokeLocalDirectory(id)
       await shutdownHarness()
       setLocalDirectories((current) => current.filter((item) => item.id !== id))
+      setPendingAttachments((current) => current.filter((item) => item.rootId !== id))
       setHarnessSessionId('')
     } catch (error) {
       setLocalFileError(error instanceof Error ? error.message : String(error))
@@ -685,9 +717,10 @@ export default function App() {
   }
   const submit = async (event: FormEvent) => {
     event.preventDefault()
-    const input = prompt.trim()
+    const messageAttachments = pendingAttachments
+    const input = prompt.trim() || (messageAttachments.length > 0 ? '请查看并处理这些附件。' : '')
     if (!input || !bootstrap || runtimeStatus !== 'ready' || harnessRunning || !selectedCapabilityExecutable) return
-    const remembered = memoryInstruction(input)
+    const remembered = messageAttachments.length === 0 ? memoryInstruction(input) : undefined
     if (remembered) {
       setPrompt('')
       if (!window.confirm(`是否将以下内容保存为长期记忆？\n\n${remembered}`)) {
@@ -735,7 +768,7 @@ export default function App() {
     if (!currentCapabilitySnapshot) setCurrentCapabilitySnapshot(capabilitySnapshot)
     const taskId = currentLocalTaskId || crypto.randomUUID()
     const existingTask = localTasks.find((task) => task.id === taskId)
-    const pendingMessages: TaskMessage[] = [...messages, { role: 'user', text: input },
+    const pendingMessages: TaskMessage[] = [...messages, { role: 'user', text: input, ...(messageAttachments.length > 0 ? { attachments: messageAttachments } : {}) },
       { role: 'assistant', text: '', pending: true }]
     const runningMonitor: TaskMonitorState = {
       ...createTaskMonitor(now),
@@ -755,6 +788,7 @@ export default function App() {
       expertKitId: selectedExpertKit?.id,
       skillId: selectedSkill?.id,
       model: activeModel,
+      localDirectories: taskDirectories,
       capabilitySnapshot,
       monitor: runningMonitor,
       messages: pendingMessages,
@@ -768,7 +802,10 @@ export default function App() {
       summary: [selectedExpertKit?.id, selectedSkill?.id, activeModel].filter(Boolean).join(' · '), occurredAt: now,
     }).catch(() => undefined)
     setPrompt('')
+    setPendingAttachments([])
     setHarnessRunning(true)
+    streamingTaskIdRef.current = taskId
+    streamingResponseKeyRef.current = ''
     cancellationRequestedRef.current = false
     taskMonitorRef.current = runningMonitor
     setTaskMonitor(runningMonitor)
@@ -790,6 +827,7 @@ export default function App() {
         modelApiKey: bootstrap.modelApiKey,
         accessToken,
         localFileRootIds: taskDirectories.map((directory) => directory.id),
+        attachments: messageAttachments,
       })
       if (!result.finalResponse.trim()) throw new Error('模型本轮没有返回可显示文本，请重试')
       setHarnessSessionId(result.sessionId)
@@ -835,6 +873,8 @@ export default function App() {
     } finally {
       setHarnessRunning(false)
       cancellationRequestedRef.current = false
+      streamingTaskIdRef.current = ''
+      streamingResponseKeyRef.current = ''
     }
   }
 
@@ -859,6 +899,7 @@ export default function App() {
     const previous = [...messages].reverse().find((message) => message.role === 'user')
     if (!previous) return
     setPrompt(previous.text)
+    setPendingAttachments(previous.attachments ?? [])
     focusComposer()
   }
 
@@ -1173,6 +1214,7 @@ export default function App() {
             harnessRunning={harnessRunning}
             knowledgeBases={knowledgeBases}
             localDirectories={localDirectories}
+            pendingAttachments={pendingAttachments}
             localFileError={localFileError}
             messageListRef={messageListRef}
             messages={messages}
@@ -1188,6 +1230,7 @@ export default function App() {
             onRecoverHarness={() => setHarnessHealthAttempt((value) => value + 1)}
             onRemoveKnowledge={(reference) => setSelectedKnowledgeBaseRefs((current) => current.filter((item) => item !== reference))}
             onRemoveLocalDirectory={(id) => void removeLocalDirectory(id)}
+            onRemoveAttachment={(id) => setPendingAttachments((current) => current.filter((item) => item.id !== id))}
             onSelectInvocation={selectInvocation}
             onSelectModel={selectModel}
             onSubmit={(event) => void submit(event)}
