@@ -8,6 +8,7 @@ import {
   runHarness,
 } from './harness'
 import type { AllowedExtensionArtifact, ConnectorRuntimeDefinition, TaskMonitorState } from './types'
+import type { ExtensionValidationReport } from './extensionSubmissions'
 
 export interface ExtensionPreviewConfig {
   employeeId: string
@@ -34,9 +35,10 @@ interface Props {
   config?: ExtensionPreviewConfig
   unavailableReason?: string
   onRunningChange: (running: boolean) => void
+  onReport?: (report: ExtensionValidationReport) => void
 }
 
-export function ExtensionPreviewPanel({ target, config, unavailableReason, onRunningChange }: Props) {
+export function ExtensionPreviewPanel({ target, config, unavailableReason, onRunningChange, onReport }: Props) {
   const [prompt, setPrompt] = useState('请执行一次最小范围的能力验证，并说明使用了哪些步骤和工具。')
   const [running, setRunning] = useState(false)
   const [monitor, setMonitor] = useState<TaskMonitorState>(createTaskMonitor)
@@ -86,6 +88,7 @@ export function ExtensionPreviewPanel({ target, config, unavailableReason, onRun
   const run = async () => {
     if (!config || running || !prompt.trim()) return
     const startedAt = new Date().toISOString()
+    const startedAtMs = Date.now()
     const started: TaskMonitorState = {
       ...createTaskMonitor(startedAt),
       status: 'running',
@@ -122,7 +125,16 @@ export function ExtensionPreviewPanel({ target, config, unavailableReason, onRun
       }
       monitorRef.current = completed
       setMonitor(completed)
-      setResponse(result.finalResponse || '试运行已完成，但模型没有返回文本。')
+      const finalResponse = result.finalResponse || '试运行已完成，但模型没有返回文本。'
+      setResponse(finalResponse)
+      const discoveredTools = [...new Set(completed.steps.flatMap((step) => step.toolName ? [step.toolName] : []))]
+      onReport?.({
+        type: 'HARNESS', status: 'PASSED', prompt: prompt.trim(), model: config.model,
+        latencyMs: Math.max(0, Date.now() - startedAtMs), discoveredTools,
+        steps: completed.steps.map((step) => ({ kind: step.kind, label: step.label, status: step.status, toolName: step.toolName ?? '' })),
+        artifacts: completed.artifacts.map((artifact) => ({ name: artifact.name, kind: artifact.kind, sourceTool: artifact.sourceTool })),
+        finalResponse, completedAt: completed.updatedAt,
+      })
     } catch (reason) {
       const message = reason instanceof Error ? reason.message : String(reason)
       const failed: TaskMonitorState = {

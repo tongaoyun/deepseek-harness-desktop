@@ -16,6 +16,7 @@ import {
   submitPackage,
   type ExtensionKind,
   type ExtensionSubmission,
+  type ExtensionValidationReport,
 } from './extensionSubmissions'
 import { composerIssues, deriveSkillDependencies, ExpertKitComposer } from './ExpertKitComposer'
 import { ExtensionPreviewPanel, type ExtensionPreviewConfig } from './ExtensionPreviewPanel'
@@ -104,6 +105,7 @@ export function ExtensionAuthoringModal({
   const [created, setCreated] = useState<{ manifest: ExpertKitManifest; bytes: number[] }>()
   const [savedConnector, setSavedConnector] = useState<ConnectorCatalogEntry>()
   const [savedFingerprint, setSavedFingerprint] = useState('')
+  const [validationEvidence, setValidationEvidence] = useState<{ fingerprint: string; report: ExtensionValidationReport }>()
   const draftFingerprint = JSON.stringify({ kind, form, permissions, selectedSkillIds })
   const currentDraftSaved = savedFingerprint === draftFingerprint
 
@@ -156,6 +158,7 @@ export function ExtensionAuthoringModal({
     setDiagnostic(undefined)
     setError('')
     setSavedFingerprint('')
+    setValidationEvidence(undefined)
   }
 
   const startNew = (nextKind = kind) => {
@@ -267,10 +270,12 @@ export function ExtensionAuthoringModal({
       if (!currentDraftSaved) throw new Error('当前内容有修改，请先重新保存到本机')
       if (kind === 'connector') {
         if (!savedConnector) throw new Error('请先保存到本机，再提交审核')
-        await submitConnector(savedConnector, employeeId, accessToken)
+        await submitConnector(savedConnector, employeeId, accessToken,
+          validationEvidence?.fingerprint === draftFingerprint ? validationEvidence.report : undefined)
       } else {
         if (!created) throw new Error('请先保存到本机，再提交审核')
-        await submitPackage(created.manifest, created.bytes, employeeId, accessToken)
+        await submitPackage(created.manifest, created.bytes, employeeId, accessToken,
+          validationEvidence?.fingerprint === draftFingerprint ? validationEvidence.report : undefined)
       }
       setTab('mine')
       await refreshMine()
@@ -336,8 +341,18 @@ export function ExtensionAuthoringModal({
       })
       if (!result) throw new Error('连接测试没有返回结果')
       setDiagnostic(result)
-      if (result.discoveredTools.length > 0) setForm((current) => ({ ...current, toolNames: result.discoveredTools.join(', ') }))
       if (result.status === 'unavailable') throw new Error(result.error || 'MCP 服务不可用')
+      const nextForm = result.discoveredTools.length > 0 ? { ...form, toolNames: result.discoveredTools.join(', ') } : form
+      if (nextForm !== form) setForm(nextForm)
+      setValidationEvidence({
+        fingerprint: JSON.stringify({ kind, form: nextForm, permissions, selectedSkillIds }),
+        report: {
+          type: 'CONNECTOR_DIAGNOSTIC', status: 'PASSED', prompt: '', model: '',
+          latencyMs: result.latencyMs, discoveredTools: result.discoveredTools,
+          steps: [{ kind: 'tool', label: '连接 MCP 服务并发现工具', status: 'completed', toolName: 'tools/list' }],
+          artifacts: [], finalResponse: '', completedAt: new Date().toISOString(),
+        },
+      })
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason))
     } finally {
@@ -371,7 +386,7 @@ export function ExtensionAuthoringModal({
         {rows.map(({ submission, local }) => {
           const item = submission ?? local!
           return <article key={coordinate(item)}>
-            <span><strong>{item.name}</strong><small>{kindLabel(item.kind)} · v{item.version}{local ? ' · 本机可用' : ' · 本机草稿已删除'}</small></span>
+            <span><strong>{item.name}</strong><small>{kindLabel(item.kind)} · v{item.version}{local ? ' · 本机可用' : ' · 本机草稿已删除'}{submission?.validationReport?.status === 'PASSED' ? ' · 已附验证结果' : ''}</small></span>
             <em className={(submission?.status ?? 'DRAFT').toLowerCase()}>{statusLabel(submission?.status ?? 'DRAFT')}</em>
             {submission?.reviewNote && <p>审核意见：{submission.reviewNote}</p>}
             {local && <div className="submission-actions">
@@ -395,7 +410,7 @@ export function ExtensionAuthoringModal({
           {kind === 'connector' ? <>
             <label>传输<select value={form.transport} onChange={(event) => setForm({ ...form, transport: event.target.value as typeof form.transport })}><option value="streamable-http">Streamable HTTP</option><option value="sse">SSE</option></select></label>
             <label>认证<select value={form.authMode} onChange={(event) => setForm({ ...form, authMode: event.target.value as typeof form.authMode })}><option value="none">无</option><option value="employee-bearer">员工 Bearer Token</option></select></label>
-            <label className="wide">MCP 地址<input placeholder="https://mcp.example.com/mcp" required type="url" value={form.url} onChange={(event) => { setForm({ ...form, url: event.target.value }); setDiagnostic(undefined) }} /></label>
+            <label className="wide">MCP 地址<input placeholder="https://mcp.example.com/mcp" required type="url" value={form.url} onChange={(event) => { setForm({ ...form, url: event.target.value }); setDiagnostic(undefined); setValidationEvidence(undefined) }} /></label>
             <label className="wide">工具名称<input placeholder="测试连接后自动回填，也可手工修改" value={form.toolNames} onChange={(event) => setForm({ ...form, toolNames: event.target.value })} /></label>
             <div className="connector-authoring-test wide"><button disabled={testing || busy} onClick={() => void testConnector()} type="button"><RefreshCw className={testing ? 'spin' : ''} size={13} />{testing ? '正在连接…' : '测试连接并发现工具'}</button>{diagnostic && diagnostic.status !== 'unavailable' && <span>{diagnostic.status === 'ready' ? '连接成功' : '连接成功，登记工具有变化'} · {diagnostic.latencyMs} ms · 发现 {diagnostic.discoveredTools.length} 个工具</span>}</div>
           </> : <>
@@ -419,6 +434,7 @@ export function ExtensionAuthoringModal({
         </div>
         {kind !== 'connector' && <ExtensionPreviewPanel
           config={previewConfig}
+          onReport={(report) => setValidationEvidence({ fingerprint: draftFingerprint, report })}
           onRunningChange={(running) => {
             setPreviewRunning(running)
             onPreviewRunningChange(running)
