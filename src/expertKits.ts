@@ -208,38 +208,6 @@ export function mergeExpertKits(
   return views
 }
 
-export interface PublishedExtensionCoordinate {
-  kind: InstalledExpertKit['manifest']['kind']
-  id: string
-  version: string
-}
-
-export function installedExtensionSnapshot(
-  installed: InstalledExpertKit[],
-  published: PublishedExtensionCoordinate[],
-) {
-  const unique = new Map<string, InstalledExpertKit>()
-  for (const extension of installed.filter((item) => item.source === 'developer')) {
-    const coordinate = `${extension.manifest.kind}:${extension.manifest.id}`
-    if (!unique.has(coordinate)) unique.set(coordinate, extension)
-  }
-  for (const coordinate of published) {
-    const extension = installed.find((item) => item.source === 'catalog'
-      && item.manifest.kind === coordinate.kind
-      && item.manifest.id === coordinate.id
-      && item.manifest.version === coordinate.version)
-    if (extension) unique.set(`${coordinate.kind}:${coordinate.id}`, extension)
-  }
-  return [...unique.values()].sort((left, right) =>
-    `${left.manifest.kind}:${left.manifest.id}`.localeCompare(`${right.manifest.kind}:${right.manifest.id}`),
-  ).map((extension) => ({
-    kind: extension.manifest.kind,
-    id: extension.manifest.id,
-    version: extension.manifest.version,
-    source: extension.source,
-  }))
-}
-
 export function normalizePermissions(
   value: ExpertKitCatalogEntry['permissions'] | InstalledExpertKit['manifest']['permissions'] | undefined,
 ): ExpertKitPermissions {

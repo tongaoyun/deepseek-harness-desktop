@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { installedExtensionSnapshot, mergeExpertKits } from './expertKits'
+import { mergeExpertKits } from './expertKits'
 import type { ConnectorCatalogEntry, ExpertKitCatalogEntry, InstalledExpertKit, KnowledgeBaseEntry } from './types'
 
 const installed: InstalledExpertKit = {
@@ -65,28 +65,6 @@ describe('mergeExpertKits', () => {
     expect(mergeExpertKits([catalogEntry], [newer, installed], [erpConnector])[0]).toMatchObject({
       installState: 'installed', installedVersion: '1.0.0',
     })
-  })
-
-  it('reports one active version per installed extension coordinate', () => {
-    const older = { ...installed, manifest: { ...installed.manifest, version: '0.9.0' } }
-    expect(installedExtensionSnapshot([installed, older, {
-      ...installed,
-      source: 'developer',
-      manifest: { ...installed.manifest, kind: 'skill', id: 'code-review' },
-    }], [{ kind: 'expert-kit', id: 'store-kit', version: '1.0.0' }])).toEqual([
-      { kind: 'expert-kit', id: 'store-kit', version: '1.0.0', source: 'catalog' },
-      { kind: 'skill', id: 'code-review', version: '1.0.0', source: 'developer' },
-    ])
-  })
-
-  it('reports the catalog version that is active after a rollback', () => {
-    const newer = { ...installed, manifest: { ...installed.manifest, version: '1.1.0' } }
-
-    expect(installedExtensionSnapshot([newer, installed], [
-      { kind: 'expert-kit', id: 'store-kit', version: '1.0.0' },
-    ])).toEqual([
-      { kind: 'expert-kit', id: 'store-kit', version: '1.0.0', source: 'catalog' },
-    ])
   })
 
   it('keeps locally installed kits that are no longer in the catalog', () => {

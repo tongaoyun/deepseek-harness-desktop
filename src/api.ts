@@ -12,10 +12,6 @@ import type {
   KnowledgeBaseEntry,
   KnowledgeDocumentEntry,
   KnowledgeSearchHit,
-  DeviceCapabilityReport,
-  DeviceFleetOverview,
-  SubmitDeviceCapabilityReport,
-  InstalledExtensionSnapshot,
   AuditEventEntry,
   SubmitAuditEvent,
 } from './types'
@@ -165,63 +161,6 @@ export async function createTaskRunArtifactDownload(
   })
   if (!response.ok) throw new Error(`任务产物下载授权返回 ${response.status}`)
   return response.json() as Promise<ArtifactDownload>
-}
-
-export async function loadDeviceCapabilityReports(
-  endpoint: string,
-  employeeId: string,
-  accessToken: string,
-  signal?: AbortSignal,
-): Promise<DeviceCapabilityReport[]> {
-  return loadCatalog(endpoint, employeeId, accessToken, '设备能力记录', signal)
-}
-
-export async function submitDeviceCapabilityReport(
-  endpoint: string,
-  employeeId: string,
-  accessToken: string,
-  request: SubmitDeviceCapabilityReport,
-): Promise<DeviceCapabilityReport> {
-  const response = await fetch(controlPlaneUrl(endpoint), {
-    method: 'POST',
-    headers: { ...enterpriseHeaders(employeeId, accessToken), 'Content-Type': 'application/json' },
-    body: JSON.stringify(request),
-  })
-  if (!response.ok) throw new Error(`设备能力上报返回 ${response.status}`)
-  return response.json() as Promise<DeviceCapabilityReport>
-}
-
-export async function submitDeviceHeartbeat(
-  endpoint: string,
-  employeeId: string,
-  accessToken: string,
-  request: Omit<SubmitDeviceCapabilityReport, 'capabilities'> & { installedExtensions: InstalledExtensionSnapshot[] },
-): Promise<void> {
-  const response = await fetch(controlPlaneUrl(`${endpoint.replace(/\/$/, '')}/heartbeat`), {
-    method: 'POST',
-    headers: { ...enterpriseHeaders(employeeId, accessToken), 'Content-Type': 'application/json' },
-    body: JSON.stringify(request),
-  })
-  if (!response.ok) throw new Error(`设备心跳上报返回 ${response.status}`)
-}
-
-export async function loadDeviceFleetOverview(
-  endpoint: string,
-  employeeId: string,
-  accessToken: string,
-  query = '',
-  status = '',
-  signal?: AbortSignal,
-): Promise<DeviceFleetOverview> {
-  const parameters = new URLSearchParams()
-  if (query.trim()) parameters.set('query', query.trim())
-  if (status) parameters.set('status', status)
-  const suffix = parameters.size > 0 ? `?${parameters}` : ''
-  const response = await fetch(controlPlaneUrl(`${endpoint.replace(/\/$/, '')}/overview${suffix}`), {
-    headers: enterpriseHeaders(employeeId, accessToken), signal: boundedSignal(signal),
-  })
-  if (!response.ok) throw new Error(`团队设备总览返回 ${response.status}`)
-  return response.json() as Promise<DeviceFleetOverview>
 }
 
 export async function submitAuditEvent(

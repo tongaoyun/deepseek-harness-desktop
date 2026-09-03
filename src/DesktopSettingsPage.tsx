@@ -1,7 +1,5 @@
-import { BrainCircuit, Keyboard, MonitorCog, RefreshCw, UserRound } from 'lucide-react'
+import { BrainCircuit, Keyboard, RefreshCw, UserRound } from 'lucide-react'
 import { useState } from 'react'
-import type { ConnectorCatalogEntry, ConnectorRuntimeDefinition, RuntimeStatus } from './types'
-import { DeviceCapabilitiesPage } from './DeviceCapabilitiesPage'
 import { DesktopUpdater } from './DesktopUpdater'
 import { MemoryPage } from './MemoryPage'
 import type { MemoryProfile } from './memory'
@@ -10,11 +8,6 @@ interface DesktopSettingsPageProps {
   accessToken: string
   employeeId: string
   memoryEndpoint: string
-  deviceEndpoint: string
-  connectors: ConnectorCatalogEntry[]
-  runtimeConnectors: ConnectorRuntimeDefinition[]
-  authorizedDirectoryCount: number
-  runtimeStatus: RuntimeStatus
   displayName: string
   department: string
   position: string
@@ -22,17 +15,12 @@ interface DesktopSettingsPageProps {
   onMemorySaved: (profile: MemoryProfile) => Promise<void> | void
 }
 
-type SettingsSection = 'profile' | 'system' | 'shortcuts' | 'memory' | 'updates'
+type SettingsSection = 'profile' | 'shortcuts' | 'memory' | 'updates'
 
 export function DesktopSettingsPage({
   accessToken,
   employeeId,
   memoryEndpoint,
-  deviceEndpoint,
-  connectors,
-  runtimeConnectors,
-  authorizedDirectoryCount,
-  runtimeStatus,
   displayName,
   department,
   position,
@@ -46,9 +34,6 @@ export function DesktopSettingsPage({
       <p>通用</p>
       <button className={section === 'profile' ? 'active' : ''} onClick={() => setSection('profile')} type="button">
         <UserRound size={17} /><span><strong>个人资料</strong><small>企业身份与账户信息</small></span>
-      </button>
-      <button className={section === 'system' ? 'active' : ''} onClick={() => setSection('system')} type="button">
-        <MonitorCog size={17} /><span><strong>系统设置</strong><small>本机能力与运行状态</small></span>
       </button>
       <button className={section === 'shortcuts' ? 'active' : ''} onClick={() => setSection('shortcuts')} type="button">
         <Keyboard size={17} /><span><strong>快捷键</strong><small>常用桌面操作</small></span>
@@ -70,16 +55,7 @@ export function DesktopSettingsPage({
             endpoint={memoryEndpoint}
             onSaved={onMemorySaved}
           />
-        : section === 'system' ? <section className="system-settings"><header><span><MonitorCog size={18} /></span><div><h2>系统设置</h2><p>检查这台电脑可供小胤使用的本地能力与运行状态。</p></div></header><DeviceCapabilitiesPage
-            accessToken={accessToken}
-            authorizedDirectoryCount={authorizedDirectoryCount}
-            connectors={connectors}
-            employeeId={employeeId}
-            endpoint={deviceEndpoint}
-            runtimeConnectors={runtimeConnectors}
-            runtimeStatus={runtimeStatus}
-          /></section>
-          : section === 'shortcuts'
+        : section === 'shortcuts'
             ? <section className="shortcut-settings settings-panel"><header><span><Keyboard size={18} /></span><div><h2>键盘快捷键</h2><p>以下快捷键在小胤任意页面可用。</p></div></header><dl><div><dt>搜索最近任务</dt><dd><kbd>Ctrl</kbd><span>+</span><kbd>K</kbd><small>macOS 使用 ⌘ K</small></dd></div><div><dt>发送消息</dt><dd><kbd>Enter</kbd><small>Shift + Enter 换行</small></dd></div><div><dt>关闭菜单或弹窗</dt><dd><kbd>Esc</kbd></dd></div><div><dt>拖入本地文件</dt><dd><span>直接拖到对话</span><small>自动授权文件所在目录</small></dd></div></dl></section>
             : <section className="update-settings settings-panel"><header><span><RefreshCw size={18} /></span><div><h2>更新应用</h2><p>检查并安装小胤桌面端的新版本。</p></div></header><div><DesktopUpdater /></div></section>}
     </section>

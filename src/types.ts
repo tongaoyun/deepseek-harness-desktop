@@ -12,7 +12,6 @@ export interface BootstrapResponse {
     schedules: string
     taskRuns: string
     knowledge: string
-    deviceCapabilities?: string
     auditEvents?: string
     memoryProfile?: string
   }
@@ -339,81 +338,6 @@ export interface InstalledExpertKit {
   installPath: string
   source: 'catalog' | 'developer'
   packageSha256?: string
-}
-
-export interface InstalledExtensionSnapshot {
-  kind: 'expert-kit' | 'skill'
-  id: string
-  version: string
-  source: 'catalog' | 'developer'
-}
-
-export type DeviceCapabilityStatus = 'READY' | 'DEGRADED' | 'UNSUPPORTED'
-
-export interface DeviceCapabilityResult {
-  key: string
-  status: DeviceCapabilityStatus
-  detail: string
-}
-
-export interface DeviceCapabilityReport {
-  id: string
-  deviceId: string
-  desktopVersion: string
-  platform: string
-  architecture: string
-  displayCount: number
-  displayScalePercents: number[]
-  capabilities: DeviceCapabilityResult[]
-  createdAt: string
-}
-
-export interface SubmitDeviceCapabilityReport {
-  deviceId: string
-  desktopVersion: string
-  platform: string
-  architecture: string
-  displayCount: number
-  displayScalePercents: number[]
-  capabilities: DeviceCapabilityResult[]
-}
-
-export type DeviceFleetStatus = 'READY' | 'DEGRADED' | 'NON_COMPLIANT' | 'STALE'
-
-export interface DeviceComplianceIssue {
-  key: string
-  detail: string
-}
-
-export interface DevicePolicy {
-  minimumDesktopVersion: string
-  staleAfterDays: number
-  requiredCapabilities: string[]
-}
-
-export interface DeviceFleetEntry {
-  employeeId: string
-  deviceId: string
-  desktopVersion: string
-  platform: string
-  architecture: string
-  displayCount: number
-  displayScalePercents: number[]
-  status: DeviceFleetStatus
-  degradedCapabilities: string[]
-  complianceIssues: DeviceComplianceIssue[]
-  reportedAt: string
-}
-
-export interface DeviceFleetOverview {
-  totalDevices: number
-  readyDevices: number
-  degradedDevices: number
-  nonCompliantDevices: number
-  staleDevices: number
-  policy: DevicePolicy
-  generatedAt: string
-  devices: DeviceFleetEntry[]
 }
 
 export type AuditEventSource = 'DESKTOP' | 'SERVER' | 'IM'
