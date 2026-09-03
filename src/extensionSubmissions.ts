@@ -1,5 +1,6 @@
 import { resolveControlPlaneEndpoint } from './api'
 import type { ConnectorCatalogEntry, ExpertKitManifest } from './types'
+import { connectorSecretTemplate, connectorSecretValues, deleteConnectorSecrets, saveConnectorSecrets } from './connectorSecrets'
 
 export type ExtensionKind = 'expert-kit' | 'skill' | 'connector'
 export type SubmissionStatus = 'DRAFT' | 'SUBMITTED' | 'CHANGES_REQUESTED' | 'REJECTED' | 'PUBLISHED' | 'UNPUBLISHED'
@@ -62,17 +63,19 @@ export async function submitPackage(manifest: ExpertKitManifest, bytes: number[]
   }), '创建审核版本失败')
   const upload = await fetch(prepared.uploadUrl, { method: 'PUT', body: file, headers: { 'Content-Type': 'application/gzip' } })
   if (!upload.ok) throw new Error(`上传扩展制品失败（${upload.status}）`)
-  if (validationReport) await saveValidationReport(manifest.kind, manifest.id, manifest.version, validationReport, employeeId, accessToken)
-  return checked(await fetch(resolveControlPlaneEndpoint(`/api/v1/extension-submissions/${manifest.kind}/${encodeURIComponent(manifest.id)}/versions/${encodeURIComponent(manifest.version)}/submit`), {
+  const submission = await checked<ExtensionSubmission>(await fetch(resolveControlPlaneEndpoint(`/api/v1/extension-submissions/${manifest.kind}/${encodeURIComponent(manifest.id)}/versions/${encodeURIComponent(manifest.version)}/submit`), {
     method: 'POST', headers: headers(employeeId, accessToken),
   }), '提交审核失败')
+  if (validationReport) await saveValidationReport(manifest.kind, manifest.id, manifest.version, validationReport, employeeId, accessToken).catch(() => undefined)
+  return { ...submission, ...(validationReport ? { validationReport } : {}) }
 }
 
 export async function submitConnector(connector: ConnectorCatalogEntry, employeeId: string, accessToken: string, validationReport?: ExtensionValidationReport): Promise<ExtensionSubmission> {
+  const template = connectorSecretTemplate(connector)
   const submission = await checked<ExtensionSubmission>(await fetch(resolveControlPlaneEndpoint('/api/v1/extension-submissions/connectors'), {
-    method: 'POST', headers: headers(employeeId, accessToken, true), body: JSON.stringify(connector),
+    method: 'POST', headers: headers(employeeId, accessToken, true), body: JSON.stringify(template),
   }), '提交连接器审核失败')
-  if (validationReport) await saveValidationReport('connector', connector.id, connector.version ?? '1.0.0', validationReport, employeeId, accessToken)
+  if (validationReport) await saveValidationReport('connector', connector.id, connector.version ?? '1.0.0', validationReport, employeeId, accessToken).catch(() => undefined)
   return { ...submission, validationReport }
 }
 
@@ -87,12 +90,26 @@ const storageKey = (employeeId: string) => `xiaoyin.personal-connectors.${employ
 export function loadPersonalConnectors(employeeId: string): ConnectorCatalogEntry[] {
   try {
     const values = JSON.parse(window.localStorage.getItem(storageKey(employeeId)) || '[]') as Array<ConnectorCatalogEntry & { category?: ConnectorCatalogEntry['category'] }>
-    return values.map((item) => ({ ...item, category: item.category ?? 'other' }))
+    const sanitized = values.map((item) => {
+      const normalized = { ...item, category: item.category ?? 'other' } as ConnectorCatalogEntry
+      const local = connectorSecretValues(normalized)
+      if ([...Object.values(local.environment), ...Object.values(local.headers)].some(Boolean)) {
+        saveConnectorSecrets(employeeId, normalized.id, local)
+      }
+      return connectorSecretTemplate(normalized)
+    })
+    window.localStorage.setItem(storageKey(employeeId), JSON.stringify(sanitized))
+    return sanitized
   } catch { return [] }
 }
 
 export function savePersonalConnector(employeeId: string, connector: ConnectorCatalogEntry): ConnectorCatalogEntry[] {
-  const values = [connector, ...loadPersonalConnectors(employeeId).filter((item) => item.id !== connector.id)]
+  const local = connectorSecretValues(connector)
+  if ([...Object.values(local.environment), ...Object.values(local.headers)].some(Boolean)) {
+    saveConnectorSecrets(employeeId, connector.id, local)
+  }
+  const template = connectorSecretTemplate(connector)
+  const values = [template, ...loadPersonalConnectors(employeeId).filter((item) => item.id !== connector.id)]
   window.localStorage.setItem(storageKey(employeeId), JSON.stringify(values))
   return values
 }
@@ -100,5 +117,6 @@ export function savePersonalConnector(employeeId: string, connector: ConnectorCa
 export function deletePersonalConnector(employeeId: string, id: string): ConnectorCatalogEntry[] {
   const values = loadPersonalConnectors(employeeId).filter((item) => item.id !== id)
   window.localStorage.setItem(storageKey(employeeId), JSON.stringify(values))
+  deleteConnectorSecrets(employeeId, id)
   return values
 }

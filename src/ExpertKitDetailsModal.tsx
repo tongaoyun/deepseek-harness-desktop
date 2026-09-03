@@ -104,9 +104,12 @@ export function ExpertKitDetailsModal({
           {onExport && <button className="secondary" onClick={onExport} type="button">导出 ZIP</button>}
           {kit.serverWorkflows.length > 0 && <button className="secondary" onClick={onSchedule} type="button"><CalendarClock size={14} /> 创建定时任务</button>}
           <button onClick={onUse} type="button">{selected ? '正在使用' : '立即使用'}</button>
-        </> : <button disabled={installing || !kit.sha256} onClick={onInstall} type="button">
-          {installing ? '正在校验并安装…' : kit.installState === 'update' ? '确认更新' : '确认安装'}
-        </button>}
+        </> : kit.installState === 'update' ? <>
+          {onCustomize && <button className="secondary" onClick={onCustomize} type="button">定制已安装版</button>}
+          {onExport && <button className="secondary" onClick={onExport} type="button">导出已安装版</button>}
+          <button className="secondary" onClick={onUse} type="button">{selected ? `正在使用 v${kit.installedVersion}` : `继续使用 v${kit.installedVersion}`}</button>
+          <button disabled={installing || !kit.sha256} onClick={onInstall} type="button">{installing ? '正在校验并安装…' : '确认更新'}</button>
+        </> : <button disabled={installing || !kit.sha256} onClick={onInstall} type="button">{installing ? '正在校验并安装…' : '确认安装'}</button>}
       </div>
     </section>
   </div>

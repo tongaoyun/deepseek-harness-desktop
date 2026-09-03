@@ -1,4 +1,5 @@
 import type { ConnectorCatalogEntry, ConnectorRuntimeDefinition } from './types'
+import { applyConnectorSecrets, type ConnectorSecretStore } from './connectorSecrets'
 
 const DESKTOP_BROWSER: ConnectorCatalogEntry = {
   id: 'desktop-browser',
@@ -17,6 +18,7 @@ const DESKTOP_BROWSER: ConnectorCatalogEntry = {
     'browser_click', 'browser_type', 'browser_select', 'browser_scroll', 'browser_back',
     'browser_downloads', 'browser_human_takeover', 'browser_screenshot',
   ],
+  command: '', arguments: [], environment: {}, headers: {},
 }
 
 export function withDesktopBuiltinConnectors(connectors: ConnectorCatalogEntry[]): ConnectorCatalogEntry[] {
@@ -27,9 +29,11 @@ export function buildRuntimeConnectorCatalog(
   connectors: ConnectorCatalogEntry[],
   legacyErpMcpUrl: string,
   enabledConnectorIds: Iterable<string> = [],
+  localSecrets: ConnectorSecretStore = {},
 ): ConnectorRuntimeDefinition[] {
   const enabled = new Set(enabledConnectorIds)
   return connectors.map((connector) => {
+    const configured = applyConnectorSecrets(connector, localSecrets[connector.id])
     const legacyErp = connector.id === 'erp-mcp' && !connector.transport && Boolean(legacyErpMcpUrl)
     return {
       id: connector.id,
@@ -41,6 +45,10 @@ export function buildRuntimeConnectorCatalog(
       url: connector.url || (legacyErp ? legacyErpMcpUrl : ''),
       authMode: connector.authMode ?? (legacyErp ? 'employee-bearer' : 'none'),
       toolNames: [...new Set(connector.toolNames)],
+      command: configured.command ?? '',
+      arguments: configured.arguments ?? [],
+      environment: configured.environment ?? {},
+      headers: configured.headers ?? {},
       enabled: enabled.has(connector.id),
     }
   })

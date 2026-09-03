@@ -13,6 +13,14 @@ pub struct ConnectorDefinition {
     pub(crate) url: String,
     pub(crate) auth_mode: String,
     #[serde(default)]
+    pub(crate) command: String,
+    #[serde(default)]
+    pub(crate) arguments: Vec<String>,
+    #[serde(default)]
+    pub(crate) environment: HashMap<String, String>,
+    #[serde(default)]
+    pub(crate) headers: HashMap<String, String>,
+    #[serde(default)]
     pub(crate) tool_names: Vec<String>,
     #[serde(default)]
     pub(crate) enabled: bool,
@@ -27,6 +35,10 @@ pub struct RuntimeConnector {
     pub(crate) transport: String,
     pub(crate) url: String,
     pub(crate) auth_mode: String,
+    pub(crate) command: String,
+    pub(crate) arguments: Vec<String>,
+    pub(crate) environment: HashMap<String, String>,
+    pub(crate) headers: HashMap<String, String>,
     pub(crate) allowed_tools: Vec<String>,
     pub(crate) required_tools: Vec<String>,
     pub(crate) allow_write: bool,
@@ -48,6 +60,10 @@ pub(crate) fn diagnostic_connectors(
             transport: connector.transport.clone(),
             url: connector.url.clone(),
             auth_mode: connector.auth_mode.clone(),
+            command: connector.command.clone(),
+            arguments: connector.arguments.clone(),
+            environment: connector.environment.clone(),
+            headers: connector.headers.clone(),
             allowed_tools: connector.tool_names.clone(),
             required_tools: connector.tool_names.clone(),
             allow_write: true,
@@ -63,25 +79,7 @@ pub(crate) fn runtime_connectors(
 ) -> Result<Vec<RuntimeConnector>, String> {
     validate_connector_catalog(catalog)?;
     if !profile.allow_connector_read {
-        if !profile.connector_refs.is_empty() || !profile.required_connector_tools.is_empty() {
-            return Err("专家套件禁止读取连接器，但同时声明了连接器依赖".to_string());
-        }
         return Ok(Vec::new());
-    }
-    let by_id = catalog
-        .iter()
-        .map(|connector| (connector.id.as_str(), connector))
-        .collect::<HashMap<_, _>>();
-    for connector_id in &profile.connector_refs {
-        let connector = by_id
-            .get(connector_id.as_str())
-            .ok_or_else(|| format!("扩展引用了未发布的连接器：{connector_id}"))?;
-        if connector.status != "ready" {
-            return Err(format!("扩展依赖的连接器尚未就绪：{}", connector.name));
-        }
-        if !connector.enabled {
-            return Err(format!("请先为当前员工启用连接器：{}", connector.name));
-        }
     }
     let selected = catalog
         .iter()
@@ -93,45 +91,6 @@ pub(crate) fn runtime_connectors(
         .iter()
         .map(|connector| (connector.id.as_str(), connector.tool_names.to_vec()))
         .collect::<HashMap<_, _>>();
-    let desktop_tools = catalog
-        .iter()
-        .filter(|connector| {
-            connector.enabled && connector.transport == "desktop" && connector.status == "ready"
-        })
-        .flat_map(|connector| connector.tool_names.iter().cloned())
-        .collect::<HashSet<_>>();
-    let mut claimed_tools = HashMap::<String, String>::new();
-    for connector in &selected {
-        for tool in connector_tools
-            .get(connector.id.as_str())
-            .expect("selected connector tools were computed")
-        {
-            if let Some(owner) = claimed_tools.insert(tool.clone(), connector.id.clone()) {
-                return Err(format!(
-                    "连接器工具名冲突：{tool} 同时由 {owner} 和 {} 提供",
-                    connector.id
-                ));
-            }
-        }
-    }
-    let available_tools = claimed_tools
-        .keys()
-        .cloned()
-        .chain(desktop_tools)
-        .collect::<HashSet<_>>();
-    let missing = profile
-        .required_connector_tools
-        .iter()
-        .filter(|tool| !available_tools.contains(*tool))
-        .cloned()
-        .collect::<Vec<_>>();
-    if !missing.is_empty() {
-        return Err(format!(
-            "专家套件缺少可用连接器工具：{}",
-            missing.join(", ")
-        ));
-    }
-
     Ok(selected
         .into_iter()
         .map(|connector| RuntimeConnector {
@@ -141,6 +100,10 @@ pub(crate) fn runtime_connectors(
             transport: connector.transport.clone(),
             url: connector.url.clone(),
             auth_mode: connector.auth_mode.clone(),
+            command: connector.command.clone(),
+            arguments: connector.arguments.clone(),
+            environment: connector.environment.clone(),
+            headers: connector.headers.clone(),
             allowed_tools: connector_tools
                 .get(connector.id.as_str())
                 .expect("selected connector tools were computed")
@@ -153,15 +116,12 @@ pub(crate) fn runtime_connectors(
                 .collect(),
             allow_write: profile.allow_connector_write,
             require_write_approval: profile.approve_connector_write,
-            required: profile.connector_refs.contains(&connector.id),
+            required: false,
         })
         .collect())
 }
 
 pub(crate) fn validate_connector_catalog(connectors: &[ConnectorDefinition]) -> Result<(), String> {
-    if connectors.len() > 32 {
-        return Err("连接器数量不能超过 32 个".to_string());
-    }
     let mut connector_ids = HashSet::new();
     for connector in connectors {
         if !valid_identifier(&connector.id) || !connector_ids.insert(connector.id.as_str()) {
@@ -181,7 +141,7 @@ pub(crate) fn validate_connector_catalog(connectors: &[ConnectorDefinition]) -> 
         }
         if !matches!(
             connector.transport.as_str(),
-            "streamable-http" | "sse" | "desktop"
+            "streamable-http" | "sse" | "stdio" | "desktop"
         ) {
             return Err(format!("连接器传输方式无效：{}", connector.id));
         }
@@ -191,6 +151,10 @@ pub(crate) fn validate_connector_catalog(connectors: &[ConnectorDefinition]) -> 
         if connector.transport == "desktop" {
             if !connector.url.is_empty() {
                 return Err(format!("桌面内置连接器不能配置远程地址：{}", connector.id));
+            }
+        } else if connector.transport == "stdio" {
+            if connector.command.trim().is_empty() {
+                return Err(format!("stdio 连接器缺少启动命令：{}", connector.id));
             }
         } else if connector.status == "ready" {
             validate_http_url("连接器", &connector.url)?;

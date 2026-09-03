@@ -31,4 +31,32 @@ describe('capability snapshot', () => {
     const disabled = { ...connector('erp'), enabled: false }
     expect(createCapabilitySnapshot([], [], [disabled]).connectors).toEqual([])
   })
+
+  it('keeps the installed artifact executable until the employee chooses to update', () => {
+    const kit = {
+      id: 'ops', version: '2.0.0', sha256: 'b'.repeat(64), installState: 'update',
+      installed: { manifest: { version: '1.0.0' }, packageSha256: 'a'.repeat(64) },
+    } as ExpertKitView
+    expect(createCapabilitySnapshot([kit], [], []).extensions).toEqual([{
+      kind: 'expert-kit', id: 'ops', version: '1.0.0', sha256: 'a'.repeat(64),
+    }])
+  })
+
+  it('stores only connector credential keys in task history and hydrates at execution time', () => {
+    const configured = {
+      ...connector('crm'),
+      environment: { CRM_TOKEN: 'env-secret' },
+      headers: { Authorization: 'header-secret' },
+    }
+    const snapshot = createCapabilitySnapshot([], [], [configured])
+    expect(snapshot.connectors[0]).toMatchObject({
+      environment: { CRM_TOKEN: '' }, headers: { Authorization: '' },
+    })
+    expect(JSON.stringify(snapshot)).not.toContain('env-secret')
+    expect(connectorsForSnapshot(snapshot, {
+      crm: { environment: { CRM_TOKEN: 'local-env' }, headers: { Authorization: 'local-header' } },
+    })[0]).toMatchObject({
+      environment: { CRM_TOKEN: 'local-env' }, headers: { Authorization: 'local-header' },
+    })
+  })
 })

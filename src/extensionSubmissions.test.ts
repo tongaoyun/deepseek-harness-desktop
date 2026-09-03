@@ -4,6 +4,7 @@ import {
   loadPersonalConnectors,
   savePersonalConnector,
   saveValidationReport,
+  submitConnector,
   type ExtensionValidationReport,
 } from './extensionSubmissions'
 import type { ConnectorCatalogEntry } from './types'
@@ -61,6 +62,16 @@ describe('personal connector drafts', () => {
     expect(deletePersonalConnector('employee-1', 'first').map((item) => item.id)).toEqual(['second'])
     expect(loadPersonalConnectors('employee-2')[0].version).toBe('2.0.0')
   })
+
+  it('moves personal connector values out of draft metadata', () => {
+    savePersonalConnector('employee-1', {
+      ...connector('first', '1.0.0'), headers: { Authorization: 'local-secret' },
+    })
+
+    expect(loadPersonalConnectors('employee-1')[0].headers).toEqual({ Authorization: '' })
+    expect(values.get('xiaoyin.personal-connectors.employee-1')).not.toContain('local-secret')
+    expect(values.get('xiaoyin.connector-secrets.employee-1')).toContain('local-secret')
+  })
 })
 
 describe('extension validation report api', () => {
@@ -82,5 +93,23 @@ describe('extension validation report api', () => {
     expect(url).toBe('http://192.168.2.67:30081/api/v1/extension-submissions/skill/order%20review/versions/1.0.0/validation-report')
     expect(options.headers).toMatchObject({ 'X-Xiaoyin-Employee-Id': 'employee-7', Authorization: 'Bearer token' })
     expect(JSON.parse(options.body)).toEqual(report)
+  })
+
+  it('never sends local connector secret values to the control plane', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: 'erp', version: '1.0.0' }), {
+      status: 200, headers: { 'Content-Type': 'application/json' },
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+    await submitConnector({
+      ...connector('erp', '1.0.0'),
+      environment: { ERP_TOKEN: 'env-secret' },
+      headers: { Authorization: 'header-secret' },
+    }, 'employee-1', 'access-token')
+
+    const payload = JSON.parse(fetchMock.mock.calls[0][1].body)
+    expect(payload.environment).toEqual({ ERP_TOKEN: '' })
+    expect(payload.headers).toEqual({ Authorization: '' })
+    expect(JSON.stringify(payload)).not.toContain('env-secret')
+    expect(JSON.stringify(payload)).not.toContain('header-secret')
   })
 })

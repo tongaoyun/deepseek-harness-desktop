@@ -28,4 +28,22 @@ describe('slash invocation options', () => {
     const options = buildInvocationOptions([], [standalone])
     expect(options[0]).toMatchObject({ profileKind: 'skill', profileId: 'document-insight', label: '/document-insight' })
   })
+
+  it('keeps the installed version commands available when an update exists', () => {
+    const update = {
+      ...kit,
+      version: '2.0.0',
+      commandIds: ['new-report'],
+      skillIds: ['new-inventory'],
+      installState: 'update',
+      installed: {
+        manifest: {
+          id: 'ops', name: '运营专家', version: '1.0.0', commands: [{ id: 'daily-report', path: 'commands/daily.md' }],
+          skills: [{ id: 'inventory', path: 'skills/inventory' }],
+        },
+      },
+    } as ExpertKitView
+    expect(buildInvocationOptions([update], []).map((item) => item.label))
+      .toEqual(['/daily-report', '/inventory'])
+  })
 })

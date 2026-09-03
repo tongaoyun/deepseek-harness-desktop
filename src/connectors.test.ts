@@ -17,4 +17,15 @@ describe('runtime connector catalog', () => {
     })
     expect(result[1]).toMatchObject({ transport: 'desktop', url: '', enabled: false })
   })
+
+  it('hydrates published credential keys only from the current employee local store', () => {
+    const [runtime] = buildRuntimeConnectorCatalog([{
+      id: 'crm', name: 'CRM', summary: '', category: 'project-management', kind: 'managed-mcp', scope: 'organization',
+      status: 'ready', managed: false, version: '1', transport: 'stdio', command: 'node', arguments: ['server.js'],
+      url: '', authMode: 'none', toolNames: [], environment: { CRM_TOKEN: '' }, headers: {},
+    }], '', ['crm'], { crm: { environment: { CRM_TOKEN: 'local-secret' }, headers: {} } })
+
+    expect(runtime.environment).toEqual({ CRM_TOKEN: 'local-secret' })
+    expect(runtime.enabled).toBe(true)
+  })
 })

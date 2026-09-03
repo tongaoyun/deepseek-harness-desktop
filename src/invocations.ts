@@ -13,29 +13,34 @@ export interface InvocationOption {
 }
 
 export function buildInvocationOptions(kits: ExpertKitView[], skills: Array<SkillCatalogEntry | SkillView>): InvocationOption[] {
-  const installed = kits.filter((kit) => kit.installState === 'installed')
-  const options: InvocationOption[] = installed.flatMap((kit) => [
-    ...kit.commandIds.map((id): InvocationOption => ({
+  const installed = kits.filter((kit) => kit.installState === 'installed' || kit.installState === 'update')
+  const options: InvocationOption[] = installed.flatMap((kit) => {
+    const usingOlderVersion = kit.installState === 'update' && kit.installed
+    const commandIds = usingOlderVersion ? kit.installed!.manifest.commands.map((command) => command.id) : kit.commandIds
+    const skillIds = usingOlderVersion ? kit.installed!.manifest.skills.map((skill) => skill.id) : kit.skillIds
+    const profileName = usingOlderVersion ? kit.installed!.manifest.name : kit.name
+    return [
+    ...commandIds.map((id): InvocationOption => ({
       id,
       kind: 'command',
       label: `/${id}`,
-      description: `运行《${kit.name}》快捷命令`,
+      description: `运行《${profileName}》快捷命令`,
       profileKind: 'expert-kit',
       profileId: kit.id,
-      profileName: kit.name,
+      profileName,
     })),
-    ...kit.skillIds.map((id): InvocationOption => ({
+    ...skillIds.map((id): InvocationOption => ({
       id,
       kind: 'skill',
       label: `/${id}`,
-      description: `使用《${kit.name}》中的 Skill`,
+      description: `使用《${profileName}》中的 Skill`,
       profileKind: 'expert-kit',
       profileId: kit.id,
-      profileName: kit.name,
+      profileName,
     })),
-  ])
+  ]})
   for (const skill of skills) {
-    if ('installState' in skill && skill.installState === 'installed') {
+    if ('installState' in skill && (skill.installState === 'installed' || skill.installState === 'update')) {
       options.push({ id: skill.id, kind: 'skill', label: `/${skill.id}`,
         description: `${skill.summary} · 独立 Skill`, profileKind: 'skill', profileId: skill.id, profileName: skill.name })
     }
