@@ -17,7 +17,9 @@ import {
   type ExtensionKind,
   type ExtensionSubmission,
 } from './extensionSubmissions'
+import { composerIssues, deriveSkillDependencies, ExpertKitComposer } from './ExpertKitComposer'
 import { diagnoseConnectors } from './harness'
+import type { SkillView } from './skills'
 import type {
   ConnectorCatalogEntry,
   ConnectorDiagnosticResult,
@@ -36,6 +38,8 @@ interface Props {
   initialKind: ExtensionKind
   employeeId: string
   accessToken: string
+  skills: SkillView[]
+  connectors: ConnectorCatalogEntry[]
   onClose: () => void
   onChanged: (change: AuthoringChange) => Promise<void> | void
 }
@@ -76,13 +80,14 @@ const defaultPermissions: Record<string, PermissionMode> = {
   localFiles: 'deny', shell: 'deny', computerUse: 'deny', connectorRead: 'allow', connectorWrite: 'approval',
 }
 
-export function ExtensionAuthoringModal({ initialKind, employeeId, accessToken, onClose, onChanged }: Props) {
+export function ExtensionAuthoringModal({ initialKind, employeeId, accessToken, skills, connectors, onClose, onChanged }: Props) {
   const [kind, setKind] = useState<ExtensionKind>(initialKind)
   const [tab, setTab] = useState<'create' | 'mine'>('create')
   const [form, setForm] = useState(defaults)
   const [permissions, setPermissions] = useState<Record<string, PermissionMode>>(defaultPermissions)
   const [submissions, setSubmissions] = useState<ExtensionSubmission[]>([])
   const [localCreations, setLocalCreations] = useState<LocalCreation[]>([])
+  const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>([])
   const [editing, setEditing] = useState<{ kind: ExtensionKind; id: string; version: string }>()
   const [busy, setBusy] = useState(false)
   const [testing, setTesting] = useState(false)
@@ -145,6 +150,7 @@ export function ExtensionAuthoringModal({ initialKind, employeeId, accessToken, 
     setKind(nextKind)
     setForm(defaults)
     setPermissions(defaultPermissions)
+    setSelectedSkillIds([])
     setEditing(undefined)
     resetDraftState()
     setTab('create')
@@ -190,6 +196,9 @@ export function ExtensionAuthoringModal({ initialKind, employeeId, accessToken, 
         requiredTools: manifest.requiredTools.join(', '),
       })
       setPermissions({ ...defaultPermissions, ...manifest.permissions })
+      setSelectedSkillIds(local.kind === 'expert-kit'
+        ? manifest.skills.map((skill) => skill.id).filter((id) => id !== 'main')
+        : [])
       setEditing(mode === 'edit' ? { kind: local.kind, id: local.id, version: local.version } : undefined)
       resetDraftState()
       setTab('create')
@@ -215,8 +224,17 @@ export function ExtensionAuthoringModal({ initialKind, employeeId, accessToken, 
         await onChanged({ type: 'connector-upsert', connector })
       } else {
         if (kind === 'skill' && split(form.triggers).length === 0) throw new Error('Skill 至少需要一个触发词')
-        const manifest = manifestFromForm(kind, form, permissions)
-        const value = await createDeveloperExtension(manifest, form.instructions)
+        if (kind === 'expert-kit' && selectedSkillIds.length > 0) {
+          const issues = composerIssues(skills, connectors, selectedSkillIds, split(form.connectorRefs), split(form.requiredTools))
+          if (issues.length > 0) throw new Error(`专家套件依赖未完成：${issues[0]}`)
+        }
+        const manifest = manifestFromForm(kind, form, permissions, selectedSkillIds)
+        const skillSources = kind === 'expert-kit' ? selectedSkillIds.map((id) => {
+          const skill = skills.find((item) => item.id === id && item.installed)
+          if (!skill?.installedVersion) throw new Error(`Skill ${id} 尚未安装到本机`)
+          return { id, version: skill.installedVersion }
+        }) : []
+        const value = await createDeveloperExtension(manifest, form.instructions, skillSources)
         setCreated({ manifest, bytes: value.bytes })
         setEditing({ kind, id: manifest.id, version: manifest.version })
         await onChanged({ type: 'extension-change' })
@@ -312,6 +330,19 @@ export function ExtensionAuthoringModal({ initialKind, employeeId, accessToken, 
     }
   }
 
+  const updateSelectedSkills = (ids: string[]) => {
+    const before = deriveSkillDependencies(skills, selectedSkillIds)
+    const after = deriveSkillDependencies(skills, ids)
+    const manualConnectors = split(form.connectorRefs).filter((id) => !before.connectorIds.includes(id))
+    const manualTools = split(form.requiredTools).filter((tool) => !before.tools.includes(tool))
+    setSelectedSkillIds(ids)
+    setForm((current) => ({
+      ...current,
+      connectorRefs: unique([...manualConnectors, ...after.connectorIds]).join(', '),
+      requiredTools: unique([...manualTools, ...after.tools]).join(', '),
+    }))
+  }
+
   return <div className="authoring-backdrop" onMouseDown={onClose} role="presentation">
     <section aria-modal="true" className="authoring-modal" onMouseDown={(event) => event.stopPropagation()} role="dialog">
       <header><div><strong>企业扩展创作中心</strong><small>个人扩展可立即使用；提交审核通过后向全公司发布。</small></div><button aria-label="关闭" onClick={onClose} type="button"><X size={16} /></button></header>
@@ -353,10 +384,21 @@ export function ExtensionAuthoringModal({ initialKind, employeeId, accessToken, 
             <label className="wide">工具名称<input placeholder="测试连接后自动回填，也可手工修改" value={form.toolNames} onChange={(event) => setForm({ ...form, toolNames: event.target.value })} /></label>
             <div className="connector-authoring-test wide"><button disabled={testing || busy} onClick={() => void testConnector()} type="button"><RefreshCw className={testing ? 'spin' : ''} size={13} />{testing ? '正在连接…' : '测试连接并发现工具'}</button>{diagnostic && diagnostic.status !== 'unavailable' && <span>{diagnostic.status === 'ready' ? '连接成功' : '连接成功，登记工具有变化'} · {diagnostic.latencyMs} ms · 发现 {diagnostic.discoveredTools.length} 个工具</span>}</div>
           </> : <>
-            <label>触发词<input placeholder="多个用逗号分隔" value={form.triggers} onChange={(event) => setForm({ ...form, triggers: event.target.value })} /></label>
-            <label>连接器 IDs<input value={form.connectorRefs} onChange={(event) => setForm({ ...form, connectorRefs: event.target.value })} /></label>
-            <label className="wide">所需工具<input value={form.requiredTools} onChange={(event) => setForm({ ...form, requiredTools: event.target.value })} /></label>
-            <label className="wide">执行说明<textarea required value={form.instructions} onChange={(event) => setForm({ ...form, instructions: event.target.value })} /></label>
+            {kind === 'expert-kit' && <ExpertKitComposer
+              connectors={connectors}
+              onConnectorsChange={(ids) => setForm({ ...form, connectorRefs: ids.join(', ') })}
+              onSkillsChange={updateSelectedSkills}
+              onToolsChange={(tools) => setForm({ ...form, requiredTools: tools.join(', ') })}
+              selectedConnectorIds={split(form.connectorRefs)}
+              selectedSkillIds={selectedSkillIds}
+              selectedTools={split(form.requiredTools)}
+              skills={skills}
+            />}
+            {kind === 'skill' && <label>触发词<input placeholder="多个用逗号分隔" value={form.triggers} onChange={(event) => setForm({ ...form, triggers: event.target.value })} /></label>}
+            {kind === 'skill' && <label>连接器 IDs<input value={form.connectorRefs} onChange={(event) => setForm({ ...form, connectorRefs: event.target.value })} /></label>}
+            {kind === 'skill' && <label className="wide">所需工具<input value={form.requiredTools} onChange={(event) => setForm({ ...form, requiredTools: event.target.value })} /></label>}
+            {(kind === 'skill' || selectedSkillIds.length === 0) && <label className="wide">{kind === 'skill' ? '执行说明' : '内置 Skill 执行说明'}<textarea required value={form.instructions} onChange={(event) => setForm({ ...form, instructions: event.target.value })} /></label>}
+            {kind === 'expert-kit' && selectedSkillIds.length > 0 && <div className="expert-composer-packaging wide">保存时会把 {selectedSkillIds.length} 个已安装 Skill 的执行说明复制进套件制品，套件可独立安装和审核。</div>}
             <fieldset className="wide"><legend>权限</legend>{Object.keys(permissions).map((key) => <label key={key}>{permissionLabel(key)}<select value={permissions[key]} onChange={(event) => setPermissions({ ...permissions, [key]: event.target.value as PermissionMode })}><option value="deny">禁止</option><option value="approval">需确认</option><option value="allow">允许</option></select></label>)}</fieldset>
           </>}
         </div>
@@ -371,17 +413,20 @@ function connectorFromForm(form: AuthoringForm): ConnectorCatalogEntry {
   return { id: form.id, name: form.name, version: form.version, summary: form.summary, kind: 'managed-mcp', scope: 'PERSONAL', status: 'ready', managed: false, transport: form.transport, url: form.url, authMode: form.authMode, toolNames: split(form.toolNames) }
 }
 
-function manifestFromForm(kind: 'expert-kit' | 'skill', form: AuthoringForm, permissions: Record<string, PermissionMode>): ExpertKitManifest {
+function manifestFromForm(kind: 'expert-kit' | 'skill', form: AuthoringForm, permissions: Record<string, PermissionMode>, selectedSkillIds: string[]): ExpertKitManifest {
   return {
-    schemaVersion: '1', kind, id: form.id, name: form.name, version: form.version, summary: form.summary,
+    schemaVersion: kind === 'expert-kit' ? '2' : '1', kind, id: form.id, name: form.name, version: form.version, summary: form.summary,
     triggers: split(form.triggers), minimumDesktopVersion: '0.1.29', commands: [],
-    skills: [{ id: kind === 'skill' ? form.id : 'main', path: kind === 'skill' ? 'SKILL.md' : 'skills/main/SKILL.md' }],
+    skills: kind === 'expert-kit' && selectedSkillIds.length > 0
+      ? selectedSkillIds.map((id) => ({ id, path: `skills/${id}/SKILL.md` }))
+      : [{ id: kind === 'skill' ? form.id : 'main', path: kind === 'skill' ? 'SKILL.md' : 'skills/main/SKILL.md' }],
     requiredTools: split(form.requiredTools), connectorRefs: split(form.connectorRefs), knowledgeBaseRefs: [],
     permissions: permissions as ExpertKitManifest['permissions'], serverWorkflows: [],
   }
 }
 
 function split(value: string) { return value.split(',').map((item) => item.trim()).filter(Boolean) }
+function unique(values: string[]) { return [...new Set(values)] }
 function coordinate(value: Pick<LocalCreation, 'kind' | 'id' | 'version'>) { return `${value.kind}:${value.id}:${value.version}` }
 function bumpVersion(value: string) { const match = /^(\d+)\.(\d+)\.(\d+)/.exec(value); return match ? `${match[1]}.${match[2]}.${Number(match[3]) + 1}` : '1.0.0' }
 function kindLabel(value: ExtensionKind) { return value === 'expert-kit' ? '专家套件' : value === 'skill' ? 'Skill' : 'MCP 连接器' }

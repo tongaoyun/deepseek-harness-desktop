@@ -190,6 +190,15 @@ pub struct InstalledExpertKit {
 pub struct CreateDeveloperExtensionRequest {
     manifest: ExpertKitManifest,
     instructions: String,
+    #[serde(default)]
+    skill_sources: Vec<DeveloperSkillSource>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DeveloperSkillSource {
+    id: String,
+    version: String,
 }
 
 #[derive(Serialize)]
@@ -351,7 +360,8 @@ pub fn create_developer_extension(
     request: CreateDeveloperExtensionRequest,
 ) -> Result<DeveloperExtensionPackage, String> {
     let manifest = request.manifest;
-    let bytes = build_developer_package(&manifest, &request.instructions)?;
+    let payload_files = load_composed_skill_files(&app, &manifest, &request.skill_sources)?;
+    let bytes = build_developer_package(&manifest, &request.instructions, &payload_files)?;
     let installed = install_package_bytes(
         &extensions_root(&app)?.join(&manifest.kind),
         &bytes,
@@ -367,6 +377,7 @@ pub fn create_developer_extension(
 fn build_developer_package(
     manifest: &ExpertKitManifest,
     instructions: &str,
+    payload_files: &[(String, Vec<u8>)],
 ) -> Result<Vec<u8>, String> {
     validate_artifact_kind(&manifest.kind)?;
     let manifest_path = if manifest.kind == "skill" {
@@ -383,18 +394,123 @@ fn build_developer_package(
             .ok_or_else(|| "专家套件至少需要一个 Skill".to_string())?;
         skill.path.clone()
     };
-    let manifest_bytes = serde_json::to_vec_pretty(&manifest)
+    let mut manifest_value =
+        serde_json::to_value(manifest).map_err(|error| format!("无法生成扩展清单：{error}"))?;
+    let manifest_object = manifest_value
+        .as_object_mut()
+        .ok_or_else(|| "扩展清单必须是 JSON 对象".to_string())?;
+    manifest_object.remove("kind");
+    if manifest.kind == "skill" {
+        manifest_object.remove("commands");
+        manifest_object.remove("skills");
+        manifest_object.remove("serverWorkflows");
+    }
+    let manifest_bytes = serde_json::to_vec_pretty(&manifest_value)
         .map_err(|error| format!("无法生成扩展清单：{error}"))?;
     let encoder = GzEncoder::new(Vec::new(), Compression::default());
     let mut archive = tar::Builder::new(encoder);
     append_generated_file(&mut archive, manifest_path, &manifest_bytes)?;
-    append_generated_file(&mut archive, &instruction_path, instructions.as_bytes())?;
+    if payload_files.is_empty() {
+        append_generated_file(&mut archive, &instruction_path, instructions.as_bytes())?;
+    } else {
+        for (path, bytes) in payload_files {
+            append_generated_file(&mut archive, path, bytes)?;
+        }
+    }
     let encoder = archive
         .into_inner()
         .map_err(|error| format!("无法生成扩展制品：{error}"))?;
     encoder
         .finish()
         .map_err(|error| format!("无法压缩扩展制品：{error}"))
+}
+
+fn load_composed_skill_files(
+    app: &tauri::AppHandle,
+    manifest: &ExpertKitManifest,
+    sources: &[DeveloperSkillSource],
+) -> Result<Vec<(String, Vec<u8>)>, String> {
+    if sources.is_empty() {
+        return Ok(Vec::new());
+    }
+    if manifest.kind != "expert-kit" || sources.len() != manifest.skills.len() {
+        return Err("专家套件的 Skill 来源与清单不一致".to_string());
+    }
+    let root = extensions_root(app)?.join("skill");
+    let mut ids = HashSet::new();
+    let mut files = Vec::new();
+    for source in sources {
+        validate_identifier(&source.id)?;
+        Version::parse(&source.version).map_err(|error| format!("Skill 版本无效：{error}"))?;
+        if !ids.insert(source.id.as_str()) {
+            return Err(format!("重复选择了 Skill：{}", source.id));
+        }
+        let reference = manifest
+            .skills
+            .iter()
+            .find(|reference| reference.id == source.id)
+            .ok_or_else(|| format!("Skill 未写入专家套件清单：{}", source.id))?;
+        let directory = root.join(&source.id).join(&source.version);
+        load_and_validate_manifest(
+            &directory,
+            Some("skill"),
+            Some(&source.id),
+            Some(&source.version),
+        )?;
+        collect_payload_files(
+            &directory,
+            &directory,
+            Path::new(&format!("skills/{}", source.id)),
+            &mut files,
+        )?;
+        if !files.iter().any(|(path, _)| path == &reference.path) {
+            return Err(format!("Skill {} 缺少入口文件", source.id));
+        }
+    }
+    Ok(files)
+}
+
+fn collect_payload_files(
+    root: &Path,
+    directory: &Path,
+    target_prefix: &Path,
+    files: &mut Vec<(String, Vec<u8>)>,
+) -> Result<(), String> {
+    let mut entries = fs::read_dir(directory)
+        .map_err(|error| format!("无法读取扩展资源：{error}"))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| format!("无法读取扩展资源：{error}"))?;
+    entries.sort_by_key(std::fs::DirEntry::file_name);
+    for entry in entries {
+        let path = entry.path();
+        let relative = path
+            .strip_prefix(root)
+            .map_err(|_| "扩展资源路径无效".to_string())?;
+        let first = relative.components().next();
+        if matches!(first, Some(Component::Normal(name)) if name == ".xiaoyin" || name == ".xiaoyin-kit" || name == ".xiaoyin-skill")
+        {
+            continue;
+        }
+        validate_relative_path(relative)?;
+        let file_type = entry
+            .file_type()
+            .map_err(|error| format!("无法检查扩展资源类型：{error}"))?;
+        if file_type.is_symlink() || !file_type.is_file() && !file_type.is_dir() {
+            return Err(format!("扩展包含不支持的资源类型：{}", relative.display()));
+        }
+        if file_type.is_dir() {
+            collect_payload_files(root, &path, target_prefix, files)?;
+            continue;
+        }
+        if files.len() >= 2048 {
+            return Err("扩展资源文件不能超过 2048 个".to_string());
+        }
+        let target = target_prefix.join(relative);
+        validate_relative_path(&target)?;
+        let bytes = fs::read(&path).map_err(|error| format!("无法读取扩展资源：{error}"))?;
+        files.push((target.to_string_lossy().replace('\\', "/"), bytes));
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -441,7 +557,9 @@ pub fn package_developer_extension(
 ) -> Result<DeveloperExtensionPackage, String> {
     let directory = extensions_root(&app)?.join(&kind).join(&id).join(&version);
     let draft = read_developer_extension(app, kind, id, version)?;
-    let bytes = build_developer_package(&draft.manifest, &draft.instructions)?;
+    let mut payload_files = Vec::new();
+    collect_payload_files(&directory, &directory, Path::new(""), &mut payload_files)?;
+    let bytes = build_developer_package(&draft.manifest, &draft.instructions, &payload_files)?;
     Ok(DeveloperExtensionPackage {
         installed: installed_kit(draft.manifest, &directory, InstallSource::Developer),
         bytes,
@@ -1573,6 +1691,143 @@ mod tests {
         .unwrap();
         assert_eq!(installed.manifest.kind, "skill");
         assert_eq!(installed.manifest.skills[0].path, "SKILL.md");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn developer_composer_packages_every_selected_skill() {
+        let manifest: ExpertKitManifest = serde_json::from_str(
+            r#"{
+              "schemaVersion":"2","kind":"expert-kit","id":"operations-kit","name":"运营套件","version":"1.0.0",
+              "summary":"组合多个运营 Skill","minimumDesktopVersion":"0.1.29","commands":[],
+              "skills":[
+                {"id":"order-review","path":"skills/order-review/SKILL.md"},
+                {"id":"sales-report","path":"skills/sales-report/SKILL.md"}
+              ],
+              "requiredTools":[],"connectorRefs":[],"knowledgeBaseRefs":[],
+              "permissions":{"localFiles":"deny","shell":"deny","computerUse":"deny","connectorRead":"allow","connectorWrite":"approval"},
+              "serverWorkflows":[]
+            }"#,
+        )
+        .unwrap();
+        let skill_files = vec![
+            (
+                "skills/order-review/SKILL.md".to_string(),
+                b"# Order review".to_vec(),
+            ),
+            (
+                "skills/sales-report/SKILL.md".to_string(),
+                b"# Sales report".to_vec(),
+            ),
+        ];
+        let package = build_developer_package(&manifest, "", &skill_files).unwrap();
+        let root = std::env::temp_dir().join(format!(
+            "xiaoyin-composer-test-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir(&root).unwrap();
+
+        let installed = install_package_bytes(
+            &root,
+            &package,
+            Some("expert-kit"),
+            Some("operations-kit"),
+            Some("1.0.0"),
+            None,
+            InstallSource::Developer,
+        )
+        .unwrap();
+
+        let directory = Path::new(&installed.install_path);
+        assert_eq!(
+            fs::read_to_string(directory.join("skills/order-review/SKILL.md")).unwrap(),
+            "# Order review"
+        );
+        assert_eq!(
+            fs::read_to_string(directory.join("skills/sales-report/SKILL.md")).unwrap(),
+            "# Sales report"
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn developer_builder_writes_the_standalone_skill_manifest_contract() {
+        let manifest: ExpertKitManifest = serde_json::from_str(
+            r#"{
+              "schemaVersion":"1","kind":"skill","id":"order-review","name":"订单检查","version":"1.0.0",
+              "summary":"检查订单风险","triggers":["检查订单"],"minimumDesktopVersion":"0.1.29",
+              "commands":[],"skills":[{"id":"order-review","path":"SKILL.md"}],
+              "requiredTools":[],"connectorRefs":[],"knowledgeBaseRefs":[],
+              "permissions":{"localFiles":"deny","shell":"deny","computerUse":"deny","connectorRead":"allow","connectorWrite":"approval"},
+              "serverWorkflows":[]
+            }"#,
+        )
+        .unwrap();
+        let package = build_developer_package(&manifest, "# Order review", &[]).unwrap();
+        let root = std::env::temp_dir().join(format!(
+            "xiaoyin-skill-builder-test-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir(&root).unwrap();
+
+        let installed = install_package_bytes(
+            &root,
+            &package,
+            Some("skill"),
+            Some("order-review"),
+            Some("1.0.0"),
+            None,
+            InstallSource::Developer,
+        )
+        .unwrap();
+
+        assert_eq!(installed.manifest.kind, "skill");
+        assert_eq!(
+            fs::read_to_string(Path::new(&installed.install_path).join("SKILL.md")).unwrap(),
+            "# Order review"
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn composer_copies_skill_resources_but_not_install_metadata() {
+        let root = std::env::temp_dir().join(format!(
+            "xiaoyin-skill-resources-test-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(root.join("scripts")).unwrap();
+        fs::create_dir_all(root.join(".xiaoyin")).unwrap();
+        fs::create_dir_all(root.join(".xiaoyin-skill")).unwrap();
+        fs::write(root.join("SKILL.md"), "# Skill").unwrap();
+        fs::write(root.join("scripts/check.js"), "export default true").unwrap();
+        fs::write(root.join(".xiaoyin/install.json"), "{}").unwrap();
+        fs::write(root.join(".xiaoyin-skill/skill.json"), "{}").unwrap();
+        let mut files = Vec::new();
+
+        collect_payload_files(&root, &root, Path::new("skills/order-review"), &mut files).unwrap();
+
+        assert_eq!(
+            files
+                .iter()
+                .map(|(path, _)| path.as_str())
+                .collect::<Vec<_>>(),
+            vec![
+                "skills/order-review/SKILL.md",
+                "skills/order-review/scripts/check.js"
+            ]
+        );
         fs::remove_dir_all(root).unwrap();
     }
 

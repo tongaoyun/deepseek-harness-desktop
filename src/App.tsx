@@ -1240,7 +1240,7 @@ export default function App() {
           </section>
         )}
       </main>
-      {authoringKind && user && <ExtensionAuthoringModal accessToken={accessToken} employeeId={user.userId} initialKind={authoringKind} onClose={() => setAuthoringKind(undefined)} onChanged={async (change) => {
+      {authoringKind && user && <ExtensionAuthoringModal accessToken={accessToken} connectors={connectors} employeeId={user.userId} initialKind={authoringKind} skills={skillViews} onClose={() => setAuthoringKind(undefined)} onChanged={async (change) => {
         if (change.type === 'connector-upsert') {
           const connector = change.connector
           const next = [connector, ...connectors.filter((item) => item.id !== connector.id)]
