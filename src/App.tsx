@@ -1240,12 +1240,18 @@ export default function App() {
           </section>
         )}
       </main>
-      {authoringKind && user && <ExtensionAuthoringModal accessToken={accessToken} employeeId={user.userId} initialKind={authoringKind} onClose={() => setAuthoringKind(undefined)} onSaved={async (connector) => {
-        if (connector) {
+      {authoringKind && user && <ExtensionAuthoringModal accessToken={accessToken} employeeId={user.userId} initialKind={authoringKind} onClose={() => setAuthoringKind(undefined)} onChanged={async (change) => {
+        if (change.type === 'connector-upsert') {
+          const connector = change.connector
           const next = [connector, ...connectors.filter((item) => item.id !== connector.id)]
           extensionCacheRef.current.connectors = next
           setConnectors(next)
           setEnabledConnectorIds((current) => saveEnabledConnectorIds(user.userId, [...current, connector.id]))
+        } else if (change.type === 'connector-delete') {
+          const next = connectors.filter((item) => item.id !== change.id)
+          extensionCacheRef.current.connectors = next
+          setConnectors(next)
+          setEnabledConnectorIds((current) => saveEnabledConnectorIds(user.userId, current.filter((id) => id !== change.id)))
         } else await refreshInstalledKits()
       }} />}
       {activeExpertKit && <ExpertKitDetailsModal

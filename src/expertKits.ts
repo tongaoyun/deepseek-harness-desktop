@@ -67,6 +67,26 @@ export async function createDeveloperExtension(manifest: ExpertKitManifest, inst
   return invoke('create_developer_extension', { request: { manifest, instructions } })
 }
 
+export interface DeveloperExtensionDraft {
+  manifest: ExpertKitManifest
+  instructions: string
+}
+
+export async function readDeveloperExtension(kind: 'expert-kit' | 'skill', id: string, version: string): Promise<DeveloperExtensionDraft> {
+  if (!isTauri()) throw new Error('请在小胤桌面客户端中编辑扩展')
+  return invoke<DeveloperExtensionDraft>('read_developer_extension', { kind, id, version })
+}
+
+export async function packageDeveloperExtension(kind: 'expert-kit' | 'skill', id: string, version: string): Promise<{ installed: InstalledExpertKit; bytes: number[] }> {
+  if (!isTauri()) throw new Error('请在小胤桌面客户端中打包扩展')
+  return invoke('package_developer_extension', { kind, id, version })
+}
+
+export async function removeDeveloperExtension(kind: 'expert-kit' | 'skill', id: string, version: string): Promise<void> {
+  if (!isTauri()) throw new Error('请在小胤桌面客户端中删除扩展')
+  await invoke('remove_developer_extension', { kind, id, version })
+}
+
 export async function createExpertKitTemplate(id: string, name: string): Promise<string | null> {
   if (!isTauri()) throw new Error('请在小胤桌面客户端中创建专家套件')
   return invoke<string | null>('create_expert_kit_template', { id, name })
