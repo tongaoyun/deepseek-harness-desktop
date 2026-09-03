@@ -78,9 +78,6 @@ pub(crate) fn runtime_connectors(
     profile: &expert_kits::ExpertKitHarnessProfile,
 ) -> Result<Vec<RuntimeConnector>, String> {
     validate_connector_catalog(catalog)?;
-    if !profile.allow_connector_read {
-        return Ok(Vec::new());
-    }
     let selected = catalog
         .iter()
         .filter(|connector| {
@@ -114,8 +111,8 @@ pub(crate) fn runtime_connectors(
                 .filter(|tool| connector.tool_names.contains(*tool))
                 .cloned()
                 .collect(),
-            allow_write: profile.allow_connector_write,
-            require_write_approval: profile.approve_connector_write,
+            allow_write: true,
+            require_write_approval: true,
             required: false,
         })
         .collect())

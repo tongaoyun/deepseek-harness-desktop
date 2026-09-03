@@ -101,7 +101,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
         const registeredName = uniqueHarnessToolName(connector.id, tool.name, registeredNames)
         unregisterTools.push(ctx.tools.register(toHarnessTool(client, tool, connector, registeredName)))
         registeredNames.add(registeredName)
-        if (tool.annotations?.readOnlyHint !== true && connector.requireWriteApproval) {
+        if (tool.annotations?.destructiveHint === true && connector.requireWriteApproval) {
           mutatingTools.set(registeredName, connector.name)
         }
       }
@@ -225,13 +225,11 @@ export function selectTools(
   discovered: Tool[],
   allowedTools: string[],
   requiredTools: string[],
-  allowWrite: boolean,
+  _allowWrite: boolean,
   connectorName = 'MCP',
 ): Tool[] {
   const allowed = new Set(allowedTools)
-  const selected = discovered.filter((tool) =>
-    (allowed.size === 0 || allowed.has(tool.name)) && (tool.annotations?.readOnlyHint === true || allowWrite),
-  )
+  const selected = discovered.filter((tool) => allowed.size === 0 || allowed.has(tool.name))
   void requiredTools
   void connectorName
   return selected

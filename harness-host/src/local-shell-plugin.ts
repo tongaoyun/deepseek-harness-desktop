@@ -28,6 +28,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     if (config.requireApproval === false) return next()
     if (exec.name !== 'local_shell_run') return next()
     const input = asRecord(exec.arguments)
+    if (!shellCommandRequiresApproval(input.command)) return next()
     return Promise.resolve({
       kind: 'ask' as const,
       reason: [
@@ -45,7 +46,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
 function shellTool(bridge: LocalFileBridge): ToolDefinition {
   return {
     name: 'local_shell_run',
-    description: 'Run one PowerShell or Bash command starting in an employee-authorized directory. Every call requires employee confirmation.',
+    description: 'Run one PowerShell or Bash command in an employee-authorized directory. Read-only inspection commands run directly; commands that may change state require confirmation.',
     parameters: {
       type: 'object',
       properties: {
@@ -72,6 +73,20 @@ function shellTool(bridge: LocalFileBridge): ToolDefinition {
     },
     isConcurrencySafe: () => false,
   }
+}
+
+export function shellCommandRequiresApproval(value: unknown): boolean {
+  if (typeof value !== 'string') return true
+  const command = value.trim()
+  if (!command || /[\r\n;&|><`]/.test(command) || command.includes('$(')) return true
+  const tokens = command.split(/\s+/)
+  const executable = tokens[0]?.toLocaleLowerCase('en-US') ?? ''
+  if (['pwd', 'ls', 'dir', 'rg', 'grep', 'head', 'tail', 'wc', 'type', 'get-childitem', 'get-content', 'resolve-path'].includes(executable)) {
+    return executable === 'rg' && tokens.some((token) => token === '--pre' || token.startsWith('--pre='))
+  }
+  if (executable === 'find') return tokens.some((token) => ['-delete', '-exec', '-execdir', '-ok', '-okdir'].includes(token))
+  if (executable === 'git') return !['status', 'diff', 'log', 'show', 'branch', 'rev-parse'].includes(tokens[1]?.toLocaleLowerCase('en-US') ?? '')
+  return true
 }
 
 export async function runCommand(command: string, cwd: string, timeoutMs: number, signal: AbortSignal): Promise<object> {

@@ -249,9 +249,6 @@ pub struct ExpertKitHarnessProfile {
     pub allow_computer_use: bool,
     pub approve_computer_use: bool,
     pub allowed_computer_tools: Vec<String>,
-    pub allow_connector_read: bool,
-    pub allow_connector_write: bool,
-    pub approve_connector_write: bool,
     pub prompt: String,
 }
 
@@ -1141,8 +1138,6 @@ pub fn harness_profile(
     let local_files = permission(|value| value.local_files);
     let shell = permission(|value| value.shell);
     let computer_use = permission(|value| value.computer_use);
-    let connector_read = permission(|value| value.connector_read);
-    let connector_write = permission(|value| value.connector_write);
     Ok(ExpertKitHarnessProfile {
         skill_directories,
         knowledge_base_refs: Some(knowledge_base_refs),
@@ -1157,9 +1152,6 @@ pub fn harness_profile(
             .iter()
             .map(|tool| (*tool).to_string())
             .collect(),
-        allow_connector_read: connector_read != PermissionMode::Deny,
-        allow_connector_write: connector_write != PermissionMode::Deny,
-        approve_connector_write: connector_write == PermissionMode::Approval,
         prompt,
     })
 }

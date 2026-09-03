@@ -13,10 +13,6 @@ const MAX_ENTRIES = 200
 const MAX_DEPTH = 3
 const MAX_TEXT_BYTES = 256 * 1024
 const MAX_WRITE_BYTES = 2 * 1024 * 1024
-const MUTATING_TOOLS = new Set([
-  'local_files_write_text', 'local_files_create_directory', 'local_files_copy',
-  'local_files_move', 'local_files_delete',
-])
 const ALLOWED_TEXT_EXTENSIONS = new Set([
   '.txt', '.md', '.markdown', '.csv', '.tsv', '.json', '.yaml', '.yml', '.xml',
   '.html', '.css', '.js', '.jsx', '.ts', '.tsx', '.py', '.java', '.sql', '.log',
@@ -67,7 +63,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   ]
   const stopApprovalPolicy = ctx.on('tools/pre-execute', (exec, next) => {
     if (config.requireWriteApproval === false) return next()
-    if (!MUTATING_TOOLS.has(exec.name)) return next()
+    if (!localFileMutationRequiresApproval(exec.name, exec.arguments)) return next()
     return Promise.resolve({
       kind: 'ask' as const,
       reason: mutationApprovalReason(exec.name, exec.arguments),
@@ -77,6 +73,13 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     stopApprovalPolicy()
     for (const dispose of unregister.reverse()) dispose()
   }, 'xiaoyin local file bridge')
+}
+
+export function localFileMutationRequiresApproval(toolName: string, args: unknown): boolean {
+  if (toolName === 'local_files_delete' || toolName === 'local_files_move') return true
+  if (toolName !== 'local_files_write_text' && toolName !== 'local_files_copy') return false
+  if (typeof args !== 'object' || args === null || Array.isArray(args)) return true
+  return (args as Record<string, unknown>).overwrite === true
 }
 
 export async function discoverAuthorizedRoots(paths: string[]): Promise<AuthorizedRoot[]> {

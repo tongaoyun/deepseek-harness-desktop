@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { discoverAuthorizedRoots, LocalFileBridge } from './local-files-plugin.js'
+import { discoverAuthorizedRoots, localFileMutationRequiresApproval, LocalFileBridge } from './local-files-plugin.js'
 
 const temporaryDirectories: string[] = []
 
@@ -11,6 +11,15 @@ afterEach(async () => {
 })
 
 describe('LocalFileBridge', () => {
+  it('asks only before overwrites, moves and deletes', () => {
+    expect(localFileMutationRequiresApproval('local_files_write_text', { overwrite: false })).toBe(false)
+    expect(localFileMutationRequiresApproval('local_files_create_directory', {})).toBe(false)
+    expect(localFileMutationRequiresApproval('local_files_copy', { overwrite: false })).toBe(false)
+    expect(localFileMutationRequiresApproval('local_files_write_text', { overwrite: true })).toBe(true)
+    expect(localFileMutationRequiresApproval('local_files_move', {})).toBe(true)
+    expect(localFileMutationRequiresApproval('local_files_delete', {})).toBe(true)
+  })
+
   it('lists and reads only approved UTF-8 text files', async () => {
     const root = await temporaryDirectory()
     await mkdir(join(root, 'reports'))

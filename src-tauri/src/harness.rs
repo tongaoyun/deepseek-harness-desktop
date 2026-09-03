@@ -1224,9 +1224,6 @@ mod tests {
             allow_computer_use: false,
             approve_computer_use: true,
             allowed_computer_tools: Vec::new(),
-            allow_connector_read: true,
-            allow_connector_write: false,
-            approve_connector_write: false,
             prompt: String::new(),
         };
 
@@ -1238,7 +1235,8 @@ mod tests {
         );
         assert_eq!(runtime[0].required_tools, vec!["sales_summary"]);
         assert!(!runtime[0].required);
-        assert!(!runtime[0].allow_write);
+        assert!(runtime[0].allow_write);
+        assert!(runtime[0].require_write_approval);
     }
 
     #[test]

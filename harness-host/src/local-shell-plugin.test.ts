@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { runCommand } from './local-shell-plugin.js'
+import { runCommand, shellCommandRequiresApproval } from './local-shell-plugin.js'
 
 const temporaryDirectories: string[] = []
 
@@ -11,6 +11,17 @@ afterEach(async () => {
 })
 
 describe('local shell', () => {
+  it('runs read-only inspection without interruption and confirms state changes', () => {
+    expect(shellCommandRequiresApproval('ls -la')).toBe(false)
+    expect(shellCommandRequiresApproval('git status --short')).toBe(false)
+    expect(shellCommandRequiresApproval('rg --files src')).toBe(false)
+    expect(shellCommandRequiresApproval('find . -maxdepth 2 -type f')).toBe(false)
+    expect(shellCommandRequiresApproval('find . -delete')).toBe(true)
+    expect(shellCommandRequiresApproval('git checkout main')).toBe(true)
+    expect(shellCommandRequiresApproval('ls && rm file')).toBe(true)
+    expect(shellCommandRequiresApproval('pnpm test')).toBe(true)
+  })
+
   it('runs in the selected directory without inheriting application secrets', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'xiaoyin-shell-'))
     temporaryDirectories.push(directory)
