@@ -103,6 +103,7 @@ export interface TaskMessage {
   role: 'assistant' | 'user'
   text: string
   pending?: boolean
+  monitor?: TaskMonitorState
   id?: string
   source?: 'desktop' | 'dingtalk'
 }
@@ -135,6 +136,8 @@ export interface TaskMonitorState {
   status: 'idle' | 'running' | 'completed' | 'failed' | 'canceled'
   activity: string
   updatedAt: string
+  startedAt?: string
+  completedAt?: string
   steps: TaskExecutionStep[]
   artifacts: TaskArtifact[]
 }

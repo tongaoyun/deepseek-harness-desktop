@@ -497,13 +497,6 @@ export default function App() {
   }, [prompt])
 
   useEffect(() => {
-    const list = messageListRef.current
-    if (!list) return
-    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    list.scrollTo({ top: list.scrollHeight, behavior: reducedMotion ? 'auto' : 'smooth' })
-  }, [messages, taskMonitor.updatedAt])
-
-  useEffect(() => {
     workspaceRef.current?.scrollTo({ top: 0, behavior: 'auto' })
   }, [page])
 
@@ -733,12 +726,13 @@ export default function App() {
     const taskId = currentLocalTaskId || crypto.randomUUID()
     const existingTask = localTasks.find((task) => task.id === taskId)
     const pendingMessages: TaskMessage[] = [...messages, { role: 'user', text: input },
-      { role: 'assistant', text: '正在分析任务…', pending: true }]
+      { role: 'assistant', text: '', pending: true }]
     const runningMonitor: TaskMonitorState = {
-      ...(existingTask?.monitor ?? createTaskMonitor(now)),
+      ...createTaskMonitor(now),
       status: 'running',
       activity: '正在启动本地 Agent',
       updatedAt: now,
+      startedAt: now,
     }
     const runningTask: LocalTaskRun = {
       id: taskId,
@@ -789,12 +783,14 @@ export default function App() {
       })
       if (!result.finalResponse.trim()) throw new Error('模型本轮没有返回可显示文本，请重试')
       setHarnessSessionId(result.sessionId)
-      const completedMessages = pendingMessages.map((message, index) => index === pendingMessages.length - 1
-        ? { role: 'assistant', text: result.finalResponse }
-        : message) as TaskMessage[]
+      const completedAt = new Date().toISOString()
       const completedMonitor: TaskMonitorState = {
-        ...taskMonitorRef.current, status: 'completed', activity: '任务已完成', updatedAt: new Date().toISOString(),
+        ...taskMonitorRef.current, status: 'completed', activity: '任务已完成', updatedAt: completedAt,
+        completedAt,
       }
+      const completedMessages = pendingMessages.map((message, index) => index === pendingMessages.length - 1
+        ? { role: 'assistant', text: result.finalResponse, monitor: completedMonitor }
+        : message) as TaskMessage[]
       taskMonitorRef.current = completedMonitor
       setTaskMonitor(completedMonitor)
       setMessages(completedMessages)
@@ -804,15 +800,17 @@ export default function App() {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       const canceled = cancellationRequestedRef.current
-      const failedMessages = pendingMessages.map((item, index) => index === pendingMessages.length - 1
-        ? { role: 'assistant', text: canceled ? '任务已取消，可修改要求后重新执行。' : `执行失败：${message}` }
-        : item) as TaskMessage[]
+      const completedAt = new Date().toISOString()
       const failedMonitor: TaskMonitorState = {
         ...taskMonitorRef.current,
         status: canceled ? 'canceled' : 'failed',
         activity: canceled ? '任务已取消' : '任务执行失败',
-        updatedAt: new Date().toISOString(),
+        updatedAt: completedAt,
+        completedAt,
       }
+      const failedMessages = pendingMessages.map((item, index) => index === pendingMessages.length - 1
+        ? { role: 'assistant', text: canceled ? '任务已取消，可修改要求后重新执行。' : `执行失败：${message}`, monitor: failedMonitor }
+        : item) as TaskMessage[]
       taskMonitorRef.current = failedMonitor
       setTaskMonitor(failedMonitor)
       setMessages(failedMessages)

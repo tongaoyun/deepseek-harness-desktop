@@ -230,6 +230,7 @@ export function applyHarnessNotification(
       status,
       activity: status === 'completed' ? '任务已完成' : '任务执行失败',
       updatedAt: occurredAt,
+      completedAt: occurredAt,
       steps: upsertStep(settled, {
       id: `response:${turn}`,
       kind: 'response',

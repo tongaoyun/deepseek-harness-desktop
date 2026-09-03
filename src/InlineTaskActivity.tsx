@@ -1,29 +1,39 @@
-import { ChevronDown } from 'lucide-react'
+import { ChevronRight, LoaderCircle } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { ExecutionTrace } from './ExecutionTrace'
-import { TaskArtifacts } from './TaskArtifacts'
+import { taskDurationLabel } from './taskTiming'
 import type { TaskMonitorState } from './types'
 
 export function InlineTaskActivity({ monitor }: { monitor: TaskMonitorState }) {
   const [open, setOpen] = useState(monitor.status === 'running')
+  const [clock, setClock] = useState(Date.now())
 
   useEffect(() => {
     setOpen(monitor.status === 'running')
   }, [monitor.status])
 
+  useEffect(() => {
+    if (monitor.status !== 'running') return
+    const timer = window.setInterval(() => setClock(Date.now()), 1_000)
+    return () => window.clearInterval(timer)
+  }, [monitor.status])
+
   if (monitor.status === 'idle' && monitor.steps.length === 0 && monitor.artifacts.length === 0) return null
-  const count = monitor.steps.length
+  const duration = taskDurationLabel(monitor, clock)
+  const summary = monitor.status === 'running'
+    ? monitor.activity
+    : duration ? `用时 ${duration}` : statusLabel(monitor.status)
 
   return <section className={`inline-task-activity ${monitor.status}`}>
     <button aria-expanded={open} className="inline-task-summary" onClick={() => setOpen((current) => !current)} type="button">
-      <i aria-hidden="true" />
-      <span>{monitor.activity}</span>
-      <small>{count > 0 ? `${count} 项操作` : statusLabel(monitor.status)}</small>
-      <ChevronDown className={open ? 'open' : ''} size={14} />
+      {monitor.status === 'running' && <LoaderCircle className="turn-spinner" size={14} />}
+      <span>{summary}</span>
+      {monitor.steps.length > 0 && <small>{monitor.steps.length} 项操作</small>}
+      <ChevronRight className={open ? 'open' : ''} size={15} />
     </button>
     {open && <div className="inline-task-body">
       {monitor.steps.length > 0 && <ExecutionTrace steps={monitor.steps} />}
-      {monitor.artifacts.length > 0 && <div className="inline-artifacts"><strong>生成的文件</strong><TaskArtifacts artifacts={monitor.artifacts} /></div>}
+      {monitor.steps.length === 0 && <p>{monitor.activity}</p>}
     </div>}
   </section>
 }

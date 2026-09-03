@@ -1,9 +1,10 @@
-import { Bot, ChevronDown, CirclePlus, CircleStop, FolderOpen, Send, Sparkles, SquareCheckBig, X } from 'lucide-react'
-import { lazy, Suspense, type FormEvent, type RefObject } from 'react'
+import { ArrowDown, Bot, ChevronDown, CirclePlus, CircleStop, FolderOpen, Send, Sparkles, SquareCheckBig, X } from 'lucide-react'
+import { lazy, Suspense, useEffect, useRef, useState, type FormEvent, type RefObject, type UIEvent } from 'react'
 import type { AuthorizedLocalDirectory } from './harness'
 import type { InvocationOption } from './invocations'
 import { InlineTaskActivity } from './InlineTaskActivity'
 import { modelDisplayName } from './modelSelection'
+import { TaskArtifacts } from './TaskArtifacts'
 import type { CapabilitySnapshot, KnowledgeBaseEntry, RuntimeStatus, TaskMessage, TaskMonitorState } from './types'
 import { XiaoyinMascot } from './XiaoyinMascot'
 
@@ -48,18 +49,55 @@ interface Props {
 }
 
 export function ChatPage(props: Props) {
+  const [showScrollDown, setShowScrollDown] = useState(false)
+  const pinnedToBottom = useRef(true)
+  const previousMessageCount = useRef(props.messages.length)
+  const lastMessage = props.messages.at(-1)
+
+  const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
+    const list = props.messageListRef.current
+    if (!list) return
+    pinnedToBottom.current = true
+    setShowScrollDown(false)
+    const effectiveBehavior = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : behavior
+    list.scrollTo({ top: list.scrollHeight, behavior: effectiveBehavior })
+  }
+
+  const trackScroll = (event: UIEvent<HTMLDivElement>) => {
+    const list = event.currentTarget
+    const atBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 96
+    pinnedToBottom.current = atBottom
+    setShowScrollDown(!atBottom)
+  }
+
+  useEffect(() => {
+    const addedMessage = props.messages.length > previousMessageCount.current
+    previousMessageCount.current = props.messages.length
+    if (!addedMessage && !pinnedToBottom.current) return
+    const frame = window.requestAnimationFrame(() => scrollToBottom(addedMessage ? 'smooth' : 'auto'))
+    return () => window.cancelAnimationFrame(frame)
+  }, [props.messages.length, lastMessage?.pending, lastMessage?.text, props.taskMonitor.updatedAt])
+
   return <section className={props.messages.length > 0 ? 'chat-page conversation' : 'chat-page'}>
     {props.messages.length === 0 && <div className="hero-copy">
       <XiaoyinMascot size={62} variant="hero" />
       <h1>不止聊天，搞定一切</h1>
       <p>本地运行、自主规划、安全可控的 AI 工作搭子</p>
     </div>}
-    {props.messages.length > 0 && <div className="message-list" ref={props.messageListRef}>{props.messages.map((message, index) => {
+    {props.messages.length > 0 && <div aria-live="polite" className="message-list" onScroll={trackScroll} ref={props.messageListRef}>{props.messages.map((message, index) => {
       const retryable = message.role === 'assistant' && index === props.messages.length - 1 && !message.pending && (message.text.startsWith('执行失败：') || message.text.startsWith('任务已取消'))
-      const visibleText = message.pending ? '正在处理…' : message.text
-      const showTaskActivity = message.role === 'assistant' && index === props.messages.length - 1
-      return <article className={`message ${message.role}${message.pending ? ' pending' : ''}`} key={`${message.role}-${index}`}><span className="message-avatar">{message.role === 'user' ? '你' : <XiaoyinMascot size={29} variant="avatar" />}</span><div><small>{message.role === 'user' ? '你' : '小胤'}</small><Suspense fallback={<p>{visibleText}</p>}><RichMessage assistant={message.role === 'assistant'} onRegenerate={message.role === 'assistant' && !message.pending ? props.onPrepareRetry : undefined} text={visibleText} /></Suspense>{showTaskActivity && <InlineTaskActivity monitor={props.taskMonitor} />}{retryable && <button className="retry-task" onClick={props.onPrepareRetry} type="button">修改后重新执行</button>}</div></article>
+      const monitor = message.monitor ?? (message.role === 'assistant' && index === props.messages.length - 1 ? props.taskMonitor : undefined)
+      if (message.role === 'user') return <article className="conversation-turn user-turn" key={`${message.role}-${index}`}>
+        <div className="user-prompt"><Suspense fallback={<p>{message.text}</p>}><RichMessage assistant={false} text={message.text} /></Suspense></div>
+      </article>
+      return <article aria-busy={message.pending} className={`conversation-turn assistant-turn${message.pending ? ' pending' : ''}`} key={`${message.role}-${index}`}>
+        {monitor && <InlineTaskActivity monitor={monitor} />}
+        {!message.pending && <Suspense fallback={<p>{message.text}</p>}><RichMessage assistant onRegenerate={index === props.messages.length - 1 ? props.onPrepareRetry : undefined} text={message.text} /></Suspense>}
+        {!message.pending && monitor && monitor.artifacts.length > 0 && <TaskArtifacts artifacts={monitor.artifacts} conversation />}
+        {retryable && <button className="retry-task" onClick={props.onPrepareRetry} type="button">修改后重新执行</button>}
+      </article>
     })}</div>}
+    {showScrollDown && <button aria-label="滚动到最新消息" className="scroll-to-latest" onClick={() => scrollToBottom()} title="滚动到最新消息" type="button"><ArrowDown size={18} /></button>}
     {props.harnessHealth === 'degraded' && <div className="runtime-recovery"><CircleStop size={17} /><span><strong>本地 Agent 暂不可用</strong><small>{props.harnessHealthDetail}</small></span><button onClick={props.onRecoverHarness} type="button">重新检测</button></div>}
     <form className="composer" onSubmit={props.onSubmit}>
       <textarea aria-label="给小胤发送消息" onChange={(event) => props.onPrompt(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); event.currentTarget.form?.requestSubmit() } }} placeholder="描述任务，/ 快捷调用，@ 添加上下文" ref={props.composerRef} value={props.prompt} />

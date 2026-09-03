@@ -3,13 +3,14 @@ import { FileSpreadsheet, FileText, FolderSearch } from 'lucide-react'
 import { useState } from 'react'
 import type { TaskArtifact } from './types'
 
-export function TaskArtifacts({ artifacts }: { artifacts: TaskArtifact[] }) {
+export function TaskArtifacts({ artifacts, conversation = false }: { artifacts: TaskArtifact[]; conversation?: boolean }) {
   const [error, setError] = useState('')
   if (artifacts.length === 0) return null
-  return <>
+  return <section className={conversation ? 'turn-files' : undefined}>
+    {conversation && <header><FileText size={19} /><strong>处理了 {artifacts.length} 个文件</strong></header>}
     <div className="monitor-artifacts">{artifacts.map((artifact) => <ArtifactCard artifact={artifact} key={artifact.id} onError={setError} />)}</div>
     {error && <p className="monitor-error">{error}</p>}
-  </>
+  </section>
 }
 
 function ArtifactCard({ artifact, onError }: { artifact: TaskArtifact; onError: (message: string) => void }) {
