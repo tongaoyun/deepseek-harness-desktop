@@ -5,13 +5,9 @@ import {
   CircleStop,
   FolderOpen,
   PlugZap,
-  Plus,
-  RefreshCw,
-  Search,
   ShieldCheck,
   SquareCheckBig,
   WandSparkles,
-  X,
 } from 'lucide-react'
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react'
@@ -33,11 +29,9 @@ import { ErpAuthScreen } from './ErpAuthScreen'
 import { ExpertKitDetailsModal } from './ExpertKitDetailsModal'
 import { SkillDetailsModal } from './SkillDetailsModal'
 import {
-  createExpertKitTemplate,
   customizeExpertKit,
-  developerExpertKitInstallEnabled,
   exportExpertKit,
-  installDeveloperExpertKit,
+  installDeveloperExtension,
   installExtension,
   installedExtensionSnapshot,
   listInstalledExtensions,
@@ -84,6 +78,8 @@ import { buildInvocationOptions, filterInvocationOptions, type InvocationOption 
 import { buildRuntimeConnectorCatalog, withDesktopBuiltinConnectors } from './connectors'
 import { loadEnabledConnectorIds, saveEnabledConnectorIds } from './connectorPreferences'
 import {
+  connectorSecretTemplate,
+  connectorSecretValues,
   deleteConnectorSecrets,
   loadConnectorSecrets,
   saveConnectorSecrets,
@@ -103,7 +99,8 @@ import { extensionMatches, type ExtensionFilter } from './ExtensionToolbar'
 import type { ExtensionCategoryFilter } from './extensionCategories'
 import { ExpertCatalogPage, SkillCatalogPage } from './ExtensionCatalogPages'
 import { ExtensionAuthoringModal } from './ExtensionAuthoringModal'
-import { loadPersonalConnectors, type ExtensionKind } from './extensionSubmissions'
+import { loadPersonalConnectors, savePersonalConnector, type ExtensionKind } from './extensionSubmissions'
+import { ExtensionPageActions } from './ExtensionPageActions'
 import './styles.css'
 
 const extensionNav = [
@@ -147,7 +144,6 @@ export default function App() {
   const [extensionSyncedAt, setExtensionSyncedAt] = useState<Date>()
   const [catalogCacheSavedAt, setCatalogCacheSavedAt] = useState('')
   const [catalogCacheStale, setCatalogCacheStale] = useState(false)
-  const [developerKitMode, setDeveloperKitMode] = useState(false)
   const [developerKitBusy, setDeveloperKitBusy] = useState(false)
   const [installingKitId, setInstallingKitId] = useState('')
   const [installingSkillId, setInstallingSkillId] = useState('')
@@ -199,8 +195,11 @@ export default function App() {
   )
 
   useEffect(() => {
-    void developerExpertKitInstallEnabled().then(setDeveloperKitMode).catch(() => undefined)
-  }, [])
+    if (!['experts', 'skills', 'connectors'].includes(page)) return
+    setExtensionQuery('')
+    setExtensionFilter('market')
+    setExtensionCategory('all')
+  }, [page])
 
   useEffect(() => {
     if (authState !== 'authenticated' || !user) return
@@ -912,31 +911,21 @@ export default function App() {
     }
   }
 
-  const installLocalAcceptanceKit = async () => {
+  const installLocalExtension = async (kind: 'expert-kit' | 'skill') => {
     if (developerKitBusy) return
     setDeveloperKitBusy(true)
     setExpertKitError('')
     try {
-      const installed = await installDeveloperExpertKit()
+      const installed = await installDeveloperExtension(kind)
       if (!installed) return
       await refreshInstalledKits()
-      setActiveExpertKitId(installed.manifest.id)
+      if (kind === 'expert-kit') setActiveExpertKitId(installed.manifest.id)
+      else setActiveSkillId(installed.manifest.id)
     } catch (error) {
       setExpertKitError(error instanceof Error ? error.message : String(error))
     } finally {
       setDeveloperKitBusy(false)
     }
-  }
-
-  const createLocalExpertKit = async () => {
-    const id = window.prompt('专家套件 ID（小写字母、数字和连字符，例如 shop-report）')?.trim()
-    if (!id) return
-    const name = window.prompt('专家套件名称')?.trim()
-    if (!name) return
-    try {
-      const path = await createExpertKitTemplate(id, name)
-      if (path) window.alert(`专家套件模板已创建：\n${path}`)
-    } catch (error) { setExpertKitError(error instanceof Error ? error.message : String(error)) }
   }
 
   const customizeLocalExpertKit = async (kit: ExpertKitView) => {
@@ -1184,27 +1173,40 @@ export default function App() {
           />
         ) : (
           <section className="capability-page">
-            <div className="capability-page-heading"><div><span className="page-kicker">企业能力中心</span>
+            {page !== 'schedules' && <div className="capability-page-heading"><div>
             <h1>{extensionNav.find((item) => item.id === page)?.label ?? ({ settings: '桌面设置', schedules: '定时任务', im: 'IM 频道' } as Record<string, string>)[page]}</h1>
             <p>{page === 'experts'
-              ? '面向岗位的一整套工作方案，统一组合命令、技能、连接器和后台工作流。'
+              ? '专家套件是面向角色或行业的工具套件，在对话框中输入 @ 或 / 即可使用。'
               : page === 'skills'
-                ? '公司沉淀的独立工作方法，可由 Agent 自动识别或在对话中明确调用。'
+                ? '安装与管理技能，在对话中扩展小胤的能力。'
                   : page === 'connectors'
-                    ? '连接公司数据和员工电脑能力；账号、地址和令牌由公司统一管理。'
+                    ? '连接外部应用、日历与服务，让你的工作流更顺畅。'
                   : page === 'knowledge'
                     ? '集中管理公司文档；索引任务由 Temporal 托管，回答可引用文件与页码或工作表。'
                   : page === 'im'
                     ? '把钉钉等公司消息入口连接到本机小胤 Harness，集中查看连接和处理状态。'
-                  : page === 'schedules'
-                    ? '按专家套件声明的后台工作流创建任务；任务由 Temporal 托管，关闭电脑后仍会运行。'
                   : page === 'settings'
                     ? '管理企业身份、个人记忆、快捷键与应用更新。'
-                    : '这里将由控制中心下发公司自己的能力与权限配置。'}</p></div>{(page === 'experts' || page === 'skills' || page === 'connectors') && <div className="capability-page-actions">
-              <button aria-label="刷新目录" className="refresh-extension-button" disabled={expertKitsLoading} onClick={() => setExtensionSyncAttempt((value) => value + 1)} title="刷新目录" type="button"><RefreshCw className={expertKitsLoading ? 'spin' : ''} size={15} /></button>
-              <label className="capability-page-search"><Search size={14} /><input aria-label={`搜索${page === 'experts' ? '专家套件' : page === 'skills' ? '技能' : '连接器'}`} onChange={(event) => setExtensionQuery(event.target.value)} placeholder={`搜索${page === 'experts' ? '套件' : page === 'skills' ? '技能' : '连接器'}…`} value={extensionQuery} />{extensionQuery && <button aria-label="清空搜索" onClick={() => setExtensionQuery('')} type="button"><X size={12} /></button>}</label>
-              <button className="add-extension-button" onClick={() => setAuthoringKind(page === 'experts' ? 'expert-kit' : page === 'skills' ? 'skill' : 'connector')} type="button"><Plus size={15} />添加</button>
-            </div>}</div>
+                    : '这里将由控制中心下发公司自己的能力与权限配置。'}</p></div>{(page === 'experts' || page === 'skills' || page === 'connectors') && <ExtensionPageActions
+              loading={expertKitsLoading}
+              onCreate={() => setAuthoringKind(page === 'experts' ? 'expert-kit' : page === 'skills' ? 'skill' : 'connector')}
+              onImportConnector={(connector) => {
+                if (!user) return
+                const values = connectorSecretValues(connector)
+                const template = connectorSecretTemplate(connector)
+                savePersonalConnector(user.userId, connector)
+                setConnectorSecrets(saveConnectorSecrets(user.userId, connector.id, values))
+                const next = [template, ...connectors.filter((item) => item.id !== connector.id)]
+                extensionCacheRef.current.connectors = next
+                setConnectors(next)
+                setEnabledConnectorIds((current) => saveEnabledConnectorIds(user.userId, [...new Set([...current, connector.id])]))
+              }}
+              onQuery={setExtensionQuery}
+              onRefresh={() => setExtensionSyncAttempt((value) => value + 1)}
+              onUpload={() => void installLocalExtension(page === 'skills' ? 'skill' : 'expert-kit')}
+              page={page}
+              query={extensionQuery}
+            />}</div>}
             {extensionSyncIssues.length > 0 && <div className="sync-diagnostics"><div><CircleStop size={17} /><span><strong>部分企业能力同步失败，已保留上次成功数据</strong><small>{extensionSyncedAt ? `最近尝试 ${extensionSyncedAt.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}` : '刚刚尝试同步'}</small></span><button onClick={() => setExtensionSyncAttempt((value) => value + 1)} type="button">重新同步</button></div><details><summary>查看 {extensionSyncIssues.length} 项失败详情</summary>{extensionSyncIssues.map((issue) => <p key={issue.key}><strong>{issue.label}</strong><span>{issue.message}</span></p>)}</details></div>}
             {catalogCacheSavedAt && extensionSyncIssues.length > 0 && <div className={`catalog-cache-state ${catalogCacheStale ? 'stale' : ''}`}><ShieldCheck size={15} /><span>{catalogCacheStale ? '本机企业目录缓存已超过 7 天，浏览仍可用，但相关能力暂停执行。' : `当前显示本机缓存 · ${new Date(catalogCacheSavedAt).toLocaleString('zh-CN', { hour12: false })}`}</span></div>}
             {page === 'settings' && bootstrap && user && <DesktopSettingsPage
@@ -1217,11 +1219,10 @@ export default function App() {
               onMemorySaved={memorySaved}
               position={user.position}
             />}
-            {page === 'experts' && <ExpertCatalogPage all={expertKits} category={extensionCategory} developerBusy={developerKitBusy} developerMode={developerKitMode} error={expertKitError} filter={extensionFilter} installingId={installingKitId} loading={expertKitsLoading} onCategory={setExtensionCategory} onCreate={() => void createLocalExpertKit()} onFilter={setExtensionFilter} onImport={() => void installLocalAcceptanceKit()} onOpen={setActiveExpertKitId} visible={visibleExpertKits} />}
+            {page === 'experts' && <ExpertCatalogPage all={expertKits} category={extensionCategory} error={expertKitError} filter={extensionFilter} installingId={installingKitId} loading={expertKitsLoading} onCategory={setExtensionCategory} onFilter={setExtensionFilter} onOpen={setActiveExpertKitId} visible={visibleExpertKits} />}
             {page === 'skills' && <SkillCatalogPage all={skillViews} category={extensionCategory} error={expertKitError} filter={extensionFilter} loading={expertKitsLoading} onCategory={setExtensionCategory} onFilter={setExtensionFilter} onOpen={setActiveSkillId} visible={visibleSkillViews} />}
             {page === 'connectors' && <>
               <ConnectorsPage
-                accessToken={accessToken}
                 catalog={connectors}
                 catalogError={expertKitError}
                 loading={expertKitsLoading}

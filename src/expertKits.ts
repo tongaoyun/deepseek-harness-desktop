@@ -57,9 +57,9 @@ export async function developerExpertKitInstallEnabled(): Promise<boolean> {
   return invoke<boolean>('developer_expert_kit_install_enabled')
 }
 
-export async function installDeveloperExpertKit(): Promise<InstalledExpertKit | null> {
-  if (!isTauri()) throw new Error('请在小胤桌面客户端中安装本地验收套件')
-  return invoke<InstalledExpertKit | null>('install_developer_expert_kit')
+export async function installDeveloperExtension(kind: 'expert-kit' | 'skill'): Promise<InstalledExpertKit | null> {
+  if (!isTauri()) throw new Error(`请在小胤桌面客户端中安装本地${kind === 'skill' ? '技能' : '专家套件'}`)
+  return invoke<InstalledExpertKit | null>('install_developer_extension', { kind })
 }
 
 export interface DeveloperSkillSource {

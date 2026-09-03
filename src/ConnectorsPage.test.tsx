@@ -27,7 +27,6 @@ describe('connector local configuration', () => {
     const onSaveSecrets = vi.fn()
     const root = createRoot(container)
     await act(async () => root.render(<ConnectorsPage
-      accessToken="token"
       catalog={[catalog]}
       catalogError=""
       loading={false}

@@ -40,11 +40,16 @@ describe('scheduled task user flow', () => {
       />)
       await Promise.resolve()
     })
-    const preset = [...container.querySelectorAll<HTMLButtonElement>('.cron-presets button')]
-      .find((button) => button.textContent === '每天 18:00')
-    expect(preset).toBeDefined()
-    await act(async () => preset!.click())
-    expect(container.querySelector<HTMLInputElement>('input[value="0 18 * * *"]')).not.toBeNull()
+    const create = [...container.querySelectorAll<HTMLButtonElement>('button')]
+      .find((button) => button.textContent === '新建定时任务')!
+    await act(async () => create.click())
+    const preset = container.querySelector<HTMLSelectElement>('select[aria-label="计划频率"]')!
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!
+      setter.call(preset, '0 18 * * *')
+      preset.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(preset.value).toBe('0 18 * * *')
     expect(container.querySelector('.cron-hint')?.textContent).toContain('接下来：')
 
     const natural = container.querySelector<HTMLTextAreaElement>('textarea')!
@@ -53,9 +58,9 @@ describe('scheduled task user flow', () => {
       setter.call(natural, '每个工作日下午 6:30 生成日报')
       natural.dispatchEvent(new Event('input', { bubbles: true }))
     })
-    const parse = [...container.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent === '解析任务')!
+    const parse = [...container.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent === '识别时间')!
     await act(async () => parse.click())
-    expect(container.querySelector<HTMLInputElement>('input[value="30 18 * * 1-5"]')).not.toBeNull()
+    expect(preset.value).toBe('30 18 * * 1-5')
     expect(container.querySelector('.schedule-parse-result')?.textContent).toContain('18:30')
     await act(async () => root.unmount())
   })

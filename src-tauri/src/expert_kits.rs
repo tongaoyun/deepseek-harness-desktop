@@ -338,17 +338,27 @@ pub fn developer_expert_kit_install_enabled() -> bool {
 }
 
 #[tauri::command]
-pub async fn install_developer_expert_kit(
+pub async fn install_developer_extension(
     app: tauri::AppHandle,
+    kind: String,
 ) -> Result<Option<InstalledExpertKit>, String> {
     require_developer_install()?;
+    if kind != "expert-kit" && kind != "skill" {
+        return Err("仅支持导入专家套件或技能".to_string());
+    }
     let dialog_app = app.clone();
+    let dialog_kind = kind.clone();
     let selected = tauri::async_runtime::spawn_blocking(move || {
+        let (title, filter) = if dialog_kind == "skill" {
+            ("导入本地技能", "小胤技能")
+        } else {
+            ("导入本地专家套件", "小胤专家套件")
+        };
         dialog_app
             .dialog()
             .file()
-            .set_title("导入本地专家套件")
-            .add_filter("小胤专家套件", &["zip", "gz"])
+            .set_title(title)
+            .add_filter(filter, &["zip", "gz"])
             .blocking_pick_file()
     })
     .await
@@ -365,9 +375,9 @@ pub async fn install_developer_expert_kit(
     }
     let bytes = fs::read(&path).map_err(|error| format!("无法读取专家套件：{error}"))?;
     install_package_bytes(
-        &extensions_root(&app)?.join("expert-kit"),
+        &extensions_root(&app)?.join(&kind),
         &bytes,
-        Some("expert-kit"),
+        Some(&kind),
         None,
         None,
         None,

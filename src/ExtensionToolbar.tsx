@@ -1,6 +1,6 @@
 import { extensionCategories, type ExtensionCategoryFilter } from './extensionCategories'
 
-export type ExtensionFilter = 'market' | 'installed' | 'updates' | 'attention'
+export type ExtensionFilter = 'market' | 'builtin' | 'installed' | 'updates' | 'attention'
 
 export function ExtensionToolbar({ filter, onFilter }: {
   filter: ExtensionFilter
@@ -26,7 +26,7 @@ export function ExtensionCategoryBar({ value, onChange }: {
 }
 
 export function extensionMatches(
-  item: { id: string; name: string; summary: string; category?: string; installState: string; readiness: string },
+  item: { id: string; name: string; summary: string; category?: string; installState: string; readiness: string; localOnly?: boolean },
   query: string,
   filter: ExtensionFilter,
   category: ExtensionCategoryFilter = 'all',
@@ -34,8 +34,9 @@ export function extensionMatches(
   const value = query.trim().toLocaleLowerCase('zh-CN')
   if (value && !`${item.name} ${item.summary} ${item.id}`.toLocaleLowerCase('zh-CN').includes(value)) return false
   if (category !== 'all' && (item.category ?? 'other') !== category) return false
-  if (filter === 'installed') return item.installState === 'installed'
+  if (filter === 'builtin') return item.localOnly === true && item.installState !== 'retired'
+  if (filter === 'installed') return item.installState === 'installed' || item.installState === 'update'
   if (filter === 'updates') return item.installState === 'update'
   if (filter === 'attention') return item.installState === 'retired' || item.installState === 'update' || item.readiness === 'partial'
-  return item.installState !== 'retired'
+  return item.installState !== 'retired' && item.localOnly !== true
 }
