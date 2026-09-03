@@ -1110,7 +1110,7 @@ pub fn harness_profile(
             format!("本独立 Skill 的可加载 ID 是 {}。", artifact.manifest.id)
         };
         format!(
-            "本任务明确使用公司{}《{}》（ID: {}，版本: {}）。{}所有已安装 Skill 仍可按需加载；优先遵循本扩展的工作方法和命令。{}\n\n员工任务：\n{}",
+            "本任务明确使用公司{}《{}》（ID: {}，版本: {}）。{}所有已安装 Skill 仍可按需加载；优先遵循本扩展的工作方法和命令。不要先向员工汇报泛化的资源盘点，不要因为任务未用到知识库或连接器而阻塞；只有具体任务确实需要时才检查对应能力。面对简短或口语化输入，先按最可能的意图自然回答，仅在无法继续行动时追问。{}\n\n员工任务：\n{}",
             profile_label,
             artifact.manifest.name,
             artifact.manifest.id,
