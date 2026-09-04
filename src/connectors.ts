@@ -15,7 +15,8 @@ const DESKTOP_BROWSER: ConnectorCatalogEntry = {
   authMode: 'none',
   toolNames: [
     'browser_open', 'browser_snapshot', 'browser_tabs', 'browser_switch_tab', 'browser_close_tab',
-    'browser_click', 'browser_type', 'browser_select', 'browser_scroll', 'browser_back',
+    'browser_click', 'browser_click_text', 'browser_click_point', 'browser_type', 'browser_select',
+    'browser_scroll', 'browser_back', 'browser_reload', 'browser_press_key', 'browser_wait_for',
     'browser_downloads', 'browser_human_takeover', 'browser_screenshot',
   ],
   command: '', arguments: [], environment: {}, headers: {},

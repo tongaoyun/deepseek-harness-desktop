@@ -23,11 +23,8 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   const bridge = new BrowserBridge(ctx, config.executable, config.debugUrl)
   const unregister = browserTools(bridge).map((definition) => ctx.tools.register(definition))
   const stopApprovalPolicy = ctx.on('tools/pre-execute', (exec, next) => {
-    if (!['browser_click', 'browser_type', 'browser_select', 'browser_human_takeover'].includes(exec.name)) return next()
-    if (exec.name === 'browser_human_takeover') {
-      return Promise.resolve({ kind: 'ask' as const, reason: '请在已打开的浏览器窗口中完成登录、验证码或其他人工操作；完成后批准继续。' })
-    }
-    return Promise.resolve({ kind: 'ask' as const, reason: browserApprovalReason(exec.name, exec.arguments) })
+    if (exec.name !== 'browser_human_takeover') return next()
+    return Promise.resolve({ kind: 'ask' as const, reason: '请在已打开的浏览器窗口中完成登录、验证码或其他人工操作；完成后批准继续。' })
   })
   ctx.effect(() => async () => {
     stopApprovalPolicy()
@@ -51,8 +48,8 @@ export class BrowserBridge {
     private readonly configuredExecutable = '',
     private readonly configuredDebugUrl = '',
   ) {
-    this.profileDirectory = resolve(process.env.DSH_HOME ?? process.cwd(), 'browser-profile')
-    this.downloadDirectory = resolve(process.env.DSH_HOME ?? process.cwd(), 'browser-downloads')
+    this.profileDirectory = process.env.XIAOYIN_BROWSER_PROFILE_DIR || resolve(process.env.DSH_HOME ?? process.cwd(), 'browser-profile')
+    this.downloadDirectory = process.env.XIAOYIN_BROWSER_DOWNLOAD_DIR || resolve(process.env.DSH_HOME ?? process.cwd(), 'browser-downloads')
   }
 
   async open(url: string, signal: AbortSignal): Promise<BrowserSnapshot> {
@@ -90,10 +87,44 @@ export class BrowserBridge {
     return this.snapshot(signal)
   }
 
+  async clickText(text: string, exact: boolean, signal: AbortSignal): Promise<BrowserSnapshot> {
+    const targetText = requiredString(text, 'text', 1_000)
+    const expression = `(() => {
+      const wanted = ${JSON.stringify(targetText)}.trim().replace(/\\s+/g, ' ').toLocaleLowerCase()
+      const visible = (el) => { const style = getComputedStyle(el); const rect = el.getBoundingClientRect(); return style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0 }
+      const candidates = [...document.querySelectorAll('button,a[href],input[type=button],input[type=submit],[role=button],[role=link]')].filter(visible)
+      const label = (el) => (el.innerText || el.getAttribute('aria-label') || el.getAttribute('title') || el.value || '').trim().replace(/\\s+/g, ' ').toLocaleLowerCase()
+      const match = candidates.find((el) => label(el) === wanted)${exact ? '' : ' || candidates.find((el) => label(el).includes(wanted))'}
+      if (!match) return false
+      match.scrollIntoView({ block: 'center', inline: 'center' }); match.click(); return true
+    })()`
+    const result = await (await this.ensurePage(signal)).request('Runtime.evaluate', { expression, returnByValue: true }, signal)
+    if (record(record(result).result).value !== true) throw new Error(`Browser element with text was not found: ${targetText}`)
+    await settle(signal)
+    return this.snapshot(signal)
+  }
+
+  async clickPoint(x: number, y: number, signal: AbortSignal): Promise<BrowserSnapshot> {
+    if (![x, y].every((value) => Number.isFinite(value) && value >= 0 && value <= 20_000)) throw new Error('Browser click point is invalid')
+    const connection = await this.ensurePage(signal)
+    await connection.request('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 }, signal)
+    await connection.request('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 }, signal)
+    await settle(signal)
+    return this.snapshot(signal)
+  }
+
   async type(selector: string, text: string, signal: AbortSignal): Promise<BrowserSnapshot> {
     const value = validateSelector(selector)
     if (!text || text.length > MAX_INPUT_CHARS) throw new Error('Browser input text is invalid')
-    const expression = `(() => { const el = document.querySelector(${JSON.stringify(value)}); if (!el) return false; el.focus(); el.value = ${JSON.stringify(text)}; el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); return true })()`
+    const expression = `(() => {
+      const el = document.querySelector(${JSON.stringify(value)}); if (!el) return false; el.focus()
+      const next = ${JSON.stringify(text)}
+      if (el instanceof HTMLInputElement) Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, next)
+      else if (el instanceof HTMLTextAreaElement) Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(el, next)
+      else if (el.isContentEditable) el.textContent = next
+      else return false
+      el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: next })); el.dispatchEvent(new Event('change', { bubbles: true })); return true
+    })()`
     const result = await (await this.ensurePage(signal)).request('Runtime.evaluate', { expression, returnByValue: true }, signal)
     if (record(record(result).result).value !== true) throw new Error(`Browser element not found: ${value}`)
     return this.snapshot(signal)
@@ -156,6 +187,39 @@ export class BrowserBridge {
     await (await this.ensurePage(signal)).request('Runtime.evaluate', { expression: 'history.back()', returnByValue: true }, signal)
     await settle(signal)
     return this.snapshot(signal)
+  }
+
+  async reload(signal: AbortSignal): Promise<BrowserSnapshot> {
+    await (await this.ensurePage(signal)).request('Page.reload', { ignoreCache: false }, signal)
+    await this.waitForPageReady(signal)
+    return this.snapshot(signal)
+  }
+
+  async pressKey(key: string, signal: AbortSignal): Promise<BrowserSnapshot> {
+    const value = validateBrowserKey(key)
+    const connection = await this.ensurePage(signal)
+    await connection.request('Input.dispatchKeyEvent', { type: 'keyDown', key: value, code: value }, signal)
+    await connection.request('Input.dispatchKeyEvent', { type: 'keyUp', key: value, code: value }, signal)
+    await settle(signal, 150)
+    return this.snapshot(signal)
+  }
+
+  async waitFor(selector: string, text: string, timeoutMs: number, signal: AbortSignal): Promise<BrowserSnapshot> {
+    if (!selector && !text) throw new Error('browser_wait_for requires selector or text')
+    const validatedSelector = selector ? validateSelector(selector) : ''
+    if (text.length > 2_000) throw new Error('Browser wait text is invalid')
+    if (!Number.isFinite(timeoutMs) || timeoutMs < 100 || timeoutMs > 30_000) throw new Error('Browser wait timeout is invalid')
+    const deadline = Date.now() + timeoutMs
+    const connection = await this.ensurePage(signal)
+    while (Date.now() < deadline) {
+      const expression = selector
+        ? `Boolean(document.querySelector(${JSON.stringify(validatedSelector)}))`
+        : `(document.body?.innerText ?? '').includes(${JSON.stringify(text)})`
+      const result = await connection.request('Runtime.evaluate', { expression, returnByValue: true }, signal)
+      if (record(record(result).result).value === true) return this.snapshot(signal)
+      await settle(signal, 200)
+    }
+    throw new Error(selector ? `Timed out waiting for browser element: ${validatedSelector}` : `Timed out waiting for browser text: ${text}`)
   }
 
   async downloads(): Promise<Array<{ name: string; sizeBytes: number }>> {
@@ -281,7 +345,15 @@ export class BrowserBridge {
   }
 }
 
-interface BrowserSnapshot { title: string; url: string; text: string; links: Array<{ text: string; href: string; selector: string }>; controls: Array<{ tag: string; label: string; selector: string }> }
+interface BrowserBounds { x: number; y: number; width: number; height: number }
+interface BrowserSnapshot {
+  title: string
+  url: string
+  viewport?: { width: number; height: number; scrollX: number; scrollY: number }
+  text: string
+  links: Array<{ text: string; href: string; selector: string; bounds?: BrowserBounds }>
+  controls: Array<{ tag: string; label: string; selector: string; bounds?: BrowserBounds }>
+}
 interface BrowserTab { id: string; title: string; url: string; active: boolean }
 interface BrowserTarget { id: string; url: string; webSocketDebuggerUrl: string }
 
@@ -335,10 +407,15 @@ function browserTools(bridge: BrowserBridge): ToolDefinition[] {
     tool('browser_switch_tab', 'Switch the active page to an existing tab.', { targetId: { type: 'string', maxLength: 200 } }, ['targetId'], (input, signal) => bridge.switchTab(requiredString(input.targetId, 'targetId', 200), signal)),
     tool('browser_close_tab', 'Close one browser tab.', { targetId: { type: 'string', maxLength: 200 } }, ['targetId'], (input, signal) => bridge.closeTab(requiredString(input.targetId, 'targetId', 200), signal)),
     tool('browser_click', 'Click an element in the active browser page by CSS selector.', { selector: { type: 'string', maxLength: MAX_SELECTOR_CHARS } }, ['selector'], (input, signal) => bridge.click(requiredString(input.selector, 'selector', MAX_SELECTOR_CHARS), signal)),
+    tool('browser_click_text', 'Click a visible link, button or button-like control by its user-facing text. Prefer this over fragile CSS selectors.', { text: { type: 'string', maxLength: 1_000 }, exact: { type: 'boolean', default: false } }, ['text'], (input, signal) => bridge.clickText(requiredString(input.text, 'text', 1_000), input.exact === true, signal)),
+    tool('browser_click_point', 'Click viewport coordinates after inspecting browser_screenshot. Use only when semantic controls are unavailable, such as canvas applications.', { x: { type: 'number' }, y: { type: 'number' } }, ['x', 'y'], (input, signal) => bridge.clickPoint(requiredNumber(input.x, 'x'), requiredNumber(input.y, 'y'), signal)),
     tool('browser_type', 'Replace the value of an input or textarea in the active browser page.', { selector: { type: 'string', maxLength: MAX_SELECTOR_CHARS }, text: { type: 'string', maxLength: MAX_INPUT_CHARS } }, ['selector', 'text'], (input, signal) => bridge.type(requiredString(input.selector, 'selector', MAX_SELECTOR_CHARS), requiredString(input.text, 'text', MAX_INPUT_CHARS), signal)),
     tool('browser_select', 'Select an option by value in a select control.', { selector: { type: 'string', maxLength: MAX_SELECTOR_CHARS }, value: { type: 'string', maxLength: MAX_INPUT_CHARS } }, ['selector', 'value'], (input, signal) => bridge.select(requiredString(input.selector, 'selector', MAX_SELECTOR_CHARS), String(input.value ?? ''), signal)),
     tool('browser_scroll', 'Scroll the active page by a pixel offset.', { x: { type: 'number' }, y: { type: 'number' } }, ['y'], (input, signal) => bridge.scroll(optionalNumber(input.x), requiredNumber(input.y, 'y'), signal)),
     tool('browser_back', 'Navigate the active tab back one entry.', {}, [], (_input, signal) => bridge.back(signal)),
+    tool('browser_reload', 'Reload the active browser page.', {}, [], (_input, signal) => bridge.reload(signal)),
+    tool('browser_press_key', 'Press a navigation or editing key in the active page.', { key: { type: 'string', maxLength: 30 } }, ['key'], (input, signal) => bridge.pressKey(requiredString(input.key, 'key', 30), signal)),
+    tool('browser_wait_for', 'Wait until a CSS selector exists or visible page text appears.', { selector: { type: 'string', maxLength: MAX_SELECTOR_CHARS }, text: { type: 'string', maxLength: 2_000 }, timeoutMs: { type: 'number', default: 10_000 } }, [], (input, signal) => bridge.waitFor(typeof input.selector === 'string' ? input.selector : '', typeof input.text === 'string' ? input.text : '', input.timeoutMs === undefined ? 10_000 : requiredNumber(input.timeoutMs, 'timeoutMs'), signal)),
     tool('browser_downloads', 'List files downloaded by the Xiaoyin browser.', {}, [], () => bridge.downloads()),
     tool('browser_human_takeover', 'Pause at an employee approval checkpoint so the employee can complete login, CAPTCHA, payment confirmation, or another sensitive browser step.', {}, [], (_input, signal) => bridge.snapshot(signal)),
     screenshotTool(bridge),
@@ -378,11 +455,26 @@ export function browserApprovalReason(toolName: string, args: unknown): string {
 }
 
 function validateSelector(value: unknown): string { return requiredString(value, 'selector', MAX_SELECTOR_CHARS) }
+export function validateBrowserKey(value: string): string {
+  const allowed = new Set(['Enter', 'Tab', 'Escape', 'Backspace', 'Delete', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'PageUp', 'PageDown', ' '])
+  if (!allowed.has(value)) throw new Error('Browser key is not supported')
+  return value
+}
 function requiredString(value: unknown, name: string, limit: number): string { if (typeof value !== 'string' || !value.trim() || value.length > limit) throw new Error(`${name} is invalid`); return value }
 function requiredNumber(value: unknown, name: string): number { if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error(`${name} is invalid`); return value }
 function optionalNumber(value: unknown): number { return value === undefined ? 0 : requiredNumber(value, 'number') }
 function record(value: unknown): Record<string, any> { if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Browser protocol returned an invalid object'); return value as Record<string, any> }
-function normalizeSnapshot(value: Record<string, unknown>): BrowserSnapshot { return { title: String(value.title ?? '').slice(0, 500), url: String(value.url ?? '').slice(0, 4096), text: String(value.text ?? '').slice(0, MAX_OUTPUT_CHARS), links: Array.isArray(value.links) ? value.links.slice(0, 200) as BrowserSnapshot['links'] : [], controls: Array.isArray(value.controls) ? value.controls.slice(0, 200) as BrowserSnapshot['controls'] : [] } }
+function normalizeSnapshot(value: Record<string, unknown>): BrowserSnapshot {
+  const viewport = value.viewport && typeof value.viewport === 'object' && !Array.isArray(value.viewport)
+    ? value.viewport as BrowserSnapshot['viewport']
+    : undefined
+  return {
+    title: String(value.title ?? '').slice(0, 500), url: String(value.url ?? '').slice(0, 4096),
+    ...(viewport ? { viewport } : {}), text: String(value.text ?? '').slice(0, MAX_OUTPUT_CHARS),
+    links: Array.isArray(value.links) ? value.links.slice(0, 200) as BrowserSnapshot['links'] : [],
+    controls: Array.isArray(value.controls) ? value.controls.slice(0, 200) as BrowserSnapshot['controls'] : [],
+  }
+}
 function delay(milliseconds: number) { return new Promise((resolvePromise) => setTimeout(resolvePromise, milliseconds)) }
 async function settle(signal: AbortSignal, milliseconds = 450) { await Promise.race([delay(milliseconds), new Promise((_, reject) => signal.addEventListener('abort', () => reject(new Error('Browser operation was cancelled')), { once: true }))]) }
 
@@ -399,5 +491,6 @@ async function browserExecutable(configured: string): Promise<string> {
 const SNAPSHOT_SCRIPT = `(() => {
   const selector = (el) => { if (el.id) return '#' + CSS.escape(el.id); const name = el.getAttribute('name'); if (name) return el.tagName.toLowerCase() + '[name="' + CSS.escape(name) + '"]'; const path = []; let node = el; while (node && node !== document.body && path.length < 5) { const tag = node.tagName.toLowerCase(); const siblings = [...node.parentElement.children].filter(x => x.tagName === node.tagName); path.unshift(tag + (siblings.length > 1 ? ':nth-of-type(' + (siblings.indexOf(node) + 1) + ')' : '')); node = node.parentElement } return path.join(' > ') }
   const visible = (el) => { const style = getComputedStyle(el); const rect = el.getBoundingClientRect(); return style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0 }
-  return { title: document.title, url: location.href, text: (document.body?.innerText ?? '').slice(0, ${MAX_OUTPUT_CHARS}), links: [...document.querySelectorAll('a[href]')].filter(visible).slice(0, 200).map(el => ({ text: (el.innerText || el.getAttribute('aria-label') || '').trim().slice(0, 300), href: el.href, selector: selector(el) })), controls: [...document.querySelectorAll('button,input,textarea,select')].filter(visible).slice(0, 200).map(el => ({ tag: el.tagName.toLowerCase(), label: (el.getAttribute('aria-label') || el.innerText || el.getAttribute('placeholder') || el.getAttribute('name') || '').trim().slice(0, 300), selector: selector(el) })) }
+  const bounds = (el) => { const rect = el.getBoundingClientRect(); return { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) } }
+  return { title: document.title, url: location.href, viewport: { width: innerWidth, height: innerHeight, scrollX, scrollY }, text: (document.body?.innerText ?? '').slice(0, ${MAX_OUTPUT_CHARS}), links: [...document.querySelectorAll('a[href]')].filter(visible).slice(0, 200).map(el => ({ text: (el.innerText || el.getAttribute('aria-label') || '').trim().slice(0, 300), href: el.href, selector: selector(el), bounds: bounds(el) })), controls: [...document.querySelectorAll('button,input,textarea,select,[role=button],[role=link]')].filter(visible).slice(0, 200).map(el => ({ tag: el.tagName.toLowerCase(), label: (el.getAttribute('aria-label') || el.innerText || el.getAttribute('placeholder') || el.getAttribute('name') || '').trim().slice(0, 300), selector: selector(el), bounds: bounds(el) })) }
 })()`

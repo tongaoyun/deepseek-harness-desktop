@@ -16,6 +16,7 @@ use sha2::{Digest, Sha256};
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 use std::{
+    collections::HashMap,
     io::{BufRead, BufReader, Read, Write},
     path::{Path, PathBuf},
     process::{Child, ChildStdin, ChildStdout, Command, Stdio},
@@ -28,15 +29,23 @@ use std::{
 use tauri::{Emitter, Manager};
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 
+const MAX_CONCURRENT_HARNESS_TASKS: usize = 3;
+
+#[derive(Default)]
+struct HarnessSlot {
+    process: Mutex<Option<HarnessProcess>>,
+    active_pid: AtomicU32,
+}
+
 #[derive(Clone, Default)]
 pub struct HarnessManager {
-    process: Arc<Mutex<Option<HarnessProcess>>>,
-    active_pid: Arc<AtomicU32>,
+    slots: Arc<Mutex<HashMap<String, Arc<HarnessSlot>>>>,
 }
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HarnessRunRequest {
+    task_id: String,
     prompt: String,
     employee_id: String,
     team_id: String,
@@ -148,6 +157,7 @@ pub struct HarnessHostHealth {
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct HarnessUiNotification {
+    task_id: String,
     request_id: u64,
     event: Value,
 }
@@ -177,6 +187,7 @@ pub(crate) struct HarnessProcess {
     stderr_tail: Arc<Mutex<String>>,
     stderr_reader: Option<JoinHandle<()>>,
     next_id: u64,
+    notification_task_id: String,
     pub(crate) fingerprint: RuntimeFingerprint,
 }
 
@@ -241,25 +252,39 @@ pub async fn run_harness(
     };
     let model_api_key = request.model_api_key;
     let access_token = request.access_token;
+    let task_id = request.task_id;
     let manager = manager.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        manager.run(&app, fingerprint, turn, model_api_key, access_token)
+        manager.run(
+            &task_id,
+            &app,
+            fingerprint,
+            turn,
+            model_api_key,
+            access_token,
+        )
     })
     .await
     .map_err(|error| format!("Harness 执行线程异常：{error}"))?
 }
 
 #[tauri::command]
-pub async fn shutdown_harness(manager: tauri::State<'_, HarnessManager>) -> Result<(), String> {
+pub async fn shutdown_harness(
+    manager: tauri::State<'_, HarnessManager>,
+    task_id: Option<String>,
+) -> Result<(), String> {
     let manager = manager.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || manager.shutdown())
+    tauri::async_runtime::spawn_blocking(move || manager.shutdown(task_id.as_deref()))
         .await
         .map_err(|error| format!("Harness 关闭线程异常：{error}"))?
 }
 
 #[tauri::command]
-pub fn cancel_harness(manager: tauri::State<'_, HarnessManager>) -> Result<bool, String> {
-    manager.cancel()
+pub fn cancel_harness(
+    manager: tauri::State<'_, HarnessManager>,
+    task_id: String,
+) -> Result<bool, String> {
+    manager.cancel(&task_id)
 }
 
 #[tauri::command]
@@ -367,13 +392,15 @@ pub async fn probe_harness_host(app: tauri::AppHandle) -> Result<HarnessHostHeal
 impl HarnessManager {
     fn run(
         &self,
+        task_id: &str,
         app: &tauri::AppHandle,
         fingerprint: RuntimeFingerprint,
         turn: HarnessTurnInput,
         model_api_key: String,
         access_token: String,
     ) -> Result<HarnessRunResult, String> {
-        let mut guard = self
+        let slot = self.slot(task_id)?;
+        let mut guard = slot
             .process
             .lock()
             .map_err(|_| "Harness 进程状态不可用".to_string())?;
@@ -385,17 +412,18 @@ impl HarnessManager {
             process.shutdown();
         }
         if guard.is_none() {
-            *guard = Some(HarnessProcess::start(
+            *guard = Some(HarnessProcess::start_for_task(
                 app,
+                task_id,
                 fingerprint,
                 model_api_key,
                 access_token,
             )?);
         }
         let process = guard.as_mut().expect("Harness process was initialized");
-        self.active_pid.store(process.child.id(), Ordering::Release);
-        let result = process.run(app, turn.prompt, turn.session_id, turn.images);
-        self.active_pid.store(0, Ordering::Release);
+        slot.active_pid.store(process.child.id(), Ordering::Release);
+        let result = process.run(task_id, app, turn.prompt, turn.session_id, turn.images);
+        slot.active_pid.store(0, Ordering::Release);
         match result {
             Ok(result) => Ok(result),
             Err(error) => {
@@ -406,44 +434,107 @@ impl HarnessManager {
         }
     }
 
-    fn shutdown(&self) -> Result<(), String> {
-        let mut guard = self
-            .process
-            .lock()
-            .map_err(|_| "Harness 进程状态不可用".to_string())?;
-        if let Some(mut process) = guard.take() {
+    fn slot(&self, task_id: &str) -> Result<Arc<HarnessSlot>, String> {
+        if task_id.is_empty() || task_id.len() > 200 {
+            return Err("Harness 任务标识无效".to_string());
+        }
+        let mut evicted = None;
+        let slot = {
+            let mut slots = self
+                .slots
+                .lock()
+                .map_err(|_| "Harness 任务池不可用".to_string())?;
+            if let Some(slot) = slots.get(task_id) {
+                return Ok(Arc::clone(slot));
+            }
+            if slots.len() >= MAX_CONCURRENT_HARNESS_TASKS {
+                let idle = slots
+                    .iter()
+                    .find(|(_, slot)| slot.active_pid.load(Ordering::Acquire) == 0)
+                    .map(|(id, _)| id.clone());
+                let Some(idle) = idle else {
+                    return Err(format!(
+                        "当前已有 {MAX_CONCURRENT_HARNESS_TASKS} 个任务在运行，请等待一个任务完成后再试"
+                    ));
+                };
+                evicted = slots.remove(&idle);
+            }
+            let slot = Arc::new(HarnessSlot::default());
+            slots.insert(task_id.to_string(), Arc::clone(&slot));
+            slot
+        };
+        if let Some(evicted) = evicted
+            && let Ok(mut process) = evicted.process.lock()
+            && let Some(mut process) = process.take()
+        {
             process.shutdown();
+        }
+        Ok(slot)
+    }
+
+    fn shutdown(&self, task_id: Option<&str>) -> Result<(), String> {
+        let slots = {
+            let mut current = self
+                .slots
+                .lock()
+                .map_err(|_| "Harness 任务池不可用".to_string())?;
+            match task_id {
+                Some(task_id) => current.remove(task_id).into_iter().collect::<Vec<_>>(),
+                None => current.drain().map(|(_, slot)| slot).collect::<Vec<_>>(),
+            }
+        };
+        for slot in slots {
+            let pid = slot.active_pid.load(Ordering::Acquire);
+            if pid != 0 {
+                let _ = terminate_process(pid);
+            }
+            if let Ok(mut process) = slot.process.lock()
+                && let Some(mut process) = process.take()
+            {
+                process.shutdown();
+            }
         }
         Ok(())
     }
 
-    fn cancel(&self) -> Result<bool, String> {
-        let pid = self.active_pid.load(Ordering::Acquire);
+    fn cancel(&self, task_id: &str) -> Result<bool, String> {
+        let slot = self
+            .slots
+            .lock()
+            .map_err(|_| "Harness 任务池不可用".to_string())?
+            .get(task_id)
+            .cloned();
+        let Some(slot) = slot else { return Ok(false) };
+        let pid = slot.active_pid.load(Ordering::Acquire);
         if pid == 0 {
             return Ok(false);
         }
-        #[cfg(target_os = "windows")]
-        {
-            let mut command = Command::new("taskkill");
-            command.creation_flags(0x0800_0000);
-            let status = command
-                .args(["/PID", &pid.to_string(), "/T", "/F"])
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .status()
-                .map_err(|error| format!("无法取消当前任务：{error}"))?;
-            Ok(status.success())
-        }
-        #[cfg(not(target_os = "windows"))]
-        {
-            let status = Command::new("kill")
-                .args(["-TERM", &pid.to_string()])
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .status()
-                .map_err(|error| format!("无法取消当前任务：{error}"))?;
-            Ok(status.success())
-        }
+        terminate_process(pid)
+    }
+}
+
+fn terminate_process(pid: u32) -> Result<bool, String> {
+    #[cfg(target_os = "windows")]
+    {
+        let mut command = Command::new("taskkill");
+        command.creation_flags(0x0800_0000);
+        let status = command
+            .args(["/PID", &pid.to_string(), "/T", "/F"])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .map_err(|error| format!("无法取消当前任务：{error}"))?;
+        Ok(status.success())
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let status = Command::new("kill")
+            .args(["-TERM", &pid.to_string()])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .map_err(|error| format!("无法取消当前任务：{error}"))?;
+        Ok(status.success())
     }
 }
 
@@ -454,7 +545,24 @@ impl HarnessProcess {
         model_api_key: String,
         access_token: String,
     ) -> Result<Self, String> {
-        Self::start_internal(app, fingerprint, model_api_key, access_token, true)
+        Self::start_internal(app, fingerprint, model_api_key, access_token, true, None)
+    }
+
+    fn start_for_task(
+        app: &tauri::AppHandle,
+        task_id: &str,
+        fingerprint: RuntimeFingerprint,
+        model_api_key: String,
+        access_token: String,
+    ) -> Result<Self, String> {
+        Self::start_internal(
+            app,
+            fingerprint,
+            model_api_key,
+            access_token,
+            true,
+            Some(task_id),
+        )
     }
 
     fn start_uninitialized(
@@ -463,7 +571,7 @@ impl HarnessProcess {
         model_api_key: String,
         access_token: String,
     ) -> Result<Self, String> {
-        Self::start_internal(app, fingerprint, model_api_key, access_token, false)
+        Self::start_internal(app, fingerprint, model_api_key, access_token, false, None)
     }
 
     fn start_internal(
@@ -472,6 +580,7 @@ impl HarnessProcess {
         model_api_key: String,
         access_token: String,
         initialize: bool,
+        task_id: Option<&str>,
     ) -> Result<Self, String> {
         let runtime = resolve_runtime_paths(app)?;
         let app_data = app
@@ -479,6 +588,13 @@ impl HarnessProcess {
             .app_data_dir()
             .map_err(|error| format!("无法确定 Harness 数据目录：{error}"))?;
         let dsh_home = app_data.join("harness");
+        let browser_home = task_id.map(|task_id| {
+            let mut hasher = Sha256::new();
+            hasher.update(task_id.as_bytes());
+            app_data
+                .join("harness-browser")
+                .join(format!("{:x}", hasher.finalize()))
+        });
         let workspace = app_data.join("workspace");
         std::fs::create_dir_all(&dsh_home)
             .and_then(|_| std::fs::create_dir_all(&workspace))
@@ -527,6 +643,18 @@ impl HarnessProcess {
             .env("XIAOYIN_KNOWLEDGE_BASE_REFS", knowledge_base_refs)
             .env("XIAOYIN_LOCAL_FILE_ROOTS", local_file_roots)
             .env("XIAOYIN_ATTACHMENT_ROOT", dsh_home.join("attachments"))
+            .envs(browser_home.as_ref().map(|path| {
+                (
+                    "XIAOYIN_BROWSER_PROFILE_DIR",
+                    path.join("profile").into_os_string(),
+                )
+            }))
+            .envs(browser_home.as_ref().map(|path| {
+                (
+                    "XIAOYIN_BROWSER_DOWNLOAD_DIR",
+                    path.join("downloads").into_os_string(),
+                )
+            }))
             .env(
                 "XIAOYIN_ALLOW_BROWSER",
                 fingerprint.allow_browser.to_string(),
@@ -562,6 +690,7 @@ impl HarnessProcess {
             stderr_tail,
             stderr_reader,
             next_id: 1,
+            notification_task_id: String::new(),
             fingerprint,
         };
         if initialize {
@@ -572,11 +701,13 @@ impl HarnessProcess {
 
     fn run(
         &mut self,
+        task_id: &str,
         app: &tauri::AppHandle,
         prompt: String,
         session_id: Option<String>,
         images: Vec<HarnessImageInput>,
     ) -> Result<HarnessRunResult, String> {
+        self.notification_task_id = task_id.to_string();
         let mut params = json!({ "prompt": prompt, "images": images });
         if let Some(session_id) = session_id {
             params["sessionId"] = Value::String(session_id);
@@ -658,7 +789,11 @@ impl HarnessProcess {
                         });
                         let _ = app.emit(
                             "xiaoyin://harness-notification",
-                            HarnessUiNotification { request_id, event },
+                            HarnessUiNotification {
+                                task_id: self.notification_task_id.clone(),
+                                request_id,
+                                event,
+                            },
                         );
                     }
                     continue;
@@ -667,7 +802,11 @@ impl HarnessProcess {
                     let event = output.get("params").cloned().unwrap_or(Value::Null);
                     let _ = app.emit(
                         "xiaoyin://harness-notification",
-                        HarnessUiNotification { request_id, event },
+                        HarnessUiNotification {
+                            task_id: self.notification_task_id.clone(),
+                            request_id,
+                            event,
+                        },
                     );
                 }
                 continue;
@@ -963,6 +1102,12 @@ fn validate_runtime_paths(paths: &HarnessRuntimePaths) -> Result<(), String> {
 }
 
 fn validate_run_request(request: &HarnessRunRequest) -> Result<(), String> {
+    if request.task_id.trim().is_empty()
+        || request.task_id.len() > 200
+        || request.task_id.chars().any(char::is_control)
+    {
+        return Err("任务标识无效".to_string());
+    }
     if request.employee_id.trim().is_empty()
         || request.employee_id.len() > 512
         || request.employee_id.chars().any(char::is_control)
@@ -1079,12 +1224,25 @@ mod tests {
 
     #[test]
     fn cancel_without_active_run_is_a_noop() {
-        assert_eq!(HarnessManager::default().cancel(), Ok(false));
+        assert_eq!(HarnessManager::default().cancel("missing-task"), Ok(false));
+    }
+
+    #[test]
+    fn task_pool_keeps_three_slots_and_reuses_idle_capacity() {
+        let manager = HarnessManager::default();
+        assert!(manager.slot("task-1").is_ok());
+        assert!(manager.slot("task-2").is_ok());
+        assert!(manager.slot("task-3").is_ok());
+        assert!(manager.slot("task-4").is_ok());
+        let slots = manager.slots.lock().expect("task pool should be available");
+        assert_eq!(slots.len(), MAX_CONCURRENT_HARNESS_TASKS);
+        assert!(slots.contains_key("task-4"));
     }
 
     #[test]
     fn run_request_requires_safe_endpoints_and_model() {
         let valid = HarnessRunRequest {
+            task_id: "task-1".to_string(),
             prompt: "分析库存".to_string(),
             employee_id: "employee-1".to_string(),
             team_id: "crossborder".to_string(),
