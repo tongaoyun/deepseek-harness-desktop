@@ -57,7 +57,7 @@ export async function submitPackage(manifest: ExpertKitManifest, bytes: number[]
       triggers: manifest.triggers ?? [], minimumDesktopVersion: manifest.minimumDesktopVersion,
       commandIds: manifest.commands.map((item) => item.id), skillIds: manifest.skills.map((item) => item.id),
       connectorRefs: manifest.connectorRefs, requiredTools: manifest.requiredTools,
-      knowledgeBaseRefs: manifest.knowledgeBaseRefs ?? [], permissions: manifest.permissions,
+      knowledgeBaseRefs: manifest.knowledgeBaseRefs ?? [],
       serverWorkflows: manifest.serverWorkflows, sha256,
     }),
   }), '创建审核版本失败')

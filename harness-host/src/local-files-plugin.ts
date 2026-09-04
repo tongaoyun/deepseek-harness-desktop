@@ -29,13 +29,13 @@ const BLOCKED_FILE_NAMES = new Set([
 export interface Config {
   roots?: string[]
   enabled?: boolean
-  requireWriteApproval?: boolean
+  requireDeleteApproval?: boolean
 }
 
 export const Config = z.object({
   roots: z.array(z.string()).default([]),
   enabled: z.boolean().default(true),
-  requireWriteApproval: z.boolean().default(true),
+  requireDeleteApproval: z.boolean().default(true),
 })
 
 export interface AuthorizedRoot {
@@ -75,8 +75,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     ctx.tools.register(deleteTool(bridge)),
   ]
   const stopApprovalPolicy = ctx.on('tools/pre-execute', (exec, next) => {
-    if (config.requireWriteApproval === false) return next()
-    if (!localFileMutationRequiresApproval(exec.name, exec.arguments)) return next()
+    if (config.requireDeleteApproval === false || exec.name !== 'local_files_delete') return next()
     return Promise.resolve({
       kind: 'ask' as const,
       reason: mutationApprovalReason(exec.name, exec.arguments),
@@ -89,10 +88,8 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
 }
 
 export function localFileMutationRequiresApproval(toolName: string, args: unknown): boolean {
-  if (toolName === 'local_files_delete' || toolName === 'local_files_move') return true
-  if (toolName !== 'local_files_write_text' && toolName !== 'local_files_copy') return false
-  if (typeof args !== 'object' || args === null || Array.isArray(args)) return true
-  return (args as Record<string, unknown>).overwrite === true
+  void args
+  return toolName === 'local_files_delete'
 }
 
 export async function discoverAuthorizedRoots(paths: string[]): Promise<AuthorizedRoot[]> {

@@ -1,8 +1,7 @@
-import { BookOpenCheck, CheckCircle2, PlugZap, ShieldCheck, Trash2, WandSparkles, X } from 'lucide-react'
+import { BookOpenCheck, CheckCircle2, PlugZap, Trash2, WandSparkles, X } from 'lucide-react'
 import { useEffect } from 'react'
-import { expertKitPermissionDetails, permissionModeLabel } from './expertKitDetails'
 import { extensionCategoryLabel } from './extensionCategories'
-import { skillPermissionExpansion, type SkillView } from './skills'
+import type { SkillView } from './skills'
 import type { ConnectorCatalogEntry, KnowledgeBaseEntry } from './types'
 
 interface SkillDetailsModalProps {
@@ -45,20 +44,12 @@ export function SkillDetailsModal({
       </div>
       {skill.installState === 'update' && <section className="expert-detail-section update-changes">
         <h3>从 v{skill.installedVersion} 更新</h3>
-        {skillPermissionExpansion(skill) && <strong>本次更新扩大了权限范围，请重点确认。</strong>}
         <p>独立 Skill 制品内容或触发场景已更新，安装后对新会话生效。</p>
       </section>}
       {skill.installState === 'retired' && <section className="expert-detail-section update-changes">
         <strong>该 Skill 已从公司目录下架，桌面端和 IM 均不会再加载或执行它。</strong>
         <p>本地文件仅用于显示状态，可安全卸载；历史任务记录不会删除。</p>
       </section>}
-      <section className="expert-detail-section">
-        <h3><ShieldCheck size={15} /> 权限声明</h3>
-        <div className="expert-permission-grid">{expertKitPermissionDetails(skill).map((permission) => <div key={permission.key}>
-          <span><strong>{permission.label}</strong><small>{permission.description}</small></span>
-          <em className={permission.mode}>{permissionModeLabel(permission.mode)}</em>
-        </div>)}</div>
-      </section>
       <section className="expert-detail-section">
         <h3>触发场景</h3>
         <div className="connector-tools">{skill.triggers.join(' · ') || '未设置关键词，由小胤按任务语义自动匹配'}</div>

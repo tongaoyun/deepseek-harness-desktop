@@ -11,12 +11,12 @@ afterEach(async () => {
 })
 
 describe('LocalFileBridge', () => {
-  it('asks only before overwrites, moves and deletes', () => {
+  it('asks only before deletion', () => {
     expect(localFileMutationRequiresApproval('local_files_write_text', { overwrite: false })).toBe(false)
     expect(localFileMutationRequiresApproval('local_files_create_directory', {})).toBe(false)
     expect(localFileMutationRequiresApproval('local_files_copy', { overwrite: false })).toBe(false)
-    expect(localFileMutationRequiresApproval('local_files_write_text', { overwrite: true })).toBe(true)
-    expect(localFileMutationRequiresApproval('local_files_move', {})).toBe(true)
+    expect(localFileMutationRequiresApproval('local_files_write_text', { overwrite: true })).toBe(false)
+    expect(localFileMutationRequiresApproval('local_files_move', {})).toBe(false)
     expect(localFileMutationRequiresApproval('local_files_delete', {})).toBe(true)
   })
 

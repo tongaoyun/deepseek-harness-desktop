@@ -55,7 +55,7 @@
 | 运行恢复 | 启动轻量 Host 探测 → 异常通知 → Harness 进程中止/清理 → 用户重新检测或重试任务；完整本地工具自检按需执行 |
 | 能力同步 | 并行拉取目录 → 分项诊断 → SQLite 持久缓存；失败项继续使用最近成功数据，恢复连接后自动更新 |
 | 本地拖入 | 原生拖放事件 → 授权文件所在目录 → 加入当前任务上下文 |
-| 扩展安装 | 控制中心目录 → MinIO 专家套件或 Skill 制品 → SHA-256/Manifest/权限校验 → `extensions/<kind>/<id>/<version>` |
+| 扩展安装 | 控制中心目录 → MinIO 专家套件或 Skill 制品 → SHA-256/Manifest 校验 → `extensions/<kind>/<id>/<version>` |
 | 扩展发布 | 桌面创作与试运行 → 控制中心审核 → 专家套件或 Skill 不可变制品发布到 MinIO |
 | MCP 接入 | `erp-mcp-gateway` 新增 Tool → 契约测试 → 部署并自动注册 Nacos MCP Registry → 控制中心动态投影 |
 | 连接器诊断 | 一次性 Harness Host → MCP 握手和 `tools/list` → 登记清单对比 → 立即关闭 |
@@ -74,7 +74,7 @@
 |---|---|
 | 身份与模型 | ERP 扫码登录、控制中心模型目录、LiteLLM |
 | Agent | 内置 DeepSeek Harness、SQLite 会话、搜索/分页/归档、富文本回复、产物卡片、任务取消与失败重试；原生 Workspace Context、Jobs 和 Goal |
-| 扩展 | `.xiaoyin-kit/kit.json` 专家套件、根目录 `SKILL.md` 独立 Skill、`/` 命令入口、自动触发、运行时权限治理，以及模板创建、ZIP/tar.gz 导入、定制副本和 ZIP 导出 |
+| 扩展 | `.xiaoyin-kit/kit.json` 专家套件、根目录 `SKILL.md` 独立 Skill、`/` 命令入口、自动触发，以及模板创建、ZIP/tar.gz 导入、定制副本和 ZIP 导出 |
 | 连接器 | 员工级启停、Streamable HTTP/SSE、工具白名单、写权限、实时诊断和仅包含已启用能力的新任务快照 |
 | ERP | `order_get`、`sales_summary`、`inventory_risk` |
 | 本地工具 | 文件、DOCX/XLSX/PPTX/PDF、Windows Computer Use；Shell 使用 Harness 原生 Bash/PowerShell Executor、受管进程树、后台 Job 和终端结果卡片；浏览器支持持久登录、多标签、滚动/选择、下载和人工接管 |
@@ -86,9 +86,9 @@
 
 ## 安全规则
 
-- 专家套件和 Skill 只声明连接器 ID、工具、知识库引用和权限，不携带地址或凭据。
+- 专家套件和 Skill 只声明连接器 ID、工具和知识库引用，不携带地址或凭据。
 - 只有当前员工明确启用且已就绪的连接器会加入新任务能力快照；扩展声明的连接器和工具属于强依赖，缺失或未启用时阻止运行。
-- 专家套件的 `deny`、`approval`、`allow` 会落实为运行时禁用、逐次确认、直接执行；分别约束本地文件、Shell、Computer Use 和连接器读写。
+- 本地文件和 Office 仅能访问员工为当前任务授权的目录；普通写入与桌面操作直接执行，删除、高危 Shell 和明确标注的破坏性 MCP 调用需要确认。
 - 新建任务、选择专家套件或调用 Skill 时重新生成能力快照；连接器、扩展或知识上下文更新不改变进行中的任务。
 - 本地工具只能访问员工授权目录；目录穿越、越界符号链接和敏感文件被拒绝。
 - 模型凭据、员工令牌和 IM Secret 只存在于受控进程或系统凭据库。

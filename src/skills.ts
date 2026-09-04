@@ -1,9 +1,8 @@
-import { desktopToolNames, normalizePermissions } from './expertKits'
+import { desktopToolNames } from './expertKits'
 import type {
   ConnectorCatalogEntry,
   InstalledExpertKit,
   KnowledgeBaseEntry,
-  PermissionMode,
   SkillCatalogEntry,
 } from './types'
 
@@ -68,7 +67,6 @@ export function mergeSkills(
       connectorRefs,
       requiredTools,
       knowledgeBaseRefs,
-      permissions: normalizePermissions(skill.permissions),
       ...dependencyState(connectorRefs, requiredTools, knowledgeBaseRefs),
       installed: local,
       installedVersion: local?.manifest.version,
@@ -95,7 +93,6 @@ export function mergeSkills(
       connectorRefs,
       requiredTools,
       knowledgeBaseRefs,
-      permissions: normalizePermissions(manifest.permissions),
       sha256: '',
       installed: local,
       installedVersion: manifest.version,
@@ -105,12 +102,4 @@ export function mergeSkills(
     })
   }
   return views
-}
-
-export function skillPermissionExpansion(skill: SkillView): boolean {
-  if (skill.installState !== 'update' || !skill.installed) return false
-  const rank: Record<PermissionMode, number> = { deny: 0, approval: 1, allow: 2 }
-  const before = normalizePermissions(skill.installed.manifest.permissions)
-  const after = normalizePermissions(skill.permissions)
-  return (Object.keys(after) as Array<keyof typeof after>).some((key) => rank[after[key]] > rank[before[key]])
 }

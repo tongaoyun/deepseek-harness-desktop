@@ -43,10 +43,9 @@ const CREATE_TOOLS = new Set([
   'office_docx_create', 'office_xlsx_create', 'office_xlsx_update_cells', 'office_pptx_create', 'office_pdf_create',
 ])
 
-export interface Config { roots?: string[]; enabled?: boolean; requireWriteApproval?: boolean }
+export interface Config { roots?: string[]; enabled?: boolean }
 export const Config = z.object({
   roots: z.array(z.string()).default([]), enabled: z.boolean().default(true),
-  requireWriteApproval: z.boolean().default(true),
 })
 
 export async function apply(ctx: Context, config: Config = {}): Promise<void> {
@@ -62,15 +61,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     ctx.tools.register(createPptxTool(bridge)),
     ctx.tools.register(createPdfTool(bridge)),
   ]
-  const stopApprovalPolicy = ctx.on('tools/pre-execute', (exec, next) => {
-    if (config.requireWriteApproval === false) return next()
-    if (!CREATE_TOOLS.has(exec.name)) return next()
-    const input = record(exec.arguments)
-    const path = typeof input.path === 'string' ? input.path : '未指定路径'
-    return Promise.resolve({ kind: 'ask' as const, reason: `生成并写入本地文档\npath: ${path}\n工具：${exec.name}` })
-  })
   ctx.effect(() => () => {
-    stopApprovalPolicy()
     for (const dispose of unregister.reverse()) dispose()
   }, 'xiaoyin local document bridge')
 }

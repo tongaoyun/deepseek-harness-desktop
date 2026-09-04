@@ -1028,7 +1028,7 @@ export default function App() {
 
   return (
     <div className={`app-shell${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
-      {dragActive && <div className="file-drop-overlay"><FolderOpen size={34} /><strong>松开即可添加到当前任务</strong><span>文件只会授权其所在目录，执行时仍遵循专家套件权限</span></div>}
+      {dragActive && <div className="file-drop-overlay"><FolderOpen size={34} /><strong>松开即可添加到当前任务</strong><span>文件只会在本次任务授权的目录内使用</span></div>}
       <DesktopSidebar
         collapsed={sidebarCollapsed}
         onCloseSearch={() => { setTaskSearchOpen(false); setTaskQuery('') }}
@@ -1115,7 +1115,7 @@ export default function App() {
                     ? '把钉钉等公司消息入口连接到本机小胤 Harness，集中查看连接和处理状态。'
                   : page === 'settings'
                     ? '管理企业身份、个人记忆、快捷键与应用更新。'
-                    : '这里将由控制中心下发公司自己的能力与权限配置。'}</p></div>{(page === 'experts' || page === 'skills' || page === 'connectors') && <ExtensionPageActions
+                    : '这里将由控制中心下发公司自己的能力配置。'}</p></div>{(page === 'experts' || page === 'skills' || page === 'connectors') && <ExtensionPageActions
               loading={expertKitsLoading}
               onCreate={() => {
                 if (page === 'experts' || page === 'skills') createWithXiaoyin(page === 'experts' ? 'expert-kit' : 'skill')
