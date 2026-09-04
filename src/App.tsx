@@ -117,6 +117,8 @@ export default function App() {
   const [localTasks, setLocalTasks] = useState<LocalTaskRun[]>([])
   const [currentLocalTaskId, setCurrentLocalTaskId] = useState('')
   const [authoringKind, setAuthoringKind] = useState<ExtensionKind>()
+  const [authoringInstructions, setAuthoringInstructions] = useState('')
+  const [creationKind, setCreationKind] = useState<'expert-kit' | 'skill'>()
   const [enabledConnectorIds, setEnabledConnectorIds] = useState<string[]>([])
   const [connectorSecrets, setConnectorSecrets] = useState<ConnectorSecretStore>({})
   const [expertKitError, setExpertKitError] = useState('')
@@ -482,7 +484,7 @@ export default function App() {
     taskMonitorRef.current = next
     setTaskMonitor(next)
   }
-  const startNewTask = (initialPrompt = '') => {
+  const startNewTask = (initialPrompt = '', nextCreationKind?: 'expert-kit' | 'skill') => {
     setPage('chat')
     setTaskSearchOpen(false)
     setTaskQuery('')
@@ -494,6 +496,7 @@ export default function App() {
     setSelectedExpertKitId('')
     setSelectedSkillId('')
     setCurrentLocalTaskId('')
+    setCreationKind(nextCreationKind)
     setPendingAttachments([])
     const monitor = createTaskMonitor()
     taskMonitorRef.current = monitor
@@ -504,7 +507,9 @@ export default function App() {
     focusComposer()
   }
   const newTask = () => startNewTask()
-  const createWithXiaoyin = (kind: XiaoyinCreationKind) => startNewTask(creationPrompt(kind))
+  const createWithXiaoyin = (kind: XiaoyinCreationKind) => startNewTask(
+    creationPrompt(kind), kind === 'schedule' ? undefined : kind,
+  )
   const persistLocalTask = (task: LocalTaskRun) => {
     if (!user) return
     setLocalTasks((current) => [task, ...current.filter((item) => item.id !== task.id)]
@@ -518,6 +523,7 @@ export default function App() {
     setTaskQuery('')
     setMessages(task.messages.map((message) => ({ ...message, pending: false })))
     setCurrentLocalTaskId(task.id)
+    setCreationKind(undefined)
     setHarnessSessionId(task.sessionId ?? '')
     setCurrentCapabilitySnapshot(task.capabilitySnapshot)
     setSelectedKnowledgeBaseRefs(task.capabilitySnapshot?.knowledgeBaseRefs ?? [])
@@ -1060,12 +1066,18 @@ export default function App() {
             localFileError={localFileError}
             messageListRef={messageListRef}
             messages={messages}
+            creationKind={creationKind}
             modelMenuOpen={modelMenuOpen}
             modelPickerRef={modelPickerRef}
             models={bootstrap?.models ?? []}
             onAddKnowledge={(reference) => { setSelectedKnowledgeBaseRefs((current) => [...current, reference]); setPrompt(''); focusComposer() }}
             onAddLocalDirectory={() => void addLocalDirectory()}
             onCancel={() => void cancelCurrentTask()}
+            onContinueCreation={(instructions) => {
+              if (!creationKind) return
+              setAuthoringInstructions(instructions)
+              setAuthoringKind(creationKind)
+            }}
             onSelectCapability={selectChatCapability}
             onPrepareRetry={prepareRetry}
             onPrompt={(value) => { setPrompt(value); focusComposer() }}
@@ -1107,7 +1119,10 @@ export default function App() {
               loading={expertKitsLoading}
               onCreate={() => {
                 if (page === 'experts' || page === 'skills') createWithXiaoyin(page === 'experts' ? 'expert-kit' : 'skill')
-                else setAuthoringKind('connector')
+                else {
+                  setAuthoringInstructions('')
+                  setAuthoringKind('connector')
+                }
               }}
               onImportConnector={(connector) => {
                 if (!user) return
@@ -1198,7 +1213,8 @@ export default function App() {
         connectors={connectors}
         employeeId={user.userId}
         initialKind={authoringKind}
-        onClose={() => setAuthoringKind(undefined)}
+        initialInstructions={authoringInstructions}
+        onClose={() => { setAuthoringKind(undefined); setAuthoringInstructions('') }}
         onPreviewRunningChange={(running) => { extensionPreviewRunningRef.current = running }}
         previewConfig={!harnessRunning && runtimeStatus === 'ready' && bootstrap ? {
           employeeId: user.userId,

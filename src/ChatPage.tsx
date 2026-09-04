@@ -6,6 +6,7 @@ import { InlineTaskActivity } from './InlineTaskActivity'
 import { modelDisplayName } from './modelSelection'
 import { TaskArtifacts } from './TaskArtifacts'
 import type { CapabilitySnapshot, KnowledgeBaseEntry, LocalTaskAttachment, RuntimeStatus, TaskMessage, TaskMonitorState } from './types'
+import { XiaoyinMascot } from './XiaoyinMascot'
 
 const RichMessage = lazy(() => import('./RichMessage').then((module) => ({ default: module.RichMessage })))
 interface Props {
@@ -49,6 +50,8 @@ interface Props {
   onRemoveKnowledge: (reference: string) => void
   onRemoveLocalDirectory: (id: string) => void
   onRemoveAttachment: (id: string) => void
+  creationKind?: 'expert-kit' | 'skill'
+  onContinueCreation?: (instructions: string) => void
 }
 
 export function ChatPage(props: Props) {
@@ -96,7 +99,9 @@ export function ChatPage(props: Props) {
 
   return <section className={props.messages.length > 0 ? 'chat-page conversation' : 'chat-page'}>
     {props.messages.length === 0 && <div className="hero-copy">
-      <h1>今天想做什么？</h1>
+      <XiaoyinMascot size={62} variant="hero" />
+      <h1>不止聊天，搞定一切</h1>
+      <p>本地运行、自主规划、安全可控的 AI 工作搭子</p>
     </div>}
     {props.messages.length > 0 && <div aria-live="polite" className="message-list" onScroll={trackScroll} ref={props.messageListRef}>{props.messages.map((message, index) => {
       const monitor = message.monitor ?? (message.role === 'assistant' && index === props.messages.length - 1 ? props.taskMonitor : undefined)
@@ -112,6 +117,10 @@ export function ChatPage(props: Props) {
         {monitor && <InlineTaskActivity finalResponse={message.text} monitor={monitor} />}
         {(!message.pending || message.text) && <div className={message.pending ? 'streaming-response' : undefined}><Suspense fallback={<p>{message.text}</p>}><RichMessage assistant={!message.pending} onRegenerate={!message.pending && index === props.messages.length - 1 ? props.onPrepareRetry : undefined} text={message.text} /></Suspense></div>}
         {!message.pending && monitor && monitor.artifacts.length > 0 && <TaskArtifacts artifacts={monitor.artifacts} conversation />}
+        {!message.pending && monitor?.status === 'completed' && index === props.messages.length - 1 && props.creationKind && props.onContinueCreation && <div className="creation-handoff">
+          <span><Sparkles size={16} /><span><strong>继续完成创建</strong><small>把当前方案带入创作表单，确认后保存到本机。</small></span></span>
+          <button onClick={() => props.onContinueCreation?.(message.text)} type="button">保存为{props.creationKind === 'expert-kit' ? '专家套件' : '技能'}</button>
+        </div>}
         {retryable && <button className="retry-task" onClick={props.onPrepareRetry} type="button">重试这个任务</button>}
       </article>
     })}</div>}
