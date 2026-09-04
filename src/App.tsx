@@ -61,6 +61,7 @@ import { useEnterpriseSession } from './useEnterpriseSession'
 import { ScheduledTasksPage } from './ScheduledTasksPage'
 import { ImChannelsPage } from './ImChannelsPage'
 import { loadTaskHistory, persistTaskHistory } from './taskHistory'
+import { resolveHarnessSessionId } from './harnessSession'
 import { loadLocalImStatus, startLocalIm, stopLocalImRuntime, syncLocalImTasks } from './localIm'
 import { mergeImStatusIntoTasks } from './imTaskSync'
 import type { LocalTaskRun, TaskExecutionStep, TaskMessage, TaskMonitorState } from './types'
@@ -616,6 +617,7 @@ export default function App() {
     }
     let taskDirectories = localDirectories
     const taskSessionId = harnessSessionId
+    let resetSessionForDirectoryChange = false
     const standardDirectories = standardLocalDirectories(input)
     if (standardDirectories.length > 0) {
       setLocalFileError('')
@@ -624,7 +626,11 @@ export default function App() {
         const additions = authorizations.filter((next) => !taskDirectories.some((item) => item.id === next.id))
         taskDirectories = [...taskDirectories, ...additions]
         setLocalDirectories(taskDirectories)
-        if (additions.length > 0) await shutdownHarness()
+        if (additions.length > 0) {
+          resetSessionForDirectoryChange = true
+          setHarnessSessionId('')
+          await shutdownHarness()
+        }
       } catch (error) {
         setLocalFileError(error instanceof Error ? error.message : String(error))
         return
@@ -639,7 +645,12 @@ export default function App() {
     if (!currentCapabilitySnapshot) setCurrentCapabilitySnapshot(capabilitySnapshot)
     const taskId = currentLocalTaskId || crypto.randomUUID()
     const existingTask = localTasks.find((task) => task.id === taskId)
-    const rootSessionId = taskSessionId || existingTask?.sessionId || `session-${crypto.randomUUID().replaceAll('-', '')}`
+    const rootSessionId = resolveHarnessSessionId(
+      taskSessionId,
+      existingTask?.sessionId,
+      resetSessionForDirectoryChange,
+      () => `session-${crypto.randomUUID().replaceAll('-', '')}`,
+    )
     const pendingMessages: TaskMessage[] = [...messages, { role: 'user', text: input, ...(messageAttachments.length > 0 ? { attachments: messageAttachments } : {}) },
       { role: 'assistant', text: '', pending: true }]
     const runningMonitor: TaskMonitorState = {
