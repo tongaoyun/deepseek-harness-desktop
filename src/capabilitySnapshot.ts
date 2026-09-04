@@ -44,8 +44,10 @@ export function createCapabilitySnapshot(
 export function connectorsForSnapshot(
   snapshot: CapabilitySnapshot,
   localSecrets: ConnectorSecretStore = {},
+  enabledConnectorIds?: Iterable<string>,
 ): ConnectorRuntimeDefinition[] {
-  return snapshot.connectors.map((item) => ({
+  const enabled = enabledConnectorIds === undefined ? undefined : new Set(enabledConnectorIds)
+  return snapshot.connectors.filter((item) => enabled?.has(item.id) !== false).map((item) => ({
     ...item,
     toolNames: [...item.toolNames],
     environment: hydrateValues(item.environment, localSecrets[item.id]?.environment),

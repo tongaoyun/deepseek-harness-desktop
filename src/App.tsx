@@ -760,7 +760,7 @@ export default function App() {
         litellmBaseUrl: bootstrap.endpoints.litellm,
         knowledgeEndpoint: resolveControlPlaneEndpoint(bootstrap.endpoints.knowledge),
         scheduleEndpoint: resolveControlPlaneEndpoint(bootstrap.endpoints.schedules),
-        connectors: connectorsForSnapshot(capabilitySnapshot, connectorSecrets),
+        connectors: connectorsForSnapshot(capabilitySnapshot, connectorSecrets, enabledConnectorIdsRef.current),
         allowedArtifacts: capabilitySnapshot.extensions,
         knowledgeBaseRefs: capabilitySnapshot.knowledgeBaseRefs,
         model: activeModel,
@@ -1147,6 +1147,7 @@ export default function App() {
             onAddKnowledge={addKnowledgeContext}
             onAddLocalDirectory={() => void addLocalDirectory()}
             onAddLocalFiles={() => void addLocalFiles()}
+            onBrowseExpertKits={() => setPage('experts')}
             onCancel={() => void cancelCurrentTask()}
             onContinueCreation={(instructions) => {
               if (!creationKind) return

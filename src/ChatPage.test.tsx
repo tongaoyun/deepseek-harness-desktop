@@ -13,7 +13,7 @@ describe('ChatPage conversation', () => {
       harnessHealthDetail="正常" harnessRunning={false} knowledgeBases={[]} localDirectories={[]}
       localFileError="" messageListRef={{ current: null }} pendingAttachments={[]} messages={[]}
       modelMenuOpen={false} modelPickerRef={{ current: null }} models={[]} onAddKnowledge={() => undefined}
-      onAddLocalDirectory={() => undefined} onAddLocalFiles={() => undefined} onCancel={() => undefined} onSelectCapability={() => undefined}
+      onAddLocalDirectory={() => undefined} onAddLocalFiles={() => undefined} onBrowseExpertKits={() => undefined} onCancel={() => undefined} onSelectCapability={() => undefined}
       onPrepareRetry={() => undefined} onPrompt={() => undefined} onReconnect={() => undefined} onRecoverHarness={() => undefined}
       onRemoveAttachment={() => undefined} onRemoveKnowledge={() => undefined} onRemoveLocalDirectory={() => undefined}
       onSelectModel={() => undefined} onSubmit={() => undefined}
@@ -24,7 +24,7 @@ describe('ChatPage conversation', () => {
     expect(html).toContain('本地运行、自主规划、安全可控的 AI 工作搭子')
     expect(html).toContain('placeholder="描述你想完成的任务"')
     expect(html).toContain('aria-label="添加上下文"')
-    expect(html).not.toContain('title="按需使用专家套件"')
+    expect(html).toContain('title="按需使用专家套件"')
     expect(html).not.toContain('@ 引用知识库')
     expect(html).not.toContain('快捷指令')
     expect(html).not.toContain('>通用<')
@@ -42,7 +42,7 @@ describe('ChatPage conversation', () => {
         { role: 'user', text: '解释冒泡排序' },
         { role: 'assistant', text: '冒泡排序会比较相邻元素。', monitor },
       ]} modelMenuOpen={false} modelPickerRef={{ current: null }} models={[]} onAddKnowledge={() => undefined}
-      onAddLocalDirectory={() => undefined} onAddLocalFiles={() => undefined} onCancel={() => undefined} onContinueCreation={() => undefined} onSelectCapability={() => undefined}
+      onAddLocalDirectory={() => undefined} onAddLocalFiles={() => undefined} onBrowseExpertKits={() => undefined} onCancel={() => undefined} onContinueCreation={() => undefined} onSelectCapability={() => undefined}
       onPrepareRetry={() => undefined} onPrompt={() => undefined} onReconnect={() => undefined} onRecoverHarness={() => undefined}
       onRemoveAttachment={() => undefined} onRemoveKnowledge={() => undefined} onRemoveLocalDirectory={() => undefined}
       onSelectModel={() => undefined} onSubmit={() => undefined} onToggleModelMenu={() => undefined} prompt=""
@@ -70,7 +70,7 @@ describe('ChatPage conversation', () => {
       localDirectories={[]} localFileError="" messageListRef={{ current: null }} messages={[
         { role: 'assistant', text: '正在列出下载目录中的文件', pending: true, monitor },
       ]} modelMenuOpen={false} modelPickerRef={{ current: null }} models={[]} onAddKnowledge={() => undefined}
-      onAddLocalDirectory={() => undefined} onAddLocalFiles={() => undefined} onCancel={() => undefined} onSelectCapability={() => undefined}
+      onAddLocalDirectory={() => undefined} onAddLocalFiles={() => undefined} onBrowseExpertKits={() => undefined} onCancel={() => undefined} onSelectCapability={() => undefined}
       onPrepareRetry={() => undefined} onPrompt={() => undefined} onReconnect={() => undefined} onRecoverHarness={() => undefined}
       onRemoveAttachment={() => undefined} onRemoveKnowledge={() => undefined} onRemoveLocalDirectory={() => undefined}
       onSelectModel={() => undefined} onSubmit={() => undefined}
