@@ -52,6 +52,7 @@ export type AuthoringChange =
 
 interface Props {
   initialKind: ExtensionKind
+  initialInstructions?: string
   employeeId: string
   accessToken: string
   skills: SkillView[]
@@ -108,12 +109,16 @@ const standardPermissions: ExpertKitManifest['permissions'] = {
 }
 
 export function ExtensionAuthoringModal({
-  initialKind, employeeId, accessToken, skills, connectors, previewConfig,
+  initialKind, initialInstructions = '', employeeId, accessToken, skills, connectors, previewConfig,
   previewUnavailableReason, onPreviewRunningChange, onClose, onChanged,
 }: Props) {
   const [kind, setKind] = useState<ExtensionKind>(initialKind)
   const [tab, setTab] = useState<'create' | 'mine'>('create')
-  const [form, setForm] = useState(defaults)
+  const initialForm = (nextKind: ExtensionKind): AuthoringForm => nextKind === initialKind
+    && nextKind !== 'connector' && initialInstructions.trim()
+    ? { ...defaults, instructions: initialInstructions.trim() }
+    : { ...defaults }
+  const [form, setForm] = useState(() => initialForm(initialKind))
   const [submissions, setSubmissions] = useState<ExtensionSubmission[]>([])
   const [localCreations, setLocalCreations] = useState<LocalCreation[]>([])
   const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>([])
@@ -185,7 +190,7 @@ export function ExtensionAuthoringModal({
 
   const startNew = (nextKind = kind) => {
     setKind(nextKind)
-    setForm(defaults)
+    setForm(initialForm(nextKind))
     setSelectedSkillIds([])
     setEditing(undefined)
     resetDraftState()
@@ -424,6 +429,7 @@ export function ExtensionAuthoringModal({
         })}
         {!busy && rows.length === 0 && <p>还没有本地扩展或审核记录。</p>}
       </div> : <form onSubmit={save}>
+        {!editing && initialInstructions.trim() && kind === initialKind && <div className="authoring-mode">已带入小胤生成的初稿。请确认名称、分类和执行说明后保存到本机。</div>}
         {editing && <div className="authoring-mode">正在编辑 {kindLabel(editing.kind)}：{editing.id} · v{editing.version}，保存会更新本机草稿。</div>}
         <div className="authoring-kind">{(['expert-kit', 'skill', 'connector'] as const).map((value) => <button className={kind === value ? 'active' : ''} disabled={Boolean(editing)} key={value} onClick={() => startNew(value)} type="button">{kindLabel(value)}</button>)}</div>
         <div className="authoring-grid">
