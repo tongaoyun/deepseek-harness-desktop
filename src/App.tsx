@@ -62,6 +62,8 @@ import { ScheduledTasksPage } from './ScheduledTasksPage'
 import { ImChannelsPage } from './ImChannelsPage'
 import { loadTaskHistory, persistTaskHistory } from './taskHistory'
 import { resolveHarnessSessionId } from './harnessSession'
+import { harnessPromptWithConversationReplay } from './conversationReplay'
+import { applyHarnessResponseToMessages } from './streamingMessages'
 import { loadLocalImStatus, startLocalIm, stopLocalImRuntime, syncLocalImTasks } from './localIm'
 import { mergeImStatusIntoTasks } from './imTaskSync'
 import type { LocalTaskRun, TaskExecutionStep, TaskMessage, TaskMonitorState } from './types'
@@ -150,11 +152,13 @@ export default function App() {
   const [currentCapabilitySnapshot, setCurrentCapabilitySnapshot] = useState<import('./types').CapabilitySnapshot>()
   const [selectedKnowledgeBaseRefs, setSelectedKnowledgeBaseRefs] = useState<string[]>([])
   const [harnessRunning, setHarnessRunning] = useState(false)
+  const [taskContextRestoring, setTaskContextRestoring] = useState(false)
   const [harnessHealth, setHarnessHealth] = useState<HarnessHealth>('checking')
   const [harnessHealthDetail, setHarnessHealthDetail] = useState('正在检查本地 Agent')
   const [harnessHealthAttempt, setHarnessHealthAttempt] = useState(0)
   const [taskMonitor, setTaskMonitor] = useState<TaskMonitorState>(createTaskMonitor)
   const taskMonitorRef = useRef<TaskMonitorState>(taskMonitor)
+  const streamingMonitorRef = useRef<TaskMonitorState>(taskMonitor)
   const extensionPreviewRunningRef = useRef(false)
   const [localDirectories, setLocalDirectories] = useState<AuthorizedLocalDirectory[]>([])
   const [pendingAttachments, setPendingAttachments] = useState<LocalTaskAttachment[]>([])
@@ -175,12 +179,19 @@ export default function App() {
   const workspaceRef = useRef<HTMLElement>(null)
   const cancellationRequestedRef = useRef(false)
   const streamingTaskIdRef = useRef('')
+  const streamingMessagesRef = useRef<TaskMessage[]>([])
   const streamingResponseKeyRef = useRef('')
+  const currentLocalTaskIdRef = useRef('')
+  const taskContextRestoreIdRef = useRef(0)
   const enabledConnectorIdsRef = useRef<string[]>([])
   const allowedArtifacts = useMemo(
     () => allowedExtensionArtifacts(expertKitCatalog, skills),
     [expertKitCatalog, skills],
   )
+  const selectCurrentLocalTaskId = (id: string) => {
+    currentLocalTaskIdRef.current = id
+    setCurrentLocalTaskId(id)
+  }
 
   useEffect(() => {
     if (!['experts', 'skills', 'connectors'].includes(page)) return
@@ -223,7 +234,7 @@ export default function App() {
   useEffect(() => {
     if (authState !== 'authenticated' || !user) {
       setLocalTasks([])
-      setCurrentLocalTaskId('')
+      selectCurrentLocalTaskId('')
       return
     }
     let disposed = false
@@ -336,24 +347,28 @@ export default function App() {
     let disposed = false
     let unlisten: () => void = () => undefined
     void listenHarnessNotifications((notification) => {
-      if (!disposed && !extensionPreviewRunningRef.current) {
-        const next = applyHarnessNotification(taskMonitorRef.current, notification)
-        taskMonitorRef.current = next
-        setTaskMonitor(next)
-        const response = harnessResponseUpdate(notification)
-        if (response && streamingTaskIdRef.current) {
-          setMessages((current) => current.map((message, index) => {
-            if (index !== current.length - 1 || message.role !== 'assistant' || !message.pending) return message
-            if (response.mode === 'clear') {
-              streamingResponseKeyRef.current = ''
-              return { ...message, text: '' }
-            }
-            const sameMessage = streamingResponseKeyRef.current === response.key
-            streamingResponseKeyRef.current = response.key
-            return { ...message, text: response.mode === 'append' && sameMessage ? `${message.text}${response.text}` : response.text }
-          }))
-        }
+      if (disposed || extensionPreviewRunningRef.current) return
+      const taskId = streamingTaskIdRef.current
+      if (!taskId) return
+      const nextMonitor = applyHarnessNotification(streamingMonitorRef.current, notification)
+      streamingMonitorRef.current = nextMonitor
+      const response = harnessResponseUpdate(notification)
+      if (response) {
+        const update = applyHarnessResponseToMessages(
+          streamingMessagesRef.current,
+          response,
+          streamingResponseKeyRef.current,
+        )
+        streamingMessagesRef.current = update.messages
+        streamingResponseKeyRef.current = update.responseKey
       }
+      setLocalTasks((current) => current.map((task) => task.id === taskId
+        ? { ...task, updatedAt: nextMonitor.updatedAt, monitor: nextMonitor, messages: streamingMessagesRef.current }
+        : task))
+      if (currentLocalTaskIdRef.current !== taskId) return
+      taskMonitorRef.current = nextMonitor
+      setTaskMonitor(nextMonitor)
+      if (response) setMessages(streamingMessagesRef.current)
     }).then((dispose) => {
       if (disposed) dispose()
       else unlisten = dispose
@@ -462,6 +477,8 @@ export default function App() {
       enabledConnectorIdsRef.current = next
       return next
     })
+    setCurrentCapabilitySnapshot(undefined)
+    setHarnessSessionId('')
     void shutdownHarness()
   }
   const invocationOptions = buildInvocationOptions(currentCapabilitySnapshot
@@ -470,7 +487,7 @@ export default function App() {
   const visibleInvocations = filterInvocationOptions(invocationOptions, prompt)
   const contextQuery = prompt.startsWith('@') && !/\s/.test(prompt.slice(1))
     ? prompt.slice(1).toLocaleLowerCase('zh-CN') : undefined
-  const visibleKnowledgeContexts = contextQuery === undefined || currentCapabilitySnapshot ? [] : knowledgeBases
+  const visibleKnowledgeContexts = contextQuery === undefined ? [] : knowledgeBases
     .filter((item) => !selectedKnowledgeBaseRefs.includes(item.reference)
       && (!contextQuery || `${item.name} ${item.description} ${item.reference}`.toLocaleLowerCase('zh-CN').includes(contextQuery)))
     .slice(0, 8)
@@ -486,6 +503,8 @@ export default function App() {
     setTaskMonitor(next)
   }
   const startNewTask = (initialPrompt = '', nextCreationKind?: 'expert-kit' | 'skill') => {
+    taskContextRestoreIdRef.current += 1
+    setTaskContextRestoring(false)
     setPage('chat')
     setTaskSearchOpen(false)
     setTaskQuery('')
@@ -496,7 +515,7 @@ export default function App() {
     setSelectedKnowledgeBaseRefs([])
     setSelectedExpertKitId('')
     setSelectedSkillId('')
-    setCurrentLocalTaskId('')
+    selectCurrentLocalTaskId('')
     setCreationKind(nextCreationKind)
     setPendingAttachments([])
     const monitor = createTaskMonitor()
@@ -519,11 +538,13 @@ export default function App() {
       .catch((reason) => setLocalFileError(reason instanceof Error ? reason.message : String(reason)))
   }
   const openLocalTask = (task: LocalTaskRun) => {
+    const restoreId = taskContextRestoreIdRef.current + 1
+    taskContextRestoreIdRef.current = restoreId
     setPage('chat')
     setTaskSearchOpen(false)
     setTaskQuery('')
     setMessages(task.messages.map((message) => ({ ...message, pending: false })))
-    setCurrentLocalTaskId(task.id)
+    selectCurrentLocalTaskId(task.id)
     setCreationKind(undefined)
     setHarnessSessionId(task.sessionId ?? '')
     setCurrentCapabilitySnapshot(task.capabilitySnapshot)
@@ -537,16 +558,21 @@ export default function App() {
     setTaskMonitor(task.monitor)
     setLocalDirectories([])
     setLocalFileError('')
+    const paths = (task.localDirectories ?? []).flatMap((directory) => directory.path ? [directory.path] : [])
+    setTaskContextRestoring(paths.length > 0)
     void Promise.all([clearLocalDirectories(), shutdownHarness()]).then(async () => {
-      const paths = (task.localDirectories ?? []).flatMap((directory) => directory.path ? [directory.path] : [])
       if (paths.length === 0) return
       try {
         const restored = await restoreLocalDirectories(paths)
+        if (taskContextRestoreIdRef.current !== restoreId) return
         setLocalDirectories(restored)
         if (restored.length < paths.length) setLocalFileError('部分历史工作目录已移动或不可用，请重新添加。')
       } catch (reason) {
+        if (taskContextRestoreIdRef.current !== restoreId) return
         setLocalFileError(reason instanceof Error ? reason.message : String(reason))
       }
+    }).finally(() => {
+      if (taskContextRestoreIdRef.current === restoreId) setTaskContextRestoring(false)
     })
     focusComposer()
   }
@@ -576,6 +602,20 @@ export default function App() {
       setLocalFileError(error instanceof Error ? error.message : String(error))
     }
   }
+  const addKnowledgeContext = (reference: string) => {
+    setSelectedKnowledgeBaseRefs((current) => current.includes(reference) ? current : [...current, reference])
+    setCurrentCapabilitySnapshot(undefined)
+    setHarnessSessionId('')
+    void shutdownHarness()
+    setPrompt('')
+    focusComposer()
+  }
+  const removeKnowledgeContext = (reference: string) => {
+    setSelectedKnowledgeBaseRefs((current) => current.filter((item) => item !== reference))
+    setCurrentCapabilitySnapshot(undefined)
+    setHarnessSessionId('')
+    void shutdownHarness()
+  }
   const logoutWithCleanup = async () => {
     await clearLocalDirectories()
     await Promise.all([shutdownHarness(), stopLocalImRuntime()])
@@ -592,6 +632,10 @@ export default function App() {
     const messageAttachments = pendingAttachments
     const input = prompt.trim() || (messageAttachments.length > 0 ? '请查看并处理这些附件。' : '')
     if (!input || !bootstrap || runtimeStatus !== 'ready' || harnessRunning) return
+    if (taskContextRestoring) {
+      setLocalFileError('正在恢复该任务的工作目录，请稍候。')
+      return
+    }
     const remembered = messageAttachments.length === 0 ? memoryInstruction(input) : undefined
     if (remembered) {
       setPrompt('')
@@ -645,13 +689,17 @@ export default function App() {
     if (!currentCapabilitySnapshot) setCurrentCapabilitySnapshot(capabilitySnapshot)
     const taskId = currentLocalTaskId || crypto.randomUUID()
     const existingTask = localTasks.find((task) => task.id === taskId)
-    const mustStartFreshSession = resetSessionForDirectoryChange || taskMonitorRef.current.status === 'failed'
+    const sessionWasExplicitlyInvalidated = !taskSessionId && Boolean(existingTask?.sessionId)
+    const mustStartFreshSession = resetSessionForDirectoryChange
+      || sessionWasExplicitlyInvalidated
+      || taskMonitorRef.current.status === 'failed'
     const rootSessionId = resolveHarnessSessionId(
       taskSessionId,
       existingTask?.sessionId,
       mustStartFreshSession,
       () => `session-${crypto.randomUUID().replaceAll('-', '')}`,
     )
+    const harnessPrompt = harnessPromptWithConversationReplay(input, messages, mustStartFreshSession)
     const pendingMessages: TaskMessage[] = [...messages, { role: 'user', text: input, ...(messageAttachments.length > 0 ? { attachments: messageAttachments } : {}) },
       { role: 'assistant', text: '', pending: true }]
     const runningMonitor: TaskMonitorState = {
@@ -677,7 +725,7 @@ export default function App() {
       monitor: runningMonitor,
       messages: pendingMessages,
     }
-    setCurrentLocalTaskId(taskId)
+    selectCurrentLocalTaskId(taskId)
     setHarnessSessionId(rootSessionId)
     setMessages(pendingMessages)
     persistLocalTask(runningTask)
@@ -690,13 +738,15 @@ export default function App() {
     setPendingAttachments([])
     setHarnessRunning(true)
     streamingTaskIdRef.current = taskId
+    streamingMessagesRef.current = pendingMessages
     streamingResponseKeyRef.current = ''
     cancellationRequestedRef.current = false
     taskMonitorRef.current = runningMonitor
+    streamingMonitorRef.current = runningMonitor
     setTaskMonitor(runningMonitor)
     try {
       const result = await runHarness({
-        prompt: input,
+        prompt: harnessPrompt,
         employeeId: user!.userId,
         teamId: user!.teamId,
         sessionId: rootSessionId,
@@ -716,18 +766,20 @@ export default function App() {
         attachments: messageAttachments,
       })
       if (!result.finalResponse.trim()) throw new Error('模型本轮没有返回可显示文本，请重试')
-      setHarnessSessionId(result.sessionId)
       const completedAt = new Date().toISOString()
       const completedMonitor: TaskMonitorState = {
-        ...taskMonitorRef.current, status: 'completed', activity: '任务已完成', updatedAt: completedAt,
+        ...streamingMonitorRef.current, status: 'completed', activity: '任务已完成', updatedAt: completedAt,
         completedAt,
       }
       const completedMessages = pendingMessages.map((message, index) => index === pendingMessages.length - 1
         ? { role: 'assistant', text: result.finalResponse, monitor: completedMonitor }
         : message) as TaskMessage[]
-      taskMonitorRef.current = completedMonitor
-      setTaskMonitor(completedMonitor)
-      setMessages(completedMessages)
+      if (currentLocalTaskIdRef.current === taskId) {
+        setHarnessSessionId(result.sessionId)
+        taskMonitorRef.current = completedMonitor
+        setTaskMonitor(completedMonitor)
+        setMessages(completedMessages)
+      }
       persistLocalTask({ ...runningTask, status: 'COMPLETED', updatedAt: new Date().toISOString(),
         sessionId: result.sessionId, monitor: completedMonitor, messages: completedMessages })
       await reportTaskAudit('SUCCEEDED', taskId, completedMonitor.steps)
@@ -737,7 +789,7 @@ export default function App() {
       const canceled = cancellationRequestedRef.current
       const completedAt = new Date().toISOString()
       const failedMonitor: TaskMonitorState = {
-        ...taskMonitorRef.current,
+        ...streamingMonitorRef.current,
         status: canceled ? 'canceled' : 'failed',
         activity: canceled ? '任务已取消' : '任务执行失败',
         updatedAt: completedAt,
@@ -746,9 +798,11 @@ export default function App() {
       const failedMessages = pendingMessages.map((item, index) => index === pendingMessages.length - 1
         ? { role: 'assistant', text: canceled ? '任务已取消，可修改要求后重新执行。' : `${failure.title}：${message}`, monitor: failedMonitor }
         : item) as TaskMessage[]
-      taskMonitorRef.current = failedMonitor
-      setTaskMonitor(failedMonitor)
-      setMessages(failedMessages)
+      if (currentLocalTaskIdRef.current === taskId) {
+        taskMonitorRef.current = failedMonitor
+        setTaskMonitor(failedMonitor)
+        setMessages(failedMessages)
+      }
       persistLocalTask({ ...runningTask, status: canceled ? 'CANCELED' : 'FAILED', updatedAt: new Date().toISOString(), monitor: failedMonitor, messages: failedMessages })
       const infrastructureFailure = failure.infrastructure
       if (!canceled && infrastructureFailure) {
@@ -761,6 +815,7 @@ export default function App() {
       setHarnessRunning(false)
       cancellationRequestedRef.current = false
       streamingTaskIdRef.current = ''
+      streamingMessagesRef.current = []
       streamingResponseKeyRef.current = ''
     }
   }
@@ -973,7 +1028,7 @@ export default function App() {
     if (!['installed', 'update'].includes(kit.installState)) return
     if (messages.length > 0) {
       setMessages([])
-      setCurrentLocalTaskId('')
+      selectCurrentLocalTaskId('')
       setSelectedKnowledgeBaseRefs([])
     }
     setSelectedExpertKitId(kit.id)
@@ -987,6 +1042,10 @@ export default function App() {
   }
 
   const selectModel = (model: string) => {
+    if (model !== activeModel && currentLocalTaskId) {
+      setHarnessSessionId('')
+      void shutdownHarness()
+    }
     setSelectedModel(model)
     setModelMenuOpen(false)
     if (user) window.localStorage.setItem(modelStorageKey(user.userId), model)
@@ -1023,6 +1082,7 @@ export default function App() {
   }
 
   const memorySaved = async () => {
+    setHarnessSessionId('')
     await Promise.all([shutdownHarness(), stopLocalImRuntime()])
     if (bootstrap) {
       await startLocalIm({
@@ -1071,6 +1131,7 @@ export default function App() {
             capabilitySnapshot={currentCapabilitySnapshot}
             composerRef={composerRef}
             contextQuery={contextQuery}
+            currentTaskRunning={harnessRunning && currentLocalTaskId === streamingTaskIdRef.current}
             harnessHealth={harnessHealth}
             harnessHealthDetail={harnessHealthDetail}
             harnessRunning={harnessRunning}
@@ -1084,7 +1145,7 @@ export default function App() {
             modelMenuOpen={modelMenuOpen}
             modelPickerRef={modelPickerRef}
             models={bootstrap?.models ?? []}
-            onAddKnowledge={(reference) => { setSelectedKnowledgeBaseRefs((current) => [...current, reference]); setPrompt(''); focusComposer() }}
+            onAddKnowledge={addKnowledgeContext}
             onAddLocalDirectory={() => void addLocalDirectory()}
             onCancel={() => void cancelCurrentTask()}
             onContinueCreation={(instructions) => {
@@ -1097,7 +1158,7 @@ export default function App() {
             onPrompt={(value) => { setPrompt(value); focusComposer() }}
             onReconnect={() => setConnectionAttempt((value) => value + 1)}
             onRecoverHarness={() => setHarnessHealthAttempt((value) => value + 1)}
-            onRemoveKnowledge={(reference) => setSelectedKnowledgeBaseRefs((current) => current.filter((item) => item !== reference))}
+            onRemoveKnowledge={removeKnowledgeContext}
             onRemoveLocalDirectory={(id) => void removeLocalDirectory(id)}
             onRemoveAttachment={(id) => setPendingAttachments((current) => current.filter((item) => item.id !== id))}
             onSelectInvocation={selectInvocation}
@@ -1110,6 +1171,7 @@ export default function App() {
             selectedCapabilityName={selectedExpertKit?.name ?? selectedSkill?.name ?? '通用'}
             selectedKnowledgeBaseRefs={selectedKnowledgeBaseRefs}
             taskMonitor={taskMonitor}
+            taskContextRestoring={taskContextRestoring}
             visibleInvocations={visibleInvocations}
             visibleKnowledgeContexts={visibleKnowledgeContexts}
           />

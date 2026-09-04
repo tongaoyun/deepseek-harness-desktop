@@ -186,6 +186,7 @@ export async function runSessionTurn(
       if (event?.type === 'turn/end') {
         const reason = record(record(event.data)?.reason)
         if (reason?.kind === 'error') turnFailure = providerFailureMessage(reason)
+        if (turnStarted) break
       }
       if (turnStarted && notification.method === 'session.status'
         && notification.params.sessionId === sessionId && notification.params.status === 'idle') break
@@ -221,11 +222,21 @@ async function nextBeforeDeadline(
 function providerFailureMessage(reason: Record<string, unknown>): string {
   const error = record(reason.error) ?? record(reason.failure)
   const message = typeof error?.message === 'string' ? error.message : ''
+  const normalized = message.toLocaleLowerCase('en-US')
   if (message.includes("function.name") || message.includes("tools[")) {
     return '模型工具配置不兼容，请重新启动小胤后再试'
   }
-  if (message.includes('401') || message.toLowerCase().includes('unauthorized')) return '模型服务认证失败，请联系管理员检查配置'
-  if (message.includes('429') || message.toLowerCase().includes('rate limit')) return '模型服务繁忙，请稍后重试'
+  if (message.includes('401') || normalized.includes('unauthorized')) return '模型服务认证失败，请联系管理员检查配置'
+  if (message.includes('429') || normalized.includes('rate limit')) return '模型服务繁忙，请稍后重试'
+  if (/context.{0,20}(length|window)|too many tokens|maximum context/u.test(normalized)) {
+    return '当前会话内容过长，请新建任务或缩短上下文后重试'
+  }
+  if (/econnrefused|enotfound|fetch failed|network|socket hang up/u.test(normalized)) {
+    return '模型服务暂时无法连接，请检查内网后重试'
+  }
+  if (/\b50[0-9]\b|bad gateway|service unavailable|gateway timeout/u.test(normalized)) {
+    return '模型服务暂时不可用，请稍后重试'
+  }
   return message ? '模型服务未能完成本轮请求，请重试' : ''
 }
 

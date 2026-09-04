@@ -331,7 +331,6 @@ button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 2px
 .harness-state.degraded i { background: #c96558; }
 .cancel-button { display: grid; width: 32px; height: 32px; place-items: center; border: 0; border-radius: 50%; color: #fff; background: #b8584e; cursor: pointer; }
 .cancel-button:hover { background: #9e473f; }
-.retry-task { margin-top: 7px; padding: 6px 9px; border: 1px solid #cdddcf; border-radius: 7px; color: #347b4d; background: #f7fbf8; cursor: pointer; font-size: 9px; }
 .runtime-recovery { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; margin-bottom: 10px; padding: 10px 12px; border: 1px solid #efceca; border-radius: 10px; color: #9c4f46; background: #fff8f7; }
 .runtime-recovery span, .runtime-recovery strong, .runtime-recovery small { display: block; }
 .runtime-recovery strong { font-size: 10px; }

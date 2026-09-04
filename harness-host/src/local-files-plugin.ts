@@ -20,20 +20,25 @@ const BACKUP_DIRECTORY = '.xiaoyin-backups'
 const IGNORED_SEARCH_DIRECTORIES = new Set(['.git', '.idea', '.next', '.venv', 'node_modules', 'target', 'dist', BACKUP_DIRECTORY])
 const ALLOWED_TEXT_EXTENSIONS = new Set([
   '.txt', '.md', '.markdown', '.csv', '.tsv', '.json', '.yaml', '.yml', '.xml',
-  '.html', '.css', '.js', '.jsx', '.ts', '.tsx', '.py', '.java', '.sql', '.log',
+  '.html', '.css', '.scss', '.less', '.js', '.jsx', '.mjs', '.cjs', '.ts', '.tsx', '.mts', '.cts',
+  '.vue', '.svelte', '.py', '.java', '.kt', '.kts', '.go', '.rs', '.c', '.cc', '.cpp', '.h', '.hpp',
+  '.cs', '.rb', '.php', '.swift', '.dart', '.sql', '.graphql', '.gql', '.sh', '.zsh', '.fish', '.ps1',
+  '.bat', '.cmd', '.toml', '.ini', '.conf', '.properties', '.gradle', '.lock', '.log',
 ])
 const BLOCKED_FILE_NAMES = new Set([
   '.env', '.npmrc', '.pypirc', 'credentials', 'credentials.json', 'id_rsa', 'id_ed25519',
 ])
 
 export interface Config {
-  roots?: string[]
+  roots?: LocalFileRootInput[]
   enabled?: boolean
   requireDeleteApproval?: boolean
 }
 
+export type LocalFileRootInput = string | { id: string; name: string; path: string }
+
 export const Config = z.object({
-  roots: z.array(z.string()).default([]),
+  roots: z.array(z.any()).default([]),
   enabled: z.boolean().default(true),
   requireDeleteApproval: z.boolean().default(true),
 })
@@ -92,22 +97,30 @@ export function localFileMutationRequiresApproval(toolName: string, args: unknow
   return toolName === 'local_files_delete'
 }
 
-export async function discoverAuthorizedRoots(paths: string[]): Promise<AuthorizedRoot[]> {
-  if (paths.length > MAX_ROOTS) throw new Error(`At most ${MAX_ROOTS} local directories may be authorized`)
-  const canonicalPaths: string[] = []
-  for (const value of paths) {
-    if (!isAbsolute(value)) throw new Error('Authorized local directories must use absolute paths')
-    const canonical = await realpath(value)
+export async function discoverAuthorizedRoots(values: LocalFileRootInput[]): Promise<AuthorizedRoot[]> {
+  if (values.length > MAX_ROOTS) throw new Error(`At most ${MAX_ROOTS} local directories may be authorized`)
+  const roots: AuthorizedRoot[] = []
+  for (const [index, value] of values.entries()) {
+    const path = typeof value === 'string' ? value : value.path
+    if (!isAbsolute(path)) throw new Error('Authorized local directories must use absolute paths')
+    const canonical = await realpath(path)
     if (!(await stat(canonical)).isDirectory()) {
-      throw new Error(`Authorized local path is not a directory: ${value}`)
+      throw new Error(`Authorized local path is not a directory: ${path}`)
     }
-    if (!canonicalPaths.includes(canonical)) canonicalPaths.push(canonical)
+    if (roots.some((root) => root.path === canonical)) continue
+    const id = typeof value === 'string' ? `local-root-${index + 1}` : safeRootLabel(value.id, 'id')
+    const name = typeof value === 'string' ? basename(canonical) || '已授权目录' : safeRootLabel(value.name, 'name')
+    if (roots.some((root) => root.id === id)) throw new Error(`Authorized local root ID is duplicated: ${id}`)
+    roots.push({ id, name, path: canonical })
   }
-  return canonicalPaths.map((path, index) => ({
-    id: `local-root-${index + 1}`,
-    name: basename(path) || '已授权目录',
-    path,
-  }))
+  return roots
+}
+
+function safeRootLabel(value: string, field: 'id' | 'name'): string {
+  if (typeof value !== 'string' || !value.trim() || value.length > 512 || /[\u0000-\u001f\u007f]/u.test(value)) {
+    throw new Error(`Authorized local root ${field} is invalid`)
+  }
+  return value
 }
 
 export class LocalFileBridge {

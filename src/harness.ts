@@ -405,15 +405,7 @@ export function applyHarnessNotification(
       activity: status === 'completed' ? '任务已完成' : '任务执行失败',
       updatedAt: occurredAt,
       completedAt: occurredAt,
-      timeline: status === 'failed' ? upsertTimeline(timeline, {
-        id: `error:turn:${turn}`,
-        kind: 'error',
-        label: '执行未完成',
-        status: 'failed',
-        detail: '本轮任务在完成回复前中断，可以调整要求后重试。',
-        occurredAt,
-        completedAt: occurredAt,
-      }) : timeline,
+      timeline,
       subagents,
       steps: upsertStep(settled, {
       id: `response:${turn}`,

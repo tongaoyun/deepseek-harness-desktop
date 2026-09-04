@@ -14,6 +14,7 @@ interface Props {
   messages: TaskMessage[]
   prompt: string
   taskMonitor: TaskMonitorState
+  taskContextRestoring?: boolean
   capabilitySnapshot?: CapabilitySnapshot
   harnessHealth: 'checking' | 'ready' | 'degraded'
   harnessHealthDetail: string
@@ -27,6 +28,7 @@ interface Props {
   modelMenuOpen: boolean
   visibleInvocations: InvocationOption[]
   contextQuery?: string
+  currentTaskRunning?: boolean
   visibleKnowledgeContexts: KnowledgeBaseEntry[]
   knowledgeBases: KnowledgeBaseEntry[]
   selectedKnowledgeBaseRefs: string[]
@@ -57,6 +59,7 @@ interface Props {
 
 export function ChatPage(props: Props) {
   const [showScrollDown, setShowScrollDown] = useState(false)
+  const currentTaskRunning = props.currentTaskRunning ?? props.harnessRunning
   const [capabilityMenuOpen, setCapabilityMenuOpen] = useState(false)
   const [contextMenuOpen, setContextMenuOpen] = useState(false)
   const pinnedToBottom = useRef(true)
@@ -106,8 +109,6 @@ export function ChatPage(props: Props) {
     </div>}
     {props.messages.length > 0 && <div aria-live="polite" className="message-list" onScroll={trackScroll} ref={props.messageListRef}>{props.messages.map((message, index) => {
       const monitor = message.monitor ?? (message.role === 'assistant' && index === props.messages.length - 1 ? props.taskMonitor : undefined)
-      const retryable = message.role === 'assistant' && index === props.messages.length - 1 && !message.pending
-        && (monitor?.status === 'failed' || monitor?.status === 'canceled')
       if (message.role === 'user') return <article className="conversation-turn user-turn" key={`${message.role}-${index}`}>
         <div className="user-prompt">
           {message.attachments && message.attachments.length > 0 && <AttachmentList attachments={message.attachments} />}
@@ -124,7 +125,6 @@ export function ChatPage(props: Props) {
           <span><Sparkles size={16} /><span><strong>继续完成创建</strong><small>把当前方案带入创作表单，确认后保存到本机。</small></span></span>
           <button onClick={() => props.onContinueCreation?.(message.text)} type="button">保存为{props.creationKind === 'expert-kit' ? '专家套件' : '技能'}</button>
         </div>}
-        {retryable && <button className="retry-task" onClick={props.onPrepareRetry} type="button">重试这个任务</button>}
       </article>
     })}</div>}
     {showScrollDown && <button aria-label="滚动到最新消息" className="scroll-to-latest" onClick={() => scrollToBottom()} title="滚动到最新消息" type="button"><ArrowDown size={18} /></button>}
@@ -141,7 +141,7 @@ export function ChatPage(props: Props) {
             <button onClick={() => { setContextMenuOpen(false); props.onAddLocalDirectory() }} type="button"><FolderOpen size={16} /><span><strong>工作目录</strong><small>允许小胤读取和处理本地文件</small></span></button>
             {props.knowledgeBases.filter((item) => !props.selectedKnowledgeBaseRefs.includes(item.reference)).length > 0 && <>
               <small>知识库</small>
-              {props.knowledgeBases.filter((item) => !props.selectedKnowledgeBaseRefs.includes(item.reference)).slice(0, 6).map((item) => <button disabled={Boolean(props.capabilitySnapshot)} key={item.reference} onClick={() => { props.onAddKnowledge(item.reference); setContextMenuOpen(false) }} type="button"><BookOpen size={16} /><span><strong>{item.name}</strong><small>{item.description || knowledgeScopeLabel(item.scope)}</small></span></button>)}
+              {props.knowledgeBases.filter((item) => !props.selectedKnowledgeBaseRefs.includes(item.reference)).slice(0, 6).map((item) => <button key={item.reference} onClick={() => { props.onAddKnowledge(item.reference); setContextMenuOpen(false) }} type="button"><BookOpen size={16} /><span><strong>{item.name}</strong><small>{item.description || knowledgeScopeLabel(item.scope)}</small></span></button>)}
             </>}
           </div>}
         </div>
@@ -158,17 +158,17 @@ export function ChatPage(props: Props) {
           <button aria-expanded={props.modelMenuOpen} className="model-label" onClick={props.onToggleModelMenu} type="button"><Bot size={14} /> {modelDisplayName(props.activeModel)} <ChevronDown size={13} /></button>
           {props.modelMenuOpen && <div className="model-menu"><small>公司可用模型</small>{(props.models.length ? props.models : [props.activeModel]).map((model) => <button className={model === props.activeModel ? 'active' : ''} key={model} onClick={() => props.onSelectModel(model)} title={model} type="button"><span><strong>{modelDisplayName(model)}</strong></span>{model === props.activeModel && <SquareCheckBig size={14} />}</button>)}</div>}
         </div>
-        {props.harnessRunning
+        {currentTaskRunning
           ? <button aria-label="取消当前任务" className="cancel-button" onClick={props.onCancel} title="取消当前任务" type="button"><CircleStop size={17} /></button>
-          : <button aria-label="发送" className="send-button" disabled={(!props.prompt.trim() && props.pendingAttachments.length === 0) || props.runtimeStatus !== 'ready' || props.harnessHealth === 'degraded'} title={props.runtimeStatus !== 'ready' ? '企业服务未连接' : props.harnessHealth === 'degraded' ? '请先恢复本地 Agent' : '发送'} type="submit"><Send size={17} /></button>}
+          : <button aria-label="发送" className="send-button" disabled={(!props.prompt.trim() && props.pendingAttachments.length === 0) || props.runtimeStatus !== 'ready' || props.harnessHealth === 'degraded' || props.taskContextRestoring || props.harnessRunning} title={props.runtimeStatus !== 'ready' ? '企业服务未连接' : props.harnessHealth === 'degraded' ? '请先恢复本地 Agent' : props.taskContextRestoring ? '正在恢复任务目录' : props.harnessRunning ? '另一个任务正在运行' : '发送'} type="submit"><Send size={17} /></button>}
       </div>
       {props.visibleInvocations.length > 0 && <div className="slash-menu"><small>快捷指令</small>{props.visibleInvocations.map((option) => <button key={`${option.profileKind}-${option.profileId}-${option.id}`} onClick={() => props.onSelectInvocation(option)} type="button"><span><strong>{option.label}</strong><small>{option.description}</small></span></button>)}</div>}
-      {props.contextQuery !== undefined && <div className="slash-menu"><small>引用知识库</small>{props.visibleKnowledgeContexts.map((item) => <button key={item.reference} onClick={() => props.onAddKnowledge(item.reference)} type="button"><span><strong>@{item.name}</strong><small>{item.description || item.reference}</small></span><em>{knowledgeScopeLabel(item.scope)}</em></button>)}{props.visibleKnowledgeContexts.length === 0 && <span className="context-menu-empty">{props.capabilitySnapshot ? '当前对话已开始，请新建任务后添加知识库' : '没有匹配的知识库'}</span>}</div>}
+      {props.contextQuery !== undefined && <div className="slash-menu"><small>引用知识库</small>{props.visibleKnowledgeContexts.map((item) => <button key={item.reference} onClick={() => props.onAddKnowledge(item.reference)} type="button"><span><strong>@{item.name}</strong><small>{item.description || item.reference}</small></span><em>{knowledgeScopeLabel(item.scope)}</em></button>)}{props.visibleKnowledgeContexts.length === 0 && <span className="context-menu-empty">没有匹配的知识库</span>}</div>}
     </form>
     {props.localFileError && <div className="local-file-error">{props.localFileError}</div>}
     <div className="context-bar">
       <div className="local-contexts">
-        {props.selectedKnowledgeBaseRefs.map((reference) => <span className="local-context" key={reference}>@{props.knowledgeBases.find((item) => item.reference === reference)?.name ?? reference}<button aria-label={`移除 ${reference}`} disabled={props.harnessRunning || Boolean(props.capabilitySnapshot)} onClick={() => props.onRemoveKnowledge(reference)} type="button"><X size={11} /></button></span>)}
+        {props.selectedKnowledgeBaseRefs.map((reference) => <span className="local-context" key={reference}>@{props.knowledgeBases.find((item) => item.reference === reference)?.name ?? reference}<button aria-label={`移除 ${reference}`} disabled={props.harnessRunning} onClick={() => props.onRemoveKnowledge(reference)} type="button"><X size={11} /></button></span>)}
         {props.localDirectories.map((directory) => <span className="local-context" key={directory.id}><FolderOpen size={12} />{directory.name}<button aria-label={`移除 ${directory.name}`} disabled={props.harnessRunning} onClick={() => props.onRemoveLocalDirectory(directory.id)} type="button"><X size={11} /></button></span>)}
         {props.pendingAttachments.length > 0 && <AttachmentList attachments={props.pendingAttachments} onRemove={props.onRemoveAttachment} />}
       </div>

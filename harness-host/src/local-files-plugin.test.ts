@@ -11,6 +11,15 @@ afterEach(async () => {
 })
 
 describe('LocalFileBridge', () => {
+  it('preserves desktop authorization IDs for tools and artifact actions', async () => {
+    const root = await temporaryDirectory()
+    const [authorized] = await discoverAuthorizedRoots([{ id: 'local-stable-id', name: '下载', path: root }])
+    const bridge = new LocalFileBridge([authorized!])
+
+    expect(bridge.visibleRoots()).toEqual([{ id: 'local-stable-id', name: '下载' }])
+    expect(await bridge.list('local-stable-id')).toMatchObject({ rootId: 'local-stable-id', rootName: '下载' })
+  })
+
   it('asks only before deletion', () => {
     expect(localFileMutationRequiresApproval('local_files_write_text', { overwrite: false })).toBe(false)
     expect(localFileMutationRequiresApproval('local_files_create_directory', {})).toBe(false)
@@ -34,6 +43,18 @@ describe('LocalFileBridge', () => {
     expect(file.content).toContain('A-1,8')
     expect(file.path).toBe('reports/daily.csv')
     expect(file.rootName).toBeTruthy()
+  })
+
+  it('reads common development source and configuration formats', async () => {
+    const root = await temporaryDirectory()
+    await writeFile(join(root, 'main.rs'), 'fn main() {}\n')
+    await writeFile(join(root, 'App.vue'), '<template />\n')
+    await writeFile(join(root, 'Cargo.toml'), '[package]\nname = "demo"\n')
+    const bridge = new LocalFileBridge(await discoverAuthorizedRoots([root]))
+
+    await expect(bridge.readText('local-root-1', 'main.rs')).resolves.toMatchObject({ content: 'fn main() {}\n' })
+    await expect(bridge.readText('local-root-1', 'App.vue')).resolves.toMatchObject({ content: '<template />\n' })
+    await expect(bridge.readText('local-root-1', 'Cargo.toml')).resolves.toMatchObject({ content: '[package]\nname = "demo"\n' })
   })
 
   it('searches names and text content without traversing dependency folders', async () => {

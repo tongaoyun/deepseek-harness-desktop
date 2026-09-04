@@ -34,7 +34,19 @@ describe('persisted session follow-ups', () => {
     const result = await runSessionTurn(fakeClient(notifications), 'session-1', [{ type: 'text', text: '解释下冒泡' }], (value) => observed.push(value))
 
     expect(result.finalResponse).toBe('冒泡排序会重复比较相邻元素。')
-    expect(observed).toHaveLength(6)
+    expect(observed).toHaveLength(5)
+  })
+
+  it('finishes on turn/end even when the runtime does not emit a trailing idle status', async () => {
+    const notifications: HarnessNotification[] = [
+      event('agent/inbox/spliced', { inserted: [{ id: 'message-2' }] }),
+      event('turn/start', { turn: 2 }),
+      event('assistant/message', { message: { content: [{ type: 'text', text: '完成。' }] } }),
+      event('turn/end', { turn: 2, reason: { kind: 'completed' } }),
+    ]
+
+    await expect(runSessionTurn(fakeClient(notifications), 'session-1', [{ type: 'text', text: '继续' }], () => undefined, 20))
+      .resolves.toMatchObject({ finalResponse: '完成。' })
   })
 
   it('does not report a textless model turn as successful', async () => {

@@ -30,6 +30,14 @@ pub struct AuthorizedDirectoryView {
     path: String,
 }
 
+#[derive(Clone, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RuntimeLocalFileRoot {
+    pub(crate) id: String,
+    pub(crate) name: String,
+    pub(crate) path: String,
+}
+
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LocalTaskAttachmentView {
@@ -219,7 +227,7 @@ pub fn clear_local_directories(
 }
 
 impl LocalFileAuthorizations {
-    pub fn resolve(&self, ids: &[String]) -> Result<Vec<String>, String> {
+    pub(crate) fn resolve(&self, ids: &[String]) -> Result<Vec<RuntimeLocalFileRoot>, String> {
         if ids.len() > MAX_AUTHORIZED_DIRECTORIES {
             return Err(format!(
                 "单次任务最多使用 {MAX_AUTHORIZED_DIRECTORIES} 个本地文件夹"
@@ -238,7 +246,11 @@ impl LocalFileAuthorizations {
                 guard
                     .iter()
                     .find(|directory| &directory.id == id)
-                    .map(|directory| directory.path.to_string_lossy().into_owned())
+                    .map(|directory| RuntimeLocalFileRoot {
+                        id: directory.id.clone(),
+                        name: directory.name.clone(),
+                        path: directory.path.to_string_lossy().into_owned(),
+                    })
                     .ok_or_else(|| format!("本地文件夹授权已失效：{id}"))
             })
             .collect()
@@ -369,8 +381,17 @@ mod tests {
         assert_eq!(
             authorizations
                 .resolve(std::slice::from_ref(&view.id))
-                .unwrap(),
-            vec![directory.canonicalize().unwrap().to_string_lossy()]
+                .unwrap()
+                .into_iter()
+                .map(|root| root.path)
+                .collect::<Vec<_>>(),
+            vec![
+                directory
+                    .canonicalize()
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned()
+            ]
         );
         assert!(authorizations.resolve(&["missing".to_string()]).is_err());
 
