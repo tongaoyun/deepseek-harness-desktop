@@ -28,6 +28,26 @@ describe('InlineTaskActivity', () => {
     })).toBe('2分钟7秒')
   })
 
+  it('shows subagent collaboration as compact activity in the same chat turn', () => {
+    const html = renderToStaticMarkup(<InlineTaskActivity monitor={{
+      status: 'running', activity: '子 Agent 正在处理', updatedAt: '2026-09-03T10:00:01.000Z',
+      startedAt: '2026-09-03T10:00:00.000Z', steps: [], artifacts: [],
+      subagents: [
+        { id: 'one', label: '检查前端', status: 'running', startedAt: '2026-09-03T10:00:00.000Z' },
+        { id: 'two', label: '检查后端', status: 'completed', startedAt: '2026-09-03T10:00:00.000Z', completedAt: '2026-09-03T10:00:01.000Z' },
+      ],
+      timeline: [
+        { id: 'one', kind: 'subagent', label: '检查前端', status: 'running', occurredAt: '2026-09-03T10:00:00.000Z' },
+        { id: 'two', kind: 'subagent', label: '检查后端', status: 'completed', occurredAt: '2026-09-03T10:00:00.000Z' },
+      ],
+    }} />)
+
+    expect(html).toContain('2 个协作任务')
+    expect(html).toContain('检查前端')
+    expect(html).toContain('检查后端')
+    expect(html).not.toContain('Task Monitor')
+  })
+
   it('renders files as a separate conversation result card', () => {
     const html = renderToStaticMarkup(<TaskArtifacts conversation artifacts={[
       { id: 'a', rootId: 'root', rootName: 'Downloads', path: 'report.xlsx', name: 'report.xlsx', kind: 'spreadsheet', sourceTool: 'office.xlsx.create', createdAt: '2026-09-03T10:00:00.000Z' },

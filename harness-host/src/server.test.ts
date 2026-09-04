@@ -48,7 +48,7 @@ describe('HostServer', () => {
     expect(output).toHaveLength(2)
     expect(output[0]).toMatchObject({
       method: 'session.notification',
-      params: { requestId: 'turn-1' },
+      params: { requestId: 'turn-1', rootSessionId: 'session-1' },
     })
     expect(output[1]).toEqual({
       jsonrpc: '2.0',
@@ -112,8 +112,9 @@ function fakeRuntime(): HarnessRuntime {
       return { status: 'initialized', runtime: 'fake' }
     },
     async run(input, onNotification) {
-      onNotification({ method: 'session.status', params: { status: 'working' } })
-      return { sessionId: input.sessionId ?? 'new-session', finalResponse: '完成' }
+      const rootSessionId = input.sessionId ?? 'new-session'
+      onNotification({ method: 'session.status', params: { sessionId: rootSessionId, status: 'working' } }, rootSessionId)
+      return { sessionId: rootSessionId, finalResponse: '完成' }
     },
     async close() {},
   }

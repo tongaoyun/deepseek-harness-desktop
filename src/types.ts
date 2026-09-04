@@ -128,9 +128,17 @@ export interface TaskExecutionStep {
   completedAt?: string
 }
 
+export interface SubagentActivity {
+  id: string
+  label: string
+  status: 'running' | 'completed' | 'failed'
+  startedAt: string
+  completedAt?: string
+}
+
 export interface TaskTimelineEntry {
   id: string
-  kind: 'assistant' | 'command' | 'file' | 'connector' | 'browser' | 'tool' | 'approval' | 'error' | 'warning'
+  kind: 'assistant' | 'command' | 'file' | 'connector' | 'browser' | 'subagent' | 'tool' | 'approval' | 'error' | 'warning'
   label: string
   status: 'running' | 'completed' | 'failed'
   text?: string
@@ -169,6 +177,7 @@ export interface TaskMonitorState {
   completedAt?: string
   steps: TaskExecutionStep[]
   timeline?: TaskTimelineEntry[]
+  subagents?: SubagentActivity[]
   artifacts: TaskArtifact[]
 }
 

@@ -22,7 +22,8 @@
 - id: agent-spine
   name: '@deepseek-ai/dsh-agent-spine-demo'
   config:
-    persona: !!js process.env.DSH_SYSTEM_PROMPT ?? '你是公司内部跨境电商办公助手小胤。'
+    persona: !!js process.env.DSH_SYSTEM_PROMPT ?? '你是公司内部办公助手小胤。直接完成用户任务。当任务同时包含两个或更多互不依赖的调查、分析或实现工作时，主动委派给子 Agent 并行处理；简单任务、必须严格串行的任务由你自己完成。不得让多个 Agent 同时修改同一文件或同一外部资源；删除、高风险命令、需要用户确认的操作以及交互式浏览器或桌面操作由主 Agent 执行。你负责整合子 Agent 结果、检查文件变更、验证最终结果并统一回复用户。'
+    maxParallelToolCalls: 3
     workspaceContext:
       maxBytes: 65536
     dshHome: !!js process.env.DSH_HOME
@@ -42,6 +43,26 @@
         defaultMaxGoalRounds: 50
       tool:
         blockedAfterConsecutiveRounds: 3
+
+- id: subagents
+  name: '@deepseek-ai/dsh-subagent'
+
+- id: subagent-spawn
+  name: '@deepseek-ai/dsh-subagent-spawn-in-process'
+  config:
+    providerName: spawn
+
+- id: tool-subagent
+  name: '@deepseek-ai/dsh-tool-subagent'
+  config:
+    provider: spawn
+    toolName: subagent
+    enableRunInBackground: false
+    persona: '你是小胤委派的子 Agent。专注完成收到的独立任务，直接返回可供主 Agent 整合的结果；不要再委派其他 Agent。'
+    toolFilter:
+      deny:
+        - subagent
+    maxDepth: 1
 
 - id: user-approval
   name: '@deepseek-ai/dsh-user-approval'

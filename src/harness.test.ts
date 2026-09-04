@@ -94,6 +94,42 @@ describe('harnessActivityLabel', () => {
       .toEqual({ key: '', mode: 'clear', text: '' })
   })
 
+  it('keeps child session text and completion out of the root conversation', () => {
+    const childText = scopedEvent('child-1', 'root-1', 'text-chunks', {
+      turn: 1, step: 1, texts: ['子 Agent 内部回复'],
+    }, 1)
+    expect(harnessResponseUpdate(childText)).toBeUndefined()
+
+    const running = { ...createTaskMonitor(), status: 'running' as const, activity: '正在处理' }
+    const afterChildEnd = applyHarnessNotification(running, scopedEvent('child-1', 'root-1', 'turn/end', {
+      turn: 1, reason: { kind: 'completed' },
+    }, 2))
+    expect(afterChildEnd.status).toBe('running')
+    expect(afterChildEnd.activity).toBe('子 Agent 正在处理')
+  })
+
+  it('records real subagent tool calls as compact collaboration activities', () => {
+    const monitor = [
+      scopedEvent('root-1', 'root-1', 'tool/call', {
+        turn: 1, step: 1, callId: 'delegate-1', name: 'subagent',
+        arguments: JSON.stringify({ description: '检查后端测试', prompt: '不应展示的子任务全文' }),
+      }, 1),
+      scopedEvent('root-1', 'root-1', 'tool/result', { message: { content: [{
+        type: 'tool-result', toolCallId: 'delegate-1', isError: false,
+        content: [{ type: 'text', text: '子 Agent 的完整回复不在进度中展示' }],
+      }] } }, 2),
+    ].reduce(applyHarnessNotification, createTaskMonitor())
+
+    expect(monitor.subagents).toMatchObject([{
+      id: 'delegate-1', label: '检查后端测试', status: 'completed',
+    }])
+    expect(monitor.timeline).toMatchObject([{
+      kind: 'subagent', label: '检查后端测试', status: 'completed',
+    }])
+    expect(JSON.stringify(monitor)).not.toContain('不应展示')
+    expect(JSON.stringify(monitor)).not.toContain('完整回复')
+  })
+
   it('records only the approval decision and tool name', () => {
     const monitor = [event('approval/decision', {
       approvalId: 'approval-1', name: 'bash', decision: 'reject', reason: 'sensitive command',
@@ -182,5 +218,15 @@ function event(type: string, data: Record<string, unknown>, time: number) {
   return {
     requestId: 1,
     event: { event: { method: 'session.event', params: { event: { type, time, data } } } },
+  }
+}
+
+function scopedEvent(sessionId: string, rootSessionId: string, type: string, data: Record<string, unknown>, time: number) {
+  return {
+    requestId: 1,
+    event: {
+      rootSessionId,
+      event: { method: 'session.event', params: { sessionId, event: { type, time, data } } },
+    },
   }
 }

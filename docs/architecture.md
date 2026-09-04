@@ -73,7 +73,7 @@
 | 领域 | 已实现能力 |
 |---|---|
 | 身份与模型 | ERP 扫码登录、控制中心模型目录、LiteLLM |
-| Agent | 内置 DeepSeek Harness、SQLite 会话、搜索/分页/归档、富文本回复、产物卡片、任务取消与失败重试；原生 Workspace Context、Jobs 和 Goal |
+| Agent | 内置 DeepSeek Harness、SQLite 会话、搜索/分页/归档、富文本回复、产物卡片、任务取消与失败重试；原生 Workspace Context、Jobs、Goal 和受控多 Agent 并行委派 |
 | 扩展 | `.xiaoyin-kit/kit.json` 专家套件、根目录 `SKILL.md` 独立 Skill、`/` 命令入口、自动触发，以及模板创建、ZIP/tar.gz 导入、定制副本和 ZIP 导出 |
 | 连接器 | 员工级启停、Streamable HTTP/SSE、工具白名单、写权限、实时诊断和仅包含已启用能力的新任务快照 |
 | ERP | `order_get`、`sales_summary`、`inventory_risk` |
