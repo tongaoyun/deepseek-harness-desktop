@@ -40,7 +40,7 @@ jobs:
           rustc --version
           cargo --version
           xcrun --show-sdk-path
-          codesign --version
+          command -v codesign
 
       - name: 安装锁定依赖
         run: pnpm install --frozen-lockfile --registry=http://192.168.2.9:4873/
