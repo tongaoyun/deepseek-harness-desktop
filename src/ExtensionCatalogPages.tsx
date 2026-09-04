@@ -71,7 +71,7 @@ export function SkillCatalogPage(props: CommonProps & { all: SkillView[]; visibl
 }
 
 function CatalogHero({ kind }: { kind: 'experts' | 'skills' }) {
-  return <section className={`catalog-hero ${kind}`}><div><strong>{kind === 'experts' ? '为每个岗位准备一套成熟工作方法' : '为你精选的职场技能'}</strong><p>{kind === 'experts' ? '把常用技能、数据源和工作流组合起来，一键加入对话。' : '涵盖写作、效率、设计、数据分析等多种场景，一键安装。'}</p></div><div className="catalog-hero-art"><span>效率</span><span>分析</span><span>创作</span><XiaoyinMascot size={76} variant="hero" /></div></section>
+  return <section className={`catalog-hero ${kind}`}><div><strong>{kind === 'experts' ? '为每个岗位准备一套成熟工作方法' : '为你精选的职场技能'}</strong><p>{kind === 'experts' ? '把常用技能、数据源和工作流组合起来，一键加入对话。' : '涵盖写作、效率、设计、数据分析等多种场景，一键安装。'}</p></div><div className="catalog-hero-art"><span>效率</span><span>分析</span><span>创作</span><XiaoyinMascot size={82} variant={kind === 'experts' ? 'expert' : 'skill'} /></div></section>
 }
 
 function CatalogHeading({ filter, marketCount, installedCount, builtIn = false, sort, onFilter, onSort }: {

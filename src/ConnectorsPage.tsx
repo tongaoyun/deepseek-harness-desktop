@@ -80,7 +80,7 @@ export function ConnectorsPage({ catalog, runtime, loading, catalogError, syncEr
   }
 
   return <>
-    <section className="catalog-hero connectors"><div><strong>连接你的应用，释放生产力</strong><p>把企业服务、开发工具和日常应用接入小胤。</p></div><div className="connector-hero-art"><span><PlugZap size={31} /></span><XiaoyinMascot size={82} variant="hero" /></div></section>
+    <section className="catalog-hero connectors"><div><strong>连接你的应用，释放生产力</strong><p>把企业服务、开发工具和日常应用接入小胤。</p></div><div className="connector-hero-art"><XiaoyinMascot size={88} variant="connector" /></div></section>
     <div className="catalog-heading-row connector-heading-row"><div className="catalog-tabs" role="tablist"><button aria-selected={view === 'market'} className={view === 'market' ? 'active' : ''} onClick={() => setView('market')} role="tab" type="button">市场</button><button aria-selected={view === 'connected'} className={view === 'connected' ? 'active' : ''} onClick={() => setView('connected')} role="tab" type="button">已启用 <em>{connectedCount}</em></button></div></div>
     {loading && <div className="kit-empty">正在同步企业连接器…</div>}
     {!loading && catalog.length === 0 && <div className="kit-empty">控制中心尚未配置连接器</div>}
