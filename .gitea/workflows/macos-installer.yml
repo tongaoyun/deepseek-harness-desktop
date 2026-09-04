@@ -1,0 +1,93 @@
+name: macOS installer
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: macos-installer-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-macos-arm64:
+    runs-on: macos-arm64
+    timeout-minutes: 120
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_TARGET_DIR: /Users/a1-6/Library/Caches/xiaoyin-desktop-builder/target
+      CARGO_REGISTRIES_CRATES_IO_INDEX: sparse+https://rsproxy.cn/index/
+      NPM_CONFIG_REGISTRY: http://192.168.2.9:4873/
+      NPM_CONFIG_FETCH_RETRIES: 4
+      NPM_CONFIG_FETCH_TIMEOUT: 120000
+      NPM_CONFIG_UPDATE_NOTIFIER: "false"
+      VITE_CONTROL_PLANE_BASE_URL: http://192.168.2.67:30081
+
+    steps:
+      - name: 检出代码
+        uses: http://192.168.2.66:3300/instudio/checkout@v4
+
+      - name: 验证 macOS 构建环境
+        run: |
+          test "$(uname -s)" = "Darwin"
+          test "$(uname -m)" = "arm64"
+          test "$(node --version)" = "v24.19.0"
+          test "$(pnpm --version)" = "10.33.0"
+          rustc --version
+          cargo --version
+          xcrun --show-sdk-path
+          codesign --version
+
+      - name: 安装锁定依赖
+        run: pnpm install --frozen-lockfile --registry=http://192.168.2.9:4873/
+
+      - name: 前端与 Harness 质量门禁
+        run: |
+          pnpm verify:version
+          pnpm lint
+          pnpm typecheck
+          pnpm test
+          pnpm build
+
+      - name: Rust 质量门禁
+        run: |
+          cargo fmt --check --manifest-path src-tauri/Cargo.toml
+          cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+          cargo test --manifest-path src-tauri/Cargo.toml --all-targets
+
+      - name: 准备内置 Harness Runtime
+        run: bash scripts/prepare-harness-runtime-macos.sh
+
+      - name: 构建 macOS 应用
+        run: pnpm tauri build --config src-tauri/tauri.macos.conf.json
+
+      - name: 签名并生成 DMG
+        run: bash scripts/package-macos-dmg.sh
+
+      - name: 收集 macOS 安装包
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          app="$CARGO_TARGET_DIR/release/bundle/macos/小胤.app"
+          dmg="$CARGO_TARGET_DIR/release/bundle/dmg/小胤_${version}_aarch64.dmg"
+          output="macos-artifacts"
+          test -d "$app"
+          test -f "$dmg"
+          mkdir -p "$output"
+          ditto -c -k --sequesterRsrc --keepParent "$app" "$output/小胤_${version}_aarch64.app.zip"
+          cp "$dmg" "$output/"
+          (cd "$output" && shasum -a 256 * > SHA256SUMS.txt)
+
+      - name: 上传 macOS 安装包
+        uses: http://192.168.2.66:3300/instudio/gitea-upload-artifact@v4
+        with:
+          name: xiaoyin-desktop-macos-arm64-${{ github.sha }}
+          path: |
+            macos-artifacts/*.dmg
+            macos-artifacts/*.app.zip
+            macos-artifacts/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 30
