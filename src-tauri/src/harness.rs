@@ -513,6 +513,12 @@ impl HarnessProcess {
         std::fs::create_dir_all(&dsh_home)
             .and_then(|_| std::fs::create_dir_all(&workspace))
             .map_err(|error| format!("无法创建 Harness 数据目录：{error}"))?;
+        let session_workspace = fingerprint
+            .local_file_roots
+            .first()
+            .map(PathBuf::from)
+            .filter(|path| path.is_dir())
+            .unwrap_or_else(|| workspace.clone());
 
         let skill_directories = serde_json::to_string(&fingerprint.skill_directories)
             .map_err(|error| format!("无法生成 Skill 配置：{error}"))?;
@@ -529,9 +535,9 @@ impl HarnessProcess {
         command.creation_flags(0x0800_0000);
         let mut child = command
             .arg(&runtime.entry)
-            .current_dir(&workspace)
+            .current_dir(&session_workspace)
             .env("DSH_CORDIS_CONFIG", &runtime.config)
-            .env("DSH_CWD", &workspace)
+            .env("DSH_CWD", &session_workspace)
             .env("DSH_HOME", &dsh_home)
             .env("DSH_SESSION_ROOT", dsh_home.join("sessions"))
             .env(
@@ -1297,12 +1303,12 @@ mod tests {
     fn approval_requests_are_validated_and_control_characters_are_removed() {
         let value = json!({
             "approvalId": "approval-1",
-            "toolName": "local_shell_run",
+            "toolName": "bash",
             "reason": "运行命令\u{0007}\nls"
         });
         let approval = parse_approval_request(Some(&value)).expect("approval should parse");
         assert_eq!(approval.approval_id, "approval-1");
-        assert_eq!(approval.tool_name, "local_shell_run");
+        assert_eq!(approval.tool_name, "bash");
         assert_eq!(approval.reason, "运行命令 \nls");
         assert!(approval_message(&approval).contains("仅本次允许"));
     }

@@ -4,12 +4,15 @@ import ExcelJS from 'exceljs'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
+import { resolvePwshPath } from '@deepseek-ai/dsh-pwsh-local'
 import { ComputerUseBridge, runComputerUsePreflight } from './local-computer-use-plugin.js'
 import { parseDocx, parsePdf, parseXlsx, renderPdf, selectPdfFont } from './local-documents-plugin.js'
 import { discoverAuthorizedRoots, LocalFileBridge } from './local-files-plugin.js'
-import { runCommand } from './local-shell-plugin.js'
 
 const { Workbook } = ExcelJS
+const execFileAsync = promisify(execFile)
 
 interface CapabilityCheck {
   key: string
@@ -43,16 +46,17 @@ export async function runLocalCapabilitySelfTest(): Promise<{ status: 'passed'; 
     await writeFile(join(root, 'self-test.pdf'), pdfBytes)
     ensure(JSON.stringify(await parsePdf(pdfBytes)).includes('PDF ready'), 'PDF round trip failed')
 
-    const command = process.platform === 'win32' ? 'Write-Output xiaoyin-shell-ready' : 'printf xiaoyin-shell-ready'
-    const shell = await runCommand(command, root, 10_000, new AbortController().signal) as { exitCode: number; stdout: string }
-    ensure(shell.exitCode === 0 && shell.stdout.includes('xiaoyin-shell-ready'), 'Shell execution failed')
+    const shell = process.platform === 'win32'
+      ? await execFileAsync(resolvePwshPath(), ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', 'Write-Output xiaoyin-shell-ready'], { cwd: root, timeout: 10_000 })
+      : await execFileAsync('/bin/bash', ['--noprofile', '--norc', '-c', 'printf xiaoyin-shell-ready'], { cwd: root, timeout: 10_000 })
+    ensure(shell.stdout.includes('xiaoyin-shell-ready'), 'Native Harness shell execution failed')
 
     const checks: CapabilityCheck[] = [
       { key: 'local-files', passed: true, detail: 'write and read' },
       { key: 'office-docx', passed: true, detail: 'create and parse' },
       { key: 'office-xlsx', passed: true, detail: 'create and parse' },
       { key: 'office-pdf', passed: true, detail: 'create and parse' },
-      { key: 'local-shell', passed: true, detail: 'isolated command' },
+      { key: 'native-shell', passed: true, detail: 'Harness subprocess and platform shell ready' },
     ]
 
     if (process.platform === 'win32') {

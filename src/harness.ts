@@ -601,7 +601,14 @@ function toolActivityLabel(toolName: string): string {
     local_files_copy: '复制本地文件',
     local_files_move: '移动本地文件',
     local_files_delete: '删除本地文件',
-    local_shell_run: '运行本地命令',
+    bash: '运行 Bash 命令',
+    pwsh: '运行 PowerShell 命令',
+    job_output: '读取后台任务',
+    job_list: '查看后台任务',
+    job_kill: '停止后台任务',
+    get_goal: '查看任务目标',
+    create_goal: '创建任务目标',
+    update_goal: '更新任务目标',
     browser_open: '打开网页',
     browser_snapshot: '读取网页',
     browser_click: '操作网页',
@@ -621,7 +628,7 @@ function toolPresentation(toolName: string, rawArguments: unknown): Pick<TaskTim
   const args = toolArguments(rawArguments)
   const path = firstText(args, 'path', 'workdir')
   const destination = firstText(args, 'destinationPath')
-  if (toolName === 'local_shell_run') return compact({
+  if (toolName === 'bash' || toolName === 'pwsh') return compact({
     kind: 'command', label: '运行命令', detail: firstText(args, 'description'), path,
     text: bounded(firstText(args, 'command'), 16_000),
   })
@@ -661,15 +668,12 @@ function toolResultPresentation(
   failed: boolean,
 ): Partial<TaskTimelineEntry> {
   const value = toolResultValue(content)
-  if (toolName === 'local_shell_run') {
-    if (!value) return failed ? { detail: publicToolError(content) } : {}
-    const stdout = text(value.stdout)?.trim()
-    const stderr = text(value.stderr)?.trim()
-    const exitCode = typeof value.exitCode === 'number' ? value.exitCode : undefined
+  if (toolName === 'bash' || toolName === 'pwsh') {
+    const output = toolResultText(content)
+    const exitCode = output.match(/\[exit code: (\d+)]\s*$/)?.[1]
     return compact({
-      output: bounded([stdout, stderr].filter(Boolean).join('\n'), 12_000),
-      detail: exitCode === undefined ? undefined : `退出码 ${exitCode}${value.truncated === true ? ' · 输出已截断' : ''}`,
-      path: text(value.workdir),
+      output: bounded(output.replace(/\n?\[exit code: \d+]\s*$/, '').trim(), 12_000),
+      detail: failed ? publicToolError(content) : exitCode === undefined ? undefined : `退出码 ${exitCode}`,
     })
   }
   if (toolName === 'local_files_list' && value) {
@@ -729,9 +733,12 @@ function publicEventError(data: Record<string, unknown>): string | undefined {
 }
 
 function publicToolError(content: unknown): string | undefined {
+  return bounded(toolResultText(content), 1_000)
+}
+
+function toolResultText(content: unknown): string {
   const blocks = Array.isArray(content) ? content : []
-  const value = blocks.map((item) => text(asRecord(item)?.text)).filter(Boolean).join('\n')
-  return bounded(value, 1_000)
+  return blocks.map((item) => text(asRecord(item)?.text)).filter(Boolean).join('\n')
 }
 
 function bounded(value: string | undefined, length: number): string | undefined {
