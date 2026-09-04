@@ -645,10 +645,11 @@ export default function App() {
     if (!currentCapabilitySnapshot) setCurrentCapabilitySnapshot(capabilitySnapshot)
     const taskId = currentLocalTaskId || crypto.randomUUID()
     const existingTask = localTasks.find((task) => task.id === taskId)
+    const mustStartFreshSession = resetSessionForDirectoryChange || taskMonitorRef.current.status === 'failed'
     const rootSessionId = resolveHarnessSessionId(
       taskSessionId,
       existingTask?.sessionId,
-      resetSessionForDirectoryChange,
+      mustStartFreshSession,
       () => `session-${crypto.randomUUID().replaceAll('-', '')}`,
     )
     const pendingMessages: TaskMessage[] = [...messages, { role: 'user', text: input, ...(messageAttachments.length > 0 ? { attachments: messageAttachments } : {}) },
@@ -677,6 +678,7 @@ export default function App() {
       messages: pendingMessages,
     }
     setCurrentLocalTaskId(taskId)
+    setHarnessSessionId(rootSessionId)
     setMessages(pendingMessages)
     persistLocalTask(runningTask)
     void submitAuditEvent(bootstrap.endpoints.auditEvents ?? '/api/v1/audit-events', user!.userId, accessToken, {
