@@ -1,11 +1,11 @@
 export function resolveHarnessSessionId(
   currentSessionId: string,
   persistedSessionId: string | undefined,
-  runtimeCapabilitiesChanged: boolean,
+  mustStartFreshSession: boolean,
   createSessionId: () => string,
 ): string {
   // Harness sessions are bound to the workspace and tool catalog they started with.
-  // Adding a local directory changes both, so resuming the old session is invalid.
-  if (runtimeCapabilitiesChanged) return createSessionId()
+  // Capability changes and failed turns can leave a persisted session unsafe to resume.
+  if (mustStartFreshSession) return createSessionId()
   return currentSessionId || persistedSessionId || createSessionId()
 }
