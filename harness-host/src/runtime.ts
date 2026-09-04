@@ -166,6 +166,7 @@ export async function runSessionTurn(
   let turnStarted = false
   let finalResponse = ''
   let turnFailure = ''
+  const streamedText = new Map<string, string>()
   const deadline = Date.now() + timeoutMs
   try {
     const messageId = await client.prompt(sessionId, content)
@@ -175,8 +176,8 @@ export async function runSessionTurn(
         if (!isPromptReceipt(notification, sessionId, messageId)) continue
         receivedPrompt = true
       }
-      onNotification(notification)
       const event = sessionEvent(notification, sessionId)
+      await forwardVisibleTextSmoothly(notification, event, streamedText, onNotification)
       if (event?.type === 'turn/start') turnStarted = true
       if (event?.type === 'assistant/message') {
         turnStarted = true
@@ -196,6 +197,114 @@ export async function runSessionTurn(
   }
   if (!finalResponse.trim()) throw new Error(turnFailure || '模型本轮没有返回可显示文本，请重试')
   return { sessionId, finalResponse }
+}
+
+/**
+ * Providers do not all expose token deltas consistently. Some return one large
+ * `text-chunks` event (or only the final assistant message), which makes the
+ * desktop UI appear frozen and then dump a whole answer at once. Normalize
+ * those cases here so every consumer receives the same real incremental event
+ * stream. Small native chunks pass through untouched.
+ */
+async function forwardVisibleTextSmoothly(
+  notification: HarnessNotification,
+  event: Record<string, unknown> | undefined,
+  streamedText: Map<string, string>,
+  onNotification: (value: HarnessNotification) => void,
+): Promise<void> {
+  if (event === undefined) {
+    onNotification(notification)
+    return
+  }
+  if (event.type === 'tool/call') {
+    streamedText.clear()
+    onNotification(notification)
+    return
+  }
+  const data = record(event.data)
+  const key = assistantStepKey(data)
+  if (event.type === 'text-chunks') {
+    const text = stringTexts(data?.texts)
+    if (!text) {
+      onNotification(notification)
+      return
+    }
+    if (Array.from(text).length >= 18) {
+      await emitIncrementalText(notification, event, text, onNotification)
+    } else {
+      onNotification(notification)
+    }
+    streamedText.set(key, `${streamedText.get(key) ?? ''}${text}`)
+    return
+  }
+  if (event.type === 'assistant/message') {
+    const finalText = assistantText(event)
+    const previous = streamedText.get(key) ?? ''
+    const missing = finalText.startsWith(previous) ? finalText.slice(previous.length) : ''
+    if (missing) await emitIncrementalText(notification, event, missing, onNotification)
+    if (finalText) streamedText.set(key, finalText)
+  }
+  onNotification(notification)
+}
+
+async function emitIncrementalText(
+  notification: HarnessNotification,
+  event: Record<string, unknown>,
+  text: string,
+  onNotification: (value: HarnessNotification) => void,
+): Promise<void> {
+  const chunks = visibleTextChunks(text)
+  if (chunks.length === 1) {
+    onNotification(event.type === 'text-chunks' ? notification : textChunkNotification(notification, event, text))
+    return
+  }
+  for (const chunk of chunks) {
+    onNotification(textChunkNotification(notification, event, chunk))
+    await shortUiPause()
+  }
+}
+
+export function visibleTextChunks(text: string): string[] {
+  const characters = Array.from(text)
+  if (characters.length < 18) return [text]
+  const chunkSize = Math.max(4, Math.ceil(characters.length / 80))
+  const chunks: string[] = []
+  for (let index = 0; index < characters.length; index += chunkSize) {
+    chunks.push(characters.slice(index, index + chunkSize).join(''))
+  }
+  return chunks
+}
+
+function textChunkNotification(
+  notification: HarnessNotification,
+  event: Record<string, unknown>,
+  text: string,
+): HarnessNotification {
+  const params = notification.params as unknown as Record<string, unknown>
+  return {
+    ...notification,
+    params: {
+      ...params,
+      event: {
+        ...event,
+        type: 'text-chunks',
+        data: { turn: 0, step: 0, ...record(event.data), texts: [text] },
+      },
+    },
+  } as HarnessNotification
+}
+
+function assistantStepKey(data: Record<string, unknown> | undefined): string {
+  void data
+  return 'root-visible-response'
+}
+
+function stringTexts(value: unknown): string {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string').join('') : ''
+}
+
+function shortUiPause(): Promise<void> {
+  return new Promise((resolvePromise) => setTimeout(resolvePromise, 32))
 }
 
 async function nextBeforeDeadline(

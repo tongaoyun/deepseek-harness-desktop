@@ -4,7 +4,11 @@ import { ExecutionTimeline } from './ExecutionTimeline'
 import { taskDurationLabel } from './taskTiming'
 import type { TaskMonitorState } from './types'
 
-export function InlineTaskActivity({ monitor, finalResponse = '' }: { monitor: TaskMonitorState; finalResponse?: string }) {
+export function InlineTaskActivity({ monitor, finalResponse = '', onApprovalDecision }: {
+  monitor: TaskMonitorState
+  finalResponse?: string
+  onApprovalDecision?: (approvalId: string, decision: 'allow' | 'reject') => void
+}) {
   const [open, setOpen] = useState(true)
   const [clock, setClock] = useState(Date.now())
 
@@ -32,7 +36,7 @@ export function InlineTaskActivity({ monitor, finalResponse = '' }: { monitor: T
       <span>{summary}</span>
       {hasDetails && <ChevronRight className={open ? 'open' : ''} size={15} />}
     </button>
-    {open && hasDetails && <ExecutionTimeline entries={monitor.timeline ?? []} finalResponse={finalResponse} />}
+    {open && hasDetails && <ExecutionTimeline entries={monitor.timeline ?? []} finalResponse={finalResponse} onApprovalDecision={onApprovalDecision} />}
   </section>
 }
 

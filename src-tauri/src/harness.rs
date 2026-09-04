@@ -23,11 +23,12 @@ use std::{
     sync::{
         Arc, Mutex,
         atomic::{AtomicU32, Ordering},
+        mpsc,
     },
     thread::JoinHandle,
+    time::Duration,
 };
 use tauri::{Emitter, Manager};
-use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 
 const MAX_CONCURRENT_HARNESS_TASKS: usize = 3;
 
@@ -40,6 +41,17 @@ struct HarnessSlot {
 #[derive(Clone, Default)]
 pub struct HarnessManager {
     slots: Arc<Mutex<HashMap<String, Arc<HarnessSlot>>>>,
+    approvals: Arc<ApprovalBroker>,
+}
+
+#[derive(Default)]
+struct ApprovalBroker {
+    pending: Mutex<HashMap<String, PendingApproval>>,
+}
+
+struct PendingApproval {
+    task_id: String,
+    sender: mpsc::Sender<String>,
 }
 
 #[derive(Deserialize)]
@@ -162,6 +174,14 @@ struct HarnessUiNotification {
     event: Value,
 }
 
+fn ui_notification(task_id: &str, request_id: u64, event: Value) -> HarnessUiNotification {
+    HarnessUiNotification {
+        task_id: task_id.to_string(),
+        request_id,
+        event,
+    }
+}
+
 #[derive(Clone, Eq, PartialEq)]
 pub(crate) struct RuntimeFingerprint {
     pub(crate) skill_directories: Vec<String>,
@@ -188,6 +208,7 @@ pub(crate) struct HarnessProcess {
     stderr_reader: Option<JoinHandle<()>>,
     next_id: u64,
     notification_task_id: String,
+    approval_broker: Option<Arc<ApprovalBroker>>,
     pub(crate) fingerprint: RuntimeFingerprint,
 }
 
@@ -285,6 +306,16 @@ pub fn cancel_harness(
     task_id: String,
 ) -> Result<bool, String> {
     manager.cancel(&task_id)
+}
+
+#[tauri::command]
+pub fn respond_harness_approval(
+    manager: tauri::State<'_, HarnessManager>,
+    task_id: String,
+    approval_id: String,
+    decision: String,
+) -> Result<bool, String> {
+    manager.respond_to_approval(&task_id, &approval_id, &decision)
 }
 
 #[tauri::command]
@@ -418,6 +449,7 @@ impl HarnessManager {
                 fingerprint,
                 model_api_key,
                 access_token,
+                Arc::clone(&self.approvals),
             )?);
         }
         let process = guard.as_mut().expect("Harness process was initialized");
@@ -473,6 +505,10 @@ impl HarnessManager {
     }
 
     fn shutdown(&self, task_id: Option<&str>) -> Result<(), String> {
+        match task_id {
+            Some(task_id) => self.approvals.reject_task(task_id),
+            None => self.approvals.reject_all(),
+        }
         let slots = {
             let mut current = self
                 .slots
@@ -498,6 +534,7 @@ impl HarnessManager {
     }
 
     fn cancel(&self, task_id: &str) -> Result<bool, String> {
+        self.approvals.reject_task(task_id);
         let slot = self
             .slots
             .lock()
@@ -510,6 +547,88 @@ impl HarnessManager {
             return Ok(false);
         }
         terminate_process(pid)
+    }
+
+    fn respond_to_approval(
+        &self,
+        task_id: &str,
+        approval_id: &str,
+        decision: &str,
+    ) -> Result<bool, String> {
+        if !matches!(decision, "allow" | "reject") {
+            return Err("授权决定无效".to_string());
+        }
+        self.approvals.respond(task_id, approval_id, decision)
+    }
+}
+
+impl ApprovalBroker {
+    fn register(&self, task_id: &str, approval_id: &str) -> Result<mpsc::Receiver<String>, String> {
+        let (sender, receiver) = mpsc::channel();
+        let mut pending = self
+            .pending
+            .lock()
+            .map_err(|_| "Harness 授权状态不可用".to_string())?;
+        if pending.contains_key(approval_id) {
+            return Err("Harness 授权请求重复".to_string());
+        }
+        pending.insert(
+            approval_id.to_string(),
+            PendingApproval {
+                task_id: task_id.to_string(),
+                sender,
+            },
+        );
+        Ok(receiver)
+    }
+
+    fn respond(&self, task_id: &str, approval_id: &str, decision: &str) -> Result<bool, String> {
+        let mut approvals = self
+            .pending
+            .lock()
+            .map_err(|_| "Harness 授权状态不可用".to_string())?;
+        let Some(owner) = approvals
+            .get(approval_id)
+            .map(|value| value.task_id.clone())
+        else {
+            return Ok(false);
+        };
+        if owner != task_id {
+            return Err("授权请求不属于当前任务".to_string());
+        }
+        let pending = approvals
+            .remove(approval_id)
+            .expect("approval was checked above");
+        Ok(pending.sender.send(decision.to_string()).is_ok())
+    }
+
+    fn reject_task(&self, task_id: &str) {
+        let pending = self.pending.lock();
+        let Ok(mut pending) = pending else { return };
+        let approval_ids = pending
+            .iter()
+            .filter(|(_, value)| value.task_id == task_id)
+            .map(|(id, _)| id.clone())
+            .collect::<Vec<_>>();
+        for approval_id in approval_ids {
+            if let Some(value) = pending.remove(&approval_id) {
+                let _ = value.sender.send("reject".to_string());
+            }
+        }
+    }
+
+    fn reject_all(&self) {
+        let pending = self.pending.lock();
+        let Ok(mut pending) = pending else { return };
+        for (_, value) in pending.drain() {
+            let _ = value.sender.send("reject".to_string());
+        }
+    }
+
+    fn remove(&self, approval_id: &str) {
+        if let Ok(mut pending) = self.pending.lock() {
+            pending.remove(approval_id);
+        }
     }
 }
 
@@ -545,7 +664,15 @@ impl HarnessProcess {
         model_api_key: String,
         access_token: String,
     ) -> Result<Self, String> {
-        Self::start_internal(app, fingerprint, model_api_key, access_token, true, None)
+        Self::start_internal(
+            app,
+            fingerprint,
+            model_api_key,
+            access_token,
+            true,
+            None,
+            None,
+        )
     }
 
     fn start_for_task(
@@ -554,6 +681,7 @@ impl HarnessProcess {
         fingerprint: RuntimeFingerprint,
         model_api_key: String,
         access_token: String,
+        approval_broker: Arc<ApprovalBroker>,
     ) -> Result<Self, String> {
         Self::start_internal(
             app,
@@ -562,6 +690,7 @@ impl HarnessProcess {
             access_token,
             true,
             Some(task_id),
+            Some(approval_broker),
         )
     }
 
@@ -571,7 +700,15 @@ impl HarnessProcess {
         model_api_key: String,
         access_token: String,
     ) -> Result<Self, String> {
-        Self::start_internal(app, fingerprint, model_api_key, access_token, false, None)
+        Self::start_internal(
+            app,
+            fingerprint,
+            model_api_key,
+            access_token,
+            false,
+            None,
+            None,
+        )
     }
 
     fn start_internal(
@@ -581,6 +718,7 @@ impl HarnessProcess {
         access_token: String,
         initialize: bool,
         task_id: Option<&str>,
+        approval_broker: Option<Arc<ApprovalBroker>>,
     ) -> Result<Self, String> {
         let runtime = resolve_runtime_paths(app)?;
         let app_data = app
@@ -692,6 +830,7 @@ impl HarnessProcess {
             next_id: 1,
             notification_task_id: String::new(),
             fingerprint,
+            approval_broker,
         };
         if initialize {
             process.request("host.initialize", None, None)?;
@@ -760,19 +899,37 @@ impl HarnessProcess {
             if output.get("method").is_some() {
                 if output.get("method").and_then(Value::as_str) == Some("approval.request") {
                     let approval = parse_approval_request(output.get("params"))?;
-                    let decision = if let Some(app) = app {
-                        let confirmed = app
-                            .dialog()
-                            .message(approval_message(&approval))
-                            .title("小胤操作确认")
-                            .kind(MessageDialogKind::Warning)
-                            .buttons(MessageDialogButtons::YesNo)
-                            .blocking_show();
-                        if confirmed { "allow" } else { "reject" }
+                    let decision = if let (Some(app), Some(broker)) = (app, &self.approval_broker) {
+                        let receiver =
+                            broker.register(&self.notification_task_id, &approval.approval_id)?;
+                        let event = json!({
+                            "event": {
+                                "method": "session.event",
+                                "params": { "event": {
+                                    "type": "approval/request",
+                                    "data": {
+                                        "approvalId": approval.approval_id,
+                                        "name": approval.tool_name,
+                                        "reason": approval.reason
+                                    }
+                                }}
+                            }
+                        });
+                        let _ = app.emit(
+                            "xiaoyin://harness-notification",
+                            ui_notification(&self.notification_task_id, request_id, event),
+                        );
+                        match receiver.recv_timeout(Duration::from_secs(5 * 60)) {
+                            Ok(decision) => decision,
+                            Err(_) => {
+                                broker.remove(&approval.approval_id);
+                                "reject".to_string()
+                            }
+                        }
                     } else {
-                        "reject"
+                        "reject".to_string()
                     };
-                    self.send_approval_response(&approval.approval_id, decision)?;
+                    self.send_approval_response(&approval.approval_id, &decision)?;
                     if let Some(app) = app {
                         let event = json!({
                             "event": {
@@ -789,11 +946,7 @@ impl HarnessProcess {
                         });
                         let _ = app.emit(
                             "xiaoyin://harness-notification",
-                            HarnessUiNotification {
-                                task_id: self.notification_task_id.clone(),
-                                request_id,
-                                event,
-                            },
+                            ui_notification(&self.notification_task_id, request_id, event),
                         );
                     }
                     continue;
@@ -802,11 +955,7 @@ impl HarnessProcess {
                     let event = output.get("params").cloned().unwrap_or(Value::Null);
                     let _ = app.emit(
                         "xiaoyin://harness-notification",
-                        HarnessUiNotification {
-                            task_id: self.notification_task_id.clone(),
-                            request_id,
-                            event,
-                        },
+                        ui_notification(&self.notification_task_id, request_id, event),
                     );
                 }
                 continue;
@@ -1008,13 +1157,6 @@ fn sanitize_dialog_text(value: &str, max_chars: usize) -> String {
     }
 }
 
-fn approval_message(approval: &ApprovalPrompt) -> String {
-    format!(
-        "工具：{}\n\n{}\n\n仅本次允许该操作？",
-        approval.tool_name, approval.reason
-    )
-}
-
 impl Drop for HarnessProcess {
     fn drop(&mut self) {
         if self.child.try_wait().ok().flatten().is_none() {
@@ -1024,7 +1166,7 @@ impl Drop for HarnessProcess {
 }
 
 fn resolve_runtime_paths(_app: &tauri::AppHandle) -> Result<HarnessRuntimePaths, String> {
-    #[cfg(all(target_os = "windows", not(debug_assertions)))]
+    #[cfg(not(debug_assertions))]
     {
         let paths = packaged_runtime_paths(
             &_app
@@ -1036,7 +1178,7 @@ fn resolve_runtime_paths(_app: &tauri::AppHandle) -> Result<HarnessRuntimePaths,
         return Ok(paths);
     }
 
-    #[cfg(not(all(target_os = "windows", not(debug_assertions))))]
+    #[cfg(debug_assertions)]
     {
         let defaults = development_runtime_paths()?;
         let paths = HarnessRuntimePaths {
@@ -1049,7 +1191,7 @@ fn resolve_runtime_paths(_app: &tauri::AppHandle) -> Result<HarnessRuntimePaths,
     }
 }
 
-#[cfg(not(all(target_os = "windows", not(debug_assertions))))]
+#[cfg(debug_assertions)]
 fn development_runtime_paths() -> Result<HarnessRuntimePaths, String> {
     let repository = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -1061,17 +1203,21 @@ fn development_runtime_paths() -> Result<HarnessRuntimePaths, String> {
     })
 }
 
-#[cfg(any(all(target_os = "windows", not(debug_assertions)), test))]
+#[cfg(any(not(debug_assertions), test))]
 fn packaged_runtime_paths(resource_dir: &Path) -> HarnessRuntimePaths {
     let root = resource_dir.join("resources/harness-runtime");
     HarnessRuntimePaths {
-        node: root.join("node/node.exe"),
+        node: root.join(if cfg!(target_os = "windows") {
+            "node/node.exe"
+        } else {
+            "node/node"
+        }),
         entry: root.join("harness-host/dist/index.js"),
         config: root.join("harness-host/runtime/cordis.yml"),
     }
 }
 
-#[cfg(not(all(target_os = "windows", not(debug_assertions))))]
+#[cfg(debug_assertions)]
 fn configured_path(variable: &str, fallback: PathBuf) -> Result<PathBuf, String> {
     if let Ok(value) = std::env::var(variable)
         && !value.trim().is_empty()
@@ -1228,6 +1374,26 @@ mod tests {
     }
 
     #[test]
+    fn native_bridge_preserves_incremental_host_event_shape() {
+        let host_params = json!({
+            "requestId": 7,
+            "rootSessionId": "session-1",
+            "event": {
+                "method": "session.event",
+                "params": {
+                    "sessionId": "session-1",
+                    "event": { "type": "text-chunks", "data": { "texts": ["正在回答"] } }
+                }
+            }
+        });
+        let bridged = serde_json::to_value(ui_notification("task-1", 7, host_params.clone()))
+            .expect("notification should serialize");
+        assert_eq!(bridged["taskId"], "task-1");
+        assert_eq!(bridged["requestId"], 7);
+        assert_eq!(bridged["event"], host_params);
+    }
+
+    #[test]
     fn task_pool_keeps_three_slots_and_reuses_idle_capacity() {
         let manager = HarnessManager::default();
         assert!(manager.slot("task-1").is_ok());
@@ -1287,8 +1453,11 @@ mod tests {
         let paths = packaged_runtime_paths(Path::new(r"C:\Program Files\xiaoyin"));
         assert_eq!(
             paths.node,
-            PathBuf::from(r"C:\Program Files\xiaoyin")
-                .join("resources/harness-runtime/node/node.exe")
+            PathBuf::from(r"C:\Program Files\xiaoyin").join(if cfg!(target_os = "windows") {
+                "resources/harness-runtime/node/node.exe"
+            } else {
+                "resources/harness-runtime/node/node"
+            })
         );
         assert_eq!(
             paths.entry,
@@ -1411,7 +1580,15 @@ mod tests {
         assert_eq!(approval.approval_id, "approval-1");
         assert_eq!(approval.tool_name, "bash");
         assert_eq!(approval.reason, "运行命令 \nls");
-        assert!(approval_message(&approval).contains("仅本次允许"));
+    }
+
+    #[test]
+    fn approval_broker_scopes_decisions_to_the_owning_task() {
+        let broker = ApprovalBroker::default();
+        let receiver = broker.register("task-1", "approval-1").unwrap();
+        assert!(broker.respond("task-2", "approval-1", "allow").is_err());
+        assert!(broker.respond("task-1", "approval-1", "allow").unwrap());
+        assert_eq!(receiver.recv().unwrap(), "allow");
     }
 
     #[test]

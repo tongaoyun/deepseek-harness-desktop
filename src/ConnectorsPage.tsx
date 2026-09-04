@@ -1,4 +1,22 @@
-import { Check, CircleAlert, KeyRound, PlugZap, Plus, RefreshCw, X } from 'lucide-react'
+import {
+  Blocks,
+  CalendarDays,
+  Check,
+  CircleAlert,
+  Code2,
+  Database,
+  FileStack,
+  KeyRound,
+  MapPinned,
+  MessageSquareText,
+  Palette,
+  PlugZap,
+  Plus,
+  RefreshCw,
+  Workflow,
+  X,
+  type LucideIcon,
+} from 'lucide-react'
 import { type FormEvent, useMemo, useState } from 'react'
 import { connectorCategories } from './extensionCategories'
 import { applyConnectorSecrets, missingConnectorSecretKeys, type ConnectorSecretStore, type ConnectorSecretValues } from './connectorSecrets'
@@ -87,19 +105,23 @@ export function ConnectorsPage({ catalog, runtime, loading, catalogError, syncEr
     {!loading && catalog.length > 0 && visibleCatalog.length === 0 && <div className="kit-empty">没有匹配的连接器</div>}
     {catalogError && <div className="kit-error">{catalogError}</div>}
     {syncError && <div className="kit-error">{syncError}</div>}
-    <div className="connector-category-list">{groupedCatalog.map((category) => <section className="connector-category-section" key={category.id}>
-      <h2>{category.label}</h2><div className="kit-grid">{category.connectors.map((connector) => {
+    <div className="connector-category-list">{groupedCatalog.map((category) => {
+      const presentation = categoryPresentation(category.id)
+      const CategoryIcon = presentation.icon
+      return <section className={`connector-category-section ${presentation.theme}`} key={category.id}>
+      <h2><span><CategoryIcon size={14} /></span>{category.label}<small>{category.connectors.length}</small></h2><div className="kit-grid">{category.connectors.map((connector) => {
         const enabled = runtime.find((item) => item.id === connector.id)?.enabled === true
         const canEnable = connector.status === 'ready'
         const missingSecrets = missingConnectorSecretKeys(connector, secrets[connector.id])
         const hasSecretRequirements = Object.keys(connector.environment ?? {}).length + Object.keys(connector.headers ?? {}).length > 0
         const diagnostic = diagnostics[connector.id]
-        return <article className="connector-market-card" key={connector.id}>
-          <span className="market-card-icon"><PlugZap size={18} /></span><div><h3>{connector.name}</h3><p>{connectorSummary(connector)}</p><div className="connector-card-controls">{hasSecretRequirements && <button className="connector-inline-config" onClick={() => openSecretConfiguration(connector)} type="button"><KeyRound size={12} />{missingSecrets.length > 0 ? '需要本机配置' : '修改本机配置'}</button>}{enabled && connector.transport !== 'desktop' && <button className="connector-inline-config" disabled={testingId === connector.id} onClick={() => void diagnose(connector.id)} type="button"><RefreshCw className={testingId === connector.id ? 'spin' : ''} size={12} />测试连接</button>}</div>{diagnostic && <small className={`connector-health ${diagnostic.status}`}>{diagnostic.status === 'ready' ? <Check size={11} /> : <CircleAlert size={11} />}{diagnostic.status === 'ready' ? `连接正常 · ${diagnostic.latencyMs} ms · ${diagnostic.discoveredTools.length} 个工具` : diagnostic.error || '连接器工具与配置不一致'}</small>}</div>
+        return <article className={`connector-market-card ${presentation.theme}${enabled ? ' enabled' : ''}`} key={connector.id}>
+          <span className="market-card-icon"><CategoryIcon size={20} /></span><div><h3>{connector.name}</h3><p>{connectorSummary(connector)}</p><div className="connector-card-controls">{hasSecretRequirements && <button className="connector-inline-config" onClick={() => openSecretConfiguration(connector)} type="button"><KeyRound size={12} />{missingSecrets.length > 0 ? '需要本机配置' : '修改本机配置'}</button>}{enabled && connector.transport !== 'desktop' && <button className="connector-inline-config" disabled={testingId === connector.id} onClick={() => void diagnose(connector.id)} type="button"><RefreshCw className={testingId === connector.id ? 'spin' : ''} size={12} />测试连接</button>}</div>{diagnostic && <small className={`connector-health ${diagnostic.status}`}>{diagnostic.status === 'ready' ? <Check size={11} /> : <CircleAlert size={11} />}{diagnostic.status === 'ready' ? `连接正常 · ${diagnostic.latencyMs} ms · ${diagnostic.discoveredTools.length} 个工具` : diagnostic.error || '连接器工具与配置不一致'}</small>}</div>
           <button aria-label={enabled ? '已启用' : canEnable ? '启用连接器' : '暂不可用'} className={`connector-add ${enabled ? 'installed' : ''}`} disabled={!canEnable} onClick={() => { if (!enabled && missingSecrets.length > 0) openSecretConfiguration(connector, true); else onToggle(connector.id, !enabled) }} type="button">{enabled ? <Check size={19} /> : <Plus size={22} />}<span className="sr-only">{enabled ? '已为我启用' : canEnable ? '为我启用' : '当前不可启用'}</span></button>
         </article>
       })}</div>
-    </section>)}</div>
+    </section>
+    })}</div>
     {configuring && <div className="expert-modal-backdrop" onMouseDown={() => setConfiguring(undefined)} role="presentation"><section aria-modal="true" className="expert-kit-modal connector-secret-modal" onMouseDown={(event) => event.stopPropagation()} role="dialog">
       <button aria-label="关闭" className="expert-modal-close" onClick={() => setConfiguring(undefined)} type="button"><X size={16} /></button>
       <header><span><KeyRound size={20} /></span><div><h2>配置 {configuring.name}</h2><p>值只保存在当前员工的这台设备，不会上传到控制中心或 Nacos。</p></div></header>
@@ -112,6 +134,21 @@ export function ConnectorsPage({ catalog, runtime, loading, catalogError, syncEr
       </form>
     </section></div>}
   </>
+}
+
+function categoryPresentation(category: string): { icon: LucideIcon; theme: string } {
+  return ({
+    'recommended-system': { icon: Blocks, theme: 'theme-green' },
+    'communication-collaboration': { icon: MessageSquareText, theme: 'theme-blue' },
+    'project-management': { icon: Workflow, theme: 'theme-orange' },
+    'knowledge-documents': { icon: FileStack, theme: 'theme-cyan' },
+    'developer-tools': { icon: Code2, theme: 'theme-violet' },
+    'design-creative': { icon: Palette, theme: 'theme-pink' },
+    'schedule-productivity': { icon: CalendarDays, theme: 'theme-amber' },
+    'maps-travel': { icon: MapPinned, theme: 'theme-sky' },
+    'industry-data': { icon: Database, theme: 'theme-indigo' },
+    other: { icon: PlugZap, theme: 'theme-slate' },
+  } as Record<string, { icon: LucideIcon; theme: string }>)[category] ?? { icon: PlugZap, theme: 'theme-slate' }
 }
 
 function connectorSummary(connector: ConnectorCatalogEntry): string {

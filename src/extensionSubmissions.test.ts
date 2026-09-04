@@ -63,14 +63,14 @@ describe('personal connector drafts', () => {
     expect(loadPersonalConnectors('employee-2')[0].version).toBe('2.0.0')
   })
 
-  it('moves personal connector values out of draft metadata', () => {
+  it('never persists personal connector values in draft metadata', () => {
     savePersonalConnector('employee-1', {
       ...connector('first', '1.0.0'), headers: { Authorization: 'local-secret' },
     })
 
     expect(loadPersonalConnectors('employee-1')[0].headers).toEqual({ Authorization: '' })
     expect(values.get('xiaoyin.personal-connectors.employee-1')).not.toContain('local-secret')
-    expect(values.get('xiaoyin.connector-secrets.employee-1')).toContain('local-secret')
+    expect([...values.values()].join('')).not.toContain('local-secret')
   })
 })
 

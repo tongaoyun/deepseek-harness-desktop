@@ -98,6 +98,13 @@ describe('mergeExpertKits', () => {
     })
   })
 
+  it('never exposes the removed cross-border operations kit, including stale local installs', () => {
+    const removedCatalog = { ...catalogEntry, id: 'crossborder-operations', name: '跨境电商运营专家' }
+    const removedInstalled = { ...installed, manifest: { ...installed.manifest, id: 'crossborder-operations', name: '跨境电商运营专家' } }
+
+    expect(mergeExpertKits([removedCatalog], [removedInstalled], [erpConnector])).toEqual([])
+  })
+
   it('reports unavailable connectors and tools missing from referenced connectors', () => {
     const partial = mergeExpertKits([
       { ...catalogEntry, connectorRefs: ['erp-mcp', 'desktop-office'], requiredTools: ['sales_summary', 'office.xlsx.create'] },

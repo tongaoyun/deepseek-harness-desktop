@@ -11,6 +11,8 @@ import {
   uploadKnowledgeDocument,
 } from './api'
 import type { KnowledgeBaseEntry, KnowledgeDocumentEntry, KnowledgeSearchHit } from './types'
+import { useDesktopDialog } from './DesktopDialog'
+import { XiaoyinMascot } from './XiaoyinMascot'
 
 interface KnowledgeBasePageProps {
   endpoint: string
@@ -20,6 +22,7 @@ interface KnowledgeBasePageProps {
 }
 
 export function KnowledgeBasePage({ endpoint, employeeId, teamId, accessToken }: KnowledgeBasePageProps) {
+  const { confirm, dialog } = useDesktopDialog()
   const [bases, setBases] = useState<KnowledgeBaseEntry[]>([])
   const [selectedId, setSelectedId] = useState('')
   const [documents, setDocuments] = useState<KnowledgeDocumentEntry[]>([])
@@ -81,7 +84,12 @@ export function KnowledgeBasePage({ endpoint, employeeId, teamId, accessToken }:
   }
 
   const removeBase = async () => {
-    if (!selected || busy || !window.confirm(`删除知识库“${selected.name}”及其中全部文档？`)) return
+    if (!selected || busy || !await confirm({
+      title: `删除知识库“${selected.name}”？`,
+      message: '其中的全部文档和索引都会一并删除。',
+      confirmLabel: '删除',
+      danger: true,
+    })) return
     setBusy(true); setError('')
     try {
       await deleteKnowledgeBase(endpoint, employeeId, teamId, accessToken, selected.id)
@@ -110,7 +118,12 @@ export function KnowledgeBasePage({ endpoint, employeeId, teamId, accessToken }:
   }
 
   const removeDocument = async (document: KnowledgeDocumentEntry) => {
-    if (busy || !window.confirm(`删除文档“${document.filename}”？`)) return
+    if (busy || !await confirm({
+      title: `删除文档“${document.filename}”？`,
+      message: '删除后需要重新上传才能恢复。',
+      confirmLabel: '删除',
+      danger: true,
+    })) return
     setBusy(true); setError('')
     try {
       await deleteKnowledgeDocument(endpoint, employeeId, teamId, accessToken, document.knowledgeBaseId, document.id)
@@ -135,7 +148,12 @@ export function KnowledgeBasePage({ endpoint, employeeId, teamId, accessToken }:
     catch (reason) { setError(message(reason)) } finally { setBusy(false) }
   }
 
-  return <div className="knowledge-page">
+  return <>
+    <section className="knowledge-hero">
+      <div><strong>让公司资料真正用起来</strong><p>上传文档后即可检索，也能让小胤在回答中引用原文。</p></div>
+      <div className="knowledge-hero-art"><span><BookOpenCheck size={18} /></span><XiaoyinMascot size={82} variant="skill" /></div>
+    </section>
+    <div className="knowledge-page">
     <aside className="knowledge-sidebar">
       <form onSubmit={create}>
         <strong><Plus size={14} />新建知识库</strong>
@@ -155,7 +173,7 @@ export function KnowledgeBasePage({ endpoint, employeeId, teamId, accessToken }:
       </div>
     </aside>
     <section className="knowledge-main">
-      {!selected ? <div className="knowledge-welcome"><BookOpenCheck size={30} /><h2>企业知识库</h2><p>上传公司资料，让小胤在回答时引用可追溯的原文。</p></div> : <>
+      {!selected ? <div className="knowledge-welcome"><XiaoyinMascot size={92} variant="skill" /><h2>创建第一个知识库</h2><p>把公司资料交给小胤，搜索和引用都有原文依据。</p></div> : <>
         <header><div><h2>{selected.name}</h2><p>{selected.description || '集中管理该主题的公司资料。'}</p></div><div>
           <input accept=".pdf,.docx,.xlsx,.txt,.md,.markdown" multiple onChange={(event) => void upload([...(event.target.files ?? [])])} ref={fileInput} type="file" />
           <button disabled={busy} onClick={() => fileInput.current?.click()} type="button"><Upload size={14} />上传文档</button>
@@ -173,7 +191,9 @@ export function KnowledgeBasePage({ endpoint, employeeId, teamId, accessToken }:
       </>}
       {error && <div className="kit-error">{error}</div>}
     </section>
-  </div>
+    {dialog}
+    </div>
+  </>
 }
 
 function statusLabel(status: KnowledgeDocumentEntry['status']): string {

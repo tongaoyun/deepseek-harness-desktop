@@ -9,21 +9,26 @@ import type { TaskTimelineEntry } from './types'
 interface Props {
   entries: TaskTimelineEntry[]
   finalResponse?: string
+  onApprovalDecision?: (approvalId: string, decision: 'allow' | 'reject') => void
 }
 
-export function ExecutionTimeline({ entries, finalResponse = '' }: Props) {
+export function ExecutionTimeline({ entries, finalResponse = '', onApprovalDecision }: Props) {
   const visible = withoutDuplicatedFinal(entries, finalResponse)
   if (visible.length === 0) return null
   return <div aria-label="执行过程" className="execution-timeline">
-    {visible.map((entry) => entry.kind === 'assistant'
-      ? <div className="timeline-commentary message-markdown" key={entry.id}>
+    {visible.map((entry, index) => entry.kind === 'assistant'
+      ? <div className="timeline-commentary message-markdown" key={entry.id} style={{ animationDelay: `${Math.min(index * 22, 132)}ms` }}>
         <ReactMarkdown remarkPlugins={[remarkGfm]}>{entry.text ?? ''}</ReactMarkdown>
       </div>
-      : <ActivityEntry entry={entry} key={entry.id} />)}
+      : <ActivityEntry entry={entry} index={index} key={entry.id} onApprovalDecision={onApprovalDecision} />)}
   </div>
 }
 
-function ActivityEntry({ entry }: { entry: TaskTimelineEntry }) {
+function ActivityEntry({ entry, index, onApprovalDecision }: {
+  entry: TaskTimelineEntry
+  index: number
+  onApprovalDecision?: (approvalId: string, decision: 'allow' | 'reject') => void
+}) {
   const expandable = Boolean(entry.text || entry.detail || entry.output || entry.path || entry.secondaryPath || entry.toolName)
   const summary = <>
     <ActivityIcon entry={entry} />
@@ -35,8 +40,9 @@ function ActivityEntry({ entry }: { entry: TaskTimelineEntry }) {
     </span>
     {expandable && <ChevronRight className="timeline-chevron" size={14} />}
   </>
-  if (!expandable) return <div className={`timeline-tool timeline-tool-row timeline-${entry.kind} ${entry.status}`}>{summary}</div>
-  return <details className={`timeline-tool timeline-${entry.kind} ${entry.status}`} open={entry.status === 'running'}>
+  const style = { animationDelay: `${Math.min(index * 22, 132)}ms` }
+  if (!expandable) return <div className={`timeline-tool timeline-tool-row timeline-${entry.kind} ${entry.status}`} style={style}>{summary}</div>
+  return <details className={`timeline-tool timeline-${entry.kind} ${entry.status}`} open={entry.status === 'running'} style={style}>
     <summary>{summary}</summary>
     <div className="timeline-details">
       {entry.kind === 'command' && entry.text && <code className="timeline-command">{entry.text}</code>}
@@ -45,6 +51,10 @@ function ActivityEntry({ entry }: { entry: TaskTimelineEntry }) {
       {entry.secondaryPath && <code className="timeline-path">→ {entry.secondaryPath}</code>}
       {entry.output && <pre className="timeline-output">{entry.output}</pre>}
       {!entry.detail && !entry.path && !entry.secondaryPath && entry.kind !== 'command' && entry.toolName && <code className="timeline-tool-name">{entry.toolName}</code>}
+      {entry.kind === 'approval' && entry.status === 'running' && entry.approvalId && onApprovalDecision && <div className="timeline-approval-actions">
+        <button className="reject" onClick={() => onApprovalDecision(entry.approvalId!, 'reject')} type="button">拒绝</button>
+        <button onClick={() => onApprovalDecision(entry.approvalId!, 'allow')} type="button">允许本次操作</button>
+      </div>}
     </div>
   </details>
 }

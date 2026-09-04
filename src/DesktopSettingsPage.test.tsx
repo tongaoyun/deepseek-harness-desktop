@@ -18,7 +18,7 @@ describe('desktop settings navigation', () => {
     expect(html).toContain('个人资料')
     expect(html).toContain('快捷键')
     expect(html).toContain('记忆')
-    expect(html).toContain('更新应用')
+    expect(html).not.toContain('更新应用')
     expect(html).not.toContain('应用快照')
     expect(html).not.toContain('系统设置')
     expect(html).not.toContain('设备能力')

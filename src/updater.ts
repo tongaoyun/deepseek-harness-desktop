@@ -24,6 +24,15 @@ const initialState: DesktopUpdaterState = {
   downloadedBytes: 0,
 }
 
+export function isWindowsDesktop(): boolean {
+  if (!isTauri() || typeof navigator === 'undefined') return false
+  return isWindowsPlatform(navigator.userAgent, navigator.platform)
+}
+
+export function isWindowsPlatform(userAgent: string, platform: string): boolean {
+  return /Windows|Win32|Win64/iu.test(`${userAgent} ${platform}`)
+}
+
 export function isUnsupportedUpdaterPlatformError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error)
   return message.includes('None of the fallback platforms')
@@ -71,7 +80,7 @@ export function useDesktopUpdater() {
   const checkingRef = useRef(false)
 
   const checkForUpdates = useCallback(async (silent = false) => {
-    if (!isTauri() || checkingRef.current) return
+    if (!isWindowsDesktop() || checkingRef.current) return
     checkingRef.current = true
     if (!silent) setState((current) => ({ ...current, phase: 'checking', error: undefined }))
     try {
@@ -130,7 +139,7 @@ export function useDesktopUpdater() {
   }, [state.phase])
 
   useEffect(() => {
-    if (!isTauri()) return
+    if (!isWindowsDesktop()) return
     const timer = window.setTimeout(() => void checkForUpdates(true), 2_000)
     const interval = window.setInterval(() => void checkForUpdates(true), 6 * 60 * 60_000)
     const visible = () => { if (document.visibilityState === 'visible') void checkForUpdates(true) }

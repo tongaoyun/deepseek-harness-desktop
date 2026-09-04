@@ -5,10 +5,13 @@ import type {
   ExpertKitDownload,
   InstalledExpertKit,
   ExpertKitManifest,
+  InstalledExtensionInventory,
   KnowledgeBaseEntry,
 } from './types'
 
 export type ExpertKitInstallState = 'available' | 'installed' | 'update' | 'retired'
+
+const REMOVED_EXPERT_KIT_IDS = new Set(['crossborder-operations'])
 
 export interface ExpertKitView extends ExpertKitCatalogEntry {
   installState: ExpertKitInstallState
@@ -45,8 +48,12 @@ export const desktopToolNames = new Set([
 ])
 
 export async function listInstalledExtensions(): Promise<InstalledExpertKit[]> {
-  if (!isTauri()) return []
-  return invoke<InstalledExpertKit[]>('list_installed_expert_kits')
+  return (await inspectInstalledExtensions()).installed
+}
+
+export async function inspectInstalledExtensions(): Promise<InstalledExtensionInventory> {
+  if (!isTauri()) return { installed: [], issues: [] }
+  return invoke<InstalledExtensionInventory>('list_installed_expert_kits')
 }
 
 export async function installExtension(download: ExpertKitDownload, kind: 'expert-kit' | 'skill'): Promise<InstalledExpertKit> {
@@ -117,6 +124,11 @@ export async function removeCatalogExtension(id: string, kind: 'expert-kit' | 's
   await invoke('remove_catalog_extension', { id, kind })
 }
 
+export async function removeBrokenExtension(coordinate: string): Promise<void> {
+  if (!isTauri()) throw new Error('请在小胤桌面客户端中清理损坏扩展')
+  await invoke('remove_broken_extension', { coordinate })
+}
+
 export function mergeExpertKits(
   catalog: ExpertKitCatalogEntry[],
   installed: InstalledExpertKit[],
@@ -127,6 +139,7 @@ export function mergeExpertKits(
   const newestInstalled = new Map<string, InstalledExpertKit>()
   for (const kit of installed) {
     if (kit.manifest.kind === 'skill') continue
+    if (REMOVED_EXPERT_KIT_IDS.has(kit.manifest.id)) continue
     if (!newestInstalled.has(kit.manifest.id)) newestInstalled.set(kit.manifest.id, kit)
   }
 
@@ -158,7 +171,8 @@ export function mergeExpertKits(
     }
   }
 
-  const views = catalog.map((kit): ExpertKitView => {
+  const activeCatalog = catalog.filter((kit) => !REMOVED_EXPERT_KIT_IDS.has(kit.id))
+  const views = activeCatalog.map((kit): ExpertKitView => {
     const local = installed.find((value) => value.manifest.kind === 'expert-kit'
       && value.manifest.id === kit.id && value.manifest.version === kit.version)
       ?? newestInstalled.get(kit.id)
@@ -179,7 +193,7 @@ export function mergeExpertKits(
         : local ? 'update' : 'available',
     }
   })
-  const catalogIds = new Set(catalog.map((kit) => kit.id))
+  const catalogIds = new Set(activeCatalog.map((kit) => kit.id))
   for (const local of newestInstalled.values()) {
     if (catalogIds.has(local.manifest.id)) continue
     views.push({

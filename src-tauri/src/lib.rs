@@ -5,6 +5,7 @@ use tauri::{
     tray::TrayIconBuilder,
 };
 
+mod connector_secrets;
 mod device_identity;
 mod erp_auth;
 mod expert_kits;
@@ -83,6 +84,10 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             device_identity::inspect_device_identity,
+            connector_secrets::load_connector_secrets,
+            connector_secrets::save_connector_secret,
+            connector_secrets::delete_connector_secret,
+            connector_secrets::migrate_connector_secrets,
             runtime_info,
             erp_auth::erp_session,
             erp_auth::clear_erp_session,
@@ -100,7 +105,10 @@ pub fn run() {
             expert_kits::remove_developer_expert_kit,
             expert_kits::remove_developer_extension,
             expert_kits::remove_catalog_extension,
-            local_artifacts::open_local_artifact,
+            expert_kits::remove_broken_extension,
+            local_artifacts::read_local_artifact_preview,
+            local_artifacts::read_harness_image_preview,
+            local_artifacts::reveal_local_artifact,
             local_files::authorize_local_directory,
             local_files::authorize_local_files,
             local_files::authorize_standard_local_directories,
@@ -118,6 +126,7 @@ pub fn run() {
             harness::probe_harness_host,
             harness::self_test_local_capabilities,
             harness::cancel_harness,
+            harness::respond_harness_approval,
             harness::shutdown_harness,
             im::configure_local_dingtalk,
             im::start_local_im,

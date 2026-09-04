@@ -11,6 +11,7 @@ import type {
   TaskFileChange,
   TaskMonitorState,
   TaskTimelineEntry,
+  TaskVisualArtifact,
 } from './types'
 import type { StandardLocalDirectory } from './localFileIntent'
 
@@ -65,23 +66,40 @@ export type HarnessFailureCategory = 'timeout' | 'authentication' | 'capacity' |
 
 export interface HarnessFailure {
   category: HarnessFailureCategory
+  code: string
   title: string
   message: string
   infrastructure: boolean
+  retryable: boolean
 }
 
 export function classifyHarnessFailure(reason: unknown): HarnessFailure {
   const message = reason instanceof Error ? reason.message : String(reason)
-  if (/任务执行超过|timed?\s*out|timeout/iu.test(message)) return { category: 'timeout', title: '任务运行超时', message, infrastructure: false }
-  if (/401|unauthorized|认证失败|invalid.*key/iu.test(message)) return { category: 'authentication', title: '模型认证失败', message, infrastructure: false }
-  if (/429|rate.?limit|服务繁忙|capacity|overloaded/iu.test(message)) return { category: 'capacity', title: '模型服务繁忙', message, infrastructure: false }
-  if (/permission|denied|权限|未授权|approval.*reject/iu.test(message)) return { category: 'permission', title: '操作未获授权', message, infrastructure: false }
-  if (/MCP|connector|连接器|tool.*(unavailable|not found)|unknown tool/iu.test(message)) return { category: 'connector', title: '连接器调用失败', message, infrastructure: false }
+  if (/任务执行超过|timed?\s*out|timeout/iu.test(message)) return failure('timeout', 'XY-TIMEOUT', '任务运行超时', message, false, false)
+  if (/401|unauthorized|认证失败|invalid.*key/iu.test(message)) return failure('authentication', 'XY-AUTH', '模型认证失败', message, false, false)
+  if (/429|rate.?limit|服务繁忙|capacity|overloaded/iu.test(message)) return failure('capacity', 'XY-CAPACITY', '模型服务繁忙', message, false, true)
+  if (/permission|denied|权限|未授权|approval.*reject/iu.test(message)) return failure('permission', 'XY-PERMISSION', '操作未获授权', message, false, false)
+  if (/MCP|connector|连接器|tool.*(unavailable|not found)|unknown tool/iu.test(message)) return failure('connector', 'XY-CONNECTOR', '连接器调用失败', message, false, false)
   if (/Harness Host|ECONNRESET|ECONNREFUSED|broken pipe|socket hang up|进程.*退出|connection.*closed/iu.test(message)) {
-    return { category: 'local-agent', title: '本地 Agent 异常', message, infrastructure: true }
+    return failure('local-agent', 'XY-LOCAL-AGENT', '本地 Agent 异常', message, true, true)
   }
-  if (/模型|provider|assistant|turn/iu.test(message)) return { category: 'model', title: '模型未能完成任务', message, infrastructure: false }
-  return { category: 'unknown', title: '任务执行失败', message, infrastructure: false }
+  if (/模型|provider|assistant|turn/iu.test(message)) return failure('model', 'XY-MODEL', '模型未能完成任务', message, false, true)
+  return failure('unknown', 'XY-UNKNOWN', '任务执行失败', message, false, false)
+}
+
+export function shouldRetryHarnessFailure(failure: HarnessFailure, monitor: TaskMonitorState): boolean {
+  return failure.retryable && !monitor.steps.some((step) => step.kind === 'tool' || step.kind === 'approval')
+}
+
+function failure(
+  category: HarnessFailureCategory,
+  code: string,
+  title: string,
+  message: string,
+  infrastructure: boolean,
+  retryable: boolean,
+): HarnessFailure {
+  return { category, code, title, message, infrastructure, retryable }
 }
 
 export interface HarnessNotification {
@@ -171,6 +189,15 @@ export async function cancelHarness(taskId: string): Promise<boolean> {
   return invoke<boolean>('cancel_harness', { taskId })
 }
 
+export async function respondHarnessApproval(
+  taskId: string,
+  approvalId: string,
+  decision: 'allow' | 'reject',
+): Promise<boolean> {
+  if (!isTauri()) return false
+  return invoke<boolean>('respond_harness_approval', { taskId, approvalId, decision })
+}
+
 export async function authorizeDroppedPaths(paths: string[]): Promise<DroppedPathAuthorization> {
   if (!isTauri() || paths.length === 0) return { directories: [], attachments: [] }
   return invoke<DroppedPathAuthorization>('authorize_dropped_paths', { paths })
@@ -209,11 +236,8 @@ export interface HarnessResponseUpdate {
 export function harnessResponseUpdate(notification: HarnessNotification): HarnessResponseUpdate | undefined {
   const parsed = parseHarnessEvent(notification)
   if (!parsed || !parsed.isRootSession) return undefined
-  const turn = integer(parsed.data.turn)
-  const step = integer(parsed.data.step)
   if (parsed.type === 'tool/call') return { key: '', mode: 'clear', text: '' }
-  if (turn === undefined || step === undefined) return undefined
-  const key = `assistant:${turn}:${step}`
+  const key = 'assistant:visible-response'
   if (parsed.type === 'text-chunks') {
     const delta = Array.isArray(parsed.data.texts)
       ? parsed.data.texts.filter((value): value is string => typeof value === 'string').join('')
@@ -240,11 +264,11 @@ export function applyHarnessNotification(
     updatedAt: eventTime(parsed.event),
   }
   const occurredAt = eventTime(parsed.event)
-  const turn = integer(parsed.data.turn)
-  const step = integer(parsed.data.step)
+  const turn = integer(parsed.data.turn) ?? 0
+  const step = integer(parsed.data.step) ?? 0
   const activity = harnessActivityLabel(notification)
 
-  if (parsed.type === 'step/start' && turn !== undefined && step !== undefined) {
+  if (parsed.type === 'step/start') {
     return updateMonitor(current, activity, upsertStep(current.steps, {
       id: `analysis:${turn}:${step}`,
       kind: 'analysis',
@@ -254,7 +278,7 @@ export function applyHarnessNotification(
     }), occurredAt)
   }
 
-  if (parsed.type === 'text-chunks' && turn !== undefined && step !== undefined) {
+  if (parsed.type === 'text-chunks') {
     const delta = Array.isArray(parsed.data.texts)
       ? parsed.data.texts.filter((value): value is string => typeof value === 'string').join('')
       : ''
@@ -265,7 +289,7 @@ export function applyHarnessNotification(
     }
   }
 
-  if (parsed.type === 'assistant/message' && turn !== undefined && step !== undefined) {
+  if (parsed.type === 'assistant/message') {
     const message = assistantMessageText(parsed.data)
     const next = updateMonitor(current, activity,
       completeStep(current.steps, `analysis:${turn}:${step}`, 'completed', occurredAt), occurredAt)
@@ -286,9 +310,7 @@ export function applyHarnessNotification(
     const callId = text(parsed.data.callId)
     const toolName = text(parsed.data.name)
     if (!callId || !toolName) return current
-    const analysisCompleted = turn === undefined || step === undefined
-      ? current.steps
-      : completeStep(current.steps, `analysis:${turn}:${step}`, 'completed', occurredAt)
+    const analysisCompleted = completeStep(current.steps, `analysis:${turn}:${step}`, 'completed', occurredAt)
     const presentation = toolPresentation(toolName, parsed.data.arguments)
     const subagents = toolName === 'subagent'
       ? upsertSubagent(current.subagents ?? [], {
@@ -328,6 +350,12 @@ export function applyHarnessNotification(
     const artifacts = artifact
       ? [...current.artifacts.filter((item) => item.id !== artifact.id), artifact].slice(-50)
       : current.artifacts
+    const visual = !result.failed && toolName
+      ? visualFromToolResult(toolName, result.content, occurredAt)
+      : undefined
+    const visuals = visual
+      ? [...(current.visuals ?? []).filter((item) => item.id !== visual.id), visual].slice(-20)
+      : current.visuals
     const change = !result.failed && toolName
       ? fileChangeFromToolResult(toolName, result.content, occurredAt)
       : undefined
@@ -343,6 +371,7 @@ export function applyHarnessNotification(
         current.timeline ?? [], `tool:${result.callId}`, result.failed ? 'failed' : 'completed', occurredAt, presentation,
       ),
       artifacts,
+      ...(visuals === undefined ? {} : { visuals }),
       ...(changes === undefined ? {} : { changes }),
       ...(subagents === undefined ? {} : { subagents }),
     }
@@ -363,6 +392,32 @@ export function applyHarnessNotification(
         ...(detail ? { detail } : {}),
         occurredAt,
         completedAt: occurredAt,
+      }),
+    }
+  }
+
+  if (parsed.type === 'approval/request') {
+    const approvalId = text(parsed.data.approvalId)
+    const toolName = text(parsed.data.name)
+    if (!approvalId || !toolName) return current
+    return {
+      ...updateMonitor(current, `等待确认：${toolActivityLabel(toolName)}`, upsertStep(current.steps, {
+        id: `approval:${approvalId}`,
+        kind: 'approval',
+        label: `确认${toolActivityLabel(toolName)}`,
+        status: 'running',
+        toolName,
+        startedAt: occurredAt,
+      }), occurredAt),
+      timeline: upsertTimeline(current.timeline ?? [], {
+        id: `approval:${approvalId}`,
+        kind: 'approval',
+        label: `需要确认：${toolActivityLabel(toolName)}`,
+        status: 'running',
+        toolName,
+        approvalId,
+        ...(bounded(text(parsed.data.reason), 2_000) ? { detail: bounded(text(parsed.data.reason), 2_000) } : {}),
+        occurredAt,
       }),
     }
   }
@@ -389,12 +444,14 @@ export function applyHarnessNotification(
         label: `${allowed ? '已允许' : '已拒绝'}${toolActivityLabel(toolName)}`,
         status: allowed ? 'completed' : 'failed',
         toolName,
+        approvalId,
         occurredAt,
+        completedAt: occurredAt,
       }),
     }
   }
 
-  if (parsed.type === 'turn/end' && turn !== undefined) {
+  if (parsed.type === 'turn/end') {
     const reason = text(asRecord(parsed.data.reason)?.kind)
     const status = reason === 'completed' ? 'completed' : 'failed'
     const settled = current.steps.map((item): TaskExecutionStep => item.status === 'running'
@@ -482,11 +539,11 @@ const ARTIFACT_TOOLS = new Set([
   'office.docx.create', 'office.xlsx.create', 'office.pdf.create',
   'office_docx_create', 'office_xlsx_create', 'office_xlsx_update_cells', 'office_xlsx_append_rows',
   'office_xlsx_add_sheet', 'office_pptx_create', 'office_pdf_create',
-  'local_files_write_text', 'local_files_copy', 'local_files_move',
 ])
 
 const FILE_CHANGE_TOOLS = new Set([
   ...ARTIFACT_TOOLS,
+  'local_files_write_text', 'local_files_copy', 'local_files_move',
   'local_files_delete',
 ])
 
@@ -511,6 +568,7 @@ function fileChangeFromToolResult(toolName: string, content: unknown, changedAt:
     sourceTool: toolName,
     action: fileChangeAction(toolName, value),
     ...(text(value.source) ? { previousPath: text(value.source) } : {}),
+    ...(text(value.backupPath) ? { backupPath: text(value.backupPath) } : {}),
     ...(addedLines === undefined ? {} : { addedLines }),
     ...(deletedLines === undefined ? {} : { deletedLines }),
     changedAt,
@@ -528,18 +586,22 @@ function fileChangeAction(toolName: string, value: Record<string, unknown>): Tas
 function upsertFileChange(current: TaskFileChange[], next: TaskFileChange): TaskFileChange[] {
   const index = current.findIndex((item) => item.id === next.id)
   if (index < 0) return [...current, next].slice(-100)
-  return current.map((item, itemIndex) => itemIndex !== index ? item : {
-    ...item,
-    ...next,
-    addedLines: addOptionalCounts(item.addedLines, next.addedLines),
-    deletedLines: addOptionalCounts(item.deletedLines, next.deletedLines),
+  return current.map((item, itemIndex): TaskFileChange => {
+    if (itemIndex !== index) return item
+    // Review the whole turn from the first baseline to the final file. Summing
+    // intermediate edits can never reliably describe that final diff.
+    const action: TaskFileChange['action'] = next.action === 'deleted'
+      ? 'deleted'
+      : item.action === 'created' ? 'created' : next.action
+    return {
+      ...item,
+      ...next,
+      action,
+      backupPath: item.backupPath ?? next.backupPath,
+      addedLines: undefined,
+      deletedLines: undefined,
+    }
   }).slice(-100)
-}
-
-function addOptionalCounts(left: number | undefined, right: number | undefined): number | undefined {
-  if (left === undefined) return right
-  if (right === undefined) return left
-  return left + right
 }
 
 function artifactFromToolResult(toolName: string, content: unknown, createdAt: string): TaskArtifact | undefined {
@@ -586,6 +648,32 @@ function artifactAction(toolName: string, value: Record<string, unknown>): TaskA
   if (toolName === 'local_files_copy') return 'copied'
   if (toolName === 'local_files_move') return 'moved'
   return text(value.backupPath) ? 'updated' : 'created'
+}
+
+function visualFromToolResult(toolName: string, content: unknown, createdAt: string): TaskVisualArtifact | undefined {
+  if (toolName !== 'browser_screenshot' && !toolName.startsWith('computer_use_')) return undefined
+  const blocks = Array.isArray(content) ? content : []
+  for (const value of blocks) {
+    const block = asRecord(value)
+    const attachment = asRecord(block?.attachment)
+    const attachmentId = text(attachment?.attachmentId)
+    const mediaType = text(attachment?.mediaType)
+    const width = nonNegativeInteger(attachment?.width)
+    const height = nonNegativeInteger(attachment?.height)
+    if (block?.type !== 'image' || !attachmentId?.match(/^sha256:[a-f0-9]{64}$/u)
+      || (mediaType !== 'image/png' && mediaType !== 'image/jpeg') || !width || !height) continue
+    return {
+      id: `${toolName}:${attachmentId}`,
+      attachmentId,
+      mediaType,
+      name: text(attachment?.name) ?? (toolName === 'browser_screenshot' ? '网页截图' : '桌面截图'),
+      width,
+      height,
+      sourceTool: toolName,
+      createdAt,
+    }
+  }
+  return undefined
 }
 
 function toolResultValue(content: unknown): Record<string, unknown> | undefined {

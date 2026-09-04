@@ -2,6 +2,9 @@ import { invoke, isTauri } from '@tauri-apps/api/core'
 import type { LocalTaskRun } from './types'
 
 const LIMIT = 200
+const MAX_STORED_MESSAGES = 120
+const MAX_MESSAGE_CHARS = 240_000
+const MAX_STORED_BYTES = 7 * 1024 * 1024
 
 interface LocalTaskPage {
   items: LocalTaskRun[]
@@ -62,11 +65,12 @@ export function recoverInterruptedTasks(tasks: LocalTaskRun[], now = new Date().
 }
 
 export async function persistTaskHistory(employeeId: string, task: LocalTaskRun): Promise<void> {
+  const durable = compactTaskForStorage(task)
   if (!isTauri()) {
-    saveLocalTask(employeeId, task)
+    saveLocalTask(employeeId, durable)
     return
   }
-  await invoke('save_local_task', { employeeId, task })
+  await invoke('save_local_task', { employeeId, task: durable })
 }
 
 export async function removeTaskHistory(employeeId: string, id: string): Promise<void> {
@@ -94,12 +98,35 @@ function validTasks(values: unknown[]): LocalTaskRun[] {
 
 export function saveLocalTask(employeeId: string, task: LocalTaskRun,
                               storage: Storage = window.localStorage): LocalTaskRun[] {
+  task = compactTaskForStorage(task)
   const tasks = loadLocalTasks(employeeId, storage)
   const updated = [task, ...tasks.filter((item) => item.id !== task.id)]
     .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
     .slice(0, LIMIT)
   storage.setItem(storageKey(employeeId), JSON.stringify(updated))
   return updated
+}
+
+export function compactTaskForStorage(task: LocalTaskRun): LocalTaskRun {
+  let messages = task.messages.slice(-MAX_STORED_MESSAGES).map((message, index, values) => ({
+    ...message,
+    text: boundedMessage(message.text),
+    // Old execution traces are the largest repeated part of long conversations.
+    // Keep recent traces and the task-level final monitor; visible answer text is preserved.
+    ...(index < values.length - 30 ? { monitor: undefined } : {}),
+  }))
+  let compacted = { ...task, messages }
+  while (messages.length > 4 && new TextEncoder().encode(JSON.stringify(compacted)).byteLength > MAX_STORED_BYTES) {
+    messages = messages.slice(2)
+    compacted = { ...compacted, messages }
+  }
+  return compacted
+}
+
+function boundedMessage(value: string): string {
+  if (value.length <= MAX_MESSAGE_CHARS) return value
+  const half = Math.floor(MAX_MESSAGE_CHARS / 2)
+  return `${value.slice(0, half)}\n\n……较长内容已折叠……\n\n${value.slice(-half)}`
 }
 
 function storageKey(employeeId: string): string {

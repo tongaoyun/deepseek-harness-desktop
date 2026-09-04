@@ -23,11 +23,11 @@ import {
   applyConnectorSecrets,
   connectorSecretTemplate,
   connectorSecretValues,
-  loadConnectorSecrets,
   type ConnectorSecretValues,
 } from './connectorSecrets'
 import { ExtensionPreviewPanel, type ExtensionPreviewConfig } from './ExtensionPreviewPanel'
 import { diagnoseConnectors } from './harness'
+import { useDesktopDialog } from './DesktopDialog'
 import {
   connectorCategories,
   connectorCategoryLabel,
@@ -57,6 +57,7 @@ interface Props {
   accessToken: string
   skills: SkillView[]
   connectors: ConnectorCatalogEntry[]
+  connectorSecrets: Record<string, ConnectorSecretValues>
   previewConfig?: ExtensionPreviewConfig
   previewUnavailableReason?: string
   onPreviewRunningChange: (running: boolean) => void
@@ -104,9 +105,10 @@ const defaults: AuthoringForm = {
 }
 
 export function ExtensionAuthoringModal({
-  initialKind, initialInstructions = '', employeeId, accessToken, skills, connectors, previewConfig,
+  initialKind, initialInstructions = '', employeeId, accessToken, skills, connectors, connectorSecrets, previewConfig,
   previewUnavailableReason, onPreviewRunningChange, onClose, onChanged,
 }: Props) {
+  const { confirm, dialog } = useDesktopDialog()
   const [kind, setKind] = useState<ExtensionKind>(initialKind)
   const [tab, setTab] = useState<'create' | 'mine'>('create')
   const initialForm = (nextKind: ExtensionKind): AuthoringForm => nextKind === initialKind
@@ -193,7 +195,7 @@ export function ExtensionAuthoringModal({
   }
 
   const fillConnector = (connector: ConnectorCatalogEntry, mode: 'edit' | 'copy' | 'upgrade') => {
-    const configured = applyConnectorSecrets(connector, loadConnectorSecrets(employeeId)[connector.id])
+    const configured = applyConnectorSecrets(connector, connectorSecrets[connector.id])
     const version = mode === 'upgrade' ? bumpVersion(connector.version ?? '1.0.0') : mode === 'copy' ? '1.0.0' : connector.version ?? '1.0.0'
     setKind('connector')
     setForm({
@@ -328,7 +330,12 @@ export function ExtensionAuthoringModal({
   }
 
   const removeLocal = async (local: LocalCreation) => {
-    if (!window.confirm(`删除本机扩展“${local.name}” v${local.version}？已发布的企业版本不受影响。`)) return
+    if (!await confirm({
+      title: `删除本机扩展“${local.name}”？`,
+      message: `将删除本机 v${local.version} 草稿，已发布的企业版本不受影响。`,
+      confirmLabel: '删除',
+      danger: true,
+    })) return
     setBusy(true)
     setError('')
     try {
@@ -483,6 +490,7 @@ export function ExtensionAuthoringModal({
         <footer><button disabled={busy || testing || previewRunning} type="submit">{busy ? '正在保存…' : editing ? '更新本机草稿' : '保存到本机'}</button><button className="primary" disabled={busy || testing || previewRunning || !currentDraftSaved || (kind === 'connector' ? !savedConnector : !created)} onClick={() => void publish()} type="button"><Send size={14} />提交审核</button></footer>
       </form>}
     </section>
+    {dialog}
   </div>
 }
 

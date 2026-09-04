@@ -1,10 +1,13 @@
 import { ArrowDown, BookOpen, Bot, Boxes, Check, ChevronDown, CirclePlus, CircleStop, FileImage, FilePlus2, FileText, FolderOpen, Send, Sparkles, SquareCheckBig, X } from 'lucide-react'
-import { lazy, Suspense, useEffect, useRef, useState, type FormEvent, type RefObject, type UIEvent } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type RefObject, type UIEvent } from 'react'
 import type { AuthorizedLocalDirectory } from './harness'
 import { FileChangesCard } from './FileChangesCard'
 import { InlineTaskActivity } from './InlineTaskActivity'
+import { LocalFilePreviewPanel } from './LocalFilePreviewPanel'
+import type { LocalArtifactTarget } from './localArtifactPreview'
 import { modelDisplayName } from './modelSelection'
 import { TaskArtifacts } from './TaskArtifacts'
+import { TaskVisuals } from './TaskVisuals'
 import type { CapabilitySnapshot, KnowledgeBaseEntry, LocalTaskAttachment, RuntimeStatus, TaskMessage, TaskMonitorState } from './types'
 import { XiaoyinMascot } from './XiaoyinMascot'
 
@@ -46,6 +49,7 @@ interface Props {
   onToggleModelMenu: () => void
   onSelectModel: (model: string) => void
   onCancel: () => void
+  onApprovalDecision?: (approvalId: string, decision: 'allow' | 'reject') => void
   onAddKnowledge: (reference: string) => void
   onRemoveKnowledge: (reference: string) => void
   onRemoveLocalDirectory: (id: string) => void
@@ -59,11 +63,27 @@ export function ChatPage(props: Props) {
   const currentTaskRunning = props.currentTaskRunning ?? props.harnessRunning
   const [capabilityMenuOpen, setCapabilityMenuOpen] = useState(false)
   const [contextMenuOpen, setContextMenuOpen] = useState(false)
+  const [previewTargets, setPreviewTargets] = useState<LocalArtifactTarget[]>([])
+  const [previewKey, setPreviewKey] = useState('')
   const pinnedToBottom = useRef(true)
   const previousMessageCount = useRef(props.messages.length)
   const capabilityPickerRef = useRef<HTMLDivElement>(null)
   const contextPickerRef = useRef<HTMLDivElement>(null)
   const lastMessage = props.messages.at(-1)
+  const previewTarget = previewTargets.find((target) => artifactKey(target) === previewKey) ?? previewTargets.at(-1)
+  const openPreview = useCallback((target: LocalArtifactTarget) => {
+    const key = artifactKey(target)
+    setPreviewTargets((current) => current.some((item) => artifactKey(item) === key) ? current : [...current, target].slice(-8))
+    setPreviewKey(key)
+  }, [])
+  const closePreview = useCallback(() => {
+    if (!previewTarget) return
+    setPreviewTargets((current) => {
+      const next = current.filter((item) => artifactKey(item) !== artifactKey(previewTarget))
+      setPreviewKey(next.at(-1) ? artifactKey(next.at(-1)!) : '')
+      return next
+    })
+  }, [previewTarget])
 
   const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
     const list = props.messageListRef.current
@@ -98,13 +118,31 @@ export function ChatPage(props: Props) {
     return () => document.removeEventListener('pointerdown', dismiss)
   }, [])
 
-  return <section className={props.messages.length > 0 ? 'chat-page conversation' : 'chat-page'}>
+  useEffect(() => {
+    const closeMenus = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      setCapabilityMenuOpen(false)
+      setContextMenuOpen(false)
+    }
+    document.addEventListener('keydown', closeMenus)
+    return () => document.removeEventListener('keydown', closeMenus)
+  }, [])
+
+  useEffect(() => {
+    if (props.messages.length === 0) {
+      setPreviewTargets([])
+      setPreviewKey('')
+    }
+  }, [props.messages.length])
+
+  return <div className={`chat-workspace${previewTarget ? ' preview-open' : ''}`}><section className={props.messages.length > 0 ? 'chat-page conversation' : 'chat-page'}>
     {props.messages.length === 0 && <div className="hero-copy">
       <XiaoyinMascot size={62} variant="hero" />
       <h1>不止聊天，搞定一切</h1>
       <p>本地运行、自主规划、安全可控的 AI 工作搭子</p>
     </div>}
-    {props.messages.length > 0 && <div aria-live="polite" className="message-list" onScroll={trackScroll} ref={props.messageListRef}>{props.messages.map((message, index) => {
+    <span aria-live="polite" className="sr-only">{props.taskMonitor.activity}</span>
+    {props.messages.length > 0 && <div aria-label="任务对话" className="message-list" onScroll={trackScroll} ref={props.messageListRef} role="log">{props.messages.map((message, index) => {
       const monitor = message.monitor ?? (message.role === 'assistant' && index === props.messages.length - 1 ? props.taskMonitor : undefined)
       if (message.role === 'user') return <article className="conversation-turn user-turn" key={`${message.role}-${index}`}>
         <div className="user-prompt">
@@ -113,11 +151,14 @@ export function ChatPage(props: Props) {
         </div>
       </article>
       const timelineOwnsStreamingText = message.pending && (monitor?.timeline?.some((entry) => entry.kind === 'assistant') ?? false)
+      const artifactIds = new Set((monitor?.artifacts ?? []).map((artifact) => artifact.id))
+      const reviewChanges = (monitor?.changes ?? []).filter((change) => !artifactIds.has(change.id))
       return <article aria-busy={message.pending} className={`conversation-turn assistant-turn${message.pending ? ' pending' : ''}`} key={`${message.role}-${index}`}>
-        {monitor && <InlineTaskActivity finalResponse={message.text} monitor={monitor} />}
+        {monitor && <InlineTaskActivity finalResponse={message.text} monitor={monitor} onApprovalDecision={props.onApprovalDecision} />}
         {(!timelineOwnsStreamingText && (!message.pending || message.text)) && <div className={message.pending ? 'streaming-response' : undefined}><Suspense fallback={<p>{message.text}</p>}><RichMessage assistant={!message.pending} onRegenerate={!message.pending && index === props.messages.length - 1 ? props.onPrepareRetry : undefined} text={message.text} /></Suspense></div>}
-        {!message.pending && monitor && (monitor.changes?.length ?? 0) > 0 && <FileChangesCard changes={monitor.changes ?? []} />}
-        {!message.pending && monitor && monitor.artifacts.length > 0 && <TaskArtifacts artifacts={monitor.artifacts} conversation />}
+        {!message.pending && reviewChanges.length > 0 && <FileChangesCard changes={reviewChanges} onOpen={openPreview} />}
+        {!message.pending && monitor && monitor.artifacts.length > 0 && <TaskArtifacts artifacts={monitor.artifacts} conversation onOpen={openPreview} />}
+        {!message.pending && monitor && (monitor.visuals?.length ?? 0) > 0 && <TaskVisuals visuals={monitor.visuals ?? []} />}
         {!message.pending && monitor?.status === 'completed' && index === props.messages.length - 1 && props.creationKind && props.onContinueCreation && <div className="creation-handoff">
           <span><Sparkles size={16} /><span><strong>继续完成创建</strong><small>把当前方案带入创作表单，确认后保存到本机。</small></span></span>
           <button onClick={() => props.onContinueCreation?.(message.text)} type="button">保存为{props.creationKind === 'expert-kit' ? '专家套件' : '技能'}</button>
@@ -132,24 +173,24 @@ export function ChatPage(props: Props) {
       <textarea aria-label="给小胤发送消息" onChange={(event) => props.onPrompt(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); event.currentTarget.form?.requestSubmit() } }} placeholder="描述你想完成的任务" ref={props.composerRef} value={props.prompt} />
       <div className="composer-actions">
         <div className="context-picker" ref={contextPickerRef}>
-          <button aria-expanded={contextMenuOpen} aria-label="添加上下文" className="workspace-button context-add-button" disabled={props.harnessRunning} onClick={() => { setContextMenuOpen((value) => !value); setCapabilityMenuOpen(false) }} title="添加文件、文件夹或知识库" type="button"><CirclePlus size={19} /></button>
-          {contextMenuOpen && <div className="composer-popover context-menu">
+          <button aria-expanded={contextMenuOpen} aria-haspopup="menu" aria-label="添加上下文" className="workspace-button context-add-button" disabled={props.harnessRunning} onClick={() => { setContextMenuOpen((value) => !value); setCapabilityMenuOpen(false) }} title="添加文件、文件夹或知识库" type="button"><CirclePlus size={19} /></button>
+          {contextMenuOpen && <div className="composer-popover context-menu" onKeyDown={navigateMenu} role="menu">
             <small>添加上下文</small>
-            <button onClick={() => { setContextMenuOpen(false); props.onAddLocalFiles() }} type="button"><FilePlus2 size={16} /><span><strong>文件</strong><small>添加图片、文档或其他任务资料</small></span></button>
-            <button onClick={() => { setContextMenuOpen(false); props.onAddLocalDirectory() }} type="button"><FolderOpen size={16} /><span><strong>文件夹</strong><small>允许小胤在该目录中读取和修改文件</small></span></button>
+            <button onClick={() => { setContextMenuOpen(false); props.onAddLocalFiles() }} role="menuitem" type="button"><FilePlus2 size={16} /><span><strong>文件</strong><small>添加图片、文档或其他任务资料</small></span></button>
+            <button onClick={() => { setContextMenuOpen(false); props.onAddLocalDirectory() }} role="menuitem" type="button"><FolderOpen size={16} /><span><strong>文件夹</strong><small>允许小胤在该目录中读取和修改文件</small></span></button>
             {props.knowledgeBases.filter((item) => !props.selectedKnowledgeBaseRefs.includes(item.reference)).length > 0 && <>
               <small>知识库</small>
-              {props.knowledgeBases.filter((item) => !props.selectedKnowledgeBaseRefs.includes(item.reference)).slice(0, 6).map((item) => <button key={item.reference} onClick={() => { props.onAddKnowledge(item.reference); setContextMenuOpen(false) }} type="button"><BookOpen size={16} /><span><strong>{item.name}</strong><small>{item.description || knowledgeScopeLabel(item.scope)}</small></span></button>)}
+              {props.knowledgeBases.filter((item) => !props.selectedKnowledgeBaseRefs.includes(item.reference)).slice(0, 6).map((item) => <button key={item.reference} onClick={() => { props.onAddKnowledge(item.reference); setContextMenuOpen(false) }} role="menuitem" type="button"><BookOpen size={16} /><span><strong>{item.name}</strong><small>{item.description || knowledgeScopeLabel(item.scope)}</small></span></button>)}
             </>}
           </div>}
         </div>
         <div className="capability-picker" ref={capabilityPickerRef}>
-          <button aria-expanded={capabilityMenuOpen} className={`mode-button${props.selectedCapabilityId ? ' selected' : ''}`} disabled={currentTaskRunning} onClick={() => { setCapabilityMenuOpen((value) => !value); setContextMenuOpen(false) }} title="按需使用专家套件" type="button"><Sparkles size={14} /> {props.selectedCapabilityName} <ChevronDown size={13} /></button>
-          {capabilityMenuOpen && <div className="composer-popover capability-menu">
+          <button aria-expanded={capabilityMenuOpen} aria-haspopup="menu" className={`mode-button${props.selectedCapabilityId ? ' selected' : ''}`} disabled={currentTaskRunning} onClick={() => { setCapabilityMenuOpen((value) => !value); setContextMenuOpen(false) }} title="按需使用专家套件" type="button"><Sparkles size={14} /> {props.selectedCapabilityName} <ChevronDown size={13} /></button>
+          {capabilityMenuOpen && <div className="composer-popover capability-menu" onKeyDown={navigateMenu} role="menu">
             <small>专家套件（可选）</small>
-            <button className={!props.selectedCapabilityId ? 'active' : ''} onClick={() => { props.onSelectCapability(''); setCapabilityMenuOpen(false) }} type="button"><Sparkles size={16} /><span><strong>不使用专家套件</strong><small>小胤仍会按任务自动调用技能、工具和连接器</small></span>{!props.selectedCapabilityId && <Check size={15} />}</button>
-            {props.capabilityOptions.map((option) => <button className={props.selectedCapabilityId === option.id ? 'active' : ''} key={option.id} onClick={() => { props.onSelectCapability(option.id); setCapabilityMenuOpen(false) }} type="button"><Sparkles size={16} /><span><strong>{option.name}</strong><small>{option.summary}</small></span>{props.selectedCapabilityId === option.id && <Check size={15} />}</button>)}
-            {props.capabilityOptions.length === 0 && <button onClick={() => { setCapabilityMenuOpen(false); props.onBrowseExpertKits() }} type="button"><Boxes size={16} /><span><strong>安装专家套件</strong><small>前往企业市场选择适合的工作方式</small></span></button>}
+            <button className={!props.selectedCapabilityId ? 'active' : ''} onClick={() => { props.onSelectCapability(''); setCapabilityMenuOpen(false) }} role="menuitemradio" aria-checked={!props.selectedCapabilityId} type="button"><Sparkles size={16} /><span><strong>不使用专家套件</strong><small>小胤仍会按任务自动调用技能、工具和连接器</small></span>{!props.selectedCapabilityId && <Check size={15} />}</button>
+            {props.capabilityOptions.map((option) => <button aria-checked={props.selectedCapabilityId === option.id} className={props.selectedCapabilityId === option.id ? 'active' : ''} key={option.id} onClick={() => { props.onSelectCapability(option.id); setCapabilityMenuOpen(false) }} role="menuitemradio" type="button"><Sparkles size={16} /><span><strong>{option.name}</strong><small>{option.summary}</small></span>{props.selectedCapabilityId === option.id && <Check size={15} />}</button>)}
+            {props.capabilityOptions.length === 0 && <button onClick={() => { setCapabilityMenuOpen(false); props.onBrowseExpertKits() }} role="menuitem" type="button"><Boxes size={16} /><span><strong>安装专家套件</strong><small>前往企业市场选择适合的工作方式</small></span></button>}
           </div>}
         </div>
         <div className="model-picker" ref={props.modelPickerRef}>
@@ -169,7 +210,19 @@ export function ChatPage(props: Props) {
         {props.pendingAttachments.length > 0 && <AttachmentList attachments={props.pendingAttachments} onRemove={props.onRemoveAttachment} />}
       </div>
     </div>
-  </section>
+  </section>{previewTarget && <LocalFilePreviewPanel onClose={closePreview} onSelect={(target) => setPreviewKey(artifactKey(target))} tabs={previewTargets} target={previewTarget} />}</div>
+}
+
+function artifactKey(target: LocalArtifactTarget): string { return `${target.rootId}:${target.path}` }
+
+function navigateMenu(event: ReactKeyboardEvent<HTMLDivElement>) {
+  if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
+  const items = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)'))
+  if (items.length === 0) return
+  event.preventDefault()
+  const current = items.indexOf(document.activeElement as HTMLButtonElement)
+  const index = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : event.key === 'ArrowDown' ? (current + 1) % items.length : (current <= 0 ? items.length : current) - 1
+  items[index]?.focus()
 }
 
 function AttachmentList({ attachments, onRemove }: { attachments: LocalTaskAttachment[]; onRemove?: (id: string) => void }) {

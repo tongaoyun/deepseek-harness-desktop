@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { HarnessNotification } from '@deepseek-ai/dsh-sdk-client'
-import { applyMemoryContext, runSessionTurn } from './runtime.js'
+import { applyMemoryContext, runSessionTurn, visibleTextChunks } from './runtime.js'
 
 describe('local cross-session memory', () => {
   it('adds employee guidance without replacing the current task', () => {
@@ -34,7 +34,8 @@ describe('persisted session follow-ups', () => {
     const result = await runSessionTurn(fakeClient(notifications), 'session-1', [{ type: 'text', text: '解释下冒泡' }], (value) => observed.push(value))
 
     expect(result.finalResponse).toBe('冒泡排序会重复比较相邻元素。')
-    expect(observed).toHaveLength(5)
+    expect(observed).toHaveLength(6)
+    expect(observed.some((item) => item.params.event?.type === 'text-chunks')).toBe(true)
   })
 
   it('finishes on turn/end even when the runtime does not emit a trailing idle status', async () => {
@@ -108,6 +109,32 @@ describe('persisted session follow-ups', () => {
 
     expect(result.finalResponse).toBe('主 Agent 汇总结果')
     expect(observed.some((item) => item.params.sessionId === 'child-1')).toBe(true)
+  })
+})
+
+describe('visible response streaming', () => {
+  it('keeps short provider chunks intact and splits large responses without losing text', () => {
+    expect(visibleTextChunks('简短回复')).toEqual(['简短回复'])
+    const response = '这是一个较长的模型回复，用于验证供应商只返回完整消息时，小胤仍然能够以稳定的增量展示内容，而不是等待结束后一次性全部显示。'.repeat(3)
+    const chunks = visibleTextChunks(response)
+    expect(chunks.length).toBeGreaterThan(1)
+    expect(chunks.join('')).toBe(response)
+    expect(chunks.every((chunk) => Array.from(chunk).length >= 1)).toBe(true)
+  })
+
+  it('smooths ordinary short answers instead of dumping one provider event', async () => {
+    const answer = '冒泡排序会反复比较相邻元素，并在顺序错误时交换它们，直到整个序列有序。'
+    const notifications: HarnessNotification[] = [
+      event('agent/inbox/spliced', { inserted: [{ id: 'message-2' }] }),
+      event('turn/start', { turn: 2 }),
+      event('assistant/message', { message: { content: [{ type: 'text', text: answer }] } }),
+      event('turn/end', { turn: 2, reason: { kind: 'completed' } }),
+    ]
+    const observed: HarnessNotification[] = []
+
+    await runSessionTurn(fakeClient(notifications), 'session-1', [{ type: 'text', text: '冒泡排序是什么' }], (value) => observed.push(value))
+
+    expect(observed.filter((item) => item.params.event?.type === 'text-chunks').length).toBeGreaterThan(1)
   })
 })
 

@@ -2,6 +2,7 @@ import { ChevronUp, LogOut, Settings } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { DesktopUpdater } from './DesktopUpdater'
 import { FeedbackButton } from './FeedbackButton'
+import { isWindowsDesktop } from './updater'
 
 interface AccountMenuProps {
   companyName?: string
@@ -16,6 +17,7 @@ export function AccountMenu({ companyName, department, displayName, onFeedback, 
   const [menuOpen, setMenuOpen] = useState(false)
   const [updateAvailable, setUpdateAvailable] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
+  const windowsDesktop = isWindowsDesktop()
 
   useEffect(() => {
     if (!menuOpen) return
@@ -38,8 +40,8 @@ export function AccountMenu({ companyName, department, displayName, onFeedback, 
       <section aria-label="账户菜单" className="account-menu" hidden={!menuOpen}>
         <header><span>{displayName?.slice(0, 1) ?? '员'}</span><div><strong>{displayName ?? '企业员工'}</strong><small>{department || '跨境运营'} · {companyName || '企业内部版'}</small></div></header>
         <div className="account-menu-items">
-          <button onClick={() => { setMenuOpen(false); onSettings() }} type="button"><Settings size={16} /><span><strong>桌面设置</strong><small>个人资料、记忆、快捷键与更新</small></span></button>
-          <DesktopUpdater onAvailabilityChange={setUpdateAvailable} variant="menu" />
+          <button onClick={() => { setMenuOpen(false); onSettings() }} type="button"><Settings size={16} /><span><strong>桌面设置</strong><small>{windowsDesktop ? '个人资料、记忆、快捷键与更新' : '个人资料、记忆与快捷键'}</small></span></button>
+          {windowsDesktop && <DesktopUpdater onAvailabilityChange={setUpdateAvailable} variant="menu" />}
           <FeedbackButton onFeedback={onFeedback} />
         </div>
         <button className="account-logout" onClick={() => void onLogout()} type="button"><LogOut size={16} />退出登录</button>

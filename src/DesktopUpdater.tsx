@@ -1,7 +1,7 @@
 import { isTauri } from '@tauri-apps/api/core'
 import { DownloadCloud, RefreshCw, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { useDesktopUpdater } from './updater'
+import { isWindowsDesktop, useDesktopUpdater } from './updater'
 
 interface DesktopUpdaterProps {
   onAvailabilityChange?: (available: boolean) => void
@@ -29,7 +29,7 @@ export function DesktopUpdater({ onAvailabilityChange, variant = 'toolbar' }: De
     return () => document.removeEventListener('keydown', escape)
   }, [dialogOpen, state.phase])
 
-  if (!isTauri()) return null
+  if (!isTauri() || !isWindowsDesktop()) return null
 
   const busy = state.phase === 'checking' || state.phase === 'downloading' || state.phase === 'installing'
   const buttonLabel = state.phase === 'available'

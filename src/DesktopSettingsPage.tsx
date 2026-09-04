@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { DesktopUpdater } from './DesktopUpdater'
 import { MemoryPage } from './MemoryPage'
 import type { MemoryProfile } from './memory'
+import { isWindowsDesktop } from './updater'
 
 interface DesktopSettingsPageProps {
   accessToken: string
@@ -28,6 +29,8 @@ export function DesktopSettingsPage({
   onMemorySaved,
 }: DesktopSettingsPageProps) {
   const [section, setSection] = useState<SettingsSection>('profile')
+  const windowsDesktop = isWindowsDesktop()
+  const visibleSection = section === 'updates' && !windowsDesktop ? 'profile' : section
 
   return <div className="desktop-settings">
     <aside className="settings-navigation" aria-label="桌面设置">
@@ -41,21 +44,21 @@ export function DesktopSettingsPage({
       <button className={section === 'memory' ? 'active' : ''} onClick={() => setSection('memory')} type="button">
         <BrainCircuit size={17} /><span><strong>记忆</strong><small>协作风格与工作手册</small></span>
       </button>
-      <button className={section === 'updates' ? 'active' : ''} onClick={() => setSection('updates')} type="button">
+      {windowsDesktop && <button className={visibleSection === 'updates' ? 'active' : ''} onClick={() => setSection('updates')} type="button">
         <RefreshCw size={17} /><span><strong>更新应用</strong><small>检查桌面端新版本</small></span>
-      </button>
+      </button>}
     </aside>
     <section className="settings-content">
-      {section === 'profile'
+      {visibleSection === 'profile'
         ? <section className="profile-settings settings-panel"><header><span><UserRound size={18} /></span><div><h2>个人资料</h2><p>当前登录的企业账号信息。</p></div></header><dl><div><dt>姓名</dt><dd>{displayName}</dd></div><div><dt>员工账号</dt><dd>{employeeId}</dd></div><div><dt>部门</dt><dd>{department || '未设置'}</dd></div><div><dt>岗位</dt><dd>{position || '未设置'}</dd></div><div><dt>企业</dt><dd>{companyName}</dd></div></dl></section>
-        : section === 'memory'
+        : visibleSection === 'memory'
         ? <MemoryPage
             accessToken={accessToken}
             employeeId={employeeId}
             endpoint={memoryEndpoint}
             onSaved={onMemorySaved}
           />
-        : section === 'shortcuts'
+        : visibleSection === 'shortcuts'
             ? <section className="shortcut-settings settings-panel"><header><span><Keyboard size={18} /></span><div><h2>键盘快捷键</h2><p>以下快捷键在小胤任意页面可用。</p></div></header><dl><div><dt>搜索最近任务</dt><dd><kbd>Ctrl</kbd><span>+</span><kbd>K</kbd><small>macOS 使用 ⌘ K</small></dd></div><div><dt>发送消息</dt><dd><kbd>Enter</kbd><small>Shift + Enter 换行</small></dd></div><div><dt>关闭菜单或弹窗</dt><dd><kbd>Esc</kbd></dd></div><div><dt>拖入本地文件</dt><dd><span>直接拖到对话</span><small>自动授权文件所在目录</small></dd></div></dl></section>
             : <section className="update-settings settings-panel"><header><span><RefreshCw size={18} /></span><div><h2>更新应用</h2><p>检查并安装小胤桌面端的新版本。</p></div></header><div><DesktopUpdater /></div></section>}
     </section>

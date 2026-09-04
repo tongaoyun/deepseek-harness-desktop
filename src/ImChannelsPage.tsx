@@ -15,14 +15,18 @@ import { XiaoyinMascot } from './XiaoyinMascot'
 import type { LocalTaskRun } from './types'
 import { applyHarnessNotification, createTaskMonitor } from './harness'
 import { InlineTaskActivity } from './InlineTaskActivity'
+import { useDesktopDialog } from './DesktopDialog'
 
 interface Props extends LocalImHarnessContext { localTasks: LocalTaskRun[] }
+
+const STATUS_REFRESH_INTERVAL_MS = 10_000
 
 const providers = [
   { id: 'DINGTALK', name: '钉钉', summary: '通过钉钉机器人接收并回复用户消息', tone: 'dingtalk' },
 ]
 
 export function ImChannelsPage(harness: Props) {
+  const { confirm, dialog } = useDesktopDialog()
   const [status, setStatus] = useState<LocalImStatus>()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -54,8 +58,15 @@ export function ImChannelsPage(harness: Props) {
 
   useEffect(() => {
     void refresh()
-    const timer = window.setInterval(() => void refresh(), 3_000)
-    return () => window.clearInterval(timer)
+    const refreshWhenVisible = () => {
+      if (!document.hidden) void refresh()
+    }
+    const timer = window.setInterval(refreshWhenVisible, STATUS_REFRESH_INTERVAL_MS)
+    document.addEventListener('visibilitychange', refreshWhenVisible)
+    return () => {
+      window.clearInterval(timer)
+      document.removeEventListener('visibilitychange', refreshWhenVisible)
+    }
   }, [refresh])
 
   useEffect(() => {
@@ -114,7 +125,12 @@ export function ImChannelsPage(harness: Props) {
   }
 
   const remove = async () => {
-    if (!window.confirm('移除钉钉频道配置？本机保存的 Client Secret 和配对记录将一并删除。')) return
+    if (!await confirm({
+      title: '移除钉钉频道配置？',
+      message: '本机保存的 Client Secret 和配对记录将一并删除。',
+      confirmLabel: '移除',
+      danger: true,
+    })) return
     setLoading(true)
     try {
       setStatus(await removeLocalDingTalk())
@@ -240,6 +256,7 @@ export function ImChannelsPage(harness: Props) {
         <InlineTaskActivity finalResponse={conversation.lastMessage} monitor={monitor} />
       </section></div>
     })()}
+    {dialog}
   </div>
 }
 

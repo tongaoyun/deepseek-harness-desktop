@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { loadLocalTasks, recoverInterruptedTasks, saveLocalTask } from './taskHistory'
+import { compactTaskForStorage, loadLocalTasks, recoverInterruptedTasks, saveLocalTask } from './taskHistory'
 import type { LocalTaskRun } from './types'
 
 class MemoryStorage implements Storage {
@@ -84,5 +84,16 @@ describe('task history', () => {
     expect(recovered?.monitor.steps[0]?.status).toBe('failed')
     expect(recovered?.messages.at(-1)?.role).toBe('assistant')
     expect(recovered?.messages.at(-1)?.pending).toBeUndefined()
+  })
+
+  it('bounds long histories without dropping the newest exchange', () => {
+    const task: LocalTaskRun = {
+      id: 'long', source: 'DESKTOP', name: '长任务', status: 'COMPLETED',
+      createdAt: '2026-08-29T01:00:00Z', updatedAt: '2026-08-29T01:01:00Z', monitor,
+      messages: Array.from({ length: 140 }, (_, index) => ({ role: index % 2 ? 'assistant' as const : 'user' as const, text: `消息 ${index}` })),
+    }
+    const compacted = compactTaskForStorage(task)
+    expect(compacted.messages).toHaveLength(120)
+    expect(compacted.messages.at(-1)?.text).toBe('消息 139')
   })
 })

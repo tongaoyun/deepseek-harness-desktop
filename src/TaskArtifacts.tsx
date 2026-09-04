@@ -1,25 +1,29 @@
-import { invoke, isTauri } from '@tauri-apps/api/core'
 import { FileSliders, FileSpreadsheet, FileText, FolderSearch } from 'lucide-react'
 import { useState } from 'react'
+import { revealLocalArtifact, type LocalArtifactTarget } from './localArtifactPreview'
 import type { TaskArtifact } from './types'
 
-export function TaskArtifacts({ artifacts, conversation = false }: { artifacts: TaskArtifact[]; conversation?: boolean }) {
+export function TaskArtifacts({ artifacts, conversation = false, onOpen }: { artifacts: TaskArtifact[]; conversation?: boolean; onOpen?: (target: LocalArtifactTarget) => void }) {
   const [error, setError] = useState('')
   if (artifacts.length === 0) return null
   return <section className={conversation ? 'turn-files' : undefined}>
     {conversation && <header><FileText size={19} /><strong>{artifactSummary(artifacts)}</strong></header>}
-    <div className="monitor-artifacts">{artifacts.map((artifact) => <ArtifactCard artifact={artifact} key={artifact.id} onError={setError} />)}</div>
+    <div className="monitor-artifacts">{artifacts.map((artifact) => <ArtifactCard artifact={artifact} key={artifact.id} onError={setError} onOpen={onOpen} />)}</div>
     {error && <p className="monitor-error">{error}</p>}
   </section>
 }
 
-function ArtifactCard({ artifact, onError }: { artifact: TaskArtifact; onError: (message: string) => void }) {
+function ArtifactCard({ artifact, onError, onOpen }: { artifact: TaskArtifact; onError: (message: string) => void; onOpen?: (target: LocalArtifactTarget) => void }) {
   const Icon = artifact.kind === 'spreadsheet' ? FileSpreadsheet : artifact.kind === 'presentation' ? FileSliders : FileText
-  const open = async (reveal: boolean) => {
+  const action = artifact.action ?? 'created'
+  const target: LocalArtifactTarget = {
+    rootId: artifact.rootId, rootName: artifact.rootName, path: artifact.path, name: artifact.name,
+    ...((action === 'created' || action === 'updated') ? { review: { action, ...(artifact.backupPath ? { backupPath: artifact.backupPath } : {}) } } : {}),
+  }
+  const reveal = async () => {
     onError('')
-    if (!isTauri()) return
     try {
-      await invoke('open_local_artifact', { rootId: artifact.rootId, path: artifact.path, reveal })
+      await revealLocalArtifact(target)
     } catch (reason) {
       onError(reason instanceof Error ? reason.message : String(reason))
     }
@@ -27,8 +31,8 @@ function ArtifactCard({ artifact, onError }: { artifact: TaskArtifact; onError: 
   return <article>
     <span><Icon size={17} /></span>
     <div><strong>{artifact.name}</strong><small>{actionLabel(artifact.action)} · {artifact.rootName} / {artifact.path}</small></div>
-    <button onClick={() => void open(false)} type="button">打开</button>
-    <button aria-label={`在文件夹中显示 ${artifact.name}`} onClick={() => void open(true)} title="在文件夹中显示" type="button"><FolderSearch size={13} /></button>
+    <button disabled={!onOpen} onClick={() => onOpen?.(target)} title="在小胤中打开" type="button">打开</button>
+    <button aria-label={`在文件夹中显示 ${artifact.name}`} onClick={() => void reveal()} title="在文件夹中显示" type="button"><FolderSearch size={13} /></button>
   </article>
 }
 

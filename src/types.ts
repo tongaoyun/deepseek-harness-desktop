@@ -149,6 +149,7 @@ export interface TaskTimelineEntry {
   secondaryPath?: string
   connectorName?: string
   itemCount?: number
+  approvalId?: string
   occurredAt: string
   completedAt?: string
 }
@@ -169,6 +170,17 @@ export interface TaskArtifact {
   createdAt: string
 }
 
+export interface TaskVisualArtifact {
+  id: string
+  attachmentId: string
+  mediaType: 'image/png' | 'image/jpeg'
+  name: string
+  width: number
+  height: number
+  sourceTool: string
+  createdAt: string
+}
+
 export interface TaskFileChange {
   id: string
   rootId: string
@@ -178,6 +190,7 @@ export interface TaskFileChange {
   sourceTool: string
   action: 'created' | 'updated' | 'copied' | 'moved' | 'deleted'
   previousPath?: string
+  backupPath?: string
   addedLines?: number
   deletedLines?: number
   changedAt: string
@@ -194,6 +207,12 @@ export interface TaskMonitorState {
   subagents?: SubagentActivity[]
   changes?: TaskFileChange[]
   artifacts: TaskArtifact[]
+  visuals?: TaskVisualArtifact[]
+  failure?: {
+    code: string
+    category: string
+    detail: string
+  }
 }
 
 export interface LocalTaskRun {
@@ -386,6 +405,16 @@ export interface InstalledExtensionSnapshot {
   id: string
   version: string
   source: 'catalog' | 'developer'
+}
+
+export interface InstalledExtensionIssue {
+  coordinate: string
+  message: string
+}
+
+export interface InstalledExtensionInventory {
+  installed: InstalledExpertKit[]
+  issues: InstalledExtensionIssue[]
 }
 
 export interface DeviceHeartbeatContext {

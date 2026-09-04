@@ -7,6 +7,7 @@ use tauri::Manager;
 
 const DEFAULT_LIMIT: u32 = 100;
 const MAX_LIMIT: u32 = 200;
+const RETAINED_TASK_LIMIT: i64 = 200;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -109,16 +110,35 @@ pub fn save_local_task(
     }
     let payload =
         serde_json::to_string(&task).map_err(|error| format!("无法序列化本地会话：{error}"))?;
-    if payload.len() > 8 * 1024 * 1024 {
-        return Err("单个会话不能超过 8 MB".to_string());
+    if payload.len() > 16 * 1024 * 1024 {
+        return Err("单个会话不能超过 16 MB".to_string());
     }
     with_database(&app, |database| {
+        let account = account_key(&employee_id);
         database.execute(
             "INSERT INTO local_task(employee_key, id, name, status, updated_at, payload) VALUES (?1, ?2, ?3, ?4, ?5, ?6) ON CONFLICT(employee_key, id) DO UPDATE SET name=excluded.name, status=excluded.status, updated_at=excluded.updated_at, payload=excluded.payload",
-            params![account_key(&employee_id), id, name, status, updated_at, payload],
+            params![account, id, name, status, updated_at, payload],
         ).map_err(database_error)?;
+        prune_local_tasks(database, &account)?;
         Ok(())
     })
+}
+
+fn prune_local_tasks(database: &Connection, employee_key: &str) -> Result<(), String> {
+    database
+        .execute(
+            "DELETE FROM local_task
+             WHERE employee_key = ?1
+               AND id NOT IN (
+                 SELECT id FROM local_task
+                 WHERE employee_key = ?1
+                 ORDER BY updated_at DESC, id DESC
+                 LIMIT ?2
+               )",
+            params![employee_key, RETAINED_TASK_LIMIT],
+        )
+        .map_err(database_error)?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -261,5 +281,70 @@ mod tests {
         assert!(validate_employee_id("employee-1").is_ok());
         assert!(validate_employee_id("employee\n1").is_err());
         assert_eq!(escape_like("50%_done\\"), "50\\%\\_done\\\\");
+    }
+
+    #[test]
+    fn pruning_keeps_only_the_newest_tasks_for_one_employee() {
+        let database = Connection::open_in_memory().unwrap();
+        database
+            .execute_batch(
+                "CREATE TABLE local_task (
+                   employee_key TEXT NOT NULL,
+                   id TEXT NOT NULL,
+                   name TEXT NOT NULL,
+                   status TEXT NOT NULL,
+                   updated_at TEXT NOT NULL,
+                   payload TEXT NOT NULL,
+                   PRIMARY KEY(employee_key, id)
+                 );",
+            )
+            .unwrap();
+        for index in 0..205 {
+            database
+                .execute(
+                    "INSERT INTO local_task(employee_key, id, name, status, updated_at, payload)
+                     VALUES (?1, ?2, 'task', 'COMPLETED', ?3, '{}')",
+                    params![
+                        "employee-1",
+                        format!("task-{index:03}"),
+                        format!("2026-09-04T00:{index:03}:00Z")
+                    ],
+                )
+                .unwrap();
+        }
+        database
+            .execute(
+                "INSERT INTO local_task(employee_key, id, name, status, updated_at, payload)
+                 VALUES ('employee-2', 'other-task', 'task', 'COMPLETED', '2026-09-04T00:00:00Z', '{}')",
+                [],
+            )
+            .unwrap();
+
+        prune_local_tasks(&database, "employee-1").unwrap();
+
+        let retained = database
+            .query_row(
+                "SELECT COUNT(*) FROM local_task WHERE employee_key = 'employee-1'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap();
+        let oldest = database
+            .query_row(
+                "SELECT id FROM local_task WHERE employee_key = 'employee-1' ORDER BY updated_at ASC LIMIT 1",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .unwrap();
+        let other_retained = database
+            .query_row(
+                "SELECT COUNT(*) FROM local_task WHERE employee_key = 'employee-2'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap();
+        assert_eq!(retained, RETAINED_TASK_LIMIT);
+        assert_eq!(oldest, "task-005");
+        assert_eq!(other_retained, 1);
     }
 }

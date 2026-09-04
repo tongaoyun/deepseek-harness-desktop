@@ -3,7 +3,7 @@ import { loadConnectors, loadExpertKits, loadKnowledgeBases, loadSkills } from '
 import type { ErpUser } from './auth'
 import { withDesktopBuiltinConnectors } from './connectors'
 import { loadEnterpriseCatalogCache, saveEnterpriseCatalogCache } from './enterpriseCache'
-import { listInstalledExtensions, mergeExpertKits, type ExpertKitView } from './expertKits'
+import { inspectInstalledExtensions, mergeExpertKits, type ExpertKitView } from './expertKits'
 import { loadPersonalConnectors } from './extensionSubmissions'
 import { mergeSkills, type SkillView } from './skills'
 import type {
@@ -19,6 +19,7 @@ export interface ExtensionSyncIssue {
   key: string
   label: string
   message: string
+  removable?: boolean
 }
 
 interface CatalogData {
@@ -115,7 +116,7 @@ export function useEnterpriseCatalog({
         }
         const results = await Promise.allSettled([
           loadExpertKits(bootstrap.endpoints.expertKits, user.userId, accessToken, controller.signal),
-          listInstalledExtensions(),
+          inspectInstalledExtensions(),
           loadSkills(bootstrap.endpoints.skills, user.userId, accessToken, controller.signal),
           loadConnectors(bootstrap.endpoints.connectors, user.userId, accessToken, controller.signal),
           loadKnowledgeBases(bootstrap.endpoints.knowledge, user.userId, user.teamId, accessToken, controller.signal),
@@ -124,7 +125,7 @@ export function useEnterpriseCatalog({
         const [catalogResult, installedResult, skillsResult, connectorsResult, knowledgeResult] = results
         const data = cacheRef.current
         if (catalogResult.status === 'fulfilled') data.catalog = catalogResult.value
-        if (installedResult.status === 'fulfilled') data.installed = installedResult.value
+        if (installedResult.status === 'fulfilled') data.installed = installedResult.value.installed
         if (skillsResult.status === 'fulfilled') data.skills = skillsResult.value
         if (connectorsResult.status === 'fulfilled') {
           const personal = loadPersonalConnectors(user.userId)
@@ -142,9 +143,18 @@ export function useEnterpriseCatalog({
           ['connectors', '连接器目录', connectorsResult],
           ['knowledge', '知识库目录', knowledgeResult],
         ] as const
-        setSyncIssues(sources.flatMap(([key, label, result]) => result.status === 'rejected'
+        const sourceIssues = sources.flatMap(([key, label, result]) => result.status === 'rejected'
           ? [{ key, label, message: result.reason instanceof Error ? result.reason.message : String(result.reason) }]
-          : []))
+          : [])
+        const localIssues = installedResult.status === 'fulfilled'
+          ? installedResult.value.issues.map((issue) => ({
+            key: `local-extension:${issue.coordinate}`,
+            label: issue.coordinate,
+            message: issue.message,
+            removable: removableCoordinate(issue.coordinate),
+          }))
+          : []
+        setSyncIssues([...sourceIssues, ...localIssues])
         setSyncedAt(new Date())
         if ([catalogResult, skillsResult, connectorsResult, knowledgeResult].every((result) => result.status === 'fulfilled')) {
           const savedAt = new Date().toISOString()
@@ -166,10 +176,19 @@ export function useEnterpriseCatalog({
   const refresh = useCallback(() => setRefreshKey((value) => value + 1), [])
 
   const refreshInstalled = useCallback(async () => {
-    const installed = await listInstalledExtensions()
-    cacheRef.current.installed = installed
+    const inventory = await inspectInstalledExtensions()
+    cacheRef.current.installed = inventory.installed
     applyCatalog()
-    return installed
+    setSyncIssues((current) => [
+      ...current.filter((issue) => !issue.key.startsWith('local-extension:')),
+      ...inventory.issues.map((issue) => ({
+        key: `local-extension:${issue.coordinate}`,
+        label: issue.coordinate,
+        message: issue.message,
+        removable: removableCoordinate(issue.coordinate),
+      })),
+    ])
+    return inventory.installed
   }, [applyCatalog])
 
   const replaceConnectors = useCallback((next: ConnectorCatalogEntry[]) => {
@@ -192,4 +211,8 @@ export function useEnterpriseCatalog({
     syncIssues,
     syncedAt,
   }
+}
+
+function removableCoordinate(value: string): boolean {
+  return /^(expert-kit|skill):[a-z][a-z0-9-]{2,63}@\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(value)
 }
