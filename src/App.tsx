@@ -34,6 +34,7 @@ import {
 } from './expertKits'
 import {
   authorizeLocalDirectory,
+  authorizeLocalFiles,
   authorizeDroppedPaths,
   authorizeStandardLocalDirectories,
   applyHarnessNotification,
@@ -69,7 +70,6 @@ import { mergeImStatusIntoTasks } from './imTaskSync'
 import type { LocalTaskRun, TaskExecutionStep, TaskMessage, TaskMonitorState } from './types'
 import { memoryInstruction, rememberInstruction } from './memory'
 import { modelStorageKey, resolveSelectedModel } from './modelSelection'
-import { buildInvocationOptions, filterInvocationOptions, type InvocationOption } from './invocations'
 import { needsLocalDirectoryAuthorization, standardLocalDirectories } from './localFileIntent'
 import { creationPrompt, type XiaoyinCreationKind } from './creationPrompts'
 import { buildRuntimeConnectorCatalog } from './connectors'
@@ -483,16 +483,6 @@ export default function App() {
     setCurrentCapabilitySnapshot(undefined)
     setHarnessSessionId('')
   }
-  const invocationOptions = buildInvocationOptions(currentCapabilitySnapshot
-    ? selectedExpertKit ? [selectedExpertKit] : []
-    : expertKits)
-  const visibleInvocations = filterInvocationOptions(invocationOptions, prompt)
-  const contextQuery = prompt.startsWith('@') && !/\s/.test(prompt.slice(1))
-    ? prompt.slice(1).toLocaleLowerCase('zh-CN') : undefined
-  const visibleKnowledgeContexts = contextQuery === undefined ? [] : knowledgeBases
-    .filter((item) => !selectedKnowledgeBaseRefs.includes(item.reference)
-      && (!contextQuery || `${item.name} ${item.description} ${item.reference}`.toLocaleLowerCase('zh-CN').includes(contextQuery)))
-    .slice(0, 8)
   const activeModel = selectedModel || bootstrap?.models[0] || 'deepseek-v4-flash'
   const activeLocalTasks = localTasks.filter((task) => !task.archivedAt)
   const visibleLocalTasks = taskQuery.trim()
@@ -588,6 +578,19 @@ export default function App() {
         ? current
         : [...current, authorization])
       setHarnessSessionId('')
+    } catch (error) {
+      setLocalFileError(error instanceof Error ? error.message : String(error))
+    }
+  }
+  const addLocalFiles = async () => {
+    setLocalFileError('')
+    try {
+      const { attachments } = await authorizeLocalFiles()
+      setPendingAttachments((current) => [
+        ...current,
+        ...attachments.filter((next) => !current.some((item) => item.id === next.id)),
+      ].slice(0, 16))
+      focusComposer()
     } catch (error) {
       setLocalFileError(error instanceof Error ? error.message : String(error))
     }
@@ -1059,17 +1062,6 @@ export default function App() {
     if (user) window.localStorage.setItem(modelStorageKey(user.userId), model)
   }
 
-  const selectInvocation = (option: InvocationOption) => {
-    if (!currentCapabilitySnapshot) {
-      setSelectedExpertKitId(option.profileId)
-      setSelectedSkillId('')
-      setHarnessSessionId('')
-    }
-    setPrompt(`/${option.id} `)
-    if (!currentCapabilitySnapshot && currentLocalTaskId) void shutdownHarness(currentLocalTaskId)
-    focusComposer()
-  }
-
   const selectChatCapability = (id: string) => {
     const kit = expertKits.find((item) => item.id === id && ['installed', 'update'].includes(item.installState))
     if (kit) {
@@ -1138,7 +1130,6 @@ export default function App() {
             capabilityOptions={expertKits.filter((item) => ['installed', 'update'].includes(item.installState)).map((item) => ({ id: item.id, name: item.name, summary: item.summary }))}
             capabilitySnapshot={currentCapabilitySnapshot}
             composerRef={composerRef}
-            contextQuery={contextQuery}
             currentTaskRunning={currentTaskRunning}
             harnessHealth={harnessHealth}
             harnessHealthDetail={harnessHealthDetail}
@@ -1155,6 +1146,7 @@ export default function App() {
             models={bootstrap?.models ?? []}
             onAddKnowledge={addKnowledgeContext}
             onAddLocalDirectory={() => void addLocalDirectory()}
+            onAddLocalFiles={() => void addLocalFiles()}
             onCancel={() => void cancelCurrentTask()}
             onContinueCreation={(instructions) => {
               if (!creationKind) return
@@ -1169,19 +1161,16 @@ export default function App() {
             onRemoveKnowledge={removeKnowledgeContext}
             onRemoveLocalDirectory={(id) => void removeLocalDirectory(id)}
             onRemoveAttachment={(id) => setPendingAttachments((current) => current.filter((item) => item.id !== id))}
-            onSelectInvocation={selectInvocation}
             onSelectModel={selectModel}
             onSubmit={(event) => void submit(event)}
             onToggleModelMenu={() => setModelMenuOpen((value) => !value)}
             prompt={prompt}
             runtimeStatus={runtimeStatus}
             selectedCapabilityId={selectedExpertKit?.id ?? ''}
-            selectedCapabilityName={selectedExpertKit?.name ?? selectedSkill?.name ?? '通用'}
+            selectedCapabilityName={selectedExpertKit?.name ?? '专家套件'}
             selectedKnowledgeBaseRefs={selectedKnowledgeBaseRefs}
             taskMonitor={taskMonitor}
             taskContextRestoring={taskContextRestoring}
-            visibleInvocations={visibleInvocations}
-            visibleKnowledgeContexts={visibleKnowledgeContexts}
           />
         ) : (
           <section className="capability-page">

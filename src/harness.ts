@@ -132,6 +132,11 @@ export async function authorizeLocalDirectory(): Promise<AuthorizedLocalDirector
   return invoke<AuthorizedLocalDirectory | null>('authorize_local_directory')
 }
 
+export async function authorizeLocalFiles(): Promise<DroppedPathAuthorization> {
+  if (!isTauri()) throw new Error('本地文件只能在小胤桌面客户端中选择')
+  return invoke<DroppedPathAuthorization>('authorize_local_files')
+}
+
 export async function authorizeStandardLocalDirectories(
   directories: StandardLocalDirectory[],
 ): Promise<AuthorizedLocalDirectory[]> {

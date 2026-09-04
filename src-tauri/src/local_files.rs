@@ -86,6 +86,36 @@ pub async fn authorize_local_directory(
 }
 
 #[tauri::command]
+pub async fn authorize_local_files(
+    app: tauri::AppHandle,
+    authorizations: tauri::State<'_, LocalFileAuthorizations>,
+) -> Result<DroppedPathAuthorization, String> {
+    let selected = tauri::async_runtime::spawn_blocking(move || {
+        app.dialog()
+            .file()
+            .set_title("选择要发送给小胤的文件")
+            .blocking_pick_files()
+    })
+    .await
+    .map_err(|error| format!("打开文件选择器失败：{error}"))?;
+    let Some(selected) = selected else {
+        return Ok(DroppedPathAuthorization {
+            directories: Vec::new(),
+            attachments: Vec::new(),
+        });
+    };
+    let paths = selected
+        .into_iter()
+        .map(|value| {
+            value
+                .into_path()
+                .map_err(|error| format!("选择的文件路径无效：{error}"))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    authorize_paths(&authorizations, paths)
+}
+
+#[tauri::command]
 pub fn authorize_standard_local_directories(
     app: tauri::AppHandle,
     authorizations: tauri::State<'_, LocalFileAuthorizations>,
@@ -128,10 +158,19 @@ pub fn authorize_dropped_paths(
     if paths.len() > 32 {
         return Err("单次最多拖入 32 个文件或文件夹".to_string());
     }
+    authorize_paths(
+        &authorizations,
+        paths.into_iter().map(PathBuf::from).collect(),
+    )
+}
+
+fn authorize_paths(
+    authorizations: &LocalFileAuthorizations,
+    paths: Vec<PathBuf>,
+) -> Result<DroppedPathAuthorization, String> {
     let mut directories = Vec::new();
     let mut attachments = Vec::new();
-    for value in paths {
-        let selected = PathBuf::from(value);
+    for selected in paths {
         let is_directory = selected.is_dir();
         let directory = if is_directory {
             selected.clone()
@@ -142,9 +181,10 @@ pub fn authorize_dropped_paths(
                 .ok_or_else(|| "拖入的文件路径无效".to_string())?
         };
         let view = authorizations.authorize(directory)?;
-        if !directories
-            .iter()
-            .any(|item: &AuthorizedDirectoryView| item.id == view.id)
+        if is_directory
+            && !directories
+                .iter()
+                .any(|item: &AuthorizedDirectoryView| item.id == view.id)
         {
             directories.push(view.clone());
         }
@@ -416,6 +456,23 @@ mod tests {
     fn disk_root_cannot_be_authorized() {
         let root = Path::new(std::path::MAIN_SEPARATOR_STR);
         assert!(canonical_directory(root).is_err());
+    }
+
+    #[test]
+    fn selected_files_become_task_attachments() {
+        let directory = temporary_directory();
+        let file = directory.join("requirements.md");
+        std::fs::write(&file, "requirements").unwrap();
+        let authorizations = LocalFileAuthorizations::default();
+
+        let result = authorize_paths(&authorizations, vec![file]).unwrap();
+
+        assert!(result.directories.is_empty());
+        assert_eq!(result.attachments.len(), 1);
+        assert_eq!(result.attachments[0].name, "requirements.md");
+        assert_eq!(result.attachments[0].path, "requirements.md");
+        assert_eq!(result.attachments[0].kind, "file");
+        std::fs::remove_dir_all(directory).unwrap();
     }
 
     fn temporary_directory() -> PathBuf {
