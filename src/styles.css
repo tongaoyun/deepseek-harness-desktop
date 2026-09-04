@@ -44,11 +44,17 @@ button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 2px
 
 .xiaoyin-mascot { --mascot-size: 48px; position: relative; display: inline-grid; flex: none; place-items: center; width: var(--mascot-size); height: var(--mascot-size); isolation: isolate; }
 .xiaoyin-mascot img { display: block; width: 100%; height: 100%; object-fit: contain; pointer-events: none; user-select: none; }
-.xiaoyin-mascot.brand img, .xiaoyin-mascot.hero img { filter: drop-shadow(0 9px 14px #236f3c24); transform-origin: 50% 75%; animation: mascot-float 4.2s ease-in-out infinite; }
+.xiaoyin-mascot.brand img, .xiaoyin-mascot.hero img, .xiaoyin-mascot.expert img, .xiaoyin-mascot.skill img, .xiaoyin-mascot.connector img { filter: drop-shadow(0 9px 14px #236f3c24); transform-origin: 50% 75%; animation: mascot-float 4.2s ease-in-out infinite; }
+.xiaoyin-mascot.expert img { animation-name: mascot-present; }
+.xiaoyin-mascot.skill img { animation-name: mascot-read; }
+.xiaoyin-mascot.connector img { animation-duration: 3.6s; animation-name: mascot-connect; }
 .xiaoyin-mascot.hero { margin-bottom: 7px; }
 .xiaoyin-mascot.hero::before { position: absolute; z-index: -1; width: 80%; height: 64%; border-radius: 50%; background: #dff8e7; content: ""; filter: blur(10px); animation: mascot-aura 4.2s ease-in-out infinite; }
 .xiaoyin-mascot.avatar img { transform: scale(1.08); }
 @keyframes mascot-float { 0%, 100% { transform: translateY(1px) rotate(-.5deg); } 50% { transform: translateY(-4px) rotate(.7deg); } }
+@keyframes mascot-present { 0%, 100% { transform: translateY(1px) rotate(-1deg); } 50% { transform: translateY(-3px) rotate(1.2deg); } }
+@keyframes mascot-read { 0%, 100% { transform: translateY(1px) scale(1); } 50% { transform: translateY(-2px) scale(1.025); } }
+@keyframes mascot-connect { 0%, 44%, 100% { transform: translateY(1px) scale(1); } 55% { transform: translateY(-2px) scale(1.04); } 64% { transform: translateY(0) scale(1.01); } }
 @keyframes mascot-aura { 0%, 100% { opacity: .42; transform: scale(.9); } 50% { opacity: .82; transform: scale(1.06); } }
 
 .app-shell { display: grid; grid-template-columns: 252px 1fr; width: 100vw; height: 100vh; background: #fff; }
