@@ -23,7 +23,8 @@
   name: '@deepseek-ai/dsh-agent-spine-demo'
   config:
     persona: !!js process.env.DSH_SYSTEM_PROMPT ?? '你是公司内部跨境电商办公助手小胤。'
-    workspaceContext: false
+    workspaceContext:
+      maxBytes: 65536
     dshHome: !!js process.env.DSH_HOME
     skills:
       filesystem:
@@ -31,7 +32,16 @@
         customSkillDirs: !!js JSON.parse(process.env.DSH_CUSTOM_SKILL_DIRS ?? '[]')
         watchFollowSymlinks: false
     toolBash: false
-    toolJobs: false
+    jobs:
+      maxConcurrentJobsPerOwner: 4
+    toolJobs:
+      completionDelivery: wakeup
+      maxConsecutiveWakes: 3
+    goals:
+      domain:
+        defaultMaxGoalRounds: 50
+      tool:
+        blockedAfterConsecutiveRounds: 3
 
 - id: user-approval
   name: '@deepseek-ai/dsh-user-approval'
@@ -75,12 +85,13 @@
     enabled: !!js process.env.XIAOYIN_ALLOW_LOCAL_FILES !== 'false'
     requireWriteApproval: !!js process.env.XIAOYIN_APPROVE_LOCAL_FILE_WRITES !== 'false'
 
-- id: local-shell
-  name: '../dist/local-shell-plugin.js'
+- id: native-shell
+  name: '../dist/native-shell-plugin.js'
   config:
-    roots: !!js JSON.parse(process.env.XIAOYIN_LOCAL_FILE_ROOTS ?? '[]')
     enabled: !!js process.env.XIAOYIN_ALLOW_SHELL === 'true'
     requireApproval: !!js process.env.XIAOYIN_APPROVE_SHELL !== 'false'
+    cwd: !!js process.env.DSH_CWD
+    dshHome: !!js process.env.DSH_HOME
 
 - id: local-computer-use
   name: '../dist/local-computer-use-plugin.js'

@@ -73,11 +73,11 @@
 | 领域 | 已实现能力 |
 |---|---|
 | 身份与模型 | ERP 扫码登录、控制中心模型目录、LiteLLM |
-| Agent | 内置 DeepSeek Harness、SQLite 会话、搜索/分页/归档、富文本回复、产物卡片、安全执行时间线、任务取消与失败重试 |
+| Agent | 内置 DeepSeek Harness、SQLite 会话、搜索/分页/归档、富文本回复、产物卡片、任务取消与失败重试；原生 Workspace Context、Jobs 和 Goal |
 | 扩展 | `.xiaoyin-kit/kit.json` 专家套件、根目录 `SKILL.md` 独立 Skill、`/` 命令入口、自动触发、运行时权限治理，以及模板创建、ZIP/tar.gz 导入、定制副本和 ZIP 导出 |
 | 连接器 | 员工级启停、Streamable HTTP/SSE、工具白名单、写权限、实时诊断和仅包含已启用能力的新任务快照 |
 | ERP | `order_get`、`sales_summary`、`inventory_risk` |
-| 本地工具 | 文件、DOCX/XLSX/PPTX/PDF、Shell、Windows Computer Use；浏览器支持持久登录、多标签、滚动/选择、下载和人工接管 |
+| 本地工具 | 文件、DOCX/XLSX/PPTX/PDF、Windows Computer Use；Shell 使用 Harness 原生 Bash/PowerShell Executor、受管进程树、后台 Job 和终端结果卡片；浏览器支持持久登录、多标签、滚动/选择、下载和人工接管 |
 | 知识 | 跨设备记忆、保存确认、本机最多 50 个版本、导入导出、个人/团队/公司知识库和来源引用 |
 | 云端任务 | Temporal 定时任务、常用时间模板、执行预览、失败通知、执行记录和产物下载 |
 | IM | 本地钉钉 Stream、持久队列、重试、开放/配对模式、任务接管、完整消息/步骤/产物同步、附件理解、文件回传、精准任务结果推送和系统托盘驻留 |

@@ -1004,7 +1004,17 @@ pub fn harness_profile(
             .filter(|tool| {
                 !tool.starts_with("office.")
                     && !tool.starts_with("computer_use_")
-                    && tool.as_str() != "local_shell_run"
+                    && !matches!(
+                        tool.as_str(),
+                        "bash"
+                            | "pwsh"
+                            | "job_output"
+                            | "job_list"
+                            | "job_kill"
+                            | "get_goal"
+                            | "create_goal"
+                            | "update_goal"
+                    )
             })
             .cloned()
             .collect::<Vec<_>>()
@@ -1023,7 +1033,7 @@ pub fn harness_profile(
     if knowledge_base_refs.len() > 32 {
         return Err("任务知识库引用不能超过 32 个".to_string());
     }
-    let desktop_agent_guidance = "你正在小胤桌面端中工作，是能实际完成任务的 Agent，不是只能回答问题的聊天机器人。涉及本地目录、文件读写、命令、浏览器或已连接系统时，应先使用当前可用工具行动并根据真实结果回答；不要在尚未尝试工具前声称无法访问。若已有授权工作目录，先调用 local_files_roots 查明目录，再继续读取或操作。仅在缺少继续执行所必需的授权、目标或业务参数时追问。工具过程使用简短自然的进度说明，最终回答聚焦结果、变更和仍需用户处理的事项。";
+    let desktop_agent_guidance = "你正在小胤桌面端中工作，是能实际完成任务的 Agent，不是只能回答问题的聊天机器人。涉及本地目录、文件读写、Shell、浏览器或已连接系统时，应直接使用当前可用工具行动并根据真实结果回答；不要在尚未尝试工具前声称无法访问，也不要让员工为普通文件任务重复选择目录。优先以当前工作目录为起点，必要时再查询其他已授权目录。耗时命令可使用后台 Job，跨多轮复杂工作可使用 Goal 管理进度。仅在缺少继续执行所必需的授权、目标或业务参数时追问。工具过程使用简短自然的进度说明，最终回答聚焦结果、变更和仍需员工处理的事项。";
     let prompt = if let Some(artifact) = selected {
         let commands = load_command_context(artifact)?;
         let profile_label = if artifact.manifest.kind == "skill" {

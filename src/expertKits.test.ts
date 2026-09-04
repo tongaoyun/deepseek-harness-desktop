@@ -125,7 +125,7 @@ describe('mergeExpertKits', () => {
     const result = mergeExpertKits([{
       ...catalogEntry,
       connectorRefs: [],
-      requiredTools: ['local_shell_run', 'computer_use_observe', 'computer_use_click'],
+      requiredTools: ['bash', 'computer_use_observe', 'computer_use_click'],
     }], [])
     expect(result[0]).toMatchObject({ readiness: 'ready', connectorIssues: [] })
   })

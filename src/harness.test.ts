@@ -96,10 +96,10 @@ describe('harnessActivityLabel', () => {
 
   it('records only the approval decision and tool name', () => {
     const monitor = [event('approval/decision', {
-      approvalId: 'approval-1', name: 'local_shell_run', decision: 'reject', reason: 'sensitive command',
+      approvalId: 'approval-1', name: 'bash', decision: 'reject', reason: 'sensitive command',
     }, 1)].reduce(applyHarnessNotification, createTaskMonitor())
 
-    expect(monitor.steps).toMatchObject([{ kind: 'approval', toolName: 'local_shell_run', status: 'failed' }])
+    expect(monitor.steps).toMatchObject([{ kind: 'approval', toolName: 'bash', status: 'failed' }])
     expect(JSON.stringify(monitor)).not.toContain('sensitive command')
   })
 
@@ -135,16 +135,16 @@ describe('harnessActivityLabel', () => {
           rootId: 'r1', rootName: 'Downloads', directory: 'reports', entries: [{ path: 'reports/a.md', type: 'file' }], truncated: false,
         }) }],
       }] } }, 2),
-      event('tool/call', { callId: 'shell', name: 'local_shell_run', arguments: JSON.stringify({ command: 'pnpm test', description: '运行测试', workdir: 'app' }) }, 3),
+      event('tool/call', { callId: 'shell', name: 'bash', arguments: JSON.stringify({ command: 'pnpm test', description: '运行测试', workdir: 'app' }) }, 3),
       event('tool/result', { message: { content: [{
-        type: 'tool-result', toolCallId: 'shell', isError: false, content: [{ type: 'text', text: JSON.stringify({ exitCode: 0, stdout: '42 tests passed', stderr: '' }) }],
+        type: 'tool-result', toolCallId: 'shell', isError: false, content: [{ type: 'text', text: '42 tests passed' }],
       }] } }, 4),
       event('tool/call', { callId: 'github', name: 'mcp_github_list_pull_requests', arguments: JSON.stringify({ owner: 'private' }) }, 5),
     ].reduce(applyHarnessNotification, createTaskMonitor())
 
     expect(monitor.timeline).toMatchObject([
       { kind: 'file', label: '查看 reports', path: 'reports', itemCount: 1, status: 'completed' },
-      { kind: 'command', label: '运行命令', text: 'pnpm test', detail: '退出码 0', output: '42 tests passed', status: 'completed' },
+      { kind: 'command', label: '运行命令', text: 'pnpm test', detail: '运行测试', output: '42 tests passed', status: 'completed' },
       { kind: 'connector', label: '使用 github', connectorName: 'github', status: 'running' },
     ])
     expect(JSON.stringify(monitor)).not.toContain('private')
