@@ -3,7 +3,7 @@ import z from '@deepseek-ai/schemastery'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { spawn, type ChildProcess } from 'node:child_process'
-import { access, mkdir, readFile, readdir, stat } from 'node:fs/promises'
+import { access, mkdir, readFile, readdir, rm, stat } from 'node:fs/promises'
 import { resolve } from 'node:path'
 
 export const name = 'xiaoyin-local-browser'
@@ -58,7 +58,13 @@ export class BrowserBridge {
   async open(url: string, signal: AbortSignal): Promise<BrowserSnapshot> {
     const validated = validateBrowserUrl(url)
     await this.ensureBrowser(signal)
-    await this.openPage(validated, signal)
+    const reusable = this.connection ? undefined : (await this.rawTabs(signal)).find((tab) => isBlankBrowserUrl(tab.url))
+    if (reusable) {
+      await this.connectTarget(reusable, signal)
+      await this.navigateCurrentPage(validated, signal)
+    } else {
+      await this.openPage(validated, signal)
+    }
     return this.snapshot(signal)
   }
 
@@ -102,6 +108,7 @@ export class BrowserBridge {
   }
 
   async tabs(signal: AbortSignal): Promise<BrowserTab[]> {
+    if (!this.baseUrl && !this.configuredDebugUrl.trim()) return []
     await this.ensureBrowser(signal)
     const response = await fetch(`${this.baseUrl}/json/list`, { signal })
     if (!response.ok) throw new Error(`Browser tab list returned HTTP ${response.status}`)
@@ -114,6 +121,7 @@ export class BrowserBridge {
   }
 
   async switchTab(targetId: string, signal: AbortSignal): Promise<BrowserSnapshot> {
+    this.requireActiveBrowser()
     const target = (await this.rawTabs(signal)).find((item) => item.id === targetId)
     if (!target?.webSocketDebuggerUrl) throw new Error('Browser tab was not found')
     await this.connectTarget(target, signal)
@@ -121,6 +129,7 @@ export class BrowserBridge {
   }
 
   async closeTab(targetId: string, signal: AbortSignal): Promise<BrowserTab[]> {
+    this.requireActiveBrowser()
     const response = await fetch(`${this.baseUrl}/json/close/${encodeURIComponent(targetId)}`, { signal })
     if (!response.ok) throw new Error(`Browser could not close the tab: HTTP ${response.status}`)
     if (this.targetId === targetId) { this.connection?.close(); this.connection = undefined; this.targetId = '' }
@@ -177,18 +186,20 @@ export class BrowserBridge {
     }
     const executable = await browserExecutable(this.configuredExecutable)
     await mkdir(this.profileDirectory, { recursive: true })
+    const activePort = resolve(this.profileDirectory, 'DevToolsActivePort')
+    await rm(activePort, { force: true })
     this.child = spawn(executable, [
       '--remote-debugging-port=0', `--user-data-dir=${this.profileDirectory}`,
       '--no-first-run', '--no-default-browser-check', 'about:blank',
     ], { windowsHide: false, stdio: 'ignore' })
-    const activePort = resolve(this.profileDirectory, 'DevToolsActivePort')
+    this.ownsBrowser = true
     for (let attempt = 0; attempt < 80; attempt += 1) {
       if (signal.aborted) throw new Error('Browser operation was cancelled')
       try {
         const [line] = (await readFile(activePort, 'utf8')).split(/\r?\n/)
         const port = Number(line)
         if (Number.isSafeInteger(port) && port > 0) {
-          this.port = port; this.baseUrl = `http://127.0.0.1:${port}`; this.ownsBrowser = true; return
+          this.port = port; this.baseUrl = `http://127.0.0.1:${port}`; return
         }
       } catch { /* browser is still starting */ }
       await delay(100)
@@ -202,19 +213,22 @@ export class BrowserBridge {
     if (!response.ok) throw new Error(`Browser could not open the page: HTTP ${response.status}`)
     const target = record(await response.json())
     if (typeof target.webSocketDebuggerUrl !== 'string') throw new Error('Browser page endpoint is unavailable')
-    await this.connectTarget({ id: String(target.id ?? ''), webSocketDebuggerUrl: target.webSocketDebuggerUrl }, signal)
+    const id = String(target.id ?? '')
+    await this.activateTarget(id, signal)
+    await this.connectTarget({ id, url, webSocketDebuggerUrl: target.webSocketDebuggerUrl }, signal)
+    await this.waitForPageReady(signal)
   }
 
-  private async rawTabs(signal: AbortSignal): Promise<Array<{ id: string; webSocketDebuggerUrl: string }>> {
+  private async rawTabs(signal: AbortSignal): Promise<BrowserTarget[]> {
     await this.ensureBrowser(signal)
     const response = await fetch(`${this.baseUrl}/json/list`, { signal })
     if (!response.ok) throw new Error(`Browser tab list returned HTTP ${response.status}`)
     const value = await response.json()
     if (!Array.isArray(value)) throw new Error('Browser tab list is invalid')
-    return value.map((item) => record(item)).filter((item) => item.type === 'page' && typeof item.webSocketDebuggerUrl === 'string').map((item) => ({ id: String(item.id), webSocketDebuggerUrl: String(item.webSocketDebuggerUrl) }))
+    return value.map((item) => record(item)).filter((item) => item.type === 'page' && typeof item.webSocketDebuggerUrl === 'string').map((item) => ({ id: String(item.id), url: String(item.url ?? ''), webSocketDebuggerUrl: String(item.webSocketDebuggerUrl) }))
   }
 
-  private async connectTarget(target: { id: string; webSocketDebuggerUrl: string }, signal: AbortSignal): Promise<void> {
+  private async connectTarget(target: BrowserTarget, signal: AbortSignal): Promise<void> {
     this.connection?.close()
     this.connection = await CdpConnection.connect(target.webSocketDebuggerUrl, signal)
     this.targetId = target.id
@@ -225,15 +239,51 @@ export class BrowserBridge {
     await settle(signal)
   }
 
+  private async navigateCurrentPage(url: string, signal: AbortSignal): Promise<void> {
+    if (!this.connection || !this.targetId) throw new Error('Browser page is unavailable')
+    await this.activateTarget(this.targetId, signal)
+    await this.connection.request('Page.navigate', { url }, signal)
+    await this.waitForPageReady(signal)
+  }
+
+  private async activateTarget(targetId: string, signal: AbortSignal): Promise<void> {
+    if (!targetId) throw new Error('Browser page identifier is unavailable')
+    const response = await fetch(`${this.baseUrl}/json/activate/${encodeURIComponent(targetId)}`, { signal })
+    if (!response.ok) throw new Error(`Browser could not activate the page: HTTP ${response.status}`)
+  }
+
+  private async waitForPageReady(signal: AbortSignal): Promise<void> {
+    if (!this.connection) return
+    const deadline = Date.now() + 5_000
+    while (Date.now() < deadline) {
+      const result = await this.connection.request('Runtime.evaluate', {
+        expression: '({ readyState: document.readyState, url: location.href })', returnByValue: true,
+      }, signal)
+      const value = record(record(record(result).result).value)
+      if (!isBlankBrowserUrl(String(value.url ?? '')) && ['interactive', 'complete'].includes(String(value.readyState ?? ''))) return
+      await settle(signal, 100)
+    }
+  }
+
+  private requireActiveBrowser(): void {
+    if (!this.baseUrl && !this.configuredDebugUrl.trim()) throw new Error('Browser has no active page. Call browser_open with a target HTTP(S) URL first.')
+  }
+
   private async ensurePage(signal: AbortSignal): Promise<CdpConnection> {
+    this.requireActiveBrowser()
     await this.ensureBrowser(signal)
-    if (!this.connection) await this.openPage('about:blank', signal)
+    if (!this.connection) {
+      const [target] = await this.rawTabs(signal)
+      if (!target) throw new Error('Browser has no active page. Call browser_open with a target HTTP(S) URL first.')
+      await this.connectTarget(target, signal)
+    }
     return this.connection!
   }
 }
 
 interface BrowserSnapshot { title: string; url: string; text: string; links: Array<{ text: string; href: string; selector: string }>; controls: Array<{ tag: string; label: string; selector: string }> }
 interface BrowserTab { id: string; title: string; url: string; active: boolean }
+interface BrowserTarget { id: string; url: string; webSocketDebuggerUrl: string }
 
 class CdpConnection {
   private nextId = 1
@@ -279,8 +329,8 @@ class CdpConnection {
 
 function browserTools(bridge: BrowserBridge): ToolDefinition[] {
   return [
-    tool('browser_open', 'Open an HTTP(S) page in the Xiaoyin browser. The persistent profile keeps employee login state.', { url: { type: 'string', maxLength: 4096 } }, ['url'], (input, signal) => bridge.open(requiredString(input.url, 'url', 4096), signal)),
-    tool('browser_snapshot', 'Read the active browser page as structured text, links and form controls.', {}, [], (_input, signal) => bridge.snapshot(signal)),
+    tool('browser_open', 'Open an exact HTTP(S) destination in the Xiaoyin browser. A target URL is required; ask the user when the destination is unknown. The persistent profile keeps employee login state.', { url: { type: 'string', maxLength: 4096 } }, ['url'], (input, signal) => bridge.open(requiredString(input.url, 'url', 4096), signal)),
+    tool('browser_snapshot', 'Read a page already opened with browser_open as structured text, links and form controls. This tool never launches an empty browser.', {}, [], (_input, signal) => bridge.snapshot(signal)),
     tool('browser_tabs', 'List all open browser tabs and identify the active tab.', {}, [], (_input, signal) => bridge.tabs(signal)),
     tool('browser_switch_tab', 'Switch the active page to an existing tab.', { targetId: { type: 'string', maxLength: 200 } }, ['targetId'], (input, signal) => bridge.switchTab(requiredString(input.targetId, 'targetId', 200), signal)),
     tool('browser_close_tab', 'Close one browser tab.', { targetId: { type: 'string', maxLength: 200 } }, ['targetId'], (input, signal) => bridge.closeTab(requiredString(input.targetId, 'targetId', 200), signal)),
@@ -309,6 +359,10 @@ export function validateBrowserUrl(value: string): string {
   return url.toString()
 }
 
+export function isBlankBrowserUrl(value: string): boolean {
+  return !value || value === 'about:blank' || value.startsWith('chrome://newtab') || value.startsWith('edge://newtab')
+}
+
 export function validateDebugUrl(value: string): string {
   const url = new URL(value)
   if (url.protocol !== 'http:' || !['127.0.0.1', 'localhost', '::1'].includes(url.hostname) || url.username || url.password) {
@@ -330,7 +384,7 @@ function optionalNumber(value: unknown): number { return value === undefined ? 0
 function record(value: unknown): Record<string, any> { if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Browser protocol returned an invalid object'); return value as Record<string, any> }
 function normalizeSnapshot(value: Record<string, unknown>): BrowserSnapshot { return { title: String(value.title ?? '').slice(0, 500), url: String(value.url ?? '').slice(0, 4096), text: String(value.text ?? '').slice(0, MAX_OUTPUT_CHARS), links: Array.isArray(value.links) ? value.links.slice(0, 200) as BrowserSnapshot['links'] : [], controls: Array.isArray(value.controls) ? value.controls.slice(0, 200) as BrowserSnapshot['controls'] : [] } }
 function delay(milliseconds: number) { return new Promise((resolvePromise) => setTimeout(resolvePromise, milliseconds)) }
-async function settle(signal: AbortSignal) { await Promise.race([delay(450), new Promise((_, reject) => signal.addEventListener('abort', () => reject(new Error('Browser operation was cancelled')), { once: true }))]) }
+async function settle(signal: AbortSignal, milliseconds = 450) { await Promise.race([delay(milliseconds), new Promise((_, reject) => signal.addEventListener('abort', () => reject(new Error('Browser operation was cancelled')), { once: true }))]) }
 
 async function browserExecutable(configured: string): Promise<string> {
   const candidates = [configured, process.env.XIAOYIN_BROWSER_EXECUTABLE, ...(process.platform === 'win32' ? [
