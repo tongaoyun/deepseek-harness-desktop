@@ -34,6 +34,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "cargo clippy failed" }
           # The self-hosted Windows runner currently cannot start Tauri test executables
           # (STATUS_ENTRYPOINT_NOT_FOUND in the machine DLL environment). Compile and link
-          # every test target here; the same tests execute in the main CI job.
+          # every test target here. The full suite still executes in the developer
+          # `pnpm check`; restore execution here after the runner DLL environment is repaired.
           cargo test --no-run
           if ($LASTEXITCODE -ne 0) { throw "cargo test compilation failed" }
