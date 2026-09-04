@@ -95,10 +95,6 @@ pub struct ExpertKitManifest {
     knowledge_base_refs: Option<Vec<String>>,
     #[serde(default)]
     server_workflows: Vec<ServerWorkflow>,
-    // Imported packages may declare their preferred access level. The desktop
-    // runtime still applies the active company policy when exposing tools.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    permissions: Option<ExtensionPermissions>,
 }
 
 fn default_extension_category() -> String {
@@ -110,29 +106,6 @@ fn default_extension_category() -> String {
 struct FileReference {
     id: String,
     path: String,
-}
-
-#[derive(Clone, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct ExtensionPermissions {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    local_files: Option<ExtensionPermissionMode>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    shell: Option<ExtensionPermissionMode>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    computer_use: Option<ExtensionPermissionMode>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    connector_read: Option<ExtensionPermissionMode>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    connector_write: Option<ExtensionPermissionMode>,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
-#[serde(rename_all = "lowercase")]
-enum ExtensionPermissionMode {
-    Allow,
-    Approval,
-    Deny,
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -1332,6 +1305,9 @@ fn load_and_validate_manifest(
     let object = value
         .as_object_mut()
         .ok_or_else(|| "扩展清单必须是 JSON 对象".to_string())?;
+    // QoderWork packages may include this unused legacy hint. Xiaoyin derives
+    // runtime capabilities from installed tools and connectors instead.
+    object.remove("permissions");
     if object.contains_key("kind")
         || object.contains_key("commands") && kind == "skill"
         || object.contains_key("skills") && kind == "skill"
@@ -1656,37 +1632,25 @@ mod tests {
         )
         .unwrap();
         assert_eq!(manifest.id, "report-kit");
-        let permissions = manifest.permissions.unwrap();
-        assert_eq!(
-            permissions.local_files,
-            Some(ExtensionPermissionMode::Approval)
-        );
-        assert_eq!(
-            permissions.computer_use,
-            Some(ExtensionPermissionMode::Deny)
+        assert!(
+            serde_json::to_value(&manifest)
+                .unwrap()
+                .get("permissions")
+                .is_none()
         );
         fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
-    fn manifest_rejects_unknown_permission_fields_and_modes() {
-        let unknown_field = serde_json::from_str::<ExpertKitManifest>(
+    fn manifest_model_still_rejects_unknown_fields() {
+        let unknown = serde_json::from_str::<ExpertKitManifest>(
             r#"{
               "schemaVersion":"2","kind":"expert-kit","id":"report-kit","name":"日报","version":"1.0.0",
               "summary":"生成日报","skills":[{"id":"report","path":"skills/report/SKILL.md"}],
-              "permissions":{"filesystem":"allow"}
+              "unexpected":true
             }"#,
         );
-        assert!(unknown_field.is_err());
-
-        let unknown_mode = serde_json::from_str::<ExpertKitManifest>(
-            r#"{
-              "schemaVersion":"2","kind":"expert-kit","id":"report-kit","name":"日报","version":"1.0.0",
-              "summary":"生成日报","skills":[{"id":"report","path":"skills/report/SKILL.md"}],
-              "permissions":{"localFiles":"prompt"}
-            }"#,
-        );
-        assert!(unknown_mode.is_err());
+        assert!(unknown.is_err());
     }
 
     #[test]
