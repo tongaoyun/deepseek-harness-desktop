@@ -25,11 +25,10 @@ const KEY_CODES: Record<string, number> = {
 }
 const MODIFIER_CODES: Record<string, number> = { CTRL: 0x11, ALT: 0x12, SHIFT: 0x10, WIN: 0x5B }
 
-export interface Config { enabled?: boolean; tools?: string[]; requireApproval?: boolean }
+export interface Config { enabled?: boolean; tools?: string[] }
 export const Config = z.object({
   enabled: z.boolean().default(false),
   tools: z.array(z.string()).default([]),
-  requireApproval: z.boolean().default(true),
 })
 
 export async function apply(ctx: Context, config: Config = {}): Promise<void> {
@@ -39,14 +38,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   const bridge = new ComputerUseBridge(ctx)
   const definitions = computerUseTools(bridge).filter((tool) => selected.has(tool.name))
   const unregister = definitions.map((tool) => ctx.tools.register(tool))
-  const stopApprovalPolicy = ctx.on('tools/pre-execute', (exec, next) => {
-    if (config.requireApproval === false) return next()
-    if (!selected.has(exec.name)) return next()
-    if (exec.name === 'computer_use_observe' || exec.name === 'computer_use_scroll') return next()
-    return Promise.resolve({ kind: 'ask' as const, reason: approvalReason(exec.name, exec.arguments) })
-  })
   ctx.effect(() => () => {
-    stopApprovalPolicy()
     for (const dispose of unregister.reverse()) dispose()
   }, 'xiaoyin Windows computer use bridge')
 }
@@ -196,19 +188,6 @@ export function validateToolSelection(values: string[]): Set<string> {
   return unique
 }
 
-export function approvalReason(toolName: string, args: unknown): string {
-  const input = record(args)
-  const purpose = requiredString(input.description, 'description', 500)
-  const action = ({
-    computer_use_observe: '截取当前桌面并读取界面元素',
-    computer_use_click: `点击屏幕坐标 (${input.x}, ${input.y})`,
-    computer_use_type: `向当前焦点输入 ${typeof input.text === 'string' ? input.text.length : 0} 个字符`,
-    computer_use_key: `按键 ${formatKey(input.key, input.modifiers)}`,
-    computer_use_scroll: `在屏幕坐标 (${input.x}, ${input.y}) 滚动 ${input.delta}`,
-  } as Record<string, string>)[toolName] ?? toolName
-  return [`操作 Windows 桌面：${action}`, `用途：${purpose}`, '操作完成后会重新截取当前桌面。'].join('\n')
-}
-
 function runPowerShell(script: string, signal: AbortSignal): Promise<string> {
   const encoded = Buffer.from(script, 'utf16le').toString('base64')
   return new Promise((resolvePromise, reject) => {
@@ -329,4 +308,3 @@ function requiredString(value: unknown, name: string, max: number): string { if 
 function integer(value: unknown, fallback: number | undefined, minimum: number, maximum: number): number { const result = value === undefined ? fallback : value; if (typeof result !== 'number' || !Number.isSafeInteger(result) || result < minimum || result > maximum) throw new Error(`integer must be between ${minimum} and ${maximum}`); return result }
 function requiredKey(value: unknown): string { const key = requiredString(value, 'key', 16).toUpperCase(); if (!(key in KEY_CODES)) throw new Error('Unsupported key'); return key }
 function modifiers(value: unknown): string[] { if (value === undefined) return []; if (!Array.isArray(value) || value.length > 4 || value.some((item) => typeof item !== 'string' || !(item.toUpperCase() in MODIFIER_CODES))) throw new Error('Invalid key modifiers'); return [...new Set(value.map((item) => String(item).toUpperCase()))] }
-function formatKey(key: unknown, value: unknown): string { const values = Array.isArray(value) ? value.map(String) : []; return [...values, String(key ?? '')].filter(Boolean).join('+') }

@@ -75,30 +75,28 @@
   name: '../dist/local-files-plugin.js'
   config:
     roots: !!js JSON.parse(process.env.XIAOYIN_LOCAL_FILE_ROOTS ?? '[]')
-    enabled: !!js process.env.XIAOYIN_ALLOW_LOCAL_FILES !== 'false'
-    requireWriteApproval: !!js process.env.XIAOYIN_APPROVE_LOCAL_FILE_WRITES !== 'false'
+    enabled: true
+    requireDeleteApproval: true
 
 - id: local-documents
   name: '../dist/local-documents-plugin.js'
   config:
     roots: !!js JSON.parse(process.env.XIAOYIN_LOCAL_FILE_ROOTS ?? '[]')
-    enabled: !!js process.env.XIAOYIN_ALLOW_LOCAL_FILES !== 'false'
-    requireWriteApproval: !!js process.env.XIAOYIN_APPROVE_LOCAL_FILE_WRITES !== 'false'
+    enabled: true
 
 - id: native-shell
   name: '../dist/native-shell-plugin.js'
   config:
-    enabled: !!js process.env.XIAOYIN_ALLOW_SHELL === 'true'
-    requireApproval: !!js process.env.XIAOYIN_APPROVE_SHELL !== 'false'
+    enabled: true
+    requireApproval: true
     cwd: !!js process.env.DSH_CWD
     dshHome: !!js process.env.DSH_HOME
 
 - id: local-computer-use
   name: '../dist/local-computer-use-plugin.js'
   config:
-    enabled: !!js process.env.XIAOYIN_ALLOW_COMPUTER_USE === 'true'
+    enabled: true
     tools: !!js JSON.parse(process.env.XIAOYIN_COMPUTER_USE_TOOLS ?? '[]')
-    requireApproval: !!js process.env.XIAOYIN_APPROVE_COMPUTER_USE !== 'false'
 
 - id: local-browser
   name: '../dist/local-browser-plugin.js'

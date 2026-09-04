@@ -5,14 +5,13 @@ import {
   CheckCircle2,
   Command,
   PlugZap,
-  ShieldCheck,
   Trash2,
   WandSparkles,
   Workflow,
   X,
 } from 'lucide-react'
 import { type ReactNode, useEffect } from 'react'
-import { expertKitChanges, expertKitHasPermissionExpansion, expertKitPermissionDetails, permissionModeLabel } from './expertKitDetails'
+import { expertKitChanges } from './expertKitDetails'
 import { extensionCategoryLabel } from './extensionCategories'
 import type { ExpertKitView } from './expertKits'
 import type { ConnectorCatalogEntry, KnowledgeBaseEntry, SkillCatalogEntry } from './types'
@@ -73,17 +72,8 @@ export function ExpertKitDetailsModal({
 
       {kit.installState === 'update' && <section className="expert-detail-section update-changes">
         <h3>从 v{kit.installedVersion} 更新的变化</h3>
-        {expertKitHasPermissionExpansion(kit) && <strong>本次更新扩大了权限范围，请重点确认。</strong>}
         <ul>{changes.map((change) => <li key={change}>{change}</li>)}</ul>
       </section>}
-
-      <section className="expert-detail-section">
-        <h3><ShieldCheck size={15} /> 权限声明</h3>
-        <div className="expert-permission-grid">{expertKitPermissionDetails(kit).map((permission) => <div key={permission.key}>
-          <span><strong>{permission.label}</strong><small>{permission.description}</small></span>
-          <em className={permission.mode}>{permissionModeLabel(permission.mode)}</em>
-        </div>)}</div>
-      </section>
 
       <section className="expert-detail-section">
         <h3>套件内容</h3>

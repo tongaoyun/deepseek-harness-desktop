@@ -103,11 +103,6 @@ const defaults: AuthoringForm = {
   authMode: 'none',
 }
 
-const standardPermissions: ExpertKitManifest['permissions'] = {
-  localFiles: 'approval', shell: 'approval', computerUse: 'approval',
-  connectorRead: 'allow', connectorWrite: 'approval',
-}
-
 export function ExtensionAuthoringModal({
   initialKind, initialInstructions = '', employeeId, accessToken, skills, connectors, previewConfig,
   previewUnavailableReason, onPreviewRunningChange, onClose, onChanged,
@@ -480,7 +475,7 @@ export function ExtensionAuthoringModal({
             kind: created.manifest.kind,
             id: created.manifest.id,
             knowledgeBaseRefs: created.manifest.knowledgeBaseRefs ?? [],
-            allowLocalFiles: created.manifest.permissions.localFiles !== 'deny',
+            allowLocalFiles: true,
           } : undefined}
           unavailableReason={previewUnavailableReason}
         />}
@@ -503,7 +498,7 @@ function manifestFromForm(kind: 'expert-kit' | 'skill', form: AuthoringForm, sel
       ? selectedSkillIds.map((id) => ({ id, path: `skills/${id}/SKILL.md` }))
       : [{ id: kind === 'skill' ? form.id : 'main', path: kind === 'skill' ? 'SKILL.md' : 'skills/main/SKILL.md' }],
     requiredTools: split(form.requiredTools), connectorRefs: split(form.connectorRefs), knowledgeBaseRefs: [],
-    permissions: standardPermissions, serverWorkflows: [],
+    serverWorkflows: [],
   }
 }
 

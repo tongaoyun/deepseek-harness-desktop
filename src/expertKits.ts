@@ -3,7 +3,6 @@ import type {
   ConnectorCatalogEntry,
   ExpertKitCatalogEntry,
   ExpertKitDownload,
-  ExpertKitPermissions,
   InstalledExpertKit,
   ExpertKitManifest,
   KnowledgeBaseEntry,
@@ -170,7 +169,6 @@ export function mergeExpertKits(
       connectorRefs: kit.connectorRefs ?? [],
       requiredTools: kit.requiredTools ?? [],
       knowledgeBaseRefs: kit.knowledgeBaseRefs ?? [],
-      permissions: normalizePermissions(kit.permissions),
       serverWorkflows: kit.serverWorkflows ?? [],
       ...readiness(kit.connectorRefs ?? [], kit.requiredTools ?? [], kit.knowledgeBaseRefs ?? []),
       installed: local,
@@ -196,7 +194,6 @@ export function mergeExpertKits(
       connectorRefs: local.manifest.connectorRefs,
       requiredTools: local.manifest.requiredTools,
       knowledgeBaseRefs: local.manifest.knowledgeBaseRefs ?? [],
-      permissions: normalizePermissions(local.manifest.permissions),
       serverWorkflows: local.manifest.serverWorkflows,
       sha256: '',
       ...readiness(local.manifest.connectorRefs, local.manifest.requiredTools, local.manifest.knowledgeBaseRefs ?? []),
@@ -239,18 +236,6 @@ export function installedExtensionSnapshot(
     version: extension.manifest.version,
     source: extension.source,
   }))
-}
-
-export function normalizePermissions(
-  value: ExpertKitCatalogEntry['permissions'] | InstalledExpertKit['manifest']['permissions'] | undefined,
-): ExpertKitPermissions {
-  return {
-    localFiles: value?.localFiles ?? 'deny',
-    shell: value?.shell ?? 'deny',
-    computerUse: value?.computerUse ?? 'deny',
-    connectorRead: value?.connectorRead ?? 'deny',
-    connectorWrite: value?.connectorWrite ?? 'deny',
-  }
 }
 
 function connectorStatusLabel(status: ConnectorCatalogEntry['status']): string {

@@ -34,7 +34,6 @@ export interface ExpertKitCatalogEntry {
   connectorRefs: string[]
   requiredTools: string[]
   knowledgeBaseRefs: string[]
-  permissions: ExpertKitPermissions
   serverWorkflows: ServerWorkflowDefinition[]
   sha256: string
 }
@@ -263,7 +262,6 @@ export interface SkillCatalogEntry {
   connectorRefs: string[]
   requiredTools: string[]
   knowledgeBaseRefs: string[]
-  permissions: ExpertKitPermissions
   sha256: string
 }
 
@@ -334,16 +332,6 @@ export interface AllowedExtensionArtifact {
   sha256: string
 }
 
-export type PermissionMode = 'deny' | 'allow' | 'approval'
-
-export interface ExpertKitPermissions {
-  localFiles: PermissionMode
-  shell: PermissionMode
-  computerUse: PermissionMode
-  connectorRead: PermissionMode
-  connectorWrite: PermissionMode
-}
-
 export interface ExpertKitManifest {
   schemaVersion: string
   kind: 'expert-kit' | 'skill'
@@ -359,13 +347,6 @@ export interface ExpertKitManifest {
   requiredTools: string[]
   connectorRefs: string[]
   knowledgeBaseRefs?: string[]
-  permissions: {
-    localFiles: PermissionMode
-    shell: PermissionMode
-    computerUse?: PermissionMode
-    connectorRead?: PermissionMode
-    connectorWrite?: PermissionMode
-  }
   serverWorkflows: ServerWorkflowDefinition[]
 }
 

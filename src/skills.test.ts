@@ -6,7 +6,6 @@ const catalog: SkillCatalogEntry = {
   id: 'document-insight', name: '文档洞察', version: '1.1.0', summary: '分析文档', category: 'knowledge-research', sourceKitId: '',
   triggers: ['总结文档'], minimumDesktopVersion: '0.1.13', connectorRefs: [],
   requiredTools: ['office.document.read'], knowledgeBaseRefs: [],
-  permissions: { localFiles: 'approval', shell: 'deny', computerUse: 'deny', connectorRead: 'deny', connectorWrite: 'deny' },
   sha256: 'a'.repeat(64),
 }
 
@@ -17,7 +16,6 @@ const installed: InstalledExpertKit = {
     summary: '分析文档', category: 'knowledge-research', triggers: ['总结文档'], minimumDesktopVersion: '0.1.13', commands: [],
     skills: [{ id: 'document-insight', path: 'skills/document-insight/SKILL.md' }],
     requiredTools: ['office.document.read'], connectorRefs: [], knowledgeBaseRefs: [],
-    permissions: { localFiles: 'approval', shell: 'deny', computerUse: 'deny', connectorRead: 'deny', connectorWrite: 'deny' },
     serverWorkflows: [],
   },
 }

@@ -153,12 +153,6 @@ pub(crate) struct RuntimeFingerprint {
     pub(crate) skill_directories: Vec<String>,
     pub(crate) connectors: Vec<RuntimeConnector>,
     pub(crate) local_file_roots: Vec<String>,
-    pub(crate) allow_local_files: bool,
-    pub(crate) approve_local_file_writes: bool,
-    pub(crate) allow_shell: bool,
-    pub(crate) approve_shell: bool,
-    pub(crate) allow_computer_use: bool,
-    pub(crate) approve_computer_use: bool,
     pub(crate) allow_browser: bool,
     pub(crate) allowed_computer_tools: Vec<String>,
     pub(crate) litellm_base_url: String,
@@ -217,10 +211,6 @@ pub async fn run_harness(
         &user_prompt,
         &request.allowed_artifacts,
     )?;
-    if !profile.allow_local_files && !profile.allow_shell && !request.local_file_root_ids.is_empty()
-    {
-        return Err("当前专家套件禁止使用本地目录".to_string());
-    }
     let local_file_roots = local_files.resolve(&request.local_file_root_ids)?;
     let allow_browser = desktop_connector_enabled(&request.connectors, "desktop-browser");
     let connectors = runtime_connectors(&request.connectors, &profile)?;
@@ -228,12 +218,6 @@ pub async fn run_harness(
         skill_directories: profile.skill_directories,
         connectors,
         local_file_roots,
-        allow_local_files: profile.allow_local_files,
-        approve_local_file_writes: profile.approve_local_file_writes,
-        allow_shell: profile.allow_shell,
-        approve_shell: profile.approve_shell,
-        allow_computer_use: profile.allow_computer_use,
-        approve_computer_use: profile.approve_computer_use,
         allow_browser,
         allowed_computer_tools: profile.allowed_computer_tools,
         litellm_base_url: request.litellm_base_url,
@@ -288,12 +272,6 @@ pub async fn diagnose_connectors(
         skill_directories: Vec::new(),
         connectors,
         local_file_roots: Vec::new(),
-        allow_local_files: false,
-        approve_local_file_writes: true,
-        allow_shell: false,
-        approve_shell: true,
-        allow_computer_use: false,
-        approve_computer_use: true,
         allow_browser: false,
         allowed_computer_tools: Vec::new(),
         litellm_base_url: String::new(),
@@ -329,12 +307,6 @@ pub async fn self_test_local_capabilities(
         skill_directories: Vec::new(),
         connectors: Vec::new(),
         local_file_roots: Vec::new(),
-        allow_local_files: false,
-        approve_local_file_writes: true,
-        allow_shell: false,
-        approve_shell: true,
-        allow_computer_use: false,
-        approve_computer_use: true,
         allow_browser: false,
         allowed_computer_tools: Vec::new(),
         litellm_base_url: String::new(),
@@ -364,12 +336,6 @@ pub async fn probe_harness_host(app: tauri::AppHandle) -> Result<HarnessHostHeal
         skill_directories: Vec::new(),
         connectors: Vec::new(),
         local_file_roots: Vec::new(),
-        allow_local_files: false,
-        approve_local_file_writes: true,
-        allow_shell: false,
-        approve_shell: true,
-        allow_computer_use: false,
-        approve_computer_use: true,
         allow_browser: false,
         allowed_computer_tools: Vec::new(),
         litellm_base_url: String::new(),
@@ -558,29 +524,8 @@ impl HarnessProcess {
             .env("XIAOYIN_LOCAL_FILE_ROOTS", local_file_roots)
             .env("XIAOYIN_ATTACHMENT_ROOT", dsh_home.join("attachments"))
             .env(
-                "XIAOYIN_ALLOW_LOCAL_FILES",
-                fingerprint.allow_local_files.to_string(),
-            )
-            .env(
-                "XIAOYIN_APPROVE_LOCAL_FILE_WRITES",
-                fingerprint.approve_local_file_writes.to_string(),
-            )
-            .env("XIAOYIN_ALLOW_SHELL", fingerprint.allow_shell.to_string())
-            .env(
-                "XIAOYIN_APPROVE_SHELL",
-                fingerprint.approve_shell.to_string(),
-            )
-            .env(
-                "XIAOYIN_ALLOW_COMPUTER_USE",
-                fingerprint.allow_computer_use.to_string(),
-            )
-            .env(
                 "XIAOYIN_ALLOW_BROWSER",
                 fingerprint.allow_browser.to_string(),
-            )
-            .env(
-                "XIAOYIN_APPROVE_COMPUTER_USE",
-                fingerprint.approve_computer_use.to_string(),
             )
             .env("XIAOYIN_COMPUTER_USE_TOOLS", computer_tools)
             .env("DEEPSEEK_BASE_URL", &fingerprint.litellm_base_url)
@@ -1233,12 +1178,6 @@ mod tests {
             skill_directories: Vec::new(),
             knowledge_base_refs: Some(vec!["organization:operations-sop".to_string()]),
             required_connector_tools: vec!["sales_summary".to_string(), "browser_open".to_string()],
-            allow_local_files: false,
-            approve_local_file_writes: true,
-            allow_shell: false,
-            approve_shell: true,
-            allow_computer_use: false,
-            approve_computer_use: true,
             allowed_computer_tools: Vec::new(),
             prompt: String::new(),
         };

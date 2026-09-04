@@ -93,7 +93,6 @@ pub struct ExpertKitManifest {
     connector_refs: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     knowledge_base_refs: Option<Vec<String>>,
-    permissions: Permissions,
     #[serde(default)]
     server_workflows: Vec<ServerWorkflow>,
 }
@@ -107,35 +106,6 @@ fn default_extension_category() -> String {
 struct FileReference {
     id: String,
     path: String,
-}
-
-#[derive(Clone, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct Permissions {
-    local_files: PermissionMode,
-    shell: PermissionMode,
-    #[serde(default = "deny_permission")]
-    computer_use: PermissionMode,
-    connector_read: PermissionMode,
-    connector_write: PermissionMode,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
-#[serde(rename_all = "lowercase")]
-enum PermissionMode {
-    Deny,
-    Allow,
-    Approval,
-}
-
-fn deny_permission() -> PermissionMode {
-    PermissionMode::Deny
-}
-
-impl Permissions {
-    fn validate(&self) -> Result<(), String> {
-        Ok(())
-    }
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -242,12 +212,6 @@ pub struct ExpertKitHarnessProfile {
     pub skill_directories: Vec<String>,
     pub knowledge_base_refs: Option<Vec<String>>,
     pub required_connector_tools: Vec<String>,
-    pub allow_local_files: bool,
-    pub approve_local_file_writes: bool,
-    pub allow_shell: bool,
-    pub approve_shell: bool,
-    pub allow_computer_use: bool,
-    pub approve_computer_use: bool,
     pub allowed_computer_tools: Vec<String>,
     pub prompt: String,
 }
@@ -1070,23 +1034,10 @@ pub fn harness_profile(
     } else {
         format!("{}\n\n员工任务：\n{}", desktop_agent_guidance, user_prompt)
     };
-    let permissions = selected.map(|artifact| &artifact.manifest.permissions);
-    let permission = |select: fn(&Permissions) -> PermissionMode| {
-        permissions.map(select).unwrap_or(PermissionMode::Approval)
-    };
-    let local_files = permission(|value| value.local_files);
-    let shell = permission(|value| value.shell);
-    let computer_use = permission(|value| value.computer_use);
     Ok(ExpertKitHarnessProfile {
         skill_directories,
         knowledge_base_refs: Some(knowledge_base_refs),
         required_connector_tools: connector_tools,
-        allow_local_files: local_files != PermissionMode::Deny,
-        approve_local_file_writes: local_files == PermissionMode::Approval,
-        allow_shell: shell != PermissionMode::Deny,
-        approve_shell: shell == PermissionMode::Approval,
-        allow_computer_use: computer_use != PermissionMode::Deny,
-        approve_computer_use: computer_use == PermissionMode::Approval,
         allowed_computer_tools: DESKTOP_COMPUTER_TOOLS
             .iter()
             .map(|tool| (*tool).to_string())
@@ -1396,7 +1347,6 @@ fn load_and_validate_manifest(
     if !EXTENSION_CATEGORIES.contains(&manifest.category.as_str()) {
         manifest.category = default_extension_category();
     }
-    manifest.permissions.validate()?;
 
     if manifest.kind == "skill" {
         let mut triggers = HashSet::new();
@@ -1662,8 +1612,7 @@ mod tests {
             r#"{
               "schemaVersion":"2","id":"report-kit","name":"日报","version":"1.0.0",
               "summary":"生成日报","skills":[{"id":"report","path":"skills/report/SKILL.md"}],
-              "requiredTools":["sales_summary"],
-              "permissions":{"localFiles":"approval","shell":"deny","computerUse":"deny","connectorRead":"allow","connectorWrite":"approval"}
+              "requiredTools":["sales_summary"]
             }"#,
         )
         .unwrap();
@@ -1683,8 +1632,7 @@ mod tests {
     fn real_tar_gzip_package_is_safely_extracted_and_validated() {
         let manifest = r#"{
           "schemaVersion":"2","id":"report-kit","name":"日报","version":"1.0.0",
-          "summary":"生成日报","skills":[{"id":"report","path":"skills/report/SKILL.md"}],
-          "permissions":{"localFiles":"approval","shell":"deny","computerUse":"deny","connectorRead":"allow","connectorWrite":"approval"}
+          "summary":"生成日报","skills":[{"id":"report","path":"skills/report/SKILL.md"}]
         }"#;
         let encoder = GzEncoder::new(Vec::new(), Compression::default());
         let mut archive = tar::Builder::new(encoder);
@@ -1719,8 +1667,7 @@ mod tests {
         let manifest = r#"{
           "schemaVersion":"1","id":"document-insight","name":"文档洞察","version":"1.0.0",
           "summary":"分析员工授权的文档","triggers":["总结文档"],"minimumDesktopVersion":"0.1.9",
-          "requiredTools":["office.document.read"],"connectorRefs":[],"knowledgeBaseRefs":[],
-          "permissions":{"localFiles":"approval","shell":"deny","computerUse":"deny","connectorRead":"deny","connectorWrite":"deny"}
+          "requiredTools":["office.document.read"],"connectorRefs":[],"knowledgeBaseRefs":[]
         }"#;
         let encoder = GzEncoder::new(Vec::new(), Compression::default());
         let mut archive = tar::Builder::new(encoder);
@@ -1760,7 +1707,6 @@ mod tests {
                 {"id":"sales-report","path":"skills/sales-report/SKILL.md"}
               ],
               "requiredTools":[],"connectorRefs":[],"knowledgeBaseRefs":[],
-              "permissions":{"localFiles":"deny","shell":"deny","computerUse":"deny","connectorRead":"allow","connectorWrite":"approval"},
               "serverWorkflows":[]
             }"#,
         )
@@ -1817,7 +1763,6 @@ mod tests {
               "summary":"检查订单风险","triggers":["检查订单"],"minimumDesktopVersion":"0.1.29",
               "commands":[],"skills":[{"id":"order-review","path":"SKILL.md"}],
               "requiredTools":[],"connectorRefs":[],"knowledgeBaseRefs":[],
-              "permissions":{"localFiles":"deny","shell":"deny","computerUse":"deny","connectorRead":"allow","connectorWrite":"approval"},
               "serverWorkflows":[]
             }"#,
         )
@@ -1891,8 +1836,7 @@ mod tests {
         let manifest = r#"{
           "schemaVersion":"1","id":"document-insight","name":"文档洞察","version":"1.0.0",
           "summary":"分析员工授权的文档","triggers":["总结文档"],"minimumDesktopVersion":"0.1.9",
-          "requiredTools":["office.document.read"],"connectorRefs":[],"knowledgeBaseRefs":[],
-          "permissions":{"localFiles":"approval","shell":"deny","computerUse":"deny","connectorRead":"deny","connectorWrite":"deny"}
+          "requiredTools":["office.document.read"],"connectorRefs":[],"knowledgeBaseRefs":[]
         }"#;
         let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
         zip.start_file(
@@ -1963,8 +1907,7 @@ mod tests {
         let manifest = r#"{
           "schemaVersion":"2","id":"platform-acceptance","name":"平台验收","version":"1.0.0",
           "summary":"验证平台能力","minimumDesktopVersion":"0.1.9",
-          "skills":[{"id":"platform-check","path":"skills/platform-check/SKILL.md"}],
-          "permissions":{"localFiles":"approval","shell":"approval","computerUse":"approval","connectorRead":"deny","connectorWrite":"deny"}
+          "skills":[{"id":"platform-check","path":"skills/platform-check/SKILL.md"}]
         }"#;
         let package = test_package(manifest, b"# Platform check");
         let installed = install_package_bytes(
@@ -2031,8 +1974,7 @@ mod tests {
         write_install_record(&root, &"a".repeat(64), InstallSource::Catalog).unwrap();
         let manifest: ExpertKitManifest = serde_json::from_str(r#"{
           "schemaVersion":"1","kind":"skill","id":"document-insight","name":"文档洞察",
-          "version":"1.0.0","summary":"分析文档","skills":[{"id":"document-insight","path":"skills/document-insight/SKILL.md"}],
-          "permissions":{"localFiles":"approval","shell":"deny","computerUse":"deny","connectorRead":"deny","connectorWrite":"deny"}
+          "version":"1.0.0","summary":"分析文档","skills":[{"id":"document-insight","path":"skills/document-insight/SKILL.md"}]
         }"#).unwrap();
         let installed = installed_kit(manifest, &root, InstallSource::Catalog);
         let allowed = AllowedExtensionArtifact {
