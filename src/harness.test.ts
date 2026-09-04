@@ -163,6 +163,27 @@ describe('harnessActivityLabel', () => {
     expect(ignored.artifacts).toEqual([])
   })
 
+  it('records structured file changes and aggregates repeated edits', () => {
+    const monitor = [
+      event('tool/call', { callId: 'write-1', name: 'local_files_write_text' }, 1),
+      event('tool/result', { message: { content: [{
+        type: 'tool-result', toolCallId: 'write-1', isError: false, content: [{ type: 'text', text: JSON.stringify({
+          rootId: 'repo', rootName: 'xiaoyin', path: 'src/App.tsx', action: 'updated', addedLines: 5, deletedLines: 2,
+        }) }],
+      }] } }, 2),
+      event('tool/call', { callId: 'write-2', name: 'local_files_write_text' }, 3),
+      event('tool/result', { message: { content: [{
+        type: 'tool-result', toolCallId: 'write-2', isError: false, content: [{ type: 'text', text: JSON.stringify({
+          rootId: 'repo', rootName: 'xiaoyin', path: 'src/App.tsx', action: 'updated', addedLines: 3, deletedLines: 1,
+        }) }],
+      }] } }, 4),
+    ].reduce(applyHarnessNotification, createTaskMonitor())
+
+    expect(monitor.changes).toMatchObject([{
+      path: 'src/App.tsx', action: 'updated', addedLines: 8, deletedLines: 3,
+    }])
+  })
+
   it('maps local files, commands and connectors into distinct conversation blocks', () => {
     const monitor = [
       event('tool/call', { callId: 'files', name: 'local_files_list', arguments: JSON.stringify({ rootId: 'r1', path: 'reports' }) }, 1),

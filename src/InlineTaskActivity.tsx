@@ -5,12 +5,11 @@ import { taskDurationLabel } from './taskTiming'
 import type { TaskMonitorState } from './types'
 
 export function InlineTaskActivity({ monitor, finalResponse = '' }: { monitor: TaskMonitorState; finalResponse?: string }) {
-  const [open, setOpen] = useState(monitor.status === 'running' || (monitor.timeline?.length ?? 0) > 0)
+  const [open, setOpen] = useState(true)
   const [clock, setClock] = useState(Date.now())
 
   useEffect(() => {
     if (monitor.status === 'running') setOpen(true)
-    else if (monitor.status === 'completed') setOpen(false)
     else if (monitor.status === 'failed') setOpen(true)
   }, [monitor.status])
 
@@ -20,13 +19,11 @@ export function InlineTaskActivity({ monitor, finalResponse = '' }: { monitor: T
     return () => window.clearInterval(timer)
   }, [monitor.status])
 
-  if (monitor.status === 'idle' && monitor.steps.length === 0 && monitor.artifacts.length === 0) return null
+  if (monitor.status === 'idle' && monitor.steps.length === 0 && monitor.artifacts.length === 0 && (monitor.changes?.length ?? 0) === 0) return null
   const duration = taskDurationLabel(monitor, clock)
-  const subagentCount = monitor.subagents?.length ?? 0
-  const collaboration = subagentCount > 0 ? ` · ${subagentCount} 个协作任务` : ''
   const summary = monitor.status === 'running'
-    ? duration ? `正在处理 ${duration}${collaboration}` : `${monitor.activity}${collaboration}`
-    : duration ? `${monitor.status === 'failed' ? '处理失败' : '已处理'} ${duration}${collaboration}` : `${statusLabel(monitor.status)}${collaboration}`
+    ? duration ? `已处理 ${duration}` : monitor.activity
+    : duration ? `${monitor.status === 'failed' ? '处理失败' : '用时'} ${duration}` : statusLabel(monitor.status)
   const hasDetails = (monitor.timeline?.length ?? 0) > 0
 
   return <section className={`inline-task-activity ${monitor.status}`}>

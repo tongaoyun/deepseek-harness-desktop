@@ -98,7 +98,8 @@ describe('LocalFileBridge', () => {
     const bridge = new LocalFileBridge(await discoverAuthorizedRoots([root]))
 
     await bridge.createDirectory('local-root-1', 'exports/daily')
-    await bridge.writeText('local-root-1', 'exports/daily/report.md', '# report', false)
+    const created = await bridge.writeText('local-root-1', 'exports/daily/report.md', '# report', false) as { addedLines: number; deletedLines: number }
+    expect(created).toMatchObject({ addedLines: 1, deletedLines: 0 })
     await bridge.copy('local-root-1', 'exports/daily/report.md', 'exports/report-copy.md', false)
     await bridge.move('local-root-1', 'exports/report-copy.md', 'exports/report-final.md')
     expect((await bridge.readText('local-root-1', 'exports/report-final.md')).content).toBe('# report')
@@ -111,10 +112,11 @@ describe('LocalFileBridge', () => {
     await writeFile(join(root, 'report.md'), 'before')
     const bridge = new LocalFileBridge(await discoverAuthorizedRoots([root]))
 
-    const overwritten = await bridge.writeText('local-root-1', 'report.md', 'after', true) as { backupPath: string }
+    const overwritten = await bridge.writeText('local-root-1', 'report.md', 'after\nand more', true) as { backupPath: string; addedLines: number; deletedLines: number }
+    expect(overwritten).toMatchObject({ action: 'updated', addedLines: 2, deletedLines: 1 })
     expect((await bridge.readText('local-root-1', overwritten.backupPath)).content).toBe('before')
     const deleted = await bridge.delete('local-root-1', 'report.md', false) as { backupPath: string }
-    expect((await bridge.readText('local-root-1', deleted.backupPath)).content).toBe('after')
+    expect((await bridge.readText('local-root-1', deleted.backupPath)).content).toBe('after\nand more')
   })
 
   it('blocks mutation of credential files and traversal destinations', async () => {
