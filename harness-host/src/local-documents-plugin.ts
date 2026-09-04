@@ -40,7 +40,8 @@ const MAX_SHEETS = 20
 const MAX_ROWS = 2_000
 const MAX_COLUMNS = 100
 const CREATE_TOOLS = new Set([
-  'office_docx_create', 'office_xlsx_create', 'office_xlsx_update_cells', 'office_pptx_create', 'office_pdf_create',
+  'office_docx_create', 'office_xlsx_create', 'office_xlsx_update_cells', 'office_xlsx_append_rows',
+  'office_xlsx_add_sheet', 'office_pptx_create', 'office_pdf_create',
 ])
 
 export interface Config { roots?: LocalFileRootInput[]; enabled?: boolean }
@@ -58,6 +59,8 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     ctx.tools.register(createDocxTool(bridge)),
     ctx.tools.register(createXlsxTool(bridge)),
     ctx.tools.register(updateXlsxCellsTool(bridge)),
+    ctx.tools.register(appendXlsxRowsTool(bridge)),
+    ctx.tools.register(addXlsxSheetTool(bridge)),
     ctx.tools.register(createPptxTool(bridge)),
     ctx.tools.register(createPdfTool(bridge)),
   ]
@@ -155,6 +158,47 @@ function updateXlsxCellsTool(bridge: LocalFileBridge): ToolDefinition {
     const backupPath = await bridge.backupExisting(rootId, requestedPath)
     await workbook.xlsx.writeFile(target)
     return { rootId: root.id, rootName: root.name, path: bridge.visiblePath(root, target), size: (await stat(target)).size, updatedCells: updates.length, ...(backupPath ? { backupPath } : {}) }
+  })
+}
+
+function appendXlsxRowsTool(bridge: LocalFileBridge): ToolDefinition {
+  return tool('office_xlsx_append_rows', 'Append rows to an existing XLSX worksheet while preserving workbook formatting, formulas and other sheets.', {
+    rootId: stringProperty('Authorized root ID.'), path: stringProperty('Relative .xlsx file path.'),
+    sheet: { type: 'string', minLength: 1, maxLength: 31 },
+    rows: { type: 'array', minItems: 1, maxItems: MAX_ROWS, items: { type: 'array', maxItems: MAX_COLUMNS, items: { type: ['string', 'number', 'boolean', 'null'] } } },
+  }, ['rootId', 'path', 'sheet', 'rows'], async (input) => {
+    const { rootId, requestedPath, root, target, workbook } = await existingWorkbook(bridge, input)
+    const sheetName = requiredString(input.sheet, 'sheet')
+    const worksheet = workbook.getWorksheet(sheetName)
+    if (!worksheet) throw new Error(`Worksheet does not exist: ${sheetName}`)
+    const rows = worksheetRowsInput(input.rows)
+    const firstRow = worksheet.rowCount + 1
+    worksheet.addRows(rows)
+    const backupPath = await bridge.backupExisting(rootId, requestedPath)
+    await workbook.xlsx.writeFile(target)
+    return { rootId: root.id, rootName: root.name, path: bridge.visiblePath(root, target), size: (await stat(target)).size,
+      sheet: sheetName, firstRow, appendedRows: rows.length, ...(backupPath ? { backupPath } : {}) }
+  })
+}
+
+function addXlsxSheetTool(bridge: LocalFileBridge): ToolDefinition {
+  return tool('office_xlsx_add_sheet', 'Add a worksheet to an existing XLSX workbook without rebuilding the file.', {
+    rootId: stringProperty('Authorized root ID.'), path: stringProperty('Relative .xlsx file path.'),
+    sheet: { type: 'string', minLength: 1, maxLength: 31 },
+    rows: { type: 'array', maxItems: MAX_ROWS, items: { type: 'array', maxItems: MAX_COLUMNS, items: { type: ['string', 'number', 'boolean', 'null'] } } },
+  }, ['rootId', 'path', 'sheet'], async (input) => {
+    const { rootId, requestedPath, root, target, workbook } = await existingWorkbook(bridge, input)
+    const sheetName = requiredString(input.sheet, 'sheet')
+    if (sheetName.length > 31 || workbook.getWorksheet(sheetName)) throw new Error(`Worksheet already exists or has an invalid name: ${sheetName}`)
+    const rows = input.rows === undefined ? [] : worksheetRowsInput(input.rows)
+    const worksheet = workbook.addWorksheet(sheetName)
+    worksheet.addRows(rows)
+    if (rows.length > 0) worksheet.getRow(1).font = { bold: true }
+    worksheet.columns.forEach((column) => { column.width = Math.min(60, Math.max(10, measuredWidth(column.values ?? []))) })
+    const backupPath = await bridge.backupExisting(rootId, requestedPath)
+    await workbook.xlsx.writeFile(target)
+    return { rootId: root.id, rootName: root.name, path: bridge.visiblePath(root, target), size: (await stat(target)).size,
+      sheet: sheetName, rowCount: rows.length, ...(backupPath ? { backupPath } : {}) }
   })
 }
 
@@ -289,6 +333,18 @@ function decodeXmlText(value: string): string {
 
 type Target = Awaited<ReturnType<LocalFileBridge['resolveTarget']>>
 
+async function existingWorkbook(bridge: LocalFileBridge, input: Record<string, unknown>) {
+  const rootId = requiredString(input.rootId, 'rootId')
+  const requestedPath = requiredString(input.path, 'path')
+  const { root, target } = await bridge.resolveExisting(rootId, requestedPath)
+  if (extname(target).toLowerCase() !== '.xlsx') throw new Error('Workbook path must end with .xlsx')
+  const metadata = await stat(target)
+  if (!metadata.isFile() || metadata.size > MAX_DOCUMENT_BYTES) throw new Error('Workbook is unavailable or exceeds the size limit')
+  const workbook = new Workbook()
+  await workbook.xlsx.readFile(target)
+  return { rootId, requestedPath, root, target, workbook }
+}
+
 async function documentTarget(bridge: LocalFileBridge, input: Record<string, unknown>, extension: string): Promise<Target> {
   const target = await bridge.resolveTarget(requiredString(input.rootId, 'rootId'), requiredString(input.path, 'path'))
   if (extname(target.target).toLowerCase() !== extension) throw new Error(`Destination path must end with ${extension}`)
@@ -370,5 +426,6 @@ function measuredWidth(values: readonly unknown[]): number { return Math.max(0, 
 function tableArraySchema(): object { return { type: 'array', maxItems: 100, items: { type: 'array', maxItems: MAX_ROWS, items: { type: 'array', maxItems: MAX_COLUMNS, items: { type: 'string', maxLength: 20_000 } } } } }
 function tablesInput(value: unknown): string[][][] { if (value === undefined) return []; if (!Array.isArray(value) || value.length > 100) throw new Error('tables is invalid'); return value.map((table) => { if (!Array.isArray(table) || table.length > MAX_ROWS) throw new Error('table rows are invalid'); return table.map((row) => { if (!Array.isArray(row) || row.length > MAX_COLUMNS || row.some((cell) => typeof cell !== 'string' || cell.length > 20_000)) throw new Error('table cells are invalid'); return row as string[] }) }) }
 function sheetsInput(value: unknown): Array<{ name: string; rows: Array<Array<string | number | boolean | null>> }> { if (!Array.isArray(value) || value.length === 0 || value.length > MAX_SHEETS) throw new Error('sheets is invalid'); const names = new Set<string>(); return value.map((item) => { const sheet = record(item); const name = requiredString(sheet.name, 'sheet.name'); if (name.length > 31 || names.has(name)) throw new Error('Sheet names must be unique and at most 31 characters'); names.add(name); if (!Array.isArray(sheet.rows) || sheet.rows.length > MAX_ROWS) throw new Error('sheet.rows is invalid'); const rows = sheet.rows.map((row) => { if (!Array.isArray(row) || row.length > MAX_COLUMNS || row.some((cell) => cell !== null && !['string', 'number', 'boolean'].includes(typeof cell))) throw new Error('sheet row is invalid'); return row as Array<string | number | boolean | null> }); return { name, rows } }) }
+function worksheetRowsInput(value: unknown): Array<Array<string | number | boolean | null>> { if (!Array.isArray(value) || value.length === 0 || value.length > MAX_ROWS) throw new Error('rows is invalid'); return value.map((row) => { if (!Array.isArray(row) || row.length > MAX_COLUMNS || row.some((cell) => cell !== null && !['string', 'number', 'boolean'].includes(typeof cell))) throw new Error('row is invalid'); return row as Array<string | number | boolean | null> }) }
 function cellUpdatesInput(value: unknown): Array<{ sheet: string; cell: string; value: string | number | boolean | null }> { if (!Array.isArray(value) || value.length === 0 || value.length > 2_000) throw new Error('updates is invalid'); return value.map((item) => { const update = record(item); const sheet = requiredString(update.sheet, 'update.sheet'); const cell = requiredString(update.cell, 'update.cell').toUpperCase(); if (!/^[A-Z]{1,3}[1-9][0-9]{0,6}$/u.test(cell)) throw new Error(`Invalid cell reference: ${cell}`); if (update.value !== null && !['string', 'number', 'boolean'].includes(typeof update.value)) throw new Error('update.value is invalid'); return { sheet, cell, value: update.value as string | number | boolean | null } }) }
 function presentationSlidesInput(value: unknown): Array<{ title: string; bullets: string[]; speakerNotes: string }> { if (!Array.isArray(value) || value.length === 0 || value.length > 100) throw new Error('slides is invalid'); return value.map((item) => { const slide = record(item); return { title: requiredString(slide.title, 'slide.title'), bullets: stringArray(slide.bullets, 'slide.bullets', 30, 2_000), speakerNotes: optionalString(slide.speakerNotes, 'slide.speakerNotes', 10_000) } }) }

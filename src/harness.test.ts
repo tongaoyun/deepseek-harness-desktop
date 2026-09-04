@@ -10,6 +10,7 @@ describe('harnessActivityLabel', () => {
 
   it('shows safe progress labels without exposing reasoning content', () => {
     const label = harnessActivityLabel({
+      taskId: 'task-1',
       requestId: 1,
       event: {
         event: {
@@ -23,6 +24,7 @@ describe('harnessActivityLabel', () => {
     expect(label).not.toContain('private')
 
     expect(harnessActivityLabel({
+      taskId: 'task-1',
       requestId: 1,
       event: { event: { method: 'session.status', params: { status: 'idle' } } },
     })).toBe('正在整理结果')
@@ -230,13 +232,14 @@ describe('diagnoseConnectors', () => {
   })
 
   it('keeps cancellation and empty drops safe outside Tauri', async () => {
-    await expect(cancelHarness()).resolves.toBe(false)
+    await expect(cancelHarness('missing-task')).resolves.toBe(false)
     await expect(authorizeDroppedPaths([])).resolves.toEqual({ directories: [], attachments: [] })
   })
 })
 
 function event(type: string, data: Record<string, unknown>, time: number) {
   return {
+    taskId: 'task-1',
     requestId: 1,
     event: { event: { method: 'session.event', params: { event: { type, time, data } } } },
   }
@@ -244,6 +247,7 @@ function event(type: string, data: Record<string, unknown>, time: number) {
 
 function scopedEvent(sessionId: string, rootSessionId: string, type: string, data: Record<string, unknown>, time: number) {
   return {
+    taskId: 'task-1',
     requestId: 1,
     event: {
       rootSessionId,

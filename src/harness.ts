@@ -15,6 +15,7 @@ import type {
 import type { StandardLocalDirectory } from './localFileIntent'
 
 export interface HarnessRunInput {
+  taskId: string
   prompt: string
   employeeId: string
   teamId: string
@@ -84,6 +85,7 @@ export function classifyHarnessFailure(reason: unknown): HarnessFailure {
 }
 
 export interface HarnessNotification {
+  taskId?: string
   requestId: number
   event: unknown
 }
@@ -154,14 +156,14 @@ export async function restoreLocalDirectories(paths: string[]): Promise<Authoriz
   return invoke<AuthorizedLocalDirectory[]>('restore_local_directories', { paths })
 }
 
-export async function shutdownHarness(): Promise<void> {
+export async function shutdownHarness(taskId?: string): Promise<void> {
   if (!isTauri()) return
-  await invoke('shutdown_harness')
+  await invoke('shutdown_harness', { taskId })
 }
 
-export async function cancelHarness(): Promise<boolean> {
+export async function cancelHarness(taskId: string): Promise<boolean> {
   if (!isTauri()) return false
-  return invoke<boolean>('cancel_harness')
+  return invoke<boolean>('cancel_harness', { taskId })
 }
 
 export async function authorizeDroppedPaths(paths: string[]): Promise<DroppedPathAuthorization> {
@@ -473,7 +475,8 @@ function toolResult(data: Record<string, unknown>): { callId: string; failed: bo
 
 const ARTIFACT_TOOLS = new Set([
   'office.docx.create', 'office.xlsx.create', 'office.pdf.create',
-  'office_docx_create', 'office_xlsx_create', 'office_xlsx_update_cells', 'office_pptx_create', 'office_pdf_create',
+  'office_docx_create', 'office_xlsx_create', 'office_xlsx_update_cells', 'office_xlsx_append_rows',
+  'office_xlsx_add_sheet', 'office_pptx_create', 'office_pdf_create',
   'local_files_write_text', 'local_files_copy', 'local_files_move',
 ])
 
@@ -689,6 +692,8 @@ function toolActivityLabel(toolName: string): string {
     office_docx_create: '生成 Word 文档',
     office_xlsx_create: '生成 Excel 表格',
     office_xlsx_update_cells: '修改 Excel 表格',
+    office_xlsx_append_rows: '追加 Excel 数据',
+    office_xlsx_add_sheet: '添加 Excel 工作表',
     office_pptx_create: '生成 PowerPoint 演示文稿',
     office_pdf_create: '生成 PDF 文档',
     local_files_roots: '检查工作目录',
@@ -712,7 +717,12 @@ function toolActivityLabel(toolName: string): string {
     browser_open: '打开网页',
     browser_snapshot: '读取网页',
     browser_click: '操作网页',
+    browser_click_text: '操作网页',
+    browser_click_point: '操作网页',
     browser_type: '填写网页内容',
+    browser_press_key: '操作网页键盘',
+    browser_wait_for: '等待网页内容',
+    browser_reload: '刷新网页',
     browser_downloads: '查看下载文件',
   } as Record<string, string>)[toolName]
   if (known) return known
@@ -749,6 +759,8 @@ function toolPresentation(toolName: string, rawArguments: unknown): Pick<TaskTim
     office_docx_create: path ? `生成 ${path}` : '生成 Word 文档',
     office_xlsx_create: path ? `生成 ${path}` : '生成 Excel 表格',
     office_xlsx_update_cells: path ? `修改 ${path}` : '修改 Excel 表格',
+    office_xlsx_append_rows: path ? `追加数据到 ${path}` : '追加 Excel 数据',
+    office_xlsx_add_sheet: path ? `添加工作表到 ${path}` : '添加 Excel 工作表',
     office_pptx_create: path ? `生成 ${path}` : '生成 PowerPoint 演示文稿',
     office_pdf_create: path ? `生成 ${path}` : '生成 PDF 文档',
   }

@@ -146,7 +146,7 @@ export function ChatPage(props: Props) {
           </div>}
         </div>
         <div className="capability-picker" ref={capabilityPickerRef}>
-          <button aria-expanded={capabilityMenuOpen} className="mode-button" disabled={props.harnessRunning || Boolean(props.capabilitySnapshot)} onClick={() => { setCapabilityMenuOpen((value) => !value); setContextMenuOpen(false) }} title={props.capabilitySnapshot ? '当前对话的工作模式已固定，新建任务后可切换' : '选择工作模式'} type="button"><Sparkles size={14} /> {props.selectedCapabilityName} <ChevronDown size={13} /></button>
+          <button aria-expanded={capabilityMenuOpen} className="mode-button" disabled={currentTaskRunning} onClick={() => { setCapabilityMenuOpen((value) => !value); setContextMenuOpen(false) }} title="选择工作模式" type="button"><Sparkles size={14} /> {props.selectedCapabilityName} <ChevronDown size={13} /></button>
           {capabilityMenuOpen && <div className="composer-popover capability-menu">
             <small>工作模式</small>
             <button className={!props.selectedCapabilityId ? 'active' : ''} onClick={() => { props.onSelectCapability(''); setCapabilityMenuOpen(false) }} type="button"><Sparkles size={16} /><span><strong>通用</strong><small>小胤根据任务自动选择技能和工具</small></span>{!props.selectedCapabilityId && <Check size={15} />}</button>
@@ -155,12 +155,12 @@ export function ChatPage(props: Props) {
           </div>}
         </div>
         <div className="model-picker" ref={props.modelPickerRef}>
-          <button aria-expanded={props.modelMenuOpen} className="model-label" onClick={props.onToggleModelMenu} type="button"><Bot size={14} /> {modelDisplayName(props.activeModel)} <ChevronDown size={13} /></button>
+          <button aria-expanded={props.modelMenuOpen} className="model-label" disabled={currentTaskRunning} onClick={props.onToggleModelMenu} type="button"><Bot size={14} /> {modelDisplayName(props.activeModel)} <ChevronDown size={13} /></button>
           {props.modelMenuOpen && <div className="model-menu"><small>公司可用模型</small>{(props.models.length ? props.models : [props.activeModel]).map((model) => <button className={model === props.activeModel ? 'active' : ''} key={model} onClick={() => props.onSelectModel(model)} title={model} type="button"><span><strong>{modelDisplayName(model)}</strong></span>{model === props.activeModel && <SquareCheckBig size={14} />}</button>)}</div>}
         </div>
         {currentTaskRunning
           ? <button aria-label="取消当前任务" className="cancel-button" onClick={props.onCancel} title="取消当前任务" type="button"><CircleStop size={17} /></button>
-          : <button aria-label="发送" className="send-button" disabled={(!props.prompt.trim() && props.pendingAttachments.length === 0) || props.runtimeStatus !== 'ready' || props.harnessHealth === 'degraded' || props.taskContextRestoring || props.harnessRunning} title={props.runtimeStatus !== 'ready' ? '企业服务未连接' : props.harnessHealth === 'degraded' ? '请先恢复本地 Agent' : props.taskContextRestoring ? '正在恢复任务目录' : props.harnessRunning ? '另一个任务正在运行' : '发送'} type="submit"><Send size={17} /></button>}
+          : <button aria-label="发送" className="send-button" disabled={(!props.prompt.trim() && props.pendingAttachments.length === 0) || props.runtimeStatus !== 'ready' || props.harnessHealth === 'degraded' || props.taskContextRestoring} title={props.runtimeStatus !== 'ready' ? '企业服务未连接' : props.harnessHealth === 'degraded' ? '请先恢复本地 Agent' : props.taskContextRestoring ? '正在恢复任务目录' : '发送'} type="submit"><Send size={17} /></button>}
       </div>
       {props.visibleInvocations.length > 0 && <div className="slash-menu"><small>快捷指令</small>{props.visibleInvocations.map((option) => <button key={`${option.profileKind}-${option.profileId}-${option.id}`} onClick={() => props.onSelectInvocation(option)} type="button"><span><strong>{option.label}</strong><small>{option.description}</small></span></button>)}</div>}
       {props.contextQuery !== undefined && <div className="slash-menu"><small>引用知识库</small>{props.visibleKnowledgeContexts.map((item) => <button key={item.reference} onClick={() => props.onAddKnowledge(item.reference)} type="button"><span><strong>@{item.name}</strong><small>{item.description || item.reference}</small></span><em>{knowledgeScopeLabel(item.scope)}</em></button>)}{props.visibleKnowledgeContexts.length === 0 && <span className="context-menu-empty">没有匹配的知识库</span>}</div>}

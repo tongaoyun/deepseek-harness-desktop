@@ -47,6 +47,7 @@ export function ExtensionPreviewPanel({ target, config, unavailableReason, onRun
   const [error, setError] = useState('')
   const monitorRef = useRef(monitor)
   const runningRef = useRef(false)
+  const previewTaskIdRef = useRef(`extension-preview-${crypto.randomUUID()}`)
   const onRunningChangeRef = useRef(onRunningChange)
   onRunningChangeRef.current = onRunningChange
 
@@ -54,7 +55,7 @@ export function ExtensionPreviewPanel({ target, config, unavailableReason, onRun
     let disposed = false
     let unlisten: () => void = () => undefined
     void listenHarnessNotifications((notification) => {
-      if (disposed || !runningRef.current) return
+      if (disposed || !runningRef.current || notification.taskId !== previewTaskIdRef.current) return
       const next = applyHarnessNotification(monitorRef.current, notification)
       monitorRef.current = next
       setMonitor(next)
@@ -65,7 +66,7 @@ export function ExtensionPreviewPanel({ target, config, unavailableReason, onRun
     return () => {
       disposed = true
       unlisten()
-      if (runningRef.current) void cancelHarness()
+      if (runningRef.current) void cancelHarness(previewTaskIdRef.current)
       onRunningChangeRef.current(false)
     }
   }, [])
@@ -73,7 +74,7 @@ export function ExtensionPreviewPanel({ target, config, unavailableReason, onRun
   useEffect(() => {
     if (runningRef.current) {
       runningRef.current = false
-      void cancelHarness()
+      void cancelHarness(previewTaskIdRef.current)
       setRunning(false)
       onRunningChangeRef.current(false)
     }
@@ -104,6 +105,7 @@ export function ExtensionPreviewPanel({ target, config, unavailableReason, onRun
     setError('')
     try {
       const result = await runHarness({
+        taskId: previewTaskIdRef.current,
         prompt: prompt.trim(),
         employeeId: config.employeeId,
         teamId: config.teamId,
@@ -159,7 +161,7 @@ export function ExtensionPreviewPanel({ target, config, unavailableReason, onRun
   const cancel = async () => {
     if (!runningRef.current) return
     runningRef.current = false
-    await cancelHarness().catch(() => false)
+    await cancelHarness(previewTaskIdRef.current).catch(() => false)
     const canceled: TaskMonitorState = {
       ...monitorRef.current,
       status: 'canceled',
