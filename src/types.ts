@@ -372,6 +372,17 @@ export interface ExpertKitManifest {
   connectorRefs: string[]
   knowledgeBaseRefs?: string[]
   serverWorkflows: ServerWorkflowDefinition[]
+  permissions?: ExtensionPermissions
+}
+
+export type ExtensionPermissionMode = 'allow' | 'approval' | 'deny'
+
+export interface ExtensionPermissions {
+  localFiles?: ExtensionPermissionMode
+  shell?: ExtensionPermissionMode
+  computerUse?: ExtensionPermissionMode
+  connectorRead?: ExtensionPermissionMode
+  connectorWrite?: ExtensionPermissionMode
 }
 
 export interface InstalledExpertKit {
