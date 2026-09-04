@@ -102,6 +102,7 @@ pub fn run() {
             expert_kits::remove_catalog_extension,
             local_artifacts::open_local_artifact,
             local_files::authorize_local_directory,
+            local_files::authorize_local_files,
             local_files::authorize_standard_local_directories,
             local_files::authorize_dropped_paths,
             local_files::restore_local_directories,

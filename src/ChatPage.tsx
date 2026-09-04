@@ -1,7 +1,6 @@
-import { ArrowDown, BookOpen, Bot, Check, ChevronDown, CirclePlus, CircleStop, FileImage, FileText, FolderOpen, Send, Sparkles, SquareCheckBig, X } from 'lucide-react'
+import { ArrowDown, BookOpen, Bot, Check, ChevronDown, CirclePlus, CircleStop, FileImage, FilePlus2, FileText, FolderOpen, Send, Sparkles, SquareCheckBig, X } from 'lucide-react'
 import { lazy, Suspense, useEffect, useRef, useState, type FormEvent, type RefObject, type UIEvent } from 'react'
 import type { AuthorizedLocalDirectory } from './harness'
-import type { InvocationOption } from './invocations'
 import { FileChangesCard } from './FileChangesCard'
 import { InlineTaskActivity } from './InlineTaskActivity'
 import { modelDisplayName } from './modelSelection'
@@ -26,10 +25,7 @@ interface Props {
   activeModel: string
   models: string[]
   modelMenuOpen: boolean
-  visibleInvocations: InvocationOption[]
-  contextQuery?: string
   currentTaskRunning?: boolean
-  visibleKnowledgeContexts: KnowledgeBaseEntry[]
   knowledgeBases: KnowledgeBaseEntry[]
   selectedKnowledgeBaseRefs: string[]
   localDirectories: AuthorizedLocalDirectory[]
@@ -44,11 +40,11 @@ interface Props {
   onReconnect: () => void
   onRecoverHarness: () => void
   onAddLocalDirectory: () => void
+  onAddLocalFiles: () => void
   onSelectCapability: (id: string) => void
   onToggleModelMenu: () => void
   onSelectModel: (model: string) => void
   onCancel: () => void
-  onSelectInvocation: (option: InvocationOption) => void
   onAddKnowledge: (reference: string) => void
   onRemoveKnowledge: (reference: string) => void
   onRemoveLocalDirectory: (id: string) => void
@@ -132,28 +128,28 @@ export function ChatPage(props: Props) {
       ? <div className="runtime-recovery"><CircleStop size={17} /><span><strong>企业服务暂不可用</strong><small>请检查内网连接后重试</small></span><button onClick={props.onReconnect} type="button">重新连接</button></div>
       : props.harnessHealth === 'degraded' && <div className="runtime-recovery"><CircleStop size={17} /><span><strong>本地 Agent 暂不可用</strong><small>{props.harnessHealthDetail}</small></span><button onClick={props.onRecoverHarness} type="button">重新检测</button></div>}
     <form className="composer" onSubmit={props.onSubmit}>
-      <textarea aria-label="给小胤发送消息" onChange={(event) => props.onPrompt(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); event.currentTarget.form?.requestSubmit() } }} placeholder="描述任务；@ 引用知识库，/ 使用快捷指令" ref={props.composerRef} value={props.prompt} />
+      <textarea aria-label="给小胤发送消息" onChange={(event) => props.onPrompt(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); event.currentTarget.form?.requestSubmit() } }} placeholder="描述你想完成的任务" ref={props.composerRef} value={props.prompt} />
       <div className="composer-actions">
         <div className="context-picker" ref={contextPickerRef}>
-          <button aria-expanded={contextMenuOpen} className="workspace-button" disabled={props.harnessRunning} onClick={() => { setContextMenuOpen((value) => !value); setCapabilityMenuOpen(false) }} title="添加文件或知识库" type="button"><CirclePlus size={17} /><span>添加</span></button>
+          <button aria-expanded={contextMenuOpen} aria-label="添加上下文" className="workspace-button context-add-button" disabled={props.harnessRunning} onClick={() => { setContextMenuOpen((value) => !value); setCapabilityMenuOpen(false) }} title="添加文件、文件夹或知识库" type="button"><CirclePlus size={19} /></button>
           {contextMenuOpen && <div className="composer-popover context-menu">
-            <small>添加到当前任务</small>
-            <button onClick={() => { setContextMenuOpen(false); props.onAddLocalDirectory() }} type="button"><FolderOpen size={16} /><span><strong>工作目录</strong><small>允许小胤读取和处理本地文件</small></span></button>
+            <small>添加上下文</small>
+            <button onClick={() => { setContextMenuOpen(false); props.onAddLocalFiles() }} type="button"><FilePlus2 size={16} /><span><strong>文件</strong><small>添加图片、文档或其他任务资料</small></span></button>
+            <button onClick={() => { setContextMenuOpen(false); props.onAddLocalDirectory() }} type="button"><FolderOpen size={16} /><span><strong>文件夹</strong><small>允许小胤在该目录中读取和修改文件</small></span></button>
             {props.knowledgeBases.filter((item) => !props.selectedKnowledgeBaseRefs.includes(item.reference)).length > 0 && <>
               <small>知识库</small>
               {props.knowledgeBases.filter((item) => !props.selectedKnowledgeBaseRefs.includes(item.reference)).slice(0, 6).map((item) => <button key={item.reference} onClick={() => { props.onAddKnowledge(item.reference); setContextMenuOpen(false) }} type="button"><BookOpen size={16} /><span><strong>{item.name}</strong><small>{item.description || knowledgeScopeLabel(item.scope)}</small></span></button>)}
             </>}
           </div>}
         </div>
-        <div className="capability-picker" ref={capabilityPickerRef}>
-          <button aria-expanded={capabilityMenuOpen} className="mode-button" disabled={currentTaskRunning} onClick={() => { setCapabilityMenuOpen((value) => !value); setContextMenuOpen(false) }} title="选择工作模式" type="button"><Sparkles size={14} /> {props.selectedCapabilityName} <ChevronDown size={13} /></button>
+        {(props.capabilityOptions.length > 0 || props.selectedCapabilityId) && <div className="capability-picker" ref={capabilityPickerRef}>
+          <button aria-expanded={capabilityMenuOpen} className={`mode-button${props.selectedCapabilityId ? ' selected' : ''}`} disabled={currentTaskRunning} onClick={() => { setCapabilityMenuOpen((value) => !value); setContextMenuOpen(false) }} title="按需使用专家套件" type="button"><Sparkles size={14} /> {props.selectedCapabilityName} <ChevronDown size={13} /></button>
           {capabilityMenuOpen && <div className="composer-popover capability-menu">
-            <small>工作模式</small>
-            <button className={!props.selectedCapabilityId ? 'active' : ''} onClick={() => { props.onSelectCapability(''); setCapabilityMenuOpen(false) }} type="button"><Sparkles size={16} /><span><strong>通用</strong><small>小胤根据任务自动选择技能和工具</small></span>{!props.selectedCapabilityId && <Check size={15} />}</button>
-            {props.capabilityOptions.length > 0 && <small>专家套件</small>}
+            <small>专家套件（可选）</small>
+            <button className={!props.selectedCapabilityId ? 'active' : ''} onClick={() => { props.onSelectCapability(''); setCapabilityMenuOpen(false) }} type="button"><Sparkles size={16} /><span><strong>不使用专家套件</strong><small>小胤仍会按任务自动调用技能、工具和连接器</small></span>{!props.selectedCapabilityId && <Check size={15} />}</button>
             {props.capabilityOptions.map((option) => <button className={props.selectedCapabilityId === option.id ? 'active' : ''} key={option.id} onClick={() => { props.onSelectCapability(option.id); setCapabilityMenuOpen(false) }} type="button"><Sparkles size={16} /><span><strong>{option.name}</strong><small>{option.summary}</small></span>{props.selectedCapabilityId === option.id && <Check size={15} />}</button>)}
           </div>}
-        </div>
+        </div>}
         <div className="model-picker" ref={props.modelPickerRef}>
           <button aria-expanded={props.modelMenuOpen} className="model-label" disabled={currentTaskRunning} onClick={props.onToggleModelMenu} type="button"><Bot size={14} /> {modelDisplayName(props.activeModel)} <ChevronDown size={13} /></button>
           {props.modelMenuOpen && <div className="model-menu"><small>公司可用模型</small>{(props.models.length ? props.models : [props.activeModel]).map((model) => <button className={model === props.activeModel ? 'active' : ''} key={model} onClick={() => props.onSelectModel(model)} title={model} type="button"><span><strong>{modelDisplayName(model)}</strong></span>{model === props.activeModel && <SquareCheckBig size={14} />}</button>)}</div>}
@@ -162,13 +158,11 @@ export function ChatPage(props: Props) {
           ? <button aria-label="取消当前任务" className="cancel-button" onClick={props.onCancel} title="取消当前任务" type="button"><CircleStop size={17} /></button>
           : <button aria-label="发送" className="send-button" disabled={(!props.prompt.trim() && props.pendingAttachments.length === 0) || props.runtimeStatus !== 'ready' || props.harnessHealth === 'degraded' || props.taskContextRestoring} title={props.runtimeStatus !== 'ready' ? '企业服务未连接' : props.harnessHealth === 'degraded' ? '请先恢复本地 Agent' : props.taskContextRestoring ? '正在恢复任务目录' : '发送'} type="submit"><Send size={17} /></button>}
       </div>
-      {props.visibleInvocations.length > 0 && <div className="slash-menu"><small>快捷指令</small>{props.visibleInvocations.map((option) => <button key={`${option.profileKind}-${option.profileId}-${option.id}`} onClick={() => props.onSelectInvocation(option)} type="button"><span><strong>{option.label}</strong><small>{option.description}</small></span></button>)}</div>}
-      {props.contextQuery !== undefined && <div className="slash-menu"><small>引用知识库</small>{props.visibleKnowledgeContexts.map((item) => <button key={item.reference} onClick={() => props.onAddKnowledge(item.reference)} type="button"><span><strong>@{item.name}</strong><small>{item.description || item.reference}</small></span><em>{knowledgeScopeLabel(item.scope)}</em></button>)}{props.visibleKnowledgeContexts.length === 0 && <span className="context-menu-empty">没有匹配的知识库</span>}</div>}
     </form>
     {props.localFileError && <div className="local-file-error">{props.localFileError}</div>}
     <div className="context-bar">
       <div className="local-contexts">
-        {props.selectedKnowledgeBaseRefs.map((reference) => <span className="local-context" key={reference}>@{props.knowledgeBases.find((item) => item.reference === reference)?.name ?? reference}<button aria-label={`移除 ${reference}`} disabled={props.harnessRunning} onClick={() => props.onRemoveKnowledge(reference)} type="button"><X size={11} /></button></span>)}
+        {props.selectedKnowledgeBaseRefs.map((reference) => <span className="local-context" key={reference}><BookOpen size={12} />{props.knowledgeBases.find((item) => item.reference === reference)?.name ?? reference}<button aria-label={`移除 ${reference}`} disabled={props.harnessRunning} onClick={() => props.onRemoveKnowledge(reference)} type="button"><X size={11} /></button></span>)}
         {props.localDirectories.map((directory) => <span className="local-context" key={directory.id}><FolderOpen size={12} />{directory.name}<button aria-label={`移除 ${directory.name}`} disabled={props.harnessRunning} onClick={() => props.onRemoveLocalDirectory(directory.id)} type="button"><X size={11} /></button></span>)}
         {props.pendingAttachments.length > 0 && <AttachmentList attachments={props.pendingAttachments} onRemove={props.onRemoveAttachment} />}
       </div>
