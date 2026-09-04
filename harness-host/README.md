@@ -16,4 +16,4 @@
 
 `XIAOYIN_LOCAL_FILE_ROOTS` 只由 Tauri 注入本次任务已授权的目录。Local File Bridge 提供目录浏览、文本读写、建目录、复制、移动和删除；Document Bridge 解析和生成 DOCX/XLSX/PDF。命令执行直接组合 DeepSeek Harness 的原生 Shell Executor、Subprocess Runtime、Jobs 和终端结果格式，macOS/Linux 使用 `bash`，Windows 使用 `pwsh`；小胤只在原生 `tools/pre-execute` 上叠加危险命令确认策略。
 
-Agent Spine 同时开启工作区 `AGENTS.md` 上下文、后台 Job 控制和持久 Goal。它们使用 Harness 原生事件与会话状态，不从回复文本推断执行状态。
+Agent Spine 同时开启工作区 `AGENTS.md` 上下文、后台 Job 控制、持久 Goal 和 Harness 原生 Subagent 委派。主 Agent 可对相互独立的复杂工作自动并行委派最多 3 个一次性子 Agent，等待结果后统一汇总；子 Agent 不再递归委派。这些能力使用 Harness 原生事件与会话状态，不从回复文本推断执行状态。

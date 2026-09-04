@@ -5,6 +5,7 @@ import type {
   ConnectorDiagnosticResult,
   ConnectorRuntimeDefinition,
   LocalTaskAttachment,
+  SubagentActivity,
   TaskArtifact,
   TaskExecutionStep,
   TaskMonitorState,
@@ -199,7 +200,7 @@ export interface HarnessResponseUpdate {
 /** Visible assistant text only. Reasoning events and tool payloads never enter the reply. */
 export function harnessResponseUpdate(notification: HarnessNotification): HarnessResponseUpdate | undefined {
   const parsed = parseHarnessEvent(notification)
-  if (!parsed) return undefined
+  if (!parsed || !parsed.isRootSession) return undefined
   const turn = integer(parsed.data.turn)
   const step = integer(parsed.data.step)
   if (parsed.type === 'tool/call') return { key: '', mode: 'clear', text: '' }
@@ -224,6 +225,12 @@ export function applyHarnessNotification(
 ): TaskMonitorState {
   const parsed = parseHarnessEvent(notification)
   if (!parsed) return current
+  if (!parsed.isRootSession) return {
+    ...current,
+    status: current.status === 'idle' ? 'running' : current.status,
+    activity: '子 Agent 正在处理',
+    updatedAt: eventTime(parsed.event),
+  }
   const occurredAt = eventTime(parsed.event)
   const turn = integer(parsed.data.turn)
   const step = integer(parsed.data.step)
@@ -275,6 +282,14 @@ export function applyHarnessNotification(
       ? current.steps
       : completeStep(current.steps, `analysis:${turn}:${step}`, 'completed', occurredAt)
     const presentation = toolPresentation(toolName, parsed.data.arguments)
+    const subagents = toolName === 'subagent'
+      ? upsertSubagent(current.subagents ?? [], {
+        id: callId,
+        label: presentation.label,
+        status: 'running',
+        startedAt: occurredAt,
+      })
+      : current.subagents
     return {
       ...updateMonitor(current, activity, upsertStep(analysisCompleted, {
       id: `tool:${callId}`,
@@ -291,6 +306,7 @@ export function applyHarnessNotification(
         toolName,
         occurredAt,
       }),
+      ...(subagents === undefined ? {} : { subagents }),
     }
   }
 
@@ -305,6 +321,9 @@ export function applyHarnessNotification(
       ? [...current.artifacts.filter((item) => item.id !== artifact.id), artifact].slice(-50)
       : current.artifacts
     const presentation = toolName ? toolResultPresentation(toolName, result.content, result.failed) : {}
+    const subagents = toolName === 'subagent'
+      ? completeSubagent(current.subagents ?? [], result.callId, result.failed ? 'failed' : 'completed', occurredAt)
+      : current.subagents
     return {
       ...updateMonitor(current, activity,
         completeStep(current.steps, `tool:${result.callId}`, result.failed ? 'failed' : 'completed', occurredAt), occurredAt),
@@ -312,6 +331,7 @@ export function applyHarnessNotification(
         current.timeline ?? [], `tool:${result.callId}`, result.failed ? 'failed' : 'completed', occurredAt, presentation,
       ),
       artifacts,
+      ...(subagents === undefined ? {} : { subagents }),
     }
   }
 
@@ -370,6 +390,9 @@ export function applyHarnessNotification(
     const timeline = (current.timeline ?? []).map((item): TaskTimelineEntry => item.status === 'running'
       ? { ...item, status }
       : item)
+    const subagents = (current.subagents ?? []).map((item): SubagentActivity => item.status === 'running'
+      ? { ...item, status, completedAt: occurredAt }
+      : item)
     return {
       ...current,
       status,
@@ -385,6 +408,7 @@ export function applyHarnessNotification(
         occurredAt,
         completedAt: occurredAt,
       }) : timeline,
+      subagents,
       steps: upsertStep(settled, {
       id: `response:${turn}`,
       kind: 'response',
@@ -400,7 +424,7 @@ export function applyHarnessNotification(
 }
 
 export function createTaskMonitor(now = new Date().toISOString()): TaskMonitorState {
-  return { status: 'idle', activity: '等待开始', updatedAt: now, steps: [], timeline: [], artifacts: [] }
+  return { status: 'idle', activity: '等待开始', updatedAt: now, steps: [], timeline: [], subagents: [], artifacts: [] }
 }
 
 function updateMonitor(
@@ -418,18 +442,22 @@ function parseHarnessEvent(notification: HarnessNotification): {
   event: Record<string, unknown>
   type: string
   data: Record<string, unknown>
+  isRootSession: boolean
 } | undefined {
   const envelope = asRecord(notification.event)
   const wireEvent = asRecord(envelope?.event)
   const method = text(wireEvent?.method) ?? ''
   const params = asRecord(wireEvent?.params) ?? {}
   const event = asRecord(params.event) ?? {}
+  const rootSessionId = text(envelope?.rootSessionId)
+  const eventSessionId = text(params.sessionId)
   return {
     method,
     params,
     event,
     type: text(event.type) ?? '',
     data: asRecord(event.data) ?? {},
+    isRootSession: !rootSessionId || !eventSessionId || rootSessionId === eventSessionId,
   }
 }
 
@@ -531,6 +559,22 @@ function completeStep(
     : item)
 }
 
+function upsertSubagent(current: SubagentActivity[], next: SubagentActivity): SubagentActivity[] {
+  const index = current.findIndex((item) => item.id === next.id)
+  return (index < 0
+    ? [...current, next]
+    : current.map((item, itemIndex) => itemIndex === index ? { ...item, ...next } : item)).slice(-20)
+}
+
+function completeSubagent(
+  current: SubagentActivity[],
+  id: string,
+  status: 'completed' | 'failed',
+  completedAt: string,
+): SubagentActivity[] {
+  return current.map((item) => item.id === id ? { ...item, status, completedAt } : item)
+}
+
 function assistantMessageText(data: Record<string, unknown>): string {
   const message = asRecord(data.message)
   const content = Array.isArray(message?.content) ? message.content : []
@@ -609,6 +653,7 @@ function toolActivityLabel(toolName: string): string {
     get_goal: '查看任务目标',
     create_goal: '创建任务目标',
     update_goal: '更新任务目标',
+    subagent: '委派子任务',
     browser_open: '打开网页',
     browser_snapshot: '读取网页',
     browser_click: '操作网页',
@@ -631,6 +676,9 @@ function toolPresentation(toolName: string, rawArguments: unknown): Pick<TaskTim
   if (toolName === 'bash' || toolName === 'pwsh') return compact({
     kind: 'command', label: '运行命令', detail: firstText(args, 'description'), path,
     text: bounded(firstText(args, 'command'), 16_000),
+  })
+  if (toolName === 'subagent') return compact({
+    kind: 'subagent', label: firstText(args, 'description') ?? '委派子任务',
   })
   const fileLabels: Record<string, string> = {
     local_files_roots: '检查可用工作目录',

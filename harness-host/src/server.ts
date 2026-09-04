@@ -88,10 +88,10 @@ export class HostServer {
           return
         case 'session.run': {
           const input = parseRunInput(value.params)
-          const result = await this.runtime.run(input, (event) => {
+          const result = await this.runtime.run(input, (event, rootSessionId) => {
             this.emit(notification('session.notification', {
               requestId: value.id,
-              sessionId: input.sessionId,
+              rootSessionId,
               event,
             }))
           })

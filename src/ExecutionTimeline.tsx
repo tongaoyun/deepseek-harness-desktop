@@ -1,6 +1,6 @@
 import {
   Check, ChevronRight, CircleAlert, FileCode2, FileInput, FolderSearch, Globe2,
-  LoaderCircle, MessageSquareText, PlugZap, ShieldCheck, TerminalSquare, Wrench,
+  LoaderCircle, MessageSquareText, PlugZap, ShieldCheck, TerminalSquare, Users, Wrench,
 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -52,6 +52,7 @@ function ActivityIcon({ entry }: { entry: TaskTimelineEntry }) {
   if (entry.kind === 'command') return <TerminalSquare size={16} />
   if (entry.kind === 'connector') return <PlugZap size={16} />
   if (entry.kind === 'browser') return <Globe2 size={16} />
+  if (entry.kind === 'subagent') return <Users size={16} />
   if (entry.kind === 'approval') return <ShieldCheck size={16} />
   if (entry.kind === 'error' || entry.kind === 'warning') return <CircleAlert size={16} />
   if (entry.kind === 'file') {

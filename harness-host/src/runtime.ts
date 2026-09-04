@@ -23,7 +23,7 @@ export interface HarnessRunResult {
 export interface HarnessRuntime {
   health(): Promise<{ status: string; runtime: string; version: string }>
   initialize(): Promise<{ status: string; runtime: string }>
-  run(input: RunInput, onNotification: (value: HarnessNotification) => void): Promise<HarnessRunResult>
+  run(input: RunInput, onNotification: (value: HarnessNotification, rootSessionId: string) => void): Promise<HarnessRunResult>
   close(): Promise<void>
 }
 
@@ -58,10 +58,13 @@ export class DeepSeekHarnessRuntime implements HarnessRuntime {
 
   async run(
     input: RunInput,
-    onNotification: (value: HarnessNotification) => void,
+    onNotification: (value: HarnessNotification, rootSessionId: string) => void,
   ): Promise<HarnessRunResult> {
     const sessionId = input.sessionId ?? `session-${randomUUID().replaceAll('-', '')}`
-    const execution = this.runTail.then(() => this.runNow({ ...input, sessionId }, onNotification))
+    const execution = this.runTail.then(() => this.runNow(
+      { ...input, sessionId },
+      (value) => onNotification(value, sessionId),
+    ))
     this.runTail = execution.then(() => undefined, () => undefined)
     return execution
   }

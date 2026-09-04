@@ -22,9 +22,11 @@ export function InlineTaskActivity({ monitor, finalResponse = '' }: { monitor: T
 
   if (monitor.status === 'idle' && monitor.steps.length === 0 && monitor.artifacts.length === 0) return null
   const duration = taskDurationLabel(monitor, clock)
+  const subagentCount = monitor.subagents?.length ?? 0
+  const collaboration = subagentCount > 0 ? ` · ${subagentCount} 个协作任务` : ''
   const summary = monitor.status === 'running'
-    ? duration ? `正在处理 ${duration}` : monitor.activity
-    : duration ? `${monitor.status === 'failed' ? '处理失败' : '已处理'} ${duration}` : statusLabel(monitor.status)
+    ? duration ? `正在处理 ${duration}${collaboration}` : `${monitor.activity}${collaboration}`
+    : duration ? `${monitor.status === 'failed' ? '处理失败' : '已处理'} ${duration}${collaboration}` : `${statusLabel(monitor.status)}${collaboration}`
   const hasDetails = (monitor.timeline?.length ?? 0) > 0
 
   return <section className={`inline-task-activity ${monitor.status}`}>

@@ -73,6 +73,30 @@ describe('persisted session follow-ups', () => {
     await expect(runSessionTurn(fakeClient(notifications), 'session-1', [{ type: 'text', text: '继续' }], () => undefined))
       .resolves.toMatchObject({ finalResponse: '我先检查文件。' })
   })
+
+  it('waits for the root turn while forwarding child session activity', async () => {
+    const notifications: HarnessNotification[] = [
+      event('agent/inbox/spliced', { inserted: [{ id: 'message-2' }] }),
+      eventFor('child-1', 'turn/start', { turn: 1 }),
+      eventFor('child-1', 'assistant/message', { message: { content: [{ type: 'text', text: '子 Agent 调研结果' }] } }),
+      eventFor('child-1', 'turn/end', { turn: 1, reason: { kind: 'completed' } }),
+      statusFor('child-1', 'idle'),
+      event('turn/start', { turn: 2 }),
+      event('assistant/message', { message: { content: [{ type: 'text', text: '主 Agent 汇总结果' }] } }),
+      event('turn/end', { turn: 2, reason: { kind: 'completed' } }),
+      status('idle'),
+    ]
+    const observed: HarnessNotification[] = []
+    const result = await runSessionTurn(
+      fakeClient(notifications),
+      'session-1',
+      [{ type: 'text', text: '并行调研' }],
+      (value) => observed.push(value),
+    )
+
+    expect(result.finalResponse).toBe('主 Agent 汇总结果')
+    expect(observed.some((item) => item.params.sessionId === 'child-1')).toBe(true)
+  })
 })
 
 function fakeClient(notifications: HarnessNotification[]) {
@@ -92,4 +116,12 @@ function event(type: string, data: Record<string, unknown>): HarnessNotification
 
 function status(value: string): HarnessNotification {
   return { method: 'session.status', params: { sessionId: 'session-1', status: value } }
+}
+
+function eventFor(sessionId: string, type: string, data: Record<string, unknown>): HarnessNotification {
+  return { method: 'session.event', params: { sessionId, event: { type, data } } }
+}
+
+function statusFor(sessionId: string, value: string): HarnessNotification {
+  return { method: 'session.status', params: { sessionId, status: value } }
 }

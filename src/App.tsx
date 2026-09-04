@@ -639,6 +639,7 @@ export default function App() {
     if (!currentCapabilitySnapshot) setCurrentCapabilitySnapshot(capabilitySnapshot)
     const taskId = currentLocalTaskId || crypto.randomUUID()
     const existingTask = localTasks.find((task) => task.id === taskId)
+    const rootSessionId = taskSessionId || existingTask?.sessionId || `session-${crypto.randomUUID().replaceAll('-', '')}`
     const pendingMessages: TaskMessage[] = [...messages, { role: 'user', text: input, ...(messageAttachments.length > 0 ? { attachments: messageAttachments } : {}) },
       { role: 'assistant', text: '', pending: true }]
     const runningMonitor: TaskMonitorState = {
@@ -655,7 +656,7 @@ export default function App() {
       status: 'RUNNING',
       createdAt: existingTask?.createdAt ?? now,
       updatedAt: now,
-      sessionId: taskSessionId || existingTask?.sessionId,
+      sessionId: rootSessionId,
       expertKitId: selectedExpertKit?.id,
       skillId: selectedSkill?.id,
       model: activeModel,
@@ -685,7 +686,7 @@ export default function App() {
         prompt: input,
         employeeId: user!.userId,
         teamId: user!.teamId,
-        ...(taskSessionId ? { sessionId: taskSessionId } : {}),
+        sessionId: rootSessionId,
         ...(selectedExpertKit
           ? { selectedExtension: { kind: 'expert-kit' as const, id: selectedExpertKit.id } }
           : selectedSkill ? { selectedExtension: { kind: 'skill' as const, id: selectedSkill.id } } : {}),
