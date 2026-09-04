@@ -8,6 +8,7 @@ import type {
   SubagentActivity,
   TaskArtifact,
   TaskExecutionStep,
+  TaskFileChange,
   TaskMonitorState,
   TaskTimelineEntry,
 } from './types'
@@ -320,6 +321,10 @@ export function applyHarnessNotification(
     const artifacts = artifact
       ? [...current.artifacts.filter((item) => item.id !== artifact.id), artifact].slice(-50)
       : current.artifacts
+    const change = !result.failed && toolName
+      ? fileChangeFromToolResult(toolName, result.content, occurredAt)
+      : undefined
+    const changes = change ? upsertFileChange(current.changes ?? [], change) : current.changes
     const presentation = toolName ? toolResultPresentation(toolName, result.content, result.failed) : {}
     const subagents = toolName === 'subagent'
       ? completeSubagent(current.subagents ?? [], result.callId, result.failed ? 'failed' : 'completed', occurredAt)
@@ -331,6 +336,7 @@ export function applyHarnessNotification(
         current.timeline ?? [], `tool:${result.callId}`, result.failed ? 'failed' : 'completed', occurredAt, presentation,
       ),
       artifacts,
+      ...(changes === undefined ? {} : { changes }),
       ...(subagents === undefined ? {} : { subagents }),
     }
   }
@@ -424,7 +430,7 @@ export function applyHarnessNotification(
 }
 
 export function createTaskMonitor(now = new Date().toISOString()): TaskMonitorState {
-  return { status: 'idle', activity: '等待开始', updatedAt: now, steps: [], timeline: [], subagents: [], artifacts: [] }
+  return { status: 'idle', activity: '等待开始', updatedAt: now, steps: [], timeline: [], subagents: [], changes: [], artifacts: [] }
 }
 
 function updateMonitor(
@@ -478,6 +484,63 @@ const ARTIFACT_TOOLS = new Set([
   'office_docx_create', 'office_xlsx_create', 'office_xlsx_update_cells', 'office_pptx_create', 'office_pdf_create',
   'local_files_write_text', 'local_files_copy', 'local_files_move',
 ])
+
+const FILE_CHANGE_TOOLS = new Set([
+  ...ARTIFACT_TOOLS,
+  'local_files_delete',
+])
+
+function fileChangeFromToolResult(toolName: string, content: unknown, changedAt: string): TaskFileChange | undefined {
+  if (!FILE_CHANGE_TOOLS.has(toolName)) return undefined
+  const value = toolResultValue(content)
+  if (!value) return undefined
+  const rootId = text(value.rootId)
+  const rootName = text(value.rootName)
+  const path = text(value.path) ?? text(value.destination)
+  if (!rootId || !rootName || !path || path === '.' || path.startsWith('/') || /^[A-Za-z]:[\\/]/.test(path)) return undefined
+  const name = path.split('/').filter(Boolean).at(-1)
+  if (!name) return undefined
+  const addedLines = nonNegativeInteger(value.addedLines)
+  const deletedLines = nonNegativeInteger(value.deletedLines)
+  return {
+    id: `${rootId}:${path}`,
+    rootId,
+    rootName,
+    path,
+    name,
+    sourceTool: toolName,
+    action: fileChangeAction(toolName, value),
+    ...(text(value.source) ? { previousPath: text(value.source) } : {}),
+    ...(addedLines === undefined ? {} : { addedLines }),
+    ...(deletedLines === undefined ? {} : { deletedLines }),
+    changedAt,
+  }
+}
+
+function fileChangeAction(toolName: string, value: Record<string, unknown>): TaskFileChange['action'] {
+  if (toolName === 'local_files_copy') return 'copied'
+  if (toolName === 'local_files_move') return 'moved'
+  if (toolName === 'local_files_delete') return 'deleted'
+  if (text(value.action) === 'updated' || text(value.backupPath)) return 'updated'
+  return 'created'
+}
+
+function upsertFileChange(current: TaskFileChange[], next: TaskFileChange): TaskFileChange[] {
+  const index = current.findIndex((item) => item.id === next.id)
+  if (index < 0) return [...current, next].slice(-100)
+  return current.map((item, itemIndex) => itemIndex !== index ? item : {
+    ...item,
+    ...next,
+    addedLines: addOptionalCounts(item.addedLines, next.addedLines),
+    deletedLines: addOptionalCounts(item.deletedLines, next.deletedLines),
+  }).slice(-100)
+}
+
+function addOptionalCounts(left: number | undefined, right: number | undefined): number | undefined {
+  if (left === undefined) return right
+  if (right === undefined) return left
+  return left + right
+}
 
 function artifactFromToolResult(toolName: string, content: unknown, createdAt: string): TaskArtifact | undefined {
   if (!ARTIFACT_TOOLS.has(toolName)) return undefined
@@ -811,6 +874,10 @@ function eventTime(event: Record<string, unknown>): string {
 
 function integer(value: unknown): number | undefined {
   return Number.isSafeInteger(value) ? value as number : undefined
+}
+
+function nonNegativeInteger(value: unknown): number | undefined {
+  return Number.isSafeInteger(value) && (value as number) >= 0 ? value as number : undefined
 }
 
 function text(value: unknown): string | undefined {

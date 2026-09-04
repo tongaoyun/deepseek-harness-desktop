@@ -261,9 +261,26 @@ export class LocalFileBridge {
     const bytes = Buffer.byteLength(content, 'utf8')
     if (bytes > MAX_WRITE_BYTES) throw new Error(`Text content exceeds the ${MAX_WRITE_BYTES} byte limit`)
     const target = await this.resolveTargetInsideRoot(root, requestedPath)
+    let previousContent: string | undefined
+    if (overwrite) {
+      try {
+        previousContent = await readFile(target, 'utf8')
+      } catch (error) {
+        if (!isNotFound(error)) throw error
+      }
+    }
     const backupPath = overwrite ? await this.backupIfExists(root, target) : undefined
     await writeFile(target, content, { encoding: 'utf8', flag: overwrite ? 'w' : 'wx' })
-    return { rootId: root.id, rootName: root.name, path: this.displayPath(root, target), size: bytes, ...(backupPath ? { backupPath } : {}) }
+    const lineChanges = textLineChanges(previousContent, content)
+    return {
+      rootId: root.id,
+      rootName: root.name,
+      path: this.displayPath(root, target),
+      size: bytes,
+      action: backupPath ? 'updated' : 'created',
+      ...lineChanges,
+      ...(backupPath ? { backupPath } : {}),
+    }
   }
 
   async createDirectory(rootId: string, requestedPath: string): Promise<object> {
@@ -664,6 +681,33 @@ function requiredContent(value: unknown): string {
 
 function isNotFound(error: unknown): boolean {
   return typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT'
+}
+
+function textLineChanges(previous: string | undefined, next: string): { addedLines?: number; deletedLines?: number } {
+  const after = normalizedLines(next)
+  if (previous === undefined) return { addedLines: after.length, deletedLines: 0 }
+  const before = normalizedLines(previous)
+  if (before.length * after.length > 2_000_000) return {}
+  const row = new Uint32Array(after.length + 1)
+  for (const beforeLine of before) {
+    let diagonal = 0
+    for (let column = 1; column <= after.length; column += 1) {
+      const above = row[column] ?? 0
+      row[column] = beforeLine === after[column - 1]
+        ? diagonal + 1
+        : Math.max(row[column] ?? 0, row[column - 1] ?? 0)
+      diagonal = above
+    }
+  }
+  const common = row[after.length] ?? 0
+  return { addedLines: after.length - common, deletedLines: before.length - common }
+}
+
+function normalizedLines(value: string): string[] {
+  if (!value) return []
+  const lines = value.replaceAll('\r\n', '\n').split('\n')
+  if (lines.at(-1) === '') lines.pop()
+  return lines
 }
 
 function mutationApprovalReason(toolName: string, args: unknown): string {

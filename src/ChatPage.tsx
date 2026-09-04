@@ -2,6 +2,7 @@ import { ArrowDown, BookOpen, Bot, Check, ChevronDown, CirclePlus, CircleStop, F
 import { lazy, Suspense, useEffect, useRef, useState, type FormEvent, type RefObject, type UIEvent } from 'react'
 import type { AuthorizedLocalDirectory } from './harness'
 import type { InvocationOption } from './invocations'
+import { FileChangesCard } from './FileChangesCard'
 import { InlineTaskActivity } from './InlineTaskActivity'
 import { modelDisplayName } from './modelSelection'
 import { TaskArtifacts } from './TaskArtifacts'
@@ -113,9 +114,11 @@ export function ChatPage(props: Props) {
           <Suspense fallback={<p>{message.text}</p>}><RichMessage assistant={false} text={message.text} /></Suspense>
         </div>
       </article>
+      const timelineOwnsStreamingText = message.pending && (monitor?.timeline?.some((entry) => entry.kind === 'assistant') ?? false)
       return <article aria-busy={message.pending} className={`conversation-turn assistant-turn${message.pending ? ' pending' : ''}`} key={`${message.role}-${index}`}>
         {monitor && <InlineTaskActivity finalResponse={message.text} monitor={monitor} />}
-        {(!message.pending || message.text) && <div className={message.pending ? 'streaming-response' : undefined}><Suspense fallback={<p>{message.text}</p>}><RichMessage assistant={!message.pending} onRegenerate={!message.pending && index === props.messages.length - 1 ? props.onPrepareRetry : undefined} text={message.text} /></Suspense></div>}
+        {(!timelineOwnsStreamingText && (!message.pending || message.text)) && <div className={message.pending ? 'streaming-response' : undefined}><Suspense fallback={<p>{message.text}</p>}><RichMessage assistant={!message.pending} onRegenerate={!message.pending && index === props.messages.length - 1 ? props.onPrepareRetry : undefined} text={message.text} /></Suspense></div>}
+        {!message.pending && monitor && (monitor.changes?.length ?? 0) > 0 && <FileChangesCard changes={monitor.changes ?? []} />}
         {!message.pending && monitor && monitor.artifacts.length > 0 && <TaskArtifacts artifacts={monitor.artifacts} conversation />}
         {!message.pending && monitor?.status === 'completed' && index === props.messages.length - 1 && props.creationKind && props.onContinueCreation && <div className="creation-handoff">
           <span><Sparkles size={16} /><span><strong>继续完成创建</strong><small>把当前方案带入创作表单，确认后保存到本机。</small></span></span>

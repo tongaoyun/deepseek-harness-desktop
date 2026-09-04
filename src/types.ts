@@ -169,6 +169,20 @@ export interface TaskArtifact {
   createdAt: string
 }
 
+export interface TaskFileChange {
+  id: string
+  rootId: string
+  rootName: string
+  path: string
+  name: string
+  sourceTool: string
+  action: 'created' | 'updated' | 'copied' | 'moved' | 'deleted'
+  previousPath?: string
+  addedLines?: number
+  deletedLines?: number
+  changedAt: string
+}
+
 export interface TaskMonitorState {
   status: 'idle' | 'running' | 'completed' | 'failed' | 'canceled'
   activity: string
@@ -178,6 +192,7 @@ export interface TaskMonitorState {
   steps: TaskExecutionStep[]
   timeline?: TaskTimelineEntry[]
   subagents?: SubagentActivity[]
+  changes?: TaskFileChange[]
   artifacts: TaskArtifact[]
 }
 
