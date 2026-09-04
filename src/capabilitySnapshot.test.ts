@@ -27,6 +27,12 @@ describe('capability snapshot', () => {
     expect(connectorsForSnapshot(snapshot)).toEqual([connector('erp', '1')])
   })
 
+  it('revokes a connector from an old task snapshot when the employee disables it', () => {
+    const snapshot = createCapabilitySnapshot([], [], [connector('erp-mcp')])
+    expect(connectorsForSnapshot(snapshot, {}, [])).toEqual([])
+    expect(connectorsForSnapshot(snapshot, {}, ['erp-mcp'])).toEqual([connector('erp-mcp')])
+  })
+
   it('excludes connectors the employee has not enabled', () => {
     const disabled = { ...connector('erp'), enabled: false }
     expect(createCapabilitySnapshot([], [], [disabled]).connectors).toEqual([])

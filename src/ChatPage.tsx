@@ -1,4 +1,4 @@
-import { ArrowDown, BookOpen, Bot, Check, ChevronDown, CirclePlus, CircleStop, FileImage, FilePlus2, FileText, FolderOpen, Send, Sparkles, SquareCheckBig, X } from 'lucide-react'
+import { ArrowDown, BookOpen, Bot, Boxes, Check, ChevronDown, CirclePlus, CircleStop, FileImage, FilePlus2, FileText, FolderOpen, Send, Sparkles, SquareCheckBig, X } from 'lucide-react'
 import { lazy, Suspense, useEffect, useRef, useState, type FormEvent, type RefObject, type UIEvent } from 'react'
 import type { AuthorizedLocalDirectory } from './harness'
 import { FileChangesCard } from './FileChangesCard'
@@ -41,6 +41,7 @@ interface Props {
   onRecoverHarness: () => void
   onAddLocalDirectory: () => void
   onAddLocalFiles: () => void
+  onBrowseExpertKits: () => void
   onSelectCapability: (id: string) => void
   onToggleModelMenu: () => void
   onSelectModel: (model: string) => void
@@ -142,14 +143,15 @@ export function ChatPage(props: Props) {
             </>}
           </div>}
         </div>
-        {(props.capabilityOptions.length > 0 || props.selectedCapabilityId) && <div className="capability-picker" ref={capabilityPickerRef}>
+        <div className="capability-picker" ref={capabilityPickerRef}>
           <button aria-expanded={capabilityMenuOpen} className={`mode-button${props.selectedCapabilityId ? ' selected' : ''}`} disabled={currentTaskRunning} onClick={() => { setCapabilityMenuOpen((value) => !value); setContextMenuOpen(false) }} title="按需使用专家套件" type="button"><Sparkles size={14} /> {props.selectedCapabilityName} <ChevronDown size={13} /></button>
           {capabilityMenuOpen && <div className="composer-popover capability-menu">
             <small>专家套件（可选）</small>
             <button className={!props.selectedCapabilityId ? 'active' : ''} onClick={() => { props.onSelectCapability(''); setCapabilityMenuOpen(false) }} type="button"><Sparkles size={16} /><span><strong>不使用专家套件</strong><small>小胤仍会按任务自动调用技能、工具和连接器</small></span>{!props.selectedCapabilityId && <Check size={15} />}</button>
             {props.capabilityOptions.map((option) => <button className={props.selectedCapabilityId === option.id ? 'active' : ''} key={option.id} onClick={() => { props.onSelectCapability(option.id); setCapabilityMenuOpen(false) }} type="button"><Sparkles size={16} /><span><strong>{option.name}</strong><small>{option.summary}</small></span>{props.selectedCapabilityId === option.id && <Check size={15} />}</button>)}
+            {props.capabilityOptions.length === 0 && <button onClick={() => { setCapabilityMenuOpen(false); props.onBrowseExpertKits() }} type="button"><Boxes size={16} /><span><strong>安装专家套件</strong><small>前往企业市场选择适合的工作方式</small></span></button>}
           </div>}
-        </div>}
+        </div>
         <div className="model-picker" ref={props.modelPickerRef}>
           <button aria-expanded={props.modelMenuOpen} className="model-label" disabled={currentTaskRunning} onClick={props.onToggleModelMenu} type="button"><Bot size={14} /> {modelDisplayName(props.activeModel)} <ChevronDown size={13} /></button>
           {props.modelMenuOpen && <div className="model-menu"><small>公司可用模型</small>{(props.models.length ? props.models : [props.activeModel]).map((model) => <button className={model === props.activeModel ? 'active' : ''} key={model} onClick={() => props.onSelectModel(model)} title={model} type="button"><span><strong>{modelDisplayName(model)}</strong></span>{model === props.activeModel && <SquareCheckBig size={14} />}</button>)}</div>}
