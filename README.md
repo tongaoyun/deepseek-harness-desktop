@@ -51,6 +51,7 @@ pnpm tauri:dev
 | 日常调试 | Windows 工作机运行 `pnpm tauri:dev` |
 | 快速安装验证 | `Windows quick installer`，生成 Debug NSIS，制品保留 7 天 |
 | 完整安装验证 | `Windows installer`，生成 MSI 与 NSIS，并按配置执行烟测 |
+| 员工桌面验收 | `pnpm acceptance:windows`，验证聊天、文件、Shell、浏览器、Office、凭据库与多 Agent |
 | 正式发布 | 推送 `v*` 标签，执行门禁、烟测、Updater 签名和 Gitea Release |
 | 回滚 | `Roll back desktop release`，选择已发布版本 |
 
@@ -63,3 +64,7 @@ pnpm tauri:dev
 - `TAURI_SIGNING_PRIVATE_KEY`、`TAURI_SIGNING_PRIVATE_KEY_PASSWORD`：Updater 签名密钥。
 
 Updater 私钥只保存在 Actions Secret 和受保护备份中，不得提交到仓库、`.env` 或安装包。Windows 安装包不执行 Authenticode 证书签名。
+
+## macOS 本机构建
+
+在 Mac 上运行 `pnpm tauri:build:macos`。命令会校验并打包固定版本的 Node.js、完整 Harness Runtime 和桌面应用，生成可独立运行的 `.app` 与 `.dmg`，再挂载最终 DMG 检查签名、架构以及内置 Harness 健康状态。未配置 Apple Developer ID 时产物使用临时签名，仅适合本机或公司内部分发测试，不代表已完成公证。

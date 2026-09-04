@@ -68,6 +68,9 @@ jobs:
       - name: 签名并生成 DMG
         run: bash scripts/package-macos-dmg.sh
 
+      - name: 验证最终 macOS 安装包
+        run: bash scripts/smoke-test-macos-bundle.sh
+
       - name: 收集 macOS 安装包
         run: |
           version="$(node -p "require('./package.json').version")"

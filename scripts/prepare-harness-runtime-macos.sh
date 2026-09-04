@@ -32,7 +32,23 @@ mkdir -p "$next_stage"
 cd "$repository"
 pnpm --dir harness-host build
 pnpm --config.node-linker=hoisted --filter '@xiaoyin/harness-host' --prod deploy "$next_stage/harness-host"
-rm -rf -- "$next_stage/harness-host/node_modules/.bin"
+host_stage="$next_stage/harness-host"
+node_modules="$host_stage/node_modules"
+rm -rf -- \
+  "$node_modules/.bin" \
+  "$node_modules/@types" \
+  "$host_stage/src" \
+  "$host_stage/tsconfig.json" \
+  "$host_stage/pnpm-lock.yaml"
+find "$host_stage/dist" -type f \( -name '*.d.ts' -o -name '*.map' \) -delete
+find "$node_modules" -type f \( -name '*.map' -o -name '*.pdb' \) -delete
+
+# node-pty publishes native builds for every desktop platform. Keep only the
+# build matching this runner; the packaged runtime is platform-specific.
+node_pty_prebuilds="$node_modules/node-pty/prebuilds"
+if [[ -d "$node_pty_prebuilds" ]]; then
+  find "$node_pty_prebuilds" -mindepth 1 -maxdepth 1 -type d ! -name "darwin-$node_arch" -exec rm -rf -- {} +
+fi
 
 archive="node-$node_version-darwin-$node_arch.tar.gz"
 base_url="https://nodejs.org/dist/$node_version"
@@ -52,8 +68,8 @@ cp "$node_root/LICENSE" "$next_stage/node/LICENSE"
 chmod 755 "$next_stage/node/node"
 
 node_binary="$next_stage/node/node"
-entry="$next_stage/harness-host/dist/index.js"
-config="$next_stage/harness-host/runtime/cordis.yml"
+entry="$host_stage/dist/index.js"
+config="$host_stage/runtime/cordis.yml"
 for required in "$node_binary" "$entry" "$config"; do
   [[ -f "$required" ]] || { echo "Packaged Harness file is missing: $required" >&2; exit 1; }
 done
