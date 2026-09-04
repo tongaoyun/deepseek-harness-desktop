@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { browserApprovalReason, validateBrowserUrl, validateDebugUrl } from './local-browser-plugin.js'
+import { BrowserBridge, browserApprovalReason, isBlankBrowserUrl, validateBrowserUrl, validateDebugUrl } from './local-browser-plugin.js'
 
 describe('local browser connector', () => {
   it('accepts normal web pages and rejects unsafe URL forms', () => {
@@ -17,5 +17,19 @@ describe('local browser connector', () => {
     expect(validateDebugUrl('http://127.0.0.1:9222')).toBe('http://127.0.0.1:9222')
     expect(() => validateDebugUrl('https://127.0.0.1:9222')).toThrow('local HTTP')
     expect(() => validateDebugUrl('http://browser.internal:9222')).toThrow('local HTTP')
+  })
+
+  it('recognizes only browser bootstrap pages as reusable blanks', () => {
+    expect(isBlankBrowserUrl('about:blank')).toBe(true)
+    expect(isBlankBrowserUrl('chrome://newtab/')).toBe(true)
+    expect(isBlankBrowserUrl('edge://newtab/')).toBe(true)
+    expect(isBlankBrowserUrl('https://example.com/')).toBe(false)
+  })
+
+  it('does not launch an empty browser when no destination has been opened', async () => {
+    const bridge = new BrowserBridge({} as never)
+    const signal = new AbortController().signal
+    await expect(bridge.tabs(signal)).resolves.toEqual([])
+    await expect(bridge.snapshot(signal)).rejects.toThrow('browser_open')
   })
 })
