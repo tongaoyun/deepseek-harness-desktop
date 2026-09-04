@@ -4,7 +4,11 @@ pub(crate) use crate::harness_connectors::{
 use crate::harness_connectors::{
     desktop_connector_enabled, diagnostic_connectors, validate_connector_catalog, validate_http_url,
 };
-use crate::{expert_kits, local_files::LocalFileAuthorizations, memory};
+use crate::{
+    expert_kits,
+    local_files::{LocalFileAuthorizations, RuntimeLocalFileRoot},
+    memory,
+};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -152,7 +156,7 @@ struct HarnessUiNotification {
 pub(crate) struct RuntimeFingerprint {
     pub(crate) skill_directories: Vec<String>,
     pub(crate) connectors: Vec<RuntimeConnector>,
-    pub(crate) local_file_roots: Vec<String>,
+    pub(crate) local_file_roots: Vec<RuntimeLocalFileRoot>,
     pub(crate) allow_browser: bool,
     pub(crate) allowed_computer_tools: Vec<String>,
     pub(crate) litellm_base_url: String,
@@ -482,7 +486,7 @@ impl HarnessProcess {
         let session_workspace = fingerprint
             .local_file_roots
             .first()
-            .map(PathBuf::from)
+            .map(|root| PathBuf::from(&root.path))
             .filter(|path| path.is_dir())
             .unwrap_or_else(|| workspace.clone());
 

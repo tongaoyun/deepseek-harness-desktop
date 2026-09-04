@@ -5,6 +5,7 @@ use crate::{
         ConnectorDefinition, HarnessProcess, RuntimeFingerprint, credential_digest,
         runtime_connectors,
     },
+    local_files::RuntimeLocalFileRoot,
     memory,
 };
 use keyring::Entry;
@@ -330,7 +331,11 @@ impl LocalImManager {
         let fingerprint = RuntimeFingerprint {
             skill_directories: profile.skill_directories,
             connectors,
-            local_file_roots: vec![im_workspace.to_string_lossy().into_owned()],
+            local_file_roots: vec![RuntimeLocalFileRoot {
+                id: "local-im-workspace".to_string(),
+                name: "IM 工作目录".to_string(),
+                path: im_workspace.to_string_lossy().into_owned(),
+            }],
             allow_browser,
             allowed_computer_tools: Vec::new(),
             litellm_base_url: context.litellm_base_url,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { loadLocalTasks, saveLocalTask } from './taskHistory'
+import { loadLocalTasks, recoverInterruptedTasks, saveLocalTask } from './taskHistory'
 import type { LocalTaskRun } from './types'
 
 class MemoryStorage implements Storage {
@@ -65,5 +65,24 @@ describe('task history', () => {
     saveLocalTask('employee-1', task, storage)
 
     expect(loadLocalTasks('employee-1', storage)[0].monitor).toEqual(task.monitor)
+  })
+
+  it('turns tasks left running by an app exit into retryable failures', () => {
+    const task: LocalTaskRun = {
+      id: 'task-interrupted', source: 'DESKTOP', name: '整理下载目录', status: 'RUNNING',
+      createdAt: '2026-08-29T01:00:00Z', updatedAt: '2026-08-29T01:00:01Z',
+      monitor: { status: 'running', activity: '正在读取文件', updatedAt: '2026-08-29T01:00:01Z', artifacts: [], steps: [
+        { id: 'tool:1', kind: 'tool', label: '读取文件', status: 'running', startedAt: '2026-08-29T01:00:01Z' },
+      ] },
+      messages: [{ role: 'user', text: '整理下载目录' }, { role: 'assistant', text: '', pending: true }],
+    }
+
+    const [recovered] = recoverInterruptedTasks([task], '2026-08-29T01:05:00Z')
+
+    expect(recovered?.status).toBe('FAILED')
+    expect(recovered?.monitor.status).toBe('failed')
+    expect(recovered?.monitor.steps[0]?.status).toBe('failed')
+    expect(recovered?.messages.at(-1)?.role).toBe('assistant')
+    expect(recovered?.messages.at(-1)?.pending).toBeUndefined()
   })
 })

@@ -11,16 +11,54 @@ interface LocalTaskPage {
 }
 
 export async function loadTaskHistory(employeeId: string): Promise<LocalTaskRun[]> {
-  if (!isTauri()) return loadLocalTasks(employeeId)
+  if (!isTauri()) return recoverInterruptedTasks(loadLocalTasks(employeeId))
   const localStorageTasks = loadLocalTasks(employeeId)
   const page = await invoke<LocalTaskPage>('load_local_tasks', {
     employeeId,
     query: { query: '', offset: 0, limit: LIMIT },
   })
-  if (page.items.length > 0 || localStorageTasks.length === 0) return validTasks(page.items)
-  await Promise.all(localStorageTasks.map((task) => invoke('save_local_task', { employeeId, task })))
+  if (page.items.length > 0 || localStorageTasks.length === 0) {
+    const tasks = validTasks(page.items)
+    const recovered = recoverInterruptedTasks(tasks)
+    await Promise.all(recovered.filter((task, index) => task !== tasks[index])
+      .map((task) => invoke('save_local_task', { employeeId, task })))
+    return recovered
+  }
+  const migrated = recoverInterruptedTasks(localStorageTasks)
+  await Promise.all(migrated.map((task) => invoke('save_local_task', { employeeId, task })))
   window.localStorage.removeItem(storageKey(employeeId))
-  return localStorageTasks
+  return migrated
+}
+
+export function recoverInterruptedTasks(tasks: LocalTaskRun[], now = new Date().toISOString()): LocalTaskRun[] {
+  return tasks.map((task) => {
+    if (task.status !== 'RUNNING') return task
+    const monitor = {
+      ...task.monitor,
+      status: 'failed' as const,
+      activity: '上次运行已中断',
+      updatedAt: now,
+      completedAt: now,
+      steps: task.monitor.steps.map((step) => step.status === 'running'
+        ? { ...step, status: 'failed' as const, completedAt: now }
+        : step),
+      timeline: task.monitor.timeline?.map((entry) => entry.status === 'running'
+        ? { ...entry, status: 'failed' as const, completedAt: now }
+        : entry),
+      subagents: task.monitor.subagents?.map((agent) => agent.status === 'running'
+        ? { ...agent, status: 'failed' as const, completedAt: now }
+        : agent),
+    }
+    const interrupted = {
+      role: 'assistant' as const,
+      text: '上次任务因应用关闭或本地 Agent 中断，未能完成。可以直接重试。',
+      monitor,
+    }
+    const messages = task.messages.at(-1)?.role === 'assistant' && task.messages.at(-1)?.pending
+      ? [...task.messages.slice(0, -1), interrupted]
+      : [...task.messages, interrupted]
+    return { ...task, status: 'FAILED' as const, updatedAt: now, monitor, messages }
+  })
 }
 
 export async function persistTaskHistory(employeeId: string, task: LocalTaskRun): Promise<void> {

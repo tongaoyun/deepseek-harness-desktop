@@ -10,7 +10,7 @@ import { createRequire } from 'node:module'
 import { unzipSync } from 'fflate'
 import { access, readFile, stat, writeFile } from 'node:fs/promises'
 import { extname } from 'node:path'
-import { LocalFileBridge, discoverAuthorizedRoots } from './local-files-plugin.js'
+import { LocalFileBridge, discoverAuthorizedRoots, type LocalFileRootInput } from './local-files-plugin.js'
 
 const { Workbook } = ExcelJS
 const require = createRequire(import.meta.url)
@@ -43,9 +43,9 @@ const CREATE_TOOLS = new Set([
   'office_docx_create', 'office_xlsx_create', 'office_xlsx_update_cells', 'office_pptx_create', 'office_pdf_create',
 ])
 
-export interface Config { roots?: string[]; enabled?: boolean }
+export interface Config { roots?: LocalFileRootInput[]; enabled?: boolean }
 export const Config = z.object({
-  roots: z.array(z.string()).default([]), enabled: z.boolean().default(true),
+  roots: z.array(z.any()).default([]), enabled: z.boolean().default(true),
 })
 
 export async function apply(ctx: Context, config: Config = {}): Promise<void> {
