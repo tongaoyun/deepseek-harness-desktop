@@ -33,3 +33,15 @@ test('CI uses one registered Runner serially and explicitly passes the Rust targ
   assert.match(workflow, /--target "\$rust_target"/)
   assert.match(workflow, /app="\$target_dir\/release\/bundle/)
 })
+
+test('bundle architecture checks accept the binary path before lipo variable arguments', { skip: process.platform !== 'darwin' }, () => {
+  const smoke = readFileSync(new URL('./smoke-test-macos-bundle.sh', import.meta.url), 'utf8')
+  const checks = smoke.split('\n').filter((line) => line.startsWith('/usr/bin/lipo ')).join('\n')
+  assert.equal(checks.split('\n').length, 2)
+  const run = (arch) => execFileSync('/bin/bash', ['-e', '-c', checks], {
+    env: { ...process.env, binary: process.execPath, node_binary: process.execPath, binary_arch: arch },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  run(process.arch === 'arm64' ? 'arm64' : 'x86_64')
+  assert.throws(() => run('ppc'))
+})

@@ -45,8 +45,8 @@ done
 /usr/bin/codesign --verify --deep --strict "$app"
 bundle_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")"
 [[ "$bundle_version" == "$version" ]] || { echo 'Installed bundle version does not match the release.' >&2; exit 1; }
-/usr/bin/lipo -verify_arch "$binary_arch" "$binary"
-/usr/bin/lipo -verify_arch "$binary_arch" "$node_binary"
+/usr/bin/lipo "$binary" -verify_arch "$binary_arch"
+/usr/bin/lipo "$node_binary" -verify_arch "$binary_arch"
 "$node_binary" "$repository/scripts/check-macos-runtime.mjs" "$runtime/harness-host" "$node_arch"
 
 node "$repository/scripts/check-harness-runtime.mjs" "$node_binary" "$runtime/harness-host"
