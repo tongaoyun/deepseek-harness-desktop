@@ -79,54 +79,8 @@ try {
     }
   }
 
-  $previousConfig = $env:DSH_CORDIS_CONFIG
-  $previousAllowShell = $env:XIAOYIN_ALLOW_SHELL
-  $previousApproveShell = $env:XIAOYIN_APPROVE_SHELL
-  $env:DSH_CORDIS_CONFIG = $runtimeConfig
-  $env:XIAOYIN_ALLOW_SHELL = "true"
-  $env:XIAOYIN_APPROVE_SHELL = "false"
-  try {
-    $runtimeOutput = @(
-      '{"jsonrpc":"2.0","id":1,"method":"host.initialize"}',
-      '{"jsonrpc":"2.0","id":2,"method":"host.health"}',
-      '{"jsonrpc":"2.0","id":3,"method":"host.self-test"}',
-      '{"jsonrpc":"2.0","id":4,"method":"host.shutdown"}'
-    ) | & $runtimeNode $runtimeEntry
-    if ($LASTEXITCODE -ne 0) { throw "Installed Harness runtime exited with $LASTEXITCODE." }
-  }
-  finally {
-    $env:DSH_CORDIS_CONFIG = $previousConfig
-    $env:XIAOYIN_ALLOW_SHELL = $previousAllowShell
-    $env:XIAOYIN_APPROVE_SHELL = $previousApproveShell
-  }
-  $initialized = @($runtimeOutput) | ForEach-Object { $_ | ConvertFrom-Json } |
-    Where-Object { $_.id -eq 1 } | Select-Object -First 1
-  if (-not $initialized -or $initialized.result.status -ne "initialized") {
-    throw "Installed Harness runtime initialization failed."
-  }
-  $health = @($runtimeOutput) | ForEach-Object { $_ | ConvertFrom-Json } |
-    Where-Object { $_.id -eq 2 } | Select-Object -First 1
-  if (-not $health) { throw "Installed Harness runtime did not return a health response." }
-  if ($health.PSObject.Properties.Name -contains "error") {
-    throw "Installed Harness runtime health check failed: $($health.error.message)"
-  }
-  if (-not ($health.PSObject.Properties.Name -contains "result") -or $health.result.status -ne "ready") {
-    throw "Installed Harness runtime health check failed."
-  }
-  $selfTest = @($runtimeOutput) | ForEach-Object { $_ | ConvertFrom-Json } |
-    Where-Object { $_.id -eq 3 } | Select-Object -First 1
-  if (-not $selfTest) { throw "Installed Harness runtime did not return a capability self-test response." }
-  if ($selfTest.PSObject.Properties.Name -contains "error") {
-    throw "Installed local capability self-test failed: $($selfTest.error.message)"
-  }
-  if (-not ($selfTest.PSObject.Properties.Name -contains "result") -or $selfTest.result.status -ne "passed") {
-    throw "Installed local capability self-test failed."
-  }
-  $requiredChecks = @("local-files", "office-docx", "office-xlsx", "office-pdf", "native-shell", "computer-use")
-  $passedChecks = @($selfTest.result.checks | Where-Object { $_.passed } | ForEach-Object { $_.key })
-  foreach ($requiredCheck in $requiredChecks) {
-    if ($requiredCheck -notin $passedChecks) { throw "Installed capability was not verified: $requiredCheck" }
-  }
+  & $runtimeNode (Join-Path $PSScriptRoot "check-harness-runtime.mjs") $runtimeNode (Join-Path $runtimeRoot "harness-host") --self-test
+  if ($LASTEXITCODE -ne 0) { throw "Installed Harness runtime and capability check failed with exit code $LASTEXITCODE." }
 
   $application = Get-ChildItem -LiteralPath $resolvedRoot -File -Filter "*.exe" |
     Where-Object { $_.Name -notmatch "^(uninstall|unins.*)\.exe$" } |
