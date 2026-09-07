@@ -1,3 +1,4 @@
+import { readServerData } from './serverResponse'
 import type {
   BootstrapResponse,
   ConnectorCatalogEntry,
@@ -23,7 +24,7 @@ export async function loadBootstrap(employeeId = 'local-development', accessToke
   if (!response.ok) {
     throw new Error(`控制中心返回 ${response.status}`)
   }
-  return response.json() as Promise<BootstrapResponse>
+  return readServerData<BootstrapResponse>(response)
 }
 
 export async function loadExpertKits(
@@ -37,7 +38,7 @@ export async function loadExpertKits(
     signal: boundedSignal(signal),
   })
   if (!response.ok) throw new Error(`专家套件目录返回 ${response.status}`)
-  return response.json() as Promise<ExpertKitCatalogEntry[]>
+  return readServerData<ExpertKitCatalogEntry[]>(response)
 }
 
 export async function createExpertKitDownload(
@@ -51,7 +52,7 @@ export async function createExpertKitDownload(
     headers: enterpriseHeaders(employeeId, accessToken),
   })
   if (!response.ok) throw new Error(`专家套件下载授权返回 ${response.status}`)
-  return response.json() as Promise<ExpertKitDownload>
+  return readServerData<ExpertKitDownload>(response)
 }
 
 export async function loadSkills(
@@ -74,7 +75,7 @@ export async function createSkillDownload(
     headers: enterpriseHeaders(employeeId, accessToken),
   })
   if (!response.ok) throw new Error(`技能下载授权返回 ${response.status}`)
-  return response.json() as Promise<ExpertKitDownload>
+  return readServerData<ExpertKitDownload>(response)
 }
 
 export async function loadConnectors(
@@ -128,7 +129,7 @@ export async function submitAuditEvent(
     body: JSON.stringify(event),
   })
   if (!response.ok) throw new Error(`审计事件上报返回 ${response.status}`)
-  return response.json() as Promise<AuditEventEntry>
+  return readServerData<AuditEventEntry>(response)
 }
 
 export async function submitFeedback(
@@ -153,7 +154,7 @@ export async function submitFeedback(
   if (response.status === 401 || response.status === 403) throw new Error('登录已失效或没有提交权限，请重新登录')
   if (response.status === 413) throw new Error('图片超过服务端上传限制，请减少图片后重试')
   if (!response.ok) throw new Error(`反馈提交返回 ${response.status}`)
-  const result = await response.json() as { id?: string }
+  const result = await readServerData<{ id?: string }>(response)
   if (!result.id) throw new Error('未收到反馈编号，请检查服务连接')
 }
 
@@ -168,7 +169,7 @@ export async function loadKnowledgeBases(
     headers: knowledgeHeaders(employeeId, teamId, accessToken), signal: boundedSignal(signal),
   })
   if (!response.ok) throw new Error(`知识库返回 ${response.status}`)
-  return response.json() as Promise<KnowledgeBaseEntry[]>
+  return readServerData<KnowledgeBaseEntry[]>(response)
 }
 
 export async function createKnowledgeBase(
@@ -203,7 +204,7 @@ export async function loadKnowledgeDocuments(
     headers: knowledgeHeaders(employeeId, teamId, accessToken), signal: boundedSignal(signal),
   })
   if (!response.ok) throw new Error(`知识库文档返回 ${response.status}`)
-  return response.json() as Promise<KnowledgeDocumentEntry[]>
+  return readServerData<KnowledgeDocumentEntry[]>(response)
 }
 
 export async function uploadKnowledgeDocument(
@@ -220,7 +221,7 @@ export async function uploadKnowledgeDocument(
     method: 'POST', headers: knowledgeHeaders(employeeId, teamId, accessToken), body: form,
   })
   if (!response.ok) throw new Error(`知识库文档上传返回 ${response.status}`)
-  return response.json() as Promise<KnowledgeDocumentEntry>
+  return readServerData<KnowledgeDocumentEntry>(response)
 }
 
 export async function reindexKnowledgeDocument(
@@ -270,7 +271,7 @@ export async function loadKnowledgeSource(context: KnowledgeSourceContext, sourc
   })
   if (response.status === 404) throw new Error('原文已删除、正在重建或已更新，请重新检索。历史摘录不能作为当前依据。')
   if (!response.ok) throw new Error(`原文暂时无法读取（${response.status}），请重试。`)
-  return response.json() as Promise<KnowledgeSearchHit>
+  return readServerData<KnowledgeSearchHit>(response)
 }
 
 async function knowledgeRequest<T>(
@@ -289,7 +290,7 @@ async function knowledgeRequest<T>(
     ...(request ? { body: JSON.stringify(request) } : {}),
   })
   if (!response.ok) throw new Error(`知识库操作返回 ${response.status}`)
-  return response.json() as Promise<T>
+  return readServerData<T>(response)
 }
 
 async function knowledgeVoidRequest(
@@ -318,7 +319,7 @@ async function loadCatalog<T>(
     signal: boundedSignal(signal),
   })
   if (!response.ok) throw new Error(`${label}返回 ${response.status}`)
-  return response.json() as Promise<T[]>
+  return readServerData<T[]>(response)
 }
 
 function serverUrl(path: string): string {

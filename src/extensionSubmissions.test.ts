@@ -83,7 +83,7 @@ describe('extension validation report api', () => {
       artifacts: [{ name: '订单报告.md', kind: 'document', sourceTool: 'document.write' }],
       finalResponse: '验证完成', completedAt: '2026-09-03T01:00:00Z',
     }
-    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(report), {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(wire(report)), {
       status: 200, headers: { 'Content-Type': 'application/json' },
     }))
     vi.stubGlobal('fetch', fetchMock)
@@ -96,7 +96,7 @@ describe('extension validation report api', () => {
   })
 
   it('never sends local connector secret values to the control plane', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: 'erp', version: '1.0.0' }), {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(wire({ id: 'erp', version: '1.0.0' })), {
       status: 200, headers: { 'Content-Type': 'application/json' },
     }))
     vi.stubGlobal('fetch', fetchMock)
@@ -113,3 +113,5 @@ describe('extension validation report api', () => {
     expect(JSON.stringify(payload)).not.toContain('header-secret')
   })
 })
+
+function wire(data: unknown) { return { success: true, data } }

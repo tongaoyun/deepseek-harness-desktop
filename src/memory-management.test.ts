@@ -18,7 +18,7 @@ it('understands explicit natural commands without guessing ambiguous references'
 it('blocks stale cloud writes, keeps local changes, and resumes only after an explicit version choice', async () => {
   stored = { ...emptyMemoryProfile, entries: [], collaborationStyle: '本机修改', version: 2, syncPending: true, updatedAt: '2026-09-07' }
   const cloud = { ...stored, collaborationStyle: '另一台修改', version: 3, syncPending: false }
-  vi.mocked(fetch).mockImplementation(async (_url, options) => options?.method === 'PUT' ? new Response('{}', { status: 409 }) : new Response(JSON.stringify(cloud)))
+  vi.mocked(fetch).mockImplementation(async (_url, options) => options?.method === 'PUT' ? new Response(JSON.stringify(wire({})), { status: 409 }) : new Response(JSON.stringify(wire(cloud))))
   const conflict = await syncMemoryProfile('u', '/memory', '')
   expect(conflict.syncConflict).toBe(true)
   expect(conflict.collaborationStyle).toBe('本机修改')
@@ -30,7 +30,7 @@ it('blocks stale cloud writes, keeps local changes, and resumes only after an ex
 })
 it('recognizes an already committed timed-out save without overwriting cloud again', async () => {
   stored = { ...emptyMemoryProfile, version: 2, syncPending: true }
-  vi.mocked(fetch).mockImplementation(async (_url, options) => options?.method === 'PUT' ? new Response('{}', { status: 409 }) : new Response(JSON.stringify({ ...stored, version: 3 })))
+  vi.mocked(fetch).mockImplementation(async (_url, options) => options?.method === 'PUT' ? new Response(JSON.stringify(wire({})), { status: 409 }) : new Response(JSON.stringify(wire({ ...stored, version: 3 }))))
   expect(await syncMemoryProfile('u', '/memory', '')).toMatchObject({ version: 3, syncPending: false, syncConflict: false })
 })
 it('rejects modification if a selected candidate changed before confirmation', async () => {
@@ -56,7 +56,7 @@ it('preserves offline changes including deletions instead of restoring remote co
   expect(saved.entries?.[0].taskId).toBe('task-1')
   const cleared = await forgetInstruction('u', '/memory', '', '库存规则')
   expect(cleared.entries).toEqual([])
-  vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ ...saved, updatedAt: '2099-01-01' })))
+  vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify(wire({ ...saved, updatedAt: '2099-01-01' }))))
   expect((await loadSyncedMemoryProfile('u', '/memory', '')).entries).toEqual([])
 })
 it('serializes simultaneous learning without losing either entry', async () => {
@@ -75,10 +75,12 @@ it('does not learn when automatic memory or all memory is disabled', async () =>
 })
 it('retries sync without leaking local sync flags and requires a valid response', async () => {
   const saved = await rememberInstruction('u', '/memory', '', '中文')
-  vi.mocked(fetch).mockImplementation(async (_url, options) => new Response(JSON.stringify({ ...JSON.parse(options?.body as string), updatedAt: '2099-01-01T00:00:00Z' })))
+  vi.mocked(fetch).mockImplementation(async (_url, options) => new Response(JSON.stringify(wire({ ...JSON.parse(options?.body as string), updatedAt: '2099-01-01T00:00:00Z' }))))
   const synced = await saveSyncedMemoryProfile('u', '/memory', '', saved)
   expect(synced.syncPending).toBe(false)
   const options = vi.mocked(fetch).mock.calls.at(-1)![1]!
   expect(options.signal).toBeInstanceOf(AbortSignal)
   expect(JSON.parse(options.body as string).syncPending).toBeUndefined()
 })
+
+function wire(data: unknown) { return { success: true, data } }

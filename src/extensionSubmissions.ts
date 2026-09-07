@@ -1,4 +1,5 @@
 import { resolveServerEndpoint } from './api'
+import { readServerData } from './serverResponse'
 import type { ConnectorCatalogEntry, ExpertKitManifest } from './types'
 import { connectorSecretTemplate } from './connectorSecrets'
 
@@ -37,10 +38,10 @@ function headers(employeeId: string, accessToken: string, json = false): Record<
 
 async function checked<T>(response: Response, label: string): Promise<T> {
   if (!response.ok) {
-    const payload = await response.json().catch(() => ({})) as { message?: string; detail?: string }
-    throw new Error(payload.message || payload.detail || `${label}（${response.status}）`)
+    const payload = await response.json().catch(() => ({})) as { errMessage?: string }
+    throw new Error(payload.errMessage || `${label}（${response.status}）`)
   }
-  return response.json() as Promise<T>
+  return readServerData<T>(response)
 }
 
 export async function loadMySubmissions(employeeId: string, accessToken: string): Promise<ExtensionSubmission[]> {

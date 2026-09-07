@@ -1,3 +1,4 @@
+import { readServerData } from './serverResponse'
 import { invoke, isTauri } from '@tauri-apps/api/core'
 import { resolveServerEndpoint } from './api'
 import { normalizeMemory, relatedMemories } from './memoryEditing'
@@ -268,7 +269,7 @@ async function requestMemoryProfile(endpoint: string, employeeId: string, access
     headers: enterpriseHeaders(employeeId, accessToken),
   })
   if (!response.ok) throw new Error(`记忆同步返回 ${response.status}`)
-  const profile: unknown = await response.json()
+  const profile: unknown = await readServerData(response)
   validateMemoryProfile(profile)
   return profile
 }
@@ -286,7 +287,7 @@ async function putMemoryProfile(
   })
   if (response.status === 409) throw new MemorySyncConflict('记忆版本冲突')
   if (!response.ok) throw new Error(`记忆同步返回 ${response.status}`)
-  const saved: unknown = await response.json()
+  const saved: unknown = await readServerData(response)
   validateMemoryProfile(saved)
   return saved
 }

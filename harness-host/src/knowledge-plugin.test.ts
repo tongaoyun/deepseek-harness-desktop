@@ -19,7 +19,7 @@ describe('KnowledgeClient', () => {
           restrictToKnowledgeBaseRefs: false, limit: 3,
         })
         response.setHeader('Content-Type', 'application/json')
-        response.end('[{"filename":"sop.pdf","locator":"第 2 页","content":"先核查库存"}]')
+        response.end(JSON.stringify({ success: true, data: [{ filename: 'sop.pdf', locator: '第 2 页', content: '先核查库存' }] }))
       })
     })
     servers.push(server)
@@ -43,7 +43,7 @@ describe('KnowledgeClient', () => {
       request.on('end', () => {
         received = JSON.parse(body)
         response.setHeader('Content-Type', 'application/json')
-        response.end('[]')
+        response.end(JSON.stringify({ success: true, data: [] }))
       })
     })
     servers.push(server)

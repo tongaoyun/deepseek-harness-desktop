@@ -19,7 +19,7 @@ describe('loadBootstrap', () => {
   afterEach(() => vi.unstubAllGlobals())
 
   it('rereads source identity with current account headers and explicit stale-source errors', async () => {
-    const fetchMock = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({ sourceId: '12', content: 'current' })))
+    const fetchMock = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify(wire({ sourceId: '12', content: 'current' }))))
       .mockResolvedValueOnce(new Response(null, { status: 404 }))
     vi.stubGlobal('fetch', fetchMock)
     const context = { endpoint: '/api/v1/knowledge-bases/', employeeId: 'employee', teamId: 'team', accessToken: 'test-token' }
@@ -48,7 +48,7 @@ describe('loadBootstrap', () => {
       capabilities: ['chat'],
       models: [],
     }
-    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(payload), {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(wire(payload)), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     }))
@@ -65,8 +65,8 @@ describe('loadBootstrap', () => {
 
   it('loads the expert kit catalog and requests an encoded download path', async () => {
     const fetchMock = vi.fn()
-      .mockResolvedValueOnce(new Response('[]', { status: 200, headers: { 'Content-Type': 'application/json' } }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ id: 'kit one' }), {
+      .mockResolvedValueOnce(new Response(JSON.stringify(wire([])), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(wire({ id: 'kit one' })), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
       }))
@@ -85,8 +85,8 @@ describe('loadBootstrap', () => {
 
   it('loads skills and connectors through the shared enterprise catalog contract', async () => {
     const fetchMock = vi.fn()
-      .mockResolvedValueOnce(new Response('[]', { status: 200, headers: { 'Content-Type': 'application/json' } }))
-      .mockResolvedValueOnce(new Response('[]', { status: 200, headers: { 'Content-Type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(wire([])), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(wire([])), { status: 200, headers: { 'Content-Type': 'application/json' } }))
     vi.stubGlobal('fetch', fetchMock)
 
     await loadSkills('/api/v1/skills', 'employee-1', 'token-1')
@@ -104,7 +104,7 @@ describe('loadBootstrap', () => {
 
   it('submits redacted audit events without exposing a desktop audit feed', async () => {
     const fetchMock = vi.fn()
-      .mockResolvedValueOnce(new Response(JSON.stringify({ id: 'audit-1' }), {
+      .mockResolvedValueOnce(new Response(JSON.stringify(wire({ id: 'audit-1' })), {
         status: 201, headers: { 'Content-Type': 'application/json' },
       }))
     vi.stubGlobal('fetch', fetchMock)
@@ -135,7 +135,7 @@ describe('loadBootstrap', () => {
   })
 
   it('submits feedback with reproducible desktop context', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: 'feedback-1' }), { status: 201 }))
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(wire({ id: 'feedback-1' })), { status: 201 }))
     vi.stubGlobal('fetch', fetchMock)
 
     await submitFeedback('employee-1', 'token-1', '任务运行失败', {
@@ -150,9 +150,11 @@ describe('loadBootstrap', () => {
   })
 
   it('does not report success without a ticket and explains upload failures', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(new Response('{}')).mockResolvedValueOnce(new Response(null, { status: 413 })))
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(new Response(JSON.stringify(wire({})))).mockResolvedValueOnce(new Response(null, { status: 413 })))
     await expect(submitFeedback('employee', 'token', '问题', { category: 'BUG' })).rejects.toThrow('反馈编号')
     await expect(submitFeedback('employee', 'token', '问题', { category: 'BUG' })).rejects.toThrow('上传限制')
   })
 
 })
+
+function wire(data: unknown) { return { success: true, data } }

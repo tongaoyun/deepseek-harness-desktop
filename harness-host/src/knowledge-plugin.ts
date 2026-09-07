@@ -82,7 +82,11 @@ export class KnowledgeClient {
       },
     })
     if (!response.ok) throw new Error(`Knowledge service returned HTTP ${response.status}`)
-    return response.json()
+    const value: unknown = await response.json()
+    if (typeof value !== 'object' || value === null || !('success' in value) || value.success !== true || !('data' in value)) {
+      throw new Error('Knowledge service returned an invalid or failed COLA response')
+    }
+    return value.data
   }
 }
 
