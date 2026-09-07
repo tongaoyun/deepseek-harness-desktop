@@ -21,4 +21,4 @@
 
 仅发送用户填写的文字、所选图片和版本／设备／任务标识，不自动收集对话或本地文件。控制端以同一事务保存文字与图片，管理端显示附图数量，展开后按需读取，可打开原图；折叠或离开页面释放预览资源。
 
-接口：`POST /api/v1/feedback` 接受 multipart 的 `feedback` JSON 部分和重复 `images` 文件部分；管理端通过 `/api/v1/admin/feedback/{id}/images` 查询附图，再以 `/images/{imageId}` 读取图片。控制端与桌面需一起部署，数据库迁移为 V27。
+接口：`POST /api/v1/feedback` 接受 multipart 的 `feedback` JSON 部分和重复 `images` 文件部分；管理端通过 `/api/v1/admin/feedback/{id}/images` 查询附图，再以 `/images/{imageId}` 读取图片。控制端与桌面需使用兼容的接口版本。
