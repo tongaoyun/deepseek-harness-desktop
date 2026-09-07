@@ -53,6 +53,8 @@ jobs:
         run: |
           node --test scripts/check-harness-runtime.test.mjs
           if ($LASTEXITCODE -ne 0) { throw "Harness runtime checker tests failed" }
+          powershell -NoProfile -ExecutionPolicy Bypass -File scripts/acceptance-windows.test.ps1
+          if ($LASTEXITCODE -ne 0) { throw "Windows desktop preflight regression failed" }
           foreach ($Script in @('scripts/prepare-harness-runtime.ps1', 'scripts/test-windows-installer.ps1')) {
             $Tokens = $null
             $Errors = $null
