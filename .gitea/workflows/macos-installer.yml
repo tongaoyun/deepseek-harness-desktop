@@ -70,6 +70,7 @@ jobs:
           node --test scripts/publish-macos-update.test.mjs
           node --test scripts/macos-build-env.test.mjs
           node --test scripts/check-harness-runtime.test.mjs
+          node --test scripts/verify-updater-signature.test.mjs
           pnpm lint
           pnpm typecheck
           pnpm test

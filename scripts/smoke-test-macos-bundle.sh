@@ -53,6 +53,7 @@ node "$repository/scripts/check-harness-runtime.mjs" "$node_binary" "$runtime/ha
 
 archive="$target_dir/release/bundle/macos/小胤.app.tar.gz"
 [[ -s "$archive.sig" ]] || { echo 'Updater signature is missing.' >&2; exit 1; }
+node "$repository/scripts/verify-updater-signature.mjs" "$archive" "$repository/src-tauri/tauri.conf.json"
 mkdir -p "$temporary/update"
 tar -xzf "$archive" -C "$temporary/update"
 update_app="$temporary/update/小胤.app"
