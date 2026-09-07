@@ -1,10 +1,18 @@
-name: Windows installer
+name: Windows 安装包
 
 on:
   push:
     tags: ["v*"]
   workflow_dispatch:
     inputs:
+      build_mode:
+        description: "release：完整检查与正式安装包；quick：仅生成开发验证用 Debug NSIS"
+        required: true
+        default: release
+        type: choice
+        options:
+          - release
+          - quick
       run_install_smoke:
         description: "在隔离目录执行 NSIS 安装、内置 Harness、启动和卸载烟测"
         required: true
@@ -16,14 +24,15 @@ permissions:
   actions: write
 
 concurrency:
-  group: windows-installer-${{ github.ref }}
-  cancel-in-progress: true
+  group: windows-installer-${{ github.event_name == 'workflow_dispatch' && 'manual' || 'release' }}
+  cancel-in-progress: ${{ github.event_name == 'workflow_dispatch' }}
 
 jobs:
   build-windows-x64:
     runs-on: windows-x64
     timeout-minutes: 120
     env:
+      XIAOYIN_BUILD_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.build_mode == 'quick' && 'quick' || 'release' }}
       CARGO_TERM_COLOR: always
       CARGO_TARGET_DIR: C:\xiaoyin-desktop-builder\target
       CARGO_REGISTRIES_CRATES_IO_INDEX: sparse+https://rsproxy.cn/index/
@@ -75,6 +84,9 @@ jobs:
           .\scripts\ensure-pnpm.ps1
           pnpm config set store-dir C:\xiaoyin-desktop-builder\pnpm-store
           pnpm install --frozen-lockfile --registry=http://192.168.2.9:4873/
+          if ($LASTEXITCODE -ne 0) { throw "dependency installation failed" }
+          pnpm verify:version
+          if ($LASTEXITCODE -ne 0) { throw "version consistency check failed" }
 
       - name: 验证正式版本标签
         if: ${{ startsWith(github.ref, 'refs/tags/v') }}
@@ -86,6 +98,7 @@ jobs:
           }
 
       - name: 前端与 Harness 质量门禁
+        if: ${{ env.XIAOYIN_BUILD_MODE == 'release' }}
         shell: powershell
         run: |
           pnpm verify:version
@@ -102,6 +115,7 @@ jobs:
         run: .\scripts\prepare-harness-runtime.ps1
 
       - name: Rust 质量门禁
+        if: ${{ env.XIAOYIN_BUILD_MODE == 'release' }}
         working-directory: src-tauri
         shell: powershell
         run: |
@@ -114,20 +128,31 @@ jobs:
 
       - name: 准备 Tauri Windows 打包工具
         shell: powershell
-        run: .\scripts\prepare-tauri-windows-tools.ps1
+        run: |
+          if ($env:XIAOYIN_BUILD_MODE -eq 'quick') {
+            .\scripts\prepare-tauri-windows-tools.ps1 -Bundles nsis
+          } else {
+            .\scripts\prepare-tauri-windows-tools.ps1
+          }
 
-      - name: 构建 MSI 与 NSIS 安装包
+      - name: 构建所选 Windows 安装包
         shell: powershell
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
-          $Bundle = Join-Path $env:CARGO_TARGET_DIR "release\bundle"
+          $Profile = if ($env:XIAOYIN_BUILD_MODE -eq 'quick') { 'debug' } else { 'release' }
+          $Bundle = Join-Path $env:CARGO_TARGET_DIR "$Profile\bundle"
           if (Test-Path -LiteralPath $Bundle) { Remove-Item -LiteralPath $Bundle -Recurse -Force }
-          pnpm tauri build
+          if ($env:XIAOYIN_BUILD_MODE -eq 'quick') {
+            pnpm tauri build --debug --features windows-no-console --bundles nsis --config src-tauri/tauri.quick.windows.conf.json
+          } else {
+            pnpm tauri build
+          }
+          if ($LASTEXITCODE -ne 0) { throw "Windows installer build failed" }
 
       - name: NSIS 安装与内置 Harness 烟测
-        if: ${{ startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.run_install_smoke) }}
+        if: ${{ env.XIAOYIN_BUILD_MODE == 'release' && (startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.run_install_smoke)) }}
         shell: powershell
         env:
           XIAOYIN_WINDOWS_SMOKE: "1"
@@ -141,22 +166,26 @@ jobs:
       - name: 收集安装包并生成 SHA-256 清单
         shell: powershell
         run: |
-          $Bundle = Join-Path $env:CARGO_TARGET_DIR "release\bundle"
+          $Quick = $env:XIAOYIN_BUILD_MODE -eq 'quick'
+          $Profile = if ($Quick) { 'debug' } else { 'release' }
+          $Bundle = Join-Path $env:CARGO_TARGET_DIR "$Profile\bundle"
           $Output = Join-Path (Get-Location).Path "windows-artifacts"
           $ExpectedVersion = (Get-Content "package.json" -Raw | ConvertFrom-Json).version
           $Files = @(Get-ChildItem $Bundle -Recurse -File | Where-Object {
             $_.Extension -in @(".exe", ".msi") -and $_.Name -like "*_${ExpectedVersion}_*"
           })
-          if ($Files.Count -ne 2) { throw "Expected MSI and NSIS installers, found $($Files.Count)" }
+          $ExpectedCount = if ($Quick) { 1 } else { 2 }
+          if ($Files.Count -ne $ExpectedCount) { throw "Expected $ExpectedCount installers, found $($Files.Count)" }
           if (Test-Path -LiteralPath $Output) { Remove-Item -LiteralPath $Output -Recurse -Force }
           New-Item -ItemType Directory -Force -Path $Output | Out-Null
           foreach ($File in $Files) {
             Copy-Item -LiteralPath $File.FullName -Destination (Join-Path $Output $File.Name)
             $Signature = "$($File.FullName).sig"
             if (-not (Test-Path -LiteralPath $Signature -PathType Leaf)) {
-              throw "Updater signature is missing: $Signature"
+              if (-not $Quick) { throw "Updater signature is missing: $Signature" }
+            } else {
+              Copy-Item -LiteralPath $Signature -Destination (Join-Path $Output (Split-Path $Signature -Leaf))
             }
-            Copy-Item -LiteralPath $Signature -Destination (Join-Path $Output (Split-Path $Signature -Leaf))
           }
           $ChecksumLines = @(Get-ChildItem $Output -File | Get-FileHash -Algorithm SHA256 |
             ForEach-Object { "$($_.Hash.ToLowerInvariant())  $(Split-Path $_.Path -Leaf)" })
@@ -174,7 +203,7 @@ jobs:
       - name: 上传 Windows 安装包
         uses: http://192.168.2.66:3300/instudio/gitea-upload-artifact@v4
         with:
-          name: xiaoyin-desktop-windows-x64-${{ github.sha }}
+          name: xiaoyin-desktop-windows-${{ env.XIAOYIN_BUILD_MODE }}-x64-${{ github.sha }}
           path: |
             windows-artifacts/*.exe
             windows-artifacts/*.msi
