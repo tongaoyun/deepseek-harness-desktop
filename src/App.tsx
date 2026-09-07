@@ -3,7 +3,7 @@ import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import {
   createExpertKitDownload,
   createSkillDownload,
-  resolveControlPlaneEndpoint,
+  resolveServerEndpoint,
   localScheduleNamespace,
   submitFeedback,
 } from './api'
@@ -224,7 +224,7 @@ export default function App() {
     employeeId: user.userId,
     teamId: user.teamId,
     litellmBaseUrl: bootstrap.endpoints.litellm,
-    knowledgeEndpoint: resolveControlPlaneEndpoint(bootstrap.endpoints.knowledge),
+    knowledgeEndpoint: resolveServerEndpoint(bootstrap.endpoints.knowledge),
     scheduleEndpoint: localScheduleNamespace(),
     connectors: runtimeConnectors,
     allowedArtifacts,
@@ -888,7 +888,7 @@ export default function App() {
           teamId: user!.teamId,
           sessionId: rootSessionId,
           litellmBaseUrl: bootstrap.endpoints.litellm,
-          knowledgeEndpoint: resolveControlPlaneEndpoint(bootstrap.endpoints.knowledge),
+          knowledgeEndpoint: resolveServerEndpoint(bootstrap.endpoints.knowledge),
           scheduleEndpoint: localScheduleNamespace(),
           connectors: taskConnectors,
           allowedArtifacts: capabilitySnapshot.extensions,
@@ -1168,7 +1168,7 @@ export default function App() {
           employeeId: user.userId,
           teamId: user.teamId,
           litellmBaseUrl: bootstrap.endpoints.litellm,
-          knowledgeEndpoint: resolveControlPlaneEndpoint(bootstrap.endpoints.knowledge),
+          knowledgeEndpoint: resolveServerEndpoint(bootstrap.endpoints.knowledge),
           scheduleEndpoint: localScheduleNamespace(),
           connectors: runtimeConnectors,
           allowedArtifacts,
@@ -1214,7 +1214,7 @@ export default function App() {
           employeeId: user.userId,
           teamId: user.teamId,
           litellmBaseUrl: bootstrap.endpoints.litellm,
-          knowledgeEndpoint: resolveControlPlaneEndpoint(bootstrap.endpoints.knowledge),
+          knowledgeEndpoint: resolveServerEndpoint(bootstrap.endpoints.knowledge),
           scheduleEndpoint: localScheduleNamespace(),
           connectors: runtimeConnectors,
           allowedArtifacts,
@@ -1309,7 +1309,7 @@ export default function App() {
         {(taskPersistence.failures.length > 0 || draftSaveError) && <section className="task-save-warning" role="alert"><div><strong>{taskPersistence.failures.length ? `${taskPersistence.failures.length} 个任务尚未保存` : '当前草稿尚未保存'}</strong><p>当前内容仍在内存中，请勿退出应用。切换页面不会清除此提示。</p><details><summary>查看原因</summary>{draftSaveError && <p>{draftSaveError}</p>}{taskPersistence.failures.map((failure) => <p key={failure.task.id}>{failure.task.name}：{failure.detail}</p>)}</details></div><button type="button" disabled={!draftSaveError && taskPersistence.failures.every((failure) => failure.retrying)} onClick={() => { saveCurrentDraft(); void taskPersistence.retry() }}>{!draftSaveError && taskPersistence.failures.every((failure) => failure.retrying) ? '正在保存…' : '重试保存'}</button></section>}
         {!activeExpertKit && !activeSkill && (page === 'chat' ? (
           <ChatPage
-            knowledgeContext={bootstrap && user ? { endpoint: resolveControlPlaneEndpoint(bootstrap.endpoints.knowledge), employeeId: user.userId, teamId: user.teamId, accessToken } : undefined}
+            knowledgeContext={bootstrap && user ? { endpoint: resolveServerEndpoint(bootstrap.endpoints.knowledge), employeeId: user.userId, teamId: user.teamId, accessToken } : undefined}
             key={currentLocalTaskId || 'new-task'}
             taskId={currentLocalTaskId}
             fileChangesBusy={runningTaskIds.length > 0}
@@ -1501,7 +1501,7 @@ export default function App() {
               connectors={runtimeConnectors}
               allowedArtifacts={allowedArtifacts}
               litellmBaseUrl={bootstrap.endpoints.litellm}
-              knowledgeEndpoint={resolveControlPlaneEndpoint(bootstrap.endpoints.knowledge)}
+              knowledgeEndpoint={resolveServerEndpoint(bootstrap.endpoints.knowledge)}
               scheduleEndpoint={localScheduleNamespace()}
               model={activeModel}
               modelApiKey={bootstrap.modelApiKey}
@@ -1559,7 +1559,7 @@ export default function App() {
           employeeId: user.userId,
           teamId: user.teamId,
           litellmBaseUrl: bootstrap.endpoints.litellm,
-          knowledgeEndpoint: resolveControlPlaneEndpoint(bootstrap.endpoints.knowledge),
+          knowledgeEndpoint: resolveServerEndpoint(bootstrap.endpoints.knowledge),
           scheduleEndpoint: localScheduleNamespace(),
           connectors: runtimeConnectors,
           allowedArtifacts,

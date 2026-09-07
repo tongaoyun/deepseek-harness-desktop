@@ -1,4 +1,4 @@
-import { resolveControlPlaneEndpoint } from './api'
+import { resolveServerEndpoint } from './api'
 import type { ConnectorCatalogEntry, ExpertKitManifest } from './types'
 import { connectorSecretTemplate } from './connectorSecrets'
 
@@ -44,14 +44,14 @@ async function checked<T>(response: Response, label: string): Promise<T> {
 }
 
 export async function loadMySubmissions(employeeId: string, accessToken: string): Promise<ExtensionSubmission[]> {
-  return checked(await fetch(resolveControlPlaneEndpoint('/api/v1/extension-submissions'), { headers: headers(employeeId, accessToken) }), '加载我的创作失败')
+  return checked(await fetch(resolveServerEndpoint('/api/v1/extension-submissions'), { headers: headers(employeeId, accessToken) }), '加载我的创作失败')
 }
 
 export async function submitPackage(manifest: ExpertKitManifest, bytes: number[], employeeId: string, accessToken: string, validationReport?: ExtensionValidationReport): Promise<ExtensionSubmission> {
   const file = new Uint8Array(bytes)
   const digest = await crypto.subtle.digest('SHA-256', file)
   const sha256 = [...new Uint8Array(digest)].map((value) => value.toString(16).padStart(2, '0')).join('')
-  const prepared = await checked<{ uploadUrl: string }>(await fetch(resolveControlPlaneEndpoint('/api/v1/extension-submissions/releases'), {
+  const prepared = await checked<{ uploadUrl: string }>(await fetch(resolveServerEndpoint('/api/v1/extension-submissions/releases'), {
     method: 'POST', headers: headers(employeeId, accessToken, true), body: JSON.stringify({
       kind: manifest.kind, id: manifest.id, name: manifest.name, version: manifest.version, summary: manifest.summary, category: manifest.category,
       triggers: manifest.triggers ?? [], minimumDesktopVersion: manifest.minimumDesktopVersion,
@@ -63,7 +63,7 @@ export async function submitPackage(manifest: ExpertKitManifest, bytes: number[]
   }), '创建审核版本失败')
   const upload = await fetch(prepared.uploadUrl, { method: 'PUT', body: file, headers: { 'Content-Type': 'application/gzip' } })
   if (!upload.ok) throw new Error(`上传扩展制品失败（${upload.status}）`)
-  const submission = await checked<ExtensionSubmission>(await fetch(resolveControlPlaneEndpoint(`/api/v1/extension-submissions/${manifest.kind}/${encodeURIComponent(manifest.id)}/versions/${encodeURIComponent(manifest.version)}/submit`), {
+  const submission = await checked<ExtensionSubmission>(await fetch(resolveServerEndpoint(`/api/v1/extension-submissions/${manifest.kind}/${encodeURIComponent(manifest.id)}/versions/${encodeURIComponent(manifest.version)}/submit`), {
     method: 'POST', headers: headers(employeeId, accessToken),
   }), '提交审核失败')
   if (validationReport) await saveValidationReport(manifest.kind, manifest.id, manifest.version, validationReport, employeeId, accessToken).catch(() => undefined)
@@ -72,7 +72,7 @@ export async function submitPackage(manifest: ExpertKitManifest, bytes: number[]
 
 export async function submitConnector(connector: ConnectorCatalogEntry, employeeId: string, accessToken: string, validationReport?: ExtensionValidationReport): Promise<ExtensionSubmission> {
   const template = connectorSecretTemplate(connector)
-  const submission = await checked<ExtensionSubmission>(await fetch(resolveControlPlaneEndpoint('/api/v1/extension-submissions/connectors'), {
+  const submission = await checked<ExtensionSubmission>(await fetch(resolveServerEndpoint('/api/v1/extension-submissions/connectors'), {
     method: 'POST', headers: headers(employeeId, accessToken, true), body: JSON.stringify(template),
   }), '提交连接器审核失败')
   if (validationReport) await saveValidationReport('connector', connector.id, connector.version ?? '1.0.0', validationReport, employeeId, accessToken).catch(() => undefined)
@@ -80,7 +80,7 @@ export async function submitConnector(connector: ConnectorCatalogEntry, employee
 }
 
 export async function saveValidationReport(kind: ExtensionKind, id: string, version: string, report: ExtensionValidationReport, employeeId: string, accessToken: string): Promise<ExtensionValidationReport> {
-  return checked(await fetch(resolveControlPlaneEndpoint(`/api/v1/extension-submissions/${kind}/${encodeURIComponent(id)}/versions/${encodeURIComponent(version)}/validation-report`), {
+  return checked(await fetch(resolveServerEndpoint(`/api/v1/extension-submissions/${kind}/${encodeURIComponent(id)}/versions/${encodeURIComponent(version)}/validation-report`), {
     method: 'POST', headers: headers(employeeId, accessToken, true), body: JSON.stringify(report),
   }), '保存发布前验证结果失败')
 }

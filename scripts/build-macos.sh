@@ -10,7 +10,7 @@ if [[ -z "${TAURI_SIGNING_PRIVATE_KEY-}" && -z "${TAURI_SIGNING_PRIVATE_KEY_PATH
   exit 1
 fi
 cd "$repository"
-export VITE_CONTROL_PLANE_BASE_URL="${VITE_CONTROL_PLANE_BASE_URL:-http://192.168.2.67:30081}"
+export VITE_XIAOYIN_SERVER_URL="${VITE_XIAOYIN_SERVER_URL:-http://192.168.2.67:30081}"
 pnpm verify:version
 rustup target add "$rust_target"
 bash scripts/prepare-harness-runtime-macos.sh

@@ -13,10 +13,10 @@ import type {
   SubmitAuditEvent,
 } from './types'
 
-const DEFAULT_CONTROL_PLANE = 'http://192.168.2.67:30081'
+const DEFAULT_XIAOYIN_SERVER = 'http://192.168.2.67:30081'
 
 export async function loadBootstrap(employeeId = 'local-development', accessToken = '', signal?: AbortSignal): Promise<BootstrapResponse> {
-  const response = await fetch(controlPlaneUrl('/api/v1/bootstrap'), {
+  const response = await fetch(serverUrl('/api/v1/bootstrap'), {
     headers: enterpriseHeaders(employeeId, accessToken),
     signal: boundedSignal(signal),
   })
@@ -32,7 +32,7 @@ export async function loadExpertKits(
   accessToken: string,
   signal?: AbortSignal,
 ): Promise<ExpertKitCatalogEntry[]> {
-  const response = await fetch(controlPlaneUrl(endpoint), {
+  const response = await fetch(serverUrl(endpoint), {
     headers: enterpriseHeaders(employeeId, accessToken),
     signal: boundedSignal(signal),
   })
@@ -47,7 +47,7 @@ export async function createExpertKitDownload(
   accessToken: string,
 ): Promise<ExpertKitDownload> {
   const base = endpoint.replace(/\/$/, '')
-  const response = await fetch(controlPlaneUrl(`${base}/${encodeURIComponent(kitId)}/download`), {
+  const response = await fetch(serverUrl(`${base}/${encodeURIComponent(kitId)}/download`), {
     headers: enterpriseHeaders(employeeId, accessToken),
   })
   if (!response.ok) throw new Error(`专家套件下载授权返回 ${response.status}`)
@@ -70,7 +70,7 @@ export async function createSkillDownload(
   accessToken: string,
 ): Promise<ExpertKitDownload> {
   const base = endpoint.replace(/\/$/, '')
-  const response = await fetch(controlPlaneUrl(`${base}/${encodeURIComponent(skillId)}/download`), {
+  const response = await fetch(serverUrl(`${base}/${encodeURIComponent(skillId)}/download`), {
     headers: enterpriseHeaders(employeeId, accessToken),
   })
   if (!response.ok) throw new Error(`技能下载授权返回 ${response.status}`)
@@ -92,7 +92,7 @@ export async function submitDeviceHeartbeat(
   accessToken: string,
   request: DeviceHeartbeatContext & { installedExtensions: InstalledExtensionSnapshot[] },
 ): Promise<void> {
-  const response = await fetch(controlPlaneUrl(`${endpoint.replace(/\/$/, '')}/heartbeat`), {
+  const response = await fetch(serverUrl(`${endpoint.replace(/\/$/, '')}/heartbeat`), {
     method: 'POST',
     headers: { ...enterpriseHeaders(employeeId, accessToken), 'Content-Type': 'application/json' },
     body: JSON.stringify(request),
@@ -108,7 +108,7 @@ export async function submitDeviceCapabilityReport(
     capabilities: Array<{ key: string; status: 'READY' | 'DEGRADED' | 'UNSUPPORTED'; detail: string }>
   },
 ): Promise<void> {
-  const response = await fetch(controlPlaneUrl(endpoint.replace(/\/$/, '')), {
+  const response = await fetch(serverUrl(endpoint.replace(/\/$/, '')), {
     method: 'POST',
     headers: { ...enterpriseHeaders(employeeId, accessToken), 'Content-Type': 'application/json' },
     body: JSON.stringify(request),
@@ -122,7 +122,7 @@ export async function submitAuditEvent(
   accessToken: string,
   event: SubmitAuditEvent,
 ): Promise<AuditEventEntry> {
-  const response = await fetch(controlPlaneUrl(endpoint), {
+  const response = await fetch(serverUrl(endpoint), {
     method: 'POST',
     headers: { ...enterpriseHeaders(employeeId, accessToken), 'Content-Type': 'application/json' },
     body: JSON.stringify(event),
@@ -141,7 +141,7 @@ export async function submitFeedback(
   const body = new FormData()
   body.append('feedback', new Blob([JSON.stringify({ message, ...context })], { type: 'application/json' }))
   images.forEach((file) => body.append('images', file))
-  const response = await fetch(controlPlaneUrl('/api/v1/feedback'), {
+  const response = await fetch(serverUrl('/api/v1/feedback'), {
     method: 'POST',
     headers: enterpriseHeaders(employeeId, accessToken),
     body,
@@ -164,7 +164,7 @@ export async function loadKnowledgeBases(
   accessToken: string,
   signal?: AbortSignal,
 ): Promise<KnowledgeBaseEntry[]> {
-  const response = await fetch(controlPlaneUrl(endpoint), {
+  const response = await fetch(serverUrl(endpoint), {
     headers: knowledgeHeaders(employeeId, teamId, accessToken), signal: boundedSignal(signal),
   })
   if (!response.ok) throw new Error(`知识库返回 ${response.status}`)
@@ -199,7 +199,7 @@ export async function loadKnowledgeDocuments(
   knowledgeBaseId: string,
   signal?: AbortSignal,
 ): Promise<KnowledgeDocumentEntry[]> {
-  const response = await fetch(controlPlaneUrl(`${endpoint.replace(/\/$/, '')}/${encodeURIComponent(knowledgeBaseId)}/documents`), {
+  const response = await fetch(serverUrl(`${endpoint.replace(/\/$/, '')}/${encodeURIComponent(knowledgeBaseId)}/documents`), {
     headers: knowledgeHeaders(employeeId, teamId, accessToken), signal: boundedSignal(signal),
   })
   if (!response.ok) throw new Error(`知识库文档返回 ${response.status}`)
@@ -216,7 +216,7 @@ export async function uploadKnowledgeDocument(
 ): Promise<KnowledgeDocumentEntry> {
   const form = new FormData()
   form.append('file', file, file.name)
-  const response = await fetch(controlPlaneUrl(`${endpoint.replace(/\/$/, '')}/${encodeURIComponent(knowledgeBaseId)}/documents`), {
+  const response = await fetch(serverUrl(`${endpoint.replace(/\/$/, '')}/${encodeURIComponent(knowledgeBaseId)}/documents`), {
     method: 'POST', headers: knowledgeHeaders(employeeId, teamId, accessToken), body: form,
   })
   if (!response.ok) throw new Error(`知识库文档上传返回 ${response.status}`)
@@ -265,7 +265,7 @@ export interface KnowledgeSourceContext { endpoint: string; employeeId: string; 
 
 export async function loadKnowledgeSource(context: KnowledgeSourceContext, sourceId: string, signal?: AbortSignal): Promise<KnowledgeSearchHit> {
   if (!/^[1-9][0-9]{0,18}$/.test(sourceId)) throw new Error('原文引用无效，请重新检索')
-  const response = await fetch(controlPlaneUrl(`${context.endpoint.replace(/\/$/, '')}/sources/${sourceId}`), {
+  const response = await fetch(serverUrl(`${context.endpoint.replace(/\/$/, '')}/sources/${sourceId}`), {
     headers: knowledgeHeaders(context.employeeId, context.teamId, context.accessToken), signal: boundedSignal(signal),
   })
   if (response.status === 404) throw new Error('原文已删除、正在重建或已更新，请重新检索。历史摘录不能作为当前依据。')
@@ -282,7 +282,7 @@ async function knowledgeRequest<T>(
   method: 'POST',
   request?: object,
 ): Promise<T> {
-  const response = await fetch(controlPlaneUrl(`${endpoint.replace(/\/$/, '')}${suffix}`), {
+  const response = await fetch(serverUrl(`${endpoint.replace(/\/$/, '')}${suffix}`), {
     method,
     signal: boundedSignal(),
     headers: { ...knowledgeHeaders(employeeId, teamId, accessToken), ...(request ? { 'Content-Type': 'application/json' } : {}) },
@@ -300,7 +300,7 @@ async function knowledgeVoidRequest(
   suffix: string,
   method: 'DELETE',
 ): Promise<void> {
-  const response = await fetch(controlPlaneUrl(`${endpoint.replace(/\/$/, '')}${suffix}`), {
+  const response = await fetch(serverUrl(`${endpoint.replace(/\/$/, '')}${suffix}`), {
     method, headers: knowledgeHeaders(employeeId, teamId, accessToken),
   })
   if (!response.ok) throw new Error(`知识库删除操作返回 ${response.status}`)
@@ -313,7 +313,7 @@ async function loadCatalog<T>(
   label: string,
   signal?: AbortSignal,
 ): Promise<T[]> {
-  const response = await fetch(controlPlaneUrl(endpoint), {
+  const response = await fetch(serverUrl(endpoint), {
     headers: enterpriseHeaders(employeeId, accessToken),
     signal: boundedSignal(signal),
   })
@@ -321,8 +321,8 @@ async function loadCatalog<T>(
   return response.json() as Promise<T[]>
 }
 
-function controlPlaneUrl(path: string): string {
-  const baseUrl = import.meta.env.VITE_CONTROL_PLANE_BASE_URL ?? DEFAULT_CONTROL_PLANE
+function serverUrl(path: string): string {
+  const baseUrl = import.meta.env.VITE_XIAOYIN_SERVER_URL ?? DEFAULT_XIAOYIN_SERVER
   return new URL(path, `${baseUrl.replace(/\/$/, '')}/`).toString()
 }
 
@@ -331,8 +331,8 @@ function boundedSignal(signal?: AbortSignal, timeoutMs = 12_000): AbortSignal {
   return signal ? AbortSignal.any([signal, timeout]) : timeout
 }
 
-export function resolveControlPlaneEndpoint(path: string): string {
-  return controlPlaneUrl(path)
+export function resolveServerEndpoint(path: string): string {
+  return serverUrl(path)
 }
 
 function enterpriseHeaders(employeeId: string, accessToken: string): Record<string, string> {
@@ -351,5 +351,5 @@ function knowledgeHeaders(employeeId: string, teamId: string, accessToken: strin
 
 // Stable local storage namespace, not a server API. Preserve existing plans across server changes.
 export function localScheduleNamespace(): string {
-  return controlPlaneUrl('/api/v1/schedules')
+  return serverUrl('/api/v1/schedules')
 }

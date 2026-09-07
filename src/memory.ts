@@ -1,5 +1,5 @@
 import { invoke, isTauri } from '@tauri-apps/api/core'
-import { resolveControlPlaneEndpoint } from './api'
+import { resolveServerEndpoint } from './api'
 import { normalizeMemory, relatedMemories } from './memoryEditing'
 
 const operations = new Map<string, Promise<unknown>>()
@@ -263,7 +263,7 @@ export async function rememberInstruction(
 }
 
 async function requestMemoryProfile(endpoint: string, employeeId: string, accessToken: string): Promise<MemoryProfile> {
-  const response = await fetch(resolveControlPlaneEndpoint(endpoint), {
+  const response = await fetch(resolveServerEndpoint(endpoint), {
     signal: AbortSignal.timeout(10_000),
     headers: enterpriseHeaders(employeeId, accessToken),
   })
@@ -279,7 +279,7 @@ async function putMemoryProfile(
   accessToken: string,
   profile: MemoryProfile,
 ): Promise<MemoryProfile> {
-  const response = await fetch(resolveControlPlaneEndpoint(endpoint), {
+  const response = await fetch(resolveServerEndpoint(endpoint), {
     signal: AbortSignal.timeout(10_000),
     method: 'PUT', headers: { ...enterpriseHeaders(employeeId, accessToken), 'Content-Type': 'application/json' },
     body: JSON.stringify({ enabled: profile.enabled, collaborationStyle: profile.collaborationStyle, workManual: profile.workManual, automaticMemory: profile.automaticMemory ?? false, entries: profile.entries ?? [], expectedVersion: profile.version ?? 0 }),

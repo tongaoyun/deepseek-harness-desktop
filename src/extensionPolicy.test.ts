@@ -12,7 +12,7 @@ describe('extension execution policy', () => {
     ])
   })
 
-  it('fails closed when the control-plane catalogs are unavailable', () => {
+  it('fails closed when the xiaoyin-server catalogs are unavailable', () => {
     expect(allowedExtensionArtifacts([], [])).toEqual([])
   })
 })

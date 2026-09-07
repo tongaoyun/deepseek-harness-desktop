@@ -24,7 +24,7 @@ pnpm tauri:dev
 
 `pnpm check` 执行版本一致性、lint、TypeScript、前端测试、Harness 测试、生产构建、Rust 格式、Clippy 和 Rust 测试。
 
-控制中心默认地址为 `http://192.168.2.67:30081`，可通过 `VITE_CONTROL_PLANE_BASE_URL` 覆盖。浏览器模式用于界面开发；ERP Cookie、系统凭据、本地文件权限、Harness 和本地 IM 必须在 Tauri 中验证。
+控制中心默认地址为 `http://192.168.2.67:30081`，可通过 `VITE_XIAOYIN_SERVER_URL` 覆盖。浏览器模式用于界面开发；ERP Cookie、系统凭据、本地文件权限、Harness 和本地 IM 必须在 Tauri 中验证。
 
 网页预览默认使用 `local-development` 本地员工，不需要扫码。桌面本地测试可在不提交的 `.env.local` 中设置 `VITE_SKIP_ERP_LOGIN=true`，运行 `pnpm tauri:dev` 自动进入工作台；正式桌面构建忽略此开关，仍使用 ERP 登录。恢复扫码测试时将开关设为 `false` 并重启开发服务。本地身份不读取或清除已有 ERP 凭据，退出后会重新进入本地会话。
 

@@ -30,7 +30,7 @@ export function useDeviceHeartbeat({
       const installed = await listInstalledExtensions()
       if (/^\d+\.\d+\.\d+$/.test(context.desktopVersion)) {
         const endpoint = bootstrap.endpoints.deviceCapabilities ?? '/api/v1/device-capabilities'
-        const capabilityKeys = [...new Set([...bootstrap.capabilities, 'control-plane', 'harness'])]
+        const capabilityKeys = [...new Set([...bootstrap.capabilities, 'xiaoyin-server', 'harness'])]
           .map((key) => key.trim().toLowerCase())
           .filter((key) => /^[a-z][a-z0-9.-]{1,63}$/.test(key))
         await Promise.all([
