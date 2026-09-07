@@ -7,9 +7,11 @@ import { pathToFileURL } from 'node:url'
 
 export async function checkHarnessCommand(command, args, env = process.env, timeoutMs = 30_000, { selfTest = false } = {}) {
   const temporary = await mkdtemp(join(tmpdir(), 'xiaoyin-runtime-smoke-'))
+  let childClosed = Promise.resolve()
   try {
     await new Promise((done, fail) => {
       const child = spawn(command, args, { cwd: temporary, env: { ...env, DSH_HOME: temporary }, stdio: ['pipe', 'pipe', 'pipe'] })
+      childClosed = new Promise((closed) => child.once('close', closed))
       let settled = false
       let index = 0
       const requests = [['host.initialize', 'initialized'], ['host.health', 'ready'], ['host.shutdown', 'closed']]
@@ -47,7 +49,11 @@ export async function checkHarnessCommand(command, args, env = process.env, time
       })
       send()
     })
-  } finally { await rm(temporary, { recursive: true, force: true }) }
+  } finally {
+    // Windows locks a running process's working directory even after kill is requested.
+    await childClosed
+    await rm(temporary, { recursive: true, force: true })
+  }
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
