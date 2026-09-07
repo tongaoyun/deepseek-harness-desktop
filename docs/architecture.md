@@ -19,11 +19,11 @@ DeepSeek Harness Host
   │ HTTP(S)
 控制中心
   ├─ Bootstrap、模型、扩展、知识库、记忆和审计
-  ├─ 知识库索引 Worker（Temporal）和 MinIO 制品授权
+  ├─ 知识库索引 Worker（PostgreSQL 持久化队列）和 MinIO 制品授权
   └─ LiteLLM、ERP MCP 与 Nacos MCP Registry
 ```
 
-桌面只访问 Bootstrap 下发的业务端点和制品 URL，不访问 Nacos、Temporal、PostgreSQL 或 MinIO 管理接口。
+桌面只访问 Bootstrap 下发的业务端点和制品 URL，不访问 Nacos、PostgreSQL 或 MinIO 管理接口。
 
 ## 运行链路
 
@@ -79,7 +79,7 @@ Harness Host 的 `task-instructions.ts` 为桌面对话和本地 IM 每轮追加
 
 运行中追加文字进入本机任务队列，当前轮成功后按顺序续轮，沿用该任务的上下文与模型。失败、停止和重启恢复后队列暂停；切换页面不影响后台续轮，也不覆盖其他任务的草稿。执行过程将连续工具事件分组，成功组默认折叠，错误与确认独立显示。当前轮完成或停止后默认收起过程，保留正文与成果。原生任务在初始化前登记取消状态；停止终止任务进程组，前端忽略后续事件并阻止自动重试，不将取消显示为模型错误。行为和限制见 [任务执行与结果展示](task-execution.md)。
 
-桌面对话与 IM 接管任务运行在本机 Harness，可使用本地文件、Skills、员工连接器、浏览器和 Computer Use。云端定时 Agent 运行在 Workflow Worker，可使用已批准的非破坏性 MCP 工具并生成结果产物，不访问员工电脑上的文件或桌面应用。
+桌面对话、定时任务与 IM 接管任务统一运行在本机 Harness，可使用本地文件、技能、员工连接器、浏览器和 Computer Use。服务端知识索引 Worker 只处理文档解析、分块与索引，不执行另一套云端 Agent。
 
 ## 界面与交互
 

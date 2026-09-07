@@ -1,20 +1,21 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
-  cancelScheduledTaskExecution,
   createExpertKitDownload,
-  createTaskRunArtifactDownload,
   loadBootstrap,
+  localScheduleNamespace,
   loadConnectors,
   loadExpertKits,
   loadSkills,
   loadKnowledgeSource,
-  loadCloudTaskRuns,
   submitAuditEvent,
   submitDeviceCapabilityReport,
   submitFeedback,
 } from './api'
 
 describe('loadBootstrap', () => {
+  it('keeps local plans in their existing namespace without a bootstrap schedule endpoint', () => {
+    expect(localScheduleNamespace()).toBe('http://192.168.2.67:30081/api/v1/schedules')
+  })
   afterEach(() => vi.unstubAllGlobals())
 
   it('rereads source identity with current account headers and explicit stale-source errors', async () => {
@@ -30,16 +31,6 @@ describe('loadBootstrap', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
-  it('submits cancellation for one encoded execution and propagates server failure', async () => {
-    const fetchMock = vi.fn().mockResolvedValueOnce(new Response(null, { status: 202 }))
-      .mockResolvedValueOnce(new Response(null, { status: 503 }))
-    vi.stubGlobal('fetch', fetchMock)
-    await cancelScheduledTaskExecution('/api/v1/schedules/', 'employee-1', 'token', 'plan one', 'run/one')
-    expect(fetchMock.mock.calls[0][0]).toBe('http://192.168.2.67:30081/api/v1/schedules/plan%20one/executions/run%2Fone/cancel')
-    expect(fetchMock.mock.calls[0][1]).toMatchObject({ method: 'POST', headers: { 'X-Xiaoyin-Employee-Id': 'employee-1', Authorization: 'Bearer token' } })
-    await expect(cancelScheduledTaskExecution('/api/v1/schedules', 'employee-1', 'token', 'one', 'run')).rejects.toThrow('503')
-  })
-
   it('loads the memory-only model credential from the control plane', async () => {
     const payload = {
       protocolVersion: '1',
@@ -52,8 +43,6 @@ describe('loadBootstrap', () => {
         expertKits: '/api/v1/expert-kits',
         skills: '/api/v1/skills',
         connectors: '/api/v1/connectors',
-        schedules: '/api/v1/schedules',
-        taskRuns: '/api/v1/task-runs',
         knowledge: '/api/v1/knowledge-bases',
       },
       capabilities: ['chat'],
@@ -111,23 +100,6 @@ describe('loadBootstrap', () => {
       'X-Xiaoyin-Employee-Id': 'employee-1',
       Authorization: 'Bearer token-1',
     })
-  })
-
-  it('loads task runs and requests an employee-scoped artifact by run id', async () => {
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(new Response('[]', { status: 200, headers: { 'Content-Type': 'application/json' } }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ objectKey: 'workflows/result.json' }), {
-        status: 200, headers: { 'Content-Type': 'application/json' },
-      }))
-    vi.stubGlobal('fetch', fetchMock)
-
-    await loadCloudTaskRuns('/api/v1/task-runs', 'employee-1', 'token-1')
-    await createTaskRunArtifactDownload('/api/v1/task-runs', 'employee-1', 'token-1', 'run one')
-
-    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
-      'http://192.168.2.67:30081/api/v1/task-runs',
-      'http://192.168.2.67:30081/api/v1/task-runs/run%20one/artifact',
-    ])
   })
 
   it('submits redacted audit events without exposing a desktop audit feed', async () => {
