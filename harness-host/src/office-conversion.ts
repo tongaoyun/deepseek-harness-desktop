@@ -85,7 +85,7 @@ export function officeFontConfig(userDirectory: string, cacheDirectory: string):
   const escape = (value: string) => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
   return `<?xml version="1.0" encoding="UTF-8"?>
 <fontconfig>
-<dir>/System/Library/Fonts</dir><dir>/Library/Fonts</dir><dir>${escape(join(userDirectory, 'Library/Fonts'))}</dir>
+<dir>/System/Library/Fonts</dir><dir>/Library/Fonts</dir><dir>${escape(posix.join(userDirectory, 'Library/Fonts'))}</dir>
 <cachedir>${escape(cacheDirectory)}</cachedir>
 </fontconfig>`
 }
