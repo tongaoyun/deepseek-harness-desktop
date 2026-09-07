@@ -3,6 +3,10 @@ packages:
 
 injectWorkspacePackages: true
 
+supportedArchitectures:
+  os: [current]
+  cpu: [current, arm64, x64]
+
 overrides:
   uuid: 11.1.1
 
