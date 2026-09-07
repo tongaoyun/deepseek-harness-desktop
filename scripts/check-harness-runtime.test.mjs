@@ -26,3 +26,32 @@ test('rejects a failed initialization and an early exit', async () => {
 test('times out and terminates an unresponsive runtime', async () => {
   await assert.rejects(checkHarnessCommand(process.execPath, ['-e', 'setInterval(()=>{},1000)'], process.env, 100), /timed out/)
 })
+
+test('waits for the capability self-test and rejects missing or failed checks', async () => {
+  const fixture = `
+    const lines = require('node:readline').createInterface({ input: process.stdin });
+    let pending = false;
+    const methods = ['host.initialize', 'host.health', 'host.self-test', 'host.shutdown'];
+    lines.on('line', line => {
+      const r = JSON.parse(line);
+      if (pending || r.method !== methods.shift()) process.exit(2);
+      pending = true;
+      setTimeout(() => {
+        pending = false;
+        const status = { 'host.initialize': 'initialized', 'host.health': 'ready', 'host.self-test': 'passed', 'host.shutdown': 'closed' }[r.method];
+        const checks = ['local-files', 'office-docx', 'office-xlsx', 'office-pdf', 'native-shell', 'computer-use']
+          .filter(key => key !== process.env.OMIT_CHECK)
+          .map(key => ({ key, passed: key !== process.env.FAIL_CHECK }));
+        console.log(JSON.stringify({ id: r.id, result: { status, checks } }));
+      }, 20);
+    });
+    lines.on('close', () => process.exit(pending || methods.length ? 3 : 0));
+  `
+  await checkHarnessCommand(process.execPath, ['-e', fixture], process.env, 5000, { selfTest: true })
+  for (const env of [{ OMIT_CHECK: 'office-pdf' }, { FAIL_CHECK: 'native-shell' }]) {
+    await assert.rejects(
+      checkHarnessCommand(process.execPath, ['-e', fixture], { ...process.env, ...env }, 5000, { selfTest: true }),
+      /Installed capabilities were not verified/,
+    )
+  }
+})

@@ -81,35 +81,8 @@ foreach ($required in @($stagedNode, $stagedEntry, $stagedConfig)) {
   }
 }
 
-$previousConfig = $env:DSH_CORDIS_CONFIG
-$previousAllowShell = $env:XIAOYIN_ALLOW_SHELL
-$previousApproveShell = $env:XIAOYIN_APPROVE_SHELL
-$env:DSH_CORDIS_CONFIG = $stagedConfig
-$env:XIAOYIN_ALLOW_SHELL = "true"
-$env:XIAOYIN_APPROVE_SHELL = "false"
-try {
-  $requests = @(
-    '{"jsonrpc":"2.0","id":1,"method":"host.initialize"}',
-    '{"jsonrpc":"2.0","id":2,"method":"host.health"}',
-    '{"jsonrpc":"2.0","id":3,"method":"host.shutdown"}'
-  )
-  $responses = @($requests | & $stagedNode $stagedEntry)
-  if ($LASTEXITCODE -ne 0) { throw "Packaged Harness health process exited with $LASTEXITCODE." }
-}
-finally {
-  $env:DSH_CORDIS_CONFIG = $previousConfig
-  $env:XIAOYIN_ALLOW_SHELL = $previousAllowShell
-  $env:XIAOYIN_APPROVE_SHELL = $previousApproveShell
-}
-
-$initialized = $responses | ForEach-Object { $_ | ConvertFrom-Json } | Where-Object { $_.id -eq 1 } | Select-Object -First 1
-if (-not $initialized -or $initialized.result.status -ne "initialized") {
-  throw "Packaged Harness initialization did not complete."
-}
-$health = $responses | ForEach-Object { $_ | ConvertFrom-Json } | Where-Object { $_.id -eq 2 } | Select-Object -First 1
-if (-not $health -or $health.result.status -ne "ready") {
-  throw "Packaged Harness health check did not return ready."
-}
+& $stagedNode (Join-Path $PSScriptRoot "check-harness-runtime.mjs") $stagedNode $hostStage
+if ($LASTEXITCODE -ne 0) { throw "Packaged Harness health check failed with exit code $LASTEXITCODE." }
 
 $manifest = [ordered]@{
   schemaVersion = 1
