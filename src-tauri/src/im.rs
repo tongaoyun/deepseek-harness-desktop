@@ -97,6 +97,8 @@ pub struct ImConversationSummary {
     session_id: String,
     message_count: u64,
     status: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    outcome: Option<Value>,
     delivery_status: Option<String>,
     pending_delivery_count: Option<u64>,
     updated_at: String,
@@ -115,6 +117,8 @@ pub struct ImConversationMessage {
     role: String,
     text: String,
     created_at: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    outcome: Option<Value>,
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -855,17 +859,23 @@ mod tests {
 
     #[test]
     fn delivery_failure_survives_the_native_status_bridge_without_failing_execution() {
+        let outcome = json!({ "status": "partial", "summary": "缺少销售数据",
+            "remaining": ["补充销售数据"], "checks": [] });
         let status = parse_runtime_status(json!({
             "provider": "DINGTALK", "configured": true, "connected": true, "state": "DEGRADED",
             "clientId": "test", "accessPolicy": "open", "notifyTaskResults": false,
             "conversations": [{ "conversationKey": "test:private:one", "conversationType": "private",
                 "conversationTitle": "验收", "senderNick": "测试员工", "lastMessage": "生成文件", "lastResponse": "文件已生成",
                 "sessionId": "session", "messageCount": 1, "status": "COMPLETED", "updatedAt": "now",
-                "deliveryStatus": "FAILED", "pendingDeliveryCount": 1 }]
+                "deliveryStatus": "FAILED", "pendingDeliveryCount": 1, "outcome": outcome,
+                "messages": [{ "id": "reply", "role": "assistant", "text": "文件已生成",
+                    "createdAt": "now", "outcome": outcome }] }]
         }), true, true).unwrap();
         let value = serde_json::to_value(status).unwrap();
         assert_eq!(value["conversations"][0]["status"], "COMPLETED");
         assert_eq!(value["conversations"][0]["deliveryStatus"], "FAILED");
         assert_eq!(value["conversations"][0]["pendingDeliveryCount"], 1);
+        assert_eq!(value["conversations"][0]["outcome"], outcome);
+        assert_eq!(value["conversations"][0]["messages"][0]["outcome"], outcome);
     }
 }

@@ -34,6 +34,7 @@ jobs:
           pnpm typecheck
           pnpm test
           pnpm build
+          node harness-host/scripts/acceptance-task-outcomes.mjs
 
   rust-windows:
     runs-on: windows-x64

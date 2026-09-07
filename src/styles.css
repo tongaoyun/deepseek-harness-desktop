@@ -1374,3 +1374,12 @@ button.skill-postcard:hover { transform: rotate(0) translateY(-3px); }
 .local-schedule-actions button { border: 0; background: transparent; color: #666; padding: 4px 0; }
 .conversation-load-earlier { align-self: center; border: 0; border-radius: 8px; padding: 8px 14px; margin: 12px auto 24px; color: #777; background: #f6f6f6; }
 .local-schedule-directory { display: flex; align-items: center; justify-content: center; gap: 6px; padding: 9px; border: 1px solid #e6e6e6; border-radius: 8px; color: #555; background: #fafafa; font-size: 12px; }
+.task-outcome-details { margin: 12px 0; font-size: 12px; line-height: 1.6; color: var(--xy-text-secondary, #737373); overflow-wrap: anywhere; min-width: 0; }
+.task-outcome-details p { margin: 4px 0; white-space: pre-wrap; }
+.task-outcome-details ul { margin: 4px 0; padding-left: 20px; }
+.task-outcome-details summary { cursor: pointer; }
+.task-outcome-details details ul { list-style: none; padding: 0; }
+.task-outcome-details details li { display: flex; align-items: flex-start; gap: 8px; margin-top: 8px; }
+.task-outcome-details details li svg { flex: 0 0 14px; margin-top: 3px; }
+.task-outcome-details details li div { min-width: 0; }
+.task-outcome-details strong { font-weight: 500; }

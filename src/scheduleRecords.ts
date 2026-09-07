@@ -1,7 +1,7 @@
 import type { LocalScheduleRun } from './localSchedules'
 
 export const scheduleRunLabels: Record<LocalScheduleRun['status'], string> = {
-  RUNNING: '执行中', COMPLETED: '成功', FAILED: '失败', CANCELED: '已停止', INTERRUPTED: '已中断', MISSED: '已错过',
+  RUNNING: '执行中', COMPLETED: '成功', FAILED: '失败', CANCELED: '已停止', INTERRUPTED: '已中断', MISSED: '已错过', NEEDS_ATTENTION: '待处理',
 }
 export type RecordGrouping = 'day' | 'week' | 'month'
 export function scheduleRecordGroup(at: string, grouping: RecordGrouping): string {

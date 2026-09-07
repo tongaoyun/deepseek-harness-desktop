@@ -2,6 +2,7 @@ import { Archive, SquareCheck, BookOpenCheck, Boxes, CalendarClock, ChevronDown,
 import { type KeyboardEvent as ReactKeyboardEvent, type RefObject, useEffect, useState } from 'react'
 import { AccountMenu } from './AccountMenu'
 import { ChannelHistory } from './ChannelHistory'
+import { taskStatusLabel } from './taskOutcome'
 import type { LocalTaskRun } from './types'
 
 const extensions = [
@@ -85,7 +86,7 @@ export function DesktopSidebar(props: Props) {
         {listedTasks.map((task) => <div className="recent-task-wrap" data-task-menu={task.id} key={task.id}>
           {editingTaskId === task.id
             ? <form onSubmit={(event) => { event.preventDefault(); props.onRenameTask(task, editingName); setEditingTaskId('') }}><input autoFocus aria-label="任务名称" maxLength={120} onChange={(event) => setEditingName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Escape') setEditingTaskId('') }} value={editingName} /></form>
-            : <button aria-current={props.page === 'chat' && props.activeTaskId === task.id ? 'true' : undefined} className={`recent-task${props.page === 'chat' && props.activeTaskId === task.id ? ' active' : ''}`} onClick={() => props.onOpenTask(task)} type="button"><span>{task.name}</span><small>{task.status === 'RUNNING' ? '运行中' : task.status === 'COMPLETED' ? '已完成' : task.status === 'CANCELED' ? '已停止' : task.monitor.failure?.code === 'XY-INTERRUPTED' ? '已中断' : '执行失败'}</small></button>}
+            : <button aria-current={props.page === 'chat' && props.activeTaskId === task.id ? 'true' : undefined} className={`recent-task${props.page === 'chat' && props.activeTaskId === task.id ? ' active' : ''}`} onClick={() => props.onOpenTask(task)} type="button"><span>{task.name}</span><small>{taskStatusLabel(task)}</small></button>}
           <button aria-expanded={menuTaskId === task.id} aria-label={`管理 ${task.name}`} className="recent-task-more" onClick={() => setMenuTaskId((current) => current === task.id ? '' : task.id)} type="button"><MoreHorizontal size={14} /></button>
           {menuTaskId === task.id && <div className="recent-task-menu" onKeyDown={navigateMenu} role="menu">
             {!task.archivedAt && <button disabled={task.status === 'RUNNING'} onClick={() => { setEditingName(task.name); setEditingTaskId(task.id); setMenuTaskId('') }} role="menuitem" type="button"><Pencil size={13} />重命名</button>}

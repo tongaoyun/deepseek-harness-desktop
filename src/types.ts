@@ -157,6 +157,7 @@ export interface TaskFileChange {
 }
 
 export interface TaskMonitorState {
+  outcome?: import('./taskOutcome').TaskOutcome
   status: 'idle' | 'running' | 'completed' | 'failed' | 'canceled'
   activity: string
   updatedAt: string

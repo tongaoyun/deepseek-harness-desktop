@@ -9,6 +9,8 @@ import {
 } from './harness'
 import type { AllowedExtensionArtifact, ConnectorRuntimeDefinition, TaskMonitorState } from './types'
 import type { ExtensionValidationReport } from './extensionSubmissions'
+import { parseTaskOutcome, taskOutcomeLabel, unverifiedTaskOutcome } from './taskOutcome'
+import { TaskOutcomeDetails } from './TaskOutcomeDetails'
 
 export interface ExtensionPreviewConfig {
   employeeId: string
@@ -67,6 +69,8 @@ export function ExtensionPreviewPanel({ target, config, unavailableReason, onRun
       disposed = true
       unlisten()
       if (runningRef.current) void cancelHarness(previewTaskIdRef.current)
+      runningRef.current = false
+      previewTaskIdRef.current = ''
       onRunningChangeRef.current(false)
     }
   }, [])
@@ -78,6 +82,7 @@ export function ExtensionPreviewPanel({ target, config, unavailableReason, onRun
       setRunning(false)
       onRunningChangeRef.current(false)
     }
+    previewTaskIdRef.current = ''
     setResponse('')
     setError('')
     const idle = createTaskMonitor()
@@ -91,6 +96,8 @@ export function ExtensionPreviewPanel({ target, config, unavailableReason, onRun
     if (!config || running || !prompt.trim()) return
     const startedAt = new Date().toISOString()
     const startedAtMs = Date.now()
+    const runId = `extension-preview-${crypto.randomUUID()}`
+    previewTaskIdRef.current = runId
     const started: TaskMonitorState = {
       ...createTaskMonitor(startedAt),
       status: 'running',
@@ -105,7 +112,7 @@ export function ExtensionPreviewPanel({ target, config, unavailableReason, onRun
     setError('')
     try {
       const result = await runHarness({
-        taskId: previewTaskIdRef.current,
+        taskId: runId,
         prompt: prompt.trim(),
         executionMode: 'agent',
         employeeId: config.employeeId,
@@ -123,25 +130,30 @@ export function ExtensionPreviewPanel({ target, config, unavailableReason, onRun
         localFileRootIds: target.allowLocalFiles ? config.localFileRootIds : [],
         attachments: [],
       })
+      if (previewTaskIdRef.current !== runId || !runningRef.current) return
+      if (!result.finalResponse.trim()) throw new Error('试运行未返回可显示文本，请重试')
+      const outcome = parseTaskOutcome(result.outcome) ?? unverifiedTaskOutcome()
       const completed: TaskMonitorState = {
         ...monitorRef.current,
         status: 'completed',
-        activity: '试运行通过',
+        outcome,
+        activity: taskOutcomeLabel(outcome),
         updatedAt: new Date().toISOString(),
       }
       monitorRef.current = completed
       setMonitor(completed)
-      const finalResponse = result.finalResponse || '试运行已完成，但模型没有返回文本。'
+      const finalResponse = result.finalResponse
       setResponse(finalResponse)
       const discoveredTools = [...new Set(completed.steps.flatMap((step) => step.toolName ? [step.toolName] : []))]
       onReport?.({
-        type: 'HARNESS', status: 'PASSED', prompt: prompt.trim(), model: config.model,
+        type: 'HARNESS', status: outcome.status === 'completed' ? 'PASSED' : 'FAILED', prompt: prompt.trim(), model: config.model,
         latencyMs: Math.max(0, Date.now() - startedAtMs), discoveredTools,
         steps: completed.steps.map((step) => ({ kind: step.kind, label: step.label, status: step.status, toolName: step.toolName ?? '' })),
         artifacts: completed.artifacts.map((artifact) => ({ name: artifact.name, kind: artifact.kind, sourceTool: artifact.sourceTool })),
         finalResponse, completedAt: completed.updatedAt,
       })
     } catch (reason) {
+      if (previewTaskIdRef.current !== runId || !runningRef.current) return
       const message = reason instanceof Error ? reason.message : String(reason)
       const failed: TaskMonitorState = {
         ...monitorRef.current,
@@ -153,16 +165,20 @@ export function ExtensionPreviewPanel({ target, config, unavailableReason, onRun
       setMonitor(failed)
       if (runningRef.current) setError(message)
     } finally {
-      runningRef.current = false
-      setRunning(false)
-      onRunningChangeRef.current(false)
+      if (previewTaskIdRef.current === runId) {
+        runningRef.current = false
+        setRunning(false)
+        onRunningChangeRef.current(false)
+      }
     }
   }
 
   const cancel = async () => {
     if (!runningRef.current) return
+    const runId = previewTaskIdRef.current
     runningRef.current = false
-    await cancelHarness(previewTaskIdRef.current).catch(() => false)
+    await cancelHarness(runId).catch(() => false)
+    if (previewTaskIdRef.current !== runId) return
     const canceled: TaskMonitorState = {
       ...monitorRef.current,
       status: 'canceled',
@@ -176,7 +192,7 @@ export function ExtensionPreviewPanel({ target, config, unavailableReason, onRun
   }
 
   return <section className="extension-preview">
-    <header><span><strong>发布前试运行</strong><small>只在本机执行当前草稿，不提交审核、不写入正式任务记录。</small></span><em className={monitor.status}>{previewStatusLabel(monitor.status)}</em></header>
+    <header><span><strong>发布前试运行</strong><small>只在本机执行当前草稿，不提交审核、不写入正式任务记录。</small></span><em className={monitor.status}>{monitor.status === 'completed' ? taskOutcomeLabel(monitor.outcome) : previewStatusLabel(monitor.status)}</em></header>
     <div className="extension-preview-input">
       <textarea disabled={running} onChange={(event) => setPrompt(event.target.value)} value={prompt} />
       {running
@@ -187,6 +203,7 @@ export function ExtensionPreviewPanel({ target, config, unavailableReason, onRun
     {monitor.steps.length > 0 && <div className="extension-preview-steps">{monitor.steps.map((step) => <article key={step.id}><i className={step.status} /><span><strong>{step.label}</strong><small>{step.toolName ?? step.kind}</small></span><em>{stepStatusLabel(step.status)}</em></article>)}</div>}
     {monitor.artifacts.length > 0 && <div className="extension-preview-artifacts"><strong>产物</strong>{monitor.artifacts.map((artifact) => <span key={artifact.id}><FileText size={12} />{artifact.name}<small>{artifact.sourceTool}</small></span>)}</div>}
     {response && <div className="extension-preview-response"><strong>最终回复</strong><p>{response}</p></div>}
+    {monitor.status === 'completed' && <TaskOutcomeDetails outcome={monitor.outcome} />}
     {error && <div className="authoring-error">{error}</div>}
   </section>
 }
@@ -195,7 +212,7 @@ export function previewStatusLabel(status: TaskMonitorState['status']) {
   return {
     idle: '等待测试',
     running: '运行中',
-    completed: '已通过',
+    completed: '本轮已结束',
     failed: '失败',
     canceled: '已取消',
   }[status]

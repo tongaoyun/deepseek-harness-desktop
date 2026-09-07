@@ -12,6 +12,8 @@ import * as harness from './harness'
 import type { ConnectorCatalogEntry, LocalTaskRun } from './types'
 import { mergeExpertKits, type ExpertKitView } from './expertKits'
 import { runHarnessWithRecovery } from './taskRecovery'
+import { reportTaskAudit } from './taskAudit'
+import type { TaskOutcome } from './taskOutcome'
 import { persistTaskHistory, loadTaskById } from './taskHistory'
 import { readTaskDraft } from './taskDrafts'
 import { useHarnessNotifications } from './useHarnessNotifications'
@@ -46,6 +48,7 @@ vi.mock('./memory', async (original) => ({ ...await original<object>(), remember
 vi.mock('./harness', async (original) => ({ ...await original<object>(), clearLocalDirectories: async () => {}, restoreLocalDirectories: async () => [], shutdownHarness: async () => {}, cancelHarness: async () => true }))
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
+const completedOutcome: TaskOutcome = { status: 'completed', summary: '已完成本次要求', remaining: [], checks: [] }
 
 const olderTask = (): LocalTaskRun => ({ id: 'older-task', source: 'DESKTOP', name: '更早的定时任务', status: 'COMPLETED', createdAt: '2026-09-01', updatedAt: '2026-09-01', monitor: harness.createTaskMonitor(), messages: [{ role: 'user', text: '保留原始需求' }, { role: 'assistant', text: '历史成果已生成' }] })
 it('appends explicit memory to the original task without losing prior messages or task identity', async () => {
@@ -250,7 +253,7 @@ it('clears only the submitted creation draft and preserves the ordinary new-task
 it('runs a local schedule through the same desktop execution flow without replacing the open draft', async () => {
   const available = vi.spyOn(harness, 'connectorDiagnosticsAvailable').mockReturnValue(true)
   vi.stubGlobal('navigator', { locks: { request: async (_name: string, options: unknown, handler?: (lock: object) => unknown) => (handler ?? options as (lock: object) => unknown)({}) } })
-  vi.mocked(runHarnessWithRecovery).mockResolvedValue({ finalResponse: 'SCHEDULE_OK', sessionId: 'schedule-session' })
+  vi.mocked(runHarnessWithRecovery).mockResolvedValue({ finalResponse: 'SCHEDULE_OK', sessionId: 'schedule-session', outcome: completedOutcome })
   try {
     await fixture(async () => {
       await act(async () => fixtures.chat!.onPrompt('未发送的日常草稿'))
@@ -271,7 +274,7 @@ it('runs a local schedule through the same desktop execution flow without replac
 it.each(['other-model', 'removed-model'])('uses the scheduled model or pauses an unavailable model: %s', async (model) => {
   const available = vi.spyOn(harness, 'connectorDiagnosticsAvailable').mockReturnValue(true)
   vi.stubGlobal('navigator', { locks: { request: async (_name: string, options: unknown, handler?: (lock: object) => unknown) => (handler ?? options as (lock: object) => unknown)({}) } })
-  vi.mocked(runHarnessWithRecovery).mockResolvedValue({ finalResponse: 'MODEL_OK', sessionId: 'model-session' })
+  vi.mocked(runHarnessWithRecovery).mockResolvedValue({ finalResponse: 'MODEL_OK', sessionId: 'model-session', outcome: completedOutcome })
   try {
     await fixture(async () => {
       await act(async () => fixtures.sidebar!.onPage('schedules'))
@@ -295,7 +298,7 @@ it('restores scheduled attachment roots and forwards attachments to the ordinary
   const available = vi.spyOn(harness, 'connectorDiagnosticsAvailable').mockReturnValue(true)
   const restore = vi.spyOn(harness, 'restoreLocalDirectories').mockResolvedValue([{ id: 'attachment-root', name: '资料', path: '/fixture' }])
   vi.stubGlobal('navigator', { locks: { request: async (_name: string, options: unknown, handler?: (lock: object) => unknown) => (handler ?? options as (lock: object) => unknown)({}) } })
-  vi.mocked(runHarnessWithRecovery).mockResolvedValue({ finalResponse: '附件读取完成', sessionId: 'attachment-session' })
+  vi.mocked(runHarnessWithRecovery).mockResolvedValue({ finalResponse: '附件读取完成', sessionId: 'attachment-session', outcome: completedOutcome })
   const attachment = { id: 'attachment-root:input.csv', rootId: 'attachment-root', rootName: '资料', rootPath: '/fixture', path: 'input.csv', name: 'input.csv', kind: 'file' as const }
   try {
     await fixture(async () => {
@@ -334,6 +337,7 @@ it('keeps canceled local schedules and their desktop tasks in the same stopped s
 })
 
 beforeEach(() => {
+  vi.mocked(runHarnessWithRecovery).mockReset()
   fixtures.models = ['original-model', 'other-model']
   const values = new Map<string, string>()
   vi.stubGlobal('localStorage', { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => values.set(key, value), removeItem: (key: string) => values.delete(key) })
@@ -369,17 +373,52 @@ it('continues in the original session and preserves another task’s draft and m
     expect(fixtures.chat!.queue?.items).toHaveLength(1)
     await act(async () => { fixtures.sidebar!.onNewTask() })
     await act(async () => { fixtures.chat!.onPrompt('另一个任务的草稿'); fixtures.chat!.onSelectModel('other-model') })
-    await act(async () => { first.resolve({ finalResponse: '排序说明', sessionId: original.sessionId! } as Awaited<ReturnType<typeof runHarnessWithRecovery>>) })
+    await act(async () => { first.resolve({ finalResponse: '排序说明', sessionId: original.sessionId!, outcome: completedOutcome }) })
     expect(runHarnessWithRecovery).toHaveBeenCalledTimes(2)
     const continuation = vi.mocked(runHarnessWithRecovery).mock.calls[1][0]
     expect(continuation).toMatchObject({ taskId: original.taskId, sessionId: original.sessionId, model: 'original-model', prompt: '再给一个例子' })
     expect(fixtures.chat!.prompt).toBe('另一个任务的草稿')
     expect(fixtures.chat!.activeModel).toBe('other-model')
     expect(fixtures.chat!.messages).toEqual([])
-    await act(async () => { second.resolve({ finalResponse: '示例', sessionId: original.sessionId! } as Awaited<ReturnType<typeof runHarnessWithRecovery>>) })
+    await act(async () => { second.resolve({ finalResponse: '示例', sessionId: original.sessionId!, outcome: completedOutcome }) })
     const saved = vi.mocked(persistTaskHistory).mock.calls.at(-1)![1] as LocalTaskRun
     expect(saved.messages.map((message) => message.text)).toEqual(['解释排序算法', '排序说明', '再给一个例子', '示例'])
     expect(fixtures.chat!.prompt).toBe('另一个任务的草稿')
+  })
+})
+
+it.each(['partial', 'needs_input', 'needs_confirmation', 'blocked', 'unverified', undefined] as const)('retains incomplete outcomes and pauses queued work: %s', async (status) => {
+  const first = deferredRun()
+  const outcome: TaskOutcome | undefined = status ? { status, summary: '已生成初稿，尚待补充', remaining: ['补充销售数据'], checks: [] } : undefined
+  vi.mocked(runHarnessWithRecovery).mockReturnValueOnce(first.promise)
+  await fixture(async () => {
+    await submit('整理销售报告')
+    await submit('将报告发给团队')
+    await act(async () => first.resolve({ finalResponse: '已生成初稿', sessionId: 'report', outcome }))
+    expect(runHarnessWithRecovery).toHaveBeenCalledOnce()
+    expect(fixtures.chat!.queue).toMatchObject({ paused: true, items: [{ text: '将报告发给团队' }] })
+    expect(fixtures.chat!.taskMonitor.outcome?.status).toBe(status ?? 'unverified')
+    const saved = vi.mocked(persistTaskHistory).mock.calls.at(-1)![1]
+    expect(saved.monitor.outcome).toEqual(fixtures.chat!.taskMonitor.outcome)
+    expect(saved.messages.at(-1)?.monitor?.outcome).toEqual(saved.monitor.outcome)
+    expect(reportTaskAudit).not.toHaveBeenCalledWith(expect.objectContaining({ outcome: 'SUCCEEDED' }))
+    expect(learnCompletedTask).not.toHaveBeenCalled()
+  })
+})
+
+it('runs clarification directly while preserving the paused queue', async () => {
+  const first = deferredRun()
+  vi.mocked(runHarnessWithRecovery).mockReturnValueOnce(first.promise).mockResolvedValue({ finalResponse: '报告已补齐', sessionId: 'report', outcome: completedOutcome })
+  await fixture(async () => {
+    await submit('整理销售报告')
+    await submit('将报告发给团队')
+    await act(async () => first.resolve({ finalResponse: '缺少统计月份', sessionId: 'report', outcome: { status: 'needs_input', summary: '缺少统计月份', remaining: ['提供月份'], checks: [] } }))
+    await submit('统计八月份')
+    expect(runHarnessWithRecovery).toHaveBeenCalledTimes(2)
+    expect(vi.mocked(runHarnessWithRecovery).mock.calls[1][0].prompt).toBe('统计八月份')
+    expect(fixtures.chat!.queue).toMatchObject({ paused: true, items: [{ text: '将报告发给团队' }] })
+    expect(fixtures.chat!.taskMonitor.outcome?.status).toBe('completed')
+    expect(reportTaskAudit).toHaveBeenLastCalledWith(expect.objectContaining({ outcome: 'SUCCEEDED' }))
   })
 })
 
@@ -404,7 +443,7 @@ it('keeps the queue paused when stop races with a successful completion', async 
     await submit('再给一个例子')
     await act(async () => { fixtures.chat!.onCancel() })
     const original = vi.mocked(runHarnessWithRecovery).mock.calls[0][0]
-    await act(async () => { first.resolve({ finalResponse: '完成', sessionId: original.sessionId! } as Awaited<ReturnType<typeof runHarnessWithRecovery>>) })
+    await act(async () => { first.resolve({ finalResponse: '完成', sessionId: original.sessionId!, outcome: completedOutcome }) })
     expect(runHarnessWithRecovery).toHaveBeenCalledOnce()
     expect(fixtures.chat!.queue?.paused).toBe(true)
     expect(fixtures.chat!.queue?.items[0].text).toBe('再给一个例子')
@@ -549,7 +588,7 @@ it('refreshes model policy between queued turns without interrupting a running m
     await act(async () => window.dispatchEvent(new Event('focus')))
     expect(runHarnessWithRecovery).toHaveBeenCalledTimes(1)
     expect(original.model).toBe('original-model')
-    await act(async () => first.resolve({ sessionId: original.sessionId!, finalResponse: '排序说明' } as Awaited<ReturnType<typeof runHarnessWithRecovery>>))
+    await act(async () => first.resolve({ sessionId: original.sessionId!, finalResponse: '排序说明', outcome: completedOutcome }))
     const next = vi.mocked(runHarnessWithRecovery).mock.calls[1][0]
     expect(next.model).toBe('replacement-model')
     expect(next.sessionId).not.toBe(original.sessionId)

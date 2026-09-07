@@ -25,6 +25,13 @@ async function fixture(initial: string, overrides: Partial<ChatPageProps>, check
 }
 async function click(container: HTMLElement, selector: string) { await act(async () => container.querySelector<HTMLButtonElement>(selector)!.click()) }
 
+it.each([false, true])('labels direct continuation accurately when the existing queue is paused: %s', async (paused) => {
+  await fixture('补充资料', { queue: { paused, items: [{ id: 'queued', text: '发送报告' }] } }, async (container) => {
+    expect(container.querySelector('.send-button')?.getAttribute('aria-label')).toBe(paused ? '发送' : '加入消息队列')
+    expect(container.querySelector('.composer-hint')?.textContent).toContain(paused ? 'Enter 发送' : 'Enter 加入队列')
+  })
+})
+
 it('shows model choices without a company heading and preserves model selection', async () => {
   const select = vi.fn()
   await fixture('', { modelMenuOpen: true, activeModel: 'deepseek-v4-flash', models: ['deepseek-v4-flash', 'deepseek-v4-pro'], onSelectModel: select }, async (container) => {

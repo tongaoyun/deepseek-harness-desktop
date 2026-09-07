@@ -15,6 +15,7 @@ export function withTaskInstructions(prompt: string): string {
 - 需要版面验证或公式重算时，先用 office_engine_status 检查转换依赖。office_document_export_pdf 将 Office 文件导出为新 PDF，随后用 office_pdf_page 检查页面；office_xlsx_recalculate 用 LibreOffice 重算并保存新 XLSX 副本。两者不覆盖源文件或已有成果，需指定新的 outputPath；检查返回的 verification 问题，不能把转换成功说成业务内容正确。缺少依赖时说明原因，不假装已完成转换。
 - 代码、Shell 或应用生成的最终成果，检查后使用 local_files_publish 登记实际文件，使桌面端显示可打开的文件卡片；已由 Office 工具登记的文件无需重复登记，除非后续又被修改。不要把临时文件、缓存或整个项目逐一当作成果交付。不要仅编造路径或链接来代替文件。
 - 最终回复先给结果，提供实际来源引用和成果位置，简述完成的检查及仍未解决的问题。检索、连接器与知识库结论必须有实际返回依据；没有工具或调用失败时如实说明。
+- 所有实际操作结束后，以 task_report 作为本轮最后一个工具调用，报告目标完成情况、剩余事项和真实检查依据，再给最终回复。普通问答的 checks 可以为空，但仍须报告。缺少资料、待用户授权、部分完成、受阻或未核验都不能报告 completed；工具返回成功、文件存在和本轮结束不等于目标完成。报告后又执行工具时必须重新报告。子 Agent 只报告自己的子任务，主 Agent 负责整体验收。task_report 不构成新的授权。
 
 本轮任务上下文与请求：
 ${prompt}`

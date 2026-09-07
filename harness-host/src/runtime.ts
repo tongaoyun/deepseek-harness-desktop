@@ -9,6 +9,7 @@ import { imageMetadata } from './local-attachment-store-plugin.js'
 import { withTaskInstructions } from './task-instructions.js'
 import { IMAGE_LIMITS } from './image-limits.js'
 import { memoryContextForTask } from './memory-context.js'
+import { TaskOutcomeTracker, type TaskOutcome } from './task-outcome.js'
 
 export interface RunInput {
   prompt: string
@@ -21,6 +22,7 @@ export interface ImageRunInput { data: Buffer; mediaType: 'image/png' | 'image/j
 export interface HarnessRunResult {
   sessionId: string
   finalResponse: string
+  outcome?: TaskOutcome
 }
 
 export interface HarnessRuntime {
@@ -186,6 +188,7 @@ export async function runSessionTurn(
   let finalResponse = ''
   let turnFailure = ''
   const streamedText = new Map<string, string>()
+  const outcome = new TaskOutcomeTracker()
   const deadline = Date.now() + timeoutMs
   try {
     const messageId = await client.prompt(sessionId, content)
@@ -196,6 +199,7 @@ export async function runSessionTurn(
         receivedPrompt = true
       }
       const event = sessionEvent(notification, sessionId)
+      outcome.observe(event)
       await forwardVisibleTextSmoothly(notification, event, streamedText, onNotification)
       if (event?.type === 'turn/start') turnStarted = true
       if (event?.type === 'assistant/message') {
@@ -217,7 +221,7 @@ export async function runSessionTurn(
   }
   if (turnFailure) throw new Error(turnFailure)
   if (!finalResponse.trim()) throw new Error('模型本轮没有返回可显示文本，请重试')
-  return { sessionId, finalResponse }
+  return { sessionId, finalResponse, outcome: outcome.result() }
 }
 
 /**

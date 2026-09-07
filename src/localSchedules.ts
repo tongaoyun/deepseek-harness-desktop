@@ -1,12 +1,14 @@
 import { nextCronRuns } from './cronPreview'
 import { attachmentSelectionError } from './attachmentLimits'
 import type { LocalTaskRun, LocalTaskAttachment } from './types'
+import { parseTaskOutcome, taskOutcomeLabel, type TaskOutcome } from './taskOutcome'
 
 export type ScheduleTiming = { kind: 'once'; at: string } | { kind: 'interval'; minutes: number }
 
 export interface LocalScheduleRun {
   id: string; scheduledAt: string; startedAt: string; closedAt?: string
-  status: 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELED' | 'INTERRUPTED' | 'MISSED'
+  status: 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELED' | 'INTERRUPTED' | 'MISSED' | 'NEEDS_ATTENTION'
+  outcome?: TaskOutcome
   taskId?: string; detail?: string
 }
 export interface LocalSchedule {
@@ -68,7 +70,7 @@ export async function saveLocalSchedule(owner: string, input: LocalScheduleInput
   })
 }
 
-export type LocalScheduleResult = boolean | 'canceled' | { notStarted: string }
+export type LocalScheduleResult = boolean | 'canceled' | { notStarted: string } | { outcome: TaskOutcome }
 export type LocalScheduleExecutor = (schedule: LocalSchedule, taskId: string) => Promise<LocalScheduleResult>
 /** A lease covers the actual run; state writes use a separate short lock. This
  * allows pause/delete while running and prevents a second window dispatching it. */
@@ -104,14 +106,15 @@ export async function tickLocalSchedules(owner: string, ready: () => boolean, ru
     try { if (!ready()) throw new Error('执行前账号或本机状态发生变化，本轮未启动'); result = await run(selected, record.taskId) }
     catch (error) { detail = error instanceof Error ? error.message : String(error) }
     const success = result === true
-    const notStarted = typeof result === 'object' ? result.notStarted : ''
+    const notStarted = typeof result === 'object' && 'notStarted' in result ? result.notStarted : ''
+    const outcome = typeof result === 'object' && 'outcome' in result ? parseTaskOutcome(result.outcome) : undefined
     await mutateLocalSchedules(owner, (items) => items.map((item) => item.id !== selectedId ? item : {
       ...item, active: success ? item.active : false,
       runs: item.runs.map((entry) => {
         if (entry.id !== runId) return entry
         const { taskId: _taskId, ...withoutTask } = entry
-        return { ...(notStarted ? withoutTask : entry), status: success ? 'COMPLETED' : result === 'canceled' ? 'CANCELED' : 'FAILED', closedAt: new Date().toISOString(),
-          ...(!success ? { detail: notStarted || detail || (result === 'canceled' ? '本次任务已主动停止，已保留结果并暂停计划；恢复需手动操作' : '本次任务未完成，计划已暂停；请在任务对话中核对或继续') } : {}) }
+        return { ...(notStarted ? withoutTask : entry), status: success ? 'COMPLETED' : result === 'canceled' ? 'CANCELED' : outcome ? 'NEEDS_ATTENTION' : 'FAILED', closedAt: new Date().toISOString(),
+          ...(outcome ? { outcome, detail: `${taskOutcomeLabel(outcome)}：${outcome.summary} 计划已暂停。` } : !success ? { detail: notStarted || detail || (result === 'canceled' ? '本次任务已主动停止，已保留结果并暂停计划；恢复需手动操作' : '本次任务未完成，计划已暂停；请在任务对话中核对或继续') } : {}) }
       }),
     }))
   })

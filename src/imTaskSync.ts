@@ -1,6 +1,7 @@
 import { applyHarnessNotification } from './harness'
 import type { LocalImStatus } from './localIm'
 import type { LocalTaskRun, TaskMonitorState } from './types'
+import { parseTaskOutcome, taskOutcomeLabel, unverifiedTaskOutcome, type TaskOutcome } from './taskOutcome'
 
 export function mergeImStatusIntoTasks(
   tasks: LocalTaskRun[], status: LocalImStatus,
@@ -19,7 +20,9 @@ export function mergeImStatusIntoTasks(
         return true
       })
       .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
-      .map((message) => ({ ...message, source: 'dingtalk' as const }))
+      .map((message) => ({ ...message, source: 'dingtalk' as const,
+        ...(message.role === 'assistant' && message.outcome ? { monitor: terminalMonitor({ status: 'idle', activity: '', updatedAt: message.createdAt, steps: [], artifacts: [] }, 'COMPLETED', message.createdAt, message.outcome) } : {}),
+      }))
     const processed = new Set(task.processedImEventIds ?? [])
     let monitor = task.monitor
     for (const notification of conversations.flatMap((item) => item.taskEvents ?? [])
@@ -28,7 +31,7 @@ export function mergeImStatusIntoTasks(
       if (current) monitor = applyHarnessNotification(monitor, { requestId: 0, event: { event: notification.event } })
       processed.add(notification.id)
     }
-    if (current) monitor = terminalMonitor(monitor, latest.status, latest.updatedAt)
+    if (current) monitor = terminalMonitor(monitor, latest.status, latest.updatedAt, latest.outcome)
     const taskStatus = latest.status === 'RUNNING' ? 'RUNNING' : latest.status === 'FAILED' ? 'FAILED' : 'COMPLETED'
     const updated: LocalTaskRun = {
       ...task,
@@ -47,9 +50,10 @@ export function mergeImStatusIntoTasks(
 }
 
 function terminalMonitor(
-  monitor: TaskMonitorState, status: 'RUNNING' | 'COMPLETED' | 'FAILED', updatedAt: string,
+  monitor: TaskMonitorState, status: 'RUNNING' | 'COMPLETED' | 'FAILED', updatedAt: string, reportedOutcome?: TaskOutcome,
 ): TaskMonitorState {
-  if (status === 'RUNNING') return { ...monitor, status: 'running', activity: '正在通过钉钉继续任务', updatedAt }
-  if (status === 'FAILED') return { ...monitor, status: 'failed', activity: '钉钉任务执行失败', updatedAt }
-  return { ...monitor, status: 'completed', activity: '已通过钉钉完成回复', updatedAt }
+  if (status === 'RUNNING') return { ...monitor, outcome: undefined, status: 'running', activity: '正在通过钉钉继续任务', updatedAt }
+  if (status === 'FAILED') return { ...monitor, outcome: undefined, status: 'failed', activity: '钉钉任务执行失败', updatedAt }
+  const outcome = parseTaskOutcome(reportedOutcome) ?? unverifiedTaskOutcome()
+  return { ...monitor, outcome, status: 'completed', activity: taskOutcomeLabel(outcome), updatedAt }
 }

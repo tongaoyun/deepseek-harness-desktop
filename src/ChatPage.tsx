@@ -6,6 +6,7 @@ import { InlineTaskActivity } from './InlineTaskActivity'
 import { LocalFilePreviewPanel } from './LocalFilePreviewPanel'
 import type { LocalArtifactTarget } from './localArtifactPreview'
 import { TaskArtifacts } from './TaskArtifacts'
+import { TaskOutcomeDetails } from './TaskOutcomeDetails'
 import { TaskVisuals } from './TaskVisuals'
 import type { CapabilitySnapshot, KnowledgeBaseEntry, LocalTaskAttachment, RuntimeStatus, TaskMessage, TaskMonitorState } from './types'
 import { XiaoyinMascot } from './XiaoyinMascot'
@@ -218,6 +219,7 @@ export function ChatPage(props: ChatPageProps) {
           props.onChangesUndone?.(index, results)
         }} />}
         {!message.pending && monitor && monitor.artifacts.length > 0 && <TaskArtifacts artifacts={monitor.artifacts} conversation onOpen={openPreview} />}
+        {!message.pending && monitor?.status === 'completed' && monitor.outcome && <TaskOutcomeDetails outcome={monitor.outcome} />}
         {!message.pending && monitor?.knowledgeSources && <KnowledgeSources sources={monitor.knowledgeSources} context={props.knowledgeContext} />}
         {!message.pending && monitor && (monitor.visuals?.length ?? 0) > 0 && <TaskVisuals key={props.taskId} visuals={monitor.visuals ?? []} />}
         {!message.pending && monitor?.status === 'completed' && index === props.messages.length - 1 && props.creationKind && props.onContinueCreation && <div className="creation-handoff">

@@ -72,6 +72,9 @@
 - id: desktop-approval
   name: '../dist/desktop-approval-plugin.js'
 
+- id: task-outcome
+  name: '../dist/task-outcome-plugin.js'
+
 - id: managed-mcp
   name: '../dist/managed-mcp-plugin.js'
   config:

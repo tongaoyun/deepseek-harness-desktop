@@ -40,6 +40,7 @@ export interface HarnessRunInput {
 export interface HarnessRunResult {
   sessionId: string
   finalResponse: string
+  outcome?: import('./taskOutcome').TaskOutcome
 }
 
 export interface ConnectorDiagnosticInput {
@@ -509,7 +510,7 @@ export function applyHarnessNotification(
     return {
       ...current,
       status,
-      activity: status === 'completed' ? '任务已完成' : '任务执行失败',
+      activity: status === 'completed' ? '本轮已结束' : '任务执行失败',
       updatedAt: occurredAt,
       completedAt: occurredAt,
       timeline,
@@ -884,6 +885,7 @@ function toolActivityLabel(toolName: string): string {
     job_list: '查看后台任务',
     job_kill: '停止后台任务',
     get_goal: '查看任务目标',
+    task_report: '整理交付结果',
     create_goal: '创建任务目标',
     update_goal: '更新任务目标',
     subagent: '委派子任务',

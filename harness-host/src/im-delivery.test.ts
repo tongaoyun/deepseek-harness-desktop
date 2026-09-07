@@ -6,6 +6,9 @@ import ExcelJS from 'exceljs'
 import { afterEach, expect, it, vi } from 'vitest'
 import { LocalImRuntime } from './im-runtime.js'
 import type { HarnessRuntime } from './runtime.js'
+import type { TaskOutcome } from './task-outcome.js'
+
+const incompleteOutcome: TaskOutcome = { status: 'partial', summary: '已生成初稿，缺少销售数据', remaining: ['补充销售数据'], checks: [{ description: '数据完整性', result: 'failed', evidence: '九月数据缺失' }] }
 
 afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); vi.restoreAllMocks() })
 
@@ -58,7 +61,7 @@ it('resumes only unsent files after a restart and retains the generated answer o
           type: 'tool-result', toolCallId: file, content: [{ type: 'text', text: JSON.stringify({ rootId: 'local-im-workspace', path: file }) }],
         }] } } } } }, 'root')
       }
-      return { sessionId: 'root', finalResponse: '两份报表已生成' }
+      return { sessionId: 'root', finalResponse: '两份报表已生成', outcome: incompleteOutcome }
     })
     const test = fixture(join(directory, 'state.json'), run); const queued = queuedEvent()
     test.internals.pendingEvents.set(queued.event.eventId, queued)
@@ -69,6 +72,7 @@ it('resumes only unsent files after a restart and retains the generated answer o
     expect(conversation.lastResponse).toBe('两份报表已生成')
     expect(conversation.messages.some((message) => message.text.includes('first.csv'))).toBe(true)
     expect(conversation.messages.some((message) => message.text === '两份报表已生成')).toBe(true)
+    expect(test.runtime.status().conversations[0]?.outcome).toEqual(incompleteOutcome)
     const restored = fixture(join(directory, 'state.json'))
     await restored.internals.loadSessions()
     await restored.internals.processQueuedEvent([...restored.internals.pendingEvents.values()][0]!)
@@ -77,6 +81,8 @@ it('resumes only unsent files after a restart and retains the generated answer o
     expect(restored.sendGeneratedFile).toHaveBeenCalledOnce()
     expect(restored.sendGeneratedFile.mock.calls[0]![1]).toBe(join(directory, 'first.csv'))
     expect([...restored.internals.conversations.values()][0]?.status).toBe('COMPLETED')
+    expect(restored.runtime.status().conversations[0]?.outcome).toEqual(incompleteOutcome)
+    expect(restored.runtime.status().conversations[0]?.messages.find((message) => message.text === '两份报表已生成')?.outcome).toEqual(incompleteOutcome)
   } finally { await rm(directory, { recursive: true, force: true }) }
 })
 
@@ -128,6 +134,7 @@ it('rejects duplicate retry clicks and does not overwrite a newer task when old 
   const key = test.runtime.status().conversations[0]!.conversationKey
   const conversation = test.internals.conversations.get(key)!
   Object.assign(conversation, { status: 'RUNNING', lastResponse: '较新的任务', sessionId: 'new-session',
+    outcome: undefined,
     messages: [...conversation.messages, { id: 'new-event', role: 'user', text: '新任务', createdAt: new Date().toISOString() }] })
   let finish!: () => void
   test.reply.mockImplementation(() => new Promise<void>((resolve) => { finish = resolve }))
@@ -135,6 +142,7 @@ it('rejects duplicate retry clicks and does not overwrite a newer task when old 
   await expect(test.runtime.retryDelivery(key)).rejects.toThrow('没有等待')
   finish(); await Promise.all(test.internals.conversationWork.values())
   expect(test.runtime.status().conversations[0]).toMatchObject({ status: 'RUNNING', sessionId: 'new-session', lastResponse: '较新的任务' })
+  expect(test.runtime.status().conversations[0]?.outcome).toBeUndefined()
   expect(test.run).toHaveBeenCalledOnce()
 })
 

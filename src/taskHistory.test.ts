@@ -72,6 +72,22 @@ describe('task history', () => {
     expect(loadLocalTasks('employee-1', storage)[0].monitor).toEqual(task.monitor)
   })
 
+  it('round trips remaining work and evidence on both the task and assistant message', () => {
+    const storage = new MemoryStorage()
+    const finishedMonitor: LocalTaskRun['monitor'] = { ...monitor, status: 'completed', outcome: {
+      status: 'needs_confirmation', summary: '报告已生成，发送前需要确认收件人', remaining: ['确认收件人'],
+      checks: [{ description: '报告结构', result: 'passed', evidence: 'report.xlsx 包含销售和汇总表' }],
+    } }
+    const task: LocalTaskRun = { id: 'awaiting', source: 'DESKTOP', name: '销售报告', status: 'COMPLETED',
+      createdAt: '2026-09-07', updatedAt: '2026-09-07', monitor: finishedMonitor,
+      messages: [{ role: 'assistant', text: '请确认收件人', monitor: finishedMonitor }],
+    }
+    saveLocalTask('employee-1', task, storage)
+    const [restored] = recoverInterruptedTasks(loadLocalTasks('employee-1', storage))
+    expect(restored?.monitor.outcome).toEqual(finishedMonitor.outcome)
+    expect(restored?.messages[0].monitor?.outcome).toEqual(finishedMonitor.outcome)
+  })
+
   it('turns tasks left running by an app exit into retryable failures', () => {
     const task: LocalTaskRun = {
       id: 'task-interrupted', source: 'DESKTOP', name: '整理下载目录', status: 'RUNNING',

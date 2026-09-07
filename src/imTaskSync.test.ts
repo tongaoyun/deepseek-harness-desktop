@@ -3,6 +3,9 @@ import { mergeImStatusIntoTasks } from './imTaskSync'
 import { createTaskMonitor } from './harness'
 import type { LocalImStatus } from './localIm'
 import type { LocalTaskRun } from './types'
+import type { TaskOutcome } from './taskOutcome'
+
+const partialOutcome: TaskOutcome = { status: 'partial', summary: '日报缺少一项数据', remaining: ['补充退货数据'], checks: [] }
 
 describe('IM task synchronization', () => {
   it('imports missing old messages without overwriting a newer desktop execution', () => {
@@ -13,14 +16,15 @@ describe('IM task synchronization', () => {
       messages: [{ id: 'desktop-new', role: 'user', text: '修改一下' }],
     }
     const conversation = {
-      boundTaskId: task.id, sessionId: 'old-session', status: 'COMPLETED', updatedAt: '2026-09-02T01:00:00Z',
-      messages: [{ id: 'im-old', role: 'assistant', text: '旧结果', createdAt: '2026-09-02T01:00:00Z' }],
+      boundTaskId: task.id, sessionId: 'old-session', status: 'COMPLETED', outcome: partialOutcome, updatedAt: '2026-09-02T01:00:00Z',
+      messages: [{ id: 'im-old', role: 'assistant', text: '旧结果', outcome: partialOutcome, createdAt: '2026-09-02T01:00:00Z' }],
       taskEvents: [{ id: 'e1', createdAt: '2026-09-02T01:00:00Z', event: {} }],
     }
     const status = { enabled: true, conversations: [conversation, conversation] } as unknown as LocalImStatus
     const merged = mergeImStatusIntoTasks([task], status)
     expect(merged.tasks[0]).toMatchObject({ status: 'RUNNING', sessionId: 'new-session', monitor: task.monitor })
     expect(merged.tasks[0]!.messages.map((message) => message.id)).toEqual(['desktop-new', 'im-old'])
+    expect(merged.tasks[0]!.messages.at(-1)?.monitor?.outcome).toEqual(partialOutcome)
     expect(mergeImStatusIntoTasks(merged.tasks, status).changed).toHaveLength(0)
   })
   it('merges DingTalk messages and structured events into the bound desktop task once', () => {
@@ -31,7 +35,7 @@ describe('IM task synchronization', () => {
     }
     const status = { enabled: true, conversations: [{
       conversationKey: 'ding:user', boundTaskId: 'task-1', sessionId: 'session-1',
-      status: 'COMPLETED', updatedAt: '2026-09-02T01:00:00Z',
+      status: 'COMPLETED', outcome: partialOutcome, updatedAt: '2026-09-02T01:00:00Z',
       messages: [{ id: 'm1', role: 'user', text: '继续生成日报', createdAt: '2026-09-02T00:59:00Z' }],
       taskEvents: [{ id: 'e1', createdAt: '2026-09-02T01:00:00Z', event: {
         method: 'session.event', params: { event: { type: 'turn/end', time: Date.parse('2026-09-02T01:00:00Z'), data: { turn: 1, reason: { kind: 'completed' } } } },
@@ -41,6 +45,7 @@ describe('IM task synchronization', () => {
     expect(first.changed).toHaveLength(1)
     expect(first.tasks[0]).toMatchObject({ status: 'COMPLETED', messages: [{ id: 'm1', source: 'dingtalk' }] })
     expect(first.tasks[0]!.monitor.steps).toEqual([expect.objectContaining({ id: 'response:1', status: 'completed' })])
+    expect(first.tasks[0]!.monitor.outcome).toEqual(partialOutcome)
     expect(mergeImStatusIntoTasks(first.tasks, status).changed).toHaveLength(0)
   })
 })

@@ -59,6 +59,23 @@ describe('local cross-session memory', () => {
 })
 
 describe('persisted session follow-ups', () => {
+  it('preserves a waiting outcome from the root turn and never guesses completion from text', async () => {
+    const outcome = { status: 'needs_input', summary: '缺少源数据', remaining: ['提供销售明细'], checks: [] }
+    const report = (session: string) => [
+      eventFor(session, 'tool/call', { callId: 'report', name: 'task_report' }),
+      eventFor(session, 'tool/result', { message: { content: [{ type: 'tool-result', toolCallId: 'report', isError: false, content: [{ type: 'text', text: JSON.stringify({ xiaoyinTaskOutcome: 1, outcome }) }] }] } }),
+    ]
+    for (const session of ['session-1', 'child-1']) {
+      const result = await runSessionTurn(fakeClient([
+        event('agent/inbox/spliced', { inserted: [{ id: 'message-2' }] }), event('turn/start', { turn: 1 }),
+        ...report(session),
+        event('assistant/message', { message: { content: [{ type: 'text', text: '请提供销售明细。' }] } }),
+        event('turn/end', { reason: { kind: 'completed' } }),
+      ]), 'session-1', [{ type: 'text', text: '分析销售' }], () => {})
+      expect(result.outcome?.status).toBe(session === 'session-1' ? 'needs_input' : 'unverified')
+      expect(result.finalResponse).toBe('请提供销售明细。')
+    }
+  })
   it('fails a turn after partial output while still forwarding that output to the desktop', async () => {
     const observed: HarnessNotification[] = []
     const notifications = [

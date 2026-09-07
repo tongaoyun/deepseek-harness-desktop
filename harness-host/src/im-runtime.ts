@@ -8,6 +8,7 @@ import {
   type DWClientDownStream,
 } from 'dingtalk-stream'
 import type { HarnessRuntime } from './runtime.js'
+import { parseTaskOutcome, unverifiedTaskOutcome, type TaskOutcome } from './task-outcome.js'
 import { prepareImDocumentContext } from './im-attachments.js'
 import type { ImageRunInput } from './runtime.js'
 
@@ -50,6 +51,7 @@ export interface LocalImStatus {
 }
 
 export interface ImConversationSummary {
+  outcome?: TaskOutcome | undefined
   conversationKey: string
   conversationType: 'group' | 'private'
   conversationTitle: string
@@ -69,6 +71,7 @@ export interface ImConversationSummary {
 }
 
 export interface ImConversationMessage {
+  outcome?: TaskOutcome
   id: string
   role: 'user' | 'assistant'
   text: string
@@ -152,7 +155,7 @@ interface QueuedEvent {
   attempts: number
   paused?: boolean
   stage?: 'preparing' | 'executing' | 'delivery'
-  delivery?: { response: string; sessionId?: string; files: string[]; sentFiles: string[]; replySent: boolean }
+  delivery?: { response: string; sessionId?: string; files: string[]; sentFiles: string[]; replySent: boolean; outcome?: TaskOutcome }
 }
 
 export class LocalImRuntime {
@@ -414,6 +417,7 @@ export class LocalImRuntime {
           const createdAt = new Date().toISOString()
           const latest = existing.messages.filter((item) => item.role === 'user').at(-1)?.id === queued.event.eventId
           this.conversations.set(key, { ...existing, ...(latest ? { status: queued.delivery ? 'COMPLETED' as const : 'FAILED' as const,
+            outcome: queued.delivery?.outcome,
             lastResponse: queued.delivery ? queued.delivery.response.slice(0, 500) : this.lastError.slice(0, 500) } : {}), updatedAt: createdAt,
             messages: appendMessage(existing.messages, { id: `${queued.event.eventId}:delivery-error`, role: 'assistant', text: this.lastError, createdAt }),
           })
@@ -524,15 +528,15 @@ export class LocalImRuntime {
     if (!response) throw new Error('Harness returned an empty IM response')
     this.sessions.set(conversationKey, result.sessionId)
     if (binding) this.taskBindings.set(conversationKey, { ...binding, sessionId: result.sessionId })
-    await this.queueResponse(queued, response.slice(0, MAX_REPLY_CHARS), [...generatedFiles], result.sessionId)
+    await this.queueResponse(queued, response.slice(0, MAX_REPLY_CHARS), [...generatedFiles], result.sessionId, parseTaskOutcome(result.outcome) ?? unverifiedTaskOutcome())
   }
 
-  private async queueResponse(queued: QueuedEvent, response: string, files: string[], sessionId?: string): Promise<void> {
-    queued.delivery = { response, files, sentFiles: [], replySent: false, ...(sessionId ? { sessionId } : {}) }
+  private async queueResponse(queued: QueuedEvent, response: string, files: string[], sessionId?: string, outcome?: TaskOutcome): Promise<void> {
+    queued.delivery = { response, files, sentFiles: [], replySent: false, ...(sessionId ? { sessionId } : {}), ...(outcome ? { outcome } : {}) }
     queued.stage = 'delivery'
     queued.attempts = 0
     await this.persistSessions()
-    await this.completeConversationReply(buildConversationKey(this.configuration!.clientId, queued.event), queued.event, response, sessionId)
+    await this.completeConversationReply(buildConversationKey(this.configuration!.clientId, queued.event), queued.event, response, sessionId, 'COMPLETED', outcome)
     await this.deliverQueuedResponse(queued)
   }
 
@@ -559,7 +563,7 @@ export class LocalImRuntime {
       await this.persistSessions()
     }
     if (failures.length) throw new Error(failures.join('；'))
-    await this.completeConversationReply(key, queued.event, delivery.response, delivery.sessionId)
+    await this.completeConversationReply(key, queued.event, delivery.response, delivery.sessionId, 'COMPLETED', delivery.outcome)
   }
 
   private async handleTaskCommand(conversationKey: string, text: string): Promise<string | undefined> {
@@ -581,7 +585,7 @@ export class LocalImRuntime {
   }
 
   private async completeConversationReply(
-    conversationKey: string, event: DingTalkEvent, response: string, sessionId?: string, status: ImConversationSummary['status'] = 'COMPLETED',
+    conversationKey: string, event: DingTalkEvent, response: string, sessionId?: string, status: ImConversationSummary['status'] = 'COMPLETED', outcome?: TaskOutcome,
   ): Promise<void> {
     const current = this.conversations.get(conversationKey)
     if (!current) return
@@ -601,8 +605,8 @@ export class LocalImRuntime {
     this.conversations.set(conversationKey, {
       ...current,
       sessionId: sessionId ?? current.sessionId,
-      lastResponse: response.slice(0, 500), status, updatedAt: createdAt,
-      messages: appendMessage(current.messages.filter((message) => message.id !== `${event.eventId}:delivery-error`), { id: `${event.eventId}:reply`, role: 'assistant', text: response, createdAt }),
+      lastResponse: response.slice(0, 500), status, outcome, updatedAt: createdAt,
+      messages: appendMessage(current.messages.filter((message) => message.id !== `${event.eventId}:delivery-error`), { id: `${event.eventId}:reply`, role: 'assistant', text: response, createdAt, ...(outcome ? { outcome } : {}) }),
       ...(binding ? { boundTaskId: binding.taskId, boundTaskName: binding.taskName } : {}),
     })
     await this.persistSessions()

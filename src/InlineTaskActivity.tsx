@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ExecutionTimeline, visibleExecutionEntries, type ApprovalDecisionHandler, type ApprovalUiState } from './ExecutionTimeline'
 import { taskDurationLabel } from './taskTiming'
 import type { TaskMonitorState } from './types'
+import { taskOutcomeLabel } from './taskOutcome'
 
 export function InlineTaskActivity({ monitor, finalResponse = '', onApprovalDecision }: {
   monitor: TaskMonitorState
@@ -52,6 +53,7 @@ export function InlineTaskActivity({ monitor, finalResponse = '', onApprovalDeci
   const summary = monitor.status === 'running'
     ? activity
     : interrupted ? '上次运行已中断'
+    : monitor.status === 'completed' && monitor.outcome ? `${taskOutcomeLabel(monitor.outcome)}${duration ? ` · 用时 ${duration}` : ''}`
     : duration ? `${monitor.status === 'failed' ? '处理失败 · 用时' : monitor.status === 'canceled' ? '已停止 · 用时' : '用时'} ${duration}` : statusLabel(monitor.status)
   const hasDetails = visibleExecutionEntries(monitor.timeline ?? [], finalResponse).length > 0
 
@@ -68,7 +70,7 @@ export function InlineTaskActivity({ monitor, finalResponse = '', onApprovalDeci
 
 function statusLabel(status: TaskMonitorState['status']): string {
   if (status === 'running') return '执行中'
-  if (status === 'completed') return '已完成'
+  if (status === 'completed') return '本轮已结束'
   if (status === 'failed') return '失败'
   if (status === 'canceled') return '已停止'
   return '待开始'

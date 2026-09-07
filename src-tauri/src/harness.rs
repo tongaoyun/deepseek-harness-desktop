@@ -196,6 +196,8 @@ pub struct ConnectorDiagnosticRequest {
 pub struct HarnessRunResult {
     session_id: String,
     final_response: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    outcome: Option<Value>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -1570,6 +1572,27 @@ mod tests {
                 .recv_timeout(Duration::from_secs(2))
                 .unwrap()
                 .is_ok()
+        );
+    }
+
+    #[test]
+    fn native_bridge_preserves_task_outcome_and_accepts_legacy_responses() {
+        let outcome = json!({ "status": "needs_input", "summary": "缺少月份",
+            "remaining": ["提供统计月份"], "checks": [] });
+        let result: HarnessRunResult = serde_json::from_value(json!({
+            "sessionId": "session-1", "finalResponse": "请补充月份", "outcome": outcome
+        }))
+        .unwrap();
+        assert_eq!(serde_json::to_value(result).unwrap()["outcome"], outcome);
+        let legacy: HarnessRunResult = serde_json::from_value(json!({
+            "sessionId": "session-1", "finalResponse": "旧回复"
+        }))
+        .unwrap();
+        assert!(
+            serde_json::to_value(legacy)
+                .unwrap()
+                .get("outcome")
+                .is_none()
         );
     }
 

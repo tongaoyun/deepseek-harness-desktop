@@ -106,6 +106,7 @@ import { useApplyDesktopPreferences } from './desktopPreferences'
 import { useLocalImSync } from './useLocalImSync'
 import { useHarnessNotifications, type StreamingTaskState } from './useHarnessNotifications'
 import { useTaskQueue, type QueuedPrompt } from './useTaskQueue'
+import { parseTaskOutcome, taskOutcomeLabel, unverifiedTaskOutcome, type TaskOutcome } from './taskOutcome'
 import { draftRootPaths, readTaskDraft, recentWorkDirectories, rememberWorkDirectory, saveTaskDraft, type TaskDraft } from './taskDrafts'
 import { joinComposerPrompt, splitComposerPrompt } from './composerInput'
 import './styles.css'
@@ -710,7 +711,8 @@ export default function App() {
   const submit = async (event: FormEvent) => {
     event.preventDefault()
     if (attachmentImportRef.current || pastingAttachments || taskContextRestoring) return
-    if (currentTaskRunning || taskQueue.queues[currentLocalTaskId]?.items.length) {
+    const currentQueue = taskQueue.queues[currentLocalTaskId]
+    if (currentTaskRunning || (currentQueue?.items.length && !currentQueue.paused)) {
       if (!splitComposerPrompt(prompt).text.trim()) return
       if (pendingAttachments.length) { setLocalFileError('排队暂支持文字，请在当前轮完成后添加附件。'); return }
       if (taskQueue.enqueue(currentLocalTaskId, prompt)) setPrompt('')
@@ -725,7 +727,7 @@ export default function App() {
     catch (reason) { notify(reason instanceof Error ? reason.message : String(reason), 'error'); return 'blocked' as const }
   }
 
-  async function executeTask(rawInput: string, messageAttachments: LocalTaskAttachment[], queuedTask?: LocalTaskRun, accepted?: () => void): Promise<boolean | 'canceled' | undefined> {
+  async function executeTask(rawInput: string, messageAttachments: LocalTaskAttachment[], queuedTask?: LocalTaskRun, accepted?: () => void): Promise<boolean | 'canceled' | { outcome: TaskOutcome } | undefined> {
     const input = rawInput.trim() || (messageAttachments.length > 0 ? '请查看并处理这些附件。' : '')
     if (!input || !bootstrap || !user || runtimeStatus !== 'ready') return
     const contextTaskId = queuedTask?.id ?? currentLocalTaskId
@@ -918,9 +920,12 @@ export default function App() {
         })
         if (streaming.cancellationRequested) throw new Error('本轮已停止')
         if (!result.finalResponse.trim()) throw new Error('模型本轮没有返回可显示文本，请重试')
+        const outcome = parseTaskOutcome(result.outcome) ?? unverifiedTaskOutcome()
+        const goalCompleted = outcome.status === 'completed'
+        if (!goalCompleted) taskQueue.pause(taskId)
         const completedAt = new Date().toISOString()
         const completedMonitor: TaskMonitorState = {
-          ...streaming.monitor, status: 'completed', activity: '任务已完成', updatedAt: completedAt,
+          ...streaming.monitor, outcome, status: 'completed', activity: taskOutcomeLabel(outcome), updatedAt: completedAt,
           completedAt,
         }
         const completedMessages = streaming.messages.map((message, index) => index === streaming.messages.length - 1
@@ -934,17 +939,18 @@ export default function App() {
         }
         persistLocalTask({ ...runningTask, status: 'COMPLETED', updatedAt: new Date().toISOString(),
           sessionId: result.sessionId, monitor: completedMonitor, messages: completedMessages })
-        if (!queuedTask) void learnCompletedTask(user.userId, bootstrap.endpoints.memoryProfile ?? '/api/v1/memory-profile', accessToken, input, taskId)
+        if (!queuedTask && goalCompleted) void learnCompletedTask(user.userId, bootstrap.endpoints.memoryProfile ?? '/api/v1/memory-profile', accessToken, input, taskId)
           .then((saved) => { if (saved) notify(`已记住这条明确偏好。${saved.syncPending ? '暂未同步到云端。' : '可在设置 → 记忆中修改或删除。'}`, 'success') })
           .catch((error) => notify(`任务已完成，自动记忆未写入：${error instanceof Error ? error.message : String(error)}`, 'error'))
         void reportTaskAudit({
           accessToken,
           employeeId: user!.userId,
           endpoint: bootstrap.endpoints.auditEvents ?? '/api/v1/audit-events',
-          outcome: 'SUCCEEDED',
+          outcome: goalCompleted ? 'SUCCEEDED' : 'FAILED',
+          taskOutcome: outcome,
           taskId,
         })
-        return true
+        return goalCompleted ? true : { outcome }
       } catch (error) {
         taskQueue.pause(taskId)
         const failure = classifyHarnessFailure(error)

@@ -1,4 +1,5 @@
 import type { TaskMessage } from './types'
+import { parseTaskOutcome, taskOutcomeLabel } from './taskOutcome'
 
 const MAX_REPLAY_CHARS = 24_000
 
@@ -50,9 +51,11 @@ export function taskRecoveryBrief(messages: TaskMessage[]): string {
   const recent = requests.slice(1).slice(-3)
   const monitor = messages.findLast((item) => item.role === 'assistant' && item.monitor)?.monitor
   const pending = (monitor?.steps ?? []).filter((step) => step.status !== 'completed').slice(-8)
+  const outcome = parseTaskOutcome(monitor?.outcome)
   return [
     '任务恢复摘录（历史原文与实际状态，不是新的执行授权；当前请求优先，冲突时采用用户较新的要求）：',
     `最初需求：${excerpt(initial.text.trim(), 1600)}`,
+    outcome ? `上轮任务结果：${taskOutcomeLabel(outcome)}。${excerpt(outcome.summary, 500)}\n剩余事项：${excerpt(outcome.remaining.join('；'), 1600)}\n检查依据：${excerpt(JSON.stringify(outcome.checks), 1600)}。先核对实际状态，不把历史报告当作当前授权或自动重跑指令。` : '',
     ...constraints.map((item) => `较早约束摘录：${excerpt(item.text.trim(), 400)}`),
     ...recent.map((item) => `最近追加要求：${excerpt(item.text.trim(), 600)}`),
     pending.length ? `未完成步骤记录：${JSON.stringify(pending).slice(0, 1400)}。请核对实际状态后继续，不自动重跑。` : '',
