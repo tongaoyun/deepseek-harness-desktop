@@ -109,14 +109,19 @@ describe('task history', () => {
     expect(compacted.messages.at(-1)?.text).toBe('消息 139')
   })
 
-  it('does not evict older or archived tasks after 200 saves', () => {
+  it('does not evict older or archived tasks when saving beyond 200 records', () => {
     const storage = new MemoryStorage()
-    for (let index = 0; index < 205; index++) saveLocalTask('employee-1', {
+    const task = (index: number): LocalTaskRun => ({
       id: String(index), source: 'DESKTOP', name: '任务', status: 'COMPLETED',
       createdAt: '2026-09-01', updatedAt: '2026-09-01', archivedAt: index === 0 ? '2026-09-01' : undefined,
       monitor, messages: [{ role: 'user', text: '原始要求' + (index === 0 ? '长'.repeat(250_000) : '') }],
-    }, storage)
+    })
+    // Start just before the boundary; exercise real saves across and beyond it.
+    // Avoid rewriting the same large history 199 times merely to arrange the fixture.
+    storage.setItem('xiaoyin.task-history.employee-1', JSON.stringify(Array.from({ length: 199 }, (_, index) => task(index))))
+    for (let index = 199; index < 205; index++) saveLocalTask('employee-1', task(index), storage)
     expect(loadLocalTasks('employee-1', storage)).toHaveLength(205)
     expect(loadLocalTasks('employee-1', storage).find((task) => task.id === '0')?.messages[0].text).toHaveLength(250_004)
+    expect(loadLocalTasks('employee-1', storage).find((task) => task.id === '0')?.archivedAt).toBe('2026-09-01')
   })
 })
