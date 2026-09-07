@@ -1641,8 +1641,8 @@ mod tests {
             knowledge_base_refs: Vec::new(),
             allowed_artifacts: Vec::new(),
             litellm_base_url: "http://litellm.internal/v1".to_string(),
-            knowledge_endpoint: "http://control-plane.internal/api/v1/knowledge-bases".to_string(),
-            schedule_endpoint: "http://control-plane.internal/api/v1/schedules".to_string(),
+            knowledge_endpoint: "http://xiaoyin-server.internal/api/v1/knowledge-bases".to_string(),
+            schedule_endpoint: "http://xiaoyin-server.internal/api/v1/schedules".to_string(),
             connectors: vec![ConnectorDefinition {
                 timeout_seconds: None,
                 id: "erp-mcp".to_string(),
