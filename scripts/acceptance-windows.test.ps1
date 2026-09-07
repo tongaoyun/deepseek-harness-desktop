@@ -7,7 +7,9 @@ $parseErrors = $null
 $ast = [System.Management.Automation.Language.Parser]::ParseFile($scriptPath, [ref]$tokens, [ref]$parseErrors)
 if ($parseErrors.Count -gt 0) { throw "Acceptance script syntax is invalid: $parseErrors" }
 $functions = $ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $false)
-foreach ($function in $functions) { . ([scriptblock]::Create($function.Extent.Text)) }
+foreach ($function in $functions) {
+  Set-Item -Path "Function:\$($function.Name)" -Value $function.Body.GetScriptBlock()
+}
 
 function Assert-Equal {
   param($Actual, $Expected)
