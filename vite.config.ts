@@ -6,6 +6,7 @@ export default defineConfig({
   clearScreen: false,
   test: {
     include: ['src/**/*.test.{ts,tsx}'],
+    maxWorkers: 2,
   },
   build: {
     rollupOptions: {
