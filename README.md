@@ -44,22 +44,30 @@ pnpm tauri:dev
 
 默认控制中心为 `http://192.168.2.67:30081`。开发环境可通过 `VITE_CONTROL_PLANE_BASE_URL` 覆盖。浏览器模式仅用于界面开发；ERP Cookie、系统权限和本地 IM 必须在 Tauri 中验证。
 
-## Windows 发布
+## 构建与验收
 
-| 场景 | 工作流 |
-|---|---|
-| 日常调试 | Windows 工作机运行 `pnpm tauri:dev` |
-| 快速安装验证 | `Windows quick installer`，生成 Debug NSIS，制品保留 7 天 |
-| 完整安装验证 | `Windows installer`，生成 MSI 与 NSIS，并按配置执行烟测 |
-| 正式发布 | 推送 `v*` 标签，执行门禁、烟测、Updater 签名和 Gitea Release |
-| 回滚 | `Roll back desktop release`，选择已发布版本 |
+Gitea 统一为「代码检查」「macOS 安装包」「Windows 安装包」「版本回退」四个入口。参数、缓存及并发规则见 [构建工作流](docs/build-workflows.md)。
 
-`main` 执行 lint、类型、测试与构建门禁。Windows Rust CI 在 `main`、Pull Request 或手动触发时执行。自动更新使用正式单通道和 Tauri 签名。
+| 平台 | 命令或工作流 | 输出 |
+|---|---|---|
+| Windows x64 调试 | `pnpm tauri:dev` | 本地应用 |
+| Windows x64 快速安装验证 | `Windows 安装包`，选择 `quick` | Debug NSIS，仅开发验证 |
+| Windows x64 完整安装验证 | `Windows 安装包`，选择 `release` | MSI、NSIS、Updater 文件 |
+| macOS Apple Silicon / Intel | `macOS 安装包`，选择 `arm64` / `x64` / `all` | `.app`、`.dmg`、Updater 文件、SHA-256 |
 
-发布前同步更新 `package.json`、`src-tauri/Cargo.toml` 和 `src-tauri/tauri.conf.json` 的版本。本仓库不部署到 K3s；Windows 安装包内置 Node 与 Harness Runtime，员工电脑无需安装开发环境。
+macOS 构建按目标架构准备固定版本的 Node.js 和 Harness Runtime，并验证最终 DMG、原生依赖、Harness 与更新包签名。公共质量检查只跑一次，正式标签顺序构建双架构，通过后发布独立 Mac 更新索引。安装包最低要求 macOS 14，使用内部分发临时签名，尚无 Apple 公证；完整安装和升级仍需验收。详见 [macOS 更新](docs/macos-updates.md)。
 
-正式 Windows 发布使用 Tauri Updater 签名校验更新文件，Actions 需要配置：
+## 发布
 
-- `TAURI_SIGNING_PRIVATE_KEY`、`TAURI_SIGNING_PRIVATE_KEY_PASSWORD`：Updater 签名密钥。
+发布前同步更新以下版本：
 
-Updater 私钥只保存在 Actions Secret 和受保护备份中，不得提交到仓库、`.env` 或安装包。Windows 安装包不执行 Authenticode 证书签名。
+- `package.json`
+- `src-tauri/Cargo.toml`
+- `src-tauri/tauri.conf.json`
+
+推送 `v*` 标签会运行 Windows 和 macOS 安装包工作流。Windows Updater 需要以下 Actions Secrets：
+
+- `TAURI_SIGNING_PRIVATE_KEY`
+- `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`
+
+Updater 私钥只保存在 Actions Secrets 和受保护备份中，不提交到仓库、`.env` 或安装包。Windows 更新索引回退使用「版本回退」工作流。

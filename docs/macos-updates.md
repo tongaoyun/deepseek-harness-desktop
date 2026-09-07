@@ -6,7 +6,7 @@ Apple Silicon 与 Intel 安装包均要求 macOS 14 或更新系统，与内置�
 
 ## 发布流程
 
-- `macos-installer.yml` 的版本标签构建 Apple Silicon 和 Intel；手动运行可选择 `all`、`arm64` 或 `x64`，手动构建只留流水线制品。
+- `macos-installer.yml` 的版本标签构建 Apple Silicon 和 Intel；手动默认 `arm64`，可选择 `all` 或 `x64`，手动构建只留流水线制品。公共检查每轮只执行一次，两个目标分别编译并验收。工作流入口及触发规则见 [构建工作流](build-workflows.md)。
 - 两个架构都由 `macos-arm64` Runner 顺序构建，避免同一构建机的暂存资源相互覆盖。Apple Silicon 主机构建 Intel 包需安装 `x86_64-apple-darwin` Rust 标准库，并用 Rosetta 2 运行 Intel 内置 Node 和原生依赖的验收；不要求另设 Intel Runner。
 - `XIAOYIN_MACOS_ARCH=arm64|x64` 明确指定目标，Rust 主程序、内置 Node、node-pty 和 Swift 桌面助手保持一致。原生可选依赖安装两种 CPU 版本；实际验收使用目标 Node 加载 FFI、PDF/图片模块并运行终端子进程，不能只检查主程序架构。
 - 显式目标的产物目录为 `$CARGO_TARGET_DIR/<Rust target>/release/bundle`，未指定 `CARGO_TARGET_DIR` 时使用 `src-tauri/target/<Rust target>/release/bundle`。更新平台仍分别使用 `darwin-aarch64` 和 `darwin-x86_64`，不将单架构包标记为 Universal。

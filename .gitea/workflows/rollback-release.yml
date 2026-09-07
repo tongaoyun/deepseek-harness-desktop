@@ -1,4 +1,4 @@
-name: Roll back desktop release
+name: 版本回退
 
 on:
   workflow_dispatch:
