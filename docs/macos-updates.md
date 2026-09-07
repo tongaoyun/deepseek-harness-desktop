@@ -2,6 +2,8 @@
 
 桌面支持 Windows 与 macOS 更新入口。开发模式不后台检查，缺少当前架构的发布包时显示「暂未发布此平台更新」，允许稍后重试。下载与安装期间不并发检查新版本。
 
+Apple Silicon 与 Intel 安装包均要求 macOS 14 或更新系统，与内置桌面操作组件的最低系统版本一致；Intel 架构支持不代表支持旧版 macOS。
+
 ## 发布流程
 
 - `macos-installer.yml` 的版本标签构建 Apple Silicon 和 Intel；手动运行可选择 `all`、`arm64` 或 `x64`，手动构建只留流水线制品。
