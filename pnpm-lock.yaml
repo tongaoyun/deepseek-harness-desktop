@@ -26,6 +26,9 @@ importers:
       '@tauri-apps/plugin-updater':
         specifier: 2.10.1
         version: 2.10.1
+      croner:
+        specifier: 10.0.1
+        version: 10.0.1
       diff:
         specifier: ^9.0.0
         version: 9.0.0
@@ -1997,6 +2000,10 @@ packages:
   crc32-stream@4.0.3:
     resolution: {integrity: sha512-NT7w2JVU7DFroFdYkeq8cywxrgjPHWkdX1wjpRQXPX5Asews3tA+Ght6lddQO5Mkumffp3X7GEqku3epj2toIw==}
     engines: {node: '>= 10'}
+
+  croner@10.0.1:
+    resolution: {integrity: sha512-ixNtAJndqh173VQ4KodSdJEI6nuioBWI0V1ITNKhZZsO0pEMoDxz539T4FTTbSZ/xIOSuDnzxLVRqBVSvPNE2g==}
+    engines: {node: '>=18.0'}
 
   cross-spawn@7.0.6:
     resolution: {integrity: sha512-uV2QOWP2nWzsy2aMp8aRibhi9dlzF5Hgh5SHaB9OiTGEyDTiJJyx0uy51QXdyWbtAHNua4XJzUKca3OzKUd3vA==}
@@ -4692,6 +4699,8 @@ snapshots:
     dependencies:
       crc-32: 1.2.2
       readable-stream: 3.6.2
+
+  croner@10.0.1: {}
 
   cross-spawn@7.0.6:
     dependencies:
