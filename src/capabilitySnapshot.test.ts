@@ -10,6 +10,16 @@ const connector = (id: string, version = '1', status: ConnectorRuntimeDefinition
 })
 
 describe('capability snapshot', () => {
+  it('preserves a session after native JSON storage reorders nested object keys', () => {
+    const skill = { id: 'unit-testing', version: '1.0.1', sha256: 'a'.repeat(64), installState: 'installed' } as SkillView
+    const snapshot = createCapabilitySnapshot([], [skill], [{ ...connector('erp'), headers: { Z: '', A: '' } }])
+    const stored = JSON.parse(JSON.stringify(snapshot, (_key, value) => value && typeof value === 'object' && !Array.isArray(value)
+      ? Object.fromEntries(Object.entries(value).sort(([left], [right]) => left.localeCompare(right))) : value))
+    expect(JSON.stringify(stored)).not.toBe(JSON.stringify(snapshot))
+    expect(capabilitySnapshotChanged(stored, snapshot)).toBe(false)
+    stored.extensions[0].sha256 = 'b'.repeat(64)
+    expect(capabilitySnapshotChanged(stored, snapshot)).toBe(true)
+  })
   it('rebuilds sessions for configuration changes but not checkpoint timestamps', () => {
     const first = createCapabilitySnapshot([], [], [connector('erp')], [], 'first')
     expect(capabilitySnapshotChanged(first, { ...first, createdAt: 'second' })).toBe(false)

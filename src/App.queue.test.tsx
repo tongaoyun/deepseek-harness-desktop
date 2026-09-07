@@ -14,7 +14,7 @@ import { mergeExpertKits, type ExpertKitView } from './expertKits'
 import { runHarnessWithRecovery } from './taskRecovery'
 import { reportTaskAudit } from './taskAudit'
 import type { TaskOutcome } from './taskOutcome'
-import { persistTaskHistory, loadTaskById } from './taskHistory'
+import { persistTaskHistory, loadTaskById, loadTaskHistory } from './taskHistory'
 import { readTaskDraft, saveTaskDraft } from './taskDrafts'
 import { useHarnessNotifications } from './useHarnessNotifications'
 import { rememberInstruction, emptyMemoryProfile, learnCompletedTask } from './memory'
@@ -41,7 +41,7 @@ vi.mock('./DesktopSidebar', () => ({ DesktopSidebar: (props: ComponentProps<type
 vi.mock('./ScheduledTasksPage', () => ({ ScheduledTasksPage: (props: ComponentProps<typeof ScheduledTasksPage>) => { fixtures.schedules = props; return null } }))
 vi.mock('./ExtensionCatalogPages', () => ({ CapabilityCatalogPage: (props: ComponentProps<typeof CapabilityCatalogPage>) => { fixtures.creationCatalog = props; return null } }))
 vi.mock('./api', async (original) => ({ ...await original<object>(), loadBootstrap: async () => ({ models: [...fixtures.models], capabilities: [], endpoints: { litellm: '/model', knowledge: '/knowledge', schedules: '/schedules' } }) }))
-vi.mock('./taskHistory', async (original) => ({ ...await original<object>(), loadTaskHistory: async () => [], loadTaskById: vi.fn(), persistTaskHistory: vi.fn(async () => {}) }))
+vi.mock('./taskHistory', async (original) => ({ ...await original<object>(), loadTaskHistory: vi.fn(async () => []), loadTaskById: vi.fn(), persistTaskHistory: vi.fn(async () => {}) }))
 vi.mock('./taskRecovery', () => ({ runHarnessWithRecovery: vi.fn() }))
 vi.mock('./taskAudit', () => ({ reportTaskAudit: vi.fn(async () => {}) }))
 vi.mock('./memory', async (original) => ({ ...await original<object>(), rememberInstruction: vi.fn(), learnCompletedTask: vi.fn(async () => undefined) }))
@@ -338,6 +338,7 @@ it('keeps canceled local schedules and their desktop tasks in the same stopped s
 
 beforeEach(() => {
   vi.mocked(runHarnessWithRecovery).mockReset()
+  vi.mocked(loadTaskHistory).mockResolvedValue([])
   fixtures.models = ['original-model', 'other-model']
   const values = new Map<string, string>()
   vi.stubGlobal('localStorage', { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => values.set(key, value), removeItem: (key: string) => values.delete(key) })
@@ -534,6 +535,24 @@ it.each(['', '继续检查'])('resumes the persisted session after remount with 
     expect(fixtures.chat!.prompt).toBe(prompt)
     await submit('复查原任务')
     expect(vi.mocked(runHarnessWithRecovery).mock.calls[0][0]).toMatchObject({ sessionId: 'persisted-session', prompt: '复查原任务' })
+  })
+})
+
+it('resumes an installed kit after native persistence reorders the capability snapshot', async () => {
+  fixtures.catalog.expertKits = mergeExpertKits([], [{ installPath: '/extensions/reports', source: 'developer', packageSha256: 'a'.repeat(64), manifest: { schemaVersion: '2', kind: 'expert-kit', id: 'reports', name: '报告专家', version: '1.0.0', summary: '生成报告', category: 'other', minimumDesktopVersion: '0.1.30', commands: [], skills: [{ id: 'report', path: 'skills/report/SKILL.md' }], connectorRefs: [], requiredTools: [], serverWorkflows: [] } }])
+  vi.mocked(runHarnessWithRecovery).mockImplementation(async (request) => ({ finalResponse: '完成', sessionId: request.sessionId!, outcome: completedOutcome }))
+  let stored!: LocalTaskRun
+  await fixture(async () => {
+    await submit('/kit:reports 分析销售情况')
+    const task = vi.mocked(persistTaskHistory).mock.calls.at(-1)![1]
+    stored = JSON.parse(JSON.stringify(task, (_key, value) => value && typeof value === 'object' && !Array.isArray(value)
+      ? Object.fromEntries(Object.entries(value).sort(([left], [right]) => left.localeCompare(right))) : value))
+  })
+  vi.mocked(loadTaskHistory).mockResolvedValue([stored])
+  await fixture(async () => {
+    await act(async () => fixtures.sidebar!.onOpenTask(stored))
+    await submit('/kit:reports 只读复查')
+    expect(vi.mocked(runHarnessWithRecovery).mock.calls.at(-1)![0]).toMatchObject({ sessionId: stored.sessionId, prompt: '/kit:reports 只读复查' })
   })
 })
 
