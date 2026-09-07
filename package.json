@@ -17,6 +17,9 @@
     "check": "pnpm verify:version && pnpm lint && pnpm typecheck && pnpm test && pnpm build && cargo fmt --check --manifest-path src-tauri/Cargo.toml && cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings && cargo test --manifest-path src-tauri/Cargo.toml --all-targets",
     "verify:version": "node scripts/verify-version-consistency.mjs",
     "harness:prepare:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-harness-runtime.ps1",
+    "harness:prepare:macos": "bash scripts/prepare-harness-runtime-macos.sh",
+    "smoke:macos": "bash scripts/smoke-test-macos-bundle.sh",
+    "tauri:build:macos": "bash scripts/build-macos.sh",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build"

@@ -12,3 +12,6 @@ src-tauri/resources/harness-runtime/
 vite.config.js
 vite.config.d.ts
 .xiaoyin/
+harness-host/native/xiaoyin-computer-use*
+src-tauri/resources/harness-runtime.next/
+macos-artifacts/

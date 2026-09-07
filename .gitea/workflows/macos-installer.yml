@@ -4,22 +4,38 @@ on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      architecture:
+        description: "选择 macOS 构建架构"
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - arm64
+          - x64
 
 permissions:
   contents: read
   actions: write
 
 concurrency:
-  group: macos-installer-${{ github.ref }}
-  cancel-in-progress: true
+  group: macos-installer-release
+  cancel-in-progress: false
 
 jobs:
-  build-macos-arm64:
+  build-macos:
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        architecture: ${{ fromJSON(inputs.architecture == 'arm64' && '["arm64"]' || inputs.architecture == 'x64' && '["x64"]' || '["arm64","x64"]') }}
     runs-on: macos-arm64
     timeout-minutes: 120
     env:
       CARGO_TERM_COLOR: always
-      CARGO_TARGET_DIR: /Users/a1-6/Library/Caches/xiaoyin-desktop-builder/target
+      XIAOYIN_MACOS_ARCH: ${{ matrix.architecture }}
+      CARGO_TARGET_DIR: /tmp/xiaoyin-desktop-builder/target
       CARGO_REGISTRIES_CRATES_IO_INDEX: sparse+https://rsproxy.cn/index/
       NPM_CONFIG_REGISTRY: http://192.168.2.9:4873/
       NPM_CONFIG_FETCH_RETRIES: 4
@@ -34,7 +50,10 @@ jobs:
       - name: 验证 macOS 构建环境
         run: |
           test "$(uname -s)" = "Darwin"
-          test "$(uname -m)" = "arm64"
+          repository="$PWD"
+          source scripts/macos-build-env.sh
+          macos_check_execution
+          rustup target add "$rust_target"
           test "$(node --version)" = "v24.19.0"
           test "$(pnpm --version)" = "10.33.0"
           rustc --version
@@ -48,6 +67,9 @@ jobs:
       - name: 前端与 Harness 质量门禁
         run: |
           pnpm verify:version
+          node --test scripts/publish-macos-update.test.mjs
+          node --test scripts/macos-build-env.test.mjs
+          node --test scripts/check-harness-runtime.test.mjs
           pnpm lint
           pnpm typecheck
           pnpm test
@@ -63,31 +85,68 @@ jobs:
           cargo test --manifest-path src-tauri/Cargo.toml --all-targets
 
       - name: 构建 macOS 应用
-        run: pnpm tauri build --config src-tauri/tauri.macos.conf.json
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          repository="$PWD"
+          source scripts/macos-build-env.sh
+          pnpm tauri build --config src-tauri/tauri.macos.conf.json --target "$rust_target"
 
       - name: 签名并生成 DMG
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: bash scripts/package-macos-dmg.sh
 
       - name: 收集 macOS 安装包
         run: |
           version="$(node -p "require('./package.json').version")"
-          app="$CARGO_TARGET_DIR/release/bundle/macos/小胤.app"
-          dmg="$CARGO_TARGET_DIR/release/bundle/dmg/小胤_${version}_aarch64.dmg"
+          repository="$PWD"
+          source scripts/macos-build-env.sh
+          app="$target_dir/release/bundle/macos/小胤.app"
+          updater="$target_dir/release/bundle/macos/小胤.app.tar.gz"
+          dmg="$target_dir/release/bundle/dmg/小胤_${version}_${artifact_arch}.dmg"
           output="macos-artifacts"
           test -d "$app"
           test -f "$dmg"
+          test -f "$updater"
+          test -f "$updater.sig"
           mkdir -p "$output"
-          ditto -c -k --sequesterRsrc --keepParent "$app" "$output/小胤_${version}_aarch64.app.zip"
+          ditto -c -k --sequesterRsrc --keepParent "$app" "$output/小胤_${version}_${artifact_arch}.app.zip"
           cp "$dmg" "$output/"
+          cp "$updater" "$updater.sig" "$output/"
           (cd "$output" && shasum -a 256 * > SHA256SUMS.txt)
 
       - name: 上传 macOS 安装包
         uses: http://192.168.2.66:3300/instudio/gitea-upload-artifact@v4
         with:
-          name: xiaoyin-desktop-macos-arm64-${{ github.sha }}
+          name: xiaoyin-desktop-macos-${{ matrix.architecture }}-${{ github.sha }}
           path: |
             macos-artifacts/*.dmg
             macos-artifacts/*.app.zip
+            macos-artifacts/*.app.tar.gz
+            macos-artifacts/*.sig
             macos-artifacts/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 30
+
+      - name: 上传已验证的架构更新包
+        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+        env:
+          RELEASE_USERNAME: ${{ secrets.RELEASE_USERNAME }}
+          RELEASE_CREDENTIAL: ${{ secrets.RELEASE_CREDENTIAL }}
+        run: node scripts/publish-macos-update.mjs stage ${{ matrix.architecture }}
+
+  publish-macos-update:
+    needs: build-macos
+    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+    runs-on: macos-arm64
+    steps:
+      - name: 检出代码
+        uses: http://192.168.2.66:3300/instudio/checkout@v4
+      - name: 验证双架构并发布 macOS 更新索引
+        env:
+          RELEASE_USERNAME: ${{ secrets.RELEASE_USERNAME }}
+          RELEASE_CREDENTIAL: ${{ secrets.RELEASE_CREDENTIAL }}
+        run: node scripts/publish-macos-update.mjs publish
