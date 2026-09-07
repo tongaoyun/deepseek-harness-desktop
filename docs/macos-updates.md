@@ -4,6 +4,8 @@
 
 Apple Silicon 与 Intel 安装包均要求 macOS 14 或更新系统，与内置桌面操作组件的最低系统版本一致；Intel 架构支持不代表支持旧版 macOS。
 
+ERP 扫码回调使用 `http://www.instudio.me:6206`。`src-tauri/Info.plist` 仅为该域名允许 HTTP，其他域名保留 macOS ATS 默认限制；安装包烟测检查此配置。
+
 ## 发布流程
 
 - `macos-installer.yml` 的版本标签构建 Apple Silicon 和 Intel；手动默认 `arm64`，可选择 `all` 或 `x64`，手动构建只留流水线制品。公共检查每轮只执行一次，两个目标分别编译并验收。工作流入口及触发规则见 [构建工作流](build-workflows.md)。
