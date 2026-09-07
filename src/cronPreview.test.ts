@@ -12,4 +12,9 @@ describe('cron preview', () => {
   it('rejects malformed expressions', () => {
     expect(nextCronRuns('bad cron', 'Asia/Shanghai')).toEqual([])
   })
+
+  it('finds the next monthly date without depending on the machine timezone', () => {
+    expect(nextCronRuns('0 9 1 * *', 'Asia/Shanghai', 1, new Date('2026-09-07T02:00:00Z'))
+      .map((value) => value.toISOString())).toEqual(['2026-10-01T01:00:00.000Z'])
+  })
 })

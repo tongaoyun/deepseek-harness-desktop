@@ -5,6 +5,10 @@ import { expect, it, vi } from 'vitest'
 import { ScheduledTasksPage } from './ScheduledTasksPage'
 import type { LocalSchedule } from './localSchedules'
 
+// These tests cover controls and focus, not calendar scanning. Real cron and
+// timezone behavior is covered separately in cronPreview.test.ts.
+vi.mock('./cronPreview', () => ({ nextCronRuns: vi.fn(() => [new Date('2026-10-01T01:00:00Z')]) }))
+
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 it('matches the creation controls and closes a popup with Escape before closing the dialog', async () => {
   const fetch = vi.fn(); vi.stubGlobal('fetch', fetch)
