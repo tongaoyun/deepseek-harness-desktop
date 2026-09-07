@@ -1,3 +1,5 @@
+#[cfg(test)]
+mod acceptance;
 mod archive;
 mod compatibility;
 mod inventory;
@@ -937,19 +939,22 @@ pub fn remove_catalog_extension(
     validate_artifact_kind(&kind)?;
     let root = extensions_root(&app)?.join(&kind);
     let extension_directory = root.join(&id);
+    remove_catalog_versions(&extension_directory, &kind, &id)
+}
+
+fn remove_catalog_versions(extension_directory: &Path, kind: &str, id: &str) -> Result<(), String> {
     if !extension_directory.exists() {
         return Ok(());
     }
     let mut removals = Vec::new();
-    for version_directory in child_directories(&extension_directory)? {
+    for version_directory in child_directories(extension_directory)? {
         let Ok(record) = load_install_record(&version_directory) else {
             continue;
         };
         if record.source != InstallSource::Catalog {
             continue;
         }
-        let manifest =
-            load_and_validate_manifest(&version_directory, Some(&kind), Some(&id), None)?;
+        let manifest = load_and_validate_manifest(&version_directory, Some(kind), Some(id), None)?;
         if manifest.kind != kind {
             return Err("本地扩展类型与卸载请求不一致".to_string());
         }
@@ -960,12 +965,12 @@ pub fn remove_catalog_extension(
             .map_err(|error| format!("无法卸载本地扩展：{error}"))?;
     }
     if extension_directory.exists()
-        && fs::read_dir(&extension_directory)
+        && fs::read_dir(extension_directory)
             .map_err(|error| format!("无法检查扩展目录：{error}"))?
             .next()
             .is_none()
     {
-        fs::remove_dir(&extension_directory)
+        fs::remove_dir(extension_directory)
             .map_err(|error| format!("无法清理扩展目录：{error}"))?;
     }
     Ok(())
@@ -1329,17 +1334,12 @@ fn append_skill_directories(
             continue;
         }
         let skill_path = root.join(&skill.path);
-        let directory = if skill_path
-            .file_name()
-            .is_some_and(|name| name == "SKILL.md")
-        {
-            skill_path.parent().and_then(Path::parent)
-        } else {
-            skill_path.parent()
-        }
-        .ok_or_else(|| format!("技能路径无效：{}", skill.path))?
-        .to_string_lossy()
-        .into_owned();
+        // Each root is scanned independently, so a shared parent would reintroduce skipped skills.
+        let directory = skill_path
+            .parent()
+            .ok_or_else(|| format!("技能路径无效：{}", skill.path))?
+            .to_string_lossy()
+            .into_owned();
         if !directories.contains(&directory) {
             directories.push(directory);
         }
@@ -1634,6 +1634,44 @@ mod tests {
 
         let plain = normalize_skill_document("# 工作方法", "plain-skill", "普通工作方法");
         assert!(plain.starts_with("---\nname: plain-skill\ndescription: \"普通工作方法\"\n---\n"));
+    }
+
+    #[test]
+    fn overlapping_kits_only_expose_selected_skill_directories() {
+        let kit = |id: &str, ids: &[&str]| {
+            let manifest = serde_json::from_value::<ExpertKitManifest>(serde_json::json!({
+                "schemaVersion": "2", "kind": "expert-kit", "id": id,
+                "name": id, "version": "1.0.0", "summary": "Development skills",
+                "skills": ids.iter().map(|skill| serde_json::json!({
+                    "id": skill, "path": format!("skills/{skill}/SKILL.md")
+                })).collect::<Vec<_>>()
+            }))
+            .unwrap();
+            installed_kit(
+                manifest,
+                &PathBuf::from(id).join("1.0.0"),
+                InstallSource::Developer,
+            )
+        };
+        let selected = kit("selected-kit", &["api-design"]);
+        let other = kit("fullstack-kit", &["api-design", "code-review"]);
+        let mut directories = Vec::new();
+        let mut ids = HashSet::new();
+        append_skill_directories(&selected, &mut directories, &mut ids).unwrap();
+        append_skill_directories(&other, &mut directories, &mut ids).unwrap();
+        append_skill_directories(&selected, &mut directories, &mut ids).unwrap();
+        assert_eq!(
+            directories,
+            vec![
+                PathBuf::from("selected-kit/1.0.0/skills/api-design")
+                    .to_string_lossy()
+                    .into_owned(),
+                PathBuf::from("fullstack-kit/1.0.0/skills/code-review")
+                    .to_string_lossy()
+                    .into_owned(),
+            ]
+        );
+        assert_eq!(ids.len(), 2);
     }
 
     #[test]

@@ -1,1 +1,2 @@
 third-party/node-v24.19.0/LICENSE -text
+patches/*.patch text eol=lf whitespace=-space-before-tab

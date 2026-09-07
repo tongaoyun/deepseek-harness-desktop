@@ -4,6 +4,10 @@ pub(super) fn scan_installed_extensions(
     app: &tauri::AppHandle,
 ) -> Result<InstalledExtensionInventory, String> {
     let root = extensions_root(app)?;
+    scan_root(&root)
+}
+
+pub(super) fn scan_root(root: &Path) -> Result<InstalledExtensionInventory, String> {
     if !root.exists() {
         return Ok(InstalledExtensionInventory {
             installed: Vec::new(),
@@ -13,7 +17,7 @@ pub(super) fn scan_installed_extensions(
 
     let mut installed = Vec::new();
     let mut issues = Vec::new();
-    for kind_directory in child_directories(&root)? {
+    for kind_directory in child_directories(root)? {
         let Some(kind) = directory_name(&kind_directory) else {
             issues.push(issue("未知扩展目录", "扩展目录名称不是有效文本"));
             continue;

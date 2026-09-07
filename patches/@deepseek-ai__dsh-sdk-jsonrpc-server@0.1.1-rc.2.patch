@@ -1,0 +1,35 @@
+diff --git a/lib/index.js b/lib/index.js
+index e29c7e33c60e3c47b35467ad6b419a301b7e0f08..2cf3d11710efb3880628f61470a4ae9adebb7187 100644
+--- a/lib/index.js
++++ b/lib/index.js
+@@ -176,15 +176,23 @@ var HarnessSdkJsonRpcServer = class {
+ 		return creation;
+ 	}
+ 	async createSession(sessionId) {
+-		const rec = { handle: await this.ctx.agents.create({
++		const persistence = this.ctx.get("sessionPersistence");
++		const stored = persistence === void 0 ? void 0 : (await persistence.list()).find((meta) => meta.id === sessionId);
++		if (stored !== void 0 && stored.cwd !== this.cwd) throw new Error("Persisted session belongs to a different workspace");
++		const agentOptions = {
++			provider: this.provider,
++			model: this.model,
++			...this.maxTokens === void 0 ? {} : { maxTokens: this.maxTokens }
++		};
++		const handle = stored === void 0 ? await this.ctx.agents.create({
+ 			sessionId: SessionId(sessionId),
+ 			meta: { cwd: this.cwd },
+-			agentOptions: {
+-				provider: this.provider,
+-				model: this.model,
+-				...this.maxTokens === void 0 ? {} : { maxTokens: this.maxTokens }
+-			}
+-		}) };
++			agentOptions
++		}) : await this.ctx.agents.resume({
++			resumeSessionId: SessionId(sessionId),
++			agentOptions
++		});
++		const rec = { handle };
+ 		this.sessions.set(sessionId, rec);
+ 		return rec;
+ 	}

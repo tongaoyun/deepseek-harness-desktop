@@ -17,3 +17,4 @@ harness-host/native/xiaoyin-computer-use-arm64
 harness-host/native/xiaoyin-computer-use-x86_64
 src-tauri/resources/harness-runtime.next/
 macos-artifacts/
+output/acceptance-*.json
