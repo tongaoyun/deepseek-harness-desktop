@@ -25,6 +25,8 @@ XIAOYIN_EXTENSION_FIXTURES=/path/to/fixtures.json \
 
 原生安装器在临时目录验证安装、重复安装、升级、启停、技能目录及卸载，不操作员工已有扩展。
 
+Windows 安装器烟测使用安装目录中的 Node 和 Harness 运行技能加载与会话恢复验收，核对最终安装包的依赖和补丁。
+
 ## 真实代码任务
 
 配置 `DEEPSEEK_API_KEY` 和 `XIAOYIN_ACCEPTANCE_SKILL_DIRS`。后者为包含 `unit-testing` 的技能目录 JSON 数组。

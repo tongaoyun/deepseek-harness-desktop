@@ -1661,14 +1661,10 @@ mod tests {
         append_skill_directories(&other, &mut directories, &mut ids).unwrap();
         append_skill_directories(&selected, &mut directories, &mut ids).unwrap();
         assert_eq!(
-            directories,
+            directories.iter().map(PathBuf::from).collect::<Vec<_>>(),
             vec![
-                PathBuf::from("selected-kit/1.0.0/skills/api-design")
-                    .to_string_lossy()
-                    .into_owned(),
-                PathBuf::from("fullstack-kit/1.0.0/skills/code-review")
-                    .to_string_lossy()
-                    .into_owned(),
+                PathBuf::from("selected-kit/1.0.0/skills/api-design"),
+                PathBuf::from("fullstack-kit/1.0.0/skills/code-review"),
             ]
         );
         assert_eq!(ids.len(), 2);

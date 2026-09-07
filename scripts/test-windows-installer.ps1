@@ -82,6 +82,11 @@ try {
   & $runtimeNode (Join-Path $PSScriptRoot "check-harness-runtime.mjs") $runtimeNode (Join-Path $runtimeRoot "harness-host") --self-test
   if ($LASTEXITCODE -ne 0) { throw "Installed Harness runtime and capability check failed with exit code $LASTEXITCODE." }
 
+  foreach ($acceptance in @("acceptance-skill-loading.mjs", "acceptance-session-recovery.mjs")) {
+    & $runtimeNode (Join-Path $runtimeRoot "harness-host\scripts\$acceptance")
+    if ($LASTEXITCODE -ne 0) { throw "Installed Harness acceptance failed: $acceptance (exit code $LASTEXITCODE)." }
+  }
+
   $application = Get-ChildItem -LiteralPath $resolvedRoot -File -Filter "*.exe" |
     Where-Object { $_.Name -notmatch "^(uninstall|unins.*)\.exe$" } |
     Select-Object -First 1

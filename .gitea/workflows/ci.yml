@@ -62,7 +62,7 @@ jobs:
       - name: 准备 Tauri 静态检查资源目录
         shell: powershell
         run: New-Item -ItemType Directory -Force src-tauri\resources\harness-runtime | Out-Null
-      - name: Rust 格式、静态检查和测试编译
+      - name: Rust 格式、静态检查和测试
         working-directory: src-tauri
         shell: powershell
         run: |
@@ -70,7 +70,5 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "cargo fmt failed" }
           cargo clippy --all-targets -- -D warnings
           if ($LASTEXITCODE -ne 0) { throw "cargo clippy failed" }
-          # This Runner's DLL environment cannot start Tauri tests yet.
-          # Compile/link here; the release workflow must still execute them.
-          cargo test --no-run
-          if ($LASTEXITCODE -ne 0) { throw "cargo test compilation failed" }
+          cargo test
+          if ($LASTEXITCODE -ne 0) { throw "cargo test failed" }
