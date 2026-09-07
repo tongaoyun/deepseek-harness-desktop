@@ -15,7 +15,7 @@ import { runHarnessWithRecovery } from './taskRecovery'
 import { reportTaskAudit } from './taskAudit'
 import type { TaskOutcome } from './taskOutcome'
 import { persistTaskHistory, loadTaskById } from './taskHistory'
-import { readTaskDraft } from './taskDrafts'
+import { readTaskDraft, saveTaskDraft } from './taskDrafts'
 import { useHarnessNotifications } from './useHarnessNotifications'
 import { rememberInstruction, emptyMemoryProfile, learnCompletedTask } from './memory'
 
@@ -519,6 +519,37 @@ it('restores independent new-task and conversation drafts without clearing eithe
   await fixture(async () => {
     expect(fixtures.chat!.prompt).toBe('新任务未发送')
     expect(fixtures.chat!.activeModel).toBe('other-model')
+  })
+})
+
+it.each(['', '继续检查'])('resumes the persisted session after remount with an unchanged workspace draft: %s', async (prompt) => {
+  const directories = [{ id: 'work', name: '工作', path: '/work' }]
+  const task: LocalTaskRun = { ...olderTask(), sessionId: 'persisted-session', model: 'original-model', localDirectories: directories,
+    capabilitySnapshot: { createdAt: '', extensions: [], connectors: [], knowledgeBaseRefs: [] } }
+  vi.spyOn(harness, 'restoreLocalDirectories').mockResolvedValue(directories)
+  saveTaskDraft('queue-test', task.id, { prompt, attachments: [], directories, knowledgeRefs: [], connectorIds: [], model: 'original-model', updatedAt: 1 })
+  vi.mocked(runHarnessWithRecovery).mockResolvedValue({ finalResponse: '复查完成', sessionId: 'persisted-session', outcome: completedOutcome })
+  await fixture(async () => {
+    await act(async () => fixtures.sidebar!.onOpenTask(task))
+    expect(fixtures.chat!.prompt).toBe(prompt)
+    await submit('复查原任务')
+    expect(vi.mocked(runHarnessWithRecovery).mock.calls[0][0]).toMatchObject({ sessionId: 'persisted-session', prompt: '复查原任务' })
+  })
+})
+
+it('starts a new session when a restored draft changes the workspace', async () => {
+  const task: LocalTaskRun = { ...olderTask(), sessionId: 'persisted-session', model: 'original-model', localDirectories: [{ id: 'old', name: '旧目录', path: '/old' }],
+    capabilitySnapshot: { createdAt: '', extensions: [], connectors: [], knowledgeBaseRefs: [] } }
+  const directories = [{ id: 'new', name: '新目录', path: '/new' }]
+  vi.spyOn(harness, 'restoreLocalDirectories').mockResolvedValue(directories)
+  saveTaskDraft('queue-test', task.id, { prompt: '继续', attachments: [], directories, knowledgeRefs: [], connectorIds: [], model: 'original-model', updatedAt: 1 })
+  vi.mocked(runHarnessWithRecovery).mockResolvedValue({ finalResponse: '完成', sessionId: 'new-session', outcome: completedOutcome })
+  await fixture(async () => {
+    await act(async () => fixtures.sidebar!.onOpenTask(task))
+    await submit('检查当前目录')
+    const request = vi.mocked(runHarnessWithRecovery).mock.calls[0][0]
+    expect(request.sessionId).not.toBe('persisted-session')
+    expect(request.prompt).toContain('保留原始需求')
   })
 })
 

@@ -548,7 +548,9 @@ export default function App() {
     taskMonitorRef.current = streaming?.monitor ?? task.monitor
     setTaskMonitor(streaming?.monitor ?? task.monitor)
     const draft = user ? readTaskDraft(user.userId, task.id) : undefined
-    if (draft) { setCurrentCapabilitySnapshot(undefined); setHarnessSessionId('') }
+    if (draft && JSON.stringify(draftRootPaths(draft).sort()) !== JSON.stringify((task.localDirectories ?? []).flatMap((directory) => directory.path ? [directory.path] : []).sort())) {
+      setHarnessSessionId('')
+    }
     void restoreDraftContext(draft ?? { ...emptyDraft(), prompt: joinComposerPrompt(task.invocationToken ?? '', ''), directories: task.localDirectories ?? [], knowledgeRefs: task.capabilitySnapshot?.knowledgeBaseRefs ?? [], connectorIds: task.composerConnectorIds ?? [], model: task.model ?? activeModel })
     focusComposer()
   }

@@ -55,7 +55,7 @@ if [[ -f "$spawn_helper" ]]; then chmod 755 "$spawn_helper"; fi
 
 archive="node-$node_version-darwin-$node_arch.tar.gz"
 base_url="https://nodejs.org/dist/$node_version"
-curl --fail --location --silent --show-error --connect-timeout 15 --max-time 300 --retry 2 "$base_url/$archive" --output "$temporary/$archive"
+curl --fail --location --silent --show-error --connect-timeout 15 --max-time 900 --speed-limit 1024 --speed-time 60 --retry 2 "$base_url/$archive" --output "$temporary/$archive"
 curl --fail --location --silent --show-error --connect-timeout 15 --max-time 60 --retry 2 "$base_url/SHASUMS256.txt" --output "$temporary/SHASUMS256.txt"
 expected_sha="$(awk -v file="$archive" '$2 == file { print $1 }' "$temporary/SHASUMS256.txt")"
 actual_sha="$(shasum -a 256 "$temporary/$archive" | awk '{ print $1 }')"
