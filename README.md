@@ -1,20 +1,19 @@
 # 小胤桌面端
 
-## 项目结构
+面向员工的桌面工作助手。以 Qoder Work 为产品主线，以 Claude、Codex 的任务执行能力为目标，完成需求理解、工具执行、结果检查和文件交付。
 
-| 路径 | 内容 |
-|---|---|
-| `src/` | React 工作台、任务、扩展、知识库和 IM 页面 |
-| `src-tauri/` | Tauri 命令、权限、凭据、文件访问、进程管理和安装配置 |
-| `harness-host/` | DeepSeek Harness、Skills、MCP、本地工具和钉钉 Runtime |
-| `scripts/` | Runtime 准备、安装包构建、烟测和发布验收 |
-| `.gitea/workflows/` | CI、Windows/macOS 安装包和版本回滚 |
+## 仓库职责
 
-详细组件边界见 [架构与能力](docs/architecture.md)，对话、排队和文件交付见 [任务执行与结果展示](docs/task-execution.md)，页面功能与参考产品差异见 [桌面能力对照](docs/desktop-alignment.md)，Windows 人工验收见 [Windows 正式版验收](docs/windows-release-acceptance.md)。
+| 仓库 | 负责什么 |
+| --- | --- |
+| `xiaoyin-desktop` | 桌面、任务执行、本地文件、Office、定时任务和钉钉 |
+| `xiaoyin-server` | 企业控制台、模型与扩展目录、知识索引、审计和记忆同步 |
+| `xiaoyin-extensions` | 官方 Skills、专家套件、内容模板和发布工具 |
+| `erp-mcp-gateway` | ERP 业务工具与 Nacos MCP 注册 |
 
 ## 开发
 
-环境要求：Node.js 24.19.0、pnpm 10.33.0、Rust 1.97+。
+环境：Node.js 24.19.0、pnpm 10.33.0、Rust 1.97+。Windows 需要 Visual C++ Build Tools；macOS 需要 Xcode Command Line Tools。
 
 ```bash
 pnpm install --frozen-lockfile
@@ -22,54 +21,43 @@ pnpm check
 pnpm tauri:dev
 ```
 
-`pnpm check` 执行版本一致性、lint、TypeScript、前端测试、Harness 测试、生产构建、Rust 格式、Clippy 和 Rust 测试。
+控制中心默认地址为 `http://192.168.2.67:30081`，通过 `VITE_XIAOYIN_SERVER_URL` 指定其他环境。
 
-控制中心默认地址为 `http://192.168.2.67:30081`，可通过 `VITE_XIAOYIN_SERVER_URL` 覆盖。浏览器模式用于界面开发；ERP Cookie、系统凭据、本地文件权限、Harness 和本地 IM 必须在 Tauri 中验证。
+浏览器预览使用本地开发身份。桌面开发可在未提交的 `.env.local` 中设置 `VITE_SKIP_ERP_LOGIN=true`；正式构建始终使用 ERP 登录。模型调用与企业目录需要对应服务可达。本机权限、凭据、文件、Harness 和 IM 在 Tauri 中验证。
 
-网页预览默认使用 `local-development` 本地员工，不需要扫码。桌面本地测试可在不提交的 `.env.local` 中设置 `VITE_SKIP_ERP_LOGIN=true`，运行 `pnpm tauri:dev` 自动进入工作台；正式桌面构建忽略此开关，仍使用 ERP 登录。恢复扫码测试时将开关设为 `false` 并重启开发服务。本地身份不读取或清除已有 ERP 凭据，退出后会重新进入本地会话。
+## 代码目录
 
-免扫码只跳过身份登录，不模拟控制中心或模型服务。服务离线时可以进入工作台，但企业目录同步和模型调用仍需对应服务可达。
+| 目录 | 内容 |
+| --- | --- |
+| `src/` | React 工作台、交互与任务状态 |
+| `src-tauri/` | 原生权限、凭据、SQLite、扩展安装和进程管理 |
+| `harness-host/` | Agent 运行时、Skills、MCP、本地工具和钉钉 |
+| `scripts/` | 构建、运行时准备、安装包和验收脚本 |
+| `.gitea/workflows/` | CI、安装包与更新发布 |
 
-## 连接器
+## 构建发布
 
-技能和专家套件的创建、导入、调用、启停、原文查看、定制与分享见 [扩展使用](docs/extensions.md)。
+`pnpm check` 执行版本、lint、类型、前端与 Harness 测试、生产构建，以及 Rust 格式、Clippy 和测试。
 
-在「扩展 → 连接器」中添加企业或个人 MCP 服务，支持 Streamable HTTP、SSE 和 STDIO。
+| 工作流 | 参数 | 产物 |
+| --- | --- | --- |
+| Windows 安装包 | `release` | MSI、NSIS、更新签名与 SHA-256 |
+| Windows 安装包 | `quick` | 开发验证用 Debug NSIS |
+| macOS 安装包 | `arm64`、`x64` 或 `all` | DMG、应用归档、更新签名与 SHA-256 |
 
-- JSON 导入支持单个连接器对象和包含多个服务的 `mcpServers`；兼容 `type` / `transport`、`args` / `arguments`、`env` / `environment`。
-- 中文和其他显示名称会保留，内部 ID 自动生成。手动配置时可以只填写名称，留空 ID。
-- 导入前逐项检查配置；已有 ID 不会被覆盖。导入后显示各项保存结果，失败项可以重试。
-- 「已添加」保留关闭的个人服务；可以直接编辑完整配置或删除个人连接器。关闭开关保留配置，删除同时移除本机凭据。
-- 已启用的 MCP 服务在打开连接器页面或配置变化时自动检测，展示连接中、待配置、正常、异常或未检测状态。展开「工具与配置」可查看声明工具、实际发现的工具及差异。
+手动构建保存流水线制品。推送版本标签会发布更新，发布前同步 `package.json`、`src-tauri/Cargo.toml`、`src-tauri/Cargo.lock` 和 `src-tauri/tauri.conf.json`，执行 `pnpm verify:version`。
 
-检测结果是一次连接测试，不是持续在线承诺。浏览器开发模式无法执行本机 MCP 检测，显示未检测；桌面内置能力在使用时检查。配置变化用于新任务，既有任务保留自己的能力快照。
+Tauri 更新签名使用 Actions Secrets 中的 `TAURI_SIGNING_PRIVATE_KEY` 和 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`。Windows Authenticode 与 Apple Developer ID 公证属于操作系统信任签名，需要分别配置。
 
-## 构建与验收
+## 文档
 
-Gitea 统一为「代码检查」「macOS 安装包」「Windows 安装包」「版本回退」四个入口。参数、缓存及并发规则见 [构建工作流](docs/build-workflows.md)。
-
-| 平台 | 命令或工作流 | 输出 |
-|---|---|---|
-| Windows x64 调试 | `pnpm tauri:dev` | 本地应用 |
-| Windows x64 快速安装验证 | `Windows 安装包`，选择 `quick` | Debug NSIS，仅开发验证 |
-| Windows x64 完整安装验证 | `Windows 安装包`，选择 `release` | MSI、NSIS、Updater 文件 |
-| Windows x64 人工验收 | `pnpm acceptance:windows` | `acceptance-report.json` |
-| macOS Apple Silicon | `macOS 安装包`，默认选择 `arm64` | `.app`、`.dmg`、Updater 文件、SHA-256 |
-| macOS Intel | 在 `macOS 安装包` 手动选择 `x64`，由 `macos-arm64` Runner 交叉构建并用 Rosetta 验证 | `.app`、`.dmg`、Updater 文件、SHA-256 |
-
-macOS 构建按目标准备固定版本的 Node.js、原生依赖和 Harness Runtime，并对最终 DMG 执行完整性、签名、架构和 Harness 健康检查，核对更新归档与 DMG 包含同一应用。发布标签触发同一 Apple Silicon Runner 顺序构建两种架构；全部通过后发布独立 macOS 更新索引，不受 Windows 发布覆盖。产物使用临时签名、尚无 Apple 公证；真实发布需要现有签名密钥与发布凭据，Intel 实机安装升级仍需单独验收。详见 [macOS 更新](docs/macos-updates.md)。
-
-## 发布
-
-发布前同步更新以下版本：
-
-- `package.json`
-- `src-tauri/Cargo.toml`
-- `src-tauri/tauri.conf.json`
-
-推送 `v*` 标签会运行 Windows 和 macOS 安装包工作流。Windows 和 macOS Updater 产物需要以下 Actions Secrets：
-
-- `TAURI_SIGNING_PRIVATE_KEY`
-- `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`
-
-Updater 私钥只保存在 Actions Secrets 和受保护备份中，不提交到仓库、`.env` 或安装包。Windows 更新索引回退使用「版本回退」工作流。
+| 需要了解 | 文档 |
+| --- | --- |
+| 产品能力与边界 | [产品能力](docs/desktop-alignment.md) |
+| 组件和数据如何协作 | [架构](docs/architecture.md) |
+| 任务、恢复、队列与交付 | [任务执行](docs/task-execution.md) |
+| Skills、套件、连接器 | [扩展](docs/extensions.md) |
+| 文档生成、重算与 PDF | [Office 工具](docs/office.md) |
+| 质量与发布门槛 | [发布验收](docs/system-readiness.md)、[真实任务评测](docs/task-evaluation.md) |
+| 安装包与更新 | [构建流程](docs/build-workflows.md)、[macOS](docs/macos-updates.md)、[Windows](docs/windows-release-acceptance.md) |
+| 下一步完善内容 | [完善计划](docs/roadmap.md) |
