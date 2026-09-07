@@ -1,7 +1,22 @@
 import { describe, expect, it } from 'vitest'
-import { runComputerUsePreflight, validateToolSelection } from './local-computer-use-plugin.js'
+import type { Context } from '@deepseek-ai/cordis'
+import { apply, runComputerUsePreflight, validateToolSelection } from './local-computer-use-plugin.js'
 
 describe('Windows Computer Use', () => {
+  it.skipIf(!['darwin', 'win32'].includes(process.platform))('exposes folder navigation and address-bar shortcut keys', async () => {
+    const definitions: unknown[] = []
+    const ctx = {
+      tools: { register(definition: unknown) { definitions.push(definition); return () => {} } },
+      effect() {},
+    } as unknown as Context
+    await apply(ctx, { enabled: true, tools: ['computer_use_key'] })
+    const schema = JSON.stringify(definitions)
+    expect(schema).toContain('"G"')
+    expect(schema).toContain('"L"')
+    expect(schema).toContain('"SHIFT"')
+    expect(schema).toContain('"WIN"')
+  })
+
   it('accepts only the built-in tool allowlist', () => {
     expect([...validateToolSelection(['computer_use_observe', 'computer_use_click'])]).toEqual([
       'computer_use_observe', 'computer_use_click',

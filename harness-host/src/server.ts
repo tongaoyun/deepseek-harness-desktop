@@ -66,6 +66,10 @@ export class HostServer {
           if (this.imRuntime === undefined) throw new Error('Local IM runtime is unavailable')
           this.emit(success(value.id, this.imRuntime.allowPairing(parseConversationKey(value.params))))
           return
+        case 'im.revoke-pairing':
+          if (this.imRuntime === undefined) throw new Error('Local IM runtime is unavailable')
+          this.emit(success(value.id, this.imRuntime.revokePairing(parseConversationKey(value.params))))
+          return
         case 'im.bind-task':
           if (this.imRuntime === undefined) throw new Error('Local IM runtime is unavailable')
           this.emit(success(value.id, await this.imRuntime.bindTask(parseTaskBinding(value.params))))
@@ -73,6 +77,10 @@ export class HostServer {
         case 'im.unbind-task':
           if (this.imRuntime === undefined) throw new Error('Local IM runtime is unavailable')
           this.emit(success(value.id, await this.imRuntime.unbindTask(parseConversationKey(value.params))))
+          return
+        case 'im.retry-delivery':
+          if (this.imRuntime === undefined) throw new Error('Local IM runtime is unavailable')
+          this.emit(success(value.id, await this.imRuntime.retryDelivery(parseConversationKey(value.params))))
           return
         case 'im.sync-tasks':
           if (this.imRuntime === undefined) throw new Error('Local IM runtime is unavailable')
@@ -232,7 +240,7 @@ function parseRunImages(value: unknown): ImageRunInput[] {
     if (image.mediaType !== 'image/png' && image.mediaType !== 'image/jpeg') {
       throw new Error('session.run image mediaType is invalid')
     }
-    if (typeof image.dataBase64 !== 'string' || image.dataBase64.length === 0 || image.dataBase64.length > 7_000_000) {
+    if (typeof image.dataBase64 !== 'string' || image.dataBase64.length === 0 || image.dataBase64.length > 14 * 1024 * 1024) {
       throw new Error('session.run image data is invalid')
     }
     if (typeof image.name !== 'string' || image.name.length === 0 || image.name.length > 255) {

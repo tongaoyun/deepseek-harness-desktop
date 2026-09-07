@@ -2,9 +2,35 @@ use crate::expert_kits;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
+#[cfg(test)]
+mod timeout_tests {
+    use super::*;
+
+    #[test]
+    fn configured_timeout_is_validated_and_forwarded() {
+        let mut connector: ConnectorDefinition = serde_json::from_value(serde_json::json!({
+            "id": "test-server", "name": "Test", "status": "ready", "version": "1",
+            "transport": "stdio", "url": "", "authMode": "none", "command": "node",
+            "timeoutSeconds": 120
+        }))
+        .unwrap();
+        let runtime = diagnostic_connectors(&[connector.clone()]).unwrap();
+        assert_eq!(
+            serde_json::to_value(&runtime[0]).unwrap()["timeoutSeconds"],
+            120
+        );
+        connector.timeout_seconds = Some(601);
+        assert!(validate_connector_catalog(&[connector.clone()]).is_err());
+        connector.timeout_seconds = None;
+        assert!(validate_connector_catalog(&[connector]).is_ok());
+    }
+}
+
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ConnectorDefinition {
+    #[serde(default)]
+    pub(crate) timeout_seconds: Option<u64>,
     pub(crate) id: String,
     pub(crate) name: String,
     pub(crate) status: String,
@@ -29,6 +55,8 @@ pub struct ConnectorDefinition {
 #[derive(Clone, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RuntimeConnector {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) timeout_seconds: Option<u64>,
     pub(crate) id: String,
     pub(crate) name: String,
     pub(crate) version: String,
@@ -54,6 +82,7 @@ pub(crate) fn diagnostic_connectors(
         .iter()
         .filter(|connector| connector.status == "ready" && connector.transport != "desktop")
         .map(|connector| RuntimeConnector {
+            timeout_seconds: connector.timeout_seconds,
             id: connector.id.clone(),
             name: connector.name.clone(),
             version: connector.version.clone(),
@@ -76,6 +105,7 @@ pub(crate) fn diagnostic_connectors(
 pub(crate) fn runtime_connectors(
     catalog: &[ConnectorDefinition],
     profile: &expert_kits::ExpertKitHarnessProfile,
+    allow_write: bool,
 ) -> Result<Vec<RuntimeConnector>, String> {
     validate_connector_catalog(catalog)?;
     let selected = catalog
@@ -91,6 +121,7 @@ pub(crate) fn runtime_connectors(
     Ok(selected
         .into_iter()
         .map(|connector| RuntimeConnector {
+            timeout_seconds: connector.timeout_seconds,
             id: connector.id.clone(),
             name: connector.name.clone(),
             version: connector.version.clone(),
@@ -111,7 +142,7 @@ pub(crate) fn runtime_connectors(
                 .filter(|tool| connector.tool_names.contains(*tool))
                 .cloned()
                 .collect(),
-            allow_write: true,
+            allow_write,
             require_write_approval: true,
             required: false,
         })
@@ -121,6 +152,12 @@ pub(crate) fn runtime_connectors(
 pub(crate) fn validate_connector_catalog(connectors: &[ConnectorDefinition]) -> Result<(), String> {
     let mut connector_ids = HashSet::new();
     for connector in connectors {
+        if connector
+            .timeout_seconds
+            .is_some_and(|seconds| !(1..=600).contains(&seconds))
+        {
+            return Err(format!("连接器超时时间须为 1–600 秒：{}", connector.id));
+        }
         if !valid_identifier(&connector.id) || !connector_ids.insert(connector.id.as_str()) {
             return Err(format!("连接器 ID 无效或重复：{}", connector.id));
         }

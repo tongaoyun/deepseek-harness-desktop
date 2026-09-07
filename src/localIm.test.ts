@@ -10,6 +10,13 @@ vi.mock('@tauri-apps/api/core', () => ({
 describe('local IM native bridge', () => {
   beforeEach(() => invoke.mockReset())
 
+  it('retries only delivery for the selected native conversation', async () => {
+    invoke.mockResolvedValue({ configured: true })
+    const { retryLocalImDelivery } = await import('./localIm')
+    await retryLocalImDelivery('app:private:one')
+    expect(invoke).toHaveBeenCalledWith('retry_local_im_delivery', { conversationKey: 'app:private:one' })
+  })
+
   it('passes DingTalk credentials only to the native configure command', async () => {
     invoke.mockResolvedValue({ configured: true })
     const { configureLocalDingTalk } = await import('./localIm')

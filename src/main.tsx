@@ -6,6 +6,7 @@ import { AppErrorBoundary } from './AppErrorBoundary'
 import { ErpQrLoginWindow } from './ErpQrLoginWindow'
 import { isTauriRuntime } from './auth'
 import './styles.css'
+import './settingsFeedback.css'
 
 const nativeLabel = isTauriRuntime() ? getCurrentWindow().label : ''
 const isLoginWindow = nativeLabel === 'erp-login' || new URLSearchParams(window.location.search).get('window') === 'erp-login'

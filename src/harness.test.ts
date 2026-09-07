@@ -1,11 +1,37 @@
 import { describe, expect, it } from 'vitest'
-import { applyHarnessNotification, authorizeDroppedPaths, cancelHarness, classifyHarnessFailure, createTaskMonitor, diagnoseConnectors, harnessActivityLabel, harnessResponseUpdate, probeHarnessHost, selfTestLocalCapabilities } from './harness'
+import { applyStoppingHarnessNotification } from './harness'
+import { applyHarnessNotification, authorizeDroppedPaths, cancelHarness, classifyHarnessFailure, createTaskMonitor, diagnoseConnectors, harnessActivityLabel, harnessResponseUpdate, probeHarnessHost, selfTestLocalCapabilities, shouldRetryHarnessFailure } from './harness'
 
 describe('harnessActivityLabel', () => {
+  it('persists bounded source receipts only from successful knowledge tools', () => {
+    const source = { sourceId: '12', knowledgeBaseId: 'kb', knowledgeBaseName: '制度', documentId: 'doc', filename: '报销.md', locator: '正文', content: '报销上限 800 元', score: 1 }
+    const run = (name: string, failed = false) => [
+      event('tool/call', { turn: 1, step: 1, callId: 'knowledge', name }, 1),
+      event('tool/result', { turn: 1, step: 1, message: { content: [{ type: 'tool-result', toolCallId: 'knowledge', isError: failed, content: [{ type: 'text', text: JSON.stringify([source, source, { ...source, sourceId: 'file:///fake' }]) }] }] } }, 2),
+      event('step/start', { turn: 1, step: 2 }, 3),
+      event('text-chunks', { turn: 1, step: 2, texts: ['报销上限 800 元。'] }, 4),
+      event('turn/end', { turn: 1, reason: { kind: 'completed' } }, 5),
+    ].reduce(applyHarnessNotification, createTaskMonitor())
+    expect(run('knowledge_search').knowledgeSources).toEqual([source])
+    expect(run('knowledge_search', true).knowledgeSources ?? []).toEqual([])
+    expect(run('bash').knowledgeSources ?? []).toEqual([])
+  })
+
   it('classifies runtime failures into actionable user-facing groups', () => {
     expect(classifyHarnessFailure(new Error('任务执行超过 15 分钟')).category).toBe('timeout')
     expect(classifyHarnessFailure(new Error('MCP connector unavailable')).category).toBe('connector')
     expect(classifyHarnessFailure(new Error('Harness Host 意外退出')).infrastructure).toBe(true)
+  })
+
+  it('retries transient model failures only before a tool or approval starts', () => {
+    const transient = classifyHarnessFailure(new Error('模型本轮没有返回可显示文本'))
+    expect(shouldRetryHarnessFailure(transient, createTaskMonitor())).toBe(true)
+    const afterTool = { ...createTaskMonitor(), steps: [{
+      id: 'tool:1', kind: 'tool' as const, label: '运行命令', status: 'completed' as const,
+      toolName: 'bash', startedAt: new Date().toISOString(),
+    }] }
+    expect(shouldRetryHarnessFailure(transient, afterTool)).toBe(false)
+    expect(shouldRetryHarnessFailure(classifyHarnessFailure(new Error('认证失败')), createTaskMonitor())).toBe(false)
   })
 
   it('shows safe progress labels without exposing reasoning content', () => {
@@ -88,10 +114,10 @@ describe('harnessActivityLabel', () => {
   it('projects visible response chunks without exposing reasoning', () => {
     expect(harnessResponseUpdate(event('reasoning-chunks', { turn: 1, step: 1, texts: ['private'] }, 1))).toBeUndefined()
     expect(harnessResponseUpdate(event('text-chunks', { turn: 1, step: 2, texts: ['正在', '回答'] }, 2)))
-      .toEqual({ key: 'assistant:1:2', mode: 'append', text: '正在回答' })
+      .toEqual({ key: 'assistant:visible-response', mode: 'append', text: '正在回答' })
     expect(harnessResponseUpdate(event('assistant/message', { turn: 1, step: 2, message: { content: [
       { type: 'reasoning', text: 'private' }, { type: 'text', text: '完整回答' },
-    ] } }, 3))).toEqual({ key: 'assistant:1:2', mode: 'replace', text: '完整回答' })
+    ] } }, 3))).toEqual({ key: 'assistant:visible-response', mode: 'replace', text: '完整回答' })
     expect(harnessResponseUpdate(event('tool/call', { callId: '1', name: 'local_files_list' }, 4)))
       .toEqual({ key: '', mode: 'clear', text: '' })
   })
@@ -165,25 +191,49 @@ describe('harnessActivityLabel', () => {
     expect(ignored.artifacts).toEqual([])
   })
 
-  it('records structured file changes and aggregates repeated edits', () => {
+  it('keeps the first review baseline and avoids misleading repeated-edit totals', () => {
     const monitor = [
       event('tool/call', { callId: 'write-1', name: 'local_files_write_text' }, 1),
       event('tool/result', { message: { content: [{
         type: 'tool-result', toolCallId: 'write-1', isError: false, content: [{ type: 'text', text: JSON.stringify({
-          rootId: 'repo', rootName: 'xiaoyin', path: 'src/App.tsx', action: 'updated', addedLines: 5, deletedLines: 2,
+          rootId: 'repo', rootName: 'xiaoyin', path: 'src/App.tsx', action: 'updated', backupPath: '.xiaoyin-backups/first/App.tsx', beforeHash: 'original', afterHash: 'first', addedLines: 5, deletedLines: 2,
         }) }],
       }] } }, 2),
       event('tool/call', { callId: 'write-2', name: 'local_files_write_text' }, 3),
       event('tool/result', { message: { content: [{
         type: 'tool-result', toolCallId: 'write-2', isError: false, content: [{ type: 'text', text: JSON.stringify({
-          rootId: 'repo', rootName: 'xiaoyin', path: 'src/App.tsx', action: 'updated', addedLines: 3, deletedLines: 1,
+          rootId: 'repo', rootName: 'xiaoyin', path: 'src/App.tsx', action: 'updated', backupPath: '.xiaoyin-backups/second/App.tsx', beforeHash: 'first', afterHash: 'last', addedLines: 3, deletedLines: 1,
         }) }],
       }] } }, 4),
     ].reduce(applyHarnessNotification, createTaskMonitor())
 
     expect(monitor.changes).toMatchObject([{
-      path: 'src/App.tsx', action: 'updated', addedLines: 8, deletedLines: 3,
+      path: 'src/App.tsx', action: 'updated', backupPath: '.xiaoyin-backups/first/App.tsx',
+      beforeHash: 'original', afterHash: 'last',
+      addedLines: undefined, deletedLines: undefined,
     }])
+  })
+
+  it('exposes browser screenshots as safe durable visual references', () => {
+    const attachmentId = `sha256:${'a'.repeat(64)}`
+    const monitor = [
+      event('tool/call', { callId: 'shot', name: 'browser_screenshot' }, 1),
+      event('tool/result', { message: { content: [{
+        type: 'tool-result', toolCallId: 'shot', isError: false, content: [
+          { type: 'text', text: '{}' },
+          { type: 'image', attachment: { attachmentId, mediaType: 'image/png', width: 1280, height: 720, name: 'browser.png' } },
+        ],
+      }] } }, 2),
+    ].reduce(applyHarnessNotification, createTaskMonitor())
+    expect(monitor.visuals).toMatchObject([{ attachmentId, mediaType: 'image/png', width: 1280, height: 720 }])
+  })
+
+  it('keeps approval requests inside the task timeline until decided', () => {
+    const monitor = [event('approval/request', {
+      approvalId: 'approval-1', name: 'local_files_delete', reason: '删除 report.md',
+    }, 1)].reduce(applyHarnessNotification, createTaskMonitor())
+    expect(monitor.activity).toContain('等待确认')
+    expect(monitor.timeline).toMatchObject([{ kind: 'approval', approvalId: 'approval-1', status: 'running' }])
   })
 
   it('maps local files, commands and connectors into distinct conversation blocks', () => {
@@ -235,6 +285,24 @@ describe('diagnoseConnectors', () => {
     await expect(cancelHarness('missing-task')).resolves.toBe(false)
     await expect(authorizeDroppedPaths([])).resolves.toEqual({ directories: [], attachments: [] })
   })
+})
+
+it('retains late file receipts while stopping without resuming text or accepting unstarted work', () => {
+  const started = applyHarnessNotification(createTaskMonitor(), event('tool/call', { callId: 'write', name: 'local_files_write_text' }, 1))
+  const stopping = { ...started, activity: '正在停止' }
+  const receipt = event('tool/result', { message: { content: [{ type: 'tool-result', toolCallId: 'write', isError: false,
+    content: [{ type: 'text', text: JSON.stringify({ rootId: 'repo', rootName: '测试', path: 'checkpoint.txt', action: 'created', sizeBytes: 13 }) }],
+  }] } }, 2)
+  const next = applyStoppingHarnessNotification(stopping, receipt)
+  expect(next.activity).toBe('正在停止')
+  expect(next.status).toBe(stopping.status)
+  expect(next.steps.find((step) => step.id === 'tool:write')?.status).toBe('completed')
+  expect(next.changes).toMatchObject([{ path: 'checkpoint.txt', action: 'created' }])
+  expect(applyStoppingHarnessNotification(next, receipt)).toBe(next)
+  const idle = createTaskMonitor()
+  expect(applyStoppingHarnessNotification(idle, receipt)).toBe(idle)
+  expect(applyStoppingHarnessNotification(stopping, event('text-chunks', { texts: ['迟到正文'] }, 3))).toBe(stopping)
+  expect(applyStoppingHarnessNotification(stopping, event('tool/call', { callId: 'new', name: 'bash' }, 3))).toBe(stopping)
 })
 
 function event(type: string, data: Record<string, unknown>, time: number) {

@@ -5,6 +5,24 @@ import type { LocalImStatus } from './localIm'
 import type { LocalTaskRun } from './types'
 
 describe('IM task synchronization', () => {
+  it('imports missing old messages without overwriting a newer desktop execution', () => {
+    const task: LocalTaskRun = {
+      id: 'task-1', source: 'DESKTOP', name: '日报', status: 'RUNNING',
+      createdAt: '2026-09-02T00:00:00Z', updatedAt: '2026-09-02T02:00:00Z',
+      sessionId: 'new-session', monitor: { ...createTaskMonitor(), status: 'running', activity: '正在修改日报' },
+      messages: [{ id: 'desktop-new', role: 'user', text: '修改一下' }],
+    }
+    const conversation = {
+      boundTaskId: task.id, sessionId: 'old-session', status: 'COMPLETED', updatedAt: '2026-09-02T01:00:00Z',
+      messages: [{ id: 'im-old', role: 'assistant', text: '旧结果', createdAt: '2026-09-02T01:00:00Z' }],
+      taskEvents: [{ id: 'e1', createdAt: '2026-09-02T01:00:00Z', event: {} }],
+    }
+    const status = { enabled: true, conversations: [conversation, conversation] } as unknown as LocalImStatus
+    const merged = mergeImStatusIntoTasks([task], status)
+    expect(merged.tasks[0]).toMatchObject({ status: 'RUNNING', sessionId: 'new-session', monitor: task.monitor })
+    expect(merged.tasks[0]!.messages.map((message) => message.id)).toEqual(['desktop-new', 'im-old'])
+    expect(mergeImStatusIntoTasks(merged.tasks, status).changed).toHaveLength(0)
+  })
   it('merges DingTalk messages and structured events into the bound desktop task once', () => {
     const task: LocalTaskRun = {
       id: 'task-1', source: 'DESKTOP', name: '日报', status: 'COMPLETED',

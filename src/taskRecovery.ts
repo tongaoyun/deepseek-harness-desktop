@@ -1,0 +1,67 @@
+import {
+  classifyHarnessFailure,
+  runHarness,
+  shouldRetryHarnessFailure,
+  shutdownHarness,
+  type HarnessFailure,
+  type HarnessRunInput,
+  type HarnessRunResult,
+} from './harness'
+import type { TaskMonitorState } from './types'
+
+interface RecoveryCallbacks {
+  getMonitor: () => TaskMonitorState
+  isCanceled: () => boolean
+  onRetry: (sessionId: string, failure: HarnessFailure) => void
+}
+
+interface RecoveryRuntime {
+  execute: (input: HarnessRunInput) => Promise<HarnessRunResult>
+  reset: (taskId: string) => Promise<void>
+  sessionId: () => string
+}
+
+const defaultRuntime: RecoveryRuntime = {
+  execute: runHarness,
+  reset: async (taskId) => { await shutdownHarness(taskId) },
+  sessionId: () => `session-${crypto.randomUUID().replaceAll('-', '')}`,
+}
+
+export async function runHarnessWithRecovery(
+  request: HarnessRunInput,
+  callbacks: RecoveryCallbacks,
+  runtime: RecoveryRuntime = defaultRuntime,
+): Promise<HarnessRunResult> {
+  try {
+    return await runtime.execute(request)
+  } catch (reason) {
+    const failure = classifyHarnessFailure(reason)
+    if (callbacks.isCanceled() || !shouldRetryHarnessFailure(failure, callbacks.getMonitor())) throw reason
+    await runtime.reset(request.taskId)
+    if (callbacks.isCanceled()) throw new Error('本轮已停止')
+    const sessionId = runtime.sessionId()
+    callbacks.onRetry(sessionId, failure)
+    return runtime.execute({ ...request, sessionId })
+  }
+}
+
+export function retryingTaskMonitor(previous: TaskMonitorState, now = new Date().toISOString()): TaskMonitorState {
+  return {
+    status: 'running',
+    activity: '模型服务短暂异常，正在自动重试',
+    startedAt: previous.startedAt ?? now,
+    updatedAt: now,
+    steps: [],
+    subagents: [],
+    changes: previous.changes ?? [],
+    artifacts: previous.artifacts,
+    timeline: [{
+      id: `retry:${now}`,
+      kind: 'warning',
+      label: '模型服务短暂异常，已自动重试一次',
+      status: 'completed',
+      occurredAt: now,
+      completedAt: now,
+    }],
+  }
+}

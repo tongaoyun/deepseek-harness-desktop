@@ -1,15 +1,25 @@
 mod archive;
+mod compatibility;
+mod inventory;
+mod manifest;
+pub mod workbench;
 
 use archive::{extract_package, package_root};
 use flate2::{Compression, write::GzEncoder};
 use futures_util::StreamExt;
+#[cfg(test)]
+use manifest::valid_tool_name;
+use manifest::{
+    ensure_supported_desktop_version, load_and_validate_manifest, valid_knowledge_base_reference,
+    validate_identifier, validate_relative_path, validate_sha256,
+};
 use semver::Version;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
     collections::HashSet,
     fs::{self, File},
-    io::{Read, Write},
+    io::Write,
     path::{Component, Path, PathBuf},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -101,7 +111,7 @@ fn default_extension_category() -> String {
     "other".to_string()
 }
 
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct FileReference {
     id: String,
@@ -172,10 +182,27 @@ struct InstallRecord {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InstalledExpertKit {
+    enabled: bool,
     manifest: ExpertKitManifest,
     install_path: String,
     source: InstallSource,
     package_sha256: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    bundled_connectors: Option<serde_json::Value>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InstalledExtensionIssue {
+    coordinate: String,
+    message: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InstalledExtensionInventory {
+    installed: Vec<InstalledExpertKit>,
+    issues: Vec<InstalledExtensionIssue>,
 }
 
 #[derive(Deserialize)]
@@ -185,6 +212,8 @@ pub struct CreateDeveloperExtensionRequest {
     instructions: String,
     #[serde(default)]
     skill_sources: Vec<DeveloperSkillSource>,
+    #[serde(default)]
+    base: Option<DeveloperSkillSource>,
 }
 
 #[derive(Deserialize)]
@@ -219,39 +248,8 @@ pub struct ExpertKitHarnessProfile {
 #[tauri::command]
 pub fn list_installed_expert_kits(
     app: tauri::AppHandle,
-) -> Result<Vec<InstalledExpertKit>, String> {
-    let root = extensions_root(&app)?;
-    if !root.exists() {
-        return Ok(Vec::new());
-    }
-
-    let mut installed = Vec::new();
-    for kind_directory in child_directories(&root)? {
-        let Some(kind) = kind_directory.file_name().and_then(|value| value.to_str()) else {
-            continue;
-        };
-        if validate_artifact_kind(kind).is_err() {
-            continue;
-        }
-        for extension_directory in child_directories(&kind_directory)? {
-            for version_directory in child_directories(&extension_directory)? {
-                if let (Ok(manifest), Ok(record)) = (
-                    load_and_validate_manifest(&version_directory, Some(kind), None, None),
-                    load_install_record(&version_directory),
-                ) && validate_sha256(&record.package_sha256).is_ok()
-                {
-                    installed.push(installed_kit(manifest, &version_directory, record.source));
-                }
-            }
-        }
-    }
-    installed.sort_by(|left, right| {
-        left.manifest
-            .id
-            .cmp(&right.manifest.id)
-            .then_with(|| compare_versions(&right.manifest.version, &left.manifest.version))
-    });
-    Ok(installed)
+) -> Result<InstalledExtensionInventory, String> {
+    inventory::scan_installed_extensions(&app)
 }
 
 #[tauri::command]
@@ -294,10 +292,11 @@ pub async fn install_expert_kit(
 }
 
 #[tauri::command]
-pub async fn install_developer_extension(
+pub async fn select_developer_extension(
     app: tauri::AppHandle,
     kind: String,
-) -> Result<Option<InstalledExpertKit>, String> {
+    input: Option<String>,
+) -> Result<Option<String>, String> {
     if kind != "expert-kit" && kind != "skill" {
         return Err("仅支持导入专家套件或技能".to_string());
     }
@@ -309,12 +308,16 @@ pub async fn install_developer_extension(
         } else {
             ("导入本地专家套件", "小胤专家套件")
         };
-        dialog_app
+        let picker = dialog_app
             .dialog()
             .file()
             .set_title(title)
-            .add_filter(filter, &["zip", "gz"])
-            .blocking_pick_file()
+            .add_filter(filter, &["zip", "gz", "md"]);
+        if input.as_deref() == Some("directory") {
+            picker.blocking_pick_folder()
+        } else {
+            picker.blocking_pick_file()
+        }
     })
     .await
     .map_err(|error| format!("打开专家套件选择器失败：{error}"))?;
@@ -324,11 +327,56 @@ pub async fn install_developer_extension(
     let path = selected
         .into_path()
         .map_err(|error| format!("选择的专家套件路径无效：{error}"))?;
+    Ok(Some(path.to_string_lossy().to_string()))
+}
+
+#[tauri::command]
+pub async fn install_developer_extension(
+    app: tauri::AppHandle,
+    kind: String,
+    input: Option<String>,
+    path: Option<String>,
+) -> Result<Option<InstalledExpertKit>, String> {
+    if kind != "expert-kit" && kind != "skill" {
+        return Err("仅支持导入专家套件或技能".to_string());
+    }
+    let selected = match path {
+        Some(path) => Some(path),
+        None => select_developer_extension(app.clone(), kind.clone(), input).await?,
+    };
+    let Some(selected) = selected else {
+        return Ok(None);
+    };
+    let path = std::path::PathBuf::from(selected);
     let metadata = fs::metadata(&path).map_err(|error| format!("无法读取专家套件：{error}"))?;
-    if !metadata.is_file() || metadata.len() > MAX_PACKAGE_BYTES as u64 {
+    if metadata.is_file() && metadata.len() > MAX_PACKAGE_BYTES as u64 {
         return Err("本地专家套件不是普通文件或超过 32 MiB 限制".to_string());
     }
-    let bytes = fs::read(&path).map_err(|error| format!("无法读取专家套件：{error}"))?;
+    let bytes = if metadata.is_dir() {
+        validate_directory_package(&path)?;
+        let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        append_directory_to_zip(
+            &mut zip,
+            &path,
+            &path,
+            zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Deflated),
+        )?;
+        zip.finish()
+            .map_err(|error| error.to_string())?
+            .into_inner()
+    } else if path.file_name().is_some_and(|name| name == "SKILL.md") {
+        let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        zip.start_file("SKILL.md", zip::write::SimpleFileOptions::default())
+            .map_err(|error| error.to_string())?;
+        zip.write_all(&fs::read(&path).map_err(|error| error.to_string())?)
+            .map_err(|error| error.to_string())?;
+        zip.finish()
+            .map_err(|error| error.to_string())?
+            .into_inner()
+    } else {
+        fs::read(&path).map_err(|error| format!("无法读取专家套件：{error}"))?
+    };
     install_package_bytes(
         &extensions_root(&app)?.join(&kind),
         &bytes,
@@ -347,7 +395,32 @@ pub fn create_developer_extension(
     request: CreateDeveloperExtensionRequest,
 ) -> Result<DeveloperExtensionPackage, String> {
     let manifest = request.manifest;
-    let payload_files = load_composed_skill_files(&app, &manifest, &request.skill_sources)?;
+    let payload_files = if let Some(base) = request.base {
+        validate_artifact_kind(&manifest.kind)?;
+        validate_identifier(&base.id)?;
+        Version::parse(&base.version).map_err(|error| error.to_string())?;
+        let directory = extensions_root(&app)?
+            .join(&manifest.kind)
+            .join(&base.id)
+            .join(&base.version);
+        let draft =
+            read_developer_extension(app.clone(), manifest.kind.clone(), base.id, base.version)?;
+        if manifest.skills != draft.manifest.skills || manifest.commands != draft.manifest.commands
+        {
+            return Err("编辑执行说明时不能改变套件资源结构，请使用定制目录修改".into());
+        }
+        let mut files = Vec::new();
+        collect_payload_files(&directory, &directory, Path::new(""), &mut files)?;
+        let instruction = if manifest.kind == "skill" {
+            "SKILL.md"
+        } else {
+            &manifest.skills[0].path
+        };
+        files.retain(|(path, _)| path != instruction);
+        files
+    } else {
+        load_composed_skill_files(&app, &manifest, &request.skill_sources)?
+    };
     let bytes = build_developer_package(&manifest, &request.instructions, &payload_files)?;
     let installed = install_package_bytes(
         &extensions_root(&app)?.join(&manifest.kind),
@@ -378,7 +451,7 @@ fn build_developer_package(
         let skill = manifest
             .skills
             .first()
-            .ok_or_else(|| "专家套件至少需要一个 Skill".to_string())?;
+            .ok_or_else(|| "专家套件至少需要一个技能".to_string())?;
         skill.path.clone()
     };
     let mut manifest_value =
@@ -397,12 +470,19 @@ fn build_developer_package(
     let encoder = GzEncoder::new(Vec::new(), Compression::default());
     let mut archive = tar::Builder::new(encoder);
     append_generated_file(&mut archive, manifest_path, &manifest_bytes)?;
-    if payload_files.is_empty() {
+    if !payload_files
+        .iter()
+        .any(|(path, _)| path == &instruction_path)
+    {
         append_generated_file(&mut archive, &instruction_path, instructions.as_bytes())?;
-    } else {
-        for (path, bytes) in payload_files {
-            append_generated_file(&mut archive, path, bytes)?;
+    }
+    for command in &manifest.commands {
+        if !payload_files.iter().any(|(path, _)| path == &command.path) {
+            append_generated_file(&mut archive, &command.path, b"Follow this expert kit's skills and delivery standards to complete the user's task.\n\n$ARGUMENTS")?;
         }
+    }
+    for (path, bytes) in payload_files {
+        append_generated_file(&mut archive, path, bytes)?;
     }
     let encoder = archive
         .into_inner()
@@ -420,23 +500,30 @@ fn load_composed_skill_files(
     if sources.is_empty() {
         return Ok(Vec::new());
     }
-    if manifest.kind != "expert-kit" || sources.len() != manifest.skills.len() {
-        return Err("专家套件的 Skill 来源与清单不一致".to_string());
+    if manifest.kind != "expert-kit"
+        || !(sources.len() == manifest.skills.len()
+            || (sources.len() + 1 == manifest.skills.len()
+                && manifest
+                    .skills
+                    .first()
+                    .is_some_and(|skill| skill.path == "skills/kit-guide/SKILL.md")))
+    {
+        return Err("专家套件的技能来源与清单不一致".to_string());
     }
     let root = extensions_root(app)?.join("skill");
     let mut ids = HashSet::new();
     let mut files = Vec::new();
     for source in sources {
         validate_identifier(&source.id)?;
-        Version::parse(&source.version).map_err(|error| format!("Skill 版本无效：{error}"))?;
+        Version::parse(&source.version).map_err(|error| format!("技能版本无效：{error}"))?;
         if !ids.insert(source.id.as_str()) {
-            return Err(format!("重复选择了 Skill：{}", source.id));
+            return Err(format!("重复选择了技能：{}", source.id));
         }
         let reference = manifest
             .skills
             .iter()
             .find(|reference| reference.id == source.id)
-            .ok_or_else(|| format!("Skill 未写入专家套件清单：{}", source.id))?;
+            .ok_or_else(|| format!("技能未写入专家套件清单：{}", source.id))?;
         let directory = root.join(&source.id).join(&source.version);
         load_and_validate_manifest(
             &directory,
@@ -451,7 +538,7 @@ fn load_composed_skill_files(
             &mut files,
         )?;
         if !files.iter().any(|(path, _)| path == &reference.path) {
-            return Err(format!("Skill {} 缺少入口文件", source.id));
+            return Err(format!("技能 {} 缺少入口文件", source.id));
         }
     }
     Ok(files)
@@ -474,7 +561,9 @@ fn collect_payload_files(
             .strip_prefix(root)
             .map_err(|_| "扩展资源路径无效".to_string())?;
         let first = relative.components().next();
-        if matches!(first, Some(Component::Normal(name)) if name == ".xiaoyin" || name == ".xiaoyin-kit" || name == ".xiaoyin-skill")
+        if matches!(first, Some(Component::Normal(name)) if name == ".xiaoyin")
+            || relative == Path::new(KIT_MANIFEST_PATH)
+            || relative == Path::new(SKILL_MANIFEST_PATH)
         {
             continue;
         }
@@ -522,7 +611,7 @@ pub fn read_developer_extension(
         let skill = manifest
             .skills
             .first()
-            .ok_or_else(|| "专家套件至少需要一个 Skill".to_string())?;
+            .ok_or_else(|| "专家套件至少需要一个技能".to_string())?;
         validate_relative_path(Path::new(&skill.path))?;
         directory.join(&skill.path)
     };
@@ -571,14 +660,14 @@ pub async fn customize_expert_kit(
     app: tauri::AppHandle,
     id: String,
     version: String,
+    kind: Option<String>,
 ) -> Result<Option<String>, String> {
+    let kind = kind.as_deref().unwrap_or("expert-kit");
+    validate_artifact_kind(kind)?;
     validate_identifier(&id)?;
     Version::parse(&version).map_err(|error| format!("专家套件版本无效：{error}"))?;
-    let source = extensions_root(&app)?
-        .join("expert-kit")
-        .join(&id)
-        .join(&version);
-    load_and_validate_manifest(&source, Some("expert-kit"), Some(&id), Some(&version))?;
+    let source = extensions_root(&app)?.join(kind).join(&id).join(&version);
+    load_and_validate_manifest(&source, Some(kind), Some(&id), Some(&version))?;
     let dialog_app = app.clone();
     let selected = tauri::async_runtime::spawn_blocking(move || {
         dialog_app
@@ -599,7 +688,28 @@ pub async fn customize_expert_kit(
     if destination.exists() {
         return Err("定制副本目录已存在".to_string());
     }
+    if destination.starts_with(&source) {
+        return Err("定制目录不能位于已安装套件内部".into());
+    }
     copy_extension_tree(&source, &destination, true)?;
+    let manifest_path = destination.join(if kind == "skill" {
+        SKILL_MANIFEST_PATH
+    } else {
+        KIT_MANIFEST_PATH
+    });
+    let mut manifest: serde_json::Value =
+        serde_json::from_slice(&fs::read(&manifest_path).map_err(|error| error.to_string())?)
+            .map_err(|error| error.to_string())?;
+    let new_id = compatibility::portable_id(&format!("{id}-custom"));
+    manifest["id"] = serde_json::json!(new_id);
+    compatibility::rekey_bundled_connectors(&destination, &mut manifest, &new_id)?;
+    manifest["name"] = serde_json::json!(format!(
+        "{} · 定制",
+        manifest["name"].as_str().unwrap_or(&id)
+    ));
+    manifest["version"] = serde_json::json!("1.0.0");
+    fs::write(manifest_path, serde_json::to_vec_pretty(&manifest).unwrap())
+        .map_err(|error| error.to_string())?;
     Ok(Some(destination.to_string_lossy().into_owned()))
 }
 
@@ -608,14 +718,14 @@ pub async fn export_expert_kit(
     app: tauri::AppHandle,
     id: String,
     version: String,
+    kind: Option<String>,
 ) -> Result<Option<String>, String> {
+    let kind = kind.as_deref().unwrap_or("expert-kit");
+    validate_artifact_kind(kind)?;
     validate_identifier(&id)?;
     Version::parse(&version).map_err(|error| format!("专家套件版本无效：{error}"))?;
-    let source = extensions_root(&app)?
-        .join("expert-kit")
-        .join(&id)
-        .join(&version);
-    load_and_validate_manifest(&source, Some("expert-kit"), Some(&id), Some(&version))?;
+    let source = extensions_root(&app)?.join(kind).join(&id).join(&version);
+    load_and_validate_manifest(&source, Some(kind), Some(&id), Some(&version))?;
     let file_name = format!("{}-{}.zip", id, version);
     let dialog_app = app.clone();
     let selected = tauri::async_runtime::spawn_blocking(move || {
@@ -673,6 +783,10 @@ fn copy_extension_tree(
 }
 
 fn write_extension_zip(source: &Path, destination: &Path) -> Result<(), String> {
+    if destination.starts_with(source) {
+        return Err("请将 ZIP 保存到套件目录之外".into());
+    }
+    validate_directory_package(source)?;
     let file = File::create(destination).map_err(|error| format!("无法创建 ZIP：{error}"))?;
     let mut zip = zip::ZipWriter::new(file);
     let options = zip::write::SimpleFileOptions::default()
@@ -683,8 +797,40 @@ fn write_extension_zip(source: &Path, destination: &Path) -> Result<(), String> 
     Ok(())
 }
 
-fn append_directory_to_zip(
-    zip: &mut zip::ZipWriter<File>,
+fn validate_directory_package(root: &Path) -> Result<(), String> {
+    let mut pending = vec![(root.to_path_buf(), 0)];
+    let mut files = 0;
+    let mut bytes = 0u64;
+    while let Some((directory, depth)) = pending.pop() {
+        if depth > 32 {
+            return Err("扩展目录层级超过 32 层".into());
+        }
+        for entry in fs::read_dir(directory).map_err(|error| error.to_string())? {
+            let entry = entry.map_err(|error| error.to_string())?;
+            let metadata = entry.metadata().map_err(|error| error.to_string())?;
+            let file_type = entry.file_type().map_err(|error| error.to_string())?;
+            if file_type.is_symlink() || !(file_type.is_file() || file_type.is_dir()) {
+                return Err("扩展目录只支持普通文件和文件夹".into());
+            }
+            files += 1;
+            if files > 1024 {
+                return Err("扩展目录不能超过 1024 项".into());
+            }
+            if file_type.is_dir() {
+                pending.push((entry.path(), depth + 1));
+            } else {
+                bytes += metadata.len();
+            }
+            if bytes > 64 * 1024 * 1024 {
+                return Err("扩展资源不能超过 64 MiB".into());
+            }
+        }
+    }
+    Ok(())
+}
+
+fn append_directory_to_zip<W: std::io::Write + std::io::Seek>(
+    zip: &mut zip::ZipWriter<W>,
     root: &Path,
     directory: &Path,
     options: zip::write::SimpleFileOptions,
@@ -693,6 +839,13 @@ fn append_directory_to_zip(
     {
         let entry = entry.map_err(|error| format!("无法读取套件文件：{error}"))?;
         let path = entry.path();
+        if entry
+            .file_type()
+            .map_err(|error| error.to_string())?
+            .is_symlink()
+        {
+            return Err("扩展目录不能包含符号链接".into());
+        }
         if path.ends_with(INSTALL_RECORD_PATH) {
             continue;
         }
@@ -818,6 +971,35 @@ pub fn remove_catalog_extension(
     Ok(())
 }
 
+#[tauri::command]
+pub fn remove_broken_extension(app: tauri::AppHandle, coordinate: String) -> Result<(), String> {
+    let (kind, remainder) = coordinate
+        .split_once(':')
+        .ok_or_else(|| "损坏扩展坐标无效".to_string())?;
+    let (id, version) = remainder
+        .rsplit_once('@')
+        .ok_or_else(|| "损坏扩展坐标无效".to_string())?;
+    validate_artifact_kind(kind)?;
+    validate_identifier(id)?;
+    Version::parse(version).map_err(|error| format!("扩展版本无效：{error}"))?;
+    let extension_directory = extensions_root(&app)?.join(kind).join(id);
+    let version_directory = extension_directory.join(version);
+    if version_directory.exists() {
+        fs::remove_dir_all(&version_directory)
+            .map_err(|error| format!("无法移除损坏扩展：{error}"))?;
+    }
+    if extension_directory.exists()
+        && fs::read_dir(&extension_directory)
+            .map_err(|error| format!("无法检查扩展目录：{error}"))?
+            .next()
+            .is_none()
+    {
+        fs::remove_dir(&extension_directory)
+            .map_err(|error| format!("无法清理扩展目录：{error}"))?;
+    }
+    Ok(())
+}
+
 fn install_package_bytes(
     root: &Path,
     bytes: &[u8],
@@ -845,6 +1027,9 @@ fn install_package_bytes(
     let result = (|| {
         extract_package(bytes, &staging_directory)?;
         let package_directory = package_root(&staging_directory)?;
+        if source == InstallSource::Developer {
+            compatibility::normalize_package(&package_directory, expected_kind)?;
+        }
         let manifest = load_and_validate_manifest(
             &package_directory,
             expected_kind,
@@ -909,7 +1094,11 @@ pub fn harness_profile(
     requested_knowledge_base_refs: &[String],
     user_prompt: &str,
     allowed_artifacts: &[AllowedExtensionArtifact],
+    execution_mode: &str,
 ) -> Result<ExpertKitHarnessProfile, String> {
+    if !matches!(execution_mode, "agent" | "plan") {
+        return Err("执行模式无效".to_string());
+    }
     if selected_kind.is_some() != selected_id.is_some() {
         return Err("扩展选择坐标不完整".to_string());
     }
@@ -920,7 +1109,8 @@ pub fn harness_profile(
         validate_identifier(id)?;
     }
     validate_allowed_artifacts(allowed_artifacts)?;
-    let installed = list_installed_expert_kits(app.clone())?
+    let installed = inventory::scan_installed_extensions(app)?
+        .installed
         .into_iter()
         .filter(|artifact| artifact_is_executable(artifact, allowed_artifacts))
         .collect::<Vec<_>>();
@@ -937,7 +1127,7 @@ pub fn harness_profile(
         .map(|coordinate| {
             newest
                 .get(coordinate)
-                .ok_or_else(|| format!("扩展已下架、未获准或尚未安装：{coordinate}"))
+                .ok_or_else(|| format!("扩展已停用、下架或尚未安装：{coordinate}"))
         })
         .transpose()?;
     for artifact in newest.values() {
@@ -983,31 +1173,25 @@ pub fn harness_profile(
             .cloned()
             .collect::<Vec<_>>()
     });
-    let mut knowledge_base_refs = selected
-        .and_then(|artifact| artifact.manifest.knowledge_base_refs.clone())
-        .unwrap_or_default();
-    for reference in requested_knowledge_base_refs {
-        if !valid_knowledge_base_reference(reference) {
-            return Err(format!("任务知识库引用无效：{reference}"));
-        }
-        if !knowledge_base_refs.contains(reference) {
-            knowledge_base_refs.push(reference.clone());
-        }
-    }
-    if knowledge_base_refs.len() > 32 {
-        return Err("任务知识库引用不能超过 32 个".to_string());
-    }
-    let desktop_agent_guidance = "你正在小胤桌面端中工作，是能实际完成任务的 Agent，不是只能回答问题的聊天机器人。涉及本地目录、文件读写、Shell、浏览器或已连接系统时，应直接使用当前可用工具行动并根据真实结果回答；不要在尚未尝试工具前声称无法访问，也不要让员工为普通文件任务重复选择目录。优先以当前工作目录为起点，必要时再查询其他已授权目录。耗时命令可使用后台 Job，跨多轮复杂工作可使用 Goal 管理进度。仅在缺少继续执行所必需的授权、目标或业务参数时追问。工具过程使用简短自然的进度说明，最终回答聚焦结果、变更和仍需员工处理的事项。";
+    let knowledge_base_refs = task_knowledge_scope(
+        selected.and_then(|artifact| artifact.manifest.knowledge_base_refs.as_deref()),
+        requested_knowledge_base_refs,
+    )?;
+    let desktop_agent_guidance = if execution_mode == "plan" {
+        "你正在小胤桌面端的 Plan 模式中工作。先理解目标并检查真实环境，再给出可执行计划。可以读取文件、搜索内容、查询知识库和进行不改变状态的检查；不得创建、修改或删除文件，不得执行会改变环境或外部系统的命令和工具，不得发送消息。发现信息不足时指出具体缺口。最终回答包含目标、现状、实施步骤、验证方式和关键取舍，不要开始实施。"
+    } else {
+        "你正在小胤桌面端中工作，是能实际完成任务的 Agent，不是只能回答问题的聊天机器人。涉及本地目录、文件读写、Shell、浏览器或已连接系统时，应直接使用当前可用工具行动并根据真实结果回答；不要在尚未尝试工具前声称无法访问，也不要让员工为普通文件任务重复选择目录。优先以当前工作目录为起点，必要时再查询其他已授权目录。耗时命令可使用后台 Job，跨多轮复杂工作可使用 Goal 管理进度。仅在缺少继续执行所必需的授权、目标或业务参数时追问。工具过程使用简短自然的进度说明，最终回答聚焦结果、变更和仍需员工处理的事项。"
+    };
     let prompt = if let Some(artifact) = selected {
-        let commands = load_command_context(artifact)?;
+        let commands = load_command_context(artifact, user_prompt)?;
         let profile_label = if artifact.manifest.kind == "skill" {
-            "独立 Skill"
+            "独立技能"
         } else {
             "专家套件"
         };
         let skill_guidance = if artifact.manifest.kind == "expert-kit" {
             format!(
-                "专家套件 ID 不是 Skill 名称。该套件包含以下可加载 Skill：{}。需要加载工作方法时，只能使用这些 Skill ID，不要把 {} 当作 Skill ID。",
+                "专家套件 ID 不是技能名称。该能力包包含以下可加载技能：{}。先加载与任务相关的技能，读取其工作方法和交付要求，不要仅凭套件名称模拟岗位能力。加载本套件技能时使用这些技能 ID，不要把 {} 当作技能 ID。",
                 artifact
                     .manifest
                     .skills
@@ -1018,10 +1202,13 @@ pub fn harness_profile(
                 artifact.manifest.id,
             )
         } else {
-            format!("本独立 Skill 的可加载 ID 是 {}。", artifact.manifest.id)
+            format!(
+                "本独立技能的可加载 ID 是 {}。先加载技能并读取工作方法和交付要求，再开展任务。",
+                artifact.manifest.id
+            )
         };
         format!(
-            "{}\n\n本任务明确使用公司{}《{}》（ID: {}，版本: {}）。{}所有已安装 Skill 仍可按需加载；优先遵循本扩展的工作方法和命令。不要先向员工汇报泛化的资源盘点，不要因为任务未用到知识库或连接器而阻塞；只有具体任务确实需要时才检查对应能力。面对简短或口语化输入，先按最可能的意图自然回答，仅在无法继续行动时追问。{}\n\n员工任务：\n{}",
+            "{}\n\n本任务明确使用公司{}《{}》（ID: {}，版本: {}）。{}所有已安装技能仍可按需加载；优先遵循本扩展的工作方法和命令。不要先向员工汇报泛化的资源盘点，不要因为任务未用到知识库或连接器而阻塞；只有具体任务确实需要时才检查对应能力。面对简短或口语化输入，先按最可能的意图自然回答，仅在无法继续行动时追问。{}\n\n员工任务：\n{}",
             desktop_agent_guidance,
             profile_label,
             artifact.manifest.name,
@@ -1036,7 +1223,7 @@ pub fn harness_profile(
     };
     Ok(ExpertKitHarnessProfile {
         skill_directories,
-        knowledge_base_refs: Some(knowledge_base_refs),
+        knowledge_base_refs,
         required_connector_tools: connector_tools,
         allowed_computer_tools: DESKTOP_COMPUTER_TOOLS
             .iter()
@@ -1044,6 +1231,29 @@ pub fn harness_profile(
             .collect(),
         prompt,
     })
+}
+
+fn task_knowledge_scope(
+    kit_refs: Option<&[String]>,
+    requested_refs: &[String],
+) -> Result<Option<Vec<String>>, String> {
+    // None uses the employee-accessible catalog; Some([]) is an explicit empty scope.
+    if kit_refs.is_none() && requested_refs.is_empty() {
+        return Ok(None);
+    }
+    let mut references = Vec::new();
+    for reference in kit_refs.unwrap_or_default().iter().chain(requested_refs) {
+        if !valid_knowledge_base_reference(reference) {
+            return Err(format!("任务知识库引用无效：{reference}"));
+        }
+        if !references.contains(reference) {
+            references.push(reference.clone());
+        }
+    }
+    if references.len() > 32 {
+        return Err("任务知识库引用不能超过 32 个".to_string());
+    }
+    Ok(Some(references))
 }
 
 pub fn validate_allowed_artifacts(artifacts: &[AllowedExtensionArtifact]) -> Result<(), String> {
@@ -1075,6 +1285,9 @@ fn artifact_is_executable(
     artifact: &InstalledExpertKit,
     allowed_artifacts: &[AllowedExtensionArtifact],
 ) -> bool {
+    if !artifact.enabled {
+        return false;
+    }
     if artifact.source == InstallSource::Developer {
         return true;
     }
@@ -1101,7 +1314,7 @@ fn append_skill_directories(
             .manifest
             .skills
             .first()
-            .ok_or_else(|| "独立 Skill 缺少入口".to_string())?;
+            .ok_or_else(|| "独立技能缺少入口".to_string())?;
         if !skill_ids.insert(skill.id.clone()) {
             return Ok(());
         }
@@ -1124,7 +1337,7 @@ fn append_skill_directories(
         } else {
             skill_path.parent()
         }
-        .ok_or_else(|| format!("Skill 路径无效：{}", skill.path))?
+        .ok_or_else(|| format!("技能路径无效：{}", skill.path))?
         .to_string_lossy()
         .into_owned();
         if !directories.contains(&directory) {
@@ -1139,11 +1352,11 @@ fn prepare_skill_runtime_files(kit: &InstalledExpertKit) -> Result<(), String> {
     for skill in &kit.manifest.skills {
         let path = root.join(&skill.path);
         let content = fs::read_to_string(&path)
-            .map_err(|error| format!("无法读取 Skill {}：{error}", skill.id))?;
+            .map_err(|error| format!("无法读取技能 {}：{error}", skill.id))?;
         let normalized = normalize_skill_document(&content, &skill.id, &kit.manifest.summary);
         if normalized != content {
             fs::write(&path, normalized)
-                .map_err(|error| format!("无法准备 Skill {}：{error}", skill.id))?;
+                .map_err(|error| format!("无法准备技能 {}：{error}", skill.id))?;
         }
     }
     Ok(())
@@ -1198,19 +1411,40 @@ fn normalize_skill_document(content: &str, id: &str, fallback_description: &str)
     result
 }
 
-fn load_command_context(kit: &InstalledExpertKit) -> Result<String, String> {
+fn load_command_context(kit: &InstalledExpertKit, prompt: &str) -> Result<String, String> {
     if kit.manifest.commands.is_empty() {
         return Ok(String::new());
     }
     let root = Path::new(&kit.install_path);
-    let mut context = String::from("\n套件命令说明：");
+    let token = prompt.split_whitespace().next().unwrap_or_default();
+    let prefix = format!("/kit:{}:", kit.manifest.id);
+    let selected = token.strip_prefix(&prefix);
+    let arguments = prompt
+        .trim_start()
+        .strip_prefix(token)
+        .unwrap_or_default()
+        .trim();
+    if selected.is_some_and(|id| !kit.manifest.commands.iter().any(|command| command.id == id)) {
+        return Err("未找到指定的套件命令".into());
+    }
+    let mut context = String::from("\n套件可用命令：");
     for command in &kit.manifest.commands {
+        let invocation = format!("/kit:{}:{}", kit.manifest.id, command.id);
+        if selected != Some(command.id.as_str()) {
+            context.push_str(&format!("\n{invocation}"));
+            continue;
+        }
         let content = fs::read_to_string(root.join(&command.path))
             .map_err(|error| format!("无法读取专家套件命令 {}：{error}", command.id))?;
         if content.len() > 256 * 1024 {
             return Err(format!("专家套件命令文件过大：{}", command.id));
         }
-        context.push_str(&format!("\n\n/{}\n{}", command.id, content));
+        let content = content
+            .replace("${CLAUDE_PLUGIN_ROOT}", &kit.install_path)
+            .replace("${QWEN_PLUGIN_ROOT}", &kit.install_path)
+            .replace("${QODER_PLUGIN_ROOT}", &kit.install_path)
+            .replace("$ARGUMENTS", arguments);
+        context.push_str(&format!("\n\n当前命令 {invocation}\n{content}"));
     }
     Ok(context)
 }
@@ -1276,244 +1510,6 @@ async fn download_package(url: &str) -> Result<Vec<u8>, String> {
     Ok(bytes)
 }
 
-fn load_and_validate_manifest(
-    root: &Path,
-    expected_kind: Option<&str>,
-    expected_id: Option<&str>,
-    expected_version: Option<&str>,
-) -> Result<ExpertKitManifest, String> {
-    let kit_manifest = root.join(KIT_MANIFEST_PATH);
-    let skill_manifest = root.join(SKILL_MANIFEST_PATH);
-    let (kind, manifest_path) = match (kit_manifest.is_file(), skill_manifest.is_file()) {
-        (true, false) => ("expert-kit", kit_manifest),
-        (false, true) => ("skill", skill_manifest),
-        (true, true) => return Err("扩展不能同时包含专家套件和独立 Skill 清单".to_string()),
-        (false, false) => {
-            return Err("扩展缺少 .xiaoyin-kit/kit.json 或 .xiaoyin-skill/skill.json".to_string());
-        }
-    };
-    if expected_kind.is_some_and(|expected| expected != kind) {
-        return Err("扩展类型与目录记录不一致".to_string());
-    }
-    let file = File::open(&manifest_path).map_err(|_| "无法打开扩展清单".to_string())?;
-    let mut json = String::new();
-    file.take(1024 * 1024)
-        .read_to_string(&mut json)
-        .map_err(|error| format!("无法读取扩展清单：{error}"))?;
-    let mut value: serde_json::Value =
-        serde_json::from_str(&json).map_err(|error| format!("扩展清单无效：{error}"))?;
-    let object = value
-        .as_object_mut()
-        .ok_or_else(|| "扩展清单必须是 JSON 对象".to_string())?;
-    // QoderWork packages may include this unused legacy hint. Xiaoyin derives
-    // runtime capabilities from installed tools and connectors instead.
-    object.remove("permissions");
-    if object.contains_key("kind")
-        || object.contains_key("commands") && kind == "skill"
-        || object.contains_key("skills") && kind == "skill"
-        || object.contains_key("serverWorkflows") && kind == "skill"
-    {
-        return Err("独立 Skill 与专家套件字段不能混用".to_string());
-    }
-    let schema = object
-        .get("schemaVersion")
-        .and_then(serde_json::Value::as_str)
-        .unwrap_or_default();
-    if (kind == "expert-kit" && schema != "2") || (kind == "skill" && schema != "1") {
-        return Err("不支持的扩展 Schema 版本".to_string());
-    }
-    object.insert(
-        "kind".to_string(),
-        serde_json::Value::String(kind.to_string()),
-    );
-    if kind == "skill" {
-        object.insert("commands".to_string(), serde_json::json!([]));
-        object.insert("skills".to_string(), serde_json::json!([{ "id": object.get("id").cloned().unwrap_or_default(), "path": "SKILL.md" }]));
-        object.insert("serverWorkflows".to_string(), serde_json::json!([]));
-    }
-    let mut manifest: ExpertKitManifest =
-        serde_json::from_value(value).map_err(|error| format!("扩展清单字段无效：{error}"))?;
-    validate_identifier(&manifest.id)?;
-    Version::parse(&manifest.version).map_err(|error| format!("专家套件版本无效：{error}"))?;
-    if expected_id.is_some_and(|id| id != manifest.id) {
-        return Err("专家套件 ID 与目录记录不一致".to_string());
-    }
-    if expected_version.is_some_and(|version| version != manifest.version) {
-        return Err("专家套件版本与目录记录不一致".to_string());
-    }
-    if manifest.name.trim().is_empty()
-        || manifest.summary.trim().is_empty()
-        || manifest.skills.is_empty()
-    {
-        return Err("专家套件名称、简介和 Skills 不能为空".to_string());
-    }
-    if !EXTENSION_CATEGORIES.contains(&manifest.category.as_str()) {
-        manifest.category = default_extension_category();
-    }
-
-    if manifest.kind == "skill" {
-        let mut triggers = HashSet::new();
-        if manifest.triggers.len() > 20
-            || manifest.triggers.iter().any(|trigger| {
-                trigger.trim().is_empty() || trigger.len() > 120 || !triggers.insert(trigger)
-            })
-        {
-            return Err("独立 Skill 触发场景声明无效".to_string());
-        }
-    }
-
-    let mut reference_ids = HashSet::new();
-    for reference in manifest.commands.iter().chain(&manifest.skills) {
-        if reference.id.trim().is_empty() || !reference_ids.insert(&reference.id) {
-            return Err("专家套件命令和 Skill ID 不能为空或重复".to_string());
-        }
-        let path = Path::new(&reference.path);
-        validate_relative_path(path)?;
-        if !root.join(path).is_file() {
-            return Err(format!("专家套件引用文件不存在：{}", reference.path));
-        }
-        if manifest.kind == "skill" && reference.path != "SKILL.md" {
-            return Err("独立 Skill 的入口必须是根目录 SKILL.md".to_string());
-        }
-        if manifest.kind == "expert-kit"
-            && manifest.skills.iter().any(|skill| skill.id == reference.id)
-            && reference.path != format!("skills/{}/SKILL.md", reference.id)
-        {
-            return Err(format!(
-                "套件 Skill 路径必须是 skills/{}/SKILL.md",
-                reference.id
-            ));
-        }
-    }
-    let mut tools = HashSet::new();
-    for tool in &manifest.required_tools {
-        if !valid_tool_name(tool) || !tools.insert(tool) {
-            return Err(format!("专家套件工具声明无效：{tool}"));
-        }
-    }
-    let mut connectors = HashSet::new();
-    for connector in &manifest.connector_refs {
-        if validate_identifier(connector).is_err() || !connectors.insert(connector) {
-            return Err(format!("专家套件连接器引用无效：{connector}"));
-        }
-    }
-    let mut workflow_ids = HashSet::new();
-    for workflow in &manifest.server_workflows {
-        if validate_identifier(&workflow.id).is_err() || !workflow_ids.insert(&workflow.id) {
-            return Err(format!("后台工作流 ID 无效或重复：{}", workflow.id));
-        }
-        if workflow.name.trim().is_empty()
-            || workflow.name.len() > 200
-            || workflow.version.trim().is_empty()
-            || workflow.workflow_type.trim().is_empty()
-        {
-            return Err(format!("后台工作流定义不完整：{}", workflow.id));
-        }
-        let mut step_ids = HashSet::new();
-        for step in &workflow.steps {
-            if step.id.trim().is_empty()
-                || !step_ids.insert(&step.id)
-                || !valid_tool_name(&step.tool)
-            {
-                return Err(format!("后台工作流步骤无效：{} / {}", workflow.id, step.id));
-            }
-            if !manifest.connector_refs.contains(&step.connector_id) {
-                return Err(format!(
-                    "后台工作流步骤引用未声明连接器：{}",
-                    step.connector_id
-                ));
-            }
-            if !manifest.required_tools.contains(&step.tool) {
-                return Err(format!("后台工作流步骤使用未声明工具：{}", step.tool));
-            }
-        }
-    }
-    if let Some(knowledge_base_refs) = &manifest.knowledge_base_refs {
-        if knowledge_base_refs.len() > 32 {
-            return Err("专家套件知识库引用不能超过 32 个".to_string());
-        }
-        let minimum = Version::parse(&manifest.minimum_desktop_version)
-            .map_err(|error| format!("最低桌面版本无效：{error}"))?;
-        if minimum < Version::new(0, 1, 7) {
-            return Err("使用知识库引用的专家套件必须要求桌面端 0.1.7 或更高版本".to_string());
-        }
-        let mut references = HashSet::new();
-        for reference in knowledge_base_refs {
-            if !valid_knowledge_base_reference(reference) || !references.insert(reference) {
-                return Err(format!("专家套件知识库引用无效或重复：{reference}"));
-            }
-        }
-    }
-    Ok(manifest)
-}
-
-fn ensure_supported_desktop_version(minimum: Option<&str>) -> Result<(), String> {
-    let Some(minimum) = minimum.filter(|value| !value.trim().is_empty()) else {
-        return Ok(());
-    };
-    let minimum = Version::parse(minimum).map_err(|error| format!("最低桌面版本无效：{error}"))?;
-    let current = Version::parse(env!("CARGO_PKG_VERSION"))
-        .map_err(|error| format!("当前桌面版本无效：{error}"))?;
-    if current < minimum {
-        return Err(format!("该套件需要小胤桌面端 {minimum} 或更高版本"));
-    }
-    Ok(())
-}
-
-fn validate_identifier(value: &str) -> Result<(), String> {
-    let valid = (3..=64).contains(&value.len())
-        && value.as_bytes().first().is_some_and(u8::is_ascii_lowercase)
-        && value.bytes().all(|character| {
-            character.is_ascii_lowercase() || character.is_ascii_digit() || character == b'-'
-        });
-    if valid {
-        Ok(())
-    } else {
-        Err("专家套件 ID 无效".to_string())
-    }
-}
-
-fn validate_sha256(value: &str) -> Result<(), String> {
-    if value.len() == 64 && value.bytes().all(|character| character.is_ascii_hexdigit()) {
-        Ok(())
-    } else {
-        Err("专家套件 SHA-256 无效".to_string())
-    }
-}
-
-fn validate_relative_path(path: &Path) -> Result<(), String> {
-    if path.as_os_str().is_empty()
-        || path
-            .components()
-            .any(|component| !matches!(component, Component::Normal(_)))
-    {
-        return Err("专家套件包含不安全路径".to_string());
-    }
-    Ok(())
-}
-
-fn valid_tool_name(value: &str) -> bool {
-    !value.is_empty()
-        && value.as_bytes().first().is_some_and(u8::is_ascii_lowercase)
-        && value.bytes().all(|character| {
-            character.is_ascii_lowercase()
-                || character.is_ascii_digit()
-                || matches!(character, b'_' | b'.' | b'-')
-        })
-}
-
-fn valid_knowledge_base_reference(value: &str) -> bool {
-    let Some((scope, key)) = value.split_once(':') else {
-        return false;
-    };
-    matches!(scope, "personal" | "team" | "organization")
-        && (3..=64).contains(&key.len())
-        && key.as_bytes().first().is_some_and(u8::is_ascii_lowercase)
-        && key.bytes().all(|character| {
-            character.is_ascii_lowercase() || character.is_ascii_digit() || character == b'-'
-        })
-}
-
 fn child_directories(root: &Path) -> Result<Vec<PathBuf>, String> {
     Ok(fs::read_dir(root)
         .map_err(|error| format!("无法读取专家套件目录：{error}"))?
@@ -1534,6 +1530,10 @@ fn installed_kit(
     source: InstallSource,
 ) -> InstalledExpertKit {
     InstalledExpertKit {
+        enabled: !directory
+            .parent()
+            .is_some_and(|parent| parent.join(".disabled").exists()),
+        bundled_connectors: compatibility::bundled_connectors(directory),
         manifest,
         install_path: directory.to_string_lossy().into_owned(),
         source,
@@ -1568,6 +1568,45 @@ mod tests {
     use std::io::Cursor;
     use std::io::Write;
     use zip::{ZipWriter, write::SimpleFileOptions};
+
+    #[test]
+    fn unselected_knowledge_uses_employee_catalog_but_explicit_empty_stays_empty() {
+        assert_eq!(task_knowledge_scope(None, &[]).unwrap(), None);
+        assert_eq!(task_knowledge_scope(Some(&[]), &[]).unwrap(), Some(vec![]));
+    }
+
+    #[test]
+    fn task_knowledge_unions_kit_and_user_references_without_duplicates() {
+        let kit = vec!["organization:handbook".to_string()];
+        let requested = vec![
+            "organization:handbook".to_string(),
+            "team:sales".to_string(),
+        ];
+        assert_eq!(
+            task_knowledge_scope(Some(&kit), &requested).unwrap(),
+            Some(requested.clone())
+        );
+        assert_eq!(
+            task_knowledge_scope(None, &requested).unwrap(),
+            Some(requested.clone())
+        );
+        assert_eq!(
+            task_knowledge_scope(Some(&[]), &requested).unwrap(),
+            Some(requested)
+        );
+        assert_eq!(task_knowledge_scope(Some(&kit), &[]).unwrap(), Some(kit));
+    }
+
+    #[test]
+    fn task_knowledge_validates_scope_and_unique_limit() {
+        assert!(task_knowledge_scope(None, &["unknown:handbook".to_string()]).is_err());
+        let refs = (0..33)
+            .map(|index| format!("team:kb-{index}"))
+            .collect::<Vec<_>>();
+        assert!(task_knowledge_scope(None, &refs).is_err());
+        assert!(task_knowledge_scope(None, &refs[..32]).is_ok());
+        assert!(task_knowledge_scope(Some(&refs[..32]), &refs[..32]).is_ok());
+    }
 
     #[test]
     fn unsafe_paths_are_rejected() {
@@ -1726,7 +1765,7 @@ mod tests {
         let manifest: ExpertKitManifest = serde_json::from_str(
             r#"{
               "schemaVersion":"2","kind":"expert-kit","id":"operations-kit","name":"运营套件","version":"1.0.0",
-              "summary":"组合多个运营 Skill","minimumDesktopVersion":"0.1.29","commands":[],
+              "summary":"组合多个运营技能","minimumDesktopVersion":"0.1.29","commands":[],
               "skills":[
                 {"id":"order-review","path":"skills/order-review/SKILL.md"},
                 {"id":"sales-report","path":"skills/sales-report/SKILL.md"}
@@ -2001,7 +2040,7 @@ mod tests {
           "schemaVersion":"1","kind":"skill","id":"document-insight","name":"文档洞察",
           "version":"1.0.0","summary":"分析文档","skills":[{"id":"document-insight","path":"skills/document-insight/SKILL.md"}]
         }"#).unwrap();
-        let installed = installed_kit(manifest, &root, InstallSource::Catalog);
+        let mut installed = installed_kit(manifest, &root, InstallSource::Catalog);
         let allowed = AllowedExtensionArtifact {
             kind: "skill".to_string(),
             id: "document-insight".to_string(),
@@ -2020,6 +2059,9 @@ mod tests {
                 ..allowed
             }],
         ));
+        installed.enabled = false;
+        installed.source = InstallSource::Developer;
+        assert!(!artifact_is_executable(&installed, &[]));
         fs::remove_dir_all(root).unwrap();
     }
 

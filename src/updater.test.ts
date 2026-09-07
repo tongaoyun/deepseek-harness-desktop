@@ -1,5 +1,18 @@
 import { describe, expect, it } from 'vitest'
-import { isUnsupportedUpdaterPlatformError, updateDownloadProgress } from './updater'
+import { isUnsupportedUpdaterPlatformError, isWindowsPlatform, isUpdatablePlatform, updateDownloadProgress } from './updater'
+
+describe('desktop updater platform', () => {
+  it('supports Mac and Windows updates but not Linux or mobile browsers', () => {
+    expect(isUpdatablePlatform('Macintosh; Intel Mac OS X', 'MacIntel')).toBe(true)
+    expect(isUpdatablePlatform('Windows NT 10.0', 'Win32')).toBe(true)
+    expect(isUpdatablePlatform('Linux x86_64', 'Linux')).toBe(false)
+    expect(isUpdatablePlatform('iPhone', 'iPhone')).toBe(false)
+  })
+  it('identifies Windows separately from Mac', () => {
+    expect(isWindowsPlatform('Mozilla/5.0 (Windows NT 10.0; Win64; x64)', 'Win32')).toBe(true)
+    expect(isWindowsPlatform('Mozilla/5.0 (Macintosh; Intel Mac OS X)', 'MacIntel')).toBe(false)
+  })
+})
 
 describe('isUnsupportedUpdaterPlatformError', () => {
   it('recognizes the expected macOS error from a Windows-only update feed', () => {

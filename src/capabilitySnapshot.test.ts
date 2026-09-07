@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { connectorsForSnapshot, createCapabilitySnapshot } from './capabilitySnapshot'
+import { capabilitySnapshotChanged, connectorsForSnapshot, createCapabilitySnapshot } from './capabilitySnapshot'
 import type { ExpertKitView } from './expertKits'
 import type { SkillView } from './skills'
 import type { ConnectorRuntimeDefinition } from './types'
@@ -10,6 +10,16 @@ const connector = (id: string, version = '1', status: ConnectorRuntimeDefinition
 })
 
 describe('capability snapshot', () => {
+  it('rebuilds sessions for configuration changes but not checkpoint timestamps', () => {
+    const first = createCapabilitySnapshot([], [], [connector('erp')], [], 'first')
+    expect(capabilitySnapshotChanged(first, { ...first, createdAt: 'second' })).toBe(false)
+    expect(capabilitySnapshotChanged(first, createCapabilitySnapshot([], [], [connector('erp', '2')]))).toBe(true)
+    expect(capabilitySnapshotChanged(first, createCapabilitySnapshot([], [], []))).toBe(true)
+  })
+  it('excludes disabled skills and expert kits from new tasks', () => {
+    const common = { id: 'disabled', version: '1.0.0', sha256: 'a'.repeat(64), installState: 'installed', installed: { enabled: false } }
+    expect(createCapabilitySnapshot([common as ExpertKitView], [common as SkillView], []).extensions).toEqual([])
+  })
   it('freezes installed extensions and ready connector versions for a task', () => {
     const kit = { id: 'ops', version: '1.0.0', sha256: 'a'.repeat(64), installState: 'installed' } as ExpertKitView
     const skill = { id: 'document', version: '2.0.0', sha256: 'b'.repeat(64), installState: 'installed' } as SkillView

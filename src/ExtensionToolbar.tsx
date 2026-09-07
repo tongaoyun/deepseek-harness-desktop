@@ -1,4 +1,6 @@
 import { extensionCategories, type ExtensionCategoryFilter } from './extensionCategories'
+import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
 
 export type ExtensionFilter = 'market' | 'builtin' | 'installed' | 'updates' | 'attention'
 
@@ -19,9 +21,30 @@ export function ExtensionCategoryBar({ value, onChange }: {
   value: ExtensionCategoryFilter
   onChange: (value: ExtensionCategoryFilter) => void
 }) {
-  return <div aria-label="业务分类" className="extension-category-bar" role="tablist">
+  const list = useRef<HTMLDivElement>(null)
+  const [edges, setEdges] = useState({ left: false, right: false })
+  const updateEdges = () => {
+    const element = list.current
+    if (element) setEdges({ left: element.scrollLeft > 2, right: element.scrollLeft + element.clientWidth < element.scrollWidth - 2 })
+  }
+  useEffect(() => {
+    updateEdges()
+    if (!list.current || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(updateEdges)
+    observer.observe(list.current)
+    return () => observer.disconnect()
+  }, [])
+  const scroll = (direction: number) => {
+    const element = list.current
+    element?.scrollBy({ left: direction * element.clientWidth * .7, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })
+  }
+  return <div className="category-scroll">
+    {edges.left && <button aria-label="向左滚动分类" className="category-arrow left" onClick={() => scroll(-1)} type="button"><ChevronLeft size={15} /></button>}
+    <div aria-label="业务分类" className="extension-category-bar" onScroll={updateEdges} ref={list} role="tablist">
     <button aria-selected={value === 'all'} className={value === 'all' ? 'active' : ''} onClick={() => onChange('all')} role="tab" type="button">全部</button>
     {extensionCategories.map((category) => <button aria-selected={value === category.id} className={value === category.id ? 'active' : ''} key={category.id} onClick={() => onChange(category.id)} role="tab" type="button">{category.label}</button>)}
+    </div>
+    {edges.right && <button aria-label="向右滚动分类" className="category-arrow right" onClick={() => scroll(1)} type="button"><ChevronRight size={15} /></button>}
   </div>
 }
 

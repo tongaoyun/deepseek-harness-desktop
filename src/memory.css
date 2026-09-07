@@ -1,0 +1,43 @@
+.memory-settings { color: #252525; gap: 18px; }
+.memory-title { display: flex; align-items: center; gap: 14px; }
+.memory-title h2 { margin: 0 0 6px; font-size: 22px; }
+.memory-title p, .memory-settings small, .memory-empty { color: #818181; font-size: 13px; line-height: 1.6; }
+.memory-settings fieldset { display: grid; gap: 18px; padding: 0; border: 0; min-width: 0; margin: 0; }
+.memory-options, .memory-section { border: 1px solid #e8e8e8; border-radius: 14px; padding: 20px; background: #fff; }
+.memory-options label { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 10px 0; }
+.memory-options label + label { border-top: 1px solid #eee; margin-top: 12px; padding-top: 20px; }
+.memory-options strong, .memory-options small { display: block; }
+.memory-options small { margin-top: 5px; }
+.memory-options input { appearance: none; width: 36px; height: 22px; flex-shrink: 0; border: 0; border-radius: 20px; cursor: pointer; background: #e7e7e7; position: relative; transition: background .16s ease; }
+.memory-options input::before { content: ''; position: absolute; width: 18px; height: 18px; top: 2px; left: 2px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px #0002; transition: transform .16s ease; }
+.memory-options input:checked { background: #80dca0; }
+.memory-options input:checked::before { transform: translateX(14px); }
+.memory-options input:focus-visible { outline: 2px solid #777; outline-offset: 3px; }
+.memory-section summary { cursor: pointer; font-size: 15px; font-weight: 600; }
+.memory-section summary span { color: #888; font-size: 12px; font-weight: 400; margin-left: 10px; }
+.memory-section header, .memory-entry > div, .memory-entry footer, .memory-actions, .memory-revision { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.memory-section h3 { font-size: 15px; margin: 0 0 16px; }
+.memory-section header > span, .memory-entry footer, .memory-actions > span, .memory-revision { color: #888; font-size: 12px; }
+.memory-settings textarea, .memory-section > input { box-sizing: border-box; width: 100%; border: 1px solid #e6e6e6; border-radius: 10px; padding: 12px; background: #fff; color: #303030; font: inherit; font-size: 14px; }
+.memory-settings textarea { min-height: 90px; resize: vertical; line-height: 1.65; margin-top: 12px; }
+.memory-settings button, .memory-presets label, .memory-entry select { border: 1px solid #e5e5e5; border-radius: 8px; padding: 7px 11px; background: #fff; color: #444; font: inherit; font-size: 12px; cursor: pointer; }
+.memory-settings button:hover { background: #f5f5f5; }
+.memory-settings :disabled { opacity: .5; cursor: default; }
+.memory-presets { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.memory-presets input { display: none; }
+.memory-entry { padding: 18px 0; border-bottom: 1px solid #eee; }
+.memory-entry textarea { min-height: 64px; margin-bottom: 8px; }
+.memory-entry footer span { overflow-wrap: anywhere; }
+.memory-actions button { display: inline-flex; align-items: center; gap: 6px; background: #171717; color: white; white-space: nowrap; }
+.memory-actions button:hover { background: #333; }
+.memory-revision { margin-top: 12px; }
+.memory-add { margin-bottom: 16px; padding: 14px; border-radius: 10px; background: #f7f8f7; }
+.memory-draft-status { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: #777; font-size: 12px; }
+.memory-conflict { padding: 16px; border: 1px solid #edd6a3; border-radius: 12px; background: #fffbf3; font-size: 13px; }
+.memory-conflict button { margin: 4px 8px 4px 0; }
+.memory-conflict small { display: block; }
+.memory-choice { max-width: 580px; }
+.memory-choice-list { display: grid; gap: 8px; max-height: 45vh; overflow: auto; }
+.memory-choice-list label { display: flex; align-items: flex-start; gap: 10px; padding: 12px; border: 1px solid #e8e8e8; border-radius: 10px; cursor: pointer; font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; }
+.memory-choice-list input { margin-top: 5px; flex-shrink: 0; accent-color: #63b987; }
+@media (max-width: 700px) { .memory-section summary span { display: block; margin: 8px 0 0; } .memory-actions { align-items: flex-start; } }

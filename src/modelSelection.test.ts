@@ -5,6 +5,7 @@ describe('model selection', () => {
   it('restores only a model still published by the company', () => {
     expect(resolveSelectedModel(['model-a', 'model-b'], 'model-b')).toBe('model-b')
     expect(resolveSelectedModel(['model-a'], 'retired-model')).toBe('model-a')
+    expect(resolveSelectedModel([], 'retired-model')).toBe('')
   })
 
   it('renders model ids without inventing product tiers', () => {

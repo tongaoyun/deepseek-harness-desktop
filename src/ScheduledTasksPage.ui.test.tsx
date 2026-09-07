@@ -1,156 +1,71 @@
 // @vitest-environment jsdom
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createScheduledTask, loadScheduledTasks, updateScheduledTask } from './api'
+import { expect, it, vi } from 'vitest'
 import { ScheduledTasksPage } from './ScheduledTasksPage'
+import type { LocalSchedule } from './localSchedules'
 
-vi.mock('./api', () => ({
-  changeScheduledTask: vi.fn(),
-  createScheduledTask: vi.fn(),
-  createTaskRunArtifactDownload: vi.fn(),
-  deleteScheduledTask: vi.fn(),
-  loadScheduledTaskExecutions: vi.fn().mockResolvedValue([]),
-  loadScheduledTasks: vi.fn().mockResolvedValue([]),
-  updateScheduledTask: vi.fn(),
-}))
-
-describe('scheduled task user flow', () => {
-  let container: HTMLDivElement
-
-  beforeEach(() => {
-    vi.clearAllMocks()
-    Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
-    container = document.createElement('div')
-    document.body.append(container)
-  })
-
-  afterEach(() => container.remove())
-
-  it('routes AI creation into a new Xiaoyin conversation', async () => {
-    const onCreateWithXiaoyin = vi.fn()
-    const root = createRoot(container)
-    await act(async () => {
-      root.render(<ScheduledTasksPage
-        accessToken="token"
-        employeeId="employee-1"
-        endpoint="/api/v1/schedules"
-        onCreateWithXiaoyin={onCreateWithXiaoyin}
-      />)
-      await Promise.resolve()
+Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
+it('matches the creation controls and closes a popup with Escape before closing the dialog', async () => {
+  const fetch = vi.fn(); vi.stubGlobal('fetch', fetch)
+  const container = document.body.appendChild(document.createElement('div'))
+  const root = createRoot(container)
+  const create = vi.fn(), refresh = vi.fn()
+  try {
+    await act(async () => root.render(<ScheduledTasksPage local={{ items: [], error: '', action: vi.fn(), save: vi.fn(), refresh }} onCreateWithXiaoyin={create} onOpenLocalTask={() => {}} />))
+    expect(container.querySelector('.schedule-server-note .schedule-wake')).not.toBeNull()
+    await act(async () => container.querySelector<HTMLButtonElement>('.schedule-create-with-ai')!.click())
+    expect(create).toHaveBeenCalledOnce()
+    await act(async () => container.querySelector<HTMLButtonElement>('.schedule-refresh')!.click())
+    expect(refresh).toHaveBeenCalledOnce()
+    await act(async () => container.querySelector<HTMLButtonElement>('.schedule-new-button')!.click())
+    const choose = async (label: string) => act(async () => {
+      const menu = container.querySelector('[role="menu"][aria-label="执行频率"]')!
+      ;[...menu.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === label)!.click()
     })
-
-    const createWithAI = [...container.querySelectorAll<HTMLButtonElement>('button')]
-      .find((button) => button.textContent === '通过小胤创建')!
-    await act(async () => createWithAI.click())
-
-    expect(onCreateWithXiaoyin).toHaveBeenCalledOnce()
-    expect(container.querySelector('.schedule-modal')).toBeNull()
-    await act(async () => root.unmount())
-  })
-
-  it('selects a preset and previews upcoming executions', async () => {
-    const root = createRoot(container)
-    await act(async () => {
-      root.render(<ScheduledTasksPage
-        accessToken="token"
-        employeeId="employee-1"
-        endpoint="/api/v1/schedules"
-        onCreateWithXiaoyin={() => undefined}
-      />)
-      await Promise.resolve()
-    })
-    const create = [...container.querySelectorAll<HTMLButtonElement>('button')]
-      .find((button) => button.textContent === '新建定时任务')!
-    await act(async () => create.click())
-    const preset = container.querySelector<HTMLSelectElement>('select[aria-label="计划频率"]')!
-    await act(async () => {
-      const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!
-      setter.call(preset, '0 18 * * *')
-      preset.dispatchEvent(new Event('change', { bubbles: true }))
-    })
-    expect(preset.value).toBe('0 18 * * *')
-    expect(container.querySelector('.cron-hint')?.textContent).toContain('接下来：')
-
-    const natural = container.querySelector<HTMLTextAreaElement>('textarea')!
-    await act(async () => {
-      const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!
-      setter.call(natural, '每个工作日下午 6:30 生成日报')
-      natural.dispatchEvent(new Event('input', { bubbles: true }))
-    })
-    const parse = [...container.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent === '识别时间')!
-    await act(async () => parse.click())
-    expect(preset.value).toBe('30 18 * * 1-5')
-    expect(container.querySelector('.schedule-parse-result')?.textContent).toContain('18:30')
-    await act(async () => root.unmount())
-  })
-
-  it('creates a generic agent schedule without selecting an expert kit', async () => {
-    vi.mocked(createScheduledTask).mockResolvedValue({
-      id: 'schedule-1', name: '竞品追踪',
-      expertKitId: 'xiaoyin-agent', expertKitVersion: '1', workflowId: 'agent-prompt',
-      workflowType: 'AgentPromptWorkflow', workflowVersion: '1', cronExpression: '0 9 * * 1-5',
-      timeZone: 'Asia/Shanghai', inputs: { prompt: '整理竞品动态' }, status: 'ACTIVE',
-      createdAt: '2026-09-03T00:00:00Z', updatedAt: '2026-09-03T00:00:00Z',
-    })
-    const root = createRoot(container)
-    await act(async () => {
-      root.render(<ScheduledTasksPage accessToken="token" employeeId="employee-1"
-        endpoint="/api/v1/schedules" onCreateWithXiaoyin={() => undefined} />)
-      await Promise.resolve()
-    })
-    await act(async () => [...container.querySelectorAll<HTMLButtonElement>('button')]
-      .find((button) => button.textContent === '新建定时任务')!.click())
-    const name = container.querySelector<HTMLInputElement>('input[placeholder="描述你的任务"]')!
-    const prompt = container.querySelector<HTMLTextAreaElement>('textarea')!
-    await act(async () => {
-      setValue(name, '竞品追踪')
-      setValue(prompt, '整理竞品动态')
-    })
-    await act(async () => container.querySelector<HTMLFormElement>('form.schedule-modal')!
-      .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
-
-    expect(createScheduledTask).toHaveBeenCalledWith('/api/v1/schedules', 'employee-1', 'token', expect.objectContaining({
-      name: '竞品追踪', expertKitId: 'xiaoyin-agent', workflowId: 'agent-prompt',
-      inputs: { prompt: '整理竞品动态' },
-    }))
-    await act(async () => root.unmount())
-  })
-
-  it('edits an existing schedule in place', async () => {
-    const task = {
-      id: 'schedule-1', name: '竞品追踪',
-      expertKitId: 'xiaoyin-agent', expertKitVersion: '1', workflowId: 'agent-prompt',
-      workflowType: 'AgentPromptWorkflow', workflowVersion: '1', cronExpression: '0 9 * * 1-5',
-      timeZone: 'Asia/Shanghai', inputs: { prompt: '整理竞品动态' }, status: 'PAUSED' as const,
-      createdAt: '2026-09-03T00:00:00Z', updatedAt: '2026-09-03T00:00:00Z',
-    }
-    vi.mocked(loadScheduledTasks).mockResolvedValue([task])
-    vi.mocked(updateScheduledTask).mockResolvedValue({ ...task, name: '午间竞品追踪', cronExpression: '0 12 * * 1-5' })
-    const root = createRoot(container)
-    await act(async () => {
-      root.render(<ScheduledTasksPage accessToken="token" employeeId="employee-1"
-        endpoint="/api/v1/schedules" onCreateWithXiaoyin={() => undefined} />)
-      await Promise.resolve()
-    })
-    await act(async () => container.querySelector<HTMLButtonElement>('button[aria-label="任务操作"]')!.click())
-    await act(async () => [...container.querySelectorAll<HTMLButtonElement>('button')]
-      .find((button) => button.textContent === '编辑任务')!.click())
-    expect(container.querySelector('.schedule-modal h2')?.textContent).toBe('编辑定时任务')
-    const name = container.querySelector<HTMLInputElement>('input[placeholder="描述你的任务"]')!
-    await act(async () => setValue(name, '午间竞品追踪'))
-    await act(async () => container.querySelector<HTMLFormElement>('form.schedule-modal')!
-      .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
-
-    expect(updateScheduledTask).toHaveBeenCalledWith('/api/v1/schedules', 'employee-1', 'token', 'schedule-1',
-      expect.objectContaining({ name: '午间竞品追踪', inputs: { prompt: '整理竞品动态' } }))
-    expect(container.textContent).toContain('午间竞品追踪')
-    await act(async () => root.unmount())
-  })
+    expect([...container.querySelectorAll('[role="menu"][aria-label="执行频率"] button')].map((o) => o.textContent)).toEqual(['不重复', '间隔', '每小时', '每天', '每周', '每月', '自定义'])
+    await choose('间隔')
+    expect(container.querySelector<HTMLInputElement>('[aria-label="间隔分钟"]')!.value).toBe('30')
+    await choose('每周')
+    expect(container.querySelectorAll('.schedule-weekdays [aria-pressed=true]')).toHaveLength(5)
+    await choose('每月')
+    expect(container.querySelectorAll('.schedule-month-picker .schedule-date-grid button')).toHaveLength(31)
+    await choose('不重复')
+    expect(container.querySelector('[aria-label="执行日期"]')).not.toBeNull()
+    await choose('自定义')
+    expect(container.querySelector<HTMLInputElement>('[aria-label="时区"]')!.value).toBe(Intl.DateTimeFormat().resolvedOptions().timeZone)
+    const details = container.querySelector<HTMLDetailsElement>('.schedule-frequency')!
+    await act(async () => { details.open = true; details.querySelector('summary')!.focus(); document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })) })
+    expect(details.open).toBe(false)
+    expect(container.querySelector('[role="dialog"]')).not.toBeNull()
+    await act(async () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+    expect(container.querySelector('[role="dialog"]')).toBeNull()
+    expect(fetch).not.toHaveBeenCalled()
+  } finally { await act(async () => root.unmount()); container.remove(); vi.unstubAllGlobals() }
 })
 
-function setValue(element: HTMLInputElement | HTMLTextAreaElement, value: string): void {
-  const prototype = element instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype
-  Object.getOwnPropertyDescriptor(prototype, 'value')!.set!.call(element, value)
-  element.dispatchEvent(new Event('input', { bubbles: true }))
-}
+it('keeps run/delete in the more menu, confirms deletion and filters execution records', async () => {
+  const at = '2026-09-06T01:00:00Z'
+  const items: LocalSchedule[] = [{ id: 'a', name: '周报', prompt: '整理报告', cronExpression: '0 9 * * 1', timeZone: 'Asia/Shanghai', directories: [], active: false, createdAt: at, nextAt: at,
+    runs: [{ id: 'done', taskId: 'task-a', status: 'COMPLETED', scheduledAt: at, startedAt: at }, { id: 'failed', status: 'FAILED', scheduledAt: at, startedAt: at }] }]
+  const action = vi.fn(async () => {})
+  const open = vi.fn()
+  const container = document.body.appendChild(document.createElement('div'))
+  const root = createRoot(container)
+  try {
+    await act(async () => root.render(<ScheduledTasksPage local={{ items, error: '', action, save: vi.fn(), refresh: vi.fn() }} onCreateWithXiaoyin={() => {}} onOpenLocalTask={open} />))
+    expect(container.querySelector('.local-schedule-actions')).toBeNull()
+    await act(async () => container.querySelector<HTMLButtonElement>('.schedule-card-more .danger')!.click())
+    expect(action).not.toHaveBeenCalled()
+    await act(async () => container.querySelector<HTMLButtonElement>('.schedule-delete-dialog .danger')!.click())
+    expect(action).toHaveBeenCalledWith('a', 'delete')
+    await act(async () => [...container.querySelectorAll<HTMLButtonElement>('[role=tab]')].find((b) => b.textContent === '执行记录')!.click())
+    expect(container.querySelectorAll('.schedule-execution-page article')).toHaveLength(2)
+    await act(async () => [...container.querySelectorAll<HTMLButtonElement>('[role=menu][aria-label="按状态筛选"] button')].find((b) => b.textContent === '成功')!.click())
+    expect(container.querySelectorAll('.schedule-execution-page article')).toHaveLength(1)
+    await act(async () => container.querySelector<HTMLButtonElement>('.schedule-execution-page article button')!.click())
+    expect(open).toHaveBeenCalledWith('task-a')
+    await act(async () => [...container.querySelectorAll<HTMLButtonElement>('.schedule-record-grouping button')].find((b) => b.textContent === '按月')!.click())
+    expect(container.querySelector('.schedule-execution-page h3')!.textContent).toBe('2026 年 9 月')
+  } finally { await act(async () => root.unmount()); container.remove() }
+})

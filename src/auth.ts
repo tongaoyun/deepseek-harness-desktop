@@ -24,8 +24,12 @@ export function isTauriRuntime(): boolean {
   return '__TAURI_INTERNALS__' in window
 }
 
+export function usesLocalDevelopmentSession(): boolean {
+  return !isTauriRuntime() || (import.meta.env.DEV && import.meta.env.VITE_SKIP_ERP_LOGIN === 'true')
+}
+
 export async function resolveErpSession(): Promise<ErpSessionStatus> {
-  if (!isTauriRuntime()) {
+  if (usesLocalDevelopmentSession()) {
     return {
       authenticated: true,
       accessToken: '',
@@ -48,11 +52,11 @@ export async function resolveErpSession(): Promise<ErpSessionStatus> {
 }
 
 export async function openErpLogin(): Promise<void> {
-  if (!isTauriRuntime()) return
+  if (usesLocalDevelopmentSession()) return
   await invoke('open_erp_login')
 }
 
 export async function clearErpSession(): Promise<void> {
-  if (!isTauriRuntime()) return
+  if (usesLocalDevelopmentSession()) return
   await invoke('clear_erp_session')
 }

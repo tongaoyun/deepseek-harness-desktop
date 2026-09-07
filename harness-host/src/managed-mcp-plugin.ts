@@ -15,6 +15,7 @@ export const name = 'xiaoyin-managed-mcp'
 export const inject = ['tools']
 
 export interface ManagedConnectorConfig {
+  timeoutSeconds?: number
   id: string
   name: string
   version: string
@@ -50,6 +51,7 @@ export interface ConnectorDiagnosticResult {
 }
 
 const ConnectorConfig = z.object({
+  timeoutSeconds: z.number().default(60),
   id: z.string().required(),
   name: z.string().required(),
   version: z.string().default('1'),
@@ -87,9 +89,9 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     try {
       validateConnector(connector, employeeToken)
       client = new Client({ name: `xiaoyin-desktop-${connector.id}`, version: '0.1.0' })
-      await client.connect(createTransport(connector, employeeToken))
+      await client.connect(createTransport(connector, employeeToken), connectorRequestOptions(connector))
 
-      const discovered = await client.listTools()
+      const discovered = await client.listTools({}, connectorRequestOptions(connector))
       const tools = selectTools(
         discovered.tools,
         connector.allowedTools,
@@ -131,6 +133,12 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     stopApprovalPolicy()
     await cleanup(unregisterTools, activeClients)
   }, 'xiaoyin managed MCP connectors')
+}
+
+export function connectorRequestOptions(connector: Pick<ManagedConnectorConfig, 'timeoutSeconds'>): { timeout: number; maxTotalTimeout: number } {
+  const seconds = connector.timeoutSeconds ?? 60
+  if (!Number.isInteger(seconds) || seconds < 1 || seconds > 600) throw new Error('连接器超时时间须为 1–600 秒')
+  return { timeout: seconds * 1000, maxTotalTimeout: seconds * 1000 }
 }
 
 /**
@@ -225,17 +233,19 @@ export function selectTools(
   discovered: Tool[],
   allowedTools: string[],
   requiredTools: string[],
-  _allowWrite: boolean,
+  allowWrite: boolean,
   connectorName = 'MCP',
 ): Tool[] {
   const allowed = new Set(allowedTools)
-  const selected = discovered.filter((tool) => allowed.size === 0 || allowed.has(tool.name))
+  const selected = discovered.filter((tool) => (allowed.size === 0 || allowed.has(tool.name))
+    && (allowWrite || tool.annotations?.readOnlyHint === true))
   void requiredTools
   void connectorName
   return selected
 }
 
 function validateConnector(connector: ManagedConnectorConfig, employeeToken: string | undefined): void {
+  connectorRequestOptions(connector)
   if (!connector.id.trim() || !connector.name.trim()) throw new Error('连接器标识或名称为空')
   if (!['streamable-http', 'sse', 'stdio'].includes(connector.transport)) {
     throw new Error(`不支持传输协议 ${connector.transport}`)
@@ -297,7 +307,7 @@ function toHarnessTool(
     async execute(args, exec) {
       const result = await client.callTool(
         { name: tool.name, arguments: asArguments(args, connector.name) },
-        { signal: exec.signal },
+        { ...connectorRequestOptions(connector), signal: exec.signal },
       )
       if (result.isError) throw new Error(renderMcpContent(result, connector.name))
       return canonicalMcpValue(result)

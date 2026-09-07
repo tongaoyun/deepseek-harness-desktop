@@ -78,7 +78,7 @@ export async function createSkillDownload(
   const response = await fetch(controlPlaneUrl(`${base}/${encodeURIComponent(skillId)}/download`), {
     headers: enterpriseHeaders(employeeId, accessToken),
   })
-  if (!response.ok) throw new Error(`Skill 下载授权返回 ${response.status}`)
+  if (!response.ok) throw new Error(`技能下载授权返回 ${response.status}`)
   return response.json() as Promise<ExpertKitDownload>
 }
 
@@ -153,6 +153,15 @@ export async function loadScheduledTaskExecutions(
     employeeId, accessToken, '执行记录')
 }
 
+export async function cancelScheduledTaskExecution(
+  endpoint: string, employeeId: string, accessToken: string, id: string, runId: string,
+): Promise<void> {
+  const response = await fetch(controlPlaneUrl(`${endpoint.replace(/\/$/, '')}/${encodeURIComponent(id)}/executions/${encodeURIComponent(runId)}/cancel`), {
+    method: 'POST', headers: enterpriseHeaders(employeeId, accessToken), signal: AbortSignal.timeout(15_000),
+  })
+  if (!response.ok) throw new Error(`取消云端执行返回 ${response.status}，请刷新记录确认当前状态后重试`)
+}
+
 export async function loadCloudTaskRuns(
   endpoint: string,
   employeeId: string,
@@ -189,6 +198,22 @@ export async function submitDeviceHeartbeat(
   if (!response.ok) throw new Error(`设备心跳上报返回 ${response.status}`)
 }
 
+export async function submitDeviceCapabilityReport(
+  endpoint: string,
+  employeeId: string,
+  accessToken: string,
+  request: DeviceHeartbeatContext & {
+    capabilities: Array<{ key: string; status: 'READY' | 'DEGRADED' | 'UNSUPPORTED'; detail: string }>
+  },
+): Promise<void> {
+  const response = await fetch(controlPlaneUrl(endpoint.replace(/\/$/, '')), {
+    method: 'POST',
+    headers: { ...enterpriseHeaders(employeeId, accessToken), 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  })
+  if (!response.ok) throw new Error(`设备能力上报返回 ${response.status}`)
+}
+
 export async function submitAuditEvent(
   endpoint: string,
   employeeId: string,
@@ -208,13 +233,26 @@ export async function submitFeedback(
   employeeId: string,
   accessToken: string,
   message: string,
+  context: { category: 'BUG' | 'SUGGESTION' | 'QUESTION' | 'OTHER'; desktopVersion?: string; deviceId?: string; taskId?: string },
+  images: File[] = [],
 ): Promise<void> {
+  const body = new FormData()
+  body.append('feedback', new Blob([JSON.stringify({ message, ...context })], { type: 'application/json' }))
+  images.forEach((file) => body.append('images', file))
   const response = await fetch(controlPlaneUrl('/api/v1/feedback'), {
     method: 'POST',
-    headers: { ...enterpriseHeaders(employeeId, accessToken), 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message }),
+    headers: enterpriseHeaders(employeeId, accessToken),
+    body,
+    signal: AbortSignal.timeout(45_000),
+  }).catch((reason) => {
+    if (reason instanceof Error && /Timeout|Abort/.test(reason.name)) throw new Error('提交超时，暂未确认是否收到，请先在控制中心核实后再重试')
+    throw new Error('无法连接反馈服务，请检查网络后重试')
   })
+  if (response.status === 401 || response.status === 403) throw new Error('登录已失效或没有提交权限，请重新登录')
+  if (response.status === 413) throw new Error('图片超过服务端上传限制，请减少图片后重试')
   if (!response.ok) throw new Error(`反馈提交返回 ${response.status}`)
+  const result = await response.json() as { id?: string }
+  if (!result.id) throw new Error('未收到反馈编号，请检查服务连接')
 }
 
 export async function loadKnowledgeBases(
@@ -321,6 +359,18 @@ export async function searchKnowledge(
   })
 }
 
+export interface KnowledgeSourceContext { endpoint: string; employeeId: string; teamId: string; accessToken: string }
+
+export async function loadKnowledgeSource(context: KnowledgeSourceContext, sourceId: string, signal?: AbortSignal): Promise<KnowledgeSearchHit> {
+  if (!/^[1-9][0-9]{0,18}$/.test(sourceId)) throw new Error('原文引用无效，请重新检索')
+  const response = await fetch(controlPlaneUrl(`${context.endpoint.replace(/\/$/, '')}/sources/${sourceId}`), {
+    headers: knowledgeHeaders(context.employeeId, context.teamId, context.accessToken), signal: boundedSignal(signal),
+  })
+  if (response.status === 404) throw new Error('原文已删除、正在重建或已更新，请重新检索。历史摘录不能作为当前依据。')
+  if (!response.ok) throw new Error(`原文暂时无法读取（${response.status}），请重试。`)
+  return response.json() as Promise<KnowledgeSearchHit>
+}
+
 async function knowledgeRequest<T>(
   endpoint: string,
   employeeId: string,
@@ -332,6 +382,7 @@ async function knowledgeRequest<T>(
 ): Promise<T> {
   const response = await fetch(controlPlaneUrl(`${endpoint.replace(/\/$/, '')}${suffix}`), {
     method,
+    signal: boundedSignal(),
     headers: { ...knowledgeHeaders(employeeId, teamId, accessToken), ...(request ? { 'Content-Type': 'application/json' } : {}) },
     ...(request ? { body: JSON.stringify(request) } : {}),
   })

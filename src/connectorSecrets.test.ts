@@ -26,6 +26,7 @@ describe('local connector secrets', () => {
       value: { localStorage: {
         getItem: (key: string) => values.get(key) ?? null,
         setItem: (key: string, value: string) => values.set(key, value),
+        removeItem: (key: string) => values.delete(key),
       } },
     })
   })
@@ -40,13 +41,24 @@ describe('local connector secrets', () => {
     expect(applyConnectorSecrets(template, connectorSecretValues(connector))).toMatchObject(connector)
   })
 
-  it('stores values per employee and removes only the selected connector', () => {
-    saveConnectorSecrets('employee-1', 'erp', connectorSecretValues(connector))
-    saveConnectorSecrets('employee-1', 'crm', { environment: {}, headers: { Token: 'crm-secret' } })
-    expect(loadConnectorSecrets('employee-1').erp.environment.ERP_TOKEN).toBe('secret')
-    expect(deleteConnectorSecrets('employee-1', 'erp')).toEqual({
+  it('stores values per employee and removes only the selected connector', async () => {
+    await saveConnectorSecrets('employee-1', 'erp', connectorSecretValues(connector))
+    await saveConnectorSecrets('employee-1', 'crm', { environment: {}, headers: { Token: 'crm-secret' } })
+    expect((await loadConnectorSecrets('employee-1')).erp.environment.ERP_TOKEN).toBe('secret')
+    await expect(deleteConnectorSecrets('employee-1', 'erp')).resolves.toEqual({
       crm: { environment: {}, headers: { Token: 'crm-secret' } },
     })
-    expect(loadConnectorSecrets('employee-2')).toEqual({})
+    await expect(loadConnectorSecrets('employee-2')).resolves.toEqual({})
+  })
+
+  it('moves secrets embedded in old connector drafts into the secret store', async () => {
+    values.set('xiaoyin.personal-connectors.employee-legacy', JSON.stringify([{
+      id: 'erp', environment: { ERP_TOKEN: 'legacy-env' }, headers: { Authorization: 'legacy-header' },
+    }]))
+
+    await expect(loadConnectorSecrets('employee-legacy')).resolves.toEqual({
+      erp: { environment: { ERP_TOKEN: 'legacy-env' }, headers: { Authorization: 'legacy-header' } },
+    })
+    expect(values.get('xiaoyin.personal-connectors.employee-legacy')).not.toContain('legacy-env')
   })
 })

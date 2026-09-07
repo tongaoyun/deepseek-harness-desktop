@@ -1,6 +1,54 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { HarnessNotification } from '@deepseek-ai/dsh-sdk-client'
-import { applyMemoryContext, runSessionTurn } from './runtime.js'
+import { applyMemoryContext, DeepSeekHarnessRuntime, runSessionTurn, visibleTextChunks } from './runtime.js'
+import { withTaskInstructions } from './task-instructions.js'
+
+it('passes shared execution and delivery rules to actual runtime turns, including follow-ups', async () => {
+  const runtime = new DeepSeekHarnessRuntime()
+  const observedPrompts: unknown[] = []
+  const client = {
+    ...fakeClient([]),
+    prompt: async (_sessionId: string, content: unknown) => { observedPrompts.push(content); return 'message-2' },
+    subscribeSessionTree: () => fakeClient([
+      event('agent/inbox/spliced', { inserted: [{ id: 'message-2' }] }),
+      event('turn/start', { turn: 1 }),
+      event('assistant/message', { message: { content: [{ type: 'text', text: '完成检查。' }] } }),
+      event('turn/end', { turn: 1, reason: { kind: 'completed' } }),
+    ]).subscribeSessionTree(),
+  }
+  Object.assign(runtime, { harness: { start: async () => {}, close: async () => {}, client } })
+  await runtime.run({ sessionId: 'session-1', prompt: '只检查，不修改' }, () => {})
+  await runtime.run({ sessionId: 'session-1', prompt: '把报告加上汇总行' }, () => {})
+  expect(observedPrompts).toHaveLength(2)
+  expect(JSON.stringify(observedPrompts[0])).toContain('只检查，不修改')
+  expect(JSON.stringify(observedPrompts[1])).toContain('把报告加上汇总行')
+  for (const prompt of observedPrompts) {
+    expect(JSON.stringify(prompt)).toContain('local_files_publish')
+    expect(JSON.stringify(prompt)).toContain('文件存在不等于内容正确')
+    expect(JSON.stringify(prompt)).toContain('询问、检查和诊断不代表授权修改')
+    expect(JSON.stringify(prompt)).toContain('切换工作阶段')
+    expect(JSON.stringify(prompt)).toContain('简单问答不强行播报进度')
+  }
+  expect(withTaskInstructions('用户原文')).toMatch(/本轮任务上下文与请求：\n用户原文$/u)
+  await runtime.close()
+})
+
+it('closes the underlying runtime immediately instead of waiting for the active turn', async () => {
+  const runtime = new DeepSeekHarnessRuntime()
+  const close = vi.fn(async () => {})
+  Object.assign(runtime, { runTail: new Promise<void>(() => {}), harness: { close } })
+  await runtime.close()
+  await runtime.close()
+  expect(close).toHaveBeenCalledOnce()
+  await expect(runtime.initialize()).rejects.toThrow('本轮已停止')
+})
+
+it('rejects queued work after shutdown rather than starting another runtime', async () => {
+  const runtime = new DeepSeekHarnessRuntime()
+  const pending = runtime.run({ prompt: '不应执行' }, () => {})
+  await runtime.close()
+  await expect(pending).rejects.toThrow('本轮已停止')
+})
 
 describe('local cross-session memory', () => {
   it('adds employee guidance without replacing the current task', () => {
@@ -11,6 +59,36 @@ describe('local cross-session memory', () => {
 })
 
 describe('persisted session follow-ups', () => {
+  it('fails a turn after partial output while still forwarding that output to the desktop', async () => {
+    const observed: HarnessNotification[] = []
+    const notifications = [
+      event('agent/inbox/spliced', { inserted: [{ id: 'message-2' }] }),
+      event('turn/start', { turn: 1 }),
+      event('assistant/message', { message: { content: [{ type: 'text', text: '已读取表格，准备核对数据。' }] } }),
+      event('turn/end', { reason: { kind: 'error', error: { message: 'model disconnected' } } }),
+    ]
+    await expect(runSessionTurn(fakeClient(notifications), 'session-1', [{ type: 'text', text: '处理表格' }], (value) => observed.push(value))).rejects.toThrow()
+    expect(JSON.stringify(observed)).toContain('已读取表格')
+  })
+
+  it('does not treat reaching the output limit as task completion', async () => {
+    await expect(runSessionTurn(fakeClient([
+      event('agent/inbox/spliced', { inserted: [{ id: 'message-2' }] }),
+      event('turn/start', { turn: 1 }),
+      event('assistant/message', { message: { content: [{ type: 'text', text: '未写完' }] } }),
+      event('turn/end', { reason: { kind: 'max-tokens' } }),
+    ]), 'session-1', [{ type: 'text', text: '继续' }], () => {})).rejects.toThrow('输出上限')
+  })
+
+  it('reports payload-less errors as failures even after a partial response', async () => {
+    await expect(runSessionTurn(fakeClient([
+      event('agent/inbox/spliced', { inserted: [{ id: 'message-2' }] }),
+      event('turn/start', { turn: 1 }),
+      event('assistant/message', { message: { content: [{ type: 'text', text: '部分结果' }] } }),
+      event('turn/end', { reason: { kind: 'error' } }),
+    ]), 'session-1', [{ type: 'text', text: '继续' }], () => {})).rejects.toThrow('执行失败')
+  })
+
   it('stops waiting when a turn never produces activity', async () => {
     const client = {
       prompt: async () => 'message-2',
@@ -34,7 +112,8 @@ describe('persisted session follow-ups', () => {
     const result = await runSessionTurn(fakeClient(notifications), 'session-1', [{ type: 'text', text: '解释下冒泡' }], (value) => observed.push(value))
 
     expect(result.finalResponse).toBe('冒泡排序会重复比较相邻元素。')
-    expect(observed).toHaveLength(5)
+    expect(observed).toHaveLength(6)
+    expect(observed.some((item) => item.params.event?.type === 'text-chunks')).toBe(true)
   })
 
   it('finishes on turn/end even when the runtime does not emit a trailing idle status', async () => {
@@ -108,6 +187,32 @@ describe('persisted session follow-ups', () => {
 
     expect(result.finalResponse).toBe('主 Agent 汇总结果')
     expect(observed.some((item) => item.params.sessionId === 'child-1')).toBe(true)
+  })
+})
+
+describe('visible response streaming', () => {
+  it('keeps short provider chunks intact and splits large responses without losing text', () => {
+    expect(visibleTextChunks('简短回复')).toEqual(['简短回复'])
+    const response = '这是一个较长的模型回复，用于验证供应商只返回完整消息时，小胤仍然能够以稳定的增量展示内容，而不是等待结束后一次性全部显示。'.repeat(3)
+    const chunks = visibleTextChunks(response)
+    expect(chunks.length).toBeGreaterThan(1)
+    expect(chunks.join('')).toBe(response)
+    expect(chunks.every((chunk) => Array.from(chunk).length >= 1)).toBe(true)
+  })
+
+  it('smooths ordinary short answers instead of dumping one provider event', async () => {
+    const answer = '冒泡排序会反复比较相邻元素，并在顺序错误时交换它们，直到整个序列有序。'
+    const notifications: HarnessNotification[] = [
+      event('agent/inbox/spliced', { inserted: [{ id: 'message-2' }] }),
+      event('turn/start', { turn: 2 }),
+      event('assistant/message', { message: { content: [{ type: 'text', text: answer }] } }),
+      event('turn/end', { turn: 2, reason: { kind: 'completed' } }),
+    ]
+    const observed: HarnessNotification[] = []
+
+    await runSessionTurn(fakeClient(notifications), 'session-1', [{ type: 'text', text: '冒泡排序是什么' }], (value) => observed.push(value))
+
+    expect(observed.filter((item) => item.params.event?.type === 'text-chunks').length).toBeGreaterThan(1)
   })
 })
 

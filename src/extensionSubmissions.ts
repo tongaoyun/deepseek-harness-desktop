@@ -1,6 +1,6 @@
 import { resolveControlPlaneEndpoint } from './api'
 import type { ConnectorCatalogEntry, ExpertKitManifest } from './types'
-import { connectorSecretTemplate, connectorSecretValues, deleteConnectorSecrets, saveConnectorSecrets } from './connectorSecrets'
+import { connectorSecretTemplate } from './connectorSecrets'
 
 export type ExtensionKind = 'expert-kit' | 'skill' | 'connector'
 export type SubmissionStatus = 'DRAFT' | 'SUBMITTED' | 'CHANGES_REQUESTED' | 'REJECTED' | 'PUBLISHED' | 'UNPUBLISHED'
@@ -87,27 +87,21 @@ export async function saveValidationReport(kind: ExtensionKind, id: string, vers
 
 const storageKey = (employeeId: string) => `xiaoyin.personal-connectors.${employeeId}`
 
+export function isPersonalConnector(connector: ConnectorCatalogEntry): boolean {
+  return connector.kind === 'personal-mcp' || ['personal', 'employee'].includes(connector.scope.toLowerCase())
+}
+
 export function loadPersonalConnectors(employeeId: string): ConnectorCatalogEntry[] {
   try {
     const values = JSON.parse(window.localStorage.getItem(storageKey(employeeId)) || '[]') as Array<ConnectorCatalogEntry & { category?: ConnectorCatalogEntry['category'] }>
-    const sanitized = values.map((item) => {
-      const normalized = { ...item, category: item.category ?? 'other' } as ConnectorCatalogEntry
-      const local = connectorSecretValues(normalized)
-      if ([...Object.values(local.environment), ...Object.values(local.headers)].some(Boolean)) {
-        saveConnectorSecrets(employeeId, normalized.id, local)
-      }
+    return values.map((item) => {
+      const normalized = { ...item, scope: 'PERSONAL', managed: false, category: item.category ?? 'other' } as ConnectorCatalogEntry
       return connectorSecretTemplate(normalized)
     })
-    window.localStorage.setItem(storageKey(employeeId), JSON.stringify(sanitized))
-    return sanitized
   } catch { return [] }
 }
 
 export function savePersonalConnector(employeeId: string, connector: ConnectorCatalogEntry): ConnectorCatalogEntry[] {
-  const local = connectorSecretValues(connector)
-  if ([...Object.values(local.environment), ...Object.values(local.headers)].some(Boolean)) {
-    saveConnectorSecrets(employeeId, connector.id, local)
-  }
   const template = connectorSecretTemplate(connector)
   const values = [template, ...loadPersonalConnectors(employeeId).filter((item) => item.id !== connector.id)]
   window.localStorage.setItem(storageKey(employeeId), JSON.stringify(values))
@@ -117,6 +111,5 @@ export function savePersonalConnector(employeeId: string, connector: ConnectorCa
 export function deletePersonalConnector(employeeId: string, id: string): ConnectorCatalogEntry[] {
   const values = loadPersonalConnectors(employeeId).filter((item) => item.id !== id)
   window.localStorage.setItem(storageKey(employeeId), JSON.stringify(values))
-  deleteConnectorSecrets(employeeId, id)
   return values
 }

@@ -9,9 +9,15 @@ export function mergeImStatusIntoTasks(
   const next = tasks.map((task) => {
     const conversations = status.conversations.filter((item) => item.boundTaskId === task.id)
     if (conversations.length === 0) return task
+    const latest = [...conversations].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0]!
+    const current = Date.parse(latest.updatedAt) >= Date.parse(task.updatedAt)
     const messageIds = new Set(task.messages.map((message) => message.id).filter(Boolean))
     const incomingMessages = conversations.flatMap((item) => item.messages ?? [])
-      .filter((message) => !messageIds.has(message.id))
+      .filter((message) => {
+        if (messageIds.has(message.id)) return false
+        messageIds.add(message.id)
+        return true
+      })
       .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
       .map((message) => ({ ...message, source: 'dingtalk' as const }))
     const processed = new Set(task.processedImEventIds ?? [])
@@ -19,16 +25,15 @@ export function mergeImStatusIntoTasks(
     for (const notification of conversations.flatMap((item) => item.taskEvents ?? [])
       .filter((event) => !processed.has(event.id))
       .sort((left, right) => left.createdAt.localeCompare(right.createdAt))) {
-      monitor = applyHarnessNotification(monitor, { requestId: 0, event: { event: notification.event } })
+      if (current) monitor = applyHarnessNotification(monitor, { requestId: 0, event: { event: notification.event } })
       processed.add(notification.id)
     }
-    const latest = [...conversations].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0]!
-    monitor = terminalMonitor(monitor, latest.status, latest.updatedAt)
+    if (current) monitor = terminalMonitor(monitor, latest.status, latest.updatedAt)
     const taskStatus = latest.status === 'RUNNING' ? 'RUNNING' : latest.status === 'FAILED' ? 'FAILED' : 'COMPLETED'
     const updated: LocalTaskRun = {
       ...task,
-      status: taskStatus,
-      sessionId: latest.sessionId || task.sessionId,
+      status: current ? taskStatus : task.status,
+      sessionId: current ? latest.sessionId || task.sessionId : task.sessionId,
       updatedAt: latest.updatedAt > task.updatedAt ? latest.updatedAt : task.updatedAt,
       monitor,
       messages: [...task.messages, ...incomingMessages],

@@ -5,16 +5,23 @@ use tauri::{
     tray::TrayIconBuilder,
 };
 
+mod attachment_storage;
+mod clipboard_files;
+mod connector_secrets;
 mod device_identity;
 mod erp_auth;
 mod expert_kits;
+mod feedback_images;
 mod harness;
 mod harness_connectors;
 mod im;
+mod im_registration;
 mod local_artifacts;
+mod local_file_undo;
 mod local_files;
 mod local_store;
 mod memory;
+mod schedule_desktop;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -59,6 +66,13 @@ pub fn run() {
                         show_main_window(tray.app_handle());
                     }
                 });
+            #[cfg(target_os = "macos")]
+            {
+                tray = tray
+                    .icon(tauri::include_image!("icons/trayTemplate@2x.png"))
+                    .icon_as_template(true);
+            }
+            #[cfg(not(target_os = "macos"))]
             if let Some(icon) = app.default_window_icon() {
                 tray = tray.icon(icon.clone());
             }
@@ -82,7 +96,12 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            attachment_storage::attachment_storage,
             device_identity::inspect_device_identity,
+            connector_secrets::load_connector_secrets,
+            connector_secrets::save_connector_secret,
+            connector_secrets::delete_connector_secret,
+            connector_secrets::migrate_connector_secrets,
             runtime_info,
             erp_auth::erp_session,
             erp_auth::clear_erp_session,
@@ -92,23 +111,36 @@ pub fn run() {
             expert_kits::list_installed_expert_kits,
             expert_kits::install_expert_kit,
             expert_kits::install_developer_extension,
+            expert_kits::select_developer_extension,
             expert_kits::create_developer_extension,
             expert_kits::read_developer_extension,
+            expert_kits::workbench::read_extension_contents,
+            expert_kits::workbench::set_extension_enabled,
+            expert_kits::workbench::reveal_extension_directory,
             expert_kits::package_developer_extension,
             expert_kits::customize_expert_kit,
             expert_kits::export_expert_kit,
             expert_kits::remove_developer_expert_kit,
             expert_kits::remove_developer_extension,
             expert_kits::remove_catalog_extension,
-            local_artifacts::open_local_artifact,
+            expert_kits::remove_broken_extension,
+            local_artifacts::read_local_artifact_preview,
+            local_artifacts::read_harness_image_preview,
+            local_artifacts::reveal_local_artifact,
+            local_file_undo::undo_local_file_change,
             local_files::authorize_local_directory,
             local_files::authorize_local_files,
+            local_files::import_pasted_image,
+            local_files::import_pasted_file,
+            clipboard_files::clipboard_file_paths,
+            feedback_images::read_feedback_image,
             local_files::authorize_standard_local_directories,
             local_files::authorize_dropped_paths,
             local_files::restore_local_directories,
             local_files::revoke_local_directory,
             local_files::clear_local_directories,
             local_store::load_local_tasks,
+            local_store::load_local_task,
             local_store::save_local_task,
             local_store::delete_local_task,
             local_store::load_enterprise_catalog_cache,
@@ -118,14 +150,20 @@ pub fn run() {
             harness::probe_harness_host,
             harness::self_test_local_capabilities,
             harness::cancel_harness,
+            harness::respond_harness_approval,
+            schedule_desktop::schedule_keep_awake,
             harness::shutdown_harness,
             im::configure_local_dingtalk,
             im::start_local_im,
             im::set_local_im_enabled,
             im::local_im_status,
             im::allow_local_im_pairing,
+            im_registration::begin_dingtalk_registration,
+            im_registration::poll_dingtalk_registration,
+            im::revoke_local_im_pairing,
             im::bind_local_im_task,
             im::unbind_local_im_task,
+            im::retry_local_im_delivery,
             im::sync_local_im_tasks,
             im::route_local_im_schedule,
             im::stop_local_im_runtime,

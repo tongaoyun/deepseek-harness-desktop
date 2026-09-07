@@ -3,6 +3,18 @@ import type { AllowedExtensionArtifact, ConnectorRuntimeDefinition } from './typ
 
 export type ImAccessPolicy = 'open' | 'pairing'
 
+export interface DingTalkRegistration { deviceCode: string; verificationUri: string; expiresIn: number; interval: number }
+export type DingTalkRegistrationResult = { status: 'WAITING' | 'FAIL' | 'EXPIRED' } | { status: 'SUCCESS'; clientId: string; clientSecret: string }
+
+export async function beginDingTalkRegistration(): Promise<DingTalkRegistration> {
+  if (!isTauri()) throw new Error('请在小胤桌面端扫码配置钉钉，网页预览可查看手动配置')
+  return invoke('begin_dingtalk_registration')
+}
+
+export async function pollDingTalkRegistration(deviceCode: string): Promise<DingTalkRegistrationResult> {
+  return invoke('poll_dingtalk_registration', { deviceCode })
+}
+
 export interface LocalImHarnessContext {
   employeeId: string
   teamId: string
@@ -35,6 +47,7 @@ export interface LocalImStatus {
   accessPolicy: ImAccessPolicy
   notifyTaskResults: boolean
   pendingPairings: LocalImPairingRequest[]
+  pairedConversations?: string[]
   conversations: LocalImConversationSummary[]
   pendingEventCount: number
   lastHeartbeatAt?: string
@@ -51,6 +64,8 @@ export interface LocalImConversationSummary {
   sessionId: string
   messageCount: number
   status: 'RUNNING' | 'COMPLETED' | 'FAILED'
+  deliveryStatus?: 'SENDING' | 'FAILED'
+  pendingDeliveryCount?: number
   updatedAt: string
   boundTaskId?: string
   boundTaskName?: string
@@ -105,6 +120,11 @@ export async function allowLocalImPairing(conversationKey: string): Promise<Loca
   return invoke<LocalImStatus>('allow_local_im_pairing', { conversationKey })
 }
 
+export async function revokeLocalImPairing(conversationKey: string): Promise<LocalImStatus> {
+  if (!isTauri()) throw new Error('配对管理只能在小胤桌面客户端中使用')
+  return invoke<LocalImStatus>('revoke_local_im_pairing', { conversationKey })
+}
+
 export async function bindLocalImTask(
   conversationKey: string,
   task: { id: string; name: string; sessionId: string },
@@ -118,6 +138,11 @@ export async function bindLocalImTask(
 export async function unbindLocalImTask(conversationKey: string): Promise<LocalImStatus> {
   if (!isTauri()) throw new Error('任务接管只能在小胤桌面客户端中使用')
   return invoke<LocalImStatus>('unbind_local_im_task', { conversationKey })
+}
+
+export async function retryLocalImDelivery(conversationKey: string): Promise<LocalImStatus> {
+  if (!isTauri()) throw new Error('请在小胤桌面端重试发送')
+  return invoke<LocalImStatus>('retry_local_im_delivery', { conversationKey })
 }
 
 export async function syncLocalImTasks(

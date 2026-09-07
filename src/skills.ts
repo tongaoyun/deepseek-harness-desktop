@@ -93,7 +93,7 @@ export function mergeSkills(
       connectorRefs,
       requiredTools,
       knowledgeBaseRefs,
-      sha256: '',
+      sha256: local.packageSha256 ?? '',
       installed: local,
       installedVersion: manifest.version,
       installState: local.source === 'developer' ? 'installed' : 'retired',

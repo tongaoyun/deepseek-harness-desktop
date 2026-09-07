@@ -13,6 +13,8 @@ use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 use std::{
@@ -20,26 +22,102 @@ use std::{
     io::{BufRead, BufReader, Read, Write},
     path::{Path, PathBuf},
     process::{Child, ChildStdin, ChildStdout, Command, Stdio},
-    sync::{
-        Arc, Mutex,
-        atomic::{AtomicU32, Ordering},
-    },
+    sync::{Arc, Mutex, mpsc},
     thread::JoinHandle,
+    time::Duration,
 };
-use tauri::{Emitter, Manager};
-use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
+use tauri::{Emitter, Listener, Manager};
 
 const MAX_CONCURRENT_HARNESS_TASKS: usize = 3;
 
 #[derive(Default)]
 struct HarnessSlot {
     process: Mutex<Option<HarnessProcess>>,
-    active_pid: AtomicU32,
+    active: Mutex<Option<ActiveRun>>,
+}
+
+#[derive(Default)]
+struct ActiveRun {
+    pid: Option<u32>,
+    canceled: bool,
+}
+
+struct ActiveRunGuard(Arc<HarnessSlot>);
+
+impl Drop for ActiveRunGuard {
+    fn drop(&mut self) {
+        if let Ok(mut active) = self.0.active.lock() {
+            *active = None;
+        }
+    }
+}
+
+impl HarnessSlot {
+    fn begin(self: &Arc<Self>) -> Result<ActiveRunGuard, String> {
+        let mut active = self.active.lock().map_err(|_| "任务状态不可用")?;
+        if active.is_some() {
+            return Err("当前任务仍在执行".to_string());
+        }
+        *active = Some(ActiveRun::default());
+        Ok(ActiveRunGuard(Arc::clone(self)))
+    }
+
+    fn is_running(&self) -> bool {
+        self.active.lock().map_or(true, |active| active.is_some())
+    }
+
+    fn register_process(&self, pid: u32) -> Result<(), String> {
+        let mut active = self.active.lock().map_err(|_| "任务状态不可用")?;
+        let run = active.as_mut().ok_or("任务未登记")?;
+        if run.canceled {
+            return Err("本轮已停止".to_string());
+        }
+        run.pid = Some(pid);
+        Ok(())
+    }
+
+    fn cancel(self: &Arc<Self>) -> Result<bool, String> {
+        let mut active = self.active.lock().map_err(|_| "任务状态不可用")?;
+        let Some(run) = active.as_mut() else {
+            return Ok(false);
+        };
+        if run.canceled {
+            return Ok(true);
+        }
+        // Serialize cancellation with process registration so startup cannot miss a stop.
+        if let Some(pid) = run.pid {
+            signal_process(pid, false)?;
+            let slot = Arc::clone(self);
+            std::thread::spawn(move || {
+                std::thread::sleep(Duration::from_secs(5));
+                if let Ok(active) = slot.active.lock()
+                    && active
+                        .as_ref()
+                        .is_some_and(|run| run.canceled && run.pid == Some(pid))
+                {
+                    let _ = terminate_process(pid);
+                }
+            });
+        }
+        run.canceled = true;
+        Ok(true)
+    }
 }
 
 #[derive(Clone, Default)]
 pub struct HarnessManager {
     slots: Arc<Mutex<HashMap<String, Arc<HarnessSlot>>>>,
+    approvals: Arc<ApprovalBroker>,
+}
+
+#[derive(Default)]
+struct ApprovalBroker {
+    pending: Mutex<HashMap<String, PendingApproval>>,
+}
+
+struct PendingApproval {
+    task_id: String,
+    sender: mpsc::Sender<String>,
 }
 
 #[derive(Deserialize)]
@@ -47,6 +125,7 @@ pub struct HarnessManager {
 pub struct HarnessRunRequest {
     task_id: String,
     prompt: String,
+    execution_mode: String,
     employee_id: String,
     team_id: String,
     session_id: Option<String>,
@@ -162,6 +241,14 @@ struct HarnessUiNotification {
     event: Value,
 }
 
+fn ui_notification(task_id: &str, request_id: u64, event: Value) -> HarnessUiNotification {
+    HarnessUiNotification {
+        task_id: task_id.to_string(),
+        request_id,
+        event,
+    }
+}
+
 #[derive(Clone, Eq, PartialEq)]
 pub(crate) struct RuntimeFingerprint {
     pub(crate) skill_directories: Vec<String>,
@@ -169,6 +256,7 @@ pub(crate) struct RuntimeFingerprint {
     pub(crate) local_file_roots: Vec<RuntimeLocalFileRoot>,
     pub(crate) allow_browser: bool,
     pub(crate) allowed_computer_tools: Vec<String>,
+    pub(crate) execution_mode: String,
     pub(crate) litellm_base_url: String,
     pub(crate) knowledge_endpoint: String,
     pub(crate) schedule_endpoint: String,
@@ -188,6 +276,7 @@ pub(crate) struct HarnessProcess {
     stderr_reader: Option<JoinHandle<()>>,
     next_id: u64,
     notification_task_id: String,
+    approval_broker: Option<Arc<ApprovalBroker>>,
     pub(crate) fingerprint: RuntimeFingerprint,
 }
 
@@ -206,6 +295,7 @@ pub async fn run_harness(
     request: HarnessRunRequest,
 ) -> Result<HarnessRunResult, String> {
     validate_run_request(&request)?;
+    let active_run = manager.slot(&request.task_id)?.begin()?;
     let (attachment_context, images) = prepare_attachments(&local_files, &request.attachments)?;
     let user_prompt = if attachment_context.is_empty() {
         request.prompt.trim().to_string()
@@ -225,16 +315,24 @@ pub async fn run_harness(
         &request.knowledge_base_refs,
         &user_prompt,
         &request.allowed_artifacts,
+        &request.execution_mode,
     )?;
     let local_file_roots = local_files.resolve(&request.local_file_root_ids)?;
-    let allow_browser = desktop_connector_enabled(&request.connectors, "desktop-browser");
-    let connectors = runtime_connectors(&request.connectors, &profile)?;
+    let plan_mode = request.execution_mode == "plan";
+    let allow_browser =
+        !plan_mode && desktop_connector_enabled(&request.connectors, "desktop-browser");
+    let connectors = runtime_connectors(&request.connectors, &profile, !plan_mode)?;
     let fingerprint = RuntimeFingerprint {
         skill_directories: profile.skill_directories,
         connectors,
         local_file_roots,
         allow_browser,
-        allowed_computer_tools: profile.allowed_computer_tools,
+        allowed_computer_tools: if plan_mode {
+            Vec::new()
+        } else {
+            profile.allowed_computer_tools
+        },
+        execution_mode: request.execution_mode,
         litellm_base_url: request.litellm_base_url,
         knowledge_endpoint: request.knowledge_endpoint,
         schedule_endpoint: request.schedule_endpoint,
@@ -255,6 +353,7 @@ pub async fn run_harness(
     let task_id = request.task_id;
     let manager = manager.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
+        let _active_run = active_run;
         manager.run(
             &task_id,
             &app,
@@ -288,6 +387,16 @@ pub fn cancel_harness(
 }
 
 #[tauri::command]
+pub fn respond_harness_approval(
+    manager: tauri::State<'_, HarnessManager>,
+    task_id: String,
+    approval_id: String,
+    decision: String,
+) -> Result<bool, String> {
+    manager.respond_to_approval(&task_id, &approval_id, &decision)
+}
+
+#[tauri::command]
 pub async fn diagnose_connectors(
     app: tauri::AppHandle,
     request: ConnectorDiagnosticRequest,
@@ -303,6 +412,7 @@ pub async fn diagnose_connectors(
         local_file_roots: Vec::new(),
         allow_browser: false,
         allowed_computer_tools: Vec::new(),
+        execution_mode: "agent".to_string(),
         litellm_base_url: String::new(),
         knowledge_endpoint: String::new(),
         schedule_endpoint: String::new(),
@@ -338,6 +448,7 @@ pub async fn self_test_local_capabilities(
         local_file_roots: Vec::new(),
         allow_browser: false,
         allowed_computer_tools: Vec::new(),
+        execution_mode: "agent".to_string(),
         litellm_base_url: String::new(),
         knowledge_endpoint: String::new(),
         schedule_endpoint: String::new(),
@@ -367,6 +478,7 @@ pub async fn probe_harness_host(app: tauri::AppHandle) -> Result<HarnessHostHeal
         local_file_roots: Vec::new(),
         allow_browser: false,
         allowed_computer_tools: Vec::new(),
+        execution_mode: "agent".to_string(),
         litellm_base_url: String::new(),
         knowledge_endpoint: String::new(),
         schedule_endpoint: String::new(),
@@ -411,19 +523,24 @@ impl HarnessManager {
         {
             process.shutdown();
         }
-        if guard.is_none() {
+        let needs_initialize = guard.is_none();
+        if needs_initialize {
             *guard = Some(HarnessProcess::start_for_task(
                 app,
                 task_id,
                 fingerprint,
                 model_api_key,
                 access_token,
+                Arc::clone(&self.approvals),
             )?);
         }
         let process = guard.as_mut().expect("Harness process was initialized");
-        slot.active_pid.store(process.child.id(), Ordering::Release);
-        let result = process.run(task_id, app, turn.prompt, turn.session_id, turn.images);
-        slot.active_pid.store(0, Ordering::Release);
+        let result = slot.register_process(process.child.id()).and_then(|()| {
+            if needs_initialize {
+                process.request("host.initialize", None, None)?;
+            }
+            process.run(task_id, app, turn.prompt, turn.session_id, turn.images)
+        });
         match result {
             Ok(result) => Ok(result),
             Err(error) => {
@@ -450,7 +567,7 @@ impl HarnessManager {
             if slots.len() >= MAX_CONCURRENT_HARNESS_TASKS {
                 let idle = slots
                     .iter()
-                    .find(|(_, slot)| slot.active_pid.load(Ordering::Acquire) == 0)
+                    .find(|(_, slot)| !slot.is_running())
                     .map(|(id, _)| id.clone());
                 let Some(idle) = idle else {
                     return Err(format!(
@@ -473,6 +590,10 @@ impl HarnessManager {
     }
 
     fn shutdown(&self, task_id: Option<&str>) -> Result<(), String> {
+        match task_id {
+            Some(task_id) => self.approvals.reject_task(task_id),
+            None => self.approvals.reject_all(),
+        }
         let slots = {
             let mut current = self
                 .slots
@@ -484,10 +605,7 @@ impl HarnessManager {
             }
         };
         for slot in slots {
-            let pid = slot.active_pid.load(Ordering::Acquire);
-            if pid != 0 {
-                let _ = terminate_process(pid);
-            }
+            let _ = slot.cancel();
             if let Ok(mut process) = slot.process.lock()
                 && let Some(mut process) = process.take()
             {
@@ -498,6 +616,7 @@ impl HarnessManager {
     }
 
     fn cancel(&self, task_id: &str) -> Result<bool, String> {
+        self.approvals.reject_task(task_id);
         let slot = self
             .slots
             .lock()
@@ -505,17 +624,103 @@ impl HarnessManager {
             .get(task_id)
             .cloned();
         let Some(slot) = slot else { return Ok(false) };
-        let pid = slot.active_pid.load(Ordering::Acquire);
-        if pid == 0 {
-            return Ok(false);
+        slot.cancel()
+    }
+
+    fn respond_to_approval(
+        &self,
+        task_id: &str,
+        approval_id: &str,
+        decision: &str,
+    ) -> Result<bool, String> {
+        if !matches!(decision, "allow" | "reject") {
+            return Err("授权决定无效".to_string());
         }
-        terminate_process(pid)
+        self.approvals.respond(task_id, approval_id, decision)
+    }
+}
+
+impl ApprovalBroker {
+    fn register(&self, task_id: &str, approval_id: &str) -> Result<mpsc::Receiver<String>, String> {
+        let (sender, receiver) = mpsc::channel();
+        let mut pending = self
+            .pending
+            .lock()
+            .map_err(|_| "Harness 授权状态不可用".to_string())?;
+        if pending.contains_key(approval_id) {
+            return Err("Harness 授权请求重复".to_string());
+        }
+        pending.insert(
+            approval_id.to_string(),
+            PendingApproval {
+                task_id: task_id.to_string(),
+                sender,
+            },
+        );
+        Ok(receiver)
+    }
+
+    fn respond(&self, task_id: &str, approval_id: &str, decision: &str) -> Result<bool, String> {
+        let mut approvals = self
+            .pending
+            .lock()
+            .map_err(|_| "Harness 授权状态不可用".to_string())?;
+        let Some(owner) = approvals
+            .get(approval_id)
+            .map(|value| value.task_id.clone())
+        else {
+            return Ok(false);
+        };
+        if owner != task_id {
+            return Err("授权请求不属于当前任务".to_string());
+        }
+        let pending = approvals
+            .remove(approval_id)
+            .expect("approval was checked above");
+        Ok(pending.sender.send(decision.to_string()).is_ok())
+    }
+
+    fn reject_task(&self, task_id: &str) {
+        let pending = self.pending.lock();
+        let Ok(mut pending) = pending else { return };
+        let approval_ids = pending
+            .iter()
+            .filter(|(_, value)| value.task_id == task_id)
+            .map(|(id, _)| id.clone())
+            .collect::<Vec<_>>();
+        for approval_id in approval_ids {
+            if let Some(value) = pending.remove(&approval_id) {
+                let _ = value.sender.send("reject".to_string());
+            }
+        }
+    }
+
+    fn reject_all(&self) {
+        let pending = self.pending.lock();
+        let Ok(mut pending) = pending else { return };
+        for (_, value) in pending.drain() {
+            let _ = value.sender.send("reject".to_string());
+        }
+    }
+
+    fn remove(&self, approval_id: &str) {
+        if let Ok(mut pending) = self.pending.lock() {
+            pending.remove(approval_id);
+        }
     }
 }
 
 fn terminate_process(pid: u32) -> Result<bool, String> {
+    signal_process(pid, true)
+}
+
+fn signal_process(pid: u32, force: bool) -> Result<bool, String> {
+    if pid == 0 {
+        return Err("无效的任务进程".to_string());
+    }
     #[cfg(target_os = "windows")]
     {
+        let _ = force;
         let mut command = Command::new("taskkill");
         command.creation_flags(0x0800_0000);
         let status = command
@@ -528,8 +733,15 @@ fn terminate_process(pid: u32) -> Result<bool, String> {
     }
     #[cfg(not(target_os = "windows"))]
     {
+        // Let the SDK dispose its detached tool handles first. Escalation targets
+        // only the isolated task group if shutdown does not settle in time.
+        let target = if force {
+            format!("-{pid}")
+        } else {
+            pid.to_string()
+        };
         let status = Command::new("kill")
-            .args(["-TERM", &pid.to_string()])
+            .args([if force { "-KILL" } else { "-TERM" }, "--", &target])
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .status()
@@ -545,7 +757,15 @@ impl HarnessProcess {
         model_api_key: String,
         access_token: String,
     ) -> Result<Self, String> {
-        Self::start_internal(app, fingerprint, model_api_key, access_token, true, None)
+        Self::start_internal(
+            app,
+            fingerprint,
+            model_api_key,
+            access_token,
+            true,
+            None,
+            None,
+        )
     }
 
     fn start_for_task(
@@ -554,14 +774,16 @@ impl HarnessProcess {
         fingerprint: RuntimeFingerprint,
         model_api_key: String,
         access_token: String,
+        approval_broker: Arc<ApprovalBroker>,
     ) -> Result<Self, String> {
         Self::start_internal(
             app,
             fingerprint,
             model_api_key,
             access_token,
-            true,
+            false,
             Some(task_id),
+            Some(approval_broker),
         )
     }
 
@@ -571,7 +793,15 @@ impl HarnessProcess {
         model_api_key: String,
         access_token: String,
     ) -> Result<Self, String> {
-        Self::start_internal(app, fingerprint, model_api_key, access_token, false, None)
+        Self::start_internal(
+            app,
+            fingerprint,
+            model_api_key,
+            access_token,
+            false,
+            None,
+            None,
+        )
     }
 
     fn start_internal(
@@ -581,6 +811,7 @@ impl HarnessProcess {
         access_token: String,
         initialize: bool,
         task_id: Option<&str>,
+        approval_broker: Option<Arc<ApprovalBroker>>,
     ) -> Result<Self, String> {
         let runtime = resolve_runtime_paths(app)?;
         let app_data = app
@@ -607,7 +838,7 @@ impl HarnessProcess {
             .unwrap_or_else(|| workspace.clone());
 
         let skill_directories = serde_json::to_string(&fingerprint.skill_directories)
-            .map_err(|error| format!("无法生成 Skill 配置：{error}"))?;
+            .map_err(|error| format!("无法生成技能配置：{error}"))?;
         let connectors = serde_json::to_string(&fingerprint.connectors)
             .map_err(|error| format!("无法生成连接器配置：{error}"))?;
         let local_file_roots = serde_json::to_string(&fingerprint.local_file_roots)
@@ -617,6 +848,8 @@ impl HarnessProcess {
         let computer_tools = serde_json::to_string(&fingerprint.allowed_computer_tools)
             .map_err(|error| format!("无法生成 Computer Use 工具配置：{error}"))?;
         let mut command = Command::new(&runtime.node);
+        #[cfg(unix)]
+        command.process_group(0);
         #[cfg(target_os = "windows")]
         command.creation_flags(0x0800_0000);
         let mut child = command
@@ -631,6 +864,7 @@ impl HarnessProcess {
                 app_data.join("im-channels/dingtalk-sessions.json"),
             )
             .env("DSH_CUSTOM_SKILL_DIRS", skill_directories)
+            .env("XIAOYIN_EXECUTION_MODE", &fingerprint.execution_mode)
             .env("XIAOYIN_MCP_CONNECTORS", connectors)
             .env("XIAOYIN_EMPLOYEE_BEARER_TOKEN", access_token)
             .env("XIAOYIN_EMPLOYEE_ID", &fingerprint.employee_id)
@@ -692,6 +926,7 @@ impl HarnessProcess {
             next_id: 1,
             notification_task_id: String::new(),
             fingerprint,
+            approval_broker,
         };
         if initialize {
             process.request("host.initialize", None, None)?;
@@ -758,21 +993,83 @@ impl HarnessProcess {
             let output: Value = serde_json::from_str(&line)
                 .map_err(|error| format!("Harness 输出不是有效 JSON-RPC：{error}"))?;
             if output.get("method").is_some() {
+                if output.get("method").and_then(Value::as_str) == Some("schedule.request") {
+                    let params = output.get("params").cloned().unwrap_or(Value::Null);
+                    let id = params
+                        .get("requestId")
+                        .and_then(Value::as_str)
+                        .unwrap_or("");
+                    if id.is_empty() || id.len() > 100 {
+                        return Err("定时任务请求标识无效".into());
+                    }
+                    let result = if let Some(app) = app {
+                        let (sender, receiver) = mpsc::channel::<Value>();
+                        let listener =
+                            app.listen(format!("xiaoyin://schedule-response/{id}"), move |event| {
+                                if let Ok(value) = serde_json::from_str(event.payload()) {
+                                    let _ = sender.send(value);
+                                }
+                            });
+                        let _ = app.emit(
+                            "xiaoyin://schedule-request",
+                            json!({
+                                "taskId": self.notification_task_id, "request": params
+                            }),
+                        );
+                        let result = receiver.recv_timeout(Duration::from_secs(12))
+                            .unwrap_or_else(|_| json!({"error": "桌面未确认操作结果，请先查询列表，不要直接重复创建"}));
+                        app.unlisten(listener);
+                        result
+                    } else {
+                        json!({"error": "定时任务管理需要小胤桌面保持运行"})
+                    };
+                    serde_json::to_writer(
+                        &mut self.stdin,
+                        &json!({
+                            "jsonrpc": "2.0", "id": null, "method": "schedule.respond",
+                            "params": {"requestId": id, "result": result}
+                        }),
+                    )
+                    .map_err(|e| e.to_string())?;
+                    self.stdin
+                        .write_all(b"\n")
+                        .and_then(|_| self.stdin.flush())
+                        .map_err(|e| e.to_string())?;
+                    continue;
+                }
                 if output.get("method").and_then(Value::as_str) == Some("approval.request") {
                     let approval = parse_approval_request(output.get("params"))?;
-                    let decision = if let Some(app) = app {
-                        let confirmed = app
-                            .dialog()
-                            .message(approval_message(&approval))
-                            .title("小胤操作确认")
-                            .kind(MessageDialogKind::Warning)
-                            .buttons(MessageDialogButtons::YesNo)
-                            .blocking_show();
-                        if confirmed { "allow" } else { "reject" }
+                    let decision = if let (Some(app), Some(broker)) = (app, &self.approval_broker) {
+                        let receiver =
+                            broker.register(&self.notification_task_id, &approval.approval_id)?;
+                        let event = json!({
+                            "event": {
+                                "method": "session.event",
+                                "params": { "event": {
+                                    "type": "approval/request",
+                                    "data": {
+                                        "approvalId": approval.approval_id,
+                                        "name": approval.tool_name,
+                                        "reason": approval.reason
+                                    }
+                                }}
+                            }
+                        });
+                        let _ = app.emit(
+                            "xiaoyin://harness-notification",
+                            ui_notification(&self.notification_task_id, request_id, event),
+                        );
+                        match receiver.recv_timeout(Duration::from_secs(5 * 60)) {
+                            Ok(decision) => decision,
+                            Err(_) => {
+                                broker.remove(&approval.approval_id);
+                                "reject".to_string()
+                            }
+                        }
                     } else {
-                        "reject"
+                        "reject".to_string()
                     };
-                    self.send_approval_response(&approval.approval_id, decision)?;
+                    self.send_approval_response(&approval.approval_id, &decision)?;
                     if let Some(app) = app {
                         let event = json!({
                             "event": {
@@ -789,11 +1086,7 @@ impl HarnessProcess {
                         });
                         let _ = app.emit(
                             "xiaoyin://harness-notification",
-                            HarnessUiNotification {
-                                task_id: self.notification_task_id.clone(),
-                                request_id,
-                                event,
-                            },
+                            ui_notification(&self.notification_task_id, request_id, event),
                         );
                     }
                     continue;
@@ -802,11 +1095,7 @@ impl HarnessProcess {
                     let event = output.get("params").cloned().unwrap_or(Value::Null);
                     let _ = app.emit(
                         "xiaoyin://harness-notification",
-                        HarnessUiNotification {
-                            task_id: self.notification_task_id.clone(),
-                            request_id,
-                            event,
-                        },
+                        ui_notification(&self.notification_task_id, request_id, event),
                     );
                 }
                 continue;
@@ -847,12 +1136,11 @@ impl HarnessProcess {
 
     pub(crate) fn shutdown(&mut self) {
         let _ = self.request("host.shutdown", None, None);
-        let _ = self.child.kill();
-        let _ = self.child.wait();
-        self.finish_stderr_capture();
+        self.kill();
     }
 
     fn kill(&mut self) {
+        let _ = terminate_process(self.child.id());
         let _ = self.child.kill();
         let _ = self.child.wait();
         self.finish_stderr_capture();
@@ -1008,13 +1296,6 @@ fn sanitize_dialog_text(value: &str, max_chars: usize) -> String {
     }
 }
 
-fn approval_message(approval: &ApprovalPrompt) -> String {
-    format!(
-        "工具：{}\n\n{}\n\n仅本次允许该操作？",
-        approval.tool_name, approval.reason
-    )
-}
-
 impl Drop for HarnessProcess {
     fn drop(&mut self) {
         if self.child.try_wait().ok().flatten().is_none() {
@@ -1024,7 +1305,7 @@ impl Drop for HarnessProcess {
 }
 
 fn resolve_runtime_paths(_app: &tauri::AppHandle) -> Result<HarnessRuntimePaths, String> {
-    #[cfg(all(target_os = "windows", not(debug_assertions)))]
+    #[cfg(not(debug_assertions))]
     {
         let paths = packaged_runtime_paths(
             &_app
@@ -1036,7 +1317,7 @@ fn resolve_runtime_paths(_app: &tauri::AppHandle) -> Result<HarnessRuntimePaths,
         return Ok(paths);
     }
 
-    #[cfg(not(all(target_os = "windows", not(debug_assertions))))]
+    #[cfg(debug_assertions)]
     {
         let defaults = development_runtime_paths()?;
         let paths = HarnessRuntimePaths {
@@ -1049,7 +1330,7 @@ fn resolve_runtime_paths(_app: &tauri::AppHandle) -> Result<HarnessRuntimePaths,
     }
 }
 
-#[cfg(not(all(target_os = "windows", not(debug_assertions))))]
+#[cfg(debug_assertions)]
 fn development_runtime_paths() -> Result<HarnessRuntimePaths, String> {
     let repository = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -1061,17 +1342,21 @@ fn development_runtime_paths() -> Result<HarnessRuntimePaths, String> {
     })
 }
 
-#[cfg(any(all(target_os = "windows", not(debug_assertions)), test))]
+#[cfg(any(not(debug_assertions), test))]
 fn packaged_runtime_paths(resource_dir: &Path) -> HarnessRuntimePaths {
     let root = resource_dir.join("resources/harness-runtime");
     HarnessRuntimePaths {
-        node: root.join("node/node.exe"),
+        node: root.join(if cfg!(target_os = "windows") {
+            "node/node.exe"
+        } else {
+            "node/node"
+        }),
         entry: root.join("harness-host/dist/index.js"),
         config: root.join("harness-host/runtime/cordis.yml"),
     }
 }
 
-#[cfg(not(all(target_os = "windows", not(debug_assertions))))]
+#[cfg(debug_assertions)]
 fn configured_path(variable: &str, fallback: PathBuf) -> Result<PathBuf, String> {
     if let Ok(value) = std::env::var(variable)
         && !value.trim().is_empty()
@@ -1119,6 +1404,9 @@ fn validate_run_request(request: &HarnessRunRequest) -> Result<(), String> {
     }
     if request.prompt.trim().is_empty() || request.prompt.len() > 1024 * 1024 {
         return Err("消息不能为空且不能超过 1 MiB".to_string());
+    }
+    if !matches!(request.execution_mode.as_str(), "agent" | "plan") {
+        return Err("执行模式无效".to_string());
     }
     validate_http_url("LiteLLM", &request.litellm_base_url)?;
     validate_http_url("知识库", &request.knowledge_endpoint)?;
@@ -1187,8 +1475,8 @@ fn prepare_attachments(
             if !matches!(media_type, "image/png" | "image/jpeg") {
                 return Err("图片附件只支持 PNG 或 JPEG".to_string());
             }
-            if metadata.len() > 5 * 1024 * 1024 {
-                return Err(format!("图片附件超过 5 MB：{}", attachment.name));
+            if metadata.len() > 10 * 1024 * 1024 {
+                return Err(format!("图片附件超过 10 MB：{}", attachment.name));
             }
             let bytes =
                 std::fs::read(path).map_err(|error| format!("无法读取图片附件：{error}"))?;
@@ -1228,6 +1516,84 @@ mod tests {
     }
 
     #[test]
+    fn cancellation_is_remembered_before_process_start_and_scoped_to_one_turn() {
+        let manager = HarnessManager::default();
+        let slot = manager.slot("startup").unwrap();
+        let guard = slot.begin().unwrap();
+        assert!(slot.is_running());
+        assert!(slot.begin().is_err());
+        assert_eq!(manager.cancel("startup"), Ok(true));
+        assert_eq!(slot.register_process(123), Err("本轮已停止".to_string()));
+        drop(guard);
+        assert!(!slot.is_running());
+        assert_eq!(manager.cancel("startup"), Ok(false));
+        let _next = slot.begin().unwrap();
+        assert!(!slot.active.lock().unwrap().as_ref().unwrap().canceled);
+    }
+
+    #[test]
+    fn canceling_one_task_does_not_cancel_another() {
+        let manager = HarnessManager::default();
+        let one = manager.slot("one").unwrap();
+        let two = manager.slot("two").unwrap();
+        let _first = one.begin().unwrap();
+        let _second = two.begin().unwrap();
+        assert_eq!(manager.cancel("one"), Ok(true));
+        assert!(!two.active.lock().unwrap().as_ref().unwrap().canceled);
+        assert!(terminate_process(0).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn stop_terminates_an_isolated_host_group_even_when_term_is_ignored() {
+        let mut child = Command::new("sh")
+            .args(["-c", "trap '' TERM; sleep 30 & printf 'ready\\n'; wait"])
+            .process_group(0)
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let mut stdout = BufReader::new(child.stdout.take().unwrap());
+        let mut ready = String::new();
+        stdout.read_line(&mut ready).unwrap();
+        assert_eq!(ready, "ready\n");
+        let (sender, receiver) = mpsc::channel();
+        std::thread::spawn(move || {
+            let mut output = String::new();
+            let result = stdout.read_to_string(&mut output);
+            let _ = sender.send(result);
+        });
+        assert_eq!(terminate_process(child.id()), Ok(true));
+        assert!(!child.wait().unwrap().success());
+        // Descendants must release inherited stdout too, or native reads hang.
+        assert!(
+            receiver
+                .recv_timeout(Duration::from_secs(2))
+                .unwrap()
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn native_bridge_preserves_incremental_host_event_shape() {
+        let host_params = json!({
+            "requestId": 7,
+            "rootSessionId": "session-1",
+            "event": {
+                "method": "session.event",
+                "params": {
+                    "sessionId": "session-1",
+                    "event": { "type": "text-chunks", "data": { "texts": ["正在回答"] } }
+                }
+            }
+        });
+        let bridged = serde_json::to_value(ui_notification("task-1", 7, host_params.clone()))
+            .expect("notification should serialize");
+        assert_eq!(bridged["taskId"], "task-1");
+        assert_eq!(bridged["requestId"], 7);
+        assert_eq!(bridged["event"], host_params);
+    }
+
+    #[test]
     fn task_pool_keeps_three_slots_and_reuses_idle_capacity() {
         let manager = HarnessManager::default();
         assert!(manager.slot("task-1").is_ok());
@@ -1244,6 +1610,7 @@ mod tests {
         let valid = HarnessRunRequest {
             task_id: "task-1".to_string(),
             prompt: "分析库存".to_string(),
+            execution_mode: "agent".to_string(),
             employee_id: "employee-1".to_string(),
             team_id: "crossborder".to_string(),
             session_id: None,
@@ -1254,6 +1621,7 @@ mod tests {
             knowledge_endpoint: "http://control-plane.internal/api/v1/knowledge-bases".to_string(),
             schedule_endpoint: "http://control-plane.internal/api/v1/schedules".to_string(),
             connectors: vec![ConnectorDefinition {
+                timeout_seconds: None,
                 id: "erp-mcp".to_string(),
                 name: "ERP".to_string(),
                 status: "ready".to_string(),
@@ -1287,8 +1655,11 @@ mod tests {
         let paths = packaged_runtime_paths(Path::new(r"C:\Program Files\xiaoyin"));
         assert_eq!(
             paths.node,
-            PathBuf::from(r"C:\Program Files\xiaoyin")
-                .join("resources/harness-runtime/node/node.exe")
+            PathBuf::from(r"C:\Program Files\xiaoyin").join(if cfg!(target_os = "windows") {
+                "resources/harness-runtime/node/node.exe"
+            } else {
+                "resources/harness-runtime/node/node"
+            })
         );
         assert_eq!(
             paths.entry,
@@ -1306,6 +1677,7 @@ mod tests {
     fn ready_connectors_are_session_capabilities_and_declared_dependencies_are_advisory() {
         let catalog = vec![
             ConnectorDefinition {
+                timeout_seconds: None,
                 id: "erp-mcp".to_string(),
                 name: "ERP".to_string(),
                 status: "ready".to_string(),
@@ -1322,6 +1694,7 @@ mod tests {
             },
             ConnectorDefinition {
                 id: "desktop-browser".to_string(),
+                timeout_seconds: None,
                 name: "浏览器".to_string(),
                 status: "ready".to_string(),
                 version: "1".to_string(),
@@ -1344,7 +1717,8 @@ mod tests {
             prompt: String::new(),
         };
 
-        let runtime = runtime_connectors(&catalog, &profile).expect("connector should resolve");
+        let runtime =
+            runtime_connectors(&catalog, &profile, true).expect("connector should resolve");
         assert_eq!(runtime.len(), 1);
         assert_eq!(
             runtime[0].allowed_tools,
@@ -1360,6 +1734,7 @@ mod tests {
     fn diagnostics_include_only_ready_remote_connectors_and_all_declared_tools() {
         let catalog = vec![
             ConnectorDefinition {
+                timeout_seconds: None,
                 id: "erp-mcp".to_string(),
                 name: "ERP".to_string(),
                 status: "ready".to_string(),
@@ -1376,6 +1751,7 @@ mod tests {
             },
             ConnectorDefinition {
                 id: "local-files".to_string(),
+                timeout_seconds: None,
                 name: "本地文件".to_string(),
                 status: "ready".to_string(),
                 version: "1".to_string(),
@@ -1411,7 +1787,15 @@ mod tests {
         assert_eq!(approval.approval_id, "approval-1");
         assert_eq!(approval.tool_name, "bash");
         assert_eq!(approval.reason, "运行命令 \nls");
-        assert!(approval_message(&approval).contains("仅本次允许"));
+    }
+
+    #[test]
+    fn approval_broker_scopes_decisions_to_the_owning_task() {
+        let broker = ApprovalBroker::default();
+        let receiver = broker.register("task-1", "approval-1").unwrap();
+        assert!(broker.respond("task-2", "approval-1", "allow").is_err());
+        assert!(broker.respond("task-1", "approval-1", "allow").unwrap());
+        assert_eq!(receiver.recv().unwrap(), "allow");
     }
 
     #[test]

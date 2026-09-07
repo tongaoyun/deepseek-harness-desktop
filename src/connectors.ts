@@ -1,5 +1,5 @@
 import type { ConnectorCatalogEntry, ConnectorRuntimeDefinition } from './types'
-import { applyConnectorSecrets, type ConnectorSecretStore } from './connectorSecrets'
+import { applyConnectorSecrets, missingConnectorSecretKeys, type ConnectorSecretStore } from './connectorSecrets'
 
 const DESKTOP_BROWSER: ConnectorCatalogEntry = {
   id: 'desktop-browser',
@@ -36,10 +36,12 @@ export function buildRuntimeConnectorCatalog(
   return connectors.map((connector) => {
     const configured = applyConnectorSecrets(connector, localSecrets[connector.id])
     const legacyErp = connector.id === 'erp-mcp' && !connector.transport && Boolean(legacyErpMcpUrl)
+      && !['disabled', 'unavailable'].includes(connector.status)
+    const status = legacyErp ? 'ready' : connector.status
     return {
       id: connector.id,
       name: connector.name,
-      status: legacyErp ? 'ready' : connector.status,
+      status: status === 'ready' && missingConnectorSecretKeys(configured).length > 0 ? 'needs-configuration' : status,
       version: connector.version || '1',
       transport: connector.transport
         ?? (connector.kind === 'desktop-builtin' ? 'desktop' : 'streamable-http'),
@@ -50,6 +52,7 @@ export function buildRuntimeConnectorCatalog(
       arguments: configured.arguments ?? [],
       environment: configured.environment ?? {},
       headers: configured.headers ?? {},
+      timeoutSeconds: configured.timeoutSeconds,
       enabled: enabled.has(connector.id),
     }
   })

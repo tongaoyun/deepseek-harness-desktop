@@ -1,3 +1,4 @@
+use base64::Engine;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
@@ -44,6 +45,7 @@ pub struct LocalTaskAttachmentView {
     id: String,
     root_id: String,
     root_name: String,
+    root_path: String,
     path: String,
     name: String,
     kind: String,
@@ -93,7 +95,7 @@ pub async fn authorize_local_files(
     let selected = tauri::async_runtime::spawn_blocking(move || {
         app.dialog()
             .file()
-            .set_title("选择要发送给小胤的文件")
+            .set_title("选择本地文件")
             .blocking_pick_files()
     })
     .await
@@ -210,6 +212,7 @@ fn authorize_paths(
                 id: format!("{}:{}", view.id, relative),
                 root_id: view.id,
                 root_name: view.name,
+                root_path: view.path,
                 path: relative,
                 name,
                 kind: if media_type.is_some() {
@@ -226,6 +229,101 @@ fn authorize_paths(
         directories,
         attachments,
     })
+}
+
+#[tauri::command]
+pub fn import_pasted_image(
+    app: tauri::AppHandle,
+    authorizations: tauri::State<'_, LocalFileAuthorizations>,
+    data: String,
+    media_type: String,
+) -> Result<DroppedPathAuthorization, String> {
+    let bytes = decode_pasted_image(&data, &media_type)?;
+    let directory = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|error| format!("无法确定附件目录：{error}"))?
+        .join("pasted-images");
+    std::fs::create_dir_all(&directory).map_err(|error| format!("创建附件目录失败：{error}"))?;
+    let extension = if media_type == "image/png" {
+        "png"
+    } else {
+        "jpg"
+    };
+    let digest = format!("{:x}", Sha256::digest(&bytes));
+    let path = directory.join(format!("截图-{}.{}", &digest[..20], extension));
+    if !path.exists() {
+        std::fs::write(&path, bytes).map_err(|error| format!("保存截图失败：{error}"))?;
+    }
+    authorize_paths(&authorizations, vec![path])
+}
+
+fn decode_pasted_image(data: &str, media_type: &str) -> Result<Vec<u8>, String> {
+    if data.len() > 14 * 1024 * 1024 {
+        return Err("单张图片不能超过 10 MB".to_string());
+    }
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(data)
+        .map_err(|_| "截图内容无法解析".to_string())?;
+    if bytes.len() > 10 * 1024 * 1024 {
+        return Err("单张图片不能超过 10 MB".to_string());
+    }
+    let valid = match media_type {
+        "image/png" => bytes.starts_with(b"\x89PNG\r\n\x1a\n"),
+        "image/jpeg" => bytes.starts_with(&[0xff, 0xd8, 0xff]),
+        _ => false,
+    };
+    if !valid {
+        return Err("截图粘贴支持 PNG 和 JPEG 图片".to_string());
+    }
+    Ok(bytes)
+}
+
+fn decode_pasted_file(name: &str, data: &str) -> Result<(String, Vec<u8>), String> {
+    if name.trim().is_empty()
+        || name == "."
+        || name == ".."
+        || name.chars().any(|c| c.is_control() || "/\\:".contains(c))
+        || name.len() > 180
+    {
+        return Err("粘贴文件的名称无效，请改用拖拽或选择文件".into());
+    }
+    if data.len() > 35 * 1024 * 1024 {
+        return Err("直接粘贴的文件不能超过 25 MiB，请改用拖拽或选择文件".into());
+    }
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(data)
+        .map_err(|_| "粘贴文件内容无法解析")?;
+    if bytes.len() > 25 * 1024 * 1024 {
+        return Err("直接粘贴的文件不能超过 25 MiB，请改用拖拽或选择文件".into());
+    }
+    let digest = format!("{:x}", Sha256::digest(&bytes));
+    Ok((format!("{}-{name}", &digest[..20]), bytes))
+}
+
+#[tauri::command]
+pub fn import_pasted_file(
+    app: tauri::AppHandle,
+    authorizations: tauri::State<'_, LocalFileAuthorizations>,
+    name: String,
+    data: String,
+) -> Result<DroppedPathAuthorization, String> {
+    let (filename, bytes) = decode_pasted_file(&name, &data)?;
+    let directory = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|error| error.to_string())?
+        .join("pasted-files");
+    std::fs::create_dir_all(&directory).map_err(|error| format!("创建附件目录失败：{error}"))?;
+    let path = directory.join(filename);
+    if !path.exists() {
+        std::fs::write(&path, bytes).map_err(|error| format!("保存附件失败：{error}"))?;
+    }
+    let mut value = authorize_paths(&authorizations, vec![path])?;
+    for attachment in &mut value.attachments {
+        attachment.name = name.clone();
+    }
+    Ok(value)
 }
 
 #[tauri::command]
@@ -314,12 +412,12 @@ impl LocalFileAuthorizations {
         let directory = guard
             .iter()
             .find(|directory| directory.id == id)
-            .ok_or_else(|| format!("本地文件夹授权已失效：{id}"))?;
+            .ok_or_else(|| format!("[XY-FILE-AUTH] 本地文件夹授权已失效：{id}"))?;
         let target = directory
             .path
             .join(relative)
             .canonicalize()
-            .map_err(|_| "文件不存在或已被移动".to_string())?;
+            .map_err(artifact_io_error)?;
         if !target.starts_with(&directory.path) {
             return Err("产物路径超出已授权目录".to_string());
         }
@@ -392,6 +490,16 @@ fn image_media_type(path: &Path) -> Option<&'static str> {
     }
 }
 
+pub(crate) fn artifact_io_error(error: std::io::Error) -> String {
+    match error.kind() {
+        std::io::ErrorKind::NotFound => "[XY-FILE-MISSING] 文件不存在或已被移动".to_string(),
+        std::io::ErrorKind::PermissionDenied => {
+            "[XY-FILE-PERMISSION] 无权访问文件，请检查系统文件访问权限".to_string()
+        }
+        _ => format!("无法读取文件路径：{error}"),
+    }
+}
+
 fn canonical_directory(selected: &Path) -> Result<PathBuf, String> {
     let canonical = selected
         .canonicalize()
@@ -409,6 +517,30 @@ fn canonical_directory(selected: &Path) -> Result<PathBuf, String> {
 mod tests {
     use super::*;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn artifact_errors_distinguish_missing_permission_and_other_io() {
+        use std::io::{Error, ErrorKind};
+        assert!(
+            artifact_io_error(Error::from(ErrorKind::NotFound)).starts_with("[XY-FILE-MISSING]")
+        );
+        assert!(
+            artifact_io_error(Error::from(ErrorKind::PermissionDenied))
+                .starts_with("[XY-FILE-PERMISSION]")
+        );
+        let other = artifact_io_error(Error::other("disk unavailable"));
+        assert!(!other.contains("MISSING"));
+        assert!(other.contains("disk unavailable"));
+    }
+
+    #[test]
+    fn pasted_images_require_matching_supported_headers() {
+        let png = base64::engine::general_purpose::STANDARD.encode(b"\x89PNG\r\n\x1a\nfixture");
+        assert!(decode_pasted_image(&png, "image/png").is_ok());
+        assert!(decode_pasted_image(&png, "image/jpeg").is_err());
+        assert!(decode_pasted_image(&png, "image/svg+xml").is_err());
+        assert!(decode_pasted_image("invalid!", "image/png").is_err());
+    }
 
     #[test]
     fn authorization_resolves_only_registered_ids_without_exposing_paths() {
@@ -473,6 +605,19 @@ mod tests {
         assert_eq!(result.attachments[0].path, "requirements.md");
         assert_eq!(result.attachments[0].kind, "file");
         std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn pasted_file_names_and_content_are_checked_and_identical_files_are_stable() {
+        let data = base64::engine::general_purpose::STANDARD.encode(b"report");
+        let (name, bytes) = decode_pasted_file("报告.pdf", &data).unwrap();
+        assert!(name.ends_with("-报告.pdf"));
+        assert_eq!(bytes, b"report");
+        assert_eq!(decode_pasted_file("报告.pdf", &data).unwrap().0, name);
+        for invalid in ["", "../a.txt", "a/b.txt", "a\\b.txt", ".", "..", "a\n.txt"] {
+            assert!(decode_pasted_file(invalid, &data).is_err());
+        }
+        assert!(decode_pasted_file("a.txt", "not base64!").is_err());
     }
 
     fn temporary_directory() -> PathBuf {

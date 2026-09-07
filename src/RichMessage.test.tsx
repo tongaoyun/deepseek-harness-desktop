@@ -13,7 +13,7 @@ describe('rich message', () => {
   it('keeps the compact answer actions limited to copy and regenerate', () => {
     const html = renderToStaticMarkup(<RichMessage assistant onRegenerate={() => undefined} text="完成" />)
     expect(html).toContain('复制回答')
-    expect(html).toContain('重新回答')
+    expect(html).toContain('编辑后重发')
     expect(html).not.toContain('赞同')
   })
 })

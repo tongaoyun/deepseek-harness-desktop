@@ -20,6 +20,7 @@
     "harness:prepare:macos": "bash scripts/prepare-harness-runtime-macos.sh",
     "smoke:macos": "bash scripts/smoke-test-macos-bundle.sh",
     "tauri:build:macos": "bash scripts/build-macos.sh",
+    "acceptance:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/acceptance-windows.ps1",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build"
@@ -28,7 +29,10 @@
     "@tauri-apps/api": "2.11.1",
     "@tauri-apps/plugin-process": "2.3.1",
     "@tauri-apps/plugin-updater": "2.10.1",
+    "diff": "^9.0.0",
+    "highlight.js": "^11.12.0",
     "lucide-react": "0.468.0",
+    "qrcode": "^1.5.4",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "react-markdown": "10.1.0",
@@ -37,6 +41,7 @@
   "devDependencies": {
     "@tauri-apps/cli": "2.11.4",
     "@types/node": "24.10.13",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "6.0.1",

@@ -4,6 +4,7 @@ import type {
   AllowedExtensionArtifact,
   ConnectorDiagnosticResult,
   ConnectorRuntimeDefinition,
+  KnowledgeSearchHit,
   LocalTaskAttachment,
   SubagentActivity,
   TaskArtifact,
@@ -11,12 +12,14 @@ import type {
   TaskFileChange,
   TaskMonitorState,
   TaskTimelineEntry,
+  TaskVisualArtifact,
 } from './types'
 import type { StandardLocalDirectory } from './localFileIntent'
 
 export interface HarnessRunInput {
   taskId: string
   prompt: string
+  executionMode: 'agent' | 'plan'
   employeeId: string
   teamId: string
   sessionId?: string
@@ -65,23 +68,40 @@ export type HarnessFailureCategory = 'timeout' | 'authentication' | 'capacity' |
 
 export interface HarnessFailure {
   category: HarnessFailureCategory
+  code: string
   title: string
   message: string
   infrastructure: boolean
+  retryable: boolean
 }
 
 export function classifyHarnessFailure(reason: unknown): HarnessFailure {
   const message = reason instanceof Error ? reason.message : String(reason)
-  if (/任务执行超过|timed?\s*out|timeout/iu.test(message)) return { category: 'timeout', title: '任务运行超时', message, infrastructure: false }
-  if (/401|unauthorized|认证失败|invalid.*key/iu.test(message)) return { category: 'authentication', title: '模型认证失败', message, infrastructure: false }
-  if (/429|rate.?limit|服务繁忙|capacity|overloaded/iu.test(message)) return { category: 'capacity', title: '模型服务繁忙', message, infrastructure: false }
-  if (/permission|denied|权限|未授权|approval.*reject/iu.test(message)) return { category: 'permission', title: '操作未获授权', message, infrastructure: false }
-  if (/MCP|connector|连接器|tool.*(unavailable|not found)|unknown tool/iu.test(message)) return { category: 'connector', title: '连接器调用失败', message, infrastructure: false }
+  if (/任务执行超过|timed?\s*out|timeout/iu.test(message)) return failure('timeout', 'XY-TIMEOUT', '任务运行超时', message, false, false)
+  if (/401|unauthorized|认证失败|invalid.*key/iu.test(message)) return failure('authentication', 'XY-AUTH', '模型认证失败', message, false, false)
+  if (/429|rate.?limit|服务繁忙|capacity|overloaded/iu.test(message)) return failure('capacity', 'XY-CAPACITY', '模型服务繁忙', message, false, true)
+  if (/permission|denied|权限|未授权|approval.*reject/iu.test(message)) return failure('permission', 'XY-PERMISSION', '操作未获授权', message, false, false)
+  if (/MCP|connector|连接器|tool.*(unavailable|not found)|unknown tool/iu.test(message)) return failure('connector', 'XY-CONNECTOR', '连接器调用失败', message, false, false)
   if (/Harness Host|ECONNRESET|ECONNREFUSED|broken pipe|socket hang up|进程.*退出|connection.*closed/iu.test(message)) {
-    return { category: 'local-agent', title: '本地 Agent 异常', message, infrastructure: true }
+    return failure('local-agent', 'XY-LOCAL-AGENT', '本地 Agent 异常', message, true, true)
   }
-  if (/模型|provider|assistant|turn/iu.test(message)) return { category: 'model', title: '模型未能完成任务', message, infrastructure: false }
-  return { category: 'unknown', title: '任务执行失败', message, infrastructure: false }
+  if (/模型|provider|assistant|turn/iu.test(message)) return failure('model', 'XY-MODEL', '模型未能完成任务', message, false, true)
+  return failure('unknown', 'XY-UNKNOWN', '任务执行失败', message, false, false)
+}
+
+export function shouldRetryHarnessFailure(failure: HarnessFailure, monitor: TaskMonitorState): boolean {
+  return failure.retryable && !monitor.steps.some((step) => step.kind === 'tool' || step.kind === 'approval')
+}
+
+function failure(
+  category: HarnessFailureCategory,
+  code: string,
+  title: string,
+  message: string,
+  infrastructure: boolean,
+  retryable: boolean,
+): HarnessFailure {
+  return { category, code, title, message, infrastructure, retryable }
 }
 
 export interface HarnessNotification {
@@ -137,6 +157,36 @@ export async function authorizeLocalFiles(): Promise<DroppedPathAuthorization> {
   return invoke<DroppedPathAuthorization>('authorize_local_files')
 }
 
+export async function importPastedImage(file: File): Promise<DroppedPathAuthorization> {
+  if (!isTauri()) throw new Error('截图粘贴请在小胤桌面客户端中使用')
+  if (!['image/png', 'image/jpeg'].includes(file.type)) throw new Error('截图粘贴支持 PNG 和 JPEG 图片')
+  if (file.size > 10 * 1024 * 1024) throw new Error('单张图片不能超过 10 MB')
+  const data = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result).split(',')[1])
+    reader.onerror = () => reject(new Error('读取剪贴板图片失败'))
+    reader.readAsDataURL(file)
+  })
+  return invoke<DroppedPathAuthorization>('import_pasted_image', { data, mediaType: file.type })
+}
+
+export async function clipboardFilePaths(): Promise<string[]> {
+  return isTauri() ? invoke<string[]>('clipboard_file_paths') : []
+}
+
+export async function importPastedFile(file: File): Promise<DroppedPathAuthorization> {
+  if (!isTauri()) throw new Error('文件粘贴请在小胤桌面客户端中使用')
+  if (['image/png', 'image/jpeg'].includes(file.type)) return importPastedImage(file)
+  if (file.size > 25 * 1024 * 1024) throw new Error(`${file.name} 超过 25 MiB，请改用拖拽或选择文件`)
+  const data = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result).split(',')[1])
+    reader.onerror = () => reject(new Error(`读取 ${file.name} 失败`))
+    reader.readAsDataURL(file)
+  })
+  return invoke<DroppedPathAuthorization>('import_pasted_file', { name: file.name, data })
+}
+
 export async function authorizeStandardLocalDirectories(
   directories: StandardLocalDirectory[],
 ): Promise<AuthorizedLocalDirectory[]> {
@@ -169,6 +219,15 @@ export async function shutdownHarness(taskId?: string): Promise<void> {
 export async function cancelHarness(taskId: string): Promise<boolean> {
   if (!isTauri()) return false
   return invoke<boolean>('cancel_harness', { taskId })
+}
+
+export async function respondHarnessApproval(
+  taskId: string,
+  approvalId: string,
+  decision: 'allow' | 'reject',
+): Promise<boolean> {
+  if (!isTauri()) return false
+  return invoke<boolean>('respond_harness_approval', { taskId, approvalId, decision })
 }
 
 export async function authorizeDroppedPaths(paths: string[]): Promise<DroppedPathAuthorization> {
@@ -209,11 +268,8 @@ export interface HarnessResponseUpdate {
 export function harnessResponseUpdate(notification: HarnessNotification): HarnessResponseUpdate | undefined {
   const parsed = parseHarnessEvent(notification)
   if (!parsed || !parsed.isRootSession) return undefined
-  const turn = integer(parsed.data.turn)
-  const step = integer(parsed.data.step)
   if (parsed.type === 'tool/call') return { key: '', mode: 'clear', text: '' }
-  if (turn === undefined || step === undefined) return undefined
-  const key = `assistant:${turn}:${step}`
+  const key = 'assistant:visible-response'
   if (parsed.type === 'text-chunks') {
     const delta = Array.isArray(parsed.data.texts)
       ? parsed.data.texts.filter((value): value is string => typeof value === 'string').join('')
@@ -225,6 +281,16 @@ export function harnessResponseUpdate(notification: HarnessNotification): Harnes
     return message ? { key, mode: 'replace', text: message } : undefined
   }
   return undefined
+}
+
+/** Keep receipts for already-started tools while Stop is settling, not late text/status. */
+export function applyStoppingHarnessNotification(current: TaskMonitorState, notification: HarnessNotification): TaskMonitorState {
+  const parsed = parseHarnessEvent(notification)
+  if (!parsed?.isRootSession || parsed.type !== 'tool/result') return current
+  const result = toolResult(parsed.data)
+  if (!result || !current.steps.some((step) => step.id === `tool:${result.callId}` && step.status === 'running')) return current
+  const next = applyHarnessNotification(current, notification)
+  return { ...next, status: current.status, activity: current.activity }
 }
 
 export function applyHarnessNotification(
@@ -240,11 +306,11 @@ export function applyHarnessNotification(
     updatedAt: eventTime(parsed.event),
   }
   const occurredAt = eventTime(parsed.event)
-  const turn = integer(parsed.data.turn)
-  const step = integer(parsed.data.step)
+  const turn = integer(parsed.data.turn) ?? 0
+  const step = integer(parsed.data.step) ?? 0
   const activity = harnessActivityLabel(notification)
 
-  if (parsed.type === 'step/start' && turn !== undefined && step !== undefined) {
+  if (parsed.type === 'step/start') {
     return updateMonitor(current, activity, upsertStep(current.steps, {
       id: `analysis:${turn}:${step}`,
       kind: 'analysis',
@@ -254,7 +320,7 @@ export function applyHarnessNotification(
     }), occurredAt)
   }
 
-  if (parsed.type === 'text-chunks' && turn !== undefined && step !== undefined) {
+  if (parsed.type === 'text-chunks') {
     const delta = Array.isArray(parsed.data.texts)
       ? parsed.data.texts.filter((value): value is string => typeof value === 'string').join('')
       : ''
@@ -265,7 +331,7 @@ export function applyHarnessNotification(
     }
   }
 
-  if (parsed.type === 'assistant/message' && turn !== undefined && step !== undefined) {
+  if (parsed.type === 'assistant/message') {
     const message = assistantMessageText(parsed.data)
     const next = updateMonitor(current, activity,
       completeStep(current.steps, `analysis:${turn}:${step}`, 'completed', occurredAt), occurredAt)
@@ -286,9 +352,7 @@ export function applyHarnessNotification(
     const callId = text(parsed.data.callId)
     const toolName = text(parsed.data.name)
     if (!callId || !toolName) return current
-    const analysisCompleted = turn === undefined || step === undefined
-      ? current.steps
-      : completeStep(current.steps, `analysis:${turn}:${step}`, 'completed', occurredAt)
+    const analysisCompleted = completeStep(current.steps, `analysis:${turn}:${step}`, 'completed', occurredAt)
     const presentation = toolPresentation(toolName, parsed.data.arguments)
     const subagents = toolName === 'subagent'
       ? upsertSubagent(current.subagents ?? [], {
@@ -328,6 +392,12 @@ export function applyHarnessNotification(
     const artifacts = artifact
       ? [...current.artifacts.filter((item) => item.id !== artifact.id), artifact].slice(-50)
       : current.artifacts
+    const visual = !result.failed && toolName
+      ? visualFromToolResult(toolName, result.content, occurredAt)
+      : undefined
+    const visuals = visual
+      ? [...(current.visuals ?? []).filter((item) => item.id !== visual.id), visual].slice(-20)
+      : current.visuals
     const change = !result.failed && toolName
       ? fileChangeFromToolResult(toolName, result.content, occurredAt)
       : undefined
@@ -343,6 +413,8 @@ export function applyHarnessNotification(
         current.timeline ?? [], `tool:${result.callId}`, result.failed ? 'failed' : 'completed', occurredAt, presentation,
       ),
       artifacts,
+      ...(!result.failed && toolName === 'knowledge_search' ? { knowledgeSources: mergeKnowledgeSources(current.knowledgeSources ?? [], result.content) } : {}),
+      ...(visuals === undefined ? {} : { visuals }),
       ...(changes === undefined ? {} : { changes }),
       ...(subagents === undefined ? {} : { subagents }),
     }
@@ -363,6 +435,32 @@ export function applyHarnessNotification(
         ...(detail ? { detail } : {}),
         occurredAt,
         completedAt: occurredAt,
+      }),
+    }
+  }
+
+  if (parsed.type === 'approval/request') {
+    const approvalId = text(parsed.data.approvalId)
+    const toolName = text(parsed.data.name)
+    if (!approvalId || !toolName) return current
+    return {
+      ...updateMonitor(current, `等待确认：${toolActivityLabel(toolName)}`, upsertStep(current.steps, {
+        id: `approval:${approvalId}`,
+        kind: 'approval',
+        label: `确认${toolActivityLabel(toolName)}`,
+        status: 'running',
+        toolName,
+        startedAt: occurredAt,
+      }), occurredAt),
+      timeline: upsertTimeline(current.timeline ?? [], {
+        id: `approval:${approvalId}`,
+        kind: 'approval',
+        label: `需要确认：${toolActivityLabel(toolName)}`,
+        status: 'running',
+        toolName,
+        approvalId,
+        ...(bounded(text(parsed.data.reason), 2_000) ? { detail: bounded(text(parsed.data.reason), 2_000) } : {}),
+        occurredAt,
       }),
     }
   }
@@ -389,12 +487,14 @@ export function applyHarnessNotification(
         label: `${allowed ? '已允许' : '已拒绝'}${toolActivityLabel(toolName)}`,
         status: allowed ? 'completed' : 'failed',
         toolName,
+        approvalId,
         occurredAt,
+        completedAt: occurredAt,
       }),
     }
   }
 
-  if (parsed.type === 'turn/end' && turn !== undefined) {
+  if (parsed.type === 'turn/end') {
     const reason = text(asRecord(parsed.data.reason)?.kind)
     const status = reason === 'completed' ? 'completed' : 'failed'
     const settled = current.steps.map((item): TaskExecutionStep => item.status === 'running'
@@ -481,12 +581,14 @@ function toolResult(data: Record<string, unknown>): { callId: string; failed: bo
 const ARTIFACT_TOOLS = new Set([
   'office.docx.create', 'office.xlsx.create', 'office.pdf.create',
   'office_docx_create', 'office_xlsx_create', 'office_xlsx_update_cells', 'office_xlsx_append_rows',
-  'office_xlsx_add_sheet', 'office_pptx_create', 'office_pdf_create',
-  'local_files_write_text', 'local_files_copy', 'local_files_move',
+  'office_xlsx_add_sheet', 'office_xlsx_format_sheet', 'office_pptx_create', 'office_pdf_create',
+  'office_document_export_pdf', 'office_xlsx_recalculate',
+  'local_files_publish',
 ])
 
 const FILE_CHANGE_TOOLS = new Set([
-  ...ARTIFACT_TOOLS,
+  ...[...ARTIFACT_TOOLS].filter((tool) => tool !== 'local_files_publish'),
+  'local_files_write_text', 'local_files_copy', 'local_files_move',
   'local_files_delete',
 ])
 
@@ -510,7 +612,10 @@ function fileChangeFromToolResult(toolName: string, content: unknown, changedAt:
     name,
     sourceTool: toolName,
     action: fileChangeAction(toolName, value),
+    ...(text(value.afterHash) ? { afterHash: text(value.afterHash) } : {}),
+    ...(text(value.beforeHash) ? { beforeHash: text(value.beforeHash) } : {}),
     ...(text(value.source) ? { previousPath: text(value.source) } : {}),
+    ...(text(value.backupPath) ? { backupPath: text(value.backupPath) } : {}),
     ...(addedLines === undefined ? {} : { addedLines }),
     ...(deletedLines === undefined ? {} : { deletedLines }),
     changedAt,
@@ -528,18 +633,24 @@ function fileChangeAction(toolName: string, value: Record<string, unknown>): Tas
 function upsertFileChange(current: TaskFileChange[], next: TaskFileChange): TaskFileChange[] {
   const index = current.findIndex((item) => item.id === next.id)
   if (index < 0) return [...current, next].slice(-100)
-  return current.map((item, itemIndex) => itemIndex !== index ? item : {
-    ...item,
-    ...next,
-    addedLines: addOptionalCounts(item.addedLines, next.addedLines),
-    deletedLines: addOptionalCounts(item.deletedLines, next.deletedLines),
+  return current.map((item, itemIndex): TaskFileChange => {
+    if (itemIndex !== index) return item
+    // Review the whole turn from the first baseline to the final file. Summing
+    // intermediate edits can never reliably describe that final diff.
+    const action: TaskFileChange['action'] = next.action === 'deleted'
+      ? 'deleted'
+      : item.action === 'created' || item.action === 'copied' || item.action === 'moved' || item.action === 'deleted' ? item.action : next.action
+    return {
+      ...item,
+      ...next,
+      action,
+      backupPath: item.backupPath,
+      beforeHash: item.beforeHash,
+      afterHash: next.afterHash,
+      addedLines: undefined,
+      deletedLines: undefined,
+    }
   }).slice(-100)
-}
-
-function addOptionalCounts(left: number | undefined, right: number | undefined): number | undefined {
-  if (left === undefined) return right
-  if (right === undefined) return left
-  return left + right
 }
 
 function artifactFromToolResult(toolName: string, content: unknown, createdAt: string): TaskArtifact | undefined {
@@ -583,9 +694,57 @@ function artifactFromToolResult(toolName: string, content: unknown, createdAt: s
 }
 
 function artifactAction(toolName: string, value: Record<string, unknown>): TaskArtifact['action'] {
+  if (toolName === 'local_files_publish') return 'published'
   if (toolName === 'local_files_copy') return 'copied'
   if (toolName === 'local_files_move') return 'moved'
   return text(value.backupPath) ? 'updated' : 'created'
+}
+
+function visualFromToolResult(toolName: string, content: unknown, createdAt: string): TaskVisualArtifact | undefined {
+  if (toolName !== 'browser_screenshot' && toolName !== 'office_pdf_page' && !toolName.startsWith('computer_use_')) return undefined
+  const blocks = Array.isArray(content) ? content : []
+  for (const value of blocks) {
+    const block = asRecord(value)
+    const attachment = asRecord(block?.attachment)
+    const attachmentId = text(attachment?.attachmentId)
+    const mediaType = text(attachment?.mediaType)
+    const width = nonNegativeInteger(attachment?.width)
+    const height = nonNegativeInteger(attachment?.height)
+    if (block?.type !== 'image' || !attachmentId?.match(/^sha256:[a-f0-9]{64}$/u)
+      || (mediaType !== 'image/png' && mediaType !== 'image/jpeg') || !width || !height) continue
+    return {
+      id: `${toolName}:${attachmentId}`,
+      attachmentId,
+      mediaType,
+      name: text(attachment?.name) ?? (toolName === 'browser_screenshot' ? '网页截图' : '桌面截图'),
+      width,
+      height,
+      sourceTool: toolName,
+      createdAt,
+    }
+  }
+  return undefined
+}
+
+function mergeKnowledgeSources(previous: KnowledgeSearchHit[], content: unknown): KnowledgeSearchHit[] {
+  const sources = new Map(previous.map((hit) => [hit.sourceId, hit]))
+  for (const value of Array.isArray(content) ? content : []) {
+    const block = asRecord(value)
+    if (typeof block?.text !== 'string') continue
+    try {
+      const hits: unknown = JSON.parse(block.text)
+      for (const raw of Array.isArray(hits) ? hits.slice(0, 20) : []) {
+        const hit = asRecord(raw)
+        if (!hit || typeof hit.sourceId !== 'string' || !/^[1-9][0-9]{0,18}$/.test(hit.sourceId)) continue
+        if (!['knowledgeBaseId', 'knowledgeBaseName', 'documentId', 'filename', 'locator', 'content'].every((key) => typeof hit[key] === 'string')) continue
+        sources.set(hit.sourceId, { sourceId: hit.sourceId, knowledgeBaseId: String(hit.knowledgeBaseId).slice(0, 64),
+          knowledgeBaseName: String(hit.knowledgeBaseName).slice(0, 120), documentId: String(hit.documentId).slice(0, 64),
+          filename: String(hit.filename).slice(0, 255), locator: String(hit.locator).slice(0, 500), content: String(hit.content).slice(0, 1600),
+          score: typeof hit.score === 'number' && Number.isFinite(hit.score) ? hit.score : 0 })
+      }
+    } catch { /* Ignore non-JSON tool text, never infer references from model prose. */ }
+  }
+  return [...sources.values()].slice(-24)
 }
 
 function toolResultValue(content: unknown): Record<string, unknown> | undefined {
@@ -694,17 +853,26 @@ function toolActivityLabel(toolName: string): string {
     'office.xlsx.create': '生成 Excel 表格',
     'office.pdf.create': '生成 PDF 文档',
     office_document_read: '读取 Office 文档',
+    office_document_check: '检查交付文档',
+    office_engine_status: '检查文档转换能力',
+    office_document_export_pdf: '导出 PDF 副本',
+    office_xlsx_recalculate: '重算表格副本',
+    office_pdf_page: '查看 PDF 页面',
+    computer_use_observe: '观察桌面', computer_use_click: '点击应用', computer_use_type: '输入文字',
+    computer_use_key: '发送按键', computer_use_scroll: '滚动界面',
     office_docx_create: '生成 Word 文档',
     office_xlsx_create: '生成 Excel 表格',
     office_xlsx_update_cells: '修改 Excel 表格',
     office_xlsx_append_rows: '追加 Excel 数据',
     office_xlsx_add_sheet: '添加 Excel 工作表',
+    office_xlsx_format_sheet: '调整表格排版',
     office_pptx_create: '生成 PowerPoint 演示文稿',
     office_pdf_create: '生成 PDF 文档',
     local_files_roots: '检查工作目录',
     local_files_list: '查看目录内容',
     local_files_search: '搜索本地文件',
     local_files_read_text: '读取本地文件',
+    local_files_publish: '准备交付文件',
     local_files_write_text: '修改本地文件',
     local_files_create_directory: '新建文件夹',
     local_files_copy: '复制本地文件',
@@ -755,6 +923,7 @@ function toolPresentation(toolName: string, rawArguments: unknown): Pick<TaskTim
     local_files_list: path ? `查看 ${path === '.' ? '目录' : path}` : '查看目录',
     local_files_search: `搜索“${firstText(args, 'query') ?? '文件'}”`,
     local_files_read_text: path ? `读取 ${path}` : '读取文件',
+    local_files_publish: path ? `准备交付 ${path}` : '准备交付文件',
     local_files_write_text: path ? `写入 ${path}` : '写入文件',
     local_files_create_directory: path ? `创建 ${path}` : '创建文件夹',
     local_files_copy: destination ? `复制到 ${destination}` : '复制文件',
@@ -766,8 +935,11 @@ function toolPresentation(toolName: string, rawArguments: unknown): Pick<TaskTim
     office_xlsx_update_cells: path ? `修改 ${path}` : '修改 Excel 表格',
     office_xlsx_append_rows: path ? `追加数据到 ${path}` : '追加 Excel 数据',
     office_xlsx_add_sheet: path ? `添加工作表到 ${path}` : '添加 Excel 工作表',
+    office_xlsx_format_sheet: path ? `调整 ${path} 的排版` : '调整表格排版',
     office_pptx_create: path ? `生成 ${path}` : '生成 PowerPoint 演示文稿',
     office_pdf_create: path ? `生成 ${path}` : '生成 PDF 文档',
+    office_document_export_pdf: path ? `将 ${path} 导出为 PDF 副本` : '导出 PDF 副本',
+    office_xlsx_recalculate: path ? `重算 ${path} 并保存副本` : '重算表格副本',
   }
   if (fileLabels[toolName]) return compact({
     kind: 'file', label: fileLabels[toolName], path: firstText(args, 'path', 'sourcePath'), secondaryPath: destination,
