@@ -45,6 +45,12 @@ done
 /usr/bin/codesign --verify --deep --strict "$app"
 bundle_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")"
 [[ "$bundle_version" == "$version" ]] || { echo 'Installed bundle version does not match the release.' >&2; exit 1; }
+erp_http="$(/usr/libexec/PlistBuddy -c 'Print :NSAppTransportSecurity:NSExceptionDomains:www.instudio.me:NSExceptionAllowsInsecureHTTPLoads' "$app/Contents/Info.plist")"
+[[ "$erp_http" == true ]] || { echo 'ERP HTTP login callback is blocked by macOS ATS.' >&2; exit 1; }
+for broad_exception in NSAllowsArbitraryLoads NSAllowsArbitraryLoadsInWebContent; do
+  allowed="$(/usr/libexec/PlistBuddy -c "Print :NSAppTransportSecurity:$broad_exception" "$app/Contents/Info.plist" 2>/dev/null || true)"
+  [[ "$allowed" != true ]] || { echo 'macOS ATS must remain enabled outside the ERP domain.' >&2; exit 1; }
+done
 /usr/bin/lipo "$binary" -verify_arch "$binary_arch"
 /usr/bin/lipo "$node_binary" -verify_arch "$binary_arch"
 "$node_binary" "$repository/scripts/check-macos-runtime.mjs" "$runtime/harness-host" "$node_arch"
