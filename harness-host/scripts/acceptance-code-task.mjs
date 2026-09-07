@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { DeepSeekHarnessRuntime } from '../dist/runtime.js'
+import { evaluationMetrics } from './evaluation-metrics.mjs'
 
 if (!process.env.DEEPSEEK_API_KEY) throw new Error('DEEPSEEK_API_KEY is required')
 const skills = JSON.parse(process.env.XIAOYIN_ACCEPTANCE_SKILL_DIRS ?? '[]')
@@ -42,11 +43,13 @@ Object.assign(process.env, {
   XIAOYIN_TURN_TIMEOUT_MS: '240000',
 })
 let runtime = new DeepSeekHarnessRuntime()
+const metrics = evaluationMetrics()
 const calls = []
 const turnFailures = []
 let phase = 'execute'
 let completed
 const collect = (notification) => {
+  metrics.collect(notification)
   const event = notification.params?.event
   if (event?.type === 'tool/call') {
     calls.push(event.data.name)
@@ -75,6 +78,8 @@ try {
   phase = 'restore'
   console.log(JSON.stringify({ phase, sessionId: result.sessionId }))
   const resumed = await runtime.run({ sessionId: result.sessionId, prompt: '继续刚才的任务。只读核对当前文件和测试结果，复述我第一轮给出的任务标记，并说明这次修复的四项要求是否满足。不要改动任何文件。' }, collect)
+  assert.equal(resumed.sessionId, result.sessionId, 'restart must resume the original session')
+  assert.equal(resumed.outcome?.status, 'completed')
   assert.equal(await readFile(join(workspace, 'median.mjs'), 'utf8'), saved)
   assert.equal(await readFile(join(workspace, 'median.test.mjs'), 'utf8'), originalTests)
   assert.match(resumed.finalResponse, /XY-CODE-ROUNDTRIP/)
@@ -85,6 +90,7 @@ try {
   throw error
 } finally {
   await runtime.close()
+  report.metrics = metrics.result()
   await mkdir(resolve(reportPath, '..'), { recursive: true })
   await writeFile(reportPath, JSON.stringify(report, null, 2) + '\n')
   if (report?.passed) await rm(root, { recursive: true, force: true })

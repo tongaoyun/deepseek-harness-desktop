@@ -39,6 +39,10 @@ DeepSeek Harness Host
 | 钉钉 | DingTalk Stream → 本地队列和会话 → Harness；`/bind` 将会话绑定到桌面任务 |
 | 审计 | 桌面或服务端 → 去敏事件 API → PostgreSQL |
 
+登录检查由单一请求协调。临时网络错误自动重试，不直接弹出二维码；有效期内保留已验证身份，过期后暂停使用并继续复查。网络恢复、窗口激活或休眠唤醒时检查到期状态，退出登录后忽略先前检查的迟到响应。ERP 明确返回未登录时才进入扫码流程，实际 Cookie 生命周期仍由 ERP 与系统 WebView 管理。
+
+任务恢复和新轮次持久化状态由 `harnessSession.ts`、`taskTurn.ts` 统一准备，页面负责交互与调度。真实模型质量检查见 [任务评测](task-evaluation.md)。
+
 ## 能力矩阵
 
 | 领域 | 能力 |
@@ -164,6 +168,6 @@ macOS 后台转换使用临时 [Fontconfig 配置](https://fontconfig.pages.free
 | 仓库 | 职责 |
 |---|---|
 | `xiaoyin-desktop` | 桌面应用、Harness、本地工具和本地 IM |
-| `xiaoyin-server` | 控制中心和 Workflow Worker |
-| `xiaoyin-extensions` | Skills、专家套件、分发 SDK 和模板 |
+| `xiaoyin-server` | 七层 COLA 控制中心、Web 控制台和知识索引 |
+| `xiaoyin-extensions` | 官方 Skills、专家套件、内容模板和仓库内部发布工具 |
 | `erp-mcp-gateway` | ERP MCP 工具开发与运行入口 |

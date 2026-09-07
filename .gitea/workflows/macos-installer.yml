@@ -45,7 +45,7 @@ jobs:
       - name: 前端与 Harness 质量门禁
         run: |
           pnpm verify:version
-          node --test scripts/publish-macos-update.test.mjs scripts/macos-build-env.test.mjs scripts/check-harness-runtime.test.mjs scripts/verify-updater-signature.test.mjs scripts/workflows.test.mjs
+          node --test scripts/publish-macos-update.test.mjs scripts/macos-build-env.test.mjs scripts/check-harness-runtime.test.mjs scripts/verify-updater-signature.test.mjs scripts/workflows.test.mjs scripts/evaluation-metrics.test.mjs
           pnpm lint
           pnpm typecheck
           pnpm test

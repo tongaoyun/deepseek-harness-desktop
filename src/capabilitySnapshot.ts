@@ -57,8 +57,14 @@ export function connectorsForSnapshot(
 
 /** Timestamps are bookkeeping, not a reason to discard the execution session. */
 export function capabilitySnapshotChanged(previous: CapabilitySnapshot | undefined, next: CapabilitySnapshot): boolean {
-  return !previous || JSON.stringify({ extensions: previous.extensions, connectors: previous.connectors, knowledgeBaseRefs: previous.knowledgeBaseRefs })
-    !== JSON.stringify({ extensions: next.extensions, connectors: next.connectors, knowledgeBaseRefs: next.knowledgeBaseRefs })
+  return !previous || snapshotContent(previous) !== snapshotContent(next)
+}
+
+function snapshotContent({ extensions, connectors, knowledgeBaseRefs }: CapabilitySnapshot): string {
+  // Rust's JSON maps sort keys, including nested connector settings, when persisting tasks.
+  return JSON.stringify({ extensions, connectors, knowledgeBaseRefs }, (_key, value) =>
+    value && typeof value === 'object' && !Array.isArray(value)
+      ? Object.fromEntries(Object.entries(value).sort(([left], [right]) => left.localeCompare(right))) : value)
 }
 
 function emptyValues(values?: Record<string, string>): Record<string, string> | undefined {

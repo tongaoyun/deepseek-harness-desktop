@@ -225,6 +225,7 @@ pub(crate) async fn erp_session(app: tauri::AppHandle) -> Result<ErpSessionStatu
         .await
         .map_err(|error| format!("ERP 登录状态检查失败：{error}"))?;
 
+    reject_unavailable_identity(response.status())?;
     let user = if response.status().is_success() {
         let identity: ErpIdentity = response
             .json()
@@ -252,6 +253,13 @@ pub(crate) async fn erp_session(app: tauri::AppHandle) -> Result<ErpSessionStatu
         user: Some(user),
         login_url: erp_login_url(),
     })
+}
+
+fn reject_unavailable_identity(status: reqwest::StatusCode) -> Result<(), String> {
+    if status.is_server_error() || status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+        return Err(format!("ERP 身份服务暂时不可用：HTTP {status}"));
+    }
+    Ok(())
 }
 
 async fn legacy_erp_user(
@@ -371,6 +379,21 @@ pub(crate) async fn clear_erp_session(app: tauri::AppHandle) -> Result<(), Strin
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unavailable_identity_is_not_treated_as_an_expired_session() {
+        for status in [429, 500, 502, 503, 504] {
+            assert!(
+                reject_unavailable_identity(reqwest::StatusCode::from_u16(status).unwrap())
+                    .is_err()
+            );
+        }
+        for status in [200, 401, 403, 404] {
+            assert!(
+                reject_unavailable_identity(reqwest::StatusCode::from_u16(status).unwrap()).is_ok()
+            );
+        }
+    }
 
     #[test]
     fn login_tmp_code_is_validated() {

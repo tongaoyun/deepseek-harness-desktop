@@ -29,7 +29,7 @@ jobs:
       - name: Lint、类型、测试和构建
         run: |
           pnpm verify:version
-          node --test scripts/workflows.test.mjs scripts/macos-build-env.test.mjs scripts/check-harness-runtime.test.mjs scripts/publish-macos-update.test.mjs scripts/verify-updater-signature.test.mjs
+          node --test scripts/workflows.test.mjs scripts/macos-build-env.test.mjs scripts/check-harness-runtime.test.mjs scripts/publish-macos-update.test.mjs scripts/verify-updater-signature.test.mjs scripts/evaluation-metrics.test.mjs
           pnpm lint
           pnpm typecheck
           pnpm test

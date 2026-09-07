@@ -1,153 +1,138 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { listen } from '@tauri-apps/api/event'
-import {
-  clearErpSession,
-  isTauriRuntime,
-  openErpLogin,
-  resolveErpSession,
-  usesLocalDevelopmentSession,
-  type ErpUser,
-} from './auth'
+import { clearErpSession, isTauriRuntime, openErpLogin, resolveErpSession, usesLocalDevelopmentSession, type ErpSessionStatus } from './auth'
 
 type AuthState = 'checking' | 'required' | 'authorizing' | 'authenticated' | 'error'
+const RETRY_MS = 15_000
+const LOGIN_POLL_MS = 1_500
 
 export function useEnterpriseSession() {
   const [state, setState] = useState<AuthState>('checking')
-  const [user, setUser] = useState<ErpUser | null>(null)
-  const [accessToken, setAccessToken] = useState('')
-  const [expiresAt, setExpiresAt] = useState<number | null>(null)
+  const [session, setSession] = useState<ErpSessionStatus>()
   const [error, setError] = useState('')
-
-  const acceptSession = useCallback((session: Awaited<ReturnType<typeof resolveErpSession>>) => {
-    if (!session.authenticated || !session.user) return false
-    setUser(session.user)
-    setAccessToken(session.accessToken)
-    setExpiresAt(session.expiresAt)
-    setState('authenticated')
-    setError('')
-    return true
-  }, [])
-
-  const reopen = useCallback(async () => {
-    setState('required')
-    setError('')
-    try {
-      if (usesLocalDevelopmentSession()) {
-        acceptSession(await resolveErpSession())
-        return
-      }
-      await openErpLogin()
-    } catch (cause) {
-      setState('error')
-      setError(cause instanceof Error ? cause.message : '无法打开 ERP 扫码窗口')
-    }
-  }, [acceptSession])
+  const actions = useRef({ reopen: async () => {}, logout: async () => {} })
 
   useEffect(() => {
-    if (!isTauriRuntime() || usesLocalDevelopmentSession()) return
-    let cancelled = false
+    let disposed = false
+    let generation = 0
+    let checking: number | undefined
+    let timer: ReturnType<typeof setTimeout> | undefined
+    let accepted: ErpSessionStatus | undefined
+    let loginOpened = false
+    let pendingLogout = false
+    let authorizingUntil = 0
     let unlisten: (() => void) | undefined
-    void listen<string>('erp-login-progress', (event) => {
-      if (event.payload !== 'authorizing') return
-      setState('authorizing')
+    const current = (request: number) => !disposed && request === generation
+    const schedule = (delay: number) => {
+      clearTimeout(timer)
+      timer = setTimeout(() => void check(), delay)
+    }
+    const openLogin = async (request: number) => {
+      if (loginOpened || !current(request)) return
+      await openErpLogin()
+      if (current(request)) loginOpened = true
+    }
+    async function check() {
+      if (disposed || pendingLogout || checking === generation) return
+      const request = generation
+      checking = request
+      clearTimeout(timer)
+      try {
+        const next = await resolveErpSession()
+        if (!current(request)) return
+        if (next.authenticated && next.user) {
+          accepted = next
+          setSession(next)
+          setState('authenticated')
+          setError('')
+          authorizingUntil = 0
+          loginOpened = false
+          if (next.expiresAt) schedule(Math.max(1_000, next.expiresAt * 1_000 - Date.now() - 5 * 60_000))
+        } else {
+          accepted = undefined
+          setSession(undefined)
+          setError(authorizingUntil && authorizingUntil <= Date.now() ? '钉钉已确认，但 ERP 会话未建立，请重新扫码。' : '')
+          if (authorizingUntil > Date.now()) {
+            setState('authorizing')
+          } else {
+            setState('required')
+            await openLogin(request)
+          }
+          if (current(request)) schedule(LOGIN_POLL_MS)
+        }
+      } catch {
+        if (!current(request)) return
+        // A failed request does not prove logout. Keep only the still-valid session.
+        if (!accepted || (accepted.expiresAt !== null && accepted.expiresAt * 1_000 <= Date.now())) {
+          setSession(undefined)
+          setState('error')
+        }
+        setError('暂时无法连接 ERP，正在自动重试。')
+        schedule(RETRY_MS)
+      } finally {
+        if (checking === request) checking = undefined
+      }
+    }
+    const logout = async () => {
+      const request = ++generation
+      pendingLogout = true
+      clearTimeout(timer)
+      accepted = undefined
+      setSession(undefined)
+      setState('checking')
       setError('')
-    }).then((dispose) => {
-      if (cancelled) dispose()
-      else unlisten = dispose
-    }).catch((cause) => {
-      if (!cancelled) setError(cause instanceof Error ? cause.message : '无法监听 ERP 登录进度')
-    })
+      try {
+        await clearErpSession()
+        if (!current(request)) return
+        pendingLogout = false
+        loginOpened = false
+        authorizingUntil = 0
+        await check()
+      } catch {
+        if (current(request)) {
+          setState('error')
+          setError('退出登录未完成，请重试。')
+        }
+      }
+    }
+    actions.current = {
+      logout,
+      reopen: async () => {
+        if (pendingLogout) return logout()
+        loginOpened = false
+        authorizingUntil = 0
+        await check()
+      },
+    }
+    const wake = () => {
+      if (document.visibilityState === 'hidden') return
+      if (!accepted || accepted.expiresAt === null || accepted.expiresAt * 1_000 - Date.now() <= 5 * 60_000) void check()
+    }
+    window.addEventListener('online', wake)
+    window.addEventListener('focus', wake)
+    document.addEventListener('visibilitychange', wake)
+    if (isTauriRuntime() && !usesLocalDevelopmentSession()) {
+      void listen<string>('erp-login-progress', (event) => {
+        if (disposed || pendingLogout || event.payload !== 'authorizing') return
+        authorizingUntil = Date.now() + 20_000
+        setState('authorizing')
+        setError('')
+        schedule(LOGIN_POLL_MS)
+      }).then((dispose) => { if (disposed) dispose(); else unlisten = dispose }).catch(() => undefined)
+    }
+    void check()
     return () => {
-      cancelled = true
+      disposed = true
+      clearTimeout(timer)
       unlisten?.()
+      window.removeEventListener('online', wake)
+      window.removeEventListener('focus', wake)
+      document.removeEventListener('visibilitychange', wake)
     }
   }, [])
 
-  useEffect(() => {
-    let cancelled = false
-    void resolveErpSession()
-      .then(async (session) => {
-        if (cancelled || acceptSession(session)) return
-        setState('required')
-        await openErpLogin()
-      })
-      .catch(async (cause) => {
-        if (cancelled) return
-        setState('required')
-        setError(cause instanceof Error ? cause.message : 'ERP 登录状态检查失败')
-        try {
-          await openErpLogin()
-        } catch (openError) {
-          if (cancelled) return
-          setState('error')
-          setError(openError instanceof Error ? openError.message : '无法打开 ERP 扫码窗口')
-        }
-      })
-    return () => { cancelled = true }
-  }, [acceptSession])
-
-  useEffect(() => {
-    if (state !== 'authorizing') return
-    let cancelled = false
-    const timer = window.setTimeout(() => {
-      void resolveErpSession()
-        .then((session) => {
-          if (cancelled || acceptSession(session)) return
-          setState('required')
-          setError('钉钉已确认，但 ERP 会话未建立，请重新扫码。')
-        })
-        .catch(() => {
-          if (cancelled) return
-          setState('required')
-          setError('ERP 登录确认超时，请重新扫码。')
-        })
-    }, 20_000)
-    return () => {
-      cancelled = true
-      window.clearTimeout(timer)
-    }
-  }, [acceptSession, state])
-
-  useEffect(() => {
-    if (!isTauriRuntime() || usesLocalDevelopmentSession() || state === 'authenticated') return
-    let cancelled = false
-    let checking = false
-    const timer = window.setInterval(() => {
-      if (checking) return
-      checking = true
-      void resolveErpSession()
-        .then((session) => {
-          if (!cancelled) acceptSession(session)
-        })
-        .catch(() => undefined)
-        .finally(() => { checking = false })
-    }, 1_500)
-    return () => {
-      cancelled = true
-      window.clearInterval(timer)
-    }
-  }, [acceptSession, state])
-
-  useEffect(() => {
-    if (!expiresAt || state !== 'authenticated') return
-    const delay = Math.max(1_000, expiresAt * 1_000 - Date.now() - 5 * 60_000)
-    const timer = window.setTimeout(() => {
-      void resolveErpSession()
-        .then((session) => {
-          if (!acceptSession(session)) void reopen()
-        })
-        .catch(() => void reopen())
-    }, delay)
-    return () => window.clearTimeout(timer)
-  }, [acceptSession, expiresAt, reopen, state])
-
-  const logout = useCallback(async () => {
-    await clearErpSession()
-    setUser(null)
-    setAccessToken('')
-    setExpiresAt(null)
-    await reopen()
-  }, [reopen])
-
-  return { accessToken, authorizing: state === 'authorizing', error, logout, reopen, state, user }
+  return {
+    accessToken: session?.accessToken ?? '', authorizing: state === 'authorizing', error,
+    logout: () => actions.current.logout(), reopen: () => actions.current.reopen(), state, user: session?.user ?? null,
+  }
 }

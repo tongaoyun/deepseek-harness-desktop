@@ -21,6 +21,8 @@
     "smoke:macos": "bash scripts/smoke-test-macos-bundle.sh",
     "tauri:build:macos": "bash scripts/build-macos.sh",
     "acceptance:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/acceptance-windows.ps1",
+    "evaluation:list": "node harness-host/scripts/evaluate-work-tasks.mjs --list",
+    "evaluation:run": "node harness-host/scripts/evaluate-work-tasks.mjs",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build"

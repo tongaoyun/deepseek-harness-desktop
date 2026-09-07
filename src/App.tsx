@@ -55,8 +55,8 @@ import { useTaskCheckpoints } from './useTaskCheckpoints'
 import { useLocalSchedules } from './useLocalSchedules'
 import { useLocalScheduleTools } from './useLocalScheduleTools'
 import { attachmentSelectionError } from './attachmentLimits'
-import { resolveHarnessSessionId } from './harnessSession'
-import { harnessPromptWithConversationReplay } from './conversationReplay'
+import { restoredTaskSessionId } from './harnessSession'
+import { prepareTaskTurn } from './taskTurn'
 import { startLocalIm, stopLocalImRuntime } from './localIm'
 import type { LocalTaskRun, TaskMessage, TaskMonitorState } from './types'
 import { parseMemoryCommand, learnCompletedTask } from './memory'
@@ -84,7 +84,7 @@ import { DesktopSettingsPage } from './DesktopSettingsPage'
 import { ConnectorsPage } from './ConnectorsPage'
 import type { SkillView } from './skills'
 import { allowedExtensionArtifacts } from './extensionPolicy'
-import { capabilitySnapshotChanged, createCapabilitySnapshot } from './capabilitySnapshot'
+import { createCapabilitySnapshot } from './capabilitySnapshot'
 import { useEnterpriseBootstrap } from './useEnterpriseBootstrap'
 import { DesktopSidebar } from './DesktopSidebar'
 import { ChatPage } from './ChatPage'
@@ -543,14 +543,11 @@ export default function App() {
     setMessages(streaming?.messages ?? task.messages.map((message) => ({ ...message, pending: false })))
     selectCurrentLocalTaskId(task.id)
     setCreationKind(undefined)
-    setHarnessSessionId(task.sessionId ?? '')
     setCurrentCapabilitySnapshot(task.capabilitySnapshot)
     taskMonitorRef.current = streaming?.monitor ?? task.monitor
     setTaskMonitor(streaming?.monitor ?? task.monitor)
     const draft = user ? readTaskDraft(user.userId, task.id) : undefined
-    if (draft && JSON.stringify(draftRootPaths(draft).sort()) !== JSON.stringify((task.localDirectories ?? []).flatMap((directory) => directory.path ? [directory.path] : []).sort())) {
-      setHarnessSessionId('')
-    }
+    setHarnessSessionId(restoredTaskSessionId(task, draft))
     void restoreDraftContext(draft ?? { ...emptyDraft(), prompt: joinComposerPrompt(task.invocationToken ?? '', ''), directories: task.localDirectories ?? [], knowledgeRefs: task.capabilitySnapshot?.knowledgeBaseRefs ?? [], connectorIds: task.composerConnectorIds ?? [], model: task.model ?? activeModel })
     focusComposer()
   }
@@ -814,50 +811,15 @@ export default function App() {
       if (isCurrent()) setCurrentCapabilitySnapshot(capabilitySnapshot)
       const taskId = contextTaskId || crypto.randomUUID()
       const existingTask = queuedTask ?? localTasks.find((task) => task.id === taskId)
-      const sessionWasExplicitlyInvalidated = !taskSessionId && Boolean(existingTask?.sessionId)
       const invocations = extensionInvocations(expertKits, skillViews)
       const currentInvocation = selectedInvocation(input, invocations)
       const invocation = currentInvocation ?? (queuedTask?.invocationToken ? invocations.find((item) => item.token === queuedTask.invocationToken) : undefined)
-      const mustStartFreshSession = resetSessionForDirectoryChange
-        || Boolean(existingTask && (existingTask.model !== taskModel || capabilitySnapshotChanged(existingTask.capabilitySnapshot, capabilitySnapshot)))
-        || (!taskSessionId && !existingTask?.sessionId && contextMessages.length > 0)
-        || invocation?.token !== existingTask?.invocationToken
-        || sessionWasExplicitlyInvalidated
-        || contextMonitor.status === 'failed' || contextMonitor.status === 'canceled'
-      const rootSessionId = resolveHarnessSessionId(
-        taskSessionId,
-        existingTask?.sessionId,
-        mustStartFreshSession,
-        () => `session-${crypto.randomUUID().replaceAll('-', '')}`,
-      )
-      const replayPrompt = harnessPromptWithConversationReplay(input, contextMessages, mustStartFreshSession)
-      const harnessPrompt = invocation && !replayPrompt.startsWith(invocation.token)
-        ? `${invocation.token}\n${replayPrompt}` : replayPrompt
-      const pendingMessages: TaskMessage[] = [...contextMessages, { role: 'user', text: input, ...(messageAttachments.length > 0 ? { attachments: messageAttachments } : {}) },
-        { role: 'assistant', text: '', pending: true }]
-      const runningMonitor: TaskMonitorState = {
-        ...createTaskMonitor(now),
-        status: 'running',
-        activity: '正在处理',
-        updatedAt: now,
-        startedAt: now,
-      }
-      const runningTask: LocalTaskRun = {
-        id: taskId,
-        source: 'DESKTOP',
-        name: existingTask?.name ?? (splitComposerPrompt(input).text || invocation?.name || input).slice(0, 60),
-        status: 'RUNNING',
-        createdAt: existingTask?.createdAt ?? now,
-        updatedAt: now,
-        sessionId: rootSessionId,
-        model: taskModel,
-        invocationToken: invocation?.token,
-        composerConnectorIds: taskConnectorIds,
-        localDirectories: taskDirectories,
-        capabilitySnapshot,
-        monitor: runningMonitor,
-        messages: pendingMessages,
-      }
+      const { rootSessionId, harnessPrompt, pendingMessages, runningMonitor, runningTask } = prepareTaskTurn({
+        taskId, input, now, existingTask, sessionId: taskSessionId, model: taskModel,
+        directories: taskDirectories, directoriesChanged: resetSessionForDirectoryChange,
+        connectorIds: taskConnectorIds, capabilities: capabilitySnapshot, invocation,
+        messages: contextMessages, monitor: contextMonitor, attachments: messageAttachments,
+      })
       accepted?.()
       if (isCurrent()) {
         if (!queuedTask) { try { saveTaskDraft(user.userId, contextTaskId || creationDraftKeyRef.current) } catch { /* Current task keeps the submitted content. */ } }
