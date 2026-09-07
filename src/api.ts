@@ -1,14 +1,9 @@
 import type {
   BootstrapResponse,
-  ArtifactDownload,
-  CloudTaskRun,
   ConnectorCatalogEntry,
-  CreateScheduledTaskRequest,
   ExpertKitCatalogEntry,
   ExpertKitDownload,
   SkillCatalogEntry,
-  ScheduledTask,
-  ScheduledTaskExecution,
   KnowledgeBaseEntry,
   KnowledgeDocumentEntry,
   KnowledgeSearchHit,
@@ -89,99 +84,6 @@ export async function loadConnectors(
   signal?: AbortSignal,
 ): Promise<ConnectorCatalogEntry[]> {
   return loadCatalog(endpoint, employeeId, accessToken, '连接器目录', signal)
-}
-
-export async function loadScheduledTasks(
-  endpoint: string,
-  employeeId: string,
-  accessToken: string,
-  signal?: AbortSignal,
-): Promise<ScheduledTask[]> {
-  return loadCatalog(endpoint, employeeId, accessToken, '定时任务', signal)
-}
-
-export async function createScheduledTask(
-  endpoint: string,
-  employeeId: string,
-  accessToken: string,
-  request: CreateScheduledTaskRequest,
-): Promise<ScheduledTask> {
-  return scheduleRequest(endpoint, employeeId, accessToken, '', 'POST', request)
-}
-
-export async function updateScheduledTask(
-  endpoint: string,
-  employeeId: string,
-  accessToken: string,
-  id: string,
-  request: CreateScheduledTaskRequest,
-): Promise<ScheduledTask> {
-  return scheduleRequest(endpoint, employeeId, accessToken, `/${encodeURIComponent(id)}`, 'PUT', request)
-}
-
-export async function changeScheduledTask(
-  endpoint: string,
-  employeeId: string,
-  accessToken: string,
-  id: string,
-  action: 'pause' | 'resume' | 'run',
-): Promise<ScheduledTask> {
-  return scheduleRequest(endpoint, employeeId, accessToken,
-    `/${encodeURIComponent(id)}/${action}`, 'POST')
-}
-
-export async function deleteScheduledTask(
-  endpoint: string,
-  employeeId: string,
-  accessToken: string,
-  id: string,
-): Promise<void> {
-  const response = await fetch(controlPlaneUrl(`${endpoint.replace(/\/$/, '')}/${encodeURIComponent(id)}`), {
-    method: 'DELETE',
-    headers: enterpriseHeaders(employeeId, accessToken),
-  })
-  if (!response.ok) throw new Error(`删除定时任务返回 ${response.status}`)
-}
-
-export async function loadScheduledTaskExecutions(
-  endpoint: string,
-  employeeId: string,
-  accessToken: string,
-  id: string,
-): Promise<ScheduledTaskExecution[]> {
-  return loadCatalog(`${endpoint.replace(/\/$/, '')}/${encodeURIComponent(id)}/executions`,
-    employeeId, accessToken, '执行记录')
-}
-
-export async function cancelScheduledTaskExecution(
-  endpoint: string, employeeId: string, accessToken: string, id: string, runId: string,
-): Promise<void> {
-  const response = await fetch(controlPlaneUrl(`${endpoint.replace(/\/$/, '')}/${encodeURIComponent(id)}/executions/${encodeURIComponent(runId)}/cancel`), {
-    method: 'POST', headers: enterpriseHeaders(employeeId, accessToken), signal: AbortSignal.timeout(15_000),
-  })
-  if (!response.ok) throw new Error(`取消云端执行返回 ${response.status}，请刷新记录确认当前状态后重试`)
-}
-
-export async function loadCloudTaskRuns(
-  endpoint: string,
-  employeeId: string,
-  accessToken: string,
-  signal?: AbortSignal,
-): Promise<CloudTaskRun[]> {
-  return loadCatalog(endpoint, employeeId, accessToken, '任务记录', signal)
-}
-
-export async function createTaskRunArtifactDownload(
-  endpoint: string,
-  employeeId: string,
-  accessToken: string,
-  runId: string,
-): Promise<ArtifactDownload> {
-  const response = await fetch(controlPlaneUrl(`${endpoint.replace(/\/$/, '')}/${encodeURIComponent(runId)}/artifact`), {
-    headers: enterpriseHeaders(employeeId, accessToken),
-  })
-  if (!response.ok) throw new Error(`任务产物下载授权返回 ${response.status}`)
-  return response.json() as Promise<ArtifactDownload>
 }
 
 export async function submitDeviceHeartbeat(
@@ -404,23 +306,6 @@ async function knowledgeVoidRequest(
   if (!response.ok) throw new Error(`知识库删除操作返回 ${response.status}`)
 }
 
-async function scheduleRequest(
-  endpoint: string,
-  employeeId: string,
-  accessToken: string,
-  suffix: string,
-  method: 'POST' | 'PUT',
-  request?: CreateScheduledTaskRequest,
-): Promise<ScheduledTask> {
-  const response = await fetch(controlPlaneUrl(`${endpoint.replace(/\/$/, '')}${suffix}`), {
-    method,
-    headers: { ...enterpriseHeaders(employeeId, accessToken), ...(request ? { 'Content-Type': 'application/json' } : {}) },
-    ...(request ? { body: JSON.stringify(request) } : {}),
-  })
-  if (!response.ok) throw new Error(`定时任务操作返回 ${response.status}`)
-  return response.json() as Promise<ScheduledTask>
-}
-
 async function loadCatalog<T>(
   endpoint: string,
   employeeId: string,
@@ -462,4 +347,9 @@ function knowledgeHeaders(employeeId: string, teamId: string, accessToken: strin
     ...enterpriseHeaders(employeeId, accessToken),
     ...(teamId.trim() ? { 'X-Xiaoyin-Team-Id': teamId.trim() } : {}),
   }
+}
+
+// Stable local storage namespace, not a server API. Preserve existing plans across server changes.
+export function localScheduleNamespace(): string {
+  return controlPlaneUrl('/api/v1/schedules')
 }

@@ -7,7 +7,6 @@ import {
   PlugZap,
   Trash2,
   WandSparkles,
-  Workflow,
 } from 'lucide-react'
 import { type ReactNode, useEffect } from 'react'
 import { expertKitChanges } from './expertKitDetails'
@@ -58,7 +57,7 @@ export function ExpertKitDetailsModal({
         {onUse && <button onClick={() => onUse()} type="button">在对话中使用</button>}
         {onRemove && <button className="danger" disabled={removing} onClick={onRemove} type="button"><Trash2 size={14} />{removing ? '正在卸载…' : kit.localOnly ? '移除本地套件' : '卸载套件'}</button>}
         {kit.installState === 'retired' ? null : kit.installState === 'installed' ? <>
-          {kit.serverWorkflows.length > 0 && <button className="secondary" onClick={onSchedule} type="button"><CalendarClock size={14} /> 创建定时任务</button>}
+          <button className="secondary" onClick={onSchedule} type="button"><CalendarClock size={14} /> 创建定时任务</button>
         </> : kit.installState === 'update' ? <>
           <button disabled={installing || !kit.sha256} onClick={onInstall} type="button">{installing ? '正在校验并安装…' : '确认更新'}</button>
         </> : <button disabled={installing || !kit.sha256} onClick={onInstall} type="button">{installing ? '正在校验并安装…' : '确认安装'}</button>}
@@ -96,11 +95,10 @@ export function ExpertKitDetailsModal({
       </section>}
       {kit.installed && <ExtensionContentsPanel extension={kit.installed} />}
       <section className="expert-detail-section">
-        <h3>连接与工作流</h3>
+        <h3>连接器与知识库</h3>
         <div className="expert-content-groups">
           <DetailGroup icon={<PlugZap size={14} />} title={`连接器 ${kit.connectorRefs.length}`} values={kit.connectorRefs.map((id) => connectorById.get(id)?.name ?? id)} empty="不使用连接器" />
           <DetailGroup icon={<BookOpenCheck size={14} />} title={`知识库 ${kit.knowledgeBaseRefs.length}`} values={kit.knowledgeBaseRefs.map((reference) => knowledgeByReference.get(reference)?.name ?? reference)} empty="不绑定知识库" />
-          <DetailGroup icon={<Workflow size={14} />} title={`后台工作流 ${kit.serverWorkflows.length}`} values={kit.serverWorkflows.map((workflow) => workflow.name)} empty="不包含后台工作流" />
         </div>
       </section>
 

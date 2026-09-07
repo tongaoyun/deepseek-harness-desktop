@@ -9,8 +9,6 @@ export interface BootstrapResponse {
     expertKits: string
     skills: string
     connectors: string
-    schedules: string
-    taskRuns: string
     knowledge: string
     deviceCapabilities?: string
     auditEvents?: string
@@ -53,49 +51,6 @@ export interface ServerWorkflowInput {
   type: 'string' | 'date' | 'integer' | 'boolean'
   required: boolean
   description?: string
-}
-
-export interface ScheduledTask {
-  id: string
-  name: string
-  expertKitId: string
-  expertKitVersion: string
-  workflowId: string
-  workflowType: string
-  workflowVersion: string
-  cronExpression: string
-  timeZone: string
-  inputs: Record<string, unknown>
-  status: 'ACTIVE' | 'PAUSED'
-  createdAt: string
-  updatedAt: string
-}
-
-export interface ScheduledTaskExecution {
-  scheduledAt: string
-  startedAt: string
-  workflowId: string
-  runId: string
-  status: string
-  closedAt?: string
-  artifactObjectKey?: string
-}
-
-export interface CloudTaskRun {
-  id: string
-  source: 'SCHEDULE'
-  employeeId?: string
-  name: string
-  expertKitId: string
-  workflowId: string
-  scheduleId: string
-  temporalWorkflowId: string
-  runId: string
-  status: string
-  scheduledAt: string
-  startedAt: string
-  closedAt?: string
-  artifactObjectKey?: string
 }
 
 export interface TaskMessage {
@@ -277,7 +232,7 @@ export interface KnowledgeDocumentEntry {
   status: KnowledgeDocumentStatus
   chunkCount: number
   failureMessage?: string
-  temporalWorkflowId?: string
+  indexRunId?: string
   createdAt: string
   updatedAt: string
 }
@@ -291,15 +246,6 @@ export interface KnowledgeSearchHit {
   locator: string
   content: string
   score: number
-}
-
-export interface CreateScheduledTaskRequest {
-  name: string
-  expertKitId: string
-  workflowId: string
-  cronExpression: string
-  timeZone: string
-  inputs: Record<string, unknown>
 }
 
 export interface SkillCatalogEntry {

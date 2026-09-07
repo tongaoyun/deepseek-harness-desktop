@@ -4,6 +4,7 @@ import {
   createExpertKitDownload,
   createSkillDownload,
   resolveControlPlaneEndpoint,
+  localScheduleNamespace,
   submitFeedback,
 } from './api'
 import { ErpAuthScreen } from './ErpAuthScreen'
@@ -223,7 +224,7 @@ export default function App() {
     teamId: user.teamId,
     litellmBaseUrl: bootstrap.endpoints.litellm,
     knowledgeEndpoint: resolveControlPlaneEndpoint(bootstrap.endpoints.knowledge),
-    scheduleEndpoint: resolveControlPlaneEndpoint(bootstrap.endpoints.schedules),
+    scheduleEndpoint: localScheduleNamespace(),
     connectors: runtimeConnectors,
     allowedArtifacts,
     model: activeModel,
@@ -240,7 +241,7 @@ export default function App() {
     owner: user?.userId, ready: authState === 'authenticated' && runtimeStatus === 'ready' && harnessHealth === 'ready',
     tasks: localTasks, runningIds: runningTaskIds, run: runQueued,
   })
-  const localSchedules = useLocalSchedules(user && bootstrap ? `${user.userId}:${resolveControlPlaneEndpoint(bootstrap.endpoints.schedules)}` : undefined,
+  const localSchedules = useLocalSchedules(user && bootstrap ? `${user.userId}:${localScheduleNamespace()}` : undefined,
     connectorDiagnosticsAvailable() && authState === 'authenticated' && runtimeStatus === 'ready' && harnessHealth === 'ready' && runningTaskIds.length < 3,
     async (schedule, taskId) => {
       if (schedule.model && !bootstrap?.models.includes(schedule.model)) return { notStarted: '计划指定的模型已不可用，请编辑计划重新选择模型；计划已暂停' }
@@ -260,7 +261,7 @@ export default function App() {
         throw error
       }
     })
-  useLocalScheduleTools(user && bootstrap ? `${user.userId}:${resolveControlPlaneEndpoint(bootstrap.endpoints.schedules)}` : undefined, localSchedules, localTasks, runningTaskIds)
+  useLocalScheduleTools(user && bootstrap ? `${user.userId}:${localScheduleNamespace()}` : undefined, localSchedules, localTasks, runningTaskIds)
   const dragActive = useDesktopDrop({
     enabled: authState === 'authenticated' && page === 'chat' && connectorDiagnosticsAvailable(),
     running: currentTaskRunning || taskContextRestoring || pastingAttachments,
@@ -886,7 +887,7 @@ export default function App() {
           sessionId: rootSessionId,
           litellmBaseUrl: bootstrap.endpoints.litellm,
           knowledgeEndpoint: resolveControlPlaneEndpoint(bootstrap.endpoints.knowledge),
-          scheduleEndpoint: resolveControlPlaneEndpoint(bootstrap.endpoints.schedules),
+          scheduleEndpoint: localScheduleNamespace(),
           connectors: taskConnectors,
           allowedArtifacts: capabilitySnapshot.extensions,
           knowledgeBaseRefs: capabilitySnapshot.knowledgeBaseRefs,
@@ -1162,7 +1163,7 @@ export default function App() {
           teamId: user.teamId,
           litellmBaseUrl: bootstrap.endpoints.litellm,
           knowledgeEndpoint: resolveControlPlaneEndpoint(bootstrap.endpoints.knowledge),
-          scheduleEndpoint: resolveControlPlaneEndpoint(bootstrap.endpoints.schedules),
+          scheduleEndpoint: localScheduleNamespace(),
           connectors: runtimeConnectors,
           allowedArtifacts,
           model: activeModel,
@@ -1208,7 +1209,7 @@ export default function App() {
           teamId: user.teamId,
           litellmBaseUrl: bootstrap.endpoints.litellm,
           knowledgeEndpoint: resolveControlPlaneEndpoint(bootstrap.endpoints.knowledge),
-          scheduleEndpoint: resolveControlPlaneEndpoint(bootstrap.endpoints.schedules),
+          scheduleEndpoint: localScheduleNamespace(),
           connectors: runtimeConnectors,
           allowedArtifacts,
           model: activeModel,
@@ -1495,7 +1496,7 @@ export default function App() {
               allowedArtifacts={allowedArtifacts}
               litellmBaseUrl={bootstrap.endpoints.litellm}
               knowledgeEndpoint={resolveControlPlaneEndpoint(bootstrap.endpoints.knowledge)}
-              scheduleEndpoint={resolveControlPlaneEndpoint(bootstrap.endpoints.schedules)}
+              scheduleEndpoint={localScheduleNamespace()}
               model={activeModel}
               modelApiKey={bootstrap.modelApiKey}
               localTasks={localTasks}
@@ -1553,7 +1554,7 @@ export default function App() {
           teamId: user.teamId,
           litellmBaseUrl: bootstrap.endpoints.litellm,
           knowledgeEndpoint: resolveControlPlaneEndpoint(bootstrap.endpoints.knowledge),
-          scheduleEndpoint: resolveControlPlaneEndpoint(bootstrap.endpoints.schedules),
+          scheduleEndpoint: localScheduleNamespace(),
           connectors: runtimeConnectors,
           allowedArtifacts,
           model: activeModel,
