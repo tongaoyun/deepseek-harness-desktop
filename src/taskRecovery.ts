@@ -38,6 +38,7 @@ export async function runHarnessWithRecovery(
     const failure = classifyHarnessFailure(reason)
     if (callbacks.isCanceled() || !shouldRetryHarnessFailure(failure, callbacks.getMonitor())) throw reason
     await runtime.reset(request.taskId)
+    if (callbacks.isCanceled()) throw new Error('本轮已停止')
     const sessionId = runtime.sessionId()
     callbacks.onRetry(sessionId, failure)
     return runtime.execute({ ...request, sessionId })

@@ -6,6 +6,9 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { DeepSeekHarness, type ContentBlock, type HarnessClient, type HarnessNotification } from '@deepseek-ai/dsh-sdk-client'
 import { AttachmentId, type ImageAttachmentRef, type ImageMediaType } from '@deepseek-ai/dsh-attachment'
 import { imageMetadata } from './local-attachment-store-plugin.js'
+import { withTaskInstructions } from './task-instructions.js'
+import { IMAGE_LIMITS } from './image-limits.js'
+import { memoryContextForTask } from './memory-context.js'
 
 export interface RunInput {
   prompt: string
@@ -40,6 +43,8 @@ const moduleDirectory = dirname(fileURLToPath(import.meta.url))
 export class DeepSeekHarnessRuntime implements HarnessRuntime {
   private harness: DeepSeekHarness | undefined
   private runTail: Promise<void> = Promise.resolve()
+  private closing = false
+  private closeTask: Promise<void> | undefined
 
   constructor(private readonly extraEnv: NodeJS.ProcessEnv = {}) {}
 
@@ -52,7 +57,12 @@ export class DeepSeekHarnessRuntime implements HarnessRuntime {
   }
 
   async initialize(): Promise<{ status: string; runtime: string }> {
-    await this.getOrCreateHarness().start()
+    try {
+      await this.getOrCreateHarness().start()
+    } catch (error) {
+      if (this.closing) await this.closeTask?.catch(() => undefined)
+      throw error
+    }
     return { status: 'initialized', runtime: 'deepseek-harness' }
   }
 
@@ -77,14 +87,15 @@ export class DeepSeekHarnessRuntime implements HarnessRuntime {
       throw new Error('prompt must not be blank')
     }
     const harness = this.getOrCreateHarness()
-    const prompt = applyMemoryContext(input.prompt, process.env.XIAOYIN_MEMORY_CONTEXT)
-    const images = await Promise.all((input.images ?? []).slice(0, 4).map(persistInputImage))
+    const prompt = withTaskInstructions(applyMemoryContext(input.prompt, process.env.XIAOYIN_MEMORY_CONTEXT))
+    if ((input.images?.length ?? 0) > IMAGE_LIMITS.maxImagesPerMessage) throw new Error('单条消息最多添加 4 张图片')
+    const images = await Promise.all((input.images ?? []).map(persistInputImage))
     const content: string | ContentBlock[] = images.length === 0 ? prompt : [
       { type: 'text', text: prompt }, ...images.map((attachment) => ({ type: 'image' as const, attachment })),
     ]
     const sessionId = input.sessionId ?? `session-${randomUUID().replaceAll('-', '')}`
-    await harness.start()
     try {
+      await harness.start()
       return await runSessionTurn(
         harness.client,
         sessionId,
@@ -93,6 +104,9 @@ export class DeepSeekHarnessRuntime implements HarnessRuntime {
         turnTimeoutMs(process.env.XIAOYIN_TURN_TIMEOUT_MS),
       )
     } catch (error) {
+      // Do not let the native host tear down the process group before the SDK
+      // has finished disposing detached shell/MCP children.
+      if (this.closing) await this.closeTask?.catch(() => undefined)
       if (error instanceof TurnTimeoutError && this.harness === harness) {
         this.harness = undefined
         await harness.close().catch(() => undefined)
@@ -102,13 +116,18 @@ export class DeepSeekHarnessRuntime implements HarnessRuntime {
   }
 
   async close(): Promise<void> {
-    await this.runTail
+    if (this.closeTask) return this.closeTask
+    this.closing = true
     const current = this.harness
     this.harness = undefined
-    await current?.close()
+    // Closing the SDK actively aborts the model turn and disposes tool handles.
+    // Waiting for runTail first would turn Stop into "wait until finished".
+    this.closeTask = current?.close() ?? Promise.resolve()
+    return this.closeTask
   }
 
   private getOrCreateHarness(): DeepSeekHarness {
+    if (this.closing) throw new Error('本轮已停止')
     if (this.harness !== undefined) return this.harness
 
     const packageJson = require.resolve('@deepseek-ai/dsh-sdk-jsonrpc-demo/package.json')
@@ -186,7 +205,8 @@ export async function runSessionTurn(
       }
       if (event?.type === 'turn/end') {
         const reason = record(record(event.data)?.reason)
-        if (reason?.kind === 'error') turnFailure = providerFailureMessage(reason)
+        if (reason?.kind === 'error') turnFailure = providerFailureMessage(reason) || '本轮执行失败，已保留部分结果，请检查后继续'
+        else if (reason?.kind === 'max-tokens') turnFailure = '本轮达到模型输出上限，结果尚未完成，请继续处理剩余内容'
         if (turnStarted) break
       }
       if (turnStarted && notification.method === 'session.status'
@@ -195,7 +215,8 @@ export async function runSessionTurn(
   } finally {
     subscription.close()
   }
-  if (!finalResponse.trim()) throw new Error(turnFailure || '模型本轮没有返回可显示文本，请重试')
+  if (turnFailure) throw new Error(turnFailure)
+  if (!finalResponse.trim()) throw new Error('模型本轮没有返回可显示文本，请重试')
   return { sessionId, finalResponse }
 }
 
@@ -381,10 +402,10 @@ function record(value: unknown): Record<string, unknown> | undefined {
 }
 
 async function persistInputImage(input: ImageRunInput): Promise<ImageAttachmentRef> {
-  if (input.data.length === 0 || input.data.length > 5 * 1024 * 1024) throw new Error('IM image exceeds the supported size')
+  if (input.data.length === 0 || input.data.length > IMAGE_LIMITS.maxImageBytes) throw new Error('图片为空或超过 10 MB，请缩小后重试')
   const metadata = imageMetadata(input.data, input.mediaType)
-  if (metadata.width > 2_560 || metadata.height > 2_560 || metadata.width * metadata.height > 4_000_000) {
-    throw new Error('IM image dimensions exceed the selected model policy')
+  if (metadata.width > IMAGE_LIMITS.maxImageDimension || metadata.height > IMAGE_LIMITS.maxImageDimension || metadata.width * metadata.height > IMAGE_LIMITS.maxImagePixels) {
+    throw new Error('图片分辨率超出当前运行时范围：最长边 2560 像素、总计 400 万像素，请裁剪或缩小后重试')
   }
   const hash = createHash('sha256').update(input.data).digest('hex')
   const root = resolve(process.env.XIAOYIN_ATTACHMENT_ROOT ?? './.xiaoyin/attachments')
@@ -400,7 +421,7 @@ async function persistInputImage(input: ImageRunInput): Promise<ImageAttachmentR
 }
 
 export function applyMemoryContext(prompt: string, memoryContext: string | undefined): string {
-  const memory = memoryContext?.trim()
+  const memory = memoryContextForTask(prompt, memoryContext)
   if (!memory) return prompt
   return `<xiaoyin-memory>\n${memory}\n</xiaoyin-memory>\n\n当前任务：\n${prompt}`
 }

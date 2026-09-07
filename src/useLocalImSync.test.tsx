@@ -28,14 +28,15 @@ const context: LocalImHarnessContext = {
 }
 
 function Harness({
-  onSyncError, onTasksChanged = vi.fn(), tasks = [],
+  onSyncError, onTasksChanged = vi.fn(), tasks = [], employeeId = 'employee-1',
 }: {
   onSyncError: (message: string) => void
   onTasksChanged?: (tasks: LocalTaskRun[]) => void
   tasks?: LocalTaskRun[]
+  employeeId?: string
 }) {
   useLocalImSync({
-    context, currentTaskId: '', employeeId: 'employee-1', enabled: true, onSyncError,
+    context, currentTaskId: '', employeeId, enabled: true, onSyncError,
     onCurrentTaskChanged: vi.fn(), onTasksChanged, tasks,
   })
   return null
@@ -106,5 +107,43 @@ describe('local IM synchronization', () => {
     expect(onTasksChanged).not.toHaveBeenCalled()
     expect(onSyncError).toHaveBeenCalledWith(expect.stringContaining('database busy'))
     await act(async () => root.unmount())
+  })
+
+  it('does not replace newly created local tasks while an IM checkpoint is saving', async () => {
+    const task: LocalTaskRun = {
+      id: 'task-1', source: 'DESKTOP', name: '日报', status: 'RUNNING',
+      createdAt: '2026-09-04T01:00:00Z', updatedAt: '2026-09-04T01:00:00Z', sessionId: 'session-1',
+      monitor: { status: 'running', activity: '处理中', updatedAt: '2026-09-04T01:00:00Z', steps: [], artifacts: [] }, messages: [],
+    }
+    bridge.syncLocalImTasks.mockResolvedValue(null)
+    bridge.loadLocalImStatus.mockResolvedValue({ enabled: true, conversations: [{ boundTaskId: task.id, status: 'COMPLETED', updatedAt: '2026-09-04T01:01:00Z', sessionId: task.sessionId, messages: [], taskEvents: [] }] })
+    let complete!: () => void
+    bridge.persistTaskHistory.mockReturnValueOnce(new Promise<void>((resolve) => { complete = resolve }))
+    const onTasksChanged = vi.fn()
+    const root = createRoot(container)
+    await act(async () => root.render(<Harness onSyncError={vi.fn()} onTasksChanged={onTasksChanged} tasks={[task]} />))
+    expect(bridge.persistTaskHistory).toHaveBeenCalledOnce()
+    await act(async () => root.render(<Harness onSyncError={vi.fn()} onTasksChanged={onTasksChanged} tasks={[task, { ...task, id: 'new-task' }]} />))
+    await act(async () => complete())
+    expect(onTasksChanged).not.toHaveBeenCalled()
+    await act(async () => vi.advanceTimersByTimeAsync(10_000))
+    expect(onTasksChanged.mock.calls[0]![0]).toHaveLength(2)
+    expect(onTasksChanged.mock.calls[0]![0]).toEqual(expect.arrayContaining([expect.objectContaining({ id: 'new-task' })]))
+    await act(async () => root.unmount())
+  })
+
+  it('ignores late startup and polling errors after unmount', async () => {
+    let rejectStart!: (error: Error) => void
+    let rejectSync!: (error: Error) => void
+    bridge.startLocalIm.mockReturnValue(new Promise((_resolve, reject) => { rejectStart = reject }))
+    const onSyncError = vi.fn()
+    const root = createRoot(container)
+    await act(async () => root.render(<Harness onSyncError={onSyncError} />))
+    await act(async () => vi.advanceTimersByTimeAsync(10_000))
+    bridge.syncLocalImTasks.mockReturnValueOnce(new Promise((_resolve, reject) => { rejectSync = reject }))
+    await act(async () => vi.advanceTimersByTimeAsync(10_000))
+    await act(async () => root.unmount())
+    await act(async () => { rejectStart(new Error('old startup')); rejectSync(new Error('old polling')) })
+    expect(onSyncError).not.toHaveBeenCalled()
   })
 })

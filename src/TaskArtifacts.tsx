@@ -7,9 +7,9 @@ export function TaskArtifacts({ artifacts, conversation = false, onOpen }: { art
   const [error, setError] = useState('')
   if (artifacts.length === 0) return null
   return <section className={conversation ? 'turn-files' : undefined}>
-    {conversation && <header><FileText size={19} /><strong>{artifactSummary(artifacts)}</strong></header>}
+    {conversation && <header className="sr-only"><strong>{artifactSummary(artifacts)}</strong></header>}
     <div className="monitor-artifacts">{artifacts.map((artifact) => <ArtifactCard artifact={artifact} key={artifact.id} onError={setError} onOpen={onOpen} />)}</div>
-    {error && <p className="monitor-error">{error}</p>}
+    {error && <p className="monitor-error" role="alert">{error}</p>}
   </section>
 }
 
@@ -26,17 +26,19 @@ function ArtifactCard({ artifact, onError, onOpen }: { artifact: TaskArtifact; o
       await revealLocalArtifact(target)
     } catch (reason) {
       onError(reason instanceof Error ? reason.message : String(reason))
+      onOpen?.(target)
     }
   }
-  return <article>
+  return <article className={`artifact-${artifact.kind}`}>
     <span><Icon size={17} /></span>
-    <div><strong>{artifact.name}</strong><small>{actionLabel(artifact.action)} · {artifact.rootName} / {artifact.path}</small></div>
+    <div><button className="artifact-name" disabled={!onOpen} onClick={() => onOpen?.(target)} type="button">{artifact.name}</button><small>{actionLabel(artifact.action)}{artifact.sizeBytes !== undefined ? ` · ${formatFileSize(artifact.sizeBytes)}` : ''} · {artifact.rootName} / {artifact.path}</small></div>
     <button disabled={!onOpen} onClick={() => onOpen?.(target)} title="在小胤中打开" type="button">打开</button>
     <button aria-label={`在文件夹中显示 ${artifact.name}`} onClick={() => void reveal()} title="在文件夹中显示" type="button"><FolderSearch size={13} /></button>
   </article>
 }
 
 function artifactSummary(artifacts: TaskArtifact[]): string {
+  if (artifacts.some((item) => item.action === 'published')) return `交付了 ${artifacts.length} 个文件`
   const updated = artifacts.filter((item) => item.action === 'updated').length
   const created = artifacts.length - updated
   if (updated > 0 && created > 0) return `创建 ${created} 个、修改 ${updated} 个文件`
@@ -45,5 +47,11 @@ function artifactSummary(artifacts: TaskArtifact[]): string {
 }
 
 function actionLabel(action: TaskArtifact['action']): string {
-  return ({ created: '已创建', updated: '已修改，可恢复原文件', copied: '已复制', moved: '已移动' } as const)[action ?? 'created']
+  return ({ created: '已创建', updated: '已修改', copied: '已复制', moved: '已移动', published: '已就绪' } as const)[action ?? 'created']
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }

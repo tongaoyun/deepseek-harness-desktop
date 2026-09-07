@@ -51,6 +51,26 @@ export async function listInstalledExtensions(): Promise<InstalledExpertKit[]> {
   return (await inspectInstalledExtensions()).installed
 }
 
+export interface ExtensionDocument { id: string; path: string; content: string }
+export interface ExtensionContents { readme: string; skills: ExtensionDocument[]; commands: ExtensionDocument[] }
+
+export async function readExtensionContents(kind: 'expert-kit' | 'skill', id: string, version: string): Promise<ExtensionContents> {
+  if (!isTauri()) throw new Error('请在桌面客户端中查看已安装扩展的原文')
+  return invoke('read_extension_contents', { kind, id, version })
+}
+
+export async function setExtensionEnabled(extension: InstalledExpertKit, enabled: boolean): Promise<void> {
+  if (!isTauri()) throw new Error('请在桌面客户端中设置扩展启停')
+  const { kind, id, version } = extension.manifest
+  await invoke('set_extension_enabled', { kind, id, version, enabled })
+}
+
+export async function revealExtensionDirectory(extension: InstalledExpertKit): Promise<void> {
+  if (!isTauri()) throw new Error('请在桌面客户端中打开扩展文件夹')
+  const { kind, id, version } = extension.manifest
+  await invoke('reveal_extension_directory', { kind, id, version })
+}
+
 export async function inspectInstalledExtensions(): Promise<InstalledExtensionInventory> {
   if (!isTauri()) return { installed: [], issues: [] }
   return invoke<InstalledExtensionInventory>('list_installed_expert_kits')
@@ -69,9 +89,13 @@ export async function installExtension(download: ExpertKitDownload, kind: 'exper
   })
 }
 
-export async function installDeveloperExtension(kind: 'expert-kit' | 'skill'): Promise<InstalledExpertKit | null> {
+export async function selectDeveloperExtension(kind: 'expert-kit' | 'skill', input: 'archive' | 'directory' = 'archive'): Promise<string | null> {
+  if (!isTauri()) throw new Error('请在小胤桌面客户端中选择本地扩展')
+  return invoke('select_developer_extension', { kind, input })
+}
+export async function installDeveloperExtension(kind: 'expert-kit' | 'skill', input: 'archive' | 'directory' = 'archive', path?: string): Promise<InstalledExpertKit | null> {
   if (!isTauri()) throw new Error(`请在小胤桌面客户端中安装本地${kind === 'skill' ? '技能' : '专家套件'}`)
-  return invoke<InstalledExpertKit | null>('install_developer_extension', { kind })
+  return invoke<InstalledExpertKit | null>('install_developer_extension', { kind, input, path })
 }
 
 export interface DeveloperSkillSource {
@@ -79,9 +103,9 @@ export interface DeveloperSkillSource {
   version: string
 }
 
-export async function createDeveloperExtension(manifest: ExpertKitManifest, instructions: string, skillSources: DeveloperSkillSource[] = []): Promise<{ installed: InstalledExpertKit; bytes: number[] }> {
+export async function createDeveloperExtension(manifest: ExpertKitManifest, instructions: string, skillSources: DeveloperSkillSource[] = [], base?: DeveloperSkillSource): Promise<{ installed: InstalledExpertKit; bytes: number[] }> {
   if (!isTauri()) throw new Error('请在小胤桌面客户端中创建扩展')
-  return invoke('create_developer_extension', { request: { manifest, instructions, skillSources } })
+  return invoke('create_developer_extension', { request: { manifest, instructions, skillSources, base } })
 }
 
 export interface DeveloperExtensionDraft {
@@ -104,14 +128,14 @@ export async function removeDeveloperExtension(kind: 'expert-kit' | 'skill', id:
   await invoke('remove_developer_extension', { kind, id, version })
 }
 
-export async function customizeExpertKit(id: string, version: string): Promise<string | null> {
+export async function customizeExpertKit(id: string, version: string, kind: 'expert-kit' | 'skill' = 'expert-kit'): Promise<string | null> {
   if (!isTauri()) throw new Error('请在小胤桌面客户端中定制专家套件')
-  return invoke<string | null>('customize_expert_kit', { id, version })
+  return invoke<string | null>('customize_expert_kit', { id, version, kind })
 }
 
-export async function exportExpertKit(id: string, version: string): Promise<string | null> {
+export async function exportExpertKit(id: string, version: string, kind: 'expert-kit' | 'skill' = 'expert-kit'): Promise<string | null> {
   if (!isTauri()) throw new Error('请在小胤桌面客户端中导出专家套件')
-  return invoke<string | null>('export_expert_kit', { id, version })
+  return invoke<string | null>('export_expert_kit', { id, version, kind })
 }
 
 export async function removeDeveloperExpertKit(id: string, version: string): Promise<void> {
@@ -209,7 +233,7 @@ export function mergeExpertKits(
       requiredTools: local.manifest.requiredTools,
       knowledgeBaseRefs: local.manifest.knowledgeBaseRefs ?? [],
       serverWorkflows: local.manifest.serverWorkflows,
-      sha256: '',
+      sha256: local.packageSha256 ?? '',
       ...readiness(local.manifest.connectorRefs, local.manifest.requiredTools, local.manifest.knowledgeBaseRefs ?? []),
       installState: local.source === 'developer' ? 'installed' : 'retired',
       installedVersion: local.manifest.version,

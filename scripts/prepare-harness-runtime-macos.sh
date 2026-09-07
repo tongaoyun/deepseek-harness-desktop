@@ -11,12 +11,8 @@ repository="$(cd "$script_dir/.." && pwd)"
 stage="$repository/src-tauri/resources/harness-runtime"
 expected_stage="$repository/src-tauri/resources/harness-runtime"
 node_version="v24.19.0"
-machine="$(uname -m)"
-case "$machine" in
-  arm64) node_arch="arm64" ;;
-  x86_64) node_arch="x64" ;;
-  *) echo "Unsupported macOS architecture: $machine" >&2; exit 1 ;;
-esac
+source "$script_dir/macos-build-env.sh"
+macos_check_execution
 
 if [[ "$stage" != "$expected_stage" ]]; then
   echo "Refusing to stage outside the dedicated Tauri resource directory: $stage" >&2
@@ -33,6 +29,11 @@ cd "$repository"
 pnpm --dir harness-host build
 pnpm --config.node-linker=hoisted --filter '@xiaoyin/harness-host' --prod deploy "$next_stage/harness-host"
 host_stage="$next_stage/harness-host"
+mkdir -p "$host_stage/native"
+helper="$repository/harness-host/native/xiaoyin-computer-use"
+if [[ -n "${XIAOYIN_MACOS_ARCH-}" ]]; then helper="$helper-$binary_arch"; fi
+cp "$helper" "$host_stage/native/xiaoyin-computer-use"
+chmod 755 "$host_stage/native/xiaoyin-computer-use"
 node_modules="$host_stage/node_modules"
 rm -rf -- \
   "$node_modules/.bin" \
@@ -44,16 +45,18 @@ find "$host_stage/dist" -type f \( -name '*.d.ts' -o -name '*.map' \) -delete
 find "$node_modules" -type f \( -name '*.map' -o -name '*.pdb' \) -delete
 
 # node-pty publishes native builds for every desktop platform. Keep only the
-# build matching this runner; the packaged runtime is platform-specific.
+# build matching the requested target, which may differ from the runner.
 node_pty_prebuilds="$node_modules/node-pty/prebuilds"
 if [[ -d "$node_pty_prebuilds" ]]; then
   find "$node_pty_prebuilds" -mindepth 1 -maxdepth 1 -type d ! -name "darwin-$node_arch" -exec rm -rf -- {} +
 fi
+spawn_helper="$node_pty_prebuilds/darwin-$node_arch/spawn-helper"
+if [[ -f "$spawn_helper" ]]; then chmod 755 "$spawn_helper"; fi
 
 archive="node-$node_version-darwin-$node_arch.tar.gz"
 base_url="https://nodejs.org/dist/$node_version"
-curl --fail --location --silent --show-error "$base_url/$archive" --output "$temporary/$archive"
-curl --fail --location --silent --show-error "$base_url/SHASUMS256.txt" --output "$temporary/SHASUMS256.txt"
+curl --fail --location --silent --show-error --connect-timeout 15 --max-time 300 --retry 2 "$base_url/$archive" --output "$temporary/$archive"
+curl --fail --location --silent --show-error --connect-timeout 15 --max-time 60 --retry 2 "$base_url/SHASUMS256.txt" --output "$temporary/SHASUMS256.txt"
 expected_sha="$(awk -v file="$archive" '$2 == file { print $1 }' "$temporary/SHASUMS256.txt")"
 actual_sha="$(shasum -a 256 "$temporary/$archive" | awk '{ print $1 }')"
 if [[ -z "$expected_sha" || "$actual_sha" != "$expected_sha" ]]; then
@@ -68,30 +71,14 @@ cp "$node_root/LICENSE" "$next_stage/node/LICENSE"
 chmod 755 "$next_stage/node/node"
 
 node_binary="$next_stage/node/node"
+"$node_binary" "$repository/scripts/check-macos-runtime.mjs" "$host_stage" "$node_arch"
 entry="$host_stage/dist/index.js"
 config="$host_stage/runtime/cordis.yml"
 for required in "$node_binary" "$entry" "$config"; do
   [[ -f "$required" ]] || { echo "Packaged Harness file is missing: $required" >&2; exit 1; }
 done
 
-runtime_output="$temporary/runtime-output.jsonl"
-old_config="${DSH_CORDIS_CONFIG-}"
-old_allow_shell="${XIAOYIN_ALLOW_SHELL-}"
-old_approve_shell="${XIAOYIN_APPROVE_SHELL-}"
-export DSH_CORDIS_CONFIG="$config"
-export XIAOYIN_ALLOW_SHELL="true"
-export XIAOYIN_APPROVE_SHELL="false"
-printf '%s\n' \
-  '{"jsonrpc":"2.0","id":1,"method":"host.initialize"}' \
-  '{"jsonrpc":"2.0","id":2,"method":"host.health"}' \
-  '{"jsonrpc":"2.0","id":3,"method":"host.shutdown"}' |
-  "$node_binary" "$entry" > "$runtime_output"
-export DSH_CORDIS_CONFIG="$old_config"
-export XIAOYIN_ALLOW_SHELL="$old_allow_shell"
-export XIAOYIN_APPROVE_SHELL="$old_approve_shell"
-
-grep -q '"status":"initialized"' "$runtime_output" || { echo "Harness initialization failed." >&2; exit 1; }
-grep -q '"status":"ready"' "$runtime_output" || { echo "Harness health check failed." >&2; exit 1; }
+node "$repository/scripts/check-harness-runtime.mjs" "$node_binary" "$host_stage"
 
 printf '{\n  "schemaVersion": 1,\n  "platform": "macos-%s",\n  "nodeVersion": "%s",\n  "nodeArchiveSha256": "%s"\n}\n' \
   "$node_arch" "$node_version" "$actual_sha" > "$next_stage/runtime-manifest.json"

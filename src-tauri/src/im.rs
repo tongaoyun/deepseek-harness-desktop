@@ -97,6 +97,8 @@ pub struct ImConversationSummary {
     session_id: String,
     message_count: u64,
     status: String,
+    delivery_status: Option<String>,
+    pending_delivery_count: Option<u64>,
     updated_at: String,
     bound_task_id: Option<String>,
     bound_task_name: Option<String>,
@@ -144,6 +146,7 @@ pub struct LocalImStatus {
     access_policy: AccessPolicy,
     notify_task_results: bool,
     pending_pairings: Vec<PairingRequest>,
+    paired_conversations: Vec<String>,
     conversations: Vec<ImConversationSummary>,
     pending_event_count: usize,
     last_heartbeat_at: Option<String>,
@@ -157,10 +160,20 @@ pub async fn configure_local_dingtalk(
     request: ConfigureDingTalkRequest,
 ) -> Result<LocalImStatus, String> {
     validate_client_id(&request.client_id)?;
-    validate_client_secret(&request.client_secret)?;
     validate_harness_context(&request.harness)?;
     let existing = load_configuration(&app)?;
     let client_id = request.client_id.trim().to_string();
+    let keep_secret = retain_existing_secret(
+        &client_id,
+        &request.client_secret,
+        existing.as_ref().map(|value| value.client_id.as_str()),
+    )?;
+    let secret = if keep_secret {
+        load_secret()?
+    } else {
+        request.client_secret.clone()
+    };
+    validate_client_secret(&secret)?;
     let stored = StoredDingTalkConfiguration {
         paired_conversations: existing
             .filter(|value| value.client_id == client_id)
@@ -171,13 +184,29 @@ pub async fn configure_local_dingtalk(
         access_policy: request.access_policy,
         notify_task_results: request.notify_task_results,
     };
-    store_secret(&request.client_secret)?;
+    if !keep_secret {
+        store_secret(&secret)?;
+    }
     save_configuration(&app, &stored)?;
     if !stored.enabled {
         manager.stop()?;
         return Ok(stopped_status(Some(&stored), true));
     }
-    manager.start(&app, &stored, request.client_secret, request.harness)
+    manager.start(&app, &stored, secret, request.harness)
+}
+
+fn retain_existing_secret(
+    client_id: &str,
+    secret: &str,
+    existing_id: Option<&str>,
+) -> Result<bool, String> {
+    if !secret.trim().is_empty() {
+        return Ok(false);
+    }
+    if existing_id == Some(client_id) {
+        return Ok(true);
+    }
+    Err("新应用必须填写 Client Secret".to_string())
 }
 
 #[tauri::command]
@@ -244,8 +273,25 @@ pub fn allow_local_im_pairing(
         save_configuration(&app, &stored)?;
     }
     manager
-        .allow_pairing(&conversation_key)?
-        .ok_or_else(|| "钉钉频道当前未运行".to_string())
+        .change_pairing(&conversation_key, true)
+        .map(|value| value.unwrap_or_else(|| stopped_status(Some(&stored), secret_exists())))
+}
+
+#[tauri::command]
+pub fn revoke_local_im_pairing(
+    app: tauri::AppHandle,
+    manager: tauri::State<'_, LocalImManager>,
+    conversation_key: String,
+) -> Result<LocalImStatus, String> {
+    validate_binding_field("IM 会话标识", &conversation_key, 1_024)?;
+    let mut stored = load_configuration(&app)?.ok_or_else(|| "尚未配置钉钉频道".to_string())?;
+    stored
+        .paired_conversations
+        .retain(|key| key != &conversation_key);
+    save_configuration(&app, &stored)?;
+    manager
+        .change_pairing(&conversation_key, false)
+        .map(|value| value.unwrap_or_else(|| stopped_status(Some(&stored), secret_exists())))
 }
 
 #[tauri::command]
@@ -277,6 +323,16 @@ pub fn sync_local_im_tasks(
     tasks: Vec<BindableTask>,
 ) -> Result<Option<LocalImStatus>, String> {
     manager.sync_tasks(tasks)
+}
+
+#[tauri::command]
+pub fn retry_local_im_delivery(
+    manager: tauri::State<'_, LocalImManager>,
+    conversation_key: String,
+) -> Result<LocalImStatus, String> {
+    manager
+        .retry_delivery(&conversation_key)?
+        .ok_or_else(|| "钉钉频道当前未运行".to_string())
 }
 
 #[tauri::command]
@@ -317,8 +373,15 @@ impl LocalImManager {
         client_secret: String,
         context: HarnessContext,
     ) -> Result<LocalImStatus, String> {
-        let profile =
-            expert_kits::harness_profile(app, None, None, &[], "", &context.allowed_artifacts)?;
+        let profile = expert_kits::harness_profile(
+            app,
+            None,
+            None,
+            &[],
+            "",
+            &context.allowed_artifacts,
+            "agent",
+        )?;
         let im_workspace = app
             .path()
             .app_data_dir()
@@ -327,7 +390,7 @@ impl LocalImManager {
         fs::create_dir_all(&im_workspace)
             .map_err(|error| format!("无法创建 IM 工作目录：{error}"))?;
         let allow_browser = desktop_connector_enabled(&context.connectors, "desktop-browser");
-        let connectors = runtime_connectors(&context.connectors, &profile)?;
+        let connectors = runtime_connectors(&context.connectors, &profile, true)?;
         let fingerprint = RuntimeFingerprint {
             skill_directories: profile.skill_directories,
             connectors,
@@ -338,6 +401,7 @@ impl LocalImManager {
             }],
             allow_browser,
             allowed_computer_tools: Vec::new(),
+            execution_mode: "agent".to_string(),
             litellm_base_url: context.litellm_base_url,
             knowledge_endpoint: context.knowledge_endpoint,
             schedule_endpoint: context.schedule_endpoint,
@@ -399,7 +463,11 @@ impl LocalImManager {
         }
     }
 
-    fn allow_pairing(&self, conversation_key: &str) -> Result<Option<LocalImStatus>, String> {
+    fn change_pairing(
+        &self,
+        conversation_key: &str,
+        allow: bool,
+    ) -> Result<Option<LocalImStatus>, String> {
         let mut guard = self
             .process
             .lock()
@@ -408,7 +476,11 @@ impl LocalImManager {
             return Ok(None);
         };
         let value = process.request(
-            "im.allow-pairing",
+            if allow {
+                "im.allow-pairing"
+            } else {
+                "im.revoke-pairing"
+            },
             Some(json!({ "conversationKey": conversation_key })),
             None,
         )?;
@@ -457,6 +529,23 @@ impl LocalImManager {
         };
         let value = process.request(
             "im.unbind-task",
+            Some(json!({ "conversationKey": conversation_key })),
+            None,
+        )?;
+        parse_runtime_status(value, true, true).map(Some)
+    }
+
+    fn retry_delivery(&self, conversation_key: &str) -> Result<Option<LocalImStatus>, String> {
+        validate_binding_field("IM 会话标识", conversation_key, 1_024)?;
+        let mut guard = self
+            .process
+            .lock()
+            .map_err(|_| "本地 IM 状态不可用".to_string())?;
+        let Some(process) = guard.as_mut() else {
+            return Ok(None);
+        };
+        let value = process.request(
+            "im.retry-delivery",
             Some(json!({ "conversationKey": conversation_key })),
             None,
         )?;
@@ -528,6 +617,8 @@ fn parse_runtime_status(
         #[serde(default)]
         pending_pairings: Vec<PairingRequest>,
         #[serde(default)]
+        paired_conversations: Vec<String>,
+        #[serde(default)]
         conversations: Vec<ImConversationSummary>,
         #[serde(default)]
         pending_event_count: usize,
@@ -547,6 +638,7 @@ fn parse_runtime_status(
         access_policy: status.access_policy,
         notify_task_results: status.notify_task_results,
         pending_pairings: status.pending_pairings,
+        paired_conversations: status.paired_conversations,
         conversations: status.conversations,
         pending_event_count: status.pending_event_count,
         last_heartbeat_at: status.last_heartbeat_at,
@@ -573,6 +665,9 @@ fn stopped_status(
             .unwrap_or(AccessPolicy::Pairing),
         notify_task_results: configuration.is_some_and(|value| value.notify_task_results),
         pending_pairings: Vec::new(),
+        paired_conversations: configuration
+            .map(|value| value.paired_conversations.clone())
+            .unwrap_or_default(),
         conversations: Vec::new(),
         pending_event_count: 0,
         last_heartbeat_at: None,
@@ -729,6 +824,14 @@ mod tests {
     use super::*;
 
     #[test]
+    fn empty_secret_is_retained_only_for_the_same_application() {
+        assert!(retain_existing_secret("old-app", "", Some("old-app")).unwrap());
+        assert!(retain_existing_secret("new-app", "", Some("old-app")).is_err());
+        assert!(retain_existing_secret("new-app", "", None).is_err());
+        assert!(!retain_existing_secret("new-app", "new-secret", Some("old-app")).unwrap());
+    }
+
+    #[test]
     fn local_im_configuration_rejects_invalid_credentials() {
         assert!(validate_client_id("").is_err());
         assert!(validate_client_secret("secret\nvalue").is_err());
@@ -748,5 +851,21 @@ mod tests {
         assert_eq!(value["clientId"], "ding-app");
         assert_eq!(value["secretConfigured"], true);
         assert!(value.get("clientSecret").is_none());
+    }
+
+    #[test]
+    fn delivery_failure_survives_the_native_status_bridge_without_failing_execution() {
+        let status = parse_runtime_status(json!({
+            "provider": "DINGTALK", "configured": true, "connected": true, "state": "DEGRADED",
+            "clientId": "test", "accessPolicy": "open", "notifyTaskResults": false,
+            "conversations": [{ "conversationKey": "test:private:one", "conversationType": "private",
+                "conversationTitle": "验收", "senderNick": "测试员工", "lastMessage": "生成文件", "lastResponse": "文件已生成",
+                "sessionId": "session", "messageCount": 1, "status": "COMPLETED", "updatedAt": "now",
+                "deliveryStatus": "FAILED", "pendingDeliveryCount": 1 }]
+        }), true, true).unwrap();
+        let value = serde_json::to_value(status).unwrap();
+        assert_eq!(value["conversations"][0]["status"], "COMPLETED");
+        assert_eq!(value["conversations"][0]["deliveryStatus"], "FAILED");
+        assert_eq!(value["conversations"][0]["pendingDeliveryCount"], 1);
     }
 }

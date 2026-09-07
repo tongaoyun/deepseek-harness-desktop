@@ -36,14 +36,12 @@ describe('KnowledgeClient', () => {
   })
 
   it('enforces the selected expert kit knowledge scope', async () => {
+    let received: unknown
     const server = createServer((request, response) => {
       let body = ''
       request.on('data', (chunk) => { body += chunk })
       request.on('end', () => {
-        expect(JSON.parse(body)).toEqual({
-          query: '退款', knowledgeBaseIds: [], knowledgeBaseRefs: ['organization:refund-sop'],
-          restrictToKnowledgeBaseRefs: true, limit: 6,
-        })
+        received = JSON.parse(body)
         response.setHeader('Content-Type', 'application/json')
         response.end('[]')
       })
@@ -57,6 +55,7 @@ describe('KnowledgeClient', () => {
       'employee-1', 'crossborder', '', ['organization:refund-sop'],
     )
     await client.search('退款', ['kb-untrusted'], 6)
+    expect(received).toEqual({ query: '退款', knowledgeBaseIds: ['kb-untrusted'], knowledgeBaseRefs: ['organization:refund-sop'], restrictToKnowledgeBaseRefs: true, limit: 6 })
   })
 
   it('parses unrestricted, empty, and explicit knowledge scopes', () => {

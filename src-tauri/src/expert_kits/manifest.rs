@@ -12,7 +12,7 @@ pub(super) fn load_and_validate_manifest(
     let (kind, manifest_path) = match (kit_manifest.is_file(), skill_manifest.is_file()) {
         (true, false) => ("expert-kit", kit_manifest),
         (false, true) => ("skill", skill_manifest),
-        (true, true) => return Err("扩展不能同时包含专家套件和独立 Skill 清单".to_string()),
+        (true, true) => return Err("扩展不能同时包含专家套件和独立技能清单".to_string()),
         (false, false) => {
             return Err("扩展缺少 .xiaoyin-kit/kit.json 或 .xiaoyin-skill/skill.json".to_string());
         }
@@ -38,7 +38,7 @@ pub(super) fn load_and_validate_manifest(
         || object.contains_key("skills") && kind == "skill"
         || object.contains_key("serverWorkflows") && kind == "skill"
     {
-        return Err("独立 Skill 与专家套件字段不能混用".to_string());
+        return Err("独立技能与专家套件字段不能混用".to_string());
     }
     let schema = object
         .get("schemaVersion")
@@ -70,7 +70,7 @@ pub(super) fn load_and_validate_manifest(
         || manifest.summary.trim().is_empty()
         || manifest.skills.is_empty()
     {
-        return Err("专家套件名称、简介和 Skills 不能为空".to_string());
+        return Err("专家套件名称、简介和技能不能为空".to_string());
     }
     if !EXTENSION_CATEGORIES.contains(&manifest.category.as_str()) {
         manifest.category = default_extension_category();
@@ -83,14 +83,19 @@ pub(super) fn load_and_validate_manifest(
                 trigger.trim().is_empty() || trigger.len() > 120 || !triggers.insert(trigger)
             })
         {
-            return Err("独立 Skill 触发场景声明无效".to_string());
+            return Err("独立技能触发场景声明无效".to_string());
         }
     }
 
     let mut reference_ids = HashSet::new();
-    for reference in manifest.commands.iter().chain(&manifest.skills) {
-        if reference.id.trim().is_empty() || !reference_ids.insert(&reference.id) {
-            return Err("专家套件命令和 Skill ID 不能为空或重复".to_string());
+    for (reference, is_skill) in manifest
+        .commands
+        .iter()
+        .map(|item| (item, false))
+        .chain(manifest.skills.iter().map(|item| (item, true)))
+    {
+        if reference.id.trim().is_empty() || !reference_ids.insert((is_skill, &reference.id)) {
+            return Err("专家套件命令和技能 ID 不能为空或重复".to_string());
         }
         let path = Path::new(&reference.path);
         validate_relative_path(path)?;
@@ -98,14 +103,16 @@ pub(super) fn load_and_validate_manifest(
             return Err(format!("专家套件引用文件不存在：{}", reference.path));
         }
         if manifest.kind == "skill" && reference.path != "SKILL.md" {
-            return Err("独立 Skill 的入口必须是根目录 SKILL.md".to_string());
+            return Err("独立技能的入口必须是根目录 SKILL.md".to_string());
         }
         if manifest.kind == "expert-kit"
-            && manifest.skills.iter().any(|skill| skill.id == reference.id)
-            && reference.path != format!("skills/{}/SKILL.md", reference.id)
+            && is_skill
+            && Path::new(&reference.path)
+                .file_name()
+                .is_none_or(|name| name != "SKILL.md")
         {
             return Err(format!(
-                "套件 Skill 路径必须是 skills/{}/SKILL.md",
+                "套件技能 {} 的入口文件必须命名为 SKILL.md",
                 reference.id
             ));
         }

@@ -7,7 +7,7 @@ const extension = {
 }
 
 describe('extension category filtering', () => {
-  it('uses the shared category for expert kits and Skills', () => {
+  it('uses the shared category for expert kits and 技能', () => {
     expect(extensionMatches(extension, '', 'market', 'code-development')).toBe(true)
     expect(extensionMatches(extension, '', 'market', 'code-review')).toBe(false)
   })

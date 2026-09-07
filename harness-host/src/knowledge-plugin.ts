@@ -61,7 +61,7 @@ export class KnowledgeClient {
       method: 'POST',
       body: JSON.stringify({
         query,
-        knowledgeBaseIds: this.knowledgeBaseRefs === null ? knowledgeBaseIds : [],
+        knowledgeBaseIds,
         knowledgeBaseRefs: this.knowledgeBaseRefs ?? [],
         restrictToKnowledgeBaseRefs: this.knowledgeBaseRefs !== null,
         limit,
@@ -112,7 +112,7 @@ function listTool(client: KnowledgeClient): ToolDefinition {
 function searchTool(client: KnowledgeClient): ToolDefinition {
   return {
     name: 'knowledge_search',
-    description: 'Search approved company documents. Results include file names and page, worksheet, or section locators; cite these sources in the answer.',
+    description: 'Search approved company documents. Results include sourceId, file names and page, worksheet, or section locators; cite file names and locators for claims supported by these excerpts. Empty results mean no matching evidence, not permission to invent company policies. Search again for current facts after updates or in follow-up tasks; historical excerpts are not proof of current content. A search hit is an excerpt, not proof that the entire document was read.',
     parameters: {
       type: 'object',
       properties: {

@@ -280,28 +280,38 @@ fn preview_sheet_text(archive: &mut ZipArchive<File>, extension: &str) -> Result
             .into_iter()
             .take(10_000)
             .map(|row| {
-                xml_blocks(row, "c")
-                    .into_iter()
-                    .map(|cell| {
-                        let raw = xml_tag_value(cell, "v")
-                            .or_else(|| xml_tag_value(cell, "t"))
-                            .unwrap_or_default();
-                        if cell
-                            .split('>')
-                            .next()
-                            .is_some_and(|header| header.contains("t=\"s\""))
-                        {
-                            raw.parse::<usize>()
-                                .ok()
-                                .and_then(|index| shared.get(index))
-                                .cloned()
-                                .unwrap_or(raw)
-                        } else {
-                            decode_xml_entities(&raw)
-                        }
-                    })
-                    .collect::<Vec<_>>()
-                    .join("\t")
+                let mut cells = Vec::new();
+                for cell in xml_blocks(row, "c") {
+                    let column = xml_attribute(cell, "r")
+                        .and_then(spreadsheet_column)
+                        .unwrap_or(cells.len());
+                    if column >= 16_384 {
+                        continue;
+                    }
+                    let raw = xml_tag_value(cell, "v")
+                        .filter(|value| !value.is_empty())
+                        .or_else(|| xml_tag_value(cell, "t"))
+                        .unwrap_or_else(|| {
+                            xml_tag_value(cell, "f")
+                                .filter(|formula| !formula.is_empty())
+                                .map(|formula| format!("[公式：{formula}；待重算]"))
+                                .unwrap_or_default()
+                        });
+                    let value = if xml_attribute(cell, "t") == Some("s") {
+                        raw.parse::<usize>()
+                            .ok()
+                            .and_then(|index| shared.get(index))
+                            .cloned()
+                            .unwrap_or(raw)
+                    } else {
+                        decode_xml_entities(&raw)
+                    };
+                    if cells.len() <= column {
+                        cells.resize(column + 1, String::new());
+                    }
+                    cells[column] = value;
+                }
+                cells.join("\t")
             })
             .collect::<Vec<_>>()
             .join("\n");
@@ -383,6 +393,22 @@ fn xml_blocks<'a>(xml: &'a str, tag: &str) -> Vec<&'a str> {
     let mut remaining = xml;
     while let Some(begin) = remaining.find(&start) {
         let candidate = &remaining[begin..];
+        if !candidate
+            .as_bytes()
+            .get(start.len())
+            .is_some_and(|byte| byte.is_ascii_whitespace() || *byte == b'>' || *byte == b'/')
+        {
+            remaining = &candidate[start.len()..];
+            continue;
+        }
+        let Some(header_end) = candidate.find('>') else {
+            break;
+        };
+        if candidate[..header_end].ends_with('/') {
+            blocks.push(&candidate[..=header_end]);
+            remaining = &candidate[header_end + 1..];
+            continue;
+        }
         let Some(close) = candidate.find(&end) else {
             break;
         };
@@ -391,6 +417,27 @@ fn xml_blocks<'a>(xml: &'a str, tag: &str) -> Vec<&'a str> {
         remaining = &candidate[block_end..];
     }
     blocks
+}
+
+fn xml_attribute<'a>(xml: &'a str, name: &str) -> Option<&'a str> {
+    let header = xml.split('>').next()?;
+    for quote in ['"', '\''] {
+        let marker = format!(" {name}={quote}");
+        if let Some((_, value)) = header.split_once(&marker) {
+            return value.split(quote).next();
+        }
+    }
+    None
+}
+
+fn spreadsheet_column(reference: &str) -> Option<usize> {
+    let mut column = 0usize;
+    for letter in reference.bytes().take_while(u8::is_ascii_alphabetic) {
+        column = column
+            .checked_mul(26)?
+            .checked_add((letter.to_ascii_uppercase() - b'A' + 1) as usize)?;
+    }
+    column.checked_sub(1)
 }
 
 fn xml_tag_value(xml: &str, tag: &str) -> Option<String> {
@@ -435,7 +482,7 @@ fn image_mime(extension: &str) -> Option<&'static str> {
 fn validate_artifact_path(value: &Path) -> Result<PathBuf, String> {
     let path = value
         .canonicalize()
-        .map_err(|_| "文件不存在或已被移动".to_string())?;
+        .map_err(crate::local_files::artifact_io_error)?;
     if !path.is_file() {
         return Err("目标不是文件".to_string());
     }
@@ -475,6 +522,34 @@ mod tests {
             "xiaoyin-artifact-preview-{}-{label}",
             std::process::id()
         ))
+    }
+
+    #[test]
+    fn spreadsheet_preview_preserves_blank_columns_and_missing_formula_results() {
+        use std::io::Write;
+        let root = temporary_root("sparse-xlsx");
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("sparse.xlsx");
+        let mut writer = zip::ZipWriter::new(File::create(&path).unwrap());
+        writer
+            .start_file(
+                "xl/worksheets/sheet1.xml",
+                zip::write::SimpleFileOptions::default(),
+            )
+            .unwrap();
+        writer.write_all(br#"<worksheet><sheetData><row r="1"><c r="B1" t="inlineStr"><is><t>total</t></is></c><c r="C1"/><c r="E1"><v>167.5</v></c></row><row r="2"><c r='C2'><f>SUM(A1:B1)</f><v/></c></row></sheetData></worksheet>"#).unwrap();
+        writer.finish().unwrap();
+        let mut archive = ZipArchive::new(File::open(&path).unwrap()).unwrap();
+        assert_eq!(
+            preview_sheet_text(&mut archive, "xlsx").unwrap(),
+            "工作表 1\n\ttotal\t\t\t167.5\n\t\t[公式：SUM(A1:B1)；待重算]"
+        );
+        assert_eq!(
+            xml_blocks("<cols/><c r=\"A1\"/><c r=\"B1\"><v>0</v></c>", "c").len(),
+            2
+        );
+        assert_eq!(spreadsheet_column("AA12"), Some(26));
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

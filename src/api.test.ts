@@ -1,17 +1,44 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  cancelScheduledTaskExecution,
   createExpertKitDownload,
   createTaskRunArtifactDownload,
   loadBootstrap,
   loadConnectors,
   loadExpertKits,
   loadSkills,
+  loadKnowledgeSource,
   loadCloudTaskRuns,
   submitAuditEvent,
+  submitDeviceCapabilityReport,
+  submitFeedback,
 } from './api'
 
 describe('loadBootstrap', () => {
   afterEach(() => vi.unstubAllGlobals())
+
+  it('rereads source identity with current account headers and explicit stale-source errors', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({ sourceId: '12', content: 'current' })))
+      .mockResolvedValueOnce(new Response(null, { status: 404 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const context = { endpoint: '/api/v1/knowledge-bases/', employeeId: 'employee', teamId: 'team', accessToken: 'test-token' }
+    await expect(loadKnowledgeSource(context, '12')).resolves.toMatchObject({ sourceId: '12' })
+    expect(fetchMock.mock.calls[0][0]).toBe('http://192.168.2.67:30081/api/v1/knowledge-bases/sources/12')
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({ headers: { 'X-Xiaoyin-Employee-Id': 'employee', 'X-Xiaoyin-Team-Id': 'team', Authorization: 'Bearer test-token' } })
+    await expect(loadKnowledgeSource(context, '12')).rejects.toThrow('历史摘录不能作为当前依据')
+    await expect(loadKnowledgeSource(context, '../files')).rejects.toThrow()
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('submits cancellation for one encoded execution and propagates server failure', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(new Response(null, { status: 202 }))
+      .mockResolvedValueOnce(new Response(null, { status: 503 }))
+    vi.stubGlobal('fetch', fetchMock)
+    await cancelScheduledTaskExecution('/api/v1/schedules/', 'employee-1', 'token', 'plan one', 'run/one')
+    expect(fetchMock.mock.calls[0][0]).toBe('http://192.168.2.67:30081/api/v1/schedules/plan%20one/executions/run%2Fone/cancel')
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({ method: 'POST', headers: { 'X-Xiaoyin-Employee-Id': 'employee-1', Authorization: 'Bearer token' } })
+    await expect(cancelScheduledTaskExecution('/api/v1/schedules', 'employee-1', 'token', 'one', 'run')).rejects.toThrow('503')
+  })
 
   it('loads the memory-only model credential from the control plane', async () => {
     const payload = {
@@ -117,6 +144,43 @@ describe('loadBootstrap', () => {
 
     expect(fetchMock.mock.calls[0][0]).toContain('/api/v1/audit-events')
     expect(JSON.parse(fetchMock.mock.calls[0][1].body)).not.toHaveProperty('arguments')
+  })
+
+  it('submits the current device capability snapshot', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 201 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await submitDeviceCapabilityReport('/api/v1/device-capabilities', 'employee-1', 'token-1', {
+      deviceId: '00000000-0000-4000-8000-000000000001', desktopVersion: '0.1.0',
+      platform: 'macos', architecture: 'aarch64', displayCount: 1, displayScalePercents: [200],
+      capabilities: [{ key: 'harness', status: 'READY', detail: '本地 Agent 已就绪' }],
+    })
+
+    expect(fetchMock.mock.calls[0][0]).toContain('/api/v1/device-capabilities')
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).capabilities).toEqual([
+      { key: 'harness', status: 'READY', detail: '本地 Agent 已就绪' },
+    ])
+  })
+
+  it('submits feedback with reproducible desktop context', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: 'feedback-1' }), { status: 201 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await submitFeedback('employee-1', 'token-1', '任务运行失败', {
+      category: 'BUG', desktopVersion: '0.1.0', deviceId: 'device-1', taskId: 'task-1',
+    }, [new File(['image'], 'shot.png', { type: 'image/png' })])
+
+    const body = fetchMock.mock.calls[0][1].body as FormData
+    expect(body.getAll('images')).toHaveLength(1)
+    expect(JSON.parse(await (body.get('feedback') as Blob).text())).toEqual({
+      message: '任务运行失败', category: 'BUG', desktopVersion: '0.1.0', deviceId: 'device-1', taskId: 'task-1',
+    })
+  })
+
+  it('does not report success without a ticket and explains upload failures', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(new Response('{}')).mockResolvedValueOnce(new Response(null, { status: 413 })))
+    await expect(submitFeedback('employee', 'token', '问题', { category: 'BUG' })).rejects.toThrow('反馈编号')
+    await expect(submitFeedback('employee', 'token', '问题', { category: 'BUG' })).rejects.toThrow('上传限制')
   })
 
 })

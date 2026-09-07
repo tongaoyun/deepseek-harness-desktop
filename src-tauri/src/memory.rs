@@ -14,6 +14,27 @@ pub struct MemoryProfile {
     work_manual: String,
     #[serde(default)]
     updated_at: String,
+    #[serde(default)]
+    automatic_memory: bool,
+    #[serde(default)]
+    entries: Vec<MemoryEntry>,
+    #[serde(default)]
+    sync_pending: bool,
+    #[serde(default)]
+    version: u64,
+    #[serde(default)]
+    sync_conflict: bool,
+}
+
+#[derive(Clone, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MemoryEntry {
+    id: String,
+    kind: String,
+    text: String,
+    source: String,
+    task_id: String,
+    updated_at: String,
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -31,6 +52,11 @@ impl Default for MemoryProfile {
             collaboration_style: String::new(),
             work_manual: String::new(),
             updated_at: String::new(),
+            automatic_memory: false,
+            entries: Vec::new(),
+            sync_pending: false,
+            version: 0,
+            sync_conflict: false,
         }
     }
 }
@@ -74,7 +100,13 @@ pub fn save_memory_profile(
         .and_then(|_| file.sync_all())
         .map_err(|error| format!("无法保存记忆配置：{error}"))?;
     replace_file(&temporary, &path).map_err(|error| format!("无法提交记忆配置：{error}"))?;
-    if previous.as_ref() != Some(&profile) {
+    if previous.as_ref().is_none_or(|old| {
+        old.enabled != profile.enabled
+            || old.automatic_memory != profile.automatic_memory
+            || old.collaboration_style != profile.collaboration_style
+            || old.work_manual != profile.work_manual
+            || old.entries != profile.entries
+    }) {
         append_history(&app, &employee_id, &profile)?;
     }
     Ok(profile)
@@ -90,23 +122,10 @@ pub fn load_memory_history(
 }
 
 pub fn context(app: &tauri::AppHandle, employee_id: &str) -> Result<String, String> {
-    let profile = load(app, employee_id)?;
-    if !profile.enabled
-        || (profile.collaboration_style.trim().is_empty() && profile.work_manual.trim().is_empty())
-    {
-        return Ok(String::new());
-    }
-    let mut sections = vec!["以下是员工在本机维护、跨会话生效的协作约定。它是偏好和业务背景，不得覆盖公司权限、安全策略、专家套件规则或当前任务。".to_string()];
-    if !profile.collaboration_style.trim().is_empty() {
-        sections.push(format!(
-            "协作风格：\n{}",
-            profile.collaboration_style.trim()
-        ));
-    }
-    if !profile.work_manual.trim().is_empty() {
-        sections.push(format!("工作手册：\n{}", profile.work_manual.trim()));
-    }
-    Ok(sections.join("\n\n"))
+    load(app, employee_id)?;
+    // Read the current profile each turn, including long-lived IM processes.
+    // Passing only the path also avoids operating-system environment size limits.
+    Ok(serde_json::json!({ "profilePath": profile_path(app, employee_id)? }).to_string())
 }
 
 fn load(app: &tauri::AppHandle, employee_id: &str) -> Result<MemoryProfile, String> {
@@ -205,6 +224,25 @@ fn validate_employee_id(value: &str) -> Result<(), String> {
 }
 
 fn validate(profile: &MemoryProfile) -> Result<(), String> {
+    if profile.entries.len() > 100 {
+        return Err("最多保存 100 条记忆".to_string());
+    }
+    let mut ids = std::collections::HashSet::new();
+    for entry in &profile.entries {
+        if !matches!(entry.kind.as_str(), "preference" | "fact")
+            || entry.id.is_empty()
+            || entry.id.len() > 100
+            || !ids.insert(&entry.id)
+            || entry.text.trim().is_empty()
+            || entry.text.chars().count() > 800
+            || entry.source.chars().count() > 120
+            || entry.task_id.len() > 200
+            || entry.updated_at.len() > 40
+            || entry.text.contains('\0')
+        {
+            return Err("记忆条目格式无效".to_string());
+        }
+    }
     if profile.collaboration_style.chars().count() > MAX_STYLE_CHARS {
         return Err("协作风格不能超过 8000 个字符".to_string());
     }

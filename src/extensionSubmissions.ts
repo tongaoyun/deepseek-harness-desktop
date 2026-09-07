@@ -87,11 +87,15 @@ export async function saveValidationReport(kind: ExtensionKind, id: string, vers
 
 const storageKey = (employeeId: string) => `xiaoyin.personal-connectors.${employeeId}`
 
+export function isPersonalConnector(connector: ConnectorCatalogEntry): boolean {
+  return connector.kind === 'personal-mcp' || ['personal', 'employee'].includes(connector.scope.toLowerCase())
+}
+
 export function loadPersonalConnectors(employeeId: string): ConnectorCatalogEntry[] {
   try {
     const values = JSON.parse(window.localStorage.getItem(storageKey(employeeId)) || '[]') as Array<ConnectorCatalogEntry & { category?: ConnectorCatalogEntry['category'] }>
     return values.map((item) => {
-      const normalized = { ...item, category: item.category ?? 'other' } as ConnectorCatalogEntry
+      const normalized = { ...item, scope: 'PERSONAL', managed: false, category: item.category ?? 'other' } as ConnectorCatalogEntry
       return connectorSecretTemplate(normalized)
     })
   } catch { return [] }

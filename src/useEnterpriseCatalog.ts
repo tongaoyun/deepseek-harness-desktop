@@ -4,7 +4,7 @@ import type { ErpUser } from './auth'
 import { withDesktopBuiltinConnectors } from './connectors'
 import { loadEnterpriseCatalogCache, saveEnterpriseCatalogCache } from './enterpriseCache'
 import { inspectInstalledExtensions, mergeExpertKits, type ExpertKitView } from './expertKits'
-import { loadPersonalConnectors } from './extensionSubmissions'
+import { isPersonalConnector, loadPersonalConnectors } from './extensionSubmissions'
 import { mergeSkills, type SkillView } from './skills'
 import type {
   BootstrapResponse,
@@ -56,6 +56,8 @@ export function useEnterpriseCatalog({
   const [refreshKey, setRefreshKey] = useState(0)
   const cacheRef = useRef<CatalogData>(emptyCatalog())
   const catalogOwnerRef = useRef('')
+  const inventoryRevisionRef = useRef(0)
+  const cacheLoadedRef = useRef(false)
   const enabledConnectorIdsRef = useRef(enabledConnectorIds)
 
   const applyCatalog = useCallback((data = cacheRef.current) => {
@@ -76,6 +78,9 @@ export function useEnterpriseCatalog({
     if (!bootstrap || !user) {
       cacheRef.current = emptyCatalog()
       catalogOwnerRef.current = ''
+      cacheLoadedRef.current = false
+      inventoryRevisionRef.current += 1
+      setLoading(false)
       setCacheSavedAt('')
       setSyncIssues([])
       setSyncedAt(undefined)
@@ -85,6 +90,8 @@ export function useEnterpriseCatalog({
     if (catalogOwnerRef.current !== user.userId) {
       cacheRef.current = emptyCatalog()
       catalogOwnerRef.current = user.userId
+      cacheLoadedRef.current = false
+      inventoryRevisionRef.current += 1
       setCacheSavedAt('')
       setSyncIssues([])
       setSyncedAt(undefined)
@@ -98,8 +105,10 @@ export function useEnterpriseCatalog({
       if (showLoading) setLoading(true)
       setSyncIssues([])
       try {
-        if (showLoading) {
+        if (showLoading && !cacheLoadedRef.current) {
           const cached = await loadEnterpriseCatalogCache(user.userId).catch(() => undefined)
+          if (controller.signal.aborted) return
+          cacheLoadedRef.current = true
           if (cached && cacheRef.current.catalog.length === 0) {
             const personal = loadPersonalConnectors(user.userId)
             cacheRef.current = {
@@ -107,13 +116,14 @@ export function useEnterpriseCatalog({
               ...cached,
               connectors: withDesktopBuiltinConnectors([
                 ...personal,
-                ...cached.connectors.filter((item) => !personal.some((value) => value.id === item.id)),
+                ...cached.connectors.filter((item) => !isPersonalConnector(item) && !personal.some((value) => value.id === item.id)),
               ]),
             }
             setCacheSavedAt(cached.savedAt)
             applyCatalog()
           }
         }
+        const inventoryRevision = inventoryRevisionRef.current
         const results = await Promise.allSettled([
           loadExpertKits(bootstrap.endpoints.expertKits, user.userId, accessToken, controller.signal),
           inspectInstalledExtensions(),
@@ -125,7 +135,8 @@ export function useEnterpriseCatalog({
         const [catalogResult, installedResult, skillsResult, connectorsResult, knowledgeResult] = results
         const data = cacheRef.current
         if (catalogResult.status === 'fulfilled') data.catalog = catalogResult.value
-        if (installedResult.status === 'fulfilled') data.installed = installedResult.value.installed
+        const currentInventory = inventoryRevision === inventoryRevisionRef.current
+        if (currentInventory && installedResult.status === 'fulfilled') data.installed = installedResult.value.installed
         if (skillsResult.status === 'fulfilled') data.skills = skillsResult.value
         if (connectorsResult.status === 'fulfilled') {
           const personal = loadPersonalConnectors(user.userId)
@@ -133,20 +144,26 @@ export function useEnterpriseCatalog({
             ...personal,
             ...connectorsResult.value.filter((item) => !personal.some((value) => value.id === item.id)),
           ])
+        } else {
+          const personal = loadPersonalConnectors(user.userId)
+          data.connectors = withDesktopBuiltinConnectors([
+            ...personal,
+            ...data.connectors.filter((item) => !isPersonalConnector(item) && !personal.some((value) => value.id === item.id)),
+          ])
         }
         if (knowledgeResult.status === 'fulfilled') data.knowledge = knowledgeResult.value
         applyCatalog()
         const sources = [
           ['expert-kits', '专家套件目录', catalogResult],
           ['installed', '本机已安装能力', installedResult],
-          ['skills', 'Skills 目录', skillsResult],
+          ['skills', '技能目录', skillsResult],
           ['connectors', '连接器目录', connectorsResult],
           ['knowledge', '知识库目录', knowledgeResult],
         ] as const
-        const sourceIssues = sources.flatMap(([key, label, result]) => result.status === 'rejected'
+        const sourceIssues = sources.flatMap(([key, label, result]) => result.status === 'rejected' && (key !== 'installed' || currentInventory)
           ? [{ key, label, message: result.reason instanceof Error ? result.reason.message : String(result.reason) }]
           : [])
-        const localIssues = installedResult.status === 'fulfilled'
+        const localIssues = currentInventory && installedResult.status === 'fulfilled'
           ? installedResult.value.issues.map((issue) => ({
             key: `local-extension:${issue.coordinate}`,
             label: issue.coordinate,
@@ -154,13 +171,13 @@ export function useEnterpriseCatalog({
             removable: removableCoordinate(issue.coordinate),
           }))
           : []
-        setSyncIssues([...sourceIssues, ...localIssues])
+        setSyncIssues((current) => [...sourceIssues, ...(currentInventory ? localIssues : current.filter((issue) => issue.key.startsWith('local-extension:')))])
         setSyncedAt(new Date())
         if ([catalogResult, skillsResult, connectorsResult, knowledgeResult].every((result) => result.status === 'fulfilled')) {
           const savedAt = new Date().toISOString()
           setCacheSavedAt(savedAt)
           void saveEnterpriseCatalogCache(user.userId, {
-            savedAt, catalog: data.catalog, skills: data.skills, connectors: data.connectors, knowledge: data.knowledge,
+            savedAt, catalog: data.catalog, skills: data.skills, connectors: data.connectors.filter((item) => !isPersonalConnector(item)), knowledge: data.knowledge,
           }).catch(() => undefined)
         }
       } finally {
@@ -170,17 +187,22 @@ export function useEnterpriseCatalog({
     }
     void synchronize(true)
     const timer = window.setInterval(() => void synchronize(false), 60_000)
-    return () => { window.clearInterval(timer); controller.abort() }
+    const onFocus = () => { void synchronize(false) }
+    window.addEventListener('focus', onFocus)
+    return () => { window.clearInterval(timer); window.removeEventListener('focus', onFocus); controller.abort() }
   }, [accessToken, applyCatalog, bootstrap, refreshKey, user])
 
   const refresh = useCallback(() => setRefreshKey((value) => value + 1), [])
 
   const refreshInstalled = useCallback(async () => {
+    const owner = catalogOwnerRef.current
+    const revision = ++inventoryRevisionRef.current
     const inventory = await inspectInstalledExtensions()
+    if (owner !== catalogOwnerRef.current || revision !== inventoryRevisionRef.current) return inventory.installed
     cacheRef.current.installed = inventory.installed
     applyCatalog()
     setSyncIssues((current) => [
-      ...current.filter((issue) => !issue.key.startsWith('local-extension:')),
+      ...current.filter((issue) => issue.key !== 'installed' && !issue.key.startsWith('local-extension:')),
       ...inventory.issues.map((issue) => ({
         key: `local-extension:${issue.coordinate}`,
         label: issue.coordinate,
@@ -191,8 +213,8 @@ export function useEnterpriseCatalog({
     return inventory.installed
   }, [applyCatalog])
 
-  const replaceConnectors = useCallback((next: ConnectorCatalogEntry[]) => {
-    cacheRef.current.connectors = next
+  const replaceConnectors = useCallback((next: ConnectorCatalogEntry[] | ((current: ConnectorCatalogEntry[]) => ConnectorCatalogEntry[])) => {
+    cacheRef.current.connectors = typeof next === 'function' ? next(cacheRef.current.connectors) : next
     applyCatalog()
   }, [applyCatalog])
 

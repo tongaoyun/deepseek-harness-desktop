@@ -33,7 +33,7 @@ describe('standalone skill catalog', () => {
     expect(mergeSkills([catalog], [expert])[0].installState).toBe('available')
   })
 
-  it('keeps a removed catalog Skill visible but marks it retired', () => {
+  it('keeps a removed catalog 技能 visible but marks it retired', () => {
     expect(mergeSkills([], [installed])[0]).toMatchObject({
       id: 'document-insight', installState: 'retired', installedVersion: '1.0.0',
     })

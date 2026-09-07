@@ -73,51 +73,50 @@ fn extract_tar_gzip_package(bytes: &[u8], destination: &Path) -> Result<(), Stri
 
 fn extract_zip_package(bytes: &[u8], destination: &Path) -> Result<(), String> {
     let mut archive = zip::ZipArchive::new(Cursor::new(bytes))
-        .map_err(|error| format!("Skill ZIP 压缩包无效：{error}"))?;
+        .map_err(|error| format!("技能 ZIP 压缩包无效：{error}"))?;
     if archive.len() > MAX_ARCHIVE_ENTRIES {
-        return Err("Skill 文件数量超过限制".to_string());
+        return Err("技能文件数量超过限制".to_string());
     }
     let mut extracted_bytes = 0u64;
     for index in 0..archive.len() {
         let mut entry = archive
             .by_index(index)
-            .map_err(|error| format!("读取 Skill ZIP 条目失败：{error}"))?;
+            .map_err(|error| format!("读取技能 ZIP 条目失败：{error}"))?;
         if entry
             .unix_mode()
             .is_some_and(|mode| mode & 0o170000 == 0o120000)
         {
-            return Err("Skill 不能包含符号链接".to_string());
+            return Err("技能不能包含符号链接".to_string());
         }
         let path = entry
             .enclosed_name()
-            .ok_or_else(|| "Skill ZIP 路径无效".to_string())?
+            .ok_or_else(|| "技能 ZIP 路径无效".to_string())?
             .to_path_buf();
         let Some(path) = normalized_archive_entry_path(&path)? else {
             if entry.is_dir() {
                 continue;
             }
-            return Err("Skill ZIP 根路径不能是文件".to_string());
+            return Err("技能 ZIP 根路径不能是文件".to_string());
         };
         validate_relative_path(&path)?;
         let output = destination.join(&path);
         if entry.is_dir() {
-            fs::create_dir_all(&output).map_err(|error| format!("无法创建 Skill 目录：{error}"))?;
+            fs::create_dir_all(&output).map_err(|error| format!("无法创建技能目录：{error}"))?;
             continue;
         }
         extracted_bytes = extracted_bytes
             .checked_add(entry.size())
-            .ok_or_else(|| "Skill 解压大小无效".to_string())?;
+            .ok_or_else(|| "技能解压大小无效".to_string())?;
         if extracted_bytes > MAX_EXTRACTED_BYTES {
-            return Err("Skill 解压后超过 64 MiB 限制".to_string());
+            return Err("技能解压后超过 64 MiB 限制".to_string());
         }
         if let Some(parent) = output.parent() {
-            fs::create_dir_all(parent)
-                .map_err(|error| format!("无法创建 Skill 文件目录：{error}"))?;
+            fs::create_dir_all(parent).map_err(|error| format!("无法创建技能文件目录：{error}"))?;
         }
         let mut file =
-            File::create(&output).map_err(|error| format!("无法创建 Skill 文件：{error}"))?;
+            File::create(&output).map_err(|error| format!("无法创建技能文件：{error}"))?;
         std::io::copy(&mut entry, &mut file)
-            .map_err(|error| format!("无法写入 Skill 文件：{error}"))?;
+            .map_err(|error| format!("无法写入技能文件：{error}"))?;
     }
     Ok(())
 }
@@ -134,7 +133,9 @@ pub(super) fn package_root(staging_directory: &Path) -> Result<PathBuf, String> 
 }
 
 fn has_extension_manifest(root: &Path) -> bool {
-    root.join(KIT_MANIFEST_PATH).is_file() || root.join(SKILL_MANIFEST_PATH).is_file()
+    root.join(KIT_MANIFEST_PATH).is_file()
+        || root.join(SKILL_MANIFEST_PATH).is_file()
+        || super::compatibility::has_portable_entry(root)
 }
 
 fn normalized_archive_entry_path(path: &Path) -> Result<Option<PathBuf>, String> {

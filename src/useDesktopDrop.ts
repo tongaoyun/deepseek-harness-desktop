@@ -1,29 +1,32 @@
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { useEffect, useRef, useState } from 'react'
-import { authorizeDroppedPaths, type DroppedPathAuthorization } from './harness'
 
 export function useDesktopDrop({
   enabled,
-  onAuthorized,
+  onPaths,
   onError,
   running,
+  scope = 'task',
 }: {
   enabled: boolean
-  onAuthorized: (value: DroppedPathAuthorization) => void
+  onPaths: (paths: string[]) => Promise<unknown>
   onError: (message: string) => void
   running: boolean
+  scope?: 'task' | 'feedback'
 }) {
   const [active, setActive] = useState(false)
-  const latest = useRef({ onAuthorized, onError, running })
-  latest.current = { onAuthorized, onError, running }
+  const latest = useRef({ onPaths, onError, running })
+  latest.current = { onPaths, onError, running }
 
   useEffect(() => {
+    setActive(false)
     if (!enabled) return
     let disposed = false
     let unlisten: () => void = () => undefined
     void getCurrentWebviewWindow().onDragDropEvent((event) => {
       if (disposed) return
-      if (event.payload.type === 'over') setActive(true)
+      if (scope === 'task' && document.querySelector('[data-feedback-drop]')) { setActive(false); return }
+      if (event.payload.type === 'over' || event.payload.type === 'enter') setActive(true)
       if (event.payload.type === 'leave') setActive(false)
       if (event.payload.type !== 'drop') return
       setActive(false)
@@ -31,14 +34,13 @@ export function useDesktopDrop({
         latest.current.onError('请先取消或等待当前任务完成，再拖入文件')
         return
       }
-      void authorizeDroppedPaths(event.payload.paths)
-        .then((value) => latest.current.onAuthorized(value))
-        .catch((reason) => latest.current.onError(message(reason)))
-    }).then((dispose) => { if (disposed) disposeSilently(dispose); else unlisten = dispose })
+      void latest.current.onPaths(event.payload.paths)
+        .catch((reason) => { if (!disposed) latest.current.onError(message(reason)) })
+    }).then((dispose) => { if (disposed) disposeSilently(dispose); else unlisten = dispose }).catch((reason) => { if (!disposed) latest.current.onError(`拖拽暂不可用，请通过「＋」添加文件：${message(reason)}`) })
     return () => { disposed = true; disposeSilently(unlisten) }
-  }, [enabled])
+  }, [enabled, scope])
 
-  return active
+  return enabled && active
 }
 
 function disposeSilently(dispose: () => void): void {

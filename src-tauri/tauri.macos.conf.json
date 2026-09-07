@@ -1,7 +1,13 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
+  "plugins": {
+    "updater": {
+      "endpoints": ["http://192.168.2.66:3300/api/packages/instudio/generic/xiaoyin-desktop-updater-macos/latest/latest.json"]
+    }
+  },
   "bundle": {
-    "createUpdaterArtifacts": false,
+    "createUpdaterArtifacts": true,
+    "macOS": { "minimumSystemVersion": "14.0" },
     "targets": ["app"],
     "resources": ["resources/harness-runtime"]
   }

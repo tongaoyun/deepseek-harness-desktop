@@ -1,5 +1,6 @@
 import { CircleAlert, CircleCheck, X } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useDialogFocus } from './useDialogFocus'
 
 interface ConfirmationOptions {
   title: string
@@ -36,6 +37,8 @@ export function useDesktopDialog() {
       return undefined
     })
   }, [])
+  const dialogRef = useRef<HTMLElement>(null)
+  useDialogFocus(dialogRef, request ? 'confirmation' : '', () => settle(false))
 
   useEffect(() => () => {
     window.clearTimeout(toastTimer.current)
@@ -46,7 +49,7 @@ export function useDesktopDialog() {
     event.stopPropagation()
     if (event.target === event.currentTarget) settle(false)
   }}>
-    <section aria-labelledby="desktop-dialog-title" aria-modal="true" className="desktop-dialog" role="dialog">
+    <section aria-labelledby="desktop-dialog-title" aria-modal="true" className="desktop-dialog" ref={dialogRef} role="dialog">
       <button aria-label="关闭" className="desktop-dialog-close" onClick={() => settle(false)} type="button"><X size={18} /></button>
       <h2 id="desktop-dialog-title">{request.title}</h2>
       <p>{request.message}</p>

@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import type { Tool } from '@modelcontextprotocol/client'
+import { createServer } from 'node:http'
 import {
   compareConnectorTools,
+  connectorRequestOptions,
   diagnoseConnector,
   diagnosticError,
   selectTools,
@@ -23,6 +25,12 @@ const tools: Tool[] = [
   },
 ]
 
+it('uses the configured execution deadline and validates its range', () => {
+  expect(connectorRequestOptions({})).toEqual({ timeout: 60000, maxTotalTimeout: 60000 })
+  expect(connectorRequestOptions({ timeoutSeconds: 120 })).toEqual({ timeout: 120000, maxTotalTimeout: 120000 })
+  for (const timeoutSeconds of [0, 601, 1.5, NaN]) expect(() => connectorRequestOptions({ timeoutSeconds })).toThrow('1–600')
+})
+
 describe('managed MCP tool selection', () => {
   it('exposes provider-safe unique names without changing the upstream MCP name', () => {
     const used = new Set<string>()
@@ -35,9 +43,9 @@ describe('managed MCP tool selection', () => {
     expect(first).toMatch(/^[a-zA-Z0-9_-]+$/)
   })
 
-  it('uses every discovered tool when no optional allowlist is configured', () => {
+  it('uses only annotated read tools when writes are disabled', () => {
     expect(selectTools(tools, [], [], false).map((tool) => tool.name))
-      .toEqual(['sales_summary', 'order_cancel'])
+      .toEqual(['sales_summary'])
     expect(selectTools(tools, ['sales_summary'], [], false).map((tool) => tool.name))
       .toEqual(['sales_summary'])
   })
@@ -46,7 +54,7 @@ describe('managed MCP tool selection', () => {
     expect(selectTools(tools, ['sales_summary'], ['inventory_risk'], false, 'ERP').map((tool) => tool.name))
       .toEqual(['sales_summary'])
     expect(selectTools(tools, ['order_cancel'], ['order_cancel'], false, 'ERP').map((tool) => tool.name))
-      .toEqual(['order_cancel'])
+      .toEqual([])
   })
 
   it('keeps MCP tools available regardless of legacy expert-kit write flags', () => {
@@ -56,6 +64,36 @@ describe('managed MCP tool selection', () => {
 })
 
 describe('managed MCP diagnostics', () => {
+  it('performs a real HTTP handshake and detects outage, recovery and tool drift without calling business tools', async () => {
+    let offline = false
+    let names = ['sales_summary']
+    const methods: string[] = []
+    const server = createServer(async (request, response) => {
+      if (offline) { response.writeHead(503).end(); return }
+      if (request.method !== 'POST') { response.writeHead(405).end(); return }
+      let body = ''
+      for await (const chunk of request) body += chunk
+      const message = JSON.parse(body)
+      methods.push(message.method)
+      if (message.id === undefined) { response.writeHead(202).end(); return }
+      const result = message.method === 'initialize'
+        ? { protocolVersion: message.params.protocolVersion, capabilities: { tools: {} }, serverInfo: { name: 'local-acceptance', version: '1' } }
+        : { tools: names.map((name) => ({ name, inputSchema: { type: 'object' }, annotations: { readOnlyHint: true } })) }
+      response.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ jsonrpc: '2.0', id: message.id, result }))
+    })
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    try {
+      const address = server.address() as { port: number }
+      const connector = { id: 'local-test', name: 'Local', version: '1', transport: 'streamable-http' as const, url: `http://127.0.0.1:${address.port}/mcp`, authMode: 'none' as const,
+        command: '', arguments: [], environment: {}, headers: {}, allowedTools: ['sales_summary'], requiredTools: [], allowWrite: false, requireWriteApproval: true, required: false }
+      expect(await diagnoseConnector(connector, undefined, 1000)).toMatchObject({ status: 'ready', discoveredTools: ['sales_summary'] })
+      offline = true
+      expect(await diagnoseConnector(connector, undefined, 1000)).toMatchObject({ status: 'unavailable' })
+      offline = false; names = ['inventory_summary']
+      expect(await diagnoseConnector(connector, undefined, 1000)).toMatchObject({ status: 'drift', missingTools: ['sales_summary'], undeclaredTools: ['inventory_summary'] })
+      expect(methods).not.toContain('tools/call')
+    } finally { server.closeAllConnections(); await new Promise<void>((resolve) => server.close(() => resolve())) }
+  })
   it('reports missing and undeclared tools without duplicates', () => {
     expect(compareConnectorTools(
       ['inventory_risk', 'order_get', 'order_get'],

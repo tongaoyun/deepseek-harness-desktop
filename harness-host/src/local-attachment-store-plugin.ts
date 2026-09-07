@@ -1,4 +1,5 @@
 import type { Context } from '@deepseek-ai/cordis'
+import { IMAGE_LIMITS } from './image-limits.js'
 import z from '@deepseek-ai/schemastery'
 import {
   AttachmentError,
@@ -22,14 +23,7 @@ export interface Config { root?: string }
 export const Config = z.object({ root: z.string().default('./.xiaoyin/attachments') })
 
 export default class LocalAttachmentStore extends AttachmentStore {
-  readonly imageLimits: ImageAttachmentLimits = {
-    maxImageBytes: 5 * 1024 * 1024,
-    maxImagesPerMessage: 4,
-    maxMessageImageBytes: 12 * 1024 * 1024,
-    maxImagePixels: 4_000_000,
-    maxImageDimension: 2560,
-    mediaTypes: ['image/png', 'image/jpeg'],
-  }
+  readonly imageLimits: ImageAttachmentLimits = IMAGE_LIMITS
 
   private readonly root: string
 

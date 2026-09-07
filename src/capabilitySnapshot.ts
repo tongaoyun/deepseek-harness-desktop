@@ -11,14 +11,14 @@ export function createCapabilitySnapshot(
   createdAt = new Date().toISOString(),
 ): CapabilitySnapshot {
   const extensions: AllowedExtensionArtifact[] = [
-    ...expertKits.filter((item) => ['installed', 'update'].includes(item.installState)
+    ...expertKits.filter((item) => item.installed?.enabled !== false && ['installed', 'update'].includes(item.installState)
       && (item.installState === 'update' ? item.installed?.packageSha256 : item.sha256)).map((item) => ({
       kind: 'expert-kit' as const,
       id: item.id,
       version: item.installState === 'update' ? item.installed!.manifest.version : item.version,
       sha256: item.installState === 'update' ? item.installed!.packageSha256! : item.sha256,
     })),
-    ...skills.filter((item) => ['installed', 'update'].includes(item.installState)
+    ...skills.filter((item) => item.installed?.enabled !== false && ['installed', 'update'].includes(item.installState)
       && (item.installState === 'update' ? item.installed?.packageSha256 : item.sha256)).map((item) => ({
       kind: 'skill' as const,
       id: item.id,
@@ -53,6 +53,12 @@ export function connectorsForSnapshot(
     environment: hydrateValues(item.environment, localSecrets[item.id]?.environment),
     headers: hydrateValues(item.headers, localSecrets[item.id]?.headers),
   }))
+}
+
+/** Timestamps are bookkeeping, not a reason to discard the execution session. */
+export function capabilitySnapshotChanged(previous: CapabilitySnapshot | undefined, next: CapabilitySnapshot): boolean {
+  return !previous || JSON.stringify({ extensions: previous.extensions, connectors: previous.connectors, knowledgeBaseRefs: previous.knowledgeBaseRefs })
+    !== JSON.stringify({ extensions: next.extensions, connectors: next.connectors, knowledgeBaseRefs: next.knowledgeBaseRefs })
 }
 
 function emptyValues(values?: Record<string, string>): Record<string, string> | undefined {

@@ -1,6 +1,6 @@
 export function resolveSelectedModel(models: string[], stored?: string | null): string {
   if (stored && models.includes(stored)) return stored
-  return models[0] ?? 'deepseek-v4-flash'
+  return models[0] ?? ''
 }
 
 export function modelDisplayName(model: string): string {

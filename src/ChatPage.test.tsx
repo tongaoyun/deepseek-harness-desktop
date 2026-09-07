@@ -9,22 +9,25 @@ describe('ChatPage conversation', () => {
       status: 'idle', activity: '', updatedAt: '2026-09-03T10:00:00.000Z', steps: [], artifacts: [],
     }
     const html = renderToStaticMarkup(<ChatPage
-      activeModel="deepseek-v4-flash" capabilityOptions={[]} composerRef={{ current: null }} harnessHealth="ready"
+      activeModel="deepseek-v4-flash" composerRef={{ current: null }} harnessHealth="ready"
       harnessHealthDetail="正常" harnessRunning={false} knowledgeBases={[]} localDirectories={[]}
       localFileError="" messageListRef={{ current: null }} pendingAttachments={[]} messages={[]}
       modelMenuOpen={false} modelPickerRef={{ current: null }} models={[]} onAddKnowledge={() => undefined}
-      onAddLocalDirectory={() => undefined} onAddLocalFiles={() => undefined} onBrowseExpertKits={() => undefined} onCancel={() => undefined} onSelectCapability={() => undefined}
+      onAddLocalDirectory={() => undefined} onAddLocalFiles={() => undefined} onCancel={() => undefined}
       onPrepareRetry={() => undefined} onPrompt={() => undefined} onReconnect={() => undefined} onRecoverHarness={() => undefined}
       onRemoveAttachment={() => undefined} onRemoveKnowledge={() => undefined} onRemoveLocalDirectory={() => undefined}
       onSelectModel={() => undefined} onSubmit={() => undefined}
-      onToggleModelMenu={() => undefined} prompt="" runtimeStatus="ready" selectedCapabilityId=""
-      selectedCapabilityName="专家套件" selectedKnowledgeBaseRefs={[]} taskMonitor={monitor}
+      onToggleModelMenu={() => undefined} prompt="" runtimeStatus="ready"
+      selectedKnowledgeBaseRefs={[]} taskMonitor={monitor}
     />)
     expect(html).toContain('不止聊天，搞定一切')
     expect(html).toContain('本地运行、自主规划、安全可控的 AI 工作搭子')
-    expect(html).toContain('placeholder="描述你想完成的任务"')
+    expect(html).toContain('placeholder="描述任务，/ 调用技能或套件，@ 添加上下文"')
     expect(html).toContain('aria-label="添加上下文"')
-    expect(html).toContain('title="按需使用专家套件"')
+    expect(html).not.toContain('aria-label="执行模式"')
+    expect(html).not.toContain('agent-mode')
+    expect(html).not.toContain('<select')
+    expect(html).not.toContain('自主规划并执行，自动加载技能和连接器')
     expect(html).not.toContain('@ 引用知识库')
     expect(html).not.toContain('快捷指令')
     expect(html).not.toContain('>通用<')
@@ -34,19 +37,20 @@ describe('ChatPage conversation', () => {
     const monitor: TaskMonitorState = {
       status: 'completed', activity: '任务已完成', startedAt: '2026-09-03T10:00:00.000Z',
       completedAt: '2026-09-03T10:00:02.000Z', updatedAt: '2026-09-03T10:00:02.000Z', steps: [], artifacts: [],
+      knowledgeSources: [{ sourceId: '12', knowledgeBaseId: 'kb', knowledgeBaseName: '知识', documentId: 'doc', filename: '排序说明.md', locator: '正文', content: '原文', score: 1 }],
     }
     const html = renderToStaticMarkup(<ChatPage
-      activeModel="deepseek-v4-flash" capabilityOptions={[]} composerRef={{ current: null }} creationKind="expert-kit" harnessHealth="ready"
+      activeModel="deepseek-v4-flash" composerRef={{ current: null }} creationKind="skill" harnessHealth="ready"
       harnessHealthDetail="正常" harnessRunning={false} knowledgeBases={[]} localDirectories={[]}
       localFileError="" messageListRef={{ current: null }} pendingAttachments={[]} messages={[
         { role: 'user', text: '解释冒泡排序' },
         { role: 'assistant', text: '冒泡排序会比较相邻元素。', monitor },
       ]} modelMenuOpen={false} modelPickerRef={{ current: null }} models={[]} onAddKnowledge={() => undefined}
-      onAddLocalDirectory={() => undefined} onAddLocalFiles={() => undefined} onBrowseExpertKits={() => undefined} onCancel={() => undefined} onContinueCreation={() => undefined} onSelectCapability={() => undefined}
+      onAddLocalDirectory={() => undefined} onAddLocalFiles={() => undefined} onCancel={() => undefined} onContinueCreation={() => undefined}
       onPrepareRetry={() => undefined} onPrompt={() => undefined} onReconnect={() => undefined} onRecoverHarness={() => undefined}
       onRemoveAttachment={() => undefined} onRemoveKnowledge={() => undefined} onRemoveLocalDirectory={() => undefined}
       onSelectModel={() => undefined} onSubmit={() => undefined} onToggleModelMenu={() => undefined} prompt=""
-      runtimeStatus="ready" selectedCapabilityId="" selectedCapabilityName="专家套件" selectedKnowledgeBaseRefs={[]}
+      runtimeStatus="ready" selectedKnowledgeBaseRefs={[]}
       taskMonitor={monitor}
     />)
 
@@ -56,7 +60,9 @@ describe('ChatPage conversation', () => {
     expect(html).not.toContain('message-avatar')
     expect(html).not.toContain('>小胤<')
     expect(html).toContain('添加')
-    expect(html).toContain('保存为专家套件')
+    expect(html).toContain('保存为技能')
+    expect(html).toContain('aria-label="检索原文"')
+    expect(html).toContain('排序说明.md')
   })
 
   it('shows streamed assistant text and local attachments before completion', () => {
@@ -65,18 +71,18 @@ describe('ChatPage conversation', () => {
       updatedAt: '2026-09-03T10:00:01.000Z', steps: [], artifacts: [],
     }
     const html = renderToStaticMarkup(<ChatPage
-      activeModel="deepseek-v4-flash" capabilityOptions={[]} composerRef={{ current: null }} harnessHealth="ready"
+      activeModel="deepseek-v4-flash" composerRef={{ current: null }} harnessHealth="ready"
       harnessHealthDetail="正常" harnessRunning knowledgeBases={[]}
       localDirectories={[]} localFileError="" messageListRef={{ current: null }} messages={[
         { role: 'assistant', text: '正在列出下载目录中的文件', pending: true, monitor },
       ]} modelMenuOpen={false} modelPickerRef={{ current: null }} models={[]} onAddKnowledge={() => undefined}
-      onAddLocalDirectory={() => undefined} onAddLocalFiles={() => undefined} onBrowseExpertKits={() => undefined} onCancel={() => undefined} onSelectCapability={() => undefined}
+      onAddLocalDirectory={() => undefined} onAddLocalFiles={() => undefined} onCancel={() => undefined}
       onPrepareRetry={() => undefined} onPrompt={() => undefined} onReconnect={() => undefined} onRecoverHarness={() => undefined}
       onRemoveAttachment={() => undefined} onRemoveKnowledge={() => undefined} onRemoveLocalDirectory={() => undefined}
       onSelectModel={() => undefined} onSubmit={() => undefined}
       onToggleModelMenu={() => undefined} pendingAttachments={[{
         id: 'download:image.png', rootId: 'download', rootName: '下载', path: 'image.png', name: 'image.png', kind: 'image', mediaType: 'image/png',
-      }]} prompt="" runtimeStatus="ready" selectedCapabilityId="" selectedCapabilityName="专家套件"
+      }]} prompt="" runtimeStatus="ready"
       selectedKnowledgeBaseRefs={[]} taskMonitor={monitor}
     />)
 

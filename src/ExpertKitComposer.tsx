@@ -50,13 +50,13 @@ export function composerIssues(
   }
   const dependencies = deriveSkillDependencies(skills, selectedSkillIds)
   for (const id of dependencies.connectorIds) {
-    if (!selectedConnectors.has(id)) issues.push(`所选 Skill 依赖连接器 ${id}`)
+    if (!selectedConnectors.has(id)) issues.push(`所选技能依赖连接器 ${id}`)
   }
   const providedTools = new Set(
     connectors.filter((connector) => selectedConnectors.has(connector.id)).flatMap((connector) => connector.toolNames),
   )
   for (const tool of dependencies.tools) {
-    if (!selectedToolSet.has(tool)) issues.push(`所选 Skill 依赖工具 ${tool}`)
+    if (!selectedToolSet.has(tool)) issues.push(`所选技能依赖工具 ${tool}`)
     if (!desktopToolNames.has(tool) && !providedTools.has(tool)) issues.push(`${tool} 没有可用的连接器提供`)
   }
   return unique(issues)
@@ -76,17 +76,17 @@ export function ExpertKitComposer(props: Props) {
       .flatMap((connector) => connector.toolNames),
   ])
   return <section className="expert-composer wide">
-    <header><span><strong>可视化能力编排</strong><small>选择已安装的 Skill，依赖的连接器和工具会自动勾选。</small></span><em className={issues.length ? 'partial' : 'ready'}>{issues.length ? `${issues.length} 项待完善` : '依赖完整'}</em></header>
+    <header><span><strong>可视化能力编排</strong><small>选择已安装的技能，依赖的连接器和工具会自动勾选。</small></span><em className={issues.length ? 'partial' : 'ready'}>{issues.length ? `${issues.length} 项待完善` : '依赖完整'}</em></header>
     <div className="expert-composer-group">
-      <h4><Check size={13} />Skills <small>{props.selectedSkillIds.length} 个已选</small></h4>
+      <h4><Check size={13} />技能 <small>{props.selectedSkillIds.length} 个已选</small></h4>
       <div className="expert-composer-options">{props.skills.map((skill) => {
         const enabled = Boolean(skill.installed)
         const selected = props.selectedSkillIds.includes(skill.id)
         return <button className={selected ? 'selected' : ''} disabled={!enabled} key={skill.id} onClick={() => enabled && props.onSkillsChange(toggle(props.selectedSkillIds, skill.id))} type="button">
           <span><strong>{skill.name}</strong><small>{skill.id} · v{skill.installedVersion ?? skill.version}</small></span><em>{enabled ? selected ? '已选择' : '选择' : '需先安装'}</em>
         </button>
-      })}{props.selectedSkillIds.filter((id) => !props.skills.some((skill) => skill.id === id)).map((id) => <button className="missing" key={id} onClick={() => props.onSkillsChange(toggle(props.selectedSkillIds, id))} type="button"><span><strong>{id}</strong><small>原套件引用的 Skill 当前不在目录中</small></span><em>移除</em></button>)}</div>
-      {props.skills.length === 0 && <p>暂无可编排的 Skill，请先在 Skill 页面安装或创建。</p>}
+      })}{props.selectedSkillIds.filter((id) => !props.skills.some((skill) => skill.id === id)).map((id) => <button className="missing" key={id} onClick={() => props.onSkillsChange(toggle(props.selectedSkillIds, id))} type="button"><span><strong>{id}</strong><small>原套件引用的技能当前不在目录中</small></span><em>移除</em></button>)}</div>
+      {props.skills.length === 0 && <p>暂无可编排的技能，请先在技能页面安装或创建。</p>}
     </div>
     <div className="expert-composer-group">
       <h4><Plug size={13} />连接器 <small>{props.selectedConnectorIds.length} 个已选</small></h4>

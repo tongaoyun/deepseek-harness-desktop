@@ -5,6 +5,16 @@ import { runHarnessWithRecovery } from './taskRecovery'
 const request = { taskId: 'task', sessionId: 'old' } as HarnessRunInput
 
 describe('runHarnessWithRecovery', () => {
+  it('does not restart a turn stopped during recovery', async () => {
+    let canceled = false
+    const execute = vi.fn().mockRejectedValue(new Error('模型本轮没有返回可显示文本'))
+    const onRetry = vi.fn()
+    await expect(runHarnessWithRecovery(request, {
+      getMonitor: createTaskMonitor, isCanceled: () => canceled, onRetry,
+    }, { execute, reset: async () => { canceled = true }, sessionId: () => 'fresh' })).rejects.toThrow('本轮已停止')
+    expect(execute).toHaveBeenCalledOnce()
+    expect(onRetry).not.toHaveBeenCalled()
+  })
   it('retries one transient pre-tool failure with a fresh session', async () => {
     const execute = vi.fn()
       .mockRejectedValueOnce(new Error('模型本轮没有返回可显示文本'))

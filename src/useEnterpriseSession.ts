@@ -5,6 +5,7 @@ import {
   isTauriRuntime,
   openErpLogin,
   resolveErpSession,
+  usesLocalDevelopmentSession,
   type ErpUser,
 } from './auth'
 
@@ -31,15 +32,19 @@ export function useEnterpriseSession() {
     setState('required')
     setError('')
     try {
+      if (usesLocalDevelopmentSession()) {
+        acceptSession(await resolveErpSession())
+        return
+      }
       await openErpLogin()
     } catch (cause) {
       setState('error')
       setError(cause instanceof Error ? cause.message : '无法打开 ERP 扫码窗口')
     }
-  }, [])
+  }, [acceptSession])
 
   useEffect(() => {
-    if (!isTauriRuntime()) return
+    if (!isTauriRuntime() || usesLocalDevelopmentSession()) return
     let cancelled = false
     let unlisten: (() => void) | undefined
     void listen<string>('erp-login-progress', (event) => {
@@ -104,7 +109,7 @@ export function useEnterpriseSession() {
   }, [acceptSession, state])
 
   useEffect(() => {
-    if (!isTauriRuntime() || state === 'authenticated') return
+    if (!isTauriRuntime() || usesLocalDevelopmentSession() || state === 'authenticated') return
     let cancelled = false
     let checking = false
     const timer = window.setInterval(() => {

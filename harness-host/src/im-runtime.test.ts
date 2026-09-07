@@ -1,7 +1,63 @@
 import { describe, expect, it } from 'vitest'
 import { buildConversationKey, parseDingTalkEvent, parseTaskCommand } from './im-runtime.js'
+import { generatedArtifactPath } from './im-runtime.js'
+import { resolve } from 'node:path'
+import { tmpdir } from 'node:os'
+import { LocalImRuntime } from './im-runtime.js'
+import type { HarnessRuntime } from './runtime.js'
 
 describe('local DingTalk runtime', () => {
+  it('exposes paired conversations and allows revoking one without dropping the others', () => {
+    const runtime = new LocalImRuntime({} as HarnessRuntime, '')
+    Object.assign(runtime, { configuration: { clientId: 'test', accessPolicy: 'pairing', notifyTaskResults: false } })
+    runtime.allowPairing('test:private:one')
+    expect(runtime.allowPairing('test:group:two').pairedConversations).toEqual(['test:private:one', 'test:group:two'])
+    expect(runtime.revokePairing('test:private:one').pairedConversations).toEqual(['test:group:two'])
+    expect(runtime.revokePairing('test:private:one').pairedConversations).toEqual(['test:group:two'])
+  })
+  it('delivers published files using the native stable root ID, not a positional directory number', () => {
+    const calls = new Map<string, string>()
+    const root = resolve(tmpdir(), 'xiaoyin-im-artifact-fixture')
+    const roots = JSON.stringify([{ id: 'local-im-workspace', name: 'IM 工作目录', path: root }])
+    const call = { method: 'session.event', params: { sessionId: 'root', event: { type: 'tool/call', data: { callId: 'one', name: 'local_files_publish' } } } }
+    const result = imArtifactResult('one', 'local-im-workspace', 'report.csv')
+    expect(generatedArtifactPath(call, calls, 'root', roots)).toBeUndefined()
+    expect(generatedArtifactPath(result, calls, 'root', roots)).toBe(resolve(root, 'report.csv'))
+    expect(calls.size).toBe(0)
+    expect(generatedArtifactPath(result, calls, 'root', roots)).toBeUndefined()
+  })
+
+  it('does not deliver merely read files, unknown results, failed outputs or child-session outputs', () => {
+    const roots = JSON.stringify([{ id: 'local-im-workspace', path: tmpdir() }])
+    const calls = new Map<string, string>()
+    const call = { method: 'session.event', params: { sessionId: 'root', event: { type: 'tool/call', data: { callId: 'read', name: 'local_files_read_text' } } } }
+    generatedArtifactPath(call, calls, 'root', roots)
+    expect(generatedArtifactPath(imArtifactResult('read', 'local-im-workspace', 'source.csv'), calls, 'root', roots)).toBeUndefined()
+    calls.set('failed', 'local_files_publish')
+    expect(generatedArtifactPath(imArtifactResult('failed', 'local-im-workspace', 'report.csv', true), calls, 'root', roots)).toBeUndefined()
+    expect(calls.size).toBe(0)
+    const child = { ...call, params: { ...call.params, sessionId: 'child', event: { ...call.params.event, data: { callId: 'child', name: 'local_files_publish' } } } }
+    generatedArtifactPath(child, calls, 'root', roots)
+    expect(calls.size).toBe(0)
+    calls.set('outside', 'local_files_publish')
+    expect(generatedArtifactPath(imArtifactResult('outside', 'local-im-workspace', '../outside.csv'), calls, 'root', roots)).toBeUndefined()
+  })
+
+  it('supports Office artifacts with string roots as well as stable roots', () => {
+    const calls = new Map([['office', 'office_xlsx_create']])
+    const roots = JSON.stringify([tmpdir()])
+    expect(generatedArtifactPath(imArtifactResult('office', 'local-root-1', 'report.xlsx'), calls, 'root', roots)).toBe(resolve(tmpdir(), 'report.xlsx'))
+  })
+  it('recognizes converted and recalculated copies as deliverable outputs, not their sources', () => {
+    const roots = JSON.stringify([{ id: 'office-root', path: tmpdir() }])
+    const calls = new Map<string, string>()
+    for (const [name, path] of [['office_document_export_pdf', 'report.pdf'], ['office_xlsx_recalculate', 'recalculated.xlsx']]) {
+      const call = { method: 'session.event', params: { sessionId: 'root', event: { type: 'tool/call', data: { callId: name, name, arguments: { rootId: 'office-root', path: 'source.xlsx', outputPath: path } } } } }
+      expect(generatedArtifactPath(call, calls, 'root', roots)).toBeUndefined()
+      expect(generatedArtifactPath(imArtifactResult(name, 'office-root', path), calls, 'root', roots)).toBe(resolve(tmpdir(), path))
+    }
+    expect(calls.size).toBe(0)
+  })
   it('parses in-channel task takeover commands exactly', () => {
     expect(parseTaskCommand('/bind')).toEqual({ kind: 'bind' })
     expect(parseTaskCommand('/bind 2')).toEqual({ kind: 'bind', index: 2 })
@@ -58,3 +114,10 @@ describe('local DingTalk runtime', () => {
     expect(event.attachment).toEqual({ downloadCode: 'download-1', fileName: '库存.xlsx', kind: 'document' })
   })
 })
+
+function imArtifactResult(callId: string, rootId: string, path: string, isError = false) {
+  return { method: 'session.event', params: { sessionId: 'root', event: { type: 'tool/result', data: { message: { content: [{
+    type: 'tool-result', toolCallId: callId, isError,
+    content: [{ type: 'text', text: JSON.stringify({ rootId, path, size: 20 }) }],
+  }] } } } } }
+}

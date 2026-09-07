@@ -1,7 +1,22 @@
 import { describe, expect, it } from 'vitest'
+import { applyStoppingHarnessNotification } from './harness'
 import { applyHarnessNotification, authorizeDroppedPaths, cancelHarness, classifyHarnessFailure, createTaskMonitor, diagnoseConnectors, harnessActivityLabel, harnessResponseUpdate, probeHarnessHost, selfTestLocalCapabilities, shouldRetryHarnessFailure } from './harness'
 
 describe('harnessActivityLabel', () => {
+  it('persists bounded source receipts only from successful knowledge tools', () => {
+    const source = { sourceId: '12', knowledgeBaseId: 'kb', knowledgeBaseName: '制度', documentId: 'doc', filename: '报销.md', locator: '正文', content: '报销上限 800 元', score: 1 }
+    const run = (name: string, failed = false) => [
+      event('tool/call', { turn: 1, step: 1, callId: 'knowledge', name }, 1),
+      event('tool/result', { turn: 1, step: 1, message: { content: [{ type: 'tool-result', toolCallId: 'knowledge', isError: failed, content: [{ type: 'text', text: JSON.stringify([source, source, { ...source, sourceId: 'file:///fake' }]) }] }] } }, 2),
+      event('step/start', { turn: 1, step: 2 }, 3),
+      event('text-chunks', { turn: 1, step: 2, texts: ['报销上限 800 元。'] }, 4),
+      event('turn/end', { turn: 1, reason: { kind: 'completed' } }, 5),
+    ].reduce(applyHarnessNotification, createTaskMonitor())
+    expect(run('knowledge_search').knowledgeSources).toEqual([source])
+    expect(run('knowledge_search', true).knowledgeSources ?? []).toEqual([])
+    expect(run('bash').knowledgeSources ?? []).toEqual([])
+  })
+
   it('classifies runtime failures into actionable user-facing groups', () => {
     expect(classifyHarnessFailure(new Error('任务执行超过 15 分钟')).category).toBe('timeout')
     expect(classifyHarnessFailure(new Error('MCP connector unavailable')).category).toBe('connector')
@@ -181,19 +196,20 @@ describe('harnessActivityLabel', () => {
       event('tool/call', { callId: 'write-1', name: 'local_files_write_text' }, 1),
       event('tool/result', { message: { content: [{
         type: 'tool-result', toolCallId: 'write-1', isError: false, content: [{ type: 'text', text: JSON.stringify({
-          rootId: 'repo', rootName: 'xiaoyin', path: 'src/App.tsx', action: 'updated', backupPath: '.xiaoyin-backups/first/App.tsx', addedLines: 5, deletedLines: 2,
+          rootId: 'repo', rootName: 'xiaoyin', path: 'src/App.tsx', action: 'updated', backupPath: '.xiaoyin-backups/first/App.tsx', beforeHash: 'original', afterHash: 'first', addedLines: 5, deletedLines: 2,
         }) }],
       }] } }, 2),
       event('tool/call', { callId: 'write-2', name: 'local_files_write_text' }, 3),
       event('tool/result', { message: { content: [{
         type: 'tool-result', toolCallId: 'write-2', isError: false, content: [{ type: 'text', text: JSON.stringify({
-          rootId: 'repo', rootName: 'xiaoyin', path: 'src/App.tsx', action: 'updated', backupPath: '.xiaoyin-backups/second/App.tsx', addedLines: 3, deletedLines: 1,
+          rootId: 'repo', rootName: 'xiaoyin', path: 'src/App.tsx', action: 'updated', backupPath: '.xiaoyin-backups/second/App.tsx', beforeHash: 'first', afterHash: 'last', addedLines: 3, deletedLines: 1,
         }) }],
       }] } }, 4),
     ].reduce(applyHarnessNotification, createTaskMonitor())
 
     expect(monitor.changes).toMatchObject([{
       path: 'src/App.tsx', action: 'updated', backupPath: '.xiaoyin-backups/first/App.tsx',
+      beforeHash: 'original', afterHash: 'last',
       addedLines: undefined, deletedLines: undefined,
     }])
   })
@@ -269,6 +285,24 @@ describe('diagnoseConnectors', () => {
     await expect(cancelHarness('missing-task')).resolves.toBe(false)
     await expect(authorizeDroppedPaths([])).resolves.toEqual({ directories: [], attachments: [] })
   })
+})
+
+it('retains late file receipts while stopping without resuming text or accepting unstarted work', () => {
+  const started = applyHarnessNotification(createTaskMonitor(), event('tool/call', { callId: 'write', name: 'local_files_write_text' }, 1))
+  const stopping = { ...started, activity: '正在停止' }
+  const receipt = event('tool/result', { message: { content: [{ type: 'tool-result', toolCallId: 'write', isError: false,
+    content: [{ type: 'text', text: JSON.stringify({ rootId: 'repo', rootName: '测试', path: 'checkpoint.txt', action: 'created', sizeBytes: 13 }) }],
+  }] } }, 2)
+  const next = applyStoppingHarnessNotification(stopping, receipt)
+  expect(next.activity).toBe('正在停止')
+  expect(next.status).toBe(stopping.status)
+  expect(next.steps.find((step) => step.id === 'tool:write')?.status).toBe('completed')
+  expect(next.changes).toMatchObject([{ path: 'checkpoint.txt', action: 'created' }])
+  expect(applyStoppingHarnessNotification(next, receipt)).toBe(next)
+  const idle = createTaskMonitor()
+  expect(applyStoppingHarnessNotification(idle, receipt)).toBe(idle)
+  expect(applyStoppingHarnessNotification(stopping, event('text-chunks', { texts: ['迟到正文'] }, 3))).toBe(stopping)
+  expect(applyStoppingHarnessNotification(stopping, event('tool/call', { callId: 'new', name: 'bash' }, 3))).toBe(stopping)
 })
 
 function event(type: string, data: Record<string, unknown>, time: number) {

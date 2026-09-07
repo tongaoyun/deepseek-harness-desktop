@@ -31,9 +31,11 @@ export function useLocalImSync({
 
   useEffect(() => {
     if (!enabled || !context) return
+    let disposed = false
     void startLocalIm(context).then(async (status) => {
-      if (status.enabled) await syncLocalImTasks(synchronizedTasks(latest.current.tasks))
-    }).catch((reason) => latest.current.onSyncError?.(`IM 连接启动失败：${message(reason)}`))
+      if (!disposed && status.enabled) await syncLocalImTasks(synchronizedTasks(latest.current.tasks))
+    }).catch((reason) => { if (!disposed) latest.current.onSyncError?.(`IM 连接启动失败：${message(reason)}`) })
+    return () => { disposed = true }
   }, [context, enabled])
 
   useEffect(() => {
@@ -43,10 +45,11 @@ export function useLocalImSync({
     let consecutiveFailures = 0
     let failureReported = false
     const synchronize = async () => {
-      if (document.hidden || synchronizing) return
+      if (disposed || document.hidden || synchronizing) return
       synchronizing = true
       try {
         await syncLocalImTasks(synchronizedTasks(latest.current.tasks))
+        if (disposed) return
         const status = await loadLocalImStatus()
         if (disposed) return
         if (!status.enabled) {
@@ -54,10 +57,14 @@ export function useLocalImSync({
           failureReported = false
           return
         }
-        const merged = mergeImStatusIntoTasks(latest.current.tasks, status)
+        const snapshot = latest.current.tasks
+        const merged = mergeImStatusIntoTasks(snapshot, status)
         if (merged.changed.length > 0) {
           await Promise.all(merged.changed.map((task) => persistTaskHistory(employeeId, task)))
           if (disposed) return
+          // A local action during persistence wins. Reconcile the next poll instead of
+          // replacing newly created, edited or deleted desktop tasks with this snapshot.
+          if (latest.current.tasks !== snapshot) return
           latest.current.tasks = merged.tasks
           latest.current.onTasksChanged(merged.tasks)
           const selected = merged.changed.find((task) => task.id === latest.current.currentTaskId)
@@ -66,6 +73,7 @@ export function useLocalImSync({
         consecutiveFailures = 0
         failureReported = false
       } catch (reason) {
+        if (disposed) return
         consecutiveFailures += 1
         if (consecutiveFailures >= FAILURE_NOTICE_THRESHOLD && !failureReported) {
           failureReported = true

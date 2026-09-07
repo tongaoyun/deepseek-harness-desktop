@@ -2,11 +2,23 @@ import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 import { constants as fsConstants } from 'node:fs'
+import { createHash, randomUUID } from 'node:crypto'
 import { copyFile, cp, mkdir, open, readFile, readdir, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { basename, extname, isAbsolute, relative, resolve, sep } from 'node:path'
 
 export const name = 'xiaoyin-local-files'
 export const inject = ['tools']
+
+/** A bounded receipt for conflict-checked desktop undo. Never invent one for directories. */
+export async function fileChangeReceipt(rootPath: string, target: string, backupPath?: string): Promise<{ afterHash?: string; beforeHash?: string }> {
+  try {
+    const paths = [target, ...(backupPath ? [resolve(rootPath, backupPath)] : [])]
+    const metadata = await Promise.all(paths.map((path) => stat(path)))
+    if (metadata.some((item) => !item.isFile() || item.size > 32 * 1024 * 1024)) return {}
+    const hashes = await Promise.all(paths.map(async (path) => createHash('sha256').update(await readFile(path)).digest('hex')))
+    return { afterHash: hashes[0]!, ...(backupPath ? { beforeHash: hashes[1]! } : {}) }
+  } catch { return {} }
+}
 
 const MAX_ROOTS = 8
 const MAX_ENTRIES = 200
@@ -33,6 +45,7 @@ export interface Config {
   roots?: LocalFileRootInput[]
   enabled?: boolean
   requireDeleteApproval?: boolean
+  readOnly?: boolean
 }
 
 export type LocalFileRootInput = string | { id: string; name: string; path: string }
@@ -41,6 +54,7 @@ export const Config = z.object({
   roots: z.array(z.any()).default([]),
   enabled: z.boolean().default(true),
   requireDeleteApproval: z.boolean().default(true),
+  readOnly: z.boolean().default(false),
 })
 
 export interface AuthorizedRoot {
@@ -73,11 +87,14 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     ctx.tools.register(listTool(bridge)),
     ctx.tools.register(searchTool(bridge)),
     ctx.tools.register(readTextTool(bridge)),
-    ctx.tools.register(writeTextTool(bridge)),
-    ctx.tools.register(createDirectoryTool(bridge)),
-    ctx.tools.register(copyTool(bridge)),
-    ctx.tools.register(moveTool(bridge)),
-    ctx.tools.register(deleteTool(bridge)),
+    ctx.tools.register(publishTool(bridge)),
+    ...(config.readOnly ? [] : [
+      ctx.tools.register(writeTextTool(bridge)),
+      ctx.tools.register(createDirectoryTool(bridge)),
+      ctx.tools.register(copyTool(bridge)),
+      ctx.tools.register(moveTool(bridge)),
+      ctx.tools.register(deleteTool(bridge)),
+    ]),
   ]
   const stopApprovalPolicy = ctx.on('tools/pre-execute', (exec, next) => {
     if (config.requireDeleteApproval === false || exec.name !== 'local_files_delete') return next()
@@ -128,6 +145,27 @@ export class LocalFileBridge {
 
   visibleRoots(): Array<{ id: string; name: string }> {
     return this.roots.map(({ id, name }) => ({ id, name }))
+  }
+
+  async publish(rootId: string, requestedPath: string) {
+    const root = this.root(rootId)
+    const file = await this.resolveInsideRoot(root, requestedPath)
+    if (isBlockedFileName(basename(requestedPath)) || isBlockedFileName(basename(file))) {
+      throw new Error('Credential and environment files cannot be published')
+    }
+    if (!(await stat(file)).isFile()) throw new Error('Only existing regular files can be published')
+    const handle = await open(file, 'r')
+    try {
+      const metadata = await handle.stat()
+      if (!metadata.isFile()) throw new Error('Only existing regular files can be published')
+      if (metadata.size === 0) throw new Error('交付文件为空，请检查生成结果后再交付')
+      return {
+        rootId: root.id, rootName: root.name, path: this.displayPath(root, file),
+        size: metadata.size, action: 'published' as const,
+      }
+    } finally {
+      await handle.close()
+    }
   }
 
   async list(rootId: string, requestedPath = '', depth = 1): Promise<{
@@ -181,19 +219,25 @@ export class LocalFileBridge {
       throw new Error(`maxBytes must be between 1 and ${MAX_TEXT_WINDOW_BYTES}`)
     }
     const handle = await open(file, 'r')
-    const bytes = Buffer.alloc(Math.min(maxBytes, Math.max(0, metadata.size - offset)))
+    let bytes = Buffer.alloc(Math.min(maxBytes, Math.max(0, metadata.size - offset)))
     try {
-      await handle.read(bytes, 0, bytes.length, offset)
+      const result = await handle.read(bytes, 0, bytes.length, offset)
+      bytes = bytes.subarray(0, result.bytesRead)
     } finally {
       await handle.close()
     }
     if (bytes.includes(0)) throw new Error('Binary files cannot be read as text')
-    let content: string
-    try {
-      content = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
-    } catch {
-      throw new Error('Local text file must use UTF-8 encoding')
+    let content: string | undefined
+    const maxTrim = offset + bytes.length < metadata.size ? Math.min(3, bytes.length - 1) : 0
+    for (let trim = 0; trim <= maxTrim; trim += 1) {
+      try {
+        const complete = bytes.subarray(0, bytes.length - trim)
+        content = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(complete)
+        bytes = complete
+        break
+      } catch { /* keep incomplete UTF-8 bytes for the next window */ }
     }
+    if (content === undefined) throw new Error('Local text must use UTF-8; choose a character-boundary offset and maxBytes of at least 4')
     return {
       rootId: root.id,
       rootName: root.name,
@@ -292,6 +336,7 @@ export class LocalFileBridge {
       size: bytes,
       action: backupPath ? 'updated' : 'created',
       ...lineChanges,
+      ...await fileChangeReceipt(root.path, target, backupPath),
       ...(backupPath ? { backupPath } : {}),
     }
   }
@@ -315,7 +360,7 @@ export class LocalFileBridge {
     const destination = await this.resolveTargetInsideRoot(root, destinationPath)
     const backupPath = overwrite ? await this.backupIfExists(root, destination) : undefined
     await copyFile(source, destination, overwrite ? 0 : fsConstants.COPYFILE_EXCL)
-    return { rootId: root.id, rootName: root.name, source: this.displayPath(root, source), destination: this.displayPath(root, destination), ...(backupPath ? { backupPath } : {}) }
+    return { rootId: root.id, rootName: root.name, source: this.displayPath(root, source), destination: this.displayPath(root, destination), ...await fileChangeReceipt(root.path, destination, backupPath), ...(backupPath ? { backupPath } : {}) }
   }
 
   async move(rootId: string, sourcePath: string, destinationPath: string): Promise<object> {
@@ -370,7 +415,7 @@ export class LocalFileBridge {
   private async backupIfExists(root: AuthorizedRoot, target: string): Promise<string | undefined> {
     try {
       const metadata = await stat(target)
-      const stamp = new Date().toISOString().replaceAll(/[:.]/gu, '-')
+      const stamp = `${new Date().toISOString().replaceAll(/[:.]/gu, '-')}-${randomUUID()}`
       const original = this.displayPath(root, target)
       const backup = resolve(root.path, BACKUP_DIRECTORY, stamp, original)
       await mkdir(resolve(backup, '..'), { recursive: true })
@@ -532,6 +577,24 @@ function searchTool(bridge: LocalFileBridge): ToolDefinition {
         optionalBoolean(input.includeContent, true, 'includeContent'),
         optionalLimit(input.limit),
       )
+    },
+    isConcurrencySafe: () => true,
+  }
+}
+
+function publishTool(bridge: LocalFileBridge): ToolDefinition {
+  return {
+    name: 'local_files_publish',
+    description: '将已存在的本地成果文件登记到任务文件卡片，供员工打开或在文件夹中查看。适用于代码、Shell 或应用生成的文档、表格、图片等。生成并检查内容后调用；此工具只检查文件可读且非空，不验证内容正确性，不创建、修改或上传文件，也不生成变更或撤销记录。path 为已授权目录下的相对路径。',
+    parameters: {
+      type: 'object',
+      properties: { rootId: stringProperty('已授权目录 ID'), path: stringProperty('成果文件相对路径') },
+      required: ['rootId', 'path'], additionalProperties: false,
+    },
+    output: { schema: {}, render: (_args, value) => [{ type: 'text', text: renderValue(value) }] },
+    async execute(args) {
+      const input = asRecord(args)
+      return bridge.publish(requiredString(input.rootId, 'rootId'), requiredString(input.path, 'path'))
     },
     isConcurrencySafe: () => true,
   }

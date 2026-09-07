@@ -4,7 +4,7 @@
 - id: sdk-jsonrpc-server
   name: '@deepseek-ai/dsh-sdk-jsonrpc-server'
   config:
-    maxTokensAsSuccess: true
+    maxTokensAsSuccess: false
 
 - id: local-attachments
   name: '../dist/local-attachment-store-plugin.js'
@@ -85,12 +85,10 @@
     employeeIdEnv: XIAOYIN_EMPLOYEE_ID
     employeeTokenEnv: XIAOYIN_EMPLOYEE_BEARER_TOKEN
 
-- id: enterprise-schedules
+- id: desktop-schedules
   name: '../dist/schedule-plugin.js'
   config:
-    endpoint: !!js process.env.XIAOYIN_SCHEDULE_ENDPOINT ?? ''
-    employeeIdEnv: XIAOYIN_EMPLOYEE_ID
-    employeeTokenEnv: XIAOYIN_EMPLOYEE_BEARER_TOKEN
+    readOnly: !!js process.env.XIAOYIN_EXECUTION_MODE === 'plan'
 
 - id: local-files
   name: '../dist/local-files-plugin.js'
@@ -98,17 +96,19 @@
     roots: !!js JSON.parse(process.env.XIAOYIN_LOCAL_FILE_ROOTS ?? '[]')
     enabled: true
     requireDeleteApproval: true
+    readOnly: !!js process.env.XIAOYIN_EXECUTION_MODE === 'plan'
 
 - id: local-documents
   name: '../dist/local-documents-plugin.js'
   config:
     roots: !!js JSON.parse(process.env.XIAOYIN_LOCAL_FILE_ROOTS ?? '[]')
     enabled: true
+    readOnly: !!js process.env.XIAOYIN_EXECUTION_MODE === 'plan'
 
 - id: native-shell
   name: '../dist/native-shell-plugin.js'
   config:
-    enabled: true
+    enabled: !!js process.env.XIAOYIN_EXECUTION_MODE !== 'plan'
     requireApproval: true
     cwd: !!js process.env.DSH_CWD
     dshHome: !!js process.env.DSH_HOME

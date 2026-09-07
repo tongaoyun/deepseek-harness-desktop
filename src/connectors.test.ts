@@ -2,6 +2,20 @@ import { describe, expect, it } from 'vitest'
 import { buildRuntimeConnectorCatalog } from './connectors'
 
 describe('runtime connector catalog', () => {
+  it('does not enable an administratively disabled legacy connector', () => {
+    const [runtime] = buildRuntimeConnectorCatalog([{
+      id: 'erp-mcp', name: 'ERP', summary: '', category: 'industry-data', kind: 'managed-mcp', scope: 'organization',
+      status: 'disabled', managed: true, toolNames: [],
+    }], 'http://erp.internal/mcp', ['erp-mcp'])
+    expect(runtime.status).toBe('disabled')
+  })
+
+  it('marks missing configuration unusable and recovers when values are supplied', () => {
+    const catalog = [{ id: 'crm', name: 'CRM', summary: '', category: 'project-management' as const, kind: 'managed-mcp', scope: 'organization',
+      status: 'ready' as const, managed: false, transport: 'stdio' as const, command: 'node', toolNames: [], environment: { TOKEN: '' } }]
+    expect(buildRuntimeConnectorCatalog(catalog, '', ['crm'])[0].status).toBe('needs-configuration')
+    expect(buildRuntimeConnectorCatalog(catalog, '', ['crm'], { crm: { environment: { TOKEN: 'configured' }, headers: {} } })[0].status).toBe('ready')
+  })
   it('adapts the legacy ERP catalog while preserving desktop built-ins', () => {
     const result = buildRuntimeConnectorCatalog([
       { id: 'erp-mcp', name: 'ERP', summary: '', category: 'industry-data', kind: 'managed-mcp', scope: 'organization',

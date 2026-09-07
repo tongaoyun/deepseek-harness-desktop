@@ -112,6 +112,7 @@ export interface LocalTaskAttachment {
   id: string
   rootId: string
   rootName: string
+  rootPath?: string
   path: string
   name: string
   kind: 'file' | 'image'
@@ -122,7 +123,7 @@ export interface TaskExecutionStep {
   id: string
   kind: 'analysis' | 'tool' | 'approval' | 'response'
   label: string
-  status: 'running' | 'completed' | 'failed'
+  status: 'running' | 'completed' | 'failed' | 'canceled'
   toolName?: string
   startedAt: string
   completedAt?: string
@@ -131,7 +132,7 @@ export interface TaskExecutionStep {
 export interface SubagentActivity {
   id: string
   label: string
-  status: 'running' | 'completed' | 'failed'
+  status: 'running' | 'completed' | 'failed' | 'canceled'
   startedAt: string
   completedAt?: string
 }
@@ -140,7 +141,7 @@ export interface TaskTimelineEntry {
   id: string
   kind: 'assistant' | 'command' | 'file' | 'connector' | 'browser' | 'subagent' | 'tool' | 'approval' | 'error' | 'warning'
   label: string
-  status: 'running' | 'completed' | 'failed'
+  status: 'running' | 'completed' | 'failed' | 'canceled'
   text?: string
   toolName?: string
   detail?: string
@@ -164,7 +165,7 @@ export interface TaskArtifact {
   name: string
   kind: TaskArtifactKind
   sourceTool: string
-  action?: 'created' | 'updated' | 'copied' | 'moved'
+  action?: 'created' | 'updated' | 'copied' | 'moved' | 'published'
   backupPath?: string
   sizeBytes?: number
   createdAt: string
@@ -191,6 +192,10 @@ export interface TaskFileChange {
   action: 'created' | 'updated' | 'copied' | 'moved' | 'deleted'
   previousPath?: string
   backupPath?: string
+  afterHash?: string
+  beforeHash?: string
+  undoneAt?: string
+  recoveryPath?: string
   addedLines?: number
   deletedLines?: number
   changedAt: string
@@ -208,6 +213,7 @@ export interface TaskMonitorState {
   changes?: TaskFileChange[]
   artifacts: TaskArtifact[]
   visuals?: TaskVisualArtifact[]
+  knowledgeSources?: KnowledgeSearchHit[]
   failure?: {
     code: string
     category: string
@@ -226,6 +232,8 @@ export interface LocalTaskRun {
   sessionId?: string
   expertKitId?: string
   skillId?: string
+  invocationToken?: string
+  composerConnectorIds?: string[]
   model?: string
   localDirectories?: Array<{ id: string; name: string; path?: string }>
   capabilitySnapshot?: CapabilitySnapshot
@@ -275,6 +283,7 @@ export interface KnowledgeDocumentEntry {
 }
 
 export interface KnowledgeSearchHit {
+  sourceId?: string
   knowledgeBaseId: string
   knowledgeBaseName: string
   documentId: string
@@ -313,6 +322,7 @@ export type ConnectorTransport = 'streamable-http' | 'sse' | 'stdio' | 'desktop'
 export type ConnectorAuthMode = 'employee-bearer' | 'none'
 
 export interface ConnectorCatalogEntry {
+  timeoutSeconds?: number
   id: string
   name: string
   summary: string
@@ -333,6 +343,7 @@ export interface ConnectorCatalogEntry {
 }
 
 export interface ConnectorRuntimeDefinition {
+  timeoutSeconds?: number
   id: string
   name: string
   status: ConnectorStatus
@@ -394,6 +405,8 @@ export interface ExpertKitManifest {
 }
 
 export interface InstalledExpertKit {
+  enabled?: boolean
+  bundledConnectors?: unknown
   manifest: ExpertKitManifest
   installPath: string
   source: 'catalog' | 'developer'
@@ -428,7 +441,7 @@ export interface DeviceHeartbeatContext {
 
 export type AuditEventSource = 'DESKTOP' | 'SERVER' | 'IM'
 export type AuditEventCategory = 'AGENT' | 'TOOL' | 'APPROVAL' | 'SCHEDULE' | 'KNOWLEDGE' | 'EXTENSION'
-export type AuditEventOutcome = 'STARTED' | 'SUCCEEDED' | 'FAILED' | 'DENIED'
+export type AuditEventOutcome = 'STARTED' | 'SUCCEEDED' | 'FAILED' | 'DENIED' | 'CANCELED'
 
 export interface AuditEventEntry {
   id: string

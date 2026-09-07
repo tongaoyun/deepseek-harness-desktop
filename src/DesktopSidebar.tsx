@@ -1,10 +1,11 @@
-import { Archive, BookOpenCheck, Boxes, CalendarClock, MessageSquare, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Pencil, PlugZap, Plus, RotateCcw, Search, Trash2, WandSparkles, X } from 'lucide-react'
+import { Archive, SquareCheck, BookOpenCheck, Boxes, CalendarClock, ChevronDown, MessageSquare, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Pencil, PlugZap, Plus, RotateCcw, Search, Trash2, WandSparkles, X } from 'lucide-react'
 import { type KeyboardEvent as ReactKeyboardEvent, type RefObject, useEffect, useState } from 'react'
 import { AccountMenu } from './AccountMenu'
+import { ChannelHistory } from './ChannelHistory'
 import type { LocalTaskRun } from './types'
 
 const extensions = [
-  { id: 'experts', label: '专家套件', icon: Boxes },
+  { id: 'packs', label: '专家套件', icon: Boxes },
   { id: 'skills', label: '技能', icon: WandSparkles },
   { id: 'connectors', label: '连接器', icon: PlugZap },
   { id: 'knowledge', label: '知识库', icon: BookOpenCheck },
@@ -12,12 +13,19 @@ const extensions = [
 
 interface Props {
   collapsed: boolean
+  channelOwner?: string
+  onOpenChannel?: (key: string) => void
+  activeTaskId?: string
   page: string
   taskSearchOpen: boolean
   taskQuery: string
   taskSearchInputRef: RefObject<HTMLInputElement | null>
   tasks: LocalTaskRun[]
   visibleTasks: LocalTaskRun[]
+  historyMore?: boolean
+  historyBusy?: boolean
+  historyError?: string
+  onLoadHistory?: () => void
   user?: { companyName?: string; department?: string; displayName?: string }
   onNewTask: () => void
   onToggleCollapsed: () => void
@@ -29,12 +37,13 @@ interface Props {
   onRenameTask: (task: LocalTaskRun, name: string) => void
   onArchiveTask: (task: LocalTaskRun, archived: boolean) => void
   onDeleteTask: (task: LocalTaskRun) => void
-  onFeedback: (message: string) => Promise<void>
+  onFeedback: (message: string, category: 'BUG' | 'SUGGESTION' | 'QUESTION' | 'OTHER', images?: File[]) => Promise<void>
   onLogout: () => Promise<void>
 }
 
 export function DesktopSidebar(props: Props) {
-  const [historyView, setHistoryView] = useState<'tasks' | 'channels' | 'archived'>('tasks')
+  const [extensionsOpen, setExtensionsOpen] = useState(true)
+  const [historyView, setHistoryView] = useState<'tasks' | 'channels'>('tasks')
   const [menuTaskId, setMenuTaskId] = useState('')
   const [editingTaskId, setEditingTaskId] = useState('')
   const [editingName, setEditingName] = useState('')
@@ -52,7 +61,7 @@ export function DesktopSidebar(props: Props) {
       document.removeEventListener('keydown', closeOnEscape)
     }
   }, [menuTaskId])
-  const listedTasks = props.visibleTasks.filter((task) => historyView === 'archived' ? Boolean(task.archivedAt) : !task.archivedAt)
+  const listedTasks = props.visibleTasks.filter((task) => props.taskQuery.trim() || !task.archivedAt)
   const navItem = (id: string, label: string, Icon: typeof Boxes) => <button aria-current={props.page === id ? 'page' : undefined} className={props.page === id ? 'nav-item active' : 'nav-item'} onClick={() => props.onPage(id)} title={props.collapsed ? label : undefined} type="button"><Icon size={17} /><span>{label}</span></button>
   return <aside className="sidebar">
     <div className="sidebar-brand">
@@ -61,22 +70,22 @@ export function DesktopSidebar(props: Props) {
         <button aria-label={props.collapsed ? '展开侧栏' : '收起侧栏'} onClick={props.onToggleCollapsed} type="button">{props.collapsed ? <PanelLeftOpen size={15} /> : <PanelLeftClose size={15} />}</button>
       </div>
     </div>
-    {props.taskSearchOpen && <label className="task-search"><Search size={14} /><input aria-label="搜索最近任务" onChange={(event) => props.onTaskQuery(event.target.value)} placeholder="搜索最近任务" ref={props.taskSearchInputRef} value={props.taskQuery} /><button aria-label="关闭搜索" onClick={props.onCloseSearch} type="button"><X size={13} /></button></label>}
+    {props.taskSearchOpen && <label className="task-search"><Search size={14} /><input aria-label="搜索任务" onChange={(event) => props.onTaskQuery(event.target.value)} placeholder="搜索任务" ref={props.taskSearchInputRef} value={props.taskQuery} /><button aria-label="关闭搜索" onClick={props.onCloseSearch} type="button"><X size={13} /></button></label>}
     <button className="new-task" onClick={props.onNewTask} title={props.collapsed ? '新任务' : undefined} type="button"><Plus size={18} /><span>新任务</span></button>
-    <p className="nav-label extension-label"><Boxes size={13} />扩展</p>
-    <nav className="extension-nav">{extensions.map(({ id, label, icon }) => <span key={id}>{navItem(id, label, icon)}</span>)}</nav>
+    <button aria-expanded={extensionsOpen} className="nav-label extension-label extension-group-toggle" onClick={() => setExtensionsOpen((value) => !value)} type="button"><Boxes size={13} /><span>扩展</span><ChevronDown className={extensionsOpen ? '' : 'closed'} size={12} /></button>
+    {(extensionsOpen || props.collapsed) && <nav aria-label="扩展" className="extension-nav">{extensions.map(({ id, label, icon }) => <span key={id}>{navItem(id, label, icon)}</span>)}</nav>}
     <nav className="office-nav">
       {navItem('schedules', '定时任务', CalendarClock)}
       {navItem('im', 'IM 频道', MessageSquare)}
     </nav>
-    <div className="sidebar-segments"><button className={historyView === 'tasks' ? 'active' : ''} onClick={() => setHistoryView('tasks')} type="button">任务</button><button className={historyView === 'channels' ? 'active' : ''} onClick={() => setHistoryView('channels')} type="button">频道</button><button aria-label="归档任务" className={historyView === 'archived' ? 'active' : ''} onClick={() => setHistoryView('archived')} title="归档" type="button"><Archive size={13} /></button></div>
+    <div className="sidebar-segments"><button className={historyView === 'tasks' ? 'active' : ''} onClick={() => setHistoryView('tasks')} type="button"><SquareCheck size={15} />任务</button><button className={historyView === 'channels' ? 'active' : ''} onClick={() => setHistoryView('channels')} type="button"><MessageSquare size={15} />频道</button></div>
     {historyView !== 'channels'
       ? <div className="recent-tasks">
-        <p className="nav-label">{historyView === 'archived' ? '归档' : '最近'}</p>
+        <p className="nav-label">最近</p>
         {listedTasks.map((task) => <div className="recent-task-wrap" data-task-menu={task.id} key={task.id}>
           {editingTaskId === task.id
             ? <form onSubmit={(event) => { event.preventDefault(); props.onRenameTask(task, editingName); setEditingTaskId('') }}><input autoFocus aria-label="任务名称" maxLength={120} onChange={(event) => setEditingName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Escape') setEditingTaskId('') }} value={editingName} /></form>
-            : <button className="recent-task" onClick={() => props.onOpenTask(task)} type="button"><span>{task.name}</span><small>{task.status === 'RUNNING' ? '运行中' : task.status === 'COMPLETED' ? '已完成' : task.status === 'CANCELED' ? '已取消' : '执行失败'}</small></button>}
+            : <button aria-current={props.page === 'chat' && props.activeTaskId === task.id ? 'true' : undefined} className={`recent-task${props.page === 'chat' && props.activeTaskId === task.id ? ' active' : ''}`} onClick={() => props.onOpenTask(task)} type="button"><span>{task.name}</span><small>{task.status === 'RUNNING' ? '运行中' : task.status === 'COMPLETED' ? '已完成' : task.status === 'CANCELED' ? '已停止' : task.monitor.failure?.code === 'XY-INTERRUPTED' ? '已中断' : '执行失败'}</small></button>}
           <button aria-expanded={menuTaskId === task.id} aria-label={`管理 ${task.name}`} className="recent-task-more" onClick={() => setMenuTaskId((current) => current === task.id ? '' : task.id)} type="button"><MoreHorizontal size={14} /></button>
           {menuTaskId === task.id && <div className="recent-task-menu" onKeyDown={navigateMenu} role="menu">
             {!task.archivedAt && <button disabled={task.status === 'RUNNING'} onClick={() => { setEditingName(task.name); setEditingTaskId(task.id); setMenuTaskId('') }} role="menuitem" type="button"><Pencil size={13} />重命名</button>}
@@ -85,9 +94,11 @@ export function DesktopSidebar(props: Props) {
           </div>}
         </div>)}
         {props.tasks.length === 0 && <small className="recent-empty">暂无任务</small>}
-        {props.tasks.length > 0 && listedTasks.length === 0 && <small className="recent-empty">{props.taskQuery ? '没有匹配的任务' : historyView === 'archived' ? '暂无归档任务' : '暂无任务'}</small>}
+        {props.tasks.length > 0 && listedTasks.length === 0 && <small className="recent-empty">{props.taskQuery ? '没有匹配的任务' : '暂无任务'}</small>}
+        {props.historyError && <small role="alert" className="recent-empty">{props.historyError}</small>}
+        {(props.historyMore || props.historyError) && <button className="recent-task" disabled={props.historyBusy} onClick={props.onLoadHistory} type="button">{props.historyBusy ? '正在加载…' : props.historyError ? '重试加载' : '加载更早任务'}</button>}
       </div>
-      : <div className="recent-tasks channel-history"><p className="nav-label">最近</p><button className="recent-task" onClick={() => props.onPage('im')} type="button"><span>IM 频道</span><small>查看最近会话</small></button></div>}
+      : <ChannelHistory key={props.channelOwner} onConfigure={() => props.onPage('im')} onOpen={(key) => props.onOpenChannel ? props.onOpenChannel(key) : props.onPage('im')} />}
     <div className="sidebar-spacer" />
     <AccountMenu companyName={props.user?.companyName} department={props.user?.department} displayName={props.user?.displayName} onFeedback={props.onFeedback} onLogout={props.onLogout} onSettings={() => props.onPage('settings')} />
   </aside>

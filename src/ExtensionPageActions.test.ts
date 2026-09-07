@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { parseConnectorJson } from './ExtensionPageActions'
+import { parseConnectorImport } from './connectorImport'
 
 describe('connector JSON import', () => {
   it('accepts a standard mcpServers stdio entry', () => {
@@ -16,5 +17,43 @@ describe('connector JSON import', () => {
 
   it('rejects incomplete configurations', () => {
     expect(() => parseConnectorJson('{"id":"broken"}')).toThrow('command')
+  })
+
+  it('honors type aliases and preserves names and configuration for every server', () => {
+    const items = parseConnectorImport(JSON.stringify({ mcpServers: {
+      '我的日历': { type: 'sse', url: 'https://calendar.example/sse', headers: { Authorization: 'Bearer secret' } },
+      'My Files': { type: 'stdio', command: 'node', args: ['server.js', 'a path with spaces'], env: { KEY: 'value' } },
+      api: { type: 'http', name: '内部 API', url: 'https://api.example/mcp' },
+    } }))
+    expect(items.map((item) => item.connector?.transport)).toEqual(['sse', 'stdio', 'streamable-http'])
+    expect(items[0]?.connector).toMatchObject({ name: '我的日历', headers: { Authorization: 'Bearer secret' } })
+    expect(items[0]?.connector?.id).toMatch(/^[a-z0-9][a-z0-9-]{1,63}$/)
+    expect(parseConnectorJson(JSON.stringify({ name: '我的日历', type: 'sse', url: 'https://calendar.example/sse' })).id).toBe(items[0]?.connector?.id)
+    expect(items[1]?.connector?.arguments).toEqual(['server.js', 'a path with spaces'])
+    expect(items[2]?.connector?.name).toBe('内部 API')
+  })
+
+  it('reports invalid entries individually without losing valid servers', () => {
+    const items = parseConnectorImport(JSON.stringify({ mcpServers: {
+      good: { command: 'node' }, broken: null, unknown: { type: 'websocket', url: 'https://example.com' },
+      args: { command: 'node', args: 'server.js' }, badUrl: { type: 'sse', url: 'not-a-url' },
+    } }))
+    expect(items[0]?.connector?.id).toBe('good')
+    expect(items.slice(1).every((item) => Boolean(item.error) && !item.connector)).toBe(true)
+  })
+
+  it('rejects empty or malformed top-level configurations', () => {
+    for (const value of ['null', '[]', '{"mcpServers":[]}', '{"mcpServers":{}}']) {
+      expect(() => parseConnectorImport(value)).toThrow()
+    }
+  })
+
+  it('reports duplicate IDs instead of overwriting entries', () => {
+    const items = parseConnectorImport(JSON.stringify({ mcpServers: {
+      one: { id: 'same', command: 'node' }, two: { id: 'same', command: 'python' },
+    } }))
+    expect(items[0]?.connector?.id).toBe('same')
+    expect(items[1]?.error).toContain('重复')
+    expect(() => parseConnectorJson(JSON.stringify({ mcpServers: { one: { command: 'node' }, two: { command: 'node' } } }))).toThrow('多个服务')
   })
 })

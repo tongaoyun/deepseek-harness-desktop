@@ -11,13 +11,13 @@ export interface CodeDiffRow {
 
 const CONTEXT_LINES = 4
 
-export function codeDiffRows(previous: string, current: string): CodeDiffRow[] {
+export function codeDiffRows(previous: string, current: string, expandedFolds: ReadonlySet<string> = new Set()): CodeDiffRow[] {
   let oldLine = 1
   let newLine = 1
   const rows: CodeDiffRow[] = []
   for (const [partIndex, part] of diffLines(previous, current).entries()) {
     const lines = contentLines(part.value)
-    if (!part.added && !part.removed && lines.length > CONTEXT_LINES * 2 + 2) {
+    if (!part.added && !part.removed && lines.length > CONTEXT_LINES * 2 + 2 && !expandedFolds.has(`${partIndex}:fold`)) {
       appendLines(rows, lines.slice(0, CONTEXT_LINES), 'context', partIndex, oldLine, newLine)
       oldLine += CONTEXT_LINES
       newLine += CONTEXT_LINES

@@ -88,6 +88,19 @@ describe('HostServer', () => {
     expect(output).toEqual([{ jsonrpc: '2.0', id: 9, result: { status: 'accepted' } }])
   })
 
+  it('accepts image payloads between five and ten MiB without rejecting their base64 envelope', async () => {
+    const output: JsonRpcOutput[] = []
+    const runtime = fakeRuntime()
+    let length = 0
+    runtime.run = async (input) => { length = input.images![0]!.data.length; return { sessionId: 'large-image', finalResponse: '收到' } }
+    const server = new HostServer(runtime, (value) => output.push(value))
+    await server.handle({ jsonrpc: '2.0', id: 'large-image', method: 'session.run', params: {
+      prompt: '检查图片', images: [{ dataBase64: Buffer.alloc(6 * 1024 * 1024, 1).toString('base64'), mediaType: 'image/png', name: 'large.png' }],
+    } })
+    expect(length).toBe(6 * 1024 * 1024)
+    expect(output.at(-1)).toMatchObject({ result: { finalResponse: '收到' } })
+  })
+
   it('binds and unbinds a DingTalk conversation to a desktop task session', async () => {
     const output: JsonRpcOutput[] = []
     const runtime = new LocalImRuntime(fakeRuntime())
@@ -100,6 +113,18 @@ describe('HostServer', () => {
     } })
     expect(output).toHaveLength(2)
     expect(output.map((item) => 'id' in item ? item.id : undefined)).toEqual([10, 11])
+  })
+
+  it('routes manual delivery retries to IM without starting an Agent session', async () => {
+    const output: JsonRpcOutput[] = []
+    const runtime = new LocalImRuntime(fakeRuntime())
+    const calls: string[] = []
+    runtime.retryDelivery = async (key) => { calls.push(key); return runtime.status() }
+    const server = new HostServer(fakeRuntime(), (value) => output.push(value), undefined, runtime)
+    await server.handle({ jsonrpc: '2.0', id: 12, method: 'im.retry-delivery', params: { conversationKey: 'test:private:one' } })
+    expect(calls).toEqual(['test:private:one'])
+    expect(output).toHaveLength(1)
+    expect(output[0]).toMatchObject({ id: 12, result: { provider: 'DINGTALK' } })
   })
 })
 

@@ -1,5 +1,5 @@
 import { readFile, rename, writeFile } from 'node:fs/promises'
-import { basename, dirname, extname, relative, resolve } from 'node:path'
+import { basename, dirname, extname, isAbsolute, relative, resolve, sep } from 'node:path'
 import { mkdir } from 'node:fs/promises'
 import {
   DWClient,
@@ -8,13 +8,12 @@ import {
   type DWClientDownStream,
 } from 'dingtalk-stream'
 import type { HarnessRuntime } from './runtime.js'
-import { parseDocx, parsePdf, parsePptx, parseXlsx } from './local-documents-plugin.js'
+import { prepareImDocumentContext } from './im-attachments.js'
 import type { ImageRunInput } from './runtime.js'
 
 const MAX_REPLY_CHARS = 16_000
 const MAX_KNOWN_EVENTS = 1_000
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
-const MAX_ATTACHMENT_PROMPT_CHARS = 120_000
 
 export type ImAccessPolicy = 'open' | 'pairing'
 
@@ -43,6 +42,7 @@ export interface LocalImStatus {
   accessPolicy: ImAccessPolicy
   notifyTaskResults: boolean
   pendingPairings: PairingRequest[]
+  pairedConversations?: string[]
   conversations: ImConversationSummary[]
   pendingEventCount: number
   lastHeartbeatAt?: string
@@ -59,6 +59,8 @@ export interface ImConversationSummary {
   sessionId: string
   messageCount: number
   status: 'RUNNING' | 'COMPLETED' | 'FAILED'
+  deliveryStatus?: 'SENDING' | 'FAILED' | undefined
+  pendingDeliveryCount?: number
   updatedAt: string
   boundTaskId?: string
   boundTaskName?: string
@@ -148,6 +150,9 @@ export interface ScheduleRoute {
 interface QueuedEvent {
   event: DingTalkEvent
   attempts: number
+  paused?: boolean
+  stage?: 'preparing' | 'executing' | 'delivery'
+  delivery?: { response: string; sessionId?: string; files: string[]; sentFiles: string[]; replySent: boolean }
 }
 
 export class LocalImRuntime {
@@ -173,6 +178,9 @@ export class LocalImRuntime {
   private persistTail = Promise.resolve()
   private connectionWatch: NodeJS.Timeout | undefined
   private taskRunWatch: NodeJS.Timeout | undefined
+  private taskRunPoll: Promise<void> | undefined
+  private taskRunEpoch = 0
+  private taskDeliveryError: string | undefined
 
   constructor(
     private readonly harness: HarnessRuntime,
@@ -182,6 +190,7 @@ export class LocalImRuntime {
   async configure(configuration: DingTalkImConfiguration): Promise<LocalImStatus> {
     validateConfiguration(configuration)
     await this.stop()
+    this.taskDeliveryError = undefined
     this.configuration = {
       ...configuration,
       clientId: configuration.clientId.trim(),
@@ -226,12 +235,14 @@ export class LocalImRuntime {
       this.taskRunWatch = setInterval(() => void this.pollTaskRuns(), 60_000)
       this.taskRunWatch.unref()
     }
-    for (const queued of this.pendingEvents.values()) this.scheduleEvent(queued)
+    for (const queued of this.pendingEvents.values()) if (!queued.paused) this.scheduleEvent(queued)
     return this.status()
   }
 
   status(): LocalImStatus {
     const configuration = this.configuration
+    const pausedDeliveries = [...this.pendingEvents.values()].filter((queued) => queued.delivery && queued.paused).length
+    const lastError = this.taskDeliveryError || (pausedDeliveries ? `${pausedDeliveries} 项结果发送未完成，请在会话中仅重试发送` : this.lastError)
     if (configuration === undefined) {
       return {
         provider: 'DINGTALK', configured: false, connected: false,
@@ -244,15 +255,20 @@ export class LocalImRuntime {
       provider: 'DINGTALK',
       configured: true,
       connected: this.connected,
-      state: this.connected ? 'READY' : this.lastError ? 'DEGRADED' : 'CONNECTING',
+      state: lastError ? 'DEGRADED' : this.connected ? 'READY' : 'CONNECTING',
       clientId: configuration.clientId,
       accessPolicy: configuration.accessPolicy,
       notifyTaskResults: configuration.notifyTaskResults,
       pendingPairings: [...this.pendingPairings.values()],
-      conversations: [...this.conversations.values()].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)).slice(0, 100),
+      pairedConversations: [...this.pairedConversations],
+      conversations: [...this.conversations.values()].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)).slice(0, 100).map((conversation) => {
+        const pending = [...this.pendingEvents.values()].filter((queued) => queued.delivery && buildConversationKey(configuration.clientId, queued.event) === conversation.conversationKey)
+        return { ...conversation, deliveryStatus: pending.length ? pending.some((queued) => queued.paused) ? 'FAILED' as const : 'SENDING' as const : undefined,
+          pendingDeliveryCount: pending.filter((queued) => queued.paused).length }
+      }),
       pendingEventCount: this.pendingEvents.size,
       ...(this.lastHeartbeatAt === undefined ? {} : { lastHeartbeatAt: this.lastHeartbeatAt }),
-      ...(this.lastError === undefined ? {} : { lastError: this.lastError }),
+      ...(lastError ? { lastError } : {}),
     }
   }
 
@@ -260,6 +276,12 @@ export class LocalImRuntime {
     if (!conversationKey.trim()) throw new Error('conversationKey must not be blank')
     this.pairedConversations.add(conversationKey)
     this.pendingPairings.delete(conversationKey)
+    return this.status()
+  }
+
+  revokePairing(conversationKey: string): LocalImStatus {
+    if (!conversationKey.trim()) throw new Error('conversationKey must not be blank')
+    this.pairedConversations.delete(conversationKey)
     return this.status()
   }
 
@@ -303,6 +325,7 @@ export class LocalImRuntime {
   }
 
   async stop(): Promise<void> {
+    ++this.taskRunEpoch
     if (this.connectionWatch !== undefined) clearInterval(this.connectionWatch)
     if (this.taskRunWatch !== undefined) clearInterval(this.taskRunWatch)
     this.connectionWatch = undefined
@@ -311,6 +334,7 @@ export class LocalImRuntime {
     const client = this.client
     this.client = undefined
     client?.disconnect()
+    await this.taskRunPoll
     await Promise.allSettled(this.conversationWork.values())
     await this.persistTail.catch(() => undefined)
   }
@@ -344,6 +368,18 @@ export class LocalImRuntime {
     }
   }
 
+  async retryDelivery(conversationKey: string): Promise<LocalImStatus> {
+    const configuration = this.configuration
+    if (!configuration || !this.connected) throw new Error('请先连接钉钉频道')
+    if (configuration.accessPolicy === 'pairing' && !this.pairedConversations.has(conversationKey)) throw new Error('请先允许该会话配对')
+    const queued = [...this.pendingEvents.values()].find((item) => item.paused && item.delivery && buildConversationKey(configuration.clientId, item.event) === conversationKey)
+    if (!queued) throw new Error('没有等待手动重试的发送记录')
+    queued.paused = false; queued.attempts = 0
+    try { await this.persistSessions() } catch (error) { queued.paused = true; throw error }
+    this.scheduleEvent(queued)
+    return this.status()
+  }
+
   private scheduleEvent(queued: QueuedEvent): void {
     const configuration = this.configuration
     if (configuration === undefined) return
@@ -357,27 +393,45 @@ export class LocalImRuntime {
   }
 
   private async processQueuedEvent(queued: QueuedEvent): Promise<void> {
+    if (queued.paused) return
     try {
-      await this.processEvent(queued.event)
+      if (queued.stage === 'executing') throw new Error('上次执行已中断，可能存在已完成操作；请检查任务结果后明确继续，不自动重跑')
+      if (queued.delivery) await this.deliverQueuedResponse(queued)
+      else await this.processEvent(queued)
       this.pendingEvents.delete(queued.event.eventId)
       await this.persistSessions()
     } catch (error) {
+      if (queued.delivery) this.pendingEvents.set(queued.event.eventId, queued)
       queued.attempts += 1
-      this.lastError = safeError(error)
+      const canRetry = queued.stage !== 'executing' && queued.attempts < 3
+      const pendingFiles = queued.delivery?.files.filter((file) => !queued.delivery!.sentFiles.includes(file)) ?? []
+      this.lastError = `${queued.delivery ? '任务已执行，结果发送未完成' : '任务未完成'}：${safeError(error)}${pendingFiles.length ? `；待发送文件：${pendingFiles.map((file) => basename(file)).join('、')}` : ''}。${canRetry ? '仅重试当前失败阶段。' : '已暂停，请检查结果后明确继续。'}`
       const configuration = this.configuration
       if (configuration !== undefined) {
         const key = buildConversationKey(configuration.clientId, queued.event)
         const existing = this.conversations.get(key)
         if (existing !== undefined) {
-          this.conversations.set(key, { ...existing, status: 'FAILED', updatedAt: new Date().toISOString() })
+          const createdAt = new Date().toISOString()
+          const latest = existing.messages.filter((item) => item.role === 'user').at(-1)?.id === queued.event.eventId
+          this.conversations.set(key, { ...existing, ...(latest ? { status: queued.delivery ? 'COMPLETED' as const : 'FAILED' as const,
+            lastResponse: queued.delivery ? queued.delivery.response.slice(0, 500) : this.lastError.slice(0, 500) } : {}), updatedAt: createdAt,
+            messages: appendMessage(existing.messages, { id: `${queued.event.eventId}:delivery-error`, role: 'assistant', text: this.lastError, createdAt }),
+          })
         }
       }
-      if (queued.attempts >= 3) this.pendingEvents.delete(queued.event.eventId)
+      if (!canRetry) {
+        if (queued.delivery) queued.paused = true
+        else this.pendingEvents.delete(queued.event.eventId)
+      }
       await this.persistSessions()
       process.stderr.write(`Local DingTalk event failed (${queued.attempts}/3): ${this.lastError}\n`)
-      if (queued.attempts < 3) {
+      if (canRetry) {
         const delay = 1_000 * 2 ** queued.attempts
-        setTimeout(() => this.scheduleEvent(queued), delay).unref()
+        // Keep this conversation serialized until the delivery retry finishes.
+        if (this.client) {
+          await new Promise<void>((resolve) => setTimeout(resolve, delay))
+          if (this.client && this.pendingEvents.get(queued.event.eventId) === queued) await this.processQueuedEvent(queued)
+        }
       }
     }
   }
@@ -391,7 +445,8 @@ export class LocalImRuntime {
     }
   }
 
-  private async processEvent(event: DingTalkEvent): Promise<void> {
+  private async processEvent(queued: QueuedEvent): Promise<void> {
+    const event = queued.event
     const configuration = this.configuration
     if (configuration === undefined || (!event.text.trim() && event.attachment === undefined)) return
     const conversationKey = buildConversationKey(configuration.clientId, event)
@@ -432,23 +487,29 @@ export class LocalImRuntime {
     await this.persistSessions()
     const commandResponse = await this.handleTaskCommand(conversationKey, event.text)
     if (commandResponse !== undefined) {
-      await this.completeConversationReply(conversationKey, event, commandResponse)
+      await this.queueResponse(queued, commandResponse, [])
       return
     }
     const currentSession = this.sessions.get(conversationKey)
     const binding = this.taskBindings.get(conversationKey)
     const attachment = await this.loadAttachmentContext(event)
     const generatedFiles = new Set<string>()
+    const artifactCalls = new Map<string, string>()
+    queued.stage = 'executing'
+    await this.persistSessions()
     const result = await this.harness.run({
       prompt: buildPrompt(event, attachment.context),
       ...(attachment.image ? { images: [attachment.image] } : {}),
       ...(currentSession === undefined ? {} : { sessionId: currentSession }),
-    }, (notification) => {
+    }, (notification, rootSessionId) => {
+      this.sessions.set(conversationKey, rootSessionId)
+      if (binding) this.taskBindings.set(conversationKey, { ...binding, sessionId: rootSessionId })
       const conversation = this.conversations.get(conversationKey)
       if (!conversation) return
       const createdAt = new Date().toISOString()
       this.conversations.set(conversationKey, {
         ...conversation,
+        sessionId: rootSessionId,
         taskEvents: [...conversation.taskEvents, {
           id: `${event.eventId}:${conversation.taskEvents.length + 1}`,
           event: safeEvent(notification),
@@ -456,22 +517,49 @@ export class LocalImRuntime {
         }].slice(-200),
         updatedAt: createdAt,
       })
-      const generated = generatedArtifactPath(notification)
+      const generated = generatedArtifactPath(notification, artifactCalls, rootSessionId)
       if (generated) generatedFiles.add(generated)
     })
     const response = result.finalResponse.trim()
     if (!response) throw new Error('Harness returned an empty IM response')
     this.sessions.set(conversationKey, result.sessionId)
     if (binding) this.taskBindings.set(conversationKey, { ...binding, sessionId: result.sessionId })
-    await this.completeConversationReply(conversationKey, event, response.slice(0, MAX_REPLY_CHARS), result.sessionId)
-    const target = this.deliveryTargets.get(conversationKey)
-    if (target) {
-      for (const file of [...generatedFiles].slice(0, 5)) {
-        await this.sendGeneratedFile(target, file).catch((error) => {
-          process.stderr.write(`Unable to return generated DingTalk file: ${safeError(error)}\n`)
-        })
-      }
+    await this.queueResponse(queued, response.slice(0, MAX_REPLY_CHARS), [...generatedFiles], result.sessionId)
+  }
+
+  private async queueResponse(queued: QueuedEvent, response: string, files: string[], sessionId?: string): Promise<void> {
+    queued.delivery = { response, files, sentFiles: [], replySent: false, ...(sessionId ? { sessionId } : {}) }
+    queued.stage = 'delivery'
+    queued.attempts = 0
+    await this.persistSessions()
+    await this.completeConversationReply(buildConversationKey(this.configuration!.clientId, queued.event), queued.event, response, sessionId)
+    await this.deliverQueuedResponse(queued)
+  }
+
+  private async deliverQueuedResponse(queued: QueuedEvent): Promise<void> {
+    const delivery = queued.delivery!
+    const key = buildConversationKey(this.configuration!.clientId, queued.event)
+    // Persist each acknowledged delivery so a retry never reruns the Agent or resends known successes.
+    if (!delivery.replySent) {
+      await this.reply(queued.event, delivery.response)
+      delivery.replySent = true
+      await this.persistSessions()
     }
+    const target = this.deliveryTargets.get(key)
+    const failures: string[] = []
+    for (const file of delivery.files) {
+      if (delivery.sentFiles.includes(file)) continue
+      try {
+        if (!target) throw new Error('文件接收会话不可用')
+        await this.sendGeneratedFile(target, file)
+        delivery.sentFiles.push(file)
+      } catch (error) {
+        failures.push(`${basename(file)}：${safeError(error)}`)
+      }
+      await this.persistSessions()
+    }
+    if (failures.length) throw new Error(failures.join('；'))
+    await this.completeConversationReply(key, queued.event, delivery.response, delivery.sessionId)
   }
 
   private async handleTaskCommand(conversationKey: string, text: string): Promise<string | undefined> {
@@ -493,11 +581,17 @@ export class LocalImRuntime {
   }
 
   private async completeConversationReply(
-    conversationKey: string, event: DingTalkEvent, response: string, sessionId?: string,
+    conversationKey: string, event: DingTalkEvent, response: string, sessionId?: string, status: ImConversationSummary['status'] = 'COMPLETED',
   ): Promise<void> {
     const current = this.conversations.get(conversationKey)
     if (!current) return
     const createdAt = new Date().toISOString()
+    if (current.messages.filter((item) => item.role === 'user').at(-1)?.id !== event.eventId) {
+      // Retrying an older delivery must not rewind a newer task/session.
+      this.conversations.set(conversationKey, { ...current, messages: current.messages.filter((item) => item.id !== `${event.eventId}:delivery-error`) })
+      await this.persistSessions()
+      return
+    }
     if (sessionId) {
       this.sessions.set(conversationKey, sessionId)
       const binding = this.taskBindings.get(conversationKey)
@@ -507,12 +601,11 @@ export class LocalImRuntime {
     this.conversations.set(conversationKey, {
       ...current,
       sessionId: sessionId ?? current.sessionId,
-      lastResponse: response.slice(0, 500), status: 'COMPLETED', updatedAt: createdAt,
-      messages: appendMessage(current.messages, { id: `${event.eventId}:reply`, role: 'assistant', text: response, createdAt }),
+      lastResponse: response.slice(0, 500), status, updatedAt: createdAt,
+      messages: appendMessage(current.messages.filter((message) => message.id !== `${event.eventId}:delivery-error`), { id: `${event.eventId}:reply`, role: 'assistant', text: response, createdAt }),
       ...(binding ? { boundTaskId: binding.taskId, boundTaskName: binding.taskName } : {}),
     })
     await this.persistSessions()
-    await this.reply(event, response)
   }
 
   private async loadAttachmentContext(event: DingTalkEvent): Promise<{ context: string; image?: ImageRunInput }> {
@@ -528,28 +621,18 @@ export class LocalImRuntime {
         image: { data: bytes, mediaType: detectImageMediaType(bytes), name: attachment.fileName },
       }
     }
-    const extension = extname(attachment.fileName).toLowerCase()
-    const extracted = extension === '.docx'
-      ? await parseDocx(bytes)
-      : extension === '.xlsx'
-        ? await parseXlsx(bytes)
-        : extension === '.pptx'
-          ? await parsePptx(bytes)
-        : extension === '.pdf'
-          ? await parsePdf(bytes)
-          : extension === '.txt' || extension === '.csv' || extension === '.md'
-            ? { text: bytes.toString('utf8') }
-            : undefined
-    if (extracted === undefined) {
-      return { context: `用户发送了附件：${attachment.fileName}（${bytes.length} 字节）。当前仅支持解析 DOCX、XLSX、PPTX、PDF、TXT、CSV、Markdown。` }
-    }
-    return { context: `附件名称：${attachment.fileName}\n附件解析结果：\n${JSON.stringify(extracted).slice(0, MAX_ATTACHMENT_PROMPT_CHARS)}` }
+    return { context: await prepareImDocumentContext(bytes, attachment.fileName, JSON.parse(process.env.XIAOYIN_LOCAL_FILE_ROOTS ?? '[]')) }
   }
 
   private async reply(event: DingTalkEvent, content: string): Promise<void> {
-    if (!event.sessionWebhook) throw new Error('DingTalk event has no session webhook')
-    if (event.sessionWebhookExpiredTime > 0 && event.sessionWebhookExpiredTime <= Date.now()) {
-      throw new Error('DingTalk reply window expired')
+    if (!event.sessionWebhook || (event.sessionWebhookExpiredTime > 0 && event.sessionWebhookExpiredTime <= Date.now())) {
+      const configuration = this.configuration
+      const target = configuration && this.deliveryTargets.get(buildConversationKey(configuration.clientId, event))
+      if (!target) throw new Error('回复窗口已过期，且没有可用的原接收会话')
+      // Reuse the original target only when the webhook is known to be expired.
+      // Never retry a possibly successful webhook send through a second channel.
+      await this.proactiveSend(target, content)
+      return
     }
     const token = String(await this.client?.getAccessToken() ?? '')
     if (!token) throw new Error('DingTalk access token is unavailable')
@@ -573,7 +656,13 @@ export class LocalImRuntime {
     }
   }
 
-  private async pollTaskRuns(): Promise<void> {
+  private pollTaskRuns(): Promise<void> {
+    if (this.taskRunPoll) return this.taskRunPoll
+    this.taskRunPoll = this.pollTaskRunsOnce(this.taskRunEpoch).finally(() => { this.taskRunPoll = undefined })
+    return this.taskRunPoll
+  }
+
+  private async pollTaskRunsOnce(epoch: number): Promise<void> {
     const configuration = this.configuration
     const employeeId = process.env.XIAOYIN_EMPLOYEE_ID?.trim() ?? ''
     const knowledgeEndpoint = process.env.XIAOYIN_KNOWLEDGE_ENDPOINT?.trim() ?? ''
@@ -591,18 +680,26 @@ export class LocalImRuntime {
       })
       if (!response.ok) throw new Error(`task runs returned HTTP ${response.status}`)
       const runs = (await response.json()) as CloudTaskRunEvent[]
-      const terminal = runs.filter((run) => run.runId && (run.status === 'COMPLETED' || run.status === 'FAILED'))
+      if (epoch !== this.taskRunEpoch) return
+      const terminal = runs.filter((run) => run.runId && ['COMPLETED', 'FAILED', 'CANCELED', 'TERMINATED', 'TIMED_OUT'].includes(run.status))
       if (!this.taskRunBaselineInitialized) {
         for (const run of terminal) this.knownTaskRunIds.add(run.runId)
         this.taskRunBaselineInitialized = true
         await this.persistSessions()
         return
       }
+      const failed: string[] = []
       for (const run of terminal.reverse()) {
+        if (epoch !== this.taskRunEpoch) return
         if (this.knownTaskRunIds.has(run.runId)) continue
-        await this.pushTaskRun(run)
-        this.knownTaskRunIds.add(run.runId)
+        try {
+          await this.pushTaskRun(run)
+          this.knownTaskRunIds.add(run.runId)
+        } catch (error) {
+          failed.push(`${run.name || run.runId}：${safeError(error)}`)
+        }
       }
+      this.taskDeliveryError = failed.length ? `云端任务通知待重试：${failed.join('；')}` : undefined
       while (this.knownTaskRunIds.size > MAX_KNOWN_EVENTS) {
         const first = this.knownTaskRunIds.values().next().value
         if (first === undefined) break
@@ -615,6 +712,8 @@ export class LocalImRuntime {
       }
       await this.persistSessions()
     } catch (error) {
+      if (epoch !== this.taskRunEpoch) return
+      this.taskDeliveryError = `云端任务通知同步失败：${safeError(error)}。将在下次同步时重试。`
       process.stderr.write(`Unable to poll task results for local IM: ${safeError(error)}\n`)
     }
   }
@@ -626,9 +725,11 @@ export class LocalImRuntime {
     const conversationKey = this.scheduleRoutes.get(run.scheduleId)
     if (!conversationKey) return
     const target = this.deliveryTargets.get(conversationKey)
-    if (!target || (configuration.accessPolicy === 'pairing' && !this.pairedConversations.has(conversationKey))) return
+    if (!target || (configuration.accessPolicy === 'pairing' && !this.pairedConversations.has(conversationKey))) {
+      throw new Error('目标 IM 会话暂不可用或尚未配对')
+    }
     if (this.knownTaskDeliveryIds.has(`${run.runId}:${conversationKey}`)) return
-    const status = run.status === 'COMPLETED' ? '已完成' : '执行失败'
+    const status = ({ COMPLETED: '已完成', FAILED: '执行失败', CANCELED: '已取消', TERMINATED: '已终止', TIMED_OUT: '执行超时' } as Record<string, string>)[run.status] ?? run.status
     const artifact = run.artifactObjectKey ? '，结果文件可在定时任务的执行记录中查看' : ''
     const content = `云端任务“${run.name || '未命名任务'}”${status}${artifact}。\n执行时间：${new Date(run.startedAt).toLocaleString('zh-CN')}`
     const delivery = await Promise.allSettled([this.proactiveSend(target, content)])
@@ -639,7 +740,7 @@ export class LocalImRuntime {
 
   private async proactiveSend(target: ImDeliveryTarget, content: string): Promise<void> {
     const configuration = this.configuration
-    if (configuration === undefined) return
+    if (configuration === undefined) throw new Error('钉钉频道当前未运行')
     const token = String(await this.client?.getAccessToken() ?? '')
     if (!token) throw new Error('DingTalk access token is unavailable')
     const group = target.conversationType === 'group'
@@ -663,7 +764,7 @@ export class LocalImRuntime {
 
   private async sendGeneratedFile(target: ImDeliveryTarget, file: string): Promise<void> {
     const configuration = this.configuration
-    if (!configuration) return
+    if (!configuration) throw new Error('钉钉频道当前未运行')
     const bytes = await readFile(file)
     if (bytes.length === 0 || bytes.length > MAX_ATTACHMENT_BYTES) throw new Error('Generated file exceeds DingTalk upload limits')
     const token = String(await this.client?.getAccessToken() ?? '')
@@ -770,7 +871,7 @@ export class LocalImRuntime {
       taskBindings: [...this.taskBindings.values()],
       scheduleRoutes: [...this.scheduleRoutes].map(([scheduleId, conversationKey]) => ({ scheduleId, conversationKey })),
     })
-    this.persistTail = this.persistTail.then(async () => {
+    this.persistTail = this.persistTail.catch(() => undefined).then(async () => {
       await mkdir(dirname(this.statePath), { recursive: true })
       const temporary = `${this.statePath}.tmp`
       await writeFile(temporary, snapshot, { mode: 0o600 })
@@ -807,17 +908,40 @@ function safeEvent(value: unknown): unknown {
   }
 }
 
-function generatedArtifactPath(notification: unknown): string | undefined {
+const IM_ARTIFACT_TOOLS = new Set([
+  'office.docx.create', 'office.xlsx.create', 'office.pdf.create',
+  'office_docx_create', 'office_xlsx_create', 'office_xlsx_update_cells', 'office_xlsx_append_rows',
+  'office_xlsx_add_sheet', 'office_xlsx_format_sheet', 'office_pptx_create', 'office_pdf_create', 'local_files_publish',
+  'office_document_export_pdf', 'office_xlsx_recalculate',
+])
+
+export function generatedArtifactPath(
+  notification: unknown,
+  calls: Map<string, string>,
+  rootSessionId: string,
+  configuredRoots = process.env.XIAOYIN_LOCAL_FILE_ROOTS ?? '[]',
+): string | undefined {
   const wire = recordValue(notification)
   const params = recordValue(wire?.params)
+  if (params?.sessionId && params.sessionId !== rootSessionId) return undefined
   const event = recordValue(params?.event)
+  const data = recordValue(event?.data)
+  if (event?.type === 'tool/call') {
+    const name = stringValue(data?.name)
+    const callId = stringValue(data?.callId)
+    if (IM_ARTIFACT_TOOLS.has(name) && callId) calls.set(callId, name)
+    return undefined
+  }
   if (event?.type !== 'tool/result') return undefined
-  const data = recordValue(event.data)
   const message = recordValue(data?.message)
   const blocks = Array.isArray(message?.content) ? message.content : []
   for (const blockValue of blocks) {
     const block = recordValue(blockValue)
-    if (block?.type !== 'tool-result' || block.isError === true || !Array.isArray(block.content)) continue
+    if (block?.type !== 'tool-result') continue
+    const callId = stringValue(block.toolCallId)
+    const toolName = calls.get(callId)
+    calls.delete(callId)
+    if (!toolName || block.isError === true || !Array.isArray(block.content)) continue
     for (const contentValue of block.content) {
       const content = recordValue(contentValue)
       if (content?.type !== 'text' || typeof content.text !== 'string') continue
@@ -825,13 +949,16 @@ function generatedArtifactPath(notification: unknown): string | undefined {
         const output = recordValue(JSON.parse(content.text))
         const rootId = stringValue(output?.rootId)
         const path = stringValue(output?.path || output?.destination)
-        const index = Number(rootId.match(/^local-root-(\d+)$/u)?.[1] ?? 0) - 1
-        const roots = JSON.parse(process.env.XIAOYIN_LOCAL_FILE_ROOTS ?? '[]') as unknown
-        if (!Array.isArray(roots) || typeof roots[index] !== 'string' || !path) continue
-        const root = resolve(roots[index])
+        const roots = JSON.parse(configuredRoots) as unknown
+        if (!Array.isArray(roots) || !path || isAbsolute(path)) continue
+        const entry = roots.find((value, index) => typeof value === 'string'
+          ? rootId === `local-root-${index + 1}` : recordValue(value)?.id === rootId)
+        const rootPath = typeof entry === 'string' ? entry : stringValue(recordValue(entry)?.path)
+        if (!rootPath || !isAbsolute(rootPath)) continue
+        const root = resolve(rootPath)
         const candidate = resolve(root, path)
         const relation = relative(root, candidate)
-        if (!relation || relation.startsWith('..') || resolve(root, relation) !== candidate) continue
+        if (!relation || relation === '..' || relation.startsWith(`..${sep}`) || isAbsolute(relation)) continue
         return candidate
       } catch { /* ignore non-structured tool output */ }
     }

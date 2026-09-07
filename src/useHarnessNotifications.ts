@@ -1,5 +1,5 @@
 import { useEffect, useRef, type RefObject } from 'react'
-import { applyHarnessNotification, harnessResponseUpdate, listenHarnessNotifications } from './harness'
+import { applyHarnessNotification, applyStoppingHarnessNotification, harnessResponseUpdate, listenHarnessNotifications } from './harness'
 import { applyHarnessResponseToMessages } from './streamingMessages'
 import type { TaskMessage, TaskMonitorState } from './types'
 
@@ -33,6 +33,14 @@ export function useHarnessNotifications({
       if (!taskId) return
       const streaming = streamingTasksRef.current.get(taskId)
       if (!streaming) return
+      if (streaming.cancellationRequested) {
+        const nextMonitor = applyStoppingHarnessNotification(streaming.monitor, notification)
+        if (nextMonitor === streaming.monitor) return
+        streaming.monitor = nextMonitor
+        latest.current.onTaskUpdate(taskId, nextMonitor, streaming.messages)
+        if (currentTaskIdRef.current === taskId) latest.current.onCurrentUpdate(nextMonitor)
+        return
+      }
       const nextMonitor = applyHarnessNotification(streaming.monitor, notification)
       streaming.monitor = nextMonitor
       const response = harnessResponseUpdate(notification)

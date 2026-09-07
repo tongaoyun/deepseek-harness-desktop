@@ -10,7 +10,7 @@ export async function reportTaskAudit({
   accessToken: string
   employeeId: string
   endpoint: string
-  outcome: 'SUCCEEDED' | 'FAILED'
+  outcome: 'SUCCEEDED' | 'FAILED' | 'CANCELED'
   taskId: string
 }): Promise<void> {
   await submitAuditEvent(endpoint, employeeId, accessToken, {
@@ -20,6 +20,6 @@ export async function reportTaskAudit({
     outcome,
     resourceType: 'desktop-task',
     resourceId: taskId,
-    summary: outcome === 'SUCCEEDED' ? '桌面 Agent 执行完成' : '桌面 Agent 执行失败',
+    summary: outcome === 'SUCCEEDED' ? '桌面任务执行完成' : outcome === 'CANCELED' ? '用户已停止本轮桌面任务' : '桌面任务执行失败',
   }).catch(() => undefined)
 }

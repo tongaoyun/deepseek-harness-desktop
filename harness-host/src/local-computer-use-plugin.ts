@@ -5,6 +5,7 @@ import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { spawn } from 'node:child_process'
 import { mkdir, readFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
+import { MacComputerUseBridge } from './mac-computer-use.js'
 
 export const name = 'xiaoyin-local-computer-use'
 export const inject = ['tools', 'attachments']
@@ -21,7 +22,7 @@ const KEY_CODES: Record<string, number> = {
   PAGEUP: 0x21, PAGEDOWN: 0x22,
   F1: 0x70, F2: 0x71, F3: 0x72, F4: 0x73, F5: 0x74, F6: 0x75,
   F7: 0x76, F8: 0x77, F9: 0x78, F10: 0x79, F11: 0x7A, F12: 0x7B,
-  A: 0x41, C: 0x43, F: 0x46, N: 0x4E, O: 0x4F, P: 0x50, S: 0x53, V: 0x56, W: 0x57, X: 0x58, Y: 0x59, Z: 0x5A,
+  A: 0x41, C: 0x43, F: 0x46, G: 0x47, L: 0x4C, N: 0x4E, O: 0x4F, P: 0x50, S: 0x53, V: 0x56, W: 0x57, X: 0x58, Y: 0x59, Z: 0x5A,
 }
 const MODIFIER_CODES: Record<string, number> = { CTRL: 0x11, ALT: 0x12, SHIFT: 0x10, WIN: 0x5B }
 
@@ -32,15 +33,15 @@ export const Config = z.object({
 })
 
 export async function apply(ctx: Context, config: Config = {}): Promise<void> {
-  if (config.enabled !== true || process.platform !== 'win32') return
+  if (config.enabled !== true || !['win32', 'darwin'].includes(process.platform)) return
   const selected = validateToolSelection(config.tools ?? [])
   if (selected.size === 0) return
-  const bridge = new ComputerUseBridge(ctx)
+  const bridge = process.platform === 'darwin' ? new MacComputerUseBridge(ctx) : new ComputerUseBridge(ctx)
   const definitions = computerUseTools(bridge).filter((tool) => selected.has(tool.name))
   const unregister = definitions.map((tool) => ctx.tools.register(tool))
   ctx.effect(() => () => {
     for (const dispose of unregister.reverse()) dispose()
-  }, 'xiaoyin Windows computer use bridge')
+  }, 'xiaoyin local computer use bridge')
 }
 
 export class ComputerUseBridge {
@@ -87,10 +88,10 @@ export class ComputerUseBridge {
   }
 }
 
-interface ComputerObservation {
+export interface ComputerObservation {
   screen: { width: number; height: number }
-  activeWindow: { title: string; processId: number }
-  elements: Array<{ name: string; automationId: string; controlType: string; x: number; y: number; width: number; height: number }>
+  activeWindow: { title: string; processId: number; signature?: string }
+  elements: Array<{ name: string; value?: string; automationId: string; controlType: string; x: number; y: number; width: number; height: number }>
   truncated: boolean
   image: ImageAttachmentRef
 }
@@ -122,7 +123,7 @@ export async function runComputerUsePreflight(
   return result
 }
 
-function computerUseTools(bridge: ComputerUseBridge): ToolDefinition[] {
+function computerUseTools(bridge: Pick<ComputerUseBridge, 'observe' | 'click' | 'type' | 'key' | 'scroll'>): ToolDefinition[] {
   return [
     tool('computer_use_observe', 'Capture the current Windows desktop and list visible accessibility elements using screenshot pixel coordinates.', {
       description: purposeProperty(), maxElements: maxElementsProperty(),
@@ -162,7 +163,7 @@ function computerUseTools(bridge: ComputerUseBridge): ToolDefinition[] {
 
 function tool(name: string, description: string, properties: Record<string, unknown>, required: string[], execute: (input: Record<string, unknown>, signal: AbortSignal) => Promise<ComputerObservation>): ToolDefinition {
   return {
-    name, description,
+    name, description: process.platform === 'darwin' ? description.replaceAll('Windows', 'macOS').replace('with modifiers', 'with modifiers (WIN maps to Command)') : description,
     parameters: { type: 'object', properties, required, additionalProperties: false },
     output: {
       schema: {},

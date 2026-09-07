@@ -107,6 +107,7 @@ export function ExtensionPreviewPanel({ target, config, unavailableReason, onRun
       const result = await runHarness({
         taskId: previewTaskIdRef.current,
         prompt: prompt.trim(),
+        executionMode: 'agent',
         employeeId: config.employeeId,
         teamId: config.teamId,
         selectedExtension: { kind: target.kind, id: target.id },

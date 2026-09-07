@@ -11,6 +11,30 @@ afterEach(async () => {
 })
 
 describe('LocalFileBridge', () => {
+  it('publishes readable external outputs without creating a change or undo receipt', async () => {
+    const root = await temporaryDirectory()
+    await writeFile(join(root, 'chart.png'), Buffer.from([137, 80, 78, 71]))
+    const bridge = new LocalFileBridge(await discoverAuthorizedRoots([{ id: 'workspace', name: '工作目录', path: root }]))
+    expect(await bridge.publish('workspace', 'chart.png')).toEqual({
+      rootId: 'workspace', rootName: '工作目录', path: 'chart.png', size: 4, action: 'published',
+    })
+    expect(localFileMutationRequiresApproval('local_files_publish', {})).toBe(false)
+  })
+
+  it('rejects missing, empty, directory and out-of-scope deliverables', async () => {
+    const root = await temporaryDirectory()
+    const outside = await temporaryDirectory()
+    await writeFile(join(root, 'empty.csv'), '')
+    await writeFile(join(outside, 'private.txt'), 'outside')
+    await symlink(join(outside, 'private.txt'), join(root, 'outside.txt'))
+    const bridge = new LocalFileBridge(await discoverAuthorizedRoots([root]))
+    await expect(bridge.publish('local-root-1', 'missing.xlsx')).rejects.toThrow()
+    await expect(bridge.publish('local-root-1', 'empty.csv')).rejects.toThrow('交付文件为空')
+    await expect(bridge.publish('local-root-1', '.')).rejects.toThrow('regular files')
+    await expect(bridge.publish('local-root-1', 'outside.txt')).rejects.toThrow()
+    await expect(bridge.publish('unknown', 'empty.csv')).rejects.toThrow()
+  })
+
   it('preserves desktop authorization IDs for tools and artifact actions', async () => {
     const root = await temporaryDirectory()
     const [authorized] = await discoverAuthorizedRoots([{ id: 'local-stable-id', name: '下载', path: root }])
@@ -121,6 +145,7 @@ describe('LocalFileBridge', () => {
     await bridge.createDirectory('local-root-1', 'exports/daily')
     const created = await bridge.writeText('local-root-1', 'exports/daily/report.md', '# report', false) as { addedLines: number; deletedLines: number }
     expect(created).toMatchObject({ addedLines: 1, deletedLines: 0 })
+    expect(created).toMatchObject({ afterHash: expect.stringMatching(/^[a-f0-9]{64}$/) })
     await bridge.copy('local-root-1', 'exports/daily/report.md', 'exports/report-copy.md', false)
     await bridge.move('local-root-1', 'exports/report-copy.md', 'exports/report-final.md')
     expect((await bridge.readText('local-root-1', 'exports/report-final.md')).content).toBe('# report')
@@ -135,6 +160,7 @@ describe('LocalFileBridge', () => {
 
     const overwritten = await bridge.writeText('local-root-1', 'report.md', 'after\nand more', true) as { backupPath: string; addedLines: number; deletedLines: number }
     expect(overwritten).toMatchObject({ action: 'updated', addedLines: 2, deletedLines: 1 })
+    expect(overwritten).toMatchObject({ beforeHash: expect.stringMatching(/^[a-f0-9]{64}$/), afterHash: expect.stringMatching(/^[a-f0-9]{64}$/) })
     expect((await bridge.readText('local-root-1', overwritten.backupPath)).content).toBe('before')
     const deleted = await bridge.delete('local-root-1', 'report.md', false) as { backupPath: string }
     expect((await bridge.readText('local-root-1', deleted.backupPath)).content).toBe('after\nand more')

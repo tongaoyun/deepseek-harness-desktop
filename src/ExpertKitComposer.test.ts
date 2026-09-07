@@ -33,8 +33,8 @@ describe('expert kit composer', () => {
 
   it('reports missing dependencies and becomes ready after auto selection', () => {
     expect(composerIssues([skill], [connector], ['order-review'], [], [])).toEqual([
-      '所选 Skill 依赖连接器 erp-mcp',
-      '所选 Skill 依赖工具 order.search',
+      '所选技能依赖连接器 erp-mcp',
+      '所选技能依赖工具 order.search',
       'order.search 没有可用的连接器提供',
     ])
     expect(composerIssues([skill], [connector], ['order-review'], ['erp-mcp'], ['order.search'])).toEqual([])

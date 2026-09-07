@@ -9,28 +9,14 @@ fi
 script_dir="$(cd "$(dirname "$0")" && pwd)"
 repository="$(cd "$script_dir/.." && pwd)"
 version="$(node -p "require('$repository/package.json').version")"
-if [[ -n "${CARGO_TARGET_DIR-}" ]]; then
-  if [[ "$CARGO_TARGET_DIR" = /* ]]; then
-    target_dir="$CARGO_TARGET_DIR"
-  else
-    target_dir="$repository/$CARGO_TARGET_DIR"
-  fi
-else
-  target_dir="$repository/src-tauri/target"
-fi
-
-case "$(uname -m)" in
-  arm64) artifact_arch="aarch64" ;;
-  x86_64) artifact_arch="x64" ;;
-  *) echo "Unsupported macOS architecture: $(uname -m)" >&2; exit 1 ;;
-esac
+source "$script_dir/macos-build-env.sh"
+macos_check_execution
 
 dmg="$target_dir/release/bundle/dmg/小胤_${version}_${artifact_arch}.dmg"
 [[ -f "$dmg" ]] || { echo "macOS disk image is missing: $dmg" >&2; exit 1; }
 
 temporary="$(mktemp -d)"
 mount_point="$temporary/mounted"
-runtime_output="$temporary/runtime-output.jsonl"
 mkdir -p "$mount_point"
 mounted=false
 cleanup() {
@@ -57,19 +43,21 @@ for required in "$app" "$binary" "$node_binary" "$entry" "$config"; do
 done
 
 /usr/bin/codesign --verify --deep --strict "$app"
-file "$binary" | grep -q "$(uname -m)" || { echo "Application architecture does not match the runner." >&2; exit 1; }
-file "$node_binary" | grep -q "$(uname -m)" || { echo "Node.js architecture does not match the runner." >&2; exit 1; }
+bundle_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")"
+[[ "$bundle_version" == "$version" ]] || { echo 'Installed bundle version does not match the release.' >&2; exit 1; }
+/usr/bin/lipo -verify_arch "$binary_arch" "$binary"
+/usr/bin/lipo -verify_arch "$binary_arch" "$node_binary"
+"$node_binary" "$repository/scripts/check-macos-runtime.mjs" "$runtime/harness-host" "$node_arch"
 
-export DSH_CORDIS_CONFIG="$config"
-export XIAOYIN_ALLOW_SHELL="true"
-export XIAOYIN_APPROVE_SHELL="false"
-printf '%s\n' \
-  '{"jsonrpc":"2.0","id":1,"method":"host.initialize"}' \
-  '{"jsonrpc":"2.0","id":2,"method":"host.health"}' \
-  '{"jsonrpc":"2.0","id":3,"method":"host.shutdown"}' |
-  "$node_binary" "$entry" > "$runtime_output"
+node "$repository/scripts/check-harness-runtime.mjs" "$node_binary" "$runtime/harness-host"
 
-grep -q '"status":"initialized"' "$runtime_output" || { echo "Packaged Harness initialization failed." >&2; exit 1; }
-grep -q '"status":"ready"' "$runtime_output" || { echo "Packaged Harness health check failed." >&2; exit 1; }
+archive="$target_dir/release/bundle/macos/小胤.app.tar.gz"
+[[ -s "$archive.sig" ]] || { echo 'Updater signature is missing.' >&2; exit 1; }
+node "$repository/scripts/verify-updater-signature.mjs" "$archive" "$repository/src-tauri/tauri.conf.json"
+mkdir -p "$temporary/update"
+tar -xzf "$archive" -C "$temporary/update"
+update_app="$temporary/update/小胤.app"
+/usr/bin/codesign --verify --deep --strict "$update_app"
+diff -qr "$app" "$update_app" >/dev/null || { echo 'DMG and updater archive contain different applications.' >&2; exit 1; }
 
 echo "macOS bundle smoke test passed: $dmg"
