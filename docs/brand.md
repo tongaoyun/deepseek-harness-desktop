@@ -52,4 +52,4 @@
 
 上述配色由 `src/styles.css` 的 `--xy-*` 变量统一管理，浏览器开发页与原生桌面复用同一组组件和样式。
 
-完整能力及与参考产品的差异见 [桌面能力对照](desktop-alignment.md)。
+功能范围见 [产品能力](desktop-alignment.md)。
