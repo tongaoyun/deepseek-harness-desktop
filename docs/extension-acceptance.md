@@ -25,6 +25,15 @@ XIAOYIN_EXTENSION_FIXTURES=/path/to/fixtures.json \
 
 原生安装器在临时目录验证安装、重复安装、升级、启停、技能目录及卸载，不操作员工已有扩展。
 
+Qoder 原始套件验收覆盖产品设计、市场营销、1688 买家助手、1688 商家助手、产品管理、全栈开发专家，共 59 个技能。将六个原始 ZIP 放在同一目录后执行：
+
+```bash
+XIAOYIN_QODER_KIT_ARCHIVES=/path/to/archives \
+  cargo test --manifest-path src-tauri/Cargo.toml qoder_expert_kit_archives --lib -- --ignored --nocapture
+```
+
+检查中文名称、技能数量和原始文件逐字节一致性。界面回归覆盖详情阅读、技能快捷使用、停用和弹窗焦点恢复。
+
 Windows 安装器烟测使用安装目录中的 Node 和 Harness 运行技能加载与会话恢复验收，核对最终安装包的依赖和补丁。
 
 ## 真实代码任务

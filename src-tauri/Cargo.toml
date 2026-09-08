@@ -21,6 +21,7 @@ base64 = "0.22.1"
 flate2 = "1.1.2"
 futures-util = "0.3.31"
 percent-encoding = "2.3.2"
+pulldown-cmark = { version = "0.13", default-features = false }
 reqwest = { version = "=0.13.4", default-features = false, features = ["form", "json", "native-tls", "query", "stream"] }
 rusqlite = { version = "0.37.0", features = ["bundled"] }
 semver = "1.0.26"

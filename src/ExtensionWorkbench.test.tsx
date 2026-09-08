@@ -71,7 +71,7 @@ it('uses compact installed skill rows and prevents using disabled skills', async
 it('keeps commands unavailable until the kit is installed', async () => {
   await render(<ExpertKitDetailsModal kit={{ ...kit, installState: 'available' }} skills={[skill]} connectors={[]} knowledgeBases={[]} installing={false} removing={false} onClose={noop} onInstall={noop} onSchedule={noop} />, async (container) => {
     expect(container.querySelector<HTMLButtonElement>('.detail-command-list button')!.disabled).toBe(true)
-    expect(container.textContent).toContain('安装套件后可点击命令')
+    expect(container.textContent).toContain('确认安装')
   })
 })
 

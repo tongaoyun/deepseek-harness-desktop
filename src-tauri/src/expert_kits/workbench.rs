@@ -1,10 +1,13 @@
 use super::*;
+use pulldown_cmark::{Event, HeadingLevel, Parser, Tag, TagEnd};
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExtensionDocument {
     id: String,
     name: String,
+    summary: String,
+    user_invocable: bool,
     path: String,
     content: String,
 }
@@ -75,6 +78,9 @@ pub fn read_extension_contents(
                 Ok(ExtensionDocument {
                     id: entry.id.clone(),
                     name: document_name(&content, &entry.id),
+                    summary: compatibility::metadata(&content, "description").unwrap_or_default(),
+                    user_invocable: compatibility::metadata(&content, "user-invocable")
+                        .is_none_or(|value| value.trim() != "false"),
                     path: entry.path.clone(),
                     content,
                 })
@@ -92,16 +98,62 @@ pub fn read_extension_contents(
     })
 }
 
-fn document_name(content: &str, fallback: &str) -> String {
-    compatibility::metadata(content, "displayName")
-        .or_else(|| compatibility::metadata(content, "name"))
-        .filter(|name| !name.trim().is_empty())
+pub(super) fn document_name(content: &str, fallback: &str) -> String {
+    let field = |key| {
+        compatibility::metadata(content, key)
+            .map(|value| value.trim().to_owned())
+            .filter(|value| !value.is_empty())
+    };
+    let name = field("name");
+    field("displayName")
         .or_else(|| {
-            content
-                .lines()
-                .find_map(|line| line.strip_prefix("# ").map(str::to_owned))
+            name.clone().filter(|value| {
+                !value
+                    .chars()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_')
+            })
         })
+        .or_else(|| document_heading(content))
+        .or(name)
         .unwrap_or_else(|| fallback.to_owned())
+}
+
+fn document_heading(content: &str) -> Option<String> {
+    let content = content.trim_start_matches('\u{feff}');
+    let mut lines = content.split_inclusive('\n');
+    let first = lines.next()?;
+    let body = if first.trim() == "---" {
+        let mut offset = first.len();
+        for line in lines {
+            offset += line.len();
+            if line.trim() == "---" {
+                break;
+            }
+        }
+        content.get(offset..).unwrap_or_default()
+    } else {
+        content
+    };
+    let mut title = String::new();
+    let mut heading = false;
+    for event in Parser::new(body) {
+        match event {
+            Event::Start(Tag::Heading {
+                level: HeadingLevel::H1,
+                ..
+            }) => heading = true,
+            Event::End(TagEnd::Heading(HeadingLevel::H1)) if heading => {
+                if !title.trim().is_empty() {
+                    return Some(title.trim().to_owned());
+                }
+                heading = false;
+            }
+            Event::Text(text) | Event::Code(text) if heading => title.push_str(&text),
+            Event::SoftBreak | Event::HardBreak if heading => title.push(' '),
+            _ => {}
+        }
+    }
+    None
 }
 
 #[tauri::command]
@@ -145,6 +197,26 @@ mod tests {
         );
         assert_eq!(document_name("# 市场分析\n内容", "ext-123"), "市场分析");
         assert_eq!(document_name("内容", "frame"), "frame");
+        assert_eq!(
+            document_name("---\nname: api-design\n---\n# API接口设计", "api-design"),
+            "API接口设计"
+        );
+        assert_eq!(
+            document_name(
+                "---\r\nname: review\r\ndisplayName: ''\r\n---\r\n# **代码**审查",
+                "review"
+            ),
+            "代码审查"
+        );
+        assert_eq!(
+            document_name("```md\n# 假标题\n```\n# 真标题", "id"),
+            "真标题"
+        );
+        assert_eq!(document_name("接口设计\n===\n", "id"), "接口设计");
+        assert_eq!(
+            document_name("---\nname: api-design\n---\n正文", "id"),
+            "api-design"
+        );
     }
 
     #[test]
