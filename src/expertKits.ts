@@ -51,7 +51,7 @@ export async function listInstalledExtensions(): Promise<InstalledExpertKit[]> {
   return (await inspectInstalledExtensions()).installed
 }
 
-export interface ExtensionDocument { id: string; path: string; content: string }
+export interface ExtensionDocument { id: string; name: string; path: string; content: string }
 export interface ExtensionContents { readme: string; skills: ExtensionDocument[]; commands: ExtensionDocument[] }
 
 export async function readExtensionContents(kind: 'expert-kit' | 'skill', id: string, version: string): Promise<ExtensionContents> {
@@ -89,7 +89,7 @@ export async function installExtension(download: ExpertKitDownload, kind: 'exper
   })
 }
 
-export async function selectDeveloperExtension(kind: 'expert-kit' | 'skill', input: 'archive' | 'directory' = 'archive'): Promise<string | null> {
+export async function selectDeveloperExtension(kind: 'expert-kit' | 'skill', input: 'archive' | 'directory' = 'archive'): Promise<string[]> {
   if (!isTauri()) throw new Error('请在小胤桌面客户端中选择本地扩展')
   return invoke('select_developer_extension', { kind, input })
 }

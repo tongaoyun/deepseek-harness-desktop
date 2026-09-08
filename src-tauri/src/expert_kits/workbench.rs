@@ -4,6 +4,7 @@ use super::*;
 #[serde(rename_all = "camelCase")]
 pub struct ExtensionDocument {
     id: String,
+    name: String,
     path: String,
     content: String,
 }
@@ -73,6 +74,7 @@ pub fn read_extension_contents(
                     .map_err(|error| format!("无法读取 {}：{error}", entry.path))?;
                 Ok(ExtensionDocument {
                     id: entry.id.clone(),
+                    name: document_name(&content, &entry.id),
                     path: entry.path.clone(),
                     content,
                 })
@@ -88,6 +90,18 @@ pub fn read_extension_contents(
         skills: read(&manifest.skills)?,
         commands: read(&manifest.commands)?,
     })
+}
+
+fn document_name(content: &str, fallback: &str) -> String {
+    compatibility::metadata(content, "displayName")
+        .or_else(|| compatibility::metadata(content, "name"))
+        .filter(|name| !name.trim().is_empty())
+        .or_else(|| {
+            content
+                .lines()
+                .find_map(|line| line.strip_prefix("# ").map(str::to_owned))
+        })
+        .unwrap_or_else(|| fallback.to_owned())
 }
 
 #[tauri::command]
@@ -118,6 +132,20 @@ pub fn reveal_extension_directory(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn document_names_keep_human_labels_separate_from_execution_ids() {
+        assert_eq!(
+            document_name("---\nname: 问题定义\n---\n# 正文", "ext-123"),
+            "问题定义"
+        );
+        assert_eq!(
+            document_name("---\nname: frame\ndisplayName: 问题定义\n---", "frame"),
+            "问题定义"
+        );
+        assert_eq!(document_name("# 市场分析\n内容", "ext-123"), "市场分析");
+        assert_eq!(document_name("内容", "frame"), "frame");
+    }
 
     #[test]
     fn activation_is_version_independent_and_reversible() {

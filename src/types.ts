@@ -306,7 +306,7 @@ export interface ConnectorRuntimeDefinition {
   enabled: boolean
 }
 
-export type ConnectorDiagnosticStatus = 'ready' | 'drift' | 'unavailable'
+export type ConnectorDiagnosticStatus = 'ready' | 'drift' | 'authentication-required' | 'access-denied' | 'unavailable'
 
 export interface ConnectorDiagnosticResult {
   id: string

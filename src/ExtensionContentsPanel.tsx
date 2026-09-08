@@ -25,11 +25,11 @@ export function ExtensionContentsPanel({ extension }: { extension: InstalledExpe
   return <section className="expert-detail-section extension-source-section">
     <h3>{kind === 'skill' ? '技能说明' : '套件内容'}</h3>
     {kind === 'skill' && contents.skills[0] ? <Markdown content={contents.skills[0].content} /> : <>
-      <div className="extension-source-list">{contents.skills.map((item) => <button key={item.path} onClick={() => setActive(item)} type="button"><FileText size={16} /><span><strong>{item.id}</strong><small>{item.path}</small></span><ArrowRight size={14} /></button>)}</div>
+      <div className="extension-source-list">{contents.skills.map((item) => <button key={item.path} onClick={() => setActive(item)} type="button"><FileText size={16} /><span><strong>{item.name}</strong><small>{item.path}</small></span><ArrowRight size={14} /></button>)}</div>
       {contents.commands.length > 0 && <details><summary>查看 {contents.commands.length} 个命令的执行说明</summary><div className="extension-source-list">{contents.commands.map((item) => <button key={item.path} onClick={() => setActive(item)} type="button"><FileText size={16} /><span>/{item.id}</span><ArrowRight size={14} /></button>)}</div></details>}
       {contents.readme && <details className="extension-readme"><summary>查看完整套件说明</summary><Markdown content={contents.readme} /></details>}
     </>}
-    {active && <div className="expert-modal-backdrop" onMouseDown={() => setActive(undefined)} role="presentation"><section ref={dialog} aria-label={active.id} aria-modal="true" className="extension-source-dialog" onMouseDown={(event) => event.stopPropagation()} role="dialog"><header><strong>{active.id}</strong><button aria-label="关闭原文" onClick={() => setActive(undefined)} type="button"><X size={17} /></button></header><p>以下内容来自 {active.path} 原文</p><Markdown content={active.content} /></section></div>}
+    {active && <div className="expert-modal-backdrop" onMouseDown={() => setActive(undefined)} role="presentation"><section ref={dialog} aria-label={active.name} aria-modal="true" className="extension-source-dialog" onMouseDown={(event) => event.stopPropagation()} role="dialog"><header><strong>{active.name}</strong><button aria-label="关闭原文" onClick={() => setActive(undefined)} type="button"><X size={17} /></button></header><p>以下内容来自 {active.path} 原文</p><Markdown content={active.content} /></section></div>}
   </section>
 }
 

@@ -161,6 +161,7 @@ export default function App() {
     syncedAt: extensionSyncedAt,
   } = useEnterpriseCatalog({ accessToken, bootstrap, enabledConnectorIds, user })
   const [developerKitBusy, setDeveloperKitBusy] = useState(false)
+  const localExtensionInstallLock = useRef(false)
   const [installingKitId, setInstallingKitId] = useState('')
   const [installingSkillId, setInstallingSkillId] = useState('')
   const [removingCatalogId, setRemovingCatalogId] = useState('')
@@ -1055,35 +1056,44 @@ export default function App() {
   }
 
   const installLocalExtension = async (kind: 'expert-kit' | 'skill', input: 'archive' | 'directory' = 'archive', path?: string) => {
-    if (developerKitBusy) return
+    if (localExtensionInstallLock.current) throw new Error('已有扩展正在安装，请稍后重试')
+    localExtensionInstallLock.current = true
     setDeveloperKitBusy(true)
     setExpertKitError('')
     try {
       const installed = await installDeveloperExtension(kind, input, path)
-      if (!installed) return
+      if (!installed) {
+        if (path) throw new Error('安装未完成，请重试')
+        return
+      }
+      let warning: string | undefined
       if (installed.bundledConnectors) {
         try {
           const failures: string[] = []
           for (const item of parseConnectorImport(JSON.stringify(installed.bundledConnectors))) {
             if (!item.connector) { failures.push(`${item.name}：${item.error}`); continue }
             const connector = item.connector
-            if (!connectors.some((existing) => existing.id === connector.id)) {
+            if (!connectors.some((existing) => existing.id === connector.id)
+              && !(user && loadPersonalConnectors(user.userId).some((existing) => existing.id === connector.id))) {
               try { await persistPersonalConnector(connector, true) }
               catch (error) { failures.push(`${item.name}：${error instanceof Error ? error.message : String(error)}`) }
             }
           }
           if (failures.length) throw new Error(failures.join('；'))
         } catch (error) {
-          setExpertKitError(`套件已安装，连接器需要处理：${error instanceof Error ? error.message : String(error)}`)
+          warning = `套件已安装，连接器需要处理：${error instanceof Error ? error.message : String(error)}`
+          setExpertKitError(warning)
         }
       }
       await refreshInstalledKits()
       if (kind === 'expert-kit') setActiveExpertKitId(installed.manifest.id)
       else setActiveSkillId(installed.manifest.id)
+      return { warning }
     } catch (error) {
       setExpertKitError(error instanceof Error ? error.message : String(error))
       if (path) throw error
     } finally {
+      localExtensionInstallLock.current = false
       setDeveloperKitBusy(false)
     }
   }

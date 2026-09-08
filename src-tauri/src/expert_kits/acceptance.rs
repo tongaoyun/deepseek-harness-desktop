@@ -1,5 +1,62 @@
 use super::*;
 
+#[test]
+#[ignore = "requires XIAOYIN_QODER_KIT_ARCHIVES with the five original Qoder ZIP files"]
+fn qoder_expert_kit_archives() {
+    let archives = PathBuf::from(std::env::var("XIAOYIN_QODER_KIT_ARCHIVES").unwrap());
+    let root =
+        std::env::temp_dir().join(format!("xiaoyin-qoder-acceptance-{}", uuid::Uuid::new_v4()));
+    fs::create_dir_all(&root).unwrap();
+    let fixtures = [
+        ("product-design", "0.5.10", "产品设计", 28),
+        ("marketing", "1.1.1", "市场营销", 8),
+        ("ali1688-buyer-assistant", "1.0.0", "1688买家助手", 5),
+        ("ali1688-seller-assistant", "1.0.0", "1688商家助手", 2),
+        ("product-management", "1.1.1", "产品管理", 8),
+    ];
+    let mut file_count = 0;
+    for (id, version, name, skill_count) in fixtures {
+        let bytes = fs::read(archives.join(format!("{id}-v{version}.zip"))).unwrap();
+        let installed = install_package_bytes(
+            &root.join("expert-kit"),
+            &bytes,
+            Some("expert-kit"),
+            None,
+            None,
+            None,
+            InstallSource::Developer,
+        )
+        .unwrap();
+        assert_eq!(installed.manifest.id, id);
+        assert_eq!(installed.manifest.version, version);
+        assert_eq!(installed.manifest.name, name);
+        assert_eq!(installed.manifest.skills.len(), skill_count);
+        let mut zip = zip::ZipArchive::new(std::io::Cursor::new(&bytes)).unwrap();
+        for index in 0..zip.len() {
+            let mut entry = zip.by_index(index).unwrap();
+            if entry.is_dir() {
+                continue;
+            }
+            let mut original = Vec::new();
+            std::io::Read::read_to_end(&mut entry, &mut original).unwrap();
+            assert_eq!(
+                fs::read(Path::new(&installed.install_path).join(entry.enclosed_name().unwrap()))
+                    .unwrap(),
+                original,
+                "{id}: {}",
+                entry.name()
+            );
+            file_count += 1;
+        }
+        println!("Verified {id}@{version}: {name}, {skill_count} skills, original files preserved");
+    }
+    let inventory = inventory::scan_root(&root).unwrap();
+    assert!(inventory.issues.is_empty());
+    assert_eq!(inventory.installed.len(), 5);
+    fs::remove_dir_all(root).unwrap();
+    println!("Verified 5 original ZIP archives, 51 skills and {file_count} unchanged source files");
+}
+
 #[derive(Deserialize)]
 struct ArtifactFixture {
     kind: String,

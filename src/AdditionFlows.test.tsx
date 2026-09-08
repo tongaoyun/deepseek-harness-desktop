@@ -70,7 +70,7 @@ it('validates timeout values in JSON imports', () => {
 })
 
 it('selects a skill without installing and installs only after confirmation, retaining failures for retry', async () => {
-  vi.mocked(selectDeveloperExtension).mockResolvedValue('/tmp/test/SKILL.md')
+  vi.mocked(selectDeveloperExtension).mockResolvedValue(['/tmp/test/SKILL.md'])
   const install = vi.fn().mockRejectedValueOnce(new Error('包结构无效')).mockResolvedValueOnce(undefined), close = vi.fn()
   await fixture(<ExtensionUploadDialog kind="skill" onInstall={install} onClose={close} />, async (container) => {
     expect(container.querySelector<HTMLButtonElement>('footer button')!.disabled).toBe(true)
@@ -88,7 +88,7 @@ it('selects a skill without installing and installs only after confirmation, ret
 })
 
 it('keeps folder selection in the kit upload dialog and cancellation writes nothing', async () => {
-  vi.mocked(selectDeveloperExtension).mockResolvedValue(null)
+  vi.mocked(selectDeveloperExtension).mockResolvedValue([])
   const install = vi.fn(), close = vi.fn()
   await fixture(<ExtensionUploadDialog kind="expert-kit" onInstall={install} onClose={close} />, async (container) => {
     await click(container, '.upload-folder-button')
@@ -97,5 +97,55 @@ it('keeps folder selection in the kit upload dialog and cancellation writes noth
     await act(async () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
     expect(close).toHaveBeenCalledOnce()
     expect(install).not.toHaveBeenCalled()
+  })
+})
+
+it('installs a batch sequentially, deduplicates paths and retries only failed files', async () => {
+  vi.mocked(selectDeveloperExtension).mockResolvedValue(['/tmp/design.zip', '/tmp/marketing.zip', '/tmp/design.zip', '/tmp/product.zip'])
+  const install = vi.fn().mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('文件损坏')).mockResolvedValue(undefined)
+  const close = vi.fn()
+  await fixture(<ExtensionUploadDialog kind="expert-kit" onInstall={install} onClose={close} />, async (container) => {
+    await click(container, '.extension-dropzone')
+    expect(container.querySelectorAll('.extension-upload-queue li')).toHaveLength(3)
+    await click(container, 'footer button')
+    expect(install.mock.calls.map(([path]) => path)).toEqual(['/tmp/design.zip', '/tmp/marketing.zip', '/tmp/product.zip'])
+    expect(container.querySelectorAll('.installed')).toHaveLength(2)
+    expect(container.textContent).toContain('文件损坏')
+    expect(close).not.toHaveBeenCalled()
+    await click(container, 'footer button')
+    expect(install.mock.calls.map(([path]) => path)).toEqual(['/tmp/design.zip', '/tmp/marketing.zip', '/tmp/product.zip', '/tmp/marketing.zip'])
+    expect(close).toHaveBeenCalledOnce()
+  })
+})
+
+it('retains partial connector failures and does not reinstall successful packages', async () => {
+  vi.mocked(selectDeveloperExtension).mockResolvedValue(['/tmp/design.zip', '/tmp/marketing.zip'])
+  const install = vi.fn().mockResolvedValueOnce({ warning: '套件已安装，连接器需要处理：存储失败' }).mockResolvedValue(undefined)
+  const close = vi.fn()
+  await fixture(<ExtensionUploadDialog kind="expert-kit" onInstall={install} onClose={close} />, async (container) => {
+    await click(container, '.extension-dropzone')
+    await click(container, 'footer button')
+    expect(close).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('连接器需要处理')
+    expect(container.querySelector<HTMLButtonElement>('footer button')!.disabled).toBe(true)
+    expect(install).toHaveBeenCalledTimes(2)
+  })
+})
+
+it('blocks repeat submission and closing while installing', async () => {
+  vi.mocked(selectDeveloperExtension).mockResolvedValue(['/tmp/design.zip'])
+  let finish!: () => void
+  const install = vi.fn(() => new Promise<void>((resolve) => { finish = resolve }))
+  const close = vi.fn()
+  await fixture(<ExtensionUploadDialog kind="expert-kit" onInstall={install} onClose={close} />, async (container) => {
+    await click(container, '.extension-dropzone')
+    await click(container, 'footer button')
+    await click(container, 'footer button')
+    await act(async () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+    expect(install).toHaveBeenCalledOnce()
+    expect(close).not.toHaveBeenCalled()
+    expect(container.querySelector<HTMLButtonElement>('.extension-dropzone')!.disabled).toBe(true)
+    await act(async () => finish())
+    expect(close).toHaveBeenCalledOnce()
   })
 })

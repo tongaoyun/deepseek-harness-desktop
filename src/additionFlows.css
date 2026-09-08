@@ -16,3 +16,11 @@
 .composer-cascade .composer-category-tabs { display: flex; flex-direction: column; gap: 1px; border: 0; padding: 0; }.composer-cascade .composer-category-tabs button { display: flex; justify-content: flex-start; gap: 9px; width: 100%; padding: 8px; border: 0; border-radius: 5px; font-size: 12px; background: transparent; color: #444; }.composer-cascade .composer-category-tabs button span { flex: 1; text-align: left; }.composer-cascade .composer-category-tabs button > svg:last-child { transform: rotate(-90deg); }.composer-cascade .composer-category-tabs button[aria-selected=true] { background: #f2f2f2; }
 .task-composer .composer-cascade .composer-add-file { margin: 0; border: 0; padding: 8px; min-height: 30px; background: transparent; font-size: 12px; }.composer-cascade-panel .composer-context-search { margin: 3px; }.composer-cascade-panel .composer-option-list { max-height: 245px; }.composer-cascade-panel footer { display: grid; gap: 5px; padding: 9px 5px 4px; }.composer-cascade-panel footer span { display: none; }.composer-cascade-panel footer button { text-align: left; font-size: 12px; }
 @media (max-width: 600px) { .task-composer .composer-context-menu.composer-cascade { grid-template-columns: 115px minmax(0,1fr); }.composer-cascade-panel .composer-option-list { max-height: 180px; } }
+.extension-upload-queue { list-style: none; padding: 0; margin: 14px 0; max-height: 240px; overflow-y: auto; }
+.extension-upload-queue li { display: grid; grid-template-columns: 16px minmax(0, 1fr) 28px; align-items: start; gap: 9px; padding: 10px 0; border-bottom: 1px solid #e7e7e7; }
+.extension-upload-queue strong, .extension-upload-queue small { display: block; overflow-wrap: anywhere; font-size: 12px; }
+.extension-upload-queue small { margin-top: 4px; color: #707070; }
+.extension-upload-queue .failed small, .extension-upload-queue .warning small { color: #a34636; }
+.extension-upload-queue .installed > svg { color: #33744a; }
+.extension-upload-queue button { width: 28px; height: 28px; display: grid; place-items: center; border: 0; background: transparent; color: #707070; }
+.connector-health.authentication-required, .connector-health.access-denied { color: #a05a4f; }

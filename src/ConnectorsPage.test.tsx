@@ -114,4 +114,19 @@ describe('connector local configuration', () => {
     expect(onDelete).toHaveBeenCalledWith('crm')
     await act(async () => root.unmount())
   })
+
+  it.each([['authentication-required', '待授权'], ['access-denied', '无访问权限']] as const)('shows %s separately from connection failure', async (status, label) => {
+    const root = createRoot(container)
+    try {
+      await act(async () => root.render(<ConnectorsPage
+        catalog={[{ ...catalog, environment: {} }]} catalogError="" loading={false} query="" syncError=""
+        personalIds={['crm']} onEdit={vi.fn()} onDelete={vi.fn()}
+        onDiagnose={async () => ({ id: 'crm', status, latencyMs: 10, discoveredTools: [], missingTools: [], undeclaredTools: [] })}
+        runtime={[{ ...catalog, environment: {}, enabled: true } as ConnectorRuntimeDefinition]} secrets={{}}
+        onToggle={vi.fn()} onSaveSecrets={vi.fn()} />))
+      expect(container.querySelector('.connector-health')?.textContent).toContain(label)
+      expect(container.querySelector('.connector-health')?.textContent).not.toContain('连接失败')
+      expect(container.textContent).not.toContain('服务没有返回工具')
+    } finally { await act(async () => root.unmount()) }
+  })
 })

@@ -5,6 +5,9 @@ import {
   Client,
   SSEClientTransport,
   StreamableHTTPClientTransport,
+  SdkHttpError,
+  SseError,
+  UnauthorizedError,
   type CallToolResult,
   type Tool,
   type Transport,
@@ -38,7 +41,7 @@ export interface Config {
   employeeBearerTokenEnv?: string
 }
 
-export type ConnectorDiagnosticStatus = 'ready' | 'drift' | 'unavailable'
+export type ConnectorDiagnosticStatus = 'ready' | 'drift' | 'authentication-required' | 'access-denied' | 'unavailable'
 
 export interface ConnectorDiagnosticResult {
   id: string
@@ -197,14 +200,17 @@ export async function diagnoseConnector(
       undeclaredTools: comparison.undeclaredTools,
     }
   } catch (error) {
+    const status = diagnosticFailureStatus(error)
     return {
       id: connector.id,
-      status: 'unavailable',
+      status,
       latencyMs: elapsedMilliseconds(startedAt),
       discoveredTools: [],
-      missingTools: uniqueSorted(connector.allowedTools),
+      missingTools: [],
       undeclaredTools: [],
-      error: diagnosticError(error, employeeToken, [
+      error: status === 'authentication-required' ? '服务需要登录授权或凭据已失效'
+        : status === 'access-denied' ? '当前凭据没有访问权限'
+        : diagnosticError(error, employeeToken, [
         ...Object.values(connector.headers ?? {}),
         ...Object.values(connector.environment ?? {}),
       ]),
@@ -212,6 +218,14 @@ export async function diagnoseConnector(
   } finally {
     if (client) await closeQuietly(client)
   }
+}
+
+export function diagnosticFailureStatus(error: unknown): ConnectorDiagnosticStatus {
+  if (error instanceof UnauthorizedError) return 'authentication-required'
+  const status = error instanceof SdkHttpError ? error.status : error instanceof SseError ? error.code : undefined
+  if (status === 401) return 'authentication-required'
+  if (status === 403) return 'access-denied'
+  return 'unavailable'
 }
 
 export function compareConnectorTools(
