@@ -1,4 +1,8 @@
-import type { ExpertKitView } from './expertKits'
+import type { ExpertKitView, ExtensionDocument } from './expertKits'
+
+export function expertKitSkillPrompt(kitId: string, skill: Pick<ExtensionDocument, 'id' | 'name'>): string {
+  return `/kit:${kitId} 请使用套件中的「${skill.name}」（${skill.id}）技能。\n\n`
+}
 
 export function expertKitChanges(kit: ExpertKitView): string[] {
   if (kit.installState !== 'update' || !kit.installed) return []

@@ -1,7 +1,6 @@
-import { BookOpenCheck, CheckCircle2, PlugZap, Trash2, WandSparkles } from 'lucide-react'
-import { useEffect } from 'react'
-import { ExtensionDetailLayout } from './ExtensionDetailLayout'
-import { InstalledExtensionControls } from './InstalledExtensionControls'
+import { BookOpenCheck, PlugZap, Trash2, WandSparkles, MoreHorizontal, MessageSquare } from 'lucide-react'
+import { ExtensionReaderDialog } from './ExtensionReaderDialog'
+import { ExtensionActionMenu, InstalledExtensionControls } from './InstalledExtensionControls'
 import { ExtensionContentsPanel } from './ExtensionContentsPanel'
 import { extensionCategoryLabel } from './extensionCategories'
 import type { SkillView } from './skills'
@@ -25,36 +24,25 @@ interface SkillDetailsModalProps {
 export function SkillDetailsModal({
   skill, connectors, knowledgeBases, installing, removing, onClose, onInstall, onRemove, onUse, onCustomize, onExport, onChanged,
 }: SkillDetailsModalProps) {
-  useEffect(() => {
-    const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose() }
-    document.addEventListener('keydown', escape)
-    return () => document.removeEventListener('keydown', escape)
-  }, [onClose])
-
   const connectorById = new Map(connectors.map((connector) => [connector.id, connector]))
   const knowledgeByReference = new Map(knowledgeBases.map((entry) => [entry.reference, entry]))
   const issues = [...skill.connectorIssues, ...skill.knowledgeIssues]
   const state = skill.installState === 'retired' ? '已下架' : skill.installState === 'installed' ? '已安装' : skill.installState === 'update' ? '更新确认' : '安装确认'
-  return <ExtensionDetailLayout titleId="skill-title" onClose={onClose} actions={<>
+  return <ExtensionReaderDialog title={skill.name} onClose={onClose} heading={<>
+      <div className="extension-profile"><span><WandSparkles size={22} /></span><div><h2>{skill.name}</h2><p className="extension-reader-meta">v{skill.installedVersion ?? skill.version} · {skill.localOnly ? '本地技能' : state} · {extensionCategoryLabel(skill.category)}</p></div></div>
+      <p className="extension-reader-summary">{skill.summary}</p>
+    </>} actions={<>
         {skill.installed && skill.installState !== 'retired' && <InstalledExtensionControls extension={skill.installed} onChanged={onChanged} onCustomize={onCustomize} onExport={onExport} />}
 
-        {onRemove && <button className="danger" disabled={removing} onClick={onRemove} type="button"><Trash2 size={14} />{removing ? '正在卸载…' : '卸载技能'}</button>}
-        {onUse && <button onClick={onUse} type="button">在对话中使用</button>}
+        {onRemove && <ExtensionActionMenu label="更多操作" icon={<MoreHorizontal size={16} />}><button className="danger" disabled={removing} onClick={onRemove} type="button"><Trash2 size={14} />{removing ? '正在卸载…' : '卸载技能'}</button></ExtensionActionMenu>}
+        {onUse && <button onClick={onUse} type="button"><MessageSquare size={14} />使用</button>}
         {skill.installState === 'retired' ? null : skill.installState === 'installed'
           ? null
           : skill.installState === 'update'
             ? <button disabled={installing || !skill.sha256} onClick={onInstall} type="button">{installing ? '正在校验并安装…' : '确认更新'}</button>
             : <button disabled={installing || !skill.sha256} onClick={onInstall} type="button">{installing ? '正在校验并安装…' : '确认安装'}</button>}
   </>}>
-      <div className="expert-modal-heading">
-        <span><WandSparkles size={22} /></span>
-        <div><small>{state} · 独立技能 · {extensionCategoryLabel(skill.category)} · v{skill.version}</small><h2 id="skill-title">{skill.name}</h2><p>{skill.summary}</p></div>
-      </div>
-      <div className={`expert-dependency-state ${skill.readiness}`}>
-        {skill.readiness === 'ready'
-          ? <><CheckCircle2 size={15} /><span>当前员工所需的连接器、工具和知识库均已就绪</span></>
-          : <><PlugZap size={15} /><span>安装后部分能力暂不可用：{issues.join('；')}</span></>}
-      </div>
+      {issues.length > 0 && <div className="expert-dependency-state partial"><PlugZap size={15} /><span>部分能力暂不可用：{issues.join('；')}</span></div>}
       {skill.installState === 'update' && <section className="expert-detail-section update-changes">
         <h3>从 v{skill.installedVersion} 更新</h3>
         <p>独立技能制品内容或触发场景已更新，安装后对新会话生效。</p>
@@ -63,19 +51,19 @@ export function SkillDetailsModal({
         <strong>该技能已从公司目录下架，桌面端和 IM 均不会再加载或执行它。</strong>
         <p>本地文件仅用于显示状态，可安全卸载；历史任务记录不会删除。</p>
       </section>}
-      <section className="expert-detail-section">
+      {skill.triggers.length > 0 && <section className="expert-detail-section">
         <h3>触发场景</h3>
-        <div className="connector-tools">{skill.triggers.join(' · ') || '未设置关键词，由小胤按任务语义自动匹配'}</div>
-      </section>
+        <div className="connector-tools">{skill.triggers.join(' · ')}</div>
+      </section>}
       {skill.installed && <ExtensionContentsPanel extension={skill.installed} />}
-      <section className="expert-detail-section">
+      {(skill.connectorRefs.length > 0 || skill.knowledgeBaseRefs.length > 0 || skill.requiredTools.length > 0) && <section className="expert-detail-section">
         <h3>依赖能力</h3>
         <div className="expert-content-groups">
-          <div><h4><PlugZap size={14} />连接器 {skill.connectorRefs.length}</h4><p>{skill.connectorRefs.map((id) => connectorById.get(id)?.name ?? id).join(' · ') || '不使用连接器'}</p></div>
-          <div><h4><BookOpenCheck size={14} />知识库 {skill.knowledgeBaseRefs.length}</h4><p>{skill.knowledgeBaseRefs.map((id) => knowledgeByReference.get(id)?.name ?? id).join(' · ') || '不绑定知识库'}</p></div>
-          <div><h4><WandSparkles size={14} />工具 {skill.requiredTools.length}</h4><p>{skill.requiredTools.join(' · ') || '不声明额外工具'}</p></div>
+          {skill.connectorRefs.length > 0 && <div><h4><PlugZap size={14} />连接器 {skill.connectorRefs.length}</h4><p>{skill.connectorRefs.map((id) => connectorById.get(id)?.name ?? id).join(' · ')}</p></div>}
+          {skill.knowledgeBaseRefs.length > 0 && <div><h4><BookOpenCheck size={14} />知识库 {skill.knowledgeBaseRefs.length}</h4><p>{skill.knowledgeBaseRefs.map((id) => knowledgeByReference.get(id)?.name ?? id).join(' · ')}</p></div>}
+          {skill.requiredTools.length > 0 && <div><h4><WandSparkles size={14} />工具 {skill.requiredTools.length}</h4><p>{skill.requiredTools.join(' · ')}</p></div>}
         </div>
-      </section>
+      </section>}
 
-  </ExtensionDetailLayout>
+  </ExtensionReaderDialog>
 }

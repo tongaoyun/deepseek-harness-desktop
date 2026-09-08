@@ -1,5 +1,5 @@
-import { FolderOpen, Share2, ChevronDown, Download } from 'lucide-react'
-import { useRef, useState } from 'react'
+import { FolderOpen, Share2, Download, Pencil } from 'lucide-react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { revealExtensionDirectory, setExtensionEnabled } from './expertKits'
 import type { InstalledExpertKit } from './types'
 
@@ -26,9 +26,28 @@ export function InstalledExtensionControls({ extension, onChanged, onCustomize, 
       setError('')
       try { await revealExtensionDirectory(extension) } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
     }} title="在文件夹中显示" type="button"><FolderOpen size={15} /></button>
-    {onCustomize && <button className="secondary" onClick={onCustomize} title="创建可编辑副本，在对话中定制" type="button">定制</button>}
-    {onExport && <details className="extension-share-menu"><summary><Share2 size={14} />分享<ChevronDown size={13} /></summary><div><button onClick={(event) => { event.currentTarget.closest('details')?.removeAttribute('open'); onExport() }} type="button"><Download size={14} />导出为 ZIP 包</button><p>导出后可发送给同事导入使用</p></div></details>}
+    {onCustomize && <button aria-label="自定义修改" className="secondary" onClick={onCustomize} title="自定义修改" type="button"><Pencil size={15} /></button>}
+    {onExport && <ExtensionActionMenu label="分享" icon={<Share2 size={15} />}><button onClick={onExport} type="button"><Download size={14} />导出为 ZIP 包</button></ExtensionActionMenu>}
     <span className="extension-enable-label">在聊天中启用<ExtensionEnableSwitch extension={extension} onChanged={onChanged} /></span>
     {error && <span className="extension-action-error" role="alert">{error}</span>}
   </>
+}
+
+export function ExtensionActionMenu({ label, icon, children }: { label: string; icon: ReactNode; children: ReactNode }) {
+  const menu = useRef<HTMLDetailsElement>(null)
+  useEffect(() => {
+    const dismiss = (event: MouseEvent) => { if (menu.current && !menu.current.contains(event.target as Node)) menu.current.open = false }
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && menu.current?.open) {
+        event.preventDefault(); event.stopImmediatePropagation()
+        menu.current.open = false; menu.current.querySelector('summary')?.focus()
+      }
+    }
+    document.addEventListener('mousedown', dismiss)
+    document.addEventListener('keydown', escape, true)
+    return () => { document.removeEventListener('mousedown', dismiss); document.removeEventListener('keydown', escape, true) }
+  }, [])
+  return <details ref={menu} className="extension-share-menu" data-popover><summary aria-label={label} title={label}>{icon}</summary><div onClick={(event) => {
+    if ((event.target as HTMLElement).closest('button:not(:disabled)') && menu.current) menu.current.open = false
+  }}>{children}</div></details>
 }

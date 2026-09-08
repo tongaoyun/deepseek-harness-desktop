@@ -13,7 +13,7 @@ afterEach(() => vi.resetAllMocks())
 const extension = { enabled: true, installPath: '/extensions/demo', source: 'developer', manifest: { kind: 'expert-kit', id: 'demo', version: '1.0.0', name: '测试套件' } } as InstalledExpertKit
 
 it('reads real installed sources and opens individual skill instructions', async () => {
-  vi.mocked(readExtensionContents).mockResolvedValue({ readme: '# 套件介绍', commands: [], skills: [{ id: 'ext-123456', name: '审查步骤', path: 'skills/review/SKILL.md', content: '---\nname: review\n---\n# 审查步骤\n\n检查实际变更。' }] })
+  vi.mocked(readExtensionContents).mockResolvedValue({ readme: '# 套件介绍', commands: [], skills: [{ id: 'ext-123456', name: '审查步骤', summary: '检查实际变更', userInvocable: true, path: 'skills/review/SKILL.md', content: '---\nname: review\n---\n# 审查步骤\n\n检查实际变更。' }] })
   const container = document.body.appendChild(document.createElement('div'))
   const root = createRoot(container)
   try {
@@ -22,11 +22,14 @@ it('reads real installed sources and opens individual skill instructions', async
     const opener = container.querySelector<HTMLButtonElement>('.extension-source-list button')!
     expect(opener.textContent).toContain('审查步骤')
     expect(opener.textContent).not.toContain('ext-123456')
+    expect(opener.textContent).toContain('检查实际变更')
+    expect(opener.textContent).not.toContain('SKILL.md')
+    expect(container.querySelector('.extension-readme details')).toBeNull()
     opener.focus()
     await act(async () => opener.click())
     expect(container.querySelector('[role="dialog"]')?.textContent).toContain('审查步骤')
     expect(container.querySelector('[role="dialog"]')?.getAttribute('aria-label')).toBe('审查步骤')
-    expect(container.querySelector('.extension-markdown')?.textContent).not.toContain('name: review')
+    expect(container.querySelector('[role="dialog"] .extension-markdown')?.textContent).not.toContain('name: review')
     expect(document.activeElement).toBe(container.querySelector('[aria-label="关闭原文"]'))
     await act(async () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })))
     expect(document.activeElement).toBe(container.querySelector('[aria-label="关闭原文"]'))

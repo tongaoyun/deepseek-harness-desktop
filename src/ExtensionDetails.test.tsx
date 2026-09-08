@@ -1,0 +1,81 @@
+// @vitest-environment jsdom
+import { act } from 'react'
+import { createRoot } from 'react-dom/client'
+import { afterEach, expect, it, vi } from 'vitest'
+import { ExpertKitDetailsModal } from './ExpertKitDetailsModal'
+import { SkillDetailsModal } from './SkillDetailsModal'
+import { readExtensionContents, type ExpertKitView, type ExtensionDocument } from './expertKits'
+import type { SkillView } from './skills'
+
+vi.mock('./expertKits', () => ({ readExtensionContents: vi.fn(), setExtensionEnabled: vi.fn(), revealExtensionDirectory: vi.fn() }))
+Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
+afterEach(() => vi.resetAllMocks())
+const api: ExtensionDocument = { id: 'api-design', name: 'API接口设计', summary: '请求与响应结构标准化', path: 'skills/api-design/SKILL.md', content: '---\nname: api-design\n---\n# API接口设计\n\n检查接口。', userInvocable: true }
+const background: ExtensionDocument = { ...api, id: 'internal', name: '后台知识', path: 'skills/internal/SKILL.md', userInvocable: false }
+const kit: ExpertKitView = {
+  id: 'fullstack-dev-expert', name: '全栈开发专家', version: '1.0.1', summary: '覆盖前后端开发与测试', category: 'code-development', minimumDesktopVersion: '0.1.30',
+  commandIds: [], skillIds: [api.id, background.id], connectorRefs: [], requiredTools: [], knowledgeBaseRefs: [], serverWorkflows: [], sha256: '',
+  installState: 'installed', readiness: 'ready', connectorIssues: [], knowledgeIssues: [], localOnly: false,
+  installed: { source: 'catalog', enabled: true, installPath: '/extensions/fullstack', manifest: {
+    schemaVersion: '2', kind: 'expert-kit', id: 'fullstack-dev-expert', name: '全栈开发专家', version: '1.0.1', summary: '覆盖前后端开发与测试', category: 'code-development', minimumDesktopVersion: '0.1.30',
+    skills: [api, background], commands: [], connectorRefs: [], requiredTools: [], knowledgeBaseRefs: [], serverWorkflows: [],
+  } },
+}
+
+it('uses the selected skill, keeps non-invocable knowledge readable, and closes only the nested reader', async () => {
+  vi.mocked(readExtensionContents).mockResolvedValue({ readme: '# 开发流程', skills: [api, background], commands: [] })
+  const onClose = vi.fn(), onUseSkill = vi.fn()
+  const container = document.body.appendChild(document.createElement('div'))
+  const root = createRoot(container)
+  const render = (value = kit) => <ExpertKitDetailsModal kit={value} skills={[]} connectors={[]} knowledgeBases={[]} installing={false} removing={false} onClose={onClose} onInstall={vi.fn()} onSchedule={vi.fn()} onUseSkill={onUseSkill} />
+  try {
+    await act(async () => root.render(render()))
+    expect(container.querySelector('.expert-dependency-state')).toBeNull()
+    expect(container.textContent).not.toContain('不绑定知识库')
+    expect(container.querySelectorAll('.detail-command-list button')).toHaveLength(1)
+    expect(container.querySelectorAll('.extension-source-list button')).toHaveLength(2)
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="使用技能：API接口设计"]')!.click())
+    expect(onUseSkill).toHaveBeenLastCalledWith(api)
+    const opener = container.querySelector<HTMLButtonElement>('[aria-label="知识技能：API接口设计"]')!
+    opener.focus()
+    await act(async () => opener.click())
+    expect(container.querySelector('[role="dialog"]')?.textContent).toContain('来自 全栈开发专家')
+    await act(async () => container.querySelector<HTMLButtonElement>('footer button')!.click())
+    expect(onUseSkill).toHaveBeenCalledTimes(2)
+    await act(async () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+    expect(onClose).not.toHaveBeenCalled()
+    expect(container.querySelector('[role="dialog"]')).toBeNull()
+    expect(document.activeElement).toBe(opener)
+    await act(async () => root.render(render({ ...kit, installed: { ...kit.installed!, enabled: false } })))
+    expect(container.querySelector<HTMLButtonElement>('.detail-command-list button')!.disabled).toBe(true)
+    await act(async () => opener.click())
+    expect(container.querySelector('footer')).toBeNull()
+  } finally { await act(async () => root.unmount()); container.remove() }
+})
+
+it('opens standalone skills in a focused reader and returns focus to the catalog', async () => {
+  vi.mocked(readExtensionContents).mockResolvedValue({ readme: '', skills: [api], commands: [] })
+  const skill: SkillView = { ...kit, sourceKitId: '', triggers: [], installed: { ...kit.installed!, manifest: { ...kit.installed!.manifest, kind: 'skill' } } }
+  const onClose = vi.fn(), onUse = vi.fn()
+  const opener = document.body.appendChild(document.createElement('button'))
+  opener.focus()
+  const container = document.body.appendChild(document.createElement('div'))
+  const root = createRoot(container)
+  try {
+    await act(async () => root.render(<SkillDetailsModal skill={skill} connectors={[]} knowledgeBases={[]} installing={false} removing={false} onClose={onClose} onInstall={vi.fn()} onUse={onUse} onRemove={vi.fn()} />))
+    expect(container.querySelector('[role="dialog"][aria-modal="true"]')).not.toBeNull()
+    expect(document.activeElement).toBe(container.querySelector('[aria-label="关闭原文"]'))
+    expect(container.querySelector('.extension-reader-body')?.textContent).toContain('检查接口。')
+    expect(container.textContent).not.toContain('已就绪')
+    expect(container.textContent).not.toContain('触发场景')
+    const menu = container.querySelector('details')!
+    menu.open = true
+    await act(async () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+    expect(menu.open).toBe(false)
+    expect(onClose).not.toHaveBeenCalled()
+    await act(async () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+    expect(onClose).toHaveBeenCalledOnce()
+    await act(async () => root.unmount())
+    expect(document.activeElement).toBe(opener)
+  } finally { container.remove(); opener.remove() }
+})

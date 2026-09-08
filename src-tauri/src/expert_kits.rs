@@ -1537,10 +1537,8 @@ fn installed_kit(
     directory: &Path,
     source: InstallSource,
 ) -> InstalledExpertKit {
-    if source == InstallSource::Developer
-        && let Some(name) = compatibility::presentation_name(directory, &manifest)
-    {
-        manifest.name = name;
+    if source == InstallSource::Developer {
+        compatibility::apply_presentation(directory, &mut manifest);
     }
     InstalledExpertKit {
         enabled: !directory

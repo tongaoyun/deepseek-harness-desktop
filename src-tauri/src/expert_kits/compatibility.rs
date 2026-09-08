@@ -29,8 +29,10 @@ pub(super) fn normalize_package(root: &Path, kind: Option<&str>) -> Result<(), S
         let id = portable_id(name);
         let display_name = plugin_display_name(&plugin).unwrap_or(name);
         let summary = plugin
-            .get("description")
+            .get("descriptionZh")
             .and_then(Value::as_str)
+            .filter(|value| !value.trim().is_empty())
+            .or_else(|| plugin.get("description").and_then(Value::as_str))
             .unwrap_or(name);
         let version = plugin
             .get("version")
@@ -93,8 +95,9 @@ pub(super) fn normalize_package(root: &Path, kind: Option<&str>) -> Result<(), S
                 .find_map(|line| line.strip_prefix("# ").map(str::to_owned))
                 .unwrap_or(fallback[..22].into())
         });
-        let summary = metadata(&content, "description").unwrap_or_else(|| name.clone());
-        let manifest = json!({"schemaVersion":"1", "id":portable_id(&name), "name":name,
+        let display_name = workbench::document_name(&content, &name);
+        let summary = metadata(&content, "description").unwrap_or_else(|| display_name.clone());
+        let manifest = json!({"schemaVersion":"1", "id":portable_id(&name), "name":display_name,
             "version":"1.0.0", "summary":summary, "minimumDesktopVersion":"0.1.30", "category":"other"});
         write_file(
             root,
@@ -156,21 +159,46 @@ fn portable_plugin(root: &Path) -> Result<Option<Value>, String> {
     Ok(Some(selected.clone()))
 }
 
-pub(super) fn presentation_name(root: &Path, manifest: &ExpertKitManifest) -> Option<String> {
-    if manifest.name != manifest.id {
-        return None;
+pub(super) fn apply_presentation(root: &Path, manifest: &mut ExpertKitManifest) {
+    if manifest.kind == "skill" {
+        if let Ok(content) = fs::read_to_string(root.join("SKILL.md"))
+            && (manifest.name == manifest.id
+                || metadata(&content, "name").as_ref() == Some(&manifest.name))
+        {
+            manifest.name = workbench::document_name(&content, &manifest.name);
+        }
+        return;
     }
-    let plugin = portable_plugin(root).ok()??;
-    if portable_id(plugin.get("name")?.as_str()?) != manifest.id
+    let Some(plugin) = portable_plugin(root).ok().flatten() else {
+        return;
+    };
+    if plugin
+        .get("name")
+        .and_then(Value::as_str)
+        .map(portable_id)
+        .as_ref()
+        != Some(&manifest.id)
         || plugin
             .get("version")
             .and_then(Value::as_str)
             .unwrap_or("1.0.0")
             != manifest.version
     {
-        return None;
+        return;
     }
-    plugin_display_name(&plugin).map(str::to_owned)
+    if manifest.name == manifest.id
+        && let Some(name) = plugin_display_name(&plugin)
+    {
+        manifest.name = name.to_owned();
+    }
+    if plugin.get("description").and_then(Value::as_str) == Some(manifest.summary.as_str())
+        && let Some(summary) = plugin
+            .get("descriptionZh")
+            .and_then(Value::as_str)
+            .filter(|value| !value.trim().is_empty())
+    {
+        manifest.summary = summary.to_owned();
+    }
 }
 
 fn read_json(path: &Path) -> Result<Value, String> {
@@ -549,6 +577,43 @@ mod tests {
             assert!(normalize_package(&source.0, Some("expert-kit")).is_err());
             assert!(!source.0.join(KIT_MANIFEST_PATH).exists());
         }
+    }
+
+    #[test]
+    fn presentation_uses_localized_metadata_without_changing_ids_or_custom_labels() {
+        let source = Fixture::new();
+        source.write(".qoder-plugin/plugin.json", r#"{"name":"developer","displayName":"开发专家","description":"Development","descriptionZh":"开发与测试"}"#);
+        source.write(
+            "skills/api/SKILL.md",
+            "---\nname: api-design\n---\n# API接口设计",
+        );
+        normalize_package(&source.0, Some("expert-kit")).unwrap();
+        let mut manifest =
+            load_and_validate_manifest(&source.0, Some("expert-kit"), None, None).unwrap();
+        assert_eq!(manifest.summary, "开发与测试");
+        manifest.name = "developer".into();
+        manifest.summary = "Development".into();
+        apply_presentation(&source.0, &mut manifest);
+        assert_eq!(manifest.name, "开发专家");
+        assert_eq!(manifest.summary, "开发与测试");
+        assert_eq!(manifest.id, "developer");
+        assert_eq!(manifest.skills[0].id, "api-design");
+        manifest.name = "团队专家".into();
+        manifest.summary = "团队规范".into();
+        apply_presentation(&source.0, &mut manifest);
+        assert_eq!(manifest.name, "团队专家");
+        assert_eq!(manifest.summary, "团队规范");
+
+        let standalone = Fixture::new();
+        standalone.write("SKILL.md", "---\nname: api-design\n---\n# API接口设计");
+        normalize_package(&standalone.0, Some("skill")).unwrap();
+        let mut skill =
+            load_and_validate_manifest(&standalone.0, Some("skill"), None, None).unwrap();
+        assert_eq!(skill.id, "api-design");
+        assert_eq!(skill.name, "API接口设计");
+        skill.name = "api-design".into();
+        apply_presentation(&standalone.0, &mut skill);
+        assert_eq!(skill.name, "API接口设计");
     }
 
     #[test]

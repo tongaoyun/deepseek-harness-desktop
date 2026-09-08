@@ -9,6 +9,7 @@ import {
 } from './api'
 import { ErpAuthScreen } from './ErpAuthScreen'
 import { ExpertKitDetailsModal } from './ExpertKitDetailsModal'
+import { expertKitSkillPrompt } from './expertKitDetails'
 import { SkillDetailsModal } from './SkillDetailsModal'
 import {
   customizeExpertKit,
@@ -408,7 +409,7 @@ export default function App() {
 
   useEffect(() => {
     workspaceRef.current?.scrollTo({ top: 0, behavior: 'auto' })
-  }, [page, activeExpertKitId, activeSkillId])
+  }, [page, activeExpertKitId])
 
   const visibleExpertKits = useMemo(
     () => expertKits.filter((item) => extensionMatches(item, extensionQuery, extensionFilter, extensionCategory)),
@@ -1281,7 +1282,7 @@ export default function App() {
 
       <main className={`workspace${(taskPersistence.failures.length || draftSaveError) && page === 'chat' ? ' with-save-warning' : ''}`} ref={workspaceRef}>
         {(taskPersistence.failures.length > 0 || draftSaveError) && <section className="task-save-warning" role="alert"><div><strong>{taskPersistence.failures.length ? `${taskPersistence.failures.length} 个任务尚未保存` : '当前草稿尚未保存'}</strong><p>当前内容仍在内存中，请勿退出应用。切换页面不会清除此提示。</p><details><summary>查看原因</summary>{draftSaveError && <p>{draftSaveError}</p>}{taskPersistence.failures.map((failure) => <p key={failure.task.id}>{failure.task.name}：{failure.detail}</p>)}</details></div><button type="button" disabled={!draftSaveError && taskPersistence.failures.every((failure) => failure.retrying)} onClick={() => { saveCurrentDraft(); void taskPersistence.retry() }}>{!draftSaveError && taskPersistence.failures.every((failure) => failure.retrying) ? '正在保存…' : '重试保存'}</button></section>}
-        {!activeExpertKit && !activeSkill && (page === 'chat' ? (
+        {!activeExpertKit && (page === 'chat' ? (
           <ChatPage
             knowledgeContext={bootstrap && user ? { endpoint: resolveServerEndpoint(bootstrap.endpoints.knowledge), employeeId: user.userId, teamId: user.teamId, accessToken } : undefined}
             key={currentLocalTaskId || 'new-task'}
@@ -1372,7 +1373,7 @@ export default function App() {
             taskContextRestoring={taskContextRestoring}
           />
         ) : (
-          <section className="capability-page" key={`${page}-${capabilityKind}`}>
+          <section className="capability-page" inert={Boolean(activeSkill)} key={`${page}-${capabilityKind}`}>
             {page !== 'schedules' && <div className="capability-page-heading"><div>
             <h1>{page === 'skills' ? capabilityKind === 'packs' ? '专家套件' : '技能' : extensionNav.find((item) => item.id === page)?.label ?? ({ settings: '桌面设置', schedules: '定时任务', im: 'IM 频道' } as Record<string, string>)[page]}</h1>
             <p>{page === 'skills'
@@ -1498,6 +1499,7 @@ export default function App() {
           : activeExpertKit.installed ? () => void removeCatalogArtifact('expert-kit', activeExpertKit.id) : undefined}
         onSchedule={() => { setActiveExpertKitId(''); setPage('schedules') }}
         onUse={activeExpertKit.installed?.enabled !== false && ['installed', 'update'].includes(activeExpertKit.installState) ? (command) => { setActiveExpertKitId(''); startNewTask(`/kit:${activeExpertKit.id}${command ? `:${command}` : ''} `) } : undefined}
+        onUseSkill={activeExpertKit.installed?.enabled !== false && ['installed', 'update'].includes(activeExpertKit.installState) ? (skill) => { setActiveExpertKitId(''); startNewTask(expertKitSkillPrompt(activeExpertKit.id, skill)) } : undefined}
         onConfigureConnectors={() => { setActiveExpertKitId(''); setExtensionQuery(''); setPage('connectors') }}
         onCustomize={['installed', 'update'].includes(activeExpertKit.installState) ? () => void customizeLocalExpertKit(activeExpertKit) : undefined}
         onExport={['installed', 'update'].includes(activeExpertKit.installState) ? () => void exportLocalExpertKit(activeExpertKit) : undefined}

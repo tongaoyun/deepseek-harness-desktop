@@ -51,7 +51,7 @@ export async function listInstalledExtensions(): Promise<InstalledExpertKit[]> {
   return (await inspectInstalledExtensions()).installed
 }
 
-export interface ExtensionDocument { id: string; name: string; path: string; content: string }
+export interface ExtensionDocument { id: string; name: string; summary: string; userInvocable: boolean; path: string; content: string }
 export interface ExtensionContents { readme: string; skills: ExtensionDocument[]; commands: ExtensionDocument[] }
 
 export async function readExtensionContents(kind: 'expert-kit' | 'skill', id: string, version: string): Promise<ExtensionContents> {

@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-#[ignore = "requires XIAOYIN_QODER_KIT_ARCHIVES with the five original Qoder ZIP files"]
+#[ignore = "requires XIAOYIN_QODER_KIT_ARCHIVES with the six original Qoder ZIP files"]
 fn qoder_expert_kit_archives() {
     let archives = PathBuf::from(std::env::var("XIAOYIN_QODER_KIT_ARCHIVES").unwrap());
     let root =
@@ -13,6 +13,7 @@ fn qoder_expert_kit_archives() {
         ("ali1688-buyer-assistant", "1.0.0", "1688买家助手", 5),
         ("ali1688-seller-assistant", "1.0.0", "1688商家助手", 2),
         ("product-management", "1.1.1", "产品管理", 8),
+        ("fullstack-dev-expert", "1.0.0", "全栈开发专家", 8),
     ];
     let mut file_count = 0;
     for (id, version, name, skill_count) in fixtures {
@@ -31,6 +32,32 @@ fn qoder_expert_kit_archives() {
         assert_eq!(installed.manifest.version, version);
         assert_eq!(installed.manifest.name, name);
         assert_eq!(installed.manifest.skills.len(), skill_count);
+        if id == "fullstack-dev-expert" {
+            let names = installed
+                .manifest
+                .skills
+                .iter()
+                .map(|skill| {
+                    let content =
+                        fs::read_to_string(Path::new(&installed.install_path).join(&skill.path))
+                            .unwrap();
+                    workbench::document_name(&content, &skill.id)
+                })
+                .collect::<HashSet<_>>();
+            for name in [
+                "API接口设计",
+                "Java业务开发",
+                "Vue组件开发",
+                "代码审查",
+                "单元测试",
+                "数据库设计",
+                "性能调优",
+                "重构建议",
+            ] {
+                assert!(names.contains(name), "missing display name: {name}");
+            }
+            assert!(installed.manifest.summary.contains("开发"));
+        }
         let mut zip = zip::ZipArchive::new(std::io::Cursor::new(&bytes)).unwrap();
         for index in 0..zip.len() {
             let mut entry = zip.by_index(index).unwrap();
@@ -52,9 +79,9 @@ fn qoder_expert_kit_archives() {
     }
     let inventory = inventory::scan_root(&root).unwrap();
     assert!(inventory.issues.is_empty());
-    assert_eq!(inventory.installed.len(), 5);
+    assert_eq!(inventory.installed.len(), 6);
     fs::remove_dir_all(root).unwrap();
-    println!("Verified 5 original ZIP archives, 51 skills and {file_count} unchanged source files");
+    println!("Verified 6 original ZIP archives, 59 skills and {file_count} unchanged source files");
 }
 
 #[derive(Deserialize)]
