@@ -184,6 +184,8 @@ struct InstallRecord {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InstalledExpertKit {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    author: Option<String>,
     enabled: bool,
     manifest: ExpertKitManifest,
     install_path: String,
@@ -1537,10 +1539,13 @@ fn installed_kit(
     directory: &Path,
     source: InstallSource,
 ) -> InstalledExpertKit {
-    if source == InstallSource::Developer {
-        compatibility::apply_presentation(directory, &mut manifest);
-    }
+    let author = if source == InstallSource::Developer {
+        compatibility::apply_presentation(directory, &mut manifest)
+    } else {
+        None
+    };
     InstalledExpertKit {
+        author,
         enabled: !directory
             .parent()
             .is_some_and(|parent| parent.join(".disabled").exists()),

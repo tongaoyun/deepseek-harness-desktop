@@ -159,7 +159,7 @@ fn portable_plugin(root: &Path) -> Result<Option<Value>, String> {
     Ok(Some(selected.clone()))
 }
 
-pub(super) fn apply_presentation(root: &Path, manifest: &mut ExpertKitManifest) {
+pub(super) fn apply_presentation(root: &Path, manifest: &mut ExpertKitManifest) -> Option<String> {
     if manifest.kind == "skill" {
         if let Ok(content) = fs::read_to_string(root.join("SKILL.md"))
             && (manifest.name == manifest.id
@@ -167,11 +167,9 @@ pub(super) fn apply_presentation(root: &Path, manifest: &mut ExpertKitManifest) 
         {
             manifest.name = workbench::document_name(&content, &manifest.name);
         }
-        return;
+        return None;
     }
-    let Some(plugin) = portable_plugin(root).ok().flatten() else {
-        return;
-    };
+    let plugin = portable_plugin(root).ok().flatten()?;
     if plugin
         .get("name")
         .and_then(Value::as_str)
@@ -184,7 +182,7 @@ pub(super) fn apply_presentation(root: &Path, manifest: &mut ExpertKitManifest) 
             .unwrap_or("1.0.0")
             != manifest.version
     {
-        return;
+        return None;
     }
     if manifest.name == manifest.id
         && let Some(name) = plugin_display_name(&plugin)
@@ -199,6 +197,16 @@ pub(super) fn apply_presentation(root: &Path, manifest: &mut ExpertKitManifest) 
     {
         manifest.summary = summary.to_owned();
     }
+    plugin
+        .get("author")
+        .and_then(|author| {
+            author
+                .as_str()
+                .or_else(|| author.get("name").and_then(Value::as_str))
+        })
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .map(str::to_owned)
 }
 
 fn read_json(path: &Path) -> Result<Value, String> {
@@ -582,7 +590,7 @@ mod tests {
     #[test]
     fn presentation_uses_localized_metadata_without_changing_ids_or_custom_labels() {
         let source = Fixture::new();
-        source.write(".qoder-plugin/plugin.json", r#"{"name":"developer","displayName":"开发专家","description":"Development","descriptionZh":"开发与测试"}"#);
+        source.write(".qoder-plugin/plugin.json", r#"{"name":"developer","displayName":"开发专家","description":"Development","descriptionZh":"开发与测试","author":{"name":"QoderWork"}}"#);
         source.write(
             "skills/api/SKILL.md",
             "---\nname: api-design\n---\n# API接口设计",
@@ -593,14 +601,17 @@ mod tests {
         assert_eq!(manifest.summary, "开发与测试");
         manifest.name = "developer".into();
         manifest.summary = "Development".into();
-        apply_presentation(&source.0, &mut manifest);
+        assert_eq!(
+            apply_presentation(&source.0, &mut manifest).as_deref(),
+            Some("QoderWork")
+        );
         assert_eq!(manifest.name, "开发专家");
         assert_eq!(manifest.summary, "开发与测试");
         assert_eq!(manifest.id, "developer");
         assert_eq!(manifest.skills[0].id, "api-design");
         manifest.name = "团队专家".into();
         manifest.summary = "团队规范".into();
-        apply_presentation(&source.0, &mut manifest);
+        let _ = apply_presentation(&source.0, &mut manifest);
         assert_eq!(manifest.name, "团队专家");
         assert_eq!(manifest.summary, "团队规范");
 
@@ -612,7 +623,7 @@ mod tests {
         assert_eq!(skill.id, "api-design");
         assert_eq!(skill.name, "API接口设计");
         skill.name = "api-design".into();
-        apply_presentation(&standalone.0, &mut skill);
+        let _ = apply_presentation(&standalone.0, &mut skill);
         assert_eq!(skill.name, "API接口设计");
     }
 

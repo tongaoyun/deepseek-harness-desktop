@@ -1,4 +1,4 @@
-import { FolderOpen, Share2, Download, Pencil } from 'lucide-react'
+import { FolderOpen, Share2, Download, Pencil, ChevronDown } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { revealExtensionDirectory, setExtensionEnabled } from './expertKits'
 import type { InstalledExpertKit } from './types'
@@ -17,8 +17,8 @@ export function ExtensionEnableSwitch({ extension, onChanged }: { extension: Ins
   }}><span /></button>{error && <span className="extension-action-error" role="alert">{error}</span>}</span>
 }
 
-export function InstalledExtensionControls({ extension, onChanged, onCustomize, onExport }: {
-  extension: InstalledExpertKit; onChanged?: () => Promise<void> | void; onCustomize?: () => void; onExport?: () => void
+export function InstalledExtensionControls({ extension, onChanged, onCustomize, onExport, showLabels = false }: {
+  extension: InstalledExpertKit; onChanged?: () => Promise<void> | void; onCustomize?: () => void; onExport?: () => void; showLabels?: boolean
 }) {
   const [error, setError] = useState('')
   return <>
@@ -26,14 +26,14 @@ export function InstalledExtensionControls({ extension, onChanged, onCustomize, 
       setError('')
       try { await revealExtensionDirectory(extension) } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
     }} title="在文件夹中显示" type="button"><FolderOpen size={15} /></button>
-    {onCustomize && <button aria-label="自定义修改" className="secondary" onClick={onCustomize} title="自定义修改" type="button"><Pencil size={15} /></button>}
-    {onExport && <ExtensionActionMenu label="分享" icon={<Share2 size={15} />}><button onClick={onExport} type="button"><Download size={14} />导出为 ZIP 包</button></ExtensionActionMenu>}
+    {onCustomize && <button aria-label={showLabels ? '编辑' : '自定义修改'} className={`secondary${showLabels ? ' extension-labelled-action' : ''}`} onClick={onCustomize} title={showLabels ? '编辑套件' : '自定义修改'} type="button"><Pencil size={15} />{showLabels && '编辑'}</button>}
+    {onExport && <ExtensionActionMenu label={showLabels ? '分享此套件' : '分享'} showLabel={showLabels} icon={<Share2 size={15} />}><button onClick={onExport} type="button"><Download size={14} />导出为 ZIP 包</button></ExtensionActionMenu>}
     <span className="extension-enable-label">在聊天中启用<ExtensionEnableSwitch extension={extension} onChanged={onChanged} /></span>
     {error && <span className="extension-action-error" role="alert">{error}</span>}
   </>
 }
 
-export function ExtensionActionMenu({ label, icon, children }: { label: string; icon: ReactNode; children: ReactNode }) {
+export function ExtensionActionMenu({ label, icon, children, showLabel = false }: { label: string; icon: ReactNode; children: ReactNode; showLabel?: boolean }) {
   const menu = useRef<HTMLDetailsElement>(null)
   useEffect(() => {
     const dismiss = (event: MouseEvent) => { if (menu.current && !menu.current.contains(event.target as Node)) menu.current.open = false }
@@ -47,7 +47,7 @@ export function ExtensionActionMenu({ label, icon, children }: { label: string; 
     document.addEventListener('keydown', escape, true)
     return () => { document.removeEventListener('mousedown', dismiss); document.removeEventListener('keydown', escape, true) }
   }, [])
-  return <details ref={menu} className="extension-share-menu" data-popover><summary aria-label={label} title={label}>{icon}</summary><div onClick={(event) => {
+  return <details ref={menu} className={`extension-share-menu${showLabel ? ' extension-labelled-menu' : ''}`} data-popover><summary aria-label={label} title={label}>{icon}{showLabel && <><span>{label}</span><ChevronDown size={13} /></>}</summary><div onClick={(event) => {
     if ((event.target as HTMLElement).closest('button:not(:disabled)') && menu.current) menu.current.open = false
   }}>{children}</div></details>
 }

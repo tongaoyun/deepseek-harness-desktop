@@ -7,6 +7,7 @@ pub struct ExtensionDocument {
     id: String,
     name: String,
     summary: String,
+    argument_hint: String,
     user_invocable: bool,
     path: String,
     content: String,
@@ -79,6 +80,8 @@ pub fn read_extension_contents(
                     id: entry.id.clone(),
                     name: document_name(&content, &entry.id),
                     summary: compatibility::metadata(&content, "description").unwrap_or_default(),
+                    argument_hint: compatibility::metadata(&content, "argument-hint")
+                        .unwrap_or_default(),
                     user_invocable: compatibility::metadata(&content, "user-invocable")
                         .is_none_or(|value| value.trim() != "false"),
                     path: entry.path.clone(),

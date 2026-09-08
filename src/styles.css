@@ -885,6 +885,7 @@ button.skill-postcard:hover { transform: rotate(0) translateY(-3px); }
 .extension-share-menu { position: relative; }
 .extension-share-menu > summary { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 6px; background: #f1f1f1; color: #333; font-size: 12px; cursor: pointer; list-style: none; }
 .extension-share-menu > summary::-webkit-details-marker { display: none; }
+.extension-labelled-menu > summary { display: flex; gap: 8px; width: auto; padding: 0 12px; border-radius: 16px; font-size: 13px; font-weight: 500; }
 .extension-share-menu > div { position: absolute; z-index: 40; top: 34px; right: 0; width: 215px; padding: 8px; border: 1px solid #eee; border-radius: 8px; background: white; box-shadow: 0 8px 24px #0002; }
 .extension-share-menu > div > button { width: 100%; justify-content: flex-start; background: white; color: #333; }
 .extension-share-menu p { margin: 5px 7px; font-size: 11px; color: #888; }
@@ -904,24 +905,36 @@ button.skill-postcard:hover { transform: rotate(0) translateY(-3px); }
 .extension-markdown pre, .extension-markdown table { max-width: 100%; overflow-x: auto; }
 .extension-markdown img { max-width: 100%; height: auto; }
 .extension-reader-backdrop { padding: 24px; }
-.extension-reader-dialog { display: flex; flex-direction: column; width: min(920px, calc(100vw - 48px)); max-height: calc(100dvh - 48px); min-width: 0; min-height: 0; border: 1px solid #e5e5e5; border-radius: 12px; background: #fafafa; box-shadow: 0 16px 48px #0002; letter-spacing: 0; }
+.extension-reader-dialog { display: flex; flex-direction: column; width: min(920px, calc(100vw - 48px)); max-height: calc(100dvh - 48px); min-width: 0; min-height: 0; border: 1px solid #e5e5e5; border-radius: 12px; background: #f0f0f0; box-shadow: 0 16px 48px #0002; letter-spacing: 0; }
 .extension-reader-heading { position: relative; flex-shrink: 0; padding: 24px 64px 18px 26px; max-height: 35dvh; overflow: auto; }
 .extension-reader-heading h2 { margin: 0; color: #252525; font-size: 20px; line-height: 1.5; font-weight: 600; overflow-wrap: anywhere; letter-spacing: 0; }
 .extension-reader-close { position: absolute; top: 22px; right: 20px; display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 6px; color: #626262; background: transparent; cursor: pointer; }
 .extension-reader-close:hover { background: #ececec; }
 .extension-reader-meta { margin: 6px 0 0; color: #888; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
 .extension-reader-summary { margin: 14px 0 0; color: #555; font-size: 13px; line-height: 1.8; overflow-wrap: anywhere; }
-.extension-reader-body { min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 8px 26px 26px; background: #fff; }
+.extension-reader-body { min-height: 0; overflow: auto; overscroll-behavior: contain; margin: 0 8px 8px; padding: 20px; border-radius: 8px; background: #fff; }
 .extension-reader-body > .extension-markdown { margin-top: 0; }
-.extension-reader-actions.expert-modal-actions { position: relative; flex-shrink: 0; align-items: center; flex-wrap: wrap; gap: 8px; margin: 0; padding: 16px 24px; border-top: 1px solid #eee; }
+.extension-reader-title { display: flex; align-items: center; gap: 12px; }
+.extension-reader-title > svg { flex-shrink: 0; color: #888; }
+.extension-reader-actions.expert-modal-actions { position: relative; flex-shrink: 0; align-items: center; flex-wrap: wrap; gap: 8px; margin: 0; padding: 6px 16px 14px; border: 0; }
 .extension-reader-actions.expert-modal-actions button { flex: 0 0 auto; min-width: 32px; min-height: 32px; padding: 6px 10px; border-radius: 6px; background: #202020; font-size: 12px; font-weight: 500; }
 .extension-reader-actions.expert-modal-actions button.secondary { color: #444; background: #eee; }
+.extension-reader-actions.expert-modal-actions .extension-customize-primary { padding: 7px 17px; border-radius: 18px; font-size: 14px; font-weight: 600; background: #141414; }
 .extension-reader-actions .extension-share-menu > div { top: auto; bottom: 40px; }
 .extension-reader-actions.expert-modal-actions .extension-switch { min-width: 32px; min-height: 20px; height: 20px; padding: 3px; border-radius: 20px; background: #d5d5d5; }
 .extension-reader-actions.expert-modal-actions .extension-switch[aria-checked="true"] { background: #95dea7; }
 .extension-profile { display: flex; align-items: center; gap: 16px; }
 .extension-profile > span { display: grid; place-items: center; flex: 0 0 46px; height: 46px; border: 1px solid #e3e3e3; border-radius: 8px; color: #666; background: #fafafa; }
 .extension-profile > div { min-width: 0; }
+.extension-profile-title { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.extension-profile-badge { display: inline-block; padding: 3px 9px; border-radius: 6px; color: #629e85; background: #f0f5f2; font-size: 12px; line-height: 1.5; }
+.extension-readme-preview { position: relative; max-height: 360px; overflow: hidden; padding: 20px; border: 1px solid #e5e5e5; border-radius: 8px; color: #666; background: #f7f7f7; cursor: pointer; }
+.extension-readme-preview:after { position: absolute; right: 0; bottom: 0; left: 0; height: 40px; background: linear-gradient(transparent, #f7f7f7); content: ''; pointer-events: none; }
+.extension-readme-preview:hover { border-color: #c9c9c9; }
+.extension-readme-preview > h3 { display: flex; align-items: center; gap: 9px; margin: 0; color: #858585; }
+.extension-readme-preview .extension-markdown { margin-top: 12px; }
+.extension-readme-preview .extension-markdown > :first-child { margin-top: 0; }
+.extension-readme-preview:focus-visible { outline: 2px solid #659d7a; outline-offset: 3px; }
 .extension-profile h2 { margin: 0; color: #252525; font-size: 22px; font-weight: 600; line-height: 1.5; letter-spacing: 0; overflow-wrap: anywhere; }
 .extension-profile-summary { margin: 22px 0 0; color: #555; font-size: 14px; line-height: 1.8; overflow-wrap: anywhere; }
 .extension-detail-body .expert-content-groups > div, .extension-reader-body .expert-content-groups > div { padding: 8px 0; border: 0; border-radius: 0; }
@@ -1024,13 +1037,14 @@ button.skill-postcard:hover { transform: rotate(0) translateY(-3px); }
 .category-arrow.left { left: -10px; }
 .category-arrow.right { right: -5px; }
 .category-arrow:hover { color: #141414; background: #f5f5f5; }
-.extension-detail-page { min-height: 100%; animation: workbench-fade .18s ease-out; }
+.extension-detail-page { width: min(100%, 100vw); min-width: 0; min-height: 100%; animation: workbench-fade .18s ease-out; }
 .extension-detail-toolbar { position: sticky; top: 0; z-index: 40; display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding: 9px 20px; background: #fff; }
 .detail-back { display: inline-flex; align-items: center; flex-shrink: 0; gap: 7px; padding: 6px 0; border: 0; color: #757575; background: transparent; font-size: 13px; cursor: pointer; }
 .detail-back:hover { color: #141414; }
-.extension-detail-toolbar .expert-modal-actions { flex: 1; align-items: center; flex-wrap: wrap; margin: 0; padding: 0; border: 0; }
+.extension-detail-toolbar .expert-modal-actions { flex: 1; min-width: 0; align-items: center; flex-wrap: wrap; margin: 0; padding: 0; border: 0; }
 .extension-detail-toolbar .expert-modal-actions button { flex: 0 0 auto; min-width: 32px; min-height: 32px; padding: 6px 10px; border-radius: 6px; background: #141414; font-size: 12px; font-weight: 500; }
 .extension-detail-toolbar .expert-modal-actions button.secondary { color: #303030; background: #f0f0f0; }
+.extension-detail-toolbar .expert-modal-actions button.extension-labelled-action { border-radius: 16px; padding: 6px 13px; font-size: 13px; }
 .extension-detail-toolbar .expert-modal-actions button.danger, .extension-reader-actions.expert-modal-actions button.danger { margin-right: 0; color: #a25348; background: #fff4f2; }
 .extension-detail-toolbar .expert-modal-actions .extension-share-menu button, .extension-reader-actions.expert-modal-actions .extension-share-menu button { justify-content: flex-start; width: 100%; color: #444; background: #fff; }
 .extension-detail-toolbar .expert-modal-actions .extension-share-menu button.danger, .extension-reader-actions.expert-modal-actions .extension-share-menu button.danger { color: #a25348; }

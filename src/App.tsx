@@ -9,7 +9,8 @@ import {
 } from './api'
 import { ErpAuthScreen } from './ErpAuthScreen'
 import { ExpertKitDetailsModal } from './ExpertKitDetailsModal'
-import { expertKitSkillPrompt } from './expertKitDetails'
+import { expertKitSkillPrompt, extensionCustomizationPrompt } from './expertKitDetails'
+import type { ExtensionDocument } from './expertKits'
 import { SkillDetailsModal } from './SkillDetailsModal'
 import {
   customizeExpertKit,
@@ -1099,13 +1100,13 @@ export default function App() {
     }
   }
 
-  const customizeLocalExpertKit = async (kit: ExpertKitView | SkillView, kind: 'expert-kit' | 'skill' = 'expert-kit') => {
+  const customizeLocalExpertKit = async (kit: ExpertKitView | SkillView, kind: 'expert-kit' | 'skill' = 'expert-kit', document?: ExtensionDocument) => {
     try {
       const path = await customizeExpertKit(kit.id, kit.installed?.manifest.version ?? kit.version, kind)
       if (path) {
         setActiveExpertKitId('')
         setActiveSkillId('')
-        const cleared = startNewTask(`请帮我定制「${kit.name}」。副本目录：${path}\n先询问我要调整的岗位、工作流程或输出要求，再修改该目录中的文件，保留辅助资源。完成后提醒我从${kind === 'skill' ? '技能' : '专家套件'}页面的“添加 → 上传”窗口选择本地文件夹，再点击“安装”。`)
+        const cleared = startNewTask(extensionCustomizationPrompt(kit.name, path, kind, document))
         const restoreId = taskContextRestoreIdRef.current
         await cleared
         if (restoreId !== taskContextRestoreIdRef.current) return
@@ -1502,6 +1503,7 @@ export default function App() {
         onUseSkill={activeExpertKit.installed?.enabled !== false && ['installed', 'update'].includes(activeExpertKit.installState) ? (skill) => { setActiveExpertKitId(''); startNewTask(expertKitSkillPrompt(activeExpertKit.id, skill)) } : undefined}
         onConfigureConnectors={() => { setActiveExpertKitId(''); setExtensionQuery(''); setPage('connectors') }}
         onCustomize={['installed', 'update'].includes(activeExpertKit.installState) ? () => void customizeLocalExpertKit(activeExpertKit) : undefined}
+        onCustomizeDocument={['installed', 'update'].includes(activeExpertKit.installState) ? (document) => void customizeLocalExpertKit(activeExpertKit, 'expert-kit', document) : undefined}
         onExport={['installed', 'update'].includes(activeExpertKit.installState) ? () => void exportLocalExpertKit(activeExpertKit) : undefined}
       />}
       {activeSkill && <SkillDetailsModal
