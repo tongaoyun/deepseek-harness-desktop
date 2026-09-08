@@ -2,7 +2,7 @@ import { Boxes, Check, Plus, Sparkles } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import type { ExpertKitView } from './expertKits'
 import type { SkillView } from './skills'
-import { ExtensionCategoryBar, type ExtensionFilter } from './ExtensionToolbar'
+import { ExtensionCategoryBar, extensionMatches, type ExtensionFilter } from './ExtensionToolbar'
 import type { ExtensionCategoryFilter } from './extensionCategories'
 import { CapabilityHero } from './CapabilityHero'
 import { CatalogLoading } from './CatalogLoading'
@@ -48,7 +48,7 @@ export function ExpertCatalogPage(props: CommonProps & {
   const installedCount = props.all.filter((item) => item.installState === 'installed' || item.installState === 'update').length
   return <>
     <CapabilityHero kind="experts" />
-    <CatalogHeading filter={props.filter} installedCount={installedCount} marketCount={props.all.filter((item) => item.installState !== 'retired').length} onFilter={props.onFilter} onSort={setSort} sort={sort} />
+    <CatalogHeading filter={props.filter} installedCount={installedCount} marketCount={props.all.filter((item) => extensionMatches(item, '', 'market')).length} onFilter={props.onFilter} onSort={setSort} sort={sort} />
     {props.filter === 'market' && <ExtensionCategoryBar onChange={props.onCategory} value={props.category} />}
     {props.loading && (visible.length === 0 ? <CatalogLoading kind="expert" label="正在同步公司专家套件…" /> : <p className="catalog-refresh-status" role="status">正在同步公司专家套件…</p>)}
     {!props.loading && props.all.length === 0 && <div className="kit-empty">控制中心尚未发布专家套件</div>}
@@ -75,7 +75,7 @@ export function SkillCatalogPage(props: CommonProps & { all: SkillView[]; visibl
   const installedCount = props.all.filter((item) => item.installState === 'installed' || item.installState === 'update').length
   return <>
     <CapabilityHero highlights={props.all.filter((item) => item.installState !== 'retired')} kind="skills" onOpenHighlight={props.onOpen} />
-    <CatalogHeading builtIn filter={props.filter} installedCount={installedCount} marketCount={props.all.filter((item) => !item.localOnly && item.installState !== 'retired').length} onFilter={props.onFilter} onSort={setSort} sort={sort} />
+    <CatalogHeading builtIn filter={props.filter} installedCount={installedCount} marketCount={props.all.filter((item) => extensionMatches(item, '', 'market')).length} onFilter={props.onFilter} onSort={setSort} sort={sort} />
     {props.filter === 'market' && <ExtensionCategoryBar onChange={props.onCategory} value={props.category} />}
     {props.loading && (visible.length === 0 ? <CatalogLoading kind="skill" label="正在同步公司技能…" /> : <p className="catalog-refresh-status" role="status">正在同步公司技能…</p>)}
     {!props.loading && props.all.length === 0 && <div className="kit-empty">控制中心尚未发布独立技能</div>}

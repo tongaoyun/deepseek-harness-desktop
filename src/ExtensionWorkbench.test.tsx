@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
-import { act, type ReactNode } from 'react'
+import { act, useState, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { expect, it, vi } from 'vitest'
 import { ExpertKitDetailsModal } from './ExpertKitDetailsModal'
-import { SkillCatalogPage } from './ExtensionCatalogPages'
+import { ExpertCatalogPage, SkillCatalogPage } from './ExtensionCatalogPages'
+import { extensionMatches, type ExtensionFilter } from './ExtensionToolbar'
 import { ExtensionPageActions } from './ExtensionPageActions'
 import type { ExpertKitView } from './expertKits'
 import type { SkillView } from './skills'
@@ -30,6 +31,28 @@ async function render(element: ReactNode, check: (container: HTMLDivElement) => 
   try { await act(async () => root.render(element)); await check(container) }
   finally { await act(async () => root.unmount()); container.remove() }
 }
+
+it('counts only published kits in the market while retaining local imports in installed kits', async () => {
+  const all: ExpertKitView[] = [kit,
+    ...Array.from({ length: 5 }, (_, index) => ({ ...kit, id: `local-${index}`, localOnly: true })),
+    { ...kit, id: 'retired', installState: 'retired' },
+  ]
+  function Catalog() {
+    const [filter, setFilter] = useState<ExtensionFilter>('market')
+    return <ExpertCatalogPage all={all} visible={all.filter((item) => extensionMatches(item, '', filter))} loading={false} error="" filter={filter} category="all" onFilter={setFilter} onCategory={noop} onOpen={noop} installingId="" />
+  }
+  await render(<Catalog />, async (container) => {
+    const tabs = container.querySelectorAll<HTMLButtonElement>('.catalog-tabs button')
+    expect(tabs[0].textContent).toBe('套件广场 1')
+    expect(tabs[1].textContent).toBe('已安装 6')
+    expect(container.querySelectorAll('.expert-market-grid article')).toHaveLength(1)
+    await act(async () => tabs[1].click())
+    expect(container.querySelectorAll('.expert-market-grid article')).toHaveLength(6)
+    expect(tabs[0].textContent).toBe('套件广场 1')
+    await act(async () => tabs[0].click())
+    expect(container.querySelectorAll('.expert-market-grid article')).toHaveLength(1)
+  })
+})
 
 it('opens skill details from its title and its action without installing', async () => {
   const open = vi.fn()
