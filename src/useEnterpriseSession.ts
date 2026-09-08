@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { listen } from '@tauri-apps/api/event'
-import { clearErpSession, isTauriRuntime, openErpLogin, resolveErpSession, usesLocalDevelopmentSession, type ErpSessionStatus } from './auth'
+import { clearErpSession, isTauriRuntime, openErpLogin, resolveErpSession, sessionFailureMessage, usesLocalDevelopmentSession, type ErpSessionStatus } from './auth'
 
 type AuthState = 'checking' | 'required' | 'authorizing' | 'authenticated' | 'error'
 const RETRY_MS = 15_000
@@ -29,8 +29,12 @@ export function useEnterpriseSession() {
     }
     const openLogin = async (request: number) => {
       if (loginOpened || !current(request)) return
-      await openErpLogin()
-      if (current(request)) loginOpened = true
+      try {
+        await openErpLogin()
+        if (current(request)) loginOpened = true
+      } catch {
+        if (current(request)) setError('无法打开扫码窗口，请重新打开。')
+      }
     }
     async function check() {
       if (disposed || pendingLogout || checking === generation) return
@@ -51,7 +55,8 @@ export function useEnterpriseSession() {
         } else {
           accepted = undefined
           setSession(undefined)
-          setError(authorizingUntil && authorizingUntil <= Date.now() ? '钉钉已确认，但 ERP 会话未建立，请重新扫码。' : '')
+          setError(authorizingUntil && authorizingUntil <= Date.now() ? '钉钉已确认，但 ERP 会话未建立，请重新扫码。' :
+            next.diagnostic?.code === 'session_rejected' ? sessionFailureMessage(next.diagnostic) : '')
           if (authorizingUntil > Date.now()) {
             setState('authorizing')
           } else {
@@ -60,14 +65,16 @@ export function useEnterpriseSession() {
           }
           if (current(request)) schedule(LOGIN_POLL_MS)
         }
-      } catch {
+      } catch (cause) {
         if (!current(request)) return
         // A failed request does not prove logout. Keep only the still-valid session.
+        const accessDenied = cause && typeof cause === 'object' && 'code' in cause && cause.code === 'access_denied'
+        if (accessDenied) accepted = undefined
         if (!accepted || (accepted.expiresAt !== null && accepted.expiresAt * 1_000 <= Date.now())) {
           setSession(undefined)
           setState('error')
         }
-        setError('暂时无法连接 ERP，正在自动重试。')
+        setError(sessionFailureMessage(cause))
         schedule(RETRY_MS)
       } finally {
         if (checking === request) checking = undefined
@@ -113,7 +120,7 @@ export function useEnterpriseSession() {
     document.addEventListener('visibilitychange', wake)
     if (isTauriRuntime() && !usesLocalDevelopmentSession()) {
       void listen<string>('erp-login-progress', (event) => {
-        if (disposed || pendingLogout || event.payload !== 'authorizing') return
+        if (disposed || pendingLogout || accepted || event.payload !== 'authorizing') return
         authorizingUntil = Date.now() + 20_000
         setState('authorizing')
         setError('')

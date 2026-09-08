@@ -56,6 +56,7 @@ Tauri 更新签名使用 Actions Secrets 中的 `TAURI_SIGNING_PRIVATE_KEY` 和 
 | 产品能力与边界 | [产品能力](docs/desktop-alignment.md) |
 | 组件和数据如何协作 | [架构](docs/architecture.md) |
 | 任务、恢复、队列与交付 | [任务执行](docs/task-execution.md) |
+| 登录、会话与诊断 | [登录与会话](docs/login.md) |
 | Skills、套件、连接器 | [扩展](docs/extensions.md) |
 | 文档生成、重算与 PDF | [Office 工具](docs/office.md) |
 | 质量与发布门槛 | [发布验收](docs/system-readiness.md)、[真实任务评测](docs/task-evaluation.md) |

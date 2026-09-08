@@ -3,10 +3,11 @@ import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import type { ErpSessionStatus } from './auth'
+import { listen } from '@tauri-apps/api/event'
 import { useEnterpriseSession } from './useEnterpriseSession'
 
 const { resolve, clear, open } = vi.hoisted(() => ({ resolve: vi.fn(), clear: vi.fn(), open: vi.fn() }))
-vi.mock('./auth', () => ({ resolveErpSession: resolve, clearErpSession: clear, openErpLogin: open, isTauriRuntime: () => true, usesLocalDevelopmentSession: () => false }))
+vi.mock('./auth', async (importOriginal) => ({ ...await importOriginal<typeof import('./auth')>(), resolveErpSession: resolve, clearErpSession: clear, openErpLogin: open, isTauriRuntime: () => true, usesLocalDevelopmentSession: () => false }))
 vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => {}) }))
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 let latest: ReturnType<typeof useEnterpriseSession>
@@ -21,6 +22,7 @@ beforeEach(() => {
   resolve.mockResolvedValue(valid())
   clear.mockResolvedValue(undefined)
   open.mockResolvedValue(undefined)
+  vi.mocked(listen).mockResolvedValue(() => {})
   container = document.body.appendChild(document.createElement('div'))
   root = createRoot(container)
 })
@@ -104,4 +106,42 @@ it('does not silently log back in after credential deletion fails', async () => 
   await act(async () => latest.reopen())
   expect(clear).toHaveBeenCalledTimes(2)
   expect(latest.state).toBe('required')
+})
+
+it('ignores a late QR confirmation after authentication', async () => {
+  await mount()
+  const callback = vi.mocked(listen).mock.calls[0][1]
+  await act(async () => callback({ event: 'erp-login-progress', id: 1, payload: 'authorizing' }))
+  expect(latest.state).toBe('authenticated')
+  expect(latest.accessToken).toBe('fixture')
+  await advance(1_500)
+  expect(resolve).toHaveBeenCalledTimes(1)
+})
+
+it('retries opening the QR window without misclassifying it as a network error', async () => {
+  resolve.mockResolvedValue(loggedOut)
+  open.mockRejectedValueOnce(new Error('window unavailable'))
+  await mount()
+  expect(latest.state).toBe('required')
+  expect(latest.error).toBe('无法打开扫码窗口，请重新打开。')
+  await act(async () => latest.reopen())
+  expect(open).toHaveBeenCalledTimes(2)
+  expect(latest.error).toBe('')
+})
+
+it('drops access immediately when the identity service explicitly denies permission', async () => {
+  await mount()
+  resolve.mockRejectedValue({ code: 'access_denied', httpStatus: 403 })
+  await advance(25 * 60_000)
+  expect(latest.state).toBe('error')
+  expect(latest.accessToken).toBe('')
+  expect(latest.error).toContain('账号权限')
+  expect(open).not.toHaveBeenCalled()
+})
+
+it('distinguishes service failures from logout without exposing response details', async () => {
+  resolve.mockRejectedValue({ code: 'identity_unavailable', httpStatus: 503, message: 'Cookie=secret' })
+  await mount()
+  expect(latest.error).toBe('ERP 身份服务暂时不可用，正在自动重试。')
+  expect(open).not.toHaveBeenCalled()
 })
