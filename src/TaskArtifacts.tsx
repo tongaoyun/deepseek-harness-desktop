@@ -1,6 +1,7 @@
-import { FileSliders, FileSpreadsheet, FileText, FolderSearch } from 'lucide-react'
-import { useState } from 'react'
-import { revealLocalArtifact, type LocalArtifactTarget } from './localArtifactPreview'
+import { FileSliders, FileSpreadsheet, FileText, FolderSearch, Image } from 'lucide-react'
+import { useCallback, useState } from 'react'
+import { loadLocalArtifactPreview, revealLocalArtifact, type LocalArtifactTarget } from './localArtifactPreview'
+import { TaskImagePreview } from './TaskImagePreview'
 import type { TaskArtifact } from './types'
 
 export function TaskArtifacts({ artifacts, conversation = false, onOpen }: { artifacts: TaskArtifact[]; conversation?: boolean; onOpen?: (target: LocalArtifactTarget) => void }) {
@@ -14,7 +15,14 @@ export function TaskArtifacts({ artifacts, conversation = false, onOpen }: { art
 }
 
 function ArtifactCard({ artifact, onError, onOpen }: { artifact: TaskArtifact; onError: (message: string) => void; onOpen?: (target: LocalArtifactTarget) => void }) {
-  const Icon = artifact.kind === 'spreadsheet' ? FileSpreadsheet : artifact.kind === 'presentation' ? FileSliders : FileText
+  const isImage = artifact.kind === 'image' || /\.(png|jpe?g|webp|gif|bmp)$/i.test(artifact.path)
+  const Icon = isImage ? Image : artifact.kind === 'spreadsheet' ? FileSpreadsheet : artifact.kind === 'presentation' ? FileSliders : FileText
+  const { rootId, rootName, path, name } = artifact
+  const loadImage = useCallback(async () => {
+    const preview = await loadLocalArtifactPreview({ rootId, rootName, path, name })
+    if (preview.kind !== 'image' || !preview.dataUrl) throw new Error(preview.truncated ? '图片过大，请打开原文件查看' : '图片暂不可预览')
+    return preview.dataUrl
+  }, [rootId, rootName, path, name])
   const action = artifact.action ?? 'created'
   const target: LocalArtifactTarget = {
     rootId: artifact.rootId, rootName: artifact.rootName, path: artifact.path, name: artifact.name,
@@ -29,7 +37,8 @@ function ArtifactCard({ artifact, onError, onOpen }: { artifact: TaskArtifact; o
       onOpen?.(target)
     }
   }
-  return <article className={`artifact-${artifact.kind}`}>
+  return <article className={`artifact-${isImage ? 'image' : artifact.kind}`}>
+    {isImage && <TaskImagePreview key={`${artifact.id}:${artifact.createdAt}`} name={artifact.name} load={loadImage} />}
     <span><Icon size={17} /></span>
     <div><button className="artifact-name" disabled={!onOpen} onClick={() => onOpen?.(target)} type="button">{artifact.name}</button><small>{actionLabel(artifact.action)}{artifact.sizeBytes !== undefined ? ` · ${formatFileSize(artifact.sizeBytes)}` : ''} · {artifact.rootName} / {artifact.path}</small></div>
     <button disabled={!onOpen} onClick={() => onOpen?.(target)} title="在小胤中打开" type="button">打开</button>

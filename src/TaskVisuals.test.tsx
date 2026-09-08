@@ -57,9 +57,10 @@ it('isolates one failed screenshot, retries it, and traps/restores lightbox focu
     expect(container.querySelectorAll('img')).toHaveLength(2)
     const opener = container.querySelector<HTMLButtonElement>('[aria-label="查看 截图 bad"]')!
     await act(async () => { opener.focus(); opener.click() })
-    expect(document.activeElement?.getAttribute('aria-label')).toBe('关闭截图')
+    expect(document.activeElement?.getAttribute('aria-label')).toBe('关闭图片')
+    expect(document.body.querySelector('[role="dialog"]')).not.toBeNull()
     await act(async () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
-    expect(container.querySelector('[role="dialog"]')).toBeNull()
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull()
     expect(document.activeElement).toBe(opener)
   })
   expect(URL.revokeObjectURL).toHaveBeenCalledTimes(2)

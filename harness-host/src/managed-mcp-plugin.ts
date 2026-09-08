@@ -1,6 +1,8 @@
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
+import type { ContentBlock } from '@deepseek-ai/dsh-sdk-client'
+import { mcpResultContent } from './mcp-result-content.js'
 import {
   Client,
   SSEClientTransport,
@@ -15,7 +17,7 @@ import {
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio'
 
 export const name = 'xiaoyin-managed-mcp'
-export const inject = ['tools']
+export const inject = ['tools', 'attachments']
 
 export interface ManagedConnectorConfig {
   timeoutSeconds?: number
@@ -104,7 +106,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
       )
       for (const tool of tools) {
         const registeredName = uniqueHarnessToolName(connector.id, tool.name, registeredNames)
-        unregisterTools.push(ctx.tools.register(toHarnessTool(client, tool, connector, registeredName)))
+        unregisterTools.push(ctx.tools.register(toHarnessTool(ctx, client, tool, connector, registeredName)))
         registeredNames.add(registeredName)
         if (tool.annotations?.destructiveHint === true && connector.requireWriteApproval) {
           mutatingTools.set(registeredName, connector.name)
@@ -305,6 +307,7 @@ function safeArguments(value: unknown): string {
 }
 
 function toHarnessTool(
+  ctx: Context,
   client: Client,
   tool: Tool,
   connector: ManagedConnectorConfig,
@@ -316,7 +319,7 @@ function toHarnessTool(
     parameters: tool.inputSchema,
     output: {
       schema: {},
-      render: (_args, value) => [{ type: 'text', text: renderValue(value) }],
+      render: (_args, value) => value as unknown as ContentBlock[],
     },
     async execute(args, exec) {
       const result = await client.callTool(
@@ -324,7 +327,7 @@ function toHarnessTool(
         { ...connectorRequestOptions(connector), signal: exec.signal },
       )
       if (result.isError) throw new Error(renderMcpContent(result, connector.name))
-      return canonicalMcpValue(result)
+      return mcpResultContent(result, ctx.attachments, connector.name, exec.signal)
     },
     isConcurrencySafe: () => true,
   }
@@ -337,23 +340,11 @@ function asArguments(value: unknown, connectorName: string): Record<string, unkn
   throw new Error(`${connectorName} MCP 工具参数必须是对象`)
 }
 
-function canonicalMcpValue(result: CallToolResult): unknown {
-  if (result.structuredContent !== undefined) return result.structuredContent
-  const texts = result.content
-    .filter((block): block is Extract<(typeof result.content)[number], { type: 'text' }> => block.type === 'text')
-    .map((block) => block.text)
-  return texts.length === 1 ? texts[0] : texts
-}
-
 function renderMcpContent(result: CallToolResult, connectorName: string): string {
   const texts = result.content
     .filter((block): block is Extract<(typeof result.content)[number], { type: 'text' }> => block.type === 'text')
     .map((block) => block.text)
   return texts.join('\n') || `${connectorName} MCP 工具返回错误`
-}
-
-function renderValue(value: unknown): string {
-  return typeof value === 'string' ? value : JSON.stringify(value, null, 2)
 }
 
 async function cleanup(unregisterTools: Array<() => void>, clients: Client[]): Promise<void> {

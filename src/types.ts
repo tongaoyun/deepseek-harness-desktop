@@ -110,7 +110,7 @@ export interface TaskTimelineEntry {
   completedAt?: string
 }
 
-export type TaskArtifactKind = 'document' | 'spreadsheet' | 'presentation' | 'pdf' | 'text' | 'file'
+export type TaskArtifactKind = 'document' | 'spreadsheet' | 'presentation' | 'pdf' | 'text' | 'image' | 'file'
 
 export interface TaskArtifact {
   id: string
