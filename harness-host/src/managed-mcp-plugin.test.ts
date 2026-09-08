@@ -108,6 +108,41 @@ describe('managed MCP diagnostics', () => {
     })
   })
 
+  it.each(['initialize', 'tools/list'])('distinguishes authorization failures at %s from outages and verifies recovery', async (blockedMethod) => {
+    let status = 401
+    const methods: string[] = []
+    const server = createServer(async (request, response) => {
+      if (request.method !== 'POST') { response.writeHead(405).end(); return }
+      let body = ''
+      for await (const chunk of request) body += chunk
+      const message = JSON.parse(body)
+      methods.push(message.method)
+      if (message.method === blockedMethod && status !== 200) {
+        response.writeHead(status, { 'Content-Type': 'application/json' }).end(JSON.stringify({ error: 'invalid_token', error_description: 'Authentication required' }))
+        return
+      }
+      if (message.id === undefined) { response.writeHead(202).end(); return }
+      const result = message.method === 'initialize'
+        ? { protocolVersion: message.params.protocolVersion, capabilities: { tools: {} }, serverInfo: { name: 'auth-test', version: '1' } }
+        : { tools: [] }
+      response.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ jsonrpc: '2.0', id: message.id, result }))
+    })
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    try {
+      const address = server.address() as { port: number }
+      const connector = { id: 'auth-test', name: 'Auth', version: '1', transport: 'streamable-http' as const, url: `http://127.0.0.1:${address.port}/mcp`, authMode: 'none' as const,
+        command: '', arguments: [], environment: {}, headers: {}, allowedTools: [], requiredTools: [], allowWrite: false, requireWriteApproval: true, required: false }
+      expect(await diagnoseConnector(connector, undefined, 1000)).toMatchObject({ status: 'authentication-required', missingTools: [], error: '服务需要登录授权或凭据已失效' })
+      status = 403
+      expect(await diagnoseConnector(connector, undefined, 1000)).toMatchObject({ status: 'access-denied', error: '当前凭据没有访问权限' })
+      status = 503
+      expect(await diagnoseConnector(connector, undefined, 1000)).toMatchObject({ status: 'unavailable' })
+      status = 200
+      expect(await diagnoseConnector(connector, undefined, 1000)).toMatchObject({ status: 'ready' })
+      expect(methods).not.toContain('tools/call')
+    } finally { server.closeAllConnections(); await new Promise<void>((resolve) => server.close(() => resolve())) }
+  })
+
   it('returns a bounded unavailable result without invoking a tool', async () => {
     const result = await diagnoseConnector({
       id: 'offline-mcp',
@@ -126,7 +161,7 @@ describe('managed MCP diagnostics', () => {
       id: 'offline-mcp',
       status: 'unavailable',
       discoveredTools: [],
-      missingTools: ['sales_summary'],
+      missingTools: [],
     })
     expect(result.error).toBeTruthy()
   })

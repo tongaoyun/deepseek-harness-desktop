@@ -3,9 +3,9 @@ use serde_json::{Value, json};
 
 pub(super) const CONNECTORS_PATH: &str = ".xiaoyin-kit/connectors.json";
 const PLUGIN_PATHS: [&str; 3] = [
+    ".qoder-plugin/plugin.json",
     ".claude-plugin/plugin.json",
     ".qwen-plugin/plugin.json",
-    ".qoder-plugin/plugin.json",
 ];
 
 pub(super) fn has_portable_entry(root: &Path) -> bool {
@@ -17,33 +17,17 @@ pub(super) fn normalize_package(root: &Path, kind: Option<&str>) -> Result<(), S
     if root.join(KIT_MANIFEST_PATH).is_file() || root.join(SKILL_MANIFEST_PATH).is_file() {
         return Ok(());
     }
-    let plugins: Vec<_> = PLUGIN_PATHS
-        .iter()
-        .filter(|path| root.join(path).is_file())
-        .collect();
-    if plugins.len() > 1 {
-        return Err("存在多个插件清单，请保留一个明确的套件入口".into());
-    }
-    if let Some(plugin_path) = plugins.first() {
+    if let Some(plugin) = portable_plugin(root)? {
         if kind == Some("skill") {
             return Err("这是专家套件，请从专家套件入口导入".into());
         }
-        let plugin = read_json(&root.join(plugin_path))?;
         let name = plugin
             .get("name")
             .and_then(Value::as_str)
             .filter(|name| !name.trim().is_empty())
             .ok_or("plugin.json 必须包含 name")?;
-        for feature in ["hooks", "agents", "lspServers"] {
-            if plugin.get(feature).is_some_and(|value| !value.is_null())
-                || root.join(feature).exists()
-            {
-                return Err(format!(
-                    "该套件包含尚不支持转换的 {feature}，请移除此部分后导入；未安装任何内容"
-                ));
-            }
-        }
         let id = portable_id(name);
+        let display_name = plugin_display_name(&plugin).unwrap_or(name);
         let summary = plugin
             .get("description")
             .and_then(Value::as_str)
@@ -88,7 +72,7 @@ pub(super) fn normalize_package(root: &Path, kind: Option<&str>) -> Result<(), S
             });
         }
         let connector_refs = convert_connectors(root, &plugin, &id)?;
-        let manifest = json!({"schemaVersion":"2", "id":id, "name":name, "version":version,
+        let manifest = json!({"schemaVersion":"2", "id":id, "name":display_name, "version":version,
             "summary":summary, "minimumDesktopVersion":"0.1.30", "category":"other",
             "skills":skills, "commands":commands, "connectorRefs":connector_refs});
         write_file(
@@ -121,6 +105,72 @@ pub(super) fn normalize_package(root: &Path, kind: Option<&str>) -> Result<(), S
         return Err("未找到 SKILL.md 或支持的套件清单".into());
     }
     Ok(())
+}
+
+fn plugin_display_name(plugin: &Value) -> Option<&str> {
+    plugin
+        .get("displayName")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+}
+
+// Platform metadata may differ; executable content must describe the same package.
+fn portable_plugin(root: &Path) -> Result<Option<Value>, String> {
+    let plugins = PLUGIN_PATHS
+        .iter()
+        .filter(|path| root.join(path).is_file())
+        .map(|path| read_json(&root.join(path)))
+        .collect::<Result<Vec<_>, _>>()?;
+    let Some(selected) = plugins.first() else {
+        return Ok(None);
+    };
+    let signature = |plugin: &Value| -> Result<Value, String> {
+        for feature in ["hooks", "agents", "lspServers"] {
+            if plugin.get(feature).is_some_and(|value| !value.is_null())
+                || root.join(feature).exists()
+            {
+                return Err(format!(
+                    "该套件包含尚不支持转换的 {feature}，未安装任何内容"
+                ));
+            }
+        }
+        let normalized_paths = |field| -> Result<Vec<String>, String> {
+            let mut values = paths(plugin, field, field)?;
+            values.sort();
+            values.dedup();
+            Ok(values)
+        };
+        Ok(
+            json!({"name":plugin.get("name"), "version":plugin.get("version").unwrap_or(&json!("1.0.0")),
+            "skills":normalized_paths("skills")?, "commands":normalized_paths("commands")?,
+            "mcpServers":connector_config(root, plugin)?}),
+        )
+    };
+    let expected = signature(selected)?;
+    for plugin in plugins.iter().skip(1) {
+        if signature(plugin)? != expected {
+            return Err("多个平台清单的名称、版本或执行内容不一致，请明确套件入口后导入".into());
+        }
+    }
+    Ok(Some(selected.clone()))
+}
+
+pub(super) fn presentation_name(root: &Path, manifest: &ExpertKitManifest) -> Option<String> {
+    if manifest.name != manifest.id {
+        return None;
+    }
+    let plugin = portable_plugin(root).ok()??;
+    if portable_id(plugin.get("name")?.as_str()?) != manifest.id
+        || plugin
+            .get("version")
+            .and_then(Value::as_str)
+            .unwrap_or("1.0.0")
+            != manifest.version
+    {
+        return None;
+    }
+    plugin_display_name(&plugin).map(str::to_owned)
 }
 
 fn read_json(path: &Path) -> Result<Value, String> {
@@ -225,18 +275,25 @@ fn relative(root: &Path, path: &Path) -> Result<String, String> {
         .map_err(|error| error.to_string())
 }
 
-fn convert_connectors(root: &Path, plugin: &Value, kit_id: &str) -> Result<Vec<String>, String> {
-    let config = match plugin.get("mcpServers") {
+fn connector_config(root: &Path, plugin: &Value) -> Result<Value, String> {
+    match plugin.get("mcpServers") {
         Some(Value::String(path)) => {
             let path = path.strip_prefix("./").unwrap_or(path);
             validate_relative_path(Path::new(path))?;
-            read_json(&root.join(path))?
+            read_json(&root.join(path))
         }
-        Some(value) if value.is_object() => value.clone(),
-        Some(_) => return Err("mcpServers 只支持对象或配置文件路径".into()),
-        None if root.join(".mcp.json").is_file() => read_json(&root.join(".mcp.json"))?,
-        None => return Ok(Vec::new()),
-    };
+        Some(value) if value.is_object() => Ok(value.clone()),
+        Some(_) => Err("mcpServers 只支持对象或配置文件路径".into()),
+        None if root.join(".mcp.json").is_file() => read_json(&root.join(".mcp.json")),
+        None => Ok(Value::Null),
+    }
+}
+
+fn convert_connectors(root: &Path, plugin: &Value, kit_id: &str) -> Result<Vec<String>, String> {
+    let config = connector_config(root, plugin)?;
+    if config.is_null() {
+        return Ok(Vec::new());
+    }
     let servers = config
         .get("mcpServers")
         .unwrap_or(&config)
@@ -343,7 +400,7 @@ pub(super) fn portable_id(name: &str) -> String {
 }
 
 /// Only presentation metadata is extracted; the original Skill document remains intact.
-fn metadata(content: &str, key: &str) -> Option<String> {
+pub(super) fn metadata(content: &str, key: &str) -> Option<String> {
     let mut lines = content.trim_start_matches('\u{feff}').lines();
     if lines.next()?.trim() != "---" {
         return None;
@@ -409,6 +466,88 @@ mod tests {
     impl Drop for Fixture {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn equivalent_platform_manifests_preserve_display_names_and_original_files() {
+        let source = Fixture::new();
+        let claude = r#"{"name":"product-design","displayName":"Design","version":"0.5.10","skills":["skills/frame"]}"#;
+        let qoder = r#"{"name":"product-design","displayName":"产品设计","version":"0.5.10","skills":["./skills/frame"],"qoderMarket":{"source":"apphub"}}"#;
+        source.write(".claude-plugin/plugin.json", claude);
+        source.write(".qoder-plugin/plugin.json", qoder);
+        source.write(
+            "skills/frame/SKILL.md",
+            "---\nname: 问题定义\n---\n# 问题定义",
+        );
+        source.write("skills/frame/references/template.md", "原始模板");
+        let root = Fixture::new();
+        let installed = install_package_bytes(
+            &root.0,
+            &source.zip(),
+            Some("expert-kit"),
+            None,
+            None,
+            None,
+            InstallSource::Developer,
+        )
+        .unwrap();
+        assert_eq!(installed.manifest.id, "product-design");
+        assert_eq!(installed.manifest.name, "产品设计");
+        assert_eq!(installed.manifest.skills.len(), 1);
+        let directory = Path::new(&installed.install_path);
+        assert_eq!(
+            fs::read_to_string(directory.join(".claude-plugin/plugin.json")).unwrap(),
+            claude
+        );
+        assert_eq!(
+            fs::read_to_string(directory.join(".qoder-plugin/plugin.json")).unwrap(),
+            qoder
+        );
+        assert_eq!(
+            fs::read_to_string(directory.join("skills/frame/references/template.md")).unwrap(),
+            "原始模板"
+        );
+        let mut manifest = installed.manifest.clone();
+        manifest.name = manifest.id.clone();
+        let before = fs::read(directory.join(KIT_MANIFEST_PATH)).unwrap();
+        assert_eq!(
+            installed_kit(manifest.clone(), directory, InstallSource::Developer)
+                .manifest
+                .name,
+            "产品设计"
+        );
+        assert_eq!(
+            installed_kit(manifest.clone(), directory, InstallSource::Catalog)
+                .manifest
+                .name,
+            "product-design"
+        );
+        manifest.name = "我的设计套件".into();
+        assert_eq!(
+            installed_kit(manifest, directory, InstallSource::Developer)
+                .manifest
+                .name,
+            "我的设计套件"
+        );
+        assert_eq!(fs::read(directory.join(KIT_MANIFEST_PATH)).unwrap(), before);
+    }
+
+    #[test]
+    fn conflicting_platform_manifests_and_secondary_unsupported_features_are_rejected() {
+        for other in [
+            r#"{"name":"other"}"#,
+            r#"{"name":"product-design","version":"2.0.0"}"#,
+            r#"{"name":"product-design","skills":"other-skills"}"#,
+            r#"{"name":"product-design","commands":"other-commands"}"#,
+            r#"{"name":"product-design","mcpServers":{"api":{"url":"https://example.com/mcp"}}}"#,
+            r#"{"name":"product-design","hooks":{}}"#,
+        ] {
+            let source = Fixture::new();
+            source.write(".qoder-plugin/plugin.json", r#"{"name":"product-design"}"#);
+            source.write(".claude-plugin/plugin.json", other);
+            assert!(normalize_package(&source.0, Some("expert-kit")).is_err());
+            assert!(!source.0.join(KIT_MANIFEST_PATH).exists());
         }
     }
 

@@ -69,7 +69,7 @@ export function ExpertKitDetailsModal({
 
       <div className={`expert-dependency-state ${kit.readiness}`}>
         {kit.readiness === 'ready'
-          ? <><CheckCircle2 size={15} /><span>当前员工所需的连接器、工具和知识库均已就绪</span></>
+          ? <><CheckCircle2 size={15} /><span>{kit.connectorRefs.length > 0 ? '依赖配置完整 · 连接与授权状态待检测' : '依赖配置完整'}</span></>
           : <><PlugZap size={15} /><span>安装后部分能力暂不可用：{issues.join('；')}</span></>}
       </div>
 

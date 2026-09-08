@@ -298,7 +298,7 @@ pub async fn select_developer_extension(
     app: tauri::AppHandle,
     kind: String,
     input: Option<String>,
-) -> Result<Option<String>, String> {
+) -> Result<Vec<String>, String> {
     if kind != "expert-kit" && kind != "skill" {
         return Err("仅支持导入专家套件或技能".to_string());
     }
@@ -316,20 +316,22 @@ pub async fn select_developer_extension(
             .set_title(title)
             .add_filter(filter, &["zip", "gz", "md"]);
         if input.as_deref() == Some("directory") {
-            picker.blocking_pick_folder()
+            picker.blocking_pick_folders()
         } else {
-            picker.blocking_pick_file()
+            picker.blocking_pick_files()
         }
     })
     .await
     .map_err(|error| format!("打开专家套件选择器失败：{error}"))?;
-    let Some(selected) = selected else {
-        return Ok(None);
-    };
-    let path = selected
-        .into_path()
-        .map_err(|error| format!("选择的专家套件路径无效：{error}"))?;
-    Ok(Some(path.to_string_lossy().to_string()))
+    selected
+        .unwrap_or_default()
+        .into_iter()
+        .map(|file| {
+            file.into_path()
+                .map(|path| path.to_string_lossy().to_string())
+                .map_err(|error| format!("选择的专家套件路径无效：{error}"))
+        })
+        .collect()
 }
 
 #[tauri::command]
@@ -344,7 +346,13 @@ pub async fn install_developer_extension(
     }
     let selected = match path {
         Some(path) => Some(path),
-        None => select_developer_extension(app.clone(), kind.clone(), input).await?,
+        None => {
+            let mut paths = select_developer_extension(app.clone(), kind.clone(), input).await?;
+            if paths.len() > 1 {
+                return Err("多个扩展请通过上传窗口批量安装".into());
+            }
+            paths.pop()
+        }
     };
     let Some(selected) = selected else {
         return Ok(None);
@@ -1525,10 +1533,15 @@ fn child_directories(root: &Path) -> Result<Vec<PathBuf>, String> {
 }
 
 fn installed_kit(
-    manifest: ExpertKitManifest,
+    mut manifest: ExpertKitManifest,
     directory: &Path,
     source: InstallSource,
 ) -> InstalledExpertKit {
+    if source == InstallSource::Developer
+        && let Some(name) = compatibility::presentation_name(directory, &manifest)
+    {
+        manifest.name = name;
+    }
     InstalledExpertKit {
         enabled: !directory
             .parent()
