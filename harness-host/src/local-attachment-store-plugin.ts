@@ -106,7 +106,7 @@ export default class LocalAttachmentStore extends AttachmentStore {
       variantId: ImageVariantId(`sha256:${variant}`),
       attachment: ref,
       data: stored.data,
-      mediaType: 'image/png',
+      mediaType: ref.mediaType,
       bytes: stored.data.byteLength,
       width: ref.width,
       height: ref.height,

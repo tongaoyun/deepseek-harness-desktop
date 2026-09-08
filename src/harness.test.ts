@@ -228,6 +228,30 @@ describe('harnessActivityLabel', () => {
     expect(monitor.visuals).toMatchObject([{ attachmentId, mediaType: 'image/png', width: 1280, height: 720 }])
   })
 
+  it('retains every valid connector image, deduplicates references and ignores failed or malformed results', () => {
+    const image = (hash: string) => ({ type: 'image', attachment: { attachmentId: `sha256:${hash.repeat(64)}`, mediaType: 'image/png', width: 320, height: 240 } })
+    const result = (callId: string, isError: boolean, content: unknown[]) => event('tool/result', { message: { content: [{ type: 'tool-result', toolCallId: callId, isError, content }] } }, 2)
+    const monitor = [
+      event('tool/call', { callId: 'images', name: 'mcp_design_generate' }, 1),
+      result('images', false, [image('a'), image('b'), image('a'), image('../'), { type: 'image', data: 'raw-data', mimeType: 'image/png' }]),
+      event('tool/call', { callId: 'failed', name: 'mcp_design_generate' }, 3),
+      result('failed', true, [image('c')]),
+    ].reduce(applyHarnessNotification, createTaskMonitor())
+    expect(monitor.visuals).toHaveLength(2)
+    expect(monitor.visuals?.map((item) => item.attachmentId)).toEqual([`sha256:${'a'.repeat(64)}`, `sha256:${'b'.repeat(64)}`])
+    expect(JSON.parse(JSON.stringify(monitor)).visuals).toEqual(monitor.visuals)
+  })
+
+  it('classifies published image files for inline previews', () => {
+    const monitor = [
+      event('tool/call', { callId: 'poster', name: 'local_files_publish' }, 1),
+      event('tool/result', { message: { content: [{ type: 'tool-result', toolCallId: 'poster', isError: false,
+        content: [{ type: 'text', text: JSON.stringify({ rootId: 'workspace', rootName: '工作目录', path: 'out/海报.WEBP', size: 1234 }) }],
+      }] } }, 2),
+    ].reduce(applyHarnessNotification, createTaskMonitor())
+    expect(monitor.artifacts).toMatchObject([{ kind: 'image', path: 'out/海报.WEBP', action: 'published' }])
+  })
+
   it('keeps approval requests inside the task timeline until decided', () => {
     const monitor = [event('approval/request', {
       approvalId: 'approval-1', name: 'local_files_delete', reason: '删除 report.md',

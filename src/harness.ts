@@ -393,11 +393,12 @@ export function applyHarnessNotification(
     const artifacts = artifact
       ? [...current.artifacts.filter((item) => item.id !== artifact.id), artifact].slice(-50)
       : current.artifacts
-    const visual = !result.failed && toolName
-      ? visualFromToolResult(toolName, result.content, occurredAt)
-      : undefined
-    const visuals = visual
-      ? [...(current.visuals ?? []).filter((item) => item.id !== visual.id), visual].slice(-20)
+    const newVisuals = !result.failed && toolName
+      ? visualsFromToolResult(toolName, result.content, occurredAt)
+      : []
+    const visualIds = new Set(newVisuals.map((item) => item.id))
+    const visuals = newVisuals.length
+      ? [...(current.visuals ?? []).filter((item) => !visualIds.has(item.id)), ...newVisuals].slice(-20)
       : current.visuals
     const change = !result.failed && toolName
       ? fileChangeFromToolResult(toolName, result.content, occurredAt)
@@ -665,7 +666,7 @@ function artifactFromToolResult(toolName: string, content: unknown, createdAt: s
   const name = path.split('/').filter(Boolean).at(-1)
   if (!name) return undefined
   const extension = name.split('.').at(-1)?.toLowerCase()
-  const kind = extension === 'xlsx' || extension === 'xls' || extension === 'csv'
+  const kind = /\.(png|jpe?g|webp|gif|bmp)$/i.test(name) ? 'image' : extension === 'xlsx' || extension === 'xls' || extension === 'csv'
     ? 'spreadsheet'
     : extension === 'pptx'
       ? 'presentation'
@@ -701,9 +702,9 @@ function artifactAction(toolName: string, value: Record<string, unknown>): TaskA
   return text(value.backupPath) ? 'updated' : 'created'
 }
 
-function visualFromToolResult(toolName: string, content: unknown, createdAt: string): TaskVisualArtifact | undefined {
-  if (toolName !== 'browser_screenshot' && toolName !== 'office_pdf_page' && !toolName.startsWith('computer_use_')) return undefined
+function visualsFromToolResult(toolName: string, content: unknown, createdAt: string): TaskVisualArtifact[] {
   const blocks = Array.isArray(content) ? content : []
+  const visuals = new Map<string, TaskVisualArtifact>()
   for (const value of blocks) {
     const block = asRecord(value)
     const attachment = asRecord(block?.attachment)
@@ -712,19 +713,20 @@ function visualFromToolResult(toolName: string, content: unknown, createdAt: str
     const width = nonNegativeInteger(attachment?.width)
     const height = nonNegativeInteger(attachment?.height)
     if (block?.type !== 'image' || !attachmentId?.match(/^sha256:[a-f0-9]{64}$/u)
-      || (mediaType !== 'image/png' && mediaType !== 'image/jpeg') || !width || !height) continue
-    return {
-      id: `${toolName}:${attachmentId}`,
+      || (mediaType !== 'image/png' && mediaType !== 'image/jpeg') || !width || !height || !Number.isSafeInteger(width) || !Number.isSafeInteger(height)) continue
+    const id = `${toolName}:${attachmentId}`
+    visuals.set(id, {
+      id,
       attachmentId,
       mediaType,
-      name: text(attachment?.name) ?? (toolName === 'browser_screenshot' ? '网页截图' : '桌面截图'),
+      name: text(attachment?.name) ?? (toolName === 'browser_screenshot' ? '网页截图' : toolName.startsWith('computer_use_') ? '桌面截图' : '工具返回图片'),
       width,
       height,
       sourceTool: toolName,
       createdAt,
-    }
+    })
   }
-  return undefined
+  return [...visuals.values()]
 }
 
 function mergeKnowledgeSources(previous: KnowledgeSearchHit[], content: unknown): KnowledgeSearchHit[] {

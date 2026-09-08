@@ -1,7 +1,10 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import type { Context } from '@deepseek-ai/cordis'
+import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 import type { Tool } from '@modelcontextprotocol/client'
 import { createServer } from 'node:http'
 import {
+  apply,
   compareConnectorTools,
   connectorRequestOptions,
   diagnoseConnector,
@@ -24,6 +27,44 @@ const tools: Tool[] = [
     annotations: { readOnlyHint: false, destructiveHint: true },
   },
 ]
+
+it('delivers connector image blocks through registered MCP tools and preserves upstream failures', async () => {
+  const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII='
+  let failed = false
+  const server = createServer(async (request, response) => {
+    if (request.method !== 'POST') { response.writeHead(405).end(); return }
+    let body = ''; for await (const chunk of request) body += chunk
+    const message = JSON.parse(body)
+    if (message.id === undefined) { response.writeHead(202).end(); return }
+    const result = message.method === 'initialize'
+      ? { protocolVersion: message.params.protocolVersion, capabilities: { tools: {} }, serverInfo: { name: 'image-test', version: '1' } }
+      : message.method === 'tools/list' ? { tools: [tools[0]] }
+      : { isError: failed, content: [{ type: 'text', text: failed ? '上游失败' : '结果' }, { type: 'image', mimeType: 'image/png', data: png }] }
+    response.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ jsonrpc: '2.0', id: message.id, result }))
+  })
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  const registered = new Map<string, ToolDefinition>()
+  const saveImage = vi.fn(async () => ({ attachmentId: `sha256:${'a'.repeat(64)}`, mediaType: 'image/png', width: 1, height: 1, bytes: Buffer.from(png, 'base64').length }))
+  let dispose = async () => {}
+  try {
+    await apply({ attachments: { saveImage }, tools: { register(tool: ToolDefinition) { registered.set(tool.name, tool); return () => registered.delete(tool.name) } },
+      on() { return () => {} }, effect(factory: () => () => Promise<void>) { dispose = factory() },
+    } as unknown as Context, { connectors: [{ id: 'images', name: '图片服务', version: '1', transport: 'streamable-http',
+      url: `http://127.0.0.1:${(server.address() as { port: number }).port}/mcp`, authMode: 'none', command: '', allowedTools: ['sales_summary'], requiredTools: [], allowWrite: false, requireWriteApproval: false, required: true,
+    }] })
+    const tool = registered.get('mcp_images_sales_summary')!
+    const exec = { signal: new AbortController().signal } as never
+    const value = await tool.execute({}, exec)
+    expect(tool.output.render({}, JSON.parse(JSON.stringify(value)))).toEqual([
+      { type: 'text', text: '结果' }, { type: 'image', attachment: await saveImage.mock.results[0].value },
+    ])
+    expect(saveImage).toHaveBeenCalledWith(expect.objectContaining({ data: Buffer.from(png, 'base64'), mediaType: 'image/png' }))
+    failed = true
+    await expect(tool.execute({}, exec)).rejects.toThrow('上游失败')
+    expect(saveImage).toHaveBeenCalledOnce()
+  } finally { await dispose(); await new Promise<void>((resolve) => server.close(() => resolve())) }
+  expect(registered.size).toBe(0)
+})
 
 it('uses the configured execution deadline and validates its range', () => {
   expect(connectorRequestOptions({})).toEqual({ timeout: 60000, maxTotalTimeout: 60000 })
