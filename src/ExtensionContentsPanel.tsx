@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { FileText, ArrowRight, MessageSquare } from 'lucide-react'
+import { FileText, ArrowRight } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { readExtensionContents, type ExtensionContents, type ExtensionDocument } from './expertKits'
@@ -7,15 +7,17 @@ import type { InstalledExpertKit } from './types'
 import { ExtensionReaderDialog } from './ExtensionReaderDialog'
 
 export function ExtensionContentsPanel({ extension, onUseSkill, onUseCommand, onCustomize }: {
-  extension: InstalledExpertKit; onUseSkill?: (skill: ExtensionDocument) => void; onUseCommand?: (id: string) => void; onCustomize?: () => void
+  extension: InstalledExpertKit; onUseSkill?: (skill: ExtensionDocument) => void; onUseCommand?: (id: string) => void; onCustomize?: (document: ExtensionDocument) => void
 }) {
   const { kind, id, version } = extension.manifest
   const [result, setResult] = useState<{ key: string; contents?: ExtensionContents; error?: string }>()
   const [active, setActive] = useState<ExtensionDocument>()
+  const [readmeOpen, setReadmeOpen] = useState(false)
   const key = `${kind}:${id}@${version}`
   useEffect(() => {
     let current = true
     setActive(undefined)
+    setReadmeOpen(false)
     readExtensionContents(kind, id, version).then((contents) => { if (current) setResult({ key, contents }) }, (reason) => { if (current) setResult({ key, error: reason instanceof Error ? reason.message : String(reason) }) })
     return () => { current = false }
   }, [kind, id, version, key])
@@ -25,13 +27,12 @@ export function ExtensionContentsPanel({ extension, onUseSkill, onUseCommand, on
   if (kind === 'skill') return contents.skills[0] ? <Markdown content={contents.skills[0].content} /> : <p>暂无技能说明</p>
   const enabled = extension.enabled !== false
   const shortcuts = contents.skills.filter((skill) => skill.userInvocable)
-  const useActiveSkill = enabled && active?.userInvocable && contents.skills.includes(active) ? onUseSkill : undefined
   return <>
     {(shortcuts.length > 0 || contents.commands.length > 0) && <section className="expert-detail-section">
       <h3>快捷命令 <small>({shortcuts.length + contents.commands.length})</small></h3>
       <div className="detail-command-list">
         {contents.commands.map((item) => <button aria-label={`使用命令：${item.name}`} disabled={!enabled || !onUseCommand} key={`command:${item.path}`} onClick={() => onUseCommand?.(item.id)} type="button"><code>/{item.name}</code><span>{item.summary}</span><ArrowRight size={15} /></button>)}
-        {shortcuts.map((item) => <button aria-label={`使用技能：${item.name}`} disabled={!enabled || !onUseSkill} key={item.path} onClick={() => onUseSkill?.(item)} type="button"><code>/{item.name}</code><span>{item.summary}</span><ArrowRight size={15} /></button>)}
+        {shortcuts.map((item) => <button aria-label={`使用技能：${item.name}`} disabled={!enabled || !onUseSkill} key={item.path} onClick={() => onUseSkill?.(item)} type="button"><code>/{item.name}</code><span>{item.argumentHint || item.summary}</span><ArrowRight size={15} /></button>)}
       </div>
     </section>}
     {contents.skills.length > 0 && <section className="expert-detail-section extension-source-section">
@@ -42,11 +43,16 @@ export function ExtensionContentsPanel({ extension, onUseSkill, onUseCommand, on
       <h3>命令说明 <small>({contents.commands.length})</small></h3>
       <div className="extension-source-list">{contents.commands.map((item) => <button key={item.path} onClick={() => setActive(item)} type="button"><FileText size={16} /><span><strong>{item.name}</strong>{item.summary && <small>{item.summary}</small>}</span><ArrowRight size={14} /></button>)}</div>
     </section>}
-    {contents.readme && <section className="expert-detail-section extension-readme"><h3>套件说明</h3><Markdown content={contents.readme} /></section>}
-    {active && <ExtensionReaderDialog title={active.name} onClose={() => setActive(undefined)} heading={<><h2>{active.name}</h2><p className="extension-reader-meta">来自 {extension.manifest.name} · v{version}</p>{active.summary && <p className="extension-reader-summary">{active.summary}</p>}</>} actions={(onCustomize || useActiveSkill) ? <>
-      {onCustomize && <button className="secondary" onClick={onCustomize} type="button">自定义修改</button>}
-      {useActiveSkill && <button onClick={() => useActiveSkill(active)} type="button"><MessageSquare size={14} />使用技能</button>}
-    </> : undefined}><Markdown content={active.content} /></ExtensionReaderDialog>}
+    {contents.readme && <section className="expert-detail-section extension-readme">
+      <div className="extension-readme-preview" role="button" tabIndex={0} aria-label="查看完整套件说明" aria-haspopup="dialog" onClick={() => setReadmeOpen(true)} onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setReadmeOpen(true) }
+      }}>
+        <h3><FileText size={16} />套件说明</h3>
+        <div inert aria-hidden="true"><Markdown content={contents.readme} /></div>
+      </div>
+    </section>}
+    {readmeOpen && <ExtensionReaderDialog title="套件说明" onClose={() => setReadmeOpen(false)} heading={<h2 className="extension-reader-title"><FileText size={20} />套件说明</h2>}><Markdown content={contents.readme} /></ExtensionReaderDialog>}
+    {active && <ExtensionReaderDialog title={active.name} onClose={() => setActive(undefined)} heading={<><h2>{active.name}</h2><p className="extension-reader-meta">来自 {extension.manifest.name} · {id}</p>{active.summary && <p className="extension-reader-summary">{active.summary}</p>}</>} actions={onCustomize ? <button className="extension-customize-primary" onClick={() => onCustomize(active)} type="button">自定义修改</button> : undefined}><Markdown content={active.content} /></ExtensionReaderDialog>}
   </>
 }
 

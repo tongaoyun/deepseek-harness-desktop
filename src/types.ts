@@ -352,6 +352,7 @@ export interface ExpertKitManifest {
 }
 
 export interface InstalledExpertKit {
+  author?: string
   enabled?: boolean
   bundledConnectors?: unknown
   manifest: ExpertKitManifest
