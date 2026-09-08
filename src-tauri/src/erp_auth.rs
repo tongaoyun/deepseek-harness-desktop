@@ -7,12 +7,12 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tauri::{Emitter, Manager};
+mod diagnostics;
+use diagnostics::{Code, Diagnostic};
 
 const ERP_LOGIN_URL: &str = "http://www.instudio.me:6206/eshop/manager/login.jsp";
 const ERP_USER_URL: &str =
     "http://www.instudio.me:6206/gateway/tiktok-product-publish-service/auth/user";
-const ERP_PERMISSION_URL: &str =
-    "http://www.instudio.me:6206/erpaccount/erpaccount/dashboard/managerstats";
 const ERP_COOKIE_URL: &str = "http://www.instudio.me:6206/eshop/";
 const ERP_DINGTALK_APP_ID: &str = "dingoa43wafbtpeg2czybj";
 const ERP_DINGTALK_CALLBACK_URL: &str =
@@ -46,11 +46,6 @@ struct ErpIdentity {
     data_permission: String,
 }
 
-#[derive(Deserialize)]
-struct ErpPermission {
-    code: Option<i64>,
-}
-
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ErpSessionStatus {
@@ -59,6 +54,7 @@ pub(crate) struct ErpSessionStatus {
     expires_at: Option<i64>,
     user: Option<ErpUser>,
     login_url: String,
+    diagnostic: Diagnostic,
 }
 
 #[derive(Serialize)]
@@ -77,10 +73,6 @@ fn erp_login_url() -> String {
 
 fn erp_user_url() -> String {
     setting("XIAOYIN_ERP_USER_URL", ERP_USER_URL)
-}
-
-fn erp_permission_url() -> String {
-    setting("XIAOYIN_ERP_PERMISSION_URL", ERP_PERMISSION_URL)
 }
 
 fn erp_cookie_url() -> String {
@@ -189,18 +181,34 @@ pub(crate) fn complete_erp_qr_login(
 }
 
 #[tauri::command]
-pub(crate) async fn erp_session(app: tauri::AppHandle) -> Result<ErpSessionStatus, String> {
+pub(crate) async fn erp_session(app: tauri::AppHandle) -> Result<ErpSessionStatus, Diagnostic> {
+    let result = resolve_session(&app).await;
+    let diagnostic = match &result {
+        Ok(session) => &session.diagnostic,
+        Err(diagnostic) => diagnostic,
+    };
+    if let Ok(directory) = app.path().app_log_dir() {
+        let path = directory.join("erp-session.json");
+        let diagnostic = diagnostic.clone();
+        let _ =
+            tauri::async_runtime::spawn_blocking(move || diagnostics::record(&path, &diagnostic))
+                .await;
+    }
+    result
+}
+
+async fn resolve_session(app: &tauri::AppHandle) -> Result<ErpSessionStatus, Diagnostic> {
     let webview = app
         .get_webview_window("erp-login")
         .or_else(|| app.get_webview_window("main"))
-        .ok_or_else(|| "找不到桌面 WebView".to_string())?;
+        .ok_or_else(|| Diagnostic::new(Code::CookieReadFailed, None, None))?;
     let cookie_url = erp_cookie_url()
         .parse()
-        .map_err(|error| format!("ERP Cookie 地址无效：{error}"))?;
+        .map_err(|_| Diagnostic::new(Code::ConfigurationInvalid, None, None))?;
     let cookies = tauri::async_runtime::spawn_blocking(move || webview.cookies_for_url(cookie_url))
         .await
-        .map_err(|error| format!("读取 ERP 登录状态失败：{error}"))?
-        .map_err(|error| format!("读取 ERP Cookie 失败：{error}"))?;
+        .map_err(|_| Diagnostic::new(Code::CookieReadFailed, None, None))?
+        .map_err(|_| Diagnostic::new(Code::CookieReadFailed, None, None))?;
     let cookie_header = cookies
         .iter()
         .map(|cookie| format!("{}={}", cookie.name(), cookie.value()))
@@ -208,89 +216,97 @@ pub(crate) async fn erp_session(app: tauri::AppHandle) -> Result<ErpSessionStatu
         .join("; ");
 
     if cookie_header.is_empty() {
-        return Ok(unauthenticated_erp_session());
+        return Ok(unauthenticated_erp_session(Diagnostic::new(
+            Code::CookieMissing,
+            Some(0),
+            None,
+        )));
     }
 
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(5))
         .redirect(reqwest::redirect::Policy::none())
         .build()
-        .map_err(|error| format!("无法创建 ERP 会话客户端：{error}"))?;
-    let response = client
-        .get(erp_user_url())
-        .header("Accept", "application/json")
-        .header("X-Requested-With", "XMLHttpRequest")
-        .header("Cookie", &cookie_header)
-        .send()
-        .await
-        .map_err(|error| format!("ERP 登录状态检查失败：{error}"))?;
-
-    reject_unavailable_identity(response.status())?;
-    let user = if response.status().is_success() {
-        let identity: ErpIdentity = response
-            .json()
-            .await
-            .map_err(|error| format!("ERP 身份响应无效：{error}"))?;
-        erp_user_from_identity(&identity)?
-    } else {
-        match legacy_erp_user(&client, &cookie_header).await? {
-            Some(user) => user,
-            None => return Ok(unauthenticated_erp_session()),
-        }
+        .map_err(|_| Diagnostic::new(Code::ConfigurationInvalid, Some(cookies.len()), None))?;
+    let (user, diagnostic) =
+        resolve_identity(&client, &erp_user_url(), &cookie_header, cookies.len()).await?;
+    let Some(user) = user else {
+        return Ok(unauthenticated_erp_session(diagnostic));
     };
     let access_token = trusted_internal_token(&cookie_header);
     if let Some(window) = app.get_webview_window("erp-login") {
         let _ = window.hide();
-        if let Ok(url) = erp_login_window_url(&app) {
+        if let Ok(url) = erp_login_window_url(app) {
             let _ = window.navigate(url);
         }
     }
-    show_main_window(&app);
+    show_main_window(app);
     Ok(ErpSessionStatus {
         authenticated: true,
         access_token,
         expires_at: trusted_session_expiry(),
         user: Some(user),
         login_url: erp_login_url(),
+        diagnostic,
     })
 }
 
-fn reject_unavailable_identity(status: reqwest::StatusCode) -> Result<(), String> {
-    if status.is_server_error() || status == reqwest::StatusCode::TOO_MANY_REQUESTS {
-        return Err(format!("ERP 身份服务暂时不可用：HTTP {status}"));
-    }
-    Ok(())
-}
-
-async fn legacy_erp_user(
+async fn resolve_identity(
     client: &reqwest::Client,
+    url: &str,
     cookie_header: &str,
-) -> Result<Option<ErpUser>, String> {
+    cookie_count: usize,
+) -> Result<(Option<ErpUser>, Diagnostic), Diagnostic> {
+    let failure = |code, status| Diagnostic::new(code, Some(cookie_count), status);
     let response = client
-        .post(erp_permission_url())
+        .get(url)
         .header("Accept", "application/json")
         .header("X-Requested-With", "XMLHttpRequest")
         .header("Cookie", cookie_header)
         .send()
         .await
-        .map_err(|error| format!("ERP 权限校验失败：{error}"))?;
-    if !response.status().is_success() {
-        return Err(format!("ERP 权限校验失败：HTTP {}", response.status()));
+        .map_err(|error| {
+            failure(
+                if error.is_timeout() {
+                    Code::RequestTimeout
+                } else if error.is_builder() {
+                    Code::ConfigurationInvalid
+                } else {
+                    Code::NetworkError
+                },
+                None,
+            )
+        })?;
+    let status = response.status().as_u16();
+    match status {
+        401 => return Ok((None, failure(Code::SessionRejected, Some(status)))),
+        403 => return Err(failure(Code::AccessDenied, Some(status))),
+        200 => {}
+        _ => return Err(failure(Code::IdentityUnavailable, Some(status))),
     }
-    let permission: ErpPermission = response
-        .json()
-        .await
-        .map_err(|error| format!("ERP 权限响应无效：{error}"))?;
-    Ok((permission.code == Some(200)).then(|| trusted_erp_user(cookie_header)))
+    let identity: ErpIdentity = response.json().await.map_err(|error| {
+        failure(
+            if error.is_timeout() {
+                Code::RequestTimeout
+            } else {
+                Code::IdentityInvalid
+            },
+            Some(status),
+        )
+    })?;
+    let user = erp_user_from_identity(&identity)
+        .map_err(|_| failure(Code::IdentityInvalid, Some(status)))?;
+    Ok((Some(user), failure(Code::Authenticated, Some(status))))
 }
 
-fn unauthenticated_erp_session() -> ErpSessionStatus {
+fn unauthenticated_erp_session(diagnostic: Diagnostic) -> ErpSessionStatus {
     ErpSessionStatus {
         authenticated: false,
         access_token: String::new(),
         expires_at: None,
         user: None,
         login_url: erp_login_url(),
+        diagnostic,
     }
 }
 
@@ -324,21 +340,6 @@ fn erp_user_from_identity(identity: &ErpIdentity) -> Result<ErpUser, String> {
             "operator".to_string()
         },
     })
-}
-
-fn trusted_erp_user(cookie_header: &str) -> ErpUser {
-    let digest = cookie_digest(cookie_header);
-    ErpUser {
-        user_id: format!("erp-{}", &digest[..16]),
-        display_name: "ERP 员工".to_string(),
-        department: "企业内部".to_string(),
-        team_id: "internal".to_string(),
-        position: String::new(),
-        data_permission: "erp-manager".to_string(),
-        company_id: "internal".to_string(),
-        company_name: "企业内部版".to_string(),
-        role: "admin".to_string(),
-    }
 }
 
 fn cookie_digest(cookie_header: &str) -> String {
@@ -380,19 +381,83 @@ pub(crate) async fn clear_erp_session(app: tauri::AppHandle) -> Result<(), Strin
 mod tests {
     use super::*;
 
+    fn identity_response(
+        status: u16,
+        body: &str,
+    ) -> Result<(Option<ErpUser>, Diagnostic), Diagnostic> {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/auth/user", listener.local_addr().unwrap());
+        let body = body.to_string();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(3)))
+                .unwrap();
+            let mut request = Vec::new();
+            let mut buffer = [0; 1024];
+            while !request.windows(4).any(|bytes| bytes == b"\r\n\r\n") {
+                let length = stream.read(&mut buffer).unwrap();
+                assert!(length > 0);
+                request.extend_from_slice(&buffer[..length]);
+            }
+            write!(stream, "HTTP/1.1 {status} Test\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
+        });
+        let client = reqwest::Client::builder()
+            .no_proxy()
+            .timeout(Duration::from_secs(3))
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .unwrap();
+        let result = tauri::async_runtime::block_on(resolve_identity(
+            &client,
+            &url,
+            "SESSION=private-cookie",
+            1,
+        ));
+        server.join().unwrap();
+        result
+    }
+
     #[test]
-    fn unavailable_identity_is_not_treated_as_an_expired_session() {
-        for status in [429, 500, 502, 503, 504] {
-            assert!(
-                reject_unavailable_identity(reqwest::StatusCode::from_u16(status).unwrap())
-                    .is_err()
+    fn only_an_explicit_unauthorized_response_requires_login() {
+        let (user, diagnostic) =
+            identity_response(401, "{\"message\":\"private-cookie\"}").unwrap();
+        assert!(user.is_none());
+        assert_eq!(diagnostic.code, Code::SessionRejected);
+        for (status, expected) in [
+            (403, Code::AccessDenied),
+            (302, Code::IdentityUnavailable),
+            (404, Code::IdentityUnavailable),
+            (429, Code::IdentityUnavailable),
+            (500, Code::IdentityUnavailable),
+            (503, Code::IdentityUnavailable),
+        ] {
+            let failure = identity_response(status, "private-cookie").err().unwrap();
+            assert_eq!(failure.code, expected);
+            assert_eq!(failure.http_status, Some(status));
+            let report = serde_json::to_string(&failure).unwrap();
+            assert!(!report.contains("private-cookie"));
+            assert!(!report.contains("127.0.0.1"));
+        }
+    }
+
+    #[test]
+    fn identity_must_contain_a_real_employee() {
+        for body in [
+            "{}",
+            "<html>Login</html>",
+            r#"{"operId":"","oper":"Employee"}"#,
+        ] {
+            assert_eq!(
+                identity_response(200, body).err().unwrap().code,
+                Code::IdentityInvalid
             );
         }
-        for status in [200, 401, 403, 404] {
-            assert!(
-                reject_unavailable_identity(reqwest::StatusCode::from_u16(status).unwrap()).is_ok()
-            );
-        }
+        let (user, diagnostic) =
+            identity_response(200, r#"{"operId":"1001","oper":"Employee"}"#).unwrap();
+        assert_eq!(user.unwrap().user_id, "1001");
+        assert_eq!(diagnostic.code, Code::Authenticated);
     }
 
     #[test]
@@ -428,7 +493,6 @@ mod tests {
         );
         assert!(erp_cookie_url().ends_with("/eshop/"));
         assert!(erp_user_url().ends_with("/auth/user"));
-        assert!(erp_permission_url().ends_with("/dashboard/managerstats"));
     }
 
     #[test]
@@ -458,9 +522,5 @@ mod tests {
         assert!(token.starts_with("internal-trust:"));
         assert!(!token.contains(cookie));
         assert_eq!(token, trusted_internal_token(cookie));
-        let user = trusted_erp_user(cookie);
-        assert!(user.user_id.starts_with("erp-"));
-        assert!(!user.user_id.contains("secret-session"));
-        assert_eq!(user.role, "admin");
     }
 }
