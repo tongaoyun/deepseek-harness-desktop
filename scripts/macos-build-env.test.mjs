@@ -29,6 +29,7 @@ test('CI shares one runner fairly across two architecture workers', () => {
   const workflow = readFileSync(new URL('../.gitea/workflows/macos-installer.yml', import.meta.url), 'utf8')
   assert.match(workflow, /max-parallel: 2/)
   assert.match(workflow, /CARGO_BUILD_JOBS: "4"/)
+  assert.match(workflow, /XIAOYIN_HARNESS_SMOKE_TIMEOUT_MS: "120000"/)
   assert.match(workflow, /runs-on: macos-arm64/)
   assert.doesNotMatch(workflow, /runs-on:.*macos-x64/)
   assert.match(workflow, /--target "\$rust_target"/)

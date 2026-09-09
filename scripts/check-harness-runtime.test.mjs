@@ -1,6 +1,15 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { checkHarnessCommand } from './check-harness-runtime.mjs'
+import { checkHarnessCommand, DEFAULT_HARNESS_SMOKE_TIMEOUT_MS, harnessSmokeTimeout } from './check-harness-runtime.mjs'
+
+test('uses a bounded explicit smoke timeout', () => {
+  assert.equal(harnessSmokeTimeout({}), DEFAULT_HARNESS_SMOKE_TIMEOUT_MS)
+  assert.equal(harnessSmokeTimeout({ XIAOYIN_HARNESS_SMOKE_TIMEOUT_MS: '' }), DEFAULT_HARNESS_SMOKE_TIMEOUT_MS)
+  assert.equal(harnessSmokeTimeout({ XIAOYIN_HARNESS_SMOKE_TIMEOUT_MS: '120000' }), 120_000)
+  for (const value of ['0', '-1', '1.5', ' 120000', 'invalid', '600001', '9007199254740992']) {
+    assert.throws(() => harnessSmokeTimeout({ XIAOYIN_HARNESS_SMOKE_TIMEOUT_MS: value }), /XIAOYIN_HARNESS_SMOKE_TIMEOUT_MS/)
+  }
+})
 
 test('keeps stdin open until delayed initialization, health and shutdown acknowledge', async () => {
   await checkHarnessCommand(process.execPath, ['-e', `
