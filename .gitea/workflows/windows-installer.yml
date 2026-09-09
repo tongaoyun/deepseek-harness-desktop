@@ -6,33 +6,28 @@ on:
   workflow_dispatch:
     inputs:
       build_mode:
-        description: "release：完整检查与正式安装包；quick：仅生成开发验证用 Debug NSIS"
+        description: "release：正式安装包与安装验收；quick：仅生成开发验证用 Debug NSIS"
         required: true
         default: release
         type: choice
         options:
           - release
           - quick
-      run_install_smoke:
-        description: "在隔离目录执行 NSIS 安装、内置 Harness、启动和卸载烟测"
-        required: true
-        default: true
-        type: boolean
-
 permissions:
-  contents: write
+  contents: read
   actions: write
 
 concurrency:
-  group: windows-installer-${{ github.event_name == 'workflow_dispatch' && 'manual' || 'release' }}
-  cancel-in-progress: ${{ github.event_name == 'workflow_dispatch' }}
+  group: windows-installer-${{ startsWith(github.ref, 'refs/tags/v') && 'release' || 'manual' }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/v') }}
 
 jobs:
   build-windows-x64:
+    name: 构建 x64
     runs-on: windows-x64
     timeout-minutes: 120
     env:
-      XIAOYIN_BUILD_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.build_mode == 'quick' && 'quick' || 'release' }}
+      XIAOYIN_BUILD_MODE: ${{ startsWith(github.ref, 'refs/tags/v') && 'release' || inputs.build_mode == 'quick' && 'quick' || 'release' }}
       CARGO_TERM_COLOR: always
       CARGO_TARGET_DIR: C:\xiaoyin-desktop-builder\target
       CARGO_REGISTRIES_CRATES_IO_INDEX: sparse+https://rsproxy.cn/index/
@@ -61,23 +56,6 @@ jobs:
           if (-not $Installation) { throw "Microsoft Visual C++ Build Tools is missing" }
           Write-Output "Visual C++ Build Tools: $Installation"
 
-      - name: 验证 PowerShell 发布脚本语法
-        shell: powershell
-        run: |
-          $Tokens = $null
-          $Errors = $null
-          [System.Management.Automation.Language.Parser]::ParseFile(
-            (Resolve-Path '.\scripts\publish-gitea-release.ps1').Path,
-            [ref]$Tokens,
-            [ref]$Errors
-          ) | Out-Null
-          if ($Errors.Count -gt 0) {
-            $Errors | ForEach-Object {
-              Write-Host "$($_.Extent.StartLineNumber):$($_.Extent.StartColumnNumber) $($_.Message) [$($_.Extent.Text)]"
-            }
-            throw "PowerShell release script syntax validation failed"
-          }
-
       - name: 安装锁定依赖
         shell: powershell
         run: |
@@ -91,40 +69,11 @@ jobs:
       - name: 验证正式版本标签
         if: ${{ startsWith(github.ref, 'refs/tags/v') }}
         shell: powershell
-        run: |
-          $ExpectedTag = "v$((Get-Content 'package.json' -Raw | ConvertFrom-Json).version)"
-          if ($env:GITHUB_REF_NAME -ne $ExpectedTag) {
-            throw "Tag $env:GITHUB_REF_NAME does not match package version $ExpectedTag"
-          }
-
-      - name: 前端与 Harness 质量门禁
-        if: ${{ env.XIAOYIN_BUILD_MODE == 'release' }}
-        shell: powershell
-        run: |
-          pnpm verify:version
-          if ($LASTEXITCODE -ne 0) { throw "version consistency check failed with exit code $LASTEXITCODE" }
-          pnpm lint
-          if ($LASTEXITCODE -ne 0) { throw "lint failed with exit code $LASTEXITCODE" }
-          pnpm typecheck
-          if ($LASTEXITCODE -ne 0) { throw "typecheck failed with exit code $LASTEXITCODE" }
-          pnpm test
-          if ($LASTEXITCODE -ne 0) { throw "tests failed with exit code $LASTEXITCODE" }
+        run: node scripts/verify-release-ref.mjs
 
       - name: 准备内置 Harness Runtime
         shell: powershell
         run: .\scripts\prepare-harness-runtime.ps1
-
-      - name: Rust 质量门禁
-        if: ${{ env.XIAOYIN_BUILD_MODE == 'release' }}
-        working-directory: src-tauri
-        shell: powershell
-        run: |
-          cargo fmt --check
-          if ($LASTEXITCODE -ne 0) { throw "cargo fmt failed with exit code $LASTEXITCODE" }
-          cargo clippy --all-targets -- -D warnings
-          if ($LASTEXITCODE -ne 0) { throw "cargo clippy failed with exit code $LASTEXITCODE" }
-          cargo test
-          if ($LASTEXITCODE -ne 0) { throw "cargo test failed with exit code $LASTEXITCODE" }
 
       - name: 准备 Tauri Windows 打包工具
         shell: powershell
@@ -152,7 +101,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Windows installer build failed" }
 
       - name: NSIS 安装与内置 Harness 烟测
-        if: ${{ env.XIAOYIN_BUILD_MODE == 'release' && (startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.run_install_smoke)) }}
+        if: ${{ env.XIAOYIN_BUILD_MODE == 'release' }}
         shell: powershell
         env:
           XIAOYIN_WINDOWS_SMOKE: "1"

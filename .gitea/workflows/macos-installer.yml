@@ -20,16 +20,17 @@ permissions:
   actions: write
 
 concurrency:
-  group: macos-installer-${{ github.event_name == 'workflow_dispatch' && 'manual' || 'release' }}
-  cancel-in-progress: ${{ github.event_name == 'workflow_dispatch' }}
+  group: macos-installer-${{ startsWith(github.ref, 'refs/tags/v') && 'release' || 'manual' }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/v') }}
 
 jobs:
   build-macos:
+    name: 构建 ${{ matrix.architecture }}
     strategy:
       fail-fast: false
       max-parallel: 2
       matrix:
-        architecture: ${{ fromJSON(inputs.architecture == 'arm64' && '["arm64"]' || inputs.architecture == 'x64' && '["x64"]' || '["arm64","x64"]') }}
+        architecture: ${{ fromJSON(startsWith(github.ref, 'refs/tags/v') && '["arm64","x64"]' || inputs.architecture == 'arm64' && '["arm64"]' || inputs.architecture == 'x64' && '["x64"]' || '["arm64","x64"]') }}
     runs-on: macos-arm64
     timeout-minutes: 120
     env:
@@ -67,6 +68,10 @@ jobs:
         run: |
           pnpm install --frozen-lockfile --registry=http://192.168.2.9:4873/
           pnpm verify:version
+
+      - name: 验证正式版本标签
+        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+        run: node scripts/verify-release-ref.mjs
 
       - name: 准备内置 Harness Runtime
         run: bash scripts/prepare-harness-runtime-macos.sh
@@ -129,9 +134,11 @@ jobs:
         run: node scripts/publish-macos-update.mjs stage ${{ matrix.architecture }}
 
   publish-macos-update:
+    name: 发布更新索引
     needs: build-macos
     if: ${{ startsWith(github.ref, 'refs/tags/v') }}
     runs-on: macos-arm64
+    timeout-minutes: 15
     steps:
       - name: 检出代码
         uses: http://192.168.2.66:3300/instudio/checkout@v4

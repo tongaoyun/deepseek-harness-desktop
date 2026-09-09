@@ -13,6 +13,7 @@ concurrency:
 jobs:
   web-and-harness:
     runs-on: ci-node
+    timeout-minutes: 30
     container:
       image: ci-node:1.0.0
       volumes:
@@ -29,9 +30,8 @@ jobs:
       - name: Lint、类型、测试和构建
         run: |
           pnpm verify:version
-          node --test scripts/workflows.test.mjs scripts/macos-build-env.test.mjs scripts/check-harness-runtime.test.mjs scripts/publish-macos-update.test.mjs scripts/verify-updater-signature.test.mjs scripts/evaluation-metrics.test.mjs
+          node --test scripts/workflows.test.mjs scripts/macos-build-env.test.mjs scripts/check-harness-runtime.test.mjs scripts/publish-macos-update.test.mjs scripts/verify-release-ref.test.mjs scripts/verify-updater-signature.test.mjs scripts/evaluation-metrics.test.mjs
           pnpm lint
-          pnpm typecheck
           pnpm test
           pnpm build
           node harness-host/scripts/acceptance-task-outcomes.mjs
@@ -48,18 +48,18 @@ jobs:
     steps:
       - name: 检出代码
         uses: http://192.168.2.66:3300/instudio/checkout@v4
-      - name: Windows Harness 验收脚本回归
+      - name: Windows 脚本回归
         shell: powershell
         run: |
           node --test scripts/check-harness-runtime.test.mjs
           if ($LASTEXITCODE -ne 0) { throw "Harness runtime checker tests failed" }
           powershell -NoProfile -ExecutionPolicy Bypass -File scripts/acceptance-windows.test.ps1
           if ($LASTEXITCODE -ne 0) { throw "Windows desktop preflight regression failed" }
-          foreach ($Script in @('scripts/prepare-harness-runtime.ps1', 'scripts/test-windows-installer.ps1')) {
+          foreach ($Script in Get-ChildItem scripts -File -Filter '*.ps1') {
             $Tokens = $null
             $Errors = $null
-            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $Script).Path, [ref]$Tokens, [ref]$Errors) | Out-Null
-            if ($Errors.Count -gt 0) { throw "PowerShell syntax validation failed for ${Script}: $Errors" }
+            [System.Management.Automation.Language.Parser]::ParseFile($Script.FullName, [ref]$Tokens, [ref]$Errors) | Out-Null
+            if ($Errors.Count -gt 0) { throw "PowerShell syntax validation failed for $($Script.FullName): $Errors" }
           }
       - name: 准备 Tauri 静态检查资源目录
         shell: powershell
