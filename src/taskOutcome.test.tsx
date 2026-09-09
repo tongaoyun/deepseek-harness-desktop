@@ -41,3 +41,11 @@ it('keeps the internal unverified fallback out of ordinary conversation UI', () 
   expect(html).toBe('')
   expect(taskStatusLabel({ status: 'COMPLETED', monitor } as LocalTaskRun)).toBe('本轮已结束')
 })
+
+it('keeps successful verification metadata out of the final answer', () => {
+  const outcome: TaskOutcome = {
+    status: 'completed', summary: '下载目录已查看完毕。', remaining: [],
+    checks: [{ description: '目录读取', result: 'passed', evidence: '已列出目录内容' }],
+  }
+  expect(renderToStaticMarkup(<TaskOutcomeDetails outcome={outcome} />)).toBe('')
+})
