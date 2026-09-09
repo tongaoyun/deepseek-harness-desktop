@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ExecutionTimeline, visibleExecutionEntries, type ApprovalDecisionHandler, type ApprovalUiState } from './ExecutionTimeline'
 import { taskDurationLabel } from './taskTiming'
 import type { TaskMonitorState } from './types'
-import { taskOutcomeLabel } from './taskOutcome'
+import { isUnverifiedTaskOutcome } from './taskOutcome'
 
 export function InlineTaskActivity({ monitor, finalResponse = '', onApprovalDecision }: {
   monitor: TaskMonitorState
@@ -47,16 +47,20 @@ export function InlineTaskActivity({ monitor, finalResponse = '', onApprovalDeci
     return () => window.clearInterval(timer)
   }, [monitor.status])
 
-  if (monitor.status === 'idle' && monitor.steps.length === 0 && monitor.artifacts.length === 0 && (monitor.changes?.length ?? 0) === 0) return null
+  const executionEntries = visibleExecutionEntries(monitor.timeline ?? [], finalResponse)
+  const hasDetails = executionEntries.length > 0
+  const unverified = monitor.status === 'completed' && isUnverifiedTaskOutcome(monitor.outcome)
+  if ((monitor.status === 'idle' || unverified) && executionEntries.length === 0 && monitor.steps.length === 0
+    && monitor.artifacts.length === 0 && (monitor.changes?.length ?? 0) === 0) return null
+  if (monitor.status === 'completed' && !hasDetails) return null
   const duration = taskDurationLabel(monitor, clock)
   const activity = /启动|初始化/.test(monitor.activity) ? '正在处理' : monitor.activity
   const interrupted = monitor.status === 'failed' && monitor.failure?.code === 'XY-INTERRUPTED'
   const summary = monitor.status === 'running'
     ? activity
     : interrupted ? '上次运行已中断'
-    : monitor.status === 'completed' && monitor.outcome ? `${taskOutcomeLabel(monitor.outcome)}${duration ? ` · 用时 ${duration}` : ''}`
+    : monitor.status === 'completed' ? `执行过程${duration ? ` · 用时 ${duration}` : ''}`
     : duration ? `${monitor.status === 'failed' ? '处理失败 · 用时' : monitor.status === 'canceled' ? '已停止 · 用时' : '用时'} ${duration}` : statusLabel(monitor.status)
-  const hasDetails = visibleExecutionEntries(monitor.timeline ?? [], finalResponse).length > 0
 
   return <section className={`inline-task-activity ${monitor.status}`}>
     <button aria-expanded={hasDetails ? open : undefined} className="inline-task-summary" disabled={!hasDetails} onClick={() => setChoice({ scope, open: !open })} type="button">

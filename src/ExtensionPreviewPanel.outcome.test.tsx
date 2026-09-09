@@ -28,7 +28,7 @@ it.each(['completed', 'needs_input', undefined] as const)('reports a preview as 
     await act(async () => container.querySelector<HTMLButtonElement>('.extension-preview-input button')!.click())
     expect(report).toHaveBeenCalledWith(expect.objectContaining({ status: status === 'completed' ? 'PASSED' : 'FAILED' }))
     expect(container.querySelector('.extension-preview-response')?.textContent).toContain('试运行回复')
-    expect(container.querySelector('header em')?.textContent).toBe(status === 'completed' ? '已完成' : status === 'needs_input' ? '等待补充' : '完成情况待核对')
+    expect(container.querySelector('header em')?.textContent).toBe(status === 'completed' ? '已完成' : status === 'needs_input' ? '等待补充' : '本轮已结束')
   })
 })
 

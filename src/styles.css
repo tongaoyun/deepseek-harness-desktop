@@ -685,7 +685,7 @@ button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 2px
   --xy-accent-soft: #edf5ef;
   --xy-surface: #ffffff;
   --xy-surface-soft: #fafafa;
-  --xy-sidebar: #fafafa;
+  --xy-sidebar: #ffffff;
   --xy-hover: #f4f4f4;
   --xy-selected: #eeeeee;
   --xy-text-secondary: #737373;
@@ -703,9 +703,9 @@ button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 2px
   background: var(--xy-surface);
 }
 body, .app-shell { background: var(--xy-surface); }
-.app-shell { grid-template-columns: 240px minmax(0, 1fr); padding: 4px 4px 4px 0; }
-.sidebar { height: calc(100vh - 8px); padding-top: 6px; }
-.workspace { border-radius: 6px; }
+.app-shell { grid-template-columns: 240px minmax(0, 1fr); padding: 0; }
+.sidebar { height: 100vh; padding-top: 10px; }
+.workspace { border-radius: 0; }
 .app-shell, .sidebar { transition-duration: .18s; }
 .chat-page { width: min(740px, calc(100% - 64px)); padding-top: clamp(92px, 25vh, 200px); }
 .chat-page.conversation { width: min(var(--conversation-max-width, 800px), calc(100% - 64px)); padding-top: 38px; }

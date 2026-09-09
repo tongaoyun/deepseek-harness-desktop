@@ -4,7 +4,7 @@ import './taskOutcome.css'
 
 export function TaskOutcomeDetails({ outcome }: { outcome: unknown }) {
   const value = parseTaskOutcome(outcome)
-  if (!value) return null
+  if (!value || value.status === 'unverified') return null
   if (!value.checks.length && !value.remaining.length) return null
   return <section className="task-outcome-details" aria-label="任务结果">
     {value.status !== 'completed' && <div className="task-outcome-attention" role="status"><strong>{taskOutcomeLabel(value)}</strong><p>{value.summary}</p><ul>{value.remaining.map((item, index) => <li key={index}>{item}</li>)}</ul></div>}
