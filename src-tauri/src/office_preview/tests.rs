@@ -41,6 +41,21 @@ fn csv_handles_bom_quoted_delimiters_multiline_values_and_empty_cells() {
 }
 
 #[test]
+fn csv_preserves_crlf_inside_quoted_values() {
+    let source = std::fs::read_to_string(fixture("quoted.csv")).unwrap();
+    let path = std::env::temp_dir().join(format!("xiaoyin-preview-{}.csv", uuid::Uuid::new_v4()));
+    std::fs::write(&path, source.replace("\r\n", "\n").replace('\n', "\r\n")).unwrap();
+    let result = read(&path, "csv");
+    std::fs::remove_file(path).unwrap();
+    let (StructuredPreview::Spreadsheet { sheets }, truncated) = result.unwrap() else {
+        panic!("expected workbook")
+    };
+    assert!(!truncated);
+    assert_eq!(sheets[0].rows[1][1].value, "第一行\r\n第二行");
+    assert_eq!(sheets[0].rows[2][2].value, "0");
+}
+
+#[test]
 fn document_preserves_headings_and_table_cells() {
     let (preview, truncated) = read(&fixture("brief.docx"), "docx").unwrap();
     assert!(!truncated);
