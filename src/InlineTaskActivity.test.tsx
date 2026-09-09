@@ -66,8 +66,19 @@ describe('InlineTaskActivity', () => {
       timeline: [{ id: 'command', kind: 'command', label: '运行命令', status: 'completed', toolName: 'bash', text: 'pnpm test', occurredAt: '2026-09-03T10:01:00.000Z' }],
     }} />)
     expect(html).toContain('用时 2分钟7秒')
+    expect(html).toContain('执行过程')
+    expect(html).not.toContain('已完成')
     expect(html).toContain('aria-expanded="false"')
     expect(html).not.toContain('pnpm test')
+  })
+
+  it('does not place a completion disclosure above an ordinary answer', () => {
+    const html = renderToStaticMarkup(<InlineTaskActivity finalResponse="我是小胤。" monitor={{
+      status: 'completed', activity: '已完成', startedAt: '2026-09-03T10:00:00.000Z',
+      completedAt: '2026-09-03T10:00:01.000Z', updatedAt: '2026-09-03T10:00:01.000Z',
+      outcome: { status: 'completed', summary: '已回答', remaining: [], checks: [] }, steps: [], artifacts: [],
+    }} />)
+    expect(html).toBe('')
   })
 
   it('does not expose startup internals in the conversation', () => {

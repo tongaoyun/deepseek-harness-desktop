@@ -30,3 +30,14 @@ it('distinguishes a finished turn from a verified goal and prioritizes stop/fail
   expect(taskStatusLabel({ ...task, status: 'CANCELED' })).toBe('已停止')
   expect(taskStatusLabel({ ...task, status: 'FAILED' })).toBe('执行失败')
 })
+
+it('keeps the internal unverified fallback out of ordinary conversation UI', () => {
+  const outcome: TaskOutcome = {
+    status: 'unverified', summary: '本轮已结束，任务完成情况待核对。',
+    remaining: ['核对当前成果和未完成事项后继续。'], checks: [],
+  }
+  const monitor = { ...createTaskMonitor(), status: 'completed' as const, outcome }
+  const html = renderToStaticMarkup(<><InlineTaskActivity monitor={monitor} finalResponse="我是小胤。" /><TaskOutcomeDetails outcome={outcome} /></>)
+  expect(html).toBe('')
+  expect(taskStatusLabel({ status: 'COMPLETED', monitor } as LocalTaskRun)).toBe('本轮已结束')
+})
