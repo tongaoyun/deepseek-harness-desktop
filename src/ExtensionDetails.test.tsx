@@ -15,13 +15,33 @@ const api: ExtensionDocument = { id: 'api-design', name: 'API接口设计', summ
 const background: ExtensionDocument = { ...api, id: 'internal', name: '后台知识', path: 'skills/internal/SKILL.md', userInvocable: false }
 const kit: ExpertKitView = {
   id: 'fullstack-dev-expert', name: '全栈开发专家', version: '1.0.1', summary: '覆盖前后端开发与测试', category: 'code-development', minimumDesktopVersion: '0.1.30',
-  commandIds: [], skillIds: [api.id, background.id], connectorRefs: [], requiredTools: [], knowledgeBaseRefs: [], sha256: '',
+  commandIds: [], skillIds: [api.id, background.id], skillDetails: [
+    { id: api.id, name: api.name, summary: api.summary },
+    { id: background.id, name: background.name, summary: background.summary },
+  ], connectorRefs: [], requiredTools: [], knowledgeBaseRefs: [], sha256: '',
   installState: 'installed', readiness: 'ready', connectorIssues: [], knowledgeIssues: [], localOnly: false,
   installed: { source: 'catalog', enabled: true, installPath: '/extensions/fullstack', manifest: {
     schemaVersion: '2', kind: 'expert-kit', id: 'fullstack-dev-expert', name: '全栈开发专家', version: '1.0.1', summary: '覆盖前后端开发与测试', category: 'code-development', minimumDesktopVersion: '0.1.30',
     skills: [api, background], commands: [], connectorRefs: [], requiredTools: [], knowledgeBaseRefs: [],
   } },
 }
+
+it('shows bundled skill names from the expert kit catalog before installation', async () => {
+  const available = { ...kit, installed: undefined, installState: 'available' as const }
+  const container = document.body.appendChild(document.createElement('div'))
+  const root = createRoot(container)
+  try {
+    await act(async () => root.render(<ExpertKitDetailsModal kit={available} skills={[]} connectors={[]}
+      knowledgeBases={[]} installing={false} removing={false} onClose={vi.fn()} onInstall={vi.fn()}
+      onSchedule={vi.fn()} />))
+    expect(container.querySelector('.detail-skill-list')?.textContent).toContain('API接口设计')
+    expect(container.querySelector('.detail-skill-list')?.textContent).toContain('后台知识')
+    expect(container.querySelector('.detail-skill-list')?.textContent).not.toContain('api-design')
+  } finally {
+    await act(async () => root.unmount())
+    container.remove()
+  }
+})
 
 it('uses the selected skill, keeps non-invocable knowledge readable, and closes only the nested reader', async () => {
   vi.mocked(readExtensionContents).mockResolvedValue({ readme: '# 开发流程', skills: [api, background], commands: [] })
