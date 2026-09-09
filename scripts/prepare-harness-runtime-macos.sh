@@ -14,6 +14,11 @@ node_version="v24.19.0"
 source "$script_dir/macos-build-env.sh"
 macos_check_execution
 
+case "$node_arch" in
+  arm64) expected_sha="8294b7aa9b03997481c06babf1e8b270c859358f27da57a11509afe537ac381d" ;;
+  x64) expected_sha="d1b5e999db158c62fe8f7267a4476b035d8bd93b1a605bac24a3f0dd166e3316" ;;
+esac
+
 if [[ "$stage" != "$expected_stage" ]]; then
   echo "Refusing to stage outside the dedicated Tauri resource directory: $stage" >&2
   exit 1
@@ -55,15 +60,24 @@ if [[ -f "$spawn_helper" ]]; then chmod 755 "$spawn_helper"; fi
 
 archive="node-$node_version-darwin-$node_arch.tar.gz"
 base_url="https://nodejs.org/dist/$node_version"
-curl --fail --location --silent --show-error --connect-timeout 15 --max-time 900 --speed-limit 1024 --speed-time 60 --retry 2 "$base_url/$archive" --output "$temporary/$archive"
-curl --fail --location --silent --show-error --connect-timeout 15 --max-time 60 --retry 2 "$base_url/SHASUMS256.txt" --output "$temporary/SHASUMS256.txt"
-expected_sha="$(awk -v file="$archive" '$2 == file { print $1 }' "$temporary/SHASUMS256.txt")"
-actual_sha="$(shasum -a 256 "$temporary/$archive" | awk '{ print $1 }')"
-if [[ -z "$expected_sha" || "$actual_sha" != "$expected_sha" ]]; then
-  echo "Node.js archive SHA-256 verification failed." >&2
-  exit 1
+cache_root="${XIAOYIN_BUILD_CACHE_DIR:-$HOME/Library/Caches/xiaoyin-desktop-builder}"
+archive_cache="$cache_root/node/$node_version/$archive"
+mkdir -p "$(dirname "$archive_cache")"
+actual_sha=""
+if [[ -f "$archive_cache" ]]; then
+  actual_sha="$(shasum -a 256 "$archive_cache" | awk '{ print $1 }')"
 fi
-tar -xzf "$temporary/$archive" -C "$temporary"
+if [[ "$actual_sha" != "$expected_sha" ]]; then
+  download="$temporary/$archive"
+  curl --fail --location --silent --show-error --connect-timeout 15 --max-time 900 --speed-limit 1024 --speed-time 60 --retry 2 "$base_url/$archive" --output "$download"
+  actual_sha="$(shasum -a 256 "$download" | awk '{ print $1 }')"
+  if [[ "$actual_sha" != "$expected_sha" ]]; then
+    echo "Node.js archive SHA-256 verification failed." >&2
+    exit 1
+  fi
+  mv -f "$download" "$archive_cache"
+fi
+tar -xzf "$archive_cache" -C "$temporary"
 node_root="$temporary/node-$node_version-darwin-$node_arch"
 mkdir -p "$next_stage/node"
 cp "$node_root/bin/node" "$next_stage/node/node"
