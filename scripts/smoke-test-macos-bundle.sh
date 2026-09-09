@@ -37,8 +37,9 @@ binary="$app/Contents/MacOS/$executable_name"
 runtime="$app/Contents/Resources/resources/harness-runtime"
 node_binary="$runtime/node/node"
 entry="$runtime/harness-host/dist/index.js"
+pptx_worker="$runtime/harness-host/dist/pptx-render-worker.mjs"
 config="$runtime/harness-host/runtime/cordis.yml"
-for required in "$app" "$binary" "$node_binary" "$entry" "$config"; do
+for required in "$app" "$binary" "$node_binary" "$entry" "$pptx_worker" "$config"; do
   [[ -e "$required" ]] || { echo "Packaged file is missing: $required" >&2; exit 1; }
 done
 

@@ -54,8 +54,9 @@ function Test-PackagedHarness {
   $runtimeRoot = Join-Path $installRoot "resources\harness-runtime"
   $node = Join-Path $runtimeRoot "node\node.exe"
   $entry = Join-Path $runtimeRoot "harness-host\dist\index.js"
+  $pptxWorker = Join-Path $runtimeRoot "harness-host\dist\pptx-render-worker.mjs"
   $config = Join-Path $runtimeRoot "harness-host\runtime\cordis.yml"
-  foreach ($required in @($node, $entry, $config)) {
+  foreach ($required in @($node, $entry, $pptxWorker, $config)) {
     if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
       throw "安装包缺少 Harness 运行文件：$required"
     }

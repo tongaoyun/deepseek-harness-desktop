@@ -86,8 +86,9 @@ chmod 755 "$next_stage/node/node"
 
 node_binary="$next_stage/node/node"
 entry="$host_stage/dist/index.js"
+pptx_worker="$host_stage/dist/pptx-render-worker.mjs"
 config="$host_stage/runtime/cordis.yml"
-for required in "$node_binary" "$entry" "$config"; do
+for required in "$node_binary" "$entry" "$pptx_worker" "$config"; do
   [[ -f "$required" ]] || { echo "Packaged Harness file is missing: $required" >&2; exit 1; }
 done
 

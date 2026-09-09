@@ -49,7 +49,7 @@ it('keeps a failed MCP form for retry and forwards the actual timeout to the run
     expect(close).toHaveBeenCalledOnce()
     const saved = save.mock.calls[1][0]
     expect(saved).toMatchObject({ command: 'node', arguments: ['my server.js'], timeoutSeconds: 120 })
-    expect(buildRuntimeConnectorCatalog([saved], '', ['test-server'])[0].timeoutSeconds).toBe(120)
+    expect(buildRuntimeConnectorCatalog([saved], ['test-server'])[0].timeoutSeconds).toBe(120)
   })
 })
 

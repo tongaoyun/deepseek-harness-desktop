@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import {
   applyConnectorSecrets,
   connectorSecretTemplate,
@@ -16,21 +16,7 @@ const connector = {
   environment: { ERP_TOKEN: 'secret' }, headers: { Authorization: 'Bearer secret' },
 } satisfies ConnectorCatalogEntry
 
-const values = new Map<string, string>()
-
 describe('local connector secrets', () => {
-  beforeEach(() => {
-    values.clear()
-    Object.defineProperty(globalThis, 'window', {
-      configurable: true,
-      value: { localStorage: {
-        getItem: (key: string) => values.get(key) ?? null,
-        setItem: (key: string, value: string) => values.set(key, value),
-        removeItem: (key: string) => values.delete(key),
-      } },
-    })
-  })
-
   it('publishes only key names and hydrates them from local values', () => {
     const template = connectorSecretTemplate(connector)
     expect(template).toMatchObject({ environment: { ERP_TOKEN: '' }, headers: { Authorization: '' } })
@@ -49,16 +35,5 @@ describe('local connector secrets', () => {
       crm: { environment: {}, headers: { Token: 'crm-secret' } },
     })
     await expect(loadConnectorSecrets('employee-2')).resolves.toEqual({})
-  })
-
-  it('moves secrets embedded in old connector drafts into the secret store', async () => {
-    values.set('xiaoyin.personal-connectors.employee-legacy', JSON.stringify([{
-      id: 'erp', environment: { ERP_TOKEN: 'legacy-env' }, headers: { Authorization: 'legacy-header' },
-    }]))
-
-    await expect(loadConnectorSecrets('employee-legacy')).resolves.toEqual({
-      erp: { environment: { ERP_TOKEN: 'legacy-env' }, headers: { Authorization: 'legacy-header' } },
-    })
-    expect(values.get('xiaoyin.personal-connectors.employee-legacy')).not.toContain('legacy-env')
   })
 })

@@ -28,25 +28,29 @@ export function withDesktopBuiltinConnectors(connectors: ConnectorCatalogEntry[]
 
 export function buildRuntimeConnectorCatalog(
   connectors: ConnectorCatalogEntry[],
-  legacyErpMcpUrl: string,
   enabledConnectorIds: Iterable<string> = [],
   localSecrets: ConnectorSecretStore = {},
 ): ConnectorRuntimeDefinition[] {
   const enabled = new Set(enabledConnectorIds)
   return connectors.map((connector) => {
     const configured = applyConnectorSecrets(connector, localSecrets[connector.id])
-    const legacyErp = connector.id === 'erp-mcp' && !connector.transport && Boolean(legacyErpMcpUrl)
-      && !['disabled', 'unavailable'].includes(connector.status)
-    const status = legacyErp ? 'ready' : connector.status
+    const transport = connector.transport
+      ?? (connector.kind === 'desktop-builtin' ? 'desktop' : 'streamable-http')
+    const incomplete = connector.kind !== 'desktop-builtin' && (
+      !connector.transport
+      || transport === 'stdio' && !configured.command?.trim()
+      || (transport === 'streamable-http' || transport === 'sse') && (!connector.url?.trim() || !connector.authMode)
+    )
     return {
       id: connector.id,
       name: connector.name,
-      status: status === 'ready' && missingConnectorSecretKeys(configured).length > 0 ? 'needs-configuration' : status,
+      status: connector.status === 'ready' && (incomplete || missingConnectorSecretKeys(configured).length > 0)
+        ? 'needs-configuration'
+        : connector.status,
       version: connector.version || '1',
-      transport: connector.transport
-        ?? (connector.kind === 'desktop-builtin' ? 'desktop' : 'streamable-http'),
-      url: connector.url || (legacyErp ? legacyErpMcpUrl : ''),
-      authMode: connector.authMode ?? (legacyErp ? 'employee-bearer' : 'none'),
+      transport,
+      url: connector.url ?? '',
+      authMode: connector.authMode ?? 'none',
       toolNames: [...new Set(connector.toolNames)],
       command: configured.command ?? '',
       arguments: configured.arguments ?? [],

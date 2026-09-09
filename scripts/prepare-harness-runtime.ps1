@@ -74,8 +74,9 @@ if ($licenseSha256 -ne $expectedLicenseSha256) {
 
 $stagedNode = Join-Path $nodeStage "node.exe"
 $stagedEntry = Join-Path $stage "harness-host\dist\index.js"
+$stagedPptxWorker = Join-Path $stage "harness-host\dist\pptx-render-worker.mjs"
 $stagedConfig = Join-Path $stage "harness-host\runtime\cordis.yml"
-foreach ($required in @($stagedNode, $stagedEntry, $stagedConfig)) {
+foreach ($required in @($stagedNode, $stagedEntry, $stagedPptxWorker, $stagedConfig)) {
   if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
     throw "Packaged Harness file is missing: $required"
   }
@@ -92,6 +93,7 @@ $manifest = [ordered]@{
   files = [ordered]@{
     node = (Get-FileHash -LiteralPath $stagedNode -Algorithm SHA256).Hash.ToLowerInvariant()
     entry = (Get-FileHash -LiteralPath $stagedEntry -Algorithm SHA256).Hash.ToLowerInvariant()
+    pptxWorker = (Get-FileHash -LiteralPath $stagedPptxWorker -Algorithm SHA256).Hash.ToLowerInvariant()
     config = (Get-FileHash -LiteralPath $stagedConfig -Algorithm SHA256).Hash.ToLowerInvariant()
     lockfile = (Get-FileHash -LiteralPath (Join-Path $repository "pnpm-lock.yaml") -Algorithm SHA256).Hash.ToLowerInvariant()
   }

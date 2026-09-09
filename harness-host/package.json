@@ -41,7 +41,7 @@
     "dingtalk-stream": "2.1.6-beta.1",
     "docx": "9.7.1",
     "exceljs": "4.4.0",
-    "fflate": "0.8.2",
+    "fflate": "0.8.3",
     "mammoth": "1.12.1",
     "pdf-parse": "2.4.5",
     "pdfkit": "0.20.1",

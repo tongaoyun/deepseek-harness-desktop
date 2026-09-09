@@ -72,8 +72,9 @@ try {
   $runtimeRoot = Join-Path $resolvedRoot "resources\harness-runtime"
   $runtimeNode = Join-Path $runtimeRoot "node\node.exe"
   $runtimeEntry = Join-Path $runtimeRoot "harness-host\dist\index.js"
+  $runtimePptxWorker = Join-Path $runtimeRoot "harness-host\dist\pptx-render-worker.mjs"
   $runtimeConfig = Join-Path $runtimeRoot "harness-host\runtime\cordis.yml"
-  foreach ($required in @($runtimeNode, $runtimeEntry, $runtimeConfig, (Join-Path $runtimeRoot "runtime-manifest.json"))) {
+  foreach ($required in @($runtimeNode, $runtimeEntry, $runtimePptxWorker, $runtimeConfig, (Join-Path $runtimeRoot "runtime-manifest.json"))) {
     if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
       throw "Installed Harness resource is missing: $required"
     }

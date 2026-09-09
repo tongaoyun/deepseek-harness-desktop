@@ -6,32 +6,16 @@ import ExcelJS from 'exceljs'
 import mammoth from 'mammoth'
 import { PDFParse } from 'pdf-parse'
 import PDFDocument from 'pdfkit'
-import { createRequire } from 'node:module'
+import { spawn } from 'node:child_process'
 import { unzipSync } from 'fflate'
 import { access, link, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { dirname, extname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { LocalFileBridge, discoverAuthorizedRoots, fileChangeReceipt, type LocalFileRootInput } from './local-files-plugin.js'
 import { convertOffice, findOfficeEngine } from './office-conversion.js'
 
 const { Workbook } = ExcelJS
-const require = createRequire(import.meta.url)
-interface PptxSlide {
-  background: { color: string }
-  addShape(shape: unknown, options: Record<string, unknown>): void
-  addText(text: string | Array<{ text: string; options: Record<string, unknown> }>, options: Record<string, unknown>): void
-  addNotes(notes: string): void
-}
-interface PptxPresentation {
-  layout: string
-  author: string
-  subject: string
-  theme: { headFontFace: string; bodyFontFace: string; lang: string }
-  ShapeType: { rect: unknown }
-  addSlide(): PptxSlide
-  write(options: { outputType: 'nodebuffer' }): Promise<Buffer | ArrayBuffer>
-}
-const PptxGenJS = require('pptxgenjs') as { new(): PptxPresentation }
 
 export const name = 'xiaoyin-local-documents'
 export const inject = ['tools', 'attachments']
@@ -41,6 +25,8 @@ const MAX_TEXT_CHARS = 400_000
 const MAX_SHEETS = 20
 const MAX_ROWS = 2_000
 const MAX_COLUMNS = 100
+const MAX_PPTX_RENDER_BYTES = 25 * 1024 * 1024
+const PPTX_RENDER_TIMEOUT_MS = 30_000
 const CREATE_TOOLS = new Set([
   'office_docx_create', 'office_xlsx_create', 'office_xlsx_update_cells', 'office_xlsx_append_rows',
   'office_xlsx_add_sheet', 'office_xlsx_format_sheet', 'office_pptx_create', 'office_pdf_create',
@@ -405,26 +391,57 @@ export async function renderPptx(
   slides: Array<{ title: string; bullets: string[]; speakerNotes?: string }>,
   title = '',
 ): Promise<Buffer> {
-  const presentation = new PptxGenJS()
-  presentation.layout = 'LAYOUT_WIDE'
-  presentation.author = '小胤'
-  presentation.subject = title || '小胤生成演示文稿'
-  presentation.theme = { headFontFace: 'Microsoft YaHei', bodyFontFace: 'Microsoft YaHei', lang: 'zh-CN' }
-  for (const item of slides) {
-    const slide = presentation.addSlide()
-    slide.background = { color: 'F7FAF8' }
-    slide.addShape(presentation.ShapeType.rect, { x: 0, y: 0, w: 0.16, h: 7.5, fill: { color: '4F9366' }, line: { color: '4F9366' } })
-    slide.addText(item.title, { x: 0.65, y: 0.55, w: 11.7, h: 0.7, fontFace: 'Microsoft YaHei', fontSize: 27, bold: true, color: '202522', margin: 0 })
-    if (item.bullets.length > 0) {
-      slide.addText(item.bullets.map((text) => ({ text, options: { bullet: { indent: 18 }, breakLine: true } })), {
-        x: 0.75, y: 1.65, w: 11.6, h: 4.9, fontFace: 'Microsoft YaHei', fontSize: 18, color: '3F4741', breakLine: false,
-        margin: 0.08, paraSpaceAfterPt: 14, valign: 'top',
-      })
+  return runPptxRenderer(fileURLToPath(new URL('./pptx-render-worker.mjs', import.meta.url)), { slides, title })
+}
+
+export function runPptxRenderer(
+  workerPath: string,
+  payload: { slides: Array<{ title: string; bullets: string[]; speakerNotes?: string }>; title: string },
+  timeoutMs = PPTX_RENDER_TIMEOUT_MS,
+): Promise<Buffer> {
+  return new Promise((resolvePromise, rejectPromise) => {
+    const child = spawn(process.execPath, [workerPath], { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true })
+    const output: Buffer[] = []
+    const errors: Buffer[] = []
+    let outputBytes = 0
+    let errorBytes = 0
+    let settled = false
+
+    const finish = (error?: Error) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      if (error) rejectPromise(error)
+      else resolvePromise(Buffer.concat(output))
     }
-    if (item.speakerNotes) slide.addNotes(item.speakerNotes)
-  }
-  const raw = await presentation.write({ outputType: 'nodebuffer' })
-  return Buffer.isBuffer(raw) ? raw : Buffer.from(raw)
+    const stop = (error: Error) => {
+      child.kill('SIGKILL')
+      finish(error)
+    }
+    const timer = setTimeout(() => stop(new Error('PPTX 生成超时，未写入文件')), timeoutMs)
+
+    child.stdout.on('data', (chunk: Buffer) => {
+      outputBytes += chunk.length
+      if (outputBytes > MAX_PPTX_RENDER_BYTES) stop(new Error('PPTX 生成结果超过 25 MiB 限制'))
+      else output.push(chunk)
+    })
+    child.stderr.on('data', (chunk: Buffer) => {
+      if (errorBytes >= 64 * 1024) return
+      errorBytes += chunk.length
+      errors.push(chunk.subarray(0, Math.max(0, 64 * 1024 - errorBytes + chunk.length)))
+    })
+    child.once('error', () => finish(new Error('无法启动隔离的 PPTX 生成进程')))
+    child.once('close', (code) => {
+      if (settled) return
+      if (code === 0 && outputBytes > 0) finish()
+      else {
+        const detail = Buffer.concat(errors).toString('utf8').trim()
+        finish(new Error(detail ? `PPTX 生成失败：${detail}` : 'PPTX 生成失败'))
+      }
+    })
+    child.stdin.on('error', () => { /* A failed worker is reported through close/error. */ })
+    child.stdin.end(JSON.stringify(payload))
+  })
 }
 
 function createPdfTool(bridge: LocalFileBridge): ToolDefinition {

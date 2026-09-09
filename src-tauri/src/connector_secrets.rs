@@ -6,7 +6,6 @@ use tauri::Manager;
 
 const KEYRING_SERVICE: &str = "com.instudio.xiaoyin.connector-secret";
 const MAX_SECRET_CHARS: usize = 2_048;
-const MAX_CONNECTORS: usize = 128;
 const MAX_FIELDS_PER_CONNECTOR: usize = 64;
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
@@ -63,24 +62,6 @@ pub fn delete_connector_secret(
     validate_identifier("员工标识", &employee_id)?;
     validate_identifier("连接器标识", &connector_id)?;
     delete_values(&app, &employee_id, &connector_id)?;
-    load_store(&app, &employee_id)
-}
-
-#[tauri::command]
-pub fn migrate_connector_secrets(
-    app: tauri::AppHandle,
-    employee_id: String,
-    legacy: ConnectorSecretStore,
-) -> Result<ConnectorSecretStore, String> {
-    validate_identifier("员工标识", &employee_id)?;
-    if legacy.len() > MAX_CONNECTORS {
-        return Err("旧连接器密钥数量过多，无法安全迁移".to_string());
-    }
-    let current = load_store(&app, &employee_id)?;
-    let merged = merge_stores(current, legacy)?;
-    for (connector_id, values) in &merged {
-        save_values(&app, &employee_id, connector_id, values)?;
-    }
     load_store(&app, &employee_id)
 }
 
@@ -181,28 +162,6 @@ fn non_empty_keys(values: &BTreeMap<String, String>) -> Vec<String> {
         .filter(|(_, value)| !value.is_empty())
         .map(|(key, _)| key.clone())
         .collect()
-}
-
-fn merge_stores(
-    mut current: ConnectorSecretStore,
-    legacy: ConnectorSecretStore,
-) -> Result<ConnectorSecretStore, String> {
-    for (connector_id, values) in legacy {
-        validate_identifier("连接器标识", &connector_id)?;
-        validate_values(&values)?;
-        let target = current.entry(connector_id).or_default();
-        for (key, value) in values.environment {
-            if !value.is_empty() {
-                target.environment.entry(key).or_insert(value);
-            }
-        }
-        for (key, value) in values.headers {
-            if !value.is_empty() {
-                target.headers.entry(key).or_insert(value);
-            }
-        }
-    }
-    Ok(current)
 }
 
 fn validate_values(values: &ConnectorSecretValues) -> Result<(), String> {
@@ -332,27 +291,6 @@ fn digest(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn migration_keeps_existing_vault_values() {
-        let current = BTreeMap::from([(
-            "erp".to_string(),
-            ConnectorSecretValues {
-                environment: BTreeMap::from([("TOKEN".to_string(), "new".to_string())]),
-                headers: BTreeMap::new(),
-            },
-        )]);
-        let legacy = BTreeMap::from([(
-            "erp".to_string(),
-            ConnectorSecretValues {
-                environment: BTreeMap::from([("TOKEN".to_string(), "old".to_string())]),
-                headers: BTreeMap::from([("Authorization".to_string(), "Bearer old".to_string())]),
-            },
-        )]);
-        let merged = merge_stores(current, legacy).unwrap();
-        assert_eq!(merged["erp"].environment["TOKEN"], "new");
-        assert_eq!(merged["erp"].headers["Authorization"], "Bearer old");
-    }
 
     #[test]
     fn rejects_oversized_secret_values() {

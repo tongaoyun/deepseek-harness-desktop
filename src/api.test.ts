@@ -38,7 +38,6 @@ describe('loadBootstrap', () => {
       modelApiKey: 'test-model-key',
       endpoints: {
         litellm: 'http://litellm.local/v1',
-        erpMcp: 'http://erp.local/mcp',
         artifacts: '/api/v1/artifacts',
         expertKits: '/api/v1/expert-kits',
         skills: '/api/v1/skills',
