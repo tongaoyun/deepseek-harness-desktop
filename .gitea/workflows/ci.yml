@@ -79,6 +79,7 @@ jobs:
         shell: powershell
         run: |
           Get-CimInstance Win32_OperatingSystem | Select-Object Caption, Version, BuildNumber
+          powershell -NoProfile -ExecutionPolicy Bypass -File scripts/diagnose-windows-loader.ps1
           Get-WinEvent -FilterHashtable @{LogName='System'; ProviderName='Application Popup'; StartTime=(Get-Date).AddHours(-1)} -ErrorAction SilentlyContinue |
             Where-Object { $_.Message -match 'xiaoyin|entry|入口' } | Select-Object -First 5 TimeCreated, Message | Format-List
           Get-WinEvent -FilterHashtable @{LogName='Application'; StartTime=(Get-Date).AddHours(-1)} -MaxEvents 100 -ErrorAction SilentlyContinue |
