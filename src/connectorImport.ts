@@ -7,6 +7,29 @@ export interface ConnectorImportItem {
   error?: string
 }
 
+export async function persistBundledConnectors(
+  value: unknown,
+  knownIds: Iterable<string>,
+  persist: (connector: ConnectorCatalogEntry) => Promise<void>,
+): Promise<string[]> {
+  const known = new Set(knownIds)
+  const failures: string[] = []
+  for (const item of parseConnectorImport(JSON.stringify(value))) {
+    if (!item.connector) {
+      failures.push(`${item.name}：${item.error}`)
+      continue
+    }
+    if (known.has(item.connector.id)) continue
+    try {
+      await persist(item.connector)
+      known.add(item.connector.id)
+    } catch (error) {
+      failures.push(`${item.name}：${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+  return failures
+}
+
 /** Parse each server independently so one invalid entry cannot hide the others. */
 export function parseConnectorImport(value: string): ConnectorImportItem[] {
   const parsed = object(JSON.parse(value), '配置')

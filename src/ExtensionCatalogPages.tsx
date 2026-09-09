@@ -1,4 +1,5 @@
 import { Boxes, Check, Plus, Sparkles } from 'lucide-react'
+import { convertFileSrc, isTauri } from '@tauri-apps/api/core'
 import { useMemo, useState } from 'react'
 import type { ExpertKitView } from './expertKits'
 import type { SkillView } from './skills'
@@ -58,13 +59,21 @@ export function ExpertCatalogPage(props: CommonProps & {
       const installed = kit.installState === 'installed' || kit.installState === 'update'
       const actionLabel = kit.installState === 'retired' ? '查看并卸载' : kit.installState === 'update' ? '查看更新' : installed ? '查看详情' : '查看并安装'
       return <article className="market-card" key={kit.id}>
-        <div className="market-card-title"><span className="market-card-icon"><Boxes size={18} /></span><div><h3><button className="market-card-name" onClick={() => props.onOpen(kit.id)} type="button">{kit.name}</button></h3><small>@{kit.localOnly ? '我的创作' : '小胤企业市场'}</small></div><button aria-label={`${actionLabel}：${kit.name}`} className={installed ? 'installed' : ''} disabled={props.installingId === kit.id} onClick={() => props.onOpen(kit.id)} title={actionLabel} type="button">{installed ? <Check size={18} /> : <Plus size={20} />}</button></div>
+        <div className="market-card-title"><CatalogKitIcon installPath={kit.installed?.installPath} /><div><h3><button className="market-card-name" onClick={() => props.onOpen(kit.id)} type="button">{kit.name}</button></h3><small>@{kit.author || (kit.localOnly ? '我的创作' : '小胤企业市场')}</small></div><button aria-label={`${actionLabel}：${kit.name}`} className={installed ? 'installed' : ''} disabled={props.installingId === kit.id} onClick={() => props.onOpen(kit.id)} title={actionLabel} type="button">{installed ? <Check size={18} /> : <Plus size={20} />}</button></div>
         <p>{kit.summary}</p>
         {kit.readiness === 'partial' && <div className="market-card-warning">部分依赖待配置，安装后仍可继续完善</div>}
         <footer><span>{kit.skillIds.length} 个技能{kit.commandIds.length > 0 ? ` · ${kit.commandIds.length} 个指令` : ''}</span><span>v{kit.version}</span></footer>
       </article>
     })}</div>
   </>
+}
+
+function CatalogKitIcon({ installPath }: { installPath?: string }) {
+  const [failed, setFailed] = useState(false)
+  const source = installPath && isTauri() ? convertFileSrc(`${installPath}/assets/icon.svg`) : ''
+  return <span className="market-card-icon">{source && !failed
+    ? <img alt="" aria-hidden="true" onError={() => setFailed(true)} src={source} />
+    : <Boxes size={18} />}</span>
 }
 
 export function SkillCatalogPage(props: CommonProps & { all: SkillView[]; visible: SkillView[]; onOpen: (id: string) => void }) {

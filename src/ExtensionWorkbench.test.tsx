@@ -18,7 +18,7 @@ const skill: SkillView = {
   installState: 'available', readiness: 'ready', connectorIssues: [], knowledgeIssues: [],
 }
 const kit: ExpertKitView = {
-  id: 'developer', name: '开发专家', summary: '开发工作方案', version: '1.0.0', category: 'code-development',
+  id: 'developer', name: '开发专家', author: 'QoderWork', summary: '开发工作方案', version: '1.0.0', category: 'code-development',
   minimumDesktopVersion: '0.1.0', commandIds: ['review'], skillIds: ['review'], connectorRefs: [],
   knowledgeBaseRefs: [], requiredTools: [], sha256: 'a'.repeat(64),
   installState: 'installed', installedVersion: '1.0.0', readiness: 'ready', connectorIssues: [], knowledgeIssues: [], localOnly: false,
@@ -46,6 +46,7 @@ it('counts only published kits in the market while retaining local imports in in
     expect(tabs[0].textContent).toBe('套件广场 1')
     expect(tabs[1].textContent).toBe('已安装 6')
     expect(container.querySelectorAll('.expert-market-grid article')).toHaveLength(1)
+    expect(container.querySelector('.market-card-title small')?.textContent).toBe('@QoderWork')
     await act(async () => tabs[1].click())
     expect(container.querySelectorAll('.expert-market-grid article')).toHaveLength(6)
     expect(tabs[0].textContent).toBe('套件广场 1')

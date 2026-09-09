@@ -8,20 +8,22 @@ import {
   WandSparkles,
   MoreHorizontal,
   MessageSquare,
+  ChevronRight,
 } from 'lucide-react'
-import { type ReactNode, useEffect } from 'react'
+import { convertFileSrc, isTauri } from '@tauri-apps/api/core'
+import { useEffect, useState } from 'react'
 import { expertKitChanges } from './expertKitDetails'
 import { ExtensionDetailLayout } from './ExtensionDetailLayout'
 import { ExtensionActionMenu, InstalledExtensionControls } from './InstalledExtensionControls'
 import { ExtensionContentsPanel } from './ExtensionContentsPanel'
 import { extensionCategoryLabel } from './extensionCategories'
 import type { ExpertKitView, ExtensionDocument } from './expertKits'
-import type { ConnectorCatalogEntry, KnowledgeBaseEntry, SkillCatalogEntry } from './types'
+import type { ConnectorRuntimeDefinition, KnowledgeBaseEntry, SkillCatalogEntry } from './types'
 
 interface ExpertKitDetailsModalProps {
   kit: ExpertKitView
   skills: SkillCatalogEntry[]
-  connectors: ConnectorCatalogEntry[]
+  connectors: ConnectorRuntimeDefinition[]
   knowledgeBases: KnowledgeBaseEntry[]
   installing: boolean
   removing: boolean
@@ -35,11 +37,13 @@ interface ExpertKitDetailsModalProps {
   onUse?: (command?: string) => void
   onUseSkill?: (skill: ExtensionDocument) => void
   onConfigureConnectors?: () => void
+  onConfigureKnowledge?: () => void
+  onToggleConnector?: (connector: ConnectorRuntimeDefinition, enabled: boolean) => void
   onChanged?: () => Promise<void> | void
 }
 
 export function ExpertKitDetailsModal({
-  kit, skills, connectors, knowledgeBases, installing, removing, onClose, onInstall, onRemove, onSchedule, onCustomize, onCustomizeDocument, onExport, onUse, onUseSkill, onConfigureConnectors, onChanged,
+  kit, skills, connectors, knowledgeBases, installing, removing, onClose, onInstall, onRemove, onSchedule, onCustomize, onCustomizeDocument, onExport, onUse, onUseSkill, onConfigureConnectors, onConfigureKnowledge, onToggleConnector, onChanged,
 }: ExpertKitDetailsModalProps) {
   useEffect(() => {
     const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose() }
@@ -67,7 +71,7 @@ export function ExpertKitDetailsModal({
         </> : <button disabled={installing || !kit.sha256} onClick={onInstall} type="button">{installing ? '正在校验并安装…' : '确认安装'}</button>}
   </>}>
       <div className="extension-profile">
-        <span><Boxes size={22} /></span>
+        <ExtensionIcon installPath={kit.installed?.installPath} name={kit.name} />
         <div><div className="extension-profile-title"><h2 id="expert-kit-title">{kit.name}</h2><span className="extension-profile-badge">v{kit.installedVersion ?? kit.version}</span><span className="extension-profile-badge">{kit.localOnly ? '本地导入' : kit.installState === 'retired' ? '已下架' : '套件市场'}</span></div><p className="extension-reader-meta">{kit.installed?.author || kit.author ? `@${kit.installed?.author || kit.author}` : `${stateLabel} · ${extensionCategoryLabel(kit.category)}`}</p></div>
       </div>
       <p className="extension-profile-summary">{kit.summary}</p>
@@ -92,21 +96,76 @@ export function ExpertKitDetailsModal({
         <h3>知识技能 <small>({kit.skillIds.length})</small></h3>
         <div className="detail-skill-list">{kit.skillIds.map((id) => <article key={id}><WandSparkles size={15} /><div><strong>{skillById.get(id)?.name ?? id}</strong><p>{skillById.get(id)?.summary || '随专家套件一起加载的工作方法'}</p></div></article>)}</div>
       </section>}
-      {kit.installed && <ExtensionContentsPanel extension={kit.installed} onUseSkill={onUseSkill} onUseCommand={onUse} onCustomize={onCustomizeDocument} />}
-      {(kit.connectorRefs.length > 0 || kit.knowledgeBaseRefs.length > 0) && <section className="expert-detail-section">
-        <h3>连接器与知识库</h3>
-        <div className="expert-content-groups">
-          {kit.connectorRefs.length > 0 && <DetailGroup icon={<PlugZap size={14} />} title={`连接器 ${kit.connectorRefs.length}`} values={kit.connectorRefs.map((id) => connectorById.get(id)?.name ?? id)} />}
-          {kit.knowledgeBaseRefs.length > 0 && <DetailGroup icon={<BookOpenCheck size={14} />} title={`知识库 ${kit.knowledgeBaseRefs.length}`} values={kit.knowledgeBaseRefs.map((reference) => knowledgeByReference.get(reference)?.name ?? reference)} />}
-        </div>
-      </section>}
-
-      {kit.connectorRefs.length > 0 && onConfigureConnectors && <button className="kit-configure-link" onClick={onConfigureConnectors} type="button"><PlugZap size={14} />查看和配置连接器</button>}
+      {kit.installed && <ExtensionContentsPanel extension={kit.installed} onUseSkill={onUseSkill} onUseCommand={onUse} onCustomize={onCustomizeDocument} beforeSkills={<CapabilitySections
+        connectorRefs={kit.connectorRefs}
+        connectorById={connectorById}
+        knowledgeBaseRefs={kit.knowledgeBaseRefs}
+        knowledgeByReference={knowledgeByReference}
+        onConfigureConnectors={onConfigureConnectors}
+        onConfigureKnowledge={onConfigureKnowledge}
+        onToggleConnector={onToggleConnector}
+      />} />}
+      {!kit.installed && <CapabilitySections
+        connectorRefs={kit.connectorRefs}
+        connectorById={connectorById}
+        knowledgeBaseRefs={kit.knowledgeBaseRefs}
+        knowledgeByReference={knowledgeByReference}
+        onConfigureConnectors={onConfigureConnectors}
+        onConfigureKnowledge={onConfigureKnowledge}
+        onToggleConnector={onToggleConnector}
+      />}
 
 
   </ExtensionDetailLayout>
 }
 
-function DetailGroup({ icon, title, values }: { icon: ReactNode; title: string; values: string[] }) {
-  return <div><h4>{icon}{title}</h4><p>{values.join(' · ')}</p></div>
+function ExtensionIcon({ installPath, name }: { installPath?: string; name: string }) {
+  const [failed, setFailed] = useState(false)
+  const source = installPath && isTauri() ? convertFileSrc(`${installPath}/assets/icon.svg`) : ''
+  return <span className="extension-profile-icon">{source && !failed
+    ? <img alt="" aria-hidden="true" onError={() => setFailed(true)} src={source} />
+    : <Boxes aria-label={`${name}套件图标`} size={22} />}</span>
+}
+
+function CapabilitySections({ connectorRefs, connectorById, knowledgeBaseRefs, knowledgeByReference, onConfigureConnectors, onConfigureKnowledge, onToggleConnector }: {
+  connectorRefs: string[]
+  connectorById: Map<string, ConnectorRuntimeDefinition>
+  knowledgeBaseRefs: string[]
+  knowledgeByReference: Map<string, KnowledgeBaseEntry>
+  onConfigureConnectors?: () => void
+  onConfigureKnowledge?: () => void
+  onToggleConnector?: (connector: ConnectorRuntimeDefinition, enabled: boolean) => void
+}) {
+  return <>
+    {connectorRefs.length > 0 && <section className="expert-detail-section">
+      <h3>数据连接 <small>({connectorRefs.length})</small></h3>
+      <div className="extension-capability-list">{connectorRefs.map((id) => {
+        const connector = connectorById.get(id)
+        const enabled = connector?.enabled === true
+        const ready = connector?.status === 'ready'
+        const status = !connector ? '未安装' : !enabled ? '未启用' : ready ? '已启用 · 使用时检查' : connector.status === 'needs-configuration' ? '待配置' : '当前不可用'
+        return <div className="extension-capability-row" key={id}>
+          <span className={`extension-capability-status ${enabled && ready ? 'ready' : ''}`} />
+          <div><strong>{connector?.name ?? id}</strong><small>{connector ? `${status}${connector.toolNames.length > 0 ? ` · ${connector.toolNames.length} 个工具` : ''}` : '套件所需连接器尚未安装'}</small></div>
+          {connector && <button aria-label={`${enabled ? '关闭' : '启用'} ${connector.name}`} aria-checked={enabled} className="extension-capability-switch" disabled={!onToggleConnector} onClick={() => onToggleConnector?.(connector, !enabled)} role="switch" type="button"><span /></button>}
+          {!connector && onConfigureConnectors && <button aria-label="配置连接器" className="extension-capability-open" onClick={onConfigureConnectors} type="button"><ChevronRight size={16} /></button>}
+        </div>
+      })}</div>
+    </section>}
+    {knowledgeBaseRefs.length > 0 && <section className="expert-detail-section">
+      <h3>知识库 <small>({knowledgeBaseRefs.length})</small></h3>
+      <div className="extension-capability-list">{knowledgeBaseRefs.map((reference) => {
+        const knowledgeBase = knowledgeByReference.get(reference)
+        return <button className="extension-capability-row extension-capability-link" disabled={!onConfigureKnowledge} key={reference} onClick={onConfigureKnowledge} type="button">
+          <BookOpenCheck size={16} />
+          <div><strong>{knowledgeBase?.name ?? reference}</strong><small>{knowledgeBase ? `${scopeLabel(knowledgeBase.scope)} · 可用于检索` : '不存在或无访问权限'}</small></div>
+          <ChevronRight size={16} />
+        </button>
+      })}</div>
+    </section>}
+  </>
+}
+
+function scopeLabel(scope: KnowledgeBaseEntry['scope']) {
+  return scope === 'PERSONAL' ? '个人知识库' : scope === 'TEAM' ? '团队知识库' : '组织知识库'
 }

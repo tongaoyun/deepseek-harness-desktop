@@ -300,6 +300,11 @@ fn convert_connectors(root: &Path, plugin: &Value, kit_id: &str) -> Result<Vec<S
         if server.contains_key("oauth") {
             return Err("该套件的 OAuth 连接器需要单独接入".into());
         }
+        if server.get("oauthBaseUrl").and_then(Value::as_str).is_some()
+            && !server.contains_key("authMode")
+        {
+            server.insert("authMode".into(), json!("oauth"));
+        }
         let mut server = Value::Object({
             server.insert("id".into(), json!(id));
             server.insert("name".into(), json!(name));
@@ -400,7 +405,7 @@ mod tests {
             "commands/start.md",
             "读取 ${QODER_PLUGIN_ROOT}/templates/input.md\n\n$ARGUMENTS",
         );
-        root.write(".mcp.json", r#"{"mcpServers":{"design":{"command":"node","args":["${QODER_PLUGIN_ROOT}/server.js"]}}}"#);
+        root.write(".mcp.json", r#"{"mcpServers":{"design":{"command":"node","args":["${QODER_PLUGIN_ROOT}/server.js"]},"buyer":{"type":"streamable-http","url":"https://mcp.example.com","oauthBaseUrl":"https://auth.example.com"}}}"#);
 
         import(&root.0, Some("expert-kit")).unwrap();
 
@@ -418,6 +423,11 @@ mod tests {
             fs::read_to_string(root.0.join(native_connectors::CONNECTORS_PATH)).unwrap();
         assert!(connectors.contains(native_connectors::EXTENSION_ROOT_VARIABLE));
         assert!(!connectors.contains("QODER_PLUGIN_ROOT"));
+        let connectors: Value = serde_json::from_str(&connectors).unwrap();
+        assert_eq!(
+            connectors["mcpServers"]["product-design-buyer"]["authMode"],
+            "oauth"
+        );
     }
 
     #[test]
