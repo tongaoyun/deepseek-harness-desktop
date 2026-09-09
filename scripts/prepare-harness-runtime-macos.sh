@@ -71,14 +71,11 @@ cp "$node_root/LICENSE" "$next_stage/node/LICENSE"
 chmod 755 "$next_stage/node/node"
 
 node_binary="$next_stage/node/node"
-"$node_binary" "$repository/scripts/check-macos-runtime.mjs" "$host_stage" "$node_arch"
 entry="$host_stage/dist/index.js"
 config="$host_stage/runtime/cordis.yml"
 for required in "$node_binary" "$entry" "$config"; do
   [[ -f "$required" ]] || { echo "Packaged Harness file is missing: $required" >&2; exit 1; }
 done
-
-node "$repository/scripts/check-harness-runtime.mjs" "$node_binary" "$host_stage"
 
 printf '{\n  "schemaVersion": 1,\n  "platform": "macos-%s",\n  "nodeVersion": "%s",\n  "nodeArchiveSha256": "%s"\n}\n' \
   "$node_arch" "$node_version" "$actual_sha" > "$next_stage/runtime-manifest.json"

@@ -28,13 +28,21 @@ test('implicit native builds keep the standard Cargo directory', () => {
 test('CI shares one runner fairly across two architecture workers', () => {
   const workflow = readFileSync(new URL('../.gitea/workflows/macos-installer.yml', import.meta.url), 'utf8')
   assert.match(workflow, /max-parallel: 2/)
-  assert.match(workflow, /CARGO_BUILD_JOBS: "4"/)
-  assert.match(workflow, /XIAOYIN_HARNESS_SMOKE_TIMEOUT_MS: "120000"/)
+  assert.match(workflow, /CARGO_BUILD_JOBS: "3"/)
+  assert.match(workflow, /XIAOYIN_HARNESS_SMOKE_TIMEOUT_MS: "300000"/)
   assert.match(workflow, /CARGO_TARGET_DIR: \/tmp\/xiaoyin-desktop-builder\/target\/\$\{\{ matrix\.architecture \}\}/)
   assert.match(workflow, /runs-on: macos-arm64/)
   assert.doesNotMatch(workflow, /runs-on:.*macos-x64/)
   assert.match(workflow, /--target "\$rust_target"/)
   assert.match(workflow, /app="\$target_dir\/release\/bundle/)
+})
+
+test('staged runtime checks run once against the final disk image', () => {
+  const prepare = readFileSync(new URL('./prepare-harness-runtime-macos.sh', import.meta.url), 'utf8')
+  const smoke = readFileSync(new URL('./smoke-test-macos-bundle.sh', import.meta.url), 'utf8')
+  assert.doesNotMatch(prepare, /check-(harness|macos)-runtime/)
+  assert.match(smoke, /check-macos-runtime\.mjs/)
+  assert.match(smoke, /check-harness-runtime\.mjs/)
 })
 
 test('bundle architecture checks accept the binary path before lipo variable arguments', { skip: process.platform !== 'darwin' }, () => {
