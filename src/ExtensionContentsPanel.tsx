@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { FileText, ArrowRight } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -6,8 +6,8 @@ import { readExtensionContents, type ExtensionContents, type ExtensionDocument }
 import type { InstalledExpertKit } from './types'
 import { ExtensionReaderDialog } from './ExtensionReaderDialog'
 
-export function ExtensionContentsPanel({ extension, onUseSkill, onUseCommand, onCustomize }: {
-  extension: InstalledExpertKit; onUseSkill?: (skill: ExtensionDocument) => void; onUseCommand?: (id: string) => void; onCustomize?: (document: ExtensionDocument) => void
+export function ExtensionContentsPanel({ extension, onUseSkill, onUseCommand, onCustomize, beforeSkills }: {
+  extension: InstalledExpertKit; onUseSkill?: (skill: ExtensionDocument) => void; onUseCommand?: (id: string) => void; onCustomize?: (document: ExtensionDocument) => void; beforeSkills?: ReactNode
 }) {
   const { kind, id, version } = extension.manifest
   const [result, setResult] = useState<{ key: string; contents?: ExtensionContents; error?: string }>()
@@ -35,9 +35,10 @@ export function ExtensionContentsPanel({ extension, onUseSkill, onUseCommand, on
         {shortcuts.map((item) => <button aria-label={`使用技能：${item.name}`} disabled={!enabled || !onUseSkill} key={item.path} onClick={() => onUseSkill?.(item)} type="button"><code>/{item.name}</code><span>{item.argumentHint || item.summary}</span><ArrowRight size={15} /></button>)}
       </div>
     </section>}
+    {beforeSkills}
     {contents.skills.length > 0 && <section className="expert-detail-section extension-source-section">
       <h3>知识技能 <small>({contents.skills.length})</small></h3>
-      <div className="extension-source-list">{contents.skills.map((item) => <button aria-label={`知识技能：${item.name}`} key={item.path} onClick={() => setActive(item)} type="button"><FileText size={16} /><span><strong>{item.name}</strong>{item.summary && <small>{item.summary}</small>}</span><ArrowRight size={14} /></button>)}</div>
+      <div className="extension-source-list">{contents.skills.map((item) => <button aria-label={`知识技能：${item.name}`} key={item.path} onClick={() => setActive(item)} type="button"><span><strong>{item.name}</strong>{item.summary && <small>{item.summary}</small>}</span></button>)}</div>
     </section>}
     {contents.commands.length > 0 && <section className="expert-detail-section extension-source-section">
       <h3>命令说明 <small>({contents.commands.length})</small></h3>

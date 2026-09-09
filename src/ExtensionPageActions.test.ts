@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { parseConnectorJson } from './ExtensionPageActions'
-import { parseConnectorImport } from './connectorImport'
+import { parseConnectorImport, persistBundledConnectors } from './connectorImport'
 
 describe('connector JSON import', () => {
   it('accepts a standard mcpServers stdio entry', () => {
@@ -55,5 +55,17 @@ describe('connector JSON import', () => {
     expect(items[0]?.connector?.id).toBe('same')
     expect(items[1]?.error).toContain('重复')
     expect(() => parseConnectorJson(JSON.stringify({ mcpServers: { one: { command: 'node' }, two: { command: 'node' } } }))).toThrow('多个服务')
+  })
+
+  it('persists new bundled connectors once and reports individual failures', async () => {
+    const persisted: string[] = []
+    const failures = await persistBundledConnectors({ mcpServers: {
+      existing: { command: 'node' },
+      added: { type: 'streamable-http', url: 'https://mcp.example.com', authMode: 'oauth' },
+      broken: {},
+    } }, ['existing'], async (connector) => { persisted.push(connector.id) })
+    expect(persisted).toEqual(['added'])
+    expect(failures).toHaveLength(1)
+    expect(failures[0]).toContain('broken')
   })
 })

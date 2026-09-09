@@ -63,7 +63,7 @@ import { attachmentSelectionError } from './attachmentLimits'
 import { restoredTaskSessionId } from './harnessSession'
 import { prepareTaskTurn } from './taskTurn'
 import { startLocalIm, stopLocalImRuntime } from './localIm'
-import type { LocalTaskRun, TaskMessage, TaskMonitorState } from './types'
+import type { InstalledExpertKit, LocalTaskRun, TaskMessage, TaskMonitorState } from './types'
 import { parseMemoryCommand, learnCompletedTask } from './memory'
 import { useMemoryCommands } from './useMemoryCommands'
 import { useMemorySync } from './useMemorySync'
@@ -73,7 +73,7 @@ import { creationPrompt, type XiaoyinCreationKind } from './creationPrompts'
 import { McpConnectorDialog } from './McpConnectorDialog'
 import { ExtensionUploadDialog } from './ExtensionUploadDialog'
 import { extensionInvocations, selectedInvocations } from './extensionInvocations'
-import { parseConnectorImport } from './connectorImport'
+import { persistBundledConnectors } from './connectorImport'
 import { buildRuntimeConnectorCatalog } from './connectors'
 import { loadEnabledConnectorIds, saveEnabledConnectorIds } from './connectorPreferences'
 import {
@@ -1006,6 +1006,17 @@ export default function App() {
     focusComposer()
   }
 
+  const registerBundledConnectors = async (installed: InstalledExpertKit) => {
+    if (!installed.bundledConnectors) return
+    const personal = user ? loadPersonalConnectors(user.userId) : []
+    const failures = await persistBundledConnectors(
+      installed.bundledConnectors,
+      [...connectors, ...personal].map((connector) => connector.id),
+      (connector) => persistPersonalConnector(connector, true),
+    )
+    if (failures.length) throw new Error(failures.join('；'))
+  }
+
   const installKit = async (kit: ExpertKitView) => {
     if (!bootstrap || !user || kit.installState === 'installed') return
     setInstallingKitId(kit.id)
@@ -1020,8 +1031,15 @@ export default function App() {
       if (download.version !== kit.version || download.sha256 !== kit.sha256) {
         throw new Error('专家套件目录在安装期间发生变化，请刷新后重试')
       }
-      await installExtension(download, 'expert-kit')
+      const installed = await installExtension(download, 'expert-kit')
+      let warning: string | undefined
+      try {
+        await registerBundledConnectors(installed)
+      } catch (error) {
+        warning = `套件已安装，连接器需要处理：${error instanceof Error ? error.message : String(error)}`
+      }
       await refreshInstalledKits()
+      if (warning) setExpertKitError(warning)
     } catch (error) {
       setExpertKitError(error instanceof Error ? error.message : String(error))
     } finally {
@@ -1082,17 +1100,7 @@ export default function App() {
       let warning: string | undefined
       if (installed.bundledConnectors) {
         try {
-          const failures: string[] = []
-          for (const item of parseConnectorImport(JSON.stringify(installed.bundledConnectors))) {
-            if (!item.connector) { failures.push(`${item.name}：${item.error}`); continue }
-            const connector = item.connector
-            if (!connectors.some((existing) => existing.id === connector.id)
-              && !(user && loadPersonalConnectors(user.userId).some((existing) => existing.id === connector.id))) {
-              try { await persistPersonalConnector(connector, true) }
-              catch (error) { failures.push(`${item.name}：${error instanceof Error ? error.message : String(error)}`) }
-            }
-          }
-          if (failures.length) throw new Error(failures.join('；'))
+          await registerBundledConnectors(installed)
         } catch (error) {
           warning = `套件已安装，连接器需要处理：${error instanceof Error ? error.message : String(error)}`
           setExpertKitError(warning)
@@ -1508,7 +1516,7 @@ export default function App() {
         onChanged={refreshInstalledKits}
         kit={activeExpertKit}
         skills={skills}
-        connectors={connectors}
+        connectors={runtimeConnectors}
         knowledgeBases={knowledgeBases}
         installing={installingKitId === activeExpertKit.id}
         removing={(developerKitBusy && activeExpertKit.localOnly) || removingCatalogId === activeExpertKit.id}
@@ -1521,6 +1529,16 @@ export default function App() {
         onUse={activeExpertKit.installed?.enabled !== false && ['installed', 'update'].includes(activeExpertKit.installState) ? (command) => { setActiveExpertKitId(''); startNewTask(`/kit:${activeExpertKit.id}${command ? `:${command}` : ''} `) } : undefined}
         onUseSkill={activeExpertKit.installed?.enabled !== false && ['installed', 'update'].includes(activeExpertKit.installState) ? (skill) => { setActiveExpertKitId(''); startNewTask(expertKitSkillPrompt(activeExpertKit.id, skill)) } : undefined}
         onConfigureConnectors={() => { setActiveExpertKitId(''); setExtensionQuery(''); setPage('connectors') }}
+        onConfigureKnowledge={() => { setActiveExpertKitId(''); setPage('knowledge') }}
+        onToggleConnector={(connector, enabled) => {
+          if (enabled && (connector.authMode === 'oauth' || connector.status === 'needs-configuration')) {
+            setActiveExpertKitId('')
+            setExtensionQuery(connector.name)
+            setPage('connectors')
+            return
+          }
+          toggleConnector(connector.id, enabled)
+        }}
         onCustomize={['installed', 'update'].includes(activeExpertKit.installState) ? () => void customizeLocalExpertKit(activeExpertKit) : undefined}
         onCustomizeDocument={['installed', 'update'].includes(activeExpertKit.installState) ? (document) => void customizeLocalExpertKit(activeExpertKit, 'expert-kit', document) : undefined}
         onExport={['installed', 'update'].includes(activeExpertKit.installState) ? () => void exportLocalExpertKit(activeExpertKit) : undefined}

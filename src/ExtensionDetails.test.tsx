@@ -6,6 +6,7 @@ import { ExpertKitDetailsModal } from './ExpertKitDetailsModal'
 import { SkillDetailsModal } from './SkillDetailsModal'
 import { readExtensionContents, type ExpertKitView, type ExtensionDocument } from './expertKits'
 import type { SkillView } from './skills'
+import type { ConnectorRuntimeDefinition, KnowledgeBaseEntry } from './types'
 
 vi.mock('./expertKits', () => ({ readExtensionContents: vi.fn(), setExtensionEnabled: vi.fn(), revealExtensionDirectory: vi.fn() }))
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
@@ -80,6 +81,39 @@ it('opens the full README from its bounded preview and restores its opener', asy
     expect(document.activeElement).toBe(opener)
     await act(async () => opener.click())
     expect(container.querySelector('[role="dialog"]')).not.toBeNull()
+  } finally { await act(async () => root.unmount()); container.remove() }
+})
+
+it('shows working connector controls and the Xiaoyin knowledge base entry', async () => {
+  vi.mocked(readExtensionContents).mockResolvedValue({ readme: '', skills: [], commands: [] })
+  const connector = { id: 'notion', name: 'Notion', version: '1', status: 'ready', transport: 'streamable-http', url: 'https://notion.test/mcp', authMode: 'oauth', enabled: true, toolNames: ['search', 'write'] } satisfies ConnectorRuntimeDefinition
+  const knowledgeBase = { id: 'kb-1', referenceKey: 'product', reference: 'kb:product', scope: 'TEAM', name: '产品资料', description: '', createdAt: '', updatedAt: '' } satisfies KnowledgeBaseEntry
+  const onToggleConnector = vi.fn(), onConfigureKnowledge = vi.fn()
+  const container = document.body.appendChild(document.createElement('div'))
+  const root = createRoot(container)
+  try {
+    await act(async () => root.render(<ExpertKitDetailsModal
+      kit={{ ...kit, connectorRefs: ['notion'], knowledgeBaseRefs: ['kb:product'] }}
+      skills={[]}
+      connectors={[connector]}
+      knowledgeBases={[knowledgeBase]}
+      installing={false}
+      removing={false}
+      onClose={vi.fn()}
+      onInstall={vi.fn()}
+      onSchedule={vi.fn()}
+      onToggleConnector={onToggleConnector}
+      onConfigureKnowledge={onConfigureKnowledge}
+    />))
+    expect(container.textContent).toContain('已启用 · 使用时检查 · 2 个工具')
+    const toggle = container.querySelector<HTMLButtonElement>('[aria-label="关闭 Notion"]')!
+    expect(toggle.getAttribute('aria-checked')).toBe('true')
+    await act(async () => toggle.click())
+    expect(onToggleConnector).toHaveBeenCalledWith(connector, false)
+    const knowledge = [...container.querySelectorAll<HTMLButtonElement>('.extension-capability-link')].find((button) => button.textContent?.includes('产品资料'))!
+    expect(knowledge.textContent).toContain('团队知识库 · 可用于检索')
+    await act(async () => knowledge.click())
+    expect(onConfigureKnowledge).toHaveBeenCalledOnce()
   } finally { await act(async () => root.unmount()); container.remove() }
 })
 
