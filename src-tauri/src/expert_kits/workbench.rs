@@ -79,10 +79,9 @@ pub fn read_extension_contents(
                 Ok(ExtensionDocument {
                     id: entry.id.clone(),
                     name: document_name(&content, &entry.id),
-                    summary: compatibility::metadata(&content, "description").unwrap_or_default(),
-                    argument_hint: compatibility::metadata(&content, "argument-hint")
-                        .unwrap_or_default(),
-                    user_invocable: compatibility::metadata(&content, "user-invocable")
+                    summary: metadata(&content, "description").unwrap_or_default(),
+                    argument_hint: metadata(&content, "argument-hint").unwrap_or_default(),
+                    user_invocable: metadata(&content, "user-invocable")
                         .is_none_or(|value| value.trim() != "false"),
                     path: entry.path.clone(),
                     content,
@@ -103,7 +102,7 @@ pub fn read_extension_contents(
 
 pub(super) fn document_name(content: &str, fallback: &str) -> String {
     let field = |key| {
-        compatibility::metadata(content, key)
+        metadata(content, key)
             .map(|value| value.trim().to_owned())
             .filter(|value| !value.is_empty())
     };
@@ -119,6 +118,34 @@ pub(super) fn document_name(content: &str, fallback: &str) -> String {
         .or_else(|| document_heading(content))
         .or(name)
         .unwrap_or_else(|| fallback.to_owned())
+}
+
+pub(super) fn metadata(content: &str, key: &str) -> Option<String> {
+    let mut lines = content.trim_start_matches('\u{feff}').lines();
+    if lines.next()?.trim() != "---" {
+        return None;
+    }
+    let lines: Vec<_> = lines.take_while(|line| line.trim() != "---").collect();
+    for (index, line) in lines.iter().enumerate() {
+        if let Some(value) = line.strip_prefix(&format!("{key}:")) {
+            let value = value.trim();
+            if value.starts_with(['>', '|']) {
+                return Some(
+                    lines[index + 1..]
+                        .iter()
+                        .take_while(|line| line.starts_with(' ') || line.is_empty())
+                        .map(|line| line.trim())
+                        .collect::<Vec<_>>()
+                        .join(" "),
+                );
+            }
+            return Some(
+                serde_json::from_str::<String>(value)
+                    .unwrap_or_else(|_| value.trim_matches('\'').to_owned()),
+            );
+        }
+    }
+    None
 }
 
 fn document_heading(content: &str) -> Option<String> {

@@ -207,7 +207,6 @@ export function mergeExpertKits(
       connectorRefs: kit.connectorRefs ?? [],
       requiredTools: kit.requiredTools ?? [],
       knowledgeBaseRefs: kit.knowledgeBaseRefs ?? [],
-      serverWorkflows: kit.serverWorkflows ?? [],
       ...readiness(kit.connectorRefs ?? [], kit.requiredTools ?? [], kit.knowledgeBaseRefs ?? []),
       installed: local,
       localOnly: false,
@@ -223,6 +222,7 @@ export function mergeExpertKits(
     views.push({
       id: local.manifest.id,
       name: local.manifest.name,
+      author: local.manifest.author,
       version: local.manifest.version,
       summary: local.manifest.summary,
       category: local.manifest.category,
@@ -232,7 +232,6 @@ export function mergeExpertKits(
       connectorRefs: local.manifest.connectorRefs,
       requiredTools: local.manifest.requiredTools,
       knowledgeBaseRefs: local.manifest.knowledgeBaseRefs ?? [],
-      serverWorkflows: local.manifest.serverWorkflows,
       sha256: local.packageSha256 ?? '',
       ...readiness(local.manifest.connectorRefs, local.manifest.requiredTools, local.manifest.knowledgeBaseRefs ?? []),
       installState: local.source === 'developer' ? 'installed' : 'retired',

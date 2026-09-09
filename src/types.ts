@@ -22,6 +22,7 @@ export type RuntimeStatus = 'connecting' | 'ready' | 'offline'
 export interface ExpertKitCatalogEntry {
   id: string
   name: string
+  author?: string
   version: string
   summary: string
   category: import('./extensionCategories').ExtensionCategory
@@ -31,25 +32,7 @@ export interface ExpertKitCatalogEntry {
   connectorRefs: string[]
   requiredTools: string[]
   knowledgeBaseRefs: string[]
-  serverWorkflows: ServerWorkflowDefinition[]
   sha256: string
-}
-
-export interface ServerWorkflowDefinition {
-  id: string
-  name: string
-  workflowType: string
-  version: string
-  inputs: ServerWorkflowInput[]
-  steps: Array<{ id: string; connectorId: string; tool: string; arguments: Record<string, unknown> }>
-}
-
-export interface ServerWorkflowInput {
-  name: string
-  label: string
-  type: 'string' | 'date' | 'integer' | 'boolean'
-  required: boolean
-  description?: string
 }
 
 export interface TaskMessage {
@@ -258,6 +241,7 @@ export interface KnowledgeSearchHit {
 export interface SkillCatalogEntry {
   id: string
   name: string
+  author?: string
   version: string
   summary: string
   category: import('./extensionCategories').ExtensionCategory
@@ -344,6 +328,7 @@ export interface ExpertKitManifest {
   kind: 'expert-kit' | 'skill'
   id: string
   name: string
+  author?: string
   version: string
   summary: string
   category: import('./extensionCategories').ExtensionCategory
@@ -354,7 +339,6 @@ export interface ExpertKitManifest {
   requiredTools: string[]
   connectorRefs: string[]
   knowledgeBaseRefs?: string[]
-  serverWorkflows: ServerWorkflowDefinition[]
 }
 
 export interface InstalledExpertKit {

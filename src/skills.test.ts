@@ -16,7 +16,6 @@ const installed: InstalledExpertKit = {
     summary: '分析文档', category: 'knowledge-research', triggers: ['总结文档'], minimumDesktopVersion: '0.1.13', commands: [],
     skills: [{ id: 'document-insight', path: 'skills/document-insight/SKILL.md' }],
     requiredTools: ['office.document.read'], connectorRefs: [], knowledgeBaseRefs: [],
-    serverWorkflows: [],
   },
 }
 

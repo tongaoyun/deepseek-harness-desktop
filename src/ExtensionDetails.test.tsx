@@ -14,11 +14,11 @@ const api: ExtensionDocument = { id: 'api-design', name: 'API接口设计', summ
 const background: ExtensionDocument = { ...api, id: 'internal', name: '后台知识', path: 'skills/internal/SKILL.md', userInvocable: false }
 const kit: ExpertKitView = {
   id: 'fullstack-dev-expert', name: '全栈开发专家', version: '1.0.1', summary: '覆盖前后端开发与测试', category: 'code-development', minimumDesktopVersion: '0.1.30',
-  commandIds: [], skillIds: [api.id, background.id], connectorRefs: [], requiredTools: [], knowledgeBaseRefs: [], serverWorkflows: [], sha256: '',
+  commandIds: [], skillIds: [api.id, background.id], connectorRefs: [], requiredTools: [], knowledgeBaseRefs: [], sha256: '',
   installState: 'installed', readiness: 'ready', connectorIssues: [], knowledgeIssues: [], localOnly: false,
   installed: { source: 'catalog', enabled: true, installPath: '/extensions/fullstack', manifest: {
     schemaVersion: '2', kind: 'expert-kit', id: 'fullstack-dev-expert', name: '全栈开发专家', version: '1.0.1', summary: '覆盖前后端开发与测试', category: 'code-development', minimumDesktopVersion: '0.1.30',
-    skills: [api, background], commands: [], connectorRefs: [], requiredTools: [], knowledgeBaseRefs: [], serverWorkflows: [],
+    skills: [api, background], commands: [], connectorRefs: [], requiredTools: [], knowledgeBaseRefs: [],
   } },
 }
 

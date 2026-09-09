@@ -18,7 +18,6 @@ const skill = {
       schemaVersion: '1', kind: 'skill', id: 'order-review', name: '订单检查', version: '1.0.0', summary: '', category: 'ecommerce-retail',
       triggers: ['检查订单'], minimumDesktopVersion: '0.1.29', commands: [], skills: [{ id: 'order-review', path: 'SKILL.md' }],
       connectorRefs: ['erp-mcp'], requiredTools: ['order.search'], knowledgeBaseRefs: [],
-      serverWorkflows: [],
     },
   },
 } as SkillView

@@ -548,7 +548,7 @@ it.each(['', '继续检查'])('resumes the persisted session after remount with 
 })
 
 it('resumes an installed kit after native persistence reorders the capability snapshot', async () => {
-  fixtures.catalog.expertKits = mergeExpertKits([], [{ installPath: '/extensions/reports', source: 'developer', packageSha256: 'a'.repeat(64), manifest: { schemaVersion: '2', kind: 'expert-kit', id: 'reports', name: '报告专家', version: '1.0.0', summary: '生成报告', category: 'other', minimumDesktopVersion: '0.1.30', commands: [], skills: [{ id: 'report', path: 'skills/report/SKILL.md' }], connectorRefs: [], requiredTools: [], serverWorkflows: [] } }])
+  fixtures.catalog.expertKits = mergeExpertKits([], [{ installPath: '/extensions/reports', source: 'developer', packageSha256: 'a'.repeat(64), manifest: { schemaVersion: '2', kind: 'expert-kit', id: 'reports', name: '报告专家', version: '1.0.0', summary: '生成报告', category: 'other', minimumDesktopVersion: '0.1.30', commands: [], skills: [{ id: 'report', path: 'skills/report/SKILL.md' }], connectorRefs: [], requiredTools: [] } }])
   vi.mocked(runHarnessWithRecovery).mockImplementation(async (request) => ({ finalResponse: '完成', sessionId: request.sessionId!, outcome: completedOutcome }))
   let stored!: LocalTaskRun
   await fixture(async () => {
@@ -600,7 +600,7 @@ it('sends only task-selected connectors and returns to automatic tools after rem
 })
 
 it('executes the selected kit and stops forcing it after the user removes the capability', async () => {
-  fixtures.catalog.expertKits = mergeExpertKits([], [{ installPath: '/extensions/reports', source: 'developer', packageSha256: 'a'.repeat(64), manifest: { schemaVersion: '2', kind: 'expert-kit', id: 'reports', name: '报告专家', version: '1.0.0', summary: '生成报告', category: 'other', minimumDesktopVersion: '0.1.30', commands: [], skills: [{ id: 'report', path: 'skills/report/SKILL.md' }], connectorRefs: [], requiredTools: [], serverWorkflows: [] } }])
+  fixtures.catalog.expertKits = mergeExpertKits([], [{ installPath: '/extensions/reports', source: 'developer', packageSha256: 'a'.repeat(64), manifest: { schemaVersion: '2', kind: 'expert-kit', id: 'reports', name: '报告专家', version: '1.0.0', summary: '生成报告', category: 'other', minimumDesktopVersion: '0.1.30', commands: [], skills: [{ id: 'report', path: 'skills/report/SKILL.md' }], connectorRefs: [], requiredTools: [] } }])
   vi.mocked(runHarnessWithRecovery).mockResolvedValue({ finalResponse: '完成', sessionId: 'kit-session' })
   await fixture(async () => {
     await submit('/kit:reports 分析销售情况')
@@ -613,7 +613,7 @@ it('executes the selected kit and stops forcing it after the user removes the ca
 })
 
 it('persists both kits and retains them when reopening the task', async () => {
-  fixtures.catalog.expertKits = mergeExpertKits([], ['design', 'product'].map((id) => ({ installPath: `/extensions/${id}`, source: 'developer', packageSha256: 'a'.repeat(64), manifest: { schemaVersion: '2', kind: 'expert-kit', id, name: id, version: '1.0.0', summary: id, category: 'other', minimumDesktopVersion: '0.1.30', commands: [], skills: [{ id, path: `skills/${id}/SKILL.md` }], connectorRefs: [], requiredTools: [], serverWorkflows: [] } })))
+  fixtures.catalog.expertKits = mergeExpertKits([], ['design', 'product'].map((id) => ({ installPath: `/extensions/${id}`, source: 'developer', packageSha256: 'a'.repeat(64), manifest: { schemaVersion: '2', kind: 'expert-kit', id, name: id, version: '1.0.0', summary: id, category: 'other', minimumDesktopVersion: '0.1.30', commands: [], skills: [{ id, path: `skills/${id}/SKILL.md` }], connectorRefs: [], requiredTools: [] } })))
   vi.mocked(runHarnessWithRecovery).mockResolvedValue({ finalResponse: '完成', sessionId: 'combined-session' })
   await fixture(async () => {
     await submit('/kit:design /kit:product 制定产品方案')
@@ -681,7 +681,7 @@ it('does not invent a default model when the policy has no available models', as
 
 it('applies installed extension updates and disablement to the next turn', async () => {
   function kit(version: string, enabled = true) {
-    return mergeExpertKits([], [{ enabled, installPath: `/extensions/reports/${version}`, source: 'developer', packageSha256: version === '1.0.0' ? 'a'.repeat(64) : 'b'.repeat(64), manifest: { schemaVersion: '2', kind: 'expert-kit', id: 'reports', name: '报告专家', version, summary: '生成报告', category: 'other', minimumDesktopVersion: '0.1.30', commands: [], skills: [{ id: 'report', path: 'skills/report/SKILL.md' }], connectorRefs: [], requiredTools: [], serverWorkflows: [] } }])
+    return mergeExpertKits([], [{ enabled, installPath: `/extensions/reports/${version}`, source: 'developer', packageSha256: version === '1.0.0' ? 'a'.repeat(64) : 'b'.repeat(64), manifest: { schemaVersion: '2', kind: 'expert-kit', id: 'reports', name: '报告专家', version, summary: '生成报告', category: 'other', minimumDesktopVersion: '0.1.30', commands: [], skills: [{ id: 'report', path: 'skills/report/SKILL.md' }], connectorRefs: [], requiredTools: [] } }])
   }
   fixtures.catalog.expertKits = kit('1.0.0')
   vi.mocked(runHarnessWithRecovery).mockImplementation(async (input) => ({ sessionId: input.sessionId!, finalResponse: '报告完成' } as Awaited<ReturnType<typeof runHarnessWithRecovery>>))
