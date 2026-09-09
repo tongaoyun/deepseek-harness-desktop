@@ -20,7 +20,7 @@ export async function localScheduleCommand(owner: string, controller: LocalSched
   const draft: LocalScheduleInput = previous ? { ...previous } : {
     name: '', prompt: '', cronExpression: '', timeZone: '', directories: task.localDirectories ?? [],
     model: task.model,
-    taskContext: { composerConnectorIds: task.composerConnectorIds, invocationToken: task.invocationToken, capabilitySnapshot: task.capabilitySnapshot },
+    taskContext: { composerConnectorIds: task.composerConnectorIds, invocationTokens: task.invocationTokens, capabilitySnapshot: task.capabilitySnapshot },
     attachments: task.messages.flatMap((message) => message.role === 'user' ? message.attachments ?? [] : [])
       .filter((entry, index, all) => all.findIndex((item) => item.id === entry.id) === index),
   }

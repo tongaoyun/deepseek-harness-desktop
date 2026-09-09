@@ -34,7 +34,7 @@ describe('expert kit details', () => {
   it('keeps skill shortcuts on the supported kit route with the selected skill in the draft', () => {
     const prompt = expertKitSkillPrompt('fullstack-dev-expert', { id: 'api-design', name: 'API接口设计' })
     expect(prompt).toBe('/kit:fullstack-dev-expert 请使用套件中的「API接口设计」（api-design）技能。\n\n')
-    expect(splitComposerPrompt(prompt).token).toBe('/kit:fullstack-dev-expert')
+    expect(splitComposerPrompt(prompt).tokens).toEqual(['/kit:fullstack-dev-expert'])
     expect(splitComposerPrompt(prompt).text.trim()).toBe('请使用套件中的「API接口设计」（api-design）技能。')
   })
   it('summarizes capability changes', () => {

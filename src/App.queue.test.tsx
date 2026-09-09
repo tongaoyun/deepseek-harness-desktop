@@ -51,6 +51,15 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 const completedOutcome: TaskOutcome = { status: 'completed', summary: '已完成本次要求', remaining: [], checks: [] }
 
 const olderTask = (): LocalTaskRun => ({ id: 'older-task', source: 'DESKTOP', name: '更早的定时任务', status: 'COMPLETED', createdAt: '2026-09-01', updatedAt: '2026-09-01', monitor: harness.createTaskMonitor(), messages: [{ role: 'user', text: '保留原始需求' }, { role: 'assistant', text: '历史成果已生成' }] })
+it('starts a file generation task in the default workspace without requiring a directory picker', async () => {
+  vi.mocked(runHarnessWithRecovery).mockResolvedValue({ finalResponse: '成果已生成', sessionId: 'workspace-task' })
+  await fixture(async () => {
+    await submit('在默认工作目录创建测试文件')
+    expect(runHarnessWithRecovery).toHaveBeenCalledOnce()
+    expect(fixtures.chat!.localFileError).toBe('')
+    expect(fixtures.chat!.messages.at(-1)?.text).toBe('成果已生成')
+  })
+})
 it('appends explicit memory to the original task without losing prior messages or task identity', async () => {
   vi.mocked(runHarnessWithRecovery).mockResolvedValue({ finalResponse: '原来的成果', sessionId: 'original' })
   vi.mocked(rememberInstruction).mockResolvedValue({ ...emptyMemoryProfile, syncPending: true })
@@ -595,11 +604,26 @@ it('executes the selected kit and stops forcing it after the user removes the ca
   vi.mocked(runHarnessWithRecovery).mockResolvedValue({ finalResponse: '完成', sessionId: 'kit-session' })
   await fixture(async () => {
     await submit('/kit:reports 分析销售情况')
-    expect(vi.mocked(runHarnessWithRecovery).mock.calls[0][0].selectedExtension).toEqual({ kind: 'expert-kit', id: 'reports' })
+    expect(vi.mocked(runHarnessWithRecovery).mock.calls[0][0].selectedExtensions).toEqual([{ kind: 'expert-kit', id: 'reports' }])
     expect(fixtures.chat!.prompt).toBe('/kit:reports ')
     await submit('解释排序算法')
-    expect(vi.mocked(runHarnessWithRecovery).mock.calls[1][0].selectedExtension).toBeUndefined()
+    expect(vi.mocked(runHarnessWithRecovery).mock.calls[1][0].selectedExtensions).toEqual([])
     expect(vi.mocked(runHarnessWithRecovery).mock.calls[1][0].sessionId).not.toBe('kit-session')
+  })
+})
+
+it('persists both kits and retains them when reopening the task', async () => {
+  fixtures.catalog.expertKits = mergeExpertKits([], ['design', 'product'].map((id) => ({ installPath: `/extensions/${id}`, source: 'developer', packageSha256: 'a'.repeat(64), manifest: { schemaVersion: '2', kind: 'expert-kit', id, name: id, version: '1.0.0', summary: id, category: 'other', minimumDesktopVersion: '0.1.30', commands: [], skills: [{ id, path: `skills/${id}/SKILL.md` }], connectorRefs: [], requiredTools: [], serverWorkflows: [] } })))
+  vi.mocked(runHarnessWithRecovery).mockResolvedValue({ finalResponse: '完成', sessionId: 'combined-session' })
+  await fixture(async () => {
+    await submit('/kit:design /kit:product 制定产品方案')
+    expect(vi.mocked(runHarnessWithRecovery).mock.calls[0][0].selectedExtensions).toEqual([{ kind: 'expert-kit', id: 'design' }, { kind: 'expert-kit', id: 'product' }])
+    expect(fixtures.chat!.prompt).toBe('/kit:design /kit:product ')
+    const saved = vi.mocked(persistTaskHistory).mock.calls.at(-1)![1]
+    expect(saved.invocationTokens).toEqual(['/kit:design', '/kit:product'])
+    await act(async () => fixtures.sidebar!.onNewTask())
+    await act(async () => fixtures.sidebar!.onOpenTask(saved))
+    expect(fixtures.chat!.prompt).toBe('/kit:design /kit:product ')
   })
 })
 

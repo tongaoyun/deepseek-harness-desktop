@@ -5,20 +5,27 @@ import { fileURLToPath } from 'node:url'
 
 const cases = [
   { id: 'code-restart', script: 'acceptance-code-task.mjs', args: [] },
+  { id: 'interrupted-write', script: 'evaluate-interrupted-task.mjs', args: [] },
+  { id: 'crash-write', script: 'evaluate-interrupted-task.mjs', args: ['crash'] },
+  { id: 'network-write', script: 'evaluate-interrupted-task.mjs', args: ['network'] },
   ...['spreadsheet', 'document', 'clarification'].map((id) => ({ id, script: 'evaluate-office-task.mjs', args: [id] })),
 ]
+const requested = process.argv.slice(2).filter(arg => arg.startsWith('--case=')).map(arg => arg.slice('--case='.length))
+for (const arg of process.argv.slice(2)) if (arg !== '--list' && !arg.startsWith('--case=')) throw new Error(`Unknown option: ${arg}`)
+if (requested.some(id => !cases.some(scenario => scenario.id === id))) throw new Error('Unknown evaluation case')
+const selected = requested.length ? cases.filter(scenario => requested.includes(scenario.id)) : cases
 const repeats = Number(process.env.XIAOYIN_EVAL_REPEATS ?? 1)
 if (!Number.isInteger(repeats) || repeats < 1 || repeats > 10) throw new Error('XIAOYIN_EVAL_REPEATS must be 1..10')
 if (process.argv.includes('--list')) {
-  console.log(JSON.stringify({ cases: cases.map((item) => item.id), repeats, realModel: true }, null, 2))
+  console.log(JSON.stringify({ cases: selected.map((item) => item.id), repeats, realModel: true }, null, 2))
 } else {
   if (!process.env.DEEPSEEK_API_KEY) throw new Error('DEEPSEEK_API_KEY is required')
-  if (!JSON.parse(process.env.XIAOYIN_ACCEPTANCE_SKILL_DIRS ?? '[]').length) throw new Error('XIAOYIN_ACCEPTANCE_SKILL_DIRS is required for code evaluation')
+  if (selected.some(scenario => scenario.id === 'code-restart') && !JSON.parse(process.env.XIAOYIN_ACCEPTANCE_SKILL_DIRS ?? '[]').length) throw new Error('XIAOYIN_ACCEPTANCE_SKILL_DIRS is required for code evaluation')
   const root = resolve(process.env.XIAOYIN_EVAL_REPORT_DIR ?? `output/evaluation-${new Date().toISOString().replaceAll(':', '-')}`)
   await mkdir(root, { recursive: true })
   const results = []
   for (let run = 1; run <= repeats; run++) {
-    for (const scenario of cases) {
+    for (const scenario of selected) {
       const reportPath = join(root, `${scenario.id}-${run}.json`)
       const started = performance.now()
       const outcome = await new Promise((done) => {
@@ -46,8 +53,8 @@ if (process.argv.includes('--list')) {
       results.push(result)
       console.log(JSON.stringify({ id: result.id, run, passed: result.passed, durationMs: result.durationMs }))
       const summary = { schemaVersion: 1, realModel: true, model: process.env.DSH_MODEL ?? 'deepseek-v4-flash', repeats,
-        completed: results.length, planned: repeats * cases.length,
-        passed: results.length === repeats * cases.length && results.every((item) => item.passed),
+        completed: results.length, planned: repeats * selected.length,
+        passed: results.length === repeats * selected.length && results.every((item) => item.passed),
         successRate: results.filter((item) => item.passed).length / results.length, results }
       await writeFile(join(root, 'summary.json'), JSON.stringify(summary, null, 2) + '\n')
     }

@@ -1,5 +1,6 @@
 import { invoke, isTauri } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
+import { taskInterruption } from './taskInterruption'
 import type {
   AllowedExtensionArtifact,
   ConnectorDiagnosticResult,
@@ -17,13 +18,14 @@ import type {
 import type { StandardLocalDirectory } from './localFileIntent'
 
 export interface HarnessRunInput {
+  operationScope: string
   taskId: string
   prompt: string
   executionMode: 'agent' | 'plan'
   employeeId: string
   teamId: string
   sessionId?: string
-  selectedExtension?: { kind: 'expert-kit' | 'skill'; id: string }
+  selectedExtensions: { kind: 'expert-kit' | 'skill'; id: string }[]
   knowledgeBaseRefs: string[]
   allowedArtifacts: AllowedExtensionArtifact[]
   litellmBaseUrl: string
@@ -44,6 +46,7 @@ export interface HarnessRunResult {
 }
 
 export interface ConnectorDiagnosticInput {
+  employeeId: string
   connectors: ConnectorRuntimeDefinition[]
   accessToken: string
 }
@@ -78,6 +81,10 @@ export interface HarnessFailure {
 
 export function classifyHarnessFailure(reason: unknown): HarnessFailure {
   const message = reason instanceof Error ? reason.message : String(reason)
+  if (message.includes('[XY-OPERATION-UNCERTAIN]')) return failure('connector', 'XY-OPERATION-UNCERTAIN', '外部操作结果待核对', message, false, false)
+  if (message.includes('[XY-CONNECTOR-AUTH]')) return failure('connector', 'XY-CONNECTOR-AUTH', '连接器需要重新授权', message, false, false)
+  if (message.includes('[XY-CONNECTOR-PERMISSION]')) return failure('connector', 'XY-CONNECTOR-PERMISSION', '连接器访问受限', message, false, false)
+  if (message.includes('[XY-CONNECTOR]')) return failure('connector', 'XY-CONNECTOR', '连接器调用失败', message, false, false)
   if (/任务执行超过|timed?\s*out|timeout/iu.test(message)) return failure('timeout', 'XY-TIMEOUT', '任务运行超时', message, false, false)
   if (/401|unauthorized|认证失败|invalid.*key/iu.test(message)) return failure('authentication', 'XY-AUTH', '模型认证失败', message, false, false)
   if (/429|rate.?limit|服务繁忙|capacity|overloaded/iu.test(message)) return failure('capacity', 'XY-CAPACITY', '模型服务繁忙', message, false, true)
@@ -91,7 +98,10 @@ export function classifyHarnessFailure(reason: unknown): HarnessFailure {
 }
 
 export function shouldRetryHarnessFailure(failure: HarnessFailure, monitor: TaskMonitorState): boolean {
-  return failure.retryable && !monitor.steps.some((step) => step.kind === 'tool' || step.kind === 'approval')
+  return failure.retryable && !monitor.executionStarted
+    && !monitor.steps.some((step) => step.kind === 'tool' || step.kind === 'approval')
+    && !(monitor.timeline ?? []).some((entry) => entry.toolName || entry.kind === 'approval')
+    && !(monitor.subagents?.length)
 }
 
 function failure(
@@ -300,6 +310,8 @@ export function applyHarnessNotification(
 ): TaskMonitorState {
   const parsed = parseHarnessEvent(notification)
   if (!parsed) return current
+  // This fact survives bounded display history and includes delegated tool activity.
+  if (['tool/call', 'tool/result', 'approval/request'].includes(parsed.type)) current = { ...current, executionStarted: true }
   if (!parsed.isRootSession) return {
     ...current,
     status: current.status === 'idle' ? 'running' : current.status,
@@ -499,17 +511,19 @@ export function applyHarnessNotification(
   if (parsed.type === 'turn/end') {
     const reason = text(asRecord(parsed.data.reason)?.kind)
     const status = reason === 'completed' ? 'completed' : 'failed'
+    const interruption = taskInterruption(current, 'failure', occurredAt)
     const settled = current.steps.map((item): TaskExecutionStep => item.status === 'running'
-      ? { ...item, status, completedAt: occurredAt }
+      ? { ...item, status: item.kind === 'tool' ? 'canceled' : status, completedAt: occurredAt }
       : item)
     const timeline = (current.timeline ?? []).map((item): TaskTimelineEntry => item.status === 'running'
-      ? { ...item, status }
+      ? { ...item, status: item.toolName && item.kind !== 'approval' ? 'canceled' : status }
       : item)
     const subagents = (current.subagents ?? []).map((item): SubagentActivity => item.status === 'running'
       ? { ...item, status, completedAt: occurredAt }
       : item)
     return {
       ...current,
+      ...(status === 'failed' || interruption.pendingOperations.length ? { interruption } : {}),
       status,
       activity: status === 'completed' ? '本轮已结束' : '任务执行失败',
       updatedAt: occurredAt,
@@ -972,6 +986,7 @@ function toolResultPresentation(
       detail: failed ? publicToolError(content) : exitCode === undefined ? undefined : `退出码 ${exitCode}`,
     })
   }
+  if (failed) return compact({ detail: publicToolError(content), path: text(value?.path) })
   if (toolName === 'local_files_list' && value) {
     const entries = Array.isArray(value.entries) ? value.entries : []
     return compact({

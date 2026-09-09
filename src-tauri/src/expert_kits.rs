@@ -2,6 +2,7 @@
 mod acceptance;
 mod archive;
 mod compatibility;
+pub mod github;
 mod inventory;
 mod manifest;
 pub mod workbench;
@@ -1102,10 +1103,16 @@ fn install_package_bytes(
     result
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ExtensionSelection {
+    pub kind: String,
+    pub id: String,
+}
+
 pub fn harness_profile(
     app: &tauri::AppHandle,
-    selected_kind: Option<&str>,
-    selected_id: Option<&str>,
+    selections: &[ExtensionSelection],
     requested_knowledge_base_refs: &[String],
     user_prompt: &str,
     allowed_artifacts: &[AllowedExtensionArtifact],
@@ -1114,14 +1121,16 @@ pub fn harness_profile(
     if !matches!(execution_mode, "agent" | "plan") {
         return Err("执行模式无效".to_string());
     }
-    if selected_kind.is_some() != selected_id.is_some() {
-        return Err("扩展选择坐标不完整".to_string());
+    if selections.len() > 8 {
+        return Err("每个任务最多选择 8 项技能或专家套件".into());
     }
-    if let Some(kind) = selected_kind {
-        validate_artifact_kind(kind)?;
-    }
-    if let Some(id) = selected_id {
-        validate_identifier(id)?;
+    let mut coordinates = HashSet::new();
+    for selection in selections {
+        validate_artifact_kind(&selection.kind)?;
+        validate_identifier(&selection.id)?;
+        if !coordinates.insert(format!("{}:{}", selection.kind, selection.id)) {
+            return Err("任务不能重复选择同一技能或专家套件".into());
+        }
     }
     validate_allowed_artifacts(allowed_artifacts)?;
     let installed = inventory::scan_installed_extensions(app)?
@@ -1134,23 +1143,22 @@ pub fn harness_profile(
         let coordinate = format!("{}:{}", artifact.manifest.kind, artifact.manifest.id);
         newest.entry(coordinate).or_insert(artifact);
     }
-    let selected_coordinate = selected_kind
-        .zip(selected_id)
-        .map(|(kind, id)| format!("{kind}:{id}"));
-    let selected = selected_coordinate
-        .as_ref()
-        .map(|coordinate| {
+    let selected = selections
+        .iter()
+        .map(|selection| {
+            let coordinate = format!("{}:{}", selection.kind, selection.id);
             newest
-                .get(coordinate)
+                .get(&coordinate)
                 .ok_or_else(|| format!("扩展已停用、下架或尚未安装：{coordinate}"))
         })
-        .transpose()?;
+        .collect::<Result<Vec<_>, _>>()?;
     for artifact in newest.values() {
         prepare_skill_runtime_files(artifact)?;
     }
+    validate_selected_skill_conflicts(&selected)?;
     let mut skill_directories = Vec::new();
     let mut skill_ids = HashSet::new();
-    if let Some(artifact) = selected {
+    for artifact in &selected {
         append_skill_directories(artifact, &mut skill_directories, &mut skill_ids)?;
     }
     for artifact in newest
@@ -1165,31 +1173,44 @@ pub fn harness_profile(
     {
         append_skill_directories(artifact, &mut skill_directories, &mut skill_ids)?;
     }
-    let connector_tools = selected.map_or_else(Vec::new, |artifact| {
-        artifact
-            .manifest
-            .required_tools
-            .iter()
-            .filter(|tool| {
-                !tool.starts_with("office.")
-                    && !tool.starts_with("computer_use_")
-                    && !matches!(
-                        tool.as_str(),
-                        "bash"
-                            | "pwsh"
-                            | "job_output"
-                            | "job_list"
-                            | "job_kill"
-                            | "get_goal"
-                            | "create_goal"
-                            | "update_goal"
-                    )
-            })
-            .cloned()
-            .collect::<Vec<_>>()
-    });
+    let connector_tools = selected
+        .iter()
+        .flat_map(|artifact| {
+            artifact
+                .manifest
+                .required_tools
+                .iter()
+                .filter(|tool| {
+                    !tool.starts_with("office.")
+                        && !tool.starts_with("computer_use_")
+                        && !matches!(
+                            tool.as_str(),
+                            "bash"
+                                | "pwsh"
+                                | "job_output"
+                                | "job_list"
+                                | "job_kill"
+                                | "get_goal"
+                                | "create_goal"
+                                | "update_goal"
+                        )
+                })
+                .cloned()
+                .collect::<Vec<_>>()
+        })
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    let kit_refs = selected
+        .iter()
+        .filter_map(|artifact| artifact.manifest.knowledge_base_refs.as_ref())
+        .collect::<Vec<_>>();
+    let combined_refs = kit_refs
+        .iter()
+        .flat_map(|refs| refs.iter().cloned())
+        .collect::<Vec<_>>();
     let knowledge_base_refs = task_knowledge_scope(
-        selected.and_then(|artifact| artifact.manifest.knowledge_base_refs.as_deref()),
+        (!kit_refs.is_empty()).then_some(combined_refs.as_slice()),
         requested_knowledge_base_refs,
     )?;
     let desktop_agent_guidance = if execution_mode == "plan" {
@@ -1197,7 +1218,7 @@ pub fn harness_profile(
     } else {
         "你正在小胤桌面端中工作，是能实际完成任务的 Agent，不是只能回答问题的聊天机器人。涉及本地目录、文件读写、Shell、浏览器或已连接系统时，应直接使用当前可用工具行动并根据真实结果回答；不要在尚未尝试工具前声称无法访问，也不要让员工为普通文件任务重复选择目录。优先以当前工作目录为起点，必要时再查询其他已授权目录。耗时命令可使用后台 Job，跨多轮复杂工作可使用 Goal 管理进度。仅在缺少继续执行所必需的授权、目标或业务参数时追问。工具过程使用简短自然的进度说明，最终回答聚焦结果、变更和仍需员工处理的事项。"
     };
-    let prompt = if let Some(artifact) = selected {
+    let contexts = selected.iter().map(|artifact| {
         let commands = load_command_context(artifact, user_prompt)?;
         let profile_label = if artifact.manifest.kind == "skill" {
             "独立技能"
@@ -1222,20 +1243,22 @@ pub fn harness_profile(
                 artifact.manifest.id
             )
         };
-        format!(
-            "{}\n\n本任务明确使用公司{}《{}》（ID: {}，版本: {}）。{}所有已安装技能仍可按需加载；优先遵循本扩展的工作方法和命令。不要先向员工汇报泛化的资源盘点，不要因为任务未用到知识库或连接器而阻塞；只有具体任务确实需要时才检查对应能力。面对简短或口语化输入，先按最可能的意图自然回答，仅在无法继续行动时追问。{}\n\n员工任务：\n{}",
-            desktop_agent_guidance,
+        Ok::<_, String>(format!(
+            "本任务明确使用{}《{}》（ID: {}，版本: {}）。{}{}",
             profile_label,
             artifact.manifest.name,
             artifact.manifest.id,
             artifact.manifest.version,
             skill_guidance,
             commands,
-            user_prompt,
-        )
-    } else {
-        format!("{}\n\n员工任务：\n{}", desktop_agent_guidance, user_prompt)
-    };
+        ))
+    }).collect::<Result<Vec<_>, _>>()?;
+    let prompt = format!(
+        "{}\n\n{}\n\n按所选能力的职责组合完成同一任务。不同方案的事实结论或交付要求发生冲突时明确指出，以员工的具体要求为准；不要默默丢弃任一所选能力。\n\n员工任务：\n{}",
+        desktop_agent_guidance,
+        contexts.join("\n\n"),
+        user_prompt
+    );
     Ok(ExpertKitHarnessProfile {
         skill_directories,
         knowledge_base_refs,
@@ -1246,6 +1269,34 @@ pub fn harness_profile(
             .collect(),
         prompt,
     })
+}
+
+fn validate_selected_skill_conflicts(selected: &[&InstalledExpertKit]) -> Result<(), String> {
+    let mut skills = std::collections::HashMap::<String, (String, PathBuf)>::new();
+    for artifact in selected {
+        for skill in &artifact.manifest.skills {
+            let entry = Path::new(&artifact.install_path).join(&skill.path);
+            let directory = entry.parent().ok_or("技能目录无效")?;
+            if let Some((owner, previous)) = skills.get(&skill.id) {
+                let mut previous_files = Vec::new();
+                let mut current_files = Vec::new();
+                collect_payload_files(previous, previous, Path::new(""), &mut previous_files)?;
+                collect_payload_files(directory, directory, Path::new(""), &mut current_files)?;
+                if previous_files != current_files {
+                    return Err(format!(
+                        "《{}》与《{}》包含内容不同的同名技能 {}，请先定制并区分技能 ID",
+                        owner, artifact.manifest.name, skill.id
+                    ));
+                }
+            } else {
+                skills.insert(
+                    skill.id.clone(),
+                    (artifact.manifest.name.clone(), directory.to_path_buf()),
+                );
+            }
+        }
+    }
+    Ok(())
 }
 
 fn task_knowledge_scope(
@@ -1426,14 +1477,19 @@ fn load_command_context(kit: &InstalledExpertKit, prompt: &str) -> Result<String
         return Ok(String::new());
     }
     let root = Path::new(&kit.install_path);
-    let token = prompt.split_whitespace().next().unwrap_or_default();
+    let tokens = prompt
+        .split_whitespace()
+        .take_while(|token| token.starts_with("/kit:") || token.starts_with("/skill:"))
+        .collect::<Vec<_>>();
     let prefix = format!("/kit:{}:", kit.manifest.id);
-    let selected = token.strip_prefix(&prefix);
-    let arguments = prompt
-        .trim_start()
-        .strip_prefix(token)
-        .unwrap_or_default()
-        .trim();
+    let selected = tokens.iter().find_map(|token| token.strip_prefix(&prefix));
+    let mut arguments = prompt.trim_start();
+    for token in &tokens {
+        arguments = arguments
+            .strip_prefix(token)
+            .unwrap_or(arguments)
+            .trim_start();
+    }
     if selected.is_some_and(|id| !kit.manifest.commands.iter().any(|command| command.id == id)) {
         return Err("未找到指定的套件命令".into());
     }
@@ -1726,6 +1782,51 @@ mod tests {
                 .unwrap()
                 .get("permissions")
                 .is_none()
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn combined_kits_check_resources_and_expand_each_command_arguments() {
+        let root =
+            std::env::temp_dir().join(format!("xiaoyin-combined-kits-{}", std::process::id()));
+        let kits = ["design", "product"].map(|id| {
+            let directory = root.join(id);
+            fs::create_dir_all(directory.join("skills/shared/assets")).unwrap();
+            fs::create_dir_all(directory.join("commands")).unwrap();
+            fs::write(directory.join("skills/shared/SKILL.md"), "# Shared").unwrap();
+            fs::write(directory.join("skills/shared/assets/template.txt"), "same").unwrap();
+            fs::write(
+                directory.join("commands/run.md"),
+                format!("{id}: $ARGUMENTS"),
+            )
+            .unwrap();
+            let manifest = serde_json::from_value::<ExpertKitManifest>(serde_json::json!({
+                "schemaVersion": "2", "kind": "expert-kit", "id": id, "name": id,
+                "version": "1.0.0", "summary": "Test",
+                "skills": [{ "id": "shared", "path": "skills/shared/SKILL.md" }],
+                "commands": [{ "id": "run", "path": "commands/run.md" }]
+            }))
+            .unwrap();
+            installed_kit(manifest, &directory, InstallSource::Developer)
+        });
+        assert!(validate_selected_skill_conflicts(&[&kits[0], &kits[1]]).is_ok());
+        for kit in &kits {
+            let context =
+                load_command_context(kit, "/kit:design:run /kit:product:run deliver report")
+                    .unwrap();
+            assert!(context.contains(&format!("{}: deliver report", kit.manifest.id)));
+            assert!(!context.contains("$ARGUMENTS"));
+        }
+        fs::write(
+            root.join("product/skills/shared/assets/template.txt"),
+            "different",
+        )
+        .unwrap();
+        assert!(
+            validate_selected_skill_conflicts(&[&kits[0], &kits[1]])
+                .unwrap_err()
+                .contains("同名技能")
         );
         fs::remove_dir_all(root).unwrap();
     }

@@ -7,6 +7,25 @@ mod timeout_tests {
     use super::*;
 
     #[test]
+    fn erp_cookie_mode_is_forwarded_only_for_remote_connectors_without_static_auth() {
+        let mut connector: ConnectorDefinition = serde_json::from_value(serde_json::json!({
+            "id": "erp", "name": "ERP", "status": "ready", "version": "1",
+            "transport": "sse", "url": "https://erp.example/sse", "authMode": "erp-cookie"
+        }))
+        .unwrap();
+        assert_eq!(
+            diagnostic_connectors(&[connector.clone()]).unwrap()[0].auth_mode,
+            "erp-cookie"
+        );
+        connector.headers.insert("cOoKiE".into(), "secret".into());
+        assert!(validate_connector_catalog(&[connector.clone()]).is_err());
+        connector.headers.clear();
+        connector.transport = "stdio".into();
+        connector.command = "node".into();
+        assert!(validate_connector_catalog(&[connector]).is_err());
+    }
+
+    #[test]
     fn configured_timeout_is_validated_and_forwarded() {
         let mut connector: ConnectorDefinition = serde_json::from_value(serde_json::json!({
             "id": "test-server", "name": "Test", "status": "ready", "version": "1",
@@ -179,8 +198,21 @@ pub(crate) fn validate_connector_catalog(connectors: &[ConnectorDefinition]) -> 
         ) {
             return Err(format!("连接器传输方式无效：{}", connector.id));
         }
-        if !matches!(connector.auth_mode.as_str(), "employee-bearer" | "none") {
+        if !matches!(
+            connector.auth_mode.as_str(),
+            "employee-bearer" | "erp-cookie" | "oauth" | "none"
+        ) {
             return Err(format!("连接器认证方式无效：{}", connector.id));
+        }
+        if matches!(connector.auth_mode.as_str(), "erp-cookie" | "oauth") {
+            if !matches!(connector.transport.as_str(), "streamable-http" | "sse") {
+                return Err("动态授权仅支持 HTTP/SSE 连接器".into());
+            }
+            if connector.headers.keys().any(|key| {
+                key.eq_ignore_ascii_case("cookie") || key.eq_ignore_ascii_case("authorization")
+            }) {
+                return Err("动态授权不能同时配置 Cookie 或 Authorization 请求头".into());
+            }
         }
         if connector.transport == "desktop" {
             if !connector.url.is_empty() {

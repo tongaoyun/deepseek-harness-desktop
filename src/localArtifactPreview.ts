@@ -26,6 +26,7 @@ export interface LocalArtifactTarget {
   rootName: string
   path: string
   name: string
+  initialView?: 'preview' | 'review'
   review?: {
     action: 'created' | 'updated' | 'copied' | 'moved' | 'deleted'
     backupPath?: string
@@ -37,13 +38,21 @@ export interface LocalArtifactTarget {
 export interface LocalArtifactPreview {
   name: string
   path: string
-  kind: 'code' | 'text' | 'image' | 'pdf' | 'office' | 'file'
+  kind: 'code' | 'text' | 'markdown' | 'image' | 'pdf' | 'spreadsheet' | 'document' | 'presentation' | 'audio' | 'video' | 'file'
   language?: string
   content?: string
   dataUrl?: string
   sizeBytes: number
   truncated: boolean
+  structured?: StructuredPreview
 }
+
+export interface PreviewCell { value: string; kind: 'text' | 'number' | 'date' | 'boolean' | 'error'; formula?: string }
+export interface PreviewSheet { name: string; rows: PreviewCell[][]; rowOffset: number; columnOffset: number; truncated: boolean }
+export type PreviewBlock = { type: 'paragraph'; text: string; level: number } | { type: 'table'; rows: string[][] }
+export type StructuredPreview = { type: 'spreadsheet'; sheets: PreviewSheet[] }
+  | { type: 'document'; blocks: PreviewBlock[] }
+  | { type: 'presentation'; slides: PreviewBlock[][] }
 
 export async function loadLocalArtifactPreview(target: LocalArtifactTarget): Promise<LocalArtifactPreview> {
   if (!isTauri()) throw new Error('文件预览仅在小胤桌面端可用')
@@ -53,9 +62,18 @@ export async function loadLocalArtifactPreview(target: LocalArtifactTarget): Pro
   })
 }
 
+export function htmlArtifactPreviewUrl(target: LocalArtifactTarget): Promise<string> {
+  return invoke<string>('html_artifact_preview_url', { rootId: target.rootId, path: target.path })
+}
+
 export async function revealLocalArtifact(target: LocalArtifactTarget): Promise<void> {
   if (!isTauri()) throw new Error('文件定位仅在小胤桌面端可用')
   await invoke('reveal_local_artifact', { rootId: target.rootId, path: target.path })
+}
+
+export async function openLocalArtifact(target: LocalArtifactTarget): Promise<void> {
+  if (!isTauri()) throw new Error('打开原文件仅在小胤桌面端可用')
+  await invoke('open_local_artifact', { rootId: target.rootId, path: target.path })
 }
 
 export function artifactFailure(message: string): { kind: 'authorization' | 'missing' | 'permission' | 'other'; title: string; hint: string } {

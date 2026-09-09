@@ -34,6 +34,18 @@ export function parseConnectorImport(value: string): ConnectorImportItem[] {
         if (!['http:', 'https:'].includes(endpoint.protocol)) throw new Error('url 必须使用 HTTP 或 HTTPS')
       }
       const category = connectorCategories.find((item) => item.id === config.category)?.id ?? 'other'
+      const authMode = config.authMode ?? 'none'
+      if (authMode !== 'none' && authMode !== 'employee-bearer' && authMode !== 'erp-cookie' && authMode !== 'oauth') throw new Error('不支持的认证方式')
+      const headers = record(config.headers, 'headers')
+      if (authMode === 'oauth') {
+        const endpoint = new URL(url)
+        if (endpoint.protocol !== 'https:' && !(endpoint.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(endpoint.hostname))) throw new Error('OAuth 地址必须使用 HTTPS')
+        if (endpoint.username || endpoint.password || endpoint.hash) throw new Error('OAuth 地址不能包含凭据或片段')
+      }
+      if (authMode === 'erp-cookie' || authMode === 'oauth') {
+        if (transport === 'stdio') throw new Error('ERP 扫码会话仅支持 HTTP/SSE 连接器')
+        if (Object.keys(headers).some((key) => ['cookie', 'authorization'].includes(key.toLowerCase()))) throw new Error('ERP 扫码会话不能同时配置 Cookie 或 Authorization 请求头')
+      }
       const timeoutSeconds = config.timeoutSeconds
       if (timeoutSeconds !== undefined && (typeof timeoutSeconds !== 'number' || !Number.isInteger(timeoutSeconds) || timeoutSeconds < 1 || timeoutSeconds > 600)) throw new Error('timeoutSeconds 必须是 1–600 之间的整数')
       const connector: ConnectorCatalogEntry = {
@@ -42,10 +54,10 @@ export function parseConnectorImport(value: string): ConnectorImportItem[] {
         summary: optionalText(config.summary, 'summary') || `个人 MCP 连接器 · ${name.trim()}`,
         kind: 'personal-mcp', scope: 'PERSONAL', status: 'ready', managed: false,
         version: optionalText(config.version, 'version') || '1.0.0', transport,
-        url: transport === 'stdio' ? '' : url, authMode: 'none', command,
+        url: transport === 'stdio' ? '' : url, authMode, command,
         arguments: strings(config.args ?? config.arguments, 'args'),
         environment: record(config.env ?? config.environment, 'env'),
-        headers: record(config.headers, 'headers'),
+        headers,
         toolNames: strings(config.toolNames, 'toolNames'),
       }
       ids.add(id)

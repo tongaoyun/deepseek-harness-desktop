@@ -28,11 +28,12 @@ export function InlineTaskActivity({ monitor, finalResponse = '', onApprovalDeci
     }
   }, [approvalsEnabled, onApprovalDecision])
   const collapsedEntries = useMemo(() => {
+    if (monitor.status !== 'running') return []
     const entries = monitor.timeline ?? []
     const latest = entries.findLast((entry) => entry.kind === 'assistant')
     return entries.filter((entry) => (entry.kind === 'approval' && entry.status === 'running')
       || entry.kind === 'warning' || entry.kind === 'error' || entry.status === 'failed'
-      || (monitor.status === 'running' && entry === latest && entry.kind === 'assistant'))
+      || (entry === latest && entry.kind === 'assistant'))
   }, [monitor.timeline, monitor.status])
   // Resolve disclosure in the same render as the new status. An effect would
   // briefly paint completed content expanded before collapsing it a frame later.

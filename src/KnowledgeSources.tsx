@@ -42,7 +42,7 @@ function SourceDialog({ sourceId, context, onClose }: { sourceId: string; contex
       <header><h2>原文片段</h2><button type="button" aria-label="关闭原文" onClick={onClose}><X size={18} /></button></header>
       {loading && <p role="status">正在核实原文…</p>}
       {error && <div role="alert"><p>{error}</p><button type="button" onClick={() => setAttempt((value) => value + 1)}>重新读取</button></div>}
-      {source && <><h3>{source.filename}</h3><small>{source.knowledgeBaseName} · {source.locator}</small><pre>{source.content}</pre><footer>以上为当前索引中的原文片段，不代表已阅读整份文档。</footer></>}
+      {source && <><h3>{source.filename}</h3><small>{source.knowledgeBaseName} · {source.locator}</small><pre>{source.content}</pre></>}
     </section>
   </div>, document.body)
 }

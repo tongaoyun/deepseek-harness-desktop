@@ -112,12 +112,13 @@ export function ExtensionPreviewPanel({ target, config, unavailableReason, onRun
     setError('')
     try {
       const result = await runHarness({
+        operationScope: crypto.randomUUID(),
         taskId: runId,
         prompt: prompt.trim(),
         executionMode: 'agent',
         employeeId: config.employeeId,
         teamId: config.teamId,
-        selectedExtension: { kind: target.kind, id: target.id },
+        selectedExtensions: [{ kind: target.kind, id: target.id }],
         knowledgeBaseRefs: target.knowledgeBaseRefs,
         allowedArtifacts: config.allowedArtifacts,
         litellmBaseUrl: config.litellmBaseUrl,

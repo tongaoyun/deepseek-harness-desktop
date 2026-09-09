@@ -1,4 +1,4 @@
-import { ArrowDown, CircleStop, FileImage, FileText, Keyboard, Sparkles, X } from 'lucide-react'
+import { ArrowDown, ChevronRight, CircleStop, FileImage, FileText, Keyboard, Sparkles, X } from 'lucide-react'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type RefObject, type UIEvent } from 'react'
 import type { AuthorizedLocalDirectory } from './harness'
 import { FileChangesCard } from './FileChangesCard'
@@ -7,6 +7,8 @@ import { LocalFilePreviewPanel } from './LocalFilePreviewPanel'
 import type { LocalArtifactTarget } from './localArtifactPreview'
 import { TaskArtifacts } from './TaskArtifacts'
 import { TaskOutcomeDetails } from './TaskOutcomeDetails'
+import { TaskRecoveryNotice } from './TaskRecoveryNotice'
+import { TaskOperationReview } from './TaskOperationReview'
 import { TaskVisuals } from './TaskVisuals'
 import type { CapabilitySnapshot, KnowledgeBaseEntry, LocalTaskAttachment, RuntimeStatus, TaskMessage, TaskMonitorState } from './types'
 import { XiaoyinMascot } from './XiaoyinMascot'
@@ -20,6 +22,8 @@ import { RichMessage } from './RichMessage'
 import { KnowledgeSources } from './KnowledgeSources'
 import type { KnowledgeSourceContext } from './api'
 export interface ChatPageProps {
+  employeeId?: string
+  onResumeInterrupted?: () => void
   knowledgeContext?: KnowledgeSourceContext
   taskId?: string
   fileChangesBusy?: boolean
@@ -202,24 +206,26 @@ export function ChatPage(props: ChatPageProps) {
       const messageInput = splitComposerPrompt(message.text)
       if (message.role === 'user') return <article className="conversation-turn user-turn" key={`${message.role}-${index}`}>
         <div className="user-prompt">
-          {messageInput.token && <span className="message-capability"><Sparkles size={12} />{props.invocations?.find((item) => item.token === messageInput.token)?.name ?? messageInput.token.replace(/^\/(?:kit|skill):/u, '')}</span>}
+          {messageInput.tokens.map((token) => <span key={token} className="message-capability"><Sparkles size={12} />{props.invocations?.find((item) => item.token === token)?.name ?? token.replace(/^\/(?:kit|skill):/u, '')}</span>)}
           {message.attachments && message.attachments.length > 0 && <AttachmentList attachments={message.attachments} />}
-          <RichMessage assistant={false} text={messageInput.text || (messageInput.token ? '使用此能力开始任务' : message.text)} />
+          <RichMessage assistant={false} text={messageInput.text || (messageInput.tokens.length ? '使用所选能力开始任务' : message.text)} />
         </div>
       </article>
       const timelineOwnsStreamingText = message.pending && (monitor?.timeline?.some((entry) => entry.kind === 'assistant') ?? false)
-      const artifactIds = new Set((monitor?.artifacts ?? []).filter((artifact) => artifact.action !== 'published').map((artifact) => artifact.id))
-      const reviewChanges = (monitor?.changes ?? []).filter((change) => !artifactIds.has(change.id))
+      const reviewChanges = monitor?.changes ?? []
+      const fileChanges = !message.pending && reviewChanges.length > 0 && <FileChangesCard changes={reviewChanges} busy={props.fileChangesBusy ?? props.harnessRunning} onOpen={openPreview} onReview={reviewFiles} onUndone={(results) => {
+        setPreviewTargets([])
+        setPreviewKey('')
+        props.onChangesUndone?.(index, results)
+      }} />
       return <article aria-busy={message.pending} className={`conversation-turn assistant-turn${message.pending ? ' pending' : ''}`} key={`${message.role}-${index}`}>
         {monitor && <InlineTaskActivity finalResponse={message.pending ? '' : message.text} monitor={monitor} onApprovalDecision={props.onApprovalDecision} />}
         {(!timelineOwnsStreamingText && Boolean(message.text.trim())) && <div className={message.pending ? 'streaming-response' : undefined}><RichMessage assistant={!message.pending} onRegenerate={!message.pending && index === props.messages.length - 1 ? props.onPrepareRetry : undefined} text={message.text} /></div>}
-        {!message.pending && reviewChanges.length > 0 && <FileChangesCard changes={reviewChanges} busy={props.fileChangesBusy ?? props.harnessRunning} onOpen={openPreview} onReview={reviewFiles} onUndone={(results) => {
-          setPreviewTargets([])
-          setPreviewKey('')
-          props.onChangesUndone?.(index, results)
-        }} />}
-        {!message.pending && monitor && monitor.artifacts.length > 0 && <TaskArtifacts artifacts={monitor.artifacts} conversation onOpen={openPreview} />}
+        {monitor && monitor.artifacts.length > 0 && <TaskArtifacts artifacts={monitor.artifacts} conversation onOpen={openPreview} />}
+        {fileChanges && (monitor?.artifacts.length ? <details className="task-file-review"><summary><ChevronRight size={14} />文件变更 <small>{reviewChanges.length}</small></summary>{fileChanges}</details> : fileChanges)}
         {!message.pending && monitor?.status === 'completed' && monitor.outcome && <TaskOutcomeDetails outcome={monitor.outcome} />}
+        {!message.pending && monitor?.interruption && <TaskRecoveryNotice monitor={monitor} disabled={props.harnessRunning || Boolean(props.taskContextRestoring) || Boolean(props.prompt.trim()) || props.pendingAttachments.length > 0} onResume={index === props.messages.length - 1 ? props.onResumeInterrupted : undefined} />}
+        {!message.pending && index === props.messages.length - 1 && props.employeeId && props.taskId && <TaskOperationReview key={`${props.employeeId}:${props.taskId}`} employeeId={props.employeeId} taskId={props.taskId} revision={props.taskMonitor.updatedAt} disabled={props.harnessRunning} />}
         {!message.pending && monitor?.knowledgeSources && <KnowledgeSources sources={monitor.knowledgeSources} context={props.knowledgeContext} />}
         {!message.pending && monitor && (monitor.visuals?.length ?? 0) > 0 && <TaskVisuals key={props.taskId} visuals={monitor.visuals ?? []} />}
         {!message.pending && monitor?.status === 'completed' && index === props.messages.length - 1 && props.creationKind && props.onContinueCreation && <div className="creation-handoff">

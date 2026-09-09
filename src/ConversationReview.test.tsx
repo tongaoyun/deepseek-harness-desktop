@@ -134,8 +134,10 @@ it('keeps important notices and the latest progress visible after a tool starts 
     expect(app.element.textContent).not.toContain('旧的过程说明')
     expect(app.element.querySelector('.inline-task-summary')?.getAttribute('aria-expanded')).toBe('false')
     await act(async () => app.root.render(<InlineTaskActivity monitor={{ ...monitor, status: 'canceled' }} />))
-    expect(app.element.textContent).toContain('磁盘空间不足')
+    expect(app.element.textContent).not.toContain('磁盘空间不足')
     expect(app.element.querySelector('.inline-task-summary')?.getAttribute('aria-expanded')).toBe('false')
+    await act(async () => app.element.querySelector<HTMLButtonElement>('.inline-task-summary')!.click())
+    expect(app.element.textContent).toContain('磁盘空间不足')
   } finally { await app.cleanup() }
 })
 
@@ -192,7 +194,7 @@ it('does not let Escape consumed by another interaction close the file preview',
 it('reloads changed review baselines, computes current counts and refreshes the file', async () => {
   const app = mount()
   vi.mocked(loadLocalArtifactPreview).mockImplementation(async (target) => ({ name: target.name, path: target.path, kind: 'code', sizeBytes: 12, truncated: false, content: target.path.startsWith('.xiaoyin') ? 'before\n' : 'after\n' }))
-  const target = { rootId: 'root', rootName: 'repo', name: 'one.ts', path: 'one.ts', review: { action: 'updated' as const, backupPath: '.xiaoyin-backups/first/one.ts', addedLines: 900 } }
+  const target = { rootId: 'root', rootName: 'repo', name: 'one.ts', path: 'one.ts', initialView: 'review' as const, review: { action: 'updated' as const, backupPath: '.xiaoyin-backups/first/one.ts', addedLines: 900 } }
   try {
     await act(async () => app.root.render(<LocalFilePreviewPanel onClose={() => {}} target={target} />))
     expect(app.element.querySelector('.local-review-counts')?.textContent).toBe('+1-1')

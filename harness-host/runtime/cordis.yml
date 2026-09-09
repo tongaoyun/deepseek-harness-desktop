@@ -93,6 +93,11 @@
   config:
     readOnly: !!js process.env.XIAOYIN_EXECUTION_MODE === 'plan'
 
+- id: desktop-skills
+  name: '../dist/skill-plugin.js'
+  config:
+    readOnly: !!js process.env.XIAOYIN_EXECUTION_MODE === 'plan'
+
 - id: local-files
   name: '../dist/local-files-plugin.js'
   config:

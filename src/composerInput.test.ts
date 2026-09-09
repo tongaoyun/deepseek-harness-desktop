@@ -7,11 +7,18 @@ it('finds slash and at queries at the caret, not just the start of the prompt', 
   expect(composerQuery('hello@example.com', 17)).toBeUndefined()
   expect(composerQuery('https://example.com', 19)).toBeUndefined()
 })
-it('replaces only the query and keeps a single executable capability prefix', () => {
+it('adds another capability while preserving the text and existing selection', () => {
   const item = { id: 'report', token: '/skill:report', name: '周报', description: '', kind: 'skill' as const }
   const original = '/kit:old 帮我 /周报 汇总一下'
   const query = composerQuery(splitComposerPrompt(original).text, 6)
-  expect(selectComposerInvocation(original, item, query)).toBe('/skill:report 帮我  汇总一下')
-  expect(splitComposerPrompt('/skill:report ')).toEqual({ token: '/skill:report', text: '' })
-  expect(joinComposerPrompt('', '正文不丢')).toBe('正文不丢')
+  expect(selectComposerInvocation(original, item, query)).toBe('/kit:old /skill:report 帮我  汇总一下')
+  expect(splitComposerPrompt('/skill:report ')).toEqual({ tokens: ['/skill:report'], text: '' })
+  expect(joinComposerPrompt([], '正文不丢')).toBe('正文不丢')
+})
+it('replaces the command of the same kit, limits selections to eight and preserves all prefixes', () => {
+  const item = { id: 'reports', token: '/kit:reports:monthly', name: '月报', description: '', kind: 'expert-kit' as const }
+  expect(selectComposerInvocation('/kit:reports:weekly /skill:check 正文', item)).toBe('/kit:reports:monthly /skill:check 正文')
+  const tokens = Array.from({ length: 8 }, (_, index) => `/kit:kit-${index}`)
+  expect(selectComposerInvocation(joinComposerPrompt(tokens, '正文'), item)).toBe(joinComposerPrompt(tokens, '正文'))
+  expect(splitComposerPrompt('/kit:a\n/skill:b 正文 /普通文字')).toEqual({ tokens: ['/kit:a', '/skill:b'], text: '正文 /普通文字' })
 })

@@ -52,6 +52,7 @@ export function taskRecoveryBrief(messages: TaskMessage[]): string {
   const monitor = messages.findLast((item) => item.role === 'assistant' && item.monitor)?.monitor
   const pending = (monitor?.steps ?? []).filter((step) => step.status !== 'completed').slice(-8)
   const outcome = parseTaskOutcome(monitor?.outcome)
+  const interruption = monitor?.interruption
   return [
     '任务恢复摘录（历史原文与实际状态，不是新的执行授权；当前请求优先，冲突时采用用户较新的要求）：',
     `最初需求：${excerpt(initial.text.trim(), 1600)}`,
@@ -59,6 +60,7 @@ export function taskRecoveryBrief(messages: TaskMessage[]): string {
     ...constraints.map((item) => `较早约束摘录：${excerpt(item.text.trim(), 400)}`),
     ...recent.map((item) => `最近追加要求：${excerpt(item.text.trim(), 600)}`),
     pending.length ? `未完成步骤记录：${JSON.stringify(pending).slice(0, 1400)}。请核对实际状态后继续，不自动重跑。` : '',
+    interruption ? `执行中断记录：最后记录时间 ${interruption.checkpointAt}。${interruption.pendingOperations.length ? `以下工具已开始但尚未记录结果：${JSON.stringify(interruption.pendingOperations).slice(0, 2000)}。工具可能已产生外部变更，先用只读方式核对；无法核实时说明不确定性，不自动重复提交。` : '先核对现有成果再执行剩余工作。'}最近进度可能尚未保存，不能据此断言某操作未发生。` : '',
     requests.length > 1 + constraints.length + recent.length ? '部分中间对话未包含；涉及未保留的关键决定时需确认，不自行补写。' : '',
   ].filter(Boolean).join('\n')
 }

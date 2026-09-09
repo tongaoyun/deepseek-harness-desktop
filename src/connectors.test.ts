@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import { buildRuntimeConnectorCatalog } from './connectors'
+import { parseConnectorJson } from './connectorImport'
+
+it('preserves ERP cookie authentication on import and runtime selection without storing cookies', () => {
+  const config = { id: 'erp-custom', name: 'ERP', url: 'https://erp.example/mcp', authMode: 'erp-cookie' }
+  const entry = parseConnectorJson(JSON.stringify(config))
+  expect(buildRuntimeConnectorCatalog([entry], '', ['erp-custom'])[0]).toMatchObject({ authMode: 'erp-cookie', headers: {}, enabled: true })
+  for (const extra of [{ headers: { Cookie: 'secret' } }, { headers: { aUtHoRiZaTiOn: 'secret' } }, { transport: 'stdio', command: 'node' }, { authMode: 'invalid' }]) {
+    expect(() => parseConnectorJson(JSON.stringify({ ...config, ...extra }))).toThrow()
+  }
+})
 
 describe('runtime connector catalog', () => {
   it('does not enable an administratively disabled legacy connector', () => {

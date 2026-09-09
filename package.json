@@ -25,6 +25,7 @@
     "evaluation:run": "node harness-host/scripts/evaluate-work-tasks.mjs",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
+    "tauri:dev:local": "node scripts/dev-local.mjs",
     "tauri:build": "tauri build"
   },
   "dependencies": {

@@ -14,6 +14,7 @@ const MAX_AUTHORIZED_DIRECTORIES: usize = 8;
 #[derive(Clone, Default)]
 pub struct LocalFileAuthorizations {
     directories: Arc<Mutex<Vec<AuthorizedDirectory>>>,
+    workspace: Arc<Mutex<Option<AuthorizedDirectory>>>,
 }
 
 #[derive(Clone)]
@@ -365,6 +366,20 @@ pub fn clear_local_directories(
 }
 
 impl LocalFileAuthorizations {
+    pub(crate) fn initialize_workspace(&self, path: PathBuf) -> Result<(), String> {
+        std::fs::create_dir_all(&path).map_err(|error| format!("无法创建默认工作目录：{error}"))?;
+        let directory = AuthorizedDirectory {
+            id: "workspace".to_string(),
+            name: "默认工作目录".to_string(),
+            path: canonical_directory(&path)?,
+        };
+        *self
+            .workspace
+            .lock()
+            .map_err(|_| "默认工作目录状态不可用".to_string())? = Some(directory);
+        Ok(())
+    }
+
     pub(crate) fn resolve(&self, ids: &[String]) -> Result<Vec<RuntimeLocalFileRoot>, String> {
         if ids.len() > MAX_AUTHORIZED_DIRECTORIES {
             return Err(format!(
@@ -379,10 +394,20 @@ impl LocalFileAuthorizations {
             .directories
             .lock()
             .map_err(|_| "本地文件夹授权状态不可用".to_string())?;
+        let workspace = self
+            .workspace
+            .lock()
+            .map_err(|_| "默认工作目录状态不可用".to_string())?;
+        let default_ids = workspace
+            .as_ref()
+            .map(|item| vec![item.id.clone()])
+            .unwrap_or_default();
+        let ids = if ids.is_empty() { &default_ids } else { ids };
         ids.iter()
             .map(|id| {
                 guard
                     .iter()
+                    .chain(workspace.iter())
                     .find(|directory| &directory.id == id)
                     .map(|directory| RuntimeLocalFileRoot {
                         id: directory.id.clone(),
@@ -409,8 +434,13 @@ impl LocalFileAuthorizations {
             .directories
             .lock()
             .map_err(|_| "本地文件夹授权状态不可用".to_string())?;
+        let workspace = self
+            .workspace
+            .lock()
+            .map_err(|_| "默认工作目录状态不可用".to_string())?;
         let directory = guard
             .iter()
+            .chain(workspace.iter())
             .find(|directory| directory.id == id)
             .ok_or_else(|| format!("[XY-FILE-AUTH] 本地文件夹授权已失效：{id}"))?;
         let target = directory
@@ -426,6 +456,15 @@ impl LocalFileAuthorizations {
 
     fn authorize(&self, selected: PathBuf) -> Result<AuthorizedDirectoryView, String> {
         let path = canonical_directory(&selected)?;
+        if let Some(workspace) = self
+            .workspace
+            .lock()
+            .map_err(|_| "默认工作目录状态不可用".to_string())?
+            .as_ref()
+            && workspace.path == path
+        {
+            return Ok(workspace.view());
+        }
         let name = path
             .file_name()
             .and_then(|value| value.to_str())
@@ -519,6 +558,51 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
+    fn default_workspace_is_available_without_selection_and_survives_user_root_cleanup() {
+        let directory = temporary_directory();
+        let workspace = directory.join("workspace");
+        let authorizations = LocalFileAuthorizations::default();
+        authorizations
+            .initialize_workspace(workspace.clone())
+            .unwrap();
+        std::fs::write(workspace.join("preview.html"), "<h1>Preview</h1>").unwrap();
+        let roots = authorizations.resolve(&[]).unwrap();
+        assert_eq!(roots.len(), 1);
+        assert_eq!(roots[0].id, "workspace");
+        assert_eq!(
+            authorizations.authorize(workspace.clone()).unwrap().id,
+            "workspace"
+        );
+        authorizations.clear().unwrap();
+        assert!(
+            authorizations
+                .resolve_artifact("workspace", "preview.html")
+                .is_ok()
+        );
+        assert!(
+            authorizations
+                .resolve_artifact("workspace", "../outside.txt")
+                .is_err()
+        );
+        let restarted = LocalFileAuthorizations::default();
+        restarted.initialize_workspace(workspace).unwrap();
+        assert!(
+            restarted
+                .resolve_artifact("workspace", "preview.html")
+                .is_ok()
+        );
+        let selected = authorizations.authorize(directory.clone()).unwrap();
+        assert_eq!(
+            authorizations
+                .resolve(std::slice::from_ref(&selected.id))
+                .unwrap()[0]
+                .id,
+            selected.id
+        );
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
     fn artifact_errors_distinguish_missing_permission_and_other_io() {
         use std::io::{Error, ErrorKind};
         assert!(
@@ -588,6 +672,27 @@ mod tests {
     fn disk_root_cannot_be_authorized() {
         let root = Path::new(std::path::MAIN_SEPARATOR_STR);
         assert!(canonical_directory(root).is_err());
+    }
+
+    #[test]
+    fn html_preview_reads_only_the_currently_authorized_file() {
+        let directory = temporary_directory();
+        let authorizations = LocalFileAuthorizations::default();
+        let view = authorizations.authorize(directory.clone()).unwrap();
+        std::fs::write(directory.join("preview.html"), "<button>test</button>").unwrap();
+        let request = tauri::http::Request::builder()
+            .uri(format!("/{}/preview.html", view.id))
+            .body(Vec::new())
+            .unwrap();
+        let response = crate::local_artifacts::html_preview_response(&authorizations, &request);
+        assert_eq!(response.status(), 200);
+        assert_eq!(response.body(), b"<button>test</button>");
+        authorizations.directories.lock().unwrap().clear();
+        assert_eq!(
+            crate::local_artifacts::html_preview_response(&authorizations, &request).status(),
+            400
+        );
+        std::fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]

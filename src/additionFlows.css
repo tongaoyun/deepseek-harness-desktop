@@ -7,9 +7,7 @@
 .add-dialog footer { margin-top: 24px; }.add-dialog footer button { width: 100%; padding: 7px 16px; border: 0; border-radius: 20px; background: #080808; color: #fff; font-size: 13px; font-weight: 600; }.add-dialog button:disabled { opacity: .45; cursor: default; }.add-dialog button { cursor: pointer; }.add-error { color: #b34238; font-size: 12px; line-height: 1.6; }
 .add-variable-list { display: grid; gap: 8px; font-size: 12px; }.add-variable-list > div { display: flex; gap: 8px; }.add-variable-list button { border: 0; color: #777; background: none; text-align: left; padding: 0; }
 .add-dialog.upload-extension-dialog { width: min(420px, 100%); }.extension-dropzone { width: 100%; min-height: 145px; border: 1px dashed #ddd; border-radius: 9px; background: #fafafa; display: flex; gap: 13px; flex-direction: column; align-items: center; justify-content: center; color: #888; padding: 15px; font-size: 13px; overflow-wrap: anywhere; }.extension-dropzone.dragging { border-color: #91d9a2; background: #f3faf4; }.upload-requirements { margin-top: 22px; font-size: 12px; color: #888; line-height: 1.8; }.upload-requirements strong { color: #333; }.upload-requirements ul { padding-left: 17px; }.upload-folder-button { background: none; border: 0; padding: 0; font-size: 12px; color: #777; }
-.knowledge-create-trigger { width: 100%; background: #111; color: white; border: 0; border-radius: 18px; padding: 8px 12px; display: flex; gap: 7px; justify-content: center; align-items: center; }
 .extension-add-menu { width: 280px; border-radius: 9px; }.extension-add-menu button { padding: 10px 9px; }.extension-add-menu small { font-size: 11px; }
-.knowledge-sidebar .add-dialog form { padding: 0; margin: 0; border: 0; background: transparent; }.knowledge-sidebar .add-dialog footer button { background: #080808; color: #fff; }
 .add-dialog.connector-json-add-dialog > textarea { height: 310px; font-family: monospace; font-size: 12px; }.add-dialog.connector-json-add-dialog footer { display: flex; gap: 10px; }.add-dialog.connector-json-add-dialog footer .secondary { background: #f2f2f2; color: #444; }
 .task-composer .composer-context-menu.composer-cascade { width: min(470px, calc(100vw - 90px)); display: grid; grid-template-columns: 140px minmax(0, 1fr); padding: 0; border: 0; box-shadow: none; background: transparent; gap: 3px; align-items: end; }
 .composer-cascade-rail,.composer-cascade-panel { border: 1px solid #e8e8e8; border-radius: 9px; background: #fff; padding: 5px; box-shadow: 0 4px 14px #0002; min-width: 0; }
@@ -24,3 +22,9 @@
 .extension-upload-queue .installed > svg { color: #33744a; }
 .extension-upload-queue button { width: 28px; height: 28px; display: grid; place-items: center; border: 0; background: transparent; color: #707070; }
 .connector-health.authentication-required, .connector-health.access-denied { color: #a05a4f; }
+.connector-account { margin: 16px 0; padding: 16px 0; border-block: 1px solid var(--border-color, #e4e4e7); }
+.connector-account-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-top: 12px; }
+.connector-account-actions .connector-detail-primary { display: inline-flex; align-items: center; justify-content: center; gap: 8px; margin: 0; }
+.connector-account-scopes { margin-top: 12px; font-size: 12px; }
+.connector-account-scopes ul { padding-left: 20px; overflow-wrap: anywhere; max-height: 120px; overflow-y: auto; }
+.connector-account > p { font-size: 12px; line-height: 1.6; white-space: normal; overflow: visible; overflow-wrap: anywhere; text-overflow: clip; }

@@ -157,6 +157,13 @@ export interface TaskFileChange {
 }
 
 export interface TaskMonitorState {
+  executionStarted?: boolean
+  operationScope?: string
+  interruption?: {
+    checkpointAt: string
+    cause: 'exit' | 'failure' | 'canceled'
+    pendingOperations: Array<{ id: string; label: string; toolName?: string }>
+  }
   outcome?: import('./taskOutcome').TaskOutcome
   status: 'idle' | 'running' | 'completed' | 'failed' | 'canceled'
   activity: string
@@ -188,7 +195,7 @@ export interface LocalTaskRun {
   sessionId?: string
   expertKitId?: string
   skillId?: string
-  invocationToken?: string
+  invocationTokens?: string[]
   composerConnectorIds?: string[]
   model?: string
   localDirectories?: Array<{ id: string; name: string; path?: string }>
@@ -266,7 +273,7 @@ export interface SkillCatalogEntry {
 
 export type ConnectorStatus = 'ready' | 'needs-configuration' | 'unavailable' | 'disabled'
 export type ConnectorTransport = 'streamable-http' | 'sse' | 'stdio' | 'desktop'
-export type ConnectorAuthMode = 'employee-bearer' | 'none'
+export type ConnectorAuthMode = 'employee-bearer' | 'erp-cookie' | 'oauth' | 'none'
 
 export interface ConnectorCatalogEntry {
   timeoutSeconds?: number

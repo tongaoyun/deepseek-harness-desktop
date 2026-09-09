@@ -45,6 +45,7 @@ const ActivityEntry = memo(function ActivityEntry({ entry, onApprovalDecision, a
     <ActivityIcon entry={entry} />
     <span className="timeline-title">{activityTitle(entry)}</span>
     {entry.itemCount !== undefined && <small>{entry.itemCount} 项</small>}
+    {entry.completedAt && <small className="timeline-duration">{executionDuration(entry)}</small>}
     <span className="timeline-status">
       {entry.status === 'running' && <LoaderCircle className="turn-spinner" size={14} />}
       {entry.status === 'failed' && <CircleAlert size={14} />}
@@ -84,6 +85,13 @@ function StableDetails({ attention, className, summary, children }: { attention:
     event.preventDefault()
     setChoice({ attention, open: !open })
   }}>{summary}</summary>{children}</details>
+}
+
+function executionDuration(entry: TaskTimelineEntry): string {
+  const elapsed = Date.parse(entry.completedAt ?? '') - Date.parse(entry.occurredAt)
+  if (!Number.isFinite(elapsed) || elapsed < 0) return ''
+  const seconds = Math.floor(elapsed / 1_000)
+  return seconds < 60 ? `${seconds}秒` : `${Math.floor(seconds / 60)}分${seconds % 60}秒`
 }
 
 function activityTitle(entry: TaskTimelineEntry): string {

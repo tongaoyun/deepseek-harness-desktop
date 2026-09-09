@@ -8,6 +8,8 @@ import {
   submitFeedback,
 } from './api'
 import { ErpAuthScreen } from './ErpAuthScreen'
+import { taskInterruption, TASK_RESUME_PROMPT } from './taskInterruption'
+import { openErpLogin } from './auth'
 import { ExpertKitDetailsModal } from './ExpertKitDetailsModal'
 import { expertKitSkillPrompt, extensionCustomizationPrompt } from './expertKitDetails'
 import type { ExtensionDocument } from './expertKits'
@@ -56,6 +58,7 @@ import { useHistoryPages } from './useHistoryPages'
 import { useTaskCheckpoints } from './useTaskCheckpoints'
 import { useLocalSchedules } from './useLocalSchedules'
 import { useLocalScheduleTools } from './useLocalScheduleTools'
+import { useLocalSkillTools } from './useLocalSkillTools'
 import { attachmentSelectionError } from './attachmentLimits'
 import { restoredTaskSessionId } from './harnessSession'
 import { prepareTaskTurn } from './taskTurn'
@@ -65,11 +68,11 @@ import { parseMemoryCommand, learnCompletedTask } from './memory'
 import { useMemoryCommands } from './useMemoryCommands'
 import { useMemorySync } from './useMemorySync'
 import { modelStorageKey, resolveSelectedModel } from './modelSelection'
-import { needsLocalDirectoryAuthorization, standardLocalDirectories } from './localFileIntent'
+import { standardLocalDirectories } from './localFileIntent'
 import { creationPrompt, type XiaoyinCreationKind } from './creationPrompts'
 import { McpConnectorDialog } from './McpConnectorDialog'
 import { ExtensionUploadDialog } from './ExtensionUploadDialog'
-import { extensionInvocations, selectedInvocation } from './extensionInvocations'
+import { extensionInvocations, selectedInvocations } from './extensionInvocations'
 import { parseConnectorImport } from './connectorImport'
 import { buildRuntimeConnectorCatalog } from './connectors'
 import { loadEnabledConnectorIds, saveEnabledConnectorIds } from './connectorPreferences'
@@ -84,6 +87,7 @@ import {
 import { KnowledgeBasePage } from './KnowledgeBasePage'
 import { DesktopSettingsPage } from './DesktopSettingsPage'
 import { ConnectorsPage } from './ConnectorsPage'
+import { connectorAuthorization } from './connectorAuthorization'
 import type { SkillView } from './skills'
 import { allowedExtensionArtifacts } from './extensionPolicy'
 import { createCapabilitySnapshot } from './capabilitySnapshot'
@@ -251,9 +255,6 @@ export default function App() {
       if (schedule.model && !bootstrap?.models.includes(schedule.model)) return { notStarted: '计划指定的模型已不可用，请编辑计划重新选择模型；计划已暂停' }
       const directories = [...schedule.directories, ...(schedule.attachments ?? []).flatMap((file) => file.rootPath ? [{ id: file.rootId, name: file.rootName, path: file.rootPath }] : [])]
         .filter((entry, index, all) => all.findIndex((item) => item.id === entry.id) === index)
-      if (!directories.length && needsLocalDirectoryAuthorization(schedule.prompt) && !standardLocalDirectories(schedule.prompt).length) {
-        return { notStarted: '本轮未启动：该计划需要工作目录，请编辑计划选择目录后再执行；计划已暂停' }
-      }
       const now = new Date().toISOString()
       const task: LocalTaskRun = { id: taskId, source: 'DESKTOP', name: schedule.name, status: 'COMPLETED', createdAt: now, updatedAt: now,
         ...schedule.taskContext, localDirectories: directories, model: schedule.model || activeModel, messages: [], monitor: createTaskMonitor(now) }
@@ -266,6 +267,10 @@ export default function App() {
       }
     })
   useLocalScheduleTools(user && bootstrap ? `${user.userId}:${localScheduleNamespace()}` : undefined, localSchedules, localTasks, runningTaskIds)
+  useLocalSkillTools(authState === 'authenticated' && user && bootstrap ? `${user.userId}:${localScheduleNamespace()}` : undefined, {
+    skills: skillViews, employeeId: user?.userId ?? '', endpoint: bootstrap?.endpoints.skills ?? '', accessToken,
+    refresh: () => refreshInstalledKits(),
+  }, localTasks, runningTaskIds)
   const dragActive = useDesktopDrop({
     enabled: authState === 'authenticated' && page === 'chat' && connectorDiagnosticsAvailable(),
     running: currentTaskRunning || taskContextRestoring || pastingAttachments,
@@ -464,16 +469,22 @@ export default function App() {
     if (importing && (existing || connectors.some((item) => item.id === connector.id))) throw new Error('该连接器已存在，请使用编辑配置或更换名称 / ID')
     if (!existing && connectors.some((item) => item.id === connector.id)) throw new Error('该 ID 已被企业或内置连接器使用，请更换 ID')
     const template = connectorSecretTemplate({ ...connector, managed: false, scope: 'PERSONAL' })
+    const previous = runtimeConnectors.find(item => item.id === connector.id)
+    if (previous?.authMode === 'oauth' && (previous.url !== connector.url || connector.authMode !== 'oauth')) {
+      await connectorAuthorization(user.userId, previous, 'disconnect')
+    }
     setConnectorSecrets(await saveConnectorSecrets(user.userId, connector.id, connectorSecretValues(connector)))
     savePersonalConnector(user.userId, template)
     replaceConnectors((current) => [template, ...current.filter((item) => item.id !== connector.id)])
-    if (!existing) toggleConnector(connector.id, true)
+    if (!existing) toggleConnector(connector.id, connector.authMode !== 'oauth')
     setCurrentCapabilitySnapshot(undefined)
     setHarnessSessionId('')
   }
 
   const removePersonalConnector = async (id: string) => {
     if (!user) throw new Error('请先登录')
+    const connector = runtimeConnectors.find(item => item.id === id)
+    if (connector?.authMode === 'oauth') await connectorAuthorization(user.userId, connector, 'disconnect')
     setConnectorSecrets(await deleteConnectorSecrets(user.userId, id))
     deletePersonalConnector(user.userId, id)
     replaceConnectors((current) => current.filter((item) => item.id !== id))
@@ -521,7 +532,7 @@ export default function App() {
     if (initialPrompt && (!draftKind || !saved?.prompt.trim())) {
       const initial = splitComposerPrompt(initialPrompt)
       const existing = splitComposerPrompt(saved?.prompt ?? '').text
-      const nextPrompt = initial.token ? joinComposerPrompt(initial.token, initial.text || existing) : [initialPrompt, existing].filter(Boolean).join('\n\n')
+      const nextPrompt = initial.tokens.length ? joinComposerPrompt(initial.tokens, initial.text || existing) : [initialPrompt, existing].filter(Boolean).join('\n\n')
       draft = { ...emptyDraft(), ...saved, prompt: nextPrompt }
     }
     return restoreDraftContext(draft)
@@ -551,7 +562,7 @@ export default function App() {
     setTaskMonitor(streaming?.monitor ?? task.monitor)
     const draft = user ? readTaskDraft(user.userId, task.id) : undefined
     setHarnessSessionId(restoredTaskSessionId(task, draft))
-    void restoreDraftContext(draft ?? { ...emptyDraft(), prompt: joinComposerPrompt(task.invocationToken ?? '', ''), directories: task.localDirectories ?? [], knowledgeRefs: task.capabilitySnapshot?.knowledgeBaseRefs ?? [], connectorIds: task.composerConnectorIds ?? [], model: task.model ?? activeModel })
+    void restoreDraftContext(draft ?? { ...emptyDraft(), prompt: joinComposerPrompt(task.invocationTokens ?? [], ''), directories: task.localDirectories ?? [], knowledgeRefs: task.capabilitySnapshot?.knowledgeBaseRefs ?? [], connectorIds: task.composerConnectorIds ?? [], model: task.model ?? activeModel })
     focusComposer()
   }
   async function openStoredTask(id: string) {
@@ -746,8 +757,8 @@ export default function App() {
       if (!taskModel) { reportInputError('当前没有可用模型，请在控制中心配置模型后重试。'); return }
       const attachmentError = attachmentSelectionError(messageAttachments)
       if (attachmentError) { reportInputError(attachmentError); return }
-      if ((/^\/(?:kit|skill):/u.test(input) && !selectedInvocation(input, extensionInvocations(expertKits, skillViews)))
-        || (queuedTask?.invocationToken && !extensionInvocations(expertKits, skillViews).some((item) => item.token === queuedTask.invocationToken))) {
+      const requestedTokens = queuedTask?.invocationTokens ?? splitComposerPrompt(input).tokens
+      if (requestedTokens.length > 8 || requestedTokens.some((token) => !extensionInvocations(expertKits, skillViews).some((item) => item.token === token))) {
         reportInputError('该技能、套件或命令尚未安装或已不可用，请输入 / 重新选择。')
         return
       }
@@ -800,9 +811,6 @@ export default function App() {
           reportInputError(error instanceof Error ? error.message : String(error))
           return
         }
-      } else if (taskDirectories.length === 0 && needsLocalDirectoryAuthorization(input)) {
-        reportInputError('请先在输入框下方选择工作目录，任务内容已保留。')
-        return
       }
       const now = new Date().toISOString()
       const taskConnectorIds = queuedTask?.composerConnectorIds ?? (queuedTask ? [] : selectedTaskConnectorIds)
@@ -815,21 +823,22 @@ export default function App() {
       const taskId = contextTaskId || crypto.randomUUID()
       const existingTask = queuedTask ?? localTasks.find((task) => task.id === taskId)
       const invocations = extensionInvocations(expertKits, skillViews)
-      const currentInvocation = selectedInvocation(input, invocations)
-      const invocation = currentInvocation ?? (queuedTask?.invocationToken ? invocations.find((item) => item.token === queuedTask.invocationToken) : undefined)
+      const currentInvocations = selectedInvocations(input, invocations)
+      const selected = queuedTask ? (queuedTask.invocationTokens ?? []).flatMap((token) => invocations.find((item) => item.token === token) ?? []) : currentInvocations
       const { rootSessionId, harnessPrompt, pendingMessages, runningMonitor, runningTask } = prepareTaskTurn({
         taskId, input, now, existingTask, sessionId: taskSessionId, model: taskModel,
         directories: taskDirectories, directoriesChanged: resetSessionForDirectoryChange,
-        connectorIds: taskConnectorIds, capabilities: capabilitySnapshot, invocation,
+        connectorIds: taskConnectorIds, capabilities: capabilitySnapshot, invocations: selected,
         messages: contextMessages, monitor: contextMonitor, attachments: messageAttachments,
       })
       accepted?.()
+      if (isCurrent()) setLocalFileError('')
       if (isCurrent()) {
         if (!queuedTask) { try { saveTaskDraft(user.userId, contextTaskId || creationDraftKeyRef.current) } catch { /* Current task keeps the submitted content. */ } }
         selectCurrentLocalTaskId(taskId)
         setHarnessSessionId(rootSessionId)
         setMessages(pendingMessages)
-        if (!queuedTask) { setPrompt(joinComposerPrompt(invocation?.token ?? '', '')); setPendingAttachments([]) }
+        if (!queuedTask) { setPrompt(joinComposerPrompt(selected.map((item) => item.token), '')); setPendingAttachments([]) }
       }
       persistLocalTask(runningTask)
       const streaming: StreamingTaskState = {
@@ -847,9 +856,10 @@ export default function App() {
       let executionSessionId = rootSessionId
       try {
         const result = await runHarnessWithRecovery({
+          operationScope: runningMonitor.operationScope!,
           taskId,
           prompt: harnessPrompt,
-          selectedExtension: invocation ? { kind: invocation.kind, id: invocation.id } : undefined,
+          selectedExtensions: selected.map((item) => ({ kind: item.kind, id: item.id })),
           executionMode: 'agent',
           employeeId: user!.userId,
           teamId: user!.teamId,
@@ -926,9 +936,10 @@ export default function App() {
         const completedAt = new Date().toISOString()
         const failedMonitor: TaskMonitorState = {
           ...streaming.monitor,
-          steps: streaming.monitor.steps.map((step) => step.status === 'running' ? { ...step, status: canceled ? 'canceled' : 'failed', completedAt } : step),
-          timeline: streaming.monitor.timeline?.map((entry) => entry.status === 'running' ? { ...entry, status: canceled ? 'canceled' : 'failed', completedAt } : entry),
-          subagents: streaming.monitor.subagents?.map((agent) => agent.status === 'running' ? { ...agent, status: canceled ? 'canceled' : 'failed', completedAt } : agent),
+          interruption: taskInterruption(streaming.monitor, canceled ? 'canceled' : 'failure'),
+          steps: streaming.monitor.steps.map((step) => step.status === 'running' ? { ...step, label: `${step.label}（结果待核对）`, status: 'canceled', completedAt } : step),
+          timeline: streaming.monitor.timeline?.map((entry) => entry.status === 'running' ? { ...entry, label: `${entry.label}（结果待核对）`, status: 'canceled', completedAt } : entry),
+          subagents: streaming.monitor.subagents?.map((agent) => agent.status === 'running' ? { ...agent, status: 'canceled', completedAt } : agent),
           status: canceled ? 'canceled' : 'failed',
           activity: canceled ? '已停止' : '任务执行失败',
           updatedAt: completedAt,
@@ -1285,6 +1296,7 @@ export default function App() {
         {(taskPersistence.failures.length > 0 || draftSaveError) && <section className="task-save-warning" role="alert"><div><strong>{taskPersistence.failures.length ? `${taskPersistence.failures.length} 个任务尚未保存` : '当前草稿尚未保存'}</strong><p>当前内容仍在内存中，请勿退出应用。切换页面不会清除此提示。</p><details><summary>查看原因</summary>{draftSaveError && <p>{draftSaveError}</p>}{taskPersistence.failures.map((failure) => <p key={failure.task.id}>{failure.task.name}：{failure.detail}</p>)}</details></div><button type="button" disabled={!draftSaveError && taskPersistence.failures.every((failure) => failure.retrying)} onClick={() => { saveCurrentDraft(); void taskPersistence.retry() }}>{!draftSaveError && taskPersistence.failures.every((failure) => failure.retrying) ? '正在保存…' : '重试保存'}</button></section>}
         {!activeExpertKit && (page === 'chat' ? (
           <ChatPage
+            employeeId={user?.userId}
             knowledgeContext={bootstrap && user ? { endpoint: resolveServerEndpoint(bootstrap.endpoints.knowledge), employeeId: user.userId, teamId: user.teamId, accessToken } : undefined}
             key={currentLocalTaskId || 'new-task'}
             taskId={currentLocalTaskId}
@@ -1366,6 +1378,11 @@ export default function App() {
             onRemoveAttachment={(id) => setPendingAttachments((current) => current.filter((item) => item.id !== id))}
             onSelectModel={selectModel}
             onSubmit={(event) => void submit(event)}
+            onResumeInterrupted={() => {
+              if (prompt.trim() || pendingAttachments.length || currentTaskRunning || taskContextRestoring) return
+              const tokens = localTasks.find((task) => task.id === currentLocalTaskId)?.invocationTokens ?? []
+              void executeTask([...tokens, TASK_RESUME_PROMPT].join('\n'), [])
+            }}
             onToggleModelMenu={() => setModelMenuOpen((value) => !value)}
             prompt={prompt}
             runtimeStatus={runtimeStatus}
@@ -1422,6 +1439,7 @@ export default function App() {
             {page === 'skills' && <CapabilityCatalogPage onChanged={refreshInstalledKits} onUseSkill={(id) => startNewTask(`/skill:${id} `)} kind={capabilityKind} onCreate={() => createWithXiaoyin(capabilityKind === 'packs' ? 'expert-kit' : 'skill')} category={extensionCategory} error={expertKitError} expertKits={expertKits} filter={extensionFilter} installingKitId={installingKitId} loading={expertKitsLoading} onCategory={setExtensionCategory} onFilter={(value) => { setExtensionFilter(value); setExtensionCategory('all') }} onOpenExpertKit={setActiveExpertKitId} onOpenSkill={setActiveSkillId} skills={skillViews} visibleExpertKits={visibleExpertKits} visibleSkills={visibleSkillViews} />}
             {page === 'connectors' && <>
               <ConnectorsPage
+                employeeId={user?.userId}
                 catalog={connectors}
                 catalogError={expertKitError}
                 loading={expertKitsLoading}
@@ -1448,9 +1466,10 @@ export default function App() {
                 onDiagnose={async (connectorId) => {
                   const connector = runtimeConnectors.find((item) => item.id === connectorId)
                   if (!connector || !connectorDiagnosticsAvailable()) return undefined
-                  const [result] = await diagnoseConnectors({ accessToken, connectors: [{ ...connector, enabled: true }] })
+                  const [result] = await diagnoseConnectors({ employeeId: user?.userId ?? '', accessToken, connectors: [{ ...connector, enabled: true }] })
                   return result
                 }}
+                onReauthorizeErp={openErpLogin}
               />
             </>}
             {page === 'knowledge' && bootstrap && user && <KnowledgeBasePage key={`${user.userId}:${bootstrap.endpoints.knowledge}`}

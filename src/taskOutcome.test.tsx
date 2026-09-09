@@ -15,13 +15,16 @@ it('shows outstanding work and check evidence without implying a finished turn c
   expect(html).toContain('安装重算引擎后核对公式')
   expect(html).toContain('未找到 LibreOffice')
   expect(html).not.toContain('任务已完成')
+  expect(html).toContain('验收记录')
+  expect(html).not.toContain('<details open')
+  expect(html.indexOf('安装重算引擎后核对公式')).toBeLessThan(html.indexOf('<details'))
   const prompt = harnessPromptWithConversationReplay('继续核对', [{ role: 'user', text: '生成表格' }, { role: 'assistant', text: '表格已生成', monitor }], true)
   expect(prompt).toContain('部分完成')
   expect(prompt).toContain('安装重算引擎后核对公式')
   expect(prompt).toContain('未找到 LibreOffice')
 })
 
-it('keeps legacy history readable without inventing an assessment and prioritizes stop/failure labels', () => {
+it('distinguishes a finished turn from a verified goal and prioritizes stop/failure labels', () => {
   const task = { status: 'COMPLETED', monitor: createTaskMonitor() } as LocalTaskRun
   expect(taskStatusLabel(task)).toBe('本轮已结束')
   expect(taskStatusLabel({ ...task, status: 'CANCELED' })).toBe('已停止')

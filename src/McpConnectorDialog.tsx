@@ -24,6 +24,7 @@ export function McpConnectorDialog({ initial, existingIds, onSave, onClose }: { 
   const [name, setName] = useState(initial?.name ?? '')
   const [command, setCommand] = useState(initial ? [initial.command, ...initial.arguments ?? []].filter((v) => v !== undefined).map((v) => JSON.stringify(v)).join(' ') : '')
   const [url, setUrl] = useState(initial?.url ?? '')
+  const [authMode, setAuthMode] = useState(initial?.authMode ?? 'none')
   const [timeoutSeconds, setTimeoutSeconds] = useState(initial?.timeoutSeconds ?? 60)
   const [env, setEnv] = useState(Object.entries(initial?.environment ?? {}).length ? Object.entries(initial!.environment!) : [['', '']])
   const [headers, setHeaders] = useState(Object.entries(initial?.headers ?? {}).length ? Object.entries(initial!.headers!) : [['', '']])
@@ -41,16 +42,17 @@ export function McpConnectorDialog({ initial, existingIds, onSave, onClose }: { 
     lock.current = true; setBusy(true); setError('')
     try {
       const parts = transport === 'stdio' ? splitMcpCommand(command) : []
-      const parsed = parseConnectorJson(JSON.stringify({ id: initial?.id, name, transport, command: parts[0], args: parts.slice(1), url, env: transport === 'stdio' ? record(env) : {}, headers: transport === 'stdio' ? {} : record(headers) }))
+      const parsed = parseConnectorJson(JSON.stringify({ id: initial?.id, name, transport, authMode: transport === 'stdio' ? 'none' : authMode, command: parts[0], args: parts.slice(1), url, env: transport === 'stdio' ? record(env) : {}, headers: transport === 'stdio' ? {} : record(headers) }))
       if (!initial && existingIds.includes(parsed.id)) throw new Error('该连接器已存在，请使用其他名称或编辑已有配置')
       if (!Number.isInteger(timeoutSeconds) || timeoutSeconds < 1 || timeoutSeconds > 600) throw new Error('超时时间须为 1–600 秒')
-      await onSave({ ...initial, ...parsed, timeoutSeconds, version: initial?.version ?? parsed.version, toolNames: initial?.toolNames ?? [], authMode: transport === 'stdio' ? 'none' : initial?.authMode ?? 'none' })
+      await onSave({ ...initial, ...parsed, timeoutSeconds, version: initial?.version ?? parsed.version, toolNames: initial?.toolNames ?? [] })
       onClose()
     } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
     finally { lock.current = false; setBusy(false) }
   }}><fieldset disabled={busy}>
     <label>服务器类型<select value={transport} onChange={(e) => setTransport(e.target.value as typeof transport)}><option value="stdio">STDIO</option><option value="sse">SSE</option><option value="streamable-http">Streamable HTTP</option></select></label>
     <label>服务器名称<input required value={name} onChange={(e) => setName(e.target.value)} placeholder="my-mcp-server" /></label>
+    {transport !== 'stdio' && <label>认证方式<select value={authMode} onChange={(e) => setAuthMode(e.target.value as typeof authMode)}><option value="none">无 / 自定义请求头</option><option value="oauth">浏览器账户授权（OAuth）</option><option value="employee-bearer">员工 Bearer Token</option><option value="erp-cookie">ERP 扫码会话</option></select></label>}
     {transport === 'stdio' ? <label>命令<textarea required rows={3} value={command} onChange={(e) => setCommand(e.target.value)} placeholder="npx -y @modelcontextprotocol/server-filesystem" /><small>粘贴完整命令；带空格的路径请用引号包围，不通过 Shell 执行。</small></label> : <label>服务器地址<input required type="url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder={transport === 'sse' ? 'https://example.com/sse' : 'https://example.com/mcp'} /></label>}
     <div className="add-variable-list"><strong>{transport === 'stdio' ? '环境变量' : '请求头'} <small>（可选）</small></strong>{rows.map(([key, value], index) => <div key={index}><input aria-label={`变量名 ${index + 1}`} value={key} placeholder={transport === 'stdio' ? 'API_KEY' : 'Authorization'} onChange={(e) => setRows(rows.map((r, n) => n === index ? [e.target.value, value] : r))} /><input aria-label={`变量值 ${index + 1}`} type="password" value={value} placeholder="值" onChange={(e) => setRows(rows.map((r, n) => n === index ? [key, e.target.value] : r))} /><button type="button" aria-label={`移除变量 ${index + 1}`} onClick={() => setRows(rows.filter((_, n) => n !== index))}>×</button></div>)}<button type="button" onClick={() => setRows([...rows, ['', '']])}>＋ 添加变量</button></div>
     <label>执行超时（秒）<input type="number" min={1} max={600} step={1} required value={timeoutSeconds || ''} onChange={(e) => setTimeoutSeconds(Number(e.target.value))} /><small>默认 60 秒，支持 1–600 秒，适用于任务中的连接、工具列表获取和调用。</small></label>

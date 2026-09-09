@@ -187,18 +187,28 @@ export async function runSessionTurn(
   let turnStarted = false
   let finalResponse = ''
   let turnFailure = ''
+  const pendingTools = new Set<string>()
   const streamedText = new Map<string, string>()
   const outcome = new TaskOutcomeTracker()
   const deadline = Date.now() + timeoutMs
   try {
-    const messageId = await client.prompt(sessionId, content)
+    const messageId = await beforeDeadline(() => client.prompt(sessionId, content), deadline, timeoutMs)
     for (;;) {
-      const notification = await nextBeforeDeadline(subscription, deadline, timeoutMs)
+      const notification = await beforeDeadline(() => subscription.next(), deadline, timeoutMs)
       if (!receivedPrompt) {
         if (!isPromptReceipt(notification, sessionId, messageId)) continue
         receivedPrompt = true
       }
       const event = sessionEvent(notification, sessionId)
+      const data = record(event?.data)
+      if (event?.type === 'tool/call' && typeof data?.callId === 'string') pendingTools.add(data.callId)
+      if (event?.type === 'tool/result') {
+        const blocks = record(data?.message)?.content
+        for (const block of Array.isArray(blocks) ? blocks : []) {
+          const result = record(block)
+          if (result?.type === 'tool-result' && typeof result.toolCallId === 'string') pendingTools.delete(result.toolCallId)
+        }
+      }
       outcome.observe(event)
       await forwardVisibleTextSmoothly(notification, event, streamedText, onNotification)
       if (event?.type === 'turn/start') turnStarted = true
@@ -220,6 +230,7 @@ export async function runSessionTurn(
     subscription.close()
   }
   if (turnFailure) throw new Error(turnFailure)
+  if (pendingTools.size) throw new Error('本轮仍有工具操作未取得结果，请先核对实际结果后继续')
   if (!finalResponse.trim()) throw new Error('模型本轮没有返回可显示文本，请重试')
   return { sessionId, finalResponse, outcome: outcome.result() }
 }
@@ -332,17 +343,17 @@ function shortUiPause(): Promise<void> {
   return new Promise((resolvePromise) => setTimeout(resolvePromise, 32))
 }
 
-async function nextBeforeDeadline(
-  subscription: SessionSubscription,
+async function beforeDeadline<T>(
+  operation: () => Promise<T>,
   deadline: number,
   timeoutMs: number,
-): Promise<HarnessNotification> {
+): Promise<T> {
   const remaining = deadline - Date.now()
   if (remaining <= 0) throw new TurnTimeoutError(timeoutMs)
   let timer: NodeJS.Timeout | undefined
   try {
     return await Promise.race([
-      subscription.next(),
+      operation(),
       new Promise<never>((_resolve, reject) => {
         timer = setTimeout(() => reject(new TurnTimeoutError(timeoutMs)), remaining)
         timer.unref()

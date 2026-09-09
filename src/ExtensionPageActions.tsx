@@ -59,7 +59,7 @@ export function ExtensionPageActions(props: Props) {
         {props.page === 'connectors'
           ? <>
             <button onClick={() => { setOpen(false); props.onCreate() }} role="menuitem" type="button"><PenLine size={18} /><span><strong>手动填写配置</strong><small>填写任意 MCP 服务的连接信息</small></span></button>
-            <button onClick={() => { setOpen(false); setJsonOpen(true) }} role="menuitem" type="button"><Braces size={18} /><span><strong>粘贴 JSON 配置</strong><small>兼容常见 MCP JSON 配置</small></span></button>
+            <button onClick={() => { setOpen(false); setJsonOpen(true) }} role="menuitem" type="button"><Braces size={18} /><span><strong>粘贴 JSON 配置</strong><small>导入 MCP 服务配置</small></span></button>
           </>
           : <button disabled={props.loading} onClick={() => { setOpen(false); props.onUpload() }} role="menuitem" type="button"><FileUp size={18} /><span><strong>上传{props.packageKind === 'expert-kit' ? '套件' : noun}</strong><small>导入{noun}文件，仅安装到本机</small></span></button>}
         <button disabled role="menuitem" type="button"><Send size={18} /><span><strong>提交到企业市场</strong><small>创建后可在创作中心提交管理员审核</small></span></button>

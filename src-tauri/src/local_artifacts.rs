@@ -9,10 +9,58 @@ use std::{
     process::Command,
 };
 use tauri::Manager;
-use zip::ZipArchive;
+use tauri_plugin_opener::OpenerExt;
 
 const TEXT_PREVIEW_LIMIT: usize = 2 * 1024 * 1024;
 const MEDIA_PREVIEW_LIMIT: usize = 12 * 1024 * 1024;
+pub(crate) const HTML_PREVIEW_CSP: &str = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; sandbox allow-scripts";
+
+pub(crate) fn html_preview_response(
+    authorizations: &LocalFileAuthorizations,
+    request: &tauri::http::Request<Vec<u8>>,
+) -> tauri::http::Response<Vec<u8>> {
+    let result = (|| {
+        if request.method() != tauri::http::Method::GET {
+            return Err("预览请求无效".to_string());
+        }
+        let decoded =
+            percent_encoding::percent_decode_str(request.uri().path().trim_start_matches('/'))
+                .decode_utf8()
+                .map_err(|_| "文件路径编码无效")?;
+        let (root_id, path) = decoded.split_once('/').ok_or("文件预览路径无效")?;
+        let target = authorizations.resolve_artifact(root_id, path)?;
+        html_preview_bytes(&validate_artifact_path(&target)?)
+    })();
+    let (status, content_type, body) = match result {
+        Ok(bytes) => (200, "text/html; charset=utf-8", bytes),
+        Err(error) => (400, "text/plain; charset=utf-8", error.into_bytes()),
+    };
+    tauri::http::Response::builder()
+        .status(status)
+        .header("Content-Type", content_type)
+        .header("Content-Security-Policy", HTML_PREVIEW_CSP)
+        .header("Cache-Control", "no-store")
+        .header("X-Content-Type-Options", "nosniff")
+        .header("Referrer-Policy", "no-referrer")
+        .body(body)
+        .expect("valid HTML preview response")
+}
+
+fn html_preview_bytes(path: &Path) -> Result<Vec<u8>, String> {
+    if !path
+        .extension()
+        .and_then(|value| value.to_str())
+        .is_some_and(|value| matches!(value.to_ascii_lowercase().as_str(), "html" | "htm"))
+    {
+        return Err("交互预览仅支持 HTML 文件".into());
+    }
+    let (bytes, truncated) = read_limited(path, TEXT_PREVIEW_LIMIT)?;
+    if truncated {
+        return Err("HTML 文件超过 2 MiB，请查看源码".into());
+    }
+    std::str::from_utf8(&bytes).map_err(|_| "HTML 必须是 UTF-8 文本")?;
+    Ok(bytes)
+}
 const CODE_EXTENSIONS: &[&str] = &[
     "c",
     "cc",
@@ -47,8 +95,9 @@ const CODE_EXTENSIONS: &[&str] = &[
     "yaml",
     "yml",
 ];
-const TEXT_EXTENSIONS: &[&str] = &["csv", "log", "md", "txt"];
-const OFFICE_EXTENSIONS: &[&str] = &["doc", "docx", "ods", "odt", "ppt", "pptx", "xls", "xlsx"];
+const TEXT_EXTENSIONS: &[&str] = &["log", "md", "markdown", "txt"];
+const OFFICE_EXTENSIONS: &[&str] = &["csv", "tsv", "docx", "odt", "pptx", "xlsx"];
+static PREVIEW_LOCK: futures_util::lock::Mutex<()> = futures_util::lock::Mutex::new(());
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -61,16 +110,24 @@ pub struct LocalArtifactPreview {
     data_url: Option<String>,
     size_bytes: u64,
     truncated: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    structured: Option<crate::office_preview::StructuredPreview>,
 }
 
 #[tauri::command]
-pub fn read_local_artifact_preview(
+pub async fn read_local_artifact_preview(
     authorizations: tauri::State<'_, LocalFileAuthorizations>,
     root_id: String,
     path: String,
 ) -> Result<LocalArtifactPreview, String> {
-    let target = authorizations.resolve_artifact(&root_id, &path)?;
-    preview_file(&validate_artifact_path(&target)?, path)
+    let _guard = PREVIEW_LOCK.lock().await;
+    let authorizations = authorizations.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let target = authorizations.resolve_artifact(&root_id, &path)?;
+        preview_file(&validate_artifact_path(&target)?, path)
+    })
+    .await
+    .map_err(|_| "文件预览处理失败，请重试".to_string())?
 }
 
 #[tauri::command]
@@ -87,6 +144,20 @@ pub fn reveal_local_artifact(
     } else {
         Err("系统无法在文件夹中定位该文件".to_string())
     }
+}
+
+#[tauri::command]
+pub fn open_local_artifact(
+    app: tauri::AppHandle,
+    authorizations: tauri::State<'_, LocalFileAuthorizations>,
+    root_id: String,
+    path: String,
+) -> Result<(), String> {
+    let target = authorizations.resolve_artifact(&root_id, &path)?;
+    let target = validate_artifact_path(&target)?;
+    app.opener()
+        .open_path(target.to_string_lossy(), None::<&str>)
+        .map_err(|_| "系统无法打开该文件，请检查是否安装对应应用".into())
 }
 
 #[tauri::command]
@@ -136,17 +207,18 @@ fn preview_file(target: &Path, relative_path: String) -> Result<LocalArtifactPre
         .unwrap_or_default()
         .to_ascii_lowercase();
 
-    if let Some(mime) = image_mime(&extension) {
+    if let Some((kind, mime)) = media_type(&extension) {
         let (bytes, truncated) = read_limited(target, MEDIA_PREVIEW_LIMIT)?;
         return Ok(LocalArtifactPreview {
             name,
             path: relative_path,
-            kind: "image".to_string(),
+            kind: kind.to_string(),
             language: None,
             content: None,
             data_url: (!truncated).then(|| format!("data:{mime};base64,{}", BASE64.encode(bytes))),
             size_bytes: metadata.len(),
             truncated,
+            structured: None,
         });
     }
     if extension == "pdf" {
@@ -161,19 +233,21 @@ fn preview_file(target: &Path, relative_path: String) -> Result<LocalArtifactPre
                 .then(|| format!("data:application/pdf;base64,{}", BASE64.encode(bytes))),
             size_bytes: metadata.len(),
             truncated,
+            structured: None,
         });
     }
     if OFFICE_EXTENSIONS.contains(&extension.as_str()) {
-        let content = preview_office_text(target, &extension)?;
+        let (structured, truncated) = crate::office_preview::read(target, &extension)?;
         return Ok(LocalArtifactPreview {
             name,
             path: relative_path,
-            kind: "office".to_string(),
+            kind: structured.kind().to_string(),
             language: Some(extension),
-            content,
+            content: None,
             data_url: None,
             size_bytes: metadata.len(),
-            truncated: false,
+            truncated,
+            structured: Some(structured),
         });
     }
 
@@ -189,7 +263,9 @@ fn preview_file(target: &Path, relative_path: String) -> Result<LocalArtifactPre
     Ok(LocalArtifactPreview {
         name,
         path: relative_path,
-        kind: if CODE_EXTENSIONS.contains(&extension.as_str()) {
+        kind: if matches!(extension.as_str(), "md" | "markdown") {
+            "markdown"
+        } else if CODE_EXTENSIONS.contains(&extension.as_str()) {
             "code"
         } else if content.is_some() {
             "text"
@@ -202,256 +278,8 @@ fn preview_file(target: &Path, relative_path: String) -> Result<LocalArtifactPre
         data_url: None,
         size_bytes: metadata.len(),
         truncated,
+        structured: None,
     })
-}
-
-fn preview_office_text(target: &Path, extension: &str) -> Result<Option<String>, String> {
-    if matches!(extension, "doc" | "ppt" | "xls") {
-        return Ok(None);
-    }
-    let file = File::open(target).map_err(|error| format!("无法打开 Office 文件：{error}"))?;
-    let mut archive =
-        ZipArchive::new(file).map_err(|error| format!("Office 文件结构无效：{error}"))?;
-    let content = match extension {
-        "docx" => read_zip_entry(&mut archive, "word/document.xml")
-            .map(|value| office_xml_text(&value, &["</w:p>", "</w:tr>"], &["</w:tc>"]))?,
-        "pptx" => {
-            let mut names = (0..archive.len())
-                .filter_map(|index| {
-                    archive
-                        .by_index(index)
-                        .ok()
-                        .map(|entry| entry.name().to_string())
-                })
-                .filter(|name| name.starts_with("ppt/slides/slide") && name.ends_with(".xml"))
-                .collect::<Vec<_>>();
-            names.sort_by_key(|name| numeric_suffix(name));
-            let mut slides = Vec::new();
-            for (index, name) in names.iter().enumerate().take(200) {
-                let xml = read_zip_entry(&mut archive, name)?;
-                let text = office_xml_text(&xml, &["</a:p>"], &[]);
-                if !text.trim().is_empty() {
-                    slides.push(format!("第 {} 页\n{}", index + 1, text.trim()));
-                }
-            }
-            slides.join("\n\n")
-        }
-        "xlsx" | "ods" => preview_sheet_text(&mut archive, extension)?,
-        "odt" => read_zip_entry(&mut archive, "content.xml").map(|value| {
-            office_xml_text(
-                &value,
-                &["</text:p>", "</table:table-row>"],
-                &["</table:table-cell>"],
-            )
-        })?,
-        _ => String::new(),
-    };
-    Ok((!content.trim().is_empty()).then(|| content.chars().take(500_000).collect()))
-}
-
-fn preview_sheet_text(archive: &mut ZipArchive<File>, extension: &str) -> Result<String, String> {
-    if extension == "ods" {
-        return read_zip_entry(archive, "content.xml").map(|value| {
-            office_xml_text(&value, &["</table:table-row>"], &["</table:table-cell>"])
-        });
-    }
-    let shared = read_zip_entry_optional(archive, "xl/sharedStrings.xml")?
-        .map(|xml| {
-            xml_blocks(&xml, "si")
-                .into_iter()
-                .map(|value| office_xml_text(value, &[], &[]))
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
-    let mut names = (0..archive.len())
-        .filter_map(|index| {
-            archive
-                .by_index(index)
-                .ok()
-                .map(|entry| entry.name().to_string())
-        })
-        .filter(|name| name.starts_with("xl/worksheets/sheet") && name.ends_with(".xml"))
-        .collect::<Vec<_>>();
-    names.sort_by_key(|name| numeric_suffix(name));
-    let mut sheets = Vec::new();
-    for (sheet_index, name) in names.iter().enumerate().take(100) {
-        let xml = read_zip_entry(archive, name)?;
-        let rows = xml_blocks(&xml, "row")
-            .into_iter()
-            .take(10_000)
-            .map(|row| {
-                let mut cells = Vec::new();
-                for cell in xml_blocks(row, "c") {
-                    let column = xml_attribute(cell, "r")
-                        .and_then(spreadsheet_column)
-                        .unwrap_or(cells.len());
-                    if column >= 16_384 {
-                        continue;
-                    }
-                    let raw = xml_tag_value(cell, "v")
-                        .filter(|value| !value.is_empty())
-                        .or_else(|| xml_tag_value(cell, "t"))
-                        .unwrap_or_else(|| {
-                            xml_tag_value(cell, "f")
-                                .filter(|formula| !formula.is_empty())
-                                .map(|formula| format!("[公式：{formula}；待重算]"))
-                                .unwrap_or_default()
-                        });
-                    let value = if xml_attribute(cell, "t") == Some("s") {
-                        raw.parse::<usize>()
-                            .ok()
-                            .and_then(|index| shared.get(index))
-                            .cloned()
-                            .unwrap_or(raw)
-                    } else {
-                        decode_xml_entities(&raw)
-                    };
-                    if cells.len() <= column {
-                        cells.resize(column + 1, String::new());
-                    }
-                    cells[column] = value;
-                }
-                cells.join("\t")
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
-        if !rows.trim().is_empty() {
-            sheets.push(format!("工作表 {}\n{}", sheet_index + 1, rows));
-        }
-    }
-    Ok(sheets.join("\n\n"))
-}
-
-fn read_zip_entry(archive: &mut ZipArchive<File>, name: &str) -> Result<String, String> {
-    let entry = archive
-        .by_name(name)
-        .map_err(|_| format!("Office 文件缺少 {name}"))?;
-    let mut value = String::new();
-    entry
-        .take(4 * 1024 * 1024)
-        .read_to_string(&mut value)
-        .map_err(|error| format!("无法读取 Office 内容：{error}"))?;
-    Ok(value)
-}
-
-fn read_zip_entry_optional(
-    archive: &mut ZipArchive<File>,
-    name: &str,
-) -> Result<Option<String>, String> {
-    match archive.by_name(name) {
-        Ok(entry) => {
-            let mut value = String::new();
-            entry
-                .take(4 * 1024 * 1024)
-                .read_to_string(&mut value)
-                .map_err(|error| format!("无法读取 Office 内容：{error}"))?;
-            Ok(Some(value))
-        }
-        Err(zip::result::ZipError::FileNotFound) => Ok(None),
-        Err(error) => Err(format!("Office 文件结构无效：{error}")),
-    }
-}
-
-fn office_xml_text(xml: &str, line_breaks: &[&str], tabs: &[&str]) -> String {
-    let mut normalized = xml.to_string();
-    for marker in line_breaks {
-        normalized = normalized.replace(marker, "\n");
-    }
-    for marker in tabs {
-        normalized = normalized.replace(marker, "\t");
-    }
-    let mut text = String::with_capacity(normalized.len());
-    let mut in_tag = false;
-    for character in normalized.chars() {
-        match character {
-            '<' => in_tag = true,
-            '>' => in_tag = false,
-            _ if !in_tag => text.push(character),
-            _ => {}
-        }
-    }
-    decode_xml_entities(&text)
-        .lines()
-        .map(str::trim_end)
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
-fn decode_xml_entities(value: &str) -> String {
-    value
-        .replace("&lt;", "<")
-        .replace("&gt;", ">")
-        .replace("&quot;", "\"")
-        .replace("&apos;", "'")
-        .replace("&amp;", "&")
-}
-
-fn xml_blocks<'a>(xml: &'a str, tag: &str) -> Vec<&'a str> {
-    let start = format!("<{tag}");
-    let end = format!("</{tag}>");
-    let mut blocks = Vec::new();
-    let mut remaining = xml;
-    while let Some(begin) = remaining.find(&start) {
-        let candidate = &remaining[begin..];
-        if !candidate
-            .as_bytes()
-            .get(start.len())
-            .is_some_and(|byte| byte.is_ascii_whitespace() || *byte == b'>' || *byte == b'/')
-        {
-            remaining = &candidate[start.len()..];
-            continue;
-        }
-        let Some(header_end) = candidate.find('>') else {
-            break;
-        };
-        if candidate[..header_end].ends_with('/') {
-            blocks.push(&candidate[..=header_end]);
-            remaining = &candidate[header_end + 1..];
-            continue;
-        }
-        let Some(close) = candidate.find(&end) else {
-            break;
-        };
-        let block_end = close + end.len();
-        blocks.push(&candidate[..block_end]);
-        remaining = &candidate[block_end..];
-    }
-    blocks
-}
-
-fn xml_attribute<'a>(xml: &'a str, name: &str) -> Option<&'a str> {
-    let header = xml.split('>').next()?;
-    for quote in ['"', '\''] {
-        let marker = format!(" {name}={quote}");
-        if let Some((_, value)) = header.split_once(&marker) {
-            return value.split(quote).next();
-        }
-    }
-    None
-}
-
-fn spreadsheet_column(reference: &str) -> Option<usize> {
-    let mut column = 0usize;
-    for letter in reference.bytes().take_while(u8::is_ascii_alphabetic) {
-        column = column
-            .checked_mul(26)?
-            .checked_add((letter.to_ascii_uppercase() - b'A' + 1) as usize)?;
-    }
-    column.checked_sub(1)
-}
-
-fn xml_tag_value(xml: &str, tag: &str) -> Option<String> {
-    let block = xml_blocks(xml, tag).into_iter().next()?;
-    Some(office_xml_text(block, &[], &[]))
-}
-
-fn numeric_suffix(value: &str) -> u32 {
-    value
-        .chars()
-        .filter(char::is_ascii_digit)
-        .collect::<String>()
-        .parse()
-        .unwrap_or(u32::MAX)
 }
 
 fn read_limited(path: &Path, limit: usize) -> Result<(Vec<u8>, bool), String> {
@@ -468,13 +296,21 @@ fn read_limited(path: &Path, limit: usize) -> Result<(Vec<u8>, bool), String> {
     Ok((bytes, truncated))
 }
 
-fn image_mime(extension: &str) -> Option<&'static str> {
+fn media_type(extension: &str) -> Option<(&'static str, &'static str)> {
     match extension {
-        "bmp" => Some("image/bmp"),
-        "gif" => Some("image/gif"),
-        "jpeg" | "jpg" => Some("image/jpeg"),
-        "png" => Some("image/png"),
-        "webp" => Some("image/webp"),
+        "bmp" => Some(("image", "image/bmp")),
+        "gif" => Some(("image", "image/gif")),
+        "jpeg" | "jpg" => Some(("image", "image/jpeg")),
+        "png" => Some(("image", "image/png")),
+        "webp" => Some(("image", "image/webp")),
+        "svg" => Some(("image", "image/svg+xml")),
+        "mp3" => Some(("audio", "audio/mpeg")),
+        "wav" => Some(("audio", "audio/wav")),
+        "m4a" => Some(("audio", "audio/mp4")),
+        "ogg" => Some(("audio", "audio/ogg")),
+        "mp4" | "m4v" => Some(("video", "video/mp4")),
+        "webm" => Some(("video", "video/webm")),
+        "mov" => Some(("video", "video/quicktime")),
         _ => None,
     }
 }
@@ -517,39 +353,37 @@ fn platform_reveal(path: &Path) -> Result<std::process::ExitStatus, String> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn html_preview_enforces_authorization_type_size_and_isolation() {
+        let root = temporary_root("html");
+        std::fs::create_dir_all(&root).unwrap();
+        let html = root.join("tool.html");
+        std::fs::write(&html, "<button onclick='this.textContent=2'>1</button>").unwrap();
+        assert!(html_preview_bytes(&html).unwrap().starts_with(b"<button"));
+        assert!(html_preview_bytes(&root.join("secret.txt")).is_err());
+        std::fs::write(&html, vec![b'x'; TEXT_PREVIEW_LIMIT + 1]).unwrap();
+        assert!(html_preview_bytes(&html).unwrap_err().contains("2 MiB"));
+        let request = tauri::http::Request::builder()
+            .uri("xiaoyin-preview://localhost/unknown/tool.html")
+            .body(Vec::new())
+            .unwrap();
+        let response = html_preview_response(&LocalFileAuthorizations::default(), &request);
+        assert_eq!(response.status(), 400);
+        assert!(
+            response.headers()["content-security-policy"]
+                .to_str()
+                .unwrap()
+                .contains("sandbox allow-scripts")
+        );
+        assert!(String::from_utf8_lossy(response.body()).contains("授权已失效"));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     fn temporary_root(label: &str) -> PathBuf {
         std::env::temp_dir().join(format!(
             "xiaoyin-artifact-preview-{}-{label}",
             std::process::id()
         ))
-    }
-
-    #[test]
-    fn spreadsheet_preview_preserves_blank_columns_and_missing_formula_results() {
-        use std::io::Write;
-        let root = temporary_root("sparse-xlsx");
-        std::fs::create_dir_all(&root).unwrap();
-        let path = root.join("sparse.xlsx");
-        let mut writer = zip::ZipWriter::new(File::create(&path).unwrap());
-        writer
-            .start_file(
-                "xl/worksheets/sheet1.xml",
-                zip::write::SimpleFileOptions::default(),
-            )
-            .unwrap();
-        writer.write_all(br#"<worksheet><sheetData><row r="1"><c r="B1" t="inlineStr"><is><t>total</t></is></c><c r="C1"/><c r="E1"><v>167.5</v></c></row><row r="2"><c r='C2'><f>SUM(A1:B1)</f><v/></c></row></sheetData></worksheet>"#).unwrap();
-        writer.finish().unwrap();
-        let mut archive = ZipArchive::new(File::open(&path).unwrap()).unwrap();
-        assert_eq!(
-            preview_sheet_text(&mut archive, "xlsx").unwrap(),
-            "工作表 1\n\ttotal\t\t\t167.5\n\t\t[公式：SUM(A1:B1)；待重算]"
-        );
-        assert_eq!(
-            xml_blocks("<cols/><c r=\"A1\"/><c r=\"B1\"><v>0</v></c>", "c").len(),
-            2
-        );
-        assert_eq!(spreadsheet_column("AA12"), Some(26));
-        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

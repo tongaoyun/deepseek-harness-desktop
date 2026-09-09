@@ -1,5 +1,6 @@
 import { invoke, isTauri } from '@tauri-apps/api/core'
 import type { LocalTaskRun } from './types'
+import { taskInterruption } from './taskInterruption'
 
 const LIMIT = 200
 const writes = new Map<string, Promise<void>>()
@@ -67,19 +68,20 @@ export function recoverInterruptedTasks(tasks: LocalTaskRun[], now = new Date().
     if (task.status !== 'RUNNING') return task
     const monitor = {
       ...task.monitor,
+      interruption: taskInterruption(task.monitor, 'exit', task.updatedAt),
       status: 'failed' as const,
       activity: '上次运行已中断',
       failure: { code: 'XY-INTERRUPTED', category: 'local-agent' as const, detail: '应用关闭或本地执行进程中断，已保留最近保存的进度与成果。' },
       updatedAt: now,
-      completedAt: now,
+      completedAt: task.updatedAt,
       steps: task.monitor.steps.map((step) => step.status === 'running'
-        ? { ...step, status: 'failed' as const, completedAt: now }
+        ? { ...step, label: `${step.label}（结果待核对）`, status: 'canceled' as const, completedAt: task.updatedAt }
         : step),
       timeline: task.monitor.timeline?.map((entry) => entry.status === 'running'
-        ? { ...entry, status: 'failed' as const, completedAt: now }
+        ? { ...entry, label: `${entry.label}（结果待核对）`, status: 'canceled' as const, completedAt: task.updatedAt }
         : entry),
       subagents: task.monitor.subagents?.map((agent) => agent.status === 'running'
-        ? { ...agent, status: 'failed' as const, completedAt: now }
+        ? { ...agent, status: 'canceled' as const, completedAt: task.updatedAt }
         : agent),
     }
     const interrupted = {

@@ -1,7 +1,12 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { ChatPage } from './ChatPage'
-import type { TaskMonitorState } from './types'
+import type { TaskArtifact, TaskMonitorState } from './types'
+
+const artifact: TaskArtifact = {
+  id: 'sales', rootId: 'workspace', rootName: '工作目录', path: 'sales.xlsx', name: 'sales.xlsx',
+  kind: 'spreadsheet', sourceTool: 'office_xlsx_create', action: 'created', createdAt: '2026-09-03T10:00:01.000Z',
+}
 
 describe('ChatPage conversation', () => {
   it('restores the new-task welcome copy', () => {
@@ -36,7 +41,8 @@ describe('ChatPage conversation', () => {
   it('renders work as full-width turns without assistant chat bubbles', () => {
     const monitor: TaskMonitorState = {
       status: 'completed', activity: '任务已完成', startedAt: '2026-09-03T10:00:00.000Z',
-      completedAt: '2026-09-03T10:00:02.000Z', updatedAt: '2026-09-03T10:00:02.000Z', steps: [], artifacts: [],
+      completedAt: '2026-09-03T10:00:02.000Z', updatedAt: '2026-09-03T10:00:02.000Z', steps: [], artifacts: [artifact],
+      changes: [{ ...artifact, action: 'created', changedAt: artifact.createdAt }],
       knowledgeSources: [{ sourceId: '12', knowledgeBaseId: 'kb', knowledgeBaseName: '知识', documentId: 'doc', filename: '排序说明.md', locator: '正文', content: '原文', score: 1 }],
     }
     const html = renderToStaticMarkup(<ChatPage
@@ -63,12 +69,15 @@ describe('ChatPage conversation', () => {
     expect(html).toContain('保存为技能')
     expect(html).toContain('aria-label="检索原文"')
     expect(html).toContain('排序说明.md')
+    expect(html).toContain('class="artifact-name"')
+    expect(html).toContain('class="file-change-path"')
+    expect(html).toContain('aria-label="文件改动"')
   })
 
   it('shows streamed assistant text and local attachments before completion', () => {
     const monitor: TaskMonitorState = {
       status: 'running', activity: '正在处理', startedAt: '2026-09-03T10:00:00.000Z',
-      updatedAt: '2026-09-03T10:00:01.000Z', steps: [], artifacts: [],
+      updatedAt: '2026-09-03T10:00:01.000Z', steps: [], artifacts: [artifact],
     }
     const html = renderToStaticMarkup(<ChatPage
       activeModel="deepseek-v4-flash" composerRef={{ current: null }} harnessHealth="ready"
@@ -89,6 +98,8 @@ describe('ChatPage conversation', () => {
     expect(html).toContain('正在列出下载目录中的文件')
     expect(html).toContain('streaming-response')
     expect(html).toContain('image.png')
+    expect(html).toContain('sales.xlsx')
+    expect(html).toContain('class="artifact-name"')
     expect(html).not.toContain('disabled="" title="发送"')
   })
 })

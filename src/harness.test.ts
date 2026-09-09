@@ -1,8 +1,17 @@
 import { describe, expect, it } from 'vitest'
-import { applyStoppingHarnessNotification } from './harness'
+import { applyStoppingHarnessNotification, type HarnessNotification } from './harness'
 import { applyHarnessNotification, authorizeDroppedPaths, cancelHarness, classifyHarnessFailure, createTaskMonitor, diagnoseConnectors, harnessActivityLabel, harnessResponseUpdate, probeHarnessHost, selfTestLocalCapabilities, shouldRetryHarnessFailure } from './harness'
 
 describe('harnessActivityLabel', () => {
+  it('retains structured Office failure reasons instead of replacing them with file metadata', () => {
+    const monitor = [
+      event('tool/call', { turn: 1, step: 1, callId: 'export', name: 'office_document_export_pdf', arguments: { path: 'report.docx' } }, 1),
+      event('tool/result', { message: { content: [{ type: 'tool-result', toolCallId: 'export', isError: true, content: [{ type: 'text', text: JSON.stringify({ error: '未找到 LibreOffice', path: 'report.docx', size: 1024 }) }] }] } }, 2),
+    ].reduce(applyHarnessNotification, createTaskMonitor())
+    expect(monitor.timeline?.[0].status).toBe('failed')
+    expect(monitor.timeline?.[0].detail).toContain('未找到 LibreOffice')
+    expect(monitor.artifacts).toEqual([])
+  })
   it('persists bounded source receipts only from successful knowledge tools', () => {
     const source = { sourceId: '12', knowledgeBaseId: 'kb', knowledgeBaseName: '制度', documentId: 'doc', filename: '报销.md', locator: '正文', content: '报销上限 800 元', score: 1 }
     const run = (name: string, failed = false) => [
@@ -32,6 +41,27 @@ describe('harnessActivityLabel', () => {
     }] }
     expect(shouldRetryHarnessFailure(transient, afterTool)).toBe(false)
     expect(shouldRetryHarnessFailure(classifyHarnessFailure(new Error('认证失败')), createTaskMonitor())).toBe(false)
+  })
+
+  it('does not forget tool execution when long-task display records are trimmed', () => {
+    const transient = classifyHarnessFailure(new Error('模型服务繁忙'))
+    let monitor = applyHarnessNotification(createTaskMonitor(), event('tool/call', { callId: 'write', name: 'bash' }, 1))
+    for (let step = 1; step <= 110; step += 1) {
+      monitor = applyHarnessNotification(monitor, event('step/start', { turn: 1, step }, step + 1))
+    }
+    expect(monitor.steps.some(step => step.kind === 'tool')).toBe(false)
+    expect(monitor.executionStarted).toBe(true)
+    expect(shouldRetryHarnessFailure(transient, { ...monitor, timeline: [] })).toBe(false)
+  })
+
+  it('blocks replay after a delegated tool starts even without a root tool event', () => {
+    const notification: HarnessNotification = event('tool/call', { callId: 'child-write', name: 'bash' }, 1)
+    notification.event = { rootSessionId: 'root', event: { method: 'session.event', params: {
+      sessionId: 'child', event: { type: 'tool/call', time: 1, data: { callId: 'child-write', name: 'bash' } },
+    } } }
+    const monitor = applyHarnessNotification(createTaskMonitor(), notification)
+    expect(monitor.steps).toEqual([])
+    expect(shouldRetryHarnessFailure(classifyHarnessFailure('模型服务繁忙'), monitor)).toBe(false)
   })
 
   it('shows safe progress labels without exposing reasoning content', () => {
@@ -293,7 +323,7 @@ describe('harnessActivityLabel', () => {
 
 describe('diagnoseConnectors', () => {
   it('does not fall back to browser network access outside Tauri', async () => {
-    await expect(diagnoseConnectors({ connectors: [], accessToken: '' }))
+    await expect(diagnoseConnectors({ employeeId: 'employee', connectors: [], accessToken: '' }))
       .rejects.toThrow('只能在小胤桌面客户端中运行')
   })
 
