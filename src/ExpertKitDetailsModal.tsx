@@ -52,6 +52,7 @@ export function ExpertKitDetailsModal({
   }, [onClose])
 
   const skillById = new Map(skills.map((skill) => [skill.id, skill]))
+  const kitSkillById = new Map((kit.skillDetails ?? []).map((skill) => [skill.id, skill]))
   const connectorById = new Map(connectors.map((connector) => [connector.id, connector]))
   const knowledgeByReference = new Map(knowledgeBases.map((knowledgeBase) => [knowledgeBase.reference, knowledgeBase]))
   const changes = expertKitChanges(kit)
@@ -94,7 +95,10 @@ export function ExpertKitDetailsModal({
       </section>}
       {!kit.installed && kit.skillIds.length > 0 && <section className="expert-detail-section">
         <h3>知识技能 <small>({kit.skillIds.length})</small></h3>
-        <div className="detail-skill-list">{kit.skillIds.map((id) => <article key={id}><WandSparkles size={15} /><div><strong>{skillById.get(id)?.name ?? id}</strong><p>{skillById.get(id)?.summary || '随专家套件一起加载的工作方法'}</p></div></article>)}</div>
+        <div className="detail-skill-list">{kit.skillIds.map((id) => {
+          const skill = kitSkillById.get(id) ?? skillById.get(id)
+          return <article key={id}><WandSparkles size={15} /><div><strong>{skill?.name ?? id}</strong><p>{skill?.summary || '随专家套件一起加载的工作方法'}</p></div></article>
+        })}</div>
       </section>}
       {kit.installed && <ExtensionContentsPanel extension={kit.installed} onUseSkill={onUseSkill} onUseCommand={onUse} onCustomize={onCustomizeDocument} beforeSkills={<CapabilitySections
         connectorRefs={kit.connectorRefs}

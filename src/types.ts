@@ -19,6 +19,12 @@ export interface BootstrapResponse {
 
 export type RuntimeStatus = 'connecting' | 'ready' | 'offline'
 
+export interface ExpertKitSkillDetail {
+  id: string
+  name: string
+  summary: string
+}
+
 export interface ExpertKitCatalogEntry {
   id: string
   name: string
@@ -29,6 +35,7 @@ export interface ExpertKitCatalogEntry {
   minimumDesktopVersion: string
   commandIds: string[]
   skillIds: string[]
+  skillDetails?: ExpertKitSkillDetail[]
   connectorRefs: string[]
   requiredTools: string[]
   knowledgeBaseRefs: string[]
