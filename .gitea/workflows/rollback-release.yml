@@ -1,4 +1,4 @@
-name: 版本回退
+name: Windows 更新回退
 
 on:
   workflow_dispatch:
@@ -12,12 +12,14 @@ permissions:
   contents: read
 
 concurrency:
-  group: xiaoyin-desktop-release-pointer
+  group: windows-installer-release
   cancel-in-progress: false
 
 jobs:
   rollback:
+    name: 回退更新索引
     runs-on: ci-node
+    timeout-minutes: 10
     container:
       image: ci-node:1.0.0
     steps:

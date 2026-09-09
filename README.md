@@ -45,7 +45,7 @@ pnpm tauri:dev
 | Windows 安装包 | `quick` | 开发验证用 Debug NSIS |
 | macOS 安装包 | `arm64`、`x64` 或 `all` | DMG、应用归档、更新签名与 SHA-256 |
 
-手动构建保存流水线制品。推送版本标签会发布更新，发布前同步 `package.json`、`src-tauri/Cargo.toml`、`src-tauri/Cargo.lock` 和 `src-tauri/tauri.conf.json`，执行 `pnpm verify:version`。
+手动构建保存流水线制品。推送版本标签会发布更新；标签必须与项目版本一致并指向当前 `main` 提交。发布前同步 `package.json`、`src-tauri/Cargo.toml`、`src-tauri/Cargo.lock` 和 `src-tauri/tauri.conf.json`，执行 `pnpm verify:version`。Windows release 固定执行安装、内置 Harness、启动和卸载验收。
 
 Tauri 更新签名使用 Actions Secrets 中的 `TAURI_SIGNING_PRIVATE_KEY` 和 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`。Windows Authenticode 与 Apple Developer ID 公证属于操作系统信任签名，需要分别配置。
 
