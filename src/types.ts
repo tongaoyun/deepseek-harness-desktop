@@ -4,7 +4,6 @@ export interface BootstrapResponse {
   modelApiKey: string
   endpoints: {
     litellm: string
-    erpMcp: string
     artifacts: string
     expertKits: string
     skills: string

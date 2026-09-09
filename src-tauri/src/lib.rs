@@ -113,7 +113,6 @@ pub fn run() {
             task_operations::task_write_operations,
             connector_secrets::save_connector_secret,
             connector_secrets::delete_connector_secret,
-            connector_secrets::migrate_connector_secrets,
             runtime_info,
             erp_auth::erp_session,
             erp_auth::clear_erp_session,

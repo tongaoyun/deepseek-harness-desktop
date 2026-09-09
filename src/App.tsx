@@ -224,8 +224,8 @@ export default function App() {
     [expertKitCatalog, skills],
   )
   const runtimeConnectors = useMemo(() => buildRuntimeConnectorCatalog(
-    connectors, bootstrap?.endpoints.erpMcp ?? '', enabledConnectorIds, connectorSecrets,
-  ), [bootstrap?.endpoints.erpMcp, connectorSecrets, connectors, enabledConnectorIds])
+    connectors, enabledConnectorIds, connectorSecrets,
+  ), [connectorSecrets, connectors, enabledConnectorIds])
   const activeModel = resolveSelectedModel(bootstrap?.models ?? [], selectedModel)
   const localImContext = useMemo(() => bootstrap && user ? {
     employeeId: user.userId,

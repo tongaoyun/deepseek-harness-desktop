@@ -65,6 +65,8 @@
 
 在「扩展 → 连接器」添加企业或个人 MCP 服务，支持 Streamable HTTP、SSE 和 STDIO。
 
+企业连接器目录必须提供完整配置：HTTP/SSE 包含 `transport`、`url` 和 `authMode`，STDIO 包含 `transport`、`command` 和所需参数。桌面只使用目录当前下发的配置。
+
 - JSON 导入支持单个服务和 `mcpServers`，接受 `type` / `transport`、`args` / `arguments`、`env` / `environment` 字段。显示名称可以使用中文，内部 ID 可自动生成。
 - HTTP/SSE 支持无认证、自定义请求头、OAuth、员工 Bearer Token 和 ERP 扫码会话。`authMode: "erp-cookie"` 自动使用当前扫码 Cookie，受信任来源和失效处理见[登录与会话](login.md#mcp-使用扫码会话)。
 - 导入逐项检查并报告保存结果，已有 ID 不会覆盖；失败项可以调整后重试。

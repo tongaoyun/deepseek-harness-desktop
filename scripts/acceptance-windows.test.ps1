@@ -84,8 +84,13 @@ input.on('line', line => {
 process.stdin.on('end', () => { if (pending) process.exit(8); });
 '@
   $entry = Join-Path $hostRoot "dist\index.js"
+  $pptxWorker = Join-Path $hostRoot "dist\pptx-render-worker.mjs"
   Set-Content -LiteralPath $entry -Value $fixture -Encoding ASCII
+  Set-Content -LiteralPath $pptxWorker -Value "process.exit(0)" -Encoding ASCII
   Test-PackagedHarness -Executable $application
+  Remove-Item -LiteralPath $pptxWorker
+  Assert-Throws { Test-PackagedHarness -Executable $application }
+  Set-Content -LiteralPath $pptxWorker -Value "process.exit(0)" -Encoding ASCII
   Set-Content -LiteralPath $entry -Value "process.exit(7)" -Encoding ASCII
   Assert-Throws { Test-PackagedHarness -Executable $application }
   Write-Output "Packaged Harness request sequencing and failure propagation passed."

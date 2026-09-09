@@ -4,10 +4,10 @@ import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 import { Document, Packer, Paragraph } from 'docx'
 import ExcelJS from 'exceljs'
 import { zipSync, strToU8 } from 'fflate'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { apply as applyDocuments, checkDocument, parseDocx, parsePdf, parsePptx, parseXlsx, renderPdf, renderPptx, selectPdfFont } from './local-documents-plugin.js'
+import { apply as applyDocuments, checkDocument, parseDocx, parsePdf, parsePptx, parseXlsx, renderPdf, renderPptx, runPptxRenderer, selectPdfFont } from './local-documents-plugin.js'
 
 const { Workbook } = ExcelJS
 
@@ -194,6 +194,18 @@ describe('local document formats', () => {
       slideCount: 1,
       text: expect.stringContaining('库存周报'),
     })
+  })
+
+  it('terminates an unresponsive PPTX renderer at the deadline', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'xiaoyin-pptx-timeout-'))
+    try {
+      const worker = join(directory, 'worker.mjs')
+      await writeFile(worker, 'process.stdin.resume(); setInterval(() => {}, 1000)\n')
+      await expect(runPptxRenderer(worker, { slides: [{ title: 'Report', bullets: [] }], title: 'Report' }, 50))
+        .rejects.toThrow('PPTX 生成超时')
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
   })
 
   it.skipIf(process.platform === 'linux')('creates Chinese PDFs with an installed system font', async () => {
