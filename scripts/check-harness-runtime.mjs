@@ -5,7 +5,23 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
-export async function checkHarnessCommand(command, args, env = process.env, timeoutMs = 30_000, { selfTest = false } = {}) {
+export const DEFAULT_HARNESS_SMOKE_TIMEOUT_MS = 30_000
+const MAX_HARNESS_SMOKE_TIMEOUT_MS = 600_000
+
+export function harnessSmokeTimeout(env = process.env) {
+  const value = env.XIAOYIN_HARNESS_SMOKE_TIMEOUT_MS
+  if (value === undefined || value === '') return DEFAULT_HARNESS_SMOKE_TIMEOUT_MS
+  if (!/^[1-9]\d*$/.test(value)) {
+    throw new Error('XIAOYIN_HARNESS_SMOKE_TIMEOUT_MS must be a positive integer')
+  }
+  const timeoutMs = Number(value)
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs > MAX_HARNESS_SMOKE_TIMEOUT_MS) {
+    throw new Error(`XIAOYIN_HARNESS_SMOKE_TIMEOUT_MS must not exceed ${MAX_HARNESS_SMOKE_TIMEOUT_MS}`)
+  }
+  return timeoutMs
+}
+
+export async function checkHarnessCommand(command, args, env = process.env, timeoutMs = DEFAULT_HARNESS_SMOKE_TIMEOUT_MS, { selfTest = false } = {}) {
   const temporary = await mkdtemp(join(tmpdir(), 'xiaoyin-runtime-smoke-'))
   let childClosed = Promise.resolve()
   try {
@@ -64,7 +80,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   await checkHarnessCommand(resolve(node), [resolve(host, 'dist/index.js')], {
     ...process.env, DSH_CORDIS_CONFIG: resolve(host, 'runtime/cordis.yml'),
     XIAOYIN_ALLOW_SHELL: 'true', XIAOYIN_APPROVE_SHELL: 'false',
-  }, 30_000, { selfTest: mode === '--self-test' })
+  }, harnessSmokeTimeout(), { selfTest: mode === '--self-test' })
   console.log('Packaged Harness initialize, health and shutdown responses verified')
   if (mode === '--self-test') console.log('Installed Harness local capability self-test verified')
 }
