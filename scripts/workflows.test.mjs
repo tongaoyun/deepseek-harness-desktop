@@ -27,13 +27,13 @@ test('exactly four workflow entries retain Windows checks and manual rollback', 
   assert.match(rollback, /workflow_dispatch:/)
   assert.doesNotMatch(rollback, /\n  (push|pull_request):/)
 })
-test('macOS common checks run once before architecture packaging', () => {
-  const quality = mac.split('  quality:')[1].split('  build-macos:')[0]
+test('macOS release reuses main CI and packages both architectures concurrently', () => {
   const build = mac.split('  build-macos:')[1].split('  publish-macos-update:')[0]
-  assert.match(quality, /pnpm test/)
-  assert.match(quality, /cargo clippy/)
-  assert.match(quality, /cargo test/)
-  assert.match(build, /needs: quality/)
+  assert.doesNotMatch(mac, /  quality:/)
+  assert.doesNotMatch(build, /needs: quality/)
+  assert.match(build, /max-parallel: 2/)
+  assert.match(build, /CARGO_BUILD_JOBS: "4"/)
+  assert.match(build, /pnpm verify:version/)
   assert.doesNotMatch(build, /pnpm (lint|typecheck|test)|cargo (clippy|test)/)
   assert.match(build, /smoke-test-macos-bundle.sh/)
   assert.match(mac, /default: arm64/)

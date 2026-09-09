@@ -9,7 +9,7 @@ Gitea 提供四个入口：
 | Windows 安装包 | 版本标签、手动 | 默认 release；手动可选 quick 生成开发验证用 Debug NSIS |
 | 版本回退 | 手动 | 将 Windows 更新索引切回已有签名版本，不重新构建 |
 
-macOS 的公共质量检查每轮只执行一次，通过后按目标架构顺序编译、签名和验收。每个目标都独立验证内置 Node、原生模块、Harness 和最终安装包。两种架构不同时修改暂存资源。
+代码检查在合并请求和 `main` 提交时完成。macOS 安装包工作流复用该结果，核对版本后并行编译两个架构；每个目标仍独立验证内置 Node、原生模块、Harness 和最终安装包。8 核构建机为每个 Cargo 进程分配 4 个并行任务，避免相互争抢。
 
 macOS 复用 `/tmp/xiaoyin-desktop-builder/target`，Windows 检查与安装包复用 `C:\xiaoyin-desktop-builder\target`；Debug、Release 和跨架构产物由 Cargo 分目录管理。工具链、系统目标或依赖变化仍可能触发重新编译，缓存不保证固定构建时间。不要在构建前清空 Cargo 缓存。
 

@@ -24,49 +24,17 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'workflow_dispatch' }}
 
 jobs:
-  quality:
-    name: 公共检查（仅一次）
-    runs-on: macos-arm64
-    timeout-minutes: 45
-    env:
-      CARGO_TERM_COLOR: always
-      CARGO_TARGET_DIR: /tmp/xiaoyin-desktop-builder/target
-      CARGO_REGISTRIES_CRATES_IO_INDEX: sparse+https://rsproxy.cn/index/
-      NPM_CONFIG_REGISTRY: http://192.168.2.9:4873/
-      VITE_XIAOYIN_SERVER_URL: http://192.168.2.67:30081
-    steps:
-      - name: 检出代码
-        uses: http://192.168.2.66:3300/instudio/checkout@v4
-      - name: 安装锁定依赖
-        run: |
-          test "$(node --version)" = "v24.19.0"
-          test "$(pnpm --version)" = "10.33.0"
-          pnpm install --frozen-lockfile --registry=http://192.168.2.9:4873/
-      - name: 前端与 Harness 质量门禁
-        run: |
-          pnpm verify:version
-          node --test scripts/publish-macos-update.test.mjs scripts/macos-build-env.test.mjs scripts/check-harness-runtime.test.mjs scripts/verify-updater-signature.test.mjs scripts/workflows.test.mjs scripts/evaluation-metrics.test.mjs
-          pnpm lint
-          pnpm typecheck
-          pnpm test
-      - name: Rust 质量门禁
-        run: |
-          mkdir -p src-tauri/resources/harness-runtime
-          cargo fmt --check --manifest-path src-tauri/Cargo.toml
-          cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
-          cargo test --manifest-path src-tauri/Cargo.toml --all-targets
-
   build-macos:
-    needs: quality
     strategy:
       fail-fast: false
-      max-parallel: 1
+      max-parallel: 2
       matrix:
         architecture: ${{ fromJSON(inputs.architecture == 'arm64' && '["arm64"]' || inputs.architecture == 'x64' && '["x64"]' || '["arm64","x64"]') }}
     runs-on: macos-arm64
     timeout-minutes: 120
     env:
       CARGO_TERM_COLOR: always
+      CARGO_BUILD_JOBS: "4"
       XIAOYIN_MACOS_ARCH: ${{ matrix.architecture }}
       CARGO_TARGET_DIR: /tmp/xiaoyin-desktop-builder/target
       CARGO_REGISTRIES_CRATES_IO_INDEX: sparse+https://rsproxy.cn/index/
@@ -95,7 +63,9 @@ jobs:
           command -v codesign
 
       - name: 安装锁定依赖
-        run: pnpm install --frozen-lockfile --registry=http://192.168.2.9:4873/
+        run: |
+          pnpm install --frozen-lockfile --registry=http://192.168.2.9:4873/
+          pnpm verify:version
 
       - name: 准备内置 Harness Runtime
         run: bash scripts/prepare-harness-runtime-macos.sh

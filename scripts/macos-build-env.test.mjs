@@ -25,9 +25,10 @@ test('invalid and universal targets are rejected rather than silently using host
 test('implicit native builds keep the standard Cargo directory', () => {
   assert.equal(config('', '/tmp/target').at(-1), '/tmp/target')
 })
-test('CI uses one registered Runner serially and explicitly passes the Rust target', () => {
+test('CI shares one runner fairly across two architecture workers', () => {
   const workflow = readFileSync(new URL('../.gitea/workflows/macos-installer.yml', import.meta.url), 'utf8')
-  assert.match(workflow, /max-parallel: 1/)
+  assert.match(workflow, /max-parallel: 2/)
+  assert.match(workflow, /CARGO_BUILD_JOBS: "4"/)
   assert.match(workflow, /runs-on: macos-arm64/)
   assert.doesNotMatch(workflow, /runs-on:.*macos-x64/)
   assert.match(workflow, /--target "\$rust_target"/)
