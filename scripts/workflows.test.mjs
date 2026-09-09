@@ -20,17 +20,13 @@ function context(event, inputs = {}, ref = event === 'push' ? 'refs/tags/v1.0.0'
   return { github: { event_name: event, ref }, inputs }
 }
 
-test('exactly four workflow entries retain Windows checks and manual rollback', () => {
-  assert.deepEqual(readdirSync(directory).filter(n => n.endsWith('.yml')).sort(), ['ci.yml', 'macos-installer.yml', 'rollback-release.yml', 'windows-installer.yml'])
+test('exactly three workflow entries retain shared checks and platform installers', () => {
+  assert.deepEqual(readdirSync(directory).filter(n => n.endsWith('.yml')).sort(), ['ci.yml', 'macos-installer.yml', 'windows-installer.yml'])
   const ci = read('ci.yml')
   assert.match(ci, /  web-and-harness:/)
   assert.match(ci, /  rust-windows:/)
   assert.match(ci, /cargo test\n/)
   assert.doesNotMatch(ci, /cargo test --no-run/)
-  const rollback = read('rollback-release.yml')
-  assert.match(rollback, /^name: Windows 更新回退$/m)
-  assert.match(rollback, /workflow_dispatch:/)
-  assert.doesNotMatch(rollback, /\n  (push|pull_request):/)
 })
 test('macOS release reuses main CI and packages both architectures concurrently', () => {
   const build = mac.split('  build-macos:')[1].split('  publish-macos-update:')[0]
@@ -60,7 +56,6 @@ test('manual builds supersede manual builds but never cancel release runs', () =
     assert.match(workflow, /group: .+startsWith\(github\.ref, 'refs\/tags\/v'\).+release.+manual/)
   }
   assert.match(win, /group: windows-installer-/)
-  assert.match(read('rollback-release.yml'), /group: windows-installer-release/)
 })
 test('Windows quick mode is explicit and cannot weaken a tag release', () => {
   assert.equal(expression(win, 'XIAOYIN_BUILD_MODE', context('workflow_dispatch', { build_mode: 'quick' })), 'quick')
@@ -89,8 +84,7 @@ test('installer jobs use concise labels and bounded execution time', () => {
   assert.match(mac, /name: 构建 \$\{\{ matrix\.architecture \}\}/)
   assert.match(mac, /name: 发布更新索引/)
   assert.match(win, /name: 构建 x64/)
-  assert.match(read('rollback-release.yml'), /name: 回退更新索引/)
-  for (const workflow of [read('ci.yml'), mac, win, read('rollback-release.yml')]) {
+  for (const workflow of [read('ci.yml'), mac, win]) {
     assert.match(workflow, /timeout-minutes:/)
   }
 })
