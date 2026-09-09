@@ -31,7 +31,7 @@ try {
       $Library = $Matches[1]
       $Module = [LoaderDiagnostics]::LoadLibraryEx($Library, [IntPtr]::Zero, 1)
       Write-Output "Import library: $Library; load=$($Module -ne [IntPtr]::Zero)"
-    } elseif ($Module -ne [IntPtr]::Zero -and $Line -match '^\s+[0-9A-F]+\s+([^\s]+)\s*$') {
+    } elseif ($Module -ne [IntPtr]::Zero -and $Line -match '^\s+[0-9A-F]+\s+([A-Za-z_?@][^\s]*)\s*$') {
       $Symbol = $Matches[1]
       if ([LoaderDiagnostics]::GetProcAddress($Module, $Symbol) -eq [IntPtr]::Zero) {
         Write-Output "Missing import: $Library!$Symbol"
