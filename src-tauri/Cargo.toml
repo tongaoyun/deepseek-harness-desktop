@@ -1,6 +1,6 @@
 [package]
 name = "xiaoyin-desktop"
-version = "0.1.32"
+version = "0.1.33"
 description = "Xiaoyin enterprise desktop assistant"
 authors = ["InStudio"]
 edition = "2024"
@@ -20,6 +20,7 @@ tauri-build = { version = "2", features = [] }
 base64 = "0.22.1"
 calamine = { version = "0.36.1", features = ["dates"] }
 csv = "1.4.0"
+dunce = "1.0.5"
 flate2 = "1.1.2"
 futures-util = "0.3.31"
 percent-encoding = "2.3.2"

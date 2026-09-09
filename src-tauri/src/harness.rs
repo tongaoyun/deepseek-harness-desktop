@@ -1426,7 +1426,8 @@ fn development_runtime_paths() -> Result<HarnessRuntimePaths, String> {
 
 #[cfg(any(not(debug_assertions), test))]
 fn packaged_runtime_paths(resource_dir: &Path) -> HarnessRuntimePaths {
-    let root = resource_dir.join("resources/harness-runtime");
+    // Node's entry-point resolver rejects Windows verbatim paths returned by Tauri.
+    let root = dunce::simplified(resource_dir).join("resources/harness-runtime");
     HarnessRuntimePaths {
         node: root.join(if cfg!(target_os = "windows") {
             "node/node.exe"
@@ -1784,6 +1785,30 @@ mod tests {
             PathBuf::from(r"C:\Program Files\xiaoyin")
                 .join("resources/harness-runtime/harness-host/runtime/cordis.yml")
         );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn packaged_node_entry_starts_from_a_canonical_windows_resource_directory() {
+        let temporary =
+            std::env::temp_dir().join(format!("xiaoyin runtime {}", uuid::Uuid::new_v4()));
+        let entry = temporary.join("resources/harness-runtime/harness-host/dist/index.js");
+        std::fs::create_dir_all(entry.parent().unwrap()).unwrap();
+        std::fs::write(&entry, "process.stdout.write('runtime-entry-ready')").unwrap();
+        let canonical = temporary.canonicalize().unwrap();
+        let paths = packaged_runtime_paths(&canonical);
+        let output = Command::new("node")
+            .arg(paths.entry)
+            .creation_flags(0x0800_0000)
+            .output()
+            .expect("Node is required for the desktop runtime tests");
+        std::fs::remove_dir_all(&temporary).unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(output.stdout, b"runtime-entry-ready");
     }
 
     #[test]

@@ -5872,11 +5872,12 @@ dependencies = [
 
 [[package]]
 name = "xiaoyin-desktop"
-version = "0.1.32"
+version = "0.1.33"
 dependencies = [
  "base64 0.22.1",
  "calamine",
  "csv",
+ "dunce",
  "flate2",
  "futures-util",
  "keyring",
