@@ -37,7 +37,7 @@ jobs:
       CARGO_BUILD_JOBS: "4"
       XIAOYIN_HARNESS_SMOKE_TIMEOUT_MS: "120000"
       XIAOYIN_MACOS_ARCH: ${{ matrix.architecture }}
-      CARGO_TARGET_DIR: /tmp/xiaoyin-desktop-builder/target
+      CARGO_TARGET_DIR: /tmp/xiaoyin-desktop-builder/target/${{ matrix.architecture }}
       CARGO_REGISTRIES_CRATES_IO_INDEX: sparse+https://rsproxy.cn/index/
       NPM_CONFIG_REGISTRY: http://192.168.2.9:4873/
       NPM_CONFIG_FETCH_RETRIES: 4

@@ -34,6 +34,7 @@ test('macOS release reuses main CI and packages both architectures concurrently'
   assert.match(build, /max-parallel: 2/)
   assert.match(build, /CARGO_BUILD_JOBS: "4"/)
   assert.match(build, /XIAOYIN_HARNESS_SMOKE_TIMEOUT_MS: "120000"/)
+  assert.match(build, /CARGO_TARGET_DIR: \/tmp\/xiaoyin-desktop-builder\/target\/\$\{\{ matrix\.architecture \}\}/)
   assert.match(build, /pnpm verify:version/)
   assert.doesNotMatch(build, /pnpm (lint|typecheck|test)|cargo (clippy|test)/)
   assert.match(build, /smoke-test-macos-bundle.sh/)
