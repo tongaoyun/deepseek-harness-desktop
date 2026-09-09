@@ -135,7 +135,7 @@ pub(super) fn package_root(staging_directory: &Path) -> Result<PathBuf, String> 
 fn has_extension_manifest(root: &Path) -> bool {
     root.join(KIT_MANIFEST_PATH).is_file()
         || root.join(SKILL_MANIFEST_PATH).is_file()
-        || super::compatibility::has_portable_entry(root)
+        || super::qoder_import::has_import_entry(root)
 }
 
 fn normalized_archive_entry_path(path: &Path) -> Result<Option<PathBuf>, String> {

@@ -78,6 +78,7 @@ interface LocalCreation {
 interface AuthoringForm {
   id: string
   name: string
+  author: string
   version: string
   summary: string
   category: ExtensionCategory | ConnectorCategory
@@ -96,7 +97,7 @@ interface AuthoringForm {
 }
 
 const defaults: AuthoringForm = {
-  id: '', name: '', version: '1.0.0', summary: '', category: 'other',
+  id: '', name: '', author: '', version: '1.0.0', summary: '', category: 'other',
   instructions: '# 使用说明\n\n请在这里描述执行步骤、输入和输出。',
   triggers: '', connectorRefs: '', requiredTools: '', url: '', command: '', arguments: '',
   environment: '', headers: '', toolNames: '',
@@ -226,6 +227,7 @@ export function ExtensionAuthoringModal({
         ...defaults,
         id: mode === 'copy' ? `${manifest.id}-copy` : manifest.id,
         name: mode === 'copy' ? `${manifest.name} 副本` : manifest.name,
+        author: manifest.author ?? '',
         version: nextVersion,
         summary: manifest.summary,
         category: manifest.category,
@@ -265,7 +267,7 @@ export function ExtensionAuthoringModal({
         setEditing({ kind, id: connector.id, version: connector.version! })
       } else {
         const generated = manifestFromForm(kind, form, selectedSkillIds)
-        const manifest = baseManifest ? { ...generated, commands: baseManifest.commands, skills: baseManifest.skills, knowledgeBaseRefs: baseManifest.knowledgeBaseRefs, serverWorkflows: baseManifest.serverWorkflows } : generated
+        const manifest = baseManifest ? { ...generated, commands: baseManifest.commands, skills: baseManifest.skills, knowledgeBaseRefs: baseManifest.knowledgeBaseRefs } : generated
         const skillSources = kind === 'expert-kit' && !baseManifest ? selectedSkillIds.map((id) => {
           const skill = skills.find((item) => item.id === id && item.installed)
           if (!skill?.installedVersion) throw new Error(`技能 ${id} 尚未安装到本机`)
@@ -435,6 +437,7 @@ export function ExtensionAuthoringModal({
         <div className="authoring-grid">
           <label>{kind === 'connector' ? 'ID（可选）' : 'ID'}<input disabled={Boolean(editing)} pattern={kind === 'connector' ? undefined : '[A-Za-z0-9._-]+'} placeholder={kind === 'connector' ? '留空时根据名称自动生成' : undefined} required={kind !== 'connector'} value={form.id} onChange={(event) => setForm({ ...form, id: event.target.value })} /></label>
           <label>名称<input required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} /></label>
+          {kind !== 'connector' && <label>作者<input maxLength={80} value={form.author} onChange={(event) => setForm({ ...form, author: event.target.value })} /></label>}
           <label>版本<input disabled={Boolean(editing)} pattern="[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?" required value={form.version} onChange={(event) => setForm({ ...form, version: event.target.value })} /></label>
           <label>分类<select value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value as AuthoringForm['category'] })}>{(kind === 'connector' ? connectorCategories : extensionCategories).map((category) => <option key={category.id} value={category.id}>{category.label}</option>)}</select></label>
           <label className="wide">说明<input required value={form.summary} onChange={(event) => setForm({ ...form, summary: event.target.value })} /></label>
@@ -512,13 +515,12 @@ function connectorFromForm(form: AuthoringForm): ConnectorCatalogEntry {
 
 function manifestFromForm(kind: 'expert-kit' | 'skill', form: AuthoringForm, selectedSkillIds: string[]): ExpertKitManifest {
   return {
-    schemaVersion: kind === 'expert-kit' ? '2' : '1', kind, id: form.id, name: form.name, version: form.version, summary: form.summary, category: form.category as ExtensionCategory,
+    schemaVersion: kind === 'expert-kit' ? '2' : '1', kind, id: form.id, name: form.name, author: form.author.trim() || undefined, version: form.version, summary: form.summary, category: form.category as ExtensionCategory,
     triggers: split(form.triggers), minimumDesktopVersion: '0.1.30', commands: kind === 'expert-kit' ? [{ id: 'start', path: 'commands/start.md' }] : [],
     skills: kind === 'expert-kit'
       ? [{ id: `guide-${form.id}`, path: 'skills/kit-guide/SKILL.md' }, ...selectedSkillIds.map((id) => ({ id, path: `skills/${id}/SKILL.md` }))]
       : [{ id: form.id, path: 'SKILL.md' }],
     requiredTools: split(form.requiredTools), connectorRefs: split(form.connectorRefs), knowledgeBaseRefs: [],
-    serverWorkflows: [],
   }
 }
 

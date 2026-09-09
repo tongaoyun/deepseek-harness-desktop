@@ -23,17 +23,17 @@
 |---|---|
 | 添加 → 上传技能 | 单个 `SKILL.md`，或包含 `SKILL.md` 和辅助文件的 ZIP/tar.gz |
 | 上传窗口 → 选择本地文件夹 | 技能目录根部含 `SKILL.md`，保留 scripts、references、assets 等资源 |
-| 添加 → 上传套件 | 原生 `.xiaoyin-kit/kit.json`，或 `.claude-plugin/plugin.json` / `.qwen-plugin/plugin.json` / `.qoder-plugin/plugin.json`；也可在窗口内选择文件夹 |
+| 添加 → 上传套件 | 原生 `.xiaoyin-kit/kit.json`，或 Qoder `.qoder-plugin/plugin.json`；也可在窗口内选择文件夹 |
 
 上传窗口支持多选文件、文件夹或批量拖放。确认「安装」后逐个校验并安装，每项显示结果；失败不影响其他包，重试只处理失败和待安装项。重复路径自动合并，安装中禁用重复提交和关闭。
 
 压缩包允许根目录直接包含入口，或用一个顶层文件夹包裹。单独导入 `SKILL.md` 只包含该文件；需要脚本、模板、参考资料时使用目录或压缩包。标准技能无须手写小胤清单，名称和简介从 frontmatter 提取，缺失时补默认元数据。
 
-外部套件 `plugin.json` 必须包含 `name`。支持 `skills`、`commands` 的相对路径或路径数组，默认读取 `skills/`、`commands/`；命令为 Markdown 文件。支持内嵌 `mcpServers`、指向配置文件的路径或根目录 `.mcp.json`，支持 STDIO、HTTP 和 SSE 配置。`${CLAUDE_PLUGIN_ROOT}` / `${QWEN_PLUGIN_ROOT}` / `${QODER_PLUGIN_ROOT}` 在命令和连接器配置中解析为安装目录，命令正文中的 `$ARGUMENTS` 使用任务文本。
+Qoder 套件 `plugin.json` 必须包含 `name`。支持 `skills`、`commands` 的相对路径或路径数组，默认读取 `skills/`、`commands/`；命令为 Markdown 文件。支持内嵌 `mcpServers`、指向配置文件的路径或根目录 `.mcp.json`，支持 STDIO、HTTP 和 SSE 配置。导入时将 `${QODER_PLUGIN_ROOT}` 转为 `${XIAOYIN_EXTENSION_ROOT}`，生成小胤清单和连接器配置，并移除 Qoder 清单。命令正文中的 `$ARGUMENTS` 使用任务文本。
 
-套件优先显示 `displayName` 和 `descriptionZh`，执行 ID 由 `name` 生成。技能优先显示 `displayName`；`name` 是英文标识时，使用正文一级标题作为展示名称。多个平台清单的名称、版本、技能路径、命令路径和 MCP 配置一致时可以共存，优先读取 Qoder 清单；不一致时报告冲突。所有原始清单和辅助资源均保留。
+套件优先使用 `displayName` 和 `descriptionZh`，执行 ID 由 `name` 生成。技能优先使用 `displayName`；`name` 是英文标识时，使用正文一级标题作为展示名称。安装、执行和导出只读取小胤原生清单。
 
-套件安装后逐项保存新的个人连接器；已有同 ID 配置不会覆盖。连接器保存失败不撤销套件安装，上传列表保留该项及失败原因，可在连接器页面手动导入或配置。更新外部套件后请核对保留的连接器配置，特别是指向旧版本目录的启动路径。
+套件安装后逐项保存新的个人连接器；已有同 ID 配置不会覆盖。连接器保存失败不撤销套件安装，上传列表保留该项及失败原因，可在连接器页面手动导入或配置。
 
 导入支持技能、Markdown 命令、辅助文件和 MCP 配置；包含 Hooks、自定义 Agents、LSP 或 OAuth 连接器声明时拒绝导入。依赖的软件、运行时和登录授权需要在本机准备。企业发布制品使用原生清单格式。
 

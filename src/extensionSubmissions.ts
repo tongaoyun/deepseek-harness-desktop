@@ -59,7 +59,7 @@ export async function submitPackage(manifest: ExpertKitManifest, bytes: number[]
       commandIds: manifest.commands.map((item) => item.id), skillIds: manifest.skills.map((item) => item.id),
       connectorRefs: manifest.connectorRefs, requiredTools: manifest.requiredTools,
       knowledgeBaseRefs: manifest.knowledgeBaseRefs ?? [],
-      serverWorkflows: manifest.serverWorkflows, sha256,
+      author: manifest.author, sha256,
     }),
   }), '创建审核版本失败')
   const upload = await fetch(prepared.uploadUrl, { method: 'PUT', body: file, headers: { 'Content-Type': 'application/gzip' } })

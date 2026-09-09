@@ -84,6 +84,7 @@ export function mergeSkills(
     views.push({
       id: manifest.id,
       name: manifest.name,
+      author: manifest.author,
       version: manifest.version,
       summary: manifest.summary,
       category: manifest.category,

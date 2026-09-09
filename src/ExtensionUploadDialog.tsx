@@ -93,7 +93,7 @@ export function ExtensionUploadDialog({ kind, onClose, onInstall }: {
       <div><strong title={item.path}>{item.path.split(/[/\\]/).pop()}</strong><small role={item.message ? 'alert' : 'status'}>{item.message ?? ({ pending: '待安装', installing: '正在安装', installed: '已安装', failed: '安装失败', warning: '已安装，需处理连接器' }[item.state])}</small></div>
       <button aria-label={`移除 ${item.path.split(/[/\\]/).pop()}`} title="从列表移除" type="button" disabled={busy} onClick={() => setItems((current) => current.filter((entry) => entry.path !== item.path))}><X size={15} /></button>
     </li>)}</ul>}
-    <div className="upload-requirements"><strong>文件要求</strong><ul><li>{kind === 'skill' ? 'SKILL.md、ZIP / tar.gz' : '小胤、Qoder、Claude、Qwen 套件 ZIP / tar.gz'}</li><li>每个文件不超过 32 MiB</li></ul></div>
+    <div className="upload-requirements"><strong>文件要求</strong><ul><li>{kind === 'skill' ? 'SKILL.md、ZIP / tar.gz' : '小胤或 Qoder 套件 ZIP / tar.gz'}</li><li>每个文件不超过 32 MiB</li></ul></div>
     <button className="upload-folder-button" type="button" disabled={busy} onClick={() => void select('directory')}>选择本地文件夹</button>
     {error && <p className="add-error" role="alert">{error}</p>}
     <footer><button type="button" disabled={busy || !pending.length} onClick={() => void install()}>{busy ? '正在处理…' : pending.some((item) => item.state === 'failed') ? `重试并安装 (${pending.length})` : pending.length > 1 ? `安装 (${pending.length})` : '安装'}</button></footer>

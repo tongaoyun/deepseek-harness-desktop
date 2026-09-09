@@ -68,7 +68,7 @@ export function ExpertKitDetailsModal({
   </>}>
       <div className="extension-profile">
         <span><Boxes size={22} /></span>
-        <div><div className="extension-profile-title"><h2 id="expert-kit-title">{kit.name}</h2><span className="extension-profile-badge">v{kit.installedVersion ?? kit.version}</span><span className="extension-profile-badge">{kit.localOnly ? '本地导入' : kit.installState === 'retired' ? '已下架' : '套件市场'}</span></div><p className="extension-reader-meta">{kit.installed?.author ? `@${kit.installed.author}` : `${stateLabel} · ${extensionCategoryLabel(kit.category)}`}</p></div>
+        <div><div className="extension-profile-title"><h2 id="expert-kit-title">{kit.name}</h2><span className="extension-profile-badge">v{kit.installedVersion ?? kit.version}</span><span className="extension-profile-badge">{kit.localOnly ? '本地导入' : kit.installState === 'retired' ? '已下架' : '套件市场'}</span></div><p className="extension-reader-meta">{kit.installed?.author || kit.author ? `@${kit.installed?.author || kit.author}` : `${stateLabel} · ${extensionCategoryLabel(kit.category)}`}</p></div>
       </div>
       <p className="extension-profile-summary">{kit.summary}</p>
 

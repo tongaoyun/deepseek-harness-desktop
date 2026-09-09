@@ -139,7 +139,7 @@ fn candidates(bytes: &[u8], selected: &str) -> Result<Vec<GithubSkillCandidate>,
                     .filter(|name| !name.is_empty())
                     .unwrap_or("skill"),
             ),
-            summary: compatibility::metadata(&content, "description").unwrap_or_default(),
+            summary: workbench::metadata(&content, "description").unwrap_or_default(),
         });
         if found.len() > 256 {
             return Err("仓库中技能过多，请提供具体技能目录地址".into());

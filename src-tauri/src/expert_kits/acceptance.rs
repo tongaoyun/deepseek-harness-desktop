@@ -59,29 +59,54 @@ fn qoder_expert_kit_archives() {
             assert!(installed.manifest.summary.contains("开发"));
         }
         let mut zip = zip::ZipArchive::new(std::io::Cursor::new(&bytes)).unwrap();
+        let install_directory = Path::new(&installed.install_path);
+        assert!(!install_directory.join(".qoder-plugin").exists());
+        assert!(!install_directory.join(".claude-plugin").exists());
+        assert!(!install_directory.join(".qwen-plugin").exists());
+        assert!(!install_directory.join(".mcp.json").exists());
+        assert!(install_directory.join(KIT_MANIFEST_PATH).is_file());
         for index in 0..zip.len() {
             let mut entry = zip.by_index(index).unwrap();
             if entry.is_dir() {
                 continue;
             }
+            let path = entry.enclosed_name().unwrap();
+            let path_text = path.to_string_lossy().replace('\\', "/");
+            if path_text == ".mcp.json"
+                || path_text.starts_with(".qoder-plugin/")
+                || path_text.starts_with(".claude-plugin/")
+                || path_text.starts_with(".qwen-plugin/")
+            {
+                continue;
+            }
             let mut original = Vec::new();
             std::io::Read::read_to_end(&mut entry, &mut original).unwrap();
+            let expected = String::from_utf8(original.clone())
+                .ok()
+                .map(|content| {
+                    content
+                        .replace(
+                            "${QODER_PLUGIN_ROOT}",
+                            native_connectors::EXTENSION_ROOT_VARIABLE,
+                        )
+                        .into_bytes()
+                })
+                .unwrap_or(original);
             assert_eq!(
-                fs::read(Path::new(&installed.install_path).join(entry.enclosed_name().unwrap()))
-                    .unwrap(),
-                original,
+                fs::read(install_directory.join(path)).unwrap(),
+                expected,
                 "{id}: {}",
                 entry.name()
             );
             file_count += 1;
         }
-        println!("Verified {id}@{version}: {name}, {skill_count} skills, original files preserved");
+        println!("Verified {id}@{version}: {name}, {skill_count} native skills");
     }
     let inventory = inventory::scan_root(&root).unwrap();
     assert!(inventory.issues.is_empty());
     assert_eq!(inventory.installed.len(), 6);
     fs::remove_dir_all(root).unwrap();
-    println!("Verified 6 original ZIP archives, 59 skills and {file_count} unchanged source files");
+    println!("Verified 6 Qoder archives, 59 native skills and {file_count} content files");
 }
 
 #[derive(Deserialize)]

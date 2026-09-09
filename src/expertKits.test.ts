@@ -10,7 +10,6 @@ const installed: InstalledExpertKit = {
     minimumDesktopVersion: '0.1.0', commands: [], skills: [{ id: 'diagnosis', path: 'skills/diagnosis/SKILL.md' }],
     connectorRefs: ['erp-mcp'],
     requiredTools: ['sales_summary'],
-    serverWorkflows: [],
   },
 }
 
@@ -26,7 +25,6 @@ const catalogEntry: ExpertKitCatalogEntry = {
   connectorRefs: ['erp-mcp'],
   knowledgeBaseRefs: [],
   requiredTools: ['sales_summary'],
-  serverWorkflows: [],
   sha256: 'a'.repeat(64),
 }
 

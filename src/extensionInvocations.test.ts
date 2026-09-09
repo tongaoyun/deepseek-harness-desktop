@@ -5,7 +5,7 @@ import type { InstalledExpertKit } from './types'
 
 const installed: InstalledExpertKit = {
   installPath: '/extensions/reports', source: 'developer',
-  manifest: { schemaVersion: '2', kind: 'expert-kit', id: 'reports', name: '分析专家', version: '1.0.0', summary: '生成分析报告', category: 'other', minimumDesktopVersion: '0.1.30', commands: [{ id: 'weekly', path: 'commands/weekly.md' }], skills: [{ id: 'report', path: 'skills/report/SKILL.md' }], connectorRefs: [], requiredTools: [], serverWorkflows: [] },
+  manifest: { schemaVersion: '2', kind: 'expert-kit', id: 'reports', name: '分析专家', version: '1.0.0', summary: '生成分析报告', category: 'other', minimumDesktopVersion: '0.1.30', commands: [{ id: 'weekly', path: 'commands/weekly.md' }], skills: [{ id: 'report', path: 'skills/report/SKILL.md' }], connectorRefs: [], requiredTools: [] },
 }
 
 describe('extension invocations', () => {

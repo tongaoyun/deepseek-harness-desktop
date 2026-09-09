@@ -20,7 +20,7 @@ const skill: SkillView = {
 const kit: ExpertKitView = {
   id: 'developer', name: '开发专家', summary: '开发工作方案', version: '1.0.0', category: 'code-development',
   minimumDesktopVersion: '0.1.0', commandIds: ['review'], skillIds: ['review'], connectorRefs: [],
-  knowledgeBaseRefs: [], requiredTools: [], serverWorkflows: [], sha256: 'a'.repeat(64),
+  knowledgeBaseRefs: [], requiredTools: [], sha256: 'a'.repeat(64),
   installState: 'installed', installedVersion: '1.0.0', readiness: 'ready', connectorIssues: [], knowledgeIssues: [], localOnly: false,
 }
 

@@ -1,10 +1,11 @@
 #[cfg(test)]
 mod acceptance;
 mod archive;
-mod compatibility;
 pub mod github;
 mod inventory;
 mod manifest;
+mod native_connectors;
+mod qoder_import;
 pub mod workbench;
 
 use archive::{extract_package, package_root};
@@ -89,13 +90,13 @@ pub struct ExpertKitManifest {
     kind: String,
     id: String,
     name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    author: Option<String>,
     version: String,
     summary: String,
-    #[serde(default = "default_extension_category")]
     category: String,
     #[serde(default)]
     triggers: Vec<String>,
-    #[serde(default)]
     minimum_desktop_version: String,
     #[serde(default)]
     commands: Vec<FileReference>,
@@ -106,12 +107,6 @@ pub struct ExpertKitManifest {
     connector_refs: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     knowledge_base_refs: Option<Vec<String>>,
-    #[serde(default)]
-    server_workflows: Vec<ServerWorkflow>,
-}
-
-fn default_extension_category() -> String {
-    "other".to_string()
 }
 
 #[derive(Clone, PartialEq, Deserialize, Serialize)]
@@ -119,41 +114,6 @@ fn default_extension_category() -> String {
 struct FileReference {
     id: String,
     path: String,
-}
-
-#[derive(Clone, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct ServerWorkflow {
-    id: String,
-    name: String,
-    workflow_type: String,
-    version: String,
-    #[serde(default)]
-    inputs: Vec<ServerWorkflowInput>,
-    #[serde(default)]
-    steps: Vec<ServerWorkflowStep>,
-}
-
-#[derive(Clone, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct ServerWorkflowInput {
-    name: String,
-    label: String,
-    #[serde(rename = "type")]
-    input_type: String,
-    required: bool,
-    #[serde(default)]
-    description: String,
-}
-
-#[derive(Clone, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct ServerWorkflowStep {
-    id: String,
-    connector_id: String,
-    tool: String,
-    #[serde(default)]
-    arguments: serde_json::Map<String, serde_json::Value>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
@@ -476,7 +436,6 @@ fn build_developer_package(
     if manifest.kind == "skill" {
         manifest_object.remove("commands");
         manifest_object.remove("skills");
-        manifest_object.remove("serverWorkflows");
     }
     let manifest_bytes = serde_json::to_vec_pretty(&manifest_value)
         .map_err(|error| format!("无法生成扩展清单：{error}"))?;
@@ -713,9 +672,9 @@ pub async fn customize_expert_kit(
     let mut manifest: serde_json::Value =
         serde_json::from_slice(&fs::read(&manifest_path).map_err(|error| error.to_string())?)
             .map_err(|error| error.to_string())?;
-    let new_id = compatibility::portable_id(&format!("{id}-custom"));
+    let new_id = native_connectors::portable_id(&format!("{id}-custom"));
     manifest["id"] = serde_json::json!(new_id);
-    compatibility::rekey_bundled_connectors(&destination, &mut manifest, &new_id)?;
+    native_connectors::rekey_bundled_connectors(&destination, &mut manifest, &new_id)?;
     manifest["name"] = serde_json::json!(format!(
         "{} · 定制",
         manifest["name"].as_str().unwrap_or(&id)
@@ -1044,7 +1003,7 @@ fn install_package_bytes(
         extract_package(bytes, &staging_directory)?;
         let package_directory = package_root(&staging_directory)?;
         if source == InstallSource::Developer {
-            compatibility::normalize_package(&package_directory, expected_kind)?;
+            qoder_import::import(&package_directory, expected_kind)?;
         }
         let manifest = load_and_validate_manifest(
             &package_directory,
@@ -1506,9 +1465,10 @@ fn load_command_context(kit: &InstalledExpertKit, prompt: &str) -> Result<String
             return Err(format!("专家套件命令文件过大：{}", command.id));
         }
         let content = content
-            .replace("${CLAUDE_PLUGIN_ROOT}", &kit.install_path)
-            .replace("${QWEN_PLUGIN_ROOT}", &kit.install_path)
-            .replace("${QODER_PLUGIN_ROOT}", &kit.install_path)
+            .replace(
+                native_connectors::EXTENSION_ROOT_VARIABLE,
+                &kit.install_path,
+            )
             .replace("$ARGUMENTS", arguments);
         context.push_str(&format!("\n\n当前命令 {invocation}\n{content}"));
     }
@@ -1591,21 +1551,16 @@ fn child_directories(root: &Path) -> Result<Vec<PathBuf>, String> {
 }
 
 fn installed_kit(
-    mut manifest: ExpertKitManifest,
+    manifest: ExpertKitManifest,
     directory: &Path,
     source: InstallSource,
 ) -> InstalledExpertKit {
-    let author = if source == InstallSource::Developer {
-        compatibility::apply_presentation(directory, &mut manifest)
-    } else {
-        None
-    };
     InstalledExpertKit {
-        author,
+        author: manifest.author.clone(),
         enabled: !directory
             .parent()
             .is_some_and(|parent| parent.join(".disabled").exists()),
-        bundled_connectors: compatibility::bundled_connectors(directory),
+        bundled_connectors: native_connectors::bundled_connectors(directory),
         manifest,
         install_path: directory.to_string_lossy().into_owned(),
         source,
@@ -1714,6 +1669,7 @@ mod tests {
             let manifest = serde_json::from_value::<ExpertKitManifest>(serde_json::json!({
                 "schemaVersion": "2", "kind": "expert-kit", "id": id,
                 "name": id, "version": "1.0.0", "summary": "Development skills",
+                "category": "code-development", "minimumDesktopVersion": "0.1.30",
                 "skills": ids.iter().map(|skill| serde_json::json!({
                     "id": skill, "path": format!("skills/{skill}/SKILL.md")
                 })).collect::<Vec<_>>()
@@ -1743,7 +1699,7 @@ mod tests {
     }
 
     #[test]
-    fn manifest_is_loaded_and_references_are_checked() {
+    fn native_manifest_rejects_unknown_fields() {
         let root = std::env::temp_dir().join(format!(
             "xiaoyin-expert-kit-test-{}-{}",
             std::process::id(),
@@ -1759,7 +1715,8 @@ mod tests {
             root.join(KIT_MANIFEST_PATH),
             r#"{
               "schemaVersion":"2","id":"report-kit","name":"日报","version":"1.0.0",
-              "summary":"生成日报","skills":[{"id":"report","path":"skills/report/SKILL.md"}],
+              "summary":"生成日报","category":"other","minimumDesktopVersion":"0.1.30",
+              "skills":[{"id":"report","path":"skills/report/SKILL.md"}],
               "requiredTools":["sales_summary"],
               "permissions":{
                 "localFiles":"approval","shell":"approval","computerUse":"deny",
@@ -1769,20 +1726,15 @@ mod tests {
         )
         .unwrap();
 
-        let manifest = load_and_validate_manifest(
+        let error = load_and_validate_manifest(
             &root,
             Some("expert-kit"),
             Some("report-kit"),
             Some("1.0.0"),
         )
+        .err()
         .unwrap();
-        assert_eq!(manifest.id, "report-kit");
-        assert!(
-            serde_json::to_value(&manifest)
-                .unwrap()
-                .get("permissions")
-                .is_none()
-        );
+        assert!(error.contains("unknown field `permissions`"), "{error}");
         fs::remove_dir_all(root).unwrap();
     }
 
@@ -1803,7 +1755,8 @@ mod tests {
             .unwrap();
             let manifest = serde_json::from_value::<ExpertKitManifest>(serde_json::json!({
                 "schemaVersion": "2", "kind": "expert-kit", "id": id, "name": id,
-                "version": "1.0.0", "summary": "Test",
+                "version": "1.0.0", "summary": "Test", "category": "other",
+                "minimumDesktopVersion": "0.1.30",
                 "skills": [{ "id": "shared", "path": "skills/shared/SKILL.md" }],
                 "commands": [{ "id": "run", "path": "commands/run.md" }]
             }))
@@ -1847,7 +1800,8 @@ mod tests {
     fn real_tar_gzip_package_is_safely_extracted_and_validated() {
         let manifest = r#"{
           "schemaVersion":"2","id":"report-kit","name":"日报","version":"1.0.0",
-          "summary":"生成日报","skills":[{"id":"report","path":"skills/report/SKILL.md"}]
+          "summary":"生成日报","category":"other","minimumDesktopVersion":"0.1.30",
+          "skills":[{"id":"report","path":"skills/report/SKILL.md"}]
         }"#;
         let encoder = GzEncoder::new(Vec::new(), Compression::default());
         let mut archive = tar::Builder::new(encoder);
@@ -1881,7 +1835,7 @@ mod tests {
     fn standalone_skill_uses_its_own_manifest_and_root_skill_file() {
         let manifest = r#"{
           "schemaVersion":"1","id":"document-insight","name":"文档洞察","version":"1.0.0",
-          "summary":"分析员工授权的文档","triggers":["总结文档"],"minimumDesktopVersion":"0.1.9",
+          "summary":"分析员工授权的文档","category":"knowledge-research","triggers":["总结文档"],"minimumDesktopVersion":"0.1.9",
           "requiredTools":["office.document.read"],"connectorRefs":[],"knowledgeBaseRefs":[]
         }"#;
         let encoder = GzEncoder::new(Vec::new(), Compression::default());
@@ -1916,13 +1870,12 @@ mod tests {
         let manifest: ExpertKitManifest = serde_json::from_str(
             r#"{
               "schemaVersion":"2","kind":"expert-kit","id":"operations-kit","name":"运营套件","version":"1.0.0",
-              "summary":"组合多个运营技能","minimumDesktopVersion":"0.1.29","commands":[],
+              "summary":"组合多个运营技能","category":"other","minimumDesktopVersion":"0.1.29","commands":[],
               "skills":[
                 {"id":"order-review","path":"skills/order-review/SKILL.md"},
                 {"id":"sales-report","path":"skills/sales-report/SKILL.md"}
               ],
-              "requiredTools":[],"connectorRefs":[],"knowledgeBaseRefs":[],
-              "serverWorkflows":[]
+              "requiredTools":[],"connectorRefs":[],"knowledgeBaseRefs":[]
             }"#,
         )
         .unwrap();
@@ -1975,10 +1928,9 @@ mod tests {
         let manifest: ExpertKitManifest = serde_json::from_str(
             r#"{
               "schemaVersion":"1","kind":"skill","id":"order-review","name":"订单检查","version":"1.0.0",
-              "summary":"检查订单风险","triggers":["检查订单"],"minimumDesktopVersion":"0.1.29",
+              "summary":"检查订单风险","category":"other","triggers":["检查订单"],"minimumDesktopVersion":"0.1.29",
               "commands":[],"skills":[{"id":"order-review","path":"SKILL.md"}],
-              "requiredTools":[],"connectorRefs":[],"knowledgeBaseRefs":[],
-              "serverWorkflows":[]
+              "requiredTools":[],"connectorRefs":[],"knowledgeBaseRefs":[]
             }"#,
         )
         .unwrap();
@@ -2050,7 +2002,7 @@ mod tests {
     fn skill_zip_with_top_level_directory_is_installed() {
         let manifest = r#"{
           "schemaVersion":"1","id":"document-insight","name":"文档洞察","version":"1.0.0",
-          "summary":"分析员工授权的文档","triggers":["总结文档"],"minimumDesktopVersion":"0.1.9",
+          "summary":"分析员工授权的文档","category":"knowledge-research","triggers":["总结文档"],"minimumDesktopVersion":"0.1.9",
           "requiredTools":["office.document.read"],"connectorRefs":[],"knowledgeBaseRefs":[]
         }"#;
         let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
@@ -2121,7 +2073,7 @@ mod tests {
         fs::create_dir(&root).unwrap();
         let manifest = r#"{
           "schemaVersion":"2","id":"platform-acceptance","name":"平台验收","version":"1.0.0",
-          "summary":"验证平台能力","minimumDesktopVersion":"0.1.9",
+          "summary":"验证平台能力","category":"other","minimumDesktopVersion":"0.1.9",
           "skills":[{"id":"platform-check","path":"skills/platform-check/SKILL.md"}]
         }"#;
         let package = test_package(manifest, b"# Platform check");
@@ -2189,7 +2141,8 @@ mod tests {
         write_install_record(&root, &"a".repeat(64), InstallSource::Catalog).unwrap();
         let manifest: ExpertKitManifest = serde_json::from_str(r#"{
           "schemaVersion":"1","kind":"skill","id":"document-insight","name":"文档洞察",
-          "version":"1.0.0","summary":"分析文档","skills":[{"id":"document-insight","path":"skills/document-insight/SKILL.md"}]
+          "version":"1.0.0","summary":"分析文档","category":"knowledge-research","minimumDesktopVersion":"0.1.30",
+          "skills":[{"id":"document-insight","path":"skills/document-insight/SKILL.md"}]
         }"#).unwrap();
         let mut installed = installed_kit(manifest, &root, InstallSource::Catalog);
         let allowed = AllowedExtensionArtifact {
