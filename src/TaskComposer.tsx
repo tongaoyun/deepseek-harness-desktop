@@ -30,8 +30,7 @@ export function TaskComposer(props: ChatPageProps & { onPreview: (target: LocalA
   const menuSearch = useRef<HTMLInputElement>(null)
   const addButton = useRef<HTMLButtonElement>(null)
   const directoryButton = useRef<HTMLButtonElement>(null)
-  const { token, text } = splitComposerPrompt(props.prompt)
-  const selected = props.invocations?.find((item) => item.token === token)
+  const { tokens, text } = splitComposerPrompt(props.prompt)
   const [caret, setCaret] = useState(text.length)
   const [optionIndex, setOptionIndex] = useState(0)
   const [dismissed, setDismissed] = useState('')
@@ -44,12 +43,13 @@ export function TaskComposer(props: ChatPageProps & { onPreview: (target: LocalA
     if (position !== undefined) props.composerRef.current?.setSelectionRange(position, position)
   })
   const finishReference = () => {
-    if (query) { props.onPrompt(joinComposerPrompt(token, removeComposerQuery(text, query))); setCaret(query.start); focusInput(query.start) }
+    if (query) { props.onPrompt(joinComposerPrompt(tokens, removeComposerQuery(text, query))); setCaret(query.start); focusInput(query.start) }
     else focusInput()
     closeMenu(); setOptionIndex(0)
   }
   const extensionOptions = (kind?: 'skill' | 'expert-kit'): Option[] => (props.invocations ?? []).filter((item) => !kind || item.kind === kind).map((item) => ({
-    id: item.token, name: item.name, description: item.description, selected: item.token === token,
+    id: item.token, name: item.name, description: item.description, selected: tokens.includes(item.token),
+    disabled: tokens.length >= 8 && !tokens.some((token) => token.split(':').slice(0, 2).join(':') === item.token.split(':').slice(0, 2).join(':')),
     choose: () => { props.onPrompt(selectComposerInvocation(props.prompt, item, query)); closeMenu(); setOptionIndex(0); setDismissed(''); setCaret(query?.start ?? text.length); focusInput(query?.start ?? text.length) },
   }))
   const knowledgeOptions: Option[] = props.knowledgeBases.map((item) => ({
@@ -63,7 +63,7 @@ export function TaskComposer(props: ChatPageProps & { onPreview: (target: LocalA
   }))
   const references: Option[] = [...knowledgeOptions, ...connectorOptions, ...props.localDirectories.map((item): Option => ({
     id: item.id, name: item.name, description: item.path || '当前工作目录',
-    choose: () => { if (query) { const next = text.slice(0, query.start) + `「${item.name}」` + text.slice(query.end); props.onPrompt(joinComposerPrompt(token, next)); setCaret(query.start + item.name.length + 2) } closeMenu(); focusInput() },
+    choose: () => { if (query) { const next = text.slice(0, query.start) + `「${item.name}」` + text.slice(query.end); props.onPrompt(joinComposerPrompt(tokens, next)); setCaret(query.start + item.name.length + 2) } closeMenu(); focusInput() },
   }))]
   const matches = (item: Option, value: string) => `${item.name} ${item.id} ${item.description}`.toLocaleLowerCase().includes(value.toLocaleLowerCase())
   const suggestions = query ? (query.trigger === '/' ? extensionOptions() : references).filter((item) => matches(item, query.text) && !item.disabled).slice(0, 12) : []
@@ -112,8 +112,8 @@ export function TaskComposer(props: ChatPageProps & { onPreview: (target: LocalA
     if (event.key === 'Escape' && menu) { event.stopPropagation(); (menu === 'context' ? addButton : directoryButton).current?.focus(); closeMenu() }
   }}>
     <form className="composer" onSubmit={props.onSubmit}>
-      {(token || props.selectedKnowledgeBaseRefs.length > 0 || (props.selectedConnectorIds?.length ?? 0) > 0) && <div aria-label="当前任务能力" className="composer-capabilities">
-        {token && <span className="composer-capability primary" title={selected?.description || '该能力已不可用，请重新选择'}><Puzzle size={13} />{selected?.name || token}<button aria-label="移除指定能力" disabled={locked} onClick={() => props.onPrompt(text)} type="button"><X size={12} /></button></span>}
+      {(tokens.length > 0 || props.selectedKnowledgeBaseRefs.length > 0 || (props.selectedConnectorIds?.length ?? 0) > 0) && <div aria-label="当前任务能力" className="composer-capabilities">
+        {tokens.map((token) => { const selected = props.invocations?.find((item) => item.token === token); return <span key={token} className="composer-capability primary" title={selected?.description || '该能力已不可用，请重新选择'}><Puzzle size={13} />{selected?.name || token}<button aria-label={`移除能力 ${selected?.name || token}`} disabled={locked} onClick={() => props.onPrompt(joinComposerPrompt(tokens.filter((value) => value !== token), text))} type="button"><X size={12} /></button></span> })}
         {props.selectedKnowledgeBaseRefs.map((id) => <span className="composer-capability" key={id}><BookOpen size={13} />{props.knowledgeBases.find((item) => item.reference === id)?.name || id}<button aria-label={`移除知识库 ${id}`} disabled={locked} onClick={() => props.onRemoveKnowledge(id)} type="button"><X size={12} /></button></span>)}
         {props.selectedConnectorIds?.map((id) => <span className="composer-capability" key={id}><Plug size={13} />{props.composerConnectors?.find((item) => item.id === id)?.name || id}<button aria-label={`移除连接器 ${id}`} disabled={locked} onClick={() => props.onToggleTaskConnector?.(id)} type="button"><X size={12} /></button></span>)}
       </div>}
@@ -122,7 +122,7 @@ export function TaskComposer(props: ChatPageProps & { onPreview: (target: LocalA
       {pasteError && <div className="local-file-error" role="alert">{pasteError}</div>}
       {query && <div className="composer-popover composer-suggestions"><small>{query.trigger === '/' ? '调用技能或专家套件' : '引用知识库、连接器或工作目录'}</small><div id={listId} role="listbox" aria-label={query.trigger === '/' ? '技能与专家套件' : '任务上下文'}>{suggestions.map((item, index) => <button aria-selected={index === activeIndex} className={index === activeIndex ? 'active' : ''} id={`${listId}-${index}`} key={item.id} onMouseDown={(event) => event.preventDefault()} onClick={item.choose} role="option" type="button"><Sparkles size={15} /><span><strong>{item.name}</strong><small>{item.description}</small></span></button>)}</div>{suggestions.length === 0 && <p className="composer-empty">{query.trigger === '/' ? '暂无匹配能力，可通过「＋」浏览和安装。' : '暂无匹配上下文，可通过「＋」添加或配置。'}</p>}<footer>↑ ↓ 选择 · Enter 确认 · Esc 关闭</footer></div>}
       <textarea aria-label="给小胤发送消息" autoCapitalize="off" autoCorrect="off" spellCheck={false} aria-expanded={Boolean(query)} aria-controls={query ? listId : undefined} aria-activedescendant={suggestions.length ? `${listId}-${activeIndex}` : undefined}
-        onChange={(event) => { props.onPrompt(joinComposerPrompt(token, event.target.value)); setCaret(event.target.selectionStart); setOptionIndex(0); setDismissed('') }}
+        onChange={(event) => { props.onPrompt(joinComposerPrompt(tokens, event.target.value)); setCaret(event.target.selectionStart); setOptionIndex(0); setDismissed('') }}
         onSelect={(event) => setCaret(event.currentTarget.selectionStart)} onKeyDown={inputKey}
         readOnly={checkingClipboard}
         onPaste={(event) => {
@@ -136,7 +136,7 @@ export function TaskComposer(props: ChatPageProps & { onPreview: (target: LocalA
           setCheckingClipboard(true); setPasteError('')
           void props.onPasteFiles(files).then((handled) => {
             if (handled || request !== pasteRequest.current || snapshot.prompt !== pasteView.current.prompt || snapshot.taskId !== pasteView.current.taskId) return
-            if (pastedText) { props.onPrompt(joinComposerPrompt(token, text.slice(0, start) + pastedText + text.slice(end))); setCaret(start + pastedText.length); focusInput(start + pastedText.length) }
+            if (pastedText) { props.onPrompt(joinComposerPrompt(tokens, text.slice(0, start) + pastedText + text.slice(end))); setCaret(start + pastedText.length); focusInput(start + pastedText.length) }
           }).catch((reason) => { if (request === pasteRequest.current) setPasteError(reason instanceof Error ? reason.message : String(reason)) })
             .finally(() => { if (request === pasteRequest.current) setCheckingClipboard(false) })
         }}
@@ -173,7 +173,7 @@ export function TaskComposer(props: ChatPageProps & { onPreview: (target: LocalA
           {props.modelMenuOpen && props.models.length > 0 && <div className="model-menu">{props.models.map((model) => <button className={model === props.activeModel ? 'active' : ''} key={model} onClick={() => props.onSelectModel(model)} title={model} type="button"><strong>{modelDisplayName(model)}</strong>{model === props.activeModel && <Check size={14} />}</button>)}</div>}
         </div>
         {running ? <>{text.trim() && <button aria-label="加入消息队列" className="queue-send-button" type="submit">加入队列<ArrowUp size={14} /></button>}<button aria-label={stopping ? '正在停止' : '停止本轮'} className="cancel-button" disabled={stopping} onClick={props.onCancel} title="停止本轮，保留对话并暂停队列" type="button">{stopping ? <LoaderCircle className="turn-spinner" size={14} /> : <Square size={11} fill="currentColor" strokeWidth={0} />}</button></>
-          : <button aria-label={props.queue?.items.length && !props.queue.paused ? '加入消息队列' : '发送'} className="send-button" disabled={(!text.trim() && !token && props.pendingAttachments.length === 0) || props.runtimeStatus !== 'ready' || props.harnessHealth === 'degraded' || props.taskContextRestoring || props.pastingAttachments || checkingClipboard} title={props.runtimeStatus !== 'ready' ? '企业服务未连接' : props.harnessHealth === 'degraded' ? '请先恢复本地 Agent' : props.taskContextRestoring ? '正在恢复任务上下文' : '发送'} type="submit"><ArrowUp size={17} /></button>}
+          : <button aria-label={props.queue?.items.length && !props.queue.paused ? '加入消息队列' : '发送'} className="send-button" disabled={(!text.trim() && !tokens.length && props.pendingAttachments.length === 0) || props.runtimeStatus !== 'ready' || props.harnessHealth === 'degraded' || props.taskContextRestoring || props.pastingAttachments || checkingClipboard} title={props.runtimeStatus !== 'ready' ? '企业服务未连接' : props.harnessHealth === 'degraded' ? '请先恢复本地 Agent' : props.taskContextRestoring ? '正在恢复任务上下文' : '发送'} type="submit"><ArrowUp size={17} /></button>}
       </div>
     </form>
     {props.localFileError && <div className="local-file-error" role="alert">{props.localFileError}</div>}

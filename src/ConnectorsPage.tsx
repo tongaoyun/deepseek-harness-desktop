@@ -26,8 +26,11 @@ import type { ConnectorCatalogEntry, ConnectorDiagnosticResult, ConnectorRuntime
 import { CapabilityHero } from './CapabilityHero'
 import { CatalogLoading } from './CatalogLoading'
 import { useDialogFocus } from './useDialogFocus'
+import { ConnectorAccount } from './ConnectorAccount'
 
 interface ConnectorsPageProps {
+  employeeId?: string
+  onReauthorizeErp?: () => Promise<void>
   catalog: ConnectorCatalogEntry[]
   runtime: ConnectorRuntimeDefinition[]
   loading: boolean
@@ -43,7 +46,8 @@ interface ConnectorsPageProps {
   onDiagnose: (connectorId: string) => Promise<ConnectorDiagnosticResult | undefined>
 }
 
-export function ConnectorsPage({ catalog, runtime, loading, catalogError, syncError, query, onToggle, personalIds, onEdit, onDelete, secrets, onSaveSecrets, onDiagnose }: ConnectorsPageProps) {
+export function ConnectorsPage({ employeeId, catalog, runtime, loading, catalogError, syncError, query, onToggle, personalIds, onEdit, onDelete, secrets, onSaveSecrets, onDiagnose, onReauthorizeErp }: ConnectorsPageProps) {
+  const [authorizationRevision, setAuthorizationRevision] = useState<Record<string, number>>({})
   const [view, setView] = useState<'market' | 'connected'>('market')
   const [detailId, setDetailId] = useState('')
   const [configuring, setConfiguring] = useState<ConnectorCatalogEntry>()
@@ -147,11 +151,13 @@ export function ConnectorsPage({ catalog, runtime, loading, catalogError, syncEr
                 <button aria-label={`删除 ${connector.name}`} className="connector-inline-config danger" disabled={Boolean(deletingId)} onClick={() => void remove(connector.id)} type="button"><Trash2 size={12} />{deletingId === connector.id ? '正在删除…' : '删除'}</button>
               </>}
             </div>
-            <ConnectorHealth connector={connector} enabled={enabled} missing={missingSecrets.length > 0} onDiagnose={onDiagnose} runtime={runtimeConnector} />
-            {detailOpen && <button className="connector-detail-primary" disabled={!enabled && !canEnable} onClick={() => { if (!enabled && missingSecrets.length > 0) openSecretConfiguration(connector, true); else onToggle(connector.id, !enabled) }} type="button">{enabled ? '断开连接' : canEnable ? '连接并启用' : '当前不可用'}</button>}
+            {detailOpen && employeeId && runtimeConnector?.authMode === 'oauth' && <ConnectorAccount employeeId={employeeId} connector={runtimeConnector} onConnected={() => { onToggle(connector.id, true); setAuthorizationRevision(value => ({ ...value, [connector.id]: (value[connector.id] ?? 0) + 1 })) }} onDisconnected={() => { onToggle(connector.id, false); setAuthorizationRevision(value => ({ ...value, [connector.id]: (value[connector.id] ?? 0) + 1 })) }} />}
+            <ConnectorHealth key={authorizationRevision[connector.id] ?? 0} connector={connector} enabled={enabled} missing={missingSecrets.length > 0} onDiagnose={onDiagnose} runtime={runtimeConnector}
+              onAuthorize={(runtimeConnector?.authMode ?? connector.authMode) === 'oauth' ? undefined : (runtimeConnector?.authMode ?? connector.authMode) === 'erp-cookie' ? onReauthorizeErp : hasSecretRequirements ? async () => openSecretConfiguration(connector) : personalIds.includes(connector.id) ? async () => onEdit(connector) : undefined} />
+            {detailOpen && runtimeConnector?.authMode !== 'oauth' && <button className="connector-detail-primary" disabled={!enabled && !canEnable} onClick={() => { if (!enabled && missingSecrets.length > 0) openSecretConfiguration(connector, true); else onToggle(connector.id, !enabled) }} type="button">{enabled ? '停用' : canEnable ? '连接并启用' : '当前不可用'}</button>}
             </section></div>
           </div>
-          <button aria-label={enabled ? '关闭连接器' : canEnable ? '启用连接器' : '暂不可用'} aria-pressed={enabled} className={`connector-add ${enabled ? 'installed' : ''}`} disabled={!enabled && !canEnable} onClick={() => { if (!enabled && missingSecrets.length > 0) openSecretConfiguration(connector, true); else onToggle(connector.id, !enabled) }} type="button">{enabled ? <Check size={19} /> : <Plus size={22} />}<span className="sr-only">{enabled ? '已为我启用' : canEnable ? '为我启用' : '当前不可启用'}</span></button>
+          <button aria-label={enabled ? '关闭连接器' : canEnable ? '启用连接器' : '暂不可用'} aria-pressed={enabled} className={`connector-add ${enabled ? 'installed' : ''}`} disabled={!enabled && !canEnable} onClick={() => { if (!enabled && runtimeConnector?.authMode === 'oauth') setDetailId(connector.id); else if (!enabled && missingSecrets.length > 0) openSecretConfiguration(connector, true); else onToggle(connector.id, !enabled) }} type="button">{enabled ? <Check size={19} /> : <Plus size={22} />}<span className="sr-only">{enabled ? '已为我启用' : canEnable ? '为我启用' : '当前不可启用'}</span></button>
         </article>
       })}</div>
     </section>
@@ -170,13 +176,16 @@ export function ConnectorsPage({ catalog, runtime, loading, catalogError, syncEr
   </>
 }
 
-function ConnectorHealth({ connector, runtime, enabled, missing, onDiagnose }: {
+function ConnectorHealth({ connector, runtime, enabled, missing, onDiagnose, onAuthorize }: {
   connector: ConnectorCatalogEntry
   runtime?: ConnectorRuntimeDefinition
   enabled: boolean
   missing: boolean
   onDiagnose: ConnectorsPageProps['onDiagnose']
+  onAuthorize?: () => Promise<void>
 }) {
+  const [authorizing, setAuthorizing] = useState(false)
+  const [authorizationError, setAuthorizationError] = useState('')
   const [retry, setRetry] = useState(0)
   const [check, setCheck] = useState<{ key: string; result?: ConnectorDiagnosticResult; done: boolean }>()
   const latestDiagnose = useRef(onDiagnose)
@@ -189,6 +198,13 @@ function ConnectorHealth({ connector, runtime, enabled, missing, onDiagnose }: {
   const current = check?.key === key ? check : undefined
   const result = current?.result
   const testing = canTest && !current?.done
+
+  useEffect(() => {
+    if (!canTest || result?.status !== 'authentication-required') return
+    const recheck = () => { if (document.visibilityState !== 'hidden') setRetry(value => value + 1) }
+    window.addEventListener('focus', recheck)
+    return () => window.removeEventListener('focus', recheck)
+  }, [canTest, result?.status])
 
   useEffect(() => {
     if (!canTest) return
@@ -211,8 +227,13 @@ function ConnectorHealth({ connector, runtime, enabled, missing, onDiagnose }: {
     <div className="connector-health-row">
       <span aria-live="polite" className={`connector-health ${state}`}>{testing ? <RefreshCw className="spin" size={11} /> : state === 'ready' ? <Check size={11} /> : <CircleAlert size={11} />}{label}{result && canTest && !testing ? ` · ${result.latencyMs} ms` : ''}</span>
       {canTest && <button className="connector-inline-config" disabled={testing} onClick={() => setRetry((value) => value + 1)} type="button">重新检测</button>}
+      {result?.status === 'authentication-required' && onAuthorize && <button className="connector-inline-config" disabled={authorizing} onClick={() => {
+        setAuthorizing(true); setAuthorizationError('')
+        void onAuthorize().catch(reason => setAuthorizationError(reason instanceof Error ? reason.message : '无法打开授权入口')).finally(() => setAuthorizing(false))
+      }} type="button"><KeyRound size={12} />{authorizing ? '正在打开…' : (runtime?.authMode ?? connector.authMode) === 'erp-cookie' ? '重新扫码登录' : '更新凭据'}</button>}
     </div>
     {result?.error && <p className="connector-diagnostic-error">{result.error}</p>}
+    {authorizationError && <p className="connector-diagnostic-error" role="alert">{authorizationError}</p>}
     <details className="connector-tool-details"><summary>工具与配置 · {tools.length} 个{result ? '已发现工具' : '声明工具'}</summary>
       <p>{runtime?.transport ?? connector.transport} · {desktop ? '桌面内置能力' : (runtime?.transport ?? connector.transport) === 'stdio' ? connector.command : connector.url}</p>
       <small>检测结果对应本次配置，不代表持续在线状态。</small>

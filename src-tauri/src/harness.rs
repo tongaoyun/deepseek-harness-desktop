@@ -30,6 +30,15 @@ use tauri::{Emitter, Listener, Manager};
 
 const MAX_CONCURRENT_HARNESS_TASKS: usize = 3;
 
+impl HarnessManager {
+    pub(crate) fn begin_operation_review(
+        &self,
+        task_id: &str,
+    ) -> Result<impl Drop + use<>, String> {
+        self.slot(task_id)?.begin()
+    }
+}
+
 #[derive(Default)]
 struct HarnessSlot {
     process: Mutex<Option<HarnessProcess>>,
@@ -123,13 +132,14 @@ struct PendingApproval {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HarnessRunRequest {
+    operation_scope: String,
     task_id: String,
     prompt: String,
     execution_mode: String,
     employee_id: String,
     team_id: String,
     session_id: Option<String>,
-    selected_extension: Option<ExtensionSelection>,
+    selected_extensions: Vec<expert_kits::ExtensionSelection>,
     #[serde(default)]
     knowledge_base_refs: Vec<String>,
     #[serde(default)]
@@ -171,21 +181,16 @@ struct HarnessImageInput {
 }
 
 struct HarnessTurnInput {
+    operation_scope: String,
     prompt: String,
     session_id: Option<String>,
     images: Vec<HarnessImageInput>,
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct ExtensionSelection {
-    kind: String,
-    id: String,
-}
-
-#[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ConnectorDiagnosticRequest {
+    employee_id: String,
     #[serde(default)]
     connectors: Vec<ConnectorDefinition>,
     access_token: String,
@@ -271,6 +276,8 @@ pub(crate) struct RuntimeFingerprint {
 }
 
 pub(crate) struct HarnessProcess {
+    app: tauri::AppHandle,
+    erp_session_epoch: u64,
     child: Child,
     stdin: ChildStdin,
     stdout: BufReader<ChildStdout>,
@@ -283,9 +290,9 @@ pub(crate) struct HarnessProcess {
 }
 
 #[derive(Debug, Eq, PartialEq)]
-struct HarnessRuntimePaths {
-    node: PathBuf,
-    entry: PathBuf,
+pub(crate) struct HarnessRuntimePaths {
+    pub(crate) node: PathBuf,
+    pub(crate) entry: PathBuf,
     config: PathBuf,
 }
 
@@ -306,14 +313,7 @@ pub async fn run_harness(
     };
     let profile = expert_kits::harness_profile(
         &app,
-        request
-            .selected_extension
-            .as_ref()
-            .map(|selection| selection.kind.as_str()),
-        request
-            .selected_extension
-            .as_ref()
-            .map(|selection| selection.id.as_str()),
+        &request.selected_extensions,
         &request.knowledge_base_refs,
         &user_prompt,
         &request.allowed_artifacts,
@@ -346,6 +346,7 @@ pub async fn run_harness(
         credential_digest: credential_digest(&request.model_api_key, &request.access_token),
     };
     let turn = HarnessTurnInput {
+        operation_scope: request.operation_scope,
         prompt: profile.prompt,
         session_id: request.session_id,
         images,
@@ -418,7 +419,7 @@ pub async fn diagnose_connectors(
         litellm_base_url: String::new(),
         knowledge_endpoint: String::new(),
         schedule_endpoint: String::new(),
-        employee_id: String::new(),
+        employee_id: request.employee_id,
         team_id: String::new(),
         knowledge_base_refs: Some(Vec::new()),
         model: "connector-diagnostics".to_string(),
@@ -541,7 +542,7 @@ impl HarnessManager {
             if needs_initialize {
                 process.request("host.initialize", None, None)?;
             }
-            process.run(task_id, app, turn.prompt, turn.session_id, turn.images)
+            process.run(task_id, app, turn)
         });
         match result {
             Ok(result) => Ok(result),
@@ -861,6 +862,20 @@ impl HarnessProcess {
             .env("DSH_CWD", &session_workspace)
             .env("DSH_HOME", &dsh_home)
             .env("DSH_SESSION_ROOT", dsh_home.join("sessions"))
+            .envs(
+                task_id
+                    .map(|id| {
+                        crate::task_operations::journal_path(app, &fingerprint.employee_id, id)
+                    })
+                    .transpose()?
+                    .into_iter()
+                    .flat_map(|path| {
+                        [
+                            ("XIAOYIN_OPERATION_SCOPE_FILE", path.with_extension("scope")),
+                            ("XIAOYIN_OPERATION_JOURNAL", path),
+                        ]
+                    }),
+            )
             .env(
                 "XIAOYIN_IM_STATE_PATH",
                 app_data.join("im-channels/dingtalk-sessions.json"),
@@ -920,6 +935,8 @@ impl HarnessProcess {
         let stderr_tail = Arc::new(Mutex::new(String::new()));
         let stderr_reader = Some(capture_stderr(stderr, Arc::clone(&stderr_tail)));
         let mut process = Self {
+            app: app.clone(),
+            erp_session_epoch: crate::erp_auth::mcp::session_epoch(),
             child,
             stdin,
             stdout: BufReader::new(stdout),
@@ -940,13 +957,17 @@ impl HarnessProcess {
         &mut self,
         task_id: &str,
         app: &tauri::AppHandle,
-        prompt: String,
-        session_id: Option<String>,
-        images: Vec<HarnessImageInput>,
+        turn: HarnessTurnInput,
     ) -> Result<HarnessRunResult, String> {
         self.notification_task_id = task_id.to_string();
-        let mut params = json!({ "prompt": prompt, "images": images });
-        if let Some(session_id) = session_id {
+        let scope_path =
+            crate::task_operations::journal_path(app, &self.fingerprint.employee_id, task_id)?
+                .with_extension("scope");
+        std::fs::create_dir_all(scope_path.parent().ok_or("任务记录目录无效")?)
+            .and_then(|_| std::fs::write(&scope_path, &turn.operation_scope))
+            .map_err(|_| "无法保存任务执行标识")?;
+        let mut params = json!({ "prompt": turn.prompt, "images": turn.images });
+        if let Some(session_id) = turn.session_id {
             params["sessionId"] = Value::String(session_id);
         }
         let result = self.request("session.run", Some(params), Some(app))?;
@@ -995,40 +1016,97 @@ impl HarnessProcess {
             let output: Value = serde_json::from_str(&line)
                 .map_err(|error| format!("Harness 输出不是有效 JSON-RPC：{error}"))?;
             if output.get("method").is_some() {
-                if output.get("method").and_then(Value::as_str) == Some("schedule.request") {
+                if matches!(
+                    output.get("method").and_then(Value::as_str),
+                    Some("erp-cookie.request" | "connector-oauth.request")
+                ) {
+                    let oauth = output["method"] == "connector-oauth.request";
+                    let params = &output["params"];
+                    let id = params["requestId"].as_str().unwrap_or("");
+                    if id.is_empty() || id.len() > 100 {
+                        return Err("ERP 会话请求标识无效".into());
+                    }
+                    let connector_id = params["connectorId"].as_str().unwrap_or("");
+                    let connector = self
+                        .fingerprint
+                        .connectors
+                        .iter()
+                        .find(|value| value.id == connector_id);
+                    let result = if oauth {
+                        crate::connector_oauth::token_result(
+                            &self.app,
+                            connector,
+                            params["url"].as_str().unwrap_or(""),
+                            &self.fingerprint.employee_id,
+                            self.erp_session_epoch,
+                            params["rejectedToken"].as_str(),
+                        )
+                    } else {
+                        tauri::async_runtime::block_on(crate::erp_auth::mcp::cookie_result(
+                            &self.app,
+                            connector,
+                            params["url"].as_str().unwrap_or(""),
+                            &self.fingerprint.employee_id,
+                            self.erp_session_epoch,
+                        ))
+                    };
+                    // This response stays on private IPC and never becomes a task notification.
+                    serde_json::to_writer(
+                        &mut self.stdin,
+                        &json!({
+                            "jsonrpc": "2.0", "id": null, "method": if oauth { "connector-oauth.respond" } else { "erp-cookie.respond" },
+                            "params": {"requestId": id, "result": result}
+                        }),
+                    )
+                    .map_err(|_| "无法发送 ERP 会话响应".to_string())?;
+                    self.stdin
+                        .write_all(b"\n")
+                        .and_then(|_| self.stdin.flush())
+                        .map_err(|_| "无法发送 ERP 会话响应".to_string())?;
+                    continue;
+                }
+                if matches!(
+                    output.get("method").and_then(Value::as_str),
+                    Some("schedule.request" | "skill.request")
+                ) {
+                    let domain = if output["method"] == "skill.request" {
+                        "skill"
+                    } else {
+                        "schedule"
+                    };
                     let params = output.get("params").cloned().unwrap_or(Value::Null);
                     let id = params
                         .get("requestId")
                         .and_then(Value::as_str)
                         .unwrap_or("");
                     if id.is_empty() || id.len() > 100 {
-                        return Err("定时任务请求标识无效".into());
+                        return Err("桌面工具请求标识无效".into());
                     }
                     let result = if let Some(app) = app {
                         let (sender, receiver) = mpsc::channel::<Value>();
                         let listener =
-                            app.listen(format!("xiaoyin://schedule-response/{id}"), move |event| {
+                            app.listen(format!("xiaoyin://{domain}-response/{id}"), move |event| {
                                 if let Ok(value) = serde_json::from_str(event.payload()) {
                                     let _ = sender.send(value);
                                 }
                             });
                         let _ = app.emit(
-                            "xiaoyin://schedule-request",
+                            &format!("xiaoyin://{domain}-request"),
                             json!({
                                 "taskId": self.notification_task_id, "request": params
                             }),
                         );
-                        let result = receiver.recv_timeout(Duration::from_secs(12))
-                            .unwrap_or_else(|_| json!({"error": "桌面未确认操作结果，请先查询列表，不要直接重复创建"}));
+                        let result = receiver.recv_timeout(Duration::from_secs(if domain == "skill" { 90 } else { 12 }))
+                            .unwrap_or_else(|_| json!({"error": "桌面未确认操作结果，请先查询状态，不要直接重复操作"}));
                         app.unlisten(listener);
                         result
                     } else {
-                        json!({"error": "定时任务管理需要小胤桌面保持运行"})
+                        json!({"error": "此操作需要小胤桌面保持运行"})
                     };
                     serde_json::to_writer(
                         &mut self.stdin,
                         &json!({
-                            "jsonrpc": "2.0", "id": null, "method": "schedule.respond",
+                            "jsonrpc": "2.0", "id": null, "method": format!("{domain}.respond"),
                             "params": {"requestId": id, "result": result}
                         }),
                     )
@@ -1306,7 +1384,9 @@ impl Drop for HarnessProcess {
     }
 }
 
-fn resolve_runtime_paths(_app: &tauri::AppHandle) -> Result<HarnessRuntimePaths, String> {
+pub(crate) fn resolve_runtime_paths(
+    _app: &tauri::AppHandle,
+) -> Result<HarnessRuntimePaths, String> {
     #[cfg(not(debug_assertions))]
     {
         let paths = packaged_runtime_paths(
@@ -1389,6 +1469,15 @@ fn validate_runtime_paths(paths: &HarnessRuntimePaths) -> Result<(), String> {
 }
 
 fn validate_run_request(request: &HarnessRunRequest) -> Result<(), String> {
+    if request.operation_scope.is_empty()
+        || request.operation_scope.len() > 100
+        || !request
+            .operation_scope
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+    {
+        return Err("任务执行标识无效".into());
+    }
     if request.task_id.trim().is_empty()
         || request.task_id.len() > 200
         || request.task_id.chars().any(char::is_control)
@@ -1631,13 +1720,14 @@ mod tests {
     #[test]
     fn run_request_requires_safe_endpoints_and_model() {
         let valid = HarnessRunRequest {
+            operation_scope: "test-turn".into(),
             task_id: "task-1".to_string(),
             prompt: "分析库存".to_string(),
             execution_mode: "agent".to_string(),
             employee_id: "employee-1".to_string(),
             team_id: "crossborder".to_string(),
             session_id: None,
-            selected_extension: None,
+            selected_extensions: Vec::new(),
             knowledge_base_refs: Vec::new(),
             allowed_artifacts: Vec::new(),
             litellm_base_url: "http://litellm.internal/v1".to_string(),

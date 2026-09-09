@@ -8,7 +8,12 @@ use std::{
 };
 use tauri::{Emitter, Manager};
 mod diagnostics;
+pub(crate) mod mcp;
+mod persistence;
 use diagnostics::{Code, Diagnostic};
+
+// Serialize restoration, validation and logout so a late check cannot re-save a revoked session.
+static SESSION_RESTORED: futures_util::lock::Mutex<bool> = futures_util::lock::Mutex::new(false);
 
 const ERP_LOGIN_URL: &str = "http://www.instudio.me:6206/eshop/manager/login.jsp";
 const ERP_USER_URL: &str =
@@ -198,6 +203,8 @@ pub(crate) async fn erp_session(app: tauri::AppHandle) -> Result<ErpSessionStatu
 }
 
 async fn resolve_session(app: &tauri::AppHandle) -> Result<ErpSessionStatus, Diagnostic> {
+    let mut restored = SESSION_RESTORED.lock().await;
+    let session_epoch = mcp::session_epoch();
     let webview = app
         .get_webview_window("erp-login")
         .or_else(|| app.get_webview_window("main"))
@@ -205,10 +212,24 @@ async fn resolve_session(app: &tauri::AppHandle) -> Result<ErpSessionStatus, Dia
     let cookie_url = erp_cookie_url()
         .parse()
         .map_err(|_| Diagnostic::new(Code::ConfigurationInvalid, None, None))?;
-    let cookies = tauri::async_runtime::spawn_blocking(move || webview.cookies_for_url(cookie_url))
-        .await
-        .map_err(|_| Diagnostic::new(Code::CookieReadFailed, None, None))?
-        .map_err(|_| Diagnostic::new(Code::CookieReadFailed, None, None))?;
+    let store = session_store(app)?;
+    let restore = !*restored;
+    let cookies = tauri::async_runtime::spawn_blocking(move || {
+        if restore {
+            for cookie in store.load().map_err(|_| Code::CookieStoreFailed)? {
+                webview
+                    .set_cookie(cookie)
+                    .map_err(|_| Code::CookieReadFailed)?;
+            }
+        }
+        webview
+            .cookies_for_url(cookie_url)
+            .map_err(|_| Code::CookieReadFailed)
+    })
+    .await
+    .map_err(|_| Diagnostic::new(Code::CookieReadFailed, None, None))?
+    .map_err(|code| Diagnostic::new(code, None, None))?;
+    *restored = true;
     let cookie_header = cookies
         .iter()
         .map(|cookie| format!("{}={}", cookie.name(), cookie.value()))
@@ -231,9 +252,23 @@ async fn resolve_session(app: &tauri::AppHandle) -> Result<ErpSessionStatus, Dia
     let (user, diagnostic) =
         resolve_identity(&client, &erp_user_url(), &cookie_header, cookies.len()).await?;
     let Some(user) = user else {
+        clear_saved_session(app).await?;
         return Ok(unauthenticated_erp_session(diagnostic));
     };
+    if session_epoch != mcp::session_epoch() {
+        return Ok(unauthenticated_erp_session(Diagnostic::new(
+            Code::SessionRejected,
+            None,
+            None,
+        )));
+    }
+    let store = session_store(app)?;
+    tauri::async_runtime::spawn_blocking(move || store.save(&cookies))
+        .await
+        .map_err(|_| Diagnostic::new(Code::CookieStoreFailed, None, None))?
+        .map_err(|_| Diagnostic::new(Code::CookieStoreFailed, None, None))?;
     let access_token = trusted_internal_token(&cookie_header);
+    mcp::activate_session(session_epoch);
     if let Some(window) = app.get_webview_window("erp-login") {
         let _ = window.hide();
         if let Ok(url) = erp_login_window_url(app) {
@@ -359,6 +394,12 @@ fn trusted_session_expiry() -> Option<i64> {
 
 #[tauri::command]
 pub(crate) async fn clear_erp_session(app: tauri::AppHandle) -> Result<(), String> {
+    mcp::revoke_session();
+    let mut restored = SESSION_RESTORED.lock().await;
+    *restored = true;
+    clear_saved_session(&app)
+        .await
+        .map_err(|_| "无法清除系统凭据库中的 ERP 登录记录".to_string())?;
     let webview = app
         .get_webview_window("erp-login")
         .or_else(|| app.get_webview_window("main"))
@@ -375,6 +416,19 @@ pub(crate) async fn clear_erp_session(app: tauri::AppHandle) -> Result<(), Strin
     .await
     .map_err(|error| format!("清除 ERP 登录状态失败：{error}"))?
     .map_err(|error| format!("清除 ERP Cookie 失败：{error}"))
+}
+
+fn session_store(app: &tauri::AppHandle) -> Result<persistence::SessionStore, Diagnostic> {
+    persistence::SessionStore::new(&app.config().identifier, &erp_cookie_url(), &erp_user_url())
+        .map_err(|_| Diagnostic::new(Code::CookieStoreFailed, None, None))
+}
+
+async fn clear_saved_session(app: &tauri::AppHandle) -> Result<(), Diagnostic> {
+    let store = session_store(app)?;
+    tauri::async_runtime::spawn_blocking(move || store.clear())
+        .await
+        .map_err(|_| Diagnostic::new(Code::CookieStoreFailed, None, None))?
+        .map_err(|_| Diagnostic::new(Code::CookieStoreFailed, None, None))
 }
 
 #[cfg(test)]

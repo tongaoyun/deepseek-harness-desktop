@@ -92,7 +92,7 @@ export function FileChangesCard({ changes, onOpen, onReview, onUndone, busy = fa
 
 function target(change: TaskFileChange): LocalArtifactTarget {
   return { rootId: change.rootId, rootName: change.rootName, path: change.path, name: change.name,
-    review: { action: change.action, backupPath: change.backupPath, addedLines: change.addedLines, deletedLines: change.deletedLines } }
+    initialView: 'review', review: { action: change.action, backupPath: change.backupPath, addedLines: change.addedLines, deletedLines: change.deletedLines } }
 }
 
 function actionLabel(action: TaskFileChange['action']): string {

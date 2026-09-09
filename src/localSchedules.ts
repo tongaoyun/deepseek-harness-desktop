@@ -19,7 +19,7 @@ export interface LocalSchedule {
   attachments?: LocalTaskAttachment[]
   model?: string
   timeZoneMode?: 'system' | 'fixed'
-  taskContext?: Pick<LocalTaskRun, 'composerConnectorIds' | 'invocationToken' | 'capabilitySnapshot'>
+  taskContext?: Pick<LocalTaskRun, 'composerConnectorIds' | 'invocationTokens' | 'capabilitySnapshot'>
 }
 export type LocalScheduleInput = Pick<LocalSchedule, 'name' | 'prompt' | 'cronExpression' | 'timeZone' | 'directories' | 'timing' | 'attachments' | 'taskContext' | 'model' | 'timeZoneMode'>
 export const localScheduleEvent = 'xiaoyin-local-schedules-updated'

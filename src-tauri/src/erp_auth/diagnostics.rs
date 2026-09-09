@@ -21,6 +21,7 @@ pub(crate) enum Code {
     IdentityUnavailable,
     IdentityInvalid,
     CookieReadFailed,
+    CookieStoreFailed,
     ConfigurationInvalid,
 }
 

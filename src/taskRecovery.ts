@@ -47,6 +47,7 @@ export async function runHarnessWithRecovery(
 
 export function retryingTaskMonitor(previous: TaskMonitorState, now = new Date().toISOString()): TaskMonitorState {
   return {
+    operationScope: previous.operationScope,
     status: 'running',
     activity: '模型服务短暂异常，正在自动重试',
     startedAt: previous.startedAt ?? now,

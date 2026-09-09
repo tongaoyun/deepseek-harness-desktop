@@ -7,6 +7,7 @@ use tauri::{
 
 mod attachment_storage;
 mod clipboard_files;
+mod connector_oauth;
 mod connector_secrets;
 mod device_identity;
 mod erp_auth;
@@ -14,6 +15,7 @@ mod expert_kits;
 mod feedback_images;
 mod harness;
 mod harness_connectors;
+mod html_preview;
 mod im;
 mod im_registration;
 mod local_artifacts;
@@ -21,7 +23,9 @@ mod local_file_undo;
 mod local_files;
 mod local_store;
 mod memory;
+mod office_preview;
 mod schedule_desktop;
+mod task_operations;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -45,11 +49,17 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(harness::HarnessManager::default())
+        .manage(connector_oauth::ConnectorOAuthManager::default())
         .manage(im::LocalImManager::default())
         .manage(local_files::LocalFileAuthorizations::default())
+        .manage(html_preview::HtmlPreviewServer::default())
         .setup(|app| {
+            app.state::<local_files::LocalFileAuthorizations>()
+                .initialize_workspace(app.path().app_data_dir()?.join("workspace"))
+                .map_err(std::io::Error::other)?;
             let show = MenuItem::with_id(app, "show", "打开小胤", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "退出小胤", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show, &quit])?;
@@ -99,6 +109,8 @@ pub fn run() {
             attachment_storage::attachment_storage,
             device_identity::inspect_device_identity,
             connector_secrets::load_connector_secrets,
+            connector_oauth::connector_authorization,
+            task_operations::task_write_operations,
             connector_secrets::save_connector_secret,
             connector_secrets::delete_connector_secret,
             connector_secrets::migrate_connector_secrets,
@@ -110,6 +122,9 @@ pub fn run() {
             erp_auth::complete_erp_qr_login,
             expert_kits::list_installed_expert_kits,
             expert_kits::install_expert_kit,
+            expert_kits::github::inspect_github_skills,
+            expert_kits::github::install_github_skill,
+            html_preview::html_artifact_preview_url,
             expert_kits::install_developer_extension,
             expert_kits::select_developer_extension,
             expert_kits::create_developer_extension,
@@ -127,6 +142,7 @@ pub fn run() {
             local_artifacts::read_local_artifact_preview,
             local_artifacts::read_harness_image_preview,
             local_artifacts::reveal_local_artifact,
+            local_artifacts::open_local_artifact,
             local_file_undo::undo_local_file_change,
             local_files::authorize_local_directory,
             local_files::authorize_local_files,
@@ -172,8 +188,14 @@ pub fn run() {
             memory::load_memory_history,
             memory::save_memory_profile
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running Xiaoyin desktop");
+        .build(tauri::generate_context!())
+        .expect("error while building Xiaoyin desktop")
+        .run(|_app, _event| {
+            #[cfg(target_os = "macos")]
+            if matches!(_event, tauri::RunEvent::Reopen { .. }) {
+                show_main_window(_app);
+            }
+        });
 }
 
 pub(crate) fn show_main_window(app: &tauri::AppHandle) {

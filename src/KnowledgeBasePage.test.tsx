@@ -3,7 +3,7 @@ import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { KnowledgeBasePage } from './KnowledgeBasePage'
-import { createKnowledgeBase, loadKnowledgeBases, loadKnowledgeDocuments, uploadKnowledgeDocument, searchKnowledge, deleteKnowledgeDocument } from './api'
+import { createKnowledgeBase, loadKnowledgeBases, loadKnowledgeDocuments, uploadKnowledgeDocument, searchKnowledge, deleteKnowledgeDocument, reindexKnowledgeDocument } from './api'
 import type { KnowledgeBaseEntry, KnowledgeDocumentEntry } from './types'
 
 vi.mock('./api', () => ({ loadKnowledgeBases: vi.fn(), loadKnowledgeDocuments: vi.fn(), uploadKnowledgeDocument: vi.fn(), searchKnowledge: vi.fn(), deleteKnowledgeDocument: vi.fn(), createKnowledgeBase: vi.fn(), deleteKnowledgeBase: vi.fn(), reindexKnowledgeDocument: vi.fn() }))
@@ -108,5 +108,62 @@ it('does not misrepresent a catalog failure as an empty knowledge base', async (
     expect(container.textContent).toContain('知识库暂不可用')
     expect(container.textContent).not.toContain('创建第一个知识库')
     expect(container.querySelector('[role="alert"]')!.textContent).toContain('unavailable')
+  })
+})
+
+it('retries only failed uploads without submitting successful files twice', async () => {
+  vi.mocked(uploadKnowledgeDocument).mockResolvedValueOnce(doc('first')).mockRejectedValueOnce(new Error('network')).mockResolvedValueOnce(doc('second'))
+  await fixture(async (container) => {
+    await upload(container, ['first', 'second'].map((id) => new File(['data'], `${id}.md`)))
+    await click(container, '.knowledge-upload-retry button')
+    expect(vi.mocked(uploadKnowledgeDocument).mock.calls.map((call) => call[5].name)).toEqual(['first.md', 'second.md', 'second.md'])
+    expect(container.querySelector('.knowledge-upload-retry')).toBeNull()
+    expect(container.querySelectorAll('.knowledge-documents article')).toHaveLength(2)
+  })
+})
+
+it('does not replace a new knowledge base document with a late reindex response', async () => {
+  let resolve!: (value: KnowledgeDocumentEntry) => void
+  vi.mocked(reindexKnowledgeDocument).mockReturnValue(new Promise((yes) => { resolve = yes }))
+  vi.mocked(loadKnowledgeDocuments).mockResolvedValueOnce([doc('shared')]).mockResolvedValue([doc('shared', 'two')])
+  await fixture(async (container) => {
+    await click(container, '[title="重建索引"]')
+    await click(container, '.knowledge-base-list button:last-of-type')
+    await act(async () => resolve({ ...doc('shared'), status: 'QUEUED' }))
+    expect(container.querySelector('.knowledge-documents em')?.textContent).toBe('可检索')
+  })
+})
+
+it('filters documents by filename and indexing status', async () => {
+  vi.mocked(loadKnowledgeDocuments).mockResolvedValue([doc('ready'), { ...doc('failed'), status: 'FAILED', failureMessage: '文件损坏' }])
+  await fixture(async (container) => {
+    await act(async () => {
+      const select = container.querySelector<HTMLSelectElement>('[aria-label="文档状态"]')!
+      select.value = 'FAILED'; select.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(container.querySelectorAll('.knowledge-documents article')).toHaveLength(1)
+    expect(container.querySelector('.knowledge-documents article')?.textContent).toContain('文件损坏')
+    await act(async () => {
+      const input = container.querySelector<HTMLInputElement>('[aria-label="按文档名称筛选"]')!
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'missing')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(container.textContent).toContain('没有符合筛选条件的文档')
+  })
+})
+
+it('discards a search response after the query has changed', async () => {
+  let resolve!: (value: Awaited<ReturnType<typeof searchKnowledge>>) => void
+  vi.mocked(searchKnowledge).mockReturnValue(new Promise((yes) => { resolve = yes }))
+  await fixture(async (container) => {
+    await search(container)
+    await act(async () => {
+      const input = container.querySelector<HTMLInputElement>('.knowledge-search input')!
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, '退款')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await act(async () => resolve([{ knowledgeBaseId: 'one', knowledgeBaseName: 'one', documentId: 'old', filename: '库存.md', locator: '正文', content: '过期检索结果', score: 1 }]))
+    expect(container.textContent).not.toContain('过期检索结果')
+    expect(container.querySelector('.knowledge-hits')).toBeNull()
   })
 })

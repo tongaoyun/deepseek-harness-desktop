@@ -1,12 +1,17 @@
-import { FileCode2, FileDiff, FileText, FolderSearch, Image, LoaderCircle, RefreshCw, X } from 'lucide-react'
+import { ExternalLink, Eye, FileCode2, FileDiff, FileText, FolderSearch, Image, LoaderCircle, RefreshCw, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+import { StructuredFilePreview } from './StructuredFilePreview'
 import { codeDiffRows } from './codeDiff'
 import { highlightedCode } from './codeHighlight'
 import { authorizeLocalDirectory, authorizeLocalFiles } from './harness'
 import {
   loadLocalArtifactPreview,
+  htmlArtifactPreviewUrl,
   artifactFailure,
   revealLocalArtifact,
+  openLocalArtifact,
   type LocalArtifactPreview,
   type LocalArtifactTarget,
 } from './localArtifactPreview'
@@ -23,9 +28,11 @@ export function LocalFilePreviewPanel({ onClose, onSelect, onOpenSelected, tabs 
   const [preview, setPreview] = useState<LocalArtifactPreview>()
   const [previousPreview, setPreviousPreview] = useState<LocalArtifactPreview>()
   const [error, setError] = useState('')
+  const [actionError, setActionError] = useState('')
   const [loading, setLoading] = useState(true)
   const [pdfUrl, setPdfUrl] = useState('')
-  const [view, setView] = useState<'review' | 'file'>(target.review ? 'review' : 'file')
+  const [htmlUrl, setHtmlUrl] = useState('')
+  const [view, setView] = useState<'review' | 'file' | 'preview'>(target.initialView ?? 'preview')
   const [revision, setRevision] = useState(0)
   const [reviewWarning, setReviewWarning] = useState('')
   const [recovering, setRecovering] = useState(false)
@@ -44,10 +51,11 @@ export function LocalFilePreviewPanel({ onClose, onSelect, onOpenSelected, tabs 
     let disposed = false
     setLoading(true)
     setError('')
+    setActionError('')
     setReviewWarning('')
     setPreview(undefined)
     setPreviousPreview(undefined)
-    setView(target.review ? 'review' : 'file')
+    setView(target.initialView ?? 'preview')
     const previousTarget = target.review?.backupPath
       ? { ...target, path: target.review.backupPath, review: undefined }
       : undefined
@@ -98,7 +106,17 @@ export function LocalFilePreviewPanel({ onClose, onSelect, onOpenSelected, tabs 
   }, [onClose])
 
   const lines = useMemo(() => preview?.content?.split('\n').slice(0, MAX_RENDERED_LINES) ?? [], [preview?.content])
-  const canReview = Boolean(target.review && preview?.content !== undefined && (preview.kind === 'code' || preview.kind === 'text') && !preview.truncated && !previousPreview?.truncated
+  const canPreviewHtml = preview?.kind === 'code' && /\.html?$/i.test(target.path) && !preview.truncated && target.review?.action !== 'deleted'
+  const canReadMarkdown = preview?.kind === 'markdown' && target.review?.action !== 'deleted'
+  const hasText = preview?.kind === 'code' || preview?.kind === 'text' || preview?.kind === 'markdown'
+  useEffect(() => {
+    let disposed = false
+    setHtmlUrl('')
+    if (canPreviewHtml) void htmlArtifactPreviewUrl(target).then((url) => { if (!disposed) setHtmlUrl(url) })
+      .catch((reason) => { if (!disposed) { setActionError(message(reason)); setView('file') } })
+    return () => { disposed = true }
+  }, [canPreviewHtml, target, revision])
+  const canReview = Boolean(target.review && preview?.content !== undefined && hasText && !preview.truncated && !previousPreview?.truncated
     && (target.review.action === 'created' || (target.review.action === 'copied' && !target.review.backupPath) || previousPreview?.content !== undefined))
   const diffCounts = useMemo(() => {
     if (!canReview) return undefined
@@ -108,9 +126,16 @@ export function LocalFilePreviewPanel({ onClose, onSelect, onOpenSelected, tabs 
 
   const reveal = async () => {
     const original = target
-    setError('')
+    setActionError('')
     try { await revealLocalArtifact(target) }
-    catch (reason) { if (active.current === original) setError(message(reason)) }
+    catch (reason) { if (active.current === original) setActionError(message(reason)) }
+  }
+
+  const openOriginal = async () => {
+    const original = target
+    setActionError('')
+    try { await openLocalArtifact(target) }
+    catch (reason) { if (active.current === original) setActionError(message(reason)) }
   }
 
   const recover = async (directory: boolean) => {
@@ -139,9 +164,11 @@ export function LocalFilePreviewPanel({ onClose, onSelect, onOpenSelected, tabs 
     <header className="local-file-preview-tabbar">
       <div className="local-file-preview-tabs">{tabs.map((tab) => <button className={tab.rootId === target.rootId && tab.path === target.path ? 'active' : ''} key={`${tab.rootId}:${tab.path}`} onClick={() => onSelect?.(tab)} title={tab.path} type="button"><FileIcon kind={tab === target ? preview?.kind : undefined} /><strong>{tab.name}</strong></button>)}</div>
       <span className="local-file-preview-tab-actions">
-        {canReview && <span className="local-preview-view-switch">
-          <button className={view === 'review' ? 'active' : ''} onClick={() => setView('review')} type="button"><FileDiff size={14} />改动</button>
-          {target.review?.action !== 'deleted' && <button className={view === 'file' ? 'active' : ''} onClick={() => setView('file')} type="button"><FileCode2 size={14} />文件</button>}
+        {(canReview || canPreviewHtml || canReadMarkdown) && <span className="local-preview-view-switch" role="group" aria-label="文件视图">
+          {canReadMarkdown && <button aria-label="阅读视图" title="阅读视图" aria-pressed={view === 'preview'} className={view === 'preview' ? 'active' : ''} onClick={() => setView('preview')} type="button"><Eye size={14} /></button>}
+          {canPreviewHtml && <button aria-label="交互预览" title="交互预览" aria-pressed={view === 'preview'} className={view === 'preview' ? 'active' : ''} onClick={() => setView('preview')} type="button"><Eye size={14} /></button>}
+          {canReview && <button aria-label="查看改动" title="查看改动" aria-pressed={view === 'review'} className={view === 'review' ? 'active' : ''} onClick={() => setView('review')} type="button"><FileDiff size={14} /></button>}
+          {target.review?.action !== 'deleted' && <button aria-label="查看源码" title="查看源码" aria-pressed={view === 'file'} className={view === 'file' ? 'active' : ''} onClick={() => setView('file')} type="button"><FileCode2 size={14} /></button>}
         </span>}
         <button aria-label="关闭预览" onClick={onClose} title="关闭" type="button"><X size={17} /></button>
       </span>
@@ -152,21 +179,26 @@ export function LocalFilePreviewPanel({ onClose, onSelect, onOpenSelected, tabs 
         ? <em className="local-review-counts"><ins>+{diffCounts?.added}</ins><del>-{diffCounts?.deleted}</del></em>
         : preview && <em>{formatBytes(preview.sizeBytes)}{preview.language ? ` · ${preview.language.toUpperCase()}` : ''}</em>}
       <button aria-label="刷新文件" disabled={loading} onClick={() => setRevision((value) => value + 1)} title="重新读取磁盘内容" type="button"><RefreshCw size={15} /></button>
+      <button aria-label="使用本机应用打开" disabled={target.review?.action === 'deleted'} onClick={() => void openOriginal()} title="使用本机应用打开" type="button"><ExternalLink size={15} /></button>
       <button aria-label="在文件夹中显示" disabled={target.review?.action === 'deleted'} onClick={() => void reveal()} title={target.review?.action === 'deleted' ? '文件已删除' : '在文件夹中显示'} type="button"><FolderSearch size={15} /></button>
     </div>
     <div className="local-file-preview-body">
+      {actionError && <p className="local-preview-action-error" role="alert">{actionError}</p>}
       {loading && <div className="local-file-preview-state"><LoaderCircle className="spin" size={22} /><strong>正在读取文件</strong></div>}
       {!loading && error && <div className="local-file-preview-state error" role="alert"><FileText size={25} /><strong>{failure.title}</strong><p>{failure.hint}</p><details><summary>查看详细原因</summary><p>{error}</p></details><div className="file-recovery-actions"><button disabled={recovering} type="button" onClick={() => setRevision((value) => value + 1)}>重新读取</button>{failure.kind === 'authorization' && <button disabled={recovering} type="button" onClick={() => void recover(true)}>重新授权目录</button>}{onOpenSelected && <button disabled={recovering} type="button" onClick={() => void recover(false)}>{recovering ? '正在选择…' : '选择文件打开'}</button>}</div>{onOpenSelected && <small>所选文件会在新标签中打开，不改写历史成果路径与撤销记录。</small>}</div>}
-      {!loading && preview && target.review && !canReview && <p className="local-preview-truncated">{reviewWarning || (preview.truncated || previousPreview?.truncated ? '文件过大，无法展示完整差异；下方仅为内容预览。' : '此文件没有可用的文本对比基线，下方展示文件内容。')}</p>}
-      {!loading && preview?.kind === 'image' && preview.dataUrl && <div className="local-image-preview"><img alt={preview.name} src={preview.dataUrl} /></div>}
+      {!loading && preview && target.review && hasText && !canReview && view === 'review' && <p className="local-preview-truncated">{reviewWarning || (preview.truncated || previousPreview?.truncated ? '文件过大，无法展示完整差异；下方仅为内容预览。' : '此文件没有可用的文本对比基线，下方展示文件内容。')}</p>}
+      {!loading && preview?.kind === 'image' && preview.dataUrl && <div className="local-image-preview"><img alt={preview.name} src={preview.dataUrl} onError={() => setActionError('图片无法解码，请使用本机应用检查原文件')} /></div>}
       {!loading && preview?.kind === 'pdf' && pdfUrl && <iframe className="local-pdf-preview" src={pdfUrl} title={preview.name} />}
-      {!loading && preview && (preview.kind === 'code' || preview.kind === 'text') && view === 'review' && canReview
+      {!loading && preview && hasText && view === 'review' && canReview
         && <CodeReview key={`${target.rootId}:${target.path}:${revision}`} current={preview.content ?? ''} language={preview.language} previous={previousPreview?.content ?? ''} />}
-      {!loading && preview && (preview.kind === 'code' || preview.kind === 'text') && (view === 'file' || !canReview) && <CodePreview language={preview.language} lines={lines} />}
-      {!loading && preview?.kind === 'office' && preview.content && <div className={`local-office-preview ${preview.language ?? ''}`}><pre>{preview.content}</pre></div>}
-      {!loading && preview && (preview.kind === 'code' || preview.kind === 'text') && (preview.truncated || (preview.content?.split('\n').length ?? 0) > MAX_RENDERED_LINES) && <div className="local-preview-truncated">文件较大，仅展示前面的内容</div>}
+      {!loading && htmlUrl && canPreviewHtml && view === 'preview' && <iframe key={`${htmlUrl}:${revision}`} className="local-html-preview" src={htmlUrl} sandbox="allow-scripts" referrerPolicy="no-referrer" title={`交互预览 ${target.name}`} />}
+      {!loading && canReadMarkdown && view === 'preview' && <div className="markdown-content-preview message-markdown"><ReactMarkdown remarkPlugins={[remarkGfm]}>{lines.join('\n')}</ReactMarkdown></div>}
+      {!loading && preview && hasText && !((canPreviewHtml || canReadMarkdown) && view === 'preview') && (view !== 'review' || !canReview) && <CodePreview language={preview.language} lines={lines} />}
+      {!loading && preview?.structured && <StructuredFilePreview key={`${target.rootId}:${target.path}:${revision}`} value={preview.structured} />}
+      {!loading && preview && (preview.kind === 'audio' || preview.kind === 'video') && preview.dataUrl && <div className="local-media-preview">{preview.kind === 'audio' ? <audio controls preload="metadata" src={preview.dataUrl} aria-label={preview.name} onError={() => setActionError('音频无法解码，请使用本机应用打开')} /> : <video controls preload="metadata" src={preview.dataUrl} aria-label={preview.name} onError={() => setActionError('视频无法解码，请使用本机应用打开')} />}</div>}
+      {!loading && preview && (preview.truncated || (hasText && (preview.content?.split('\n').length ?? 0) > MAX_RENDERED_LINES)) && <div className="local-preview-truncated">文件较大，仅展示部分内容</div>}
       {!loading && preview && ((preview.kind === 'image' || preview.kind === 'pdf') && !preview.dataUrl) && <PreviewUnavailable preview={preview} />}
-      {!loading && preview && ((preview.kind === 'office' && !preview.content) || preview.kind === 'file') && <PreviewUnavailable preview={preview} />}
+      {!loading && preview && (preview.kind === 'file' || ((preview.kind === 'audio' || preview.kind === 'video') && !preview.dataUrl)) && <PreviewUnavailable preview={preview} />}
     </div>
   </aside>
 }

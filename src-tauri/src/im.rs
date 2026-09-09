@@ -377,15 +377,8 @@ impl LocalImManager {
         client_secret: String,
         context: HarnessContext,
     ) -> Result<LocalImStatus, String> {
-        let profile = expert_kits::harness_profile(
-            app,
-            None,
-            None,
-            &[],
-            "",
-            &context.allowed_artifacts,
-            "agent",
-        )?;
+        let profile =
+            expert_kits::harness_profile(app, &[], &[], "", &context.allowed_artifacts, "agent")?;
         let im_workspace = app
             .path()
             .app_data_dir()

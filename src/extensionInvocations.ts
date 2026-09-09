@@ -1,5 +1,6 @@
 import type { ExpertKitView } from './expertKits'
 import type { SkillView } from './skills'
+import { splitComposerPrompt } from './composerInput'
 
 export interface ExtensionInvocation {
   token: string
@@ -23,7 +24,6 @@ export function extensionInvocations(kits: ExpertKitView[], skills: SkillView[])
   ]
 }
 
-export function selectedInvocation(prompt: string, options: ExtensionInvocation[]): ExtensionInvocation | undefined {
-  const token = prompt.trim().split(/\s/u)[0]
-  return options.find((option) => option.token === token)
+export function selectedInvocations(prompt: string, options: ExtensionInvocation[]): ExtensionInvocation[] {
+  return splitComposerPrompt(prompt).tokens.flatMap((token) => options.find((option) => option.token === token) ?? [])
 }

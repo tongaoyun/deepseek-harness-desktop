@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { extensionInvocations, selectedInvocation } from './extensionInvocations'
+import { extensionInvocations, selectedInvocations } from './extensionInvocations'
 import { mergeExpertKits } from './expertKits'
 import type { InstalledExpertKit } from './types'
 
@@ -12,9 +12,9 @@ describe('extension invocations', () => {
   it('exposes installed kits and exact namespaced commands', () => {
     const options = extensionInvocations(mergeExpertKits([], [installed]), [])
     expect(options.map((item) => item.token)).toEqual(['/kit:reports', '/kit:reports:weekly'])
-    expect(selectedInvocation('/kit:reports:weekly 本周数据', options)).toMatchObject({ kind: 'expert-kit', id: 'reports' })
-    expect(selectedInvocation('解释 /kit:reports', options)).toBeUndefined()
-    expect(selectedInvocation('/kit:reports:missing', options)).toBeUndefined()
+    expect(selectedInvocations('/kit:reports:weekly 本周数据', options)).toMatchObject([{ kind: 'expert-kit', id: 'reports' }])
+    expect(selectedInvocations('解释 /kit:reports', options)).toEqual([])
+    expect(selectedInvocations('/kit:reports:missing', options)).toEqual([])
   })
   it('never offers unavailable or retired kits, and uses installed commands during updates', () => {
     const kit = mergeExpertKits([], [installed])[0]!

@@ -1,4 +1,4 @@
-import { FileSliders, FileSpreadsheet, FileText, FolderSearch, Image } from 'lucide-react'
+import { FileSliders, FileSpreadsheet, FileText, FolderSearch, Image, Music2, Video } from 'lucide-react'
 import { useCallback, useState } from 'react'
 import { loadLocalArtifactPreview, revealLocalArtifact, type LocalArtifactTarget } from './localArtifactPreview'
 import { TaskImagePreview } from './TaskImagePreview'
@@ -15,8 +15,8 @@ export function TaskArtifacts({ artifacts, conversation = false, onOpen }: { art
 }
 
 function ArtifactCard({ artifact, onError, onOpen }: { artifact: TaskArtifact; onError: (message: string) => void; onOpen?: (target: LocalArtifactTarget) => void }) {
-  const isImage = artifact.kind === 'image' || /\.(png|jpe?g|webp|gif|bmp)$/i.test(artifact.path)
-  const Icon = isImage ? Image : artifact.kind === 'spreadsheet' ? FileSpreadsheet : artifact.kind === 'presentation' ? FileSliders : FileText
+  const isImage = artifact.kind === 'image' || /\.(png|jpe?g|webp|gif|bmp|svg)$/i.test(artifact.path)
+  const Icon = isImage ? Image : /\.(mp3|wav|m4a|ogg)$/i.test(artifact.path) ? Music2 : /\.(mp4|m4v|mov|webm)$/i.test(artifact.path) ? Video : artifact.kind === 'spreadsheet' ? FileSpreadsheet : artifact.kind === 'presentation' ? FileSliders : FileText
   const { rootId, rootName, path, name } = artifact
   const loadImage = useCallback(async () => {
     const preview = await loadLocalArtifactPreview({ rootId, rootName, path, name })

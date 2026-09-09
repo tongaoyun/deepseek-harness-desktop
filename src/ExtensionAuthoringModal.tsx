@@ -361,6 +361,7 @@ export function ExtensionAuthoringModal({
       }
       const id = connectorId(form.id.trim() || form.name.trim() || 'connector-draft')
       const [result] = await diagnoseConnectors({
+        employeeId,
         accessToken,
         connectors: [{
           id, name: form.name.trim() || id, version: form.version, status: 'ready', enabled: true,
@@ -369,7 +370,7 @@ export function ExtensionAuthoringModal({
       })
       if (!result) throw new Error('连接测试没有返回结果')
       setDiagnostic(result)
-      if (result.status === 'unavailable') throw new Error(result.error || 'MCP 服务不可用')
+      if (result.status !== 'ready' && result.status !== 'drift') throw new Error(result.error || 'MCP 服务尚未就绪')
       const nextForm = result.discoveredTools.length > 0 ? { ...form, toolNames: result.discoveredTools.join(', ') } : form
       if (nextForm !== form) setForm(nextForm)
       setValidationEvidence({
@@ -439,7 +440,7 @@ export function ExtensionAuthoringModal({
           <label className="wide">说明<input required value={form.summary} onChange={(event) => setForm({ ...form, summary: event.target.value })} /></label>
           {kind === 'connector' ? <>
             <label>传输<select value={form.transport} onChange={(event) => setForm({ ...form, transport: event.target.value as typeof form.transport })}><option value="streamable-http">Streamable HTTP</option><option value="sse">SSE</option><option value="stdio">stdio 本地进程</option></select></label>
-            {form.transport !== 'stdio' && <label>认证<select value={form.authMode} onChange={(event) => setForm({ ...form, authMode: event.target.value as typeof form.authMode })}><option value="none">无</option><option value="employee-bearer">员工 Bearer Token</option></select></label>}
+            {form.transport !== 'stdio' && <label>认证<select value={form.authMode} onChange={(event) => setForm({ ...form, authMode: event.target.value as typeof form.authMode })}><option value="none">无</option><option value="employee-bearer">员工 Bearer Token</option><option value="erp-cookie">ERP 扫码会话</option></select></label>}
             {form.transport === 'stdio' ? <>
               <label className="wide">启动命令<input placeholder="例如 npx" required value={form.command} onChange={(event) => { setForm({ ...form, command: event.target.value }); setDiagnostic(undefined); setValidationEvidence(undefined) }} /></label>
               <label className="wide">命令参数<textarea placeholder={'每行一个参数，例如：\n-y\n@modelcontextprotocol/server-filesystem'} value={form.arguments} onChange={(event) => setForm({ ...form, arguments: event.target.value })} /><small>参数会随连接器发布；Token 等敏感值请放到环境变量中。</small></label>

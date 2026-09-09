@@ -31,6 +31,7 @@ const sessionMessages = {
   identity_unavailable: 'ERP 身份服务暂时不可用，正在自动重试。',
   identity_invalid: 'ERP 返回的员工身份不完整，请联系管理员。',
   cookie_read_failed: '无法读取本机登录记录，请重试或重启小胤。',
+  cookie_store_failed: '无法访问系统凭据库中的登录记录，请解锁凭据库后重试。',
   configuration_invalid: 'ERP 登录配置无效，请联系管理员。',
 } as const
 

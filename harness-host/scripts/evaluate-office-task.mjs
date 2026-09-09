@@ -64,7 +64,8 @@ try {
   } else if (scenario === 'document') {
     assert.equal(result.outcome?.status, 'completed')
     const text = (await mammoth.extractRawText({ path: join(workspace, 'notice.docx') })).value
-    for (const phrase of ['报销须知', '800', '5日', '发票', '部门负责人']) assert(text.includes(phrase), `Missing source fact: ${phrase}`)
+    const normalized = text.replace(/\s/gu, '')
+    for (const phrase of ['报销须知', '800', '每月5日前', '上月费用', '发票', '部门负责人']) assert(normalized.includes(phrase), `Missing source fact: ${phrase}`)
     assert(!text.includes('500'), 'Invented reimbursement amount')
     report.turns = 1
   } else {

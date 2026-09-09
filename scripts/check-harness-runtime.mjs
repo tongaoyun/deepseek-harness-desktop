@@ -36,7 +36,8 @@ export async function checkHarnessCommand(command, args, env = process.env, time
           stop(new Error(`Packaged Harness ${requests[index][0]} failed: ${value.error?.message ?? value.result?.status ?? 'missing status'}`)); return
         }
         if (requests[index][0] === 'host.self-test') {
-          const required = ['local-files', 'office-docx', 'office-xlsx', 'office-pdf', 'native-shell', 'computer-use']
+          const required = ['local-files', 'office-docx', 'office-xlsx', 'office-pdf', 'native-shell']
+          if (process.platform === 'win32') required.push('computer-use')
           const passed = new Set((Array.isArray(value.result.checks) ? value.result.checks : []).filter((check) => check.passed === true).map((check) => check.key))
           const missing = required.filter((key) => !passed.has(key))
           if (missing.length) {

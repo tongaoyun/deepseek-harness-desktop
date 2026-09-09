@@ -8,6 +8,7 @@ import {
   compareConnectorTools,
   connectorRequestOptions,
   diagnoseConnector,
+  discoverConnectorTools,
   diagnosticError,
   selectTools,
   uniqueHarnessToolName,
@@ -28,17 +29,24 @@ const tools: Tool[] = [
   },
 ]
 
-it('delivers connector image blocks through registered MCP tools and preserves upstream failures', async () => {
+it.each(['none', 'employee-bearer'] as const)('delivers images and preserves call failures without replay using %s authentication', async (authMode) => {
+  vi.stubEnv('XIAOYIN_MCP_TEST_TOKEN', 'test-employee-token')
   const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII='
   let failed = false
+  let unauthorized = false
+  let toolCalls = 0
   const server = createServer(async (request, response) => {
     if (request.method !== 'POST') { response.writeHead(405).end(); return }
     let body = ''; for await (const chunk of request) body += chunk
     const message = JSON.parse(body)
+    if (message.method === 'tools/call') {
+      toolCalls++
+      if (unauthorized) { response.writeHead(401).end(); return }
+    }
     if (message.id === undefined) { response.writeHead(202).end(); return }
     const result = message.method === 'initialize'
       ? { protocolVersion: message.params.protocolVersion, capabilities: { tools: {} }, serverInfo: { name: 'image-test', version: '1' } }
-      : message.method === 'tools/list' ? { tools: [tools[0]] }
+      : message.method === 'tools/list' ? { tools }
       : { isError: failed, content: [{ type: 'text', text: failed ? '上游失败' : '结果' }, { type: 'image', mimeType: 'image/png', data: png }] }
     response.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ jsonrpc: '2.0', id: message.id, result }))
   })
@@ -49,10 +57,12 @@ it('delivers connector image blocks through registered MCP tools and preserves u
   try {
     await apply({ attachments: { saveImage }, tools: { register(tool: ToolDefinition) { registered.set(tool.name, tool); return () => registered.delete(tool.name) } },
       on() { return () => {} }, effect(factory: () => () => Promise<void>) { dispose = factory() },
-    } as unknown as Context, { connectors: [{ id: 'images', name: '图片服务', version: '1', transport: 'streamable-http',
-      url: `http://127.0.0.1:${(server.address() as { port: number }).port}/mcp`, authMode: 'none', command: '', allowedTools: ['sales_summary'], requiredTools: [], allowWrite: false, requireWriteApproval: false, required: true,
+    } as unknown as Context, { employeeBearerTokenEnv: 'XIAOYIN_MCP_TEST_TOKEN', connectors: [{ id: 'images', name: '图片服务', version: '1', transport: 'streamable-http',
+      url: `http://127.0.0.1:${(server.address() as { port: number }).port}/mcp`, authMode, command: '', allowedTools: [], requiredTools: [], allowWrite: true, requireWriteApproval: false, required: true,
     }] })
     const tool = registered.get('mcp_images_sales_summary')!
+    expect(tool.isConcurrencySafe()).toBe(true)
+    expect(registered.get('mcp_images_order_cancel')!.isConcurrencySafe()).toBe(false)
     const exec = { signal: new AbortController().signal } as never
     const value = await tool.execute({}, exec)
     expect(tool.output.render({}, JSON.parse(JSON.stringify(value)))).toEqual([
@@ -62,7 +72,14 @@ it('delivers connector image blocks through registered MCP tools and preserves u
     failed = true
     await expect(tool.execute({}, exec)).rejects.toThrow('上游失败')
     expect(saveImage).toHaveBeenCalledOnce()
-  } finally { await dispose(); await new Promise<void>((resolve) => server.close(() => resolve())) }
+    unauthorized = true
+    const before = toolCalls
+    await expect(registered.get('mcp_images_order_cancel')!.execute({}, exec)).rejects.toThrow('[XY-CONNECTOR-AUTH]')
+    expect(toolCalls - before).toBe(1)
+    unauthorized = false
+    failed = false
+    await expect(tool.execute({}, exec)).resolves.toBeDefined()
+  } finally { await dispose(); await new Promise<void>((resolve) => server.close(() => resolve())); vi.unstubAllEnvs() }
   expect(registered.size).toBe(0)
 })
 
@@ -91,17 +108,26 @@ describe('managed MCP tool selection', () => {
       .toEqual(['sales_summary'])
   })
 
-  it('treats declared dependencies as guidance rather than a session gate', () => {
-    expect(selectTools(tools, ['sales_summary'], ['inventory_risk'], false, 'ERP').map((tool) => tool.name))
-      .toEqual(['sales_summary'])
-    expect(selectTools(tools, ['order_cancel'], ['order_cancel'], false, 'ERP').map((tool) => tool.name))
-      .toEqual([])
+  it('rejects required tools missing from discovery or excluded by policy', () => {
+    expect(() => selectTools(tools, ['sales_summary'], ['inventory_risk'], false, 'ERP')).toThrow('inventory_risk')
+    expect(() => selectTools(tools, ['order_cancel'], ['order_cancel'], false, 'ERP')).toThrow('order_cancel')
+    expect(() => selectTools(tools, ['sales_summary'], ['order_cancel'], true, 'ERP')).toThrow('order_cancel')
   })
 
-  it('keeps MCP tools available regardless of legacy expert-kit write flags', () => {
+  it('includes required write tools when writes are enabled', () => {
     expect(selectTools(tools, ['order_cancel'], ['order_cancel'], true).map((tool) => tool.name))
       .toEqual(['order_cancel'])
   })
+})
+
+it('discovers tools across pages and rejects looping cursors or duplicate names', async () => {
+  const listTools = vi.fn().mockResolvedValueOnce({ tools: [tools[0]], nextCursor: 'page-2' }).mockResolvedValueOnce({ tools: [tools[1]] })
+  expect(await discoverConnectorTools({ listTools } as never, 1000)).toEqual(tools)
+  expect(listTools.mock.calls[1][0]).toEqual({ cursor: 'page-2' })
+  listTools.mockReset().mockResolvedValue({ tools: [], nextCursor: 'same' })
+  await expect(discoverConnectorTools({ listTools } as never, 1000)).rejects.toThrow('游标重复')
+  listTools.mockReset().mockResolvedValue({ tools: [tools[0]], nextCursor: 'more' })
+  await expect(discoverConnectorTools({ listTools } as never, 1000)).rejects.toThrow('重复工具')
 })
 
 describe('managed MCP diagnostics', () => {

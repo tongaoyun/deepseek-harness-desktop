@@ -1,8 +1,12 @@
 import type { Context } from '@deepseek-ai/cordis'
+import { readFileSync } from 'node:fs'
 import z from '@deepseek-ai/schemastery'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 import type { ContentBlock } from '@deepseek-ai/dsh-sdk-client'
 import { mcpResultContent } from './mcp-result-content.js'
+import { erpCookieFetch, ErpCookieError } from './erp-cookie-fetch.js'
+import { connectorOAuthFetch } from './connector-oauth-fetch.js'
+import { WriteOperationJournal, UncertainOperationError } from './write-operation-journal.js'
 import {
   Client,
   SSEClientTransport,
@@ -26,7 +30,7 @@ export interface ManagedConnectorConfig {
   version: string
   transport: 'streamable-http' | 'sse' | 'stdio'
   url: string
-  authMode: 'employee-bearer' | 'none'
+  authMode: 'employee-bearer' | 'erp-cookie' | 'oauth' | 'none'
   command: string
   arguments: string[]
   environment: Record<string, string>
@@ -62,7 +66,7 @@ const ConnectorConfig = z.object({
   version: z.string().default('1'),
   transport: z.union(['streamable-http', 'sse', 'stdio']).default('streamable-http'),
   url: z.string().default(''),
-  authMode: z.union(['employee-bearer', 'none']).default('none'),
+  authMode: z.union(['employee-bearer', 'erp-cookie', 'oauth', 'none']).default('none'),
   command: z.string().default(''),
   arguments: z.array(z.string()).default([]),
   environment: z.dict(z.string()).default({}),
@@ -88,6 +92,11 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   const unregisterTools: Array<() => void> = []
   const mutatingTools = new Map<string, string>()
   const registeredNames = new Set<string>()
+  const scopeFile = process.env.XIAOYIN_OPERATION_SCOPE_FILE
+  const journal = process.env.XIAOYIN_OPERATION_JOURNAL
+    ? new WriteOperationJournal(process.env.XIAOYIN_OPERATION_JOURNAL, scopeFile
+      ? () => readFileSync(scopeFile, 'utf8').trim() : process.env.XIAOYIN_OPERATION_SCOPE ?? '') : undefined
+  if (journal) ctx.effect(() => () => journal.close(), 'write operation journal')
 
   for (const connector of connectors) {
     let client: Client | undefined
@@ -96,9 +105,9 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
       client = new Client({ name: `xiaoyin-desktop-${connector.id}`, version: '0.1.0' })
       await client.connect(createTransport(connector, employeeToken), connectorRequestOptions(connector))
 
-      const discovered = await client.listTools({}, connectorRequestOptions(connector))
+      const discovered = await discoverConnectorTools(client, connectorRequestOptions(connector).timeout)
       const tools = selectTools(
-        discovered.tools,
+        discovered,
         connector.allowedTools,
         connector.requiredTools,
         connector.allowWrite,
@@ -106,9 +115,9 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
       )
       for (const tool of tools) {
         const registeredName = uniqueHarnessToolName(connector.id, tool.name, registeredNames)
-        unregisterTools.push(ctx.tools.register(toHarnessTool(ctx, client, tool, connector, registeredName)))
+        unregisterTools.push(ctx.tools.register(toHarnessTool(ctx, client, tool, connector, registeredName, employeeToken, journal)))
         registeredNames.add(registeredName)
-        if (tool.annotations?.destructiveHint === true && connector.requireWriteApproval) {
+        if ((tool.annotations?.readOnlyHint !== true || tool.annotations?.destructiveHint === true) && connector.requireWriteApproval) {
           mutatingTools.set(registeredName, connector.name)
         }
       }
@@ -116,7 +125,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
       debug(`${connector.name}: connected, registered=${tools.length}`)
     } catch (error) {
       if (client) await closeQuietly(client)
-      const message = `${connector.name} (${connector.id}) 不可用：${safeError(error)}`
+      const message = connectorFailureMessage(error, connector, employeeToken)
       if (connector.required) {
         await cleanup(unregisterTools, activeClients)
         throw new Error(message)
@@ -188,11 +197,11 @@ export async function diagnoseConnector(
       timeout: timeoutMs,
       maxTotalTimeout: timeoutMs,
     })
-    const discovered = await client.listTools({}, {
-      timeout: timeoutMs,
-      maxTotalTimeout: timeoutMs,
-    })
-    const comparison = compareConnectorTools(connector.allowedTools, discovered.tools.map((tool) => tool.name))
+    const discovered = await discoverConnectorTools(client, timeoutMs)
+    const comparison = compareConnectorTools(connector.allowedTools, discovered.map((tool) => tool.name))
+    const selected = new Set(discovered.filter((tool) => (!connector.allowedTools.length || connector.allowedTools.includes(tool.name))
+      && (connector.allowWrite || (tool.annotations?.readOnlyHint === true && tool.annotations?.destructiveHint !== true))).map((tool) => tool.name))
+    comparison.missingTools = uniqueSorted([...comparison.missingTools, ...connector.requiredTools.filter((name) => !selected.has(name))])
     return {
       id: connector.id,
       status: comparison.missingTools.length > 0 || comparison.undeclaredTools.length > 0 ? 'drift' : 'ready',
@@ -210,8 +219,8 @@ export async function diagnoseConnector(
       discoveredTools: [],
       missingTools: [],
       undeclaredTools: [],
-      error: status === 'authentication-required' ? '服务需要登录授权或凭据已失效'
-        : status === 'access-denied' ? '当前凭据没有访问权限'
+      error: status === 'authentication-required' ? (connector.authMode === 'erp-cookie' ? 'ERP 登录已失效，请重新扫码登录' : '服务需要登录授权或凭据已失效')
+        : status === 'access-denied' ? (connector.authMode === 'erp-cookie' ? 'ERP MCP 来源未授权、登录账号与任务不一致或账号没有访问权限' : '当前凭据没有访问权限')
         : diagnosticError(error, employeeToken, [
         ...Object.values(connector.headers ?? {}),
         ...Object.values(connector.environment ?? {}),
@@ -224,7 +233,7 @@ export async function diagnoseConnector(
 
 export function diagnosticFailureStatus(error: unknown): ConnectorDiagnosticStatus {
   if (error instanceof UnauthorizedError) return 'authentication-required'
-  const status = error instanceof SdkHttpError ? error.status : error instanceof SseError ? error.code : undefined
+  const status = error instanceof SdkHttpError || error instanceof ErpCookieError ? error.status : error instanceof SseError ? error.code : undefined
   if (status === 401) return 'authentication-required'
   if (status === 403) return 'access-denied'
   return 'unavailable'
@@ -254,14 +263,54 @@ export function selectTools(
 ): Tool[] {
   const allowed = new Set(allowedTools)
   const selected = discovered.filter((tool) => (allowed.size === 0 || allowed.has(tool.name))
-    && (allowWrite || tool.annotations?.readOnlyHint === true))
-  void requiredTools
-  void connectorName
+    && (allowWrite || (tool.annotations?.readOnlyHint === true && tool.annotations?.destructiveHint !== true)))
+  const selectedNames = new Set(selected.map((tool) => tool.name))
+  const missing = uniqueSorted(requiredTools.filter((name) => !selectedNames.has(name)))
+  if (missing.length) throw new Error(`${connectorName} 缺少可用的必需工具：${missing.join('、')}。请检查工具配置和写入权限`)
   return selected
+}
+
+export async function discoverConnectorTools(client: Pick<Client, 'listTools'>, timeoutMs: number): Promise<Tool[]> {
+  const deadline = Date.now() + timeoutMs
+  const tools = new Map<string, Tool>()
+  const cursors = new Set<string>()
+  let cursor: string | undefined
+  for (let page = 0; page < 100; page++) {
+    const remaining = deadline - Date.now()
+    if (remaining <= 0) throw new Error('MCP 工具发现超时')
+    const result = await client.listTools(cursor ? { cursor } : {}, { timeout: remaining, maxTotalTimeout: remaining })
+    for (const tool of result.tools) {
+      if (tools.has(tool.name)) throw new Error(`MCP 返回重复工具：${tool.name}`)
+      tools.set(tool.name, tool)
+      if (tools.size > 5000) throw new Error('MCP 工具数量超过 5000')
+    }
+    cursor = result.nextCursor
+    if (!cursor) return [...tools.values()]
+    if (cursors.has(cursor)) throw new Error('MCP 工具列表游标重复')
+    cursors.add(cursor)
+  }
+  throw new Error('MCP 工具列表超过 100 页')
+}
+
+export function connectorFailureMessage(error: unknown, connector: ManagedConnectorConfig, employeeToken?: string): string {
+  const status = diagnosticFailureStatus(error)
+  const prefix = status === 'authentication-required' ? 'XY-CONNECTOR-AUTH' : status === 'access-denied' ? 'XY-CONNECTOR-PERMISSION' : 'XY-CONNECTOR'
+  const detail = status === 'authentication-required'
+    ? connector.authMode === 'erp-cookie' ? 'ERP 登录已失效，请重新扫码登录后继续任务' : '凭据已失效，请在连接器详情更新凭据后继续任务'
+    : status === 'access-denied' ? '当前账号或凭据没有访问权限，请检查授权范围'
+    : diagnosticError(error, employeeToken, [...Object.values(connector.headers ?? {}), ...Object.values(connector.environment ?? {})])
+  return `[${prefix}] ${connector.name} (${connector.id})：${detail}`
 }
 
 function validateConnector(connector: ManagedConnectorConfig, employeeToken: string | undefined): void {
   connectorRequestOptions(connector)
+  if (!['none', 'employee-bearer', 'erp-cookie', 'oauth'].includes(connector.authMode)) throw new Error('连接器认证方式无效')
+  if (connector.authMode === 'erp-cookie' || connector.authMode === 'oauth') {
+    if (connector.transport === 'stdio') throw new Error('ERP 扫码会话仅支持 HTTP/SSE 连接器')
+    if (Object.keys(connector.headers ?? {}).some((key) => ['cookie', 'authorization'].includes(key.toLowerCase()))) {
+      throw new Error('ERP 扫码会话不能同时配置 Cookie 或 Authorization 请求头')
+    }
+  }
   if (!connector.id.trim() || !connector.name.trim()) throw new Error('连接器标识或名称为空')
   if (!['streamable-http', 'sse', 'stdio'].includes(connector.transport)) {
     throw new Error(`不支持传输协议 ${connector.transport}`)
@@ -287,10 +336,12 @@ function createTransport(connector: ManagedConnectorConfig, employeeToken: strin
     })
   }
   const token = connector.authMode === 'employee-bearer' ? employeeToken : undefined
-  const headers = connector.headers ?? {}
+  const headers = new Headers(connector.headers ?? {})
+  if (token) headers.set('authorization', `Bearer ${token}`)
   const options = {
-    ...(token ? { authProvider: { token: async () => token } } : {}),
-    ...(Object.keys(headers).length > 0 ? { requestInit: { headers } } : {}),
+    ...(connector.authMode === 'erp-cookie' ? { fetch: erpCookieFetch(connector) } : {}),
+    ...(connector.authMode === 'oauth' ? { fetch: connectorOAuthFetch(connector) } : {}),
+    requestInit: { headers },
   }
   return connector.transport === 'sse'
     ? new SSEClientTransport(new URL(connector.url), options)
@@ -312,6 +363,8 @@ function toHarnessTool(
   tool: Tool,
   connector: ManagedConnectorConfig,
   registeredName = tool.name,
+  employeeToken?: string,
+  journal?: WriteOperationJournal,
 ): ToolDefinition {
   return {
     name: registeredName,
@@ -322,14 +375,22 @@ function toHarnessTool(
       render: (_args, value) => value as unknown as ContentBlock[],
     },
     async execute(args, exec) {
-      const result = await client.callTool(
-        { name: tool.name, arguments: asArguments(args, connector.name) },
-        { ...connectorRequestOptions(connector), signal: exec.signal },
-      )
-      if (result.isError) throw new Error(renderMcpContent(result, connector.name))
-      return mcpResultContent(result, ctx.attachments, connector.name, exec.signal)
+      try {
+        const arguments_ = asArguments(args, connector.name)
+        const call = () => client.callTool(
+          { name: tool.name, arguments: arguments_ },
+          { ...connectorRequestOptions(connector), signal: exec.signal },
+        )
+        const mutating = tool.annotations?.readOnlyHint !== true || tool.annotations?.destructiveHint === true
+        const result = journal && mutating ? await journal.execute(connector, tool.name, arguments_, call, exec.signal) : await call()
+        if (result.isError) throw new Error(renderMcpContent(result, connector.name))
+        return await mcpResultContent(result, ctx.attachments, connector.name, exec.signal)
+      } catch (error) {
+        if (error instanceof UncertainOperationError) throw error
+        throw new Error(connectorFailureMessage(error, connector, employeeToken))
+      }
     },
-    isConcurrencySafe: () => true,
+    isConcurrencySafe: () => tool.annotations?.readOnlyHint === true && tool.annotations?.destructiveHint !== true,
   }
 }
 

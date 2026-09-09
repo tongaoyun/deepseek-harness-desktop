@@ -106,6 +106,16 @@ describe('persisted session follow-ups', () => {
     ]), 'session-1', [{ type: 'text', text: '继续' }], () => {})).rejects.toThrow('执行失败')
   })
 
+  it('does not accept completion while a dispatched tool has no receipt', async () => {
+    await expect(runSessionTurn(fakeClient([
+      event('agent/inbox/spliced', { inserted: [{ id: 'message-2' }] }),
+      event('turn/start', { turn: 1 }),
+      event('tool/call', { callId: 'write', name: 'order_create' }),
+      event('assistant/message', { message: { content: [{ type: 'text', text: '订单已创建' }] } }),
+      event('turn/end', { reason: { kind: 'completed' } }),
+    ]), 'session-1', [{ type: 'text', text: '创建订单' }], () => {})).rejects.toThrow('工具操作未取得结果')
+  })
+
   it('stops waiting when a turn never produces activity', async () => {
     const client = {
       prompt: async () => 'message-2',
@@ -114,6 +124,19 @@ describe('persisted session follow-ups', () => {
 
     await expect(runSessionTurn(client, 'session-1', [{ type: 'text', text: '继续' }], () => undefined, 10))
       .rejects.toThrow('任务执行超过 1 秒')
+  })
+
+  it('bounds prompt acknowledgement and closes the subscription when the engine stalls', async () => {
+    const close = vi.fn()
+    const next = vi.fn()
+    const client = {
+      prompt: () => new Promise<string>(() => {}),
+      subscribeSessionTree: () => ({ next, close }),
+    }
+    await expect(runSessionTurn(client, 'session-1', [{ type: 'text', text: '继续' }], () => {}, 10))
+      .rejects.toThrow('任务执行超过')
+    expect(close).toHaveBeenCalledOnce()
+    expect(next).not.toHaveBeenCalled()
   })
 
   it('ignores a stale idle status until the new turn has actually started', async () => {

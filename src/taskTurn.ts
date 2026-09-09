@@ -17,7 +17,7 @@ type TurnContext = {
   directoriesChanged: boolean
   connectorIds: string[]
   capabilities: CapabilitySnapshot
-  invocation?: ExtensionInvocation
+  invocations: ExtensionInvocation[]
   messages: TaskMessage[]
   monitor: TaskMonitorState
   attachments: LocalTaskAttachment[]
@@ -25,27 +25,30 @@ type TurnContext = {
 
 /** Session selection and persisted turn state must use the same immutable context. */
 export function prepareTaskTurn(context: TurnContext) {
-  const { existingTask, invocation, sessionId, messages, input, now, capabilities } = context
+  const { existingTask, invocations, sessionId, messages, input, now, capabilities } = context
+  const invocationTokens = invocations.map((item) => item.token)
   const fresh = context.directoriesChanged
     || Boolean(existingTask && (existingTask.model !== context.model || capabilitySnapshotChanged(existingTask.capabilitySnapshot, capabilities)))
     || (!sessionId && !existingTask?.sessionId && messages.length > 0)
-    || invocation?.token !== existingTask?.invocationToken
+    || JSON.stringify(invocationTokens) !== JSON.stringify(existingTask?.invocationTokens ?? [])
     || (!sessionId && Boolean(existingTask?.sessionId))
     || context.monitor.status === 'failed' || context.monitor.status === 'canceled'
   const rootSessionId = resolveHarnessSessionId(sessionId, existingTask?.sessionId, fresh,
     () => `session-${crypto.randomUUID().replaceAll('-', '')}`)
   const replay = harnessPromptWithConversationReplay(input, messages, fresh)
-  const harnessPrompt = invocation && !replay.startsWith(invocation.token) ? `${invocation.token}\n${replay}` : replay
+  const harnessPrompt = invocationTokens.length && !replay.startsWith(invocationTokens.join(' ')) ? `${invocationTokens.join(' ')}\n${replay}` : replay
   const pendingMessages: TaskMessage[] = [...messages,
     { role: 'user', text: input, ...(context.attachments.length ? { attachments: context.attachments } : {}) },
     { role: 'assistant', text: '', pending: true },
   ]
-  const runningMonitor: TaskMonitorState = { ...createTaskMonitor(now), status: 'running', activity: '正在处理', updatedAt: now, startedAt: now }
+  const operationScope = context.monitor.interruption && context.monitor.operationScope
+    ? context.monitor.operationScope : crypto.randomUUID()
+  const runningMonitor: TaskMonitorState = { ...createTaskMonitor(now), operationScope, status: 'running', activity: '正在处理', updatedAt: now, startedAt: now }
   const runningTask: LocalTaskRun = {
     id: context.taskId, source: 'DESKTOP',
-    name: existingTask?.name ?? (splitComposerPrompt(input).text || invocation?.name || input).slice(0, 60),
+    name: existingTask?.name ?? (splitComposerPrompt(input).text || invocations.map((item) => item.name).join('、') || input).slice(0, 60),
     status: 'RUNNING', createdAt: existingTask?.createdAt ?? now, updatedAt: now,
-    sessionId: rootSessionId, model: context.model, invocationToken: invocation?.token,
+    sessionId: rootSessionId, model: context.model, invocationTokens,
     composerConnectorIds: context.connectorIds, localDirectories: context.directories,
     capabilitySnapshot: capabilities, monitor: runningMonitor, messages: pendingMessages,
   }

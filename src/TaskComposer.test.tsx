@@ -61,7 +61,7 @@ it('selects a skill in the middle of a sentence, preserves surrounding text and 
     await click(container, '[role="option"]')
     expect(container.querySelector('textarea')!.value).toBe('帮我 ')
     expect(container.querySelector('.composer-capability')!.textContent).toContain('周报')
-    await click(container, '[aria-label="移除指定能力"]')
+    await click(container, '[aria-label="移除能力 周报"]')
     expect(container.querySelector('.composer-capability')).toBeNull()
     expect(container.querySelector('textarea')!.value).toBe('帮我 ')
   })
@@ -71,6 +71,15 @@ it('turns an at query into actual knowledge context rather than leaving an inert
     await click(container, '[role="option"]')
     expect(container.querySelector('textarea')!.value).toBe('参考 ')
     expect(container.querySelector('.composer-capability')!.textContent).toContain('公司资料')
+  })
+})
+it('removes only the selected kit from a combined task', async () => {
+  await fixture('/kit:design /kit:product 做一个方案', { invocations: ['design', 'product'].map((id) => ({ token: `/kit:${id}`, id, name: id, description: '', kind: 'expert-kit' })) }, async (container) => {
+    expect(container.querySelectorAll('.composer-capability')).toHaveLength(2)
+    await click(container, '[aria-label="移除能力 design"]')
+    expect(container.querySelectorAll('.composer-capability')).toHaveLength(1)
+    expect(container.querySelector('.composer-capability')!.textContent).toContain('product')
+    expect(container.querySelector('textarea')!.value).toBe('做一个方案')
   })
 })
 it('offers management for empty categories and closes the panel with Escape', async () => {
