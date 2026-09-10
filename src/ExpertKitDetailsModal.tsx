@@ -12,7 +12,6 @@ import {
 } from 'lucide-react'
 import { convertFileSrc, isTauri } from '@tauri-apps/api/core'
 import { useEffect, useState } from 'react'
-import { expertKitChanges } from './expertKitDetails'
 import { ExtensionDetailLayout } from './ExtensionDetailLayout'
 import { ExtensionActionMenu, InstalledExtensionControls } from './InstalledExtensionControls'
 import { ExtensionContentsPanel } from './ExtensionContentsPanel'
@@ -55,8 +54,7 @@ export function ExpertKitDetailsModal({
   const kitSkillById = new Map((kit.skillDetails ?? []).map((skill) => [skill.id, skill]))
   const connectorById = new Map(connectors.map((connector) => [connector.id, connector]))
   const knowledgeByReference = new Map(knowledgeBases.map((knowledgeBase) => [knowledgeBase.reference, knowledgeBase]))
-  const changes = expertKitChanges(kit)
-  const stateLabel = kit.localOnly ? '本地专家套件' : kit.installState === 'retired' ? '已下架' : kit.installState === 'installed' ? '已安装' : kit.installState === 'update' ? '更新确认' : '安装确认'
+  const stateLabel = kit.localOnly ? '本地专家套件' : kit.installState === 'retired' ? '已下架' : kit.installState === 'installed' ? '已安装' : '安装确认'
   const issues = [...kit.connectorIssues, ...kit.knowledgeIssues]
   const commands = kit.installed?.manifest.commands.map((command) => command.id) ?? kit.commandIds
 
@@ -67,13 +65,11 @@ export function ExpertKitDetailsModal({
           {onRemove && <button className="danger" disabled={removing} onClick={onRemove} type="button"><Trash2 size={14} />{removing ? '正在卸载…' : '卸载套件'}</button>}
         </ExtensionActionMenu>}
         {kit.installed && kit.installState !== 'retired' && <InstalledExtensionControls extension={kit.installed} onChanged={onChanged} onCustomize={onCustomize} onExport={onExport} showLabels />}
-        {kit.installState === 'retired' || kit.installState === 'installed' ? null : kit.installState === 'update' ? <>
-          <button disabled={installing || !kit.sha256} onClick={onInstall} type="button">{installing ? '正在校验并安装…' : '确认更新'}</button>
-        </> : <button disabled={installing || !kit.sha256} onClick={onInstall} type="button">{installing ? '正在校验并安装…' : '确认安装'}</button>}
+        {kit.installState === 'retired' || kit.installState === 'installed' ? null : <button disabled={installing || !kit.sha256} onClick={onInstall} type="button">{installing ? '正在校验并安装…' : '确认安装'}</button>}
   </>}>
       <div className="extension-profile">
         <ExtensionIcon installPath={kit.installed?.installPath} name={kit.name} />
-        <div><div className="extension-profile-title"><h2 id="expert-kit-title">{kit.name}</h2><span className="extension-profile-badge">v{kit.installedVersion ?? kit.version}</span><span className="extension-profile-badge">{kit.localOnly ? '本地导入' : kit.installState === 'retired' ? '已下架' : '套件市场'}</span></div><p className="extension-reader-meta">{kit.installed?.author || kit.author ? `@${kit.installed?.author || kit.author}` : `${stateLabel} · ${extensionCategoryLabel(kit.category)}`}</p></div>
+        <div><div className="extension-profile-title"><h2 id="expert-kit-title">{kit.name}</h2><span className="extension-profile-badge">{kit.localOnly ? '本地导入' : kit.installState === 'retired' ? '已下架' : '套件市场'}</span></div><p className="extension-reader-meta">{kit.installed?.author || kit.author ? `@${kit.installed?.author || kit.author}` : `${stateLabel} · ${extensionCategoryLabel(kit.category)}`}</p></div>
       </div>
       <p className="extension-profile-summary">{kit.summary}</p>
 
@@ -82,11 +78,6 @@ export function ExpertKitDetailsModal({
       {kit.installState === 'retired' && <section className="expert-detail-section update-changes">
         <strong>该专家套件已从公司目录下架，桌面端和 IM 均不会再加载或执行它。</strong>
         <p>本地文件仅用于显示状态，可安全卸载；历史任务记录不会删除。</p>
-      </section>}
-
-      {kit.installState === 'update' && <section className="expert-detail-section update-changes">
-        <h3>从 v{kit.installedVersion} 更新的变化</h3>
-        <ul>{changes.map((change) => <li key={change}>{change}</li>)}</ul>
       </section>}
 
       {!kit.installed && commands.length > 0 && <section className="expert-detail-section">

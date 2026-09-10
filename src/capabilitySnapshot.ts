@@ -11,12 +11,12 @@ export function createCapabilitySnapshot(
   createdAt = new Date().toISOString(),
 ): CapabilitySnapshot {
   const extensions: AllowedExtensionArtifact[] = [
-    ...expertKits.filter((item) => item.installed?.enabled !== false && ['installed', 'update'].includes(item.installState)
-      && (item.installState === 'update' ? item.installed?.packageSha256 : item.sha256)).map((item) => ({
+    ...expertKits.filter((item) => item.installed?.enabled !== false && item.installState === 'installed'
+      && item.installed?.packageSha256).map((item) => ({
       kind: 'expert-kit' as const,
       id: item.id,
-      version: item.installState === 'update' ? item.installed!.manifest.version : item.version,
-      sha256: item.installState === 'update' ? item.installed!.packageSha256! : item.sha256,
+      version: item.installed!.manifest.version,
+      sha256: item.installed!.packageSha256!,
     })),
     ...skills.filter((item) => item.installed?.enabled !== false && ['installed', 'update'].includes(item.installState)
       && (item.installState === 'update' ? item.installed?.packageSha256 : item.sha256)).map((item) => ({

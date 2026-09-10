@@ -31,7 +31,10 @@ describe('capability snapshot', () => {
     expect(createCapabilitySnapshot([common as ExpertKitView], [common as SkillView], []).extensions).toEqual([])
   })
   it('freezes installed extensions and ready connector versions for a task', () => {
-    const kit = { id: 'ops', version: '1.0.0', sha256: 'a'.repeat(64), installState: 'installed' } as ExpertKitView
+    const kit = {
+      id: 'ops', version: '1.0.0', sha256: 'a'.repeat(64), installState: 'installed',
+      installed: { manifest: { version: '1.0.0' }, packageSha256: 'a'.repeat(64) },
+    } as ExpertKitView
     const skill = { id: 'document', version: '2.0.0', sha256: 'b'.repeat(64), installState: 'installed' } as SkillView
     const snapshot = createCapabilitySnapshot(
       [kit], [skill], [connector('erp'), connector('offline', '1', 'unavailable')],
@@ -58,9 +61,9 @@ describe('capability snapshot', () => {
     expect(createCapabilitySnapshot([], [], [disabled]).connectors).toEqual([])
   })
 
-  it('keeps the installed artifact executable until the employee chooses to update', () => {
+  it('keeps the installed artifact executable while automatic synchronization is pending', () => {
     const kit = {
-      id: 'ops', version: '2.0.0', sha256: 'b'.repeat(64), installState: 'update',
+      id: 'ops', version: '2.0.0', sha256: 'b'.repeat(64), installState: 'installed',
       installed: { manifest: { version: '1.0.0' }, packageSha256: 'a'.repeat(64) },
     } as ExpertKitView
     expect(createCapabilitySnapshot([kit], [], []).extensions).toEqual([{

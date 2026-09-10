@@ -46,20 +46,20 @@ const knowledgeBase: KnowledgeBaseEntry = {
 }
 
 describe('mergeExpertKits', () => {
-  it('marks matching and newer catalog versions correctly', () => {
+  it('treats an installed catalog kit as current while background sync replaces its content', () => {
     const matching = mergeExpertKits([catalogEntry], [installed], [erpConnector])
     expect(matching[0].installState).toBe('installed')
     expect(matching[0].readiness).toBe('ready')
 
     const update = mergeExpertKits([{ ...catalogEntry, version: '1.1.0', sha256: 'b'.repeat(64) }], [installed], [erpConnector])
-    expect(update[0]).toMatchObject({ installState: 'update', installedVersion: '1.0.0' })
+    expect(update[0]).toMatchObject({ installState: 'installed', installed })
   })
 
   it('prefers the exact published version when the device retains a newer rollback candidate', () => {
     const newer = { ...installed, manifest: { ...installed.manifest, version: '1.1.0' } }
 
     expect(mergeExpertKits([catalogEntry], [newer, installed], [erpConnector])[0]).toMatchObject({
-      installState: 'installed', installedVersion: '1.0.0',
+      installState: 'installed', installed,
     })
   })
 

@@ -88,6 +88,8 @@ it('opens the full README from its bounded preview and restores its opener', asy
     expect(container.textContent).toContain('@QoderWork')
     expect(container.querySelector('[aria-label="编辑"]')?.textContent).toBe('编辑')
     expect(container.querySelector('[aria-label="分享此套件"]')?.textContent).toBe('分享此套件')
+    expect(container.textContent).not.toContain('v1.0.1')
+    expect(container.textContent).not.toContain('更新')
     const opener = container.querySelector<HTMLElement>('[aria-label="查看完整套件说明"]')!
     expect(opener.querySelector('[inert][aria-hidden="true"]')).not.toBeNull()
     opener.focus()
