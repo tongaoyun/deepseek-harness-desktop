@@ -32,7 +32,6 @@ interface ExpertKitDetailsModalProps {
   onRemove?: () => void
   onSchedule: () => void
   onCustomize?: () => void
-  onCustomizeDocument?: (document: ExtensionDocument) => void
   onExport?: () => void
   onUse?: (command?: string) => void
   onUseSkill?: (skill: Pick<ExtensionDocument, 'id' | 'name'>) => void
@@ -44,7 +43,7 @@ interface ExpertKitDetailsModalProps {
 }
 
 export function ExpertKitDetailsModal({
-  kit, skills, connectors, knowledgeBases, installing, removing, onClose, onInstall, onRemove, onSchedule, onCustomize, onCustomizeDocument, onExport, onUse, onUseSkill, onLoadReadme, onConfigureConnectors, onConfigureKnowledge, onToggleConnector, onChanged,
+  kit, skills, connectors, knowledgeBases, installing, removing, onClose, onInstall, onRemove, onSchedule, onCustomize, onExport, onUse, onUseSkill, onLoadReadme, onConfigureConnectors, onConfigureKnowledge, onToggleConnector, onChanged,
 }: ExpertKitDetailsModalProps) {
   useEffect(() => {
     const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose() }
@@ -111,7 +110,7 @@ export function ExpertKitDetailsModal({
           return <article key={id}><WandSparkles size={15} /><div><strong>{skill?.name ?? id}</strong><p>{bundledSkill?.argumentHint || skill?.summary || '随专家套件一起加载的工作方法'}</p></div></article>
         })}</div>
       </section>}
-      {kit.installed && <ExtensionContentsPanel extension={kit.installed} onUseSkill={onUseSkill} onUseCommand={onUse} onCustomize={onCustomizeDocument} beforeSkills={<CapabilitySections
+      {kit.installed && <ExtensionContentsPanel extension={kit.installed} onUseSkill={onUseSkill} onUseCommand={onUse} beforeSkills={<CapabilitySections
         connectorRefs={kit.connectorRefs}
         connectorById={connectorById}
         knowledgeBaseRefs={kit.knowledgeBaseRefs}

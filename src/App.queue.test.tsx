@@ -18,6 +18,7 @@ import { persistTaskHistory, loadTaskById, loadTaskHistory } from './taskHistory
 import { readTaskDraft, saveTaskDraft } from './taskDrafts'
 import { useHarnessNotifications } from './useHarnessNotifications'
 import { rememberInstruction, emptyMemoryProfile, learnCompletedTask } from './memory'
+import { loadBootstrap } from './api'
 
 const fixtures = vi.hoisted(() => ({
   drop: undefined as Parameters<typeof import('./useDesktopDrop').useDesktopDrop>[0] | undefined,
@@ -40,7 +41,7 @@ vi.mock('./ChatPage', () => ({ ChatPage: (props: ComponentProps<typeof ChatPage>
 vi.mock('./DesktopSidebar', () => ({ DesktopSidebar: (props: ComponentProps<typeof DesktopSidebar>) => { fixtures.sidebar = props; return null } }))
 vi.mock('./ScheduledTasksPage', () => ({ ScheduledTasksPage: (props: ComponentProps<typeof ScheduledTasksPage>) => { fixtures.schedules = props; return null } }))
 vi.mock('./ExtensionCatalogPages', () => ({ CapabilityCatalogPage: (props: ComponentProps<typeof CapabilityCatalogPage>) => { fixtures.creationCatalog = props; return null } }))
-vi.mock('./api', async (original) => ({ ...await original<object>(), loadBootstrap: async () => ({ models: [...fixtures.models], capabilities: [], endpoints: { litellm: '/model', knowledge: '/knowledge', schedules: '/schedules' } }) }))
+vi.mock('./api', async (original) => ({ ...await original<object>(), loadBootstrap: vi.fn(async () => ({ models: [...fixtures.models], capabilities: [], endpoints: { litellm: '/model', knowledge: '/knowledge', schedules: '/schedules' } })) }))
 vi.mock('./taskHistory', async (original) => ({ ...await original<object>(), loadTaskHistory: vi.fn(async () => []), loadTaskById: vi.fn(), persistTaskHistory: vi.fn(async () => {}) }))
 vi.mock('./taskRecovery', () => ({ runHarnessWithRecovery: vi.fn() }))
 vi.mock('./taskAudit', () => ({ reportTaskAudit: vi.fn(async () => {}) }))
@@ -129,6 +130,20 @@ it('opens an unloaded scheduled task directly from durable history', async () =>
     expect(fixtures.sidebar!.activeTaskId).toBe('older-task')
     expect(fixtures.chat!.messages[0].text).toBe('保留原始需求')
     expect(fixtures.sidebar!.tasks.some((task) => task.id === 'older-task')).toBe(true)
+  })
+})
+
+it('keeps local schedules and settings available when enterprise bootstrap is offline', async () => {
+  vi.mocked(loadBootstrap).mockRejectedValueOnce(new Error('offline'))
+  await fixture(async () => {
+    await act(async () => fixtures.sidebar!.onPage('schedules'))
+    expect(fixtures.schedules).toBeDefined()
+    expect(fixtures.schedules!.models).toEqual([])
+    expect(fixtures.schedules!.onCreateWithXiaoyin).toBeUndefined()
+
+    await act(async () => fixtures.sidebar!.onPage('settings'))
+    expect(document.querySelector('.desktop-settings')).not.toBeNull()
+    expect(document.querySelector<HTMLButtonElement>('.settings-navigation button:disabled')?.textContent).toContain('企业服务连接后可用')
   })
 })
 

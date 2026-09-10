@@ -28,7 +28,10 @@ use std::{
 };
 use tauri::{Emitter, Listener, Manager};
 
-const MAX_CONCURRENT_HARNESS_TASKS: usize = 3;
+/// A finished task keeps its harness process warm so the next turn starts quickly, but only this
+/// many idle ones are worth the memory. How many tasks run at once is the employee's call, the way
+/// it is when they open another terminal, so a running task is never refused a slot.
+const WARM_IDLE_HARNESS_SLOTS: usize = 3;
 
 impl HarnessManager {
     pub(crate) fn begin_operation_review(
@@ -566,7 +569,7 @@ impl HarnessManager {
         if task_id.is_empty() || task_id.len() > 200 {
             return Err("Harness 任务标识无效".to_string());
         }
-        let mut evicted = None;
+        let mut evicted = Vec::new();
         let slot = {
             let mut slots = self
                 .slots
@@ -575,27 +578,24 @@ impl HarnessManager {
             if let Some(slot) = slots.get(task_id) {
                 return Ok(Arc::clone(slot));
             }
-            if slots.len() >= MAX_CONCURRENT_HARNESS_TASKS {
-                let idle = slots
-                    .iter()
-                    .find(|(_, slot)| !slot.is_running())
-                    .map(|(id, _)| id.clone());
-                let Some(idle) = idle else {
-                    return Err(format!(
-                        "当前已有 {MAX_CONCURRENT_HARNESS_TASKS} 个任务在运行，请等待一个任务完成后再试"
-                    ));
-                };
-                evicted = slots.remove(&idle);
+            let idle = slots
+                .iter()
+                .filter(|(_, slot)| !slot.is_running())
+                .map(|(id, _)| id.clone())
+                .collect::<Vec<_>>();
+            for id in idle.into_iter().skip(WARM_IDLE_HARNESS_SLOTS) {
+                evicted.extend(slots.remove(&id));
             }
             let slot = Arc::new(HarnessSlot::default());
             slots.insert(task_id.to_string(), Arc::clone(&slot));
             slot
         };
-        if let Some(evicted) = evicted
-            && let Ok(mut process) = evicted.process.lock()
-            && let Some(mut process) = process.take()
-        {
-            process.shutdown();
+        for evicted in evicted {
+            if let Ok(mut process) = evicted.process.lock()
+                && let Some(mut process) = process.take()
+            {
+                process.shutdown();
+            }
         }
         Ok(slot)
     }
@@ -1715,15 +1715,35 @@ mod tests {
     }
 
     #[test]
-    fn task_pool_keeps_three_slots_and_reuses_idle_capacity() {
+    fn idle_slots_are_trimmed_while_running_tasks_all_keep_theirs() {
         let manager = HarnessManager::default();
-        assert!(manager.slot("task-1").is_ok());
-        assert!(manager.slot("task-2").is_ok());
-        assert!(manager.slot("task-3").is_ok());
-        assert!(manager.slot("task-4").is_ok());
+        for index in 1..=6 {
+            assert!(manager.slot(&format!("task-{index}")).is_ok());
+        }
+        {
+            let slots = manager.slots.lock().expect("task pool should be available");
+            // Nothing is running, so only the warm idle slots and the newest one survive.
+            assert_eq!(slots.len(), WARM_IDLE_HARNESS_SLOTS + 1);
+            assert!(slots.contains_key("task-6"));
+        }
+
+        let running = (1..=5)
+            .map(|index| {
+                let id = format!("busy-{index}");
+                let slot = manager.slot(&id).expect("slot should be available");
+                (id, slot.begin().expect("task should start"))
+            })
+            .collect::<Vec<_>>();
+        assert!(manager.slot("busy-6").is_ok());
         let slots = manager.slots.lock().expect("task pool should be available");
-        assert_eq!(slots.len(), MAX_CONCURRENT_HARNESS_TASKS);
-        assert!(slots.contains_key("task-4"));
+        // A running task is never evicted and never refused, however many are already going.
+        for (id, _) in &running {
+            assert!(
+                slots.contains_key(id.as_str()),
+                "{id} should still be pooled"
+            );
+        }
+        assert!(slots.contains_key("busy-6"));
     }
 
     #[test]

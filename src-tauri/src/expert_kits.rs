@@ -1490,9 +1490,6 @@ fn normalize_skill_document(content: &str, id: &str, fallback_description: &str)
 }
 
 fn load_command_context(kit: &InstalledExpertKit, prompt: &str) -> Result<String, String> {
-    if kit.manifest.commands.is_empty() {
-        return Ok(String::new());
-    }
     let root = Path::new(&kit.install_path);
     let tokens = prompt
         .split_whitespace()
@@ -1507,8 +1504,39 @@ fn load_command_context(kit: &InstalledExpertKit, prompt: &str) -> Result<String
             .unwrap_or(arguments)
             .trim_start();
     }
-    if selected.is_some_and(|id| !kit.manifest.commands.iter().any(|command| command.id == id)) {
-        return Err("未找到指定的套件命令".into());
+    // Skills use an explicit namespace so a kit may safely ship a command and skill with the same
+    // id. Keep accepting the old unprefixed skill token when it does not collide with a command.
+    let selected_skill = selected.and_then(|target| {
+        target.strip_prefix("skill:").or_else(|| {
+            (!kit
+                .manifest
+                .commands
+                .iter()
+                .any(|command| command.id == target))
+            .then_some(target)
+        })
+    });
+    if let Some(id) = selected_skill {
+        let skill = kit
+            .manifest
+            .skills
+            .iter()
+            .find(|skill| skill.id == id)
+            .ok_or("未找到指定的套件命令或技能")?;
+        // The kit's other skills stay loaded: a chained kit has skills that read each other's
+        // output, so pinning a starting point must not amputate the rest.
+        return Ok(format!(
+            "\n本次从技能 {} 开始，先加载它并按其工作方法处理；确有需要时再加载本套件的其他技能。{}",
+            skill.id,
+            if arguments.is_empty() {
+                String::new()
+            } else {
+                format!("员工补充：{arguments}")
+            }
+        ));
+    }
+    if kit.manifest.commands.is_empty() {
+        return Ok(String::new());
     }
     let mut context = String::from("\n套件可用命令：");
     for command in &kit.manifest.commands {
@@ -1793,6 +1821,88 @@ mod tests {
         .err()
         .unwrap();
         assert!(error.contains("unknown field `permissions`"), "{error}");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_kit_token_addresses_its_skills_when_it_ships_no_commands() {
+        let root = std::env::temp_dir().join(format!(
+            "xiaoyin-kit-skill-token-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(root.join("skills/prd")).unwrap();
+        fs::write(
+            root.join("skills/prd/SKILL.md"),
+            "---\nname: prd\n---\n# 写PRD",
+        )
+        .unwrap();
+        let manifest = serde_json::from_value::<ExpertKitManifest>(serde_json::json!({
+            "schemaVersion": "2", "kind": "expert-kit", "id": "product-design", "name": "产品设计",
+            "version": "1.0.0", "summary": "设计", "category": "design",
+            "minimumDesktopVersion": "0.1.30",
+            "skills": [{ "id": "prd", "path": "skills/prd/SKILL.md" }]
+        }))
+        .unwrap();
+        let kit = installed_kit(manifest, &root, InstallSource::Developer);
+
+        let context =
+            load_command_context(&kit, "/kit:product-design:skill:prd 整理登录功能的需求").unwrap();
+        assert!(context.contains("从技能 prd 开始"), "{context}");
+        assert!(context.contains("整理登录功能的需求"), "{context}");
+        // Pinning a starting skill leaves the rest of the kit available for a chained workflow.
+        assert!(context.contains("再加载本套件的其他技能"), "{context}");
+        assert!(
+            load_command_context(&kit, "/kit:product-design:prd 兼容旧草稿")
+                .unwrap()
+                .contains("从技能 prd 开始")
+        );
+        assert!(
+            load_command_context(&kit, "/kit:product-design:missing 做点什么")
+                .unwrap_err()
+                .contains("未找到")
+        );
+        assert_eq!(
+            load_command_context(&kit, "/kit:product-design 做点什么").unwrap(),
+            ""
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn an_explicit_skill_token_wins_when_a_command_has_the_same_id() {
+        let root = std::env::temp_dir().join(format!(
+            "xiaoyin-kit-command-skill-collision-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(root.join("commands")).unwrap();
+        fs::create_dir_all(root.join("skills/review")).unwrap();
+        fs::write(root.join("commands/review.md"), "COMMAND $ARGUMENTS").unwrap();
+        fs::write(root.join("skills/review/SKILL.md"), "# Review").unwrap();
+        let manifest = serde_json::from_value::<ExpertKitManifest>(serde_json::json!({
+            "schemaVersion": "2", "kind": "expert-kit", "id": "quality", "name": "质量",
+            "version": "1.0.0", "summary": "复核", "category": "other",
+            "minimumDesktopVersion": "0.1.30",
+            "commands": [{ "id": "review", "path": "commands/review.md" }],
+            "skills": [{ "id": "review", "path": "skills/review/SKILL.md" }]
+        }))
+        .unwrap();
+        let kit = installed_kit(manifest, &root, InstallSource::Developer);
+
+        let skill = load_command_context(&kit, "/kit:quality:skill:review 检查交付物").unwrap();
+        assert!(skill.contains("从技能 review 开始"), "{skill}");
+        assert!(!skill.contains("COMMAND"), "{skill}");
+
+        let command = load_command_context(&kit, "/kit:quality:review 检查交付物").unwrap();
+        assert!(command.contains("COMMAND 检查交付物"), "{command}");
+        assert!(!command.contains("从技能 review 开始"), "{command}");
         fs::remove_dir_all(root).unwrap();
     }
 

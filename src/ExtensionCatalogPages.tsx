@@ -49,7 +49,7 @@ export function ExpertCatalogPage(props: CommonProps & {
     <CatalogHeading filter={props.filter} installedCount={installedCount} marketCount={props.all.filter((item) => extensionMatches(item, '', 'market')).length} onFilter={props.onFilter} />
     {props.filter === 'market' && <ExtensionCategoryBar onChange={props.onCategory} value={props.category} />}
     {props.loading && (visible.length === 0 ? <CatalogLoading kind="expert" label="正在同步公司专家套件…" /> : <p className="catalog-refresh-status" role="status">正在同步公司专家套件…</p>)}
-    {!props.loading && props.all.length === 0 && <div className="kit-empty">控制中心尚未发布专家套件</div>}
+    {!props.loading && !props.error && props.all.length === 0 && <div className="kit-empty">控制中心尚未发布专家套件</div>}
     {props.error && <div className="kit-error">{props.error}</div>}
     {!props.loading && props.all.length > 0 && visible.length === 0 && <div className="kit-empty">没有匹配的专家套件</div>}
     <div className="kit-grid expert-market-grid">{visible.map((kit) => {
@@ -80,7 +80,7 @@ export function SkillCatalogPage(props: CommonProps & { all: SkillView[]; visibl
     <CatalogHeading builtIn filter={props.filter} installedCount={installedCount} marketCount={props.all.filter((item) => extensionMatches(item, '', 'market')).length} onFilter={props.onFilter} />
     {props.filter === 'market' && <ExtensionCategoryBar onChange={props.onCategory} value={props.category} />}
     {props.loading && (visible.length === 0 ? <CatalogLoading kind="skill" label="正在同步公司技能…" /> : <p className="catalog-refresh-status" role="status">正在同步公司技能…</p>)}
-    {!props.loading && props.all.length === 0 && <div className="kit-empty">控制中心尚未发布独立技能</div>}
+    {!props.loading && !props.error && props.all.length === 0 && <div className="kit-empty">控制中心尚未发布独立技能</div>}
     {props.error && <div className="kit-error">{props.error}</div>}
     {!props.loading && props.all.length > 0 && visible.length === 0 && <div className="kit-empty">没有匹配的技能</div>}
     {visible.length > 0 && <h2 className="catalog-section-label">{props.filter === 'builtin' ? '本机技能' : props.filter === 'installed' ? '已安装技能' : '企业技能'}<span>{visible.length}</span></h2>}

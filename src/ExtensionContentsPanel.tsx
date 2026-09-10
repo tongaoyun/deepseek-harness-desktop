@@ -5,8 +5,8 @@ import type { InstalledExpertKit } from './types'
 import { ExtensionReaderDialog } from './ExtensionReaderDialog'
 import { ExtensionMarkdown as Markdown, ExtensionReadmeSection } from './ExtensionReadmeSection'
 
-export function ExtensionContentsPanel({ extension, onUseSkill, onUseCommand, onCustomize, beforeSkills }: {
-  extension: InstalledExpertKit; onUseSkill?: (skill: ExtensionDocument) => void; onUseCommand?: (id: string) => void; onCustomize?: (document: ExtensionDocument) => void; beforeSkills?: ReactNode
+export function ExtensionContentsPanel({ extension, onUseSkill, onUseCommand, beforeSkills }: {
+  extension: InstalledExpertKit; onUseSkill?: (skill: ExtensionDocument) => void; onUseCommand?: (id: string) => void; beforeSkills?: ReactNode
 }) {
   const { kind, id, version } = extension.manifest
   const [result, setResult] = useState<{ key: string; contents?: ExtensionContents; error?: string }>()
@@ -42,6 +42,6 @@ export function ExtensionContentsPanel({ extension, onUseSkill, onUseCommand, on
       <div className="extension-source-list">{contents.commands.map((item) => <button key={item.path} onClick={() => setActive(item)} type="button"><FileText size={16} /><span><strong>{item.name}</strong>{item.summary && <small>{item.summary}</small>}</span><ArrowRight size={14} /></button>)}</div>
     </section>}
     <ExtensionReadmeSection readme={contents.readme} />
-    {active && <ExtensionReaderDialog title={active.name} onClose={() => setActive(undefined)} heading={<><h2>{active.name}</h2><p className="extension-reader-meta">来自 {extension.manifest.name} · {id}</p>{active.summary && <p className="extension-reader-summary">{active.summary}</p>}</>} actions={onCustomize ? <button className="extension-customize-primary" onClick={() => onCustomize(active)} type="button">自定义修改</button> : undefined}><Markdown content={active.content} /></ExtensionReaderDialog>}
+    {active && <ExtensionReaderDialog title={active.name} onClose={() => setActive(undefined)} heading={<><h2>{active.name}</h2><p className="extension-reader-meta">来自 {extension.manifest.name} · {id}</p>{active.summary && <p className="extension-reader-summary">{active.summary}</p>}</>}><Markdown content={active.content} /></ExtensionReaderDialog>}
   </>
 }

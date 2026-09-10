@@ -122,7 +122,7 @@ export function ConnectorsPage({ employeeId, catalog, runtime, loading, catalogE
     <div className="catalog-heading-row connector-heading-row"><div className="catalog-tabs" role="tablist"><button aria-selected={view === 'market'} className={view === 'market' ? 'active' : ''} onClick={() => setView('market')} role="tab" type="button">市场</button><button aria-selected={view === 'connected'} className={view === 'connected' ? 'active' : ''} onClick={() => setView('connected')} role="tab" type="button">已添加 <em>{connectedCount}</em></button></div></div>
     <p className="connector-session-note">配置变更用于新任务；正在执行的任务继续使用原有配置。</p>
     {loading && (visibleCatalog.length === 0 ? <CatalogLoading kind="connector" label="正在同步企业连接器…" /> : <p className="catalog-refresh-status" role="status">正在同步企业连接器…</p>)}
-    {!loading && catalog.length === 0 && <div className="kit-empty">控制中心尚未配置连接器</div>}
+    {!loading && !catalogError && !syncError && catalog.length === 0 && <div className="kit-empty">控制中心尚未配置连接器</div>}
     {!loading && catalog.length > 0 && visibleCatalog.length === 0 && <div className="kit-empty">没有匹配的连接器</div>}
     {catalogError && <div className="kit-error">{catalogError}</div>}
     {syncError && <div className="kit-error">{syncError}</div>}

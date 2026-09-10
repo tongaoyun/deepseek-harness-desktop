@@ -66,6 +66,32 @@ it('selects a skill in the middle of a sentence, preserves surrounding text and 
     expect(container.querySelector('textarea')!.value).toBe('帮我 ')
   })
 })
+it('lets a single chosen capability describe itself until the employee types', async () => {
+  const invocations = [{ token: '/kit:fullstack:api-design', id: 'fullstack', kind: 'expert-kit' as const, name: 'API接口设计', description: 'RESTful API 规范设计、OpenAPI 3.0 文档生成' }]
+  await fixture('/kit:fullstack:api-design ', { invocations }, async (container) => {
+    expect(container.querySelector('.composer-capability')!.textContent).toContain('API接口设计')
+    expect(container.querySelector('textarea')!.placeholder).toBe('RESTful API 规范设计、OpenAPI 3.0 文档生成')
+  })
+  await fixture('/kit:fullstack:api-design 帮我设计订单接口', { invocations }, async (container) => {
+    expect(container.querySelector('textarea')!.value).toBe('帮我设计订单接口')
+  })
+  await fixture('/kit:design /kit:product', { invocations: ['design', 'product'].map((id) => ({ token: `/kit:${id}`, id, name: id, description: '说明', kind: 'expert-kit' as const })) }, async (container) => {
+    expect(container.querySelector('textarea')!.placeholder).toBe('描述任务，/ 调用技能或套件，@ 添加上下文')
+  })
+})
+it('keeps a kit-bundled skill out of the menus while still naming it once chosen', async () => {
+  const invocations = [
+    { token: '/kit:fullstack', id: 'fullstack', kind: 'expert-kit' as const, name: '全栈开发专家', description: '开发套件' },
+    { token: '/kit:fullstack:skill:api-design', id: 'fullstack', kind: 'expert-kit' as const, name: 'API接口设计', description: '设计接口', bundledSkill: true },
+  ]
+  await fixture('/', { invocations }, async (container) => {
+    expect([...container.querySelectorAll('[role="option"]')].map((item) => item.textContent)).toEqual(['全栈开发专家开发套件'])
+  })
+  await fixture('/kit:fullstack:skill:api-design ', { invocations }, async (container) => {
+    expect(container.querySelector('.composer-capability')!.textContent).toContain('API接口设计')
+    expect(container.querySelector('textarea')!.placeholder).toBe('设计接口')
+  })
+})
 it('turns an at query into actual knowledge context rather than leaving an inert mention', async () => {
   await fixture('参考 @资料', { knowledgeBases: [{ id: 'kb', reference: 'kb:manual', name: '公司资料', description: '流程说明', scope: 'ORGANIZATION' }] as ChatPageProps['knowledgeBases'] }, async (container) => {
     await click(container, '[role="option"]')
