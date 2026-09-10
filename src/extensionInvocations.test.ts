@@ -5,7 +5,7 @@ import type { InstalledExpertKit } from './types'
 
 const installed: InstalledExpertKit = {
   installPath: '/extensions/reports', source: 'developer',
-  manifest: { schemaVersion: '2', kind: 'expert-kit', id: 'reports', name: '分析专家', version: '1.0.0', summary: '生成分析报告', category: 'other', minimumDesktopVersion: '0.1.30', commands: [{ id: 'weekly', path: 'commands/weekly.md' }], skills: [{ id: 'report', path: 'skills/report/SKILL.md' }], connectorRefs: [], requiredTools: [] },
+  manifest: { schemaVersion: '2', kind: 'expert-kit', id: 'reports', name: '分析专家', version: '1.0.0', summary: '生成分析报告', category: 'other', minimumDesktopVersion: '0.1.30', commands: [{ id: 'weekly', path: 'commands/weekly.md', skillId: 'report' }], skills: [{ id: 'report', path: 'skills/report/SKILL.md' }], connectorRefs: [], requiredTools: [] },
 }
 
 describe('extension invocations', () => {
@@ -18,7 +18,10 @@ describe('extension invocations', () => {
     expect(bundled.name).toBe('report')
     expect(bundled.bundledSkill).toBe(true)
     expect(options.filter((item) => !item.bundledSkill).map((item) => item.token)).toEqual(['/kit:reports', '/kit:reports:weekly'])
-    expect(selectedInvocations('/kit:reports:weekly 本周数据', options)).toMatchObject([{ kind: 'expert-kit', id: 'reports' }])
+    expect(selectedInvocations('/kit:reports:weekly 本周数据', options)).toMatchObject([{ kind: 'expert-kit', id: 'reports', spec: {
+      mode: 'explicit', kind: 'expert-kit', extensionId: 'reports', extensionVersion: '1.0.0', commandId: 'weekly', skillId: 'report',
+    } }])
+    expect(bundled.spec).toEqual({ mode: 'explicit', kind: 'expert-kit', extensionId: 'reports', extensionVersion: '1.0.0', skillId: 'report' })
     expect(selectedInvocations('解释 /kit:reports', options)).toEqual([])
     expect(selectedInvocations('/kit:reports:missing', options)).toEqual([])
   })

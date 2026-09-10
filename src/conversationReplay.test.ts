@@ -3,6 +3,16 @@ import { harnessPromptWithConversationReplay } from './conversationReplay'
 import type { TaskMessage } from './types'
 
 describe('harnessPromptWithConversationReplay', () => {
+  it('removes UI capability tokens from replayed user messages', () => {
+    const result = harnessPromptWithConversationReplay('继续', [
+      { role: 'user', text: '/kit:reports /skill:review 分析本周数据' },
+      { role: 'assistant', text: '已完成初步分析' },
+    ], true)
+    expect(result).toContain('用户：分析本周数据')
+    expect(result).not.toContain('/kit:reports')
+    expect(result).not.toContain('/skill:review')
+  })
+
   it('retains the initial goal and early constraints beyond the replay tail budget', () => {
     const messages: TaskMessage[] = [
       { role: 'user', text: '目标：整理年度订单报表' },

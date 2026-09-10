@@ -576,7 +576,10 @@ it('resumes an installed kit after native persistence reorders the capability sn
   await fixture(async () => {
     await act(async () => fixtures.sidebar!.onOpenTask(stored))
     await submit('/kit:reports 只读复查')
-    expect(vi.mocked(runHarnessWithRecovery).mock.calls.at(-1)![0]).toMatchObject({ sessionId: stored.sessionId, prompt: '/kit:reports 只读复查' })
+    expect(vi.mocked(runHarnessWithRecovery).mock.calls.at(-1)![0]).toMatchObject({
+      sessionId: stored.sessionId, prompt: '只读复查',
+      invocations: [{ mode: 'explicit', kind: 'expert-kit', extensionId: 'reports', extensionVersion: '1.0.0' }],
+    })
   })
 })
 
@@ -619,10 +622,12 @@ it('executes the selected kit and stops forcing it after the user removes the ca
   vi.mocked(runHarnessWithRecovery).mockResolvedValue({ finalResponse: '完成', sessionId: 'kit-session' })
   await fixture(async () => {
     await submit('/kit:reports 分析销售情况')
-    expect(vi.mocked(runHarnessWithRecovery).mock.calls[0][0].selectedExtensions).toEqual([{ kind: 'expert-kit', id: 'reports' }])
+    expect(vi.mocked(runHarnessWithRecovery).mock.calls[0][0].invocations).toEqual([
+      { mode: 'explicit', kind: 'expert-kit', extensionId: 'reports', extensionVersion: '1.0.0' },
+    ])
     expect(fixtures.chat!.prompt).toBe('/kit:reports ')
     await submit('解释排序算法')
-    expect(vi.mocked(runHarnessWithRecovery).mock.calls[1][0].selectedExtensions).toEqual([])
+    expect(vi.mocked(runHarnessWithRecovery).mock.calls[1][0].invocations).toEqual([])
     expect(vi.mocked(runHarnessWithRecovery).mock.calls[1][0].sessionId).not.toBe('kit-session')
   })
 })
@@ -632,10 +637,17 @@ it('persists both kits and retains them when reopening the task', async () => {
   vi.mocked(runHarnessWithRecovery).mockResolvedValue({ finalResponse: '完成', sessionId: 'combined-session' })
   await fixture(async () => {
     await submit('/kit:design /kit:product 制定产品方案')
-    expect(vi.mocked(runHarnessWithRecovery).mock.calls[0][0].selectedExtensions).toEqual([{ kind: 'expert-kit', id: 'design' }, { kind: 'expert-kit', id: 'product' }])
+    expect(vi.mocked(runHarnessWithRecovery).mock.calls[0][0].invocations).toEqual([
+      { mode: 'explicit', kind: 'expert-kit', extensionId: 'design', extensionVersion: '1.0.0' },
+      { mode: 'explicit', kind: 'expert-kit', extensionId: 'product', extensionVersion: '1.0.0' },
+    ])
     expect(fixtures.chat!.prompt).toBe('/kit:design /kit:product ')
     const saved = vi.mocked(persistTaskHistory).mock.calls.at(-1)![1]
     expect(saved.invocationTokens).toEqual(['/kit:design', '/kit:product'])
+    expect(saved.invocationSpecs).toEqual([
+      { mode: 'explicit', kind: 'expert-kit', extensionId: 'design', extensionVersion: '1.0.0' },
+      { mode: 'explicit', kind: 'expert-kit', extensionId: 'product', extensionVersion: '1.0.0' },
+    ])
     await act(async () => fixtures.sidebar!.onNewTask())
     await act(async () => fixtures.sidebar!.onOpenTask(saved))
     expect(fixtures.chat!.prompt).toBe('/kit:design /kit:product ')

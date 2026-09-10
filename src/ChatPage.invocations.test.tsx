@@ -3,8 +3,14 @@ import { act, useRef, useState, type ComponentProps } from 'react'
 import { createRoot } from 'react-dom/client'
 import { expect, it, vi } from 'vitest'
 import { ChatPage } from './ChatPage'
+import type { ExtensionInvocation } from './extensionInvocations'
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
+
+function kitInvocation(token: string, name: string, commandId?: string): ExtensionInvocation {
+  return { token, kind: 'expert-kit', id: 'reports', name, description: name,
+    spec: { mode: 'explicit', kind: 'expert-kit', extensionId: 'reports', extensionVersion: '1.0.0', ...(commandId ? { commandId } : {}) } }
+}
 
 it('resizes the composer, selects a command with the keyboard, and then submits normally', async () => {
   const submit = vi.fn((event: React.FormEvent) => event.preventDefault())
@@ -20,7 +26,7 @@ it('resizes the composer, selects a command with the keyboard, and then submits 
       onPrompt: setPrompt, onReconnect: noop, onRecoverHarness: noop, onRemoveAttachment: noop, onRemoveKnowledge: noop,
       onRemoveLocalDirectory: noop, onSelectModel: noop, onSubmit: submit, onToggleModelMenu: noop,
       prompt, runtimeStatus: 'ready', selectedKnowledgeBaseRefs: [], taskMonitor: { status: 'idle', activity: '', updatedAt: '', steps: [], artifacts: [] },
-      invocations: [{ token: '/kit:reports', kind: 'expert-kit', id: 'reports', name: '分析专家', description: '分析' }, { token: '/kit:reports:weekly', kind: 'expert-kit', id: 'reports', name: '周报', description: '每周报告' }],
+      invocations: [kitInvocation('/kit:reports', '分析专家'), kitInvocation('/kit:reports:weekly', '周报', 'weekly')],
     }
     return <ChatPage {...props} />
   }

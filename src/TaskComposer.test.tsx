@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client'
 import { expect, it, vi } from 'vitest'
 import { TaskComposer } from './TaskComposer'
 import type { ChatPageProps } from './ChatPage'
+import type { ExtensionInvocation } from './extensionInvocations'
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 async function fixture(initial: string, overrides: Partial<ChatPageProps>, check: (container: HTMLDivElement) => Promise<void>) {
@@ -24,6 +25,13 @@ async function fixture(initial: string, overrides: Partial<ChatPageProps>, check
   finally { await act(async () => root.unmount()); container.remove() }
 }
 async function click(container: HTMLElement, selector: string) { await act(async () => container.querySelector<HTMLButtonElement>(selector)!.click()) }
+function invocation(item: Omit<ExtensionInvocation, 'spec'>): ExtensionInvocation {
+  const parts = item.token.split(':')
+  return { ...item, spec: item.kind === 'skill'
+    ? { mode: 'explicit', kind: 'skill', extensionId: item.id, extensionVersion: '1.0.0', skillId: item.id }
+    : { mode: 'explicit', kind: 'expert-kit', extensionId: item.id, extensionVersion: '1.0.0',
+        ...(parts[2] === 'skill' ? { skillId: parts[3] } : parts[2] ? { commandId: parts[2] } : {}) } }
+}
 
 it.each([false, true])('labels direct continuation accurately when the existing queue is paused: %s', async (paused) => {
   await fixture('补充资料', { queue: { paused, items: [{ id: 'queued', text: '发送报告' }] } }, async (container) => {
@@ -57,7 +65,7 @@ it('shows an explicit empty model state instead of inventing a selectable fallba
 })
 
 it('selects a skill in the middle of a sentence, preserves surrounding text and supports removal', async () => {
-  await fixture('帮我 /周报', { invocations: [{ token: '/skill:weekly', id: 'weekly', kind: 'skill', name: '周报', description: '整理本周数据' }] }, async (container) => {
+  await fixture('帮我 /周报', { invocations: [invocation({ token: '/skill:weekly', id: 'weekly', kind: 'skill', name: '周报', description: '整理本周数据' })] }, async (container) => {
     await click(container, '[role="option"]')
     expect(container.querySelector('textarea')!.value).toBe('帮我 ')
     expect(container.querySelector('.composer-capability')!.textContent).toContain('周报')
@@ -67,7 +75,7 @@ it('selects a skill in the middle of a sentence, preserves surrounding text and 
   })
 })
 it('lets a single chosen capability describe itself until the employee types', async () => {
-  const invocations = [{ token: '/kit:fullstack:api-design', id: 'fullstack', kind: 'expert-kit' as const, name: 'API接口设计', description: 'RESTful API 规范设计、OpenAPI 3.0 文档生成' }]
+  const invocations = [invocation({ token: '/kit:fullstack:api-design', id: 'fullstack', kind: 'expert-kit', name: 'API接口设计', description: 'RESTful API 规范设计、OpenAPI 3.0 文档生成' })]
   await fixture('/kit:fullstack:api-design ', { invocations }, async (container) => {
     expect(container.querySelector('.composer-capability')!.textContent).toContain('API接口设计')
     expect(container.querySelector('textarea')!.placeholder).toBe('RESTful API 规范设计、OpenAPI 3.0 文档生成')
@@ -75,14 +83,14 @@ it('lets a single chosen capability describe itself until the employee types', a
   await fixture('/kit:fullstack:api-design 帮我设计订单接口', { invocations }, async (container) => {
     expect(container.querySelector('textarea')!.value).toBe('帮我设计订单接口')
   })
-  await fixture('/kit:design /kit:product', { invocations: ['design', 'product'].map((id) => ({ token: `/kit:${id}`, id, name: id, description: '说明', kind: 'expert-kit' as const })) }, async (container) => {
+  await fixture('/kit:design /kit:product', { invocations: ['design', 'product'].map((id) => invocation({ token: `/kit:${id}`, id, name: id, description: '说明', kind: 'expert-kit' })) }, async (container) => {
     expect(container.querySelector('textarea')!.placeholder).toBe('描述任务，/ 调用技能或套件，@ 添加上下文')
   })
 })
 it('keeps a kit-bundled skill out of the menus while still naming it once chosen', async () => {
   const invocations = [
-    { token: '/kit:fullstack', id: 'fullstack', kind: 'expert-kit' as const, name: '全栈开发专家', description: '开发套件' },
-    { token: '/kit:fullstack:skill:api-design', id: 'fullstack', kind: 'expert-kit' as const, name: 'API接口设计', description: '设计接口', bundledSkill: true },
+    invocation({ token: '/kit:fullstack', id: 'fullstack', kind: 'expert-kit', name: '全栈开发专家', description: '开发套件' }),
+    invocation({ token: '/kit:fullstack:skill:api-design', id: 'fullstack', kind: 'expert-kit', name: 'API接口设计', description: '设计接口', bundledSkill: true }),
   ]
   await fixture('/', { invocations }, async (container) => {
     expect([...container.querySelectorAll('[role="option"]')].map((item) => item.textContent)).toEqual(['全栈开发专家开发套件'])
@@ -100,7 +108,7 @@ it('turns an at query into actual knowledge context rather than leaving an inert
   })
 })
 it('removes only the selected kit from a combined task', async () => {
-  await fixture('/kit:design /kit:product 做一个方案', { invocations: ['design', 'product'].map((id) => ({ token: `/kit:${id}`, id, name: id, description: '', kind: 'expert-kit' })) }, async (container) => {
+  await fixture('/kit:design /kit:product 做一个方案', { invocations: ['design', 'product'].map((id) => invocation({ token: `/kit:${id}`, id, name: id, description: '', kind: 'expert-kit' })) }, async (container) => {
     expect(container.querySelectorAll('.composer-capability')).toHaveLength(2)
     await click(container, '[aria-label="移除能力 design"]')
     expect(container.querySelectorAll('.composer-capability')).toHaveLength(1)

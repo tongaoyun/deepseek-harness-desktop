@@ -29,6 +29,7 @@ export interface ExtensionPreviewConfig {
 interface PreviewTarget {
   kind: 'expert-kit' | 'skill'
   id: string
+  version: string
   knowledgeBaseRefs: string[]
   allowLocalFiles: boolean
 }
@@ -118,7 +119,10 @@ export function ExtensionPreviewPanel({ target, config, unavailableReason, onRun
         executionMode: 'agent',
         employeeId: config.employeeId,
         teamId: config.teamId,
-        selectedExtensions: [{ kind: target.kind, id: target.id }],
+        invocations: [{
+          mode: 'explicit', kind: target.kind, extensionId: target.id, extensionVersion: target.version,
+          ...(target.kind === 'skill' ? { skillId: target.id } : {}),
+        }],
         knowledgeBaseRefs: target.knowledgeBaseRefs,
         allowedArtifacts: config.allowedArtifacts,
         litellmBaseUrl: config.litellmBaseUrl,

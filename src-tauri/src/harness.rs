@@ -150,7 +150,7 @@ pub struct HarnessRunRequest {
     employee_id: String,
     team_id: String,
     session_id: Option<String>,
-    selected_extensions: Vec<expert_kits::ExtensionSelection>,
+    invocations: Vec<expert_kits::InvocationSpec>,
     #[serde(default)]
     knowledge_base_refs: Vec<String>,
     #[serde(default)]
@@ -324,7 +324,7 @@ pub async fn run_harness(
     };
     let profile = expert_kits::harness_profile(
         &app,
-        &request.selected_extensions,
+        &request.invocations,
         &request.knowledge_base_refs,
         &user_prompt,
         &request.allowed_artifacts,
@@ -1756,7 +1756,7 @@ mod tests {
             employee_id: "employee-1".to_string(),
             team_id: "crossborder".to_string(),
             session_id: None,
-            selected_extensions: Vec::new(),
+            invocations: Vec::new(),
             knowledge_base_refs: Vec::new(),
             allowed_artifacts: Vec::new(),
             litellm_base_url: "http://litellm.internal/v1".to_string(),
