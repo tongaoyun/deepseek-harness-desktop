@@ -218,6 +218,11 @@ pub struct ExpertKitHarnessProfile {
     pub prompt: String,
 }
 
+const SKILL_METADATA_BUDGET_CHARS: usize = 8_000;
+const SKILL_DESCRIPTION_MAX_CHARS: usize = 1_024;
+const EXTENSION_CONTEXT_ITEM_MAX_BYTES: usize = 32 * 1024;
+const EXTENSION_CONTEXT_TOTAL_MAX_BYTES: usize = 64 * 1024;
+
 #[tauri::command]
 pub fn list_installed_expert_kits(
     app: tauri::AppHandle,
@@ -1090,16 +1095,33 @@ fn install_package_bytes(
     result
 }
 
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ExtensionSelection {
-    pub kind: String,
-    pub id: String,
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+enum InvocationMode {
+    Explicit,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct InvocationSpec {
+    mode: InvocationMode,
+    kind: String,
+    extension_id: String,
+    extension_version: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    skill_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    command_id: Option<String>,
+}
+
+struct ResolvedInvocation<'a> {
+    spec: &'a InvocationSpec,
+    artifact: &'a InstalledExpertKit,
 }
 
 pub fn harness_profile(
     app: &tauri::AppHandle,
-    selections: &[ExtensionSelection],
+    invocations: &[InvocationSpec],
     requested_knowledge_base_refs: &[String],
     user_prompt: &str,
     allowed_artifacts: &[AllowedExtensionArtifact],
@@ -1108,16 +1130,8 @@ pub fn harness_profile(
     if !matches!(execution_mode, "agent" | "plan") {
         return Err("执行模式无效".to_string());
     }
-    if selections.len() > 8 {
+    if invocations.len() > 8 {
         return Err("每个任务最多选择 8 项技能或专家套件".into());
-    }
-    let mut coordinates = HashSet::new();
-    for selection in selections {
-        validate_artifact_kind(&selection.kind)?;
-        validate_identifier(&selection.id)?;
-        if !coordinates.insert(format!("{}:{}", selection.kind, selection.id)) {
-            return Err("任务不能重复选择同一技能或专家套件".into());
-        }
     }
     validate_allowed_artifacts(allowed_artifacts)?;
     let installed = inventory::scan_installed_extensions(app)?
@@ -1130,33 +1144,36 @@ pub fn harness_profile(
         let coordinate = format!("{}:{}", artifact.manifest.kind, artifact.manifest.id);
         newest.entry(coordinate).or_insert(artifact);
     }
-    let selected = selections
+    let resolved = resolve_invocations(invocations, &newest)?;
+    let selected = resolved
         .iter()
-        .map(|selection| {
-            let coordinate = format!("{}:{}", selection.kind, selection.id);
-            newest
-                .get(&coordinate)
-                .ok_or_else(|| format!("扩展已停用、下架或尚未安装：{coordinate}"))
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+        .map(|invocation| invocation.artifact)
+        .collect::<Vec<_>>();
     for artifact in newest.values() {
         prepare_skill_runtime_files(artifact)?;
     }
-    validate_selected_skill_conflicts(&selected)?;
-    let mut skill_directories = Vec::new();
-    let mut skill_ids = HashSet::new();
-    for artifact in &selected {
-        append_skill_directories(artifact, &mut skill_directories, &mut skill_ids)?;
+    validate_selected_skill_conflicts(&resolved)?;
+    let mut skill_catalog = SkillDirectorySelection::new(SKILL_METADATA_BUDGET_CHARS);
+    for invocation in &resolved {
+        skill_catalog.append_invocation(invocation)?;
+    }
+    let explicit_coordinates = resolved
+        .iter()
+        .map(|invocation| artifact_coordinate(invocation.artifact))
+        .collect::<HashSet<_>>();
+    for artifact in newest.values().filter(|artifact| {
+        artifact.manifest.kind == "skill"
+            && artifact.manifest.allow_implicit_invocation
+            && !explicit_coordinates.contains(&artifact_coordinate(artifact))
+    }) {
+        skill_catalog.append_artifact(artifact, false)?;
     }
     for artifact in newest.values().filter(|artifact| {
-        artifact.manifest.kind == "skill" && artifact.manifest.allow_implicit_invocation
+        artifact.manifest.kind == "expert-kit"
+            && artifact.manifest.allow_implicit_invocation
+            && !explicit_coordinates.contains(&artifact_coordinate(artifact))
     }) {
-        append_skill_directories(artifact, &mut skill_directories, &mut skill_ids)?;
-    }
-    for artifact in newest.values().filter(|artifact| {
-        artifact.manifest.kind == "expert-kit" && artifact.manifest.allow_implicit_invocation
-    }) {
-        append_skill_directories(artifact, &mut skill_directories, &mut skill_ids)?;
+        skill_catalog.append_artifact(artifact, false)?;
     }
     let connector_tools = selected
         .iter()
@@ -1204,14 +1221,21 @@ pub fn harness_profile(
     } else {
         "你正在小胤桌面端中工作，是能实际完成任务的 Agent，不是只能回答问题的聊天机器人。涉及本地目录、文件读写、Shell、浏览器或已连接系统时，应直接使用当前可用工具行动并根据真实结果回答；不要在尚未尝试工具前声称无法访问，也不要让员工为普通文件任务重复选择目录。优先以当前工作目录为起点，必要时再查询其他已授权目录。耗时命令可使用后台 Job，跨多轮复杂工作可使用 Goal 管理进度。仅在缺少继续执行所必需的授权、目标或业务参数时追问。工具过程使用简短自然的进度说明，最终回答聚焦结果、变更和仍需员工处理的事项。"
     };
-    let contexts = selected.iter().map(|artifact| {
-        let commands = load_command_context(artifact, user_prompt)?;
+    let contexts = resolved.iter().map(|invocation| {
+        let artifact = invocation.artifact;
+        let commands = load_command_context(artifact, invocation.spec, user_prompt)?;
         let profile_label = if artifact.manifest.kind == "skill" {
             "独立技能"
         } else {
             "专家套件"
         };
-        let skill_guidance = if artifact.manifest.kind == "expert-kit" {
+        let skill_guidance = if artifact.manifest.kind == "expert-kit"
+            && let Some(skill_id) = invocation.spec.skill_id.as_deref()
+        {
+            format!(
+                "本次已按需限定为技能 {skill_id}。只加载该技能并读取其工作方法和交付要求，不要加载本套件的其他技能。"
+            )
+        } else if artifact.manifest.kind == "expert-kit" {
             format!(
                 "专家套件 ID 不是技能名称。该能力包包含以下可加载技能：{}。先加载与任务相关的技能，读取其工作方法和交付要求，不要仅凭套件名称模拟岗位能力。加载本套件技能时使用这些技能 ID，不要把 {} 当作技能 ID。",
                 artifact
@@ -1239,14 +1263,28 @@ pub fn harness_profile(
             commands,
         ))
     }).collect::<Result<Vec<_>, _>>()?;
+    validate_extension_context_budget(&contexts)?;
+    let catalog_notice = if skill_catalog.omitted > 0 {
+        format!(
+            "技能目录元数据超过 {} 字符预算，已省略 {} 个未明确选择的技能；员工明确选择的能力不受影响。",
+            skill_catalog.limit, skill_catalog.omitted
+        )
+    } else {
+        String::new()
+    };
     let prompt = format!(
-        "{}\n\n{}\n\n按所选能力的职责组合完成同一任务。不同方案的事实结论或交付要求发生冲突时明确指出，以员工的具体要求为准；不要默默丢弃任一所选能力。\n\n员工任务：\n{}",
+        "{}\n\n{}{}\n\n按所选能力的职责组合完成同一任务。不同方案的事实结论或交付要求发生冲突时明确指出，以员工的具体要求为准；不要默默丢弃任一所选能力。\n\n员工任务：\n{}",
         desktop_agent_guidance,
         contexts.join("\n\n"),
+        if catalog_notice.is_empty() {
+            String::new()
+        } else {
+            format!("\n\n{catalog_notice}")
+        },
         user_prompt
     );
     Ok(ExpertKitHarnessProfile {
-        skill_directories,
+        skill_directories: skill_catalog.directories,
         knowledge_base_refs,
         required_connector_tools: connector_tools,
         allowed_computer_tools: DESKTOP_COMPUTER_TOOLS
@@ -1257,10 +1295,122 @@ pub fn harness_profile(
     })
 }
 
-fn validate_selected_skill_conflicts(selected: &[&InstalledExpertKit]) -> Result<(), String> {
+fn artifact_coordinate(artifact: &InstalledExpertKit) -> String {
+    format!("{}:{}", artifact.manifest.kind, artifact.manifest.id)
+}
+
+fn resolve_invocations<'a>(
+    invocations: &'a [InvocationSpec],
+    installed: &'a std::collections::BTreeMap<String, InstalledExpertKit>,
+) -> Result<Vec<ResolvedInvocation<'a>>, String> {
+    let mut coordinates = HashSet::new();
+    invocations
+        .iter()
+        .map(|spec| {
+            validate_artifact_kind(&spec.kind)?;
+            validate_identifier(&spec.extension_id)?;
+            Version::parse(&spec.extension_version)
+                .map_err(|error| format!("调用版本无效：{error}"))?;
+            let coordinate = format!("{}:{}", spec.kind, spec.extension_id);
+            if !coordinates.insert(coordinate.clone()) {
+                return Err("任务不能重复选择同一技能或专家套件".into());
+            }
+            let artifact = installed
+                .get(&coordinate)
+                .ok_or_else(|| format!("扩展已停用、下架或尚未安装：{coordinate}"))?;
+            if artifact.manifest.version != spec.extension_version {
+                return Err(format!(
+                    "扩展版本已变化，请重新选择：{}@{}",
+                    spec.extension_id, spec.extension_version
+                ));
+            }
+            validate_invocation_target(spec, artifact)?;
+            Ok(ResolvedInvocation { spec, artifact })
+        })
+        .collect()
+}
+
+fn validate_invocation_target(
+    spec: &InvocationSpec,
+    artifact: &InstalledExpertKit,
+) -> Result<(), String> {
+    if artifact.manifest.kind == "skill" {
+        if spec.command_id.is_some()
+            || artifact
+                .manifest
+                .skills
+                .first()
+                .map(|skill| skill.id.as_str())
+                != spec.skill_id.as_deref()
+        {
+            return Err(format!("独立技能调用目标无效：{}", spec.extension_id));
+        }
+        return Ok(());
+    }
+    if let Some(command_id) = &spec.command_id {
+        let command = artifact
+            .manifest
+            .commands
+            .iter()
+            .find(|command| command.id == *command_id)
+            .ok_or_else(|| format!("未找到指定的套件命令：{command_id}"))?;
+        if command.skill_id != spec.skill_id {
+            return Err(format!("套件命令 {command_id} 的起始技能与清单不一致"));
+        }
+        return Ok(());
+    }
+    if let Some(skill_id) = &spec.skill_id
+        && !artifact
+            .manifest
+            .skills
+            .iter()
+            .any(|skill| skill.id == *skill_id)
+    {
+        return Err(format!("未找到指定的套件技能：{skill_id}"));
+    }
+    Ok(())
+}
+
+fn validate_extension_context_budget(contexts: &[String]) -> Result<(), String> {
+    if let Some(context) = contexts
+        .iter()
+        .find(|context| context.len() > EXTENSION_CONTEXT_ITEM_MAX_BYTES)
+    {
+        return Err(format!(
+            "单项扩展上下文超过 {} KiB，请精简命令和能力说明（当前 {} KiB）",
+            EXTENSION_CONTEXT_ITEM_MAX_BYTES / 1024,
+            context.len().div_ceil(1024)
+        ));
+    }
+    let total = contexts.iter().map(String::len).sum::<usize>();
+    if total > EXTENSION_CONTEXT_TOTAL_MAX_BYTES {
+        return Err(format!(
+            "所选扩展上下文合计超过 {} KiB，请减少选择或精简命令（当前 {} KiB）",
+            EXTENSION_CONTEXT_TOTAL_MAX_BYTES / 1024,
+            total.div_ceil(1024)
+        ));
+    }
+    Ok(())
+}
+
+fn invocation_skills<'a>(invocation: &ResolvedInvocation<'a>) -> Vec<&'a FileReference> {
+    match invocation.spec.skill_id.as_deref() {
+        Some(skill_id) => invocation
+            .artifact
+            .manifest
+            .skills
+            .iter()
+            .filter(|skill| skill.id == skill_id)
+            .collect(),
+        None => invocation.artifact.manifest.skills.iter().collect(),
+    }
+}
+
+fn validate_selected_skill_conflicts(selected: &[ResolvedInvocation<'_>]) -> Result<(), String> {
     let mut skills = std::collections::HashMap::<String, (String, PathBuf)>::new();
-    for artifact in selected {
-        for skill in &artifact.manifest.skills {
+    for invocation in selected {
+        let artifact = invocation.artifact;
+        for skill in invocation_skills(invocation) {
             let entry = Path::new(&artifact.install_path).join(&skill.path);
             let directory = entry.parent().ok_or("技能目录无效")?;
             if let Some((owner, previous)) = skills.get(&skill.id) {
@@ -1393,43 +1543,77 @@ fn artifact_is_executable(
     })
 }
 
-fn append_skill_directories(
-    kit: &InstalledExpertKit,
-    directories: &mut Vec<String>,
-    skill_ids: &mut HashSet<String>,
-) -> Result<(), String> {
-    let root = Path::new(&kit.install_path);
-    if kit.manifest.kind == "skill" {
-        let skill = kit
-            .manifest
-            .skills
-            .first()
-            .ok_or_else(|| "独立技能缺少入口".to_string())?;
-        if !skill_ids.insert(skill.id.clone()) {
+struct SkillDirectorySelection {
+    directories: Vec<String>,
+    ids: HashSet<String>,
+    used: usize,
+    limit: usize,
+    omitted: usize,
+}
+
+impl SkillDirectorySelection {
+    fn new(limit: usize) -> Self {
+        Self {
+            directories: Vec::new(),
+            ids: HashSet::new(),
+            used: 0,
+            limit,
+            omitted: 0,
+        }
+    }
+
+    fn append_invocation(&mut self, invocation: &ResolvedInvocation<'_>) -> Result<(), String> {
+        for skill in invocation_skills(invocation) {
+            self.append_skill(invocation.artifact, skill, true)?;
+        }
+        Ok(())
+    }
+
+    fn append_artifact(
+        &mut self,
+        artifact: &InstalledExpertKit,
+        explicit: bool,
+    ) -> Result<(), String> {
+        for skill in &artifact.manifest.skills {
+            self.append_skill(artifact, skill, explicit)?;
+        }
+        Ok(())
+    }
+
+    fn append_skill(
+        &mut self,
+        artifact: &InstalledExpertKit,
+        skill: &FileReference,
+        explicit: bool,
+    ) -> Result<(), String> {
+        if self.ids.contains(&skill.id) {
             return Ok(());
         }
-        let directory = root.to_string_lossy().into_owned();
-        if !directories.contains(&directory) {
-            directories.push(directory);
-        }
-        return Ok(());
-    }
-    for skill in &kit.manifest.skills {
-        if !skill_ids.insert(skill.id.clone()) {
-            continue;
-        }
-        let skill_path = root.join(&skill.path);
-        // Each root is scanned independently, so a shared parent would reintroduce skipped skills.
-        let directory = skill_path
+        let directory = Path::new(&artifact.install_path)
+            .join(&skill.path)
             .parent()
             .ok_or_else(|| format!("技能路径无效：{}", skill.path))?
             .to_string_lossy()
             .into_owned();
-        if !directories.contains(&directory) {
-            directories.push(directory);
+        let summary = artifact
+            .manifest
+            .summary
+            .chars()
+            .take(SKILL_DESCRIPTION_MAX_CHARS)
+            .collect::<String>();
+        let cost =
+            skill.id.chars().count() + summary.chars().count() + directory.chars().count() + 32;
+        if !explicit && self.used.saturating_add(cost) > self.limit {
+            self.omitted += 1;
+            return Ok(());
         }
+        self.used = self.used.saturating_add(cost);
+        self.ids.insert(skill.id.clone());
+        if !self.directories.contains(&directory) {
+            self.directories.push(directory);
+        }
+        Ok(())
     }
-    Ok(())
 }
 
 fn prepare_skill_runtime_files(kit: &InstalledExpertKit) -> Result<(), String> {
@@ -1496,84 +1680,63 @@ fn normalize_skill_document(content: &str, id: &str, fallback_description: &str)
     result
 }
 
-fn load_command_context(kit: &InstalledExpertKit, prompt: &str) -> Result<String, String> {
+fn load_command_context(
+    kit: &InstalledExpertKit,
+    spec: &InvocationSpec,
+    arguments: &str,
+) -> Result<String, String> {
     let root = Path::new(&kit.install_path);
-    let tokens = prompt
-        .split_whitespace()
-        .take_while(|token| token.starts_with("/kit:") || token.starts_with("/skill:"))
-        .collect::<Vec<_>>();
-    let prefix = format!("/kit:{}:", kit.manifest.id);
-    let selected = tokens.iter().find_map(|token| token.strip_prefix(&prefix));
-    let mut arguments = prompt.trim_start();
-    for token in &tokens {
-        arguments = arguments
-            .strip_prefix(token)
-            .unwrap_or(arguments)
-            .trim_start();
-    }
-    // Skills use an explicit namespace so a kit may safely ship a command and skill with the same
-    // id. Keep accepting the old unprefixed skill token when it does not collide with a command.
-    let selected_skill = selected.and_then(|target| {
-        target.strip_prefix("skill:").or_else(|| {
-            (!kit
-                .manifest
-                .commands
-                .iter()
-                .any(|command| command.id == target))
-            .then_some(target)
-        })
-    });
-    if let Some(id) = selected_skill {
-        let skill = kit
-            .manifest
-            .skills
-            .iter()
-            .find(|skill| skill.id == id)
-            .ok_or("未找到指定的套件命令或技能")?;
-        // The kit's other skills stay loaded: a chained kit has skills that read each other's
-        // output, so pinning a starting point must not amputate the rest.
+    if spec.command_id.is_none()
+        && let Some(skill_id) = spec.skill_id.as_deref()
+    {
         return Ok(format!(
-            "\n本次从技能 {} 开始，先加载它并按其工作方法处理；确有需要时再加载本套件的其他技能。{}",
-            skill.id,
-            if arguments.is_empty() {
-                String::new()
-            } else {
-                format!("员工补充：{arguments}")
-            }
+            "\n本次调用技能 {skill_id}。加载该技能并按其工作方法和交付要求完成任务。"
         ));
     }
-    if kit.manifest.commands.is_empty() {
-        return Ok(String::new());
-    }
-    let mut context = String::from("\n套件可用命令：");
-    for command in &kit.manifest.commands {
-        let invocation = format!("/kit:{}:{}", kit.manifest.id, command.id);
-        if selected != Some(command.id.as_str()) {
-            context.push_str(&format!("\n{invocation}"));
-            continue;
+
+    let Some(command_id) = spec.command_id.as_deref() else {
+        if kit.manifest.commands.is_empty() {
+            return Ok(String::new());
         }
-        let content = fs::read_to_string(root.join(&command.path))
-            .map_err(|error| format!("无法读取专家套件命令 {}：{error}", command.id))?;
-        if content.len() > 256 * 1024 {
-            return Err(format!("专家套件命令文件过大：{}", command.id));
-        }
-        let content = content
-            .replace(
-                native_connectors::EXTENSION_ROOT_VARIABLE,
-                &kit.install_path,
-            )
-            .replace("$ARGUMENTS", arguments);
-        let skill_guidance = command
-            .skill_id
-            .as_deref()
-            .map_or_else(String::new, |skill_id| {
-                format!("\n本命令调用技能 {skill_id}，先加载该技能并按其工作方法执行。")
-            });
-        context.push_str(&format!(
-            "\n\n当前命令 {invocation}{skill_guidance}\n{content}"
-        ));
+        let commands = kit
+            .manifest
+            .commands
+            .iter()
+            .map(|command| match command.skill_id.as_deref() {
+                Some(skill_id) => format!("{}（起始技能：{}）", command.id, skill_id),
+                None => command.id.clone(),
+            })
+            .collect::<Vec<_>>()
+            .join("、");
+        return Ok(format!("\n套件包含以下快捷命令：{commands}。"));
+    };
+    let command = kit
+        .manifest
+        .commands
+        .iter()
+        .find(|command| command.id == command_id)
+        .ok_or_else(|| format!("未找到指定的套件命令：{command_id}"))?;
+    let content = fs::read_to_string(root.join(&command.path))
+        .map_err(|error| format!("无法读取专家套件命令 {}：{error}", command.id))?;
+    if content.len() > EXTENSION_CONTEXT_ITEM_MAX_BYTES {
+        return Err(format!("专家套件命令文件过大：{}", command.id));
     }
-    Ok(context)
+    let content = content
+        .replace(
+            native_connectors::EXTENSION_ROOT_VARIABLE,
+            &kit.install_path,
+        )
+        .replace("$ARGUMENTS", arguments.trim());
+    let skill_guidance = command
+        .skill_id
+        .as_deref()
+        .map_or_else(String::new, |skill_id| {
+            format!("\n本命令调用技能 {skill_id}，先加载该技能并按其工作方法执行。")
+        });
+    Ok(format!(
+        "\n\n当前命令 {}{skill_guidance}\n{content}",
+        command.id
+    ))
 }
 
 fn load_install_record(root: &Path) -> Result<InstallRecord, String> {
@@ -1697,6 +1860,22 @@ mod tests {
     use std::io::Write;
     use zip::{ZipWriter, write::SimpleFileOptions};
 
+    fn invocation(
+        kind: &str,
+        extension_id: &str,
+        skill_id: Option<&str>,
+        command_id: Option<&str>,
+    ) -> InvocationSpec {
+        InvocationSpec {
+            mode: InvocationMode::Explicit,
+            kind: kind.to_string(),
+            extension_id: extension_id.to_string(),
+            extension_version: "1.0.0".to_string(),
+            skill_id: skill_id.map(str::to_string),
+            command_id: command_id.map(str::to_string),
+        }
+    }
+
     #[test]
     fn unselected_knowledge_uses_employee_catalog_but_explicit_empty_stays_empty() {
         assert_eq!(task_knowledge_scope(None, &[]).unwrap(), None);
@@ -1784,19 +1963,114 @@ mod tests {
         };
         let selected = kit("selected-kit", &["api-design"]);
         let other = kit("fullstack-kit", &["api-design", "code-review"]);
-        let mut directories = Vec::new();
-        let mut ids = HashSet::new();
-        append_skill_directories(&selected, &mut directories, &mut ids).unwrap();
-        append_skill_directories(&other, &mut directories, &mut ids).unwrap();
-        append_skill_directories(&selected, &mut directories, &mut ids).unwrap();
+        let mut catalog = SkillDirectorySelection::new(8_000);
+        catalog.append_artifact(&selected, true).unwrap();
+        catalog.append_artifact(&other, false).unwrap();
+        catalog.append_artifact(&selected, true).unwrap();
         assert_eq!(
-            directories.iter().map(PathBuf::from).collect::<Vec<_>>(),
+            catalog
+                .directories
+                .iter()
+                .map(PathBuf::from)
+                .collect::<Vec<_>>(),
             vec![
                 PathBuf::from("selected-kit/1.0.0/skills/api-design"),
                 PathBuf::from("fullstack-kit/1.0.0/skills/code-review"),
             ]
         );
-        assert_eq!(ids.len(), 2);
+        assert_eq!(catalog.ids.len(), 2);
+
+        let selected_spec = invocation("expert-kit", "selected-kit", Some("api-design"), None);
+        let other_spec = invocation("expert-kit", "fullstack-kit", Some("code-review"), None);
+        assert!(
+            validate_selected_skill_conflicts(&[
+                ResolvedInvocation {
+                    spec: &selected_spec,
+                    artifact: &selected,
+                },
+                ResolvedInvocation {
+                    spec: &other_spec,
+                    artifact: &other,
+                },
+            ])
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn implicit_skills_respect_metadata_budget_but_explicit_skills_do_not() {
+        let manifest = serde_json::from_value::<ExpertKitManifest>(serde_json::json!({
+            "schemaVersion": "2", "kind": "expert-kit", "id": "reports", "name": "Reports",
+            "version": "1.0.0", "summary": "A".repeat(2_000), "category": "other",
+            "minimumDesktopVersion": "0.1.30",
+            "skills": [{ "id": "weekly", "path": "skills/weekly/SKILL.md" }]
+        }))
+        .unwrap();
+        let kit = installed_kit(
+            manifest,
+            Path::new("reports/1.0.0"),
+            InstallSource::Developer,
+        );
+
+        let mut implicit = SkillDirectorySelection::new(100);
+        implicit.append_artifact(&kit, false).unwrap();
+        assert!(implicit.directories.is_empty());
+        assert_eq!(implicit.omitted, 1);
+
+        let spec = invocation("expert-kit", "reports", Some("weekly"), None);
+        let resolved = ResolvedInvocation {
+            spec: &spec,
+            artifact: &kit,
+        };
+        let mut explicit = SkillDirectorySelection::new(100);
+        explicit.append_invocation(&resolved).unwrap();
+        assert_eq!(
+            explicit
+                .directories
+                .iter()
+                .map(PathBuf::from)
+                .collect::<Vec<_>>(),
+            [PathBuf::from("reports/1.0.0/skills/weekly")]
+        );
+        assert_eq!(explicit.omitted, 0);
+    }
+
+    #[test]
+    fn structured_invocations_require_exact_versions_and_command_bindings() {
+        let manifest = serde_json::from_value::<ExpertKitManifest>(serde_json::json!({
+            "schemaVersion": "2", "kind": "expert-kit", "id": "reports", "name": "Reports",
+            "version": "1.0.0", "summary": "Reports", "category": "other",
+            "minimumDesktopVersion": "0.1.30",
+            "commands": [{ "id": "weekly", "path": "commands/weekly.md", "skillId": "report" }],
+            "skills": [{ "id": "report", "path": "skills/report/SKILL.md" }]
+        }))
+        .unwrap();
+        let kit = installed_kit(
+            manifest,
+            Path::new("reports/1.0.0"),
+            InstallSource::Developer,
+        );
+        let installed = [("expert-kit:reports".to_string(), kit)]
+            .into_iter()
+            .collect();
+
+        let wrong_version = InvocationSpec {
+            extension_version: "2.0.0".to_string(),
+            ..invocation("expert-kit", "reports", Some("report"), Some("weekly"))
+        };
+        assert!(
+            resolve_invocations(&[wrong_version], &installed)
+                .err()
+                .unwrap()
+                .contains("版本已变化")
+        );
+
+        let wrong_binding = invocation("expert-kit", "reports", None, Some("weekly"));
+        assert!(
+            validate_invocation_target(&wrong_binding, &installed["expert-kit:reports"])
+                .unwrap_err()
+                .contains("起始技能")
+        );
     }
 
     #[test]
@@ -1840,7 +2114,7 @@ mod tests {
     }
 
     #[test]
-    fn a_kit_token_addresses_its_skills_when_it_ships_no_commands() {
+    fn a_structured_invocation_addresses_one_kit_skill() {
         let root = std::env::temp_dir().join(format!(
             "xiaoyin-kit-skill-token-{}-{}",
             std::process::id(),
@@ -1864,31 +2138,29 @@ mod tests {
         .unwrap();
         let kit = installed_kit(manifest, &root, InstallSource::Developer);
 
-        let context =
-            load_command_context(&kit, "/kit:product-design:skill:prd 整理登录功能的需求").unwrap();
-        assert!(context.contains("从技能 prd 开始"), "{context}");
-        assert!(context.contains("整理登录功能的需求"), "{context}");
-        // Pinning a starting skill leaves the rest of the kit available for a chained workflow.
-        assert!(context.contains("再加载本套件的其他技能"), "{context}");
+        let skill = invocation("expert-kit", "product-design", Some("prd"), None);
+        let context = load_command_context(&kit, &skill, "整理登录功能的需求").unwrap();
+        assert!(context.contains("调用技能 prd"), "{context}");
+        assert!(!context.contains("整理登录功能的需求"), "{context}");
+        assert!(!context.contains("其他技能"), "{context}");
+
+        let missing = invocation("expert-kit", "product-design", Some("missing"), None);
         assert!(
-            load_command_context(&kit, "/kit:product-design:prd 兼容旧草稿")
-                .unwrap()
-                .contains("从技能 prd 开始")
-        );
-        assert!(
-            load_command_context(&kit, "/kit:product-design:missing 做点什么")
+            validate_invocation_target(&missing, &kit)
                 .unwrap_err()
                 .contains("未找到")
         );
+
+        let root_invocation = invocation("expert-kit", "product-design", None, None);
         assert_eq!(
-            load_command_context(&kit, "/kit:product-design 做点什么").unwrap(),
+            load_command_context(&kit, &root_invocation, "做点什么").unwrap(),
             ""
         );
         fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
-    fn an_explicit_skill_token_wins_when_a_command_has_the_same_id() {
+    fn structured_skill_and_command_targets_do_not_collide() {
         let root = std::env::temp_dir().join(format!(
             "xiaoyin-kit-command-skill-collision-{}-{}",
             std::process::id(),
@@ -1911,11 +2183,13 @@ mod tests {
         .unwrap();
         let kit = installed_kit(manifest, &root, InstallSource::Developer);
 
-        let skill = load_command_context(&kit, "/kit:quality:skill:review 检查交付物").unwrap();
-        assert!(skill.contains("从技能 review 开始"), "{skill}");
+        let skill_spec = invocation("expert-kit", "quality", Some("review"), None);
+        let skill = load_command_context(&kit, &skill_spec, "检查交付物").unwrap();
+        assert!(skill.contains("调用技能 review"), "{skill}");
         assert!(!skill.contains("COMMAND"), "{skill}");
 
-        let command = load_command_context(&kit, "/kit:quality:review 检查交付物").unwrap();
+        let command_spec = invocation("expert-kit", "quality", Some("review"), Some("review"));
+        let command = load_command_context(&kit, &command_spec, "检查交付物").unwrap();
         assert!(command.contains("COMMAND 检查交付物"), "{command}");
         assert!(command.contains("本命令调用技能 review"), "{command}");
         fs::remove_dir_all(root).unwrap();
@@ -1965,7 +2239,21 @@ mod tests {
             .unwrap();
             installed_kit(manifest, &directory, InstallSource::Developer)
         });
-        assert!(validate_selected_skill_conflicts(&[&kits[0], &kits[1]]).is_ok());
+        let specs = kits
+            .iter()
+            .map(|kit| invocation("expert-kit", &kit.manifest.id, None, None))
+            .collect::<Vec<_>>();
+        let selected = [
+            ResolvedInvocation {
+                spec: &specs[0],
+                artifact: &kits[0],
+            },
+            ResolvedInvocation {
+                spec: &specs[1],
+                artifact: &kits[1],
+            },
+        ];
+        assert!(validate_selected_skill_conflicts(&selected).is_ok());
 
         // A real difference in the instructions still blocks the task.
         fs::write(
@@ -1975,9 +2263,7 @@ mod tests {
             ),
         )
         .unwrap();
-        let error = validate_selected_skill_conflicts(&[&kits[0], &kits[1]])
-            .err()
-            .unwrap();
+        let error = validate_selected_skill_conflicts(&selected).err().unwrap();
         assert!(error.contains("api-design"), "{error}");
         fs::remove_dir_all(root).unwrap();
     }
@@ -2007,11 +2293,24 @@ mod tests {
             .unwrap();
             installed_kit(manifest, &directory, InstallSource::Developer)
         });
-        assert!(validate_selected_skill_conflicts(&[&kits[0], &kits[1]]).is_ok());
+        let specs = kits
+            .iter()
+            .map(|kit| invocation("expert-kit", &kit.manifest.id, None, Some("run")))
+            .collect::<Vec<_>>();
+        let selected = [
+            ResolvedInvocation {
+                spec: &specs[0],
+                artifact: &kits[0],
+            },
+            ResolvedInvocation {
+                spec: &specs[1],
+                artifact: &kits[1],
+            },
+        ];
+        assert!(validate_selected_skill_conflicts(&selected).is_ok());
         for kit in &kits {
-            let context =
-                load_command_context(kit, "/kit:design:run /kit:product:run deliver report")
-                    .unwrap();
+            let spec = invocation("expert-kit", &kit.manifest.id, None, Some("run"));
+            let context = load_command_context(kit, &spec, "deliver report").unwrap();
             assert!(context.contains(&format!("{}: deliver report", kit.manifest.id)));
             assert!(!context.contains("$ARGUMENTS"));
         }
@@ -2021,7 +2320,7 @@ mod tests {
         )
         .unwrap();
         assert!(
-            validate_selected_skill_conflicts(&[&kits[0], &kits[1]])
+            validate_selected_skill_conflicts(&selected)
                 .unwrap_err()
                 .contains("同名技能")
         );

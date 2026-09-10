@@ -195,21 +195,29 @@ fn official_extension_lifecycle() {
         .get(&("expert-kit".to_string(), "fullstack-dev-expert".to_string()))
         .unwrap();
     prepare_skill_runtime_files(selected).unwrap();
-    let mut directories = Vec::new();
-    let mut ids = HashSet::new();
-    append_skill_directories(selected, &mut directories, &mut ids).unwrap();
+    let mut catalog = SkillDirectorySelection::new(usize::MAX);
+    catalog.append_artifact(selected, true).unwrap();
     for artifact in newest.values() {
-        append_skill_directories(artifact, &mut directories, &mut ids).unwrap();
+        catalog.append_artifact(artifact, false).unwrap();
     }
-    assert_eq!(ids.len(), 9);
-    assert_eq!(directories.len(), 9);
+    assert_eq!(catalog.ids.len(), 9);
+    assert_eq!(catalog.directories.len(), 9);
     assert!(
-        directories
+        catalog
+            .directories
             .iter()
             .all(|path| Path::new(path).join("SKILL.md").is_file())
     );
+    let root_invocation = InvocationSpec {
+        mode: InvocationMode::Explicit,
+        kind: "expert-kit".to_string(),
+        extension_id: selected.manifest.id.clone(),
+        extension_version: selected.manifest.version.clone(),
+        skill_id: None,
+        command_id: None,
+    };
     assert!(
-        load_command_context(selected, "检查 API")
+        load_command_context(selected, &root_invocation, "检查 API")
             .unwrap()
             .is_empty()
     );

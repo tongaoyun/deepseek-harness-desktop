@@ -1,7 +1,7 @@
 import { capabilitySnapshotChanged } from './capabilitySnapshot'
 import { splitComposerPrompt } from './composerInput'
 import { harnessPromptWithConversationReplay } from './conversationReplay'
-import type { ExtensionInvocation } from './extensionInvocations'
+import { sameInvocationSpec, type ExtensionInvocation } from './extensionInvocations'
 import { createTaskMonitor } from './harness'
 import { resolveHarnessSessionId } from './harnessSession'
 import type { CapabilitySnapshot, LocalTaskAttachment, LocalTaskRun, TaskMessage, TaskMonitorState } from './types'
@@ -27,16 +27,22 @@ type TurnContext = {
 export function prepareTaskTurn(context: TurnContext) {
   const { existingTask, invocations, sessionId, messages, input, now, capabilities } = context
   const invocationTokens = invocations.map((item) => item.token)
+  const invocationSpecs = invocations.map((item) => item.spec)
+  const previousInvocations = existingTask?.invocationSpecs
+  const invocationsChanged = previousInvocations
+    ? invocationSpecs.length !== previousInvocations.length
+      || invocationSpecs.some((spec, index) => !sameInvocationSpec(spec, previousInvocations[index]!))
+    : JSON.stringify(invocationTokens) !== JSON.stringify(existingTask?.invocationTokens ?? [])
   const fresh = context.directoriesChanged
     || Boolean(existingTask && (existingTask.model !== context.model || capabilitySnapshotChanged(existingTask.capabilitySnapshot, capabilities)))
     || (!sessionId && !existingTask?.sessionId && messages.length > 0)
-    || JSON.stringify(invocationTokens) !== JSON.stringify(existingTask?.invocationTokens ?? [])
+    || invocationsChanged
     || (!sessionId && Boolean(existingTask?.sessionId))
     || context.monitor.status === 'failed' || context.monitor.status === 'canceled'
   const rootSessionId = resolveHarnessSessionId(sessionId, existingTask?.sessionId, fresh,
     () => `session-${crypto.randomUUID().replaceAll('-', '')}`)
-  const replay = harnessPromptWithConversationReplay(input, messages, fresh)
-  const harnessPrompt = invocationTokens.length && !replay.startsWith(invocationTokens.join(' ')) ? `${invocationTokens.join(' ')}\n${replay}` : replay
+  const replay = harnessPromptWithConversationReplay(splitComposerPrompt(input).text, messages, fresh)
+  const harnessPrompt = replay
   const pendingMessages: TaskMessage[] = [...messages,
     { role: 'user', text: input, ...(context.attachments.length ? { attachments: context.attachments } : {}) },
     { role: 'assistant', text: '', pending: true },
@@ -48,7 +54,7 @@ export function prepareTaskTurn(context: TurnContext) {
     id: context.taskId, source: 'DESKTOP',
     name: existingTask?.name ?? (splitComposerPrompt(input).text || invocations.map((item) => item.name).join('、') || input).slice(0, 60),
     status: 'RUNNING', createdAt: existingTask?.createdAt ?? now, updatedAt: now,
-    sessionId: rootSessionId, model: context.model, invocationTokens,
+    sessionId: rootSessionId, model: context.model, invocationTokens, invocationSpecs,
     composerConnectorIds: context.connectorIds, localDirectories: context.directories,
     capabilitySnapshot: capabilities, monitor: runningMonitor, messages: pendingMessages,
   }

@@ -14,6 +14,7 @@ import type {
   TaskMonitorState,
   TaskTimelineEntry,
   TaskVisualArtifact,
+  InvocationSpec,
 } from './types'
 import type { StandardLocalDirectory } from './localFileIntent'
 
@@ -25,7 +26,7 @@ export interface HarnessRunInput {
   employeeId: string
   teamId: string
   sessionId?: string
-  selectedExtensions: { kind: 'expert-kit' | 'skill'; id: string }[]
+  invocations: InvocationSpec[]
   knowledgeBaseRefs: string[]
   allowedArtifacts: AllowedExtensionArtifact[]
   litellmBaseUrl: string

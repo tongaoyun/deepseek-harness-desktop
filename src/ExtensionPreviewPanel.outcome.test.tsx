@@ -16,7 +16,7 @@ async function fixture(check: (container: HTMLDivElement, report: ReturnType<typ
   const report = vi.fn()
   const config: ExtensionPreviewConfig = { employeeId: 'fixture', teamId: 'team', litellmBaseUrl: 'http://localhost', knowledgeEndpoint: '', scheduleEndpoint: '', connectors: [], allowedArtifacts: [], model: 'fixture', modelApiKey: '', accessToken: '', localFileRootIds: [] }
   try {
-    await act(async () => root.render(<ExtensionPreviewPanel target={{ kind: 'skill', id: 'fixture', knowledgeBaseRefs: [], allowLocalFiles: false }} config={config} onRunningChange={() => {}} onReport={report} />))
+    await act(async () => root.render(<ExtensionPreviewPanel target={{ kind: 'skill', id: 'fixture', version: '1.0.0', knowledgeBaseRefs: [], allowLocalFiles: false }} config={config} onRunningChange={() => {}} onReport={report} />))
     await check(container, report)
   } finally { await act(async () => root.unmount()); container.remove() }
 }
@@ -26,6 +26,9 @@ it.each(['completed', 'needs_input', undefined] as const)('reports a preview as 
   vi.mocked(runHarness).mockResolvedValue({ sessionId: 'fixture', finalResponse: '试运行回复', outcome })
   await fixture(async (container, report) => {
     await act(async () => container.querySelector<HTMLButtonElement>('.extension-preview-input button')!.click())
+    expect(runHarness).toHaveBeenCalledWith(expect.objectContaining({ invocations: [{
+      mode: 'explicit', kind: 'skill', extensionId: 'fixture', extensionVersion: '1.0.0', skillId: 'fixture',
+    }] }))
     expect(report).toHaveBeenCalledWith(expect.objectContaining({ status: status === 'completed' ? 'PASSED' : 'FAILED' }))
     expect(container.querySelector('.extension-preview-response')?.textContent).toContain('试运行回复')
     expect(container.querySelector('header em')?.textContent).toBe(status === 'completed' ? '已完成' : status === 'needs_input' ? '等待补充' : '本轮已结束')

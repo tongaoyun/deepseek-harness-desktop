@@ -486,6 +486,7 @@ export function ExtensionAuthoringModal({
           target={created && currentDraftSaved ? {
             kind: created.manifest.kind,
             id: created.manifest.id,
+            version: created.manifest.version,
             knowledgeBaseRefs: created.manifest.knowledgeBaseRefs ?? [],
             allowLocalFiles: true,
           } : undefined}

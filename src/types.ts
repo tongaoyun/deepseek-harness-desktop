@@ -186,6 +186,7 @@ export interface LocalTaskRun {
   expertKitId?: string
   skillId?: string
   invocationTokens?: string[]
+  invocationSpecs?: InvocationSpec[]
   composerConnectorIds?: string[]
   model?: string
   localDirectories?: Array<{ id: string; name: string; path?: string }>
@@ -193,6 +194,15 @@ export interface LocalTaskRun {
   monitor: TaskMonitorState
   messages: TaskMessage[]
   processedImEventIds?: string[]
+}
+
+export interface InvocationSpec {
+  mode: 'explicit'
+  kind: 'expert-kit' | 'skill'
+  extensionId: string
+  extensionVersion: string
+  skillId?: string
+  commandId?: string
 }
 
 export interface CapabilitySnapshot {

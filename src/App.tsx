@@ -71,7 +71,7 @@ import { standardLocalDirectories } from './localFileIntent'
 import { creationPrompt, type XiaoyinCreationKind } from './creationPrompts'
 import { McpConnectorDialog } from './McpConnectorDialog'
 import { ExtensionUploadDialog } from './ExtensionUploadDialog'
-import { extensionInvocations, selectedInvocations } from './extensionInvocations'
+import { extensionInvocations, sameInvocationSpec, selectedInvocations } from './extensionInvocations'
 import { persistBundledConnectors } from './connectorImport'
 import { buildRuntimeConnectorCatalog } from './connectors'
 import { loadEnabledConnectorIds, saveEnabledConnectorIds } from './connectorPreferences'
@@ -754,8 +754,13 @@ export default function App() {
       if (!taskModel) { reportInputError('当前没有可用模型，请在控制中心配置模型后重试。'); return }
       const attachmentError = attachmentSelectionError(messageAttachments)
       if (attachmentError) { reportInputError(attachmentError); return }
+      const availableInvocations = extensionInvocations(expertKits, skillViews)
       const requestedTokens = queuedTask?.invocationTokens ?? splitComposerPrompt(input).tokens
-      if (requestedTokens.length > 8 || requestedTokens.some((token) => !extensionInvocations(expertKits, skillViews).some((item) => item.token === token))) {
+      const requestedSpecs = queuedTask?.invocationSpecs
+      const invalidInvocation = requestedSpecs
+        ? requestedSpecs.length > 8 || requestedSpecs.some((spec) => !availableInvocations.some((item) => sameInvocationSpec(item.spec, spec)))
+        : requestedTokens.length > 8 || requestedTokens.some((token) => !availableInvocations.some((item) => item.token === token))
+      if (invalidInvocation) {
         reportInputError('该技能、套件或命令尚未安装或已不可用，请输入 / 重新选择。')
         return
       }
@@ -819,9 +824,12 @@ export default function App() {
       if (isCurrent()) setCurrentCapabilitySnapshot(capabilitySnapshot)
       const taskId = contextTaskId || crypto.randomUUID()
       const existingTask = queuedTask ?? localTasks.find((task) => task.id === taskId)
-      const invocations = extensionInvocations(expertKits, skillViews)
-      const currentInvocations = selectedInvocations(input, invocations)
-      const selected = queuedTask ? (queuedTask.invocationTokens ?? []).flatMap((token) => invocations.find((item) => item.token === token) ?? []) : currentInvocations
+      const currentInvocations = selectedInvocations(input, availableInvocations)
+      const selected = queuedTask
+        ? requestedSpecs
+          ? requestedSpecs.flatMap((spec) => availableInvocations.find((item) => sameInvocationSpec(item.spec, spec)) ?? [])
+          : requestedTokens.flatMap((token) => availableInvocations.find((item) => item.token === token) ?? [])
+        : currentInvocations
       const { rootSessionId, harnessPrompt, pendingMessages, runningMonitor, runningTask } = prepareTaskTurn({
         taskId, input, now, existingTask, sessionId: taskSessionId, model: taskModel,
         directories: taskDirectories, directoriesChanged: resetSessionForDirectoryChange,
@@ -856,7 +864,7 @@ export default function App() {
           operationScope: runningMonitor.operationScope!,
           taskId,
           prompt: harnessPrompt,
-          selectedExtensions: selected.map((item) => ({ kind: item.kind, id: item.id })),
+          invocations: selected.map((item) => item.spec),
           executionMode: 'agent',
           employeeId: user!.userId,
           teamId: user!.teamId,
