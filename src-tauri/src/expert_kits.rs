@@ -97,6 +97,8 @@ pub struct ExpertKitManifest {
     category: String,
     #[serde(default)]
     triggers: Vec<String>,
+    #[serde(default = "default_true")]
+    allow_implicit_invocation: bool,
     minimum_desktop_version: String,
     #[serde(default)]
     commands: Vec<FileReference>,
@@ -114,6 +116,12 @@ pub struct ExpertKitManifest {
 struct FileReference {
     id: String,
     path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    skill_id: Option<String>,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
@@ -1140,16 +1148,14 @@ pub fn harness_profile(
     for artifact in &selected {
         append_skill_directories(artifact, &mut skill_directories, &mut skill_ids)?;
     }
-    for artifact in newest
-        .values()
-        .filter(|artifact| artifact.manifest.kind == "skill")
-    {
+    for artifact in newest.values().filter(|artifact| {
+        artifact.manifest.kind == "skill" && artifact.manifest.allow_implicit_invocation
+    }) {
         append_skill_directories(artifact, &mut skill_directories, &mut skill_ids)?;
     }
-    for artifact in newest
-        .values()
-        .filter(|artifact| artifact.manifest.kind == "expert-kit")
-    {
+    for artifact in newest.values().filter(|artifact| {
+        artifact.manifest.kind == "expert-kit" && artifact.manifest.allow_implicit_invocation
+    }) {
         append_skill_directories(artifact, &mut skill_directories, &mut skill_ids)?;
     }
     let connector_tools = selected
@@ -1161,6 +1167,7 @@ pub fn harness_profile(
                 .iter()
                 .filter(|tool| {
                     !tool.starts_with("office.")
+                        && !tool.starts_with("office_")
                         && !tool.starts_with("computer_use_")
                         && !matches!(
                             tool.as_str(),
@@ -1556,7 +1563,15 @@ fn load_command_context(kit: &InstalledExpertKit, prompt: &str) -> Result<String
                 &kit.install_path,
             )
             .replace("$ARGUMENTS", arguments);
-        context.push_str(&format!("\n\n当前命令 {invocation}\n{content}"));
+        let skill_guidance = command
+            .skill_id
+            .as_deref()
+            .map_or_else(String::new, |skill_id| {
+                format!("\n本命令调用技能 {skill_id}，先加载该技能并按其工作方法执行。")
+            });
+        context.push_str(&format!(
+            "\n\n当前命令 {invocation}{skill_guidance}\n{content}"
+        ));
     }
     Ok(context)
 }
@@ -1890,7 +1905,7 @@ mod tests {
             "schemaVersion": "2", "kind": "expert-kit", "id": "quality", "name": "质量",
             "version": "1.0.0", "summary": "复核", "category": "other",
             "minimumDesktopVersion": "0.1.30",
-            "commands": [{ "id": "review", "path": "commands/review.md" }],
+            "commands": [{ "id": "review", "path": "commands/review.md", "skillId": "review" }],
             "skills": [{ "id": "review", "path": "skills/review/SKILL.md" }]
         }))
         .unwrap();
@@ -1902,8 +1917,24 @@ mod tests {
 
         let command = load_command_context(&kit, "/kit:quality:review 检查交付物").unwrap();
         assert!(command.contains("COMMAND 检查交付物"), "{command}");
-        assert!(!command.contains("从技能 review 开始"), "{command}");
+        assert!(command.contains("本命令调用技能 review"), "{command}");
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn implicit_invocation_defaults_on_and_can_be_disabled() {
+        let base = serde_json::json!({
+            "schemaVersion": "2", "kind": "expert-kit", "id": "quality", "name": "质量",
+            "version": "1.0.0", "summary": "复核", "category": "other",
+            "minimumDesktopVersion": "0.1.30",
+            "skills": [{ "id": "review", "path": "skills/review/SKILL.md" }]
+        });
+        let implicit = serde_json::from_value::<ExpertKitManifest>(base.clone()).unwrap();
+        assert!(implicit.allow_implicit_invocation);
+        let mut explicit_value = base;
+        explicit_value["allowImplicitInvocation"] = serde_json::json!(false);
+        let explicit = serde_json::from_value::<ExpertKitManifest>(explicit_value).unwrap();
+        assert!(!explicit.allow_implicit_invocation);
     }
 
     #[test]

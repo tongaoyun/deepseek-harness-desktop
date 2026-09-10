@@ -124,6 +124,24 @@ pub(super) fn load_and_validate_manifest(
             ));
         }
     }
+    let skill_ids = manifest
+        .skills
+        .iter()
+        .map(|skill| skill.id.as_str())
+        .collect::<HashSet<_>>();
+    for command in &manifest.commands {
+        if command
+            .skill_id
+            .as_deref()
+            .is_some_and(|skill_id| !skill_ids.contains(skill_id))
+        {
+            return Err(format!(
+                "专家套件命令 {} 引用不存在的技能：{}",
+                command.id,
+                command.skill_id.as_deref().unwrap_or_default()
+            ));
+        }
+    }
     let mut tools = HashSet::new();
     for tool in &manifest.required_tools {
         if !valid_tool_name(tool) || !tools.insert(tool) {

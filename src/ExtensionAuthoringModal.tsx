@@ -84,6 +84,7 @@ interface AuthoringForm {
   category: ExtensionCategory | ConnectorCategory
   instructions: string
   triggers: string
+  allowImplicitInvocation: boolean
   connectorRefs: string
   requiredTools: string
   url: string
@@ -99,7 +100,7 @@ interface AuthoringForm {
 const defaults: AuthoringForm = {
   id: '', name: '', author: '', version: '1.0.0', summary: '', category: 'other',
   instructions: '# 使用说明\n\n请在这里描述执行步骤、输入和输出。',
-  triggers: '', connectorRefs: '', requiredTools: '', url: '', command: '', arguments: '',
+  triggers: '', allowImplicitInvocation: true, connectorRefs: '', requiredTools: '', url: '', command: '', arguments: '',
   environment: '', headers: '', toolNames: '',
   transport: 'streamable-http',
   authMode: 'none',
@@ -233,6 +234,7 @@ export function ExtensionAuthoringModal({
         category: manifest.category,
         instructions: draft.instructions,
         triggers: (manifest.triggers ?? []).join(', '),
+        allowImplicitInvocation: manifest.allowImplicitInvocation ?? true,
         connectorRefs: manifest.connectorRefs.join(', '),
         requiredTools: manifest.requiredTools.join(', '),
       })
@@ -468,6 +470,7 @@ export function ExtensionAuthoringModal({
             {kind === 'skill' && <label>触发词<input placeholder="多个用逗号分隔" value={form.triggers} onChange={(event) => setForm({ ...form, triggers: event.target.value })} /></label>}
             {kind === 'skill' && <label>连接器 IDs<input value={form.connectorRefs} onChange={(event) => setForm({ ...form, connectorRefs: event.target.value })} /></label>}
             {kind === 'skill' && <label className="wide">所需工具<input value={form.requiredTools} onChange={(event) => setForm({ ...form, requiredTools: event.target.value })} /></label>}
+            <label className="authoring-switch wide"><span><strong>允许自动调用</strong><small>关闭后只在员工明确选择该能力时加载</small></span><input aria-label="允许自动调用" checked={form.allowImplicitInvocation} onChange={(event) => setForm({ ...form, allowImplicitInvocation: event.target.checked })} role="switch" type="checkbox" /></label>
             <label className="wide">{kind === 'skill' ? '执行说明' : '岗位、工作流程与交付标准'}<textarea required value={form.instructions} onChange={(event) => setForm({ ...form, instructions: event.target.value })} /></label>
             {baseManifest && <div className="expert-composer-packaging wide">编辑保留原有技能、命令和辅助资源。需要调整套件结构时，请从详情页创建定制副本。</div>}
             {!baseManifest && kind === 'expert-kit' && selectedSkillIds.length > 0 && <div className="expert-composer-packaging wide">保存时会把 {selectedSkillIds.length} 个已安装技能及其辅助资源复制进套件，套件可独立安装和审核。</div>}
@@ -516,7 +519,7 @@ function connectorFromForm(form: AuthoringForm): ConnectorCatalogEntry {
 function manifestFromForm(kind: 'expert-kit' | 'skill', form: AuthoringForm, selectedSkillIds: string[]): ExpertKitManifest {
   return {
     schemaVersion: kind === 'expert-kit' ? '2' : '1', kind, id: form.id, name: form.name, author: form.author.trim() || undefined, version: form.version, summary: form.summary, category: form.category as ExtensionCategory,
-    triggers: split(form.triggers), minimumDesktopVersion: '0.1.30', commands: kind === 'expert-kit' ? [{ id: 'start', path: 'commands/start.md' }] : [],
+    triggers: split(form.triggers), allowImplicitInvocation: form.allowImplicitInvocation, minimumDesktopVersion: '0.1.41', commands: kind === 'expert-kit' ? [{ id: 'start', path: 'commands/start.md', skillId: `guide-${form.id}` }] : [],
     skills: kind === 'expert-kit'
       ? [{ id: `guide-${form.id}`, path: 'skills/kit-guide/SKILL.md' }, ...selectedSkillIds.map((id) => ({ id, path: `skills/${id}/SKILL.md` }))]
       : [{ id: form.id, path: 'SKILL.md' }],

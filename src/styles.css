@@ -1423,3 +1423,7 @@ button.skill-postcard:hover { transform: rotate(0) translateY(-3px); }
 .local-schedule-actions button { border: 0; background: transparent; color: #666; padding: 4px 0; }
 .conversation-load-earlier { align-self: center; border: 0; border-radius: 8px; padding: 8px 14px; margin: 12px auto 24px; color: #777; background: #f6f6f6; }
 .local-schedule-directory { display: flex; align-items: center; justify-content: center; gap: 6px; padding: 9px; border: 1px solid #e6e6e6; border-radius: 8px; color: #555; background: #fafafa; font-size: 12px; }
+.authoring-grid .authoring-switch { flex-direction: row; align-items: center; justify-content: space-between; }
+.authoring-switch span, .authoring-switch strong, .authoring-switch small { display: block; }
+.authoring-switch small { margin-top: 3px; color: #879087; }
+.authoring-grid .authoring-switch input { width: auto; }
