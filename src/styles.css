@@ -251,7 +251,6 @@ button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 2px
 .message-actions button { width: 34px; height: 34px; padding: 0; }
 .message-actions button.active { color: #32784a; background: #edf5ef; }
 .scroll-to-latest { position: absolute; z-index: 20; right: 50%; bottom: 133px; display: grid; width: 34px; height: 34px; place-items: center; transform: translateX(50%); border: 1px solid #dfe2df; border-radius: 50%; color: #323834; background: #fff; box-shadow: 0 5px 16px #1720191a; cursor: pointer; }
-.catalog-cache-state { display: flex; align-items: center; gap: 8px; margin: 0 0 14px; padding: 9px 11px; border: 1px solid #dbe8df; border-radius: 9px; color: #54705f; background: #f5faf7; font-size: 11px; }
 .im-conversation-center { margin-top: 18px; border: 1px solid #e0e6e2; border-radius: 14px; background: white; overflow: hidden; }
 .im-conversation-center > header { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid #edf0ee; }
 .im-conversation-center h3, .im-conversation-center p { margin: 0; }.im-conversation-center header p { margin-top: 3px; color: #849087; font-size: 11px; }.im-conversation-center header > span { color: #708077; font-size: 11px; }
@@ -420,15 +419,6 @@ button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 2px
 .runtime-recovery strong { font-size: 10px; }
 .runtime-recovery small { margin-top: 2px; color: #a26b64; font-size: 8px; }
 .runtime-recovery button { padding: 6px 9px; border: 0; border-radius: 7px; color: #fff; background: #a9574e; cursor: pointer; font-size: 9px; }
-.sync-diagnostics { margin-top: 18px; overflow: hidden; border: 1px solid #efd9aa; border-radius: 11px; color: #7e6327; background: #fffaf0; }
-.sync-diagnostics > div { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 9px; padding: 11px 13px; }
-.sync-diagnostics span, .sync-diagnostics strong, .sync-diagnostics small { display: block; }
-.sync-diagnostics strong { font-size: 10px; }
-.sync-diagnostics small { margin-top: 2px; color: #9a824f; font-size: 8px; }
-.sync-diagnostics button { padding: 6px 9px; border: 0; border-radius: 7px; color: #755a20; background: #f5e4b8; cursor: pointer; font-size: 9px; }
-.sync-diagnostics details { padding: 0 13px 11px 39px; }
-.sync-diagnostics summary { cursor: pointer; font-size: 9px; }
-.sync-diagnostics details p { display: grid; grid-template-columns: 110px minmax(0,1fr) auto; align-items:start; gap: 8px; min-height: 0; margin: 8px 0 0; font-size: 8px; }
 .file-drop-overlay { position: fixed; z-index: 300; inset: 18px; display: grid; place-items: center; align-content: center; gap: 9px; border: 2px dashed #55a66f; border-radius: 20px; color: #347b4d; background: #eff9f2ed; box-shadow: 0 0 0 100vmax #17241a35; pointer-events: none; }
 .file-drop-overlay strong { font-size: 16px; }
 .file-drop-overlay span { color: #66806d; font-size: 10px; }

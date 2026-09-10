@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { loadConnectors, loadExpertKits, loadKnowledgeBases, loadSkills } from './api'
+import { createExpertKitDownload, loadConnectors, loadExpertKits, loadKnowledgeBases, loadSkills } from './api'
 import type { ErpUser } from './auth'
 import { withDesktopBuiltinConnectors } from './connectors'
 import { loadEnterpriseCatalogCache, saveEnterpriseCatalogCache } from './enterpriseCache'
-import { inspectInstalledExtensions, mergeExpertKits, type ExpertKitView } from './expertKits'
+import { inspectInstalledExtensions, installExtension, mergeExpertKits, type ExpertKitView } from './expertKits'
+import { synchronizePublishedExpertKits } from './expertKitSync'
 import { isPersonalConnector, loadPersonalConnectors } from './extensionSubmissions'
 import { mergeSkills, type SkillView } from './skills'
 import type {
@@ -136,7 +137,19 @@ export function useEnterpriseCatalog({
         const data = cacheRef.current
         if (catalogResult.status === 'fulfilled') data.catalog = catalogResult.value
         const currentInventory = inventoryRevision === inventoryRevisionRef.current
-        if (currentInventory && installedResult.status === 'fulfilled') data.installed = installedResult.value.installed
+        let expertKitSyncIssues: ExtensionSyncIssue[] = []
+        if (currentInventory && installedResult.status === 'fulfilled') {
+          data.installed = installedResult.value.installed
+          if (catalogResult.status === 'fulfilled') {
+            const synchronized = await synchronizePublishedExpertKits(catalogResult.value, data.installed, {
+              download: (id) => createExpertKitDownload(bootstrap.endpoints.expertKits, id, user.userId, accessToken),
+              install: (download) => installExtension(download, 'expert-kit'),
+            })
+            if (controller.signal.aborted) return
+            data.installed = synchronized.installed
+            expertKitSyncIssues = synchronized.issues
+          }
+        }
         if (skillsResult.status === 'fulfilled') data.skills = skillsResult.value
         if (connectorsResult.status === 'fulfilled') {
           const personal = loadPersonalConnectors(user.userId)
@@ -171,7 +184,7 @@ export function useEnterpriseCatalog({
             removable: removableCoordinate(issue.coordinate),
           }))
           : []
-        setSyncIssues((current) => [...sourceIssues, ...(currentInventory ? localIssues : current.filter((issue) => issue.key.startsWith('local-extension:')))])
+        setSyncIssues((current) => [...sourceIssues, ...expertKitSyncIssues, ...(currentInventory ? localIssues : current.filter((issue) => issue.key.startsWith('local-extension:')))])
         setSyncedAt(new Date())
         if ([catalogResult, skillsResult, connectorsResult, knowledgeResult].every((result) => result.status === 'fulfilled')) {
           const savedAt = new Date().toISOString()

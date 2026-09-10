@@ -1,4 +1,4 @@
-import { CircleStop, FolderOpen, ShieldCheck } from 'lucide-react'
+import { FolderOpen } from 'lucide-react'
 import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import {
   createExpertKitDownload,
@@ -20,7 +20,6 @@ import {
   installDeveloperExtension,
   installExtension,
   removeCatalogExtension,
-  removeBrokenExtension,
   removeDeveloperExpertKit,
   removeDeveloperExtension,
   type ExpertKitView,
@@ -152,7 +151,6 @@ export default function App() {
   const [connectorSecrets, setConnectorSecrets] = useState<ConnectorSecretStore>({})
   const [expertKitError, setExpertKitError] = useState('')
   const {
-    cacheSavedAt: catalogCacheSavedAt,
     connectors,
     expertKitCatalog,
     expertKits,
@@ -163,8 +161,6 @@ export default function App() {
     replaceConnectors,
     skills,
     skillViews,
-    syncIssues: extensionSyncIssues,
-    syncedAt: extensionSyncedAt,
   } = useEnterpriseCatalog({ accessToken, bootstrap, enabledConnectorIds, user })
   const [developerKitBusy, setDeveloperKitBusy] = useState(false)
   const localExtensionInstallLock = useRef(false)
@@ -1052,22 +1048,6 @@ export default function App() {
     void sendDeviceHeartbeat()
   }
 
-  const cleanBrokenExtension = async (coordinate: string) => {
-    if (!await confirmAction({
-      title: '移除损坏扩展？',
-      message: `${coordinate}\n\n只会删除这个无法加载的本地版本，之后可以重新安装。`,
-      confirmLabel: '移除',
-      danger: true,
-    })) return
-    try {
-      await removeBrokenExtension(coordinate)
-      await refreshInstalledKits()
-      notify('损坏扩展已移除，可以重新安装。')
-    } catch (reason) {
-      setExpertKitError(reason instanceof Error ? reason.message : String(reason))
-    }
-  }
-
   const installSkill = async (skill: SkillView) => {
     if (!bootstrap || !user || skill.installState === 'installed') return
     setInstallingSkillId(skill.id)
@@ -1431,8 +1411,6 @@ export default function App() {
               page={page}
               query={extensionQuery}
             />}</div>}
-            {extensionSyncIssues.length > 0 && <div className="sync-diagnostics"><div><CircleStop size={17} /><span><strong>部分企业能力需要处理，其他能力仍可使用</strong><small>{extensionSyncedAt ? `最近检查 ${extensionSyncedAt.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}` : '刚刚完成检查'}</small></span><button onClick={refreshEnterpriseCatalog} type="button">重新检查</button></div><details><summary>查看 {extensionSyncIssues.length} 项详情</summary>{extensionSyncIssues.map((issue) => <p key={issue.key}><strong>{issue.label}</strong><span>{issue.message}</span>{issue.removable && <button onClick={() => void cleanBrokenExtension(issue.label)} type="button">移除损坏项</button>}</p>)}</details></div>}
-            {catalogCacheSavedAt && extensionSyncIssues.some((issue) => !issue.key.startsWith('local-extension:')) && <div className="catalog-cache-state"><ShieldCheck size={15} /><span>当前使用本机缓存，可继续执行 · {new Date(catalogCacheSavedAt).toLocaleString('zh-CN', { hour12: false })}</span></div>}
             {page === 'settings' && bootstrap && user && <DesktopSettingsPage
               accessToken={accessToken}
               companyName={user.companyName}
@@ -1526,8 +1504,8 @@ export default function App() {
           ? () => void removeLocalAcceptanceKit(activeExpertKit)
           : activeExpertKit.installed ? () => void removeCatalogArtifact('expert-kit', activeExpertKit.id) : undefined}
         onSchedule={() => { setActiveExpertKitId(''); setPage('schedules') }}
-        onUse={activeExpertKit.installed?.enabled !== false && ['installed', 'update'].includes(activeExpertKit.installState) ? (command) => { setActiveExpertKitId(''); startNewTask(`/kit:${activeExpertKit.id}${command ? `:${command}` : ''} `) } : undefined}
-        onUseSkill={activeExpertKit.installed?.enabled !== false && ['installed', 'update'].includes(activeExpertKit.installState) ? (skill) => { setActiveExpertKitId(''); startNewTask(expertKitSkillPrompt(activeExpertKit.id, skill)) } : undefined}
+        onUse={activeExpertKit.installed?.enabled !== false && activeExpertKit.installState === 'installed' ? (command) => { setActiveExpertKitId(''); startNewTask(`/kit:${activeExpertKit.id}${command ? `:${command}` : ''} `) } : undefined}
+        onUseSkill={activeExpertKit.installed?.enabled !== false && activeExpertKit.installState === 'installed' ? (skill) => { setActiveExpertKitId(''); startNewTask(expertKitSkillPrompt(activeExpertKit.id, skill)) } : undefined}
         onConfigureConnectors={() => { setActiveExpertKitId(''); setExtensionQuery(''); setPage('connectors') }}
         onConfigureKnowledge={() => { setActiveExpertKitId(''); setPage('knowledge') }}
         onToggleConnector={(connector, enabled) => {
@@ -1539,9 +1517,9 @@ export default function App() {
           }
           toggleConnector(connector.id, enabled)
         }}
-        onCustomize={['installed', 'update'].includes(activeExpertKit.installState) ? () => void customizeLocalExpertKit(activeExpertKit) : undefined}
-        onCustomizeDocument={['installed', 'update'].includes(activeExpertKit.installState) ? (document) => void customizeLocalExpertKit(activeExpertKit, 'expert-kit', document) : undefined}
-        onExport={['installed', 'update'].includes(activeExpertKit.installState) ? () => void exportLocalExpertKit(activeExpertKit) : undefined}
+        onCustomize={activeExpertKit.installState === 'installed' ? () => void customizeLocalExpertKit(activeExpertKit) : undefined}
+        onCustomizeDocument={activeExpertKit.installState === 'installed' ? (document) => void customizeLocalExpertKit(activeExpertKit, 'expert-kit', document) : undefined}
+        onExport={activeExpertKit.installState === 'installed' ? () => void exportLocalExpertKit(activeExpertKit) : undefined}
       />}
       {activeSkill && <SkillDetailsModal
         onChanged={refreshInstalledKits}

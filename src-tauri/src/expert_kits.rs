@@ -241,11 +241,18 @@ pub async fn install_expert_kit(
         if record.package_sha256 != request.sha256.to_ascii_lowercase() {
             return Err("本地同版本套件与控制中心摘要不一致，请联系管理员".to_string());
         }
-        return Ok(installed_kit(manifest, &final_directory, record.source));
+        let installed = installed_kit(manifest, &final_directory, record.source);
+        remove_other_catalog_versions(
+            &root.join(&request.id),
+            &request.kind,
+            &request.id,
+            &request.version,
+        )?;
+        return Ok(installed);
     }
 
     let bytes = download_package(&request.url).await?;
-    install_package_bytes(
+    let installed = install_package_bytes(
         &root,
         &bytes,
         Some(&request.kind),
@@ -253,7 +260,14 @@ pub async fn install_expert_kit(
         Some(&request.version),
         Some(&request.sha256),
         InstallSource::Catalog,
-    )
+    )?;
+    remove_other_catalog_versions(
+        &root.join(&request.id),
+        &request.kind,
+        &request.id,
+        &request.version,
+    )?;
+    Ok(installed)
 }
 
 #[tauri::command]
@@ -942,6 +956,36 @@ fn remove_catalog_versions(extension_directory: &Path, kind: &str, id: &str) -> 
     {
         fs::remove_dir(extension_directory)
             .map_err(|error| format!("无法清理扩展目录：{error}"))?;
+    }
+    Ok(())
+}
+
+fn remove_other_catalog_versions(
+    extension_directory: &Path,
+    kind: &str,
+    id: &str,
+    current_version: &str,
+) -> Result<(), String> {
+    if !extension_directory.exists() {
+        return Ok(());
+    }
+    for version_directory in child_directories(extension_directory)? {
+        if version_directory
+            .file_name()
+            .and_then(|value| value.to_str())
+            == Some(current_version)
+        {
+            continue;
+        }
+        let Ok(record) = load_install_record(&version_directory) else {
+            continue;
+        };
+        if record.source != InstallSource::Catalog {
+            continue;
+        }
+        load_and_validate_manifest(&version_directory, Some(kind), Some(id), None)?;
+        fs::remove_dir_all(&version_directory)
+            .map_err(|error| format!("无法清理旧套件内容：{error}"))?;
     }
     Ok(())
 }
@@ -2124,6 +2168,49 @@ mod tests {
         .err()
         .unwrap();
         assert!(catalog_collision.contains("同版本套件"));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn published_install_keeps_only_current_catalog_content() {
+        let root = std::env::temp_dir().join(format!(
+            "xiaoyin-current-kit-test-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir(&root).unwrap();
+        let manifest = r#"{
+          "schemaVersion":"2","id":"report-kit","name":"报告专家","version":"1.0.0",
+          "summary":"生成报告","category":"other","minimumDesktopVersion":"0.1.9",
+          "skills":[{"id":"platform-check","path":"skills/platform-check/SKILL.md"}]
+        }"#;
+        for (version, source) in [
+            ("1.0.0", InstallSource::Catalog),
+            ("2.0.0", InstallSource::Catalog),
+            ("3.0.0", InstallSource::Developer),
+        ] {
+            let package = test_package(&manifest.replace("1.0.0", version), b"# Report");
+            install_package_bytes(
+                &root,
+                &package,
+                Some("expert-kit"),
+                Some("report-kit"),
+                Some(version),
+                None,
+                source,
+            )
+            .unwrap();
+        }
+
+        let directory = root.join("report-kit");
+        remove_other_catalog_versions(&directory, "expert-kit", "report-kit", "2.0.0").unwrap();
+
+        assert!(!directory.join("1.0.0").exists());
+        assert!(directory.join("2.0.0").exists());
+        assert!(directory.join("3.0.0").exists());
         fs::remove_dir_all(root).unwrap();
     }
 

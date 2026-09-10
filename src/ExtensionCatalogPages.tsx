@@ -44,9 +44,9 @@ export function ExpertCatalogPage(props: CommonProps & {
 }) {
   const [sort, setSort] = useState<'popular' | 'latest'>('popular')
   const visible = useMemo(() => sort === 'latest'
-    ? [...props.visible].sort((left, right) => right.version.localeCompare(left.version, undefined, { numeric: true }))
+    ? [...props.visible].reverse()
     : props.visible, [props.visible, sort])
-  const installedCount = props.all.filter((item) => item.installState === 'installed' || item.installState === 'update').length
+  const installedCount = props.all.filter((item) => item.installState === 'installed').length
   return <>
     <CapabilityHero kind="experts" />
     <CatalogHeading filter={props.filter} installedCount={installedCount} marketCount={props.all.filter((item) => extensionMatches(item, '', 'market')).length} onFilter={props.onFilter} onSort={setSort} sort={sort} />
@@ -56,12 +56,12 @@ export function ExpertCatalogPage(props: CommonProps & {
     {props.error && <div className="kit-error">{props.error}</div>}
     {!props.loading && props.all.length > 0 && visible.length === 0 && <div className="kit-empty">没有匹配的专家套件</div>}
     <div className="kit-grid expert-market-grid">{visible.map((kit) => {
-      const installed = kit.installState === 'installed' || kit.installState === 'update'
-      const actionLabel = kit.installState === 'retired' ? '查看并卸载' : kit.installState === 'update' ? '查看更新' : installed ? '查看详情' : '查看并安装'
+      const installed = kit.installState === 'installed'
+      const actionLabel = kit.installState === 'retired' ? '查看并卸载' : installed ? '查看详情' : '查看并安装'
       return <article className="market-card" key={kit.id}>
         <div className="market-card-title"><CatalogKitIcon installPath={kit.installed?.installPath} /><div><h3><button className="market-card-name" onClick={() => props.onOpen(kit.id)} type="button">{kit.name}</button></h3><small>@{kit.author || (kit.localOnly ? '我的创作' : '小胤企业市场')}</small></div><button aria-label={`${actionLabel}：${kit.name}`} className={installed ? 'installed' : ''} disabled={props.installingId === kit.id} onClick={() => props.onOpen(kit.id)} title={actionLabel} type="button">{installed ? <Check size={18} /> : <Plus size={20} />}</button></div>
         <p>{kit.summary}</p>
-        <footer><span>{kit.skillIds.length} 个技能{kit.connectorRefs.length > 0 ? ` · ${kit.connectorRefs.length} 个数据连接` : ''}</span><span>v{kit.version}</span></footer>
+        <footer><span>{kit.skillIds.length} 个技能{kit.connectorRefs.length > 0 ? ` · ${kit.connectorRefs.length} 个数据连接` : ''}</span></footer>
       </article>
     })}</div>
   </>

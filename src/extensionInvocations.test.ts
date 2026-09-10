@@ -19,7 +19,7 @@ describe('extension invocations', () => {
   it('never offers unavailable or retired kits, and uses installed commands during updates', () => {
     const kit = mergeExpertKits([], [installed])[0]!
     expect(extensionInvocations([{ ...kit, installState: 'retired' }, { ...kit, installState: 'available' }], [])).toEqual([])
-    expect(extensionInvocations([{ ...kit, installState: 'update', commandIds: ['not-installed'] }], []).map((item) => item.token)).not.toContain('/kit:reports:not-installed')
+    expect(extensionInvocations([{ ...kit, commandIds: ['not-installed'] }], []).map((item) => item.token)).not.toContain('/kit:reports:not-installed')
   })
   it('excludes disabled kits and their commands', () => {
     expect(extensionInvocations(mergeExpertKits([], [{ ...installed, enabled: false }]), [])).toEqual([])

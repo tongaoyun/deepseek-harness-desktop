@@ -9,7 +9,7 @@ import type {
   KnowledgeBaseEntry,
 } from './types'
 
-export type ExpertKitInstallState = 'available' | 'installed' | 'update' | 'retired'
+export type ExpertKitInstallState = 'available' | 'installed' | 'retired'
 
 const REMOVED_EXPERT_KIT_IDS = new Set(['crossborder-operations'])
 
@@ -18,7 +18,6 @@ export interface ExpertKitView extends ExpertKitCatalogEntry {
   readiness: 'ready' | 'partial'
   connectorIssues: string[]
   knowledgeIssues: string[]
-  installedVersion?: string
   installed?: InstalledExpertKit
   localOnly: boolean
 }
@@ -211,10 +210,7 @@ export function mergeExpertKits(
       ...readiness(kit.connectorRefs ?? [], kit.requiredTools ?? [], kit.knowledgeBaseRefs ?? []),
       installed: local,
       localOnly: false,
-      installedVersion: local?.manifest.version,
-      installState: local?.manifest.version === kit.version
-        ? 'installed'
-        : local ? 'update' : 'available',
+      installState: local ? 'installed' : 'available',
     }
   })
   const catalogIds = new Set(activeCatalog.map((kit) => kit.id))
@@ -237,7 +233,6 @@ export function mergeExpertKits(
       sha256: local.packageSha256 ?? '',
       ...readiness(local.manifest.connectorRefs, local.manifest.requiredTools, local.manifest.knowledgeBaseRefs ?? []),
       installState: local.source === 'developer' ? 'installed' : 'retired',
-      installedVersion: local.manifest.version,
       installed: local,
       localOnly: local.source === 'developer',
     })
