@@ -26,12 +26,15 @@ beforeEach(() => {
   vi.mocked(inspectInstalledExtensions).mockResolvedValue(installed('old'))
 })
 
-async function fixture(check: (render: (owner: string) => Promise<void>, state: () => ReturnType<typeof useEnterpriseCatalog>) => Promise<void>) {
+async function fixture(
+  check: (render: (owner: string) => Promise<void>, state: () => ReturnType<typeof useEnterpriseCatalog>) => Promise<void>,
+  withBootstrap = true,
+) {
   let state!: ReturnType<typeof useEnterpriseCatalog>
   function Probe({ owner }: { owner: string }) {
     // Match the session hook's stable user object.
     const user = users[owner]
-    state = useEnterpriseCatalog({ accessToken: '', bootstrap, enabledConnectorIds, user }); return null
+    state = useEnterpriseCatalog({ accessToken: '', bootstrap: withBootstrap ? bootstrap : undefined, enabledConnectorIds, user }); return null
   }
   const root = createRoot(document.createElement('div'))
   try { await check(async (owner) => { await act(async () => root.render(<Probe owner={owner} />)) }, () => state) }
@@ -122,5 +125,38 @@ it('refreshes capability configuration when returning to the window', async () =
     vi.mocked(loadConnectors).mockResolvedValue([{ id: 'new-connector' } as ConnectorCatalogEntry])
     await act(async () => window.dispatchEvent(new Event('focus')))
     expect(state().connectors.some((item) => item.id === 'new-connector')).toBe(true)
+  })
+})
+
+it('loads cached catalog data and installed extensions without enterprise bootstrap', async () => {
+  vi.mocked(loadEnterpriseCatalogCache).mockResolvedValue({
+    savedAt: '2026-09-10T00:00:00Z',
+    catalog: [{ id: 'cached-kit', name: '缓存套件' } as never],
+    skills: [], knowledge: [], connectors: [{ id: 'cached-connector' } as ConnectorCatalogEntry],
+  })
+  await fixture(async (render, state) => {
+    await render('one')
+    expect(state().expertKitCatalog.map((item) => item.id)).toEqual(['cached-kit'])
+    expect(state().expertKits.map((item) => item.id)).toEqual(['old'])
+    expect(state().connectors.some((item) => item.id === 'cached-connector')).toBe(true)
+    expect(state().error).toContain('正在显示本机缓存和已安装扩展')
+    expect(state().loading).toBe(false)
+    expect(loadExpertKits).not.toHaveBeenCalled()
+    expect(loadConnectors).not.toHaveBeenCalled()
+  }, false)
+})
+
+it('reports partial remote failures and retains the last cached content', async () => {
+  vi.mocked(loadEnterpriseCatalogCache).mockResolvedValue({
+    savedAt: '2026-09-10T00:00:00Z',
+    catalog: [{ id: 'cached-kit', name: '缓存套件' } as never],
+    skills: [], knowledge: [], connectors: [],
+  })
+  vi.mocked(loadExpertKits).mockRejectedValue(new Error('network unavailable'))
+  await fixture(async (render, state) => {
+    await render('one')
+    expect(state().expertKitCatalog.map((item) => item.id)).toEqual(['cached-kit'])
+    expect(state().error).toContain('专家套件同步失败')
+    expect(state().loading).toBe(false)
   })
 })

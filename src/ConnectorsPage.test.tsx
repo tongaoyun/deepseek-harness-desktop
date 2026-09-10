@@ -22,6 +22,17 @@ describe('connector local configuration', () => {
 
   afterEach(() => container.remove())
 
+  it('shows catalog errors without also claiming that no connectors were configured', async () => {
+    const root = createRoot(container)
+    await act(async () => root.render(<ConnectorsPage
+      catalog={[]} catalogError="连接器同步失败，正在显示最近一次可用内容。" loading={false} query="" syncError=""
+      personalIds={[]} onEdit={vi.fn()} onDelete={vi.fn()} onDiagnose={vi.fn()} runtime={[]} secrets={{}}
+      onToggle={vi.fn()} onSaveSecrets={vi.fn()} />))
+    expect(container.textContent).toContain('连接器同步失败')
+    expect(container.textContent).not.toContain('控制中心尚未配置连接器')
+    await act(async () => root.unmount())
+  })
+
   it('asks for required local values before enabling the connector', async () => {
     const onToggle = vi.fn()
     const onSaveSecrets = vi.fn()

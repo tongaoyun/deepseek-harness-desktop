@@ -18,6 +18,11 @@ export function readTaskQueues(owner: string): Queues {
   } catch { return {} }
 }
 
+/** How many tasks the desktop starts on its own. An employee opens as many conversations as they
+ *  want, but a queue continuation or a schedule firing is not their decision in the moment, so
+ *  background work stays within a bound they can still reason about. */
+export const AUTOMATIC_TASK_LIMIT = 3
+
 export function useTaskQueue({ owner, ready, tasks, runningIds, run }: {
   owner?: string; ready: boolean; tasks: LocalTaskRun[]; runningIds: string[]
   run: (task: LocalTaskRun, item: QueuedPrompt, accepted: () => void) => Promise<Outcome>
@@ -56,7 +61,7 @@ export function useTaskQueue({ owner, ready, tasks, runningIds, run }: {
   }
 
   useEffect(() => {
-    if (!ready || !owner || state.owner !== owner || runningIds.length >= 3 || storageBlocked.current) return
+    if (!ready || !owner || state.owner !== owner || runningIds.length >= AUTOMATIC_TASK_LIMIT || storageBlocked.current) return
     // One queued continuation at a time, alongside existing interactive tasks.
     if (busy.current.size) return
     const task = tasks.find((task) => !task.archivedAt && task.status !== 'RUNNING' && !runningIds.includes(task.id) && state.queues[task.id]?.items.length && !state.queues[task.id]?.paused)

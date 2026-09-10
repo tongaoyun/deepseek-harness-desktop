@@ -13,7 +13,6 @@ import { taskInterruption, TASK_RESUME_PROMPT } from './taskInterruption'
 import { openErpLogin } from './auth'
 import { ExpertKitDetailsModal } from './ExpertKitDetailsModal'
 import { expertKitSkillPrompt, extensionCustomizationPrompt } from './expertKitDetails'
-import type { ExtensionDocument } from './expertKits'
 import { SkillDetailsModal } from './SkillDetailsModal'
 import {
   customizeExpertKit,
@@ -111,7 +110,7 @@ import { useDesktopDrop } from './useDesktopDrop'
 import { useApplyDesktopPreferences } from './desktopPreferences'
 import { useLocalImSync } from './useLocalImSync'
 import { useHarnessNotifications, type StreamingTaskState } from './useHarnessNotifications'
-import { useTaskQueue, type QueuedPrompt } from './useTaskQueue'
+import { AUTOMATIC_TASK_LIMIT, useTaskQueue, type QueuedPrompt } from './useTaskQueue'
 import { parseTaskOutcome, taskOutcomeLabel, unverifiedTaskOutcome, type TaskOutcome } from './taskOutcome'
 import { draftRootPaths, readTaskDraft, recentWorkDirectories, rememberWorkDirectory, saveTaskDraft, type TaskDraft } from './taskDrafts'
 import { joinComposerPrompt, splitComposerPrompt } from './composerInput'
@@ -155,6 +154,7 @@ export default function App() {
     connectors,
     expertKitCatalog,
     expertKits,
+    error: enterpriseCatalogError,
     knowledgeBases,
     loading: expertKitsLoading,
     refresh: refreshEnterpriseCatalog,
@@ -246,8 +246,8 @@ export default function App() {
     owner: user?.userId, ready: authState === 'authenticated' && runtimeStatus === 'ready' && harnessHealth === 'ready',
     tasks: localTasks, runningIds: runningTaskIds, run: runQueued,
   })
-  const localSchedules = useLocalSchedules(user && bootstrap ? `${user.userId}:${localScheduleNamespace()}` : undefined,
-    connectorDiagnosticsAvailable() && authState === 'authenticated' && runtimeStatus === 'ready' && harnessHealth === 'ready' && runningTaskIds.length < 3,
+  const localSchedules = useLocalSchedules(user ? `${user.userId}:${localScheduleNamespace()}` : undefined,
+    connectorDiagnosticsAvailable() && authState === 'authenticated' && runtimeStatus === 'ready' && harnessHealth === 'ready' && runningTaskIds.length < AUTOMATIC_TASK_LIMIT,
     async (schedule, taskId) => {
       if (schedule.model && !bootstrap?.models.includes(schedule.model)) return { notStarted: '计划指定的模型已不可用，请编辑计划重新选择模型；计划已暂停' }
       const directories = [...schedule.directories, ...(schedule.attachments ?? []).flatMap((file) => file.rootPath ? [{ id: file.rootId, name: file.rootName, path: file.rootPath }] : [])]
@@ -263,7 +263,7 @@ export default function App() {
         throw error
       }
     })
-  useLocalScheduleTools(user && bootstrap ? `${user.userId}:${localScheduleNamespace()}` : undefined, localSchedules, localTasks, runningTaskIds)
+  useLocalScheduleTools(user ? `${user.userId}:${localScheduleNamespace()}` : undefined, localSchedules, localTasks, runningTaskIds)
   useLocalSkillTools(authState === 'authenticated' && user && bootstrap ? `${user.userId}:${localScheduleNamespace()}` : undefined, {
     skills: skillViews, employeeId: user?.userId ?? '', endpoint: bootstrap?.endpoints.skills ?? '', accessToken,
     refresh: () => refreshInstalledKits(),
@@ -1100,13 +1100,13 @@ export default function App() {
     }
   }
 
-  const customizeLocalExpertKit = async (kit: ExpertKitView | SkillView, kind: 'expert-kit' | 'skill' = 'expert-kit', document?: ExtensionDocument) => {
+  const customizeLocalExpertKit = async (kit: ExpertKitView | SkillView, kind: 'expert-kit' | 'skill' = 'expert-kit') => {
     try {
       const path = await customizeExpertKit(kit.id, kit.installed?.manifest.version ?? kit.version, kind)
       if (path) {
         setActiveExpertKitId('')
         setActiveSkillId('')
-        const cleared = startNewTask(extensionCustomizationPrompt(kit.name, path, kind, document))
+        const cleared = startNewTask(extensionCustomizationPrompt(kit.name, path, kind))
         const restoreId = taskContextRestoreIdRef.current
         await cleared
         if (restoreId !== taskContextRestoreIdRef.current) return
@@ -1412,26 +1412,27 @@ export default function App() {
               page={page}
               query={extensionQuery}
             />}</div>}
-            {page === 'settings' && bootstrap && user && <DesktopSettingsPage
+            {page === 'settings' && user && <DesktopSettingsPage
               accessToken={accessToken}
               companyName={user.companyName}
               department={user.department}
               displayName={user.displayName}
               employeeId={user.userId}
-              memoryEndpoint={bootstrap.endpoints.memoryProfile ?? '/api/v1/memory-profile'}
+              memoryAvailable={Boolean(bootstrap)}
+              memoryEndpoint={bootstrap?.endpoints.memoryProfile ?? '/api/v1/memory-profile'}
               onMemorySaved={memorySaved}
               onOpenMemoryTask={(id) => void openStoredTask(id)}
               position={user.position}
             />}
-            {page === 'skills' && <CapabilityCatalogPage onChanged={refreshInstalledKits} onUseSkill={(id) => startNewTask(`/skill:${id} `)} kind={capabilityKind} onCreate={() => createWithXiaoyin(capabilityKind === 'packs' ? 'expert-kit' : 'skill')} category={extensionCategory} error={expertKitError} expertKits={expertKits} filter={extensionFilter} installingKitId={installingKitId} loading={expertKitsLoading} onCategory={setExtensionCategory} onFilter={(value) => { setExtensionFilter(value); setExtensionCategory('all') }} onOpenExpertKit={setActiveExpertKitId} onOpenSkill={setActiveSkillId} skills={skillViews} visibleExpertKits={visibleExpertKits} visibleSkills={visibleSkillViews} />}
+            {page === 'skills' && <CapabilityCatalogPage onChanged={refreshInstalledKits} onUseSkill={(id) => startNewTask(`/skill:${id} `)} kind={capabilityKind} onCreate={() => createWithXiaoyin(capabilityKind === 'packs' ? 'expert-kit' : 'skill')} category={extensionCategory} error={[enterpriseCatalogError, expertKitError].filter(Boolean).join('；')} expertKits={expertKits} filter={extensionFilter} installingKitId={installingKitId} loading={expertKitsLoading} onCategory={setExtensionCategory} onFilter={(value) => { setExtensionFilter(value); setExtensionCategory('all') }} onOpenExpertKit={setActiveExpertKitId} onOpenSkill={setActiveSkillId} skills={skillViews} visibleExpertKits={visibleExpertKits} visibleSkills={visibleSkillViews} />}
             {page === 'connectors' && <>
               <ConnectorsPage
                 employeeId={user?.userId}
                 catalog={connectors}
-                catalogError={expertKitError}
+                catalogError={enterpriseCatalogError}
                 loading={expertKitsLoading}
                 runtime={runtimeConnectors}
-                syncError=""
+                syncError={expertKitError}
                 query={extensionQuery}
                 onToggle={toggleConnector}
                 personalIds={user ? loadPersonalConnectors(user.userId).map((item) => item.id) : []}
@@ -1466,10 +1467,10 @@ export default function App() {
               teamId={user.teamId}
               endpoint={bootstrap.endpoints.knowledge}
             />}
-            {page === 'schedules' && bootstrap && user && <ScheduledTasksPage
+            {page === 'schedules' && user && <ScheduledTasksPage
               key={user.userId}
-              models={bootstrap.models}
-              onCreateWithXiaoyin={() => createWithXiaoyin('schedule')}
+              models={bootstrap?.models ?? []}
+              onCreateWithXiaoyin={bootstrap ? () => createWithXiaoyin('schedule') : undefined}
               local={localSchedules}
               onOpenLocalTask={(id) => { void openStoredTask(id) }}
             />}
@@ -1520,7 +1521,6 @@ export default function App() {
           toggleConnector(connector.id, enabled)
         }}
         onCustomize={activeExpertKit.installState === 'installed' ? () => void customizeLocalExpertKit(activeExpertKit) : undefined}
-        onCustomizeDocument={activeExpertKit.installState === 'installed' ? (document) => void customizeLocalExpertKit(activeExpertKit, 'expert-kit', document) : undefined}
         onExport={activeExpertKit.installState === 'installed' ? () => void exportLocalExpertKit(activeExpertKit) : undefined}
       />}
       {activeSkill && <SkillDetailsModal
@@ -1550,7 +1550,7 @@ export default function App() {
         initialConnector={editingConnector}
         onClose={() => { setAuthoringKind(undefined); setAuthoringInstructions(''); setEditingConnector(undefined) }}
         onPreviewRunningChange={() => undefined}
-        previewConfig={runningTaskIds.length < 3 && runtimeStatus === 'ready' && bootstrap ? {
+        previewConfig={runtimeStatus === 'ready' && bootstrap ? {
           employeeId: user.userId,
           teamId: user.teamId,
           litellmBaseUrl: bootstrap.endpoints.litellm,
@@ -1563,7 +1563,7 @@ export default function App() {
           accessToken,
           localFileRootIds: localDirectories.map((directory) => directory.id),
         } : undefined}
-        previewUnavailableReason={runningTaskIds.length >= 3 ? '已有 3 个本地任务并行运行，请等待一个任务完成后再试运行。' : runtimeStatus !== 'ready' ? '企业服务尚未连接，暂时不能试运行。' : undefined}
+        previewUnavailableReason={runtimeStatus !== 'ready' ? '企业服务尚未连接，暂时不能试运行。' : undefined}
         skills={skillViews}
         onChanged={async (change) => {
           if (change.type === 'connector-upsert') {

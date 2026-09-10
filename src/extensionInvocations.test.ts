@@ -9,9 +9,15 @@ const installed: InstalledExpertKit = {
 }
 
 describe('extension invocations', () => {
-  it('exposes installed kits and exact namespaced commands', () => {
+  it('exposes installed kits, their commands and their bundled skills', () => {
     const options = extensionInvocations(mergeExpertKits([], [installed]), [])
-    expect(options.map((item) => item.token)).toEqual(['/kit:reports', '/kit:reports:weekly'])
+    expect(options.map((item) => item.token)).toEqual(['/kit:reports', '/kit:reports:weekly', '/kit:reports:skill:report'])
+    // A bundled skill reads like a standalone one instead of borrowing the kit's name, but it is
+    // reachable only through its kit, so the top-level menus keep listing the kit alone.
+    const bundled = options.find((item) => item.token === '/kit:reports:skill:report')!
+    expect(bundled.name).toBe('report')
+    expect(bundled.bundledSkill).toBe(true)
+    expect(options.filter((item) => !item.bundledSkill).map((item) => item.token)).toEqual(['/kit:reports', '/kit:reports:weekly'])
     expect(selectedInvocations('/kit:reports:weekly 本周数据', options)).toMatchObject([{ kind: 'expert-kit', id: 'reports' }])
     expect(selectedInvocations('解释 /kit:reports', options)).toEqual([])
     expect(selectedInvocations('/kit:reports:missing', options)).toEqual([])
@@ -23,5 +29,18 @@ describe('extension invocations', () => {
   })
   it('excludes disabled kits and their commands', () => {
     expect(extensionInvocations(mergeExpertKits([], [{ ...installed, enabled: false }]), [])).toEqual([])
+  })
+  it('uses distinct tokens for a command and bundled skill with the same id', () => {
+    const collision = {
+      ...installed,
+      manifest: {
+        ...installed.manifest,
+        commands: [{ id: 'review', path: 'commands/review.md' }],
+        skills: [{ id: 'review', path: 'skills/review/SKILL.md' }],
+      },
+    }
+    expect(extensionInvocations(mergeExpertKits([], [collision]), []).map((item) => item.token)).toEqual([
+      '/kit:reports', '/kit:reports:review', '/kit:reports:skill:review',
+    ])
   })
 })

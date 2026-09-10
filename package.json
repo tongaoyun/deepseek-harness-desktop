@@ -23,10 +23,10 @@
     "acceptance:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/acceptance-windows.ps1",
     "evaluation:list": "node harness-host/scripts/evaluate-work-tasks.mjs --list",
     "evaluation:run": "node harness-host/scripts/evaluate-work-tasks.mjs",
-    "tauri": "tauri",
-    "tauri:dev": "tauri dev",
+    "tauri": "node scripts/run-tauri.mjs",
+    "tauri:dev": "node scripts/run-tauri.mjs dev",
     "tauri:dev:local": "node scripts/dev-local.mjs",
-    "tauri:build": "tauri build"
+    "tauri:build": "node scripts/run-tauri.mjs build"
   },
   "dependencies": {
     "@tauri-apps/api": "2.11.1",

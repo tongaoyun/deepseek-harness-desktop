@@ -50,10 +50,10 @@ it('shows bundled skill names from the expert kit catalog before installation', 
 
 it('uses the selected skill, keeps non-invocable knowledge readable, and closes only the nested reader', async () => {
   vi.mocked(readExtensionContents).mockResolvedValue({ readme: '# 开发流程', skills: [api, background], commands: [] })
-  const onClose = vi.fn(), onUseSkill = vi.fn(), onCustomize = vi.fn()
+  const onClose = vi.fn(), onUseSkill = vi.fn()
   const container = document.body.appendChild(document.createElement('div'))
   const root = createRoot(container)
-  const render = (value = kit) => <ExpertKitDetailsModal kit={value} skills={[]} connectors={[]} knowledgeBases={[]} installing={false} removing={false} onClose={onClose} onInstall={vi.fn()} onSchedule={vi.fn()} onUseSkill={onUseSkill} onCustomizeDocument={onCustomize} />
+  const render = (value = kit) => <ExpertKitDetailsModal kit={value} skills={[]} connectors={[]} knowledgeBases={[]} installing={false} removing={false} onClose={onClose} onInstall={vi.fn()} onSchedule={vi.fn()} onUseSkill={onUseSkill} />
   try {
     await act(async () => root.render(render()))
     expect(container.querySelector('.expert-dependency-state')).toBeNull()
@@ -67,9 +67,8 @@ it('uses the selected skill, keeps non-invocable knowledge readable, and closes 
     opener.focus()
     await act(async () => opener.click())
     expect(container.querySelector('[role="dialog"]')?.textContent).toContain('来自 全栈开发专家')
-    await act(async () => container.querySelector<HTMLButtonElement>('footer button')!.click())
-    expect(container.querySelector('footer')?.textContent).toBe('自定义修改')
-    expect(onCustomize).toHaveBeenCalledWith(api)
+    // Reading a bundled skill offers no per-skill customize entry; the kit is customized as a whole.
+    expect(container.textContent).not.toContain('自定义修改')
     expect(onUseSkill).toHaveBeenCalledOnce()
     await act(async () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
     expect(onClose).not.toHaveBeenCalled()
@@ -78,7 +77,8 @@ it('uses the selected skill, keeps non-invocable knowledge readable, and closes 
     await act(async () => root.render(render({ ...kit, installed: { ...kit.installed!, enabled: false } })))
     expect(container.querySelector<HTMLButtonElement>('.detail-command-list button')!.disabled).toBe(true)
     await act(async () => opener.click())
-    expect(container.querySelector('footer')?.textContent).toBe('自定义修改')
+    // A disabled kit still opens its skills for reading, and the reader carries no action footer.
+    expect(container.querySelector('[role="dialog"] footer')).toBeNull()
   } finally { await act(async () => root.unmount()); container.remove() }
 })
 

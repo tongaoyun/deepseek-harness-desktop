@@ -44,6 +44,7 @@ export function useEnterpriseCatalog({
   const [connectors, setConnectors] = useState<ConnectorCatalogEntry[]>([])
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBaseEntry[]>([])
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
   const [refreshKey, setRefreshKey] = useState(0)
   const cacheRef = useRef<CatalogData>(emptyCatalog())
   const catalogOwnerRef = useRef('')
@@ -66,12 +67,13 @@ export function useEnterpriseCatalog({
   }, [applyCatalog, enabledConnectorIds])
 
   useEffect(() => {
-    if (!bootstrap || !user) {
+    if (!user) {
       cacheRef.current = emptyCatalog()
       catalogOwnerRef.current = ''
       cacheLoadedRef.current = false
       inventoryRevisionRef.current += 1
       setLoading(false)
+      setError('')
       applyCatalog()
       return
     }
@@ -80,6 +82,7 @@ export function useEnterpriseCatalog({
       catalogOwnerRef.current = user.userId
       cacheLoadedRef.current = false
       inventoryRevisionRef.current += 1
+      setError('')
       applyCatalog()
     }
     const controller = new AbortController()
@@ -105,6 +108,17 @@ export function useEnterpriseCatalog({
             }
             applyCatalog()
           }
+        }
+        if (!bootstrap) {
+          const inventory = await inspectInstalledExtensions().catch(() => undefined)
+          if (controller.signal.aborted || catalogOwnerRef.current !== user.userId) return
+          if (inventory) cacheRef.current.installed = inventory.installed
+          applyCatalog()
+          const hasCache = cacheRef.current.catalog.length + cacheRef.current.skills.length + cacheRef.current.connectors.length + cacheRef.current.knowledge.length > 0
+          setError(hasCache
+            ? '企业服务未连接，正在显示本机缓存和已安装扩展。'
+            : '企业服务未连接，企业能力目录暂不可用；已安装的本机扩展仍可查看。')
+          return
         }
         const inventoryRevision = inventoryRevisionRef.current
         const results = await Promise.allSettled([
@@ -160,7 +174,13 @@ export function useEnterpriseCatalog({
         }
         if (knowledgeResult.status === 'fulfilled') data.knowledge = knowledgeResult.value
         applyCatalog()
-        if ([catalogResult, skillsResult, connectorsResult, knowledgeResult].every((result) => result.status === 'fulfilled')) {
+        const remoteResults = [catalogResult, skillsResult, connectorsResult, knowledgeResult]
+        const failures = remoteResults.flatMap((result, index) => result.status === 'rejected'
+          ? [['专家套件', '技能', '连接器', '知识库'][index]] : [])
+        setError(failures.length
+          ? `${failures.join('、')}同步失败，正在显示最近一次可用内容。`
+          : installedResult.status === 'rejected' ? '本机扩展读取失败，企业目录仍可浏览。' : '')
+        if (remoteResults.every((result) => result.status === 'fulfilled')) {
           void saveEnterpriseCatalogCache(user.userId, {
             savedAt: new Date().toISOString(), catalog: data.catalog, skills: data.skills, connectors: data.connectors.filter((item) => !isPersonalConnector(item)), knowledge: data.knowledge,
           }).catch(() => undefined)
@@ -171,10 +191,10 @@ export function useEnterpriseCatalog({
       }
     }
     void synchronize(true)
-    const timer = window.setInterval(() => void synchronize(false), 60_000)
+    const timer = bootstrap ? window.setInterval(() => void synchronize(false), 60_000) : undefined
     const onFocus = () => { void synchronize(false) }
-    window.addEventListener('focus', onFocus)
-    return () => { window.clearInterval(timer); window.removeEventListener('focus', onFocus); controller.abort() }
+    if (bootstrap) window.addEventListener('focus', onFocus)
+    return () => { if (timer) window.clearInterval(timer); window.removeEventListener('focus', onFocus); controller.abort() }
   }, [accessToken, applyCatalog, bootstrap, refreshKey, user])
 
   const refresh = useCallback(() => setRefreshKey((value) => value + 1), [])
@@ -200,6 +220,7 @@ export function useEnterpriseCatalog({
     expertKits,
     knowledgeBases,
     loading,
+    error,
     refresh,
     refreshInstalled,
     replaceConnectors,

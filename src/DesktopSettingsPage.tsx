@@ -11,6 +11,7 @@ interface DesktopSettingsPageProps {
   accessToken: string
   employeeId: string
   memoryEndpoint: string
+  memoryAvailable?: boolean
   displayName: string
   department: string
   position: string
@@ -25,6 +26,7 @@ export function DesktopSettingsPage({
   accessToken,
   employeeId,
   memoryEndpoint,
+  memoryAvailable = true,
   displayName,
   department,
   position,
@@ -34,7 +36,9 @@ export function DesktopSettingsPage({
 }: DesktopSettingsPageProps) {
   const [section, setSection] = useState<SettingsSection>('preferences')
   const windowsDesktop = isUpdatableDesktop()
-  const visibleSection = section === 'updates' && !windowsDesktop ? 'profile' : section
+  const visibleSection = section === 'updates' && !windowsDesktop
+    ? 'profile'
+    : section === 'memory' && !memoryAvailable ? 'preferences' : section
 
   return <div className="desktop-settings">
     <aside className="settings-navigation" aria-label="桌面设置">
@@ -46,8 +50,8 @@ export function DesktopSettingsPage({
       <button className={section === 'shortcuts' ? 'active' : ''} onClick={() => setSection('shortcuts')} type="button">
         <Keyboard size={17} /><span><strong>快捷键</strong><small>常用桌面操作</small></span>
       </button>
-      <button className={section === 'memory' ? 'active' : ''} onClick={() => setSection('memory')} type="button">
-        <BrainCircuit size={17} /><span><strong>记忆</strong><small>工作方式与长期偏好</small></span>
+      <button className={section === 'memory' ? 'active' : ''} disabled={!memoryAvailable} onClick={() => setSection('memory')} type="button">
+        <BrainCircuit size={17} /><span><strong>记忆</strong><small>{memoryAvailable ? '工作方式与长期偏好' : '企业服务连接后可用'}</small></span>
       </button>
       {windowsDesktop && <button className={visibleSection === 'updates' ? 'active' : ''} onClick={() => setSection('updates')} type="button">
         <RefreshCw size={17} /><span><strong>更新应用</strong><small>检查桌面端新版本</small></span>

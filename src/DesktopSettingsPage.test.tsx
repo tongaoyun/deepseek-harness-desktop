@@ -27,4 +27,24 @@ describe('desktop settings navigation', () => {
     expect(html).not.toContain('安全工作环境')
     expect(html).not.toContain('实验特性')
   })
+
+  it('keeps local settings available while disabling enterprise memory offline', () => {
+    const html = renderToStaticMarkup(<DesktopSettingsPage
+      accessToken=""
+      companyName="示例企业"
+      department="研发部"
+      displayName="测试员工"
+      employeeId="employee-1"
+      memoryAvailable={false}
+      memoryEndpoint="/memory"
+      onMemorySaved={() => undefined}
+      position="工程师"
+    />)
+
+    expect(html).toContain('偏好设置')
+    expect(html).toContain('快捷键')
+    expect(html).toContain('附件存储')
+    expect(html).toContain('企业服务连接后可用')
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>.*?<strong>记忆<\/strong>/u)
+  })
 })
