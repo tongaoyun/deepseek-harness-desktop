@@ -41,6 +41,23 @@ export async function loadExpertKits(
   return readServerData<ExpertKitCatalogEntry[]>(response)
 }
 
+/** The catalog listing stays light, so a kit's own guide is fetched when its details are opened. */
+export async function loadExpertKitReadme(
+  endpoint: string,
+  kitId: string,
+  employeeId: string,
+  accessToken: string,
+  signal?: AbortSignal,
+): Promise<string> {
+  const base = endpoint.replace(/\/$/, '')
+  const response = await fetch(serverUrl(`${base}/${encodeURIComponent(kitId)}/readme`), {
+    headers: enterpriseHeaders(employeeId, accessToken),
+    signal: boundedSignal(signal),
+  })
+  if (!response.ok) throw new Error(`套件说明返回 ${response.status}`)
+  return readServerData<{ readme?: string }>(response).then((value) => value.readme ?? '')
+}
+
 export async function createExpertKitDownload(
   endpoint: string,
   kitId: string,

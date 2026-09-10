@@ -12,10 +12,10 @@ export interface ExtensionInvocation {
 
 export function extensionInvocations(kits: ExpertKitView[], skills: SkillView[]): ExtensionInvocation[] {
   return [
-    ...skills.filter((skill) => skill.installed?.enabled !== false && ['installed', 'update'].includes(skill.installState)).map((skill): ExtensionInvocation => ({
+    ...skills.filter((skill) => skill.installed?.enabled !== false && skill.installState === 'installed').map((skill): ExtensionInvocation => ({
       token: `/skill:${skill.id}`, name: skill.name, description: skill.summary, kind: 'skill', id: skill.id,
     })),
-    ...kits.filter((kit) => kit.installed?.enabled !== false && ['installed', 'update'].includes(kit.installState)).flatMap((kit): ExtensionInvocation[] => [
+    ...kits.filter((kit) => kit.installed?.enabled !== false && kit.installState === 'installed').flatMap((kit): ExtensionInvocation[] => [
       { token: `/kit:${kit.id}`, name: kit.name, description: kit.summary, kind: 'expert-kit', id: kit.id },
       ...(kit.installed?.manifest.commands.map((command) => command.id) ?? kit.commandIds).map((id): ExtensionInvocation => ({
         token: `/kit:${kit.id}:${id}`, name: `${kit.name} · ${id}`, description: '执行套件快捷命令', kind: 'expert-kit', id: kit.id,

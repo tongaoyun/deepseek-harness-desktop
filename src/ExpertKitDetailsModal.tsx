@@ -15,6 +15,7 @@ import { useEffect, useState } from 'react'
 import { ExtensionDetailLayout } from './ExtensionDetailLayout'
 import { ExtensionActionMenu, InstalledExtensionControls } from './InstalledExtensionControls'
 import { ExtensionContentsPanel } from './ExtensionContentsPanel'
+import { ExtensionReadmeSection } from './ExtensionReadmeSection'
 import { extensionCategoryLabel } from './extensionCategories'
 import type { ExpertKitView, ExtensionDocument } from './expertKits'
 import type { ConnectorRuntimeDefinition, KnowledgeBaseEntry, SkillCatalogEntry } from './types'
@@ -34,7 +35,8 @@ interface ExpertKitDetailsModalProps {
   onCustomizeDocument?: (document: ExtensionDocument) => void
   onExport?: () => void
   onUse?: (command?: string) => void
-  onUseSkill?: (skill: ExtensionDocument) => void
+  onUseSkill?: (skill: Pick<ExtensionDocument, 'id' | 'name'>) => void
+  onLoadReadme?: (id: string) => Promise<string>
   onConfigureConnectors?: () => void
   onConfigureKnowledge?: () => void
   onToggleConnector?: (connector: ConnectorRuntimeDefinition, enabled: boolean) => void
@@ -42,7 +44,7 @@ interface ExpertKitDetailsModalProps {
 }
 
 export function ExpertKitDetailsModal({
-  kit, skills, connectors, knowledgeBases, installing, removing, onClose, onInstall, onRemove, onSchedule, onCustomize, onCustomizeDocument, onExport, onUse, onUseSkill, onConfigureConnectors, onConfigureKnowledge, onToggleConnector, onChanged,
+  kit, skills, connectors, knowledgeBases, installing, removing, onClose, onInstall, onRemove, onSchedule, onCustomize, onCustomizeDocument, onExport, onUse, onUseSkill, onLoadReadme, onConfigureConnectors, onConfigureKnowledge, onToggleConnector, onChanged,
 }: ExpertKitDetailsModalProps) {
   useEffect(() => {
     const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose() }
@@ -56,7 +58,21 @@ export function ExpertKitDetailsModal({
   const knowledgeByReference = new Map(knowledgeBases.map((knowledgeBase) => [knowledgeBase.reference, knowledgeBase]))
   const stateLabel = kit.localOnly ? '本地专家套件' : kit.installState === 'retired' ? '已下架' : kit.installState === 'installed' ? '已安装' : '安装确认'
   const issues = [...kit.connectorIssues, ...kit.knowledgeIssues]
+  // An installed kit reads its guide from disk; before that the catalog serves it on demand.
+  const [catalogReadme, setCatalogReadme] = useState('')
+  const readmeSource = kit.installed || !onLoadReadme ? '' : kit.id
+  useEffect(() => {
+    if (!readmeSource) return setCatalogReadme('')
+    let current = true
+    onLoadReadme?.(readmeSource).then((value) => { if (current) setCatalogReadme(value) }, () => undefined)
+    return () => { current = false }
+  }, [onLoadReadme, readmeSource])
   const commands = kit.installed?.manifest.commands.map((command) => command.id) ?? kit.commandIds
+  // Before install the desktop only has published metadata, where every bundled skill is invocable
+  // unless its own SKILL.md opts out; the installed view below reads that flag from the real files.
+  const shortcutSkills = kit.skillDetails?.length
+    ? kit.skillDetails
+    : kit.skillIds.map((id) => ({ id, name: id, summary: '', argumentHint: '' }))
 
   return <ExtensionDetailLayout titleId="expert-kit-title" onClose={onClose} actions={<>
         {(onRemove || onUse || kit.installState === 'installed') && <ExtensionActionMenu label="更多操作" icon={<MoreHorizontal size={16} />}>
@@ -69,7 +85,7 @@ export function ExpertKitDetailsModal({
   </>}>
       <div className="extension-profile">
         <ExtensionIcon installPath={kit.installed?.installPath} name={kit.name} />
-        <div><div className="extension-profile-title"><h2 id="expert-kit-title">{kit.name}</h2><span className="extension-profile-badge">{kit.localOnly ? '本地导入' : kit.installState === 'retired' ? '已下架' : '套件市场'}</span></div><p className="extension-reader-meta">{kit.installed?.author || kit.author ? `@${kit.installed?.author || kit.author}` : `${stateLabel} · ${extensionCategoryLabel(kit.category)}`}</p></div>
+        <div><div className="extension-profile-title"><h2 id="expert-kit-title">{kit.name}</h2><span className="extension-profile-badge">{kit.localOnly ? '本地导入' : kit.installState === 'retired' ? '已下架' : '套件市场'}</span></div><p className="extension-reader-meta">{stateLabel} · {extensionCategoryLabel(kit.category)}</p></div>
       </div>
       <p className="extension-profile-summary">{kit.summary}</p>
 
@@ -80,12 +96,15 @@ export function ExpertKitDetailsModal({
         <p>本地文件仅用于显示状态，可安全卸载；历史任务记录不会删除。</p>
       </section>}
 
-      {!kit.installed && commands.length > 0 && <section className="expert-detail-section">
-        <h3>快捷命令 <small>({commands.length})</small></h3>
-        <div className="detail-command-list">{commands.map((id) => <button disabled={!onUse} key={id} onClick={() => onUse?.(id)} type="button"><code>/{id}</code><span>{skillById.get(id)?.summary || '使用套件中的工作流程处理任务'}</span><ArrowRight size={15} /></button>)}</div>
+      {!kit.installed && commands.length + shortcutSkills.length > 0 && <section className="expert-detail-section">
+        <h3>快捷命令 <small>({commands.length + shortcutSkills.length})</small></h3>
+        <div className="detail-command-list">
+          {commands.map((id) => <button disabled={!onUse} key={`command:${id}`} onClick={() => onUse?.(id)} type="button"><code>/{id}</code><span>{skillById.get(id)?.summary || '使用套件中的工作流程处理任务'}</span><ArrowRight size={15} /></button>)}
+          {shortcutSkills.map((skill) => <button disabled={!onUseSkill} key={`skill:${skill.id}`} onClick={() => onUseSkill?.(skill)} type="button"><code>/{skill.name}</code><span>{skill.argumentHint || skill.summary || '使用套件中的工作流程处理任务'}</span><ArrowRight size={15} /></button>)}
+        </div>
       </section>}
       {!kit.installed && kit.skillIds.length > 0 && <section className="expert-detail-section">
-        <h3>知识技能 <small>({kit.skillIds.length})</small></h3>
+        <h3>技能 <small>({kit.skillIds.length})</small></h3>
         <div className="detail-skill-list">{kit.skillIds.map((id) => {
           const bundledSkill = kitSkillById.get(id)
           const skill = bundledSkill ?? skillById.get(id)
@@ -101,6 +120,7 @@ export function ExpertKitDetailsModal({
         onConfigureKnowledge={onConfigureKnowledge}
         onToggleConnector={onToggleConnector}
       />} />}
+      {!kit.installed && <ExtensionReadmeSection readme={catalogReadme} />}
       {!kit.installed && <CapabilitySections
         connectorRefs={kit.connectorRefs}
         connectorById={connectorById}

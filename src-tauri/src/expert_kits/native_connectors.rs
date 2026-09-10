@@ -1,5 +1,5 @@
 use super::*;
-use serde_json::{Value, json};
+use serde_json::Value;
 
 pub(super) const CONNECTORS_PATH: &str = ".xiaoyin-kit/connectors.json";
 pub(super) const EXTENSION_ROOT_VARIABLE: &str = "${XIAOYIN_EXTENSION_ROOT}";
@@ -50,37 +50,6 @@ pub(super) fn bundled_connectors(directory: &Path) -> Option<Value> {
         &directory.to_string_lossy(),
     );
     Some(config)
-}
-
-pub(super) fn rekey_bundled_connectors(
-    root: &Path,
-    manifest: &mut Value,
-    new_id: &str,
-) -> Result<(), String> {
-    if !root.join(CONNECTORS_PATH).is_file() {
-        return Ok(());
-    }
-    let config = read_json(&root.join(CONNECTORS_PATH))?;
-    let servers = config["mcpServers"]
-        .as_object()
-        .ok_or("套件连接器配置无效")?;
-    let mut converted = serde_json::Map::new();
-    let mut mapping = std::collections::HashMap::new();
-    for (old_id, server) in servers {
-        let id = portable_id(&format!("{new_id}-{old_id}"));
-        let mut server = server.clone();
-        server["id"] = json!(id);
-        mapping.insert(old_id.clone(), id.clone());
-        converted.insert(id, server);
-    }
-    if let Some(refs) = manifest["connectorRefs"].as_array_mut() {
-        for reference in refs {
-            if let Some(id) = reference.as_str().and_then(|id| mapping.get(id)) {
-                *reference = json!(id);
-            }
-        }
-    }
-    write_json(root, CONNECTORS_PATH, &json!({"mcpServers": converted}))
 }
 
 pub(super) fn portable_id(name: &str) -> String {
@@ -151,6 +120,7 @@ pub(super) fn write_json(root: &Path, relative: &str, value: &Value) -> Result<(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn expands_only_the_native_root_variable() {

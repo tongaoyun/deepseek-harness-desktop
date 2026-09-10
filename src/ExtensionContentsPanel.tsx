@@ -1,10 +1,9 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { FileText, ArrowRight } from 'lucide-react'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
 import { readExtensionContents, type ExtensionContents, type ExtensionDocument } from './expertKits'
 import type { InstalledExpertKit } from './types'
 import { ExtensionReaderDialog } from './ExtensionReaderDialog'
+import { ExtensionMarkdown as Markdown, ExtensionReadmeSection } from './ExtensionReadmeSection'
 
 export function ExtensionContentsPanel({ extension, onUseSkill, onUseCommand, onCustomize, beforeSkills }: {
   extension: InstalledExpertKit; onUseSkill?: (skill: ExtensionDocument) => void; onUseCommand?: (id: string) => void; onCustomize?: (document: ExtensionDocument) => void; beforeSkills?: ReactNode
@@ -12,12 +11,10 @@ export function ExtensionContentsPanel({ extension, onUseSkill, onUseCommand, on
   const { kind, id, version } = extension.manifest
   const [result, setResult] = useState<{ key: string; contents?: ExtensionContents; error?: string }>()
   const [active, setActive] = useState<ExtensionDocument>()
-  const [readmeOpen, setReadmeOpen] = useState(false)
   const key = `${kind}:${id}@${version}`
   useEffect(() => {
     let current = true
     setActive(undefined)
-    setReadmeOpen(false)
     readExtensionContents(kind, id, version).then((contents) => { if (current) setResult({ key, contents }) }, (reason) => { if (current) setResult({ key, error: reason instanceof Error ? reason.message : String(reason) }) })
     return () => { current = false }
   }, [kind, id, version, key])
@@ -37,26 +34,14 @@ export function ExtensionContentsPanel({ extension, onUseSkill, onUseCommand, on
     </section>}
     {beforeSkills}
     {contents.skills.length > 0 && <section className="expert-detail-section extension-source-section">
-      <h3>知识技能 <small>({contents.skills.length})</small></h3>
-      <div className="extension-source-list">{contents.skills.map((item) => <button aria-label={`知识技能：${item.name}`} key={item.path} onClick={() => setActive(item)} type="button"><span><strong>{item.name}</strong>{item.summary && <small>{item.summary}</small>}</span></button>)}</div>
+      <h3>技能 <small>({contents.skills.length})</small></h3>
+      <div className="extension-source-list">{contents.skills.map((item) => <button aria-label={`技能：${item.name}`} key={item.path} onClick={() => setActive(item)} type="button"><span><strong>{item.name}</strong>{item.summary && <small>{item.summary}</small>}</span></button>)}</div>
     </section>}
     {contents.commands.length > 0 && <section className="expert-detail-section extension-source-section">
       <h3>命令说明 <small>({contents.commands.length})</small></h3>
       <div className="extension-source-list">{contents.commands.map((item) => <button key={item.path} onClick={() => setActive(item)} type="button"><FileText size={16} /><span><strong>{item.name}</strong>{item.summary && <small>{item.summary}</small>}</span><ArrowRight size={14} /></button>)}</div>
     </section>}
-    {contents.readme && <section className="expert-detail-section extension-readme">
-      <div className="extension-readme-preview" role="button" tabIndex={0} aria-label="查看完整套件说明" aria-haspopup="dialog" onClick={() => setReadmeOpen(true)} onKeyDown={(event) => {
-        if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setReadmeOpen(true) }
-      }}>
-        <h3><FileText size={16} />套件说明</h3>
-        <div inert aria-hidden="true"><Markdown content={contents.readme} /></div>
-      </div>
-    </section>}
-    {readmeOpen && <ExtensionReaderDialog title="套件说明" onClose={() => setReadmeOpen(false)} heading={<h2 className="extension-reader-title"><FileText size={20} />套件说明</h2>}><Markdown content={contents.readme} /></ExtensionReaderDialog>}
+    <ExtensionReadmeSection readme={contents.readme} />
     {active && <ExtensionReaderDialog title={active.name} onClose={() => setActive(undefined)} heading={<><h2>{active.name}</h2><p className="extension-reader-meta">来自 {extension.manifest.name} · {id}</p>{active.summary && <p className="extension-reader-summary">{active.summary}</p>}</>} actions={onCustomize ? <button className="extension-customize-primary" onClick={() => onCustomize(active)} type="button">自定义修改</button> : undefined}><Markdown content={active.content} /></ExtensionReaderDialog>}
   </>
-}
-
-function Markdown({ content }: { content: string }) {
-  return <div className="message-markdown extension-markdown"><ReactMarkdown remarkPlugins={[remarkGfm]}>{content.replace(/^\uFEFF?---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/, '')}</ReactMarkdown></div>
 }
