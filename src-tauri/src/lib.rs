@@ -137,7 +137,6 @@ pub fn run() {
             expert_kits::remove_developer_expert_kit,
             expert_kits::remove_developer_extension,
             expert_kits::remove_catalog_extension,
-            expert_kits::remove_broken_extension,
             local_artifacts::read_local_artifact_preview,
             local_artifacts::read_harness_image_preview,
             local_artifacts::reveal_local_artifact,

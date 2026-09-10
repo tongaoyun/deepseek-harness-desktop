@@ -211,7 +211,7 @@ pub(super) fn valid_tool_name(value: &str) -> bool {
         })
 }
 
-fn valid_file_reference_id(value: &str) -> bool {
+pub(super) fn valid_file_reference_id(value: &str) -> bool {
     (2..=64).contains(&value.len())
         && value.as_bytes().first().is_some_and(u8::is_ascii_lowercase)
         && value.bytes().all(|character| {

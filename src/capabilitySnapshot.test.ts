@@ -11,7 +11,10 @@ const connector = (id: string, version = '1', status: ConnectorRuntimeDefinition
 
 describe('capability snapshot', () => {
   it('preserves a session after native JSON storage reorders nested object keys', () => {
-    const skill = { id: 'unit-testing', version: '1.0.1', sha256: 'a'.repeat(64), installState: 'installed' } as SkillView
+    const skill = {
+      id: 'unit-testing', version: '1.0.1', sha256: 'a'.repeat(64), installState: 'installed',
+      installed: { manifest: { version: '1.0.1' }, packageSha256: 'a'.repeat(64) },
+    } as SkillView
     const snapshot = createCapabilitySnapshot([], [skill], [{ ...connector('erp'), headers: { Z: '', A: '' } }])
     const stored = JSON.parse(JSON.stringify(snapshot, (_key, value) => value && typeof value === 'object' && !Array.isArray(value)
       ? Object.fromEntries(Object.entries(value).sort(([left], [right]) => left.localeCompare(right))) : value))
@@ -27,7 +30,10 @@ describe('capability snapshot', () => {
     expect(capabilitySnapshotChanged(first, createCapabilitySnapshot([], [], []))).toBe(true)
   })
   it('excludes disabled skills and expert kits from new tasks', () => {
-    const common = { id: 'disabled', version: '1.0.0', sha256: 'a'.repeat(64), installState: 'installed', installed: { enabled: false } }
+    const common = {
+      id: 'disabled', version: '1.0.0', sha256: 'a'.repeat(64), installState: 'installed',
+      installed: { enabled: false, manifest: { version: '1.0.0' }, packageSha256: 'a'.repeat(64) },
+    }
     expect(createCapabilitySnapshot([common as ExpertKitView], [common as SkillView], []).extensions).toEqual([])
   })
   it('freezes installed extensions and ready connector versions for a task', () => {
@@ -35,7 +41,10 @@ describe('capability snapshot', () => {
       id: 'ops', version: '1.0.0', sha256: 'a'.repeat(64), installState: 'installed',
       installed: { manifest: { version: '1.0.0' }, packageSha256: 'a'.repeat(64) },
     } as ExpertKitView
-    const skill = { id: 'document', version: '2.0.0', sha256: 'b'.repeat(64), installState: 'installed' } as SkillView
+    const skill = {
+      id: 'document', version: '2.0.0', sha256: 'b'.repeat(64), installState: 'installed',
+      installed: { manifest: { version: '2.0.0' }, packageSha256: 'b'.repeat(64) },
+    } as SkillView
     const snapshot = createCapabilitySnapshot(
       [kit], [skill], [connector('erp'), connector('offline', '1', 'unavailable')],
       ['team:refund-sop'], '2026-09-02T00:00:00Z',

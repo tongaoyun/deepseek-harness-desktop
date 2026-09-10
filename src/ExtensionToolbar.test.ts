@@ -16,9 +16,10 @@ describe('extension category filtering', () => {
     expect(extensionMatches({ ...extension, category: undefined }, '', 'market', 'other')).toBe(true)
   })
 
-  it('separates local built-ins and keeps updates in installed', () => {
+  it('separates local built-ins from the market and lists installed content', () => {
     expect(extensionMatches({ ...extension, localOnly: true }, '', 'market')).toBe(false)
     expect(extensionMatches({ ...extension, localOnly: true }, '', 'builtin')).toBe(true)
-    expect(extensionMatches({ ...extension, installState: 'update' }, '', 'installed')).toBe(true)
+    expect(extensionMatches({ ...extension, installState: 'installed' }, '', 'installed')).toBe(true)
+    expect(extensionMatches(extension, '', 'installed')).toBe(false)
   })
 })

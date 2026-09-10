@@ -2,20 +2,7 @@ import { extensionCategories, type ExtensionCategoryFilter } from './extensionCa
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 
-export type ExtensionFilter = 'market' | 'builtin' | 'installed' | 'updates' | 'attention'
-
-export function ExtensionToolbar({ filter, onFilter }: {
-  filter: ExtensionFilter
-  onFilter: (value: ExtensionFilter) => void
-}) {
-  const filters: Array<{ id: ExtensionFilter; label: string }> = [
-    { id: 'market', label: '企业市场' }, { id: 'installed', label: '已安装' },
-    { id: 'updates', label: '可更新' }, { id: 'attention', label: '需要处理' },
-  ]
-  return <div className="extension-toolbar">
-    <div>{filters.map((item) => <button className={filter === item.id ? 'active' : ''} key={item.id} onClick={() => onFilter(item.id)} type="button">{item.label}</button>)}</div>
-  </div>
-}
+export type ExtensionFilter = 'market' | 'builtin' | 'installed' | 'attention'
 
 export function ExtensionCategoryBar({ value, onChange }: {
   value: ExtensionCategoryFilter
@@ -58,8 +45,7 @@ export function extensionMatches(
   if (value && !`${item.name} ${item.summary} ${item.id}`.toLocaleLowerCase('zh-CN').includes(value)) return false
   if (category !== 'all' && (item.category ?? 'other') !== category) return false
   if (filter === 'builtin') return item.localOnly === true && item.installState !== 'retired'
-  if (filter === 'installed') return item.installState === 'installed' || item.installState === 'update'
-  if (filter === 'updates') return item.installState === 'update'
-  if (filter === 'attention') return item.installState === 'retired' || item.installState === 'update' || item.readiness === 'partial'
+  if (filter === 'installed') return item.installState === 'installed'
+  if (filter === 'attention') return item.installState === 'retired' || item.readiness === 'partial'
   return item.installState !== 'retired' && item.localOnly !== true
 }

@@ -2,6 +2,7 @@ import { FolderOpen } from 'lucide-react'
 import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import {
   createExpertKitDownload,
+  loadExpertKitReadme,
   createSkillDownload,
   resolveServerEndpoint,
   localScheduleNamespace,
@@ -1504,6 +1505,7 @@ export default function App() {
           ? () => void removeLocalAcceptanceKit(activeExpertKit)
           : activeExpertKit.installed ? () => void removeCatalogArtifact('expert-kit', activeExpertKit.id) : undefined}
         onSchedule={() => { setActiveExpertKitId(''); setPage('schedules') }}
+        onLoadReadme={bootstrap && user ? (id) => loadExpertKitReadme(bootstrap.endpoints.expertKits, id, user.userId, accessToken) : undefined}
         onUse={activeExpertKit.installed?.enabled !== false && activeExpertKit.installState === 'installed' ? (command) => { setActiveExpertKitId(''); startNewTask(`/kit:${activeExpertKit.id}${command ? `:${command}` : ''} `) } : undefined}
         onUseSkill={activeExpertKit.installed?.enabled !== false && activeExpertKit.installState === 'installed' ? (skill) => { setActiveExpertKitId(''); startNewTask(expertKitSkillPrompt(activeExpertKit.id, skill)) } : undefined}
         onConfigureConnectors={() => { setActiveExpertKitId(''); setExtensionQuery(''); setPage('connectors') }}
@@ -1530,7 +1532,7 @@ export default function App() {
         removing={removingCatalogId === activeSkill.id}
         onClose={() => setActiveSkillId('')}
         onInstall={() => void installSkill(activeSkill)}
-        onUse={activeSkill.installed?.enabled !== false && ['installed', 'update'].includes(activeSkill.installState) ? () => { setActiveSkillId(''); startNewTask(`/skill:${activeSkill.id} `) } : undefined}
+        onUse={activeSkill.installed?.enabled !== false && activeSkill.installState === 'installed' ? () => { setActiveSkillId(''); startNewTask(`/skill:${activeSkill.id} `) } : undefined}
         onCustomize={activeSkill.installed ? () => void customizeLocalExpertKit(activeSkill, 'skill') : undefined}
         onExport={activeSkill.installed ? () => void exportLocalExpertKit(activeSkill, 'skill') : undefined}
         onRemove={activeSkill.installed ? () => void removeCatalogArtifact('skill', activeSkill.id) : undefined}

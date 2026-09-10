@@ -242,12 +242,7 @@ pub async fn install_expert_kit(
             return Err("本地同版本套件与控制中心摘要不一致，请联系管理员".to_string());
         }
         let installed = installed_kit(manifest, &final_directory, record.source);
-        remove_other_catalog_versions(
-            &root.join(&request.id),
-            &request.kind,
-            &request.id,
-            &request.version,
-        )?;
+        prune_superseded_catalog_versions(&app, &root.join(&request.id), &request.version);
         return Ok(installed);
     }
 
@@ -261,12 +256,7 @@ pub async fn install_expert_kit(
         Some(&request.sha256),
         InstallSource::Catalog,
     )?;
-    remove_other_catalog_versions(
-        &root.join(&request.id),
-        &request.kind,
-        &request.id,
-        &request.version,
-    )?;
+    prune_superseded_catalog_versions(&app, &root.join(&request.id), &request.version);
     Ok(installed)
 }
 
@@ -686,9 +676,9 @@ pub async fn customize_expert_kit(
     let mut manifest: serde_json::Value =
         serde_json::from_slice(&fs::read(&manifest_path).map_err(|error| error.to_string())?)
             .map_err(|error| error.to_string())?;
-    let new_id = native_connectors::portable_id(&format!("{id}-custom"));
-    manifest["id"] = serde_json::json!(new_id);
-    native_connectors::rekey_bundled_connectors(&destination, &mut manifest, &new_id)?;
+    // The copy keeps the same bundled connector ids: they name shared desktop connectors, so a
+    // customized kit reuses whatever the employee already configured instead of asking again.
+    manifest["id"] = serde_json::json!(native_connectors::portable_id(&format!("{id}-custom")));
     manifest["name"] = serde_json::json!(format!(
         "{} · 定制",
         manifest["name"].as_str().unwrap_or(&id)
@@ -960,16 +950,34 @@ fn remove_catalog_versions(extension_directory: &Path, kind: &str, id: &str) -> 
     Ok(())
 }
 
-fn remove_other_catalog_versions(
+/// Superseded content is disk cleanup, never a reason to fail an install that already succeeded,
+/// and it stays on disk while a task is running so a live run keeps the files it started with.
+/// Whatever is left over is removed the next time the same extension is installed.
+fn prune_superseded_catalog_versions(
+    app: &tauri::AppHandle,
     extension_directory: &Path,
-    kind: &str,
-    id: &str,
     current_version: &str,
-) -> Result<(), String> {
-    if !extension_directory.exists() {
-        return Ok(());
+) {
+    if app
+        .state::<crate::harness::HarnessManager>()
+        .has_running_task()
+    {
+        return;
     }
-    for version_directory in child_directories(extension_directory)? {
+    remove_other_catalog_versions(extension_directory, current_version);
+}
+
+/// The install record is what proves a version directory is catalog content, not a developer copy.
+/// A manifest that no longer loads is exactly the damaged state a reinstall is meant to clear, so it
+/// does not protect the directory; an unreadable record does.
+fn remove_other_catalog_versions(extension_directory: &Path, current_version: &str) {
+    if !extension_directory.exists() {
+        return;
+    }
+    let Ok(version_directories) = child_directories(extension_directory) else {
+        return;
+    };
+    for version_directory in version_directories {
         if version_directory
             .file_name()
             .and_then(|value| value.to_str())
@@ -983,40 +991,8 @@ fn remove_other_catalog_versions(
         if record.source != InstallSource::Catalog {
             continue;
         }
-        load_and_validate_manifest(&version_directory, Some(kind), Some(id), None)?;
-        fs::remove_dir_all(&version_directory)
-            .map_err(|error| format!("无法清理旧套件内容：{error}"))?;
+        let _ = fs::remove_dir_all(&version_directory);
     }
-    Ok(())
-}
-
-#[tauri::command]
-pub fn remove_broken_extension(app: tauri::AppHandle, coordinate: String) -> Result<(), String> {
-    let (kind, remainder) = coordinate
-        .split_once(':')
-        .ok_or_else(|| "损坏扩展坐标无效".to_string())?;
-    let (id, version) = remainder
-        .rsplit_once('@')
-        .ok_or_else(|| "损坏扩展坐标无效".to_string())?;
-    validate_artifact_kind(kind)?;
-    validate_identifier(id)?;
-    Version::parse(version).map_err(|error| format!("扩展版本无效：{error}"))?;
-    let extension_directory = extensions_root(&app)?.join(kind).join(id);
-    let version_directory = extension_directory.join(version);
-    if version_directory.exists() {
-        fs::remove_dir_all(&version_directory)
-            .map_err(|error| format!("无法移除损坏扩展：{error}"))?;
-    }
-    if extension_directory.exists()
-        && fs::read_dir(&extension_directory)
-            .map_err(|error| format!("无法检查扩展目录：{error}"))?
-            .next()
-            .is_none()
-    {
-        fs::remove_dir(&extension_directory)
-            .map_err(|error| format!("无法清理扩展目录：{error}"))?;
-    }
-    Ok(())
 }
 
 fn install_package_bytes(
@@ -1285,7 +1261,7 @@ fn validate_selected_skill_conflicts(selected: &[&InstalledExpertKit]) -> Result
                 let mut current_files = Vec::new();
                 collect_payload_files(previous, previous, Path::new(""), &mut previous_files)?;
                 collect_payload_files(directory, directory, Path::new(""), &mut current_files)?;
-                if previous_files != current_files {
+                if comparable_skill_files(previous_files) != comparable_skill_files(current_files) {
                     return Err(format!(
                         "《{}》与《{}》包含内容不同的同名技能 {}，请先定制并区分技能 ID",
                         owner, artifact.manifest.name, skill.id
@@ -1300,6 +1276,44 @@ fn validate_selected_skill_conflicts(selected: &[&InstalledExpertKit]) -> Result
         }
     }
     Ok(())
+}
+
+/// Two copies of the same skill only conflict when they would behave differently. The frontmatter
+/// version is publishing metadata the runtime never reads, so a kit and a standalone copy that
+/// differ only by that stamp are the same skill.
+fn comparable_skill_files(files: Vec<(String, Vec<u8>)>) -> Vec<(String, Vec<u8>)> {
+    files
+        .into_iter()
+        .map(|(path, content)| {
+            if !path.ends_with("SKILL.md") {
+                return (path, content);
+            }
+            match String::from_utf8(content) {
+                Ok(text) => (path, without_frontmatter_version(&text).into_bytes()),
+                Err(error) => (path, error.into_bytes()),
+            }
+        })
+        .collect()
+}
+
+fn without_frontmatter_version(content: &str) -> String {
+    let trimmed = content.trim_start_matches('\u{feff}');
+    let mut lines = trimmed.lines();
+    if lines.next().map(str::trim) != Some("---") {
+        return content.to_owned();
+    }
+    let mut result = String::from("---\n");
+    let mut inside = true;
+    for line in lines {
+        if inside && line.trim() == "---" {
+            inside = false;
+        } else if inside && line.trim_start().starts_with("version:") {
+            continue;
+        }
+        result.push_str(line);
+        result.push('\n');
+    }
+    result
 }
 
 fn task_knowledge_scope(
@@ -1783,6 +1797,51 @@ mod tests {
     }
 
     #[test]
+    fn a_version_stamp_alone_does_not_make_two_copies_of_a_skill_conflict() {
+        let root = std::env::temp_dir().join(format!(
+            "xiaoyin-skill-stamp-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let body = "\n---\n\n# API接口设计\n\n设计接口。\n";
+        let kits = [("kit", "1.0.0"), ("standalone", "1.0.1")].map(|(id, version)| {
+            let directory = root.join(id);
+            fs::create_dir_all(directory.join("skills/api-design")).unwrap();
+            fs::write(
+                directory.join("skills/api-design/SKILL.md"),
+                format!("---\nname: api-design\nversion: {version}\ndescription: 设计接口{body}"),
+            )
+            .unwrap();
+            let manifest = serde_json::from_value::<ExpertKitManifest>(serde_json::json!({
+                "schemaVersion": "2", "kind": "expert-kit", "id": id, "name": id,
+                "version": "1.0.0", "summary": "Test", "category": "other",
+                "minimumDesktopVersion": "0.1.30",
+                "skills": [{ "id": "api-design", "path": "skills/api-design/SKILL.md" }]
+            }))
+            .unwrap();
+            installed_kit(manifest, &directory, InstallSource::Developer)
+        });
+        assert!(validate_selected_skill_conflicts(&[&kits[0], &kits[1]]).is_ok());
+
+        // A real difference in the instructions still blocks the task.
+        fs::write(
+            root.join("standalone/skills/api-design/SKILL.md"),
+            format!(
+                "---\nname: api-design\nversion: 1.0.1\ndescription: 设计接口{body}并生成文档。\n"
+            ),
+        )
+        .unwrap();
+        let error = validate_selected_skill_conflicts(&[&kits[0], &kits[1]])
+            .err()
+            .unwrap();
+        assert!(error.contains("api-design"), "{error}");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn combined_kits_check_resources_and_expand_each_command_arguments() {
         let root =
             std::env::temp_dir().join(format!("xiaoyin-combined-kits-{}", std::process::id()));
@@ -2206,11 +2265,24 @@ mod tests {
         }
 
         let directory = root.join("report-kit");
-        remove_other_catalog_versions(&directory, "expert-kit", "report-kit", "2.0.0").unwrap();
+        // A catalog copy whose manifest no longer loads is the damaged state a reinstall clears.
+        let damaged = directory.join("0.9.0");
+        fs::create_dir_all(damaged.join(".xiaoyin")).unwrap();
+        fs::write(
+            damaged.join(".xiaoyin/install.json"),
+            format!("{{\"packageSha256\":\"{}\"}}", "a".repeat(64)),
+        )
+        .unwrap();
+        // Without a readable install record the directory has no provenance, so it is left alone.
+        let unknown = directory.join("0.8.0");
+        fs::create_dir_all(&unknown).unwrap();
+        remove_other_catalog_versions(&directory, "2.0.0");
 
         assert!(!directory.join("1.0.0").exists());
         assert!(directory.join("2.0.0").exists());
         assert!(directory.join("3.0.0").exists());
+        assert!(!damaged.exists());
+        assert!(unknown.exists());
         fs::remove_dir_all(root).unwrap();
     }
 

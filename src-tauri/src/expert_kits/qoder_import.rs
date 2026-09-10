@@ -77,14 +77,14 @@ fn import_kit(root: &Path, expected_kind: Option<&str>) -> Result<(), String> {
             path: path.into(),
         });
     }
-    let connector_refs = convert_connectors(root, &plugin, &id)?;
+    let connector_refs = convert_connectors(root, &plugin)?;
     let mut manifest = json!({
         "schemaVersion": "2",
         "id": id,
         "name": name,
         "version": version,
         "summary": summary,
-        "category": "other",
+        "category": category(&plugin),
         "minimumDesktopVersion": "0.1.30",
         "commands": commands,
         "skills": skills,
@@ -138,6 +138,50 @@ fn import_skill(root: &Path, expected_kind: Option<&str>) -> Result<(), String> 
         manifest["author"] = json!(author.trim());
     }
     native_connectors::write_json(root, SKILL_MANIFEST_PATH, &manifest)
+}
+
+/// Qoder's own taxonomy, plus the ids Xiaoyin already uses so a native value passes through.
+/// Anything unknown or missing stays "other" — the employee can set it after import.
+const QODER_CATEGORIES: [(&str, &str); 22] = [
+    ("engineering", "code-development"),
+    ("development", "code-development"),
+    ("coding", "code-development"),
+    ("review", "code-review"),
+    ("security", "security-testing"),
+    ("testing", "security-testing"),
+    ("data", "database-analysis"),
+    ("database", "database-analysis"),
+    ("analytics", "database-analysis"),
+    ("devops", "operations-deployment"),
+    ("operations", "operations-deployment"),
+    ("tools", "developer-tools"),
+    ("productivity", "office-productivity"),
+    ("office", "office-productivity"),
+    ("writing", "content-creation"),
+    ("content", "content-creation"),
+    ("commerce", "ecommerce-retail"),
+    ("ecommerce", "ecommerce-retail"),
+    ("retail", "ecommerce-retail"),
+    ("hr", "recruiting"),
+    ("product", "product-management"),
+    ("research", "knowledge-research"),
+];
+
+fn category(plugin: &Value) -> &'static str {
+    let Some(value) = optional_string(plugin, "category") else {
+        return "other";
+    };
+    let value = value.to_ascii_lowercase();
+    if let Some(native) = EXTENSION_CATEGORIES
+        .iter()
+        .find(|category| **category == value)
+    {
+        return native;
+    }
+    QODER_CATEGORIES
+        .iter()
+        .find(|(source, _)| *source == value)
+        .map_or("other", |(_, target)| *target)
 }
 
 fn reject_unsupported_features(root: &Path, plugin: &Value) -> Result<(), String> {
@@ -197,15 +241,19 @@ fn collect_skills(
     if directory.join("SKILL.md").is_file() {
         let content =
             fs::read_to_string(directory.join("SKILL.md")).map_err(|error| error.to_string())?;
-        let name = workbench::metadata(&content, "name").unwrap_or_else(|| {
-            directory
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .into_owned()
-        });
+        let folder = directory
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .into_owned();
+        let name = workbench::metadata(&content, "name").unwrap_or_else(|| folder.clone());
+        // A display name is often Chinese and would hash into an unreadable id, while the folder
+        // beside it is usually the identifier the package's own cross-references already use.
+        let id = usable_identifier(&name)
+            .or_else(|| usable_identifier(&folder))
+            .unwrap_or_else(|| native_connectors::portable_id(&name));
         result.push(FileReference {
-            id: native_connectors::portable_id(&name),
+            id,
             path: relative(root, &directory.join("SKILL.md"))?,
         });
     } else if directory.is_dir() {
@@ -216,6 +264,11 @@ fn collect_skills(
         return Err("skills 路径必须指向包含 SKILL.md 的目录".into());
     }
     Ok(())
+}
+
+fn usable_identifier(value: &str) -> Option<String> {
+    // Skill and command entries answer to the file-reference rule, which is looser than a kit id.
+    manifest::valid_file_reference_id(value).then(|| value.to_owned())
 }
 
 fn collect_commands(
@@ -282,7 +335,9 @@ fn connector_config(root: &Path, plugin: &Value) -> Result<Value, String> {
     }
 }
 
-fn convert_connectors(root: &Path, plugin: &Value, kit_id: &str) -> Result<Vec<String>, String> {
+/// Bundled connectors are the desktop's own connectors: the MCP server name is the shared id, so a
+/// server another kit already installed and authorized is reused instead of duplicated per kit.
+fn convert_connectors(root: &Path, plugin: &Value) -> Result<Vec<String>, String> {
     let config = connector_config(root, plugin)?;
     if config.is_null() {
         return Ok(Vec::new());
@@ -295,7 +350,7 @@ fn convert_connectors(root: &Path, plugin: &Value, kit_id: &str) -> Result<Vec<S
     let mut converted = serde_json::Map::new();
     let mut ids = Vec::new();
     for (name, config) in servers {
-        let id = native_connectors::portable_id(&format!("{kit_id}-{name}"));
+        let id = native_connectors::portable_id(name);
         let mut server = config.as_object().ok_or("MCP 服务配置必须是对象")?.clone();
         if server.contains_key("oauth") {
             return Err("该套件的 OAuth 连接器需要单独接入".into());
@@ -304,6 +359,24 @@ fn convert_connectors(root: &Path, plugin: &Value, kit_id: &str) -> Result<Vec<S
             && !server.contains_key("authMode")
         {
             server.insert("authMode".into(), json!("oauth"));
+        }
+        // Qoder writes MCP's own `type`; the kit contract names the field `transport` and uses
+        // the transport ids the connector runtime understands.
+        if let Some(transport) = server
+            .remove("type")
+            .as_ref()
+            .and_then(Value::as_str)
+            .map(|value| {
+                if value == "http" {
+                    "streamable-http"
+                } else {
+                    value
+                }
+            })
+            .map(str::to_owned)
+            && !server.contains_key("transport")
+        {
+            server.insert("transport".into(), json!(transport));
         }
         let mut server = Value::Object({
             server.insert("id".into(), json!(id));
@@ -424,10 +497,88 @@ mod tests {
         assert!(connectors.contains(native_connectors::EXTENSION_ROOT_VARIABLE));
         assert!(!connectors.contains("QODER_PLUGIN_ROOT"));
         let connectors: Value = serde_json::from_str(&connectors).unwrap();
+        assert_eq!(connectors["mcpServers"]["buyer"]["authMode"], "oauth");
         assert_eq!(
-            connectors["mcpServers"]["product-design-buyer"]["authMode"],
-            "oauth"
+            connectors["mcpServers"]["buyer"]["transport"],
+            "streamable-http"
         );
+        assert!(connectors["mcpServers"]["buyer"]["type"].is_null());
+    }
+
+    #[test]
+    fn keeps_the_folder_identifier_behind_a_chinese_skill_name() {
+        let root = Fixture::new();
+        root.write(
+            QODER_MANIFEST_PATH,
+            r#"{"name":"product-design","displayName":"产品设计","category":"engineering","skills":["./skills/qa","./skills/prd","./skills/写PRD"]}"#,
+        );
+        root.write(
+            "skills/qa/SKILL.md",
+            "---\nname: 设计验收\ndescription: 对比设计与实现\n---\n# 设计验收",
+        );
+        root.write(
+            "skills/prd/SKILL.md",
+            "---\nname: 写PRD\ndescription: 输出需求文档\n---\n# 写PRD",
+        );
+        root.write(
+            "skills/写PRD/SKILL.md",
+            "---\nname: 出方案\ndescription: 输出设计方案\n---\n# 出方案",
+        );
+
+        import(&root.0, Some("expert-kit")).unwrap();
+
+        let manifest = native_connectors::read_json(&root.0.join(KIT_MANIFEST_PATH)).unwrap();
+        // The readable folder wins over a hash of the display name; a Chinese folder still hashes.
+        // A two-letter folder is a valid skill reference even though it is too short for a kit id.
+        assert_eq!(manifest["skills"][0]["id"], "qa");
+        assert_eq!(manifest["skills"][1]["id"], "prd");
+        assert!(
+            manifest["skills"][2]["id"]
+                .as_str()
+                .unwrap()
+                .starts_with("ext-")
+        );
+        assert_eq!(manifest["category"], "code-development");
+    }
+
+    #[test]
+    fn two_kits_declaring_the_same_server_share_one_connector() {
+        let ids = ["writer-kit", "planner-kit"].map(|kit| {
+            let root = Fixture::new();
+            root.write(
+                QODER_MANIFEST_PATH,
+                &format!(r#"{{"name":"{kit}","displayName":"套件","skills":["./skills/main"]}}"#),
+            );
+            root.write("skills/main/SKILL.md", "---\nname: main\n---\n# 主技能");
+            root.write(
+                ".mcp.json",
+                r#"{"mcpServers":{"notion":{"type":"http","url":"https://mcp.notion.com/mcp"}}}"#,
+            );
+
+            import(&root.0, Some("expert-kit")).unwrap();
+
+            let manifest = native_connectors::read_json(&root.0.join(KIT_MANIFEST_PATH)).unwrap();
+            let connectors =
+                native_connectors::read_json(&root.0.join(native_connectors::CONNECTORS_PATH))
+                    .unwrap();
+            assert!(connectors["mcpServers"]["notion"]["url"].is_string());
+            manifest["connectorRefs"].clone()
+        });
+        // The id names the shared desktop connector, so the second kit reuses whatever the
+        // employee already configured instead of asking for its own copy.
+        assert_eq!(ids[0], json!(["notion"]));
+        assert_eq!(ids[0], ids[1]);
+    }
+
+    #[test]
+    fn unknown_and_missing_categories_stay_in_other() {
+        assert_eq!(category(&json!({"category": "design"})), "design");
+        assert_eq!(
+            category(&json!({"category": "ENGINEERING"})),
+            "code-development"
+        );
+        assert_eq!(category(&json!({"category": "spaceflight"})), "other");
+        assert_eq!(category(&json!({})), "other");
     }
 
     #[test]

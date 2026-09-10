@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { createExpertKitDownload, loadConnectors, loadExpertKits, loadKnowledgeBases, loadSkills } from './api'
+import { createExpertKitDownload, createSkillDownload, loadConnectors, loadExpertKits, loadKnowledgeBases, loadSkills } from './api'
 import type { ErpUser } from './auth'
 import { withDesktopBuiltinConnectors } from './connectors'
 import { loadEnterpriseCatalogCache, saveEnterpriseCatalogCache } from './enterpriseCache'
 import { inspectInstalledExtensions, installExtension, mergeExpertKits, type ExpertKitView } from './expertKits'
-import { synchronizePublishedExpertKits } from './expertKitSync'
+import { synchronizePublishedExtensions } from './publishedExtensionSync'
 import { isPersonalConnector, loadPersonalConnectors } from './extensionSubmissions'
 import { mergeSkills, type SkillView } from './skills'
 import type {
@@ -15,13 +15,6 @@ import type {
   KnowledgeBaseEntry,
   SkillCatalogEntry,
 } from './types'
-
-export interface ExtensionSyncIssue {
-  key: string
-  label: string
-  message: string
-  removable?: boolean
-}
 
 interface CatalogData {
   catalog: ExpertKitCatalogEntry[]
@@ -51,9 +44,6 @@ export function useEnterpriseCatalog({
   const [connectors, setConnectors] = useState<ConnectorCatalogEntry[]>([])
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBaseEntry[]>([])
   const [loading, setLoading] = useState(false)
-  const [syncIssues, setSyncIssues] = useState<ExtensionSyncIssue[]>([])
-  const [syncedAt, setSyncedAt] = useState<Date>()
-  const [cacheSavedAt, setCacheSavedAt] = useState('')
   const [refreshKey, setRefreshKey] = useState(0)
   const cacheRef = useRef<CatalogData>(emptyCatalog())
   const catalogOwnerRef = useRef('')
@@ -82,9 +72,6 @@ export function useEnterpriseCatalog({
       cacheLoadedRef.current = false
       inventoryRevisionRef.current += 1
       setLoading(false)
-      setCacheSavedAt('')
-      setSyncIssues([])
-      setSyncedAt(undefined)
       applyCatalog()
       return
     }
@@ -93,9 +80,6 @@ export function useEnterpriseCatalog({
       catalogOwnerRef.current = user.userId
       cacheLoadedRef.current = false
       inventoryRevisionRef.current += 1
-      setCacheSavedAt('')
-      setSyncIssues([])
-      setSyncedAt(undefined)
       applyCatalog()
     }
     const controller = new AbortController()
@@ -104,7 +88,6 @@ export function useEnterpriseCatalog({
       if (syncing) return
       syncing = true
       if (showLoading) setLoading(true)
-      setSyncIssues([])
       try {
         if (showLoading && !cacheLoadedRef.current) {
           const cached = await loadEnterpriseCatalogCache(user.userId).catch(() => undefined)
@@ -120,7 +103,6 @@ export function useEnterpriseCatalog({
                 ...cached.connectors.filter((item) => !isPersonalConnector(item) && !personal.some((value) => value.id === item.id)),
               ]),
             }
-            setCacheSavedAt(cached.savedAt)
             applyCatalog()
           }
         }
@@ -137,18 +119,30 @@ export function useEnterpriseCatalog({
         const data = cacheRef.current
         if (catalogResult.status === 'fulfilled') data.catalog = catalogResult.value
         const currentInventory = inventoryRevision === inventoryRevisionRef.current
-        let expertKitSyncIssues: ExtensionSyncIssue[] = []
-        if (currentInventory && installedResult.status === 'fulfilled') {
-          data.installed = installedResult.value.installed
-          if (catalogResult.status === 'fulfilled') {
-            const synchronized = await synchronizePublishedExpertKits(catalogResult.value, data.installed, {
-              download: (id) => createExpertKitDownload(bootstrap.endpoints.expertKits, id, user.userId, accessToken),
-              install: (download) => installExtension(download, 'expert-kit'),
-            })
-            if (controller.signal.aborted) return
-            data.installed = synchronized.installed
-            expertKitSyncIssues = synchronized.issues
-          }
+        let latestInventory = installedResult.status === 'fulfilled' ? installedResult.value : undefined
+        if (latestInventory && !currentInventory) {
+          // A local install landed while the catalog was loading, so this snapshot is already stale:
+          // read the inventory again instead of skipping the published-content sync for a whole cycle.
+          const revision = inventoryRevisionRef.current
+          latestInventory = await inspectInstalledExtensions().catch(() => undefined)
+          if (controller.signal.aborted || catalogOwnerRef.current !== user.userId) return
+          if (revision !== inventoryRevisionRef.current) latestInventory = undefined
+        }
+        if (latestInventory) {
+          data.installed = latestInventory.installed
+          const synchronized: InstalledExpertKit[] = await synchronizePublishedExtensions(
+            catalogResult.status === 'fulfilled' ? catalogResult.value : [],
+            skillsResult.status === 'fulfilled' ? skillsResult.value : [],
+            latestInventory,
+            {
+              download: (kind, id) => kind === 'expert-kit'
+                ? createExpertKitDownload(bootstrap.endpoints.expertKits, id, user.userId, accessToken)
+                : createSkillDownload(bootstrap.endpoints.skills, id, user.userId, accessToken),
+              install: (kind, download) => installExtension(download, kind),
+            },
+          )
+          if (controller.signal.aborted || catalogOwnerRef.current !== user.userId) return
+          data.installed = synchronized
         }
         if (skillsResult.status === 'fulfilled') data.skills = skillsResult.value
         if (connectorsResult.status === 'fulfilled') {
@@ -166,31 +160,9 @@ export function useEnterpriseCatalog({
         }
         if (knowledgeResult.status === 'fulfilled') data.knowledge = knowledgeResult.value
         applyCatalog()
-        const sources = [
-          ['expert-kits', '专家套件目录', catalogResult],
-          ['installed', '本机已安装能力', installedResult],
-          ['skills', '技能目录', skillsResult],
-          ['connectors', '连接器目录', connectorsResult],
-          ['knowledge', '知识库目录', knowledgeResult],
-        ] as const
-        const sourceIssues = sources.flatMap(([key, label, result]) => result.status === 'rejected' && (key !== 'installed' || currentInventory)
-          ? [{ key, label, message: result.reason instanceof Error ? result.reason.message : String(result.reason) }]
-          : [])
-        const localIssues = currentInventory && installedResult.status === 'fulfilled'
-          ? installedResult.value.issues.map((issue) => ({
-            key: `local-extension:${issue.coordinate}`,
-            label: issue.coordinate,
-            message: issue.message,
-            removable: removableCoordinate(issue.coordinate),
-          }))
-          : []
-        setSyncIssues((current) => [...sourceIssues, ...expertKitSyncIssues, ...(currentInventory ? localIssues : current.filter((issue) => issue.key.startsWith('local-extension:')))])
-        setSyncedAt(new Date())
         if ([catalogResult, skillsResult, connectorsResult, knowledgeResult].every((result) => result.status === 'fulfilled')) {
-          const savedAt = new Date().toISOString()
-          setCacheSavedAt(savedAt)
           void saveEnterpriseCatalogCache(user.userId, {
-            savedAt, catalog: data.catalog, skills: data.skills, connectors: data.connectors.filter((item) => !isPersonalConnector(item)), knowledge: data.knowledge,
+            savedAt: new Date().toISOString(), catalog: data.catalog, skills: data.skills, connectors: data.connectors.filter((item) => !isPersonalConnector(item)), knowledge: data.knowledge,
           }).catch(() => undefined)
         }
       } finally {
@@ -214,15 +186,6 @@ export function useEnterpriseCatalog({
     if (owner !== catalogOwnerRef.current || revision !== inventoryRevisionRef.current) return inventory.installed
     cacheRef.current.installed = inventory.installed
     applyCatalog()
-    setSyncIssues((current) => [
-      ...current.filter((issue) => issue.key !== 'installed' && !issue.key.startsWith('local-extension:')),
-      ...inventory.issues.map((issue) => ({
-        key: `local-extension:${issue.coordinate}`,
-        label: issue.coordinate,
-        message: issue.message,
-        removable: removableCoordinate(issue.coordinate),
-      })),
-    ])
     return inventory.installed
   }, [applyCatalog])
 
@@ -232,7 +195,6 @@ export function useEnterpriseCatalog({
   }, [applyCatalog])
 
   return {
-    cacheSavedAt,
     connectors,
     expertKitCatalog,
     expertKits,
@@ -243,11 +205,5 @@ export function useEnterpriseCatalog({
     replaceConnectors,
     skills,
     skillViews,
-    syncIssues,
-    syncedAt,
   }
-}
-
-function removableCoordinate(value: string): boolean {
-  return /^(expert-kit|skill):[a-z][a-z0-9-]{2,63}@\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(value)
 }

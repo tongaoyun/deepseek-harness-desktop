@@ -38,6 +38,10 @@ it('shows bundled skill names from the expert kit catalog before installation', 
     expect(container.querySelector('.detail-skill-list')?.textContent).toContain('输入要设计的接口')
     expect(container.querySelector('.detail-skill-list')?.textContent).toContain('后台知识')
     expect(container.querySelector('.detail-skill-list')?.textContent).not.toContain('api-design')
+    // A kit that ships no commands still offers its skills as shortcuts before installation.
+    const shortcuts = [...container.querySelectorAll('.detail-command-list code')].map((item) => item.textContent)
+    expect(shortcuts).toEqual(['/API接口设计', '/后台知识'])
+    expect(container.querySelector('.expert-detail-section h3')?.textContent).toBe('快捷命令 (2)')
   } finally {
     await act(async () => root.unmount())
     container.remove()
@@ -59,7 +63,7 @@ it('uses the selected skill, keeps non-invocable knowledge readable, and closes 
     expect(container.querySelectorAll('.extension-source-list button')).toHaveLength(2)
     await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="使用技能：API接口设计"]')!.click())
     expect(onUseSkill).toHaveBeenLastCalledWith(api)
-    const opener = container.querySelector<HTMLButtonElement>('[aria-label="知识技能：API接口设计"]')!
+    const opener = container.querySelector<HTMLButtonElement>('[aria-label="技能：API接口设计"]')!
     opener.focus()
     await act(async () => opener.click())
     expect(container.querySelector('[role="dialog"]')?.textContent).toContain('来自 全栈开发专家')
@@ -78,6 +82,26 @@ it('uses the selected skill, keeps non-invocable knowledge readable, and closes 
   } finally { await act(async () => root.unmount()); container.remove() }
 })
 
+it('reads the kit guide from the catalog before installation', async () => {
+  const available = { ...kit, installed: undefined, installState: 'available' as const }
+  const loadReadme = vi.fn(async () => '# 全栈开发专家\n\n覆盖前后端开发与测试。')
+  const container = document.body.appendChild(document.createElement('div'))
+  const root = createRoot(container)
+  try {
+    await act(async () => root.render(<ExpertKitDetailsModal kit={available} skills={[]} connectors={[]}
+      knowledgeBases={[]} installing={false} removing={false} onClose={vi.fn()} onInstall={vi.fn()}
+      onSchedule={vi.fn()} onLoadReadme={loadReadme} />))
+    expect(loadReadme).toHaveBeenCalledWith('fullstack-dev-expert')
+    const preview = container.querySelector<HTMLElement>('.extension-readme-preview')!
+    expect(preview.textContent).toContain('覆盖前后端开发与测试')
+    await act(async () => preview.click())
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain('覆盖前后端开发与测试')
+  } finally {
+    await act(async () => root.unmount())
+    container.remove()
+  }
+})
+
 it('opens the full README from its bounded preview and restores its opener', async () => {
   vi.mocked(readExtensionContents).mockResolvedValue({ readme: '# 开发指南\n\n## 目标角色\n\n工程师\n\n|命令|说明|\n|---|---|\n|/接口|设计接口|', skills: [], commands: [] })
   const close = vi.fn(), customize = vi.fn()
@@ -85,7 +109,7 @@ it('opens the full README from its bounded preview and restores its opener', asy
   const root = createRoot(container)
   try {
     await act(async () => root.render(<ExpertKitDetailsModal kit={{ ...kit, installed: { ...kit.installed!, author: 'QoderWork' } }} skills={[]} connectors={[]} knowledgeBases={[]} installing={false} removing={false} onClose={close} onInstall={vi.fn()} onSchedule={vi.fn()} onCustomize={customize} onExport={vi.fn()} />))
-    expect(container.textContent).toContain('@QoderWork')
+    expect(container.textContent).not.toContain('QoderWork')
     expect(container.querySelector('[aria-label="编辑"]')?.textContent).toBe('编辑')
     expect(container.querySelector('[aria-label="分享此套件"]')?.textContent).toBe('分享此套件')
     expect(container.textContent).not.toContain('v1.0.1')

@@ -37,6 +37,14 @@ impl HarnessManager {
     ) -> Result<impl Drop + use<>, String> {
         self.slot(task_id)?.begin()
     }
+
+    /// A running task holds absolute paths into the extension directories it was started with,
+    /// so callers that delete installed content wait until no slot is executing.
+    pub(crate) fn has_running_task(&self) -> bool {
+        self.slots
+            .lock()
+            .map_or(true, |slots| slots.values().any(|slot| slot.is_running()))
+    }
 }
 
 #[derive(Default)]

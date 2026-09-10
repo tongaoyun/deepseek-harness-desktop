@@ -79,7 +79,7 @@ pub fn read_extension_contents(
                 Ok(ExtensionDocument {
                     id: entry.id.clone(),
                     name: document_name(&content, &entry.id),
-                    summary: metadata(&content, "description").unwrap_or_default(),
+                    summary: summary(&content),
                     argument_hint: metadata(&content, "argument-hint").unwrap_or_default(),
                     user_invocable: metadata(&content, "user-invocable")
                         .is_none_or(|value| value.trim() != "false"),
@@ -98,6 +98,22 @@ pub fn read_extension_contents(
         skills: read(&manifest.skills)?,
         commands: read(&manifest.commands)?,
     })
+}
+
+/// A description doubles as the trigger text the model matches on, so a long one contributes only
+/// its opening sentence to the summary shown beside the skill.
+pub(super) fn summary(content: &str) -> String {
+    let description = metadata(content, "description").unwrap_or_default();
+    let text = description.split_whitespace().collect::<Vec<_>>().join(" ");
+    if text.chars().count() <= 300 {
+        return text;
+    }
+    let sentence = text
+        .char_indices()
+        .find(|(_, character)| matches!(character, '。' | '．' | '.' | '!' | '?' | '！' | '？'))
+        .map(|(index, character)| text[..index + character.len_utf8()].to_owned())
+        .filter(|value| value.chars().count() <= 300);
+    sentence.unwrap_or_else(|| format!("{}…", text.chars().take(299).collect::<String>()))
 }
 
 pub(super) fn document_name(content: &str, fallback: &str) -> String {

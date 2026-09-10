@@ -3,22 +3,28 @@ import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { useEnterpriseCatalog } from './useEnterpriseCatalog'
-import { loadConnectors } from './api'
-import { inspectInstalledExtensions } from './expertKits'
+import { createExpertKitDownload, createSkillDownload, loadConnectors, loadExpertKits, loadSkills } from './api'
+import { inspectInstalledExtensions, installExtension } from './expertKits'
 import { loadEnterpriseCatalogCache } from './enterpriseCache'
 import type { BootstrapResponse, ConnectorCatalogEntry, InstalledExpertKit } from './types'
 import type { ErpUser } from './auth'
 
-vi.mock('./api', () => ({ loadExpertKits: vi.fn(async () => []), loadSkills: vi.fn(async () => []), loadKnowledgeBases: vi.fn(async () => []), loadConnectors: vi.fn(async () => []) }))
+vi.mock('./api', () => ({ createExpertKitDownload: vi.fn(), createSkillDownload: vi.fn(), loadExpertKits: vi.fn(async () => []), loadSkills: vi.fn(async () => []), loadKnowledgeBases: vi.fn(async () => []), loadConnectors: vi.fn(async () => []) }))
 vi.mock('./enterpriseCache', () => ({ loadEnterpriseCatalogCache: vi.fn(async () => undefined), saveEnterpriseCatalogCache: vi.fn(async () => {}) }))
-vi.mock('./expertKits', () => ({ inspectInstalledExtensions: vi.fn(), mergeExpertKits: (_catalog: unknown, installed: InstalledExpertKit[]) => installed.map((item) => ({ id: item.manifest.id })) }))
+vi.mock('./expertKits', () => ({ inspectInstalledExtensions: vi.fn(), installExtension: vi.fn(), mergeExpertKits: (_catalog: unknown, installed: InstalledExpertKit[]) => installed.map((item) => ({ id: item.manifest.id })) }))
 vi.mock('./skills', () => ({ mergeSkills: () => [] }))
 vi.mock('./extensionSubmissions', () => ({ loadPersonalConnectors: () => [], isPersonalConnector: () => false }))
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 const bootstrap = { endpoints: {} } as BootstrapResponse
 const enabledConnectorIds: string[] = []
 const installed = (id: string) => ({ installed: [{ manifest: { id } } as InstalledExpertKit], issues: [] })
-beforeEach(() => { vi.resetAllMocks(); vi.mocked(loadConnectors).mockResolvedValue([]); vi.mocked(inspectInstalledExtensions).mockResolvedValue(installed('old')) })
+beforeEach(() => {
+  vi.resetAllMocks()
+  vi.mocked(loadConnectors).mockResolvedValue([])
+  vi.mocked(loadExpertKits).mockResolvedValue([])
+  vi.mocked(loadSkills).mockResolvedValue([])
+  vi.mocked(inspectInstalledExtensions).mockResolvedValue(installed('old'))
+})
 
 async function fixture(check: (render: (owner: string) => Promise<void>, state: () => ReturnType<typeof useEnterpriseCatalog>) => Promise<void>) {
   let state!: ReturnType<typeof useEnterpriseCatalog>
@@ -44,6 +50,57 @@ it('does not let an older background inventory overwrite a completed installatio
     await act(async () => resolve([]))
     expect(state().expertKits.map((item) => item.id)).toEqual(['new'])
     expect(state().loading).toBe(false)
+  })
+})
+
+it('continues published kit synchronization after a concurrent inventory refresh', async () => {
+  let resolve!: (value: ConnectorCatalogEntry[]) => void
+  const oldKit = {
+    source: 'catalog', packageSha256: 'a'.repeat(64),
+    manifest: { kind: 'expert-kit', id: 'fullstack-dev-expert', version: '1.0.0' },
+  } as InstalledExpertKit
+  const latestKit = {
+    ...oldKit, packageSha256: 'b'.repeat(64),
+    manifest: { ...oldKit.manifest, version: '1.0.1' },
+  } as InstalledExpertKit
+  vi.mocked(loadExpertKits).mockResolvedValue([{
+    id: 'fullstack-dev-expert', name: '全栈开发专家', version: '1.0.1', sha256: 'b'.repeat(64),
+  } as never])
+  vi.mocked(createExpertKitDownload).mockResolvedValue({
+    id: 'fullstack-dev-expert', version: '1.0.1', sha256: 'b'.repeat(64), url: 'http://example.test/kit.tar.gz',
+    expiresAt: '2026-09-10T06:00:00Z',
+  })
+  vi.mocked(installExtension).mockResolvedValue(latestKit)
+  vi.mocked(inspectInstalledExtensions).mockResolvedValue({ installed: [oldKit], issues: [] })
+  vi.mocked(loadConnectors).mockReturnValueOnce(new Promise((yes) => { resolve = yes }))
+
+  await fixture(async (render, state) => {
+    await render('one')
+    await act(async () => { await state().refreshInstalled() })
+    await act(async () => resolve([]))
+    expect(inspectInstalledExtensions).toHaveBeenCalledTimes(3)
+    expect(installExtension).toHaveBeenCalledOnce()
+    expect(state().expertKits.map((item) => item.id)).toEqual(['fullstack-dev-expert'])
+  })
+})
+
+it('replaces an installed standalone skill with the published content', async () => {
+  const local = {
+    source: 'catalog', packageSha256: 'a'.repeat(64),
+    manifest: { kind: 'skill', id: 'document-insight', version: '1.0.0' },
+  } as InstalledExpertKit
+  const latest = { ...local, packageSha256: 'b'.repeat(64), manifest: { ...local.manifest, version: '1.1.0' } } as InstalledExpertKit
+  vi.mocked(loadSkills).mockResolvedValue([{ id: 'document-insight', name: '文档洞察', version: '1.1.0', sha256: 'b'.repeat(64) } as never])
+  vi.mocked(createSkillDownload).mockResolvedValue({
+    id: 'document-insight', version: '1.1.0', sha256: 'b'.repeat(64), url: 'http://example.test/skill.tar.gz', expiresAt: '',
+  })
+  vi.mocked(installExtension).mockResolvedValue(latest)
+  vi.mocked(inspectInstalledExtensions).mockResolvedValue({ installed: [local], issues: [] })
+
+  await fixture(async (render) => {
+    await render('one')
+    expect(createSkillDownload).toHaveBeenCalledOnce()
+    expect(vi.mocked(installExtension).mock.calls).toEqual([[expect.objectContaining({ id: 'document-insight' }), 'skill']])
   })
 })
 

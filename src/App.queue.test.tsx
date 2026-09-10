@@ -23,7 +23,7 @@ const fixtures = vi.hoisted(() => ({
   drop: undefined as Parameters<typeof import('./useDesktopDrop').useDesktopDrop>[0] | undefined,
   models: ['original-model', 'other-model'],
   user: { userId: 'queue-test', teamId: 'team', name: '测试员工' },
-  catalog: { connectors: [] as ConnectorCatalogEntry[], expertKitCatalog: [], expertKits: [] as ExpertKitView[], knowledgeBases: [], skills: [], skillViews: [], syncIssues: [], loading: false },
+  catalog: { connectors: [] as ConnectorCatalogEntry[], expertKitCatalog: [], expertKits: [] as ExpertKitView[], knowledgeBases: [], skills: [], skillViews: [], loading: false },
   chat: undefined as ComponentProps<typeof ChatPage> | undefined,
   sidebar: undefined as ComponentProps<typeof DesktopSidebar> | undefined,
   schedules: undefined as ComponentProps<typeof ScheduledTasksPage> | undefined,

@@ -6,7 +6,7 @@ import type {
   SkillCatalogEntry,
 } from './types'
 
-export type SkillInstallState = 'available' | 'installed' | 'update' | 'retired'
+export type SkillInstallState = 'available' | 'installed' | 'retired'
 
 export interface SkillView extends SkillCatalogEntry {
   installState: SkillInstallState
@@ -57,9 +57,7 @@ export function mergeSkills(
     const connectorRefs = skill.connectorRefs ?? []
     const requiredTools = skill.requiredTools ?? []
     const knowledgeBaseRefs = skill.knowledgeBaseRefs ?? []
-    const local = installed.find((value) => value.manifest.kind === 'skill'
-      && value.manifest.id === skill.id && value.manifest.version === skill.version)
-      ?? localById.get(skill.id)
+    const local = localById.get(skill.id)
     return {
       ...skill,
       triggers: skill.triggers ?? [],
@@ -70,7 +68,7 @@ export function mergeSkills(
       ...dependencyState(connectorRefs, requiredTools, knowledgeBaseRefs),
       installed: local,
       installedVersion: local?.manifest.version,
-      installState: local?.manifest.version === skill.version ? 'installed' : local ? 'update' : 'available',
+      installState: local ? 'installed' : 'available',
       localOnly: false,
     }
   })

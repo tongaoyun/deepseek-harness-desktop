@@ -147,11 +147,6 @@ export async function removeCatalogExtension(id: string, kind: 'expert-kit' | 's
   await invoke('remove_catalog_extension', { id, kind })
 }
 
-export async function removeBrokenExtension(coordinate: string): Promise<void> {
-  if (!isTauri()) throw new Error('请在小胤桌面客户端中清理损坏扩展')
-  await invoke('remove_broken_extension', { coordinate })
-}
-
 export function mergeExpertKits(
   catalog: ExpertKitCatalogEntry[],
   installed: InstalledExpertKit[],

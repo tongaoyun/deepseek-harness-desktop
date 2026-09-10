@@ -20,9 +20,9 @@ const installed: InstalledExpertKit = {
 }
 
 describe('standalone skill catalog', () => {
-  it('detects an installed older version as update without requiring a connector for desktop tools', () => {
+  it('keeps an installed skill installed while the published version is fetched in the background', () => {
     const [skill] = mergeSkills([catalog], [installed])
-    expect(skill.installState).toBe('update')
+    expect(skill.installState).toBe('installed')
     expect(skill.installedVersion).toBe('1.0.0')
     expect(skill.readiness).toBe('ready')
   })
