@@ -2024,7 +2024,14 @@ mod tests {
         };
         let mut explicit = SkillDirectorySelection::new(100);
         explicit.append_invocation(&resolved).unwrap();
-        assert_eq!(explicit.directories, ["reports/1.0.0/skills/weekly"]);
+        assert_eq!(
+            explicit
+                .directories
+                .iter()
+                .map(PathBuf::from)
+                .collect::<Vec<_>>(),
+            [PathBuf::from("reports/1.0.0/skills/weekly")]
+        );
         assert_eq!(explicit.omitted, 0);
     }
 
