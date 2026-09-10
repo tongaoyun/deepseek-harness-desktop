@@ -21,7 +21,7 @@ pnpm check
 pnpm tauri:dev
 ```
 
-控制中心默认地址为 `http://192.168.2.67:30081`，通过 `VITE_XIAOYIN_SERVER_URL` 指定其他环境。
+服务端 API 默认地址为 `http://192.168.2.67:30081`，通过 `VITE_XIAOYIN_SERVER_URL` 指定其他环境。Web 控制中心使用 `http://192.168.2.67:30084`。
 
 浏览器预览使用本地开发身份。桌面开发可在未提交的 `.env.local` 中设置 `VITE_SKIP_ERP_LOGIN=true`；正式构建始终使用 ERP 登录。模型调用与企业目录需要对应服务可达。本机权限、凭据、文件、Harness 和 IM 在 Tauri 中验证。
 
