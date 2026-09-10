@@ -341,8 +341,9 @@ export interface ExpertKitManifest {
   summary: string
   category: import('./extensionCategories').ExtensionCategory
   triggers?: string[]
+  allowImplicitInvocation?: boolean
   minimumDesktopVersion: string
-  commands: Array<{ id: string; path: string }>
+  commands: Array<{ id: string; path: string; skillId?: string }>
   skills: Array<{ id: string; path: string }>
   requiredTools: string[]
   connectorRefs: string[]

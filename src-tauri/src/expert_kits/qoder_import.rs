@@ -75,6 +75,7 @@ fn import_kit(root: &Path, expected_kind: Option<&str>) -> Result<(), String> {
         skills.push(FileReference {
             id: "main".into(),
             path: path.into(),
+            skill_id: None,
         });
     }
     let connector_refs = convert_connectors(root, &plugin)?;
@@ -255,6 +256,7 @@ fn collect_skills(
         result.push(FileReference {
             id,
             path: relative(root, &directory.join("SKILL.md"))?,
+            skill_id: None,
         });
     } else if directory.is_dir() {
         for child in child_directories(directory)? {
@@ -298,6 +300,7 @@ fn collect_commands(
                 &path.file_stem().unwrap_or_default().to_string_lossy(),
             ),
             path: relative(root, path)?,
+            skill_id: None,
         });
     }
     Ok(())
