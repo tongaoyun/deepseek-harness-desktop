@@ -985,7 +985,7 @@ button.skill-postcard:hover { transform: rotate(0) translateY(-3px); }
 .kit-grid article, .market-card, .connector-market-card { border-color: var(--xy-line); border-radius: 10px; background: #fff; box-shadow: none; transition: border-color .15s ease, background-color .15s ease; }
 .kit-grid article, .kit-grid article.market-card { min-height: 150px; padding: 15px; border-radius: 8px; background: #fff; }
 .kit-grid article.market-card { position: relative; }
-.expert-market-grid article.market-card { background: #f8f8f8; border-color: transparent; min-height: 140px; }
+.expert-market-grid article.market-card { background: #f8f8f8; border-color: transparent; min-height: 132px; }
 .kit-grid article.market-card.skill-card { min-height: 154px !important; }
 .market-card .market-card-name::after { position: absolute; inset: 0; border-radius: 8px; content: ''; }
 .market-card:focus-within { outline: 2px solid #78b88a; outline-offset: 2px; }
@@ -1002,6 +1002,8 @@ button.skill-postcard:hover { transform: rotate(0) translateY(-3px); }
 .kit-grid h3, .market-card h3 { color: var(--xy-text); font-size: 13px; }
 .kit-grid p, .kit-grid .market-card > p { color: var(--xy-muted); font-size: 12px; line-height: 1.65; }
 .market-card footer, .market-card-title small { color: #777c77; font-size: 11px; }
+.expert-market-grid .market-card > p { min-height: 36px; margin-top: 10px; line-height: 1.5; }
+.expert-market-grid .market-card footer { padding-top: 8px; }
 .market-card .market-card-name { display: inline; width: auto; height: auto; padding: 0; border: 0; border-radius: 3px; color: inherit; background: transparent; font: inherit; text-align: left; cursor: pointer; }
 .market-card-name:hover { text-decoration: none; }
 .market-card-title > button { min-width: 32px; min-height: 32px; border-radius: 7px; }
@@ -1037,7 +1039,7 @@ button.skill-postcard:hover { transform: rotate(0) translateY(-3px); }
 .extension-detail-toolbar .expert-modal-actions .extension-switch { min-height: 20px; padding: 3px; border-radius: 20px; background: #d5d5d5; }
 .extension-detail-toolbar .expert-modal-actions .extension-switch[aria-checked="true"] { background: #95dea7; }
 .extension-detail-toolbar .expert-modal-actions button:hover { filter: brightness(.96); }
-.extension-detail-body { width: min(768px, calc(100% - 80px)); margin: 24px auto 0; padding-bottom: 48px; }
+.extension-detail-body { width: min(976px, calc(100% - 80px)); margin: 40px auto 0; padding-bottom: 48px; }
 .extension-detail-body .expert-modal-heading { padding-right: 0; gap: 20px; }
 .extension-detail-body .expert-modal-heading > span { border: 1px solid var(--xy-line); border-radius: 6px; background: #fafafa; color: #777; }
 .extension-detail-body .expert-modal-heading h2 { font-size: 22px; }

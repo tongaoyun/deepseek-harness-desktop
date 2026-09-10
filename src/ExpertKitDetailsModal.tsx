@@ -96,8 +96,9 @@ export function ExpertKitDetailsModal({
       {!kit.installed && kit.skillIds.length > 0 && <section className="expert-detail-section">
         <h3>知识技能 <small>({kit.skillIds.length})</small></h3>
         <div className="detail-skill-list">{kit.skillIds.map((id) => {
-          const skill = kitSkillById.get(id) ?? skillById.get(id)
-          return <article key={id}><WandSparkles size={15} /><div><strong>{skill?.name ?? id}</strong><p>{skill?.summary || '随专家套件一起加载的工作方法'}</p></div></article>
+          const bundledSkill = kitSkillById.get(id)
+          const skill = bundledSkill ?? skillById.get(id)
+          return <article key={id}><WandSparkles size={15} /><div><strong>{skill?.name ?? id}</strong><p>{bundledSkill?.argumentHint || skill?.summary || '随专家套件一起加载的工作方法'}</p></div></article>
         })}</div>
       </section>}
       {kit.installed && <ExtensionContentsPanel extension={kit.installed} onUseSkill={onUseSkill} onUseCommand={onUse} onCustomize={onCustomizeDocument} beforeSkills={<CapabilitySections

@@ -23,6 +23,7 @@ export interface ExpertKitSkillDetail {
   id: string
   name: string
   summary: string
+  argumentHint: string
 }
 
 export interface ExpertKitCatalogEntry {

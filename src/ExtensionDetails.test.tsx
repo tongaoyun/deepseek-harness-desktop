@@ -16,8 +16,8 @@ const background: ExtensionDocument = { ...api, id: 'internal', name: '后台知
 const kit: ExpertKitView = {
   id: 'fullstack-dev-expert', name: '全栈开发专家', version: '1.0.1', summary: '覆盖前后端开发与测试', category: 'code-development', minimumDesktopVersion: '0.1.30',
   commandIds: [], skillIds: [api.id, background.id], skillDetails: [
-    { id: api.id, name: api.name, summary: api.summary },
-    { id: background.id, name: background.name, summary: background.summary },
+    { id: api.id, name: api.name, summary: api.summary, argumentHint: api.argumentHint ?? '' },
+    { id: background.id, name: background.name, summary: background.summary, argumentHint: '' },
   ], connectorRefs: [], requiredTools: [], knowledgeBaseRefs: [], sha256: '',
   installState: 'installed', readiness: 'ready', connectorIssues: [], knowledgeIssues: [], localOnly: false,
   installed: { source: 'catalog', enabled: true, installPath: '/extensions/fullstack', manifest: {
@@ -35,6 +35,7 @@ it('shows bundled skill names from the expert kit catalog before installation', 
       knowledgeBases={[]} installing={false} removing={false} onClose={vi.fn()} onInstall={vi.fn()}
       onSchedule={vi.fn()} />))
     expect(container.querySelector('.detail-skill-list')?.textContent).toContain('API接口设计')
+    expect(container.querySelector('.detail-skill-list')?.textContent).toContain('输入要设计的接口')
     expect(container.querySelector('.detail-skill-list')?.textContent).toContain('后台知识')
     expect(container.querySelector('.detail-skill-list')?.textContent).not.toContain('api-design')
   } finally {
