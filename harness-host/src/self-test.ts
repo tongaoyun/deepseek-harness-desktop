@@ -6,7 +6,6 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { resolvePwshPath } from '@deepseek-ai/dsh-pwsh-local'
 import { ComputerUseBridge, runComputerUsePreflight } from './local-computer-use-plugin.js'
 import { parseDocx, parsePdf, parseXlsx, renderPdf, selectPdfFont } from './local-documents-plugin.js'
 import { discoverAuthorizedRoots, LocalFileBridge } from './local-files-plugin.js'
@@ -47,7 +46,11 @@ export async function runLocalCapabilitySelfTest(): Promise<{ status: 'passed'; 
     ensure(JSON.stringify(await parsePdf(pdfBytes)).includes('PDF ready'), 'PDF round trip failed')
 
     const shell = process.platform === 'win32'
-      ? await execFileAsync(resolvePwshPath(), ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', 'Write-Output xiaoyin-shell-ready'], { cwd: root, timeout: 10_000 })
+      ? await execFileAsync(
+          join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'),
+          ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', 'Write-Output xiaoyin-shell-ready'],
+          { cwd: root, timeout: 10_000 },
+        )
       : await execFileAsync('/bin/bash', ['--noprofile', '--norc', '-c', 'printf xiaoyin-shell-ready'], { cwd: root, timeout: 10_000 })
     ensure(shell.stdout.includes('xiaoyin-shell-ready'), 'Native Harness shell execution failed')
 

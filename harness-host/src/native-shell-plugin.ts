@@ -1,11 +1,5 @@
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
-import LocalBashExecutor from '@deepseek-ai/dsh-bash-local'
-import PwshLocalExecutor from '@deepseek-ai/dsh-pwsh-local'
-import * as shellEnvironment from '@deepseek-ai/dsh-shell-env'
-import * as toolBash from '@deepseek-ai/dsh-tool-bash'
-import * as toolPwsh from '@deepseek-ai/dsh-tool-pwsh'
 
 export const name = 'xiaoyin-native-shell'
 export const inject = ['tools']
@@ -27,21 +21,11 @@ export const Config = z.object({
 })
 
 /**
- * Compose the official Harness shell stack. Xiaoyin owns policy only; process
- * execution, cancellation, output rendering and background jobs remain native.
+ * Add Xiaoyin's approval policy to the shell owned by the sdk-minimal profile.
+ * Process execution, cancellation and terminal lifecycle stay in Harness.
  */
 export function apply(ctx: Context, config: Config = {}): void {
   if (config.enabled !== true) return
-
-  ctx.plugin(LocalSubprocessRuntime)
-  ctx.plugin(shellEnvironment, config.dshHome ? { dshHome: config.dshHome } : {})
-  if (process.platform === 'win32') {
-    ctx.plugin(PwshLocalExecutor, shellConfig(config.cwd))
-    ctx.plugin(toolPwsh, { enableRunInBackground: true })
-  } else {
-    ctx.plugin(LocalBashExecutor, shellConfig(config.cwd))
-    ctx.plugin(toolBash, { enableRunInBackground: true })
-  }
 
   if (config.requireApproval === false) return
   const stopApprovalPolicy = ctx.on('tools/pre-execute', (exec, next) => {
@@ -61,24 +45,6 @@ export function apply(ctx: Context, config: Config = {}): void {
     })
   })
   ctx.effect(() => () => stopApprovalPolicy(), 'xiaoyin native shell approval policy')
-}
-
-function shellConfig(cwd: string | undefined): {
-  cwd?: string
-  timeoutMs: number
-  maxTimeoutMs: number
-  maxOutputBytes: number
-  maxSpillBytes: number
-  graceMs: number
-} {
-  return {
-    ...(cwd ? { cwd } : {}),
-    timeoutMs: 120_000,
-    maxTimeoutMs: 600_000,
-    maxOutputBytes: 64 * 1024,
-    maxSpillBytes: 64 * 1024 * 1024,
-    graceMs: 3_000,
-  }
 }
 
 export function shellCommandRequiresApproval(value: unknown): boolean {
