@@ -1,4 +1,5 @@
-import { applyHarnessNotification, type HarnessNotification } from './harness'
+import { applyHarnessNotification, applyStoppingHarnessNotification, createTaskMonitor, type HarnessFailure, type HarnessNotification } from './harness'
+import { taskInterruption } from './taskInterruption'
 import type {
   ExecutionEvent,
   ExecutionEventType,
@@ -6,27 +7,64 @@ import type {
   ExecutionProjectionDelta,
   ExecutionThread,
   ExecutionTurn,
-  TaskMonitorState,
+  TaskMonitorProjection,
 } from './types'
-import type { TaskOutcome } from './taskOutcome'
+import { taskOutcomeLabel, type TaskOutcome } from './taskOutcome'
 
 type CollectionName = NonNullable<ExecutionProjectionDelta['replaceCollections']>[number]
 
 export interface HarnessExecutionObservation {
   thread: ExecutionThread
-  monitor: TaskMonitorState
+  monitor: TaskMonitorProjection
   event?: ExecutionEvent
   duplicate: boolean
 }
 
-export function startExecutionTurn(
+export interface ExecutionRuntimeProjection {
+  thread: ExecutionThread
+  monitor: TaskMonitorProjection
+}
+
+export function beginExecutionTurn({
+  taskId,
+  sessionId,
+  operationScope,
+  previous,
+  now = new Date().toISOString(),
+  createId = () => crypto.randomUUID(),
+}: {
+  taskId: string
+  sessionId: string
+  operationScope: string
+  previous?: ExecutionThread
+  now?: string
+  createId?: () => string
+}): ExecutionRuntimeProjection {
+  const monitor: TaskMonitorProjection = {
+    ...createTaskMonitor(now), operationScope, status: 'running', activity: '正在处理', updatedAt: now, startedAt: now,
+  }
+  return initializeExecutionTurn(taskId, sessionId, monitor, previous, now, createId)
+}
+
+/** Converts pre-v1 persisted state once; normal runtime code must use domain transitions. */
+export function migrateLegacyExecution(
   taskId: string,
   sessionId: string,
-  monitor: TaskMonitorState,
-  previous?: ExecutionThread,
-  now = new Date().toISOString(),
+  monitor: TaskMonitorProjection,
+  now = monitor.startedAt || monitor.updatedAt,
   createId: () => string = () => crypto.randomUUID(),
-): ExecutionThread {
+): ExecutionRuntimeProjection {
+  return initializeExecutionTurn(taskId, sessionId, monitor, undefined, now, createId)
+}
+
+function initializeExecutionTurn(
+  taskId: string,
+  sessionId: string,
+  monitor: TaskMonitorProjection,
+  previous: ExecutionThread | undefined,
+  now: string,
+  createId: () => string,
+): ExecutionRuntimeProjection {
   const turnId = `turn-${createId()}`
   const event: ExecutionEvent = {
     id: `${turnId}:1`,
@@ -39,26 +77,30 @@ export function startExecutionTurn(
   const turn: ExecutionTurn = {
     id: turnId,
     sessionId,
-    status: 'running',
+    status: monitor.status === 'completed' ? 'completed'
+      : monitor.status === 'failed' ? 'failed'
+        : monitor.status === 'canceled' ? 'canceled' : 'running',
     startedAt: now,
+    ...(monitor.completedAt ? { completedAt: monitor.completedAt } : {}),
     nextSequence: 2,
     sourceCursors: {},
     items: [],
     events: [event],
   }
-  return {
+  const thread: ExecutionThread = {
     protocolVersion: 1,
     id: previous?.id ?? taskId,
-    activeTurnId: turnId,
+    ...(monitor.status === 'running' || monitor.status === 'idle' ? { activeTurnId: turnId } : {}),
     turns: [...(previous?.turns ?? []), turn],
   }
+  return { thread, monitor: projectExecutionTurn(createTaskMonitor(now), turn) }
 }
 
 export function observeHarnessNotification(
   thread: ExecutionThread,
-  monitor: TaskMonitorState,
+  monitor: TaskMonitorProjection,
   notification: HarnessNotification,
-  reduce: (current: TaskMonitorState, value: HarnessNotification) => TaskMonitorState = applyHarnessNotification,
+  options: { stopping?: boolean } = {},
 ): HarnessExecutionObservation {
   const active = activeTurn(thread)
   if (!active) return { thread, monitor, duplicate: false }
@@ -69,7 +111,9 @@ export function observeHarnessNotification(
   const sourceCursors = cursor
     ? { ...active.sourceCursors, [cursor.streamId]: cursor.sequence }
     : active.sourceCursors
-  const reduced = reduce(monitor, notification)
+  const reduced = options.stopping
+    ? applyStoppingHarnessNotification(monitor, notification)
+    : applyHarnessNotification(monitor, notification)
   const projection = monitorDelta(monitor, reduced)
   if (!projection) {
     return { thread: replaceTurn(thread, { ...active, sourceCursors }), monitor, duplicate: false }
@@ -87,12 +131,22 @@ export function observeHarnessNotification(
     ...(cursor ? { sourceCursor: cursor } : {}),
     projection,
   }
+  const previousEvent = active.events.at(-1)
+  const coalesced = identity.type === 'item.updated' && Boolean(identity.itemId)
+    && previousEvent?.type === identity.type && previousEvent.itemId === identity.itemId
+  if (coalesced && previousEvent) {
+    event.id = previousEvent.id
+    event.sequence = previousEvent.sequence
+    event.projection = mergeProjectionDelta(previousEvent.projection, event.projection)
+  }
   const nextTurn = {
     ...active,
-    nextSequence: active.nextSequence + 1,
+    nextSequence: coalesced ? active.nextSequence : active.nextSequence + 1,
     sourceCursors,
-    items: event.item ? upsertExecutionItem(active.items, event.item) : active.items,
-    events: [...active.events, event],
+    items: event.item
+      ? upsertExecutionItem(synchronizeExecutionItems(active.items, reduced), event.item)
+      : synchronizeExecutionItems(active.items, reduced),
+    events: coalesced ? [...active.events.slice(0, -1), event] : [...active.events, event],
   }
   return {
     thread: replaceTurn(thread, nextTurn),
@@ -102,17 +156,151 @@ export function observeHarnessNotification(
   }
 }
 
-export function appendExecutionTransition(
+function mergeProjectionDelta(previous: ExecutionProjectionDelta, next: ExecutionProjectionDelta): ExecutionProjectionDelta {
+  const replaceCollections = [...new Set([...(previous.replaceCollections ?? []), ...(next.replaceCollections ?? [])])]
+  return { ...previous, ...next, ...(replaceCollections.length ? { replaceCollections } : {}) }
+}
+
+export function retryExecutionTurn(
   thread: ExecutionThread,
-  before: TaskMonitorState,
-  after: TaskMonitorState,
-  type: Extract<ExecutionEventType, 'item.completed' | 'turn.completed' | 'turn.failed' | 'turn.interrupted' | 'verification.recorded'>,
-  options: { itemId?: string; correlationId?: string; outcome?: TaskOutcome } = {},
-): ExecutionThread {
-  const active = activeTurn(thread)
-  if (!active) return thread
+  current: TaskMonitorProjection,
+  sessionId: string,
+  now = new Date().toISOString(),
+): ExecutionRuntimeProjection {
+  const next: TaskMonitorProjection = {
+    operationScope: current.operationScope,
+    status: 'running',
+    activity: '模型服务短暂异常，正在自动重试',
+    startedAt: current.startedAt ?? now,
+    updatedAt: now,
+    steps: [],
+    subagents: [],
+    changes: current.changes ?? [],
+    artifacts: current.artifacts,
+    timeline: [{
+      id: `retry:${now}`,
+      kind: 'warning',
+      label: '模型服务短暂异常，已自动重试一次',
+      status: 'completed',
+      occurredAt: now,
+      completedAt: now,
+    }],
+  }
+  return appendProjectionEvent(thread, current, next, 'turn.retry.started', { correlationId: `retry:${sessionId}` })
+}
+
+export function requestExecutionInterrupt(
+  thread: ExecutionThread,
+  current: TaskMonitorProjection,
+  now = new Date().toISOString(),
+): ExecutionRuntimeProjection {
+  return appendProjectionEvent(thread, current, { ...current, activity: '正在停止', updatedAt: now }, 'turn.interrupt.requested')
+}
+
+export function failExecutionInterruptRequest(
+  thread: ExecutionThread,
+  current: TaskMonitorProjection,
+  now = new Date().toISOString(),
+): ExecutionRuntimeProjection {
+  return appendProjectionEvent(thread, current, { ...current, activity: '停止失败，可重试', updatedAt: now }, 'turn.interrupt.failed')
+}
+
+export function updateExecutionProgress(
+  thread: ExecutionThread,
+  current: TaskMonitorProjection,
+  activity: string,
+  now = new Date().toISOString(),
+): ExecutionRuntimeProjection {
+  return appendProjectionEvent(thread, current, { ...current, status: 'running', activity, updatedAt: now }, 'turn.progress.updated')
+}
+
+export function recordExecutionFileChanges(
+  thread: ExecutionThread,
+  current: TaskMonitorProjection,
+  changes: NonNullable<TaskMonitorProjection['changes']>,
+  options: { now?: string; targetTurnId?: string } = {},
+): ExecutionRuntimeProjection {
+  const now = options.now ?? new Date().toISOString()
+  const turnId = options.targetTurnId
+    ?? thread.turns.findLast((turn) => turn.events[0]?.projection.operationScope === current.operationScope)?.id
+  return appendProjectionEvent(thread, current, { ...current, changes, updatedAt: now }, 'file.changes.updated', {
+    allowTerminal: true, targetTurnId: turnId,
+  })
+}
+
+export function completeExecutionTurn(
+  thread: ExecutionThread,
+  current: TaskMonitorProjection,
+  outcome: TaskOutcome,
+  now = new Date().toISOString(),
+  options: { activity?: string } = {},
+): ExecutionRuntimeProjection {
+  const completed: TaskMonitorProjection = {
+    ...current,
+    outcome,
+    status: 'completed',
+    activity: options.activity ?? taskOutcomeLabel(outcome),
+    updatedAt: now,
+    completedAt: now,
+  }
+  const verified = appendProjectionEvent(thread, current, completed, 'verification.recorded', { outcome })
+  return appendProjectionEvent(verified.thread, verified.monitor, verified.monitor, 'turn.completed')
+}
+
+export function failExecutionTurn(
+  thread: ExecutionThread,
+  current: TaskMonitorProjection,
+  {
+    cause,
+    failure,
+    now = new Date().toISOString(),
+    checkpointAt,
+  }: {
+    cause: 'exit' | 'failure' | 'canceled'
+    failure?: Pick<HarnessFailure, 'code' | 'category' | 'message'>
+    now?: string
+    checkpointAt?: string
+  },
+): ExecutionRuntimeProjection {
+  const canceled = cause === 'canceled'
+  const interruption = taskInterruption(current, cause, checkpointAt ?? current.updatedAt)
+  const settledAt = cause === 'exit' ? checkpointAt ?? current.updatedAt : now
+  const next: TaskMonitorProjection = {
+    ...current,
+    interruption,
+    steps: current.steps.map((step) => step.status === 'running'
+      ? { ...step, label: `${step.label}（结果待核对）`, status: 'canceled', completedAt: settledAt }
+      : step),
+    timeline: current.timeline?.map((entry) => entry.status === 'running'
+      ? { ...entry, label: `${entry.label}（结果待核对）`, status: 'canceled', completedAt: settledAt }
+      : entry),
+    subagents: current.subagents?.map((agent) => agent.status === 'running'
+      ? { ...agent, status: 'canceled', completedAt: settledAt }
+      : agent),
+    status: canceled ? 'canceled' : 'failed',
+    activity: cause === 'exit' ? '上次运行已中断' : canceled ? '已停止' : '任务执行失败',
+    updatedAt: now,
+    completedAt: settledAt,
+    failure: canceled ? undefined : failure
+      ? { code: failure.code, category: failure.category, detail: failure.message.slice(0, 500) }
+      : { code: 'XY-INTERRUPTED', category: 'local-agent', detail: '应用关闭或本地执行进程中断，已保留最近保存的进度与成果。' },
+  }
+  return appendProjectionEvent(thread, current, next, cause === 'failure' ? 'turn.failed' : 'turn.interrupted')
+}
+
+function appendProjectionEvent(
+  thread: ExecutionThread,
+  before: TaskMonitorProjection,
+  after: TaskMonitorProjection,
+  type: Exclude<ExecutionEventType, 'turn.started' | 'item.started' | 'item.updated' | 'item.failed' | 'approval.requested' | 'approval.decided'>,
+  options: { itemId?: string; correlationId?: string; outcome?: TaskOutcome; allowTerminal?: boolean; targetTurnId?: string } = {},
+): ExecutionRuntimeProjection {
+  const active = options.targetTurnId
+    ? thread.turns.find((turn) => turn.id === options.targetTurnId)
+    : activeTurn(thread) ?? (options.allowTerminal ? thread.turns.at(-1) : undefined)
+  if (!active) return { thread, monitor: before }
   const projection = monitorDelta(before, after)
-  if (!projection && type === 'item.completed') return thread
+  if (!projection && type !== 'turn.completed') return { thread, monitor: before }
   const event: ExecutionEvent = {
     id: `${active.id}:${active.nextSequence}`,
     sequence: active.nextSequence,
@@ -137,20 +325,28 @@ export function appendExecutionTransition(
     status,
     ...(terminal ? { completedAt: after.completedAt ?? after.updatedAt } : {}),
     nextSequence: active.nextSequence + 1,
-    items: event.item ? upsertExecutionItem(active.items, event.item) : active.items,
+    items: event.item
+      ? upsertExecutionItem(synchronizeExecutionItems(active.items, after), event.item)
+      : synchronizeExecutionItems(active.items, after),
     events: [...active.events, event],
   }
-  return {
+  const nextThread = {
     ...replaceTurn(thread, nextTurn),
     ...(terminal ? { activeTurnId: undefined } : {}),
   }
+  return { thread: nextThread, monitor: projectExecutionEvent(before, event) }
 }
 
-export function projectExecutionTurn(initial: TaskMonitorState, turn: ExecutionTurn): TaskMonitorState {
+export function projectExecutionTurn(initial: TaskMonitorProjection, turn: ExecutionTurn): TaskMonitorProjection {
   return turn.events.reduce(projectExecutionEvent, initial)
 }
 
-export function projectExecutionEvent(current: TaskMonitorState, event: ExecutionEvent): TaskMonitorState {
+export function projectExecutionThread(thread: ExecutionThread): TaskMonitorProjection | undefined {
+  const turn = thread.turns.at(-1)
+  return turn ? projectExecutionTurn(createTaskMonitor(turn.startedAt), turn) : undefined
+}
+
+export function projectExecutionEvent(current: TaskMonitorProjection, event: ExecutionEvent): TaskMonitorProjection {
   const delta = event.projection
   const replace = new Set(delta.replaceCollections ?? [])
   return {
@@ -200,9 +396,21 @@ function upsertExecutionItem(items: ExecutionItem[], item: ExecutionItem): Execu
   return items.map((candidate, current) => current === index ? item : candidate)
 }
 
+function synchronizeExecutionItems(items: ExecutionItem[], monitor: TaskMonitorProjection): ExecutionItem[] {
+  return items.map((item) => {
+    const step = monitor.steps.find((candidate) => candidate.id === item.id)
+    const timeline = monitor.timeline?.find((candidate) => candidate.id === item.id)
+    const subagent = monitor.subagents?.find((candidate) => candidate.id === item.correlationId || `tool:${candidate.id}` === item.id)
+    const status = step?.status ?? timeline?.status ?? subagent?.status
+    if (!status) return item
+    const completedAt = step?.completedAt ?? timeline?.completedAt ?? subagent?.completedAt
+    return { ...item, status, ...(completedAt ? { completedAt } : {}) }
+  })
+}
+
 function executionItem(
   id: string,
-  monitor: TaskMonitorState,
+  monitor: TaskMonitorProjection,
   eventType: ExecutionEventType,
   occurredAt: string,
   correlationId?: string,
@@ -309,7 +517,7 @@ function toolResultCallId(data: Record<string, unknown>): string | undefined {
   return undefined
 }
 
-function monitorDelta(before: TaskMonitorState, after: TaskMonitorState): ExecutionProjectionDelta | undefined {
+function monitorDelta(before: TaskMonitorProjection, after: TaskMonitorProjection): ExecutionProjectionDelta | undefined {
   if (before === after) return undefined
   const replaceCollections: CollectionName[] = []
   const steps = changedCollection(before.steps, after.steps, 'steps', replaceCollections)
@@ -319,6 +527,13 @@ function monitorDelta(before: TaskMonitorState, after: TaskMonitorState): Execut
   const artifacts = changedCollection(before.artifacts, after.artifacts, 'artifacts', replaceCollections)
   const visuals = changedCollection(before.visuals, after.visuals, 'visuals', replaceCollections)
   const knowledgeSources = changedCollection(before.knowledgeSources, after.knowledgeSources, 'knowledgeSources', replaceCollections, knowledgeKey)
+  const scalarChanged = before.executionStarted !== after.executionStarted
+    || before.operationScope !== after.operationScope || before.status !== after.status
+    || before.activity !== after.activity || before.updatedAt !== after.updatedAt
+    || before.startedAt !== after.startedAt || before.completedAt !== after.completedAt
+    || before.interruption !== after.interruption || before.outcome !== after.outcome || before.failure !== after.failure
+  if (!scalarChanged && steps === undefined && timeline === undefined && subagents === undefined
+    && changes === undefined && artifacts === undefined && visuals === undefined && knowledgeSources === undefined) return undefined
   return {
     ...(before.executionStarted === after.executionStarted ? {} : { executionStarted: after.executionStarted }),
     ...(before.operationScope === after.operationScope ? {} : { operationScope: after.operationScope }),
@@ -341,7 +556,7 @@ function monitorDelta(before: TaskMonitorState, after: TaskMonitorState): Execut
   }
 }
 
-function fullProjection(monitor: TaskMonitorState): ExecutionProjectionDelta {
+function fullProjection(monitor: TaskMonitorProjection): ExecutionProjectionDelta {
   return {
     executionStarted: monitor.executionStarted,
     operationScope: monitor.operationScope,

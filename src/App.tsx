@@ -9,7 +9,7 @@ import {
   submitFeedback,
 } from './api'
 import { ErpAuthScreen } from './ErpAuthScreen'
-import { taskInterruption, TASK_RESUME_PROMPT } from './taskInterruption'
+import { TASK_RESUME_PROMPT } from './taskInterruption'
 import { openErpLogin } from './auth'
 import { ExpertKitDetailsModal } from './ExpertKitDetailsModal'
 import { expertKitSkillPrompt, extensionCustomizationPrompt } from './expertKitDetails'
@@ -101,8 +101,17 @@ import { deletePersonalConnector, loadPersonalConnectors, savePersonalConnector,
 import { ExtensionPageActions } from './ExtensionPageActions'
 import { useEnterpriseCatalog } from './useEnterpriseCatalog'
 import { useDesktopDialog } from './DesktopDialog'
-import { retryingTaskMonitor, runHarnessWithRecovery } from './taskRecovery'
-import { appendExecutionTransition } from './executionRuntime'
+import { runHarnessWithRecovery } from './taskRecovery'
+import {
+  beginExecutionTurn,
+  completeExecutionTurn,
+  failExecutionInterruptRequest,
+  failExecutionTurn,
+  migrateLegacyExecution,
+  recordExecutionFileChanges,
+  requestExecutionInterrupt,
+  retryExecutionTurn,
+} from './executionRuntime'
 import { useHarnessHealth } from './useHarnessHealth'
 import { useDeviceHeartbeat } from './useDeviceHeartbeat'
 import { inspectDeviceHeartbeatContext } from './deviceHeartbeat'
@@ -112,7 +121,7 @@ import { useApplyDesktopPreferences } from './desktopPreferences'
 import { useLocalImSync } from './useLocalImSync'
 import { useHarnessNotifications, type StreamingTaskState } from './useHarnessNotifications'
 import { AUTOMATIC_TASK_LIMIT, useTaskQueue, type QueuedPrompt } from './useTaskQueue'
-import { parseTaskOutcome, taskOutcomeLabel, unverifiedTaskOutcome, type TaskOutcome } from './taskOutcome'
+import { parseTaskOutcome, unverifiedTaskOutcome, type TaskOutcome } from './taskOutcome'
 import { draftRootPaths, readTaskDraft, recentWorkDirectories, rememberWorkDirectory, saveTaskDraft, type TaskDraft } from './taskDrafts'
 import { joinComposerPrompt, splitComposerPrompt } from './composerInput'
 import './styles.css'
@@ -497,11 +506,6 @@ export default function App() {
     })
     : localTasks
   const focusComposer = () => window.requestAnimationFrame(() => composerRef.current?.focus())
-  const setTaskMonitorActivity = (activity: string) => {
-    const next = { ...taskMonitorRef.current, activity, updatedAt: new Date().toISOString() }
-    taskMonitorRef.current = next
-    setTaskMonitor(next)
-  }
   const startNewTask = (initialPrompt = '', nextCreationKind?: 'skill' | 'expert-kit', draftKind?: XiaoyinCreationKind) => {
     if (!saveCurrentDraft()) return Promise.resolve()
     creationDraftKeyRef.current = draftKind ? `creation:${draftKind}` : ''
@@ -780,11 +784,19 @@ export default function App() {
         } catch (error) {
           reply = `记忆未更改：${error instanceof Error ? error.message : String(error)}`
         }
-        const rememberedMessages: TaskMessage[] = [...contextMessages, { role: 'user', text: input }, { role: 'assistant', text: reply }]
         const timestamp = new Date().toISOString()
-        const monitor: TaskMonitorState = { ...createTaskMonitor(timestamp), status: 'completed', activity: '记忆处理完成' }
+        const started = beginExecutionTurn({
+          taskId, sessionId: '', operationScope: crypto.randomUUID(), previous: existingTask?.execution, now: timestamp,
+        })
+        const completed = completeExecutionTurn(started.thread, started.monitor, {
+          status: 'completed', summary: '记忆处理完成', remaining: [], checks: [],
+        }, timestamp, { activity: '记忆处理完成' })
+        const monitor = completed.monitor
+        const rememberedMessages: TaskMessage[] = [...contextMessages, { role: 'user', text: input }, {
+          role: 'assistant', text: reply, monitor, executionTurnId: completed.thread.turns.at(-1)?.id,
+        }]
         persistLocalTask({ ...existingTask, id: taskId, source: existingTask?.source ?? 'DESKTOP', name: existingTask?.name ?? input.slice(0, 60),
-          status: 'COMPLETED', createdAt: existingTask?.createdAt ?? timestamp, updatedAt: timestamp, monitor, messages: rememberedMessages, sessionId: '' })
+          status: 'COMPLETED', createdAt: existingTask?.createdAt ?? timestamp, updatedAt: timestamp, execution: completed.thread, monitor, messages: rememberedMessages, sessionId: '' })
         if (isCurrent()) {
           selectCurrentLocalTaskId(taskId)
           setMessages(rememberedMessages)
@@ -887,20 +899,20 @@ export default function App() {
           isCanceled: () => streaming.cancellationRequested,
           onRetry: (sessionId) => {
             executionSessionId = sessionId
-            const retryMonitor = retryingTaskMonitor(streaming.monitor)
-            streaming.execution = appendExecutionTransition(streaming.execution, streaming.monitor, retryMonitor, 'item.completed', { correlationId: `retry:${sessionId}` })
-            streaming.monitor = retryMonitor
+            const retry = retryExecutionTurn(streaming.execution, streaming.monitor, sessionId)
+            streaming.execution = retry.thread
+            streaming.monitor = retry.monitor
             streaming.responseKey = ''
             streaming.messages = streaming.messages.map((message, index) => index === streaming.messages.length - 1
               ? { ...message, text: '', pending: true }
               : message)
             if (currentLocalTaskIdRef.current === taskId) {
               setHarnessSessionId(sessionId)
-              taskMonitorRef.current = retryMonitor
-              setTaskMonitor(retryMonitor)
+              taskMonitorRef.current = retry.monitor
+              setTaskMonitor(retry.monitor)
               setMessages(streaming.messages)
             }
-            persistLocalTask({ ...runningTask, sessionId, updatedAt: new Date().toISOString(), execution: streaming.execution, monitor: retryMonitor, messages: streaming.messages })
+            persistLocalTask({ ...runningTask, sessionId, updatedAt: retry.monitor.updatedAt, execution: retry.thread, monitor: retry.monitor, messages: streaming.messages })
           },
         })
         if (streaming.cancellationRequested) throw new Error('本轮已停止')
@@ -909,14 +921,12 @@ export default function App() {
         const goalCompleted = outcome.status === 'completed'
         if (!goalCompleted) taskQueue.pause(taskId)
         const completedAt = new Date().toISOString()
-        const completedMonitor: TaskMonitorState = {
-          ...streaming.monitor, outcome, status: 'completed', activity: taskOutcomeLabel(outcome), updatedAt: completedAt,
-          completedAt,
-        }
-        streaming.execution = appendExecutionTransition(streaming.execution, streaming.monitor, completedMonitor, 'verification.recorded', { outcome })
-        streaming.execution = appendExecutionTransition(streaming.execution, completedMonitor, completedMonitor, 'turn.completed')
+        const completed = completeExecutionTurn(streaming.execution, streaming.monitor, outcome, completedAt)
+        streaming.execution = completed.thread
+        streaming.monitor = completed.monitor
+        const completedMonitor = completed.monitor
         const completedMessages = streaming.messages.map((message, index) => index === streaming.messages.length - 1
-          ? { role: 'assistant', text: result.finalResponse, monitor: completedMonitor }
+          ? { role: 'assistant', text: result.finalResponse, monitor: completedMonitor, executionTurnId: streaming.execution.turns.at(-1)?.id }
           : message) as TaskMessage[]
         if (currentLocalTaskIdRef.current === taskId) {
           setHarnessSessionId(result.sessionId)
@@ -944,21 +954,16 @@ export default function App() {
         const message = failure.message
         const canceled = streaming.cancellationRequested
         const completedAt = new Date().toISOString()
-        const failedMonitor: TaskMonitorState = {
-          ...streaming.monitor,
-          interruption: taskInterruption(streaming.monitor, canceled ? 'canceled' : 'failure'),
-          steps: streaming.monitor.steps.map((step) => step.status === 'running' ? { ...step, label: `${step.label}（结果待核对）`, status: 'canceled', completedAt } : step),
-          timeline: streaming.monitor.timeline?.map((entry) => entry.status === 'running' ? { ...entry, label: `${entry.label}（结果待核对）`, status: 'canceled', completedAt } : entry),
-          subagents: streaming.monitor.subagents?.map((agent) => agent.status === 'running' ? { ...agent, status: 'canceled', completedAt } : agent),
-          status: canceled ? 'canceled' : 'failed',
-          activity: canceled ? '已停止' : '任务执行失败',
-          updatedAt: completedAt,
-          completedAt,
-          failure: canceled ? undefined : { code: failure.code, category: failure.category, detail: message.slice(0, 500) },
-        }
-        streaming.execution = appendExecutionTransition(streaming.execution, streaming.monitor, failedMonitor, canceled ? 'turn.interrupted' : 'turn.failed')
+        const failed = failExecutionTurn(streaming.execution, streaming.monitor, {
+          cause: canceled ? 'canceled' : 'failure',
+          failure: { code: failure.code, category: failure.category, message },
+          now: completedAt,
+        })
+        streaming.execution = failed.thread
+        streaming.monitor = failed.monitor
+        const failedMonitor = failed.monitor
         const failedMessages = streaming.messages.map((item, index) => index === streaming.messages.length - 1
-          ? { role: 'assistant', text: canceled ? item.text : [item.text.trim(), `${failure.title}：${message}\n\n错误编号：${failure.code}`].filter(Boolean).join('\n\n---\n\n'), monitor: failedMonitor }
+          ? { role: 'assistant', text: canceled ? item.text : [item.text.trim(), `${failure.title}：${message}\n\n错误编号：${failure.code}`].filter(Boolean).join('\n\n---\n\n'), monitor: failedMonitor, executionTurnId: streaming.execution.turns.at(-1)?.id }
           : item) as TaskMessage[]
         if (currentLocalTaskIdRef.current === taskId) {
           taskMonitorRef.current = failedMonitor
@@ -992,8 +997,16 @@ export default function App() {
     if (!streaming || streaming.cancellationRequested) return
     taskQueue.pause(taskId)
     streaming.cancellationRequested = true
-    streaming.monitor = { ...streaming.monitor, activity: '正在停止', updatedAt: new Date().toISOString() }
-    setTaskMonitorActivity('正在停止')
+    const requested = requestExecutionInterrupt(streaming.execution, streaming.monitor)
+    streaming.execution = requested.thread
+    streaming.monitor = requested.monitor
+    setLocalTasks((current) => current.map((task) => task.id === taskId
+      ? { ...task, execution: requested.thread, monitor: requested.monitor, updatedAt: requested.monitor.updatedAt }
+      : task))
+    if (currentLocalTaskIdRef.current === taskId) {
+      taskMonitorRef.current = requested.monitor
+      setTaskMonitor(requested.monitor)
+    }
     try {
       // A missing native run can mean it just finished or recovery is between runs.
       // Keep the intent: completion/recovery must not overwrite or restart it.
@@ -1001,9 +1014,15 @@ export default function App() {
     } catch (reason) {
       if (streamingTasksRef.current.get(taskId) !== streaming) return
       streaming.cancellationRequested = false
-      streaming.monitor = { ...streaming.monitor, activity: '停止失败，可重试' }
+      const failed = failExecutionInterruptRequest(streaming.execution, streaming.monitor)
+      streaming.execution = failed.thread
+      streaming.monitor = failed.monitor
+      setLocalTasks((current) => current.map((task) => task.id === taskId
+        ? { ...task, execution: failed.thread, monitor: failed.monitor, updatedAt: failed.monitor.updatedAt }
+        : task))
       if (currentLocalTaskIdRef.current === taskId) {
-        setTaskMonitorActivity('停止失败，可重试')
+        taskMonitorRef.current = failed.monitor
+        setTaskMonitor(failed.monitor)
         setLocalFileError(reason instanceof Error ? reason.message : String(reason))
       }
     }
@@ -1307,8 +1326,18 @@ export default function App() {
             onChangesUndone={(messageIndex, results) => {
               const task = localTasks.find((item) => item.id === currentLocalTaskId)
               if (!task) return
+              const selectedMonitor = task.messages[messageIndex]?.monitor
+              const updatedChanges = selectedMonitor?.changes?.map((change) => ({ ...change, ...results.find((result) => result.id === change.id) }))
+              const execution = task.execution ?? (selectedMonitor
+                ? migrateLegacyExecution(task.id, task.sessionId ?? '', selectedMonitor).thread
+                : undefined)
+              const runtime = execution && selectedMonitor && updatedChanges
+                ? recordExecutionFileChanges(execution, selectedMonitor, updatedChanges, {
+                  targetTurnId: task.messages[messageIndex]?.executionTurnId,
+                })
+                : undefined
               const nextMessages = task.messages.map((message, index) => index !== messageIndex || !message.monitor ? message : {
-                ...message, monitor: { ...message.monitor, changes: message.monitor.changes?.map((change) => ({ ...change, ...results.find((result) => result.id === change.id) })) },
+                ...message, monitor: runtime?.monitor ?? { ...message.monitor, changes: updatedChanges },
               })
               const nextMonitor = nextMessages.at(-1)?.monitor ?? task.monitor
               if (currentLocalTaskIdRef.current === task.id) {
@@ -1317,7 +1346,7 @@ export default function App() {
                 if (nextMonitor) { setTaskMonitor(nextMonitor); taskMonitorRef.current = nextMonitor }
               }
               void shutdownHarness(task.id)
-              persistLocalTask({ ...task, sessionId: undefined, messages: nextMessages, monitor: nextMonitor, updatedAt: new Date().toISOString() })
+              persistLocalTask({ ...task, sessionId: undefined, execution: runtime?.thread ?? task.execution, messages: nextMessages, monitor: nextMonitor, updatedAt: new Date().toISOString() })
             }}
             activeModel={activeModel}
             queue={taskQueue.queues[currentLocalTaskId]}

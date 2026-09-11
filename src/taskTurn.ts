@@ -2,8 +2,7 @@ import { capabilitySnapshotChanged } from './capabilitySnapshot'
 import { splitComposerPrompt } from './composerInput'
 import { harnessPromptWithConversationReplay } from './conversationReplay'
 import { sameInvocationSpec, type ExtensionInvocation } from './extensionInvocations'
-import { startExecutionTurn } from './executionRuntime'
-import { createTaskMonitor } from './harness'
+import { beginExecutionTurn } from './executionRuntime'
 import { resolveHarnessSessionId } from './harnessSession'
 import type { CapabilitySnapshot, LocalTaskAttachment, LocalTaskRun, TaskMessage, TaskMonitorState } from './types'
 
@@ -44,14 +43,16 @@ export function prepareTaskTurn(context: TurnContext) {
     () => `session-${crypto.randomUUID().replaceAll('-', '')}`)
   const replay = harnessPromptWithConversationReplay(splitComposerPrompt(input).text, messages, fresh)
   const harnessPrompt = replay
-  const pendingMessages: TaskMessage[] = [...messages,
-    { role: 'user', text: input, ...(context.attachments.length ? { attachments: context.attachments } : {}) },
-    { role: 'assistant', text: '', pending: true },
-  ]
   const operationScope = context.monitor.interruption && context.monitor.operationScope
     ? context.monitor.operationScope : crypto.randomUUID()
-  const runningMonitor: TaskMonitorState = { ...createTaskMonitor(now), operationScope, status: 'running', activity: '正在处理', updatedAt: now, startedAt: now }
-  const execution = startExecutionTurn(context.taskId, rootSessionId, runningMonitor, existingTask?.execution, now)
+  const runtime = beginExecutionTurn({
+    taskId: context.taskId, sessionId: rootSessionId, operationScope, previous: existingTask?.execution, now,
+  })
+  const { thread: execution, monitor: runningMonitor } = runtime
+  const pendingMessages: TaskMessage[] = [...messages,
+    { role: 'user', text: input, ...(context.attachments.length ? { attachments: context.attachments } : {}) },
+    { role: 'assistant', text: '', pending: true, executionTurnId: execution.activeTurnId },
+  ]
   const runningTask: LocalTaskRun = {
     id: context.taskId, source: 'DESKTOP',
     name: existingTask?.name ?? (splitComposerPrompt(input).text || invocations.map((item) => item.name).join('、') || input).slice(0, 60),

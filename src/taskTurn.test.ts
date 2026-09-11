@@ -30,6 +30,7 @@ describe('prepareTaskTurn', () => {
     expect(result.harnessPrompt).toBe('分析本周数据')
     expect(result.runningTask.invocationTokens).toEqual(['/kit:reports:weekly'])
     expect(result.runningTask.invocationSpecs).toEqual([invocation().spec])
+    expect(result.pendingMessages.at(-1)?.executionTurnId).toBe(result.execution.activeTurnId)
   })
 
   it('starts a fresh session when the exact invocation version changes', () => {

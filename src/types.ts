@@ -49,6 +49,7 @@ export interface TaskMessage {
   attachments?: LocalTaskAttachment[]
   pending?: boolean
   monitor?: TaskMonitorState
+  executionTurnId?: string
   id?: string
   source?: 'desktop' | 'dingtalk'
 }
@@ -146,7 +147,7 @@ export interface TaskFileChange {
   changedAt: string
 }
 
-export interface TaskMonitorState {
+export interface TaskMonitorProjection {
   executionStarted?: boolean
   operationScope?: string
   interruption?: {
@@ -174,8 +175,15 @@ export interface TaskMonitorState {
   }
 }
 
+/** @deprecated Runtime code must write ExecutionEvent and derive this projection. */
+export type TaskMonitorState = TaskMonitorProjection
+
 export type ExecutionEventType =
   | 'turn.started'
+  | 'turn.retry.started'
+  | 'turn.interrupt.requested'
+  | 'turn.interrupt.failed'
+  | 'turn.progress.updated'
   | 'item.started'
   | 'item.updated'
   | 'item.completed'
@@ -186,11 +194,12 @@ export type ExecutionEventType =
   | 'turn.failed'
   | 'turn.interrupted'
   | 'verification.recorded'
+  | 'file.changes.updated'
 
 export interface ExecutionProjectionDelta {
   executionStarted?: boolean
   operationScope?: string
-  status?: TaskMonitorState['status']
+  status?: TaskMonitorProjection['status']
   activity?: string
   updatedAt: string
   startedAt?: string
@@ -202,9 +211,9 @@ export interface ExecutionProjectionDelta {
   artifacts?: TaskArtifact[]
   visuals?: TaskVisualArtifact[]
   knowledgeSources?: KnowledgeSearchHit[]
-  interruption?: TaskMonitorState['interruption']
-  outcome?: TaskMonitorState['outcome']
-  failure?: TaskMonitorState['failure']
+  interruption?: TaskMonitorProjection['interruption']
+  outcome?: TaskMonitorProjection['outcome']
+  failure?: TaskMonitorProjection['failure']
   replaceCollections?: Array<'steps' | 'timeline' | 'subagents' | 'changes' | 'artifacts' | 'visuals' | 'knowledgeSources'>
 }
 
