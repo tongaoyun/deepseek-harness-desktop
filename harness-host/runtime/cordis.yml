@@ -1,147 +1,173 @@
-# stdout is exclusively owned by the JSON-RPC transport. Never mount a console
-# logger or an interactive approval UI in this unattended composition.
-
-- id: sdk-jsonrpc-server
-  name: '@deepseek-ai/dsh-sdk-jsonrpc-server'
-  config:
-    maxTokensAsSuccess: false
-
-- id: local-attachments
-  name: '../dist/local-attachment-store-plugin.js'
-  config:
-    root: !!js process.env.XIAOYIN_ATTACHMENT_ROOT ?? './.xiaoyin/attachments'
+# Xiaoyin runtime overlay for the upstream sdk-minimal profile. The profile
+# owns the Agent kernel, JSON-RPC server, terminal, subprocess and persistence
+# lifecycle; this patch only changes policy and adds product capabilities.
 
 - id: llm-deepseek
-  name: '@deepseek-ai/dsh-llm-deepseek'
   config:
     apiKeyEnv: DEEPSEEK_API_KEY
-    models:
-      - id: !!js process.env.DSH_MODEL ?? 'deepseek-v4-flash'
-        contextWindow: !!js Number(process.env.DSH_CONTEXT_WINDOW ?? 128000)
+    defaultContextWindow: !!js Number(process.env.DSH_CONTEXT_WINDOW ?? 128000)
+    streamIdleTimeoutMs: 172800000
 
-- id: agent-spine
-  name: '@deepseek-ai/dsh-agent-spine-demo'
+- id: system-prompt
   config:
-    persona: !!js process.env.DSH_SYSTEM_PROMPT ?? '你是公司内部办公助手小胤。直接完成用户任务。当任务同时包含两个或更多互不依赖的调查、分析或实现工作时，主动委派给子 Agent 并行处理；简单任务、必须严格串行的任务由你自己完成。不得让多个 Agent 同时修改同一文件或同一外部资源；删除、高风险命令、需要用户确认的操作以及交互式浏览器或桌面操作由主 Agent 执行。你负责整合子 Agent 结果、检查文件变更、验证最终结果并统一回复用户。只有当前运行时工具列表实际提供的连接器才可使用。涉及 ERP 等实时企业数据时，必须先成功调用相应工具，才能声称已查询或调用；工具不存在或调用失败时，明确说明并引导用户启用连接器，禁止凭模型知识编造结果。'
+    includeHarnessIdentity: false
+    includeRuntimeContext: true
+    personaPrefix: !!js process.env.DSH_SYSTEM_PROMPT ?? '你是公司内部办公助手小胤。直接完成用户任务。复杂任务先判断依赖关系，再决定串行、并行或委派；不要把每个技能机械映射成一个 Agent。主 Agent 负责目标、权限、整合与验收，子 Agent 只承担边界清晰且可独立完成的工作。不得让多个 Agent 同时修改同一文件或同一外部资源。只有当前运行时真实提供的工具和连接器才可使用；实时企业数据必须来自成功的工具调用，禁止凭模型知识编造。'
+
+- id: sandbox-policy
+  config:
+    mode: !!js "process.env.XIAOYIN_EXECUTION_MODE === 'plan' ? 'read-only' : 'danger-full-access'"
+    workspaceRoot: !!js process.cwd()
+
+- id: agent-loop
+  config:
+    agents: []
     maxParallelToolCalls: 3
-    workspaceContext:
-      maxBytes: 65536
-    dshHome: !!js process.env.DSH_HOME
-    skills:
-      filesystem:
+
+- id: jobs
+  config:
+    maxConcurrentJobsPerOwner: 4
+
+- id: persistent-bash
+  disabled: !!js process.platform === 'win32' || process.env.XIAOYIN_EXECUTION_MODE === 'plan' || process.env.XIAOYIN_ALLOW_SHELL === 'false'
+  config:
+    timeoutMs: 300000
+    maxOutputChars: 65536
+
+- id: persistent-pwsh
+  disabled: !!js process.platform !== 'win32' || process.env.XIAOYIN_EXECUTION_MODE === 'plan' || process.env.XIAOYIN_ALLOW_SHELL === 'false'
+  config:
+    timeoutMs: 300000
+    maxOutputChars: 65536
+
+- id: sessions
+  config:
+    root: !!js process.env.DSH_SESSION_ROOT ?? dshHomePath('sessions')
+    compression: none
+
+- insert:
+    - id: local-attachments
+      name: '../dist/local-attachment-store-plugin.js'
+      config:
+        root: !!js process.env.XIAOYIN_ATTACHMENT_ROOT ?? './.xiaoyin/attachments'
+
+    - id: approval
+      name: '@deepseek-ai/dsh-user-approval'
+      config:
+        policy: ask
+
+    - id: desktop-approval
+      name: '../dist/desktop-approval-plugin.js'
+
+    - id: session-checkpoints
+      name: '@deepseek-ai/dsh-session-checkpoint-policy'
+
+    - id: token-meter
+      name: '@deepseek-ai/dsh-token-meter'
+
+    # The catalog is cheap; full SKILL.md bodies enter context only after the
+    # model loads a selected or clearly matching skill.
+    - id: skills
+      name: '@deepseek-ai/dsh-skill'
+
+    - id: skill-filesystem
+      name: '@deepseek-ai/dsh-skill-filesystem'
+      config:
         includeDefaultRoots: false
         customSkillDirs: !!js JSON.parse(process.env.DSH_CUSTOM_SKILL_DIRS ?? '[]')
         watchFollowSymlinks: false
-    toolBash: false
-    jobs:
-      maxConcurrentJobsPerOwner: 4
-    toolJobs:
-      completionDelivery: wakeup
-      maxConsecutiveWakes: 3
-    goals:
-      domain:
-        defaultMaxGoalRounds: 50
-      tool:
-        blockedAfterConsecutiveRounds: 3
 
-- id: subagents
-  name: '@deepseek-ai/dsh-subagent'
+    - id: tool-skill
+      name: '@deepseek-ai/dsh-tool-skill'
 
-- id: subagent-spawn
-  name: '@deepseek-ai/dsh-subagent-spawn-in-process'
-  config:
-    providerName: spawn
+    # Continuable children expose stable session ids plus follow-up, stop and
+    # inventory controls. A depth cap prevents recursive delegation.
+    - id: subagents
+      name: '@deepseek-ai/dsh-subagent'
 
-- id: tool-subagent
-  name: '@deepseek-ai/dsh-tool-subagent'
-  config:
-    provider: spawn
-    toolName: subagent
-    enableRunInBackground: false
-    persona: '你是小胤委派的子 Agent。专注完成收到的独立任务，直接返回可供主 Agent 整合的结果；不要再委派其他 Agent。'
-    toolFilter:
-      deny:
-        - subagent
-    maxDepth: 1
+    - id: subagent-spawn
+      name: '@deepseek-ai/dsh-subagent-spawn-in-process'
+      config:
+        providerName: spawn
 
-- id: user-approval
-  name: '@deepseek-ai/dsh-user-approval'
-  config:
-    policy: ask
+    - id: tool-subagent-control
+      name: '@deepseek-ai/dsh-tool-subagent-control'
 
-- id: desktop-approval
-  name: '../dist/desktop-approval-plugin.js'
+    - id: tool-subagent-list-agents
+      name: '@deepseek-ai/dsh-tool-subagent-control/list-agents'
 
-- id: task-outcome
-  name: '../dist/task-outcome-plugin.js'
+    - id: tool-subagent
+      name: '@deepseek-ai/dsh-tool-subagent'
+      config:
+        provider: spawn
+        toolName: subagent
+        enableRunInBackground: true
+        backgroundMode: continuable
+        persona: '你是小胤委派的子 Agent。只完成收到的独立任务，返回事实、产物与验证结果；不要再次委派。'
+        toolFilter:
+          deny:
+            - subagent
+            - send_message
+            - interrupt_agent
+            - list_agents
+        maxDepth: 1
 
-- id: managed-mcp
-  name: '../dist/managed-mcp-plugin.js'
-  config:
-    connectors: !!js JSON.parse(process.env.XIAOYIN_MCP_CONNECTORS ?? '[]')
-    employeeBearerTokenEnv: XIAOYIN_EMPLOYEE_BEARER_TOKEN
+    - id: task-outcome
+      name: '../dist/task-outcome-plugin.js'
 
-- id: enterprise-knowledge
-  name: '../dist/knowledge-plugin.js'
-  config:
-    endpoint: !!js process.env.XIAOYIN_KNOWLEDGE_ENDPOINT ?? ''
-    employeeIdEnv: XIAOYIN_EMPLOYEE_ID
-    employeeTokenEnv: XIAOYIN_EMPLOYEE_BEARER_TOKEN
+    - id: managed-mcp
+      name: '../dist/managed-mcp-plugin.js'
+      config:
+        connectors: !!js JSON.parse(process.env.XIAOYIN_MCP_CONNECTORS ?? '[]')
+        employeeBearerTokenEnv: XIAOYIN_EMPLOYEE_BEARER_TOKEN
 
-- id: desktop-schedules
-  name: '../dist/schedule-plugin.js'
-  config:
-    readOnly: !!js process.env.XIAOYIN_EXECUTION_MODE === 'plan'
+    - id: enterprise-knowledge
+      name: '../dist/knowledge-plugin.js'
+      config:
+        endpoint: !!js process.env.XIAOYIN_KNOWLEDGE_ENDPOINT ?? ''
+        employeeIdEnv: XIAOYIN_EMPLOYEE_ID
+        employeeTokenEnv: XIAOYIN_EMPLOYEE_BEARER_TOKEN
 
-- id: desktop-skills
-  name: '../dist/skill-plugin.js'
-  config:
-    readOnly: !!js process.env.XIAOYIN_EXECUTION_MODE === 'plan'
+    - id: desktop-schedules
+      name: '../dist/schedule-plugin.js'
+      config:
+        readOnly: !!js process.env.XIAOYIN_EXECUTION_MODE === 'plan'
 
-- id: local-files
-  name: '../dist/local-files-plugin.js'
-  config:
-    roots: !!js JSON.parse(process.env.XIAOYIN_LOCAL_FILE_ROOTS ?? '[]')
-    enabled: true
-    requireDeleteApproval: true
-    readOnly: !!js process.env.XIAOYIN_EXECUTION_MODE === 'plan'
+    - id: desktop-skills
+      name: '../dist/skill-plugin.js'
+      config:
+        readOnly: !!js process.env.XIAOYIN_EXECUTION_MODE === 'plan'
 
-- id: local-documents
-  name: '../dist/local-documents-plugin.js'
-  config:
-    roots: !!js JSON.parse(process.env.XIAOYIN_LOCAL_FILE_ROOTS ?? '[]')
-    enabled: true
-    readOnly: !!js process.env.XIAOYIN_EXECUTION_MODE === 'plan'
+    - id: local-files
+      name: '../dist/local-files-plugin.js'
+      config:
+        roots: !!js JSON.parse(process.env.XIAOYIN_LOCAL_FILE_ROOTS ?? '[]')
+        enabled: true
+        requireDeleteApproval: true
+        readOnly: !!js process.env.XIAOYIN_EXECUTION_MODE === 'plan'
 
-- id: native-shell
-  name: '../dist/native-shell-plugin.js'
-  config:
-    enabled: !!js process.env.XIAOYIN_EXECUTION_MODE !== 'plan'
-    requireApproval: true
-    cwd: !!js process.env.DSH_CWD
-    dshHome: !!js process.env.DSH_HOME
+    - id: local-documents
+      name: '../dist/local-documents-plugin.js'
+      config:
+        roots: !!js JSON.parse(process.env.XIAOYIN_LOCAL_FILE_ROOTS ?? '[]')
+        enabled: true
+        readOnly: !!js process.env.XIAOYIN_EXECUTION_MODE === 'plan'
 
-- id: local-computer-use
-  name: '../dist/local-computer-use-plugin.js'
-  config:
-    enabled: true
-    tools: !!js JSON.parse(process.env.XIAOYIN_COMPUTER_USE_TOOLS ?? '[]')
+    - id: native-shell-policy
+      name: '../dist/native-shell-plugin.js'
+      config:
+        enabled: !!js process.env.XIAOYIN_EXECUTION_MODE !== 'plan' && process.env.XIAOYIN_ALLOW_SHELL !== 'false'
+        requireApproval: !!js process.env.XIAOYIN_APPROVE_SHELL !== 'false'
 
-- id: local-browser
-  name: '../dist/local-browser-plugin.js'
-  config:
-    enabled: !!js process.env.XIAOYIN_ALLOW_BROWSER === 'true'
-    executable: !!js process.env.XIAOYIN_BROWSER_EXECUTABLE ?? ''
-    debugUrl: !!js process.env.XIAOYIN_BROWSER_DEBUG_URL ?? ''
+    - id: local-computer-use
+      name: '../dist/local-computer-use-plugin.js'
+      config:
+        enabled: !!js process.env.XIAOYIN_EXECUTION_MODE !== 'plan'
+        tools: !!js JSON.parse(process.env.XIAOYIN_COMPUTER_USE_TOOLS ?? '[]')
 
-- id: sessions
-  name: '@deepseek-ai/dsh-session-persistence-jsonl'
-  config:
-    root: !!js process.env.DSH_SESSION_ROOT ?? './.xiaoyin/sessions'
-    compression: none
-
-- id: session-checkpoints
-  name: '@deepseek-ai/dsh-session-checkpoint-policy'
-
-- id: token-meter
-  name: '@deepseek-ai/dsh-token-meter'
+    - id: local-browser
+      name: '../dist/local-browser-plugin.js'
+      config:
+        enabled: !!js process.env.XIAOYIN_EXECUTION_MODE !== 'plan' && process.env.XIAOYIN_ALLOW_BROWSER === 'true'
+        executable: !!js process.env.XIAOYIN_BROWSER_EXECUTABLE ?? ''
+        debugUrl: !!js process.env.XIAOYIN_BROWSER_DEBUG_URL ?? ''

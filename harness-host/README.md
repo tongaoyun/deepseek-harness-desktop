@@ -16,7 +16,7 @@ Harness Host 通过 stdin/stdout 提供逐行 JSON-RPC 2.0。stdout 只输出协
 
 | 环境变量 | 内容 |
 |---|---|
-| `DSH_CORDIS_CONFIG` | Cordis 配置文件路径 |
+| `DSH_CORDIS_CONFIG` | `sdk-minimal` Profile 的小胤覆盖配置路径 |
 | `DSH_CUSTOM_SKILL_DIRS` | 通过桌面校验的 Skill 根目录 |
 | `XIAOYIN_MCP_CONNECTORS` | 控制中心下发并由桌面筛选的 MCP 连接器 |
 | `XIAOYIN_LOCAL_FILE_ROOTS` | 任务授权目录 ID 和路径映射 |
@@ -29,5 +29,6 @@ Harness Host 通过 stdin/stdout 提供逐行 JSON-RPC 2.0。stdout 只输出协
 - 缺少桌面响应、用户拒绝、取消或审批超时都会拒绝工具调用。
 - MCP 工具使用显式白名单；专家套件要求的连接器不可用时终止任务。
 - 本地文件工具只访问 `XIAOYIN_LOCAL_FILE_ROOTS` 指定的目录。
-- Shell 使用 Harness 原生 Executor 和 Subprocess Runtime；macOS/Linux 使用 `bash`，Windows 使用 `pwsh`。
-- Agent 支持 Workspace Context、Jobs、Goal 和最多 3 个并行子 Agent；子 Agent 不递归委派。
+- Shell 使用 Harness `sdk-minimal` 的持久 Terminal 和 Subprocess Runtime；macOS/Linux 使用 `bash`，Windows 使用 `pwsh`。
+- Skill 先注入有预算的目录，完整 `SKILL.md` 按需加载，不随选择数量完整塞入上下文。
+- 子 Agent 使用独立持久 Session，支持后台继续、消息、停止和状态查询；子 Agent 不递归委派。

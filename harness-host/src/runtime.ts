@@ -1,10 +1,12 @@
-import { createRequire } from 'node:module'
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { mkdir, writeFile } from 'node:fs/promises'
-import { DeepSeekHarness, type ContentBlock, type HarnessClient, type HarnessNotification } from '@deepseek-ai/dsh-sdk-client'
-import { AttachmentId, type ImageAttachmentRef, type ImageMediaType } from '@deepseek-ai/dsh-attachment'
+import {
+  DeepSeekHarness,
+  type HarnessClient,
+  type HarnessNotification,
+  type SdkPromptContentBlock,
+} from '@deepseek-ai/dsh-sdk-client'
 import { imageMetadata } from './local-attachment-store-plugin.js'
 import { withTaskInstructions } from './task-instructions.js'
 import { IMAGE_LIMITS } from './image-limits.js'
@@ -39,7 +41,6 @@ export class TurnTimeoutError extends Error {
   }
 }
 
-const require = createRequire(import.meta.url)
 const moduleDirectory = dirname(fileURLToPath(import.meta.url))
 
 export class DeepSeekHarnessRuntime implements HarnessRuntime {
@@ -54,7 +55,7 @@ export class DeepSeekHarnessRuntime implements HarnessRuntime {
     return {
       status: 'ready',
       runtime: 'deepseek-harness',
-      version: '0.1.1-rc.2',
+      version: '0.1.5-rc.2',
     }
   }
 
@@ -91,9 +92,10 @@ export class DeepSeekHarnessRuntime implements HarnessRuntime {
     const harness = this.getOrCreateHarness()
     const prompt = withTaskInstructions(applyMemoryContext(input.prompt, process.env.XIAOYIN_MEMORY_CONTEXT))
     if ((input.images?.length ?? 0) > IMAGE_LIMITS.maxImagesPerMessage) throw new Error('单条消息最多添加 4 张图片')
-    const images = await Promise.all((input.images ?? []).map(persistInputImage))
-    const content: string | ContentBlock[] = images.length === 0 ? prompt : [
-      { type: 'text', text: prompt }, ...images.map((attachment) => ({ type: 'image' as const, attachment })),
+    const images = (input.images ?? []).map(encodedInputImage)
+    const content: SdkPromptContentBlock[] = [
+      { type: 'text', text: prompt },
+      ...images,
     ]
     const sessionId = input.sessionId ?? `session-${randomUUID().replaceAll('-', '')}`
     try {
@@ -101,7 +103,7 @@ export class DeepSeekHarnessRuntime implements HarnessRuntime {
       return await runSessionTurn(
         harness.client,
         sessionId,
-        normalizeContent(content),
+        content,
         onNotification,
         turnTimeoutMs(process.env.XIAOYIN_TURN_TIMEOUT_MS),
       )
@@ -132,26 +134,21 @@ export class DeepSeekHarnessRuntime implements HarnessRuntime {
     if (this.closing) throw new Error('本轮已停止')
     if (this.harness !== undefined) return this.harness
 
-    const packageJson = require.resolve('@deepseek-ai/dsh-sdk-jsonrpc-demo/package.json')
-    const runtimeBin = resolve(dirname(packageJson), 'lib/bin.js')
-    const configPath = process.env.DSH_CORDIS_CONFIG
+    const patchPath = process.env.DSH_CORDIS_CONFIG
       ?? resolve(moduleDirectory, '../runtime/cordis.yml')
     const workspace = resolve(process.env.DSH_CWD ?? process.cwd())
 
     const maxTokens = positiveInteger(process.env.DSH_MAX_TOKENS)
     this.harness = new DeepSeekHarness({
-      launch: {
-        command: process.execPath,
-        args: [runtimeBin],
-        cwd: workspace,
-        env: {
-          ...process.env,
-          ...this.extraEnv,
-          DSH_CORDIS_CONFIG: configPath,
-          DSH_CWD: workspace,
-        },
-      },
+      profile: 'sdk-minimal',
+      patches: [patchPath],
       cwd: workspace,
+      processCwd: workspace,
+      env: {
+        ...process.env,
+        ...this.extraEnv,
+        DSH_CWD: workspace,
+      },
       provider: process.env.DSH_PROVIDER ?? 'deepseek-official',
       model: process.env.DSH_MODEL ?? 'deepseek-v4-flash',
       ...(maxTokens === undefined ? {} : { maxTokens }),
@@ -166,7 +163,7 @@ interface SessionSubscription {
 }
 
 interface SessionClient {
-  prompt(sessionId: string, contentBlocks: ContentBlock[]): Promise<string>
+  prompt(sessionId: string, contentBlocks: SdkPromptContentBlock[]): Promise<string>
   subscribeSessionTree(sessionId: string): SessionSubscription
 }
 
@@ -178,7 +175,7 @@ interface SessionClient {
 export async function runSessionTurn(
   client: Pick<HarnessClient, 'prompt' | 'subscribeSessionTree'> | SessionClient,
   sessionId: string,
-  content: ContentBlock[],
+  content: SdkPromptContentBlock[],
   onNotification: (value: HarnessNotification) => void,
   timeoutMs = 15 * 60_000,
 ): Promise<HarnessRunResult> {
@@ -219,8 +216,27 @@ export async function runSessionTurn(
       }
       if (event?.type === 'turn/end') {
         const reason = record(record(event.data)?.reason)
-        if (reason?.kind === 'error') turnFailure = providerFailureMessage(reason) || '本轮执行失败，已保留部分结果，请检查后继续'
-        else if (reason?.kind === 'max-tokens') turnFailure = '本轮达到模型输出上限，结果尚未完成，请继续处理剩余内容'
+        switch (reason?.kind) {
+          case 'completed':
+            break
+          case 'error':
+            turnFailure = providerFailureMessage(reason) || '本轮执行失败，已保留部分结果，请检查后继续'
+            break
+          case 'max-tokens':
+            turnFailure = '本轮达到模型输出上限，结果尚未完成，请继续处理剩余内容'
+            break
+          case 'aborted':
+            turnFailure = '本轮已停止，已保留停止前的部分结果'
+            break
+          case 'blocked':
+            turnFailure = '本轮输入未进入执行，请检查权限或运行状态后重试'
+            break
+          case 'interrupted':
+            turnFailure = '本轮执行被意外中断，已保留中断前的部分结果，请检查后继续'
+            break
+          default:
+            turnFailure = '本轮以未知状态结束，不能确认任务已完成'
+        }
         if (turnStarted) break
       }
       if (turnStarted && notification.method === 'session.status'
@@ -385,10 +401,6 @@ function providerFailureMessage(reason: Record<string, unknown>): string {
   return message ? '模型服务未能完成本轮请求，请重试' : ''
 }
 
-function normalizeContent(content: string | ContentBlock[]): ContentBlock[] {
-  return typeof content === 'string' ? [{ type: 'text', text: content }] : content
-}
-
 function isPromptReceipt(notification: HarnessNotification, sessionId: string, messageId: string): boolean {
   const event = sessionEvent(notification, sessionId)
   if (event?.type !== 'agent/inbox/spliced') return false
@@ -416,22 +428,16 @@ function record(value: unknown): Record<string, unknown> | undefined {
     ? value as Record<string, unknown> : undefined
 }
 
-async function persistInputImage(input: ImageRunInput): Promise<ImageAttachmentRef> {
+function encodedInputImage(input: ImageRunInput): SdkPromptContentBlock {
   if (input.data.length === 0 || input.data.length > IMAGE_LIMITS.maxImageBytes) throw new Error('图片为空或超过 10 MB，请缩小后重试')
   const metadata = imageMetadata(input.data, input.mediaType)
   if (metadata.width > IMAGE_LIMITS.maxImageDimension || metadata.height > IMAGE_LIMITS.maxImageDimension || metadata.width * metadata.height > IMAGE_LIMITS.maxImagePixels) {
     throw new Error('图片分辨率超出当前运行时范围：最长边 2560 像素、总计 400 万像素，请裁剪或缩小后重试')
   }
-  const hash = createHash('sha256').update(input.data).digest('hex')
-  const root = resolve(process.env.XIAOYIN_ATTACHMENT_ROOT ?? './.xiaoyin/attachments')
-  await mkdir(root, { recursive: true })
-  await writeFile(resolve(root, `${hash}.image`), input.data, { flag: 'wx' }).catch((error: NodeJS.ErrnoException) => {
-    if (error.code !== 'EEXIST') throw error
-  })
   return {
-    attachmentId: AttachmentId(`sha256:${hash}`), mediaType: input.mediaType as ImageMediaType,
-    bytes: input.data.length, width: metadata.width, height: metadata.height,
-    name: input.name.replaceAll(/[\\/]/g, '').slice(0, 100),
+    type: 'image',
+    data: input.data.toString('base64'),
+    mimeType: input.mediaType,
   }
 }
 

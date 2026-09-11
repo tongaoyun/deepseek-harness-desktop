@@ -97,6 +97,19 @@ describe('persisted session follow-ups', () => {
     ]), 'session-1', [{ type: 'text', text: '继续' }], () => {})).rejects.toThrow('输出上限')
   })
 
+  it.each([
+    ['aborted', '已停止'],
+    ['blocked', '未进入执行'],
+    ['interrupted', '意外中断'],
+  ])('does not treat a %s turn as successful', async (kind, message) => {
+    await expect(runSessionTurn(fakeClient([
+      event('agent/inbox/spliced', { inserted: [{ id: 'message-2' }] }),
+      event('turn/start', { turn: 1 }),
+      event('assistant/message', { message: { content: [{ type: 'text', text: '部分结果' }] } }),
+      event('turn/end', { reason: kind === 'aborted' ? { kind, reason: { kind: 'user' } } : { kind } }),
+    ]), 'session-1', [{ type: 'text', text: '继续' }], () => {})).rejects.toThrow(message)
+  })
+
   it('reports payload-less errors as failures even after a partial response', async () => {
     await expect(runSessionTurn(fakeClient([
       event('agent/inbox/spliced', { inserted: [{ id: 'message-2' }] }),
