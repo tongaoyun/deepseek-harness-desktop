@@ -359,6 +359,19 @@ it('retains late file receipts while stopping without resuming text or accepting
   expect(applyStoppingHarnessNotification(stopping, event('tool/call', { callId: 'new', name: 'bash' }, 3))).toBe(stopping)
 })
 
+it('projects structured questions and settles them after a desktop answer', () => {
+  const requested = applyHarnessNotification(createTaskMonitor(), event('question/request', {
+    questionId: 'question-1',
+    questions: [{ id: 'mode', header: '执行方式', question: '请选择模式', options: [
+      { label: '安全模式', description: '每次写入前确认' }, { label: '快速模式' },
+    ], multiSelect: false }],
+  }, 1))
+  expect(requested).toMatchObject({ status: 'running', activity: '等待你回答' })
+  expect(requested.timeline).toMatchObject([{ kind: 'question', questionId: 'question-1', status: 'running', questions: [{ id: 'mode' }] }])
+  const answered = applyHarnessNotification(requested, event('question/answered', { questionId: 'question-1' }, 2))
+  expect(answered.timeline).toMatchObject([{ kind: 'question', status: 'completed' }])
+})
+
 function event(type: string, data: Record<string, unknown>, time: number) {
   return {
     taskId: 'task-1',

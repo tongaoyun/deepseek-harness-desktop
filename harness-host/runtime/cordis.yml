@@ -1,6 +1,6 @@
-# Xiaoyin runtime overlay for the upstream sdk-minimal profile. The profile
-# owns the Agent kernel, JSON-RPC server, terminal, subprocess and persistence
-# lifecycle; this patch only changes policy and adds product capabilities.
+# Xiaoyin policy and product overlay for the upstream full `sdk` profile.
+# Stable Harness capabilities stay owned by dsh-base; this file only replaces
+# deployment policy and adds desktop-owned bridges and business tools.
 
 - id: llm-deepseek
   config:
@@ -14,36 +14,121 @@
     includeRuntimeContext: true
     personaPrefix: !!js process.env.DSH_SYSTEM_PROMPT ?? '你是公司内部办公助手小胤。直接完成用户任务。复杂任务先判断依赖关系，再决定串行、并行或委派；不要把每个技能机械映射成一个 Agent。主 Agent 负责目标、权限、整合与验收，子 Agent 只承担边界清晰且可独立完成的工作。不得让多个 Agent 同时修改同一文件或同一外部资源。只有当前运行时真实提供的工具和连接器才可使用；实时企业数据必须来自成功的工具调用，禁止凭模型知识编造。'
 
-- id: sandbox-policy
-  config:
-    mode: !!js "process.env.XIAOYIN_EXECUTION_MODE === 'plan' ? 'read-only' : 'danger-full-access'"
-    workspaceRoot: !!js process.cwd()
-
 - id: agent-loop
   config:
     agents: []
     maxParallelToolCalls: 3
 
-- id: jobs
-  config:
-    maxConcurrentJobsPerOwner: 4
-
-- id: persistent-bash
-  disabled: !!js process.platform === 'win32' || process.env.XIAOYIN_EXECUTION_MODE === 'plan' || process.env.XIAOYIN_ALLOW_SHELL === 'false'
-  config:
-    timeoutMs: 300000
-    maxOutputChars: 65536
-
-- id: persistent-pwsh
-  disabled: !!js process.platform !== 'win32' || process.env.XIAOYIN_EXECUTION_MODE === 'plan' || process.env.XIAOYIN_ALLOW_SHELL === 'false'
-  config:
-    timeoutMs: 300000
-    maxOutputChars: 65536
-
-- id: sessions
+- id: session-persistence-jsonl
   config:
     root: !!js process.env.DSH_SESSION_ROOT ?? dshHomePath('sessions')
     compression: none
+
+- id: session-query-sqlite
+  config:
+    path: !!js dshHomePath('session-query.sqlite')
+    openAt: first-search
+
+# Xiaoyin already stores content-addressed images in its authorized attachment
+# store. Keep one attachment backend until existing desktop references migrate.
+- id: attachment-local
+  disabled: true
+
+- id: sandbox-policy
+  config:
+    mode: !!js process.env.DSH_PERMISSION_MODE ?? 'workspace-write'
+    workspaceRoot: !!js process.cwd()
+
+- id: approval
+  config:
+    policy: ask
+
+- id: permission
+  config:
+    presets:
+      read-only:
+        sandbox: read-only
+        approval: ask
+      workspace-write:
+        sandbox: workspace-write
+        approval: ask
+      danger-full-access:
+        sandbox: danger-full-access
+        approval: ask
+    defaultPreset: workspace-write
+
+- id: bash-sandbox
+  disabled: !!js process.platform === 'win32' || process.env.XIAOYIN_ALLOW_SHELL === 'false'
+  config:
+    timeoutMs: 300000
+
+- id: pwsh-sandbox
+  disabled: !!js process.platform !== 'win32' || process.env.XIAOYIN_ALLOW_SHELL === 'false'
+
+- id: tool-bash
+  disabled: !!js process.platform === 'win32' || process.env.XIAOYIN_ALLOW_SHELL === 'false'
+
+- id: tool-pwsh
+  disabled: !!js process.platform !== 'win32' || process.env.XIAOYIN_ALLOW_SHELL === 'false'
+
+- id: skill-filesystem
+  config:
+    includeDefaultRoots: false
+    customSkillDirs: !!js JSON.parse(process.env.DSH_CUSTOM_SKILL_DIRS ?? '[]')
+    watchFollowSymlinks: false
+
+- id: tool-subagent
+  config:
+    provider: spawn
+    toolName: subagent
+    enableRunInBackground: true
+    backgroundMode: continuable
+    persona: '你是小胤委派的子 Agent。只完成收到的独立任务，返回事实、产物与验证结果；不要再次委派。'
+    toolFilter:
+      deny: [subagent, subagent_fork, send_message, interrupt_agent, list_agents]
+    maxDepth: 1
+
+- id: tool-subagent-fork
+  config:
+    provider: fork
+    toolName: subagent_fork
+    backgroundMode: one-shot
+    maxDepth: 1
+
+- id: tool-result-pruner
+  config:
+    thresholdChars: 8192
+    headChars: 4096
+    tailChars: 1024
+
+- id: spill-policy
+  config:
+    maxInlineBytes: 50000
+
+- id: tool-todo
+  config:
+    allowParallelInProgress: true
+
+- id: tool-ralph
+  config:
+    subagentProvider: spawn
+    maxRounds: 32
+
+- id: repeat-tool-reminder
+  config:
+    thresholds: [3, 5, 8]
+    argumentsPreviewChars: 500
+
+- id: tool-web
+  config:
+    fetch: true
+    searchTimeoutMs: 60000
+
+- id: tools
+  config:
+    # PTC executes model-written TypeScript with Bash-equivalent authority.
+    # Native remains the product default; deployments opt into ptc or both.
+    mode: !!js process.env.XIAOYIN_TOOLS_MODE ?? 'native'
 
 - insert:
     - id: local-attachments
@@ -51,66 +136,138 @@
       config:
         root: !!js process.env.XIAOYIN_ATTACHMENT_ROOT ?? './.xiaoyin/attachments'
 
-    - id: approval
-      name: '@deepseek-ai/dsh-user-approval'
-      config:
-        policy: ask
-
     - id: desktop-approval
       name: '../dist/desktop-approval-plugin.js'
 
-    - id: session-checkpoints
-      name: '@deepseek-ai/dsh-session-checkpoint-policy'
+    - id: desktop-user-question
+      name: '../dist/desktop-user-question-plugin.js'
 
-    - id: token-meter
-      name: '@deepseek-ai/dsh-token-meter'
+    - id: desktop-plan-mode
+      name: '../dist/desktop-plan-mode-plugin.js'
 
-    # The catalog is cheap; full SKILL.md bodies enter context only after the
-    # model loads a selected or clearly matching skill.
-    - id: skills
-      name: '@deepseek-ai/dsh-skill'
+    - id: tool-ask-user
+      name: '@deepseek-ai/dsh-tool-ask-user'
 
-    - id: skill-filesystem
-      name: '@deepseek-ai/dsh-skill-filesystem'
+    - id: tool-session-query
+      name: '@deepseek-ai/dsh-tool-session-query'
+      # rc.2 currently creates an effect after the SDK composition context has
+      # become inactive. Keep the durable query index enabled, but expose its
+      # model-facing tools only for deployments validating the upstream fix.
+      disabled: !!js process.env.XIAOYIN_ENABLE_SESSION_QUERY_TOOLS !== 'true'
       config:
-        includeDefaultRoots: false
-        customSkillDirs: !!js JSON.parse(process.env.DSH_CUSTOM_SKILL_DIRS ?? '[]')
-        watchFollowSymlinks: false
+        maxSearchResults: 50
+        searchTimeoutMs: 30000
 
-    - id: tool-skill
-      name: '@deepseek-ai/dsh-tool-skill'
-
-    # Continuable children expose stable session ids plus follow-up, stop and
-    # inventory controls. A depth cap prevents recursive delegation.
-    - id: subagents
-      name: '@deepseek-ai/dsh-subagent'
-
-    - id: subagent-spawn
-      name: '@deepseek-ai/dsh-subagent-spawn-in-process'
+    - id: code-runtime
+      name: '@deepseek-ai/dsh-code-runtime-worker-thread'
+      disabled: !!js "!['ptc', 'both'].includes(process.env.XIAOYIN_TOOLS_MODE ?? 'native')"
       config:
-        providerName: spawn
+        computeMs: 60000
+        maxWallMs: 600000
+        maxOutputBytes: 16777216
+        maxOldGenerationSizeMb: 256
 
-    - id: tool-subagent-control
-      name: '@deepseek-ai/dsh-tool-subagent-control'
+    # LSP is mounted only with an explicit non-empty server map. The desktop
+    # never guesses executables or starts language servers behind the user.
+    - id: lsp
+      name: '@deepseek-ai/dsh-lsp'
+      disabled: !!js "!process.env.XIAOYIN_LSP_SERVERS"
 
-    - id: tool-subagent-list-agents
-      name: '@deepseek-ai/dsh-tool-subagent-control/list-agents'
+    - id: lsp-stdio
+      name: '@deepseek-ai/dsh-lsp-stdio'
+      disabled: !!js "!process.env.XIAOYIN_LSP_SERVERS"
+      config:
+        servers: !!js JSON.parse(process.env.XIAOYIN_LSP_SERVERS ?? '{}')
 
-    - id: tool-subagent
+    - id: tool-lsp
+      name: '@deepseek-ai/dsh-tool-lsp'
+      disabled: !!js "!process.env.XIAOYIN_LSP_SERVERS"
+
+    # Hooks can run arbitrary local commands and therefore require an explicit
+    # config path. Missing paths leave no hook listener mounted.
+    - id: hooks-codex
+      name: '@deepseek-ai/dsh-hooks-codex'
+      disabled: !!js "!process.env.XIAOYIN_CODEX_HOOKS_CONFIG"
+      config:
+        configPath: !!js process.env.XIAOYIN_CODEX_HOOKS_CONFIG ?? ''
+
+    - id: hooks-claude-code
+      name: '@deepseek-ai/dsh-hooks-claude-code'
+      disabled: !!js "!process.env.XIAOYIN_CLAUDE_HOOKS_CONFIG"
+      config:
+        configPath: !!js process.env.XIAOYIN_CLAUDE_HOOKS_CONFIG ?? ''
+
+    # External agent runtimes are opt-in. Each gets a static tool and isolated
+    # provider so unavailable accounts or executables are never advertised.
+    - id: subagent-codex
+      name: '@deepseek-ai/dsh-subagent-codex'
+      disabled: !!js process.env.XIAOYIN_ENABLE_CODEX_SUBAGENT !== 'true'
+      config:
+        providerName: codex
+        permissionMode: never
+
+    - id: tool-subagent-codex
       name: '@deepseek-ai/dsh-tool-subagent'
+      disabled: !!js process.env.XIAOYIN_ENABLE_CODEX_SUBAGENT !== 'true'
       config:
-        provider: spawn
-        toolName: subagent
-        enableRunInBackground: true
-        backgroundMode: continuable
-        persona: '你是小胤委派的子 Agent。只完成收到的独立任务，返回事实、产物与验证结果；不要再次委派。'
-        toolFilter:
-          deny:
-            - subagent
-            - send_message
-            - interrupt_agent
-            - list_agents
-        maxDepth: 1
+        provider: codex
+        toolName: subagent_codex
+        backgroundMode: one-shot
+
+    - id: subagent-claude
+      name: '@deepseek-ai/dsh-subagent-claude-code'
+      disabled: !!js process.env.XIAOYIN_ENABLE_CLAUDE_SUBAGENT !== 'true'
+      config:
+        providerName: claude-code
+        permissionMode: dontAsk
+
+    - id: tool-subagent-claude
+      name: '@deepseek-ai/dsh-tool-subagent'
+      disabled: !!js process.env.XIAOYIN_ENABLE_CLAUDE_SUBAGENT !== 'true'
+      config:
+        provider: claude-code
+        toolName: subagent_claude
+        backgroundMode: one-shot
+
+    - id: subagent-acp
+      name: '@deepseek-ai/dsh-subagent-acp'
+      disabled: !!js "!process.env.XIAOYIN_ACP_COMMAND"
+      config:
+        providerName: acp
+        command: !!js process.env.XIAOYIN_ACP_COMMAND ?? ''
+        args: !!js JSON.parse(process.env.XIAOYIN_ACP_ARGS ?? '[]')
+        permission: reject
+
+    - id: tool-subagent-acp
+      name: '@deepseek-ai/dsh-tool-subagent'
+      disabled: !!js "!process.env.XIAOYIN_ACP_COMMAND"
+      config:
+        provider: acp
+        toolName: subagent_acp
+        backgroundMode: one-shot
+
+    - id: subagent-dsh
+      name: '@deepseek-ai/dsh-subagent-dsh-sdk'
+      disabled: !!js process.env.XIAOYIN_ENABLE_DSH_SUBAGENT !== 'true'
+      config:
+        providerName: dsh-sdk
+        profile: sdk
+        patches: []
+        dshHome: !!js dshHomePath('subagents/dsh')
+        provider: deepseek-official
+        model: !!js process.env.DSH_MODEL ?? 'deepseek-v4-flash'
+        env:
+          DEEPSEEK_API_KEY: !!js process.env.DEEPSEEK_API_KEY ?? ''
+          DSH_TELEMETRY_DISABLED: '1'
+
+    - id: tool-subagent-dsh
+      name: '@deepseek-ai/dsh-tool-subagent'
+      disabled: !!js process.env.XIAOYIN_ENABLE_DSH_SUBAGENT !== 'true'
+      config:
+        provider: dsh-sdk
+        toolName: subagent_dsh
+        backgroundMode: one-shot
+        maxDepth: provider-managed
 
     - id: task-outcome
       name: '../dist/task-outcome-plugin.js'
@@ -131,12 +288,12 @@
     - id: desktop-schedules
       name: '../dist/schedule-plugin.js'
       config:
-        readOnly: !!js process.env.XIAOYIN_EXECUTION_MODE === 'plan'
+        readOnly: false
 
     - id: desktop-skills
       name: '../dist/skill-plugin.js'
       config:
-        readOnly: !!js process.env.XIAOYIN_EXECUTION_MODE === 'plan'
+        readOnly: false
 
     - id: local-files
       name: '../dist/local-files-plugin.js'
@@ -144,30 +301,30 @@
         roots: !!js JSON.parse(process.env.XIAOYIN_LOCAL_FILE_ROOTS ?? '[]')
         enabled: true
         requireDeleteApproval: true
-        readOnly: !!js process.env.XIAOYIN_EXECUTION_MODE === 'plan'
+        readOnly: false
 
     - id: local-documents
       name: '../dist/local-documents-plugin.js'
       config:
         roots: !!js JSON.parse(process.env.XIAOYIN_LOCAL_FILE_ROOTS ?? '[]')
         enabled: true
-        readOnly: !!js process.env.XIAOYIN_EXECUTION_MODE === 'plan'
+        readOnly: false
 
     - id: native-shell-policy
       name: '../dist/native-shell-plugin.js'
       config:
-        enabled: !!js process.env.XIAOYIN_EXECUTION_MODE !== 'plan' && process.env.XIAOYIN_ALLOW_SHELL !== 'false'
+        enabled: !!js process.env.XIAOYIN_ALLOW_SHELL !== 'false'
         requireApproval: !!js process.env.XIAOYIN_APPROVE_SHELL !== 'false'
 
     - id: local-computer-use
       name: '../dist/local-computer-use-plugin.js'
       config:
-        enabled: !!js process.env.XIAOYIN_EXECUTION_MODE !== 'plan'
+        enabled: true
         tools: !!js JSON.parse(process.env.XIAOYIN_COMPUTER_USE_TOOLS ?? '[]')
 
     - id: local-browser
       name: '../dist/local-browser-plugin.js'
       config:
-        enabled: !!js process.env.XIAOYIN_EXECUTION_MODE !== 'plan' && process.env.XIAOYIN_ALLOW_BROWSER === 'true'
+        enabled: !!js process.env.XIAOYIN_ALLOW_BROWSER === 'true'
         executable: !!js process.env.XIAOYIN_BROWSER_EXECUTABLE ?? ''
         debugUrl: !!js process.env.XIAOYIN_BROWSER_DEBUG_URL ?? ''

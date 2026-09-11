@@ -12,6 +12,8 @@ import type {
   TaskExecutionStep,
   TaskFileChange,
   TaskMonitorState,
+  TaskQuestionAnswer,
+  TaskQuestionItem,
   TaskTimelineEntry,
   TaskVisualArtifact,
   InvocationSpec,
@@ -244,6 +246,15 @@ export async function respondHarnessApproval(
   return invoke<boolean>('respond_harness_approval', { taskId, approvalId, decision })
 }
 
+export async function respondHarnessQuestion(
+  taskId: string,
+  questionId: string,
+  answers: TaskQuestionAnswer[],
+): Promise<boolean> {
+  if (!isTauri()) return false
+  return invoke<boolean>('respond_harness_question', { taskId, questionId, answers })
+}
+
 export async function authorizeDroppedPaths(paths: string[]): Promise<DroppedPathAuthorization> {
   if (!isTauri() || paths.length === 0) return { directories: [], attachments: [] }
   return invoke<DroppedPathAuthorization>('authorize_dropped_paths', { paths })
@@ -314,7 +325,7 @@ export function applyHarnessNotification(
   const parsed = parseHarnessEvent(notification)
   if (!parsed) return current
   // This fact survives bounded display history and includes delegated tool activity.
-  if (['tool/call', 'tool/result', 'approval/request'].includes(parsed.type)) current = { ...current, executionStarted: true }
+  if (['tool/call', 'tool/result', 'approval/request', 'question/request'].includes(parsed.type)) current = { ...current, executionStarted: true }
   if (!parsed.isRootSession) return {
     ...current,
     status: current.status === 'idle' ? 'running' : current.status,
@@ -508,6 +519,39 @@ export function applyHarnessNotification(
         occurredAt,
         completedAt: occurredAt,
       }),
+    }
+  }
+
+  if (parsed.type === 'question/request') {
+    const questionId = text(parsed.data.questionId)
+    const questions = parseTaskQuestions(parsed.data.questions)
+    if (!questionId || questions.length === 0) return current
+    const planReview = questions.some((question) => question.intent?.kind === 'plan-review')
+    return {
+      ...current,
+      status: 'running',
+      activity: planReview ? '等待你审阅计划' : '等待你回答',
+      updatedAt: occurredAt,
+      timeline: upsertTimeline(current.timeline ?? [], {
+        id: `question:${questionId}`,
+        kind: 'question',
+        label: planReview ? '计划审阅' : '需要你的回答',
+        status: 'running',
+        questionId,
+        questions,
+        occurredAt,
+      }),
+    }
+  }
+
+  if (parsed.type === 'question/answered') {
+    const questionId = text(parsed.data.questionId)
+    if (!questionId) return current
+    return {
+      ...current,
+      activity,
+      updatedAt: occurredAt,
+      timeline: completeTimeline(current.timeline ?? [], `question:${questionId}`, 'completed', occurredAt),
     }
   }
 
@@ -1012,6 +1056,36 @@ function toolResultPresentation(
     })
   }
   return failed ? compact({ detail: publicToolError(content) }) : {}
+}
+
+function parseTaskQuestions(value: unknown): TaskQuestionItem[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((item): TaskQuestionItem[] => {
+    const question = asRecord(item)
+    const id = text(question?.id)
+    const prompt = text(question?.question)
+    if (!id || !prompt) return []
+    const options = Array.isArray(question?.options) ? question.options.flatMap((item) => {
+      const option = asRecord(item)
+      const label = text(option?.label)
+      if (!label) return []
+      const description = text(option?.description)
+      return [{ label, ...(description ? { description } : {}) }]
+    }) : undefined
+    const intentValue = asRecord(question?.intent)
+    const approve = text(intentValue?.approve)
+    const intent = intentValue?.kind === 'plan-review' && approve
+      ? { kind: 'plan-review' as const, approve }
+      : undefined
+    const header = text(question?.header)
+    const detail = text(question?.detail)
+    return [{
+      id, question: prompt,
+      ...(header ? { header } : {}), ...(detail ? { detail } : {}),
+      ...(options ? { options } : {}), ...(question?.multiSelect === true ? { multiSelect: true } : {}),
+      ...(intent ? { intent } : {}),
+    }]
+  })
 }
 
 function toolArguments(value: unknown): Record<string, unknown> {

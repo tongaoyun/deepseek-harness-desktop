@@ -13,6 +13,7 @@ type TurnContext = {
   existingTask?: LocalTaskRun
   sessionId: string
   model: string
+  executionMode?: 'agent' | 'plan'
   directories: NonNullable<LocalTaskRun['localDirectories']>
   directoriesChanged: boolean
   connectorIds: string[]
@@ -26,6 +27,7 @@ type TurnContext = {
 /** Session selection and persisted turn state must use the same immutable context. */
 export function prepareTaskTurn(context: TurnContext) {
   const { existingTask, invocations, sessionId, messages, input, now, capabilities } = context
+  const executionMode = context.executionMode ?? 'agent'
   const invocationTokens = invocations.map((item) => item.token)
   const invocationSpecs = invocations.map((item) => item.spec)
   const previousInvocations = existingTask?.invocationSpecs
@@ -34,7 +36,8 @@ export function prepareTaskTurn(context: TurnContext) {
       || invocationSpecs.some((spec, index) => !sameInvocationSpec(spec, previousInvocations[index]!))
     : JSON.stringify(invocationTokens) !== JSON.stringify(existingTask?.invocationTokens ?? [])
   const fresh = context.directoriesChanged
-    || Boolean(existingTask && (existingTask.model !== context.model || capabilitySnapshotChanged(existingTask.capabilitySnapshot, capabilities)))
+    || Boolean(existingTask && (existingTask.model !== context.model
+      || capabilitySnapshotChanged(existingTask.capabilitySnapshot, capabilities)))
     || (!sessionId && !existingTask?.sessionId && messages.length > 0)
     || invocationsChanged
     || (!sessionId && Boolean(existingTask?.sessionId))
@@ -57,7 +60,7 @@ export function prepareTaskTurn(context: TurnContext) {
     id: context.taskId, source: 'DESKTOP',
     name: existingTask?.name ?? (splitComposerPrompt(input).text || invocations.map((item) => item.name).join('、') || input).slice(0, 60),
     status: 'RUNNING', createdAt: existingTask?.createdAt ?? now, updatedAt: now,
-    sessionId: rootSessionId, model: context.model, invocationTokens, invocationSpecs,
+    sessionId: rootSessionId, model: context.model, executionMode, invocationTokens, invocationSpecs,
     composerConnectorIds: context.connectorIds, localDirectories: context.directories,
     capabilitySnapshot: capabilities, execution, monitor: runningMonitor, messages: pendingMessages,
   }

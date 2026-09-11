@@ -21,7 +21,7 @@ export const Config = z.object({
 })
 
 /**
- * Add Xiaoyin's approval policy to the shell owned by the sdk-minimal profile.
+ * Add Xiaoyin's approval policy to the shell owned by the full sdk profile.
  * Process execution, cancellation and terminal lifecycle stay in Harness.
  */
 export function apply(ctx: Context, config: Config = {}): void {

@@ -432,7 +432,8 @@ function executionItem(
     id,
     kind: timeline.kind === 'assistant' ? 'assistant'
       : timeline.kind === 'approval' ? 'approval'
-        : timeline.kind === 'subagent' ? 'subagent'
+        : timeline.kind === 'question' ? 'question'
+          : timeline.kind === 'subagent' ? 'subagent'
           : timeline.kind === 'warning' ? 'warning'
             : timeline.kind === 'error' ? 'error' : 'tool-call',
     status: timeline.status,
@@ -483,6 +484,7 @@ function harnessEventIdentity(notification: HarnessNotification): Pick<Execution
   const step = integer(data.step) ?? 0
   const callId = string(data.callId) ?? toolResultCallId(data)
   const approvalId = string(data.approvalId)
+  const questionId = string(data.questionId)
   if (type === 'step/start') return { type: 'item.started', itemId: `analysis:${turn}:${step}` }
   if (type === 'text-chunks') return { type: 'item.updated', itemId: `assistant:${turn}:${step}` }
   if (type === 'assistant/message') return { type: 'item.completed', itemId: `assistant:${turn}:${step}` }
@@ -490,6 +492,8 @@ function harnessEventIdentity(notification: HarnessNotification): Pick<Execution
   if (type === 'tool/result') return { type: reducedItemType(notification), itemId: callId ? `tool:${callId}` : undefined, correlationId: callId }
   if (type === 'approval/request') return { type: 'approval.requested', itemId: approvalId ? `approval:${approvalId}` : undefined, correlationId: approvalId }
   if (type === 'approval/decision') return { type: 'approval.decided', itemId: approvalId ? `approval:${approvalId}` : undefined, correlationId: approvalId }
+  if (type === 'question/request') return { type: 'question.requested', itemId: questionId ? `question:${questionId}` : undefined, correlationId: questionId }
+  if (type === 'question/answered') return { type: 'question.answered', itemId: questionId ? `question:${questionId}` : undefined, correlationId: questionId }
   if (type === 'turn/end') return {
     type: string(record(data.reason)?.kind) === 'completed' ? 'item.completed' : 'item.failed',
     itemId: 'provider-turn',

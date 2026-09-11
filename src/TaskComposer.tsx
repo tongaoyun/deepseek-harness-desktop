@@ -1,4 +1,4 @@
-import { ArrowUp, BookOpen, Bot, Check, ChevronDown, FilePlus2, FolderOpen, LoaderCircle, Plug, Plus, Puzzle, Search, Sparkles, Square, X } from 'lucide-react'
+import { ArrowUp, BookOpen, Bot, Check, ChevronDown, FilePlus2, FolderOpen, ListTree, LoaderCircle, Plug, Plus, Puzzle, Search, Sparkles, Square, X } from 'lucide-react'
 import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react'
 import type { ChatPageProps } from './ChatPage'
 import { composerQuery, joinComposerPrompt, removeComposerQuery, selectComposerInvocation, splitComposerPrompt } from './composerInput'
@@ -172,6 +172,10 @@ export function TaskComposer(props: ChatPageProps & { onPreview: (target: LocalA
             <footer><span>{category === 'connector' ? props.selectedConnectorIds?.length ? '本轮仅使用所选连接器' : '不指定时按需使用已启用连接器' : '无需先选择能力，也可以直接开始任务'}</span>{props.onBrowseCapability && <button onClick={() => { closeMenu(); props.onBrowseCapability?.(category) }} type="button">管理{categories.find((item) => item.id === category)?.label} →</button>}</footer>
             </div>
           </section>}
+        </div>
+        <div aria-label="执行模式" className="execution-mode-control" role="group">
+          <button aria-pressed={(props.executionMode ?? 'agent') === 'agent'} disabled={locked} onClick={() => props.onExecutionModeChange?.('agent')} title="执行任务" type="button"><Bot size={13} />Agent</button>
+          <button aria-pressed={props.executionMode === 'plan'} disabled={locked} onClick={() => props.onExecutionModeChange?.('plan')} title="只研究并提交计划" type="button"><ListTree size={13} />计划</button>
         </div>
         <div className="model-picker" ref={props.modelPickerRef}>
           <button aria-expanded={props.modelMenuOpen && props.models.length > 0} className="model-label" disabled={running || props.models.length === 0} onClick={props.onToggleModelMenu} type="button"><Bot size={14} /> {props.models.length ? modelDisplayName(props.activeModel) : '暂无可用模型'} <ChevronDown size={13} /></button>

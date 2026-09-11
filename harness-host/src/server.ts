@@ -2,6 +2,7 @@ import type { HarnessRuntime, ImageRunInput, RunInput } from './runtime.js'
 import type { BindableTask, DingTalkImConfiguration, LocalImRuntime, ScheduleRoute, TaskBinding } from './im-runtime.js'
 import { diagnoseConfiguredConnectors } from './managed-mcp-plugin.js'
 import { runLocalCapabilitySelfTest } from './self-test.js'
+import type { QuestionAnswer } from './question-bridge.js'
 import {
   failure,
   isJsonRpcRequest,
@@ -18,6 +19,7 @@ export class HostServer {
     private readonly emit: (output: JsonRpcOutput) => void,
     private readonly respondToApproval?: (approvalId: string, decision: 'allow' | 'reject') => boolean,
     private readonly imRuntime?: LocalImRuntime,
+    private readonly respondToQuestion?: (questionId: string, answer: QuestionAnswer) => boolean,
   ) {}
 
   async handle(value: unknown): Promise<void> {
@@ -37,6 +39,15 @@ export class HostServer {
           const response = parseApprovalResponse(value.params)
           if (this.respondToApproval === undefined || !this.respondToApproval(response.approvalId, response.decision)) {
             this.emit(failure(value.id, -32004, 'Approval request is no longer pending'))
+          } else {
+            this.emit(success(value.id, { status: 'accepted' }))
+          }
+          return
+        }
+        case 'question.respond': {
+          const response = parseQuestionResponse(value.params)
+          if (this.respondToQuestion === undefined || !this.respondToQuestion(response.questionId, response.answer)) {
+            this.emit(failure(value.id, -32004, 'Question request is no longer pending'))
           } else {
             this.emit(success(value.id, { status: 'accepted' }))
           }
@@ -209,6 +220,36 @@ function parseApprovalResponse(params: unknown): { approvalId: string; decision:
     throw new Error('approval.respond params.decision must be allow or reject')
   }
   return { approvalId: record.approvalId, decision: record.decision }
+}
+
+function parseQuestionResponse(params: unknown): { questionId: string; answer: QuestionAnswer } {
+  if (typeof params !== 'object' || params === null || Array.isArray(params)) {
+    throw new Error('question.respond params must be an object')
+  }
+  const record = params as Record<string, unknown>
+  if (typeof record.questionId !== 'string' || !record.questionId || record.questionId.length > 200) {
+    throw new Error('question.respond params.questionId must be a string')
+  }
+  if (!Array.isArray(record.answers) || record.answers.length === 0 || record.answers.length > 3) {
+    throw new Error('question.respond params.answers must be an array')
+  }
+  const answers = record.answers.map((item) => {
+    if (typeof item !== 'object' || item === null || Array.isArray(item)) throw new Error('question answer is invalid')
+    const answer = item as Record<string, unknown>
+    if (typeof answer.id !== 'string' || !answer.id || answer.id.length > 200) throw new Error('question answer id is invalid')
+    if (!Array.isArray(answer.selected) || answer.selected.some((entry) => typeof entry !== 'string')) {
+      throw new Error('question answer selected is invalid')
+    }
+    if (answer.selected.length > 12 || answer.custom !== undefined && typeof answer.custom !== 'string') {
+      throw new Error('question answer is too large')
+    }
+    return {
+      id: answer.id,
+      selected: (answer.selected as string[]).map((entry) => entry.slice(0, 200)),
+      ...(typeof answer.custom === 'string' ? { custom: answer.custom.slice(0, 16 * 1024) } : {}),
+    }
+  })
+  return { questionId: record.questionId, answer: { answers } }
 }
 
 function parseRunInput(params: unknown): RunInput {

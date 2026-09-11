@@ -4,7 +4,7 @@ export interface ExecutionGroup { id: string; kind: 'steps' | 'message' | 'notic
 export function groupExecutionEntries(entries: TaskTimelineEntry[]): ExecutionGroup[] {
   const groups: ExecutionGroup[] = []
   for (const entry of entries) {
-    const kind = entry.kind === 'assistant' ? 'message' : ['approval', 'error', 'warning'].includes(entry.kind) ? 'notice' : 'steps'
+    const kind = entry.kind === 'assistant' ? 'message' : ['approval', 'question', 'error', 'warning'].includes(entry.kind) ? 'notice' : 'steps'
     const last = groups.at(-1)
     if (kind === 'steps' && last?.kind === 'steps') last.entries.push(entry)
     else groups.push({ id: entry.id, kind, entries: [entry] })

@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events'
 import { expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
-  handle: vi.fn(), close: vi.fn(async () => {}), stopIm: vi.fn(async () => {}), closeApproval: vi.fn(async () => {}),
+  handle: vi.fn(), close: vi.fn(async () => {}), stopIm: vi.fn(async () => {}), closeApproval: vi.fn(async () => {}), closeQuestion: vi.fn(async () => {}),
 }))
 const lines = new EventEmitter()
 vi.mock('node:readline', () => ({ createInterface: () => lines }))
@@ -11,6 +11,10 @@ vi.mock('./im-runtime.js', () => ({ LocalImRuntime: class { stop = mocks.stopIm 
 vi.mock('./approval-bridge.js', () => ({ ApprovalBridge: class {
   start = async () => ({ url: 'http://local-test', token: 'test' })
   close = mocks.closeApproval
+} }))
+vi.mock('./question-bridge.js', () => ({ QuestionBridge: class {
+  start = async () => ({ url: 'http://local-question-test', token: 'test' })
+  close = mocks.closeQuestion
 } }))
 vi.mock('./server.js', () => ({ HostServer: class { handle = mocks.handle } }))
 
@@ -32,6 +36,7 @@ it('aborts an active request on desktop EOF, drops queued work and disposes all 
     expect(mocks.close).toHaveBeenCalledOnce()
     expect(mocks.stopIm).toHaveBeenCalledOnce()
     expect(mocks.closeApproval).toHaveBeenCalledOnce()
+    expect(mocks.closeQuestion).toHaveBeenCalledOnce()
     await vi.waitFor(() => expect(exit).toHaveBeenCalledOnce())
     finish()
     await Promise.resolve(); await Promise.resolve()

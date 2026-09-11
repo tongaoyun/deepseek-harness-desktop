@@ -64,6 +64,16 @@ it('shows an explicit empty model state instead of inventing a selectable fallba
   })
 })
 
+it('switches explicitly between agent and plan modes', async () => {
+  const change = vi.fn()
+  await fixture('', { executionMode: 'agent', onExecutionModeChange: change }, async (container) => {
+    const modes = [...container.querySelectorAll<HTMLButtonElement>('.execution-mode-control button')]
+    expect(modes.map((item) => item.getAttribute('aria-pressed'))).toEqual(['true', 'false'])
+    await act(async () => modes[1].click())
+    expect(change).toHaveBeenCalledWith('plan')
+  })
+})
+
 it('selects a skill in the middle of a sentence, preserves surrounding text and supports removal', async () => {
   await fixture('帮我 /周报', { invocations: [invocation({ token: '/skill:weekly', id: 'weekly', kind: 'skill', name: '周报', description: '整理本周数据' })] }, async (container) => {
     await click(container, '[role="option"]')

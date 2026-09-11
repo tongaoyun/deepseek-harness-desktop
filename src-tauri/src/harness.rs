@@ -18,7 +18,7 @@ use std::os::unix::process::CommandExt;
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     io::{BufRead, BufReader, Read, Write},
     path::{Path, PathBuf},
     process::{Child, ChildStdin, ChildStdout, Command, Stdio},
@@ -128,6 +128,7 @@ impl HarnessSlot {
 pub struct HarnessManager {
     slots: Arc<Mutex<HashMap<String, Arc<HarnessSlot>>>>,
     approvals: Arc<ApprovalBroker>,
+    questions: Arc<QuestionBroker>,
 }
 
 #[derive(Default)]
@@ -138,6 +139,29 @@ struct ApprovalBroker {
 struct PendingApproval {
     task_id: String,
     sender: mpsc::Sender<String>,
+}
+
+#[derive(Default)]
+struct QuestionBroker {
+    pending: Mutex<HashMap<(String, String), PendingQuestion>>,
+}
+
+struct PendingQuestion {
+    sender: mpsc::Sender<Vec<QuestionAnswerInput>>,
+}
+
+struct InteractionBrokers {
+    approval: Arc<ApprovalBroker>,
+    question: Arc<QuestionBroker>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct QuestionAnswerInput {
+    id: String,
+    #[serde(default)]
+    selected: Vec<String>,
+    custom: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -307,6 +331,7 @@ pub(crate) struct HarnessProcess {
     next_id: u64,
     notification_task_id: String,
     approval_broker: Option<Arc<ApprovalBroker>>,
+    question_broker: Option<Arc<QuestionBroker>>,
     pub(crate) fingerprint: RuntimeFingerprint,
 }
 
@@ -341,20 +366,14 @@ pub async fn run_harness(
         &request.execution_mode,
     )?;
     let local_file_roots = local_files.resolve(&request.local_file_root_ids)?;
-    let plan_mode = request.execution_mode == "plan";
-    let allow_browser =
-        !plan_mode && desktop_connector_enabled(&request.connectors, "desktop-browser");
-    let connectors = runtime_connectors(&request.connectors, &profile, !plan_mode)?;
+    let allow_browser = desktop_connector_enabled(&request.connectors, "desktop-browser");
+    let connectors = runtime_connectors(&request.connectors, &profile, true)?;
     let fingerprint = RuntimeFingerprint {
         skill_directories: profile.skill_directories,
         connectors,
         local_file_roots,
         allow_browser,
-        allowed_computer_tools: if plan_mode {
-            Vec::new()
-        } else {
-            profile.allowed_computer_tools
-        },
+        allowed_computer_tools: profile.allowed_computer_tools,
         execution_mode: request.execution_mode,
         litellm_base_url: request.litellm_base_url,
         knowledge_endpoint: request.knowledge_endpoint,
@@ -418,6 +437,16 @@ pub fn respond_harness_approval(
     decision: String,
 ) -> Result<bool, String> {
     manager.respond_to_approval(&task_id, &approval_id, &decision)
+}
+
+#[tauri::command]
+pub fn respond_harness_question(
+    manager: tauri::State<'_, HarnessManager>,
+    task_id: String,
+    question_id: String,
+    answers: Vec<QuestionAnswerInput>,
+) -> Result<bool, String> {
+    manager.respond_to_question(&task_id, &question_id, answers)
 }
 
 #[tauri::command]
@@ -556,6 +585,7 @@ impl HarnessManager {
                 model_api_key,
                 access_token,
                 Arc::clone(&self.approvals),
+                Arc::clone(&self.questions),
             )?);
         }
         let process = guard.as_mut().expect("Harness process was initialized");
@@ -612,8 +642,14 @@ impl HarnessManager {
 
     fn shutdown(&self, task_id: Option<&str>) -> Result<(), String> {
         match task_id {
-            Some(task_id) => self.approvals.reject_task(task_id),
-            None => self.approvals.reject_all(),
+            Some(task_id) => {
+                self.approvals.reject_task(task_id);
+                self.questions.reject_task(task_id);
+            }
+            None => {
+                self.approvals.reject_all();
+                self.questions.reject_all();
+            }
         }
         let slots = {
             let mut current = self
@@ -638,6 +674,7 @@ impl HarnessManager {
 
     fn cancel(&self, task_id: &str) -> Result<bool, String> {
         self.approvals.reject_task(task_id);
+        self.questions.reject_task(task_id);
         let slot = self
             .slots
             .lock()
@@ -658,6 +695,16 @@ impl HarnessManager {
             return Err("授权决定无效".to_string());
         }
         self.approvals.respond(task_id, approval_id, decision)
+    }
+
+    fn respond_to_question(
+        &self,
+        task_id: &str,
+        question_id: &str,
+        answers: Vec<QuestionAnswerInput>,
+    ) -> Result<bool, String> {
+        validate_question_answers(&answers)?;
+        self.questions.respond(task_id, question_id, answers)
     }
 }
 
@@ -731,6 +778,65 @@ impl ApprovalBroker {
     }
 }
 
+impl QuestionBroker {
+    fn register(
+        &self,
+        task_id: &str,
+        question_id: &str,
+    ) -> Result<mpsc::Receiver<Vec<QuestionAnswerInput>>, String> {
+        let (sender, receiver) = mpsc::channel();
+        let mut pending = self
+            .pending
+            .lock()
+            .map_err(|_| "Harness 问题状态不可用".to_string())?;
+        let key = (task_id.to_string(), question_id.to_string());
+        if pending.contains_key(&key) {
+            return Err("Harness 问题请求重复".to_string());
+        }
+        pending.insert(key, PendingQuestion { sender });
+        Ok(receiver)
+    }
+
+    fn respond(
+        &self,
+        task_id: &str,
+        question_id: &str,
+        answers: Vec<QuestionAnswerInput>,
+    ) -> Result<bool, String> {
+        let mut pending = self
+            .pending
+            .lock()
+            .map_err(|_| "Harness 问题状态不可用".to_string())?;
+        let key = (task_id.to_string(), question_id.to_string());
+        let Some(request) = pending.remove(&key) else {
+            if pending.keys().any(|(_, id)| id == question_id) {
+                return Err("问题请求不属于当前任务".to_string());
+            }
+            return Ok(false);
+        };
+        Ok(request.sender.send(answers).is_ok())
+    }
+
+    fn reject_task(&self, task_id: &str) {
+        let Ok(mut pending) = self.pending.lock() else {
+            return;
+        };
+        pending.retain(|(owner, _), _| owner != task_id);
+    }
+
+    fn reject_all(&self) {
+        if let Ok(mut pending) = self.pending.lock() {
+            pending.clear();
+        }
+    }
+
+    fn remove(&self, task_id: &str, question_id: &str) {
+        if let Ok(mut pending) = self.pending.lock() {
+            pending.remove(&(task_id.to_string(), question_id.to_string()));
+        }
+    }
+}
+
 fn terminate_process(pid: u32) -> Result<bool, String> {
     signal_process(pid, true)
 }
@@ -796,6 +902,7 @@ impl HarnessProcess {
         model_api_key: String,
         access_token: String,
         approval_broker: Arc<ApprovalBroker>,
+        question_broker: Arc<QuestionBroker>,
     ) -> Result<Self, String> {
         Self::start_internal(
             app,
@@ -804,7 +911,10 @@ impl HarnessProcess {
             access_token,
             false,
             Some(task_id),
-            Some(approval_broker),
+            Some(InteractionBrokers {
+                approval: approval_broker,
+                question: question_broker,
+            }),
         )
     }
 
@@ -832,7 +942,7 @@ impl HarnessProcess {
         access_token: String,
         initialize: bool,
         task_id: Option<&str>,
-        approval_broker: Option<Arc<ApprovalBroker>>,
+        interaction_brokers: Option<InteractionBrokers>,
     ) -> Result<Self, String> {
         let runtime = resolve_runtime_paths(app)?;
         let app_data = app
@@ -952,6 +1062,9 @@ impl HarnessProcess {
             .ok_or_else(|| "无法连接 Harness stderr".to_string())?;
         let stderr_tail = Arc::new(Mutex::new(String::new()));
         let stderr_reader = Some(capture_stderr(stderr, Arc::clone(&stderr_tail)));
+        let (approval_broker, question_broker) = interaction_brokers
+            .map(|brokers| (Some(brokers.approval), Some(brokers.question)))
+            .unwrap_or_default();
         let mut process = Self {
             app: app.clone(),
             erp_session_epoch: crate::erp_auth::mcp::session_epoch(),
@@ -964,6 +1077,7 @@ impl HarnessProcess {
             notification_task_id: String::new(),
             fingerprint,
             approval_broker,
+            question_broker,
         };
         if initialize {
             process.request("host.initialize", None, None)?;
@@ -1204,6 +1318,67 @@ impl HarnessProcess {
                     }
                     continue;
                 }
+                if output.get("method").and_then(Value::as_str) == Some("question.request") {
+                    let question = parse_question_request(output.get("params"))?;
+                    let answers = if let (Some(app), Some(broker)) = (app, &self.question_broker) {
+                        let receiver =
+                            broker.register(&self.notification_task_id, &question.question_id)?;
+                        let event = json!({
+                            "event": {
+                                "method": "session.event",
+                                "params": { "event": {
+                                    "type": "question/request",
+                                    "data": {
+                                        "questionId": question.question_id,
+                                        "questions": question.questions
+                                    }
+                                }}
+                            }
+                        });
+                        let _ = app.emit("xiaoyin://harness-notification", {
+                            notification_sequence += 1;
+                            ui_notification(
+                                &self.notification_task_id,
+                                request_id,
+                                &notification_stream_id,
+                                notification_sequence,
+                                event,
+                            )
+                        });
+                        match receiver.recv_timeout(Duration::from_secs(30 * 60)) {
+                            Ok(answers) => answers,
+                            Err(_) => {
+                                broker.remove(&self.notification_task_id, &question.question_id);
+                                return Err("等待问题回答超时，本轮已停止".to_string());
+                            }
+                        }
+                    } else {
+                        return Err("当前界面不能回答 Harness 问题".to_string());
+                    };
+                    self.send_question_response(&question.question_id, &answers)?;
+                    if let Some(app) = app {
+                        let event = json!({
+                            "event": {
+                                "method": "session.event",
+                                "params": { "event": {
+                                    "type": "question/answered",
+                                    "data": { "questionId": question.question_id }
+                                }}
+                            }
+                        });
+                        let _ = app.emit("xiaoyin://harness-notification", {
+                            notification_sequence += 1;
+                            ui_notification(
+                                &self.notification_task_id,
+                                request_id,
+                                &notification_stream_id,
+                                notification_sequence,
+                                event,
+                            )
+                        });
+                    }
+                    continue;
+                }
                 if let Some(app) = app {
                     let event = output.get("params").cloned().unwrap_or(Value::Null);
                     let _ = app.emit("xiaoyin://harness-notification", {
@@ -1251,6 +1426,27 @@ impl HarnessProcess {
             .write_all(b"\n")
             .and_then(|_| self.stdin.flush())
             .map_err(|error| format!("无法向 Harness 发送授权响应：{error}"))
+    }
+
+    fn send_question_response(
+        &mut self,
+        question_id: &str,
+        answers: &[QuestionAnswerInput],
+    ) -> Result<(), String> {
+        let request_id = self.next_id;
+        self.next_id += 1;
+        let request = json!({
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "method": "question.respond",
+            "params": { "questionId": question_id, "answers": answers },
+        });
+        serde_json::to_writer(&mut self.stdin, &request)
+            .map_err(|error| format!("无法序列化 Harness 问题响应：{error}"))?;
+        self.stdin
+            .write_all(b"\n")
+            .and_then(|_| self.stdin.flush())
+            .map_err(|error| format!("无法向 Harness 发送问题响应：{error}"))
     }
 
     pub(crate) fn shutdown(&mut self) {
@@ -1373,6 +1569,12 @@ struct ApprovalPrompt {
     reason: String,
 }
 
+#[derive(Debug, PartialEq)]
+struct QuestionPrompt {
+    question_id: String,
+    questions: Value,
+}
+
 fn parse_approval_request(params: Option<&Value>) -> Result<ApprovalPrompt, String> {
     let value = params.ok_or_else(|| "Harness 授权请求缺少参数".to_string())?;
     let approval_id = value
@@ -1393,6 +1595,134 @@ fn parse_approval_request(params: Option<&Value>) -> Result<ApprovalPrompt, Stri
         approval_id: approval_id.to_string(),
         tool_name: sanitize_dialog_text(tool_name, 200),
         reason: sanitize_dialog_text(reason, 8 * 1024),
+    })
+}
+
+fn parse_question_request(params: Option<&Value>) -> Result<QuestionPrompt, String> {
+    let value = params.ok_or_else(|| "Harness 问题请求缺少参数".to_string())?;
+    let question_id = value
+        .get("questionId")
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty() && value.len() <= 200)
+        .ok_or_else(|| "Harness 问题请求 ID 无效".to_string())?;
+    let questions = value
+        .get("questions")
+        .and_then(Value::as_array)
+        .filter(|value| !value.is_empty() && value.len() <= 3)
+        .ok_or_else(|| "Harness 问题内容无效".to_string())?;
+    let mut question_ids = HashSet::new();
+    for question in questions {
+        let question = question
+            .as_object()
+            .ok_or_else(|| "Harness 问题内容无效".to_string())?;
+        let id = valid_question_text(question.get("id"), 200, false)
+            .ok_or_else(|| "Harness 问题 ID 无效".to_string())?;
+        if !question_ids.insert(id) {
+            return Err("Harness 问题 ID 重复".to_string());
+        }
+        valid_question_text(question.get("question"), 4_000, true)
+            .ok_or_else(|| "Harness 问题正文无效".to_string())?;
+        for (field, max) in [("header", 200), ("detail", 64 * 1024)] {
+            if question.contains_key(field)
+                && valid_question_text(question.get(field), max, true).is_none()
+            {
+                return Err("Harness 问题补充内容无效".to_string());
+            }
+        }
+        if question
+            .get("multiSelect")
+            .is_some_and(|value| !value.is_boolean())
+        {
+            return Err("Harness 问题选择模式无效".to_string());
+        }
+        let mut option_labels = HashSet::new();
+        if let Some(options) = question.get("options") {
+            let options = options
+                .as_array()
+                .filter(|options| options.len() <= 12)
+                .ok_or_else(|| "Harness 问题选项无效".to_string())?;
+            for option in options {
+                let option = option
+                    .as_object()
+                    .ok_or_else(|| "Harness 问题选项无效".to_string())?;
+                let label = valid_question_text(option.get("label"), 200, false)
+                    .ok_or_else(|| "Harness 问题选项无效".to_string())?;
+                if !option_labels.insert(label) {
+                    return Err("Harness 问题选项重复".to_string());
+                }
+                if option.contains_key("description")
+                    && valid_question_text(option.get("description"), 2_000, true).is_none()
+                {
+                    return Err("Harness 问题选项说明无效".to_string());
+                }
+            }
+        }
+        if let Some(intent) = question.get("intent") {
+            let intent = intent
+                .as_object()
+                .ok_or_else(|| "Harness 问题意图无效".to_string())?;
+            let approve = valid_question_text(intent.get("approve"), 200, false)
+                .ok_or_else(|| "Harness 问题意图无效".to_string())?;
+            if intent.get("kind").and_then(Value::as_str) != Some("plan-review")
+                || !question.contains_key("detail")
+                || !option_labels.contains(approve)
+            {
+                return Err("Harness 计划审阅意图无效".to_string());
+            }
+        }
+    }
+    if serde_json::to_vec(questions)
+        .map_err(|error| error.to_string())?
+        .len()
+        > 128 * 1024
+    {
+        return Err("Harness 问题内容过长".to_string());
+    }
+    Ok(QuestionPrompt {
+        question_id: question_id.to_string(),
+        questions: Value::Array(questions.clone()),
+    })
+}
+
+fn validate_question_answers(answers: &[QuestionAnswerInput]) -> Result<(), String> {
+    if answers.is_empty() || answers.len() > 3 {
+        return Err("问题回答数量无效".to_string());
+    }
+    let mut answer_ids = HashSet::new();
+    for answer in answers {
+        if answer.id.trim().is_empty()
+            || answer.id.len() > 200
+            || answer.id.chars().any(char::is_control)
+            || !answer_ids.insert(answer.id.as_str())
+            || answer.selected.len() > 12
+            || answer.selected.iter().any(|value| {
+                value.trim().is_empty() || value.len() > 200 || value.chars().any(char::is_control)
+            })
+            || answer.custom.as_ref().is_some_and(|value| {
+                value.len() > 16 * 1024
+                    || value.chars().any(|character| {
+                        character != '\n' && character != '\t' && character.is_control()
+                    })
+            })
+            || (answer.selected.is_empty()
+                && answer
+                    .custom
+                    .as_ref()
+                    .is_none_or(|value| value.trim().is_empty()))
+        {
+            return Err("问题回答内容无效".to_string());
+        }
+    }
+    Ok(())
+}
+
+fn valid_question_text(value: Option<&Value>, max_bytes: usize, multiline: bool) -> Option<&str> {
+    value.and_then(Value::as_str).filter(|value| {
+        !value.trim().is_empty()
+            && value.len() <= max_bytes
+            && !value.chars().any(|character| {
+                character.is_control() && (!multiline || (character != '\n' && character != '\t'))
+            })
     })
 }
 
@@ -2001,6 +2331,109 @@ mod tests {
         assert!(broker.respond("task-2", "approval-1", "allow").is_err());
         assert!(broker.respond("task-1", "approval-1", "allow").unwrap());
         assert_eq!(receiver.recv().unwrap(), "allow");
+    }
+
+    #[test]
+    fn question_requests_validate_shape_and_plan_review_intent() {
+        let value = json!({
+            "questionId": "question-1",
+            "questions": [{
+                "id": "review",
+                "header": "计划",
+                "question": "是否执行？",
+                "detail": "## 实施计划",
+                "options": [{"label": "批准"}, {"label": "修改"}],
+                "intent": {"kind": "plan-review", "approve": "批准"}
+            }]
+        });
+        let question = parse_question_request(Some(&value)).expect("question should parse");
+        assert_eq!(question.question_id, "question-1");
+        assert_eq!(question.questions[0]["id"], "review");
+
+        let invalid_intent = json!({
+            "questionId": "question-2",
+            "questions": [{
+                "id": "review",
+                "question": "是否执行？",
+                "detail": "计划",
+                "options": [{"label": "修改"}],
+                "intent": {"kind": "plan-review", "approve": "批准"}
+            }]
+        });
+        assert!(parse_question_request(Some(&invalid_intent)).is_err());
+        let duplicate_ids = json!({
+            "questionId": "question-3",
+            "questions": [
+                {"id": "same", "question": "第一个？"},
+                {"id": "same", "question": "第二个？"}
+            ]
+        });
+        assert!(parse_question_request(Some(&duplicate_ids)).is_err());
+    }
+
+    #[test]
+    fn question_answers_reject_empty_duplicate_or_unsafe_values() {
+        let valid = vec![QuestionAnswerInput {
+            id: "scope".into(),
+            selected: vec!["运行时".into()],
+            custom: Some("保留备份".into()),
+        }];
+        assert!(validate_question_answers(&valid).is_ok());
+        assert!(
+            validate_question_answers(&[QuestionAnswerInput {
+                id: "scope".into(),
+                selected: Vec::new(),
+                custom: Some("  ".into()),
+            }])
+            .is_err()
+        );
+        assert!(
+            validate_question_answers(&[
+                valid[0].clone(),
+                QuestionAnswerInput {
+                    id: "scope".into(),
+                    selected: vec!["界面".into()],
+                    custom: None,
+                },
+            ])
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn question_broker_isolates_same_question_id_between_tasks() {
+        let broker = QuestionBroker::default();
+        let first = broker.register("task-1", "question-1").unwrap();
+        let second = broker.register("task-2", "question-1").unwrap();
+        assert!(broker.respond("task-3", "question-1", Vec::new()).is_err());
+        assert!(
+            broker
+                .respond(
+                    "task-2",
+                    "question-1",
+                    vec![QuestionAnswerInput {
+                        id: "answer".into(),
+                        selected: vec!["two".into()],
+                        custom: None,
+                    }],
+                )
+                .unwrap()
+        );
+        assert_eq!(second.recv().unwrap()[0].selected, vec!["two"]);
+        assert!(
+            broker
+                .respond(
+                    "task-1",
+                    "question-1",
+                    vec![QuestionAnswerInput {
+                        id: "answer".into(),
+                        selected: vec!["one".into()],
+                        custom: None,
+                    }],
+                )
+                .unwrap()
+        );
+        assert_eq!(first.recv().unwrap()[0].selected, vec!["one"]);
     }
 
     #[test]

@@ -85,7 +85,7 @@ export interface SubagentActivity {
 
 export interface TaskTimelineEntry {
   id: string
-  kind: 'assistant' | 'command' | 'file' | 'connector' | 'browser' | 'subagent' | 'tool' | 'approval' | 'error' | 'warning'
+  kind: 'assistant' | 'command' | 'file' | 'connector' | 'browser' | 'subagent' | 'tool' | 'approval' | 'question' | 'error' | 'warning'
   label: string
   status: 'running' | 'completed' | 'failed' | 'canceled'
   text?: string
@@ -97,8 +97,26 @@ export interface TaskTimelineEntry {
   connectorName?: string
   itemCount?: number
   approvalId?: string
+  questionId?: string
+  questions?: TaskQuestionItem[]
   occurredAt: string
   completedAt?: string
+}
+
+export interface TaskQuestionItem {
+  id: string
+  question: string
+  header?: string
+  detail?: string
+  options?: Array<{ label: string; description?: string }>
+  multiSelect?: boolean
+  intent?: { kind: 'plan-review'; approve: string }
+}
+
+export interface TaskQuestionAnswer {
+  id: string
+  selected: string[]
+  custom?: string
 }
 
 export type TaskArtifactKind = 'document' | 'spreadsheet' | 'presentation' | 'pdf' | 'text' | 'image' | 'file'
@@ -190,6 +208,8 @@ export type ExecutionEventType =
   | 'item.failed'
   | 'approval.requested'
   | 'approval.decided'
+  | 'question.requested'
+  | 'question.answered'
   | 'turn.completed'
   | 'turn.failed'
   | 'turn.interrupted'
@@ -237,7 +257,7 @@ export interface ExecutionEvent {
 
 export interface ExecutionItem {
   id: string
-  kind: 'analysis' | 'assistant' | 'tool-call' | 'approval' | 'subagent' | 'warning' | 'error' | 'verification' | 'provider-turn'
+  kind: 'analysis' | 'assistant' | 'tool-call' | 'approval' | 'question' | 'subagent' | 'warning' | 'error' | 'verification' | 'provider-turn'
   status: 'running' | 'completed' | 'failed' | 'canceled'
   label: string
   startedAt: string
@@ -280,6 +300,7 @@ export interface LocalTaskRun {
   invocationSpecs?: InvocationSpec[]
   composerConnectorIds?: string[]
   model?: string
+  executionMode?: 'agent' | 'plan'
   localDirectories?: Array<{ id: string; name: string; path?: string }>
   capabilitySnapshot?: CapabilitySnapshot
   execution?: ExecutionThread
