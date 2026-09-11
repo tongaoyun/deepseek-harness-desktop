@@ -40,6 +40,7 @@ import {
   diagnoseConnectors,
   restoreLocalDirectories,
   respondHarnessApproval,
+  respondHarnessQuestion,
   revokeLocalDirectory,
   shutdownHarness,
   type AuthorizedLocalDirectory,
@@ -206,6 +207,7 @@ export default function App() {
   const [localFileError, setLocalFileError] = useState('')
   const [draftSaveError, setDraftSaveError] = useState('')
   const [selectedModel, setSelectedModel] = useState('')
+  const [executionMode, setExecutionMode] = useState<'agent' | 'plan'>('agent')
   const [modelMenuOpen, setModelMenuOpen] = useState(false)
   const [taskSearchOpen, setTaskSearchOpen] = useState(false)
   const [taskQuery, setTaskQuery] = useState('')
@@ -564,7 +566,7 @@ export default function App() {
     setTaskMonitor(streaming?.monitor ?? task.monitor)
     const draft = user ? readTaskDraft(user.userId, task.id) : undefined
     setHarnessSessionId(restoredTaskSessionId(task, draft))
-    void restoreDraftContext(draft ?? { ...emptyDraft(), prompt: joinComposerPrompt(task.invocationTokens ?? [], ''), directories: task.localDirectories ?? [], knowledgeRefs: task.capabilitySnapshot?.knowledgeBaseRefs ?? [], connectorIds: task.composerConnectorIds ?? [], model: task.model ?? activeModel })
+    void restoreDraftContext(draft ?? { ...emptyDraft(), prompt: joinComposerPrompt(task.invocationTokens ?? [], ''), directories: task.localDirectories ?? [], knowledgeRefs: task.capabilitySnapshot?.knowledgeBaseRefs ?? [], connectorIds: task.composerConnectorIds ?? [], model: task.model ?? activeModel, executionMode: task.executionMode ?? 'agent' })
     focusComposer()
   }
   async function openStoredTask(id: string) {
@@ -584,10 +586,10 @@ export default function App() {
       openLocalTask(task)
     } catch (reason) { if (stillCurrent()) notify(`读取任务失败：${String(reason)}`, 'error') }
   }
-  function emptyDraft(): TaskDraft { return { prompt: '', attachments: [], directories: [], knowledgeRefs: [], connectorIds: [], model: activeModel, updatedAt: Date.now() } }
+  function emptyDraft(): TaskDraft { return { prompt: '', attachments: [], directories: [], knowledgeRefs: [], connectorIds: [], model: activeModel, executionMode: 'agent', updatedAt: Date.now() } }
   function saveCurrentDraft() {
     if (!user || draftOwnerRef.current !== user.userId || draftPausedRef.current) return true
-    try { saveTaskDraft(user.userId, currentLocalTaskId || creationDraftKeyRef.current, { prompt, attachments: pendingAttachments, directories: localDirectories, knowledgeRefs: selectedKnowledgeBaseRefs, connectorIds: selectedTaskConnectorIds, model: activeModel, updatedAt: Date.now() }); setDraftSaveError(''); return true }
+    try { saveTaskDraft(user.userId, currentLocalTaskId || creationDraftKeyRef.current, { prompt, attachments: pendingAttachments, directories: localDirectories, knowledgeRefs: selectedKnowledgeBaseRefs, connectorIds: selectedTaskConnectorIds, model: activeModel, executionMode, updatedAt: Date.now() }); setDraftSaveError(''); return true }
     catch { setDraftSaveError('草稿保存失败，请检查本机存储空间。当前输入已保留；保存成功前不能切换到其他对话。'); return false }
   }
   async function restoreDraftContext(saved?: TaskDraft) {
@@ -597,6 +599,7 @@ export default function App() {
     setPrompt(draft.prompt); setPendingAttachments(draft.attachments); setLocalDirectories(draft.directories)
     setSelectedKnowledgeBaseRefs(draft.knowledgeRefs); setSelectedTaskConnectorIds(draft.connectorIds)
     setSelectedModel(bootstrap ? resolveSelectedModel(bootstrap.models, draft.model) : draft.model)
+    setExecutionMode(draft.executionMode ?? 'agent')
     setTaskContextRestoring(true); setLocalFileError('')
     try {
       await clearLocalDirectories()
@@ -755,6 +758,7 @@ export default function App() {
     const contextMessages = queuedTask?.messages ?? messages
     const contextMonitor = queuedTask?.monitor ?? taskMonitorRef.current
     const taskModel = resolveSelectedModel(bootstrap.models, queuedTask ? queuedTask.model : activeModel)
+    const taskExecutionMode = queuedTask?.executionMode ?? executionMode
     try {
       if (!taskModel) { reportInputError('当前没有可用模型，请在控制中心配置模型后重试。'); return }
       const attachmentError = attachmentSelectionError(messageAttachments)
@@ -844,7 +848,7 @@ export default function App() {
           : requestedTokens.flatMap((token) => availableInvocations.find((item) => item.token === token) ?? [])
         : currentInvocations
       const { rootSessionId, harnessPrompt, pendingMessages, runningMonitor, execution, runningTask } = prepareTaskTurn({
-        taskId, input, now, existingTask, sessionId: taskSessionId, model: taskModel,
+        taskId, input, now, existingTask, sessionId: taskSessionId, model: taskModel, executionMode: taskExecutionMode,
         directories: taskDirectories, directoriesChanged: resetSessionForDirectoryChange,
         connectorIds: taskConnectorIds, capabilities: capabilitySnapshot, invocations: selected,
         messages: contextMessages, monitor: contextMonitor, attachments: messageAttachments,
@@ -879,7 +883,7 @@ export default function App() {
           taskId,
           prompt: harnessPrompt,
           invocations: selected.map((item) => item.spec),
-          executionMode: 'agent',
+          executionMode: taskExecutionMode,
           employeeId: user!.userId,
           teamId: user!.teamId,
           sessionId: rootSessionId,
@@ -1386,6 +1390,7 @@ export default function App() {
             modelMenuOpen={modelMenuOpen}
             modelPickerRef={modelPickerRef}
             models={bootstrap?.models ?? []}
+            executionMode={executionMode}
             onAddKnowledge={addKnowledgeContext}
             onAddLocalDirectory={() => void addLocalDirectory()}
             onAddLocalFiles={() => void addLocalFiles()}
@@ -1394,6 +1399,20 @@ export default function App() {
               if (!taskId) throw new Error('当前任务不可用，请重新打开任务。')
               const accepted = await respondHarnessApproval(taskId, approvalId, decision)
               if (!accepted) throw new Error('该操作确认已失效，请重新执行任务。')
+            }}
+            onQuestionAnswer={async (questionId, answers) => {
+              const taskId = currentLocalTaskIdRef.current
+              if (!taskId) throw new Error('当前任务不可用，请重新打开任务。')
+              const request = taskMonitorRef.current.timeline?.find((entry) => entry.questionId === questionId)
+              const approvedPlan = request?.questions?.some((question) => question.intent?.kind === 'plan-review'
+                && answers.some((answer) => answer.id === question.id && answer.selected.includes(question.intent!.approve)))
+              const accepted = await respondHarnessQuestion(taskId, questionId, answers)
+              if (!accepted) throw new Error('该问题已失效，请重新执行任务。')
+              if (approvedPlan) setExecutionMode('agent')
+            }}
+            onExecutionModeChange={(mode) => {
+              setExecutionMode(mode)
+              setLocalFileError('')
             }}
             onCancel={() => void cancelCurrentTask()}
             onContinueCreation={(instructions) => {

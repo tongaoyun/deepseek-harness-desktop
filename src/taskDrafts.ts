@@ -8,6 +8,7 @@ export interface TaskDraft {
   knowledgeRefs: string[]
   connectorIds: string[]
   model: string
+  executionMode?: 'agent' | 'plan'
   updatedAt: number
 }
 
@@ -20,7 +21,8 @@ function readDrafts(owner: string): Record<string, TaskDraft> {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
     return Object.fromEntries(Object.entries(value).filter(([, draft]) => {
       const item = draft as TaskDraft
-      return item && typeof item.prompt === 'string' && typeof item.model === 'string' && Number.isFinite(item.updatedAt)
+      return item && typeof item.prompt === 'string' && typeof item.model === 'string'
+        && (item.executionMode === undefined || item.executionMode === 'agent' || item.executionMode === 'plan') && Number.isFinite(item.updatedAt)
         && [item.attachments, item.directories, item.knowledgeRefs, item.connectorIds].every(Array.isArray)
         && item.knowledgeRefs.every((entry) => typeof entry === 'string') && item.connectorIds.every((entry) => typeof entry === 'string')
         && item.directories.every((entry) => entry && typeof entry.id === 'string' && typeof entry.name === 'string' && (entry.path === undefined || typeof entry.path === 'string'))

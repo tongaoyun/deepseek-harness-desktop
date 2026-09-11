@@ -3,6 +3,7 @@ import { HostServer } from './server.js'
 import { DeepSeekHarnessRuntime } from './runtime.js'
 import type { JsonRpcOutput } from './protocol.js'
 import { ApprovalBridge } from './approval-bridge.js'
+import { QuestionBridge } from './question-bridge.js'
 import { LocalImRuntime } from './im-runtime.js'
 import { ScheduleBridge } from './schedule-bridge.js'
 import { DesktopToolBridge } from './desktop-tool-bridge.js'
@@ -16,6 +17,8 @@ const emit = (output: JsonRpcOutput): void => {
 
 const approvalBridge = new ApprovalBridge(emit)
 const approvalEndpoint = await approvalBridge.start()
+const questionBridge = new QuestionBridge(emit)
+const questionEndpoint = await questionBridge.start()
 const scheduleBridge = new ScheduleBridge(emit)
 const scheduleEndpoint = await scheduleBridge.start()
 const skillBridge = new DesktopToolBridge(emit, 'skill', ['search', 'inspect_github', 'install'], 95000)
@@ -35,6 +38,8 @@ const runtime = new DeepSeekHarnessRuntime({
   XIAOYIN_LOCAL_SCHEDULE_TOKEN: scheduleEndpoint.token,
   XIAOYIN_APPROVAL_BRIDGE_URL: approvalEndpoint.url,
   XIAOYIN_APPROVAL_BRIDGE_TOKEN: approvalEndpoint.token,
+  XIAOYIN_QUESTION_BRIDGE_URL: questionEndpoint.url,
+  XIAOYIN_QUESTION_BRIDGE_TOKEN: questionEndpoint.token,
 })
 const imRuntime = new LocalImRuntime(runtime)
 const server = new HostServer(
@@ -42,6 +47,7 @@ const server = new HostServer(
   emit,
   (approvalId, decision) => approvalBridge.respond(approvalId, decision),
   imRuntime,
+  (questionId, answer) => questionBridge.respond(questionId, answer),
 )
 let chain = Promise.resolve()
 
@@ -69,7 +75,7 @@ lines.on('line', (line) => {
     if (params?.requestId) ((value as Record<string, unknown>).method === 'skill.respond' ? skillBridge : scheduleBridge).respond(params.requestId, params.result)
     return
   }
-  if (isApprovalResponse(value)) {
+  if (isInteractiveResponse(value)) {
     void server.handle(value).catch((error: unknown) => {
       process.stderr.write(`Harness approval response failure: ${String(error)}\n`)
     })
@@ -83,16 +89,16 @@ lines.on('line', (line) => {
   })
 })
 
-function isApprovalResponse(value: unknown): boolean {
+function isInteractiveResponse(value: unknown): boolean {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
-    && (value as Record<string, unknown>).method === 'approval.respond'
+    && ['approval.respond', 'question.respond'].includes(String((value as Record<string, unknown>).method))
 }
 
 function stop(): void {
   if (stopping) return
   stopping = true
   // EOF means the desktop has gone away: abort now, never wait for its active turn.
-  void Promise.allSettled([runtime.close(), imRuntime.stop(), approvalBridge.close(), scheduleBridge.close(), skillBridge.close(), erpCookieBridge.close(), oauthBridge.close()])
+  void Promise.allSettled([runtime.close(), imRuntime.stop(), approvalBridge.close(), questionBridge.close(), scheduleBridge.close(), skillBridge.close(), erpCookieBridge.close(), oauthBridge.close()])
     .then(() => process.exit(0))
 }
 

@@ -1,18 +1,20 @@
 import { ChevronRight, LoaderCircle } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ExecutionTimeline, visibleExecutionEntries, type ApprovalDecisionHandler, type ApprovalUiState } from './ExecutionTimeline'
+import { ExecutionTimeline, visibleExecutionEntries, type ApprovalDecisionHandler, type ApprovalUiState, type QuestionAnswerHandler } from './ExecutionTimeline'
 import { taskDurationLabel } from './taskTiming'
 import type { TaskMonitorState } from './types'
 import { isUnverifiedTaskOutcome } from './taskOutcome'
 
-export function InlineTaskActivity({ monitor, finalResponse = '', onApprovalDecision }: {
+export function InlineTaskActivity({ monitor, finalResponse = '', onApprovalDecision, onQuestionAnswer }: {
   monitor: TaskMonitorState
   finalResponse?: string
   onApprovalDecision?: ApprovalDecisionHandler
+  onQuestionAnswer?: QuestionAnswerHandler
 }) {
   const [clock, setClock] = useState(Date.now())
   const approvalsEnabled = monitor.status === 'running' && monitor.activity !== '正在停止'
   const pendingApproval = approvalsEnabled ? (monitor.timeline ?? []).filter((entry) => entry.kind === 'approval' && entry.status === 'running').map((entry) => entry.id).join(':') : ''
+  const pendingQuestion = approvalsEnabled ? (monitor.timeline ?? []).filter((entry) => entry.kind === 'question' && entry.status === 'running').map((entry) => entry.id).join(':') : ''
   const [approvalStates, setApprovalStates] = useState<Record<string, ApprovalUiState>>({})
   const approvalLocks = useRef(new Set<string>())
   const decide = useCallback(async (id: string, decision: 'allow' | 'reject') => {
@@ -31,15 +33,15 @@ export function InlineTaskActivity({ monitor, finalResponse = '', onApprovalDeci
     if (monitor.status !== 'running') return []
     const entries = monitor.timeline ?? []
     const latest = entries.findLast((entry) => entry.kind === 'assistant')
-    return entries.filter((entry) => (entry.kind === 'approval' && entry.status === 'running')
+    return entries.filter((entry) => ((entry.kind === 'approval' || entry.kind === 'question') && entry.status === 'running')
       || entry.kind === 'warning' || entry.kind === 'error' || entry.status === 'failed'
       || (entry === latest && entry.kind === 'assistant'))
   }, [monitor.timeline, monitor.status])
   // Resolve disclosure in the same render as the new status. An effect would
   // briefly paint completed content expanded before collapsing it a frame later.
-  const scope = `${monitor.status}:${pendingApproval}`
+  const scope = `${monitor.status}:${pendingApproval}:${pendingQuestion}`
   const [choice, setChoice] = useState<{ scope: string; open: boolean }>()
-  const open = choice?.scope === scope ? choice.open : monitor.status === 'running' || monitor.status === 'failed' || Boolean(pendingApproval)
+  const open = choice?.scope === scope ? choice.open : monitor.status === 'running' || monitor.status === 'failed' || Boolean(pendingApproval) || Boolean(pendingQuestion)
 
   useEffect(() => {
     if (monitor.status !== 'running') return
@@ -65,11 +67,11 @@ export function InlineTaskActivity({ monitor, finalResponse = '', onApprovalDeci
   return <section className={`inline-task-activity ${monitor.status}`}>
     <button aria-expanded={hasDetails ? open : undefined} className="inline-task-summary" disabled={!hasDetails} onClick={() => setChoice({ scope, open: !open })} type="button">
       {monitor.status === 'running' && <LoaderCircle className="turn-spinner" size={14} />}
-      <span>{pendingApproval ? '等待你确认' : summary}</span>
+      <span>{pendingQuestion ? '等待你回答' : pendingApproval ? '等待你确认' : summary}</span>
       {monitor.status === 'running' && duration && <small>{duration}</small>}
       {hasDetails && <ChevronRight className={open ? 'open' : ''} size={15} />}
     </button>
-    {hasDetails && <ExecutionTimeline entries={open ? monitor.timeline ?? [] : collapsedEntries} finalResponse={finalResponse} onApprovalDecision={onApprovalDecision ? decide : undefined} approvalStates={approvalStates} approvalsEnabled={approvalsEnabled} />}
+    {hasDetails && <ExecutionTimeline entries={open ? monitor.timeline ?? [] : collapsedEntries} finalResponse={finalResponse} onApprovalDecision={onApprovalDecision ? decide : undefined} onQuestionAnswer={onQuestionAnswer} approvalStates={approvalStates} approvalsEnabled={approvalsEnabled} />}
   </section>
 }
 

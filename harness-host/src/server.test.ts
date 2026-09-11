@@ -88,6 +88,22 @@ describe('HostServer', () => {
     expect(output).toEqual([{ jsonrpc: '2.0', id: 9, result: { status: 'accepted' } }])
   })
 
+  it('accepts structured question answers independently of a model turn', async () => {
+    const output: JsonRpcOutput[] = []
+    const server = new HostServer(
+      fakeRuntime(),
+      (value) => output.push(value),
+      undefined,
+      undefined,
+      (id, answer) => id === 'question-1' && answer.answers[0]?.selected[0] === '继续',
+    )
+    await server.handle({
+      jsonrpc: '2.0', id: 10, method: 'question.respond',
+      params: { questionId: 'question-1', answers: [{ id: 'action', selected: ['继续'] }] },
+    })
+    expect(output).toEqual([{ jsonrpc: '2.0', id: 10, result: { status: 'accepted' } }])
+  })
+
   it('accepts image payloads between five and ten MiB without rejecting their base64 envelope', async () => {
     const output: JsonRpcOutput[] = []
     const runtime = fakeRuntime()

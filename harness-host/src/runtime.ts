@@ -140,7 +140,7 @@ export class DeepSeekHarnessRuntime implements HarnessRuntime {
 
     const maxTokens = positiveInteger(process.env.DSH_MAX_TOKENS)
     this.harness = new DeepSeekHarness({
-      profile: 'sdk-minimal',
+      profile: 'sdk',
       patches: [patchPath],
       cwd: workspace,
       processCwd: workspace,
@@ -148,6 +148,9 @@ export class DeepSeekHarnessRuntime implements HarnessRuntime {
         ...process.env,
         ...this.extraEnv,
         DSH_CWD: workspace,
+        // Session telemetry can include complete conversation content after
+        // feedback. Xiaoyin keeps it off until the desktop owns an opt-in UI.
+        DSH_TELEMETRY_DISABLED: '1',
       },
       provider: process.env.DSH_PROVIDER ?? 'deepseek-official',
       model: process.env.DSH_MODEL ?? 'deepseek-v4-flash',

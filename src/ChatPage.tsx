@@ -39,6 +39,7 @@ export interface ChatPageProps {
   runtimeStatus: RuntimeStatus
   activeModel: string
   models: string[]
+  executionMode?: 'agent' | 'plan'
   modelMenuOpen: boolean
   currentTaskRunning?: boolean
   queue?: TaskQueue
@@ -64,8 +65,10 @@ export interface ChatPageProps {
   onAddLocalFiles: () => void
   onToggleModelMenu: () => void
   onSelectModel: (model: string) => void
+  onExecutionModeChange?: (mode: 'agent' | 'plan') => void
   onCancel: () => void
   onApprovalDecision?: import('./ExecutionTimeline').ApprovalDecisionHandler
+  onQuestionAnswer?: import('./ExecutionTimeline').QuestionAnswerHandler
   onAddKnowledge: (reference: string) => void
   onRemoveKnowledge: (reference: string) => void
   onRemoveLocalDirectory: (id: string) => void
@@ -219,7 +222,7 @@ export function ChatPage(props: ChatPageProps) {
         props.onChangesUndone?.(index, results)
       }} />
       return <article aria-busy={message.pending} className={`conversation-turn assistant-turn${message.pending ? ' pending' : ''}`} key={`${message.role}-${index}`}>
-        {monitor && <InlineTaskActivity finalResponse={message.pending ? '' : message.text} monitor={monitor} onApprovalDecision={props.onApprovalDecision} />}
+        {monitor && <InlineTaskActivity finalResponse={message.pending ? '' : message.text} monitor={monitor} onApprovalDecision={props.onApprovalDecision} onQuestionAnswer={props.onQuestionAnswer} />}
         {(!timelineOwnsStreamingText && Boolean(message.text.trim())) && <div className={message.pending ? 'streaming-response' : undefined}><RichMessage assistant={!message.pending} onRegenerate={!message.pending && index === props.messages.length - 1 ? props.onPrepareRetry : undefined} text={message.text} /></div>}
         {monitor && monitor.artifacts.length > 0 && <TaskArtifacts artifacts={monitor.artifacts} conversation onOpen={openPreview} />}
         {fileChanges && (monitor?.artifacts.length ? <details className="task-file-review"><summary><ChevronRight size={14} />文件变更 <small>{reviewChanges.length}</small></summary>{fileChanges}</details> : fileChanges)}

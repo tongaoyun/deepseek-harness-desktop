@@ -17,6 +17,12 @@ afterEach(() => { vi.restoreAllMocks(); vi.clearAllMocks() })
 const change: TaskFileChange = { id: 'one', rootId: 'root', rootName: 'repo', path: 'one.ts', name: 'one.ts', action: 'updated', sourceTool: 'local_files_write_text', backupPath: '.xiaoyin-backups/first/one.ts', afterHash: 'after', beforeHash: 'before', changedAt: '' }
 const button = (text: string, scope: ParentNode = document) => [...scope.querySelectorAll<HTMLButtonElement>('button')].find((item) => item.textContent?.trim() === text)!
 function mount() { const element = document.body.appendChild(document.createElement('div')); const root = createRoot(element); return { element, root, cleanup: async () => { await act(async () => root.unmount()); element.remove() } } }
+async function fill(element: HTMLTextAreaElement, value: string) {
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(element, value)
+    element.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+}
 
 it('keeps tool disclosures stable through completion and the next tool starting', async () => {
   const app = mount()
@@ -174,6 +180,53 @@ it('keeps confirmation outside collapsed details and disables it while stopping'
     expect(button('允许本次操作').disabled).toBe(true)
     await act(async () => button('允许本次操作').click())
     expect(decide).not.toHaveBeenCalled()
+  } finally { await app.cleanup() }
+})
+
+it('submits a structured single-choice answer once', async () => {
+  const app = mount(); const answer = vi.fn().mockResolvedValue(undefined)
+  const monitor: TaskMonitorState = { status: 'running', activity: '等待你回答', updatedAt: '', steps: [], artifacts: [], timeline: [{
+    id: 'question:mode', questionId: 'mode', kind: 'question', label: '需要你的回答', status: 'running', occurredAt: '',
+    questions: [{ id: 'strategy', header: '执行方式', question: '选择执行方式', options: [{ label: '安全模式', description: '保留备份' }, { label: '快速模式' }] }],
+  }] }
+  try {
+    await act(async () => app.root.render(<InlineTaskActivity monitor={monitor} onQuestionAnswer={answer} />))
+    expect(button('提交回答').disabled).toBe(true)
+    await act(async () => app.element.querySelector<HTMLInputElement>('.question-option input')!.click())
+    await act(async () => button('提交回答').click())
+    expect(answer).toHaveBeenCalledWith('mode', [{ id: 'strategy', selected: ['安全模式'] }])
+    expect(button('已提交').disabled).toBe(true)
+  } finally { await app.cleanup() }
+})
+
+it('supports multi-select plus custom text in one structured answer', async () => {
+  const app = mount(); const answer = vi.fn().mockResolvedValue(undefined)
+  const monitor: TaskMonitorState = { status: 'running', activity: '等待你回答', updatedAt: '', steps: [], artifacts: [], timeline: [{
+    id: 'question:scope', questionId: 'scope', kind: 'question', label: '需要你的回答', status: 'running', occurredAt: '',
+    questions: [{ id: 'areas', question: '选择优化范围', multiSelect: true, options: [{ label: '运行时' }, { label: '界面' }] }],
+  }] }
+  try {
+    await act(async () => app.root.render(<InlineTaskActivity monitor={monitor} onQuestionAnswer={answer} />))
+    const choices = [...app.element.querySelectorAll<HTMLInputElement>('.question-option input')]
+    await act(async () => { choices[0].click(); choices[1].click() })
+    await fill(app.element.querySelector('textarea')!, '保留现有数据')
+    await act(async () => button('提交回答').click())
+    expect(answer).toHaveBeenCalledWith('scope', [{ id: 'areas', selected: ['运行时', '界面'], custom: '保留现有数据' }])
+  } finally { await app.cleanup() }
+})
+
+it('renders plan markdown and sends the declared approval option', async () => {
+  const app = mount(); const answer = vi.fn().mockResolvedValue(undefined)
+  const monitor: TaskMonitorState = { status: 'running', activity: '等待你审阅计划', updatedAt: '', steps: [], artifacts: [], timeline: [{
+    id: 'question:plan', questionId: 'plan', kind: 'question', label: '计划审阅', status: 'running', occurredAt: '',
+    questions: [{ id: 'review', question: '是否按此计划执行？', detail: '## 实施计划\n\n- 修改运行时\n- 运行测试', options: [{ label: '批准执行' }, { label: '继续修改' }], intent: { kind: 'plan-review', approve: '批准执行' } }],
+  }] }
+  try {
+    await act(async () => app.root.render(<InlineTaskActivity monitor={monitor} onQuestionAnswer={answer} />))
+    expect(app.element.querySelector('.question-detail h2')?.textContent).toBe('实施计划')
+    await act(async () => app.element.querySelector<HTMLInputElement>('.question-option input')!.click())
+    await act(async () => button('提交回答').click())
+    expect(answer).toHaveBeenCalledWith('plan', [{ id: 'review', selected: ['批准执行'] }])
   } finally { await app.cleanup() }
 })
 

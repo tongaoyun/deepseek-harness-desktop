@@ -165,6 +165,7 @@ pub fn run() {
             harness::self_test_local_capabilities,
             harness::cancel_harness,
             harness::respond_harness_approval,
+            harness::respond_harness_question,
             schedule_desktop::schedule_keep_awake,
             harness::shutdown_harness,
             im::configure_local_dingtalk,

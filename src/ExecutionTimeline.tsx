@@ -1,14 +1,15 @@
 import {
-  ChevronRight, CircleAlert, FileCode2, FileInput, FolderSearch, Globe2,
+  ChevronRight, CircleAlert, CircleHelp, FileCode2, FileInput, FolderSearch, Globe2,
   LoaderCircle, MessageSquareText, PlugZap, ShieldCheck, TerminalSquare, Users, Wrench,
 } from 'lucide-react'
 import { memo, useState, type ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import type { TaskTimelineEntry } from './types'
+import type { TaskQuestionAnswer, TaskTimelineEntry } from './types'
 import { groupExecutionEntries, executionGroupLabel, executionGroupStatus } from './executionGroups'
 
 export type ApprovalDecisionHandler = (approvalId: string, decision: 'allow' | 'reject') => void | Promise<void>
+export type QuestionAnswerHandler = (questionId: string, answers: TaskQuestionAnswer[]) => void | Promise<void>
 export interface ApprovalUiState { status: 'sending' | 'sent' | 'error'; error?: string }
 interface Props {
   entries: TaskTimelineEntry[]
@@ -16,16 +17,17 @@ interface Props {
   onApprovalDecision?: ApprovalDecisionHandler
   approvalStates?: Record<string, ApprovalUiState>
   approvalsEnabled?: boolean
+  onQuestionAnswer?: QuestionAnswerHandler
 }
 
-export const ExecutionTimeline = memo(function ExecutionTimeline({ entries, finalResponse = '', onApprovalDecision, approvalStates, approvalsEnabled = true }: Props) {
+export const ExecutionTimeline = memo(function ExecutionTimeline({ entries, finalResponse = '', onApprovalDecision, approvalStates, approvalsEnabled = true, onQuestionAnswer }: Props) {
   const visible = visibleExecutionEntries(entries, finalResponse)
   if (visible.length === 0) return null
   return <div aria-label="执行过程" className="execution-timeline">
     {groupExecutionEntries(visible).map((group) => group.kind === 'message'
       ? <TimelineCommentary key={group.id} text={group.entries[0].text ?? ''} />
       : group.kind === 'notice'
-        ? <ActivityEntry entry={group.entries[0]} key={group.id} onApprovalDecision={onApprovalDecision} approvalState={approvalStates?.[group.entries[0].approvalId ?? '']} approvalsEnabled={approvalsEnabled} />
+        ? <ActivityEntry entry={group.entries[0]} key={group.id} onApprovalDecision={onApprovalDecision} onQuestionAnswer={onQuestionAnswer} approvalState={approvalStates?.[group.entries[0].approvalId ?? '']} approvalsEnabled={approvalsEnabled} />
         : <StableDetails className="execution-step-group" key={group.id} attention={group.entries.some((entry) => entry.status === 'failed')} summary={<><ChevronRight size={14} /><span title={executionGroupStatus(group.entries)}>{executionGroupLabel(group.entries)}</span>{group.entries.some((entry) => entry.status === 'running') && <LoaderCircle className="turn-spinner" size={13} />}</>}><div><small className="execution-group-count">{executionGroupStatus(group.entries)}</small>{group.entries.map((entry) => <ActivityEntry entry={entry} key={entry.id} />)}</div></StableDetails>)}
   </div>
 })
@@ -34,13 +36,17 @@ const TimelineCommentary = memo(function TimelineCommentary({ text }: { text: st
   return <div className="timeline-commentary message-markdown"><ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown></div>
 })
 
-const ActivityEntry = memo(function ActivityEntry({ entry, onApprovalDecision, approvalState, approvalsEnabled = true }: {
+const ActivityEntry = memo(function ActivityEntry({ entry, onApprovalDecision, onQuestionAnswer, approvalState, approvalsEnabled = true }: {
   entry: TaskTimelineEntry
   onApprovalDecision?: ApprovalDecisionHandler
   approvalState?: ApprovalUiState
   approvalsEnabled?: boolean
+  onQuestionAnswer?: QuestionAnswerHandler
 }) {
-  const expandable = Boolean(entry.text || entry.detail || entry.output || entry.path || entry.secondaryPath || entry.toolName || entry.approvalId)
+  if (entry.kind === 'question' && entry.status === 'running' && entry.questionId && entry.questions?.length && onQuestionAnswer) {
+    return <QuestionCard entry={entry} enabled={approvalsEnabled} onAnswer={onQuestionAnswer} />
+  }
+  const expandable = Boolean(entry.text || entry.detail || entry.output || entry.path || entry.secondaryPath || entry.toolName || entry.approvalId || entry.questionId)
   const summary = <>
     <ActivityIcon entry={entry} />
     <span className="timeline-title">{activityTitle(entry)}</span>
@@ -75,6 +81,55 @@ const ActivityEntry = memo(function ActivityEntry({ entry, onApprovalDecision, a
     {approvalsEnabled && submitting && <p className="approval-feedback" role="status">{approvalState.status === 'sending' ? '正在提交确认…' : '确认已发送，等待执行结果。'}</p>}
     {approvalsEnabled && approvalState?.status === 'error' && <p className="approval-feedback error" role="alert">{approvalState.error}</p>}
   </div>
+})
+
+const QuestionCard = memo(function QuestionCard({ entry, enabled, onAnswer }: {
+  entry: TaskTimelineEntry
+  enabled: boolean
+  onAnswer: QuestionAnswerHandler
+}) {
+  const [answers, setAnswers] = useState<Record<string, TaskQuestionAnswer>>({})
+  const [state, setState] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle')
+  const [error, setError] = useState('')
+  const questions = entry.questions ?? []
+  const valid = questions.every((question) => {
+    const answer = answers[question.id]
+    return Boolean(answer?.selected.length || answer?.custom?.trim())
+  })
+  const select = (id: string, label: string, multi: boolean) => setAnswers((current) => {
+    const answer = current[id] ?? { id, selected: [] }
+    const selected = multi
+      ? answer.selected.includes(label) ? answer.selected.filter((item) => item !== label) : [...answer.selected, label]
+      : [label]
+    return { ...current, [id]: { ...answer, selected } }
+  })
+  const submit = async () => {
+    if (!entry.questionId || !valid || !enabled || state === 'sending' || state === 'sent') return
+    setState('sending'); setError('')
+    try {
+      await onAnswer(entry.questionId, questions.map((question) => answers[question.id]))
+      setState('sent')
+    } catch (reason) {
+      setState('error'); setError(reason instanceof Error ? reason.message : String(reason))
+    }
+  }
+  return <section className="timeline-question" aria-label={entry.label}>
+    {questions.map((question) => {
+      const answer = answers[question.id] ?? { id: question.id, selected: [] }
+      return <fieldset key={question.id} disabled={!enabled || state === 'sending' || state === 'sent'}>
+        <legend>{question.header && <small>{question.header}</small>}<strong>{question.question}</strong></legend>
+        {question.detail && <div className="question-detail message-markdown"><ReactMarkdown remarkPlugins={[remarkGfm]}>{question.detail}</ReactMarkdown></div>}
+        {question.options?.map((option) => <label className="question-option" key={option.label}>
+          <input checked={answer.selected.includes(option.label)} name={question.multiSelect ? undefined : question.id} onChange={() => select(question.id, option.label, Boolean(question.multiSelect))} type={question.multiSelect ? 'checkbox' : 'radio'} />
+          <span><strong>{option.label}</strong>{option.description && <small>{option.description}</small>}</span>
+        </label>)}
+        <textarea aria-label={`${question.question}的补充回答`} onChange={(event) => setAnswers((current) => ({ ...current, [question.id]: { ...answer, custom: event.target.value } }))} placeholder={question.options?.length ? '补充说明（可选）' : '请输入回答'} rows={question.intent?.kind === 'plan-review' ? 2 : 3} value={answer.custom ?? ''} />
+      </fieldset>
+    })}
+    <div className="timeline-question-actions"><button disabled={!valid || !enabled || state === 'sending' || state === 'sent'} onClick={() => void submit()} type="button">{state === 'sending' ? '正在提交…' : state === 'sent' ? '已提交' : '提交回答'}</button></div>
+    {!enabled && <p className="approval-feedback" role="status">本轮已停止或结束，不能再回答。</p>}
+    {state === 'error' && <p className="approval-feedback error" role="alert">{error}</p>}
+  </section>
 })
 
 /** Tool results update the summary, never toggle the reader's disclosure choice. */
@@ -129,6 +184,7 @@ function ActivityIcon({ entry }: { entry: TaskTimelineEntry }) {
   if (entry.kind === 'browser') return <Globe2 size={17} />
   if (entry.kind === 'subagent') return <Users size={17} />
   if (entry.kind === 'approval') return <ShieldCheck size={17} />
+  if (entry.kind === 'question') return <CircleHelp size={17} />
   if (entry.kind === 'error' || entry.kind === 'warning') return <CircleAlert size={17} />
   if (entry.kind === 'file') {
     if (entry.toolName === 'local_files_list' || entry.toolName === 'local_files_roots') return <FolderSearch size={17} />
