@@ -72,7 +72,7 @@ import { standardLocalDirectories } from './localFileIntent'
 import { creationPrompt, type XiaoyinCreationKind } from './creationPrompts'
 import { McpConnectorDialog } from './McpConnectorDialog'
 import { ExtensionUploadDialog } from './ExtensionUploadDialog'
-import { extensionInvocations, sameInvocationSpec, selectedInvocations } from './extensionInvocations'
+import { extensionInvocations, sameCapabilitySelection, selectedInvocations } from './extensionInvocations'
 import { persistBundledConnectors } from './connectorImport'
 import { buildRuntimeConnectorCatalog } from './connectors'
 import { loadEnabledConnectorIds, saveEnabledConnectorIds } from './connectorPreferences'
@@ -89,8 +89,7 @@ import { DesktopSettingsPage } from './DesktopSettingsPage'
 import { ConnectorsPage } from './ConnectorsPage'
 import { connectorAuthorization } from './connectorAuthorization'
 import type { SkillView } from './skills'
-import { allowedExtensionArtifacts } from './extensionPolicy'
-import { createCapabilitySnapshot } from './capabilitySnapshot'
+import { capabilitySnapshotForExecution, resolveCapabilitySnapshot } from './capabilitySnapshot'
 import { useEnterpriseBootstrap } from './useEnterpriseBootstrap'
 import { DesktopSidebar } from './DesktopSidebar'
 import { ChatPage } from './ChatPage'
@@ -132,6 +131,12 @@ const extensionNav = [
   { id: 'connectors', label: '连接器' },
   { id: 'knowledge', label: '知识库' },
 ]
+
+function sameValues(left: string[], right: string[]): boolean {
+  if (left.length !== right.length) return false
+  const expected = new Set(right)
+  return expected.size === right.length && left.every((value) => expected.has(value))
+}
 
 export default function App() {
   useApplyDesktopPreferences()
@@ -228,10 +233,6 @@ export default function App() {
   const creationDraftKeyRef = useRef('')
   const taskContextRestoreIdRef = useRef(0)
   const enabledConnectorIdsRef = useRef<string[]>([])
-  const allowedArtifacts = useMemo(
-    () => allowedExtensionArtifacts(expertKitCatalog, skills),
-    [expertKitCatalog, skills],
-  )
   const runtimeConnectors = useMemo(() => buildRuntimeConnectorCatalog(
     connectors, enabledConnectorIds, connectorSecrets,
   ), [connectorSecrets, connectors, enabledConnectorIds])
@@ -242,12 +243,18 @@ export default function App() {
     litellmBaseUrl: bootstrap.endpoints.litellm,
     knowledgeEndpoint: resolveServerEndpoint(bootstrap.endpoints.knowledge),
     scheduleEndpoint: localScheduleNamespace(),
-    connectors: runtimeConnectors,
-    allowedArtifacts,
+    capabilitySnapshot: resolveCapabilitySnapshot({
+      expertKits,
+      skills: skillViews,
+      selections: [],
+      connectors: runtimeConnectors,
+      selectedConnectorIds: runtimeConnectors.filter((connector) => connector.enabled && connector.status === 'ready').map((connector) => connector.id),
+      createdAt: 'im-channel-runtime',
+    }),
     model: activeModel,
     modelApiKey: bootstrap.modelApiKey,
     accessToken,
-  } : undefined, [accessToken, activeModel, allowedArtifacts, bootstrap, runtimeConnectors, user])
+  } : undefined, [accessToken, activeModel, bootstrap, expertKits, runtimeConnectors, skillViews, user])
   const selectCurrentLocalTaskId = (id: string) => {
     currentLocalTaskIdRef.current = id
     setCurrentLocalTaskId(id)
@@ -566,7 +573,7 @@ export default function App() {
     setTaskMonitor(streaming?.monitor ?? task.monitor)
     const draft = user ? readTaskDraft(user.userId, task.id) : undefined
     setHarnessSessionId(restoredTaskSessionId(task, draft))
-    void restoreDraftContext(draft ?? { ...emptyDraft(), prompt: joinComposerPrompt(task.invocationTokens ?? [], ''), directories: task.localDirectories ?? [], knowledgeRefs: task.capabilitySnapshot?.knowledgeBaseRefs ?? [], connectorIds: task.composerConnectorIds ?? [], model: task.model ?? activeModel, executionMode: task.executionMode ?? 'agent' })
+    void restoreDraftContext(draft ?? { ...emptyDraft(), prompt: joinComposerPrompt(task.invocationTokens ?? [], ''), directories: task.localDirectories ?? [], knowledgeRefs: task.capabilitySnapshot?.knowledgeBaseRefs ?? [], connectorIds: task.capabilitySnapshot?.connectors.map((connector) => connector.id) ?? [], model: task.model ?? activeModel, executionMode: task.executionMode ?? 'agent' })
     focusComposer()
   }
   async function openStoredTask(id: string) {
@@ -757,6 +764,7 @@ export default function App() {
     const reportInputError = (message: string) => { if (isCurrent()) setLocalFileError(message); else notify(message, 'error') }
     const contextMessages = queuedTask?.messages ?? messages
     const contextMonitor = queuedTask?.monitor ?? taskMonitorRef.current
+    const existingTask = queuedTask ?? localTasks.find((task) => task.id === contextTaskId)
     const taskModel = resolveSelectedModel(bootstrap.models, queuedTask ? queuedTask.model : activeModel)
     const taskExecutionMode = queuedTask?.executionMode ?? executionMode
     try {
@@ -765,10 +773,10 @@ export default function App() {
       if (attachmentError) { reportInputError(attachmentError); return }
       const availableInvocations = extensionInvocations(expertKits, skillViews)
       const requestedTokens = queuedTask?.invocationTokens ?? splitComposerPrompt(input).tokens
-      const requestedSpecs = queuedTask?.invocationSpecs
-      const invalidInvocation = requestedSpecs
-        ? requestedSpecs.length > 8 || requestedSpecs.some((spec) => !availableInvocations.some((item) => sameInvocationSpec(item.spec, spec)))
-        : requestedTokens.length > 8 || requestedTokens.some((token) => !availableInvocations.some((item) => item.token === token))
+      const requestedSelections = queuedTask?.capabilitySnapshot?.selections
+      const invalidInvocation = (requestedSelections
+        ? requestedSelections.length > 8 || requestedSelections.some((selection) => !availableInvocations.some((item) => sameCapabilitySelection(item.selection, selection)))
+        : requestedTokens.length > 8 || requestedTokens.some((token) => !availableInvocations.some((item) => item.token === token)))
       if (invalidInvocation) {
         reportInputError('该技能、套件或命令尚未安装或已不可用，请输入 / 重新选择。')
         return
@@ -832,25 +840,35 @@ export default function App() {
         }
       }
       const now = new Date().toISOString()
-      const taskConnectorIds = queuedTask?.composerConnectorIds ?? (queuedTask ? [] : selectedTaskConnectorIds)
+      const taskConnectorIds = queuedTask?.capabilitySnapshot?.connectors.map((connector) => connector.id) ?? selectedTaskConnectorIds
       if (taskConnectorIds.some((id) => !runtimeConnectors.some((item) => item.id === id && item.enabled && item.status === 'ready'))) { reportInputError('选中的连接器尚未就绪，请重新配置或从当前任务移除。'); return }
-      const taskConnectors = runtimeConnectors.filter((item) => item.enabled && item.status === 'ready'
-        && (!taskConnectorIds.length || taskConnectorIds.includes(item.id)))
-      const capabilitySnapshot = createCapabilitySnapshot(expertKits, skillViews, taskConnectors,
-        queuedTask ? queuedTask.capabilitySnapshot?.knowledgeBaseRefs ?? [] : selectedKnowledgeBaseRefs, now)
-      if (isCurrent()) setCurrentCapabilitySnapshot(capabilitySnapshot)
       const taskId = contextTaskId || crypto.randomUUID()
-      const existingTask = queuedTask ?? localTasks.find((task) => task.id === taskId)
       const currentInvocations = selectedInvocations(input, availableInvocations)
       const selected = queuedTask
-        ? requestedSpecs
-          ? requestedSpecs.flatMap((spec) => availableInvocations.find((item) => sameInvocationSpec(item.spec, spec)) ?? [])
-          : requestedTokens.flatMap((token) => availableInvocations.find((item) => item.token === token) ?? [])
+        ? requestedSelections
+          ? requestedSelections.flatMap((selection) => availableInvocations.find((item) => sameCapabilitySelection(item.selection, selection)) ?? [])
+          : []
         : currentInvocations
+      const retainedSnapshot = existingTask?.capabilitySnapshot
+      const choicesUnchanged = retainedSnapshot
+        && sameValues(requestedTokens, existingTask.invocationTokens ?? [])
+        && sameValues(taskConnectorIds, retainedSnapshot.requestedConnectorIds)
+        && sameValues(selectedKnowledgeBaseRefs, retainedSnapshot.requestedKnowledgeBaseRefs)
+      const capabilitySnapshot = queuedTask?.capabilitySnapshot ?? (choicesUnchanged ? retainedSnapshot : resolveCapabilitySnapshot({
+        expertKits,
+        skills: skillViews,
+        selections: selected.map((item) => item.selection),
+        connectors: runtimeConnectors,
+        selectedConnectorIds: taskConnectorIds,
+        knowledgeBaseRefs: selectedKnowledgeBaseRefs,
+        availableKnowledgeBaseRefs: knowledgeBases.map((item) => item.reference),
+        createdAt: now,
+      }))
+      if (isCurrent()) setCurrentCapabilitySnapshot(capabilitySnapshot)
       const { rootSessionId, harnessPrompt, pendingMessages, runningMonitor, execution, runningTask } = prepareTaskTurn({
         taskId, input, now, existingTask, sessionId: taskSessionId, model: taskModel, executionMode: taskExecutionMode,
         directories: taskDirectories, directoriesChanged: resetSessionForDirectoryChange,
-        connectorIds: taskConnectorIds, capabilities: capabilitySnapshot, invocations: selected,
+        capabilities: capabilitySnapshot, invocations: selected, invocationTokens: queuedTask?.invocationTokens,
         messages: contextMessages, monitor: contextMonitor, attachments: messageAttachments,
       })
       accepted?.()
@@ -882,7 +900,7 @@ export default function App() {
           operationScope: runningMonitor.operationScope!,
           taskId,
           prompt: harnessPrompt,
-          invocations: selected.map((item) => item.spec),
+          capabilitySnapshot: capabilitySnapshotForExecution(capabilitySnapshot, runtimeConnectors, connectorSecrets, enabledConnectorIds),
           executionMode: taskExecutionMode,
           employeeId: user!.userId,
           teamId: user!.teamId,
@@ -890,9 +908,6 @@ export default function App() {
           litellmBaseUrl: bootstrap.endpoints.litellm,
           knowledgeEndpoint: resolveServerEndpoint(bootstrap.endpoints.knowledge),
           scheduleEndpoint: localScheduleNamespace(),
-          connectors: taskConnectors,
-          allowedArtifacts: capabilitySnapshot.extensions,
-          knowledgeBaseRefs: capabilitySnapshot.knowledgeBaseRefs,
           model: taskModel,
           modelApiKey: bootstrap.modelApiKey,
           accessToken,
@@ -1176,20 +1191,7 @@ export default function App() {
       await removeDeveloperExpertKit(kit.id, kit.version)
       setActiveExpertKitId('')
       await refreshInstalledKits()
-      if (bootstrap && user) {
-        await startLocalIm({
-          employeeId: user.userId,
-          teamId: user.teamId,
-          litellmBaseUrl: bootstrap.endpoints.litellm,
-          knowledgeEndpoint: resolveServerEndpoint(bootstrap.endpoints.knowledge),
-          scheduleEndpoint: localScheduleNamespace(),
-          connectors: runtimeConnectors,
-          allowedArtifacts,
-          model: activeModel,
-          modelApiKey: bootstrap.modelApiKey,
-          accessToken,
-        }).catch(() => undefined)
-      }
+      if (localImContext) await startLocalIm(localImContext).catch(() => undefined)
     } catch (error) {
       setExpertKitError(error instanceof Error ? error.message : String(error))
     } finally {
@@ -1222,20 +1224,7 @@ export default function App() {
       setActiveExpertKitId('')
       setActiveSkillId('')
       await refreshInstalledKits()
-      if (bootstrap && user) {
-        await startLocalIm({
-          employeeId: user.userId,
-          teamId: user.teamId,
-          litellmBaseUrl: bootstrap.endpoints.litellm,
-          knowledgeEndpoint: resolveServerEndpoint(bootstrap.endpoints.knowledge),
-          scheduleEndpoint: localScheduleNamespace(),
-          connectors: runtimeConnectors,
-          allowedArtifacts,
-          model: activeModel,
-          modelApiKey: bootstrap.modelApiKey,
-          accessToken,
-        }).catch(() => undefined)
-      }
+      if (localImContext) await startLocalIm(localImContext).catch(() => undefined)
     } catch (error) {
       setExpertKitError(error instanceof Error ? error.message : String(error))
     } finally {
@@ -1536,15 +1525,14 @@ export default function App() {
               local={localSchedules}
               onOpenLocalTask={(id) => { void openStoredTask(id) }}
             />}
-            {page === 'im' && bootstrap && user && <ImChannelsPage
+            {page === 'im' && bootstrap && user && localImContext && <ImChannelsPage
               key={user.userId}
               selectedConversationKey={imConversationKey}
               onSelectConversation={setImConversationKey}
               accessToken={accessToken}
               employeeId={user.userId}
               teamId={user.teamId}
-              connectors={runtimeConnectors}
-              allowedArtifacts={allowedArtifacts}
+              capabilitySnapshot={localImContext.capabilitySnapshot}
               litellmBaseUrl={bootstrap.endpoints.litellm}
               knowledgeEndpoint={resolveServerEndpoint(bootstrap.endpoints.knowledge)}
               scheduleEndpoint={localScheduleNamespace()}
@@ -1619,7 +1607,6 @@ export default function App() {
           knowledgeEndpoint: resolveServerEndpoint(bootstrap.endpoints.knowledge),
           scheduleEndpoint: localScheduleNamespace(),
           connectors: runtimeConnectors,
-          allowedArtifacts,
           model: activeModel,
           modelApiKey: bootstrap.modelApiKey,
           accessToken,

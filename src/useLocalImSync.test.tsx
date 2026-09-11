@@ -23,7 +23,8 @@ vi.mock('./taskHistory', () => ({ persistTaskHistory: bridge.persistTaskHistory 
 const context: LocalImHarnessContext = {
   employeeId: 'employee-1', teamId: 'team-1', litellmBaseUrl: 'http://litellm',
   knowledgeEndpoint: 'http://knowledge', scheduleEndpoint: 'http://schedules',
-  connectors: [], allowedArtifacts: [], model: 'deepseek-v4-flash', modelApiKey: 'model-key',
+  capabilitySnapshot: { schemaVersion: 1, createdAt: 'test', selections: [], artifacts: [], implicitArtifacts: [], requestedConnectorIds: [], connectors: [], requestedKnowledgeBaseRefs: [], knowledgeBaseRefs: [] },
+  model: 'deepseek-v4-flash', modelApiKey: 'model-key',
   accessToken: 'employee-token',
 }
 

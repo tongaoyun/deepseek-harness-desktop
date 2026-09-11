@@ -25,9 +25,9 @@ async function fixture(initial: string, overrides: Partial<ChatPageProps>, check
   finally { await act(async () => root.unmount()); container.remove() }
 }
 async function click(container: HTMLElement, selector: string) { await act(async () => container.querySelector<HTMLButtonElement>(selector)!.click()) }
-function invocation(item: Omit<ExtensionInvocation, 'spec'>): ExtensionInvocation {
+function invocation(item: Omit<ExtensionInvocation, 'selection'>): ExtensionInvocation {
   const parts = item.token.split(':')
-  return { ...item, spec: item.kind === 'skill'
+  return { ...item, selection: item.kind === 'skill'
     ? { mode: 'explicit', kind: 'skill', extensionId: item.id, extensionVersion: '1.0.0', skillId: item.id }
     : { mode: 'explicit', kind: 'expert-kit', extensionId: item.id, extensionVersion: '1.0.0',
         ...(parts[2] === 'skill' ? { skillId: parts[3] } : parts[2] ? { commandId: parts[2] } : {}) } }

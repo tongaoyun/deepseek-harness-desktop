@@ -2,8 +2,8 @@ use crate::harness_connectors::desktop_connector_enabled;
 use crate::{
     expert_kits,
     harness::{
-        ConnectorDefinition, HarnessProcess, RuntimeFingerprint, credential_digest,
-        runtime_connectors,
+        CapabilitySnapshot, HarnessProcess, RuntimeFingerprint, credential_digest,
+        runtime_connectors, validate_capability_snapshot,
     },
     local_files::RuntimeLocalFileRoot,
     memory,
@@ -55,10 +55,7 @@ pub struct HarnessContext {
     knowledge_endpoint: String,
     #[serde(default)]
     schedule_endpoint: String,
-    #[serde(default)]
-    connectors: Vec<ConnectorDefinition>,
-    #[serde(default)]
-    allowed_artifacts: Vec<expert_kits::AllowedExtensionArtifact>,
+    capability_snapshot: CapabilitySnapshot,
     model: String,
     model_api_key: String,
     access_token: String,
@@ -377,8 +374,15 @@ impl LocalImManager {
         client_secret: String,
         context: HarnessContext,
     ) -> Result<LocalImStatus, String> {
-        let profile =
-            expert_kits::harness_profile(app, &[], &[], "", &context.allowed_artifacts, "agent")?;
+        let profile = expert_kits::harness_profile(
+            app,
+            &context.capability_snapshot.selections,
+            &context.capability_snapshot.knowledge_base_refs,
+            "",
+            &context.capability_snapshot.artifacts,
+            &context.capability_snapshot.implicit_artifacts,
+            "agent",
+        )?;
         let im_workspace = app
             .path()
             .app_data_dir()
@@ -386,8 +390,10 @@ impl LocalImManager {
             .join("im-workspace");
         fs::create_dir_all(&im_workspace)
             .map_err(|error| format!("无法创建 IM 工作目录：{error}"))?;
-        let allow_browser = desktop_connector_enabled(&context.connectors, "desktop-browser");
-        let connectors = runtime_connectors(&context.connectors, &profile, true)?;
+        let allow_browser =
+            desktop_connector_enabled(&context.capability_snapshot.connectors, "desktop-browser");
+        let connectors =
+            runtime_connectors(&context.capability_snapshot.connectors, &profile, true)?;
         let fingerprint = RuntimeFingerprint {
             skill_directories: profile.skill_directories,
             connectors,
@@ -791,7 +797,7 @@ fn validate_harness_context(value: &HarnessContext) -> Result<(), String> {
     validate_http_url("LiteLLM", &value.litellm_base_url)?;
     validate_http_url("知识库", &value.knowledge_endpoint)?;
     validate_http_url("定时任务", &value.schedule_endpoint)?;
-    expert_kits::validate_allowed_artifacts(&value.allowed_artifacts)?;
+    validate_capability_snapshot(&value.capability_snapshot)?;
     if value.model.trim().is_empty() || value.model.len() > 200 {
         return Err("模型名称无效".to_string());
     }

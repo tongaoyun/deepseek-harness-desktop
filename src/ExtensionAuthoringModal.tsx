@@ -128,7 +128,7 @@ export function ExtensionAuthoringModal({
   const [previewRunning, setPreviewRunning] = useState(false)
   const [error, setError] = useState('')
   const [diagnostic, setDiagnostic] = useState<ConnectorDiagnosticResult>()
-  const [created, setCreated] = useState<{ manifest: ExpertKitManifest; bytes: number[] }>()
+  const [created, setCreated] = useState<{ manifest: ExpertKitManifest; bytes: number[]; sha256: string }>()
   const [savedConnector, setSavedConnector] = useState<ConnectorCatalogEntry>()
   const [savedFingerprint, setSavedFingerprint] = useState('')
   const [validationEvidence, setValidationEvidence] = useState<{ fingerprint: string; report: ExtensionValidationReport }>()
@@ -277,7 +277,7 @@ export function ExtensionAuthoringModal({
         }) : []
         const value = await createDeveloperExtension(manifest, form.instructions, skillSources, baseManifest ? { id: baseManifest.id, version: baseManifest.version } : undefined)
         setBaseManifest(manifest)
-        setCreated({ manifest, bytes: value.bytes })
+        setCreated({ manifest, bytes: value.bytes, sha256: value.installed.packageSha256 ?? '' })
         setSavedFingerprint(draftFingerprint)
         setEditing({ kind, id: manifest.id, version: manifest.version })
         await onChanged({ type: 'extension-change' })
@@ -487,6 +487,7 @@ export function ExtensionAuthoringModal({
             kind: created.manifest.kind,
             id: created.manifest.id,
             version: created.manifest.version,
+            sha256: created.sha256,
             knowledgeBaseRefs: created.manifest.knowledgeBaseRefs ?? [],
             allowLocalFiles: true,
           } : undefined}

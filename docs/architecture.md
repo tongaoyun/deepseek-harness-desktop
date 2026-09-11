@@ -2,6 +2,20 @@
 
 小胤采用一个桌面任务入口。专家套件、Skills、定时计划与钉钉会话统一使用本机 Harness 执行。
 
+产品与运行时只有一个明确边界：专家套件、技能、连接器、知识库、定时任务和 IM 频道是小胤的产品事实源；Session、Agent Loop、上下文、工具、权限、工作流和执行事件由 DeepSeek Harness 负责。产品能力不能直接拼接 Prompt 或注册第二套工具，而是先由 `Xiaoyin Capability Resolver` 编译为 `CapabilitySnapshot`。
+
+```text
+用户选择 / 频道配置 / 定时任务
+  -> Xiaoyin Capability Resolver
+  -> CapabilitySnapshot
+     +-- selections + exact artifacts
+     +-- implicitArtifacts (仅可发现元数据，按需加载正文)
+     +-- requested connector / knowledge choices
+     +-- resolved connectors / knowledge scope
+  -> Tauri 校验版本、摘要、启停和依赖
+  -> DeepSeek Harness Session
+```
+
 ## 组件
 
 ```text
@@ -29,7 +43,7 @@ xiaoyin-server
 | `src/useEnterpriseSession.ts` | 登录检查、到期重查、网络恢复与退出 |
 | `src/harnessSession.ts`、`src/taskTurn.ts` | 会话选择、恢复上下文、新轮次准备 |
 | `src/executionRuntime.ts` | `Thread -> Turn -> Item -> Event` 状态机、事件去重、生命周期变更与 UI 投影 |
-| `src/capabilitySnapshot.ts` | 每轮能力快照与语义变化判断 |
+| `src/capabilitySnapshot.ts` | 产品能力解析、依赖闭包、凭据脱敏、不可变能力快照与语义变化判断 |
 | `src-tauri/src/` | 系统权限、ERP Cookie、凭据、持久化与进程控制 |
 | `harness-host/src/runtime.ts` | 模型会话和工具运行时 |
 | `harness-host/src/task-instructions.ts` | 澄清、执行、验证和交付约定 |
@@ -71,7 +85,9 @@ xiaoyin-server
 
 本地工具检查目录授权、路径穿越和符号链接。破坏性操作经过原生确认。设备报告和审计不携带隐藏推理、业务原文、工具参数、凭据或绝对路径。
 
-能力快照固定当前轮次使用的扩展、工具和知识范围，下一轮重新读取启停及配置。未声明知识范围时可按员工权限检索；显式空范围表示不检索。手动指定的知识引用加入本轮范围，仍受员工权限约束。
+能力快照固定任务选择的套件、技能、制品版本、连接器版本和知识范围。选择不变时后续轮次复用同一快照；员工主动调整选择时生成新快照并重建 Harness Session。制品停用、卸载、摘要不符，连接器被员工禁用或依赖不再有权限时，即使旧快照仍有记录也不能继续执行。
+
+显式选择的套件和技能记录在 `selections + artifacts`。允许自动调用但未被显式选择的能力单独记录在 `implicitArtifacts`，只向 Harness 提供受预算限制的技能目录，正文仍由 Harness 按需加载；自动能力不会扩大连接器、知识库或写权限。连接器凭据不进入持久化快照，启动执行时从系统凭据存储注入。
 
 ## 平台约束
 

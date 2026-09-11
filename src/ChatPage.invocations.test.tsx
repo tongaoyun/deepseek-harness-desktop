@@ -9,7 +9,7 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 
 function kitInvocation(token: string, name: string, commandId?: string): ExtensionInvocation {
   return { token, kind: 'expert-kit', id: 'reports', name, description: name,
-    spec: { mode: 'explicit', kind: 'expert-kit', extensionId: 'reports', extensionVersion: '1.0.0', ...(commandId ? { commandId } : {}) } }
+    selection: { mode: 'explicit', kind: 'expert-kit', extensionId: 'reports', extensionVersion: '1.0.0', ...(commandId ? { commandId } : {}) } }
 }
 
 it('resizes the composer, selects a command with the keyboard, and then submits normally', async () => {

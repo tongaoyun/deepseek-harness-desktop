@@ -174,17 +174,11 @@ pub struct HarnessRunRequest {
     employee_id: String,
     team_id: String,
     session_id: Option<String>,
-    invocations: Vec<expert_kits::InvocationSpec>,
-    #[serde(default)]
-    knowledge_base_refs: Vec<String>,
-    #[serde(default)]
-    allowed_artifacts: Vec<expert_kits::AllowedExtensionArtifact>,
+    capability_snapshot: CapabilitySnapshot,
     litellm_base_url: String,
     knowledge_endpoint: String,
     #[serde(default)]
     schedule_endpoint: String,
-    #[serde(default)]
-    connectors: Vec<ConnectorDefinition>,
     model: String,
     model_api_key: String,
     access_token: String,
@@ -192,6 +186,22 @@ pub struct HarnessRunRequest {
     local_file_root_ids: Vec<String>,
     #[serde(default)]
     attachments: Vec<LocalTaskAttachment>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct CapabilitySnapshot {
+    pub(crate) schema_version: u8,
+    pub(crate) created_at: String,
+    pub(crate) selections: Vec<expert_kits::CapabilitySelection>,
+    pub(crate) artifacts: Vec<expert_kits::AllowedExtensionArtifact>,
+    pub(crate) implicit_artifacts: Vec<expert_kits::AllowedExtensionArtifact>,
+    pub(crate) requested_connector_ids: Vec<String>,
+    #[serde(default)]
+    pub(crate) connectors: Vec<ConnectorDefinition>,
+    pub(crate) requested_knowledge_base_refs: Vec<String>,
+    #[serde(default)]
+    pub(crate) knowledge_base_refs: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -359,15 +369,17 @@ pub async fn run_harness(
     };
     let profile = expert_kits::harness_profile(
         &app,
-        &request.invocations,
-        &request.knowledge_base_refs,
+        &request.capability_snapshot.selections,
+        &request.capability_snapshot.knowledge_base_refs,
         &user_prompt,
-        &request.allowed_artifacts,
+        &request.capability_snapshot.artifacts,
+        &request.capability_snapshot.implicit_artifacts,
         &request.execution_mode,
     )?;
     let local_file_roots = local_files.resolve(&request.local_file_root_ids)?;
-    let allow_browser = desktop_connector_enabled(&request.connectors, "desktop-browser");
-    let connectors = runtime_connectors(&request.connectors, &profile, true)?;
+    let allow_browser =
+        desktop_connector_enabled(&request.capability_snapshot.connectors, "desktop-browser");
+    let connectors = runtime_connectors(&request.capability_snapshot.connectors, &profile, true)?;
     let fingerprint = RuntimeFingerprint {
         skill_directories: profile.skill_directories,
         connectors,
@@ -1872,8 +1884,7 @@ fn validate_run_request(request: &HarnessRunRequest) -> Result<(), String> {
     validate_http_url("LiteLLM", &request.litellm_base_url)?;
     validate_http_url("知识库", &request.knowledge_endpoint)?;
     validate_http_url("定时任务", &request.schedule_endpoint)?;
-    validate_connector_catalog(&request.connectors)?;
-    expert_kits::validate_allowed_artifacts(&request.allowed_artifacts)?;
+    validate_capability_snapshot(&request.capability_snapshot)?;
     if request.attachments.len() > 16 {
         return Err("单条消息最多添加 16 个附件".to_string());
     }
@@ -1891,6 +1902,44 @@ fn validate_run_request(request: &HarnessRunRequest) -> Result<(), String> {
         return Err("ERP 访问凭据无效".to_string());
     }
     Ok(())
+}
+
+pub(crate) fn validate_capability_snapshot(snapshot: &CapabilitySnapshot) -> Result<(), String> {
+    if snapshot.schema_version != 1 {
+        return Err("能力快照协议版本无效".to_string());
+    }
+    if snapshot.created_at.trim().is_empty()
+        || snapshot.created_at.len() > 64
+        || snapshot.created_at.chars().any(char::is_control)
+    {
+        return Err("能力快照创建时间无效".to_string());
+    }
+    if snapshot.selections.len() != snapshot.artifacts.len() {
+        return Err("能力快照中的选择项与制品数量不一致".to_string());
+    }
+    if snapshot.requested_connector_ids.len() > 64
+        || snapshot.requested_knowledge_base_refs.len() > 32
+    {
+        return Err("能力快照的产品选择范围过大".to_string());
+    }
+    if snapshot
+        .requested_connector_ids
+        .iter()
+        .any(|id| id.trim().is_empty() || id.len() > 200 || id.chars().any(char::is_control))
+        || snapshot
+            .requested_knowledge_base_refs
+            .iter()
+            .any(|reference| {
+                reference.trim().is_empty()
+                    || reference.len() > 512
+                    || reference.chars().any(char::is_control)
+            })
+    {
+        return Err("能力快照的产品选择无效".to_string());
+    }
+    validate_connector_catalog(&snapshot.connectors)?;
+    expert_kits::validate_allowed_artifacts(&snapshot.artifacts)?;
+    expert_kits::validate_allowed_artifacts(&snapshot.implicit_artifacts)
 }
 
 fn prepare_attachments(
@@ -2125,28 +2174,35 @@ mod tests {
             employee_id: "employee-1".to_string(),
             team_id: "crossborder".to_string(),
             session_id: None,
-            invocations: Vec::new(),
-            knowledge_base_refs: Vec::new(),
-            allowed_artifacts: Vec::new(),
+            capability_snapshot: CapabilitySnapshot {
+                schema_version: 1,
+                created_at: "2026-09-11T00:00:00Z".to_string(),
+                selections: Vec::new(),
+                artifacts: Vec::new(),
+                implicit_artifacts: Vec::new(),
+                requested_connector_ids: Vec::new(),
+                knowledge_base_refs: Vec::new(),
+                requested_knowledge_base_refs: Vec::new(),
+                connectors: vec![ConnectorDefinition {
+                    timeout_seconds: None,
+                    id: "erp-mcp".to_string(),
+                    name: "ERP".to_string(),
+                    status: "ready".to_string(),
+                    version: "1".to_string(),
+                    transport: "streamable-http".to_string(),
+                    url: "http://erp.internal/mcp".to_string(),
+                    auth_mode: "employee-bearer".to_string(),
+                    tool_names: vec!["sales_summary".to_string()],
+                    command: String::new(),
+                    arguments: Vec::new(),
+                    environment: std::collections::HashMap::new(),
+                    headers: std::collections::HashMap::new(),
+                    enabled: true,
+                }],
+            },
             litellm_base_url: "http://litellm.internal/v1".to_string(),
             knowledge_endpoint: "http://xiaoyin-server.internal/api/v1/knowledge-bases".to_string(),
             schedule_endpoint: "http://xiaoyin-server.internal/api/v1/schedules".to_string(),
-            connectors: vec![ConnectorDefinition {
-                timeout_seconds: None,
-                id: "erp-mcp".to_string(),
-                name: "ERP".to_string(),
-                status: "ready".to_string(),
-                version: "1".to_string(),
-                transport: "streamable-http".to_string(),
-                url: "http://erp.internal/mcp".to_string(),
-                auth_mode: "employee-bearer".to_string(),
-                tool_names: vec!["sales_summary".to_string()],
-                command: String::new(),
-                arguments: Vec::new(),
-                environment: std::collections::HashMap::new(),
-                headers: std::collections::HashMap::new(),
-                enabled: true,
-            }],
             model: "deepseek-chat".to_string(),
             model_api_key: "model-token".to_string(),
             access_token: "erp-token".to_string(),

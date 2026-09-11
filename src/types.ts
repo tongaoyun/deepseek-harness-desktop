@@ -294,11 +294,7 @@ export interface LocalTaskRun {
   updatedAt: string
   archivedAt?: string
   sessionId?: string
-  expertKitId?: string
-  skillId?: string
   invocationTokens?: string[]
-  invocationSpecs?: InvocationSpec[]
-  composerConnectorIds?: string[]
   model?: string
   executionMode?: 'agent' | 'plan'
   localDirectories?: Array<{ id: string; name: string; path?: string }>
@@ -309,7 +305,7 @@ export interface LocalTaskRun {
   processedImEventIds?: string[]
 }
 
-export interface InvocationSpec {
+export interface CapabilitySelection {
   mode: 'explicit'
   kind: 'expert-kit' | 'skill'
   extensionId: string
@@ -319,9 +315,14 @@ export interface InvocationSpec {
 }
 
 export interface CapabilitySnapshot {
+  schemaVersion: 1
   createdAt: string
-  extensions: AllowedExtensionArtifact[]
+  selections: CapabilitySelection[]
+  artifacts: AllowedExtensionArtifact[]
+  implicitArtifacts: AllowedExtensionArtifact[]
+  requestedConnectorIds: string[]
   connectors: ConnectorRuntimeDefinition[]
+  requestedKnowledgeBaseRefs: string[]
   knowledgeBaseRefs: string[]
 }
 

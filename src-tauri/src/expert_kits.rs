@@ -74,7 +74,7 @@ pub struct ExpertKitInstallRequest {
     url: String,
 }
 
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AllowedExtensionArtifact {
     kind: String,
@@ -1103,7 +1103,7 @@ enum InvocationMode {
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct InvocationSpec {
+pub struct CapabilitySelection {
     mode: InvocationMode,
     kind: String,
     extension_id: String,
@@ -1115,41 +1115,59 @@ pub struct InvocationSpec {
 }
 
 struct ResolvedInvocation<'a> {
-    spec: &'a InvocationSpec,
+    spec: &'a CapabilitySelection,
     artifact: &'a InstalledExpertKit,
 }
 
 pub fn harness_profile(
     app: &tauri::AppHandle,
-    invocations: &[InvocationSpec],
+    selections: &[CapabilitySelection],
     requested_knowledge_base_refs: &[String],
     user_prompt: &str,
     allowed_artifacts: &[AllowedExtensionArtifact],
+    implicit_artifacts: &[AllowedExtensionArtifact],
     execution_mode: &str,
 ) -> Result<ExpertKitHarnessProfile, String> {
     if !matches!(execution_mode, "agent" | "plan") {
         return Err("执行模式无效".to_string());
     }
-    if invocations.len() > 8 {
+    if selections.len() > 8 {
         return Err("每个任务最多选择 8 项技能或专家套件".into());
     }
     validate_allowed_artifacts(allowed_artifacts)?;
+    validate_allowed_artifacts(implicit_artifacts)?;
+    let mut executable_artifacts = allowed_artifacts.to_vec();
+    executable_artifacts.extend_from_slice(implicit_artifacts);
     let installed = inventory::scan_installed_extensions(app)?
         .installed
         .into_iter()
-        .filter(|artifact| artifact_is_executable(artifact, allowed_artifacts))
+        .filter(|artifact| artifact_is_executable(artifact, &executable_artifacts))
         .collect::<Vec<_>>();
-    let mut newest = std::collections::BTreeMap::<String, InstalledExpertKit>::new();
+    let mut installed_by_version = std::collections::BTreeMap::<String, InstalledExpertKit>::new();
     for artifact in installed {
-        let coordinate = format!("{}:{}", artifact.manifest.kind, artifact.manifest.id);
-        newest.entry(coordinate).or_insert(artifact);
+        let coordinate = artifact_version_coordinate(&artifact);
+        installed_by_version.insert(coordinate, artifact);
     }
-    let resolved = resolve_invocations(invocations, &newest)?;
+    let resolved = resolve_selections(selections, &installed_by_version)?;
     let selected = resolved
         .iter()
         .map(|invocation| invocation.artifact)
         .collect::<Vec<_>>();
-    for artifact in newest.values() {
+    let selected_coordinates = selected
+        .iter()
+        .map(|artifact| artifact_version_coordinate(artifact))
+        .collect::<HashSet<_>>();
+    let implicit = implicit_artifacts
+        .iter()
+        .filter_map(|allowed| {
+            installed_by_version.get(&format!(
+                "{}:{}@{}",
+                allowed.kind, allowed.id, allowed.version
+            ))
+        })
+        .filter(|artifact| !selected_coordinates.contains(&artifact_version_coordinate(artifact)))
+        .collect::<Vec<_>>();
+    for artifact in selected.iter().copied().chain(implicit.iter().copied()) {
         prepare_skill_runtime_files(artifact)?;
     }
     validate_selected_skill_conflicts(&resolved)?;
@@ -1157,22 +1175,7 @@ pub fn harness_profile(
     for invocation in &resolved {
         skill_catalog.append_invocation(invocation)?;
     }
-    let explicit_coordinates = resolved
-        .iter()
-        .map(|invocation| artifact_coordinate(invocation.artifact))
-        .collect::<HashSet<_>>();
-    for artifact in newest.values().filter(|artifact| {
-        artifact.manifest.kind == "skill"
-            && artifact.manifest.allow_implicit_invocation
-            && !explicit_coordinates.contains(&artifact_coordinate(artifact))
-    }) {
-        skill_catalog.append_artifact(artifact, false)?;
-    }
-    for artifact in newest.values().filter(|artifact| {
-        artifact.manifest.kind == "expert-kit"
-            && artifact.manifest.allow_implicit_invocation
-            && !explicit_coordinates.contains(&artifact_coordinate(artifact))
-    }) {
+    for artifact in implicit {
         skill_catalog.append_artifact(artifact, false)?;
     }
     let connector_tools = selected
@@ -1299,12 +1302,20 @@ fn artifact_coordinate(artifact: &InstalledExpertKit) -> String {
     format!("{}:{}", artifact.manifest.kind, artifact.manifest.id)
 }
 
-fn resolve_invocations<'a>(
-    invocations: &'a [InvocationSpec],
+fn artifact_version_coordinate(artifact: &InstalledExpertKit) -> String {
+    format!(
+        "{}@{}",
+        artifact_coordinate(artifact),
+        artifact.manifest.version
+    )
+}
+
+fn resolve_selections<'a>(
+    selections: &'a [CapabilitySelection],
     installed: &'a std::collections::BTreeMap<String, InstalledExpertKit>,
 ) -> Result<Vec<ResolvedInvocation<'a>>, String> {
     let mut coordinates = HashSet::new();
-    invocations
+    selections
         .iter()
         .map(|spec| {
             validate_artifact_kind(&spec.kind)?;
@@ -1315,15 +1326,17 @@ fn resolve_invocations<'a>(
             if !coordinates.insert(coordinate.clone()) {
                 return Err("任务不能重复选择同一技能或专家套件".into());
             }
-            let artifact = installed
-                .get(&coordinate)
-                .ok_or_else(|| format!("扩展已停用、下架或尚未安装：{coordinate}"))?;
-            if artifact.manifest.version != spec.extension_version {
-                return Err(format!(
-                    "扩展版本已变化，请重新选择：{}@{}",
-                    spec.extension_id, spec.extension_version
-                ));
-            }
+            let version_coordinate = format!("{coordinate}@{}", spec.extension_version);
+            let artifact = if let Some(artifact) = installed.get(&version_coordinate) {
+                artifact
+            } else if installed
+                .keys()
+                .any(|key| key.starts_with(&format!("{coordinate}@")))
+            {
+                return Err(format!("扩展版本已变化，请重新选择：{version_coordinate}"));
+            } else {
+                return Err(format!("扩展已停用、下架或尚未安装：{version_coordinate}"));
+            };
             validate_invocation_target(spec, artifact)?;
             Ok(ResolvedInvocation { spec, artifact })
         })
@@ -1331,7 +1344,7 @@ fn resolve_invocations<'a>(
 }
 
 fn validate_invocation_target(
-    spec: &InvocationSpec,
+    spec: &CapabilitySelection,
     artifact: &InstalledExpertKit,
 ) -> Result<(), String> {
     if artifact.manifest.kind == "skill" {
@@ -1528,9 +1541,6 @@ fn artifact_is_executable(
     if !artifact.enabled {
         return false;
     }
-    if artifact.source == InstallSource::Developer {
-        return true;
-    }
     let Some(allowed) = allowed_artifacts.iter().find(|allowed| {
         allowed.kind == artifact.manifest.kind
             && allowed.id == artifact.manifest.id
@@ -1539,7 +1549,7 @@ fn artifact_is_executable(
         return false;
     };
     load_install_record(Path::new(&artifact.install_path)).is_ok_and(|record| {
-        record.source == InstallSource::Catalog && record.package_sha256 == allowed.sha256
+        record.source == artifact.source && record.package_sha256 == allowed.sha256
     })
 }
 
@@ -1564,7 +1574,7 @@ impl SkillDirectorySelection {
 
     fn append_invocation(&mut self, invocation: &ResolvedInvocation<'_>) -> Result<(), String> {
         for skill in invocation_skills(invocation) {
-            self.append_skill(invocation.artifact, skill, true)?;
+            self.append_skill(invocation.artifact, skill)?;
         }
         Ok(())
     }
@@ -1575,7 +1585,28 @@ impl SkillDirectorySelection {
         explicit: bool,
     ) -> Result<(), String> {
         for skill in &artifact.manifest.skills {
-            self.append_skill(artifact, skill, explicit)?;
+            if !explicit {
+                let directory = Path::new(&artifact.install_path)
+                    .join(&skill.path)
+                    .parent()
+                    .ok_or_else(|| format!("技能路径无效：{}", skill.path))?
+                    .to_string_lossy()
+                    .into_owned();
+                let cost = skill.id.chars().count()
+                    + artifact
+                        .manifest
+                        .summary
+                        .chars()
+                        .count()
+                        .min(SKILL_DESCRIPTION_MAX_CHARS)
+                    + directory.chars().count()
+                    + 32;
+                if self.used.saturating_add(cost) > self.limit {
+                    self.omitted += 1;
+                    continue;
+                }
+            }
+            self.append_skill(artifact, skill)?;
         }
         Ok(())
     }
@@ -1584,7 +1615,6 @@ impl SkillDirectorySelection {
         &mut self,
         artifact: &InstalledExpertKit,
         skill: &FileReference,
-        explicit: bool,
     ) -> Result<(), String> {
         if self.ids.contains(&skill.id) {
             return Ok(());
@@ -1603,10 +1633,6 @@ impl SkillDirectorySelection {
             .collect::<String>();
         let cost =
             skill.id.chars().count() + summary.chars().count() + directory.chars().count() + 32;
-        if !explicit && self.used.saturating_add(cost) > self.limit {
-            self.omitted += 1;
-            return Ok(());
-        }
         self.used = self.used.saturating_add(cost);
         self.ids.insert(skill.id.clone());
         if !self.directories.contains(&directory) {
@@ -1682,7 +1708,7 @@ fn normalize_skill_document(content: &str, id: &str, fallback_description: &str)
 
 fn load_command_context(
     kit: &InstalledExpertKit,
-    spec: &InvocationSpec,
+    spec: &CapabilitySelection,
     arguments: &str,
 ) -> Result<String, String> {
     let root = Path::new(&kit.install_path);
@@ -1865,8 +1891,8 @@ mod tests {
         extension_id: &str,
         skill_id: Option<&str>,
         command_id: Option<&str>,
-    ) -> InvocationSpec {
-        InvocationSpec {
+    ) -> CapabilitySelection {
+        CapabilitySelection {
             mode: InvocationMode::Explicit,
             kind: kind.to_string(),
             extension_id: extension_id.to_string(),
@@ -2050,16 +2076,16 @@ mod tests {
             Path::new("reports/1.0.0"),
             InstallSource::Developer,
         );
-        let installed = [("expert-kit:reports".to_string(), kit)]
+        let installed = [("expert-kit:reports@1.0.0".to_string(), kit)]
             .into_iter()
             .collect();
 
-        let wrong_version = InvocationSpec {
+        let wrong_version = CapabilitySelection {
             extension_version: "2.0.0".to_string(),
             ..invocation("expert-kit", "reports", Some("report"), Some("weekly"))
         };
         assert!(
-            resolve_invocations(&[wrong_version], &installed)
+            resolve_selections(&[wrong_version], &installed)
                 .err()
                 .unwrap()
                 .contains("版本已变化")
@@ -2067,7 +2093,7 @@ mod tests {
 
         let wrong_binding = invocation("expert-kit", "reports", None, Some("weekly"));
         assert!(
-            validate_invocation_target(&wrong_binding, &installed["expert-kit:reports"])
+            validate_invocation_target(&wrong_binding, &installed["expert-kit:reports@1.0.0"])
                 .unwrap_err()
                 .contains("起始技能")
         );

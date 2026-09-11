@@ -7,7 +7,7 @@ import {
   listenHarnessNotifications,
   runHarness,
 } from './harness'
-import type { AllowedExtensionArtifact, ConnectorRuntimeDefinition, TaskMonitorState } from './types'
+import type { ConnectorRuntimeDefinition, TaskMonitorState } from './types'
 import type { ExtensionValidationReport } from './extensionSubmissions'
 import { parseTaskOutcome, taskOutcomeLabel, unverifiedTaskOutcome } from './taskOutcome'
 import { TaskOutcomeDetails } from './TaskOutcomeDetails'
@@ -19,7 +19,6 @@ export interface ExtensionPreviewConfig {
   knowledgeEndpoint: string
   scheduleEndpoint: string
   connectors: ConnectorRuntimeDefinition[]
-  allowedArtifacts: AllowedExtensionArtifact[]
   model: string
   modelApiKey: string
   accessToken: string
@@ -30,6 +29,7 @@ interface PreviewTarget {
   kind: 'expert-kit' | 'skill'
   id: string
   version: string
+  sha256: string
   knowledgeBaseRefs: string[]
   allowLocalFiles: boolean
 }
@@ -119,16 +119,23 @@ export function ExtensionPreviewPanel({ target, config, unavailableReason, onRun
         executionMode: 'agent',
         employeeId: config.employeeId,
         teamId: config.teamId,
-        invocations: [{
-          mode: 'explicit', kind: target.kind, extensionId: target.id, extensionVersion: target.version,
-          ...(target.kind === 'skill' ? { skillId: target.id } : {}),
-        }],
-        knowledgeBaseRefs: target.knowledgeBaseRefs,
-        allowedArtifacts: config.allowedArtifacts,
+        capabilitySnapshot: {
+          schemaVersion: 1,
+          createdAt: startedAt,
+          selections: [{
+            mode: 'explicit', kind: target.kind, extensionId: target.id, extensionVersion: target.version,
+            ...(target.kind === 'skill' ? { skillId: target.id } : {}),
+          }],
+          artifacts: [{ kind: target.kind, id: target.id, version: target.version, sha256: target.sha256 }],
+          implicitArtifacts: [],
+          requestedConnectorIds: config.connectors.map((connector) => connector.id),
+          knowledgeBaseRefs: target.knowledgeBaseRefs,
+          requestedKnowledgeBaseRefs: target.knowledgeBaseRefs,
+          connectors: config.connectors,
+        },
         litellmBaseUrl: config.litellmBaseUrl,
         knowledgeEndpoint: config.knowledgeEndpoint,
         scheduleEndpoint: config.scheduleEndpoint,
-        connectors: config.connectors,
         model: config.model,
         modelApiKey: config.modelApiKey,
         accessToken: config.accessToken,

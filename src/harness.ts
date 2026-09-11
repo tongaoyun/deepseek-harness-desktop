@@ -2,7 +2,7 @@ import { invoke, isTauri } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { taskInterruption } from './taskInterruption'
 import type {
-  AllowedExtensionArtifact,
+  CapabilitySnapshot,
   ConnectorDiagnosticResult,
   ConnectorRuntimeDefinition,
   KnowledgeSearchHit,
@@ -16,7 +16,6 @@ import type {
   TaskQuestionItem,
   TaskTimelineEntry,
   TaskVisualArtifact,
-  InvocationSpec,
 } from './types'
 import type { StandardLocalDirectory } from './localFileIntent'
 
@@ -28,13 +27,10 @@ export interface HarnessRunInput {
   employeeId: string
   teamId: string
   sessionId?: string
-  invocations: InvocationSpec[]
-  knowledgeBaseRefs: string[]
-  allowedArtifacts: AllowedExtensionArtifact[]
+  capabilitySnapshot: CapabilitySnapshot
   litellmBaseUrl: string
   knowledgeEndpoint: string
   scheduleEndpoint: string
-  connectors: ConnectorRuntimeDefinition[]
   model: string
   modelApiKey: string
   accessToken: string

@@ -550,7 +550,7 @@ it('restores independent new-task and conversation drafts without clearing eithe
 it.each(['', '继续检查'])('resumes the persisted session after remount with an unchanged workspace draft: %s', async (prompt) => {
   const directories = [{ id: 'work', name: '工作', path: '/work' }]
   const task: LocalTaskRun = { ...olderTask(), sessionId: 'persisted-session', model: 'original-model', localDirectories: directories,
-    capabilitySnapshot: { createdAt: '', extensions: [], connectors: [], knowledgeBaseRefs: [] } }
+    capabilitySnapshot: { schemaVersion: 1, createdAt: 'test', selections: [], artifacts: [], implicitArtifacts: [], requestedConnectorIds: [], connectors: [], requestedKnowledgeBaseRefs: [], knowledgeBaseRefs: [] } }
   vi.spyOn(harness, 'restoreLocalDirectories').mockResolvedValue(directories)
   saveTaskDraft('queue-test', task.id, { prompt, attachments: [], directories, knowledgeRefs: [], connectorIds: [], model: 'original-model', updatedAt: 1 })
   vi.mocked(runHarnessWithRecovery).mockResolvedValue({ finalResponse: '复查完成', sessionId: 'persisted-session', outcome: completedOutcome })
@@ -578,14 +578,14 @@ it('resumes an installed kit after native persistence reorders the capability sn
     await submit('/kit:reports 只读复查')
     expect(vi.mocked(runHarnessWithRecovery).mock.calls.at(-1)![0]).toMatchObject({
       sessionId: stored.sessionId, prompt: '只读复查',
-      invocations: [{ mode: 'explicit', kind: 'expert-kit', extensionId: 'reports', extensionVersion: '1.0.0' }],
+      capabilitySnapshot: { selections: [{ mode: 'explicit', kind: 'expert-kit', extensionId: 'reports', extensionVersion: '1.0.0' }] },
     })
   })
 })
 
 it('starts a new session when a restored draft changes the workspace', async () => {
   const task: LocalTaskRun = { ...olderTask(), sessionId: 'persisted-session', model: 'original-model', localDirectories: [{ id: 'old', name: '旧目录', path: '/old' }],
-    capabilitySnapshot: { createdAt: '', extensions: [], connectors: [], knowledgeBaseRefs: [] } }
+    capabilitySnapshot: { schemaVersion: 1, createdAt: 'test', selections: [], artifacts: [], implicitArtifacts: [], requestedConnectorIds: [], connectors: [], requestedKnowledgeBaseRefs: [], knowledgeBaseRefs: [] } }
   const directories = [{ id: 'new', name: '新目录', path: '/new' }]
   vi.spyOn(harness, 'restoreLocalDirectories').mockResolvedValue(directories)
   saveTaskDraft('queue-test', task.id, { prompt: '继续', attachments: [], directories, knowledgeRefs: [], connectorIds: [], model: 'original-model', updatedAt: 1 })
@@ -599,17 +599,17 @@ it('starts a new session when a restored draft changes the workspace', async () 
   })
 })
 
-it('sends only task-selected connectors and returns to automatic tools after removing the selection', async () => {
+it('sends only task-selected connectors and removes them from the capability snapshot when deselected', async () => {
   fixtures.catalog.connectors = ['crm', 'drive'].map((id) => ({ id, name: id, summary: '', category: 'other', kind: 'mcp', scope: 'EMPLOYEE', status: 'ready', managed: false, version: '1', transport: 'streamable-http', url: `https://${id}.example/mcp`, authMode: 'none', toolNames: [`${id}_read`] })) as ConnectorCatalogEntry[]
   localStorage.setItem('xiaoyin.enabled-connectors.queue-test', JSON.stringify(['crm', 'drive']))
   vi.mocked(runHarnessWithRecovery).mockResolvedValue({ finalResponse: '完成', sessionId: 'test-session' })
   await fixture(async () => {
     await act(async () => { fixtures.chat!.onToggleTaskConnector!('crm') })
     await submit('分析客户情况')
-    expect(vi.mocked(runHarnessWithRecovery).mock.calls[0][0].connectors.map((item) => item.id)).toEqual(['crm'])
+    expect(vi.mocked(runHarnessWithRecovery).mock.calls[0][0].capabilitySnapshot.connectors.map((item) => item.id)).toEqual(['crm'])
     await act(async () => { fixtures.chat!.onToggleTaskConnector!('crm') })
     await submit('继续分析')
-    expect(vi.mocked(runHarnessWithRecovery).mock.calls[1][0].connectors.map((item) => item.id)).toEqual(['crm', 'drive'])
+    expect(vi.mocked(runHarnessWithRecovery).mock.calls[1][0].capabilitySnapshot.connectors).toEqual([])
     await act(async () => { fixtures.chat!.onToggleTaskConnector!('unavailable') })
     await submit('继续')
     expect(runHarnessWithRecovery).toHaveBeenCalledTimes(2)
@@ -622,12 +622,12 @@ it('executes the selected kit and stops forcing it after the user removes the ca
   vi.mocked(runHarnessWithRecovery).mockResolvedValue({ finalResponse: '完成', sessionId: 'kit-session' })
   await fixture(async () => {
     await submit('/kit:reports 分析销售情况')
-    expect(vi.mocked(runHarnessWithRecovery).mock.calls[0][0].invocations).toEqual([
+    expect(vi.mocked(runHarnessWithRecovery).mock.calls[0][0].capabilitySnapshot.selections).toEqual([
       { mode: 'explicit', kind: 'expert-kit', extensionId: 'reports', extensionVersion: '1.0.0' },
     ])
     expect(fixtures.chat!.prompt).toBe('/kit:reports ')
     await submit('解释排序算法')
-    expect(vi.mocked(runHarnessWithRecovery).mock.calls[1][0].invocations).toEqual([])
+    expect(vi.mocked(runHarnessWithRecovery).mock.calls[1][0].capabilitySnapshot.selections).toEqual([])
     expect(vi.mocked(runHarnessWithRecovery).mock.calls[1][0].sessionId).not.toBe('kit-session')
   })
 })
@@ -637,14 +637,14 @@ it('persists both kits and retains them when reopening the task', async () => {
   vi.mocked(runHarnessWithRecovery).mockResolvedValue({ finalResponse: '完成', sessionId: 'combined-session' })
   await fixture(async () => {
     await submit('/kit:design /kit:product 制定产品方案')
-    expect(vi.mocked(runHarnessWithRecovery).mock.calls[0][0].invocations).toEqual([
+    expect(vi.mocked(runHarnessWithRecovery).mock.calls[0][0].capabilitySnapshot.selections).toEqual([
       { mode: 'explicit', kind: 'expert-kit', extensionId: 'design', extensionVersion: '1.0.0' },
       { mode: 'explicit', kind: 'expert-kit', extensionId: 'product', extensionVersion: '1.0.0' },
     ])
     expect(fixtures.chat!.prompt).toBe('/kit:design /kit:product ')
     const saved = vi.mocked(persistTaskHistory).mock.calls.at(-1)![1]
     expect(saved.invocationTokens).toEqual(['/kit:design', '/kit:product'])
-    expect(saved.invocationSpecs).toEqual([
+    expect(saved.capabilitySnapshot?.selections).toEqual([
       { mode: 'explicit', kind: 'expert-kit', extensionId: 'design', extensionVersion: '1.0.0' },
       { mode: 'explicit', kind: 'expert-kit', extensionId: 'product', extensionVersion: '1.0.0' },
     ])
@@ -654,26 +654,27 @@ it('persists both kits and retains them when reopening the task', async () => {
   })
 })
 
-it('uses changed connector settings on continuation, keeps configured defaults, and drops deleted connectors', async () => {
+it('pins connector settings for a task and blocks execution after the employee revokes it', async () => {
   const connector: ConnectorCatalogEntry = { id: 'crm', name: 'CRM', summary: '', category: 'other', kind: 'mcp', scope: 'EMPLOYEE',
     status: 'ready', managed: false, version: '1', transport: 'streamable-http', url: 'https://crm.example/old', authMode: 'none', toolNames: ['read'], headers: { 'X-Client': 'xiaoyin' } }
   fixtures.catalog.connectors = [connector]
   localStorage.setItem('xiaoyin.enabled-connectors.queue-test', '["crm"]')
   vi.mocked(runHarnessWithRecovery).mockImplementation(async (input) => ({ sessionId: input.sessionId!, finalResponse: '客户分析完成' } as Awaited<ReturnType<typeof runHarnessWithRecovery>>))
   await fixture(async () => {
+    await act(async () => { fixtures.chat!.onToggleTaskConnector!('crm') })
     await submit('分析客户')
     const first = vi.mocked(runHarnessWithRecovery).mock.calls[0][0]
-    expect(first.connectors[0].headers).toEqual({ 'X-Client': 'xiaoyin' })
+    expect(first.capabilitySnapshot.connectors[0].headers).toEqual({ 'X-Client': 'xiaoyin' })
     fixtures.catalog.connectors = [{ ...connector, version: '2', url: 'https://crm.example/new', toolNames: ['read', 'search'] }]
     await submit('继续检查')
     const next = vi.mocked(runHarnessWithRecovery).mock.calls[1][0]
-    expect(next.connectors[0]).toMatchObject({ version: '2', url: 'https://crm.example/new', toolNames: ['read', 'search'] })
-    expect(next.sessionId).not.toBe(first.sessionId)
-    expect(next.prompt).toContain('客户分析完成')
-    expect(first.connectors[0].version).toBe('1')
+    expect(next.capabilitySnapshot.connectors[0]).toMatchObject({ version: '1', url: 'https://crm.example/old', toolNames: ['read'] })
+    expect(next.sessionId).toBe(first.sessionId)
+    expect(first.capabilitySnapshot.connectors[0].version).toBe('1')
     fixtures.catalog.connectors = []
     await submit('总结结果')
-    expect(vi.mocked(runHarnessWithRecovery).mock.calls[2][0].connectors).toEqual([])
+    expect(runHarnessWithRecovery).toHaveBeenCalledTimes(2)
+    expect(fixtures.chat!.localFileError).toContain('连接器尚未就绪')
   })
 })
 
@@ -706,20 +707,21 @@ it('does not invent a default model when the policy has no available models', as
   })
 })
 
-it('applies installed extension updates and disablement to the next turn', async () => {
+it('pins an extension version for the task and blocks it after disablement', async () => {
   function kit(version: string, enabled = true) {
     return mergeExpertKits([], [{ enabled, installPath: `/extensions/reports/${version}`, source: 'developer', packageSha256: version === '1.0.0' ? 'a'.repeat(64) : 'b'.repeat(64), manifest: { schemaVersion: '2', kind: 'expert-kit', id: 'reports', name: '报告专家', version, summary: '生成报告', category: 'other', minimumDesktopVersion: '0.1.30', commands: [], skills: [{ id: 'report', path: 'skills/report/SKILL.md' }], connectorRefs: [], requiredTools: [] } }])
   }
   fixtures.catalog.expertKits = kit('1.0.0')
   vi.mocked(runHarnessWithRecovery).mockImplementation(async (input) => ({ sessionId: input.sessionId!, finalResponse: '报告完成' } as Awaited<ReturnType<typeof runHarnessWithRecovery>>))
   await fixture(async () => {
-    await submit('分析报告')
-    expect(vi.mocked(runHarnessWithRecovery).mock.calls[0][0].allowedArtifacts[0].version).toBe('1.0.0')
+    await submit('/kit:reports 分析报告')
+    expect(vi.mocked(runHarnessWithRecovery).mock.calls[0][0].capabilitySnapshot.artifacts[0].version).toBe('1.0.0')
     fixtures.catalog.expertKits = kit('2.0.0')
-    await submit('继续检查')
-    expect(vi.mocked(runHarnessWithRecovery).mock.calls[1][0].allowedArtifacts[0].version).toBe('2.0.0')
+    await submit('/kit:reports 继续检查')
+    expect(vi.mocked(runHarnessWithRecovery).mock.calls[1][0].capabilitySnapshot.artifacts[0].version).toBe('1.0.0')
     fixtures.catalog.expertKits = kit('2.0.0', false)
-    await submit('总结')
-    expect(vi.mocked(runHarnessWithRecovery).mock.calls[2][0].allowedArtifacts).toEqual([])
+    await submit('/kit:reports 总结')
+    expect(runHarnessWithRecovery).toHaveBeenCalledTimes(2)
+    expect(fixtures.chat!.localFileError).toContain('尚未安装或已不可用')
   })
 })
