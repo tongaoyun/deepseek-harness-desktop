@@ -119,6 +119,8 @@ function failure(
 export interface HarnessNotification {
   taskId?: string
   requestId: number
+  streamId?: string
+  sequence?: number
   event: unknown
 }
 

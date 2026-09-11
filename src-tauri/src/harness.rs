@@ -256,13 +256,23 @@ pub struct HarnessHostHealth {
 struct HarnessUiNotification {
     task_id: String,
     request_id: u64,
+    stream_id: String,
+    sequence: u64,
     event: Value,
 }
 
-fn ui_notification(task_id: &str, request_id: u64, event: Value) -> HarnessUiNotification {
+fn ui_notification(
+    task_id: &str,
+    request_id: u64,
+    stream_id: &str,
+    sequence: u64,
+    event: Value,
+) -> HarnessUiNotification {
     HarnessUiNotification {
         task_id: task_id.to_string(),
         request_id,
+        stream_id: stream_id.to_string(),
+        sequence,
         event,
     }
 }
@@ -1003,6 +1013,9 @@ impl HarnessProcess {
             .and_then(|_| self.stdin.flush())
             .map_err(|error| format!("无法向 Harness 发送请求：{error}"))?;
 
+        let notification_stream_id = uuid::Uuid::new_v4().to_string();
+        let mut notification_sequence = 0_u64;
+
         loop {
             let mut line = String::new();
             let bytes = self
@@ -1143,10 +1156,16 @@ impl HarnessProcess {
                                 }}
                             }
                         });
-                        let _ = app.emit(
-                            "xiaoyin://harness-notification",
-                            ui_notification(&self.notification_task_id, request_id, event),
-                        );
+                        let _ = app.emit("xiaoyin://harness-notification", {
+                            notification_sequence += 1;
+                            ui_notification(
+                                &self.notification_task_id,
+                                request_id,
+                                &notification_stream_id,
+                                notification_sequence,
+                                event,
+                            )
+                        });
                         match receiver.recv_timeout(Duration::from_secs(5 * 60)) {
                             Ok(decision) => decision,
                             Err(_) => {
@@ -1172,19 +1191,31 @@ impl HarnessProcess {
                                 }}
                             }
                         });
-                        let _ = app.emit(
-                            "xiaoyin://harness-notification",
-                            ui_notification(&self.notification_task_id, request_id, event),
-                        );
+                        let _ = app.emit("xiaoyin://harness-notification", {
+                            notification_sequence += 1;
+                            ui_notification(
+                                &self.notification_task_id,
+                                request_id,
+                                &notification_stream_id,
+                                notification_sequence,
+                                event,
+                            )
+                        });
                     }
                     continue;
                 }
                 if let Some(app) = app {
                     let event = output.get("params").cloned().unwrap_or(Value::Null);
-                    let _ = app.emit(
-                        "xiaoyin://harness-notification",
-                        ui_notification(&self.notification_task_id, request_id, event),
-                    );
+                    let _ = app.emit("xiaoyin://harness-notification", {
+                        notification_sequence += 1;
+                        ui_notification(
+                            &self.notification_task_id,
+                            request_id,
+                            &notification_stream_id,
+                            notification_sequence,
+                            event,
+                        )
+                    });
                 }
                 continue;
             }
@@ -1707,10 +1738,18 @@ mod tests {
                 }
             }
         });
-        let bridged = serde_json::to_value(ui_notification("task-1", 7, host_params.clone()))
-            .expect("notification should serialize");
+        let bridged = serde_json::to_value(ui_notification(
+            "task-1",
+            7,
+            "stream-1",
+            3,
+            host_params.clone(),
+        ))
+        .expect("notification should serialize");
         assert_eq!(bridged["taskId"], "task-1");
         assert_eq!(bridged["requestId"], 7);
+        assert_eq!(bridged["streamId"], "stream-1");
+        assert_eq!(bridged["sequence"], 3);
         assert_eq!(bridged["event"], host_params);
     }
 
