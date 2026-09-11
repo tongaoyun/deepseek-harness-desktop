@@ -102,6 +102,7 @@ import { ExtensionPageActions } from './ExtensionPageActions'
 import { useEnterpriseCatalog } from './useEnterpriseCatalog'
 import { useDesktopDialog } from './DesktopDialog'
 import { retryingTaskMonitor, runHarnessWithRecovery } from './taskRecovery'
+import { appendExecutionTransition } from './executionRuntime'
 import { useHarnessHealth } from './useHarnessHealth'
 import { useDeviceHeartbeat } from './useDeviceHeartbeat'
 import { inspectDeviceHeartbeatContext } from './deviceHeartbeat'
@@ -302,8 +303,8 @@ export default function App() {
   useHarnessNotifications({
     currentTaskIdRef: currentLocalTaskIdRef,
     streamingTasksRef,
-    onTaskUpdate: (taskId, monitor, taskMessages) => setLocalTasks((current) => current.map((task) => task.id === taskId
-      ? { ...task, updatedAt: monitor.updatedAt, monitor, messages: taskMessages }
+    onTaskUpdate: (taskId, monitor, taskMessages, execution) => setLocalTasks((current) => current.map((task) => task.id === taskId
+      ? { ...task, updatedAt: monitor.updatedAt, execution, monitor, messages: taskMessages }
       : task)),
     onCurrentUpdate: (monitor, taskMessages) => {
       taskMonitorRef.current = monitor
@@ -830,7 +831,7 @@ export default function App() {
           ? requestedSpecs.flatMap((spec) => availableInvocations.find((item) => sameInvocationSpec(item.spec, spec)) ?? [])
           : requestedTokens.flatMap((token) => availableInvocations.find((item) => item.token === token) ?? [])
         : currentInvocations
-      const { rootSessionId, harnessPrompt, pendingMessages, runningMonitor, runningTask } = prepareTaskTurn({
+      const { rootSessionId, harnessPrompt, pendingMessages, runningMonitor, execution, runningTask } = prepareTaskTurn({
         taskId, input, now, existingTask, sessionId: taskSessionId, model: taskModel,
         directories: taskDirectories, directoriesChanged: resetSessionForDirectoryChange,
         connectorIds: taskConnectorIds, capabilities: capabilitySnapshot, invocations: selected,
@@ -848,6 +849,7 @@ export default function App() {
       persistLocalTask(runningTask)
       const streaming: StreamingTaskState = {
         monitor: runningMonitor,
+        execution,
         messages: pendingMessages,
         responseKey: '',
         cancellationRequested: false,
@@ -886,6 +888,7 @@ export default function App() {
           onRetry: (sessionId) => {
             executionSessionId = sessionId
             const retryMonitor = retryingTaskMonitor(streaming.monitor)
+            streaming.execution = appendExecutionTransition(streaming.execution, streaming.monitor, retryMonitor, 'item.completed', { correlationId: `retry:${sessionId}` })
             streaming.monitor = retryMonitor
             streaming.responseKey = ''
             streaming.messages = streaming.messages.map((message, index) => index === streaming.messages.length - 1
@@ -897,7 +900,7 @@ export default function App() {
               setTaskMonitor(retryMonitor)
               setMessages(streaming.messages)
             }
-            persistLocalTask({ ...runningTask, sessionId, updatedAt: new Date().toISOString(), monitor: retryMonitor, messages: streaming.messages })
+            persistLocalTask({ ...runningTask, sessionId, updatedAt: new Date().toISOString(), execution: streaming.execution, monitor: retryMonitor, messages: streaming.messages })
           },
         })
         if (streaming.cancellationRequested) throw new Error('本轮已停止')
@@ -910,6 +913,8 @@ export default function App() {
           ...streaming.monitor, outcome, status: 'completed', activity: taskOutcomeLabel(outcome), updatedAt: completedAt,
           completedAt,
         }
+        streaming.execution = appendExecutionTransition(streaming.execution, streaming.monitor, completedMonitor, 'verification.recorded', { outcome })
+        streaming.execution = appendExecutionTransition(streaming.execution, completedMonitor, completedMonitor, 'turn.completed')
         const completedMessages = streaming.messages.map((message, index) => index === streaming.messages.length - 1
           ? { role: 'assistant', text: result.finalResponse, monitor: completedMonitor }
           : message) as TaskMessage[]
@@ -920,7 +925,7 @@ export default function App() {
           setMessages(completedMessages)
         }
         persistLocalTask({ ...runningTask, status: 'COMPLETED', updatedAt: new Date().toISOString(),
-          sessionId: result.sessionId, monitor: completedMonitor, messages: completedMessages })
+          sessionId: result.sessionId, execution: streaming.execution, monitor: completedMonitor, messages: completedMessages })
         if (!queuedTask && goalCompleted) void learnCompletedTask(user.userId, bootstrap.endpoints.memoryProfile ?? '/api/v1/memory-profile', accessToken, input, taskId)
           .then((saved) => { if (saved) notify(`已记住这条明确偏好。${saved.syncPending ? '暂未同步到云端。' : '可在设置 → 记忆中修改或删除。'}`, 'success') })
           .catch((error) => notify(`任务已完成，自动记忆未写入：${error instanceof Error ? error.message : String(error)}`, 'error'))
@@ -951,6 +956,7 @@ export default function App() {
           completedAt,
           failure: canceled ? undefined : { code: failure.code, category: failure.category, detail: message.slice(0, 500) },
         }
+        streaming.execution = appendExecutionTransition(streaming.execution, streaming.monitor, failedMonitor, canceled ? 'turn.interrupted' : 'turn.failed')
         const failedMessages = streaming.messages.map((item, index) => index === streaming.messages.length - 1
           ? { role: 'assistant', text: canceled ? item.text : [item.text.trim(), `${failure.title}：${message}\n\n错误编号：${failure.code}`].filter(Boolean).join('\n\n---\n\n'), monitor: failedMonitor }
           : item) as TaskMessage[]
@@ -959,7 +965,7 @@ export default function App() {
           setTaskMonitor(failedMonitor)
           setMessages(failedMessages)
         }
-        persistLocalTask({ ...runningTask, status: canceled ? 'CANCELED' : 'FAILED', updatedAt: new Date().toISOString(), sessionId: executionSessionId, monitor: failedMonitor, messages: failedMessages })
+        persistLocalTask({ ...runningTask, status: canceled ? 'CANCELED' : 'FAILED', updatedAt: new Date().toISOString(), sessionId: executionSessionId, execution: streaming.execution, monitor: failedMonitor, messages: failedMessages })
         const infrastructureFailure = failure.infrastructure
         if (!canceled && infrastructureFailure) {
           reportInfrastructureFailure(message)

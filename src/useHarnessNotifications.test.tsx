@@ -3,6 +3,7 @@ import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { expect, it, vi } from 'vitest'
 import { listenHarnessNotifications, type HarnessNotification } from './harness'
+import { startExecutionTurn } from './executionRuntime'
 import { useHarnessNotifications, type StreamingTaskState } from './useHarnessNotifications'
 
 vi.mock('./harness', async (original) => ({ ...await original<object>(), listenHarnessNotifications: vi.fn() }))
@@ -11,7 +12,10 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 it('ignores late events after stopping without affecting other tasks', async () => {
   let listener: (notification: HarnessNotification) => void = () => {}
   vi.mocked(listenHarnessNotifications).mockImplementation(async (callback) => { listener = callback; return () => {} })
-  const state = (): StreamingTaskState => ({ monitor: { status: 'running', activity: '正在处理', updatedAt: '', steps: [], artifacts: [] }, messages: [{ role: 'assistant', text: '已收到的部分', pending: true }], responseKey: '', cancellationRequested: false })
+  const state = (): StreamingTaskState => {
+    const monitor: StreamingTaskState['monitor'] = { status: 'running', activity: '正在处理', updatedAt: '', steps: [], artifacts: [] }
+    return { monitor, execution: startExecutionTurn('task', 'session', monitor, undefined, '', () => 'test'), messages: [{ role: 'assistant', text: '已收到的部分', pending: true }], responseKey: '', cancellationRequested: false }
+  }
   const first = state(); const other = state()
   const onCurrentUpdate = vi.fn(); const onTaskUpdate = vi.fn()
   const streamingTasksRef = { current: new Map([['one', first], ['two', other]]) }

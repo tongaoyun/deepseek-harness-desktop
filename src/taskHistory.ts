@@ -1,6 +1,7 @@
 import { invoke, isTauri } from '@tauri-apps/api/core'
 import type { LocalTaskRun } from './types'
 import { taskInterruption } from './taskInterruption'
+import { appendExecutionTransition } from './executionRuntime'
 
 const LIMIT = 200
 const writes = new Map<string, Promise<void>>()
@@ -84,6 +85,9 @@ export function recoverInterruptedTasks(tasks: LocalTaskRun[], now = new Date().
         ? { ...agent, status: 'canceled' as const, completedAt: task.updatedAt }
         : agent),
     }
+    const execution = task.execution
+      ? appendExecutionTransition(task.execution, task.monitor, monitor, 'turn.interrupted')
+      : undefined
     const interrupted = {
       role: 'assistant' as const,
       text: [task.messages.at(-1)?.role === 'assistant' && task.messages.at(-1)?.pending ? task.messages.at(-1)!.text.trim() : '',
@@ -93,7 +97,7 @@ export function recoverInterruptedTasks(tasks: LocalTaskRun[], now = new Date().
     const messages = task.messages.at(-1)?.role === 'assistant' && task.messages.at(-1)?.pending
       ? [...task.messages.slice(0, -1), interrupted]
       : [...task.messages, interrupted]
-    return { ...task, sessionId: undefined, status: 'FAILED' as const, updatedAt: now, monitor, messages }
+    return { ...task, sessionId: undefined, status: 'FAILED' as const, updatedAt: now, execution, monitor, messages }
   })
 }
 
@@ -155,7 +159,23 @@ function isLocalTask(value: unknown): value is LocalTaskRun {
     && ['RUNNING', 'COMPLETED', 'FAILED', 'CANCELED'].includes(task.status ?? '')
     && typeof task.createdAt === 'string' && typeof task.updatedAt === 'string' && Array.isArray(task.messages)
     && task.messages.every((message) => message && ['user', 'assistant'].includes(message.role) && typeof message.text === 'string')
+    && (task.execution === undefined || isExecutionThread(task.execution))
     && isTaskMonitor(task.monitor)
+}
+
+function isExecutionThread(value: unknown): boolean {
+  if (!value || typeof value !== 'object') return false
+  const thread = value as NonNullable<LocalTaskRun['execution']>
+  return thread.protocolVersion === 1 && typeof thread.id === 'string' && Array.isArray(thread.turns)
+    && thread.turns.every((turn) => turn && typeof turn.id === 'string' && typeof turn.sessionId === 'string'
+      && ['running', 'completed', 'failed', 'canceled'].includes(turn.status)
+      && typeof turn.startedAt === 'string' && Number.isSafeInteger(turn.nextSequence)
+      && turn.sourceCursors && typeof turn.sourceCursors === 'object'
+      && Object.values(turn.sourceCursors).every((sequence) => Number.isSafeInteger(sequence) && sequence > 0)
+      && Array.isArray(turn.items) && Array.isArray(turn.events)
+      && turn.events.every((event) => event && typeof event.id === 'string' && Number.isSafeInteger(event.sequence)
+        && event.turnId === turn.id && typeof event.type === 'string' && typeof event.occurredAt === 'string'
+        && event.projection && typeof event.projection.updatedAt === 'string'))
 }
 
 function isTaskMonitor(value: unknown): boolean {

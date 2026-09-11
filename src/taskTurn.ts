@@ -2,6 +2,7 @@ import { capabilitySnapshotChanged } from './capabilitySnapshot'
 import { splitComposerPrompt } from './composerInput'
 import { harnessPromptWithConversationReplay } from './conversationReplay'
 import { sameInvocationSpec, type ExtensionInvocation } from './extensionInvocations'
+import { startExecutionTurn } from './executionRuntime'
 import { createTaskMonitor } from './harness'
 import { resolveHarnessSessionId } from './harnessSession'
 import type { CapabilitySnapshot, LocalTaskAttachment, LocalTaskRun, TaskMessage, TaskMonitorState } from './types'
@@ -50,13 +51,14 @@ export function prepareTaskTurn(context: TurnContext) {
   const operationScope = context.monitor.interruption && context.monitor.operationScope
     ? context.monitor.operationScope : crypto.randomUUID()
   const runningMonitor: TaskMonitorState = { ...createTaskMonitor(now), operationScope, status: 'running', activity: '正在处理', updatedAt: now, startedAt: now }
+  const execution = startExecutionTurn(context.taskId, rootSessionId, runningMonitor, existingTask?.execution, now)
   const runningTask: LocalTaskRun = {
     id: context.taskId, source: 'DESKTOP',
     name: existingTask?.name ?? (splitComposerPrompt(input).text || invocations.map((item) => item.name).join('、') || input).slice(0, 60),
     status: 'RUNNING', createdAt: existingTask?.createdAt ?? now, updatedAt: now,
     sessionId: rootSessionId, model: context.model, invocationTokens, invocationSpecs,
     composerConnectorIds: context.connectorIds, localDirectories: context.directories,
-    capabilitySnapshot: capabilities, monitor: runningMonitor, messages: pendingMessages,
+    capabilitySnapshot: capabilities, execution, monitor: runningMonitor, messages: pendingMessages,
   }
-  return { rootSessionId, harnessPrompt, pendingMessages, runningMonitor, runningTask }
+  return { rootSessionId, harnessPrompt, pendingMessages, runningMonitor, execution, runningTask }
 }

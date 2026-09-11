@@ -174,6 +174,88 @@ export interface TaskMonitorState {
   }
 }
 
+export type ExecutionEventType =
+  | 'turn.started'
+  | 'item.started'
+  | 'item.updated'
+  | 'item.completed'
+  | 'item.failed'
+  | 'approval.requested'
+  | 'approval.decided'
+  | 'turn.completed'
+  | 'turn.failed'
+  | 'turn.interrupted'
+  | 'verification.recorded'
+
+export interface ExecutionProjectionDelta {
+  executionStarted?: boolean
+  operationScope?: string
+  status?: TaskMonitorState['status']
+  activity?: string
+  updatedAt: string
+  startedAt?: string
+  completedAt?: string
+  steps?: TaskExecutionStep[]
+  timeline?: TaskTimelineEntry[]
+  subagents?: SubagentActivity[]
+  changes?: TaskFileChange[]
+  artifacts?: TaskArtifact[]
+  visuals?: TaskVisualArtifact[]
+  knowledgeSources?: KnowledgeSearchHit[]
+  interruption?: TaskMonitorState['interruption']
+  outcome?: TaskMonitorState['outcome']
+  failure?: TaskMonitorState['failure']
+  replaceCollections?: Array<'steps' | 'timeline' | 'subagents' | 'changes' | 'artifacts' | 'visuals' | 'knowledgeSources'>
+}
+
+export interface ExecutionEvent {
+  id: string
+  sequence: number
+  turnId: string
+  type: ExecutionEventType
+  occurredAt: string
+  itemId?: string
+  item?: ExecutionItem
+  correlationId?: string
+  sourceCursor?: { streamId: string; requestId: number; sequence: number }
+  verification?: {
+    status: 'claimed' | 'verified' | 'partial' | 'blocked' | 'uncertain'
+    summary: string
+    evidenceCount: number
+  }
+  projection: ExecutionProjectionDelta
+}
+
+export interface ExecutionItem {
+  id: string
+  kind: 'analysis' | 'assistant' | 'tool-call' | 'approval' | 'subagent' | 'warning' | 'error' | 'verification' | 'provider-turn'
+  status: 'running' | 'completed' | 'failed' | 'canceled'
+  label: string
+  startedAt: string
+  completedAt?: string
+  correlationId?: string
+  toolName?: string
+}
+
+export interface ExecutionTurn {
+  id: string
+  sessionId: string
+  status: 'running' | 'completed' | 'failed' | 'canceled'
+  startedAt: string
+  completedAt?: string
+  nextSequence: number
+  sourceCursors: Record<string, number>
+  items: ExecutionItem[]
+  events: ExecutionEvent[]
+}
+
+export interface ExecutionThread {
+  protocolVersion: 1
+  id: string
+  activeTurnId?: string
+  turns: ExecutionTurn[]
+}
+
 export interface LocalTaskRun {
   id: string
   source: 'DESKTOP'
@@ -191,6 +273,7 @@ export interface LocalTaskRun {
   model?: string
   localDirectories?: Array<{ id: string; name: string; path?: string }>
   capabilitySnapshot?: CapabilitySnapshot
+  execution?: ExecutionThread
   monitor: TaskMonitorState
   messages: TaskMessage[]
   processedImEventIds?: string[]
