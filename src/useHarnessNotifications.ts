@@ -1,5 +1,5 @@
 import { useEffect, useRef, type RefObject } from 'react'
-import { applyHarnessNotification, applyStoppingHarnessNotification, harnessResponseUpdate, listenHarnessNotifications } from './harness'
+import { harnessResponseUpdate, listenHarnessNotifications } from './harness'
 import { observeHarnessNotification } from './executionRuntime'
 import { applyHarnessResponseToMessages } from './streamingMessages'
 import type { ExecutionThread, TaskMessage, TaskMonitorState } from './types'
@@ -36,7 +36,7 @@ export function useHarnessNotifications({
       const streaming = streamingTasksRef.current.get(taskId)
       if (!streaming) return
       if (streaming.cancellationRequested) {
-        const observed = observeHarnessNotification(streaming.execution, streaming.monitor, notification, applyStoppingHarnessNotification)
+        const observed = observeHarnessNotification(streaming.execution, streaming.monitor, notification, { stopping: true })
         if (!observed.event) return
         streaming.execution = observed.thread
         streaming.monitor = observed.monitor
@@ -44,7 +44,7 @@ export function useHarnessNotifications({
         if (currentTaskIdRef.current === taskId) latest.current.onCurrentUpdate(observed.monitor)
         return
       }
-      const observed = observeHarnessNotification(streaming.execution, streaming.monitor, notification, applyHarnessNotification)
+      const observed = observeHarnessNotification(streaming.execution, streaming.monitor, notification)
       if (observed.duplicate) return
       streaming.execution = observed.thread
       streaming.monitor = observed.monitor

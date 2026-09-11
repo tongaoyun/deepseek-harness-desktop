@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { compactTaskForStorage, loadLocalTasks, recoverInterruptedTasks, saveLocalTask } from './taskHistory'
+import { beginExecutionTurn, completeExecutionTurn } from './executionRuntime'
 import type { LocalTaskRun } from './types'
 
 class MemoryStorage implements Storage {
@@ -70,6 +71,58 @@ describe('task history', () => {
     saveLocalTask('employee-1', task, storage)
 
     expect(loadLocalTasks('employee-1', storage)[0].monitor).toEqual(task.monitor)
+  })
+
+  it('rebuilds stale monitor caches from the canonical execution thread', () => {
+    const storage = new MemoryStorage()
+    const started = beginExecutionTurn({
+      taskId: 'canonical', sessionId: 'session', operationScope: 'scope', now: '2026-09-11T01:00:00Z', createId: () => 'canonical',
+    })
+    const outcome = { status: 'completed' as const, summary: '已核对', remaining: [], checks: [{ description: '结果', result: 'passed' as const, evidence: '通过' }] }
+    const completed = completeExecutionTurn(started.thread, started.monitor, outcome, '2026-09-11T01:01:00Z')
+    const stale = { ...monitor, updatedAt: '2026-09-11T00:00:00Z' }
+    saveLocalTask('employee-1', {
+      id: 'canonical', source: 'DESKTOP', name: '事件事实源', status: 'COMPLETED',
+      createdAt: '2026-09-11T01:00:00Z', updatedAt: '2026-09-11T01:01:00Z', execution: completed.thread,
+      monitor: stale, messages: [{ role: 'assistant', text: '完成', monitor: stale }],
+    }, storage)
+    const persisted = JSON.parse(storage.getItem('xiaoyin.task-history.employee-1')!)
+    persisted[0].monitor = { stale: true }
+    storage.setItem('xiaoyin.task-history.employee-1', JSON.stringify(persisted))
+
+    const restored = loadLocalTasks('employee-1', storage)[0]!
+    expect(restored.monitor).toEqual(completed.monitor)
+    expect(restored.messages[0]?.monitor).toEqual(completed.monitor)
+  })
+
+  it('binds legacy messages to distinct turns when an interrupted operation scope is reused', () => {
+    const storage = new MemoryStorage()
+    const first = beginExecutionTurn({
+      taskId: 'resumed', sessionId: 'session-1', operationScope: 'shared-scope', now: '2026-09-11T02:00:00Z', createId: () => 'first',
+    })
+    const firstCompleted = completeExecutionTurn(first.thread, first.monitor, {
+      status: 'partial', summary: '第一轮部分完成', remaining: ['继续'], checks: [],
+    }, '2026-09-11T02:01:00Z')
+    const second = beginExecutionTurn({
+      taskId: 'resumed', sessionId: 'session-2', operationScope: 'shared-scope', previous: firstCompleted.thread,
+      now: '2026-09-11T02:02:00Z', createId: () => 'second',
+    })
+    const secondCompleted = completeExecutionTurn(second.thread, second.monitor, {
+      status: 'completed', summary: '第二轮全部完成', remaining: [], checks: [],
+    }, '2026-09-11T02:03:00Z')
+    const stale = { ...first.monitor, operationScope: 'shared-scope', updatedAt: 'stale' }
+    saveLocalTask('employee-1', {
+      id: 'resumed', source: 'DESKTOP', name: '恢复任务', status: 'COMPLETED',
+      createdAt: '2026-09-11T02:00:00Z', updatedAt: '2026-09-11T02:03:00Z', execution: secondCompleted.thread,
+      monitor: stale, messages: [
+        { role: 'assistant', text: '第一轮', monitor: stale },
+        { role: 'assistant', text: '第二轮', monitor: stale },
+      ],
+    }, storage)
+
+    const restored = loadLocalTasks('employee-1', storage)[0]!
+    expect(restored.messages.map((message) => message.executionTurnId)).toEqual(['turn-first', 'turn-second'])
+    expect(restored.messages.map((message) => message.monitor?.outcome?.summary)).toEqual(['第一轮部分完成', '第二轮全部完成'])
   })
 
   it('round trips remaining work and evidence on both the task and assistant message', () => {

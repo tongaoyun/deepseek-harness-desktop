@@ -28,6 +28,7 @@ xiaoyin-server
 | `src/App.tsx` | 页面协调、任务调度与状态连接 |
 | `src/useEnterpriseSession.ts` | 登录检查、到期重查、网络恢复与退出 |
 | `src/harnessSession.ts`、`src/taskTurn.ts` | 会话选择、恢复上下文、新轮次准备 |
+| `src/executionRuntime.ts` | `Thread -> Turn -> Item -> Event` 状态机、事件去重、生命周期变更与 UI 投影 |
 | `src/capabilitySnapshot.ts` | 每轮能力快照与语义变化判断 |
 | `src-tauri/src/` | 系统权限、ERP Cookie、凭据、持久化与进程控制 |
 | `harness-host/src/runtime.ts` | 模型会话和工具运行时 |
@@ -51,6 +52,10 @@ xiaoyin-server
 身份接口的 401、403、网络异常与响应无效分别处理。脱敏诊断记录位置和升级验收见 [登录与会话](login.md)。
 
 任务恢复优先复用原会话。工作目录或能力内容变化时重建；JSON 对象键顺序不构成能力变化。正在运行的任务周期保存，重启后暂停未执行的队列，用户决定是否继续。
+
+桌面任务以 `ExecutionThread` 为唯一可写事实源。每条用户请求建立一个 `ExecutionTurn`，消息、工具、授权、验收和文件状态作为 Item 与有序 `ExecutionEvent` 记录。原生事件使用 `streamId + sequence` 去重；Harness 重启后新的流不会与旧请求编号混淆。
+
+`TaskMonitorProjection` 只供界面展示和旧组件兼容。开始、重试、停止、完成、失败、IM 接管和文件撤销必须先提交运行时事件，再由同一 reducer 生成投影。Assistant 消息通过 `executionTurnId` 关联产生它的 Turn，恢复任务即使复用 `operationScope` 也不会串改历史投影。加载本地历史时始终从有效事件线程重放，磁盘中的 Monitor 缓存即使过期或损坏也不能覆盖事件事实；没有事件线程或消息 Turn 引用的旧记录在首次继续处理时迁移。
 
 ## 数据与权限
 

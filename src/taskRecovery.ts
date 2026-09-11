@@ -44,25 +44,3 @@ export async function runHarnessWithRecovery(
     return runtime.execute({ ...request, sessionId })
   }
 }
-
-export function retryingTaskMonitor(previous: TaskMonitorState, now = new Date().toISOString()): TaskMonitorState {
-  return {
-    operationScope: previous.operationScope,
-    status: 'running',
-    activity: '模型服务短暂异常，正在自动重试',
-    startedAt: previous.startedAt ?? now,
-    updatedAt: now,
-    steps: [],
-    subagents: [],
-    changes: previous.changes ?? [],
-    artifacts: previous.artifacts,
-    timeline: [{
-      id: `retry:${now}`,
-      kind: 'warning',
-      label: '模型服务短暂异常，已自动重试一次',
-      status: 'completed',
-      occurredAt: now,
-      completedAt: now,
-    }],
-  }
-}
