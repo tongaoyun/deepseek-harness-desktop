@@ -205,11 +205,11 @@ it('keeps the Shell switch unchanged and reports a failed runtime preference wri
   await fixture(async () => {
     await act(async () => fixtures.sidebar!.onPage('settings'))
     await act(async () => document.querySelector<HTMLButtonElement>('.settings-navigation button:last-child')!.click())
-    const shell = document.querySelector<HTMLInputElement>('input[aria-label="启用本地 Shell 与持久终端"]')!
+    const shell = document.querySelector<HTMLInputElement>('input[aria-label="允许本地命令执行"]')!
     expect(shell.checked).toBe(true)
     const originalWrite = localStorage.setItem.bind(localStorage)
     const write = vi.spyOn(localStorage, 'setItem').mockImplementation((key, value) => {
-      if (key === 'xiaoyin.runtime.allow-shell') throw new Error('storage unavailable')
+      if (key === 'xiaoyin.runtime.queue-test.allow-shell') throw new Error('storage unavailable')
       originalWrite(key, value)
     })
     await act(async () => shell.click())

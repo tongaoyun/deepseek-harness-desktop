@@ -2,7 +2,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { DesktopSettingsPage } from './DesktopSettingsPage'
 import { buildRuntimeDiagnostics, runtimeDiagnosticsFilename } from './runtimeDiagnostics'
 
@@ -66,23 +66,45 @@ describe('desktop settings navigation', () => {
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*>.*?<strong>记忆<\/strong>/u)
   })
 
-  it('renders the actual Harness capability gates when provided by the host', () => {
-    const html = renderToStaticMarkup(<DesktopSettingsPage
+  it('keeps Harness internals hidden and exposes only configured product controls', async () => {
+    Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
+    const checkHarness = vi.fn()
+    const container = document.body.appendChild(document.createElement('div'))
+    const root = createRoot(container)
+    const renderPage = (lsp: 'enabled' | 'unconfigured', codexHooks: 'enabled' | 'unconfigured') => <DesktopSettingsPage
       accessToken=""
       companyName="示例企业"
       department="研发部"
       displayName="测试员工"
       employeeId="employee-1"
-    harnessCapabilities={{ webSearch: 'enabled', sessionQuery: 'gated', sessionReference: 'enabled', lsp: 'unconfigured' }}
-      harnessRuntime="deepseek-harness"
-      harnessVersion="0.1.5-rc.2"
+      harnessCapabilities={{ webSearch: 'enabled', sessionQuery: 'gated', sessionReference: 'enabled', lsp, codexHooks }}
+      harnessHealth="idle"
+      harnessHealthDetail="本地执行环境将在任务开始时按需启动"
       memoryEndpoint="/memory"
+      onCheckHarness={checkHarness}
       onMemorySaved={() => undefined}
       position="工程师"
-    />)
+    />
+    try {
+      await act(async () => root.render(renderPage('unconfigured', 'unconfigured')))
+      const runtimeNavigation = [...container.querySelectorAll<HTMLButtonElement>('.settings-navigation button')]
+        .find((item) => item.textContent?.includes('本地能力'))
+      await act(async () => runtimeNavigation!.click())
 
-    expect(html).toContain('运行时能力')
-    expect(html).toContain('Harness 底层能力状态')
+      expect(container.textContent).toContain('允许本地命令执行')
+      expect(container.textContent).toContain('高级设置与诊断')
+      expect(container.textContent).toContain('按需启动')
+      expect(container.textContent).not.toContain('代码语言服务')
+      expect(container.textContent).not.toContain('自动化 Hooks')
+      expect(container.innerHTML).not.toMatch(/SDK Profile|Agent Loop|Ralph|sessionQuery/u)
+
+      await act(async () => root.render(renderPage('enabled', 'enabled')))
+      expect(container.textContent).toContain('代码语言服务')
+      expect(container.textContent).toContain('自动化 Hooks')
+      await act(async () => [...container.querySelectorAll<HTMLButtonElement>('button')]
+        .find((item) => item.textContent === '检查本地能力')!.click())
+      expect(checkHarness).toHaveBeenCalledOnce()
+    } finally { await act(async () => root.unmount()); container.remove() }
   })
 
   it('reports a failed model check and permits retry', async () => {

@@ -300,7 +300,7 @@ export async function selfTestLocalCapabilities(): Promise<LocalCapabilitySelfTe
   return invoke<LocalCapabilitySelfTestResult>('self_test_local_capabilities')
 }
 
-export async function probeHarnessHost(modelConfigured = false, allowShell = true, allowLsp = true, allowExternalAgents = false, allowHooks = false, toolsMode: 'native' | 'ptc' | 'both' = 'native'): Promise<HarnessHostHealth> {
+export async function probeHarnessHost(modelConfigured = false, allowShell = true, allowLsp = false, allowExternalAgents = false, allowHooks = false, toolsMode: 'native' | 'ptc' | 'both' = 'native'): Promise<HarnessHostHealth> {
   if (!isTauri()) throw new Error('Harness Host 仅在小胤桌面客户端中运行')
   return invoke<HarnessHostHealth>('probe_harness_host', { modelConfigured, allowShell, allowLsp, allowExternalAgents, allowHooks, toolsMode })
 }

@@ -17,6 +17,7 @@ import { TaskComposer } from './TaskComposer'
 import { splitComposerPrompt } from './composerInput'
 import { TaskQueuePanel } from './TaskQueuePanel'
 import type { TaskQueue } from './useTaskQueue'
+import type { HarnessHealth } from './useHarnessHealth'
 
 import { RichMessage } from './RichMessage'
 import { KnowledgeSources } from './KnowledgeSources'
@@ -33,7 +34,7 @@ export interface ChatPageProps {
   taskProjection: XiaoyinTaskProjection
   taskContextRestoring?: boolean
   capabilitySnapshot?: CapabilitySnapshot
-  harnessHealth: 'checking' | 'ready' | 'degraded'
+  harnessHealth: HarnessHealth
   harnessHealthDetail: string
   harnessRunning: boolean
   runtimeStatus: RuntimeStatus
