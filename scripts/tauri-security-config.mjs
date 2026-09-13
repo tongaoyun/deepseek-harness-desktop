@@ -6,8 +6,9 @@ export function resolveTauriServerUrl(command, cwd = process.cwd(), environment 
   const configured = environment.VITE_XIAOYIN_SERVER_URL
     ?? loadEnv(command === 'dev' ? 'development' : 'production', cwd, 'VITE_').VITE_XIAOYIN_SERVER_URL
   const value = configured || DEFAULT_SERVER_URL
-  if (command === 'build' && new URL(value).protocol !== 'https:') {
-    throw new Error('Release builds require an HTTPS VITE_XIAOYIN_SERVER_URL')
+  const parsed = parseServerUrl(value)
+  if (command === 'build' && parsed.protocol === 'http:' && !isPrivateNetworkHost(parsed.hostname)) {
+    throw new Error('Release builds allow HTTP only for loopback or RFC1918 private network servers')
   }
   return value
 }
@@ -15,8 +16,7 @@ export function resolveTauriServerUrl(command, cwd = process.cwd(), environment 
 export function tauriSecurityConfig(serverUrl = DEFAULT_SERVER_URL) {
   let origin
   try {
-    const parsed = new URL(serverUrl)
-    if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('unsupported protocol')
+    const parsed = parseServerUrl(serverUrl)
     origin = parsed.origin
   } catch {
     throw new Error('VITE_XIAOYIN_SERVER_URL must be an absolute HTTP(S) URL')
@@ -35,6 +35,22 @@ export function tauriSecurityConfig(serverUrl = DEFAULT_SERVER_URL) {
       },
     },
   }
+}
+
+function parseServerUrl(value) {
+  const parsed = new URL(value)
+  if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) throw new Error('unsupported server URL')
+  return parsed
+}
+
+function isPrivateNetworkHost(hostname) {
+  if (hostname === 'localhost' || hostname === '[::1]') return true
+  const octets = hostname.split('.').map(Number)
+  if (octets.length !== 4 || octets.some((value) => !Number.isInteger(value) || value < 0 || value > 255)) return false
+  return octets[0] === 10
+    || octets[0] === 127
+    || octets[0] === 192 && octets[1] === 168
+    || octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31
 }
 
 export { DEFAULT_SERVER_URL }

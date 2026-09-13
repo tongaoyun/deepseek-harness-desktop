@@ -21,7 +21,7 @@ pnpm check
 pnpm tauri:dev
 ```
 
-服务端 API 开发地址默认为 `http://192.168.2.67:30081`，通过 `VITE_XIAOYIN_SERVER_URL` 指定其他环境。正式安装包必须配置 HTTPS 地址；构建脚本会拒绝 HTTP，以免 ERP Cookie 在换取控制面短期令牌时明文传输。`pnpm tauri dev/build` 会把该地址的 origin 同步加入桌面 CSP；不要绕过仓库脚本直接调用 Tauri CLI。
+服务端 API 默认使用公司内网地址 `http://192.168.2.67:30081`，开发和正式安装包都无需额外配置。需要切换环境时可通过 `VITE_XIAOYIN_SERVER_URL` 覆盖；正式构建仅允许 HTTPS、回环地址或 RFC1918 私网 IP。`pnpm tauri dev/build` 会把实际地址的 origin 同步加入桌面 CSP；不要绕过仓库脚本直接调用 Tauri CLI。
 
 浏览器预览使用本地开发身份。桌面开发可在未提交的 `.env.local` 中设置 `VITE_SKIP_ERP_LOGIN=true`；正式构建始终使用 ERP 登录。模型调用与企业目录需要对应服务可达。本机权限、凭据、文件、Harness 和 IM 在 Tauri 中验证。
 

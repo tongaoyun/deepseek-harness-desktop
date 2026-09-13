@@ -44,8 +44,6 @@ jobs:
       NPM_CONFIG_FETCH_RETRIES: 4
       NPM_CONFIG_FETCH_TIMEOUT: 120000
       NPM_CONFIG_UPDATE_NOTIFIER: "false"
-      VITE_XIAOYIN_SERVER_URL: ${{ vars.XIAOYIN_HTTPS_SERVER_URL }}
-
     steps:
       - name: 检出代码
         uses: http://192.168.2.66:3300/instudio/checkout@v4
