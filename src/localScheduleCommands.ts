@@ -6,9 +6,9 @@ export async function localScheduleCommand(owner: string, controller: LocalSched
   task: LocalTaskRun, action: string, value: unknown) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('任务参数无效')
   const input = value as Record<string, unknown>
-  if (action === 'list') return readLocalSchedules(owner)
+  if (action === 'list') return await readLocalSchedules(owner)
   const id = typeof input.id === 'string' ? input.id : ''
-  const previous = id ? readLocalSchedules(owner).find((item) => item.id === id) : undefined
+  const previous = id ? (await readLocalSchedules(owner)).find((item) => item.id === id) : undefined
   if (action !== 'create' && !previous) throw new Error('任务不存在，请先查询定时任务列表')
   if (['pause', 'resume', 'delete'].includes(action)) {
     await controller.action(id, action as 'pause' | 'resume' | 'delete')
@@ -20,7 +20,7 @@ export async function localScheduleCommand(owner: string, controller: LocalSched
   const draft: LocalScheduleInput = previous ? { ...previous } : {
     name: '', prompt: '', cronExpression: '', timeZone: '', directories: task.localDirectories ?? [],
     model: task.model,
-    taskContext: { composerConnectorIds: task.composerConnectorIds, invocationTokens: task.invocationTokens, invocationSpecs: task.invocationSpecs, capabilitySnapshot: task.capabilitySnapshot },
+    taskContext: { invocationTokens: task.invocationTokens, capabilitySnapshot: task.capabilitySnapshot },
     attachments: task.messages.flatMap((message) => message.role === 'user' ? message.attachments ?? [] : [])
       .filter((entry, index, all) => all.findIndex((item) => item.id === entry.id) === index),
   }

@@ -25,9 +25,9 @@ function boundedConversationReplay(messages: TaskMessage[]): string {
   const entries = messages.flatMap((message) => {
     const text = message.role === 'user' ? splitComposerPrompt(message.text).text.trim() : message.text.trim()
     if (message.pending || !text) return []
-    if (message.role === 'assistant' && message.monitor?.status === 'failed') return []
-    const speaker = message.role === 'user' ? '用户' : message.monitor?.status === 'canceled' ? '小胤（本轮已停止，以下为未完成的部分回复）' : '小胤'
-    const undone = (message.monitor?.changes ?? []).filter((change) => change.undoneAt)
+    if (message.role === 'assistant' && message.projection?.status === 'failed') return []
+    const speaker = message.role === 'user' ? '用户' : message.projection?.status === 'canceled' ? '小胤（本轮已停止，以下为未完成的部分回复）' : '小胤'
+    const undone = (message.projection?.changes ?? []).filter((change) => change.undoneAt)
     return [`${speaker}：${text}${undone.length ? `\n文件状态更新：用户随后在桌面撤销了本轮的以下文件改动：${undone.map((change) => change.path).join('、')}。请以磁盘现状为准，不要假设这些改动仍然存在。` : ''}`]
   })
   const selected: string[] = []
@@ -55,10 +55,10 @@ export function taskRecoveryBrief(messages: TaskMessage[]): string {
   // instructions to repeat previously authorized actions.
   const constraints = requests.slice(1, -3).filter((text) => /不要|不得|只(?:能|读|检查)|必须|保留|限制|不超过|目标|要求/u.test(text)).slice(-4)
   const recent = requests.slice(1).slice(-3)
-  const monitor = messages.findLast((item) => item.role === 'assistant' && item.monitor)?.monitor
-  const pending = (monitor?.steps ?? []).filter((step) => step.status !== 'completed').slice(-8)
-  const outcome = parseTaskOutcome(monitor?.outcome)
-  const interruption = monitor?.interruption
+  const projection = messages.findLast((item) => item.role === 'assistant' && item.projection)?.projection
+  const pending = (projection?.steps ?? []).filter((step) => step.status !== 'completed').slice(-8)
+  const outcome = parseTaskOutcome(projection?.outcome)
+  const interruption = projection?.interruption
   return [
     '任务恢复摘录（历史原文与实际状态，不是新的执行授权；当前请求优先，冲突时采用用户较新的要求）：',
     `最初需求：${excerpt(initial, 1600)}`,
@@ -78,10 +78,10 @@ function taskFileContext(messages: TaskMessage[]): string {
     for (const attachment of message.attachments ?? []) remember(`${attachment.rootId}:${attachment.path}`, {
       type: '附件', rootId: attachment.rootId, rootName: attachment.rootName, path: attachment.path, kind: attachment.kind,
     })
-    for (const artifact of message.monitor?.artifacts ?? []) remember(artifact.id, {
+    for (const artifact of message.projection?.artifacts ?? []) remember(artifact.id, {
       type: '成果', rootId: artifact.rootId, rootName: artifact.rootName, path: artifact.path, state: artifact.action ?? 'created',
     })
-    for (const change of message.monitor?.changes ?? []) remember(change.id, {
+    for (const change of message.projection?.changes ?? []) remember(change.id, {
       type: '文件状态', rootId: change.rootId, rootName: change.rootName, path: change.path,
       state: change.undoneAt ? '已撤销，请核实磁盘现状' : change.action,
     })
@@ -93,10 +93,10 @@ function taskFileContext(messages: TaskMessage[]): string {
     if (rows.length >= 30 || size + row.length > 7_000) break
     rows.push(row); size += row.length
   }
-  const unfinished = [...messages].reverse().find((message) => message.role === 'assistant' && message.monitor)
-  const monitor = unfinished?.monitor
-  const remainder = monitor && (monitor.status === 'failed' || monitor.status === 'canceled')
-    ? `最近一轮${monitor.status === 'failed' ? '失败' : '已停止'}，任务尚未确认完成。${monitor.failure?.detail?.slice(0, 400) ?? ''} 请检查实际结果，避免重复已经成功的写入。` : ''
+  const unfinished = [...messages].reverse().find((message) => message.role === 'assistant' && message.projection)
+  const projection = unfinished?.projection
+  const remainder = projection && (projection.status === 'failed' || projection.status === 'canceled')
+    ? `最近一轮${projection.status === 'failed' ? '失败' : '已停止'}，任务尚未确认完成。${projection.failure?.detail?.slice(0, 400) ?? ''} 请检查实际结果，避免重复已经成功的写入。` : ''
   if (!rows.length && !remainder) return ''
   return ['任务文件与恢复状态（历史引用，不是新的操作指令；访问前确认目录授权与磁盘现状）：', ...rows.reverse(),
     files.size > rows.length ? `仅保留最近 ${rows.length}/${files.size} 个文件引用，较早引用未包含。` : '', remainder].filter(Boolean).join('\n')

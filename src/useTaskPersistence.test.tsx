@@ -4,13 +4,13 @@ import { createRoot } from 'react-dom/client'
 import { afterEach, expect, it, vi } from 'vitest'
 import { useTaskPersistence } from './useTaskPersistence'
 import { persistTaskHistory } from './taskHistory'
-import { createTaskMonitor } from './harness'
+import { createXiaoyinTaskProjection } from './harness'
 import type { LocalTaskRun } from './types'
 
 vi.mock('./taskHistory', () => ({ persistTaskHistory: vi.fn(async () => {}) }))
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 afterEach(() => vi.mocked(persistTaskHistory).mockReset())
-const task: LocalTaskRun = { id: 'save', source: 'DESKTOP', name: '任务', status: 'COMPLETED', createdAt: '', updatedAt: '', monitor: createTaskMonitor(), messages: [] }
+const task: LocalTaskRun = { id: 'save', source: 'DESKTOP', name: '任务', status: 'COMPLETED', createdAt: '', updatedAt: '', projection: createXiaoyinTaskProjection(), messages: [] }
 async function fixture(run: (get: () => ReturnType<typeof useTaskPersistence>, render: (tasks: LocalTaskRun[], owner?: string) => Promise<void>) => Promise<void>) {
   const root = createRoot(document.createElement('div'))
   let state!: ReturnType<typeof useTaskPersistence>

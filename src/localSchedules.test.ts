@@ -28,14 +28,14 @@ it('runs a one-off exactly once and persists its completed disabled state', asyn
   await tickLocalSchedules('one', () => true, run, now)
   await tickLocalSchedules('one', () => true, run, new Date(now.getTime() + 86400000))
   expect(run).toHaveBeenCalledOnce()
-  expect(readLocalSchedules('one')[0]).toMatchObject({ active: false, runs: [{ status: 'COMPLETED' }] })
+  expect((await readLocalSchedules('one'))[0]).toMatchObject({ active: false, runs: [{ status: 'COMPLETED' }] })
 })
 it('expires a missed one-off without replaying and rejects saving past dates', async () => {
   const timing = { kind: 'once' as const, at: now.toISOString() }
   await saveLocalSchedule('one', { ...input, timing }, undefined, new Date(now.getTime() - 60000))
   const run = vi.fn(async () => true)
   await tickLocalSchedules('one', () => true, run, new Date(now.getTime() + 90000))
-  expect(readLocalSchedules('one')[0]).toMatchObject({ active: false, runs: [{ status: 'MISSED' }] })
+  expect((await readLocalSchedules('one'))[0]).toMatchObject({ active: false, runs: [{ status: 'MISSED' }] })
   expect(run).not.toHaveBeenCalled()
   await expect(saveLocalSchedule('one', { ...input, timing }, undefined, now)).rejects.toThrow('未来')
 })
@@ -43,10 +43,10 @@ it('anchors intervals without drifting with polling and skips missed intervals',
   await saveLocalSchedule('one', { ...input, timing: { kind: 'interval', minutes: 180 } }, undefined, now)
   const run = vi.fn(async () => true)
   await tickLocalSchedules('one', () => true, run, new Date(now.getTime() + 10815000))
-  expect(readLocalSchedules('one')[0].nextAt).toBe(new Date(now.getTime() + 21600000).toISOString())
+  expect((await readLocalSchedules('one'))[0].nextAt).toBe(new Date(now.getTime() + 21600000).toISOString())
   await tickLocalSchedules('one', () => true, run, new Date(now.getTime() + 33000000))
   expect(run).toHaveBeenCalledOnce()
-  expect(readLocalSchedules('one')[0].runs[0].status).toBe('MISSED')
+  expect((await readLocalSchedules('one'))[0].runs[0].status).toBe('MISSED')
   expect(() => nextLocalRun({ ...input, timing: { kind: 'interval', minutes: 0 } }, now)).toThrow('间隔')
 })
 it('chat tools create in the same local store, inherit files and retain pause state on edit', async () => {
@@ -54,28 +54,39 @@ it('chat tools create in the same local store, inherit files and retain pause st
   const task = { model: 'selected-model', localDirectories: [{ id: 'root', name: '资料', path: '/tmp/fixture' }], messages: [{ role: 'user', text: '日报', attachments: [file] }] } as LocalTaskRun
   const controller = { items: [], error: '', action: vi.fn(async () => {}), refresh: vi.fn(), save: vi.fn(async () => []) }
   await localScheduleCommand('one', controller, task, 'create', { name: '日报', prompt: '分析资料', intervalMinutes: 60 })
-  const created = readLocalSchedules('one')[0]
+  const created = (await readLocalSchedules('one'))[0]
   expect(created).toMatchObject({ active: true, model: 'selected-model', timing: { kind: 'interval', minutes: 60 }, directories: task.localDirectories, attachments: [file] })
   await mutateLocalSchedules('one', (items) => items.map((item) => ({ ...item, active: false })))
   await localScheduleCommand('one', controller, task, 'update', { id: created.id, name: '修改日报', cronExpression: '0 18 * * 1,4' })
-  expect(readLocalSchedules('one')[0]).toMatchObject({ active: false, name: '修改日报', cronExpression: '0 18 * * 1,4', attachments: [file] })
-  expect(readLocalSchedules('one')[0].timing).toBeUndefined()
+  expect((await readLocalSchedules('one'))[0]).toMatchObject({ active: false, name: '修改日报', cronExpression: '0 18 * * 1,4', attachments: [file] })
+  expect((await readLocalSchedules('one'))[0].timing).toBeUndefined()
   await expect(localScheduleCommand('one', controller, task, 'create', { name: '冲突', prompt: '测试', runAt: '2030-01-01', intervalMinutes: 5 })).rejects.toThrow('请选择一个')
   await expect(localScheduleCommand('one', controller, task, 'create', { name: '缺时间', prompt: '测试' })).rejects.toThrow('请选择一个')
   await expect(localScheduleCommand('one', controller, task, 'update', { id: 'missing' })).rejects.toThrow('不存在')
-  expect(readLocalSchedules('one')).toHaveLength(1)
+  expect(await readLocalSchedules('one')).toHaveLength(1)
 })
 async function due() {
   await saveLocalSchedule('one', input, undefined, new Date(now.getTime() - 60_000))
-  return readLocalSchedules('one')[0]
+  return (await readLocalSchedules('one'))[0]
 }
+it('does not write or broadcast when an idle tick changes no schedule', async () => {
+  await saveLocalSchedule('one', input, undefined, now)
+  const write = vi.spyOn(localStorage, 'setItem')
+  const updated = vi.fn()
+  window.addEventListener('xiaoyin-local-schedules-updated', updated)
+  try {
+    await tickLocalSchedules('one', () => true, vi.fn(), now)
+    expect(write).not.toHaveBeenCalled()
+    expect(updated).not.toHaveBeenCalled()
+  } finally { window.removeEventListener('xiaoyin-local-schedules-updated', updated) }
+})
 it('preserves an explicitly configured timezone and model when a chat tool edits the name', async () => {
   await saveLocalSchedule('fixed', { ...input, timeZone: 'UTC', timeZoneMode: 'fixed', model: 'selected-model' })
-  const id = readLocalSchedules('fixed')[0].id
+  const id = (await readLocalSchedules('fixed'))[0].id
   const controller = { items: [], error: '', action: vi.fn(async () => {}), refresh: vi.fn(), save: vi.fn(async () => []) }
   await localScheduleCommand('fixed', controller, { messages: [] } as unknown as LocalTaskRun, 'update', { id, name: '新的名称' })
-  expect(readLocalSchedules('fixed')[0]).toMatchObject({ name: '新的名称', timeZone: 'UTC', timeZoneMode: 'fixed', model: 'selected-model' })
-  expect(nextLocalRun(readLocalSchedules('fixed')[0], now)).toBe('2026-09-06T09:00:00.000Z')
+  expect((await readLocalSchedules('fixed'))[0]).toMatchObject({ name: '新的名称', timeZone: 'UTC', timeZoneMode: 'fixed', model: 'selected-model' })
+  expect(nextLocalRun((await readLocalSchedules('fixed'))[0], now)).toBe('2026-09-06T09:00:00.000Z')
 })
 it('dispatches a due plan once through the shared task callback and persists the task link', async () => {
   await due()
@@ -83,20 +94,22 @@ it('dispatches a due plan once through the shared task callback and persists the
   await tickLocalSchedules('one', () => true, run, now)
   await tickLocalSchedules('one', () => true, run, now)
   expect(run).toHaveBeenCalledOnce()
-  expect(readLocalSchedules('one')[0].runs[0]).toMatchObject({ status: 'COMPLETED', taskId: expect.any(String) })
+  const plan = (await readLocalSchedules('one'))[0]
+  expect(plan.runs[0]).toMatchObject({ status: 'COMPLETED', taskId: expect.any(String), scheduleId: plan.id, scheduleRunId: expect.any(String) })
+  expect(run).toHaveBeenCalledWith(expect.objectContaining({ id: plan.id }), plan.runs[0].taskId, plan.runs[0].scheduleRunId)
 })
 it('records missed offline windows without catch-up execution', async () => {
   await due()
   const run = vi.fn(async () => true)
   await tickLocalSchedules('one', () => true, run, new Date(now.getTime() + 90_000))
   expect(run).not.toHaveBeenCalled()
-  expect(readLocalSchedules('one')[0].runs[0].status).toBe('MISSED')
+  expect((await readLocalSchedules('one'))[0].runs[0].status).toBe('MISSED')
 })
 it('persists a task needing input and pauses its schedule without losing the result link', async () => {
   await due()
   const outcome = { status: 'needs_input' as const, summary: '缺少销售明细', remaining: ['提供明细文件'], checks: [] }
   await tickLocalSchedules('one', () => true, async () => ({ outcome }), now)
-  expect(readLocalSchedules('one')[0]).toMatchObject({ active: false, runs: [{ status: 'NEEDS_ATTENTION', outcome, taskId: expect.any(String) }] })
+  expect((await readLocalSchedules('one'))[0]).toMatchObject({ active: false, runs: [{ status: 'NEEDS_ATTENTION', outcome, taskId: expect.any(String) }] })
   const rerun = vi.fn(async () => true)
   await tickLocalSchedules('one', () => true, rerun, new Date(now.getTime() + 86400_000))
   expect(rerun).not.toHaveBeenCalled()
@@ -104,7 +117,7 @@ it('persists a task needing input and pauses its schedule without losing the res
 it('records deliberate cancellation separately and pauses future runs without losing the task link', async () => {
   await due()
   await tickLocalSchedules('one', () => true, async () => 'canceled', now)
-  expect(readLocalSchedules('one')[0]).toMatchObject({ active: false, runs: [{ status: 'CANCELED', taskId: expect.any(String), detail: expect.stringContaining('主动停止') }] })
+  expect((await readLocalSchedules('one'))[0]).toMatchObject({ active: false, runs: [{ status: 'CANCELED', taskId: expect.any(String), detail: expect.stringContaining('主动停止') }] })
   const rerun = vi.fn(async () => true)
   await tickLocalSchedules('one', () => true, rerun, new Date(now.getTime() + 86400_000))
   expect(rerun).not.toHaveBeenCalled()
@@ -112,7 +125,7 @@ it('records deliberate cancellation separately and pauses future runs without lo
 it('does not offer a nonexistent task link when preflight prevents dispatch', async () => {
   await due()
   await tickLocalSchedules('one', () => true, async () => ({ notStarted: '请先选择工作目录' }), now)
-  const plan = readLocalSchedules('one')[0]
+  const plan = (await readLocalSchedules('one'))[0]
   expect(plan.active).toBe(false)
   expect(plan.runs[0]).toMatchObject({ status: 'FAILED', detail: '请先选择工作目录' })
   expect(plan.runs[0].taskId).toBeUndefined()
@@ -120,12 +133,12 @@ it('does not offer a nonexistent task link when preflight prevents dispatch', as
 it('pauses failed and interrupted runs rather than replaying side effects', async () => {
   const plan = await due()
   await tickLocalSchedules('one', () => true, async () => false, now)
-  expect(readLocalSchedules('one')[0].active).toBe(false)
+  expect((await readLocalSchedules('one'))[0].active).toBe(false)
   await mutateLocalSchedules('one', (items) => items.map((item) => ({ ...item, active: true, runs: [{ id: 'old', taskId: 'partial-task', scheduledAt: now.toISOString(), startedAt: now.toISOString(), status: 'RUNNING' }] })))
   const run = vi.fn(async () => true)
   await tickLocalSchedules('one', () => true, run, now, plan.id)
   expect(run).not.toHaveBeenCalled()
-  expect(readLocalSchedules('one')[0]).toMatchObject({ active: false, runs: [{ status: 'INTERRUPTED', taskId: 'partial-task' }] })
+  expect((await readLocalSchedules('one'))[0]).toMatchObject({ active: false, runs: [{ status: 'INTERRUPTED', taskId: 'partial-task' }] })
 })
 it('holds a cross-window lease while executing but allows pausing the next run', async () => {
   const plan = await due()
@@ -140,7 +153,7 @@ it('holds a cross-window lease while executing but allows pausing the next run',
   await mutateLocalSchedules('one', (items) => items.map((item) => ({ ...item, active: false })))
   finish(true); await first
   expect(second).not.toHaveBeenCalled()
-  expect(readLocalSchedules('one')[0].active).toBe(false)
+  expect((await readLocalSchedules('one'))[0].active).toBe(false)
 })
 it('does not execute if the durable running marker cannot be written', async () => {
   await due()
@@ -152,8 +165,18 @@ it('does not execute if the durable running marker cannot be written', async () 
 })
 it('keeps owners isolated and does not silently replace corrupt data', async () => {
   await due()
-  expect(readLocalSchedules('another')).toEqual([])
+  expect(await readLocalSchedules('another')).toEqual([])
   localStorage.setItem('xiaoyin:local-schedules:v1:one', '{broken')
   await expect(saveLocalSchedule('one', input)).rejects.toThrow()
   expect(localStorage.getItem('xiaoyin:local-schedules:v1:one')).toBe('{broken')
+})
+
+it('upgrades legacy run rows to explicit schedule references on read', async () => {
+  await due()
+  await mutateLocalSchedules('one', (items) => items.map((item) => ({
+    ...item,
+    runs: [{ id: 'legacy-run', scheduledAt: now.toISOString(), startedAt: now.toISOString(), status: 'MISSED' as const }],
+  })))
+  const plan = (await readLocalSchedules('one'))[0]
+  expect(plan.runs[0]).toMatchObject({ scheduleId: plan.id, scheduleRunId: 'legacy-run' })
 })

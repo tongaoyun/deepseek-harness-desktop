@@ -35,7 +35,7 @@ jobs:
       NPM_CONFIG_FETCH_RETRIES: 4
       NPM_CONFIG_FETCH_TIMEOUT: 120000
       NPM_CONFIG_UPDATE_NOTIFIER: "false"
-      VITE_XIAOYIN_SERVER_URL: http://192.168.2.67:30081
+      VITE_XIAOYIN_SERVER_URL: ${{ env.XIAOYIN_BUILD_MODE == 'quick' && 'http://192.168.2.67:30081' || vars.XIAOYIN_HTTPS_SERVER_URL }}
 
     steps:
       - name: 检出代码

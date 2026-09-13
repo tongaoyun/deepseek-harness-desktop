@@ -8,7 +8,7 @@ export function attachmentStorageReferences(storage: Storage = localStorage): un
   const values: unknown[] = []
   for (let index = 0; index < storage.length; index++) {
     const key = storage.key(index) ?? ''
-    if (/^xiaoyin(?:\.task-(?:drafts|history)\.|:local-schedules:|:task-queue:)/.test(key)) {
+    if (/^xiaoyin\.task-(?:drafts|history)\./.test(key)) {
       // Fail closed if any account's references cannot be read.
       values.push(JSON.parse(storage.getItem(key) ?? 'null'))
     }

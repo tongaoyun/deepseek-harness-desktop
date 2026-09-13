@@ -8,6 +8,9 @@ import { LocalImRuntime } from './im-runtime.js'
 import { ScheduleBridge } from './schedule-bridge.js'
 import { DesktopToolBridge } from './desktop-tool-bridge.js'
 import { ConnectorCredentialBridge, type ConnectorCredentialResult } from './connector-credential-bridge.js'
+import { SessionProjectionBridge } from './session-projection-bridge.js'
+import { publicErrorMessage } from './public-error.js'
+import './xiaoyin-projections-plugin.js'
 
 let stopping = false
 const emit = (output: JsonRpcOutput): void => {
@@ -31,6 +34,8 @@ const oauthBridge = new ConnectorCredentialBridge(emit, 'connector-oauth')
 const oauthEndpoint = await oauthBridge.start()
 process.env.XIAOYIN_OAUTH_BRIDGE_URL = oauthEndpoint.url
 process.env.XIAOYIN_OAUTH_BRIDGE_TOKEN = oauthEndpoint.token
+const projectionBridge = new SessionProjectionBridge(emit)
+const projectionEndpoint = await projectionBridge.start()
 const runtime = new DeepSeekHarnessRuntime({
   XIAOYIN_LOCAL_SKILL_URL: skillEndpoint.url,
   XIAOYIN_LOCAL_SKILL_TOKEN: skillEndpoint.token,
@@ -40,6 +45,8 @@ const runtime = new DeepSeekHarnessRuntime({
   XIAOYIN_APPROVAL_BRIDGE_TOKEN: approvalEndpoint.token,
   XIAOYIN_QUESTION_BRIDGE_URL: questionEndpoint.url,
   XIAOYIN_QUESTION_BRIDGE_TOKEN: questionEndpoint.token,
+  XIAOYIN_SESSION_PROJECTION_URL: projectionEndpoint.url,
+  XIAOYIN_SESSION_PROJECTION_TOKEN: projectionEndpoint.token,
 })
 const imRuntime = new LocalImRuntime(runtime)
 const server = new HostServer(
@@ -77,7 +84,7 @@ lines.on('line', (line) => {
   }
   if (isInteractiveResponse(value)) {
     void server.handle(value).catch((error: unknown) => {
-      process.stderr.write(`Harness approval response failure: ${String(error)}\n`)
+      process.stderr.write(`Harness approval response failure: ${publicErrorMessage(error)}\n`)
     })
     return
   }
@@ -85,7 +92,7 @@ lines.on('line', (line) => {
     if (stopping) return
     await server.handle(value)
   }).catch((error: unknown) => {
-    process.stderr.write(`Harness host failure: ${String(error)}\n`)
+    process.stderr.write(`Harness host failure: ${publicErrorMessage(error)}\n`)
   })
 })
 
@@ -98,7 +105,7 @@ function stop(): void {
   if (stopping) return
   stopping = true
   // EOF means the desktop has gone away: abort now, never wait for its active turn.
-  void Promise.allSettled([runtime.close(), imRuntime.stop(), approvalBridge.close(), questionBridge.close(), scheduleBridge.close(), skillBridge.close(), erpCookieBridge.close(), oauthBridge.close()])
+  void Promise.allSettled([runtime.close(), imRuntime.stop(), approvalBridge.close(), questionBridge.close(), scheduleBridge.close(), skillBridge.close(), erpCookieBridge.close(), oauthBridge.close(), projectionBridge.close()])
     .then(() => process.exit(0))
 }
 

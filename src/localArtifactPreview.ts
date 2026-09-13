@@ -15,8 +15,10 @@ export async function undoLocalFileChange(change: TaskFileChange): Promise<UndoF
   const reason = undoUnavailableReason(change)
   if (reason) throw new Error(reason)
   const recoveryPath = await invoke<string>('undo_local_file_change', {
-    rootId: change.rootId, path: change.path, action: change.action,
-    afterHash: change.afterHash, beforeHash: change.beforeHash ?? null, backupPath: change.backupPath ?? null,
+    request: {
+      rootId: change.rootId, path: change.path, action: change.action,
+      afterHash: change.afterHash, beforeHash: change.beforeHash ?? null, backupPath: change.backupPath ?? null,
+    },
   })
   return { id: change.id, undoneAt: new Date().toISOString(), recoveryPath }
 }
@@ -83,7 +85,7 @@ export function artifactFailure(message: string): { kind: 'authorization' | 'mis
   return { kind: 'other', title: '无法打开文件', hint: '请重试读取，或选择本地文件打开。' }
 }
 
-export async function loadHarnessImagePreview(attachmentId: string, mediaType: 'image/png' | 'image/jpeg'): Promise<string> {
+export async function loadHarnessImagePreview(employeeId: string, attachmentId: string, mediaType: 'image/png' | 'image/jpeg'): Promise<string> {
   if (!isTauri()) throw new Error('截图预览仅在小胤桌面端可用')
-  return invoke<string>('read_harness_image_preview', { attachmentId, mediaType })
+  return invoke<string>('read_harness_image_preview', { employeeId, attachmentId, mediaType })
 }

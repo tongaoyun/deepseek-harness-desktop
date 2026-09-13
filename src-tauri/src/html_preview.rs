@@ -7,6 +7,7 @@ pub(crate) struct HtmlPreviewServer(Mutex<Option<PreviewEndpoint>>);
 struct PreviewEndpoint {
     origin: String,
     token: String,
+    generation: u64,
     server: Arc<tiny_http::Server>,
 }
 
@@ -18,6 +19,7 @@ impl Drop for PreviewEndpoint {
 
 impl PreviewEndpoint {
     fn start(authorizations: LocalFileAuthorizations) -> Result<Self, String> {
+        let generation = authorizations.generation();
         let server =
             Arc::new(tiny_http::Server::http("127.0.0.1:0").map_err(|_| "无法启动本机 HTML 预览")?);
         let address = server.server_addr().to_ip().ok_or("HTML 预览地址无效")?;
@@ -38,6 +40,7 @@ impl PreviewEndpoint {
                     if !trusted_host
                         || request.method() != &tiny_http::Method::Get
                         || path.is_none()
+                        || authorizations.generation() != generation
                     {
                         let _ = request.respond(tiny_http::Response::empty(404));
                         continue;
@@ -50,6 +53,10 @@ impl PreviewEndpoint {
                         continue;
                     };
                     let response = html_preview_response(&authorizations, &input);
+                    if authorizations.generation() != generation {
+                        let _ = request.respond(tiny_http::Response::empty(404));
+                        continue;
+                    }
                     let headers = response
                         .headers()
                         .iter()
@@ -73,6 +80,7 @@ impl PreviewEndpoint {
         Ok(Self {
             origin,
             token,
+            generation,
             server,
         })
     }
@@ -87,15 +95,21 @@ impl PreviewEndpoint {
 }
 
 #[tauri::command]
-pub(crate) fn html_artifact_preview_url(
+pub(crate) async fn html_artifact_preview_url(
+    app: tauri::AppHandle,
     server: tauri::State<'_, HtmlPreviewServer>,
     authorizations: tauri::State<'_, LocalFileAuthorizations>,
     root_id: String,
     path: String,
 ) -> Result<String, String> {
+    let employee_id = crate::erp_auth::current_employee(&app).await?;
+    authorizations.ensure_employee(&employee_id)?;
     authorizations.resolve_artifact(&root_id, &path)?;
     let mut endpoint = server.0.lock().map_err(|_| "HTML 预览服务不可用")?;
-    if endpoint.is_none() {
+    if endpoint
+        .as_ref()
+        .is_none_or(|value| value.generation != authorizations.generation())
+    {
         *endpoint = Some(PreviewEndpoint::start(authorizations.inner().clone())?);
     }
     endpoint.as_ref().unwrap().url(&root_id, &path)
@@ -107,7 +121,8 @@ mod tests {
     #[test]
     fn preview_uses_an_untrusted_origin_and_rechecks_live_authorization() {
         tauri::async_runtime::block_on(async {
-            let endpoint = PreviewEndpoint::start(LocalFileAuthorizations::default()).unwrap();
+            let authorizations = LocalFileAuthorizations::default();
+            let endpoint = PreviewEndpoint::start(authorizations.clone()).unwrap();
             let client = reqwest::Client::new();
             let url = endpoint.url("missing", "中文 file.html").unwrap();
             assert!(url.starts_with("http://127.0.0.1:"));
@@ -139,6 +154,9 @@ mod tests {
                     .status(),
                 404
             );
+            let stale = endpoint.url("missing", "preview.html").unwrap();
+            authorizations.clear().unwrap();
+            assert_eq!(client.get(stale).send().await.unwrap().status(), 404);
         });
     }
 }

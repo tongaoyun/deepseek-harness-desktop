@@ -69,6 +69,14 @@ try {
 const readline = require('node:readline');
 const checks = ['local-files', 'office-docx', 'office-xlsx', 'office-pdf', 'native-shell', 'computer-use'];
 const statuses = {'host.initialize': 'initialized', 'host.health': 'ready', 'host.self-test': 'passed', 'host.shutdown': 'closed'};
+const shell = process.env.XIAOYIN_ALLOW_SHELL !== 'false';
+const capabilities = {
+  sessionPersistence: 'enabled', sessionQuery: 'enabled', sessionReference: 'enabled', present: 'enabled',
+  shell: shell ? 'enabled' : 'gated', persistentTerminal: shell ? 'enabled' : 'gated',
+  codeRuntime: process.env.XIAOYIN_TOOLS_MODE === 'ptc' ? 'enabled' : 'gated',
+  sessionQueryTools: process.env.XIAOYIN_ENABLE_SESSION_QUERY_TOOLS === 'false' ? 'gated' : 'enabled',
+  mcpClient: 'gated',
+};
 let pending = false;
 const input = readline.createInterface({input: process.stdin});
 input.on('line', line => {
@@ -77,7 +85,7 @@ input.on('line', line => {
   const request = JSON.parse(line);
   setTimeout(() => {
     pending = false;
-    console.log(JSON.stringify({id: request.id, result: {status: statuses[request.method], checks: checks.map(key => ({key, passed: true}))}}));
+    console.log(JSON.stringify({id: request.id, result: {status: statuses[request.method], capabilities, checks: checks.map(key => ({key, passed: true}))}}));
     if (request.method === 'host.shutdown') input.close();
   }, 50);
 });

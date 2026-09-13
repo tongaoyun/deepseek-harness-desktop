@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { connectorDiagnosticsAvailable, probeHarnessHost, selfTestLocalCapabilities } from './harness'
+import { connectorDiagnosticsAvailable, probeHarnessHost, selfTestLocalCapabilities, type HarnessHostHealth } from './harness'
+import type { HarnessToolsMode } from './runtimePreferences'
 
 export type HarnessHealth = 'checking' | 'ready' | 'degraded'
 
-export function useHarnessHealth(authenticated: boolean) {
+export function useHarnessHealth(authenticated: boolean, modelConfigured = false, allowShell = true, allowLsp = true, allowExternalAgents = false, allowHooks = false, toolsMode: HarnessToolsMode = 'native') {
   const [health, setHealth] = useState<HarnessHealth>('checking')
   const [detail, setDetail] = useState('正在检查本地 Agent')
+  const [hostHealth, setHostHealth] = useState<HarnessHostHealth>()
   const [attempt, setAttempt] = useState(0)
   const diagnosticRun = useRef(0)
 
@@ -13,14 +15,17 @@ export function useHarnessHealth(authenticated: boolean) {
     if (!authenticated || !connectorDiagnosticsAvailable()) {
       setHealth('ready')
       setDetail('本地 Agent 仅在桌面客户端启用')
+      setHostHealth(undefined)
       return
     }
     let disposed = false
     setHealth('checking')
     setDetail('正在检查 Harness Host')
-    void probeHarnessHost()
+    setHostHealth(undefined)
+    void probeHarnessHost(modelConfigured, allowShell, allowLsp, allowExternalAgents, allowHooks, toolsMode)
       .then(async (result) => {
         if (disposed) return
+        setHostHealth(result)
         if (result.status !== 'ready') {
           setHealth('degraded')
           setDetail(`Harness Host 状态异常：${result.status}`)
@@ -40,9 +45,10 @@ export function useHarnessHealth(authenticated: boolean) {
         if (disposed) return
         setHealth('degraded')
         setDetail(message(reason))
+        setHostHealth(undefined)
       })
     return () => { disposed = true }
-  }, [attempt, authenticated])
+  }, [allowExternalAgents, allowHooks, allowLsp, allowShell, attempt, authenticated, modelConfigured, toolsMode])
 
   const reportInfrastructureFailure = useCallback((reason: string) => {
     const run = diagnosticRun.current + 1
@@ -58,7 +64,7 @@ export function useHarnessHealth(authenticated: boolean) {
       })
   }, [])
 
-  return { health, detail, recover: () => setAttempt((value) => value + 1), reportInfrastructureFailure }
+  return { health, detail, hostHealth, recover: () => setAttempt((value) => value + 1), reportInfrastructureFailure }
 }
 
 function message(reason: unknown): string {

@@ -45,6 +45,7 @@ export function useEnterpriseCatalog({
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBaseEntry[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [displayOwner, setDisplayOwner] = useState('')
   const [refreshKey, setRefreshKey] = useState(0)
   const cacheRef = useRef<CatalogData>(emptyCatalog())
   const catalogOwnerRef = useRef('')
@@ -53,6 +54,7 @@ export function useEnterpriseCatalog({
   const enabledConnectorIdsRef = useRef(enabledConnectorIds)
 
   const applyCatalog = useCallback((data = cacheRef.current) => {
+    setDisplayOwner(catalogOwnerRef.current)
     setExpertKitCatalog(data.catalog)
     setSkills(data.skills)
     setConnectors(data.connectors)
@@ -214,17 +216,18 @@ export function useEnterpriseCatalog({
     applyCatalog()
   }, [applyCatalog])
 
+  const visible = Boolean(user && displayOwner === user.userId)
   return {
-    connectors,
-    expertKitCatalog,
-    expertKits,
-    knowledgeBases,
-    loading,
-    error,
+    connectors: visible ? connectors : [],
+    expertKitCatalog: visible ? expertKitCatalog : [],
+    expertKits: visible ? expertKits : [],
+    knowledgeBases: visible ? knowledgeBases : [],
+    loading: visible && loading,
+    error: visible ? error : '',
     refresh,
     refreshInstalled,
     replaceConnectors,
-    skills,
-    skillViews,
+    skills: visible ? skills : [],
+    skillViews: visible ? skillViews : [],
   }
 }

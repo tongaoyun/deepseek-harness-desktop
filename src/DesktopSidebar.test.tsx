@@ -8,7 +8,7 @@ const noop = () => undefined
 const task: LocalTaskRun = {
   id: 'current', source: 'DESKTOP', name: '分析文档', status: 'COMPLETED',
   createdAt: '', updatedAt: '', messages: [],
-  monitor: { status: 'idle', activity: '', updatedAt: '', steps: [], artifacts: [] },
+  projection: { status: 'idle', activity: '', updatedAt: '', steps: [], artifacts: [] },
 }
 const props: ComponentProps<typeof DesktopSidebar> = {
   collapsed: false, activeTaskId: task.id, page: 'chat', taskSearchOpen: false,
@@ -32,7 +32,7 @@ it('marks the open task as current only on the conversation page', () => {
 })
 
 it('shows interrupted separately from ordinary task failure', () => {
-  const interrupted: LocalTaskRun = { ...task, status: 'FAILED', monitor: { ...task.monitor, status: 'failed',
+  const interrupted: LocalTaskRun = { ...task, status: 'FAILED', projection: { ...task.projection, status: 'failed',
     failure: { code: 'XY-INTERRUPTED', category: 'local-agent', detail: '应用退出' },
   } }
   const html = renderToStaticMarkup(<DesktopSidebar {...props} tasks={[interrupted]} visibleTasks={[interrupted]} />)

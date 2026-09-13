@@ -3,6 +3,7 @@ import type { BindableTask, DingTalkImConfiguration, LocalImRuntime, ScheduleRou
 import { diagnoseConfiguredConnectors } from './managed-mcp-plugin.js'
 import { runLocalCapabilitySelfTest } from './self-test.js'
 import type { QuestionAnswer } from './question-bridge.js'
+import { publicErrorMessage } from './public-error.js'
 import {
   failure,
   isJsonRpcRequest,
@@ -62,6 +63,23 @@ export class HostServer {
         case 'host.self-test':
           this.emit(success(value.id, await runLocalCapabilitySelfTest()))
           return
+        case 'session.inspect': {
+          const sessionId = parseSessionId(value.params)
+          if (!this.runtime.inspectSession) throw new Error('Session inspection is unavailable')
+          this.emit(success(value.id, await this.runtime.inspectSession(sessionId)))
+          return
+        }
+        case 'session.search': {
+          const input = parseSessionSearch(value.params)
+          if (!this.runtime.searchSessions) throw new Error('Session search is unavailable')
+          this.emit(success(value.id, await this.runtime.searchSessions(input.sessionIds, input.query, input.limit, input.cursor)))
+          return
+        }
+        case 'provider.check': {
+          if (!this.runtime.checkProvider) throw new Error('模型服务检查不可用')
+          this.emit(success(value.id, await this.runtime.checkProvider()))
+          return
+        }
         case 'connectors.diagnose':
           this.emit(success(value.id, await diagnoseConfiguredConnectors()))
           return
@@ -127,10 +145,27 @@ export class HostServer {
           this.emit(failure(value.id, -32601, `Method not found: ${value.method}`))
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      this.emit(failure(value.id, -32001, message))
+      this.emit(failure(value.id, -32001, publicErrorMessage(error)))
     }
   }
+}
+
+function parseSessionId(params: unknown): string {
+  if (typeof params !== 'object' || params === null || Array.isArray(params)) throw new Error('session.inspect params must be an object')
+  const sessionId = (params as Record<string, unknown>).sessionId
+  if (typeof sessionId !== 'string' || !/^[-a-zA-Z0-9_:.]{1,256}$/u.test(sessionId)) throw new Error('session.inspect sessionId is invalid')
+  return sessionId
+}
+
+function parseSessionSearch(params: unknown): { sessionIds: string[]; query: string; limit: number; cursor?: string } {
+  if (typeof params !== 'object' || params === null || Array.isArray(params)) throw new Error('session.search params must be an object')
+  const value = params as Record<string, unknown>
+  if (!Array.isArray(value.sessionIds) || value.sessionIds.length > 2_000 || value.sessionIds.some((id) => typeof id !== 'string' || !/^[-a-zA-Z0-9_:.]{1,256}$/u.test(id))) throw new Error('session.search sessionIds are invalid')
+  if (typeof value.query !== 'string' || !value.query.trim() || value.query.length > 500) throw new Error('session.search query is invalid')
+  const limit = value.limit === undefined ? 100 : value.limit
+  if (!Number.isSafeInteger(limit) || Number(limit) < 1 || Number(limit) > 200) throw new Error('session.search limit is invalid')
+  if (value.cursor !== undefined && (typeof value.cursor !== 'string' || value.cursor.length === 0 || value.cursor.length > 8_192)) throw new Error('session.search cursor is invalid')
+  return { sessionIds: value.sessionIds, query: value.query, limit: Number(limit), ...(value.cursor === undefined ? {} : { cursor: value.cursor }) }
 }
 
 function parseImConfiguration(params: unknown): DingTalkImConfiguration {

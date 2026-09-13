@@ -2,12 +2,14 @@ import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { createServer as createNetServer } from 'node:net'
 import { createServer, loadEnv } from 'vite'
+import { localDevelopmentPort, localDevelopmentTauriConfig } from './dev-local-config.mjs'
 
 process.env.VITE_SKIP_ERP_LOGIN = 'true'
+process.env.XIAOYIN_LOCAL_DEV_WEBVIEW_ISOLATION = 'true'
 const root = fileURLToPath(new URL('..', import.meta.url))
 const backend = process.env.VITE_XIAOYIN_SERVER_URL ?? loadEnv('development', root, 'VITE_').VITE_XIAOYIN_SERVER_URL ?? 'http://192.168.2.67:30081'
 const probe = createNetServer()
-await new Promise((resolve, reject) => { probe.once('error', reject); probe.listen(0, '127.0.0.1', resolve) })
+await new Promise((resolve, reject) => { probe.once('error', reject); probe.listen(localDevelopmentPort(process.env.XIAOYIN_LOCAL_DEV_PORT), '127.0.0.1', resolve) })
 const address = probe.address()
 if (!address || typeof address === 'string') throw new Error('本地测试服务启动失败')
 await new Promise((resolve, reject) => probe.close((error) => error ? reject(error) : resolve()))
@@ -17,11 +19,7 @@ const server = await createServer({ root, server: { host: '127.0.0.1', port: add
   proxy: { '/api': { target: backend, changeOrigin: true } },
 } })
 await server.listen()
-const config = {
-  productName: '小胤本地测试', identifier: 'com.instudio.xiaoyin.desktop.local-test',
-  build: { devUrl: url, beforeDevCommand: '' },
-  app: { windows: [{ label: 'main', title: '小胤 · 本地测试', width: 1320, height: 820, minWidth: 900, minHeight: 640 }] },
-}
+const config = localDevelopmentTauriConfig(url)
 console.log(`本地测试预览：${url}`)
 console.log('开发会话：local-development；应用数据与正常小胤独立。')
 const cli = fileURLToPath(new URL('../node_modules/@tauri-apps/cli/tauri.js', import.meta.url))

@@ -1,10 +1,18 @@
 import { invoke, isTauri } from '@tauri-apps/api/core'
-import type { AllowedExtensionArtifact, ConnectorRuntimeDefinition } from './types'
+import type { CapabilitySnapshot } from './types'
+
+let runtimeTransition: Promise<void> = Promise.resolve()
+
+function serializeRuntime<T>(operation: () => Promise<T>): Promise<T> {
+  const result = runtimeTransition.then(operation, operation)
+  runtimeTransition = result.then(() => undefined, () => undefined)
+  return result
+}
 
 export type ImAccessPolicy = 'open' | 'pairing'
 
 export interface DingTalkRegistration { deviceCode: string; verificationUri: string; expiresIn: number; interval: number }
-export type DingTalkRegistrationResult = { status: 'WAITING' | 'FAIL' | 'EXPIRED' } | { status: 'SUCCESS'; clientId: string; clientSecret: string }
+export type DingTalkRegistrationResult = { status: 'WAITING' | 'RETRY' | 'FAIL' | 'EXPIRED' } | { status: 'SUCCESS'; clientId: string; clientSecret: string }
 
 export async function beginDingTalkRegistration(): Promise<DingTalkRegistration> {
   if (!isTauri()) throw new Error('请在小胤桌面端扫码配置钉钉，网页预览可查看手动配置')
@@ -21,11 +29,14 @@ export interface LocalImHarnessContext {
   litellmBaseUrl: string
   knowledgeEndpoint: string
   scheduleEndpoint: string
-  connectors: ConnectorRuntimeDefinition[]
-  allowedArtifacts: AllowedExtensionArtifact[]
+  capabilitySnapshot: CapabilitySnapshot
   model: string
   modelApiKey: string
   accessToken: string
+  allowShell: boolean
+  allowLsp: boolean
+  allowExternalAgents: boolean
+  allowHooks: boolean
 }
 
 export interface LocalImPairingRequest {
@@ -71,7 +82,7 @@ export interface LocalImConversationSummary {
   boundTaskId?: string
   boundTaskName?: string
   messages: LocalImConversationMessage[]
-  taskEvents: LocalImTaskEvent[]
+  taskProjection?: Record<string, unknown>
 }
 
 export interface LocalImConversationMessage {
@@ -79,12 +90,6 @@ export interface LocalImConversationMessage {
   id: string
   role: 'user' | 'assistant'
   text: string
-  createdAt: string
-}
-
-export interface LocalImTaskEvent {
-  id: string
-  event: unknown
   createdAt: string
 }
 
@@ -104,17 +109,17 @@ export async function loadLocalImStatus(): Promise<LocalImStatus> {
 
 export async function configureLocalDingTalk(input: ConfigureDingTalkInput): Promise<LocalImStatus> {
   if (!isTauri()) throw new Error('IM 频道只能在小胤桌面客户端中配置')
-  return invoke<LocalImStatus>('configure_local_dingtalk', { request: input })
+  return serializeRuntime(() => invoke<LocalImStatus>('configure_local_dingtalk', { request: input }))
 }
 
 export async function startLocalIm(harness: LocalImHarnessContext): Promise<LocalImStatus> {
   if (!isTauri()) return emptyStatus()
-  return invoke<LocalImStatus>('start_local_im', { harness })
+  return serializeRuntime(() => invoke<LocalImStatus>('start_local_im', { harness }))
 }
 
 export async function setLocalImEnabled(enabled: boolean, harness: LocalImHarnessContext): Promise<LocalImStatus> {
   if (!isTauri()) throw new Error('IM 频道只能在小胤桌面客户端中启停')
-  return invoke<LocalImStatus>('set_local_im_enabled', { enabled, harness })
+  return serializeRuntime(() => invoke<LocalImStatus>('set_local_im_enabled', { enabled, harness }))
 }
 
 export async function allowLocalImPairing(conversationKey: string): Promise<LocalImStatus> {
@@ -163,12 +168,12 @@ export async function routeLocalImSchedule(
 
 export async function removeLocalDingTalk(): Promise<LocalImStatus> {
   if (!isTauri()) return emptyStatus()
-  return invoke<LocalImStatus>('remove_local_dingtalk')
+  return serializeRuntime(() => invoke<LocalImStatus>('remove_local_dingtalk'))
 }
 
 export async function stopLocalImRuntime(): Promise<void> {
   if (!isTauri()) return
-  await invoke('stop_local_im_runtime')
+  await serializeRuntime(() => invoke('stop_local_im_runtime'))
 }
 
 function emptyStatus(): LocalImStatus {

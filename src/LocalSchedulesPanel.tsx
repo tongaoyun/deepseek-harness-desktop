@@ -95,7 +95,7 @@ export function LocalSchedulesPanel({ controller, onOpenTask, onCreateWithXiaoyi
     </div>
     {(!open && error || controller.error) && <p role="alert" className="kit-error">{error || controller.error}</p>}
     {controller.error && <button className="schedule-create-with-ai" type="button" onClick={() => controller.refresh()}><RefreshCw size={14} />重新检查并恢复</button>}
-    {!records ? <div className="schedule-list">{ordered.length === 0 && <div className="schedule-empty"><Clock3 size={24} /><strong>暂无定时任务</strong><p>创建一个定时任务，让小胤按计划帮你完成工作</p></div>}
+    {!records ? <div className="schedule-list">{ordered.length === 0 && !controller.error && <div className="schedule-empty"><Clock3 size={24} /><strong>暂无定时任务</strong><p>创建一个定时任务，让小胤按计划帮你完成工作</p></div>}
       {ordered.map((item) => {
         const finishedOnce = item.timing?.kind === 'once' && Date.parse(item.nextAt) <= Date.now()
         const hint = item.active ? `下次执行：${new Date(item.nextAt).toLocaleString('zh-CN')}` : finishedOnce ? '已结束；可编辑时间重新安排' : '已暂停'
@@ -106,7 +106,7 @@ export function LocalSchedulesPanel({ controller, onOpenTask, onCreateWithXiaoyi
           <button className="schedule-card-edit" type="button" aria-label={`编辑 ${item.name}`} onClick={() => edit(item)}><h3>{item.name}</h3><p>{item.prompt}</p><footer><span title={hint}><Clock3 size={14} />{scheduleLabel(item)}</span></footer></button>
         </article>
       })}
-    </div> : <div className="schedule-execution-page">{runs.length === 0 ? <div className="schedule-empty"><Clock3 size={24} /><strong>{taskFilter || statusFilter ? '暂无符合条件的记录' : '暂无执行记录'}</strong><p>{taskFilter || statusFilter ? '试试其他任务或状态' : '当定时任务开始执行后，记录将显示在这里'}</p></div> :
+    </div> : <div className="schedule-execution-page">{runs.length === 0 ? !controller.error && <div className="schedule-empty"><Clock3 size={24} /><strong>{taskFilter || statusFilter ? '暂无符合条件的记录' : '暂无执行记录'}</strong><p>{taskFilter || statusFilter ? '试试其他任务或状态' : '当定时任务开始执行后，记录将显示在这里'}</p></div> :
       [...grouped].map(([label, entries]) => <section key={label}><h3>{label}</h3>{entries.map(({ item, run }) => <article key={run.id}><span className={`schedule-run-status ${run.status.toLowerCase()}`}>{scheduleRunLabels[run.status]}</span><div><strong>{item.name}</strong>{run.detail && <small>{run.detail}</small>}</div><time>{new Date(run.startedAt).toLocaleString('zh-CN')}</time>{run.taskId && <button type="button" onClick={() => onOpenTask(run.taskId!)}>查看任务</button>}</article>)}</section>)}
     </div>}
     {open && <div className="schedule-modal-backdrop schedule-reference-backdrop"><form role="dialog" aria-modal="true" aria-label={editing ? '编辑定时任务' : '新建定时任务'} className="schedule-modal schedule-reference-modal" ref={dialog} onSubmit={(event) => {

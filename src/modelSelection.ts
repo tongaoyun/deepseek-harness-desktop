@@ -16,3 +16,15 @@ export function modelDisplayName(model: string): string {
 export function modelStorageKey(employeeId: string): string {
   return `xiaoyin.selected-model.${employeeId}`
 }
+
+export function loadSelectedModel(employeeId: string): string | null {
+  try { return localStorage.getItem(modelStorageKey(employeeId)) }
+  catch { return null }
+}
+
+export function saveSelectedModel(employeeId: string, model: string): boolean {
+  try {
+    localStorage.setItem(modelStorageKey(employeeId), model)
+    return localStorage.getItem(modelStorageKey(employeeId)) === model
+  } catch { return false }
+}

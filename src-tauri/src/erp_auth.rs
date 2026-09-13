@@ -4,7 +4,8 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
     env,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    sync::Mutex,
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use tauri::{Emitter, Manager};
 mod diagnostics;
@@ -14,6 +15,124 @@ use diagnostics::{Code, Diagnostic};
 
 // Serialize restoration, validation and logout so a late check cannot re-save a revoked session.
 static SESSION_RESTORED: futures_util::lock::Mutex<bool> = futures_util::lock::Mutex::new(false);
+static EMPLOYEE_CHECK: futures_util::lock::Mutex<()> = futures_util::lock::Mutex::new(());
+static VERIFIED_EMPLOYEE: Mutex<Option<(u64, String, Instant)>> = Mutex::new(None);
+static OFFLINE_EMPLOYEE: Mutex<Option<(u64, String, Instant)>> = Mutex::new(None);
+static CONNECTOR_TOKEN: Mutex<Option<ConnectorToken>> = Mutex::new(None);
+const EMPLOYEE_CACHE_AGE: Duration = Duration::from_secs(5);
+const OFFLINE_EMPLOYEE_CACHE_AGE: Duration = Duration::from_secs(30);
+
+struct ConnectorToken {
+    epoch: u64,
+    employee_id: String,
+    control_token: String,
+    connector_token: String,
+    expires_at: i64,
+}
+
+impl ConnectorToken {
+    fn for_session(&self, employee_id: &str, access_token: &str, epoch: u64, now: i64) -> &str {
+        if self.epoch == epoch
+            && epoch.is_multiple_of(2)
+            && self.employee_id == employee_id
+            && self.control_token == access_token
+            && now < self.expires_at
+        {
+            &self.connector_token
+        } else {
+            ""
+        }
+    }
+}
+
+pub(crate) fn connector_bearer_token(employee_id: &str, access_token: &str) -> String {
+    let Ok(guard) = CONNECTOR_TOKEN.lock() else {
+        return String::new();
+    };
+    let Ok(now) = SystemTime::now().duration_since(UNIX_EPOCH) else {
+        return String::new();
+    };
+    guard
+        .as_ref()
+        .map_or("", |session| {
+            session.for_session(
+                employee_id,
+                access_token,
+                mcp::session_epoch(),
+                now.as_secs() as i64,
+            )
+        })
+        .to_string()
+}
+
+fn clear_connector_token() {
+    if let Ok(mut guard) = CONNECTOR_TOKEN.lock() {
+        *guard = None;
+    }
+    clear_offline_employee();
+}
+
+fn clear_offline_employee() {
+    if let Ok(mut guard) = OFFLINE_EMPLOYEE.lock() {
+        *guard = None;
+    }
+}
+
+fn offline_identity_from_token(token: &ConnectorToken, epoch: u64, now: i64) -> Option<&str> {
+    (epoch.is_multiple_of(2)
+        && token.epoch == epoch
+        && token.expires_at > now
+        && !token.control_token.is_empty()
+        && !token.connector_token.is_empty())
+    .then_some(token.employee_id.as_str())
+}
+
+fn offline_employee(refresh: bool) -> Option<String> {
+    let epoch = mcp::session_epoch();
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).ok()?.as_secs() as i64;
+    let employee_id = {
+        let token = CONNECTOR_TOKEN.lock().ok()?;
+        offline_identity_from_token(token.as_ref()?, epoch, now)?.to_string()
+    };
+    let mut cache = OFFLINE_EMPLOYEE.lock().ok()?;
+    if !refresh
+        && !cache
+            .as_ref()
+            .is_some_and(|(cached_epoch, cached_id, checked_at)| {
+                *cached_epoch == epoch
+                    && cached_id == &employee_id
+                    && checked_at.elapsed() < OFFLINE_EMPLOYEE_CACHE_AGE
+            })
+    {
+        return None;
+    }
+    if refresh {
+        *cache = Some((epoch, employee_id.clone(), Instant::now()));
+    }
+    Some(employee_id)
+}
+
+fn transient_session_error(diagnostic: &Diagnostic) -> bool {
+    matches!(diagnostic.code, Code::NetworkError | Code::RequestTimeout)
+        || matches!(
+            diagnostic.code,
+            Code::IdentityUnavailable | Code::ControlPlaneAuthFailed
+        ) && diagnostic
+            .http_status
+            .is_none_or(|status| status == 429 || status >= 500)
+}
+
+fn remember_employee(session: Option<&ErpSessionStatus>) {
+    if let Ok(mut verified) = VERIFIED_EMPLOYEE.lock() {
+        let epoch = mcp::session_epoch();
+        *verified = session.and_then(|status| {
+            (status.authenticated && epoch.is_multiple_of(2))
+                .then_some(status.user.as_ref())
+                .flatten()
+                .map(|user| (epoch, user.user_id.clone(), Instant::now()))
+        });
+    }
+}
 
 const ERP_LOGIN_URL: &str = "http://www.instudio.me:6206/eshop/manager/login.jsp";
 const ERP_USER_URL: &str =
@@ -23,6 +142,7 @@ const ERP_DINGTALK_APP_ID: &str = "dingoa43wafbtpeg2czybj";
 const ERP_DINGTALK_CALLBACK_URL: &str =
     "http://www.instudio.me:6206/eshop/login.do?method=qrcodelogin";
 const DINGTALK_QR_LOGIN_URL: &str = "https://login.dingtalk.com/login/qrcode.htm";
+const MAX_ERP_IDENTITY_BYTES: usize = 32 * 1024;
 
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all(serialize = "camelCase", deserialize = "snake_case"))]
@@ -60,6 +180,21 @@ pub(crate) struct ErpSessionStatus {
     user: Option<ErpUser>,
     login_url: String,
     diagnostic: Diagnostic,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ControlPlaneSession {
+    employee_id: String,
+    team_id: String,
+    access_token: String,
+    expires_at: i64,
+}
+
+#[derive(Deserialize)]
+struct ControlPlaneEnvelope {
+    success: bool,
+    data: Option<ControlPlaneSession>,
 }
 
 #[derive(Serialize)]
@@ -164,6 +299,8 @@ pub(crate) fn complete_erp_qr_login(
     login_tmp_code: String,
 ) -> Result<(), String> {
     let login_tmp_code = validated_login_tmp_code(&login_tmp_code)?;
+    remember_employee(None);
+    clear_connector_token();
     let target = format!(
         "{}&loginTmpCode={}",
         erp_dingtalk_auth_url(),
@@ -187,7 +324,14 @@ pub(crate) fn complete_erp_qr_login(
 
 #[tauri::command]
 pub(crate) async fn erp_session(app: tauri::AppHandle) -> Result<ErpSessionStatus, Diagnostic> {
-    let result = resolve_session(&app).await;
+    let control_plane_url = option_env!("VITE_XIAOYIN_SERVER_URL")
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| Diagnostic::new(Code::ConfigurationInvalid, None, None))?;
+    let result = resolve_session(&app, true, Some(control_plane_url)).await;
+    remember_employee(result.as_ref().ok());
+    if !result.as_ref().err().is_some_and(transient_session_error) {
+        clear_offline_employee();
+    }
     let diagnostic = match &result {
         Ok(session) => &session.diagnostic,
         Err(diagnostic) => diagnostic,
@@ -202,7 +346,81 @@ pub(crate) async fn erp_session(app: tauri::AppHandle) -> Result<ErpSessionStatu
     result
 }
 
-async fn resolve_session(app: &tauri::AppHandle) -> Result<ErpSessionStatus, Diagnostic> {
+pub(crate) async fn require_employee(
+    app: &tauri::AppHandle,
+    employee_id: &str,
+) -> Result<(), String> {
+    employee_matches(&current_employee(app).await?, employee_id)
+}
+
+pub(crate) async fn current_employee(app: &tauri::AppHandle) -> Result<String, String> {
+    if local_development_identity(
+        &app.config().identifier,
+        std::env::var("XIAOYIN_LOCAL_DEV_WEBVIEW_ISOLATION")
+            .ok()
+            .as_deref(),
+    ) {
+        return Ok("local-development".to_string());
+    }
+    let _guard = EMPLOYEE_CHECK.lock().await;
+    if let Ok(verified) = VERIFIED_EMPLOYEE.lock()
+        && let Some((epoch, user_id, checked_at)) = verified.as_ref()
+        && *epoch == mcp::session_epoch()
+        && epoch.is_multiple_of(2)
+        && checked_at.elapsed() < EMPLOYEE_CACHE_AGE
+    {
+        return Ok(user_id.clone());
+    }
+    if let Some(employee_id) = offline_employee(false) {
+        return Ok(employee_id);
+    }
+    let session = match resolve_session(app, false, None).await {
+        Ok(session) => session,
+        Err(diagnostic) => {
+            if transient_session_error(&diagnostic)
+                && let Some(employee_id) = offline_employee(true)
+            {
+                return Ok(employee_id);
+            }
+            clear_offline_employee();
+            return Err("无法核实当前登录账号，请重试".to_string());
+        }
+    };
+    clear_offline_employee();
+    if mcp::session_epoch() % 2 == 1 {
+        return Err("当前登录账号已失效".to_string());
+    }
+    remember_employee(Some(&session));
+    let user_id = session
+        .user
+        .as_ref()
+        .filter(|_| session.authenticated)
+        .map_or("", |user| &user.user_id);
+    if user_id.is_empty() {
+        return Err("当前登录账号已失效".to_string());
+    }
+    Ok(user_id.to_string())
+}
+
+fn local_development_identity(identifier: &str, isolation: Option<&str>) -> bool {
+    cfg!(debug_assertions)
+        && identifier == "com.instudio.xiaoyin.desktop.local-test"
+        && isolation == Some("true")
+}
+
+fn employee_matches(actual: &str, requested: &str) -> Result<(), String> {
+    if !actual.is_empty() && actual == requested {
+        Ok(())
+    } else {
+        Err("当前登录账号与请求的员工不一致".into())
+    }
+}
+
+async fn resolve_session(
+    app: &tauri::AppHandle,
+    show_window: bool,
+    control_plane_url: Option<&str>,
+) -> Result<ErpSessionStatus, Diagnostic> {
     let mut restored = SESSION_RESTORED.lock().await;
     let session_epoch = mcp::session_epoch();
     let webview = app
@@ -237,6 +455,8 @@ async fn resolve_session(app: &tauri::AppHandle) -> Result<ErpSessionStatus, Dia
         .join("; ");
 
     if cookie_header.is_empty() {
+        clear_connector_token();
+        mcp::revoke_session();
         return Ok(unauthenticated_erp_session(Diagnostic::new(
             Code::CookieMissing,
             Some(0),
@@ -252,8 +472,33 @@ async fn resolve_session(app: &tauri::AppHandle) -> Result<ErpSessionStatus, Dia
     let (user, diagnostic) =
         resolve_identity(&client, &erp_user_url(), &cookie_header, cookies.len()).await?;
     let Some(user) = user else {
+        clear_connector_token();
+        mcp::revoke_session();
         clear_saved_session(app).await?;
         return Ok(unauthenticated_erp_session(diagnostic));
+    };
+    if session_epoch != mcp::session_epoch() {
+        return Ok(unauthenticated_erp_session(Diagnostic::new(
+            Code::SessionRejected,
+            None,
+            None,
+        )));
+    }
+    let control_plane_session = match control_plane_url {
+        Some(url) => Some(
+            exchange_control_plane_session(
+                &client,
+                url,
+                &cookie_header,
+                &user.user_id,
+                &user.team_id,
+            )
+            .await
+            .map_err(|status| {
+                Diagnostic::new(Code::ControlPlaneAuthFailed, Some(cookies.len()), status)
+            })?,
+        ),
+        None => None,
     };
     if session_epoch != mcp::session_epoch() {
         return Ok(unauthenticated_erp_session(Diagnostic::new(
@@ -267,23 +512,106 @@ async fn resolve_session(app: &tauri::AppHandle) -> Result<ErpSessionStatus, Dia
         .await
         .map_err(|_| Diagnostic::new(Code::CookieStoreFailed, None, None))?
         .map_err(|_| Diagnostic::new(Code::CookieStoreFailed, None, None))?;
-    let access_token = trusted_internal_token(&cookie_header);
+    let access_token = control_plane_session.as_ref().map_or_else(
+        || trusted_internal_token(&cookie_header),
+        |session| session.access_token.clone(),
+    );
+    let expires_at = control_plane_session
+        .as_ref()
+        .map_or_else(trusted_session_expiry, |session| Some(session.expires_at));
     mcp::activate_session(session_epoch);
-    if let Some(window) = app.get_webview_window("erp-login") {
-        let _ = window.hide();
-        if let Ok(url) = erp_login_window_url(app) {
-            let _ = window.navigate(url);
+    if let Ok(mut guard) = CONNECTOR_TOKEN.lock() {
+        if let Some(session) = control_plane_session.as_ref() {
+            *guard = Some(ConnectorToken {
+                epoch: mcp::session_epoch(),
+                employee_id: user.user_id.clone(),
+                control_token: session.access_token.clone(),
+                connector_token: trusted_internal_token(&cookie_header),
+                expires_at: session.expires_at,
+            });
+        } else if guard.as_ref().is_some_and(|old| {
+            old.employee_id != user.user_id
+                || old.connector_token != trusted_internal_token(&cookie_header)
+        }) {
+            *guard = None;
         }
     }
-    show_main_window(app);
+    if show_window {
+        if let Some(window) = app.get_webview_window("erp-login") {
+            let _ = window.hide();
+            if let Ok(url) = erp_login_window_url(app) {
+                let _ = window.navigate(url);
+            }
+        }
+        show_main_window(app);
+    }
     Ok(ErpSessionStatus {
         authenticated: true,
         access_token,
-        expires_at: trusted_session_expiry(),
+        expires_at,
         user: Some(user),
         login_url: erp_login_url(),
         diagnostic,
     })
+}
+
+async fn exchange_control_plane_session(
+    client: &reqwest::Client,
+    base_url: &str,
+    cookie_header: &str,
+    expected_employee_id: &str,
+    expected_team_id: &str,
+) -> Result<ControlPlaneSession, Option<u16>> {
+    let mut url = reqwest::Url::parse(base_url).map_err(|_| None)?;
+    let local_http = cfg!(debug_assertions)
+        && url.scheme() == "http"
+        && matches!(url.host_str(), Some("localhost" | "127.0.0.1" | "[::1]"));
+    if url.scheme() != "https" && !local_http
+        || !url.username().is_empty()
+        || url.password().is_some()
+    {
+        return Err(None);
+    }
+    url.set_path("/api/v1/employee-auth/session");
+    url.set_query(None);
+    url.set_fragment(None);
+    let mut response = client
+        .post(url)
+        .header("Accept", "application/json")
+        .json(&serde_json::json!({ "cookie": cookie_header }))
+        .send()
+        .await
+        .map_err(|_| None)?;
+    let status = response.status().as_u16();
+    if status != 200 {
+        return Err(Some(status));
+    }
+    let mut body = Vec::new();
+    while let Some(chunk) = response.chunk().await.map_err(|_| Some(status))? {
+        if body.len().saturating_add(chunk.len()) > MAX_ERP_IDENTITY_BYTES {
+            return Err(Some(status));
+        }
+        body.extend_from_slice(&chunk);
+    }
+    let envelope: ControlPlaneEnvelope = serde_json::from_slice(&body).map_err(|_| Some(status))?;
+    let session = envelope
+        .data
+        .filter(|_| envelope.success)
+        .ok_or(Some(status))?;
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| Some(status))?
+        .as_secs() as i64;
+    if session.employee_id != expected_employee_id
+        || session.team_id != expected_team_id
+        || session.access_token.is_empty()
+        || session.access_token.len() > 16 * 1024
+        || session.expires_at <= now
+        || session.expires_at > now + 3600
+    {
+        return Err(Some(status));
+    }
+    Ok(session)
 }
 
 async fn resolve_identity(
@@ -293,7 +621,7 @@ async fn resolve_identity(
     cookie_count: usize,
 ) -> Result<(Option<ErpUser>, Diagnostic), Diagnostic> {
     let failure = |code, status| Diagnostic::new(code, Some(cookie_count), status);
-    let response = client
+    let mut response = client
         .get(url)
         .header("Accept", "application/json")
         .header("X-Requested-With", "XMLHttpRequest")
@@ -319,7 +647,8 @@ async fn resolve_identity(
         200 => {}
         _ => return Err(failure(Code::IdentityUnavailable, Some(status))),
     }
-    let identity: ErpIdentity = response.json().await.map_err(|error| {
+    let mut body = Vec::new();
+    while let Some(chunk) = response.chunk().await.map_err(|error| {
         failure(
             if error.is_timeout() {
                 Code::RequestTimeout
@@ -328,7 +657,14 @@ async fn resolve_identity(
             },
             Some(status),
         )
-    })?;
+    })? {
+        if body.len().saturating_add(chunk.len()) > MAX_ERP_IDENTITY_BYTES {
+            return Err(failure(Code::IdentityInvalid, Some(status)));
+        }
+        body.extend_from_slice(&chunk);
+    }
+    let identity: ErpIdentity =
+        serde_json::from_slice(&body).map_err(|_| failure(Code::IdentityInvalid, Some(status)))?;
     let user = erp_user_from_identity(&identity)
         .map_err(|_| failure(Code::IdentityInvalid, Some(status)))?;
     Ok((Some(user), failure(Code::Authenticated, Some(status))))
@@ -356,7 +692,7 @@ fn erp_user_from_identity(identity: &ErpIdentity) -> Result<ErpUser, String> {
     let team_id = identity
         .department_id
         .map(|value| value.to_string())
-        .unwrap_or_else(|| company_id.clone());
+        .unwrap_or_default();
     Ok(ErpUser {
         user_id: identity.oper_id.clone(),
         display_name: identity.oper.clone(),
@@ -394,7 +730,10 @@ fn trusted_session_expiry() -> Option<i64> {
 
 #[tauri::command]
 pub(crate) async fn clear_erp_session(app: tauri::AppHandle) -> Result<(), String> {
+    remember_employee(None);
+    clear_connector_token();
     mcp::revoke_session();
+    crate::schedule_desktop::stop_keep_awake();
     let mut restored = SESSION_RESTORED.lock().await;
     *restored = true;
     clear_saved_session(&app)
@@ -434,6 +773,177 @@ async fn clear_saved_session(app: &tauri::AppHandle) -> Result<(), Diagnostic> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn local_dev_identity_requires_the_isolated_debug_application() {
+        assert_eq!(
+            local_development_identity("com.instudio.xiaoyin.desktop.local-test", Some("true")),
+            cfg!(debug_assertions)
+        );
+        assert!(!local_development_identity(
+            "com.instudio.xiaoyin.desktop",
+            Some("true")
+        ));
+        assert!(!local_development_identity(
+            "com.instudio.xiaoyin.desktop.local-test",
+            None
+        ));
+    }
+
+    #[test]
+    fn offline_identity_requires_a_live_signed_session_and_transient_failure() {
+        let token = ConnectorToken {
+            epoch: 2,
+            employee_id: "employee-1".into(),
+            control_token: "signed-session".into(),
+            connector_token: "internal-trust:cookie-digest".into(),
+            expires_at: 100,
+        };
+        assert_eq!(
+            offline_identity_from_token(&token, 2, 99),
+            Some("employee-1")
+        );
+        assert_eq!(offline_identity_from_token(&token, 4, 99), None);
+        assert_eq!(offline_identity_from_token(&token, 2, 100), None);
+        assert!(transient_session_error(&Diagnostic::new(
+            Code::NetworkError,
+            None,
+            None
+        )));
+        assert!(transient_session_error(&Diagnostic::new(
+            Code::IdentityUnavailable,
+            None,
+            Some(503)
+        )));
+        assert!(!transient_session_error(&Diagnostic::new(
+            Code::AccessDenied,
+            None,
+            Some(403)
+        )));
+        assert!(!transient_session_error(&Diagnostic::new(
+            Code::ControlPlaneAuthFailed,
+            None,
+            Some(401)
+        )));
+    }
+
+    #[test]
+    fn connector_token_cannot_be_used_as_a_control_plane_token_or_by_another_session() {
+        let token = ConnectorToken {
+            epoch: 2,
+            employee_id: "employee-1".into(),
+            control_token: "control-plane-token".into(),
+            connector_token: "internal-trust:cookie-digest".into(),
+            expires_at: 100,
+        };
+        assert_eq!(
+            token.for_session("employee-1", "control-plane-token", 2, 99),
+            "internal-trust:cookie-digest"
+        );
+        assert_eq!(
+            token.for_session("employee-2", "control-plane-token", 2, 99),
+            ""
+        );
+        assert_eq!(
+            token.for_session("employee-1", "old-control-token", 2, 99),
+            ""
+        );
+        assert_eq!(
+            token.for_session("employee-1", "control-plane-token", 3, 99),
+            ""
+        );
+        assert_eq!(
+            token.for_session("employee-1", "control-plane-token", 2, 100),
+            ""
+        );
+    }
+
+    #[test]
+    fn cookie_exchange_accepts_only_an_identity_bound_short_lived_session() {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let endpoint = format!("http://{}", listener.local_addr().unwrap());
+        let expires_at = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64
+            + 1800;
+        let server = std::thread::spawn(move || {
+            let valid = format!(
+                "{{\"success\":true,\"data\":{{\"employeeId\":\"employee-1\",\"teamId\":\"21\",\"accessToken\":\"signed-fixture\",\"expiresAt\":{expires_at}}}}}"
+            );
+            let oversized = format!(
+                "{{\"success\":true,\"padding\":\"{}\"}}",
+                "x".repeat(MAX_ERP_IDENTITY_BYTES)
+            );
+            for (index, body) in [valid, oversized].into_iter().enumerate() {
+                let (mut stream, _) = listener.accept().unwrap();
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(3)))
+                    .unwrap();
+                let mut request = Vec::new();
+                let mut buffer = [0; 1024];
+                loop {
+                    let length = stream.read(&mut buffer).unwrap();
+                    assert!(length > 0);
+                    request.extend_from_slice(&buffer[..length]);
+                    if request
+                        .windows("SESSION=fixture".len())
+                        .any(|part| part == b"SESSION=fixture")
+                    {
+                        break;
+                    }
+                }
+                let request = String::from_utf8(request).unwrap();
+                assert!(request.starts_with("POST /api/v1/employee-auth/session HTTP/1.1"));
+                let result = write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                if index == 0 {
+                    result.unwrap();
+                }
+            }
+        });
+        let client = reqwest::Client::builder()
+            .no_proxy()
+            .timeout(Duration::from_secs(3))
+            .build()
+            .unwrap();
+        let session = tauri::async_runtime::block_on(exchange_control_plane_session(
+            &client,
+            &endpoint,
+            "SESSION=fixture",
+            "employee-1",
+            "21",
+        ))
+        .unwrap();
+        assert_eq!(session.access_token, "signed-fixture");
+        assert_eq!(session.expires_at, expires_at);
+        assert_eq!(
+            tauri::async_runtime::block_on(exchange_control_plane_session(
+                &client,
+                &endpoint,
+                "SESSION=fixture",
+                "employee-1",
+                "21",
+            ))
+            .err(),
+            Some(Some(200))
+        );
+        server.join().unwrap();
+        assert!(
+            tauri::async_runtime::block_on(exchange_control_plane_session(
+                &client,
+                "http://192.168.2.67:30081",
+                "SESSION=fixture",
+                "employee-1",
+                "21",
+            ))
+            .is_err()
+        );
+    }
 
     fn identity_response(
         status: u16,
@@ -515,6 +1025,24 @@ mod tests {
     }
 
     #[test]
+    fn oversized_erp_identity_is_rejected_before_deserialization() {
+        let body = format!(
+            "{{\"operId\":\"1001\",\"oper\":\"Employee\",\"padding\":\"{}\"}}",
+            "x".repeat(MAX_ERP_IDENTITY_BYTES)
+        );
+        let failure = identity_response(200, &body).err().unwrap();
+        assert_eq!(failure.code, Code::IdentityInvalid);
+        assert_eq!(failure.http_status, Some(200));
+    }
+
+    #[test]
+    fn screenshot_identity_rejects_other_or_missing_employee() {
+        assert!(employee_matches("employee-a", "employee-a").is_ok());
+        assert!(employee_matches("employee-a", "employee-b").is_err());
+        assert!(employee_matches("", "employee-a").is_err());
+    }
+
+    #[test]
     fn login_tmp_code_is_validated() {
         assert_eq!(validated_login_tmp_code("session-123"), Ok("session-123"));
         assert!(validated_login_tmp_code("").is_err());
@@ -567,6 +1095,28 @@ mod tests {
         assert_eq!(user.team_id, "21");
         assert_eq!(user.company_id, "7");
         assert_eq!(user.role, "operator");
+    }
+
+    #[test]
+    fn erp_identity_without_department_does_not_inherit_company_as_team() {
+        let identity: ErpIdentity = serde_json::from_value(serde_json::json!({
+            "operId": "1001", "oper": "Employee", "groupCompanyId": 7
+        }))
+        .unwrap();
+        let user = erp_user_from_identity(&identity).unwrap();
+        assert_eq!(user.company_id, "7");
+        assert!(user.team_id.is_empty());
+
+        let identity: ErpIdentity = serde_json::from_value(serde_json::json!({
+            "operId": "1002", "oper": "Employee"
+        }))
+        .unwrap();
+        assert!(
+            erp_user_from_identity(&identity)
+                .unwrap()
+                .team_id
+                .is_empty()
+        );
     }
 
     #[test]

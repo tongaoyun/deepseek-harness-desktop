@@ -32,7 +32,7 @@ describe('harnessPromptWithConversationReplay', () => {
   })
   it('carries real file and attachment references even when a failed turn has no useful prose', () => {
     const prompt = harnessPromptWithConversationReplay('继续改这张表', [{ role: 'user', text: '', attachments: [{ id: 'input', rootId: 'root', rootName: '工作目录', path: 'input.csv', name: 'input.csv', kind: 'file' }] }, {
-      role: 'assistant', text: '', monitor: { status: 'failed', activity: '', updatedAt: '', steps: [], artifacts: [{ id: 'root:output.xlsx', rootId: 'root', rootName: '工作目录', path: 'output.xlsx', name: 'output.xlsx', kind: 'spreadsheet', sourceTool: 'local_files_publish', createdAt: '' }] },
+      role: 'assistant', text: '', projection: { status: 'failed', activity: '', updatedAt: '', steps: [], artifacts: [{ id: 'root:output.xlsx', rootId: 'root', rootName: '工作目录', path: 'output.xlsx', name: 'output.xlsx', kind: 'spreadsheet', sourceTool: 'local_files_publish', createdAt: '' }] },
     }], true)
     expect(prompt).toContain('input.csv')
     expect(prompt).toContain('output.xlsx')
@@ -42,7 +42,7 @@ describe('harnessPromptWithConversationReplay', () => {
 
   it('bounds file context and retains the latest status of an updated earlier file', () => {
     const messages: TaskMessage[] = Array.from({ length: 40 }, (_, index) => ({ role: 'user', text: 'x'.repeat(2000), attachments: [{ id: String(index), rootId: 'root', rootName: '工作目录', path: `file-${index}.txt`, name: '文件', kind: 'file' }] }))
-    messages.push({ role: 'assistant', text: '', monitor: { status: 'completed', activity: '', updatedAt: '', steps: [], artifacts: [], changes: [{ id: 'root:file-0.txt', rootId: 'root', rootName: '工作目录', path: 'file-0.txt', name: '文件', action: 'deleted', sourceTool: 'local_files_delete', changedAt: '' }] } })
+    messages.push({ role: 'assistant', text: '', projection: { status: 'completed', activity: '', updatedAt: '', steps: [], artifacts: [], changes: [{ id: 'root:file-0.txt', rootId: 'root', rootName: '工作目录', path: 'file-0.txt', name: '文件', action: 'deleted', sourceTool: 'local_files_delete', changedAt: '' }] } })
     const prompt = harnessPromptWithConversationReplay('继续', messages, true)
     expect(prompt).toContain('file-0.txt')
     expect(prompt).toContain('deleted')
@@ -51,7 +51,7 @@ describe('harnessPromptWithConversationReplay', () => {
   })
 
   it('replays file undo state so a new session does not assume changes still exist', () => {
-    const prompt = harnessPromptWithConversationReplay('继续', [{ role: 'assistant', text: '已修改文件', monitor: {
+    const prompt = harnessPromptWithConversationReplay('继续', [{ role: 'assistant', text: '已修改文件', projection: {
       status: 'completed', activity: '', updatedAt: '', steps: [], artifacts: [], changes: [{ id: 'one', rootId: 'root', rootName: 'repo', path: 'one.ts', name: 'one.ts', sourceTool: 'local_files_write_text', action: 'updated', changedAt: '', undoneAt: 'now' }],
     } }], true)
     expect(prompt).toContain('用户随后在桌面撤销了本轮的以下文件改动：one.ts')
@@ -73,7 +73,7 @@ describe('harnessPromptWithConversationReplay', () => {
   it('does not replay failed assistant output or duplicate healthy sessions', () => {
     const messages: TaskMessage[] = [
       { role: 'user', text: '继续' },
-      { role: 'assistant', text: '模型服务未能完成本轮请求', monitor: {
+      { role: 'assistant', text: '模型服务未能完成本轮请求', projection: {
         status: 'failed', activity: '失败', updatedAt: '2026-09-04T00:00:00Z', steps: [], artifacts: [],
       } },
     ]

@@ -68,6 +68,8 @@ pub struct ConnectorDefinition {
     #[serde(default)]
     pub(crate) tool_names: Vec<String>,
     #[serde(default)]
+    pub(crate) read_only_tools: Vec<String>,
+    #[serde(default)]
     pub(crate) enabled: bool,
 }
 
@@ -88,6 +90,7 @@ pub struct RuntimeConnector {
     pub(crate) headers: HashMap<String, String>,
     pub(crate) allowed_tools: Vec<String>,
     pub(crate) required_tools: Vec<String>,
+    pub(crate) read_only_tools: Vec<String>,
     pub(crate) allow_write: bool,
     pub(crate) require_write_approval: bool,
     pub(crate) required: bool,
@@ -114,6 +117,7 @@ pub(crate) fn diagnostic_connectors(
             headers: connector.headers.clone(),
             allowed_tools: connector.tool_names.clone(),
             required_tools: connector.tool_names.clone(),
+            read_only_tools: connector.read_only_tools.clone(),
             allow_write: true,
             require_write_approval: false,
             required: true,
@@ -161,6 +165,7 @@ pub(crate) fn runtime_connectors(
                 .filter(|tool| connector.tool_names.contains(*tool))
                 .cloned()
                 .collect(),
+            read_only_tools: connector.read_only_tools.clone(),
             allow_write,
             require_write_approval: true,
             required: false,
@@ -233,6 +238,17 @@ pub(crate) fn validate_connector_catalog(connectors: &[ConnectorDefinition]) -> 
             if !valid_identifier(tool) || !tools.insert(tool.as_str()) {
                 return Err(format!("连接器工具名称无效或重复：{tool}"));
             }
+        }
+        let mut read_only_tools = HashSet::new();
+        if connector.read_only_tools.iter().any(|tool| {
+            !valid_identifier(tool)
+                || !read_only_tools.insert(tool.as_str())
+                || (!connector.tool_names.is_empty() && !tools.contains(tool.as_str()))
+        }) {
+            return Err(format!(
+                "连接器只读工具未在工具清单中声明：{}",
+                connector.id
+            ));
         }
     }
     Ok(())

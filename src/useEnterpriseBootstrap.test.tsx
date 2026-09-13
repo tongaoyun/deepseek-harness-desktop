@@ -66,3 +66,35 @@ it('automatically retries an unavailable initial connection', async () => {
     expect(state.runtimeStatus).toBe('ready')
   } finally { await act(async () => root.unmount()) }
 })
+
+it('never exposes a previous employee or token bootstrap during the next render', async () => {
+  vi.mocked(loadBootstrap).mockResolvedValueOnce(config())
+    .mockImplementation(() => new Promise(() => {}))
+  const renders: Array<{ owner: string; token: string; bootstrap?: BootstrapResponse }> = []
+  function Probe({ owner, token }: { owner: string; token: string }) {
+    const state = useEnterpriseBootstrap(owner, token, 0)
+    renders.push({ owner, token, bootstrap: state.bootstrap })
+    return null
+  }
+  const root = createRoot(document.createElement('div'))
+  try {
+    await act(async () => root.render(<Probe owner="one" token="first" />))
+    expect(renders.at(-1)?.bootstrap?.employeeId).toBe('one')
+    await act(async () => root.render(<Probe owner="two" token="second" />))
+    expect(renders.find((render) => render.owner === 'two')?.bootstrap).toBeUndefined()
+    await act(async () => root.render(<Probe owner="one" token="replacement" />))
+    expect(renders.find((render) => render.token === 'replacement')?.bootstrap).toBeUndefined()
+  } finally { await act(async () => root.unmount()) }
+})
+
+it('rejects bootstrap data issued for a different employee', async () => {
+  vi.mocked(loadBootstrap).mockResolvedValue({ ...config(), employeeId: 'other' })
+  let state!: ReturnType<typeof useEnterpriseBootstrap>
+  function Probe() { state = useEnterpriseBootstrap('one', 'token', 0); return null }
+  const root = createRoot(document.createElement('div'))
+  try {
+    await act(async () => root.render(<Probe />))
+    expect(state.bootstrap).toBeUndefined()
+    expect(state.runtimeStatus).toBe('offline')
+  } finally { await act(async () => root.unmount()) }
+})

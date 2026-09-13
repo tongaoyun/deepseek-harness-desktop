@@ -9,7 +9,7 @@ import { LocalFilePreviewPanel } from './LocalFilePreviewPanel'
 import { RichMessage } from './RichMessage'
 import { codeDiffRows } from './codeDiff'
 import { loadLocalArtifactPreview, undoLocalFileChange } from './localArtifactPreview'
-import type { TaskFileChange, TaskMonitorState } from './types'
+import type { TaskFileChange, XiaoyinTaskProjection } from './types'
 
 vi.mock('./localArtifactPreview', async (original) => ({ ...await original<typeof import('./localArtifactPreview')>(), loadLocalArtifactPreview: vi.fn(), undoLocalFileChange: vi.fn() }))
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
@@ -45,12 +45,12 @@ it('keeps tool disclosures stable through completion and the next tool starting'
 
 it('collapses completion before paint, without an intermediate expanded frame', async () => {
   const app = mount(); const snapshots: Array<string | null> = []
-  const monitor: TaskMonitorState = { status: 'running', activity: '正在处理', updatedAt: '', steps: [], artifacts: [], timeline: [{ id: 'tool', kind: 'tool', label: '读取', status: 'completed', occurredAt: '' }] }
+  const projection: XiaoyinTaskProjection = { status: 'running', activity: '正在处理', updatedAt: '', steps: [], artifacts: [], timeline: [{ id: 'tool', kind: 'tool', label: '读取', status: 'completed', occurredAt: '' }] }
   function PaintProbe({ status }: { status: string }) {
     useLayoutEffect(() => { snapshots.push(app.element.querySelector('.inline-task-summary')!.getAttribute('aria-expanded')) }, [status])
     return null
   }
-  const render = (status: TaskMonitorState['status']) => app.root.render(<><InlineTaskActivity monitor={{ ...monitor, status }} /><PaintProbe status={status} /></>)
+  const render = (status: XiaoyinTaskProjection['status']) => app.root.render(<><InlineTaskActivity projection={{ ...projection, status }} /><PaintProbe status={status} /></>)
   try {
     await act(async () => render('running'))
     await act(async () => render('completed'))
@@ -91,12 +91,12 @@ it('confirms undo, persists only successful files and surfaces conflicts', async
 
 it('keeps approval actions visible even after the running process was collapsed', async () => {
   const app = mount(); const decide = vi.fn()
-  let monitor: TaskMonitorState = { status: 'running', activity: '正在处理', updatedAt: '', steps: [], artifacts: [], timeline: [{ id: 'tool', label: '检查', kind: 'tool', status: 'completed', occurredAt: '' }] }
-  const render = () => app.root.render(<InlineTaskActivity monitor={monitor} onApprovalDecision={decide} />)
+  let projection: XiaoyinTaskProjection = { status: 'running', activity: '正在处理', updatedAt: '', steps: [], artifacts: [], timeline: [{ id: 'tool', label: '检查', kind: 'tool', status: 'completed', occurredAt: '' }] }
+  const render = () => app.root.render(<InlineTaskActivity projection={projection} onApprovalDecision={decide} />)
   try {
     await act(async () => render())
     await act(async () => app.element.querySelector<HTMLButtonElement>('.inline-task-summary')!.click())
-    monitor = { ...monitor, timeline: [...monitor.timeline!, { id: 'approval', approvalId: 'permission', kind: 'approval', label: '确认操作', status: 'running', occurredAt: '' }] }
+    projection = { ...projection, timeline: [...projection.timeline!, { id: 'approval', approvalId: 'permission', kind: 'approval', label: '确认操作', status: 'running', occurredAt: '' }] }
     await act(async () => render())
     expect(app.element.querySelector('.inline-task-summary')?.getAttribute('aria-expanded')).toBe('true')
     await act(async () => app.element.querySelector<HTMLButtonElement>('.inline-task-summary')!.click())
@@ -107,16 +107,16 @@ it('keeps approval actions visible even after the running process was collapsed'
 
 it('keeps the latest streamed text visible when history is collapsed', async () => {
   const app = mount()
-  const monitor: TaskMonitorState = { status: 'running', activity: '正在生成回复', updatedAt: '', steps: [], artifacts: [], timeline: [
+  const projection: XiaoyinTaskProjection = { status: 'running', activity: '正在生成回复', updatedAt: '', steps: [], artifacts: [], timeline: [
     { id: 'old', kind: 'assistant', label: '说明', text: '旧的过程说明', status: 'completed', occurredAt: '' },
     { id: 'live', kind: 'assistant', label: '回复', text: '正在生成正文', status: 'running', occurredAt: '' },
   ] }
   try {
-    await act(async () => app.root.render(<InlineTaskActivity monitor={monitor} />))
+    await act(async () => app.root.render(<InlineTaskActivity projection={projection} />))
     await act(async () => app.element.querySelector<HTMLButtonElement>('.inline-task-summary')!.click())
     expect(app.element.textContent).toContain('正在生成正文')
     expect(app.element.textContent).not.toContain('旧的过程说明')
-    await act(async () => app.root.render(<InlineTaskActivity monitor={{ ...monitor, timeline: [monitor.timeline![0], { ...monitor.timeline![1], text: '正在生成正文，继续更新' }] }} />))
+    await act(async () => app.root.render(<InlineTaskActivity projection={{ ...projection, timeline: [projection.timeline![0], { ...projection.timeline![1], text: '正在生成正文，继续更新' }] }} />))
     expect(app.element.textContent).toContain('正在生成正文，继续更新')
     expect(app.element.querySelector('.inline-task-summary')?.getAttribute('aria-expanded')).toBe('false')
   } finally { await app.cleanup() }
@@ -124,7 +124,7 @@ it('keeps the latest streamed text visible when history is collapsed', async () 
 
 it('keeps important notices and the latest progress visible after a tool starts in collapsed history', async () => {
   const app = mount()
-  const monitor: TaskMonitorState = { status: 'running', activity: '正在处理', updatedAt: '', steps: [], artifacts: [], timeline: [
+  const projection: XiaoyinTaskProjection = { status: 'running', activity: '正在处理', updatedAt: '', steps: [], artifacts: [], timeline: [
     { id: 'old', kind: 'assistant', label: '说明', text: '旧的过程说明', status: 'completed', occurredAt: '' },
     { id: 'live', kind: 'assistant', label: '说明', text: '已检查文件，开始修改', status: 'completed', occurredAt: '' },
     { id: 'warning', kind: 'warning', label: '部分资料缺失', text: '请补充附件', status: 'completed', occurredAt: '' },
@@ -132,14 +132,14 @@ it('keeps important notices and the latest progress visible after a tool starts 
     { id: 'tool', kind: 'file', label: '读取文件', toolName: 'local_files_read_text', status: 'running', occurredAt: '' },
   ] }
   try {
-    await act(async () => app.root.render(<InlineTaskActivity monitor={monitor} />))
+    await act(async () => app.root.render(<InlineTaskActivity projection={projection} />))
     await act(async () => app.element.querySelector<HTMLButtonElement>('.inline-task-summary')!.click())
     expect(app.element.textContent).toContain('已检查文件，开始修改')
     expect(app.element.textContent).toContain('请补充附件')
     expect(app.element.textContent).toContain('磁盘空间不足')
     expect(app.element.textContent).not.toContain('旧的过程说明')
     expect(app.element.querySelector('.inline-task-summary')?.getAttribute('aria-expanded')).toBe('false')
-    await act(async () => app.root.render(<InlineTaskActivity monitor={{ ...monitor, status: 'canceled' }} />))
+    await act(async () => app.root.render(<InlineTaskActivity projection={{ ...projection, status: 'canceled' }} />))
     expect(app.element.textContent).not.toContain('磁盘空间不足')
     expect(app.element.querySelector('.inline-task-summary')?.getAttribute('aria-expanded')).toBe('false')
     await act(async () => app.element.querySelector<HTMLButtonElement>('.inline-task-summary')!.click())
@@ -151,9 +151,9 @@ it('deduplicates approval submissions across collapsing, reports errors locally 
   const app = mount()
   let reject: (reason: Error) => void = () => {}
   const decide = vi.fn().mockImplementationOnce(() => new Promise<void>((_resolve, rejectPromise) => { reject = rejectPromise })).mockResolvedValue(undefined)
-  const monitor: TaskMonitorState = { status: 'running', activity: '等待确认', updatedAt: '', steps: [], artifacts: [], timeline: [{ id: 'approve', approvalId: 'operation', kind: 'approval', label: '修改文件', status: 'running', occurredAt: '' }] }
+  const projection: XiaoyinTaskProjection = { status: 'running', activity: '等待确认', updatedAt: '', steps: [], artifacts: [], timeline: [{ id: 'approve', approvalId: 'operation', kind: 'approval', label: '修改文件', status: 'running', occurredAt: '' }] }
   try {
-    await act(async () => app.root.render(<InlineTaskActivity monitor={monitor} onApprovalDecision={decide} />))
+    await act(async () => app.root.render(<InlineTaskActivity projection={projection} onApprovalDecision={decide} />))
     await act(async () => { button('允许本次操作').click(); button('允许本次操作').click() })
     expect(decide).toHaveBeenCalledTimes(1)
     expect(button('拒绝').disabled).toBe(true)
@@ -171,12 +171,12 @@ it('deduplicates approval submissions across collapsing, reports errors locally 
 
 it('keeps confirmation outside collapsed details and disables it while stopping', async () => {
   const app = mount(); const decide = vi.fn()
-  const monitor: TaskMonitorState = { status: 'running', activity: '等待确认', updatedAt: '', steps: [], artifacts: [], timeline: [{ id: 'approve', approvalId: 'operation', kind: 'approval', label: '确认', status: 'running', occurredAt: '' }] }
+  const projection: XiaoyinTaskProjection = { status: 'running', activity: '等待确认', updatedAt: '', steps: [], artifacts: [], timeline: [{ id: 'approve', approvalId: 'operation', kind: 'approval', label: '确认', status: 'running', occurredAt: '' }] }
   try {
-    await act(async () => app.root.render(<InlineTaskActivity monitor={monitor} onApprovalDecision={decide} />))
+    await act(async () => app.root.render(<InlineTaskActivity projection={projection} onApprovalDecision={decide} />))
     await act(async () => app.element.querySelector('details summary')!.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })))
     expect(button('允许本次操作').closest('details')).toBeNull()
-    await act(async () => app.root.render(<InlineTaskActivity monitor={{ ...monitor, activity: '正在停止' }} onApprovalDecision={decide} />))
+    await act(async () => app.root.render(<InlineTaskActivity projection={{ ...projection, activity: '正在停止' }} onApprovalDecision={decide} />))
     expect(button('允许本次操作').disabled).toBe(true)
     await act(async () => button('允许本次操作').click())
     expect(decide).not.toHaveBeenCalled()
@@ -185,12 +185,12 @@ it('keeps confirmation outside collapsed details and disables it while stopping'
 
 it('submits a structured single-choice answer once', async () => {
   const app = mount(); const answer = vi.fn().mockResolvedValue(undefined)
-  const monitor: TaskMonitorState = { status: 'running', activity: '等待你回答', updatedAt: '', steps: [], artifacts: [], timeline: [{
+  const projection: XiaoyinTaskProjection = { status: 'running', activity: '等待你回答', updatedAt: '', steps: [], artifacts: [], timeline: [{
     id: 'question:mode', questionId: 'mode', kind: 'question', label: '需要你的回答', status: 'running', occurredAt: '',
     questions: [{ id: 'strategy', header: '执行方式', question: '选择执行方式', options: [{ label: '安全模式', description: '保留备份' }, { label: '快速模式' }] }],
   }] }
   try {
-    await act(async () => app.root.render(<InlineTaskActivity monitor={monitor} onQuestionAnswer={answer} />))
+    await act(async () => app.root.render(<InlineTaskActivity projection={projection} onQuestionAnswer={answer} />))
     expect(button('提交回答').disabled).toBe(true)
     await act(async () => app.element.querySelector<HTMLInputElement>('.question-option input')!.click())
     await act(async () => button('提交回答').click())
@@ -201,12 +201,12 @@ it('submits a structured single-choice answer once', async () => {
 
 it('supports multi-select plus custom text in one structured answer', async () => {
   const app = mount(); const answer = vi.fn().mockResolvedValue(undefined)
-  const monitor: TaskMonitorState = { status: 'running', activity: '等待你回答', updatedAt: '', steps: [], artifacts: [], timeline: [{
+  const projection: XiaoyinTaskProjection = { status: 'running', activity: '等待你回答', updatedAt: '', steps: [], artifacts: [], timeline: [{
     id: 'question:scope', questionId: 'scope', kind: 'question', label: '需要你的回答', status: 'running', occurredAt: '',
     questions: [{ id: 'areas', question: '选择优化范围', multiSelect: true, options: [{ label: '运行时' }, { label: '界面' }] }],
   }] }
   try {
-    await act(async () => app.root.render(<InlineTaskActivity monitor={monitor} onQuestionAnswer={answer} />))
+    await act(async () => app.root.render(<InlineTaskActivity projection={projection} onQuestionAnswer={answer} />))
     const choices = [...app.element.querySelectorAll<HTMLInputElement>('.question-option input')]
     await act(async () => { choices[0].click(); choices[1].click() })
     await fill(app.element.querySelector('textarea')!, '保留现有数据')
@@ -217,12 +217,12 @@ it('supports multi-select plus custom text in one structured answer', async () =
 
 it('renders plan markdown and sends the declared approval option', async () => {
   const app = mount(); const answer = vi.fn().mockResolvedValue(undefined)
-  const monitor: TaskMonitorState = { status: 'running', activity: '等待你审阅计划', updatedAt: '', steps: [], artifacts: [], timeline: [{
+  const projection: XiaoyinTaskProjection = { status: 'running', activity: '等待你审阅计划', updatedAt: '', steps: [], artifacts: [], timeline: [{
     id: 'question:plan', questionId: 'plan', kind: 'question', label: '计划审阅', status: 'running', occurredAt: '',
     questions: [{ id: 'review', question: '是否按此计划执行？', detail: '## 实施计划\n\n- 修改运行时\n- 运行测试', options: [{ label: '批准执行' }, { label: '继续修改' }], intent: { kind: 'plan-review', approve: '批准执行' } }],
   }] }
   try {
-    await act(async () => app.root.render(<InlineTaskActivity monitor={monitor} onQuestionAnswer={answer} />))
+    await act(async () => app.root.render(<InlineTaskActivity projection={projection} onQuestionAnswer={answer} />))
     expect(app.element.querySelector('.question-detail h2')?.textContent).toBe('实施计划')
     await act(async () => app.element.querySelector<HTMLInputElement>('.question-option input')!.click())
     await act(async () => button('提交回答').click())

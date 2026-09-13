@@ -52,6 +52,7 @@ export function buildRuntimeConnectorCatalog(
       url: connector.url ?? '',
       authMode: connector.authMode ?? 'none',
       toolNames: [...new Set(connector.toolNames)],
+      readOnlyTools: [...new Set(connector.readOnlyTools ?? [])],
       command: configured.command ?? '',
       arguments: configured.arguments ?? [],
       environment: configured.environment ?? {},

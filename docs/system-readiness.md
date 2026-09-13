@@ -8,7 +8,21 @@
 pnpm check
 ```
 
-检查覆盖版本、lint、类型、前端、Harness、生产构建、Rust 格式、Clippy 与测试。服务端执行 `sh scripts/check.sh`，包含 COLA 架构、Java 规范、API、控制台和 PostgreSQL 队列测试。
+桌面端“运行时能力 → 导出诊断”只生成版本、能力状态和时间戳，用于提交安装或运行时问题；它不包含 Prompt、Session 正文、本机路径、Token 或任何连接器凭据，也不能用于恢复会话。
+
+诊断导出只接受内置能力名称及受限格式的 Runtime/版本标识。Harness Host 的 JSON-RPC 错误和 stderr 在跨进程前统一移除环境凭据、Bearer Token、常见密钥格式及控制字符，并限制长度；各模型与连接器适配仍须在来源处先做领域化错误归类。
+
+检查覆盖版本、lint、类型、前端与 Host 测试、生产构建、Harness 运行时和契约验收、Rust 格式、Clippy 与测试。服务端在其仓库执行 `sh scripts/check.sh`。
+
+Gitea CI 的 Web/Host Job 执行 `pnpm check:web`；Windows Job 检查 PowerShell 与 Rust。安装包工作流只负责构建、签名、包内烟测和发布身份校验。
+
+安装包中的本地文件、Office、Shell 和 Computer Use 自测可另外运行：
+
+```bash
+node scripts/check-harness-runtime.mjs "$(command -v node)" harness-host --self-test
+```
+
+健康响应中的官方能力来自实际安装的依赖闭包（包括 `dsh` 的间接依赖），因此依赖缺失会显示为“未配置”或在初始化阶段失败，不会被静态清单掩盖。
 
 ## 服务端
 
@@ -35,6 +49,8 @@ pnpm check
 更新验收使用正式升级路径，检查下载、签名、安装重启和数据保留。网络失败、损坏包与签名不符时保持当前应用可用。Tauri 更新签名、Windows Authenticode 和 Apple 公证分别验证。
 
 ## 任务与会话
+
+`pnpm check:web` 包含 Harness Profile 启动、技能与结果契约、模型工具权限及 Session Query 多进程验收；这些使用隔离临时目录和模拟模型，不代表外部业务系统已通过。
 
 - 扫码登录、退出重启、会话到期、网络恢复和休眠唤醒。
 - 原任务恢复后核对会话 ID、工作目录、附件与文件哈希。

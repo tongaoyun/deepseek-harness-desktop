@@ -1,6 +1,8 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { readFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import z from '@deepseek-ai/schemastery'
+import { apply as applyHarnessMcpClient } from '@deepseek-ai/dsh-mcp-client'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 import type { ContentBlock } from '@deepseek-ai/dsh-sdk-client'
 import { mcpResultContent } from './mcp-result-content.js'
@@ -25,6 +27,12 @@ export const inject = ['tools', 'attachments']
 
 export interface ManagedConnectorConfig {
   timeoutSeconds?: number
+  reconnect?: {
+    enabled?: boolean
+    initialDelayMs?: number
+    maxDelayMs?: number
+    maxAttempts?: number
+  }
   id: string
   name: string
   version: string
@@ -37,6 +45,7 @@ export interface ManagedConnectorConfig {
   headers: Record<string, string>
   allowedTools: string[]
   requiredTools: string[]
+  readOnlyTools?: string[]
   allowWrite: boolean
   requireWriteApproval: boolean
   required: boolean
@@ -61,6 +70,12 @@ export interface ConnectorDiagnosticResult {
 
 const ConnectorConfig = z.object({
   timeoutSeconds: z.number().default(60),
+  reconnect: z.object({
+    enabled: z.boolean().default(true),
+    initialDelayMs: z.number().default(500),
+    maxDelayMs: z.number().default(30_000),
+    maxAttempts: z.number().default(10),
+  }).default({ enabled: true, initialDelayMs: 500, maxDelayMs: 30_000, maxAttempts: 10 }),
   id: z.string().required(),
   name: z.string().required(),
   version: z.string().default('1'),
@@ -73,6 +88,7 @@ const ConnectorConfig = z.object({
   headers: z.dict(z.string()).default({}),
   allowedTools: z.array(z.string()).default([]),
   requiredTools: z.array(z.string()).default([]),
+  readOnlyTools: z.array(z.string()).default([]),
   allowWrite: z.boolean().default(false),
   requireWriteApproval: z.boolean().default(true),
   required: z.boolean().default(false),
@@ -83,13 +99,31 @@ export const Config: Schemastery<Config> = z.object({
   employeeBearerTokenEnv: z.string().default('XIAOYIN_EMPLOYEE_BEARER_TOKEN'),
 })
 
+interface InstalledTool {
+  name: string
+  raw: Tool
+  dispose: () => void
+}
+
+interface ConnectorBinding {
+  connector: ManagedConnectorConfig
+  client: Client
+  transport: Transport
+  journal: WriteOperationJournal | undefined
+  installed: InstalledTool[]
+  namesByRawTool: Map<string, string>
+  reconnectAttempt: number
+  reconnectTimer?: NodeJS.Timeout
+  refreshQueue: Promise<void>
+  closed: boolean
+}
+
 export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   const connectors = config.connectors ?? []
   const employeeToken = config.employeeBearerTokenEnv
     ? process.env[config.employeeBearerTokenEnv]?.trim()
     : undefined
-  const activeClients: Client[] = []
-  const unregisterTools: Array<() => void> = []
+  const bindings: ConnectorBinding[] = []
   const mutatingTools = new Map<string, string>()
   const registeredNames = new Set<string>()
   const scopeFile = process.env.XIAOYIN_OPERATION_SCOPE_FILE
@@ -99,11 +133,42 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   if (journal) ctx.effect(() => () => journal.close(), 'write operation journal')
 
   for (const connector of connectors) {
+    if (shouldUseHarnessMcpClient(connector)) {
+      try {
+        await applyHarnessMcpClient(ctx, harnessMcpConfig(connector, employeeToken))
+        debug(`${connector.name}: connected through dsh-mcp-client`)
+      } catch (error) {
+        const message = connectorFailureMessage(error, connector, employeeToken)
+        if (connector.required) {
+          await cleanupBindings(bindings, mutatingTools)
+          throw new Error(message)
+        }
+        process.stderr.write(`${message}；本次会话跳过该连接器\n`)
+      }
+      continue
+    }
     let client: Client | undefined
     try {
       validateConnector(connector, employeeToken)
       client = new Client({ name: `xiaoyin-desktop-${connector.id}`, version: '0.1.0' })
-      await client.connect(createTransport(connector, employeeToken), connectorRequestOptions(connector))
+      const transport = createTransport(connector, employeeToken)
+      const binding: ConnectorBinding = {
+        connector,
+        client,
+        transport,
+        journal,
+        installed: [],
+        namesByRawTool: new Map(),
+        reconnectAttempt: 0,
+        refreshQueue: Promise.resolve(),
+        closed: false,
+      }
+      transport.onclose = () => {
+        if (!binding.closed && bindings.includes(binding) && binding.client === client) {
+          scheduleReconnect(ctx, binding, employeeToken, registeredNames, mutatingTools)
+        }
+      }
+      await client.connect(transport, connectorRequestOptions(connector))
 
       const discovered = await discoverConnectorTools(client, connectorRequestOptions(connector).timeout)
       const tools = selectTools(
@@ -112,22 +177,21 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
         connector.requiredTools,
         connector.allowWrite,
         connector.name,
+        connector.readOnlyTools,
       )
-      for (const tool of tools) {
-        const registeredName = uniqueHarnessToolName(connector.id, tool.name, registeredNames)
-        unregisterTools.push(ctx.tools.register(toHarnessTool(ctx, client, tool, connector, registeredName, employeeToken, journal)))
-        registeredNames.add(registeredName)
-        if ((tool.annotations?.readOnlyHint !== true || tool.annotations?.destructiveHint === true) && connector.requireWriteApproval) {
-          mutatingTools.set(registeredName, connector.name)
-        }
-      }
-      activeClients.push(client)
+      installConnectorTools(ctx, binding, tools, registeredNames, mutatingTools, employeeToken, journal)
+      client.setNotificationHandler('notifications/tools/list_changed', () => {
+        binding.refreshQueue = binding.refreshQueue
+          .then(() => refreshConnectorTools(ctx, binding, registeredNames, mutatingTools, employeeToken, journal))
+          .catch((error) => logConnectorRefreshFailure(binding.connector, employeeToken, error))
+      })
+      bindings.push(binding)
       debug(`${connector.name}: connected, registered=${tools.length}`)
     } catch (error) {
       if (client) await closeQuietly(client)
       const message = connectorFailureMessage(error, connector, employeeToken)
       if (connector.required) {
-        await cleanup(unregisterTools, activeClients)
+        await cleanupBindings(bindings, mutatingTools)
         throw new Error(message)
       }
       process.stderr.write(`${message}；本次会话跳过该连接器\n`)
@@ -145,8 +209,68 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
 
   ctx.effect(() => async () => {
     stopApprovalPolicy()
-    await cleanup(unregisterTools, activeClients)
+    for (const binding of bindings) binding.closed = true
+    for (const binding of bindings) if (binding.reconnectTimer) clearTimeout(binding.reconnectTimer)
+    await cleanupBindings(bindings, mutatingTools)
   }, 'xiaoyin managed MCP connectors')
+}
+
+/**
+ * Use the upstream MCP bridge only when the connector has no Xiaoyin policy
+ * overlay to preserve. Restricted, authenticated, or journaled connectors
+ * stay on the product adapter so allow-lists and write audits remain intact.
+ */
+export function shouldUseHarnessMcpClient(connector: ManagedConnectorConfig, env: NodeJS.ProcessEnv = process.env): boolean {
+  if (env.XIAOYIN_MCP_IMPLEMENTATION !== 'harness') return false
+  if (connector.transport === 'sse') return false
+  if (connector.authMode !== 'none' && connector.authMode !== 'employee-bearer') return false
+  if (connector.allowedTools.length > 0 || connector.requiredTools.length > 0 || connector.readOnlyTools?.length) return false
+  if (!connector.allowWrite || connector.requireWriteApproval) return false
+  return !env.XIAOYIN_OPERATION_JOURNAL
+}
+
+export function hasEligibleHarnessMcpConnector(env: NodeJS.ProcessEnv): boolean {
+  try {
+    return configuredConnectors(env.XIAOYIN_MCP_CONNECTORS).some((connector) => shouldUseHarnessMcpClient(connector, env))
+  } catch {
+    return false
+  }
+}
+
+function harnessMcpConfig(connector: ManagedConnectorConfig, employeeToken?: string) {
+  const serverName = harnessServerName(connector.id)
+  if (connector.transport === 'stdio') {
+    return {
+      transport: 'stdio' as const,
+      serverName,
+      command: connector.command,
+      args: connector.arguments,
+      env: connector.environment,
+      cwd: process.env.DSH_CWD ?? process.cwd(),
+      toolCallTimeoutMs: (connector.timeoutSeconds ?? 60) * 1000,
+      failOnStartupError: connector.required,
+      ...(connector.reconnect ? { reconnect: connector.reconnect } : {}),
+    }
+  }
+  return {
+    transport: 'streamable-http' as const,
+    serverName,
+    url: connector.url,
+    headers: {
+      ...connector.headers,
+      ...(connector.authMode === 'employee-bearer' && employeeToken ? { authorization: `Bearer ${employeeToken}` } : {}),
+    },
+    toolCallTimeoutMs: (connector.timeoutSeconds ?? 60) * 1000,
+    failOnStartupError: connector.required,
+    ...(connector.reconnect ? { reconnect: connector.reconnect } : {}),
+  }
+}
+
+/** Keep dsh-mcp-client server names collision-safe after product id sanitizing. */
+export function harnessServerName(id: string): string {
+  const readable = id.replaceAll(/[^A-Za-z0-9_-]+/g, '_').replaceAll(/_+/g, '_').replace(/^_+|_+$/g, '').slice(0, 20) || 'connector'
+  const digest = createHash('sha256').update(id).digest('hex').slice(0, 10)
+  return `${readable}_${digest}`.slice(0, 32)
 }
 
 export function connectorRequestOptions(connector: Pick<ManagedConnectorConfig, 'timeoutSeconds'>): { timeout: number; maxTotalTimeout: number } {
@@ -200,7 +324,7 @@ export async function diagnoseConnector(
     const discovered = await discoverConnectorTools(client, timeoutMs)
     const comparison = compareConnectorTools(connector.allowedTools, discovered.map((tool) => tool.name))
     const selected = new Set(discovered.filter((tool) => (!connector.allowedTools.length || connector.allowedTools.includes(tool.name))
-      && (connector.allowWrite || (tool.annotations?.readOnlyHint === true && tool.annotations?.destructiveHint !== true))).map((tool) => tool.name))
+      && (connector.allowWrite || isTrustedReadOnly(tool, connector.readOnlyTools))).map((tool) => tool.name))
     comparison.missingTools = uniqueSorted([...comparison.missingTools, ...connector.requiredTools.filter((name) => !selected.has(name))])
     return {
       id: connector.id,
@@ -260,17 +384,26 @@ export function selectTools(
   requiredTools: string[],
   allowWrite: boolean,
   connectorName = 'MCP',
+  readOnlyTools: string[] = [],
 ): Tool[] {
   const allowed = new Set(allowedTools)
   const selected = discovered.filter((tool) => (allowed.size === 0 || allowed.has(tool.name))
-    && (allowWrite || (tool.annotations?.readOnlyHint === true && tool.annotations?.destructiveHint !== true)))
+    && (allowWrite || isTrustedReadOnly(tool, readOnlyTools)))
   const selectedNames = new Set(selected.map((tool) => tool.name))
   const missing = uniqueSorted(requiredTools.filter((name) => !selectedNames.has(name)))
   if (missing.length) throw new Error(`${connectorName} 缺少可用的必需工具：${missing.join('、')}。请检查工具配置和写入权限`)
   return selected
 }
 
-export async function discoverConnectorTools(client: Pick<Client, 'listTools'>, timeoutMs: number): Promise<Tool[]> {
+function isTrustedReadOnly(tool: Tool, readOnlyTools: readonly string[] | undefined): boolean {
+  return readOnlyTools?.includes(tool.name) === true && tool.annotations?.destructiveHint !== true
+}
+
+export async function discoverConnectorTools(
+  client: Pick<Client, 'listTools'>,
+  timeoutMs: number,
+  refresh = false,
+): Promise<Tool[]> {
   const deadline = Date.now() + timeoutMs
   const tools = new Map<string, Tool>()
   const cursors = new Set<string>()
@@ -278,7 +411,11 @@ export async function discoverConnectorTools(client: Pick<Client, 'listTools'>, 
   for (let page = 0; page < 100; page++) {
     const remaining = deadline - Date.now()
     if (remaining <= 0) throw new Error('MCP 工具发现超时')
-    const result = await client.listTools(cursor ? { cursor } : {}, { timeout: remaining, maxTotalTimeout: remaining })
+    const result = await client.listTools(cursor ? { cursor } : {}, {
+      timeout: remaining,
+      maxTotalTimeout: remaining,
+      ...(refresh ? { cacheMode: 'refresh' as const } : {}),
+    })
     for (const tool of result.tools) {
       if (tools.has(tool.name)) throw new Error(`MCP 返回重复工具：${tool.name}`)
       tools.set(tool.name, tool)
@@ -304,6 +441,7 @@ export function connectorFailureMessage(error: unknown, connector: ManagedConnec
 
 function validateConnector(connector: ManagedConnectorConfig, employeeToken: string | undefined): void {
   connectorRequestOptions(connector)
+  validateReconnectPolicy(connector.reconnect)
   if (!['none', 'employee-bearer', 'erp-cookie', 'oauth'].includes(connector.authMode)) throw new Error('连接器认证方式无效')
   if (connector.authMode === 'erp-cookie' || connector.authMode === 'oauth') {
     if (connector.transport === 'stdio') throw new Error('ERP 扫码会话仅支持 HTTP/SSE 连接器')
@@ -324,6 +462,25 @@ function validateConnector(connector: ManagedConnectorConfig, employeeToken: str
   if (connector.authMode === 'employee-bearer' && !employeeToken) {
     throw new Error('缺少员工访问令牌')
   }
+}
+
+function validateReconnectPolicy(policy: ManagedConnectorConfig['reconnect']): void {
+  if (!policy) return
+  for (const [name, value] of [
+    ['initialDelayMs', policy.initialDelayMs],
+    ['maxDelayMs', policy.maxDelayMs],
+    ['maxAttempts', policy.maxAttempts],
+  ] as const) {
+    if (value === undefined) continue
+    if (!Number.isSafeInteger(value) || value < 0) throw new Error(`连接器重连参数 ${name} 须为非负整数`)
+  }
+  if ((policy.initialDelayMs ?? 500) > (policy.maxDelayMs ?? 30_000)) {
+    throw new Error('连接器重连参数 maxDelayMs 不能小于 initialDelayMs')
+  }
+  if ((policy.initialDelayMs ?? 500) > 3_600_000 || (policy.maxDelayMs ?? 30_000) > 3_600_000) {
+    throw new Error('连接器重连延迟不能超过 1 小时')
+  }
+  if ((policy.maxAttempts ?? 10) > 100) throw new Error('连接器重连次数不能超过 100')
 }
 
 function createTransport(connector: ManagedConnectorConfig, employeeToken: string | undefined): Transport {
@@ -381,7 +538,7 @@ function toHarnessTool(
           { name: tool.name, arguments: arguments_ },
           { ...connectorRequestOptions(connector), signal: exec.signal },
         )
-        const mutating = tool.annotations?.readOnlyHint !== true || tool.annotations?.destructiveHint === true
+        const mutating = !isTrustedReadOnly(tool, connector.readOnlyTools)
         const result = journal && mutating ? await journal.execute(connector, tool.name, arguments_, call, exec.signal) : await call()
         if (result.isError) throw new Error(renderMcpContent(result, connector.name))
         return await mcpResultContent(result, ctx.attachments, connector.name, exec.signal)
@@ -390,7 +547,7 @@ function toHarnessTool(
         throw new Error(connectorFailureMessage(error, connector, employeeToken))
       }
     },
-    isConcurrencySafe: () => tool.annotations?.readOnlyHint === true && tool.annotations?.destructiveHint !== true,
+    isConcurrencySafe: () => isTrustedReadOnly(tool, connector.readOnlyTools),
   }
 }
 
@@ -408,9 +565,191 @@ function renderMcpContent(result: CallToolResult, connectorName: string): string
   return texts.join('\n') || `${connectorName} MCP 工具返回错误`
 }
 
-async function cleanup(unregisterTools: Array<() => void>, clients: Client[]): Promise<void> {
-  for (const dispose of unregisterTools.splice(0).reverse()) dispose()
-  for (const client of clients.splice(0).reverse()) await closeQuietly(client)
+function installConnectorTools(
+  ctx: Context,
+  binding: ConnectorBinding,
+  tools: Tool[],
+  registeredNames: Set<string>,
+  mutatingTools: Map<string, string>,
+  employeeToken: string | undefined,
+  journal: WriteOperationJournal | undefined,
+  client: Client = binding.client,
+): void {
+  const previous = binding.installed
+  for (const installed of previous) {
+    installed.dispose()
+    mutatingTools.delete(installed.name)
+  }
+  const created: InstalledTool[] = []
+  try {
+    for (const tool of tools) {
+      const registeredName = binding.namesByRawTool.get(tool.name)
+        ?? uniqueHarnessToolName(binding.connector.id, tool.name, registeredNames)
+      binding.namesByRawTool.set(tool.name, registeredName)
+      registeredNames.add(registeredName)
+      const dispose = ctx.tools.register(toHarnessTool(
+        ctx, client, tool, binding.connector, registeredName, employeeToken, journal,
+      ))
+      if (!isTrustedReadOnly(tool, binding.connector.readOnlyTools)
+        && binding.connector.requireWriteApproval) mutatingTools.set(registeredName, binding.connector.name)
+      created.push({ name: registeredName, raw: tool, dispose })
+    }
+    binding.installed = created
+  } catch (error) {
+    for (const installed of created) {
+      installed.dispose()
+      mutatingTools.delete(installed.name)
+    }
+    binding.installed = []
+    // Restore the previous generation if a new registration collides. This
+    // keeps a transient server update from leaving the connector unusable.
+    if (previous.length > 0) {
+      binding.installed = previous.map((installed) => {
+        const dispose = ctx.tools.register(toHarnessTool(
+          ctx, client, installed.raw, binding.connector, installed.name, employeeToken, journal,
+        ))
+        if (!isTrustedReadOnly(installed.raw, binding.connector.readOnlyTools)
+          && binding.connector.requireWriteApproval) mutatingTools.set(installed.name, binding.connector.name)
+        return { ...installed, dispose }
+      })
+    }
+    throw error
+  }
+}
+
+async function refreshConnectorTools(
+  ctx: Context,
+  binding: ConnectorBinding,
+  registeredNames: Set<string>,
+  mutatingTools: Map<string, string>,
+  employeeToken: string | undefined,
+  journal: WriteOperationJournal | undefined,
+): Promise<void> {
+  if (binding.closed) return
+  const discovered = await discoverConnectorTools(
+    binding.client,
+    connectorRequestOptions(binding.connector).timeout,
+    true,
+  )
+  const tools = selectTools(
+    discovered,
+    binding.connector.allowedTools,
+    binding.connector.requiredTools,
+    binding.connector.allowWrite,
+    binding.connector.name,
+    binding.connector.readOnlyTools,
+  )
+  installConnectorTools(ctx, binding, tools, registeredNames, mutatingTools, employeeToken, journal)
+  binding.reconnectAttempt = 0
+  debug(`${binding.connector.name}: tools refreshed, registered=${tools.length}`)
+}
+
+function scheduleReconnect(
+  ctx: Context,
+  binding: ConnectorBinding,
+  employeeToken: string | undefined,
+  registeredNames: Set<string>,
+  mutatingTools: Map<string, string>,
+): void {
+  const reconnect = binding.connector.reconnect
+  if (reconnect?.enabled === false || binding.reconnectTimer || binding.closed) return
+  const maxAttempts = reconnect?.maxAttempts ?? 10
+  if (binding.reconnectAttempt >= maxAttempts) {
+    process.stderr.write(`${binding.connector.name}：MCP 连接已断开，重连次数已达上限；保留最后一组工具\n`)
+    return
+  }
+  const initial = reconnect?.initialDelayMs ?? 500
+  const maximum = reconnect?.maxDelayMs ?? 30_000
+  const delay = Math.min(maximum, initial * (2 ** binding.reconnectAttempt))
+  binding.reconnectAttempt += 1
+  debug(`${binding.connector.name}: reconnect scheduled in ${delay}ms (attempt ${binding.reconnectAttempt}/${maxAttempts})`)
+  binding.reconnectTimer = setTimeout(() => {
+    delete binding.reconnectTimer
+    void reconnectBinding(ctx, binding, employeeToken, registeredNames, mutatingTools)
+  }, delay)
+  binding.reconnectTimer.unref?.()
+}
+
+async function reconnectBinding(
+  ctx: Context,
+  binding: ConnectorBinding,
+  employeeToken: string | undefined,
+  registeredNames: Set<string>,
+  mutatingTools: Map<string, string>,
+): Promise<void> {
+  if (binding.closed) return
+  let nextClient: Client | undefined
+  try {
+    nextClient = new Client({ name: `xiaoyin-desktop-${binding.connector.id}`, version: '0.1.0' })
+    const nextTransport = createTransport(binding.connector, employeeToken)
+    nextTransport.onclose = () => {
+      if (!binding.closed && binding.client === nextClient) {
+        scheduleReconnect(ctx, binding, employeeToken, registeredNames, mutatingTools)
+      }
+    }
+    await nextClient.connect(nextTransport, connectorRequestOptions(binding.connector))
+    const discovered = await discoverConnectorTools(nextClient, connectorRequestOptions(binding.connector).timeout)
+    const tools = selectTools(
+      discovered,
+      binding.connector.allowedTools,
+      binding.connector.requiredTools,
+      binding.connector.allowWrite,
+      binding.connector.name,
+      binding.connector.readOnlyTools,
+    )
+    const oldClient = binding.client
+    installConnectorTools(ctx, binding, tools, registeredNames, mutatingTools, employeeToken, binding.journal, nextClient)
+    binding.client = nextClient
+    binding.transport = nextTransport
+    nextClient.setNotificationHandler('notifications/tools/list_changed', () => {
+      binding.refreshQueue = binding.refreshQueue
+        .then(() => refreshConnectorTools(ctx, binding, registeredNames, mutatingTools, employeeToken, binding.journal))
+        .catch((error) => logConnectorRefreshFailure(binding.connector, employeeToken, error))
+    })
+    await closeQuietly(oldClient)
+    binding.reconnectAttempt = 0
+    debug(`${binding.connector.name}: reconnected, registered=${tools.length}`)
+  } catch (error) {
+    if (nextClient) await closeQuietly(nextClient)
+    logConnectorReconnectFailure(binding.connector, employeeToken, error)
+    scheduleReconnect(ctx, binding, employeeToken, registeredNames, mutatingTools)
+  }
+}
+
+function logConnectorRefreshFailure(
+  connector: ManagedConnectorConfig,
+  employeeToken: string | undefined,
+  error: unknown,
+): void {
+  const detail = diagnosticError(error, employeeToken, [
+    ...Object.values(connector.headers ?? {}),
+    ...Object.values(connector.environment ?? {}),
+  ])
+  process.stderr.write(`${connector.name}：MCP 工具列表刷新失败，保留上一组工具：${detail}\n`)
+}
+
+function logConnectorReconnectFailure(
+  connector: ManagedConnectorConfig,
+  employeeToken: string | undefined,
+  error: unknown,
+): void {
+  const detail = diagnosticError(error, employeeToken, [
+    ...Object.values(connector.headers ?? {}),
+    ...Object.values(connector.environment ?? {}),
+  ])
+  process.stderr.write(`${connector.name}：MCP 重连失败：${detail}\n`)
+}
+
+async function cleanupBindings(bindings: ConnectorBinding[], mutatingTools: Map<string, string>): Promise<void> {
+  for (const binding of bindings.splice(0).reverse()) {
+    binding.closed = true
+    if (binding.reconnectTimer) clearTimeout(binding.reconnectTimer)
+    for (const installed of binding.installed.splice(0).reverse()) {
+      installed.dispose()
+      mutatingTools.delete(installed.name)
+    }
+    await closeQuietly(binding.client)
+  }
 }
 
 async function closeQuietly(client: Client): Promise<void> {

@@ -10,11 +10,11 @@ const localStorage = new class implements Storage {
   removeItem(key: string) { this.values.delete(key) }
   setItem(key: string, value: string) { this.values.set(key, value) }
 }()
-it('retains references across accounts, drafts, schedules and queues without collecting secrets', () => {
+it('retains WebView draft and history references without collecting migrated native state or secrets', () => {
   localStorage.clear()
   for (const key of ['xiaoyin.task-drafts.a', 'xiaoyin.task-history.b', 'xiaoyin:local-schedules:v1:a', 'xiaoyin:task-queue:b']) localStorage.setItem(key, JSON.stringify({ path: key }))
   localStorage.setItem('xiaoyin.connector-secrets.a', 'do-not-read')
-  expect(attachmentStorageReferences(localStorage)).toHaveLength(4)
+  expect(attachmentStorageReferences(localStorage)).toHaveLength(2)
   localStorage.clear()
 })
 it('refuses cleanup when another account has unreadable reference data', () => {

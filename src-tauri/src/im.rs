@@ -2,8 +2,8 @@ use crate::harness_connectors::desktop_connector_enabled;
 use crate::{
     expert_kits,
     harness::{
-        ConnectorDefinition, HarnessProcess, RuntimeFingerprint, credential_digest,
-        runtime_connectors,
+        CapabilitySnapshot, HarnessProcess, RuntimeFingerprint, credential_digest,
+        runtime_connectors, validate_capability_snapshot,
     },
     local_files::RuntimeLocalFileRoot,
     memory,
@@ -14,13 +14,12 @@ use serde_json::{Value, json};
 use std::{
     fs::{self, OpenOptions},
     io::Write,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{Arc, Mutex},
 };
 use tauri::Manager;
 
 const KEYRING_SERVICE: &str = "com.instudio.xiaoyin.im.dingtalk";
-const KEYRING_ACCOUNT: &str = "client-secret";
 
 #[derive(Clone, Default)]
 pub struct LocalImManager {
@@ -55,13 +54,18 @@ pub struct HarnessContext {
     knowledge_endpoint: String,
     #[serde(default)]
     schedule_endpoint: String,
-    #[serde(default)]
-    connectors: Vec<ConnectorDefinition>,
-    #[serde(default)]
-    allowed_artifacts: Vec<expert_kits::AllowedExtensionArtifact>,
+    capability_snapshot: CapabilitySnapshot,
     model: String,
     model_api_key: String,
     access_token: String,
+    #[serde(default)]
+    allow_shell: bool,
+    #[serde(default)]
+    allow_lsp: bool,
+    #[serde(default)]
+    allow_external_agents: bool,
+    #[serde(default)]
+    allow_hooks: bool,
 }
 
 #[derive(Deserialize)]
@@ -106,8 +110,8 @@ pub struct ImConversationSummary {
     bound_task_name: Option<String>,
     #[serde(default)]
     messages: Vec<ImConversationMessage>,
-    #[serde(default)]
-    task_events: Vec<ImTaskEvent>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    task_projection: Option<Value>,
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -119,14 +123,6 @@ pub struct ImConversationMessage {
     created_at: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     outcome: Option<Value>,
-}
-
-#[derive(Clone, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ImTaskEvent {
-    id: String,
-    event: Value,
-    created_at: String,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -165,7 +161,9 @@ pub async fn configure_local_dingtalk(
 ) -> Result<LocalImStatus, String> {
     validate_client_id(&request.client_id)?;
     validate_harness_context(&request.harness)?;
-    let existing = load_configuration(&app)?;
+    crate::erp_auth::require_employee(&app, &request.harness.employee_id).await?;
+    let employee_id = &request.harness.employee_id;
+    let existing = load_configuration(&app, employee_id)?;
     let client_id = request.client_id.trim().to_string();
     let keep_secret = retain_existing_secret(
         &client_id,
@@ -173,7 +171,7 @@ pub async fn configure_local_dingtalk(
         existing.as_ref().map(|value| value.client_id.as_str()),
     )?;
     let secret = if keep_secret {
-        load_secret()?
+        load_secret(employee_id)?
     } else {
         request.client_secret.clone()
     };
@@ -189,9 +187,9 @@ pub async fn configure_local_dingtalk(
         notify_task_results: request.notify_task_results,
     };
     if !keep_secret {
-        store_secret(&secret)?;
+        store_secret(employee_id, &secret)?;
     }
-    save_configuration(&app, &stored)?;
+    save_configuration(&app, employee_id, &stored)?;
     if !stored.enabled {
         manager.stop()?;
         return Ok(stopped_status(Some(&stored), true));
@@ -220,13 +218,19 @@ pub async fn start_local_im(
     harness: HarnessContext,
 ) -> Result<LocalImStatus, String> {
     validate_harness_context(&harness)?;
-    let Some(stored) = load_configuration(&app)? else {
+    crate::erp_auth::require_employee(&app, &harness.employee_id).await?;
+    let Some(stored) = load_configuration(&app, &harness.employee_id)? else {
+        manager.stop()?;
         return Ok(stopped_status(None, false));
     };
     if !stored.enabled {
-        return Ok(stopped_status(Some(&stored), secret_exists()));
+        manager.stop()?;
+        return Ok(stopped_status(
+            Some(&stored),
+            secret_exists(&harness.employee_id),
+        ));
     }
-    let secret = load_secret()?;
+    let secret = load_secret(&harness.employee_id)?;
     manager.start(&app, &stored, secret, harness)
 }
 
@@ -238,32 +242,38 @@ pub async fn set_local_im_enabled(
     harness: HarnessContext,
 ) -> Result<LocalImStatus, String> {
     validate_harness_context(&harness)?;
-    let mut stored = load_configuration(&app)?.ok_or_else(|| "尚未配置钉钉频道".to_string())?;
+    crate::erp_auth::require_employee(&app, &harness.employee_id).await?;
+    let mut stored = load_configuration(&app, &harness.employee_id)?
+        .ok_or_else(|| "尚未配置钉钉频道".to_string())?;
     stored.enabled = enabled;
-    save_configuration(&app, &stored)?;
+    save_configuration(&app, &harness.employee_id, &stored)?;
     if !enabled {
         manager.stop()?;
-        return Ok(stopped_status(Some(&stored), secret_exists()));
+        return Ok(stopped_status(
+            Some(&stored),
+            secret_exists(&harness.employee_id),
+        ));
     }
-    let secret = load_secret()?;
+    let secret = load_secret(&harness.employee_id)?;
     manager.start(&app, &stored, secret, harness)
 }
 
 #[tauri::command]
-pub fn local_im_status(
+pub async fn local_im_status(
     app: tauri::AppHandle,
     manager: tauri::State<'_, LocalImManager>,
 ) -> Result<LocalImStatus, String> {
-    if let Some(status) = manager.status()? {
+    let employee_id = crate::erp_auth::current_employee(&app).await?;
+    if let Some(status) = manager.status(&employee_id)? {
         return Ok(status);
     }
-    let stored = load_configuration(&app)?;
-    let secret_configured = stored.is_some() && secret_exists();
+    let stored = load_configuration(&app, &employee_id)?;
+    let secret_configured = stored.is_some() && secret_exists(&employee_id);
     Ok(stopped_status(stored.as_ref(), secret_configured))
 }
 
 #[tauri::command]
-pub fn allow_local_im_pairing(
+pub async fn allow_local_im_pairing(
     app: tauri::AppHandle,
     manager: tauri::State<'_, LocalImManager>,
     conversation_key: String,
@@ -271,82 +281,106 @@ pub fn allow_local_im_pairing(
     if conversation_key.trim().is_empty() || conversation_key.len() > 1_024 {
         return Err("IM 会话标识无效".to_string());
     }
-    let mut stored = load_configuration(&app)?.ok_or_else(|| "尚未配置钉钉频道".to_string())?;
+    let employee_id = crate::erp_auth::current_employee(&app).await?;
+    let mut stored =
+        load_configuration(&app, &employee_id)?.ok_or_else(|| "尚未配置钉钉频道".to_string())?;
     if !stored.paired_conversations.contains(&conversation_key) {
         stored.paired_conversations.push(conversation_key.clone());
-        save_configuration(&app, &stored)?;
+        save_configuration(&app, &employee_id, &stored)?;
     }
     manager
-        .change_pairing(&conversation_key, true)
-        .map(|value| value.unwrap_or_else(|| stopped_status(Some(&stored), secret_exists())))
+        .change_pairing(&employee_id, &conversation_key, true)
+        .map(|value| {
+            value.unwrap_or_else(|| stopped_status(Some(&stored), secret_exists(&employee_id)))
+        })
 }
 
 #[tauri::command]
-pub fn revoke_local_im_pairing(
+pub async fn revoke_local_im_pairing(
     app: tauri::AppHandle,
     manager: tauri::State<'_, LocalImManager>,
     conversation_key: String,
 ) -> Result<LocalImStatus, String> {
     validate_binding_field("IM 会话标识", &conversation_key, 1_024)?;
-    let mut stored = load_configuration(&app)?.ok_or_else(|| "尚未配置钉钉频道".to_string())?;
+    let employee_id = crate::erp_auth::current_employee(&app).await?;
+    let mut stored =
+        load_configuration(&app, &employee_id)?.ok_or_else(|| "尚未配置钉钉频道".to_string())?;
     stored
         .paired_conversations
         .retain(|key| key != &conversation_key);
-    save_configuration(&app, &stored)?;
+    save_configuration(&app, &employee_id, &stored)?;
     manager
-        .change_pairing(&conversation_key, false)
-        .map(|value| value.unwrap_or_else(|| stopped_status(Some(&stored), secret_exists())))
+        .change_pairing(&employee_id, &conversation_key, false)
+        .map(|value| {
+            value.unwrap_or_else(|| stopped_status(Some(&stored), secret_exists(&employee_id)))
+        })
 }
 
 #[tauri::command]
-pub fn bind_local_im_task(
+pub async fn bind_local_im_task(
+    app: tauri::AppHandle,
     manager: tauri::State<'_, LocalImManager>,
     conversation_key: String,
     task_id: String,
     task_name: String,
     session_id: String,
 ) -> Result<LocalImStatus, String> {
+    let employee_id = crate::erp_auth::current_employee(&app).await?;
     manager
-        .bind_task(&conversation_key, &task_id, &task_name, &session_id)?
+        .bind_task(
+            &employee_id,
+            &conversation_key,
+            &task_id,
+            &task_name,
+            &session_id,
+        )?
         .ok_or_else(|| "钉钉频道当前未运行".to_string())
 }
 
 #[tauri::command]
-pub fn unbind_local_im_task(
+pub async fn unbind_local_im_task(
+    app: tauri::AppHandle,
     manager: tauri::State<'_, LocalImManager>,
     conversation_key: String,
 ) -> Result<LocalImStatus, String> {
+    let employee_id = crate::erp_auth::current_employee(&app).await?;
     manager
-        .unbind_task(&conversation_key)?
+        .unbind_task(&employee_id, &conversation_key)?
         .ok_or_else(|| "钉钉频道当前未运行".to_string())
 }
 
 #[tauri::command]
-pub fn sync_local_im_tasks(
+pub async fn sync_local_im_tasks(
+    app: tauri::AppHandle,
     manager: tauri::State<'_, LocalImManager>,
     tasks: Vec<BindableTask>,
 ) -> Result<Option<LocalImStatus>, String> {
-    manager.sync_tasks(tasks)
+    let employee_id = crate::erp_auth::current_employee(&app).await?;
+    manager.sync_tasks(&employee_id, tasks)
 }
 
 #[tauri::command]
-pub fn retry_local_im_delivery(
+pub async fn retry_local_im_delivery(
+    app: tauri::AppHandle,
     manager: tauri::State<'_, LocalImManager>,
     conversation_key: String,
 ) -> Result<LocalImStatus, String> {
+    let employee_id = crate::erp_auth::current_employee(&app).await?;
     manager
-        .retry_delivery(&conversation_key)?
+        .retry_delivery(&employee_id, &conversation_key)?
         .ok_or_else(|| "钉钉频道当前未运行".to_string())
 }
 
 #[tauri::command]
-pub fn route_local_im_schedule(
+pub async fn route_local_im_schedule(
+    app: tauri::AppHandle,
     manager: tauri::State<'_, LocalImManager>,
     schedule_id: String,
     conversation_key: String,
 ) -> Result<LocalImStatus, String> {
+    let employee_id = crate::erp_auth::current_employee(&app).await?;
     manager
-        .route_schedule(&schedule_id, &conversation_key)?
+        .route_schedule(&employee_id, &schedule_id, &conversation_key)?
         .ok_or_else(|| "钉钉频道当前未运行".to_string())
 }
 
@@ -356,16 +390,17 @@ pub fn stop_local_im_runtime(manager: tauri::State<'_, LocalImManager>) -> Resul
 }
 
 #[tauri::command]
-pub fn remove_local_dingtalk(
+pub async fn remove_local_dingtalk(
     app: tauri::AppHandle,
     manager: tauri::State<'_, LocalImManager>,
 ) -> Result<LocalImStatus, String> {
+    let employee_id = crate::erp_auth::current_employee(&app).await?;
     manager.stop()?;
-    let path = configuration_path(&app)?;
+    let path = configuration_path(&app, &employee_id)?;
     if path.exists() {
         fs::remove_file(path).map_err(|error| format!("无法删除本地钉钉配置：{error}"))?;
     }
-    delete_secret()?;
+    delete_secret(&employee_id)?;
     Ok(stopped_status(None, false))
 }
 
@@ -377,17 +412,28 @@ impl LocalImManager {
         client_secret: String,
         context: HarnessContext,
     ) -> Result<LocalImStatus, String> {
-        let profile =
-            expert_kits::harness_profile(app, &[], &[], "", &context.allowed_artifacts, "agent")?;
-        let im_workspace = app
+        let profile = expert_kits::harness_profile(
+            app,
+            &context.capability_snapshot.selections,
+            &context.capability_snapshot.knowledge_base_refs,
+            "",
+            &context.capability_snapshot.artifacts,
+            &context.capability_snapshot.implicit_artifacts,
+            "agent",
+        )?;
+        let app_data = app
             .path()
             .app_data_dir()
-            .map_err(|error| format!("无法确定 IM 工作目录：{error}"))?
-            .join("im-workspace");
+            .map_err(|error| format!("无法确定 IM 工作目录：{error}"))?;
+        let im_workspace = app_data
+            .join("im-workspaces")
+            .join(crate::harness::employee_namespace(&context.employee_id));
         fs::create_dir_all(&im_workspace)
             .map_err(|error| format!("无法创建 IM 工作目录：{error}"))?;
-        let allow_browser = desktop_connector_enabled(&context.connectors, "desktop-browser");
-        let connectors = runtime_connectors(&context.connectors, &profile, true)?;
+        let allow_browser =
+            desktop_connector_enabled(&context.capability_snapshot.connectors, "desktop-browser");
+        let connectors =
+            runtime_connectors(&context.capability_snapshot.connectors, &profile, true)?;
         let fingerprint = RuntimeFingerprint {
             skill_directories: profile.skill_directories,
             connectors,
@@ -399,6 +445,11 @@ impl LocalImManager {
             allow_browser,
             allowed_computer_tools: Vec::new(),
             execution_mode: "agent".to_string(),
+            tools_mode: "native".to_string(),
+            allow_shell: context.allow_shell,
+            allow_lsp: context.allow_lsp,
+            allow_external_agents: context.allow_external_agents,
+            allow_hooks: context.allow_hooks,
             litellm_base_url: context.litellm_base_url,
             knowledge_endpoint: context.knowledge_endpoint,
             schedule_endpoint: context.schedule_endpoint,
@@ -442,11 +493,20 @@ impl LocalImManager {
         parse_runtime_status(result, configuration.enabled, true)
     }
 
-    fn status(&self) -> Result<Option<LocalImStatus>, String> {
+    fn status(&self, employee_id: &str) -> Result<Option<LocalImStatus>, String> {
         let mut guard = self
             .process
             .lock()
             .map_err(|_| "本地 IM 状态不可用".to_string())?;
+        if guard
+            .as_ref()
+            .is_some_and(|process| process.fingerprint.employee_id != employee_id)
+        {
+            if let Some(mut process) = guard.take() {
+                process.shutdown();
+            }
+            return Ok(None);
+        }
         let Some(process) = guard.as_mut() else {
             return Ok(None);
         };
@@ -462,6 +522,7 @@ impl LocalImManager {
 
     fn change_pairing(
         &self,
+        employee_id: &str,
         conversation_key: &str,
         allow: bool,
     ) -> Result<Option<LocalImStatus>, String> {
@@ -469,7 +530,7 @@ impl LocalImManager {
             .process
             .lock()
             .map_err(|_| "本地 IM 状态不可用".to_string())?;
-        let Some(process) = guard.as_mut() else {
+        let Some(process) = authorized_process(&mut guard, employee_id)? else {
             return Ok(None);
         };
         let value = process.request(
@@ -486,6 +547,7 @@ impl LocalImManager {
 
     fn bind_task(
         &self,
+        employee_id: &str,
         conversation_key: &str,
         task_id: &str,
         task_name: &str,
@@ -499,7 +561,7 @@ impl LocalImManager {
             .process
             .lock()
             .map_err(|_| "本地 IM 状态不可用".to_string())?;
-        let Some(process) = guard.as_mut() else {
+        let Some(process) = authorized_process(&mut guard, employee_id)? else {
             return Ok(None);
         };
         let value = process.request(
@@ -515,13 +577,17 @@ impl LocalImManager {
         parse_runtime_status(value, true, true).map(Some)
     }
 
-    fn unbind_task(&self, conversation_key: &str) -> Result<Option<LocalImStatus>, String> {
+    fn unbind_task(
+        &self,
+        employee_id: &str,
+        conversation_key: &str,
+    ) -> Result<Option<LocalImStatus>, String> {
         validate_binding_field("IM 会话标识", conversation_key, 1_024)?;
         let mut guard = self
             .process
             .lock()
             .map_err(|_| "本地 IM 状态不可用".to_string())?;
-        let Some(process) = guard.as_mut() else {
+        let Some(process) = authorized_process(&mut guard, employee_id)? else {
             return Ok(None);
         };
         let value = process.request(
@@ -532,13 +598,17 @@ impl LocalImManager {
         parse_runtime_status(value, true, true).map(Some)
     }
 
-    fn retry_delivery(&self, conversation_key: &str) -> Result<Option<LocalImStatus>, String> {
+    fn retry_delivery(
+        &self,
+        employee_id: &str,
+        conversation_key: &str,
+    ) -> Result<Option<LocalImStatus>, String> {
         validate_binding_field("IM 会话标识", conversation_key, 1_024)?;
         let mut guard = self
             .process
             .lock()
             .map_err(|_| "本地 IM 状态不可用".to_string())?;
-        let Some(process) = guard.as_mut() else {
+        let Some(process) = authorized_process(&mut guard, employee_id)? else {
             return Ok(None);
         };
         let value = process.request(
@@ -549,12 +619,16 @@ impl LocalImManager {
         parse_runtime_status(value, true, true).map(Some)
     }
 
-    fn sync_tasks(&self, tasks: Vec<BindableTask>) -> Result<Option<LocalImStatus>, String> {
+    fn sync_tasks(
+        &self,
+        employee_id: &str,
+        tasks: Vec<BindableTask>,
+    ) -> Result<Option<LocalImStatus>, String> {
         let mut guard = self
             .process
             .lock()
             .map_err(|_| "本地 IM 状态不可用".to_string())?;
-        let Some(process) = guard.as_mut() else {
+        let Some(process) = authorized_process(&mut guard, employee_id)? else {
             return Ok(None);
         };
         let value = process.request("im.sync-tasks", Some(json!({ "tasks": tasks })), None)?;
@@ -563,6 +637,7 @@ impl LocalImManager {
 
     fn route_schedule(
         &self,
+        employee_id: &str,
         schedule_id: &str,
         conversation_key: &str,
     ) -> Result<Option<LocalImStatus>, String> {
@@ -572,7 +647,7 @@ impl LocalImManager {
             .process
             .lock()
             .map_err(|_| "本地 IM 状态不可用".to_string())?;
-        let Some(process) = guard.as_mut() else {
+        let Some(process) = authorized_process(&mut guard, employee_id)? else {
             return Ok(None);
         };
         let value = process.request(
@@ -593,6 +668,18 @@ impl LocalImManager {
             process.shutdown();
         }
         Ok(())
+    }
+}
+
+fn authorized_process<'a>(
+    guard: &'a mut Option<HarnessProcess>,
+    employee_id: &str,
+) -> Result<Option<&'a mut HarnessProcess>, String> {
+    match guard.as_mut() {
+        Some(process) if process.fingerprint.employee_id != employee_id => {
+            Err("当前登录账号与 IM 运行账号不一致".to_string())
+        }
+        process => Ok(process),
     }
 }
 
@@ -672,17 +759,24 @@ fn stopped_status(
     }
 }
 
-fn configuration_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+fn configuration_path(app: &tauri::AppHandle, employee_id: &str) -> Result<PathBuf, String> {
     app.path()
         .app_data_dir()
-        .map(|root| root.join("im-channels/dingtalk.json"))
+        .map(|root| configuration_path_in(&root, employee_id))
         .map_err(|error| format!("无法确定本地 IM 配置目录：{error}"))
+}
+
+fn configuration_path_in(root: &Path, employee_id: &str) -> PathBuf {
+    root.join("im-channels")
+        .join(crate::harness::employee_namespace(employee_id))
+        .join("dingtalk.json")
 }
 
 fn load_configuration(
     app: &tauri::AppHandle,
+    employee_id: &str,
 ) -> Result<Option<StoredDingTalkConfiguration>, String> {
-    let path = configuration_path(app)?;
+    let path = configuration_path(app, employee_id)?;
     if !path.exists() {
         return Ok(None);
     }
@@ -694,9 +788,10 @@ fn load_configuration(
 
 fn save_configuration(
     app: &tauri::AppHandle,
+    employee_id: &str,
     value: &StoredDingTalkConfiguration,
 ) -> Result<(), String> {
-    let path = configuration_path(app)?;
+    let path = configuration_path(app, employee_id)?;
     let parent = path
         .parent()
         .ok_or_else(|| "本地 IM 配置路径无效".to_string())?;
@@ -724,31 +819,38 @@ fn save_configuration(
     fs::rename(temporary, path).map_err(|error| format!("无法提交本地钉钉配置：{error}"))
 }
 
-fn keyring_entry() -> Result<Entry, String> {
-    Entry::new(KEYRING_SERVICE, KEYRING_ACCOUNT)
+fn keyring_account(employee_id: &str) -> String {
+    format!(
+        "client-secret-{}",
+        crate::harness::employee_namespace(employee_id)
+    )
+}
+
+fn keyring_entry(employee_id: &str) -> Result<Entry, String> {
+    Entry::new(KEYRING_SERVICE, &keyring_account(employee_id))
         .map_err(|error| format!("无法访问系统凭据库：{error}"))
 }
 
-fn store_secret(secret: &str) -> Result<(), String> {
-    keyring_entry()?
+fn store_secret(employee_id: &str, secret: &str) -> Result<(), String> {
+    keyring_entry(employee_id)?
         .set_password(secret.trim())
         .map_err(|error| format!("无法保存钉钉 Client Secret：{error}"))
 }
 
-fn load_secret() -> Result<String, String> {
-    keyring_entry()?
+fn load_secret(employee_id: &str) -> Result<String, String> {
+    keyring_entry(employee_id)?
         .get_password()
         .map_err(|error| format!("无法读取钉钉 Client Secret：{error}"))
 }
 
-fn secret_exists() -> bool {
-    keyring_entry()
+fn secret_exists(employee_id: &str) -> bool {
+    keyring_entry(employee_id)
         .and_then(|entry| entry.get_password().map_err(|error| error.to_string()))
         .is_ok()
 }
 
-fn delete_secret() -> Result<(), String> {
-    match keyring_entry()?.delete_credential() {
+fn delete_secret(employee_id: &str) -> Result<(), String> {
+    match keyring_entry(employee_id)?.delete_credential() {
         Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
         Err(error) => Err(format!("无法删除钉钉 Client Secret：{error}")),
     }
@@ -791,7 +893,7 @@ fn validate_harness_context(value: &HarnessContext) -> Result<(), String> {
     validate_http_url("LiteLLM", &value.litellm_base_url)?;
     validate_http_url("知识库", &value.knowledge_endpoint)?;
     validate_http_url("定时任务", &value.schedule_endpoint)?;
-    expert_kits::validate_allowed_artifacts(&value.allowed_artifacts)?;
+    validate_capability_snapshot(&value.capability_snapshot)?;
     if value.model.trim().is_empty() || value.model.len() > 200 {
         return Err("模型名称无效".to_string());
     }
@@ -819,6 +921,45 @@ fn validate_http_url(name: &str, value: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dingtalk_configuration_and_keyring_are_employee_scoped() {
+        let root = Path::new("/app-data");
+        let first = configuration_path_in(root, "employee-1");
+        let second = configuration_path_in(root, "employee-2");
+        assert_ne!(first, second);
+        assert_ne!(keyring_account("employee-1"), keyring_account("employee-2"));
+        assert!(!first.to_string_lossy().contains("employee-1"));
+        assert!(!first.ends_with("im-channels/dingtalk.json"));
+        assert_eq!(first, configuration_path_in(root, "employee-1"));
+    }
+
+    #[test]
+    fn im_context_without_runtime_authorizations_is_restricted() {
+        let context: HarnessContext = serde_json::from_value(json!({
+            "employeeId": "employee-1",
+            "teamId": "team-1",
+            "litellmBaseUrl": "http://litellm.internal/v1",
+            "knowledgeEndpoint": "http://xiaoyin-server.internal/api/v1/knowledge-bases",
+            "capabilitySnapshot": {
+                "schemaVersion": 1,
+                "createdAt": "2026-09-11T00:00:00Z",
+                "selections": [],
+                "artifacts": [],
+                "implicitArtifacts": [],
+                "requestedConnectorIds": [],
+                "requestedKnowledgeBaseRefs": []
+            },
+            "model": "deepseek-chat",
+            "modelApiKey": "model-token",
+            "accessToken": "token"
+        }))
+        .expect("IM context should deserialize without authorization");
+        assert!(!context.allow_shell);
+        assert!(!context.allow_lsp);
+        assert!(!context.allow_external_agents);
+        assert!(!context.allow_hooks);
+    }
 
     #[test]
     fn empty_secret_is_retained_only_for_the_same_application() {

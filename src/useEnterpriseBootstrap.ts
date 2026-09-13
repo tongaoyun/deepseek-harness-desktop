@@ -4,31 +4,32 @@ import type { BootstrapResponse, RuntimeStatus } from './types'
 
 /** Refresh policy between turns without interrupting work already in flight. */
 export function useEnterpriseBootstrap(employeeId: string | undefined, accessToken: string, refreshKey: number) {
-  const [bootstrap, setBootstrap] = useState<BootstrapResponse>()
-  const [runtimeStatus, setRuntimeStatus] = useState<RuntimeStatus>('connecting')
-  const [error, setError] = useState('')
+  const key = JSON.stringify([employeeId, accessToken, refreshKey])
+  const [snapshot, setSnapshot] = useState<{ key: string; bootstrap?: BootstrapResponse; runtimeStatus: RuntimeStatus; error: string }>(
+    { key: '', runtimeStatus: 'connecting', error: '' },
+  )
   useEffect(() => {
-    setBootstrap(undefined)
-    setError('')
-    setRuntimeStatus('connecting')
+    setSnapshot({ key, runtimeStatus: 'connecting', error: '' })
     if (!employeeId) return
     const controller = new AbortController()
     let loading = false
-    let loaded = false
     const refresh = async () => {
       if (loading) return
       loading = true
       try {
         const next = await loadBootstrap(employeeId, accessToken, controller.signal)
         if (controller.signal.aborted) return
-        loaded = true
-        setBootstrap((current) => JSON.stringify(current) === JSON.stringify(next) ? current : next)
-        setRuntimeStatus('ready')
-        setError('')
+        if (next.employeeId !== employeeId) throw new Error('控制中心员工身份不匹配')
+        setSnapshot((current) => current.key === key ? {
+          key, bootstrap: JSON.stringify(current.bootstrap) === JSON.stringify(next) ? current.bootstrap : next,
+          runtimeStatus: 'ready', error: '',
+        } : current)
       } catch (reason) {
         if (controller.signal.aborted) return
-        if (!loaded) setRuntimeStatus('offline')
-        setError(loaded ? `配置刷新失败，暂用上次配置：${reason instanceof Error ? reason.message : String(reason)}` : '')
+        setSnapshot((current) => current.key === key ? {
+          ...current, runtimeStatus: current.bootstrap ? current.runtimeStatus : 'offline',
+          error: current.bootstrap ? `配置刷新失败，暂用上次配置：${reason instanceof Error ? reason.message : String(reason)}` : '',
+        } : current)
       } finally { loading = false }
     }
     const onFocus = () => { void refresh() }
@@ -37,5 +38,7 @@ export function useEnterpriseBootstrap(employeeId: string | undefined, accessTok
     window.addEventListener('focus', onFocus)
     return () => { controller.abort(); window.clearInterval(timer); window.removeEventListener('focus', onFocus) }
   }, [employeeId, accessToken, refreshKey])
-  return { bootstrap, runtimeStatus, error }
+  return snapshot.key === key
+    ? { bootstrap: snapshot.bootstrap, runtimeStatus: snapshot.runtimeStatus, error: snapshot.error }
+    : { bootstrap: undefined, runtimeStatus: 'connecting' as RuntimeStatus, error: '' }
 }

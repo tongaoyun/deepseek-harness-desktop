@@ -4,7 +4,7 @@ import { createRoot } from 'react-dom/client'
 import { afterEach, expect, it, vi } from 'vitest'
 import { useLocalSchedules } from './useLocalSchedules'
 import { readLocalSchedules, tickLocalSchedules } from './localSchedules'
-vi.mock('./localSchedules', () => ({ localScheduleEvent: 'schedule-change', readLocalSchedules: vi.fn(() => []), tickLocalSchedules: vi.fn(), mutateLocalSchedules: vi.fn(), nextLocalRun: vi.fn(), saveLocalSchedule: vi.fn() }))
+vi.mock('./localSchedules', () => ({ localScheduleEvent: 'schedule-change', readLocalSchedules: vi.fn(async () => []), tickLocalSchedules: vi.fn(), mutateLocalSchedules: vi.fn(), nextLocalRun: vi.fn(), saveLocalSchedule: vi.fn() }))
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 afterEach(() => { vi.useRealTimers(); vi.clearAllMocks() })
 
@@ -32,7 +32,7 @@ it('keeps a failed scheduler blocked until an explicit successful recovery, then
 })
 
 it('does not erase an unreadable plan error when the runtime is not ready', async () => {
-  vi.mocked(readLocalSchedules).mockImplementation(() => { throw new Error('broken plans') })
+  vi.mocked(readLocalSchedules).mockRejectedValue(new Error('broken plans'))
   const root = createRoot(document.createElement('div'))
   let controller: ReturnType<typeof useLocalSchedules>
   function Host() { controller = useLocalSchedules('owner', false, vi.fn()); return null }
@@ -41,5 +41,19 @@ it('does not erase an unreadable plan error when the runtime is not ready', asyn
     await act(async () => controller!.refresh())
     expect(controller!.error).toContain('broken plans')
     expect(tickLocalSchedules).not.toHaveBeenCalled()
-  } finally { await act(async () => root.unmount()); vi.mocked(readLocalSchedules).mockReturnValue([]) }
+  } finally { await act(async () => root.unmount()); vi.mocked(readLocalSchedules).mockResolvedValue([]) }
+})
+
+it('keeps the paused scheduler warning visible after a schedule update', async () => {
+  vi.mocked(tickLocalSchedules).mockRejectedValueOnce(new Error('storage failure'))
+  const root = createRoot(document.createElement('div'))
+  let controller: ReturnType<typeof useLocalSchedules>
+  function Host() { controller = useLocalSchedules('owner', true, vi.fn()); return null }
+  try {
+    await act(async () => root.render(<Host />))
+    expect(controller!.error).toContain('本机调度已暂停')
+    await act(async () => window.dispatchEvent(new Event('schedule-change')))
+    expect(controller!.error).toContain('本机调度已暂停')
+    expect(tickLocalSchedules).toHaveBeenCalledOnce()
+  } finally { await act(async () => root.unmount()) }
 })

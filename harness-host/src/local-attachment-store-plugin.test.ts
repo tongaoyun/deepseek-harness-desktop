@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, open, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import LocalAttachmentStore, { jpegMetadata, pngMetadata } from './local-attachment-store-plugin.js'
+import { IMAGE_LIMITS } from './image-limits.js'
 
 describe('local screenshot attachment store', () => {
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64')
   it('keeps JPEG bytes and media type consistent when projecting cached connector images to a model', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'xiaoyin-jpeg-'))
     try {
@@ -27,6 +29,70 @@ describe('local screenshot attachment store', () => {
     header[24] = 8
     header[25] = 6
     expect(pngMetadata(header)).toEqual({ width: 1280, height: 720, hasAlpha: true })
+  })
+
+  it('restores durable references after restart and rejects another employee root', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'xiaoyin-attachment-isolation-'))
+    try {
+      const firstRoot = join(root, 'employee-a')
+      const secondRoot = join(root, 'employee-b')
+      const ref = await new LocalAttachmentStore(new Context(), { root: firstRoot }).saveImage({ data: png, mediaType: 'image/png' })
+      expect((await new LocalAttachmentStore(new Context(), { root: firstRoot }).readImage(ref)).data).toEqual(png)
+      await expect(new LocalAttachmentStore(new Context(), { root: secondRoot }).readImage(ref)).rejects.toMatchObject({ code: 'ATTACHMENT_NOT_FOUND' })
+    } finally { await rm(root, { recursive: true, force: true }) }
+  })
+
+  it('distinguishes missing, corrupt and mismatched attachment references', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'xiaoyin-attachment-corruption-'))
+    try {
+      const store = new LocalAttachmentStore(new Context(), { root: directory })
+      const ref = await store.saveImage({ data: png, mediaType: 'image/png' })
+      const hash = String(ref.attachmentId).slice(7)
+      await writeFile(join(directory, `${hash}.image`), Buffer.from('corrupt'))
+      await expect(store.readImage(ref)).rejects.toMatchObject({ code: 'ATTACHMENT_CORRUPT' })
+      const healed = await store.saveImage({ data: png, mediaType: 'image/png' })
+      expect((await store.readImage(healed)).data).toEqual(png)
+      await rm(join(directory, `${hash}.image`))
+      await expect(store.readImage(ref)).rejects.toMatchObject({ code: 'ATTACHMENT_NOT_FOUND' })
+      const restored = await store.saveImage({ data: png, mediaType: 'image/png' })
+      await expect(store.readImage({ ...restored, width: 2 })).rejects.toMatchObject({ code: 'INVALID_ATTACHMENT_REF' })
+      await expect(store.readImage(restored, AbortSignal.abort())).rejects.toThrow()
+    } finally { await rm(directory, { recursive: true, force: true }) }
+  })
+
+  it('does not return a reference when the attachment directory becomes unwritable', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'xiaoyin-attachment-write-failure-'))
+    const root = join(directory, 'images')
+    try {
+      const store = new LocalAttachmentStore(new Context(), { root })
+      await rename(root, join(directory, 'old-images'))
+      await writeFile(root, 'not a directory')
+      await expect(store.saveImage({ data: png, mediaType: 'image/png' })).rejects.toMatchObject({ code: 'ATTACHMENT_WRITE_FAILED' })
+      expect(await readdir(join(directory, 'old-images'))).toEqual([])
+    } finally { await rm(directory, { recursive: true, force: true }) }
+  })
+
+  it('rejects an oversized corrupted cache without reading the entire file', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'xiaoyin-attachment-oversized-'))
+    try {
+      const store = new LocalAttachmentStore(new Context(), { root: directory })
+      const ref = await store.saveImage({ data: png, mediaType: 'image/png' })
+      const file = await open(join(directory, `${String(ref.attachmentId).slice(7)}.image`), 'r+')
+      try { await file.truncate(IMAGE_LIMITS.maxImageBytes + 1) } finally { await file.close() }
+      await expect(store.readImage(ref)).rejects.toMatchObject({ code: 'ATTACHMENT_CORRUPT' })
+    } finally { await rm(directory, { recursive: true, force: true }) }
+  })
+
+  it('does not replace an existing valid attachment after a second save', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'xiaoyin-attachment-idempotent-'))
+    try {
+      const store = new LocalAttachmentStore(new Context(), { root: directory })
+      const first = await store.saveImage({ data: png, mediaType: 'image/png' })
+      const second = await store.saveImage({ data: png, mediaType: 'image/png' })
+      expect(second.attachmentId).toBe(first.attachmentId)
+      expect((await store.readImage(first)).data).toEqual(png)
+      expect(await readdir(directory)).toEqual([`${String(first.attachmentId).slice(7)}.image`])
+    } finally { await rm(directory, { recursive: true, force: true }) }
   })
 
   it('rejects non-PNG content', () => {

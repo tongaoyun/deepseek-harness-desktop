@@ -1,6 +1,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
+import { TextRetainer } from '@deepseek-ai/dsh-output-retention'
 import { Document, HeadingLevel, Packer, Paragraph, Table, TableCell, TableRow } from 'docx'
 import ExcelJS from 'exceljs'
 import mammoth from 'mammoth'
@@ -620,7 +621,15 @@ function requiredString(value: unknown, name: string): string { if (typeof value
 function optionalString(value: unknown, name: string, max: number): string { if (value === undefined) return ''; if (typeof value !== 'string' || value.length > max) throw new Error(`${name} must be a string of at most ${max} characters`); return value }
 function optionalBoolean(value: unknown, fallback: boolean, name: string): boolean { if (value === undefined) return fallback; if (typeof value !== 'boolean') throw new Error(`${name} must be a boolean`); return value }
 function stringArray(value: unknown, name: string, maxItems: number, maxLength: number): string[] { if (value === undefined) return []; if (!Array.isArray(value) || value.length > maxItems || value.some((item) => typeof item !== 'string' || item.length > maxLength)) throw new Error(`${name} is invalid`); return value as string[] }
-function truncateText(value: string, max = MAX_TEXT_CHARS): string { return value.length <= max ? value : `${value.slice(0, max)}\n…内容已截断` }
+function truncateText(value: string, max = MAX_TEXT_CHARS): string {
+  if (value.length <= max) return value
+  // Use Harness' UTF-8-safe retainer so a multibyte character is never split at the cap.
+  const maxBytes = Buffer.byteLength(value.slice(0, max))
+  const retainer = new TextRetainer({ kind: 'head', maxBytes })
+  retainer.push(value)
+  const retained = retainer.finish()
+  return `${retained.text}\n…内容已截断${retained.truncated ? `（省略 ${Buffer.byteLength(value) - Buffer.byteLength(retained.text)} 字节）` : ''}`
+}
 function cellText(value: unknown): string {
   if (value === null || value === undefined) return ''
   if (value instanceof Date) return value.toISOString()

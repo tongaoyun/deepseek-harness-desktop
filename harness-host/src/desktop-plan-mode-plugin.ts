@@ -8,7 +8,7 @@ const PLAN_SAFE_TOOLS = new Set([
   'ask_user_question', 'exit_plan_mode', 'get_goal', 'task_report',
   'read', 'read_image', 'glob', 'grep', 'skill', 'lsp',
   'web_search', 'web_fetch',
-  'session_search', 'session_event_search', 'session_trace', 'session_event_trace', 'session_event_read',
+  'session_search', 'session_event_search', 'session_trace', 'session_event_trace', 'session_event_read', 'schedule_list',
   'job_list', 'job_output', 'list_agents',
   'local_files_roots', 'local_files_list', 'local_files_search', 'local_files_read_text',
   'office_document_read', 'office_document_check', 'office_pdf_page', 'office_engine_status',

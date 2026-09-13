@@ -69,6 +69,19 @@ it('opens published existing files without inventing a created-file review basel
   } finally { await act(async () => root.unmount()); container.remove() }
 })
 
+it('labels official present declarations as delivered files', async () => {
+  const container = document.body.appendChild(document.createElement('div'))
+  const root = createRoot(container)
+  try {
+    await act(async () => root.render(<TaskArtifacts conversation onOpen={() => undefined} artifacts={[{
+      id: 'presented', name: '交付.xlsx', path: 'reports/交付.xlsx', rootId: 'harness-workspace', rootName: 'Harness 工作区',
+      kind: 'spreadsheet', action: 'presented', sourceTool: 'present', createdAt: '',
+    }]} />))
+    expect(container.querySelector('header.sr-only')?.textContent).toBe('交付了 1 个文件')
+    expect(container.textContent).toContain('已交付')
+  } finally { await act(async () => root.unmount()); container.remove() }
+})
+
 it('keeps compact file rows accessible and opens the real artifact from its filename', async () => {
   const container = document.body.appendChild(document.createElement('div'))
   const root = createRoot(container)

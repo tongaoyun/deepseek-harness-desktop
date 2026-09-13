@@ -1,11 +1,12 @@
 import { useEffect, useRef } from 'react'
-import { loadLocalImStatus, startLocalIm, syncLocalImTasks, type LocalImHarnessContext } from './localIm'
+import { loadLocalImStatus, startLocalIm, stopLocalImRuntime, syncLocalImTasks, type LocalImHarnessContext } from './localIm'
 import { mergeImStatusIntoTasks } from './imTaskSync'
 import { persistTaskHistory } from './taskHistory'
 import type { LocalTaskRun } from './types'
 
 const SYNC_INTERVAL_MS = 10_000
 const FAILURE_NOTICE_THRESHOLD = 3
+let startupQueue: Promise<void> = Promise.resolve()
 
 export function useLocalImSync({
   context,
@@ -28,15 +29,44 @@ export function useLocalImSync({
 }) {
   const latest = useRef({ currentTaskId, onCurrentTaskChanged, onSyncError, onTasksChanged, tasks })
   latest.current = { currentTaskId, onCurrentTaskChanged, onSyncError, onTasksChanged, tasks }
+  const started = useRef(false)
+  const configuredContext = useRef('')
 
   useEffect(() => {
-    if (!enabled || !context) return
+    if (!enabled || !context) {
+      if (started.current) {
+        started.current = false
+        configuredContext.current = ''
+        startupQueue = startupQueue.then(async () => {
+          try { await stopLocalImRuntime() }
+          catch (reason) { latest.current.onSyncError?.(`IM 连接停止失败：${message(reason)}`) }
+        })
+      }
+      return
+    }
+    started.current = true
     let disposed = false
-    void startLocalIm(context).then(async (status) => {
-      if (!disposed && status.enabled) await syncLocalImTasks(synchronizedTasks(latest.current.tasks))
-    }).catch((reason) => { if (!disposed) latest.current.onSyncError?.(`IM 连接启动失败：${message(reason)}`) })
+    const contextKey = JSON.stringify(context)
+    startupQueue = startupQueue.then(async () => {
+      if (disposed) return
+      if (configuredContext.current === contextKey) return
+      try {
+        const status = await startLocalIm(context)
+        if (!disposed) configuredContext.current = contextKey
+        if (!disposed && status.enabled) await syncLocalImTasks(synchronizedTasks(latest.current.tasks))
+      } catch (reason) {
+        if (!disposed) latest.current.onSyncError?.(`IM 连接启动失败：${message(reason)}`)
+      }
+    })
     return () => { disposed = true }
   }, [context, enabled])
+
+  useEffect(() => () => {
+    if (!started.current) return
+    started.current = false
+    configuredContext.current = ''
+    startupQueue = startupQueue.then(() => stopLocalImRuntime()).catch(() => undefined)
+  }, [])
 
   useEffect(() => {
     if (!enabled || !employeeId) return

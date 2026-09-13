@@ -9,7 +9,7 @@ import { configureLocalDingTalk, loadLocalImStatus, revokeLocalImPairing, retryL
 vi.mock('./localIm', () => ({ loadLocalImStatus: vi.fn(), configureLocalDingTalk: vi.fn(), revokeLocalImPairing: vi.fn(), allowLocalImPairing: vi.fn(), bindLocalImTask: vi.fn(), unbindLocalImTask: vi.fn(), retryLocalImDelivery: vi.fn(), removeLocalDingTalk: vi.fn(), setLocalImEnabled: vi.fn() }))
 vi.mock('./DingTalkRegistration', () => ({ DingTalkRegistration: () => <div>扫码区域</div> }))
 const status: LocalImStatus = { provider: 'DINGTALK', configured: true, enabled: false, connected: false, state: 'DISABLED', clientId: 'existing-app', secretConfigured: true, accessPolicy: 'pairing', notifyTaskResults: false, pendingPairings: [], pairedConversations: ['app:private:one'], conversations: [], pendingEventCount: 0 }
-const props: ComponentProps<typeof ImChannelsPage> = { employeeId: 'one', teamId: 'team', litellmBaseUrl: '', knowledgeEndpoint: '', scheduleEndpoint: '', connectors: [], allowedArtifacts: [], model: '', modelApiKey: '', accessToken: '', localTasks: [] }
+const props: ComponentProps<typeof ImChannelsPage> = { employeeId: 'one', teamId: 'team', litellmBaseUrl: '', knowledgeEndpoint: '', scheduleEndpoint: '', capabilitySnapshot: { schemaVersion: 1, createdAt: 'test', selections: [], artifacts: [], implicitArtifacts: [], requestedConnectorIds: [], connectors: [], requestedKnowledgeBaseRefs: [], knowledgeBaseRefs: [] }, model: '', modelApiKey: '', accessToken: '', allowShell: false, allowLsp: false, allowExternalAgents: false, allowHooks: false, localTasks: [] }
 let container: HTMLDivElement
 let root: Root
 const button = (text: string) => [...container.querySelectorAll('button')].find((item) => item.textContent === text)!
@@ -26,7 +26,7 @@ it('separates completed execution from failed delivery and retries sending only'
   const ready: LocalImStatus = { ...status, enabled: true, connected: true, state: 'READY', conversations: [{
     conversationKey: 'test:private:one', conversationType: 'private', conversationTitle: '验收', senderNick: '测试员工',
     lastMessage: '生成文件', lastResponse: '文件已生成', sessionId: 's', messageCount: 1, status: 'COMPLETED',
-    deliveryStatus: 'FAILED', pendingDeliveryCount: 1, updatedAt: '', messages: [], taskEvents: [],
+    deliveryStatus: 'FAILED', pendingDeliveryCount: 1, updatedAt: '', messages: [],
   }] }
   vi.mocked(loadLocalImStatus).mockResolvedValue(ready)
   vi.mocked(retryLocalImDelivery).mockResolvedValue({ ...ready, conversations: [{ ...ready.conversations[0], deliveryStatus: 'SENDING', pendingDeliveryCount: 0 }] })
@@ -37,6 +37,20 @@ it('separates completed execution from failed delivery and retries sending only'
   expect(retryLocalImDelivery).toHaveBeenCalledExactlyOnceWith('test:private:one')
   expect(container.textContent).toContain('正在发送结果')
   expect(button('仅重试发送')).toBeUndefined()
+})
+it('retries a failed channel read and clears stale poll errors after recovery', async () => {
+  vi.mocked(loadLocalImStatus).mockRejectedValueOnce(new Error('offline')).mockResolvedValue(status)
+  await act(async () => root.render(<ImChannelsPage {...props} />))
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain('offline')
+  expect(container.querySelector<HTMLButtonElement>('.im-configure')?.disabled).toBe(true)
+  await act(async () => button('重新读取频道').click())
+  expect(container.querySelector('[role="alert"]')).toBeNull()
+  expect(container.textContent).toContain('配对管理')
+  vi.mocked(loadLocalImStatus).mockRejectedValueOnce(new Error('poll failed'))
+  await act(async () => document.dispatchEvent(new Event('visibilitychange')))
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain('poll failed')
+  await act(async () => button('重新读取频道').click())
+  expect(container.querySelector('[role="alert"]')).toBeNull()
 })
 it('editing retains the same-app secret, pairing policy and disabled state', async () => {
   await act(async () => root.render(<ImChannelsPage {...props} />))
@@ -99,7 +113,7 @@ it('does not disguise channel read errors as an empty history', async () => {
 })
 it('opens the actual channel conversation selected in the sidebar', async () => {
   const open = vi.fn()
-  vi.mocked(loadLocalImStatus).mockResolvedValue({ ...status, conversations: [{ conversationKey: 'app:group:work', conversationType: 'group', conversationTitle: '运营组', senderNick: '', lastMessage: '生成日报', lastResponse: '', sessionId: 'session', messageCount: 1, status: 'RUNNING', updatedAt: '', messages: [], taskEvents: [] }] })
+  vi.mocked(loadLocalImStatus).mockResolvedValue({ ...status, conversations: [{ conversationKey: 'app:group:work', conversationType: 'group', conversationTitle: '运营组', senderNick: '', lastMessage: '生成日报', lastResponse: '', sessionId: 'session', messageCount: 1, status: 'RUNNING', updatedAt: '', messages: [] }] })
   await act(async () => root.render(<ChannelHistory onOpen={open} onConfigure={vi.fn()} />))
   expect(container.textContent).toContain('运营组处理中')
   await act(async () => container.querySelector<HTMLButtonElement>('button')!.click())

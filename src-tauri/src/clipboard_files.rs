@@ -1,7 +1,24 @@
 /// Read file references only in response to a user paste; never poll or modify the clipboard.
 #[tauri::command]
-pub fn clipboard_file_paths() -> Result<Vec<String>, String> {
-    platform_paths()
+pub async fn clipboard_file_paths(
+    app: tauri::AppHandle,
+    grants: tauri::State<'_, crate::feedback_images::FeedbackImageGrants>,
+) -> Result<Vec<String>, String> {
+    crate::erp_auth::current_employee(&app).await?;
+    let epoch = crate::erp_auth::mcp::session_epoch();
+    let paths = platform_paths()?;
+    crate::erp_auth::current_employee(&app).await?;
+    if crate::erp_auth::mcp::session_epoch() != epoch {
+        return Err("当前登录账号已变更，请重新粘贴文件".into());
+    }
+    grants.register(
+        &paths
+            .iter()
+            .map(std::path::PathBuf::from)
+            .collect::<Vec<_>>(),
+        epoch,
+    );
+    Ok(paths)
 }
 
 #[cfg(target_os = "macos")]

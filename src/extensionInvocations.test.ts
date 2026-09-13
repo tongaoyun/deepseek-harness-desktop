@@ -18,10 +18,10 @@ describe('extension invocations', () => {
     expect(bundled.name).toBe('report')
     expect(bundled.bundledSkill).toBe(true)
     expect(options.filter((item) => !item.bundledSkill).map((item) => item.token)).toEqual(['/kit:reports', '/kit:reports:weekly'])
-    expect(selectedInvocations('/kit:reports:weekly 本周数据', options)).toMatchObject([{ kind: 'expert-kit', id: 'reports', spec: {
+    expect(selectedInvocations('/kit:reports:weekly 本周数据', options)).toMatchObject([{ kind: 'expert-kit', id: 'reports', selection: {
       mode: 'explicit', kind: 'expert-kit', extensionId: 'reports', extensionVersion: '1.0.0', commandId: 'weekly', skillId: 'report',
     } }])
-    expect(bundled.spec).toEqual({ mode: 'explicit', kind: 'expert-kit', extensionId: 'reports', extensionVersion: '1.0.0', skillId: 'report' })
+    expect(bundled.selection).toEqual({ mode: 'explicit', kind: 'expert-kit', extensionId: 'reports', extensionVersion: '1.0.0', skillId: 'report' })
     expect(selectedInvocations('解释 /kit:reports', options)).toEqual([])
     expect(selectedInvocations('/kit:reports:missing', options)).toEqual([])
   })

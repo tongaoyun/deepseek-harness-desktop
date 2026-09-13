@@ -19,10 +19,31 @@
     agents: []
     maxParallelToolCalls: 3
 
+# When the desktop has explicit authorized roots, Xiaoyin's product file
+# adapter is the only model-facing filesystem surface. The upstream fs tools
+# remain available for plain workspace sessions, but never compete with
+# local_files_* in an authorized multi-root task.
+- id: tool-fs
+  disabled: !!js "(() => { try { const roots = JSON.parse(process.env.XIAOYIN_LOCAL_FILE_ROOTS ?? '[]'); return Array.isArray(roots) && roots.length > 0 } catch { return true } })()"
+
+- id: tool-fs-search
+  disabled: !!js "(() => { try { const roots = JSON.parse(process.env.XIAOYIN_LOCAL_FILE_ROOTS ?? '[]'); return Array.isArray(roots) && roots.length > 0 } catch { return true } })()"
+
 - id: session-persistence-jsonl
   config:
     root: !!js process.env.DSH_SESSION_ROOT ?? dshHomePath('sessions')
     compression: none
+
+# Keep the official user-settings and credential documents inside the
+# employee-scoped DSH_HOME supplied by the desktop process. Explicit paths
+# make the isolation contract independent of upstream provider defaults.
+- id: settings
+  config:
+    path: !!js dshHomePath('settings.yaml')
+
+- id: credentials
+  config:
+    path: !!js dshHomePath('.credentials.yaml')
 
 - id: session-query-sqlite
   config:
@@ -44,6 +65,7 @@
     policy: ask
 
 - id: permission
+  disabled: !!js process.env.XIAOYIN_ALLOW_SHELL === 'false'
   config:
     presets:
       read-only:
@@ -131,6 +153,60 @@
     mode: !!js process.env.XIAOYIN_TOOLS_MODE ?? 'native'
 
 - insert:
+    # Persistent PTY is a separate capability from bounded shell calls. These
+    # are product overlay rows because the upstream sdk profile has no terminal
+    # rows to replace. Keeping them in insert makes the mount explicit and
+    # prevents a silent "entry not found" patch warning.
+    - id: terminal
+      name: '@deepseek-ai/dsh-terminal'
+      disabled: !!js process.env.XIAOYIN_ALLOW_SHELL === 'false'
+
+    - id: terminal-bash
+      name: '@deepseek-ai/dsh-terminal-bash'
+      disabled: !!js process.platform === 'win32' || process.env.XIAOYIN_ALLOW_SHELL === 'false'
+      config:
+        shellDialect: bash
+        timeoutMs: 300000
+
+    - id: terminal-pwsh
+      name: '@deepseek-ai/dsh-terminal-bash'
+      disabled: !!js process.platform !== 'win32' || process.env.XIAOYIN_ALLOW_SHELL === 'false'
+      config:
+        shellDialect: pwsh
+        timeoutMs: 300000
+
+    - id: tool-terminal
+      name: '@deepseek-ai/dsh-tool-terminal'
+      disabled: !!js process.env.XIAOYIN_ALLOW_SHELL === 'false'
+      config:
+        enableRunInBackground: true
+        maxResultBytes: 262144
+
+    # `present` publishes source-file references through the official Session
+    # filesystem. With explicit Xiaoyin roots the product file bridge remains
+    # the sole filesystem surface, so this tool is disabled to avoid a second
+    # path/authorization model.
+    - id: tool-present
+      name: '@deepseek-ai/dsh-tool-present'
+      disabled: !!js "(() => { try { const roots = JSON.parse(process.env.XIAOYIN_LOCAL_FILE_ROOTS ?? '[]'); return Array.isArray(roots) && roots.length > 0 } catch { return true } })()"
+      config:
+        maxFiles: 8
+
+    # Harness reminders are Session-local follow-ups. They complement, but do
+    # not replace, Xiaoyin's cross-restart Cron and external notification layer.
+    - id: session-schedule
+      name: '@deepseek-ai/dsh-schedule'
+
+    # Canonical dsh-session mentions are resolved by Harness into bounded,
+    # immutable, untrusted snapshots. This is read-only cross-session context
+    # and does not replace Xiaoyin's task history or product projection.
+    - id: session-reference
+      name: '@deepseek-ai/dsh-session-reference'
+      disabled: !!js process.env.XIAOYIN_ENABLE_SESSION_REFERENCES === 'false'
+      config:
+        maxReferences: 3
+        candidateLimit: 50
+
     - id: local-attachments
       name: '../dist/local-attachment-store-plugin.js'
       config:
@@ -145,15 +221,20 @@
     - id: desktop-plan-mode
       name: '../dist/desktop-plan-mode-plugin.js'
 
+    - id: session-projection-bridge
+      name: '../dist/session-projection-plugin.js'
+
+    - id: xiaoyin-product-projections
+      name: '../dist/xiaoyin-projections-plugin.js'
+
     - id: tool-ask-user
       name: '@deepseek-ai/dsh-tool-ask-user'
 
     - id: tool-session-query
-      name: '@deepseek-ai/dsh-tool-session-query'
-      # rc.2 currently creates an effect after the SDK composition context has
-      # become inactive. Keep the durable query index enabled, but expose its
-      # model-facing tools only for deployments validating the upstream fix.
-      disabled: !!js process.env.XIAOYIN_ENABLE_SESSION_QUERY_TOOLS !== 'true'
+      name: '../dist/session-query-compat-plugin.js'
+      # The compat layer preserves the official tools and only makes its
+      # optional prompt section resilient to rc.2's inactive-context bug.
+      disabled: !!js process.env.XIAOYIN_ENABLE_SESSION_QUERY_TOOLS === 'false'
       config:
         maxSearchResults: 50
         searchTimeoutMs: 30000
@@ -171,29 +252,29 @@
     # never guesses executables or starts language servers behind the user.
     - id: lsp
       name: '@deepseek-ai/dsh-lsp'
-      disabled: !!js "!process.env.XIAOYIN_LSP_SERVERS"
+      disabled: !!js "(() => { try { const servers = JSON.parse(process.env.XIAOYIN_LSP_SERVERS ?? '{}'); return process.env.XIAOYIN_ALLOW_LSP === 'false' || !servers || typeof servers !== 'object' || Array.isArray(servers) || Object.keys(servers).length === 0 } catch { return true } })()"
 
     - id: lsp-stdio
       name: '@deepseek-ai/dsh-lsp-stdio'
-      disabled: !!js "!process.env.XIAOYIN_LSP_SERVERS"
+      disabled: !!js "(() => { try { const servers = JSON.parse(process.env.XIAOYIN_LSP_SERVERS ?? '{}'); return process.env.XIAOYIN_ALLOW_LSP === 'false' || !servers || typeof servers !== 'object' || Array.isArray(servers) || Object.keys(servers).length === 0 } catch { return true } })()"
       config:
         servers: !!js JSON.parse(process.env.XIAOYIN_LSP_SERVERS ?? '{}')
 
     - id: tool-lsp
       name: '@deepseek-ai/dsh-tool-lsp'
-      disabled: !!js "!process.env.XIAOYIN_LSP_SERVERS"
+      disabled: !!js "(() => { try { const servers = JSON.parse(process.env.XIAOYIN_LSP_SERVERS ?? '{}'); return process.env.XIAOYIN_ALLOW_LSP === 'false' || !servers || typeof servers !== 'object' || Array.isArray(servers) || Object.keys(servers).length === 0 } catch { return true } })()"
 
     # Hooks can run arbitrary local commands and therefore require an explicit
     # config path. Missing paths leave no hook listener mounted.
     - id: hooks-codex
       name: '@deepseek-ai/dsh-hooks-codex'
-      disabled: !!js "!process.env.XIAOYIN_CODEX_HOOKS_CONFIG"
+      disabled: !!js "process.env.XIAOYIN_ALLOW_HOOKS === 'false' || !process.env.XIAOYIN_CODEX_HOOKS_CONFIG"
       config:
         configPath: !!js process.env.XIAOYIN_CODEX_HOOKS_CONFIG ?? ''
 
     - id: hooks-claude-code
       name: '@deepseek-ai/dsh-hooks-claude-code'
-      disabled: !!js "!process.env.XIAOYIN_CLAUDE_HOOKS_CONFIG"
+      disabled: !!js "process.env.XIAOYIN_ALLOW_HOOKS === 'false' || !process.env.XIAOYIN_CLAUDE_HOOKS_CONFIG"
       config:
         configPath: !!js process.env.XIAOYIN_CLAUDE_HOOKS_CONFIG ?? ''
 
@@ -201,14 +282,14 @@
     # provider so unavailable accounts or executables are never advertised.
     - id: subagent-codex
       name: '@deepseek-ai/dsh-subagent-codex'
-      disabled: !!js process.env.XIAOYIN_ENABLE_CODEX_SUBAGENT !== 'true'
+      disabled: !!js process.env.XIAOYIN_ALLOW_EXTERNAL_AGENTS === 'false' || process.env.XIAOYIN_ENABLE_CODEX_SUBAGENT !== 'true'
       config:
         providerName: codex
         permissionMode: never
 
     - id: tool-subagent-codex
       name: '@deepseek-ai/dsh-tool-subagent'
-      disabled: !!js process.env.XIAOYIN_ENABLE_CODEX_SUBAGENT !== 'true'
+      disabled: !!js process.env.XIAOYIN_ALLOW_EXTERNAL_AGENTS === 'false' || process.env.XIAOYIN_ENABLE_CODEX_SUBAGENT !== 'true'
       config:
         provider: codex
         toolName: subagent_codex
@@ -216,14 +297,14 @@
 
     - id: subagent-claude
       name: '@deepseek-ai/dsh-subagent-claude-code'
-      disabled: !!js process.env.XIAOYIN_ENABLE_CLAUDE_SUBAGENT !== 'true'
+      disabled: !!js process.env.XIAOYIN_ALLOW_EXTERNAL_AGENTS === 'false' || process.env.XIAOYIN_ENABLE_CLAUDE_SUBAGENT !== 'true'
       config:
         providerName: claude-code
         permissionMode: dontAsk
 
     - id: tool-subagent-claude
       name: '@deepseek-ai/dsh-tool-subagent'
-      disabled: !!js process.env.XIAOYIN_ENABLE_CLAUDE_SUBAGENT !== 'true'
+      disabled: !!js process.env.XIAOYIN_ALLOW_EXTERNAL_AGENTS === 'false' || process.env.XIAOYIN_ENABLE_CLAUDE_SUBAGENT !== 'true'
       config:
         provider: claude-code
         toolName: subagent_claude
@@ -231,7 +312,7 @@
 
     - id: subagent-acp
       name: '@deepseek-ai/dsh-subagent-acp'
-      disabled: !!js "!process.env.XIAOYIN_ACP_COMMAND"
+      disabled: !!js "process.env.XIAOYIN_ALLOW_EXTERNAL_AGENTS === 'false' || !process.env.XIAOYIN_ACP_COMMAND"
       config:
         providerName: acp
         command: !!js process.env.XIAOYIN_ACP_COMMAND ?? ''
@@ -240,7 +321,7 @@
 
     - id: tool-subagent-acp
       name: '@deepseek-ai/dsh-tool-subagent'
-      disabled: !!js "!process.env.XIAOYIN_ACP_COMMAND"
+      disabled: !!js "process.env.XIAOYIN_ALLOW_EXTERNAL_AGENTS === 'false' || !process.env.XIAOYIN_ACP_COMMAND"
       config:
         provider: acp
         toolName: subagent_acp
@@ -248,7 +329,7 @@
 
     - id: subagent-dsh
       name: '@deepseek-ai/dsh-subagent-dsh-sdk'
-      disabled: !!js process.env.XIAOYIN_ENABLE_DSH_SUBAGENT !== 'true'
+      disabled: !!js process.env.XIAOYIN_ALLOW_EXTERNAL_AGENTS === 'false' || process.env.XIAOYIN_ENABLE_DSH_SUBAGENT !== 'true'
       config:
         providerName: dsh-sdk
         profile: sdk
@@ -262,7 +343,7 @@
 
     - id: tool-subagent-dsh
       name: '@deepseek-ai/dsh-tool-subagent'
-      disabled: !!js process.env.XIAOYIN_ENABLE_DSH_SUBAGENT !== 'true'
+      disabled: !!js process.env.XIAOYIN_ALLOW_EXTERNAL_AGENTS === 'false' || process.env.XIAOYIN_ENABLE_DSH_SUBAGENT !== 'true'
       config:
         provider: dsh-sdk
         toolName: subagent_dsh
@@ -283,7 +364,7 @@
       config:
         endpoint: !!js process.env.XIAOYIN_KNOWLEDGE_ENDPOINT ?? ''
         employeeIdEnv: XIAOYIN_EMPLOYEE_ID
-        employeeTokenEnv: XIAOYIN_EMPLOYEE_BEARER_TOKEN
+        employeeTokenEnv: XIAOYIN_CONTROL_PLANE_TOKEN
 
     - id: desktop-schedules
       name: '../dist/schedule-plugin.js'
@@ -298,7 +379,7 @@
     - id: local-files
       name: '../dist/local-files-plugin.js'
       config:
-        roots: !!js JSON.parse(process.env.XIAOYIN_LOCAL_FILE_ROOTS ?? '[]')
+        roots: !!js "(() => { try { const roots = JSON.parse(process.env.XIAOYIN_LOCAL_FILE_ROOTS ?? '[]'); return Array.isArray(roots) ? roots : [] } catch { return [] } })()"
         enabled: true
         requireDeleteApproval: true
         readOnly: false
@@ -306,7 +387,7 @@
     - id: local-documents
       name: '../dist/local-documents-plugin.js'
       config:
-        roots: !!js JSON.parse(process.env.XIAOYIN_LOCAL_FILE_ROOTS ?? '[]')
+        roots: !!js "(() => { try { const roots = JSON.parse(process.env.XIAOYIN_LOCAL_FILE_ROOTS ?? '[]'); return Array.isArray(roots) ? roots : [] } catch { return [] } })()"
         enabled: true
         readOnly: false
 

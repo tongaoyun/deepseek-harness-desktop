@@ -31,7 +31,7 @@ pnpm tauri:build:macos x64
 
 构建脚本在缺少签名密钥或无法执行目标架构时提前失败。最终验收挂载只读 DMG，核对版本、签名和目标架构，运行内置 Harness 与原生模块，并解压更新归档确认它与 DMG 包含逐文件相同的应用。并发构建时 Harness 启动检查最多等待 5 分钟。更新归档须通过应用内置公钥的 Ed25519 验签，同时校验 Minisign 的可信备注签名；私钥不匹配或内容损坏时不上传产物。不会覆盖 `/Applications` 或修改员工任务数据。
 
-本地构建默认显式设置控制面地址为 `http://192.168.2.67:30081`，避免打包时意外继承开发用 `.env.local` 的 localhost 地址；需要其他环境时显式传入 `VITE_XIAOYIN_SERVER_URL`。Host 验收逐条等待初始化、健康与关闭响应，最后再结束 stdin；提前关闭输入会触发正常的桌面退出清理，不能用一次性管道代替协议验收。
+本地正式构建必须显式设置 HTTPS `VITE_XIAOYIN_SERVER_URL`；脚本拒绝缺失或 HTTP 地址。Host 验收逐条等待初始化、健康与关闭响应，最后再结束 stdin。
 
 脚本回归：`node --test scripts/macos-build-env.test.mjs scripts/check-harness-runtime.test.mjs scripts/publish-macos-update.test.mjs`。覆盖架构与目录映射、无效目标拒绝、顺序协议、初始化失败/超时、更新平台映射与双架构提交一致性。
 
@@ -43,4 +43,4 @@ pnpm tauri:build:macos x64
 - 在网络中断、下载失败、签名不匹配时确认当前版本仍可打开，并可重新检查；不修改真实用户数据制造故障。
 - Apple Silicon 上的 Intel 运行依赖 Rosetta，只能作为交叉构建验收；正式支持 Intel 仍需 Intel 实机完成首次安装、权限、Office 调用与升级验收。
 
-当前应用为内部分发的临时签名，不含 Apple Developer ID 公证。真实 Gitea 发布、签名升级及 Intel 实机验收未完成前，不标记正式安装和升级闭环已通过。
+内部分发的临时签名不等于 Apple Developer ID 公证；对外分发前还须完成签名、公证及 Intel 实机验收。

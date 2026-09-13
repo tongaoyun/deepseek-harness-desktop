@@ -35,13 +35,14 @@ fn installed_directory(
 }
 
 #[tauri::command]
-pub fn set_extension_enabled(
+pub async fn set_extension_enabled(
     app: tauri::AppHandle,
     kind: String,
     id: String,
     version: String,
     enabled: bool,
 ) -> Result<(), String> {
+    crate::erp_auth::current_employee(&app).await?;
     let directory = installed_directory(&app, &kind, &id, &version)?;
     set_enabled_marker(directory.parent().ok_or("扩展目录无效")?, enabled)
 }
@@ -60,12 +61,13 @@ fn set_enabled_marker(parent: &Path, enabled: bool) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn read_extension_contents(
+pub async fn read_extension_contents(
     app: tauri::AppHandle,
     kind: String,
     id: String,
     version: String,
 ) -> Result<ExtensionContents, String> {
+    crate::erp_auth::current_employee(&app).await?;
     let directory = installed_directory(&app, &kind, &id, &version)?;
     let manifest = load_and_validate_manifest(&directory, Some(&kind), Some(&id), Some(&version))?;
     let read = |references: &[FileReference]| -> Result<Vec<ExtensionDocument>, String> {
@@ -203,12 +205,13 @@ fn document_heading(content: &str) -> Option<String> {
 }
 
 #[tauri::command]
-pub fn reveal_extension_directory(
+pub async fn reveal_extension_directory(
     app: tauri::AppHandle,
     kind: String,
     id: String,
     version: String,
 ) -> Result<(), String> {
+    crate::erp_auth::current_employee(&app).await?;
     let directory = installed_directory(&app, &kind, &id, &version)?;
     #[cfg(target_os = "macos")]
     let mut command = std::process::Command::new("open");

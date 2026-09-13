@@ -71,7 +71,7 @@ export function DesktopSidebar(props: Props) {
         <button aria-label={props.collapsed ? '展开侧栏' : '收起侧栏'} onClick={props.onToggleCollapsed} type="button">{props.collapsed ? <PanelLeftOpen size={15} /> : <PanelLeftClose size={15} />}</button>
       </div>
     </div>
-    {props.taskSearchOpen && <label className="task-search"><Search size={14} /><input aria-label="搜索任务" onChange={(event) => props.onTaskQuery(event.target.value)} placeholder="搜索任务" ref={props.taskSearchInputRef} value={props.taskQuery} /><button aria-label="关闭搜索" onClick={props.onCloseSearch} type="button"><X size={13} /></button></label>}
+    {props.taskSearchOpen && <label className="task-search"><Search size={14} /><input aria-label="搜索任务" onChange={(event) => props.onTaskQuery(event.target.value)} placeholder="搜索任务、会话或技能" ref={props.taskSearchInputRef} value={props.taskQuery} /><button aria-label="关闭搜索" onClick={props.onCloseSearch} type="button"><X size={13} /></button></label>}
     <button className="new-task" onClick={props.onNewTask} title={props.collapsed ? '新任务' : undefined} type="button"><Plus size={18} /><span>新任务</span></button>
     <button aria-expanded={extensionsOpen} className="nav-label extension-label extension-group-toggle" onClick={() => setExtensionsOpen((value) => !value)} type="button"><Boxes size={13} /><span>扩展</span><ChevronDown className={extensionsOpen ? '' : 'closed'} size={12} /></button>
     {(extensionsOpen || props.collapsed) && <nav aria-label="扩展" className="extension-nav">{extensions.map(({ id, label, icon }) => <span key={id}>{navItem(id, label, icon)}</span>)}</nav>}
@@ -86,7 +86,7 @@ export function DesktopSidebar(props: Props) {
         {listedTasks.map((task) => <div className="recent-task-wrap" data-task-menu={task.id} key={task.id}>
           {editingTaskId === task.id
             ? <form onSubmit={(event) => { event.preventDefault(); props.onRenameTask(task, editingName); setEditingTaskId('') }}><input autoFocus aria-label="任务名称" maxLength={120} onChange={(event) => setEditingName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Escape') setEditingTaskId('') }} value={editingName} /></form>
-            : <button aria-current={props.page === 'chat' && props.activeTaskId === task.id ? 'true' : undefined} className={`recent-task${props.page === 'chat' && props.activeTaskId === task.id ? ' active' : ''}`} onClick={() => props.onOpenTask(task)} type="button"><span>{task.name}</span><small>{taskStatusLabel(task)}</small></button>}
+            : <button aria-current={props.page === 'chat' && props.activeTaskId === task.id ? 'true' : undefined} className={`recent-task${props.page === 'chat' && props.activeTaskId === task.id ? ' active' : ''}`} onClick={() => props.onOpenTask(task)} title={task.sessionId ? `Harness 会话 ${task.sessionId}` : undefined} type="button"><span>{task.name}</span><small>{taskStatusLabel(task)}{task.sessionId ? ` · ${task.sessionId.slice(0, 8)}` : ''}</small></button>}
           <button aria-expanded={menuTaskId === task.id} aria-label={`管理 ${task.name}`} className="recent-task-more" onClick={() => setMenuTaskId((current) => current === task.id ? '' : task.id)} type="button"><MoreHorizontal size={14} /></button>
           {menuTaskId === task.id && <div className="recent-task-menu" onKeyDown={navigateMenu} role="menu">
             {!task.archivedAt && <button disabled={task.status === 'RUNNING'} onClick={() => { setEditingName(task.name); setEditingTaskId(task.id); setMenuTaskId('') }} role="menuitem" type="button"><Pencil size={13} />重命名</button>}

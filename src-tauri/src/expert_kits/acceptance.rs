@@ -208,7 +208,7 @@ fn official_extension_lifecycle() {
             .iter()
             .all(|path| Path::new(path).join("SKILL.md").is_file())
     );
-    let root_invocation = InvocationSpec {
+    let root_invocation = CapabilitySelection {
         mode: InvocationMode::Explicit,
         kind: "expert-kit".to_string(),
         extension_id: selected.manifest.id.clone(),

@@ -18,6 +18,6 @@ export function isUnverifiedTaskOutcome(outcome: unknown): boolean {
 export function taskStatusLabel(task: LocalTaskRun): string {
   if (task.status === 'RUNNING') return '运行中'
   if (task.status === 'CANCELED') return '已停止'
-  if (task.status === 'FAILED') return task.monitor.failure?.code === 'XY-INTERRUPTED' ? '已中断' : '执行失败'
-  return taskOutcomeLabel(task.monitor.outcome)
+  if (task.status === 'FAILED') return task.projection.failure?.code === 'XY-INTERRUPTED' ? '已中断' : '执行失败'
+  return taskOutcomeLabel(task.projection.outcome)
 }

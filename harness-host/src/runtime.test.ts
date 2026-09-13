@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
+import { mkdtemp, readFile, rm, lstat, readlink, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { createServer } from 'node:http'
 import type { HarnessNotification } from '@deepseek-ai/dsh-sdk-client'
-import { applyMemoryContext, DeepSeekHarnessRuntime, runSessionTurn, visibleTextChunks } from './runtime.js'
+import { applyMemoryContext, assertHarnessDependencyClosure, DeepSeekHarnessRuntime, ensureExternalHarnessPlugins, hasConfiguredLspServers, hasHarnessPackage, runSessionTurn, visibleTextChunks } from './runtime.js'
 import { withTaskInstructions } from './task-instructions.js'
 
 it('passes shared execution and delivery rules to actual runtime turns, including follow-ups', async () => {
@@ -23,14 +27,276 @@ it('passes shared execution and delivery rules to actual runtime turns, includin
   expect(JSON.stringify(observedPrompts[0])).toContain('只检查，不修改')
   expect(JSON.stringify(observedPrompts[1])).toContain('把报告加上汇总行')
   for (const prompt of observedPrompts) {
-    expect(JSON.stringify(prompt)).toContain('local_files_publish')
+    expect(JSON.stringify(prompt)).toContain('使用 present 声明实际文件')
     expect(JSON.stringify(prompt)).toContain('文件存在不等于内容正确')
     expect(JSON.stringify(prompt)).toContain('询问、检查和诊断不代表授权修改')
     expect(JSON.stringify(prompt)).toContain('切换工作阶段')
     expect(JSON.stringify(prompt)).toContain('简单问答不强行播报进度')
   }
   expect(withTaskInstructions('用户原文')).toMatch(/本轮任务上下文与请求：\n用户原文$/u)
+  expect(withTaskInstructions('用户原文', { useOfficialPresent: true })).toContain('使用 present 声明实际文件')
+  expect(withTaskInstructions('用户原文', { useOfficialPresent: true })).not.toContain('使用 local_files_publish 登记实际文件')
   await runtime.close()
+})
+
+it('uses constructor-scoped environment for execution prompts', async () => {
+  const runtime = new DeepSeekHarnessRuntime({ XIAOYIN_MEMORY_CONTEXT: '优先给出结论' })
+  const observed: unknown[] = []
+  const client = {
+    ...fakeClient([]),
+    prompt: async (_sessionId: string, content: unknown) => { observed.push(content); return 'message-2' },
+    subscribeSessionTree: () => fakeClient([
+      eventFor('scoped-env', 'agent/inbox/spliced', { inserted: [{ id: 'message-2' }] }),
+      eventFor('scoped-env', 'turn/start', { turn: 1 }),
+      eventFor('scoped-env', 'assistant/message', { message: { content: [{ type: 'text', text: '收到' }] } }),
+      eventFor('scoped-env', 'turn/end', { reason: { kind: 'completed' } }),
+    ]).subscribeSessionTree(),
+  }
+  Object.assign(runtime, { harness: { start: async () => {}, close: async () => {}, client } })
+  await runtime.run({ sessionId: 'scoped-env', prompt: '分析库存' }, () => {})
+  expect(JSON.stringify(observed[0])).toContain('优先给出结论')
+  await runtime.close()
+})
+
+it('keeps the Xiaoyin publishing contract when authorized roots are present', async () => {
+  const runtime = new DeepSeekHarnessRuntime({ XIAOYIN_LOCAL_FILE_ROOTS: '[{"id":"workspace"}]' })
+  const observed: unknown[] = []
+  const client = {
+    ...fakeClient([]),
+    prompt: async (_sessionId: string, content: unknown) => { observed.push(content); return 'message-2' },
+    subscribeSessionTree: () => fakeClient([
+      eventFor('authorized-roots', 'agent/inbox/spliced', { inserted: [{ id: 'message-2' }] }),
+      eventFor('authorized-roots', 'turn/start', { turn: 1 }),
+      eventFor('authorized-roots', 'assistant/message', { message: { content: [{ type: 'text', text: '收到' }] } }),
+      eventFor('authorized-roots', 'turn/end', { reason: { kind: 'completed' } }),
+    ]).subscribeSessionTree(),
+  }
+  Object.assign(runtime, { harness: { start: async () => {}, close: async () => {}, client } })
+  await runtime.run({ sessionId: 'authorized-roots', prompt: '生成报告' }, () => {})
+  expect(JSON.stringify(observed[0])).toContain('使用 local_files_publish 登记实际文件')
+  expect(JSON.stringify(observed[0])).not.toContain('使用 present 声明实际文件')
+  await runtime.close()
+})
+
+it('reports Harness capability gates without advertising unconfigured providers', async () => {
+  const runtime = new DeepSeekHarnessRuntime({ XIAOYIN_ENABLE_SESSION_QUERY_TOOLS: 'false', XIAOYIN_TOOLS_MODE: 'native' })
+  const health = await runtime.health()
+  expect(health.status).toBe('uninitialized')
+  expect(health.capabilities).toMatchObject({ profile: 'gated', modelProvider: 'unconfigured', commands: 'enabled', commandFeedback: 'enabled', sessionQuery: 'enabled', sessionQueryTools: 'gated', sessionReference: 'enabled', sessionReminders: 'enabled', codeRuntime: 'gated', persistentTerminal: 'enabled', lsp: 'unconfigured', codexSubagent: 'unconfigured', present: 'enabled', mcpClient: 'gated' })
+})
+
+it('reports a configured model provider without exposing its credential', async () => {
+  const health = await new DeepSeekHarnessRuntime({ DEEPSEEK_API_KEY: 'test-secret' }).health()
+  expect(health.capabilities?.modelProvider).toBe('gated')
+  expect(JSON.stringify(health)).not.toContain('test-secret')
+})
+
+it('checks provider metadata without sending chat content', async () => {
+  const server = createServer((request, response) => {
+    expect(request.method).toBe('GET')
+    expect(request.url).toBe('/v1/models')
+    expect(request.headers.authorization).toBe('Bearer test-secret')
+    response.writeHead(200, { 'content-type': 'application/json' }).end('{"data":[]}')
+  })
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  try {
+    const address = server.address() as { port: number }
+    const result = await new DeepSeekHarnessRuntime({ DEEPSEEK_BASE_URL: `http://127.0.0.1:${address.port}/v1`, DEEPSEEK_API_KEY: 'test-secret' }).checkProvider()
+    expect(result.status).toBe('available')
+    expect(result.detail).not.toContain('test-secret')
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()))
+  }
+})
+
+it('does not follow provider redirects with the model credential', async () => {
+  const server = createServer((_request, response) => {
+    response.writeHead(302, { location: 'https://unexpected.example/models' }).end()
+  })
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  try {
+    const address = server.address() as { port: number }
+    const result = await new DeepSeekHarnessRuntime({ DEEPSEEK_BASE_URL: `http://127.0.0.1:${address.port}/v1`, DEEPSEEK_API_KEY: 'test-secret' }).checkProvider()
+    expect(result.status).toBe('unreachable')
+    expect(result.detail).not.toContain('test-secret')
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()))
+  }
+})
+
+it('fails fast when the packaged official plugin dependency closure is incomplete', () => {
+  expect(() => assertHarnessDependencyClosure()).not.toThrow()
+})
+
+it('resolves official plugins nested under the dsh launcher package', () => {
+  expect(hasHarnessPackage('@deepseek-ai/dsh-agent-loop')).toBe(true)
+  expect(hasHarnessPackage('@deepseek-ai/dsh-sdk-jsonrpc-server')).toBe(true)
+  expect(hasHarnessPackage('@deepseek-ai/dsh-package-that-does-not-exist')).toBe(false)
+})
+
+it('reports lifecycle state instead of claiming readiness before startup', async () => {
+  const runtime = new DeepSeekHarnessRuntime()
+  Object.assign(runtime, { harness: { start: async () => {}, close: async () => {}, client: fakeClient([]) } })
+  await runtime.initialize()
+  expect((await runtime.health()).status).toBe('ready')
+  await runtime.close()
+  expect((await runtime.health()).status).toBe('uninitialized')
+})
+
+it('gates persistent terminal together with desktop shell access', async () => {
+  const health = await new DeepSeekHarnessRuntime({ XIAOYIN_ALLOW_SHELL: 'false' }).health()
+  expect(health.capabilities).toMatchObject({ shell: 'gated', persistentTerminal: 'gated' })
+})
+
+it('gates official present when Xiaoyin roots are authorized', async () => {
+  const health = await new DeepSeekHarnessRuntime({ XIAOYIN_LOCAL_FILE_ROOTS: '[{"id":"workspace"}]' }).health()
+  expect(health.capabilities.present).toBe('gated')
+})
+
+it('enables the read-only Session Query tools by default', async () => {
+  const health = await new DeepSeekHarnessRuntime({ XIAOYIN_TOOLS_MODE: 'native' }).health()
+  expect(health.capabilities).toMatchObject({ sessionQuery: 'enabled', sessionQueryTools: 'enabled' })
+})
+
+it('allows isolating cross-session references without disabling session history', async () => {
+  const health = await new DeepSeekHarnessRuntime({ XIAOYIN_ENABLE_SESSION_REFERENCES: 'false' }).health()
+  expect(health.capabilities).toMatchObject({ sessionReference: 'gated', sessionQuery: 'enabled' })
+})
+
+it('uses the official SQLite Session Query backend for native history search', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'xiaoyin-session-query-'))
+  try {
+    const runtime = new DeepSeekHarnessRuntime({
+      DSH_HOME: home,
+      DSH_SESSION_ROOT: join(home, 'sessions'),
+      XIAOYIN_SESSION_QUERY_PATH: join(home, 'session-query.sqlite'),
+    })
+    await expect(runtime.searchSessions?.(['session-1'], '库存', 10)).resolves.toEqual({ items: [] })
+    await runtime.close()
+  } finally {
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
+it('keeps CJK scans independent of a damaged derived index and rebuilds FTS', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'xiaoyin-session-query-damaged-'))
+  try {
+    const queryPath = join(home, 'session-query.sqlite')
+    await writeFile(queryPath, 'not a sqlite database')
+    const environment = {
+      DSH_HOME: home,
+      DSH_SESSION_ROOT: join(home, 'sessions'),
+      XIAOYIN_SESSION_QUERY_PATH: queryPath,
+    }
+    const first = new DeepSeekHarnessRuntime(environment)
+    const second = new DeepSeekHarnessRuntime(environment)
+    try {
+      await expect(first.searchSessions?.(['session-1'], '库存', 10)).resolves.toEqual({ items: [] })
+      await expect(Promise.all([
+        first.searchSessions?.(['session-1'], 'inventory', 10),
+        second.searchSessions?.(['session-1'], 'inventory', 10),
+      ])).resolves.toEqual([{ items: [] }, { items: [] }])
+      expect((await readFile(queryPath)).subarray(0, 15).toString()).toBe('SQLite format 3')
+    } finally {
+      await Promise.all([first.close(), second.close()])
+    }
+  } finally {
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
+it('never replaces a valid SQLite database owned by another application', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'xiaoyin-session-query-foreign-'))
+  try {
+    const queryPath = join(home, 'session-query.sqlite')
+    const { DatabaseSync } = await import('node:sqlite')
+    const database = new DatabaseSync(queryPath)
+    database.exec("CREATE TABLE important (value TEXT NOT NULL); INSERT INTO important VALUES ('keep-me')")
+    database.close()
+    const runtime = new DeepSeekHarnessRuntime({
+      DSH_HOME: home,
+      DSH_SESSION_ROOT: join(home, 'sessions'),
+      XIAOYIN_SESSION_QUERY_PATH: queryPath,
+    })
+    await expect(runtime.searchSessions?.(['session-1'], 'inventory', 10)).rejects.toThrow(/not an empty or recognized derived index/i)
+    const unchanged = new DatabaseSync(queryPath, { readOnly: true })
+    try { expect(unchanged.prepare('SELECT value FROM important').get()).toEqual({ value: 'keep-me' }) }
+    finally { unchanged.close() }
+    await runtime.close()
+  } finally {
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
+it('passes an invalid official Session Query cursor through as a typed failure', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'xiaoyin-session-query-cursor-'))
+  try {
+    const runtime = new DeepSeekHarnessRuntime({
+      DSH_HOME: home,
+      DSH_SESSION_ROOT: join(home, 'sessions'),
+      XIAOYIN_SESSION_QUERY_PATH: join(home, 'session-query.sqlite'),
+    })
+    await expect(runtime.searchSessions?.(['session-1'], '库存', 10, 'definitely-not-a-provider-cursor')).rejects.toThrow(/cursor|游标/i)
+    await runtime.close()
+  } finally {
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
+it('projects non-upstream plugins into an external employee DSH_HOME', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'xiaoyin-plugin-fallback-'))
+  try {
+    await ensureExternalHarnessPlugins({ DSH_HOME: home })
+    const target = join(home, 'profiles', 'node_modules', '@deepseek-ai', 'dsh-tool-terminal')
+    const stat = await lstat(target)
+    expect(stat.isSymbolicLink() || stat.isDirectory()).toBe(true)
+    if (stat.isSymbolicLink()) expect(await readlink(target)).toContain('@deepseek-ai/dsh-tool-terminal')
+    await ensureExternalHarnessPlugins({ DSH_HOME: home })
+    expect((await lstat(target)).isDirectory() || (await lstat(target)).isSymbolicLink()).toBe(true)
+  } finally {
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
+it('only advertises LSP when the server map is valid and non-empty', () => {
+  expect(hasConfiguredLspServers(undefined)).toBe(false)
+  expect(hasConfiguredLspServers('{}')).toBe(false)
+  expect(hasConfiguredLspServers('[]')).toBe(false)
+  expect(hasConfiguredLspServers('invalid')).toBe(false)
+  expect(hasConfiguredLspServers('{"typescript":1}')).toBe(false)
+  expect(hasConfiguredLspServers('{"typescript":{"command":"typescript-language-server"}}')).toBe(false)
+  expect(hasConfiguredLspServers('{"typescript":{"command":"typescript-language-server","extensionToLanguage":{"ts":"typescript"}}}')).toBe(false)
+  expect(hasConfiguredLspServers('{"typescript":{"command":"typescript-language-server","extensionToLanguage":{".ts":"typescript"}}}')).toBe(true)
+})
+
+it('keeps LSP unconfigured when the desktop switch is disabled', async () => {
+  const runtime = new DeepSeekHarnessRuntime({
+    XIAOYIN_ALLOW_LSP: 'false',
+    XIAOYIN_LSP_SERVERS: JSON.stringify({ typescript: { command: 'typescript-language-server', extensionToLanguage: { '.ts': 'typescript' } } }),
+  })
+  expect((await runtime.health()).capabilities?.lsp).toBe('unconfigured')
+})
+
+it('keeps configured external agents unconfigured when the desktop switch is disabled', async () => {
+  const runtime = new DeepSeekHarnessRuntime({
+    XIAOYIN_ALLOW_EXTERNAL_AGENTS: 'false',
+    XIAOYIN_ENABLE_CODEX_SUBAGENT: 'true',
+    XIAOYIN_ENABLE_CLAUDE_SUBAGENT: 'true',
+    XIAOYIN_ACP_COMMAND: 'acp-agent',
+    XIAOYIN_ENABLE_DSH_SUBAGENT: 'true',
+  })
+  expect((await runtime.health()).capabilities).toMatchObject({
+    codexSubagent: 'unconfigured', claudeSubagent: 'unconfigured', acpSubagent: 'unconfigured', dshSubagent: 'unconfigured',
+  })
+})
+
+it('keeps configured hooks unconfigured when the desktop switch is disabled', async () => {
+  const runtime = new DeepSeekHarnessRuntime({
+    XIAOYIN_ALLOW_HOOKS: 'false',
+    XIAOYIN_CODEX_HOOKS_CONFIG: '/tmp/codex-hooks.json',
+    XIAOYIN_CLAUDE_HOOKS_CONFIG: '/tmp/claude-hooks.json',
+  })
+  expect((await runtime.health()).capabilities).toMatchObject({ codexHooks: 'gated', claudeHooks: 'gated' })
 })
 
 it('closes the underlying runtime immediately instead of waiting for the active turn', async () => {

@@ -64,3 +64,49 @@ test('waits for the capability self-test and rejects missing or failed checks', 
     )
   }
 })
+
+test('can assert required Harness capabilities on the health response', async () => {
+  const fixture = `
+    const lines = require('node:readline').createInterface({ input: process.stdin });
+    const methods = ['host.initialize', 'host.health', 'host.shutdown'];
+    lines.on('line', line => {
+      const r = JSON.parse(line);
+      if (r.method !== methods.shift()) process.exit(2);
+      const result = r.method === 'host.health'
+        ? { status: 'ready', capabilities: { sessionPersistence: 'enabled', sessionQuery: 'gated' } }
+        : { status: r.method === 'host.initialize' ? 'initialized' : 'closed' };
+      console.log(JSON.stringify({ id: r.id, result }));
+    });
+  `
+  await checkHarnessCommand(process.execPath, ['-e', fixture], process.env, 5000, {
+    requiredCapabilities: ['sessionPersistence', 'sessionQuery'],
+  })
+  await assert.rejects(
+    checkHarnessCommand(process.execPath, ['-e', fixture], process.env, 5000, {
+      requiredCapabilities: ['sessionPersistence', 'sessionReference'],
+    }),
+    /capabilities were not reported/u,
+  )
+})
+
+test('verifies enabled and gated runtime capabilities exactly', async () => {
+  const fixture = `
+    const lines = require('node:readline').createInterface({ input: process.stdin });
+    lines.on('line', line => {
+      const r = JSON.parse(line);
+      const result = r.method === 'host.health'
+        ? { status: 'ready', capabilities: { shell: 'gated', persistentTerminal: 'gated', codeRuntime: 'enabled' } }
+        : { status: r.method === 'host.initialize' ? 'initialized' : 'closed' };
+      console.log(JSON.stringify({ id: r.id, result }));
+    });
+  `
+  await checkHarnessCommand(process.execPath, ['-e', fixture], process.env, 5000, {
+    expectedCapabilities: { shell: 'gated', persistentTerminal: 'gated', codeRuntime: 'enabled' },
+  })
+  await assert.rejects(
+    checkHarnessCommand(process.execPath, ['-e', fixture], process.env, 5000, {
+      expectedCapabilities: { shell: 'enabled' },
+    }),
+    /shell expected enabled, got gated/u,
+  )
+})

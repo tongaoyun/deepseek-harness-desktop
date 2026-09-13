@@ -1,7 +1,7 @@
 import React, { useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { ChatPage } from '../src/ChatPage'
-import type { TaskMonitorState } from '../src/types'
+import type { XiaoyinTaskProjection } from '../src/types'
 import { taskOutcomeLabel, type TaskOutcome } from '../src/taskOutcome'
 import '../src/styles.css'
 
@@ -16,7 +16,8 @@ function Preview() {
     remaining: status === 'completed' ? [] : ['补充产品官方文档并核对引用来源'],
     checks: [{ description: '引用来源', result: status === 'completed' ? 'passed' : 'not_run', evidence: status === 'completed' ? '已核对产品官方文档' : '尚未取得产品官方文档，不能确认引用内容' }],
   }
-  const monitor: TaskMonitorState = {
+  const projection: XiaoyinTaskProjection = {
+    executionStarted: running,
     status: running ? 'running' : 'completed', outcome: running ? undefined : outcome, activity: running ? '正在整理对比表格' : taskOutcomeLabel(outcome), startedAt: new Date(Date.now() - 83000).toISOString(), updatedAt: now,
     completedAt: running ? undefined : now, steps: [],
     timeline: [
@@ -32,8 +33,8 @@ function Preview() {
     {(['completed', 'partial', 'needs_input', 'needs_confirmation', 'blocked', 'unverified'] as const).map((value) => <option key={value} value={value}>{taskOutcomeLabel({ ...outcome, status: value, remaining: value === 'completed' ? [] : ['待处理'], checks: [] })}</option>)}
     </select></header><main className="workspace">
     <ChatPage activeModel="测试模型" composerRef={useRef(null)} messageListRef={useRef(null)} modelPickerRef={useRef(null)}
-      messages={[{ role: 'user', text: '调研 AI 桌面助手的功能，整理成对比表格。' }, { role: 'assistant', text: running ? '' : '对比表格已整理完毕，包含功能、适用场景和引用来源。', pending: running, monitor }]}
-      taskMonitor={monitor} prompt={prompt} queue={queue} onPrompt={setPrompt} currentTaskRunning={running} harnessRunning={running} harnessHealth="ready" harnessHealthDetail="" runtimeStatus="ready"
+      messages={[{ role: 'user', text: '调研 AI 桌面助手的功能，整理成对比表格。' }, { role: 'assistant', text: running ? '' : '对比表格已整理完毕，包含功能、适用场景和引用来源。', pending: running, projection }]}
+      taskProjection={projection} prompt={prompt} queue={queue} onPrompt={setPrompt} currentTaskRunning={running} harnessRunning={running} harnessHealth="ready" harnessHealthDetail="" runtimeStatus="ready"
       onSubmit={(event) => { event.preventDefault(); if (prompt.trim()) { setQueue({ ...queue, items: [...queue.items, { id: crypto.randomUUID(), text: prompt }] }); setPrompt('') } }}
       onCancel={() => { setRunning(false); setQueue({ ...queue, paused: true }) }} onPauseQueue={() => setQueue({ ...queue, paused: true })} onResumeQueue={() => setQueue({ ...queue, paused: false })}
       onEditQueued={(id, text) => setQueue({ ...queue, items: queue.items.map((item) => item.id === id ? { ...item, text } : item) })} onRemoveQueued={(id) => setQueue({ ...queue, items: queue.items.filter((item) => item.id !== id) })}

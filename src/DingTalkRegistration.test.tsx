@@ -48,6 +48,17 @@ it('stops expired sessions and exposes an actionable error', async () => {
   expect(container.querySelector('[role=alert]')?.textContent).toContain('请刷新')
   expect(pollDingTalkRegistration).toHaveBeenCalledTimes(1)
 })
+it('retries transient polling errors but stops after the registration becomes invalid', async () => {
+  vi.mocked(pollDingTalkRegistration).mockResolvedValueOnce({ status: 'RETRY' })
+    .mockRejectedValueOnce(new Error('扫码会话已失效，请重新获取二维码'))
+  await act(async () => root.render(<DingTalkRegistration revision={0} onAuthorized={vi.fn()} />))
+  await act(async () => vi.advanceTimersByTimeAsync(2000))
+  expect(container.querySelector('[role=status]')?.textContent).toContain('正在重试')
+  await act(async () => vi.advanceTimersByTimeAsync(2000))
+  expect(container.querySelector('[role=alert]')?.textContent).toContain('重新获取二维码')
+  await act(async () => vi.advanceTimersByTimeAsync(10000))
+  expect(pollDingTalkRegistration).toHaveBeenCalledTimes(2)
+})
 it('shows initialization failures instead of a fake QR', async () => {
   vi.mocked(beginDingTalkRegistration).mockRejectedValue(new Error('请使用桌面端'))
   await act(async () => root.render(<DingTalkRegistration revision={0} onAuthorized={vi.fn()} />))

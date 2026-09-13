@@ -9,7 +9,7 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 
 function kitInvocation(token: string, name: string, commandId?: string): ExtensionInvocation {
   return { token, kind: 'expert-kit', id: 'reports', name, description: name,
-    spec: { mode: 'explicit', kind: 'expert-kit', extensionId: 'reports', extensionVersion: '1.0.0', ...(commandId ? { commandId } : {}) } }
+    selection: { mode: 'explicit', kind: 'expert-kit', extensionId: 'reports', extensionVersion: '1.0.0', ...(commandId ? { commandId } : {}) } }
 }
 
 it('resizes the composer, selects a command with the keyboard, and then submits normally', async () => {
@@ -25,7 +25,7 @@ it('resizes the composer, selects a command with the keyboard, and then submits 
       onAddKnowledge: noop, onAddLocalDirectory: noop, onAddLocalFiles: noop, onCancel: noop, onPrepareRetry: noop,
       onPrompt: setPrompt, onReconnect: noop, onRecoverHarness: noop, onRemoveAttachment: noop, onRemoveKnowledge: noop,
       onRemoveLocalDirectory: noop, onSelectModel: noop, onSubmit: submit, onToggleModelMenu: noop,
-      prompt, runtimeStatus: 'ready', selectedKnowledgeBaseRefs: [], taskMonitor: { status: 'idle', activity: '', updatedAt: '', steps: [], artifacts: [] },
+      prompt, runtimeStatus: 'ready', selectedKnowledgeBaseRefs: [], taskProjection: { status: 'idle', activity: '', updatedAt: '', steps: [], artifacts: [] },
       invocations: [kitInvocation('/kit:reports', '分析专家'), kitInvocation('/kit:reports:weekly', '周报', 'weekly')],
     }
     return <ChatPage {...props} />

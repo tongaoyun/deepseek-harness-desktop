@@ -1,100 +1,118 @@
 import { describe, expect, it } from 'vitest'
-import { capabilitySnapshotChanged, connectorsForSnapshot, createCapabilitySnapshot } from './capabilitySnapshot'
+import {
+  CapabilityResolutionError,
+  capabilitySnapshotChanged,
+  capabilitySnapshotForExecution,
+  resolveCapabilitySnapshot,
+} from './capabilitySnapshot'
 import type { ExpertKitView } from './expertKits'
 import type { SkillView } from './skills'
-import type { ConnectorRuntimeDefinition } from './types'
+import type { CapabilitySelection, ConnectorRuntimeDefinition } from './types'
 
-const connector = (id: string, version = '1', status: ConnectorRuntimeDefinition['status'] = 'ready'): ConnectorRuntimeDefinition => ({
-  id, version, status, name: id, transport: 'streamable-http', url: `http://${id}/mcp`, authMode: 'employee-bearer', toolNames: [],
-  enabled: true,
+const connector = (id: string, tools: string[] = [], status: ConnectorRuntimeDefinition['status'] = 'ready'): ConnectorRuntimeDefinition => ({
+  id, version: '1', status, name: id, transport: 'streamable-http', url: `http://${id}/mcp`, authMode: 'employee-bearer',
+  toolNames: tools, enabled: true,
+})
+const kit = (id: string, options: { connectors?: string[]; tools?: string[]; knowledge?: string[]; version?: string; enabled?: boolean; implicit?: boolean } = {}) => ({
+  id, version: options.version ?? '1.0.0', installState: 'installed', connectorRefs: options.connectors ?? [],
+  requiredTools: options.tools ?? [], knowledgeBaseRefs: options.knowledge ?? [],
+  installed: {
+    enabled: options.enabled ?? true,
+    manifest: { version: options.version ?? '1.0.0', allowImplicitInvocation: options.implicit ?? true },
+    packageSha256: id.padEnd(64, 'a').slice(0, 64),
+  },
+}) as ExpertKitView
+const skill = (id: string, version = '1.0.0') => ({
+  ...kit(id, { version }), sourceKitId: '', triggers: [], installedVersion: version,
+}) as unknown as SkillView
+const selection = (kind: CapabilitySelection['kind'], id: string, version = '1.0.0'): CapabilitySelection => ({
+  mode: 'explicit', kind, extensionId: id, extensionVersion: version,
+  ...(kind === 'skill' ? { skillId: id } : {}),
 })
 
-describe('capability snapshot', () => {
-  it('preserves a session after native JSON storage reorders nested object keys', () => {
-    const skill = {
-      id: 'unit-testing', version: '1.0.1', sha256: 'a'.repeat(64), installState: 'installed',
-      installed: { manifest: { version: '1.0.1' }, packageSha256: 'a'.repeat(64) },
-    } as SkillView
-    const snapshot = createCapabilitySnapshot([], [skill], [{ ...connector('erp'), headers: { Z: '', A: '' } }])
-    const stored = JSON.parse(JSON.stringify(snapshot, (_key, value) => value && typeof value === 'object' && !Array.isArray(value)
-      ? Object.fromEntries(Object.entries(value).sort(([left], [right]) => left.localeCompare(right))) : value))
-    expect(JSON.stringify(stored)).not.toBe(JSON.stringify(snapshot))
-    expect(capabilitySnapshotChanged(stored, snapshot)).toBe(false)
-    stored.extensions[0].sha256 = 'b'.repeat(64)
-    expect(capabilitySnapshotChanged(stored, snapshot)).toBe(true)
-  })
-  it('rebuilds sessions for configuration changes but not checkpoint timestamps', () => {
-    const first = createCapabilitySnapshot([], [], [connector('erp')], [], 'first')
-    expect(capabilitySnapshotChanged(first, { ...first, createdAt: 'second' })).toBe(false)
-    expect(capabilitySnapshotChanged(first, createCapabilitySnapshot([], [], [connector('erp', '2')]))).toBe(true)
-    expect(capabilitySnapshotChanged(first, createCapabilitySnapshot([], [], []))).toBe(true)
-  })
-  it('excludes disabled skills and expert kits from new tasks', () => {
-    const common = {
-      id: 'disabled', version: '1.0.0', sha256: 'a'.repeat(64), installState: 'installed',
-      installed: { enabled: false, manifest: { version: '1.0.0' }, packageSha256: 'a'.repeat(64) },
-    }
-    expect(createCapabilitySnapshot([common as ExpertKitView], [common as SkillView], []).extensions).toEqual([])
-  })
-  it('freezes installed extensions and ready connector versions for a task', () => {
-    const kit = {
-      id: 'ops', version: '1.0.0', sha256: 'a'.repeat(64), installState: 'installed',
-      installed: { manifest: { version: '1.0.0' }, packageSha256: 'a'.repeat(64) },
-    } as ExpertKitView
-    const skill = {
-      id: 'document', version: '2.0.0', sha256: 'b'.repeat(64), installState: 'installed',
-      installed: { manifest: { version: '2.0.0' }, packageSha256: 'b'.repeat(64) },
-    } as SkillView
-    const snapshot = createCapabilitySnapshot(
-      [kit], [skill], [connector('erp'), connector('offline', '1', 'unavailable')],
-      ['team:refund-sop'], '2026-09-02T00:00:00Z',
-    )
-    expect(snapshot.extensions.map((item) => `${item.kind}:${item.id}`)).toEqual(['expert-kit:ops', 'skill:document'])
-    expect(snapshot.connectors).toEqual([connector('erp')])
-    expect(snapshot.knowledgeBaseRefs).toEqual(['team:refund-sop'])
-  })
-
-  it('does not silently switch an existing task to a newer connector version', () => {
-    const snapshot = createCapabilitySnapshot([], [], [connector('erp', '1')])
-    expect(connectorsForSnapshot(snapshot)).toEqual([connector('erp', '1')])
-  })
-
-  it('revokes a connector from an old task snapshot when the employee disables it', () => {
-    const snapshot = createCapabilitySnapshot([], [], [connector('erp-mcp')])
-    expect(connectorsForSnapshot(snapshot, {}, [])).toEqual([])
-    expect(connectorsForSnapshot(snapshot, {}, ['erp-mcp'])).toEqual([connector('erp-mcp')])
-  })
-
-  it('excludes connectors the employee has not enabled', () => {
-    const disabled = { ...connector('erp'), enabled: false }
-    expect(createCapabilitySnapshot([], [], [disabled]).connectors).toEqual([])
-  })
-
-  it('keeps the installed artifact executable while automatic synchronization is pending', () => {
-    const kit = {
-      id: 'ops', version: '2.0.0', sha256: 'b'.repeat(64), installState: 'installed',
-      installed: { manifest: { version: '1.0.0' }, packageSha256: 'a'.repeat(64) },
-    } as ExpertKitView
-    expect(createCapabilitySnapshot([kit], [], []).extensions).toEqual([{
-      kind: 'expert-kit', id: 'ops', version: '1.0.0', sha256: 'a'.repeat(64),
-    }])
-  })
-
-  it('stores only connector credential keys in task history and hydrates at execution time', () => {
-    const configured = {
-      ...connector('crm'),
-      environment: { CRM_TOKEN: 'env-secret' },
-      headers: { Authorization: 'header-secret' },
-    }
-    const snapshot = createCapabilitySnapshot([], [], [configured])
-    expect(snapshot.connectors[0]).toMatchObject({
-      environment: { CRM_TOKEN: '' }, headers: { Authorization: '' },
+describe('capability resolver', () => {
+  it('compiles multiple kits and a standalone skill into one immutable task snapshot', () => {
+    const snapshot = resolveCapabilitySnapshot({
+      expertKits: [kit('operations', { connectors: ['erp'], tools: ['orders.search'], knowledge: ['team:sop'] }), kit('analytics')],
+      skills: [skill('spreadsheets')],
+      selections: [selection('expert-kit', 'operations'), selection('expert-kit', 'analytics'), selection('skill', 'spreadsheets')],
+      connectors: [connector('erp', ['orders.search'])],
+      availableKnowledgeBaseRefs: ['team:sop'],
+      createdAt: '2026-09-11T00:00:00Z',
     })
-    expect(JSON.stringify(snapshot)).not.toContain('env-secret')
-    expect(connectorsForSnapshot(snapshot, {
+    expect(snapshot.schemaVersion).toBe(1)
+    expect(snapshot.selections.map((item) => `${item.kind}:${item.extensionId}`)).toEqual([
+      'expert-kit:operations', 'expert-kit:analytics', 'skill:spreadsheets',
+    ])
+    expect(snapshot.artifacts).toHaveLength(3)
+    expect(snapshot.connectors.map((item) => item.id)).toEqual(['erp'])
+    expect(snapshot.knowledgeBaseRefs).toEqual(['team:sop'])
+  })
+
+  it('automatically includes declared dependencies but not unrelated enabled connectors', () => {
+    const snapshot = resolveCapabilitySnapshot({
+      expertKits: [kit('operations', { connectors: ['erp'] })], skills: [],
+      selections: [selection('expert-kit', 'operations')],
+      connectors: [connector('erp'), connector('crm')],
+    })
+    expect(snapshot.connectors.map((item) => item.id)).toEqual(['erp'])
+  })
+
+  it('records auto-discoverable skills separately without granting their dependencies', () => {
+    const snapshot = resolveCapabilitySnapshot({
+      expertKits: [kit('selected'), kit('discoverable', { connectors: ['private-erp'] }), kit('manual', { implicit: false })],
+      skills: [], selections: [selection('expert-kit', 'selected')], connectors: [],
+    })
+    expect(snapshot.artifacts.map((item) => item.id)).toEqual(['selected'])
+    expect(snapshot.implicitArtifacts.map((item) => item.id)).toEqual(['discoverable'])
+    expect(snapshot.connectors).toEqual([])
+  })
+
+  it('blocks unresolved connector, tool and knowledge dependencies before starting Harness', () => {
+    expect(() => resolveCapabilitySnapshot({
+      expertKits: [kit('operations', { connectors: ['erp'], tools: ['orders.search'], knowledge: ['team:sop'] })],
+      skills: [], selections: [selection('expert-kit', 'operations')], connectors: [connector('erp')],
+      availableKnowledgeBaseRefs: [],
+    })).toThrow(CapabilityResolutionError)
+    try {
+      resolveCapabilitySnapshot({
+        expertKits: [kit('operations', { connectors: ['erp'], tools: ['orders.search'], knowledge: ['team:sop'] })],
+        skills: [], selections: [selection('expert-kit', 'operations')], connectors: [connector('erp')],
+        availableKnowledgeBaseRefs: [],
+      })
+    } catch (error) {
+      expect((error as CapabilityResolutionError).issues).toEqual(expect.arrayContaining([
+        expect.stringContaining('orders.search'), expect.stringContaining('team:sop'),
+      ]))
+    }
+  })
+
+  it('rejects duplicate coordinates and version drift', () => {
+    expect(() => resolveCapabilitySnapshot({
+      expertKits: [kit('operations')], skills: [],
+      selections: [selection('expert-kit', 'operations'), selection('expert-kit', 'operations')], connectors: [],
+    })).toThrow(/重复选择/u)
+    expect(() => resolveCapabilitySnapshot({
+      expertKits: [kit('operations', { version: '2.0.0' })], skills: [],
+      selections: [selection('expert-kit', 'operations', '1.0.0')], connectors: [],
+    })).toThrow(/版本已变化/u)
+  })
+
+  it('stores no credentials and hydrates only when creating the execution request', () => {
+    const snapshot = resolveCapabilitySnapshot({
+      expertKits: [], skills: [], selections: [], selectedConnectorIds: ['crm'],
+      connectors: [{ ...connector('crm'), environment: { CRM_TOKEN: 'secret' }, headers: { Authorization: 'secret' } }],
+    })
+    expect(snapshot.connectors[0]).toMatchObject({ environment: { CRM_TOKEN: '' }, headers: { Authorization: '' } })
+    const executable = capabilitySnapshotForExecution(snapshot, [], {
       crm: { environment: { CRM_TOKEN: 'local-env' }, headers: { Authorization: 'local-header' } },
-    })[0]).toMatchObject({
-      environment: { CRM_TOKEN: 'local-env' }, headers: { Authorization: 'local-header' },
     })
+    expect(executable.connectors[0]).toMatchObject({ environment: { CRM_TOKEN: 'local-env' }, headers: { Authorization: 'local-header' } })
+  })
+
+  it('ignores bookkeeping timestamps when deciding whether a session must restart', () => {
+    const first = resolveCapabilitySnapshot({ expertKits: [], skills: [], selections: [], connectors: [], createdAt: 'first' })
+    expect(capabilitySnapshotChanged(first, { ...first, createdAt: 'second' })).toBe(false)
+    expect(capabilitySnapshotChanged(first, { ...first, selections: [selection('skill', 'new')] })).toBe(true)
   })
 })

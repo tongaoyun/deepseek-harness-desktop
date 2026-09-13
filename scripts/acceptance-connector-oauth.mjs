@@ -30,7 +30,11 @@ const server = createServer(async (req, res) => {
     if (url.pathname === '/control') return json(queued.splice(0))
     if (url.pathname === '/report') {
       const message = JSON.parse(body), request = pending.get(message.id)
-      if (request) { pending.delete(message.id); clearTimeout(request.timer); message.error ? request.reject(new Error(message.error)) : request.resolve(message.result) }
+      if (request) {
+        pending.delete(message.id); clearTimeout(request.timer)
+        if (message.error) request.reject(new Error(message.error))
+        else request.resolve(message.result)
+      }
       return json({})
     }
     if (url.pathname === '/acceptance.js') return res.writeHead(200, { 'Content-Type': 'text/javascript' }).end(script)

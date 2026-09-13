@@ -10,10 +10,15 @@ export function useLocalSchedules(owner: string | undefined, ready: boolean, run
   useEffect(() => {
     setItems([]); setError(''); setLoadedOwner(owner)
     if (!owner) return
-    const reload = () => { try { setItems(readLocalSchedules(owner)) } catch (reason) { setError(String(reason)) } }
-    reload()
-    window.addEventListener(localScheduleEvent, reload); window.addEventListener('storage', reload)
     let pending = false, blocked = false, disposed = false
+    const reload = async () => {
+      try {
+        const next = await readLocalSchedules(owner)
+        if (!disposed && current.current.owner === owner) { setItems(next); if (!blocked) setError('') }
+      } catch (reason) { if (!disposed && current.current.owner === owner) setError(String(reason)) }
+    }
+    void reload()
+    window.addEventListener(localScheduleEvent, reload); window.addEventListener('storage', reload)
     const tick = async (recover = false) => {
       if (pending || disposed || (blocked && !recover) || current.current.owner !== owner) return
       if (!current.current.ready) {
@@ -23,13 +28,13 @@ export function useLocalSchedules(owner: string | undefined, ready: boolean, run
       pending = true
       try {
         const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone
-        if (readLocalSchedules(owner).some((item) => !item.timing && item.timeZoneMode !== 'fixed' && item.timeZone !== timeZone)) {
+        if ((await readLocalSchedules(owner)).some((item) => !item.timing && item.timeZoneMode !== 'fixed' && item.timeZone !== timeZone)) {
           await mutateLocalSchedules(owner, (items) => items.map((item) => item.timing || item.timeZoneMode === 'fixed' || item.timeZone === timeZone ? item : {
             ...item, timeZone, nextAt: nextLocalRun({ ...item, timeZone }, new Date()),
           }))
         }
-        await tickLocalSchedules(owner, () => current.current.owner === owner && current.current.ready, (schedule, id) => current.current.run(schedule, id))
-        if (!disposed) { blocked = false; setItems(readLocalSchedules(owner)); setError('') }
+        await tickLocalSchedules(owner, () => current.current.owner === owner && current.current.ready, (schedule, id, scheduleRunId) => current.current.run(schedule, id, scheduleRunId))
+        if (!disposed && current.current.owner === owner) { blocked = false; setItems(await readLocalSchedules(owner)); setError('') }
       }
       catch (reason) { if (!disposed) { blocked = true; setError(`本机调度已暂停：${String(reason)}。处理原因后点击“重新检查并恢复”。`) } }
       finally { pending = false }
@@ -43,14 +48,17 @@ export function useLocalSchedules(owner: string | undefined, ready: boolean, run
     if (!owner) throw new Error('请先登录')
     if (action === 'run') {
       if (!current.current.ready) throw new Error('本机执行尚未就绪，或任务并发已满')
-      await tickLocalSchedules(owner, () => current.current.owner === owner && current.current.ready, (schedule, taskId) => current.current.run(schedule, taskId), new Date(), id)
+      await tickLocalSchedules(owner, () => current.current.owner === owner && current.current.ready, (schedule, taskId, scheduleRunId) => current.current.run(schedule, taskId, scheduleRunId), new Date(), id)
     } else await mutateLocalSchedules(owner, (items) => action === 'delete' ? items.filter((item) => item.id !== id) : items.map((item) => item.id !== id ? item : {
       ...item, active: action === 'resume', nextAt: action === 'resume' ? nextLocalRun(item, new Date()) : item.nextAt,
     }))
   }
-  return { items: loadedOwner === owner ? items : [], error: loadedOwner === owner ? error : '', action, refresh: () => {
+  return { items: loadedOwner === owner ? items : [], error: loadedOwner === owner ? error : '', action, refresh: async () => {
     if (!owner) return
-    try { setItems(readLocalSchedules(owner)) } catch (reason) { setError(String(reason)) }
+    try {
+      const next = await readLocalSchedules(owner)
+      if (current.current.owner === owner) setItems(next)
+    } catch (reason) { if (current.current.owner === owner) setError(String(reason)) }
     void recoverRef.current?.()
   }, save: (input: LocalScheduleInput, id?: string) => {
     if (!owner) return Promise.reject(new Error('请先登录'))

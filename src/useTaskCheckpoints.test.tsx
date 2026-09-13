@@ -4,7 +4,7 @@ import { createRoot } from 'react-dom/client'
 import { expect, it, vi } from 'vitest'
 import { useTaskCheckpoints } from './useTaskCheckpoints'
 import { persistTaskHistory } from './taskHistory'
-import { createTaskMonitor } from './harness'
+import { createXiaoyinTaskProjection } from './harness'
 import type { LocalTaskRun } from './types'
 
 vi.mock('./taskHistory', () => ({ persistTaskHistory: vi.fn(async () => {}) }))
@@ -15,7 +15,7 @@ it('checkpoints only changed running tasks and never saves a stale running snaps
   vi.mocked(persistTaskHistory).mockClear()
   const container = document.createElement('div'); const root = createRoot(container)
   const errors = vi.fn()
-  const task: LocalTaskRun = { id: 'checkpoint', source: 'DESKTOP', name: '任务', status: 'RUNNING', createdAt: '', updatedAt: '', monitor: createTaskMonitor(), messages: [] }
+  const task: LocalTaskRun = { id: 'checkpoint', source: 'DESKTOP', name: '任务', status: 'RUNNING', createdAt: '', updatedAt: '', projection: createXiaoyinTaskProjection(), messages: [] }
   function Probe({ tasks, owner = 'employee' }: { tasks: LocalTaskRun[]; owner?: string }) { useTaskCheckpoints(owner, tasks, errors); return null }
   try {
     await act(async () => root.render(<Probe tasks={[task]} />))

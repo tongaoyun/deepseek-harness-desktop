@@ -67,7 +67,8 @@ export interface ImConversationSummary {
   boundTaskId?: string
   boundTaskName?: string
   messages: ImConversationMessage[]
-  taskEvents: ImTaskEvent[]
+  /** Latest Host-owned product projection, forwarded from the Harness session stream. */
+  taskProjection?: Record<string, unknown>
 }
 
 export interface ImConversationMessage {
@@ -75,12 +76,6 @@ export interface ImConversationMessage {
   id: string
   role: 'user' | 'assistant'
   text: string
-  createdAt: string
-}
-
-export interface ImTaskEvent {
-  id: string
-  event: unknown
   createdAt: string
 }
 
@@ -167,6 +162,7 @@ export class LocalImRuntime {
   private pendingPairings = new Map<string, PairingRequest>()
   private pairedConversations = new Set<string>()
   private knownEvents = new Set<string>()
+  private receivingEvents = new Set<string>()
   private sessions = new Map<string, string>()
   private conversations = new Map<string, ImConversationSummary>()
   private pendingEvents = new Map<string, QueuedEvent>()
@@ -348,26 +344,37 @@ export class LocalImRuntime {
   }
 
   private async enqueueMessage(message: DWClientDownStream, messageId: string | undefined): Promise<void> {
+    let eventId: string | undefined
     try {
       const event = parseDingTalkEvent(message)
+      eventId = event.eventId
       if (this.knownEvents.has(event.eventId)) {
         this.acknowledge(messageId, EventAck.SUCCESS)
         return
       }
+      if (this.receivingEvents.has(event.eventId)) {
+        this.acknowledge(messageId, EventAck.LATER)
+        return
+      }
+      this.receivingEvents.add(event.eventId)
+      const queued = { event, attempts: 0 }
+      this.pendingEvents.set(event.eventId, queued)
+      await this.persistSessions()
       this.knownEvents.add(event.eventId)
       if (this.knownEvents.size > MAX_KNOWN_EVENTS) {
         const first = this.knownEvents.values().next().value
         if (first !== undefined) this.knownEvents.delete(first)
       }
-      const queued = { event, attempts: 0 }
-      this.pendingEvents.set(event.eventId, queued)
-      await this.persistSessions()
       this.acknowledge(messageId, EventAck.SUCCESS)
       this.scheduleEvent(queued)
     } catch (error) {
+      // A failed receipt is not acknowledged or scheduled; the provider can redeliver it.
+      if (typeof eventId === 'string') this.pendingEvents.delete(eventId)
       this.lastError = safeError(error)
       process.stderr.write(`Invalid DingTalk event: ${this.lastError}\n`)
       this.acknowledge(messageId, EventAck.LATER)
+    } finally {
+      if (typeof eventId === 'string') this.receivingEvents.delete(eventId)
     }
   }
 
@@ -482,7 +489,6 @@ export class LocalImRuntime {
       sessionId: this.sessions.get(conversationKey) ?? '', messageCount: (existing?.messageCount ?? 0) + 1,
       status: 'RUNNING', updatedAt: receivedAt,
       messages: appendMessage(existing?.messages, { id: event.eventId, role: 'user', text: messageSummary(event), createdAt: receivedAt }),
-      taskEvents: existing?.taskEvents ?? [],
       ...(this.taskBindings.get(conversationKey) ? {
         boundTaskId: this.taskBindings.get(conversationKey)!.taskId,
         boundTaskName: this.taskBindings.get(conversationKey)!.taskName,
@@ -511,14 +517,11 @@ export class LocalImRuntime {
       const conversation = this.conversations.get(conversationKey)
       if (!conversation) return
       const createdAt = new Date().toISOString()
+      const projection = xiaoyinProjectionFromNotification(notification, rootSessionId)
       this.conversations.set(conversationKey, {
         ...conversation,
         sessionId: rootSessionId,
-        taskEvents: [...conversation.taskEvents, {
-          id: `${event.eventId}:${conversation.taskEvents.length + 1}`,
-          event: safeEvent(notification),
-          createdAt,
-        }].slice(-200),
+        ...(projection ? { taskProjection: projection } : {}),
         updatedAt: createdAt,
       })
       const generated = generatedArtifactPath(notification, artifactCalls, rootSessionId)
@@ -673,7 +676,7 @@ export class LocalImRuntime {
     if (configuration === undefined || !configuration.notifyTaskResults || !employeeId || !knowledgeEndpoint) return
     try {
       const endpoint = new URL('/api/v1/task-runs', knowledgeEndpoint).toString()
-      const token = process.env.XIAOYIN_EMPLOYEE_BEARER_TOKEN?.trim() ?? ''
+      const token = process.env.XIAOYIN_CONTROL_PLANE_TOKEN?.trim() ?? ''
       const response = await fetch(endpoint, {
         headers: {
           'X-Xiaoyin-Employee-Id': employeeId,
@@ -825,11 +828,11 @@ export class LocalImRuntime {
         if (key && typeof sessionId === 'string' && sessionId) this.sessions.set(key, sessionId)
       }
       for (const conversation of value.conversations ?? []) {
-        if (conversation.conversationKey) this.conversations.set(conversation.conversationKey, {
-          ...conversation,
-          messages: conversation.messages ?? [],
-          taskEvents: conversation.taskEvents ?? [],
-        })
+        if (conversation.conversationKey) {
+          const persisted = conversation as ImConversationSummary & { taskEvents?: unknown }
+          const { taskEvents: _legacyTaskEvents, ...current } = persisted
+          this.conversations.set(conversation.conversationKey, { ...current, messages: conversation.messages ?? [] })
+        }
       }
       for (const queued of value.pendingEvents ?? []) {
         if (queued.event?.eventId) this.pendingEvents.set(queued.event.eventId, queued)
@@ -902,14 +905,17 @@ function appendMessage(messages: ImConversationMessage[] | undefined, message: I
   return [...(messages ?? []).filter((item) => item.id !== message.id), message].slice(-200)
 }
 
-function safeEvent(value: unknown): unknown {
-  try {
-    const json = JSON.stringify(value)
-    if (json.length > 100_000) return { type: 'truncated', size: json.length }
-    return JSON.parse(json) as unknown
-  } catch {
-    return { type: 'unavailable' }
-  }
+function xiaoyinProjectionFromNotification(notification: unknown, rootSessionId: string): Record<string, unknown> | undefined {
+  const value = record(notification)
+  if (value?.method !== 'session.projection') return undefined
+  const params = record(value.params)
+  if (params?.sessionId !== rootSessionId || params.key !== 'xiaoyin.task') return undefined
+  const projection = record(params.value)
+  return projection ? projection : undefined
+}
+
+function record(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : undefined
 }
 
 const IM_ARTIFACT_TOOLS = new Set([
