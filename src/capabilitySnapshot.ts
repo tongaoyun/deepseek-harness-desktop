@@ -120,6 +120,7 @@ export function capabilitySnapshotForExecution(
     connectors: snapshot.connectors.filter((item) => enabled?.has(item.id) !== false).map((item) => ({
       ...item,
       toolNames: [...item.toolNames],
+      readOnlyTools: [...(item.readOnlyTools ?? [])],
       environment: hydrateValues(item.environment, runtimeById.get(item.id)?.environment, localSecrets[item.id]?.environment),
       headers: hydrateValues(item.headers, runtimeById.get(item.id)?.headers, localSecrets[item.id]?.headers),
     })),
@@ -145,7 +146,7 @@ function sourceFor(kind: 'expert-kit' | 'skill', value: ExpertKitView | SkillVie
 }
 
 function sanitizeConnector(connector: ConnectorRuntimeDefinition): ConnectorRuntimeDefinition {
-  return { ...connector, toolNames: [...connector.toolNames], environment: emptyValues(connector.environment), headers: emptyValues(connector.headers) }
+  return { ...connector, toolNames: [...connector.toolNames], readOnlyTools: [...(connector.readOnlyTools ?? [])], environment: emptyValues(connector.environment), headers: emptyValues(connector.headers) }
 }
 function canonicalSnapshot({ createdAt: _createdAt, ...snapshot }: CapabilitySnapshot): string {
   return JSON.stringify(snapshot, (_key, value) => value && typeof value === 'object' && !Array.isArray(value)

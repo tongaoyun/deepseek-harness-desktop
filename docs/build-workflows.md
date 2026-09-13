@@ -8,7 +8,7 @@ Gitea 提供三个入口：
 | macOS 安装包 | 版本标签、手动 | 手动默认 ARM，可选 Intel 或全部；标签固定构建双架构 |
 | Windows 安装包 | 版本标签、手动 | 默认 release；手动可选 quick 生成开发验证用 Debug NSIS |
 
-代码检查是前端、Harness 和 Rust 的质量门禁，在合并请求和 `main` 提交时完成。安装包工作流负责核对发布身份、打包和验收，不重复执行相同检查。macOS 标签构建并行编译两个架构；每个目标独立验证内置 Node、原生模块、Harness 和最终安装包。8 核构建机为每个 Cargo 进程分配 3 个并行任务，给安装包验收和系统进程保留资源。
+代码检查在合并请求和 `main` 提交时运行：Web/Host Job 执行 `pnpm check:web`，Windows Job 检查 PowerShell 和 Rust。安装包工作流核对发布身份、打包和烟测，不重复整套质量检查。macOS 标签构建并行编译两个架构，分别验收内置 Node、原生模块、Harness 和最终安装包。
 
 macOS 的两个架构分别复用 `/tmp/xiaoyin-desktop-builder/target/arm64` 和 `/tmp/xiaoyin-desktop-builder/target/x64`，避免并发编译争用 Cargo 目录锁。Windows 检查与安装包复用 `C:\xiaoyin-desktop-builder\target`。工具链、系统目标或依赖变化仍可能触发重新编译，缓存不保证固定构建时间。不要在构建前清空 Cargo 缓存。
 
@@ -16,6 +16,8 @@ macOS 内置 Node 使用仓库锁定的版本和 SHA-256，首次下载并校验
 
 Windows quick 只允许从普通分支手动运行，用于验证界面与基本启动；它生成 Debug NSIS，不执行安装卸载验收，也不发布更新源。release 生成 MSI、NSIS 和更新签名，并固定执行 NSIS 安装、内置 Harness、应用启动和卸载验收。从标签手动运行时，Windows 强制使用 release，macOS 强制构建双架构。
 
-正式版本标签必须与项目版本一致，并精确指向当前 `main` 提交。同一平台只保留一个普通手动构建运行，新的运行会取消仍在执行的同类运行。正式标签发布使用独立并发组，不自动取消。
+正式发布先通过 `main` CI，再确认版本同步、HTTPS 控制面地址、Runner 和所需 Secrets；随后在当前 `main` 提交创建与项目版本一致的 `v*` 标签并推送。标签触发 Windows release 与 macOS 双架构构建；检查两个流水线的安装包、签名、哈希和更新索引实际发布结果。推送 `main` 本身不会发布安装包。
+
+同一平台只保留一个普通手动构建运行，新的运行取消仍在执行的同类运行。正式标签发布使用独立并发组，不自动取消。发布失败时保留标签和失败制品供诊断，不移动或复用已经发布的版本标签。
 
 工作流结构回归：`node --test scripts/workflows.test.mjs`。

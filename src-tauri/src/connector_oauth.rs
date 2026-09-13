@@ -81,6 +81,7 @@ pub async fn connector_authorization(
     {
         return Err("连接器授权操作无效".into());
     }
+    crate::erp_auth::require_employee(&app, &request.employee_id).await?;
     let key = credential_key(
         &request.employee_id,
         &request.connector.id,

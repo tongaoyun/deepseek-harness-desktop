@@ -1,14 +1,16 @@
 import { FileText, Play, Square } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import {
-  applyHarnessNotification,
   cancelHarness,
-  createTaskMonitor,
+  createXiaoyinTaskProjection,
+  harnessProjectionUpdate,
   listenHarnessNotifications,
+  normalizeHarnessProjection,
   runHarness,
 } from './harness'
-import type { ConnectorRuntimeDefinition, TaskMonitorState } from './types'
+import type { ConnectorRuntimeDefinition, XiaoyinTaskProjection } from './types'
 import type { ExtensionValidationReport } from './extensionSubmissions'
+import type { HarnessToolsMode } from './runtimePreferences'
 import { parseTaskOutcome, taskOutcomeLabel, unverifiedTaskOutcome } from './taskOutcome'
 import { TaskOutcomeDetails } from './TaskOutcomeDetails'
 
@@ -23,6 +25,11 @@ export interface ExtensionPreviewConfig {
   modelApiKey: string
   accessToken: string
   localFileRootIds: string[]
+  toolsMode: HarnessToolsMode
+  allowShell: boolean
+  allowLsp: boolean
+  allowExternalAgents: boolean
+  allowHooks: boolean
 }
 
 interface PreviewTarget {
@@ -45,10 +52,12 @@ interface Props {
 export function ExtensionPreviewPanel({ target, config, unavailableReason, onRunningChange, onReport }: Props) {
   const [prompt, setPrompt] = useState('请执行一次最小范围的能力验证，并说明使用了哪些步骤和工具。')
   const [running, setRunning] = useState(false)
-  const [monitor, setMonitor] = useState<TaskMonitorState>(createTaskMonitor)
+  const [projection, setProjection] = useState<XiaoyinTaskProjection>(createXiaoyinTaskProjection)
   const [response, setResponse] = useState('')
   const [error, setError] = useState('')
-  const monitorRef = useRef(monitor)
+  const projectionRef = useRef(projection)
+  const projectionSeqRef = useRef(-1)
+  const projectionSessionIdRef = useRef('')
   const runningRef = useRef(false)
   const previewTaskIdRef = useRef(`extension-preview-${crypto.randomUUID()}`)
   const onRunningChangeRef = useRef(onRunningChange)
@@ -59,9 +68,14 @@ export function ExtensionPreviewPanel({ target, config, unavailableReason, onRun
     let unlisten: () => void = () => undefined
     void listenHarnessNotifications((notification) => {
       if (disposed || !runningRef.current || notification.taskId !== previewTaskIdRef.current) return
-      const next = applyHarnessNotification(monitorRef.current, notification)
-      monitorRef.current = next
-      setMonitor(next)
+      const update = harnessProjectionUpdate(notification)
+      if (!update || (projectionSessionIdRef.current && update.sessionId !== projectionSessionIdRef.current) || update.seq <= projectionSeqRef.current) return
+      projectionSessionIdRef.current = update.sessionId
+      const next = normalizeHarnessProjection(update.value)
+      if (!next) return
+      projectionSeqRef.current = update.seq
+      projectionRef.current = next
+      setProjection(next)
     }).then((dispose) => {
       if (disposed) dispose()
       else unlisten = dispose
@@ -86,9 +100,11 @@ export function ExtensionPreviewPanel({ target, config, unavailableReason, onRun
     previewTaskIdRef.current = ''
     setResponse('')
     setError('')
-    const idle = createTaskMonitor()
-    monitorRef.current = idle
-    setMonitor(idle)
+    const idle = createXiaoyinTaskProjection()
+    projectionRef.current = idle
+    projectionSeqRef.current = -1
+    projectionSessionIdRef.current = ''
+    setProjection(idle)
   }, [target?.id, target?.kind])
 
   if (!target) return null
@@ -99,16 +115,18 @@ export function ExtensionPreviewPanel({ target, config, unavailableReason, onRun
     const startedAtMs = Date.now()
     const runId = `extension-preview-${crypto.randomUUID()}`
     previewTaskIdRef.current = runId
-    const started: TaskMonitorState = {
-      ...createTaskMonitor(startedAt),
+    const started: XiaoyinTaskProjection = {
+      ...createXiaoyinTaskProjection(startedAt),
       status: 'running',
       activity: '正在启动发布前试运行',
     }
     setRunning(true)
     runningRef.current = true
     onRunningChangeRef.current(true)
-    monitorRef.current = started
-    setMonitor(started)
+    projectionRef.current = started
+    projectionSeqRef.current = -1
+    projectionSessionIdRef.current = ''
+    setProjection(started)
     setResponse('')
     setError('')
     try {
@@ -117,6 +135,11 @@ export function ExtensionPreviewPanel({ target, config, unavailableReason, onRun
         taskId: runId,
         prompt: prompt.trim(),
         executionMode: 'agent',
+        toolsMode: config.toolsMode,
+        allowShell: config.allowShell,
+        allowLsp: config.allowLsp,
+        allowExternalAgents: config.allowExternalAgents,
+        allowHooks: config.allowHooks,
         employeeId: config.employeeId,
         teamId: config.teamId,
         capabilitySnapshot: {
@@ -145,15 +168,15 @@ export function ExtensionPreviewPanel({ target, config, unavailableReason, onRun
       if (previewTaskIdRef.current !== runId || !runningRef.current) return
       if (!result.finalResponse.trim()) throw new Error('试运行未返回可显示文本，请重试')
       const outcome = parseTaskOutcome(result.outcome) ?? unverifiedTaskOutcome()
-      const completed: TaskMonitorState = {
-        ...monitorRef.current,
+      const completed: XiaoyinTaskProjection = {
+        ...projectionRef.current,
         status: 'completed',
         outcome,
         activity: taskOutcomeLabel(outcome),
         updatedAt: new Date().toISOString(),
       }
-      monitorRef.current = completed
-      setMonitor(completed)
+      projectionRef.current = completed
+      setProjection(completed)
       const finalResponse = result.finalResponse
       setResponse(finalResponse)
       const discoveredTools = [...new Set(completed.steps.flatMap((step) => step.toolName ? [step.toolName] : []))]
@@ -167,14 +190,14 @@ export function ExtensionPreviewPanel({ target, config, unavailableReason, onRun
     } catch (reason) {
       if (previewTaskIdRef.current !== runId || !runningRef.current) return
       const message = reason instanceof Error ? reason.message : String(reason)
-      const failed: TaskMonitorState = {
-        ...monitorRef.current,
+      const failed: XiaoyinTaskProjection = {
+        ...projectionRef.current,
         status: runningRef.current ? 'failed' : 'canceled',
         activity: runningRef.current ? '试运行失败' : '试运行已取消',
         updatedAt: new Date().toISOString(),
       }
-      monitorRef.current = failed
-      setMonitor(failed)
+      projectionRef.current = failed
+      setProjection(failed)
       if (runningRef.current) setError(message)
     } finally {
       if (previewTaskIdRef.current === runId) {
@@ -191,20 +214,20 @@ export function ExtensionPreviewPanel({ target, config, unavailableReason, onRun
     runningRef.current = false
     await cancelHarness(runId).catch(() => false)
     if (previewTaskIdRef.current !== runId) return
-    const canceled: TaskMonitorState = {
-      ...monitorRef.current,
+    const canceled: XiaoyinTaskProjection = {
+      ...projectionRef.current,
       status: 'canceled',
       activity: '试运行已取消',
       updatedAt: new Date().toISOString(),
     }
-    monitorRef.current = canceled
-    setMonitor(canceled)
+    projectionRef.current = canceled
+    setProjection(canceled)
     setRunning(false)
     onRunningChangeRef.current(false)
   }
 
   return <section className="extension-preview">
-    <header><span><strong>发布前试运行</strong><small>只在本机执行当前草稿，不提交审核、不写入正式任务记录。</small></span><em className={monitor.status}>{monitor.status === 'completed' ? taskOutcomeLabel(monitor.outcome) : previewStatusLabel(monitor.status)}</em></header>
+    <header><span><strong>发布前试运行</strong><small>只在本机执行当前草稿，不提交审核、不写入正式任务记录。</small></span><em className={projection.status}>{projection.status === 'completed' ? taskOutcomeLabel(projection.outcome) : previewStatusLabel(projection.status)}</em></header>
     <div className="extension-preview-input">
       <textarea disabled={running} onChange={(event) => setPrompt(event.target.value)} value={prompt} />
       {running
@@ -212,15 +235,15 @@ export function ExtensionPreviewPanel({ target, config, unavailableReason, onRun
         : <button disabled={!config || !prompt.trim()} onClick={() => void run()} type="button"><Play size={12} />开始试运行</button>}
     </div>
     {unavailableReason && <div className="extension-preview-warning">{unavailableReason}</div>}
-    {monitor.steps.length > 0 && <div className="extension-preview-steps">{monitor.steps.map((step) => <article key={step.id}><i className={step.status} /><span><strong>{step.label}</strong><small>{step.toolName ?? step.kind}</small></span><em>{stepStatusLabel(step.status)}</em></article>)}</div>}
-    {monitor.artifacts.length > 0 && <div className="extension-preview-artifacts"><strong>产物</strong>{monitor.artifacts.map((artifact) => <span key={artifact.id}><FileText size={12} />{artifact.name}<small>{artifact.sourceTool}</small></span>)}</div>}
+    {projection.steps.length > 0 && <div className="extension-preview-steps">{projection.steps.map((step) => <article key={step.id}><i className={step.status} /><span><strong>{step.label}</strong><small>{step.toolName ?? step.kind}</small></span><em>{stepStatusLabel(step.status)}</em></article>)}</div>}
+    {projection.artifacts.length > 0 && <div className="extension-preview-artifacts"><strong>产物</strong>{projection.artifacts.map((artifact) => <span key={artifact.id}><FileText size={12} />{artifact.name}<small>{artifact.sourceTool}</small></span>)}</div>}
     {response && <div className="extension-preview-response"><strong>最终回复</strong><p>{response}</p></div>}
-    {monitor.status === 'completed' && <TaskOutcomeDetails outcome={monitor.outcome} />}
+    {projection.status === 'completed' && <TaskOutcomeDetails outcome={projection.outcome} />}
     {error && <div className="authoring-error">{error}</div>}
   </section>
 }
 
-export function previewStatusLabel(status: TaskMonitorState['status']) {
+export function previewStatusLabel(status: XiaoyinTaskProjection['status']) {
   return {
     idle: '等待测试',
     running: '运行中',
@@ -230,6 +253,6 @@ export function previewStatusLabel(status: TaskMonitorState['status']) {
   }[status]
 }
 
-function stepStatusLabel(status: TaskMonitorState['steps'][number]['status']) {
+function stepStatusLabel(status: XiaoyinTaskProjection['steps'][number]['status']) {
   return status === 'running' ? '执行中' : status === 'completed' ? '完成' : '失败'
 }

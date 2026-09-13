@@ -151,7 +151,8 @@ func windowSignature(_ pid: pid_t) -> String {
         }
         if cursor < pending.count { traversalTruncated = true }
       }
-      let result: [String: Any] = ["screen":["width":width,"height":height],"activeWindow":["title":front?.localizedName ?? "","processId":front?.processIdentifier ?? 0,"signature":front.map { windowSignature($0.processIdentifier) } ?? ""],"elements":elements,"truncated":traversalTruncated || elements.count >= limit || visited >= 800]
+      let activeSignature: String = if let front { windowSignature(front.processIdentifier) } else { "" }
+      let result: [String: Any] = ["screen":["width":width,"height":height],"activeWindow":["title":front?.localizedName ?? "","processId":front?.processIdentifier ?? 0,"signature":activeSignature],"elements":elements,"truncated":traversalTruncated || elements.count >= limit || visited >= 800]
       FileHandle.standardOutput.write(try JSONSerialization.data(withJSONObject: result))
     } catch { fail("桌面操作或观察失败，操作可能已经执行，请重新观察后再决定：\(error.localizedDescription)") }
   }

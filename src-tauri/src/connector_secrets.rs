@@ -31,38 +31,51 @@ struct SecretFieldIndex {
 type SecretIndex = BTreeMap<String, SecretFieldIndex>;
 
 #[tauri::command]
-pub fn load_connector_secrets(
+pub async fn load_connector_secrets(
     app: tauri::AppHandle,
     employee_id: String,
 ) -> Result<ConnectorSecretStore, String> {
     validate_identifier("员工标识", &employee_id)?;
-    load_store(&app, &employee_id)
+    crate::erp_auth::require_employee(&app, &employee_id).await?;
+    tauri::async_runtime::spawn_blocking(move || load_store(&app, &employee_id))
+        .await
+        .map_err(|_| "连接器凭据读取线程异常".to_string())?
 }
 
 #[tauri::command]
-pub fn save_connector_secret(
+pub async fn save_connector_secret(
     app: tauri::AppHandle,
     employee_id: String,
     connector_id: String,
     values: ConnectorSecretValues,
 ) -> Result<ConnectorSecretStore, String> {
     validate_identifier("员工标识", &employee_id)?;
+    crate::erp_auth::require_employee(&app, &employee_id).await?;
     validate_identifier("连接器标识", &connector_id)?;
     validate_values(&values)?;
-    save_values(&app, &employee_id, &connector_id, &values)?;
-    load_store(&app, &employee_id)
+    tauri::async_runtime::spawn_blocking(move || {
+        save_values(&app, &employee_id, &connector_id, &values)?;
+        load_store(&app, &employee_id)
+    })
+    .await
+    .map_err(|_| "连接器凭据保存线程异常".to_string())?
 }
 
 #[tauri::command]
-pub fn delete_connector_secret(
+pub async fn delete_connector_secret(
     app: tauri::AppHandle,
     employee_id: String,
     connector_id: String,
 ) -> Result<ConnectorSecretStore, String> {
     validate_identifier("员工标识", &employee_id)?;
+    crate::erp_auth::require_employee(&app, &employee_id).await?;
     validate_identifier("连接器标识", &connector_id)?;
-    delete_values(&app, &employee_id, &connector_id)?;
-    load_store(&app, &employee_id)
+    tauri::async_runtime::spawn_blocking(move || {
+        delete_values(&app, &employee_id, &connector_id)?;
+        load_store(&app, &employee_id)
+    })
+    .await
+    .map_err(|_| "连接器凭据删除线程异常".to_string())?
 }
 
 fn load_store(app: &tauri::AppHandle, employee_id: &str) -> Result<ConnectorSecretStore, String> {

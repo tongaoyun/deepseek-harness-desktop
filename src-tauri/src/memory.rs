@@ -62,23 +62,38 @@ impl Default for MemoryProfile {
 }
 
 #[tauri::command]
-pub fn load_memory_profile(
+pub async fn load_memory_profile(
     app: tauri::AppHandle,
     employee_id: String,
 ) -> Result<MemoryProfile, String> {
-    load(&app, &employee_id)
+    validate_employee_id(&employee_id)?;
+    crate::erp_auth::require_employee(&app, &employee_id).await?;
+    tauri::async_runtime::spawn_blocking(move || load(&app, &employee_id))
+        .await
+        .map_err(|_| "记忆配置读取线程异常".to_string())?
 }
 
 #[tauri::command]
-pub fn save_memory_profile(
+pub async fn save_memory_profile(
     app: tauri::AppHandle,
     employee_id: String,
     profile: MemoryProfile,
 ) -> Result<MemoryProfile, String> {
     validate_employee_id(&employee_id)?;
+    crate::erp_auth::require_employee(&app, &employee_id).await?;
     validate(&profile)?;
-    let previous = load(&app, &employee_id).ok();
-    let path = profile_path(&app, &employee_id)?;
+    tauri::async_runtime::spawn_blocking(move || save_profile(&app, &employee_id, profile))
+        .await
+        .map_err(|_| "记忆配置保存线程异常".to_string())?
+}
+
+fn save_profile(
+    app: &tauri::AppHandle,
+    employee_id: &str,
+    profile: MemoryProfile,
+) -> Result<MemoryProfile, String> {
+    let previous = load(app, employee_id).ok();
+    let path = profile_path(app, employee_id)?;
     let parent = path
         .parent()
         .ok_or_else(|| "记忆配置路径无效".to_string())?;
@@ -107,18 +122,21 @@ pub fn save_memory_profile(
             || old.work_manual != profile.work_manual
             || old.entries != profile.entries
     }) {
-        append_history(&app, &employee_id, &profile)?;
+        append_history(app, employee_id, &profile)?;
     }
     Ok(profile)
 }
 
 #[tauri::command]
-pub fn load_memory_history(
+pub async fn load_memory_history(
     app: tauri::AppHandle,
     employee_id: String,
 ) -> Result<Vec<MemoryRevision>, String> {
     validate_employee_id(&employee_id)?;
-    load_history(&app, &employee_id)
+    crate::erp_auth::require_employee(&app, &employee_id).await?;
+    tauri::async_runtime::spawn_blocking(move || load_history(&app, &employee_id))
+        .await
+        .map_err(|_| "记忆历史读取线程异常".to_string())?
 }
 
 pub fn context(app: &tauri::AppHandle, employee_id: &str) -> Result<String, String> {

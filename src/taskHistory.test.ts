@@ -1,6 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { compactTaskForStorage, loadLocalTasks, recoverInterruptedTasks, saveLocalTask } from './taskHistory'
-import { beginExecutionTurn, completeExecutionTurn } from './executionRuntime'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { collectHarnessSessionSearch, compactTaskForStorage, loadLocalTasks, loadTaskHistoryPage, recoverInterruptedTasks, saveLocalTask } from './taskHistory'
 import type { LocalTaskRun } from './types'
 
 class MemoryStorage implements Storage {
@@ -14,15 +13,61 @@ class MemoryStorage implements Storage {
 }
 
 describe('task history', () => {
-  const monitor: LocalTaskRun['monitor'] = {
+  afterEach(() => vi.unstubAllGlobals())
+  const projection: LocalTaskRun['projection'] = {
     status: 'idle', activity: '等待开始', updatedAt: '2026-08-28T01:00:00Z', steps: [], artifacts: [],
   }
+
+  it('follows official session search cursors and stops on a repeated cursor', async () => {
+    const calls: Array<string | undefined> = []
+    const pages = new Map<string | undefined, { items: Array<{ sessionId: string; excerpt: string; updatedAt: string }>; nextCursor?: string }>([
+      [undefined, { items: [{ sessionId: 'one', excerpt: '一', updatedAt: '' }], nextCursor: 'page-2' }],
+      ['page-2', { items: [{ sessionId: 'two', excerpt: '二', updatedAt: '' }], nextCursor: 'page-3' }],
+      ['page-3', { items: [{ sessionId: 'three', excerpt: '三', updatedAt: '' }], nextCursor: 'page-3' }],
+    ])
+    const items = await collectHarnessSessionSearch(async (cursor) => {
+      calls.push(cursor)
+      return pages.get(cursor) ?? { items: [] }
+    })
+    expect(items.map((item) => item.sessionId)).toEqual(['one', 'two', 'three'])
+    expect(calls).toEqual([undefined, 'page-2', 'page-3'])
+  })
+
+  it('caps cursor pagination without requesting an unnecessary extra page', async () => {
+    const calls: Array<string | undefined> = []
+    const items = await collectHarnessSessionSearch(async (cursor) => {
+      calls.push(cursor)
+      return {
+        items: Array.from({ length: 3 }, (_, index) => ({ sessionId: `${cursor ?? 'first'}-${index}`, excerpt: '', updatedAt: '' })),
+        nextCursor: cursor ? 'later' : 'next',
+      }
+    }, 4)
+    expect(items).toHaveLength(4)
+    expect(calls).toEqual([undefined, 'next'])
+  })
+
+  it('restarts once when Harness invalidates a cursor after an index generation change', async () => {
+    const calls: Array<string | undefined> = []
+    let stale = true
+    const items = await collectHarnessSessionSearch(async (cursor) => {
+      calls.push(cursor)
+      if (cursor === 'next' && stale) {
+        stale = false
+        throw new Error('session-search cursor is stale because its relevant corpus changed')
+      }
+      return cursor ? { items: [{ sessionId: 'second', excerpt: '', updatedAt: '' }] } : {
+        items: [{ sessionId: 'first', excerpt: '', updatedAt: '' }], nextCursor: 'next',
+      }
+    })
+    expect(items.map((item) => item.sessionId)).toEqual(['first', 'second'])
+    expect(calls).toEqual([undefined, 'next', undefined, 'next'])
+  })
 
   it('keeps employee histories separate and replaces updated tasks', () => {
     const storage = new MemoryStorage()
     const task: LocalTaskRun = {
       id: 'task-1', source: 'DESKTOP', name: '库存分析', status: 'RUNNING',
-      createdAt: '2026-08-28T01:00:00Z', updatedAt: '2026-08-28T01:00:00Z', monitor, messages: [],
+      createdAt: '2026-08-28T01:00:00Z', updatedAt: '2026-08-28T01:00:00Z', projection, messages: [],
     }
     saveLocalTask('employee-1', task, storage)
     saveLocalTask('employee-1', { ...task, status: 'COMPLETED', updatedAt: '2026-08-28T01:01:00Z' }, storage)
@@ -38,7 +83,7 @@ describe('task history', () => {
     expect(() => loadLocalTasks('employee-1', storage)).toThrow('原始数据已保留')
     expect(() => saveLocalTask('employee-1', {
       id: 'new', source: 'DESKTOP', name: '新任务', status: 'COMPLETED',
-      createdAt: '', updatedAt: '', monitor, messages: [],
+      createdAt: '', updatedAt: '', projection, messages: [],
     }, storage)).toThrow('不会覆盖')
     expect(storage.getItem('xiaoyin.task-history.employee-1')).toBe('{broken')
   })
@@ -47,18 +92,31 @@ describe('task history', () => {
     const storage = new MemoryStorage()
     const task: LocalTaskRun = {
       id: 'task-cancelled', source: 'DESKTOP', name: '广告诊断', status: 'CANCELED',
-      createdAt: '2026-08-28T01:00:00Z', updatedAt: '2026-08-28T01:01:00Z', monitor, messages: [],
+      createdAt: '2026-08-28T01:00:00Z', updatedAt: '2026-08-28T01:01:00Z', projection, messages: [],
     }
     saveLocalTask('employee-1', task, storage)
     expect(loadLocalTasks('employee-1', storage)[0].status).toBe('CANCELED')
   })
 
-  it('persists the structured task monitor independently from response text', () => {
+  it('searches the local Harness session and selected capability tokens', async () => {
+    const storage = new MemoryStorage()
+    const task: LocalTaskRun = {
+      id: 'task-session-search', source: 'DESKTOP', name: '日报', status: 'COMPLETED',
+      createdAt: '2026-08-28T01:00:00Z', updatedAt: '2026-08-28T01:01:00Z', projection, messages: [],
+      sessionId: 'session-harness-42', invocationTokens: ['/kit:finance', 'skill:invoice-check'],
+    }
+    saveLocalTask('employee-1', task, storage)
+    vi.stubGlobal('window', { localStorage: storage })
+    await expect(loadTaskHistoryPage('employee-1', 'harness-42')).resolves.toMatchObject({ items: [{ id: task.id }] })
+    await expect(loadTaskHistoryPage('employee-1', 'invoice-check')).resolves.toMatchObject({ items: [{ id: task.id }] })
+  })
+
+  it('persists the structured task projection independently from response text', () => {
     const storage = new MemoryStorage()
     const task: LocalTaskRun = {
       id: 'task-trace', source: 'DESKTOP', name: '店铺日报', status: 'COMPLETED',
       createdAt: '2026-08-29T01:00:00Z', updatedAt: '2026-08-29T01:01:00Z',
-      monitor: {
+      projection: {
         status: 'completed', activity: '任务已完成', updatedAt: '2026-08-29T01:01:00Z', artifacts: [], steps: [{
           id: 'tool:call-1', kind: 'tool', label: '查询销售汇总', status: 'completed',
           toolName: 'sales_summary', startedAt: '2026-08-29T01:00:10Z',
@@ -70,82 +128,48 @@ describe('task history', () => {
 
     saveLocalTask('employee-1', task, storage)
 
-    expect(loadLocalTasks('employee-1', storage)[0].monitor).toEqual(task.monitor)
+    const stored = JSON.parse(storage.getItem('xiaoyin.task-history.employee-1')!)
+    expect(Object.hasOwn(stored[0], 'execution')).toBe(false)
+    expect(stored[0]?.projection).toEqual(task.projection)
+    expect(loadLocalTasks('employee-1', storage)[0].projection).toEqual(task.projection)
   })
 
-  it('rebuilds stale monitor caches from the canonical execution thread', () => {
+  it('rejects a corrupted projection cache instead of rebuilding it from the desktop execution tree', () => {
     const storage = new MemoryStorage()
-    const started = beginExecutionTurn({
-      taskId: 'canonical', sessionId: 'session', operationScope: 'scope', now: '2026-09-11T01:00:00Z', createId: () => 'canonical',
-    })
-    const outcome = { status: 'completed' as const, summary: '已核对', remaining: [], checks: [{ description: '结果', result: 'passed' as const, evidence: '通过' }] }
-    const completed = completeExecutionTurn(started.thread, started.monitor, outcome, '2026-09-11T01:01:00Z')
-    const stale = { ...monitor, updatedAt: '2026-09-11T00:00:00Z' }
+    const stale = { ...projection, updatedAt: '2026-09-11T00:00:00Z' }
     saveLocalTask('employee-1', {
       id: 'canonical', source: 'DESKTOP', name: '事件事实源', status: 'COMPLETED',
-      createdAt: '2026-09-11T01:00:00Z', updatedAt: '2026-09-11T01:01:00Z', execution: completed.thread,
-      monitor: stale, messages: [{ role: 'assistant', text: '完成', monitor: stale }],
+      createdAt: '2026-09-11T01:00:00Z', updatedAt: '2026-09-11T01:01:00Z',
+      projection: stale, messages: [{ role: 'assistant', text: '完成', projection: stale }],
     }, storage)
     const persisted = JSON.parse(storage.getItem('xiaoyin.task-history.employee-1')!)
-    persisted[0].monitor = { stale: true }
+    persisted[0].projection = { stale: true }
     storage.setItem('xiaoyin.task-history.employee-1', JSON.stringify(persisted))
 
-    const restored = loadLocalTasks('employee-1', storage)[0]!
-    expect(restored.monitor).toEqual(completed.monitor)
-    expect(restored.messages[0]?.monitor).toEqual(completed.monitor)
-  })
-
-  it('binds legacy messages to distinct turns when an interrupted operation scope is reused', () => {
-    const storage = new MemoryStorage()
-    const first = beginExecutionTurn({
-      taskId: 'resumed', sessionId: 'session-1', operationScope: 'shared-scope', now: '2026-09-11T02:00:00Z', createId: () => 'first',
-    })
-    const firstCompleted = completeExecutionTurn(first.thread, first.monitor, {
-      status: 'partial', summary: '第一轮部分完成', remaining: ['继续'], checks: [],
-    }, '2026-09-11T02:01:00Z')
-    const second = beginExecutionTurn({
-      taskId: 'resumed', sessionId: 'session-2', operationScope: 'shared-scope', previous: firstCompleted.thread,
-      now: '2026-09-11T02:02:00Z', createId: () => 'second',
-    })
-    const secondCompleted = completeExecutionTurn(second.thread, second.monitor, {
-      status: 'completed', summary: '第二轮全部完成', remaining: [], checks: [],
-    }, '2026-09-11T02:03:00Z')
-    const stale = { ...first.monitor, operationScope: 'shared-scope', updatedAt: 'stale' }
-    saveLocalTask('employee-1', {
-      id: 'resumed', source: 'DESKTOP', name: '恢复任务', status: 'COMPLETED',
-      createdAt: '2026-09-11T02:00:00Z', updatedAt: '2026-09-11T02:03:00Z', execution: secondCompleted.thread,
-      monitor: stale, messages: [
-        { role: 'assistant', text: '第一轮', monitor: stale },
-        { role: 'assistant', text: '第二轮', monitor: stale },
-      ],
-    }, storage)
-
-    const restored = loadLocalTasks('employee-1', storage)[0]!
-    expect(restored.messages.map((message) => message.executionTurnId)).toEqual(['turn-first', 'turn-second'])
-    expect(restored.messages.map((message) => message.monitor?.outcome?.summary)).toEqual(['第一轮部分完成', '第二轮全部完成'])
+    expect(() => loadLocalTasks('employee-1', storage)).toThrow('本地历史无法读取')
   })
 
   it('round trips remaining work and evidence on both the task and assistant message', () => {
     const storage = new MemoryStorage()
-    const finishedMonitor: LocalTaskRun['monitor'] = { ...monitor, status: 'completed', outcome: {
+    const finishedProjection: LocalTaskRun['projection'] = { ...projection, status: 'completed', outcome: {
       status: 'needs_confirmation', summary: '报告已生成，发送前需要确认收件人', remaining: ['确认收件人'],
       checks: [{ description: '报告结构', result: 'passed', evidence: 'report.xlsx 包含销售和汇总表' }],
     } }
     const task: LocalTaskRun = { id: 'awaiting', source: 'DESKTOP', name: '销售报告', status: 'COMPLETED',
-      createdAt: '2026-09-07', updatedAt: '2026-09-07', monitor: finishedMonitor,
-      messages: [{ role: 'assistant', text: '请确认收件人', monitor: finishedMonitor }],
+      createdAt: '2026-09-07', updatedAt: '2026-09-07', projection: finishedProjection,
+      messages: [{ role: 'assistant', text: '请确认收件人', projection: finishedProjection }],
     }
     saveLocalTask('employee-1', task, storage)
     const [restored] = recoverInterruptedTasks(loadLocalTasks('employee-1', storage))
-    expect(restored?.monitor.outcome).toEqual(finishedMonitor.outcome)
-    expect(restored?.messages[0].monitor?.outcome).toEqual(finishedMonitor.outcome)
+    expect(restored?.projection.outcome).toEqual(finishedProjection.outcome)
+    expect(restored?.messages[0].projection?.outcome).toEqual(finishedProjection.outcome)
   })
 
   it('turns tasks left running by an app exit into retryable failures', () => {
     const task: LocalTaskRun = {
       id: 'task-interrupted', source: 'DESKTOP', name: '整理下载目录', status: 'RUNNING',
       createdAt: '2026-08-29T01:00:00Z', updatedAt: '2026-08-29T01:00:01Z',
-      monitor: { status: 'running', activity: '正在读取文件', updatedAt: '2026-08-29T01:00:01Z', artifacts: [], steps: [
+      projection: { status: 'running', activity: '正在读取文件', updatedAt: '2026-08-29T01:00:01Z', artifacts: [], steps: [
         { id: 'tool:1', kind: 'tool', label: '读取文件', status: 'running', startedAt: '2026-08-29T01:00:01Z' },
       ] },
       sessionId: 'interrupted-session',
@@ -155,22 +179,22 @@ describe('task history', () => {
     const [recovered] = recoverInterruptedTasks([task], '2026-08-29T01:05:00Z')
 
     expect(recovered?.status).toBe('FAILED')
-    expect(recovered?.monitor.status).toBe('failed')
-    expect(recovered?.monitor.failure?.code).toBe('XY-INTERRUPTED')
-    expect(recovered?.monitor.steps[0]?.status).toBe('canceled')
-    expect(recovered?.monitor.steps[0]?.completedAt).toBe(task.updatedAt)
-    expect(recovered?.monitor.steps[0]?.label).toContain('结果待核对')
+    expect(recovered?.projection.status).toBe('failed')
+    expect(recovered?.projection.failure?.code).toBe('XY-INTERRUPTED')
+    expect(recovered?.projection.steps[0]?.status).toBe('canceled')
+    expect(recovered?.projection.steps[0]?.completedAt).toBe(task.updatedAt)
+    expect(recovered?.projection.steps[0]?.label).toContain('结果待核对')
     expect(recovered?.messages.at(-1)?.role).toBe('assistant')
     expect(recovered?.messages.at(-1)?.pending).toBeUndefined()
     expect(recovered?.messages.at(-1)?.text).toContain('已检查第一份报表')
     expect(recovered?.messages.at(-1)?.text).toContain('不要重复已经完成的操作')
-    expect(recovered?.sessionId).toBeUndefined()
+    expect(recovered?.sessionId).toBe('interrupted-session')
   })
 
   it('preserves the initial requirement and all execution traces in long histories', () => {
     const task: LocalTaskRun = {
       id: 'long', source: 'DESKTOP', name: '长任务', status: 'COMPLETED',
-      createdAt: '2026-08-29T01:00:00Z', updatedAt: '2026-08-29T01:01:00Z', monitor,
+      createdAt: '2026-08-29T01:00:00Z', updatedAt: '2026-08-29T01:01:00Z', projection,
       messages: Array.from({ length: 140 }, (_, index) => ({ role: index % 2 ? 'assistant' as const : 'user' as const, text: `消息 ${index}` })),
     }
     const compacted = compactTaskForStorage(task)
@@ -185,7 +209,7 @@ describe('task history', () => {
     const task = (index: number): LocalTaskRun => ({
       id: String(index), source: 'DESKTOP', name: '任务', status: 'COMPLETED',
       createdAt: '2026-09-01', updatedAt: '2026-09-01', archivedAt: index === 0 ? '2026-09-01' : undefined,
-      monitor, messages: [{ role: 'user', text: '原始要求' + (index === 0 ? '长'.repeat(250_000) : '') }],
+      projection, messages: [{ role: 'user', text: '原始要求' + (index === 0 ? '长'.repeat(250_000) : '') }],
     })
     // Start just before the boundary; exercise real saves across and beyond it.
     // Avoid rewriting the same large history 199 times merely to arrange the fixture.
@@ -194,5 +218,29 @@ describe('task history', () => {
     expect(loadLocalTasks('employee-1', storage)).toHaveLength(205)
     expect(loadLocalTasks('employee-1', storage).find((task) => task.id === '0')?.messages[0].text).toHaveLength(250_004)
     expect(loadLocalTasks('employee-1', storage).find((task) => task.id === '0')?.archivedAt).toBe('2026-09-01')
+  })
+
+  it('preserves Harness usage and compaction projections while recovering an interrupted task', () => {
+    const task: LocalTaskRun = {
+      id: 'harness-projection', source: 'DESKTOP', name: '任务', status: 'RUNNING',
+      createdAt: '2026-09-11T00:00:00Z', updatedAt: '2026-09-11T00:01:00Z',
+      projection: {
+        ...projection,
+        status: 'running',
+        tokenUsage: { uncachedInputTokens: 120, outputTokens: 30, cacheReadTokens: 4, cacheWriteTokens: 2 },
+        contextPressure: { contextWindow: 1000, pressureTokens: 120, projectedTokens: 180 },
+        outputRetention: { prunedResults: 3, omittedTokens: 900 },
+        compactions: 2,
+      },
+      messages: [],
+    }
+    const [recovered] = recoverInterruptedTasks([task], '2026-09-12T00:00:00Z')
+    expect(recovered?.projection).toMatchObject({
+      tokenUsage: task.projection.tokenUsage,
+      contextPressure: task.projection.contextPressure,
+      outputRetention: task.projection.outputRetention,
+      compactions: 2,
+      status: 'failed',
+    })
   })
 })

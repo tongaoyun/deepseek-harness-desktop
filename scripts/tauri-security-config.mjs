@@ -5,7 +5,11 @@ const DEFAULT_SERVER_URL = 'http://192.168.2.67:30081'
 export function resolveTauriServerUrl(command, cwd = process.cwd(), environment = process.env) {
   const configured = environment.VITE_XIAOYIN_SERVER_URL
     ?? loadEnv(command === 'dev' ? 'development' : 'production', cwd, 'VITE_').VITE_XIAOYIN_SERVER_URL
-  return configured || DEFAULT_SERVER_URL
+  const value = configured || DEFAULT_SERVER_URL
+  if (command === 'build' && new URL(value).protocol !== 'https:') {
+    throw new Error('Release builds require an HTTPS VITE_XIAOYIN_SERVER_URL')
+  }
+  return value
 }
 
 export function tauriSecurityConfig(serverUrl = DEFAULT_SERVER_URL) {

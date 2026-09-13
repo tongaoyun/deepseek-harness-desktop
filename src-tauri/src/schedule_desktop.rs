@@ -4,12 +4,26 @@ use std::{
     sync::{Mutex, OnceLock},
 };
 
+#[cfg(target_os = "macos")]
+static PROCESS: OnceLock<Mutex<Option<Child>>> = OnceLock::new();
+
 /// The assertion ends when Xiaoyin exits, including an unexpected process exit.
 #[tauri::command]
-pub fn schedule_keep_awake(enabled: Option<bool>) -> Result<bool, String> {
+pub async fn schedule_keep_awake(
+    app: tauri::AppHandle,
+    enabled: Option<bool>,
+) -> Result<bool, String> {
+    crate::erp_auth::current_employee(&app).await?;
+    keep_awake(enabled)
+}
+
+pub(crate) fn stop_keep_awake() {
+    let _ = keep_awake(Some(false));
+}
+
+fn keep_awake(enabled: Option<bool>) -> Result<bool, String> {
     #[cfg(target_os = "macos")]
     {
-        static PROCESS: OnceLock<Mutex<Option<Child>>> = OnceLock::new();
         let mut process = PROCESS
             .get_or_init(|| Mutex::new(None))
             .lock()

@@ -160,3 +160,23 @@ it('reports partial remote failures and retains the last cached content', async 
     expect(state().loading).toBe(false)
   })
 })
+
+it('hides the previous employee catalog on the first render after an account change', async () => {
+  const renders: Array<{ owner: string; kits: string[] }> = []
+  function Probe({ owner }: { owner: string }) {
+    const state = useEnterpriseCatalog({
+      accessToken: '', bootstrap, enabledConnectorIds, user: users[owner] ?? null,
+    })
+    renders.push({ owner, kits: state.expertKits.map((kit) => kit.id) })
+    return null
+  }
+  const root = createRoot(document.createElement('div'))
+  try {
+    await act(async () => root.render(<Probe owner="one" />))
+    expect(renders.at(-1)?.kits).toEqual(['old'])
+    await act(async () => root.render(<Probe owner="two" />))
+    expect(renders.find((render) => render.owner === 'two')?.kits).toEqual([])
+    await act(async () => root.render(<Probe owner="signed-out" />))
+    expect(renders.find((render) => render.owner === 'signed-out')?.kits).toEqual([])
+  } finally { await act(async () => root.unmount()) }
+})

@@ -34,11 +34,27 @@ use tauri::{Emitter, Listener, Manager};
 const WARM_IDLE_HARNESS_SLOTS: usize = 3;
 
 impl HarnessManager {
+    fn check_task_owner(&self, task_id: &str, employee_id: &str) -> Result<(), String> {
+        let slot = self
+            .slots
+            .lock()
+            .map_err(|_| "任务状态不可用")?
+            .get(task_id)
+            .cloned();
+        if let Some(slot) = slot {
+            slot.check_owner(employee_id)?;
+        }
+        Ok(())
+    }
+
     pub(crate) fn begin_operation_review(
         &self,
         task_id: &str,
+        employee_id: &str,
     ) -> Result<impl Drop + use<>, String> {
-        self.slot(task_id)?.begin()
+        let slot = self.slot(task_id)?;
+        slot.check_owner(employee_id)?;
+        slot.begin()
     }
 
     /// A running task holds absolute paths into the extension directories it was started with,
@@ -54,6 +70,7 @@ impl HarnessManager {
 struct HarnessSlot {
     process: Mutex<Option<HarnessProcess>>,
     active: Mutex<Option<ActiveRun>>,
+    owner: Mutex<Option<String>>,
 }
 
 #[derive(Default)]
@@ -73,6 +90,25 @@ impl Drop for ActiveRunGuard {
 }
 
 impl HarnessSlot {
+    fn begin_for(self: &Arc<Self>, employee_id: &str) -> Result<ActiveRunGuard, String> {
+        let mut owner = self.owner.lock().map_err(|_| "任务归属不可用")?;
+        if owner.as_ref().is_some_and(|value| value != employee_id) {
+            return Err("当前登录账号与任务归属不一致".to_string());
+        }
+        let guard = self.begin()?;
+        *owner = Some(employee_id.to_string());
+        Ok(guard)
+    }
+
+    fn check_owner(&self, employee_id: &str) -> Result<(), String> {
+        let owner = self.owner.lock().map_err(|_| "任务归属不可用")?;
+        if owner.as_ref().is_some_and(|value| value != employee_id) {
+            Err("当前登录账号与任务归属不一致".to_string())
+        } else {
+            Ok(())
+        }
+    }
+
     fn begin(self: &Arc<Self>) -> Result<ActiveRunGuard, String> {
         let mut active = self.active.lock().map_err(|_| "任务状态不可用")?;
         if active.is_some() {
@@ -171,6 +207,16 @@ pub struct HarnessRunRequest {
     task_id: String,
     prompt: String,
     execution_mode: String,
+    #[serde(default)]
+    tools_mode: Option<String>,
+    #[serde(default)]
+    allow_shell: bool,
+    #[serde(default)]
+    allow_lsp: bool,
+    #[serde(default)]
+    allow_external_agents: bool,
+    #[serde(default)]
+    allow_hooks: bool,
     employee_id: String,
     team_id: String,
     session_id: Option<String>,
@@ -283,6 +329,55 @@ pub struct HarnessHostHealth {
     status: String,
     runtime: String,
     version: String,
+    #[serde(default)]
+    capabilities: HashMap<String, String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct HarnessProviderCheckRequest {
+    litellm_base_url: String,
+    model: String,
+    model_api_key: String,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HarnessProviderCheckResult {
+    status: String,
+    latency_ms: u64,
+    detail: String,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HarnessSessionInspection {
+    session_id: String,
+    status: String,
+    updated_at: String,
+    #[serde(default)]
+    last_event_type: Option<String>,
+    pending_tools: u32,
+    #[serde(default)]
+    projection: Option<Value>,
+    #[serde(default)]
+    messages: Vec<Value>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HarnessSessionSearchHit {
+    session_id: String,
+    excerpt: String,
+    updated_at: String,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HarnessSessionSearchPage {
+    items: Vec<HarnessSessionSearchHit>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    next_cursor: Option<String>,
 }
 
 #[derive(Clone, Serialize)]
@@ -319,6 +414,11 @@ pub(crate) struct RuntimeFingerprint {
     pub(crate) allow_browser: bool,
     pub(crate) allowed_computer_tools: Vec<String>,
     pub(crate) execution_mode: String,
+    pub(crate) tools_mode: String,
+    pub(crate) allow_shell: bool,
+    pub(crate) allow_lsp: bool,
+    pub(crate) allow_external_agents: bool,
+    pub(crate) allow_hooks: bool,
     pub(crate) litellm_base_url: String,
     pub(crate) knowledge_endpoint: String,
     pub(crate) schedule_endpoint: String,
@@ -360,7 +460,11 @@ pub async fn run_harness(
     request: HarnessRunRequest,
 ) -> Result<HarnessRunResult, String> {
     validate_run_request(&request)?;
-    let active_run = manager.slot(&request.task_id)?.begin()?;
+    crate::erp_auth::require_employee(&app, &request.employee_id).await?;
+    local_files.ensure_employee(&request.employee_id)?;
+    let active_run = manager
+        .slot(&request.task_id)?
+        .begin_for(&request.employee_id)?;
     let (attachment_context, images) = prepare_attachments(&local_files, &request.attachments)?;
     let user_prompt = if attachment_context.is_empty() {
         request.prompt.trim().to_string()
@@ -376,7 +480,14 @@ pub async fn run_harness(
         &request.capability_snapshot.implicit_artifacts,
         &request.execution_mode,
     )?;
-    let local_file_roots = local_files.resolve(&request.local_file_root_ids)?;
+    // An empty selection intentionally means the official Harness filesystem:
+    // it is backed by the employee-isolated session workspace. Product roots
+    // are only forwarded when the user explicitly authorizes directories.
+    let local_file_roots = if request.local_file_root_ids.is_empty() {
+        Vec::new()
+    } else {
+        local_files.resolve(&request.local_file_root_ids)?
+    };
     let allow_browser =
         desktop_connector_enabled(&request.capability_snapshot.connectors, "desktop-browser");
     let connectors = runtime_connectors(&request.capability_snapshot.connectors, &profile, true)?;
@@ -387,6 +498,11 @@ pub async fn run_harness(
         allow_browser,
         allowed_computer_tools: profile.allowed_computer_tools,
         execution_mode: request.execution_mode,
+        tools_mode: validate_tools_mode(request.tools_mode.as_deref())?,
+        allow_shell: request.allow_shell,
+        allow_lsp: request.allow_lsp,
+        allow_external_agents: request.allow_external_agents,
+        allow_hooks: request.allow_hooks,
         litellm_base_url: request.litellm_base_url,
         knowledge_endpoint: request.knowledge_endpoint,
         schedule_endpoint: request.schedule_endpoint,
@@ -434,30 +550,39 @@ pub async fn shutdown_harness(
 }
 
 #[tauri::command]
-pub fn cancel_harness(
+pub async fn cancel_harness(
+    app: tauri::AppHandle,
     manager: tauri::State<'_, HarnessManager>,
     task_id: String,
 ) -> Result<bool, String> {
+    let employee_id = crate::erp_auth::current_employee(&app).await?;
+    manager.check_task_owner(&task_id, &employee_id)?;
     manager.cancel(&task_id)
 }
 
 #[tauri::command]
-pub fn respond_harness_approval(
+pub async fn respond_harness_approval(
+    app: tauri::AppHandle,
     manager: tauri::State<'_, HarnessManager>,
     task_id: String,
     approval_id: String,
     decision: String,
 ) -> Result<bool, String> {
+    let employee_id = crate::erp_auth::current_employee(&app).await?;
+    manager.check_task_owner(&task_id, &employee_id)?;
     manager.respond_to_approval(&task_id, &approval_id, &decision)
 }
 
 #[tauri::command]
-pub fn respond_harness_question(
+pub async fn respond_harness_question(
+    app: tauri::AppHandle,
     manager: tauri::State<'_, HarnessManager>,
     task_id: String,
     question_id: String,
     answers: Vec<QuestionAnswerInput>,
 ) -> Result<bool, String> {
+    let employee_id = crate::erp_auth::current_employee(&app).await?;
+    manager.check_task_owner(&task_id, &employee_id)?;
     manager.respond_to_question(&task_id, &question_id, answers)
 }
 
@@ -467,6 +592,7 @@ pub async fn diagnose_connectors(
     request: ConnectorDiagnosticRequest,
 ) -> Result<Vec<ConnectorDiagnosticResult>, String> {
     validate_access_token(&request.access_token)?;
+    crate::erp_auth::require_employee(&app, &request.employee_id).await?;
     let connectors = diagnostic_connectors(&request.connectors)?;
     if connectors.is_empty() {
         return Ok(Vec::new());
@@ -478,6 +604,11 @@ pub async fn diagnose_connectors(
         allow_browser: false,
         allowed_computer_tools: Vec::new(),
         execution_mode: "agent".to_string(),
+        tools_mode: "native".to_string(),
+        allow_shell: true,
+        allow_lsp: true,
+        allow_external_agents: false,
+        allow_hooks: false,
         litellm_base_url: String::new(),
         knowledge_endpoint: String::new(),
         schedule_endpoint: String::new(),
@@ -507,6 +638,7 @@ pub async fn diagnose_connectors(
 pub async fn self_test_local_capabilities(
     app: tauri::AppHandle,
 ) -> Result<LocalCapabilitySelfTestResult, String> {
+    crate::erp_auth::current_employee(&app).await?;
     let fingerprint = RuntimeFingerprint {
         skill_directories: Vec::new(),
         connectors: Vec::new(),
@@ -514,6 +646,11 @@ pub async fn self_test_local_capabilities(
         allow_browser: false,
         allowed_computer_tools: Vec::new(),
         execution_mode: "agent".to_string(),
+        tools_mode: "native".to_string(),
+        allow_shell: true,
+        allow_lsp: true,
+        allow_external_agents: false,
+        allow_hooks: false,
         litellm_base_url: String::new(),
         knowledge_endpoint: String::new(),
         schedule_endpoint: String::new(),
@@ -536,7 +673,16 @@ pub async fn self_test_local_capabilities(
 }
 
 #[tauri::command]
-pub async fn probe_harness_host(app: tauri::AppHandle) -> Result<HarnessHostHealth, String> {
+pub async fn probe_harness_host(
+    app: tauri::AppHandle,
+    model_configured: Option<bool>,
+    tools_mode: Option<String>,
+    allow_shell: Option<bool>,
+    allow_lsp: Option<bool>,
+    allow_external_agents: Option<bool>,
+    allow_hooks: Option<bool>,
+) -> Result<HarnessHostHealth, String> {
+    crate::erp_auth::current_employee(&app).await?;
     let fingerprint = RuntimeFingerprint {
         skill_directories: Vec::new(),
         connectors: Vec::new(),
@@ -544,6 +690,11 @@ pub async fn probe_harness_host(app: tauri::AppHandle) -> Result<HarnessHostHeal
         allow_browser: false,
         allowed_computer_tools: Vec::new(),
         execution_mode: "agent".to_string(),
+        tools_mode: validate_tools_mode(tools_mode.as_deref())?,
+        allow_shell: allow_shell.unwrap_or(false),
+        allow_lsp: allow_lsp.unwrap_or(false),
+        allow_external_agents: allow_external_agents.unwrap_or(false),
+        allow_hooks: allow_hooks.unwrap_or(false),
         litellm_base_url: String::new(),
         knowledge_endpoint: String::new(),
         schedule_endpoint: String::new(),
@@ -557,13 +708,201 @@ pub async fn probe_harness_host(app: tauri::AppHandle) -> Result<HarnessHostHeal
     tauri::async_runtime::spawn_blocking(move || {
         let mut process =
             HarnessProcess::start_uninitialized(&app, fingerprint, String::new(), String::new())?;
+        // A health response is only meaningful after the same initialization
+        // handshake used by real task executions. Otherwise a broken plugin
+        // graph can report `ready` here and fail only on the first task.
+        if let Err(error) = process.request("host.initialize", None, None) {
+            process.shutdown();
+            return Err(format!("Harness Host 初始化失败：{error}"));
+        }
         let result = process.request("host.health", None, None);
         process.shutdown();
-        serde_json::from_value(result?)
-            .map_err(|error| format!("Harness Host 健康响应无效：{error}"))
+        let mut health: HarnessHostHealth = serde_json::from_value(result?)
+            .map_err(|error| format!("Harness Host 健康响应无效：{error}"))?;
+        // The probe deliberately starts without credentials. Carry only the
+        // already-known configuration bit from the desktop, never the secret,
+        // so the UI can distinguish missing setup from provider reachability.
+        health.capabilities.insert(
+            "modelProvider".to_string(),
+            if model_configured.unwrap_or(false) {
+                "gated".to_string()
+            } else {
+                "unconfigured".to_string()
+            },
+        );
+        Ok(health)
     })
     .await
     .map_err(|error| format!("Harness Host 健康检查线程异常：{error}"))?
+}
+
+#[tauri::command]
+pub async fn check_harness_provider(
+    app: tauri::AppHandle,
+    request: HarnessProviderCheckRequest,
+) -> Result<HarnessProviderCheckResult, String> {
+    crate::erp_auth::current_employee(&app).await?;
+    validate_http_url("模型", &request.litellm_base_url)?;
+    if request.model.trim().is_empty() || request.model.len() > 512 {
+        return Err("模型标识无效".to_string());
+    }
+    if request.model_api_key.trim().is_empty()
+        || request.model_api_key.len() > 16 * 1024
+        || request.model_api_key.chars().any(char::is_control)
+    {
+        return Err("模型凭据无效".to_string());
+    }
+    let fingerprint = RuntimeFingerprint {
+        skill_directories: Vec::new(),
+        connectors: Vec::new(),
+        local_file_roots: Vec::new(),
+        allow_browser: false,
+        allowed_computer_tools: Vec::new(),
+        execution_mode: "agent".to_string(),
+        tools_mode: "native".to_string(),
+        allow_shell: true,
+        allow_lsp: true,
+        allow_external_agents: false,
+        allow_hooks: false,
+        litellm_base_url: request.litellm_base_url,
+        knowledge_endpoint: String::new(),
+        schedule_endpoint: String::new(),
+        employee_id: String::new(),
+        team_id: String::new(),
+        knowledge_base_refs: Some(Vec::new()),
+        model: request.model,
+        memory_context: String::new(),
+        credential_digest: credential_digest(&request.model_api_key, ""),
+    };
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut process = HarnessProcess::start_uninitialized(
+            &app,
+            fingerprint,
+            request.model_api_key,
+            String::new(),
+        )?;
+        let result = process.request("provider.check", None, None);
+        process.shutdown();
+        serde_json::from_value(result?).map_err(|error| format!("模型服务检查响应无效：{error}"))
+    })
+    .await
+    .map_err(|error| format!("模型服务检查线程异常：{error}"))?
+}
+
+#[tauri::command]
+pub async fn inspect_harness_session(
+    app: tauri::AppHandle,
+    employee_id: String,
+    session_id: String,
+) -> Result<Option<HarnessSessionInspection>, String> {
+    validate_employee_id(&employee_id)?;
+    if !is_valid_session_id(&session_id) {
+        return Err("Harness 会话标识无效".to_string());
+    }
+    crate::erp_auth::require_employee(&app, &employee_id).await?;
+    let fingerprint = RuntimeFingerprint {
+        skill_directories: Vec::new(),
+        connectors: Vec::new(),
+        local_file_roots: Vec::new(),
+        allow_browser: false,
+        allowed_computer_tools: Vec::new(),
+        execution_mode: "agent".to_string(),
+        tools_mode: "native".to_string(),
+        allow_shell: true,
+        allow_lsp: true,
+        allow_external_agents: false,
+        allow_hooks: false,
+        litellm_base_url: String::new(),
+        knowledge_endpoint: String::new(),
+        schedule_endpoint: String::new(),
+        employee_id,
+        team_id: String::new(),
+        knowledge_base_refs: Some(Vec::new()),
+        model: "session-inspection".to_string(),
+        memory_context: String::new(),
+        credential_digest: credential_digest("", ""),
+    };
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut process =
+            HarnessProcess::start_uninitialized(&app, fingerprint, String::new(), String::new())?;
+        let result = process.request(
+            "session.inspect",
+            Some(json!({ "sessionId": session_id })),
+            None,
+        );
+        process.shutdown();
+        match result? {
+            Value::Null => Ok(None),
+            value => serde_json::from_value(value)
+                .map(Some)
+                .map_err(|error| format!("Harness 会话摘要无效：{error}")),
+        }
+    })
+    .await
+    .map_err(|error| format!("Harness 会话检查线程异常：{error}"))?
+}
+
+#[tauri::command]
+pub async fn search_harness_sessions(
+    app: tauri::AppHandle,
+    employee_id: String,
+    session_ids: Vec<String>,
+    query: String,
+    limit: Option<u32>,
+    cursor: Option<String>,
+) -> Result<HarnessSessionSearchPage, String> {
+    validate_employee_id(&employee_id)?;
+    if session_ids.len() > 2_000 || session_ids.iter().any(|id| !is_valid_session_id(id)) {
+        return Err("Harness 会话标识无效".to_string());
+    }
+    crate::erp_auth::require_employee(&app, &employee_id).await?;
+    if query.trim().is_empty() || query.len() > 500 {
+        return Err("Harness 历史搜索词无效".to_string());
+    }
+    if cursor
+        .as_ref()
+        .is_some_and(|value| value.is_empty() || value.len() > 8_192)
+    {
+        return Err("Harness 历史搜索游标无效".to_string());
+    }
+    let fingerprint = RuntimeFingerprint {
+        skill_directories: Vec::new(),
+        connectors: Vec::new(),
+        local_file_roots: Vec::new(),
+        allow_browser: false,
+        allowed_computer_tools: Vec::new(),
+        execution_mode: "agent".to_string(),
+        tools_mode: "native".to_string(),
+        allow_shell: true,
+        allow_lsp: true,
+        allow_external_agents: false,
+        allow_hooks: false,
+        litellm_base_url: String::new(),
+        knowledge_endpoint: String::new(),
+        schedule_endpoint: String::new(),
+        employee_id,
+        team_id: String::new(),
+        knowledge_base_refs: Some(Vec::new()),
+        model: "session-search".to_string(),
+        memory_context: String::new(),
+        credential_digest: credential_digest("", ""),
+    };
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut process =
+            HarnessProcess::start_uninitialized(&app, fingerprint, String::new(), String::new())?;
+        let result = process.request(
+            "session.search",
+            Some(
+                json!({ "sessionIds": session_ids, "query": query, "limit": limit.unwrap_or(100), "cursor": cursor }),
+            ),
+            None,
+        );
+        process.shutdown();
+        serde_json::from_value(result?)
+            .map_err(|error| format!("Harness 历史搜索响应无效：{error}"))
+    })
+    .await
+    .map_err(|error| format!("Harness 历史搜索线程异常：{error}"))?
 }
 
 impl HarnessManager {
@@ -581,10 +920,10 @@ impl HarnessManager {
             .process
             .lock()
             .map_err(|_| "Harness 进程状态不可用".to_string())?;
-        if guard
-            .as_ref()
-            .is_some_and(|process| process.fingerprint != fingerprint)
-            && let Some(mut process) = guard.take()
+        if fingerprint_changed(
+            guard.as_ref().map(|process| &process.fingerprint),
+            &fingerprint,
+        ) && let Some(mut process) = guard.take()
         {
             process.shutdown();
         }
@@ -961,16 +1300,23 @@ impl HarnessProcess {
             .path()
             .app_data_dir()
             .map_err(|error| format!("无法确定 Harness 数据目录：{error}"))?;
-        let dsh_home = app_data.join("harness");
+        let dsh_home = employee_harness_root(&app_data, &fingerprint.employee_id);
+        let attachment_root =
+            employee_harness_root(&app_data, &fingerprint.employee_id).join("attachments");
         let browser_home = task_id.map(|task_id| {
             let mut hasher = Sha256::new();
+            hasher.update(fingerprint.employee_id.as_bytes());
+            hasher.update([0]);
             hasher.update(task_id.as_bytes());
             app_data
                 .join("harness-browser")
                 .join(format!("{:x}", hasher.finalize()))
         });
-        let workspace = app_data.join("workspace");
+        let workspace = app_data
+            .join("workspaces")
+            .join(employee_namespace(&fingerprint.employee_id));
         std::fs::create_dir_all(&dsh_home)
+            .and_then(|_| std::fs::create_dir_all(&attachment_root))
             .and_then(|_| std::fs::create_dir_all(&workspace))
             .map_err(|error| format!("无法创建 Harness 数据目录：{error}"))?;
         let session_workspace = fingerprint
@@ -1018,12 +1364,28 @@ impl HarnessProcess {
             )
             .env(
                 "XIAOYIN_IM_STATE_PATH",
-                app_data.join("im-channels/dingtalk-sessions.json"),
+                app_data
+                    .join("im-channels")
+                    .join(employee_namespace(&fingerprint.employee_id))
+                    .join("dingtalk-sessions.json"),
             )
             .env("DSH_CUSTOM_SKILL_DIRS", skill_directories)
             .env("XIAOYIN_EXECUTION_MODE", &fingerprint.execution_mode)
+            .env("XIAOYIN_TOOLS_MODE", &fingerprint.tools_mode)
+            .env("XIAOYIN_ALLOW_SHELL", fingerprint.allow_shell.to_string())
+            .env("XIAOYIN_ALLOW_LSP", fingerprint.allow_lsp.to_string())
+            .env(
+                "XIAOYIN_ALLOW_EXTERNAL_AGENTS",
+                fingerprint.allow_external_agents.to_string(),
+            )
+            .env("XIAOYIN_ALLOW_HOOKS", fingerprint.allow_hooks.to_string())
             .env("XIAOYIN_MCP_CONNECTORS", connectors)
-            .env("XIAOYIN_EMPLOYEE_BEARER_TOKEN", access_token)
+            .env("XIAOYIN_MCP_IMPLEMENTATION", "harness")
+            .env("XIAOYIN_CONTROL_PLANE_TOKEN", &access_token)
+            .env(
+                "XIAOYIN_EMPLOYEE_BEARER_TOKEN",
+                crate::erp_auth::connector_bearer_token(&fingerprint.employee_id, &access_token),
+            )
             .env("XIAOYIN_EMPLOYEE_ID", &fingerprint.employee_id)
             .env("XIAOYIN_TEAM_ID", &fingerprint.team_id)
             .env(
@@ -1033,7 +1395,7 @@ impl HarnessProcess {
             .env("XIAOYIN_SCHEDULE_ENDPOINT", &fingerprint.schedule_endpoint)
             .env("XIAOYIN_KNOWLEDGE_BASE_REFS", knowledge_base_refs)
             .env("XIAOYIN_LOCAL_FILE_ROOTS", local_file_roots)
-            .env("XIAOYIN_ATTACHMENT_ROOT", dsh_home.join("attachments"))
+            .env("XIAOYIN_ATTACHMENT_ROOT", &attachment_root)
             .envs(browser_home.as_ref().map(|path| {
                 (
                     "XIAOYIN_BROWSER_PROFILE_DIR",
@@ -1392,7 +1754,19 @@ impl HarnessProcess {
                     continue;
                 }
                 if let Some(app) = app {
-                    let event = output.get("params").cloned().unwrap_or(Value::Null);
+                    // Preserve the method envelope for product-level Harness
+                    // projections. Older session events intentionally keep
+                    // their compact params shape for the existing renderer.
+                    let event = if output.get("method").and_then(Value::as_str)
+                        == Some("session.projection")
+                    {
+                        json!({
+                            "method": "session.projection",
+                            "params": output.get("params").cloned().unwrap_or(Value::Null),
+                        })
+                    } else {
+                        output.get("params").cloned().unwrap_or(Value::Null)
+                    };
                     let _ = app.emit("xiaoyin://harness-notification", {
                         notification_sequence += 1;
                         ui_notification(
@@ -1866,12 +2240,7 @@ fn validate_run_request(request: &HarnessRunRequest) -> Result<(), String> {
     {
         return Err("任务标识无效".to_string());
     }
-    if request.employee_id.trim().is_empty()
-        || request.employee_id.len() > 512
-        || request.employee_id.chars().any(char::is_control)
-    {
-        return Err("员工标识无效".to_string());
-    }
+    validate_employee_id(&request.employee_id)?;
     if request.team_id.len() > 512 || request.team_id.chars().any(char::is_control) {
         return Err("团队标识无效".to_string());
     }
@@ -1881,6 +2250,7 @@ fn validate_run_request(request: &HarnessRunRequest) -> Result<(), String> {
     if !matches!(request.execution_mode.as_str(), "agent" | "plan") {
         return Err("执行模式无效".to_string());
     }
+    validate_tools_mode(request.tools_mode.as_deref())?;
     validate_http_url("LiteLLM", &request.litellm_base_url)?;
     validate_http_url("知识库", &request.knowledge_endpoint)?;
     validate_http_url("定时任务", &request.schedule_endpoint)?;
@@ -1902,6 +2272,13 @@ fn validate_run_request(request: &HarnessRunRequest) -> Result<(), String> {
         return Err("ERP 访问凭据无效".to_string());
     }
     Ok(())
+}
+
+fn validate_tools_mode(value: Option<&str>) -> Result<String, String> {
+    match value.unwrap_or("native") {
+        "native" | "ptc" | "both" => Ok(value.unwrap_or("native").to_string()),
+        _ => Err("工具运行模式无效".to_string()),
+    }
 }
 
 pub(crate) fn validate_capability_snapshot(snapshot: &CapabilitySnapshot) -> Result<(), String> {
@@ -2007,6 +2384,14 @@ fn validate_access_token(access_token: &str) -> Result<(), String> {
     Ok(())
 }
 
+fn is_valid_session_id(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 256
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b':' | b'.'))
+}
+
 pub(crate) fn credential_digest(model_api_key: &str, access_token: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update((model_api_key.len() as u64).to_be_bytes());
@@ -2016,13 +2401,158 @@ pub(crate) fn credential_digest(model_api_key: &str, access_token: &str) -> Stri
     format!("{:x}", hasher.finalize())
 }
 
+/// Keep Harness persistence and the default workspace private to one employee without putting
+/// employee identifiers (which may contain PII) into filesystem paths.
+pub(crate) fn employee_namespace(employee_id: &str) -> String {
+    format!("employee-{:x}", Sha256::digest(employee_id.as_bytes()))
+}
+
+fn employee_harness_root(app_data: &Path, employee_id: &str) -> PathBuf {
+    app_data
+        .join("harness")
+        .join(employee_namespace(employee_id))
+}
+
+pub(crate) fn validate_employee_id(value: &str) -> Result<(), String> {
+    if value.trim().is_empty() || value.len() > 512 || value.chars().any(char::is_control) {
+        return Err("员工标识无效".to_string());
+    }
+    Ok(())
+}
+
+fn fingerprint_changed(current: Option<&RuntimeFingerprint>, next: &RuntimeFingerprint) -> bool {
+    current.is_some_and(|value| value != next)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
+    fn employee_storage_namespaces_are_stable_and_private() {
+        let app_data = Path::new("/tmp/xiaoyin");
+        assert_eq!(
+            employee_namespace("employee-1"),
+            employee_namespace("employee-1")
+        );
+        assert_ne!(
+            employee_namespace("employee-1"),
+            employee_namespace("employee-2")
+        );
+        assert!(
+            !employee_harness_root(app_data, "employee-1")
+                .to_string_lossy()
+                .contains("employee-1")
+        );
+        assert!(
+            employee_harness_root(app_data, "employee-1")
+                .ends_with("harness/".to_string() + &employee_namespace("employee-1"))
+        );
+    }
+
+    #[test]
+    fn employee_id_validation_rejects_empty_and_control_values() {
+        assert!(validate_employee_id("employee-1").is_ok());
+        assert!(validate_employee_id("").is_err());
+        assert!(validate_employee_id("employee\n1").is_err());
+    }
+
+    #[test]
+    fn runtime_fingerprint_changes_force_a_fresh_process() {
+        let baseline = RuntimeFingerprint {
+            skill_directories: Vec::new(),
+            connectors: Vec::new(),
+            local_file_roots: Vec::new(),
+            allow_browser: false,
+            allowed_computer_tools: Vec::new(),
+            execution_mode: "agent".to_string(),
+            tools_mode: "native".to_string(),
+            allow_shell: true,
+            allow_lsp: true,
+            allow_external_agents: false,
+            allow_hooks: false,
+            litellm_base_url: "https://model.example/v1".to_string(),
+            knowledge_endpoint: "https://knowledge.example".to_string(),
+            schedule_endpoint: "https://schedule.example".to_string(),
+            employee_id: "employee-1".to_string(),
+            team_id: "team-1".to_string(),
+            knowledge_base_refs: Some(Vec::new()),
+            model: "deepseek-chat".to_string(),
+            memory_context: String::new(),
+            credential_digest: "digest-1".to_string(),
+        };
+        assert!(!fingerprint_changed(None, &baseline));
+        assert!(!fingerprint_changed(Some(&baseline), &baseline));
+        assert_eq!(validate_tools_mode(Some("ptc")), Ok("ptc".to_string()));
+        assert_eq!(validate_tools_mode(Some("both")), Ok("both".to_string()));
+        assert!(validate_tools_mode(Some("unknown")).is_err());
+        for changed in [
+            RuntimeFingerprint {
+                employee_id: "employee-2".into(),
+                ..baseline.clone()
+            },
+            RuntimeFingerprint {
+                model: "deepseek-reasoner".into(),
+                ..baseline.clone()
+            },
+            RuntimeFingerprint {
+                credential_digest: "digest-2".into(),
+                ..baseline.clone()
+            },
+            RuntimeFingerprint {
+                execution_mode: "plan".into(),
+                ..baseline.clone()
+            },
+            RuntimeFingerprint {
+                tools_mode: "ptc".into(),
+                ..baseline.clone()
+            },
+            RuntimeFingerprint {
+                allow_shell: false,
+                ..baseline.clone()
+            },
+            RuntimeFingerprint {
+                allow_lsp: false,
+                ..baseline.clone()
+            },
+            RuntimeFingerprint {
+                allow_hooks: true,
+                ..baseline.clone()
+            },
+        ] {
+            assert!(fingerprint_changed(Some(&baseline), &changed));
+        }
+    }
+
+    #[test]
     fn cancel_without_active_run_is_a_noop() {
         assert_eq!(HarnessManager::default().cancel("missing-task"), Ok(false));
+    }
+
+    #[test]
+    fn task_slot_owner_blocks_other_employee_controls_and_reuse() {
+        let manager = HarnessManager::default();
+        assert!(manager.check_task_owner("missing", "employee-2").is_ok());
+        let slot = manager.slot("owned-task").unwrap();
+        let run = slot.begin_for("employee-1").unwrap();
+        assert!(manager.check_task_owner("owned-task", "employee-1").is_ok());
+        assert!(
+            manager
+                .check_task_owner("owned-task", "employee-2")
+                .is_err()
+        );
+        drop(run);
+        assert!(slot.begin_for("employee-2").is_err());
+        assert!(
+            manager
+                .begin_operation_review("owned-task", "employee-2")
+                .is_err()
+        );
+        assert!(
+            manager
+                .begin_operation_review("owned-task", "employee-1")
+                .is_ok()
+        );
     }
 
     #[test]
@@ -2171,6 +2701,11 @@ mod tests {
             task_id: "task-1".to_string(),
             prompt: "分析库存".to_string(),
             execution_mode: "agent".to_string(),
+            tools_mode: Some("native".to_string()),
+            allow_shell: true,
+            allow_lsp: true,
+            allow_external_agents: false,
+            allow_hooks: false,
             employee_id: "employee-1".to_string(),
             team_id: "crossborder".to_string(),
             session_id: None,
@@ -2193,6 +2728,7 @@ mod tests {
                     url: "http://erp.internal/mcp".to_string(),
                     auth_mode: "employee-bearer".to_string(),
                     tool_names: vec!["sales_summary".to_string()],
+                    read_only_tools: vec!["sales_summary".to_string()],
                     command: String::new(),
                     arguments: Vec::new(),
                     environment: std::collections::HashMap::new(),
@@ -2215,6 +2751,39 @@ mod tests {
             ..valid
         };
         assert!(validate_run_request(&invalid).is_err());
+    }
+
+    #[test]
+    fn run_request_without_runtime_authorizations_is_restricted() {
+        let request: HarnessRunRequest = serde_json::from_value(json!({
+            "operationScope": "test-turn",
+            "taskId": "task-1",
+            "prompt": "整理资料",
+            "executionMode": "agent",
+            "employeeId": "employee-1",
+            "teamId": "team-1",
+            "sessionId": null,
+            "capabilitySnapshot": {
+                "schemaVersion": 1,
+                "createdAt": "2026-09-11T00:00:00Z",
+                "selections": [],
+                "artifacts": [],
+                "implicitArtifacts": [],
+                "requestedConnectorIds": [],
+                "requestedKnowledgeBaseRefs": []
+            },
+            "litellmBaseUrl": "http://litellm.internal/v1",
+            "knowledgeEndpoint": "http://xiaoyin-server.internal/api/v1/knowledge-bases",
+            "model": "deepseek-chat",
+            "modelApiKey": "model-token",
+            "accessToken": "token"
+        }))
+        .expect("legacy-shaped request should deserialize without authorization");
+        assert_eq!(request.tools_mode, None);
+        assert!(!request.allow_shell);
+        assert!(!request.allow_lsp);
+        assert!(!request.allow_external_agents);
+        assert!(!request.allow_hooks);
     }
 
     #[test]
@@ -2277,6 +2846,7 @@ mod tests {
                 url: "http://erp.internal/mcp".to_string(),
                 auth_mode: "employee-bearer".to_string(),
                 tool_names: vec!["sales_summary".to_string(), "order_cancel".to_string()],
+                read_only_tools: vec!["sales_summary".to_string()],
                 command: String::new(),
                 arguments: Vec::new(),
                 environment: std::collections::HashMap::new(),
@@ -2293,6 +2863,7 @@ mod tests {
                 url: String::new(),
                 auth_mode: "none".to_string(),
                 tool_names: vec!["browser_open".to_string()],
+                read_only_tools: Vec::new(),
                 command: String::new(),
                 arguments: Vec::new(),
                 environment: std::collections::HashMap::new(),
@@ -2334,6 +2905,7 @@ mod tests {
                 url: "http://erp.internal/mcp".to_string(),
                 auth_mode: "employee-bearer".to_string(),
                 tool_names: vec!["sales_summary".to_string(), "inventory_risk".to_string()],
+                read_only_tools: vec!["sales_summary".to_string(), "inventory_risk".to_string()],
                 command: String::new(),
                 arguments: Vec::new(),
                 environment: std::collections::HashMap::new(),
@@ -2350,6 +2922,7 @@ mod tests {
                 url: String::new(),
                 auth_mode: "none".to_string(),
                 tool_names: vec!["local_file_read".to_string()],
+                read_only_tools: Vec::new(),
                 command: String::new(),
                 arguments: Vec::new(),
                 environment: std::collections::HashMap::new(),

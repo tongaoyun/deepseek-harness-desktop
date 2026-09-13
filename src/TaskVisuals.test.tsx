@@ -26,7 +26,7 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals())
 async function fixture(run: (container: HTMLElement, render: (items: TaskVisualArtifact[]) => Promise<void>) => Promise<void>) {
   const container = document.body.appendChild(document.createElement('div')); const root = createRoot(container)
-  const render = async (items: TaskVisualArtifact[]) => { await act(async () => root.render(<TaskVisuals visuals={items} />)) }
+  const render = async (items: TaskVisualArtifact[]) => { await act(async () => root.render(<TaskVisuals employeeId="employee-1" visuals={items} />)) }
   try { await run(container, render) } finally { await act(async () => root.unmount()); container.remove() }
 }
 it('bounds initial screenshot cards and releases images when leaving the viewport', async () => {
@@ -36,6 +36,7 @@ it('bounds initial screenshot cards and releases images when leaving the viewpor
     expect(loadHarnessImagePreview).not.toHaveBeenCalled()
     await act(async () => observers[0].change(true))
     expect(loadHarnessImagePreview).toHaveBeenCalledOnce()
+    expect(loadHarnessImagePreview).toHaveBeenCalledWith('employee-1', '0', 'image/png')
     expect(container.querySelector('img')?.src).toBe('blob:test-1')
     await act(async () => observers[0].change(false))
     expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:test-1')

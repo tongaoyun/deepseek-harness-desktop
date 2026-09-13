@@ -40,3 +40,19 @@ it('uses the compact composer, defaults to daily 09:00 and saves a chosen model'
     expect(container.querySelector('[role="dialog"]')).toBeNull()
   } finally { await act(async () => root.unmount()); container.remove() }
 })
+
+it('shows recovery instead of an empty catalog when schedules cannot be read', async () => {
+  const refresh = vi.fn()
+  const controller = { items: [], error: '本机调度已暂停', save: vi.fn(), refresh, action: vi.fn() }
+  const container = document.body.appendChild(document.createElement('div'))
+  const root = createRoot(container)
+  try {
+    await act(async () => root.render(<LocalSchedulesPanel controller={controller} onOpenTask={() => {}} />))
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('本机调度已暂停')
+    expect(container.textContent).not.toContain('暂无定时任务')
+    await act(async () => container.querySelector<HTMLButtonElement>('.schedule-toolbar [role="tab"]:last-child')!.click())
+    expect(container.textContent).not.toContain('暂无执行记录')
+    await act(async () => [...container.querySelectorAll<HTMLButtonElement>('button')].find((item) => item.textContent === '重新检查并恢复')!.click())
+    expect(refresh).toHaveBeenCalledOnce()
+  } finally { await act(async () => root.unmount()); container.remove() }
+})

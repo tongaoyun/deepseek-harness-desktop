@@ -18,6 +18,43 @@ describe('HostServer', () => {
     }])
   })
 
+  it('redacts credentials from errors at the JSON-RPC boundary', async () => {
+    const output: JsonRpcOutput[] = []
+    const runtime = fakeRuntime()
+    runtime.health = async () => { throw new Error('provider failed with sk-1234567890abcdef') }
+    const server = new HostServer(runtime, (value) => output.push(value))
+
+    await server.handle({ jsonrpc: '2.0', id: 2, method: 'host.health' })
+
+    expect(output).toEqual([{
+      jsonrpc: '2.0', id: 2,
+      error: { code: -32001, message: 'provider failed with [REDACTED]' },
+    }])
+  })
+
+  it('exposes a read-only Harness session inspection endpoint', async () => {
+    const output: JsonRpcOutput[] = []
+    const runtime = fakeRuntime()
+    runtime.inspectSession = async (sessionId) => ({ sessionId, status: 'completed', updatedAt: '2026-09-12T00:00:00.000Z', pendingTools: 0 })
+    const server = new HostServer(runtime, (value) => output.push(value))
+    await server.handle({ jsonrpc: '2.0', id: 3, method: 'session.inspect', params: { sessionId: 'session-1' } })
+    expect(output).toEqual([{ jsonrpc: '2.0', id: 3, result: { sessionId: 'session-1', status: 'completed', updatedAt: '2026-09-12T00:00:00.000Z', pendingTools: 0 } }])
+  })
+
+  it('exposes bounded read-only Harness session search', async () => {
+    const output: JsonRpcOutput[] = []
+    const runtime = fakeRuntime()
+    let receivedCursor: string | undefined
+    runtime.searchSessions = async (sessionIds, _query, _limit, cursor) => {
+      receivedCursor = cursor
+      return { items: [{ sessionId: sessionIds[0]!, excerpt: '命中', updatedAt: '2026-09-12T00:00:00.000Z' }], nextCursor: 'next-page' }
+    }
+    const server = new HostServer(runtime, (value) => output.push(value))
+    await server.handle({ jsonrpc: '2.0', id: 4, method: 'session.search', params: { sessionIds: ['session-1'], query: '库存', limit: 10, cursor: 'previous-page' } })
+    expect(receivedCursor).toBe('previous-page')
+    expect(output).toEqual([{ jsonrpc: '2.0', id: 4, result: { items: [{ sessionId: 'session-1', excerpt: '命中', updatedAt: '2026-09-12T00:00:00.000Z' }], nextCursor: 'next-page' } }])
+  })
+
   it('diagnoses configured connectors without starting the model runtime', async () => {
     const output: JsonRpcOutput[] = []
     const runtime = fakeRuntime()

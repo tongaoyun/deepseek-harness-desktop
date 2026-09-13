@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createTaskMonitor, type HarnessRunInput } from './harness'
+import { createXiaoyinTaskProjection, type HarnessRunInput } from './harness'
 import { runHarnessWithRecovery } from './taskRecovery'
 
 const request = { taskId: 'task', sessionId: 'old' } as HarnessRunInput
@@ -10,7 +10,7 @@ describe('runHarnessWithRecovery', () => {
     const execute = vi.fn().mockRejectedValue(new Error('模型本轮没有返回可显示文本'))
     const onRetry = vi.fn()
     await expect(runHarnessWithRecovery(request, {
-      getMonitor: createTaskMonitor, isCanceled: () => canceled, onRetry,
+      getProjection: createXiaoyinTaskProjection, isCanceled: () => canceled, onRetry,
     }, { execute, reset: async () => { canceled = true }, sessionId: () => 'fresh' })).rejects.toThrow('本轮已停止')
     expect(execute).toHaveBeenCalledOnce()
     expect(onRetry).not.toHaveBeenCalled()
@@ -22,7 +22,7 @@ describe('runHarnessWithRecovery', () => {
     const reset = vi.fn().mockResolvedValue(undefined)
     const onRetry = vi.fn()
     await expect(runHarnessWithRecovery(request, {
-      getMonitor: createTaskMonitor,
+      getProjection: createXiaoyinTaskProjection,
       isCanceled: () => false,
       onRetry,
     }, { execute, reset, sessionId: () => 'fresh' })).resolves.toMatchObject({ finalResponse: '完成' })
@@ -35,7 +35,7 @@ describe('runHarnessWithRecovery', () => {
     const execute = vi.fn().mockRejectedValue(new Error('模型本轮没有返回可显示文本'))
     const reset = vi.fn().mockResolvedValue(undefined)
     await expect(runHarnessWithRecovery(request, {
-      getMonitor: () => ({ ...createTaskMonitor(), steps: [{
+      getProjection: () => ({ ...createXiaoyinTaskProjection(), steps: [{
         id: 'tool', kind: 'tool', label: '运行命令', status: 'completed', startedAt: new Date().toISOString(),
       }] }),
       isCanceled: () => false,

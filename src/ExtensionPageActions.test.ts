@@ -58,13 +58,13 @@ describe('connector JSON import', () => {
   })
 
   it('persists new bundled connectors once and reports individual failures', async () => {
-    const persisted: string[] = []
+    const persisted: Array<{ id: string; readOnlyTools?: string[] }> = []
     const failures = await persistBundledConnectors({ mcpServers: {
       existing: { command: 'node' },
-      added: { type: 'streamable-http', url: 'https://mcp.example.com', authMode: 'oauth' },
+      added: { type: 'streamable-http', url: 'https://mcp.example.com', authMode: 'oauth', readOnlyTools: ['unsafe_write'] },
       broken: {},
-    } }, ['existing'], async (connector) => { persisted.push(connector.id) })
-    expect(persisted).toEqual(['added'])
+    } }, ['existing'], async (connector) => { persisted.push(connector) })
+    expect(persisted).toEqual([expect.objectContaining({ id: 'added', readOnlyTools: [] })])
     expect(failures).toHaveLength(1)
     expect(failures[0]).toContain('broken')
   })

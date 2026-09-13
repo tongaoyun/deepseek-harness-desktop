@@ -37,6 +37,7 @@ test('macOS release reuses main CI and packages both architectures concurrently'
   assert.match(build, /XIAOYIN_HARNESS_SMOKE_TIMEOUT_MS: "300000"/)
   assert.match(build, /CARGO_TARGET_DIR: \/tmp\/xiaoyin-desktop-builder\/target\/\$\{\{ matrix\.architecture \}\}/)
   assert.match(build, /pnpm verify:version/)
+  assert.match(build, /VITE_XIAOYIN_SERVER_URL: \$\{\{ vars\.XIAOYIN_HTTPS_SERVER_URL \}\}/)
   assert.doesNotMatch(build, /pnpm (lint|typecheck|test)|cargo (clippy|test)/)
   assert.match(build, /smoke-test-macos-bundle.sh/)
   assert.match(mac, /default: arm64/)
@@ -63,6 +64,7 @@ test('Windows quick mode is explicit and cannot weaken a tag release', () => {
   assert.equal(expression(win, 'XIAOYIN_BUILD_MODE', context('workflow_dispatch', { build_mode: 'quick' }, 'refs/tags/v1.0.0')), 'release')
   assert.equal(expression(win, 'XIAOYIN_BUILD_MODE', context('push', { build_mode: 'quick' })), 'release')
   assert.match(win, /--debug --features windows-no-console --bundles nsis/)
+  assert.match(win, /vars\.XIAOYIN_HTTPS_SERVER_URL/)
   assert.doesNotMatch(win, /pnpm (lint|typecheck|test)|cargo (fmt|clippy|test)/)
   assert.doesNotMatch(win, /run_install_smoke/)
   assert.match(win, /if: \$\{\{ env\.XIAOYIN_BUILD_MODE == 'release' \}\}/)
@@ -72,12 +74,16 @@ test('Windows quick mode is explicit and cannot weaken a tag release', () => {
 
 test('CI owns quality checks and validates every PowerShell script', () => {
   const ci = read('ci.yml')
-  assert.match(ci, /pnpm lint/)
-  assert.match(ci, /pnpm test/)
-  assert.match(ci, /pnpm build/)
-  assert.doesNotMatch(ci, /pnpm typecheck/)
+  const web = ci.split('  web-and-harness:')[1].split('  rust-windows:')[0]
+  assert.match(web, /pnpm check:web/)
+  const scripts = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).scripts
+  for (const command of ['verify:version', 'lint', 'typecheck', 'test', 'build', 'acceptance:harness-runtime', 'acceptance:harness-contracts', 'acceptance:tool-policy', 'acceptance:session-query']) {
+    assert.match(scripts['check:web'], new RegExp(`pnpm ${command}`))
+  }
+  assert.match(scripts.check, /pnpm check:web/)
+  assert.doesNotMatch(web, /node harness-host\/scripts\/acceptance-/)
+  assert.doesNotMatch(web, /node --test scripts\//)
   assert.match(ci, /Get-ChildItem scripts -File -Filter '\*\.ps1'/)
-  assert.match(ci, /scripts\/verify-release-ref\.test\.mjs/)
 })
 
 test('installer jobs use concise labels and bounded execution time', () => {

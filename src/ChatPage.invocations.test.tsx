@@ -25,7 +25,7 @@ it('resizes the composer, selects a command with the keyboard, and then submits 
       onAddKnowledge: noop, onAddLocalDirectory: noop, onAddLocalFiles: noop, onCancel: noop, onPrepareRetry: noop,
       onPrompt: setPrompt, onReconnect: noop, onRecoverHarness: noop, onRemoveAttachment: noop, onRemoveKnowledge: noop,
       onRemoveLocalDirectory: noop, onSelectModel: noop, onSubmit: submit, onToggleModelMenu: noop,
-      prompt, runtimeStatus: 'ready', selectedKnowledgeBaseRefs: [], taskMonitor: { status: 'idle', activity: '', updatedAt: '', steps: [], artifacts: [] },
+      prompt, runtimeStatus: 'ready', selectedKnowledgeBaseRefs: [], taskProjection: { status: 'idle', activity: '', updatedAt: '', steps: [], artifacts: [] },
       invocations: [kitInvocation('/kit:reports', '分析专家'), kitInvocation('/kit:reports:weekly', '周报', 'weekly')],
     }
     return <ChatPage {...props} />

@@ -2,15 +2,16 @@ import { capabilitySnapshotChanged } from './capabilitySnapshot'
 import { splitComposerPrompt } from './composerInput'
 import { harnessPromptWithConversationReplay } from './conversationReplay'
 import type { ExtensionInvocation } from './extensionInvocations'
-import { beginExecutionTurn } from './executionRuntime'
 import { resolveHarnessSessionId } from './harnessSession'
-import type { CapabilitySnapshot, LocalTaskAttachment, LocalTaskRun, TaskMessage, TaskMonitorState } from './types'
+import type { CapabilitySnapshot, LocalTaskAttachment, LocalTaskRun, TaskMessage, XiaoyinTaskProjection } from './types'
 
 type TurnContext = {
   taskId: string
   input: string
   now: string
   existingTask?: LocalTaskRun
+  scheduleId?: string
+  scheduleRunId?: string
   sessionId: string
   model: string
   executionMode?: 'agent' | 'plan'
@@ -20,8 +21,9 @@ type TurnContext = {
   invocations: ExtensionInvocation[]
   invocationTokens?: string[]
   messages: TaskMessage[]
-  monitor: TaskMonitorState
+  projection: XiaoyinTaskProjection
   attachments: LocalTaskAttachment[]
+  queuedItemId?: string
 }
 
 /** Session selection and persisted turn state must use the same immutable context. */
@@ -34,28 +36,35 @@ export function prepareTaskTurn(context: TurnContext) {
       || capabilitySnapshotChanged(existingTask.capabilitySnapshot, capabilities)))
     || (!sessionId && !existingTask?.sessionId && messages.length > 0)
     || (!sessionId && Boolean(existingTask?.sessionId))
-    || context.monitor.status === 'failed' || context.monitor.status === 'canceled'
+    || context.projection.status === 'failed' || context.projection.status === 'canceled'
   const rootSessionId = resolveHarnessSessionId(sessionId, existingTask?.sessionId, fresh,
     () => `session-${crypto.randomUUID().replaceAll('-', '')}`)
   const replay = harnessPromptWithConversationReplay(splitComposerPrompt(input).text, messages, fresh)
   const harnessPrompt = replay
-  const operationScope = context.monitor.interruption && context.monitor.operationScope
-    ? context.monitor.operationScope : crypto.randomUUID()
-  const runtime = beginExecutionTurn({
-    taskId: context.taskId, sessionId: rootSessionId, operationScope, previous: existingTask?.execution, now,
-  })
-  const { thread: execution, monitor: runningMonitor } = runtime
+  const operationScope = context.projection.interruption && context.projection.operationScope
+    ? context.projection.operationScope : crypto.randomUUID()
+  const runningProjection: XiaoyinTaskProjection = {
+    ...context.projection,
+    operationScope,
+    status: 'running',
+    activity: '正在处理',
+    executionStarted: false,
+    updatedAt: now,
+    startedAt: context.projection.startedAt ?? now,
+  }
   const pendingMessages: TaskMessage[] = [...messages,
-    { role: 'user', text: input, ...(context.attachments.length ? { attachments: context.attachments } : {}) },
-    { role: 'assistant', text: '', pending: true, executionTurnId: execution.activeTurnId },
+    { role: 'user', text: input, ...(context.queuedItemId ? { id: context.queuedItemId } : {}), ...(context.attachments.length ? { attachments: context.attachments } : {}) },
+    { role: 'assistant', text: '', pending: true },
   ]
   const runningTask: LocalTaskRun = {
     id: context.taskId, source: 'DESKTOP',
     name: existingTask?.name ?? (splitComposerPrompt(input).text || invocations.map((item) => item.name).join('、') || input).slice(0, 60),
     status: 'RUNNING', createdAt: existingTask?.createdAt ?? now, updatedAt: now,
     sessionId: rootSessionId, model: context.model, executionMode, invocationTokens,
+    ...(context.scheduleId ? { scheduleId: context.scheduleId } : existingTask?.scheduleId ? { scheduleId: existingTask.scheduleId } : {}),
+    ...(context.scheduleRunId ? { scheduleRunId: context.scheduleRunId } : existingTask?.scheduleRunId ? { scheduleRunId: existingTask.scheduleRunId } : {}),
     localDirectories: context.directories,
-    capabilitySnapshot: capabilities, execution, monitor: runningMonitor, messages: pendingMessages,
+    capabilitySnapshot: capabilities, projection: runningProjection, messages: pendingMessages,
   }
-  return { rootSessionId, harnessPrompt, pendingMessages, runningMonitor, execution, runningTask }
+  return { rootSessionId, harnessPrompt, pendingMessages, runningProjection, runningTask }
 }

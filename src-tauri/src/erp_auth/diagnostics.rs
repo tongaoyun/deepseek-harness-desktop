@@ -20,6 +20,7 @@ pub(crate) enum Code {
     RequestTimeout,
     IdentityUnavailable,
     IdentityInvalid,
+    ControlPlaneAuthFailed,
     CookieReadFailed,
     CookieStoreFailed,
     ConfigurationInvalid,

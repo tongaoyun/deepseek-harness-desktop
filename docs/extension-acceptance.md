@@ -10,13 +10,13 @@ node harness-host/scripts/acceptance-session-recovery.mjs
 cargo test --manifest-path src-tauri/Cargo.toml expert_kits:: --lib
 ```
 
-模型桩驱动实际运行时，覆盖技能优先级、停用、卸载、会话重启、失败重试和中断恢复。CI 自动执行。
+模型桩驱动实际运行时，覆盖技能优先级、停用、卸载、会话重启、失败重试和中断恢复。`pnpm check:web` 自动执行 Host 契约验收；Rust 用例由 CI Windows Job 执行。
 
 同名技能优先使用显式选择的扩展，其次为独立技能，再次为其他套件。仅将最终选中的技能目录交给运行时。JSON-RPC 通过 SDK 的 `agents.resume` 恢复持久化会话，补丁由 pnpm 锁定并随桌面运行时打包。
 
 ## 发布包验收
 
-准备 JSON 数组，每项包含 `kind`、`id`、`version`、`sha256`、`path`。使用已核对摘要的安装包，包含升级前版本和目标 `1.0.1`；无效包通过可选 `expected_error` 声明预期错误。验收覆盖全部官方 Skills 和全栈开发专家。
+准备 JSON 数组，每项包含 `kind`、`id`、`version`、`sha256`、`path`。使用已核对摘要的安装包，包含两个不同版本；无效包通过可选 `expected_error` 声明预期错误。
 
 ```bash
 XIAOYIN_EXTENSION_FIXTURES=/path/to/fixtures.json \

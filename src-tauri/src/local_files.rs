@@ -4,7 +4,10 @@ use sha2::{Digest, Sha256};
 use std::{
     collections::HashSet,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicU64, Ordering},
+    },
 };
 use tauri::Manager;
 use tauri_plugin_dialog::DialogExt;
@@ -15,6 +18,10 @@ const MAX_AUTHORIZED_DIRECTORIES: usize = 8;
 pub struct LocalFileAuthorizations {
     directories: Arc<Mutex<Vec<AuthorizedDirectory>>>,
     workspace: Arc<Mutex<Option<AuthorizedDirectory>>>,
+    workspace_base: Arc<Mutex<Option<PathBuf>>>,
+    employee_id: Arc<Mutex<Option<String>>>,
+    generation: Arc<AtomicU64>,
+    harness_workspaces_root: Arc<Mutex<Option<PathBuf>>>,
 }
 
 #[derive(Clone)]
@@ -71,8 +78,12 @@ pub async fn authorize_local_directory(
     app: tauri::AppHandle,
     authorizations: tauri::State<'_, LocalFileAuthorizations>,
 ) -> Result<Option<AuthorizedDirectoryView>, String> {
+    let employee_id = crate::erp_auth::current_employee(&app).await?;
+    authorizations.ensure_employee(&employee_id)?;
+    let picker_app = app.clone();
     let selected = tauri::async_runtime::spawn_blocking(move || {
-        app.dialog()
+        picker_app
+            .dialog()
             .file()
             .set_title("选择允许小胤读取的文件夹")
             .blocking_pick_folder()
@@ -85,6 +96,8 @@ pub async fn authorize_local_directory(
     let path = selected
         .into_path()
         .map_err(|error| format!("选择的文件夹路径无效：{error}"))?;
+    crate::erp_auth::require_employee(&app, &employee_id).await?;
+    authorizations.ensure_employee(&employee_id)?;
     authorizations.authorize(path).map(Some)
 }
 
@@ -93,8 +106,12 @@ pub async fn authorize_local_files(
     app: tauri::AppHandle,
     authorizations: tauri::State<'_, LocalFileAuthorizations>,
 ) -> Result<DroppedPathAuthorization, String> {
+    let employee_id = crate::erp_auth::current_employee(&app).await?;
+    authorizations.ensure_employee(&employee_id)?;
+    let picker_app = app.clone();
     let selected = tauri::async_runtime::spawn_blocking(move || {
-        app.dialog()
+        picker_app
+            .dialog()
             .file()
             .set_title("选择本地文件")
             .blocking_pick_files()
@@ -115,15 +132,19 @@ pub async fn authorize_local_files(
                 .map_err(|error| format!("选择的文件路径无效：{error}"))
         })
         .collect::<Result<Vec<_>, _>>()?;
+    crate::erp_auth::require_employee(&app, &employee_id).await?;
+    authorizations.ensure_employee(&employee_id)?;
     authorize_paths(&authorizations, paths)
 }
 
 #[tauri::command]
-pub fn authorize_standard_local_directories(
+pub async fn authorize_standard_local_directories(
     app: tauri::AppHandle,
     authorizations: tauri::State<'_, LocalFileAuthorizations>,
     request: StandardDirectoryRequest,
 ) -> Result<Vec<AuthorizedDirectoryView>, String> {
+    let employee_id = crate::erp_auth::current_employee(&app).await?;
+    authorizations.ensure_employee(&employee_id)?;
     if request.directories.len() > 3 {
         return Err("系统目录请求数量无效".to_string());
     }
@@ -148,10 +169,13 @@ pub fn authorize_standard_local_directories(
 }
 
 #[tauri::command]
-pub fn authorize_dropped_paths(
+pub async fn authorize_dropped_paths(
+    app: tauri::AppHandle,
     authorizations: tauri::State<'_, LocalFileAuthorizations>,
     paths: Vec<String>,
 ) -> Result<DroppedPathAuthorization, String> {
+    let employee_id = crate::erp_auth::current_employee(&app).await?;
+    authorizations.ensure_employee(&employee_id)?;
     if paths.is_empty() {
         return Ok(DroppedPathAuthorization {
             directories: Vec::new(),
@@ -233,12 +257,14 @@ fn authorize_paths(
 }
 
 #[tauri::command]
-pub fn import_pasted_image(
+pub async fn import_pasted_image(
     app: tauri::AppHandle,
     authorizations: tauri::State<'_, LocalFileAuthorizations>,
     data: String,
     media_type: String,
 ) -> Result<DroppedPathAuthorization, String> {
+    let employee_id = crate::erp_auth::current_employee(&app).await?;
+    authorizations.ensure_employee(&employee_id)?;
     let bytes = decode_pasted_image(&data, &media_type)?;
     let directory = app
         .path()
@@ -303,12 +329,14 @@ fn decode_pasted_file(name: &str, data: &str) -> Result<(String, Vec<u8>), Strin
 }
 
 #[tauri::command]
-pub fn import_pasted_file(
+pub async fn import_pasted_file(
     app: tauri::AppHandle,
     authorizations: tauri::State<'_, LocalFileAuthorizations>,
     name: String,
     data: String,
 ) -> Result<DroppedPathAuthorization, String> {
+    let employee_id = crate::erp_auth::current_employee(&app).await?;
+    authorizations.ensure_employee(&employee_id)?;
     let (filename, bytes) = decode_pasted_file(&name, &data)?;
     let directory = app
         .path()
@@ -328,10 +356,13 @@ pub fn import_pasted_file(
 }
 
 #[tauri::command]
-pub fn restore_local_directories(
+pub async fn restore_local_directories(
+    app: tauri::AppHandle,
     authorizations: tauri::State<'_, LocalFileAuthorizations>,
     paths: Vec<String>,
 ) -> Result<Vec<AuthorizedDirectoryView>, String> {
+    let employee_id = crate::erp_auth::current_employee(&app).await?;
+    authorizations.ensure_employee(&employee_id)?;
     if paths.len() > MAX_AUTHORIZED_DIRECTORIES {
         return Err(format!(
             "单次任务最多恢复 {MAX_AUTHORIZED_DIRECTORIES} 个本地文件夹"
@@ -351,10 +382,13 @@ pub fn restore_local_directories(
 }
 
 #[tauri::command]
-pub fn revoke_local_directory(
+pub async fn revoke_local_directory(
+    app: tauri::AppHandle,
     authorizations: tauri::State<'_, LocalFileAuthorizations>,
     id: String,
 ) -> Result<(), String> {
+    let employee_id = crate::erp_auth::current_employee(&app).await?;
+    authorizations.ensure_employee(&employee_id)?;
     authorizations.revoke(&id)
 }
 
@@ -368,10 +402,15 @@ pub fn clear_local_directories(
 impl LocalFileAuthorizations {
     pub(crate) fn initialize_workspace(&self, path: PathBuf) -> Result<(), String> {
         std::fs::create_dir_all(&path).map_err(|error| format!("无法创建默认工作目录：{error}"))?;
+        let path = canonical_directory(&path)?;
+        *self
+            .workspace_base
+            .lock()
+            .map_err(|_| "默认工作目录状态不可用")? = Some(path.clone());
         let directory = AuthorizedDirectory {
             id: "workspace".to_string(),
             name: "默认工作目录".to_string(),
-            path: canonical_directory(&path)?,
+            path,
         };
         *self
             .workspace
@@ -380,7 +419,60 @@ impl LocalFileAuthorizations {
         Ok(())
     }
 
+    pub(crate) fn ensure_employee(&self, employee_id: &str) -> Result<(), String> {
+        let mut owner = self
+            .employee_id
+            .lock()
+            .map_err(|_| "本地文件夹授权状态不可用")?;
+        if owner.as_deref() == Some(employee_id) {
+            return Ok(());
+        }
+        let base = self
+            .workspace_base
+            .lock()
+            .map_err(|_| "默认工作目录状态不可用")?
+            .clone()
+            .ok_or("默认工作目录不可用")?;
+        let path = base.join(crate::harness::employee_namespace(employee_id));
+        std::fs::create_dir_all(&path).map_err(|error| format!("无法创建员工工作目录：{error}"))?;
+        let path = canonical_directory(&path)?;
+        self.directories
+            .lock()
+            .map_err(|_| "本地文件夹授权状态不可用")?
+            .clear();
+        *self
+            .workspace
+            .lock()
+            .map_err(|_| "默认工作目录状态不可用")? = Some(AuthorizedDirectory {
+            id: "workspace".to_string(),
+            name: "默认工作目录".to_string(),
+            path,
+        });
+        *owner = Some(employee_id.to_string());
+        self.generation.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+
+    pub(crate) fn generation(&self) -> u64 {
+        self.generation.load(Ordering::SeqCst)
+    }
+
+    pub(crate) fn initialize_harness_workspaces_root(&self, path: PathBuf) -> Result<(), String> {
+        std::fs::create_dir_all(&path)
+            .map_err(|error| format!("无法创建 Harness 工作区目录：{error}"))?;
+        *self
+            .harness_workspaces_root
+            .lock()
+            .map_err(|_| "Harness 工作区状态不可用".to_string())? =
+            Some(canonical_directory(&path)?);
+        Ok(())
+    }
+
     pub(crate) fn resolve(&self, ids: &[String]) -> Result<Vec<RuntimeLocalFileRoot>, String> {
+        let _owner = self
+            .employee_id
+            .lock()
+            .map_err(|_| "本地文件夹授权状态不可用")?;
         if ids.len() > MAX_AUTHORIZED_DIRECTORIES {
             return Err(format!(
                 "单次任务最多使用 {MAX_AUTHORIZED_DIRECTORIES} 个本地文件夹"
@@ -420,6 +512,10 @@ impl LocalFileAuthorizations {
     }
 
     pub fn resolve_artifact(&self, id: &str, value: &str) -> Result<PathBuf, String> {
+        let owner = self
+            .employee_id
+            .lock()
+            .map_err(|_| "本地文件夹授权状态不可用")?;
         if value.trim().is_empty()
             || value.len() > 4_096
             || value.chars().any(|character| character == '\0')
@@ -429,6 +525,23 @@ impl LocalFileAuthorizations {
         let relative = Path::new(value);
         if relative.is_absolute() {
             return Err("产物路径必须位于已授权目录内".to_string());
+        }
+        if let Some(namespace) = id.strip_prefix("harness-workspace-")
+            && valid_harness_workspace_namespace(namespace)
+        {
+            if let Some(employee_id) = owner.as_deref()
+                && namespace != crate::harness::employee_namespace(employee_id)
+            {
+                return Err("当前登录账号与产物归属不一致".to_string());
+            }
+            let root = self
+                .harness_workspaces_root
+                .lock()
+                .map_err(|_| "Harness 工作区状态不可用".to_string())?
+                .clone()
+                .ok_or_else(|| "Harness 工作区不可用".to_string())?
+                .join(namespace);
+            return resolve_artifact_in_root(&root, relative);
         }
         let guard = self
             .directories
@@ -455,6 +568,10 @@ impl LocalFileAuthorizations {
     }
 
     fn authorize(&self, selected: PathBuf) -> Result<AuthorizedDirectoryView, String> {
+        let owner = self
+            .employee_id
+            .lock()
+            .map_err(|_| "本地文件夹授权状态不可用")?;
         let path = canonical_directory(&selected)?;
         if let Some(workspace) = self
             .workspace
@@ -464,6 +581,23 @@ impl LocalFileAuthorizations {
             && workspace.path == path
         {
             return Ok(workspace.view());
+        }
+        if owner.is_some() {
+            let workspace_base = self
+                .workspace_base
+                .lock()
+                .map_err(|_| "默认工作目录状态不可用")?;
+            let harness_root = self
+                .harness_workspaces_root
+                .lock()
+                .map_err(|_| "Harness 工作区状态不可用")?;
+            if [workspace_base.as_ref(), harness_root.as_ref()]
+                .into_iter()
+                .flatten()
+                .any(|protected| path.starts_with(protected) || protected.starts_with(&path))
+            {
+                return Err("不能授权应用工作区或其上级目录".to_string());
+            }
         }
         let name = path
             .file_name()
@@ -494,6 +628,10 @@ impl LocalFileAuthorizations {
     }
 
     fn revoke(&self, id: &str) -> Result<(), String> {
+        let _owner = self
+            .employee_id
+            .lock()
+            .map_err(|_| "本地文件夹授权状态不可用")?;
         let mut guard = self
             .directories
             .lock()
@@ -502,13 +640,35 @@ impl LocalFileAuthorizations {
         Ok(())
     }
 
-    fn clear(&self) -> Result<(), String> {
+    pub(crate) fn clear(&self) -> Result<(), String> {
+        let _owner = self
+            .employee_id
+            .lock()
+            .map_err(|_| "本地文件夹授权状态不可用")?;
         self.directories
             .lock()
             .map_err(|_| "本地文件夹授权状态不可用".to_string())?
             .clear();
+        self.generation.fetch_add(1, Ordering::SeqCst);
         Ok(())
     }
+}
+
+fn valid_harness_workspace_namespace(value: &str) -> bool {
+    value.len() == 73
+        && value.starts_with("employee-")
+        && value[9..].bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
+fn resolve_artifact_in_root(root: &Path, relative: &Path) -> Result<PathBuf, String> {
+    let target = root
+        .join(relative)
+        .canonicalize()
+        .map_err(artifact_io_error)?;
+    if !target.starts_with(root) {
+        return Err("产物路径超出已授权目录".to_string());
+    }
+    Ok(target)
 }
 
 impl AuthorizedDirectory {
@@ -555,7 +715,36 @@ fn canonical_directory(selected: &Path) -> Result<PathBuf, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn employee_switch_replaces_default_workspace_and_revokes_selected_roots() {
+        let directory = temporary_directory();
+        let base = directory.join("workspace");
+        let authorizations = LocalFileAuthorizations::default();
+        authorizations.initialize_workspace(base.clone()).unwrap();
+        authorizations.ensure_employee("employee-1").unwrap();
+        let first = authorizations.resolve(&[]).unwrap()[0].path.clone();
+        std::fs::write(Path::new(&first).join("private.txt"), "first").unwrap();
+        let selected_path = directory.join("selected");
+        std::fs::create_dir_all(&selected_path).unwrap();
+        let selected = authorizations.authorize(selected_path).unwrap();
+        assert!(authorizations.authorize(base).is_err());
+        assert!(authorizations.authorize(directory.clone()).is_err());
+        let generation = authorizations.generation();
+
+        authorizations.ensure_employee("employee-2").unwrap();
+        let second = authorizations.resolve(&[]).unwrap()[0].path.clone();
+        assert_ne!(first, second);
+        assert!(authorizations.generation() > generation);
+        assert!(authorizations.resolve(&[selected.id]).is_err());
+        assert!(
+            authorizations
+                .resolve_artifact("workspace", "private.txt")
+                .is_err()
+        );
+        assert!(!Path::new(&second).join("private.txt").exists());
+        std::fs::remove_dir_all(directory).unwrap();
+    }
 
     #[test]
     fn default_workspace_is_available_without_selection_and_survives_user_root_cleanup() {
@@ -615,6 +804,53 @@ mod tests {
         let other = artifact_io_error(Error::other("disk unavailable"));
         assert!(!other.contains("MISSING"));
         assert!(other.contains("disk unavailable"));
+    }
+
+    #[test]
+    fn harness_workspace_artifacts_resolve_by_employee_namespace() {
+        let directory = temporary_directory();
+        let namespace = crate::harness::employee_namespace("employee-1");
+        let workspace = directory.join(&namespace);
+        std::fs::create_dir_all(workspace.join("reports")).unwrap();
+        std::fs::write(workspace.join("reports/final.xlsx"), b"xlsx").unwrap();
+        let authorizations = LocalFileAuthorizations::default();
+        authorizations
+            .initialize_harness_workspaces_root(directory.clone())
+            .unwrap();
+        authorizations
+            .initialize_workspace(directory.join("default"))
+            .unwrap();
+        authorizations.ensure_employee("employee-1").unwrap();
+
+        let root_id = format!("harness-workspace-{namespace}");
+        assert!(
+            authorizations
+                .resolve_artifact(&root_id, "reports/final.xlsx")
+                .is_ok()
+        );
+        assert!(
+            authorizations
+                .resolve_artifact(&root_id, "../outside.xlsx")
+                .is_err()
+        );
+        assert!(
+            authorizations
+                .resolve_artifact("harness-workspace-employee-invalid", "reports/final.xlsx")
+                .is_err()
+        );
+        assert!(
+            authorizations
+                .resolve_artifact(
+                    &format!(
+                        "harness-workspace-{}",
+                        crate::harness::employee_namespace("employee-2")
+                    ),
+                    "reports/final.xlsx"
+                )
+                .is_err()
+        );
+
+        std::fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]
@@ -726,11 +962,8 @@ mod tests {
     }
 
     fn temporary_directory() -> PathBuf {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!("xiaoyin-local-files-{unique}"));
+        let path =
+            std::env::temp_dir().join(format!("xiaoyin-local-files-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir(&path).unwrap();
         path
     }

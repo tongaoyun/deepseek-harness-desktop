@@ -6,6 +6,7 @@ const args = process.argv.slice(2)
 const command = args[0]
 if (command === 'dev' || command === 'build') {
   const serverUrl = resolveTauriServerUrl(command)
+  process.env.VITE_XIAOYIN_SERVER_URL = serverUrl
   args.push('--config', JSON.stringify(tauriSecurityConfig(serverUrl)))
 }
 

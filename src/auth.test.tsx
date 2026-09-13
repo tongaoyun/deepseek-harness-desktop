@@ -44,6 +44,7 @@ it.each([false, true])('preserves real native login when DEV=%s and bypass is un
   await openErpLogin()
   await clearErpSession()
   expect(invoke.mock.calls.map(([command]) => command)).toEqual(['erp_session', 'open_erp_login', 'clear_erp_session'])
+  expect(invoke).toHaveBeenNthCalledWith(1, 'erp_session')
 })
 
 it.each([false, true])('returns to the local session after logout, native=%s', async (isNative) => {

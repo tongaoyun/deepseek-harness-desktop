@@ -44,7 +44,11 @@ try {
     const timer = setTimeout(() => { child.kill('SIGKILL'); fail(new Error('Skill tool transport timed out')) }, 60000)
     child.stderr.resume()
     child.once('error', (error) => { clearTimeout(timer); fail(error) })
-    child.once('close', (code) => { clearTimeout(timer); code === 0 && completed ? done() : fail(new Error(`Host exited ${code}`)) })
+    child.once('close', (code) => {
+      clearTimeout(timer)
+      if (code === 0 && completed) done()
+      else fail(new Error(`Host exited ${code}`))
+    })
     createInterface({ input: child.stdout }).on('line', (line) => {
       try {
         const value = JSON.parse(line)

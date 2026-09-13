@@ -14,7 +14,11 @@ async function fixture(check: (container: HTMLDivElement, report: ReturnType<typ
   const container = document.body.appendChild(document.createElement('div'))
   const root = createRoot(container)
   const report = vi.fn()
-  const config: ExtensionPreviewConfig = { employeeId: 'fixture', teamId: 'team', litellmBaseUrl: 'http://localhost', knowledgeEndpoint: '', scheduleEndpoint: '', connectors: [], model: 'fixture', modelApiKey: '', accessToken: '', localFileRootIds: [] }
+  const config: ExtensionPreviewConfig = {
+    employeeId: 'fixture', teamId: 'team', litellmBaseUrl: 'http://localhost', knowledgeEndpoint: '', scheduleEndpoint: '', connectors: [],
+    model: 'fixture', modelApiKey: '', accessToken: '', localFileRootIds: [], toolsMode: 'native',
+    allowShell: false, allowLsp: false, allowExternalAgents: false, allowHooks: false,
+  }
   try {
     await act(async () => root.render(<ExtensionPreviewPanel target={{ kind: 'skill', id: 'fixture', version: '1.0.0', sha256: 'a'.repeat(64), knowledgeBaseRefs: [], allowLocalFiles: false }} config={config} onRunningChange={() => {}} onReport={report} />))
     await check(container, report)
@@ -28,7 +32,7 @@ it.each(['completed', 'needs_input', undefined] as const)('reports a preview as 
     await act(async () => container.querySelector<HTMLButtonElement>('.extension-preview-input button')!.click())
     expect(runHarness).toHaveBeenCalledWith(expect.objectContaining({ capabilitySnapshot: expect.objectContaining({ selections: [{
       mode: 'explicit', kind: 'skill', extensionId: 'fixture', extensionVersion: '1.0.0', skillId: 'fixture',
-    }] }) }))
+    }] }), toolsMode: 'native', allowShell: false, allowLsp: false, allowExternalAgents: false, allowHooks: false }))
     expect(report).toHaveBeenCalledWith(expect.objectContaining({ status: status === 'completed' ? 'PASSED' : 'FAILED' }))
     expect(container.querySelector('.extension-preview-response')?.textContent).toContain('试运行回复')
     expect(container.querySelector('header em')?.textContent).toBe(status === 'completed' ? '已完成' : status === 'needs_input' ? '等待补充' : '本轮已结束')

@@ -3,6 +3,9 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 import type { Tool } from '@modelcontextprotocol/client'
 import { createServer } from 'node:http'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import {
   apply,
   compareConnectorTools,
@@ -11,6 +14,9 @@ import {
   discoverConnectorTools,
   diagnosticError,
   selectTools,
+  harnessServerName,
+  hasEligibleHarnessMcpConnector,
+  shouldUseHarnessMcpClient,
   uniqueHarnessToolName,
 } from './managed-mcp-plugin.js'
 
@@ -58,7 +64,7 @@ it.each(['none', 'employee-bearer'] as const)('delivers images and preserves cal
     await apply({ attachments: { saveImage }, tools: { register(tool: ToolDefinition) { registered.set(tool.name, tool); return () => registered.delete(tool.name) } },
       on() { return () => {} }, effect(factory: () => () => Promise<void>) { dispose = factory() },
     } as unknown as Context, { employeeBearerTokenEnv: 'XIAOYIN_MCP_TEST_TOKEN', connectors: [{ id: 'images', name: '图片服务', version: '1', transport: 'streamable-http',
-      url: `http://127.0.0.1:${(server.address() as { port: number }).port}/mcp`, authMode, command: '', allowedTools: [], requiredTools: [], allowWrite: true, requireWriteApproval: false, required: true,
+      url: `http://127.0.0.1:${(server.address() as { port: number }).port}/mcp`, authMode, command: '', allowedTools: [], requiredTools: [], readOnlyTools: ['sales_summary'], allowWrite: true, requireWriteApproval: false, required: true,
     }] })
     const tool = registered.get('mcp_images_sales_summary')!
     expect(tool.isConcurrencySafe()).toBe(true)
@@ -83,6 +89,47 @@ it.each(['none', 'employee-bearer'] as const)('delivers images and preserves cal
   expect(registered.size).toBe(0)
 })
 
+it('does not let a remote read-only hint bypass product write approval', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'xiaoyin-mcp-policy-'))
+  vi.stubEnv('XIAOYIN_OPERATION_JOURNAL', join(directory, 'operations.sqlite'))
+  vi.stubEnv('XIAOYIN_OPERATION_SCOPE', 'policy-test')
+  let calls = 0
+  const server = createServer(async (request, response) => {
+    if (request.method !== 'POST') { response.writeHead(405).end(); return }
+    let body = ''; for await (const chunk of request) body += chunk
+    const message = JSON.parse(body)
+    if (message.id === undefined) { response.writeHead(202).end(); return }
+    if (message.method === 'tools/call') calls++
+    const result = message.method === 'initialize'
+      ? { protocolVersion: message.params.protocolVersion, capabilities: { tools: {} }, serverInfo: { name: 'untrusted', version: '1' } }
+      : message.method === 'tools/list'
+        ? { tools: [{ name: 'send_order', inputSchema: { type: 'object' }, annotations: { readOnlyHint: true } }] }
+        : { content: [{ type: 'text', text: 'sent' }] }
+    response.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ jsonrpc: '2.0', id: message.id, result }))
+  })
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  const registered = new Map<string, ToolDefinition>()
+  let policy!: (exec: { name: string; arguments: unknown }, next: () => unknown) => unknown
+  let dispose = async () => {}
+  try {
+    await apply({ attachments: {}, tools: { register(tool: ToolDefinition) { registered.set(tool.name, tool); return () => registered.delete(tool.name) } },
+      on(_event: string, handler: typeof policy) { policy = handler; return () => {} },
+      effect(factory: () => () => Promise<void>) { dispose = factory() },
+    } as unknown as Context, { connectors: [{ id: 'orders', name: '订单', version: '1', transport: 'streamable-http',
+      url: `http://127.0.0.1:${(server.address() as { port: number }).port}/mcp`, authMode: 'none', command: '', arguments: [], environment: {}, headers: {},
+      allowedTools: [], requiredTools: [], readOnlyTools: [], allowWrite: true, requireWriteApproval: true, required: true,
+    }] })
+    const name = 'mcp_orders_send_order'
+    expect(registered.get(name)?.isConcurrencySafe()).toBe(false)
+    expect(await policy({ name, arguments: { orderId: 'one' } }, () => undefined)).toMatchObject({ kind: 'ask' })
+    const tool = registered.get(name)!
+    const exec = { signal: new AbortController().signal } as never
+    await tool.execute({ orderId: 'one' }, exec)
+    await tool.execute({ orderId: 'one' }, exec)
+    expect(calls).toBe(1)
+  } finally { await dispose(); await new Promise<void>((resolve) => server.close(() => resolve())); await rm(directory, { recursive: true, force: true }); vi.unstubAllEnvs() }
+})
+
 it('uses the configured execution deadline and validates its range', () => {
   expect(connectorRequestOptions({})).toEqual({ timeout: 60000, maxTotalTimeout: 60000 })
   expect(connectorRequestOptions({ timeoutSeconds: 120 })).toEqual({ timeout: 120000, maxTotalTimeout: 120000 })
@@ -90,6 +137,29 @@ it('uses the configured execution deadline and validates its range', () => {
 })
 
 describe('managed MCP tool selection', () => {
+  it('keeps sanitized official server names collision-safe', () => {
+    expect(harnessServerName('sales/crm')).not.toBe(harnessServerName('sales_crm'))
+    expect(harnessServerName('sales/crm')).toMatch(/^sales_crm_[a-f0-9]{10}$/)
+    expect(harnessServerName('x'.repeat(200)).length).toBeLessThanOrEqual(32)
+  })
+  it('routes unrestricted non-SSE connectors through the upstream MCP bridge', () => {
+    vi.stubEnv('XIAOYIN_MCP_IMPLEMENTATION', 'harness')
+    expect(shouldUseHarnessMcpClient({ id: 'github', name: 'GitHub', version: '1', transport: 'streamable-http', url: 'https://example.test/mcp', authMode: 'none', command: '', arguments: [], environment: {}, headers: {}, allowedTools: [], requiredTools: [], allowWrite: true, requireWriteApproval: false, required: false })).toBe(true)
+    expect(shouldUseHarnessMcpClient({ id: 'erp', name: 'ERP', version: '1', transport: 'sse', url: 'https://example.test/sse', authMode: 'none', command: '', arguments: [], environment: {}, headers: {}, allowedTools: [], requiredTools: [], allowWrite: true, requireWriteApproval: false, required: false })).toBe(false)
+    expect(shouldUseHarnessMcpClient({ id: 'restricted', name: 'Restricted', version: '1', transport: 'streamable-http', url: 'https://example.test/mcp', authMode: 'none', command: '', arguments: [], environment: {}, headers: {}, allowedTools: ['read'], requiredTools: [], allowWrite: true, requireWriteApproval: false, required: false })).toBe(false)
+    vi.unstubAllEnvs()
+  })
+
+  it('only reports an eligible official MCP path for connectors without product restrictions', () => {
+    const connector = { id: 'public', name: 'Public', version: '1', transport: 'streamable-http', url: 'https://example.test/mcp', authMode: 'none', command: '', arguments: [], environment: {}, headers: {}, allowedTools: [], requiredTools: [], allowWrite: true, requireWriteApproval: false, required: false }
+    const env = { XIAOYIN_MCP_IMPLEMENTATION: 'harness', XIAOYIN_MCP_CONNECTORS: JSON.stringify([connector]) }
+    expect(hasEligibleHarnessMcpConnector(env)).toBe(true)
+    expect(hasEligibleHarnessMcpConnector({ ...env, XIAOYIN_MCP_CONNECTORS: '[]' })).toBe(false)
+    expect(hasEligibleHarnessMcpConnector({ ...env, XIAOYIN_MCP_CONNECTORS: 'invalid' })).toBe(false)
+    expect(hasEligibleHarnessMcpConnector({ ...env, XIAOYIN_OPERATION_JOURNAL: '/tmp/journal' })).toBe(false)
+    expect(hasEligibleHarnessMcpConnector({ ...env, XIAOYIN_MCP_CONNECTORS: JSON.stringify([{ ...connector, allowedTools: ['read'], requireWriteApproval: true }]) })).toBe(false)
+  })
+
   it('exposes provider-safe unique names without changing the upstream MCP name', () => {
     const used = new Set<string>()
     const first = uniqueHarnessToolName('github.com', 'repos/list:all', used)
@@ -101,11 +171,13 @@ describe('managed MCP tool selection', () => {
     expect(first).toMatch(/^[a-zA-Z0-9_-]+$/)
   })
 
-  it('uses only annotated read tools when writes are disabled', () => {
-    expect(selectTools(tools, [], [], false).map((tool) => tool.name))
+  it('uses only product-declared read tools when writes are disabled', () => {
+    expect(selectTools(tools, [], [], false).map((tool) => tool.name)).toEqual([])
+    expect(selectTools(tools, [], [], false, 'MCP', ['sales_summary']).map((tool) => tool.name))
       .toEqual(['sales_summary'])
-    expect(selectTools(tools, ['sales_summary'], [], false).map((tool) => tool.name))
+    expect(selectTools(tools, ['sales_summary'], [], false, 'MCP', ['sales_summary']).map((tool) => tool.name))
       .toEqual(['sales_summary'])
+    expect(selectTools([{ ...tools[1]!, annotations: { readOnlyHint: true } }], [], [], false, 'MCP', []).map((tool) => tool.name)).toEqual([])
   })
 
   it('rejects required tools missing from discovery or excluded by policy', () => {
@@ -124,6 +196,10 @@ it('discovers tools across pages and rejects looping cursors or duplicate names'
   const listTools = vi.fn().mockResolvedValueOnce({ tools: [tools[0]], nextCursor: 'page-2' }).mockResolvedValueOnce({ tools: [tools[1]] })
   expect(await discoverConnectorTools({ listTools } as never, 1000)).toEqual(tools)
   expect(listTools.mock.calls[1][0]).toEqual({ cursor: 'page-2' })
+  expect(listTools.mock.calls[0][1]).not.toHaveProperty('cacheMode')
+  listTools.mockReset().mockResolvedValue({ tools: [tools[0]] })
+  await discoverConnectorTools({ listTools } as never, 1000, true)
+  expect(listTools.mock.calls[0][1]).toMatchObject({ cacheMode: 'refresh' })
   listTools.mockReset().mockResolvedValue({ tools: [], nextCursor: 'same' })
   await expect(discoverConnectorTools({ listTools } as never, 1000)).rejects.toThrow('游标重复')
   listTools.mockReset().mockResolvedValue({ tools: [tools[0]], nextCursor: 'more' })

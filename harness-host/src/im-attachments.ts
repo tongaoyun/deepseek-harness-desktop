@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { TextRetainer } from '@deepseek-ai/dsh-output-retention'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { extname, join } from 'node:path'
 import { discoverAuthorizedRoots, type LocalFileRootInput } from './local-files-plugin.js'
@@ -30,8 +31,12 @@ export async function prepareImDocumentContext(bytes: Buffer, fileName: string, 
     if (Buffer.byteLength(serialized) > MAX_EXTRACTED_BYTES) return `${location}\n解析内容超过 20 MiB，本轮未注入正文。请使用其他工具分段检查原文件，不得声称已完整读取。`
     const path = `${folder}/extracted.json`
     await writeFile(join(root.path, path), serialized, 'utf8')
-    // Array.from avoids splitting a surrogate pair; byte offsets match local_files_read_text.
-    const preview = Array.from(serialized).slice(0, PREVIEW_CHARS).join('')
+    // Harness' retainer keeps UTF-8 boundaries intact; the byte offset remains
+    // compatible with local_files_read_text pagination.
+    const previewCap = Buffer.byteLength(Array.from(serialized).slice(0, PREVIEW_CHARS).join(''))
+    const retainer = new TextRetainer({ kind: 'head', maxBytes: previewCap })
+    retainer.push(serialized)
+    const preview = retainer.finish().text
     const nextOffset = Buffer.byteLength(preview)
     const totalBytes = Buffer.byteLength(serialized)
     return `${location}\n已保存完整文本解析结果（不含图片识别或版面验证）：${JSON.stringify({ rootId: root.id, path, sizeBytes: totalBytes })}\n${nextOffset < totalBytes

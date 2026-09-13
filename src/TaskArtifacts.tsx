@@ -9,8 +9,8 @@ export function TaskArtifacts({ artifacts, conversation = false, onOpen }: { art
   if (artifacts.length === 0) return null
   return <section className={conversation ? 'turn-files' : undefined}>
     {conversation && <header className="sr-only"><strong>{artifactSummary(artifacts)}</strong></header>}
-    <div className="monitor-artifacts">{artifacts.map((artifact) => <ArtifactCard artifact={artifact} key={artifact.id} onError={setError} onOpen={onOpen} />)}</div>
-    {error && <p className="monitor-error" role="alert">{error}</p>}
+    <div className="projection-artifacts">{artifacts.map((artifact) => <ArtifactCard artifact={artifact} key={artifact.id} onError={setError} onOpen={onOpen} />)}</div>
+    {error && <p className="projection-error" role="alert">{error}</p>}
   </section>
 }
 
@@ -47,7 +47,7 @@ function ArtifactCard({ artifact, onError, onOpen }: { artifact: TaskArtifact; o
 }
 
 function artifactSummary(artifacts: TaskArtifact[]): string {
-  if (artifacts.some((item) => item.action === 'published')) return `交付了 ${artifacts.length} 个文件`
+  if (artifacts.some((item) => item.action === 'published' || item.action === 'presented')) return `交付了 ${artifacts.length} 个文件`
   const updated = artifacts.filter((item) => item.action === 'updated').length
   const created = artifacts.length - updated
   if (updated > 0 && created > 0) return `创建 ${created} 个、修改 ${updated} 个文件`
@@ -56,7 +56,7 @@ function artifactSummary(artifacts: TaskArtifact[]): string {
 }
 
 function actionLabel(action: TaskArtifact['action']): string {
-  return ({ created: '已创建', updated: '已修改', copied: '已复制', moved: '已移动', published: '已就绪' } as const)[action ?? 'created']
+  return ({ created: '已创建', updated: '已修改', copied: '已复制', moved: '已移动', published: '已就绪', presented: '已交付' } as const)[action ?? 'created']
 }
 
 function formatFileSize(bytes: number): string {

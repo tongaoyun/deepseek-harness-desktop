@@ -28,15 +28,7 @@ jobs:
           pnpm config set store-dir /pnpm-store
           pnpm install --frozen-lockfile --registry=http://192.168.2.9:4873/
       - name: Lint、类型、测试和构建
-        run: |
-          pnpm verify:version
-          node --test scripts/workflows.test.mjs scripts/macos-build-env.test.mjs scripts/check-harness-runtime.test.mjs scripts/publish-macos-update.test.mjs scripts/verify-release-ref.test.mjs scripts/verify-updater-signature.test.mjs scripts/evaluation-metrics.test.mjs
-          pnpm lint
-          pnpm test
-          pnpm build
-          node harness-host/scripts/acceptance-task-outcomes.mjs
-          node harness-host/scripts/acceptance-skill-loading.mjs
-          node harness-host/scripts/acceptance-session-recovery.mjs
+        run: pnpm check:web
 
   rust-windows:
     runs-on: windows-x64

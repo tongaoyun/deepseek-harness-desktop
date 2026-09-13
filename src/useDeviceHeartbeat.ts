@@ -2,6 +2,7 @@ import { useCallback, useEffect } from 'react'
 import { submitDeviceCapabilityReport, submitDeviceHeartbeat } from './api'
 import { inspectDeviceHeartbeatContext } from './deviceHeartbeat'
 import { installedExtensionSnapshot, listInstalledExtensions } from './expertKits'
+import type { HarnessHostHealth } from './harness'
 import type { BootstrapResponse, ExpertKitCatalogEntry, SkillCatalogEntry } from './types'
 
 export function useDeviceHeartbeat({
@@ -11,6 +12,7 @@ export function useDeviceHeartbeat({
   employeeId,
   expertKits,
   harnessHealth,
+  harnessCapabilities,
   runtimeReady,
   skills,
 }: {
@@ -20,6 +22,7 @@ export function useDeviceHeartbeat({
   employeeId?: string
   expertKits: ExpertKitCatalogEntry[]
   harnessHealth: 'checking' | 'ready' | 'degraded'
+  harnessCapabilities?: HarnessHostHealth['capabilities']
   runtimeReady: boolean
   skills: SkillCatalogEntry[]
 }) {
@@ -30,7 +33,7 @@ export function useDeviceHeartbeat({
       const installed = await listInstalledExtensions()
       if (/^\d+\.\d+\.\d+$/.test(context.desktopVersion)) {
         const endpoint = bootstrap.endpoints.deviceCapabilities ?? '/api/v1/device-capabilities'
-        const capabilityKeys = [...new Set([...bootstrap.capabilities, 'xiaoyin-server', 'harness'])]
+        const capabilityKeys = [...new Set([...bootstrap.capabilities, 'xiaoyin-server', 'harness', ...Object.keys(harnessCapabilities ?? {}).map((key) => `harness.${key}`)])]
           .map((key) => key.trim().toLowerCase())
           .filter((key) => /^[a-z][a-z0-9.-]{1,63}$/.test(key))
         await Promise.all([
@@ -43,18 +46,12 @@ export function useDeviceHeartbeat({
           }),
           submitDeviceCapabilityReport(endpoint, employeeId, accessToken, {
             ...context,
-            capabilities: capabilityKeys.map((key) => ({
-              key,
-              status: key === 'harness' && harnessHealth !== 'ready' ? 'DEGRADED' as const : 'READY' as const,
-              detail: key === 'harness'
-                ? harnessHealth === 'ready' ? '本地 Agent 已就绪' : '本地 Agent 正在检测或需要恢复'
-                : '企业能力已由控制面下发并可用',
-            })),
+            capabilities: capabilityKeys.map((key) => capabilityReportEntry(key, harnessHealth, harnessCapabilities)),
           }),
         ])
       }
     } catch { /* Device inventory is best effort and must never interrupt employee work. */ }
-  }, [accessToken, authenticated, bootstrap, employeeId, expertKits, harnessHealth, runtimeReady, skills])
+  }, [accessToken, authenticated, bootstrap, employeeId, expertKits, harnessCapabilities, harnessHealth, runtimeReady, skills])
 
   useEffect(() => {
     if (!authenticated || !runtimeReady || !bootstrap || !employeeId) return
@@ -64,4 +61,29 @@ export function useDeviceHeartbeat({
   }, [authenticated, bootstrap, employeeId, heartbeat, runtimeReady])
 
   return heartbeat
+}
+
+export function capabilityReportEntry(
+  key: string,
+  harnessHealth: 'checking' | 'ready' | 'degraded',
+  harnessCapabilities?: HarnessHostHealth['capabilities'],
+): { key: string; status: 'READY' | 'DEGRADED' | 'UNSUPPORTED'; detail: string } {
+  if (key === 'harness') {
+    return {
+      key,
+      status: harnessHealth === 'ready' ? 'READY' : 'DEGRADED',
+      detail: harnessHealth === 'ready' ? '本地 Agent 已就绪' : '本地 Agent 正在检测或需要恢复',
+    }
+  }
+  if (key.startsWith('harness.')) {
+    const name = key.slice('harness.'.length)
+    const sourceKey = Object.keys(harnessCapabilities ?? {}).find((candidate) => candidate.toLowerCase() === name)
+    const capability = sourceKey ? harnessCapabilities?.[sourceKey] : undefined
+    return capability === 'enabled'
+      ? { key, status: 'READY', detail: 'Harness 能力已启用' }
+      : capability === 'gated'
+        ? { key, status: 'DEGRADED', detail: 'Harness 能力已安装，但受桌面策略控制' }
+        : { key, status: 'UNSUPPORTED', detail: 'Harness 能力未在当前运行环境配置' }
+  }
+  return { key, status: 'READY', detail: '企业能力已由控制面下发并可用' }
 }

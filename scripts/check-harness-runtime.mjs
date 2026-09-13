@@ -3,7 +3,7 @@ import { createInterface } from 'node:readline'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 export const DEFAULT_HARNESS_SMOKE_TIMEOUT_MS = 30_000
 const MAX_HARNESS_SMOKE_TIMEOUT_MS = 600_000
@@ -21,7 +21,7 @@ export function harnessSmokeTimeout(env = process.env) {
   return timeoutMs
 }
 
-export async function checkHarnessCommand(command, args, env = process.env, timeoutMs = DEFAULT_HARNESS_SMOKE_TIMEOUT_MS, { selfTest = false } = {}) {
+export async function checkHarnessCommand(command, args, env = process.env, timeoutMs = DEFAULT_HARNESS_SMOKE_TIMEOUT_MS, { selfTest = false, requiredCapabilities = [], expectedCapabilities = {} } = {}) {
   const temporary = await mkdtemp(join(tmpdir(), 'xiaoyin-runtime-smoke-'))
   let childClosed = Promise.resolve()
   try {
@@ -51,6 +51,20 @@ export async function checkHarnessCommand(command, args, env = process.env, time
         if (value.error || value.result?.status !== requests[index][1]) {
           stop(new Error(`Packaged Harness ${requests[index][0]} failed: ${value.error?.message ?? value.result?.status ?? 'missing status'}`)); return
         }
+        if (requests[index][0] === 'host.health' && requiredCapabilities.length > 0) {
+          const capabilities = value.result?.capabilities
+          const missing = requiredCapabilities.filter((key) => capabilities?.[key] !== 'enabled' && capabilities?.[key] !== 'gated')
+          if (missing.length) {
+            stop(new Error(`Packaged Harness capabilities were not reported: ${missing.join(', ')}`)); return
+          }
+        }
+        if (requests[index][0] === 'host.health') {
+          const capabilities = value.result?.capabilities
+          const mismatched = Object.entries(expectedCapabilities).filter(([key, status]) => capabilities?.[key] !== status)
+          if (mismatched.length) {
+            stop(new Error(`Packaged Harness capability policy mismatch: ${mismatched.map(([key, status]) => `${key} expected ${status}, got ${capabilities?.[key] ?? 'missing'}`).join(', ')}`)); return
+          }
+        }
         if (requests[index][0] === 'host.self-test') {
           const required = ['local-files', 'office-docx', 'office-xlsx', 'office-pdf', 'native-shell']
           if (process.platform === 'win32') required.push('computer-use')
@@ -74,13 +88,28 @@ export async function checkHarnessCommand(command, args, env = process.env, time
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const [node, host, mode] = process.argv.slice(2)
-  if (!node || !host) throw new Error('Expected embedded Node path and Harness directory')
+  const [nodeArgument, hostArgument, mode] = process.argv.slice(2)
+  if ((nodeArgument === undefined) !== (hostArgument === undefined)) throw new Error('Expected both embedded Node path and Harness directory, or neither')
   if (mode && mode !== '--self-test') throw new Error(`Unknown runtime check option: ${mode}`)
-  await checkHarnessCommand(resolve(node), [resolve(host, 'dist/index.js')], {
+  const command = resolve(nodeArgument ?? process.execPath)
+  const host = resolve(hostArgument ?? fileURLToPath(new URL('../harness-host', import.meta.url)))
+  const args = [resolve(host, 'dist/index.js')]
+  const env = {
     ...process.env, DSH_CORDIS_CONFIG: resolve(host, 'runtime/cordis.yml'),
     XIAOYIN_ALLOW_SHELL: 'true', XIAOYIN_APPROVE_SHELL: 'false',
-  }, harnessSmokeTimeout(), { selfTest: mode === '--self-test' })
-  console.log('Packaged Harness initialize, health and shutdown responses verified')
+    XIAOYIN_TOOLS_MODE: 'native',
+  }
+  const timeoutMs = harnessSmokeTimeout()
+  await checkHarnessCommand(command, args, env, timeoutMs, {
+    selfTest: mode === '--self-test',
+    requiredCapabilities: ['sessionPersistence', 'sessionQuery', 'sessionReference', 'present'],
+    expectedCapabilities: { shell: 'enabled', persistentTerminal: 'enabled', codeRuntime: 'gated', sessionQuery: 'enabled', sessionQueryTools: 'enabled', mcpClient: 'gated' },
+  })
+  await checkHarnessCommand(command, args, {
+    ...env, XIAOYIN_ALLOW_SHELL: 'false', XIAOYIN_TOOLS_MODE: 'ptc', XIAOYIN_ENABLE_SESSION_QUERY_TOOLS: 'false',
+  }, timeoutMs, {
+    expectedCapabilities: { shell: 'gated', persistentTerminal: 'gated', codeRuntime: 'enabled', sessionQuery: 'enabled', sessionQueryTools: 'gated', mcpClient: 'gated' },
+  })
+  console.log('Harness native and restricted PTC capability policies verified')
   if (mode === '--self-test') console.log('Installed Harness local capability self-test verified')
 }

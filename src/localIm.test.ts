@@ -32,6 +32,7 @@ describe('local IM native bridge', () => {
         litellmBaseUrl: 'http://litellm/v1', knowledgeEndpoint: 'http://xiaoyin-server/api/v1/knowledge-bases', scheduleEndpoint: 'http://xiaoyin-server/api/v1/schedules',
         capabilitySnapshot: { schemaVersion: 1, createdAt: 'test', selections: [], artifacts: [], implicitArtifacts: [], requestedConnectorIds: [], connectors: [], requestedKnowledgeBaseRefs: [], knowledgeBaseRefs: [] },
         model: 'deepseek-v4-flash', modelApiKey: 'model-token', accessToken: 'employee-token',
+        allowShell: false, allowLsp: false, allowExternalAgents: false, allowHooks: false,
       },
     })
     expect(invoke).toHaveBeenCalledWith('configure_local_dingtalk', {
@@ -48,9 +49,27 @@ describe('local IM native bridge', () => {
       litellmBaseUrl: 'http://litellm/v1', knowledgeEndpoint: 'http://xiaoyin-server/api/v1/knowledge-bases', scheduleEndpoint: 'http://xiaoyin-server/api/v1/schedules',
       capabilitySnapshot: { schemaVersion: 1, createdAt: 'test', selections: [], artifacts: [], implicitArtifacts: [], requestedConnectorIds: [], connectors: [], requestedKnowledgeBaseRefs: [], knowledgeBaseRefs: [] },
       model: 'deepseek-v4-flash', modelApiKey: 'model-token', accessToken: 'employee-token',
+      allowShell: false, allowLsp: false, allowExternalAgents: false, allowHooks: false,
     })
     expect(invoke).toHaveBeenCalledWith('start_local_im', {
       harness: expect.not.objectContaining({ clientSecret: expect.anything() }),
     })
+  })
+
+  it('stops the previous channel before starting another employee', async () => {
+    let finishFirst!: (value: unknown) => void
+    invoke.mockImplementationOnce(() => new Promise((resolve) => { finishFirst = resolve }))
+      .mockResolvedValue({ enabled: true })
+    const { startLocalIm, stopLocalImRuntime } = await import('./localIm')
+    const first = startLocalIm({ employeeId: 'one' } as Parameters<typeof startLocalIm>[0])
+    await vi.waitFor(() => expect(invoke).toHaveBeenCalledTimes(1))
+    const stop = stopLocalImRuntime()
+    const second = startLocalIm({ employeeId: 'two' } as Parameters<typeof startLocalIm>[0])
+    expect(invoke).toHaveBeenCalledTimes(1)
+    finishFirst({ enabled: true })
+    await Promise.all([first, stop, second])
+    expect(invoke.mock.calls.map(([command]) => command)).toEqual([
+      'start_local_im', 'stop_local_im_runtime', 'start_local_im',
+    ])
   })
 })

@@ -3,9 +3,11 @@ import { useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { flushSync } from 'react-dom'
 import { ChatPage, type ChatPageProps } from '../src/ChatPage'
+import type { XiaoyinTaskProjection } from '../src/types'
 import '../src/styles.css'
 
 const noop = () => {}
+const taskProjection: XiaoyinTaskProjection = { status: 'completed', activity: '', updatedAt: '', steps: [], artifacts: [] }
 const messages = Array.from({ length: 2000 }, (_, index) => ({ role: 'assistant' as const, text: `### 合成消息 ${index}\n\n这是用于长会话切换验收的合成内容，不读取业务资料。\n\n- 文件处理完成\n- 数量核对通过\n\n\`\`\`ts\nconst total = ${index};\n\`\`\`` }))
 const base: ChatPageProps = {
   activeModel: '验收模型（不调用）', composerRef: { current: null }, harnessHealth: 'ready', harnessHealthDetail: '', harnessRunning: false,
@@ -14,7 +16,7 @@ const base: ChatPageProps = {
   onAddKnowledge: noop, onAddLocalDirectory: noop, onAddLocalFiles: noop, onCancel: noop, onPrepareRetry: noop,
   onPrompt: noop, onReconnect: noop, onRecoverHarness: noop, onRemoveAttachment: noop, onRemoveKnowledge: noop,
   onRemoveLocalDirectory: noop, onSelectModel: noop, onSubmit: (event) => event.preventDefault(), onToggleModelMenu: noop,
-  prompt: '', runtimeStatus: 'ready', selectedKnowledgeBaseRefs: [], taskMonitor: { status: 'completed', activity: '', updatedAt: '', steps: [], artifacts: [] },
+  prompt: '', runtimeStatus: 'ready', selectedKnowledgeBaseRefs: [], taskProjection,
 }
 function Fixture() {
   const [id, setId] = useState(0)

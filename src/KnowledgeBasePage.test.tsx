@@ -103,11 +103,30 @@ it('shows genuine empty search results and removes deleted source snippets', asy
 })
 
 it('does not misrepresent a catalog failure as an empty knowledge base', async () => {
-  vi.mocked(loadKnowledgeBases).mockRejectedValue(new Error('unavailable'))
+  vi.mocked(loadKnowledgeBases).mockRejectedValueOnce(new Error('unavailable')).mockResolvedValue([])
   await fixture(async (container) => {
     expect(container.textContent).toContain('知识库暂不可用')
     expect(container.textContent).not.toContain('创建第一个知识库')
     expect(container.querySelector('[role="alert"]')!.textContent).toContain('unavailable')
+    await click(container, '.knowledge-welcome button')
+    expect(loadKnowledgeBases).toHaveBeenCalledTimes(2)
+    expect(container.textContent).toContain('创建第一个知识库')
+    expect(container.querySelector('.knowledge-welcome button')?.textContent).toContain('新建知识库')
+    expect(container.querySelector('[role="alert"]')).toBeNull()
+  })
+})
+
+it('shows an empty catalog without a redundant title or retry action', async () => {
+  vi.mocked(loadKnowledgeBases).mockResolvedValue([])
+  await fixture(async (container) => {
+    expect(container.querySelector('.knowledge-page-heading')).toBeNull()
+    expect(container.querySelector('h1')).toBeNull()
+    expect(container.textContent).toContain('可见知识库 · 0')
+    expect(container.textContent).toContain('创建第一个知识库')
+    expect(container.textContent).not.toContain('重新加载')
+    expect(container.textContent).not.toContain('先创建一个知识库')
+    await click(container, '.knowledge-welcome button')
+    expect(container.querySelector('[role="dialog"]')?.textContent).toContain('新建知识库')
   })
 })
 

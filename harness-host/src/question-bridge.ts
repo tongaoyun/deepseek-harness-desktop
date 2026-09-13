@@ -1,5 +1,6 @@
-import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 import { createServer, type Server } from 'node:http'
+import { authorizedLocalBearer, hardenLocalBridgeServer } from './local-bridge-security.js'
 import { notification, type JsonRpcOutput } from './protocol.js'
 
 const MAX_BODY_BYTES = 128 * 1024
@@ -34,6 +35,7 @@ export class QuestionBridge {
   async start(): Promise<{ url: string; token: string }> {
     if (this.url !== undefined) return { url: this.url, token: this.token }
     this.server = createServer((request, response) => void this.handleHttp(request, response))
+    hardenLocalBridgeServer(this.server)
     await new Promise<void>((resolve, reject) => {
       this.server?.once('error', reject)
       this.server?.listen(0, '127.0.0.1', () => resolve())
@@ -82,19 +84,16 @@ export class QuestionBridge {
         this.pending.set(questionId, { resolve, timer })
         this.emit(notification('question.request', { questionId, questions }))
       })
-      response.writeHead(answer === 'unavailable' ? 503 : 200, { 'content-type': 'application/json' })
+      response.writeHead(answer === 'unavailable' ? 503 : 200, { 'content-type': 'application/json', 'cache-control': 'no-store' })
       response.end(JSON.stringify(answer === 'unavailable' ? { error: 'Question UI unavailable' } : answer))
     } catch (error) {
-      response.writeHead(400, { 'content-type': 'application/json' })
+      response.writeHead(400, { 'content-type': 'application/json', 'cache-control': 'no-store' })
       response.end(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }))
     }
   }
 
   private authorized(value: string | undefined): boolean {
-    const supplied = value?.startsWith('Bearer ') ? value.slice(7) : ''
-    const left = Buffer.from(supplied)
-    const right = Buffer.from(this.token)
-    return left.length === right.length && timingSafeEqual(left, right)
+    return authorizedLocalBearer(value, this.token)
   }
 }
 

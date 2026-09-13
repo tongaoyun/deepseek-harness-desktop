@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { appendFile, glob, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DeepSeekHarnessRuntime } from '../dist/runtime.js'
@@ -48,19 +48,29 @@ await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
 const environment = {
   DEEPSEEK_API_KEY: 'local-fixture-only', DEEPSEEK_BASE_URL: `http://127.0.0.1:${server.address().port}`,
   DSH_HOME: root, DSH_SESSION_ROOT: join(root, 'sessions'), XIAOYIN_ATTACHMENT_ROOT: join(root, 'attachments'),
+  XIAOYIN_SESSION_QUERY_PATH: join(root, 'session-query.sqlite'),
   XIAOYIN_LOCAL_FILE_ROOTS: '[]', XIAOYIN_MCP_CONNECTORS: '[]', DSH_CUSTOM_SKILL_DIRS: '[]',
   XIAOYIN_ALLOW_BROWSER: 'false', XIAOYIN_COMPUTER_USE_TOOLS: '[]',
 }
 let runtime = new DeepSeekHarnessRuntime(environment)
 try {
   const initial = await runtime.run({ prompt: '记住任务标记 XY-SESSION-PERSISTED。' }, () => {})
+  await assert.doesNotReject(runtime.searchSessions([initial.sessionId], 'PERSISTED', 10))
   await runtime.close()
+  await writeFile(environment.XIAOYIN_SESSION_QUERY_PATH, 'not a sqlite database')
+  const logs = []
+  for await (const path of glob('**/session.v3.jsonl', { cwd: environment.DSH_SESSION_ROOT })) logs.push(join(environment.DSH_SESSION_ROOT, path))
+  assert.equal(logs.length, 1, 'Expected one current Session JSONL generation')
+  await appendFile(logs[0], '{"type":"assistant/chunk","torn":"XY-TORN-TAIL"')
   runtime = new DeepSeekHarnessRuntime(environment)
+  const rebuilt = await runtime.searchSessions([initial.sessionId], 'PERSISTED', 10)
+  assert(rebuilt.items.some((item) => item.sessionId === initial.sessionId), 'Derived search index was not rebuilt from Session JSONL')
   phase = 'restored'
   const restored = await runtime.run({ sessionId: initial.sessionId, prompt: '继续第一轮任务。' }, () => {})
   assert.equal(restored.sessionId, initial.sessionId)
+  assert.equal((await readFile(logs[0], 'utf8')).includes('XY-TORN-TAIL'), false, 'Torn JSONL tail was not repaired before resume')
   assert.ifError(failure)
-  console.log(JSON.stringify({ check: 'restart-with-history', passed: true }))
+  console.log(JSON.stringify({ check: 'restart-with-history', passed: true, derivedIndexRebuilt: true, tornTailRecovered: true }))
 
   phase = 'fail'
   await assert.rejects(runtime.run({ sessionId: initial.sessionId, prompt: 'XY-FAILED-TURN' }, () => {}))

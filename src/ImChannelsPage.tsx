@@ -15,7 +15,7 @@ import {
 } from './localIm'
 import { XiaoyinMascot } from './XiaoyinMascot'
 import type { LocalTaskRun } from './types'
-import { applyHarnessNotification, createTaskMonitor } from './harness'
+import { createXiaoyinTaskProjection, normalizeHarnessProjection } from './harness'
 import { InlineTaskActivity } from './InlineTaskActivity'
 import { TaskOutcomeDetails } from './TaskOutcomeDetails'
 import { useDesktopDialog } from './DesktopDialog'
@@ -36,6 +36,7 @@ export function ImChannelsPage(harness: Props) {
   const [status, setStatus] = useState<LocalImStatus>()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [refreshError, setRefreshError] = useState('')
   const [configuring, setConfiguring] = useState(false)
   const [pairingOpen, setPairingOpen] = useState(false)
   const [clientId, setClientId] = useState('')
@@ -71,8 +72,9 @@ export function ImChannelsPage(harness: Props) {
       const value = await loadLocalImStatus()
       if (!mounted.current || current !== revision.current) return
       setStatus(value)
+      setRefreshError('')
     } catch (reason) {
-      if (mounted.current && current === revision.current) setError(message(reason))
+      if (mounted.current && current === revision.current) setRefreshError(message(reason))
     } finally {
       refreshing.current = false
       if (mounted.current) setLoading(false)
@@ -128,7 +130,11 @@ export function ImChannelsPage(harness: Props) {
     model: harness.model,
     modelApiKey: harness.modelApiKey,
     accessToken: harness.accessToken,
-  }), [harness.accessToken, harness.capabilitySnapshot, harness.employeeId, harness.knowledgeEndpoint, harness.litellmBaseUrl, harness.model, harness.modelApiKey, harness.scheduleEndpoint, harness.teamId])
+    allowShell: harness.allowShell,
+    allowLsp: harness.allowLsp,
+    allowExternalAgents: harness.allowExternalAgents,
+    allowHooks: harness.allowHooks,
+  }), [harness.accessToken, harness.allowExternalAgents, harness.allowHooks, harness.allowLsp, harness.allowShell, harness.capabilitySnapshot, harness.employeeId, harness.knowledgeEndpoint, harness.litellmBaseUrl, harness.model, harness.modelApiKey, harness.scheduleEndpoint, harness.teamId])
 
   const save = async (event: FormEvent) => {
     event.preventDefault()
@@ -208,11 +214,12 @@ export function ImChannelsPage(harness: Props) {
           <button disabled={busy} onClick={() => setPairingOpen(true)} type="button">配对管理{status.pendingPairings.length > 0 ? ` (${status.pendingPairings.length})` : ''}</button>
           <div className="im-provider-menu"><button aria-label="频道操作" aria-expanded={menuOpen} aria-haspopup="menu" disabled={busy} onClick={() => setMenuOpen(!menuOpen)} type="button"><MoreHorizontal size={20} /></button>{menuOpen && <div role="menu"><button onClick={openConfiguration} role="menuitem" type="button"><Pencil size={16} />编辑配置</button><button className="danger" onClick={() => void remove()} role="menuitem" type="button"><Trash2 size={16} />移除配置</button></div>}</div>
           <button aria-label={status.enabled ? '关闭频道' : '开启频道'} aria-checked={status.enabled} role="switch" className={`im-switch ${status.enabled ? 'on' : ''}`} disabled={loading || busy} onClick={() => void toggle()} type="button"><i /></button>
-        </div> : <button className="im-configure" disabled={loading || busy || !dingTalk} onClick={openConfiguration} type="button">{loading ? '读取中…' : '配置'}</button>}
+        </div> : <button className="im-configure" disabled={loading || busy || !dingTalk || (!status && Boolean(refreshError))} onClick={openConfiguration} type="button">{loading ? '读取中…' : '配置'}</button>}
       </article>
     })}</div>
 
     {status?.lastError && <div className="kit-error">钉钉频道需要处理：{status.lastError}</div>}
+    {refreshError && <div className="kit-error im-refresh-error" role="alert"><span>频道状态读取失败：{refreshError}</span><button disabled={loading} onClick={() => { setLoading(true); void refresh() }} type="button">重新读取频道</button></div>}
     {error && !configuring && !pairingOpen && <div className="kit-error" role="alert">{error}</div>}
 
     {status?.configured && <section className="im-conversation-center"><header><div><h3>IM 会话</h3><p>可将钉钉会话接管到已有桌面任务，继续使用已有任务的文件和对话。钉钉内也可发送 /bind、/bind 序号、/unbind。</p></div><span>{status.conversations.length} 个会话</span></header><div>{status.conversations.map((conversation) => <article key={conversation.conversationKey}><span className="conversation-avatar"><MessageCircle size={16} /></span><div><button className="im-conversation-open" onClick={() => setActiveConversationKey(conversation.conversationKey)} type="button"><strong>{conversation.conversationType === 'group' ? conversation.conversationTitle || '未命名群' : conversation.senderNick || '钉钉用户'}</strong></button><p>{conversation.lastMessage}</p><small><Clock3 size={11} />{new Date(conversation.updatedAt).toLocaleString()} · {conversation.messageCount} 条消息</small>{conversation.boundTaskId
@@ -264,12 +271,10 @@ export function ImChannelsPage(harness: Props) {
       const conversation = status.conversations.find((item) => item.conversationKey === activeConversationKey)
       if (!conversation) return null
       const boundTask = harness.localTasks.find((task) => task.id === conversation.boundTaskId)
-      const useBoundMonitor = boundTask && boundTask.updatedAt > conversation.updatedAt
-      const conversationMonitor = (conversation.taskEvents ?? []).reduce(
-        (current, item) => applyHarnessNotification(current, { requestId: 0, event: { event: item.event } }),
-        createTaskMonitor(conversation.updatedAt),
-      )
-      const monitor = useBoundMonitor ? boundTask.monitor : { ...conversationMonitor,
+      const useBoundProjection = boundTask && boundTask.updatedAt > conversation.updatedAt
+      const storedProjection = conversation.taskProjection ? normalizeHarnessProjection(conversation.taskProjection) : undefined
+      const conversationProjection = storedProjection ?? createXiaoyinTaskProjection(conversation.updatedAt)
+      const projection = useBoundProjection ? boundTask.projection : { ...conversationProjection,
         status: conversation.status === 'RUNNING' ? 'running' as const : conversation.status === 'FAILED' ? 'failed' as const : 'completed' as const,
         outcome: conversation.outcome,
       }
@@ -280,8 +285,8 @@ export function ImChannelsPage(harness: Props) {
         <div className="im-message-history">{(conversation.messages ?? []).map((item) => <article className={item.role} key={item.id}><small>{item.role === 'user' ? conversation.senderNick || '员工' : '小胤'} · {new Date(item.createdAt).toLocaleString()}</small><p>{item.text}</p></article>)}
           {(conversation.messages ?? []).length === 0 && <div className="kit-empty">暂无可显示的历史消息</div>}
         </div>
-        <InlineTaskActivity finalResponse={useBoundMonitor ? boundTask.messages.at(-1)?.text : conversation.lastResponse} monitor={monitor} />
-        {monitor.status === 'completed' && <TaskOutcomeDetails outcome={monitor.outcome} />}
+        <InlineTaskActivity finalResponse={useBoundProjection ? boundTask.messages.at(-1)?.text : conversation.lastResponse} projection={projection} />
+        {projection.status === 'completed' && <TaskOutcomeDetails outcome={projection.outcome} />}
       </section></div>
     })()}
     {dialog}

@@ -16,7 +16,7 @@ import {
 } from '@deepseek-ai/dsh-attachment'
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
-import { readFile, rename, unlink, writeFile } from 'node:fs/promises'
+import { open, readFile, rename, unlink } from 'node:fs/promises'
 import { resolve } from 'node:path'
 
 export interface Config { root?: string }
@@ -53,16 +53,34 @@ export default class LocalAttachmentStore extends AttachmentStore {
     const target = this.objectPath(hash)
     const temporary = `${target}.${randomUUID()}.tmp`
     try {
-      await writeFile(temporary, input.data, { flag: 'wx' })
+      const file = await open(temporary, 'wx', 0o600)
+      try {
+        await file.writeFile(input.data)
+        await file.sync()
+      } finally {
+        await file.close()
+      }
       await rename(temporary, target).catch(async (error: NodeJS.ErrnoException) => {
         if (error.code !== 'EEXIST') throw error
-        await unlink(temporary).catch(() => undefined)
+        const existing = await readFile(target).catch(() => undefined)
+        if (existing && digest(existing) === hash) {
+          await unlink(temporary).catch(() => undefined)
+          return
+        }
+        await unlink(target).catch((unlinkError: NodeJS.ErrnoException) => {
+          if (unlinkError.code !== 'ENOENT') throw unlinkError
+        })
+        await rename(temporary, target)
       })
+      if (process.platform !== 'win32') {
+        const directory = await open(this.root, 'r')
+        try { await directory.sync() } finally { await directory.close() }
+      }
+      const stored = await readFile(target)
+      if (digest(stored) !== hash) throw new Error('Screenshot content changed before it could be verified')
     } catch (error) {
       await unlink(temporary).catch(() => undefined)
-      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
-        throw new AttachmentError('Unable to persist screenshot.', 'ATTACHMENT_WRITE_FAILED', { cause: error })
-      }
+      throw new AttachmentError('Unable to persist screenshot.', 'ATTACHMENT_WRITE_FAILED', { cause: error })
     }
     const metadata = imageMetadata(input.data, input.mediaType)
     return {
@@ -78,17 +96,23 @@ export default class LocalAttachmentStore extends AttachmentStore {
   async readImage(ref: ImageAttachmentRef, signal?: AbortSignal): Promise<StoredImageAttachment> {
     signal?.throwIfAborted()
     const hash = attachmentHash(ref)
-    let data: Buffer
-    try {
-      data = await readFile(this.objectPath(hash))
-    } catch (error) {
-      throw new AttachmentError('Screenshot attachment was not found.', 'ATTACHMENT_NOT_FOUND', { cause: error })
-    }
-    signal?.throwIfAborted()
-    if (digest(data) !== hash) throw new AttachmentError('Screenshot attachment digest mismatch.', 'ATTACHMENT_CORRUPT')
     if (ref.mediaType !== 'image/png' && ref.mediaType !== 'image/jpeg') {
       throw new AttachmentError('Stored image media type is unsupported.', 'INVALID_ATTACHMENT_REF')
     }
+    let data: Buffer
+    try {
+      data = await readBounded(this.objectPath(hash), this.imageLimits.maxImageBytes)
+    } catch (error) {
+      if (error instanceof AttachmentError) throw error
+      const code = (error as NodeJS.ErrnoException).code
+      throw new AttachmentError(
+        code === 'ENOENT' ? 'Screenshot attachment was not found.' : 'Screenshot attachment could not be read.',
+        code === 'ENOENT' ? 'ATTACHMENT_NOT_FOUND' : 'ATTACHMENT_READ_FAILED',
+        { cause: error },
+      )
+    }
+    signal?.throwIfAborted()
+    if (digest(data) !== hash) throw new AttachmentError('Screenshot attachment digest mismatch.', 'ATTACHMENT_CORRUPT')
     const metadata = imageMetadata(data, ref.mediaType)
     if (ref.bytes !== data.byteLength || ref.width !== metadata.width || ref.height !== metadata.height) {
       throw new AttachmentError('Screenshot attachment metadata mismatch.', 'INVALID_ATTACHMENT_REF')
@@ -169,3 +193,24 @@ function attachmentHash(ref: ImageAttachmentRef): string {
 }
 
 function digest(data: Uint8Array): string { return createHash('sha256').update(data).digest('hex') }
+
+async function readBounded(path: string, limit: number): Promise<Buffer> {
+  const file = await open(path, 'r')
+  try {
+    const { size } = await file.stat()
+    if (!Number.isSafeInteger(size) || size > limit) {
+      throw new AttachmentError('Screenshot attachment exceeds its byte limit.', 'ATTACHMENT_CORRUPT')
+    }
+    const buffer = Buffer.allocUnsafe(size + 1)
+    let length = 0
+    while (length < buffer.length) {
+      const { bytesRead } = await file.read(buffer, length, buffer.length - length, length)
+      if (bytesRead === 0) break
+      length += bytesRead
+    }
+    if (length > limit) throw new AttachmentError('Screenshot attachment exceeds its byte limit.', 'ATTACHMENT_CORRUPT')
+    return buffer.subarray(0, length)
+  } finally {
+    await file.close()
+  }
+}

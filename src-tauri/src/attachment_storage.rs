@@ -18,8 +18,19 @@ pub struct StorageUsage {
 }
 
 #[tauri::command]
-pub fn attachment_storage(
+pub async fn attachment_storage(
     app: tauri::AppHandle,
+    references: Vec<serde_json::Value>,
+    clean: bool,
+) -> Result<StorageUsage, String> {
+    crate::erp_auth::current_employee(&app).await?;
+    tauri::async_runtime::spawn_blocking(move || inspect_storage(&app, references, clean))
+        .await
+        .map_err(|_| "附件存储检查线程异常".to_string())?
+}
+
+fn inspect_storage(
+    app: &tauri::AppHandle,
     references: Vec<serde_json::Value>,
     clean: bool,
 ) -> Result<StorageUsage, String> {
@@ -28,7 +39,7 @@ pub fn attachment_storage(
         .app_data_dir()
         .map_err(|error| error.to_string())?;
     let references = serde_json::to_string(&references).map_err(|error| error.to_string())?;
-    crate::local_store::with_database(&app, |database| {
+    crate::local_store::with_database(app, |database| {
         // Include all accounts and archived tasks, not just the currently loaded page.
         scan(&root, clean, SystemTime::now(), |name| {
             let encoded = serde_json::to_string(name).map_err(|error| error.to_string())?;
@@ -36,15 +47,30 @@ pub fn attachment_storage(
             if references.contains(fragment) {
                 return Ok(true);
             }
-            database
-                .query_row(
-                    "SELECT EXISTS(SELECT 1 FROM local_task WHERE instr(payload, ?1) > 0)",
-                    [fragment],
-                    |row| row.get::<_, bool>(0),
-                )
-                .map_err(|error| format!("无法检查任务引用，未继续清理：{error}"))
+            database_references_attachment(database, fragment)
         })
     })
+}
+
+fn database_references_attachment(
+    database: &rusqlite::Connection,
+    fragment: &str,
+) -> Result<bool, String> {
+    database
+        .query_row(
+            "SELECT EXISTS(
+               SELECT 1 FROM local_task WHERE instr(payload, ?1) > 0
+               UNION ALL
+               SELECT 1 FROM local_schedule WHERE instr(payload, ?1) > 0
+               UNION ALL
+               SELECT 1 FROM local_task_queue WHERE instr(payload, ?1) > 0
+               UNION ALL
+               SELECT 1 FROM local_workspace_state WHERE instr(payload, ?1) > 0
+             )",
+            [fragment],
+            |row| row.get::<_, bool>(0),
+        )
+        .map_err(|error| format!("无法检查任务引用，未继续清理：{error}"))
 }
 
 fn scan(
@@ -109,6 +135,29 @@ fn scan(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn native_tasks_schedules_and_queues_retain_attachment_cache() {
+        let database = rusqlite::Connection::open_in_memory().unwrap();
+        database
+            .execute_batch(
+                "CREATE TABLE local_task (payload TEXT NOT NULL);
+             CREATE TABLE local_schedule (payload TEXT NOT NULL);
+             CREATE TABLE local_task_queue (payload TEXT NOT NULL);
+             CREATE TABLE local_workspace_state (payload TEXT NOT NULL);
+             INSERT INTO local_task(payload) VALUES ('{\"path\":\"task-file.txt\"}');
+             INSERT INTO local_schedule(payload) VALUES ('{\"path\":\"schedule-file.txt\"}');
+             INSERT INTO local_task_queue(payload) VALUES ('{\"path\":\"queue-file.txt\"}');
+             INSERT INTO local_workspace_state(payload) VALUES ('{\"path\":\"draft-file.txt\"}');",
+            )
+            .unwrap();
+        assert!(database_references_attachment(&database, "task-file.txt").unwrap());
+        assert!(database_references_attachment(&database, "schedule-file.txt").unwrap());
+        assert!(database_references_attachment(&database, "queue-file.txt").unwrap());
+        assert!(database_references_attachment(&database, "draft-file.txt").unwrap());
+        assert!(!database_references_attachment(&database, "unused.txt").unwrap());
+    }
+
     #[test]
     fn only_old_unreferenced_cache_files_are_removed() {
         let root =

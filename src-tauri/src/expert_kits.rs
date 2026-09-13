@@ -224,9 +224,10 @@ const EXTENSION_CONTEXT_ITEM_MAX_BYTES: usize = 32 * 1024;
 const EXTENSION_CONTEXT_TOTAL_MAX_BYTES: usize = 64 * 1024;
 
 #[tauri::command]
-pub fn list_installed_expert_kits(
+pub async fn list_installed_expert_kits(
     app: tauri::AppHandle,
 ) -> Result<InstalledExtensionInventory, String> {
+    crate::erp_auth::current_employee(&app).await?;
     inventory::scan_installed_extensions(&app)
 }
 
@@ -235,6 +236,7 @@ pub async fn install_expert_kit(
     app: tauri::AppHandle,
     request: ExpertKitInstallRequest,
 ) -> Result<InstalledExpertKit, String> {
+    crate::erp_auth::current_employee(&app).await?;
     validate_artifact_kind(&request.kind)?;
     validate_identifier(&request.id)?;
     Version::parse(&request.version).map_err(|error| format!("专家套件版本无效：{error}"))?;
@@ -279,6 +281,7 @@ pub async fn select_developer_extension(
     kind: String,
     input: Option<String>,
 ) -> Result<Vec<String>, String> {
+    crate::erp_auth::current_employee(&app).await?;
     if kind != "expert-kit" && kind != "skill" {
         return Err("仅支持导入专家套件或技能".to_string());
     }
@@ -321,6 +324,7 @@ pub async fn install_developer_extension(
     input: Option<String>,
     path: Option<String>,
 ) -> Result<Option<InstalledExpertKit>, String> {
+    crate::erp_auth::current_employee(&app).await?;
     if kind != "expert-kit" && kind != "skill" {
         return Err("仅支持导入专家套件或技能".to_string());
     }
@@ -380,10 +384,11 @@ pub async fn install_developer_extension(
 }
 
 #[tauri::command]
-pub fn create_developer_extension(
+pub async fn create_developer_extension(
     app: tauri::AppHandle,
     request: CreateDeveloperExtensionRequest,
 ) -> Result<DeveloperExtensionPackage, String> {
+    crate::erp_auth::current_employee(&app).await?;
     let manifest = request.manifest;
     let payload_files = if let Some(base) = request.base {
         validate_artifact_kind(&manifest.kind)?;
@@ -394,7 +399,8 @@ pub fn create_developer_extension(
             .join(&base.id)
             .join(&base.version);
         let draft =
-            read_developer_extension(app.clone(), manifest.kind.clone(), base.id, base.version)?;
+            read_developer_extension(app.clone(), manifest.kind.clone(), base.id, base.version)
+                .await?;
         if manifest.skills != draft.manifest.skills || manifest.commands != draft.manifest.commands
         {
             return Err("编辑执行说明时不能改变套件资源结构，请使用定制目录修改".into());
@@ -579,12 +585,13 @@ fn collect_payload_files(
 }
 
 #[tauri::command]
-pub fn read_developer_extension(
+pub async fn read_developer_extension(
     app: tauri::AppHandle,
     kind: String,
     id: String,
     version: String,
 ) -> Result<DeveloperExtensionDraft, String> {
+    crate::erp_auth::current_employee(&app).await?;
     validate_artifact_kind(&kind)?;
     validate_identifier(&id)?;
     Version::parse(&version).map_err(|error| format!("扩展版本无效：{error}"))?;
@@ -613,14 +620,15 @@ pub fn read_developer_extension(
 }
 
 #[tauri::command]
-pub fn package_developer_extension(
+pub async fn package_developer_extension(
     app: tauri::AppHandle,
     kind: String,
     id: String,
     version: String,
 ) -> Result<DeveloperExtensionPackage, String> {
+    crate::erp_auth::current_employee(&app).await?;
     let directory = extensions_root(&app)?.join(&kind).join(&id).join(&version);
-    let draft = read_developer_extension(app, kind, id, version)?;
+    let draft = read_developer_extension(app, kind, id, version).await?;
     let mut payload_files = Vec::new();
     collect_payload_files(&directory, &directory, Path::new(""), &mut payload_files)?;
     let bytes = build_developer_package(&draft.manifest, &draft.instructions, &payload_files)?;
@@ -651,6 +659,7 @@ pub async fn customize_expert_kit(
     version: String,
     kind: Option<String>,
 ) -> Result<Option<String>, String> {
+    crate::erp_auth::current_employee(&app).await?;
     let kind = kind.as_deref().unwrap_or("expert-kit");
     validate_artifact_kind(kind)?;
     validate_identifier(&id)?;
@@ -709,6 +718,7 @@ pub async fn export_expert_kit(
     version: String,
     kind: Option<String>,
 ) -> Result<Option<String>, String> {
+    crate::erp_auth::current_employee(&app).await?;
     let kind = kind.as_deref().unwrap_or("expert-kit");
     validate_artifact_kind(kind)?;
     validate_identifier(&id)?;
@@ -860,11 +870,12 @@ fn append_directory_to_zip<W: std::io::Write + std::io::Seek>(
 }
 
 #[tauri::command]
-pub fn remove_developer_expert_kit(
+pub async fn remove_developer_expert_kit(
     app: tauri::AppHandle,
     id: String,
     version: String,
 ) -> Result<(), String> {
+    crate::erp_auth::current_employee(&app).await?;
     validate_identifier(&id)?;
     Version::parse(&version).map_err(|error| format!("专家套件版本无效：{error}"))?;
     let root = extensions_root(&app)?.join("expert-kit");
@@ -887,12 +898,13 @@ pub fn remove_developer_expert_kit(
 }
 
 #[tauri::command]
-pub fn remove_developer_extension(
+pub async fn remove_developer_extension(
     app: tauri::AppHandle,
     kind: String,
     id: String,
     version: String,
 ) -> Result<(), String> {
+    crate::erp_auth::current_employee(&app).await?;
     validate_artifact_kind(&kind)?;
     validate_identifier(&id)?;
     Version::parse(&version).map_err(|error| format!("扩展版本无效：{error}"))?;
@@ -917,11 +929,12 @@ pub fn remove_developer_extension(
 }
 
 #[tauri::command]
-pub fn remove_catalog_extension(
+pub async fn remove_catalog_extension(
     app: tauri::AppHandle,
     id: String,
     kind: String,
 ) -> Result<(), String> {
+    crate::erp_auth::current_employee(&app).await?;
     validate_identifier(&id)?;
     validate_artifact_kind(&kind)?;
     let root = extensions_root(&app)?.join(&kind);

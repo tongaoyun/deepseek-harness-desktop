@@ -11,11 +11,12 @@ import type {
   TaskArtifact,
   TaskExecutionStep,
   TaskFileChange,
-  TaskMonitorState,
+  XiaoyinTaskProjection,
   TaskQuestionAnswer,
   TaskQuestionItem,
   TaskTimelineEntry,
   TaskVisualArtifact,
+  TaskMessage,
 } from './types'
 import type { StandardLocalDirectory } from './localFileIntent'
 
@@ -24,6 +25,11 @@ export interface HarnessRunInput {
   taskId: string
   prompt: string
   executionMode: 'agent' | 'plan'
+  toolsMode: 'native' | 'ptc' | 'both'
+  allowShell: boolean
+  allowLsp: boolean
+  allowExternalAgents: boolean
+  allowHooks: boolean
   employeeId: string
   teamId: string
   sessionId?: string
@@ -65,6 +71,34 @@ export interface HarnessHostHealth {
   status: string
   runtime: string
   version: string
+  capabilities?: Record<string, 'enabled' | 'gated' | 'unconfigured'>
+}
+
+export interface HarnessProviderCheckResult {
+  status: 'available' | 'unauthorized' | 'unreachable' | 'unconfigured'
+  latencyMs: number
+  detail: string
+}
+
+export interface HarnessSessionInspection {
+  sessionId: string
+  status: 'idle' | 'running' | 'completed' | 'failed' | 'unknown'
+  updatedAt: string
+  lastEventType?: string
+  pendingTools: number
+  projection?: XiaoyinTaskProjection
+  messages?: Array<Pick<TaskMessage, 'id' | 'role' | 'text'>>
+}
+
+export interface HarnessSessionSearchHit {
+  sessionId: string
+  excerpt: string
+  updatedAt: string
+}
+
+export interface HarnessSessionSearchPage {
+  items: HarnessSessionSearchHit[]
+  nextCursor?: string
 }
 
 export type HarnessFailureCategory = 'timeout' | 'authentication' | 'capacity' | 'permission' | 'connector' | 'local-agent' | 'model' | 'unknown'
@@ -96,11 +130,11 @@ export function classifyHarnessFailure(reason: unknown): HarnessFailure {
   return failure('unknown', 'XY-UNKNOWN', '任务执行失败', message, false, false)
 }
 
-export function shouldRetryHarnessFailure(failure: HarnessFailure, monitor: TaskMonitorState): boolean {
-  return failure.retryable && !monitor.executionStarted
-    && !monitor.steps.some((step) => step.kind === 'tool' || step.kind === 'approval')
-    && !(monitor.timeline ?? []).some((entry) => entry.toolName || entry.kind === 'approval')
-    && !(monitor.subagents?.length)
+export function shouldRetryHarnessFailure(failure: HarnessFailure, projection: XiaoyinTaskProjection): boolean {
+  return failure.retryable && !projection.executionStarted
+    && !projection.steps.some((step) => step.kind === 'tool' || step.kind === 'approval')
+    && !(projection.timeline ?? []).some((entry) => entry.toolName || entry.kind === 'approval')
+    && !(projection.subagents?.length)
 }
 
 function failure(
@@ -120,6 +154,122 @@ export interface HarnessNotification {
   streamId?: string
   sequence?: number
   event: unknown
+}
+
+export interface HarnessProjectionUpdate {
+  sessionId: string
+  key: string
+  value: unknown
+  seq: number
+}
+
+/** Reads the official Harness SessionProjection notification envelope. */
+export function harnessProjectionUpdate(notification: HarnessNotification): HarnessProjectionUpdate | undefined {
+  const event = asRecord(notification.event)
+  if (event?.method !== 'session.projection') return undefined
+  const params = asRecord(event.params)
+  if (!params || typeof params.sessionId !== 'string' || typeof params.key !== 'string'
+    || !Number.isSafeInteger(params.seq) || Number(params.seq) < -1 || !Object.hasOwn(params, 'value')) return undefined
+  return { sessionId: params.sessionId, key: params.key, value: params.value, seq: Number(params.seq) }
+}
+
+export function normalizeHarnessProjection(value: unknown): XiaoyinTaskProjection | undefined {
+  const projection = asRecord(value)
+  if (!projection || !['idle', 'running', 'completed', 'failed', 'canceled'].includes(String(projection.status))
+    || typeof projection.activity !== 'string' || typeof projection.updatedAt !== 'string'
+    || !Array.isArray(projection.steps) || !Array.isArray(projection.artifacts)) return undefined
+  const base = createXiaoyinTaskProjection(projection.updatedAt)
+  const tokenUsage = normalizeTokenUsage(projection.tokenUsage)
+  const contextPressure = normalizeContextPressure(projection.contextPressure)
+  const outputRetention = normalizeOutputRetention(projection.outputRetention) ?? base.outputRetention
+  const compactions = normalizeMetricInteger(projection.compactions)
+  const interruption = normalizeInterruption(projection.interruption)
+  const outcome = normalizeOutcome(projection.outcome)
+  const failure = normalizeFailure(projection.failure)
+  return {
+    status: projection.status as XiaoyinTaskProjection['status'],
+    activity: projection.activity,
+    updatedAt: projection.updatedAt,
+    executionStarted: projection.executionStarted === true,
+    ...(typeof projection.operationScope === 'string' ? { operationScope: projection.operationScope } : {}),
+    ...(typeof projection.startedAt === 'string' ? { startedAt: projection.startedAt } : {}),
+    ...(typeof projection.completedAt === 'string' ? { completedAt: projection.completedAt } : {}),
+    steps: projection.steps as XiaoyinTaskProjection['steps'],
+    timeline: Array.isArray(projection.timeline) ? projection.timeline as XiaoyinTaskProjection['timeline'] : [],
+    subagents: Array.isArray(projection.subagents) ? projection.subagents as XiaoyinTaskProjection['subagents'] : [],
+    changes: Array.isArray(projection.changes) ? projection.changes as XiaoyinTaskProjection['changes'] : [],
+    artifacts: projection.artifacts as XiaoyinTaskProjection['artifacts'],
+    visuals: Array.isArray(projection.visuals) ? projection.visuals as XiaoyinTaskProjection['visuals'] : [],
+    knowledgeSources: Array.isArray(projection.knowledgeSources) ? projection.knowledgeSources as XiaoyinTaskProjection['knowledgeSources'] : [],
+    outputRetention,
+    ...(tokenUsage ? { tokenUsage } : {}),
+    ...(contextPressure ? { contextPressure } : {}),
+    ...(compactions !== undefined ? { compactions } : {}),
+    ...(interruption ? { interruption } : {}),
+    ...(outcome ? { outcome } : {}),
+    ...(failure ? { failure } : {}),
+  }
+}
+
+function normalizeTokenUsage(value: unknown): XiaoyinTaskProjection['tokenUsage'] | undefined {
+  const item = asRecord(value)
+  if (!item) return undefined
+  const uncachedInputTokens = normalizeMetricInteger(item.uncachedInputTokens)
+  const outputTokens = normalizeMetricInteger(item.outputTokens)
+  if (uncachedInputTokens === undefined || outputTokens === undefined) return undefined
+  const cacheReadTokens = normalizeMetricInteger(item.cacheReadTokens)
+  const cacheWriteTokens = normalizeMetricInteger(item.cacheWriteTokens)
+  return { uncachedInputTokens, outputTokens, ...(cacheReadTokens !== undefined ? { cacheReadTokens } : {}), ...(cacheWriteTokens !== undefined ? { cacheWriteTokens } : {}) }
+}
+
+function normalizeContextPressure(value: unknown): XiaoyinTaskProjection['contextPressure'] | undefined {
+  const item = asRecord(value)
+  if (!item) return undefined
+  const contextWindow = normalizeMetricInteger(item.contextWindow)
+  const pressureTokens = normalizeMetricInteger(item.pressureTokens)
+  const projectedTokens = normalizeMetricInteger(item.projectedTokens)
+  if (contextWindow === undefined && pressureTokens === undefined && projectedTokens === undefined) return undefined
+  return { ...(contextWindow !== undefined ? { contextWindow } : {}), ...(pressureTokens !== undefined ? { pressureTokens } : {}), ...(projectedTokens !== undefined ? { projectedTokens } : {}) }
+}
+
+function normalizeOutputRetention(value: unknown): XiaoyinTaskProjection['outputRetention'] | undefined {
+  const item = asRecord(value)
+  const prunedResults = normalizeMetricInteger(item?.prunedResults)
+  const omittedTokens = normalizeMetricInteger(item?.omittedTokens)
+  return prunedResults === undefined || omittedTokens === undefined ? undefined : { prunedResults, omittedTokens }
+}
+
+function normalizeInterruption(value: unknown): XiaoyinTaskProjection['interruption'] | undefined {
+  const item = asRecord(value)
+  if (!item || typeof item.checkpointAt !== 'string' || !['exit', 'failure', 'canceled'].includes(String(item.cause)) || !Array.isArray(item.pendingOperations)) return undefined
+  const pendingOperations = item.pendingOperations.flatMap((entry) => {
+    const operation = asRecord(entry)
+    if (!operation || typeof operation.id !== 'string' || typeof operation.label !== 'string') return []
+    return [{ id: operation.id, label: operation.label, ...(typeof operation.toolName === 'string' ? { toolName: operation.toolName } : {}) }]
+  })
+  return { checkpointAt: item.checkpointAt, cause: item.cause as 'exit' | 'failure' | 'canceled', pendingOperations }
+}
+
+function normalizeOutcome(value: unknown): XiaoyinTaskProjection['outcome'] | undefined {
+  const item = asRecord(value)
+  if (!item || !['completed', 'partial', 'needs_input', 'needs_confirmation', 'blocked', 'unverified'].includes(String(item.status)) || typeof item.summary !== 'string' || !Array.isArray(item.remaining) || item.remaining.some((entry) => typeof entry !== 'string') || !Array.isArray(item.checks)) return undefined
+  const checks = item.checks.flatMap((entry) => {
+    const check = asRecord(entry)
+    if (!check || typeof check.description !== 'string' || typeof check.evidence !== 'string' || !['passed', 'failed', 'not_run'].includes(String(check.result))) return []
+    return [{ description: check.description, result: check.result as 'passed' | 'failed' | 'not_run', evidence: check.evidence }]
+  })
+  return { status: item.status as NonNullable<XiaoyinTaskProjection['outcome']>['status'], summary: item.summary, remaining: item.remaining as string[], checks }
+}
+
+function normalizeFailure(value: unknown): XiaoyinTaskProjection['failure'] | undefined {
+  const item = asRecord(value)
+  return item && typeof item.code === 'string' && typeof item.category === 'string' && typeof item.detail === 'string'
+    ? { code: item.code, category: item.category, detail: item.detail }
+    : undefined
+}
+
+function normalizeMetricInteger(value: unknown): number | undefined {
+  return Number.isSafeInteger(value) && Number(value) >= 0 ? Number(value) : undefined
 }
 
 export interface AuthorizedLocalDirectory {
@@ -150,9 +300,28 @@ export async function selfTestLocalCapabilities(): Promise<LocalCapabilitySelfTe
   return invoke<LocalCapabilitySelfTestResult>('self_test_local_capabilities')
 }
 
-export async function probeHarnessHost(): Promise<HarnessHostHealth> {
+export async function probeHarnessHost(modelConfigured = false, allowShell = true, allowLsp = true, allowExternalAgents = false, allowHooks = false, toolsMode: 'native' | 'ptc' | 'both' = 'native'): Promise<HarnessHostHealth> {
   if (!isTauri()) throw new Error('Harness Host 仅在小胤桌面客户端中运行')
-  return invoke<HarnessHostHealth>('probe_harness_host')
+  return invoke<HarnessHostHealth>('probe_harness_host', { modelConfigured, allowShell, allowLsp, allowExternalAgents, allowHooks, toolsMode })
+}
+
+export async function checkHarnessProvider(input: { litellmBaseUrl: string; model: string; modelApiKey: string }): Promise<HarnessProviderCheckResult> {
+  if (!isTauri()) throw new Error('模型服务检查只能在小胤桌面客户端中运行')
+  return invoke<HarnessProviderCheckResult>('check_harness_provider', { request: input })
+}
+
+export async function inspectHarnessSession(employeeId: string, sessionId: string): Promise<HarnessSessionInspection | undefined> {
+  if (!isTauri()) return undefined
+  return invoke<HarnessSessionInspection | undefined>('inspect_harness_session', { employeeId, sessionId })
+}
+
+export async function searchHarnessSessionsPage(employeeId: string, sessionIds: string[], query: string, limit = 100, cursor?: string): Promise<HarnessSessionSearchPage> {
+  if (!isTauri()) return { items: [] }
+  return invoke<HarnessSessionSearchPage>('search_harness_sessions', { employeeId, sessionIds, query, limit, cursor })
+}
+
+export async function searchHarnessSessions(employeeId: string, sessionIds: string[], query: string, limit = 100): Promise<HarnessSessionSearchHit[]> {
+  return (await searchHarnessSessionsPage(employeeId, sessionIds, query, limit)).items
 }
 
 export function connectorDiagnosticsAvailable(): boolean {
@@ -305,7 +474,7 @@ export function harnessResponseUpdate(notification: HarnessNotification): Harnes
 }
 
 /** Keep receipts for already-started tools while Stop is settling, not late text/status. */
-export function applyStoppingHarnessNotification(current: TaskMonitorState, notification: HarnessNotification): TaskMonitorState {
+export function applyStoppingHarnessNotification(current: XiaoyinTaskProjection, notification: HarnessNotification): XiaoyinTaskProjection {
   const parsed = parseHarnessEvent(notification)
   if (!parsed?.isRootSession || parsed.type !== 'tool/result') return current
   const result = toolResult(parsed.data)
@@ -315,9 +484,9 @@ export function applyStoppingHarnessNotification(current: TaskMonitorState, noti
 }
 
 export function applyHarnessNotification(
-  current: TaskMonitorState,
+  current: XiaoyinTaskProjection,
   notification: HarnessNotification,
-): TaskMonitorState {
+): XiaoyinTaskProjection {
   const parsed = parseHarnessEvent(notification)
   if (!parsed) return current
   // This fact survives bounded display history and includes delegated tool activity.
@@ -334,7 +503,7 @@ export function applyHarnessNotification(
   const activity = harnessActivityLabel(notification)
 
   if (parsed.type === 'step/start') {
-    return updateMonitor(current, activity, upsertStep(current.steps, {
+    return updateProjection(current, activity, upsertStep(current.steps, {
       id: `analysis:${turn}:${step}`,
       kind: 'analysis',
       label: step === 1 ? '分析任务' : '整理工具结果',
@@ -349,14 +518,14 @@ export function applyHarnessNotification(
       : ''
     if (!delta) return current
     return {
-      ...updateMonitor(current, activity, current.steps, occurredAt),
+      ...updateProjection(current, activity, current.steps, occurredAt),
       timeline: appendTimelineText(current.timeline ?? [], `assistant:${turn}:${step}`, delta, occurredAt),
     }
   }
 
   if (parsed.type === 'assistant/message') {
     const message = assistantMessageText(parsed.data)
-    const next = updateMonitor(current, activity,
+    const next = updateProjection(current, activity,
       completeStep(current.steps, `analysis:${turn}:${step}`, 'completed', occurredAt), occurredAt)
     return message ? {
       ...next,
@@ -386,7 +555,7 @@ export function applyHarnessNotification(
       })
       : current.subagents
     return {
-      ...updateMonitor(current, activity, upsertStep(analysisCompleted, {
+      ...updateProjection(current, activity, upsertStep(analysisCompleted, {
       id: `tool:${callId}`,
       kind: 'tool',
       label: toolActivityLabel(toolName),
@@ -431,7 +600,7 @@ export function applyHarnessNotification(
       ? completeSubagent(current.subagents ?? [], result.callId, result.failed ? 'failed' : 'completed', occurredAt)
       : current.subagents
     return {
-      ...updateMonitor(current, activity,
+      ...updateProjection(current, activity,
         completeStep(current.steps, `tool:${result.callId}`, result.failed ? 'failed' : 'completed', occurredAt), occurredAt),
       timeline: completeTimeline(
         current.timeline ?? [], `tool:${result.callId}`, result.failed ? 'failed' : 'completed', occurredAt, presentation,
@@ -468,7 +637,7 @@ export function applyHarnessNotification(
     const toolName = text(parsed.data.name)
     if (!approvalId || !toolName) return current
     return {
-      ...updateMonitor(current, `等待确认：${toolActivityLabel(toolName)}`, upsertStep(current.steps, {
+      ...updateProjection(current, `等待确认：${toolActivityLabel(toolName)}`, upsertStep(current.steps, {
         id: `approval:${approvalId}`,
         kind: 'approval',
         label: `确认${toolActivityLabel(toolName)}`,
@@ -496,7 +665,7 @@ export function applyHarnessNotification(
     if (!approvalId || !toolName || !['allow', 'reject'].includes(decision ?? '')) return current
     const allowed = decision === 'allow'
     return {
-      ...updateMonitor(current, activity, upsertStep(current.steps, {
+      ...updateProjection(current, activity, upsertStep(current.steps, {
       id: `approval:${approvalId}`,
       kind: 'approval',
       label: `${allowed ? '已允许' : '已拒绝'}${toolActivityLabel(toolName)}`,
@@ -551,6 +720,43 @@ export function applyHarnessNotification(
     }
   }
 
+  if (parsed.type === 'compaction/start' || parsed.type === 'compaction/end') {
+    const count = (current.compactions ?? 0) + (parsed.type === 'compaction/end' ? 1 : 0)
+    return {
+      ...current,
+      activity: parsed.type === 'compaction/start' ? '正在整理上下文' : current.activity,
+      updatedAt: occurredAt,
+      compactions: count,
+      timeline: upsertTimeline(current.timeline ?? [], {
+        id: `compaction:${text(parsed.data.compactionId) ?? `${turn}:${step}`}`,
+        kind: 'tool',
+        label: parsed.type === 'compaction/start' ? '整理上下文' : '上下文整理完成',
+        status: parsed.type === 'compaction/start' ? 'running' : 'completed',
+        occurredAt,
+        completedAt: parsed.type === 'compaction/end' ? occurredAt : undefined,
+      }),
+    }
+  }
+
+  if (parsed.type === 'compaction/prune') {
+    const shadowedSeqs = Array.isArray(parsed.data.shadowedSeqs) ? parsed.data.shadowedSeqs.length : 1
+    const shadowedTokenCount = integer(parsed.data.shadowedTokenCount) ?? 0
+    const currentRetention = current.outputRetention ?? { prunedResults: 0, omittedTokens: 0 }
+    return {
+      ...updateProjection(current, '正在整理工具结果', current.steps, occurredAt),
+      outputRetention: {
+        prunedResults: currentRetention.prunedResults + shadowedSeqs,
+        omittedTokens: currentRetention.omittedTokens + shadowedTokenCount,
+      },
+      timeline: upsertTimeline(current.timeline ?? [], {
+        id: `retention:${Array.isArray(parsed.data.shadowedSeqs) ? parsed.data.shadowedSeqs.join(',') : `${turn}:${step}`}`,
+        kind: 'tool', label: '裁剪工具结果', status: 'completed',
+        detail: `${shadowedSeqs} 项${shadowedTokenCount > 0 ? `，约 ${shadowedTokenCount} tokens` : ''}`,
+        occurredAt, completedAt: occurredAt,
+      }),
+    }
+  }
+
   if (parsed.type === 'turn/end') {
     const reason = text(asRecord(parsed.data.reason)?.kind)
     const status = reason === 'completed' ? 'completed' : 'failed'
@@ -587,16 +793,16 @@ export function applyHarnessNotification(
   return current
 }
 
-export function createTaskMonitor(now = new Date().toISOString()): TaskMonitorState {
-  return { status: 'idle', activity: '等待开始', updatedAt: now, steps: [], timeline: [], subagents: [], changes: [], artifacts: [] }
+export function createXiaoyinTaskProjection(now = new Date().toISOString()): XiaoyinTaskProjection {
+  return { status: 'idle', activity: '等待开始', updatedAt: now, steps: [], timeline: [], subagents: [], changes: [], artifacts: [], outputRetention: { prunedResults: 0, omittedTokens: 0 } }
 }
 
-function updateMonitor(
-  current: TaskMonitorState,
+function updateProjection(
+  current: XiaoyinTaskProjection,
   activity: string,
   steps: TaskExecutionStep[],
   updatedAt: string,
-): TaskMonitorState {
+): XiaoyinTaskProjection {
   return { ...current, status: 'running', activity, steps, updatedAt }
 }
 
@@ -933,6 +1139,7 @@ function toolActivityLabel(toolName: string): string {
     local_files_search: '搜索本地文件',
     local_files_read_text: '读取本地文件',
     local_files_publish: '准备交付文件',
+    present: '声明交付文件',
     local_files_write_text: '修改本地文件',
     local_files_create_directory: '新建文件夹',
     local_files_copy: '复制本地文件',
@@ -940,13 +1147,39 @@ function toolActivityLabel(toolName: string): string {
     local_files_delete: '删除本地文件',
     bash: '运行 Bash 命令',
     pwsh: '运行 PowerShell 命令',
+    terminal_open: '打开持久终端',
+    terminal_send: '发送终端命令',
+    terminal_read: '读取终端输出',
+    terminal_signal: '控制终端进程',
+    terminal_close: '关闭持久终端',
+    terminal_list: '查看持久终端',
     job_output: '读取后台任务',
     job_list: '查看后台任务',
     job_kill: '停止后台任务',
+    schedule_create: '创建会话提醒',
+    schedule_list: '查看会话提醒',
+    schedule_delete: '取消会话提醒',
+    schedules_list: '查询定时任务',
+    schedules_create: '创建定时任务',
+    schedules_update: '修改定时任务',
+    schedules_pause: '暂停定时任务',
+    schedules_resume: '恢复定时任务',
+    schedules_delete: '删除定时任务',
+    todo_write: '更新任务清单',
+    workflow: '执行工作流',
+    web_search: '搜索网页资料',
+    web_fetch: '读取网页内容',
+    exit_plan_mode: '提交计划审阅',
     get_goal: '查看任务目标',
     task_report: '整理交付结果',
     create_goal: '创建任务目标',
     update_goal: '更新任务目标',
+    session_search: '查询历史会话',
+    session_event_search: '查询会话事件',
+    session_trace: '查看会话关系',
+    session_event_trace: '查看事件关系',
+    session_event_read: '读取会话事件',
+    list_agents: '查看子 Agent',
     subagent: '委派子任务',
     browser_open: '打开网页',
     browser_snapshot: '读取网页',
@@ -978,6 +1211,30 @@ function toolPresentation(toolName: string, rawArguments: unknown): Pick<TaskTim
   })
   if (toolName === 'subagent') return compact({
     kind: 'subagent', label: firstText(args, 'description') ?? '委派子任务',
+  })
+  if (toolName === 'subagent_fork' || toolName.startsWith('subagent_')) return compact({
+    kind: 'subagent', label: firstText(args, 'description') ?? '委派子任务',
+  })
+  if (toolName === 'web_search' || toolName === 'web_fetch') return compact({
+    kind: 'browser', label: toolActivityLabel(toolName), detail: firstText(args, 'query', 'url'),
+  })
+  if (toolName === 'todo_write' || toolName === 'workflow' || toolName === 'exit_plan_mode') return compact({
+    kind: 'tool', label: toolActivityLabel(toolName), detail: firstText(args, 'description', 'name'),
+  })
+  if (toolName.startsWith('session_')) return compact({
+    kind: 'tool', label: toolActivityLabel(toolName), detail: '结果按当前工作目录与会话权限过滤',
+  })
+  if (toolName === 'job_list' || toolName === 'job_output' || toolName === 'job_kill') return compact({
+    kind: 'tool', label: toolActivityLabel(toolName), detail: '后台任务状态由 Harness Jobs 统一管理',
+  })
+  if (toolName === 'schedule_create' || toolName === 'schedule_list' || toolName === 'schedule_delete') return compact({
+    kind: 'tool', label: toolActivityLabel(toolName), detail: '提醒由 Harness Session 持久化，仅在当前会话内投递',
+  })
+  if (toolName.startsWith('schedules_')) return compact({
+    kind: 'tool', label: toolActivityLabel(toolName), detail: '计划由小胤本机调度器管理',
+  })
+  if (toolName.startsWith('terminal_')) return compact({
+    kind: 'command', label: toolActivityLabel(toolName), detail: firstText(args, 'description', 'input', 'command'),
   })
   const fileLabels: Record<string, string> = {
     local_files_roots: '检查可用工作目录',
@@ -1044,6 +1301,18 @@ function toolResultPresentation(
       detail: `找到 ${matches.length} 项${value.truncated === true ? '（仅显示部分）' : ''}`,
     })
   }
+  if (toolName.startsWith('session_')) return compact({
+    detail: failed ? publicToolError(content) : '查询完成，结果仅在当前任务上下文中使用',
+  })
+  if (toolName === 'job_list' || toolName === 'job_output' || toolName === 'job_kill') return compact({
+    detail: failed ? publicToolError(content) : '已同步 Harness 后台任务状态',
+  })
+  if (toolName === 'schedule_create' || toolName === 'schedule_list' || toolName === 'schedule_delete') return compact({
+    detail: failed ? publicToolError(content) : '已同步当前会话提醒',
+  })
+  if (toolName.startsWith('schedules_')) return compact({
+    detail: failed ? publicToolError(content) : '已同步本机定时任务',
+  })
   if (toolName.startsWith('local_files_') || toolName.startsWith('office_')) {
     if (!value) return failed ? { detail: publicToolError(content) } : {}
     return compact({

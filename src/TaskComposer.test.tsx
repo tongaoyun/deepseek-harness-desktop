@@ -17,7 +17,7 @@ async function fixture(initial: string, overrides: Partial<ChatPageProps>, check
       knowledgeBases={[]} localDirectories={[]} localFileError="" messageListRef={{ current: null }} messages={[]} modelMenuOpen={false} modelPickerRef={{ current: null }} models={[]} pendingAttachments={[]}
       onAddKnowledge={(id) => setRefs((current) => [...current, id])} onRemoveKnowledge={(id) => setRefs((current) => current.filter((value) => value !== id))}
       onAddLocalDirectory={noop} onAddLocalFiles={noop} onCancel={noop} onPrepareRetry={noop} onPrompt={onPrompt} onReconnect={noop} onRecoverHarness={noop} onRemoveAttachment={noop} onRemoveLocalDirectory={noop} onSelectModel={noop} onSubmit={(event) => event.preventDefault()} onToggleModelMenu={noop}
-      prompt={prompt} runtimeStatus="ready" selectedKnowledgeBaseRefs={refs} taskMonitor={{ status: 'idle', activity: '', updatedAt: '', steps: [], artifacts: [] }} onPreview={noop} {...overrides} />
+      prompt={prompt} runtimeStatus="ready" selectedKnowledgeBaseRefs={refs} taskProjection={{ status: 'idle', activity: '', updatedAt: '', steps: [], artifacts: [] }} onPreview={noop} {...overrides} />
   }
   const container = document.body.appendChild(document.createElement('div'))
   const root = createRoot(container)
@@ -115,6 +115,13 @@ it('turns an at query into actual knowledge context rather than leaving an inert
     await click(container, '[role="option"]')
     expect(container.querySelector('textarea')!.value).toBe('参考 ')
     expect(container.querySelector('.composer-capability')!.textContent).toContain('公司资料')
+  })
+})
+
+it('inserts an official dsh-session reference from at suggestions', async () => {
+  await fixture('参考 @库存', { sessionReferences: [{ sessionId: 'session-inventory', label: '库存盘点', updatedAt: '2026-09-12T00:00:00Z' }] }, async (container) => {
+    await click(container, '[role="option"]')
+    expect(container.querySelector('textarea')!.value).toBe('参考 @[库存盘点](dsh-session:c2Vzc2lvbi1pbnZlbnRvcnk)')
   })
 })
 it('removes only the selected kit from a combined task', async () => {

@@ -1,3 +1,4 @@
+import { invoke, isTauri } from '@tauri-apps/api/core'
 import { nextCronRuns } from './cronPreview'
 import { attachmentSelectionError } from './attachmentLimits'
 import type { LocalTaskRun, LocalTaskAttachment } from './types'
@@ -8,6 +9,8 @@ export type ScheduleTiming = { kind: 'once'; at: string } | { kind: 'interval'; 
 export interface LocalScheduleRun {
   id: string; scheduledAt: string; startedAt: string; closedAt?: string
   status: 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELED' | 'INTERRUPTED' | 'MISSED' | 'NEEDS_ATTENTION'
+  /** Stable product-level run identity. `id` remains the storage key for the run. */
+  scheduleId?: string; scheduleRunId?: string
   outcome?: TaskOutcome
   taskId?: string; detail?: string
 }
@@ -24,18 +27,49 @@ export interface LocalSchedule {
 export type LocalScheduleInput = Pick<LocalSchedule, 'name' | 'prompt' | 'cronExpression' | 'timeZone' | 'directories' | 'timing' | 'attachments' | 'taskContext' | 'model' | 'timeZoneMode'>
 export const localScheduleEvent = 'xiaoyin-local-schedules-updated'
 const key = (owner: string) => `xiaoyin:local-schedules:v1:${owner}`
-export function readLocalSchedules(owner: string): LocalSchedule[] {
-  const value: unknown = JSON.parse(localStorage.getItem(key(owner)) ?? '[]')
+function parseLocalSchedules(value: unknown): LocalSchedule[] {
   if (!Array.isArray(value) || value.some((item) => !item || typeof item.id !== 'string' || typeof item.prompt !== 'string' || !Array.isArray(item.runs) || !Array.isArray(item.directories) || !Number.isFinite(Date.parse(item.nextAt)))) {
     throw new Error('本机定时计划数据无法读取，已停止自动调度；原始数据保留')
   }
-  return value as LocalSchedule[]
+  // Older records used the run row id implicitly. Normalize the explicit
+  // references on read so every subsequent execution has one stable chain.
+  return (value as LocalSchedule[]).map((item) => ({
+    ...item,
+    runs: item.runs.map((run) => ({
+      ...run,
+      scheduleId: run.scheduleId ?? item.id,
+      scheduleRunId: run.scheduleRunId ?? run.id,
+    })),
+  }))
+}
+export async function readLocalSchedules(owner: string): Promise<LocalSchedule[]> {
+  const storageKey = key(owner)
+  if (!isTauri()) return parseLocalSchedules(JSON.parse(localStorage.getItem(storageKey) ?? '[]'))
+  let raw: string | null = null
+  try { raw = localStorage.getItem(storageKey) } catch { /* SQLite remains available without WebView storage. */ }
+  let value = await invoke<unknown>('load_local_schedules', { owner })
+  if (value === null) {
+    // Only a missing native record may import the old WebView copy.
+    const legacy = raw === null ? [] : parseLocalSchedules(JSON.parse(raw))
+    value = await invoke<unknown>('load_local_schedules', { owner, legacy })
+  }
+  const schedules = parseLocalSchedules(value)
+  if (raw !== null) {
+    try { localStorage.removeItem(storageKey) } catch { /* A stale legacy copy never overrides SQLite. */ }
+  }
+  return schedules
+}
+async function writeLocalSchedules(owner: string, schedules: LocalSchedule[]) {
+  if (isTauri()) await invoke('save_local_schedules', { owner, schedules })
+  else localStorage.setItem(key(owner), JSON.stringify(schedules))
 }
 export async function mutateLocalSchedules(owner: string, update: (items: LocalSchedule[]) => LocalSchedule[]) {
   if (!navigator.locks) throw new Error('当前环境缺少本机调度锁，未保存或执行计划，请使用更新版本的小胤桌面端')
-  return navigator.locks.request(`${key(owner)}:storage`, () => {
-    const next = update(readLocalSchedules(owner))
-    localStorage.setItem(key(owner), JSON.stringify(next))
+  return navigator.locks.request(`${key(owner)}:storage`, async () => {
+    const previous = await readLocalSchedules(owner)
+    const next = update(previous)
+    if (next === previous) return previous
+    await writeLocalSchedules(owner, next)
     window.dispatchEvent(new Event(localScheduleEvent))
     return next
   })
@@ -71,7 +105,7 @@ export async function saveLocalSchedule(owner: string, input: LocalScheduleInput
 }
 
 export type LocalScheduleResult = boolean | 'canceled' | { notStarted: string } | { outcome: TaskOutcome }
-export type LocalScheduleExecutor = (schedule: LocalSchedule, taskId: string) => Promise<LocalScheduleResult>
+export type LocalScheduleExecutor = (schedule: LocalSchedule, taskId: string, scheduleRunId: string) => Promise<LocalScheduleResult>
 /** A lease covers the actual run; state writes use a separate short lock. This
  * allows pause/delete while running and prevents a second window dispatching it. */
 export async function tickLocalSchedules(owner: string, ready: () => boolean, run: LocalScheduleExecutor, now = new Date(), onlyId?: string) {
@@ -80,30 +114,38 @@ export async function tickLocalSchedules(owner: string, ready: () => boolean, ru
     if (!lock) { if (onlyId) throw new Error('已有本机定时任务执行中，请稍后再试'); return }
     let selected: LocalSchedule | undefined
     let record: LocalScheduleRun | undefined
-    await mutateLocalSchedules(owner, (items) => items.map((item) => {
-      // With the runner lease acquired, an existing running marker can only be
-      // from an interrupted process. Never replay its potentially completed writes.
-      if (item.runs.some((entry) => entry.status === 'RUNNING')) return { ...item, active: false,
-        runs: item.runs.map((entry) => entry.status === 'RUNNING' ? { ...entry, status: 'INTERRUPTED' as const, closedAt: now.toISOString(), detail: '应用执行中断，请打开已有任务核对结果后再恢复计划' } : entry) }
-      if (selected || !ready() || (onlyId ? item.id !== onlyId : !item.active || Date.parse(item.nextAt) > now.getTime())) return item
-      const missed = !onlyId && now.getTime() - Date.parse(item.nextAt) > 60_000
-      const taskId = crypto.randomUUID()
-      record = { id: crypto.randomUUID(), scheduledAt: onlyId ? now.toISOString() : item.nextAt, startedAt: now.toISOString(),
-        status: missed ? 'MISSED' : 'RUNNING', ...(missed ? { closedAt: now.toISOString(), detail: '错过计划时间（应用离线、电脑休眠或执行资源未就绪），未自动补跑' } : { taskId }) }
-      const once = item.timing?.kind === 'once'
-      const interval = item.timing?.kind === 'interval' ? item.timing.minutes * 60000 : 0
-      const followingAt = onlyId || once ? item.nextAt : interval
-        ? new Date(Date.parse(item.nextAt) + (Math.floor((now.getTime() - Date.parse(item.nextAt)) / interval) + 1) * interval).toISOString()
-        : nextLocalRun(item, now)
-      const updated = { ...item, active: once && !onlyId ? false : item.active,
-        nextAt: followingAt, runs: [record, ...item.runs].slice(0, 30) }
-      if (!missed) selected = updated
-      return updated
-    }))
+    await mutateLocalSchedules(owner, (items) => {
+      let changed = false
+      const next = items.map((item) => {
+        // With the runner lease acquired, an existing running marker can only be
+        // from an interrupted process. Never replay its potentially completed writes.
+        if (item.runs.some((entry) => entry.status === 'RUNNING')) {
+          changed = true
+          return { ...item, active: false, runs: item.runs.map((entry) => entry.status === 'RUNNING' ? { ...entry, status: 'INTERRUPTED' as const, closedAt: now.toISOString(), detail: '应用执行中断，请打开已有任务核对结果后再恢复计划' } : entry) }
+        }
+        if (selected || !ready() || (onlyId ? item.id !== onlyId : !item.active || Date.parse(item.nextAt) > now.getTime())) return item
+        const missed = !onlyId && now.getTime() - Date.parse(item.nextAt) > 60_000
+        const taskId = crypto.randomUUID()
+        const scheduleRunId = crypto.randomUUID()
+        record = { id: scheduleRunId, scheduleId: item.id, scheduleRunId, scheduledAt: onlyId ? now.toISOString() : item.nextAt, startedAt: now.toISOString(),
+          status: missed ? 'MISSED' : 'RUNNING', ...(missed ? { closedAt: now.toISOString(), detail: '错过计划时间（应用离线、电脑休眠或执行资源未就绪），未自动补跑' } : { taskId }) }
+        const once = item.timing?.kind === 'once'
+        const interval = item.timing?.kind === 'interval' ? item.timing.minutes * 60000 : 0
+        const followingAt = onlyId || once ? item.nextAt : interval
+          ? new Date(Date.parse(item.nextAt) + (Math.floor((now.getTime() - Date.parse(item.nextAt)) / interval) + 1) * interval).toISOString()
+          : nextLocalRun(item, now)
+        const updated = { ...item, active: once && !onlyId ? false : item.active,
+          nextAt: followingAt, runs: [record, ...item.runs].slice(0, 30) }
+        changed = true
+        if (!missed) selected = updated
+        return updated
+      })
+      return changed ? next : items
+    })
     if (!selected || !record?.taskId) return
     const selectedId = selected.id, runId = record.id
     let result: LocalScheduleResult = false, detail = ''
-    try { if (!ready()) throw new Error('执行前账号或本机状态发生变化，本轮未启动'); result = await run(selected, record.taskId) }
+    try { if (!ready()) throw new Error('执行前账号或本机状态发生变化，本轮未启动'); result = await run(selected, record.taskId, runId) }
     catch (error) { detail = error instanceof Error ? error.message : String(error) }
     const success = result === true
     const notStarted = typeof result === 'object' && 'notStarted' in result ? result.notStarted : ''

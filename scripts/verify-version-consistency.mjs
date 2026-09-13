@@ -17,7 +17,7 @@ const versions = {
   'src-tauri/Cargo.lock[xiaoyin-desktop]': cargoLockVersion,
 }
 const unique = new Set(Object.values(versions))
-if ([...Object.values(versions)].some((value) => typeof value !== 'string') || unique.size !== 1) {
+if (Object.values(versions).some((value) => typeof value !== 'string') || unique.size !== 1) {
   throw new Error(`Desktop version mismatch: ${JSON.stringify(versions)}`)
 }
 console.log(`Desktop version consistency passed: ${packageJson.version}`)

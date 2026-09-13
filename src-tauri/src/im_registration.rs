@@ -1,38 +1,140 @@
 //! DingTalk device registration, using the public protocol from the official connector.
 //! No application is created here without the user scanning and confirming in DingTalk.
 use serde_json::{Value, json};
-use std::time::Duration;
+use std::{
+    sync::Mutex,
+    time::{Duration, Instant},
+};
 
-async fn registration_request(action: &str, body: Value) -> Result<Value, String> {
+static REGISTRATION: Mutex<RegistrationState> = Mutex::new(RegistrationState {
+    revision: 0,
+    lease: None,
+});
+
+struct RegistrationState {
+    revision: u64,
+    lease: Option<RegistrationLease>,
+}
+
+const MAX_REGISTRATION_RESPONSE_BYTES: usize = 64 * 1024;
+
+enum RegistrationRequestError {
+    Temporary(&'static str),
+    Invalid(&'static str),
+}
+
+impl RegistrationRequestError {
+    fn message(self) -> String {
+        match self {
+            Self::Temporary(message) | Self::Invalid(message) => message.to_string(),
+        }
+    }
+}
+
+struct RegistrationLease {
+    employee_id: String,
+    session_epoch: u64,
+    device_code: String,
+    expires_at: Instant,
+}
+
+impl RegistrationLease {
+    fn allows(&self, employee_id: &str, session_epoch: u64, device_code: &str) -> bool {
+        self.employee_id == employee_id
+            && self.session_epoch == session_epoch
+            && self.device_code == device_code
+            && Instant::now() < self.expires_at
+    }
+}
+
+async fn registration_request(
+    action: &str,
+    body: Value,
+) -> Result<Value, RegistrationRequestError> {
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(15))
         .redirect(reqwest::redirect::Policy::none())
         .build()
-        .map_err(|_| "无法初始化扫码连接")?;
-    let response = client
+        .map_err(|_| RegistrationRequestError::Invalid("无法初始化扫码连接"))?;
+    let mut response = client
         .post(format!(
             "https://oapi.dingtalk.com/app/registration/{action}"
         ))
         .json(&body)
         .send()
         .await
-        .map_err(|_| "钉钉扫码服务暂不可达，请重试或使用手动配置")?;
+        .map_err(|_| {
+            RegistrationRequestError::Temporary("钉钉扫码服务暂不可达，请重试或使用手动配置")
+        })?;
     if !response.status().is_success() {
-        return Err("钉钉扫码服务返回异常，请重试".into());
+        return Err(if response.status().is_server_error() {
+            RegistrationRequestError::Temporary("钉钉扫码服务返回异常，请重试")
+        } else {
+            RegistrationRequestError::Invalid("钉钉未接受扫码请求，请刷新或使用手动配置")
+        });
     }
-    let value: Value = response.json().await.map_err(|_| "扫码服务响应无效")?;
+    let mut bytes = Vec::new();
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|_| RegistrationRequestError::Temporary("扫码服务响应暂时无法读取"))?
+    {
+        append_response_chunk(&mut bytes, &chunk)
+            .map_err(|_| RegistrationRequestError::Invalid("扫码服务响应过大"))?;
+    }
+    let value: Value = serde_json::from_slice(&bytes)
+        .map_err(|_| RegistrationRequestError::Invalid("扫码服务响应无效"))?;
     if value["errcode"].as_i64() != Some(0) {
-        return Err("钉钉未接受扫码请求，请刷新或使用手动配置".into());
+        return Err(RegistrationRequestError::Invalid(
+            "钉钉未接受扫码请求，请刷新或使用手动配置",
+        ));
     }
     Ok(value)
 }
 
+fn append_response_chunk(bytes: &mut Vec<u8>, chunk: &[u8]) -> Result<(), String> {
+    if bytes.len().saturating_add(chunk.len()) > MAX_REGISTRATION_RESPONSE_BYTES {
+        return Err("扫码服务响应过大".into());
+    }
+    bytes.extend_from_slice(chunk);
+    Ok(())
+}
+
 #[tauri::command]
-pub async fn begin_dingtalk_registration() -> Result<Value, String> {
-    let init = registration_request("init", json!({"source":"XIAOYIN"})).await?;
+pub async fn begin_dingtalk_registration(app: tauri::AppHandle) -> Result<Value, String> {
+    let employee_id = crate::erp_auth::current_employee(&app).await?;
+    let session_epoch = crate::erp_auth::mcp::session_epoch();
+    let revision = {
+        let mut state = REGISTRATION.lock().map_err(|_| "扫码状态不可用")?;
+        state.revision = state.revision.wrapping_add(1);
+        state.lease = None;
+        state.revision
+    };
+    let init = registration_request("init", json!({"source":"XIAOYIN"}))
+        .await
+        .map_err(RegistrationRequestError::message)?;
     let nonce = required(&init, "nonce")?;
-    let begin = registration_request("begin", json!({"nonce":nonce})).await?;
-    registration_session(&begin)
+    let begin = registration_request("begin", json!({"nonce":nonce}))
+        .await
+        .map_err(RegistrationRequestError::message)?;
+    let session = registration_session(&begin)?;
+    if crate::erp_auth::current_employee(&app).await? != employee_id
+        || crate::erp_auth::mcp::session_epoch() != session_epoch
+    {
+        return Err("登录账号已切换，请重新获取二维码".into());
+    }
+    let mut state = REGISTRATION.lock().map_err(|_| "扫码状态不可用")?;
+    if state.revision != revision {
+        return Err("二维码已刷新，请使用新二维码".into());
+    }
+    state.lease = Some(RegistrationLease {
+        employee_id,
+        session_epoch,
+        device_code: required(&session, "deviceCode")?.to_string(),
+        expires_at: Instant::now()
+            + Duration::from_secs(session["expiresIn"].as_u64().unwrap_or(7200)),
+    });
+    Ok(session)
 }
 
 fn registration_session(begin: &Value) -> Result<Value, String> {
@@ -52,12 +154,48 @@ fn registration_session(begin: &Value) -> Result<Value, String> {
 }
 
 #[tauri::command]
-pub async fn poll_dingtalk_registration(device_code: String) -> Result<Value, String> {
+pub async fn poll_dingtalk_registration(
+    app: tauri::AppHandle,
+    device_code: String,
+) -> Result<Value, String> {
     if device_code.trim().is_empty() || device_code.len() > 4096 {
         return Err("扫码会话无效".into());
     }
-    let value = registration_request("poll", json!({"device_code":device_code})).await?;
-    registration_result(&value)
+    let employee_id = crate::erp_auth::current_employee(&app).await?;
+    let session_epoch = crate::erp_auth::mcp::session_epoch();
+    {
+        let state = REGISTRATION.lock().map_err(|_| "扫码状态不可用")?;
+        if !state
+            .lease
+            .as_ref()
+            .is_some_and(|value| value.allows(&employee_id, session_epoch, &device_code))
+        {
+            return Err("扫码会话已失效，请重新获取二维码".into());
+        }
+    }
+    let value = match registration_request("poll", json!({"device_code":device_code})).await {
+        Ok(value) => value,
+        Err(RegistrationRequestError::Temporary(_)) => return Ok(json!({"status":"RETRY"})),
+        Err(error) => return Err(error.message()),
+    };
+    if crate::erp_auth::current_employee(&app).await? != employee_id
+        || crate::erp_auth::mcp::session_epoch() != session_epoch
+    {
+        return Err("登录账号已切换，请重新获取二维码".into());
+    }
+    let mut state = REGISTRATION.lock().map_err(|_| "扫码状态不可用")?;
+    if !state
+        .lease
+        .as_ref()
+        .is_some_and(|value| value.allows(&employee_id, session_epoch, &device_code))
+    {
+        return Err("扫码会话已失效，请重新获取二维码".into());
+    }
+    let result = registration_result(&value)?;
+    if result["status"] != "WAITING" {
+        state.lease = None;
+    }
+    Ok(result)
 }
 
 fn registration_result(value: &Value) -> Result<Value, String> {
@@ -87,6 +225,31 @@ fn required<'a>(value: &'a Value, field: &str) -> Result<&'a str, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn registration_response_is_bounded_even_when_sent_in_chunks() {
+        let mut bytes = vec![0; MAX_REGISTRATION_RESPONSE_BYTES - 1];
+        append_response_chunk(&mut bytes, &[0]).unwrap();
+        assert!(append_response_chunk(&mut bytes, &[0]).is_err());
+        assert_eq!(bytes.len(), MAX_REGISTRATION_RESPONSE_BYTES);
+    }
+    #[test]
+    fn registration_lease_rejects_another_employee_session_code_or_expired_qr() {
+        let lease = RegistrationLease {
+            employee_id: "employee-1".into(),
+            session_epoch: 2,
+            device_code: "device-1".into(),
+            expires_at: Instant::now() + Duration::from_secs(60),
+        };
+        assert!(lease.allows("employee-1", 2, "device-1"));
+        assert!(!lease.allows("employee-2", 2, "device-1"));
+        assert!(!lease.allows("employee-1", 4, "device-1"));
+        assert!(!lease.allows("employee-1", 2, "device-2"));
+        let expired = RegistrationLease {
+            expires_at: Instant::now() - Duration::from_secs(1),
+            ..lease
+        };
+        assert!(!expired.allows("employee-1", 2, "device-1"));
+    }
     #[test]
     fn rejects_non_official_urls_and_incomplete_credentials() {
         assert!(registration_session(&json!({"device_code":"one","verification_uri_complete":"https://dingtalk.com.evil.test"})).is_err());

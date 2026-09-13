@@ -11,6 +11,12 @@ it('preserves ERP cookie authentication on import and runtime selection without 
   }
 })
 
+it('carries explicitly classified read tools through the product connector catalog', () => {
+  const entry = parseConnectorJson(JSON.stringify({ id: 'reports', url: 'https://example.test/mcp', toolNames: ['report', 'send'], readOnlyTools: ['report'] }))
+  expect(buildRuntimeConnectorCatalog([entry], ['reports'])[0].readOnlyTools).toEqual(['report'])
+  expect(() => parseConnectorJson(JSON.stringify({ id: 'reports', url: 'https://example.test/mcp', readOnlyTools: 'report' }))).toThrow('readOnlyTools')
+})
+
 describe('runtime connector catalog', () => {
   it('does not enable incomplete managed connector definitions', () => {
     const [runtime] = buildRuntimeConnectorCatalog([{

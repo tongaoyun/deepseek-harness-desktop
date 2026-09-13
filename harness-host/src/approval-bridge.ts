@@ -1,5 +1,6 @@
-import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 import { createServer, type Server } from 'node:http'
+import { authorizedLocalBearer, hardenLocalBridgeServer } from './local-bridge-security.js'
 import { notification, type JsonRpcOutput } from './protocol.js'
 
 const MAX_BODY_BYTES = 16 * 1024
@@ -25,6 +26,7 @@ export class ApprovalBridge {
     this.server = createServer((request, response) => {
       void this.handleHttp(request, response)
     })
+    hardenLocalBridgeServer(this.server)
     await new Promise<void>((resolve, reject) => {
       this.server?.once('error', reject)
       this.server?.listen(0, '127.0.0.1', () => resolve())
@@ -78,19 +80,16 @@ export class ApprovalBridge {
         this.pending.set(approvalId, { resolve, timer })
         this.emit(notification('approval.request', { approvalId, ...value }))
       })
-      response.writeHead(200, { 'content-type': 'application/json' })
+      response.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' })
       response.end(JSON.stringify({ outcome: decision === 'allow' ? 'allowed-once' : decision === 'reject' ? 'rejected' : 'unavailable' }))
     } catch (error) {
-      response.writeHead(400, { 'content-type': 'application/json' })
+      response.writeHead(400, { 'content-type': 'application/json', 'cache-control': 'no-store' })
       response.end(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }))
     }
   }
 
   private authorized(value: string | undefined): boolean {
-    const supplied = value?.startsWith('Bearer ') ? value.slice(7) : ''
-    const left = Buffer.from(supplied)
-    const right = Buffer.from(this.token)
-    return left.length === right.length && timingSafeEqual(left, right)
+    return authorizedLocalBearer(value, this.token)
   }
 }
 

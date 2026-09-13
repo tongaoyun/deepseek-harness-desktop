@@ -55,10 +55,38 @@ pub fn run() {
         .manage(connector_oauth::ConnectorOAuthManager::default())
         .manage(im::LocalImManager::default())
         .manage(local_files::LocalFileAuthorizations::default())
+        .manage(feedback_images::FeedbackImageGrants::default())
         .manage(html_preview::HtmlPreviewServer::default())
         .setup(|app| {
-            app.state::<local_files::LocalFileAuthorizations>()
-                .initialize_workspace(app.path().app_data_dir()?.join("workspace"))
+            let app_data = app.path().app_data_dir()?;
+            #[cfg(debug_assertions)]
+            if std::env::var_os("XIAOYIN_LOCAL_DEV_WEBVIEW_ISOLATION").is_some() {
+                if app.config().identifier != "com.instudio.xiaoyin.desktop.local-test" {
+                    return Err(std::io::Error::other(
+                        "本地 WebView 隔离仅适用于 local-test 应用标识",
+                    )
+                    .into());
+                }
+                let main = app
+                    .config()
+                    .app
+                    .windows
+                    .iter()
+                    .find(|window| window.label == "main")
+                    .ok_or_else(|| std::io::Error::other("本地测试缺少主窗口配置"))?;
+                let builder = tauri::WebviewWindowBuilder::from_config(app.handle(), main)?;
+                #[cfg(target_os = "macos")]
+                let builder = builder.data_store_identifier(*b"xiaoyin-local-01");
+                #[cfg(not(target_os = "macos"))]
+                let builder = builder.data_directory(app_data.join("webview"));
+                builder.build()?;
+            }
+            let authorizations = app.state::<local_files::LocalFileAuthorizations>();
+            authorizations
+                .initialize_workspace(app_data.join("workspace"))
+                .and_then(|_| {
+                    authorizations.initialize_harness_workspaces_root(app_data.join("workspaces"))
+                })
                 .map_err(std::io::Error::other)?;
             let show = MenuItem::with_id(app, "show", "打开小胤", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "退出小胤", true, None::<&str>)?;
@@ -90,6 +118,14 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            if window.label() == "main"
+                && let tauri::WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }) =
+                    event
+            {
+                window
+                    .state::<feedback_images::FeedbackImageGrants>()
+                    .register(paths, erp_auth::mcp::session_epoch());
+            }
             if window.label() == "erp-login"
                 && let tauri::WindowEvent::CloseRequested { api, .. } = event
             {
@@ -154,14 +190,25 @@ pub fn run() {
             local_files::revoke_local_directory,
             local_files::clear_local_directories,
             local_store::load_local_tasks,
+            local_store::local_task_history_migrated,
+            local_store::import_local_task_history,
             local_store::load_local_task,
             local_store::save_local_task,
             local_store::delete_local_task,
             local_store::load_enterprise_catalog_cache,
             local_store::save_enterprise_catalog_cache,
+            local_store::load_local_schedules,
+            local_store::save_local_schedules,
+            local_store::load_local_task_queues,
+            local_store::save_local_task_queues,
+            local_store::load_local_workspace_state,
+            local_store::save_local_workspace_state,
             harness::run_harness,
             harness::diagnose_connectors,
             harness::probe_harness_host,
+            harness::check_harness_provider,
+            harness::inspect_harness_session,
+            harness::search_harness_sessions,
             harness::self_test_local_capabilities,
             harness::cancel_harness,
             harness::respond_harness_approval,

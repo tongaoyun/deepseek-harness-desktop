@@ -1,36 +1,47 @@
 use crate::local_files::LocalFileAuthorizations;
+use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use std::{fs, io::Read, path::Path, sync::Mutex};
 
 static UNDO_LOCK: Mutex<()> = Mutex::new(());
 const MAX_BYTES: u64 = 32 * 1024 * 1024;
 
-#[tauri::command]
-pub fn undo_local_file_change(
-    authorizations: tauri::State<'_, LocalFileAuthorizations>,
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UndoLocalFileChangeRequest {
     root_id: String,
     path: String,
     action: String,
     after_hash: String,
     before_hash: Option<String>,
     backup_path: Option<String>,
+}
+
+#[tauri::command]
+pub async fn undo_local_file_change(
+    app: tauri::AppHandle,
+    authorizations: tauri::State<'_, LocalFileAuthorizations>,
+    request: UndoLocalFileChangeRequest,
 ) -> Result<String, String> {
+    let employee_id = crate::erp_auth::current_employee(&app).await?;
+    authorizations.ensure_employee(&employee_id)?;
     let _guard = UNDO_LOCK.lock().map_err(|_| "撤销状态不可用")?;
-    if !matches!(action.as_str(), "created" | "updated" | "copied") {
+    if !matches!(request.action.as_str(), "created" | "updated" | "copied") {
         return Err("此类型的改动不支持自动撤销".into());
     }
-    if action == "updated" && backup_path.is_none() {
+    if request.action == "updated" && request.backup_path.is_none() {
         return Err("没有修改前的备份，无法撤销".into());
     }
-    let target = authorizations.resolve_artifact(&root_id, &path)?;
-    let root = authorizations.resolve_artifact(&root_id, ".")?;
-    let backup = backup_path
+    let target = authorizations.resolve_artifact(&request.root_id, &request.path)?;
+    let root = authorizations.resolve_artifact(&request.root_id, ".")?;
+    let backup = request
+        .backup_path
         .as_deref()
         .map(|value| {
             if !value.starts_with(".xiaoyin-backups/") {
                 return Err("备份路径无效".into());
             }
-            authorizations.resolve_artifact(&root_id, value)
+            authorizations.resolve_artifact(&request.root_id, value)
         })
         .transpose()?;
     let recovery_dir = root.join(".xiaoyin-backups").join("undo");
@@ -44,8 +55,8 @@ pub fn undo_local_file_change(
     let recovery = undo_file(
         &target,
         backup.as_deref(),
-        &after_hash,
-        before_hash.as_deref(),
+        &request.after_hash,
+        request.before_hash.as_deref(),
         &recovery_dir,
     )?;
     Ok(recovery

@@ -1,7 +1,4 @@
-.knowledge-page-heading { display: flex; align-items: baseline; gap: 12px; margin: 28px 0 24px; }
-.knowledge-page-heading h1 { margin: 0; font-size: 24px; }
-.knowledge-page-heading > span { color: #737373; font-size: 12px; }
-.knowledge-page { display: grid; grid-template-columns: 208px minmax(0, 1fr); min-height: 480px; gap: 28px; }
+.knowledge-page { display: grid; grid-template-columns: 208px minmax(0, 1fr); min-height: 480px; gap: 28px; margin-top: 28px; }
 .knowledge-sidebar { min-width: 0; border-right: 1px solid #ebebeb; padding-right: 20px; }
 .knowledge-create-trigger { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; min-height: 34px; padding: 6px 12px; border: 1px solid #e5e5e5; border-radius: 6px; background: white; color: #252525; font-size: 12px; cursor: pointer; }
 .knowledge-base-list { display: grid; align-content: start; gap: 4px; margin-top: 24px; }
@@ -62,6 +59,7 @@
 .knowledge-welcome { display: grid; min-height: 380px; place-content: center; justify-items: center; text-align: center; }
 .knowledge-welcome h2 { font-size: 18px; margin: 18px 0 8px; }
 .knowledge-welcome p { color: #737373; font-size: 13px; line-height: 1.6; }
+.knowledge-welcome button { margin-top: 8px; }
 @media (max-width: 1000px) {
   .knowledge-page { grid-template-columns: 170px minmax(0, 1fr); gap: 20px; }
   .knowledge-main > header, .knowledge-documents > header { flex-wrap: wrap; }

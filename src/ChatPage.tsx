@@ -10,7 +10,7 @@ import { TaskOutcomeDetails } from './TaskOutcomeDetails'
 import { TaskRecoveryNotice } from './TaskRecoveryNotice'
 import { TaskOperationReview } from './TaskOperationReview'
 import { TaskVisuals } from './TaskVisuals'
-import type { CapabilitySnapshot, KnowledgeBaseEntry, LocalTaskAttachment, RuntimeStatus, TaskMessage, TaskMonitorState } from './types'
+import type { CapabilitySnapshot, KnowledgeBaseEntry, LocalTaskAttachment, RuntimeStatus, TaskMessage, XiaoyinTaskProjection } from './types'
 import { XiaoyinMascot } from './XiaoyinMascot'
 import type { ExtensionInvocation } from './extensionInvocations'
 import { TaskComposer } from './TaskComposer'
@@ -30,7 +30,7 @@ export interface ChatPageProps {
   onChangesUndone?: (messageIndex: number, results: import('./localArtifactPreview').UndoFileResult[]) => void
   messages: TaskMessage[]
   prompt: string
-  taskMonitor: TaskMonitorState
+  taskProjection: XiaoyinTaskProjection
   taskContextRestoring?: boolean
   capabilitySnapshot?: CapabilitySnapshot
   harnessHealth: 'checking' | 'ready' | 'degraded'
@@ -80,6 +80,7 @@ export interface ChatPageProps {
   onToggleTaskConnector?: (id: string) => void
   onBrowseCapability?: (kind: 'expert-kit' | 'skill' | 'connector' | 'knowledge') => void
   recentDirectories?: AuthorizedLocalDirectory[]
+  sessionReferences?: Array<{ sessionId: string; label: string; updatedAt: string }>
   onSelectRecentDirectory?: (path: string) => void
   onPasteFiles?: (files: File[]) => Promise<boolean>
   pastingAttachments?: boolean
@@ -155,7 +156,7 @@ export function ChatPage(props: ChatPageProps) {
     if (!pinnedToBottom.current && !(addedMessage && lastMessage?.role === 'user')) return
     // Align the viewport before paint, not one animation frame after content reflows.
     scrollToBottom('auto')
-  }, [props.messages.length, lastMessage?.pending, lastMessage?.text, props.taskMonitor.updatedAt])
+  }, [props.messages.length, lastMessage?.pending, lastMessage?.text, props.taskProjection.updatedAt])
 
   useEffect(() => {
     setPreviewTargets([])
@@ -197,7 +198,7 @@ export function ChatPage(props: ChatPageProps) {
       <h1>不止聊天，搞定一切</h1>
       <p>本地运行、自主规划、安全可控的 AI 工作搭子</p>
     </div>}
-    <span aria-live="polite" className="sr-only">{props.taskMonitor.activity}</span>
+    <span aria-live="polite" className="sr-only">{props.taskProjection.activity}</span>
     {props.messages.length > 0 && <div aria-label="任务对话" className="message-list" onScroll={trackScroll} ref={props.messageListRef} role="log">{historyStart > 0 && <button className="conversation-load-earlier" type="button" onClick={() => {
       const list = props.messageListRef.current
       if (list) historyAnchor.current = { height: list.scrollHeight, top: list.scrollTop }
@@ -205,7 +206,7 @@ export function ChatPage(props: ChatPageProps) {
       setHistoryWindow({ taskId: props.taskId, start: Math.max(0, historyStart - 60) })
     }}>加载更早的消息（还有 {historyStart} 条）</button>}{props.messages.slice(historyStart).map((message, offset) => {
       const index = historyStart + offset
-      const monitor = message.monitor ?? (message.role === 'assistant' && index === props.messages.length - 1 ? props.taskMonitor : undefined)
+      const projection = message.projection ?? (message.role === 'assistant' && index === props.messages.length - 1 ? props.taskProjection : undefined)
       const messageInput = splitComposerPrompt(message.text)
       if (message.role === 'user') return <article className="conversation-turn user-turn" key={`${message.role}-${index}`}>
         <div className="user-prompt">
@@ -214,24 +215,24 @@ export function ChatPage(props: ChatPageProps) {
           <RichMessage assistant={false} text={messageInput.text || (messageInput.tokens.length ? '使用所选能力开始任务' : message.text)} />
         </div>
       </article>
-      const timelineOwnsStreamingText = message.pending && (monitor?.timeline?.some((entry) => entry.kind === 'assistant') ?? false)
-      const reviewChanges = monitor?.changes ?? []
+      const timelineOwnsStreamingText = message.pending && (projection?.timeline?.some((entry) => entry.kind === 'assistant') ?? false)
+      const reviewChanges = projection?.changes ?? []
       const fileChanges = !message.pending && reviewChanges.length > 0 && <FileChangesCard changes={reviewChanges} busy={props.fileChangesBusy ?? props.harnessRunning} onOpen={openPreview} onReview={reviewFiles} onUndone={(results) => {
         setPreviewTargets([])
         setPreviewKey('')
         props.onChangesUndone?.(index, results)
       }} />
       return <article aria-busy={message.pending} className={`conversation-turn assistant-turn${message.pending ? ' pending' : ''}`} key={`${message.role}-${index}`}>
-        {monitor && <InlineTaskActivity finalResponse={message.pending ? '' : message.text} monitor={monitor} onApprovalDecision={props.onApprovalDecision} onQuestionAnswer={props.onQuestionAnswer} />}
+        {projection && <InlineTaskActivity finalResponse={message.pending ? '' : message.text} projection={projection} onApprovalDecision={props.onApprovalDecision} onQuestionAnswer={props.onQuestionAnswer} />}
         {(!timelineOwnsStreamingText && Boolean(message.text.trim())) && <div className={message.pending ? 'streaming-response' : undefined}><RichMessage assistant={!message.pending} onRegenerate={!message.pending && index === props.messages.length - 1 ? props.onPrepareRetry : undefined} text={message.text} /></div>}
-        {monitor && monitor.artifacts.length > 0 && <TaskArtifacts artifacts={monitor.artifacts} conversation onOpen={openPreview} />}
-        {fileChanges && (monitor?.artifacts.length ? <details className="task-file-review"><summary><ChevronRight size={14} />文件变更 <small>{reviewChanges.length}</small></summary>{fileChanges}</details> : fileChanges)}
-        {!message.pending && monitor?.status === 'completed' && monitor.outcome && <TaskOutcomeDetails outcome={monitor.outcome} />}
-        {!message.pending && monitor?.interruption && <TaskRecoveryNotice monitor={monitor} disabled={props.harnessRunning || Boolean(props.taskContextRestoring) || Boolean(props.prompt.trim()) || props.pendingAttachments.length > 0} onResume={index === props.messages.length - 1 ? props.onResumeInterrupted : undefined} />}
-        {!message.pending && index === props.messages.length - 1 && props.employeeId && props.taskId && <TaskOperationReview key={`${props.employeeId}:${props.taskId}`} employeeId={props.employeeId} taskId={props.taskId} revision={props.taskMonitor.updatedAt} disabled={props.harnessRunning} />}
-        {!message.pending && monitor?.knowledgeSources && <KnowledgeSources sources={monitor.knowledgeSources} context={props.knowledgeContext} />}
-        {!message.pending && monitor && (monitor.visuals?.length ?? 0) > 0 && <TaskVisuals key={props.taskId} visuals={monitor.visuals ?? []} />}
-        {!message.pending && monitor?.status === 'completed' && index === props.messages.length - 1 && props.creationKind && props.onContinueCreation && <div className="creation-handoff">
+        {projection && projection.artifacts.length > 0 && <TaskArtifacts artifacts={projection.artifacts} conversation onOpen={openPreview} />}
+        {fileChanges && (projection?.artifacts.length ? <details className="task-file-review"><summary><ChevronRight size={14} />文件变更 <small>{reviewChanges.length}</small></summary>{fileChanges}</details> : fileChanges)}
+        {!message.pending && projection?.status === 'completed' && projection.outcome && <TaskOutcomeDetails outcome={projection.outcome} />}
+        {!message.pending && projection?.interruption && <TaskRecoveryNotice projection={projection} disabled={props.harnessRunning || Boolean(props.taskContextRestoring) || Boolean(props.prompt.trim()) || props.pendingAttachments.length > 0} onResume={index === props.messages.length - 1 ? props.onResumeInterrupted : undefined} />}
+        {!message.pending && index === props.messages.length - 1 && props.employeeId && props.taskId && <TaskOperationReview key={`${props.employeeId}:${props.taskId}`} employeeId={props.employeeId} taskId={props.taskId} revision={props.taskProjection.updatedAt} disabled={props.harnessRunning} />}
+        {!message.pending && projection?.knowledgeSources && <KnowledgeSources sources={projection.knowledgeSources} context={props.knowledgeContext} />}
+        {!message.pending && props.employeeId && projection && (projection.visuals?.length ?? 0) > 0 && <TaskVisuals employeeId={props.employeeId} key={props.taskId} visuals={projection.visuals ?? []} />}
+        {!message.pending && projection?.status === 'completed' && index === props.messages.length - 1 && props.creationKind && props.onContinueCreation && <div className="creation-handoff">
           <span><Sparkles size={16} /><span><strong>继续完成创建</strong><small>把当前方案带入创作表单，确认后保存到本机。</small></span></span>
           <button onClick={() => props.onContinueCreation?.(message.text)} type="button">{props.creationKind === 'expert-kit' ? '保存为专家套件' : '保存为技能'}</button>
         </div>}

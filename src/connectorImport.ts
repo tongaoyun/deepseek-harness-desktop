@@ -21,7 +21,7 @@ export async function persistBundledConnectors(
     }
     if (known.has(item.connector.id)) continue
     try {
-      await persist(item.connector)
+      await persist({ ...item.connector, readOnlyTools: [] })
       known.add(item.connector.id)
     } catch (error) {
       failures.push(`${item.name}：${error instanceof Error ? error.message : String(error)}`)
@@ -82,6 +82,7 @@ export function parseConnectorImport(value: string): ConnectorImportItem[] {
         environment: record(config.env ?? config.environment, 'env'),
         headers,
         toolNames: strings(config.toolNames, 'toolNames'),
+        readOnlyTools: strings(config.readOnlyTools, 'readOnlyTools'),
       }
       ids.add(id)
       return { name, connector }

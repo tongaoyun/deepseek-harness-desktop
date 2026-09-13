@@ -42,11 +42,12 @@ xiaoyin-server
 | `src/App.tsx` | 页面协调、任务调度与状态连接 |
 | `src/useEnterpriseSession.ts` | 登录检查、到期重查、网络恢复与退出 |
 | `src/harnessSession.ts`、`src/taskTurn.ts` | 会话选择、恢复上下文、新轮次准备 |
-| `src/executionRuntime.ts` | `Thread -> Turn -> Item -> Event` 状态机、事件去重、生命周期变更与 UI 投影 |
+| `src/useHarnessNotifications.ts`、`src/taskHistory.ts` | 消费 Harness Session Projection、按序去重、任务历史持久化与恢复状态 |
 | `src/capabilitySnapshot.ts` | 产品能力解析、依赖闭包、凭据脱敏、不可变能力快照与语义变化判断 |
 | `src-tauri/src/` | 系统权限、ERP Cookie、凭据、持久化与进程控制 |
 | `harness-host/src/runtime.ts` | 模型会话和工具运行时 |
 | `harness-host/src/task-instructions.ts` | 澄清、执行、验证和交付约定 |
+| `src/useDeviceHeartbeat.ts` | 上报脱敏的桌面与 Harness 能力状态，供设备诊断使用 |
 
 ## 运行流程
 
@@ -58,7 +59,7 @@ xiaoyin-server
 | 扩展安装 | 下载制品、校验摘要与清单、检查路径、写入版本目录 |
 | 连接器 | 员工配置、握手和工具发现、按轮次装配 |
 | 知识库 | 上传原件、数据库排队、服务端解析索引、按权限检索和来源回读 |
-| 定时任务 | 本机计划触发普通任务入口，保存运行记录 |
+| 定时任务 | 本机计划触发普通任务入口，保存运行记录；Harness `schedule_*` 仅处理当前 Session 内提醒 |
 | 钉钉 | Stream 收取消息、本地队列、Harness 执行、正文与成果回传 |
 
 登录检查避免并发请求。网络失败每 15 秒重试，有效期内保留已验证身份；过期后暂停使用并重查。窗口激活和网络恢复会检查到期状态，退出登录后丢弃先前请求。ERP 明确返回未登录时进入扫码，Cookie 有效期由 ERP 与 WebView 管理。
@@ -67,15 +68,25 @@ xiaoyin-server
 
 任务恢复优先复用原会话。工作目录或能力内容变化时重建；JSON 对象键顺序不构成能力变化。正在运行的任务周期保存，重启后暂停未执行的队列，用户决定是否继续。
 
-桌面任务以 `ExecutionThread` 为唯一可写事实源。每条用户请求建立一个 `ExecutionTurn`，消息、工具、授权、验收和文件状态作为 Item 与有序 `ExecutionEvent` 记录。原生事件使用 `streamId + sequence` 去重；Harness 重启后新的流不会与旧请求编号混淆。
+文件交付遵循同一文件系统策略：无显式小胤授权目录时使用 Harness 官方 `present`，只把 Session filesystem 中的相对路径声明写入 `deliverables/presented` 事件；有授权目录时关闭 `present`，由小胤 `local_files_publish` 负责目录权限、备份和撤销。两种模式都只在投影中保存文件引用，不复制文件内容。
 
-`TaskMonitorProjection` 只供界面展示和旧组件兼容。开始、重试、停止、完成、失败、IM 接管和文件撤销必须先提交运行时事件，再由同一 reducer 生成投影。Assistant 消息通过 `executionTurnId` 关联产生它的 Turn，恢复任务即使复用 `operationScope` 也不会串改历史投影。加载本地历史时始终从有效事件线程重放，磁盘中的 Monitor 缓存即使过期或损坏也不能覆盖事件事实；没有事件线程或消息 Turn 引用的旧记录在首次继续处理时迁移。
+跨会话上下文使用 Harness 官方 `dsh-session-reference`：消息中的规范 `dsh-session:` 引用在运行时读取一次，生成有界、不可变并明确标记为不可信的快照。小胤任务历史仍只保存轻量索引和 Session 引用，完整会话内容不复制到第二套产品存储。
+
+桌面任务以 Harness `sessionId` 和官方 Session Log 为执行事实源。Harness 的 `ctx.sessionProjections` 生成实时投影，Host 通过本机 Bearer Bridge 转发；小胤注册 `xiaoyin.task` 产品投影，负责把工具、文件、成果、知识来源、子 Agent 和任务结果整理为桌面需要的稳定结构。任务索引只保存产品元数据、最近摘要和轻量状态；打开历史时通过官方 Persistence 重放事件并重建消息与投影，不再维护第二套 `ExecutionThread/Turn/Item/Event` 执行树，也不从文本猜测运行状态。
+
+Harness 的持久化根目录、默认工作区和 IM 会话状态按员工标识的 SHA-256 命名空间隔离，Session inspect/search 也必须显式提供员工标识；员工标识不会直接写入路径。附件仍使用统一的内容寻址存储，因为预览只接受带 SHA-256 校验的不可变对象，避免为同一图片维护多份副本。浏览器 profile 同时按员工和任务隔离。
+
+Harness 进程缓存只在完整 `RuntimeFingerprint` 相同时复用；模型、凭据摘要、员工/团队、能力目录、连接器、知识范围、执行模式或权限任一变化都会销毁旧进程并重新初始化，避免把上一轮上下文带入新任务。
+
+Harness 的官方 settings 与 credentials provider 显式写入员工隔离的 `DSH_HOME`（`settings.yaml` 与 `.credentials.yaml`）。小胤不把企业账号或模型密钥复制到第二套本地配置；启动时只注入本轮凭据，运行时凭据文件不进入任务投影、心跳或日志。
+
+由于员工 `DSH_HOME` 位于打包运行时之外，Host 启动前会在 `DSH_HOME/profiles/node_modules` 为小胤额外挂载且不属于官方 `dsh` 依赖闭包的 Harness 插件建立受控回退链接（终端、代码运行时、LSP 和可选外部子 Agent）。已有 profile 管理条目始终优先，不覆盖用户安装的插件；链接只解决官方 Loader 的模块解析，不改变员工配置和权限边界。
 
 ## 数据与权限
 
 | 数据 | 保存位置 |
 | --- | --- |
-| 任务、草稿、附件引用和执行记录 | 本机 SQLite 与应用数据目录 |
+| 任务索引、定时计划、队列、草稿、最近工作目录和附件引用 | 按员工隔离的本机 SQLite 与应用数据目录 |
 | 用户工作文件和成果 | 员工授权目录 |
 | 扩展安装与设备启停 | 本机扩展版本目录 |
 | ERP Cookie | 系统 WebView |

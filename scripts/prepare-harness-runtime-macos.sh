@@ -14,6 +14,19 @@ node_version="v24.19.0"
 source "$script_dir/macos-build-env.sh"
 macos_check_execution
 
+# Build agents and clean developer machines may not expose pnpm globally.
+# Keep packaging deterministic while accepting the repository's normal
+# Corepack setup and the npx fallback used by CI smoke checks.
+run_pnpm() {
+  if command -v pnpm >/dev/null 2>&1; then
+    pnpm "$@"
+  elif command -v corepack >/dev/null 2>&1; then
+    corepack pnpm "$@"
+  else
+    npx --yes pnpm@10 "$@"
+  fi
+}
+
 case "$node_arch" in
   arm64) expected_sha="8294b7aa9b03997481c06babf1e8b270c859358f27da57a11509afe537ac381d" ;;
   x64) expected_sha="d1b5e999db158c62fe8f7267a4476b035d8bd93b1a605bac24a3f0dd166e3316" ;;
@@ -31,8 +44,8 @@ rm -rf -- "$next_stage"
 mkdir -p "$next_stage"
 
 cd "$repository"
-pnpm --dir harness-host build
-pnpm --config.node-linker=hoisted --filter '@xiaoyin/harness-host' --prod deploy "$next_stage/harness-host"
+run_pnpm --dir harness-host build
+run_pnpm --config.node-linker=hoisted --filter '@xiaoyin/harness-host' --prod deploy "$next_stage/harness-host"
 host_stage="$next_stage/harness-host"
 mkdir -p "$host_stage/native"
 helper="$repository/harness-host/native/xiaoyin-computer-use"

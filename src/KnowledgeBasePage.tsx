@@ -226,7 +226,6 @@ function KnowledgeWorkspace({ endpoint, employeeId, teamId, accessToken, onChang
   }
 
   return <>
-    <header className="knowledge-page-heading"><h1>知识库</h1><span>{bases.length} 个知识库</span></header>
     <div className="knowledge-page">
     <aside className="knowledge-sidebar">
       <button className="knowledge-create-trigger" type="button" onClick={() => setCreating(true)}><Plus size={14} />新建知识库</button>
@@ -246,11 +245,18 @@ function KnowledgeWorkspace({ endpoint, employeeId, teamId, accessToken, onChang
         {bases.map((item) => <button className={item.id === selectedId ? 'active' : ''} key={item.id} onClick={() => { setSelectedId(item.id); setHits([]) }} type="button">
           <BookOpenCheck size={15} /><span><strong>{item.name}</strong><small>{scopeLabel(item.scope)}</small></span>
         </button>)}
-        {loadingBases ? <div className="kit-empty" role="status">正在读取知识库…</div> : bases.length === 0 && !error && <div className="kit-empty">先创建一个知识库</div>}
+        {loadingBases && <div className="kit-empty" role="status">正在读取知识库…</div>}
       </div>
     </aside>
     <section className="knowledge-main">
-      {!selected ? <div className="knowledge-welcome"><XiaoyinMascot size={92} variant="knowledge" /><h2>{loadingBases ? '正在读取知识库' : error ? '知识库暂不可用' : '创建第一个知识库'}</h2><p>把公司资料交给小胤，搜索和引用都有原文依据。</p><button type="button" disabled={busy || loadingBases} onClick={() => { setError(''); void refreshBases().catch((reason) => setError(message(reason))) }}>重新加载</button></div> : <>
+      {!selected ? <div className="knowledge-welcome">
+        <XiaoyinMascot size={92} variant="knowledge" />
+        <h2>{loadingBases ? '正在读取知识库' : error ? '知识库暂不可用' : '创建第一个知识库'}</h2>
+        <p>把公司资料交给小胤，搜索和引用都有原文依据。</p>
+        {!loadingBases && (error
+          ? <button type="button" onClick={() => { setError(''); setLoadingBases(true); void refreshBases().catch((reason) => setError(message(reason))).finally(() => setLoadingBases(false)) }}>重新加载</button>
+          : <button type="button" onClick={() => setCreating(true)}><Plus size={14} />新建知识库</button>)}
+      </div> : <>
         <header><div><h2>{selected.name}</h2><p>{scopeLabel(selected.scope)}{selected.description ? ` · ${selected.description}` : ''}</p></div><div>
           <input accept=".pdf,.docx,.xlsx,.txt,.md,.markdown" multiple onChange={(event) => void upload([...(event.target.files ?? [])])} ref={fileInput} type="file" />
           <button disabled={busy} onClick={() => fileInput.current?.click()} type="button"><Upload size={14} />上传文档</button>

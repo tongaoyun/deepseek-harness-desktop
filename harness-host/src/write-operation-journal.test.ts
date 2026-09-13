@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { spawn } from 'node:child_process'
 import { once } from 'node:events'
+import { DatabaseSync } from 'node:sqlite'
 import { WriteOperationJournal } from './write-operation-journal.js'
 
 const roots: string[] = []
@@ -46,6 +47,17 @@ describe('durable MCP writes', () => {
     await expect(pending).rejects.toThrow('XY-OPERATION-UNCERTAIN')
     await expect(second.execute(connector, 'create', { marker: 'one' }, call)).rejects.toThrow('XY-OPERATION-UNCERTAIN')
     expect(call).not.toHaveBeenCalled()
+  })
+  it('fails closed when persisting the success receipt fails after dispatch', async () => {
+    const file = path(), journal = open(file)
+    const sabotage = new DatabaseSync(file)
+    sabotage.exec(`CREATE TRIGGER reject_success BEFORE UPDATE OF state ON operations
+      WHEN NEW.state='succeeded' BEGIN SELECT RAISE(ABORT, 'simulated disk failure'); END;`)
+    sabotage.close()
+    const call = vi.fn(async () => receipt)
+    await expect(journal.execute(connector, 'create', { marker: 'receipt-failure' }, call)).rejects.toThrow('XY-OPERATION-UNCERTAIN')
+    await expect(open(file, 'another-turn').execute(connector, 'create', { marker: 'receipt-failure' }, call)).rejects.toThrow('XY-OPERATION-UNCERTAIN')
+    expect(call).toHaveBeenCalledTimes(1)
   })
   it('does not claim or dispatch an already canceled operation', async () => {
     const journal = open(path()), call = vi.fn(async () => receipt)

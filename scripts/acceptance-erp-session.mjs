@@ -12,6 +12,7 @@ const reports = []
 let seed = true
 let identityStatus = 200
 let logout = false
+let workspaceAction = ''
 let child
 let childExit
 let interrupted = false
@@ -19,6 +20,7 @@ for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => { interru
 
 const browserScript = `
 let busy = false;
+let completedWorkspaceAction = '';
 setInterval(async () => {
   if (busy) return;
   busy = true;
@@ -30,6 +32,24 @@ setInterval(async () => {
       authenticated: result.authenticated, code: result.diagnostic.code,
       cookieCount: result.diagnostic.cookieCount, runId: result.diagnostic.runId
     })});
+    if (result.authenticated && control.workspaceAction && control.workspaceAction !== completedWorkspaceAction) {
+      const fixture = {drafts: {'new-task': {prompt: 'native workspace fixture', model: 'test-model',
+        attachments: [], directories: [], knowledgeRefs: [], connectorIds: [], updatedAt: 1}}, recentDirectories: []};
+      const employeeId = 'local-development';
+      const state = await window.__TAURI_INTERNALS__.invoke('load_local_workspace_state', {
+        employeeId, legacy: control.workspaceAction === 'import' ? fixture : {...fixture, drafts: {}}
+      });
+      let ownerRejected = false;
+      if (control.workspaceAction === 'read') {
+        try { await window.__TAURI_INTERNALS__.invoke('load_local_workspace_state', {employeeId: 'another-employee'}); }
+        catch { ownerRejected = true; }
+      }
+      completedWorkspaceAction = control.workspaceAction;
+      await fetch('/report', {method: 'POST', body: JSON.stringify({
+        code: control.workspaceAction === 'import' ? 'workspace_imported' : 'workspace_restored',
+        prompt: state.drafts['new-task']?.prompt, ownerRejected
+      })});
+    }
   } catch (error) {
     await fetch('/report', {method: 'POST', body: JSON.stringify({error: error?.code ?? String(error)})});
   } finally { busy = false; }
@@ -45,9 +65,19 @@ const server = createServer(async (request, response) => {
     const valid = request.headers.cookie?.includes('XIAOYIN_ACCEPTANCE=session-fixture')
     response.writeHead(valid ? identityStatus : 401, { 'Content-Type': 'application/json' })
     response.end(JSON.stringify({ operId: 'local-development', oper: 'Local acceptance' }))
+  } else if (url.pathname === '/api/v1/employee-auth/session') {
+    let body = ''
+    for await (const chunk of request) body += chunk
+    const valid = request.method === 'POST' && JSON.parse(body).cookie?.includes('XIAOYIN_ACCEPTANCE=session-fixture')
+    response.writeHead(valid ? identityStatus : 401, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
+    response.end(JSON.stringify(valid && identityStatus === 200 ? {
+      success: true,
+      data: { employeeId: 'local-development', teamId: '', accessToken: 'control-plane-fixture',
+        expiresAt: Math.floor(Date.now() / 1000) + 1800 },
+    } : { success: false }))
   } else if (url.pathname === '/control') {
     response.setHeader('Content-Type', 'application/json')
-    response.end(JSON.stringify({ logout }))
+    response.end(JSON.stringify({ logout, workspaceAction }))
   } else if (url.pathname === '/report') {
     let body = ''
     for await (const chunk of request) body += chunk
@@ -63,7 +93,8 @@ const server = createServer(async (request, response) => {
 })
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
 const origin = `http://localhost:${server.address().port}`
-const env = { ...process.env, XIAOYIN_ERP_COOKIE_URL: `${origin}/`, XIAOYIN_ERP_USER_URL: `${origin}/identity` }
+const env = { ...process.env, VITE_XIAOYIN_SERVER_URL: origin,
+  XIAOYIN_ERP_COOKIE_URL: `${origin}/`, XIAOYIN_ERP_USER_URL: `${origin}/identity` }
 const config = {
   identifier, productName: 'Xiaoyin Auth Acceptance',
   build: { devUrl: origin, beforeDevCommand: '' },
@@ -111,13 +142,22 @@ try {
   const initial = await waitFor('authenticated', 180_000)
   assert.equal(initial.cookieCount, 1)
   console.log('PASS: session-only WebView cookie validated and saved')
+  workspaceAction = 'import'
+  const imported = await waitFor('workspace_imported')
+  assert.equal(imported.prompt, 'native workspace fixture')
   await stop()
   seed = false
+  workspaceAction = 'read'
   start(binary, [])
   const restored = await waitFor('authenticated')
   assert.notEqual(restored.runId, initial.runId)
   assert.equal(restored.cookieCount, 1)
   console.log('PASS: new process restored the session without a login response')
+  const workspace = await waitFor('workspace_restored')
+  assert.equal(workspace.prompt, 'native workspace fixture')
+  assert.equal(workspace.ownerRejected, true)
+  workspaceAction = ''
+  console.log('PASS: native workspace state survived restart and rejected another employee')
 
   reports.length = 0
   identityStatus = 503

@@ -1,12 +1,33 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { buildConversationKey, parseDingTalkEvent, parseTaskCommand } from './im-runtime.js'
 import { generatedArtifactPath } from './im-runtime.js'
 import { resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { LocalImRuntime } from './im-runtime.js'
+import { EventAck } from 'dingtalk-stream'
 import type { HarnessRuntime } from './runtime.js'
 
 describe('local DingTalk runtime', () => {
+  it('does not acknowledge a duplicate before its first receipt is durable', async () => {
+    const runtime = new LocalImRuntime({} as HarnessRuntime, '')
+    let rejectFirst!: (error: Error) => void
+    const persist = vi.fn().mockImplementationOnce(() => new Promise<void>((_resolve, reject) => { rejectFirst = reject })).mockResolvedValue(undefined)
+    const acknowledge = vi.fn()
+    const scheduleEvent = vi.fn()
+    Object.assign(runtime, { persistSessions: persist, acknowledge, scheduleEvent, configuration: { clientId: 'test-client', accessPolicy: 'open' } })
+    const accept = (runtime as unknown as { enqueueMessage(message: unknown, messageId: string): Promise<void> }).enqueueMessage.bind(runtime)
+    const message = { specVersion: '1.0', type: 'CALLBACK', headers: { appId: 'app', connectionId: 'connection', contentType: 'application/json', messageId: 'event-1', time: '0', topic: '/v1.0/im/bot/messages/get' },
+      data: JSON.stringify({ msgtype: 'text', text: { content: '查询库存' }, senderStaffId: 'staff-1', senderNick: '员工', conversationType: '1', conversationId: 'one', sessionWebhook: 'https://api.dingtalk.com/v1.0/robot/oToMessages/batchSend', sessionWebhookExpiredTime: Date.now() + 60_000 }) }
+    const first = accept(message, 'receipt-1')
+    await accept(message, 'receipt-2')
+    expect(acknowledge).toHaveBeenCalledWith('receipt-2', EventAck.LATER)
+    rejectFirst(new Error('disk full'))
+    await first
+    expect(scheduleEvent).not.toHaveBeenCalled()
+    await accept(message, 'receipt-3')
+    expect(acknowledge).toHaveBeenCalledWith('receipt-3', EventAck.SUCCESS)
+    expect(scheduleEvent).toHaveBeenCalledOnce()
+  })
   it('exposes paired conversations and allows revoking one without dropping the others', () => {
     const runtime = new LocalImRuntime({} as HarnessRuntime, '')
     Object.assign(runtime, { configuration: { clientId: 'test', accessPolicy: 'pairing', notifyTaskResults: false } })

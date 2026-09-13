@@ -48,8 +48,7 @@ export interface TaskMessage {
   text: string
   attachments?: LocalTaskAttachment[]
   pending?: boolean
-  monitor?: TaskMonitorState
-  executionTurnId?: string
+  projection?: XiaoyinTaskProjection
   id?: string
   source?: 'desktop' | 'dingtalk'
 }
@@ -129,7 +128,7 @@ export interface TaskArtifact {
   name: string
   kind: TaskArtifactKind
   sourceTool: string
-  action?: 'created' | 'updated' | 'copied' | 'moved' | 'published'
+  action?: 'created' | 'updated' | 'copied' | 'moved' | 'published' | 'presented'
   backupPath?: string
   sizeBytes?: number
   createdAt: string
@@ -165,7 +164,11 @@ export interface TaskFileChange {
   changedAt: string
 }
 
-export interface TaskMonitorProjection {
+/**
+ * Xiaoyin product read model derived from the Harness Session Projection.
+ * This is UI/query data only; execution facts live in the Harness Session Log.
+ */
+export interface XiaoyinTaskProjection {
   executionStarted?: boolean
   operationScope?: string
   interruption?: {
@@ -186,103 +189,29 @@ export interface TaskMonitorProjection {
   artifacts: TaskArtifact[]
   visuals?: TaskVisualArtifact[]
   knowledgeSources?: KnowledgeSearchHit[]
+  /** Official Harness token-meter projection, copied without recalculation. */
+  tokenUsage?: {
+    uncachedInputTokens: number
+    outputTokens: number
+    cacheReadTokens?: number
+    cacheWriteTokens?: number
+  }
+  /** Official Harness context-pressure projection, copied without recalculation. */
+  contextPressure?: {
+    contextWindow?: number
+    pressureTokens?: number
+    projectedTokens?: number
+  }
+  outputRetention?: {
+    prunedResults: number
+    omittedTokens: number
+  }
+  compactions?: number
   failure?: {
     code: string
     category: string
     detail: string
   }
-}
-
-/** @deprecated Runtime code must write ExecutionEvent and derive this projection. */
-export type TaskMonitorState = TaskMonitorProjection
-
-export type ExecutionEventType =
-  | 'turn.started'
-  | 'turn.retry.started'
-  | 'turn.interrupt.requested'
-  | 'turn.interrupt.failed'
-  | 'turn.progress.updated'
-  | 'item.started'
-  | 'item.updated'
-  | 'item.completed'
-  | 'item.failed'
-  | 'approval.requested'
-  | 'approval.decided'
-  | 'question.requested'
-  | 'question.answered'
-  | 'turn.completed'
-  | 'turn.failed'
-  | 'turn.interrupted'
-  | 'verification.recorded'
-  | 'file.changes.updated'
-
-export interface ExecutionProjectionDelta {
-  executionStarted?: boolean
-  operationScope?: string
-  status?: TaskMonitorProjection['status']
-  activity?: string
-  updatedAt: string
-  startedAt?: string
-  completedAt?: string
-  steps?: TaskExecutionStep[]
-  timeline?: TaskTimelineEntry[]
-  subagents?: SubagentActivity[]
-  changes?: TaskFileChange[]
-  artifacts?: TaskArtifact[]
-  visuals?: TaskVisualArtifact[]
-  knowledgeSources?: KnowledgeSearchHit[]
-  interruption?: TaskMonitorProjection['interruption']
-  outcome?: TaskMonitorProjection['outcome']
-  failure?: TaskMonitorProjection['failure']
-  replaceCollections?: Array<'steps' | 'timeline' | 'subagents' | 'changes' | 'artifacts' | 'visuals' | 'knowledgeSources'>
-}
-
-export interface ExecutionEvent {
-  id: string
-  sequence: number
-  turnId: string
-  type: ExecutionEventType
-  occurredAt: string
-  itemId?: string
-  item?: ExecutionItem
-  correlationId?: string
-  sourceCursor?: { streamId: string; requestId: number; sequence: number }
-  verification?: {
-    status: 'claimed' | 'verified' | 'partial' | 'blocked' | 'uncertain'
-    summary: string
-    evidenceCount: number
-  }
-  projection: ExecutionProjectionDelta
-}
-
-export interface ExecutionItem {
-  id: string
-  kind: 'analysis' | 'assistant' | 'tool-call' | 'approval' | 'question' | 'subagent' | 'warning' | 'error' | 'verification' | 'provider-turn'
-  status: 'running' | 'completed' | 'failed' | 'canceled'
-  label: string
-  startedAt: string
-  completedAt?: string
-  correlationId?: string
-  toolName?: string
-}
-
-export interface ExecutionTurn {
-  id: string
-  sessionId: string
-  status: 'running' | 'completed' | 'failed' | 'canceled'
-  startedAt: string
-  completedAt?: string
-  nextSequence: number
-  sourceCursors: Record<string, number>
-  items: ExecutionItem[]
-  events: ExecutionEvent[]
-}
-
-export interface ExecutionThread {
-  protocolVersion: 1
-  id: string
-  activeTurnId?: string
-  turns: ExecutionTurn[]
 }
 
 export interface LocalTaskRun {
@@ -294,14 +223,18 @@ export interface LocalTaskRun {
   updatedAt: string
   archivedAt?: string
   sessionId?: string
+  /** Product scheduling references. Execution details remain in Harness events. */
+  scheduleId?: string
+  scheduleRunId?: string
   invocationTokens?: string[]
   model?: string
   executionMode?: 'agent' | 'plan'
   localDirectories?: Array<{ id: string; name: string; path?: string }>
   capabilitySnapshot?: CapabilitySnapshot
-  execution?: ExecutionThread
-  monitor: TaskMonitorState
+  projection: XiaoyinTaskProjection
   messages: TaskMessage[]
+  /** Small local index hint; the full transcript lives in Harness Persistence. */
+  messagePreview?: string
   processedImEventIds?: string[]
 }
 
@@ -405,6 +338,7 @@ export interface ConnectorCatalogEntry {
   url?: string
   authMode?: ConnectorAuthMode
   toolNames: string[]
+  readOnlyTools?: string[]
   command?: string
   arguments?: string[]
   environment?: Record<string, string>
@@ -421,6 +355,7 @@ export interface ConnectorRuntimeDefinition {
   url: string
   authMode: ConnectorAuthMode
   toolNames: string[]
+  readOnlyTools?: string[]
   command?: string
   arguments?: string[]
   environment?: Record<string, string>

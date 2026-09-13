@@ -1,9 +1,9 @@
 import { RotateCcw } from 'lucide-react'
-import type { TaskMonitorState } from './types'
+import type { XiaoyinTaskProjection } from './types'
 import './taskOutcome.css'
 
-export function TaskRecoveryNotice({ monitor, disabled, onResume }: { monitor: TaskMonitorState; disabled: boolean; onResume?: () => void }) {
-  const interruption = monitor.interruption
+export function TaskRecoveryNotice({ projection, disabled, onResume }: { projection: XiaoyinTaskProjection; disabled: boolean; onResume?: () => void }) {
+  const interruption = projection.interruption
   if (!interruption) return null
   const timestamp = new Date(interruption.checkpointAt)
   return <section className="task-recovery-notice" aria-label="任务恢复">

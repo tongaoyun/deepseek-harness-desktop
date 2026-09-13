@@ -18,6 +18,10 @@ const { spawn } = require('node-pty')
 await new Promise((done, fail) => {
   const terminal = spawn('/usr/bin/true', [], { name: 'xterm', cols: 80, rows: 24, cwd: host, env: { PATH: '/usr/bin:/bin' } })
   const timer = setTimeout(() => { terminal.kill(); fail(new Error('Native terminal smoke test timed out')) }, 10_000)
-  terminal.onExit(({ exitCode }) => { clearTimeout(timer); exitCode === 0 ? done() : fail(new Error(`Native terminal exited ${exitCode}`)) })
+  terminal.onExit(({ exitCode }) => {
+    clearTimeout(timer)
+    if (exitCode === 0) done()
+    else fail(new Error(`Native terminal exited ${exitCode}`))
+  })
 })
 console.log(`Embedded ${architecture} Node, terminal, FFI, PDF/image and Computer Use architectures verified`)

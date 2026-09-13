@@ -1,6 +1,6 @@
 # 小胤桌面端
 
-面向员工的桌面工作助手。以 Qoder Work 为产品主线，以 Claude、Codex 的任务执行能力为目标，完成需求理解、工具执行、结果检查和文件交付。
+面向员工的桌面工作助手。小胤管理专家套件、技能、连接器、知识库、定时任务和 IM 频道；DeepSeek Harness 执行会话、工具调用、权限审批和任务恢复。
 
 ## 仓库职责
 
@@ -21,7 +21,7 @@ pnpm check
 pnpm tauri:dev
 ```
 
-服务端 API 默认地址为 `http://192.168.2.67:30081`，通过 `VITE_XIAOYIN_SERVER_URL` 指定其他环境。`pnpm tauri dev/build` 会把该地址的 origin 同步加入桌面 CSP；不要绕过仓库脚本直接调用 Tauri CLI。Web 控制中心使用 `http://192.168.2.67:30084`。
+服务端 API 开发地址默认为 `http://192.168.2.67:30081`，通过 `VITE_XIAOYIN_SERVER_URL` 指定其他环境。正式安装包必须配置 HTTPS 地址；构建脚本会拒绝 HTTP，以免 ERP Cookie 在换取控制面短期令牌时明文传输。`pnpm tauri dev/build` 会把该地址的 origin 同步加入桌面 CSP；不要绕过仓库脚本直接调用 Tauri CLI。
 
 浏览器预览使用本地开发身份。桌面开发可在未提交的 `.env.local` 中设置 `VITE_SKIP_ERP_LOGIN=true`；正式构建始终使用 ERP 登录。模型调用与企业目录需要对应服务可达。本机权限、凭据、文件、Harness 和 IM 在 Tauri 中验证。
 
@@ -37,7 +37,7 @@ pnpm tauri:dev
 
 ## 构建发布
 
-`pnpm check` 执行版本、lint、类型、前端与 Harness 测试、生产构建，以及 Rust 格式、Clippy 和测试。
+`pnpm check:web` 是 CI 与本地共用的前端/Harness 门禁；`pnpm check` 还执行 Rust 格式、Clippy 和测试。发布条件与签名配置见[构建流程](docs/build-workflows.md)和[发布验收](docs/system-readiness.md)。
 
 | 工作流 | 参数 | 产物 |
 | --- | --- | --- |
@@ -45,15 +45,14 @@ pnpm tauri:dev
 | Windows 安装包 | `quick` | 开发验证用 Debug NSIS |
 | macOS 安装包 | `arm64`、`x64` 或 `all` | DMG、应用归档、更新签名与 SHA-256 |
 
-手动构建保存流水线制品。推送版本标签会发布更新；标签必须与项目版本一致并指向当前 `main` 提交。发布前同步 `package.json`、`src-tauri/Cargo.toml`、`src-tauri/Cargo.lock` 和 `src-tauri/tauri.conf.json`，执行 `pnpm verify:version`。Windows release 固定执行安装、内置 Harness、启动和卸载验收。
-
-Tauri 更新签名使用 Actions Secrets 中的 `TAURI_SIGNING_PRIVATE_KEY` 和 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`。Windows Authenticode 与 Apple Developer ID 公证属于操作系统信任签名，需要分别配置。
+手动构建保存流水线制品；与项目版本一致、指向当前 `main` 的 `v*` 标签触发正式安装包发布。推送 `main` 只触发代码检查，不发布安装包。Tauri 更新签名和系统信任签名分别配置，不能互相替代。
 
 ## 文档
 
 | 需要了解 | 文档 |
 | --- | --- |
 | 产品能力与边界 | [产品能力](docs/desktop-alignment.md) |
+| Harness 能力审计 | [DeepSeek Harness 能力矩阵](docs/deepseek-harness-capability-matrix.md) |
 | 组件和数据如何协作 | [架构](docs/architecture.md) |
 | 任务、恢复、队列与交付 | [任务执行](docs/task-execution.md) |
 | 登录、会话与诊断 | [登录与会话](docs/login.md) |

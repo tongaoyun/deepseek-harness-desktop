@@ -34,9 +34,15 @@ export function DingTalkRegistration({ revision, onAuthorized }: { revision: num
               callback.current(result.clientId, result.clientSecret)
               return
             }
-            if (result.status !== 'WAITING') { fail(result.status === 'EXPIRED' ? '二维码已过期，请刷新' : '授权未完成，请刷新或使用手动配置'); return }
-            setStatus('使用钉钉扫码，创建或选择机器人应用')
-          } catch { if (!disposed) setStatus('扫码状态暂时无法读取，正在重试…') }
+            if (result.status === 'RETRY') {
+              setStatus('扫码状态暂时无法读取，正在重试…')
+            } else if (result.status === 'WAITING') {
+              setStatus('使用钉钉扫码，创建或选择机器人应用')
+            } else {
+              fail(result.status === 'EXPIRED' ? '二维码已过期，请刷新' : '授权未完成，请刷新或使用手动配置')
+              return
+            }
+          } catch (reason) { fail(reason); return }
           if (!disposed) timer = setTimeout(poll, session.interval * 1000)
         }
         timer = setTimeout(poll, session.interval * 1000)

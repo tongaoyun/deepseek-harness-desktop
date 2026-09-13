@@ -93,6 +93,7 @@ interface AuthoringForm {
   environment: string
   headers: string
   toolNames: string
+  readOnlyTools: string
   transport: Exclude<ConnectorTransport, 'desktop'>
   authMode: ConnectorAuthMode
 }
@@ -101,7 +102,7 @@ const defaults: AuthoringForm = {
   id: '', name: '', author: '', version: '1.0.0', summary: '', category: 'other',
   instructions: '# 使用说明\n\n请在这里描述执行步骤、输入和输出。',
   triggers: '', allowImplicitInvocation: true, connectorRefs: '', requiredTools: '', url: '', command: '', arguments: '',
-  environment: '', headers: '', toolNames: '',
+  environment: '', headers: '', toolNames: '', readOnlyTools: '',
   transport: 'streamable-http',
   authMode: 'none',
 }
@@ -455,6 +456,7 @@ export function ExtensionAuthoringModal({
               <label className="wide">自定义 Headers（JSON）<textarea placeholder={'例如：{\n  "Authorization": "Bearer ..."\n}'} value={form.headers} onChange={(event) => setForm({ ...form, headers: event.target.value })} /></label>
             </>}
             <label className="wide">工具名称<input placeholder="测试连接后自动回填，也可手工修改" value={form.toolNames} onChange={(event) => setForm({ ...form, toolNames: event.target.value })} /></label>
+            <label className="wide">已核实只读工具<input placeholder="工具名，多个用逗号分隔" value={form.readOnlyTools} onChange={(event) => setForm({ ...form, readOnlyTools: event.target.value })} /></label>
             <div className="connector-authoring-test wide"><button disabled={testing || busy} onClick={() => void testConnector()} type="button"><RefreshCw className={testing ? 'spin' : ''} size={13} />{testing ? '正在连接…' : '测试连接并发现工具'}</button>{diagnostic && diagnostic.status !== 'unavailable' && <span>{diagnostic.status === 'ready' ? '连接成功' : '连接成功，登记工具有变化'} · {diagnostic.latencyMs} ms · 发现 {diagnostic.discoveredTools.length} 个工具</span>}</div>
           </> : <>
             {kind === 'expert-kit' && !baseManifest && <ExpertKitComposer
@@ -509,13 +511,14 @@ function connectorForm(connector: ConnectorCatalogEntry): AuthoringForm {
     arguments: (connector.arguments ?? []).join('\n'),
     environment: formatRecord(connector.environment), headers: formatRecord(connector.headers),
     toolNames: connector.toolNames.join(', '),
+    readOnlyTools: (connector.readOnlyTools ?? []).join(', '),
     transport: connector.transport === 'sse' || connector.transport === 'stdio' ? connector.transport : 'streamable-http',
     authMode: connector.authMode ?? 'none',
   }
 }
 
 function connectorFromForm(form: AuthoringForm): ConnectorCatalogEntry {
-  return { id: connectorId(form.id.trim() || form.name.trim()), name: form.name, version: form.version, summary: form.summary, category: form.category as ConnectorCategory, kind: 'personal-mcp', scope: 'PERSONAL', status: 'ready', managed: false, transport: form.transport, url: form.transport === 'stdio' ? '' : form.url.trim(), authMode: form.transport === 'stdio' ? 'none' : form.authMode, toolNames: split(form.toolNames), command: form.transport === 'stdio' ? form.command.trim() : '', arguments: form.transport === 'stdio' ? lines(form.arguments) : [], environment: form.transport === 'stdio' ? parseRecord(form.environment, '环境变量') : {}, headers: form.transport === 'stdio' ? {} : parseRecord(form.headers, 'Headers') }
+  return { id: connectorId(form.id.trim() || form.name.trim()), name: form.name, version: form.version, summary: form.summary, category: form.category as ConnectorCategory, kind: 'personal-mcp', scope: 'PERSONAL', status: 'ready', managed: false, transport: form.transport, url: form.transport === 'stdio' ? '' : form.url.trim(), authMode: form.transport === 'stdio' ? 'none' : form.authMode, toolNames: split(form.toolNames), readOnlyTools: split(form.readOnlyTools), command: form.transport === 'stdio' ? form.command.trim() : '', arguments: form.transport === 'stdio' ? lines(form.arguments) : [], environment: form.transport === 'stdio' ? parseRecord(form.environment, '环境变量') : {}, headers: form.transport === 'stdio' ? {} : parseRecord(form.headers, 'Headers') }
 }
 
 function manifestFromForm(kind: 'expert-kit' | 'skill', form: AuthoringForm, selectedSkillIds: string[]): ExpertKitManifest {

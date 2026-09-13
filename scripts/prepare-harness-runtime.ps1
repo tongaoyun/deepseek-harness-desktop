@@ -32,6 +32,28 @@ if ($nodeVersion -ne $expectedNodeVersion) {
   throw "Node.js $expectedNodeVersion is required; found $nodeVersion at $nodeExecutable"
 }
 
+# Keep Windows packaging usable on clean build agents that do not expose a
+# global pnpm command, matching the macOS staging path.
+$pnpmCommand = Get-Command pnpm -ErrorAction SilentlyContinue
+$pnpmExecutable = $null
+$pnpmPrefix = @()
+if ($null -ne $pnpmCommand) {
+  $pnpmExecutable = $pnpmCommand.Source
+} else {
+  $corepackCommand = Get-Command corepack -ErrorAction SilentlyContinue
+  if ($null -ne $corepackCommand) {
+    $pnpmExecutable = $corepackCommand.Source
+    $pnpmPrefix = @("pnpm")
+  } else {
+    $npxCommand = Get-Command npx -ErrorAction SilentlyContinue
+    if ($null -eq $npxCommand) {
+      throw "pnpm is unavailable and neither corepack nor npx could be found."
+    }
+    $pnpmExecutable = $npxCommand.Source
+    $pnpmPrefix = @("--yes", "pnpm@10")
+  }
+}
+
 if (Test-Path -LiteralPath $stage) {
   Remove-Item -LiteralPath $stage -Recurse -Force
 }
@@ -39,11 +61,11 @@ New-Item -ItemType Directory -Force -Path $stage | Out-Null
 
 Push-Location $repository
 try {
-  pnpm --dir harness-host build
+  & $pnpmExecutable @pnpmPrefix --dir harness-host build
   if ($LASTEXITCODE -ne 0) { throw "Harness Host build failed." }
 
   $hostStage = Join-Path $stage "harness-host"
-  pnpm --config.node-linker=hoisted --filter '@xiaoyin/harness-host' --prod deploy $hostStage
+  & $pnpmExecutable @pnpmPrefix --config.node-linker=hoisted --filter '@xiaoyin/harness-host' --prod deploy $hostStage
   if ($LASTEXITCODE -ne 0) { throw "Portable Harness dependency deployment failed." }
 
   # Runtime imports packages directly; package-manager command shims are not used by the desktop app.

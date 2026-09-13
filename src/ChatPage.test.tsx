@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { ChatPage } from './ChatPage'
-import type { TaskArtifact, TaskMonitorState } from './types'
+import type { TaskArtifact, XiaoyinTaskProjection } from './types'
 
 const artifact: TaskArtifact = {
   id: 'sales', rootId: 'workspace', rootName: '工作目录', path: 'sales.xlsx', name: 'sales.xlsx',
@@ -10,7 +10,7 @@ const artifact: TaskArtifact = {
 
 describe('ChatPage conversation', () => {
   it('restores the new-task welcome copy', () => {
-    const monitor: TaskMonitorState = {
+    const projection: XiaoyinTaskProjection = {
       status: 'idle', activity: '', updatedAt: '2026-09-03T10:00:00.000Z', steps: [], artifacts: [],
     }
     const html = renderToStaticMarkup(<ChatPage
@@ -23,7 +23,7 @@ describe('ChatPage conversation', () => {
       onRemoveAttachment={() => undefined} onRemoveKnowledge={() => undefined} onRemoveLocalDirectory={() => undefined}
       onSelectModel={() => undefined} onSubmit={() => undefined}
       onToggleModelMenu={() => undefined} prompt="" runtimeStatus="ready"
-      selectedKnowledgeBaseRefs={[]} taskMonitor={monitor}
+      selectedKnowledgeBaseRefs={[]} taskProjection={projection}
     />)
     expect(html).toContain('不止聊天，搞定一切')
     expect(html).toContain('本地运行、自主规划、安全可控的 AI 工作搭子')
@@ -41,7 +41,7 @@ describe('ChatPage conversation', () => {
   })
 
   it('renders work as full-width turns without assistant chat bubbles', () => {
-    const monitor: TaskMonitorState = {
+    const projection: XiaoyinTaskProjection = {
       status: 'completed', activity: '任务已完成', startedAt: '2026-09-03T10:00:00.000Z',
       completedAt: '2026-09-03T10:00:02.000Z', updatedAt: '2026-09-03T10:00:02.000Z', steps: [], artifacts: [artifact],
       changes: [{ ...artifact, action: 'created', changedAt: artifact.createdAt }],
@@ -52,14 +52,14 @@ describe('ChatPage conversation', () => {
       harnessHealthDetail="正常" harnessRunning={false} knowledgeBases={[]} localDirectories={[]}
       localFileError="" messageListRef={{ current: null }} pendingAttachments={[]} messages={[
         { role: 'user', text: '解释冒泡排序' },
-        { role: 'assistant', text: '冒泡排序会比较相邻元素。', monitor },
+        { role: 'assistant', text: '冒泡排序会比较相邻元素。', projection },
       ]} modelMenuOpen={false} modelPickerRef={{ current: null }} models={[]} onAddKnowledge={() => undefined}
       onAddLocalDirectory={() => undefined} onAddLocalFiles={() => undefined} onCancel={() => undefined} onContinueCreation={() => undefined}
       onPrepareRetry={() => undefined} onPrompt={() => undefined} onReconnect={() => undefined} onRecoverHarness={() => undefined}
       onRemoveAttachment={() => undefined} onRemoveKnowledge={() => undefined} onRemoveLocalDirectory={() => undefined}
       onSelectModel={() => undefined} onSubmit={() => undefined} onToggleModelMenu={() => undefined} prompt=""
       runtimeStatus="ready" selectedKnowledgeBaseRefs={[]}
-      taskMonitor={monitor}
+      taskProjection={projection}
     />)
 
     expect(html).toContain('conversation-turn user-turn')
@@ -79,7 +79,7 @@ describe('ChatPage conversation', () => {
   })
 
   it('shows streamed assistant text and local attachments before completion', () => {
-    const monitor: TaskMonitorState = {
+    const projection: XiaoyinTaskProjection = {
       status: 'running', activity: '正在处理', startedAt: '2026-09-03T10:00:00.000Z',
       updatedAt: '2026-09-03T10:00:01.000Z', steps: [], artifacts: [artifact],
     }
@@ -87,7 +87,7 @@ describe('ChatPage conversation', () => {
       activeModel="deepseek-v4-flash" composerRef={{ current: null }} harnessHealth="ready"
       harnessHealthDetail="正常" harnessRunning knowledgeBases={[]}
       localDirectories={[]} localFileError="" messageListRef={{ current: null }} messages={[
-        { role: 'assistant', text: '正在列出下载目录中的文件', pending: true, monitor },
+        { role: 'assistant', text: '正在列出下载目录中的文件', pending: true, projection },
       ]} modelMenuOpen={false} modelPickerRef={{ current: null }} models={[]} onAddKnowledge={() => undefined}
       onAddLocalDirectory={() => undefined} onAddLocalFiles={() => undefined} onCancel={() => undefined}
       onPrepareRetry={() => undefined} onPrompt={() => undefined} onReconnect={() => undefined} onRecoverHarness={() => undefined}
@@ -96,7 +96,7 @@ describe('ChatPage conversation', () => {
       onToggleModelMenu={() => undefined} pendingAttachments={[{
         id: 'download:image.png', rootId: 'download', rootName: '下载', path: 'image.png', name: 'image.png', kind: 'image', mediaType: 'image/png',
       }]} prompt="" runtimeStatus="ready"
-      selectedKnowledgeBaseRefs={[]} taskMonitor={monitor}
+      selectedKnowledgeBaseRefs={[]} taskProjection={projection}
     />)
 
     expect(html).toContain('正在列出下载目录中的文件')

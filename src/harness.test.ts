@@ -1,16 +1,57 @@
 import { describe, expect, it } from 'vitest'
 import { applyStoppingHarnessNotification, type HarnessNotification } from './harness'
-import { applyHarnessNotification, authorizeDroppedPaths, cancelHarness, classifyHarnessFailure, createTaskMonitor, diagnoseConnectors, harnessActivityLabel, harnessResponseUpdate, probeHarnessHost, selfTestLocalCapabilities, shouldRetryHarnessFailure } from './harness'
+import { applyHarnessNotification, authorizeDroppedPaths, cancelHarness, classifyHarnessFailure, createXiaoyinTaskProjection, diagnoseConnectors, harnessActivityLabel, harnessProjectionUpdate, harnessResponseUpdate, normalizeHarnessProjection, probeHarnessHost, selfTestLocalCapabilities, shouldRetryHarnessFailure } from './harness'
+
+describe('Harness Session Projection', () => {
+  it('accepts the official projection envelope and rejects compact event payloads', () => {
+    const update = harnessProjectionUpdate({ requestId: 1, event: { method: 'session.projection', params: { sessionId: 's', key: 'xiaoyin.task', seq: 4, value: { status: 'running', activity: '处理', updatedAt: '2026-09-11T00:00:00Z', steps: [], artifacts: [] } } } })
+    expect(update).toMatchObject({ sessionId: 's', key: 'xiaoyin.task', seq: 4 })
+    expect(normalizeHarnessProjection(update?.value)?.status).toBe('running')
+    expect(harnessProjectionUpdate({ requestId: 1, event: { sessionId: 's', key: 'xiaoyin.task', seq: 4, value: {} } })).toBeUndefined()
+  })
+
+  it('normalizes optional Harness metrics and drops unknown wire fields', () => {
+    const normalized = normalizeHarnessProjection({
+      status: 'completed', activity: '完成', updatedAt: '2026-09-11T00:00:00Z', executionStarted: true,
+      steps: [], artifacts: [], tokenUsage: { uncachedInputTokens: 12, outputTokens: 5, cacheReadTokens: -1 },
+      contextPressure: { contextWindow: 1000, projectedTokens: 1200 }, outputRetention: { prunedResults: 2, omittedTokens: 80 },
+      compactions: 3, privateRawOutput: 'must not persist',
+    })
+    expect(normalized).toMatchObject({
+      tokenUsage: { uncachedInputTokens: 12, outputTokens: 5 },
+      contextPressure: { contextWindow: 1000, projectedTokens: 1200 },
+      outputRetention: { prunedResults: 2, omittedTokens: 80 }, compactions: 3,
+    })
+    expect(JSON.stringify(normalized)).not.toContain('privateRawOutput')
+  })
+
+  it('keeps Harness compaction lifecycle visible without implementing compaction locally', () => {
+    const projection = [
+      event('compaction/start', { turn: 1, step: 1, compactionId: 'compact-1' }, 1),
+      event('compaction/end', { turn: 1, step: 1, compactionId: 'compact-1' }, 2),
+    ].reduce(applyHarnessNotification, createXiaoyinTaskProjection())
+    expect(projection.compactions).toBe(1)
+    expect(projection.timeline?.map((item) => item.label)).toEqual(['上下文整理完成'])
+  })
+
+  it('keeps Harness tool-result pruning as a bounded summary', () => {
+    const projection = applyHarnessNotification(createXiaoyinTaskProjection(), event('compaction/prune', {
+      turn: 1, step: 2, shadowedSeqs: [8, 9], shadowedTokenCount: 1400,
+    }, 1))
+    expect(projection.outputRetention).toEqual({ prunedResults: 2, omittedTokens: 1400 })
+    expect(projection.timeline?.[0]).toMatchObject({ label: '裁剪工具结果', detail: '2 项，约 1400 tokens' })
+  })
+})
 
 describe('harnessActivityLabel', () => {
   it('retains structured Office failure reasons instead of replacing them with file metadata', () => {
-    const monitor = [
+    const projection = [
       event('tool/call', { turn: 1, step: 1, callId: 'export', name: 'office_document_export_pdf', arguments: { path: 'report.docx' } }, 1),
       event('tool/result', { message: { content: [{ type: 'tool-result', toolCallId: 'export', isError: true, content: [{ type: 'text', text: JSON.stringify({ error: '未找到 LibreOffice', path: 'report.docx', size: 1024 }) }] }] } }, 2),
-    ].reduce(applyHarnessNotification, createTaskMonitor())
-    expect(monitor.timeline?.[0].status).toBe('failed')
-    expect(monitor.timeline?.[0].detail).toContain('未找到 LibreOffice')
-    expect(monitor.artifacts).toEqual([])
+    ].reduce(applyHarnessNotification, createXiaoyinTaskProjection())
+    expect(projection.timeline?.[0].status).toBe('failed')
+    expect(projection.timeline?.[0].detail).toContain('未找到 LibreOffice')
+    expect(projection.artifacts).toEqual([])
   })
   it('persists bounded source receipts only from successful knowledge tools', () => {
     const source = { sourceId: '12', knowledgeBaseId: 'kb', knowledgeBaseName: '制度', documentId: 'doc', filename: '报销.md', locator: '正文', content: '报销上限 800 元', score: 1 }
@@ -20,7 +61,7 @@ describe('harnessActivityLabel', () => {
       event('step/start', { turn: 1, step: 2 }, 3),
       event('text-chunks', { turn: 1, step: 2, texts: ['报销上限 800 元。'] }, 4),
       event('turn/end', { turn: 1, reason: { kind: 'completed' } }, 5),
-    ].reduce(applyHarnessNotification, createTaskMonitor())
+    ].reduce(applyHarnessNotification, createXiaoyinTaskProjection())
     expect(run('knowledge_search').knowledgeSources).toEqual([source])
     expect(run('knowledge_search', true).knowledgeSources ?? []).toEqual([])
     expect(run('bash').knowledgeSources ?? []).toEqual([])
@@ -34,24 +75,24 @@ describe('harnessActivityLabel', () => {
 
   it('retries transient model failures only before a tool or approval starts', () => {
     const transient = classifyHarnessFailure(new Error('模型本轮没有返回可显示文本'))
-    expect(shouldRetryHarnessFailure(transient, createTaskMonitor())).toBe(true)
-    const afterTool = { ...createTaskMonitor(), steps: [{
+    expect(shouldRetryHarnessFailure(transient, createXiaoyinTaskProjection())).toBe(true)
+    const afterTool = { ...createXiaoyinTaskProjection(), steps: [{
       id: 'tool:1', kind: 'tool' as const, label: '运行命令', status: 'completed' as const,
       toolName: 'bash', startedAt: new Date().toISOString(),
     }] }
     expect(shouldRetryHarnessFailure(transient, afterTool)).toBe(false)
-    expect(shouldRetryHarnessFailure(classifyHarnessFailure(new Error('认证失败')), createTaskMonitor())).toBe(false)
+    expect(shouldRetryHarnessFailure(classifyHarnessFailure(new Error('认证失败')), createXiaoyinTaskProjection())).toBe(false)
   })
 
   it('does not forget tool execution when long-task display records are trimmed', () => {
     const transient = classifyHarnessFailure(new Error('模型服务繁忙'))
-    let monitor = applyHarnessNotification(createTaskMonitor(), event('tool/call', { callId: 'write', name: 'bash' }, 1))
+    let projection = applyHarnessNotification(createXiaoyinTaskProjection(), event('tool/call', { callId: 'write', name: 'bash' }, 1))
     for (let step = 1; step <= 110; step += 1) {
-      monitor = applyHarnessNotification(monitor, event('step/start', { turn: 1, step }, step + 1))
+      projection = applyHarnessNotification(projection, event('step/start', { turn: 1, step }, step + 1))
     }
-    expect(monitor.steps.some(step => step.kind === 'tool')).toBe(false)
-    expect(monitor.executionStarted).toBe(true)
-    expect(shouldRetryHarnessFailure(transient, { ...monitor, timeline: [] })).toBe(false)
+    expect(projection.steps.some(step => step.kind === 'tool')).toBe(false)
+    expect(projection.executionStarted).toBe(true)
+    expect(shouldRetryHarnessFailure(transient, { ...projection, timeline: [] })).toBe(false)
   })
 
   it('blocks replay after a delegated tool starts even without a root tool event', () => {
@@ -59,9 +100,9 @@ describe('harnessActivityLabel', () => {
     notification.event = { rootSessionId: 'root', event: { method: 'session.event', params: {
       sessionId: 'child', event: { type: 'tool/call', time: 1, data: { callId: 'child-write', name: 'bash' } },
     } } }
-    const monitor = applyHarnessNotification(createTaskMonitor(), notification)
-    expect(monitor.steps).toEqual([])
-    expect(shouldRetryHarnessFailure(classifyHarnessFailure('模型服务繁忙'), monitor)).toBe(false)
+    const projection = applyHarnessNotification(createXiaoyinTaskProjection(), notification)
+    expect(projection.steps).toEqual([])
+    expect(shouldRetryHarnessFailure(classifyHarnessFailure('模型服务繁忙'), projection)).toBe(false)
   })
 
   it('shows safe progress labels without exposing reasoning content', () => {
@@ -86,6 +127,55 @@ describe('harnessActivityLabel', () => {
     })).toBe('正在整理结果')
   })
 
+  it('names rc.2 terminal, web, planning, todo and workflow tools', () => {
+    const labels: Record<string, string> = {
+      terminal_open: '正在打开持久终端',
+      terminal_read: '正在读取终端输出',
+      web_search: '正在搜索网页资料',
+      web_fetch: '正在读取网页内容',
+      todo_write: '正在更新任务清单',
+      workflow: '正在执行工作流',
+      exit_plan_mode: '正在提交计划审阅',
+    }
+    for (const [name, expected] of Object.entries(labels)) {
+      expect(harnessActivityLabel({
+        taskId: 'task-1', requestId: 1,
+        event: { event: { method: 'session.event', params: { event: {
+          type: 'tool/call', time: 1, data: { name },
+        } } } },
+      })).toBe(expected)
+    }
+  })
+
+  it('keeps Session Query and Jobs results as safe action summaries', () => {
+    const tools = [
+      ['session_search', '查询历史会话'],
+      ['session_event_search', '查询会话事件'],
+      ['session_trace', '查看会话关系'],
+      ['session_event_trace', '查看事件关系'],
+      ['session_event_read', '读取会话事件'],
+      ['job_list', '查看后台任务'],
+      ['job_output', '读取后台任务'],
+      ['job_kill', '停止后台任务'],
+    ] as const
+    let projection = createXiaoyinTaskProjection()
+    for (const [index, [name, label]] of tools.entries()) {
+      const callId = `safe-${index}`
+      projection = applyHarnessNotification(projection, event('tool/call', {
+        callId, name, arguments: JSON.stringify({ query: 'private query', sessionId: 'private-session' }),
+      }, index * 2 + 1))
+      projection = applyHarnessNotification(projection, event('tool/result', {
+        message: { content: [{ type: 'tool-result', toolCallId: callId, isError: false,
+          content: [{ type: 'text', text: JSON.stringify({ output: 'private raw event payload', sessionId: 'private-session' }) }],
+        }] },
+      }, index * 2 + 2))
+      expect(projection.timeline?.at(-1)).toMatchObject({ label, status: 'completed' })
+      expect(projection.timeline?.at(-1)?.detail).toBe(name.startsWith('job_') ? '已同步 Harness 后台任务状态' : '查询完成，结果仅在当前任务上下文中使用')
+      expect(JSON.stringify(projection)).not.toContain('private raw event payload')
+      expect(JSON.stringify(projection)).not.toContain('private-session')
+    }
+  })
+
   it('builds a safe durable timeline and correlates tool results', () => {
     const notifications = [
       event('step/start', { turn: 1, step: 1 }, 1),
@@ -97,34 +187,34 @@ describe('harnessActivityLabel', () => {
       ] } }, 4),
       event('turn/end', { turn: 1, reason: { kind: 'completed' } }, 5),
     ]
-    const monitor = notifications.reduce(applyHarnessNotification, createTaskMonitor('2026-08-29T00:00:00Z'))
+    const projection = notifications.reduce(applyHarnessNotification, createXiaoyinTaskProjection('2026-08-29T00:00:00Z'))
 
-    expect(monitor.steps.map(({ kind, label, status, toolName }) => ({ kind, label, status, toolName }))).toEqual([
+    expect(projection.steps.map(({ kind, label, status, toolName }) => ({ kind, label, status, toolName }))).toEqual([
       { kind: 'analysis', label: '分析任务', status: 'completed', toolName: undefined },
       { kind: 'tool', label: '查询库存风险', status: 'completed', toolName: 'inventory_risk' },
       { kind: 'response', label: '完成回复', status: 'completed', toolName: undefined },
     ])
-    expect(monitor.timeline).toMatchObject([
+    expect(projection.timeline).toMatchObject([
       { kind: 'tool', label: '查询库存风险', status: 'completed', toolName: 'inventory_risk' },
     ])
-    expect(JSON.stringify(monitor)).not.toContain('hidden chain')
-    expect(JSON.stringify(monitor)).not.toContain('private ERP result')
-    expect(JSON.stringify(monitor)).not.toContain('sensitive')
+    expect(JSON.stringify(projection)).not.toContain('hidden chain')
+    expect(JSON.stringify(projection)).not.toContain('private ERP result')
+    expect(JSON.stringify(projection)).not.toContain('sensitive')
   })
 
   it('marks unfinished steps failed when the turn ends with an error', () => {
-    const monitor = [
+    const projection = [
       event('step/start', { turn: 2, step: 1 }, 1),
       event('turn/end', { turn: 2, reason: { kind: 'error' } }, 2),
-    ].reduce(applyHarnessNotification, createTaskMonitor())
+    ].reduce(applyHarnessNotification, createXiaoyinTaskProjection())
 
-    expect(monitor.steps.map((step) => step.status)).toEqual(['failed', 'failed'])
-    expect(monitor.steps.at(-1)?.label).toBe('执行未完成')
-    expect(monitor.status).toBe('failed')
+    expect(projection.steps.map((step) => step.status)).toEqual(['failed', 'failed'])
+    expect(projection.steps.at(-1)?.label).toBe('执行未完成')
+    expect(projection.status).toBe('failed')
   })
 
   it('streams only visible text into the conversation timeline', () => {
-    const monitor = [
+    const projection = [
       event('step/start', { turn: 3, step: 1 }, 1),
       event('reasoning-chunks', { turn: 3, step: 1, texts: ['private reasoning'] }, 2),
       event('text-chunks', { turn: 3, step: 1, texts: ['我先', '查看目录。'] }, 3),
@@ -133,12 +223,12 @@ describe('harnessActivityLabel', () => {
         { type: 'reasoning', text: 'private reasoning' },
         { type: 'text', text: '我先查看目录。正在处理。' },
       ] } }, 5),
-    ].reduce(applyHarnessNotification, createTaskMonitor())
+    ].reduce(applyHarnessNotification, createXiaoyinTaskProjection())
 
-    expect(monitor.timeline).toMatchObject([{
+    expect(projection.timeline).toMatchObject([{
       kind: 'assistant', text: '我先查看目录。正在处理。', status: 'completed',
     }])
-    expect(JSON.stringify(monitor)).not.toContain('private reasoning')
+    expect(JSON.stringify(projection)).not.toContain('private reasoning')
   })
 
   it('projects visible response chunks without exposing reasoning', () => {
@@ -158,7 +248,7 @@ describe('harnessActivityLabel', () => {
     }, 1)
     expect(harnessResponseUpdate(childText)).toBeUndefined()
 
-    const running = { ...createTaskMonitor(), status: 'running' as const, activity: '正在处理' }
+    const running = { ...createXiaoyinTaskProjection(), status: 'running' as const, activity: '正在处理' }
     const afterChildEnd = applyHarnessNotification(running, scopedEvent('child-1', 'root-1', 'turn/end', {
       turn: 1, reason: { kind: 'completed' },
     }, 2))
@@ -167,7 +257,7 @@ describe('harnessActivityLabel', () => {
   })
 
   it('records real subagent tool calls as compact collaboration activities', () => {
-    const monitor = [
+    const projection = [
       scopedEvent('root-1', 'root-1', 'tool/call', {
         turn: 1, step: 1, callId: 'delegate-1', name: 'subagent',
         arguments: JSON.stringify({ description: '检查后端测试', prompt: '不应展示的子任务全文' }),
@@ -176,38 +266,38 @@ describe('harnessActivityLabel', () => {
         type: 'tool-result', toolCallId: 'delegate-1', isError: false,
         content: [{ type: 'text', text: '子 Agent 的完整回复不在进度中展示' }],
       }] } }, 2),
-    ].reduce(applyHarnessNotification, createTaskMonitor())
+    ].reduce(applyHarnessNotification, createXiaoyinTaskProjection())
 
-    expect(monitor.subagents).toMatchObject([{
+    expect(projection.subagents).toMatchObject([{
       id: 'delegate-1', label: '检查后端测试', status: 'completed',
     }])
-    expect(monitor.timeline).toMatchObject([{
+    expect(projection.timeline).toMatchObject([{
       kind: 'subagent', label: '检查后端测试', status: 'completed',
     }])
-    expect(JSON.stringify(monitor)).not.toContain('不应展示')
-    expect(JSON.stringify(monitor)).not.toContain('完整回复')
+    expect(JSON.stringify(projection)).not.toContain('不应展示')
+    expect(JSON.stringify(projection)).not.toContain('完整回复')
   })
 
   it('records only the approval decision and tool name', () => {
-    const monitor = [event('approval/decision', {
+    const projection = [event('approval/decision', {
       approvalId: 'approval-1', name: 'bash', decision: 'reject', reason: 'sensitive command',
-    }, 1)].reduce(applyHarnessNotification, createTaskMonitor())
+    }, 1)].reduce(applyHarnessNotification, createXiaoyinTaskProjection())
 
-    expect(monitor.steps).toMatchObject([{ kind: 'approval', toolName: 'bash', status: 'failed' }])
-    expect(JSON.stringify(monitor)).not.toContain('sensitive command')
+    expect(projection.steps).toMatchObject([{ kind: 'approval', toolName: 'bash', status: 'failed' }])
+    expect(JSON.stringify(projection)).not.toContain('sensitive command')
   })
 
   it('records artifacts only from structured results of file-producing tools', () => {
-    const monitor = [
+    const projection = [
       event('tool/call', { callId: 'call-doc', name: 'office.docx.create' }, 1),
       event('tool/result', { message: { content: [{
         type: 'tool-result', toolCallId: 'call-doc', isError: false, content: [{
           type: 'text', text: JSON.stringify({ rootId: 'local-1', rootName: '报表', path: 'output/daily.docx', size: 1200 }),
         }],
       }] } }, 2),
-    ].reduce(applyHarnessNotification, createTaskMonitor())
+    ].reduce(applyHarnessNotification, createXiaoyinTaskProjection())
 
-    expect(monitor.artifacts).toMatchObject([{
+    expect(projection.artifacts).toMatchObject([{
       rootId: 'local-1', path: 'output/daily.docx', name: 'daily.docx', kind: 'document', sizeBytes: 1200,
     }])
 
@@ -217,12 +307,12 @@ describe('harnessActivityLabel', () => {
         type: 'tool-result', toolCallId: 'call-erp', isError: false,
         content: [{ type: 'text', text: JSON.stringify({ rootId: 'secret', rootName: 'secret', path: 'leak.pdf' }) }],
       }] } }, 2),
-    ].reduce(applyHarnessNotification, createTaskMonitor())
+    ].reduce(applyHarnessNotification, createXiaoyinTaskProjection())
     expect(ignored.artifacts).toEqual([])
   })
 
   it('keeps the first review baseline and avoids misleading repeated-edit totals', () => {
-    const monitor = [
+    const projection = [
       event('tool/call', { callId: 'write-1', name: 'local_files_write_text' }, 1),
       event('tool/result', { message: { content: [{
         type: 'tool-result', toolCallId: 'write-1', isError: false, content: [{ type: 'text', text: JSON.stringify({
@@ -235,9 +325,9 @@ describe('harnessActivityLabel', () => {
           rootId: 'repo', rootName: 'xiaoyin', path: 'src/App.tsx', action: 'updated', backupPath: '.xiaoyin-backups/second/App.tsx', beforeHash: 'first', afterHash: 'last', addedLines: 3, deletedLines: 1,
         }) }],
       }] } }, 4),
-    ].reduce(applyHarnessNotification, createTaskMonitor())
+    ].reduce(applyHarnessNotification, createXiaoyinTaskProjection())
 
-    expect(monitor.changes).toMatchObject([{
+    expect(projection.changes).toMatchObject([{
       path: 'src/App.tsx', action: 'updated', backupPath: '.xiaoyin-backups/first/App.tsx',
       beforeHash: 'original', afterHash: 'last',
       addedLines: undefined, deletedLines: undefined,
@@ -246,7 +336,7 @@ describe('harnessActivityLabel', () => {
 
   it('exposes browser screenshots as safe durable visual references', () => {
     const attachmentId = `sha256:${'a'.repeat(64)}`
-    const monitor = [
+    const projection = [
       event('tool/call', { callId: 'shot', name: 'browser_screenshot' }, 1),
       event('tool/result', { message: { content: [{
         type: 'tool-result', toolCallId: 'shot', isError: false, content: [
@@ -254,44 +344,44 @@ describe('harnessActivityLabel', () => {
           { type: 'image', attachment: { attachmentId, mediaType: 'image/png', width: 1280, height: 720, name: 'browser.png' } },
         ],
       }] } }, 2),
-    ].reduce(applyHarnessNotification, createTaskMonitor())
-    expect(monitor.visuals).toMatchObject([{ attachmentId, mediaType: 'image/png', width: 1280, height: 720 }])
+    ].reduce(applyHarnessNotification, createXiaoyinTaskProjection())
+    expect(projection.visuals).toMatchObject([{ attachmentId, mediaType: 'image/png', width: 1280, height: 720 }])
   })
 
   it('retains every valid connector image, deduplicates references and ignores failed or malformed results', () => {
     const image = (hash: string) => ({ type: 'image', attachment: { attachmentId: `sha256:${hash.repeat(64)}`, mediaType: 'image/png', width: 320, height: 240 } })
     const result = (callId: string, isError: boolean, content: unknown[]) => event('tool/result', { message: { content: [{ type: 'tool-result', toolCallId: callId, isError, content }] } }, 2)
-    const monitor = [
+    const projection = [
       event('tool/call', { callId: 'images', name: 'mcp_design_generate' }, 1),
       result('images', false, [image('a'), image('b'), image('a'), image('../'), { type: 'image', data: 'raw-data', mimeType: 'image/png' }]),
       event('tool/call', { callId: 'failed', name: 'mcp_design_generate' }, 3),
       result('failed', true, [image('c')]),
-    ].reduce(applyHarnessNotification, createTaskMonitor())
-    expect(monitor.visuals).toHaveLength(2)
-    expect(monitor.visuals?.map((item) => item.attachmentId)).toEqual([`sha256:${'a'.repeat(64)}`, `sha256:${'b'.repeat(64)}`])
-    expect(JSON.parse(JSON.stringify(monitor)).visuals).toEqual(monitor.visuals)
+    ].reduce(applyHarnessNotification, createXiaoyinTaskProjection())
+    expect(projection.visuals).toHaveLength(2)
+    expect(projection.visuals?.map((item) => item.attachmentId)).toEqual([`sha256:${'a'.repeat(64)}`, `sha256:${'b'.repeat(64)}`])
+    expect(JSON.parse(JSON.stringify(projection)).visuals).toEqual(projection.visuals)
   })
 
   it('classifies published image files for inline previews', () => {
-    const monitor = [
+    const projection = [
       event('tool/call', { callId: 'poster', name: 'local_files_publish' }, 1),
       event('tool/result', { message: { content: [{ type: 'tool-result', toolCallId: 'poster', isError: false,
         content: [{ type: 'text', text: JSON.stringify({ rootId: 'workspace', rootName: '工作目录', path: 'out/海报.WEBP', size: 1234 }) }],
       }] } }, 2),
-    ].reduce(applyHarnessNotification, createTaskMonitor())
-    expect(monitor.artifacts).toMatchObject([{ kind: 'image', path: 'out/海报.WEBP', action: 'published' }])
+    ].reduce(applyHarnessNotification, createXiaoyinTaskProjection())
+    expect(projection.artifacts).toMatchObject([{ kind: 'image', path: 'out/海报.WEBP', action: 'published' }])
   })
 
   it('keeps approval requests inside the task timeline until decided', () => {
-    const monitor = [event('approval/request', {
+    const projection = [event('approval/request', {
       approvalId: 'approval-1', name: 'local_files_delete', reason: '删除 report.md',
-    }, 1)].reduce(applyHarnessNotification, createTaskMonitor())
-    expect(monitor.activity).toContain('等待确认')
-    expect(monitor.timeline).toMatchObject([{ kind: 'approval', approvalId: 'approval-1', status: 'running' }])
+    }, 1)].reduce(applyHarnessNotification, createXiaoyinTaskProjection())
+    expect(projection.activity).toContain('等待确认')
+    expect(projection.timeline).toMatchObject([{ kind: 'approval', approvalId: 'approval-1', status: 'running' }])
   })
 
   it('maps local files, commands and connectors into distinct conversation blocks', () => {
-    const monitor = [
+    const projection = [
       event('tool/call', { callId: 'files', name: 'local_files_list', arguments: JSON.stringify({ rootId: 'r1', path: 'reports' }) }, 1),
       event('tool/result', { message: { content: [{
         type: 'tool-result', toolCallId: 'files', isError: false, content: [{ type: 'text', text: JSON.stringify({
@@ -303,21 +393,21 @@ describe('harnessActivityLabel', () => {
         type: 'tool-result', toolCallId: 'shell', isError: false, content: [{ type: 'text', text: '42 tests passed' }],
       }] } }, 4),
       event('tool/call', { callId: 'github', name: 'mcp_github_list_pull_requests', arguments: JSON.stringify({ owner: 'private' }) }, 5),
-    ].reduce(applyHarnessNotification, createTaskMonitor())
+    ].reduce(applyHarnessNotification, createXiaoyinTaskProjection())
 
-    expect(monitor.timeline).toMatchObject([
+    expect(projection.timeline).toMatchObject([
       { kind: 'file', label: '查看 reports', path: 'reports', itemCount: 1, status: 'completed' },
       { kind: 'command', label: '运行命令', text: 'pnpm test', detail: '运行测试', output: '42 tests passed', status: 'completed' },
       { kind: 'connector', label: '使用 github', connectorName: 'github', status: 'running' },
     ])
-    expect(JSON.stringify(monitor)).not.toContain('private')
+    expect(JSON.stringify(projection)).not.toContain('private')
   })
 
   it('renders public runtime errors without exposing reasoning', () => {
-    const monitor = [event('error', { message: '连接器暂时不可用', reasoning: 'hidden chain' }, 1)]
-      .reduce(applyHarnessNotification, createTaskMonitor())
-    expect(monitor.timeline).toMatchObject([{ kind: 'error', detail: '连接器暂时不可用', status: 'failed' }])
-    expect(JSON.stringify(monitor)).not.toContain('hidden chain')
+    const projection = [event('error', { message: '连接器暂时不可用', reasoning: 'hidden chain' }, 1)]
+      .reduce(applyHarnessNotification, createXiaoyinTaskProjection())
+    expect(projection.timeline).toMatchObject([{ kind: 'error', detail: '连接器暂时不可用', status: 'failed' }])
+    expect(JSON.stringify(projection)).not.toContain('hidden chain')
   })
 })
 
@@ -342,7 +432,7 @@ describe('diagnoseConnectors', () => {
 })
 
 it('retains late file receipts while stopping without resuming text or accepting unstarted work', () => {
-  const started = applyHarnessNotification(createTaskMonitor(), event('tool/call', { callId: 'write', name: 'local_files_write_text' }, 1))
+  const started = applyHarnessNotification(createXiaoyinTaskProjection(), event('tool/call', { callId: 'write', name: 'local_files_write_text' }, 1))
   const stopping = { ...started, activity: '正在停止' }
   const receipt = event('tool/result', { message: { content: [{ type: 'tool-result', toolCallId: 'write', isError: false,
     content: [{ type: 'text', text: JSON.stringify({ rootId: 'repo', rootName: '测试', path: 'checkpoint.txt', action: 'created', sizeBytes: 13 }) }],
@@ -353,14 +443,14 @@ it('retains late file receipts while stopping without resuming text or accepting
   expect(next.steps.find((step) => step.id === 'tool:write')?.status).toBe('completed')
   expect(next.changes).toMatchObject([{ path: 'checkpoint.txt', action: 'created' }])
   expect(applyStoppingHarnessNotification(next, receipt)).toBe(next)
-  const idle = createTaskMonitor()
+  const idle = createXiaoyinTaskProjection()
   expect(applyStoppingHarnessNotification(idle, receipt)).toBe(idle)
   expect(applyStoppingHarnessNotification(stopping, event('text-chunks', { texts: ['迟到正文'] }, 3))).toBe(stopping)
   expect(applyStoppingHarnessNotification(stopping, event('tool/call', { callId: 'new', name: 'bash' }, 3))).toBe(stopping)
 })
 
 it('projects structured questions and settles them after a desktop answer', () => {
-  const requested = applyHarnessNotification(createTaskMonitor(), event('question/request', {
+  const requested = applyHarnessNotification(createXiaoyinTaskProjection(), event('question/request', {
     questionId: 'question-1',
     questions: [{ id: 'mode', header: '执行方式', question: '请选择模式', options: [
       { label: '安全模式', description: '每次写入前确认' }, { label: '快速模式' },

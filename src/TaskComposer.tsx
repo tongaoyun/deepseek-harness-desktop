@@ -21,7 +21,7 @@ export function TaskComposer(props: ChatPageProps & { onPreview: (target: LocalA
   pasteView.current = { prompt: props.prompt, taskId: props.taskId }
   useEffect(() => () => { pasteRequest.current += 1 }, [])
   const running = props.currentTaskRunning ?? props.harnessRunning
-  const stopping = running && props.taskMonitor.activity === '正在停止'
+  const stopping = running && props.taskProjection.activity === '正在停止'
   const locked = running || props.taskContextRestoring || props.pastingAttachments || checkingClipboard
   const [menu, setMenu] = useState<'context' | 'directory'>()
   const [category, setCategory] = useState<Category>('expert-kit')
@@ -66,7 +66,20 @@ export function TaskComposer(props: ChatPageProps & { onPreview: (target: LocalA
     disabled: item.status !== 'ready' || !item.enabled, selected: props.selectedConnectorIds?.includes(item.id),
     choose: () => { if (!query || !props.selectedConnectorIds?.includes(item.id)) props.onToggleTaskConnector?.(item.id); finishReference() },
   }))
-  const references: Option[] = [...knowledgeOptions, ...connectorOptions, ...props.localDirectories.map((item): Option => ({
+  const sessionReferenceOptions: Option[] = (props.sessionReferences ?? []).map((item): Option => ({
+    id: `dsh-session:${item.sessionId}`,
+    name: item.label,
+    description: '引用该会话的只读快照（不可信上下文）',
+    choose: () => {
+      if (!query) return
+      const label = item.label.replace(/[()[\]]/gu, ' ').replace(/\s+/gu, ' ').trim() || item.sessionId
+      const encoded = btoa(item.sessionId).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/u, '')
+      const mention = `@[${label}](dsh-session:${encoded})`
+      const next = text.slice(0, query.start) + mention + text.slice(query.end)
+      props.onPrompt(joinComposerPrompt(tokens, next)); setCaret(query.start + mention.length); closeMenu(); focusInput(query.start + mention.length)
+    },
+  }))
+  const references: Option[] = [...sessionReferenceOptions, ...knowledgeOptions, ...connectorOptions, ...props.localDirectories.map((item): Option => ({
     id: item.id, name: item.name, description: item.path || '当前工作目录',
     choose: () => { if (query) { const next = text.slice(0, query.start) + `「${item.name}」` + text.slice(query.end); props.onPrompt(joinComposerPrompt(tokens, next)); setCaret(query.start + item.name.length + 2) } closeMenu(); focusInput() },
   }))]
@@ -125,7 +138,7 @@ export function TaskComposer(props: ChatPageProps & { onPreview: (target: LocalA
       <ComposerAttachments attachments={props.pendingAttachments} disabled={locked} onOpen={props.onPreview} onRemove={props.onRemoveAttachment} />
       {props.pastingAttachments && <div className="composer-import-status" role="status"><LoaderCircle size={13} />正在添加附件…</div>}
       {pasteError && <div className="local-file-error" role="alert">{pasteError}</div>}
-      {query && <div className="composer-popover composer-suggestions"><small>{query.trigger === '/' ? '调用技能或专家套件' : '引用知识库、连接器或工作目录'}</small><div id={listId} role="listbox" aria-label={query.trigger === '/' ? '技能与专家套件' : '任务上下文'}>{suggestions.map((item, index) => <button aria-selected={index === activeIndex} className={index === activeIndex ? 'active' : ''} id={`${listId}-${index}`} key={item.id} onMouseDown={(event) => event.preventDefault()} onClick={item.choose} role="option" type="button"><Sparkles size={15} /><span><strong>{item.name}</strong><small>{item.description}</small></span></button>)}</div>{suggestions.length === 0 && <p className="composer-empty">{query.trigger === '/' ? '暂无匹配能力，可通过「＋」浏览和安装。' : '暂无匹配上下文，可通过「＋」添加或配置。'}</p>}<footer>↑ ↓ 选择 · Enter 确认 · Esc 关闭</footer></div>}
+      {query && <div className="composer-popover composer-suggestions"><small>{query.trigger === '/' ? '调用技能或专家套件' : '引用会话、知识库、连接器或工作目录'}</small><div id={listId} role="listbox" aria-label={query.trigger === '/' ? '技能与专家套件' : '任务上下文'}>{suggestions.map((item, index) => <button aria-selected={index === activeIndex} className={index === activeIndex ? 'active' : ''} id={`${listId}-${index}`} key={item.id} onMouseDown={(event) => event.preventDefault()} onClick={item.choose} role="option" type="button"><Sparkles size={15} /><span><strong>{item.name}</strong><small>{item.description}</small></span></button>)}</div>{suggestions.length === 0 && <p className="composer-empty">{query.trigger === '/' ? '暂无匹配能力，可通过「＋」浏览和安装。' : '暂无匹配上下文，可通过「＋」添加或配置。'}</p>}<footer>↑ ↓ 选择 · Enter 确认 · Esc 关闭</footer></div>}
       <textarea aria-label="给小胤发送消息" autoCapitalize="off" autoCorrect="off" spellCheck={false} aria-expanded={Boolean(query)} aria-controls={query ? listId : undefined} aria-activedescendant={suggestions.length ? `${listId}-${activeIndex}` : undefined}
         onChange={(event) => { props.onPrompt(joinComposerPrompt(tokens, event.target.value)); setCaret(event.target.selectionStart); setOptionIndex(0); setDismissed('') }}
         onSelect={(event) => setCaret(event.currentTarget.selectionStart)} onKeyDown={inputKey}

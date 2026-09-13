@@ -116,10 +116,13 @@ pub struct LocalArtifactPreview {
 
 #[tauri::command]
 pub async fn read_local_artifact_preview(
+    app: tauri::AppHandle,
     authorizations: tauri::State<'_, LocalFileAuthorizations>,
     root_id: String,
     path: String,
 ) -> Result<LocalArtifactPreview, String> {
+    let employee_id = crate::erp_auth::current_employee(&app).await?;
+    authorizations.ensure_employee(&employee_id)?;
     let _guard = PREVIEW_LOCK.lock().await;
     let authorizations = authorizations.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
@@ -131,11 +134,14 @@ pub async fn read_local_artifact_preview(
 }
 
 #[tauri::command]
-pub fn reveal_local_artifact(
+pub async fn reveal_local_artifact(
+    app: tauri::AppHandle,
     authorizations: tauri::State<'_, LocalFileAuthorizations>,
     root_id: String,
     path: String,
 ) -> Result<(), String> {
+    let employee_id = crate::erp_auth::current_employee(&app).await?;
+    authorizations.ensure_employee(&employee_id)?;
     let target = authorizations.resolve_artifact(&root_id, &path)?;
     let target = validate_artifact_path(&target)?;
     let status = platform_reveal(&target)?;
@@ -147,12 +153,14 @@ pub fn reveal_local_artifact(
 }
 
 #[tauri::command]
-pub fn open_local_artifact(
+pub async fn open_local_artifact(
     app: tauri::AppHandle,
     authorizations: tauri::State<'_, LocalFileAuthorizations>,
     root_id: String,
     path: String,
 ) -> Result<(), String> {
+    let employee_id = crate::erp_auth::current_employee(&app).await?;
+    authorizations.ensure_employee(&employee_id)?;
     let target = authorizations.resolve_artifact(&root_id, &path)?;
     let target = validate_artifact_path(&target)?;
     app.opener()
@@ -161,11 +169,14 @@ pub fn open_local_artifact(
 }
 
 #[tauri::command]
-pub fn read_harness_image_preview(
+pub async fn read_harness_image_preview(
     app: tauri::AppHandle,
+    employee_id: String,
     attachment_id: String,
     media_type: String,
 ) -> Result<String, String> {
+    crate::harness::validate_employee_id(&employee_id)?;
+    crate::erp_auth::require_employee(&app, &employee_id).await?;
     let hash = attachment_id
         .strip_prefix("sha256:")
         .filter(|value| {
@@ -181,15 +192,19 @@ pub fn read_harness_image_preview(
         .path()
         .app_data_dir()
         .map_err(|error| format!("无法确定 Harness 数据目录：{error}"))?;
-    let path = root
-        .join("harness")
-        .join("attachments")
-        .join(format!("{hash}.image"));
+    let path = harness_attachment_path(&root, &employee_id, hash);
     let (bytes, truncated) = read_limited(&path, 5 * 1024 * 1024)?;
     if truncated || format!("{:x}", Sha256::digest(&bytes)) != hash.to_ascii_lowercase() {
         return Err("截图内容不完整或已损坏".to_string());
     }
     Ok(format!("data:{mime};base64,{}", BASE64.encode(bytes)))
+}
+
+fn harness_attachment_path(root: &Path, employee_id: &str, hash: &str) -> PathBuf {
+    root.join("harness")
+        .join(crate::harness::employee_namespace(employee_id))
+        .join("attachments")
+        .join(format!("{hash}.image"))
 }
 
 fn preview_file(target: &Path, relative_path: String) -> Result<LocalArtifactPreview, String> {
@@ -390,6 +405,16 @@ mod tests {
     fn rejects_missing_artifacts() {
         assert!(validate_artifact_path(Path::new("")).is_err());
         assert!(validate_artifact_path(Path::new("/definitely/missing/report.pdf")).is_err());
+    }
+
+    #[test]
+    fn harness_attachments_are_isolated_by_employee_without_exposing_identity() {
+        let root = Path::new("/application-data");
+        let first = harness_attachment_path(root, "employee-1", "abc123");
+        let second = harness_attachment_path(root, "employee-2", "abc123");
+        assert_ne!(first, second);
+        assert!(!first.to_string_lossy().contains("employee-1"));
+        assert!(first.ends_with("attachments/abc123.image"));
     }
 
     #[test]

@@ -1,5 +1,5 @@
 import { FolderOpen } from 'lucide-react'
-import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react'
+import { type FormEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   createExpertKitDownload,
   loadExpertKitReadme,
@@ -33,10 +33,11 @@ import {
   type DroppedPathAuthorization,
   authorizeStandardLocalDirectories,
   cancelHarness,
+  checkHarnessProvider,
   clearLocalDirectories,
   classifyHarnessFailure,
   connectorDiagnosticsAvailable,
-  createTaskMonitor,
+  createXiaoyinTaskProjection,
   diagnoseConnectors,
   restoreLocalDirectories,
   respondHarnessApproval,
@@ -45,6 +46,7 @@ import {
   shutdownHarness,
   type AuthorizedLocalDirectory,
 } from './harness'
+import { loadHarnessExternalAgentsEnabled, loadHarnessHooksEnabled, loadHarnessLspEnabled, loadHarnessShellEnabled, loadHarnessToolsMode, saveHarnessExternalAgentsEnabled, saveHarnessHooksEnabled, saveHarnessLspEnabled, saveHarnessShellEnabled, saveHarnessToolsMode, type HarnessToolsMode } from './runtimePreferences'
 import type {
   ConnectorCatalogEntry,
   LocalTaskAttachment,
@@ -52,7 +54,7 @@ import type {
 import { useEnterpriseSession } from './useEnterpriseSession'
 import { ScheduledTasksPage } from './ScheduledTasksPage'
 import { ImChannelsPage } from './ImChannelsPage'
-import { loadTaskHistory, loadTaskById, removeTaskHistory } from './taskHistory'
+import { loadTaskHistory, loadTaskById, persistTaskHistory, removeTaskHistory, unreadableHistoryWarning } from './taskHistory'
 import { useTaskPersistence } from './useTaskPersistence'
 import { useHistoryPages } from './useHistoryPages'
 import { useTaskCheckpoints } from './useTaskCheckpoints'
@@ -63,11 +65,11 @@ import { attachmentSelectionError } from './attachmentLimits'
 import { restoredTaskSessionId } from './harnessSession'
 import { prepareTaskTurn } from './taskTurn'
 import { startLocalIm, stopLocalImRuntime } from './localIm'
-import type { InstalledExpertKit, LocalTaskRun, TaskMessage, TaskMonitorState } from './types'
+import type { InstalledExpertKit, LocalTaskRun, TaskMessage, XiaoyinTaskProjection } from './types'
 import { parseMemoryCommand, learnCompletedTask } from './memory'
 import { useMemoryCommands } from './useMemoryCommands'
 import { useMemorySync } from './useMemorySync'
-import { modelStorageKey, resolveSelectedModel } from './modelSelection'
+import { loadSelectedModel, resolveSelectedModel, saveSelectedModel } from './modelSelection'
 import { standardLocalDirectories } from './localFileIntent'
 import { creationPrompt, type XiaoyinCreationKind } from './creationPrompts'
 import { McpConnectorDialog } from './McpConnectorDialog'
@@ -102,16 +104,6 @@ import { ExtensionPageActions } from './ExtensionPageActions'
 import { useEnterpriseCatalog } from './useEnterpriseCatalog'
 import { useDesktopDialog } from './DesktopDialog'
 import { runHarnessWithRecovery } from './taskRecovery'
-import {
-  beginExecutionTurn,
-  completeExecutionTurn,
-  failExecutionInterruptRequest,
-  failExecutionTurn,
-  migrateLegacyExecution,
-  recordExecutionFileChanges,
-  requestExecutionInterrupt,
-  retryExecutionTurn,
-} from './executionRuntime'
 import { useHarnessHealth } from './useHarnessHealth'
 import { useDeviceHeartbeat } from './useDeviceHeartbeat'
 import { inspectDeviceHeartbeatContext } from './deviceHeartbeat'
@@ -121,8 +113,8 @@ import { useApplyDesktopPreferences } from './desktopPreferences'
 import { useLocalImSync } from './useLocalImSync'
 import { useHarnessNotifications, type StreamingTaskState } from './useHarnessNotifications'
 import { AUTOMATIC_TASK_LIMIT, useTaskQueue, type QueuedPrompt } from './useTaskQueue'
-import { parseTaskOutcome, unverifiedTaskOutcome, type TaskOutcome } from './taskOutcome'
-import { draftRootPaths, readTaskDraft, recentWorkDirectories, rememberWorkDirectory, saveTaskDraft, type TaskDraft } from './taskDrafts'
+import { parseTaskOutcome, taskOutcomeLabel, unverifiedTaskOutcome, type TaskOutcome } from './taskOutcome'
+import { clearStagedTaskDraft, draftRootPaths, loadTaskDraftState, readTaskDraft, recentWorkDirectories, rememberWorkDirectory, saveTaskDraft, stageTaskDraft, type TaskDraft } from './taskDrafts'
 import { joinComposerPrompt, splitComposerPrompt } from './composerInput'
 import './styles.css'
 
@@ -138,10 +130,67 @@ function sameValues(left: string[], right: string[]): boolean {
   return expected.size === right.length && left.every((value) => expected.has(value))
 }
 
+function taskProjectionRunning(current: XiaoyinTaskProjection, now: string): XiaoyinTaskProjection {
+  return { ...current, status: 'running', activity: '正在处理', updatedAt: now, startedAt: current.startedAt ?? now, executionStarted: false }
+}
+
+function taskProjectionCompleted(current: XiaoyinTaskProjection, outcome: TaskOutcome, now: string): XiaoyinTaskProjection {
+  return { ...current, status: 'completed', activity: taskOutcomeLabel(outcome), outcome, updatedAt: now, completedAt: now }
+}
+
+function taskProjectionFailed(current: XiaoyinTaskProjection, failure: ReturnType<typeof classifyHarnessFailure>, canceled: boolean, now: string): XiaoyinTaskProjection {
+  return {
+    ...current,
+    status: canceled ? 'canceled' : 'failed',
+    activity: canceled ? '已停止' : '任务执行失败',
+    updatedAt: now,
+    completedAt: now,
+    failure: canceled ? undefined : { code: failure.code, category: failure.category, detail: failure.message.slice(0, 500) },
+    steps: current.steps.map((step) => step.status === 'running' ? { ...step, status: 'canceled', completedAt: now, label: `${step.label}（结果待核对）` } : step),
+    timeline: current.timeline?.map((entry) => entry.status === 'running' ? { ...entry, status: 'canceled', completedAt: now, label: `${entry.label}（结果待核对）` } : entry),
+    subagents: current.subagents?.map((agent) => agent.status === 'running' ? { ...agent, status: 'canceled', completedAt: now } : agent),
+  }
+}
+
 export default function App() {
+  const session = useEnterpriseSession()
+  const owner = session.state === 'authenticated' ? session.user?.userId : undefined
+  const [activeOwner, setActiveOwner] = useState(owner)
+  const [workspaceReady, setWorkspaceReady] = useState(false)
+  const [transitionError, setTransitionError] = useState('')
+  const [transitionAttempt, setTransitionAttempt] = useState(0)
+  const cleanupQueue = useRef<Promise<void>>(Promise.resolve())
+  const cleanupStarted = useRef(false)
+  const transitioning = useRef(false)
+  useEffect(() => {
+    if (cleanupStarted.current && activeOwner === owner && !transitioning.current) return
+    cleanupStarted.current = true
+    transitioning.current = true
+    setWorkspaceReady(false)
+    let obsolete = false
+    setTransitionError('')
+    const cleanup = cleanupQueue.current.then(async () => {
+      await Promise.all([shutdownHarness(), stopLocalImRuntime(), clearLocalDirectories()])
+    })
+    cleanupQueue.current = cleanup.catch(() => undefined)
+    void cleanup.then(() => {
+      if (!obsolete) { transitioning.current = false; setActiveOwner(owner); setWorkspaceReady(true) }
+    }, () => {
+      if (!obsolete) setTransitionError('旧账号的本地任务未能停止，请重试。')
+    })
+    return () => { obsolete = true }
+  }, [activeOwner, owner, transitionAttempt])
+  if (!workspaceReady || activeOwner !== owner || transitioning.current) {
+    return <ErpAuthScreen authorizing={false} checking={!transitionError} error={transitionError}
+      onReopen={() => setTransitionAttempt((value) => value + 1)} />
+  }
+  return <EmployeeWorkspace key={owner ? `employee:${owner}` : 'signed-out'} session={session} />
+}
+
+function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpriseSession> }) {
   useApplyDesktopPreferences()
   const { confirm: confirmAction, dialog: confirmationDialog, notify, toast } = useDesktopDialog()
-  const { accessToken, authorizing, error: authError, logout, reopen, state: authState, user } = useEnterpriseSession()
+  const { accessToken, authorizing, error: authError, logout, reopen, state: authState, user } = session
   const [connectionAttempt, setConnectionAttempt] = useState(0)
   const { bootstrap, runtimeStatus, error: configurationError } = useEnterpriseBootstrap(authState === 'authenticated' ? user?.userId : undefined, accessToken, connectionAttempt)
   const memoryCommands = useMemoryCommands(confirmAction)
@@ -196,14 +245,20 @@ export default function App() {
   const draftPausedRef = useRef(true)
   const [runningTaskIds, setRunningTaskIds] = useState<string[]>([])
   const [taskContextRestoring, setTaskContextRestoring] = useState(false)
+  const [allowShell, setAllowShell] = useState(() => loadHarnessShellEnabled())
+  const [allowLsp, setAllowLsp] = useState(() => loadHarnessLspEnabled())
+  const [allowExternalAgents, setAllowExternalAgents] = useState(() => loadHarnessExternalAgentsEnabled())
+  const [allowHooks, setAllowHooks] = useState(() => loadHarnessHooksEnabled())
+  const [toolsMode, setToolsMode] = useState<HarnessToolsMode>(() => loadHarnessToolsMode())
   const {
     health: harnessHealth,
     detail: harnessHealthDetail,
+    hostHealth: harnessHostHealth,
     recover: recoverHarness,
     reportInfrastructureFailure,
-  } = useHarnessHealth(authState === 'authenticated')
-  const [taskMonitor, setTaskMonitor] = useState<TaskMonitorState>(createTaskMonitor)
-  const taskMonitorRef = useRef<TaskMonitorState>(taskMonitor)
+  } = useHarnessHealth(authState === 'authenticated', Boolean(bootstrap?.modelApiKey), allowShell, allowLsp, allowExternalAgents, allowHooks, toolsMode)
+  const [taskProjection, setTaskProjection] = useState<XiaoyinTaskProjection>(createXiaoyinTaskProjection)
+  const taskProjectionRef = useRef<XiaoyinTaskProjection>(taskProjection)
   const [localDirectories, setLocalDirectories] = useState<AuthorizedLocalDirectory[]>([])
   const [pendingAttachments, setPendingAttachments] = useState<LocalTaskAttachment[]>([])
   const attachmentImportRef = useRef(false)
@@ -211,7 +266,16 @@ export default function App() {
   attachmentViewRef.current = { pendingAttachments, localDirectories, page }
   const [localFileError, setLocalFileError] = useState('')
   const [draftSaveError, setDraftSaveError] = useState('')
+  const [draftStateStatus, setDraftStateStatus] = useState<'loading' | 'ready' | 'failed'>('loading')
+  const draftRevisionRef = useRef(0)
+  const draftDirtyRef = useRef(false)
+  const draftStageNonceRef = useRef('')
+  const draftSaveTimerRef = useRef<number | undefined>(undefined)
   const [selectedModel, setSelectedModel] = useState('')
+  const updateRuntimePreference = <T,>(value: T, save: (value: T) => boolean, update: (value: T) => void) => {
+    if (save(value)) update(value)
+    else notify('运行时设置未能保存，本次未切换。请检查本机存储后重试。', 'error')
+  }
   const [executionMode, setExecutionMode] = useState<'agent' | 'plan'>('agent')
   const [modelMenuOpen, setModelMenuOpen] = useState(false)
   const [taskSearchOpen, setTaskSearchOpen] = useState(false)
@@ -254,7 +318,11 @@ export default function App() {
     model: activeModel,
     modelApiKey: bootstrap.modelApiKey,
     accessToken,
-  } : undefined, [accessToken, activeModel, bootstrap, expertKits, runtimeConnectors, skillViews, user])
+    allowShell,
+    allowLsp,
+    allowExternalAgents,
+    allowHooks,
+  } : undefined, [accessToken, activeModel, allowExternalAgents, allowHooks, allowLsp, allowShell, bootstrap, expertKits, runtimeConnectors, skillViews, user])
   const selectCurrentLocalTaskId = (id: string) => {
     currentLocalTaskIdRef.current = id
     setCurrentLocalTaskId(id)
@@ -267,16 +335,17 @@ export default function App() {
   })
   const localSchedules = useLocalSchedules(user ? `${user.userId}:${localScheduleNamespace()}` : undefined,
     connectorDiagnosticsAvailable() && authState === 'authenticated' && runtimeStatus === 'ready' && harnessHealth === 'ready' && runningTaskIds.length < AUTOMATIC_TASK_LIMIT,
-    async (schedule, taskId) => {
+    async (schedule, taskId, scheduleRunId) => {
       if (schedule.model && !bootstrap?.models.includes(schedule.model)) return { notStarted: '计划指定的模型已不可用，请编辑计划重新选择模型；计划已暂停' }
       const directories = [...schedule.directories, ...(schedule.attachments ?? []).flatMap((file) => file.rootPath ? [{ id: file.rootId, name: file.rootName, path: file.rootPath }] : [])]
         .filter((entry, index, all) => all.findIndex((item) => item.id === entry.id) === index)
       const now = new Date().toISOString()
       const task: LocalTaskRun = { id: taskId, source: 'DESKTOP', name: schedule.name, status: 'COMPLETED', createdAt: now, updatedAt: now,
-        ...schedule.taskContext, localDirectories: directories, model: schedule.model || activeModel, messages: [], monitor: createTaskMonitor(now) }
+        scheduleId: schedule.id, scheduleRunId,
+        ...schedule.taskContext, localDirectories: directories, model: schedule.model || activeModel, messages: [], projection: createXiaoyinTaskProjection(now) }
       let started = false
       try {
-        return await executeTask(schedule.prompt, schedule.attachments ?? [], task, () => { started = true }) ?? { notStarted: '本轮未启动，请检查工作目录、模型和能力配置后再执行；计划已暂停' }
+        return await executeTask(schedule.prompt, schedule.attachments ?? [], task, async () => { started = true }) ?? { notStarted: '本轮未启动，请检查工作目录、模型和能力配置后再执行；计划已暂停' }
       } catch (error) {
         if (!started) return { notStarted: `本轮未启动：${error instanceof Error ? error.message : String(error)}` }
         throw error
@@ -300,6 +369,7 @@ export default function App() {
     employeeId: user?.userId,
     expertKits: expertKitCatalog,
     harnessHealth,
+    harnessCapabilities: harnessHostHealth?.capabilities,
     runtimeReady: runtimeStatus === 'ready',
     skills,
   })
@@ -314,19 +384,19 @@ export default function App() {
     onCurrentTaskChanged: (task) => {
       setMessages(task.messages)
       setHarnessSessionId(task.sessionId ?? '')
-      taskMonitorRef.current = task.monitor
-      setTaskMonitor(task.monitor)
+      taskProjectionRef.current = task.projection
+      setTaskProjection(task.projection)
     },
   })
   useHarnessNotifications({
     currentTaskIdRef: currentLocalTaskIdRef,
     streamingTasksRef,
-    onTaskUpdate: (taskId, monitor, taskMessages, execution) => setLocalTasks((current) => current.map((task) => task.id === taskId
-      ? { ...task, updatedAt: monitor.updatedAt, execution, monitor, messages: taskMessages }
+    onTaskUpdate: (taskId, projection, taskMessages) => setLocalTasks((current) => current.map((task) => task.id === taskId
+      ? { ...task, updatedAt: projection.updatedAt, projection, messages: taskMessages }
       : task)),
-    onCurrentUpdate: (monitor, taskMessages) => {
-      taskMonitorRef.current = monitor
-      setTaskMonitor(monitor)
+    onCurrentUpdate: (projection, taskMessages) => {
+      taskProjectionRef.current = projection
+      setTaskProjection(projection)
       if (taskMessages) setMessages(taskMessages)
     },
   })
@@ -349,7 +419,7 @@ export default function App() {
     if (!bootstrap || !user) return
     setSelectedModel(resolveSelectedModel(
       bootstrap.models,
-      readTaskDraft(user.userId, currentLocalTaskIdRef.current || creationDraftKeyRef.current)?.model || window.localStorage.getItem(modelStorageKey(user.userId)),
+      loadSelectedModel(user.userId),
     ))
   }, [bootstrap, user])
 
@@ -380,20 +450,16 @@ export default function App() {
     if (historyOwnerRef.current !== user.userId) { historyOwnerRef.current = user.userId; setLocalTasks([]) }
     let disposed = false
     void loadTaskHistory(user.userId)
-      .then((tasks) => { if (!disposed) setLocalTasks((current) => {
-        const known = new Set(current.map((task) => task.id))
-        return [...current, ...tasks.filter((task) => !known.has(task.id))].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-      }) })
+      .then(({ tasks, invalidCount }) => { if (!disposed) {
+        setLocalTasks((current) => {
+          const known = new Set(current.map((task) => task.id))
+          return [...current, ...tasks.filter((task) => !known.has(task.id))].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+        })
+        if (invalidCount) setLocalFileError(unreadableHistoryWarning(invalidCount))
+      } })
       .catch((reason) => { if (!disposed) setLocalFileError(reason instanceof Error ? reason.message : String(reason)) })
     return () => { disposed = true }
   }, [authState, user])
-
-  useEffect(() => {
-    if (authState === 'authenticated') return
-    setLocalDirectories([])
-    setPendingAttachments([])
-    void Promise.all([clearLocalDirectories(), shutdownHarness(), stopLocalImRuntime()])
-  }, [authState])
 
   useEffect(() => {
     if (!taskSearchOpen) return
@@ -443,19 +509,39 @@ export default function App() {
   )
 
   useEffect(() => {
-    if (authState !== 'authenticated' || !user) { draftOwnerRef.current = ''; draftPausedRef.current = true; return }
+    if (authState !== 'authenticated' || !user) { draftOwnerRef.current = ''; draftPausedRef.current = true; setDraftStateStatus('loading'); return }
     if (draftOwnerRef.current === user.userId) return
     draftOwnerRef.current = user.userId
+    draftPausedRef.current = true
+    setDraftStateStatus('loading')
     creationDraftKeyRef.current = ''
     setCreationKind(undefined)
-    setRecentDirectories(recentWorkDirectories(user.userId))
-    void restoreDraftContext(readTaskDraft(user.userId, ''))
+    let disposed = false
+    void initializeDraftState(user.userId, () => !disposed)
+    return () => { disposed = true }
   }, [authState, user?.userId])
-  useEffect(() => { saveCurrentDraft() }, [user?.userId, currentLocalTaskId, prompt, pendingAttachments, localDirectories, selectedKnowledgeBaseRefs, selectedTaskConnectorIds, activeModel, taskContextRestoring])
+  useLayoutEffect(() => {
+    if (draftStateStatus !== 'ready' || !user || draftOwnerRef.current !== user.userId || draftPausedRef.current) return
+    const revision = ++draftRevisionRef.current
+    draftDirtyRef.current = true
+    try {
+      draftStageNonceRef.current = stageTaskDraft(user.userId, currentLocalTaskId || creationDraftKeyRef.current,
+        { prompt, attachments: pendingAttachments, directories: localDirectories, knowledgeRefs: selectedKnowledgeBaseRefs, connectorIds: selectedTaskConnectorIds, model: activeModel, executionMode, updatedAt: Date.now() })
+    } catch {
+      draftStageNonceRef.current = ''
+      setDraftSaveError('草稿尚未暂存，请检查本机存储空间。认证失效或关闭应用前请重试保存。')
+    }
+    draftSaveTimerRef.current = window.setTimeout(() => {
+      if (draftRevisionRef.current === revision) void saveCurrentDraft()
+    }, 250)
+    return () => window.clearTimeout(draftSaveTimerRef.current)
+  }, [user?.userId, currentLocalTaskId, prompt, pendingAttachments, localDirectories, selectedKnowledgeBaseRefs, selectedTaskConnectorIds, activeModel, executionMode, taskContextRestoring, draftStateStatus])
   useEffect(() => { setDraftSaveError('') }, [user?.userId])
   useEffect(() => {
-    if (!draftSaveError) return
-    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = '' }
+    const warn = (event: BeforeUnloadEvent) => {
+      if (!draftSaveError && !draftDirtyRef.current) return
+      event.preventDefault(); event.returnValue = ''
+    }
     window.addEventListener('beforeunload', warn)
     return () => window.removeEventListener('beforeunload', warn)
   }, [draftSaveError])
@@ -511,12 +597,12 @@ export default function App() {
     ? localTasks.filter((task) => {
       const query = taskQuery.trim().toLocaleLowerCase()
       return historyPages.ids.includes(task.id) || task.name.toLocaleLowerCase().includes(query)
-        || task.messages.some((message) => message.text.toLocaleLowerCase().includes(query))
+        || task.messagePreview?.toLocaleLowerCase().includes(query)
     })
     : localTasks
   const focusComposer = () => window.requestAnimationFrame(() => composerRef.current?.focus())
-  const startNewTask = (initialPrompt = '', nextCreationKind?: 'skill' | 'expert-kit', draftKind?: XiaoyinCreationKind) => {
-    if (!saveCurrentDraft()) return Promise.resolve()
+  const startNewTask = async (initialPrompt = '', nextCreationKind?: 'skill' | 'expert-kit', draftKind?: XiaoyinCreationKind) => {
+    if (!await saveCurrentDraft()) return
     creationDraftKeyRef.current = draftKind ? `creation:${draftKind}` : ''
     const saved = user ? readTaskDraft(user.userId, creationDraftKeyRef.current) : undefined
     setActiveExpertKitId('')
@@ -533,9 +619,9 @@ export default function App() {
     selectCurrentLocalTaskId('')
     setCreationKind(nextCreationKind)
     setPendingAttachments([])
-    const monitor = createTaskMonitor()
-    taskMonitorRef.current = monitor
-    setTaskMonitor(monitor)
+    const projection = createXiaoyinTaskProjection()
+    taskProjectionRef.current = projection
+    setTaskProjection(projection)
     setLocalDirectories([])
     setLocalFileError('')
     focusComposer()
@@ -546,7 +632,7 @@ export default function App() {
       const nextPrompt = initial.tokens.length ? joinComposerPrompt(initial.tokens, initial.text || existing) : [initialPrompt, existing].filter(Boolean).join('\n\n')
       draft = { ...emptyDraft(), ...saved, prompt: nextPrompt }
     }
-    return restoreDraftContext(draft)
+    await restoreDraftContext(draft)
   }
   const newTask = () => startNewTask()
   const createWithXiaoyin = (kind: XiaoyinCreationKind) => startNewTask(
@@ -558,22 +644,42 @@ export default function App() {
       .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)))
     void taskPersistence.save(task).catch(() => undefined)
   }
-  const openLocalTask = (task: LocalTaskRun) => {
-    storedTaskOpenRef.current++
-    if (!saveCurrentDraft()) return
-    const streaming = streamingTasksRef.current.get(task.id)
+  const openLocalTask = async (task: LocalTaskRun): Promise<void> => {
+    const request = ++storedTaskOpenRef.current
+    const generation = taskContextRestoreIdRef.current
+    const owner = user?.userId
+    const stillCurrent = () => storedTaskOpenRef.current === request && taskContextRestoreIdRef.current === generation
+      && historyOwnerRef.current === owner
+    let selectedTask = task
+    // Durable transcripts live in Harness Persistence; hydrate stripped local indexes on demand.
+    if (user && task.sessionId && task.messages.length === 0 && !streamingTasksRef.current.has(task.id)) {
+      try {
+        const hydrated = await loadTaskById(user.userId, task.id)
+        if (!stillCurrent()) return
+        if (!hydrated) { notify('该任务记录不可用，可能已删除。当前会话未切换。', 'error'); return }
+        if (hydrated.messages.length === 0) { notify('任务完整内容暂时无法读取，请稍后重试。当前会话未切换。', 'error'); return }
+        selectedTask = hydrated
+        setLocalTasks((current) => current.map((item) => item.id === hydrated.id ? hydrated : item))
+      } catch (reason) {
+        if (stillCurrent()) notify(`读取任务详情失败：${reason instanceof Error ? reason.message : String(reason)}。当前会话未切换。`, 'error')
+        return
+      }
+    }
+    if (!stillCurrent()) return
+    if (!await saveCurrentDraft()) return
+    const streaming = streamingTasksRef.current.get(selectedTask.id)
     setPage('chat')
     setTaskSearchOpen(false)
     setTaskQuery('')
-    setMessages(streaming?.messages ?? task.messages.map((message) => ({ ...message, pending: false })))
-    selectCurrentLocalTaskId(task.id)
+    setMessages(streaming?.messages ?? selectedTask.messages.map((message) => ({ ...message, pending: false })))
+    selectCurrentLocalTaskId(selectedTask.id)
     setCreationKind(undefined)
-    setCurrentCapabilitySnapshot(task.capabilitySnapshot)
-    taskMonitorRef.current = streaming?.monitor ?? task.monitor
-    setTaskMonitor(streaming?.monitor ?? task.monitor)
-    const draft = user ? readTaskDraft(user.userId, task.id) : undefined
-    setHarnessSessionId(restoredTaskSessionId(task, draft))
-    void restoreDraftContext(draft ?? { ...emptyDraft(), prompt: joinComposerPrompt(task.invocationTokens ?? [], ''), directories: task.localDirectories ?? [], knowledgeRefs: task.capabilitySnapshot?.knowledgeBaseRefs ?? [], connectorIds: task.capabilitySnapshot?.connectors.map((connector) => connector.id) ?? [], model: task.model ?? activeModel, executionMode: task.executionMode ?? 'agent' })
+    setCurrentCapabilitySnapshot(selectedTask.capabilitySnapshot)
+    taskProjectionRef.current = streaming?.projection ?? selectedTask.projection
+    setTaskProjection(streaming?.projection ?? selectedTask.projection)
+    const draft = user ? readTaskDraft(user.userId, selectedTask.id) : undefined
+    setHarnessSessionId(restoredTaskSessionId(selectedTask, draft))
+    void restoreDraftContext(draft ?? { ...emptyDraft(), prompt: joinComposerPrompt(selectedTask.invocationTokens ?? [], ''), directories: selectedTask.localDirectories ?? [], knowledgeRefs: selectedTask.capabilitySnapshot?.knowledgeBaseRefs ?? [], connectorIds: selectedTask.capabilitySnapshot?.connectors.map((connector) => connector.id) ?? [], model: selectedTask.model ?? activeModel, executionMode: selectedTask.executionMode ?? 'agent' })
     focusComposer()
   }
   async function openStoredTask(id: string) {
@@ -594,9 +700,38 @@ export default function App() {
     } catch (reason) { if (stillCurrent()) notify(`读取任务失败：${String(reason)}`, 'error') }
   }
   function emptyDraft(): TaskDraft { return { prompt: '', attachments: [], directories: [], knowledgeRefs: [], connectorIds: [], model: activeModel, executionMode: 'agent', updatedAt: Date.now() } }
-  function saveCurrentDraft() {
+  async function initializeDraftState(owner: string, stillMounted: () => boolean = () => true) {
+    setDraftStateStatus('loading')
+    try {
+      await loadTaskDraftState(owner)
+      if (!stillMounted() || draftOwnerRef.current !== owner) return
+      setRecentDirectories(recentWorkDirectories(owner))
+      await restoreDraftContext(readTaskDraft(owner, ''))
+      if (!stillMounted() || draftOwnerRef.current !== owner) return
+      setDraftSaveError('')
+      setDraftStateStatus('ready')
+    } catch (reason) {
+      if (!stillMounted() || draftOwnerRef.current !== owner) return
+      draftPausedRef.current = true
+      setDraftSaveError(`草稿加载失败：${reason instanceof Error ? reason.message : String(reason)}`)
+      setDraftStateStatus('failed')
+    }
+  }
+  async function saveCurrentDraft() {
+    if (draftStateStatus !== 'ready') return false
     if (!user || draftOwnerRef.current !== user.userId || draftPausedRef.current) return true
-    try { saveTaskDraft(user.userId, currentLocalTaskId || creationDraftKeyRef.current, { prompt, attachments: pendingAttachments, directories: localDirectories, knowledgeRefs: selectedKnowledgeBaseRefs, connectorIds: selectedTaskConnectorIds, model: activeModel, executionMode, updatedAt: Date.now() }); setDraftSaveError(''); return true }
+    window.clearTimeout(draftSaveTimerRef.current)
+    const revision = draftRevisionRef.current
+    const nonce = draftStageNonceRef.current
+    const draftId = currentLocalTaskId || creationDraftKeyRef.current
+    try {
+      await saveTaskDraft(user.userId, draftId, { prompt, attachments: pendingAttachments, directories: localDirectories, knowledgeRefs: selectedKnowledgeBaseRefs, connectorIds: selectedTaskConnectorIds, model: activeModel, executionMode, updatedAt: Date.now() })
+      if (nonce) clearStagedTaskDraft(user.userId, draftId, nonce)
+      if (revision !== draftRevisionRef.current) return false
+      draftDirtyRef.current = false
+      setDraftSaveError('')
+      return true
+    }
     catch { setDraftSaveError('草稿保存失败，请检查本机存储空间。当前输入已保留；保存成功前不能切换到其他对话。'); return false }
   }
   async function restoreDraftContext(saved?: TaskDraft) {
@@ -633,7 +768,7 @@ export default function App() {
         ? current
         : [...current, authorization])
       setHarnessSessionId('')
-      if (user) { rememberWorkDirectory(user.userId, authorization); setRecentDirectories(recentWorkDirectories(user.userId)) }
+      if (user) { await rememberWorkDirectory(user.userId, authorization); setRecentDirectories(recentWorkDirectories(user.userId)) }
     } catch (error) {
       setLocalFileError(error instanceof Error ? error.message : String(error))
     }
@@ -717,6 +852,7 @@ export default function App() {
     setHarnessSessionId('')
   }
   const logoutWithCleanup = async () => {
+    if (!await saveCurrentDraft()) return
     await clearLocalDirectories()
     await Promise.all([shutdownHarness(), stopLocalImRuntime()])
     setLocalDirectories([])
@@ -740,19 +876,19 @@ export default function App() {
     if (currentTaskRunning || (currentQueue?.items.length && !currentQueue.paused)) {
       if (!splitComposerPrompt(prompt).text.trim()) return
       if (pendingAttachments.length) { setLocalFileError('排队暂支持文字，请在当前轮完成后添加附件。'); return }
-      if (taskQueue.enqueue(currentLocalTaskId, prompt)) setPrompt('')
+      if (await taskQueue.enqueue(currentLocalTaskId, prompt)) setPrompt('')
       return
     }
     await executeTask(prompt, pendingAttachments)
   }
 
-  async function runQueued(task: LocalTaskRun, item: QueuedPrompt, accepted: () => void) {
+  async function runQueued(task: LocalTaskRun, item: QueuedPrompt, accepted: () => Promise<void>) {
     if (!bootstrap || !user || runtimeStatus !== 'ready') return 'blocked' as const
-    try { return await executeTask(item.text, [], task, accepted) === true ? 'completed' as const : 'failed' as const }
+    try { return await executeTask(item.text, [], task, accepted, item.id) === true ? 'completed' as const : 'failed' as const }
     catch (reason) { notify(reason instanceof Error ? reason.message : String(reason), 'error'); return 'blocked' as const }
   }
 
-  async function executeTask(rawInput: string, messageAttachments: LocalTaskAttachment[], queuedTask?: LocalTaskRun, accepted?: () => void): Promise<boolean | 'canceled' | { outcome: TaskOutcome } | undefined> {
+  async function executeTask(rawInput: string, messageAttachments: LocalTaskAttachment[], queuedTask?: LocalTaskRun, accepted?: () => Promise<void>, queuedItemId?: string): Promise<boolean | 'canceled' | { outcome: TaskOutcome } | undefined> {
     const input = rawInput.trim() || (messageAttachments.length > 0 ? '请查看并处理这些附件。' : '')
     if (!input || !bootstrap || !user || runtimeStatus !== 'ready') return
     const contextTaskId = queuedTask?.id ?? currentLocalTaskId
@@ -763,7 +899,7 @@ export default function App() {
     const isCurrent = () => currentLocalTaskIdRef.current === contextTaskId && (Boolean(queuedTask) || contextGeneration === taskContextRestoreIdRef.current)
     const reportInputError = (message: string) => { if (isCurrent()) setLocalFileError(message); else notify(message, 'error') }
     const contextMessages = queuedTask?.messages ?? messages
-    const contextMonitor = queuedTask?.monitor ?? taskMonitorRef.current
+    const contextProjection = queuedTask?.projection ?? taskProjectionRef.current
     const existingTask = queuedTask ?? localTasks.find((task) => task.id === contextTaskId)
     const taskModel = resolveSelectedModel(bootstrap.models, queuedTask ? queuedTask.model : activeModel)
     const taskExecutionMode = queuedTask?.executionMode ?? executionMode
@@ -797,24 +933,21 @@ export default function App() {
           reply = `记忆未更改：${error instanceof Error ? error.message : String(error)}`
         }
         const timestamp = new Date().toISOString()
-        const started = beginExecutionTurn({
-          taskId, sessionId: '', operationScope: crypto.randomUUID(), previous: existingTask?.execution, now: timestamp,
-        })
-        const completed = completeExecutionTurn(started.thread, started.monitor, {
-          status: 'completed', summary: '记忆处理完成', remaining: [], checks: [],
-        }, timestamp, { activity: '记忆处理完成' })
-        const monitor = completed.monitor
+        const projection = taskProjectionCompleted(
+          { ...createXiaoyinTaskProjection(timestamp), operationScope: crypto.randomUUID() },
+          { status: 'completed', summary: '记忆处理完成', remaining: [], checks: [] }, timestamp,
+        )
         const rememberedMessages: TaskMessage[] = [...contextMessages, { role: 'user', text: input }, {
-          role: 'assistant', text: reply, monitor, executionTurnId: completed.thread.turns.at(-1)?.id,
+          role: 'assistant', text: reply, projection,
         }]
         persistLocalTask({ ...existingTask, id: taskId, source: existingTask?.source ?? 'DESKTOP', name: existingTask?.name ?? input.slice(0, 60),
-          status: 'COMPLETED', createdAt: existingTask?.createdAt ?? timestamp, updatedAt: timestamp, execution: completed.thread, monitor, messages: rememberedMessages, sessionId: '' })
+          status: 'COMPLETED', createdAt: existingTask?.createdAt ?? timestamp, updatedAt: timestamp, projection, messages: rememberedMessages, sessionId: '' })
         if (isCurrent()) {
           selectCurrentLocalTaskId(taskId)
           setMessages(rememberedMessages)
           setHarnessSessionId('')
-          taskMonitorRef.current = monitor
-          setTaskMonitor(monitor)
+          taskProjectionRef.current = projection
+          setTaskProjection(projection)
         }
         return
       }
@@ -865,25 +998,40 @@ export default function App() {
         createdAt: now,
       }))
       if (isCurrent()) setCurrentCapabilitySnapshot(capabilitySnapshot)
-      const { rootSessionId, harnessPrompt, pendingMessages, runningMonitor, execution, runningTask } = prepareTaskTurn({
+      const { rootSessionId, harnessPrompt, pendingMessages, runningProjection, runningTask } = prepareTaskTurn({
         taskId, input, now, existingTask, sessionId: taskSessionId, model: taskModel, executionMode: taskExecutionMode,
+        scheduleId: existingTask?.scheduleId, scheduleRunId: existingTask?.scheduleRunId,
         directories: taskDirectories, directoriesChanged: resetSessionForDirectoryChange,
         capabilities: capabilitySnapshot, invocations: selected, invocationTokens: queuedTask?.invocationTokens,
-        messages: contextMessages, monitor: contextMonitor, attachments: messageAttachments,
+        messages: contextMessages, projection: contextProjection, attachments: messageAttachments, queuedItemId,
       })
-      accepted?.()
+      try {
+        await persistTaskHistory(user.userId, runningTask)
+      } catch (reason) {
+        reportInputError(`任务尚未启动，本地记录保存失败：${reason instanceof Error ? reason.message : String(reason)}`)
+        return
+      }
+      try {
+        await accepted?.()
+      } catch (reason) {
+        if (existingTask) await persistTaskHistory(user.userId, existingTask).catch(() => undefined)
+        throw reason
+      }
       if (isCurrent()) setLocalFileError('')
       if (isCurrent()) {
-        if (!queuedTask) { try { saveTaskDraft(user.userId, contextTaskId || creationDraftKeyRef.current) } catch { /* Current task keeps the submitted content. */ } }
+        if (!queuedTask) { try { await saveTaskDraft(user.userId, contextTaskId || creationDraftKeyRef.current) } catch { /* Current task keeps the submitted content. */ } }
         selectCurrentLocalTaskId(taskId)
         setHarnessSessionId(rootSessionId)
         setMessages(pendingMessages)
         if (!queuedTask) { setPrompt(joinComposerPrompt(selected.map((item) => item.token), '')); setPendingAttachments([]) }
       }
-      persistLocalTask(runningTask)
+      setLocalTasks((current) => [runningTask, ...current.filter((item) => item.id !== runningTask.id)]
+        .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)))
       const streaming: StreamingTaskState = {
-        monitor: runningMonitor,
-        execution,
+        sessionId: rootSessionId,
+        projection: runningProjection,
+        projectionSeq: -1,
+        projectionSeqByKey: {},
         messages: pendingMessages,
         responseKey: '',
         cancellationRequested: false,
@@ -891,17 +1039,22 @@ export default function App() {
       streamingTasksRef.current.set(taskId, streaming)
       setRunningTaskIds((current) => current.includes(taskId) ? current : [...current, taskId])
       if (currentLocalTaskIdRef.current === taskId) {
-        taskMonitorRef.current = runningMonitor
-        setTaskMonitor(runningMonitor)
+        taskProjectionRef.current = runningProjection
+        setTaskProjection(runningProjection)
       }
       let executionSessionId = rootSessionId
       try {
         const result = await runHarnessWithRecovery({
-          operationScope: runningMonitor.operationScope!,
+          operationScope: runningProjection.operationScope!,
           taskId,
           prompt: harnessPrompt,
           capabilitySnapshot: capabilitySnapshotForExecution(capabilitySnapshot, runtimeConnectors, connectorSecrets, enabledConnectorIds),
           executionMode: taskExecutionMode,
+          toolsMode,
+          allowShell,
+          allowLsp,
+          allowExternalAgents,
+          allowHooks,
           employeeId: user!.userId,
           teamId: user!.teamId,
           sessionId: rootSessionId,
@@ -914,47 +1067,46 @@ export default function App() {
           localFileRootIds: taskDirectories.map((directory) => directory.id),
           attachments: messageAttachments,
         }, {
-          getMonitor: () => streaming.monitor,
+          getProjection: () => streaming.projection,
           isCanceled: () => streaming.cancellationRequested,
           onRetry: (sessionId) => {
             executionSessionId = sessionId
-            const retry = retryExecutionTurn(streaming.execution, streaming.monitor, sessionId)
-            streaming.execution = retry.thread
-            streaming.monitor = retry.monitor
+            streaming.sessionId = sessionId
+            streaming.projection = taskProjectionRunning(streaming.projection, new Date().toISOString())
+            streaming.projectionSeq = -1
+            streaming.projectionSeqByKey = {}
             streaming.responseKey = ''
             streaming.messages = streaming.messages.map((message, index) => index === streaming.messages.length - 1
               ? { ...message, text: '', pending: true }
               : message)
             if (currentLocalTaskIdRef.current === taskId) {
               setHarnessSessionId(sessionId)
-              taskMonitorRef.current = retry.monitor
-              setTaskMonitor(retry.monitor)
+              taskProjectionRef.current = streaming.projection
+              setTaskProjection(streaming.projection)
               setMessages(streaming.messages)
             }
-            persistLocalTask({ ...runningTask, sessionId, updatedAt: retry.monitor.updatedAt, execution: retry.thread, monitor: retry.monitor, messages: streaming.messages })
+            persistLocalTask({ ...runningTask, sessionId, updatedAt: streaming.projection.updatedAt, projection: streaming.projection, messages: streaming.messages })
           },
         })
         if (streaming.cancellationRequested) throw new Error('本轮已停止')
         if (!result.finalResponse.trim()) throw new Error('模型本轮没有返回可显示文本，请重试')
         const outcome = parseTaskOutcome(result.outcome) ?? unverifiedTaskOutcome()
         const goalCompleted = outcome.status === 'completed'
-        if (!goalCompleted) taskQueue.pause(taskId)
+        if (!goalCompleted) void taskQueue.pause(taskId)
         const completedAt = new Date().toISOString()
-        const completed = completeExecutionTurn(streaming.execution, streaming.monitor, outcome, completedAt)
-        streaming.execution = completed.thread
-        streaming.monitor = completed.monitor
-        const completedMonitor = completed.monitor
+        streaming.projection = taskProjectionCompleted(streaming.projection, outcome, completedAt)
+        const completedProjection = streaming.projection
         const completedMessages = streaming.messages.map((message, index) => index === streaming.messages.length - 1
-          ? { role: 'assistant', text: result.finalResponse, monitor: completedMonitor, executionTurnId: streaming.execution.turns.at(-1)?.id }
+          ? { role: 'assistant', text: result.finalResponse, projection: completedProjection }
           : message) as TaskMessage[]
         if (currentLocalTaskIdRef.current === taskId) {
           setHarnessSessionId(result.sessionId)
-          taskMonitorRef.current = completedMonitor
-          setTaskMonitor(completedMonitor)
+          taskProjectionRef.current = completedProjection
+          setTaskProjection(completedProjection)
           setMessages(completedMessages)
         }
         persistLocalTask({ ...runningTask, status: 'COMPLETED', updatedAt: new Date().toISOString(),
-          sessionId: result.sessionId, execution: streaming.execution, monitor: completedMonitor, messages: completedMessages })
+          sessionId: result.sessionId, projection: completedProjection, messages: completedMessages })
         if (!queuedTask && goalCompleted) void learnCompletedTask(user.userId, bootstrap.endpoints.memoryProfile ?? '/api/v1/memory-profile', accessToken, input, taskId)
           .then((saved) => { if (saved) notify(`已记住这条明确偏好。${saved.syncPending ? '暂未同步到云端。' : '可在设置 → 记忆中修改或删除。'}`, 'success') })
           .catch((error) => notify(`任务已完成，自动记忆未写入：${error instanceof Error ? error.message : String(error)}`, 'error'))
@@ -968,28 +1120,22 @@ export default function App() {
         })
         return goalCompleted ? true : { outcome }
       } catch (error) {
-        taskQueue.pause(taskId)
+        void taskQueue.pause(taskId)
         const failure = classifyHarnessFailure(error)
         const message = failure.message
         const canceled = streaming.cancellationRequested
         const completedAt = new Date().toISOString()
-        const failed = failExecutionTurn(streaming.execution, streaming.monitor, {
-          cause: canceled ? 'canceled' : 'failure',
-          failure: { code: failure.code, category: failure.category, message },
-          now: completedAt,
-        })
-        streaming.execution = failed.thread
-        streaming.monitor = failed.monitor
-        const failedMonitor = failed.monitor
+        streaming.projection = taskProjectionFailed(streaming.projection, failure, canceled, completedAt)
+        const failedProjection = streaming.projection
         const failedMessages = streaming.messages.map((item, index) => index === streaming.messages.length - 1
-          ? { role: 'assistant', text: canceled ? item.text : [item.text.trim(), `${failure.title}：${message}\n\n错误编号：${failure.code}`].filter(Boolean).join('\n\n---\n\n'), monitor: failedMonitor, executionTurnId: streaming.execution.turns.at(-1)?.id }
+          ? { role: 'assistant', text: canceled ? item.text : [item.text.trim(), `${failure.title}：${message}\n\n错误编号：${failure.code}`].filter(Boolean).join('\n\n---\n\n'), projection: failedProjection }
           : item) as TaskMessage[]
         if (currentLocalTaskIdRef.current === taskId) {
-          taskMonitorRef.current = failedMonitor
-          setTaskMonitor(failedMonitor)
+          taskProjectionRef.current = failedProjection
+          setTaskProjection(failedProjection)
           setMessages(failedMessages)
         }
-        persistLocalTask({ ...runningTask, status: canceled ? 'CANCELED' : 'FAILED', updatedAt: new Date().toISOString(), sessionId: executionSessionId, execution: streaming.execution, monitor: failedMonitor, messages: failedMessages })
+        persistLocalTask({ ...runningTask, status: canceled ? 'CANCELED' : 'FAILED', updatedAt: new Date().toISOString(), sessionId: executionSessionId, projection: failedProjection, messages: failedMessages })
         const infrastructureFailure = failure.infrastructure
         if (!canceled && infrastructureFailure) {
           reportInfrastructureFailure(message)
@@ -1014,17 +1160,15 @@ export default function App() {
     const taskId = currentLocalTaskIdRef.current
     const streaming = streamingTasksRef.current.get(taskId)
     if (!streaming || streaming.cancellationRequested) return
-    taskQueue.pause(taskId)
+    void taskQueue.pause(taskId)
     streaming.cancellationRequested = true
-    const requested = requestExecutionInterrupt(streaming.execution, streaming.monitor)
-    streaming.execution = requested.thread
-    streaming.monitor = requested.monitor
+    streaming.projection = { ...streaming.projection, activity: '正在停止', updatedAt: new Date().toISOString() }
     setLocalTasks((current) => current.map((task) => task.id === taskId
-      ? { ...task, execution: requested.thread, monitor: requested.monitor, updatedAt: requested.monitor.updatedAt }
+      ? { ...task, projection: streaming.projection, updatedAt: streaming.projection.updatedAt }
       : task))
     if (currentLocalTaskIdRef.current === taskId) {
-      taskMonitorRef.current = requested.monitor
-      setTaskMonitor(requested.monitor)
+      taskProjectionRef.current = streaming.projection
+      setTaskProjection(streaming.projection)
     }
     try {
       // A missing native run can mean it just finished or recovery is between runs.
@@ -1033,15 +1177,13 @@ export default function App() {
     } catch (reason) {
       if (streamingTasksRef.current.get(taskId) !== streaming) return
       streaming.cancellationRequested = false
-      const failed = failExecutionInterruptRequest(streaming.execution, streaming.monitor)
-      streaming.execution = failed.thread
-      streaming.monitor = failed.monitor
+      streaming.projection = { ...streaming.projection, activity: '停止失败，可重试', updatedAt: new Date().toISOString() }
       setLocalTasks((current) => current.map((task) => task.id === taskId
-        ? { ...task, execution: failed.thread, monitor: failed.monitor, updatedAt: failed.monitor.updatedAt }
+        ? { ...task, projection: streaming.projection, updatedAt: streaming.projection.updatedAt }
         : task))
       if (currentLocalTaskIdRef.current === taskId) {
-        taskMonitorRef.current = failed.monitor
-        setTaskMonitor(failed.monitor)
+        taskProjectionRef.current = streaming.projection
+        setTaskProjection(streaming.projection)
         setLocalFileError(reason instanceof Error ? reason.message : String(reason))
       }
     }
@@ -1239,7 +1381,7 @@ export default function App() {
     }
     setSelectedModel(model)
     setModelMenuOpen(false)
-    if (user) window.localStorage.setItem(modelStorageKey(user.userId), model)
+    if (user && !saveSelectedModel(user.userId, model)) notify('模型选择未能保存，本次选择仍有效；下次启动可能恢复默认模型。', 'error')
   }
 
   const memorySaved = async () => {
@@ -1261,7 +1403,7 @@ export default function App() {
         onOpenTask={(task) => { setActiveExpertKitId(''); setActiveSkillId(''); openLocalTask(task) }}
         onArchiveTask={(task, archived) => {
           if (task.status === 'RUNNING') return
-          if (archived) taskQueue.pause(task.id)
+          if (archived) void taskQueue.pause(task.id)
           const next = { ...task, archivedAt: archived ? new Date().toISOString() : undefined, updatedAt: new Date().toISOString() }
           persistLocalTask(next)
           if (archived && currentLocalTaskIdRef.current === task.id) newTask()
@@ -1273,7 +1415,7 @@ export default function App() {
               if (!confirmed) return
               await removeTaskHistory(user.userId, task.id)
               taskPersistence.forget(task.id)
-              taskQueue.clear(task.id)
+              await taskQueue.clear(task.id)
               setLocalTasks((current) => current.filter((item) => item.id !== task.id))
               if (currentLocalTaskIdRef.current === task.id) newTask()
             }).catch((reason) => setLocalFileError(reason instanceof Error ? reason.message : String(reason)))
@@ -1308,8 +1450,12 @@ export default function App() {
       />
 
       <main className={`workspace${(taskPersistence.failures.length || draftSaveError) && page === 'chat' ? ' with-save-warning' : ''}`} ref={workspaceRef}>
-        {(taskPersistence.failures.length > 0 || draftSaveError) && <section className="task-save-warning" role="alert"><div><strong>{taskPersistence.failures.length ? `${taskPersistence.failures.length} 个任务尚未保存` : '当前草稿尚未保存'}</strong><p>当前内容仍在内存中，请勿退出应用。切换页面不会清除此提示。</p><details><summary>查看原因</summary>{draftSaveError && <p>{draftSaveError}</p>}{taskPersistence.failures.map((failure) => <p key={failure.task.id}>{failure.task.name}：{failure.detail}</p>)}</details></div><button type="button" disabled={!draftSaveError && taskPersistence.failures.every((failure) => failure.retrying)} onClick={() => { saveCurrentDraft(); void taskPersistence.retry() }}>{!draftSaveError && taskPersistence.failures.every((failure) => failure.retrying) ? '正在保存…' : '重试保存'}</button></section>}
-        {!activeExpertKit && (page === 'chat' ? (
+        {(taskPersistence.failures.length > 0 || draftSaveError) && <section className="task-save-warning" role="alert"><div><strong>{taskPersistence.failures.length ? `${taskPersistence.failures.length} 个任务尚未保存` : '当前草稿尚未保存'}</strong><p>当前内容仍在内存中，请勿退出应用。切换页面不会清除此提示。</p><details><summary>查看原因</summary>{draftSaveError && <p>{draftSaveError}</p>}{taskPersistence.failures.map((failure) => <p key={failure.task.id}>{failure.task.name}：{failure.detail}</p>)}</details></div><button type="button" disabled={!draftSaveError && taskPersistence.failures.every((failure) => failure.retrying)} onClick={() => { void saveCurrentDraft(); void taskPersistence.retry() }}>{!draftSaveError && taskPersistence.failures.every((failure) => failure.retrying) ? '正在保存…' : '重试保存'}</button></section>}
+        {!activeExpertKit && (page === 'chat' && draftStateStatus !== 'ready' ? (
+          <section className="task-context-loading" role="status">
+            {draftStateStatus === 'failed' ? <><p>本机草稿暂时无法读取，原始数据未修改。</p><button type="button" onClick={() => { if (user) void initializeDraftState(user.userId) }}>重新读取</button></> : <p>正在恢复本机草稿…</p>}
+          </section>
+        ) : page === 'chat' ? (
           <ChatPage
             employeeId={user?.userId}
             knowledgeContext={bootstrap && user ? { endpoint: resolveServerEndpoint(bootstrap.endpoints.knowledge), employeeId: user.userId, teamId: user.teamId, accessToken } : undefined}
@@ -1319,35 +1465,26 @@ export default function App() {
             onChangesUndone={(messageIndex, results) => {
               const task = localTasks.find((item) => item.id === currentLocalTaskId)
               if (!task) return
-              const selectedMonitor = task.messages[messageIndex]?.monitor
-              const updatedChanges = selectedMonitor?.changes?.map((change) => ({ ...change, ...results.find((result) => result.id === change.id) }))
-              const execution = task.execution ?? (selectedMonitor
-                ? migrateLegacyExecution(task.id, task.sessionId ?? '', selectedMonitor).thread
-                : undefined)
-              const runtime = execution && selectedMonitor && updatedChanges
-                ? recordExecutionFileChanges(execution, selectedMonitor, updatedChanges, {
-                  targetTurnId: task.messages[messageIndex]?.executionTurnId,
-                })
-                : undefined
-              const nextMessages = task.messages.map((message, index) => index !== messageIndex || !message.monitor ? message : {
-                ...message, monitor: runtime?.monitor ?? { ...message.monitor, changes: updatedChanges },
+              const selectedProjection = task.messages[messageIndex]?.projection
+              const updatedChanges = selectedProjection?.changes?.map((change) => ({ ...change, ...results.find((result) => result.id === change.id) }))
+              const nextMessages = task.messages.map((message, index) => index !== messageIndex || !message.projection ? message : {
+                ...message, projection: { ...message.projection, changes: updatedChanges },
               })
-              const nextMonitor = nextMessages.at(-1)?.monitor ?? task.monitor
+              const nextProjection = nextMessages.at(-1)?.projection ?? task.projection
               if (currentLocalTaskIdRef.current === task.id) {
                 setMessages(nextMessages)
-                setHarnessSessionId('')
-                if (nextMonitor) { setTaskMonitor(nextMonitor); taskMonitorRef.current = nextMonitor }
+                if (nextProjection) { setTaskProjection(nextProjection); taskProjectionRef.current = nextProjection }
               }
               void shutdownHarness(task.id)
-              persistLocalTask({ ...task, sessionId: undefined, execution: runtime?.thread ?? task.execution, messages: nextMessages, monitor: nextMonitor, updatedAt: new Date().toISOString() })
+              persistLocalTask({ ...task, messages: nextMessages, projection: nextProjection, updatedAt: new Date().toISOString() })
             }}
             activeModel={activeModel}
             queue={taskQueue.queues[currentLocalTaskId]}
             queueError={taskQueue.error}
-            onRemoveQueued={(id) => { taskQueue.remove(currentLocalTaskId, id) }}
-            onEditQueued={(id, text) => { taskQueue.edit(currentLocalTaskId, id, text) }}
-            onResumeQueue={() => { taskQueue.resume(currentLocalTaskId) }}
-            onPauseQueue={() => { taskQueue.pause(currentLocalTaskId) }}
+            onRemoveQueued={(id) => { void taskQueue.remove(currentLocalTaskId, id) }}
+            onEditQueued={(id, text) => { void taskQueue.edit(currentLocalTaskId, id, text) }}
+            onResumeQueue={() => { void taskQueue.resume(currentLocalTaskId) }}
+            onPauseQueue={() => { void taskQueue.pause(currentLocalTaskId) }}
             capabilitySnapshot={currentCapabilitySnapshot}
             composerRef={composerRef}
             currentTaskRunning={currentTaskRunning}
@@ -1373,6 +1510,7 @@ export default function App() {
               if (kind === 'expert-kit' || kind === 'skill') setCapabilityKind(kind === 'expert-kit' ? 'packs' : 'skills')
             }}
             recentDirectories={recentDirectories}
+            sessionReferences={localTasks.filter((task) => task.id !== currentLocalTaskId && task.sessionId).map((task) => ({ sessionId: task.sessionId!, label: task.name, updatedAt: task.updatedAt }))}
             onSelectRecentDirectory={(path) => void addLocalDirectory(path)}
             onPasteFiles={pasteFiles}
             pastingAttachments={pastingAttachments}
@@ -1392,7 +1530,7 @@ export default function App() {
             onQuestionAnswer={async (questionId, answers) => {
               const taskId = currentLocalTaskIdRef.current
               if (!taskId) throw new Error('当前任务不可用，请重新打开任务。')
-              const request = taskMonitorRef.current.timeline?.find((entry) => entry.questionId === questionId)
+              const request = taskProjectionRef.current.timeline?.find((entry) => entry.questionId === questionId)
               const approvedPlan = request?.questions?.some((question) => question.intent?.kind === 'plan-review'
                 && answers.some((answer) => answer.id === question.id && answer.selected.includes(question.intent!.approve)))
               const accepted = await respondHarnessQuestion(taskId, questionId, answers)
@@ -1427,7 +1565,7 @@ export default function App() {
             prompt={prompt}
             runtimeStatus={runtimeStatus}
             selectedKnowledgeBaseRefs={selectedKnowledgeBaseRefs}
-            taskMonitor={taskMonitor}
+            taskProjection={taskProjection}
             taskContextRestoring={taskContextRestoring}
           />
         ) : (
@@ -1474,6 +1612,20 @@ export default function App() {
               onMemorySaved={memorySaved}
               onOpenMemoryTask={(id) => void openStoredTask(id)}
               position={user.position}
+              harnessCapabilities={harnessHostHealth?.capabilities}
+              harnessRuntime={harnessHostHealth?.runtime}
+              harnessVersion={harnessHostHealth?.version}
+              onCheckModelProvider={bootstrap ? () => checkHarnessProvider({ litellmBaseUrl: bootstrap.endpoints.litellm, model: activeModel, modelApiKey: bootstrap.modelApiKey }) : undefined}
+              toolsMode={toolsMode}
+              onToolsModeChange={(value) => updateRuntimePreference(value, saveHarnessToolsMode, setToolsMode)}
+              allowShell={allowShell}
+              onAllowShellChange={(value) => updateRuntimePreference(value, saveHarnessShellEnabled, setAllowShell)}
+              allowLsp={allowLsp}
+              onAllowLspChange={(value) => updateRuntimePreference(value, saveHarnessLspEnabled, setAllowLsp)}
+              allowExternalAgents={allowExternalAgents}
+              onAllowExternalAgentsChange={(value) => updateRuntimePreference(value, saveHarnessExternalAgentsEnabled, setAllowExternalAgents)}
+              allowHooks={allowHooks}
+              onAllowHooksChange={(value) => updateRuntimePreference(value, saveHarnessHooksEnabled, setAllowHooks)}
             />}
             {page === 'skills' && <CapabilityCatalogPage onChanged={refreshInstalledKits} onUseSkill={(id) => startNewTask(`/skill:${id} `)} kind={capabilityKind} onCreate={() => createWithXiaoyin(capabilityKind === 'packs' ? 'expert-kit' : 'skill')} category={extensionCategory} error={[enterpriseCatalogError, expertKitError].filter(Boolean).join('；')} expertKits={expertKits} filter={extensionFilter} installingKitId={installingKitId} loading={expertKitsLoading} onCategory={setExtensionCategory} onFilter={(value) => { setExtensionFilter(value); setExtensionCategory('all') }} onOpenExpertKit={setActiveExpertKitId} onOpenSkill={setActiveSkillId} skills={skillViews} visibleExpertKits={visibleExpertKits} visibleSkills={visibleSkillViews} />}
             {page === 'connectors' && <>
@@ -1538,6 +1690,10 @@ export default function App() {
               scheduleEndpoint={localScheduleNamespace()}
               model={activeModel}
               modelApiKey={bootstrap.modelApiKey}
+              allowShell={localImContext.allowShell}
+              allowLsp={localImContext.allowLsp}
+              allowExternalAgents={localImContext.allowExternalAgents}
+              allowHooks={localImContext.allowHooks}
               localTasks={localTasks}
             />}
           </section>
@@ -1611,6 +1767,11 @@ export default function App() {
           modelApiKey: bootstrap.modelApiKey,
           accessToken,
           localFileRootIds: localDirectories.map((directory) => directory.id),
+          toolsMode,
+          allowShell,
+          allowLsp,
+          allowExternalAgents,
+          allowHooks,
         } : undefined}
         previewUnavailableReason={runtimeStatus !== 'ready' ? '企业服务尚未连接，暂时不能试运行。' : undefined}
         skills={skillViews}

@@ -6,22 +6,22 @@ import { taskInterruption } from './taskInterruption'
 import { TaskRecoveryNotice } from './TaskRecoveryNotice'
 import { recoverInterruptedTasks } from './taskHistory'
 import { harnessPromptWithConversationReplay } from './conversationReplay'
-import { applyHarnessNotification, createTaskMonitor, classifyHarnessFailure } from './harness'
-import type { LocalTaskRun, TaskMonitorState } from './types'
+import { applyHarnessNotification, createXiaoyinTaskProjection, classifyHarnessFailure } from './harness'
+import type { LocalTaskRun, XiaoyinTaskProjection } from './types'
 
 const checkpoint = '2026-09-08T12:00:00.000Z'
-const monitor: TaskMonitorState = { ...createTaskMonitor(checkpoint), status: 'running',
+const projection: XiaoyinTaskProjection = { ...createXiaoyinTaskProjection(checkpoint), status: 'running',
   steps: [{ id: 'write', kind: 'tool', label: '提交订单', status: 'running', startedAt: checkpoint }],
   timeline: [{ id: 'write', kind: 'tool', label: '提交订单', toolName: 'mcp_submit', status: 'running', occurredAt: checkpoint },
     { id: 'read', kind: 'tool', label: '读取订单', status: 'completed', occurredAt: checkpoint }],
 }
 
 it('preserves uncertain operations in the recovery record and model context', () => {
-  const task: LocalTaskRun = { id: 'test', name: '订单任务', source: 'DESKTOP', status: 'RUNNING', createdAt: checkpoint, updatedAt: checkpoint, monitor,
+  const task: LocalTaskRun = { id: 'test', name: '订单任务', source: 'DESKTOP', status: 'RUNNING', createdAt: checkpoint, updatedAt: checkpoint, projection,
     messages: [{ role: 'user', text: '核对并提交订单' }, { role: 'assistant', text: '已核对价格', pending: true }] }
   const [recovered] = recoverInterruptedTasks([task], '2026-09-09T12:00:00.000Z')
-  expect(recovered.monitor.completedAt).toBe(checkpoint)
-  expect(recovered.monitor.interruption).toEqual({ checkpointAt: checkpoint, cause: 'exit', pendingOperations: [{ id: 'write', label: '提交订单', toolName: 'mcp_submit' }] })
+  expect(recovered.projection.completedAt).toBe(checkpoint)
+  expect(recovered.projection.interruption).toEqual({ checkpointAt: checkpoint, cause: 'exit', pendingOperations: [{ id: 'write', label: '提交订单', toolName: 'mcp_submit' }] })
   const replay = harnessPromptWithConversationReplay('继续', recovered.messages, true)
   expect(replay).toContain('mcp_submit')
   expect(replay).toContain('先用只读方式核对')
@@ -34,14 +34,14 @@ it('shows pending operations and blocks resume while another input or run is act
   const element = document.body.appendChild(document.createElement('div'))
   const root = createRoot(element)
   const resume = vi.fn()
-  const interrupted = { ...monitor, interruption: taskInterruption(monitor, 'failure') }
+  const interrupted = { ...projection, interruption: taskInterruption(projection, 'failure') }
   try {
-    await act(async () => root.render(<TaskRecoveryNotice monitor={interrupted} disabled onResume={resume} />))
+    await act(async () => root.render(<TaskRecoveryNotice projection={interrupted} disabled onResume={resume} />))
     expect(element.textContent).toContain('提交订单')
     expect(element.textContent).toContain('结果待核对')
     await act(async () => element.querySelector('button')!.click())
     expect(resume).not.toHaveBeenCalled()
-    await act(async () => root.render(<TaskRecoveryNotice monitor={interrupted} disabled={false} onResume={resume} />))
+    await act(async () => root.render(<TaskRecoveryNotice projection={interrupted} disabled={false} onResume={resume} />))
     await act(async () => element.querySelector('button')!.click())
     expect(resume).toHaveBeenCalledOnce()
   } finally { await act(async () => root.unmount()); element.remove() }
@@ -53,7 +53,7 @@ it('keeps connector authentication separate from model authentication and automa
 })
 
 it('retains unknown tool results after turn/end settles the visible steps', () => {
-  const ended = applyHarnessNotification(monitor, { requestId: 1, event: { event: {
+  const ended = applyHarnessNotification(projection, { requestId: 1, event: { event: {
     method: 'session.event', params: { event: { type: 'turn/end', data: { reason: { kind: 'error' } } } },
   } } })
   expect(ended.steps[0].status).toBe('canceled')
@@ -63,7 +63,7 @@ it('retains unknown tool results after turn/end settles the visible steps', () =
 })
 
 it('uses detailed file and connector timeline entries instead of generic step labels', () => {
-  const record = taskInterruption({ ...monitor, timeline: [
+  const record = taskInterruption({ ...projection, timeline: [
     { id: 'write', kind: 'connector', label: '提交订单 XY-001', toolName: 'mcp_submit', status: 'running', occurredAt: checkpoint },
     { id: 'file', kind: 'file', label: '写入 receipt.md', toolName: 'local_files_write_text', status: 'running', occurredAt: checkpoint },
   ] }, 'exit')
