@@ -4,6 +4,7 @@ import { inspectDeviceHeartbeatContext } from './deviceHeartbeat'
 import { installedExtensionSnapshot, listInstalledExtensions } from './expertKits'
 import type { HarnessHostHealth } from './harness'
 import type { BootstrapResponse, ExpertKitCatalogEntry, SkillCatalogEntry } from './types'
+import type { HarnessHealth } from './useHarnessHealth'
 
 export function useDeviceHeartbeat({
   accessToken,
@@ -21,7 +22,7 @@ export function useDeviceHeartbeat({
   bootstrap?: BootstrapResponse
   employeeId?: string
   expertKits: ExpertKitCatalogEntry[]
-  harnessHealth: 'checking' | 'ready' | 'degraded'
+  harnessHealth: HarnessHealth
   harnessCapabilities?: HarnessHostHealth['capabilities']
   runtimeReady: boolean
   skills: SkillCatalogEntry[]
@@ -65,14 +66,15 @@ export function useDeviceHeartbeat({
 
 export function capabilityReportEntry(
   key: string,
-  harnessHealth: 'checking' | 'ready' | 'degraded',
+  harnessHealth: HarnessHealth,
   harnessCapabilities?: HarnessHostHealth['capabilities'],
 ): { key: string; status: 'READY' | 'DEGRADED' | 'UNSUPPORTED'; detail: string } {
   if (key === 'harness') {
+    const operational = harnessHealth === 'idle' || harnessHealth === 'ready'
     return {
       key,
-      status: harnessHealth === 'ready' ? 'READY' : 'DEGRADED',
-      detail: harnessHealth === 'ready' ? '本地 Agent 已就绪' : '本地 Agent 正在检测或需要恢复',
+      status: operational ? 'READY' : 'DEGRADED',
+      detail: harnessHealth === 'idle' ? '本地 Agent 将在任务开始时按需启动' : harnessHealth === 'ready' ? '本地 Agent 已检查可用' : '本地 Agent 正在检测或需要恢复',
     }
   }
   if (key.startsWith('harness.')) {

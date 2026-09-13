@@ -245,11 +245,19 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
   const draftPausedRef = useRef(true)
   const [runningTaskIds, setRunningTaskIds] = useState<string[]>([])
   const [taskContextRestoring, setTaskContextRestoring] = useState(false)
-  const [allowShell, setAllowShell] = useState(() => loadHarnessShellEnabled())
-  const [allowLsp, setAllowLsp] = useState(() => loadHarnessLspEnabled())
-  const [allowExternalAgents, setAllowExternalAgents] = useState(() => loadHarnessExternalAgentsEnabled())
-  const [allowHooks, setAllowHooks] = useState(() => loadHarnessHooksEnabled())
-  const [toolsMode, setToolsMode] = useState<HarnessToolsMode>(() => loadHarnessToolsMode())
+  const runtimePreferenceOwner = user?.userId ?? ''
+  const [allowShell, setAllowShell] = useState(() => loadHarnessShellEnabled(runtimePreferenceOwner))
+  const [allowLsp, setAllowLsp] = useState(() => loadHarnessLspEnabled(runtimePreferenceOwner))
+  const [allowExternalAgents, setAllowExternalAgents] = useState(() => loadHarnessExternalAgentsEnabled(runtimePreferenceOwner))
+  const [allowHooks, setAllowHooks] = useState(() => loadHarnessHooksEnabled(runtimePreferenceOwner))
+  const [toolsMode, setToolsMode] = useState<HarnessToolsMode>(() => loadHarnessToolsMode(runtimePreferenceOwner))
+  useEffect(() => {
+    setAllowShell(loadHarnessShellEnabled(runtimePreferenceOwner))
+    setAllowLsp(loadHarnessLspEnabled(runtimePreferenceOwner))
+    setAllowExternalAgents(loadHarnessExternalAgentsEnabled(runtimePreferenceOwner))
+    setAllowHooks(loadHarnessHooksEnabled(runtimePreferenceOwner))
+    setToolsMode(loadHarnessToolsMode(runtimePreferenceOwner))
+  }, [runtimePreferenceOwner])
   const {
     health: harnessHealth,
     detail: harnessHealthDetail,
@@ -257,6 +265,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
     recover: recoverHarness,
     reportInfrastructureFailure,
   } = useHarnessHealth(authState === 'authenticated', Boolean(bootstrap?.modelApiKey), allowShell, allowLsp, allowExternalAgents, allowHooks, toolsMode)
+  const harnessOperational = harnessHealth === 'idle' || harnessHealth === 'ready'
   const [taskProjection, setTaskProjection] = useState<XiaoyinTaskProjection>(createXiaoyinTaskProjection)
   const taskProjectionRef = useRef<XiaoyinTaskProjection>(taskProjection)
   const [localDirectories, setLocalDirectories] = useState<AuthorizedLocalDirectory[]>([])
@@ -330,11 +339,11 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
   const taskStartLocks = useRef(new Set<string>())
   const currentTaskRunning = Boolean(currentLocalTaskId && runningTaskIds.includes(currentLocalTaskId))
   const taskQueue = useTaskQueue({
-    owner: user?.userId, ready: authState === 'authenticated' && runtimeStatus === 'ready' && harnessHealth === 'ready',
+    owner: user?.userId, ready: authState === 'authenticated' && runtimeStatus === 'ready' && harnessOperational,
     tasks: localTasks, runningIds: runningTaskIds, run: runQueued,
   })
   const localSchedules = useLocalSchedules(user ? `${user.userId}:${localScheduleNamespace()}` : undefined,
-    connectorDiagnosticsAvailable() && authState === 'authenticated' && runtimeStatus === 'ready' && harnessHealth === 'ready' && runningTaskIds.length < AUTOMATIC_TASK_LIMIT,
+    connectorDiagnosticsAvailable() && authState === 'authenticated' && runtimeStatus === 'ready' && harnessOperational && runningTaskIds.length < AUTOMATIC_TASK_LIMIT,
     async (schedule, taskId, scheduleRunId) => {
       if (schedule.model && !bootstrap?.models.includes(schedule.model)) return { notStarted: '计划指定的模型已不可用，请编辑计划重新选择模型；计划已暂停' }
       const directories = [...schedule.directories, ...(schedule.attachments ?? []).flatMap((file) => file.rootPath ? [{ id: file.rootId, name: file.rootName, path: file.rootPath }] : [])]
@@ -1581,7 +1590,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
                   : page === 'im'
                     ? '连接公司 IM，在私聊和群聊中交办任务，随时查看处理进度。'
                   : page === 'settings'
-                    ? '调整阅读偏好，管理个人记忆、附件存储与应用更新。'
+                    ? '管理阅读偏好、个人记忆、附件存储和本地执行权限。'
                   : '这里将由控制中心下发公司自己的能力配置。'}</p></div>{(page === 'skills' || page === 'connectors') && <ExtensionPageActions
               loading={expertKitsLoading}
               packageKind={capabilityKind === 'packs' ? 'expert-kit' : 'skill'}
@@ -1613,19 +1622,22 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
               onOpenMemoryTask={(id) => void openStoredTask(id)}
               position={user.position}
               harnessCapabilities={harnessHostHealth?.capabilities}
+              harnessHealth={harnessHealth}
+              harnessHealthDetail={harnessHealthDetail}
               harnessRuntime={harnessHostHealth?.runtime}
               harnessVersion={harnessHostHealth?.version}
+              onCheckHarness={recoverHarness}
               onCheckModelProvider={bootstrap ? () => checkHarnessProvider({ litellmBaseUrl: bootstrap.endpoints.litellm, model: activeModel, modelApiKey: bootstrap.modelApiKey }) : undefined}
               toolsMode={toolsMode}
-              onToolsModeChange={(value) => updateRuntimePreference(value, saveHarnessToolsMode, setToolsMode)}
+              onToolsModeChange={(value) => updateRuntimePreference(value, (next) => saveHarnessToolsMode(runtimePreferenceOwner, next), setToolsMode)}
               allowShell={allowShell}
-              onAllowShellChange={(value) => updateRuntimePreference(value, saveHarnessShellEnabled, setAllowShell)}
+              onAllowShellChange={(value) => updateRuntimePreference(value, (next) => saveHarnessShellEnabled(runtimePreferenceOwner, next), setAllowShell)}
               allowLsp={allowLsp}
-              onAllowLspChange={(value) => updateRuntimePreference(value, saveHarnessLspEnabled, setAllowLsp)}
+              onAllowLspChange={(value) => updateRuntimePreference(value, (next) => saveHarnessLspEnabled(runtimePreferenceOwner, next), setAllowLsp)}
               allowExternalAgents={allowExternalAgents}
-              onAllowExternalAgentsChange={(value) => updateRuntimePreference(value, saveHarnessExternalAgentsEnabled, setAllowExternalAgents)}
+              onAllowExternalAgentsChange={(value) => updateRuntimePreference(value, (next) => saveHarnessExternalAgentsEnabled(runtimePreferenceOwner, next), setAllowExternalAgents)}
               allowHooks={allowHooks}
-              onAllowHooksChange={(value) => updateRuntimePreference(value, saveHarnessHooksEnabled, setAllowHooks)}
+              onAllowHooksChange={(value) => updateRuntimePreference(value, (next) => saveHarnessHooksEnabled(runtimePreferenceOwner, next), setAllowHooks)}
             />}
             {page === 'skills' && <CapabilityCatalogPage onChanged={refreshInstalledKits} onUseSkill={(id) => startNewTask(`/skill:${id} `)} kind={capabilityKind} onCreate={() => createWithXiaoyin(capabilityKind === 'packs' ? 'expert-kit' : 'skill')} category={extensionCategory} error={[enterpriseCatalogError, expertKitError].filter(Boolean).join('；')} expertKits={expertKits} filter={extensionFilter} installingKitId={installingKitId} loading={expertKitsLoading} onCategory={setExtensionCategory} onFilter={(value) => { setExtensionFilter(value); setExtensionCategory('all') }} onOpenExpertKit={setActiveExpertKitId} onOpenSkill={setActiveSkillId} skills={skillViews} visibleExpertKits={visibleExpertKits} visibleSkills={visibleSkillViews} />}
             {page === 'connectors' && <>

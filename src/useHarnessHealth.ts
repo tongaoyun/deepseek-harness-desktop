@@ -2,53 +2,48 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { connectorDiagnosticsAvailable, probeHarnessHost, selfTestLocalCapabilities, type HarnessHostHealth } from './harness'
 import type { HarnessToolsMode } from './runtimePreferences'
 
-export type HarnessHealth = 'checking' | 'ready' | 'degraded'
+export type HarnessHealth = 'idle' | 'checking' | 'ready' | 'degraded'
 
-export function useHarnessHealth(authenticated: boolean, modelConfigured = false, allowShell = true, allowLsp = true, allowExternalAgents = false, allowHooks = false, toolsMode: HarnessToolsMode = 'native') {
-  const [health, setHealth] = useState<HarnessHealth>('checking')
-  const [detail, setDetail] = useState('正在检查本地 Agent')
+export function useHarnessHealth(authenticated: boolean, modelConfigured = false, allowShell = true, allowLsp = false, allowExternalAgents = false, allowHooks = false, toolsMode: HarnessToolsMode = 'native') {
+  const [health, setHealth] = useState<HarnessHealth>('idle')
+  const [detail, setDetail] = useState('本地执行环境将在任务开始时按需启动')
   const [hostHealth, setHostHealth] = useState<HarnessHostHealth>()
-  const [attempt, setAttempt] = useState(0)
   const diagnosticRun = useRef(0)
 
   useEffect(() => {
+    diagnosticRun.current += 1
     if (!authenticated || !connectorDiagnosticsAvailable()) {
-      setHealth('ready')
-      setDetail('本地 Agent 仅在桌面客户端启用')
       setHostHealth(undefined)
+      setHealth('idle')
+      setDetail('本地 Agent 仅在桌面客户端启用')
       return
     }
-    let disposed = false
+    setHealth('idle')
+    setDetail('本地执行环境将在任务开始时按需启动')
+  }, [allowExternalAgents, allowHooks, allowLsp, allowShell, authenticated, toolsMode])
+
+  const recover = useCallback(async () => {
+    if (!authenticated || !connectorDiagnosticsAvailable()) return
+    const run = diagnosticRun.current + 1
+    diagnosticRun.current = run
     setHealth('checking')
-    setDetail('正在检查 Harness Host')
-    setHostHealth(undefined)
-    void probeHarnessHost(modelConfigured, allowShell, allowLsp, allowExternalAgents, allowHooks, toolsMode)
-      .then(async (result) => {
-        if (disposed) return
-        setHostHealth(result)
-        if (result.status !== 'ready') {
-          setHealth('degraded')
-          setDetail(`Harness Host 状态异常：${result.status}`)
-          return
-        }
-        if (attempt > 0) {
-          const selfTest = await selfTestLocalCapabilities()
-          if (disposed) return
-          setHealth('ready')
-          setDetail(`本地能力自检通过 · ${selfTest.checks.length} 项`)
-          return
-        }
-        setHealth('ready')
-        setDetail(`Harness Host 已就绪 · ${result.version}`)
-      })
-      .catch((reason) => {
-        if (disposed) return
-        setHealth('degraded')
-        setDetail(message(reason))
-        setHostHealth(undefined)
-      })
-    return () => { disposed = true }
-  }, [allowExternalAgents, allowHooks, allowLsp, allowShell, attempt, authenticated, modelConfigured, toolsMode])
+    setDetail('正在检查本地执行环境')
+    try {
+      const result = await probeHarnessHost(modelConfigured, allowShell, allowLsp, allowExternalAgents, allowHooks, toolsMode)
+      if (diagnosticRun.current !== run) return
+      setHostHealth(result)
+      if (result.status !== 'ready') throw new Error(`本地执行环境状态异常：${result.status}`)
+      const selfTest = await selfTestLocalCapabilities()
+      if (diagnosticRun.current !== run) return
+      setHealth('ready')
+      setDetail(`本地能力检查通过 · ${selfTest.checks.length} 项`)
+    } catch (reason) {
+      if (diagnosticRun.current !== run) return
+      setHealth('degraded')
+      setDetail(message(reason))
+      setHostHealth(undefined)
+    }
+  }, [allowExternalAgents, allowHooks, allowLsp, allowShell, authenticated, modelConfigured, toolsMode])
 
   const reportInfrastructureFailure = useCallback((reason: string) => {
     const run = diagnosticRun.current + 1
@@ -64,7 +59,7 @@ export function useHarnessHealth(authenticated: boolean, modelConfigured = false
       })
   }, [])
 
-  return { health, detail, hostHealth, recover: () => setAttempt((value) => value + 1), reportInfrastructureFailure }
+  return { health, detail, hostHealth, recover, reportInfrastructureFailure }
 }
 
 function message(reason: unknown): string {

@@ -1,64 +1,72 @@
 export type HarnessToolsMode = 'native' | 'ptc' | 'both'
 
-const TOOLS_MODE_KEY = 'xiaoyin.runtime.tools-mode'
-const SHELL_KEY = 'xiaoyin.runtime.allow-shell'
-const LSP_KEY = 'xiaoyin.runtime.allow-lsp'
-const EXTERNAL_AGENTS_KEY = 'xiaoyin.runtime.allow-external-agents'
-const HOOKS_KEY = 'xiaoyin.runtime.allow-hooks'
+const TOOLS_MODE_KEY = 'tools-mode'
+const SHELL_KEY = 'allow-shell'
+const LSP_KEY = 'allow-lsp'
+const EXTERNAL_AGENTS_KEY = 'allow-external-agents'
+const HOOKS_KEY = 'allow-hooks'
 
-function readPreference(key: string): string | null | undefined {
-  try { return typeof localStorage === 'undefined' ? undefined : localStorage.getItem(key) }
+function preferenceKey(owner: string, key: string): string | undefined {
+  const normalized = owner.trim()
+  return normalized ? `xiaoyin.runtime.${encodeURIComponent(normalized)}.${key}` : undefined
+}
+
+function readPreference(owner: string, key: string): string | null | undefined {
+  const storageKey = preferenceKey(owner, key)
+  if (!storageKey) return undefined
+  try { return typeof localStorage === 'undefined' ? undefined : localStorage.getItem(storageKey) }
   catch { return undefined }
 }
 
-function writePreference(key: string, value: string): boolean {
+function writePreference(owner: string, key: string, value: string): boolean {
+  const storageKey = preferenceKey(owner, key)
+  if (!storageKey) return false
   try {
     if (typeof localStorage === 'undefined') return false
-    localStorage.setItem(key, value)
-    return localStorage.getItem(key) === value
+    localStorage.setItem(storageKey, value)
+    return localStorage.getItem(storageKey) === value
   } catch { return false }
 }
 
-export function loadHarnessToolsMode(): HarnessToolsMode {
-  const value = readPreference(TOOLS_MODE_KEY)
+export function loadHarnessToolsMode(owner: string): HarnessToolsMode {
+  const value = readPreference(owner, TOOLS_MODE_KEY)
   return value === 'ptc' || value === 'both' ? value : 'native'
 }
 
-export function saveHarnessToolsMode(value: HarnessToolsMode): boolean {
-  return writePreference(TOOLS_MODE_KEY, value)
+export function saveHarnessToolsMode(owner: string, value: HarnessToolsMode): boolean {
+  return writePreference(owner, TOOLS_MODE_KEY, value)
 }
 
 /** Shell and persistent terminal share one explicit local authorization boundary. */
-export function loadHarnessShellEnabled(): boolean {
-  const value = readPreference(SHELL_KEY)
+export function loadHarnessShellEnabled(owner: string): boolean {
+  const value = readPreference(owner, SHELL_KEY)
   return value === null || value === 'true'
 }
 
-export function saveHarnessShellEnabled(value: boolean): boolean {
-  return writePreference(SHELL_KEY, String(value))
+export function saveHarnessShellEnabled(owner: string, value: boolean): boolean {
+  return writePreference(owner, SHELL_KEY, String(value))
 }
 
-export function loadHarnessLspEnabled(): boolean {
-  const value = readPreference(LSP_KEY)
-  return value === null || value === 'true'
+export function loadHarnessLspEnabled(owner: string): boolean {
+  return readPreference(owner, LSP_KEY) === 'true'
 }
 
-export function saveHarnessLspEnabled(value: boolean): boolean {
-  return writePreference(LSP_KEY, String(value))
+export function saveHarnessLspEnabled(owner: string, value: boolean): boolean {
+  return writePreference(owner, LSP_KEY, String(value))
 }
 
-export function loadHarnessExternalAgentsEnabled(): boolean {
-  return readPreference(EXTERNAL_AGENTS_KEY) === 'true'
+export function loadHarnessExternalAgentsEnabled(owner: string): boolean {
+  return readPreference(owner, EXTERNAL_AGENTS_KEY) === 'true'
 }
 
-export function saveHarnessExternalAgentsEnabled(value: boolean): boolean {
-  return writePreference(EXTERNAL_AGENTS_KEY, String(value))
+export function saveHarnessExternalAgentsEnabled(owner: string, value: boolean): boolean {
+  return writePreference(owner, EXTERNAL_AGENTS_KEY, String(value))
 }
 
-export function loadHarnessHooksEnabled(): boolean {
-  return readPreference(HOOKS_KEY) === 'true'
+export function loadHarnessHooksEnabled(owner: string): boolean {
+  return readPreference(owner, HOOKS_KEY) === 'true'
 }
 
-export function saveHarnessHooksEnabled(value: boolean): boolean {
-  return writePreference(HOOKS_KEY, String(value))
+export function saveHarnessHooksEnabled(owner: string, value: boolean): boolean {
+  return writePreference(owner, HOOKS_KEY, String(value))
 }
