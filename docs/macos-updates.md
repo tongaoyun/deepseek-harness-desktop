@@ -4,7 +4,7 @@
 
 Apple Silicon 与 Intel 安装包均要求 macOS 14 或更新系统，与内置桌面操作组件的最低系统版本一致；Intel 架构支持不代表支持旧版 macOS。
 
-ERP 扫码回调使用 `http://www.instudio.me:6206`。`src-tauri/Info.plist` 仅为该域名允许 HTTP，其他域名保留 macOS ATS 默认限制；安装包烟测检查此配置。
+ERP 扫码回调使用 `http://www.instudio.me:6206`，`src-tauri/Info.plist` 为该域名保留 HTTP 例外。控制中心使用构建时固定的私网 IP，桌面 CSP 仅放行该来源；应用不启用全局 HTTP 例外。安装包烟测检查这些限制。
 
 ## 发布流程
 
@@ -31,7 +31,7 @@ pnpm tauri:build:macos x64
 
 构建脚本在缺少签名密钥或无法执行目标架构时提前失败。最终验收挂载只读 DMG，核对版本、签名和目标架构，运行内置 Harness 与原生模块，并解压更新归档确认它与 DMG 包含逐文件相同的应用。并发构建时 Harness 启动检查最多等待 5 分钟。更新归档须通过应用内置公钥的 Ed25519 验签，同时校验 Minisign 的可信备注签名；私钥不匹配或内容损坏时不上传产物。不会覆盖 `/Applications` 或修改员工任务数据。
 
-本地正式构建必须显式设置 HTTPS `VITE_XIAOYIN_SERVER_URL`；脚本拒绝缺失或 HTTP 地址。Host 验收逐条等待初始化、健康与关闭响应，最后再结束 stdin。
+本地正式构建默认使用公司内网控制中心，无需设置服务地址。覆盖地址时，正式构建仅接受 HTTPS、回环地址或 RFC1918 私网 IP。Host 验收逐条等待初始化、健康与关闭响应，最后再结束 stdin。
 
 脚本回归：`node --test scripts/macos-build-env.test.mjs scripts/check-harness-runtime.test.mjs scripts/publish-macos-update.test.mjs`。覆盖架构与目录映射、无效目标拒绝、顺序协议、初始化失败/超时、更新平台映射与双架构提交一致性。
 

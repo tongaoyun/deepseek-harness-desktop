@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
     env,
+    net::IpAddr,
     sync::Mutex,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
@@ -563,10 +564,7 @@ async fn exchange_control_plane_session(
     expected_team_id: &str,
 ) -> Result<ControlPlaneSession, Option<u16>> {
     let mut url = reqwest::Url::parse(base_url).map_err(|_| None)?;
-    let local_http = cfg!(debug_assertions)
-        && url.scheme() == "http"
-        && matches!(url.host_str(), Some("localhost" | "127.0.0.1" | "[::1]"));
-    if url.scheme() != "https" && !local_http
+    if !control_plane_transport_allowed(&url)
         || !url.username().is_empty()
         || url.password().is_some()
     {
@@ -612,6 +610,23 @@ async fn exchange_control_plane_session(
         return Err(Some(status));
     }
     Ok(session)
+}
+
+fn control_plane_transport_allowed(url: &reqwest::Url) -> bool {
+    if url.scheme() == "https" {
+        return true;
+    }
+    if url.scheme() != "http" {
+        return false;
+    }
+    match url.host_str() {
+        Some("localhost") => true,
+        Some(host) => host.parse::<IpAddr>().is_ok_and(|address| match address {
+            IpAddr::V4(address) => address.is_private() || address.is_loopback(),
+            IpAddr::V6(address) => address.is_unique_local() || address.is_loopback(),
+        }),
+        None => false,
+    }
 }
 
 async fn resolve_identity(
@@ -933,10 +948,19 @@ mod tests {
             Some(Some(200))
         );
         server.join().unwrap();
+        assert!(control_plane_transport_allowed(
+            &reqwest::Url::parse("http://192.168.2.67:30081").unwrap()
+        ));
+        assert!(control_plane_transport_allowed(
+            &reqwest::Url::parse("http://10.20.30.40:8080").unwrap()
+        ));
+        assert!(!control_plane_transport_allowed(
+            &reqwest::Url::parse("http://xiaoyin.example.com").unwrap()
+        ));
         assert!(
             tauri::async_runtime::block_on(exchange_control_plane_session(
                 &client,
-                "http://192.168.2.67:30081",
+                "http://xiaoyin.example.com",
                 "SESSION=fixture",
                 "employee-1",
                 "21",

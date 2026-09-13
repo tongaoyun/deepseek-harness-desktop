@@ -28,13 +28,25 @@ test('reads the server URL from Vite environment files and lets process variable
   }
 })
 
-test('requires HTTPS for a release build because ERP cookies are exchanged for control-plane sessions', () => {
-  assert.throws(() => resolveTauriServerUrl('build', process.cwd(), {
-    VITE_XIAOYIN_SERVER_URL: 'http://192.168.2.67:30081',
-  }), /require an HTTPS/)
+test('uses the company server by default and limits release HTTP to private networks', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'xiaoyin-tauri-release-env-'))
+  try {
+    assert.equal(resolveTauriServerUrl('build', directory, {}), 'http://192.168.2.67:30081')
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+  assert.equal(resolveTauriServerUrl('build', process.cwd(), {
+    VITE_XIAOYIN_SERVER_URL: 'http://10.20.30.40:8080',
+  }), 'http://10.20.30.40:8080')
   assert.equal(resolveTauriServerUrl('build', process.cwd(), {
     VITE_XIAOYIN_SERVER_URL: 'https://xiaoyin.example.com',
   }), 'https://xiaoyin.example.com')
+  assert.throws(() => resolveTauriServerUrl('build', process.cwd(), {
+    VITE_XIAOYIN_SERVER_URL: 'http://xiaoyin.example.com',
+  }), /HTTP only for loopback or RFC1918/)
+  assert.throws(() => resolveTauriServerUrl('build', process.cwd(), {
+    VITE_XIAOYIN_SERVER_URL: 'http://8.8.8.8:8080',
+  }), /HTTP only for loopback or RFC1918/)
 })
 
 test('isolates the ERP login window from workspace process and updater permissions', () => {
