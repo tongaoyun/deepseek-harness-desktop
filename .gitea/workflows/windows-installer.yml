@@ -37,6 +37,7 @@ jobs:
       NPM_CONFIG_FETCH_RETRIES: 4
       NPM_CONFIG_FETCH_TIMEOUT: 120000
       NPM_CONFIG_UPDATE_NOTIFIER: "false"
+      PNPM_STORE_DIR: C:\xiaoyin-desktop-builder\pnpm-store
     steps:
       - name: 检出代码
         uses: http://192.168.2.66:3300/instudio/checkout@v4
@@ -60,8 +61,8 @@ jobs:
         shell: powershell
         run: |
           .\scripts\ensure-pnpm.ps1
-          pnpm config set store-dir C:\xiaoyin-desktop-builder\pnpm-store
-          pnpm install --frozen-lockfile --registry=http://192.168.2.9:4873/
+          pnpm config set store-dir $env:PNPM_STORE_DIR
+          pnpm install --frozen-lockfile --prefer-offline --registry=http://192.168.2.9:4873/
           if ($LASTEXITCODE -ne 0) { throw "dependency installation failed" }
           pnpm verify:version
           if ($LASTEXITCODE -ne 0) { throw "version consistency check failed" }
