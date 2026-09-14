@@ -35,6 +35,7 @@ jobs:
     timeout-minutes: 60
     env:
       CARGO_TERM_COLOR: always
+      CARGO_INCREMENTAL: "0"
       CARGO_TARGET_DIR: C:\xiaoyin-desktop-builder\target
       CARGO_REGISTRIES_CRATES_IO_INDEX: sparse+https://rsproxy.cn/index/
     steps:
