@@ -119,7 +119,6 @@ jobs:
           name: xiaoyin-desktop-macos-${{ matrix.architecture }}-${{ github.sha }}
           path: |
             macos-artifacts/*.dmg
-            macos-artifacts/*.app.zip
             macos-artifacts/*.app.tar.gz
             macos-artifacts/*.sig
             macos-artifacts/SHA256SUMS.txt
