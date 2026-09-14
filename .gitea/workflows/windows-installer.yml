@@ -28,6 +28,7 @@ jobs:
     timeout-minutes: 120
     env:
       XIAOYIN_BUILD_MODE: ${{ startsWith(github.ref, 'refs/tags/v') && 'release' || inputs.build_mode == 'quick' && 'quick' || 'release' }}
+      XIAOYIN_HARNESS_SMOKE_TIMEOUT_MS: "300000"
       CARGO_TERM_COLOR: always
       CARGO_TARGET_DIR: C:\xiaoyin-desktop-builder\target
       CARGO_REGISTRIES_CRATES_IO_INDEX: sparse+https://rsproxy.cn/index/

@@ -28,12 +28,12 @@ test('exactly three workflow entries retain shared checks and platform installer
   assert.match(ci, /cargo test\n/)
   assert.doesNotMatch(ci, /cargo test --no-run/)
 })
-test('macOS release reuses main CI and packages both architectures concurrently', () => {
+test('macOS release reuses main CI and packages both architectures serially', () => {
   const build = mac.split('  build-macos:')[1].split('  publish-macos-update:')[0]
   assert.doesNotMatch(mac, /  quality:/)
   assert.doesNotMatch(build, /needs: quality/)
-  assert.match(build, /max-parallel: 2/)
-  assert.match(build, /CARGO_BUILD_JOBS: "3"/)
+  assert.match(build, /max-parallel: 1/)
+  assert.match(build, /CARGO_BUILD_JOBS: "2"/)
   assert.match(build, /XIAOYIN_HARNESS_SMOKE_TIMEOUT_MS: "300000"/)
   assert.match(build, /CARGO_TARGET_DIR: \/tmp\/xiaoyin-desktop-builder\/target\/\$\{\{ matrix\.architecture \}\}/)
   assert.match(build, /pnpm verify:version/)
@@ -64,6 +64,7 @@ test('Windows quick mode is explicit and cannot weaken a tag release', () => {
   assert.equal(expression(win, 'XIAOYIN_BUILD_MODE', context('workflow_dispatch', { build_mode: 'quick' }, 'refs/tags/v1.0.0')), 'release')
   assert.equal(expression(win, 'XIAOYIN_BUILD_MODE', context('push', { build_mode: 'quick' })), 'release')
   assert.match(win, /--debug --features windows-no-console --bundles nsis/)
+  assert.match(win, /XIAOYIN_HARNESS_SMOKE_TIMEOUT_MS: "300000"/)
   assert.doesNotMatch(win, /XIAOYIN_HTTPS_SERVER_URL|VITE_XIAOYIN_SERVER_URL/)
   assert.doesNotMatch(win, /pnpm (lint|typecheck|test)|cargo (fmt|clippy|test)/)
   assert.doesNotMatch(win, /run_install_smoke/)
