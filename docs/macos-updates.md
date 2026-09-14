@@ -15,7 +15,7 @@ ERP 扫码回调使用 `http://www.instudio.me:6206`，`src-tauri/Info.plist` �
 - 显式目标的产物目录为 `$CARGO_TARGET_DIR/<Rust target>/release/bundle`，未指定 `CARGO_TARGET_DIR` 时使用 `src-tauri/target/<Rust target>/release/bundle`。更新平台仍分别使用 `darwin-aarch64` 和 `darwin-x86_64`，不将单架构包标记为 Universal。
 - 最终深度签名后重新打包并签署更新压缩包，确保更新安装与 DMG 包含同一应用，而不是发布签名前的旧压缩包。
 - 标签构建将 DMG、Tauri `.app.tar.gz`、更新签名与 SHA-256 元数据存入 Gitea `xiaoyin-desktop-macos/<版本>` 通用包。已存在且内容不同的文件不能被覆盖。
-- 两个架构都成功后，发布步骤核对版本、提交与全部文件校验和，生成 `darwin-aarch64`、`darwin-x86_64` 两个更新目标，最后更新 `xiaoyin-desktop-updater-macos/latest/latest.json` 并匿名回读确认。
+- 两个架构都成功后，发布步骤并行核对版本、提交与全部文件的 SHA-256，生成 `darwin-aarch64`、`darwin-x86_64` 两个更新目标，最后更新 `xiaoyin-desktop-updater-macos/latest/latest.json` 并匿名回读确认。
 - macOS 配置使用独立索引，Windows 发布不会覆盖 Mac 平台信息。禁止以旧版本覆盖较新的 Mac 更新索引；发布凭据使用 Gitea Secrets，不写入仓库。
 
 ## 验收条件
