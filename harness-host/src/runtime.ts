@@ -416,6 +416,7 @@ export class DeepSeekHarnessRuntime implements HarnessRuntime {
     const maxTokens = positiveInteger(env.DSH_MAX_TOKENS)
     this.harness = new DeepSeekHarness({
       profile: 'sdk',
+      initializeTimeoutMs: 60_000,
       patches: [patchPath],
       cwd: workspace,
       processCwd: workspace,
