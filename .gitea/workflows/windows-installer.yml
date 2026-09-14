@@ -172,6 +172,7 @@ jobs:
         run: .\scripts\publish-gitea-release.ps1
 
       - name: 上传 Windows 安装包
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
         uses: http://192.168.2.66:3300/instudio/gitea-upload-artifact@v4
         with:
           name: xiaoyin-desktop-windows-${{ env.XIAOYIN_BUILD_MODE }}-x64-${{ github.sha }}
