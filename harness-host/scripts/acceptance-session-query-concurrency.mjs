@@ -16,7 +16,7 @@ function start(label) {
     cwd: home,
     env: {
       ...process.env,
-      DSH_HOME: home,
+      DSH_HOME: join(home, label),
       DSH_CORDIS_CONFIG: config,
       DSH_SESSION_ROOT: join(home, 'sessions'),
       XIAOYIN_SESSION_QUERY_PATH: join(home, 'session-query.sqlite'),

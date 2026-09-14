@@ -810,8 +810,8 @@ async function searchOfficialSessions(sessionIds: string[], query: string, limit
         rebuiltCorruptIndex = true
         continue
       }
-      if (attempt >= 5 || !isSessionQueryLockError(error)) throw error
-      await delay(50 * (2 ** attempt))
+      if (attempt >= 8 || !isTransientSessionQueryIndexError(error)) throw error
+      await delay(Math.min(50 * (2 ** attempt), 2_000))
     }
   }
 }
@@ -940,9 +940,15 @@ async function searchCjkSessions(context: Context, ids: string[], query: string,
   }
 }
 
-function isSessionQueryLockError(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error)
-  return /database is locked|database table is locked|SQLITE_BUSY/iu.test(message)
+function isTransientSessionQueryIndexError(error: unknown): boolean {
+  let current: unknown = error
+  for (let depth = 0; current !== undefined && depth < 6; depth += 1) {
+    const value = current as { message?: unknown; cause?: unknown }
+    // A second process can observe the upstream index while its tables are still being created.
+    if (/database is locked|database table is locked|SQLITE_BUSY|no such table: (?:persisted_sessions|search_state|persisted_docs)/iu.test(String(value?.message ?? current))) return true
+    current = value?.cause
+  }
+  return false
 }
 
 /** Rebuild the product transcript from the Harness surface, never from a second local store. */
