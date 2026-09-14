@@ -15,6 +15,7 @@ import {
   type HarnessNotification,
   type SdkPromptContentBlock,
 } from '@deepseek-ai/dsh-sdk-client'
+import type { DeepSeekHarnessOptions } from '@deepseek-ai/dsh-sdk-client'
 import { deriveEventMessage, foldSurface } from '@deepseek-ai/dsh-session/surface'
 import { imageMetadata } from './local-attachment-store-plugin.js'
 import { withTaskInstructions } from './task-instructions.js'
@@ -430,10 +431,17 @@ export class DeepSeekHarnessRuntime implements HarnessRuntime {
       },
       provider: env.DSH_PROVIDER ?? 'deepseek-official',
       model: env.DSH_MODEL ?? 'deepseek-v4-flash',
+      ...reasoningEffortOption(env.XIAOYIN_REASONING_EFFORT),
       ...(maxTokens === undefined ? {} : { maxTokens }),
     })
     return this.harness
   }
+}
+
+function reasoningEffortOption(value: string | undefined): {} | { reasoningEffort: NonNullable<DeepSeekHarnessOptions['reasoningEffort']> } {
+  if (!value || value === 'off') return {}
+  if (!['low', 'medium', 'high', 'xhigh', 'max'].includes(value)) return {}
+  return { reasoningEffort: value as NonNullable<DeepSeekHarnessOptions['reasoningEffort']> }
 }
 
 interface SessionSubscription {

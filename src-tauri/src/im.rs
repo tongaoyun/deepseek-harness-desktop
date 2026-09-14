@@ -457,6 +457,7 @@ impl LocalImManager {
             team_id: context.team_id,
             knowledge_base_refs: profile.knowledge_base_refs,
             model: context.model,
+            reasoning_effort: "medium".to_string(),
             memory_context: memory::context(app, &context.employee_id)?,
             credential_digest: credential_digest(&context.model_api_key, &context.access_token),
         };

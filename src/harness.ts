@@ -38,6 +38,7 @@ export interface HarnessRunInput {
   knowledgeEndpoint: string
   scheduleEndpoint: string
   model: string
+  reasoningEffort?: import('./modelSelection').ReasoningEffort
   modelApiKey: string
   accessToken: string
   localFileRootIds: string[]

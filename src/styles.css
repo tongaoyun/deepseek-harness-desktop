@@ -1458,3 +1458,5 @@ button.skill-postcard:hover { transform: rotate(0) translateY(-3px); }
 .runtime-tools-mode span { display: grid; gap: 3px; }
 .runtime-tools-mode small { color: #849087; font-size: 11px; line-height: 1.45; }
 .runtime-tools-mode input { position: relative; width: 40px; height: 23px; flex: 0 0 auto; appearance: none; border: 0; border-radius: 999px; background: #d8ddd9; cursor: pointer; }.runtime-tools-mode input::after { position: absolute; top: 3px; left: 3px; width: 17px; height: 17px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px #0002; content: ''; transition: transform .15s ease; }.runtime-tools-mode input:checked { background: #5fa575; }.runtime-tools-mode input:checked::after { transform: translateX(17px); }.runtime-tools-mode input:focus-visible { outline: 2px solid #6da881; outline-offset: 2px; }
+/* Keep the model menu's second section visually distinct from model IDs. */
+.model-menu .reasoning-heading { display: flex; align-items: center; gap: 4px; margin-top: 6px; padding-top: 8px; border-top: 1px solid #edf0ed; }

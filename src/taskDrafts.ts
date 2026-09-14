@@ -9,6 +9,7 @@ export interface TaskDraft {
   knowledgeRefs: string[]
   connectorIds: string[]
   model: string
+  reasoningEffort?: import('./modelSelection').ReasoningEffort
   executionMode?: 'agent' | 'plan'
   updatedAt: number
 }
@@ -57,6 +58,7 @@ function parseDraft(value: unknown): value is TaskDraft {
   if (!value || typeof value !== 'object') return false
   const item = value as TaskDraft
   return typeof item.prompt === 'string' && item.prompt.length <= 20_000 && typeof item.model === 'string'
+    && (item.reasoningEffort === undefined || ['off', 'low', 'medium', 'high', 'xhigh', 'max'].includes(item.reasoningEffort))
     && (item.executionMode === undefined || item.executionMode === 'agent' || item.executionMode === 'plan') && Number.isFinite(item.updatedAt)
     && [item.attachments, item.directories, item.knowledgeRefs, item.connectorIds].every(Array.isArray)
     && item.knowledgeRefs.every((entry) => typeof entry === 'string') && item.connectorIds.every((entry) => typeof entry === 'string')

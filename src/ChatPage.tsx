@@ -40,6 +40,7 @@ export interface ChatPageProps {
   runtimeStatus: RuntimeStatus
   activeModel: string
   models: string[]
+  reasoningEffort?: import('./modelSelection').ReasoningEffort
   executionMode?: 'agent' | 'plan'
   modelMenuOpen: boolean
   currentTaskRunning?: boolean
@@ -66,6 +67,7 @@ export interface ChatPageProps {
   onAddLocalFiles: () => void
   onToggleModelMenu: () => void
   onSelectModel: (model: string) => void
+  onSelectReasoningEffort?: (value: import('./modelSelection').ReasoningEffort) => void
   onExecutionModeChange?: (mode: 'agent' | 'plan') => void
   onCancel: () => void
   onApprovalDecision?: import('./ExecutionTimeline').ApprovalDecisionHandler

@@ -226,6 +226,8 @@ pub struct HarnessRunRequest {
     #[serde(default)]
     schedule_endpoint: String,
     model: String,
+    #[serde(default)]
+    reasoning_effort: Option<String>,
     model_api_key: String,
     access_token: String,
     #[serde(default)]
@@ -426,6 +428,7 @@ pub(crate) struct RuntimeFingerprint {
     pub(crate) team_id: String,
     pub(crate) knowledge_base_refs: Option<Vec<String>>,
     pub(crate) model: String,
+    pub(crate) reasoning_effort: String,
     pub(crate) memory_context: String,
     pub(crate) credential_digest: String,
 }
@@ -510,6 +513,7 @@ pub async fn run_harness(
         team_id: request.team_id,
         knowledge_base_refs: profile.knowledge_base_refs,
         model: request.model,
+        reasoning_effort: validate_reasoning_effort(request.reasoning_effort.as_deref())?,
         memory_context: memory::context(&app, &request.employee_id)?,
         credential_digest: credential_digest(&request.model_api_key, &request.access_token),
     };
@@ -621,6 +625,7 @@ pub async fn diagnose_connectors(
         team_id: String::new(),
         knowledge_base_refs: Some(Vec::new()),
         model: "connector-diagnostics".to_string(),
+        reasoning_effort: "medium".to_string(),
         memory_context: String::new(),
         credential_digest: credential_digest("", &request.access_token),
     };
@@ -663,6 +668,7 @@ pub async fn self_test_local_capabilities(
         team_id: String::new(),
         knowledge_base_refs: Some(Vec::new()),
         model: "capability-self-test".to_string(),
+        reasoning_effort: "medium".to_string(),
         memory_context: String::new(),
         credential_digest: credential_digest("", ""),
     };
@@ -707,6 +713,7 @@ pub async fn probe_harness_host(
         team_id: String::new(),
         knowledge_base_refs: Some(Vec::new()),
         model: "host-health-probe".to_string(),
+        reasoning_effort: "medium".to_string(),
         memory_context: String::new(),
         credential_digest: credential_digest("", ""),
     };
@@ -792,6 +799,7 @@ pub async fn check_harness_provider(
         team_id: String::new(),
         knowledge_base_refs: Some(Vec::new()),
         model: request.model,
+        reasoning_effort: "medium".to_string(),
         memory_context: String::new(),
         credential_digest: credential_digest(&request.model_api_key, ""),
     };
@@ -840,6 +848,7 @@ pub async fn inspect_harness_session(
         team_id: String::new(),
         knowledge_base_refs: Some(Vec::new()),
         model: "session-inspection".to_string(),
+        reasoning_effort: "medium".to_string(),
         memory_context: String::new(),
         credential_digest: credential_digest("", ""),
     };
@@ -905,6 +914,7 @@ pub async fn search_harness_sessions(
         team_id: String::new(),
         knowledge_base_refs: Some(Vec::new()),
         model: "session-search".to_string(),
+        reasoning_effort: "medium".to_string(),
         memory_context: String::new(),
         credential_digest: credential_digest("", ""),
     };
@@ -1437,6 +1447,7 @@ impl HarnessProcess {
             .env("DEEPSEEK_BASE_URL", &fingerprint.litellm_base_url)
             .env("DEEPSEEK_API_KEY", model_api_key)
             .env("DSH_MODEL", &fingerprint.model)
+            .env("XIAOYIN_REASONING_EFFORT", &fingerprint.reasoning_effort)
             .env("XIAOYIN_MEMORY_CONTEXT", &fingerprint.memory_context)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -2282,6 +2293,7 @@ fn validate_run_request(request: &HarnessRunRequest) -> Result<(), String> {
     if request.model.trim().is_empty() || request.model.len() > 200 {
         return Err("模型名称无效".to_string());
     }
+    validate_reasoning_effort(request.reasoning_effort.as_deref())?;
     if request.model_api_key.trim().is_empty()
         || request.model_api_key.len() > 16 * 1024
         || request.model_api_key.chars().any(char::is_control)
@@ -2299,6 +2311,13 @@ fn validate_tools_mode(value: Option<&str>) -> Result<String, String> {
     match value.unwrap_or("native") {
         "native" | "ptc" | "both" => Ok(value.unwrap_or("native").to_string()),
         _ => Err("工具运行模式无效".to_string()),
+    }
+}
+
+fn validate_reasoning_effort(value: Option<&str>) -> Result<String, String> {
+    match value.unwrap_or("medium") {
+        "off" | "low" | "medium" | "high" | "xhigh" | "max" => Ok(value.unwrap_or("medium").to_string()),
+        _ => Err("推理强度无效".to_string()),
     }
 }
 
@@ -2499,6 +2518,7 @@ mod tests {
             team_id: "team-1".to_string(),
             knowledge_base_refs: Some(Vec::new()),
             model: "deepseek-chat".to_string(),
+            reasoning_effort: "medium".to_string(),
             memory_context: String::new(),
             credential_digest: "digest-1".to_string(),
         };
@@ -2761,6 +2781,7 @@ mod tests {
             knowledge_endpoint: "http://xiaoyin-server.internal/api/v1/knowledge-bases".to_string(),
             schedule_endpoint: "http://xiaoyin-server.internal/api/v1/schedules".to_string(),
             model: "deepseek-chat".to_string(),
+            reasoning_effort: None,
             model_api_key: "model-token".to_string(),
             access_token: "erp-token".to_string(),
             local_file_root_ids: Vec::new(),

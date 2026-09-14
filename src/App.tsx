@@ -69,7 +69,7 @@ import type { InstalledExpertKit, LocalTaskRun, TaskMessage, XiaoyinTaskProjecti
 import { parseMemoryCommand, learnCompletedTask } from './memory'
 import { useMemoryCommands } from './useMemoryCommands'
 import { useMemorySync } from './useMemorySync'
-import { loadSelectedModel, resolveSelectedModel, saveSelectedModel } from './modelSelection'
+import { loadReasoningEffort, loadSelectedModel, resolveReasoningEffort, resolveSelectedModel, saveReasoningEffort, saveSelectedModel, type ReasoningEffort } from './modelSelection'
 import { standardLocalDirectories } from './localFileIntent'
 import { creationPrompt, type XiaoyinCreationKind } from './creationPrompts'
 import { McpConnectorDialog } from './McpConnectorDialog'
@@ -281,6 +281,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
   const draftStageNonceRef = useRef('')
   const draftSaveTimerRef = useRef<number | undefined>(undefined)
   const [selectedModel, setSelectedModel] = useState('')
+  const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort>('medium')
   const updateRuntimePreference = <T,>(value: T, save: (value: T) => boolean, update: (value: T) => void) => {
     if (save(value)) update(value)
     else notify('运行时设置未能保存，本次未切换。请检查本机存储后重试。', 'error')
@@ -430,6 +431,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
       bootstrap.models,
       loadSelectedModel(user.userId),
     ))
+    setReasoningEffort(loadReasoningEffort(user.userId))
   }, [bootstrap, user])
 
   useEffect(() => {
@@ -535,7 +537,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
     draftDirtyRef.current = true
     try {
       draftStageNonceRef.current = stageTaskDraft(user.userId, currentLocalTaskId || creationDraftKeyRef.current,
-        { prompt, attachments: pendingAttachments, directories: localDirectories, knowledgeRefs: selectedKnowledgeBaseRefs, connectorIds: selectedTaskConnectorIds, model: activeModel, executionMode, updatedAt: Date.now() })
+        { prompt, attachments: pendingAttachments, directories: localDirectories, knowledgeRefs: selectedKnowledgeBaseRefs, connectorIds: selectedTaskConnectorIds, model: activeModel, reasoningEffort, executionMode, updatedAt: Date.now() })
     } catch {
       draftStageNonceRef.current = ''
       setDraftSaveError('草稿尚未暂存，请检查本机存储空间。认证失效或关闭应用前请重试保存。')
@@ -544,7 +546,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
       if (draftRevisionRef.current === revision) void saveCurrentDraft()
     }, 250)
     return () => window.clearTimeout(draftSaveTimerRef.current)
-  }, [user?.userId, currentLocalTaskId, prompt, pendingAttachments, localDirectories, selectedKnowledgeBaseRefs, selectedTaskConnectorIds, activeModel, executionMode, taskContextRestoring, draftStateStatus])
+  }, [user?.userId, currentLocalTaskId, prompt, pendingAttachments, localDirectories, selectedKnowledgeBaseRefs, selectedTaskConnectorIds, activeModel, reasoningEffort, executionMode, taskContextRestoring, draftStateStatus])
   useEffect(() => { setDraftSaveError('') }, [user?.userId])
   useEffect(() => {
     const warn = (event: BeforeUnloadEvent) => {
@@ -688,7 +690,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
     setTaskProjection(streaming?.projection ?? selectedTask.projection)
     const draft = user ? readTaskDraft(user.userId, selectedTask.id) : undefined
     setHarnessSessionId(restoredTaskSessionId(selectedTask, draft))
-    void restoreDraftContext(draft ?? { ...emptyDraft(), prompt: joinComposerPrompt(selectedTask.invocationTokens ?? [], ''), directories: selectedTask.localDirectories ?? [], knowledgeRefs: selectedTask.capabilitySnapshot?.knowledgeBaseRefs ?? [], connectorIds: selectedTask.capabilitySnapshot?.connectors.map((connector) => connector.id) ?? [], model: selectedTask.model ?? activeModel, executionMode: selectedTask.executionMode ?? 'agent' })
+    void restoreDraftContext(draft ?? { ...emptyDraft(), prompt: joinComposerPrompt(selectedTask.invocationTokens ?? [], ''), directories: selectedTask.localDirectories ?? [], knowledgeRefs: selectedTask.capabilitySnapshot?.knowledgeBaseRefs ?? [], connectorIds: selectedTask.capabilitySnapshot?.connectors.map((connector) => connector.id) ?? [], model: selectedTask.model ?? activeModel, reasoningEffort: selectedTask.reasoningEffort ?? reasoningEffort, executionMode: selectedTask.executionMode ?? 'agent' })
     focusComposer()
   }
   async function openStoredTask(id: string) {
@@ -708,7 +710,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
       openLocalTask(task)
     } catch (reason) { if (stillCurrent()) notify(`读取任务失败：${String(reason)}`, 'error') }
   }
-  function emptyDraft(): TaskDraft { return { prompt: '', attachments: [], directories: [], knowledgeRefs: [], connectorIds: [], model: activeModel, executionMode: 'agent', updatedAt: Date.now() } }
+  function emptyDraft(): TaskDraft { return { prompt: '', attachments: [], directories: [], knowledgeRefs: [], connectorIds: [], model: activeModel, reasoningEffort, executionMode: 'agent', updatedAt: Date.now() } }
   async function initializeDraftState(owner: string, stillMounted: () => boolean = () => true) {
     setDraftStateStatus('loading')
     try {
@@ -734,7 +736,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
     const nonce = draftStageNonceRef.current
     const draftId = currentLocalTaskId || creationDraftKeyRef.current
     try {
-      await saveTaskDraft(user.userId, draftId, { prompt, attachments: pendingAttachments, directories: localDirectories, knowledgeRefs: selectedKnowledgeBaseRefs, connectorIds: selectedTaskConnectorIds, model: activeModel, executionMode, updatedAt: Date.now() })
+      await saveTaskDraft(user.userId, draftId, { prompt, attachments: pendingAttachments, directories: localDirectories, knowledgeRefs: selectedKnowledgeBaseRefs, connectorIds: selectedTaskConnectorIds, model: activeModel, reasoningEffort, executionMode, updatedAt: Date.now() })
       if (nonce) clearStagedTaskDraft(user.userId, draftId, nonce)
       if (revision !== draftRevisionRef.current) return false
       draftDirtyRef.current = false
@@ -750,6 +752,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
     setPrompt(draft.prompt); setPendingAttachments(draft.attachments); setLocalDirectories(draft.directories)
     setSelectedKnowledgeBaseRefs(draft.knowledgeRefs); setSelectedTaskConnectorIds(draft.connectorIds)
     setSelectedModel(bootstrap ? resolveSelectedModel(bootstrap.models, draft.model) : draft.model)
+    setReasoningEffort(resolveReasoningEffort(draft.reasoningEffort ?? reasoningEffort))
     setExecutionMode(draft.executionMode ?? 'agent')
     setTaskContextRestoring(true); setLocalFileError('')
     try {
@@ -912,6 +915,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
     const existingTask = queuedTask ?? localTasks.find((task) => task.id === contextTaskId)
     const taskModel = resolveSelectedModel(bootstrap.models, queuedTask ? queuedTask.model : activeModel)
     const taskExecutionMode = queuedTask?.executionMode ?? executionMode
+    const taskReasoningEffort = queuedTask?.reasoningEffort ?? reasoningEffort
     try {
       if (!taskModel) { reportInputError('当前没有可用模型，请在控制中心配置模型后重试。'); return }
       const attachmentError = attachmentSelectionError(messageAttachments)
@@ -1008,7 +1012,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
       }))
       if (isCurrent()) setCurrentCapabilitySnapshot(capabilitySnapshot)
       const { rootSessionId, harnessPrompt, pendingMessages, runningProjection, runningTask } = prepareTaskTurn({
-        taskId, input, now, existingTask, sessionId: taskSessionId, model: taskModel, executionMode: taskExecutionMode,
+        taskId, input, now, existingTask, sessionId: taskSessionId, model: taskModel, reasoningEffort: taskReasoningEffort, executionMode: taskExecutionMode,
         scheduleId: existingTask?.scheduleId, scheduleRunId: existingTask?.scheduleRunId,
         directories: taskDirectories, directoriesChanged: resetSessionForDirectoryChange,
         capabilities: capabilitySnapshot, invocations: selected, invocationTokens: queuedTask?.invocationTokens,
@@ -1071,6 +1075,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
           knowledgeEndpoint: resolveServerEndpoint(bootstrap.endpoints.knowledge),
           scheduleEndpoint: localScheduleNamespace(),
           model: taskModel,
+          reasoningEffort: taskReasoningEffort,
           modelApiKey: bootstrap.modelApiKey,
           accessToken,
           localFileRootIds: taskDirectories.map((directory) => directory.id),
@@ -1393,6 +1398,16 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
     if (user && !saveSelectedModel(user.userId, model)) notify('模型选择未能保存，本次选择仍有效；下次启动可能恢复默认模型。', 'error')
   }
 
+  const selectReasoningEffort = (value: ReasoningEffort) => {
+    if (value !== reasoningEffort && currentLocalTaskId) {
+      setHarnessSessionId('')
+      void shutdownHarness(currentLocalTaskId)
+    }
+    setReasoningEffort(value)
+    setModelMenuOpen(false)
+    if (user && !saveReasoningEffort(user.userId, value)) notify('推理强度未能保存，本次选择仍有效；下次启动可能恢复默认。', 'error')
+  }
+
   const memorySaved = async () => {
     setHarnessSessionId('')
   }
@@ -1526,6 +1541,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
             modelMenuOpen={modelMenuOpen}
             modelPickerRef={modelPickerRef}
             models={bootstrap?.models ?? []}
+            reasoningEffort={reasoningEffort}
             executionMode={executionMode}
             onAddKnowledge={addKnowledgeContext}
             onAddLocalDirectory={() => void addLocalDirectory()}
@@ -1564,6 +1580,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
             onRemoveLocalDirectory={(id) => void removeLocalDirectory(id)}
             onRemoveAttachment={(id) => setPendingAttachments((current) => current.filter((item) => item.id !== id))}
             onSelectModel={selectModel}
+            onSelectReasoningEffort={selectReasoningEffort}
             onSubmit={(event) => void submit(event)}
             onResumeInterrupted={() => {
               if (prompt.trim() || pendingAttachments.length || currentTaskRunning || taskContextRestoring) return

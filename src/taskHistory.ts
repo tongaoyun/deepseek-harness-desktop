@@ -327,12 +327,13 @@ function storageKey(employeeId: string): string {
 function isLocalTask(value: unknown): value is LocalTaskRun {
   if (!value || typeof value !== 'object') return false
   const task = value as Partial<LocalTaskRun>
-  const allowedFields = new Set(['id', 'source', 'name', 'status', 'createdAt', 'updatedAt', 'archivedAt', 'sessionId', 'scheduleId', 'scheduleRunId', 'invocationTokens', 'model', 'executionMode', 'localDirectories', 'capabilitySnapshot', 'projection', 'messages', 'messagePreview', 'processedImEventIds'])
+  const allowedFields = new Set(['id', 'source', 'name', 'status', 'createdAt', 'updatedAt', 'archivedAt', 'sessionId', 'scheduleId', 'scheduleRunId', 'invocationTokens', 'model', 'reasoningEffort', 'executionMode', 'localDirectories', 'capabilitySnapshot', 'projection', 'messages', 'messagePreview', 'processedImEventIds'])
   return Object.keys(task).every((key) => allowedFields.has(key)) && task.source === 'DESKTOP' && typeof task.id === 'string' && typeof task.name === 'string'
     && ['RUNNING', 'COMPLETED', 'FAILED', 'CANCELED'].includes(task.status ?? '')
     && typeof task.createdAt === 'string' && typeof task.updatedAt === 'string' && Array.isArray(task.messages)
     && (task.scheduleId === undefined || typeof task.scheduleId === 'string')
     && (task.scheduleRunId === undefined || typeof task.scheduleRunId === 'string')
+    && (task.reasoningEffort === undefined || ['off', 'low', 'medium', 'high', 'xhigh', 'max'].includes(task.reasoningEffort))
     && task.messages.every((message) => message && ['user', 'assistant'].includes(message.role) && typeof message.text === 'string')
     && isTaskProjection(task.projection)
 }

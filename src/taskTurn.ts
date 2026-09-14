@@ -3,6 +3,7 @@ import { splitComposerPrompt } from './composerInput'
 import { harnessPromptWithConversationReplay } from './conversationReplay'
 import type { ExtensionInvocation } from './extensionInvocations'
 import { resolveHarnessSessionId } from './harnessSession'
+import { resolveReasoningEffort } from './modelSelection'
 import type { CapabilitySnapshot, LocalTaskAttachment, LocalTaskRun, TaskMessage, XiaoyinTaskProjection } from './types'
 
 type TurnContext = {
@@ -14,6 +15,7 @@ type TurnContext = {
   scheduleRunId?: string
   sessionId: string
   model: string
+  reasoningEffort?: import('./modelSelection').ReasoningEffort
   executionMode?: 'agent' | 'plan'
   directories: NonNullable<LocalTaskRun['localDirectories']>
   directoriesChanged: boolean
@@ -33,6 +35,7 @@ export function prepareTaskTurn(context: TurnContext) {
   const invocationTokens = context.invocationTokens ?? invocations.map((item) => item.token)
   const fresh = context.directoriesChanged
     || Boolean(existingTask && (existingTask.model !== context.model
+      || resolveReasoningEffort(existingTask.reasoningEffort) !== resolveReasoningEffort(context.reasoningEffort)
       || capabilitySnapshotChanged(existingTask.capabilitySnapshot, capabilities)))
     || (!sessionId && !existingTask?.sessionId && messages.length > 0)
     || (!sessionId && Boolean(existingTask?.sessionId))
@@ -60,7 +63,7 @@ export function prepareTaskTurn(context: TurnContext) {
     id: context.taskId, source: 'DESKTOP',
     name: existingTask?.name ?? (splitComposerPrompt(input).text || invocations.map((item) => item.name).join('、') || input).slice(0, 60),
     status: 'RUNNING', createdAt: existingTask?.createdAt ?? now, updatedAt: now,
-    sessionId: rootSessionId, model: context.model, executionMode, invocationTokens,
+    sessionId: rootSessionId, model: context.model, ...(context.reasoningEffort ? { reasoningEffort: context.reasoningEffort } : {}), executionMode, invocationTokens,
     ...(context.scheduleId ? { scheduleId: context.scheduleId } : existingTask?.scheduleId ? { scheduleId: existingTask.scheduleId } : {}),
     ...(context.scheduleRunId ? { scheduleRunId: context.scheduleRunId } : existingTask?.scheduleRunId ? { scheduleRunId: existingTask.scheduleRunId } : {}),
     localDirectories: context.directories,

@@ -1,8 +1,8 @@
-import { ArrowUp, BookOpen, Bot, Check, ChevronDown, FilePlus2, FolderOpen, ListTree, LoaderCircle, Plug, Plus, Puzzle, Search, Sparkles, Square, X } from 'lucide-react'
+import { ArrowUp, BookOpen, Bot, Brain, Check, ChevronDown, FilePlus2, FolderOpen, ListTree, LoaderCircle, Plug, Plus, Puzzle, Search, Sparkles, Square, X } from 'lucide-react'
 import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react'
 import type { ChatPageProps } from './ChatPage'
 import { composerQuery, joinComposerPrompt, removeComposerQuery, selectComposerInvocation, splitComposerPrompt } from './composerInput'
-import { modelDisplayName } from './modelSelection'
+import { modelDisplayName, reasoningEffortOptions, type ReasoningEffort } from './modelSelection'
 import { ComposerAttachments } from './ComposerAttachments'
 import type { LocalArtifactTarget } from './localArtifactPreview'
 
@@ -192,7 +192,14 @@ export function TaskComposer(props: ChatPageProps & { onPreview: (target: LocalA
         </div>
         <div className="model-picker" ref={props.modelPickerRef}>
           <button aria-expanded={props.modelMenuOpen && props.models.length > 0} className="model-label" disabled={running || props.models.length === 0} onClick={props.onToggleModelMenu} type="button"><Bot size={14} /> {props.models.length ? modelDisplayName(props.activeModel) : '暂无可用模型'} <ChevronDown size={13} /></button>
-          {props.modelMenuOpen && props.models.length > 0 && <div className="model-menu">{props.models.map((model) => <button className={model === props.activeModel ? 'active' : ''} key={model} onClick={() => props.onSelectModel(model)} title={model} type="button"><strong>{modelDisplayName(model)}</strong>{model === props.activeModel && <Check size={14} />}</button>)}</div>}
+          {props.modelMenuOpen && props.models.length > 0 && <div className="model-menu">
+            {props.onSelectReasoningEffort && <small>模型</small>}
+            {props.models.map((model) => <button className={model === props.activeModel ? 'active' : ''} key={model} onClick={() => props.onSelectModel(model)} title={model} type="button"><strong>{modelDisplayName(model)}</strong>{model === props.activeModel && <Check size={14} />}</button>)}
+            {props.onSelectReasoningEffort && <>
+              <small className="reasoning-heading"><Brain size={12} />推理强度</small>
+              {reasoningEffortOptions.map((option) => <button className={option.value === (props.reasoningEffort ?? 'medium') ? 'active' : ''} key={option.value} onClick={() => props.onSelectReasoningEffort?.(option.value as ReasoningEffort)} title={option.description} type="button"><span><strong>{option.label}</strong><small>{option.value === 'off' ? '模型默认' : option.value}</small></span>{option.value === (props.reasoningEffort ?? 'medium') && <Check size={14} />}</button>)}
+            </>}
+          </div>}
         </div>
         {running ? <>{text.trim() && <button aria-label="加入消息队列" className="queue-send-button" type="submit">加入队列<ArrowUp size={14} /></button>}<button aria-label={stopping ? '正在停止' : '停止本轮'} className="cancel-button" disabled={stopping} onClick={props.onCancel} title="停止本轮，保留对话并暂停队列" type="button">{stopping ? <LoaderCircle className="turn-spinner" size={14} /> : <Square size={11} fill="currentColor" strokeWidth={0} />}</button></>
           : <button aria-label={props.queue?.items.length && !props.queue.paused ? '加入消息队列' : '发送'} className="send-button" disabled={(!text.trim() && !tokens.length && props.pendingAttachments.length === 0) || props.runtimeStatus !== 'ready' || props.harnessHealth === 'degraded' || props.taskContextRestoring || props.pastingAttachments || checkingClipboard} title={props.runtimeStatus !== 'ready' ? '企业服务未连接' : props.harnessHealth === 'degraded' ? '请先恢复本地 Agent' : props.taskContextRestoring ? '正在恢复任务上下文' : '发送'} type="submit"><ArrowUp size={17} /></button>}
