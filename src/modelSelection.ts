@@ -32,7 +32,6 @@ export function saveSelectedModel(employeeId: string, model: string): boolean {
 export type ReasoningEffort = 'off' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 
 export const reasoningEffortOptions: Array<{ value: ReasoningEffort; label: string; description: string }> = [
-  { value: 'off', label: '关闭', description: '使用模型默认推理' },
   { value: 'low', label: '轻度', description: '更快响应，适合简单任务' },
   { value: 'medium', label: '中度', description: '速度与质量平衡' },
   { value: 'high', label: '高度', description: '更充分的分析' },
