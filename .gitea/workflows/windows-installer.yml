@@ -95,7 +95,24 @@ jobs:
           if ($env:XIAOYIN_BUILD_MODE -eq 'quick') {
             pnpm tauri build --debug --features windows-no-console --bundles nsis --config src-tauri/tauri.quick.windows.conf.json
           } else {
-            pnpm tauri build --verbose
+            $Runtime = Join-Path (Get-Location).Path "src-tauri\resources\harness-runtime"
+            if (-not (Test-Path -LiteralPath (Join-Path $Runtime "runtime-manifest.json") -PathType Leaf)) {
+              throw "Prepared Harness runtime is missing"
+            }
+            $LinkRoot = "C:\xh"
+            New-Item -ItemType Directory -Force -Path $LinkRoot | Out-Null
+            $Link = Join-Path $LinkRoot ([guid]::NewGuid().ToString("N").Substring(0, 8))
+            New-Item -ItemType Junction -Path $Link -Target $Runtime | Out-Null
+            try {
+              $Resources = @{}
+              $Resources[(($Link -replace "\\", "/") + "/")] = "resources/harness-runtime/"
+              $Config = @{ bundle = @{ resources = $Resources } } | ConvertTo-Json -Depth 4 -Compress
+              pnpm tauri build --verbose --config $Config
+              $BuildExitCode = $LASTEXITCODE
+            } finally {
+              [System.IO.Directory]::Delete($Link)
+            }
+            if ($BuildExitCode -ne 0) { throw "Windows installer build failed" }
           }
           if ($LASTEXITCODE -ne 0) { throw "Windows installer build failed" }
 
