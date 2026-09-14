@@ -540,9 +540,14 @@ pub async fn run_harness(
 
 #[tauri::command]
 pub async fn shutdown_harness(
+    app: tauri::AppHandle,
     manager: tauri::State<'_, HarnessManager>,
     task_id: Option<String>,
 ) -> Result<(), String> {
+    if let Some(task_id) = task_id.as_deref() {
+        let employee_id = crate::erp_auth::current_employee(&app).await?;
+        manager.check_task_owner(task_id, &employee_id)?;
+    }
     let manager = manager.inner().clone();
     tauri::async_runtime::spawn_blocking(move || manager.shutdown(task_id.as_deref()))
         .await
@@ -730,6 +735,22 @@ pub async fn probe_harness_host(
                 "unconfigured".to_string()
             },
         );
+        // The probe intentionally omits secrets, so the Host cannot infer
+        // whether the DeepSeek-backed web providers are configured. Preserve
+        // the already-known desktop configuration bit without exposing it.
+        if model_configured.unwrap_or(false) {
+            for capability in ["webSearch", "webFetch"] {
+                if health
+                    .capabilities
+                    .get(capability)
+                    .is_some_and(|value| value == "unconfigured")
+                {
+                    health
+                        .capabilities
+                        .insert(capability.to_string(), "gated".to_string());
+                }
+            }
+        }
         Ok(health)
     })
     .await

@@ -85,7 +85,9 @@ export function capabilityReportEntry(
       ? { key, status: 'READY', detail: 'Harness 能力已启用' }
       : capability === 'gated'
         ? { key, status: 'DEGRADED', detail: 'Harness 能力已安装，但受桌面策略控制' }
-        : { key, status: 'UNSUPPORTED', detail: 'Harness 能力未在当前运行环境配置' }
+        : capability === 'unconfigured'
+          ? { key, status: 'UNSUPPORTED', detail: 'Harness 能力未在当前运行环境配置' }
+          : { key, status: 'DEGRADED', detail: 'Harness 能力尚未完成本机探测' }
   }
   return { key, status: 'READY', detail: '企业能力已由控制面下发并可用' }
 }

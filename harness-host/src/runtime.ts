@@ -205,6 +205,7 @@ export class DeepSeekHarnessRuntime implements HarnessRuntime {
 
   async health(): Promise<{ status: string; runtime: string; version: string; capabilities: Record<string, 'enabled' | 'gated' | 'unconfigured'> }> {
     const env = this.environment()
+    const modelConfigured = env.XIAOYIN_MODEL_PROVIDER_CONFIGURED === 'true' || Boolean(env.DEEPSEEK_API_KEY?.trim())
     return {
       status: this.initialized ? 'ready' : 'uninitialized',
       runtime: 'deepseek-harness',
@@ -214,7 +215,7 @@ export class DeepSeekHarnessRuntime implements HarnessRuntime {
         // profile is only considered active after the official launcher has
         // successfully started all composed plugins.
         profile: this.initialized ? 'enabled' : 'gated',
-        modelProvider: env.XIAOYIN_MODEL_PROVIDER_CONFIGURED === 'true' || env.DEEPSEEK_API_KEY?.trim() ? 'gated' : 'unconfigured',
+        modelProvider: modelConfigured ? 'gated' : 'unconfigured',
         agentLoop: officialCapability('@deepseek-ai/dsh-agent-loop'),
         sdkJsonRpc: officialCapability('@deepseek-ai/dsh-sdk-jsonrpc-server'),
         sessionPersistence: officialCapability('@deepseek-ai/dsh-session-persistence-jsonl'),
@@ -240,8 +241,8 @@ export class DeepSeekHarnessRuntime implements HarnessRuntime {
         tokenMeter: officialCapability('@deepseek-ai/dsh-token-meter'),
         jobs: officialCapability('@deepseek-ai/dsh-jobs-local'),
         sessionReminders: officialCapability('@deepseek-ai/dsh-schedule'),
-        webSearch: officialCapability('@deepseek-ai/dsh-web-search-deepseek'),
-        webFetch: officialCapability('@deepseek-ai/dsh-web-fetch-http'),
+        webSearch: optionalCapability('@deepseek-ai/dsh-web-search-deepseek', modelConfigured, 'unconfigured'),
+        webFetch: optionalCapability('@deepseek-ai/dsh-web-fetch-http', modelConfigured, 'unconfigured'),
         settings: officialCapability('@deepseek-ai/dsh-settings-file'),
         credentials: officialCapability('@deepseek-ai/dsh-credentials-local'),
         llmRetry: officialCapability('@deepseek-ai/dsh-llm-retry'),

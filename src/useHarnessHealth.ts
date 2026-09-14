@@ -20,7 +20,7 @@ export function useHarnessHealth(authenticated: boolean, modelConfigured = false
     }
     setHealth('idle')
     setDetail('本地执行环境将在任务开始时按需启动')
-  }, [allowExternalAgents, allowHooks, allowLsp, allowShell, authenticated, toolsMode])
+  }, [allowExternalAgents, allowHooks, allowLsp, allowShell, authenticated, modelConfigured, toolsMode])
 
   const recover = useCallback(async () => {
     if (!authenticated || !connectorDiagnosticsAvailable()) return

@@ -82,12 +82,12 @@ it('reports Harness capability gates without advertising unconfigured providers'
   const runtime = new DeepSeekHarnessRuntime({ XIAOYIN_ENABLE_SESSION_QUERY_TOOLS: 'false', XIAOYIN_TOOLS_MODE: 'native' })
   const health = await runtime.health()
   expect(health.status).toBe('uninitialized')
-  expect(health.capabilities).toMatchObject({ profile: 'gated', modelProvider: 'unconfigured', commands: 'enabled', commandFeedback: 'enabled', sessionQuery: 'enabled', sessionQueryTools: 'gated', sessionReference: 'enabled', sessionReminders: 'enabled', codeRuntime: 'gated', persistentTerminal: 'enabled', lsp: 'unconfigured', codexSubagent: 'unconfigured', present: 'enabled', mcpClient: 'gated' })
+  expect(health.capabilities).toMatchObject({ profile: 'gated', modelProvider: 'unconfigured', commands: 'enabled', commandFeedback: 'enabled', sessionQuery: 'enabled', sessionQueryTools: 'gated', sessionReference: 'enabled', sessionReminders: 'enabled', codeRuntime: 'gated', persistentTerminal: 'enabled', lsp: 'unconfigured', codexSubagent: 'unconfigured', present: 'enabled', mcpClient: 'gated', webSearch: 'unconfigured', webFetch: 'unconfigured' })
 })
 
 it('reports a configured model provider without exposing its credential', async () => {
   const health = await new DeepSeekHarnessRuntime({ DEEPSEEK_API_KEY: 'test-secret' }).health()
-  expect(health.capabilities?.modelProvider).toBe('gated')
+  expect(health.capabilities).toMatchObject({ modelProvider: 'gated', webSearch: 'enabled', webFetch: 'enabled' })
   expect(JSON.stringify(health)).not.toContain('test-secret')
 })
 

@@ -146,6 +146,12 @@
     fetch: true
     searchTimeoutMs: 60000
 
+- id: web-search-deepseek
+  config:
+    # Web search uses the Anthropic-compatible DeepSeek endpoint, which may
+    # differ from the chat/LiteLLM endpoint used by the desktop task runtime.
+    baseURL: !!js process.env.DEEPSEEK_SEARCH_BASE_URL ?? 'https://api.deepseek.com/anthropic/v1'
+
 - id: tools
   config:
     # PTC executes model-written TypeScript with Bash-equivalent authority.
