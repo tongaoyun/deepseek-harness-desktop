@@ -95,7 +95,7 @@ jobs:
           if ($env:XIAOYIN_BUILD_MODE -eq 'quick') {
             pnpm tauri build --debug --features windows-no-console --bundles nsis --config src-tauri/tauri.quick.windows.conf.json
           } else {
-            pnpm tauri build
+            pnpm tauri build --verbose
           }
           if ($LASTEXITCODE -ne 0) { throw "Windows installer build failed" }
 
