@@ -51,8 +51,10 @@ test('staged runtime checks run once against the final disk image', () => {
 
 test('bundle architecture checks accept the binary path before lipo variable arguments', { skip: process.platform !== 'darwin' }, () => {
   const smoke = readFileSync(new URL('./smoke-test-macos-bundle.sh', import.meta.url), 'utf8')
-  const checks = smoke.split('\n').filter((line) => line.startsWith('/usr/bin/lipo ')).join('\n')
-  assert.equal(checks.split('\n').length, 2)
+  assert.match(smoke, /lipo "\$runtime\/harness-host\/native\/xiaoyin-computer-use" -verify_arch "\$binary_arch"/)
+  const checks = smoke.split('\n').filter((line) => line.startsWith('/usr/bin/lipo '))
+    .map((line) => line.replace('$runtime/harness-host/native/xiaoyin-computer-use', '$binary')).join('\n')
+  assert.equal(checks.split('\n').length, 3)
   const run = (arch) => execFileSync('/bin/bash', ['-e', '-c', checks], {
     env: { ...process.env, binary: process.execPath, node_binary: process.execPath, binary_arch: arch },
     stdio: ['ignore', 'pipe', 'pipe'],

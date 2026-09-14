@@ -54,6 +54,7 @@ for broad_exception in NSAllowsArbitraryLoads NSAllowsArbitraryLoadsInWebContent
 done
 /usr/bin/lipo "$binary" -verify_arch "$binary_arch"
 /usr/bin/lipo "$node_binary" -verify_arch "$binary_arch"
+/usr/bin/lipo "$runtime/harness-host/native/xiaoyin-computer-use" -verify_arch "$binary_arch"
 "$node_binary" "$repository/scripts/check-macos-runtime.mjs" "$runtime/harness-host" "$node_arch"
 
 node "$repository/scripts/check-harness-runtime.mjs" "$node_binary" "$runtime/harness-host"
