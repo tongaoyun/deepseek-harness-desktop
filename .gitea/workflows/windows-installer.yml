@@ -103,13 +103,16 @@ jobs:
             New-Item -ItemType Directory -Force -Path $LinkRoot | Out-Null
             $Link = Join-Path $LinkRoot ([guid]::NewGuid().ToString("N").Substring(0, 8))
             New-Item -ItemType Junction -Path $Link -Target $Runtime | Out-Null
+            $ConfigPath = "$Link.json"
             try {
               $Resources = @{}
               $Resources[(($Link -replace "\\", "/") + "/")] = "resources/harness-runtime/"
               $Config = @{ bundle = @{ resources = $Resources } } | ConvertTo-Json -Depth 4 -Compress
-              pnpm tauri build --verbose --config $Config
+              [System.IO.File]::WriteAllText($ConfigPath, $Config, [System.Text.UTF8Encoding]::new($false))
+              pnpm tauri build --verbose --config $ConfigPath
               $BuildExitCode = $LASTEXITCODE
             } finally {
+              if (Test-Path -LiteralPath $ConfigPath) { Remove-Item -LiteralPath $ConfigPath -Force }
               [System.IO.Directory]::Delete($Link)
             }
             if ($BuildExitCode -ne 0) { throw "Windows installer build failed" }
