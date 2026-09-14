@@ -9,7 +9,7 @@ ERP 扫码回调使用 `http://www.instudio.me:6206`，`src-tauri/Info.plist` �
 ## 发布流程
 
 - `macos-installer.yml` 的版本标签构建 Apple Silicon 和 Intel；手动默认 `arm64`，可选择 `all` 或 `x64`，手动构建只留流水线制品。前端、Harness 和 Rust 质量门禁由合并请求与 `main` 的代码检查完成；安装包工作流核对版本后直接构建并验收。工作流入口及触发规则见 [构建工作流](build-workflows.md)。
-- 两个架构由 `macos-arm64` Runner 同时构建，使用独立工作区和 Cargo 根目录，避免目录锁让编译退化为串行。每个 Cargo 进程最多使用 3 个并行任务。Apple Silicon 主机构建 Intel 包需安装 `x86_64-apple-darwin` Rust 标准库，并用 Rosetta 2 运行 Intel 内置 Node 和原生依赖的验收；不要求另设 Intel Runner。
+- 两个架构由 `macos-arm64` Runner 串行构建，使用独立工作区和 Cargo 根目录。每个 Cargo 进程最多使用 2 个并行任务，避免 16 GB Runner 发生内存交换。Apple Silicon 主机构建 Intel 包需安装 `x86_64-apple-darwin` Rust 标准库，并用 Rosetta 2 运行 Intel 内置 Node 和原生依赖的验收；不要求另设 Intel Runner。
 - `XIAOYIN_MACOS_ARCH=arm64|x64` 明确指定目标，Rust 主程序、内置 Node、node-pty 和 Swift 桌面助手保持一致。原生可选依赖安装两种 CPU 版本；实际验收使用目标 Node 加载 FFI、PDF/图片模块并运行终端子进程，不能只检查主程序架构。
 - 内置 Node 的版本与官方 SHA-256 固定在构建脚本中。校验成功的下载包保存在 Runner 缓存，后续构建再次验哈希后复用。
 - 显式目标的产物目录为 `$CARGO_TARGET_DIR/<Rust target>/release/bundle`，未指定 `CARGO_TARGET_DIR` 时使用 `src-tauri/target/<Rust target>/release/bundle`。更新平台仍分别使用 `darwin-aarch64` 和 `darwin-x86_64`，不将单架构包标记为 Universal。

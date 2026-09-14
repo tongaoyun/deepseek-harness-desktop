@@ -28,14 +28,14 @@ jobs:
     name: 构建 ${{ matrix.architecture }}
     strategy:
       fail-fast: false
-      max-parallel: 2
+      max-parallel: 1
       matrix:
         architecture: ${{ fromJSON(startsWith(github.ref, 'refs/tags/v') && '["arm64","x64"]' || inputs.architecture == 'arm64' && '["arm64"]' || inputs.architecture == 'x64' && '["x64"]' || '["arm64","x64"]') }}
     runs-on: macos-arm64
     timeout-minutes: 120
     env:
       CARGO_TERM_COLOR: always
-      CARGO_BUILD_JOBS: "3"
+      CARGO_BUILD_JOBS: "2"
       XIAOYIN_HARNESS_SMOKE_TIMEOUT_MS: "300000"
       XIAOYIN_MACOS_ARCH: ${{ matrix.architecture }}
       CARGO_TARGET_DIR: /tmp/xiaoyin-desktop-builder/target/${{ matrix.architecture }}
