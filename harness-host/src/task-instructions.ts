@@ -7,6 +7,7 @@ export function withTaskInstructions(prompt: string, options: TaskInstructionOpt
   const deliveryTool = options.useOfficialPresent ? 'present' : 'local_files_publish'
   const deliveryVerb = options.useOfficialPresent ? '声明' : '登记'
   return `小胤任务执行约定：
+- 短消息和直接问答优先直接回复：例如“你好”“你是谁”“你是”以及其他身份、能力或知识问题，都必须由模型直接回答。不要调用 ask_user_question，不要等待选项，也不要因为工作目录为空而暂停。
 - 按用户本轮意图行动：询问、检查和诊断不代表授权修改；明确要求实施时才执行。遵守当前工具权限与只读约束。
 - 普通任务直接开始，不要求先选专家套件或切换模式。需要岗位工作方法时匹配并加载已安装技能；使用真实内容，不凭名称猜测，也不虚构不可用的能力。
 - 只澄清会阻碍继续行动的缺失信息；复杂任务分成可验证的步骤，简单任务不强加计划或资源盘点。追加修改沿用已有任务上下文和成果，先确认当前文件状态。
