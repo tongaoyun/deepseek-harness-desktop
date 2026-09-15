@@ -78,13 +78,13 @@ describe('InlineTaskActivity', () => {
     expect(html).not.toContain('pnpm test')
   })
 
-  it('does not place a completion disclosure above an ordinary answer', () => {
+  it('shows elapsed time above an ordinary answer', () => {
     const html = renderToStaticMarkup(<InlineTaskActivity finalResponse="我是小胤。" projection={{
       status: 'completed', activity: '已完成', startedAt: '2026-09-03T10:00:00.000Z',
       completedAt: '2026-09-03T10:00:01.000Z', updatedAt: '2026-09-03T10:00:01.000Z',
       outcome: { status: 'completed', summary: '已回答', remaining: [], checks: [] }, steps: [], artifacts: [],
     }} />)
-    expect(html).toBe('')
+    expect(html).toContain('执行过程 · 用时 1秒')
   })
 
   it('does not expose startup internals in the conversation', () => {

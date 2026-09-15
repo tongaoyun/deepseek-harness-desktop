@@ -55,12 +55,12 @@ export function InlineTaskActivity({ projection, finalResponse = '', onApprovalD
   const executionEntries = visibleExecutionEntries(timeline, finalResponse)
   const hasDetails = executionEntries.length > 0
   const unverified = projection.status === 'completed' && isUnverifiedTaskOutcome(projection.outcome)
+  const duration = taskDurationLabel(projection, clock)
   if ((projection.status === 'idle' || unverified) && executionEntries.length === 0 && projection.steps.length === 0
     && projection.artifacts.length === 0 && (projection.changes?.length ?? 0) === 0) return null
   // Keep the compact completion row when the harness actually started an
   // execution, even if it emitted no tool details.
-  if (projection.status === 'completed' && !hasDetails && projection.executionStarted !== true) return null
-  const duration = taskDurationLabel(projection, clock)
+  if (projection.status === 'completed' && !hasDetails && projection.executionStarted !== true && !duration) return null
   const activity = /启动|初始化/.test(projection.activity) ? '正在处理' : projection.activity
   const contextLabel = contextPressureLabel(projection)
   const retentionLabel = outputRetentionLabel(projection)
