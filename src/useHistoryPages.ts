@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { loadTaskHistoryPage, unreadableHistoryWarning } from './taskHistory'
+import { loadTaskHistoryPage } from './taskHistory'
 import type { LocalTaskRun } from './types'
 
 /** Fetch older/search results without replacing live task state. */
@@ -23,7 +23,6 @@ export function useHistoryPages(owner: string | undefined, query: string, merge:
       mergeRef.current(page.items)
       setIds((values) => [...new Set([...values, ...page.items.map((item) => item.id)])])
       setMore(page.items.length < page.total)
-      if (page.invalidCount) setError(unreadableHistoryWarning(page.invalidCount))
     } catch (reason) {
       if (state.current === current && !current.controller.signal.aborted) setError(`无法加载历史：${String(reason)}`)
     } finally {

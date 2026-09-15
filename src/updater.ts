@@ -1,4 +1,5 @@
 import { isTauri } from '@tauri-apps/api/core'
+import { getVersion } from '@tauri-apps/api/app'
 import { relaunch } from '@tauri-apps/plugin-process'
 import { check, type DownloadEvent, type Update } from '@tauri-apps/plugin-updater'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -97,7 +98,7 @@ export function useDesktopUpdater() {
       if (updateRef.current && updateRef.current !== available) await updateRef.current.close()
       updateRef.current = available
       if (!available) {
-        setState({ phase: 'current', downloadedBytes: 0 })
+        setState((current) => ({ phase: 'current', downloadedBytes: 0, currentVersion: current.currentVersion }))
         return
       }
       setState({
@@ -109,13 +110,14 @@ export function useDesktopUpdater() {
       })
     } catch (error) {
       if (isUnsupportedUpdaterPlatformError(error)) {
-        setState({ phase: 'unsupported', downloadedBytes: 0 })
+        setState((current) => ({ phase: 'unsupported', downloadedBytes: 0, currentVersion: current.currentVersion }))
       } else if (!silent) {
-        setState({
+        setState((current) => ({
           phase: 'error',
+          currentVersion: current.currentVersion,
           downloadedBytes: 0,
           error: updaterErrorMessage(error),
-        })
+        }))
       }
     } finally {
       checkingRef.current = false
@@ -146,6 +148,15 @@ export function useDesktopUpdater() {
       }))
     }
   }, [state.phase])
+
+  useEffect(() => {
+    if (!isUpdatableDesktop()) return
+    let active = true
+    void getVersion().then((currentVersion) => {
+      if (active) setState((current) => ({ ...current, currentVersion }))
+    }).catch(() => undefined)
+    return () => { active = false }
+  }, [])
 
   useEffect(() => {
     if (!isUpdatableDesktop() || import.meta.env.DEV) return

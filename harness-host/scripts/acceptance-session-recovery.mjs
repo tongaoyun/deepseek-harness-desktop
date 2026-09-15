@@ -10,6 +10,8 @@ let phase = 'initial'
 let failure
 let requests = 0
 let stopRuntime
+let streamDelivered
+const firstDelta = new Promise((resolve) => { streamDelivered = resolve })
 const server = createServer(async (request, response) => {
   try {
     const chunks = []
@@ -36,6 +38,12 @@ const server = createServer(async (request, response) => {
     for (const choice of [{ index: 0, delta: { role: 'assistant', content: text }, finish_reason: null },
       { index: 0, delta: {}, finish_reason: 'stop' }]) {
       response.write(`data: ${JSON.stringify({ id: 'recovery-' + requests, object: 'chat.completion.chunk', created: 1, model: 'deepseek-v4-flash', choices: [choice] })}\n\n`)
+      if (phase === 'initial' && choice.delta.content) {
+        let timer
+        try {
+          await Promise.race([firstDelta, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Live text was not forwarded before model completion')), 5_000) })])
+        } finally { clearTimeout(timer) }
+      }
     }
     response.end('data: [DONE]\n\n')
   } catch (error) {
@@ -54,7 +62,11 @@ const environment = {
 }
 let runtime = new DeepSeekHarnessRuntime(environment)
 try {
-  const initial = await runtime.run({ prompt: '记住任务标记 XY-SESSION-PERSISTED。' }, () => {})
+  const initial = await runtime.run({ prompt: '记住任务标记 XY-SESSION-PERSISTED。' }, (notification) => {
+    if (notification.params.event?.type === 'text-chunks') streamDelivered()
+  })
+  assert.ifError(failure)
+  console.log(JSON.stringify({ check: 'live-text-before-model-completion', passed: true }))
   await assert.doesNotReject(runtime.searchSessions([initial.sessionId], 'PERSISTED', 10))
   await runtime.close()
   await writeFile(environment.XIAOYIN_SESSION_QUERY_PATH, 'not a sqlite database')

@@ -1,7 +1,9 @@
 import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
+import { loadEnv } from 'vite'
 
-export default defineConfig({
+export default defineConfig(({ command, mode }) => ({
+  define: { 'import.meta.env.VITE_XIAOYIN_DEV_PROXY': JSON.stringify(String(command === 'serve' && mode !== 'test')) },
   plugins: [react()],
   clearScreen: false,
   test: {
@@ -23,8 +25,20 @@ export default defineConfig({
     },
   },
   server: {
+    host: '127.0.0.1',
     port: 1420,
     strictPort: true,
+    proxy: {
+      '/api': {
+        target: process.env.VITE_XIAOYIN_SERVER_URL
+          ?? loadEnv(mode, process.cwd(), 'VITE_').VITE_XIAOYIN_SERVER_URL
+          ?? 'http://192.168.2.67:30081',
+        changeOrigin: true,
+        configure(proxy) {
+          proxy.on('proxyReq', (request) => request.removeHeader('origin'))
+        },
+      },
+    },
     watch: { ignored: ['**/src-tauri/**', '**/harness-host/dist/**', '**/harness-host/native/**', '**/output/**'] },
   },
-})
+}))

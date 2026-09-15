@@ -44,6 +44,6 @@ it('shows skipped history while keeping valid entries available', async () => {
     expect(merge).toHaveBeenCalledWith([{ id: 'valid' }])
     expect(controller!.ids).toEqual(['valid'])
     expect(controller!.more).toBe(false)
-    expect(controller!.error).toContain('2 条旧格式或损坏的本地会话未显示')
+    expect(controller!.error).toBe('')
   } finally { await act(async () => root.unmount()) }
 })

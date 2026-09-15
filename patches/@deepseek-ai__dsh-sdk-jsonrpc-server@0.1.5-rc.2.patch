@@ -2,6 +2,26 @@ diff --git a/lib/index.js b/lib/index.js
 index f75cc87..c9917be 100644
 --- a/lib/index.js
 +++ b/lib/index.js
+@@ -72,6 +72,19 @@ var HarnessSdkJsonRpcServer = class {
+ 			};
+ 			this.transport.notify("session.event", payload);
+ 		}));
++		const liveAttempts = new Map();
++		this.disposers.push(ctx.on("agent/assistant-stream", ({ agent, frame }) => {
++			const sessionId = String(agent.session.id);
++			if (frame.type === "start") liveAttempts.set(sessionId, { turn: frame.turn, step: frame.step });
++			const context = liveAttempts.get(sessionId) ?? {};
++			if (frame.type === "end") liveAttempts.delete(sessionId);
++			this.transport.notify("session.event", {
++				sessionId,
++				event: { type: "assistant/stream", time: frame.time ?? Date.now(), data: { ...context, ...frame } }
++			});
++		}));
++		this.disposers.push(() => liveAttempts.clear());
++
+ 		this.disposers.push(ctx.on("agent/status", ({ agent, status }) => {
+ 			this.transport.notify("session.status", {
+ 				sessionId: String(agent.session.id),
 @@ -216,16 +216,25 @@ var HarnessSdkJsonRpcServer = class {
  		return creation;
  	}

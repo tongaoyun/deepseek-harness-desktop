@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { loadSelectedModel, modelDisplayName, resolveSelectedModel, saveSelectedModel } from './modelSelection'
+import { availableModels, loadSelectedModel, modelDisplayName, resolveSelectedModel, saveSelectedModel } from './modelSelection'
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -10,8 +10,15 @@ describe('model selection', () => {
     expect(resolveSelectedModel([], 'retired-model')).toBe('')
   })
 
+  it('hides the bare 5.6 route while retaining named variants', () => {
+    expect(availableModels(['gpt-5.6', 'gpt-5.6-sol', 'gpt-5.5', 'GPT-5.6'])).toEqual(['gpt-5.6-sol', 'gpt-5.5'])
+    expect(resolveSelectedModel(['gpt-5.6', 'gpt-5.6-sol'], 'gpt-5.6')).toBe('gpt-5.6-sol')
+  })
+
   it('renders model ids without inventing product tiers', () => {
-    expect(modelDisplayName('deepseek-v4-flash')).toBe('DeepSeek V4 Flash')
+    expect(modelDisplayName('deepseek-v4-flash')).toBe('Deepseek V4 Flash')
+    expect(modelDisplayName('gpt-5.6-sol')).toBe('GPT 5.6 Sol')
+    expect(modelDisplayName('gpt-6-astra')).toBe('GPT 6 Astra')
   })
 
   it('keeps model selection usable when storage is unavailable', () => {

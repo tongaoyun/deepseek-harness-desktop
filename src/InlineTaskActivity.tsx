@@ -16,6 +16,8 @@ export function InlineTaskActivity({ projection, finalResponse = '', onApprovalD
   const pendingApproval = approvalsEnabled ? (projection.timeline ?? []).filter((entry) => entry.kind === 'approval' && entry.status === 'running').map((entry) => entry.id).join(':') : ''
   const pendingQuestion = approvalsEnabled ? (projection.timeline ?? []).filter((entry) => entry.kind === 'question' && entry.status === 'running').map((entry) => entry.id).join(':') : ''
   const [approvalStates, setApprovalStates] = useState<Record<string, ApprovalUiState>>({})
+  const lastTimeline = useRef(projection.timeline ?? [])
+  if ((projection.timeline?.length ?? 0) > 0) lastTimeline.current = projection.timeline ?? []
   const approvalLocks = useRef(new Set<string>())
   const decide = useCallback(async (id: string, decision: 'allow' | 'reject') => {
     if (!approvalsEnabled || !onApprovalDecision || approvalLocks.current.has(id)) return
@@ -29,14 +31,15 @@ export function InlineTaskActivity({ projection, finalResponse = '', onApprovalD
       setApprovalStates((value) => ({ ...value, [id]: { status: 'error', error: reason instanceof Error ? reason.message : String(reason) } }))
     }
   }, [approvalsEnabled, onApprovalDecision])
+  const timeline = projection.timeline?.length ? projection.timeline : (projection.status === 'running' ? lastTimeline.current : [])
   const collapsedEntries = useMemo(() => {
     if (projection.status !== 'running') return []
-    const entries = projection.timeline ?? []
+    const entries = timeline
     const latest = entries.findLast((entry) => entry.kind === 'assistant')
     return entries.filter((entry) => ((entry.kind === 'approval' || entry.kind === 'question') && entry.status === 'running')
       || entry.kind === 'warning' || entry.kind === 'error' || entry.status === 'failed'
       || (entry === latest && entry.kind === 'assistant'))
-  }, [projection.timeline, projection.status])
+  }, [timeline, projection.status])
   // Resolve disclosure in the same render as the new status. An effect would
   // briefly paint completed content expanded before collapsing it a frame later.
   const scope = `${projection.status}:${pendingApproval}:${pendingQuestion}`
@@ -49,12 +52,14 @@ export function InlineTaskActivity({ projection, finalResponse = '', onApprovalD
     return () => window.clearInterval(timer)
   }, [projection.status])
 
-  const executionEntries = visibleExecutionEntries(projection.timeline ?? [], finalResponse)
+  const executionEntries = visibleExecutionEntries(timeline, finalResponse)
   const hasDetails = executionEntries.length > 0
   const unverified = projection.status === 'completed' && isUnverifiedTaskOutcome(projection.outcome)
   if ((projection.status === 'idle' || unverified) && executionEntries.length === 0 && projection.steps.length === 0
     && projection.artifacts.length === 0 && (projection.changes?.length ?? 0) === 0) return null
-  if (projection.status === 'completed' && !hasDetails) return null
+  // Keep the compact completion row when the harness actually started an
+  // execution, even if it emitted no tool details.
+  if (projection.status === 'completed' && !hasDetails && projection.executionStarted !== true) return null
   const duration = taskDurationLabel(projection, clock)
   const activity = /启动|初始化/.test(projection.activity) ? '正在处理' : projection.activity
   const contextLabel = contextPressureLabel(projection)
@@ -75,7 +80,8 @@ export function InlineTaskActivity({ projection, finalResponse = '', onApprovalD
       {retentionLabel && <small aria-label="工具结果裁剪">{retentionLabel}</small>}
       {hasDetails && <ChevronRight className={open ? 'open' : ''} size={15} />}
     </button>
-    {hasDetails && <ExecutionTimeline entries={open ? projection.timeline ?? [] : collapsedEntries} finalResponse={finalResponse} onApprovalDecision={onApprovalDecision ? decide : undefined} onQuestionAnswer={onQuestionAnswer} approvalStates={approvalStates} approvalsEnabled={approvalsEnabled} />}
+    {hasDetails && <ExecutionTimeline entries={open ? timeline : collapsedEntries} finalResponse={finalResponse} onApprovalDecision={onApprovalDecision ? decide : undefined} onQuestionAnswer={onQuestionAnswer} approvalStates={approvalStates} approvalsEnabled={approvalsEnabled} />}
+    {projection.status === 'running' && !hasDetails && <p className="task-starting-hint">正在准备执行过程…</p>}
   </section>
 }
 

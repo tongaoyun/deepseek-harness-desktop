@@ -1,4 +1,4 @@
-import { ArrowDown, ChevronRight, CircleStop, FileImage, FileText, Keyboard, Sparkles, X } from 'lucide-react'
+import { ArrowDown, CircleStop, FileImage, FileText, Keyboard, Sparkles, X } from 'lucide-react'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type RefObject, type UIEvent } from 'react'
 import type { AuthorizedLocalDirectory } from './harness'
 import { FileChangesCard } from './FileChangesCard'
@@ -7,7 +7,6 @@ import { LocalFilePreviewPanel } from './LocalFilePreviewPanel'
 import type { LocalArtifactTarget } from './localArtifactPreview'
 import { TaskArtifacts } from './TaskArtifacts'
 import { TaskOutcomeDetails } from './TaskOutcomeDetails'
-import { TaskRecoveryNotice } from './TaskRecoveryNotice'
 import { TaskOperationReview } from './TaskOperationReview'
 import { TaskVisuals } from './TaskVisuals'
 import type { CapabilitySnapshot, KnowledgeBaseEntry, LocalTaskAttachment, RuntimeStatus, TaskMessage, XiaoyinTaskProjection } from './types'
@@ -39,8 +38,9 @@ export interface ChatPageProps {
   harnessRunning: boolean
   runtimeStatus: RuntimeStatus
   activeModel: string
+  reasoningEffort?: import('./modelReasoning').ReasoningEffort
+  onReasoningEffortChange?: (value: import('./modelReasoning').ReasoningEffort) => void
   models: string[]
-  executionMode?: 'agent' | 'plan'
   modelMenuOpen: boolean
   currentTaskRunning?: boolean
   queue?: TaskQueue
@@ -66,7 +66,6 @@ export interface ChatPageProps {
   onAddLocalFiles: () => void
   onToggleModelMenu: () => void
   onSelectModel: (model: string) => void
-  onExecutionModeChange?: (mode: 'agent' | 'plan') => void
   onCancel: () => void
   onApprovalDecision?: import('./ExecutionTimeline').ApprovalDecisionHandler
   onQuestionAnswer?: import('./ExecutionTimeline').QuestionAnswerHandler
@@ -227,9 +226,8 @@ export function ChatPage(props: ChatPageProps) {
         {projection && <InlineTaskActivity finalResponse={message.pending ? '' : message.text} projection={projection} onApprovalDecision={props.onApprovalDecision} onQuestionAnswer={props.onQuestionAnswer} />}
         {(!timelineOwnsStreamingText && Boolean(message.text.trim())) && <div className={message.pending ? 'streaming-response' : undefined}><RichMessage assistant={!message.pending} onRegenerate={!message.pending && index === props.messages.length - 1 ? props.onPrepareRetry : undefined} text={message.text} /></div>}
         {projection && projection.artifacts.length > 0 && <TaskArtifacts artifacts={projection.artifacts} conversation onOpen={openPreview} />}
-        {fileChanges && (projection?.artifacts.length ? <details className="task-file-review"><summary><ChevronRight size={14} />文件变更 <small>{reviewChanges.length}</small></summary>{fileChanges}</details> : fileChanges)}
+        {fileChanges}
         {!message.pending && projection?.status === 'completed' && projection.outcome && <TaskOutcomeDetails outcome={projection.outcome} />}
-        {!message.pending && projection?.interruption && <TaskRecoveryNotice projection={projection} disabled={props.harnessRunning || Boolean(props.taskContextRestoring) || Boolean(props.prompt.trim()) || props.pendingAttachments.length > 0} onResume={index === props.messages.length - 1 ? props.onResumeInterrupted : undefined} />}
         {!message.pending && index === props.messages.length - 1 && props.employeeId && props.taskId && <TaskOperationReview key={`${props.employeeId}:${props.taskId}`} employeeId={props.employeeId} taskId={props.taskId} revision={props.taskProjection.updatedAt} disabled={props.harnessRunning} />}
         {!message.pending && projection?.knowledgeSources && <KnowledgeSources sources={projection.knowledgeSources} context={props.knowledgeContext} />}
         {!message.pending && props.employeeId && projection && (projection.visuals?.length ?? 0) > 0 && <TaskVisuals employeeId={props.employeeId} key={props.taskId} visuals={projection.visuals ?? []} />}

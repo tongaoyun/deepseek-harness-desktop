@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, type ComponentProps } from 'react'
+import { act, StrictMode, type ComponentProps } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import App from './App'
@@ -16,6 +16,7 @@ import { reportTaskAudit } from './taskAudit'
 import type { TaskOutcome } from './taskOutcome'
 import { persistTaskHistory, loadTaskById, loadTaskHistory } from './taskHistory'
 import { readTaskDraft, saveTaskDraft } from './taskDrafts'
+import * as taskDrafts from './taskDrafts'
 import { useHarnessNotifications } from './useHarnessNotifications'
 import { rememberInstruction, emptyMemoryProfile, learnCompletedTask } from './memory'
 import { loadBootstrap } from './api'
@@ -134,14 +135,14 @@ it('preserves unsaved input when switching tasks and allows switching after retr
     expect(fixtures.chat!.prompt).toBe(creationPrompt('schedule'))
   })
 })
-it('saves an execution mode change without another composer edit', async () => {
+it('uses the default agent flow even when restoring a plan-mode draft', async () => {
+  await saveTaskDraft('queue-test', '', { prompt: '先研究方案', attachments: [], directories: [], knowledgeRefs: [], connectorIds: [], model: 'original-model', executionMode: 'plan', updatedAt: 1 })
+  vi.mocked(runHarnessWithRecovery).mockResolvedValue({ finalResponse: '方案已整理', sessionId: 'default-agent' })
   await fixture(async () => {
-    await act(async () => fixtures.chat!.onPrompt('先研究方案'))
-    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 300)) })
-    expect(readTaskDraft('queue-test', '')?.executionMode).toBe('agent')
-    await act(async () => fixtures.chat!.onExecutionModeChange!('plan'))
-    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 300)) })
-    expect(readTaskDraft('queue-test', '')?.executionMode).toBe('plan')
+    expect(fixtures.chat!.prompt).toBe('先研究方案')
+    await submit('先研究方案')
+    expect(vi.mocked(runHarnessWithRecovery).mock.calls[0][0].executionMode).toBe('agent')
+    expect(vi.mocked(persistTaskHistory).mock.calls.at(-1)![1].executionMode).toBe('agent')
   })
 })
 it('coalesces rapid draft edits and flushes the final value before changing tasks', async () => {
@@ -487,6 +488,41 @@ async function fixture(check: () => Promise<void>) {
   try { await act(async () => root.render(<App />)); await check() }
   finally { await act(async () => root.unmount()); container.remove() }
 }
+
+it('finishes draft restoration when StrictMode restarts initialization', async () => {
+  await saveTaskDraft('queue-test', '', { prompt: '保留的草稿', attachments: [], directories: [], knowledgeRefs: [], connectorIds: [], model: 'original-model', updatedAt: 1 })
+  const container = document.body.appendChild(document.createElement('div'))
+  const root = createRoot(container)
+  try {
+    await act(async () => root.render(<StrictMode><App /></StrictMode>))
+    expect(container.textContent).not.toContain('正在恢复本机草稿')
+    expect(fixtures.chat!.prompt).toBe('保留的草稿')
+    expect(readTaskDraft('queue-test', '')?.prompt).toBe('保留的草稿')
+  } finally {
+    await act(async () => root.unmount())
+    container.remove()
+  }
+})
+
+it('shows draft loading when New Task is clicked from the catalog and allows retry after loading', async () => {
+  const load = taskDrafts.loadTaskDraftState
+  let finish!: () => void
+  const waiting = new Promise<void>((resolve) => { finish = resolve })
+  vi.spyOn(taskDrafts, 'loadTaskDraftState').mockImplementation(async (owner) => { await waiting; await load(owner) })
+  await fixture(async () => {
+    await act(async () => fixtures.sidebar!.onPage('packs'))
+    expect(fixtures.sidebar!.page).toBe('packs')
+    await act(async () => fixtures.sidebar!.onNewTask())
+    expect(fixtures.sidebar!.page).toBe('chat')
+    expect(document.body.textContent).toContain('正在恢复本机草稿')
+    await act(async () => finish())
+    expect(document.body.textContent).not.toContain('正在恢复本机草稿')
+    await act(async () => fixtures.sidebar!.onPage('packs'))
+    await act(async () => fixtures.sidebar!.onNewTask())
+    expect(fixtures.sidebar!.page).toBe('chat')
+    expect(fixtures.chat!.prompt).toBe('')
+  })
+})
 
 it('recovers the last input after ERP automatically invalidates the workspace', async () => {
   const container = document.body.appendChild(document.createElement('div'))
@@ -835,6 +871,30 @@ it('executes the selected kit and stops forcing it after the user removes the ca
     await submit('解释排序算法')
     expect(vi.mocked(runHarnessWithRecovery).mock.calls[1][0].capabilitySnapshot.selections).toEqual([])
     expect(vi.mocked(runHarnessWithRecovery).mock.calls[1][0].sessionId).not.toBe('kit-session')
+  })
+})
+
+it.each(['connector', 'tool', 'artifact'])('shows kit preparation errors and allows retry after fixing %s', async (missing) => {
+  fixtures.catalog.connectors = [{ id: 'erp-mcp', name: 'ERP', summary: '', category: 'other', kind: 'mcp', scope: 'EMPLOYEE', status: 'ready', managed: false, version: '1', transport: 'streamable-http', url: 'https://erp.example/mcp', authMode: 'none', toolNames: ['order.intake_diagnose_order'] }] as ConnectorCatalogEntry[]
+  if (missing !== 'connector') localStorage.setItem('xiaoyin.enabled-connectors.queue-test', '["erp-mcp"]')
+  fixtures.catalog.expertKits = mergeExpertKits([], [{ installPath: '/extensions/orders', source: 'developer', packageSha256: missing === 'artifact' ? undefined : 'a'.repeat(64), manifest: { schemaVersion: '2', kind: 'expert-kit', id: 'orders', name: '订单专家', version: '1.0.0', summary: '订单诊断', category: 'other', minimumDesktopVersion: '0.1.30', commands: [], skills: [], connectorRefs: ['erp-mcp'], requiredTools: [missing === 'tool' ? 'order_intake_diagnose_order' : 'order.intake_diagnose_order'] } }])
+  vi.mocked(runHarnessWithRecovery).mockResolvedValue({ finalResponse: '完成', sessionId: 'kit-session' })
+  await fixture(async () => {
+    const input = '/kit:orders 检查订单'
+    await submit(input)
+    expect(runHarnessWithRecovery).not.toHaveBeenCalled()
+    expect(persistTaskHistory).not.toHaveBeenCalled()
+    expect(fixtures.chat!.prompt).toBe(input)
+    expect(fixtures.chat!.localFileError).toContain('消息未能发送')
+    expect(fixtures.chat!.localFileError).toContain(missing === 'connector' ? '连接器尚未就绪' : missing === 'tool' ? 'order_intake_diagnose_order' : '缺少可信制品')
+    const kit = fixtures.catalog.expertKits[0]
+    kit.connectorRefs = missing === 'connector' ? [] : ['erp-mcp']
+    kit.requiredTools = missing === 'connector' ? [] : ['order.intake_diagnose_order']
+    kit.installed!.packageSha256 = 'a'.repeat(64)
+    await submit(input)
+    expect(runHarnessWithRecovery).toHaveBeenCalledTimes(1)
+    expect(fixtures.chat!.localFileError).toBe('')
+    expect(fixtures.chat!.prompt).toBe('/kit:orders ')
   })
 })
 

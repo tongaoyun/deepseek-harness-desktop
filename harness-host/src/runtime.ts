@@ -414,6 +414,8 @@ export class DeepSeekHarnessRuntime implements HarnessRuntime {
     const workspace = resolve(env.DSH_CWD ?? process.cwd())
 
     const maxTokens = positiveInteger(env.DSH_MAX_TOKENS)
+    const reasoningEffort = env.DSH_REASONING_EFFORT?.trim()
+    if (reasoningEffort && !['low', 'medium', 'high', 'xhigh', 'ultra'].includes(reasoningEffort)) throw new Error('Invalid reasoning effort')
     this.harness = new DeepSeekHarness({
       profile: 'sdk',
       initializeTimeoutMs: 60_000,
@@ -429,6 +431,7 @@ export class DeepSeekHarnessRuntime implements HarnessRuntime {
       },
       provider: env.DSH_PROVIDER ?? 'deepseek-official',
       model: env.DSH_MODEL ?? 'deepseek-v4-flash',
+      ...(reasoningEffort ? { reasoningEffort: reasoningEffort as NonNullable<NonNullable<ConstructorParameters<typeof DeepSeekHarness>[0]>['reasoningEffort']> } : {}),
       ...(maxTokens === undefined ? {} : { maxTokens }),
     })
     return this.harness
@@ -485,7 +488,7 @@ export async function runSessionTurn(
         }
       }
       outcome.observe(event)
-      await forwardVisibleTextSmoothly(notification, event, streamedText, onNotification)
+      forwardVisibleText(notification, event, streamedText, onNotification)
       if (event?.type === 'turn/start') turnStarted = true
       if (event?.type === 'assistant/message') {
         turnStarted = true
@@ -530,18 +533,15 @@ export async function runSessionTurn(
 }
 
 /**
- * Providers do not all expose token deltas consistently. Some return one large
- * `text-chunks` event (or only the final assistant message), which makes the
- * desktop UI appear frozen and then dump a whole answer at once. Normalize
- * those cases here so every consumer receives the same real incremental event
- * stream. Small native chunks pass through untouched.
+ * Preserve provider deltas and fill in text for providers that only emit a
+ * final message. Never delay the event reader for presentation effects.
  */
-async function forwardVisibleTextSmoothly(
+function forwardVisibleText(
   notification: HarnessNotification,
   event: Record<string, unknown> | undefined,
   streamedText: Map<string, string>,
   onNotification: (value: HarnessNotification) => void,
-): Promise<void> {
+): void {
   if (event === undefined) {
     onNotification(notification)
     return
@@ -552,6 +552,20 @@ async function forwardVisibleTextSmoothly(
     return
   }
   const data = record(event.data)
+  if (event.type === 'assistant/stream') {
+    if (data?.type === 'start') {
+      streamedText.clear()
+      onNotification(notification)
+    } else if (data?.type === 'chunk') {
+      const chunk = record(data.chunk)
+      if (chunk?.type === 'text-delta' && typeof chunk.text === 'string') {
+        const key = assistantStepKey(data)
+        streamedText.set(key, `${streamedText.get(key) ?? ''}${chunk.text}`)
+        onNotification(textChunkNotification(notification, event, chunk.text))
+      }
+    }
+    return
+  }
   const key = assistantStepKey(data)
   if (event.type === 'text-chunks') {
     const text = stringTexts(data?.texts)
@@ -559,11 +573,7 @@ async function forwardVisibleTextSmoothly(
       onNotification(notification)
       return
     }
-    if (Array.from(text).length >= 18) {
-      await emitIncrementalText(notification, event, text, onNotification)
-    } else {
-      onNotification(notification)
-    }
+    onNotification(notification)
     streamedText.set(key, `${streamedText.get(key) ?? ''}${text}`)
     return
   }
@@ -571,38 +581,10 @@ async function forwardVisibleTextSmoothly(
     const finalText = assistantText(event)
     const previous = streamedText.get(key) ?? ''
     const missing = finalText.startsWith(previous) ? finalText.slice(previous.length) : ''
-    if (missing) await emitIncrementalText(notification, event, missing, onNotification)
+    if (missing) onNotification(textChunkNotification(notification, event, missing))
     if (finalText) streamedText.set(key, finalText)
   }
   onNotification(notification)
-}
-
-async function emitIncrementalText(
-  notification: HarnessNotification,
-  event: Record<string, unknown>,
-  text: string,
-  onNotification: (value: HarnessNotification) => void,
-): Promise<void> {
-  const chunks = visibleTextChunks(text)
-  if (chunks.length === 1) {
-    onNotification(event.type === 'text-chunks' ? notification : textChunkNotification(notification, event, text))
-    return
-  }
-  for (const chunk of chunks) {
-    onNotification(textChunkNotification(notification, event, chunk))
-    await shortUiPause()
-  }
-}
-
-export function visibleTextChunks(text: string): string[] {
-  const characters = Array.from(text)
-  if (characters.length < 18) return [text]
-  const chunkSize = Math.max(4, Math.ceil(characters.length / 80))
-  const chunks: string[] = []
-  for (let index = 0; index < characters.length; index += chunkSize) {
-    chunks.push(characters.slice(index, index + chunkSize).join(''))
-  }
-  return chunks
 }
 
 function textChunkNotification(
@@ -631,10 +613,6 @@ function assistantStepKey(data: Record<string, unknown> | undefined): string {
 
 function stringTexts(value: unknown): string {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string').join('') : ''
-}
-
-function shortUiPause(): Promise<void> {
-  return new Promise((resolvePromise) => setTimeout(resolvePromise, 32))
 }
 
 async function beforeDeadline<T>(

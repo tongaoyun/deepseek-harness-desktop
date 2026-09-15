@@ -1,4 +1,4 @@
-.task-outcome-details { min-width: 0; margin: 12px 0 0; color: #737373; font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
+.task-outcome-details { min-width: 0; margin: 10px 0 0; color: #737373; font-size: 12px; line-height: 1.55; overflow-wrap: anywhere; }
 .task-outcome-details summary { display: flex; align-items: center; gap: 7px; width: fit-content; max-width: 100%; min-height: 30px; cursor: pointer; list-style: none; }
 .task-outcome-details summary::-webkit-details-marker { display: none; }
 .task-outcome-details summary:hover { color: #333; }
@@ -15,8 +15,14 @@
 .task-outcome-checks svg[aria-label="通过"] { color: #4c8663; }
 .task-outcome-checks svg[aria-label="未通过"] { color: #b6654d; }
 .task-outcome-details strong { font-weight: 500; color: #454545; }
-.task-outcome-attention { margin: 8px 0 12px; padding: 6px 0 6px 14px; border-left: 2px solid #d49a51; color: #67563f; }
-.task-outcome-attention > strong { color: #966327; }
+.task-outcome-attention { display: flex; align-items: baseline; gap: 9px; margin: 8px 0 5px; padding: 4px 0; color: #667069; }
+.task-outcome-attention > strong { flex: none; color: #9a672b; font-weight: 650; }
+.task-outcome-attention > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task-outcome-partial .task-outcome-attention { border-left: 3px solid #d39a4e; padding-left: 10px; }
+.task-outcome-failed .task-outcome-attention { border-left: 3px solid #c76b61; padding-left: 10px; }
+.task-outcome-remaining { margin-bottom: 11px; padding: 8px 10px; border-radius: 7px; background: #faf8f2; color: #665842; }
+.task-outcome-remaining > strong { color: #8f652d; font-size: 11px; }
+.task-outcome-remaining ul { margin: 4px 0 0; }
 .task-recovery-notice { margin: 16px 0; padding: 14px 0; border-block: 1px solid #dce3e0; color: #333b38; font-size: 13px; }
 .task-recovery-notice > div { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; }
 .task-recovery-notice time, .task-recovery-notice small { color: #6b746f; font-size: 11px; }

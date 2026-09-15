@@ -7,7 +7,7 @@ import type { LocalTaskRun } from './types'
 const noop = () => undefined
 const task: LocalTaskRun = {
   id: 'current', source: 'DESKTOP', name: '分析文档', status: 'COMPLETED',
-  createdAt: '', updatedAt: '', messages: [],
+  createdAt: '', updatedAt: '', messages: [], sessionId: 'session-internal-id',
   projection: { status: 'idle', activity: '', updatedAt: '', steps: [], artifacts: [] },
 }
 const props: ComponentProps<typeof DesktopSidebar> = {
@@ -24,6 +24,7 @@ it('marks the open task as current only on the conversation page', () => {
   expect(html).toContain('>专家套件</span>')
   expect(html).toContain('>技能</span>')
   expect(html).not.toContain('技能与套件')
+  expect(html).not.toContain('session-')
   const catalog = renderToStaticMarkup(<DesktopSidebar {...props} page="skills" />)
   expect(catalog).not.toContain('recent-task active')
   expect(catalog).toContain('aria-current="page" class="nav-item active"')

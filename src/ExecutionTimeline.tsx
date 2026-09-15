@@ -23,7 +23,8 @@ interface Props {
 export const ExecutionTimeline = memo(function ExecutionTimeline({ entries, finalResponse = '', onApprovalDecision, approvalStates, approvalsEnabled = true, onQuestionAnswer }: Props) {
   const visible = visibleExecutionEntries(entries, finalResponse)
   if (visible.length === 0) return null
-  return <div aria-label="执行过程" className="execution-timeline">
+  return <div aria-label="工作过程" className="execution-timeline">
+    <div className="execution-timeline-heading"><span>工作过程</span><small>工具、文件和执行活动</small></div>
     {groupExecutionEntries(visible).map((group) => group.kind === 'message'
       ? <TimelineCommentary key={group.id} text={group.entries[0].text ?? ''} />
       : group.kind === 'notice'

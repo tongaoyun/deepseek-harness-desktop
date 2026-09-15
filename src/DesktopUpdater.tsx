@@ -1,11 +1,11 @@
 import { isTauri } from '@tauri-apps/api/core'
-import { DownloadCloud, RefreshCw, X } from 'lucide-react'
+import { CheckCircle2, DownloadCloud, RefreshCw, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { isUpdatableDesktop, useDesktopUpdater } from './updater'
 
 interface DesktopUpdaterProps {
   onAvailabilityChange?: (available: boolean) => void
-  variant?: 'toolbar' | 'menu'
+  variant?: 'toolbar' | 'menu' | 'settings'
 }
 
 export function DesktopUpdater({ onAvailabilityChange, variant = 'toolbar' }: DesktopUpdaterProps) {
@@ -50,14 +50,21 @@ export function DesktopUpdater({ onAvailabilityChange, variant = 'toolbar' }: De
   }
 
   return <>
-    <button className={`updater-trigger ${variant} ${state.phase}`} disabled={busy} onClick={openOrCheck} type="button">
+    {variant === 'settings' ? <div className="update-status-panel">
+      <div className="update-status-heading"><span className={`update-state-icon ${state.phase}`}>
+        {state.phase === 'current' ? <CheckCircle2 size={24} /> : <RefreshCw className={busy ? 'spin' : ''} size={24} />}
+      </span><div><h3>{state.phase === 'current' ? '已是最新版本' : state.phase === 'idle' ? '小胤桌面端' : state.phase === 'error' ? '检查更新失败' : buttonLabel}</h3>
+        <p>当前版本 {state.currentVersion ? `v${state.currentVersion}` : '读取中'}</p></div></div>
+      {state.error && <p className="update-error" role="alert">{state.error}</p>}
+      <button className="update-check-button" disabled={busy} onClick={openOrCheck} type="button"><RefreshCw className={busy ? 'spin' : ''} size={15} />{busy ? '更新进行中' : state.phase === 'available' ? '查看更新' : '检查更新'}</button>
+    </div> : <button className={`updater-trigger ${variant} ${state.phase}`} disabled={busy} onClick={openOrCheck} type="button">
       <RefreshCw className={state.phase === 'checking' ? 'spin' : ''} size={variant === 'menu' ? 16 : 14} />
       {variant === 'menu' ? <span><strong>{buttonLabel}</strong><small>{state.phase === 'available'
         ? '点击查看版本说明并安装'
         : state.phase === 'unsupported'
           ? '可稍后重新检查，不影响当前版本使用'
           : '获取最新正式版客户端'}</small></span> : buttonLabel}
-    </button>
+    </button>}
     {dialogOpen && <div className="update-overlay" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) setDialogOpen(false) }} role="presentation">
       <section aria-labelledby="update-title" aria-modal="true" className="update-dialog" onMouseDown={(event) => event.stopPropagation()} role="dialog">
         {!busy && <button aria-label="稍后更新" className="update-close" onClick={() => setDialogOpen(false)} type="button"><X size={16} /></button>}

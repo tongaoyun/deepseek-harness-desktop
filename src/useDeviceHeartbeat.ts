@@ -1,8 +1,8 @@
-import { useCallback, useEffect } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { submitDeviceCapabilityReport, submitDeviceHeartbeat } from './api'
 import { inspectDeviceHeartbeatContext } from './deviceHeartbeat'
 import { installedExtensionSnapshot, listInstalledExtensions } from './expertKits'
-import type { HarnessHostHealth } from './harness'
+import { selfTestLocalCapabilities, type HarnessHostHealth, type LocalCapabilitySelfTestResult } from './harness'
 import type { BootstrapResponse, ExpertKitCatalogEntry, SkillCatalogEntry } from './types'
 import type { HarnessHealth } from './useHarnessHealth'
 
@@ -27,6 +27,7 @@ export function useDeviceHeartbeat({
   runtimeReady: boolean
   skills: SkillCatalogEntry[]
 }) {
+  const inventoryCheck = useRef<{ employeeId: string; result: Promise<LocalCapabilitySelfTestResult | undefined>; checkedAt: number } | undefined>(undefined)
   const heartbeat = useCallback(async () => {
     if (!authenticated || !runtimeReady || !bootstrap || !employeeId) return
     try {
@@ -34,7 +35,11 @@ export function useDeviceHeartbeat({
       const installed = await listInstalledExtensions()
       if (/^\d+\.\d+\.\d+$/.test(context.desktopVersion)) {
         const endpoint = bootstrap.endpoints.deviceCapabilities ?? '/api/v1/device-capabilities'
-        const capabilityKeys = [...new Set([...bootstrap.capabilities, 'xiaoyin-server', 'harness', ...Object.keys(harnessCapabilities ?? {}).map((key) => `harness.${key}`)])]
+        if (inventoryCheck.current?.employeeId !== employeeId || Date.now() - inventoryCheck.current.checkedAt >= 6 * 60 * 60 * 1000) {
+          inventoryCheck.current = { employeeId, checkedAt: Date.now(), result: selfTestLocalCapabilities(false).catch(() => undefined) }
+        }
+        const selfTest = await inventoryCheck.current.result
+        const capabilityKeys = [...new Set(['desktop.runtime', 'office.documents', 'control.plane', 'harness', ...Object.keys(harnessCapabilities ?? {}).map((key) => `harness.${key}`)])]
           .map((key) => key.trim().toLowerCase())
           .filter((key) => /^[a-z][a-z0-9.-]{1,63}$/.test(key))
         await Promise.all([
@@ -47,7 +52,7 @@ export function useDeviceHeartbeat({
           }),
           submitDeviceCapabilityReport(endpoint, employeeId, accessToken, {
             ...context,
-            capabilities: capabilityKeys.map((key) => capabilityReportEntry(key, harnessHealth, harnessCapabilities)),
+            capabilities: capabilityKeys.map((key) => capabilityReportEntry(key, harnessHealth, harnessCapabilities, selfTest)),
           }),
         ])
       }
@@ -68,7 +73,14 @@ export function capabilityReportEntry(
   key: string,
   harnessHealth: HarnessHealth,
   harnessCapabilities?: HarnessHostHealth['capabilities'],
+  selfTest?: LocalCapabilitySelfTestResult,
 ): { key: string; status: 'READY' | 'DEGRADED' | 'UNSUPPORTED'; detail: string } {
+  if (key === 'control.plane') return { key, status: 'READY', detail: '已通过身份验证并取得控制面配置' }
+  if (key === 'desktop.runtime' || key === 'office.documents') {
+    const required = key === 'desktop.runtime' ? ['local-files', 'native-shell'] : ['office-docx', 'office-xlsx', 'office-pdf']
+    const passed = selfTest?.status === 'passed' && required.every((name) => selfTest.checks.some((check) => check.key === name && check.passed))
+    return { key, status: passed ? 'READY' : 'DEGRADED', detail: passed ? '本地能力自检通过' : '本地能力自检未通过，请运行诊断' }
+  }
   if (key === 'harness') {
     const operational = harnessHealth === 'idle' || harnessHealth === 'ready'
     return {
@@ -87,5 +99,5 @@ export function capabilityReportEntry(
         ? { key, status: 'DEGRADED', detail: 'Harness 能力已安装，但受桌面策略控制' }
         : { key, status: 'UNSUPPORTED', detail: 'Harness 能力未在当前运行环境配置' }
   }
-  return { key, status: 'READY', detail: '企业能力已由控制面下发并可用' }
+  return { key, status: 'UNSUPPORTED', detail: '没有对应的本地能力检测结果' }
 }

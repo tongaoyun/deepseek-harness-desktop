@@ -39,6 +39,12 @@ describe('InlineTaskActivity', () => {
     })).toBe('2分钟7秒')
   })
 
+  it('shows elapsed time when a completed turn has no execution details', () => {
+    const projection = { status: 'completed' as const, activity: '任务已完成', executionStarted: true, startedAt: '2026-09-03T10:00:00.000Z', completedAt: '2026-09-03T10:00:02.000Z', updatedAt: '2026-09-03T10:00:02.000Z', steps: [], artifacts: [], outcome: { status: 'completed' as const, summary: '完成', remaining: [], checks: [] } }
+    const html = renderToStaticMarkup(<InlineTaskActivity projection={projection} />)
+    expect(html).toContain('执行过程 · 用时 2秒')
+  })
+
   it('shows subagent collaboration in the Codex-style execution stream', () => {
     const html = renderToStaticMarkup(<InlineTaskActivity projection={{
       status: 'running', activity: '子 Agent 正在处理', updatedAt: '2026-09-03T10:00:01.000Z',
