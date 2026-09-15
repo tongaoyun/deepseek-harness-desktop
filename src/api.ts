@@ -339,9 +339,14 @@ async function loadCatalog<T>(
   return readServerData<T[]>(response)
 }
 
-function serverUrl(path: string): string {
+function serverUrl(path: string, browserRequest = true): string {
   const baseUrl = import.meta.env.VITE_XIAOYIN_SERVER_URL ?? DEFAULT_XIAOYIN_SERVER
-  return new URL(path, `${baseUrl.replace(/\/$/, '')}/`).toString()
+  const url = new URL(path, `${baseUrl.replace(/\/$/, '')}/`)
+  if (browserRequest && import.meta.env.DEV && import.meta.env.VITE_XIAOYIN_DEV_PROXY === 'true'
+    && url.origin === new URL(baseUrl).origin && url.pathname.startsWith('/api/')) {
+    return new URL(`${url.pathname}${url.search}`, window.location.origin).toString()
+  }
+  return url.toString()
 }
 
 function boundedSignal(signal?: AbortSignal, timeoutMs = 12_000): AbortSignal {
@@ -350,7 +355,7 @@ function boundedSignal(signal?: AbortSignal, timeoutMs = 12_000): AbortSignal {
 }
 
 export function resolveServerEndpoint(path: string): string {
-  return serverUrl(path)
+  return serverUrl(path, false)
 }
 
 function enterpriseHeaders(employeeId: string, accessToken: string): Record<string, string> {
@@ -369,5 +374,5 @@ function knowledgeHeaders(employeeId: string, teamId: string, accessToken: strin
 
 // Stable local storage namespace, not a server API. Preserve existing plans across server changes.
 export function localScheduleNamespace(): string {
-  return serverUrl('/api/v1/schedules')
+  return serverUrl('/api/v1/schedules', false)
 }

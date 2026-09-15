@@ -27,6 +27,27 @@ function existingTask(): LocalTaskRun {
 }
 
 describe('prepareTaskTurn', () => {
+  it('starts elapsed time at the current message instead of the previous turn', () => {
+    const result = prepareTaskTurn({
+      taskId: 'task', input: '第二次提问', now: '2026-09-15T01:00:00Z', existingTask: existingTask(),
+      sessionId: 'existing-session', model: 'model', directories: [], directoriesChanged: false,
+      capabilities, invocations: [], messages: [{ role: 'user', text: '第一次提问' }],
+      projection: { ...createXiaoyinTaskProjection('2026-09-14T00:00:00Z'), status: 'completed', startedAt: '2026-09-14T00:00:00Z', completedAt: '2026-09-14T00:01:00Z' }, attachments: [],
+    })
+    expect(result.runningProjection.startedAt).toBe('2026-09-15T01:00:00Z')
+  })
+
+  it('pins reasoning effort and replays history when the effort changes', () => {
+    const result = prepareTaskTurn({
+      taskId: 'task', input: '继续', now: '2026-09-15T00:00:00Z',
+      existingTask: { ...existingTask(), reasoningEffort: 'medium' }, sessionId: 'existing-session', model: 'model', reasoningEffort: 'ultra',
+      directories: [], directoriesChanged: false, capabilities, invocations: [],
+      messages: [{ role: 'user', text: '原来的问题' }], projection: createXiaoyinTaskProjection(), attachments: [],
+    })
+    expect(result.runningTask.reasoningEffort).toBe('ultra')
+    expect(result.rootSessionId).not.toBe('existing-session')
+    expect(result.harnessPrompt).toContain('原来的问题')
+  })
   it('keeps UI tokens in task state but sends only employee text to the harness', () => {
     const result = prepareTaskTurn({
       taskId: 'task', input: '/kit:reports:weekly 分析本周数据', now: '2026-09-11T00:00:00Z',

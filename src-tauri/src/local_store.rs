@@ -27,7 +27,7 @@ const READABLE_TASK_SQL: &str = "CASE WHEN json_valid(payload) THEN COALESCE(
     AND json_type(payload, '$.projection.artifacts') = 'array'
     AND NOT EXISTS (SELECT 1 FROM json_each(payload) WHERE key NOT IN (
       'id', 'source', 'name', 'status', 'createdAt', 'updatedAt', 'archivedAt', 'sessionId',
-      'scheduleId', 'scheduleRunId', 'invocationTokens', 'model', 'executionMode',
+      'scheduleId', 'scheduleRunId', 'invocationTokens', 'model', 'reasoningEffort', 'executionMode',
       'localDirectories', 'capabilitySnapshot', 'projection', 'messages', 'messagePreview',
       'processedImEventIds'))
     AND NOT EXISTS (SELECT 1 FROM json_each(payload, '$.messages') WHERE
@@ -619,6 +619,7 @@ fn task_index_fields(task: &Value) -> Result<(&str, &str, &str, &str), String> {
         "scheduleRunId",
         "invocationTokens",
         "model",
+        "reasoningEffort",
         "executionMode",
         "localDirectories",
         "capabilitySnapshot",

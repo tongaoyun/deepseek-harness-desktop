@@ -14,6 +14,7 @@ type TurnContext = {
   scheduleRunId?: string
   sessionId: string
   model: string
+  reasoningEffort?: import('./modelReasoning').ReasoningEffort
   executionMode?: 'agent' | 'plan'
   directories: NonNullable<LocalTaskRun['localDirectories']>
   directoriesChanged: boolean
@@ -33,6 +34,7 @@ export function prepareTaskTurn(context: TurnContext) {
   const invocationTokens = context.invocationTokens ?? invocations.map((item) => item.token)
   const fresh = context.directoriesChanged
     || Boolean(existingTask && (existingTask.model !== context.model
+      || existingTask.reasoningEffort !== context.reasoningEffort
       || capabilitySnapshotChanged(existingTask.capabilitySnapshot, capabilities)))
     || (!sessionId && !existingTask?.sessionId && messages.length > 0)
     || (!sessionId && Boolean(existingTask?.sessionId))
@@ -50,7 +52,9 @@ export function prepareTaskTurn(context: TurnContext) {
     activity: '正在处理',
     executionStarted: false,
     updatedAt: now,
-    startedAt: context.projection.startedAt ?? now,
+    // Each submitted message is a new turn. Reusing the previous projection's
+    // timestamp makes a second message appear to run since the first one.
+    startedAt: now,
   }
   const pendingMessages: TaskMessage[] = [...messages,
     { role: 'user', text: input, ...(context.queuedItemId ? { id: context.queuedItemId } : {}), ...(context.attachments.length ? { attachments: context.attachments } : {}) },
@@ -60,7 +64,7 @@ export function prepareTaskTurn(context: TurnContext) {
     id: context.taskId, source: 'DESKTOP',
     name: existingTask?.name ?? (splitComposerPrompt(input).text || invocations.map((item) => item.name).join('、') || input).slice(0, 60),
     status: 'RUNNING', createdAt: existingTask?.createdAt ?? now, updatedAt: now,
-    sessionId: rootSessionId, model: context.model, executionMode, invocationTokens,
+    sessionId: rootSessionId, model: context.model, reasoningEffort: context.reasoningEffort, executionMode, invocationTokens,
     ...(context.scheduleId ? { scheduleId: context.scheduleId } : existingTask?.scheduleId ? { scheduleId: existingTask.scheduleId } : {}),
     ...(context.scheduleRunId ? { scheduleRunId: context.scheduleRunId } : existingTask?.scheduleRunId ? { scheduleRunId: existingTask.scheduleRunId } : {}),
     localDirectories: context.directories,

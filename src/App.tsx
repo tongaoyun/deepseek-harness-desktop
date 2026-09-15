@@ -54,7 +54,7 @@ import type {
 import { useEnterpriseSession } from './useEnterpriseSession'
 import { ScheduledTasksPage } from './ScheduledTasksPage'
 import { ImChannelsPage } from './ImChannelsPage'
-import { loadTaskHistory, loadTaskById, persistTaskHistory, removeTaskHistory, unreadableHistoryWarning } from './taskHistory'
+import { loadTaskHistory, loadTaskById, persistTaskHistory, removeTaskHistory } from './taskHistory'
 import { useTaskPersistence } from './useTaskPersistence'
 import { useHistoryPages } from './useHistoryPages'
 import { useTaskCheckpoints } from './useTaskCheckpoints'
@@ -64,12 +64,13 @@ import { useLocalSkillTools } from './useLocalSkillTools'
 import { attachmentSelectionError } from './attachmentLimits'
 import { restoredTaskSessionId } from './harnessSession'
 import { prepareTaskTurn } from './taskTurn'
+import { loadReasoningEffort, resolveReasoningEffort, saveReasoningEffort, type ReasoningEffort } from './modelReasoning'
 import { startLocalIm, stopLocalImRuntime } from './localIm'
 import type { InstalledExpertKit, LocalTaskRun, TaskMessage, XiaoyinTaskProjection } from './types'
 import { parseMemoryCommand, learnCompletedTask } from './memory'
 import { useMemoryCommands } from './useMemoryCommands'
 import { useMemorySync } from './useMemorySync'
-import { loadSelectedModel, resolveSelectedModel, saveSelectedModel } from './modelSelection'
+import { availableModels, loadSelectedModel, resolveSelectedModel, saveSelectedModel } from './modelSelection'
 import { standardLocalDirectories } from './localFileIntent'
 import { creationPrompt, type XiaoyinCreationKind } from './creationPrompts'
 import { McpConnectorDialog } from './McpConnectorDialog'
@@ -281,11 +282,12 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
   const draftStageNonceRef = useRef('')
   const draftSaveTimerRef = useRef<number | undefined>(undefined)
   const [selectedModel, setSelectedModel] = useState('')
+  const [reasoningSelection, setReasoningSelection] = useState<{ model: string; effort?: ReasoningEffort }>()
   const updateRuntimePreference = <T,>(value: T, save: (value: T) => boolean, update: (value: T) => void) => {
     if (save(value)) update(value)
     else notify('运行时设置未能保存，本次未切换。请检查本机存储后重试。', 'error')
   }
-  const [executionMode, setExecutionMode] = useState<'agent' | 'plan'>('agent')
+  const executionMode = 'agent' as const
   const [modelMenuOpen, setModelMenuOpen] = useState(false)
   const [taskSearchOpen, setTaskSearchOpen] = useState(false)
   const [taskQuery, setTaskQuery] = useState('')
@@ -310,6 +312,8 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
     connectors, enabledConnectorIds, connectorSecrets,
   ), [connectorSecrets, connectors, enabledConnectorIds])
   const activeModel = resolveSelectedModel(bootstrap?.models ?? [], selectedModel)
+  const activeReasoningEffort = resolveReasoningEffort(activeModel, reasoningSelection?.model === activeModel
+    ? reasoningSelection.effort : loadReasoningEffort(user?.userId ?? '', activeModel))
   const localImContext = useMemo(() => bootstrap && user ? {
     employeeId: user.userId,
     teamId: user.teamId,
@@ -459,12 +463,11 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
     if (historyOwnerRef.current !== user.userId) { historyOwnerRef.current = user.userId; setLocalTasks([]) }
     let disposed = false
     void loadTaskHistory(user.userId)
-      .then(({ tasks, invalidCount }) => { if (!disposed) {
+      .then(({ tasks }) => { if (!disposed) {
         setLocalTasks((current) => {
           const known = new Set(current.map((task) => task.id))
           return [...current, ...tasks.filter((task) => !known.has(task.id))].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
         })
-        if (invalidCount) setLocalFileError(unreadableHistoryWarning(invalidCount))
       } })
       .catch((reason) => { if (!disposed) setLocalFileError(reason instanceof Error ? reason.message : String(reason)) })
     return () => { disposed = true }
@@ -519,7 +522,6 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
 
   useEffect(() => {
     if (authState !== 'authenticated' || !user) { draftOwnerRef.current = ''; draftPausedRef.current = true; setDraftStateStatus('loading'); return }
-    if (draftOwnerRef.current === user.userId) return
     draftOwnerRef.current = user.userId
     draftPausedRef.current = true
     setDraftStateStatus('loading')
@@ -535,7 +537,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
     draftDirtyRef.current = true
     try {
       draftStageNonceRef.current = stageTaskDraft(user.userId, currentLocalTaskId || creationDraftKeyRef.current,
-        { prompt, attachments: pendingAttachments, directories: localDirectories, knowledgeRefs: selectedKnowledgeBaseRefs, connectorIds: selectedTaskConnectorIds, model: activeModel, executionMode, updatedAt: Date.now() })
+        { prompt, attachments: pendingAttachments, directories: localDirectories, knowledgeRefs: selectedKnowledgeBaseRefs, connectorIds: selectedTaskConnectorIds, model: activeModel, reasoningEffort: activeReasoningEffort, executionMode, updatedAt: Date.now() })
     } catch {
       draftStageNonceRef.current = ''
       setDraftSaveError('草稿尚未暂存，请检查本机存储空间。认证失效或关闭应用前请重试保存。')
@@ -544,7 +546,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
       if (draftRevisionRef.current === revision) void saveCurrentDraft()
     }, 250)
     return () => window.clearTimeout(draftSaveTimerRef.current)
-  }, [user?.userId, currentLocalTaskId, prompt, pendingAttachments, localDirectories, selectedKnowledgeBaseRefs, selectedTaskConnectorIds, activeModel, executionMode, taskContextRestoring, draftStateStatus])
+  }, [user?.userId, currentLocalTaskId, prompt, pendingAttachments, localDirectories, selectedKnowledgeBaseRefs, selectedTaskConnectorIds, activeModel, activeReasoningEffort, executionMode, taskContextRestoring, draftStateStatus])
   useEffect(() => { setDraftSaveError('') }, [user?.userId])
   useEffect(() => {
     const warn = (event: BeforeUnloadEvent) => {
@@ -611,6 +613,13 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
     : localTasks
   const focusComposer = () => window.requestAnimationFrame(() => composerRef.current?.focus())
   const startNewTask = async (initialPrompt = '', nextCreationKind?: 'skill' | 'expert-kit', draftKind?: XiaoyinCreationKind) => {
+    if (draftStateStatus !== 'ready') {
+      setActiveExpertKitId('')
+      setActiveSkillId('')
+      setPage('chat')
+      notify(draftStateStatus === 'failed' ? '本机草稿读取失败，请点击重新读取后再创建任务。' : '正在读取本机草稿，请稍候再创建任务。', 'error')
+      return
+    }
     if (!await saveCurrentDraft()) return
     creationDraftKeyRef.current = draftKind ? `creation:${draftKind}` : ''
     const saved = user ? readTaskDraft(user.userId, creationDraftKeyRef.current) : undefined
@@ -688,7 +697,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
     setTaskProjection(streaming?.projection ?? selectedTask.projection)
     const draft = user ? readTaskDraft(user.userId, selectedTask.id) : undefined
     setHarnessSessionId(restoredTaskSessionId(selectedTask, draft))
-    void restoreDraftContext(draft ?? { ...emptyDraft(), prompt: joinComposerPrompt(selectedTask.invocationTokens ?? [], ''), directories: selectedTask.localDirectories ?? [], knowledgeRefs: selectedTask.capabilitySnapshot?.knowledgeBaseRefs ?? [], connectorIds: selectedTask.capabilitySnapshot?.connectors.map((connector) => connector.id) ?? [], model: selectedTask.model ?? activeModel, executionMode: selectedTask.executionMode ?? 'agent' })
+    void restoreDraftContext(draft ?? { ...emptyDraft(), prompt: joinComposerPrompt(selectedTask.invocationTokens ?? [], ''), directories: selectedTask.localDirectories ?? [], knowledgeRefs: selectedTask.capabilitySnapshot?.knowledgeBaseRefs ?? [], connectorIds: selectedTask.capabilitySnapshot?.connectors.map((connector) => connector.id) ?? [], model: selectedTask.model ?? activeModel, reasoningEffort: selectedTask.reasoningEffort, executionMode: selectedTask.executionMode ?? 'agent' })
     focusComposer()
   }
   async function openStoredTask(id: string) {
@@ -708,7 +717,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
       openLocalTask(task)
     } catch (reason) { if (stillCurrent()) notify(`读取任务失败：${String(reason)}`, 'error') }
   }
-  function emptyDraft(): TaskDraft { return { prompt: '', attachments: [], directories: [], knowledgeRefs: [], connectorIds: [], model: activeModel, executionMode: 'agent', updatedAt: Date.now() } }
+  function emptyDraft(): TaskDraft { return { prompt: '', attachments: [], directories: [], knowledgeRefs: [], connectorIds: [], model: activeModel, reasoningEffort: activeReasoningEffort, executionMode: 'agent', updatedAt: Date.now() } }
   async function initializeDraftState(owner: string, stillMounted: () => boolean = () => true) {
     setDraftStateStatus('loading')
     try {
@@ -734,7 +743,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
     const nonce = draftStageNonceRef.current
     const draftId = currentLocalTaskId || creationDraftKeyRef.current
     try {
-      await saveTaskDraft(user.userId, draftId, { prompt, attachments: pendingAttachments, directories: localDirectories, knowledgeRefs: selectedKnowledgeBaseRefs, connectorIds: selectedTaskConnectorIds, model: activeModel, executionMode, updatedAt: Date.now() })
+      await saveTaskDraft(user.userId, draftId, { prompt, attachments: pendingAttachments, directories: localDirectories, knowledgeRefs: selectedKnowledgeBaseRefs, connectorIds: selectedTaskConnectorIds, model: activeModel, reasoningEffort: activeReasoningEffort, executionMode, updatedAt: Date.now() })
       if (nonce) clearStagedTaskDraft(user.userId, draftId, nonce)
       if (revision !== draftRevisionRef.current) return false
       draftDirtyRef.current = false
@@ -750,7 +759,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
     setPrompt(draft.prompt); setPendingAttachments(draft.attachments); setLocalDirectories(draft.directories)
     setSelectedKnowledgeBaseRefs(draft.knowledgeRefs); setSelectedTaskConnectorIds(draft.connectorIds)
     setSelectedModel(bootstrap ? resolveSelectedModel(bootstrap.models, draft.model) : draft.model)
-    setExecutionMode(draft.executionMode ?? 'agent')
+    setReasoningSelection({ model: draft.model, effort: draft.reasoningEffort ?? loadReasoningEffort(user?.userId ?? '', draft.model) })
     setTaskContextRestoring(true); setLocalFileError('')
     try {
       await clearLocalDirectories()
@@ -911,6 +920,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
     const contextProjection = queuedTask?.projection ?? taskProjectionRef.current
     const existingTask = queuedTask ?? localTasks.find((task) => task.id === contextTaskId)
     const taskModel = resolveSelectedModel(bootstrap.models, queuedTask ? queuedTask.model : activeModel)
+    const taskReasoningEffort = resolveReasoningEffort(taskModel, queuedTask ? queuedTask.reasoningEffort : activeReasoningEffort)
     const taskExecutionMode = queuedTask?.executionMode ?? executionMode
     try {
       if (!taskModel) { reportInputError('当前没有可用模型，请在控制中心配置模型后重试。'); return }
@@ -1008,7 +1018,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
       }))
       if (isCurrent()) setCurrentCapabilitySnapshot(capabilitySnapshot)
       const { rootSessionId, harnessPrompt, pendingMessages, runningProjection, runningTask } = prepareTaskTurn({
-        taskId, input, now, existingTask, sessionId: taskSessionId, model: taskModel, executionMode: taskExecutionMode,
+        taskId, input, now, existingTask, sessionId: taskSessionId, model: taskModel, reasoningEffort: taskReasoningEffort, executionMode: taskExecutionMode,
         scheduleId: existingTask?.scheduleId, scheduleRunId: existingTask?.scheduleRunId,
         directories: taskDirectories, directoriesChanged: resetSessionForDirectoryChange,
         capabilities: capabilitySnapshot, invocations: selected, invocationTokens: queuedTask?.invocationTokens,
@@ -1071,6 +1081,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
           knowledgeEndpoint: resolveServerEndpoint(bootstrap.endpoints.knowledge),
           scheduleEndpoint: localScheduleNamespace(),
           model: taskModel,
+          reasoningEffort: taskReasoningEffort,
           modelApiKey: bootstrap.modelApiKey,
           accessToken,
           localFileRootIds: taskDirectories.map((directory) => directory.id),
@@ -1162,6 +1173,9 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
         streamingTasksRef.current.delete(taskId)
         setRunningTaskIds((current) => current.filter((id) => id !== taskId))
       }
+    } catch (error) {
+      reportInputError(`消息未能发送：${error instanceof Error ? error.message : String(error)}`)
+      return false
     } finally { taskStartLocks.current.delete(lockKey) }
   }
 
@@ -1389,6 +1403,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
       void shutdownHarness(currentLocalTaskId)
     }
     setSelectedModel(model)
+    setReasoningSelection({ model, effort: loadReasoningEffort(user?.userId ?? '', model) })
     setModelMenuOpen(false)
     if (user && !saveSelectedModel(user.userId, model)) notify('模型选择未能保存，本次选择仍有效；下次启动可能恢复默认模型。', 'error')
   }
@@ -1488,6 +1503,11 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
               persistLocalTask({ ...task, messages: nextMessages, projection: nextProjection, updatedAt: new Date().toISOString() })
             }}
             activeModel={activeModel}
+            reasoningEffort={activeReasoningEffort}
+            onReasoningEffortChange={(effort) => {
+              setReasoningSelection({ model: activeModel, effort })
+              if (user && !saveReasoningEffort(user.userId, activeModel, effort)) notify('思考强度未能保存，本次选择仍有效。', 'error')
+            }}
             queue={taskQueue.queues[currentLocalTaskId]}
             queueError={taskQueue.error}
             onRemoveQueued={(id) => { void taskQueue.remove(currentLocalTaskId, id) }}
@@ -1525,8 +1545,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
             pastingAttachments={pastingAttachments}
             modelMenuOpen={modelMenuOpen}
             modelPickerRef={modelPickerRef}
-            models={bootstrap?.models ?? []}
-            executionMode={executionMode}
+            models={availableModels(bootstrap?.models ?? [])}
             onAddKnowledge={addKnowledgeContext}
             onAddLocalDirectory={() => void addLocalDirectory()}
             onAddLocalFiles={() => void addLocalFiles()}
@@ -1539,16 +1558,8 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
             onQuestionAnswer={async (questionId, answers) => {
               const taskId = currentLocalTaskIdRef.current
               if (!taskId) throw new Error('当前任务不可用，请重新打开任务。')
-              const request = taskProjectionRef.current.timeline?.find((entry) => entry.questionId === questionId)
-              const approvedPlan = request?.questions?.some((question) => question.intent?.kind === 'plan-review'
-                && answers.some((answer) => answer.id === question.id && answer.selected.includes(question.intent!.approve)))
               const accepted = await respondHarnessQuestion(taskId, questionId, answers)
               if (!accepted) throw new Error('该问题已失效，请重新执行任务。')
-              if (approvedPlan) setExecutionMode('agent')
-            }}
-            onExecutionModeChange={(mode) => {
-              setExecutionMode(mode)
-              setLocalFileError('')
             }}
             onCancel={() => void cancelCurrentTask()}
             onContinueCreation={(instructions) => {
@@ -1684,7 +1695,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
             />}
             {page === 'schedules' && user && <ScheduledTasksPage
               key={user.userId}
-              models={bootstrap?.models ?? []}
+              models={availableModels(bootstrap?.models ?? [])}
               onCreateWithXiaoyin={bootstrap ? () => createWithXiaoyin('schedule') : undefined}
               local={localSchedules}
               onOpenLocalTask={(id) => { void openStoredTask(id) }}

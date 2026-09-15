@@ -9,6 +9,7 @@ export interface TaskDraft {
   knowledgeRefs: string[]
   connectorIds: string[]
   model: string
+  reasoningEffort?: import('./modelReasoning').ReasoningEffort
   executionMode?: 'agent' | 'plan'
   updatedAt: number
 }

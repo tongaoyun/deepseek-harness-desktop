@@ -19,7 +19,7 @@ interface CapabilityCheck {
   detail: string
 }
 
-export async function runLocalCapabilitySelfTest(): Promise<{ status: 'passed'; checks: CapabilityCheck[] }> {
+export async function runLocalCapabilitySelfTest(includeComputer = true): Promise<{ status: 'passed'; checks: CapabilityCheck[] }> {
   const root = await mkdtemp(join(tmpdir(), 'xiaoyin-capability-self-test-'))
   const previousDshHome = process.env.DSH_HOME
   process.env.DSH_HOME = root
@@ -62,7 +62,7 @@ export async function runLocalCapabilitySelfTest(): Promise<{ status: 'passed'; 
       { key: 'native-shell', passed: true, detail: 'Harness subprocess and platform shell ready' },
     ]
 
-    if (process.platform === 'win32') {
+    if (includeComputer && process.platform === 'win32') {
       const signal = new AbortController().signal
       const preflight = await runComputerUsePreflight(signal)
       ensure(preflight.screen.width > 0 && preflight.screen.height > 0, 'Windows Computer Use screen discovery failed')

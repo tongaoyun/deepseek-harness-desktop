@@ -24,7 +24,7 @@ function CodeBlock({ children }: { children?: ReactNode }) {
   const props = code?.props as { className?: string; children?: ReactNode } | undefined
   const language = props?.className?.match(/language-([\w+-]+)/)?.[1] ?? '代码'
   const text = typeof props?.children === 'string' ? props.children.replace(/\n$/, '') : ''
-  return <div className="message-code-block"><header><span>{language}</span><CopyButton label="复制代码" text={text} /></header><pre>{children}</pre></div>
+  return <div className="message-code-block"><header><span className="code-language">{language}</span><small>{text.split('\n').length} 行</small><CopyButton label="复制代码" text={text} /></header><pre>{children}</pre></div>
 }
 
 function CopyButton({ label, text }: { label: string; text: string }) {

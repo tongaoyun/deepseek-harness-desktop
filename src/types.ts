@@ -228,6 +228,7 @@ export interface LocalTaskRun {
   scheduleRunId?: string
   invocationTokens?: string[]
   model?: string
+  reasoningEffort?: import('./modelReasoning').ReasoningEffort
   executionMode?: 'agent' | 'plan'
   localDirectories?: Array<{ id: string; name: string; path?: string }>
   capabilitySnapshot?: CapabilitySnapshot

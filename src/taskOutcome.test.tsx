@@ -17,7 +17,7 @@ it('shows outstanding work and check evidence without implying a finished turn c
   expect(html).not.toContain('任务已完成')
   expect(html).toContain('验收记录')
   expect(html).not.toContain('<details open')
-  expect(html.indexOf('安装重算引擎后核对公式')).toBeLessThan(html.indexOf('<details'))
+  expect(html.indexOf('安装重算引擎后核对公式')).toBeGreaterThan(html.indexOf('<details'))
   const prompt = harnessPromptWithConversationReplay('继续核对', [{ role: 'user', text: '生成表格' }, { role: 'assistant', text: '表格已生成', projection }], true)
   expect(prompt).toContain('部分完成')
   expect(prompt).toContain('安装重算引擎后核对公式')

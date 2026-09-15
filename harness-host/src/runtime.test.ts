@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createServer } from 'node:http'
 import type { HarnessNotification } from '@deepseek-ai/dsh-sdk-client'
-import { applyMemoryContext, assertHarnessDependencyClosure, DeepSeekHarnessRuntime, ensureExternalHarnessPlugins, hasConfiguredLspServers, hasHarnessPackage, runSessionTurn, visibleTextChunks } from './runtime.js'
+import { applyMemoryContext, assertHarnessDependencyClosure, DeepSeekHarnessRuntime, ensureExternalHarnessPlugins, hasConfiguredLspServers, hasHarnessPackage, runSessionTurn } from './runtime.js'
 import { withTaskInstructions } from './task-instructions.js'
 
 it('passes shared execution and delivery rules to actual runtime turns, including follow-ups', async () => {
@@ -510,16 +510,27 @@ describe('persisted session follow-ups', () => {
 })
 
 describe('visible response streaming', () => {
-  it('keeps short provider chunks intact and splits large responses without losing text', () => {
-    expect(visibleTextChunks('简短回复')).toEqual(['简短回复'])
-    const response = '这是一个较长的模型回复，用于验证供应商只返回完整消息时，小胤仍然能够以稳定的增量展示内容，而不是等待结束后一次性全部显示。'.repeat(3)
-    const chunks = visibleTextChunks(response)
-    expect(chunks.length).toBeGreaterThan(1)
-    expect(chunks.join('')).toBe(response)
-    expect(chunks.every((chunk) => Array.from(chunk).length >= 1)).toBe(true)
+  it('forwards live text once, excludes reasoning, and preserves turn and step', async () => {
+    const notifications = [
+      event('agent/inbox/spliced', { inserted: [{ id: 'message-2' }] }),
+      event('turn/start', { turn: 2 }),
+      event('assistant/stream', { type: 'start', turn: 2, step: 3 }),
+      event('assistant/stream', { type: 'chunk', turn: 2, step: 3, chunk: { type: 'reasoning-delta', text: 'private reasoning' } }),
+      event('assistant/stream', { type: 'chunk', turn: 2, step: 3, chunk: { type: 'text-delta', text: 'Hello' } }),
+      event('assistant/stream', { type: 'chunk', turn: 2, step: 3, chunk: { type: 'text-delta', text: ' world' } }),
+      event('assistant/message', { turn: 2, step: 3, message: { content: [{ type: 'text', text: 'Hello world' }] } }),
+      event('turn/end', { reason: { kind: 'completed' } }),
+    ]
+    const observed: HarnessNotification[] = []
+    await runSessionTurn(fakeClient(notifications), 'session-1', [{ type: 'text', text: 'hello' }], value => observed.push(value))
+    const chunks = observed.filter(item => item.params.event?.type === 'text-chunks')
+    expect(chunks.map(item => item.params.event?.data)).toEqual([
+      expect.objectContaining({ turn: 2, step: 3, texts: ['Hello'] }),
+      expect.objectContaining({ turn: 2, step: 3, texts: [' world'] }),
+    ])
+    expect(JSON.stringify(observed)).not.toContain('private reasoning')
   })
-
-  it('smooths ordinary short answers instead of dumping one provider event', async () => {
+  it('forwards complete answers without artificial timers or text fragmentation', async () => {
     const answer = '冒泡排序会反复比较相邻元素，并在顺序错误时交换它们，直到整个序列有序。'
     const notifications: HarnessNotification[] = [
       event('agent/inbox/spliced', { inserted: [{ id: 'message-2' }] }),
@@ -529,9 +540,16 @@ describe('visible response streaming', () => {
     ]
     const observed: HarnessNotification[] = []
 
-    await runSessionTurn(fakeClient(notifications), 'session-1', [{ type: 'text', text: '冒泡排序是什么' }], (value) => observed.push(value))
-
-    expect(observed.filter((item) => item.params.event?.type === 'text-chunks').length).toBeGreaterThan(1)
+    vi.useFakeTimers()
+    try {
+      await runSessionTurn(fakeClient(notifications), 'session-1', [{ type: 'text', text: '冒泡排序是什么' }], (value) => observed.push(value))
+      const chunks = observed.filter((item) => item.params.event?.type === 'text-chunks')
+      expect(chunks).toHaveLength(1)
+      expect(chunks[0].params.event?.data).toMatchObject({ texts: [answer] })
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 

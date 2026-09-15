@@ -1,4 +1,4 @@
-import { Bot, Clock3, FolderInput, Info, MoreHorizontal, Play, Plus, RefreshCw, Trash2, X, Zap } from 'lucide-react'
+import { Bot, Clock3, FolderInput, Info, MoreHorizontal, Play, Plus, RefreshCw, Trash2, X } from 'lucide-react'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { authorizeLocalDirectory, authorizeLocalFiles } from './harness'
 import { attachmentSelectionError } from './attachmentLimits'
@@ -9,7 +9,9 @@ import { nextLocalRun, type LocalSchedule, type LocalScheduleInput } from './loc
 import type { LocalSchedulesController } from './useLocalSchedules'
 import { ScheduleWakeToggle } from './ScheduleWakeToggle'
 import { SchedulePopover, ScheduleSelect } from './SchedulePopover'
-import { modelDisplayName } from './modelSelection'
+import { availableModels } from './modelSelection'
+import { ComposerModelPicker } from './ComposerModelPicker'
+import type { ReasoningEffort } from './modelReasoning'
 import { scheduleRecordGroup, scheduleRunLabels, type RecordGrouping } from './scheduleRecords'
 import './scheduleReference.css'
 
@@ -30,6 +32,9 @@ export function LocalSchedulesPanel({ controller, onOpenTask, onCreateWithXiaoyi
   const [grouping, setGrouping] = useState<RecordGrouping>('day')
   const [taskFilter, setTaskFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
+  const [modelMenuOpen, setModelMenuOpen] = useState(false)
+  const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort>()
+  const modelPickerRef = useRef<HTMLDivElement>(null)
   useEffect(() => { if (taskFilter && !controller.items.some((item) => item.id === taskFilter)) setTaskFilter('') }, [controller.items, taskFilter])
   const dialog = useRef<HTMLFormElement>(null)
   const textarea = useRef<HTMLTextAreaElement>(null)
@@ -125,9 +130,9 @@ export function LocalSchedulesPanel({ controller, onOpenTask, onCreateWithXiaoyi
             {!!draft.attachments?.length && <div className="schedule-attachments">{draft.attachments.map((file) => <div className="schedule-attachment" key={file.id}><span>{file.name}</span><button type="button" aria-label={`移除附件 ${file.name}`} onClick={() => setDraft({ ...draft, attachments: draft.attachments?.filter((entry) => entry.id !== file.id) })}><X size={12} /></button></div>)}</div>}
             <div className="schedule-composer-toolbar"><div className="schedule-context-actions">
               <SchedulePopover label="工作目录" className="schedule-directory-menu" trigger={<><FolderInput size={15} /><span>{draft.directories.map((entry) => entry.name).join('、') || '选择工作目录'}</span></>}>{(close) => <div role="menu"><button type="button" onClick={() => { close(); void selectContext('directory') }}><FolderInput size={14} />{draft.directories.length ? '更换工作目录' : '选择文件夹'}</button>{!!draft.directories.length && <button type="button" onClick={() => { setDraft({ ...draft, directories: [] }); close() }}><X size={14} />移除工作目录</button>}</div>}</SchedulePopover>
-              <button type="button" className="schedule-attach-button" aria-label="添加附件" title="添加附件" onClick={() => void selectContext('files')}><Plus size={16} /></button>
+              <button type="button" className="schedule-attach-button" aria-label="添加文件或文件夹作为上下文" data-tooltip="添加文件或文件夹作为上下文" onClick={() => void selectContext('files')}><Plus size={16} /></button>
             </div>
-              <div className="schedule-model-picker" title="Auto 使用执行时的默认模型"><Zap size={13} /><ScheduleSelect label="任务模型" value={draft.model ?? ''} options={[{ value: '', label: 'Auto' }, ...models.map((model) => ({ value: model, label: modelDisplayName(model) })), ...(draft.model && !models.includes(draft.model) ? [{ value: draft.model, label: `${modelDisplayName(draft.model)}（不可用）` }] : [])]} onChange={(model) => setDraft({ ...draft, model: model || undefined })} /></div>
+              <ComposerModelPicker modelPickerRef={modelPickerRef} models={availableModels(models)} activeModel={draft.model || models[0] || ''} reasoningEffort={reasoningEffort} onReasoningEffortChange={setReasoningEffort} modelMenuOpen={modelMenuOpen} onToggleModelMenu={() => setModelMenuOpen((value) => !value)} onSelectModel={(model) => { setDraft({ ...draft, model }); setModelMenuOpen(false) }} locked={saving || selecting} />
             </div>
           </div>
         </div>
