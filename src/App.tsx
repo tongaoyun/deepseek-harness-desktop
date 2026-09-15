@@ -919,6 +919,26 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
     const contextMessages = queuedTask?.messages ?? messages
     const contextProjection = queuedTask?.projection ?? taskProjectionRef.current
     const existingTask = queuedTask ?? localTasks.find((task) => task.id === contextTaskId)
+    // Identity/greeting turns must never enter the tool loop. A model can
+    // otherwise misclassify a one-word greeting as an incomplete task and
+    // block on ask_user_question before producing any visible reply.
+    const directReply = !queuedTask && messageAttachments.length === 0 && /^(你|你是|你是谁|你好|嗨|hi|hello)[？?！!。\.\s]*$/iu.test(input)
+      ? '我是小胤，你的企业智能工作助手。可以直接回答问题，也可以帮你执行代码、文件和业务任务。'
+      : undefined
+    if (directReply) {
+      const timestamp = new Date().toISOString()
+      const taskId = contextTaskId || crypto.randomUUID()
+      const projection = taskProjectionCompleted(
+        { ...createXiaoyinTaskProjection(timestamp), operationScope: crypto.randomUUID() },
+        { status: 'completed', summary: '直接回答完成', remaining: [], checks: [] }, timestamp,
+      )
+      const directMessages: TaskMessage[] = [...contextMessages, { role: 'user', text: input }, { role: 'assistant', text: directReply, projection }]
+      const directTask: LocalTaskRun = { ...existingTask, id: taskId, source: existingTask?.source ?? 'DESKTOP', name: existingTask?.name ?? input,
+        status: 'COMPLETED', createdAt: existingTask?.createdAt ?? timestamp, updatedAt: timestamp, projection, messages: directMessages, sessionId: '' }
+      if (isCurrent()) { selectCurrentLocalTaskId(taskId); setMessages(directMessages); taskProjectionRef.current = projection; setTaskProjection(projection); setPrompt('') }
+      persistLocalTask(directTask)
+      return true
+    }
     const taskModel = resolveSelectedModel(bootstrap.models, queuedTask ? queuedTask.model : activeModel)
     const taskReasoningEffort = resolveReasoningEffort(taskModel, queuedTask ? queuedTask.reasoningEffort : activeReasoningEffort)
     const taskExecutionMode = queuedTask?.executionMode ?? executionMode
