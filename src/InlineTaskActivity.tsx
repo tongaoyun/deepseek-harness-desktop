@@ -81,7 +81,7 @@ export function InlineTaskActivity({ projection, finalResponse = '', onApprovalD
       {hasDetails && <ChevronRight className={open ? 'open' : ''} size={15} />}
     </button>
     {hasDetails && <ExecutionTimeline entries={open ? timeline : collapsedEntries} finalResponse={finalResponse} onApprovalDecision={onApprovalDecision ? decide : undefined} onQuestionAnswer={onQuestionAnswer} approvalStates={approvalStates} approvalsEnabled={approvalsEnabled} />}
-    {projection.status === 'running' && !hasDetails && <p className="task-starting-hint">正在准备执行过程…</p>}
+    {projection.status === 'running' && !hasDetails && <p className="task-starting-hint"><LoaderCircle className="turn-spinner" size={14} />正在分析任务…</p>}
   </section>
 }
 

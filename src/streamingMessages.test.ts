@@ -17,7 +17,7 @@ describe('applyHarnessResponseToMessages', () => {
     expect(final.messages.at(-1)?.text).toBe('查看完成')
   })
 
-  it('clears commentary before a tool call without touching prior turns', () => {
+  it('can reset the current assistant stream without touching prior turns', () => {
     const current = [{ role: 'assistant' as const, text: '旧回答' }, ...pending]
     const result = applyHarnessResponseToMessages(current, { key: '', mode: 'clear', text: '' }, 'assistant:1:1')
 

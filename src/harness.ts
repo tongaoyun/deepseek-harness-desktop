@@ -459,7 +459,10 @@ export interface HarnessResponseUpdate {
 export function harnessResponseUpdate(notification: HarnessNotification): HarnessResponseUpdate | undefined {
   const parsed = parseHarnessEvent(notification)
   if (!parsed || !parsed.isRootSession) return undefined
-  if (parsed.type === 'tool/call') return { key: '', mode: 'clear', text: '' }
+  // Tool calls are a separate Codex-style activity item. Keep any assistant
+  // text already streamed above it visible; clearing it makes the transcript
+  // flash and then disappear while the tool is running.
+  if (parsed.type === 'tool/call') return undefined
   if (parsed.type === 'assistant/stream' && parsed.data.type === 'start') return { key: '', mode: 'clear', text: '' }
   const key = 'assistant:visible-response'
   if (parsed.type === 'text-chunks') {
