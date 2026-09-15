@@ -115,7 +115,7 @@ it('streams each message once, then collapses history without hiding the final r
   const render = (pending: boolean) => root.render(<ChatPage {...base} harnessRunning={pending} taskProjection={projection} messages={[{ role: 'assistant', text: '正在生成的正文', pending }]} />)
   try {
     await act(async () => render(true))
-    expect(container.querySelector('.execution-timeline')!.textContent).toContain('正在生成的正文')
+    expect(container.querySelector('.execution-timeline')!.textContent).not.toContain('正在生成的正文')
     expect(container.textContent!.split('正在生成的正文')).toHaveLength(2)
     expect(container.querySelector('.active-task-strip')).toBeNull()
     expect(container.querySelector('.timeline-commentary-label')).toBeNull()

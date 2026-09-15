@@ -215,7 +215,6 @@ export function ChatPage(props: ChatPageProps) {
           <RichMessage assistant={false} text={messageInput.text || (messageInput.tokens.length ? '使用所选能力开始任务' : message.text)} />
         </div>
       </article>
-      const timelineOwnsStreamingText = message.pending && (projection?.timeline?.some((entry) => entry.kind === 'assistant') ?? false)
       const reviewChanges = projection?.changes ?? []
       const fileChanges = !message.pending && reviewChanges.length > 0 && <FileChangesCard changes={reviewChanges} busy={props.fileChangesBusy ?? props.harnessRunning} onOpen={openPreview} onReview={reviewFiles} onUndone={(results) => {
         setPreviewTargets([])
@@ -224,7 +223,7 @@ export function ChatPage(props: ChatPageProps) {
       }} />
       return <article aria-busy={message.pending} className={`conversation-turn assistant-turn${message.pending ? ' pending' : ''}`} key={`${message.role}-${index}`}>
         {projection && <InlineTaskActivity finalResponse={message.pending ? '' : message.text} projection={projection} onApprovalDecision={props.onApprovalDecision} onQuestionAnswer={props.onQuestionAnswer} />}
-        {(!timelineOwnsStreamingText && Boolean(message.text.trim())) && <div className={message.pending ? 'streaming-response' : undefined}><RichMessage assistant={!message.pending} onRegenerate={!message.pending && index === props.messages.length - 1 ? props.onPrepareRetry : undefined} text={message.text} /></div>}
+        {Boolean(message.text.trim()) && <div className={message.pending ? 'streaming-response' : undefined}><RichMessage assistant={!message.pending} onRegenerate={!message.pending && index === props.messages.length - 1 ? props.onPrepareRetry : undefined} text={message.text} /></div>}
         {projection && projection.artifacts.length > 0 && <TaskArtifacts artifacts={projection.artifacts} conversation onOpen={openPreview} />}
         {fileChanges}
         {!message.pending && projection?.status === 'completed' && projection.outcome && <TaskOutcomeDetails outcome={projection.outcome} />}

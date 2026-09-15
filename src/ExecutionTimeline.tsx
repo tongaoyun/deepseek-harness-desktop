@@ -198,7 +198,10 @@ function ActivityIcon({ entry }: { entry: TaskTimelineEntry }) {
 
 export function visibleExecutionEntries(entries: TaskTimelineEntry[], finalResponse: string): TaskTimelineEntry[] {
   const answer = finalResponse.trim()
-  if (!answer) return entries
-  const lastMatchingIndex = entries.findLastIndex((entry) => entry.kind === 'assistant' && entry.text?.trim() === answer)
-  return lastMatchingIndex < 0 ? entries : entries.filter((_entry, index) => index !== lastMatchingIndex)
+  // The conversation turn owns assistant text. Keeping the same text in the
+  // execution timeline creates a duplicate and makes streaming look like it
+  // is disappearing when the projection refreshes.
+  const withoutAssistant = entries.filter((entry) => entry.kind !== 'assistant')
+  if (!answer) return withoutAssistant
+  return withoutAssistant
 }
