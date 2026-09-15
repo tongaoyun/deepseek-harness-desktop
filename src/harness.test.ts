@@ -239,7 +239,7 @@ describe('harnessActivityLabel', () => {
       { type: 'reasoning', text: 'private' }, { type: 'text', text: '完整回答' },
     ] } }, 3))).toEqual({ key: 'assistant:visible-response', mode: 'replace', text: '完整回答' })
     expect(harnessResponseUpdate(event('tool/call', { callId: '1', name: 'local_files_list' }, 4)))
-      .toEqual({ key: '', mode: 'clear', text: '' })
+      .toBeUndefined()
   })
 
   it('keeps child session text and completion out of the root conversation', () => {

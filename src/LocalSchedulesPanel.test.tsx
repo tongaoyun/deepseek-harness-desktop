@@ -14,8 +14,8 @@ it('uses the compact composer, defaults to daily 09:00 and saves a chosen model'
     await act(async () => root.render(<LocalSchedulesPanel controller={controller} models={['test-model']} onOpenTask={() => {}} />))
     await act(async () => container.querySelector<HTMLButtonElement>('.schedule-new-button')!.click())
     expect(container.textContent).not.toContain('识别时间')
-    expect(container.querySelector('.schedule-composer [aria-label="任务模型"]')).not.toBeNull()
-    expect(container.querySelector('.schedule-composer [aria-label="添加附件"]')).not.toBeNull()
+    expect(container.querySelector('.schedule-composer [aria-label="模型与生成模式"]')).not.toBeNull()
+    expect(container.querySelector('.schedule-composer [aria-label="添加文件或文件夹作为上下文"]')).not.toBeNull()
     expect(container.querySelector('form')!.checkValidity()).toBe(false)
     const time = container.querySelector<HTMLInputElement>('[aria-label="执行时刻"]')!
     await act(async () => {
@@ -34,7 +34,9 @@ it('uses the compact composer, defaults to daily 09:00 and saves a chosen model'
       Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(prompt, '整理日报')
       prompt.dispatchEvent(new Event('input', { bubbles: true }))
     })
-    await act(async () => container.querySelectorAll<HTMLButtonElement>('[role="menu"][aria-label="任务模型"] button')[1].click())
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="模型与生成模式"]')!.click())
+    await act(async () => container.querySelector<HTMLButtonElement>('.model-choice-row')!.click())
+    await act(async () => container.querySelector<HTMLButtonElement>('[role="option"][title="test-model"]')!.click())
     await act(async () => container.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
     expect(save).toHaveBeenCalledWith(expect.objectContaining({ cronExpression: '0 9 * * *', prompt: '整理日报', model: 'test-model', directories: [] }), undefined)
     expect(container.querySelector('[role="dialog"]')).toBeNull()
