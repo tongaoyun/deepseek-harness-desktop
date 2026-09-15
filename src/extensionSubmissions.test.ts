@@ -91,7 +91,7 @@ describe('extension validation report api', () => {
     await expect(saveValidationReport('skill', 'order review', '1.0.0', report, 'employee-7', 'token')).resolves.toEqual(report)
     const [url, options] = fetchMock.mock.calls[0]
     expect(url).toBe('http://192.168.2.67:30081/api/v1/extension-submissions/skill/order%20review/versions/1.0.0/validation-report')
-    expect(options.headers).toMatchObject({ 'X-Xiaoyin-Employee-Id': 'employee-7', Authorization: 'Bearer token' })
+    expect(options.headers).toMatchObject({ 'X-Xiaoyin-Employee-Id': 'employee-7', 'X-ERP-Session': 'token' })
     expect(JSON.parse(options.body)).toEqual(report)
   })
 

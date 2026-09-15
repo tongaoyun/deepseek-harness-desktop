@@ -680,7 +680,7 @@ export class LocalImRuntime {
       const response = await fetch(endpoint, {
         headers: {
           'X-Xiaoyin-Employee-Id': employeeId,
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...(token ? { 'X-ERP-Session': token } : {}),
         },
         redirect: 'error',
         signal: AbortSignal.timeout(15_000),
