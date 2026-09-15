@@ -59,21 +59,18 @@ const server = createServer(async (request, response) => {
   const url = new URL(request.url, 'http://localhost')
   response.setHeader('Cache-Control', 'no-store')
   if (url.pathname === '/seed') {
-    if (seed) response.setHeader('Set-Cookie', 'XIAOYIN_ACCEPTANCE=session-fixture; Path=/; HttpOnly; SameSite=Lax')
+    if (seed) response.setHeader('Set-Cookie', 'SESSION=session-fixture; Path=/; HttpOnly; SameSite=Lax')
     response.end('<!doctype html><title>Session fixture</title>')
   } else if (url.pathname === '/identity') {
-    const valid = request.headers.cookie?.includes('XIAOYIN_ACCEPTANCE=session-fixture')
+    const valid = request.headers.cookie?.includes('SESSION=session-fixture')
     response.writeHead(valid ? identityStatus : 401, { 'Content-Type': 'application/json' })
     response.end(JSON.stringify({ operId: 'local-development', oper: 'Local acceptance' }))
-  } else if (url.pathname === '/api/v1/employee-auth/session') {
-    let body = ''
-    for await (const chunk of request) body += chunk
-    const valid = request.method === 'POST' && JSON.parse(body).cookie?.includes('XIAOYIN_ACCEPTANCE=session-fixture')
+  } else if (url.pathname === '/api/v1/employee-auth/identity') {
+    const valid = request.method === 'GET' && request.headers['x-erp-session'] === 'session-fixture'
     response.writeHead(valid ? identityStatus : 401, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
     response.end(JSON.stringify(valid && identityStatus === 200 ? {
       success: true,
-      data: { employeeId: 'local-development', teamId: '', accessToken: 'control-plane-fixture',
-        expiresAt: Math.floor(Date.now() / 1000) + 1800 },
+      data: { employeeId: 'local-development', teamId: '', employeeName: 'Local acceptance' },
     } : { success: false }))
   } else if (url.pathname === '/control') {
     response.setHeader('Content-Type', 'application/json')

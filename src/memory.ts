@@ -295,6 +295,6 @@ async function putMemoryProfile(
 function enterpriseHeaders(employeeId: string, accessToken: string): Record<string, string> {
   return {
     'X-Xiaoyin-Employee-Id': employeeId,
-    ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+    ...(accessToken ? { 'X-ERP-Session': accessToken } : {}),
   }
 }

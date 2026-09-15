@@ -25,7 +25,7 @@ describe('loadBootstrap', () => {
     const context = { endpoint: '/api/v1/knowledge-bases/', employeeId: 'employee', teamId: 'team', accessToken: 'test-token' }
     await expect(loadKnowledgeSource(context, '12')).resolves.toMatchObject({ sourceId: '12' })
     expect(fetchMock.mock.calls[0][0]).toBe('http://192.168.2.67:30081/api/v1/knowledge-bases/sources/12')
-    expect(fetchMock.mock.calls[0][1]).toMatchObject({ headers: { 'X-Xiaoyin-Employee-Id': 'employee', 'X-Xiaoyin-Team-Id': 'team', Authorization: 'Bearer test-token' } })
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({ headers: { 'X-Xiaoyin-Employee-Id': 'employee', 'X-Xiaoyin-Team-Id': 'team', 'X-ERP-Session': 'test-token' } })
     await expect(loadKnowledgeSource(context, '12')).rejects.toThrow('历史摘录不能作为当前依据')
     await expect(loadKnowledgeSource(context, '../files')).rejects.toThrow()
     expect(fetchMock).toHaveBeenCalledTimes(2)
@@ -77,7 +77,7 @@ describe('loadBootstrap', () => {
     expect(fetchMock.mock.calls[0][0]).toBe('http://192.168.2.67:30081/api/v1/expert-kits')
     expect(fetchMock.mock.calls[0][1].headers).toMatchObject({
       'X-Xiaoyin-Employee-Id': 'employee-1',
-      Authorization: 'Bearer token-1',
+      'X-ERP-Session': 'token-1',
     })
     expect(fetchMock.mock.calls[1][0]).toBe('http://192.168.2.67:30081/api/v1/expert-kits/kit%20one/download')
   })
@@ -97,7 +97,7 @@ describe('loadBootstrap', () => {
     ])
     expect(fetchMock.mock.calls[1][1].headers).toMatchObject({
       'X-Xiaoyin-Employee-Id': 'employee-1',
-      Authorization: 'Bearer token-1',
+      'X-ERP-Session': 'token-1',
     })
   })
 
