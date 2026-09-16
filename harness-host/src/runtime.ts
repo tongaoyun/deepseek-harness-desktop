@@ -850,7 +850,7 @@ async function searchOfficialSessions(sessionIds: string[], query: string, limit
         rebuiltCorruptIndex = true
         continue
       }
-      if (attempt >= 8 || !isTransientSessionQueryIndexError(error)) throw error
+      if (attempt >= 8 || !(isTransientSessionQueryIndexError(error) || await isIndexCreationRace(error, env))) throw error
       await delay(Math.min(50 * (2 ** attempt), 2_000))
     }
   }
@@ -977,6 +977,29 @@ async function searchCjkSessions(context: Context, ids: string[], query: string,
   return {
     items,
     ...(offset < ids.length ? { nextCursor: `scan-v1:${offset}:${fingerprint}` } : {}),
+  }
+}
+
+/**
+ * Another process creating the shared derived index is a race, not a foreign
+ * database: the file carries our schema tables before its application id is
+ * committed. Only that case is retried, so a genuinely foreign file still
+ * fails fast and is never overwritten.
+ */
+async function isIndexCreationRace(error: unknown, env: NodeJS.ProcessEnv): Promise<boolean> {
+  if (!/is not an empty or recognized derived index/iu.test(String((error as { message?: unknown } | undefined)?.message ?? error))) return false
+  const queryPath = resolve(env.XIAOYIN_SESSION_QUERY_PATH ?? resolve(env.DSH_HOME ?? '.dsh', 'session-query.sqlite'))
+  try {
+    const { DatabaseSync } = await import('node:sqlite')
+    const database = new DatabaseSync(queryPath, { readOnly: true })
+    try {
+      const rows = database.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{ name?: unknown }>
+      return rows.some((row) => ['persisted_sessions', 'search_state', 'persisted_docs'].includes(String(row.name)))
+    } finally {
+      database.close()
+    }
+  } catch {
+    return false
   }
 }
 
