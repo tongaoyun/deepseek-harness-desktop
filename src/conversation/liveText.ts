@@ -111,7 +111,11 @@ function texts(value: unknown): string {
 function messageText(data: Record<string, unknown>): string {
   const content = record(data.message)?.content
   if (!Array.isArray(content)) return ''
-  return content.map((block) => text(record(block)?.text) ?? '').join('')
+  // Reasoning blocks also carry `text`; only visible text belongs in the reply.
+  return content.map((block) => {
+    const value = record(block)
+    return value?.type === 'text' ? text(value.text) ?? '' : ''
+  }).join('')
 }
 
 function record(value: unknown): Record<string, unknown> | undefined {

@@ -478,7 +478,10 @@ function toolResultValue(content: unknown): Record<string, unknown> | undefined 
 
 function toolResultText(content: unknown): string {
   const blocks = Array.isArray(content) ? content : []
-  return blocks.map((block) => text(record(block)?.text) ?? '').join('')
+  return blocks.map((block) => {
+    const value = record(block)
+    return value?.type === 'text' ? text(value.text) ?? '' : ''
+  }).join('')
 }
 
 function publicErrorText(content: unknown): string | undefined {
@@ -488,7 +491,11 @@ function publicErrorText(content: unknown): string | undefined {
 
 function textBlocks(content: unknown): string {
   const blocks = Array.isArray(content) ? content : []
-  return blocks.map((block) => text(record(block)?.text) ?? '').join('')
+  // Reasoning blocks also carry `text`; the transcript shows visible text only.
+  return blocks.map((block) => {
+    const value = record(block)
+    return value?.type === 'text' ? text(value.text) ?? '' : ''
+  }).join('')
 }
 
 function questionsFromValue(value: unknown): Array<Record<string, unknown>> {

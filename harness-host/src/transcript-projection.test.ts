@@ -67,6 +67,25 @@ describe('transcript projection', () => {
     expect(turn.tokenUsage).toEqual({ inputTokens: 100, outputTokens: 50 })
   })
 
+  it('keeps reasoning content out of the visible text segments', () => {
+    const state = fold([
+      event('turn/start', { turn: 1 }),
+      userMessage('m1', '下载目录里有啥'),
+      event('assistant/message', {
+        turn: 1, step: 1,
+        message: { id: 'a1', role: 'assistant', source: { kind: 'model', provider: 'deepseek', model: 'deepseek-chat' }, content: [
+          { type: 'reasoning', text: 'The user wants to list the files in their Downloads directory.' },
+          { type: 'text', text: '你的下载目录里有 20 个顶层项目。' },
+        ] },
+      }),
+      event('turn/end', { turn: 1, reason: { kind: 'completed' } }),
+    ])
+    const turn = state.entries.at(-1)
+    if (turn?.role !== 'assistant') throw new Error('expected assistant turn')
+    expect(turn.segments).toEqual([{ kind: 'text', id: '1:1', text: '你的下载目录里有 20 个顶层项目。' }])
+    expect(JSON.stringify(state.entries)).not.toContain('The user wants to list')
+  })
+
   it('never turns injected context into a user bubble', () => {
     const state = fold([
       event('turn/start', { turn: 1 }),
