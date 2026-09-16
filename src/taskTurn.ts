@@ -15,7 +15,7 @@ type TurnContext = {
   scheduleRunId?: string
   sessionId: string
   model: string
-  reasoningEffort?: import('./modelSelection').ReasoningEffort
+  reasoningEffort?: import('./modelReasoning').ReasoningEffort
   executionMode?: 'agent' | 'plan'
   directories: NonNullable<LocalTaskRun['localDirectories']>
   directoriesChanged: boolean
@@ -29,7 +29,7 @@ type TurnContext = {
 }
 
 /** The placeholder assistant turn shown from send until the first session event. */
-export function pendingAssistantTurn(model: string, reasoningEffort: import('./modelSelection').ReasoningEffort | undefined, now: string): AssistantTurn {
+export function pendingAssistantTurn(model: string, reasoningEffort: import('./modelReasoning').ReasoningEffort | undefined, now: string): AssistantTurn {
   return { id: 'pending', role: 'assistant', status: 'streaming', segments: [], meta: { ...(model ? { model } : {}), ...(reasoningEffort ? { reasoningEffort } : {}), startedAt: now } }
 }
 
@@ -66,7 +66,9 @@ export function prepareTaskTurn(context: TurnContext) {
     activity: '正在处理',
     executionStarted: false,
     updatedAt: now,
-    startedAt: context.projection.startedAt ?? now,
+    // Each submitted message is a new turn. Reusing the previous projection's
+    // timestamp makes a second message appear to run since the first one.
+    startedAt: now,
   }
   const userTurnId = context.queuedItemId ?? `user-${crypto.randomUUID().replaceAll('-', '')}`
   const pendingEntries: ConversationEntry[] = [...entries,
@@ -77,7 +79,7 @@ export function prepareTaskTurn(context: TurnContext) {
     id: context.taskId, source: 'DESKTOP',
     name: existingTask?.name ?? (splitComposerPrompt(input).text || invocations.map((item) => item.name).join('、') || input).slice(0, 60),
     status: 'RUNNING', createdAt: existingTask?.createdAt ?? now, updatedAt: now,
-    sessionId: rootSessionId, model: context.model, ...(context.reasoningEffort ? { reasoningEffort: context.reasoningEffort } : {}), executionMode, invocationTokens,
+    sessionId: rootSessionId, model: context.model, reasoningEffort: context.reasoningEffort, executionMode, invocationTokens,
     ...(context.scheduleId ? { scheduleId: context.scheduleId } : existingTask?.scheduleId ? { scheduleId: existingTask.scheduleId } : {}),
     ...(context.scheduleRunId ? { scheduleRunId: context.scheduleRunId } : existingTask?.scheduleRunId ? { scheduleRunId: existingTask.scheduleRunId } : {}),
     localDirectories: context.directories,

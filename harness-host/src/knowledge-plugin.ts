@@ -17,7 +17,7 @@ export const Config = z.object({
   endpoint: z.string().default(''),
   employeeIdEnv: z.string().default('XIAOYIN_EMPLOYEE_ID'),
   teamIdEnv: z.string().default('XIAOYIN_TEAM_ID'),
-  employeeTokenEnv: z.string().default('XIAOYIN_EMPLOYEE_BEARER_TOKEN'),
+  employeeTokenEnv: z.string().default('XIAOYIN_CONTROL_PLANE_TOKEN'),
   knowledgeBaseRefsEnv: z.string().default('XIAOYIN_KNOWLEDGE_BASE_REFS'),
 })
 
@@ -30,7 +30,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     url.toString().replace(/\/$/, ''),
     process.env[config.employeeIdEnv ?? 'XIAOYIN_EMPLOYEE_ID']?.trim() || 'local-development',
     process.env[config.teamIdEnv ?? 'XIAOYIN_TEAM_ID']?.trim() || '',
-    process.env[config.employeeTokenEnv ?? 'XIAOYIN_EMPLOYEE_BEARER_TOKEN']?.trim() || '',
+    process.env[config.employeeTokenEnv ?? 'XIAOYIN_CONTROL_PLANE_TOKEN']?.trim() || '',
     parseKnowledgeBaseRefs(process.env[config.knowledgeBaseRefsEnv ?? 'XIAOYIN_KNOWLEDGE_BASE_REFS']),
   )
   const unregister = [ctx.tools.register(listTool(client)), ctx.tools.register(searchTool(client))]
@@ -77,7 +77,7 @@ export class KnowledgeClient {
       headers: {
         'X-Xiaoyin-Employee-Id': this.employeeId,
         ...(this.teamId ? { 'X-Xiaoyin-Team-Id': this.teamId } : {}),
-        ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}),
+        ...(this.token ? { 'X-ERP-Session': this.token } : {}),
         ...init.headers,
       },
     })

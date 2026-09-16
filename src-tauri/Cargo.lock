@@ -5872,7 +5872,7 @@ dependencies = [
 
 [[package]]
 name = "xiaoyin-desktop"
-version = "0.1.49"
+version = "0.1.50"
 dependencies = [
  "base64 0.22.1",
  "calamine",
@@ -5901,6 +5901,7 @@ dependencies = [
  "tauri-plugin-updater",
  "tiny_http",
  "uuid",
+ "windows-sys 0.52.0",
  "zip 4.6.1",
 ]
 

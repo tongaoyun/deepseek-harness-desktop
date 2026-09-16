@@ -137,7 +137,7 @@ fn remember_employee(session: Option<&ErpSessionStatus>) {
 
 const ERP_LOGIN_URL: &str = "http://www.instudio.me:6206/eshop/manager/login.jsp";
 const ERP_USER_URL: &str =
-    "http://www.instudio.me:6206/gateway/tiktok-product-publish-service/auth/user";
+    "http://www.instudio.me:6206/erpMobile/erpMobile/pushController/getDbSysadmin";
 const ERP_COOKIE_URL: &str = "http://www.instudio.me:6206/eshop/";
 const ERP_DINGTALK_APP_ID: &str = "dingoa43wafbtpeg2czybj";
 const ERP_DINGTALK_CALLBACK_URL: &str =
@@ -185,17 +185,15 @@ pub(crate) struct ErpSessionStatus {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct ControlPlaneSession {
+struct ControlPlaneIdentity {
     employee_id: String,
     team_id: String,
-    access_token: String,
-    expires_at: i64,
 }
 
 #[derive(Deserialize)]
 struct ControlPlaneEnvelope {
     success: bool,
-    data: Option<ControlPlaneSession>,
+    data: Option<ControlPlaneIdentity>,
 }
 
 #[derive(Serialize)]
@@ -451,6 +449,7 @@ async fn resolve_session(
     *restored = true;
     let cookie_header = cookies
         .iter()
+        .filter(|cookie| cookie.name() == "SESSION")
         .map(|cookie| format!("{}={}", cookie.name(), cookie.value()))
         .collect::<Vec<_>>()
         .join("; ");
@@ -485,9 +484,9 @@ async fn resolve_session(
             None,
         )));
     }
-    let control_plane_session = match control_plane_url {
+    let control_plane_identity = match control_plane_url {
         Some(url) => Some(
-            exchange_control_plane_session(
+            verify_control_plane_identity(
                 &client,
                 url,
                 &cookie_header,
@@ -513,22 +512,20 @@ async fn resolve_session(
         .await
         .map_err(|_| Diagnostic::new(Code::CookieStoreFailed, None, None))?
         .map_err(|_| Diagnostic::new(Code::CookieStoreFailed, None, None))?;
-    let access_token = control_plane_session.as_ref().map_or_else(
-        || trusted_internal_token(&cookie_header),
-        |session| session.access_token.clone(),
-    );
-    let expires_at = control_plane_session
-        .as_ref()
-        .map_or_else(trusted_session_expiry, |session| Some(session.expires_at));
+    let access_token = cookie_header
+        .strip_prefix("SESSION=")
+        .unwrap_or_default()
+        .to_string();
+    let expires_at = trusted_session_expiry();
     mcp::activate_session(session_epoch);
     if let Ok(mut guard) = CONNECTOR_TOKEN.lock() {
-        if let Some(session) = control_plane_session.as_ref() {
+        if control_plane_identity.is_some() {
             *guard = Some(ConnectorToken {
                 epoch: mcp::session_epoch(),
                 employee_id: user.user_id.clone(),
-                control_token: session.access_token.clone(),
+                control_token: access_token.clone(),
                 connector_token: trusted_internal_token(&cookie_header),
-                expires_at: session.expires_at,
+                expires_at: expires_at.unwrap_or_default(),
             });
         } else if guard.as_ref().is_some_and(|old| {
             old.employee_id != user.user_id
@@ -556,13 +553,13 @@ async fn resolve_session(
     })
 }
 
-async fn exchange_control_plane_session(
+async fn verify_control_plane_identity(
     client: &reqwest::Client,
     base_url: &str,
     cookie_header: &str,
     expected_employee_id: &str,
     expected_team_id: &str,
-) -> Result<ControlPlaneSession, Option<u16>> {
+) -> Result<ControlPlaneIdentity, Option<u16>> {
     let mut url = reqwest::Url::parse(base_url).map_err(|_| None)?;
     if !control_plane_transport_allowed(&url)
         || !url.username().is_empty()
@@ -570,13 +567,16 @@ async fn exchange_control_plane_session(
     {
         return Err(None);
     }
-    url.set_path("/api/v1/employee-auth/session");
+    url.set_path("/api/v1/employee-auth/identity");
     url.set_query(None);
     url.set_fragment(None);
     let mut response = client
-        .post(url)
+        .get(url)
         .header("Accept", "application/json")
-        .json(&serde_json::json!({ "cookie": cookie_header }))
+        .header(
+            "X-ERP-Session",
+            cookie_header.strip_prefix("SESSION=").ok_or(None)?,
+        )
         .send()
         .await
         .map_err(|_| None)?;
@@ -596,17 +596,7 @@ async fn exchange_control_plane_session(
         .data
         .filter(|_| envelope.success)
         .ok_or(Some(status))?;
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_err(|_| Some(status))?
-        .as_secs() as i64;
-    if session.employee_id != expected_employee_id
-        || session.team_id != expected_team_id
-        || session.access_token.is_empty()
-        || session.access_token.len() > 16 * 1024
-        || session.expires_at <= now
-        || session.expires_at > now + 3600
-    {
+    if session.employee_id != expected_employee_id || session.team_id != expected_team_id {
         return Err(Some(status));
     }
     Ok(session)
@@ -678,8 +668,13 @@ async fn resolve_identity(
         }
         body.extend_from_slice(&chunk);
     }
-    let identity: ErpIdentity =
+    let value: serde_json::Value =
         serde_json::from_slice(&body).map_err(|_| failure(Code::IdentityInvalid, Some(status)))?;
+    if value.get("code").and_then(serde_json::Value::as_i64) == Some(601) {
+        return Ok((None, failure(Code::SessionRejected, Some(status))));
+    }
+    let identity: ErpIdentity =
+        serde_json::from_value(value).map_err(|_| failure(Code::IdentityInvalid, Some(status)))?;
     let user = erp_user_from_identity(&identity)
         .map_err(|_| failure(Code::IdentityInvalid, Some(status)))?;
     Ok((Some(user), failure(Code::Authenticated, Some(status))))
@@ -806,7 +801,7 @@ mod tests {
     }
 
     #[test]
-    fn offline_identity_requires_a_live_signed_session_and_transient_failure() {
+    fn offline_identity_requires_a_live_verified_session_and_transient_failure() {
         let token = ConnectorToken {
             epoch: 2,
             employee_id: "employee-1".into(),
@@ -874,19 +869,23 @@ mod tests {
     }
 
     #[test]
-    fn cookie_exchange_accepts_only_an_identity_bound_short_lived_session() {
+    fn expired_erp_session_in_http_200_requires_login() {
+        let (user, diagnostic) = identity_response(
+            200,
+            r#"{"success":false,"code":601,"desc":"not logged in"}"#,
+        )
+        .unwrap();
+        assert!(user.is_none());
+        assert_eq!(diagnostic.code, Code::SessionRejected);
+    }
+
+    #[test]
+    fn control_plane_verifies_identity_without_issuing_tokens() {
         use std::io::{Read, Write};
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let endpoint = format!("http://{}", listener.local_addr().unwrap());
-        let expires_at = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs() as i64
-            + 1800;
         let server = std::thread::spawn(move || {
-            let valid = format!(
-                "{{\"success\":true,\"data\":{{\"employeeId\":\"employee-1\",\"teamId\":\"21\",\"accessToken\":\"signed-fixture\",\"expiresAt\":{expires_at}}}}}"
-            );
+            let valid = r#"{"success":true,"data":{"employeeId":"employee-1","teamId":"21","employeeName":"Test Employee"}}"#.to_string();
             let oversized = format!(
                 "{{\"success\":true,\"padding\":\"{}\"}}",
                 "x".repeat(MAX_ERP_IDENTITY_BYTES)
@@ -903,14 +902,14 @@ mod tests {
                     assert!(length > 0);
                     request.extend_from_slice(&buffer[..length]);
                     if request
-                        .windows("SESSION=fixture".len())
-                        .any(|part| part == b"SESSION=fixture")
+                        .windows("x-erp-session: fixture".len())
+                        .any(|part| part == b"x-erp-session: fixture")
                     {
                         break;
                     }
                 }
                 let request = String::from_utf8(request).unwrap();
-                assert!(request.starts_with("POST /api/v1/employee-auth/session HTTP/1.1"));
+                assert!(request.starts_with("GET /api/v1/employee-auth/identity HTTP/1.1"));
                 let result = write!(
                     stream,
                     "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
@@ -926,7 +925,7 @@ mod tests {
             .timeout(Duration::from_secs(3))
             .build()
             .unwrap();
-        let session = tauri::async_runtime::block_on(exchange_control_plane_session(
+        let session = tauri::async_runtime::block_on(verify_control_plane_identity(
             &client,
             &endpoint,
             "SESSION=fixture",
@@ -934,10 +933,9 @@ mod tests {
             "21",
         ))
         .unwrap();
-        assert_eq!(session.access_token, "signed-fixture");
-        assert_eq!(session.expires_at, expires_at);
+        assert_eq!(session.employee_id, "employee-1");
         assert_eq!(
-            tauri::async_runtime::block_on(exchange_control_plane_session(
+            tauri::async_runtime::block_on(verify_control_plane_identity(
                 &client,
                 &endpoint,
                 "SESSION=fixture",
@@ -958,7 +956,7 @@ mod tests {
             &reqwest::Url::parse("http://xiaoyin.example.com").unwrap()
         ));
         assert!(
-            tauri::async_runtime::block_on(exchange_control_plane_session(
+            tauri::async_runtime::block_on(verify_control_plane_identity(
                 &client,
                 "http://xiaoyin.example.com",
                 "SESSION=fixture",
@@ -1098,7 +1096,7 @@ mod tests {
             "http://tauri.localhost/index.html?window=erp-login"
         );
         assert!(erp_cookie_url().ends_with("/eshop/"));
-        assert!(erp_user_url().ends_with("/auth/user"));
+        assert!(erp_user_url().ends_with("/erpMobile/erpMobile/pushController/getDbSysadmin"));
     }
 
     #[test]

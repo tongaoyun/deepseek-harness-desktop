@@ -28,7 +28,7 @@ export interface HarnessRunInput {
   knowledgeEndpoint: string
   scheduleEndpoint: string
   model: string
-  reasoningEffort?: import('./modelSelection').ReasoningEffort
+  reasoningEffort?: import('./modelReasoning').ReasoningEffort
   modelApiKey: string
   accessToken: string
   localFileRootIds: string[]
@@ -289,9 +289,9 @@ export async function diagnoseConnectors(
   return invoke<ConnectorDiagnosticResult[]>('diagnose_connectors', { request: input })
 }
 
-export async function selfTestLocalCapabilities(): Promise<LocalCapabilitySelfTestResult> {
+export async function selfTestLocalCapabilities(includeComputer = true): Promise<LocalCapabilitySelfTestResult> {
   if (!isTauri()) throw new Error('本地能力自检只能在小胤桌面客户端中运行')
-  return invoke<LocalCapabilitySelfTestResult>('self_test_local_capabilities')
+  return invoke<LocalCapabilitySelfTestResult>('self_test_local_capabilities', { includeComputer })
 }
 
 export async function probeHarnessHost(modelConfigured = false, allowShell = true, allowLsp = false, allowExternalAgents = false, allowHooks = false, toolsMode: 'native' | 'ptc' | 'both' = 'native'): Promise<HarnessHostHealth> {

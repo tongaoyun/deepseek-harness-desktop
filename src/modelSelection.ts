@@ -1,15 +1,18 @@
 export function resolveSelectedModel(models: string[], stored?: string | null): string {
-  if (stored && models.includes(stored)) return stored
-  return models[0] ?? ''
+  const available = availableModels(models)
+  if (stored && available.includes(stored)) return stored
+  return available[0] ?? ''
+}
+
+export function availableModels(models: string[]): string[] {
+  return [...new Set(models)].filter((model) => !['gpt-5.6', '5.6'].includes(model.trim().toLowerCase()))
 }
 
 export function modelDisplayName(model: string): string {
   return model
     .split(/[-_/]+/)
     .filter(Boolean)
-    .map((part) => part.toLowerCase() === 'deepseek'
-      ? 'DeepSeek'
-      : part.length <= 4 ? part.toUpperCase() : `${part[0].toUpperCase()}${part.slice(1)}`)
+    .map((part) => part.toLowerCase() === 'gpt' ? 'GPT' : `${part[0].toUpperCase()}${part.slice(1).toLowerCase()}`)
     .join(' ')
 }
 

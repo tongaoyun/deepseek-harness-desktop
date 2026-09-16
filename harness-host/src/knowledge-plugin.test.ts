@@ -10,7 +10,7 @@ describe('KnowledgeClient', () => {
     const server = createServer((request, response) => {
       expect(request.headers['x-xiaoyin-employee-id']).toBe('employee-1')
       expect(request.headers['x-xiaoyin-team-id']).toBe('crossborder')
-      expect(request.headers.authorization).toBe('Bearer secret-token')
+      expect(request.headers['x-erp-session']).toBe('secret-token')
       let body = ''
       request.on('data', (chunk) => { body += chunk })
       request.on('end', () => {

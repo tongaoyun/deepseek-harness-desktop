@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   createExpertKitDownload,
   loadBootstrap,
+  resolveServerEndpoint,
   localScheduleNamespace,
   loadConnectors,
   loadExpertKits,
@@ -16,7 +17,24 @@ describe('loadBootstrap', () => {
   it('keeps local plans in their existing namespace without a bootstrap schedule endpoint', () => {
     expect(localScheduleNamespace()).toBe('http://192.168.2.67:30081/api/v1/schedules')
   })
-  afterEach(() => vi.unstubAllGlobals())
+  afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs() })
+
+  it('proxies development browser requests while preserving native endpoints and the schedule namespace', async () => {
+    vi.stubEnv('DEV', true)
+    vi.stubEnv('VITE_XIAOYIN_DEV_PROXY', 'true')
+    vi.stubEnv('VITE_XIAOYIN_SERVER_URL', 'http://192.168.2.67:30081')
+    vi.stubGlobal('window', { location: { origin: 'http://localhost:1421' } })
+    const fetchMock = vi.fn().mockImplementation(async () => new Response(JSON.stringify(wire({ models: [] }))))
+    vi.stubGlobal('fetch', fetchMock)
+    await loadBootstrap('employee', 'session')
+    expect(fetchMock.mock.calls[0][0]).toBe('http://localhost:1421/api/v1/bootstrap')
+    expect(fetchMock.mock.calls[0][1].headers).toMatchObject({ 'X-ERP-Session': 'session', 'X-Xiaoyin-Employee-Id': 'employee' })
+    expect(resolveServerEndpoint('/api/v1/knowledge-bases')).toBe('http://192.168.2.67:30081/api/v1/knowledge-bases')
+    expect(localScheduleNamespace()).toBe('http://192.168.2.67:30081/api/v1/schedules')
+    vi.stubEnv('DEV', false)
+    await loadBootstrap('employee', 'session')
+    expect(fetchMock.mock.calls[1][0]).toBe('http://192.168.2.67:30081/api/v1/bootstrap')
+  })
 
   it('rereads source identity with current account headers and explicit stale-source errors', async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify(wire({ sourceId: '12', content: 'current' }))))
@@ -25,7 +43,7 @@ describe('loadBootstrap', () => {
     const context = { endpoint: '/api/v1/knowledge-bases/', employeeId: 'employee', teamId: 'team', accessToken: 'test-token' }
     await expect(loadKnowledgeSource(context, '12')).resolves.toMatchObject({ sourceId: '12' })
     expect(fetchMock.mock.calls[0][0]).toBe('http://192.168.2.67:30081/api/v1/knowledge-bases/sources/12')
-    expect(fetchMock.mock.calls[0][1]).toMatchObject({ headers: { 'X-Xiaoyin-Employee-Id': 'employee', 'X-Xiaoyin-Team-Id': 'team', Authorization: 'Bearer test-token' } })
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({ headers: { 'X-Xiaoyin-Employee-Id': 'employee', 'X-Xiaoyin-Team-Id': 'team', 'X-ERP-Session': 'test-token' } })
     await expect(loadKnowledgeSource(context, '12')).rejects.toThrow('历史摘录不能作为当前依据')
     await expect(loadKnowledgeSource(context, '../files')).rejects.toThrow()
     expect(fetchMock).toHaveBeenCalledTimes(2)
@@ -77,7 +95,7 @@ describe('loadBootstrap', () => {
     expect(fetchMock.mock.calls[0][0]).toBe('http://192.168.2.67:30081/api/v1/expert-kits')
     expect(fetchMock.mock.calls[0][1].headers).toMatchObject({
       'X-Xiaoyin-Employee-Id': 'employee-1',
-      Authorization: 'Bearer token-1',
+      'X-ERP-Session': 'token-1',
     })
     expect(fetchMock.mock.calls[1][0]).toBe('http://192.168.2.67:30081/api/v1/expert-kits/kit%20one/download')
   })
@@ -97,7 +115,7 @@ describe('loadBootstrap', () => {
     ])
     expect(fetchMock.mock.calls[1][1].headers).toMatchObject({
       'X-Xiaoyin-Employee-Id': 'employee-1',
-      Authorization: 'Bearer token-1',
+      'X-ERP-Session': 'token-1',
     })
   })
 

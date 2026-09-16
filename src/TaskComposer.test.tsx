@@ -43,6 +43,7 @@ it.each([false, true])('labels direct continuation accurately when the existing 
 it('shows model choices without a company heading and preserves model selection', async () => {
   const select = vi.fn()
   await fixture('', { modelMenuOpen: true, activeModel: 'deepseek-v4-flash', models: ['deepseek-v4-flash', 'deepseek-v4-pro'], onSelectModel: select }, async (container) => {
+    await click(container, '.model-choice-row')
     const menu = container.querySelector('.model-menu')!
     expect(menu.querySelector('small')).toBeNull()
     expect(menu.textContent).not.toContain('公司可用模型')
@@ -64,13 +65,51 @@ it('shows an explicit empty model state instead of inventing a selectable fallba
   })
 })
 
-it('switches explicitly between agent and plan modes', async () => {
+it('supports keyboard model navigation and closes the submenu before the settings panel', async () => {
+  const toggle = vi.fn()
+  await fixture('', { modelMenuOpen: true, models: ['gpt-6-astra', 'gpt-5.5'], activeModel: 'gpt-6-astra', onToggleModelMenu: toggle }, async (container) => {
+    const row = container.querySelector<HTMLButtonElement>('.model-choice-row')!
+    await act(async () => row.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })))
+    expect(document.activeElement?.getAttribute('title')).toBe('gpt-6-astra')
+    await act(async () => document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })))
+    expect(document.activeElement?.getAttribute('title')).toBe('gpt-5.5')
+    await act(async () => document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+    expect(container.querySelector('.model-choice-submenu')).toBeNull()
+    expect(document.activeElement).toBe(row)
+    expect(toggle).not.toHaveBeenCalled()
+    await act(async () => row.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+    expect(toggle).toHaveBeenCalledOnce()
+  })
+})
+
+it('does not ask users to choose an execution mode', async () => {
+  await fixture('', { models: ['gpt-6-astra'], activeModel: 'gpt-6-astra' }, async (container) => {
+    expect(container.querySelector('[aria-label="执行模式"]')).toBeNull()
+    expect(container.querySelector('.model-label')!.textContent).toContain('GPT 6 Astra')
+  })
+})
+
+it('selects supported reasoning efforts and locks the choice during execution', async () => {
   const change = vi.fn()
-  await fixture('', { executionMode: 'agent', onExecutionModeChange: change }, async (container) => {
-    const modes = [...container.querySelectorAll<HTMLButtonElement>('.execution-mode-control button')]
-    expect(modes.map((item) => item.getAttribute('aria-pressed'))).toEqual(['true', 'false'])
-    await act(async () => modes[1].click())
-    expect(change).toHaveBeenCalledWith('plan')
+  await fixture('', { modelMenuOpen: true, models: ['gpt-5.6-sol'], activeModel: 'gpt-5.6-sol', reasoningEffort: 'medium', onReasoningEffortChange: change }, async (container) => {
+    const slider = container.querySelector<HTMLInputElement>('[aria-label="生成模式"]')!
+    expect(slider.type).toBe('range')
+    expect(slider.max).toBe('4')
+    expect(slider.getAttribute('aria-valuetext')).toBe('标准')
+    expect([...container.querySelectorAll('.model-effort-stops button')].map(option => option.textContent)).toEqual(['轻度', '标准', '深度', '极深', '极致'])
+    await act(async () => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(slider, '4'); slider.dispatchEvent(new Event('input', { bubbles: true })) })
+    expect(change).toHaveBeenCalledWith('ultra')
+  })
+  await fixture('', { modelMenuOpen: true, models: ['gpt-5.5'], activeModel: 'gpt-5.5' }, async (container) => {
+    expect(container.querySelector<HTMLInputElement>('[aria-label="生成模式"]')!.max).toBe('3')
+    expect(container.querySelector('.model-effort-stops')!.textContent).not.toContain('极致')
+  })
+  await fixture('', { modelMenuOpen: true, activeModel: 'gpt-5.5', harnessRunning: true }, async (container) => {
+    expect(container.querySelector<HTMLButtonElement>('.model-label')!.disabled).toBe(true)
+    expect(container.querySelector('.model-settings-popover')).toBeNull()
+  })
+  await fixture('', { activeModel: 'unknown' }, async (container) => {
+    expect(container.querySelector('[aria-label="生成模式"]')).toBeNull()
   })
 })
 

@@ -26,6 +26,8 @@ mod memory;
 mod office_preview;
 mod schedule_desktop;
 mod task_operations;
+#[cfg(target_os = "windows")]
+mod window_chrome;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -82,6 +84,10 @@ pub fn run() {
                 builder.build()?;
             }
             let authorizations = app.state::<local_files::LocalFileAuthorizations>();
+            #[cfg(target_os = "windows")]
+            if let Some(window) = app.get_webview_window("main") {
+                window_chrome::hide_caption_icon(&window)?;
+            }
             authorizations
                 .initialize_workspace(app_data.join("workspace"))
                 .and_then(|_| {

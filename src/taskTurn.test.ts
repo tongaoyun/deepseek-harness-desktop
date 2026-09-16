@@ -28,6 +28,29 @@ function existingTask(): LocalTaskRun {
 }
 
 describe('prepareTaskTurn', () => {
+  it('starts elapsed time at the current message instead of the previous turn', () => {
+    const result = prepareTaskTurn({
+      taskId: 'task', input: '第二次提问', now: '2026-09-15T01:00:00Z', existingTask: existingTask(),
+      sessionId: 'existing-session', model: 'model', directories: [], directoriesChanged: false,
+      capabilities, invocations: [], entries: [userEntry('u1', '第一次提问')],
+      projection: { ...createXiaoyinTaskProjection('2026-09-14T00:00:00Z'), status: 'completed', startedAt: '2026-09-14T00:00:00Z', completedAt: '2026-09-14T00:01:00Z' }, attachments: [],
+    })
+    expect(result.runningProjection.startedAt).toBe('2026-09-15T01:00:00Z')
+  })
+
+  it('pins reasoning effort without rebuilding the session when the effort changes', () => {
+    const result = prepareTaskTurn({
+      taskId: 'task', input: '继续', now: '2026-09-15T00:00:00Z',
+      existingTask: { ...existingTask(), reasoningEffort: 'medium' }, sessionId: 'existing-session', model: 'model', reasoningEffort: 'ultra',
+      directories: [], directoriesChanged: false, capabilities, invocations: [],
+      entries: [userEntry('u1', '原来的问题')], projection: createXiaoyinTaskProjection(), attachments: [],
+    })
+    expect(result.runningTask.reasoningEffort).toBe('ultra')
+    // A reasoning switch restarts the host process and resumes the same
+    // session, so the conversation continues instead of being replayed.
+    expect(result.rootSessionId).toBe('existing-session')
+    expect(result.harnessPrompt).toBe('继续')
+  })
   it('keeps UI tokens in task state but sends only employee text to the harness', () => {
     const result = prepareTaskTurn({
       taskId: 'task', input: '/kit:reports:weekly 分析本周数据', now: '2026-09-11T00:00:00Z',

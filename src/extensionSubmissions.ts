@@ -33,7 +33,7 @@ export interface ExtensionValidationReport {
 }
 
 function headers(employeeId: string, accessToken: string, json = false): Record<string, string> {
-  return { 'X-Xiaoyin-Employee-Id': employeeId, ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}), ...(json ? { 'Content-Type': 'application/json' } : {}) }
+  return { 'X-Xiaoyin-Employee-Id': employeeId, ...(accessToken ? { 'X-ERP-Session': accessToken } : {}), ...(json ? { 'Content-Type': 'application/json' } : {}) }
 }
 
 async function checked<T>(response: Response, label: string): Promise<T> {

@@ -68,10 +68,13 @@ function appendText(segments: TurnSegment[], id: string, delta: string): TurnSeg
 }
 
 function settleText(segments: TurnSegment[], id: string, settled: string): TurnSegment[] {
-  const index = segments.findIndex((segment) => segment.kind === 'text' && segment.id === id)
+  const exact = segments.findIndex((segment) => segment.kind === 'text' && segment.id === id)
+  // A settled message without step identity belongs to the segment still
+  // streaming; settling it there keeps the text from appearing twice.
+  const index = exact >= 0 ? exact : segments.findLastIndex((segment) => segment.kind === 'text' && segment.streaming)
   if (index < 0) return settled.trim() ? [...segments, { kind: 'text', id, text: settled }] : segments
   return segments.map((segment, position) => position === index && segment.kind === 'text'
-    ? { ...segment, text: settled }
+    ? { ...segment, text: settled, streaming: false }
     : segment)
 }
 

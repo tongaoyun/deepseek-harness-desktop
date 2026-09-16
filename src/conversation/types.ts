@@ -1,6 +1,6 @@
 import type { LocalTaskAttachment, TaskQuestionItem } from '../types'
 import type { TaskOutcome } from '../taskOutcome'
-import type { ReasoningEffort } from '../modelSelection'
+import type { ReasoningEffort } from '../modelReasoning'
 
 /**
  * The conversation the employee sees, mirroring the host's

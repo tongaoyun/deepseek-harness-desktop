@@ -8,9 +8,9 @@ import { FileChangesCard } from './FileChangesCard'
 import { LocalFilePreviewPanel } from './LocalFilePreviewPanel'
 import type { LocalArtifactTarget } from './localArtifactPreview'
 import { TaskArtifacts } from './TaskArtifacts'
+import { TaskRecoveryNotice } from './TaskRecoveryNotice'
 import { isUnverifiedTaskOutcome } from './taskOutcome'
 import { TaskOutcomeDetails } from './TaskOutcomeDetails'
-import { TaskRecoveryNotice } from './TaskRecoveryNotice'
 import { TaskOperationReview } from './TaskOperationReview'
 import { TaskVisuals } from './TaskVisuals'
 import type { AssistantTurn, ConversationEntry } from './conversation/types'
@@ -44,9 +44,9 @@ export interface ChatPageProps {
   harnessRunning: boolean
   runtimeStatus: RuntimeStatus
   activeModel: string
+  reasoningEffort?: import('./modelReasoning').ReasoningEffort
+  onReasoningEffortChange?: (value: import('./modelReasoning').ReasoningEffort) => void
   models: string[]
-  reasoningEffort?: import('./modelSelection').ReasoningEffort
-  executionMode?: 'agent' | 'plan'
   modelMenuOpen: boolean
   currentTaskRunning?: boolean
   queue?: TaskQueue
@@ -73,8 +73,6 @@ export interface ChatPageProps {
   onAddLocalFiles: () => void
   onToggleModelMenu: () => void
   onSelectModel: (model: string) => void
-  onSelectReasoningEffort?: (value: import('./modelSelection').ReasoningEffort) => void
-  onExecutionModeChange?: (mode: 'agent' | 'plan') => void
   onCancel: () => void
   onApprovalDecision?: ApprovalDecisionHandler
   onQuestionAnswer?: QuestionAnswerHandler

@@ -447,7 +447,7 @@ pub(crate) struct RuntimeFingerprint {
     pub(crate) team_id: String,
     pub(crate) knowledge_base_refs: Option<Vec<String>>,
     pub(crate) model: String,
-    pub(crate) reasoning_effort: String,
+    pub(crate) reasoning_effort: Option<String>,
     pub(crate) memory_context: String,
     pub(crate) credential_digest: String,
 }
@@ -534,7 +534,7 @@ pub async fn run_harness(
         team_id: request.team_id,
         knowledge_base_refs: profile.knowledge_base_refs,
         model: request.model,
-        reasoning_effort: validate_reasoning_effort(request.reasoning_effort.as_deref())?,
+        reasoning_effort: request.reasoning_effort,
         memory_context: memory::context(&app, &request.employee_id)?,
         credential_digest: credential_digest(&request.model_api_key, &request.access_token),
     };
@@ -680,7 +680,7 @@ pub async fn diagnose_connectors(
         team_id: String::new(),
         knowledge_base_refs: Some(Vec::new()),
         model: "connector-diagnostics".to_string(),
-        reasoning_effort: "medium".to_string(),
+        reasoning_effort: None,
         memory_context: String::new(),
         credential_digest: credential_digest("", &request.access_token),
     };
@@ -702,6 +702,7 @@ pub async fn diagnose_connectors(
 #[tauri::command]
 pub async fn self_test_local_capabilities(
     app: tauri::AppHandle,
+    include_computer: Option<bool>,
 ) -> Result<LocalCapabilitySelfTestResult, String> {
     crate::erp_auth::current_employee(&app).await?;
     let fingerprint = RuntimeFingerprint {
@@ -723,14 +724,19 @@ pub async fn self_test_local_capabilities(
         team_id: String::new(),
         knowledge_base_refs: Some(Vec::new()),
         model: "capability-self-test".to_string(),
-        reasoning_effort: "medium".to_string(),
+        reasoning_effort: None,
         memory_context: String::new(),
         credential_digest: credential_digest("", ""),
     };
     tauri::async_runtime::spawn_blocking(move || {
         let mut process =
             HarnessProcess::start_uninitialized(&app, fingerprint, String::new(), String::new())?;
-        let result = process.request("host.self-test", None, None);
+        let method = if include_computer.unwrap_or(true) {
+            "host.self-test"
+        } else {
+            "host.inventory-check"
+        };
+        let result = process.request(method, None, None);
         process.shutdown();
         serde_json::from_value(result?).map_err(|error| format!("本地能力自检结果无效：{error}"))
     })
@@ -768,7 +774,7 @@ pub async fn probe_harness_host(
         team_id: String::new(),
         knowledge_base_refs: Some(Vec::new()),
         model: "host-health-probe".to_string(),
-        reasoning_effort: "medium".to_string(),
+        reasoning_effort: None,
         memory_context: String::new(),
         credential_digest: credential_digest("", ""),
     };
@@ -854,7 +860,7 @@ pub async fn check_harness_provider(
         team_id: String::new(),
         knowledge_base_refs: Some(Vec::new()),
         model: request.model,
-        reasoning_effort: "medium".to_string(),
+        reasoning_effort: None,
         memory_context: String::new(),
         credential_digest: credential_digest(&request.model_api_key, ""),
     };
@@ -903,7 +909,7 @@ pub async fn inspect_harness_session(
         team_id: String::new(),
         knowledge_base_refs: Some(Vec::new()),
         model: "session-inspection".to_string(),
-        reasoning_effort: "medium".to_string(),
+        reasoning_effort: None,
         memory_context: String::new(),
         credential_digest: credential_digest("", ""),
     };
@@ -969,7 +975,7 @@ pub async fn search_harness_sessions(
         team_id: String::new(),
         knowledge_base_refs: Some(Vec::new()),
         model: "session-search".to_string(),
-        reasoning_effort: "medium".to_string(),
+        reasoning_effort: None,
         memory_context: String::new(),
         credential_digest: credential_digest("", ""),
     };
@@ -1606,7 +1612,10 @@ impl HarnessProcess {
             .env("DEEPSEEK_BASE_URL", &fingerprint.litellm_base_url)
             .env("DEEPSEEK_API_KEY", model_api_key)
             .env("DSH_MODEL", &fingerprint.model)
-            .env("XIAOYIN_REASONING_EFFORT", &fingerprint.reasoning_effort)
+            .env(
+                "DSH_REASONING_EFFORT",
+                fingerprint.reasoning_effort.as_deref().unwrap_or(""),
+            )
             .env("XIAOYIN_MEMORY_CONTEXT", &fingerprint.memory_context)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -2506,7 +2515,13 @@ fn validate_run_request(request: &HarnessRunRequest) -> Result<(), String> {
     if request.model.trim().is_empty() || request.model.len() > 200 {
         return Err("模型名称无效".to_string());
     }
-    validate_reasoning_effort(request.reasoning_effort.as_deref())?;
+    if request
+        .reasoning_effort
+        .as_deref()
+        .is_some_and(|value| !matches!(value, "low" | "medium" | "high" | "xhigh" | "ultra"))
+    {
+        return Err("无效的思考强度".to_string());
+    }
     if request.model_api_key.trim().is_empty()
         || request.model_api_key.len() > 16 * 1024
         || request.model_api_key.chars().any(char::is_control)
@@ -2524,15 +2539,6 @@ fn validate_tools_mode(value: Option<&str>) -> Result<String, String> {
     match value.unwrap_or("native") {
         "native" | "ptc" | "both" => Ok(value.unwrap_or("native").to_string()),
         _ => Err("工具运行模式无效".to_string()),
-    }
-}
-
-fn validate_reasoning_effort(value: Option<&str>) -> Result<String, String> {
-    match value.unwrap_or("medium") {
-        "off" | "low" | "medium" | "high" | "xhigh" | "max" => {
-            Ok(value.unwrap_or("medium").to_string())
-        }
-        _ => Err("推理强度无效".to_string()),
     }
 }
 
@@ -2733,8 +2739,8 @@ mod tests {
             team_id: "team-1".to_string(),
             knowledge_base_refs: Some(Vec::new()),
             model: "deepseek-chat".to_string(),
-            reasoning_effort: "medium".to_string(),
             memory_context: String::new(),
+            reasoning_effort: None,
             credential_digest: "digest-1".to_string(),
         };
         assert!(!fingerprint_changed(None, &baseline));
@@ -2743,6 +2749,10 @@ mod tests {
         assert_eq!(validate_tools_mode(Some("both")), Ok("both".to_string()));
         assert!(validate_tools_mode(Some("unknown")).is_err());
         for changed in [
+            RuntimeFingerprint {
+                reasoning_effort: Some("medium".into()),
+                ..baseline.clone()
+            },
             RuntimeFingerprint {
                 employee_id: "employee-2".into(),
                 ..baseline.clone()
@@ -3018,8 +3028,8 @@ mod tests {
             knowledge_endpoint: "http://xiaoyin-server.internal/api/v1/knowledge-bases".to_string(),
             schedule_endpoint: "http://xiaoyin-server.internal/api/v1/schedules".to_string(),
             model: "deepseek-chat".to_string(),
-            reasoning_effort: None,
             model_api_key: "model-token".to_string(),
+            reasoning_effort: None,
             access_token: "erp-token".to_string(),
             local_file_root_ids: Vec::new(),
             attachments: Vec::new(),

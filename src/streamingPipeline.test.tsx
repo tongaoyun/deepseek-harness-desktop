@@ -20,6 +20,8 @@ describe('Harness Host to rendered chat streaming', () => {
     const hostEvents: HostNotification[] = [
       hostEvent('agent/inbox/spliced', { inserted: [{ id: 'message-2' }] }),
       hostEvent('turn/start', { turn: 2 }),
+      hostEvent('assistant/stream', { type: 'start', turn: 2, step: 1 }),
+      ...Array.from(answer).map((text) => hostEvent('assistant/stream', { type: 'chunk', turn: 2, step: 1, chunk: { type: 'text-delta', text } })),
       hostEvent('assistant/message', { turn: 2, step: 1, message: { content: [{ type: 'text', text: answer }] } }),
       hostEvent('turn/end', { turn: 2, reason: { kind: 'completed' } }),
     ]

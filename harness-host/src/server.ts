@@ -63,6 +63,9 @@ export class HostServer {
         case 'host.self-test':
           this.emit(success(value.id, await runLocalCapabilitySelfTest()))
           return
+        case 'host.inventory-check':
+          this.emit(success(value.id, await runLocalCapabilitySelfTest(false)))
+          return
         case 'session.inspect': {
           const sessionId = parseSessionId(value.params)
           if (!this.runtime.inspectSession) throw new Error('Session inspection is unavailable')

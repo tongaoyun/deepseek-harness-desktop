@@ -16,6 +16,7 @@ import { XiaoyinMascot } from './XiaoyinMascot'
 import { KnowledgeDocumentList } from './KnowledgeDocumentList'
 import { KnowledgeSources } from './KnowledgeSources'
 import { AddDialog } from './AddDialog'
+import { CapabilityHero } from './CapabilityHero'
 import './knowledge.css'
 
 interface KnowledgeBasePageProps {
@@ -226,6 +227,7 @@ function KnowledgeWorkspace({ endpoint, employeeId, teamId, accessToken, onChang
   }
 
   return <>
+    <CapabilityHero kind="knowledge" />
     <div className="knowledge-page">
     <aside className="knowledge-sidebar">
       <button className="knowledge-create-trigger" type="button" onClick={() => setCreating(true)}><Plus size={14} />新建知识库</button>

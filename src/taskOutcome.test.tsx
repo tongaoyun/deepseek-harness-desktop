@@ -16,7 +16,8 @@ it('shows outstanding work and check evidence without implying a finished turn c
   expect(html).toContain('未找到 LibreOffice')
   expect(html).toContain('验收记录')
   expect(html).not.toContain('<details open')
-  expect(html.indexOf('安装重算引擎后核对公式')).toBeLessThan(html.indexOf('<details'))
+  // Outstanding work now lives inside the details block.
+  expect(html.indexOf('安装重算引擎后核对公式')).toBeGreaterThan(html.indexOf('<details'))
   const prompt = harnessPromptWithConversationReplay('继续核对', [userEntry('u1', '生成表格'), assistantEntry('turn:1', '表格已生成', { outcome })], true, projection)
   expect(prompt).toContain('部分完成')
   expect(prompt).toContain('安装重算引擎后核对公式')
