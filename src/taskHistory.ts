@@ -343,7 +343,8 @@ function isLocalTask(value: unknown): value is LocalTaskRun {
   const allowedFields = new Set(['id', 'source', 'name', 'status', 'createdAt', 'updatedAt', 'archivedAt', 'sessionId', 'scheduleId', 'scheduleRunId', 'invocationTokens', 'model', 'reasoningEffort', 'executionMode', 'localDirectories', 'capabilitySnapshot', 'projection', 'entries', 'messagePreview', 'processedImEventIds'])
   return Object.keys(task).every((key) => allowedFields.has(key)) && task.source === 'DESKTOP' && typeof task.id === 'string' && typeof task.name === 'string'
     && ['RUNNING', 'COMPLETED', 'FAILED', 'CANCELED'].includes(task.status ?? '')
-    && typeof task.createdAt === 'string' && typeof task.updatedAt === 'string' && Array.isArray(task.entries)
+    && typeof task.createdAt === 'string' && typeof task.updatedAt === 'string'
+    && Array.isArray(task.entries)
     && (task.scheduleId === undefined || typeof task.scheduleId === 'string')
     && (task.scheduleRunId === undefined || typeof task.scheduleRunId === 'string')
     && (task.reasoningEffort === undefined || ['off', 'low', 'medium', 'high', 'xhigh', 'max'].includes(task.reasoningEffort))

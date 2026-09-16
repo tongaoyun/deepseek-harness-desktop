@@ -266,7 +266,7 @@ function UserTurnView({ entry, invocations }: { entry: Extract<ConversationEntry
       {entry.source === 'steer' && <span className="steer-badge"><Sparkles size={12} />已插入当前任务</span>}
       {messageInput.tokens.map((token) => <span key={token} className="message-capability"><Sparkles size={12} />{invocations?.find((item) => item.token === token)?.name ?? token.replace(/^\/(?:kit|skill):/u, '')}</span>)}
       {entry.attachments && entry.attachments.length > 0 && <AttachmentList attachments={entry.attachments} />}
-      <RichMessage assistant={false} text={messageInput.text || (messageInput.tokens.length ? '使用所选能力开始任务' : entry.text)} />
+      <RichMessage text={messageInput.text || (messageInput.tokens.length ? '使用所选能力开始任务' : entry.text)} />
     </div>
   </article>
 }

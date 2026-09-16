@@ -18,7 +18,7 @@ const READABLE_TASK_SQL: &str = "CASE WHEN json_valid(payload) THEN COALESCE(
     AND json_type(payload, '$.name') = 'text'
     AND json_type(payload, '$.createdAt') = 'text'
     AND json_type(payload, '$.updatedAt') = 'text'
-    AND json_type(payload, '$.messages') = 'array'
+    AND json_type(payload, '$.entries') = 'array'
     AND json_type(payload, '$.projection') = 'object'
     AND json_extract(payload, '$.projection.status') IN ('idle', 'running', 'completed', 'failed', 'canceled')
     AND json_type(payload, '$.projection.activity') = 'text'
@@ -28,11 +28,12 @@ const READABLE_TASK_SQL: &str = "CASE WHEN json_valid(payload) THEN COALESCE(
     AND NOT EXISTS (SELECT 1 FROM json_each(payload) WHERE key NOT IN (
       'id', 'source', 'name', 'status', 'createdAt', 'updatedAt', 'archivedAt', 'sessionId',
       'scheduleId', 'scheduleRunId', 'invocationTokens', 'model', 'reasoningEffort', 'executionMode',
-      'localDirectories', 'capabilitySnapshot', 'projection', 'messages', 'messagePreview',
+      'localDirectories', 'capabilitySnapshot', 'projection', 'entries', 'messagePreview',
       'processedImEventIds'))
-    AND NOT EXISTS (SELECT 1 FROM json_each(payload, '$.messages') WHERE
+    AND NOT EXISTS (SELECT 1 FROM json_each(payload, '$.entries') WHERE
       COALESCE(json_extract(value, '$.role') IN ('user', 'assistant'), 0) = 0
-      OR COALESCE(json_type(value, '$.text') = 'text', 0) = 0), 0) ELSE 0 END";
+      OR (json_extract(value, '$.role') = 'user' AND COALESCE(json_type(value, '$.text') = 'text', 0) = 0)
+      OR (json_extract(value, '$.role') = 'assistant' AND COALESCE(json_type(value, '$.segments') = 'array', 0) = 0)), 0) ELSE 0 END";
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -624,7 +625,7 @@ fn task_index_fields(task: &Value) -> Result<(&str, &str, &str, &str), String> {
         "localDirectories",
         "capabilitySnapshot",
         "projection",
-        "messages",
+        "entries",
         "messagePreview",
         "processedImEventIds",
     ];
@@ -650,18 +651,20 @@ fn task_index_fields(task: &Value) -> Result<(&str, &str, &str, &str), String> {
     if !matches!(status, "RUNNING" | "COMPLETED" | "FAILED" | "CANCELED") {
         return Err("本地会话状态无效".to_string());
     }
-    if !object.get("messages").is_some_and(|value| {
-        value.as_array().is_some_and(|messages| {
-            messages.iter().all(|message| {
-                message.as_object().is_some_and(|message| {
-                    matches!(
-                        message.get("role").and_then(Value::as_str),
-                        Some("user" | "assistant")
-                    ) && message.get("text").is_some_and(Value::is_string)
+    let valid_entries = |list: &Value| {
+        list.as_array().is_some_and(|items| {
+            items.iter().all(|item| {
+                item.as_object().is_some_and(|item| {
+                    match item.get("role").and_then(Value::as_str) {
+                        Some("user") => item.get("text").is_some_and(Value::is_string),
+                        Some("assistant") => item.get("segments").is_some_and(Value::is_array),
+                        _ => false,
+                    }
                 })
             })
         })
-    }) {
+    };
+    if !object.get("entries").is_some_and(&valid_entries) {
         return Err("本地会话消息无效".to_string());
     }
     let Some(projection) = object.get("projection").and_then(Value::as_object) else {
@@ -972,7 +975,7 @@ mod tests {
         serde_json::json!({
             "id": id, "source": "DESKTOP", "name": "测试任务", "status": "COMPLETED",
             "createdAt": "2026-09-13T00:00:00Z", "updatedAt": "2026-09-13T00:00:00Z",
-            "messages": [], "projection": {"status": "completed", "activity": "完成",
+            "entries": [], "projection": {"status": "completed", "activity": "完成",
                 "updatedAt": "2026-09-13T00:00:00Z", "steps": [], "artifacts": []}
         })
     }
@@ -1180,7 +1183,7 @@ mod tests {
             "id": id, "source": "DESKTOP", "name": "任务", "status": "COMPLETED",
             "createdAt": "2026-09-13", "updatedAt": "2026-09-13",
             "projection": {"status": "completed", "activity": "完成", "updatedAt": "2026-09-13", "steps": [], "artifacts": []},
-            "messages": (0..message_count).map(|turn| serde_json::json!({"role": "user", "text": format!("原始要求 {turn}")})).collect::<Vec<_>>()
+            "entries": (0..message_count).map(|turn| serde_json::json!({"id": format!("u{turn}"), "role": "user", "text": format!("原始要求 {turn}")})).collect::<Vec<_>>()
         }).to_string()
     }
 
@@ -1209,7 +1212,7 @@ mod tests {
     fn new_native_task_must_be_visible_to_the_projection_index() {
         let task = serde_json::json!({
             "id": "task", "source": "DESKTOP", "name": "新任务", "status": "COMPLETED",
-            "createdAt": "2026-09-13", "updatedAt": "2026-09-13", "messages": [],
+            "createdAt": "2026-09-13", "updatedAt": "2026-09-13", "entries": [],
             "projection": {"status": "completed", "activity": "完成", "updatedAt": "2026-09-13", "steps": [], "artifacts": []}
         });
         assert_eq!(
@@ -1233,7 +1236,7 @@ mod tests {
         invalid["status"] = Value::String("UNKNOWN".into());
         assert!(task_index_fields(&invalid).unwrap_err().contains("状态"));
         invalid = task.clone();
-        invalid["messages"] = serde_json::json!([{"role": "system", "text": "hidden"}]);
+        invalid["entries"] = serde_json::json!([{"role": "system", "text": "hidden"}]);
         assert!(task_index_fields(&invalid).unwrap_err().contains("消息"));
         invalid = task;
         invalid["projection"]["steps"] = Value::Null;
@@ -1332,8 +1335,8 @@ mod tests {
             .collect();
         assert_eq!(first.items.len(), 200);
         assert_eq!(first.invalid_count, 0);
-        assert_eq!(first.items[0]["messages"].as_array().unwrap().len(), 160);
-        assert_eq!(first.items[0]["messages"][0]["text"], "原始要求 0");
+        assert_eq!(first.items[0]["entries"].as_array().unwrap().len(), 160);
+        assert_eq!(first.items[0]["entries"][0]["text"], "原始要求 0");
         database
             .execute(
                 "DELETE FROM local_task WHERE employee_key = 'employee-1' AND id = 'task-204'",

@@ -1,22 +1,15 @@
-import { Check, Copy, RotateCcw } from 'lucide-react'
+import { Check, Copy } from 'lucide-react'
 import { Children, isValidElement, memo, useEffect, useRef, useState, type ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
 interface Props {
   text: string
-  assistant: boolean
-  onRegenerate?: () => void
 }
 
-export const RichMessage = memo(function RichMessage({ text, assistant, onRegenerate }: Props) {
-  return <>
-    <div className="message-markdown"><ReactMarkdown components={{ pre: CodeBlock }} remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown></div>
-    {assistant && <div className="message-actions">
-      <CopyButton label="复制回答" text={text} />
-      {onRegenerate && <button aria-label="编辑后重发" onClick={onRegenerate} title="将原问题和附件放回输入框，修改后发送" type="button"><RotateCcw size={17} /></button>}
-    </div>}
-  </>
+/** Markdown body only. Per-turn actions live in the turn footer, once. */
+export const RichMessage = memo(function RichMessage({ text }: Props) {
+  return <div className="message-markdown"><ReactMarkdown components={{ pre: CodeBlock }} remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown></div>
 })
 
 function CodeBlock({ children }: { children?: ReactNode }) {

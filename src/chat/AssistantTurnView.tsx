@@ -45,10 +45,10 @@ function SegmentView({ segment, streaming, approvalsEnabled, onApprovalDecision,
   onQuestionAnswer?: QuestionAnswerHandler
 }) {
   if (segment.kind === 'text') {
-    return <div className={streaming && segment.streaming ? 'streaming-response' : undefined}><RichMessage assistant={!streaming} text={segment.text} /></div>
+    return <div className={streaming && segment.streaming ? 'streaming-response' : undefined}><RichMessage text={segment.text} /></div>
   }
   if (segment.kind === 'user') return <article className="conversation-turn user-turn steer-turn">
-    <div className="user-prompt"><span className="steer-badge"><Sparkles size={12} />已插入当前任务</span><RichMessage assistant={false} text={segment.text} /></div>
+    <div className="user-prompt"><span className="steer-badge"><Sparkles size={12} />已插入当前任务</span><RichMessage text={segment.text} /></div>
   </article>
   if (segment.kind === 'approval') return <ApprovalCard segment={segment} enabled={approvalsEnabled} onDecision={onApprovalDecision} />
   if (segment.kind === 'question') return <QuestionCard segment={segment} enabled={approvalsEnabled} onAnswer={onQuestionAnswer} />

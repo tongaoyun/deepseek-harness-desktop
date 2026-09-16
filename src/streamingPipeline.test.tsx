@@ -37,7 +37,7 @@ describe('Harness Host to rendered chat streaming', () => {
       const next = applyLiveEvent(entries, live)
       if (next === entries) return
       entries = next
-      rendered.push(renderToStaticMarkup(<RichMessage assistant text={lastEntryText(entries)} />))
+      rendered.push(renderToStaticMarkup(<RichMessage text={lastEntryText(entries)} />))
     })
 
     await server.handle({

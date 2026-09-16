@@ -75,17 +75,23 @@ it('reloads changed review baselines, computes current counts and refreshes the 
   } finally { await app.cleanup() }
 })
 
-it('copies fenced code separately and keeps actions for completed answers starting with 正在', async () => {
+it('copies a fenced code block on its own, apart from the turn actions', async () => {
   const app = mount(); const copy = vi.fn().mockResolvedValue(undefined)
   Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: copy } })
   try {
-    await act(async () => app.root.render(<RichMessage assistant text={'正在使用的示例：\n\n```ts\nconst ok = true\n```'} />))
-    expect(app.element.querySelector('[aria-label="复制回答"]')).not.toBeNull()
+    const body = '正在使用的示例：\n\n```ts\nconst ok = true\n```'
+    await act(async () => app.root.render(<RichMessage text={body} />))
+    // The body owns only the code-block copy; the turn footer owns 复制回答.
+    expect(app.element.querySelector('[aria-label="复制回答"]')).toBeNull()
     await act(async () => app.element.querySelector<HTMLButtonElement>('[aria-label="复制代码"]')!.click())
     expect(copy).toHaveBeenCalledWith('const ok = true')
-    copy.mockRejectedValueOnce(new Error('denied'))
-    await act(async () => app.element.querySelector<HTMLButtonElement>('[aria-label="复制回答"]')!.click())
-    expect(app.element.textContent).toContain('复制失败，请重试')
+    copy.mockRejectedValue(new Error('denied'))
+    const retry = mount()
+    try {
+      await act(async () => retry.root.render(<RichMessage text={body} />))
+      await act(async () => retry.element.querySelector<HTMLButtonElement>('[aria-label="复制代码"]')!.click())
+      expect(retry.element.textContent).toContain('复制失败，请重试')
+    } finally { await retry.cleanup() }
   } finally { await app.cleanup() }
 })
 
