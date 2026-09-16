@@ -3,8 +3,8 @@ import { splitComposerPrompt } from './composerInput'
 import { harnessPromptWithConversationReplay } from './conversationReplay'
 import type { ExtensionInvocation } from './extensionInvocations'
 import { resolveHarnessSessionId } from './harnessSession'
-import { resolveReasoningEffort } from './modelSelection'
-import type { CapabilitySnapshot, LocalTaskAttachment, LocalTaskRun, TaskMessage, XiaoyinTaskProjection } from './types'
+import type { AssistantTurn, ConversationEntry } from './conversation/types'
+import type { CapabilitySnapshot, LocalTaskAttachment, LocalTaskRun, XiaoyinTaskProjection } from './types'
 
 type TurnContext = {
   taskId: string
@@ -22,27 +22,40 @@ type TurnContext = {
   capabilities: CapabilitySnapshot
   invocations: ExtensionInvocation[]
   invocationTokens?: string[]
-  messages: TaskMessage[]
+  entries: ConversationEntry[]
   projection: XiaoyinTaskProjection
   attachments: LocalTaskAttachment[]
   queuedItemId?: string
 }
 
+/** The placeholder assistant turn shown from send until the first session event. */
+export function pendingAssistantTurn(model: string, reasoningEffort: import('./modelSelection').ReasoningEffort | undefined, now: string): AssistantTurn {
+  return { id: 'pending', role: 'assistant', status: 'streaming', segments: [], meta: { ...(model ? { model } : {}), ...(reasoningEffort ? { reasoningEffort } : {}), startedAt: now } }
+}
+
+/**
+ * A rebuilt session loses the model's own view of the conversation, so it is
+ * reserved for changes the Harness session cannot absorb: a different
+ * authorized workspace or a different capability set. A model or reasoning
+ * switch restarts the host process but resumes the same session, and a failed
+ * or stopped turn leaves a balanced log that continues normally.
+ */
+export function sessionMustRestart(context: Pick<TurnContext, 'directoriesChanged' | 'existingTask' | 'capabilities'>): boolean {
+  return context.directoriesChanged
+    || Boolean(context.existingTask && capabilitySnapshotChanged(context.existingTask.capabilitySnapshot, context.capabilities))
+}
+
 /** Session selection and persisted turn state must use the same immutable context. */
 export function prepareTaskTurn(context: TurnContext) {
-  const { existingTask, invocations, sessionId, messages, input, now, capabilities } = context
+  const { existingTask, invocations, sessionId, entries, input, now, capabilities } = context
   const executionMode = context.executionMode ?? 'agent'
   const invocationTokens = context.invocationTokens ?? invocations.map((item) => item.token)
-  const fresh = context.directoriesChanged
-    || Boolean(existingTask && (existingTask.model !== context.model
-      || resolveReasoningEffort(existingTask.reasoningEffort) !== resolveReasoningEffort(context.reasoningEffort)
-      || capabilitySnapshotChanged(existingTask.capabilitySnapshot, capabilities)))
-    || (!sessionId && !existingTask?.sessionId && messages.length > 0)
+  const fresh = sessionMustRestart(context)
+    || (!sessionId && !existingTask?.sessionId && entries.length > 0)
     || (!sessionId && Boolean(existingTask?.sessionId))
-    || context.projection.status === 'failed' || context.projection.status === 'canceled'
   const rootSessionId = resolveHarnessSessionId(sessionId, existingTask?.sessionId, fresh,
     () => `session-${crypto.randomUUID().replaceAll('-', '')}`)
-  const replay = harnessPromptWithConversationReplay(splitComposerPrompt(input).text, messages, fresh)
+  const replay = harnessPromptWithConversationReplay(splitComposerPrompt(input).text, entries, fresh)
   const harnessPrompt = replay
   const operationScope = context.projection.interruption && context.projection.operationScope
     ? context.projection.operationScope : crypto.randomUUID()
@@ -55,9 +68,10 @@ export function prepareTaskTurn(context: TurnContext) {
     updatedAt: now,
     startedAt: context.projection.startedAt ?? now,
   }
-  const pendingMessages: TaskMessage[] = [...messages,
-    { role: 'user', text: input, ...(context.queuedItemId ? { id: context.queuedItemId } : {}), ...(context.attachments.length ? { attachments: context.attachments } : {}) },
-    { role: 'assistant', text: '', pending: true },
+  const userTurnId = context.queuedItemId ?? `user-${crypto.randomUUID().replaceAll('-', '')}`
+  const pendingEntries: ConversationEntry[] = [...entries,
+    { id: userTurnId, role: 'user', text: input, ...(context.attachments.length ? { attachments: context.attachments } : {}) },
+    pendingAssistantTurn(context.model, context.reasoningEffort, now),
   ]
   const runningTask: LocalTaskRun = {
     id: context.taskId, source: 'DESKTOP',
@@ -67,7 +81,7 @@ export function prepareTaskTurn(context: TurnContext) {
     ...(context.scheduleId ? { scheduleId: context.scheduleId } : existingTask?.scheduleId ? { scheduleId: existingTask.scheduleId } : {}),
     ...(context.scheduleRunId ? { scheduleRunId: context.scheduleRunId } : existingTask?.scheduleRunId ? { scheduleRunId: existingTask.scheduleRunId } : {}),
     localDirectories: context.directories,
-    capabilitySnapshot: capabilities, projection: runningProjection, messages: pendingMessages,
+    capabilitySnapshot: capabilities, projection: runningProjection, entries: pendingEntries,
   }
-  return { rootSessionId, harnessPrompt, pendingMessages, runningProjection, runningTask }
+  return { rootSessionId, harnessPrompt, pendingEntries, userTurnId, runningProjection, runningTask }
 }

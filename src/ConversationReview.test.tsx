@@ -1,15 +1,13 @@
 // @vitest-environment jsdom
-import { act, useLayoutEffect } from 'react'
+import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, expect, it, vi } from 'vitest'
 import { FileChangesCard } from './FileChangesCard'
-import { InlineTaskActivity } from './InlineTaskActivity'
-import { ExecutionTimeline } from './ExecutionTimeline'
 import { LocalFilePreviewPanel } from './LocalFilePreviewPanel'
 import { RichMessage } from './RichMessage'
 import { codeDiffRows } from './codeDiff'
 import { loadLocalArtifactPreview, undoLocalFileChange } from './localArtifactPreview'
-import type { TaskFileChange, XiaoyinTaskProjection } from './types'
+import type { TaskFileChange } from './types'
 
 vi.mock('./localArtifactPreview', async (original) => ({ ...await original<typeof import('./localArtifactPreview')>(), loadLocalArtifactPreview: vi.fn(), undoLocalFileChange: vi.fn() }))
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
@@ -17,47 +15,6 @@ afterEach(() => { vi.restoreAllMocks(); vi.clearAllMocks() })
 const change: TaskFileChange = { id: 'one', rootId: 'root', rootName: 'repo', path: 'one.ts', name: 'one.ts', action: 'updated', sourceTool: 'local_files_write_text', backupPath: '.xiaoyin-backups/first/one.ts', afterHash: 'after', beforeHash: 'before', changedAt: '' }
 const button = (text: string, scope: ParentNode = document) => [...scope.querySelectorAll<HTMLButtonElement>('button')].find((item) => item.textContent?.trim() === text)!
 function mount() { const element = document.body.appendChild(document.createElement('div')); const root = createRoot(element); return { element, root, cleanup: async () => { await act(async () => root.unmount()); element.remove() } } }
-async function fill(element: HTMLTextAreaElement, value: string) {
-  await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(element, value)
-    element.dispatchEvent(new Event('input', { bubbles: true }))
-  })
-}
-
-it('keeps tool disclosures stable through completion and the next tool starting', async () => {
-  const app = mount()
-  const first = { id: 'one', kind: 'tool' as const, status: 'running' as const, label: '读取文件', toolName: 'read_file', occurredAt: '' }
-  try {
-    await act(async () => app.root.render(<ExecutionTimeline entries={[first]} />))
-    const group = app.element.querySelector<HTMLDetailsElement>('.execution-step-group')!
-    expect(group.open).toBe(false)
-    await act(async () => app.root.render(<ExecutionTimeline entries={[{ ...first, status: 'completed' }]} />))
-    expect(group.open).toBe(false)
-    await act(async () => group.querySelector('summary')!.click())
-    expect(group.open).toBe(true)
-    await act(async () => app.root.render(<ExecutionTimeline entries={[{ ...first, status: 'completed' }, { ...first, id: 'two' }]} />))
-    expect(app.element.querySelector('.execution-step-group')).toBe(group)
-    expect(group.open).toBe(true)
-    await act(async () => app.root.render(<ExecutionTimeline entries={[{ ...first, status: 'completed' }, { ...first, id: 'two', status: 'completed' }]} />))
-    expect(group.open).toBe(true)
-  } finally { await app.cleanup() }
-})
-
-it('collapses completion before paint, without an intermediate expanded frame', async () => {
-  const app = mount(); const snapshots: Array<string | null> = []
-  const projection: XiaoyinTaskProjection = { status: 'running', activity: '正在处理', updatedAt: '', steps: [], artifacts: [], timeline: [{ id: 'tool', kind: 'tool', label: '读取', status: 'completed', occurredAt: '' }] }
-  function PaintProbe({ status }: { status: string }) {
-    useLayoutEffect(() => { snapshots.push(app.element.querySelector('.inline-task-summary')!.getAttribute('aria-expanded')) }, [status])
-    return null
-  }
-  const render = (status: XiaoyinTaskProjection['status']) => app.root.render(<><InlineTaskActivity projection={{ ...projection, status }} /><PaintProbe status={status} /></>)
-  try {
-    await act(async () => render('running'))
-    await act(async () => render('completed'))
-    expect(snapshots).toEqual(['true', 'false'])
-  } finally { await app.cleanup() }
-})
-
 it('reviews the entire turn, makes paths clickable and never presents partial totals as complete', async () => {
   const app = mount(); const review = vi.fn(); const open = vi.fn()
   const changes = Array.from({ length: 5 }, (_, index) => ({ ...change, id: String(index), path: `${index}.ts`, name: `${index}.ts` }))
@@ -86,147 +43,6 @@ it('confirms undo, persists only successful files and surfaces conflicts', async
     expect(app.element.querySelector('[role="alert"]')?.textContent).toContain('two.ts：文件已被修改')
     expect(app.element.textContent).toContain('已撤销 1 个文件')
     expect(document.querySelector('[role="dialog"]')).toBeNull()
-  } finally { await app.cleanup() }
-})
-
-it('keeps approval actions visible even after the running process was collapsed', async () => {
-  const app = mount(); const decide = vi.fn()
-  let projection: XiaoyinTaskProjection = { status: 'running', activity: '正在处理', updatedAt: '', steps: [], artifacts: [], timeline: [{ id: 'tool', label: '检查', kind: 'tool', status: 'completed', occurredAt: '' }] }
-  const render = () => app.root.render(<InlineTaskActivity projection={projection} onApprovalDecision={decide} />)
-  try {
-    await act(async () => render())
-    await act(async () => app.element.querySelector<HTMLButtonElement>('.inline-task-summary')!.click())
-    projection = { ...projection, timeline: [...projection.timeline!, { id: 'approval', approvalId: 'permission', kind: 'approval', label: '确认操作', status: 'running', occurredAt: '' }] }
-    await act(async () => render())
-    expect(app.element.querySelector('.inline-task-summary')?.getAttribute('aria-expanded')).toBe('true')
-    await act(async () => app.element.querySelector<HTMLButtonElement>('.inline-task-summary')!.click())
-    await act(async () => button('允许本次操作').click())
-    expect(decide).toHaveBeenCalledWith('permission', 'allow')
-  } finally { await app.cleanup() }
-})
-
-it('keeps the latest streamed text visible when history is collapsed', async () => {
-  const app = mount()
-  const projection: XiaoyinTaskProjection = { status: 'running', activity: '正在生成回复', updatedAt: '', steps: [], artifacts: [], timeline: [
-    { id: 'old', kind: 'assistant', label: '说明', text: '旧的过程说明', status: 'completed', occurredAt: '' },
-    { id: 'live', kind: 'assistant', label: '回复', text: '正在生成正文', status: 'running', occurredAt: '' },
-  ] }
-  try {
-    await act(async () => app.root.render(<InlineTaskActivity projection={projection} />))
-    await act(async () => app.element.querySelector<HTMLButtonElement>('.inline-task-summary')!.click())
-    expect(app.element.textContent).toContain('正在生成正文')
-    expect(app.element.textContent).not.toContain('旧的过程说明')
-    await act(async () => app.root.render(<InlineTaskActivity projection={{ ...projection, timeline: [projection.timeline![0], { ...projection.timeline![1], text: '正在生成正文，继续更新' }] }} />))
-    expect(app.element.textContent).toContain('正在生成正文，继续更新')
-    expect(app.element.querySelector('.inline-task-summary')?.getAttribute('aria-expanded')).toBe('false')
-  } finally { await app.cleanup() }
-})
-
-it('keeps important notices and the latest progress visible after a tool starts in collapsed history', async () => {
-  const app = mount()
-  const projection: XiaoyinTaskProjection = { status: 'running', activity: '正在处理', updatedAt: '', steps: [], artifacts: [], timeline: [
-    { id: 'old', kind: 'assistant', label: '说明', text: '旧的过程说明', status: 'completed', occurredAt: '' },
-    { id: 'live', kind: 'assistant', label: '说明', text: '已检查文件，开始修改', status: 'completed', occurredAt: '' },
-    { id: 'warning', kind: 'warning', label: '部分资料缺失', text: '请补充附件', status: 'completed', occurredAt: '' },
-    { id: 'failed', kind: 'file', label: '写入文件', toolName: 'local_files_write_text', detail: '磁盘空间不足', status: 'failed', occurredAt: '' },
-    { id: 'tool', kind: 'file', label: '读取文件', toolName: 'local_files_read_text', status: 'running', occurredAt: '' },
-  ] }
-  try {
-    await act(async () => app.root.render(<InlineTaskActivity projection={projection} />))
-    await act(async () => app.element.querySelector<HTMLButtonElement>('.inline-task-summary')!.click())
-    expect(app.element.textContent).toContain('已检查文件，开始修改')
-    expect(app.element.textContent).toContain('请补充附件')
-    expect(app.element.textContent).toContain('磁盘空间不足')
-    expect(app.element.textContent).not.toContain('旧的过程说明')
-    expect(app.element.querySelector('.inline-task-summary')?.getAttribute('aria-expanded')).toBe('false')
-    await act(async () => app.root.render(<InlineTaskActivity projection={{ ...projection, status: 'canceled' }} />))
-    expect(app.element.textContent).not.toContain('磁盘空间不足')
-    expect(app.element.querySelector('.inline-task-summary')?.getAttribute('aria-expanded')).toBe('false')
-    await act(async () => app.element.querySelector<HTMLButtonElement>('.inline-task-summary')!.click())
-    expect(app.element.textContent).toContain('磁盘空间不足')
-  } finally { await app.cleanup() }
-})
-
-it('deduplicates approval submissions across collapsing, reports errors locally and allows retry', async () => {
-  const app = mount()
-  let reject: (reason: Error) => void = () => {}
-  const decide = vi.fn().mockImplementationOnce(() => new Promise<void>((_resolve, rejectPromise) => { reject = rejectPromise })).mockResolvedValue(undefined)
-  const projection: XiaoyinTaskProjection = { status: 'running', activity: '等待确认', updatedAt: '', steps: [], artifacts: [], timeline: [{ id: 'approve', approvalId: 'operation', kind: 'approval', label: '修改文件', status: 'running', occurredAt: '' }] }
-  try {
-    await act(async () => app.root.render(<InlineTaskActivity projection={projection} onApprovalDecision={decide} />))
-    await act(async () => { button('允许本次操作').click(); button('允许本次操作').click() })
-    expect(decide).toHaveBeenCalledTimes(1)
-    expect(button('拒绝').disabled).toBe(true)
-    await act(async () => app.element.querySelector<HTMLButtonElement>('.inline-task-summary')!.click())
-    expect(button('允许本次操作').disabled).toBe(true)
-    expect(app.element.textContent).toContain('正在提交确认')
-    await act(async () => reject(new Error('网络中断，请重试')))
-    expect(app.element.querySelector('[role="alert"]')?.textContent).toBe('网络中断，请重试')
-    await act(async () => button('允许本次操作').click())
-    expect(decide).toHaveBeenCalledTimes(2)
-    expect(app.element.textContent).toContain('确认已发送')
-    expect(button('允许本次操作').disabled).toBe(true)
-  } finally { await app.cleanup() }
-})
-
-it('keeps confirmation outside collapsed details and disables it while stopping', async () => {
-  const app = mount(); const decide = vi.fn()
-  const projection: XiaoyinTaskProjection = { status: 'running', activity: '等待确认', updatedAt: '', steps: [], artifacts: [], timeline: [{ id: 'approve', approvalId: 'operation', kind: 'approval', label: '确认', status: 'running', occurredAt: '' }] }
-  try {
-    await act(async () => app.root.render(<InlineTaskActivity projection={projection} onApprovalDecision={decide} />))
-    await act(async () => app.element.querySelector('details summary')!.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })))
-    expect(button('允许本次操作').closest('details')).toBeNull()
-    await act(async () => app.root.render(<InlineTaskActivity projection={{ ...projection, activity: '正在停止' }} onApprovalDecision={decide} />))
-    expect(button('允许本次操作').disabled).toBe(true)
-    await act(async () => button('允许本次操作').click())
-    expect(decide).not.toHaveBeenCalled()
-  } finally { await app.cleanup() }
-})
-
-it('submits a structured single-choice answer once', async () => {
-  const app = mount(); const answer = vi.fn().mockResolvedValue(undefined)
-  const projection: XiaoyinTaskProjection = { status: 'running', activity: '等待你回答', updatedAt: '', steps: [], artifacts: [], timeline: [{
-    id: 'question:mode', questionId: 'mode', kind: 'question', label: '需要你的回答', status: 'running', occurredAt: '',
-    questions: [{ id: 'strategy', header: '执行方式', question: '选择执行方式', options: [{ label: '安全模式', description: '保留备份' }, { label: '快速模式' }] }],
-  }] }
-  try {
-    await act(async () => app.root.render(<InlineTaskActivity projection={projection} onQuestionAnswer={answer} />))
-    expect(button('提交回答').disabled).toBe(true)
-    await act(async () => app.element.querySelector<HTMLInputElement>('.question-option input')!.click())
-    await act(async () => button('提交回答').click())
-    expect(answer).toHaveBeenCalledWith('mode', [{ id: 'strategy', selected: ['安全模式'] }])
-    expect(button('已提交').disabled).toBe(true)
-  } finally { await app.cleanup() }
-})
-
-it('supports multi-select plus custom text in one structured answer', async () => {
-  const app = mount(); const answer = vi.fn().mockResolvedValue(undefined)
-  const projection: XiaoyinTaskProjection = { status: 'running', activity: '等待你回答', updatedAt: '', steps: [], artifacts: [], timeline: [{
-    id: 'question:scope', questionId: 'scope', kind: 'question', label: '需要你的回答', status: 'running', occurredAt: '',
-    questions: [{ id: 'areas', question: '选择优化范围', multiSelect: true, options: [{ label: '运行时' }, { label: '界面' }] }],
-  }] }
-  try {
-    await act(async () => app.root.render(<InlineTaskActivity projection={projection} onQuestionAnswer={answer} />))
-    const choices = [...app.element.querySelectorAll<HTMLInputElement>('.question-option input')]
-    await act(async () => { choices[0].click(); choices[1].click() })
-    await fill(app.element.querySelector('textarea')!, '保留现有数据')
-    await act(async () => button('提交回答').click())
-    expect(answer).toHaveBeenCalledWith('scope', [{ id: 'areas', selected: ['运行时', '界面'], custom: '保留现有数据' }])
-  } finally { await app.cleanup() }
-})
-
-it('renders plan markdown and sends the declared approval option', async () => {
-  const app = mount(); const answer = vi.fn().mockResolvedValue(undefined)
-  const projection: XiaoyinTaskProjection = { status: 'running', activity: '等待你审阅计划', updatedAt: '', steps: [], artifacts: [], timeline: [{
-    id: 'question:plan', questionId: 'plan', kind: 'question', label: '计划审阅', status: 'running', occurredAt: '',
-    questions: [{ id: 'review', question: '是否按此计划执行？', detail: '## 实施计划\n\n- 修改运行时\n- 运行测试', options: [{ label: '批准执行' }, { label: '继续修改' }], intent: { kind: 'plan-review', approve: '批准执行' } }],
-  }] }
-  try {
-    await act(async () => app.root.render(<InlineTaskActivity projection={projection} onQuestionAnswer={answer} />))
-    expect(app.element.querySelector('.question-detail h2')?.textContent).toBe('实施计划')
-    await act(async () => app.element.querySelector<HTMLInputElement>('.question-option input')!.click())
-    await act(async () => button('提交回答').click())
-    expect(answer).toHaveBeenCalledWith('plan', [{ id: 'review', selected: ['批准执行'] }])
   } finally { await app.cleanup() }
 })
 

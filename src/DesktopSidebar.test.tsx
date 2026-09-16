@@ -7,7 +7,7 @@ import type { LocalTaskRun } from './types'
 const noop = () => undefined
 const task: LocalTaskRun = {
   id: 'current', source: 'DESKTOP', name: '分析文档', status: 'COMPLETED',
-  createdAt: '', updatedAt: '', messages: [],
+  createdAt: '', updatedAt: '', entries: [],
   projection: { status: 'idle', activity: '', updatedAt: '', steps: [], artifacts: [] },
 }
 const props: ComponentProps<typeof DesktopSidebar> = {

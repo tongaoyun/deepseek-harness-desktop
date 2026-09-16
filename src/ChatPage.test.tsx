@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { ChatPage } from './ChatPage'
+import { assistantEntry, userEntry } from './conversation/testing'
 import type { TaskArtifact, XiaoyinTaskProjection } from './types'
 
 const artifact: TaskArtifact = {
@@ -16,10 +17,10 @@ describe('ChatPage conversation', () => {
     const html = renderToStaticMarkup(<ChatPage
       activeModel="deepseek-v4-flash" composerRef={{ current: null }} harnessHealth="ready"
       harnessHealthDetail="正常" harnessRunning={false} knowledgeBases={[]} localDirectories={[]}
-      localFileError="" messageListRef={{ current: null }} pendingAttachments={[]} messages={[]}
+      localFileError="" messageListRef={{ current: null }} pendingAttachments={[]} entries={[]}
       modelMenuOpen={false} modelPickerRef={{ current: null }} models={[]} onAddKnowledge={() => undefined}
       onAddLocalDirectory={() => undefined} onAddLocalFiles={() => undefined} onCancel={() => undefined}
-      onPrepareRetry={() => undefined} onPrompt={() => undefined} onReconnect={() => undefined} onRecoverHarness={() => undefined}
+      onEditTurn={() => undefined} onPrompt={() => undefined} onReconnect={() => undefined} onRecoverHarness={() => undefined}
       onRemoveAttachment={() => undefined} onRemoveKnowledge={() => undefined} onRemoveLocalDirectory={() => undefined}
       onSelectModel={() => undefined} onSubmit={() => undefined}
       onToggleModelMenu={() => undefined} prompt="" runtimeStatus="ready"
@@ -50,12 +51,12 @@ describe('ChatPage conversation', () => {
     const html = renderToStaticMarkup(<ChatPage
       activeModel="deepseek-v4-flash" composerRef={{ current: null }} creationKind="skill" harnessHealth="ready"
       harnessHealthDetail="正常" harnessRunning={false} knowledgeBases={[]} localDirectories={[]}
-      localFileError="" messageListRef={{ current: null }} pendingAttachments={[]} messages={[
-        { role: 'user', text: '解释冒泡排序' },
-        { role: 'assistant', text: '冒泡排序会比较相邻元素。', projection },
+      localFileError="" messageListRef={{ current: null }} pendingAttachments={[]} entries={[
+        userEntry('u1', '解释冒泡排序'),
+        assistantEntry('turn:1', '冒泡排序会比较相邻元素。', { outcome: projection.outcome }),
       ]} modelMenuOpen={false} modelPickerRef={{ current: null }} models={[]} onAddKnowledge={() => undefined}
       onAddLocalDirectory={() => undefined} onAddLocalFiles={() => undefined} onCancel={() => undefined} onContinueCreation={() => undefined}
-      onPrepareRetry={() => undefined} onPrompt={() => undefined} onReconnect={() => undefined} onRecoverHarness={() => undefined}
+      onEditTurn={() => undefined} onPrompt={() => undefined} onReconnect={() => undefined} onRecoverHarness={() => undefined}
       onRemoveAttachment={() => undefined} onRemoveKnowledge={() => undefined} onRemoveLocalDirectory={() => undefined}
       onSelectModel={() => undefined} onSubmit={() => undefined} onToggleModelMenu={() => undefined} prompt=""
       runtimeStatus="ready" selectedKnowledgeBaseRefs={[]}
@@ -64,7 +65,7 @@ describe('ChatPage conversation', () => {
 
     expect(html).toContain('conversation-turn user-turn')
     expect(html).toContain('conversation-turn assistant-turn')
-    expect(html).not.toContain('用时 2秒')
+    expect(html).not.toContain('inline-task-activity')
     expect(html).not.toContain('inline-task-activity')
     expect(html).toContain('冒泡排序会比较相邻元素。')
     expect(html).not.toContain('message-avatar')
@@ -86,11 +87,9 @@ describe('ChatPage conversation', () => {
     const html = renderToStaticMarkup(<ChatPage
       activeModel="deepseek-v4-flash" composerRef={{ current: null }} harnessHealth="ready"
       harnessHealthDetail="正常" harnessRunning knowledgeBases={[]}
-      localDirectories={[]} localFileError="" messageListRef={{ current: null }} messages={[
-        { role: 'assistant', text: '正在列出下载目录中的文件', pending: true, projection },
-      ]} modelMenuOpen={false} modelPickerRef={{ current: null }} models={[]} onAddKnowledge={() => undefined}
+      localDirectories={[]} localFileError="" messageListRef={{ current: null }} entries={[assistantEntry('turn:1', [{ kind: 'text', id: '1:1', text: '正在列出下载目录中的文件', streaming: true }], {}, 'streaming')]} modelMenuOpen={false} modelPickerRef={{ current: null }} models={[]} onAddKnowledge={() => undefined}
       onAddLocalDirectory={() => undefined} onAddLocalFiles={() => undefined} onCancel={() => undefined}
-      onPrepareRetry={() => undefined} onPrompt={() => undefined} onReconnect={() => undefined} onRecoverHarness={() => undefined}
+      onEditTurn={() => undefined} onPrompt={() => undefined} onReconnect={() => undefined} onRecoverHarness={() => undefined}
       onRemoveAttachment={() => undefined} onRemoveKnowledge={() => undefined} onRemoveLocalDirectory={() => undefined}
       onSelectModel={() => undefined} onSubmit={() => undefined}
       onToggleModelMenu={() => undefined} pendingAttachments={[{

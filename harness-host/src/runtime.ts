@@ -23,6 +23,7 @@ import { IMAGE_LIMITS } from './image-limits.js'
 import { memoryContextForTask } from './memory-context.js'
 import { TaskOutcomeTracker, type TaskOutcome } from './task-outcome.js'
 import { initialXiaoyinTaskView, reduceEvent, type XiaoyinTaskState, type XiaoyinTaskView } from './xiaoyin-projections-plugin.js'
+import { initialTranscriptState, reduceTranscriptEvent, type TranscriptEntry, type TranscriptState } from './transcript-projection.js'
 import { hasEligibleHarnessMcpConnector } from './managed-mcp-plugin.js'
 
 export interface RunInput {
@@ -37,6 +38,8 @@ export interface HarnessRunResult {
   sessionId: string
   finalResponse: string
   outcome?: TaskOutcome
+  /** True when the employee interrupted the turn before it completed. */
+  interrupted?: boolean
 }
 
 export interface SessionInspection {
@@ -46,6 +49,7 @@ export interface SessionInspection {
   lastEventType?: string
   pendingTools: number
   projection?: XiaoyinTaskView
+  transcript: TranscriptEntry[]
   messages: Array<{ id: string; role: 'user' | 'assistant'; text: string }>
 }
 
@@ -71,6 +75,9 @@ export interface HarnessRuntime {
   initialize(): Promise<{ status: string; runtime: string }>
   run(input: RunInput, onNotification: (value: HarnessNotification, rootSessionId: string) => void): Promise<HarnessRunResult>
   inspectSession?(sessionId: string): Promise<SessionInspection | undefined>
+  steer?(sessionId: string, text: string): Promise<unknown>
+  interrupt?(sessionId: string): Promise<{ interrupted: boolean }>
+  regenerate?(sessionId: string): Promise<{ sessionId: string }>
   searchSessions?(sessionIds: string[], query: string, limit?: number, cursor?: string): Promise<SessionSearchPage>
   checkProvider?(): Promise<ProviderCheckResult>
   close(): Promise<void>
@@ -196,6 +203,8 @@ export class DeepSeekHarnessRuntime implements HarnessRuntime {
   private harness: DeepSeekHarness | undefined
   private initialized = false
   private runTail: Promise<void> = Promise.resolve()
+  /** Set by interrupt(); consulted at the running turn's abort boundary. */
+  private interruptRequested = false
   private closing = false
   private closeTask: Promise<void> | undefined
   constructor(private readonly extraEnv: NodeJS.ProcessEnv = {}) {}
@@ -375,13 +384,16 @@ export class DeepSeekHarnessRuntime implements HarnessRuntime {
     try {
       await harness.start()
       this.initialized = true
-      return await runSessionTurn(
+      const interrupted = await runSessionTurn(
         harness.client,
         sessionId,
         content,
         onNotification,
         turnTimeoutMs(env.XIAOYIN_TURN_TIMEOUT_MS),
+        () => this.interruptRequested,
       )
+      if (!interrupted) this.interruptRequested = false
+      return interrupted
     } catch (error) {
       // Do not let the native host tear down the process group before the SDK
       // has finished disposing detached shell/MCP children.
@@ -392,6 +404,46 @@ export class DeepSeekHarnessRuntime implements HarnessRuntime {
       }
       throw error
     }
+  }
+
+  /**
+   * Steer one employee message into the running turn's next step boundary.
+   * Not serialized behind runTail: it must reach the live agent while a run
+   * is in flight.
+   */
+  async steer(sessionId: string, text: string): Promise<unknown> {
+    const harness = this.harness
+    if (harness === undefined || this.interruptRequested) throw new Error('本轮没有正在运行的任务')
+    return harness.client.request('session/steer', { sessionId, contentBlocks: [{ type: 'text', text }] } as never)
+  }
+
+  /**
+   * Ask the running turn to stop as a user cancellation, preserving partial
+   * results. Harmless when nothing is running.
+   */
+  async interrupt(sessionId: string): Promise<{ interrupted: boolean }> {
+    const harness = this.harness
+    if (harness === undefined) return { interrupted: false }
+    this.interruptRequested = true
+    try {
+      const result = await harness.client.request('session/interrupt', { sessionId } as never) as { interrupted?: boolean }
+      return { interrupted: result?.interrupted === true }
+    } catch {
+      return { interrupted: false }
+    }
+  }
+
+  /**
+   * Fork the session before its last prompt so the caller can re-run that turn
+   * with the earlier context intact. Runs between turns, never concurrently
+   * with an active run.
+   */
+  async regenerate(sessionId: string): Promise<{ sessionId: string }> {
+    const harness = this.harness
+    if (harness === undefined) throw new Error('本轮没有可重新生成的会话')
+    const result = await harness.client.request('session/regenerate', { sessionId } as never) as { sessionId?: unknown }
+    if (typeof result?.sessionId !== 'string' || !result.sessionId) throw new Error('重新生成未返回新的会话')
+    return { sessionId: result.sessionId }
   }
 
   async close(): Promise<void> {
@@ -465,10 +517,12 @@ export async function runSessionTurn(
   content: SdkPromptContentBlock[],
   onNotification: (value: HarnessNotification) => void,
   timeoutMs = 15 * 60_000,
+  isInterrupted?: () => boolean,
 ): Promise<HarnessRunResult> {
   const subscription = client.subscribeSessionTree(sessionId)
   let receivedPrompt = false
   let turnStarted = false
+  let abortedByInterrupt = false
   let finalResponse = ''
   let turnFailure = ''
   const pendingTools = new Set<string>()
@@ -513,6 +567,7 @@ export async function runSessionTurn(
             turnFailure = '本轮达到模型输出上限，结果尚未完成，请继续处理剩余内容'
             break
           case 'aborted':
+            if (isInterrupted?.()) { abortedByInterrupt = true; break }
             turnFailure = '本轮已停止，已保留停止前的部分结果'
             break
           case 'blocked':
@@ -532,10 +587,11 @@ export async function runSessionTurn(
   } finally {
     subscription.close()
   }
-  if (turnFailure) throw new Error(turnFailure)
-  if (pendingTools.size) throw new Error('本轮仍有工具操作未取得结果，请先核对实际结果后继续')
-  if (!finalResponse.trim()) throw new Error('模型本轮没有返回可显示文本，请重试')
-  return { sessionId, finalResponse, outcome: outcome.result() }
+  if (turnFailure && !(abortedByInterrupt)) throw new Error(turnFailure)
+  if (pendingTools.size && !(abortedByInterrupt)) throw new Error('本轮仍有工具操作未取得结果，请先核对实际结果后继续')
+  // A completed turn without visible text is legitimate (file edits, plan
+  // delivery); the desktop renders the turn from its streamed segments.
+  return { sessionId, finalResponse, outcome: outcome.result(), ...(abortedByInterrupt ? { interrupted: true } : {}) }
 }
 
 /**
@@ -552,11 +608,6 @@ async function forwardVisibleTextSmoothly(
   onNotification: (value: HarnessNotification) => void,
 ): Promise<void> {
   if (event === undefined) {
-    onNotification(notification)
-    return
-  }
-  if (event.type === 'tool/call') {
-    streamedText.clear()
     onNotification(notification)
     return
   }
@@ -633,9 +684,14 @@ function textChunkNotification(
   } as HarnessNotification
 }
 
+/** Streamed text is keyed per turn and step so a segment survives the tool calls
+ *  around it: text between tool calls is its own segment, never cleared away. */
 function assistantStepKey(data: Record<string, unknown> | undefined): string {
-  void data
-  return 'root-visible-response'
+  return `${integer(data?.turn) ?? 0}:${integer(data?.step) ?? 0}`
+}
+
+function integer(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isSafeInteger(value) ? value : undefined
 }
 
 function stringTexts(value: unknown): string {
@@ -783,6 +839,9 @@ async function inspectOfficialSession(sessionId: string, env: NodeJS.ProcessEnv 
       for (const event of events) outcomeTracker.observe(event)
       const hasOutcomeReport = events.some((event) => event.type === 'tool/call' && record(event.data)?.name === 'task_report')
       const projection = hasOutcomeReport ? { ...state.value, outcome: outcomeTracker.result() as unknown as Record<string, unknown> } : state.value
+      // Same fold as the live `xiaoyin.transcript` projection: reload and
+      // live rendering share one transcript shape by construction.
+      const transcriptState = events.reduce<TranscriptState>((current, event) => reduceTranscriptEvent(current, event), initialTranscriptState())
       const messages = rebuildSessionMessages(events)
       const pendingTools = projection.steps.filter((step) => step.kind === 'tool' && step.status === 'running').length
       const lastEvent = events.at(-1)
@@ -794,6 +853,7 @@ async function inspectOfficialSession(sessionId: string, env: NodeJS.ProcessEnv 
         ...(lastEvent?.type ? { lastEventType: lastEvent.type } : {}),
         pendingTools,
         projection,
+        transcript: transcriptState.entries,
         messages,
       }
     } finally {

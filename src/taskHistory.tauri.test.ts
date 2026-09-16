@@ -22,7 +22,7 @@ it('does not read stale WebView history after native migration, even when the na
 it('imports once, then never resurrects a deleted task when clearing the old key fails', async () => {
   const task: LocalTaskRun = {
     id: 'old-task', source: 'DESKTOP', name: '旧任务', status: 'COMPLETED',
-    createdAt: '2026-09-13T00:00:00Z', updatedAt: '2026-09-13T00:00:00Z', messages: [],
+    createdAt: '2026-09-13T00:00:00Z', updatedAt: '2026-09-13T00:00:00Z', entries: [],
     projection: { status: 'completed', activity: '完成', updatedAt: '2026-09-13T00:00:00Z', steps: [], artifacts: [] },
   }
   let migrated = false, tasks: LocalTaskRun[] = []
@@ -46,7 +46,7 @@ it('paginates full-message Harness hits without repeating the first page', async
     id: `task-${index}`, source: 'DESKTOP', name: `任务 ${index}`, status: 'COMPLETED',
     createdAt: new Date(Date.UTC(2026, 8, 12, 0, index)).toISOString(),
     updatedAt: new Date(Date.UTC(2026, 8, 12, 0, index)).toISOString(),
-    sessionId: `session-${index}`, messages: [],
+    sessionId: `session-${index}`, entries: [],
     projection: { status: 'completed', activity: '完成', updatedAt: '2026-09-12T00:00:00Z', steps: [], artifacts: [] },
   })).reverse()
   vi.mocked(invoke).mockImplementation(async (_command, args) => {
@@ -83,7 +83,7 @@ it('merges local metadata and Harness body matches in task recency order', async
     { id: 'title', name: '库存报告', sessionId: 'session-title', updatedAt: '2026-09-13T02:00:00Z' },
     { id: 'unrelated', name: '排期', sessionId: 'session-unrelated', updatedAt: '2026-09-13T01:00:00Z' },
   ].map((value) => ({
-    ...value, source: 'DESKTOP', status: 'COMPLETED', createdAt: value.updatedAt, messages: [],
+    ...value, source: 'DESKTOP', status: 'COMPLETED', createdAt: value.updatedAt, entries: [],
     projection: { status: 'completed', activity: '完成', updatedAt: value.updatedAt, steps: [], artifacts: [] },
   }))
   vi.mocked(invoke).mockImplementation(async (_command, args) => {
@@ -109,7 +109,7 @@ it('preserves local index pagination beyond the bounded Harness candidate set', 
   const task: LocalTaskRun = {
     id: 'older-local-match', source: 'DESKTOP', name: '库存记录', status: 'COMPLETED',
     createdAt: '2026-09-13T00:00:00Z', updatedAt: '2026-09-13T00:00:00Z',
-    messages: [], projection: { status: 'completed', activity: '完成', updatedAt: '2026-09-13T00:00:00Z', steps: [], artifacts: [] },
+    entries: [], projection: { status: 'completed', activity: '完成', updatedAt: '2026-09-13T00:00:00Z', steps: [], artifacts: [] },
   }
   vi.mocked(invoke).mockResolvedValueOnce({ items: [task], total: 2_001, offset: 0, limit: 200 })
     .mockResolvedValueOnce({ items: [task], total: 2_001, offset: 0, limit: 200 })
@@ -125,7 +125,7 @@ it('finds a body match beyond the first 2,000 Session IDs using bounded requests
     id: `task-${index}`, source: 'DESKTOP', name: `任务 ${index}`, status: 'COMPLETED',
     createdAt: new Date(Date.UTC(2026, 8, 13, 0, index)).toISOString(),
     updatedAt: new Date(Date.UTC(2026, 8, 13, 0, index)).toISOString(),
-    sessionId: `session-${index}`, messages: [],
+    sessionId: `session-${index}`, entries: [],
     projection: { status: 'completed', activity: '完成', updatedAt: '2026-09-13T00:00:00Z', steps: [], artifacts: [] },
   })).reverse()
   vi.mocked(invoke).mockImplementation(async (_command, args) => {
@@ -149,7 +149,7 @@ it('does not skip a candidate moved ahead of the current page while scanning', a
     id: `task-${index}`, source: 'DESKTOP', name: `任务 ${index}`, status: 'COMPLETED',
     createdAt: new Date(Date.UTC(2026, 8, 13, 0, index)).toISOString(),
     updatedAt: new Date(Date.UTC(2026, 8, 13, 0, index)).toISOString(),
-    sessionId: `session-${index}`, messages: [],
+    sessionId: `session-${index}`, entries: [],
     projection: { status: 'completed', activity: '完成', updatedAt: '2026-09-13T00:00:00Z', steps: [], artifacts: [] },
   }))
   let candidatePages = 0
@@ -178,7 +178,7 @@ it('sorts a later Harness batch ahead of older local title matches', async () =>
     id: `task-${index}`, source: 'DESKTOP', name: index === 0 ? '库存标题' : `任务 ${index}`, status: 'COMPLETED',
     createdAt: new Date(Date.UTC(2026, 8, 13, 0, index)).toISOString(),
     updatedAt: new Date(Date.UTC(2026, 8, 13, 0, index)).toISOString(),
-    sessionId: `session-${index}`, messages: [],
+    sessionId: `session-${index}`, entries: [],
     projection: { status: 'completed', activity: '完成', updatedAt: '2026-09-13T00:00:00Z', steps: [], artifacts: [] },
   }))
   vi.mocked(invoke).mockImplementation(async (_command, args) => {
@@ -203,7 +203,7 @@ it('stops launching Harness batches after a stale search is canceled', async () 
     id: `task-${index}`, source: 'DESKTOP', name: `任务 ${index}`, status: 'COMPLETED',
     createdAt: new Date(Date.UTC(2026, 8, 13, 0, index)).toISOString(),
     updatedAt: new Date(Date.UTC(2026, 8, 13, 0, index)).toISOString(),
-    sessionId: `session-${index}`, messages: [],
+    sessionId: `session-${index}`, entries: [],
     projection: { status: 'completed', activity: '完成', updatedAt: '2026-09-13T00:00:00Z', steps: [], artifacts: [] },
   }))
   vi.mocked(invoke).mockImplementation(async (_command, args) => {

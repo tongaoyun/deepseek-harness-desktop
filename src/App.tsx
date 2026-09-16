@@ -40,8 +40,11 @@ import {
   createXiaoyinTaskProjection,
   diagnoseConnectors,
   restoreLocalDirectories,
+  interruptHarness,
+  regenerateHarness,
   respondHarnessApproval,
   respondHarnessQuestion,
+  steerHarness,
   revokeLocalDirectory,
   shutdownHarness,
   type AuthorizedLocalDirectory,
@@ -65,7 +68,9 @@ import { attachmentSelectionError } from './attachmentLimits'
 import { restoredTaskSessionId } from './harnessSession'
 import { prepareTaskTurn } from './taskTurn'
 import { startLocalIm, stopLocalImRuntime } from './localIm'
-import type { InstalledExpertKit, LocalTaskRun, TaskMessage, XiaoyinTaskProjection } from './types'
+import type { ConversationEntry } from './conversation/types'
+import { ensureFinalText, resetOpenTurn, settleOpenTurn } from './conversation/entries'
+import type { InstalledExpertKit, LocalTaskRun, XiaoyinTaskProjection } from './types'
 import { parseMemoryCommand, learnCompletedTask } from './memory'
 import { useMemoryCommands } from './useMemoryCommands'
 import { useMemorySync } from './useMemorySync'
@@ -200,7 +205,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
   const [page, setPage] = useState('chat')
   const [imConversationKey, setImConversationKey] = useState('')
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
-  const [messages, setMessages] = useState<TaskMessage[]>([])
+  const [entries, setEntries] = useState<ConversationEntry[]>([])
   const [localTasks, setLocalTasks] = useState<LocalTaskRun[]>([])
   const taskPersistence = useTaskPersistence(user?.userId, localTasks)
   const historyOwnerRef = useRef('')
@@ -352,7 +357,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
       const now = new Date().toISOString()
       const task: LocalTaskRun = { id: taskId, source: 'DESKTOP', name: schedule.name, status: 'COMPLETED', createdAt: now, updatedAt: now,
         scheduleId: schedule.id, scheduleRunId,
-        ...schedule.taskContext, localDirectories: directories, model: schedule.model || activeModel, messages: [], projection: createXiaoyinTaskProjection(now) }
+        ...schedule.taskContext, localDirectories: directories, model: schedule.model || activeModel, entries: [], projection: createXiaoyinTaskProjection(now) }
       let started = false
       try {
         return await executeTask(schedule.prompt, schedule.attachments ?? [], task, async () => { started = true }) ?? { notStarted: '本轮未启动，请检查工作目录、模型和能力配置后再执行；计划已暂停' }
@@ -392,7 +397,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
     onSyncError: (message) => notify(message, 'error'),
     onTasksChanged: setLocalTasks,
     onCurrentTaskChanged: (task) => {
-      setMessages(task.messages)
+      setEntries(task.entries)
       setHarnessSessionId(task.sessionId ?? '')
       taskProjectionRef.current = task.projection
       setTaskProjection(task.projection)
@@ -401,13 +406,13 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
   useHarnessNotifications({
     currentTaskIdRef: currentLocalTaskIdRef,
     streamingTasksRef,
-    onTaskUpdate: (taskId, projection, taskMessages) => setLocalTasks((current) => current.map((task) => task.id === taskId
-      ? { ...task, updatedAt: projection.updatedAt, projection, messages: taskMessages }
+    onTaskUpdate: (taskId, projection, taskEntries) => setLocalTasks((current) => current.map((task) => task.id === taskId
+      ? { ...task, updatedAt: projection.updatedAt, projection, entries: taskEntries }
       : task)),
-    onCurrentUpdate: (projection, taskMessages) => {
+    onCurrentUpdate: (projection, taskEntries) => {
       taskProjectionRef.current = projection
       setTaskProjection(projection)
-      if (taskMessages) setMessages(taskMessages)
+      if (taskEntries) setEntries(taskEntries)
     },
   })
   useTaskCheckpoints(user?.userId, localTasks, () => {}, (_owner, task) => taskPersistence.save(task))
@@ -623,7 +628,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
     setPage('chat')
     setTaskSearchOpen(false)
     setTaskQuery('')
-    setMessages([])
+    setEntries([])
     setHarnessSessionId('')
     setCurrentCapabilitySnapshot(undefined)
     setSelectedKnowledgeBaseRefs([])
@@ -663,12 +668,12 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
       && historyOwnerRef.current === owner
     let selectedTask = task
     // Durable transcripts live in Harness Persistence; hydrate stripped local indexes on demand.
-    if (user && task.sessionId && task.messages.length === 0 && !streamingTasksRef.current.has(task.id)) {
+    if (user && task.sessionId && task.entries.length === 0 && !streamingTasksRef.current.has(task.id)) {
       try {
         const hydrated = await loadTaskById(user.userId, task.id)
         if (!stillCurrent()) return
         if (!hydrated) { notify('该任务记录不可用，可能已删除。当前会话未切换。', 'error'); return }
-        if (hydrated.messages.length === 0) { notify('任务完整内容暂时无法读取，请稍后重试。当前会话未切换。', 'error'); return }
+        if (hydrated.entries.length === 0) { notify('任务完整内容暂时无法读取，请稍后重试。当前会话未切换。', 'error'); return }
         selectedTask = hydrated
         setLocalTasks((current) => current.map((item) => item.id === hydrated.id ? hydrated : item))
       } catch (reason) {
@@ -682,7 +687,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
     setPage('chat')
     setTaskSearchOpen(false)
     setTaskQuery('')
-    setMessages(streaming?.messages ?? selectedTask.messages.map((message) => ({ ...message, pending: false })))
+    setEntries(streaming?.entries ?? selectedTask.entries)
     selectCurrentLocalTaskId(selectedTask.id)
     setCreationKind(undefined)
     setCurrentCapabilitySnapshot(selectedTask.capabilitySnapshot)
@@ -884,14 +889,42 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
   const submit = async (event: FormEvent) => {
     event.preventDefault()
     if (attachmentImportRef.current || pastingAttachments || taskContextRestoring) return
+    if (currentTaskRunning) {
+      if (!splitComposerPrompt(prompt).text.trim()) return
+      if (pendingAttachments.length) { setLocalFileError('插话暂支持文字，请在当前轮完成后添加附件。'); return }
+      // Steering is the live path; when the turn cannot take it (it just ended,
+      // or the runtime is unavailable) the message queues for the next turn
+      // instead of being lost.
+      if (await steerRunningTask(prompt) || await taskQueue.enqueue(currentLocalTaskId, prompt)) setPrompt('')
+      return
+    }
     const currentQueue = taskQueue.queues[currentLocalTaskId]
-    if (currentTaskRunning || (currentQueue?.items.length && !currentQueue.paused)) {
+    if (currentQueue?.items.length && !currentQueue.paused) {
       if (!splitComposerPrompt(prompt).text.trim()) return
       if (pendingAttachments.length) { setLocalFileError('排队暂支持文字，请在当前轮完成后添加附件。'); return }
       if (await taskQueue.enqueue(currentLocalTaskId, prompt)) setPrompt('')
       return
     }
     await executeTask(prompt, pendingAttachments)
+  }
+
+  /**
+   * Inject one message into the running turn. A turn that ends between the
+   * check and the write is a normal race: the caller queues the message.
+   */
+  const steerRunningTask = async (text: string): Promise<boolean> => {
+    const taskId = currentLocalTaskId
+    if (!taskId) return false
+    try {
+      if (!await steerHarness(taskId, text)) return false
+      const streaming = streamingTasksRef.current.get(taskId)
+      const steerTurn: ConversationEntry = { id: `steer-${crypto.randomUUID()}`, role: 'user', text, source: 'steer' }
+      if (streaming) {
+        streaming.entries = [...streaming.entries, steerTurn]
+        if (currentLocalTaskIdRef.current === taskId) setEntries(streaming.entries)
+      }
+      return true
+    } catch { return false }
   }
 
   async function runQueued(task: LocalTaskRun, item: QueuedPrompt, accepted: () => Promise<void>) {
@@ -910,7 +943,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
     const contextGeneration = taskContextRestoreIdRef.current
     const isCurrent = () => currentLocalTaskIdRef.current === contextTaskId && (Boolean(queuedTask) || contextGeneration === taskContextRestoreIdRef.current)
     const reportInputError = (message: string) => { if (isCurrent()) setLocalFileError(message); else notify(message, 'error') }
-    const contextMessages = queuedTask?.messages ?? messages
+    const contextEntries = queuedTask?.entries ?? entries
     const contextProjection = queuedTask?.projection ?? taskProjectionRef.current
     const existingTask = queuedTask ?? localTasks.find((task) => task.id === contextTaskId)
     const taskModel = resolveSelectedModel(bootstrap.models, queuedTask ? queuedTask.model : activeModel)
@@ -950,14 +983,16 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
           { ...createXiaoyinTaskProjection(timestamp), operationScope: crypto.randomUUID() },
           { status: 'completed', summary: '记忆处理完成', remaining: [], checks: [] }, timestamp,
         )
-        const rememberedMessages: TaskMessage[] = [...contextMessages, { role: 'user', text: input }, {
-          role: 'assistant', text: reply, projection,
-        }]
+        const rememberedEntries: ConversationEntry[] = [...contextEntries,
+          { id: `user-${crypto.randomUUID()}`, role: 'user', text: input },
+          { id: `memory-${crypto.randomUUID()}`, role: 'assistant', status: 'completed', segments: [{ kind: 'text', id: 'memory:1', text: reply }],
+            meta: { completedAt: timestamp, outcome: { status: 'completed', summary: '记忆处理完成', remaining: [], checks: [] } } },
+        ]
         persistLocalTask({ ...existingTask, id: taskId, source: existingTask?.source ?? 'DESKTOP', name: existingTask?.name ?? input.slice(0, 60),
-          status: 'COMPLETED', createdAt: existingTask?.createdAt ?? timestamp, updatedAt: timestamp, projection, messages: rememberedMessages, sessionId: '' })
+          status: 'COMPLETED', createdAt: existingTask?.createdAt ?? timestamp, updatedAt: timestamp, projection, entries: rememberedEntries, sessionId: '' })
         if (isCurrent()) {
           selectCurrentLocalTaskId(taskId)
-          setMessages(rememberedMessages)
+          setEntries(rememberedEntries)
           setHarnessSessionId('')
           taskProjectionRef.current = projection
           setTaskProjection(projection)
@@ -1011,12 +1046,12 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
         createdAt: now,
       }))
       if (isCurrent()) setCurrentCapabilitySnapshot(capabilitySnapshot)
-      const { rootSessionId, harnessPrompt, pendingMessages, runningProjection, runningTask } = prepareTaskTurn({
+      const { rootSessionId, harnessPrompt, pendingEntries, runningProjection, runningTask } = prepareTaskTurn({
         taskId, input, now, existingTask, sessionId: taskSessionId, model: taskModel, reasoningEffort: taskReasoningEffort, executionMode: taskExecutionMode,
         scheduleId: existingTask?.scheduleId, scheduleRunId: existingTask?.scheduleRunId,
         directories: taskDirectories, directoriesChanged: resetSessionForDirectoryChange,
         capabilities: capabilitySnapshot, invocations: selected, invocationTokens: queuedTask?.invocationTokens,
-        messages: contextMessages, projection: contextProjection, attachments: messageAttachments, queuedItemId,
+        entries: contextEntries, projection: contextProjection, attachments: messageAttachments, queuedItemId,
       })
       try {
         await persistTaskHistory(user.userId, runningTask)
@@ -1035,7 +1070,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
         if (!queuedTask) { try { await saveTaskDraft(user.userId, contextTaskId || creationDraftKeyRef.current) } catch { /* Current task keeps the submitted content. */ } }
         selectCurrentLocalTaskId(taskId)
         setHarnessSessionId(rootSessionId)
-        setMessages(pendingMessages)
+        setEntries(pendingEntries)
         if (!queuedTask) { setPrompt(joinComposerPrompt(selected.map((item) => item.token), '')); setPendingAttachments([]) }
       }
       setLocalTasks((current) => [runningTask, ...current.filter((item) => item.id !== runningTask.id)]
@@ -1045,8 +1080,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
         projection: runningProjection,
         projectionSeq: -1,
         projectionSeqByKey: {},
-        messages: pendingMessages,
-        responseKey: '',
+        entries: pendingEntries,
         cancellationRequested: false,
       }
       streamingTasksRef.current.set(taskId, streaming)
@@ -1089,40 +1123,44 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
             streaming.projection = taskProjectionRunning(streaming.projection, new Date().toISOString())
             streaming.projectionSeq = -1
             streaming.projectionSeqByKey = {}
-            streaming.responseKey = ''
-            streaming.messages = streaming.messages.map((message, index) => index === streaming.messages.length - 1
-              ? { ...message, text: '', pending: true }
-              : message)
+            // The retried turn starts from a clean assistant turn; the user
+            // turn stays exactly as sent.
+            streaming.entries = resetOpenTurn(streaming.entries, new Date().toISOString())
             if (currentLocalTaskIdRef.current === taskId) {
               setHarnessSessionId(sessionId)
               taskProjectionRef.current = streaming.projection
               setTaskProjection(streaming.projection)
-              setMessages(streaming.messages)
+              setEntries(streaming.entries)
             }
-            persistLocalTask({ ...runningTask, sessionId, updatedAt: streaming.projection.updatedAt, projection: streaming.projection, messages: streaming.messages })
+            persistLocalTask({ ...runningTask, sessionId, updatedAt: streaming.projection.updatedAt, projection: streaming.projection, entries: streaming.entries })
           },
         })
         if (streaming.cancellationRequested) throw new Error('本轮已停止')
-        if (!result.finalResponse.trim()) throw new Error('模型本轮没有返回可显示文本，请重试')
+        // An interrupted turn settled with its partial receipts: keep what it
+        // produced, mark it stopped, and let the employee continue.
+        if (result.interrupted) throw new Error('本轮已停止')
+        // A completed turn may legitimately end without final text (file edits,
+        // plan delivery). Success is decided by the reported outcome, and the
+        // transcript already shows whatever the turn produced.
         const outcome = parseTaskOutcome(result.outcome) ?? unverifiedTaskOutcome()
         const goalCompleted = outcome.status === 'completed'
         if (!goalCompleted) void taskQueue.pause(taskId)
         const completedAt = new Date().toISOString()
         streaming.projection = taskProjectionCompleted(streaming.projection, outcome, completedAt)
         const completedProjection = streaming.projection
-        const completedMessages = streaming.messages.map((message, index) => index === streaming.messages.length - 1
-          ? { role: 'assistant', text: result.finalResponse, projection: completedProjection }
-          : message) as TaskMessage[]
+        streaming.entries = ensureFinalText(settleOpenTurn(streaming.entries, 'completed', completedAt, {
+          model: taskModel, reasoningEffort: taskReasoningEffort, outcome,
+        }), result.finalResponse)
+        const completedEntries = streaming.entries
         if (currentLocalTaskIdRef.current === taskId) {
           setHarnessSessionId(result.sessionId)
           taskProjectionRef.current = completedProjection
           setTaskProjection(completedProjection)
-          setMessages(completedMessages)
+          setEntries(completedEntries)
         }
         persistLocalTask({ ...runningTask, status: 'COMPLETED', updatedAt: new Date().toISOString(),
-          sessionId: result.sessionId, projection: completedProjection, messages: completedMessages })
+          sessionId: result.sessionId, projection: completedProjection, entries: completedEntries })
         if (!queuedTask && goalCompleted) void learnCompletedTask(user.userId, bootstrap.endpoints.memoryProfile ?? '/api/v1/memory-profile', accessToken, input, taskId)
-          .then((saved) => { if (saved) notify(`已记住这条明确偏好。${saved.syncPending ? '暂未同步到云端。' : '可在设置 → 记忆中修改或删除。'}`, 'success') })
           .catch((error) => notify(`任务已完成，自动记忆未写入：${error instanceof Error ? error.message : String(error)}`, 'error'))
         void reportTaskAudit({
           accessToken,
@@ -1141,15 +1179,19 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
         const completedAt = new Date().toISOString()
         streaming.projection = taskProjectionFailed(streaming.projection, failure, canceled, completedAt)
         const failedProjection = streaming.projection
-        const failedMessages = streaming.messages.map((item, index) => index === streaming.messages.length - 1
-          ? { role: 'assistant', text: canceled ? item.text : [item.text.trim(), `${failure.title}：${message}\n\n错误编号：${failure.code}`].filter(Boolean).join('\n\n---\n\n'), projection: failedProjection }
-          : item) as TaskMessage[]
+        // The failure rides the turn's meta instead of being pasted into the
+        // reply text; the transcript keeps whatever the turn produced.
+        streaming.entries = settleOpenTurn(streaming.entries, canceled ? 'canceled' : 'failed', completedAt, {
+          model: taskModel, reasoningEffort: taskReasoningEffort,
+          ...(canceled ? {} : { failure: { kind: failure.category, message: `${failure.title}：${message}（错误编号：${failure.code}）` } }),
+        })
+        const failedEntries = streaming.entries
         if (currentLocalTaskIdRef.current === taskId) {
           taskProjectionRef.current = failedProjection
           setTaskProjection(failedProjection)
-          setMessages(failedMessages)
+          setEntries(failedEntries)
         }
-        persistLocalTask({ ...runningTask, status: canceled ? 'CANCELED' : 'FAILED', updatedAt: new Date().toISOString(), sessionId: executionSessionId, projection: failedProjection, messages: failedMessages })
+        persistLocalTask({ ...runningTask, status: canceled ? 'CANCELED' : 'FAILED', updatedAt: new Date().toISOString(), sessionId: executionSessionId, projection: failedProjection, entries: failedEntries })
         const infrastructureFailure = failure.infrastructure
         if (!canceled && infrastructureFailure) {
           reportInfrastructureFailure(message)
@@ -1185,9 +1227,12 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
       setTaskProjection(streaming.projection)
     }
     try {
-      // A missing native run can mean it just finished or recovery is between runs.
-      // Keep the intent: completion/recovery must not overwrite or restart it.
-      await cancelHarness(taskId)
+      // Prefer a graceful interrupt: the turn settles with its partial
+      // receipts and the model sees a user cancellation. The process signal
+      // below stays as the force-stop fallback when nothing acknowledges it.
+      let acknowledged = false
+      try { acknowledged = await interruptHarness(taskId) } catch { acknowledged = false }
+      if (!acknowledged) await cancelHarness(taskId)
     } catch (reason) {
       if (streamingTasksRef.current.get(taskId) !== streaming) return
       streaming.cancellationRequested = false
@@ -1203,8 +1248,46 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
     }
   }
 
-  const prepareRetry = () => {
-    const previous = [...messages].reverse().find((message) => message.role === 'user')
+  /**
+   * Re-run the last turn on a session forked before its prompt: the new turn
+   * keeps the earlier conversation but replaces the answer being regenerated.
+   */
+  const regenerateLastTurn = async () => {
+    const taskId = currentLocalTaskIdRef.current
+    if (!taskId || currentTaskRunning) return
+    const lastUserIndex = entries.findLastIndex((entry) => entry.role === 'user')
+    const lastUser = entries[lastUserIndex]
+    if (!lastUser || lastUser.role !== 'user' || lastUserIndex === entries.length - 1) return
+    setLocalFileError('')
+    const existingTask = localTasks.find((task) => task.id === taskId)
+    const truncated = entries.slice(0, lastUserIndex)
+    const base: LocalTaskRun = existingTask ?? {
+      id: taskId, source: 'DESKTOP', name: lastUser.text.slice(0, 60), status: 'COMPLETED',
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), projection: taskProjectionRef.current, entries: truncated,
+    }
+    let sessionId: string
+    try {
+      sessionId = await regenerateHarness(taskId)
+    } catch {
+      // A log cut by a crash has no balanced prefix to fork. Rebuild the
+      // session and replay the earlier conversation rather than dropping the
+      // regenerate action.
+      sessionId = ''
+    }
+    setEntries(truncated)
+    setHarnessSessionId(sessionId)
+    try {
+      await executeTask(lastUser.text, lastUser.attachments ?? [], {
+        ...base, sessionId, entries: truncated, projection: taskProjectionRef.current, updatedAt: new Date().toISOString(),
+      })
+    } catch (reason) {
+      setLocalFileError(`重新生成失败：${reason instanceof Error ? reason.message : String(reason)}`)
+    }
+  }
+
+  /** Load the most recent user turn back into the composer for editing. */
+  const editLastUserTurn = () => {
+    const previous = [...entries].reverse().find((entry) => entry.role === 'user')
     if (!previous) return
     setPrompt(previous.text)
     setPendingAttachments(previous.attachments ?? [])
@@ -1390,7 +1473,8 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
 
   const selectModel = (model: string) => {
     if (model !== activeModel && currentLocalTaskId) {
-      setHarnessSessionId('')
+      // The host restarts on the new model and resumes the same session, so
+      // the conversation continues instead of being replayed as text.
       void shutdownHarness(currentLocalTaskId)
     }
     setSelectedModel(model)
@@ -1400,7 +1484,6 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
 
   const selectReasoningEffort = (value: ReasoningEffort) => {
     if (value !== reasoningEffort && currentLocalTaskId) {
-      setHarnessSessionId('')
       void shutdownHarness(currentLocalTaskId)
     }
     setReasoningEffort(value)
@@ -1409,7 +1492,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
   }
 
   const memorySaved = async () => {
-    setHarnessSessionId('')
+    // Memory is injected per turn, so the session keeps its history.
   }
 
   return (
@@ -1486,21 +1569,17 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
             key={currentLocalTaskId || 'new-task'}
             taskId={currentLocalTaskId}
             fileChangesBusy={runningTaskIds.length > 0}
-            onChangesUndone={(messageIndex, results) => {
+            onChangesUndone={(results) => {
               const task = localTasks.find((item) => item.id === currentLocalTaskId)
               if (!task) return
-              const selectedProjection = task.messages[messageIndex]?.projection
-              const updatedChanges = selectedProjection?.changes?.map((change) => ({ ...change, ...results.find((result) => result.id === change.id) }))
-              const nextMessages = task.messages.map((message, index) => index !== messageIndex || !message.projection ? message : {
-                ...message, projection: { ...message.projection, changes: updatedChanges },
-              })
-              const nextProjection = nextMessages.at(-1)?.projection ?? task.projection
+              const updatedChanges = task.projection.changes?.map((change) => ({ ...change, ...results.find((result) => result.id === change.id) }))
+              const nextProjection = { ...task.projection, changes: updatedChanges ?? task.projection.changes }
               if (currentLocalTaskIdRef.current === task.id) {
-                setMessages(nextMessages)
-                if (nextProjection) { setTaskProjection(nextProjection); taskProjectionRef.current = nextProjection }
+                setTaskProjection(nextProjection)
+                taskProjectionRef.current = nextProjection
               }
               void shutdownHarness(task.id)
-              persistLocalTask({ ...task, messages: nextMessages, projection: nextProjection, updatedAt: new Date().toISOString() })
+              persistLocalTask({ ...task, projection: nextProjection, updatedAt: new Date().toISOString() })
             }}
             activeModel={activeModel}
             queue={taskQueue.queues[currentLocalTaskId]}
@@ -1520,7 +1599,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
             pendingAttachments={pendingAttachments}
             localFileError={localFileError}
             messageListRef={messageListRef}
-            messages={messages}
+            entries={entries}
             creationKind={creationKind}
             invocations={extensionInvocations(expertKits, skillViews)}
             composerConnectors={runtimeConnectors}
@@ -1572,7 +1651,8 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
               setAuthoringInstructions(instructions)
               setAuthoringKind(creationKind)
             }}
-            onPrepareRetry={prepareRetry}
+            onEditTurn={editLastUserTurn}
+            onRegenerateTurn={() => { void regenerateLastTurn() }}
             onPrompt={setPrompt}
             onReconnect={() => setConnectionAttempt((value) => value + 1)}
             onRecoverHarness={recoverHarness}

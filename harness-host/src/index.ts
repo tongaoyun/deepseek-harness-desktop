@@ -98,7 +98,7 @@ lines.on('line', (line) => {
 
 function isInteractiveResponse(value: unknown): boolean {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
-    && ['approval.respond', 'question.respond'].includes(String((value as Record<string, unknown>).method))
+    && ['approval.respond', 'question.respond', 'session.steer', 'session.interrupt'].includes(String((value as Record<string, unknown>).method))
 }
 
 function stop(): void {

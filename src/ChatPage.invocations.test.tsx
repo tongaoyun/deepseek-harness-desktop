@@ -20,9 +20,9 @@ it('resizes the composer, selects a command with the keyboard, and then submits 
     const composerRef = useRef<HTMLTextAreaElement>(null)
     const props: ComponentProps<typeof ChatPage> = {
       activeModel: 'test', composerRef, harnessHealth: 'ready', harnessHealthDetail: '', harnessRunning: false,
-      knowledgeBases: [], localDirectories: [], localFileError: '', messageListRef: { current: null }, messages: [],
+      knowledgeBases: [], localDirectories: [], localFileError: '', messageListRef: { current: null }, entries: [],
       modelMenuOpen: false, modelPickerRef: { current: null }, models: [], pendingAttachments: [],
-      onAddKnowledge: noop, onAddLocalDirectory: noop, onAddLocalFiles: noop, onCancel: noop, onPrepareRetry: noop,
+      onAddKnowledge: noop, onAddLocalDirectory: noop, onAddLocalFiles: noop, onCancel: noop, onEditTurn: noop,
       onPrompt: setPrompt, onReconnect: noop, onRecoverHarness: noop, onRemoveAttachment: noop, onRemoveKnowledge: noop,
       onRemoveLocalDirectory: noop, onSelectModel: noop, onSubmit: submit, onToggleModelMenu: noop,
       prompt, runtimeStatus: 'ready', selectedKnowledgeBaseRefs: [], taskProjection: { status: 'idle', activity: '', updatedAt: '', steps: [], artifacts: [] },

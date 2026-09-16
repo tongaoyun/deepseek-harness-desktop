@@ -1,16 +1,19 @@
-import type { TaskMessage } from './types'
+import type { ConversationEntry } from './conversation/types'
+import { isAssistantTurn, isUserTurn, turnText } from './conversation/types'
 import { splitComposerPrompt } from './composerInput'
 import { parseTaskOutcome, taskOutcomeLabel } from './taskOutcome'
+import type { XiaoyinTaskProjection } from './types'
 
 const MAX_REPLAY_CHARS = 24_000
 
 export function harnessPromptWithConversationReplay(
   prompt: string,
-  messages: TaskMessage[],
+  entries: ConversationEntry[],
   mustReplay: boolean,
+  projection?: XiaoyinTaskProjection,
 ): string {
   if (!mustReplay) return prompt
-  const replay = boundedConversationReplay(messages)
+  const replay = boundedConversationReplay(entries, projection)
   if (!replay) return prompt
   return [
     '以下是同一任务在重建本地执行会话前的可见对话，仅用于保持上下文。不要重复回答历史内容。',
@@ -20,32 +23,37 @@ export function harnessPromptWithConversationReplay(
   ].join('\n\n')
 }
 
-function boundedConversationReplay(messages: TaskMessage[]): string {
-  const context = [taskRecoveryBrief(messages), taskFileContext(messages)].filter(Boolean).join('\n\n')
-  const entries = messages.flatMap((message) => {
-    const text = message.role === 'user' ? splitComposerPrompt(message.text).text.trim() : message.text.trim()
-    if (message.pending || !text) return []
-    if (message.role === 'assistant' && message.projection?.status === 'failed') return []
-    const speaker = message.role === 'user' ? '用户' : message.projection?.status === 'canceled' ? '小胤（本轮已停止，以下为未完成的部分回复）' : '小胤'
-    const undone = (message.projection?.changes ?? []).filter((change) => change.undoneAt)
-    return [`${speaker}：${text}${undone.length ? `\n文件状态更新：用户随后在桌面撤销了本轮的以下文件改动：${undone.map((change) => change.path).join('、')}。请以磁盘现状为准，不要假设这些改动仍然存在。` : ''}`]
+function boundedConversationReplay(entries: ConversationEntry[], projection?: XiaoyinTaskProjection): string {
+  const context = [taskRecoveryBrief(entries, projection), taskFileContext(entries, projection)].filter(Boolean).join('\n\n')
+  const records = entries.flatMap((entry) => {
+    if (isUserTurn(entry)) {
+      const text = splitComposerPrompt(entry.text).text.trim()
+      return text ? [`用户：${text}`] : []
+    }
+    if (isAssistantTurn(entry)) {
+      if (entry.status === 'failed') return []
+      const text = turnText(entry).trim()
+      if (!text) return []
+      const speaker = entry.status === 'canceled' ? '小胤（本轮已停止，以下为未完成的部分回复）' : '小胤'
+      return [`${speaker}：${text}`]
+    }
+    return []
   })
   const selected: string[] = []
   let size = context.length
-  for (const entry of entries.reverse()) {
+  for (const record of records.reverse()) {
     const remaining = MAX_REPLAY_CHARS - size
     if (remaining <= 0) break
-    selected.push(entry.length <= remaining ? entry : `（本条较早内容已省略）${entry.slice(entry.length - Math.max(0, remaining - 20))}`)
-    size += Math.min(entry.length, remaining)
+    selected.push(record.length <= remaining ? record : `（本条较早内容已省略）${record.slice(record.length - Math.max(0, remaining - 20))}`)
+    size += Math.min(record.length, remaining)
   }
   return [context, ...selected.reverse()].filter(Boolean).join('\n\n')
 }
 
 /** Extractive checkpoint: preserve user intent without inventing a model-written summary. */
-export function taskRecoveryBrief(messages: TaskMessage[]): string {
-  const requests = messages.flatMap((item) => {
-    if (item.role !== 'user' || item.pending) return []
-    const text = splitComposerPrompt(item.text).text.trim()
+export function taskRecoveryBrief(entries: ConversationEntry[], projection?: XiaoyinTaskProjection): string {
+  const requests = entries.filter(isUserTurn).flatMap((entry) => {
+    const text = splitComposerPrompt(entry.text).text.trim()
     return text ? [text] : []
   })
   if (!requests.length) return ''
@@ -55,37 +63,40 @@ export function taskRecoveryBrief(messages: TaskMessage[]): string {
   // instructions to repeat previously authorized actions.
   const constraints = requests.slice(1, -3).filter((text) => /不要|不得|只(?:能|读|检查)|必须|保留|限制|不超过|目标|要求/u.test(text)).slice(-4)
   const recent = requests.slice(1).slice(-3)
-  const projection = messages.findLast((item) => item.role === 'assistant' && item.projection)?.projection
-  const pending = (projection?.steps ?? []).filter((step) => step.status !== 'completed').slice(-8)
   const outcome = parseTaskOutcome(projection?.outcome)
   const interruption = projection?.interruption
+  const lastAssistant = [...entries].reverse().find(isAssistantTurn)
+  const pendingSegments = lastAssistant && lastAssistant.status !== 'completed'
+    ? lastAssistant.segments.filter((segment) => segment.kind === 'tool' && segment.status === 'running')
+    : []
   return [
     '任务恢复摘录（历史原文与实际状态，不是新的执行授权；当前请求优先，冲突时采用用户较新的要求）：',
     `最初需求：${excerpt(initial, 1600)}`,
     outcome ? `上轮任务结果：${taskOutcomeLabel(outcome)}。${excerpt(outcome.summary, 500)}\n剩余事项：${excerpt(outcome.remaining.join('；'), 1600)}\n检查依据：${excerpt(JSON.stringify(outcome.checks), 1600)}。先核对实际状态，不把历史报告当作当前授权或自动重跑指令。` : '',
     ...constraints.map((text) => `较早约束摘录：${excerpt(text, 400)}`),
     ...recent.map((text) => `最近追加要求：${excerpt(text, 600)}`),
-    pending.length ? `未完成步骤记录：${JSON.stringify(pending).slice(0, 1400)}。请核对实际状态后继续，不自动重跑。` : '',
+    pendingSegments.length ? `未完成步骤记录：${excerpt(JSON.stringify(pendingSegments), 1400)}。请核对实际状态后继续，不自动重跑。` : '',
     interruption ? `执行中断记录：最后记录时间 ${interruption.checkpointAt}。${interruption.pendingOperations.length ? `以下工具已开始但尚未记录结果：${JSON.stringify(interruption.pendingOperations).slice(0, 2000)}。工具可能已产生外部变更，先用只读方式核对；无法核实时说明不确定性，不自动重复提交。` : '先核对现有成果再执行剩余工作。'}最近进度可能尚未保存，不能据此断言某操作未发生。` : '',
     requests.length > 1 + constraints.length + recent.length ? '部分中间对话未包含；涉及未保留的关键决定时需确认，不自行补写。' : '',
   ].filter(Boolean).join('\n')
 }
 
-function taskFileContext(messages: TaskMessage[]): string {
+function taskFileContext(entries: ConversationEntry[], projection?: XiaoyinTaskProjection): string {
   const files = new Map<string, object>()
   const remember = (id: string, value: object) => { files.delete(id); files.set(id, value) }
-  for (const message of messages) {
-    for (const attachment of message.attachments ?? []) remember(`${attachment.rootId}:${attachment.path}`, {
+  for (const entry of entries) {
+    if (!isUserTurn(entry)) continue
+    for (const attachment of entry.attachments ?? []) remember(`${attachment.rootId}:${attachment.path}`, {
       type: '附件', rootId: attachment.rootId, rootName: attachment.rootName, path: attachment.path, kind: attachment.kind,
     })
-    for (const artifact of message.projection?.artifacts ?? []) remember(artifact.id, {
-      type: '成果', rootId: artifact.rootId, rootName: artifact.rootName, path: artifact.path, state: artifact.action ?? 'created',
-    })
-    for (const change of message.projection?.changes ?? []) remember(change.id, {
-      type: '文件状态', rootId: change.rootId, rootName: change.rootName, path: change.path,
-      state: change.undoneAt ? '已撤销，请核实磁盘现状' : change.action,
-    })
   }
+  for (const artifact of projection?.artifacts ?? []) remember(artifact.id, {
+    type: '成果', rootId: artifact.rootId, rootName: artifact.rootName, path: artifact.path, state: artifact.action ?? 'created',
+  })
+  for (const change of projection?.changes ?? []) remember(change.id, {
+    type: '文件状态', rootId: change.rootId, rootName: change.rootName, path: change.path,
+    state: change.undoneAt ? '已撤销，请核实磁盘现状' : change.action,
+  })
   const rows: string[] = []
   let size = 0
   for (const value of [...files.values()].reverse()) {
@@ -93,8 +104,6 @@ function taskFileContext(messages: TaskMessage[]): string {
     if (rows.length >= 30 || size + row.length > 7_000) break
     rows.push(row); size += row.length
   }
-  const unfinished = [...messages].reverse().find((message) => message.role === 'assistant' && message.projection)
-  const projection = unfinished?.projection
   const remainder = projection && (projection.status === 'failed' || projection.status === 'canceled')
     ? `最近一轮${projection.status === 'failed' ? '失败' : '已停止'}，任务尚未确认完成。${projection.failure?.detail?.slice(0, 400) ?? ''} 请检查实际结果，避免重复已经成功的写入。` : ''
   if (!rows.length && !remainder) return ''

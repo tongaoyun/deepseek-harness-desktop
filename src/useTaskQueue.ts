@@ -109,7 +109,7 @@ export function useTaskQueue({ owner, ready, tasks, runningIds, run }: {
     if (!owner || state.owner !== owner || storageBlocked.current) return
     for (const [taskId, queue] of Object.entries(state.queues)) {
       const first = queue.items[0]
-      if (!first || !tasks.find((task) => task.id === taskId)?.messages.some((message) => message.role === 'user' && message.id === first.id)) continue
+      if (!first || !tasks.find((task) => task.id === taskId)?.entries.some((entry) => entry.role === 'user' && entry.id === first.id)) continue
       const key = JSON.stringify([owner, taskId, first.id])
       if (reconciling.current.has(key)) return
       reconciling.current.add(key)
@@ -124,7 +124,7 @@ export function useTaskQueue({ owner, ready, tasks, runningIds, run }: {
     // One queued continuation at a time, alongside existing interactive tasks.
     if (busy.current.size) return
     const task = tasks.find((task) => !task.archivedAt && task.status !== 'RUNNING' && !runningIds.includes(task.id) && state.queues[task.id]?.items.length && !state.queues[task.id]?.paused
-      && !task.messages.some((message) => message.role === 'user' && message.id === state.queues[task.id].items[0]?.id))
+      && !task.entries.some((entry) => entry.role === 'user' && entry.id === state.queues[task.id].items[0]?.id))
     if (!task) return
     const item = state.queues[task.id].items[0]
     busy.current.add(task.id)

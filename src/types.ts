@@ -1,3 +1,5 @@
+import type { ConversationEntry } from './conversation/types'
+
 export interface BootstrapResponse {
   protocolVersion: string
   employeeId: string
@@ -41,16 +43,6 @@ export interface ExpertKitCatalogEntry {
   requiredTools: string[]
   knowledgeBaseRefs: string[]
   sha256: string
-}
-
-export interface TaskMessage {
-  role: 'assistant' | 'user'
-  text: string
-  attachments?: LocalTaskAttachment[]
-  pending?: boolean
-  projection?: XiaoyinTaskProjection
-  id?: string
-  source?: 'desktop' | 'dingtalk'
 }
 
 export interface LocalTaskAttachment {
@@ -233,7 +225,7 @@ export interface LocalTaskRun {
   localDirectories?: Array<{ id: string; name: string; path?: string }>
   capabilitySnapshot?: CapabilitySnapshot
   projection: XiaoyinTaskProjection
-  messages: TaskMessage[]
+  entries: ConversationEntry[]
   /** Small local index hint; the full transcript lives in Harness Persistence. */
   messagePreview?: string
   processedImEventIds?: string[]

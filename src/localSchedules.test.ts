@@ -2,6 +2,7 @@
 import { beforeEach, afterEach, expect, it, vi } from 'vitest'
 import { mutateLocalSchedules, nextLocalRun, readLocalSchedules, saveLocalSchedule, tickLocalSchedules } from './localSchedules'
 import { localScheduleCommand } from './localScheduleCommands'
+import { userEntry } from './conversation/testing'
 import type { LocalTaskRun } from './types'
 
 const now = new Date('2026-09-06T01:00:00Z')
@@ -51,7 +52,7 @@ it('anchors intervals without drifting with polling and skips missed intervals',
 })
 it('chat tools create in the same local store, inherit files and retain pause state on edit', async () => {
   const file = { id: 'file', rootId: 'root', rootName: '资料', name: 'input.csv', path: 'input.csv', kind: 'file' as const }
-  const task = { model: 'selected-model', localDirectories: [{ id: 'root', name: '资料', path: '/tmp/fixture' }], messages: [{ role: 'user', text: '日报', attachments: [file] }] } as LocalTaskRun
+  const task = { model: 'selected-model', localDirectories: [{ id: 'root', name: '资料', path: '/tmp/fixture' }], entries: [userEntry('turn-1', '日报', [file])] } as LocalTaskRun
   const controller = { items: [], error: '', action: vi.fn(async () => {}), refresh: vi.fn(), save: vi.fn(async () => []) }
   await localScheduleCommand('one', controller, task, 'create', { name: '日报', prompt: '分析资料', intervalMinutes: 60 })
   const created = (await readLocalSchedules('one'))[0]
@@ -84,7 +85,7 @@ it('preserves an explicitly configured timezone and model when a chat tool edits
   await saveLocalSchedule('fixed', { ...input, timeZone: 'UTC', timeZoneMode: 'fixed', model: 'selected-model' })
   const id = (await readLocalSchedules('fixed'))[0].id
   const controller = { items: [], error: '', action: vi.fn(async () => {}), refresh: vi.fn(), save: vi.fn(async () => []) }
-  await localScheduleCommand('fixed', controller, { messages: [] } as unknown as LocalTaskRun, 'update', { id, name: '新的名称' })
+  await localScheduleCommand('fixed', controller, { entries: [] } as unknown as LocalTaskRun, 'update', { id, name: '新的名称' })
   expect((await readLocalSchedules('fixed'))[0]).toMatchObject({ name: '新的名称', timeZone: 'UTC', timeZoneMode: 'fixed', model: 'selected-model' })
   expect(nextLocalRun((await readLocalSchedules('fixed'))[0], now)).toBe('2026-09-06T09:00:00.000Z')
 })

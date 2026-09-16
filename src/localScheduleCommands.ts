@@ -21,7 +21,7 @@ export async function localScheduleCommand(owner: string, controller: LocalSched
     name: '', prompt: '', cronExpression: '', timeZone: '', directories: task.localDirectories ?? [],
     model: task.model,
     taskContext: { invocationTokens: task.invocationTokens, capabilitySnapshot: task.capabilitySnapshot },
-    attachments: task.messages.flatMap((message) => message.role === 'user' ? message.attachments ?? [] : [])
+    attachments: task.entries.flatMap((entry) => entry.role === 'user' ? entry.attachments ?? [] : [])
       .filter((entry, index, all) => all.findIndex((item) => item.id === entry.id) === index),
   }
   for (const key of ['name', 'prompt', 'cronExpression'] as const) {

@@ -32,5 +32,5 @@ export function useTaskCheckpoints(employeeId: string | undefined, tasks: LocalT
 
 function checkpointKey(task: LocalTaskRun): string {
   // Keep the dedupe key bounded; durable details are owned by Harness Persistence.
-  return JSON.stringify([task.sessionId ?? '', task.status, task.updatedAt, task.projection.updatedAt, task.messages.at(-1)?.text?.slice(-500) ?? ''])
+  return JSON.stringify([task.sessionId ?? '', task.status, task.updatedAt, task.projection.updatedAt, task.messagePreview?.slice(-500) ?? ''])
 }

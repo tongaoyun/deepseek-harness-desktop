@@ -24,6 +24,21 @@ describe('xiaoyin product projection', () => {
     expect(completed.value.timeline).toMatchObject([{ id: 'compaction:c-1', label: '上下文整理完成', status: 'completed' }])
   })
 
+  it('keeps Harness tool-result pruning as a bounded summary', () => {
+    const initial: XiaoyinTaskState = { value: initialXiaoyinTaskView(), toolNames: {} }
+    const state = reduceEvent(initial, { type: 'compaction/prune', time: 1, data: { turn: 1, step: 2, shadowedSeqs: [8, 9], shadowedTokenCount: 1400 } })
+    expect(state.value.outputRetention).toEqual({ prunedResults: 2, omittedTokens: 1400 })
+    expect(state.value.timeline[0]).toMatchObject({ label: '裁剪工具结果', detail: '2 项，约 1400 tokens' })
+  })
+
+  it('records local file tools as deliverables with their action', () => {
+    const initial: XiaoyinTaskState = { value: initialXiaoyinTaskView(), toolNames: {} }
+    const called = reduceEvent(initial, { type: 'tool/call', time: 1, data: { turn: 1, step: 1, callId: 'call-1', name: 'local_files_publish', arguments: JSON.stringify({ rootId: 'work', rootName: '工作目录', path: 'reports/q3.csv' }) } })
+    const state = reduceEvent(called, { type: 'tool/result', time: 2, data: { turn: 1, step: 1, message: { content: [{ type: 'tool-result', toolCallId: 'call-1', content: [{ type: 'text', text: JSON.stringify({ rootId: 'work', rootName: '工作目录', path: 'reports/q3.csv', size: 2048 }) }] }] } } })
+    expect(state.value.artifacts).toEqual([expect.objectContaining({ id: 'work:reports/q3.csv', path: 'reports/q3.csv', sourceTool: 'local_files_publish', action: 'published' })])
+    expect(state.value.changes).toEqual([expect.objectContaining({ id: 'work:reports/q3.csv', action: 'created' })])
+  })
+
   it('does not crash on malformed event timestamps', () => {
     const initial: XiaoyinTaskState = { value: initialXiaoyinTaskView(), toolNames: {} }
     expect(() => reduceEvent(initial, { type: 'turn/start', time: Number.NaN, data: {} })).not.toThrow()

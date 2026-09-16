@@ -14,9 +14,9 @@ async function fixture(initial: string, overrides: Partial<ChatPageProps>, check
     const [refs, setRefs] = useState<string[]>([])
     const composerRef = useRef<HTMLTextAreaElement>(null)
     return <TaskComposer activeModel="model" composerRef={composerRef} harnessHealth="ready" harnessHealthDetail="" harnessRunning={false}
-      knowledgeBases={[]} localDirectories={[]} localFileError="" messageListRef={{ current: null }} messages={[]} modelMenuOpen={false} modelPickerRef={{ current: null }} models={[]} pendingAttachments={[]}
+      knowledgeBases={[]} localDirectories={[]} localFileError="" messageListRef={{ current: null }} entries={[]} modelMenuOpen={false} modelPickerRef={{ current: null }} models={[]} pendingAttachments={[]}
       onAddKnowledge={(id) => setRefs((current) => [...current, id])} onRemoveKnowledge={(id) => setRefs((current) => current.filter((value) => value !== id))}
-      onAddLocalDirectory={noop} onAddLocalFiles={noop} onCancel={noop} onPrepareRetry={noop} onPrompt={onPrompt} onReconnect={noop} onRecoverHarness={noop} onRemoveAttachment={noop} onRemoveLocalDirectory={noop} onSelectModel={noop} onSubmit={(event) => event.preventDefault()} onToggleModelMenu={noop}
+      onAddLocalDirectory={noop} onAddLocalFiles={noop} onCancel={noop} onEditTurn={noop} onPrompt={onPrompt} onReconnect={noop} onRecoverHarness={noop} onRemoveAttachment={noop} onRemoveLocalDirectory={noop} onSelectModel={noop} onSubmit={(event) => event.preventDefault()} onToggleModelMenu={noop}
       prompt={prompt} runtimeStatus="ready" selectedKnowledgeBaseRefs={refs} taskProjection={{ status: 'idle', activity: '', updatedAt: '', steps: [], artifacts: [] }} onPreview={noop} {...overrides} />
   }
   const container = document.body.appendChild(document.createElement('div'))

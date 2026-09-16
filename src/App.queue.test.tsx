@@ -10,6 +10,8 @@ import type { CapabilityCatalogPage } from './ExtensionCatalogPages'
 import { creationPrompt } from './creationPrompts'
 import * as harness from './harness'
 import type { ConnectorCatalogEntry, LocalTaskRun } from './types'
+import { assistantEntry, entryText, userEntry } from './conversation/testing'
+import type { ConversationEntry, AssistantTurn } from './conversation/types'
 import { mergeExpertKits, type ExpertKitView } from './expertKits'
 import { runHarnessWithRecovery } from './taskRecovery'
 import { reportTaskAudit } from './taskAudit'
@@ -47,20 +49,22 @@ vi.mock('./taskHistory', async (original) => ({ ...await original<object>(), loa
 vi.mock('./taskRecovery', () => ({ runHarnessWithRecovery: vi.fn() }))
 vi.mock('./taskAudit', () => ({ reportTaskAudit: vi.fn(async () => {}) }))
 vi.mock('./memory', async (original) => ({ ...await original<object>(), rememberInstruction: vi.fn(), learnCompletedTask: vi.fn(async () => undefined) }))
-vi.mock('./harness', async (original) => ({ ...await original<object>(), clearLocalDirectories: async () => {}, restoreLocalDirectories: async () => [], shutdownHarness: vi.fn(async () => {}), cancelHarness: async () => true }))
+vi.mock('./harness', async (original) => ({ ...await original<object>(), clearLocalDirectories: async () => {}, restoreLocalDirectories: async () => [], shutdownHarness: vi.fn(async () => {}), cancelHarness: vi.fn(async () => true), steerHarness: vi.fn(async () => false), interruptHarness: vi.fn(async () => false), regenerateHarness: vi.fn(async () => 'session-forked') }))
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
+const entriesText = (entries: ConversationEntry[]) => entries.map((entry) => entry.role === 'user' ? entry.text : entry.segments.filter((segment) => segment.kind === 'text').map((segment) => segment.text).join(''))
+const lastText = (entries: ConversationEntry[]) => entriesText(entries).at(-1)
 const completedOutcome: TaskOutcome = { status: 'completed', summary: '已完成本次要求', remaining: [], checks: [] }
 
-const olderTask = (): LocalTaskRun => ({ id: 'older-task', source: 'DESKTOP', name: '更早的定时任务', status: 'COMPLETED', createdAt: '2026-09-01', updatedAt: '2026-09-01', projection: harness.createXiaoyinTaskProjection(), messages: [{ role: 'user', text: '保留原始需求' }, { role: 'assistant', text: '历史成果已生成' }] })
-const strippedTask = (): LocalTaskRun => ({ ...olderTask(), id: 'stripped-task', sessionId: 'session-stripped', messages: [], messagePreview: '历史摘要' })
+const olderTask = (): LocalTaskRun => ({ id: 'older-task', source: 'DESKTOP', name: '更早的定时任务', status: 'COMPLETED', createdAt: '2026-09-01', updatedAt: '2026-09-01', projection: harness.createXiaoyinTaskProjection(), entries: [userEntry('u1', '保留原始需求'), assistantEntry('turn:1', '历史成果已生成')] })
+const strippedTask = (): LocalTaskRun => ({ ...olderTask(), id: 'stripped-task', sessionId: 'session-stripped', entries: [], messagePreview: '历史摘要' })
 it('starts a file generation task in the default workspace without requiring a directory picker', async () => {
   vi.mocked(runHarnessWithRecovery).mockResolvedValue({ finalResponse: '成果已生成', sessionId: 'workspace-task' })
   await fixture(async () => {
     await submit('在默认工作目录创建测试文件')
     expect(runHarnessWithRecovery).toHaveBeenCalledOnce()
     expect(fixtures.chat!.localFileError).toBe('')
-    expect(fixtures.chat!.messages.at(-1)?.text).toBe('成果已生成')
+    expect(lastText(fixtures.chat!.entries)).toBe('成果已生成')
   })
 })
 it('appends explicit memory to the original task without losing prior messages or task identity', async () => {
@@ -72,8 +76,8 @@ it('appends explicit memory to the original task without losing prior messages o
     await submit('记住：以后用中文')
     await act(async () => document.querySelector<HTMLButtonElement>('.desktop-dialog-actions .primary')!.click())
     expect(fixtures.sidebar!.activeTaskId).toBe(id)
-    expect(fixtures.chat!.messages.map((message) => message.text).slice(0, 3)).toEqual(['解释排序算法', '原来的成果', '记住：以后用中文'])
-    expect(fixtures.chat!.messages.at(-1)?.text).toContain('本机生效')
+    expect(entriesText(fixtures.chat!.entries).slice(0, 3)).toEqual(['解释排序算法', '原来的成果', '记住：以后用中文'])
+    expect(lastText(fixtures.chat!.entries)).toContain('本机生效')
     expect(runHarnessWithRecovery).toHaveBeenCalledOnce()
     expect(vi.mocked(persistTaskHistory).mock.calls.at(-1)![1].id).toBe(id)
   })
@@ -97,7 +101,7 @@ it('does not start a task until its initial record is durable and keeps the inpu
     expect(fixtures.chat!.prompt).toBe('保存测试')
     expect(fixtures.chat!.localFileError).toContain('任务尚未启动，本地记录保存失败：模拟磁盘故障')
     await submit('保存测试')
-    expect(vi.mocked(persistTaskHistory).mock.calls.at(-1)![1].messages.at(-1)?.text).toBe('内存中的最新结果')
+    expect(lastText(vi.mocked(persistTaskHistory).mock.calls.at(-1)![1].entries)).toBe('内存中的最新结果')
     expect(runHarnessWithRecovery).toHaveBeenCalledOnce()
   })
 })
@@ -166,7 +170,7 @@ it('opens an unloaded scheduled task directly from durable history', async () =>
     await act(async () => fixtures.schedules!.onOpenLocalTask!('older-task'))
     expect(loadTaskById).toHaveBeenCalledWith('queue-test', 'older-task')
     expect(fixtures.sidebar!.activeTaskId).toBe('older-task')
-    expect(fixtures.chat!.messages[0].text).toBe('保留原始需求')
+    expect(fixtures.chat!.entries[0].role === 'user' ? fixtures.chat!.entries[0].text : entryText(fixtures.chat!.entries[0])).toBe('保留原始需求')
     expect(fixtures.sidebar!.tasks.some((task) => task.id === 'older-task')).toBe(true)
   })
 })
@@ -178,11 +182,11 @@ it('keeps the current task open when a stripped history item cannot be hydrated'
     await vi.waitFor(() => expect(fixtures.sidebar!.tasks).toHaveLength(2))
     await act(async () => { await fixtures.sidebar!.onOpenTask(olderTask()) })
     expect(fixtures.sidebar!.activeTaskId).toBe('older-task')
-    expect(fixtures.chat!.messages.at(-1)?.text).toBe('历史成果已生成')
+    expect(lastText(fixtures.chat!.entries)).toBe('历史成果已生成')
 
     await act(async () => { await fixtures.sidebar!.onOpenTask(strippedTask()) })
     expect(fixtures.sidebar!.activeTaskId).toBe('older-task')
-    expect(fixtures.chat!.messages.at(-1)?.text).toBe('历史成果已生成')
+    expect(lastText(fixtures.chat!.entries)).toBe('历史成果已生成')
     expect(document.querySelector('.desktop-toast.error')?.textContent).toContain('当前会话未切换')
   })
 })
@@ -395,7 +399,7 @@ it('runs a local schedule through the same desktop execution flow without replac
       expect(runHarnessWithRecovery).toHaveBeenCalledOnce()
       const saved = vi.mocked(persistTaskHistory).mock.calls.at(-1)![1]
       expect(saved.name).toBe('定时验收')
-      expect(saved.messages.at(-1)?.text).toBe('SCHEDULE_OK')
+      expect(lastText(saved.entries)).toBe('SCHEDULE_OK')
       expect(fixtures.schedules!.local!.items[0].runs[0]).toMatchObject({ status: 'COMPLETED', taskId: saved.id })
       await act(async () => fixtures.sidebar!.onPage('chat'))
       expect(fixtures.chat!.prompt).toBe('未发送的日常草稿')
@@ -515,11 +519,11 @@ it('does not carry chat messages or a draft into another employee workspace', as
     await act(async () => root.render(<App />))
     await submit('员工一的任务')
     await act(async () => fixtures.chat!.onPrompt('员工一的未提交草稿'))
-    expect(fixtures.chat!.messages.some((message) => message.text.includes('员工一'))).toBe(true)
+    expect(entriesText(fixtures.chat!.entries).some((text) => text.includes('员工一'))).toBe(true)
     expect(fixtures.chat!.prompt).toBe('员工一的未提交草稿')
     fixtures.user = { ...original, userId: 'another-employee' }
     await act(async () => root.render(<App />))
-    expect(fixtures.chat!.messages).toEqual([])
+    expect(fixtures.chat!.entries).toEqual([])
     expect(fixtures.chat!.prompt).toBe('')
   } finally {
     fixtures.user = original
@@ -547,7 +551,7 @@ it('waits for old native tasks to stop and retries a failed account transition',
     expect(document.querySelector('.erp-auth-error')?.textContent).not.toContain('native shutdown failed')
     await act(async () => retry!.click())
     expect(fixtures.chat).toBeDefined()
-    expect(fixtures.chat!.messages).toEqual([])
+    expect(fixtures.chat!.entries).toEqual([])
   } finally {
     fixtures.user = original
     await act(async () => root.unmount())
@@ -610,10 +614,10 @@ it('continues in the original session and preserves another task’s draft and m
     expect(continuation).toMatchObject({ taskId: original.taskId, sessionId: original.sessionId, model: 'original-model', prompt: '再给一个例子' })
     expect(fixtures.chat!.prompt).toBe('另一个任务的草稿')
     expect(fixtures.chat!.activeModel).toBe('other-model')
-    expect(fixtures.chat!.messages).toEqual([])
+    expect(fixtures.chat!.entries).toEqual([])
     await act(async () => { second.resolve({ finalResponse: '示例', sessionId: original.sessionId!, outcome: completedOutcome }) })
     const saved = vi.mocked(persistTaskHistory).mock.calls.at(-1)![1] as LocalTaskRun
-    expect(saved.messages.map((message) => message.text)).toEqual(['解释排序算法', '排序说明', '再给一个例子', '示例'])
+    expect(entriesText(saved.entries)).toEqual(['解释排序算法', '排序说明', '再给一个例子', '示例'])
     expect(fixtures.chat!.prompt).toBe('另一个任务的草稿')
   })
 })
@@ -631,7 +635,7 @@ it.each(['partial', 'needs_input', 'needs_confirmation', 'blocked', 'unverified'
     expect(fixtures.chat!.taskProjection.outcome?.status).toBe(status ?? 'unverified')
     const saved = vi.mocked(persistTaskHistory).mock.calls.at(-1)![1]
     expect(saved.projection.outcome).toEqual(fixtures.chat!.taskProjection.outcome)
-    expect(saved.messages.at(-1)?.projection?.outcome).toEqual(saved.projection.outcome)
+    expect(saved.entries.at(-1)?.role === 'assistant' ? (saved.entries.at(-1) as ConversationEntry & { meta?: { outcome?: unknown } }).meta?.outcome : undefined).toEqual(saved.projection.outcome)
     expect(reportTaskAudit).not.toHaveBeenCalledWith(expect.objectContaining({ outcome: 'SUCCEEDED' }))
     expect(learnCompletedTask).not.toHaveBeenCalled()
   })
@@ -681,7 +685,7 @@ it('keeps the queue paused when stop races with a successful completion', async 
     expect(fixtures.chat!.taskProjection.status).toBe('canceled')
     expect(fixtures.chat!.taskProjection.failure).toBeUndefined()
     expect(fixtures.chat!.currentTaskRunning).toBe(false)
-    expect(fixtures.chat!.messages.at(-1)?.text).not.toBe('完成')
+    expect(lastText(fixtures.chat!.entries)).not.toBe('完成')
   })
 })
 
@@ -694,20 +698,21 @@ it('preserves partial output and completed work after stop, then continues with 
     const request = vi.mocked(runHarnessWithRecovery).mock.calls[0][0]
     const hook = vi.mocked(useHarnessNotifications).mock.calls.at(-1)![0]
     const streaming = hook.streamingTasksRef.current.get(request.taskId)!
-    streaming.messages.at(-1)!.text = '已经检查了第一种方法。'
+    const turn1 = streaming.entries.at(-1) as AssistantTurn; turn1.segments = [{ kind: 'text', id: '1:1', text: '已经检查了第一种方法。', streaming: true }]
     streaming.projection.steps = [{ id: 'done', kind: 'tool', label: '已检查', status: 'completed', startedAt: '' }, { id: 'pending', kind: 'tool', label: '检查中', status: 'running', startedAt: '' }]
     await act(async () => fixtures.chat!.onCancel())
     expect(fixtures.chat!.taskProjection.activity).toBe('正在停止')
     await act(async () => first.reject(new Error('Host exited')))
-    expect(fixtures.chat!.messages.at(-1)?.text).toBe('已经检查了第一种方法。')
+    expect(lastText(fixtures.chat!.entries)).toBe('已经检查了第一种方法。')
     expect(fixtures.chat!.taskProjection.steps.map((step) => step.status)).toEqual(['completed', 'canceled'])
     expect(fixtures.chat!.taskProjection.failure).toBeUndefined()
     await submit('继续解释第二种')
     const continuation = vi.mocked(runHarnessWithRecovery).mock.calls[1][0]
     expect(continuation.taskId).toBe(request.taskId)
-    expect(continuation.sessionId).not.toBe(request.sessionId)
-    expect(continuation.prompt).toContain('已经检查了第一种方法。')
-    expect(continuation.prompt).toContain('继续解释第二种')
+    // The stopped turn left a balanced session log: the conversation continues
+    // in place instead of being flattened into a replayed prompt.
+    expect(continuation.sessionId).toBe(request.sessionId)
+    expect(continuation.prompt).toBe('继续解释第二种')
     await act(async () => next.resolve({ sessionId: continuation.sessionId!, finalResponse: '第二种方法。' } as Awaited<ReturnType<typeof runHarnessWithRecovery>>))
     expect(fixtures.chat!.taskProjection.status).toBe('completed')
   })
@@ -721,12 +726,13 @@ it('keeps partial text and real artifacts visible when execution fails after pro
     const request = vi.mocked(runHarnessWithRecovery).mock.calls[0][0]
     const hook = vi.mocked(useHarnessNotifications).mock.calls.at(-1)![0]
     const streaming = hook.streamingTasksRef.current.get(request.taskId)!
-    streaming.messages.at(-1)!.text = '第一份报表已生成，第二份尚未完成。'
+    const turn2 = streaming.entries.at(-1) as AssistantTurn; turn2.segments = [{ kind: 'text', id: '1:1', text: '第一份报表已生成，第二份尚未完成。', streaming: true }]
     streaming.projection.artifacts = [{ id: 'root:one.csv', rootId: 'root', rootName: '工作目录', path: 'one.csv', name: 'one.csv', kind: 'spreadsheet', action: 'published', sourceTool: 'local_files_publish', createdAt: '' }]
     await act(async () => first.reject(new Error('本轮达到模型输出上限')))
     expect(fixtures.chat!.taskProjection.status).toBe('failed')
-    expect(fixtures.chat!.messages.at(-1)?.text).toContain('第一份报表已生成')
-    expect(fixtures.chat!.messages.at(-1)?.text).toContain('错误编号')
+    expect(lastText(fixtures.chat!.entries)).toContain('第一份报表已生成')
+    const failedTurn = fixtures.chat!.entries.at(-1) as AssistantTurn
+    expect(failedTurn.meta.failure?.message).toContain('错误编号')
     expect(fixtures.chat!.taskProjection.artifacts).toHaveLength(1)
     expect(runHarnessWithRecovery).toHaveBeenCalledOnce()
   })
@@ -899,8 +905,9 @@ it('refreshes model policy between queued turns without interrupting a running m
     await act(async () => first.resolve({ sessionId: original.sessionId!, finalResponse: '排序说明', outcome: completedOutcome }))
     const next = vi.mocked(runHarnessWithRecovery).mock.calls[1][0]
     expect(next.model).toBe('replacement-model')
-    expect(next.sessionId).not.toBe(original.sessionId)
-    expect(next.prompt).toContain('排序说明')
+    // The new model resumes the same session: continuity without replay.
+    expect(next.sessionId).toBe(original.sessionId)
+    expect(next.prompt).toBe('再给一个例子')
   })
 })
 
@@ -929,5 +936,90 @@ it('pins an extension version for the task and blocks it after disablement', asy
     await submit('/kit:reports 总结')
     expect(runHarnessWithRecovery).toHaveBeenCalledTimes(2)
     expect(fixtures.chat!.localFileError).toContain('尚未安装或已不可用')
+  })
+})
+
+it('injects a message into the running turn instead of queueing it', async () => {
+  const first = deferredRun()
+  vi.mocked(runHarnessWithRecovery).mockReturnValueOnce(first.promise)
+  vi.mocked(harness.steerHarness).mockResolvedValue(true)
+  await fixture(async () => {
+    await submit('整理销售报告')
+    const taskId = vi.mocked(runHarnessWithRecovery).mock.calls[0][0].taskId
+    await submit('改用方案 B')
+    expect(harness.steerHarness).toHaveBeenCalledWith(taskId, '改用方案 B')
+    // The steered text rides the current turn: no second run, no queue entry.
+    expect(runHarnessWithRecovery).toHaveBeenCalledOnce()
+    expect(fixtures.chat!.queue?.items ?? []).toHaveLength(0)
+    expect(fixtures.chat!.prompt).toBe('')
+    const steerEntry = fixtures.chat!.entries.at(-1)
+    expect(steerEntry).toMatchObject({ role: 'user', text: '改用方案 B', source: 'steer' })
+  })
+})
+
+it('queues the message when the turn can no longer take steering', async () => {
+  const first = deferredRun()
+  vi.mocked(runHarnessWithRecovery).mockReturnValueOnce(first.promise)
+  vi.mocked(harness.steerHarness).mockResolvedValue(false)
+  await fixture(async () => {
+    await submit('整理销售报告')
+    await submit('改用方案 B')
+    expect(fixtures.chat!.queue?.items).toMatchObject([{ text: '改用方案 B' }])
+    expect(runHarnessWithRecovery).toHaveBeenCalledOnce()
+  })
+})
+
+it('interrupts the running turn before falling back to a process stop', async () => {
+  const first = deferredRun()
+  vi.mocked(runHarnessWithRecovery).mockReturnValueOnce(first.promise)
+  vi.mocked(harness.interruptHarness).mockResolvedValue(true)
+  await fixture(async () => {
+    await submit('检查排序方法')
+    await act(async () => fixtures.chat!.onCancel())
+    expect(harness.interruptHarness).toHaveBeenCalledOnce()
+    expect(harness.cancelHarness).not.toHaveBeenCalled()
+  })
+})
+
+it('force-stops the process when nothing acknowledges the interrupt', async () => {
+  const first = deferredRun()
+  vi.mocked(runHarnessWithRecovery).mockReturnValueOnce(first.promise)
+  vi.mocked(harness.interruptHarness).mockResolvedValue(false)
+  await fixture(async () => {
+    await submit('检查排序方法')
+    await act(async () => fixtures.chat!.onCancel())
+    expect(harness.cancelHarness).toHaveBeenCalledOnce()
+  })
+})
+
+it('regenerates the last turn on a forked session and keeps the earlier conversation', async () => {
+  vi.mocked(runHarnessWithRecovery).mockResolvedValueOnce({ finalResponse: '第一版答案', sessionId: 'session-one', outcome: completedOutcome })
+  await fixture(async () => {
+    await submit('解释排序算法')
+    const taskId = vi.mocked(runHarnessWithRecovery).mock.calls[0][0].taskId
+    expect(lastText(fixtures.chat!.entries)).toBe('第一版答案')
+    vi.mocked(harness.regenerateHarness).mockResolvedValue('session-one-r1')
+    vi.mocked(runHarnessWithRecovery).mockResolvedValueOnce({ finalResponse: '第二版答案', sessionId: 'session-one-r1', outcome: completedOutcome })
+    await act(async () => { await fixtures.chat!.onRegenerateTurn!() })
+    expect(harness.regenerateHarness).toHaveBeenCalledWith(taskId)
+    const regenerated = vi.mocked(runHarnessWithRecovery).mock.calls[1][0]
+    // The forked session carries the earlier context; the prompt is just the turn's input.
+    expect(regenerated.sessionId).toBe('session-one-r1')
+    expect(regenerated.prompt).toBe('解释排序算法')
+    expect(entriesText(fixtures.chat!.entries)).toEqual(['解释排序算法', '第二版答案'])
+    expect(lastText(fixtures.chat!.entries)).toBe('第二版答案')
+  })
+})
+
+it('rebuilds the session when the log cannot be forked for regeneration', async () => {
+  vi.mocked(runHarnessWithRecovery).mockResolvedValueOnce({ finalResponse: '第一版答案', sessionId: 'session-one', outcome: completedOutcome })
+  await fixture(async () => {
+    await submit('解释排序算法')
+    vi.mocked(harness.regenerateHarness).mockRejectedValue(new Error('session log is not a balanced turn prefix'))
+    vi.mocked(runHarnessWithRecovery).mockResolvedValueOnce({ finalResponse: '重放后的答案', sessionId: 'session-fresh', outcome: completedOutcome })
+    await act(async () => { await fixtures.chat!.onRegenerateTurn!() })
+    const regenerated = vi.mocked(runHarnessWithRecovery).mock.calls[1][0]
+    expect(regenerated.sessionId).not.toBe('session-one')
+    expect(lastText(fixtures.chat!.entries)).toBe('重放后的答案')
   })
 })

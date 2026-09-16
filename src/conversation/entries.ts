@@ -1,0 +1,43 @@
+import type { ConversationEntry, TurnMeta, TurnStatus } from './types'
+
+/** Settle the open assistant turn with its outcome metadata. */
+export function settleOpenTurn(
+  entries: ConversationEntry[],
+  status: TurnStatus,
+  completedAt: string,
+  meta: Partial<TurnMeta> = {},
+): ConversationEntry[] {
+  const last = entries.at(-1)
+  if (last?.role !== 'assistant' || last.status !== 'streaming') return entries
+  return [...entries.slice(0, -1), {
+    ...last,
+    status,
+    segments: last.segments.map((segment) => segment.kind === 'tool' && segment.status === 'running'
+      ? { ...segment, status: status === 'completed' ? 'completed' as const : 'canceled' as const, completedAt }
+      : segment),
+    meta: { ...last.meta, ...meta, completedAt },
+  }]
+}
+
+/**
+ * Guarantee the settled turn carries final visible text even if live events
+ * never delivered it (mocked harness, a silent provider that only returns the
+ * run result). Prefers existing streamed text; falls back to the final response.
+ */
+export function ensureFinalText(entries: ConversationEntry[], finalResponse: string): ConversationEntry[] {
+  const last = entries.at(-1)
+  if (last?.role !== 'assistant') return entries
+  if (last.segments.some((segment) => segment.kind === 'text' && segment.text.trim())) return entries
+  if (!finalResponse.trim()) return entries
+  return [...entries.slice(0, -1), { ...last, segments: [...last.segments, { kind: 'text' as const, id: `final:${last.id}`, text: finalResponse }] }]
+}
+
+/**
+ * A retried turn runs in a rebuilt session, so its identity and segments
+ * restart: keep the user turn, reset the assistant turn to a placeholder.
+ */
+export function resetOpenTurn(entries: ConversationEntry[], now: string): ConversationEntry[] {
+  const last = entries.at(-1)
+  if (last?.role !== 'assistant') return entries
+  return [...entries.slice(0, -1), { id: 'pending', role: 'assistant' as const, status: 'streaming' as const, segments: [], meta: { ...last.meta, startedAt: now } }]
+}

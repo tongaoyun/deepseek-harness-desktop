@@ -233,6 +233,9 @@
     - id: xiaoyin-product-projections
       name: '../dist/xiaoyin-projections-plugin.js'
 
+    - id: xiaoyin-transcript-projection
+      name: '../dist/transcript-projection.js'
+
     - id: tool-ask-user
       name: '@deepseek-ai/dsh-tool-ask-user'
 
