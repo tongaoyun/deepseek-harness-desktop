@@ -82,8 +82,13 @@ describe('transcript projection', () => {
     ])
     const turn = state.entries.at(-1)
     if (turn?.role !== 'assistant') throw new Error('expected assistant turn')
-    expect(turn.segments).toEqual([{ kind: 'text', id: '1:1', text: '你的下载目录里有 20 个顶层项目。' }])
-    expect(JSON.stringify(state.entries)).not.toContain('The user wants to list')
+    // Reasoning rides its own segment so the reply shows visible text only.
+    expect(turn.segments).toEqual([
+      { kind: 'thinking', id: '1:1:thinking', text: 'The user wants to list the files in their Downloads directory.' },
+      { kind: 'text', id: '1:1', text: '你的下载目录里有 20 个顶层项目。' },
+    ])
+    expect(turn.segments.filter((segment) => segment.kind === 'text').map((segment) => segment.text))
+      .toEqual(['你的下载目录里有 20 个顶层项目。'])
   })
 
   it('never turns injected context into a user bubble', () => {

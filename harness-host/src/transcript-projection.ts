@@ -18,6 +18,7 @@ import type { SessionEvent } from './xiaoyin-projections-plugin.js'
 
 export type TranscriptSegment =
   | { kind: 'text'; id: string; text: string }
+  | { kind: 'thinking'; id: string; text: string }
   | { kind: 'user'; id: string; text: string }
   | { kind: 'tool'; id: string; toolName: string; status: 'running' | 'completed' | 'failed' | 'canceled'
       startedAt: string; completedAt?: string; label: string; detail?: string; command?: string
@@ -137,11 +138,16 @@ function reduceTranscriptEventValue(state: TranscriptState, event: SessionEvent)
     if (!open) return state
     const message = record(data?.message)
     const messageText = textBlocks(message?.content)
+    const reasoningText = reasoningBlocks(message?.content)
     const segmentId = `${turn}:${step}`
-    const withoutSegment = open.segments.filter((segment) => !(segment.kind === 'text' && segment.id === segmentId))
-    const segments = messageText.trim()
-      ? [...withoutSegment, { kind: 'text' as const, id: segmentId, text: messageText }]
-      : withoutSegment
+    const thinkingId = `${turn}:${step}:thinking`
+    const withoutSegment = open.segments.filter((segment) =>
+      !(segment.kind === 'text' && segment.id === segmentId) && !(segment.kind === 'thinking' && segment.id === thinkingId))
+    const segments = [
+      ...withoutSegment,
+      ...(reasoningText.trim() ? [{ kind: 'thinking' as const, id: thinkingId, text: reasoningText }] : []),
+      ...(messageText.trim() ? [{ kind: 'text' as const, id: segmentId, text: messageText }] : []),
+    ]
     const usage = addUsage(open.tokenUsage, data?.usage)
     return withTurn(state, { ...open, segments, ...(usage ? { tokenUsage: usage } : {}) })
   }
@@ -487,6 +493,15 @@ function toolResultText(content: unknown): string {
 function publicErrorText(content: unknown): string | undefined {
   const value = toolResultValue(content)
   return boundedText(text(value?.error) ?? text(value?.message), 2_000)
+}
+
+/** Reasoning blocks carry `text` too, so they are read separately from visible text. */
+function reasoningBlocks(content: unknown): string {
+  const blocks = Array.isArray(content) ? content : []
+  return blocks.map((block) => {
+    const value = record(block)
+    return value?.type === 'reasoning' ? text(value.text) ?? '' : ''
+  }).join('')
 }
 
 function textBlocks(content: unknown): string {

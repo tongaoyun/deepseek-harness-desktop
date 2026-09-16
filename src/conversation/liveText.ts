@@ -21,6 +21,24 @@ export function applyLiveEvent(entries: ConversationEntry[], event: { type: stri
       segments: appendText(open.segments, `${turn}:${step}`, delta),
     }))
   }
+  if (event.type === 'reasoning-chunks') {
+    const delta = texts(event.data.texts)
+    if (!delta) return entries
+    return updateOpenTurn(entries, `turn:${turn}`, (open) => ({
+      ...open,
+      segments: appendThinking(open.segments, `${turn}:${step}:thinking`, delta),
+    }))
+  }
+  if (event.type === 'assistant/stream') {
+    const chunk = record(event.data.chunk)
+    if (chunk?.type !== 'reasoning-delta') return entries
+    const delta = text(chunk.text)
+    if (!delta) return entries
+    return updateOpenTurn(entries, `turn:${turn}`, (open) => ({
+      ...open,
+      segments: appendThinking(open.segments, `${turn}:${step}:thinking`, delta),
+    }))
+  }
   if (event.type === 'assistant/message') {
     const settled = messageText(event.data)
     return updateOpenTurn(entries, `turn:${turn}`, (open) => ({
@@ -63,6 +81,14 @@ function appendText(segments: TurnSegment[], id: string, delta: string): TurnSeg
   const index = segments.findIndex((segment) => segment.kind === 'text' && segment.id === id)
   if (index < 0) return [...segments, { kind: 'text', id, text: delta, streaming: true }]
   return segments.map((segment, position) => position === index && segment.kind === 'text'
+    ? { ...segment, text: segment.text + delta, streaming: true }
+    : segment)
+}
+
+function appendThinking(segments: TurnSegment[], id: string, delta: string): TurnSegment[] {
+  const index = segments.findIndex((segment) => segment.kind === 'thinking' && segment.id === id)
+  if (index < 0) return [...segments, { kind: 'thinking', id, text: delta, streaming: true }]
+  return segments.map((segment, position) => position === index && segment.kind === 'thinking'
     ? { ...segment, text: segment.text + delta, streaming: true }
     : segment)
 }

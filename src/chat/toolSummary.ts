@@ -53,6 +53,23 @@ export function toolGroupStatus(tools: ToolSegment[]): string {
     tools.some((tool) => tool.status === 'running') ? '执行中' : ''].filter(Boolean).join(' · ')
 }
 
+export type ToolCategory = 'read' | 'write' | 'command' | 'connector' | 'browser' | 'subagent' | 'tool'
+
+/** Which kind of work a tool does, for the card icon and colour. */
+export function toolCategory(toolName: string): ToolCategory {
+  const tool = toolName.replaceAll('.', '_')
+  if (tool.startsWith('mcp_') || tool.startsWith('knowledge_')) return 'connector'
+  if (tool.startsWith('browser_') || tool === 'web_search' || tool === 'web_fetch') return 'browser'
+  if (tool.startsWith('subagent')) return 'subagent'
+  if (tool === 'bash' || tool === 'pwsh' || tool.startsWith('terminal_') || tool.startsWith('job_')) return 'command'
+  if (tool === 'local_files_read_text' || tool === 'office_document_read' || tool === 'office_pdf_page'
+    || tool === 'local_files_list' || tool === 'local_files_roots' || tool === 'local_files_search'
+    || tool === 'session_search' || tool === 'session_event_search' || tool === 'session_trace'
+    || tool === 'session_event_trace' || tool === 'session_event_read' || tool === 'list_agents') return 'read'
+  if (tool.startsWith('local_files_') || tool.startsWith('office_') || tool === 'present') return 'write'
+  return 'tool'
+}
+
 /** Consecutive tool segments collapse into one card group. */
 export function groupToolSegments<T extends { kind: string }>(segments: T[]): Array<{ kind: 'tools'; tools: ToolSegment[] } | { kind: 'other'; segment: T }> {
   const groups: Array<{ kind: 'tools'; tools: ToolSegment[] } | { kind: 'other'; segment: T }> = []

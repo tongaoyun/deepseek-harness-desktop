@@ -1,7 +1,7 @@
 import { ChevronRight, CircleAlert, FileCode2, FileInput, FolderSearch, Globe2, LoaderCircle, PlugZap, TerminalSquare, Users, Wrench } from 'lucide-react'
 import { useState } from 'react'
 import type { ToolSegment } from '../conversation/types'
-import { toolGroupLabel, toolGroupStatus } from './toolSummary'
+import { toolCategory, toolGroupLabel, toolGroupStatus } from './toolSummary'
 
 /**
  * One collapsible card per run of tool calls. Collapsed by default once the
@@ -37,8 +37,9 @@ function ToolCard({ tool }: { tool: ToolSegment }) {
     </span>
     {expandable && <ChevronRight className="timeline-chevron" size={14} />}
   </>
-  if (!expandable) return <div className={`timeline-tool timeline-${tool.status}`}>{summary}</div>
-  return <details className={`timeline-tool timeline-${tool.status}`} open={tool.status === 'running' || tool.status === 'failed'}>
+  const className = `timeline-tool cat-${toolCategory(tool.toolName)} timeline-${tool.status}`
+  if (!expandable) return <div className={className}>{summary}</div>
+  return <details className={className} open={tool.status === 'running' || tool.status === 'failed'}>
     <summary onClick={(event) => event.preventDefault()}>{summary}</summary>
     <div className="timeline-details">
       {tool.command && <code className="timeline-command">{tool.command}</code>}

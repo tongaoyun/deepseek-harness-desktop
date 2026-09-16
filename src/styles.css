@@ -576,7 +576,26 @@ button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 2px
 .user-prompt .attachment-chip { border-color: #dbe8df; background: #f5faf6; }
 .context-bar .message-attachments { margin: 0; }
 .streaming-response { position: relative; min-height: 24px; }
-.streaming-response::after { display: inline-block; width: 5px; height: 15px; margin-left: 3px; border-radius: 2px; background: #72a37f; content: ''; vertical-align: -2px; animation: streaming-caret 1s steps(1) infinite; }
+.streaming-response::after { display: inline-block; width: 1.5px; height: 1.05em; margin-left: 2px; border-radius: 1px; background: currentColor; content: ''; opacity: .5; vertical-align: text-bottom; animation: streaming-caret 1.15s ease-in-out infinite; }
+
+/* Reasoning stays available but never competes with the reply. */
+.turn-thinking { min-width: 0; }
+.turn-thinking > summary { display: inline-flex; width: fit-content; max-width: 100%; align-items: center; gap: 6px; padding: 2px 7px 2px 2px; border-radius: 7px; color: #a6aaa7; cursor: pointer; font-size: 12px; list-style: none; }
+.turn-thinking > summary:hover { color: var(--xy-text-secondary); background: var(--xy-hover); }
+.turn-thinking > summary::-webkit-details-marker { display: none; }
+.turn-thinking > summary > svg { flex: none; transition: transform .16s ease; }
+.turn-thinking > summary > svg.open { transform: rotate(90deg); }
+.turn-thinking > summary > small { color: #b8bcb9; font-size: 11px; }
+.turn-thinking > p { margin: 6px 0 2px 10px; padding-left: 13px; border-left: 1px solid var(--xy-line-soft); color: #8f948f; font-size: 12.5px; line-height: 1.75; white-space: pre-wrap; }
+
+/* Tool cards colour by what the tool does, not by status alone. */
+.timeline-tool.cat-read svg:first-child { color: #6b7f8f; }
+.timeline-tool.cat-write svg:first-child { color: #4f8a63; }
+.timeline-tool.cat-command svg:first-child { color: #8a7a52; }
+.timeline-tool.cat-connector svg:first-child { color: #7d6b9e; }
+.timeline-tool.cat-browser svg:first-child { color: #4a7f9c; }
+.timeline-tool.cat-subagent svg:first-child { color: #91688f; }
+.timeline-tool.failed svg:first-child { color: #b85d55; }
 
 /* One assistant turn: segments in event order, then a quiet footer. */
 .assistant-turn-body { display: flex; min-width: 0; flex-direction: column; gap: 10px; }
@@ -623,7 +642,7 @@ button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 2px
 .question-settled svg { flex: none; color: #6f9d80; }
 .question-settled span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .question-settled small { margin-left: auto; color: #a6aaa7; font-size: 11px; }
-@keyframes streaming-caret { 50% { opacity: .2; } }
+@keyframes streaming-caret { 0%, 100% { opacity: .12; } 50% { opacity: .55; } }
 .desktop-dialog-backdrop{position:fixed;inset:0;z-index:1200;display:grid;place-items:center;padding:24px;background:rgba(30,34,31,.34);backdrop-filter:blur(2px)}
 .desktop-dialog{position:relative;width:min(440px,100%);padding:28px;border:1px solid #e3e7e3;border-radius:20px;background:#fff;box-shadow:0 24px 70px rgba(26,35,29,.18)}
 .desktop-dialog h2{margin:0 36px 10px 0;font-size:21px}.desktop-dialog p{margin:0;white-space:pre-wrap;color:#59635c;line-height:1.65}
@@ -866,15 +885,16 @@ button:not(:disabled):active { transition-duration: .06s; }
 .hero-copy::before { display: none; }
 .xiaoyin-mascot img { animation: mascot-greet .32s cubic-bezier(.2,.7,.3,1) both; transform-origin: 50% 85%; }
 @keyframes mascot-greet { from { opacity: 0; transform: translateY(5px) rotate(-3deg) scale(.97); } to { opacity: 1; transform: none; } }
-.composer { overflow: visible; border-color: var(--xy-line); border-radius: 18px; background: var(--xy-surface); box-shadow: 0 2px 10px #00000004; transition: border-color .16s ease, box-shadow .16s ease; }
+.composer { overflow: visible; border-color: var(--xy-line); border-radius: 20px; background: var(--xy-surface); box-shadow: 0 2px 12px #00000005; transition: border-color .16s ease, box-shadow .16s ease; }
 .composer:hover { border-color: #d9d9d9; box-shadow: 0 2px 10px #00000006; }
-.composer:focus-within { border-color: #cfcfcf; box-shadow: 0 2px 10px #00000006; }
+.composer:focus-within { border-color: #c6c6c6; box-shadow: 0 3px 16px #0000000a; }
 .chat-page:not(.conversation) .composer { border-radius: 14px; box-shadow: 0 3px 16px #00000006; }
 .composer textarea { min-height: 64px; max-height: 220px; height: 64px; padding: 16px 18px 8px; font-size: 14px; line-height: 24px; resize: none; overflow-y: auto; }
 .composer textarea::placeholder { color: #919191; }
 .composer textarea:focus-visible { outline: none; }
 .composer-actions { padding: 6px 10px 10px; gap: 6px; }
 .send-button { width: 30px; height: 30px; border-radius: 50%; background: var(--xy-control); box-shadow: 0 1px 4px #0002; }
+.send-button:disabled { background: #c9c9c9; box-shadow: none; }
 .send-button:not(:disabled):hover { background: #343434; transform: none; box-shadow: none; }
 .send-button:not(:disabled):active { transform: scale(.96); }
 .send-button:disabled { color: #aaa; background: #f0f0f0; box-shadow: none; }

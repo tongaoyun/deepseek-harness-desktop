@@ -1,4 +1,4 @@
-import { LoaderCircle, Sparkles } from 'lucide-react'
+import { ChevronRight, LoaderCircle, Sparkles } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import type { AssistantTurn, TurnSegment } from '../conversation/types'
 import { RichMessage } from '../RichMessage'
@@ -47,12 +47,27 @@ function SegmentView({ segment, streaming, approvalsEnabled, onApprovalDecision,
   if (segment.kind === 'text') {
     return <div className={streaming && segment.streaming ? 'streaming-response' : undefined}><RichMessage text={segment.text} /></div>
   }
+  if (segment.kind === 'thinking') return <ThinkingBlock segment={segment} />
   if (segment.kind === 'user') return <article className="conversation-turn user-turn steer-turn">
     <div className="user-prompt"><span className="steer-badge"><Sparkles size={12} />已插入当前任务</span><RichMessage text={segment.text} /></div>
   </article>
   if (segment.kind === 'approval') return <ApprovalCard segment={segment} enabled={approvalsEnabled} onDecision={onApprovalDecision} />
   if (segment.kind === 'question') return <QuestionCard segment={segment} enabled={approvalsEnabled} onAnswer={onQuestionAnswer} />
   return null
+}
+
+/** The model's reasoning, collapsed by default the way Claude Code shows it. */
+function ThinkingBlock({ segment }: { segment: Extract<TurnSegment, { kind: 'thinking' }> }) {
+  const [open, setOpen] = useState(false)
+  if (!segment.text.trim()) return null
+  return <details className="turn-thinking" open={open}>
+    <summary onClick={(event) => { event.preventDefault(); setOpen(!open) }}>
+      <ChevronRight className={open ? 'open' : ''} size={13} />
+      <span>{segment.streaming ? '正在思考' : '思考过程'}</span>
+      <small>{Math.max(1, Math.round(segment.text.length / 3))} 字</small>
+    </summary>
+    <p>{segment.text}</p>
+  </details>
 }
 
 /** What the agent is doing right now, with elapsed time and context pressure. */

@@ -44,6 +44,8 @@ export interface TurnMeta {
 }
 
 export type TextSegment = { kind: 'text'; id: string; text: string; streaming?: boolean }
+/** The model's private reasoning for one step. Collapsed by default in the UI. */
+export type ThinkingSegment = { kind: 'thinking'; id: string; text: string; streaming?: boolean }
 export type UserSegment = { kind: 'user'; id: string; text: string }
 export type ToolSegment = {
   kind: 'tool'
@@ -78,7 +80,7 @@ export type QuestionSegment = {
   status: 'running' | 'completed'
 }
 
-export type TurnSegment = TextSegment | UserSegment | ToolSegment | ApprovalSegment | QuestionSegment
+export type TurnSegment = TextSegment | ThinkingSegment | UserSegment | ToolSegment | ApprovalSegment | QuestionSegment
 
 export interface AssistantTurn {
   id: string
