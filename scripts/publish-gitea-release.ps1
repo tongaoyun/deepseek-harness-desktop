@@ -205,8 +205,13 @@ foreach ($asset in $releaseAssets) {
   Write-Output "Uploaded release asset: $($asset.Name)"
 }
 
+# The updater feed points only to the NSIS installer. Keep the immutable
+# package small; MSI remains available as a Release asset for manual installs.
 $versionPackageFiles = @(
-  $releaseFiles +
+  @(
+    [ordered]@{ Name = $nsisReleaseFile.Name; Path = $nsisReleaseFile.Path },
+    [ordered]@{ Name = $nsisSignature.Name; Path = $nsisSignature.FullName }
+  ) +
   @(
     [ordered]@{ Name = "latest.json"; Path = $latestPath },
     [ordered]@{ Name = "release-manifest.json"; Path = $manifestPath },

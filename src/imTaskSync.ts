@@ -1,7 +1,8 @@
-import { createXiaoyinTaskProjection, normalizeHarnessProjection } from './harness'
+import { normalizeHarnessProjection } from './harness'
+import type { ConversationEntry } from './conversation/types'
 import type { LocalImStatus } from './localIm'
-import type { LocalTaskRun, XiaoyinTaskProjection } from './types'
-import { parseTaskOutcome, taskOutcomeLabel, unverifiedTaskOutcome, type TaskOutcome } from './taskOutcome'
+import type { LocalTaskRun } from './types'
+import { parseTaskOutcome, taskOutcomeLabel, unverifiedTaskOutcome } from './taskOutcome'
 
 export function mergeImStatusIntoTasks(
   tasks: LocalTaskRun[], status: LocalImStatus,
@@ -12,17 +13,23 @@ export function mergeImStatusIntoTasks(
     if (conversations.length === 0) return task
     const latest = [...conversations].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0]!
     const current = Date.parse(latest.updatedAt) >= Date.parse(task.updatedAt)
-    const messageIds = new Set(task.messages.map((message) => message.id).filter(Boolean))
-    const incomingMessages = conversations.flatMap((item) => item.messages ?? [])
+    const entryIds = new Set(task.entries.map((entry) => entry.id))
+    const incomingEntries: ConversationEntry[] = conversations.flatMap((item) => item.messages ?? [])
       .filter((message) => {
-        if (messageIds.has(message.id)) return false
-        messageIds.add(message.id)
+        if (entryIds.has(message.id)) return false
+        entryIds.add(message.id)
         return true
       })
       .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
-      .map((message) => ({ ...message, source: 'dingtalk' as const,
-        ...(message.role === 'assistant' && message.outcome ? { projection: imMessageProjection(message.createdAt, message.outcome) } : {}),
-      }))
+      .map((message) => message.role === 'user'
+        ? { id: message.id, role: 'user' as const, text: message.text, source: 'dingtalk' as const }
+        : {
+            id: message.id,
+            role: 'assistant' as const,
+            status: 'completed' as const,
+            segments: [{ kind: 'text' as const, id: `${message.id}:text`, text: message.text }],
+            meta: message.outcome ? { outcome: message.outcome } : {},
+          })
     let projection = task.projection
     if (current) {
       const outcome = parseTaskOutcome(latest.outcome)
@@ -45,7 +52,7 @@ export function mergeImStatusIntoTasks(
       sessionId: current ? latest.sessionId || task.sessionId : task.sessionId,
       updatedAt: latest.updatedAt > task.updatedAt ? latest.updatedAt : task.updatedAt,
       projection,
-      messages: [...task.messages, ...incomingMessages],
+      entries: [...task.entries, ...incomingEntries],
     }
     if (JSON.stringify(updated) === JSON.stringify(task)) return task
     changed.push(updated)
@@ -54,7 +61,4 @@ export function mergeImStatusIntoTasks(
   return { tasks: changed.length > 0 ? next.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)) : tasks, changed }
 }
 
-function imMessageProjection(updatedAt: string, reportedOutcome: TaskOutcome): XiaoyinTaskProjection {
-  const outcome = parseTaskOutcome(reportedOutcome) ?? unverifiedTaskOutcome()
-  return { ...createXiaoyinTaskProjection(updatedAt), outcome, status: 'completed', activity: taskOutcomeLabel(outcome), updatedAt }
-}
+

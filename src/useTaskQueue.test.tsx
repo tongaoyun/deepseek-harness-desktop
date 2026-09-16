@@ -16,7 +16,7 @@ beforeEach(() => {
   })
 })
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals() })
-const task = (id: string, status: LocalTaskRun['status'] = 'COMPLETED') => ({ id, status, model: `model-${id}`, messages: [{ role: 'user', text: `context-${id}` }], projection: { status: 'completed' } }) as LocalTaskRun
+const task = (id: string, status: LocalTaskRun['status'] = 'COMPLETED') => ({ id, status, model: `model-${id}`, entries: [{ id: `context-${id}`, role: 'user' as const, text: `context-${id}` }], projection: { status: 'completed' } }) as LocalTaskRun
 
 async function fixture(check: (controls: { queue: () => ReturnType<typeof useTaskQueue>; render: (changes: Partial<Parameters<typeof useTaskQueue>[0]>) => Promise<void> }) => Promise<void>) {
   const container = document.body.appendChild(document.createElement('div'))
@@ -92,8 +92,8 @@ it('removes a queued item already durably attached to an interrupted task withou
   ] } }))
   await fixture(async ({ queue, render }) => {
     const run = vi.fn(async () => 'completed' as const)
-    await render({ ready: true, run, tasks: [{ ...task('a', 'FAILED'), messages: [
-      { role: 'user', text: '已提交的消息', id: 'already-started' },
+    await render({ ready: true, run, tasks: [{ ...task('a', 'FAILED'), entries: [
+      { id: 'already-started', role: 'user' as const, text: '已提交的消息' },
     ] }] })
     expect(run).not.toHaveBeenCalled()
     expect(queue().queues.a).toMatchObject({ paused: true, items: [{ id: 'later' }] })
@@ -109,8 +109,8 @@ it('stops reconciliation retries when removing an already-started item cannot be
   write.mockClear()
   await fixture(async ({ queue, render }) => {
     const run = vi.fn(async () => 'completed' as const)
-    await render({ ready: true, run, tasks: [{ ...task('a', 'FAILED'), messages: [
-      { role: 'user', text: '已提交的消息', id: 'already-started' },
+    await render({ ready: true, run, tasks: [{ ...task('a', 'FAILED'), entries: [
+      { id: 'already-started', role: 'user' as const, text: '已提交的消息' },
     ] }] })
     expect(run).not.toHaveBeenCalled()
     expect(write).toHaveBeenCalledTimes(1)

@@ -26,4 +26,8 @@ describe('device capability report', () => {
     expect(capabilityReportEntry('harness.coderuntime', 'ready', capabilities).status).toBe('DEGRADED')
     expect(capabilityReportEntry('harness.lsp', 'ready', capabilities).status).toBe('UNSUPPORTED')
   })
+
+  it('does not report an unprobed Harness capability as unsupported', () => {
+    expect(capabilityReportEntry('harness.websearch', 'idle').status).toBe('DEGRADED')
+  })
 })

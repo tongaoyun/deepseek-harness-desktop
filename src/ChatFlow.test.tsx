@@ -3,6 +3,8 @@ import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { ChatPage, type ChatPageProps } from './ChatPage'
+import { assistantEntry, toolSegment, userEntry } from './conversation/testing'
+import type { ConversationEntry } from './conversation/types'
 import type { XiaoyinTaskProjection } from './types'
 import { loadLocalArtifactPreview } from './localArtifactPreview'
 
@@ -16,21 +18,21 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals())
 const noop = () => {}
 const base: ChatPageProps = {
-  activeModel: 'model', composerRef: { current: null }, harnessHealth: 'ready', harnessHealthDetail: '', harnessRunning: false,
-  knowledgeBases: [], localDirectories: [], localFileError: '', messageListRef: { current: null }, messages: [],
+  activeModel: 'model', composerRef: { current: null }, entries: [], harnessHealth: 'ready', harnessHealthDetail: '', harnessRunning: false,
+  knowledgeBases: [], localDirectories: [], localFileError: '', messageListRef: { current: null },
   modelMenuOpen: false, modelPickerRef: { current: null }, models: [], pendingAttachments: [],
-  onAddKnowledge: noop, onAddLocalDirectory: noop, onAddLocalFiles: noop, onCancel: noop, onPrepareRetry: noop,
+  onAddKnowledge: noop, onAddLocalDirectory: noop, onAddLocalFiles: noop, onCancel: noop, onEditTurn: noop,
   onPrompt: noop, onReconnect: noop, onRecoverHarness: noop, onRemoveAttachment: noop, onRemoveKnowledge: noop,
   onRemoveLocalDirectory: noop, onSelectModel: noop, onSubmit: noop, onToggleModelMenu: noop,
   prompt: '', runtimeStatus: 'ready', selectedKnowledgeBaseRefs: [], taskProjection: { status: 'idle', activity: '', updatedAt: '', steps: [], artifacts: [] },
 }
 
-it('uses bounded conversation layout only while messages exist', async () => {
+it('uses bounded conversation layout only while entries exist', async () => {
   const container = document.body.appendChild(document.createElement('div')); const root = createRoot(container)
   try {
     await act(async () => root.render(<ChatPage {...base} />))
     expect(container.querySelector('.chat-workspace.has-conversation')).toBeNull()
-    await act(async () => root.render(<ChatPage {...base} messages={[{ role: 'assistant', text: '已完成' }]} />))
+    await act(async () => root.render(<ChatPage {...base} entries={[assistantEntry('turn:1', '已完成')]} />))
     const workspace = container.querySelector('.chat-workspace.has-conversation')!
     expect(workspace).not.toBeNull()
     const list = workspace.querySelector('.message-list')!
@@ -44,44 +46,45 @@ it('uses bounded conversation layout only while messages exist', async () => {
 it('replaces same-path review metadata across turns and clears previews on task switch', async () => {
   const container = document.body.appendChild(document.createElement('div')); const root = createRoot(container)
   const change = { id: 'root:one.ts', rootId: 'root', rootName: 'repo', name: 'one.ts', path: 'one.ts', action: 'updated' as const, sourceTool: 'local_files_write_text', changedAt: '' }
-  const messages = ['first', 'second'].map((name) => ({ role: 'assistant' as const, text: name, projection: { ...base.taskProjection, status: 'completed' as const, changes: [{ ...change, backupPath: `.xiaoyin-backups/${name}/one.ts` }] } }))
+  const render = (backup: string) => root.render(<ChatPage {...base} taskId="one" taskProjection={{ ...base.taskProjection, status: 'completed', changes: [{ ...change, backupPath: `.xiaoyin-backups/${backup}/one.ts` }] }} entries={[assistantEntry('turn:1', 'done')]} />)
   try {
-    await act(async () => root.render(<ChatPage {...base} taskId="one" messages={messages} />))
+    await act(async () => render('first'))
     await act(async () => container.querySelectorAll<HTMLButtonElement>('[aria-label="打开 one.ts"]')[0].click())
     expect(container.querySelector('.local-file-preview')).not.toBeNull()
-    await act(async () => container.querySelectorAll<HTMLButtonElement>('[aria-label="打开 one.ts"]')[1].click())
+    await act(async () => render('second'))
+    await act(async () => container.querySelectorAll<HTMLButtonElement>('[aria-label="打开 one.ts"]')[0].click())
     expect(loadLocalArtifactPreview).toHaveBeenCalledWith(expect.objectContaining({ path: '.xiaoyin-backups/second/one.ts' }))
-    expect(container.querySelectorAll('.conversation-turn')).toHaveLength(2)
-    await act(async () => root.render(<ChatPage {...base} taskId="two" messages={messages} />))
+    expect(container.querySelectorAll('.conversation-turn')).toHaveLength(1)
+    await act(async () => root.render(<ChatPage {...base} taskId="two" taskProjection={{ ...base.taskProjection, status: 'completed', changes: [{ ...change, backupPath: '.xiaoyin-backups/second/one.ts' }] }} entries={[assistantEntry('turn:1', 'done')]} />))
     expect(container.querySelector('.local-file-preview')).toBeNull()
   } finally { await act(async () => root.unmount()); container.remove() }
 })
 
-it('does not force-scroll incoming messages while reading older content', async () => {
+it('does not force-scroll incoming turns while reading older content', async () => {
   vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { callback(0); return 1 })
   const container = document.body.appendChild(document.createElement('div')); const root = createRoot(container)
   const listRef = { current: null as HTMLDivElement | null }
   try {
-    await act(async () => root.render(<ChatPage {...base} messageListRef={listRef} messages={[{ role: 'assistant', text: 'earlier' }]} />))
+    await act(async () => root.render(<ChatPage {...base} messageListRef={listRef} entries={[assistantEntry('turn:1', 'earlier')]} />))
     Object.defineProperties(listRef.current!, { scrollHeight: { value: 2000, configurable: true }, clientHeight: { value: 400, configurable: true } })
     await act(async () => listRef.current!.dispatchEvent(new Event('scroll', { bubbles: true })))
     vi.mocked(Element.prototype.scrollTo).mockClear()
-    await act(async () => root.render(<ChatPage {...base} messageListRef={listRef} messages={[{ role: 'assistant', text: 'earlier' }, { role: 'assistant', text: 'new output' }]} />))
+    await act(async () => root.render(<ChatPage {...base} messageListRef={listRef} entries={[assistantEntry('turn:1', 'earlier'), assistantEntry('turn:2', 'new output')]} />))
     expect(Element.prototype.scrollTo).not.toHaveBeenCalled()
     expect(container.querySelector('[aria-label="滚动到最新消息"]')).not.toBeNull()
   } finally { await act(async () => root.unmount()); container.remove() }
 })
 
-it('resets a scrolled-up viewport when switching between tasks with identical message shape', async () => {
+it('resets a scrolled-up viewport when switching between tasks with identical entry shape', async () => {
   const container = document.body.appendChild(document.createElement('div')); const root = createRoot(container)
   const listRef = { current: null as HTMLDivElement | null }
-  const messages = [{ role: 'assistant' as const, text: '同样的最后一条消息' }]
+  const entries = [assistantEntry('turn:1', '同样的最后一条消息')]
   try {
-    await act(async () => root.render(<ChatPage {...base} taskId="old" messageListRef={listRef} messages={messages} />))
+    await act(async () => root.render(<ChatPage {...base} taskId="old" messageListRef={listRef} entries={entries} />))
     Object.defineProperties(listRef.current!, { scrollHeight: { value: 2000, configurable: true }, clientHeight: { value: 400, configurable: true } })
     await act(async () => listRef.current!.dispatchEvent(new Event('scroll', { bubbles: true })))
     vi.mocked(Element.prototype.scrollTo).mockClear()
-    await act(async () => root.render(<ChatPage {...base} taskId="new" messageListRef={listRef} messages={messages} />))
+    await act(async () => root.render(<ChatPage {...base} taskId="new" messageListRef={listRef} entries={entries} />))
     expect(Element.prototype.scrollTo).toHaveBeenCalledWith({ top: 2000, behavior: 'auto' })
     expect(container.querySelector('[aria-label="滚动到最新消息"]')).toBeNull()
   } finally { await act(async () => root.unmount()); container.remove() }
@@ -90,43 +93,75 @@ it('resets a scrolled-up viewport when switching between tasks with identical me
 it('returns to the live turn after an explicit send from a scrolled-up conversation', async () => {
   const container = document.body.appendChild(document.createElement('div')); const root = createRoot(container)
   const listRef = { current: null as HTMLDivElement | null }
-  const messages = [{ role: 'assistant' as const, text: 'earlier' }]
+  const entries: ConversationEntry[] = [assistantEntry('turn:1', 'earlier')]
   const onSubmit = vi.fn((event: { preventDefault: () => void }) => event.preventDefault())
   try {
-    await act(async () => root.render(<ChatPage {...base} onSubmit={onSubmit} messageListRef={listRef} prompt="新问题" messages={messages} />))
+    await act(async () => root.render(<ChatPage {...base} onSubmit={onSubmit} messageListRef={listRef} prompt="新问题" entries={entries} />))
     Object.defineProperties(listRef.current!, { scrollHeight: { value: 2000, configurable: true }, clientHeight: { value: 400, configurable: true } })
     await act(async () => listRef.current!.dispatchEvent(new Event('scroll', { bubbles: true })))
     vi.mocked(Element.prototype.scrollTo).mockClear()
     await act(async () => container.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
     expect(onSubmit).toHaveBeenCalledOnce()
-    await act(async () => root.render(<ChatPage {...base} onSubmit={onSubmit} messageListRef={listRef} messages={[...messages, { role: 'user', text: '新问题' }, { role: 'assistant', text: '', pending: true }]} />))
+    await act(async () => root.render(<ChatPage {...base} onSubmit={onSubmit} messageListRef={listRef} entries={[...entries, userEntry('u2', '新问题'), assistantEntry('pending', [], {}, 'streaming')]} />))
     expect(Element.prototype.scrollTo).toHaveBeenCalledWith({ top: 2000, behavior: 'auto' })
     expect(container.querySelector('[aria-label="滚动到最新消息"]')).toBeNull()
   } finally { await act(async () => root.unmount()); container.remove() }
 })
 
-it('streams each message once, then collapses history without hiding the final response', async () => {
-  const projection: XiaoyinTaskProjection = { status: 'running', activity: '正在处理', updatedAt: '', steps: [], artifacts: [], timeline: [
-    { id: 'tool', kind: 'command', label: '检查项目', status: 'completed', text: 'pnpm test', occurredAt: '' },
-    { id: 'answer', kind: 'assistant', label: '回复', status: 'running', text: '正在生成的正文', occurredAt: '' },
-  ] }
+it('keeps streamed text in place exactly once while tool cards append below it', async () => {
+  const projection: XiaoyinTaskProjection = { status: 'running', activity: '正在处理', updatedAt: '', steps: [], artifacts: [] }
+  const streaming = assistantEntry('turn:1', [
+    { kind: 'text', id: '1:1', text: '正在生成的正文', streaming: true },
+    toolSegment('call-1', 'bash', { label: '运行命令', command: 'pnpm test', status: 'running' }),
+  ], {}, 'streaming')
+  const settled = assistantEntry('turn:1', [
+    { kind: 'text', id: '1:1', text: '正在生成的正文' },
+    toolSegment('call-1', 'bash', { label: '运行命令', command: 'pnpm test' }),
+    { kind: 'text', id: '1:2', text: '检查完成。' },
+  ], { startedAt: '2026-09-01T00:00:00.000Z', completedAt: '2026-09-01T00:00:02.000Z' })
   const container = document.body.appendChild(document.createElement('div'))
   const root = createRoot(container)
-  const render = (pending: boolean) => root.render(<ChatPage {...base} harnessRunning={pending} taskProjection={projection} messages={[{ role: 'assistant', text: '正在生成的正文', pending }]} />)
   try {
-    await act(async () => render(true))
-    expect(container.querySelector('.execution-timeline')!.textContent).toContain('正在生成的正文')
+    await act(async () => root.render(<ChatPage {...base} harnessRunning taskProjection={projection} entries={[streaming]} />))
+    // The streamed text lives in the turn body exactly once, with the tool card below it.
     expect(container.textContent!.split('正在生成的正文')).toHaveLength(2)
-    expect(container.querySelector('.active-task-strip')).toBeNull()
-    expect(container.querySelector('.timeline-commentary-label')).toBeNull()
-    projection.status = 'completed'
-    await act(async () => render(false))
-    expect(container.querySelector('.inline-task-summary')!.getAttribute('aria-expanded')).toBe('false')
-    expect(container.querySelector('.execution-timeline')).toBeNull()
-    expect(container.textContent).toContain('正在生成的正文')
-    await act(async () => container.querySelector<HTMLButtonElement>('.inline-task-summary')!.click())
-    expect(container.querySelector('.execution-timeline')!.textContent).toContain('pnpm test')
+    expect(container.querySelector('.streaming-response')?.textContent).toContain('正在生成的正文')
+    expect(container.querySelector('.tool-group')).not.toBeNull()
+    expect(container.querySelector('.tool-group')!.hasAttribute('open')).toBe(true)
+    await act(async () => root.render(<ChatPage {...base} taskProjection={{ ...projection, status: 'completed' }} entries={[settled]} />))
+    // Settlement never removes what was already written, and never duplicates it.
     expect(container.textContent!.split('正在生成的正文')).toHaveLength(2)
+    expect(container.textContent).toContain('检查完成。')
+    expect(container.querySelector('.tool-group')!.hasAttribute('open')).toBe(false)
+    expect(container.querySelector('.turn-facts')?.textContent).toContain('2秒')
+  } finally { await act(async () => root.unmount()); container.remove() }
+})
+
+it('never drops text when a tool call lands between two text segments', async () => {
+  const entries = [assistantEntry('turn:1', [
+    { kind: 'text', id: '1:1', text: '我先检查文件。' },
+    toolSegment('call-1', 'local_files_read_text', { label: '读取 a.ts' }),
+    { kind: 'text', id: '1:2', text: '文件已检查完毕。' },
+  ])]
+  const container = document.body.appendChild(document.createElement('div'))
+  const root = createRoot(container)
+  try {
+    await act(async () => root.render(<ChatPage {...base} entries={entries} />))
+    expect(container.textContent).toContain('我先检查文件。')
+    expect(container.textContent).toContain('文件已检查完毕。')
+    expect(container.textContent!.split('我先检查文件。')).toHaveLength(2)
+  } finally { await act(async () => root.unmount()); container.remove() }
+})
+
+it('renders a textless turn without an error state', async () => {
+  const entries = [assistantEntry('turn:1', [toolSegment('call-1', 'local_files_write_text', { label: '写入 report.md' })])]
+  const container = document.body.appendChild(document.createElement('div'))
+  const root = createRoot(container)
+  try {
+    await act(async () => root.render(<ChatPage {...base} taskProjection={{ ...base.taskProjection, status: 'completed' }} entries={entries} />))
+    expect(container.querySelector('.tool-group')).not.toBeNull()
+    expect(container.textContent).toContain('本轮没有文字说明')
+    expect(container.textContent).not.toContain('失败')
   } finally { await act(async () => root.unmount()); container.remove() }
 })
 
@@ -134,31 +169,43 @@ it('stops one turn, disables repeat stops and restores the composer without a fa
   const onCancel = vi.fn()
   const container = document.body.appendChild(document.createElement('div'))
   const root = createRoot(container)
-  const render = (activity: string, status: XiaoyinTaskProjection['status']) => root.render(<ChatPage {...base} onCancel={onCancel} harnessRunning={status === 'running'} taskProjection={{ ...base.taskProjection, activity, status }} messages={[{ role: 'assistant', text: '', pending: status === 'running' }]} />)
+  const render = (activity: string, status: XiaoyinTaskProjection['status'], turnStatus: 'streaming' | 'canceled') => root.render(<ChatPage {...base} onCancel={onCancel} harnessRunning={status === 'running'} taskProjection={{ ...base.taskProjection, activity, status }} entries={[assistantEntry('turn:1', [], {}, turnStatus)]} />)
   try {
-    await act(async () => render('正在处理', 'running'))
+    await act(async () => render('正在处理', 'running', 'streaming'))
     await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="停止本轮"]')!.click())
     expect(onCancel).toHaveBeenCalledOnce()
-    await act(async () => render('正在停止', 'running'))
+    await act(async () => render('正在停止', 'running', 'streaming'))
     expect(container.querySelector<HTMLButtonElement>('[aria-label="正在停止"]')!.disabled).toBe(true)
-    await act(async () => render('已停止', 'canceled'))
+    await act(async () => render('已停止', 'canceled', 'canceled'))
     expect(container.querySelector('[aria-label="发送"]')).not.toBeNull()
     expect(container.textContent).toContain('已停止')
-    expect(container.querySelector('[aria-label="复制回答"]')).toBeNull()
     expect(container.textContent).not.toContain('失败')
   } finally { await act(async () => root.unmount()); container.remove() }
 })
-it('initially renders only recent long-history messages, then loads earlier messages without changing message indexes', async () => {
-  const container = document.body.appendChild(document.createElement('div')); const root = createRoot(container)
-  const messages = Array.from({ length: 1000 }, (_, index) => ({ role: 'assistant' as const, text: `历史-${index}` }))
+
+it('offers edit on the last turn and copy once the turn has text', async () => {
+  const onEditTurn = vi.fn()
+  const container = document.body.appendChild(document.createElement('div'))
+  const root = createRoot(container)
   try {
-    await act(async () => root.render(<ChatPage {...base} taskId="long" messages={messages} />))
+    await act(async () => root.render(<ChatPage {...base} onEditTurn={onEditTurn} entries={[assistantEntry('turn:1', '结论。')]} />))
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="编辑后重发"]')!.click())
+    expect(onEditTurn).toHaveBeenCalledOnce()
+    expect(container.querySelector('[aria-label="复制回答"]')).not.toBeNull()
+  } finally { await act(async () => root.unmount()); container.remove() }
+})
+
+it('initially renders only recent long-history turns, then loads earlier turns without changing indexes', async () => {
+  const container = document.body.appendChild(document.createElement('div')); const root = createRoot(container)
+  const entries = Array.from({ length: 1000 }, (_, index) => assistantEntry(`turn:${index}`, `历史-${index}`))
+  try {
+    await act(async () => root.render(<ChatPage {...base} taskId="long" entries={entries} />))
     expect(container.querySelectorAll('.conversation-turn')).toHaveLength(60)
     expect(container.textContent).not.toContain('历史-939')
     await act(async () => container.querySelector<HTMLButtonElement>('.conversation-load-earlier')!.click())
     expect(container.querySelectorAll('.conversation-turn')).toHaveLength(120)
     expect(container.textContent).toContain('历史-880')
-    await act(async () => root.render(<ChatPage {...base} taskId="other" messages={messages} />))
+    await act(async () => root.render(<ChatPage {...base} taskId="other" entries={entries} />))
     expect(container.querySelectorAll('.conversation-turn')).toHaveLength(60)
   } finally { await act(async () => root.unmount()); container.remove() }
 })

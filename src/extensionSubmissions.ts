@@ -45,7 +45,7 @@ async function checked<T>(response: Response, label: string): Promise<T> {
 }
 
 export async function loadMySubmissions(employeeId: string, accessToken: string): Promise<ExtensionSubmission[]> {
-  return checked(await fetch(resolveServerEndpoint('/api/v1/extension-submissions'), { headers: headers(employeeId, accessToken) }), '加载我的创作失败')
+  return checked(await fetch(resolveServerEndpoint('/api/v1/extension-submissions'), { headers: headers(employeeId, accessToken), signal: submissionSignal() }), '加载我的创作失败')
 }
 
 export async function submitPackage(manifest: ExpertKitManifest, bytes: number[], employeeId: string, accessToken: string, validationReport?: ExtensionValidationReport): Promise<ExtensionSubmission> {
@@ -61,11 +61,18 @@ export async function submitPackage(manifest: ExpertKitManifest, bytes: number[]
       knowledgeBaseRefs: manifest.knowledgeBaseRefs ?? [],
       author: manifest.author, sha256,
     }),
+    signal: submissionSignal(),
   }), '创建审核版本失败')
-  const upload = await fetch(prepared.uploadUrl, { method: 'PUT', body: file, headers: { 'Content-Type': 'application/gzip' } })
+  const upload = await fetch(prepared.uploadUrl, {
+    method: 'PUT',
+    body: file,
+    headers: { 'Content-Type': 'application/gzip' },
+    redirect: 'error',
+    signal: AbortSignal.timeout(10 * 60_000),
+  })
   if (!upload.ok) throw new Error(`上传扩展制品失败（${upload.status}）`)
   const submission = await checked<ExtensionSubmission>(await fetch(resolveServerEndpoint(`/api/v1/extension-submissions/${manifest.kind}/${encodeURIComponent(manifest.id)}/versions/${encodeURIComponent(manifest.version)}/submit`), {
-    method: 'POST', headers: headers(employeeId, accessToken),
+    method: 'POST', headers: headers(employeeId, accessToken), signal: submissionSignal(),
   }), '提交审核失败')
   if (validationReport) await saveValidationReport(manifest.kind, manifest.id, manifest.version, validationReport, employeeId, accessToken).catch(() => undefined)
   return { ...submission, ...(validationReport ? { validationReport } : {}) }
@@ -74,7 +81,7 @@ export async function submitPackage(manifest: ExpertKitManifest, bytes: number[]
 export async function submitConnector(connector: ConnectorCatalogEntry, employeeId: string, accessToken: string, validationReport?: ExtensionValidationReport): Promise<ExtensionSubmission> {
   const template = connectorSecretTemplate(connector)
   const submission = await checked<ExtensionSubmission>(await fetch(resolveServerEndpoint('/api/v1/extension-submissions/connectors'), {
-    method: 'POST', headers: headers(employeeId, accessToken, true), body: JSON.stringify(template),
+    method: 'POST', headers: headers(employeeId, accessToken, true), body: JSON.stringify(template), signal: submissionSignal(),
   }), '提交连接器审核失败')
   if (validationReport) await saveValidationReport('connector', connector.id, connector.version ?? '1.0.0', validationReport, employeeId, accessToken).catch(() => undefined)
   return { ...submission, validationReport }
@@ -82,8 +89,12 @@ export async function submitConnector(connector: ConnectorCatalogEntry, employee
 
 export async function saveValidationReport(kind: ExtensionKind, id: string, version: string, report: ExtensionValidationReport, employeeId: string, accessToken: string): Promise<ExtensionValidationReport> {
   return checked(await fetch(resolveServerEndpoint(`/api/v1/extension-submissions/${kind}/${encodeURIComponent(id)}/versions/${encodeURIComponent(version)}/validation-report`), {
-    method: 'POST', headers: headers(employeeId, accessToken, true), body: JSON.stringify(report),
+    method: 'POST', headers: headers(employeeId, accessToken, true), body: JSON.stringify(report), signal: submissionSignal(),
   }), '保存发布前验证结果失败')
+}
+
+function submissionSignal(timeoutMs = 30_000): AbortSignal {
+  return AbortSignal.timeout(timeoutMs)
 }
 
 const storageKey = (employeeId: string) => `xiaoyin.personal-connectors.${employeeId}`

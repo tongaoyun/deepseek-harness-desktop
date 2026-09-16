@@ -4,13 +4,14 @@ import { createRoot } from 'react-dom/client'
 import { afterEach, expect, it, vi } from 'vitest'
 import { useTaskPersistence } from './useTaskPersistence'
 import { persistTaskHistory } from './taskHistory'
+import { assistantEntry } from './conversation/testing'
 import { createXiaoyinTaskProjection } from './harness'
 import type { LocalTaskRun } from './types'
 
 vi.mock('./taskHistory', () => ({ persistTaskHistory: vi.fn(async () => {}) }))
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 afterEach(() => vi.mocked(persistTaskHistory).mockReset())
-const task: LocalTaskRun = { id: 'save', source: 'DESKTOP', name: '任务', status: 'COMPLETED', createdAt: '', updatedAt: '', projection: createXiaoyinTaskProjection(), messages: [] }
+const task: LocalTaskRun = { id: 'save', source: 'DESKTOP', name: '任务', status: 'COMPLETED', createdAt: '', updatedAt: '', projection: createXiaoyinTaskProjection(), entries: [] }
 async function fixture(run: (get: () => ReturnType<typeof useTaskPersistence>, render: (tasks: LocalTaskRun[], owner?: string) => Promise<void>) => Promise<void>) {
   const root = createRoot(document.createElement('div'))
   let state!: ReturnType<typeof useTaskPersistence>
@@ -23,7 +24,7 @@ it('keeps failures across task changes and retries the latest task, clearing onl
     vi.mocked(persistTaskHistory).mockRejectedValueOnce(new Error('磁盘已满'))
     await act(async () => { await get().save(task).catch(() => {}) })
     expect(get().failures[0].detail).toBe('磁盘已满')
-    const latest = { ...task, messages: [{ role: 'assistant' as const, text: '最新内容' }] }
+    const latest = { ...task, entries: [assistantEntry('turn:1', '最新内容')] }
     await render([latest])
     await act(async () => get().save({ ...task, id: 'another' }))
     expect(get().failures).toHaveLength(1)

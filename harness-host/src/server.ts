@@ -138,6 +138,24 @@ export class HostServer {
           this.emit(success(value.id, result))
           return
         }
+        case 'session.steer': {
+          const input = parseSteerInput(value.params)
+          if (!this.runtime.steer) throw new Error('Session steering is unavailable')
+          this.emit(success(value.id, await this.runtime.steer(input.sessionId, input.text)))
+          return
+        }
+        case 'session.regenerate': {
+          const sessionId = parseSessionId(value.params)
+          if (!this.runtime.regenerate) throw new Error('Session regeneration is unavailable')
+          this.emit(success(value.id, await this.runtime.regenerate(sessionId)))
+          return
+        }
+        case 'session.interrupt': {
+          const sessionId = parseSessionId(value.params)
+          if (!this.runtime.interrupt) throw new Error('Session interruption is unavailable')
+          this.emit(success(value.id, await this.runtime.interrupt(sessionId)))
+          return
+        }
         case 'host.shutdown':
           this.shuttingDown = true
           await this.imRuntime?.stop()
@@ -288,6 +306,16 @@ function parseQuestionResponse(params: unknown): { questionId: string; answer: Q
     }
   })
   return { questionId: record.questionId, answer: { answers } }
+}
+
+function parseSteerInput(params: unknown): { sessionId: string; text: string } {
+  if (typeof params !== 'object' || params === null || Array.isArray(params)) {
+    throw new Error('session.steer params must be an object')
+  }
+  const record = params as Record<string, unknown>
+  if (typeof record.sessionId !== 'string' || !record.sessionId) throw new Error('session.steer params.sessionId must be a non-empty string')
+  if (typeof record.text !== 'string' || record.text.trim().length === 0) throw new Error('session.steer params.text must be a non-blank string')
+  return { sessionId: record.sessionId, text: record.text }
 }
 
 function parseRunInput(params: unknown): RunInput {

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { collectHarnessSessionSearch, compactTaskForStorage, loadLocalTasks, loadTaskHistoryPage, recoverInterruptedTasks, saveLocalTask } from './taskHistory'
+import { assistantEntry, entryText, lastEntryText, userEntry } from './conversation/testing'
 import type { LocalTaskRun } from './types'
 
 class MemoryStorage implements Storage {
@@ -67,7 +68,7 @@ describe('task history', () => {
     const storage = new MemoryStorage()
     const task: LocalTaskRun = {
       id: 'task-1', source: 'DESKTOP', name: '库存分析', status: 'RUNNING',
-      createdAt: '2026-08-28T01:00:00Z', updatedAt: '2026-08-28T01:00:00Z', projection, messages: [],
+      createdAt: '2026-08-28T01:00:00Z', updatedAt: '2026-08-28T01:00:00Z', projection, entries: [],
     }
     saveLocalTask('employee-1', task, storage)
     saveLocalTask('employee-1', { ...task, status: 'COMPLETED', updatedAt: '2026-08-28T01:01:00Z' }, storage)
@@ -83,7 +84,7 @@ describe('task history', () => {
     expect(() => loadLocalTasks('employee-1', storage)).toThrow('原始数据已保留')
     expect(() => saveLocalTask('employee-1', {
       id: 'new', source: 'DESKTOP', name: '新任务', status: 'COMPLETED',
-      createdAt: '', updatedAt: '', projection, messages: [],
+      createdAt: '', updatedAt: '', projection, entries: [],
     }, storage)).toThrow('不会覆盖')
     expect(storage.getItem('xiaoyin.task-history.employee-1')).toBe('{broken')
   })
@@ -92,7 +93,7 @@ describe('task history', () => {
     const storage = new MemoryStorage()
     const task: LocalTaskRun = {
       id: 'task-cancelled', source: 'DESKTOP', name: '广告诊断', status: 'CANCELED',
-      createdAt: '2026-08-28T01:00:00Z', updatedAt: '2026-08-28T01:01:00Z', projection, messages: [],
+      createdAt: '2026-08-28T01:00:00Z', updatedAt: '2026-08-28T01:01:00Z', projection, entries: [],
     }
     saveLocalTask('employee-1', task, storage)
     expect(loadLocalTasks('employee-1', storage)[0].status).toBe('CANCELED')
@@ -102,7 +103,7 @@ describe('task history', () => {
     const storage = new MemoryStorage()
     const task: LocalTaskRun = {
       id: 'task-session-search', source: 'DESKTOP', name: '日报', status: 'COMPLETED',
-      createdAt: '2026-08-28T01:00:00Z', updatedAt: '2026-08-28T01:01:00Z', projection, messages: [],
+      createdAt: '2026-08-28T01:00:00Z', updatedAt: '2026-08-28T01:01:00Z', projection, entries: [],
       sessionId: 'session-harness-42', invocationTokens: ['/kit:finance', 'skill:invoice-check'],
     }
     saveLocalTask('employee-1', task, storage)
@@ -123,7 +124,7 @@ describe('task history', () => {
           completedAt: '2026-08-29T01:00:11Z',
         }],
       },
-      messages: [{ role: 'assistant', text: '分析完成' }],
+      entries: [assistantEntry('turn-1', '分析完成')],
     }
 
     saveLocalTask('employee-1', task, storage)
@@ -140,7 +141,7 @@ describe('task history', () => {
     saveLocalTask('employee-1', {
       id: 'canonical', source: 'DESKTOP', name: '事件事实源', status: 'COMPLETED',
       createdAt: '2026-09-11T01:00:00Z', updatedAt: '2026-09-11T01:01:00Z',
-      projection: stale, messages: [{ role: 'assistant', text: '完成', projection: stale }],
+      projection: stale, entries: [assistantEntry('turn-1', '完成')],
     }, storage)
     const persisted = JSON.parse(storage.getItem('xiaoyin.task-history.employee-1')!)
     persisted[0].projection = { stale: true }
@@ -157,12 +158,12 @@ describe('task history', () => {
     } }
     const task: LocalTaskRun = { id: 'awaiting', source: 'DESKTOP', name: '销售报告', status: 'COMPLETED',
       createdAt: '2026-09-07', updatedAt: '2026-09-07', projection: finishedProjection,
-      messages: [{ role: 'assistant', text: '请确认收件人', projection: finishedProjection }],
+      entries: [assistantEntry('turn-1', '请确认收件人', { outcome: finishedProjection.outcome })],
     }
     saveLocalTask('employee-1', task, storage)
     const [restored] = recoverInterruptedTasks(loadLocalTasks('employee-1', storage))
     expect(restored?.projection.outcome).toEqual(finishedProjection.outcome)
-    expect(restored?.messages[0].projection?.outcome).toEqual(finishedProjection.outcome)
+    expect(restored?.entries[0]).toMatchObject({ meta: { outcome: finishedProjection.outcome } })
   })
 
   it('turns tasks left running by an app exit into retryable failures', () => {
@@ -173,7 +174,7 @@ describe('task history', () => {
         { id: 'tool:1', kind: 'tool', label: '读取文件', status: 'running', startedAt: '2026-08-29T01:00:01Z' },
       ] },
       sessionId: 'interrupted-session',
-      messages: [{ role: 'user', text: '整理下载目录' }, { role: 'assistant', text: '已检查第一份报表', pending: true }],
+      entries: [userEntry('turn-1', '整理下载目录'), assistantEntry('turn-2', '已检查第一份报表', {}, 'streaming')],
     }
 
     const [recovered] = recoverInterruptedTasks([task], '2026-08-29T01:05:00Z')
@@ -184,10 +185,11 @@ describe('task history', () => {
     expect(recovered?.projection.steps[0]?.status).toBe('canceled')
     expect(recovered?.projection.steps[0]?.completedAt).toBe(task.updatedAt)
     expect(recovered?.projection.steps[0]?.label).toContain('结果待核对')
-    expect(recovered?.messages.at(-1)?.role).toBe('assistant')
-    expect(recovered?.messages.at(-1)?.pending).toBeUndefined()
-    expect(recovered?.messages.at(-1)?.text).toContain('已检查第一份报表')
-    expect(recovered?.messages.at(-1)?.text).toContain('不要重复已经完成的操作')
+    const last = recovered?.entries.at(-1)
+    expect(last?.role).toBe('assistant')
+    expect(last).toMatchObject({ status: 'failed' })
+    expect(entryText(last)).toContain('已检查第一份报表')
+    expect(entryText(last)).toContain('不要重复已经完成的操作')
     expect(recovered?.sessionId).toBe('interrupted-session')
   })
 
@@ -195,13 +197,14 @@ describe('task history', () => {
     const task: LocalTaskRun = {
       id: 'long', source: 'DESKTOP', name: '长任务', status: 'COMPLETED',
       createdAt: '2026-08-29T01:00:00Z', updatedAt: '2026-08-29T01:01:00Z', projection,
-      messages: Array.from({ length: 140 }, (_, index) => ({ role: index % 2 ? 'assistant' as const : 'user' as const, text: `消息 ${index}` })),
+      entries: Array.from({ length: 140 }, (_, index) => index % 2
+        ? assistantEntry(`turn-${index}`, `消息 ${index}`) : userEntry(`turn-${index}`, `消息 ${index}`)),
     }
     const compacted = compactTaskForStorage(task)
-    expect(compacted.messages).toHaveLength(140)
-    expect(compacted.messages[0]?.text).toBe('消息 0')
+    expect(compacted.entries).toHaveLength(140)
+    expect(entryText(compacted.entries[0])).toBe('消息 0')
     expect(compacted).toEqual(task)
-    expect(compacted.messages.at(-1)?.text).toBe('消息 139')
+    expect(lastEntryText(compacted.entries)).toBe('消息 139')
   })
 
   it('does not evict older or archived tasks when saving beyond 200 records', () => {
@@ -209,14 +212,14 @@ describe('task history', () => {
     const task = (index: number): LocalTaskRun => ({
       id: String(index), source: 'DESKTOP', name: '任务', status: 'COMPLETED',
       createdAt: '2026-09-01', updatedAt: '2026-09-01', archivedAt: index === 0 ? '2026-09-01' : undefined,
-      projection, messages: [{ role: 'user', text: '原始要求' + (index === 0 ? '长'.repeat(250_000) : '') }],
+      projection, entries: [userEntry('turn-1', '原始要求' + (index === 0 ? '长'.repeat(250_000) : ''))],
     })
     // Start just before the boundary; exercise real saves across and beyond it.
     // Avoid rewriting the same large history 199 times merely to arrange the fixture.
     storage.setItem('xiaoyin.task-history.employee-1', JSON.stringify(Array.from({ length: 199 }, (_, index) => task(index))))
     for (let index = 199; index < 205; index++) saveLocalTask('employee-1', task(index), storage)
     expect(loadLocalTasks('employee-1', storage)).toHaveLength(205)
-    expect(loadLocalTasks('employee-1', storage).find((task) => task.id === '0')?.messages[0].text).toHaveLength(250_004)
+    expect(entryText(loadLocalTasks('employee-1', storage).find((task) => task.id === '0')?.entries[0])).toHaveLength(250_004)
     expect(loadLocalTasks('employee-1', storage).find((task) => task.id === '0')?.archivedAt).toBe('2026-09-01')
   })
 
@@ -232,7 +235,7 @@ describe('task history', () => {
         outputRetention: { prunedResults: 3, omittedTokens: 900 },
         compactions: 2,
       },
-      messages: [],
+      entries: [],
     }
     const [recovered] = recoverInterruptedTasks([task], '2026-09-12T00:00:00Z')
     expect(recovered?.projection).toMatchObject({

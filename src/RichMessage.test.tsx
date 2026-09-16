@@ -4,16 +4,16 @@ import { RichMessage } from './RichMessage'
 
 describe('rich message', () => {
   it('does not guess artifacts from response text', () => {
-    const html = renderToStaticMarkup(<RichMessage assistant text="已生成 C:\\Reports\\sales.xlsx 和 /tmp/summary.pdf" />)
+    const html = renderToStaticMarkup(<RichMessage text="已生成 C:\\Reports\\sales.xlsx 和 /tmp/summary.pdf" />)
     expect(html).toContain('sales.xlsx')
     expect(html).not.toContain('artifact-list')
     expect(html).not.toContain('在文件夹中显示')
   })
 
-  it('keeps the compact answer actions limited to copy and regenerate', () => {
-    const html = renderToStaticMarkup(<RichMessage assistant onRegenerate={() => undefined} text="完成" />)
-    expect(html).toContain('复制回答')
-    expect(html).toContain('编辑后重发')
-    expect(html).not.toContain('赞同')
+  it('leaves per-turn actions to the turn footer', () => {
+    const html = renderToStaticMarkup(<RichMessage text="完成" />)
+    expect(html).toContain('message-markdown')
+    expect(html).not.toContain('message-actions')
+    expect(html).not.toContain('复制回答')
   })
 })

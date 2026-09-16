@@ -34,14 +34,28 @@ async function main() {
     if (!response.ok && !allowed.includes(response.status)) throw new Error(`${init.method || 'GET'} ${new URL(url).pathname}: HTTP ${response.status}`)
     return response
   }
+  async function responseDigest(response) {
+    if (!response.body) throw new Error('Release artifact response did not contain a body')
+    const hash = createHash('sha256')
+    let bytes = 0
+    for await (const chunk of response.body) {
+      hash.update(chunk)
+      bytes += chunk.length
+    }
+    return { bytes, sha256: hash.digest('hex') }
+  }
   async function immutable(name, bytes) {
     const url = `${base}/${encodeURIComponent(name)}`
     const existing = await request(url, {}, [404])
+    const expected = digest(bytes)
     if (existing.ok) {
-      if (digest(Buffer.from(await existing.arrayBuffer())) !== digest(bytes)) throw new Error(`Refusing to replace ${name}`)
-    } else await request(url, { method: 'PUT', body: bytes, headers: { 'Content-Type': 'application/octet-stream' } })
-    const actual = Buffer.from(await (await request(url)).arrayBuffer())
-    if (digest(actual) !== digest(bytes)) throw new Error(`Upload verification failed: ${name}`)
+      const actual = await responseDigest(existing)
+      if (actual.sha256 !== expected) throw new Error(`Refusing to replace ${name}`)
+      return
+    }
+    await request(url, { method: 'PUT', body: bytes, headers: { 'Content-Type': 'application/octet-stream' } })
+    const actual = await responseDigest(await request(url))
+    if (actual.sha256 !== expected) throw new Error(`Upload verification failed: ${name}`)
   }
   if (mode === 'stage') {
     if (!['arm64', 'x64'].includes(arch)) throw new Error('Expected arm64 or x64')
@@ -64,11 +78,11 @@ async function main() {
   } else if (mode === 'publish') {
     const manifests = await Promise.all(['arm64', 'x64'].map(async (arch) => (await request(`${base}/${arch}.json`)).json()))
     const latest = macUpdateManifest(version, commit, manifests, base)
-    for (const manifest of manifests) for (const file of manifest.files) {
+    await Promise.all(manifests.flatMap((manifest) => manifest.files.map(async (file) => {
       if (!/^xiaoyin_[\w.-]+\.(?:dmg|app\.tar\.gz(?:\.sig)?)$/.test(file.name)) throw new Error('Invalid artifact name')
-      const bytes = Buffer.from(await (await request(`${base}/${encodeURIComponent(file.name)}`)).arrayBuffer())
-      if (bytes.length !== file.bytes || digest(bytes) !== file.sha256) throw new Error(`Release checksum mismatch: ${file.name}`)
-    }
+      const actual = await responseDigest(await request(`${base}/${encodeURIComponent(file.name)}`))
+      if (actual.bytes !== file.bytes || actual.sha256 !== file.sha256) throw new Error(`Release checksum mismatch: ${file.name}`)
+    })))
     const bytes = Buffer.from(JSON.stringify(latest))
     await immutable('latest.json', bytes)
     const previous = await request(feed, {}, [404])

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { userEntry } from './conversation/testing'
 import { mergeImStatusIntoTasks } from './imTaskSync'
 import { createXiaoyinTaskProjection } from './harness'
 import type { LocalImStatus } from './localIm'
@@ -13,7 +14,7 @@ describe('IM task synchronization', () => {
       id: 'task-1', source: 'DESKTOP', name: '日报', status: 'RUNNING',
       createdAt: '2026-09-02T00:00:00Z', updatedAt: '2026-09-02T02:00:00Z',
       sessionId: 'new-session', projection: { ...createXiaoyinTaskProjection(), status: 'running', activity: '正在修改日报' },
-      messages: [{ id: 'desktop-new', role: 'user', text: '修改一下' }],
+      entries: [userEntry('desktop-new', '修改一下')],
     }
     const conversation = {
       boundTaskId: task.id, sessionId: 'old-session', status: 'COMPLETED', outcome: partialOutcome, updatedAt: '2026-09-02T01:00:00Z',
@@ -22,15 +23,16 @@ describe('IM task synchronization', () => {
     const status = { enabled: true, conversations: [conversation, conversation] } as unknown as LocalImStatus
     const merged = mergeImStatusIntoTasks([task], status)
     expect(merged.tasks[0]).toMatchObject({ status: 'RUNNING', sessionId: 'new-session', projection: task.projection })
-    expect(merged.tasks[0]!.messages.map((message) => message.id)).toEqual(['desktop-new', 'im-old'])
-    expect(merged.tasks[0]!.messages.at(-1)?.projection?.outcome).toEqual(partialOutcome)
+    expect(merged.tasks[0]!.entries.map((entry) => entry.id)).toEqual(['desktop-new', 'im-old'])
+    const lastEntry = merged.tasks[0]!.entries.at(-1)
+    expect(lastEntry?.role === 'assistant' ? lastEntry.meta.outcome : undefined).toEqual(partialOutcome)
     expect(mergeImStatusIntoTasks(merged.tasks, status).changed).toHaveLength(0)
   })
   it('merges DingTalk messages and structured events into the bound desktop task once', () => {
     const task: LocalTaskRun = {
       id: 'task-1', source: 'DESKTOP', name: '日报', status: 'COMPLETED',
       createdAt: '2026-09-02T00:00:00Z', updatedAt: '2026-09-02T00:00:00Z',
-      sessionId: 'session-1', projection: createXiaoyinTaskProjection('2026-09-02T00:00:00Z'), messages: [],
+      sessionId: 'session-1', projection: createXiaoyinTaskProjection('2026-09-02T00:00:00Z'), entries: [],
     }
     const status = { enabled: true, conversations: [{
       conversationKey: 'ding:user', boundTaskId: 'task-1', sessionId: 'session-1',
@@ -40,7 +42,7 @@ describe('IM task synchronization', () => {
     }] } as unknown as LocalImStatus
     const first = mergeImStatusIntoTasks([task], status)
     expect(first.changed).toHaveLength(1)
-    expect(first.tasks[0]).toMatchObject({ status: 'COMPLETED', messages: [{ id: 'm1', source: 'dingtalk' }] })
+    expect(first.tasks[0]).toMatchObject({ status: 'COMPLETED', entries: [{ id: 'm1', source: 'dingtalk' }] })
     expect(first.tasks[0]!.projection.steps).toHaveLength(1)
     expect(first.tasks[0]!.projection.outcome).toEqual(partialOutcome)
     expect(mergeImStatusIntoTasks(first.tasks, status).changed).toHaveLength(0)

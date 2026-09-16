@@ -6,7 +6,8 @@ import { taskInterruption } from './taskInterruption'
 import { TaskRecoveryNotice } from './TaskRecoveryNotice'
 import { recoverInterruptedTasks } from './taskHistory'
 import { harnessPromptWithConversationReplay } from './conversationReplay'
-import { applyHarnessNotification, createXiaoyinTaskProjection, classifyHarnessFailure } from './harness'
+import { assistantEntry, userEntry } from './conversation/testing'
+import { createXiaoyinTaskProjection, classifyHarnessFailure } from './harness'
 import type { LocalTaskRun, XiaoyinTaskProjection } from './types'
 
 const checkpoint = '2026-09-08T12:00:00.000Z'
@@ -18,11 +19,11 @@ const projection: XiaoyinTaskProjection = { ...createXiaoyinTaskProjection(check
 
 it('preserves uncertain operations in the recovery record and model context', () => {
   const task: LocalTaskRun = { id: 'test', name: '订单任务', source: 'DESKTOP', status: 'RUNNING', createdAt: checkpoint, updatedAt: checkpoint, projection,
-    messages: [{ role: 'user', text: '核对并提交订单' }, { role: 'assistant', text: '已核对价格', pending: true }] }
+    entries: [userEntry('u1', '核对并提交订单'), assistantEntry('turn:1', '已核对价格', {}, 'streaming')] }
   const [recovered] = recoverInterruptedTasks([task], '2026-09-09T12:00:00.000Z')
   expect(recovered.projection.completedAt).toBe(checkpoint)
   expect(recovered.projection.interruption).toEqual({ checkpointAt: checkpoint, cause: 'exit', pendingOperations: [{ id: 'write', label: '提交订单', toolName: 'mcp_submit' }] })
-  const replay = harnessPromptWithConversationReplay('继续', recovered.messages, true)
+  const replay = harnessPromptWithConversationReplay('继续', recovered.entries, true, recovered.projection)
   expect(replay).toContain('mcp_submit')
   expect(replay).toContain('先用只读方式核对')
   expect(replay).toContain('不能据此断言某操作未发生')
@@ -52,11 +53,11 @@ it('keeps connector authentication separate from model authentication and automa
   expect(classifyHarnessFailure('model 401 Unauthorized').code).toBe('XY-AUTH')
 })
 
-it('retains unknown tool results after turn/end settles the visible steps', () => {
-  const ended = applyHarnessNotification(projection, { requestId: 1, event: { event: {
-    method: 'session.event', params: { event: { type: 'turn/end', data: { reason: { kind: 'error' } } } },
-  } } })
-  expect(ended.steps[0].status).toBe('canceled')
+it('keeps an unsettled tool in the recovery record', () => {
+  // The Harness projection settles running tools on turn/end; an unknown tool
+  // result still leaves its receipt for the employee to reconcile.
+  const ended = { ...projection, steps: projection.steps.map((step) => step.status === 'running' ? { ...step, status: 'canceled' as const } : step) }
+  expect(ended.steps[0]?.status).toBe('canceled')
   expect(taskInterruption(ended, 'failure').pendingOperations).toEqual([
     { id: 'write', label: '提交订单', toolName: 'mcp_submit' },
   ])

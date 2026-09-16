@@ -100,7 +100,7 @@ describe('local IM synchronization', () => {
       id: 'task-1', source: 'DESKTOP', name: '库存分析', status: 'RUNNING',
       createdAt: '2026-09-04T01:00:00Z', updatedAt: '2026-09-04T01:00:00Z', sessionId: 'session-1',
       projection: { status: 'running', activity: '处理中', updatedAt: '2026-09-04T01:00:00Z', steps: [], artifacts: [] },
-      messages: [],
+      entries: [],
     }
     bridge.syncLocalImTasks.mockResolvedValue(null)
     bridge.loadLocalImStatus.mockResolvedValue({
@@ -130,7 +130,7 @@ describe('local IM synchronization', () => {
     const task: LocalTaskRun = {
       id: 'task-1', source: 'DESKTOP', name: '日报', status: 'RUNNING',
       createdAt: '2026-09-04T01:00:00Z', updatedAt: '2026-09-04T01:00:00Z', sessionId: 'session-1',
-      projection: { status: 'running', activity: '处理中', updatedAt: '2026-09-04T01:00:00Z', steps: [], artifacts: [] }, messages: [],
+      projection: { status: 'running', activity: '处理中', updatedAt: '2026-09-04T01:00:00Z', steps: [], artifacts: [] }, entries: [],
     }
     bridge.syncLocalImTasks.mockResolvedValue(null)
     bridge.loadLocalImStatus.mockResolvedValue({ enabled: true, conversations: [{ boundTaskId: task.id, status: 'COMPLETED', updatedAt: '2026-09-04T01:01:00Z', sessionId: task.sessionId, messages: [] }] })

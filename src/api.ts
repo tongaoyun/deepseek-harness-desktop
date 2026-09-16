@@ -114,6 +114,7 @@ export async function submitDeviceHeartbeat(
     method: 'POST',
     headers: { ...enterpriseHeaders(employeeId, accessToken), 'Content-Type': 'application/json' },
     body: JSON.stringify(request),
+    signal: boundedSignal(),
   })
   if (!response.ok) throw new Error(`设备心跳上报返回 ${response.status}`)
 }
@@ -130,6 +131,7 @@ export async function submitDeviceCapabilityReport(
     method: 'POST',
     headers: { ...enterpriseHeaders(employeeId, accessToken), 'Content-Type': 'application/json' },
     body: JSON.stringify(request),
+    signal: boundedSignal(),
   })
   if (!response.ok) throw new Error(`设备能力上报返回 ${response.status}`)
 }
@@ -144,6 +146,7 @@ export async function submitAuditEvent(
     method: 'POST',
     headers: { ...enterpriseHeaders(employeeId, accessToken), 'Content-Type': 'application/json' },
     body: JSON.stringify(event),
+    signal: boundedSignal(),
   })
   if (!response.ok) throw new Error(`审计事件上报返回 ${response.status}`)
   return readServerData<AuditEventEntry>(response)
@@ -319,7 +322,7 @@ async function knowledgeVoidRequest(
   method: 'DELETE',
 ): Promise<void> {
   const response = await fetch(serverUrl(`${endpoint.replace(/\/$/, '')}${suffix}`), {
-    method, headers: knowledgeHeaders(employeeId, teamId, accessToken),
+    method, headers: knowledgeHeaders(employeeId, teamId, accessToken), signal: boundedSignal(),
   })
   if (!response.ok) throw new Error(`知识库删除操作返回 ${response.status}`)
 }

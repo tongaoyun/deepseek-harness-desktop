@@ -22,7 +22,11 @@ use std::{
     io::{BufRead, BufReader, Read, Write},
     path::{Path, PathBuf},
     process::{Child, ChildStdin, ChildStdout, Command, Stdio},
-    sync::{Arc, Mutex, mpsc},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+        mpsc,
+    },
     thread::JoinHandle,
     time::Duration,
 };
@@ -66,11 +70,24 @@ impl HarnessManager {
     }
 }
 
+/// Desktop turn intents shared between a task slot and its live process.
+#[derive(Clone, Default)]
+pub(crate) struct TurnIntents {
+    /// Employee messages to inject into the running turn. The run loop drains
+    /// this at each Harness notification, which is exactly the step cadence the
+    /// agent consumes steering input at.
+    steer_inbox: Arc<Mutex<Vec<String>>>,
+    /// Set by the desktop stop button; the run loop forwards it as one
+    /// `session.interrupt` so the turn settles with its partial receipts.
+    interrupt_requested: Arc<AtomicBool>,
+}
+
 #[derive(Default)]
 struct HarnessSlot {
     process: Mutex<Option<HarnessProcess>>,
     active: Mutex<Option<ActiveRun>>,
     owner: Mutex<Option<String>>,
+    intents: TurnIntents,
 }
 
 #[derive(Default)]
@@ -363,6 +380,8 @@ pub struct HarnessSessionInspection {
     #[serde(default)]
     projection: Option<Value>,
     #[serde(default)]
+    transcript: Vec<Value>,
+    #[serde(default)]
     messages: Vec<Value>,
 }
 
@@ -445,6 +464,8 @@ pub(crate) struct HarnessProcess {
     notification_task_id: String,
     approval_broker: Option<Arc<ApprovalBroker>>,
     question_broker: Option<Arc<QuestionBroker>>,
+    intents: TurnIntents,
+    current_session_id: Option<String>,
     pub(crate) fingerprint: RuntimeFingerprint,
 }
 
@@ -544,9 +565,14 @@ pub async fn run_harness(
 
 #[tauri::command]
 pub async fn shutdown_harness(
+    app: tauri::AppHandle,
     manager: tauri::State<'_, HarnessManager>,
     task_id: Option<String>,
 ) -> Result<(), String> {
+    if let Some(task_id) = task_id.as_deref() {
+        let employee_id = crate::erp_auth::current_employee(&app).await?;
+        manager.check_task_owner(task_id, &employee_id)?;
+    }
     let manager = manager.inner().clone();
     tauri::async_runtime::spawn_blocking(move || manager.shutdown(task_id.as_deref()))
         .await
@@ -588,6 +614,40 @@ pub async fn respond_harness_question(
     let employee_id = crate::erp_auth::current_employee(&app).await?;
     manager.check_task_owner(&task_id, &employee_id)?;
     manager.respond_to_question(&task_id, &question_id, answers)
+}
+
+#[tauri::command]
+pub async fn steer_harness(
+    app: tauri::AppHandle,
+    manager: tauri::State<'_, HarnessManager>,
+    task_id: String,
+    prompt: String,
+) -> Result<bool, String> {
+    let employee_id = crate::erp_auth::current_employee(&app).await?;
+    manager.check_task_owner(&task_id, &employee_id)?;
+    manager.steer(&task_id, &prompt)
+}
+
+#[tauri::command]
+pub async fn interrupt_harness(
+    app: tauri::AppHandle,
+    manager: tauri::State<'_, HarnessManager>,
+    task_id: String,
+) -> Result<bool, String> {
+    let employee_id = crate::erp_auth::current_employee(&app).await?;
+    manager.check_task_owner(&task_id, &employee_id)?;
+    manager.interrupt(&task_id)
+}
+
+#[tauri::command]
+pub async fn regenerate_harness(
+    app: tauri::AppHandle,
+    manager: tauri::State<'_, HarnessManager>,
+    task_id: String,
+) -> Result<String, String> {
+    let employee_id = crate::erp_auth::current_employee(&app).await?;
+    manager.check_task_owner(&task_id, &employee_id)?;
+    manager.regenerate(&task_id)
 }
 
 #[tauri::command]
@@ -743,6 +803,22 @@ pub async fn probe_harness_host(
                 "unconfigured".to_string()
             },
         );
+        // The probe intentionally omits secrets, so the Host cannot infer
+        // whether the DeepSeek-backed web providers are configured. Preserve
+        // the already-known desktop configuration bit without exposing it.
+        if model_configured.unwrap_or(false) {
+            for capability in ["webSearch", "webFetch"] {
+                if health
+                    .capabilities
+                    .get(capability)
+                    .is_some_and(|value| value == "unconfigured")
+                {
+                    health
+                        .capabilities
+                        .insert(capability.to_string(), "gated".to_string());
+                }
+            }
+        }
         Ok(health)
     })
     .await
@@ -951,8 +1027,11 @@ impl HarnessManager {
                 fingerprint,
                 model_api_key,
                 access_token,
-                Arc::clone(&self.approvals),
-                Arc::clone(&self.questions),
+                slot.intents.clone(),
+                InteractionBrokers {
+                    approval: Arc::clone(&self.approvals),
+                    question: Arc::clone(&self.questions),
+                },
             )?);
         }
         let process = guard.as_mut().expect("Harness process was initialized");
@@ -1050,6 +1129,90 @@ impl HarnessManager {
             .cloned();
         let Some(slot) = slot else { return Ok(false) };
         slot.cancel()
+    }
+
+    /// Queue one employee message for the running turn. The live run loop
+    /// forwards it to the agent at its next step boundary.
+    fn steer(&self, task_id: &str, text: &str) -> Result<bool, String> {
+        if text.trim().is_empty() {
+            return Err("插话内容不能为空".to_string());
+        }
+        let slot = self
+            .slots
+            .lock()
+            .map_err(|_| "Harness 任务池不可用".to_string())?
+            .get(task_id)
+            .cloned();
+        let Some(slot) = slot else { return Ok(false) };
+        if !slot.is_running() {
+            return Ok(false);
+        }
+        let mut inbox = slot
+            .intents
+            .steer_inbox
+            .lock()
+            .map_err(|_| "插话队列不可用".to_string())?;
+        // A person typing mid-turn cannot outpace the agent; bound the queue so
+        // a runaway caller cannot grow it without limit.
+        if inbox.len() >= 20 {
+            return Err("插话过于频繁，请等待当前步骤完成".to_string());
+        }
+        inbox.push(text.trim().to_string());
+        Ok(true)
+    }
+
+    /// Fork the task's session before its last prompt and return the new id.
+    /// Called between turns, so it takes the process directly instead of the
+    /// run loop's intent channel.
+    fn regenerate(&self, task_id: &str) -> Result<String, String> {
+        let slot = self
+            .slots
+            .lock()
+            .map_err(|_| "Harness 任务池不可用".to_string())?
+            .get(task_id)
+            .cloned()
+            .ok_or("该任务没有可重新生成的会话")?;
+        if slot.is_running() {
+            return Err("请等待当前轮结束后再重新生成".to_string());
+        }
+        let mut guard = slot
+            .process
+            .lock()
+            .map_err(|_| "Harness 进程状态不可用".to_string())?;
+        let process = guard.as_mut().ok_or("该任务没有可重新生成的会话")?;
+        let session_id = process
+            .current_session_id
+            .clone()
+            .ok_or("该任务还没有可重新生成的会话")?;
+        let result = process.request(
+            "session.regenerate",
+            Some(json!({ "sessionId": session_id })),
+            None,
+        )?;
+        let forked = result
+            .get("sessionId")
+            .and_then(Value::as_str)
+            .ok_or("重新生成未返回新的会话")?;
+        process.current_session_id = Some(forked.to_string());
+        Ok(forked.to_string())
+    }
+
+    /// Ask the running turn to stop while keeping its partial results.
+    fn interrupt(&self, task_id: &str) -> Result<bool, String> {
+        let slot = self
+            .slots
+            .lock()
+            .map_err(|_| "Harness 任务池不可用".to_string())?
+            .get(task_id)
+            .cloned();
+        let Some(slot) = slot else { return Ok(false) };
+        if !slot.is_running() {
+            return Ok(false);
+        }
+        slot.intents
+            .interrupt_requested
+            .store(true, Ordering::SeqCst);
+        Ok(true)
     }
 
     fn respond_to_approval(
@@ -1244,6 +1407,13 @@ fn signal_process(pid: u32, force: bool) -> Result<bool, String> {
     }
 }
 
+struct HarnessStartOptions<'a> {
+    initialize: bool,
+    task_id: Option<&'a str>,
+    interaction_brokers: Option<InteractionBrokers>,
+    intents: TurnIntents,
+}
+
 impl HarnessProcess {
     pub(crate) fn start(
         app: &tauri::AppHandle,
@@ -1256,9 +1426,12 @@ impl HarnessProcess {
             fingerprint,
             model_api_key,
             access_token,
-            true,
-            None,
-            None,
+            HarnessStartOptions {
+                initialize: true,
+                task_id: None,
+                interaction_brokers: None,
+                intents: TurnIntents::default(),
+            },
         )
     }
 
@@ -1268,20 +1441,20 @@ impl HarnessProcess {
         fingerprint: RuntimeFingerprint,
         model_api_key: String,
         access_token: String,
-        approval_broker: Arc<ApprovalBroker>,
-        question_broker: Arc<QuestionBroker>,
+        intents: TurnIntents,
+        brokers: InteractionBrokers,
     ) -> Result<Self, String> {
         Self::start_internal(
             app,
             fingerprint,
             model_api_key,
             access_token,
-            false,
-            Some(task_id),
-            Some(InteractionBrokers {
-                approval: approval_broker,
-                question: question_broker,
-            }),
+            HarnessStartOptions {
+                initialize: false,
+                task_id: Some(task_id),
+                interaction_brokers: Some(brokers),
+                intents,
+            },
         )
     }
 
@@ -1296,9 +1469,12 @@ impl HarnessProcess {
             fingerprint,
             model_api_key,
             access_token,
-            false,
-            None,
-            None,
+            HarnessStartOptions {
+                initialize: false,
+                task_id: None,
+                interaction_brokers: None,
+                intents: TurnIntents::default(),
+            },
         )
     }
 
@@ -1307,10 +1483,14 @@ impl HarnessProcess {
         fingerprint: RuntimeFingerprint,
         model_api_key: String,
         access_token: String,
-        initialize: bool,
-        task_id: Option<&str>,
-        interaction_brokers: Option<InteractionBrokers>,
+        options: HarnessStartOptions<'_>,
     ) -> Result<Self, String> {
+        let HarnessStartOptions {
+            initialize,
+            task_id,
+            interaction_brokers,
+            intents,
+        } = options;
         let runtime = resolve_runtime_paths(app)?;
         let app_data = app
             .path()
@@ -1469,6 +1649,8 @@ impl HarnessProcess {
             stderr_reader,
             next_id: 1,
             notification_task_id: String::new(),
+            intents,
+            current_session_id: None,
             fingerprint,
             approval_broker,
             question_broker,
@@ -1494,7 +1676,8 @@ impl HarnessProcess {
             .map_err(|_| "无法保存任务执行标识")?;
         let mut params = json!({ "prompt": turn.prompt, "images": turn.images });
         if let Some(session_id) = turn.session_id {
-            params["sessionId"] = Value::String(session_id);
+            params["sessionId"] = Value::String(session_id.clone());
+            self.current_session_id = Some(session_id);
         }
         let result = self.request("session.run", Some(params), Some(app))?;
         serde_json::from_value(result).map_err(|error| format!("Harness 结果无效：{error}"))
@@ -1525,6 +1708,7 @@ impl HarnessProcess {
         let mut notification_sequence = 0_u64;
 
         loop {
+            self.deliver_pending_turn_intents()?;
             let mut line = String::new();
             let bytes = self
                 .stdout
@@ -1815,6 +1999,56 @@ impl HarnessProcess {
                 .cloned()
                 .ok_or_else(|| "Harness 响应缺少 result".to_string());
         }
+    }
+
+    /// Forward employee turn intents queued by the desktop. The run loop wakes
+    /// on every Harness notification, the same step cadence the agent claims
+    /// steering input at. Responses carry unmatched ids and are skipped below.
+    fn deliver_pending_turn_intents(&mut self) -> Result<(), String> {
+        let session_id = self.current_session_id.clone();
+        let Some(session_id) = session_id else {
+            return Ok(());
+        };
+        if self
+            .intents
+            .interrupt_requested
+            .swap(false, Ordering::SeqCst)
+        {
+            self.write_request(
+                "session.interrupt",
+                json!({ "sessionId": session_id.clone() }),
+            )?;
+        }
+        let pending: Vec<String> = match self.intents.steer_inbox.lock() {
+            Ok(mut inbox) => std::mem::take(&mut *inbox),
+            Err(_) => Vec::new(),
+        };
+        for text in pending {
+            self.write_request(
+                "session.steer",
+                json!({ "sessionId": session_id.clone(), "text": text }),
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Write one fire-and-forget request. Its response is filtered out by the
+    /// request loop's id check, so no pending-response bookkeeping is needed.
+    fn write_request(&mut self, method: &str, params: Value) -> Result<(), String> {
+        let request_id = self.next_id;
+        self.next_id += 1;
+        let request = json!({
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "method": method,
+            "params": params,
+        });
+        serde_json::to_writer(&mut self.stdin, &request)
+            .map_err(|error| format!("无法序列化 Harness 请求：{error}"))?;
+        self.stdin
+            .write_all(b"\n")
+            .and_then(|_| self.stdin.flush())
+            .map_err(|error| format!("无法向 Harness 发送请求：{error}"))
     }
 
     fn send_approval_response(&mut self, approval_id: &str, decision: &str) -> Result<(), String> {
@@ -2559,6 +2793,28 @@ mod tests {
     #[test]
     fn cancel_without_active_run_is_a_noop() {
         assert_eq!(HarnessManager::default().cancel("missing-task"), Ok(false));
+    }
+
+    #[test]
+    fn steering_and_interrupt_only_reach_a_running_turn() {
+        let manager = HarnessManager::default();
+        assert_eq!(manager.steer("missing-task", "改用方案 B"), Ok(false));
+        assert_eq!(manager.interrupt("missing-task"), Ok(false));
+        assert!(manager.steer("missing-task", "   ").is_err());
+
+        let slot = manager.slot("steered-task").unwrap();
+        let run = slot.begin_for("employee-1").unwrap();
+        assert_eq!(manager.steer("steered-task", "改用方案 B"), Ok(true));
+        assert_eq!(
+            slot.intents.steer_inbox.lock().unwrap().as_slice(),
+            ["改用方案 B"]
+        );
+        assert_eq!(manager.interrupt("steered-task"), Ok(true));
+        assert!(slot.intents.interrupt_requested.load(Ordering::SeqCst));
+        drop(run);
+        // A finished turn accepts neither intent.
+        assert_eq!(manager.steer("steered-task", "太晚了"), Ok(false));
+        assert_eq!(manager.interrupt("steered-task"), Ok(false));
     }
 
     #[test]

@@ -1,4 +1,5 @@
 import { invoke, isTauri } from '@tauri-apps/api/core'
+import type { ConversationEntry } from './conversation/types'
 import type { LocalTaskRun } from './types'
 import { inspectHarnessSession, searchHarnessSessionsPage, type HarnessSessionSearchHit, type HarnessSessionSearchPage } from './harness'
 
@@ -141,7 +142,7 @@ export async function loadTaskById(employeeId: string, id: string): Promise<Loca
   if (!isLocalTask(task)) throw invalidTaskError(task)
   const indexed = canonicalizeTaskProjection(task)
   const recovered = (await recoverInterruptedTasksWithHarness(employeeId, [indexed], new Date().toISOString(), true))[0]
-  if (indexed.sessionId && indexed.messages.length === 0 && recovered.messages.length === 0) {
+  if (indexed.sessionId && indexed.entries.length === 0 && recovered.entries.length === 0) {
     throw new Error('Harness 会话内容暂时无法读取，无法打开完整任务；请稍后重试')
   }
   return recovered
@@ -203,16 +204,17 @@ export function recoverInterruptedTasks(tasks: LocalTaskRun[], now = new Date().
         : agent),
       failure: { code: 'XY-INTERRUPTED', category: 'local-agent', detail: '应用关闭或本地执行进程中断。Harness Session 已保留，继续前请核对实际结果。' },
     }
-    const interrupted = {
-      role: 'assistant' as const,
-      text: [task.messages.at(-1)?.role === 'assistant' && task.messages.at(-1)?.pending ? task.messages.at(-1)!.text.trim() : '',
-        '上次任务因应用关闭或本地 Agent 中断，未能完成。已保留最近保存的进度与成果，请检查实际结果后继续，不要重复已经完成的操作。'].filter(Boolean).join('\n\n'),
-      projection,
-    }
-    const messages = task.messages.at(-1)?.role === 'assistant' && task.messages.at(-1)?.pending
-      ? [...task.messages.slice(0, -1), interrupted]
-      : [...task.messages, interrupted]
-    return { ...task, status: 'FAILED' as const, updatedAt: now, projection, messages }
+    const interruptedNotice = '上次任务因应用关闭或本地 Agent 中断，未能完成。已保留最近保存的进度与成果，请检查实际结果后继续，不要重复已经完成的操作。'
+    const last = task.entries.at(-1)
+    const entries = last?.role === 'assistant' && last.status === 'streaming'
+      ? [...task.entries.slice(0, -1), {
+          ...last,
+          status: 'failed' as const,
+          segments: [...last.segments, { kind: 'text' as const, id: `interrupted:${now}`, text: interruptedNotice }],
+          meta: { ...last.meta, completedAt: now, failure: { kind: 'interrupted', message: interruptedNotice } },
+        }]
+      : [...task.entries, { id: `interrupted:${now}`, role: 'assistant' as const, status: 'failed' as const, segments: [{ kind: 'text' as const, id: `interrupted:${now}`, text: interruptedNotice }], meta: { completedAt: now, failure: { kind: 'interrupted', message: interruptedNotice } } }]
+    return { ...task, status: 'FAILED' as const, updatedAt: now, projection, entries }
   })
 }
 
@@ -228,15 +230,23 @@ export async function recoverInterruptedTasksWithHarness(employeeId: string, tas
     if (!result) return task.status === 'RUNNING' ? recoverInterruptedTasks([task], now)[0] : task
     if (task.status === 'RUNNING' && (!result.projection || !['completed', 'failed'].includes(result.status))) return recoverInterruptedTasks([task], now)[0]
     const status = result.status === 'completed' ? 'COMPLETED' : result.status === 'failed' ? 'FAILED' : task.status
-    const messages = result.messages?.map((message) => ({ id: message.id, role: message.role, text: message.text, pending: false }))
+    // The transcript is the authoritative rebuild from the Harness session log.
+    const transcript = result.transcript?.map((entry) => entry as unknown as ConversationEntry)
     return {
       ...task,
       status: status as LocalTaskRun['status'],
       updatedAt: result.updatedAt || task.updatedAt,
       ...(result.projection ? { projection: result.projection } : {}),
-      ...(messages?.length ? { messages, messagePreview: messages.at(-1)?.text.slice(-500) } : {}),
+      ...(transcript?.length ? { entries: transcript, messagePreview: transcriptPreview(transcript) } : {}),
     }
   })
+}
+
+function transcriptPreview(entries: ConversationEntry[]): string {
+  const last = entries.at(-1)
+  if (!last) return ''
+  if (last.role === 'user') return last.text.slice(-500)
+  return last.segments.filter((segment) => segment.kind === 'text').map((segment) => segment.text).join('').slice(-500)
 }
 
 export async function persistTaskHistory(employeeId: string, task: LocalTaskRun): Promise<void> {
@@ -294,11 +304,14 @@ export function compactTaskForStorage(task: LocalTaskRun): LocalTaskRun {
   // A session ID is reserved before Harness starts. Keep the prompt if a
   // failed or interrupted turn has no execution event to recover from yet.
   if (!copy.sessionId || (copy.status !== 'COMPLETED' && !hasHarnessSessionEvidence(copy))) return copy
-  const lastMessage = copy.messages.at(-1)?.text?.trim()
+  const lastEntry = copy.entries.at(-1)
+  const preview = lastEntry?.role === 'user'
+    ? lastEntry.text.trim()
+    : lastEntry?.segments.filter((segment) => segment.kind === 'text').map((segment) => segment.text).join('').trim()
   return {
     ...copy,
-    messages: [],
-    ...(lastMessage ? { messagePreview: lastMessage.slice(-500) } : {}),
+    entries: [],
+    ...(preview ? { messagePreview: preview.slice(-500) } : {}),
     projection: {
       ...copy.projection,
       // Expandable execution details are rebuilt from the Harness event log.
@@ -327,13 +340,16 @@ function storageKey(employeeId: string): string {
 function isLocalTask(value: unknown): value is LocalTaskRun {
   if (!value || typeof value !== 'object') return false
   const task = value as Partial<LocalTaskRun>
-  const allowedFields = new Set(['id', 'source', 'name', 'status', 'createdAt', 'updatedAt', 'archivedAt', 'sessionId', 'scheduleId', 'scheduleRunId', 'invocationTokens', 'model', 'reasoningEffort', 'executionMode', 'localDirectories', 'capabilitySnapshot', 'projection', 'messages', 'messagePreview', 'processedImEventIds'])
+  const allowedFields = new Set(['id', 'source', 'name', 'status', 'createdAt', 'updatedAt', 'archivedAt', 'sessionId', 'scheduleId', 'scheduleRunId', 'invocationTokens', 'model', 'reasoningEffort', 'executionMode', 'localDirectories', 'capabilitySnapshot', 'projection', 'entries', 'messagePreview', 'processedImEventIds'])
   return Object.keys(task).every((key) => allowedFields.has(key)) && task.source === 'DESKTOP' && typeof task.id === 'string' && typeof task.name === 'string'
     && ['RUNNING', 'COMPLETED', 'FAILED', 'CANCELED'].includes(task.status ?? '')
-    && typeof task.createdAt === 'string' && typeof task.updatedAt === 'string' && Array.isArray(task.messages)
+    && typeof task.createdAt === 'string' && typeof task.updatedAt === 'string'
+    && Array.isArray(task.entries)
     && (task.scheduleId === undefined || typeof task.scheduleId === 'string')
     && (task.scheduleRunId === undefined || typeof task.scheduleRunId === 'string')
-    && task.messages.every((message) => message && ['user', 'assistant'].includes(message.role) && typeof message.text === 'string')
+    && (task.reasoningEffort === undefined || ['off', 'low', 'medium', 'high', 'xhigh', 'max'].includes(task.reasoningEffort))
+    && task.entries.every((entry) => entry && ['user', 'assistant'].includes(entry.role)
+      && (entry.role === 'user' ? typeof entry.text === 'string' : Array.isArray(entry.segments)))
     && isTaskProjection(task.projection)
 }
 

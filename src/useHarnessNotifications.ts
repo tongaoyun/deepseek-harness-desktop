@@ -1,15 +1,15 @@
 import { useEffect, useRef, type RefObject } from 'react'
-import { harnessProjectionUpdate, harnessResponseUpdate, listenHarnessNotifications, normalizeHarnessProjection } from './harness'
-import { applyHarnessResponseToMessages } from './streamingMessages'
-import type { TaskMessage, XiaoyinTaskProjection } from './types'
+import { harnessLiveEvent, harnessProjectionUpdate, listenHarnessNotifications, normalizeHarnessProjection } from './harness'
+import { applyLiveEvent, mergeSettledTurn } from './conversation/liveText'
+import { parseAssistantTurn, type ConversationEntry } from './conversation/types'
+import type { XiaoyinTaskProjection } from './types'
 
 export interface StreamingTaskState {
   sessionId: string
   projection: XiaoyinTaskProjection
   projectionSeq?: number
   projectionSeqByKey?: Record<string, number>
-  messages: TaskMessage[]
-  responseKey: string
+  entries: ConversationEntry[]
   cancellationRequested: boolean
 }
 
@@ -20,8 +20,8 @@ export function useHarnessNotifications({
   streamingTasksRef,
 }: {
   currentTaskIdRef: RefObject<string>
-  onCurrentUpdate: (projection: XiaoyinTaskProjection, messages?: TaskMessage[]) => void
-  onTaskUpdate: (taskId: string, projection: XiaoyinTaskProjection, messages: TaskMessage[]) => void
+  onCurrentUpdate: (projection: XiaoyinTaskProjection, entries?: ConversationEntry[]) => void
+  onTaskUpdate: (taskId: string, projection: XiaoyinTaskProjection, entries: ConversationEntry[]) => void
   streamingTasksRef: RefObject<Map<string, StreamingTaskState>>
 }) {
   const latest = useRef({ onCurrentUpdate, onTaskUpdate })
@@ -39,7 +39,21 @@ export function useHarnessNotifications({
       const projectionUpdate = harnessProjectionUpdate(notification)
       if (projectionUpdate) {
         if (projectionUpdate.sessionId !== streaming.sessionId) return
-        const lastSeq = streaming.projectionSeqByKey?.[projectionUpdate.key] ?? (projectionUpdate.key === 'xiaoyin.task' ? streaming.projectionSeq ?? -1 : -1)
+        if (projectionUpdate.key === 'xiaoyin.transcript') {
+          const lastSeq = streaming.projectionSeqByKey?.['xiaoyin.transcript'] ?? -1
+          if (projectionUpdate.seq <= lastSeq) return
+          // The wire view carries only the current turn: settled text, tool
+          // cards, approvals and questions in event order.
+          const turn = parseAssistantTurn((projectionUpdate.value as { turn?: unknown })?.turn)
+          if (turn) {
+            streaming.projectionSeqByKey = { ...streaming.projectionSeqByKey, 'xiaoyin.transcript': projectionUpdate.seq }
+            streaming.entries = mergeSettledTurn(streaming.entries, turn)
+            latest.current.onTaskUpdate(taskId, streaming.projection, streaming.entries)
+            if (currentTaskIdRef.current === taskId) latest.current.onCurrentUpdate(streaming.projection, streaming.entries)
+          }
+          return
+        }
+        const lastSeq = projectionUpdate.key === 'xiaoyin.task' ? streaming.projectionSeq ?? -1 : streaming.projectionSeqByKey?.[projectionUpdate.key] ?? -1
         if (projectionUpdate.seq <= lastSeq) return
         const projected = projectionForKey(streaming.projection, projectionUpdate.key, projectionUpdate.value)
         if (!projected) return
@@ -49,21 +63,19 @@ export function useHarnessNotifications({
           ? mergeStoppingProjection(streaming.projection, projected)
           : projected
         streaming.projection = nextProjection
-        latest.current.onTaskUpdate(taskId, nextProjection, streaming.messages)
+        latest.current.onTaskUpdate(taskId, nextProjection, streaming.entries)
         if (currentTaskIdRef.current === taskId) latest.current.onCurrentUpdate(nextProjection)
         return
       }
-      const response = harnessResponseUpdate(notification)
-      if (!response) return
-      if (response) {
-        const update = applyHarnessResponseToMessages(streaming.messages, response, streaming.responseKey)
-        streaming.messages = update.messages
-        streaming.responseKey = update.responseKey
-      }
-      latest.current.onTaskUpdate(taskId, streaming.projection, streaming.messages)
-      if (currentTaskIdRef.current === taskId) {
-        latest.current.onCurrentUpdate(streaming.projection, response ? streaming.messages : undefined)
-      }
+      // Live overlay: raw root-session events keep the open text segment
+      // typing between `assistant/message` settlements.
+      const live = harnessLiveEvent(notification)
+      if (!live) return
+      const entries = applyLiveEvent(streaming.entries, live)
+      if (entries === streaming.entries) return
+      streaming.entries = entries
+      latest.current.onTaskUpdate(taskId, streaming.projection, streaming.entries)
+      if (currentTaskIdRef.current === taskId) latest.current.onCurrentUpdate(streaming.projection, streaming.entries)
     }).then((dispose) => { if (disposed) disposeSilently(dispose); else unlisten = dispose })
     return () => { disposed = true; disposeSilently(unlisten) }
   }, [currentTaskIdRef, streamingTasksRef])
@@ -109,7 +121,7 @@ function mergeById<T extends { id: string }>(left: T[], right: T[]): T[] {
   for (const item of right) {
     const index = merged.findIndex((candidate) => candidate.id === item.id)
     if (index < 0) merged.push(item)
-    else merged[index] = { ...merged[index], ...item }
+    else merged[index] = { ...merged[index]!, ...item }
   }
   return merged
 }
@@ -120,7 +132,7 @@ function mergeByKey<T>(left: T[], right: T[], keyOf: (item: T) => string): T[] {
     const key = keyOf(item)
     const index = merged.findIndex((candidate) => keyOf(candidate) === key)
     if (index < 0) merged.push(item)
-    else merged[index] = { ...merged[index], ...item }
+    else merged[index] = { ...merged[index]!, ...item }
   }
   return merged
 }

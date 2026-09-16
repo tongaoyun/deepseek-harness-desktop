@@ -1,4 +1,5 @@
 import { Bot, Check, Clock3, ExternalLink, Inbox, Info, MessageCircle, MoreHorizontal, Pencil, Trash2, X } from 'lucide-react'
+import type { ConversationEntry } from './conversation/types'
 import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   allowLocalImPairing,
@@ -16,7 +17,7 @@ import {
 import { XiaoyinMascot } from './XiaoyinMascot'
 import type { LocalTaskRun } from './types'
 import { createXiaoyinTaskProjection, normalizeHarnessProjection } from './harness'
-import { InlineTaskActivity } from './InlineTaskActivity'
+import { AssistantTurnView } from './chat/AssistantTurnView'
 import { TaskOutcomeDetails } from './TaskOutcomeDetails'
 import { useDesktopDialog } from './DesktopDialog'
 import { useDialogFocus } from './useDialogFocus'
@@ -285,12 +286,17 @@ export function ImChannelsPage(harness: Props) {
         <div className="im-message-history">{(conversation.messages ?? []).map((item) => <article className={item.role} key={item.id}><small>{item.role === 'user' ? conversation.senderNick || '员工' : '小胤'} · {new Date(item.createdAt).toLocaleString()}</small><p>{item.text}</p></article>)}
           {(conversation.messages ?? []).length === 0 && <div className="kit-empty">暂无可显示的历史消息</div>}
         </div>
-        <InlineTaskActivity finalResponse={useBoundProjection ? boundTask.messages.at(-1)?.text : conversation.lastResponse} projection={projection} />
+        {useBoundProjection && boundTaskLastTurn(boundTask.entries) && <AssistantTurnView turn={boundTaskLastTurn(boundTask.entries)!} runState={projection} />}
         {projection.status === 'completed' && <TaskOutcomeDetails outcome={projection.outcome} />}
       </section></div>
     })()}
     {dialog}
   </div>
+}
+
+function boundTaskLastTurn(entries: ConversationEntry[]): Extract<ConversationEntry, { role: 'assistant' }> | undefined {
+  const last = entries.at(-1)
+  return last?.role === 'assistant' ? last : undefined
 }
 
 function message(reason: unknown): string {

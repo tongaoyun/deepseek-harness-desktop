@@ -158,7 +158,7 @@ export function TaskComposer(props: ChatPageProps & { onPreview: (target: LocalA
           }).catch((reason) => { if (request === pasteRequest.current) setPasteError(reason instanceof Error ? reason.message : String(reason)) })
             .finally(() => { if (request === pasteRequest.current) setCheckingClipboard(false) })
         }}
-        placeholder={running || (props.queue?.items.length && !props.queue.paused) ? '追加要求，按 Enter 加入队列' : capabilityHint || '描述任务，/ 调用技能或套件，@ 添加上下文'} ref={props.composerRef} value={text} />
+        placeholder={running ? '追加要求，按 Enter 插入当前任务' : props.queue?.items.length && !props.queue.paused ? '追加要求，按 Enter 加入队列' : capabilityHint || '描述任务，/ 调用技能或套件，@ 添加上下文'} ref={props.composerRef} value={text} />
       <div className="composer-actions">
         <div className="context-picker">
           <button aria-expanded={menu === 'context'} aria-haspopup="dialog" aria-label="添加上下文" className="workspace-button context-add-button" disabled={locked} onClick={() => { setDismissed(queryKey); setMenu(menu === 'context' ? undefined : 'context'); setSearch('') }} ref={addButton} title="添加文件、专家套件、技能、连接器或知识库" type="button"><Plus size={18} /></button>
@@ -187,7 +187,7 @@ export function TaskComposer(props: ChatPageProps & { onPreview: (target: LocalA
           </section>}
         </div>
         <ComposerModelPicker {...props} locked={Boolean(locked)} />
-        {running ? <>{text.trim() && <button aria-label="加入消息队列" className="queue-send-button" type="submit">加入队列<ArrowUp size={14} /></button>}<button aria-label={stopping ? '正在停止' : '停止本轮'} className="cancel-button" disabled={stopping} onClick={props.onCancel} title="停止本轮，保留对话并暂停队列" type="button">{stopping ? <LoaderCircle className="turn-spinner" size={14} /> : <Square size={11} fill="currentColor" strokeWidth={0} />}</button></>
+        {running ? <>{text.trim() && <button aria-label="插入当前任务" className="queue-send-button" type="submit">插入当前任务<ArrowUp size={14} /></button>}<button aria-label={stopping ? '正在停止' : '停止本轮'} className="cancel-button" disabled={stopping} onClick={props.onCancel} title="停止本轮，保留对话并暂停队列" type="button">{stopping ? <LoaderCircle className="turn-spinner" size={14} /> : <Square size={11} fill="currentColor" strokeWidth={0} />}</button></>
           : <button aria-label={props.queue?.items.length && !props.queue.paused ? '加入消息队列' : '发送'} className="send-button" disabled={(!text.trim() && !tokens.length && props.pendingAttachments.length === 0) || props.runtimeStatus !== 'ready' || props.harnessHealth === 'degraded' || props.taskContextRestoring || props.pastingAttachments || checkingClipboard} title={props.runtimeStatus !== 'ready' ? '企业服务未连接' : props.harnessHealth === 'degraded' ? '请先恢复本地 Agent' : props.taskContextRestoring ? '正在恢复任务上下文' : '发送'} type="submit"><ArrowUp size={17} /></button>}
       </div>
     </form>
@@ -200,7 +200,7 @@ export function TaskComposer(props: ChatPageProps & { onPreview: (target: LocalA
           {!props.recentDirectories?.length && <p className="composer-empty">选择过的工作目录会显示在这里。</p>}
         </div>}
       </div>
-      <small className="composer-hint">Enter {running || (props.queue?.items.length && !props.queue.paused) ? '加入队列' : '发送'} · Shift+Enter 换行</small>
+      <small className="composer-hint">Enter {running ? '插入当前任务' : props.queue?.items.length && !props.queue.paused ? '加入队列' : '发送'} · Shift+Enter 换行</small>
     </div>
   </div>
 }

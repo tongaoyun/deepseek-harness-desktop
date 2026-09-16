@@ -82,12 +82,12 @@ it('reports Harness capability gates without advertising unconfigured providers'
   const runtime = new DeepSeekHarnessRuntime({ XIAOYIN_ENABLE_SESSION_QUERY_TOOLS: 'false', XIAOYIN_TOOLS_MODE: 'native' })
   const health = await runtime.health()
   expect(health.status).toBe('uninitialized')
-  expect(health.capabilities).toMatchObject({ profile: 'gated', modelProvider: 'unconfigured', commands: 'enabled', commandFeedback: 'enabled', sessionQuery: 'enabled', sessionQueryTools: 'gated', sessionReference: 'enabled', sessionReminders: 'enabled', codeRuntime: 'gated', persistentTerminal: 'enabled', lsp: 'unconfigured', codexSubagent: 'unconfigured', present: 'enabled', mcpClient: 'gated' })
+  expect(health.capabilities).toMatchObject({ profile: 'gated', modelProvider: 'unconfigured', commands: 'enabled', commandFeedback: 'enabled', sessionQuery: 'enabled', sessionQueryTools: 'gated', sessionReference: 'enabled', sessionReminders: 'enabled', codeRuntime: 'gated', persistentTerminal: 'enabled', lsp: 'unconfigured', codexSubagent: 'unconfigured', present: 'enabled', mcpClient: 'gated', webSearch: 'unconfigured', webFetch: 'unconfigured' })
 })
 
 it('reports a configured model provider without exposing its credential', async () => {
   const health = await new DeepSeekHarnessRuntime({ DEEPSEEK_API_KEY: 'test-secret' }).health()
-  expect(health.capabilities?.modelProvider).toBe('gated')
+  expect(health.capabilities).toMatchObject({ modelProvider: 'gated', webSearch: 'enabled', webFetch: 'enabled' })
   expect(JSON.stringify(health)).not.toContain('test-secret')
 })
 
@@ -447,7 +447,7 @@ describe('persisted session follow-ups', () => {
       .resolves.toMatchObject({ finalResponse: '完成。' })
   })
 
-  it('does not report a textless model turn as successful', async () => {
+  it('completes a textless model turn without failing the run', async () => {
     const notifications: HarnessNotification[] = [
       event('agent/inbox/spliced', { inserted: [{ id: 'message-2' }] }),
       event('turn/start', { turn: 2 }),
@@ -455,7 +455,7 @@ describe('persisted session follow-ups', () => {
       status('idle'),
     ]
     await expect(runSessionTurn(fakeClient(notifications), 'session-1', [{ type: 'text', text: '继续' }], () => undefined))
-      .rejects.toThrow('没有返回可显示文本')
+      .resolves.toMatchObject({ finalResponse: '' })
   })
 
   it('surfaces a safe provider failure instead of misreporting an empty answer', async () => {
@@ -551,6 +551,29 @@ describe('visible response streaming', () => {
       vi.useRealTimers()
     }
   })
+
+  it('never re-emits a segment when its assistant message lands after a tool call', async () => {
+    const notifications: HarnessNotification[] = [
+      event('agent/inbox/spliced', { inserted: [{ id: 'message-2' }] }),
+      event('turn/start', { turn: 1 }),
+      event('text-chunks', { turn: 1, step: 1, texts: ['我先检查文件。'] }),
+      event('tool/call', { turn: 1, step: 2, callId: 'call-1', name: 'local_files_list' }),
+      event('assistant/message', { turn: 1, step: 1, message: { content: [{ type: 'text', text: '我先检查文件。' }] } }),
+      event('tool/result', { callId: 'call-1', message: { content: [{ type: 'tool-result', toolCallId: 'call-1' }] } }),
+      event('assistant/message', { turn: 1, step: 2, message: { content: [{ type: 'text', text: '检查完成。' }] } }),
+      event('turn/end', { turn: 1, reason: { kind: 'completed' } }),
+    ]
+    const observed: HarnessNotification[] = []
+
+    const result = await runSessionTurn(fakeClient(notifications), 'session-1', [{ type: 'text', text: '检查文件' }], (value) => observed.push(value))
+
+    const streamed = observed
+      .filter((item) => item.params.event?.type === 'text-chunks')
+      .map((item) => ((item.params.event?.data ?? {}) as { texts?: string[] }).texts?.join('') ?? '')
+      .join('')
+    expect(streamed).toBe('我先检查文件。检查完成。')
+    expect(result.finalResponse).toBe('检查完成。')
+  })
 })
 
 function fakeClient(notifications: HarnessNotification[]) {
@@ -579,3 +602,19 @@ function eventFor(sessionId: string, type: string, data: Record<string, unknown>
 function statusFor(sessionId: string, value: string): HarnessNotification {
   return { method: 'session.status', params: { sessionId, status: value } }
 }
+
+it('returns an interrupted flag instead of failing when the employee interrupts an aborted turn', async () => {
+  const notifications: HarnessNotification[] = [
+    event('agent/inbox/spliced', { inserted: [{ id: 'message-2' }] }),
+    event('turn/start', { turn: 2 }),
+    event('assistant/message', { turn: 2, step: 1, message: { content: [{ type: 'text', text: '部分结果' }] } }),
+    event('turn/end', { turn: 2, reason: { kind: 'aborted', reason: { kind: 'user' } } }),
+    status('idle'),
+  ]
+  let interrupted = false
+  await expect(runSessionTurn(fakeClient(notifications), 'session-1', [{ type: 'text', text: '继续' }], () => undefined, 5_000, () => interrupted))
+    .rejects.toThrow('本轮已停止')
+  interrupted = true
+  await expect(runSessionTurn(fakeClient(notifications), 'session-1', [{ type: 'text', text: '继续' }], () => undefined, 5_000, () => interrupted))
+    .resolves.toMatchObject({ finalResponse: '部分结果', interrupted: true })
+})
