@@ -48,6 +48,7 @@ function SegmentView({ segment, streaming, approvalsEnabled, onApprovalDecision,
     return <div className={streaming && segment.streaming ? 'streaming-response' : undefined}><RichMessage text={segment.text} /></div>
   }
   if (segment.kind === 'thinking') return <ThinkingBlock segment={segment} />
+  if (segment.kind === 'notice') return <p className={`turn-notice ${segment.level}`} role="status">{segment.text}</p>
   if (segment.kind === 'user') return <article className="conversation-turn user-turn steer-turn">
     <div className="user-prompt"><span className="steer-badge"><Sparkles size={12} />已插入当前任务</span><RichMessage text={segment.text} /></div>
   </article>

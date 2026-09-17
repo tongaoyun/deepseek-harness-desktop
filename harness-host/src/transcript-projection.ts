@@ -34,15 +34,19 @@ export interface TranscriptUserTurn {
   text: string
 }
 
+export interface TranscriptTurnMeta {
+  startedAt?: string
+  completedAt?: string
+  failure?: { kind: string; message: string }
+  tokenUsage?: { inputTokens: number; outputTokens: number; cacheReadTokens?: number; cacheWriteTokens?: number }
+}
+
 export interface TranscriptAssistantTurn {
   id: string
   role: 'assistant'
   status: 'streaming' | 'completed' | 'failed' | 'canceled'
   segments: TranscriptSegment[]
-  startedAt?: string
-  completedAt?: string
-  failure?: { kind: string; message: string }
-  tokenUsage?: { inputTokens: number; outputTokens: number; cacheReadTokens?: number; cacheWriteTokens?: number }
+  meta: TranscriptTurnMeta
 }
 
 export type TranscriptEntry = TranscriptUserTurn | TranscriptAssistantTurn
@@ -129,7 +133,7 @@ function reduceTranscriptEventValue(state: TranscriptState, event: SessionEvent)
     // settle it honestly instead of leaving it streaming forever.
     const open = openAssistantTurn(state)
     const settled = open ? [...state.entries.slice(0, -1), settleTurn(open, 'failed', time)] : state.entries
-    const entry: TranscriptAssistantTurn = { id: `turn:${turn}`, role: 'assistant', status: 'streaming', segments: [], startedAt: time }
+    const entry: TranscriptAssistantTurn = { id: `turn:${turn}`, role: 'assistant', status: 'streaming', segments: [], meta: { startedAt: time } }
     return { ...state, entries: [...settled, entry] }
   }
 
@@ -148,8 +152,8 @@ function reduceTranscriptEventValue(state: TranscriptState, event: SessionEvent)
       ...(reasoningText.trim() ? [{ kind: 'thinking' as const, id: thinkingId, text: reasoningText }] : []),
       ...(messageText.trim() ? [{ kind: 'text' as const, id: segmentId, text: messageText }] : []),
     ]
-    const usage = addUsage(open.tokenUsage, data?.usage)
-    return withTurn(state, { ...open, segments, ...(usage ? { tokenUsage: usage } : {}) })
+    const usage = addUsage(open.meta.tokenUsage, data?.usage)
+    return withTurn(state, { ...open, segments, meta: usage ? { ...open.meta, tokenUsage: usage } : open.meta })
   }
 
   if (event.type === 'tool/call') {
@@ -235,7 +239,7 @@ function reduceTranscriptEventValue(state: TranscriptState, event: SessionEvent)
     const status = kind === 'completed' ? 'completed' : kind === 'aborted' ? 'canceled' : 'failed'
     const failure = status === 'failed' ? { kind, message: turnFailureMessage(reason) } : undefined
     const settled = settleTurn(open, status, time)
-    return withTurn(state, failure ? { ...settled, failure } : settled)
+    return withTurn(state, { ...settled, meta: { ...settled.meta, ...(failure ? { failure } : {}) } })
   }
 
   return state
@@ -256,7 +260,7 @@ function settleTurn(turn: TranscriptAssistantTurn, status: TranscriptAssistantTu
   return {
     ...turn,
     status,
-    completedAt: time,
+    meta: { ...turn.meta, completedAt: time },
     segments: turn.segments.map((segment) => segment.kind === 'tool' && segment.status === 'running'
       ? { ...segment, status: status === 'completed' ? 'completed' : 'canceled', completedAt: time }
       : segment),
@@ -273,7 +277,7 @@ function turnFailureMessage(reason: Record<string, unknown> | undefined): string
   return message || '本轮执行失败，已保留部分结果，请检查后继续'
 }
 
-function addUsage(current: TranscriptAssistantTurn['tokenUsage'], value: unknown): TranscriptAssistantTurn['tokenUsage'] {
+function addUsage(current: TranscriptTurnMeta['tokenUsage'], value: unknown): TranscriptTurnMeta['tokenUsage'] {
   const usage = record(value)
   const inputTokens = number(usage?.inputTokens)
   const outputTokens = number(usage?.outputTokens)

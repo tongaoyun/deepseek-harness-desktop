@@ -1266,7 +1266,17 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
       // below stays as the force-stop fallback when nothing acknowledges it.
       let acknowledged = false
       try { acknowledged = await interruptHarness(taskId) } catch { acknowledged = false }
-      if (!acknowledged) await cancelHarness(taskId)
+      if (!acknowledged) {
+        await cancelHarness(taskId)
+      } else {
+        // The interrupt rides the next harness event. A turn blocked on a tool
+        // that never returns emits none, so stop it by signal if it has not
+        // settled shortly after the request.
+        window.setTimeout(() => {
+          if (streamingTasksRef.current.get(taskId) !== streaming) return
+          void cancelHarness(taskId).catch(() => undefined)
+        }, 4_000)
+      }
     } catch (reason) {
       if (streamingTasksRef.current.get(taskId) !== streaming) return
       streaming.cancellationRequested = false

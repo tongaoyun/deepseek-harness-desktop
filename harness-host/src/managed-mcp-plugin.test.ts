@@ -14,6 +14,7 @@ import {
   discoverConnectorTools,
   diagnosticError,
   selectTools,
+  toHarnessTool,
   harnessServerName,
   hasEligibleHarnessMcpConnector,
   shouldUseHarnessMcpClient,
@@ -192,6 +193,16 @@ describe('managed MCP tool selection', () => {
   })
 })
 
+it('declares a harness-enforced deadline on every connector tool', () => {
+  const tool = { name: 'order.intake_diagnose_shop', description: '', inputSchema: {} }
+  const connector = { id: 'erp-mcp', name: 'erp-mcp', timeoutSeconds: undefined } as never
+  // The MCP client's own timeout does not cover a response stream that stalls,
+  // so the harness needs a deadline it enforces itself.
+  expect(toHarnessTool({} as never, {} as never, tool as never, connector).timeoutMs).toBe(60_000 + 15_000)
+  const patient = { id: 'erp-mcp', name: 'erp-mcp', timeoutSeconds: 300 } as never
+  expect(toHarnessTool({} as never, {} as never, tool as never, patient).timeoutMs).toBe(300_000 + 15_000)
+})
+
 it('discovers tools across pages and rejects looping cursors or duplicate names', async () => {
   const listTools = vi.fn().mockResolvedValueOnce({ tools: [tools[0]], nextCursor: 'page-2' }).mockResolvedValueOnce({ tools: [tools[1]] })
   expect(await discoverConnectorTools({ listTools } as never, 1000)).toEqual(tools)
@@ -322,3 +333,4 @@ describe('managed MCP diagnostics', () => {
       .toBe('[REDACTED] [REDACTED]')
   })
 })
+

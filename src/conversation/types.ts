@@ -17,6 +17,8 @@ export interface UserTurn {
   attachments?: LocalTaskAttachment[]
   /** 'steer' marks a message injected into a running turn. */
   source?: 'desktop' | 'dingtalk' | 'schedule' | 'steer'
+  /** Context this turn ran with, so the transcript can show what was in play. */
+  context?: { knowledgeRefs?: string[]; connectors?: Array<{ id: string; name: string }> }
 }
 
 export interface TurnFailure {
@@ -80,7 +82,10 @@ export type QuestionSegment = {
   status: 'running' | 'completed'
 }
 
-export type TurnSegment = TextSegment | ThinkingSegment | UserSegment | ToolSegment | ApprovalSegment | QuestionSegment
+/** Something the employee should know about this turn, e.g. a capability gap. */
+export type NoticeSegment = { kind: 'notice'; id: string; level: 'warning' | 'error'; text: string }
+
+export type TurnSegment = TextSegment | ThinkingSegment | UserSegment | ToolSegment | ApprovalSegment | QuestionSegment | NoticeSegment
 
 export interface AssistantTurn {
   id: string

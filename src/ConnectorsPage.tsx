@@ -236,7 +236,7 @@ function ConnectorHealth({ connector, runtime, enabled, missing, onDiagnose, onA
     {authorizationError && <p className="connector-diagnostic-error" role="alert">{authorizationError}</p>}
     <details className="connector-tool-details"><summary>工具与配置 · {tools.length} 个{result ? '已发现工具' : '声明工具'}</summary>
       <p>{runtime?.transport ?? connector.transport} · {desktop ? '桌面内置能力' : (runtime?.transport ?? connector.transport) === 'stdio' ? connector.command : connector.url}</p>
-      <small>检测结果对应本次配置，不代表持续在线状态。</small>
+      <small>检测使用与任务相同的工具策略，结果对应本次配置，不代表持续在线状态。</small>
       <ul>{tools.map((tool) => <li key={tool}><code>{tool}</code></li>)}</ul>
       {!tools.length && <p>{result?.status === 'ready' || result?.status === 'drift' ? '服务没有返回工具' : '连接成功后显示工具列表'}</p>}
       {Boolean(result?.missingTools.length) && <p>缺少声明工具：{result!.missingTools.join('、')}</p>}

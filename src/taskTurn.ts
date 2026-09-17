@@ -1,4 +1,3 @@
-import { capabilitySnapshotChanged } from './capabilitySnapshot'
 import { splitComposerPrompt } from './composerInput'
 import { harnessPromptWithConversationReplay } from './conversationReplay'
 import type { ExtensionInvocation } from './extensionInvocations'
@@ -35,14 +34,14 @@ export function pendingAssistantTurn(model: string, reasoningEffort: import('./m
 
 /**
  * A rebuilt session loses the model's own view of the conversation, so it is
- * reserved for changes the Harness session cannot absorb: a different
- * authorized workspace or a different capability set. A model or reasoning
- * switch restarts the host process but resumes the same session, and a failed
- * or stopped turn leaves a balanced log that continues normally.
+ * reserved for the one change the Harness session cannot absorb: a different
+ * authorized workspace, whose root the session header pins. Everything else —
+ * model, reasoning effort, the capability set — restarts the host process and
+ * resumes the same session, which the acceptance check proves keeps the
+ * history intact.
  */
-export function sessionMustRestart(context: Pick<TurnContext, 'directoriesChanged' | 'existingTask' | 'capabilities'>): boolean {
+export function sessionMustRestart(context: Pick<TurnContext, 'directoriesChanged'>): boolean {
   return context.directoriesChanged
-    || Boolean(context.existingTask && capabilitySnapshotChanged(context.existingTask.capabilitySnapshot, context.capabilities))
 }
 
 /** Session selection and persisted turn state must use the same immutable context. */
@@ -71,8 +70,13 @@ export function prepareTaskTurn(context: TurnContext) {
     startedAt: now,
   }
   const userTurnId = context.queuedItemId ?? `user-${crypto.randomUUID().replaceAll('-', '')}`
+  const contextRefs = capabilities.requestedKnowledgeBaseRefs
+  const contextConnectors = capabilities.connectors.map((connector) => ({ id: connector.id, name: connector.name }))
+  const turnContext = contextRefs.length || contextConnectors.length
+    ? { ...(contextRefs.length ? { knowledgeRefs: contextRefs } : {}), ...(contextConnectors.length ? { connectors: contextConnectors } : {}) }
+    : undefined
   const pendingEntries: ConversationEntry[] = [...entries,
-    { id: userTurnId, role: 'user', text: input, ...(context.attachments.length ? { attachments: context.attachments } : {}) },
+    { id: userTurnId, role: 'user', text: input, ...(context.attachments.length ? { attachments: context.attachments } : {}), ...(turnContext ? { context: turnContext } : {}) },
     pendingAssistantTurn(context.model, context.reasoningEffort, now),
   ]
   const runningTask: LocalTaskRun = {

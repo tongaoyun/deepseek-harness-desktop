@@ -575,6 +575,7 @@ button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 2px
 .user-prompt .message-attachments { justify-content: flex-end; }
 .user-prompt .attachment-chip { border-color: #dbe8df; background: #f5faf6; }
 .context-bar .message-attachments { margin: 0; }
+.composer-blocked { margin-left: auto; color: #a15c2f; font-size: 11px; }
 .streaming-response { position: relative; min-height: 24px; }
 .streaming-response::after { display: inline-block; width: 1.5px; height: 1.05em; margin-left: 2px; border-radius: 1px; background: currentColor; content: ''; opacity: .5; vertical-align: text-bottom; animation: streaming-caret 1.15s ease-in-out infinite; }
 
@@ -624,6 +625,9 @@ button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 2px
 .turn-actions button { display: inline-flex; width: 25px; height: 25px; align-items: center; justify-content: center; padding: 0; border: 0; border-radius: 7px; color: #9ea39f; background: transparent; cursor: pointer; }
 .turn-actions button:hover { color: var(--xy-text); background: var(--xy-hover); }
 
+.message-capability.context-ref { color: var(--xy-text-secondary); background: var(--xy-surface-soft); font-weight: 400; }
+.turn-notice { display: flex; margin: 0; padding: 9px 12px; border-radius: 8px; color: #8a5a20; background: #fdf7ec; font-size: 12.5px; line-height: 1.6; }
+.turn-notice.error { color: #8c4038; background: #fdf4f3; }
 .turn-silent { margin: 0; color: #a6aaa7; font-size: 12px; line-height: 1.6; }
 .turn-failure { margin: 0; padding: 9px 12px; border-radius: 8px; color: #8c4038; background: #fdf4f3; font-size: 12.5px; line-height: 1.6; }
 

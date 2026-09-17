@@ -61,16 +61,26 @@ export function mergeSettledTurn(entries: ConversationEntry[], settled: Assistan
   if (index < 0) return [...entries, settled]
   const current = entries[index]
   if (current.role !== 'assistant') return entries
+  // The employee sees the turn start when they sent it; the harness starts a
+  // few seconds later. Keep the earlier stamp so the clock never jumps back.
+  const merged = withEarlierStart(settled, current)
   const ahead = current.segments.filter(isStreamingText)
-  if (!ahead.length) return entries.map((entry, position) => position === index ? settled : entry)
   // A streaming overlay segment may have text beyond the settled value; keep
   // the longer text until its own assistant/message settles it.
-  const segments: TurnSegment[] = settled.segments.map((segment) => {
+  if (!ahead.length) return entries.map((entry, position) => position === index ? merged : entry)
+  const segments: TurnSegment[] = merged.segments.map((segment) => {
     const overlay = ahead.find((item) => item.id === segment.id)
     if (!overlay || segment.kind !== 'text') return segment
     return overlay.text.length > segment.text.length ? overlay : segment
   }).concat(ahead.filter((item) => !settled.segments.some((segment) => segment.id === item.id)))
-  return entries.map((entry, position) => position === index ? { ...settled, segments } : entry)
+  return entries.map((entry, position) => position === index ? { ...merged, segments } : entry)
+}
+
+function withEarlierStart(settled: AssistantTurn, current: AssistantTurn): AssistantTurn {
+  const settledAt = settled.meta.startedAt
+  const currentAt = current.meta.startedAt
+  if (!currentAt || (settledAt && Date.parse(settledAt) <= Date.parse(currentAt))) return settled
+  return { ...settled, meta: { ...settled.meta, startedAt: currentAt } }
 }
 
 function isStreamingText(segment: TurnSegment): segment is Extract<TurnSegment, { kind: 'text' }> {
@@ -83,6 +93,19 @@ function appendText(segments: TurnSegment[], id: string, delta: string): TurnSeg
   return segments.map((segment, position) => position === index && segment.kind === 'text'
     ? { ...segment, text: segment.text + delta, streaming: true }
     : segment)
+}
+
+/** A capability the runtime could not provide rides the open turn as a notice. */
+export function appendCapabilityNotice(entries: ConversationEntry[], notice: { kind: string; name: string; reason: string }): ConversationEntry[] {
+  const last = entries.at(-1)
+  if (last?.role !== 'assistant') return entries
+  const id = `notice:${notice.kind}:${notice.name}`
+  if (last.segments.some((segment) => segment.id === id)) return entries
+  const label = notice.kind === 'connector' ? '连接器' : notice.kind === 'knowledge' ? '知识库' : '能力'
+  return [...entries.slice(0, -1), {
+    ...last,
+    segments: [...last.segments, { kind: 'notice', id, level: 'warning', text: `本轮未使用${label}「${notice.name}」：${notice.reason}` }],
+  }]
 }
 
 function appendThinking(segments: TurnSegment[], id: string, delta: string): TurnSegment[] {
