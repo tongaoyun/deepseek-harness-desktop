@@ -575,6 +575,7 @@ button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 2px
 .user-prompt .message-attachments { justify-content: flex-end; }
 .user-prompt .attachment-chip { border-color: #dbe8df; background: #f5faf6; }
 .context-bar .message-attachments { margin: 0; }
+.composer-blocked { margin-left: auto; color: #a15c2f; font-size: 11px; }
 .streaming-response { position: relative; min-height: 24px; }
 .streaming-response::after { display: inline-block; width: 1.5px; height: 1.05em; margin-left: 2px; border-radius: 1px; background: currentColor; content: ''; opacity: .5; vertical-align: text-bottom; animation: streaming-caret 1.15s ease-in-out infinite; }
 

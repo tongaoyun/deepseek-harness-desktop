@@ -64,7 +64,7 @@ describe('transcript projection', () => {
     expect(turn.segments.map((segment) => segment.kind)).toEqual(['text', 'tool', 'text'])
     expect(turn.segments[0]).toMatchObject({ kind: 'text', id: '1:1', text: '我先检查现有代码。' })
     expect(turn.segments[1]).toMatchObject({ kind: 'tool', toolName: 'local_files_list', status: 'completed', label: '查看 src/login', itemCount: 3 })
-    expect(turn.tokenUsage).toEqual({ inputTokens: 100, outputTokens: 50 })
+    expect(turn.meta.tokenUsage).toEqual({ inputTokens: 100, outputTokens: 50 })
   })
 
   it('keeps reasoning content out of the visible text segments', () => {
@@ -147,7 +147,7 @@ describe('transcript projection', () => {
     const turn = state.entries.at(-1)
     if (turn?.role !== 'assistant') throw new Error('expected assistant turn')
     expect(turn.status).toBe('failed')
-    expect(turn.failure).toEqual({ kind: 'error', message: 'model disconnected' })
+    expect(turn.meta.failure).toEqual({ kind: 'error', message: 'model disconnected' })
     expect(turn.segments[0]).toMatchObject({ kind: 'tool', status: 'canceled' })
   })
 
@@ -193,6 +193,20 @@ describe('transcript projection', () => {
     expect(turns[1]).toMatchObject({ status: 'completed' })
   })
 
+  it('carries the turn timestamps inside meta so the desktop keeps its clock', () => {
+    const state = fold([
+      event('turn/start', { turn: 1 }),
+      userMessage('m1', '任务'),
+      assistantMessage(1, 1, '完成。'),
+      event('turn/end', { turn: 1, reason: { kind: 'completed' } }),
+    ])
+    const turn = state.entries.at(-1)
+    if (turn?.role !== 'assistant') throw new Error('expected assistant turn')
+    expect(turn.meta.startedAt).toBeDefined()
+    expect(turn.meta.completedAt).toBeDefined()
+    expect(Date.parse(turn.meta.completedAt!)).toBeGreaterThanOrEqual(Date.parse(turn.meta.startedAt!))
+  })
+
   it('exposes only the latest assistant turn in the wire view', () => {
     const state = fold([
       event('turn/start', { turn: 1 }),
@@ -220,7 +234,7 @@ describe('transcript projection', () => {
     ])
     const turn = state.entries.at(-1)
     if (turn?.role !== 'assistant') throw new Error('expected assistant turn')
-    expect(turn.tokenUsage).toEqual({ inputTokens: 30, outputTokens: 20, cacheReadTokens: 7 })
+    expect(turn.meta.tokenUsage).toEqual({ inputTokens: 30, outputTokens: 20, cacheReadTokens: 7 })
   })
 
   it('rebuilds the identical transcript from a persisted session log', async () => {

@@ -23,6 +23,13 @@ export function TaskComposer(props: ChatPageProps & { onPreview: (target: LocalA
   const running = props.currentTaskRunning ?? props.harnessRunning
   const stopping = running && props.taskProjection.activity === '正在停止'
   const locked = running || props.taskContextRestoring || props.pastingAttachments || checkingClipboard
+  // A disabled send with no explanation reads as "the button is broken".
+  const blockedReason = props.runtimeStatus !== 'ready' ? '企业服务未连接，正在重连'
+    : props.harnessHealth === 'degraded' ? '本地 Agent 不可用，请先恢复'
+    : props.taskContextRestoring ? '正在恢复任务上下文'
+    : props.pastingAttachments ? '正在添加附件'
+    : checkingClipboard ? '正在读取剪贴板'
+    : ''
   const [menu, setMenu] = useState<'context' | 'directory'>()
   const [category, setCategory] = useState<Category>('expert-kit')
   const [search, setSearch] = useState('')
@@ -200,7 +207,9 @@ export function TaskComposer(props: ChatPageProps & { onPreview: (target: LocalA
           {!props.recentDirectories?.length && <p className="composer-empty">选择过的工作目录会显示在这里。</p>}
         </div>}
       </div>
-      <small className="composer-hint">Enter {running ? '插入当前任务' : props.queue?.items.length && !props.queue.paused ? '加入队列' : '发送'} · Shift+Enter 换行</small>
+      {blockedReason
+        ? <small className="composer-blocked" role="status">{blockedReason}</small>
+        : <small className="composer-hint">Enter {running ? '插入当前任务' : props.queue?.items.length && !props.queue.paused ? '加入队列' : '发送'} · Shift+Enter 换行</small>}
     </div>
   </div>
 }
