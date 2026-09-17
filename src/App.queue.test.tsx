@@ -1083,3 +1083,37 @@ it('rebuilds the session when the log cannot be forked for regeneration', async 
     expect(lastText(fixtures.chat!.entries)).toBe('重放后的答案')
   })
 })
+
+it('force-stops a turn whose interrupt never lands because the harness went quiet', async () => {
+  vi.useFakeTimers()
+  const first = deferredRun()
+  vi.mocked(runHarnessWithRecovery).mockReturnValueOnce(first.promise)
+  vi.mocked(harness.interruptHarness).mockResolvedValue(true)
+  try {
+    await fixture(async () => {
+      await submit('查询这个订单')
+      await act(async () => fixtures.chat!.onCancel())
+      expect(harness.interruptHarness).toHaveBeenCalledOnce()
+      // The interrupt rides the next harness event; a blocked turn emits none.
+      expect(harness.cancelHarness).not.toHaveBeenCalled()
+      await act(async () => { vi.advanceTimersByTime(4_100) })
+      expect(harness.cancelHarness).toHaveBeenCalledOnce()
+    })
+  } finally { vi.useRealTimers() }
+})
+
+it('never force-stops a turn that settled after its interrupt', async () => {
+  vi.useFakeTimers()
+  const first = deferredRun()
+  vi.mocked(runHarnessWithRecovery).mockReturnValueOnce(first.promise)
+  vi.mocked(harness.interruptHarness).mockResolvedValue(true)
+  try {
+    await fixture(async () => {
+      await submit('查询这个订单')
+      await act(async () => fixtures.chat!.onCancel())
+      await act(async () => first.resolve({ finalResponse: '已完成', sessionId: 'settled' }))
+      await act(async () => { vi.advanceTimersByTime(10_000) })
+      expect(harness.cancelHarness).not.toHaveBeenCalled()
+    })
+  } finally { vi.useRealTimers() }
+})
