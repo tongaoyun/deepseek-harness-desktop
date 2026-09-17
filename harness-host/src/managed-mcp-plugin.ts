@@ -514,7 +514,7 @@ function safeArguments(value: unknown): string {
   }
 }
 
-function toHarnessTool(
+export function toHarnessTool(
   ctx: Context,
   client: Client,
   tool: Tool,
@@ -548,6 +548,11 @@ function toHarnessTool(
       }
     },
     isConcurrencySafe: () => isTrustedReadOnly(tool, connector.readOnlyTools),
+    // A connector call has no other bound the harness can enforce: the MCP
+    // client's own timeout does not cover a stream that stalls mid-response.
+    // Declaring the deadline lets the tool-call timeout policy abort the call
+    // through `exec.signal`, which this execute already forwards.
+    timeoutMs: connectorRequestOptions(connector).timeout + 15_000,
   }
 }
 

@@ -97,7 +97,7 @@ function reduceEventValue(state: XiaoyinTaskState, event: SessionEvent): Xiaoyin
       ? upsert(current.subagents, { id: callId, label: text(recordValue(data?.arguments)?.description) ?? '委派子任务', status: 'running', startedAt: time })
       : current.subagents
     return { ...nextState(state, changed(current, {
-      status: 'running', activity: `正在调用 ${toolName}`, executionStarted: true,
+      status: 'running', activity: toolName.startsWith('mcp_') ? `正在等待连接器 ${connectorLabel(toolName)} 返回` : `正在调用 ${toolName}`, executionStarted: true,
       steps: upsert(upsert(current.steps, { id: `analysis:${turn}:${step}`, kind: 'analysis', label: '分析任务', status: 'completed', startedAt: time, completedAt: time }), { id: stepId, kind: 'tool', label: toolName, toolName, status: 'running', startedAt: time }),
       timeline: upsert(current.timeline, { id: stepId, kind: 'tool', label: toolName, toolName, status: 'running', occurredAt: time }),
       ...(subagents !== current.subagents ? { subagents } : {}),
@@ -224,6 +224,11 @@ function reduceEventValue(state: XiaoyinTaskState, event: SessionEvent): Xiaoyin
     }))
   }
   return state
+}
+
+/** `mcp_<connector>_<tool>` reads as a connector name for the activity line. */
+function connectorLabel(toolName: string): string {
+  return toolName.slice(4).split('_')[0] || '连接器'
 }
 
 function changed(current: XiaoyinTaskView, patch: Partial<XiaoyinTaskView>): XiaoyinTaskView { return { ...current, ...patch, updatedAt: patch.updatedAt ?? new Date().toISOString() } }
