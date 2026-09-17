@@ -1,9 +1,19 @@
 import { createServer } from 'node:http'
 import { afterEach, describe, expect, it } from 'vitest'
-import { KnowledgeClient, parseKnowledgeBaseRefs } from './knowledge-plugin.js'
+import { KnowledgeClient, parseKnowledgeBaseRefs, readKnowledgeScope } from './knowledge-plugin.js'
 
 const servers: Array<ReturnType<typeof createServer>> = []
 afterEach(async () => { await Promise.all(servers.splice(0).map((server) => new Promise<void>((resolve) => server.close(() => resolve())))) })
+
+describe('readKnowledgeScope', () => {
+  it('turns a malformed scope into a gap instead of a crash', () => {
+    expect(readKnowledgeScope('["team:kb"]').kind).toBe('invalid')
+    expect(readKnowledgeScope('not-json').kind).toBe('invalid')
+    expect(readKnowledgeScope('[]').kind).toBe('none')
+    expect(readKnowledgeScope(undefined).kind).toBe('none')
+    expect(readKnowledgeScope('["team:weekly"]')).toEqual({ kind: 'refs', refs: ['team:weekly'] })
+  })
+})
 
 describe('KnowledgeClient', () => {
   it('sends employee scope and search input without exposing the token in output', async () => {
@@ -66,3 +76,4 @@ describe('KnowledgeClient', () => {
     expect(() => parseKnowledgeBaseRefs('["unknown:operations-sop"]')).toThrow()
   })
 })
+

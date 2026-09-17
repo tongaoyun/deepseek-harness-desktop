@@ -1,10 +1,13 @@
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
-import { rememberCapabilityNotice, flushCapabilityNotices } from './capability-notice.js'
+import { rememberCapabilityNotice } from './capability-notice.js'
 
 export const name = 'xiaoyin-knowledge'
-export const inject = ['tools']
+// A knowledge scope with no endpoint has nothing to register, so the plugin
+// must not require a service it will not use: requiring `tools` here fails the
+// whole host startup instead of simply having no knowledge tools.
+export const inject = []
 
 export interface Config {
   endpoint?: string
@@ -26,22 +29,25 @@ export function apply(ctx: Context, config: Config = {}): void {
   const endpoint = config.endpoint?.trim()
   if (!endpoint) {
     // Requested knowledge bases would silently have no tools at all.
-    const refs = parseKnowledgeBaseRefs(process.env[config.knowledgeBaseRefsEnv ?? 'XIAOYIN_KNOWLEDGE_BASE_REFS']) ?? []
-    if (refs.length > 0) {
-      rememberCapabilityNotice({ kind: 'knowledge', id: refs.join(','), name: `知识库 ${refs.join('、')}`, reason: '知识库服务未配置，本次不会检索知识库' })
-      ctx.on('agent/created', ({ agent }) => { flushCapabilityNotices(String(agent.session.id)) })
+    const scope = readKnowledgeScope(process.env[config.knowledgeBaseRefsEnv ?? 'XIAOYIN_KNOWLEDGE_BASE_REFS'])
+    if (scope.kind === 'refs') {
+      rememberCapabilityNotice({ kind: 'knowledge', id: scope.refs.join(','), name: scope.refs.join('、'), reason: '知识库服务未配置，本次不会检索知识库' })
     }
     return
   }
   const url = new URL(endpoint)
   if (!['http:', 'https:'].includes(url.protocol)) throw new Error('Knowledge endpoint must use HTTP(S)')
+  const scope = readKnowledgeScope(process.env[config.knowledgeBaseRefsEnv ?? 'XIAOYIN_KNOWLEDGE_BASE_REFS'])
   const client = new KnowledgeClient(
     url.toString().replace(/\/$/, ''),
     process.env[config.employeeIdEnv ?? 'XIAOYIN_EMPLOYEE_ID']?.trim() || 'local-development',
     process.env[config.teamIdEnv ?? 'XIAOYIN_TEAM_ID']?.trim() || '',
     process.env[config.employeeTokenEnv ?? 'XIAOYIN_CONTROL_PLANE_TOKEN']?.trim() || '',
-    parseKnowledgeBaseRefs(process.env[config.knowledgeBaseRefsEnv ?? 'XIAOYIN_KNOWLEDGE_BASE_REFS']),
+    scope.kind === 'refs' ? scope.refs : null,
   )
+  if (scope.kind === 'invalid') {
+    rememberCapabilityNotice({ kind: 'knowledge', id: 'scope', name: '所选知识库', reason: `范围无效：${scope.detail}` })
+  }
   const unregister = [ctx.tools.register(listTool(client)), ctx.tools.register(searchTool(client))]
   ctx.effect(() => () => unregister.reverse().forEach((dispose) => dispose()), 'xiaoyin knowledge tools')
 }
@@ -96,6 +102,20 @@ export class KnowledgeClient {
       throw new Error('Knowledge service returned an invalid or failed COLA response')
     }
     return value.data
+  }
+}
+
+/**
+ * A malformed scope must never stop the runtime from starting: the turn reports
+ * it as a capability gap instead. The strict parser stays for callers that can
+ * surface an error to the employee.
+ */
+export function readKnowledgeScope(value: string | undefined): { kind: 'none' } | { kind: 'refs'; refs: string[] } | { kind: 'invalid'; detail: string } {
+  try {
+    const refs = parseKnowledgeBaseRefs(value)
+    return refs === null || refs.length === 0 ? { kind: 'none' } : { kind: 'refs', refs }
+  } catch (error) {
+    return { kind: 'invalid', detail: error instanceof Error ? error.message : String(error) }
   }
 }
 
