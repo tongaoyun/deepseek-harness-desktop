@@ -95,6 +95,19 @@ function appendText(segments: TurnSegment[], id: string, delta: string): TurnSeg
     : segment)
 }
 
+/** A capability the runtime could not provide rides the open turn as a notice. */
+export function appendCapabilityNotice(entries: ConversationEntry[], notice: { kind: string; name: string; reason: string }): ConversationEntry[] {
+  const last = entries.at(-1)
+  if (last?.role !== 'assistant') return entries
+  const id = `notice:${notice.kind}:${notice.name}`
+  if (last.segments.some((segment) => segment.id === id)) return entries
+  const label = notice.kind === 'connector' ? '连接器' : notice.kind === 'knowledge' ? '知识库' : '能力'
+  return [...entries.slice(0, -1), {
+    ...last,
+    segments: [...last.segments, { kind: 'notice', id, level: 'warning', text: `本轮未使用${label}「${notice.name}」：${notice.reason}` }],
+  }]
+}
+
 function appendThinking(segments: TurnSegment[], id: string, delta: string): TurnSegment[] {
   const index = segments.findIndex((segment) => segment.kind === 'thinking' && segment.id === id)
   if (index < 0) return [...segments, { kind: 'thinking', id, text: delta, streaming: true }]

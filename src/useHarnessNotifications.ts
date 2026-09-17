@@ -1,6 +1,6 @@
 import { useEffect, useRef, type RefObject } from 'react'
 import { harnessLiveEvent, harnessProjectionUpdate, listenHarnessNotifications, normalizeHarnessProjection } from './harness'
-import { applyLiveEvent, mergeSettledTurn } from './conversation/liveText'
+import { appendCapabilityNotice, applyLiveEvent, mergeSettledTurn } from './conversation/liveText'
 import { parseAssistantTurn, type ConversationEntry } from './conversation/types'
 import type { XiaoyinTaskProjection } from './types'
 
@@ -39,6 +39,17 @@ export function useHarnessNotifications({
       const projectionUpdate = harnessProjectionUpdate(notification)
       if (projectionUpdate) {
         if (projectionUpdate.sessionId !== streaming.sessionId) return
+        if (projectionUpdate.key === 'xiaoyin.capabilityNotice') {
+          const lastSeq = streaming.projectionSeqByKey?.['xiaoyin.capabilityNotice'] ?? -1
+          if (projectionUpdate.seq <= lastSeq) return
+          const notice = projectionUpdate.value as { kind?: unknown; name?: unknown; reason?: unknown } | undefined
+          if (!notice || typeof notice.name !== 'string' || typeof notice.reason !== 'string') return
+          streaming.projectionSeqByKey = { ...streaming.projectionSeqByKey, 'xiaoyin.capabilityNotice': projectionUpdate.seq }
+          streaming.entries = appendCapabilityNotice(streaming.entries, { kind: String(notice.kind ?? ''), name: notice.name, reason: notice.reason })
+          latest.current.onTaskUpdate(taskId, streaming.projection, streaming.entries)
+          if (currentTaskIdRef.current === taskId) latest.current.onCurrentUpdate(streaming.projection, streaming.entries)
+          return
+        }
         if (projectionUpdate.key === 'xiaoyin.transcript') {
           const lastSeq = streaming.projectionSeqByKey?.['xiaoyin.transcript'] ?? -1
           if (projectionUpdate.seq <= lastSeq) return

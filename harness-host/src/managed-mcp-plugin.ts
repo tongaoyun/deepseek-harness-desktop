@@ -1,3 +1,4 @@
+import { rememberCapabilityNotice, flushCapabilityNotices } from './capability-notice.js'
 import type { Context } from '@deepseek-ai/cordis'
 import { readFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
@@ -144,6 +145,9 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
           throw new Error(message)
         }
         process.stderr.write(`${message}；本次会话跳过该连接器\n`)
+      // The employee asked for this connector: the turn says it was skipped
+      // instead of quietly answering without it.
+      rememberCapabilityNotice({ kind: 'connector', id: connector.id, name: connector.name, reason: message })
       }
       continue
     }
@@ -195,8 +199,17 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
         throw new Error(message)
       }
       process.stderr.write(`${message}；本次会话跳过该连接器\n`)
+      // The employee asked for this connector: the turn says it was skipped
+      // instead of quietly answering without it.
+      rememberCapabilityNotice({ kind: 'connector', id: connector.id, name: connector.name, reason: message })
     }
   }
+
+  // Connectors connect before any session exists; the gaps they reported are
+  // delivered against the session that is starting.
+  const stopNoticeDelivery = ctx.on('agent/created', ({ agent }) => {
+    flushCapabilityNotices(String(agent.session.id))
+  })
 
   const stopApprovalPolicy = ctx.on('tools/pre-execute', (exec, next) => {
     const connectorName = mutatingTools.get(exec.name)
@@ -208,6 +221,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   })
 
   ctx.effect(() => async () => {
+    stopNoticeDelivery()
     stopApprovalPolicy()
     for (const binding of bindings) binding.closed = true
     for (const binding of bindings) if (binding.reconnectTimer) clearTimeout(binding.reconnectTimer)

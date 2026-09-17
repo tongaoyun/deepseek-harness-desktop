@@ -64,7 +64,7 @@ describe('prepareTaskTurn', () => {
     expect(result.pendingEntries.at(-1)).toMatchObject({ role: 'assistant', status: 'streaming' })
   })
 
-  it('starts a fresh session when the exact invocation version changes', () => {
+  it('keeps the session when the capability set changes', () => {
     const result = prepareTaskTurn({
       taskId: 'task', input: '/kit:reports:weekly 继续', now: '2026-09-11T00:00:00Z',
       existingTask: existingTask(), sessionId: 'existing-session', model: 'model', directories: [], directoriesChanged: false,
@@ -72,8 +72,10 @@ describe('prepareTaskTurn', () => {
       entries: [userEntry('user-1', '/kit:reports:weekly 分析本周数据'), assistantEntry('turn-1', '已分析')],
       projection: createXiaoyinTaskProjection(), attachments: [],
     })
-    expect(result.rootSessionId).not.toBe('existing-session')
-    expect(result.harnessPrompt).toContain('用户：分析本周数据')
+    // A capability change restarts the host process and resumes the session;
+    // the conversation is not flattened into a replayed prompt.
+    expect(result.rootSessionId).toBe('existing-session')
+    expect(result.harnessPrompt).toBe('继续')
     expect(result.harnessPrompt).not.toContain('/kit:reports')
   })
 

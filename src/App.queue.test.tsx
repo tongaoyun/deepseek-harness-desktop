@@ -876,7 +876,9 @@ it('executes the selected kit and stops forcing it after the user removes the ca
     expect(fixtures.chat!.prompt).toBe('/kit:reports ')
     await submit('解释排序算法')
     expect(vi.mocked(runHarnessWithRecovery).mock.calls[1][0].capabilitySnapshot.selections).toEqual([])
-    expect(vi.mocked(runHarnessWithRecovery).mock.calls[1][0].sessionId).not.toBe('kit-session')
+    // Dropping a capability restarts the host with the new set and resumes the
+    // same conversation instead of rebuilding it.
+    expect(vi.mocked(runHarnessWithRecovery).mock.calls[1][0].sessionId).toBe('kit-session')
   })
 })
 

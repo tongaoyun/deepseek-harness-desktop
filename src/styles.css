@@ -625,6 +625,8 @@ button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 2px
 .turn-actions button { display: inline-flex; width: 25px; height: 25px; align-items: center; justify-content: center; padding: 0; border: 0; border-radius: 7px; color: #9ea39f; background: transparent; cursor: pointer; }
 .turn-actions button:hover { color: var(--xy-text); background: var(--xy-hover); }
 
+.turn-notice { display: flex; margin: 0; padding: 9px 12px; border-radius: 8px; color: #8a5a20; background: #fdf7ec; font-size: 12.5px; line-height: 1.6; }
+.turn-notice.error { color: #8c4038; background: #fdf4f3; }
 .turn-silent { margin: 0; color: #a6aaa7; font-size: 12px; line-height: 1.6; }
 .turn-failure { margin: 0; padding: 9px 12px; border-radius: 8px; color: #8c4038; background: #fdf4f3; font-size: 12.5px; line-height: 1.6; }
 

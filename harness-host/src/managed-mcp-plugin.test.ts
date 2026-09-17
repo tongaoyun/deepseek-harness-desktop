@@ -333,3 +333,4 @@ describe('managed MCP diagnostics', () => {
       .toBe('[REDACTED] [REDACTED]')
   })
 })
+

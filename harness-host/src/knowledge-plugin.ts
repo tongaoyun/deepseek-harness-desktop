@@ -1,6 +1,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
+import { rememberCapabilityNotice, flushCapabilityNotices } from './capability-notice.js'
 
 export const name = 'xiaoyin-knowledge'
 export const inject = ['tools']
@@ -23,7 +24,15 @@ export const Config = z.object({
 
 export function apply(ctx: Context, config: Config = {}): void {
   const endpoint = config.endpoint?.trim()
-  if (!endpoint) return
+  if (!endpoint) {
+    // Requested knowledge bases would silently have no tools at all.
+    const refs = parseKnowledgeBaseRefs(process.env[config.knowledgeBaseRefsEnv ?? 'XIAOYIN_KNOWLEDGE_BASE_REFS']) ?? []
+    if (refs.length > 0) {
+      rememberCapabilityNotice({ kind: 'knowledge', id: refs.join(','), name: `知识库 ${refs.join('、')}`, reason: '知识库服务未配置，本次不会检索知识库' })
+      ctx.on('agent/created', ({ agent }) => { flushCapabilityNotices(String(agent.session.id)) })
+    }
+    return
+  }
   const url = new URL(endpoint)
   if (!['http:', 'https:'].includes(url.protocol)) throw new Error('Knowledge endpoint must use HTTP(S)')
   const client = new KnowledgeClient(
