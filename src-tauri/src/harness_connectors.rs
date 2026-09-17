@@ -26,6 +26,40 @@ mod timeout_tests {
     }
 
     #[test]
+    fn diagnostic_and_chat_share_the_tool_policy_and_differ_only_in_probing() {
+        let connector: ConnectorDefinition = serde_json::from_value(serde_json::json!({
+            "id": "erp-mcp", "name": "erp-mcp", "status": "ready", "version": "1",
+            "transport": "streamable-http", "url": "http://erp.example/mcp", "authMode": "none",
+            "enabled": true, "toolNames": ["order.get", "order.cancel"], "readOnlyTools": ["order.get"]
+        }))
+        .unwrap();
+        let profile = expert_kits::ExpertKitHarnessProfile {
+            skill_directories: Vec::new(),
+            knowledge_base_refs: None,
+            required_connector_tools: vec!["order.get".into()],
+            allowed_computer_tools: Vec::new(),
+            prompt: String::new(),
+        };
+        let chat =
+            &runtime_connectors(std::slice::from_ref(&connector), &profile, true).unwrap()[0];
+        let probe = &diagnostic_connectors(&[connector]).unwrap()[0];
+        // A connector that diagnoses as ready must behave the same way in a
+        // task: same allow-list, same read-only classification, same write
+        // permission, same timeout.
+        assert_eq!(chat.allowed_tools, probe.allowed_tools);
+        assert_eq!(chat.read_only_tools, probe.read_only_tools);
+        assert_eq!(chat.allow_write, probe.allow_write);
+        assert_eq!(chat.timeout_seconds, probe.timeout_seconds);
+        assert_eq!(chat.url, probe.url);
+        assert_eq!(chat.transport, probe.transport);
+        // Exactly two deliberate probe differences: the probe fails loudly
+        // instead of skipping the connector, and it does not require an
+        // approval it can never ask for because it only lists tools.
+        assert!(probe.required && !chat.required);
+        assert!(!probe.require_write_approval && chat.require_write_approval);
+    }
+
+    #[test]
     fn configured_timeout_is_validated_and_forwarded() {
         let mut connector: ConnectorDefinition = serde_json::from_value(serde_json::json!({
             "id": "test-server", "name": "Test", "status": "ready", "version": "1",
@@ -96,6 +130,47 @@ pub struct RuntimeConnector {
     pub(crate) required: bool,
 }
 
+/// One connector's tool policy. Both the chat runtime and the connector
+/// diagnostic build their entry here, so a connector that diagnoses as ready
+/// behaves the same way in a task: same allow-list, same write classification,
+/// same approval requirement.
+struct ConnectorPolicy<'a> {
+    allowed_tools: &'a [String],
+    required_tools: Vec<String>,
+    allow_write: bool,
+    require_write_approval: bool,
+    required: bool,
+}
+
+fn connector_entry(
+    connector: &ConnectorDefinition,
+    policy: ConnectorPolicy<'_>,
+) -> RuntimeConnector {
+    RuntimeConnector {
+        timeout_seconds: connector.timeout_seconds,
+        id: connector.id.clone(),
+        name: connector.name.clone(),
+        version: connector.version.clone(),
+        transport: connector.transport.clone(),
+        url: connector.url.clone(),
+        auth_mode: connector.auth_mode.clone(),
+        command: connector.command.clone(),
+        arguments: connector.arguments.clone(),
+        environment: connector.environment.clone(),
+        headers: connector.headers.clone(),
+        allowed_tools: policy.allowed_tools.to_vec(),
+        required_tools: policy.required_tools,
+        read_only_tools: connector.read_only_tools.clone(),
+        allow_write: policy.allow_write,
+        require_write_approval: policy.require_write_approval,
+        required: policy.required,
+    }
+}
+
+/// The connector diagnostic answers "will this work in a task?", so it keeps the
+/// task tool policy and differs only where a probe must: it fails loudly instead
+/// of skipping the connector, and it never waits for an approval it cannot ask
+/// for because it lists tools without calling one.
 pub(crate) fn diagnostic_connectors(
     catalog: &[ConnectorDefinition],
 ) -> Result<Vec<RuntimeConnector>, String> {
@@ -103,24 +178,17 @@ pub(crate) fn diagnostic_connectors(
     Ok(catalog
         .iter()
         .filter(|connector| connector.status == "ready" && connector.transport != "desktop")
-        .map(|connector| RuntimeConnector {
-            timeout_seconds: connector.timeout_seconds,
-            id: connector.id.clone(),
-            name: connector.name.clone(),
-            version: connector.version.clone(),
-            transport: connector.transport.clone(),
-            url: connector.url.clone(),
-            auth_mode: connector.auth_mode.clone(),
-            command: connector.command.clone(),
-            arguments: connector.arguments.clone(),
-            environment: connector.environment.clone(),
-            headers: connector.headers.clone(),
-            allowed_tools: connector.tool_names.clone(),
-            required_tools: connector.tool_names.clone(),
-            read_only_tools: connector.read_only_tools.clone(),
-            allow_write: true,
-            require_write_approval: false,
-            required: true,
+        .map(|connector| {
+            connector_entry(
+                connector,
+                ConnectorPolicy {
+                    allowed_tools: &connector.tool_names,
+                    required_tools: connector.tool_names.clone(),
+                    allow_write: true,
+                    require_write_approval: false,
+                    required: true,
+                },
+            )
         })
         .collect())
 }
@@ -137,38 +205,24 @@ pub(crate) fn runtime_connectors(
             connector.enabled && connector.transport != "desktop" && connector.status == "ready"
         })
         .collect::<Vec<_>>();
-    let connector_tools = selected
-        .iter()
-        .map(|connector| (connector.id.as_str(), connector.tool_names.to_vec()))
-        .collect::<HashMap<_, _>>();
     Ok(selected
         .into_iter()
-        .map(|connector| RuntimeConnector {
-            timeout_seconds: connector.timeout_seconds,
-            id: connector.id.clone(),
-            name: connector.name.clone(),
-            version: connector.version.clone(),
-            transport: connector.transport.clone(),
-            url: connector.url.clone(),
-            auth_mode: connector.auth_mode.clone(),
-            command: connector.command.clone(),
-            arguments: connector.arguments.clone(),
-            environment: connector.environment.clone(),
-            headers: connector.headers.clone(),
-            allowed_tools: connector_tools
-                .get(connector.id.as_str())
-                .expect("selected connector tools were computed")
-                .clone(),
-            required_tools: profile
-                .required_connector_tools
-                .iter()
-                .filter(|tool| connector.tool_names.contains(*tool))
-                .cloned()
-                .collect(),
-            read_only_tools: connector.read_only_tools.clone(),
-            allow_write,
-            require_write_approval: true,
-            required: false,
+        .map(|connector| {
+            connector_entry(
+                connector,
+                ConnectorPolicy {
+                    allowed_tools: &connector.tool_names,
+                    required_tools: profile
+                        .required_connector_tools
+                        .iter()
+                        .filter(|tool| connector.tool_names.contains(*tool))
+                        .cloned()
+                        .collect(),
+                    allow_write,
+                    require_write_approval: true,
+                    required: false,
+                },
+            )
         })
         .collect())
 }
