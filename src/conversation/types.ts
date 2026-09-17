@@ -17,6 +17,8 @@ export interface UserTurn {
   attachments?: LocalTaskAttachment[]
   /** 'steer' marks a message injected into a running turn. */
   source?: 'desktop' | 'dingtalk' | 'schedule' | 'steer'
+  /** Context this turn ran with, so the transcript can show what was in play. */
+  context?: { knowledgeRefs?: string[]; connectors?: Array<{ id: string; name: string }> }
 }
 
 export interface TurnFailure {

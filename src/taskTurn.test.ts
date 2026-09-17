@@ -124,6 +124,19 @@ describe('prepareTaskTurn', () => {
     expect(result.harnessPrompt).toContain('之前的要求')
   })
 
+  it('records the context a turn ran with so the transcript can show it', () => {
+    const result = prepareTaskTurn({
+      taskId: 'task', input: '查一下库存', now: '2026-09-11T00:00:00Z',
+      existingTask: existingTask(), sessionId: 'existing-session', model: 'model', directories: [], directoriesChanged: false,
+      capabilities: { ...capabilities, requestedKnowledgeBaseRefs: ['team:kb'], connectors: [{ id: 'erp-mcp', name: 'erp-mcp' }] } as never,
+      invocations: [], entries: [], projection: createXiaoyinTaskProjection(), attachments: [],
+    })
+    expect(result.runningTask.entries[0]).toMatchObject({
+      role: 'user', text: '查一下库存',
+      context: { knowledgeRefs: ['team:kb'], connectors: [{ id: 'erp-mcp', name: 'erp-mcp' }] },
+    })
+  })
+
   it('pins a queued message ID in the durable transcript for crash reconciliation', () => {
     const result = prepareTaskTurn({
       taskId: 'task', input: '排队继续', queuedItemId: 'queue-item-1', now: '2026-09-11T00:00:00Z',

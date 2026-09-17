@@ -1,4 +1,4 @@
-import { ArrowDown, FileImage, FileText, Keyboard, Sparkles, X } from 'lucide-react'
+import { ArrowDown, BookOpen, FileImage, FileText, Keyboard, Plug, Sparkles, X } from 'lucide-react'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type RefObject, type UIEvent } from 'react'
 import type { AuthorizedLocalDirectory } from './harness'
 import { AssistantTurnView } from './chat/AssistantTurnView'
@@ -222,7 +222,7 @@ export function ChatPage(props: ChatPageProps) {
     }}>加载更早的消息（还有 {historyStart} 条）</button>}{props.entries.slice(historyStart).map((entry, offset) => {
       const index = historyStart + offset
       const isLast = index === lastIndex
-      if (entry.role === 'user') return <UserTurnView entry={entry} invocations={props.invocations} key={`user-${entry.id}-${index}`} />
+      if (entry.role === 'user') return <UserTurnView entry={entry} invocations={props.invocations} knowledgeBases={props.knowledgeBases} key={`user-${entry.id}-${index}`} />
       return <article className={`conversation-turn assistant-turn${entry.status === 'streaming' ? ' pending' : ''}`} aria-busy={entry.status === 'streaming'} key={`assistant-${entry.id}-${index}`}>
         <AssistantTurnView
           turn={entry}
@@ -259,12 +259,14 @@ export function ChatPage(props: ChatPageProps) {
   </section>{previewTarget && <LocalFilePreviewPanel onClose={closePreview} onOpenSelected={openPreview} onSelect={(target) => setPreviewKey(artifactKey(target))} tabs={previewTargets} target={previewTarget} />}</div>
 }
 
-function UserTurnView({ entry, invocations }: { entry: Extract<ConversationEntry, { role: 'user' }>; invocations?: ExtensionInvocation[] }) {
+function UserTurnView({ entry, invocations, knowledgeBases }: { entry: Extract<ConversationEntry, { role: 'user' }>; invocations?: ExtensionInvocation[]; knowledgeBases: KnowledgeBaseEntry[] }) {
   const messageInput = splitComposerPrompt(entry.text)
   return <article className="conversation-turn user-turn">
     <div className="user-prompt">
       {entry.source === 'steer' && <span className="steer-badge"><Sparkles size={12} />已插入当前任务</span>}
       {messageInput.tokens.map((token) => <span key={token} className="message-capability"><Sparkles size={12} />{invocations?.find((item) => item.token === token)?.name ?? token.replace(/^\/(?:kit|skill):/u, '')}</span>)}
+      {entry.context?.knowledgeRefs?.map((reference) => <span className="message-capability context-ref" key={reference} title={`知识库 ${reference}`}><BookOpen size={12} />{knowledgeBases.find((item) => item.reference === reference)?.name ?? reference}</span>)}
+      {entry.context?.connectors?.map((connector) => <span className="message-capability context-ref" key={connector.id} title={`连接器 ${connector.id}`}><Plug size={12} />{connector.name}</span>)}
       {entry.attachments && entry.attachments.length > 0 && <AttachmentList attachments={entry.attachments} />}
       <RichMessage text={messageInput.text || (messageInput.tokens.length ? '使用所选能力开始任务' : entry.text)} />
     </div>

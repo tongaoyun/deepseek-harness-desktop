@@ -70,8 +70,13 @@ export function prepareTaskTurn(context: TurnContext) {
     startedAt: now,
   }
   const userTurnId = context.queuedItemId ?? `user-${crypto.randomUUID().replaceAll('-', '')}`
+  const contextRefs = capabilities.requestedKnowledgeBaseRefs
+  const contextConnectors = capabilities.connectors.map((connector) => ({ id: connector.id, name: connector.name }))
+  const turnContext = contextRefs.length || contextConnectors.length
+    ? { ...(contextRefs.length ? { knowledgeRefs: contextRefs } : {}), ...(contextConnectors.length ? { connectors: contextConnectors } : {}) }
+    : undefined
   const pendingEntries: ConversationEntry[] = [...entries,
-    { id: userTurnId, role: 'user', text: input, ...(context.attachments.length ? { attachments: context.attachments } : {}) },
+    { id: userTurnId, role: 'user', text: input, ...(context.attachments.length ? { attachments: context.attachments } : {}), ...(turnContext ? { context: turnContext } : {}) },
     pendingAssistantTurn(context.model, context.reasoningEffort, now),
   ]
   const runningTask: LocalTaskRun = {
