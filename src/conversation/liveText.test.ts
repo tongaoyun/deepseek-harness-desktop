@@ -187,4 +187,13 @@ describe('live transcript overlay', () => {
     expect(turn.segments.map((segment) => segment.kind === 'text' ? segment.text : '')).toEqual(['你的下载目录里有 20 个顶层项目。'])
     expect(JSON.stringify(turn)).not.toContain('The user wants to list')
   })
+
+  it('keeps context compaction as a durable visible status event', () => {
+    const entries: ConversationEntry[] = [userEntry('u1', '长任务'), assistantEntry('turn:1', [], {}, 'streaming')]
+    const started = applyLiveEvent(entries, { type: 'compaction/start', data: { turn: 1, step: 2, compactionId: 'c-1' } })
+    const completed = applyLiveEvent(started, { type: 'compaction/end', data: { turn: 1, step: 2, compactionId: 'c-1' } })
+    const turn = completed.at(-1)
+    if (turn?.role !== 'assistant') throw new Error('expected assistant turn')
+    expect(turn.segments).toEqual([expect.objectContaining({ kind: 'status', id: 'compaction:c-1', label: '上下文已自动压缩', status: 'completed' })])
+  })
 })

@@ -222,7 +222,7 @@ export function ChatPage(props: ChatPageProps) {
           onQuestionAnswer={props.onQuestionAnswer}
         />
         {isLast && props.taskProjection.artifacts.length > 0 && <TaskArtifacts artifacts={props.taskProjection.artifacts} conversation onOpen={openPreview} />}
-        {isLast && fileChanges && (props.taskProjection.artifacts.length ? <details className="task-file-review"><summary>文件变更 <small>{reviewChanges.length}</small></summary>{fileChanges}</details> : fileChanges)}
+        {isLast && fileChanges}
         {isLast && entry.status !== 'streaming' && props.taskProjection.status === 'completed' && props.taskProjection.outcome
           && !isUnverifiedTaskOutcome(props.taskProjection.outcome) && <TaskOutcomeDetails outcome={props.taskProjection.outcome} />}
         {isLast && entry.status !== 'streaming' && props.taskProjection.interruption && <TaskRecoveryNotice projection={props.taskProjection} disabled={props.harnessRunning || Boolean(props.taskContextRestoring) || Boolean(props.prompt.trim()) || props.pendingAttachments.length > 0} onResume={props.onResumeInterrupted} />}

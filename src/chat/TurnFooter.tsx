@@ -2,20 +2,18 @@ import { Check, Copy, RotateCcw, SquarePen } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import type { AssistantTurn } from '../conversation/types'
 import { modelDisplayName } from '../modelSelection'
-import { formatTokens, turnDurationLabel } from './toolSummary'
+import { formatTokens } from './toolSummary'
 
-/** Model · tokens · duration, plus the per-turn actions. */
+/** Model and token facts, plus the per-turn actions. Duration lives in the turn header. */
 export function TurnFooter({ turn, actions }: {
   turn: AssistantTurn
   actions?: { onRegenerate?: () => void; onEdit?: () => void }
 }) {
-  const duration = turnDurationLabel(turn.meta.startedAt, turn.meta.completedAt)
   const usage = turn.meta.tokenUsage
   const tokenLabel = usage ? `输入 ${formatTokens(usage.inputTokens)}${usage.cacheReadTokens ? ` · 缓存读取 ${formatTokens(usage.cacheReadTokens)}` : ''}${usage.cacheWriteTokens ? ` · 缓存写入 ${formatTokens(usage.cacheWriteTokens)}` : ''} · 输出 ${formatTokens(usage.outputTokens)} tokens` : ''
   const facts = [
     turn.meta.model ? modelDisplayName(turn.meta.model) : '',
     tokenLabel,
-    duration,
   ].filter(Boolean)
   const showActions = turn.status !== 'streaming' && (actions?.onRegenerate || actions?.onEdit)
   if (!facts.length && !showActions) return null

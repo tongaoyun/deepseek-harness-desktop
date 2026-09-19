@@ -127,19 +127,18 @@ it('keeps streamed text in place exactly once while tool cards append below it',
     expect(container.textContent!.split('正在生成的正文')).toHaveLength(2)
     expect(container.querySelector('.streaming-response')?.textContent).toContain('正在生成的正文')
     expect(container.querySelector('.tool-group')).not.toBeNull()
-    expect(container.querySelector('.tool-group')!.hasAttribute('open')).toBe(true)
+    expect(container.querySelectorAll('.tool-group .timeline-tool')).toHaveLength(1)
     await act(async () => root.render(<ChatPage {...base} taskProjection={{ ...projection, status: 'completed' }} entries={[settled]} />))
     // Settlement never removes what was already written, and never duplicates it.
     expect(container.textContent!.split('正在生成的正文')).toHaveLength(2)
     expect(container.textContent).toContain('检查完成。')
-    expect(container.querySelector('.tool-group')!.hasAttribute('open')).toBe(false)
-    expect(container.querySelector('.turn-facts')?.textContent).toContain('2秒')
+    expect(container.querySelector('.turn-status-line')?.textContent).toContain('已处理2秒')
   } finally { await act(async () => root.unmount()); container.remove() }
 })
 
 it('shows one quiet activity summary, hides private reasoning and opens tool receipts', async () => {
   const entries = [assistantEntry('turn:1', [
-    { kind: 'text', id: 'progress', text: '我先检查工作簿。' },
+    { kind: 'commentary', id: 'progress', text: '我先检查工作簿。' },
     { kind: 'thinking', id: 'private-1', text: 'Private model reasoning' },
     toolSegment('discover', 'tool_discover', { label: '选择所需工具' }),
     { kind: 'thinking', id: 'private-2', text: 'More private reasoning' },
@@ -160,15 +159,12 @@ it('shows one quiet activity summary, hides private reasoning and opens tool rec
     const groups = container.querySelectorAll<HTMLDetailsElement>('.tool-group')
     expect(groups).toHaveLength(1)
     expect(groups[0].hasAttribute('open')).toBe(false)
-    expect(groups[0].querySelector('summary')?.textContent).toBe('已加载技能 · 已读取文件 · 已检查文档结构')
     expect(container.textContent).toContain('合计 80.50。')
-    expect(container.querySelector('.turn-progress')?.textContent).toContain('我先检查工作簿。')
+    expect(container.querySelector('.turn-commentary')?.textContent).toContain('我先检查工作簿。')
     expect(container.textContent).toContain('17秒')
     expect(container.textContent).not.toContain('0秒')
     expect(container.textContent).not.toContain('思考过程')
     expect(container.textContent).not.toContain('Private model reasoning')
-    await act(async () => groups[0].querySelector('summary')!.click())
-    expect(groups[0].hasAttribute('open')).toBe(true)
     expect(groups[0].querySelectorAll('.timeline-tool')).toHaveLength(4)
     expect(container.textContent).not.toContain('选择所需工具')
     expect(container.textContent).not.toContain('整理交付结果')
@@ -189,6 +185,22 @@ it('omits subsecond duration instead of displaying a zero or approximate time', 
     await act(async () => root.render(<ChatPage {...base} entries={[entry]} />))
     expect(container.querySelector('.turn-facts')?.textContent ?? '').not.toMatch(/<1秒|0秒/)
     expect(container.textContent).toContain('完成')
+  } finally { await act(async () => root.unmount()); container.remove() }
+})
+
+it('shows context compaction as a replayable timeline event', async () => {
+  const entry = assistantEntry('turn:1', [
+    { kind: 'commentary', id: 'progress', text: '继续处理长任务。' },
+    { kind: 'status', id: 'compaction:c-1', statusKind: 'compaction', label: '上下文已自动压缩', status: 'completed', startedAt: '2026-09-01T00:00:02.000Z', completedAt: '2026-09-01T00:00:04.000Z' },
+    { kind: 'text', id: 'answer', text: '任务完成。' },
+  ], { startedAt: '2026-09-01T00:00:00.000Z', completedAt: '2026-09-01T00:00:05.000Z' })
+  const container = document.body.appendChild(document.createElement('div'))
+  const root = createRoot(container)
+  try {
+    await act(async () => root.render(<ChatPage {...base} entries={[entry]} />))
+    expect(container.querySelector('.turn-event')?.textContent).toContain('上下文已自动压缩2秒')
+    expect(container.querySelector('.turn-commentary')?.textContent).toContain('继续处理长任务。')
+    expect(container.textContent).toContain('任务完成。')
   } finally { await act(async () => root.unmount()); container.remove() }
 })
 

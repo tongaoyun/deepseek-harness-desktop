@@ -35,9 +35,25 @@ export function applyLiveEvent(entries: ConversationEntry[], event: { type: stri
     if (!callId || !toolName) return entries
     return updateOpenTurn(entries, `turn:${turn}`, (open) => open.segments.some((segment) => segment.id === `tool:${callId}`)
       ? open
-      : { ...open, segments: [...open.segments, {
+      : { ...open, segments: [...markVisibleTextAsCommentary(open.segments), {
         kind: 'tool', id: `tool:${callId}`, toolName, label: liveToolLabel(toolName), status: 'running', startedAt: time,
       }] })
+  }
+  if (event.type === 'compaction/start' || event.type === 'compaction/end') {
+    const compactionId = text(event.data.compactionId) ?? `${turn}:${step}`
+    const id = `compaction:${compactionId}`
+    const completed = event.type === 'compaction/end'
+    return updateOpenTurn(entries, `turn:${turn}`, (open) => {
+      const previous = open.segments.find((segment) => segment.kind === 'status' && segment.id === id)
+      const next: TurnSegment = {
+        kind: 'status', id, statusKind: 'compaction',
+        label: completed ? '上下文已自动压缩' : '正在压缩上下文',
+        status: completed ? 'completed' : 'running',
+        startedAt: previous?.kind === 'status' ? previous.startedAt : time,
+        ...(completed ? { completedAt: time } : {}),
+      }
+      return { ...open, segments: [...open.segments.filter((segment) => segment.id !== id), next] }
+    })
   }
   if (event.type === 'tool/result') {
     const content = record(event.data.message)?.content
@@ -111,7 +127,7 @@ export function mergeSettledTurn(entries: ConversationEntry[], settled: Assistan
   // The employee sees the turn start when they sent it; the harness starts a
   // few seconds later. Keep the earlier stamp so the clock never jumps back.
   const merged = withEarlierStart(settled, current)
-  const ahead = current.segments.filter((segment) => isStreamingText(segment) || segment.kind === 'notice' || segment.kind === 'user'
+  const ahead = current.segments.filter((segment) => isStreamingCopy(segment) || segment.kind === 'status' || segment.kind === 'notice' || segment.kind === 'user'
     || segment.kind === 'approval' && segment.status === 'running' || segment.kind === 'question')
   // A streaming overlay segment may have text beyond the settled value; keep
   // the longer text until its own assistant/message settles it.
@@ -124,8 +140,8 @@ export function mergeSettledTurn(entries: ConversationEntry[], settled: Assistan
     if (segment.kind === 'question') {
       return ahead.find((item) => item.kind === 'question' && item.questionId === segment.questionId) ?? segment
     }
-    if (!overlay || segment.kind !== 'text') return segment
-    return overlay.kind === 'text' && overlay.text.length > segment.text.length ? overlay : segment
+    if (!overlay || (segment.kind !== 'text' && segment.kind !== 'commentary')) return segment
+    return (overlay.kind === 'text' || overlay.kind === 'commentary') && overlay.text.length > segment.text.length ? overlay : segment
   })
   for (const item of ahead) {
     if (segments.some((segment) => segment.id === item.id
@@ -158,8 +174,14 @@ function liveAnswers(value: unknown): TaskQuestionAnswer[] {
   })
 }
 
-function isStreamingText(segment: TurnSegment): segment is Extract<TurnSegment, { kind: 'text' }> {
-  return segment.kind === 'text' && segment.streaming === true
+function isStreamingCopy(segment: TurnSegment): segment is Extract<TurnSegment, { kind: 'text' | 'commentary' }> {
+  return (segment.kind === 'text' || segment.kind === 'commentary') && segment.streaming === true
+}
+
+function markVisibleTextAsCommentary(segments: TurnSegment[]): TurnSegment[] {
+  return segments.map((segment) => segment.kind === 'text'
+    ? { kind: 'commentary' as const, id: segment.id, text: segment.text, ...(segment.streaming ? { streaming: true } : {}) }
+    : segment)
 }
 
 function appendText(segments: TurnSegment[], id: string, delta: string): TurnSegment[] {
@@ -197,12 +219,12 @@ function boundedNoticeText(value: string, maxCharacters: number, maxBytes: numbe
 }
 
 function settleText(segments: TurnSegment[], id: string, settled: string): TurnSegment[] {
-  const exact = segments.findIndex((segment) => segment.kind === 'text' && segment.id === id)
+  const exact = segments.findIndex((segment) => (segment.kind === 'text' || segment.kind === 'commentary') && segment.id === id)
   // A settled message without step identity belongs to the segment still
   // streaming; settling it there keeps the text from appearing twice.
-  const index = exact >= 0 ? exact : segments.findLastIndex((segment) => segment.kind === 'text' && segment.streaming)
+  const index = exact >= 0 ? exact : segments.findLastIndex((segment) => (segment.kind === 'text' || segment.kind === 'commentary') && segment.streaming)
   if (index < 0) return settled.trim() ? [...segments, { kind: 'text', id, text: settled }] : segments
-  return segments.map((segment, position) => position === index && segment.kind === 'text'
+  return segments.map((segment, position) => position === index && (segment.kind === 'text' || segment.kind === 'commentary')
     ? { ...segment, text: settled, streaming: false }
     : segment)
 }
@@ -237,7 +259,7 @@ function settleOpenTurn(entries: ConversationEntry[], status: AssistantTurn['sta
   const last = entries.at(-1)
   if (last?.role !== 'assistant' || last.status !== 'streaming') return entries
   const failure = status === 'failed' ? { kind: reasonKind, message: '' } : undefined
-  return [...entries.slice(0, -1), { ...last, status, segments: last.segments.map((segment) => segment.kind === 'tool' && segment.status === 'running'
+  return [...entries.slice(0, -1), { ...last, status, segments: last.segments.map((segment) => (segment.kind === 'tool' || segment.kind === 'status') && segment.status === 'running'
     ? { ...segment, status: status === 'completed' ? 'completed' as const : 'canceled' as const, completedAt: time }
     : segment.kind === 'approval' && segment.status === 'running'
       ? { ...segment, status: 'failed' as const, label: `已结束：${segment.toolName}` }

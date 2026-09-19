@@ -1,27 +1,10 @@
 import { ChevronRight, CircleAlert, FileCode2, FileInput, FolderSearch, Globe2, LoaderCircle, PlugZap, TerminalSquare, Users, Wrench } from 'lucide-react'
 import { useState } from 'react'
 import type { ToolSegment } from '../conversation/types'
-import { toolCategory, toolGroupLabel, toolGroupStatus } from './toolSummary'
+import { toolCategory } from './toolSummary'
 
-/**
- * One collapsible card per run of tool calls. Collapsed by default once the
- * run settles; open while the tools are still working.
- */
 export function ToolGroup({ tools }: { tools: ToolSegment[] }) {
-  const attention = tools.some((tool) => tool.status === 'failed' || tool.status === 'running')
-  const [choice, setChoice] = useState<{ attention: boolean; open: boolean }>()
-  const open = choice?.attention === attention ? choice.open : attention
-  return <details className="tool-group" open={open}>
-    <summary onClick={(event) => { event.preventDefault(); setChoice({ attention, open: !open }) }}>
-      <ChevronRight className={open ? 'open' : ''} size={14} />
-      <span title={toolGroupStatus(tools)}>{toolGroupLabel(tools)}</span>
-      {tools.some((tool) => tool.status === 'running') && <LoaderCircle className="turn-spinner" size={13} />}
-    </summary>
-    <div className="tool-group-body">
-      <small className="tool-group-count">{toolGroupStatus(tools)}</small>
-      {tools.map((tool) => <ToolCard key={tool.id} tool={tool} />)}
-    </div>
-  </details>
+  return <div className="tool-group">{tools.map((tool) => <ToolCard key={tool.id} tool={tool} />)}</div>
 }
 
 function ToolCard({ tool }: { tool: ToolSegment }) {

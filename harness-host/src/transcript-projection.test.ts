@@ -62,8 +62,8 @@ describe('transcript projection', () => {
     const turn = state.entries[1]
     expect(turn).toMatchObject({ role: 'assistant', status: 'completed' })
     if (turn!.role !== 'assistant') return
-    expect(turn.segments.map((segment) => segment.kind)).toEqual(['text', 'tool', 'text'])
-    expect(turn.segments[0]).toMatchObject({ kind: 'text', id: '1:1', text: '我先检查现有代码。' })
+    expect(turn.segments.map((segment) => segment.kind)).toEqual(['commentary', 'tool', 'text'])
+    expect(turn.segments[0]).toMatchObject({ kind: 'commentary', id: '1:1', text: '我先检查现有代码。' })
     expect(turn.segments[1]).toMatchObject({ kind: 'tool', toolName: 'local_files_list', status: 'completed', label: '查看 src/login', itemCount: 3 })
     expect(turn.meta.tokenUsage).toEqual({ inputTokens: 100, outputTokens: 50 })
   })
@@ -153,8 +153,8 @@ describe('transcript projection', () => {
     ])
     const turn = state.entries.at(-1)
     if (turn?.role !== 'assistant') throw new Error('expected assistant turn')
-    const texts = turn.segments.filter((segment) => segment.kind === 'text')
-    expect(texts.map((segment) => (segment as { text: string }).text)).toEqual(['第一段。', '第二段。'])
+    expect(turn.segments.find((segment) => segment.kind === 'commentary')).toMatchObject({ text: '第一段。' })
+    expect(turn.segments.findLast((segment) => segment.kind === 'text')).toMatchObject({ text: '第二段。' })
     const tool = turn.segments.find((segment) => segment.kind === 'tool') as { command?: string; output?: string; detail?: string }
     expect(tool.command).toBe('pnpm test')
     expect(tool.output).toBe('ok')
@@ -272,6 +272,18 @@ describe('transcript projection', () => {
     const turn = state.entries.at(-1)
     if (turn?.role !== 'assistant') throw new Error('expected assistant turn')
     expect(turn.meta.tokenUsage).toEqual({ inputTokens: 30, outputTokens: 20, cacheReadTokens: 7 })
+  })
+
+  it('projects context compaction into the replayable timeline', () => {
+    const state = fold([
+      event('turn/start', { turn: 1 }),
+      event('compaction/start', { turn: 1, step: 2, compactionId: 'c-1' }),
+      event('compaction/end', { turn: 1, step: 2, compactionId: 'c-1' }),
+      event('turn/end', { turn: 1, reason: { kind: 'completed' } }),
+    ])
+    const turn = state.entries.at(-1)
+    if (turn?.role !== 'assistant') throw new Error('expected assistant turn')
+    expect(turn.segments).toEqual([expect.objectContaining({ kind: 'status', id: 'compaction:c-1', label: '上下文已自动压缩', status: 'completed' })])
   })
 
   it('rebuilds the identical transcript from a persisted session log', async () => {

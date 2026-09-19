@@ -35,7 +35,7 @@ export function settleOpenTurn(
   return [...entries.slice(0, -1), {
     ...last,
     status,
-    segments: last.segments.map((segment) => segment.kind === 'tool' && segment.status === 'running'
+    segments: last.segments.map((segment) => (segment.kind === 'tool' || segment.kind === 'status') && segment.status === 'running'
       ? { ...segment, status: status === 'completed' ? 'completed' as const : 'canceled' as const, completedAt }
       : segment),
     meta: { ...last.meta, ...meta, completedAt },

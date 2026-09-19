@@ -19,8 +19,11 @@ import { visibleTaskPrompt } from './task-instructions.js'
 
 export type TranscriptSegment =
   | { kind: 'text'; id: string; text: string }
+  | { kind: 'commentary'; id: string; text: string }
   | { kind: 'thinking'; id: string; text: string }
   | { kind: 'user'; id: string; text: string }
+  | { kind: 'status'; id: string; statusKind: 'compaction'; label: string
+      status: 'running' | 'completed' | 'failed' | 'canceled'; startedAt: string; completedAt?: string }
   | { kind: 'tool'; id: string; toolName: string; status: 'running' | 'completed' | 'failed' | 'canceled'
       startedAt: string; completedAt?: string; label: string; detail?: string; command?: string
       path?: string; secondaryPath?: string; itemCount?: number; output?: string }
@@ -80,7 +83,7 @@ export function apply(ctx: Context): void {
   const definition: ProjectionDefinition<'xiaoyin.transcript', TranscriptState> = {
     key: 'xiaoyin.transcript',
     stateSchema: jsonSchema,
-    stateVersion: 2,
+    stateVersion: 3,
     init: () => initialTranscriptState(),
     apply: (state, event) => {
       const next = reduceTranscriptEvent(state, event)
@@ -161,8 +164,27 @@ function reduceTranscriptEventValue(state: TranscriptState, event: SessionEvent)
     const open = openAssistantTurn(state)
     if (!open) return state
     const segment = { kind: 'tool' as const, id: `tool:${callId}`, toolName, status: 'running' as const, startedAt: time, ...toolPresentation(toolName, data?.arguments) }
-    const segments = upsertSegment(open.segments, segment)
+    const segments = upsertSegment(markVisibleTextAsCommentary(open.segments), segment)
     return { ...withTurn(state, { ...open, segments }), toolNames: { ...state.toolNames, [callId]: toolName } }
+  }
+
+  if (event.type === 'compaction/start' || event.type === 'compaction/end') {
+    const open = openAssistantTurn(state)
+    if (!open) return state
+    const compactionId = text(data?.compactionId) ?? `${turn}:${step}`
+    const id = `compaction:${compactionId}`
+    const completed = event.type === 'compaction/end'
+    const previous = open.segments.find((segment) => segment.kind === 'status' && segment.id === id)
+    const segment = {
+      kind: 'status' as const,
+      id,
+      statusKind: 'compaction' as const,
+      label: completed ? '上下文已自动压缩' : '正在压缩上下文',
+      status: completed ? 'completed' as const : 'running' as const,
+      startedAt: previous?.kind === 'status' ? previous.startedAt : time,
+      ...(completed ? { completedAt: time } : {}),
+    }
+    return withTurn(state, { ...open, segments: upsertSegment(open.segments, segment) })
   }
 
   if (event.type === 'tool/result') {
@@ -254,12 +276,18 @@ function withTurn(state: TranscriptState, turn: TranscriptAssistantTurn): Transc
   return { ...state, entries: [...state.entries.slice(0, -1), turn] }
 }
 
+function markVisibleTextAsCommentary(segments: TranscriptSegment[]): TranscriptSegment[] {
+  return segments.map((segment) => segment.kind === 'text'
+    ? { kind: 'commentary' as const, id: segment.id, text: segment.text }
+    : segment)
+}
+
 function settleTurn(turn: TranscriptAssistantTurn, status: TranscriptAssistantTurn['status'], time: string): TranscriptAssistantTurn {
   return {
     ...turn,
     status,
     meta: { ...turn.meta, completedAt: time },
-    segments: turn.segments.map((segment) => segment.kind === 'tool' && segment.status === 'running'
+    segments: turn.segments.map((segment) => (segment.kind === 'tool' || segment.kind === 'status') && segment.status === 'running'
       ? { ...segment, status: status === 'completed' ? 'completed' : 'canceled', completedAt: time }
       : segment),
   }

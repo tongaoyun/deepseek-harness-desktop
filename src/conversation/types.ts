@@ -46,9 +46,20 @@ export interface TurnMeta {
 }
 
 export type TextSegment = { kind: 'text'; id: string; text: string; streaming?: boolean }
+/** A public progress update emitted before the next action. Never private chain-of-thought. */
+export type CommentarySegment = { kind: 'commentary'; id: string; text: string; streaming?: boolean }
 /** The model's private reasoning for one step. Collapsed by default in the UI. */
 export type ThinkingSegment = { kind: 'thinking'; id: string; text: string; streaming?: boolean }
 export type UserSegment = { kind: 'user'; id: string; text: string }
+export type StatusSegment = {
+  kind: 'status'
+  id: string
+  statusKind: 'compaction'
+  label: string
+  status: 'running' | 'completed' | 'failed' | 'canceled'
+  startedAt: string
+  completedAt?: string
+}
 export type ToolSegment = {
   kind: 'tool'
   id: string
@@ -86,7 +97,7 @@ export type QuestionSegment = {
 /** Something the employee should know about this turn, e.g. a capability gap. */
 export type NoticeSegment = { kind: 'notice'; id: string; level: 'warning' | 'error'; text: string }
 
-export type TurnSegment = TextSegment | ThinkingSegment | UserSegment | ToolSegment | ApprovalSegment | QuestionSegment | NoticeSegment
+export type TurnSegment = TextSegment | CommentarySegment | ThinkingSegment | UserSegment | StatusSegment | ToolSegment | ApprovalSegment | QuestionSegment | NoticeSegment
 
 export interface AssistantTurn {
   id: string

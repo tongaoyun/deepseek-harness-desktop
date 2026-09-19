@@ -80,8 +80,10 @@ describe('Harness Host to rendered chat streaming', () => {
 
     const turn = entries.at(-1)
     if (turn?.role !== 'assistant') throw new Error('expected assistant turn')
+    expect(turn.segments.filter((segment) => segment.kind === 'commentary').map((segment) => segment.text))
+      .toEqual(['我先读取数据。'])
     expect(turn.segments.filter((segment) => segment.kind === 'text').map((segment) => segment.text))
-      .toEqual(['我先读取数据。', '整理完成。'])
+      .toEqual(['整理完成。'])
     expect(turn.status).toBe('completed')
     expect(output.at(-1)).toMatchObject({ id: 8, result: { finalResponse: '整理完成。' } })
   })

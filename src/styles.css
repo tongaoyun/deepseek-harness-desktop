@@ -227,12 +227,19 @@ button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 2px
 .timeline-question-actions button { padding: 8px 13px; border: 0; border-radius: 6px; color: #fff; background: #347a4d; cursor: pointer; font-size: 11px; font-weight: 700; }
 .timeline-question-actions button:disabled { opacity: .45; cursor: default; }
 .timeline-error summary > span:nth-child(2) { color: #a64e48; }
-.file-changes-card { margin-top: 22px; overflow: hidden; border: 1px solid var(--xy-line); border-radius: 14px; background: #fff; }
-.file-changes-card > header { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; align-items: center; gap: 12px; min-height: 76px; padding: 14px 16px; border-bottom: 1px solid var(--xy-line); background: #fff; }
-.file-changes-icon { display: grid; width: 44px; height: 44px; place-items: center; border-radius: 11px; color: #737373; background: #f7f7f7; }
-.file-changes-heading strong, .file-changes-heading small { display: block; }
-.file-changes-heading strong { color: #262b28; font-size: 14px; }
-.file-changes-heading small { margin-top: 4px; font-size: 12px; }
+.file-changes-card { width: fit-content; max-width: 100%; margin-top: 12px; }
+.file-changes-card > summary { display: inline-flex; max-width: 100%; min-height: 36px; box-sizing: border-box; align-items: center; gap: 8px; padding: 7px 11px; border: 1px solid var(--xy-line); border-radius: 9px; color: var(--xy-text-secondary); background: #fff; cursor: pointer; list-style: none; }
+.file-changes-card > summary::-webkit-details-marker { display: none; }
+.file-changes-card > summary:hover { color: var(--xy-text); background: var(--xy-hover); }
+.file-changes-card > summary > svg:first-child { flex: none; }
+.file-changes-card[open] .file-changes-chevron { transform: rotate(180deg); }
+.file-changes-chevron { flex: none; transition: transform .16s ease; }
+.file-changes-heading { display: inline-flex; min-width: 0; align-items: center; gap: 8px; }
+.file-changes-heading strong, .file-changes-heading small { display: block; white-space: nowrap; }
+.file-changes-heading strong { overflow: hidden; color: #4d534f; font-size: 12.5px; text-overflow: ellipsis; }
+.file-changes-heading small { font-size: 11px; }
+.file-changes-expanded { width: min(720px, calc(100vw - 96px)); margin-top: 8px; overflow: hidden; border: 1px solid var(--xy-line); border-radius: 10px; background: #fff; }
+.file-changes-expanded > .file-changes-controls { justify-content: flex-end; padding: 9px 12px; border-bottom: 1px solid var(--xy-line-soft); }
 .file-changes-card ins { color: #07913c; text-decoration: none; }
 .file-changes-card del { margin-left: 5px; color: #cf3131; text-decoration: none; }
 .file-change-list { display: grid; }
@@ -579,8 +586,8 @@ button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 2px
 .composer-blocked { margin-left: auto; color: #a15c2f; font-size: 11px; }
 .streaming-response { position: relative; min-height: 24px; }
 .streaming-response::after { display: inline-block; width: 1.5px; height: 1.05em; margin-left: 2px; border-radius: 1px; background: currentColor; content: ''; opacity: .5; vertical-align: text-bottom; animation: streaming-caret 1.15s ease-in-out infinite; }
-.turn-progress .message-markdown { color: var(--xy-text-secondary); font-size: 13px; line-height: 1.6; }
-.turn-progress .message-markdown p { margin: 0; }
+.turn-commentary .message-markdown { color: var(--xy-text-secondary); font-size: 13px; line-height: 1.6; }
+.turn-commentary .message-markdown p { margin: 0; }
 
 /* Tool cards colour by what the tool does, not by status alone. */
 .timeline-tool.cat-read svg:first-child { color: #6b7f8f; }
@@ -593,21 +600,17 @@ button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 2px
 
 /* One assistant turn: segments in event order, then a quiet footer. */
 .assistant-turn-body { display: flex; min-width: 0; flex-direction: column; gap: 10px; }
-.turn-status-line { display: flex; align-items: center; gap: 8px; color: var(--xy-text-secondary); font-size: 12px; }
+.turn-status-line { display: flex; align-items: center; gap: 8px; padding-bottom: 10px; border-bottom: 1px solid var(--xy-line-soft); color: var(--xy-text-secondary); font-size: 12px; }
+.turn-status-completed, .turn-status-canceled, .turn-status-failed { font-size: 13px; font-weight: 600; }
 .turn-status-line small { color: #a6aaa7; font-size: 11px; font-variant-numeric: tabular-nums; }
 .turn-status-line .turn-spinner { flex: none; color: #6f9d80; }
 
-/* Tool activity reads as one muted line that expands in place. */
-.tool-group { min-width: 0; }
-.tool-group > summary { display: inline-flex; width: fit-content; max-width: 100%; align-items: center; gap: 7px; padding: 3px 8px 3px 3px; border-radius: 7px; color: var(--xy-text-secondary); cursor: pointer; font-size: 12.5px; line-height: 1.5; list-style: none; }
-.tool-group > summary:hover { color: var(--xy-text); background: var(--xy-hover); }
-.tool-group > summary::-webkit-details-marker { display: none; }
-.tool-group > summary > svg:first-child { flex: none; color: #9ea39f; transition: transform .16s ease; }
-.tool-group > summary > svg:first-child.open { transform: rotate(90deg); }
-.tool-group > summary > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tool-group > summary > .turn-spinner { color: #6f9d80; }
-.tool-group-body { display: flex; min-width: 0; flex-direction: column; gap: 5px; margin: 5px 0 2px 10px; padding-left: 13px; border-left: 1px solid var(--xy-line-soft); }
-.tool-group-count { color: #a6aaa7; font-size: 11px; }
+.turn-event { display: inline-flex; width: fit-content; max-width: 100%; align-items: center; gap: 8px; color: var(--xy-text-secondary); font-size: 12.5px; line-height: 1.5; }
+.turn-event > svg { flex: none; color: #8b928d; }
+.turn-event small { color: #a6aaa7; font-size: 10.5px; font-variant-numeric: tabular-nums; }
+
+/* Key actions remain visible; parameters and output expand in place. */
+.tool-group { display: flex; min-width: 0; flex-direction: column; gap: 6px; }
 
 /* Footer: facts stay, actions appear when the turn is hovered or focused. */
 .turn-footer { display: flex; min-height: 22px; align-items: center; flex-wrap: wrap; gap: 4px 10px; }

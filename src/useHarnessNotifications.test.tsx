@@ -217,7 +217,8 @@ it('streams text across tool calls without clearing what was already written', a
     // The earlier segment survives the tool call, and the new one appends after it.
     const turn = first.entries.at(-1)
     if (turn?.role !== 'assistant') throw new Error('expected assistant turn')
-    expect(turn.segments.filter((segment) => segment.kind === 'text').map((segment) => segment.text)).toEqual(['我先检查文件。', '检查完成。'])
+    expect(turn.segments.filter((segment) => segment.kind === 'commentary').map((segment) => segment.text)).toEqual(['我先检查文件。'])
+    expect(turn.segments.filter((segment) => segment.kind === 'text').map((segment) => segment.text)).toEqual(['检查完成。'])
     await act(async () => listener(event('turn/end', { turn: 1, reason: { kind: 'completed' } })))
     expect(turn.status).toBe('streaming')
     expect(first.entries.at(-1)).toMatchObject({ status: 'completed' })

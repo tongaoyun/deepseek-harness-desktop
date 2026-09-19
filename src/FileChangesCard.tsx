@@ -52,42 +52,45 @@ export function FileChangesCard({ changes, onOpen, onReview, onUndone, busy = fa
     undoLock.current = false
   }
 
-  return <section aria-label="文件改动" className="file-changes-card">
-    <header>
-      <span className="file-changes-icon"><Files size={20} /></span>
+  return <details aria-label="文件改动" className="file-changes-card">
+    <summary className="file-changes-summary">
+      <Files size={16} />
       <span className="file-changes-heading">
         <strong>{allUndone ? '已撤销' : '已编辑'} {changes.length} 个文件</strong>
         {!allUndone && (completeCounts ? <small><ins>+{totals.added}</ins> <del>-{totals.deleted}</del></small> : <small className="file-counts-hint">审核中查看完整差异</small>)}
       </span>
-      <span className="file-changes-controls">
+      <ChevronDown className="file-changes-chevron" size={14} />
+    </summary>
+    <div className="file-changes-expanded">
+      <div className="file-changes-controls">
         <button disabled={busy || undoing || eligible.length === 0} onClick={() => setConfirming(true)} title={busy ? '任务执行完成后可以撤销' : eligible.length ? `撤销 ${eligible.length} 个可恢复文件` : allUndone ? '已撤销' : '缺少可验证记录，或改动类型不支持自动撤销'} type="button"><Undo2 size={15} />撤销</button>
         <button disabled={!onReview || !reviewable.length} onClick={() => onReview?.(reviewable.map(target))} type="button">审核</button>
-      </span>
-    </header>
-    <div className="file-change-list">
-      {visible.map((change) => <div className={`file-change-row ${change.action}`} key={change.id}>
-        <button className="file-change-path" disabled={!onOpen || Boolean(change.undoneAt) || (change.action === 'deleted' && !change.backupPath)} onClick={() => onOpen?.(target(change))} title={`${change.rootName}/${change.path}`} type="button">{change.path}</button>
-        <small title={undoUnavailableReason(change)}>{change.undoneAt ? '已撤销' : actionLabel(change.action)}</small>
-        <code>{!change.undoneAt && <>{change.addedLines !== undefined && <ins>+{change.addedLines}</ins>}{change.deletedLines !== undefined && <del>-{change.deletedLines}</del>}</>}</code>
-        <span className="file-change-actions">
-          <button aria-label={`打开 ${change.name}`} disabled={!onOpen || Boolean(change.undoneAt) || (change.action === 'deleted' && !change.backupPath)} onClick={() => onOpen?.(target(change))} title="在小胤中审查" type="button"><ExternalLink size={14} /></button>
-          <button aria-label={`在文件夹中显示 ${change.name}`} disabled={change.action === 'deleted' && !change.recoveryPath} onClick={() => {
-            setError('')
-            void revealLocalArtifact({ ...target(change), path: change.recoveryPath ?? change.path }).catch((reason) => setError(String(reason)))
-          }} title={change.recoveryPath ? '定位撤销前的恢复副本' : '在文件夹中显示'} type="button"><FolderSearch size={14} /></button>
-        </span>
-      </div>)}
+      </div>
+      <div className="file-change-list">
+        {visible.map((change) => <div className={`file-change-row ${change.action}`} key={change.id}>
+          <button className="file-change-path" disabled={!onOpen || Boolean(change.undoneAt) || (change.action === 'deleted' && !change.backupPath)} onClick={() => onOpen?.(target(change))} title={`${change.rootName}/${change.path}`} type="button">{change.path}</button>
+          <small title={undoUnavailableReason(change)}>{change.undoneAt ? '已撤销' : actionLabel(change.action)}</small>
+          <code>{!change.undoneAt && <>{change.addedLines !== undefined && <ins>+{change.addedLines}</ins>}{change.deletedLines !== undefined && <del>-{change.deletedLines}</del>}</>}</code>
+          <span className="file-change-actions">
+            <button aria-label={`打开 ${change.name}`} disabled={!onOpen || Boolean(change.undoneAt) || (change.action === 'deleted' && !change.backupPath)} onClick={() => onOpen?.(target(change))} title="在小胤中审查" type="button"><ExternalLink size={14} /></button>
+            <button aria-label={`在文件夹中显示 ${change.name}`} disabled={change.action === 'deleted' && !change.recoveryPath} onClick={() => {
+              setError('')
+              void revealLocalArtifact({ ...target(change), path: change.recoveryPath ?? change.path }).catch((reason) => setError(String(reason)))
+            }} title={change.recoveryPath ? '定位撤销前的恢复副本' : '在文件夹中显示'} type="button"><FolderSearch size={14} /></button>
+          </span>
+        </div>)}
+      </div>
+      {error && <p className="file-changes-error" role="alert">{error}</p>}
+      {current.some((change) => change.undoneAt) && <p className="file-changes-note" role="status">已撤销 {current.filter((change) => change.undoneAt).length} 个文件；撤销前的版本已保存在 .xiaoyin-backups/undo，点击文件夹图标可定位。</p>}
+      {changes.length > PREVIEW_COUNT && <button aria-expanded={expanded} className="file-changes-more" onClick={() => setExpanded((value) => !value)} type="button">{expanded ? '收起文件列表' : `再显示 ${changes.length - PREVIEW_COUNT} 个文件`} <ChevronDown size={14} /></button>}
     </div>
-    {error && <p className="file-changes-error" role="alert">{error}</p>}
-    {current.some((change) => change.undoneAt) && <p className="file-changes-note" role="status">已撤销 {current.filter((change) => change.undoneAt).length} 个文件；撤销前的版本已保存在 .xiaoyin-backups/undo，点击文件夹图标可定位。</p>}
-    {changes.length > PREVIEW_COUNT && <button aria-expanded={expanded} className="file-changes-more" onClick={() => setExpanded((value) => !value)} type="button">{expanded ? '收起文件列表' : `再显示 ${changes.length - PREVIEW_COUNT} 个文件`} <ChevronDown size={14} /></button>}
     {confirming && createPortal(<div className="file-undo-backdrop"><div aria-labelledby="file-undo-title" aria-modal="true" className="file-undo-dialog" ref={dialog} role="dialog">
       <h2 id="file-undo-title">撤销本轮文件改动？</h2>
       <p>将恢复 {eligible.length} 个文件到本轮修改前的状态。新建文件会移入恢复目录；之后被修改过的文件将跳过，不会覆盖。</p>
       {current.length !== eligible.length && <p>另外 {current.length - eligible.length} 个文件已撤销或不支持自动撤销。</p>}
       <footer><button disabled={undoing} onClick={() => setConfirming(false)} type="button">取消</button><button disabled={undoing || busy} onClick={() => void undo()} type="button">{undoing ? '正在撤销…' : `确认撤销 ${eligible.length} 个文件`}</button></footer>
     </div></div>, document.body)}
-  </section>
+  </details>
 }
 
 function target(change: TaskFileChange): LocalArtifactTarget {
