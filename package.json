@@ -28,6 +28,7 @@
     "acceptance:harness-runtime": "node scripts/check-harness-runtime.mjs",
     "acceptance:harness-contracts": "node harness-host/scripts/acceptance-session-recovery.mjs && node harness-host/scripts/acceptance-reasoning-effort.mjs && node harness-host/scripts/acceptance-skill-loading.mjs && node harness-host/scripts/acceptance-skill-tools.mjs && node harness-host/scripts/acceptance-task-outcomes.mjs && node harness-host/scripts/acceptance-session-continuity.mjs",
     "acceptance:session-query": "node harness-host/scripts/acceptance-session-query-concurrency.mjs",
+    "acceptance:work-buddy": "node scripts/acceptance-work-buddy.mjs",
     "acceptance:tool-policy": "node harness-host/scripts/acceptance-model-tool-policy.mjs",
     "tauri": "node scripts/run-tauri.mjs",
     "tauri:dev": "node scripts/run-tauri.mjs dev",

@@ -1,7 +1,8 @@
-import { ArrowDown, BookOpen, FileImage, FileText, Keyboard, Plug, Sparkles, X } from 'lucide-react'
+import { ArrowDown, BookOpen, FileImage, FileText, Plug, Sparkles, X } from 'lucide-react'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type RefObject, type UIEvent } from 'react'
 import type { AuthorizedLocalDirectory } from './harness'
 import { AssistantTurnView } from './chat/AssistantTurnView'
+import { activeRunStartedAt } from './chat/turnElapsed'
 import type { ApprovalDecisionHandler } from './chat/ApprovalCard'
 import type { QuestionAnswerHandler } from './chat/QuestionCard'
 import { FileChangesCard } from './FileChangesCard'
@@ -101,9 +102,6 @@ export function ChatPage(props: ChatPageProps) {
   if (historyWindow.taskId !== props.taskId || (historyWindow.start === undefined && props.entries.length > 0)) setHistoryWindow({ taskId: props.taskId, start: initialStart })
   const historyAnchor = useRef<{ height: number; top: number } | undefined>(undefined)
   const [showScrollDown, setShowScrollDown] = useState(false)
-  const [shortcutsOpen, setShortcutsOpen] = useState(false)
-  const shortcutButton = useRef<HTMLButtonElement>(null)
-  const closeShortcuts = () => { setShortcutsOpen(false); shortcutButton.current?.focus() }
   const [previewTargets, setPreviewTargets] = useState<LocalArtifactTarget[]>([])
   const [previewKey, setPreviewKey] = useState('')
   const pinnedToBottom = useRef(true)
@@ -182,15 +180,6 @@ export function ChatPage(props: ChatPageProps) {
   }, [props.messageListRef, props.entries.length, props.taskId, historyStart])
 
   useEffect(() => {
-    const closeMenus = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return
-      setShortcutsOpen(false)
-    }
-    document.addEventListener('keydown', closeMenus)
-    return () => document.removeEventListener('keydown', closeMenus)
-  }, [])
-
-  useEffect(() => {
     if (props.entries.length === 0) {
       setPreviewTargets([])
       setPreviewKey('')
@@ -206,8 +195,6 @@ export function ChatPage(props: ChatPageProps) {
   const lastIndex = props.entries.length - 1
 
   return <div className={`chat-workspace${props.entries.length > 0 ? ' has-conversation' : ''}${previewTarget ? ' preview-open' : ''}`}><section className={props.entries.length > 0 ? 'chat-page conversation' : 'chat-page'}>
-    <div className="chat-topbar"><button aria-expanded={shortcutsOpen} aria-label="快捷键指引" onClick={() => setShortcutsOpen((value) => !value)} ref={shortcutButton} title="快捷键指引" type="button"><Keyboard size={16} /></button></div>
-    {shortcutsOpen && <div className="shortcuts-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) closeShortcuts() }} role="presentation"><section aria-label="快捷键指引" aria-modal="true" className="shortcuts-dialog" role="dialog" onKeyDown={(event) => { if (event.key === 'Tab') { event.preventDefault(); event.currentTarget.querySelector('button')?.focus() } if (event.key === 'Escape') { event.stopPropagation(); closeShortcuts() } }}><header><h2>快捷键指引</h2><button aria-label="关闭快捷键指引" autoFocus onClick={closeShortcuts} type="button"><X size={16} /></button></header><dl><div><dt>新任务</dt><dd><kbd>⌘ / Ctrl</kbd> <kbd>N</kbd></dd></div><div><dt>搜索任务</dt><dd><kbd>⌘ / Ctrl</kbd> <kbd>K</kbd></dd></div><div><dt>发送消息</dt><dd><kbd>Enter</kbd></dd></div><div><dt>运行中插话</dt><dd>直接输入并按 <kbd>Enter</kbd></dd></div><div><dt>换行</dt><dd><kbd>Shift</kbd> <kbd>Enter</kbd></dd></div><div><dt>调用技能或套件</dt><dd><kbd>/</kbd></dd></div><div><dt>关闭菜单或详情</dt><dd><kbd>Esc</kbd></dd></div></dl></section></div>}
     {props.entries.length === 0 && <div className="hero-copy">
       <XiaoyinMascot size={48} variant="hero" />
       <h1>不止聊天，搞定一切</h1>
@@ -227,6 +214,7 @@ export function ChatPage(props: ChatPageProps) {
         <AssistantTurnView
           turn={entry}
           runState={isLast ? props.taskProjection : undefined}
+          elapsedStartedAt={isLast ? activeRunStartedAt(props.entries, index) : undefined}
           actions={isLast ? { onRegenerate: props.onRegenerateTurn, onEdit: props.onEditTurn } : { onEdit: undefined }}
           onApprovalDecision={props.onApprovalDecision}
           onQuestionAnswer={props.onQuestionAnswer}

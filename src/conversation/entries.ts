@@ -1,4 +1,27 @@
-import type { ConversationEntry, TurnMeta, TurnStatus } from './types'
+import type { ConversationEntry, TurnMeta, TurnStatus, UserTurn } from './types'
+
+/** Keep a mid-turn employee message inside the turn that is still running. */
+export function appendSteerToOpenTurn(entries: ConversationEntry[], message: UserTurn): ConversationEntry[] {
+  const last = entries.at(-1)
+  if (last?.role !== 'assistant' || last.status !== 'streaming') return [...entries, message]
+  return [...entries.slice(0, -1), { ...last, segments: [...last.segments, { kind: 'user' as const, id: message.id, text: message.text }] }]
+}
+
+/** Repair older local snapshots where a steer was stored after the open turn. */
+export function reconcileTaskConversation(entries: ConversationEntry[], status: TurnStatus | 'running' | 'idle', completedAt?: string): ConversationEntry[] {
+  const normalized: ConversationEntry[] = []
+  for (const entry of entries) {
+    if (entry.role === 'user' && entry.source === 'steer' && normalized.at(-1)?.role === 'assistant') {
+      const previous = normalized.pop()!
+      normalized.push(previous.role === 'assistant'
+        ? { ...previous, segments: [...previous.segments, { kind: 'user', id: entry.id, text: entry.text }] }
+        : previous)
+    } else normalized.push(entry)
+  }
+  return status === 'completed' || status === 'canceled' || status === 'failed'
+    ? settleOpenTurn(normalized, status, completedAt ?? new Date().toISOString())
+    : normalized
+}
 
 /** Settle the open assistant turn with its outcome metadata. */
 export function settleOpenTurn(
@@ -39,5 +62,5 @@ export function ensureFinalText(entries: ConversationEntry[], finalResponse: str
 export function resetOpenTurn(entries: ConversationEntry[], now: string): ConversationEntry[] {
   const last = entries.at(-1)
   if (last?.role !== 'assistant') return entries
-  return [...entries.slice(0, -1), { id: 'pending', role: 'assistant' as const, status: 'streaming' as const, segments: [], meta: { ...last.meta, startedAt: now } }]
+  return [...entries.slice(0, -1), { id: 'pending', role: 'assistant' as const, status: 'streaming' as const, segments: [], meta: { ...last.meta, startedAt: last.meta.startedAt ?? now } }]
 }

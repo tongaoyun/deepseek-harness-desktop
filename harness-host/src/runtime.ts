@@ -17,7 +17,7 @@ import {
 } from '@deepseek-ai/dsh-sdk-client'
 import { deriveEventMessage, foldSurface } from '@deepseek-ai/dsh-session/surface'
 import { imageMetadata } from './local-attachment-store-plugin.js'
-import { withTaskInstructions } from './task-instructions.js'
+import { visibleTaskPrompt, withTaskInstructions } from './task-instructions.js'
 import { IMAGE_LIMITS } from './image-limits.js'
 import { memoryContextForTask } from './memory-context.js'
 import { TaskOutcomeTracker, type TaskOutcome } from './task-outcome.js'
@@ -587,7 +587,7 @@ export async function runSessionTurn(
   if (pendingTools.size && !(abortedByInterrupt)) throw new Error('本轮仍有工具操作未取得结果，请先核对实际结果后继续')
   // A completed turn without visible text is legitimate (file edits, plan
   // delivery); the desktop renders the turn from its streamed segments.
-  return { sessionId, finalResponse, outcome: outcome.result(), ...(abortedByInterrupt ? { interrupted: true } : {}) }
+  return { sessionId, finalResponse, outcome: outcome.result(abortedByInterrupt ? '' : finalResponse), ...(abortedByInterrupt ? { interrupted: true } : {}) }
 }
 
 /**
@@ -1023,13 +1023,15 @@ function rebuildSessionMessages(events: readonly unknown[]): Array<{ id: string;
       if (!event || !['user/message', 'assistant/message'].includes(String(event.type))) return []
       const message = deriveEventMessage(event as never) as Record<string, unknown> | null
       if (!message || (message.role !== 'user' && message.role !== 'assistant')) return []
+      if (message.role === 'user' && record(message.source)?.kind !== 'user') return []
       const content = Array.isArray(message.content) ? message.content : []
       const text = content.flatMap((block) => {
         const value = block as Record<string, unknown>
         return value?.type === 'text' && typeof value.text === 'string' ? [value.text] : []
       }).join('')
-      if (!text.trim()) return []
-      return [{ id: typeof message.id === 'string' ? message.id : `${event.type}:${seq}`, role: message.role, text }]
+      const visibleText = message.role === 'user' ? visibleTaskPrompt(text) : text
+      if (!visibleText.trim()) return []
+      return [{ id: typeof message.id === 'string' ? message.id : `${event.type}:${seq}`, role: message.role, text: visibleText }]
     })
   } catch {
     // A projection can still be useful when a future event vocabulary cannot be folded.
@@ -1037,12 +1039,14 @@ function rebuildSessionMessages(events: readonly unknown[]): Array<{ id: string;
       const value = event as Record<string, unknown>
       if (value?.type !== 'assistant/message' && value?.type !== 'user/message') return []
       const data = value.type === 'user/message' ? value.data : (value.data as Record<string, unknown> | undefined)?.message
+      if (value.type === 'user/message' && record((data as Record<string, unknown> | undefined)?.source)?.kind !== 'user') return []
       const content = (data as Record<string, unknown> | undefined)?.content
       const text = Array.isArray(content) ? content.flatMap((block) => {
         const item = block as Record<string, unknown>
         return item?.type === 'text' && typeof item.text === 'string' ? [item.text] : []
       }).join('') : ''
-      return text.trim() ? [{ id: `${value.type}:${index}`, role: value.type === 'user/message' ? 'user' as const : 'assistant' as const, text }] : []
+      const visibleText = value.type === 'user/message' ? visibleTaskPrompt(text) : text
+      return visibleText.trim() ? [{ id: `${value.type}:${index}`, role: value.type === 'user/message' ? 'user' as const : 'assistant' as const, text: visibleText }] : []
     })
   }
 }

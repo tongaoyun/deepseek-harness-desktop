@@ -29,9 +29,14 @@ it('checkpoints only changed running tasks and never saves a stale running snaps
     await act(async () => root.render(<Probe tasks={[{ ...task, entries: [assistantEntry('pending', '部分结果', {}, 'streaming')], messagePreview: '部分结果' }]} />))
     await act(async () => vi.advanceTimersByTimeAsync(2000))
     expect(persistTaskHistory).toHaveBeenCalledTimes(2)
+    await act(async () => root.render(<Probe tasks={[{ ...task, entries: [assistantEntry('turn:1', [
+      { kind: 'notice', id: 'notice:knowledge:scope', level: 'warning', text: '范围无效' },
+    ], {}, 'streaming')], messagePreview: '部分结果' }]} />))
+    await act(async () => vi.advanceTimersByTimeAsync(2000))
+    expect(persistTaskHistory).toHaveBeenCalledTimes(3)
     await act(async () => root.render(<Probe tasks={[{ ...task, status: 'COMPLETED' }]} />))
     await act(async () => { window.dispatchEvent(new Event('pagehide')); await vi.advanceTimersByTimeAsync(2000) })
-    expect(persistTaskHistory).toHaveBeenCalledTimes(2)
+    expect(persistTaskHistory).toHaveBeenCalledTimes(3)
     expect(errors).not.toHaveBeenCalled()
   } finally { await act(async () => root.unmount()); vi.useRealTimers() }
 })

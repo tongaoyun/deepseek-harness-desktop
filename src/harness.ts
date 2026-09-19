@@ -246,7 +246,7 @@ function normalizeInterruption(value: unknown): XiaoyinTaskProjection['interrupt
 
 function normalizeOutcome(value: unknown): XiaoyinTaskProjection['outcome'] | undefined {
   const item = asRecord(value)
-  if (!item || !['completed', 'partial', 'needs_input', 'needs_confirmation', 'blocked', 'unverified'].includes(String(item.status)) || typeof item.summary !== 'string' || !Array.isArray(item.remaining) || item.remaining.some((entry) => typeof entry !== 'string') || !Array.isArray(item.checks)) return undefined
+  if (!item || !['completed', 'answered', 'partial', 'needs_input', 'needs_confirmation', 'blocked', 'unverified'].includes(String(item.status)) || typeof item.summary !== 'string' || !Array.isArray(item.remaining) || item.remaining.some((entry) => typeof entry !== 'string') || !Array.isArray(item.checks)) return undefined
   const checks = item.checks.flatMap((entry) => {
     const check = asRecord(entry)
     if (!check || typeof check.description !== 'string' || typeof check.evidence !== 'string' || !['passed', 'failed', 'not_run'].includes(String(check.result))) return []
@@ -279,7 +279,10 @@ export interface DroppedPathAuthorization {
 
 export async function runHarness(input: HarnessRunInput): Promise<HarnessRunResult> {
   if (!isTauri()) throw new Error('真实 Agent 执行只能在小胤桌面客户端中运行')
-  return invoke<HarnessRunResult>('run_harness', { request: input })
+  const attachments = input.attachments.map(({ id, rootId, rootName, path, name, kind, mediaType }) => ({
+    id, rootId, rootName, path, name, kind, ...(mediaType ? { mediaType } : {}),
+  }))
+  return invoke<HarnessRunResult>('run_harness', { request: { ...input, attachments } })
 }
 
 export async function diagnoseConnectors(

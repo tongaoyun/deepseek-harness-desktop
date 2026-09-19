@@ -1,4 +1,4 @@
-import { ArrowUp, BookOpen, Check, ChevronDown, FilePlus2, FolderOpen, LoaderCircle, Plug, Plus, Puzzle, Search, Sparkles, Square, X } from 'lucide-react'
+import { ArrowUp, BookOpen, Check, ChevronDown, ChevronRight, FilePlus2, FolderPlus, History, LoaderCircle, Plug, Plus, Puzzle, Search, Sparkles, Square, X } from 'lucide-react'
 import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react'
 import type { ChatPageProps } from './ChatPage'
 import { composerQuery, joinComposerPrompt, removeComposerQuery, selectComposerInvocation, splitComposerPrompt } from './composerInput'
@@ -12,6 +12,7 @@ const categories: { id: Category; label: string; icon: typeof Puzzle }[] = [
   { id: 'connector', label: '连接器', icon: Plug }, { id: 'knowledge', label: '知识库', icon: BookOpen },
 ]
 interface Option { id: string; name: string; description: string; selected?: boolean; disabled?: boolean; choose: () => void }
+const recentDirectoryLabel = (path: string) => path.replace(/^\/Users\/[^/]+(?=\/|$)/u, '~')
 
 export function TaskComposer(props: ChatPageProps & { onPreview: (target: LocalArtifactTarget) => void }) {
   const [checkingClipboard, setCheckingClipboard] = useState(false)
@@ -31,9 +32,19 @@ export function TaskComposer(props: ChatPageProps & { onPreview: (target: LocalA
     : checkingClipboard ? '正在读取剪贴板'
     : ''
   const [menu, setMenu] = useState<'context' | 'directory'>()
+  const [recentOpen, setRecentOpen] = useState(false)
+  const [directoryAbove, setDirectoryAbove] = useState(false)
+  const [directoryAlignEnd, setDirectoryAlignEnd] = useState(false)
+  const [recentToLeft, setRecentToLeft] = useState(false)
   const [category, setCategory] = useState<Category>('expert-kit')
   const [search, setSearch] = useState('')
   const root = useRef<HTMLDivElement>(null)
+  const contextPicker = useRef<HTMLDivElement>(null)
+  const directoryPicker = useRef<HTMLDivElement>(null)
+  const directoryMenu = useRef<HTMLDivElement>(null)
+  const recentMenu = useRef<HTMLDivElement>(null)
+  const recentButton = useRef<HTMLButtonElement>(null)
+  const suggestionsPicker = useRef<HTMLDivElement>(null)
   const menuSearch = useRef<HTMLInputElement>(null)
   const addButton = useRef<HTMLButtonElement>(null)
   const directoryButton = useRef<HTMLButtonElement>(null)
@@ -48,7 +59,8 @@ export function TaskComposer(props: ChatPageProps & { onPreview: (target: LocalA
   const queryKey = `${text}:${caret}`
   const query = !locked && dismissed !== queryKey ? composerQuery(text, caret) : undefined
   const listId = useId()
-  const closeMenu = () => { setMenu(undefined); setSearch('') }
+  const recentMenuId = useId()
+  const closeMenu = () => { setMenu(undefined); setRecentOpen(false); setSearch('') }
   const focusInput = (position?: number) => window.requestAnimationFrame(() => {
     props.composerRef.current?.focus()
     if (position !== undefined) props.composerRef.current?.setSelectionRange(position, position)
@@ -93,19 +105,47 @@ export function TaskComposer(props: ChatPageProps & { onPreview: (target: LocalA
   const matches = (item: Option, value: string) => `${item.name} ${item.id} ${item.description}`.toLocaleLowerCase().includes(value.toLocaleLowerCase())
   const suggestions = query ? (query.trigger === '/' ? extensionOptions() : references).filter((item) => matches(item, query.text) && !item.disabled).slice(0, 12) : []
   const menuOptions = (category === 'knowledge' ? knowledgeOptions : category === 'connector' ? connectorOptions : extensionOptions(category)).filter((item) => matches(item, search))
+  const recentDirectories = props.recentDirectories ?? []
+  const recentPaths = new Set(recentDirectories.map((item) => item.path))
+  const availableRecentDirectories = [...recentDirectories, ...props.localDirectories.filter((item) => !item.path || !recentPaths.has(item.path))]
   const activeIndex = Math.min(optionIndex, Math.max(0, suggestions.length - 1))
 
   useLayoutEffect(() => {
     const input = props.composerRef.current
     if (!input) return
     input.style.height = '0px'
-    input.style.height = `${Math.min(220, Math.max(64, input.scrollHeight))}px`
+    input.style.height = `${Math.min(160, Math.max(44, input.scrollHeight))}px`
   }, [text, props.composerRef])
+  useLayoutEffect(() => {
+    if (menu !== 'directory') return
+    const place = () => {
+      const trigger = directoryButton.current?.getBoundingClientRect()
+      const panel = directoryMenu.current?.getBoundingClientRect()
+      if (!trigger || !panel) return
+      const roomBelow = window.innerHeight - trigger.bottom
+      const alignEnd = trigger.left + panel.width > window.innerWidth - 12
+      const panelLeft = alignEnd ? trigger.right - panel.width : trigger.left
+      setDirectoryAbove(roomBelow < panel.height + 12 && trigger.top > roomBelow)
+      setDirectoryAlignEnd(alignEnd)
+      if (recentOpen && window.innerWidth > 640) {
+        const submenu = recentMenu.current?.getBoundingClientRect()
+        if (submenu) setRecentToLeft(panelLeft + panel.width + submenu.width > window.innerWidth - 12 && panelLeft >= submenu.width + 12)
+      }
+    }
+    place()
+    window.addEventListener('resize', place)
+    return () => window.removeEventListener('resize', place)
+  }, [menu, recentOpen, props.localDirectories.length, props.recentDirectories?.length])
   useEffect(() => {
-    const dismiss = (event: PointerEvent) => { if (!root.current?.contains(event.target as Node)) closeMenu() }
+    const dismiss = (event: PointerEvent) => {
+      const target = event.target as Node
+      if (menu === 'context' && !contextPicker.current?.contains(target)) closeMenu()
+      if (menu === 'directory' && !directoryPicker.current?.contains(target)) closeMenu()
+      if (query && !props.composerRef.current?.contains(target) && !suggestionsPicker.current?.contains(target)) setDismissed(queryKey)
+    }
     document.addEventListener('pointerdown', dismiss)
     return () => document.removeEventListener('pointerdown', dismiss)
-  }, [])
+  }, [menu, queryKey, Boolean(query)])
   useEffect(() => { if (menu === 'context') menuSearch.current?.focus() }, [menu])
   useEffect(() => {
     if (!menu) return
@@ -134,7 +174,11 @@ export function TaskComposer(props: ChatPageProps & { onPreview: (target: LocalA
   }
 
   return <div className="task-composer" ref={root} onKeyDown={(event) => {
-    if (event.key === 'Escape' && menu) { event.stopPropagation(); (menu === 'context' ? addButton : directoryButton).current?.focus(); closeMenu() }
+    if (event.key === 'Escape' && menu) {
+      event.stopPropagation()
+      if (menu === 'directory' && recentOpen) { setRecentOpen(false); recentButton.current?.focus() }
+      else { (menu === 'context' ? addButton : directoryButton).current?.focus(); closeMenu() }
+    }
   }}>
     <form className="composer" onSubmit={props.onSubmit}>
       {(tokens.length > 0 || props.selectedKnowledgeBaseRefs.length > 0 || (props.selectedConnectorIds?.length ?? 0) > 0) && <div aria-label="当前任务能力" className="composer-capabilities">
@@ -145,7 +189,7 @@ export function TaskComposer(props: ChatPageProps & { onPreview: (target: LocalA
       <ComposerAttachments attachments={props.pendingAttachments} disabled={locked} onOpen={props.onPreview} onRemove={props.onRemoveAttachment} />
       {props.pastingAttachments && <div className="composer-import-status" role="status"><LoaderCircle size={13} />正在添加附件…</div>}
       {pasteError && <div className="local-file-error" role="alert">{pasteError}</div>}
-      {query && <div className="composer-popover composer-suggestions"><small>{query.trigger === '/' ? '调用技能或专家套件' : '引用会话、知识库、连接器或工作目录'}</small><div id={listId} role="listbox" aria-label={query.trigger === '/' ? '技能与专家套件' : '任务上下文'}>{suggestions.map((item, index) => <button aria-selected={index === activeIndex} className={index === activeIndex ? 'active' : ''} id={`${listId}-${index}`} key={item.id} onMouseDown={(event) => event.preventDefault()} onClick={item.choose} role="option" type="button"><Sparkles size={15} /><span><strong>{item.name}</strong><small>{item.description}</small></span></button>)}</div>{suggestions.length === 0 && <p className="composer-empty">{query.trigger === '/' ? '暂无匹配能力，可通过「＋」浏览和安装。' : '暂无匹配上下文，可通过「＋」添加或配置。'}</p>}<footer>↑ ↓ 选择 · Enter 确认 · Esc 关闭</footer></div>}
+      {query && <div className="composer-popover composer-suggestions" ref={suggestionsPicker}><small>{query.trigger === '/' ? '调用技能或专家套件' : '引用会话、知识库、连接器或工作目录'}</small><div id={listId} role="listbox" aria-label={query.trigger === '/' ? '技能与专家套件' : '任务上下文'}>{suggestions.map((item, index) => <button aria-selected={index === activeIndex} className={index === activeIndex ? 'active' : ''} id={`${listId}-${index}`} key={item.id} onMouseDown={(event) => event.preventDefault()} onClick={item.choose} role="option" type="button"><Sparkles size={15} /><span><strong>{item.name}</strong><small>{item.description}</small></span></button>)}</div>{suggestions.length === 0 && <p className="composer-empty">{query.trigger === '/' ? '暂无匹配能力，可通过「＋」浏览和安装。' : '暂无匹配上下文，可通过「＋」添加或配置。'}</p>}<footer>↑ ↓ 选择 · Enter 确认 · Esc 关闭</footer></div>}
       <textarea aria-label="给小胤发送消息" autoCapitalize="off" autoCorrect="off" spellCheck={false} aria-expanded={Boolean(query)} aria-controls={query ? listId : undefined} aria-activedescendant={suggestions.length ? `${listId}-${activeIndex}` : undefined}
         onChange={(event) => { props.onPrompt(joinComposerPrompt(tokens, event.target.value)); setCaret(event.target.selectionStart); setOptionIndex(0); setDismissed('') }}
         onSelect={(event) => setCaret(event.currentTarget.selectionStart)} onKeyDown={inputKey}
@@ -165,9 +209,9 @@ export function TaskComposer(props: ChatPageProps & { onPreview: (target: LocalA
           }).catch((reason) => { if (request === pasteRequest.current) setPasteError(reason instanceof Error ? reason.message : String(reason)) })
             .finally(() => { if (request === pasteRequest.current) setCheckingClipboard(false) })
         }}
-        placeholder={running ? '追加要求，按 Enter 插入当前任务' : props.queue?.items.length && !props.queue.paused ? '追加要求，按 Enter 加入队列' : capabilityHint || '描述任务，/ 调用技能或套件，@ 添加上下文'} ref={props.composerRef} value={text} />
+        placeholder={running ? '补充当前任务，Enter 发送' : props.queue?.items.length && !props.queue.paused ? '追加要求，按 Enter 加入队列' : capabilityHint || '描述任务，/ 调用技能或套件，@ 添加上下文'} ref={props.composerRef} value={text} />
       <div className="composer-actions">
-        <div className="context-picker">
+        <div className="context-picker" ref={contextPicker}>
           <button aria-expanded={menu === 'context'} aria-haspopup="dialog" aria-label="添加上下文" className="workspace-button context-add-button" disabled={locked} onClick={() => { setDismissed(queryKey); setMenu(menu === 'context' ? undefined : 'context'); setSearch('') }} ref={addButton} title="添加文件、专家套件、技能、连接器或知识库" type="button"><Plus size={18} /></button>
           {menu === 'context' && <section className="composer-popover composer-context-menu composer-cascade" role="dialog" aria-label="添加能力与上下文">
             <div className="composer-cascade-rail"><div className="composer-category-tabs" role="tablist" aria-label="能力分类" aria-orientation="vertical" onKeyDown={(event) => {
@@ -194,17 +238,32 @@ export function TaskComposer(props: ChatPageProps & { onPreview: (target: LocalA
           </section>}
         </div>
         <ComposerModelPicker {...props} locked={Boolean(locked)} />
-        {running ? <>{text.trim() && <button aria-label="插入当前任务" className="queue-send-button" type="submit">插入当前任务<ArrowUp size={14} /></button>}<button aria-label={stopping ? '正在停止' : '停止本轮'} className="cancel-button" disabled={stopping} onClick={props.onCancel} title="停止本轮，保留对话并暂停队列" type="button">{stopping ? <LoaderCircle className="turn-spinner" size={14} /> : <Square size={11} fill="currentColor" strokeWidth={0} />}</button></>
+        {running ? <>{text.trim() && <button aria-label="补充到当前任务" className="queue-send-button" type="submit">补充<ArrowUp size={14} /></button>}<button aria-label={stopping ? '正在停止' : '停止本轮'} className="cancel-button" disabled={stopping} onClick={props.onCancel} title="停止本轮，保留对话并暂停队列" type="button"><Square size={11} fill="currentColor" strokeWidth={0} /></button></>
           : <button aria-label={props.queue?.items.length && !props.queue.paused ? '加入消息队列' : '发送'} className="send-button" disabled={(!text.trim() && !tokens.length && props.pendingAttachments.length === 0) || props.runtimeStatus !== 'ready' || props.harnessHealth === 'degraded' || props.taskContextRestoring || props.pastingAttachments || checkingClipboard} title={props.runtimeStatus !== 'ready' ? '企业服务未连接' : props.harnessHealth === 'degraded' ? '请先恢复本地 Agent' : props.taskContextRestoring ? '正在恢复任务上下文' : '发送'} type="submit"><ArrowUp size={17} /></button>}
       </div>
     </form>
     {props.localFileError && <div className="local-file-error" role="alert">{props.localFileError}</div>}
     <div className="context-bar">
-      <div className="composer-directory-picker"><button aria-expanded={menu === 'directory'} aria-haspopup="menu" className="context-directory-button" disabled={locked} onClick={() => { setMenu(menu === 'directory' ? undefined : 'directory'); setDismissed(queryKey) }} ref={directoryButton} type="button"><FolderOpen size={13} />{props.localDirectories.length ? props.localDirectories[0].name : '选择工作目录'}{props.localDirectories.length > 1 && ` +${props.localDirectories.length - 1}`}<ChevronDown size={12} /></button>
-        {menu === 'directory' && <div aria-label="工作目录" className="composer-popover composer-directory-menu" role="menu"><button onClick={() => { closeMenu(); props.onAddLocalDirectory() }} role="menuitem" type="button"><Plus size={15} />选择文件夹…</button>
-          {props.localDirectories.length > 0 && <small>当前任务</small>}{props.localDirectories.map((item) => <div className="composer-directory-row" key={item.id}><span title={item.path}>{item.name}<small>{item.path}</small></span><button aria-label={`移除目录 ${item.name}`} onClick={() => props.onRemoveLocalDirectory(item.id)} type="button"><X size={13} /></button></div>)}
-          <small>最近使用</small>{props.recentDirectories?.filter((item) => !props.localDirectories.some((current) => current.path === item.path)).map((item) => <button key={item.path} onClick={() => { closeMenu(); props.onSelectRecentDirectory?.(item.path!) }} role="menuitem" title={item.path} type="button"><FolderOpen size={14} /><span>{item.name}<small>{item.path}</small></span></button>)}
-          {!props.recentDirectories?.length && <p className="composer-empty">选择过的工作目录会显示在这里。</p>}
+      <div className="composer-directory-picker" ref={directoryPicker} onMouseLeave={() => setRecentOpen(false)}><button aria-expanded={menu === 'directory'} aria-haspopup="menu" className="context-directory-button" disabled={locked} onClick={() => { setMenu(menu === 'directory' ? undefined : 'directory'); setRecentOpen(false); setDismissed(queryKey) }} ref={directoryButton} type="button"><FolderPlus size={14} />{props.localDirectories.length ? props.localDirectories[0].name : '选择工作目录'}{props.localDirectories.length > 1 && ` +${props.localDirectories.length - 1}`}<ChevronDown size={13} /></button>
+        {menu === 'directory' && <div aria-label="工作目录" className={`composer-popover composer-directory-menu${directoryAbove ? ' above' : ''}${directoryAlignEnd ? ' align-end' : ''}`} ref={directoryMenu} role="menu"><button className="composer-directory-action" onMouseEnter={() => setRecentOpen(false)} onFocus={() => setRecentOpen(false)} onClick={() => { closeMenu(); props.onAddLocalDirectory() }} role="menuitem" type="button"><FolderPlus size={17} />选择目录</button>
+          <button aria-controls={recentOpen ? recentMenuId : undefined} aria-expanded={recentOpen} aria-haspopup="menu" className={`composer-directory-action${recentOpen ? ' active' : ''}`} onMouseEnter={() => setRecentOpen(true)} onClick={() => setRecentOpen(true)} onKeyDown={(event) => {
+            if (event.key !== 'ArrowRight') return
+            event.preventDefault(); setRecentOpen(true)
+            window.requestAnimationFrame(() => recentMenu.current?.querySelector<HTMLButtonElement>('button')?.focus())
+          }} ref={recentButton} role="menuitem" type="button"><History size={17} />最近使用的目录<ChevronRight className="composer-directory-chevron" size={17} /></button>
+          {recentOpen && <div aria-label="最近使用的目录" className={`composer-directory-recent${recentToLeft ? ' to-left' : ''}`} id={recentMenuId} onKeyDown={(event) => {
+            if (event.key === 'ArrowLeft') { event.preventDefault(); event.stopPropagation(); setRecentOpen(false); recentButton.current?.focus() }
+            if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
+            event.preventDefault()
+            const buttons = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('button')]
+            const index = buttons.indexOf(document.activeElement as HTMLButtonElement)
+            buttons[(index + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length]?.focus()
+          }} ref={recentMenu} role="menu">{availableRecentDirectories.length
+            ? availableRecentDirectories.map((item) => {
+              const selected = props.localDirectories.find((current) => current.id === item.id || Boolean(item.path && current.path === item.path))
+              return <button aria-current={selected ? 'true' : undefined} key={item.path || item.id} onClick={() => { closeMenu(); if (selected) props.onRemoveLocalDirectory(selected.id); else if (item.path) props.onSelectRecentDirectory?.(item.path) }} role="menuitem" title={item.path} type="button"><span>{recentDirectoryLabel(item.path || item.name)}</span>{selected && <Check size={14} />}</button>
+            })
+            : <p className="composer-directory-empty">暂无可用的最近目录</p>}</div>}
         </div>}
       </div>
       {blockedReason

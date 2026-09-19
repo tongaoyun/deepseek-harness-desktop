@@ -72,9 +72,9 @@ it('submits a structured single-choice answer once', async () => {
   try {
     expect(app.container.textContent).toContain('按自然月')
     await act(async () => app.container.querySelectorAll<HTMLInputElement>('input[type="radio"]')[0]!.click())
-    await act(async () => button(app.container, '提交回答')!.click())
+    await act(async () => button(app.container, '发送回答')!.click())
     expect(answer).toHaveBeenCalledWith('q1', [{ id: 'q1', selected: ['自然月'] }])
-    expect(button(app.container, '已提交')!.disabled).toBe(true)
+    expect(button(app.container, '等待继续')!.disabled).toBe(true)
   } finally { await app.cleanup() }
 })
 
@@ -94,15 +94,24 @@ it('supports multi-select plus custom text in one answer', async () => {
       setter.call(textarea, '再按周汇总')
       textarea.dispatchEvent(new Event('input', { bubbles: true }))
     })
-    await act(async () => button(app.container, '提交回答')!.click())
+    await act(async () => button(app.container, '发送回答')!.click())
     expect(answer).toHaveBeenCalledWith('q1', [{ id: 'q1', selected: ['地区', '渠道'], custom: '再按周汇总' }])
   } finally { await app.cleanup() }
 })
 
 it('renders a settled question as answered instead of asking again', async () => {
-  const app = await mount(<QuestionCard segment={{ ...question, status: 'completed' }} enabled onAnswer={vi.fn()} />)
+  const app = await mount(<QuestionCard segment={{ ...question, status: 'completed', answers: [{ id: 'q1', selected: ['自然月'] }] }} enabled onAnswer={vi.fn()} />)
   try {
-    expect(app.container.textContent).toContain('已回答')
-    expect(button(app.container, '提交回答')).toBeUndefined()
+    expect(app.container.textContent).toContain('已回答：自然月')
+    expect(button(app.container, '发送回答')).toBeUndefined()
+  } finally { await app.cleanup() }
+})
+
+it('collapses an unanswered question when the turn stops', async () => {
+  const app = await mount(<QuestionCard segment={question} enabled={false} onAnswer={vi.fn()} />)
+  try {
+    expect(app.container.textContent).toContain('已停止')
+    expect(app.container.querySelector('fieldset')).toBeNull()
+    expect(button(app.container, '发送回答')).toBeUndefined()
   } finally { await app.cleanup() }
 })

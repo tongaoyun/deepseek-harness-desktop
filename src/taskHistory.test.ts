@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { collectHarnessSessionSearch, compactTaskForStorage, loadLocalTasks, loadTaskHistoryPage, recoverInterruptedTasks, saveLocalTask } from './taskHistory'
+import { collectHarnessSessionSearch, compactTaskForStorage, loadLocalTasks, loadTaskById, loadTaskHistory, loadTaskHistoryPage, persistCapabilityNotice, recoverInterruptedTasks, saveLocalTask } from './taskHistory'
 import { assistantEntry, entryText, lastEntryText, userEntry } from './conversation/testing'
 import type { LocalTaskRun } from './types'
 
@@ -76,6 +76,66 @@ describe('task history', () => {
     expect(loadLocalTasks('employee-1', storage)).toHaveLength(1)
     expect(loadLocalTasks('employee-1', storage)[0].status).toBe('COMPLETED')
     expect(loadLocalTasks('employee-2', storage)).toEqual([])
+  })
+
+  it('keeps an immediately written notice when a stale browser checkpoint follows', () => {
+    const storage = new MemoryStorage()
+    const task: LocalTaskRun = { id: 'notice', source: 'DESKTOP', name: '告警任务', status: 'RUNNING',
+      createdAt: '2026-09-12', updatedAt: '2026-09-12', sessionId: 'session-1', projection, entries: [] }
+    saveLocalTask('employee-1', task, storage)
+    const notice = { sessionId: 'session-1', turnId: 'pending', segment: {
+      kind: 'notice' as const, id: 'notice:knowledge:scope', level: 'warning' as const, text: '范围无效',
+    } }
+    saveLocalTask('employee-1', { ...task, capabilityNotices: [notice] }, storage)
+    saveLocalTask('employee-1', { ...task, status: 'COMPLETED' }, storage)
+    expect(loadLocalTasks('employee-1', storage)[0].capabilityNotices).toEqual([notice])
+    saveLocalTask('employee-1', { ...task, sessionId: 'session-2' }, storage)
+    expect(loadLocalTasks('employee-1', storage)[0].capabilityNotices).toBeUndefined()
+  })
+
+  it('compacts model text while keeping a durable answer and mid-turn supplement', () => {
+    const storage = new MemoryStorage()
+    const task: LocalTaskRun = { id: 'interactive', source: 'DESKTOP', name: '交互验收', status: 'COMPLETED',
+      createdAt: '2026-09-18', updatedAt: '2026-09-18', sessionId: 'session-1',
+      projection: { ...projection, executionStarted: true },
+      entries: [userEntry('u1', '计算'), assistantEntry('turn:1', [
+        { kind: 'question', id: 'question:q1', questionId: 'q1', label: '需要你的回答', status: 'completed',
+          questions: [{ id: 'number', question: '哪个数？' }], answers: [{ id: 'number', selected: [], custom: '58' }] },
+        { kind: 'user', id: 'steer:1', text: '再检查' },
+        { kind: 'text', id: 'answer', text: '58 + 7 = 65' },
+      ], {}, 'completed')],
+    }
+    saveLocalTask('employee-1', task, storage)
+    const compacted = loadLocalTasks('employee-1', storage)[0]
+    expect(compacted.entries).toEqual([])
+    expect(compacted.interactionSegments?.map((item) => item.segment.kind)).toEqual(['question', 'user'])
+    saveLocalTask('employee-1', { ...task, entries: [] }, storage)
+    expect(loadLocalTasks('employee-1', storage)[0].interactionSegments).toEqual(compacted.interactionSegments)
+  })
+
+  it('restores an immediately written browser notice after restart on all history paths', async () => {
+    const storage = new MemoryStorage()
+    const notice = { sessionId: 'session-browser', turnId: 'pending', segment: {
+      kind: 'notice' as const, id: 'notice:connector:erp', level: 'warning' as const, text: '连接失败',
+    } }
+    const task: LocalTaskRun = { id: 'browser-notice', source: 'DESKTOP', name: '告警任务', status: 'RUNNING',
+      createdAt: '2026-09-12', updatedAt: '2026-09-12', sessionId: notice.sessionId, projection,
+      entries: [userEntry('u1', '查询订单'), assistantEntry('pending', [], {}, 'streaming')] }
+    saveLocalTask('employee-1', task, storage)
+    vi.stubGlobal('window', { localStorage: storage })
+    await persistCapabilityNotice('employee-1', task.id, notice)
+
+    const opened = await loadTaskById('employee-1', task.id)
+    const listed = (await loadTaskHistory('employee-1')).tasks[0]
+    const paged = (await loadTaskHistoryPage('employee-1')).items[0]
+    for (const restored of [opened, listed, paged]) {
+      expect(restored?.status).toBe('FAILED')
+      expect(restored?.entries[1]).toMatchObject({ segments: [notice.segment, { kind: 'text', text: expect.stringContaining('上次任务') }] })
+    }
+
+    saveLocalTask('employee-1', { ...task, projection: { ...projection, executionStarted: true }, capabilityNotices: [notice] }, storage)
+    const compacted = await loadTaskById('employee-1', task.id)
+    expect(compacted?.entries[0]).toMatchObject({ segments: [notice.segment, { kind: 'text', text: expect.stringContaining('上次任务') }] })
   })
 
   it('does not overwrite malformed persisted history when saving another task', () => {

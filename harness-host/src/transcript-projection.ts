@@ -2,6 +2,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
 import z from '@deepseek-ai/schemastery'
 import type { SessionEvent } from './xiaoyin-projections-plugin.js'
+import { visibleTaskPrompt } from './task-instructions.js'
 
 /**
  * Product transcript projection. Folds the durable session log into the
@@ -54,6 +55,7 @@ export type TranscriptEntry = TranscriptUserTurn | TranscriptAssistantTurn
 export interface TranscriptState {
   entries: TranscriptEntry[]
   toolNames: Record<string, string>
+  approvals: Record<string, { toolName: string; reason?: string }>
   lastSeq?: number
 }
 
@@ -72,13 +74,13 @@ export const inject = ['sessionProjections']
 
 const jsonSchema = z.any() as never
 
-export const initialTranscriptState = (): TranscriptState => ({ entries: [], toolNames: {} })
+export const initialTranscriptState = (): TranscriptState => ({ entries: [], toolNames: {}, approvals: {} })
 
 export function apply(ctx: Context): void {
   const definition: ProjectionDefinition<'xiaoyin.transcript', TranscriptState> = {
     key: 'xiaoyin.transcript',
     stateSchema: jsonSchema,
-    stateVersion: 1,
+    stateVersion: 2,
     init: () => initialTranscriptState(),
     apply: (state, event) => {
       const next = reduceTranscriptEvent(state, event)
@@ -113,7 +115,7 @@ function reduceTranscriptEventValue(state: TranscriptState, event: SessionEvent)
     // notices, skill content, cron notifications) shares this event type and
     // must stay invisible in the transcript.
     if (record(message?.source)?.kind !== 'user') return state
-    const promptText = textBlocks(message?.content)
+    const promptText = visibleTaskPrompt(textBlocks(message?.content))
     if (!promptText.trim()) return state
     const entry: TranscriptUserTurn = { id: text(message?.id) ?? `user:${state.entries.length}`, role: 'user', text: promptText }
     const open = openAssistantTurn(state)
@@ -142,14 +144,10 @@ function reduceTranscriptEventValue(state: TranscriptState, event: SessionEvent)
     if (!open) return state
     const message = record(data?.message)
     const messageText = textBlocks(message?.content)
-    const reasoningText = reasoningBlocks(message?.content)
     const segmentId = `${turn}:${step}`
-    const thinkingId = `${turn}:${step}:thinking`
-    const withoutSegment = open.segments.filter((segment) =>
-      !(segment.kind === 'text' && segment.id === segmentId) && !(segment.kind === 'thinking' && segment.id === thinkingId))
+    const withoutSegment = open.segments.filter((segment) => !(segment.kind === 'text' && segment.id === segmentId))
     const segments = [
       ...withoutSegment,
-      ...(reasoningText.trim() ? [{ kind: 'thinking' as const, id: thinkingId, text: reasoningText }] : []),
       ...(messageText.trim() ? [{ kind: 'text' as const, id: segmentId, text: messageText }] : []),
     ]
     const usage = addUsage(open.meta.tokenUsage, data?.usage)
@@ -183,31 +181,31 @@ function reduceTranscriptEventValue(state: TranscriptState, event: SessionEvent)
     return { ...withTurn(state, { ...open, segments }), toolNames: removeToolName(state.toolNames, callId) }
   }
 
-  if (event.type === 'approval/request') {
-    const approvalId = text(data?.approvalId)
-    const toolName = text(data?.name)
+  if (event.type === 'approval/asked') {
+    const approvalId = text(data?.id)
+    const toolName = text(data?.toolName)
     if (!approvalId || !toolName) return state
-    const open = openAssistantTurn(state)
-    if (!open) return state
     const reason = boundedText(data?.reason, 2_000)
-    const segment = {
-      kind: 'approval' as const, id: `approval:${approvalId}`, approvalId, toolName,
-      label: `需要确认：${toolName}`, status: 'running' as const,
-      ...(reason ? { detail: reason } : {}),
-    }
-    return withTurn(state, { ...open, segments: upsertSegment(open.segments, segment) })
+    return { ...state, approvals: { ...state.approvals, [approvalId]: { toolName, ...(reason ? { reason } : {}) } } }
   }
 
-  if (event.type === 'approval/decision') {
-    const approvalId = text(data?.approvalId)
-    const decision = text(data?.decision)
-    if (!approvalId || !['allow', 'reject'].includes(decision ?? '')) return state
+  if (event.type === 'approval/decided') {
+    const approvalId = text(data?.id)
+    const outcome = text(data?.outcome)
+    const approval = approvalId ? state.approvals[approvalId] : undefined
+    if (!approvalId || !approval) return state
+    const approvals = { ...state.approvals }
+    delete approvals[approvalId]
     const open = openAssistantTurn(state)
-    if (!open) return state
-    const segments = open.segments.map((segment) => segment.kind === 'approval' && segment.approvalId === approvalId
-      ? { ...segment, status: decision === 'allow' ? 'completed' as const : 'failed' as const, label: `${decision === 'allow' ? '已允许' : '已拒绝'}：${segment.toolName}` }
-      : segment)
-    return withTurn(state, { ...open, segments })
+    if (!open) return { ...state, approvals }
+    const allowed = outcome === 'allowed-once'
+    const segment = {
+      kind: 'approval' as const, id: `approval:${approvalId}`, approvalId, toolName: approval.toolName,
+      label: `${allowed ? '已允许' : outcome === 'rejected' ? '已拒绝' : '已结束'}：${approval.toolName}`,
+      status: allowed ? 'completed' as const : 'failed' as const,
+      ...(approval.reason ? { detail: approval.reason } : {}),
+    }
+    return { ...withTurn(state, { ...open, segments: [...open.segments, segment] }), approvals }
   }
 
   if (event.type === 'question/request') {
@@ -441,6 +439,7 @@ function toolActivityLabel(toolName: string): string {
     web_fetch: '读取网页内容',
     exit_plan_mode: '提交计划审阅',
     get_goal: '查看任务目标',
+    tool_discover: '选择所需工具',
     task_report: '整理交付结果',
     create_goal: '创建任务目标',
     update_goal: '更新任务目标',
@@ -497,15 +496,6 @@ function toolResultText(content: unknown): string {
 function publicErrorText(content: unknown): string | undefined {
   const value = toolResultValue(content)
   return boundedText(text(value?.error) ?? text(value?.message), 2_000)
-}
-
-/** Reasoning blocks carry `text` too, so they are read separately from visible text. */
-function reasoningBlocks(content: unknown): string {
-  const blocks = Array.isArray(content) ? content : []
-  return blocks.map((block) => {
-    const value = record(block)
-    return value?.type === 'reasoning' ? text(value.text) ?? '' : ''
-  }).join('')
 }
 
 function textBlocks(content: unknown): string {

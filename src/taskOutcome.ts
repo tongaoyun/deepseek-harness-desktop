@@ -5,7 +5,7 @@ export { parseTaskOutcome, unverifiedTaskOutcome }
 export type { TaskOutcome }
 
 const labels: Record<TaskOutcome['status'], string> = {
-  completed: '已完成', partial: '部分完成', needs_input: '等待补充',
+  completed: '已完成', answered: '已回答', partial: '部分完成', needs_input: '等待补充',
   needs_confirmation: '等待确认', blocked: '受阻', unverified: '本轮已结束',
 }
 export function taskOutcomeLabel(outcome: unknown): string {

@@ -27,17 +27,20 @@ export const Config = z.object({
 
 export function apply(ctx: Context, config: Config = {}): void {
   const endpoint = config.endpoint?.trim()
+  const scope = readKnowledgeScope(process.env[config.knowledgeBaseRefsEnv ?? 'XIAOYIN_KNOWLEDGE_BASE_REFS'])
+  if (scope.kind === 'invalid') {
+    rememberCapabilityNotice({ kind: 'knowledge', id: 'scope', name: '所选知识库', reason: `范围无效：${scope.detail}` })
+    return
+  }
   if (!endpoint) {
     // Requested knowledge bases would silently have no tools at all.
-    const scope = readKnowledgeScope(process.env[config.knowledgeBaseRefsEnv ?? 'XIAOYIN_KNOWLEDGE_BASE_REFS'])
-    if (scope.kind === 'refs') {
+    if (scope.kind === 'refs' && scope.refs.length > 0) {
       rememberCapabilityNotice({ kind: 'knowledge', id: scope.refs.join(','), name: scope.refs.join('、'), reason: '知识库服务未配置，本次不会检索知识库' })
     }
     return
   }
   const url = new URL(endpoint)
   if (!['http:', 'https:'].includes(url.protocol)) throw new Error('Knowledge endpoint must use HTTP(S)')
-  const scope = readKnowledgeScope(process.env[config.knowledgeBaseRefsEnv ?? 'XIAOYIN_KNOWLEDGE_BASE_REFS'])
   const client = new KnowledgeClient(
     url.toString().replace(/\/$/, ''),
     process.env[config.employeeIdEnv ?? 'XIAOYIN_EMPLOYEE_ID']?.trim() || 'local-development',
@@ -45,11 +48,10 @@ export function apply(ctx: Context, config: Config = {}): void {
     process.env[config.employeeTokenEnv ?? 'XIAOYIN_CONTROL_PLANE_TOKEN']?.trim() || '',
     scope.kind === 'refs' ? scope.refs : null,
   )
-  if (scope.kind === 'invalid') {
-    rememberCapabilityNotice({ kind: 'knowledge', id: 'scope', name: '所选知识库', reason: `范围无效：${scope.detail}` })
-  }
-  const unregister = [ctx.tools.register(listTool(client)), ctx.tools.register(searchTool(client))]
-  ctx.effect(() => () => unregister.reverse().forEach((dispose) => dispose()), 'xiaoyin knowledge tools')
+  ctx.inject(['tools'], (toolsCtx) => {
+    const unregister = [toolsCtx.tools.register(listTool(client)), toolsCtx.tools.register(searchTool(client))]
+    toolsCtx.effect(() => () => unregister.reverse().forEach((dispose) => dispose()), 'xiaoyin knowledge tools')
+  })
 }
 
 export class KnowledgeClient {
@@ -113,7 +115,7 @@ export class KnowledgeClient {
 export function readKnowledgeScope(value: string | undefined): { kind: 'none' } | { kind: 'refs'; refs: string[] } | { kind: 'invalid'; detail: string } {
   try {
     const refs = parseKnowledgeBaseRefs(value)
-    return refs === null || refs.length === 0 ? { kind: 'none' } : { kind: 'refs', refs }
+    return refs === null ? { kind: 'none' } : { kind: 'refs', refs }
   } catch (error) {
     return { kind: 'invalid', detail: error instanceof Error ? error.message : String(error) }
   }

@@ -23,9 +23,12 @@ const server = createServer(async (request, response) => {
   for await (const chunk of request) chunks.push(chunk)
   const body = JSON.parse(Buffer.concat(chunks).toString())
   toolMessages = body.messages.filter((message) => message.role === 'tool')
-  const invoke = step++ === 0
-  const delta = invoke ? { role: 'assistant', tool_calls: [{ index: 0, id: 'load-skill', type: 'function',
-    function: { name: 'skill', arguments: JSON.stringify({ name: 'api-design' }) } }] }
+  const current = step++
+  const invoke = current < 2
+  const delta = current === 0 ? { role: 'assistant', tool_calls: [{ index: 0, id: 'discover-skill', type: 'function',
+    function: { name: 'tool_discover', arguments: '{"groups":["skills"]}' } }] }
+    : current === 1 ? { role: 'assistant', tool_calls: [{ index: 0, id: 'load-skill', type: 'function',
+      function: { name: 'skill', arguments: JSON.stringify({ name: 'api-design' }) } }] }
     : { role: 'assistant', content: '技能加载验收完成。' }
   response.writeHead(200, { 'Content-Type': 'text/event-stream' })
   for (const choice of [{ index: 0, delta, finish_reason: null },

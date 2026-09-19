@@ -4,6 +4,7 @@ import {
   createExpertKitDownload,
   loadExpertKitReadme,
   createSkillDownload,
+  loadKnowledgeBases,
   resolveServerEndpoint,
   localScheduleNamespace,
   submitFeedback,
@@ -41,6 +42,7 @@ import {
   diagnoseConnectors,
   restoreLocalDirectories,
   interruptHarness,
+  inspectHarnessSession,
   regenerateHarness,
   respondHarnessApproval,
   respondHarnessQuestion,
@@ -57,7 +59,7 @@ import type {
 import { useEnterpriseSession } from './useEnterpriseSession'
 import { ScheduledTasksPage } from './ScheduledTasksPage'
 import { ImChannelsPage } from './ImChannelsPage'
-import { loadTaskHistory, loadTaskById, persistTaskHistory, removeTaskHistory } from './taskHistory'
+import { loadTaskHistory, loadTaskById, persistCapabilityNotice, persistTaskHistory, removeTaskHistory } from './taskHistory'
 import { useTaskPersistence } from './useTaskPersistence'
 import { useHistoryPages } from './useHistoryPages'
 import { useTaskCheckpoints } from './useTaskCheckpoints'
@@ -68,8 +70,9 @@ import { attachmentSelectionError } from './attachmentLimits'
 import { restoredTaskSessionId } from './harnessSession'
 import { prepareTaskTurn } from './taskTurn'
 import { startLocalIm, stopLocalImRuntime } from './localIm'
-import type { ConversationEntry } from './conversation/types'
-import { ensureFinalText, resetOpenTurn, settleOpenTurn } from './conversation/entries'
+import { parseAssistantTurn, type ConversationEntry } from './conversation/types'
+import { mergeSettledTurn } from './conversation/liveText'
+import { appendSteerToOpenTurn, ensureFinalText, reconcileTaskConversation, resetOpenTurn, settleOpenTurn } from './conversation/entries'
 import type { InstalledExpertKit, LocalTaskRun, XiaoyinTaskProjection } from './types'
 import { parseMemoryCommand, learnCompletedTask } from './memory'
 import { useMemoryCommands } from './useMemoryCommands'
@@ -97,7 +100,7 @@ import { DesktopSettingsPage } from './DesktopSettingsPage'
 import { ConnectorsPage } from './ConnectorsPage'
 import { connectorAuthorization } from './connectorAuthorization'
 import type { SkillView } from './skills'
-import { capabilitySnapshotForExecution, resolveCapabilitySnapshot } from './capabilitySnapshot'
+import { assertKnowledgeBaseRefsAvailable, capabilitySnapshotForExecution, resolveCapabilitySnapshot } from './capabilitySnapshot'
 import { useEnterpriseBootstrap } from './useEnterpriseBootstrap'
 import { DesktopSidebar } from './DesktopSidebar'
 import { ChatPage } from './ChatPage'
@@ -409,6 +412,12 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
   useHarnessNotifications({
     currentTaskIdRef: currentLocalTaskIdRef,
     streamingTasksRef,
+    onCapabilityNotice: (taskId, notice) => {
+      if (!user) return
+      void persistCapabilityNotice(user.userId, taskId, notice).catch((reason) => {
+        notify(`能力告警未保存：${reason instanceof Error ? reason.message : String(reason)}`, 'error')
+      })
+    },
     onTaskUpdate: (taskId, projection, taskEntries) => setLocalTasks((current) => current.map((task) => task.id === taskId
       ? { ...task, updatedAt: projection.updatedAt, projection, entries: taskEntries }
       : task)),
@@ -502,15 +511,6 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
     document.addEventListener('keydown', handleShortcut)
     return () => document.removeEventListener('keydown', handleShortcut)
   })
-
-  useEffect(() => {
-    if (!modelMenuOpen) return
-    const dismiss = (event: MouseEvent) => {
-      if (!modelPickerRef.current?.contains(event.target as Node)) setModelMenuOpen(false)
-    }
-    document.addEventListener('mousedown', dismiss)
-    return () => document.removeEventListener('mousedown', dismiss)
-  }, [modelMenuOpen])
 
   useEffect(() => {
     workspaceRef.current?.scrollTo({ top: 0, behavior: 'auto' })
@@ -694,7 +694,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
     setPage('chat')
     setTaskSearchOpen(false)
     setTaskQuery('')
-    setEntries(streaming?.entries ?? selectedTask.entries)
+    setEntries(streaming?.entries ?? reconcileTaskConversation(selectedTask.entries, selectedTask.projection.status, selectedTask.projection.completedAt))
     selectCurrentLocalTaskId(selectedTask.id)
     setCreationKind(undefined)
     setCurrentCapabilitySnapshot(selectedTask.capabilitySnapshot)
@@ -896,8 +896,23 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
     event.preventDefault()
     if (attachmentImportRef.current || pastingAttachments || taskContextRestoring) return
     if (currentTaskRunning) {
-      if (!splitComposerPrompt(prompt).text.trim()) return
+      const supplementalText = splitComposerPrompt(prompt).text.trim()
+      if (!supplementalText) return
       if (pendingAttachments.length) { setLocalFileError('插话暂支持文字，请在当前轮完成后添加附件。'); return }
+      const open = streamingTasksRef.current.get(currentLocalTaskId)?.entries.at(-1)
+      const pendingQuestion = open?.role === 'assistant' && open.status === 'streaming'
+        ? open.segments.findLast((segment) => segment.kind === 'question' && segment.status === 'running')
+        : undefined
+      if (pendingQuestion?.kind === 'question') {
+        if (pendingQuestion.questions.length !== 1) { setLocalFileError('请在上方逐项回答问题。'); return }
+        try {
+          const accepted = await respondHarnessQuestion(currentLocalTaskId, pendingQuestion.questionId,
+            [{ id: pendingQuestion.questions[0]!.id, selected: [], custom: supplementalText }])
+          if (!accepted) throw new Error('问题已失效，请等待当前任务结束后重发。')
+          setPrompt(''); setLocalFileError('')
+        } catch (reason) { setLocalFileError(reason instanceof Error ? reason.message : String(reason)) }
+        return
+      }
       // Steering is the live path; when the turn cannot take it (it just ended,
       // or the runtime is unavailable) the message queues for the next turn
       // instead of being lost.
@@ -926,7 +941,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
       const streaming = streamingTasksRef.current.get(taskId)
       const steerTurn: ConversationEntry = { id: `steer-${crypto.randomUUID()}`, role: 'user', text, source: 'steer' }
       if (streaming) {
-        streaming.entries = [...streaming.entries, steerTurn]
+        streaming.entries = appendSteerToOpenTurn(streaming.entries, steerTurn)
         if (currentLocalTaskIdRef.current === taskId) setEntries(streaming.entries)
       }
       return true
@@ -1076,6 +1091,10 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
         availableKnowledgeBaseRefs: knowledgeBases.map((item) => item.reference),
         createdAt: now,
       }))
+      if (capabilitySnapshot.knowledgeBaseRefs.length > 0) {
+        const currentBases = await loadKnowledgeBases(bootstrap.endpoints.knowledge, user.userId, user.teamId, accessToken)
+        assertKnowledgeBaseRefsAvailable(capabilitySnapshot, currentBases.map((item) => item.reference))
+      }
       if (isCurrent()) setCurrentCapabilitySnapshot(capabilitySnapshot)
       const { rootSessionId, harnessPrompt, pendingEntries, runningProjection, runningTask } = prepareTaskTurn({
         taskId, input, now, existingTask, sessionId: taskSessionId, model: taskModel, reasoningEffort: taskReasoningEffort, executionMode: taskExecutionMode,
@@ -1175,7 +1194,19 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
         // transcript already shows whatever the turn produced.
         const outcome = parseTaskOutcome(result.outcome) ?? unverifiedTaskOutcome()
         const goalCompleted = outcome.status === 'completed'
+        const answerDelivered = outcome.status === 'answered'
         if (!goalCompleted) void taskQueue.pause(taskId)
+        // The projection bridge is asynchronous. A turn can finish before its
+        // last wire updates arrive, so reconcile with the durable session log.
+        const inspection = await inspectHarnessSession(user!.userId, result.sessionId).catch(() => undefined)
+        const inspectedTurn = parseAssistantTurn(inspection?.transcript?.at(-1))
+        const openTurn = streaming.entries.at(-1)
+        if (inspectedTurn && openTurn?.role === 'assistant' && inspectedTurn.id === openTurn.id) {
+          streaming.entries = mergeSettledTurn(streaming.entries, inspectedTurn)
+        }
+        if (inspection?.projection && inspection.sessionId === result.sessionId) {
+          streaming.projection = { ...streaming.projection, ...inspection.projection }
+        }
         const completedAt = new Date().toISOString()
         streaming.projection = taskProjectionCompleted(streaming.projection, outcome, completedAt)
         const completedProjection = streaming.projection
@@ -1197,11 +1228,11 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
           accessToken,
           employeeId: user!.userId,
           endpoint: bootstrap.endpoints.auditEvents ?? '/api/v1/audit-events',
-          outcome: goalCompleted ? 'SUCCEEDED' : 'FAILED',
+          outcome: goalCompleted || answerDelivered ? 'SUCCEEDED' : 'FAILED',
           taskOutcome: outcome,
           taskId,
         })
-        return goalCompleted ? true : { outcome }
+        return goalCompleted || (answerDelivered && !queuedTask) ? true : { outcome }
       } catch (error) {
         void taskQueue.pause(taskId)
         const failure = classifyHarnessFailure(error)
@@ -1237,6 +1268,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
         })
         return canceled ? 'canceled' : false
       } finally {
+        window.clearTimeout(streaming.stopFallback)
         streamingTasksRef.current.delete(taskId)
         setRunningTaskIds((current) => current.filter((id) => id !== taskId))
       }
@@ -1260,24 +1292,20 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
       taskProjectionRef.current = streaming.projection
       setTaskProjection(streaming.projection)
     }
+    // Start the fallback clock with the click, not after a slow session check.
+    streaming.stopFallback = window.setTimeout(() => {
+      if (streamingTasksRef.current.get(taskId) !== streaming) return
+      void cancelHarness(taskId).catch(() => undefined)
+    }, 1_000)
     try {
       // Prefer a graceful interrupt: the turn settles with its partial
       // receipts and the model sees a user cancellation. The process signal
       // below stays as the force-stop fallback when nothing acknowledges it.
       let acknowledged = false
       try { acknowledged = await interruptHarness(taskId) } catch { acknowledged = false }
-      if (!acknowledged) {
-        await cancelHarness(taskId)
-      } else {
-        // The interrupt rides the next harness event. A turn blocked on a tool
-        // that never returns emits none, so stop it by signal if it has not
-        // settled shortly after the request.
-        window.setTimeout(() => {
-          if (streamingTasksRef.current.get(taskId) !== streaming) return
-          void cancelHarness(taskId).catch(() => undefined)
-        }, 4_000)
-      }
+      if (!acknowledged) await cancelHarness(taskId)
     } catch (reason) {
+      window.clearTimeout(streaming.stopFallback)
       if (streamingTasksRef.current.get(taskId) !== streaming) return
       streaming.cancellationRequested = false
       streaming.projection = { ...streaming.projection, activity: '停止失败，可重试', updatedAt: new Date().toISOString() }

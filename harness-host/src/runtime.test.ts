@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { createServer } from 'node:http'
 import type { HarnessNotification } from '@deepseek-ai/dsh-sdk-client'
 import { applyMemoryContext, assertHarnessDependencyClosure, DeepSeekHarnessRuntime, ensureExternalHarnessPlugins, hasConfiguredLspServers, hasHarnessPackage, runSessionTurn } from './runtime.js'
-import { withTaskInstructions } from './task-instructions.js'
+import { discoveryGuidance, visibleTaskPrompt, withTaskInstructions } from './task-instructions.js'
 
 it('passes shared execution and delivery rules to actual runtime turns, including follow-ups', async () => {
   const runtime = new DeepSeekHarnessRuntime()
@@ -28,14 +28,21 @@ it('passes shared execution and delivery rules to actual runtime turns, includin
   expect(JSON.stringify(observedPrompts[1])).toContain('把报告加上汇总行')
   for (const prompt of observedPrompts) {
     expect(JSON.stringify(prompt)).toContain('使用 present 声明实际文件')
-    expect(JSON.stringify(prompt)).toContain('文件存在不等于内容正确')
+    expect(JSON.stringify(prompt)).toContain('文件存在、工具成功或模型回复不等于任务完成')
     expect(JSON.stringify(prompt)).toContain('询问、检查和诊断不代表授权修改')
-    expect(JSON.stringify(prompt)).toContain('切换工作阶段')
-    expect(JSON.stringify(prompt)).toContain('简单问答不强行播报进度')
+    expect(JSON.stringify(prompt)).toContain('复杂任务用用户的语言简述阶段进度')
+    expect(JSON.stringify(prompt)).toContain('简单问答不播报过程')
   }
   expect(withTaskInstructions('用户原文')).toMatch(/本轮任务上下文与请求：\n用户原文$/u)
   expect(withTaskInstructions('用户原文', { useOfficialPresent: true })).toContain('使用 present 声明实际文件')
   expect(withTaskInstructions('用户原文', { useOfficialPresent: true })).not.toContain('使用 local_files_publish 登记实际文件')
+  expect(withTaskInstructions('用户原文')).toContain('必须填写 status、summary、remaining 和 checks')
+  expect(withTaskInstructions('用户原文')).not.toContain('office_xlsx_recalculate')
+  expect(withTaskInstructions('用户原文').length).toBeLessThan(1_200)
+  expect(discoveryGuidance(['office'], 'local_files_publish')).toContain('不能反推业务只有一个仓库或期间')
+  expect(discoveryGuidance(['office'], 'local_files_publish')).toContain('office_xlsx_recalculate')
+  expect(discoveryGuidance(['workflow'], 'present')).toContain('可选信息未核实写在答复限制中')
+  expect(visibleTaskPrompt('小胤任务执行约定：\n- 先判断本轮意图，旧版约定\n\n本轮任务上下文与请求：\n历史问题')).toBe('历史问题')
   await runtime.close()
 })
 
@@ -338,7 +345,7 @@ describe('persisted session follow-ups', () => {
         event('assistant/message', { message: { content: [{ type: 'text', text: '请提供销售明细。' }] } }),
         event('turn/end', { reason: { kind: 'completed' } }),
       ]), 'session-1', [{ type: 'text', text: '分析销售' }], () => {})
-      expect(result.outcome?.status).toBe(session === 'session-1' ? 'needs_input' : 'unverified')
+      expect(result.outcome?.status).toBe(session === 'session-1' ? 'needs_input' : 'answered')
       expect(result.finalResponse).toBe('请提供销售明细。')
     }
   })

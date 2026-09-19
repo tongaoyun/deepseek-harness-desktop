@@ -42,6 +42,36 @@ it('retries a startup network error without opening a QR window', async () => {
   expect(latest.state).toBe('authenticated')
 })
 
+it('shows a manual retry in progress and a distinct result when ERP is still unavailable', async () => {
+  resolve.mockRejectedValue({ code: 'network_error' })
+  await mount()
+  let fail!: (reason: unknown) => void
+  resolve.mockImplementationOnce(() => new Promise((_done, reject) => { fail = reject }))
+  let retry!: Promise<void>
+  act(() => { retry = latest.reopen() })
+  expect(latest.state).toBe('checking')
+  expect(latest.error).toBe('')
+  await act(async () => { fail({ code: 'network_error' }); await retry })
+  expect(resolve).toHaveBeenCalledTimes(2)
+  expect(latest.state).toBe('error')
+  expect(latest.error).toBe('重新检查后仍未成功：暂时无法连接 ERP，正在自动重试。')
+})
+
+it('runs a requested manual retry after an automatic check already in flight', async () => {
+  resolve.mockRejectedValue({ code: 'network_error' })
+  await mount()
+  let fail!: (reason: unknown) => void
+  resolve.mockImplementationOnce(() => new Promise((_done, reject) => { fail = reject }))
+  await advance(15_000)
+  expect(resolve).toHaveBeenCalledTimes(2)
+  await act(async () => { await latest.reopen() })
+  expect(latest.state).toBe('checking')
+  await act(async () => fail({ code: 'network_error' }))
+  await advance(0)
+  expect(resolve).toHaveBeenCalledTimes(3)
+  expect(latest.error).toContain('重新检查后仍未成功')
+})
+
 it('keeps a valid session through a failed renewal and recovers online', async () => {
   await mount()
   resolve.mockRejectedValueOnce(new Error('offline'))

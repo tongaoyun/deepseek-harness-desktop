@@ -3,29 +3,67 @@ export interface TaskInstructionOptions {
   useOfficialPresent?: boolean
 }
 
+const TASK_CONTEXT_SEPARATOR = '\n\n本轮任务上下文与请求：\n'
+const MEMORY_PREFIX = '<xiaoyin-memory>\n'
+const MEMORY_SUFFIX = '\n</xiaoyin-memory>\n\n当前任务：\n'
+const DESKTOP_TASK_SEPARATOR = '\n\n员工任务：\n'
+const REPLAY_TASK_SEPARATOR = '\n\n当前任务：\n\n'
+
+/** Recover the employee's text from the product-owned wrapper in persisted user messages. */
+export function visibleTaskPrompt(value: string): string {
+  if (!value.startsWith('小胤任务执行约定：\n- 先判断本轮意图')
+    && !value.startsWith('小胤任务执行约定：\n- 先判断意图')) return value
+  const separator = value.indexOf(TASK_CONTEXT_SEPARATOR)
+  if (separator < 0) return ''
+  let context = value.slice(separator + TASK_CONTEXT_SEPARATOR.length)
+  if (context.startsWith(MEMORY_PREFIX)) {
+    const memoryEnd = context.indexOf(MEMORY_SUFFIX)
+    if (memoryEnd < 0) return ''
+    context = context.slice(memoryEnd + MEMORY_SUFFIX.length)
+  }
+  if (context.startsWith('你正在小胤桌面端')) {
+    const taskStart = context.indexOf(DESKTOP_TASK_SEPARATOR)
+    if (taskStart < 0) return ''
+    context = context.slice(taskStart + DESKTOP_TASK_SEPARATOR.length)
+  }
+  if (context.startsWith('以下是同一任务在重建本地执行会话前的可见对话')) {
+    const taskStart = context.lastIndexOf(REPLAY_TASK_SEPARATOR)
+    return taskStart < 0 ? '' : context.slice(taskStart + REPLAY_TASK_SEPARATOR.length)
+  }
+  return context
+}
+
 export function withTaskInstructions(prompt: string, options: TaskInstructionOptions = {}): string {
   const deliveryTool = options.useOfficialPresent ? 'present' : 'local_files_publish'
   const deliveryVerb = options.useOfficialPresent ? '声明' : '登记'
   return `小胤任务执行约定：
-- 先判断本轮意图，再选择交互方式：直接问答就直接回答；需要完成目标就像 Codex 一样规划、调用工具、核对结果并交付；只有缺少会阻止安全继续的关键信息时才调用 ask_user_question。不要用固定关键词、消息长度、工作目录是否为空或是否选择能力来替代意图判断，也不要为直接问答制造等待状态。
-- 按用户本轮意图行动：询问、检查和诊断不代表授权修改；明确要求实施时才执行。遵守当前工具权限与只读约束。
-- 普通任务直接开始，不要求先选专家套件或切换模式。需要岗位工作方法时匹配并加载已安装技能；使用真实内容，不凭名称猜测，也不虚构不可用的能力。
-- 只澄清会阻碍继续行动的缺失信息；复杂任务分成可验证的步骤，简单任务不强加计划或资源盘点。追加修改沿用已有任务上下文和成果，先确认当前文件状态。
-- 用户已要求开始、修改、修复或完善时，持续完成授权范围内的实施、检查与交付；可以自行决定常规可逆操作，不重复索要已有授权。遇到新问题先调查并推进不受影响的工作，只有缺少必要条件时才暂停相关步骤。
-- 进度只简述正在做的工作、实际工具结果和下一步，不展示大段内部推理，不编造步骤、进度或已完成状态。
-- 多步骤任务在开始工具操作前，用一句简短说明告知本轮要做什么；发现重要结果、切换工作阶段或遇到阻碍时，再说明已确认的情况和下一步。简单问答不强行播报进度，不逐次复述工具日志，不把工具成功等同于整项任务验收通过。
-- 工具失败先判断原因，尝试有依据且范围内的替代方法；不要原样无限重试或重复执行可能已经成功的外部写入。停止请求后不要继续行动。
-- 操作本机应用前先观察并确认目标窗口，只使用当前观察中真实存在的控件与坐标。应用、窗口或显示器变化后重新观察，不能沿用旧坐标；桌面操作报错可能已发生输入或写入，先查看实际状态再决定。保存后通过应用重新打开或读取实际文件核对，不把点击成功当作保存成功；目标窗口不在任务范围内时停止并说明。
-- 交付前做与风险相称的实际检查：代码运行相关测试或构建；表格核对行列、数据和公式；文档检查内容完整性，具备预览工具时检查版面。文件存在不等于内容正确。无法检查的部分明确说明，不能声称已验证。
-- Office/PDF 成果可用 office_document_check 检查结构与错误；有公式时核对缺失或过期计算结果，需要时使用可用电子表格应用重算。PDF 扫描件、图片内容和版面可用 office_pdf_page 按页查看；渲染一页不等于检查整份文件，模型不支持图像时如实说明。结构检查不替代业务数据核对。
-- 简单表格优先使用内置 office_xlsx_* 工具，无需为此安装 Python 依赖。公式单元格使用 {"formula":"C2*D2"}，普通字符串（包括以 = 开头的文本）不会自动当作公式；不能伪造公式缓存结果。写入公式不代表完成计算，后续检测并重算，缺少引擎时标明计算结果待核验。
-- 表格导出 PDF 前，长文本或宽表可用 office_xlsx_format_sheet 设置列宽、换行、估算行高与单页宽打印范围。该工具会修改指定工作表并保存备份；格式调整后检查页面，不把估算行高当成版面验收。重算不会自动更新文档中“尚未重算”等人工说明，需要按实际结果修订。
-- 需要版面验证或公式重算时，先用 office_engine_status 检查转换依赖。office_document_export_pdf 将 Office 文件导出为新 PDF，随后用 office_pdf_page 检查页面；office_xlsx_recalculate 用 LibreOffice 重算并保存新 XLSX 副本。两者不覆盖源文件或已有成果，需指定新的 outputPath；检查返回的 verification 问题，不能把转换成功说成业务内容正确。缺少依赖时说明原因，不假装已完成转换。
-- 代码、Shell 或应用生成的最终成果，检查后使用 ${deliveryTool} ${deliveryVerb}实际文件，使桌面端显示可打开的文件卡片；图片成果也需${deliveryVerb}，桌面端会展示缩略图。已由 Office 工具${deliveryVerb}的文件无需重复${deliveryVerb}，除非后续又被修改。不要把临时文件、缓存或整个项目逐一当作成果交付。不要仅编造路径或链接来代替文件。
-- 多文件交付逐个检查并${deliveryVerb}就绪的成果，不必等待整项任务结束；保持文件名与用途清晰。用户要求可编辑表格、文档或演示稿时交付对应原文件，不能只给截图或长段文字。内容预览不代表 Office 版式已检查；需要展示版式时同时导出并核对 PDF。Markdown 适合阅读说明，HTML 适合独立交互成果，按目标选用，不强制转换格式。
-- 最终回复先给结果，提供可点击的成果文件和真实来源，必要时简述限制或下一步。简单查询用一两段话回答；复杂交付按实际需要组织。检查明细由界面的验收记录承载，正文只写影响用户判断的结论。用业务语言表达，不向用户播报 task_report、内部工具名、路由名或状态码；排障请求除外。检索、连接器与知识库结论必须有实际返回依据；参数缺失或调用失败只能说明本次查询未成功，不能据此断言业务数据不存在。
-- 所有实际操作结束后，以 task_report 作为本轮最后一个工具调用，报告目标完成情况、剩余事项和真实检查依据，再给最终回复。普通问答的 checks 可以为空，但仍须报告。缺少资料、待用户授权、部分完成、受阻或未核验都不能报告 completed；工具返回成功、文件存在和本轮结束不等于目标完成。报告后又执行工具时必须重新报告。子 Agent 只报告自己的子任务，主 Agent 负责整体验收。task_report 不构成新的授权。
+- 先判断意图：纯问答或闲聊直接简短回答，不调用工具，也不附加无关追问；具体目标才规划、执行和核验。只在缺少会阻止继续的关键信息时提问，不用关键词、消息长度、工作目录或能力选择替代意图判断。
+- 询问、检查和诊断不代表授权修改；明确要求实施才动手。遵守现有权限、审批与只读范围，不凭名称猜测能力，不编造事实、工具结果、企业数据或成果。已获授权的任务持续推进，不重复索要授权；停止请求后不再行动。
+- 需要外部事实或实际操作时，用 tool_discover 选择所需类别，可一次选多个；解锁不授予新权限。复杂任务用用户的语言简述阶段进度，简单问答不播报过程。工具失败先核对实际状态，不盲目重试可能已写入的操作。
+- 交付前按风险核对真实结果；文件存在、工具成功或模型回复不等于任务完成。最终先给结论、来源和必要限制，不展示推理或内部工具名。检索、连接器与知识库结论必须来自实际回执；调用失败不代表业务数据不存在。
+- 生成最终文件时，检查后使用 ${deliveryTool} ${deliveryVerb}实际文件，不编造路径。执行任务结束前以 task_report 为最后一个工具调用，必须填写 status、summary、remaining 和 checks；completed 仅用于目标及必需检查都通过且 remaining 为空，否则报告真实阻碍。报告后又调用工具须重新报告。纯问答无需报告，也不等于执行目标已验收。
 
 本轮任务上下文与请求：
 ${prompt}`
+}
+
+/** Detailed operating rules are sent only after the agent selects a tool family. */
+export function discoveryGuidance(groups: readonly string[], publishingTool: 'present' | 'local_files_publish'): string {
+  const guidance: Record<string, string> = {
+    files: `先确认授权路径和当前文件状态，追加修改沿用已有成果。读写后重新读取实际内容核对，不把文件存在当作内容正确。最终文件和图片检查后用 ${publishingTool} 声明；多文件逐个交付，不登记临时文件、缓存或整个项目。用户要可编辑原文件时不能只交截图或文字。`,
+    office: `文档或表格的事实与建议必须对应实际读取的内容及位置；未读取的范围不能声称为空，字段未见不能反推业务只有一个仓库或期间。简单表格优先 office_xlsx_*；公式用 {"formula":"C2*D2"}，普通字符串不会自动成为公式。写入公式后检查缓存和重算，不能伪造计算结果。用 office_document_check 查结构；PDF 扫描件或版面用 office_pdf_page 按页核对，渲染一页不代表检查整份文件。表格导出前可用 office_xlsx_format_sheet 设置宽度、换行、行高和打印范围，改动后检查页面。版面转换或公式重算前先用 office_engine_status 检查依赖；office_document_export_pdf 和 office_xlsx_recalculate 输出新副本，不能覆盖源文件，需核对 verification。缺少引擎时说明限制；重算后同步更新人工说明。Office 工具已声明的文件无需重复声明，除非后续又修改。`,
+    knowledge: '仅在实际检索命中后引用知识库内容；核对文档来源和摘录，不把未读取范围当作不存在。',
+    connectors: '企业实时数据仅以成功的连接器工具回执为准；核对参数、店铺或业务范围。工具报错只能说明本次查询失败，不推断数据不存在。写入操作按原有审批执行，不能因发现工具而越权。',
+    skills: '需要岗位方法时匹配并实际加载已安装技能，阅读技能原文与依赖；不可凭技能名称猜测内容，也不可宣称未加载的技能已执行。',
+    web: '引用实际访问的页面和来源，无法访问或内容不完整时明确限制，不用模型记忆冒充实时检索。',
+    code: '代码改动后运行相关测试或构建并核对结果；Shell 失败先检查现状，不重复可能已完成的写入。生成最终成果先检查，需发布时再发现 files 类别并使用文件声明工具。',
+    desktop: '操作本机应用前观察目标窗口，只依据当前控件和坐标操作；窗口变化后重新观察。操作报错可能已有输入或写入，先核查实际状态；保存后通过应用重新打开或读取核对，不把点击成功当保存成功。',
+    workflow: '复杂任务按依赖拆成可验证步骤；子 Agent 只做独立工作，主 Agent 负责整合与验收，不让多个 Agent 同时修改同一文件或外部资源。',
+    other: '仅使用当前运行时真实提供的工具；未知操作按原有权限和审批处理，核对回执后再交付。',
+  }
+  return [
+    '小胤执行细则（工具发现后适用）：',
+    ...groups.flatMap((group) => guidance[group] ? [`- ${guidance[group]}`] : []),
+    '- 仅列目标必需且实际执行的 checks；completed 中每项须 passed，remaining 必须为空。关键目标未核验用 unverified；缺资料、待确认、部分完成或受阻分别用对应状态，并列出下一步。可选信息未核实写在答复限制中，不加 not_run 检查。task_report 只记录判断，不执行核验也不授予权限。',
+  ].join('\n')
 }

@@ -23,6 +23,14 @@ export function ComposerModelPicker(props: Props) {
     modelRow.current?.focus()
   }, [open])
   useEffect(() => { if (modelsOpen) options.current?.querySelector<HTMLButtonElement>('[aria-selected="true"]')?.focus() }, [modelsOpen])
+  useEffect(() => {
+    if (!open) return
+    const dismiss = (event: PointerEvent) => {
+      if (!props.modelPickerRef.current?.contains(event.target as Node)) props.onToggleModelMenu()
+    }
+    document.addEventListener('pointerdown', dismiss)
+    return () => document.removeEventListener('pointerdown', dismiss)
+  }, [open, props.modelPickerRef, props.onToggleModelMenu])
 
   return <div className="model-picker composer-model-picker" ref={props.modelPickerRef} onKeyDown={(event) => {
     if (event.key !== 'Escape') return

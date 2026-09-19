@@ -3,6 +3,7 @@ import { act, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { expect, it, vi } from 'vitest'
 import { TaskComposer } from './TaskComposer'
+import { ComposerModelPicker } from './ComposerModelPicker'
 import type { ChatPageProps } from './ChatPage'
 import type { ExtensionInvocation } from './extensionInvocations'
 
@@ -25,6 +26,7 @@ async function fixture(initial: string, overrides: Partial<ChatPageProps>, check
   finally { await act(async () => root.unmount()); container.remove() }
 }
 async function click(container: HTMLElement, selector: string) { await act(async () => container.querySelector<HTMLButtonElement>(selector)!.click()) }
+async function pointerDown(target: EventTarget) { await act(async () => target.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))) }
 function invocation(item: Omit<ExtensionInvocation, 'selection'>): ExtensionInvocation {
   const parts = item.token.split(':')
   return { ...item, selection: item.kind === 'skill'
@@ -80,6 +82,32 @@ it('supports keyboard model navigation and closes the submenu before the setting
     await act(async () => row.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
     expect(toggle).toHaveBeenCalledOnce()
   })
+})
+
+it('dismisses the shared model picker outside but keeps it open for inside clicks', async () => {
+  function Host() {
+    const [open, setOpen] = useState(false)
+    const modelPickerRef = useRef<HTMLDivElement>(null)
+    return <><ComposerModelPicker activeModel="gpt-5.5" locked={false} modelMenuOpen={open} modelPickerRef={modelPickerRef}
+      models={['gpt-5.5']} onSelectModel={() => undefined} onToggleModelMenu={() => setOpen((value) => !value)} />
+      <button className="outside-picker" type="button">Outside</button></>
+  }
+  const container = document.body.appendChild(document.createElement('div'))
+  const root = createRoot(container)
+  try {
+    await act(async () => root.render(<Host />))
+    await click(container, '.model-label')
+    await pointerDown(container.querySelector('.model-settings-popover')!)
+    expect(container.querySelector('.model-settings-popover')).not.toBeNull()
+    await pointerDown(container.querySelector('.outside-picker')!)
+    expect(container.querySelector('.model-settings-popover')).toBeNull()
+    await click(container, '.model-label')
+    await pointerDown(document.body)
+    expect(container.querySelector('.model-settings-popover')).toBeNull()
+  } finally {
+    await act(async () => root.unmount())
+    container.remove()
+  }
 })
 
 it('does not ask users to choose an execution mode', async () => {
@@ -190,6 +218,114 @@ it('offers management for empty categories and closes the panel with Escape', as
   })
 })
 
+it('closes work directory and context menus on clicks elsewhere in the composer', async () => {
+  await fixture('', { recentDirectories: [{ id: 'recent', name: '验收目录', path: '/tmp/acceptance' }] }, async (container) => {
+    await click(container, '.context-directory-button')
+    const directory = container.querySelector('[role="menu"][aria-label="工作目录"]')!
+    expect([...directory.querySelectorAll(':scope > [role="menuitem"]')].map((item) => item.textContent)).toEqual(['选择目录', '最近使用的目录'])
+    await pointerDown(directory.querySelector('.composer-directory-action')!)
+    expect(container.querySelector('[role="menu"][aria-label="工作目录"]')).not.toBeNull()
+    await pointerDown(container.querySelector('textarea')!)
+    expect(container.querySelector('[role="menu"][aria-label="工作目录"]')).toBeNull()
+    await click(container, '.context-directory-button')
+    await pointerDown(document.body)
+    expect(container.querySelector('[role="menu"][aria-label="工作目录"]')).toBeNull()
+
+    await click(container, '[aria-label="添加上下文"]')
+    await pointerDown(container.querySelector('.composer-context-search input')!)
+    expect(container.querySelector('.composer-context-menu')).not.toBeNull()
+    await pointerDown(container.querySelector('textarea')!)
+    expect(container.querySelector('.composer-context-menu')).toBeNull()
+    await click(container, '[aria-label="添加上下文"]')
+    await pointerDown(container.querySelector('.context-directory-button')!)
+    expect(container.querySelector('.composer-context-menu')).toBeNull()
+  })
+})
+
+it('opens recent directories as a submenu and toggles selected directories there', async () => {
+  const select = vi.fn(), remove = vi.fn(), add = vi.fn()
+  await fixture('', { onSelectRecentDirectory: select, onRemoveLocalDirectory: remove, onAddLocalDirectory: add,
+    localDirectories: [{ id: 'selected', name: '当前目录', path: '/work/current' }],
+    recentDirectories: [{ id: 'selected', name: '当前目录', path: '/work/current' }, { id: 'dev', name: 'dev', path: '/Users/alice/dev' }],
+  }, async (container) => {
+    await click(container, '.context-directory-button')
+    expect(container.querySelector('.composer-directory-current')).toBeNull()
+    expect(container.querySelector('.composer-directory-menu')?.textContent).not.toContain('当前任务')
+    expect(container.querySelector('.composer-directory-recent')).toBeNull()
+    await act(async () => container.querySelector('.composer-directory-action:last-of-type')!.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })))
+    expect([...container.querySelectorAll('.composer-directory-recent button')].map((item) => item.textContent)).toEqual(['/work/current', '~/dev'])
+    expect(container.querySelector('.composer-directory-recent [aria-current="true"] svg')).not.toBeNull()
+    await pointerDown(container.querySelector('[aria-label="最近使用的目录"]')!)
+    expect(container.querySelector('.composer-directory-menu')).not.toBeNull()
+    await click(container, '.composer-directory-recent [aria-current="true"]')
+    expect(remove).toHaveBeenCalledWith('selected')
+    expect(select).not.toHaveBeenCalled()
+    await click(container, '.context-directory-button')
+    await click(container, '.composer-directory-action:last-of-type')
+    await click(container, '[title="/Users/alice/dev"]')
+    expect(select).toHaveBeenCalledWith('/Users/alice/dev')
+    expect(container.querySelector('.composer-directory-menu')).toBeNull()
+
+    await click(container, '.context-directory-button')
+    await click(container, '.composer-directory-action:last-of-type')
+    await pointerDown(document.body)
+    expect(container.querySelector('.composer-directory-recent')).toBeNull()
+    expect(container.querySelector('.composer-directory-menu')).toBeNull()
+    await click(container, '.context-directory-button')
+    await click(container, '.composer-directory-action:first-of-type')
+    expect(add).toHaveBeenCalledOnce()
+  })
+})
+
+it('keeps an active directory removable even after it leaves recent history', async () => {
+  const remove = vi.fn()
+  await fixture('', { localDirectories: [{ id: 'old', name: '旧目录', path: '/work/old' }], recentDirectories: [], onRemoveLocalDirectory: remove }, async (container) => {
+    await click(container, '.context-directory-button')
+    await click(container, '.composer-directory-action:last-of-type')
+    expect(container.querySelector('.composer-directory-recent button')?.textContent).toBe('/work/old')
+    await click(container, '.composer-directory-recent button')
+    expect(remove).toHaveBeenCalledWith('old')
+  })
+})
+
+it('supports opening the recent submenu by keyboard and closing it before the main menu', async () => {
+  await fixture('', { recentDirectories: [{ id: 'dev', name: 'dev', path: '/work/dev' }] }, async (container) => {
+    await click(container, '.context-directory-button')
+    const recent = container.querySelector<HTMLButtonElement>('.composer-directory-action:last-of-type')!
+    await act(async () => recent.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })))
+    expect(container.querySelector('.composer-directory-recent')).not.toBeNull()
+    await act(async () => container.querySelector('.composer-directory-recent')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+    expect(container.querySelector('.composer-directory-recent')).toBeNull()
+    expect(container.querySelector('.composer-directory-menu')).not.toBeNull()
+    expect(document.activeElement).toBe(recent)
+    await act(async () => recent.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+    expect(container.querySelector('.composer-directory-menu')).toBeNull()
+  })
+  await fixture('', {}, async (container) => {
+    await click(container, '.context-directory-button')
+    await click(container, '.composer-directory-action:last-of-type')
+    expect(container.querySelector('.composer-directory-empty')?.textContent).toBe('暂无可用的最近目录')
+  })
+})
+
+it.each(['/', '@'])('dismisses %s suggestions outside the editor and allows a new query', async (trigger) => {
+  await fixture(trigger, {}, async (container) => {
+    const input = container.querySelector('textarea')!
+    expect(container.querySelector('.composer-suggestions')).not.toBeNull()
+    await pointerDown(input)
+    expect(container.querySelector('.composer-suggestions')).not.toBeNull()
+    await pointerDown(container.querySelector('.composer-suggestions')!)
+    expect(container.querySelector('.composer-suggestions')).not.toBeNull()
+    await pointerDown(container.querySelector('.context-directory-button')!)
+    expect(container.querySelector('.composer-suggestions')).toBeNull()
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(input, `${trigger}new`)
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(container.querySelector('.composer-suggestions')).not.toBeNull()
+  })
+})
+
 it('uses cascading categories with hover, keyboard navigation, and a direct attachment entry', async () => {
   const add = vi.fn()
   await fixture('保持正文', { onAddLocalFiles: add }, async (container) => {
@@ -217,6 +353,7 @@ it('routes pasted images through attachment import and exposes recent work direc
     expect(paste).toHaveBeenCalledWith([image])
     expect(event.defaultPrevented).toBe(true)
     await click(container, '.context-directory-button')
+    await click(container, '.composer-directory-action:last-of-type')
     await click(container, '[title="/work"]')
     expect(recent).toHaveBeenCalledWith('/work')
   })

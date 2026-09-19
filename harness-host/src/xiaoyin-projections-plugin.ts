@@ -266,8 +266,18 @@ function questionsFromValue(value: unknown): Array<Record<string, unknown>> {
     return [{ id, question: prompt, ...(boundedText(question.header, 200) ? { header: boundedText(question.header, 200) } : {}), ...(boundedText(question.detail, 64 * 1024) ? { detail: boundedText(question.detail, 64 * 1024) } : {}), ...(options?.length ? { options } : {}), ...(question.multiSelect === true ? { multiSelect: true } : {}) }]
   })
 }
-function isArtifactTool(name: string): boolean { return name.startsWith('office_') || name.startsWith('office.') || name === 'local_files_publish' }
-function isChangeTool(name: string): boolean { return isArtifactTool(name) || name.startsWith('local_files_') }
+const officeWriteTools = new Set([
+  'office_docx_create', 'office_xlsx_create', 'office_xlsx_update_cells',
+  'office_xlsx_append_rows', 'office_xlsx_add_sheet', 'office_xlsx_format_sheet',
+  'office_xlsx_recalculate', 'office_pptx_create', 'office_pdf_create',
+  'office_document_export_pdf',
+])
+const localFileWriteTools = new Set([
+  'local_files_write_text', 'local_files_copy', 'local_files_move',
+  'local_files_delete', 'local_files_create_directory',
+])
+function isArtifactTool(name: string): boolean { return officeWriteTools.has(name) || name === 'local_files_publish' }
+function isChangeTool(name: string): boolean { return isArtifactTool(name) || localFileWriteTools.has(name) }
 function artifactFromValue(toolName: string, value: Record<string, unknown> | unknown[] | undefined, createdAt: string): Record<string, unknown> | undefined {
   const item = record(value); const rootId = text(item?.rootId); const rootName = text(item?.rootName); const path = text(item?.path) ?? text(item?.destination); if (!rootId || !rootName || !path || path === '.' || path.startsWith('/')) return undefined
   const name = path.split('/').filter(Boolean).at(-1); if (!name) return undefined

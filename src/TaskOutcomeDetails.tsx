@@ -4,7 +4,7 @@ import './taskOutcome.css'
 
 export function TaskOutcomeDetails({ outcome }: { outcome: unknown }) {
   const value = parseTaskOutcome(outcome)
-  if (!value || value.status === 'completed' || value.status === 'unverified') return null
+  if (!value || value.status === 'completed' || value.status === 'answered' || value.status === 'unverified') return null
   if (!value.checks.length && !value.remaining.length) return null
   return <section className={`task-outcome-details task-outcome-${value.status}`} aria-label="任务结果">
     <div className="task-outcome-attention" role="status"><strong>{taskOutcomeLabel(value)}</strong><span>{value.summary}</span></div>

@@ -200,6 +200,7 @@ pub fn run() {
             local_store::import_local_task_history,
             local_store::load_local_task,
             local_store::save_local_task,
+            local_store::append_local_task_capability_notice,
             local_store::delete_local_task,
             local_store::load_enterprise_catalog_cache,
             local_store::save_enterprise_catalog_cache,

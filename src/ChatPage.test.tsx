@@ -1,5 +1,5 @@
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { ChatPage } from './ChatPage'
 import { assistantEntry, userEntry } from './conversation/testing'
 import type { TaskArtifact, XiaoyinTaskProjection } from './types'
@@ -10,6 +10,33 @@ const artifact: TaskArtifact = {
 }
 
 describe('ChatPage conversation', () => {
+  it('keeps the running elapsed time across model turns', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-09-16T10:01:30Z'))
+    try {
+      const projection: XiaoyinTaskProjection = {
+        status: 'running', activity: '正在处理', updatedAt: '2026-09-16T10:01:30Z', steps: [], artifacts: [],
+      }
+      const html = renderToStaticMarkup(<ChatPage
+        activeModel="deepseek-v4-flash" composerRef={{ current: null }} harnessHealth="ready"
+        harnessHealthDetail="正常" harnessRunning knowledgeBases={[]} localDirectories={[]}
+        localFileError="" messageListRef={{ current: null }} pendingAttachments={[]} entries={[
+          userEntry('u1', '整理报表'),
+          { id: 'turn:1', role: 'assistant', status: 'completed', segments: [], meta: { startedAt: '2026-09-16T10:00:00Z', completedAt: '2026-09-16T10:00:30Z' } },
+          { id: 'turn:2', role: 'assistant', status: 'streaming', segments: [], meta: { startedAt: '2026-09-16T10:01:30Z' } },
+        ]} modelMenuOpen={false} modelPickerRef={{ current: null }} models={[]} onAddKnowledge={() => undefined}
+        onAddLocalDirectory={() => undefined} onAddLocalFiles={() => undefined} onCancel={() => undefined}
+        onEditTurn={() => undefined} onPrompt={() => undefined} onReconnect={() => undefined} onRecoverHarness={() => undefined}
+        onRemoveAttachment={() => undefined} onRemoveKnowledge={() => undefined} onRemoveLocalDirectory={() => undefined}
+        onSelectModel={() => undefined} onSubmit={() => undefined} onToggleModelMenu={() => undefined} prompt=""
+        runtimeStatus="ready" selectedKnowledgeBaseRefs={[]} taskProjection={projection}
+      />)
+      expect(html).toContain('<small>1分30秒</small>')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('restores the new-task welcome copy', () => {
     const projection: XiaoyinTaskProjection = {
       status: 'idle', activity: '', updatedAt: '2026-09-03T10:00:00.000Z', steps: [], artifacts: [],
@@ -38,6 +65,8 @@ describe('ChatPage conversation', () => {
     expect(html).not.toContain('自主规划并执行，自动加载技能和连接器')
     expect(html).not.toContain('@ 引用知识库')
     expect(html).not.toContain('快捷指令')
+    expect(html).not.toContain('快捷键指引')
+    expect(html).not.toContain('chat-topbar')
     expect(html).not.toContain('>通用<')
   })
 

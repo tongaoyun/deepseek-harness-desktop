@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   CapabilityResolutionError,
+  assertKnowledgeBaseRefsAvailable,
   capabilitySnapshotChanged,
   capabilitySnapshotForExecution,
   resolveCapabilitySnapshot,
@@ -85,6 +86,13 @@ describe('capability resolver', () => {
         expect.stringContaining('orders.search'), expect.stringContaining('team:sop'),
       ]))
     }
+  })
+
+  it('rejects stale explicit knowledge choices, including in a retained task snapshot', () => {
+    const input = { expertKits: [], skills: [], selections: [], connectors: [], knowledgeBaseRefs: ['team:removed'] }
+    expect(() => resolveCapabilitySnapshot({ ...input, availableKnowledgeBaseRefs: [] })).toThrow('team:removed')
+    const retained = resolveCapabilitySnapshot({ ...input, availableKnowledgeBaseRefs: ['team:removed'] })
+    expect(() => assertKnowledgeBaseRefsAvailable(retained, [])).toThrow('team:removed')
   })
 
   it('rejects duplicate coordinates and version drift', () => {

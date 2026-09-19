@@ -17,8 +17,8 @@ const model = createServer(async (request, response) => {
   const body = JSON.parse(Buffer.concat(chunks).toString())
   for (const tool of body.tools ?? []) tools.add(tool.function.name)
   receipts.push(...body.messages.filter((message) => message.role === 'tool'))
-  const name = ['skills_search', 'skills_install'][step]
-  const args = step++ === 0 ? { query: 'report' } : { id: 'report' }
+  const name = ['tool_discover', 'skills_search', 'skills_install'][step]
+  const args = step++ === 0 ? { groups: ['skills'] } : step === 2 ? { query: 'report' } : { id: 'report' }
   const delta = name ? { role: 'assistant', tool_calls: [{ index: 0, id: `skill-${step}`, type: 'function', function: { name, arguments: JSON.stringify(args) } }] }
     : { role: 'assistant', content: '技能已安装，下一轮任务可用。' }
   response.writeHead(200, { 'content-type': 'text/event-stream' })

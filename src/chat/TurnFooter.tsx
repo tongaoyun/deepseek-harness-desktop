@@ -10,10 +10,11 @@ export function TurnFooter({ turn, actions }: {
   actions?: { onRegenerate?: () => void; onEdit?: () => void }
 }) {
   const duration = turnDurationLabel(turn.meta.startedAt, turn.meta.completedAt)
-  const tokens = turn.meta.tokenUsage ? turn.meta.tokenUsage.inputTokens + turn.meta.tokenUsage.outputTokens : undefined
+  const usage = turn.meta.tokenUsage
+  const tokenLabel = usage ? `输入 ${formatTokens(usage.inputTokens)}${usage.cacheReadTokens ? ` · 缓存读取 ${formatTokens(usage.cacheReadTokens)}` : ''}${usage.cacheWriteTokens ? ` · 缓存写入 ${formatTokens(usage.cacheWriteTokens)}` : ''} · 输出 ${formatTokens(usage.outputTokens)} tokens` : ''
   const facts = [
     turn.meta.model ? modelDisplayName(turn.meta.model) : '',
-    tokens !== undefined ? `${formatTokens(tokens)} tokens` : '',
+    tokenLabel,
     duration,
   ].filter(Boolean)
   const showActions = turn.status !== 'streaming' && (actions?.onRegenerate || actions?.onEdit)

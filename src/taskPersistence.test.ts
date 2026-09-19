@@ -1,6 +1,6 @@
 import { expect, it, vi } from 'vitest'
 import { invoke } from '@tauri-apps/api/core'
-import { persistTaskHistory, removeTaskHistory, loadTaskById, loadTaskHistory, loadTaskHistoryPage, compactTaskForStorage } from './taskHistory'
+import { persistCapabilityNotice, persistTaskHistory, removeTaskHistory, loadTaskById, loadTaskHistory, loadTaskHistoryPage, compactTaskForStorage } from './taskHistory'
 import { createXiaoyinTaskProjection } from './harness'
 import { assistantEntry, lastEntryText, userEntry } from './conversation/testing'
 import type { LocalTaskRun } from './types'
@@ -31,6 +31,78 @@ it('does not permanently block saving after a failed write', async () => {
   expect(invoke).toHaveBeenCalledTimes(2)
 })
 
+it('appends a notice immediately after the running task save, without waiting for a checkpoint', async () => {
+  let finish!: () => void
+  vi.mocked(invoke).mockReset().mockImplementationOnce(() => new Promise<void>((resolve) => { finish = resolve })).mockResolvedValue(undefined)
+  const running = persistTaskHistory('employee', { ...fixture('immediate'), sessionId: 'session-immediate' })
+  const notice = { sessionId: 'session-immediate', turnId: 'pending', segment: {
+    kind: 'notice' as const, id: 'notice:knowledge:scope', level: 'warning' as const, text: '范围无效',
+  } }
+  const saved = persistCapabilityNotice('employee', 'immediate', notice)
+  await vi.waitFor(() => expect(invoke).toHaveBeenCalledTimes(1))
+  finish()
+  await Promise.all([running, saved])
+  expect(vi.mocked(invoke).mock.calls.map(([command]) => command)).toEqual(['save_local_task', 'append_local_task_capability_notice'])
+  expect(invoke).toHaveBeenLastCalledWith('append_local_task_capability_notice', { employeeId: 'employee', id: 'immediate', notice })
+})
+
+it('restores a pre-turn-start notice on the next official turn after a restart', async () => {
+  const task = { ...fixture('crash'), sessionId: 'session-crash', status: 'COMPLETED' as const,
+    entries: [], capabilityNotices: [{ sessionId: 'session-crash', turnId: 'pending', afterTurnId: 'turn:1', segment: {
+      kind: 'notice' as const, id: 'notice:connector:erp', level: 'warning' as const, text: '连接失败',
+    } }],
+  }
+  vi.mocked(invoke).mockReset().mockResolvedValueOnce(task).mockResolvedValueOnce({
+    sessionId: 'session-crash', status: 'completed', updatedAt: '2026-09-12T00:00:00Z', pendingTools: 0,
+    projection: task.projection, transcript: [userEntry('u1', '此前请求'), assistantEntry('turn:1', '此前结果'),
+      userEntry('u2', '继续'), assistantEntry('turn:2', '恢复结果')],
+  })
+  const restored = await loadTaskById('employee', 'crash')
+  expect(restored?.entries[1]).toMatchObject({ segments: [{ text: '此前结果' }] })
+  expect(restored?.entries[3]).toMatchObject({ segments: [{ kind: 'notice', text: '连接失败' }, { text: '恢复结果' }] })
+})
+
+it('keeps a pending notice when the failed official session has no assistant turn yet', async () => {
+  const notice = { sessionId: 'session-no-reply', turnId: 'pending', afterTurnId: 'turn:1', segment: {
+    kind: 'notice' as const, id: 'notice:knowledge:scope', level: 'warning' as const, text: '范围无效',
+  } }
+  const task = { ...fixture('no-reply'), sessionId: 'session-no-reply', capabilityNotices: [notice], entries: [] }
+  vi.mocked(invoke).mockReset().mockResolvedValueOnce(task).mockResolvedValueOnce({
+    sessionId: 'session-no-reply', status: 'failed', updatedAt: '2026-09-12T00:00:00Z', pendingTools: 0,
+    projection: task.projection, transcript: [userEntry('u1', '此前请求'), assistantEntry('turn:1', '此前结果'), userEntry('u2', '查询知识库')],
+  })
+  const restored = await loadTaskById('employee', task.id)
+  expect(restored?.entries[1]).toMatchObject({ segments: [{ text: '此前结果' }] })
+  expect(restored?.entries[3]).toMatchObject({ id: 'pending', status: 'failed', segments: [notice.segment] })
+})
+
+it('shows a durable pre-turn notice after interruption even before Harness has a transcript', async () => {
+  const notice = { sessionId: 'session-interrupted', turnId: 'pending', segment: {
+    kind: 'notice' as const, id: 'notice:knowledge:scope', level: 'warning' as const, text: '范围无效',
+  } }
+  const task = { ...fixture('interrupted-notice'), sessionId: 'session-interrupted',
+    entries: [userEntry('u1', '查询知识库'), assistantEntry('pending', [], {}, 'streaming')],
+    capabilityNotices: [notice] }
+  vi.mocked(invoke).mockReset().mockResolvedValueOnce(task).mockResolvedValueOnce(undefined)
+  const recovered = await loadTaskById('employee', task.id)
+  expect(recovered?.status).toBe('FAILED')
+  const last = recovered?.entries.at(-1)
+  expect(last?.role).toBe('assistant')
+  if (last?.role !== 'assistant') return
+  expect(last.segments[0]).toEqual(notice.segment)
+  expect(last.segments[1]).toMatchObject({ kind: 'text', text: expect.stringContaining('上次任务') })
+})
+
+it('restores a notice after interruption when the running snapshot was compacted', async () => {
+  const notice = { sessionId: 'session-compacted', turnId: 'pending', segment: {
+    kind: 'notice' as const, id: 'notice:knowledge:scope', level: 'warning' as const, text: '范围无效',
+  } }
+  const task = { ...fixture('compacted-notice'), sessionId: notice.sessionId, entries: [], capabilityNotices: [notice] }
+  vi.mocked(invoke).mockReset().mockResolvedValueOnce(task).mockResolvedValueOnce(undefined)
+  const restored = await loadTaskById('employee', task.id)
+  expect(restored?.entries[0]).toMatchObject({ status: 'failed', segments: [notice.segment, { kind: 'text', text: expect.stringContaining('上次任务') }] })
+})
+
 it('stores only a local index once a task has an official Harness session', () => {
   const task = { ...fixture('indexed'), sessionId: 'session-indexed', projection: { ...createXiaoyinTaskProjection(), executionStarted: true }, entries: [
     userEntry('u1', '原始请求'),
@@ -41,6 +113,26 @@ it('stores only a local index once a task has an official Harness session', () =
   expect(stored.messagePreview).toBe('完整执行结果')
   expect(stored.projection.steps).toEqual([])
   expect(stored.projection.artifacts).toEqual(task.projection.artifacts)
+})
+
+it('persists bounded capability notices separately from the official transcript and restores them by turn', async () => {
+  const notice = { kind: 'notice' as const, id: 'notice:knowledge:scope', level: 'warning' as const, text: '本轮未使用知识库：范围无效' }
+  const indexed = compactTaskForStorage({ ...fixture('notices'), sessionId: 'session-notices',
+    status: 'COMPLETED', projection: { ...createXiaoyinTaskProjection(), executionStarted: true },
+    entries: [userEntry('user-1', '原始请求'), assistantEntry('turn:1', [notice, { kind: 'text', id: '1:1', text: '部分结果' }])],
+  })
+  expect(indexed.entries).toEqual([])
+  expect(indexed.capabilityNotices).toEqual([{ sessionId: 'session-notices', turnId: 'turn:1', segment: notice }])
+  vi.mocked(invoke).mockReset()
+    .mockResolvedValueOnce(indexed)
+    .mockResolvedValueOnce({ sessionId: 'session-notices', status: 'completed', updatedAt: '2026-09-12T00:00:00.000Z', pendingTools: 0,
+      projection: indexed.projection, transcript: [userEntry('user-1', '原始请求'), assistantEntry('turn:1', '完整结果'), assistantEntry('turn:2', '下轮结果')] })
+  const restored = await loadTaskById('employee', 'notices')
+  expect(restored?.entries[1]).toMatchObject({ segments: [notice, { text: '完整结果' }] })
+  expect(restored?.entries[2]).toMatchObject({ segments: [{ text: '下轮结果' }] })
+  expect(compactTaskForStorage(restored!).capabilityNotices).toEqual(indexed.capabilityNotices)
+  const changedSession = compactTaskForStorage({ ...restored!, sessionId: 'session-replaced', entries: [] })
+  expect(changedSession.capabilityNotices).toBeUndefined()
 })
 
 it('retains the initial prompt when a reserved Session has no execution event yet', () => {

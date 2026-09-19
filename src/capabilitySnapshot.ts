@@ -82,10 +82,7 @@ export function resolveCapabilitySnapshot(input: ResolveCapabilitySnapshotInput)
 
   const knowledgeBaseRefs = [...new Set([...(input.knowledgeBaseRefs ?? []), ...dependencies.knowledge])].sort()
   if (input.availableKnowledgeBaseRefs !== undefined) {
-    const available = new Set(input.availableKnowledgeBaseRefs)
-    for (const reference of dependencies.knowledge) {
-      if (!available.has(reference)) issues.push(`所选能力依赖的知识库不存在或无访问权限：${reference}`)
-    }
+    issues.push(...unavailableKnowledgeBaseIssues(knowledgeBaseRefs, input.availableKnowledgeBaseRefs))
   }
   if (knowledgeBaseRefs.length > 32) issues.push('每个任务最多使用 32 个知识库')
   if (issues.length) throw resolutionError(issues)
@@ -105,6 +102,18 @@ export function resolveCapabilitySnapshot(input: ResolveCapabilitySnapshotInput)
     requestedKnowledgeBaseRefs: [...new Set(input.knowledgeBaseRefs ?? [])].sort(),
     knowledgeBaseRefs,
   }
+}
+
+/** Recheck a retained or queued snapshot against the current employee catalog. */
+export function assertKnowledgeBaseRefsAvailable(snapshot: CapabilitySnapshot, available: Iterable<string>): void {
+  const issues = unavailableKnowledgeBaseIssues(snapshot.knowledgeBaseRefs, available)
+  if (issues.length) throw resolutionError(issues)
+}
+
+function unavailableKnowledgeBaseIssues(references: Iterable<string>, available: Iterable<string>): string[] {
+  const allowed = new Set(available)
+  return [...new Set(references)].filter((reference) => !allowed.has(reference))
+    .map((reference) => `所选知识库不存在或无访问权限：${reference}`)
 }
 
 export function capabilitySnapshotForExecution(

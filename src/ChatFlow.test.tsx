@@ -137,6 +137,71 @@ it('keeps streamed text in place exactly once while tool cards append below it',
   } finally { await act(async () => root.unmount()); container.remove() }
 })
 
+it('shows one quiet activity summary, hides private reasoning and opens tool receipts', async () => {
+  const entries = [assistantEntry('turn:1', [
+    { kind: 'text', id: 'progress', text: '我先检查工作簿。' },
+    { kind: 'thinking', id: 'private-1', text: 'Private model reasoning' },
+    toolSegment('discover', 'tool_discover', { label: '选择所需工具' }),
+    { kind: 'thinking', id: 'private-2', text: 'More private reasoning' },
+    toolSegment('skill', 'skill', { label: '加载文档洞察' }),
+    toolSegment('roots', 'local_files_roots', { label: '检查可用工作目录' }),
+    toolSegment('read', 'office_document_read', {
+      label: '读取 inventory-report.xlsx', path: 'inventory-report.xlsx',
+      completedAt: '2026-09-01T00:00:00.450Z',
+    }),
+    toolSegment('check', 'office_document_check', { label: '检查文档结构' }),
+    toolSegment('report', 'task_report', { label: '整理交付结果' }),
+    { kind: 'text', id: 'answer', text: '合计 80.50。' },
+  ], { startedAt: '2026-09-01T00:00:00.000Z', completedAt: '2026-09-01T00:00:17.000Z' })]
+  const container = document.body.appendChild(document.createElement('div'))
+  const root = createRoot(container)
+  try {
+    await act(async () => root.render(<ChatPage {...base} entries={entries} />))
+    const groups = container.querySelectorAll<HTMLDetailsElement>('.tool-group')
+    expect(groups).toHaveLength(1)
+    expect(groups[0].hasAttribute('open')).toBe(false)
+    expect(groups[0].querySelector('summary')?.textContent).toBe('已加载技能 · 已读取文件 · 已检查文档结构')
+    expect(container.textContent).toContain('合计 80.50。')
+    expect(container.querySelector('.turn-progress')?.textContent).toContain('我先检查工作簿。')
+    expect(container.textContent).toContain('17秒')
+    expect(container.textContent).not.toContain('0秒')
+    expect(container.textContent).not.toContain('思考过程')
+    expect(container.textContent).not.toContain('Private model reasoning')
+    await act(async () => groups[0].querySelector('summary')!.click())
+    expect(groups[0].hasAttribute('open')).toBe(true)
+    expect(groups[0].querySelectorAll('.timeline-tool')).toHaveLength(4)
+    expect(container.textContent).not.toContain('选择所需工具')
+    expect(container.textContent).not.toContain('整理交付结果')
+    const receipt = [...groups[0].querySelectorAll<HTMLDetailsElement>('.timeline-tool')]
+      .find((element) => element.textContent?.includes('读取 inventory-report.xlsx'))!
+    expect(receipt.hasAttribute('open')).toBe(false)
+    await act(async () => receipt.querySelector('summary')!.click())
+    expect(receipt.hasAttribute('open')).toBe(true)
+    expect(receipt.querySelector('.timeline-path')?.textContent).toBe('inventory-report.xlsx')
+  } finally { await act(async () => root.unmount()); container.remove() }
+})
+
+it('omits subsecond duration instead of displaying a zero or approximate time', async () => {
+  const entry = assistantEntry('turn:1', '完成', { startedAt: '2026-09-01T00:00:00.000Z', completedAt: '2026-09-01T00:00:00.450Z' })
+  const container = document.body.appendChild(document.createElement('div'))
+  const root = createRoot(container)
+  try {
+    await act(async () => root.render(<ChatPage {...base} entries={[entry]} />))
+    expect(container.querySelector('.turn-facts')?.textContent ?? '').not.toMatch(/<1秒|0秒/)
+    expect(container.textContent).toContain('完成')
+  } finally { await act(async () => root.unmount()); container.remove() }
+})
+
+it('labels input, cache and output usage separately instead of a single ambiguous total', async () => {
+  const entry = assistantEntry('turn:1', '2', { tokenUsage: { inputTokens: 120, cacheReadTokens: 80, cacheWriteTokens: 10, outputTokens: 5 } })
+  const container = document.body.appendChild(document.createElement('div'))
+  const root = createRoot(container)
+  try {
+    await act(async () => root.render(<ChatPage {...base} entries={[entry]} />))
+    expect(container.querySelector('.turn-facts')?.textContent).toContain('输入 120 · 缓存读取 80 · 缓存写入 10 · 输出 5 tokens')
+  } finally { await act(async () => root.unmount()); container.remove() }
+})
+
 it('never drops text when a tool call lands between two text segments', async () => {
   const entries = [assistantEntry('turn:1', [
     { kind: 'text', id: '1:1', text: '我先检查文件。' },

@@ -1,5 +1,7 @@
 import { invoke, isTauri } from '@tauri-apps/api/core'
 import type { ConversationEntry } from './conversation/types'
+import { appendStoredCapabilityNotice, captureCapabilityNotices, restoreCapabilityNotices, type StoredCapabilityNotice } from './conversation/capabilityNotices'
+import { captureInteractionSegments, restoreInteractionSegments } from './conversation/interactionSegments'
 import type { LocalTaskRun } from './types'
 import { inspectHarnessSession, searchHarnessSessionsPage, type HarnessSessionSearchHit, type HarnessSessionSearchPage } from './harness'
 
@@ -132,7 +134,7 @@ export async function loadTaskHistoryPage(employeeId: string, query = '', offset
     || task.sessionId?.toLocaleLowerCase().includes(needle)
     || task.invocationTokens?.some((token) => token.toLocaleLowerCase().includes(needle))
     || task.messagePreview?.toLocaleLowerCase().includes(needle)))
-  return { items: recoverInterruptedTasks(tasks.slice(offset, offset + LIMIT)), total: tasks.length, offset, limit: LIMIT }
+  return { items: await recoverInterruptedTasksWithHarness(employeeId, tasks.slice(offset, offset + LIMIT)), total: tasks.length, offset, limit: LIMIT }
 }
 
 export async function loadTaskById(employeeId: string, id: string): Promise<LocalTaskRun | undefined> {
@@ -150,7 +152,7 @@ export async function loadTaskById(employeeId: string, id: string): Promise<Loca
 
 export async function loadTaskHistory(employeeId: string): Promise<{ tasks: LocalTaskRun[]; invalidCount: number }> {
   await Promise.all([...writes.entries()].filter(([key]) => JSON.parse(key)[0] === employeeId).map(([, write]) => write.catch(() => undefined)))
-  if (!isTauri()) return { tasks: recoverInterruptedTasks(loadLocalTasks(employeeId).slice(0, LIMIT)), invalidCount: 0 }
+  if (!isTauri()) return { tasks: await recoverInterruptedTasksWithHarness(employeeId, loadLocalTasks(employeeId).slice(0, LIMIT)), invalidCount: 0 }
   if (!await invoke<boolean>('local_task_history_migrated', { employeeId })) {
     let raw: string | null
     try { raw = window.localStorage.getItem(storageKey(employeeId)) }
@@ -220,26 +222,41 @@ export function recoverInterruptedTasks(tasks: LocalTaskRun[], now = new Date().
 
 /** Prefer the Harness projection index when a task has a durable session. */
 export async function recoverInterruptedTasksWithHarness(employeeId: string, tasks: LocalTaskRun[], now = new Date().toISOString(), hydrateCompleted = false): Promise<LocalTaskRun[]> {
-  if (!isTauri()) return recoverInterruptedTasks(tasks, now)
+  if (!isTauri()) return tasks.map((task) => task.status === 'RUNNING' ? recoverWithLocalNotices(task, now) : restoreLocalNotices(task))
   const inspected = await Promise.all(tasks.map(async (task) => {
     if (!task.sessionId || (!hydrateCompleted && task.status !== 'RUNNING')) return undefined
     try { return await inspectHarnessSession(employeeId, task.sessionId) } catch { return undefined }
   }))
   return tasks.map((task, index) => {
     const result = inspected[index]
-    if (!result) return task.status === 'RUNNING' ? recoverInterruptedTasks([task], now)[0] : task
-    if (task.status === 'RUNNING' && (!result.projection || !['completed', 'failed'].includes(result.status))) return recoverInterruptedTasks([task], now)[0]
+    const local = restoreLocalNotices(task)
+    const localEntries = local.entries
+    if (!result) return task.status === 'RUNNING' ? recoverWithLocalNotices(local, now) : local
+    if (task.status === 'RUNNING' && (!result.projection || !['completed', 'failed'].includes(result.status))) return recoverWithLocalNotices(local, now)
     const status = result.status === 'completed' ? 'COMPLETED' : result.status === 'failed' ? 'FAILED' : task.status
     // The transcript is the authoritative rebuild from the Harness session log.
     const transcript = result.transcript?.map((entry) => entry as unknown as ConversationEntry)
+    const entries = transcript?.length ? restoreInteractionSegments(task.sessionId,
+      restoreCapabilityNotices(task.sessionId, transcript, task.capabilityNotices,
+        status === 'FAILED' ? 'failed' : 'completed'), task.interactionSegments) : undefined
     return {
       ...task,
       status: status as LocalTaskRun['status'],
       updatedAt: result.updatedAt || task.updatedAt,
       ...(result.projection ? { projection: result.projection } : {}),
-      ...(transcript?.length ? { entries: transcript, messagePreview: transcriptPreview(transcript) } : {}),
+      ...(entries ? { entries, messagePreview: transcriptPreview(entries) } : local === task ? {} : { entries: localEntries }),
     }
   })
+}
+
+function recoverWithLocalNotices(task: LocalTaskRun, now: string): LocalTaskRun {
+  return restoreLocalNotices(recoverInterruptedTasks([restoreLocalNotices(task)], now)[0])
+}
+
+function restoreLocalNotices(task: LocalTaskRun): LocalTaskRun {
+  const entries = restoreInteractionSegments(task.sessionId,
+    restoreCapabilityNotices(task.sessionId, task.entries, task.capabilityNotices), task.interactionSegments)
+  return entries === task.entries ? task : { ...task, entries }
 }
 
 function transcriptPreview(entries: ConversationEntry[]): string {
@@ -254,6 +271,19 @@ export async function persistTaskHistory(employeeId: string, task: LocalTaskRun)
   await orderedWrite(employeeId, task.id, async () => {
     if (!isTauri()) saveLocalTask(employeeId, durable)
     else await invoke('save_local_task', { employeeId, task: durable })
+  })
+}
+
+/** Write a small product notice immediately without replacing a newer task snapshot. */
+export async function persistCapabilityNotice(employeeId: string, taskId: string, notice: StoredCapabilityNotice): Promise<void> {
+  await orderedWrite(employeeId, taskId, async () => {
+    if (isTauri()) {
+      await invoke('append_local_task_capability_notice', { employeeId, id: taskId, notice })
+      return
+    }
+    const task = loadLocalTasks(employeeId).find((item) => item.id === taskId)
+    if (!task || task.sessionId !== notice.sessionId) return
+    saveLocalTask(employeeId, { ...task, capabilityNotices: appendStoredCapabilityNotice(task.capabilityNotices ?? [], notice) })
   })
 }
 
@@ -293,6 +323,14 @@ export function saveLocalTask(employeeId: string, task: LocalTaskRun,
                               storage: Storage = window.localStorage): LocalTaskRun[] {
   task = compactTaskForStorage(task)
   const tasks = loadLocalTasks(employeeId, storage)
+  const previous = tasks.find((item) => item.id === task.id)
+  if (task.sessionId && previous?.sessionId === task.sessionId) {
+    let notices = previous.capabilityNotices ?? []
+    for (const notice of task.capabilityNotices ?? []) notices = appendStoredCapabilityNotice(notices, notice)
+    if (notices.length) task = { ...task, capabilityNotices: notices }
+    const interactions = captureInteractionSegments(task.sessionId, [], [...(previous.interactionSegments ?? []), ...(task.interactionSegments ?? [])])
+    if (interactions.length) task = { ...task, interactionSegments: interactions }
+  }
   const updated = [task, ...tasks.filter((item) => item.id !== task.id)]
     .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
   storage.setItem(storageKey(employeeId), JSON.stringify(updated))
@@ -301,6 +339,12 @@ export function saveLocalTask(employeeId: string, task: LocalTaskRun,
 
 export function compactTaskForStorage(task: LocalTaskRun): LocalTaskRun {
   const copy = structuredClone(task)
+  const notices = captureCapabilityNotices(copy.sessionId, copy.entries, copy.capabilityNotices)
+  if (notices.length) copy.capabilityNotices = notices
+  else delete copy.capabilityNotices
+  const interactions = captureInteractionSegments(copy.sessionId, copy.entries, copy.interactionSegments)
+  if (interactions.length) copy.interactionSegments = interactions
+  else delete copy.interactionSegments
   // A session ID is reserved before Harness starts. Keep the prompt if a
   // failed or interrupted turn has no execution event to recover from yet.
   if (!copy.sessionId || (copy.status !== 'COMPLETED' && !hasHarnessSessionEvidence(copy))) return copy
@@ -340,11 +384,18 @@ function storageKey(employeeId: string): string {
 function isLocalTask(value: unknown): value is LocalTaskRun {
   if (!value || typeof value !== 'object') return false
   const task = value as Partial<LocalTaskRun>
-  const allowedFields = new Set(['id', 'source', 'name', 'status', 'createdAt', 'updatedAt', 'archivedAt', 'sessionId', 'scheduleId', 'scheduleRunId', 'invocationTokens', 'model', 'reasoningEffort', 'executionMode', 'localDirectories', 'capabilitySnapshot', 'projection', 'entries', 'messagePreview', 'processedImEventIds'])
+  const allowedFields = new Set(['id', 'source', 'name', 'status', 'createdAt', 'updatedAt', 'archivedAt', 'sessionId', 'scheduleId', 'scheduleRunId', 'invocationTokens', 'model', 'reasoningEffort', 'executionMode', 'localDirectories', 'capabilitySnapshot', 'projection', 'entries', 'messagePreview', 'capabilityNotices', 'interactionSegments', 'processedImEventIds'])
   return Object.keys(task).every((key) => allowedFields.has(key)) && task.source === 'DESKTOP' && typeof task.id === 'string' && typeof task.name === 'string'
     && ['RUNNING', 'COMPLETED', 'FAILED', 'CANCELED'].includes(task.status ?? '')
     && typeof task.createdAt === 'string' && typeof task.updatedAt === 'string'
     && Array.isArray(task.entries)
+    && (task.capabilityNotices === undefined || (Array.isArray(task.capabilityNotices) && task.capabilityNotices.length <= 100
+      && task.capabilityNotices.every((notice) => notice && typeof notice.sessionId === 'string' && typeof notice.turnId === 'string'
+        && (notice.afterTurnId === undefined || typeof notice.afterTurnId === 'string')
+        && notice.segment?.kind === 'notice' && typeof notice.segment.id === 'string' && typeof notice.segment.text === 'string')))
+    && (task.interactionSegments === undefined || (Array.isArray(task.interactionSegments) && task.interactionSegments.length <= 100
+      && task.interactionSegments.every((item) => item && typeof item.sessionId === 'string' && typeof item.turnId === 'string'
+        && Number.isSafeInteger(item.index) && ['question', 'user'].includes(item.segment?.kind))))
     && (task.scheduleId === undefined || typeof task.scheduleId === 'string')
     && (task.scheduleRunId === undefined || typeof task.scheduleRunId === 'string')
     && (task.reasoningEffort === undefined || ['off', 'low', 'medium', 'high', 'xhigh', 'max'].includes(task.reasoningEffort))

@@ -51,6 +51,7 @@ const APP_COMMANDS: &[&str] = &[
     "import_local_task_history",
     "load_local_task",
     "save_local_task",
+    "append_local_task_capability_notice",
     "delete_local_task",
     "load_enterprise_catalog_cache",
     "save_enterprise_catalog_cache",

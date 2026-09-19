@@ -27,6 +27,8 @@ describe('task outcome contract', () => {
     const output = await tool.execute(completed, {} as never)
     expect(output).toEqual({ xiaoyinTaskOutcome: 1, outcome: completed })
     await expect(tool.execute({ ...completed, remaining: ['未完成'] }, {} as never)).rejects.toThrow('任务结果无效')
+    await expect(tool.execute({ ...completed, checks: [{ ...completed.checks[0], result: 'not_run' }] }, {} as never)).rejects.toThrow('completed 的 checks 只能包含已执行且 passed')
+    await expect(tool.execute({ summary: '已核对', remaining: [], checks: completed.checks }, {} as never)).rejects.toThrow('status 是必填字段')
   })
 
   it('requires a matching successful report instead of trusting arbitrary tool text', () => {
@@ -41,6 +43,17 @@ describe('task outcome contract', () => {
     tracker.observe(call('report2'))
     tracker.observe(result('report2'))
     expect(tracker.result()).toEqual(completed)
+  })
+
+  it('delivers a tool-free answer without certifying an execution goal', () => {
+    const tracker = new TaskOutcomeTracker()
+    expect(tracker.result('2').status).toBe('answered')
+    expect(tracker.result('  ').status).toBe('unverified')
+    tracker.observe(call('discover', 'tool_discover'))
+    tracker.observe(result('discover'))
+    expect(tracker.result('已修改文件').status).toBe('unverified')
+    expect(parseTaskOutcome({ status: 'answered', summary: '回答已送达', checks: [], remaining: [] })?.status).toBe('answered')
+    expect(parseTaskOutcome({ status: 'answered', summary: '回答已送达', checks: completed.checks, remaining: [] })).toBeUndefined()
   })
 
   it('invalidates a report when later work starts, including a failed replacement report', () => {

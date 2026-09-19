@@ -21,7 +21,7 @@ use std::{
     collections::{HashMap, HashSet},
     io::{BufRead, BufReader, Read, Write},
     path::{Path, PathBuf},
-    process::{Child, ChildStdin, ChildStdout, Command, Stdio},
+    process::{Child, ChildStdin, Command, Stdio},
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, Ordering},
@@ -214,6 +214,7 @@ pub struct QuestionAnswerInput {
     id: String,
     #[serde(default)]
     selected: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     custom: Option<String>,
 }
 
@@ -457,7 +458,8 @@ pub(crate) struct HarnessProcess {
     erp_session_epoch: u64,
     child: Child,
     stdin: ChildStdin,
-    stdout: BufReader<ChildStdout>,
+    stdout: mpsc::Receiver<Result<String, String>>,
+    stdout_reader: Option<JoinHandle<()>>,
     stderr_tail: Arc<Mutex<String>>,
     stderr_reader: Option<JoinHandle<()>>,
     next_id: u64,
@@ -1212,6 +1214,10 @@ impl HarnessManager {
         slot.intents
             .interrupt_requested
             .store(true, Ordering::SeqCst);
+        // A question or approval can block the stdout reader indefinitely;
+        // releasing its broker lets the run loop observe cancellation now.
+        self.questions.reject_task(task_id);
+        self.approvals.reject_task(task_id);
         Ok(true)
     }
 
@@ -1636,6 +1642,7 @@ impl HarnessProcess {
             .ok_or_else(|| "无法连接 Harness stderr".to_string())?;
         let stderr_tail = Arc::new(Mutex::new(String::new()));
         let stderr_reader = Some(capture_stderr(stderr, Arc::clone(&stderr_tail)));
+        let (stdout, stdout_reader) = capture_stdout(stdout);
         let (approval_broker, question_broker) = interaction_brokers
             .map(|brokers| (Some(brokers.approval), Some(brokers.question)))
             .unwrap_or_default();
@@ -1644,7 +1651,8 @@ impl HarnessProcess {
             erp_session_epoch: crate::erp_auth::mcp::session_epoch(),
             child,
             stdin,
-            stdout: BufReader::new(stdout),
+            stdout,
+            stdout_reader: Some(stdout_reader),
             stderr_tail,
             stderr_reader,
             next_id: 1,
@@ -1706,18 +1714,21 @@ impl HarnessProcess {
 
         let notification_stream_id = uuid::Uuid::new_v4().to_string();
         let mut notification_sequence = 0_u64;
+        let mut pending_question_ack: Option<(u64, String, Vec<QuestionAnswerInput>)> = None;
 
         loop {
             self.deliver_pending_turn_intents()?;
-            let mut line = String::new();
-            let bytes = self
-                .stdout
-                .read_line(&mut line)
-                .map_err(|error| format!("无法读取 Harness 响应：{error}"))?;
-            if bytes == 0 {
+            let line = match self.stdout.recv_timeout(Duration::from_millis(100)) {
+                Ok(Ok(line)) => line,
+                Ok(Err(error)) => return Err(format!("无法读取 Harness 响应：{error}")),
+                Err(mpsc::RecvTimeoutError::Timeout) => continue,
+                Err(mpsc::RecvTimeoutError::Disconnected) => String::new(),
+            };
+            if line.is_empty() {
                 let status = self.child.try_wait().ok().flatten();
                 if status.is_some() {
                     self.finish_stderr_capture();
+                    self.finish_stdout_capture();
                 }
                 let detail = self
                     .stderr_tail
@@ -1933,28 +1944,9 @@ impl HarnessProcess {
                     } else {
                         return Err("当前界面不能回答 Harness 问题".to_string());
                     };
-                    self.send_question_response(&question.question_id, &answers)?;
-                    if let Some(app) = app {
-                        let event = json!({
-                            "event": {
-                                "method": "session.event",
-                                "params": { "event": {
-                                    "type": "question/answered",
-                                    "data": { "questionId": question.question_id }
-                                }}
-                            }
-                        });
-                        let _ = app.emit("xiaoyin://harness-notification", {
-                            notification_sequence += 1;
-                            ui_notification(
-                                &self.notification_task_id,
-                                request_id,
-                                &notification_stream_id,
-                                notification_sequence,
-                                event,
-                            )
-                        });
-                    }
+                    let response_id =
+                        self.send_question_response(&question.question_id, &answers)?;
+                    pending_question_ack = Some((response_id, question.question_id, answers));
                     continue;
                 }
                 if let Some(app) = app {
@@ -1982,6 +1974,36 @@ impl HarnessProcess {
                         )
                     });
                 }
+                continue;
+            }
+            if let Some((response_id, question_id, answers)) = pending_question_ack.as_ref()
+                && output.get("id").and_then(Value::as_u64) == Some(*response_id)
+            {
+                if output.get("error").is_some() {
+                    return Err("问题回答未被 Agent 接收，请重新发起本轮任务".to_string());
+                }
+                if let Some(app) = app {
+                    let event = json!({
+                        "event": {
+                            "method": "session.event",
+                            "params": { "event": {
+                                "type": "question/answered",
+                                "data": { "questionId": question_id, "answers": answers }
+                            }}
+                        }
+                    });
+                    let _ = app.emit("xiaoyin://harness-notification", {
+                        notification_sequence += 1;
+                        ui_notification(
+                            &self.notification_task_id,
+                            request_id,
+                            &notification_stream_id,
+                            notification_sequence,
+                            event,
+                        )
+                    });
+                }
+                pending_question_ack = None;
                 continue;
             }
             if output.get("id").and_then(Value::as_u64) != Some(request_id) {
@@ -2072,7 +2094,7 @@ impl HarnessProcess {
         &mut self,
         question_id: &str,
         answers: &[QuestionAnswerInput],
-    ) -> Result<(), String> {
+    ) -> Result<u64, String> {
         let request_id = self.next_id;
         self.next_id += 1;
         let request = json!({
@@ -2086,7 +2108,8 @@ impl HarnessProcess {
         self.stdin
             .write_all(b"\n")
             .and_then(|_| self.stdin.flush())
-            .map_err(|error| format!("无法向 Harness 发送问题响应：{error}"))
+            .map_err(|error| format!("无法向 Harness 发送问题响应：{error}"))?;
+        Ok(request_id)
     }
 
     pub(crate) fn shutdown(&mut self) {
@@ -2098,7 +2121,14 @@ impl HarnessProcess {
         let _ = terminate_process(self.child.id());
         let _ = self.child.kill();
         let _ = self.child.wait();
+        self.finish_stdout_capture();
         self.finish_stderr_capture();
+    }
+
+    fn finish_stdout_capture(&mut self) {
+        if let Some(reader) = self.stdout_reader.take() {
+            let _ = reader.join();
+        }
     }
 
     fn finish_stderr_capture(&mut self) {
@@ -2110,6 +2140,31 @@ impl HarnessProcess {
 
 const MAX_HARNESS_STDERR_CHARS: usize = 16 * 1024;
 const MAX_HARNESS_ERROR_CHARS: usize = 1_200;
+
+fn capture_stdout<R: Read + Send + 'static>(
+    stdout: R,
+) -> (mpsc::Receiver<Result<String, String>>, JoinHandle<()>) {
+    let (sender, receiver) = mpsc::channel();
+    let reader = std::thread::spawn(move || {
+        let mut stdout = BufReader::new(stdout);
+        loop {
+            let mut line = String::new();
+            match stdout.read_line(&mut line) {
+                Ok(0) => break,
+                Ok(_) => {
+                    if sender.send(Ok(line)).is_err() {
+                        break;
+                    }
+                }
+                Err(error) => {
+                    let _ = sender.send(Err(error.to_string()));
+                    break;
+                }
+            }
+        }
+    });
+    (receiver, reader)
+}
 
 fn capture_stderr<R>(mut stderr: R, tail: Arc<Mutex<String>>) -> JoinHandle<()>
 where
@@ -2690,6 +2745,30 @@ mod tests {
     use super::*;
 
     #[test]
+    fn stdout_reader_delivers_lines_without_blocking_the_request_loop() {
+        let (receiver, reader) = capture_stdout(std::io::Cursor::new(b"one\ntwo\n".to_vec()));
+        assert_eq!(
+            receiver
+                .recv_timeout(Duration::from_secs(1))
+                .unwrap()
+                .unwrap(),
+            "one\n"
+        );
+        assert_eq!(
+            receiver
+                .recv_timeout(Duration::from_secs(1))
+                .unwrap()
+                .unwrap(),
+            "two\n"
+        );
+        assert!(matches!(
+            receiver.recv_timeout(Duration::from_secs(1)),
+            Err(mpsc::RecvTimeoutError::Disconnected)
+        ));
+        reader.join().unwrap();
+    }
+
+    #[test]
     fn employee_storage_namespaces_are_stable_and_private() {
         let app_data = Path::new("/tmp/xiaoyin");
         assert_eq!(
@@ -2815,6 +2894,19 @@ mod tests {
         // A finished turn accepts neither intent.
         assert_eq!(manager.steer("steered-task", "太晚了"), Ok(false));
         assert_eq!(manager.interrupt("steered-task"), Ok(false));
+    }
+
+    #[test]
+    fn interrupt_releases_a_pending_question_without_waiting_for_another_event() {
+        let manager = HarnessManager::default();
+        let slot = manager.slot("question-task").unwrap();
+        let _run = slot.begin_for("employee-1").unwrap();
+        let receiver = manager
+            .questions
+            .register("question-task", "question-1")
+            .unwrap();
+        assert_eq!(manager.interrupt("question-task"), Ok(true));
+        assert!(receiver.recv_timeout(Duration::from_millis(50)).is_err());
     }
 
     #[test]
@@ -3297,6 +3389,15 @@ mod tests {
             custom: Some("保留备份".into()),
         }];
         assert!(validate_question_answers(&valid).is_ok());
+        assert_eq!(
+            serde_json::to_value(&QuestionAnswerInput {
+                id: "addend".into(),
+                selected: vec!["35".into()],
+                custom: None,
+            })
+            .unwrap(),
+            json!({ "id": "addend", "selected": ["35"] })
+        );
         assert!(
             validate_question_answers(&[QuestionAnswerInput {
                 id: "scope".into(),

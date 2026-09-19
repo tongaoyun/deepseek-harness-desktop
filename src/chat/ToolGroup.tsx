@@ -26,11 +26,15 @@ export function ToolGroup({ tools }: { tools: ToolSegment[] }) {
 
 function ToolCard({ tool }: { tool: ToolSegment }) {
   const expandable = Boolean(tool.detail || tool.command || tool.output || tool.path || tool.secondaryPath)
+  const attention = tool.status === 'running' || tool.status === 'failed'
+  const [choice, setChoice] = useState<{ attention: boolean; open: boolean }>()
+  const open = choice?.attention === attention ? choice.open : attention
+  const elapsed = tool.completedAt && tool.startedAt ? duration(tool) : ''
   const summary = <>
     <ToolIcon tool={tool} />
     <span className="timeline-title">{tool.label}</span>
     {tool.itemCount !== undefined && <small>{tool.itemCount} 项</small>}
-    {tool.completedAt && tool.startedAt && <small className="timeline-duration">{duration(tool)}</small>}
+    {elapsed && <small className="timeline-duration">{elapsed}</small>}
     <span className="timeline-status">
       {tool.status === 'running' && <LoaderCircle className="turn-spinner" size={14} />}
       {tool.status === 'failed' && <CircleAlert size={14} />}
@@ -39,8 +43,8 @@ function ToolCard({ tool }: { tool: ToolSegment }) {
   </>
   const className = `timeline-tool cat-${toolCategory(tool.toolName)} timeline-${tool.status}`
   if (!expandable) return <div className={className}>{summary}</div>
-  return <details className={className} open={tool.status === 'running' || tool.status === 'failed'}>
-    <summary onClick={(event) => event.preventDefault()}>{summary}</summary>
+  return <details className={className} open={open}>
+    <summary onClick={(event) => { event.preventDefault(); setChoice({ attention, open: !open }) }}>{summary}</summary>
     <div className="timeline-details">
       {tool.command && <code className="timeline-command">{tool.command}</code>}
       {tool.detail && <p>{tool.detail}</p>}
@@ -55,6 +59,7 @@ function duration(tool: ToolSegment): string {
   const elapsed = Date.parse(tool.completedAt ?? '') - Date.parse(tool.startedAt)
   if (!Number.isFinite(elapsed) || elapsed < 0) return ''
   const seconds = Math.floor(elapsed / 1_000)
+  if (seconds === 0) return ''
   return seconds < 60 ? `${seconds}秒` : `${Math.floor(seconds / 60)}分${seconds % 60}秒`
 }
 

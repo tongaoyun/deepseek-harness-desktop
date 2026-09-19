@@ -58,6 +58,7 @@
     "allow-import-local-task-history",
     "allow-load-local-task",
     "allow-save-local-task",
+    "allow-append-local-task-capability-notice",
     "allow-delete-local-task",
     "allow-load-enterprise-catalog-cache",
     "allow-save-enterprise-catalog-cache",

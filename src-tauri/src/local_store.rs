@@ -1,4 +1,4 @@
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -29,7 +29,7 @@ const READABLE_TASK_SQL: &str = "CASE WHEN json_valid(payload) THEN COALESCE(
       'id', 'source', 'name', 'status', 'createdAt', 'updatedAt', 'archivedAt', 'sessionId',
       'scheduleId', 'scheduleRunId', 'invocationTokens', 'model', 'reasoningEffort', 'executionMode',
       'localDirectories', 'capabilitySnapshot', 'projection', 'entries', 'messagePreview',
-      'processedImEventIds'))
+      'processedImEventIds', 'capabilityNotices', 'interactionSegments'))
     AND NOT EXISTS (SELECT 1 FROM json_each(payload, '$.entries') WHERE
       COALESCE(json_extract(value, '$.role') IN ('user', 'assistant'), 0) = 0
       OR (json_extract(value, '$.role') = 'user' AND COALESCE(json_type(value, '$.text') = 'text', 0) = 0)
@@ -591,22 +591,236 @@ pub async fn save_local_task(
     validate_employee_id(&employee_id)?;
     crate::erp_auth::require_employee(&app, &employee_id).await?;
     with_database_async(app, move |database| {
-        let (id, name, status, updated_at) = task_index_fields(&task)?;
-        let payload =
-            serde_json::to_string(&task).map_err(|error| format!("无法序列化本地会话：{error}"))?;
-        if payload.len() > MAX_TASK_PAYLOAD_BYTES {
-            return Err("本地会话不能超过 16 MB".to_string());
-        }
-        let account = account_key(&employee_id);
-        write_local_task(database, &account, id, name, status, updated_at, &payload)
+        save_task_preserving_notices(database, &account_key(&employee_id), task)
     })
     .await
+}
+
+fn save_task_preserving_notices(
+    database: &Connection,
+    account: &str,
+    mut task: Value,
+) -> Result<(), String> {
+    let (id, _, _, _) = task_index_fields(&task)?;
+    let transaction = Transaction::new_unchecked(database, TransactionBehavior::Immediate)
+        .map_err(database_error)?;
+    let previous: Option<String> = transaction
+        .query_row(
+            "SELECT payload FROM local_task WHERE employee_key = ?1 AND id = ?2",
+            params![account, id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(database_error)?;
+    if let Some(previous) = previous.and_then(|value| serde_json::from_str::<Value>(&value).ok()) {
+        let session_id = task
+            .get("sessionId")
+            .and_then(Value::as_str)
+            .map(str::to_string);
+        if session_id.is_some()
+            && session_id.as_deref() == previous.get("sessionId").and_then(Value::as_str)
+        {
+            let saved = task_notices(&previous)?;
+            let incoming = task_notices(&task)?;
+            let mut notices = Vec::new();
+            for item in saved.iter().chain(incoming.iter()) {
+                if item.get("sessionId").and_then(Value::as_str) == session_id.as_deref() {
+                    upsert_task_notice(&mut notices, item);
+                }
+            }
+            if !notices.is_empty() {
+                task.as_object_mut()
+                    .ok_or("本地会话格式无效")?
+                    .insert("capabilityNotices".to_string(), Value::Array(notices));
+            }
+            let saved = task_interactions(&previous)?;
+            let incoming = task_interactions(&task)?;
+            let mut interactions = Vec::new();
+            for item in saved.iter().chain(incoming.iter()) {
+                if item.get("sessionId").and_then(Value::as_str) == session_id.as_deref() {
+                    upsert_task_notice(&mut interactions, item);
+                }
+            }
+            if !interactions.is_empty() {
+                task.as_object_mut().ok_or("本地会话格式无效")?.insert(
+                    "interactionSegments".to_string(),
+                    Value::Array(interactions),
+                );
+            }
+        }
+    }
+    let (id, name, status, updated_at) = task_index_fields(&task)?;
+    let payload =
+        serde_json::to_string(&task).map_err(|error| format!("无法序列化本地会话：{error}"))?;
+    if payload.len() > MAX_TASK_PAYLOAD_BYTES {
+        return Err("本地会话不能超过 16 MB".to_string());
+    }
+    write_local_task(
+        &transaction,
+        account,
+        id,
+        name,
+        status,
+        updated_at,
+        &payload,
+    )?;
+    transaction.commit().map_err(database_error)
+}
+
+fn task_notices(value: &Value) -> Result<&[Value], String> {
+    match value.get("capabilityNotices") {
+        None => Ok(&[]),
+        Some(Value::Array(items)) => Ok(items),
+        _ => Err("本地会话告警格式无效".to_string()),
+    }
+}
+
+fn task_interactions(value: &Value) -> Result<&[Value], String> {
+    match value.get("interactionSegments") {
+        None => Ok(&[]),
+        Some(Value::Array(items)) if items.len() <= 100 => Ok(items),
+        _ => Err("本地会话交互记录格式无效".to_string()),
+    }
+}
+
+fn upsert_task_notice(items: &mut Vec<Value>, notice: &Value) {
+    items.retain(|item| {
+        !(item.get("turnId") == notice.get("turnId")
+            && item.get("afterTurnId") == notice.get("afterTurnId")
+            && item.get("segment").and_then(|value| value.get("id"))
+                == notice.get("segment").and_then(|value| value.get("id")))
+    });
+    items.push(notice.clone());
+    if items.len() > 100 {
+        items.drain(..items.len() - 100);
+    }
+}
+
+#[tauri::command]
+pub async fn append_local_task_capability_notice(
+    app: tauri::AppHandle,
+    employee_id: String,
+    id: String,
+    notice: Value,
+) -> Result<(), String> {
+    validate_employee_id(&employee_id)?;
+    crate::erp_auth::require_employee(&app, &employee_id).await?;
+    if id.trim().is_empty() || id.len() > 200 || id.chars().any(char::is_control) {
+        return Err("会话标识无效".to_string());
+    }
+    with_database_async(app, move |database| {
+        append_task_capability_notice(database, &account_key(&employee_id), &id, &notice)
+    })
+    .await
+}
+
+fn append_task_capability_notice(
+    database: &Connection,
+    account: &str,
+    id: &str,
+    notice: &Value,
+) -> Result<(), String> {
+    let field = |name: &str, max: usize| {
+        notice
+            .get(name)
+            .and_then(Value::as_str)
+            .filter(|value| !value.is_empty() && value.len() <= max)
+    };
+    let session_id = field("sessionId", 256).ok_or("能力告警会话无效")?;
+    field("turnId", 200).ok_or("能力告警轮次无效")?;
+    notice
+        .get("afterTurnId")
+        .map(|_| field("afterTurnId", 200).ok_or("能力告警轮次无效"))
+        .transpose()?;
+    let segment = notice.get("segment").ok_or("能力告警内容无效")?;
+    segment
+        .get("id")
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty() && value.len() <= 200)
+        .ok_or("能力告警内容无效")?;
+    let valid = notice.as_object().is_some_and(|value| {
+        value.keys().all(|key| {
+            matches!(
+                key.as_str(),
+                "sessionId" | "turnId" | "afterTurnId" | "segment"
+            )
+        })
+    }) && segment.as_object().is_some_and(|value| {
+        value
+            .keys()
+            .all(|key| matches!(key.as_str(), "kind" | "id" | "level" | "text"))
+    }) && segment.get("kind").and_then(Value::as_str) == Some("notice")
+        && matches!(
+            segment.get("level").and_then(Value::as_str),
+            Some("warning" | "error")
+        )
+        && segment
+            .get("text")
+            .and_then(Value::as_str)
+            .is_some_and(|value| !value.is_empty() && value.len() <= 6_000);
+    if !valid {
+        return Err("能力告警内容无效".to_string());
+    }
+
+    let transaction = Transaction::new_unchecked(database, TransactionBehavior::Immediate)
+        .map_err(database_error)?;
+    let payload: Option<String> = transaction
+        .query_row(
+            "SELECT payload FROM local_task WHERE employee_key = ?1 AND id = ?2",
+            params![account, id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(database_error)?;
+    let Some(payload) = payload else {
+        return Ok(());
+    };
+    let mut task: Value =
+        serde_json::from_str(&payload).map_err(|error| format!("本地会话数据无效：{error}"))?;
+    if task.get("sessionId").and_then(Value::as_str) != Some(session_id) {
+        return Ok(());
+    }
+    let mut items = match task.get("capabilityNotices") {
+        None => Vec::new(),
+        Some(Value::Array(items)) => items.clone(),
+        _ => return Err("本地会话告警格式无效".to_string()),
+    };
+    items.retain(|item| item.get("sessionId").and_then(Value::as_str) == Some(session_id));
+    upsert_task_notice(&mut items, notice);
+    task.as_object_mut()
+        .ok_or("本地会话格式无效")?
+        .insert("capabilityNotices".to_string(), Value::Array(items));
+    let serialized =
+        serde_json::to_string(&task).map_err(|error| format!("无法序列化本地会话：{error}"))?;
+    if serialized.len() > MAX_TASK_PAYLOAD_BYTES {
+        return Err("本地会话不能超过 16 MB".to_string());
+    }
+    transaction
+        .execute(
+            "UPDATE local_task SET payload = ?1 WHERE employee_key = ?2 AND id = ?3",
+            params![serialized, account, id],
+        )
+        .map_err(database_error)?;
+    transaction.commit().map_err(database_error)
 }
 
 fn task_index_fields(task: &Value) -> Result<(&str, &str, &str, &str), String> {
     let object = task
         .as_object()
         .ok_or_else(|| "本地会话格式无效".to_string())?;
+    if task_interactions(task)?.iter().any(|item| {
+        item.get("sessionId").and_then(Value::as_str).is_none()
+            || item.get("turnId").and_then(Value::as_str).is_none()
+            || item.get("index").and_then(Value::as_u64).is_none()
+            || !matches!(
+                item.get("segment")
+                    .and_then(|value| value.get("kind"))
+                    .and_then(Value::as_str),
+                Some("question" | "user")
+            )
+    }) {
+        return Err("本地会话交互记录格式无效".to_string());
+    }
     const FIELDS: &[&str] = &[
         "id",
         "source",
@@ -628,6 +842,8 @@ fn task_index_fields(task: &Value) -> Result<(&str, &str, &str, &str), String> {
         "entries",
         "messagePreview",
         "processedImEventIds",
+        "capabilityNotices",
+        "interactionSegments",
     ];
     if object.keys().any(|key| !FIELDS.contains(&key.as_str())) {
         return Err("本地会话包含未知字段".to_string());
@@ -1188,6 +1404,20 @@ mod tests {
     }
 
     #[test]
+    fn task_accepts_bounded_desktop_interactions() {
+        let mut task: Value = serde_json::from_str(&valid_task_payload("interactive", 1)).unwrap();
+        task["interactionSegments"] = serde_json::json!([{
+            "sessionId": "session-1", "turnId": "turn:1", "index": 1,
+            "segment": {"kind": "question", "id": "question:q1", "questionId": "q1", "label": "需要回答",
+                "status": "completed", "questions": [{"id": "number", "question": "哪个数？"}],
+                "answers": [{"id": "number", "selected": ["42"]}]}
+        }]);
+        assert!(task_index_fields(&task).is_ok());
+        task["interactionSegments"][0]["segment"]["kind"] = Value::String("tool".into());
+        assert!(task_index_fields(&task).is_err());
+    }
+
+    #[test]
     fn employee_and_like_values_are_validated() {
         assert!(validate_employee_id("employee-1").is_ok());
         assert!(validate_employee_id("employee\n1").is_err());
@@ -1213,6 +1443,9 @@ mod tests {
         let task = serde_json::json!({
             "id": "task", "source": "DESKTOP", "name": "新任务", "status": "COMPLETED",
             "createdAt": "2026-09-13", "updatedAt": "2026-09-13", "entries": [],
+            "capabilityNotices": [{"sessionId": "session-1", "turnId": "turn:1",
+                "segment": {"kind": "notice", "id": "notice:knowledge:scope",
+                    "level": "warning", "text": "范围无效"}}],
             "projection": {"status": "completed", "activity": "完成", "updatedAt": "2026-09-13", "steps": [], "artifacts": []}
         });
         assert_eq!(
@@ -1252,6 +1485,114 @@ mod tests {
                 .unwrap_err()
                 .contains("未知字段")
         );
+    }
+
+    #[test]
+    fn capability_notice_is_appended_without_replacing_task_state_or_crossing_sessions() {
+        let database = task_migration_database();
+        let account = account_key("employee-1");
+        let other = account_key("employee-2");
+        let mut task = valid_local_task("notice-task");
+        task["sessionId"] = Value::String("session-1".into());
+        task["status"] = Value::String("COMPLETED".into());
+        let payload = task.to_string();
+        write_local_task(
+            &database,
+            &account,
+            "notice-task",
+            "任务",
+            "COMPLETED",
+            "2026-09-13",
+            &payload,
+        )
+        .unwrap();
+        write_local_task(
+            &database,
+            &other,
+            "notice-task",
+            "任务",
+            "COMPLETED",
+            "2026-09-13",
+            &payload,
+        )
+        .unwrap();
+        let notice = serde_json::json!({"sessionId": "session-1", "turnId": "pending", "afterTurnId": "turn:1",
+            "segment": {"kind": "notice", "id": "notice:connector:erp", "level": "warning", "text": "连接失败"}});
+        append_task_capability_notice(&database, &account, "notice-task", &notice).unwrap();
+        append_task_capability_notice(&database, &account, "notice-task", &notice).unwrap();
+        let stored: Value = serde_json::from_str(
+            &database
+                .query_row(
+                    "SELECT payload FROM local_task WHERE employee_key = ?1 AND id = 'notice-task'",
+                    [&account],
+                    |row| row.get::<_, String>(0),
+                )
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(stored["capabilityNotices"], serde_json::json!([notice]));
+        assert_eq!(stored["status"], "COMPLETED");
+        let other_payload: Value = serde_json::from_str(
+            &database
+                .query_row(
+                    "SELECT payload FROM local_task WHERE employee_key = ?1 AND id = 'notice-task'",
+                    [&other],
+                    |row| row.get::<_, String>(0),
+                )
+                .unwrap(),
+        )
+        .unwrap();
+        assert!(other_payload.get("capabilityNotices").is_none());
+
+        let mut stale = notice.clone();
+        stale["sessionId"] = Value::String("session-replaced".into());
+        append_task_capability_notice(&database, &account, "notice-task", &stale).unwrap();
+        let invalid = serde_json::json!({"sessionId": "session-1", "turnId": "turn:2",
+            "segment": {"kind": "text", "id": "bad", "level": "warning", "text": "not a notice"}});
+        assert!(
+            append_task_capability_notice(&database, &account, "notice-task", &invalid).is_err()
+        );
+        let unchanged: Value = serde_json::from_str(
+            &database
+                .query_row(
+                    "SELECT payload FROM local_task WHERE employee_key = ?1 AND id = 'notice-task'",
+                    [&account],
+                    |row| row.get::<_, String>(0),
+                )
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(unchanged, stored);
+
+        let mut stale_snapshot = task.clone();
+        stale_snapshot["status"] = Value::String("FAILED".into());
+        save_task_preserving_notices(&database, &account, stale_snapshot).unwrap();
+        let after_save: Value = serde_json::from_str(
+            &database
+                .query_row(
+                    "SELECT payload FROM local_task WHERE employee_key = ?1 AND id = 'notice-task'",
+                    [&account],
+                    |row| row.get::<_, String>(0),
+                )
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(after_save["capabilityNotices"], stored["capabilityNotices"]);
+        assert_eq!(after_save["status"], "FAILED");
+
+        task["sessionId"] = Value::String("session-replaced".into());
+        save_task_preserving_notices(&database, &account, task).unwrap();
+        let replaced: Value = serde_json::from_str(
+            &database
+                .query_row(
+                    "SELECT payload FROM local_task WHERE employee_key = ?1 AND id = 'notice-task'",
+                    [&account],
+                    |row| row.get::<_, String>(0),
+                )
+                .unwrap(),
+        )
+        .unwrap();
+        assert!(replaced.get("capabilityNotices").is_none());
     }
 
     #[test]

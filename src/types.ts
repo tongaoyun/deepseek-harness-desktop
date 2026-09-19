@@ -228,6 +228,10 @@ export interface LocalTaskRun {
   entries: ConversationEntry[]
   /** Small local index hint; the full transcript lives in Harness Persistence. */
   messagePreview?: string
+  /** Bounded product-owned notices, keyed to the official assistant turn. */
+  capabilityNotices?: import('./conversation/capabilityNotices').StoredCapabilityNotice[]
+  /** Desktop question and steering receipts absent from the Harness event log. */
+  interactionSegments?: import('./conversation/interactionSegments').StoredInteractionSegment[]
   processedImEventIds?: string[]
 }
 

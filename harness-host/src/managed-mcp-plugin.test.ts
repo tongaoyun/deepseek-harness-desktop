@@ -131,6 +131,40 @@ it('does not let a remote read-only hint bypass product write approval', async (
   } finally { await dispose(); await new Promise<void>((resolve) => server.close(() => resolve())); await rm(directory, { recursive: true, force: true }); vi.unstubAllEnvs() }
 })
 
+it('retries an optional connector that failed before its first tool discovery', async () => {
+  let available = false
+  const server = createServer(async (request, response) => {
+    if (request.method !== 'POST') { response.writeHead(405).end(); return }
+    let body = ''; for await (const chunk of request) body += chunk
+    const message = JSON.parse(body)
+    if (!available) { response.writeHead(503).end(); return }
+    if (message.id === undefined) { response.writeHead(202).end(); return }
+    const result = message.method === 'initialize'
+      ? { protocolVersion: message.params.protocolVersion, capabilities: { tools: {} }, serverInfo: { name: 'recovered', version: '1' } }
+      : { tools: [{ name: 'sales_summary', inputSchema: { type: 'object' } }] }
+    response.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ jsonrpc: '2.0', id: message.id, result }))
+  })
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  const registered = new Map<string, ToolDefinition>()
+  let dispose = async () => {}
+  try {
+    await apply({ attachments: {}, tools: { register(tool: ToolDefinition) { registered.set(tool.name, tool); return () => registered.delete(tool.name) } },
+      on() { return () => {} }, effect(factory: () => () => Promise<void>) { dispose = factory() },
+    } as unknown as Context, { connectors: [{ id: 'recover', name: 'Recovery', version: '1', transport: 'streamable-http',
+      url: `http://127.0.0.1:${(server.address() as { port: number }).port}/mcp`, authMode: 'none', command: '', arguments: [], environment: {}, headers: {},
+      allowedTools: [], requiredTools: [], readOnlyTools: ['sales_summary'], allowWrite: false, requireWriteApproval: true, required: false,
+      timeoutSeconds: 1, reconnect: { enabled: true, initialDelayMs: 30, maxDelayMs: 100, maxAttempts: 8 },
+    }] })
+    available = true
+    await vi.waitFor(() => expect(registered.has('mcp_recover_sales_summary')).toBe(true), { timeout: 3_000 })
+  } finally {
+    await dispose()
+    server.closeAllConnections()
+    await new Promise<void>((resolve) => server.close(() => resolve()))
+  }
+  expect(registered.size).toBe(0)
+})
+
 it('uses the configured execution deadline and validates its range', () => {
   expect(connectorRequestOptions({})).toEqual({ timeout: 60000, maxTotalTimeout: 60000 })
   expect(connectorRequestOptions({ timeoutSeconds: 120 })).toEqual({ timeout: 120000, maxTotalTimeout: 120000 })
@@ -333,4 +367,3 @@ describe('managed MCP diagnostics', () => {
       .toBe('[REDACTED] [REDACTED]')
   })
 })
-

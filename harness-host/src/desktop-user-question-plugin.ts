@@ -16,11 +16,12 @@ export function apply(ctx: Context): void {
         body: JSON.stringify({ questions: request.questions }),
         ...(request.signal === undefined ? {} : { signal: request.signal }),
       })
-      if (!response.ok) return next()
+      if (!response.ok) throw new Error(`桌面问答通道返回 ${response.status}`)
       const value = await response.json() as AskUserQuestionAnswer
       return value
-    } catch {
-      return next()
+    } catch (error) {
+      if (request.signal?.aborted) throw new Error('本轮已停止，问题回答未交付')
+      throw error
     }
   })
 }

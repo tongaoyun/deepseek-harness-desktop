@@ -7,6 +7,7 @@ import { SESSION_FORMAT_VERSION, SessionId } from '@deepseek-ai/dsh-session'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import { DeepSeekHarnessRuntime } from './runtime.js'
 import { initialTranscriptState, reduceTranscriptEvent, currentAssistantTurn, type TranscriptState } from './transcript-projection.js'
+import { withTaskInstructions } from './task-instructions.js'
 import type { SessionEvent } from './xiaoyin-projections-plugin.js'
 
 let clock = 0
@@ -67,7 +68,7 @@ describe('transcript projection', () => {
     expect(turn.meta.tokenUsage).toEqual({ inputTokens: 100, outputTokens: 50 })
   })
 
-  it('keeps reasoning content out of the visible text segments', () => {
+  it('does not project private reasoning into the desktop transcript', () => {
     const state = fold([
       event('turn/start', { turn: 1 }),
       userMessage('m1', '下载目录里有啥'),
@@ -82,11 +83,8 @@ describe('transcript projection', () => {
     ])
     const turn = state.entries.at(-1)
     if (turn?.role !== 'assistant') throw new Error('expected assistant turn')
-    // Reasoning rides its own segment so the reply shows visible text only.
-    expect(turn.segments).toEqual([
-      { kind: 'thinking', id: '1:1:thinking', text: 'The user wants to list the files in their Downloads directory.' },
-      { kind: 'text', id: '1:1', text: '你的下载目录里有 20 个顶层项目。' },
-    ])
+    expect(turn.segments).toEqual([{ kind: 'text', id: '1:1', text: '你的下载目录里有 20 个顶层项目。' }])
+    expect(JSON.stringify(turn)).not.toContain('The user wants to list')
     expect(turn.segments.filter((segment) => segment.kind === 'text').map((segment) => segment.text))
       .toEqual(['你的下载目录里有 20 个顶层项目。'])
   })
@@ -100,6 +98,32 @@ describe('transcript projection', () => {
       event('turn/end', { turn: 1, reason: { kind: 'completed' } }),
     ])
     expect(state.entries.filter((entry) => entry.role === 'user')).toHaveLength(1)
+  })
+
+  it('restores only the employee prompt from product instructions and memory', () => {
+    const prompt = '请读取合成文件'
+    const memory = '<xiaoyin-memory>\n偏好先给结论\n</xiaoyin-memory>\n\n当前任务：\n'
+    const desktop = (text: string) => `你正在小胤桌面端中工作，执行本地任务。\n\n按所选能力的职责组合完成同一任务。\n\n员工任务：\n${text}`
+    const state = fold([
+      event('turn/start', { turn: 1 }),
+      userMessage('m1', withTaskInstructions(`${memory}${desktop(prompt)}`)),
+      assistantMessage(1, 1, '已读取。'),
+      event('turn/end', { turn: 1, reason: { kind: 'completed' } }),
+      event('turn/start', { turn: 2 }),
+      userMessage('m2', withTaskInstructions(desktop('继续核对'))),
+      assistantMessage(2, 1, '核对完成。'),
+      event('turn/end', { turn: 2, reason: { kind: 'completed' } }),
+    ])
+    expect(state.entries.filter((entry) => entry.role === 'user')).toEqual([
+      { id: 'm1', role: 'user', text: prompt },
+      { id: 'm2', role: 'user', text: '继续核对' },
+    ])
+  })
+
+  it('keeps only the new employee input when rebuilding a workspace session', () => {
+    const replay = '以下是同一任务在重建本地执行会话前的可见对话，仅用于保持上下文。不要重复回答历史内容。\n\n用户：旧要求\n\n当前任务：\n\n新要求'
+    const state = fold([userMessage('m1', withTaskInstructions(`你正在小胤桌面端的 Plan 模式中工作。\n\n员工任务：\n${replay}`))])
+    expect(state.entries[0]).toMatchObject({ role: 'user', text: '新要求' })
   })
 
   it('embeds a mid-turn steer as a user segment between visible segments', () => {
@@ -155,9 +179,9 @@ describe('transcript projection', () => {
     const state = fold([
       event('turn/start', { turn: 1 }),
       userMessage('m1', '任务'),
-      event('approval/request', { approvalId: 'a1', name: 'local_files_write_text', reason: '写入文件' }),
+      event('approval/asked', { id: 'a1', toolName: 'local_files_write_text', reason: '写入文件' }),
       event('question/request', { questionId: 'q1', questions: [{ id: 'q1', question: '选哪个方案？', options: [{ label: 'A' }, { label: 'B' }] }] }),
-      event('approval/decision', { approvalId: 'a1', decision: 'allow' }),
+      event('approval/decided', { id: 'a1', outcome: 'allowed-once' }),
       event('question/answered', { questionId: 'q1' }),
       event('turn/end', { turn: 1, reason: { kind: 'aborted', reason: { kind: 'user' } } }),
     ])
@@ -166,6 +190,19 @@ describe('transcript projection', () => {
     expect(turn.status).toBe('canceled')
     expect(turn.segments.find((segment) => segment.kind === 'approval')).toMatchObject({ status: 'completed', label: '已允许：local_files_write_text' })
     expect(turn.segments.find((segment) => segment.kind === 'question')).toMatchObject({ status: 'completed' })
+  })
+
+  it('replays a rejected approval from durable audit events without exposing a stale decision button', () => {
+    const state = fold([
+      event('turn/start', { turn: 1 }),
+      toolCall(1, 1, 'call-1', 'mcp_erp-mcp_store_sales_summary'),
+      event('approval/asked', { id: 'audit-1', toolName: 'mcp_erp-mcp_store_sales_summary', callId: 'call-1', reason: '需要确认' }),
+      event('approval/decided', { id: 'audit-1', outcome: 'rejected' }),
+      event('turn/end', { turn: 1, reason: { kind: 'aborted' } }),
+    ])
+    const turn = state.entries.at(-1)
+    if (turn?.role !== 'assistant') throw new Error('expected assistant turn')
+    expect(turn.segments.find((segment) => segment.kind === 'approval')).toMatchObject({ status: 'failed', label: '已拒绝：mcp_erp-mcp_store_sales_summary' })
   })
 
   it('drops stale events by sequence and keeps the fold monotonic', () => {

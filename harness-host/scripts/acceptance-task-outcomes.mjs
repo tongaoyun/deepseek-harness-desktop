@@ -17,14 +17,18 @@ const server = createServer(async (request, response) => {
     const chunks = []
     for await (const chunk of request) chunks.push(chunk)
     const body = JSON.parse(Buffer.concat(chunks).toString())
-    assert.ok(body.tools.some((tool) => tool.function.name === 'task_report'), 'production tool list must expose task_report')
+    const names = body.tools.map((tool) => tool.function.name)
+    const discovery = names.includes('tool_discover') && !names.includes('task_report')
+    assert.ok(discovery || names.includes('task_report'), 'production tool list must offer discovery or reporting')
     requests++
-    const report = scenario && !suppliedReport
-    suppliedReport = true
-    const delta = report ? { role: 'assistant', tool_calls: [{ index: 0, id: `report-${requests}`, type: 'function', function: { name: 'task_report', arguments: JSON.stringify(scenario) } }] }
-      : { role: 'assistant', content: '受控验收回复' }
+    const report = scenario && !suppliedReport && !discovery
+    if (report) suppliedReport = true
+    const delta = discovery && scenario
+      ? { role: 'assistant', tool_calls: [{ index: 0, id: `discover-${requests}`, type: 'function', function: { name: 'tool_discover', arguments: '{"groups":["workflow"]}' } }] }
+      : report ? { role: 'assistant', tool_calls: [{ index: 0, id: `report-${requests}`, type: 'function', function: { name: 'task_report', arguments: JSON.stringify(scenario) } }] }
+        : { role: 'assistant', content: '受控验收回复' }
     response.writeHead(200, { 'Content-Type': 'text/event-stream' })
-    for (const choice of [{ index: 0, delta, finish_reason: null }, { index: 0, delta: {}, finish_reason: report ? 'tool_calls' : 'stop' }]) {
+    for (const choice of [{ index: 0, delta, finish_reason: null }, { index: 0, delta: {}, finish_reason: discovery && scenario || report ? 'tool_calls' : 'stop' }]) {
       response.write(`data: ${JSON.stringify({ id: `completion-${requests}`, object: 'chat.completion.chunk', created: 1, model: 'deepseek-v4-flash', choices: [choice] })}\n\n`)
     }
     response.end('data: [DONE]\n\n')
@@ -45,6 +49,7 @@ try {
   })
   deadline = setTimeout(() => { void runtime.close() }, 30_000)
   for (const status of ['completed', 'needs_input', undefined]) {
+    const before = requests
     scenario = status ? { status, summary: '受控任务结果', remaining: status === 'completed' ? [] : ['提供统计月份'], checks: [] } : undefined
     suppliedReport = false
     const calls = []
@@ -53,7 +58,8 @@ try {
       if (event?.type === 'tool/call') calls.push(event.data.name)
     })
     assert.ifError(serverFailure)
-    assert.equal(result.outcome.status, status ?? 'unverified')
+    assert.equal(result.outcome.status, status ?? 'answered')
+    assert.equal(requests - before, status ? 3 : 1, 'a direct answer must not request a report')
     assert.equal(result.finalResponse, '受控验收回复')
     if (scenario) {
       assert.deepEqual(result.outcome, scenario)

@@ -1,6 +1,7 @@
 import { useEffect, useRef, type RefObject } from 'react'
 import { harnessLiveEvent, harnessProjectionUpdate, listenHarnessNotifications, normalizeHarnessProjection } from './harness'
 import { appendCapabilityNotice, applyLiveEvent, mergeSettledTurn } from './conversation/liveText'
+import { captureCapabilityNotices, type StoredCapabilityNotice } from './conversation/capabilityNotices'
 import { parseAssistantTurn, type ConversationEntry } from './conversation/types'
 import type { XiaoyinTaskProjection } from './types'
 
@@ -11,21 +12,24 @@ export interface StreamingTaskState {
   projectionSeqByKey?: Record<string, number>
   entries: ConversationEntry[]
   cancellationRequested: boolean
+  stopFallback?: number
 }
 
 export function useHarnessNotifications({
   currentTaskIdRef,
   onCurrentUpdate,
   onTaskUpdate,
+  onCapabilityNotice,
   streamingTasksRef,
 }: {
   currentTaskIdRef: RefObject<string>
   onCurrentUpdate: (projection: XiaoyinTaskProjection, entries?: ConversationEntry[]) => void
   onTaskUpdate: (taskId: string, projection: XiaoyinTaskProjection, entries: ConversationEntry[]) => void
+  onCapabilityNotice?: (taskId: string, notice: StoredCapabilityNotice) => void
   streamingTasksRef: RefObject<Map<string, StreamingTaskState>>
 }) {
-  const latest = useRef({ onCurrentUpdate, onTaskUpdate })
-  latest.current = { onCurrentUpdate, onTaskUpdate }
+  const latest = useRef({ onCurrentUpdate, onTaskUpdate, onCapabilityNotice })
+  latest.current = { onCurrentUpdate, onTaskUpdate, onCapabilityNotice }
 
   useEffect(() => {
     let disposed = false
@@ -45,9 +49,13 @@ export function useHarnessNotifications({
           const notice = projectionUpdate.value as { kind?: unknown; name?: unknown; reason?: unknown } | undefined
           if (!notice || typeof notice.name !== 'string' || typeof notice.reason !== 'string') return
           streaming.projectionSeqByKey = { ...streaming.projectionSeqByKey, 'xiaoyin.capabilityNotice': projectionUpdate.seq }
-          streaming.entries = appendCapabilityNotice(streaming.entries, { kind: String(notice.kind ?? ''), name: notice.name, reason: notice.reason })
+          const entries = appendCapabilityNotice(streaming.entries, { kind: String(notice.kind ?? ''), name: notice.name, reason: notice.reason })
+          if (entries === streaming.entries) return
+          streaming.entries = entries
           latest.current.onTaskUpdate(taskId, streaming.projection, streaming.entries)
           if (currentTaskIdRef.current === taskId) latest.current.onCurrentUpdate(streaming.projection, streaming.entries)
+          const stored = captureCapabilityNotices(streaming.sessionId, entries).at(-1)
+          if (stored) latest.current.onCapabilityNotice?.(taskId, stored)
           return
         }
         if (projectionUpdate.key === 'xiaoyin.transcript') {

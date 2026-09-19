@@ -9,7 +9,7 @@ import type { ScheduledTasksPage } from './ScheduledTasksPage'
 import type { CapabilityCatalogPage } from './ExtensionCatalogPages'
 import { creationPrompt } from './creationPrompts'
 import * as harness from './harness'
-import type { ConnectorCatalogEntry, LocalTaskRun } from './types'
+import type { ConnectorCatalogEntry, KnowledgeBaseEntry, LocalTaskRun } from './types'
 import { assistantEntry, entryText, userEntry } from './conversation/testing'
 import type { ConversationEntry, AssistantTurn } from './conversation/types'
 import { mergeExpertKits, type ExpertKitView } from './expertKits'
@@ -21,14 +21,14 @@ import { readTaskDraft, saveTaskDraft } from './taskDrafts'
 import * as taskDrafts from './taskDrafts'
 import { useHarnessNotifications } from './useHarnessNotifications'
 import { rememberInstruction, emptyMemoryProfile, learnCompletedTask } from './memory'
-import { loadBootstrap } from './api'
+import { loadBootstrap, loadKnowledgeBases } from './api'
 
 const fixtures = vi.hoisted(() => ({
   drop: undefined as Parameters<typeof import('./useDesktopDrop').useDesktopDrop>[0] | undefined,
   models: ['original-model', 'other-model'],
   user: { userId: 'queue-test', teamId: 'team', name: '测试员工' },
   authState: 'authenticated' as 'authenticated' | 'required',
-  catalog: { connectors: [] as ConnectorCatalogEntry[], expertKitCatalog: [], expertKits: [] as ExpertKitView[], knowledgeBases: [], skills: [], skillViews: [], loading: false },
+  catalog: { connectors: [] as ConnectorCatalogEntry[], expertKitCatalog: [], expertKits: [] as ExpertKitView[], knowledgeBases: [] as KnowledgeBaseEntry[], skills: [], skillViews: [], loading: false },
   chat: undefined as ComponentProps<typeof ChatPage> | undefined,
   sidebar: undefined as ComponentProps<typeof DesktopSidebar> | undefined,
   schedules: undefined as ComponentProps<typeof ScheduledTasksPage> | undefined,
@@ -45,7 +45,7 @@ vi.mock('./ChatPage', () => ({ ChatPage: (props: ComponentProps<typeof ChatPage>
 vi.mock('./DesktopSidebar', () => ({ DesktopSidebar: (props: ComponentProps<typeof DesktopSidebar>) => { fixtures.sidebar = props; return null } }))
 vi.mock('./ScheduledTasksPage', () => ({ ScheduledTasksPage: (props: ComponentProps<typeof ScheduledTasksPage>) => { fixtures.schedules = props; return null } }))
 vi.mock('./ExtensionCatalogPages', () => ({ CapabilityCatalogPage: (props: ComponentProps<typeof CapabilityCatalogPage>) => { fixtures.creationCatalog = props; return null } }))
-vi.mock('./api', async (original) => ({ ...await original<object>(), loadBootstrap: vi.fn(async () => ({ employeeId: fixtures.user.userId, models: [...fixtures.models], capabilities: [], endpoints: { litellm: '/model', knowledge: '/knowledge', schedules: '/schedules' } })) }))
+vi.mock('./api', async (original) => ({ ...await original<object>(), loadBootstrap: vi.fn(async () => ({ employeeId: fixtures.user.userId, models: [...fixtures.models], capabilities: [], endpoints: { litellm: '/model', knowledge: '/knowledge', schedules: '/schedules' } })), loadKnowledgeBases: vi.fn() }))
 vi.mock('./taskHistory', async (original) => ({ ...await original<object>(), loadTaskHistory: vi.fn(async () => ({ tasks: [], invalidCount: 0 })), loadTaskById: vi.fn(), persistTaskHistory: vi.fn(async () => {}) }))
 vi.mock('./taskRecovery', () => ({ runHarnessWithRecovery: vi.fn() }))
 vi.mock('./taskAudit', () => ({ reportTaskAudit: vi.fn(async () => {}) }))
@@ -59,6 +59,22 @@ const completedOutcome: TaskOutcome = { status: 'completed', summary: '已完成
 
 const olderTask = (): LocalTaskRun => ({ id: 'older-task', source: 'DESKTOP', name: '更早的定时任务', status: 'COMPLETED', createdAt: '2026-09-01', updatedAt: '2026-09-01', projection: harness.createXiaoyinTaskProjection(), entries: [userEntry('u1', '保留原始需求'), assistantEntry('turn:1', '历史成果已生成')] })
 const strippedTask = (): LocalTaskRun => ({ ...olderTask(), id: 'stripped-task', sessionId: 'session-stripped', entries: [], messagePreview: '历史摘要' })
+it('checks selected knowledge against the live catalog before starting a task', async () => {
+  const base: KnowledgeBaseEntry = { id: 'kb-1', referenceKey: 'weekly', reference: 'team:weekly', scope: 'TEAM', name: '周报资料', description: '', createdAt: '', updatedAt: '' }
+  fixtures.catalog.knowledgeBases = [base]
+  vi.mocked(runHarnessWithRecovery).mockResolvedValue({ finalResponse: '已查询', sessionId: 'knowledge-session' })
+  await fixture(async () => {
+    await act(async () => fixtures.chat!.onAddKnowledge(base.reference))
+    await submit('查询周报资料')
+    expect(loadKnowledgeBases).toHaveBeenCalledOnce()
+    expect(runHarnessWithRecovery).not.toHaveBeenCalled()
+    expect(fixtures.chat!.localFileError).toContain('team:weekly')
+
+    vi.mocked(loadKnowledgeBases).mockResolvedValueOnce([base])
+    await submit('查询周报资料')
+    expect(runHarnessWithRecovery).toHaveBeenCalledOnce()
+  })
+})
 it('starts a file generation task in the default workspace without requiring a directory picker', async () => {
   vi.mocked(runHarnessWithRecovery).mockResolvedValue({ finalResponse: '成果已生成', sessionId: 'workspace-task' })
   await fixture(async () => {
@@ -477,6 +493,7 @@ beforeEach(() => {
   vi.mocked(persistTaskHistory).mockReset().mockResolvedValue(undefined)
   vi.mocked(harness.shutdownHarness).mockReset().mockResolvedValue(undefined)
   vi.mocked(loadTaskById).mockReset()
+  vi.mocked(loadKnowledgeBases).mockReset().mockResolvedValue([])
   vi.mocked(loadTaskHistory).mockResolvedValue({ tasks: [], invalidCount: 0 })
   fixtures.models = ['original-model', 'other-model']
   const values = new Map<string, string>()
@@ -484,7 +501,7 @@ beforeEach(() => {
   vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new Error('Unexpected network access in queue regression'))))
   Element.prototype.scrollTo = vi.fn()
 })
-afterEach(() => { fixtures.authState = 'authenticated'; fixtures.catalog.connectors = []; fixtures.catalog.expertKits = []; vi.restoreAllMocks(); vi.clearAllMocks(); vi.unstubAllGlobals() })
+afterEach(() => { fixtures.authState = 'authenticated'; fixtures.catalog.connectors = []; fixtures.catalog.expertKits = []; fixtures.catalog.knowledgeBases = []; vi.restoreAllMocks(); vi.clearAllMocks(); vi.unstubAllGlobals() })
 
 async function fixture(check: () => Promise<void>) {
   const container = document.body.appendChild(document.createElement('div'))
@@ -674,6 +691,21 @@ it.each(['partial', 'needs_input', 'needs_confirmation', 'blocked', 'unverified'
     expect(saved.entries.at(-1)?.role === 'assistant' ? (saved.entries.at(-1) as ConversationEntry & { meta?: { outcome?: unknown } }).meta?.outcome : undefined).toEqual(saved.projection.outcome)
     expect(reportTaskAudit).not.toHaveBeenCalledWith(expect.objectContaining({ outcome: 'SUCCEEDED' }))
     expect(learnCompletedTask).not.toHaveBeenCalled()
+  })
+})
+
+it('renders a tool-free answer as delivered without learning a verified task completion', async () => {
+  vi.mocked(runHarnessWithRecovery).mockResolvedValueOnce({
+    finalResponse: '2', sessionId: 'answer',
+    outcome: { status: 'answered', summary: '回答已送达；未执行任务验收。', remaining: [], checks: [] },
+  })
+  await fixture(async () => {
+    await submit('1+1=?')
+    expect(fixtures.chat!.taskProjection.outcome?.status).toBe('answered')
+    const lastEntry = fixtures.chat!.entries.at(-1)
+    expect(lastEntry?.role === 'assistant' ? lastEntry.meta?.outcome?.status : undefined).toBe('answered')
+    expect(learnCompletedTask).not.toHaveBeenCalled()
+    expect(reportTaskAudit).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'SUCCEEDED', taskOutcome: expect.objectContaining({ status: 'answered' }) }))
   })
 })
 
@@ -1014,8 +1046,12 @@ it('injects a message into the running turn instead of queueing it', async () =>
     expect(runHarnessWithRecovery).toHaveBeenCalledOnce()
     expect(fixtures.chat!.queue?.items ?? []).toHaveLength(0)
     expect(fixtures.chat!.prompt).toBe('')
-    const steerEntry = fixtures.chat!.entries.at(-1)
-    expect(steerEntry).toMatchObject({ role: 'user', text: '改用方案 B', source: 'steer' })
+    const openTurn = fixtures.chat!.entries.at(-1)
+    expect(openTurn).toMatchObject({ role: 'assistant', status: 'streaming', segments: [{ kind: 'user', text: '改用方案 B' }] })
+    await act(async () => first.resolve({ sessionId: 'steered-session', finalResponse: '已按方案 B 处理' }))
+    expect(fixtures.chat!.entries.at(-1)).toMatchObject({ role: 'assistant', status: 'completed', segments: [
+      { kind: 'user', text: '改用方案 B' }, { kind: 'text', text: '已按方案 B 处理' },
+    ] })
   })
 })
 
@@ -1096,9 +1132,9 @@ it('force-stops a turn whose interrupt never lands because the harness went quie
       await submit('查询这个订单')
       await act(async () => fixtures.chat!.onCancel())
       expect(harness.interruptHarness).toHaveBeenCalledOnce()
-      // The interrupt rides the next harness event; a blocked turn emits none.
+      // A quiet model or tool cannot delay Stop indefinitely.
       expect(harness.cancelHarness).not.toHaveBeenCalled()
-      await act(async () => { vi.advanceTimersByTime(4_100) })
+      await act(async () => { vi.advanceTimersByTime(1_100) })
       expect(harness.cancelHarness).toHaveBeenCalledOnce()
     })
   } finally { vi.useRealTimers() }

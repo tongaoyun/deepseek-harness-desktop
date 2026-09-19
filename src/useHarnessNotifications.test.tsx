@@ -36,6 +36,28 @@ it('ignores late events after stopping without affecting other tasks', async () 
   } finally { await act(async () => root.unmount()); container.remove() }
 })
 
+it('routes native approval notifications to the current running turn without a turn number', async () => {
+  let listener: (notification: HarnessNotification) => void = () => {}
+  vi.mocked(listenHarnessNotifications).mockImplementation(async (callback) => { listener = callback; return () => {} })
+  const streaming: StreamingTaskState = {
+    sessionId: 'session', projection: { status: 'running', activity: '正在调用', updatedAt: '', steps: [], artifacts: [] },
+    entries: [assistantEntry('turn:1', [], {}, 'streaming')], cancellationRequested: false,
+  }
+  const onCurrentUpdate = vi.fn(); const onTaskUpdate = vi.fn()
+  const streamingTasksRef = { current: new Map([['one', streaming]]) }; const currentTaskIdRef = { current: 'one' }
+  function Host() { useHarnessNotifications({ currentTaskIdRef, streamingTasksRef, onCurrentUpdate, onTaskUpdate }); return null }
+  const container = document.body.appendChild(document.createElement('div')); const root = createRoot(container)
+  try {
+    await act(async () => root.render(<Host />))
+    await act(async () => listener({ taskId: 'one', requestId: 1, event: { event: { method: 'session.event', params: {
+      event: { type: 'approval/request', data: { approvalId: 'bridge-1', name: 'mcp_erp-mcp_store_sales_summary', reason: '需要确认' } },
+    } } } }))
+    expect(streaming.entries[0]).toMatchObject({ segments: [{ kind: 'approval', approvalId: 'bridge-1', status: 'running' }] })
+    expect(onCurrentUpdate).toHaveBeenCalledOnce()
+    expect(onTaskUpdate).toHaveBeenCalledOnce()
+  } finally { await act(async () => root.unmount()); container.remove() }
+})
+
 it('merges official token and context projections without replacing the Xiaoyin task view', async () => {
   let listener: (notification: HarnessNotification) => void = () => {}
   vi.mocked(listenHarnessNotifications).mockImplementation(async (callback) => { listener = callback; return () => {} })
@@ -209,9 +231,9 @@ it('shows a capability the runtime could not provide on the turn', async () => {
     sessionId: 'session', projection: { status: 'running', activity: '正在处理', updatedAt: '', steps: [], artifacts: [] },
     projectionSeq: -1, projectionSeqByKey: {}, entries: [userEntry('u1', '查订单'), assistantEntry('pending', [], {}, 'streaming')], cancellationRequested: false,
   }
-  const onCurrentUpdate = vi.fn(); const onTaskUpdate = vi.fn()
+  const onCurrentUpdate = vi.fn(); const onTaskUpdate = vi.fn(); const onCapabilityNotice = vi.fn()
   const streamingTasksRef = { current: new Map([['one', first]]) }; const currentTaskIdRef = { current: 'one' }
-  function Host() { useHarnessNotifications({ currentTaskIdRef, streamingTasksRef, onCurrentUpdate, onTaskUpdate }); return null }
+  function Host() { useHarnessNotifications({ currentTaskIdRef, streamingTasksRef, onCurrentUpdate, onTaskUpdate, onCapabilityNotice }); return null }
   const container = document.body.appendChild(document.createElement('div')); const root = createRoot(container)
   try {
     await act(async () => root.render(<Host />))
@@ -222,6 +244,9 @@ it('shows a capability the runtime could not provide on the turn', async () => {
     const turn = first.entries.at(-1)
     if (turn?.role !== 'assistant') throw new Error('expected assistant turn')
     expect(turn.segments).toEqual([{ kind: 'notice', id: 'notice:connector:erp-mcp', level: 'warning', text: '本轮未使用连接器「erp-mcp」：连接失败' }])
+    expect(onCapabilityNotice).toHaveBeenCalledOnce()
+    expect(onCapabilityNotice).toHaveBeenCalledWith('one', { sessionId: 'session', turnId: 'pending',
+      segment: turn.segments[0] })
     // The same gap is never reported twice.
     await act(async () => listener({ taskId: 'one', requestId: 1, event: { method: 'session.projection', params: {
       sessionId: 'session', key: 'xiaoyin.capabilityNotice', seq: 2,
@@ -229,5 +254,6 @@ it('shows a capability the runtime could not provide on the turn', async () => {
     } } }))
     if (turn?.role !== 'assistant') throw new Error('expected assistant turn')
     expect(first.entries.at(-1)?.role === 'assistant' && (first.entries.at(-1) as { segments: unknown[] }).segments).toHaveLength(1)
+    expect(onCapabilityNotice).toHaveBeenCalledOnce()
   } finally { await act(async () => root.unmount()); container.remove() }
 })

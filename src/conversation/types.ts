@@ -1,4 +1,4 @@
-import type { LocalTaskAttachment, TaskQuestionItem } from '../types'
+import type { LocalTaskAttachment, TaskQuestionAnswer, TaskQuestionItem } from '../types'
 import type { TaskOutcome } from '../taskOutcome'
 import type { ReasoningEffort } from '../modelReasoning'
 
@@ -80,6 +80,7 @@ export type QuestionSegment = {
   label: string
   questions: TaskQuestionItem[]
   status: 'running' | 'completed'
+  answers?: TaskQuestionAnswer[]
 }
 
 /** Something the employee should know about this turn, e.g. a capability gap. */

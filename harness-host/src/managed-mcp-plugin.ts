@@ -152,11 +152,12 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
       continue
     }
     let client: Client | undefined
+    let binding: ConnectorBinding | undefined
     try {
       validateConnector(connector, employeeToken)
       client = new Client({ name: `xiaoyin-desktop-${connector.id}`, version: '0.1.0' })
       const transport = createTransport(connector, employeeToken)
-      const binding: ConnectorBinding = {
+      const activeBinding: ConnectorBinding = {
         connector,
         client,
         transport,
@@ -167,9 +168,10 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
         refreshQueue: Promise.resolve(),
         closed: false,
       }
+      binding = activeBinding
       transport.onclose = () => {
-        if (!binding.closed && bindings.includes(binding) && binding.client === client) {
-          scheduleReconnect(ctx, binding, employeeToken, registeredNames, mutatingTools)
+        if (!activeBinding.closed && bindings.includes(activeBinding) && activeBinding.client === client) {
+          scheduleReconnect(ctx, activeBinding, employeeToken, registeredNames, mutatingTools)
         }
       }
       await client.connect(transport, connectorRequestOptions(connector))
@@ -183,13 +185,13 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
         connector.name,
         connector.readOnlyTools,
       )
-      installConnectorTools(ctx, binding, tools, registeredNames, mutatingTools, employeeToken, journal)
+      installConnectorTools(ctx, activeBinding, tools, registeredNames, mutatingTools, employeeToken, journal)
       client.setNotificationHandler('notifications/tools/list_changed', () => {
-        binding.refreshQueue = binding.refreshQueue
-          .then(() => refreshConnectorTools(ctx, binding, registeredNames, mutatingTools, employeeToken, journal))
-          .catch((error) => logConnectorRefreshFailure(binding.connector, employeeToken, error))
+        activeBinding.refreshQueue = activeBinding.refreshQueue
+          .then(() => refreshConnectorTools(ctx, activeBinding, registeredNames, mutatingTools, employeeToken, journal))
+          .catch((error) => logConnectorRefreshFailure(activeBinding.connector, employeeToken, error))
       })
-      bindings.push(binding)
+      bindings.push(activeBinding)
       debug(`${connector.name}: connected, registered=${tools.length}`)
     } catch (error) {
       if (client) await closeQuietly(client)
@@ -202,6 +204,10 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
       // The employee asked for this connector: the turn says it was skipped
       // instead of quietly answering without it.
       rememberCapabilityNotice({ kind: 'connector', id: connector.id, name: connector.name, reason: message })
+      if (binding) {
+        bindings.push(binding)
+        scheduleReconnect(ctx, binding, employeeToken, registeredNames, mutatingTools)
+      }
     }
   }
 

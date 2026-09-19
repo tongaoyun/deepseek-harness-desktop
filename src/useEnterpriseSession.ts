@@ -20,6 +20,7 @@ export function useEnterpriseSession() {
     let accepted: ErpSessionStatus | undefined
     let loginOpened = false
     let pendingLogout = false
+    let manualRetryQueued = false
     let authorizingUntil = 0
     let unlisten: (() => void) | undefined
     const current = (request: number) => !disposed && request === generation
@@ -39,6 +40,8 @@ export function useEnterpriseSession() {
     async function check() {
       if (disposed || pendingLogout || checking === generation) return
       const request = generation
+      const manualRetry = manualRetryQueued
+      manualRetryQueued = false
       checking = request
       clearTimeout(timer)
       try {
@@ -67,6 +70,7 @@ export function useEnterpriseSession() {
         }
       } catch (cause) {
         if (!current(request)) return
+        if (manualRetryQueued) return
         // A failed request does not prove logout. Keep only the still-valid session.
         const accessDenied = cause && typeof cause === 'object' && 'code' in cause && cause.code === 'access_denied'
         if (accessDenied) accepted = undefined
@@ -74,15 +78,20 @@ export function useEnterpriseSession() {
           setSession(undefined)
           setState('error')
         }
-        setError(sessionFailureMessage(cause))
+        const message = sessionFailureMessage(cause)
+        setError(manualRetry ? `重新检查后仍未成功：${message}` : message)
         schedule(RETRY_MS)
       } finally {
-        if (checking === request) checking = undefined
+        if (checking === request) {
+          checking = undefined
+          if (manualRetryQueued && current(request) && !pendingLogout) schedule(0)
+        }
       }
     }
     const logout = async () => {
       const request = ++generation
       pendingLogout = true
+      manualRetryQueued = false
       clearTimeout(timer)
       accepted = undefined
       setSession(undefined)
@@ -108,6 +117,9 @@ export function useEnterpriseSession() {
         if (pendingLogout) return logout()
         loginOpened = false
         authorizingUntil = 0
+        manualRetryQueued = true
+        setState('checking')
+        setError('')
         await check()
       },
     }

@@ -36,7 +36,7 @@ it('resizes the composer, selects a command with the keyboard, and then submits 
   try {
     await act(async () => root.render(<Composer />))
     const input = container.querySelector('textarea')!
-    expect(input.style.height).toBe('64px')
+    expect(input.style.height).toBe('44px')
     Object.defineProperty(input, 'scrollHeight', { configurable: true, value: 500 })
     const press = async (key: string, isComposing = false) => act(async () => { input.dispatchEvent(new KeyboardEvent('keydown', { key, isComposing, bubbles: true, cancelable: true })) })
     expect(container.querySelectorAll('[role="option"]')).toHaveLength(2)
@@ -46,7 +46,7 @@ it('resizes the composer, selects a command with the keyboard, and then submits 
     await press('Enter')
     expect(input.value).toBe('')
     expect(container.querySelector('.composer-capability')?.textContent).toContain('周报')
-    expect(input.style.height).toBe('220px')
+    expect(input.style.height).toBe('160px')
     expect(container.querySelector('[role="listbox"]')).toBeNull()
     expect(submit).not.toHaveBeenCalled()
     await press('Enter')
@@ -60,6 +60,6 @@ it('resizes the composer, selects a command with the keyboard, and then submits 
       Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(input, '')
       input.dispatchEvent(new Event('input', { bubbles: true }))
     })
-    expect(input.style.height).toBe('64px')
+    expect(input.style.height).toBe('44px')
   } finally { await act(async () => root.unmount()); container.remove() }
 })

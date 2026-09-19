@@ -4,6 +4,7 @@ import type { ToolSegment } from '../conversation/types'
 export function toolActionLabel(toolName: string): string {
   const tool = toolName.replaceAll('.', '_')
   const known: Record<string, string> = {
+    skill: '加载技能',
     local_files_roots: '查看目录', local_files_list: '查看目录', local_files_search: '搜索文件',
     local_files_read_text: '读取文件', office_document_read: '读取文件',
     office_document_check: '检查文档结构', office_pdf_page: '查看 PDF 页面',
@@ -29,8 +30,9 @@ export function toolActionLabel(toolName: string): string {
 /** One-line summary of a run of tool cards, Claude Code style. */
 export function toolGroupLabel(tools: ToolSegment[]): string {
   if (!tools.length) return '暂无操作'
-  const running = tools.filter((tool) => tool.status === 'running')
-  const completed = tools.filter((tool) => tool.status === 'completed')
+  const meaningful = tools.filter((tool) => tool.toolName !== 'tool_discover' && tool.toolName !== 'task_report')
+  const running = meaningful.filter((tool) => tool.status === 'running')
+  const completed = meaningful.filter((tool) => tool.status === 'completed')
   const failed = tools.filter((tool) => tool.status === 'failed').length
   const canceled = tools.filter((tool) => tool.status === 'canceled').length
   const parts: string[] = []
@@ -38,11 +40,10 @@ export function toolGroupLabel(tools: ToolSegment[]): string {
   if (canceled) parts.push(`${canceled} 个操作已停止`)
   const active = [...new Set(running.map((tool) => toolActionLabel(tool.toolName)))]
   if (active.length) parts.push(...active.slice(0, 2).map((action) => `正在${action}`))
-  if (active.length > 2) parts.push(`另有 ${active.length - 2} 类操作进行中`)
   const actions = [...new Set(completed.map((tool) => toolActionLabel(tool.toolName)))]
-  parts.push(...actions.slice(0, 3).map((action) => `已${action}`))
-  if (actions.length > 3) parts.push(`另有 ${actions.length - 3} 类操作完成`)
-  return parts.join(' · ') || `共 ${tools.length} 次操作`
+  const notable = actions.length > 1 ? actions.filter((action) => action !== '查看目录') : actions
+  parts.push(...notable.filter((action) => !active.includes(action)).slice(0, Math.max(0, 3 - parts.length)).map((action) => `已${action}`))
+  return parts.join(' · ') || (tools.some((tool) => tool.status === 'running') ? '正在准备任务' : '执行记录')
 }
 
 export function toolGroupStatus(tools: ToolSegment[]): string {
@@ -63,6 +64,7 @@ export function toolCategory(toolName: string): ToolCategory {
   if (tool.startsWith('subagent')) return 'subagent'
   if (tool === 'bash' || tool === 'pwsh' || tool.startsWith('terminal_') || tool.startsWith('job_')) return 'command'
   if (tool === 'local_files_read_text' || tool === 'office_document_read' || tool === 'office_pdf_page'
+    || tool === 'office_document_check' || tool === 'office_engine_status'
     || tool === 'local_files_list' || tool === 'local_files_roots' || tool === 'local_files_search'
     || tool === 'session_search' || tool === 'session_event_search' || tool === 'session_trace'
     || tool === 'session_event_trace' || tool === 'session_event_read' || tool === 'list_agents') return 'read'
@@ -93,8 +95,8 @@ export function formatDuration(seconds: number): string {
 
 export function turnDurationLabel(startedAt?: string, completedAt?: string): string {
   const elapsed = Date.parse(completedAt ?? '') - Date.parse(startedAt ?? '')
-  if (!Number.isFinite(elapsed) || elapsed < 0) return ''
-  return formatDuration(Math.max(0, Math.floor(elapsed / 1_000)))
+  if (!Number.isFinite(elapsed) || elapsed < 1_000) return ''
+  return formatDuration(Math.floor(elapsed / 1_000))
 }
 
 export function formatTokens(count: number): string {
