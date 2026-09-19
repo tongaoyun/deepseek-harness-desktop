@@ -10,8 +10,8 @@ export interface ExtensionInvocation {
   kind: 'expert-kit' | 'skill'
   id: string
   selection: CapabilitySelection
-  /** A skill reachable only through its kit: usable and shown as a skill, but not a capability the
-   *  employee picks from the top-level menus, where its kit already stands for it. */
+  /** A skill shipped by a kit. It remains a kit selection internally, while the composer exposes it
+   *  alongside standalone skills so the employee can load only the method needed for this task. */
   bundledSkill?: boolean
 }
 
@@ -37,7 +37,7 @@ export function extensionInvocations(kits: ExpertKitView[], skills: SkillView[])
         // same as choosing a standalone skill instead of pasting a sentence into the draft.
         ...skills.map((skill): ExtensionInvocation => ({
           token: `/kit:${kit.id}:skill:${skill.id}`, name: detailById.get(skill.id)?.name || skill.id,
-          description: detailById.get(skill.id)?.summary || `${kit.name}中的工作方法`, kind: 'expert-kit', id: kit.id,
+          description: `${kit.name} · ${detailById.get(skill.id)?.summary || '套件内技能'}`, kind: 'expert-kit', id: kit.id,
           selection: { mode: 'explicit', kind: 'expert-kit', extensionId: kit.id, extensionVersion: version, skillId: skill.id },
           bundledSkill: true,
         })),

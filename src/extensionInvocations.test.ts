@@ -12,10 +12,10 @@ describe('extension invocations', () => {
   it('exposes installed kits, their commands and their bundled skills', () => {
     const options = extensionInvocations(mergeExpertKits([], [installed]), [])
     expect(options.map((item) => item.token)).toEqual(['/kit:reports', '/kit:reports:weekly', '/kit:reports:skill:report'])
-    // A bundled skill reads like a standalone one instead of borrowing the kit's name, but it is
-    // reachable only through its kit, so the top-level menus keep listing the kit alone.
+    // A bundled skill reads like a standalone one while retaining its parent kit selection.
     const bundled = options.find((item) => item.token === '/kit:reports:skill:report')!
     expect(bundled.name).toBe('report')
+    expect(bundled.description).toContain('分析专家')
     expect(bundled.bundledSkill).toBe(true)
     expect(options.filter((item) => !item.bundledSkill).map((item) => item.token)).toEqual(['/kit:reports', '/kit:reports:weekly'])
     expect(selectedInvocations('/kit:reports:weekly 本周数据', options)).toMatchObject([{ kind: 'expert-kit', id: 'reports', selection: {

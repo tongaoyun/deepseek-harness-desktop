@@ -5900,6 +5900,7 @@ dependencies = [
  "tauri-plugin-process",
  "tauri-plugin-updater",
  "tiny_http",
+ "tokio",
  "uuid",
  "windows-sys 0.52.0",
  "zip 4.6.1",

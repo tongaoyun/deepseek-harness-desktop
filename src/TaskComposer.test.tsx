@@ -110,9 +110,9 @@ it('dismisses the shared model picker outside but keeps it open for inside click
   }
 })
 
-it('does not ask users to choose an execution mode', async () => {
+it('keeps execution mode next to the model settings', async () => {
   await fixture('', { models: ['gpt-6-astra'], activeModel: 'gpt-6-astra' }, async (container) => {
-    expect(container.querySelector('[aria-label="执行模式"]')).toBeNull()
+    expect(container.querySelector('[aria-label="执行模式"]')?.nextElementSibling?.classList.contains('composer-model-picker')).toBe(true)
     expect(container.querySelector('.model-label')!.textContent).toContain('GPT 6 Astra')
   })
 })
@@ -164,17 +164,35 @@ it('lets a single chosen capability describe itself until the employee types', a
     expect(container.querySelector('textarea')!.placeholder).toBe('描述任务，/ 调用技能或套件，@ 添加上下文')
   })
 })
-it('keeps a kit-bundled skill out of the menus while still naming it once chosen', async () => {
+it('offers a kit-bundled skill as a focused skill invocation', async () => {
   const invocations = [
     invocation({ token: '/kit:fullstack', id: 'fullstack', kind: 'expert-kit', name: '全栈开发专家', description: '开发套件' }),
     invocation({ token: '/kit:fullstack:skill:api-design', id: 'fullstack', kind: 'expert-kit', name: 'API接口设计', description: '设计接口', bundledSkill: true }),
   ]
   await fixture('/', { invocations }, async (container) => {
-    expect([...container.querySelectorAll('[role="option"]')].map((item) => item.textContent)).toEqual(['全栈开发专家开发套件'])
+    expect([...container.querySelectorAll('[role="option"]')].map((item) => item.textContent)).toEqual(['全栈开发专家开发套件', 'API接口设计设计接口'])
+  })
+  await fixture('', { invocations }, async (container) => {
+    await click(container, '[aria-label="添加上下文"]')
+    await click(container, '[role="tab"]:nth-child(2)')
+    expect(container.querySelector('[role="tabpanel"]')!.textContent).toContain('API接口设计')
+    expect(container.querySelector('[role="tabpanel"]')!.textContent).not.toContain('全栈开发专家开发套件')
   })
   await fixture('/kit:fullstack:skill:api-design ', { invocations }, async (container) => {
     expect(container.querySelector('.composer-capability')!.textContent).toContain('API接口设计')
     expect(container.querySelector('textarea')!.placeholder).toBe('设计接口')
+  })
+})
+it('switches between Agent and Plan while idle and locks the mode during execution', async () => {
+  const change = vi.fn()
+  await fixture('', { executionMode: 'agent', onExecutionModeChange: change }, async (container) => {
+    const buttons = [...container.querySelectorAll<HTMLButtonElement>('[aria-label="执行模式"] button')]
+    expect(buttons.map((button) => [button.textContent, button.getAttribute('aria-pressed')])).toEqual([['Agent', 'true'], ['Plan', 'false']])
+    await act(async () => buttons[1].click())
+    expect(change).toHaveBeenCalledWith('plan')
+  })
+  await fixture('', { executionMode: 'plan', currentTaskRunning: true }, async (container) => {
+    expect([...container.querySelectorAll<HTMLButtonElement>('[aria-label="执行模式"] button')].every((button) => button.disabled)).toBe(true)
   })
 })
 it('turns an at query into actual knowledge context rather than leaving an inert mention', async () => {

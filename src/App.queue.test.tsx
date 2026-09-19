@@ -130,9 +130,51 @@ it('waits for the initial task write before starting the Harness turn', async ()
     await act(async () => fixtures.chat!.onPrompt('先保存再运行'))
     await act(async () => fixtures.chat!.onSubmit({ preventDefault() {} } as React.FormEvent))
     expect(persistTaskHistory).toHaveBeenCalledWith(fixtures.user.userId, expect.objectContaining({ status: 'RUNNING' }))
+    expect(entriesText(fixtures.chat!.entries)).toEqual(['先保存再运行', ''])
+    expect(fixtures.chat!.currentTaskRunning).toBe(true)
+    expect(fixtures.chat!.prompt).toBe('')
     expect(runHarnessWithRecovery).not.toHaveBeenCalled()
     await act(async () => finishWrite())
     expect(runHarnessWithRecovery).toHaveBeenCalledOnce()
+  })
+})
+it('stops a visible turn before its initial write finishes without starting Harness', async () => {
+  let finishWrite!: () => void
+  vi.mocked(persistTaskHistory).mockImplementationOnce(() => new Promise<void>((resolve) => { finishWrite = resolve }))
+  await fixture(async () => {
+    await act(async () => fixtures.chat!.onPrompt('启动前停止'))
+    await act(async () => fixtures.chat!.onSubmit({ preventDefault() {} } as React.FormEvent))
+    await act(async () => fixtures.chat!.onCancel())
+    expect(fixtures.chat!.currentTaskRunning).toBe(false)
+    expect(fixtures.chat!.taskProjection.status).toBe('canceled')
+    await act(async () => finishWrite())
+    expect(runHarnessWithRecovery).not.toHaveBeenCalled()
+    expect(vi.mocked(persistTaskHistory).mock.calls.at(-1)![1].status).toBe('CANCELED')
+  })
+})
+it('lets a later new task start while an earlier new-task write is still pending', async () => {
+  let finishFirstWrite!: () => void
+  vi.mocked(persistTaskHistory)
+    .mockImplementationOnce(() => new Promise<void>((resolve) => { finishFirstWrite = resolve }))
+    .mockResolvedValue(undefined)
+  vi.mocked(runHarnessWithRecovery).mockImplementation(async (input) => ({
+    finalResponse: `已完成：${input.prompt}`,
+    sessionId: input.sessionId!,
+    outcome: completedOutcome,
+  }))
+  await fixture(async () => {
+    await act(async () => fixtures.chat!.onPrompt('第一个任务'))
+    await act(async () => fixtures.chat!.onSubmit({ preventDefault() {} } as React.FormEvent))
+    expect(persistTaskHistory).toHaveBeenCalledTimes(1)
+
+    await act(async () => { await fixtures.sidebar!.onNewTask() })
+    await submit('第二个任务')
+    expect(persistTaskHistory).toHaveBeenCalledTimes(3)
+    expect(runHarnessWithRecovery).toHaveBeenCalledOnce()
+    expect(vi.mocked(runHarnessWithRecovery).mock.calls[0][0].prompt).toContain('第二个任务')
+
+    await act(async () => finishFirstWrite())
+    expect(runHarnessWithRecovery).toHaveBeenCalledTimes(2)
   })
 })
 it('preserves unsaved input when switching tasks and allows switching after retry succeeds', async () => {
@@ -155,14 +197,15 @@ it('preserves unsaved input when switching tasks and allows switching after retr
     expect(fixtures.chat!.prompt).toBe(creationPrompt('schedule'))
   })
 })
-it('uses the default agent flow even when restoring a plan-mode draft', async () => {
+it('restores and runs the execution mode saved with the draft', async () => {
   await saveTaskDraft('queue-test', '', { prompt: '先研究方案', attachments: [], directories: [], knowledgeRefs: [], connectorIds: [], model: 'original-model', executionMode: 'plan', updatedAt: 1 })
   vi.mocked(runHarnessWithRecovery).mockResolvedValue({ finalResponse: '方案已整理', sessionId: 'default-agent' })
   await fixture(async () => {
     expect(fixtures.chat!.prompt).toBe('先研究方案')
     await submit('先研究方案')
-    expect(vi.mocked(runHarnessWithRecovery).mock.calls[0][0].executionMode).toBe('agent')
-    expect(vi.mocked(persistTaskHistory).mock.calls.at(-1)![1].executionMode).toBe('agent')
+    expect(fixtures.chat!.executionMode).toBe('plan')
+    expect(vi.mocked(runHarnessWithRecovery).mock.calls[0][0].executionMode).toBe('plan')
+    expect(vi.mocked(persistTaskHistory).mock.calls.at(-1)![1].executionMode).toBe('plan')
   })
 })
 it('coalesces rapid draft edits and flushes the final value before changing tasks', async () => {

@@ -45,6 +45,8 @@ export interface ChatPageProps {
   harnessRunning: boolean
   runtimeStatus: RuntimeStatus
   activeModel: string
+  executionMode?: 'agent' | 'plan'
+  onExecutionModeChange?: (mode: 'agent' | 'plan') => void
   reasoningEffort?: import('./modelReasoning').ReasoningEffort
   onReasoningEffortChange?: (value: import('./modelReasoning').ReasoningEffort) => void
   models: string[]

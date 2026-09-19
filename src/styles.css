@@ -890,6 +890,10 @@ button:not(:disabled):active { transition-duration: .06s; }
 .composer textarea::placeholder { color: #919191; }
 .composer textarea:focus-visible { outline: none; }
 .composer-actions { padding: 4px 10px 8px; gap: 6px; }
+.execution-mode { display: inline-flex; flex: none; align-items: center; gap: 2px; padding: 2px; border: 1px solid #e7e9e7; border-radius: 7px; background: #f6f7f6; }
+.execution-mode button { display: inline-flex; height: 25px; align-items: center; gap: 4px; padding: 0 7px; border: 0; border-radius: 5px; color: #777d78; background: transparent; cursor: pointer; font-size: 10px; }
+.execution-mode button[aria-pressed=true] { color: #2f5f40; background: #fff; box-shadow: 0 1px 3px #00000010; }
+.execution-mode button:disabled { cursor: default; opacity: .45; }
 .send-button { width: 30px; height: 30px; border-radius: 50%; background: var(--xy-control); box-shadow: 0 1px 4px #0002; }
 .send-button:disabled { background: #c9c9c9; box-shadow: none; }
 .send-button:not(:disabled):hover { background: #343434; transform: none; box-shadow: none; }

@@ -20,8 +20,12 @@ static EMPLOYEE_CHECK: futures_util::lock::Mutex<()> = futures_util::lock::Mutex
 static VERIFIED_EMPLOYEE: Mutex<Option<(u64, String, Instant)>> = Mutex::new(None);
 static OFFLINE_EMPLOYEE: Mutex<Option<(u64, String, Instant)>> = Mutex::new(None);
 static CONNECTOR_TOKEN: Mutex<Option<ConnectorToken>> = Mutex::new(None);
-const EMPLOYEE_CACHE_AGE: Duration = Duration::from_secs(5);
+// The desktop session is renewed five minutes before its 30-minute expiry.
+// Keep local commands on that verified session instead of putting ERP DNS on
+// the critical path for every task or draft write.
+const EMPLOYEE_CACHE_AGE: Duration = Duration::from_secs(30 * 60);
 const OFFLINE_EMPLOYEE_CACHE_AGE: Duration = Duration::from_secs(30);
+const CREDENTIAL_STORE_TIMEOUT: Duration = Duration::from_secs(2);
 
 struct ConnectorToken {
     epoch: u64,
@@ -363,12 +367,9 @@ pub(crate) async fn current_employee(app: &tauri::AppHandle) -> Result<String, S
     }
     let _guard = EMPLOYEE_CHECK.lock().await;
     if let Ok(verified) = VERIFIED_EMPLOYEE.lock()
-        && let Some((epoch, user_id, checked_at)) = verified.as_ref()
-        && *epoch == mcp::session_epoch()
-        && epoch.is_multiple_of(2)
-        && checked_at.elapsed() < EMPLOYEE_CACHE_AGE
+        && let Some(user_id) = cached_employee(verified.as_ref(), mcp::session_epoch())
     {
-        return Ok(user_id.clone());
+        return Ok(user_id.to_string());
     }
     if let Some(employee_id) = offline_employee(false) {
         return Ok(employee_id);
@@ -401,6 +402,14 @@ pub(crate) async fn current_employee(app: &tauri::AppHandle) -> Result<String, S
     Ok(user_id.to_string())
 }
 
+fn cached_employee(verified: Option<&(u64, String, Instant)>, session_epoch: u64) -> Option<&str> {
+    let (epoch, user_id, checked_at) = verified?;
+    (*epoch == session_epoch
+        && epoch.is_multiple_of(2)
+        && checked_at.elapsed() < EMPLOYEE_CACHE_AGE)
+        .then_some(user_id.as_str())
+}
+
 fn local_development_identity(identifier: &str, isolation: Option<&str>) -> bool {
     cfg!(debug_assertions)
         && identifier == "com.instudio.xiaoyin.desktop.local-test"
@@ -429,15 +438,31 @@ async fn resolve_session(
     let cookie_url = erp_cookie_url()
         .parse()
         .map_err(|_| Diagnostic::new(Code::ConfigurationInvalid, None, None))?;
-    let store = session_store(app)?;
     let restore = !*restored;
+    let saved_cookies = if restore {
+        let store = session_store(app)?;
+        match tokio::time::timeout(
+            CREDENTIAL_STORE_TIMEOUT,
+            tauri::async_runtime::spawn_blocking(move || store.load()),
+        )
+        .await
+        {
+            Ok(result) => result
+                .map_err(|_| Diagnostic::new(Code::CookieStoreFailed, None, None))?
+                .map_err(|_| Diagnostic::new(Code::CookieStoreFailed, None, None))?,
+            // A rebuilt development app can lose access to its previous
+            // Keychain ACL. Existing WebView cookies remain authoritative for
+            // the current login and must not leave the whole UI checking forever.
+            Err(_) => Vec::new(),
+        }
+    } else {
+        Vec::new()
+    };
     let cookies = tauri::async_runtime::spawn_blocking(move || {
-        if restore {
-            for cookie in store.load().map_err(|_| Code::CookieStoreFailed)? {
-                webview
-                    .set_cookie(cookie)
-                    .map_err(|_| Code::CookieReadFailed)?;
-            }
+        for cookie in saved_cookies {
+            webview
+                .set_cookie(cookie)
+                .map_err(|_| Code::CookieReadFailed)?;
         }
         webview
             .cookies_for_url(cookie_url)
@@ -508,10 +533,16 @@ async fn resolve_session(
         )));
     }
     let store = session_store(app)?;
-    tauri::async_runtime::spawn_blocking(move || store.save(&cookies))
-        .await
-        .map_err(|_| Diagnostic::new(Code::CookieStoreFailed, None, None))?
-        .map_err(|_| Diagnostic::new(Code::CookieStoreFailed, None, None))?;
+    if let Ok(result) = tokio::time::timeout(
+        CREDENTIAL_STORE_TIMEOUT,
+        tauri::async_runtime::spawn_blocking(move || store.save(&cookies)),
+    )
+    .await
+    {
+        result
+            .map_err(|_| Diagnostic::new(Code::CookieStoreFailed, None, None))?
+            .map_err(|_| Diagnostic::new(Code::CookieStoreFailed, None, None))?;
+    }
     let access_token = cookie_header
         .strip_prefix("SESSION=")
         .unwrap_or_default()
@@ -835,6 +866,23 @@ mod tests {
             None,
             Some(401)
         )));
+    }
+
+    #[test]
+    fn verified_employee_cache_matches_the_desktop_session_lifetime() {
+        let current = (2, "employee-1".to_string(), Instant::now());
+        assert_eq!(cached_employee(Some(&current), 2), Some("employee-1"));
+        assert_eq!(cached_employee(Some(&current), 4), None);
+
+        let revoked = (3, "employee-1".to_string(), Instant::now());
+        assert_eq!(cached_employee(Some(&revoked), 3), None);
+
+        let expired = (
+            2,
+            "employee-1".to_string(),
+            Instant::now() - EMPLOYEE_CACHE_AGE - Duration::from_secs(1),
+        );
+        assert_eq!(cached_employee(Some(&expired), 2), None);
     }
 
     #[test]

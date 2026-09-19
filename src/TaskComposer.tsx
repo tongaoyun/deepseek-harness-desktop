@@ -1,4 +1,4 @@
-import { ArrowUp, BookOpen, Check, ChevronDown, ChevronRight, FilePlus2, FolderPlus, History, LoaderCircle, Plug, Plus, Puzzle, Search, Sparkles, Square, X } from 'lucide-react'
+import { ArrowUp, BookOpen, Bot, Check, ChevronDown, ChevronRight, FilePlus2, FolderPlus, History, ListChecks, LoaderCircle, Plug, Plus, Puzzle, Search, Sparkles, Square, X } from 'lucide-react'
 import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react'
 import type { ChatPageProps } from './ChatPage'
 import { composerQuery, joinComposerPrompt, removeComposerQuery, selectComposerInvocation, splitComposerPrompt } from './composerInput'
@@ -71,7 +71,7 @@ export function TaskComposer(props: ChatPageProps & { onPreview: (target: LocalA
     closeMenu(); setOptionIndex(0)
   }
   const extensionOptions = (kind?: 'skill' | 'expert-kit'): Option[] => (props.invocations ?? [])
-    .filter((item) => !item.bundledSkill && (!kind || item.kind === kind)).map((item) => ({
+    .filter((item) => !kind || (kind === 'skill' ? item.kind === 'skill' || item.bundledSkill : item.kind === 'expert-kit' && !item.bundledSkill)).map((item) => ({
     id: item.token, name: item.name, description: item.description, selected: tokens.includes(item.token),
     disabled: tokens.length >= 8 && !tokens.some((token) => token.split(':').slice(0, 2).join(':') === item.token.split(':').slice(0, 2).join(':')),
     choose: () => { props.onPrompt(selectComposerInvocation(props.prompt, item, query)); closeMenu(); setOptionIndex(0); setDismissed(''); setCaret(query?.start ?? text.length); focusInput(query?.start ?? text.length) },
@@ -236,6 +236,10 @@ export function TaskComposer(props: ChatPageProps & { onPreview: (target: LocalA
             <footer><span>{category === 'connector' ? props.selectedConnectorIds?.length ? '本轮仅使用所选连接器' : '不指定时按需使用已启用连接器' : '无需先选择能力，也可以直接开始任务'}</span>{props.onBrowseCapability && <button onClick={() => { closeMenu(); props.onBrowseCapability?.(category) }} type="button">管理{categories.find((item) => item.id === category)?.label} →</button>}</footer>
             </div>
           </section>}
+        </div>
+        <div aria-label="执行模式" className="execution-mode" role="group">
+          <button aria-pressed={(props.executionMode ?? 'agent') === 'agent'} disabled={locked} onClick={() => props.onExecutionModeChange?.('agent')} title="自主执行任务" type="button"><Bot size={13} />Agent</button>
+          <button aria-pressed={props.executionMode === 'plan'} disabled={locked} onClick={() => props.onExecutionModeChange?.('plan')} title="只研究并提交计划" type="button"><ListChecks size={13} />Plan</button>
         </div>
         <ComposerModelPicker {...props} locked={Boolean(locked)} />
         {running ? <>{text.trim() && <button aria-label="补充到当前任务" className="queue-send-button" type="submit">补充<ArrowUp size={14} /></button>}<button aria-label={stopping ? '正在停止' : '停止本轮'} className="cancel-button" disabled={stopping} onClick={props.onCancel} title="停止本轮，保留对话并暂停队列" type="button"><Square size={11} fill="currentColor" strokeWidth={0} /></button></>

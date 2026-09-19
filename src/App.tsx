@@ -295,7 +295,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
     if (save(value)) update(value)
     else notify('运行时设置未能保存，本次未切换。请检查本机存储后重试。', 'error')
   }
-  const executionMode = 'agent' as const
+  const [executionMode, setExecutionMode] = useState<'agent' | 'plan'>('agent')
   const [modelMenuOpen, setModelMenuOpen] = useState(false)
   const [taskSearchOpen, setTaskSearchOpen] = useState(false)
   const [taskQuery, setTaskQuery] = useState('')
@@ -763,6 +763,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
     const draft = saved ?? emptyDraft()
     setPrompt(draft.prompt); setPendingAttachments(draft.attachments); setLocalDirectories(draft.directories)
     setSelectedKnowledgeBaseRefs(draft.knowledgeRefs); setSelectedTaskConnectorIds(draft.connectorIds)
+    setExecutionMode(draft.executionMode ?? 'agent')
     setSelectedModel(bootstrap ? resolveSelectedModel(bootstrap.models, draft.model) : draft.model)
     setReasoningSelection({ model: draft.model, effort: draft.reasoningEffort ?? loadReasoningEffort(user?.userId ?? '', draft.model) })
     setTaskContextRestoring(true); setLocalFileError('')
@@ -958,11 +959,18 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
     const input = rawInput.trim() || (messageAttachments.length > 0 ? '请查看并处理这些附件。' : '')
     if (!input || !bootstrap || !user || runtimeStatus !== 'ready') return
     const contextTaskId = queuedTask?.id ?? currentLocalTaskId
-    const lockKey = contextTaskId || 'new-task'
-    if (taskStartLocks.current.has(lockKey) || streamingTasksRef.current.has(contextTaskId)) return
-    taskStartLocks.current.add(lockKey)
     const contextGeneration = taskContextRestoreIdRef.current
-    const isCurrent = () => currentLocalTaskIdRef.current === contextTaskId && (Boolean(queuedTask) || contextGeneration === taskContextRestoreIdRef.current)
+    const taskId = contextTaskId || crypto.randomUUID()
+    const lockKey = contextTaskId || `new-task:${contextGeneration}`
+    if (taskStartLocks.current.has(lockKey) || streamingTasksRef.current.has(taskId)) {
+      if ((currentLocalTaskIdRef.current === contextTaskId || currentLocalTaskIdRef.current === taskId) && contextGeneration === taskContextRestoreIdRef.current) {
+        setLocalFileError('消息正在发送，请稍候。')
+      }
+      return
+    }
+    taskStartLocks.current.add(lockKey)
+    const isCurrent = () => (currentLocalTaskIdRef.current === contextTaskId || (!contextTaskId && currentLocalTaskIdRef.current === taskId))
+      && (Boolean(queuedTask) || contextGeneration === taskContextRestoreIdRef.current)
     const reportInputError = (message: string) => { if (isCurrent()) setLocalFileError(message); else notify(message, 'error') }
     const contextEntries = queuedTask?.entries ?? entries
     const contextProjection = queuedTask?.projection ?? taskProjectionRef.current
@@ -975,7 +983,6 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
       : undefined
     if (directReply) {
       const timestamp = new Date().toISOString()
-      const taskId = contextTaskId || crypto.randomUUID()
       const projection = taskProjectionCompleted(
         { ...createXiaoyinTaskProjection(timestamp), operationScope: crypto.randomUUID() },
         { status: 'completed', summary: '直接回答完成', remaining: [], checks: [] }, timestamp,
@@ -1015,7 +1022,6 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
       }
       const memoryCommand = !queuedTask && messageAttachments.length === 0 ? parseMemoryCommand(input) : undefined
       if (memoryCommand) {
-        const taskId = contextTaskId || crypto.randomUUID()
         const existingTask = localTasks.find((task) => task.id === taskId)
         setPrompt('')
         let reply = '未更改长期记忆。'
@@ -1069,7 +1075,6 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
       const now = new Date().toISOString()
       const taskConnectorIds = queuedTask?.capabilitySnapshot?.connectors.map((connector) => connector.id) ?? selectedTaskConnectorIds
       if (taskConnectorIds.some((id) => !runtimeConnectors.some((item) => item.id === id && item.enabled && item.status === 'ready'))) { reportInputError('选中的连接器尚未就绪，请重新配置或从当前任务移除。'); return }
-      const taskId = contextTaskId || crypto.randomUUID()
       const currentInvocations = selectedInvocations(input, availableInvocations)
       const selected = queuedTask
         ? requestedSelections
@@ -1091,11 +1096,6 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
         availableKnowledgeBaseRefs: knowledgeBases.map((item) => item.reference),
         createdAt: now,
       }))
-      if (capabilitySnapshot.knowledgeBaseRefs.length > 0) {
-        const currentBases = await loadKnowledgeBases(bootstrap.endpoints.knowledge, user.userId, user.teamId, accessToken)
-        assertKnowledgeBaseRefsAvailable(capabilitySnapshot, currentBases.map((item) => item.reference))
-      }
-      if (isCurrent()) setCurrentCapabilitySnapshot(capabilitySnapshot)
       const { rootSessionId, harnessPrompt, pendingEntries, runningProjection, runningTask } = prepareTaskTurn({
         taskId, input, now, existingTask, sessionId: taskSessionId, model: taskModel, reasoningEffort: taskReasoningEffort, executionMode: taskExecutionMode,
         scheduleId: existingTask?.scheduleId, scheduleRunId: existingTask?.scheduleRunId,
@@ -1103,29 +1103,9 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
         capabilities: capabilitySnapshot, invocations: selected, invocationTokens: queuedTask?.invocationTokens,
         entries: contextEntries, projection: contextProjection, attachments: messageAttachments, queuedItemId,
       })
-      try {
-        await persistTaskHistory(user.userId, runningTask)
-      } catch (reason) {
-        reportInputError(`任务尚未启动，本地记录保存失败：${reason instanceof Error ? reason.message : String(reason)}`)
-        return
-      }
-      try {
-        await accepted?.()
-      } catch (reason) {
-        if (existingTask) await persistTaskHistory(user.userId, existingTask).catch(() => undefined)
-        throw reason
-      }
-      if (isCurrent()) setLocalFileError('')
-      if (isCurrent()) {
-        if (!queuedTask) { try { await saveTaskDraft(user.userId, contextTaskId || creationDraftKeyRef.current) } catch { /* Current task keeps the submitted content. */ } }
-        selectCurrentLocalTaskId(taskId)
-        setHarnessSessionId(rootSessionId)
-        setEntries(pendingEntries)
-        if (!queuedTask) { setPrompt(joinComposerPrompt(selected.map((item) => item.token), '')); setPendingAttachments([]) }
-      }
-      setLocalTasks((current) => [runningTask, ...current.filter((item) => item.id !== runningTask.id)]
-        .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)))
+      const previousSnapshot = currentCapabilitySnapshot
       const streaming: StreamingTaskState = {
+        phase: 'preparing',
         sessionId: rootSessionId,
         projection: runningProjection,
         projectionSeq: -1,
@@ -1135,10 +1115,77 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
       }
       streamingTasksRef.current.set(taskId, streaming)
       setRunningTaskIds((current) => current.includes(taskId) ? current : [...current, taskId])
-      if (currentLocalTaskIdRef.current === taskId) {
+      setLocalTasks((current) => [runningTask, ...current.filter((item) => item.id !== runningTask.id)]
+        .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)))
+      if (isCurrent()) {
+        setLocalFileError('')
+        setCurrentCapabilitySnapshot(capabilitySnapshot)
+        selectCurrentLocalTaskId(taskId)
+        setHarnessSessionId(rootSessionId)
+        setEntries(pendingEntries)
         taskProjectionRef.current = runningProjection
         setTaskProjection(runningProjection)
+        if (!queuedTask) { setPrompt(joinComposerPrompt(selected.map((item) => item.token), '')); setPendingAttachments([]) }
       }
+      const rollbackPendingStart = (message: string) => {
+        window.clearTimeout(streaming.stopFallback)
+        if (streamingTasksRef.current.get(taskId) === streaming) streamingTasksRef.current.delete(taskId)
+        setRunningTaskIds((current) => current.filter((id) => id !== taskId))
+        setLocalTasks((current) => existingTask
+          ? [existingTask, ...current.filter((item) => item.id !== taskId)].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+          : current.filter((item) => item.id !== taskId))
+        if (isCurrent()) {
+          selectCurrentLocalTaskId(contextTaskId)
+          setHarnessSessionId(taskSessionId)
+          setEntries(contextEntries)
+          taskProjectionRef.current = contextProjection
+          setTaskProjection(contextProjection)
+          setCurrentCapabilitySnapshot(previousSnapshot)
+          if (!queuedTask) { setPrompt(rawInput); setPendingAttachments(messageAttachments) }
+        }
+        reportInputError(message)
+      }
+      try {
+        if (capabilitySnapshot.knowledgeBaseRefs.length > 0) {
+          const currentBases = await loadKnowledgeBases(bootstrap.endpoints.knowledge, user.userId, user.teamId, accessToken)
+          assertKnowledgeBaseRefsAvailable(capabilitySnapshot, currentBases.map((item) => item.reference))
+        }
+      } catch (reason) {
+        rollbackPendingStart(`任务尚未启动，知识库校验失败：${reason instanceof Error ? reason.message : String(reason)}`)
+        return
+      }
+      try {
+        await persistTaskHistory(user.userId, runningTask)
+      } catch (reason) {
+        rollbackPendingStart(`任务尚未启动，本地记录保存失败：${reason instanceof Error ? reason.message : String(reason)}`)
+        return
+      }
+      try {
+        await accepted?.()
+      } catch (reason) {
+        if (existingTask) await persistTaskHistory(user.userId, existingTask).catch(() => undefined)
+        rollbackPendingStart(`任务尚未启动：${reason instanceof Error ? reason.message : String(reason)}`)
+        return false
+      }
+      if (isCurrent()) {
+        if (!queuedTask) { try { await saveTaskDraft(user.userId, contextTaskId || creationDraftKeyRef.current) } catch { /* Current task keeps the submitted content. */ } }
+      }
+      if (streaming.cancellationRequested) {
+        const completedAt = new Date().toISOString()
+        streaming.projection = taskProjectionFailed(streaming.projection, classifyHarnessFailure(new Error('本轮已停止')), true, completedAt)
+        streaming.entries = settleOpenTurn(streaming.entries, 'canceled', completedAt, { model: taskModel, reasoningEffort: taskReasoningEffort })
+        const canceledTask = { ...runningTask, status: 'CANCELED' as const, updatedAt: completedAt, projection: streaming.projection, entries: streaming.entries }
+        if (currentLocalTaskIdRef.current === taskId) {
+          taskProjectionRef.current = streaming.projection
+          setTaskProjection(streaming.projection)
+          setEntries(streaming.entries)
+        }
+        persistLocalTask(canceledTask)
+        streamingTasksRef.current.delete(taskId)
+        setRunningTaskIds((current) => current.filter((id) => id !== taskId))
+        return 'canceled'
+      }
+      streaming.phase = 'running'
       let executionSessionId = rootSessionId
       try {
         const result = await runHarnessWithRecovery({
@@ -1291,6 +1338,21 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
     if (currentLocalTaskIdRef.current === taskId) {
       taskProjectionRef.current = streaming.projection
       setTaskProjection(streaming.projection)
+    }
+    if (streaming.phase === 'preparing') {
+      const completedAt = new Date().toISOString()
+      streaming.projection = taskProjectionFailed(streaming.projection, classifyHarnessFailure(new Error('本轮已停止')), true, completedAt)
+      streaming.entries = settleOpenTurn(streaming.entries, 'canceled', completedAt)
+      setRunningTaskIds((current) => current.filter((id) => id !== taskId))
+      setLocalTasks((current) => current.map((task) => task.id === taskId
+        ? { ...task, status: 'CANCELED', projection: streaming.projection, entries: streaming.entries, updatedAt: completedAt }
+        : task))
+      if (currentLocalTaskIdRef.current === taskId) {
+        taskProjectionRef.current = streaming.projection
+        setTaskProjection(streaming.projection)
+        setEntries(streaming.entries)
+      }
+      return
     }
     // Start the fallback clock with the click, not after a slow session check.
     streaming.stopFallback = window.setTimeout(() => {
@@ -1646,6 +1708,8 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
               persistLocalTask({ ...task, projection: nextProjection, updatedAt: new Date().toISOString() })
             }}
             activeModel={activeModel}
+            executionMode={executionMode}
+            onExecutionModeChange={setExecutionMode}
             reasoningEffort={activeReasoningEffort}
             onReasoningEffortChange={(effort) => {
               setReasoningSelection({ model: activeModel, effort })

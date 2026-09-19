@@ -6,6 +6,7 @@ import { parseAssistantTurn, type ConversationEntry } from './conversation/types
 import type { XiaoyinTaskProjection } from './types'
 
 export interface StreamingTaskState {
+  phase?: 'preparing' | 'running'
   sessionId: string
   projection: XiaoyinTaskProjection
   projectionSeq?: number
