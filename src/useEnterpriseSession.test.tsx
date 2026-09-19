@@ -15,6 +15,7 @@ let root: ReturnType<typeof createRoot>
 let container: HTMLDivElement
 const valid = (): ErpSessionStatus => ({ authenticated: true, accessToken: 'fixture', expiresAt: Date.now() / 1_000 + 1_800, loginUrl: '', user: { userId: 'employee', displayName: 'Employee', department: '', teamId: '', position: '', dataPermission: '', companyId: '', companyName: '', role: 'operator' } })
 const loggedOut = { authenticated: false, accessToken: '', expiresAt: null, user: null, loginUrl: '' }
+const missingCookie = { ...loggedOut, diagnostic: { code: 'cookie_missing' as const, cookieCount: 0, httpStatus: null, checkedAt: 0, appVersion: 'test', os: 'macos', arch: 'aarch64', runId: 'test', debugBuild: true } }
 beforeEach(() => {
   vi.resetAllMocks()
   vi.useFakeTimers()
@@ -40,6 +41,27 @@ it('retries a startup network error without opening a QR window', async () => {
   expect(open).not.toHaveBeenCalled()
   await advance(15_000)
   expect(latest.state).toBe('authenticated')
+})
+
+it('rechecks a startup cookie miss before opening the QR window', async () => {
+  resolve.mockResolvedValueOnce(missingCookie).mockResolvedValueOnce(valid())
+  await mount()
+  expect(latest.state).toBe('checking')
+  expect(open).not.toHaveBeenCalled()
+  await advance(1_500)
+  expect(latest.state).toBe('authenticated')
+  expect(open).not.toHaveBeenCalled()
+})
+
+it('shows the login screen without opening the QR window after a repeated startup cookie miss', async () => {
+  resolve.mockResolvedValue(missingCookie)
+  await mount()
+  expect(latest.state).toBe('checking')
+  await advance(1_500)
+  expect(latest.state).toBe('required')
+  expect(open).not.toHaveBeenCalled()
+  await act(async () => latest.reopen())
+  expect(open).toHaveBeenCalledTimes(1)
 })
 
 it('shows a manual retry in progress and a distinct result when ERP is still unavailable', async () => {
@@ -93,13 +115,13 @@ it('blocks an expired session while the ERP remains unavailable', async () => {
   expect(open).not.toHaveBeenCalled()
 })
 
-it('opens login once when the ERP confirms logout', async () => {
+it('shows login without opening a window when the ERP confirms logout', async () => {
   await mount()
   resolve.mockResolvedValue(loggedOut)
   await advance(25 * 60_000 + 4_500)
   expect(latest.state).toBe('required')
   expect(latest.user).toBeNull()
-  expect(open).toHaveBeenCalledTimes(1)
+  expect(open).not.toHaveBeenCalled()
 })
 
 it('rechecks an overdue session after waking without overlapping checks', async () => {
@@ -153,6 +175,8 @@ it('retries opening the QR window without misclassifying it as a network error',
   open.mockRejectedValueOnce(new Error('window unavailable'))
   await mount()
   expect(latest.state).toBe('required')
+  expect(open).not.toHaveBeenCalled()
+  await act(async () => latest.reopen())
   expect(latest.error).toBe('无法打开扫码窗口，请重新打开。')
   await act(async () => latest.reopen())
   expect(open).toHaveBeenCalledTimes(2)

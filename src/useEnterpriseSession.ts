@@ -5,6 +5,7 @@ import { clearErpSession, isTauriRuntime, openErpLogin, resolveErpSession, sessi
 type AuthState = 'checking' | 'required' | 'authorizing' | 'authenticated' | 'error'
 const RETRY_MS = 15_000
 const LOGIN_POLL_MS = 1_500
+const STARTUP_COOKIE_GRACE_MS = 1_500
 
 export function useEnterpriseSession() {
   const [state, setState] = useState<AuthState>('checking')
@@ -22,6 +23,7 @@ export function useEnterpriseSession() {
     let pendingLogout = false
     let manualRetryQueued = false
     let authorizingUntil = 0
+    let startupCookieCheckPending = true
     let unlisten: (() => void) | undefined
     const current = (request: number) => !disposed && request === generation
     const schedule = (delay: number) => {
@@ -48,6 +50,7 @@ export function useEnterpriseSession() {
         const next = await resolveErpSession()
         if (!current(request)) return
         if (next.authenticated && next.user) {
+          startupCookieCheckPending = false
           accepted = next
           setSession(next)
           setState('authenticated')
@@ -56,6 +59,14 @@ export function useEnterpriseSession() {
           loginOpened = false
           if (next.expiresAt) schedule(Math.max(1_000, next.expiresAt * 1_000 - Date.now() - 5 * 60_000))
         } else {
+          if (startupCookieCheckPending && !manualRetry && next.diagnostic?.code === 'cookie_missing') {
+            startupCookieCheckPending = false
+            setState('checking')
+            setError('')
+            schedule(STARTUP_COOKIE_GRACE_MS)
+            return
+          }
+          startupCookieCheckPending = false
           accepted = undefined
           setSession(undefined)
           setError(authorizingUntil && authorizingUntil <= Date.now() ? '钉钉已确认，但 ERP 会话未建立，请重新扫码。' :
@@ -64,7 +75,7 @@ export function useEnterpriseSession() {
             setState('authorizing')
           } else {
             setState('required')
-            await openLogin(request)
+            if (manualRetry) await openLogin(request)
           }
           if (current(request)) schedule(LOGIN_POLL_MS)
         }
