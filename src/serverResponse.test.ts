@@ -8,7 +8,7 @@ describe('COLA server response', () => {
     }
   })
 
-  it('rejects legacy bodies, missing payloads and business failures', async () => {
+  it('rejects malformed bodies, missing payloads and business failures', async () => {
     for (const body of [[], { id: 'one' }, { success: true }, { success: false, errCode: 'MEMORY_CONFLICT', errMessage: '版本冲突' }]) {
       await expect(readServerData(new Response(JSON.stringify(body)))).rejects.toThrow()
     }

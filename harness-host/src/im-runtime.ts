@@ -829,9 +829,7 @@ export class LocalImRuntime {
       }
       for (const conversation of value.conversations ?? []) {
         if (conversation.conversationKey) {
-          const persisted = conversation as ImConversationSummary & { taskEvents?: unknown }
-          const { taskEvents: _legacyTaskEvents, ...current } = persisted
-          this.conversations.set(conversation.conversationKey, { ...current, messages: conversation.messages ?? [] })
+          this.conversations.set(conversation.conversationKey, { ...conversation, messages: conversation.messages ?? [] })
         }
       }
       for (const queued of value.pendingEvents ?? []) {

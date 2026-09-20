@@ -1,27 +1,25 @@
 import { describe, expect, it } from 'vitest'
-import { extensionInvocations, selectedInvocations } from './extensionInvocations'
+import { extensionCommandLabel, extensionInvocations, selectedInvocations } from './extensionInvocations'
 import { mergeExpertKits } from './expertKits'
 import type { InstalledExpertKit } from './types'
 
 const installed: InstalledExpertKit = {
   installPath: '/extensions/reports', source: 'developer',
-  manifest: { schemaVersion: '2', kind: 'expert-kit', id: 'reports', name: '分析专家', version: '1.0.0', summary: '生成分析报告', category: 'other', minimumDesktopVersion: '0.1.30', commands: [{ id: 'weekly', path: 'commands/weekly.md', skillId: 'report' }], skills: [{ id: 'report', path: 'skills/report/SKILL.md' }], connectorRefs: [], requiredTools: [] },
+  manifest: { schemaVersion: '3', kind: 'expert-kit', id: 'reports', name: '分析专家', version: '1.0.0', summary: '生成分析报告', category: 'other', minimumDesktopVersion: '0.1.30', commands: [{ id: 'weekly', path: 'commands/weekly.md', skillId: 'report' }], skills: [{ id: 'report', path: 'skills/report/SKILL.md', requiredTools: [], connectorRefs: [], knowledgeBaseRefs: [] }], connectorRefs: [], requiredTools: [], knowledgeBaseRefs: [] },
 }
 
 describe('extension invocations', () => {
-  it('exposes installed kits, their commands and their bundled skills', () => {
+  it('keeps internal command ids out of the user-facing picker', () => {
+    expect(extensionCommandLabel('order-intake-check')).toBe('订单排查')
+    expect(extensionCommandLabel('unknown-command', 2)).toBe('快捷命令 3')
+  })
+
+  it('exposes installed kits and their declared commands', () => {
     const options = extensionInvocations(mergeExpertKits([], [installed]), [])
-    expect(options.map((item) => item.token)).toEqual(['/kit:reports', '/kit:reports:weekly', '/kit:reports:skill:report'])
-    // A bundled skill reads like a standalone one while retaining its parent kit selection.
-    const bundled = options.find((item) => item.token === '/kit:reports:skill:report')!
-    expect(bundled.name).toBe('report')
-    expect(bundled.description).toContain('分析专家')
-    expect(bundled.bundledSkill).toBe(true)
-    expect(options.filter((item) => !item.bundledSkill).map((item) => item.token)).toEqual(['/kit:reports', '/kit:reports:weekly'])
+    expect(options.map((item) => item.token)).toEqual(['/kit:reports', '/kit:reports:weekly'])
     expect(selectedInvocations('/kit:reports:weekly 本周数据', options)).toMatchObject([{ kind: 'expert-kit', id: 'reports', selection: {
       mode: 'explicit', kind: 'expert-kit', extensionId: 'reports', extensionVersion: '1.0.0', commandId: 'weekly', skillId: 'report',
     } }])
-    expect(bundled.selection).toEqual({ mode: 'explicit', kind: 'expert-kit', extensionId: 'reports', extensionVersion: '1.0.0', skillId: 'report' })
     expect(selectedInvocations('解释 /kit:reports', options)).toEqual([])
     expect(selectedInvocations('/kit:reports:missing', options)).toEqual([])
   })
@@ -33,7 +31,7 @@ describe('extension invocations', () => {
   it('excludes disabled kits and their commands', () => {
     expect(extensionInvocations(mergeExpertKits([], [{ ...installed, enabled: false }]), [])).toEqual([])
   })
-  it('uses distinct tokens for a command and bundled skill with the same id', () => {
+  it('uses the command token when a command and Skill share an id', () => {
     const collision = {
       ...installed,
       manifest: {
@@ -42,8 +40,6 @@ describe('extension invocations', () => {
         skills: [{ id: 'review', path: 'skills/review/SKILL.md' }],
       },
     }
-    expect(extensionInvocations(mergeExpertKits([], [collision]), []).map((item) => item.token)).toEqual([
-      '/kit:reports', '/kit:reports:review', '/kit:reports:skill:review',
-    ])
+    expect(extensionInvocations(mergeExpertKits([], [collision]), []).map((item) => item.token)).toEqual(['/kit:reports', '/kit:reports:review'])
   })
 })

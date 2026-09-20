@@ -1,14 +1,13 @@
 // @vitest-environment jsdom
 import { invoke } from '@tauri-apps/api/core'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { clearStagedTaskDraft, loadTaskDraftState, readTaskDraft, recentWorkDirectories, rememberWorkDirectory, saveTaskDraft, stageTaskDraft, type TaskDraft } from './taskDrafts'
+import { clearStagedTaskDraft, loadTaskDraftState, readTaskDraft, rememberWorkDirectory, saveTaskDraft, stageTaskDraft, type TaskDraft } from './taskDrafts'
 
 vi.mock('@tauri-apps/api/core', () => ({ isTauri: () => true, invoke: vi.fn() }))
 
 const draft: TaskDraft = {
   prompt: '未发送的需求', attachments: [], directories: [], knowledgeRefs: [], connectorIds: [], model: 'model-a', updatedAt: 1,
 }
-const key = 'xiaoyin.task-drafts.employee'
 beforeEach(() => {
   const values = new Map<string, string>()
   vi.stubGlobal('localStorage', {
@@ -19,55 +18,6 @@ beforeEach(() => {
   vi.mocked(invoke).mockReset()
 })
 afterEach(() => vi.unstubAllGlobals())
-
-it('imports legacy drafts and directories once, then reads the native result', async () => {
-  const legacy = { drafts: { 'new-task': draft }, recentDirectories: [{ id: 'root', name: '工作', path: '/work' }] }
-  localStorage.setItem(key, JSON.stringify(legacy.drafts))
-  localStorage.setItem('xiaoyin.recent-directories.employee', JSON.stringify(legacy.recentDirectories))
-  vi.mocked(invoke).mockResolvedValueOnce(null).mockResolvedValueOnce(legacy)
-  await loadTaskDraftState('employee')
-  expect(vi.mocked(invoke).mock.calls).toEqual([
-    ['load_local_workspace_state', { employeeId: 'employee' }],
-    ['load_local_workspace_state', { employeeId: 'employee', legacy }],
-  ])
-  expect(readTaskDraft('employee', '')).toEqual(draft)
-  expect(recentWorkDirectories('employee')).toEqual(legacy.recentDirectories)
-  expect(localStorage.getItem(key)).toBeNull()
-  expect(localStorage.getItem('xiaoyin.recent-directories.employee')).toBeNull()
-})
-
-it('keeps invalid or unsaved legacy data intact', async () => {
-  localStorage.setItem(key, '{broken')
-  vi.mocked(invoke).mockResolvedValueOnce(null)
-  await expect(loadTaskDraftState('employee')).rejects.toThrow('原始数据保留')
-  expect(invoke).toHaveBeenCalledOnce()
-  expect(localStorage.getItem(key)).toBe('{broken')
-
-  localStorage.setItem(key, JSON.stringify({ 'new-task': draft }))
-  vi.mocked(invoke).mockResolvedValueOnce(null)
-  vi.mocked(invoke).mockRejectedValueOnce(new Error('disk full'))
-  await expect(loadTaskDraftState('employee')).rejects.toThrow('disk full')
-  expect(localStorage.getItem(key)).not.toBeNull()
-})
-
-it('reads valid native drafts despite a corrupt stale WebView copy', async () => {
-  localStorage.setItem(key, '{broken')
-  vi.mocked(invoke).mockResolvedValueOnce({ drafts: { 'new-task': draft }, recentDirectories: [] })
-  await loadTaskDraftState('employee')
-  expect(readTaskDraft('employee', '')).toEqual(draft)
-  expect(invoke).toHaveBeenCalledWith('load_local_workspace_state', { employeeId: 'employee' })
-  expect(localStorage.getItem(key)).toBeNull()
-})
-
-it('initializes an empty native workspace when there is no legacy copy', async () => {
-  const empty = { drafts: {}, recentDirectories: [] }
-  vi.mocked(invoke).mockResolvedValueOnce(null).mockResolvedValueOnce(empty)
-  await loadTaskDraftState('employee')
-  expect(vi.mocked(invoke).mock.calls).toEqual([
-    ['load_local_workspace_state', { employeeId: 'employee' }],
-    ['load_local_workspace_state', { employeeId: 'employee', legacy: empty }],
-  ])
-})
 
 it('recovers a synchronously staged draft after an authentication-driven workspace unmount', async () => {
   stageTaskDraft('employee', '', { ...draft, prompt: '最后输入的一段' })
@@ -107,10 +57,7 @@ it('serializes edits, retains the last successful state and does not fall back t
   expect(saves[1]?.[1]).toMatchObject({ employeeId: 'employee', state: {
     drafts: { 'new-task': draft }, recentDirectories: [{ id: 'root', name: '工作', path: '/work' }],
   } })
-  expect(localStorage.getItem(key)).toBeNull()
-
   vi.mocked(invoke).mockRejectedValueOnce(new Error('disk full'))
   await expect(saveTaskDraft('employee', '', { ...draft, prompt: '未保存' })).rejects.toThrow('disk full')
   expect(readTaskDraft('employee', '')).toEqual(draft)
-  expect(localStorage.getItem(key)).toBeNull()
 })

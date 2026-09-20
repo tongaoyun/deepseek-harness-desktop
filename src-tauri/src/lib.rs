@@ -196,8 +196,6 @@ pub fn run() {
             local_files::revoke_local_directory,
             local_files::clear_local_directories,
             local_store::load_local_tasks,
-            local_store::local_task_history_migrated,
-            local_store::import_local_task_history,
             local_store::load_local_task,
             local_store::save_local_task,
             local_store::append_local_task_capability_notice,

@@ -107,6 +107,11 @@ describe('Harness profile overlay', () => {
     expect(profileEntry(entries, 'code-runtime').disabled).toContain('XIAOYIN_TOOLS_MODE')
     expect(profileEntry(entries, 'tool-session-query').disabled).toContain('XIAOYIN_ENABLE_SESSION_QUERY_TOOLS')
   })
+
+  it('bounds a silent model stream instead of leaving the desktop running indefinitely', () => {
+    const entries = composedProfile()
+    expect(profileEntry(entries, 'llm-deepseek').config?.streamIdleTimeoutMs).toBe(60_000)
+  })
 })
 
 describe('authorized filesystem surface detection', () => {

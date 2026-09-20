@@ -200,19 +200,19 @@ it('distinguishes missing tasks from unreadable stored tasks', async () => {
   await expect(loadTaskById('employee', 'broken')).rejects.toThrow('原始数据已保留')
 })
 
-it('identifies legacy local records without overwriting their original payload', async () => {
+it('rejects invalid local records without overwriting their original payload', async () => {
   const oldRecord = { id: 'old', source: 'DESKTOP', name: '旧任务', entries: [] }
   vi.mocked(invoke).mockReset().mockResolvedValueOnce({ items: [oldRecord], total: 1, offset: 0, limit: 200 })
-  await expect(loadTaskHistoryPage('employee')).rejects.toThrow('缺少运行投影（旧开发格式或数据损坏）')
+  await expect(loadTaskHistoryPage('employee')).rejects.toThrow('缺少运行投影或数据损坏')
   expect(invoke).toHaveBeenCalledTimes(1)
   expect(invoke).toHaveBeenCalledWith('load_local_tasks', expect.any(Object))
 })
 
 it('loads valid tasks while reporting unreadable native rows without writing over them', async () => {
   const valid = { ...fixture('valid'), status: 'COMPLETED' as const }
-  vi.mocked(invoke).mockReset().mockResolvedValueOnce(true).mockResolvedValueOnce({ items: [valid], total: 1, invalidCount: 2, offset: 0, limit: 200 })
+  vi.mocked(invoke).mockReset().mockResolvedValueOnce({ items: [valid], total: 1, invalidCount: 2, offset: 0, limit: 200 })
   await expect(loadTaskHistory('employee')).resolves.toEqual({ tasks: [valid], invalidCount: 2 })
-  expect(invoke).toHaveBeenCalledTimes(2)
+  expect(invoke).toHaveBeenCalledTimes(1)
   expect(invoke).toHaveBeenCalledWith('load_local_tasks', { employeeId: 'employee', query: { query: '', offset: 0, limit: 200 } })
 })
 
@@ -223,7 +223,6 @@ it('keeps recovered Harness content in memory but persists only its local index'
     projection: { ...createXiaoyinTaskProjection(), status: 'running' as const, executionStarted: true, steps: [{ id: 'tool-1', kind: 'tool' as const, label: '检查文件', status: 'running' as const, startedAt: '2026-09-13T01:00:00Z' }] },
   }
   vi.mocked(invoke).mockReset()
-    .mockResolvedValueOnce(true)
     .mockResolvedValueOnce({ items: [running], total: 1, invalidCount: 0, offset: 0, limit: 200 })
     .mockRejectedValueOnce(new Error('Harness unavailable'))
     .mockResolvedValueOnce(undefined)
@@ -231,8 +230,8 @@ it('keeps recovered Harness content in memory but persists only its local index'
   const { tasks } = await loadTaskHistory('employee')
   expect(lastEntryText(tasks[0]!.entries)).toContain('已完成前半部分')
   expect(tasks[0]?.projection.steps[0]?.label).toContain('结果待核对')
-  expect(vi.mocked(invoke).mock.calls.map(([command]) => command)).toEqual(['local_task_history_migrated', 'load_local_tasks', 'inspect_harness_session', 'save_local_task'])
-  const saved = vi.mocked(invoke).mock.calls[3]![1] as { task: LocalTaskRun }
+  expect(vi.mocked(invoke).mock.calls.map(([command]) => command)).toEqual(['load_local_tasks', 'inspect_harness_session', 'save_local_task'])
+  const saved = vi.mocked(invoke).mock.calls[2]![1] as { task: LocalTaskRun }
   expect(saved.task.status).toBe('FAILED')
   expect(saved.task.entries).toEqual([])
   expect(saved.task.messagePreview).toContain('已完成前半部分')
@@ -245,13 +244,12 @@ it('can reopen a pre-execution failure without an available Harness Session', as
     assistantEntry('turn:1', [], {}, 'streaming'),
   ] }
   vi.mocked(invoke).mockReset()
-    .mockResolvedValueOnce(true)
     .mockResolvedValueOnce({ items: [running], total: 1, invalidCount: 0, offset: 0, limit: 200 })
     .mockRejectedValueOnce(new Error('Session not found'))
     .mockResolvedValueOnce(undefined)
 
   const result = await loadTaskHistory('employee')
-  const stored = (vi.mocked(invoke).mock.calls[3]![1] as { task: LocalTaskRun }).task
+  const stored = (vi.mocked(invoke).mock.calls[2]![1] as { task: LocalTaskRun }).task
   expect(result.tasks[0]?.status).toBe('FAILED')
   expect(stored.entries[0]).toMatchObject({ text: '检查订单并生成报告' })
   expect(lastEntryText(stored.entries)).toContain('不要重复已经完成的操作')
@@ -262,15 +260,15 @@ it('can reopen a pre-execution failure without an available Harness Session', as
   expect(reopened?.status).toBe('FAILED')
 })
 
-it('does not read or clear old WebView history when native storage has only unreadable rows', async () => {
-  vi.mocked(invoke).mockReset().mockResolvedValueOnce(true).mockResolvedValueOnce({ items: [], total: 0, invalidCount: 2, offset: 0, limit: 200 })
+it('uses native history when all stored rows are unreadable', async () => {
+  vi.mocked(invoke).mockReset().mockResolvedValueOnce({ items: [], total: 0, invalidCount: 2, offset: 0, limit: 200 })
   const storage = { getItem: vi.fn(() => { throw new Error('broken WebView storage') }), removeItem: vi.fn() }
   vi.stubGlobal('window', { localStorage: storage })
   try {
     await expect(loadTaskHistory('employee')).resolves.toEqual({ tasks: [], invalidCount: 2 })
     expect(storage.getItem).not.toHaveBeenCalled()
     expect(storage.removeItem).not.toHaveBeenCalled()
-    expect(invoke).toHaveBeenCalledTimes(2)
+    expect(invoke).toHaveBeenCalledTimes(1)
   } finally { vi.unstubAllGlobals() }
 })
 

@@ -75,7 +75,10 @@ export function useEnterpriseSession() {
             setState('authorizing')
           } else {
             setState('required')
-            if (manualRetry) await openLogin(request)
+            // Open the QR window after a confirmed cookie miss. Transient
+            // network failures still stay on the login screen without a flash.
+            const shouldOpenLogin = manualRetry || next.diagnostic?.code === 'cookie_missing' || next.diagnostic?.code === 'session_rejected'
+            if (shouldOpenLogin) await openLogin(request)
           }
           if (current(request)) schedule(LOGIN_POLL_MS)
         }

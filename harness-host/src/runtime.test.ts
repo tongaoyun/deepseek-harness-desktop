@@ -30,8 +30,10 @@ it('passes shared execution and delivery rules to actual runtime turns, includin
     expect(JSON.stringify(prompt)).toContain('使用 present 声明实际文件')
     expect(JSON.stringify(prompt)).toContain('文件存在、工具成功或模型回复不等于任务完成')
     expect(JSON.stringify(prompt)).toContain('询问、检查和诊断不代表授权修改')
-    expect(JSON.stringify(prompt)).toContain('复杂任务用用户的语言简述阶段进度')
-    expect(JSON.stringify(prompt)).toContain('简单问答不播报过程')
+    expect(JSON.stringify(prompt)).toContain('首次操作前用用户的语言给一句自然进度')
+    expect(JSON.stringify(prompt)).toContain('纯问答不播报过程')
+    expect(JSON.stringify(prompt)).toContain('最终答复必须自包含用户要的关键结果')
+    expect(JSON.stringify(prompt)).toContain('不能用“见上方”“如上”“工具结果中”代替正文')
   }
   expect(withTaskInstructions('用户原文')).toMatch(/本轮任务上下文与请求：\n用户原文$/u)
   expect(withTaskInstructions('用户原文', { useOfficialPresent: true })).toContain('使用 present 声明实际文件')
@@ -42,7 +44,7 @@ it('passes shared execution and delivery rules to actual runtime turns, includin
   expect(discoveryGuidance(['office'], 'local_files_publish')).toContain('不能反推业务只有一个仓库或期间')
   expect(discoveryGuidance(['office'], 'local_files_publish')).toContain('office_xlsx_recalculate')
   expect(discoveryGuidance(['workflow'], 'present')).toContain('可选信息未核实写在答复限制中')
-  expect(visibleTaskPrompt('小胤任务执行约定：\n- 先判断本轮意图，旧版约定\n\n本轮任务上下文与请求：\n历史问题')).toBe('历史问题')
+  expect(visibleTaskPrompt('小胤任务执行约定：\n- 先判断本轮意图，运行约定\n\n本轮任务上下文与请求：\n历史问题')).toBe('历史问题')
   await runtime.close()
 })
 
@@ -98,19 +100,40 @@ it('reports a configured model provider without exposing its credential', async 
   expect(JSON.stringify(health)).not.toContain('test-secret')
 })
 
-it('checks provider metadata without sending chat content', async () => {
+it('checks real model generation with fixed synthetic content', async () => {
   const server = createServer((request, response) => {
-    expect(request.method).toBe('GET')
-    expect(request.url).toBe('/v1/models')
+    expect(request.method).toBe('POST')
+    expect(request.url).toBe('/v1/chat/completions')
     expect(request.headers.authorization).toBe('Bearer test-secret')
-    response.writeHead(200, { 'content-type': 'application/json' }).end('{"data":[]}')
+    let body = ''
+    request.setEncoding('utf8')
+    request.on('data', (chunk) => { body += chunk })
+    request.on('end', () => {
+      expect(JSON.parse(body)).toEqual({ model: 'test-model', messages: [{ role: 'user', content: 'Reply with OK.' }], max_tokens: 16, stream: false })
+      response.writeHead(200, { 'content-type': 'application/json' }).end('{"choices":[{"message":{"content":"OK"}}]}')
+    })
+  })
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  try {
+    const address = server.address() as { port: number }
+    const result = await new DeepSeekHarnessRuntime({ DEEPSEEK_BASE_URL: `http://127.0.0.1:${address.port}/v1`, DEEPSEEK_API_KEY: 'test-secret', DSH_MODEL: 'test-model' }).checkProvider()
+    expect(result.status).toBe('available')
+    expect(result.detail).toBe('模型生成可用')
+    expect(result.detail).not.toContain('test-secret')
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()))
+  }
+})
+
+it('rejects an HTTP-success provider response without generated content', async () => {
+  const server = createServer((_request, response) => {
+    response.writeHead(200, { 'content-type': 'application/json' }).end('{"choices":[{"message":{"content":""}}]}')
   })
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
   try {
     const address = server.address() as { port: number }
     const result = await new DeepSeekHarnessRuntime({ DEEPSEEK_BASE_URL: `http://127.0.0.1:${address.port}/v1`, DEEPSEEK_API_KEY: 'test-secret' }).checkProvider()
-    expect(result.status).toBe('available')
-    expect(result.detail).not.toContain('test-secret')
+    expect(result).toMatchObject({ status: 'unreachable', detail: '模型生成响应无有效内容' })
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()))
   }
@@ -118,7 +141,7 @@ it('checks provider metadata without sending chat content', async () => {
 
 it('does not follow provider redirects with the model credential', async () => {
   const server = createServer((_request, response) => {
-    response.writeHead(302, { location: 'https://unexpected.example/models' }).end()
+    response.writeHead(302, { location: 'https://unexpected.example/chat/completions' }).end()
   })
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
   try {

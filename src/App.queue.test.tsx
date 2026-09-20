@@ -1003,7 +1003,7 @@ it('persists both kits and retains them when reopening the task', async () => {
   })
 })
 
-it('pins connector settings for a task and blocks execution after the employee revokes it', async () => {
+it('refreshes ready connector settings between turns and blocks execution after the employee revokes it', async () => {
   const connector: ConnectorCatalogEntry = { id: 'crm', name: 'CRM', summary: '', category: 'other', kind: 'mcp', scope: 'EMPLOYEE',
     status: 'ready', managed: false, version: '1', transport: 'streamable-http', url: 'https://crm.example/old', authMode: 'none', toolNames: ['read'], headers: { 'X-Client': 'xiaoyin' } }
   fixtures.catalog.connectors = [connector]
@@ -1017,7 +1017,7 @@ it('pins connector settings for a task and blocks execution after the employee r
     fixtures.catalog.connectors = [{ ...connector, version: '2', url: 'https://crm.example/new', toolNames: ['read', 'search'] }]
     await submit('继续检查')
     const next = vi.mocked(runHarnessWithRecovery).mock.calls[1][0]
-    expect(next.capabilitySnapshot.connectors[0]).toMatchObject({ version: '1', url: 'https://crm.example/old', toolNames: ['read'] })
+    expect(next.capabilitySnapshot.connectors[0]).toMatchObject({ version: '2', url: 'https://crm.example/new', toolNames: ['read', 'search'] })
     expect(next.sessionId).toBe(first.sessionId)
     expect(first.capabilitySnapshot.connectors[0].version).toBe('1')
     fixtures.catalog.connectors = []
@@ -1110,22 +1110,19 @@ it('queues the message when the turn can no longer take steering', async () => {
   })
 })
 
-it('interrupts the running turn before falling back to a process stop', async () => {
+it('stops the running turn immediately through the isolated process handle', async () => {
   const first = deferredRun()
   vi.mocked(runHarnessWithRecovery).mockReturnValueOnce(first.promise)
-  vi.mocked(harness.interruptHarness).mockResolvedValue(true)
   await fixture(async () => {
     await submit('检查排序方法')
     await act(async () => fixtures.chat!.onCancel())
-    expect(harness.interruptHarness).toHaveBeenCalledOnce()
-    expect(harness.cancelHarness).not.toHaveBeenCalled()
+    expect(harness.cancelHarness).toHaveBeenCalledOnce()
   })
 })
 
-it('force-stops the process when nothing acknowledges the interrupt', async () => {
+it('does not wait for a graceful interrupt acknowledgement before stopping', async () => {
   const first = deferredRun()
   vi.mocked(runHarnessWithRecovery).mockReturnValueOnce(first.promise)
-  vi.mocked(harness.interruptHarness).mockResolvedValue(false)
   await fixture(async () => {
     await submit('检查排序方法')
     await act(async () => fixtures.chat!.onCancel())
@@ -1165,36 +1162,23 @@ it('rebuilds the session when the log cannot be forked for regeneration', async 
   })
 })
 
-it('force-stops a turn whose interrupt never lands because the harness went quiet', async () => {
-  vi.useFakeTimers()
+it('stops a quiet turn without a delayed fallback timer', async () => {
   const first = deferredRun()
   vi.mocked(runHarnessWithRecovery).mockReturnValueOnce(first.promise)
-  vi.mocked(harness.interruptHarness).mockResolvedValue(true)
-  try {
-    await fixture(async () => {
-      await submit('查询这个订单')
-      await act(async () => fixtures.chat!.onCancel())
-      expect(harness.interruptHarness).toHaveBeenCalledOnce()
-      // A quiet model or tool cannot delay Stop indefinitely.
-      expect(harness.cancelHarness).not.toHaveBeenCalled()
-      await act(async () => { vi.advanceTimersByTime(1_100) })
-      expect(harness.cancelHarness).toHaveBeenCalledOnce()
-    })
-  } finally { vi.useRealTimers() }
+  await fixture(async () => {
+    await submit('查询这个订单')
+    await act(async () => fixtures.chat!.onCancel())
+    expect(harness.cancelHarness).toHaveBeenCalledOnce()
+  })
 })
 
-it('never force-stops a turn that settled after its interrupt', async () => {
-  vi.useFakeTimers()
+it('does not need a delayed stop timer after the turn settles', async () => {
   const first = deferredRun()
   vi.mocked(runHarnessWithRecovery).mockReturnValueOnce(first.promise)
-  vi.mocked(harness.interruptHarness).mockResolvedValue(true)
-  try {
-    await fixture(async () => {
-      await submit('查询这个订单')
-      await act(async () => fixtures.chat!.onCancel())
-      await act(async () => first.resolve({ finalResponse: '已完成', sessionId: 'settled' }))
-      await act(async () => { vi.advanceTimersByTime(10_000) })
-      expect(harness.cancelHarness).not.toHaveBeenCalled()
-    })
-  } finally { vi.useRealTimers() }
+  await fixture(async () => {
+    await submit('查询这个订单')
+    await act(async () => fixtures.chat!.onCancel())
+    await act(async () => first.resolve({ finalResponse: '已完成', sessionId: 'settled' }))
+    expect(harness.cancelHarness).toHaveBeenCalledOnce()
+  })
 })

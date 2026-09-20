@@ -456,7 +456,6 @@ export function ExtensionAuthoringModal({
               <label className="wide">自定义 Headers（JSON）<textarea placeholder={'例如：{\n  "Authorization": "Bearer ..."\n}'} value={form.headers} onChange={(event) => setForm({ ...form, headers: event.target.value })} /></label>
             </>}
             <label className="wide">工具名称<input placeholder="测试连接后自动回填，也可手工修改" value={form.toolNames} onChange={(event) => setForm({ ...form, toolNames: event.target.value })} /></label>
-            <label className="wide">已核实只读工具<input placeholder="工具名，多个用逗号分隔" value={form.readOnlyTools} onChange={(event) => setForm({ ...form, readOnlyTools: event.target.value })} /></label>
             <div className="connector-authoring-test wide"><button disabled={testing || busy} onClick={() => void testConnector()} type="button"><RefreshCw className={testing ? 'spin' : ''} size={13} />{testing ? '正在连接…' : '测试连接并发现工具'}</button>{diagnostic && diagnostic.status !== 'unavailable' && <span>{diagnostic.status === 'ready' ? '连接成功' : '连接成功，登记工具有变化'} · {diagnostic.latencyMs} ms · 发现 {diagnostic.discoveredTools.length} 个工具</span>}</div>
           </> : <>
             {kind === 'expert-kit' && !baseManifest && <ExpertKitComposer
@@ -522,13 +521,16 @@ function connectorFromForm(form: AuthoringForm): ConnectorCatalogEntry {
 }
 
 function manifestFromForm(kind: 'expert-kit' | 'skill', form: AuthoringForm, selectedSkillIds: string[]): ExpertKitManifest {
+  const requiredTools = split(form.requiredTools)
+  const connectorRefs = split(form.connectorRefs)
+  const dependencyFields = { requiredTools, connectorRefs, knowledgeBaseRefs: [] as string[] }
   return {
-    schemaVersion: kind === 'expert-kit' ? '2' : '1', kind, id: form.id, name: form.name, author: form.author.trim() || undefined, version: form.version, summary: form.summary, category: form.category as ExtensionCategory,
+    schemaVersion: kind === 'expert-kit' ? '3' : '1', kind, id: form.id, name: form.name, author: form.author.trim() || undefined, version: form.version, summary: form.summary, category: form.category as ExtensionCategory,
     triggers: split(form.triggers), allowImplicitInvocation: form.allowImplicitInvocation, minimumDesktopVersion: '0.1.41', commands: kind === 'expert-kit' ? [{ id: 'start', path: 'commands/start.md', skillId: `guide-${form.id}` }] : [],
     skills: kind === 'expert-kit'
-      ? [{ id: `guide-${form.id}`, path: 'skills/kit-guide/SKILL.md' }, ...selectedSkillIds.map((id) => ({ id, path: `skills/${id}/SKILL.md` }))]
+      ? [{ id: `guide-${form.id}`, path: 'skills/kit-guide/SKILL.md', ...dependencyFields }, ...selectedSkillIds.map((id) => ({ id, path: `skills/${id}/SKILL.md`, ...dependencyFields }))]
       : [{ id: form.id, path: 'SKILL.md' }],
-    requiredTools: split(form.requiredTools), connectorRefs: split(form.connectorRefs), knowledgeBaseRefs: [],
+    requiredTools, connectorRefs, knowledgeBaseRefs: [],
   }
 }
 

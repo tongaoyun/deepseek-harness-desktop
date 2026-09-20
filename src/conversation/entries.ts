@@ -7,7 +7,7 @@ export function appendSteerToOpenTurn(entries: ConversationEntry[], message: Use
   return [...entries.slice(0, -1), { ...last, segments: [...last.segments, { kind: 'user' as const, id: message.id, text: message.text }] }]
 }
 
-/** Repair older local snapshots where a steer was stored after the open turn. */
+/** Normalize a steer message into the assistant turn that is still open. */
 export function reconcileTaskConversation(entries: ConversationEntry[], status: TurnStatus | 'running' | 'idle', completedAt?: string): ConversationEntry[] {
   const normalized: ConversationEntry[] = []
   for (const entry of entries) {

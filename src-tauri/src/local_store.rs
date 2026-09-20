@@ -69,31 +69,13 @@ pub struct EnterpriseCatalogCache {
 }
 
 #[tauri::command]
-pub async fn load_local_schedules(
-    app: tauri::AppHandle,
-    owner: String,
-    legacy: Option<Value>,
-) -> Result<Value, String> {
+pub async fn load_local_schedules(app: tauri::AppHandle, owner: String) -> Result<Value, String> {
     require_storage_owner(&app, &owner).await?;
     with_database_async(app, move |database| {
-        load_or_import_schedule_payload(database, &account_key(&owner), legacy)
+        load_schedule_payload(database, &account_key(&owner))
+            .map(|value| value.unwrap_or(Value::Array(Vec::new())))
     })
     .await
-}
-
-fn load_or_import_schedule_payload(
-    database: &Connection,
-    account: &str,
-    legacy: Option<Value>,
-) -> Result<Value, String> {
-    if let Some(stored) = load_schedule_payload(database, account)? {
-        return Ok(stored);
-    }
-    if let Some(legacy) = legacy {
-        write_schedule_payload(database, account, &legacy)?;
-        return Ok(legacy);
-    }
-    Ok(Value::Null)
 }
 
 #[tauri::command]
@@ -177,29 +159,14 @@ fn write_schedule_payload(
 pub async fn load_local_task_queues(
     app: tauri::AppHandle,
     employee_id: String,
-    legacy: Option<Value>,
 ) -> Result<Value, String> {
     validate_employee_id(&employee_id)?;
     crate::erp_auth::require_employee(&app, &employee_id).await?;
     with_database_async(app, move |database| {
-        load_or_import_task_queue_payload(database, &account_key(&employee_id), legacy)
+        load_task_queue_payload(database, &account_key(&employee_id))
+            .map(|value| value.unwrap_or(Value::Object(serde_json::Map::new())))
     })
     .await
-}
-
-fn load_or_import_task_queue_payload(
-    database: &Connection,
-    account: &str,
-    legacy: Option<Value>,
-) -> Result<Value, String> {
-    if let Some(stored) = load_task_queue_payload(database, account)? {
-        return Ok(stored);
-    }
-    if let Some(legacy) = legacy {
-        write_task_queue_payload(database, account, &legacy)?;
-        return Ok(legacy);
-    }
-    Ok(Value::Null)
 }
 
 #[tauri::command]
@@ -293,20 +260,14 @@ fn write_task_queue_payload(
 pub async fn load_local_workspace_state(
     app: tauri::AppHandle,
     employee_id: String,
-    legacy: Option<Value>,
 ) -> Result<Value, String> {
     validate_employee_id(&employee_id)?;
     crate::erp_auth::require_employee(&app, &employee_id).await?;
     with_database_async(app, move |database| {
         let account = account_key(&employee_id);
-        if let Some(stored) = load_workspace_state_payload(database, &account)? {
-            return Ok(stored);
-        }
-        if let Some(legacy) = legacy {
-            write_workspace_state_payload(database, &account, &legacy)?;
-            return Ok(legacy);
-        }
-        Ok(Value::Null)
+        load_workspace_state_payload(database, &account).map(|value| {
+            value.unwrap_or_else(|| serde_json::json!({ "drafts": {}, "recentDirectories": [] }))
+        })
     })
     .await
 }
@@ -455,105 +416,6 @@ fn query_tasks(database: &Connection, account: &str, query: TaskQuery) -> Result
         offset: query.offset,
         limit,
     })
-}
-
-#[tauri::command]
-pub async fn local_task_history_migrated(
-    app: tauri::AppHandle,
-    employee_id: String,
-) -> Result<bool, String> {
-    validate_employee_id(&employee_id)?;
-    crate::erp_auth::require_employee(&app, &employee_id).await?;
-    with_database_async(app, move |database| {
-        task_history_migrated(database, &account_key(&employee_id))
-    })
-    .await
-}
-
-fn task_history_migrated(database: &Connection, account: &str) -> Result<bool, String> {
-    let marked = database
-        .query_row(
-            "SELECT 1 FROM local_task_migration WHERE employee_key = ?1",
-            [account],
-            |row| row.get::<_, i64>(0),
-        )
-        .optional()
-        .map_err(database_error)?
-        .is_some();
-    if marked {
-        return Ok(true);
-    }
-    let existing: i64 = database
-        .query_row(
-            "SELECT COUNT(*) FROM local_task WHERE employee_key = ?1",
-            [account],
-            |row| row.get(0),
-        )
-        .map_err(database_error)?;
-    if existing == 0 {
-        return Ok(false);
-    }
-    database
-        .execute(
-            "INSERT OR IGNORE INTO local_task_migration(employee_key) VALUES (?1)",
-            [account],
-        )
-        .map_err(database_error)?;
-    Ok(true)
-}
-
-#[tauri::command]
-pub async fn import_local_task_history(
-    app: tauri::AppHandle,
-    employee_id: String,
-    tasks: Vec<Value>,
-) -> Result<bool, String> {
-    validate_employee_id(&employee_id)?;
-    crate::erp_auth::require_employee(&app, &employee_id).await?;
-    with_database_async(app, move |database| {
-        import_task_history(database, &account_key(&employee_id), &tasks)
-    })
-    .await
-}
-
-fn import_task_history(
-    database: &Connection,
-    account: &str,
-    tasks: &[Value],
-) -> Result<bool, String> {
-    if tasks.len() > 10_000 {
-        return Err("本地历史数量超出导入上限".to_string());
-    }
-    let transaction = database.unchecked_transaction().map_err(database_error)?;
-    if task_history_migrated(&transaction, account)? {
-        transaction.commit().map_err(database_error)?;
-        return Ok(false);
-    }
-    for task in tasks {
-        let (id, name, status, updated_at) = task_index_fields(task)?;
-        let payload =
-            serde_json::to_string(task).map_err(|error| format!("无法序列化本地会话：{error}"))?;
-        if payload.len() > MAX_TASK_PAYLOAD_BYTES {
-            return Err("本地会话不能超过 16 MB".to_string());
-        }
-        write_local_task(
-            &transaction,
-            account,
-            id,
-            name,
-            status,
-            updated_at,
-            &payload,
-        )?;
-    }
-    transaction
-        .execute(
-            "INSERT INTO local_task_migration(employee_key) VALUES (?1)",
-            [account],
-        )
-        .map_err(database_error)?;
-    transaction.commit().map_err(database_error)?;
-    Ok(true)
 }
 
 #[tauri::command]
@@ -1030,9 +892,6 @@ pub(crate) fn with_database<T>(
            PRIMARY KEY(employee_key, id)
          );
          CREATE INDEX IF NOT EXISTS idx_local_task_employee_updated ON local_task(employee_key, updated_at DESC);
-         CREATE TABLE IF NOT EXISTS local_task_migration (
-           employee_key TEXT PRIMARY KEY
-         );
          CREATE TABLE IF NOT EXISTS enterprise_catalog_cache (
            employee_key TEXT PRIMARY KEY,
            saved_at TEXT NOT NULL,
@@ -1172,66 +1031,6 @@ mod tests {
         })
     }
 
-    fn task_migration_database() -> Connection {
-        let database = Connection::open_in_memory().unwrap();
-        database
-            .execute_batch(
-                "CREATE TABLE local_task (
-                   employee_key TEXT NOT NULL, id TEXT NOT NULL, name TEXT NOT NULL,
-                   status TEXT NOT NULL, updated_at TEXT NOT NULL, payload TEXT NOT NULL,
-                   PRIMARY KEY(employee_key, id)
-                 );
-                 CREATE TABLE local_task_migration (employee_key TEXT PRIMARY KEY);",
-            )
-            .unwrap();
-        database
-    }
-
-    fn valid_local_task(id: &str) -> Value {
-        serde_json::json!({
-            "id": id, "source": "DESKTOP", "name": "测试任务", "status": "COMPLETED",
-            "createdAt": "2026-09-13T00:00:00Z", "updatedAt": "2026-09-13T00:00:00Z",
-            "entries": [], "projection": {"status": "completed", "activity": "完成",
-                "updatedAt": "2026-09-13T00:00:00Z", "steps": [], "artifacts": []}
-        })
-    }
-
-    #[test]
-    fn task_history_import_is_atomic_and_empty_history_stays_migrated() {
-        let database = task_migration_database();
-        let account = account_key("employee-a");
-        let other = account_key("employee-b");
-        assert!(!task_history_migrated(&database, &account).unwrap());
-        assert!(
-            import_task_history(&database, &account, &[valid_local_task("one"), Value::Null])
-                .is_err()
-        );
-        assert!(!task_history_migrated(&database, &account).unwrap());
-        assert_eq!(
-            query_tasks(
-                &database,
-                &account,
-                TaskQuery {
-                    exclude_ids: Vec::new(),
-                    query: String::new(),
-                    offset: 0,
-                    limit: 200,
-                }
-            )
-            .unwrap()
-            .total,
-            0
-        );
-        assert!(import_task_history(&database, &account, &[valid_local_task("one")]).unwrap());
-        database
-            .execute("DELETE FROM local_task WHERE employee_key = ?1", [&account])
-            .unwrap();
-        assert!(task_history_migrated(&database, &account).unwrap());
-        assert!(!import_task_history(&database, &account, &[valid_local_task("stale")]).unwrap());
-        assert!(import_task_history(&database, &other, &[]).unwrap());
-        assert!(task_history_migrated(&database, &other).unwrap());
-    }
-
     #[test]
     fn workspace_state_is_isolated_and_invalid_writes_preserve_existing_data() {
         let database = workspace_state_database();
@@ -1289,31 +1088,6 @@ mod tests {
     }
 
     #[test]
-    fn schedule_legacy_import_never_overwrites_native_data() {
-        let database = schedule_database();
-        let account = account_key("employee");
-        let native = valid_schedule("native");
-        let legacy = valid_schedule("legacy");
-        write_schedule_payload(&database, &account, &native).unwrap();
-        assert_eq!(
-            load_or_import_schedule_payload(&database, &account, Some(legacy)).unwrap(),
-            native
-        );
-
-        let new_account = account_key("new-employee");
-        let imported = valid_schedule("imported");
-        assert_eq!(
-            load_or_import_schedule_payload(&database, &new_account, Some(imported.clone()))
-                .unwrap(),
-            imported
-        );
-        assert_eq!(
-            load_schedule_payload(&database, &new_account).unwrap(),
-            Some(imported)
-        );
-    }
-
-    #[test]
     fn invalid_or_excessive_schedule_collections_are_rejected() {
         let database = schedule_database();
         for invalid in [
@@ -1335,30 +1109,17 @@ mod tests {
     }
 
     #[test]
-    fn task_queues_are_isolated_and_legacy_never_overwrites_native_data() {
+    fn task_queues_are_isolated() {
         let database = task_queue_database();
         let first_account = account_key("employee-a");
         let second_account = account_key("employee-b");
         let native = valid_task_queue("native");
         write_task_queue_payload(&database, &first_account, &native).unwrap();
-        assert_eq!(
-            load_or_import_task_queue_payload(
-                &database,
-                &first_account,
-                Some(valid_task_queue("legacy"))
-            )
-            .unwrap(),
-            native
-        );
-        let imported = valid_task_queue("imported");
-        assert_eq!(
-            load_or_import_task_queue_payload(&database, &second_account, Some(imported.clone()))
-                .unwrap(),
-            imported
-        );
+        let second = valid_task_queue("second");
+        write_task_queue_payload(&database, &second_account, &second).unwrap();
         assert_eq!(
             load_task_queue_payload(&database, &second_account).unwrap(),
-            Some(imported)
+            Some(second)
         );
         assert_eq!(
             load_task_queue_payload(&database, &account_key("employee-c")).unwrap(),
@@ -1487,9 +1248,32 @@ mod tests {
         );
     }
 
+    fn task_database() -> Connection {
+        let database = Connection::open_in_memory().unwrap();
+        database
+            .execute_batch(
+                "CREATE TABLE local_task (
+                   employee_key TEXT NOT NULL, id TEXT NOT NULL, name TEXT NOT NULL,
+                   status TEXT NOT NULL, updated_at TEXT NOT NULL, payload TEXT NOT NULL,
+                   PRIMARY KEY(employee_key, id)
+                 );",
+            )
+            .unwrap();
+        database
+    }
+
+    fn valid_local_task(id: &str) -> Value {
+        serde_json::json!({
+            "id": id, "source": "DESKTOP", "name": "测试任务", "status": "COMPLETED",
+            "createdAt": "2026-09-13T00:00:00Z", "updatedAt": "2026-09-13T00:00:00Z",
+            "entries": [], "projection": {"status": "completed", "activity": "完成",
+                "updatedAt": "2026-09-13T00:00:00Z", "steps": [], "artifacts": []}
+        })
+    }
+
     #[test]
     fn capability_notice_is_appended_without_replacing_task_state_or_crossing_sessions() {
-        let database = task_migration_database();
+        let database = task_database();
         let account = account_key("employee-1");
         let other = account_key("employee-2");
         let mut task = valid_local_task("notice-task");

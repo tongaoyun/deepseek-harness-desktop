@@ -171,13 +171,3 @@ it('keeps owners isolated and does not silently replace corrupt data', async () 
   await expect(saveLocalSchedule('one', input)).rejects.toThrow()
   expect(localStorage.getItem('xiaoyin:local-schedules:v1:one')).toBe('{broken')
 })
-
-it('upgrades legacy run rows to explicit schedule references on read', async () => {
-  await due()
-  await mutateLocalSchedules('one', (items) => items.map((item) => ({
-    ...item,
-    runs: [{ id: 'legacy-run', scheduledAt: now.toISOString(), startedAt: now.toISOString(), status: 'MISSED' as const }],
-  })))
-  const plan = (await readLocalSchedules('one'))[0]
-  expect(plan.runs[0]).toMatchObject({ scheduleId: plan.id, scheduleRunId: 'legacy-run' })
-})

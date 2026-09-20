@@ -5,7 +5,7 @@ export const name = 'xiaoyin-desktop-plan-mode'
 export const inject = ['planMode', 'tools']
 
 const PLAN_SAFE_TOOLS = new Set([
-  'ask_user_question', 'exit_plan_mode', 'get_goal', 'task_report',
+  'tool_discover', 'ask_user_question', 'exit_plan_mode', 'get_goal', 'task_report',
   'read', 'read_image', 'glob', 'grep', 'skill', 'lsp',
   'web_search', 'web_fetch',
   'session_search', 'session_event_search', 'session_trace', 'session_event_trace', 'session_event_read', 'schedule_list',

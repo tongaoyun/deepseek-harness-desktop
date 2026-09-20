@@ -118,6 +118,12 @@ struct FileReference {
     path: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     skill_id: Option<String>,
+    #[serde(default)]
+    required_tools: Vec<String>,
+    #[serde(default)]
+    connector_refs: Vec<String>,
+    #[serde(default)]
+    knowledge_base_refs: Vec<String>,
 }
 
 fn default_true() -> bool {
@@ -475,6 +481,10 @@ fn build_developer_package(
         if !payload_files.iter().any(|(path, _)| path == &command.path) {
             append_generated_file(&mut archive, &command.path, b"Follow this expert kit's skills and delivery standards to complete the user's task.\n\n$ARGUMENTS")?;
         }
+    }
+    if manifest.kind == "expert-kit" {
+        let readme = format!("# {}\n\n{}\n", manifest.name, manifest.summary);
+        append_generated_file(&mut archive, "README.md", readme.as_bytes())?;
     }
     for (path, bytes) in payload_files {
         append_generated_file(&mut archive, path, bytes)?;
@@ -1191,11 +1201,11 @@ pub fn harness_profile(
     for artifact in implicit {
         skill_catalog.append_artifact(artifact, false)?;
     }
-    let connector_tools = selected
+    let connector_tools = resolved
         .iter()
-        .flat_map(|artifact| {
-            artifact
-                .manifest
+        .flat_map(invocation_skills)
+        .flat_map(|skill| {
+            skill
                 .required_tools
                 .iter()
                 .filter(|tool| {
@@ -1220,9 +1230,10 @@ pub fn harness_profile(
         .collect::<std::collections::BTreeSet<_>>()
         .into_iter()
         .collect();
-    let kit_refs = selected
+    let kit_refs = resolved
         .iter()
-        .filter_map(|artifact| artifact.manifest.knowledge_base_refs.as_ref())
+        .flat_map(invocation_skills)
+        .map(|skill| &skill.knowledge_base_refs)
         .collect::<Vec<_>>();
     let combined_refs = kit_refs
         .iter()
@@ -2128,7 +2139,7 @@ mod tests {
         fs::write(
             root.join(KIT_MANIFEST_PATH),
             r#"{
-              "schemaVersion":"2","id":"report-kit","name":"日报","version":"1.0.0",
+              "schemaVersion":"3","id":"report-kit","name":"日报","version":"1.0.0",
               "summary":"生成日报","category":"other","minimumDesktopVersion":"0.1.30",
               "skills":[{"id":"report","path":"skills/report/SKILL.md"}],
               "requiredTools":["sales_summary"],
@@ -2370,8 +2381,10 @@ mod tests {
     fn manifest_model_still_rejects_unknown_fields() {
         let unknown = serde_json::from_str::<ExpertKitManifest>(
             r#"{
-              "schemaVersion":"2","kind":"expert-kit","id":"report-kit","name":"日报","version":"1.0.0",
-              "summary":"生成日报","skills":[{"id":"report","path":"skills/report/SKILL.md"}],
+              "schemaVersion":"3","kind":"expert-kit","id":"report-kit","name":"日报","version":"1.0.0",
+              "summary":"生成日报","commands":[{"id":"report","path":"commands/report.md","skillId":"report"}],
+              "skills":[{"id":"report","path":"skills/report/SKILL.md","requiredTools":[],"connectorRefs":[],"knowledgeBaseRefs":[]}],
+              "requiredTools":[],"connectorRefs":[],"knowledgeBaseRefs":[],
               "unexpected":true
             }"#,
         );
@@ -2381,13 +2394,17 @@ mod tests {
     #[test]
     fn real_tar_gzip_package_is_safely_extracted_and_validated() {
         let manifest = r#"{
-          "schemaVersion":"2","id":"report-kit","name":"日报","version":"1.0.0",
+          "schemaVersion":"3","id":"report-kit","name":"日报","version":"1.0.0",
           "summary":"生成日报","category":"other","minimumDesktopVersion":"0.1.30",
-          "skills":[{"id":"report","path":"skills/report/SKILL.md"}]
+          "commands":[{"id":"report","path":"commands/report.md","skillId":"report"}],
+          "skills":[{"id":"report","path":"skills/report/SKILL.md","requiredTools":[],"connectorRefs":[],"knowledgeBaseRefs":[]}],
+          "requiredTools":[],"connectorRefs":[],"knowledgeBaseRefs":[]
         }"#;
         let encoder = GzEncoder::new(Vec::new(), Compression::default());
         let mut archive = tar::Builder::new(encoder);
         append_archive_file(&mut archive, KIT_MANIFEST_PATH, manifest.as_bytes());
+        append_archive_file(&mut archive, "README.md", b"# Report kit");
+        append_archive_file(&mut archive, "commands/report.md", b"$ARGUMENTS");
         append_archive_file(&mut archive, "skills/report/SKILL.md", b"# Report");
         let encoder = archive.into_inner().unwrap();
         let package = encoder.finish().unwrap();
@@ -2451,11 +2468,11 @@ mod tests {
     fn developer_composer_packages_every_selected_skill() {
         let manifest: ExpertKitManifest = serde_json::from_str(
             r#"{
-              "schemaVersion":"2","kind":"expert-kit","id":"operations-kit","name":"运营套件","version":"1.0.0",
-              "summary":"组合多个运营技能","category":"other","minimumDesktopVersion":"0.1.29","commands":[],
+              "schemaVersion":"3","kind":"expert-kit","id":"operations-kit","name":"运营套件","version":"1.0.0",
+              "summary":"组合多个运营技能","category":"other","minimumDesktopVersion":"0.1.29","commands":[{"id":"order-review","path":"commands/order-review.md","skillId":"order-review"}],
               "skills":[
-                {"id":"order-review","path":"skills/order-review/SKILL.md"},
-                {"id":"sales-report","path":"skills/sales-report/SKILL.md"}
+                {"id":"order-review","path":"skills/order-review/SKILL.md","requiredTools":[],"connectorRefs":[],"knowledgeBaseRefs":[]},
+                {"id":"sales-report","path":"skills/sales-report/SKILL.md","requiredTools":[],"connectorRefs":[],"knowledgeBaseRefs":[]}
               ],
               "requiredTools":[],"connectorRefs":[],"knowledgeBaseRefs":[]
             }"#,
@@ -2654,9 +2671,11 @@ mod tests {
         ));
         fs::create_dir(&root).unwrap();
         let manifest = r#"{
-          "schemaVersion":"2","id":"platform-acceptance","name":"平台验收","version":"1.0.0",
+          "schemaVersion":"3","id":"platform-acceptance","name":"平台验收","version":"1.0.0",
           "summary":"验证平台能力","category":"other","minimumDesktopVersion":"0.1.9",
-          "skills":[{"id":"platform-check","path":"skills/platform-check/SKILL.md"}]
+          "commands":[{"id":"platform-check","path":"commands/platform-check.md","skillId":"platform-check"}],
+          "skills":[{"id":"platform-check","path":"skills/platform-check/SKILL.md","requiredTools":[],"connectorRefs":[],"knowledgeBaseRefs":[]}],
+          "requiredTools":[],"connectorRefs":[],"knowledgeBaseRefs":[]
         }"#;
         let package = test_package(manifest, b"# Platform check");
         let installed = install_package_bytes(
@@ -2721,9 +2740,11 @@ mod tests {
         ));
         fs::create_dir(&root).unwrap();
         let manifest = r#"{
-          "schemaVersion":"2","id":"report-kit","name":"报告专家","version":"1.0.0",
+          "schemaVersion":"3","id":"report-kit","name":"报告专家","version":"1.0.0",
           "summary":"生成报告","category":"other","minimumDesktopVersion":"0.1.9",
-          "skills":[{"id":"platform-check","path":"skills/platform-check/SKILL.md"}]
+          "commands":[{"id":"platform-check","path":"commands/platform-check.md","skillId":"platform-check"}],
+          "skills":[{"id":"platform-check","path":"skills/platform-check/SKILL.md","requiredTools":[],"connectorRefs":[],"knowledgeBaseRefs":[]}],
+          "requiredTools":[],"connectorRefs":[],"knowledgeBaseRefs":[]
         }"#;
         for (version, source) in [
             ("1.0.0", InstallSource::Catalog),
@@ -2811,6 +2832,8 @@ mod tests {
         let encoder = GzEncoder::new(Vec::new(), Compression::default());
         let mut archive = tar::Builder::new(encoder);
         append_archive_file(&mut archive, KIT_MANIFEST_PATH, manifest.as_bytes());
+        append_archive_file(&mut archive, "README.md", b"# Expert kit");
+        append_archive_file(&mut archive, "commands/platform-check.md", b"$ARGUMENTS");
         append_archive_file(&mut archive, "skills/platform-check/SKILL.md", skill);
         archive.into_inner().unwrap().finish().unwrap()
     }

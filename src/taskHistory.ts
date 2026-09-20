@@ -153,17 +153,6 @@ export async function loadTaskById(employeeId: string, id: string): Promise<Loca
 export async function loadTaskHistory(employeeId: string): Promise<{ tasks: LocalTaskRun[]; invalidCount: number }> {
   await Promise.all([...writes.entries()].filter(([key]) => JSON.parse(key)[0] === employeeId).map(([, write]) => write.catch(() => undefined)))
   if (!isTauri()) return { tasks: await recoverInterruptedTasksWithHarness(employeeId, loadLocalTasks(employeeId).slice(0, LIMIT)), invalidCount: 0 }
-  if (!await invoke<boolean>('local_task_history_migrated', { employeeId })) {
-    let raw: string | null
-    try { raw = window.localStorage.getItem(storageKey(employeeId)) }
-    catch { return { tasks: [], invalidCount: 0 } } // Retry migration if WebView storage becomes readable later.
-    const migrated = raw === null ? [] : recoverInterruptedTasks(loadLocalTasks(employeeId))
-    const imported = await invoke<boolean>('import_local_task_history', { employeeId, tasks: migrated })
-    if (imported && raw !== null) {
-      try { window.localStorage.removeItem(storageKey(employeeId)) }
-      catch { /* The native migration marker prevents another import. */ }
-    }
-  }
   const page = await invoke<LocalTaskPage>('load_local_tasks', {
     employeeId,
     query: { query: '', offset: 0, limit: LIMIT },
@@ -314,7 +303,7 @@ function validTasks(values: unknown[]): LocalTaskRun[] {
 function invalidTaskError(value: unknown): Error {
   if (value && typeof value === 'object' && 'source' in value && value.source === 'DESKTOP'
     && !('projection' in value)) {
-    return new Error('本地会话缺少运行投影（旧开发格式或数据损坏），原始数据已保留')
+    return new Error('本地会话缺少运行投影或数据损坏，原始数据已保留')
   }
   return new Error('本地会话数据无效，原始数据已保留')
 }

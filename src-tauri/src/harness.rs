@@ -158,19 +158,10 @@ impl HarnessSlot {
             return Ok(true);
         }
         // Serialize cancellation with process registration so startup cannot miss a stop.
+        // Harness runs in an isolated process group; kill the group immediately so
+        // the desktop stop action cannot remain pending on a model or connector.
         if let Some(pid) = run.pid {
-            signal_process(pid, false)?;
-            let slot = Arc::clone(self);
-            std::thread::spawn(move || {
-                std::thread::sleep(Duration::from_secs(5));
-                if let Ok(active) = slot.active.lock()
-                    && active
-                        .as_ref()
-                        .is_some_and(|run| run.canceled && run.pid == Some(pid))
-                {
-                    let _ = terminate_process(pid);
-                }
-            });
+            terminate_process(pid)?;
         }
         run.canceled = true;
         Ok(true)
@@ -312,8 +303,7 @@ pub struct ConnectorDiagnosticRequest {
 pub struct HarnessRunResult {
     session_id: String,
     final_response: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    outcome: Option<Value>,
+    outcome: Value,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -2994,7 +2984,7 @@ mod tests {
     }
 
     #[test]
-    fn native_bridge_preserves_task_outcome_and_accepts_legacy_responses() {
+    fn native_bridge_preserves_task_outcome() {
         let outcome = json!({ "status": "needs_input", "summary": "缺少月份",
             "remaining": ["提供统计月份"], "checks": [] });
         let result: HarnessRunResult = serde_json::from_value(json!({
@@ -3002,16 +2992,6 @@ mod tests {
         }))
         .unwrap();
         assert_eq!(serde_json::to_value(result).unwrap()["outcome"], outcome);
-        let legacy: HarnessRunResult = serde_json::from_value(json!({
-            "sessionId": "session-1", "finalResponse": "旧回复"
-        }))
-        .unwrap();
-        assert!(
-            serde_json::to_value(legacy)
-                .unwrap()
-                .get("outcome")
-                .is_none()
-        );
     }
 
     #[test]
@@ -3135,7 +3115,7 @@ mod tests {
     }
 
     #[test]
-    fn run_request_without_runtime_authorizations_is_restricted() {
+    fn run_request_without_optional_runtime_authorizations_is_restricted() {
         let request: HarnessRunRequest = serde_json::from_value(json!({
             "operationScope": "test-turn",
             "taskId": "task-1",
@@ -3159,7 +3139,7 @@ mod tests {
             "modelApiKey": "model-token",
             "accessToken": "token"
         }))
-        .expect("legacy-shaped request should deserialize without authorization");
+        .expect("request without optional authorizations should remain restricted");
         assert_eq!(request.tools_mode, None);
         assert!(!request.allow_shell);
         assert!(!request.allow_lsp);
@@ -3263,10 +3243,7 @@ mod tests {
         let runtime =
             runtime_connectors(&catalog, &profile, true).expect("connector should resolve");
         assert_eq!(runtime.len(), 1);
-        assert_eq!(
-            runtime[0].allowed_tools,
-            vec!["sales_summary", "order_cancel"]
-        );
+        assert_eq!(runtime[0].allowed_tools, vec!["sales_summary"]);
         assert_eq!(runtime[0].required_tools, vec!["sales_summary"]);
         assert!(!runtime[0].required);
         assert!(runtime[0].allow_write);

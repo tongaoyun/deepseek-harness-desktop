@@ -123,6 +123,8 @@ it('keeps streamed text in place exactly once while tool cards append below it',
   const root = createRoot(container)
   try {
     await act(async () => root.render(<ChatPage {...base} harnessRunning taskProjection={projection} entries={[streaming]} />))
+    expect(container.querySelector('.turn-status-line')?.textContent).toContain('已处理')
+    expect(container.querySelector('.turn-activity')).not.toBeInstanceOf(HTMLDetailsElement)
     // The streamed text lives in the turn body exactly once, with the tool card below it.
     expect(container.textContent!.split('正在生成的正文')).toHaveLength(2)
     expect(container.querySelector('.streaming-response')?.textContent).toContain('正在生成的正文')
@@ -132,11 +134,36 @@ it('keeps streamed text in place exactly once while tool cards append below it',
     // Settlement never removes what was already written, and never duplicates it.
     expect(container.textContent!.split('正在生成的正文')).toHaveLength(2)
     expect(container.textContent).toContain('检查完成。')
-    expect(container.querySelector('.turn-status-line')?.textContent).toContain('已处理2秒')
+    expect(container.querySelector('.turn-status-line')?.textContent).toContain('用时 2秒')
+    expect(container.querySelector<HTMLDetailsElement>('.turn-activity')?.open).toBe(false)
   } finally { await act(async () => root.unmount()); container.remove() }
 })
 
-it('shows one quiet activity summary, hides private reasoning and opens tool receipts', async () => {
+it('shows Codex-style subtask status rows from the Harness projection', async () => {
+  const projection: XiaoyinTaskProjection = {
+    ...base.taskProjection, status: 'running', activity: '正在处理', updatedAt: '',
+    subagents: [
+      { id: 'image', label: '图片服务', status: 'running', startedAt: '' },
+      { id: 'xiaokai', label: '小凯', status: 'completed', startedAt: '', completedAt: '' },
+      { id: 'cdp', label: 'CDP', status: 'failed', startedAt: '', completedAt: '' },
+    ],
+  }
+  const container = document.body.appendChild(document.createElement('div'))
+  const root = createRoot(container)
+  try {
+    await act(async () => root.render(<ChatPage {...base} harnessRunning taskProjection={projection} entries={[assistantEntry('turn:1', [], {}, 'streaming')]} />))
+    const list = container.querySelector('[aria-label="任务状态"]')!
+    expect(list.textContent).toContain('图片服务')
+    expect(list.textContent).toContain('执行中')
+    expect(list.textContent).toContain('小凯')
+    expect(list.textContent).toContain('已完成')
+    expect(list.textContent).toContain('CDP')
+    expect(list.textContent).toContain('失败')
+    expect(list.querySelector('.turn-spinner')).not.toBeNull()
+  } finally { await act(async () => root.unmount()); container.remove() }
+})
+
+it('shows one quiet activity summary without nesting successful tool receipts', async () => {
   const entries = [assistantEntry('turn:1', [
     { kind: 'commentary', id: 'progress', text: '我先检查工作簿。' },
     { kind: 'thinking', id: 'private-1', text: 'Private model reasoning' },
@@ -156,24 +183,56 @@ it('shows one quiet activity summary, hides private reasoning and opens tool rec
   const root = createRoot(container)
   try {
     await act(async () => root.render(<ChatPage {...base} entries={entries} />))
-    const groups = container.querySelectorAll<HTMLDetailsElement>('.tool-group')
+    const groups = container.querySelectorAll<HTMLElement>('.tool-group')
     expect(groups).toHaveLength(1)
-    expect(groups[0].hasAttribute('open')).toBe(false)
+    expect(groups[0]).not.toBeInstanceOf(HTMLDetailsElement)
+    expect(groups[0].textContent).toContain('已加载技能 已读取文件 已检查文档结构')
     expect(container.textContent).toContain('合计 80.50。')
     expect(container.querySelector('.turn-commentary')?.textContent).toContain('我先检查工作簿。')
     expect(container.textContent).toContain('17秒')
     expect(container.textContent).not.toContain('0秒')
     expect(container.textContent).not.toContain('思考过程')
     expect(container.textContent).not.toContain('Private model reasoning')
-    expect(groups[0].querySelectorAll('.timeline-tool')).toHaveLength(4)
+    expect(groups[0].querySelectorAll('.timeline-tool')).toHaveLength(0)
     expect(container.textContent).not.toContain('选择所需工具')
     expect(container.textContent).not.toContain('整理交付结果')
-    const receipt = [...groups[0].querySelectorAll<HTMLDetailsElement>('.timeline-tool')]
-      .find((element) => element.textContent?.includes('读取 inventory-report.xlsx'))!
-    expect(receipt.hasAttribute('open')).toBe(false)
-    await act(async () => receipt.querySelector('summary')!.click())
-    expect(receipt.hasAttribute('open')).toBe(true)
-    expect(receipt.querySelector('.timeline-path')?.textContent).toBe('inventory-report.xlsx')
+  } finally { await act(async () => root.unmount()); container.remove() }
+})
+
+it('condenses directory setup and listing into one Codex-style activity row', async () => {
+  const entry = assistantEntry('turn:1', [
+    { kind: 'commentary', id: 'progress', text: '我先看一下下载目录里的内容。' },
+    toolSegment('roots', 'local_files_roots', { label: '检查可用工作目录' }),
+    toolSegment('list', 'local_files_list', { label: '查看目录', path: '.', itemCount: 135, detail: '135 项' }),
+    { kind: 'text', id: 'answer', text: '下载目录里主要有这些内容。' },
+  ], { startedAt: '2026-09-01T00:00:00.000Z', completedAt: '2026-09-01T00:00:14.000Z' })
+  const container = document.body.appendChild(document.createElement('div'))
+  const root = createRoot(container)
+  try {
+    await act(async () => root.render(<ChatPage {...base} entries={[entry]} />))
+    const activity = container.querySelector<HTMLDetailsElement>('.turn-activity')!
+    await act(async () => activity.querySelector('summary')!.click())
+    const group = activity.querySelector<HTMLElement>('.tool-group')!
+    expect(group).not.toBeInstanceOf(HTMLDetailsElement)
+    expect(group.textContent).toBe('已列出当前目录中的文件')
+    expect(activity.querySelector('.timeline-tool')).toBeNull()
+    expect(activity.textContent).not.toContain('检查可用工作目录')
+    expect(activity.querySelector('.timeline-output')).toBeNull()
+  } finally { await act(async () => root.unmount()); container.remove() }
+})
+
+it('hides the internal plan-review tool instead of exposing a failed tool row', async () => {
+  const entry = assistantEntry('turn:1', [
+    toolSegment('plan', 'exit_plan_mode', { label: '提交计划审阅', status: 'failed', detail: 'Error: The user chose to keep planning; revise the plan and present it again.' }),
+    { kind: 'text', id: 'answer', text: '已按反馈更新计划。' },
+  ], { startedAt: '2026-09-01T00:00:00.000Z', completedAt: '2026-09-01T00:00:04.000Z' })
+  const container = document.body.appendChild(document.createElement('div'))
+  const root = createRoot(container)
+  try {
+    await act(async () => root.render(<ChatPage {...base} entries={[entry]} />))
+    expect(container.querySelector('.turn-activity')).toBeNull()
+    expect(container.querySelector('.timeline-tool')).toBeNull()
+    expect(container.textContent).not.toContain('Error: The user chose to keep planning')
   } finally { await act(async () => root.unmount()); container.remove() }
 })
 
@@ -204,13 +263,14 @@ it('shows context compaction as a replayable timeline event', async () => {
   } finally { await act(async () => root.unmount()); container.remove() }
 })
 
-it('labels input, cache and output usage separately instead of a single ambiguous total', async () => {
+it('keeps provider token telemetry out of the visible conversation', async () => {
   const entry = assistantEntry('turn:1', '2', { tokenUsage: { inputTokens: 120, cacheReadTokens: 80, cacheWriteTokens: 10, outputTokens: 5 } })
   const container = document.body.appendChild(document.createElement('div'))
   const root = createRoot(container)
   try {
     await act(async () => root.render(<ChatPage {...base} entries={[entry]} />))
-    expect(container.querySelector('.turn-facts')?.textContent).toContain('输入 120 · 缓存读取 80 · 缓存写入 10 · 输出 5 tokens')
+    expect(container.querySelector('.turn-facts')).toBeNull()
+    expect(container.textContent).not.toContain('缓存读取')
   } finally { await act(async () => root.unmount()); container.remove() }
 })
 
@@ -257,6 +317,17 @@ it('stops one turn, disables repeat stops and restores the composer without a fa
     expect(container.querySelector('[aria-label="发送"]')).not.toBeNull()
     expect(container.textContent).toContain('已停止')
     expect(container.textContent).not.toContain('失败')
+  } finally { await act(async () => root.unmount()); container.remove() }
+})
+
+it('explains a slow first model response instead of showing an indefinite generic spinner', async () => {
+  const container = document.body.appendChild(document.createElement('div'))
+  const root = createRoot(container)
+  const startedAt = new Date(Date.now() - 11_000).toISOString()
+  try {
+    await act(async () => root.render(<ChatPage {...base} harnessRunning taskProjection={{ ...base.taskProjection, status: 'running', activity: '正在分析任务', startedAt }} entries={[assistantEntry('turn:1', [], { startedAt }, 'streaming')]} />))
+    expect(container.textContent).toContain('已处理 11秒')
+    expect(container.textContent).toContain('模型响应较慢，仍在等待')
   } finally { await act(async () => root.unmount()); container.remove() }
 })
 

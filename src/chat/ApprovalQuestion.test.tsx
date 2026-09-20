@@ -33,13 +33,13 @@ it('submits one approval decision and never repeats it', async () => {
   const decide = vi.fn(async () => undefined)
   const app = await mount(<ApprovalCard segment={approval} enabled onDecision={decide} />)
   try {
-    await act(async () => button(app.container, '允许本次操作')!.click())
+    await act(async () => button(app.container, '允许一次')!.click())
     expect(decide).toHaveBeenCalledWith('a1', 'allow')
-    expect(button(app.container, '允许本次操作')!.disabled).toBe(true)
+    expect(button(app.container, '允许一次')!.disabled).toBe(true)
     expect(button(app.container, '拒绝')!.disabled).toBe(true)
-    await act(async () => button(app.container, '允许本次操作')!.click())
+    await act(async () => button(app.container, '允许一次')!.click())
     expect(decide).toHaveBeenCalledOnce()
-    expect(app.container.textContent).toContain('确认已发送')
+    expect(app.container.textContent).toContain('已允许，等待执行')
   } finally { await app.cleanup() }
 })
 
@@ -51,7 +51,7 @@ it('reports an approval failure locally and allows a retry', async () => {
     expect(app.container.textContent).toContain('连接已断开')
     await act(async () => button(app.container, '拒绝')!.click())
     expect(decide).toHaveBeenCalledTimes(2)
-    expect(app.container.textContent).toContain('确认已发送')
+    expect(app.container.textContent).toContain('已允许，等待执行')
   } finally { await app.cleanup() }
 })
 
@@ -59,10 +59,33 @@ it('disables confirmation once the turn has stopped', async () => {
   const decide = vi.fn(async () => undefined)
   const app = await mount(<ApprovalCard segment={approval} enabled={false} onDecision={decide} />)
   try {
-    expect(button(app.container, '允许本次操作')!.disabled).toBe(true)
+    expect(button(app.container, '允许一次')!.disabled).toBe(true)
     expect(app.container.textContent).toContain('本轮已停止或结束')
-    await act(async () => button(app.container, '允许本次操作')!.click())
+    await act(async () => button(app.container, '允许一次')!.click())
     expect(decide).not.toHaveBeenCalled()
+  } finally { await app.cleanup() }
+})
+
+it('formats an MCP approval without repeating the connector prefix', async () => {
+  const app = await mount(<ApprovalCard segment={{ ...approval,
+    toolName: 'mcp_erp-mcp_order_intake_rollback_watermark',
+    detail: '调用「erp-mcp」修改工具：mcp_erp-mcp_order_intake_rollback_watermark\n参数：{"request":{"shop":"TikTok1414-MY"}}',
+  }} enabled onDecision={vi.fn()} />)
+  try {
+    expect(app.container.textContent).toContain('操作确认')
+    expect(app.container.textContent).toContain('erp-mcp · 修改操作')
+    expect(app.container.querySelector('.approval-operation code')?.textContent).toBe('order_intake_rollback_watermark')
+    expect(app.container.querySelector('.approval-arguments pre')?.textContent).toContain('\n  "request": {')
+    expect(app.container.querySelector('.approval-arguments pre')?.textContent).toContain('"shop": "TikTok1414-MY"')
+  } finally { await app.cleanup() }
+})
+
+it('collapses a settled approval into a quiet audit row', async () => {
+  const app = await mount(<ApprovalCard segment={{ ...approval, status: 'completed' }} enabled onDecision={vi.fn()} />)
+  try {
+    expect(app.container.textContent).toContain('已允许本次操作')
+    expect(button(app.container, '允许一次')).toBeUndefined()
+    expect(app.container.querySelector('.approval-card.settled')).not.toBeNull()
   } finally { await app.cleanup() }
 })
 
@@ -107,11 +130,101 @@ it('renders a settled question as answered instead of asking again', async () =>
   } finally { await app.cleanup() }
 })
 
+it('replays each answered question on its own row', async () => {
+  const app = await mount(<QuestionCard segment={{
+    ...question,
+    status: 'completed',
+    questions: [{ id: 'stack', question: '选择技术栈' }, { id: 'scope', question: '选择范围' }],
+    answers: [{ id: 'stack', selected: ['Java'] }, { id: 'scope', selected: ['核心闭环'] }],
+  }} enabled onAnswer={vi.fn()} />)
+  try {
+    const rows = app.container.querySelectorAll('.question-settled')
+    expect(rows).toHaveLength(2)
+    expect(rows[0].textContent).toContain('选择技术栈')
+    expect(rows[0].textContent).toContain('已回答：Java')
+    expect(rows[0].textContent).not.toContain('核心闭环')
+    expect(rows[1].textContent).toContain('选择范围')
+    expect(rows[1].textContent).toContain('已回答：核心闭环')
+  } finally { await app.cleanup() }
+})
+
 it('collapses an unanswered question when the turn stops', async () => {
   const app = await mount(<QuestionCard segment={question} enabled={false} onAnswer={vi.fn()} />)
   try {
     expect(app.container.textContent).toContain('已停止')
     expect(app.container.querySelector('fieldset')).toBeNull()
     expect(button(app.container, '发送回答')).toBeUndefined()
+  } finally { await app.cleanup() }
+})
+
+it('localizes plan review while preserving the raw approval value sent to Harness', async () => {
+  const answer = vi.fn(async () => undefined)
+  const plan: QuestionSegment = {
+    ...question,
+    questions: [{
+      id: 'plan-review', header: 'Plan review', question: 'Approve this plan and leave plan mode?',
+      detail: '# 新增订单系统\n\n## 目标\n完成规划。', intent: { kind: 'plan-review', approve: 'Approve' },
+      options: [
+        { label: 'Approve', description: 'Leave plan mode; the plan is carried out from the next step.' },
+        { label: 'Keep planning', description: 'Stay in plan mode; feedback goes back to the model.' },
+      ],
+    }],
+  }
+  const app = await mount(<QuestionCard segment={plan} enabled onAnswer={answer} />)
+  try {
+    expect(app.container.textContent).toContain('计划确认')
+    expect(app.container.textContent).toContain('请确认是否采用这份计划')
+    expect(app.container.textContent).toContain('采用此计划')
+    expect(app.container.textContent).toContain('继续完善')
+    expect(app.container.textContent).not.toContain('Plan review')
+    expect(app.container.textContent).not.toContain('Keep planning')
+    expect(app.container.querySelector('.plan-review-document h1')?.textContent).toBe('新增订单系统')
+    await act(async () => app.container.querySelectorAll<HTMLInputElement>('input[type="radio"]')[0]!.click())
+    await act(async () => button(app.container, '提交选择')!.click())
+    expect(answer).toHaveBeenCalledWith('q1', [{ id: 'plan-review', selected: ['Approve'] }])
+  } finally { await app.cleanup() }
+})
+
+it('advances after a single choice and keeps prior selections', async () => {
+  const answer = vi.fn(async () => undefined)
+  const multiQuestion: QuestionSegment = {
+    ...question,
+    questions: [
+      { id: 'stack', question: '选择技术栈', options: [{ label: 'Java' }, { label: 'Go' }] },
+      { id: 'scope', question: '选择范围', options: [{ label: '核心闭环' }, { label: '完整订单域' }] },
+    ],
+  }
+  const app = await mount(<QuestionCard segment={multiQuestion} enabled onAnswer={answer} />)
+  try {
+    expect(app.container.textContent).toContain('1 / 2')
+    expect(app.container.textContent).toContain('选择技术栈')
+    await act(async () => app.container.querySelectorAll<HTMLInputElement>('input[type="radio"]')[0]!.click())
+    expect(app.container.textContent).toContain('2 / 2')
+    expect(app.container.textContent).toContain('选择范围')
+    await act(async () => app.container.querySelectorAll<HTMLInputElement>('input[type="radio"]')[0]!.click())
+    await act(async () => button(app.container, '发送回答')!.click())
+    expect(answer).toHaveBeenCalledWith('q1', [
+      { id: 'stack', selected: ['Java'] },
+      { id: 'scope', selected: ['核心闭环'] },
+    ])
+  } finally { await app.cleanup() }
+})
+
+it('keeps a multi-select question in place until Next is clicked', async () => {
+  const multiPage: QuestionSegment = {
+    ...question,
+    questions: [
+      { id: 'features', question: '选择能力', options: [{ label: '订单' }, { label: '库存' }], multiSelect: true },
+      { id: 'scope', question: '选择范围', options: [{ label: 'MVP' }] },
+    ],
+  }
+  const app = await mount(<QuestionCard segment={multiPage} enabled onAnswer={vi.fn()} />)
+  try {
+    await act(async () => app.container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')[0]!.click())
+    expect(app.container.textContent).toContain('1 / 2')
+    expect(button(app.container, '下一题')!.disabled).toBe(false)
+    await act(async () => button(app.container, '下一题')!.click())
+    expect(app.container.textContent).toContain('2 / 2')
+    expect(app.container.textContent).toContain('选择范围')
   } finally { await app.cleanup() }
 })

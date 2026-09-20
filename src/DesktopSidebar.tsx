@@ -1,8 +1,7 @@
-import { Archive, SquareCheck, BookOpenCheck, Boxes, CalendarClock, ChevronDown, MessageSquare, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Pencil, PlugZap, Plus, RotateCcw, Search, Trash2, WandSparkles, X } from 'lucide-react'
+import { Archive, BookOpenCheck, Boxes, CalendarClock, ChevronDown, LoaderCircle, MessageSquare, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Pencil, PlugZap, Plus, RotateCcw, Search, SquareCheck, Trash2, WandSparkles, X } from 'lucide-react'
 import { type KeyboardEvent as ReactKeyboardEvent, type RefObject, useEffect, useState } from 'react'
 import { AccountMenu } from './AccountMenu'
 import { ChannelHistory } from './ChannelHistory'
-import { taskStatusLabel } from './taskOutcome'
 import type { LocalTaskRun } from './types'
 
 const extensions = [
@@ -88,8 +87,8 @@ export function DesktopSidebar(props: Props) {
         {listedTasks.map((task) => <div className="recent-task-wrap" data-task-menu={task.id} key={task.id}>
           {editingTaskId === task.id
             ? <form onSubmit={(event) => { event.preventDefault(); props.onRenameTask(task, editingName); setEditingTaskId('') }}><input autoFocus aria-label="任务名称" maxLength={120} onChange={(event) => setEditingName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Escape') setEditingTaskId('') }} value={editingName} /></form>
-            : <button aria-current={props.page === 'chat' && props.activeTaskId === task.id ? 'true' : undefined} className={`recent-task${props.page === 'chat' && props.activeTaskId === task.id ? ' active' : ''}`} onClick={() => props.onOpenTask(task)} type="button"><span>{task.name}</span><small>{taskStatusLabel(task)}</small></button>}
-          <button aria-expanded={menuTaskId === task.id} aria-label={`管理 ${task.name}`} className="recent-task-more" onClick={() => setMenuTaskId((current) => current === task.id ? '' : task.id)} type="button"><MoreHorizontal size={14} /></button>
+            : <button aria-current={props.page === 'chat' && props.activeTaskId === task.id ? 'true' : undefined} aria-label={task.status === 'RUNNING' ? `${task.name}，运行中` : task.name} className={`recent-task${props.page === 'chat' && props.activeTaskId === task.id ? ' active' : ''}`} onClick={() => props.onOpenTask(task)} type="button"><span>{task.name}</span>{task.status === 'RUNNING' && <span aria-label="运行中" className="recent-task-state" title="运行中"><LoaderCircle className="recent-task-spinner" size={14} /></span>}</button>}
+          <button aria-expanded={menuTaskId === task.id} aria-label={`管理 ${task.name}`} className="recent-task-more" onClick={() => setMenuTaskId((current) => current === task.id ? '' : current)} type="button"><MoreHorizontal size={14} /></button>
           {menuTaskId === task.id && <div className="recent-task-menu" onKeyDown={navigateMenu} role="menu">
             {!task.archivedAt && <button disabled={task.status === 'RUNNING'} onClick={() => { setEditingName(task.name); setEditingTaskId(task.id); setMenuTaskId('') }} role="menuitem" type="button"><Pencil size={13} />重命名</button>}
             <button disabled={task.status === 'RUNNING'} onClick={() => { props.onArchiveTask(task, !task.archivedAt); setMenuTaskId('') }} role="menuitem" type="button">{task.archivedAt ? <RotateCcw size={13} /> : <Archive size={13} />}{task.archivedAt ? '移出归档' : '归档'}</button>

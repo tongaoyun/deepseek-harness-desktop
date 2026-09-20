@@ -20,13 +20,10 @@ it('reviews the entire turn, makes paths clickable and never presents partial to
   const changes = Array.from({ length: 5 }, (_, index) => ({ ...change, id: String(index), path: `${index}.ts`, name: `${index}.ts` }))
   try {
     await act(async () => app.root.render(<FileChangesCard changes={changes} onReview={review} onOpen={open} />))
-    const summary = app.element.querySelector<HTMLDetailsElement>('.file-changes-card')!
-    expect(summary.hasAttribute('open')).toBe(false)
-    expect(summary.querySelector('summary')?.textContent).toContain('已编辑 5 个文件')
+    const summary = app.element.querySelector<HTMLElement>('.file-changes-card')!
+    expect(summary.querySelector('header')?.textContent).toContain('已编辑 5 个文件')
     expect(app.element.querySelectorAll('.file-change-row')).toHaveLength(3)
     expect(app.element.textContent).toContain('审核中查看完整差异')
-    await act(async () => summary.querySelector('summary')!.click())
-    expect(summary.hasAttribute('open')).toBe(true)
     await act(async () => button('审核').click())
     expect(review.mock.calls[0][0]).toHaveLength(5)
     await act(async () => button('0.ts').click())

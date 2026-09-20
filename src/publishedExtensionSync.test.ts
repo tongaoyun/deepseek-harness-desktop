@@ -54,10 +54,14 @@ it('keeps the installed content when a refresh fails', async () => {
     id, version: '1.9.0', sha256: 'c'.repeat(64), url: 'https://download.test/reports', expiresAt: '',
   }))
   const install = vi.fn()
+  const onFailure = vi.fn()
   const result = await synchronizePublishedExtensions([catalog], [], { installed: [installed('1.0.0')], issues: [] }, { download, install })
 
   expect(install).not.toHaveBeenCalled()
   expect(result).toEqual([installed('1.0.0')])
+
+  await synchronizePublishedExtensions([catalog], [], { installed: [installed('1.0.0')], issues: [] }, { download, install, onFailure })
+  expect(onFailure).toHaveBeenCalledWith('expert-kit', 'reports', expect.any(Error))
 })
 
 it('reinstalls catalog content that no longer loads on this machine', async () => {

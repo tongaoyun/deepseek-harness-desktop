@@ -25,61 +25,10 @@ beforeEach(() => {
 })
 afterEach(() => vi.unstubAllGlobals())
 
-it('imports one employee legacy value once and removes it only after a valid native load', async () => {
-  const legacy = [fixture('legacy')]
-  localStorage.setItem('xiaoyin:local-schedules:v1:employee-a', JSON.stringify(legacy))
-  vi.mocked(invoke).mockResolvedValueOnce(null).mockResolvedValueOnce(legacy)
-
-  await expect(readLocalSchedules('employee-a')).resolves.toEqual(legacy)
-  expect(vi.mocked(invoke).mock.calls).toEqual([
-    ['load_local_schedules', { owner: 'employee-a' }],
-    ['load_local_schedules', { owner: 'employee-a', legacy }],
-  ])
-  expect(localStorage.getItem('xiaoyin:local-schedules:v1:employee-a')).toBeNull()
-})
-
-it('keeps corrupt or failed legacy data available for recovery', async () => {
-  const key = 'xiaoyin:local-schedules:v1:employee-a'
-  localStorage.setItem(key, '{broken')
-  vi.mocked(invoke).mockResolvedValueOnce(null)
-  await expect(readLocalSchedules('employee-a')).rejects.toThrow()
-  expect(invoke).toHaveBeenCalledOnce()
-  expect(localStorage.getItem(key)).toBe('{broken')
-
-  localStorage.setItem(key, JSON.stringify([fixture('legacy')]))
-  vi.mocked(invoke).mockRejectedValueOnce(new Error('database unavailable'))
-  await expect(readLocalSchedules('employee-a')).rejects.toThrow('database unavailable')
-  expect(localStorage.getItem(key)).not.toBeNull()
-})
-
-it('validates legacy records before native import and can read SQLite without WebView storage', async () => {
-  const key = 'xiaoyin:local-schedules:v1:employee-a'
-  localStorage.setItem(key, JSON.stringify([{ ...fixture('invalid'), nextAt: 'not-a-date' }]))
-  vi.mocked(invoke).mockResolvedValueOnce(null)
-  await expect(readLocalSchedules('employee-a')).rejects.toThrow('原始数据保留')
-  expect(invoke).toHaveBeenCalledOnce()
-  expect(localStorage.getItem(key)).not.toBeNull()
-
-  vi.stubGlobal('localStorage', { getItem: () => { throw new Error('disabled') } })
+it('reads schedules from native storage', async () => {
   vi.mocked(invoke).mockResolvedValueOnce([fixture('native')])
   await expect(readLocalSchedules('employee-a')).resolves.toEqual([fixture('native')])
   expect(invoke).toHaveBeenCalledWith('load_local_schedules', { owner: 'employee-a' })
-})
-
-it('ignores malformed stale schedules once native state exists', async () => {
-  localStorage.setItem('xiaoyin:local-schedules:v1:employee-a', '{broken')
-  vi.mocked(invoke).mockResolvedValueOnce([fixture('native')])
-  await expect(readLocalSchedules('employee-a')).resolves.toEqual([fixture('native')])
-  expect(invoke).toHaveBeenCalledOnce()
-})
-
-it('initializes empty native plans once when no WebView copy exists', async () => {
-  vi.mocked(invoke).mockResolvedValueOnce(null).mockResolvedValueOnce([])
-  await expect(readLocalSchedules('employee-a')).resolves.toEqual([])
-  expect(vi.mocked(invoke).mock.calls).toEqual([
-    ['load_local_schedules', { owner: 'employee-a' }],
-    ['load_local_schedules', { owner: 'employee-a', legacy: [] }],
-  ])
 })
 
 it('persists before broadcasting and never falls back to WebView storage', async () => {
@@ -91,7 +40,6 @@ it('persists before broadcasting and never falls back to WebView storage', async
     ['load_local_schedules', { owner: 'employee-b' }],
     ['save_local_schedules', { owner: 'employee-b', schedules: [fixture('native')] }],
   ])
-  expect(localStorage.getItem('xiaoyin:local-schedules:v1:employee-b')).toBeNull()
 
   let broadcasts = 0
   const listener = () => { broadcasts += 1 }

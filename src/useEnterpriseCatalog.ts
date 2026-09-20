@@ -144,6 +144,7 @@ export function useEnterpriseCatalog({
           if (controller.signal.aborted || catalogOwnerRef.current !== user.userId) return
           if (revision !== inventoryRevisionRef.current) latestInventory = undefined
         }
+        const syncFailures: string[] = []
         if (latestInventory) {
           data.installed = latestInventory.installed
           const synchronized: InstalledExpertKit[] = await synchronizePublishedExtensions(
@@ -155,6 +156,7 @@ export function useEnterpriseCatalog({
                 ? createExpertKitDownload(bootstrap.endpoints.expertKits, id, user.userId, accessToken)
                 : createSkillDownload(bootstrap.endpoints.skills, id, user.userId, accessToken),
               install: (kind, download) => installExtension(download, kind),
+              onFailure: (kind, id) => syncFailures.push(`${kind === 'expert-kit' ? '专家套件' : '技能'}「${id}」更新失败`),
             },
           )
           if (controller.signal.aborted || catalogOwnerRef.current !== user.userId) return
@@ -179,9 +181,10 @@ export function useEnterpriseCatalog({
         const remoteResults = [catalogResult, skillsResult, connectorsResult, knowledgeResult]
         const failures = remoteResults.flatMap((result, index) => result.status === 'rejected'
           ? [['专家套件', '技能', '连接器', '知识库'][index]] : [])
+        const syncMessage = syncFailures.length ? `${syncFailures.join('；')}，将自动重试；当前继续使用已安装版本。` : ''
         setError(failures.length
-          ? `${failures.join('、')}同步失败，正在显示最近一次可用内容。`
-          : installedResult.status === 'rejected' ? '本机扩展读取失败，企业目录仍可浏览。' : '')
+          ? `${failures.join('、')}同步失败，正在显示最近一次可用内容。${syncMessage ? ` ${syncMessage}` : ''}`
+          : installedResult.status === 'rejected' ? '本机扩展读取失败，企业目录仍可浏览。' : syncMessage)
         if (remoteResults.every((result) => result.status === 'fulfilled')) {
           void saveEnterpriseCatalogCache(user.userId, {
             savedAt: new Date().toISOString(), catalog: data.catalog, skills: data.skills, connectors: data.connectors.filter((item) => !isPersonalConnector(item)), knowledge: data.knowledge,

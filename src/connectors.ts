@@ -1,6 +1,13 @@
 import type { ConnectorCatalogEntry, ConnectorRuntimeDefinition } from './types'
 import { applyConnectorSecrets, missingConnectorSecretKeys, type ConnectorSecretStore } from './connectorSecrets'
 
+/** Internal connector ids are useful for execution, but are not a user-facing label. */
+export function connectorDisplayName(connector: Pick<ConnectorCatalogEntry, 'id' | 'name'>): string {
+  const name = connector.name.trim()
+  if (!name || name === connector.id.trim()) return ''
+  return name
+}
+
 const DESKTOP_BROWSER: ConnectorCatalogEntry = {
   id: 'desktop-browser',
   name: '浏览器',

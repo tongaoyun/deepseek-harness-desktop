@@ -20,6 +20,12 @@ export function toolGroup(name: string): Group {
   return 'other'
 }
 
+function initialAllowedTools(ctx: Context): Set<string> {
+  const allowed = new Set(['tool_discover'])
+  for (const name of ['ask_user_question', 'exit_plan_mode']) if (ctx.tools.get(name)) allowed.add(name)
+  return allowed
+}
+
 export function apply(ctx: Context): void {
   const active = new WeakMap<object, { allowed: Set<string>; release: () => void; turn?: number }>()
   const dispose = ctx.tools.register({
@@ -52,8 +58,7 @@ export function apply(ctx: Context): void {
     isConcurrencySafe: () => false,
   })
   ctx.on('agent/created', ({ agent }) => {
-    const allowed = new Set(['tool_discover'])
-    if (ctx.tools.get('ask_user_question')) allowed.add('ask_user_question')
+    const allowed = initialAllowedTools(ctx)
     const release = agent.ctx.tools.restrict({ allow: [...allowed] })
     active.set(agent, { allowed, release })
   })
@@ -61,8 +66,7 @@ export function apply(ctx: Context): void {
     const state = active.get(agent)
     if (state && typeof turn === 'number' && state.turn !== turn) {
       state.turn = turn
-      state.allowed = new Set(['tool_discover'])
-      if (ctx.tools.get('ask_user_question')) state.allowed.add('ask_user_question')
+      state.allowed = initialAllowedTools(ctx)
       state.release()
       state.release = agent.ctx.tools.restrict({ allow: [...state.allowed] })
     }

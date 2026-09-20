@@ -90,7 +90,7 @@ it.each(['none', 'employee-bearer'] as const)('delivers images and preserves cal
   expect(registered.size).toBe(0)
 })
 
-it('does not let a remote read-only hint bypass product write approval', async () => {
+it('uses the MCP read-only hint without requesting write approval', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'xiaoyin-mcp-policy-'))
   vi.stubEnv('XIAOYIN_OPERATION_JOURNAL', join(directory, 'operations.sqlite'))
   vi.stubEnv('XIAOYIN_OPERATION_SCOPE', 'policy-test')
@@ -121,13 +121,13 @@ it('does not let a remote read-only hint bypass product write approval', async (
       allowedTools: [], requiredTools: [], readOnlyTools: [], allowWrite: true, requireWriteApproval: true, required: true,
     }] })
     const name = 'mcp_orders_send_order'
-    expect(registered.get(name)?.isConcurrencySafe()).toBe(false)
-    expect(await policy({ name, arguments: { orderId: 'one' } }, () => undefined)).toMatchObject({ kind: 'ask' })
+    expect(registered.get(name)?.isConcurrencySafe()).toBe(true)
+    expect(await policy({ name, arguments: { orderId: 'one' } }, () => 'next')).toBe('next')
     const tool = registered.get(name)!
     const exec = { signal: new AbortController().signal } as never
     await tool.execute({ orderId: 'one' }, exec)
     await tool.execute({ orderId: 'one' }, exec)
-    expect(calls).toBe(1)
+    expect(calls).toBe(2)
   } finally { await dispose(); await new Promise<void>((resolve) => server.close(() => resolve())); await rm(directory, { recursive: true, force: true }); vi.unstubAllEnvs() }
 })
 
@@ -141,7 +141,7 @@ it('retries an optional connector that failed before its first tool discovery', 
     if (message.id === undefined) { response.writeHead(202).end(); return }
     const result = message.method === 'initialize'
       ? { protocolVersion: message.params.protocolVersion, capabilities: { tools: {} }, serverInfo: { name: 'recovered', version: '1' } }
-      : { tools: [{ name: 'sales_summary', inputSchema: { type: 'object' } }] }
+      : { tools: [{ name: 'sales_summary', inputSchema: { type: 'object' }, annotations: { readOnlyHint: true } }] }
     response.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ jsonrpc: '2.0', id: message.id, result }))
   })
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
@@ -206,13 +206,12 @@ describe('managed MCP tool selection', () => {
     expect(first).toMatch(/^[a-zA-Z0-9_-]+$/)
   })
 
-  it('uses only product-declared read tools when writes are disabled', () => {
-    expect(selectTools(tools, [], [], false).map((tool) => tool.name)).toEqual([])
-    expect(selectTools(tools, [], [], false, 'MCP', ['sales_summary']).map((tool) => tool.name))
+  it('uses MCP annotations to select read-only tools when writes are disabled', () => {
+    expect(selectTools(tools, [], [], false).map((tool) => tool.name)).toEqual(['sales_summary'])
+    expect(selectTools(tools, ['sales_summary'], [], false).map((tool) => tool.name))
       .toEqual(['sales_summary'])
-    expect(selectTools(tools, ['sales_summary'], [], false, 'MCP', ['sales_summary']).map((tool) => tool.name))
-      .toEqual(['sales_summary'])
-    expect(selectTools([{ ...tools[1]!, annotations: { readOnlyHint: true } }], [], [], false, 'MCP', []).map((tool) => tool.name)).toEqual([])
+    expect(selectTools([{ ...tools[0]!, annotations: undefined }], [], [], false).map((tool) => tool.name)).toEqual([])
+    expect(selectTools([{ ...tools[1]!, annotations: { readOnlyHint: true, destructiveHint: true } }], [], [], false).map((tool) => tool.name)).toEqual([])
   })
 
   it('rejects required tools missing from discovery or excluded by policy', () => {

@@ -183,7 +183,6 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
         connector.requiredTools,
         connector.allowWrite,
         connector.name,
-        connector.readOnlyTools,
       )
       installConnectorTools(ctx, activeBinding, tools, registeredNames, mutatingTools, employeeToken, journal)
       client.setNotificationHandler('notifications/tools/list_changed', () => {
@@ -244,7 +243,7 @@ export function shouldUseHarnessMcpClient(connector: ManagedConnectorConfig, env
   if (env.XIAOYIN_MCP_IMPLEMENTATION !== 'harness') return false
   if (connector.transport === 'sse') return false
   if (connector.authMode !== 'none' && connector.authMode !== 'employee-bearer') return false
-  if (connector.allowedTools.length > 0 || connector.requiredTools.length > 0 || connector.readOnlyTools?.length) return false
+  if (connector.allowedTools.length > 0 || connector.requiredTools.length > 0) return false
   if (!connector.allowWrite || connector.requireWriteApproval) return false
   return !env.XIAOYIN_OPERATION_JOURNAL
 }
@@ -344,7 +343,7 @@ export async function diagnoseConnector(
     const discovered = await discoverConnectorTools(client, timeoutMs)
     const comparison = compareConnectorTools(connector.allowedTools, discovered.map((tool) => tool.name))
     const selected = new Set(discovered.filter((tool) => (!connector.allowedTools.length || connector.allowedTools.includes(tool.name))
-      && (connector.allowWrite || isTrustedReadOnly(tool, connector.readOnlyTools))).map((tool) => tool.name))
+      && (connector.allowWrite || isTrustedReadOnly(tool))).map((tool) => tool.name))
     comparison.missingTools = uniqueSorted([...comparison.missingTools, ...connector.requiredTools.filter((name) => !selected.has(name))])
     return {
       id: connector.id,
@@ -404,19 +403,18 @@ export function selectTools(
   requiredTools: string[],
   allowWrite: boolean,
   connectorName = 'MCP',
-  readOnlyTools: string[] = [],
 ): Tool[] {
   const allowed = new Set(allowedTools)
   const selected = discovered.filter((tool) => (allowed.size === 0 || allowed.has(tool.name))
-    && (allowWrite || isTrustedReadOnly(tool, readOnlyTools)))
+    && (allowWrite || isTrustedReadOnly(tool)))
   const selectedNames = new Set(selected.map((tool) => tool.name))
   const missing = uniqueSorted(requiredTools.filter((name) => !selectedNames.has(name)))
   if (missing.length) throw new Error(`${connectorName} 缺少可用的必需工具：${missing.join('、')}。请检查工具配置和写入权限`)
   return selected
 }
 
-function isTrustedReadOnly(tool: Tool, readOnlyTools: readonly string[] | undefined): boolean {
-  return readOnlyTools?.includes(tool.name) === true && tool.annotations?.destructiveHint !== true
+function isTrustedReadOnly(tool: Tool): boolean {
+  return tool.annotations?.readOnlyHint === true && tool.annotations.destructiveHint !== true
 }
 
 export async function discoverConnectorTools(
@@ -558,7 +556,7 @@ export function toHarnessTool(
           { name: tool.name, arguments: arguments_ },
           { ...connectorRequestOptions(connector), signal: exec.signal },
         )
-        const mutating = !isTrustedReadOnly(tool, connector.readOnlyTools)
+        const mutating = !isTrustedReadOnly(tool)
         const result = journal && mutating ? await journal.execute(connector, tool.name, arguments_, call, exec.signal) : await call()
         if (result.isError) throw new Error(renderMcpContent(result, connector.name))
         return await mcpResultContent(result, ctx.attachments, connector.name, exec.signal)
@@ -567,7 +565,7 @@ export function toHarnessTool(
         throw new Error(connectorFailureMessage(error, connector, employeeToken))
       }
     },
-    isConcurrencySafe: () => isTrustedReadOnly(tool, connector.readOnlyTools),
+    isConcurrencySafe: () => isTrustedReadOnly(tool),
     // A connector call has no other bound the harness can enforce: the MCP
     // client's own timeout does not cover a stream that stalls mid-response.
     // Declaring the deadline lets the tool-call timeout policy abort the call
@@ -615,7 +613,7 @@ function installConnectorTools(
       const dispose = ctx.tools.register(toHarnessTool(
         ctx, client, tool, binding.connector, registeredName, employeeToken, journal,
       ))
-      if (!isTrustedReadOnly(tool, binding.connector.readOnlyTools)
+      if (!isTrustedReadOnly(tool)
         && binding.connector.requireWriteApproval) mutatingTools.set(registeredName, binding.connector.name)
       created.push({ name: registeredName, raw: tool, dispose })
     }
@@ -633,7 +631,7 @@ function installConnectorTools(
         const dispose = ctx.tools.register(toHarnessTool(
           ctx, client, installed.raw, binding.connector, installed.name, employeeToken, journal,
         ))
-        if (!isTrustedReadOnly(installed.raw, binding.connector.readOnlyTools)
+        if (!isTrustedReadOnly(installed.raw)
           && binding.connector.requireWriteApproval) mutatingTools.set(installed.name, binding.connector.name)
         return { ...installed, dispose }
       })
@@ -662,7 +660,6 @@ async function refreshConnectorTools(
     binding.connector.requiredTools,
     binding.connector.allowWrite,
     binding.connector.name,
-    binding.connector.readOnlyTools,
   )
   installConnectorTools(ctx, binding, tools, registeredNames, mutatingTools, employeeToken, journal)
   binding.reconnectAttempt = 0
@@ -720,7 +717,6 @@ async function reconnectBinding(
       binding.connector.requiredTools,
       binding.connector.allowWrite,
       binding.connector.name,
-      binding.connector.readOnlyTools,
     )
     const oldClient = binding.client
     installConnectorTools(ctx, binding, tools, registeredNames, mutatingTools, employeeToken, binding.journal, nextClient)

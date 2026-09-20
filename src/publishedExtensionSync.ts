@@ -7,6 +7,7 @@ type PublishedEntry = Pick<ExpertKitCatalogEntry | SkillCatalogEntry, 'id' | 've
 interface SyncDependencies {
   download: (kind: PublishedExtensionKind, id: string) => Promise<ExpertKitDownload>
   install: (kind: PublishedExtensionKind, download: ExpertKitDownload) => Promise<InstalledExpertKit>
+  onFailure?: (kind: PublishedExtensionKind, id: string, error: unknown) => void
 }
 
 export async function synchronizePublishedExtensions(
@@ -37,8 +38,9 @@ export async function synchronizePublishedExtensions(
         }
         const latest = await dependencies.install(kind, download)
         current = [latest, ...current.filter((item) => !matches(item))]
-      } catch {
+      } catch (error) {
         // One entry the desktop cannot refresh must not hold back the rest; the next cycle retries it.
+        dependencies.onFailure?.(kind, entry.id, error)
       }
     }
   }

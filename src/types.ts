@@ -400,7 +400,7 @@ export interface ExpertKitManifest {
   allowImplicitInvocation?: boolean
   minimumDesktopVersion: string
   commands: Array<{ id: string; path: string; skillId?: string }>
-  skills: Array<{ id: string; path: string }>
+  skills: Array<{ id: string; path: string; requiredTools?: string[]; connectorRefs?: string[]; knowledgeBaseRefs?: string[] }>
   requiredTools: string[]
   connectorRefs: string[]
   knowledgeBaseRefs?: string[]

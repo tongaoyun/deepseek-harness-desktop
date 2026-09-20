@@ -1,45 +1,13 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { invoke } from '@tauri-apps/api/core'
 import { searchHarnessSessionsPage } from './harness'
-import { loadTaskHistory, loadTaskHistoryPage } from './taskHistory'
+import { loadTaskHistoryPage } from './taskHistory'
 import type { LocalTaskRun } from './types'
 
 vi.mock('@tauri-apps/api/core', () => ({ isTauri: () => true, invoke: vi.fn() }))
 vi.mock('./harness', () => ({ inspectHarnessSession: vi.fn(), searchHarnessSessionsPage: vi.fn() }))
 
 afterEach(() => { vi.resetAllMocks(); vi.unstubAllGlobals() })
-
-it('does not read stale WebView history after native migration, even when the native history is empty', async () => {
-  const getItem = vi.fn(() => '{broken')
-  vi.stubGlobal('window', { localStorage: { getItem } })
-  vi.mocked(invoke).mockImplementation(async (command) => command === 'local_task_history_migrated'
-    ? true : { items: [], total: 0, invalidCount: 0, offset: 0, limit: 200 })
-  await expect(loadTaskHistory('employee')).resolves.toEqual({ tasks: [], invalidCount: 0 })
-  expect(getItem).not.toHaveBeenCalled()
-  expect(vi.mocked(invoke).mock.calls.map(([command]) => command)).toEqual(['local_task_history_migrated', 'load_local_tasks'])
-})
-
-it('imports once, then never resurrects a deleted task when clearing the old key fails', async () => {
-  const task: LocalTaskRun = {
-    id: 'old-task', source: 'DESKTOP', name: '旧任务', status: 'COMPLETED',
-    createdAt: '2026-09-13T00:00:00Z', updatedAt: '2026-09-13T00:00:00Z', entries: [],
-    projection: { status: 'completed', activity: '完成', updatedAt: '2026-09-13T00:00:00Z', steps: [], artifacts: [] },
-  }
-  let migrated = false, tasks: LocalTaskRun[] = []
-  vi.stubGlobal('window', { localStorage: {
-    getItem: () => JSON.stringify([task]), removeItem: () => { throw new Error('WebView storage unavailable') },
-  } })
-  vi.mocked(invoke).mockImplementation(async (command, args) => {
-    if (command === 'local_task_history_migrated') return migrated
-    if (command === 'import_local_task_history') { tasks = (args as { tasks: LocalTaskRun[] }).tasks; migrated = true; return true }
-    if (command === 'load_local_tasks') return { items: tasks, total: tasks.length, invalidCount: 0, offset: 0, limit: 200 }
-    throw new Error(`Unexpected command: ${command}`)
-  })
-  expect((await loadTaskHistory('employee')).tasks).toHaveLength(1)
-  tasks = []
-  await expect(loadTaskHistory('employee')).resolves.toEqual({ tasks: [], invalidCount: 0 })
-  expect(vi.mocked(invoke).mock.calls.filter(([command]) => command === 'import_local_task_history')).toHaveLength(1)
-})
 
 it('paginates full-message Harness hits without repeating the first page', async () => {
   const tasks = Array.from({ length: 230 }, (_, index): LocalTaskRun => ({

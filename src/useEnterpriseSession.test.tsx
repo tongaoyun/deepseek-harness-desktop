@@ -53,14 +53,21 @@ it('rechecks a startup cookie miss before opening the QR window', async () => {
   expect(open).not.toHaveBeenCalled()
 })
 
-it('shows the login screen without opening the QR window after a repeated startup cookie miss', async () => {
+it('opens the QR window automatically after a repeated startup cookie miss', async () => {
   resolve.mockResolvedValue(missingCookie)
   await mount()
   expect(latest.state).toBe('checking')
   await advance(1_500)
   expect(latest.state).toBe('required')
-  expect(open).not.toHaveBeenCalled()
+  expect(open).toHaveBeenCalledTimes(1)
   await act(async () => latest.reopen())
+  expect(open).toHaveBeenCalledTimes(2)
+})
+
+it('opens the QR window automatically after an expired ERP session', async () => {
+  resolve.mockResolvedValue({ ...loggedOut, diagnostic: { ...missingCookie.diagnostic, code: 'session_rejected' } })
+  await mount()
+  expect(latest.state).toBe('required')
   expect(open).toHaveBeenCalledTimes(1)
 })
 

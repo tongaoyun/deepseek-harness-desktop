@@ -12,7 +12,7 @@ describe('extension category filtering', () => {
     expect(extensionMatches(extension, '', 'market', 'code-review')).toBe(false)
   })
 
-  it('keeps legacy entries in the other category', () => {
+  it('uses other for entries without a category', () => {
     expect(extensionMatches({ ...extension, category: undefined }, '', 'market', 'other')).toBe(true)
   })
 

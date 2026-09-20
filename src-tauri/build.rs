@@ -47,8 +47,6 @@ const APP_COMMANDS: &[&str] = &[
     "revoke_local_directory",
     "clear_local_directories",
     "load_local_tasks",
-    "local_task_history_migrated",
-    "import_local_task_history",
     "load_local_task",
     "save_local_task",
     "append_local_task_capability_notice",

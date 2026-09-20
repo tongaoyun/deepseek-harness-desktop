@@ -5,6 +5,7 @@ import { AssistantTurnView } from './chat/AssistantTurnView'
 import { activeRunStartedAt } from './chat/turnElapsed'
 import type { ApprovalDecisionHandler } from './chat/ApprovalCard'
 import type { QuestionAnswerHandler } from './chat/QuestionCard'
+import { TurnFooter } from './chat/TurnFooter'
 import { FileChangesCard } from './FileChangesCard'
 import { LocalFilePreviewPanel } from './LocalFilePreviewPanel'
 import type { LocalArtifactTarget } from './localArtifactPreview'
@@ -23,6 +24,7 @@ import { splitComposerPrompt } from './composerInput'
 import { TaskQueuePanel } from './TaskQueuePanel'
 import type { TaskQueue } from './useTaskQueue'
 import type { HarnessHealth } from './useHarnessHealth'
+import { connectorDisplayName } from './connectors'
 
 import { RichMessage } from './RichMessage'
 import { KnowledgeSources } from './KnowledgeSources'
@@ -189,6 +191,8 @@ export function ChatPage(props: ChatPageProps) {
   }, [props.entries.length])
 
   const reviewChanges = props.taskProjection.changes ?? []
+  const changedFiles = new Set(reviewChanges.map((change) => `${change.rootId}:${change.path}`))
+  const standaloneArtifacts = props.taskProjection.artifacts.filter((artifact) => !changedFiles.has(`${artifact.rootId}:${artifact.path}`))
   const fileChanges = reviewChanges.length > 0 && <FileChangesCard changes={reviewChanges} busy={props.fileChangesBusy ?? props.harnessRunning} onOpen={openPreview} onReview={reviewFiles} onUndone={(results) => {
     setPreviewTargets([])
     setPreviewKey('')
@@ -217,11 +221,10 @@ export function ChatPage(props: ChatPageProps) {
           turn={entry}
           runState={isLast ? props.taskProjection : undefined}
           elapsedStartedAt={isLast ? activeRunStartedAt(props.entries, index) : undefined}
-          actions={isLast ? { onRegenerate: props.onRegenerateTurn, onEdit: props.onEditTurn } : { onEdit: undefined }}
           onApprovalDecision={props.onApprovalDecision}
           onQuestionAnswer={props.onQuestionAnswer}
         />
-        {isLast && props.taskProjection.artifacts.length > 0 && <TaskArtifacts artifacts={props.taskProjection.artifacts} conversation onOpen={openPreview} />}
+        {isLast && standaloneArtifacts.length > 0 && <TaskArtifacts artifacts={standaloneArtifacts} conversation onOpen={openPreview} />}
         {isLast && fileChanges}
         {isLast && entry.status !== 'streaming' && props.taskProjection.status === 'completed' && props.taskProjection.outcome
           && !isUnverifiedTaskOutcome(props.taskProjection.outcome) && <TaskOutcomeDetails outcome={props.taskProjection.outcome} />}
@@ -233,6 +236,7 @@ export function ChatPage(props: ChatPageProps) {
           <span><Sparkles size={16} /><span><strong>继续完成创建</strong><small>把当前方案带入创作表单，确认后保存到本机。</small></span></span>
           <button onClick={() => props.onContinueCreation?.(turnTextOf(entry))} type="button">{props.creationKind === 'expert-kit' ? '保存为专家套件' : '保存为技能'}</button>
         </div>}
+        <TurnFooter turn={entry} actions={isLast ? { onRegenerate: props.onRegenerateTurn, onEdit: props.onEditTurn } : undefined} />
       </article>
     })}</div>}
     {showScrollDown && <button aria-label="滚动到最新消息" className="scroll-to-latest" onClick={() => scrollToBottom()} title="滚动到最新消息" type="button"><ArrowDown size={18} /></button>}
@@ -256,7 +260,10 @@ function UserTurnView({ entry, invocations, knowledgeBases }: { entry: Extract<C
       {entry.source === 'steer' && <span className="steer-badge"><Sparkles size={12} />已插入当前任务</span>}
       {messageInput.tokens.map((token) => <span key={token} className="message-capability"><Sparkles size={12} />{invocations?.find((item) => item.token === token)?.name ?? token.replace(/^\/(?:kit|skill):/u, '')}</span>)}
       {entry.context?.knowledgeRefs?.map((reference) => <span className="message-capability context-ref" key={reference} title={`知识库 ${reference}`}><BookOpen size={12} />{knowledgeBases.find((item) => item.reference === reference)?.name ?? reference}</span>)}
-      {entry.context?.connectors?.map((connector) => <span className="message-capability context-ref" key={connector.id} title={`连接器 ${connector.id}`}><Plug size={12} />{connector.name}</span>)}
+      {entry.context?.connectors?.map((connector) => {
+        const label = connectorDisplayName(connector)
+        return label ? <span className="message-capability context-ref" key={connector.id} title="已选择连接器"><Plug size={12} />{label}</span> : null
+      })}
       {entry.attachments && entry.attachments.length > 0 && <AttachmentList attachments={entry.attachments} />}
       <RichMessage text={messageInput.text || (messageInput.tokens.length ? '使用所选能力开始任务' : entry.text)} />
     </div>

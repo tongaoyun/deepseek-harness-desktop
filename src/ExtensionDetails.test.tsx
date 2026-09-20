@@ -21,8 +21,8 @@ const kit: ExpertKitView = {
   ], connectorRefs: [], requiredTools: [], knowledgeBaseRefs: [], sha256: '',
   installState: 'installed', readiness: 'ready', connectorIssues: [], knowledgeIssues: [], localOnly: false,
   installed: { source: 'catalog', enabled: true, installPath: '/extensions/fullstack', manifest: {
-    schemaVersion: '2', kind: 'expert-kit', id: 'fullstack-dev-expert', name: '全栈开发专家', version: '1.0.1', summary: '覆盖前后端开发与测试', category: 'code-development', minimumDesktopVersion: '0.1.30',
-    skills: [api, background], commands: [], connectorRefs: [], requiredTools: [], knowledgeBaseRefs: [],
+    schemaVersion: '3', kind: 'expert-kit', id: 'fullstack-dev-expert', name: '全栈开发专家', version: '1.0.1', summary: '覆盖前后端开发与测试', category: 'code-development', minimumDesktopVersion: '0.1.30',
+    skills: [api, background].map((skill) => ({ ...skill, requiredTools: [], connectorRefs: [], knowledgeBaseRefs: [] })), commands: [{ id: 'api-design', path: 'commands/api-design.md' }], connectorRefs: [], requiredTools: [], knowledgeBaseRefs: [],
   } },
 }
 
@@ -38,10 +38,27 @@ it('shows bundled skill names from the expert kit catalog before installation', 
     expect(container.querySelector('.detail-skill-list')?.textContent).toContain('输入要设计的接口')
     expect(container.querySelector('.detail-skill-list')?.textContent).toContain('后台知识')
     expect(container.querySelector('.detail-skill-list')?.textContent).not.toContain('api-design')
-    // A kit that ships no commands still offers its skills as shortcuts before installation.
     const shortcuts = [...container.querySelectorAll('.detail-command-list code')].map((item) => item.textContent)
-    expect(shortcuts).toEqual(['/API接口设计', '/后台知识'])
-    expect(container.querySelector('.expert-detail-section h3')?.textContent).toBe('快捷命令 (2)')
+    expect(shortcuts).toEqual([])
+    expect(container.querySelector('.expert-detail-section h3')?.textContent).not.toContain('快捷命令')
+  } finally {
+    await act(async () => root.unmount())
+    container.remove()
+  }
+})
+
+it('shows published commands without duplicating bundled skills before installation', async () => {
+  const available = { ...kit, commandIds: ['order-intake-check'], installed: undefined, installState: 'available' as const }
+  const container = document.body.appendChild(document.createElement('div'))
+  const root = createRoot(container)
+  try {
+    await act(async () => root.render(<ExpertKitDetailsModal kit={available} skills={[]} connectors={[]}
+      knowledgeBases={[]} installing={false} removing={false} onClose={vi.fn()} onInstall={vi.fn()}
+      onSchedule={vi.fn()} onUse={vi.fn()} />))
+    const shortcuts = [...container.querySelectorAll('.detail-command-list code')].map((item) => item.textContent)
+    expect(shortcuts).toEqual(['/order-intake-check'])
+    expect(container.querySelector('.detail-command-list')?.textContent).not.toContain('API接口设计')
+    expect(container.querySelector('.detail-skill-list')?.textContent).toContain('API接口设计')
   } finally {
     await act(async () => root.unmount())
     container.remove()
@@ -49,27 +66,24 @@ it('shows bundled skill names from the expert kit catalog before installation', 
 })
 
 it('uses the selected skill, keeps non-invocable knowledge readable, and closes only the nested reader', async () => {
-  vi.mocked(readExtensionContents).mockResolvedValue({ readme: '# 开发流程', skills: [api, background], commands: [] })
-  const onClose = vi.fn(), onUseSkill = vi.fn()
+  vi.mocked(readExtensionContents).mockResolvedValue({ readme: '# 开发流程', skills: [api, background], commands: [{ id: 'api-design', name: '/api-design', summary: '使用套件中的工作流程处理任务', userInvocable: true, path: 'commands/api-design.md', content: '# API 设计' }] })
+  const onClose = vi.fn()
   const container = document.body.appendChild(document.createElement('div'))
   const root = createRoot(container)
-  const render = (value = kit) => <ExpertKitDetailsModal kit={value} skills={[]} connectors={[]} knowledgeBases={[]} installing={false} removing={false} onClose={onClose} onInstall={vi.fn()} onSchedule={vi.fn()} onUseSkill={onUseSkill} />
+  const render = (value = kit) => <ExpertKitDetailsModal kit={value} skills={[]} connectors={[]} knowledgeBases={[]} installing={false} removing={false} onClose={onClose} onInstall={vi.fn()} onSchedule={vi.fn()} />
   try {
     await act(async () => root.render(render()))
     expect(container.querySelector('.expert-dependency-state')).toBeNull()
     expect(container.textContent).not.toContain('不绑定知识库')
     expect(container.querySelectorAll('.detail-command-list button')).toHaveLength(1)
-    expect(container.querySelector('.detail-command-list button')?.textContent).toContain('输入要设计的接口')
+    expect(container.querySelector('.detail-command-list button')?.textContent).toContain('使用套件中的工作流程处理任务')
     expect(container.querySelectorAll('.extension-source-list button')).toHaveLength(2)
-    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="使用技能：API接口设计"]')!.click())
-    expect(onUseSkill).toHaveBeenLastCalledWith(api)
     const opener = container.querySelector<HTMLButtonElement>('[aria-label="技能：API接口设计"]')!
     opener.focus()
     await act(async () => opener.click())
     expect(container.querySelector('[role="dialog"]')?.textContent).toContain('来自 全栈开发专家')
     // Reading a bundled skill offers no per-skill customize entry; the kit is customized as a whole.
     expect(container.textContent).not.toContain('自定义修改')
-    expect(onUseSkill).toHaveBeenCalledOnce()
     await act(async () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
     expect(onClose).not.toHaveBeenCalled()
     expect(container.querySelector('[role="dialog"]')).toBeNull()

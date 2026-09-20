@@ -49,6 +49,13 @@ test('staged runtime checks run once against the final disk image', () => {
   assert.match(smoke, /check-harness-runtime\.mjs/)
 })
 
+test('macOS release builds load a configured signing key file for Tauri', () => {
+  const build = readFileSync(new URL('./build-macos.sh', import.meta.url), 'utf8')
+  assert.match(build, /! -f "\$TAURI_SIGNING_PRIVATE_KEY_PATH" \|\| ! -r "\$TAURI_SIGNING_PRIVATE_KEY_PATH"/)
+  assert.match(build, /export TAURI_SIGNING_PRIVATE_KEY="\$\(<"\$TAURI_SIGNING_PRIVATE_KEY_PATH"\)"/)
+  assert.match(build, /unset TAURI_SIGNING_PRIVATE_KEY_PATH/)
+})
+
 test('bundle architecture checks accept the binary path before lipo variable arguments', { skip: process.platform !== 'darwin' }, () => {
   const smoke = readFileSync(new URL('./smoke-test-macos-bundle.sh', import.meta.url), 'utf8')
   assert.match(smoke, /lipo "\$runtime\/harness-host\/native\/xiaoyin-computer-use" -verify_arch "\$binary_arch"/)

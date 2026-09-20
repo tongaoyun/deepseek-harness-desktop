@@ -20,7 +20,7 @@ const props: ComponentProps<typeof DesktopSidebar> = {
 
 it('marks the open task as current only on the conversation page', () => {
   const html = renderToStaticMarkup(<DesktopSidebar {...props} />)
-  expect(html).toContain('aria-current="true" class="recent-task active"')
+  expect(html).toMatch(/aria-current="true"[^>]*class="recent-task active"/)
   expect(html).toContain('>专家套件</span>')
   expect(html).toContain('>技能</span>')
   expect(html).not.toContain('技能与套件')
@@ -37,8 +37,16 @@ it('shows interrupted separately from ordinary task failure', () => {
     failure: { code: 'XY-INTERRUPTED', category: 'local-agent', detail: '应用退出' },
   } }
   const html = renderToStaticMarkup(<DesktopSidebar {...props} tasks={[interrupted]} visibleTasks={[interrupted]} />)
-  expect(html).toContain('>已中断</small>')
-  expect(html).not.toContain('>执行失败</small>')
+  expect(html).not.toContain('已中断')
+  expect(html).not.toContain('执行失败')
+})
+
+it('shows only a spinner for a running task in the history list', () => {
+  const running: LocalTaskRun = { ...task, status: 'RUNNING', projection: { ...task.projection, status: 'running' } }
+  const html = renderToStaticMarkup(<DesktopSidebar {...props} tasks={[running]} visibleTasks={[running]} />)
+  expect(html).toContain('aria-label="分析文档，运行中"')
+  expect(html).toContain('recent-task-spinner')
+  expect(html).not.toContain('>运行中</small>')
 })
 
 it('only shows task/channel tabs and keeps archived tasks accessible through search', () => {

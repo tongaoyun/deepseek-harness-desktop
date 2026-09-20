@@ -7,8 +7,8 @@
 | 仓库 | 负责什么 |
 | --- | --- |
 | `xiaoyin-desktop` | 桌面、任务执行、本地文件、Office、定时任务和钉钉 |
-| `xiaoyin-server` | 企业控制台、模型与扩展目录、知识索引、审计和记忆同步 |
-| `xiaoyin-extensions` | 官方 Skills、专家套件、内容模板和发布工具 |
+| `xiaoyin-server` | 企业控制台；Skill、专家套件的审核与分发；连接器目录；知识库存储、索引与检索；审计和记忆同步 |
+| `xiaoyin-extensions` | 官方 Skill、专家套件的源码、规范和发布工具 |
 | `erp-mcp-gateway` | ERP 业务工具与 Nacos MCP 注册 |
 
 ## 开发
@@ -56,8 +56,7 @@ pnpm tauri:dev
 | 组件和数据如何协作 | [架构](docs/architecture.md) |
 | 任务、恢复、队列与交付 | [任务执行](docs/task-execution.md) |
 | 登录、会话与诊断 | [登录与会话](docs/login.md) |
-| Skills、套件、连接器 | [扩展](docs/extensions.md) |
+| Skill、专家套件、连接器 | [扩展](docs/extensions.md) |
 | 文档生成、重算与 PDF | [Office 工具](docs/office.md) |
 | 质量与发布门槛 | [发布验收](docs/system-readiness.md)、[真实任务评测](docs/task-evaluation.md) |
 | 安装包与更新 | [构建流程](docs/build-workflows.md)、[macOS](docs/macos-updates.md)、[Windows](docs/windows-release-acceptance.md) |
-| 下一步完善内容 | [完善计划](docs/roadmap.md) |

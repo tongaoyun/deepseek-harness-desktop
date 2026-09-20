@@ -94,22 +94,10 @@ export async function loadTaskDraftState(owner: string): Promise<void> {
     await restorePendingDraft(owner)
     return
   }
-  let draftRaw: string | null = null, directoryRaw: string | null = null
-  try { draftRaw = localStorage.getItem(draftStorageKey(owner)) } catch { /* Native state remains available. */ }
-  try { directoryRaw = localStorage.getItem(directoryStorageKey(owner)) } catch { /* Native state remains available. */ }
-  let value = await invoke<unknown>('load_local_workspace_state', { employeeId: owner })
-  if (value === null) {
-    let legacy: WorkspaceState
-    try {
-      legacy = parseWorkspaceState({ drafts: JSON.parse(draftRaw ?? '{}'), recentDirectories: JSON.parse(directoryRaw ?? '[]') })
-    } catch { throw new Error('本机草稿数据无法读取，原始数据保留') }
-    value = await invoke<unknown>('load_local_workspace_state', { employeeId: owner, legacy })
-  }
+  const value = await invoke<unknown>('load_local_workspace_state', { employeeId: owner })
   const state = parseWorkspaceState(value)
   cache.set(owner, state)
   await restorePendingDraft(owner)
-  if (draftRaw !== null) try { localStorage.removeItem(draftStorageKey(owner)) } catch { /* Native state takes precedence. */ }
-  if (directoryRaw !== null) try { localStorage.removeItem(directoryStorageKey(owner)) } catch { /* Native state takes precedence. */ }
 }
 
 async function restorePendingDraft(owner: string): Promise<void> {

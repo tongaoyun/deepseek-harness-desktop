@@ -6,7 +6,7 @@ afterEach(() => vi.unstubAllEnvs())
 
 describe('desktop plan-mode policy', () => {
   it('allows inspection and plan review but blocks mutating or unknown tools', () => {
-    for (const name of ['read', 'grep', 'knowledge_search', 'browser_snapshot', 'ask_user_question', 'exit_plan_mode', 'schedule_list']) {
+    for (const name of ['tool_discover', 'read', 'grep', 'knowledge_search', 'browser_snapshot', 'ask_user_question', 'exit_plan_mode', 'schedule_list']) {
       expect(isPlanSafeTool(name), name).toBe(true)
     }
     for (const name of ['write', 'edit', 'bash', 'local_files_delete', 'schedules_create', 'mcp_erp_order_create']) {

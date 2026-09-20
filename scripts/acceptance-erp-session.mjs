@@ -36,9 +36,9 @@ setInterval(async () => {
       const fixture = {drafts: {'new-task': {prompt: 'native workspace fixture', model: 'test-model',
         attachments: [], directories: [], knowledgeRefs: [], connectorIds: [], updatedAt: 1}}, recentDirectories: []};
       const employeeId = 'local-development';
-      const state = await window.__TAURI_INTERNALS__.invoke('load_local_workspace_state', {
-        employeeId, legacy: control.workspaceAction === 'import' ? fixture : {...fixture, drafts: {}}
-      });
+      const state = control.workspaceAction === 'seed'
+        ? (await window.__TAURI_INTERNALS__.invoke('save_local_workspace_state', {employeeId, state: fixture}), fixture)
+        : await window.__TAURI_INTERNALS__.invoke('load_local_workspace_state', {employeeId});
       let ownerRejected = false;
       if (control.workspaceAction === 'read') {
         try { await window.__TAURI_INTERNALS__.invoke('load_local_workspace_state', {employeeId: 'another-employee'}); }
@@ -46,7 +46,7 @@ setInterval(async () => {
       }
       completedWorkspaceAction = control.workspaceAction;
       await fetch('/report', {method: 'POST', body: JSON.stringify({
-        code: control.workspaceAction === 'import' ? 'workspace_imported' : 'workspace_restored',
+        code: control.workspaceAction === 'seed' ? 'workspace_saved' : 'workspace_restored',
         prompt: state.drafts['new-task']?.prompt, ownerRejected
       })});
     }
@@ -139,9 +139,9 @@ try {
   const initial = await waitFor('authenticated', 180_000)
   assert.equal(initial.cookieCount, 1)
   console.log('PASS: session-only WebView cookie validated and saved')
-  workspaceAction = 'import'
-  const imported = await waitFor('workspace_imported')
-  assert.equal(imported.prompt, 'native workspace fixture')
+  workspaceAction = 'seed'
+  const saved = await waitFor('workspace_saved')
+  assert.equal(saved.prompt, 'native workspace fixture')
   await stop()
   seed = false
   workspaceAction = 'read'

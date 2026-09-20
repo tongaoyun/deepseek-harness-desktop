@@ -27,18 +27,7 @@ function parseTaskQueues(value: unknown): Queues {
 export async function readTaskQueues(owner: string): Promise<Queues> {
   const key = storageKey(owner)
   if (!isTauri()) return parseTaskQueues(JSON.parse(window.localStorage.getItem(key) ?? '{}'))
-  let raw: string | null = null
-  try { raw = window.localStorage.getItem(key) } catch { /* SQLite remains available without WebView storage. */ }
-  let value = await invoke<unknown>('load_local_task_queues', { employeeId: owner })
-  if (value === null) {
-    const legacy = raw === null ? {} : parseTaskQueues(JSON.parse(raw))
-    value = await invoke<unknown>('load_local_task_queues', { employeeId: owner, legacy })
-  }
-  const queues = parseTaskQueues(value)
-  if (raw !== null) {
-    try { window.localStorage.removeItem(key) } catch { /* Native state takes precedence on later reads. */ }
-  }
-  return queues
+  return parseTaskQueues(await invoke<unknown>('load_local_task_queues', { employeeId: owner }))
 }
 
 async function saveTaskQueues(owner: string, queues: Queues) {

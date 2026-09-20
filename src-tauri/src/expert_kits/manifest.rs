@@ -39,9 +39,72 @@ pub(super) fn load_and_validate_manifest(
     let schema = object
         .get("schemaVersion")
         .and_then(serde_json::Value::as_str)
-        .unwrap_or_default();
-    if (kind == "expert-kit" && schema != "2") || (kind == "skill" && schema != "1") {
+        .unwrap_or_default()
+        .to_string();
+    if (kind == "expert-kit" && schema != "3") || (kind == "skill" && schema != "1") {
         return Err("不支持的扩展 Schema 版本".to_string());
+    }
+    let has_unknown_manifest_field = object.keys().any(|field| {
+        !matches!(
+            field.as_str(),
+            "schemaVersion"
+                | "id"
+                | "name"
+                | "author"
+                | "version"
+                | "summary"
+                | "category"
+                | "triggers"
+                | "allowImplicitInvocation"
+                | "minimumDesktopVersion"
+                | "commands"
+                | "skills"
+                | "requiredTools"
+                | "connectorRefs"
+                | "knowledgeBaseRefs"
+        )
+    });
+    if kind == "expert-kit" && schema == "3" && !has_unknown_manifest_field {
+        for field in [
+            "commands",
+            "skills",
+            "requiredTools",
+            "connectorRefs",
+            "knowledgeBaseRefs",
+        ] {
+            if !object.contains_key(field) {
+                return Err(format!("专家套件 Schema 3 缺少必填字段：{field}"));
+            }
+        }
+        let commands = object
+            .get("commands")
+            .and_then(serde_json::Value::as_array)
+            .ok_or_else(|| "专家套件 commands 必须是数组".to_string())?;
+        if commands.is_empty() {
+            return Err("专家套件至少需要一个快捷命令".to_string());
+        }
+        if commands.iter().any(|command| {
+            command
+                .get("skillId")
+                .and_then(serde_json::Value::as_str)
+                .is_none()
+        }) {
+            return Err("专家套件每个快捷命令必须绑定 skillId".to_string());
+        }
+        let skills = object
+            .get("skills")
+            .and_then(serde_json::Value::as_array)
+            .ok_or_else(|| "专家套件 skills 必须是数组".to_string())?;
+        if skills.is_empty() {
+            return Err("专家套件至少需要一个 Skill".to_string());
+        }
+        for skill in skills {
+            for field in ["requiredTools", "connectorRefs", "knowledgeBaseRefs"] {
+                if !skill.get(field).is_some() {
+                    return Err(format!("专家套件 Skill 缺少必填依赖字段：{field}"));
+                }
+            }
+        }
     }
     object.insert(
         "kind".to_string(),
@@ -66,6 +129,7 @@ pub(super) fn load_and_validate_manifest(
         || manifest.summary.trim().is_empty()
         || manifest.summary.chars().count() > 300
         || manifest.skills.is_empty()
+        || (manifest.kind == "expert-kit" && manifest.commands.is_empty())
     {
         return Err("专家套件名称、简介和技能不能为空".to_string());
     }
@@ -130,6 +194,9 @@ pub(super) fn load_and_validate_manifest(
         .map(|skill| skill.id.as_str())
         .collect::<HashSet<_>>();
     for command in &manifest.commands {
+        if manifest.kind == "expert-kit" && schema == "3" && command.skill_id.is_none() {
+            return Err(format!("专家套件命令 {} 必须绑定 skillId", command.id));
+        }
         if command
             .skill_id
             .as_deref()
@@ -169,6 +236,57 @@ pub(super) fn load_and_validate_manifest(
             if !valid_knowledge_base_reference(reference) || !references.insert(reference) {
                 return Err(format!("专家套件知识库引用无效或重复：{reference}"));
             }
+        }
+    }
+    if manifest.kind == "expert-kit" && schema == "3" {
+        if !root.join("README.md").is_file() && !root.join("readme.md").is_file() {
+            return Err("专家套件必须包含 README.md 套件说明".to_string());
+        }
+        let mut skill_tools = HashSet::new();
+        let mut skill_connectors = HashSet::new();
+        let mut skill_knowledge = HashSet::new();
+        for skill in &manifest.skills {
+            for tool in &skill.required_tools {
+                if !valid_tool_name(tool) {
+                    return Err(format!("Skill {} 工具声明无效：{tool}", skill.id));
+                }
+                skill_tools.insert(tool.as_str());
+            }
+            for connector in &skill.connector_refs {
+                if validate_identifier(connector).is_err() {
+                    return Err(format!("Skill {} 连接器引用无效：{connector}", skill.id));
+                }
+                skill_connectors.insert(connector.as_str());
+            }
+            for reference in &skill.knowledge_base_refs {
+                if !valid_knowledge_base_reference(reference) {
+                    return Err(format!("Skill {} 知识库引用无效：{reference}", skill.id));
+                }
+                skill_knowledge.insert(reference.as_str());
+            }
+        }
+        let manifest_tools = manifest
+            .required_tools
+            .iter()
+            .map(String::as_str)
+            .collect::<HashSet<_>>();
+        let manifest_connectors = manifest
+            .connector_refs
+            .iter()
+            .map(String::as_str)
+            .collect::<HashSet<_>>();
+        let manifest_knowledge = manifest
+            .knowledge_base_refs
+            .as_deref()
+            .unwrap_or_default()
+            .iter()
+            .map(String::as_str)
+            .collect::<HashSet<_>>();
+        if skill_tools != manifest_tools
+            || skill_connectors != manifest_connectors
+            || skill_knowledge != manifest_knowledge
+        {
+            return Err("专家套件顶层依赖必须等于所有 Skill 依赖的并集".to_string());
         }
     }
     Ok(manifest)

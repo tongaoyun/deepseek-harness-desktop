@@ -1,30 +1,29 @@
 import { Check, Copy, RotateCcw, SquarePen } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import type { AssistantTurn } from '../conversation/types'
-import { modelDisplayName } from '../modelSelection'
-import { formatTokens } from './toolSummary'
 
-/** Model and token facts, plus the per-turn actions. Duration lives in the turn header. */
+/** Codex-style quiet footer: completion time and actions, without billing telemetry in the transcript. */
 export function TurnFooter({ turn, actions }: {
   turn: AssistantTurn
   actions?: { onRegenerate?: () => void; onEdit?: () => void }
 }) {
-  const usage = turn.meta.tokenUsage
-  const tokenLabel = usage ? `输入 ${formatTokens(usage.inputTokens)}${usage.cacheReadTokens ? ` · 缓存读取 ${formatTokens(usage.cacheReadTokens)}` : ''}${usage.cacheWriteTokens ? ` · 缓存写入 ${formatTokens(usage.cacheWriteTokens)}` : ''} · 输出 ${formatTokens(usage.outputTokens)} tokens` : ''
-  const facts = [
-    turn.meta.model ? modelDisplayName(turn.meta.model) : '',
-    tokenLabel,
-  ].filter(Boolean)
+  const completedAt = completionTime(turn.meta.completedAt)
   const showActions = turn.status !== 'streaming' && (actions?.onRegenerate || actions?.onEdit)
-  if (!facts.length && !showActions) return null
+  if (!completedAt && !showActions) return null
   return <div className="turn-footer">
-    {facts.length > 0 && <small className="turn-facts">{facts.join(' · ')}</small>}
     {showActions && <span className="turn-actions">
       <CopyTurnButton turn={turn} />
       {actions?.onRegenerate && <button aria-label="重新生成" onClick={actions.onRegenerate} title="用同样的输入重跑这一轮" type="button"><RotateCcw size={15} /></button>}
       {actions?.onEdit && <button aria-label="编辑后重发" onClick={actions.onEdit} title="把原问题和附件放回输入框，修改后发送" type="button"><SquarePen size={15} /></button>}
     </span>}
+    {completedAt && <time className="turn-time" dateTime={turn.meta.completedAt}>{completedAt}</time>}
   </div>
+}
+
+function completionTime(value?: string): string {
+  const date = new Date(value ?? '')
+  if (!Number.isFinite(date.getTime())) return ''
+  return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })
 }
 
 function CopyTurnButton({ turn }: { turn: AssistantTurn }) {

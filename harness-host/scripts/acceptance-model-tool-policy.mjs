@@ -49,11 +49,12 @@ function containsNone(names, forbidden, scenario) {
 await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
 try {
   for (const scenario of [
-    { name: 'native-default', shell: 'true', roots: [], mode: 'native', files: officialFiles, forbiddenFiles: productFiles, hasShell: true, query: true, browser: false },
-    { name: 'native-no-shell', shell: 'false', roots: [], mode: 'native', files: officialFiles, forbiddenFiles: productFiles, hasShell: false, query: false, browser: false },
-    { name: 'native-authorized-roots', shell: 'false', roots: [{ id: 'workspace', name: 'Workspace', path: workspace }], mode: 'native', files: productFiles, forbiddenFiles: officialFiles, hasShell: false, query: true, browser: false },
-    { name: 'native-browser', shell: 'false', roots: [], mode: 'native', files: officialFiles, forbiddenFiles: productFiles, hasShell: false, query: false, browser: true },
-    { name: 'ptc-no-shell', shell: 'false', roots: [], mode: 'ptc', files: [], forbiddenFiles: [...officialFiles, ...productFiles], hasShell: false, query: true, browser: false },
+    { name: 'native-default', shell: 'true', roots: [], mode: 'native', executionMode: 'agent', files: officialFiles, forbiddenFiles: productFiles, hasShell: true, query: true, browser: false },
+    { name: 'native-no-shell', shell: 'false', roots: [], mode: 'native', executionMode: 'agent', files: officialFiles, forbiddenFiles: productFiles, hasShell: false, query: false, browser: false },
+    { name: 'native-authorized-roots', shell: 'false', roots: [{ id: 'workspace', name: 'Workspace', path: workspace }], mode: 'native', executionMode: 'agent', files: productFiles, forbiddenFiles: officialFiles, hasShell: false, query: true, browser: false },
+    { name: 'native-plan-authorized-roots', shell: 'false', roots: [{ id: 'workspace', name: 'Workspace', path: workspace }], mode: 'native', executionMode: 'plan', files: productFiles, forbiddenFiles: officialFiles, hasShell: false, query: true, browser: false },
+    { name: 'native-browser', shell: 'false', roots: [], mode: 'native', executionMode: 'agent', files: officialFiles, forbiddenFiles: productFiles, hasShell: false, query: false, browser: true },
+    { name: 'ptc-no-shell', shell: 'false', roots: [], mode: 'ptc', executionMode: 'agent', files: [], forbiddenFiles: [...officialFiles, ...productFiles], hasShell: false, query: true, browser: false },
   ]) {
     requestedTools = []
     schemaBytes = []
@@ -74,6 +75,7 @@ try {
       XIAOYIN_ALLOW_BROWSER: String(scenario.browser),
       XIAOYIN_ENABLE_SESSION_QUERY_TOOLS: String(scenario.query),
       XIAOYIN_ALLOW_EXTERNAL_AGENTS: 'false',
+      XIAOYIN_EXECUTION_MODE: scenario.executionMode,
       DSH_CUSTOM_SKILL_DIRS: '[]',
     })
     try {
@@ -81,12 +83,13 @@ try {
       assert.equal(requestedTools.length, scenario.mode === 'ptc' ? 1 : 2, `${scenario.name}: discovery should add exactly one request`)
       const initial = new Set(requestedTools[0])
       if (scenario.mode === 'native') {
-        containsAll(initial, ['tool_discover'], scenario.name)
+        containsAll(initial, ['tool_discover', 'exit_plan_mode'], scenario.name)
         containsNone(initial, [...officialFiles, ...productFiles, ...shellTools, ...sessionQueryTools, ...browserTools, 'task_report'], scenario.name)
         assert(initial.size <= 6 && schemaBytes[0] < 10000, `${scenario.name}: initial model tool schema was not reduced (${initial.size} tools, ${schemaBytes[0]} bytes: ${[...initial].join(', ')})`)
       }
       const names = new Set(requestedTools.at(-1))
       if (scenario.mode === 'native') {
+        containsAll(names, ['exit_plan_mode'], scenario.name)
         assert(toolReplies.at(-1).includes('office_xlsx_recalculate'), `${scenario.name}: office instructions were not delivered after discovery`)
         assert(toolReplies.at(-1).includes(scenario.roots.length ? 'local_files_publish' : 'present'), `${scenario.name}: publishing instructions did not match file policy`)
       }

@@ -1,5 +1,7 @@
 # 桌面架构
 
+本文面向桌面端开发和维护人员。员工使用方式见[产品能力](desktop-alignment.md)、[任务执行](task-execution.md)和[扩展](extensions.md)。
+
 小胤采用一个桌面任务入口。专家套件、Skills、定时计划与钉钉会话统一使用本机 Harness 执行。
 
 产品与运行时只有一个明确边界：专家套件、技能、连接器、知识库、定时任务和 IM 频道是小胤的产品事实源；Session、Agent Loop、上下文、工具、权限、工作流和执行事件由 DeepSeek Harness 负责。产品能力不能直接拼接 Prompt 或注册第二套工具，而是先由 `Xiaoyin Capability Resolver` 编译为 `CapabilitySnapshot`。
@@ -33,7 +35,7 @@ xiaoyin-server
   +-- Nacos MCP Registry
 ```
 
-桌面使用 Bootstrap 下发的端点和制品 URL。Nacos、数据库及对象存储管理接口由服务端访问。ERP 工具在 `erp-mcp-gateway` 开发并注册，官方扩展内容在 `xiaoyin-extensions` 维护。
+桌面使用 Bootstrap 下发的端点和制品 URL。Nacos、数据库及对象存储管理接口由服务端访问。ERP 工具在 `erp-mcp-gateway` 开发并注册；官方 Skill 和专家套件在 `xiaoyin-extensions` 维护并发布。连接器目录及知识库由 `xiaoyin-server` 管理，不作为扩展仓库中的独立发布物。
 
 ## 代码边界
 
@@ -96,7 +98,7 @@ Harness 的官方 settings 与 credentials provider 显式写入员工隔离的 
 
 本地工具检查目录授权、路径穿越和符号链接。破坏性操作经过原生确认。设备报告和审计不携带隐藏推理、业务原文、工具参数、凭据或绝对路径。
 
-能力快照固定任务选择的套件、技能、制品版本、连接器版本和知识范围。选择不变时后续轮次复用同一快照；员工主动调整选择时生成新快照并重建 Harness Session。制品停用、卸载、摘要不符，连接器被员工禁用或依赖不再有权限时，即使旧快照仍有记录也不能继续执行。
+能力快照固定任务选择的套件、技能、制品版本和知识范围。正在执行的轮次固定其连接器配置、工具与凭据，不在中途热切换；下一轮启动前重新检查目录和授权，并绑定最新的 `ready` 连接器。员工主动调整能力选择时生成新快照并重建 Harness Session。制品停用、卸载、摘要不符，或者连接器被下架、停用、待授权、不可用或不再有权限时，即使旧快照仍有记录也不能继续执行。
 
 显式选择的套件和技能记录在 `selections + artifacts`。允许自动调用但未被显式选择的能力单独记录在 `implicitArtifacts`，只向 Harness 提供受预算限制的技能目录，正文仍由 Harness 按需加载；自动能力不会扩大连接器、知识库或写权限。连接器凭据不进入持久化快照，启动执行时从系统凭据存储注入。
 

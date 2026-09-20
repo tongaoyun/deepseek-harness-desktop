@@ -76,11 +76,28 @@ fn import_kit(root: &Path, expected_kind: Option<&str>) -> Result<(), String> {
             id: "main".into(),
             path: path.into(),
             skill_id: None,
+            required_tools: Vec::new(),
+            connector_refs: Vec::new(),
+            knowledge_base_refs: Vec::new(),
         });
     }
     let connector_refs = convert_connectors(root, &plugin)?;
+    let default_skill = skills.first().map(|skill| skill.id.clone());
+    for skill in &mut skills {
+        skill.connector_refs = connector_refs.clone();
+    }
+    for command in &mut commands {
+        command.skill_id = default_skill.clone();
+    }
+    if !root.join("README.md").is_file() && !root.join("readme.md").is_file() {
+        write_file(
+            root,
+            "README.md",
+            format!("# {name}\n\n{summary}\n").as_bytes(),
+        )?;
+    }
     let mut manifest = json!({
-        "schemaVersion": "2",
+        "schemaVersion": "3",
         "id": id,
         "name": name,
         "version": version,
@@ -90,7 +107,8 @@ fn import_kit(root: &Path, expected_kind: Option<&str>) -> Result<(), String> {
         "commands": commands,
         "skills": skills,
         "requiredTools": [],
-        "connectorRefs": connector_refs
+        "connectorRefs": connector_refs,
+        "knowledgeBaseRefs": []
     });
     if let Some(author) = author.filter(|value| !value.trim().is_empty()) {
         manifest["author"] = json!(author.trim());
@@ -257,6 +275,9 @@ fn collect_skills(
             id,
             path: relative(root, &directory.join("SKILL.md"))?,
             skill_id: None,
+            required_tools: Vec::new(),
+            connector_refs: Vec::new(),
+            knowledge_base_refs: Vec::new(),
         });
     } else if directory.is_dir() {
         for child in child_directories(directory)? {
@@ -301,6 +322,9 @@ fn collect_commands(
             ),
             path: relative(root, path)?,
             skill_id: None,
+            required_tools: Vec::new(),
+            connector_refs: Vec::new(),
+            knowledge_base_refs: Vec::new(),
         });
     }
     Ok(())

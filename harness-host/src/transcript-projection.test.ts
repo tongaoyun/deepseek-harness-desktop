@@ -180,7 +180,7 @@ describe('transcript projection', () => {
       event('turn/start', { turn: 1 }),
       userMessage('m1', '任务'),
       event('approval/asked', { id: 'a1', toolName: 'local_files_write_text', reason: '写入文件' }),
-      event('question/request', { questionId: 'q1', questions: [{ id: 'q1', question: '选哪个方案？', options: [{ label: 'A' }, { label: 'B' }] }] }),
+      event('question/request', { questionId: 'q1', questions: [{ id: 'q1', question: '选哪个方案？', options: [{ label: 'A' }, { label: 'B' }], intent: { kind: 'plan-review', approve: 'A' } }] }),
       event('approval/decided', { id: 'a1', outcome: 'allowed-once' }),
       event('question/answered', { questionId: 'q1' }),
       event('turn/end', { turn: 1, reason: { kind: 'aborted', reason: { kind: 'user' } } }),
@@ -189,7 +189,7 @@ describe('transcript projection', () => {
     if (turn?.role !== 'assistant') throw new Error('expected assistant turn')
     expect(turn.status).toBe('canceled')
     expect(turn.segments.find((segment) => segment.kind === 'approval')).toMatchObject({ status: 'completed', label: '已允许：local_files_write_text' })
-    expect(turn.segments.find((segment) => segment.kind === 'question')).toMatchObject({ status: 'completed' })
+    expect(turn.segments.find((segment) => segment.kind === 'question')).toMatchObject({ status: 'completed', questions: [{ intent: { kind: 'plan-review', approve: 'A' } }] })
   })
 
   it('replays a rejected approval from durable audit events without exposing a stale decision button', () => {

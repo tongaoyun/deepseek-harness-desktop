@@ -13,7 +13,7 @@ import { ErpAuthScreen } from './ErpAuthScreen'
 import { TASK_RESUME_PROMPT } from './taskInterruption'
 import { openErpLogin } from './auth'
 import { ExpertKitDetailsModal } from './ExpertKitDetailsModal'
-import { expertKitSkillPrompt, extensionCustomizationPrompt } from './expertKitDetails'
+import { extensionCustomizationPrompt } from './expertKitDetails'
 import { SkillDetailsModal } from './SkillDetailsModal'
 import {
   customizeExpertKit,
@@ -41,7 +41,6 @@ import {
   createXiaoyinTaskProjection,
   diagnoseConnectors,
   restoreLocalDirectories,
-  interruptHarness,
   inspectHarnessSession,
   regenerateHarness,
   respondHarnessApproval,
@@ -100,7 +99,7 @@ import { DesktopSettingsPage } from './DesktopSettingsPage'
 import { ConnectorsPage } from './ConnectorsPage'
 import { connectorAuthorization } from './connectorAuthorization'
 import type { SkillView } from './skills'
-import { assertKnowledgeBaseRefsAvailable, capabilitySnapshotForExecution, resolveCapabilitySnapshot } from './capabilitySnapshot'
+import { assertKnowledgeBaseRefsAvailable, capabilitySnapshotForExecution, reconcileConnectorSnapshot, resolveCapabilitySnapshot } from './capabilitySnapshot'
 import { useEnterpriseBootstrap } from './useEnterpriseBootstrap'
 import { DesktopSidebar } from './DesktopSidebar'
 import { ChatPage } from './ChatPage'
@@ -648,12 +647,13 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
     setLocalDirectories([])
     setLocalFileError('')
     focusComposer()
-    let draft = saved
+    // A fresh task always starts in Agent mode; historical tasks retain their saved mode.
+    let draft = saved ? { ...saved, executionMode: 'agent' as const } : undefined
     if (initialPrompt && (!draftKind || !saved?.prompt.trim())) {
       const initial = splitComposerPrompt(initialPrompt)
       const existing = splitComposerPrompt(saved?.prompt ?? '').text
       const nextPrompt = initial.tokens.length ? joinComposerPrompt(initial.tokens, initial.text || existing) : [initialPrompt, existing].filter(Boolean).join('\n\n')
-      draft = { ...emptyDraft(), ...saved, prompt: nextPrompt }
+      draft = { ...emptyDraft(), ...saved, executionMode: 'agent', prompt: nextPrompt }
     }
     await restoreDraftContext(draft)
   }
@@ -957,7 +957,13 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
 
   async function executeTask(rawInput: string, messageAttachments: LocalTaskAttachment[], queuedTask?: LocalTaskRun, accepted?: () => Promise<void>, queuedItemId?: string): Promise<boolean | 'canceled' | { outcome: TaskOutcome } | undefined> {
     const input = rawInput.trim() || (messageAttachments.length > 0 ? '请查看并处理这些附件。' : '')
-    if (!input || !bootstrap || !user || runtimeStatus !== 'ready') return
+    if (!input) return
+    if (!bootstrap || !user || runtimeStatus !== 'ready') {
+      const message = runtimeStatus !== 'ready' ? '企业服务正在重连，消息尚未发送，请稍后重试。' : '当前登录状态不可用，请重新登录后重试。'
+      if (currentLocalTaskIdRef.current === currentLocalTaskId) setLocalFileError(message)
+      else notify(message, 'error')
+      return false
+    }
     const contextTaskId = queuedTask?.id ?? currentLocalTaskId
     const contextGeneration = taskContextRestoreIdRef.current
     const taskId = contextTaskId || crypto.randomUUID()
@@ -1086,7 +1092,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
         && sameValues(requestedTokens, existingTask.invocationTokens ?? [])
         && sameValues(taskConnectorIds, retainedSnapshot.requestedConnectorIds)
         && sameValues(selectedKnowledgeBaseRefs, retainedSnapshot.requestedKnowledgeBaseRefs)
-      const capabilitySnapshot = queuedTask?.capabilitySnapshot ?? (choicesUnchanged ? retainedSnapshot : resolveCapabilitySnapshot({
+      const baseCapabilitySnapshot = queuedTask?.capabilitySnapshot ?? (choicesUnchanged ? retainedSnapshot : resolveCapabilitySnapshot({
         expertKits,
         skills: skillViews,
         selections: selected.map((item) => item.selection),
@@ -1096,6 +1102,13 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
         availableKnowledgeBaseRefs: knowledgeBases.map((item) => item.reference),
         createdAt: now,
       }))
+      let capabilitySnapshot: import('./types').CapabilitySnapshot
+      try {
+        capabilitySnapshot = reconcileConnectorSnapshot(baseCapabilitySnapshot, runtimeConnectors, enabledConnectorIds)
+      } catch (reason) {
+        reportInputError(`任务尚未启动，连接器状态已变化：${reason instanceof Error ? reason.message : String(reason)}`)
+        return
+      }
       const { rootSessionId, harnessPrompt, pendingEntries, runningProjection, runningTask } = prepareTaskTurn({
         taskId, input, now, existingTask, sessionId: taskSessionId, model: taskModel, reasoningEffort: taskReasoningEffort, executionMode: taskExecutionMode,
         scheduleId: existingTask?.scheduleId, scheduleRunId: existingTask?.scheduleRunId,
@@ -1354,20 +1367,10 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
       }
       return
     }
-    // Start the fallback clock with the click, not after a slow session check.
-    streaming.stopFallback = window.setTimeout(() => {
-      if (streamingTasksRef.current.get(taskId) !== streaming) return
-      void cancelHarness(taskId).catch(() => undefined)
-    }, 1_000)
-    try {
-      // Prefer a graceful interrupt: the turn settles with its partial
-      // receipts and the model sees a user cancellation. The process signal
-      // below stays as the force-stop fallback when nothing acknowledges it.
-      let acknowledged = false
-      try { acknowledged = await interruptHarness(taskId) } catch { acknowledged = false }
-      if (!acknowledged) await cancelHarness(taskId)
-    } catch (reason) {
-      window.clearTimeout(streaming.stopFallback)
+    // Kill the isolated Harness process immediately. The run loop still settles
+    // the transcript and durable task record, but the UI no longer waits for a
+    // model or connector to acknowledge a graceful interrupt.
+    void cancelHarness(taskId).catch((reason) => {
       if (streamingTasksRef.current.get(taskId) !== streaming) return
       streaming.cancellationRequested = false
       streaming.projection = { ...streaming.projection, activity: '停止失败，可重试', updatedAt: new Date().toISOString() }
@@ -1379,7 +1382,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
         setTaskProjection(streaming.projection)
         setLocalFileError(reason instanceof Error ? reason.message : String(reason))
       }
-    }
+    })
   }
 
   /**
@@ -1945,7 +1948,6 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
         onSchedule={() => { setActiveExpertKitId(''); setPage('schedules') }}
         onLoadReadme={bootstrap && user ? (id) => loadExpertKitReadme(bootstrap.endpoints.expertKits, id, user.userId, accessToken) : undefined}
         onUse={activeExpertKit.installed?.enabled !== false && activeExpertKit.installState === 'installed' ? (command) => { setActiveExpertKitId(''); startNewTask(`/kit:${activeExpertKit.id}${command ? `:${command}` : ''} `) } : undefined}
-        onUseSkill={activeExpertKit.installed?.enabled !== false && activeExpertKit.installState === 'installed' ? (skill) => { setActiveExpertKitId(''); startNewTask(expertKitSkillPrompt(activeExpertKit.id, skill)) } : undefined}
         onConfigureConnectors={() => { setActiveExpertKitId(''); setExtensionQuery(''); setPage('connectors') }}
         onConfigureKnowledge={() => { setActiveExpertKitId(''); setPage('knowledge') }}
         onToggleConnector={(connector, enabled) => {

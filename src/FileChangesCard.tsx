@@ -52,20 +52,19 @@ export function FileChangesCard({ changes, onOpen, onReview, onUndone, busy = fa
     undoLock.current = false
   }
 
-  return <details aria-label="文件改动" className="file-changes-card">
-    <summary className="file-changes-summary">
-      <Files size={16} />
+  return <section aria-label="文件改动" className="file-changes-card">
+    <header className="file-changes-summary">
+      <span className="file-changes-icon"><Files size={22} /></span>
       <span className="file-changes-heading">
         <strong>{allUndone ? '已撤销' : '已编辑'} {changes.length} 个文件</strong>
         {!allUndone && (completeCounts ? <small><ins>+{totals.added}</ins> <del>-{totals.deleted}</del></small> : <small className="file-counts-hint">审核中查看完整差异</small>)}
       </span>
-      <ChevronDown className="file-changes-chevron" size={14} />
-    </summary>
-    <div className="file-changes-expanded">
       <div className="file-changes-controls">
         <button disabled={busy || undoing || eligible.length === 0} onClick={() => setConfirming(true)} title={busy ? '任务执行完成后可以撤销' : eligible.length ? `撤销 ${eligible.length} 个可恢复文件` : allUndone ? '已撤销' : '缺少可验证记录，或改动类型不支持自动撤销'} type="button"><Undo2 size={15} />撤销</button>
         <button disabled={!onReview || !reviewable.length} onClick={() => onReview?.(reviewable.map(target))} type="button">审核</button>
       </div>
+    </header>
+    <div className="file-changes-expanded">
       <div className="file-change-list">
         {visible.map((change) => <div className={`file-change-row ${change.action}`} key={change.id}>
           <button className="file-change-path" disabled={!onOpen || Boolean(change.undoneAt) || (change.action === 'deleted' && !change.backupPath)} onClick={() => onOpen?.(target(change))} title={`${change.rootName}/${change.path}`} type="button">{change.path}</button>
@@ -90,7 +89,7 @@ export function FileChangesCard({ changes, onOpen, onReview, onUndone, busy = fa
       {current.length !== eligible.length && <p>另外 {current.length - eligible.length} 个文件已撤销或不支持自动撤销。</p>}
       <footer><button disabled={undoing} onClick={() => setConfirming(false)} type="button">取消</button><button disabled={undoing || busy} onClick={() => void undo()} type="button">{undoing ? '正在撤销…' : `确认撤销 ${eligible.length} 个文件`}</button></footer>
     </div></div>, document.body)}
-  </details>
+  </section>
 }
 
 function target(change: TaskFileChange): LocalArtifactTarget {

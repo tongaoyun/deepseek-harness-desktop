@@ -39,6 +39,24 @@ it('reads real installed sources and opens individual skill instructions', async
   } finally { await act(async () => root.unmount()); container.remove() }
 })
 
+it('shows kit commands once with one slash and keeps the README as the kit description', async () => {
+  const command = { id: 'order-intake-check', name: '/订单排查', summary: '排查订单为什么没有进入 ERP', userInvocable: true, path: 'commands/order-intake-check.md', content: '# /订单排查' }
+  const skill = { id: 'order-intake', name: '订单入库排查', summary: '诊断订单入库问题', userInvocable: true, path: 'skills/order-intake/SKILL.md', content: '# 订单入库排查' }
+  vi.mocked(readExtensionContents).mockResolvedValue({ readme: '# 订单专家\n\n处理跨境订单问题。', commands: [command], skills: [skill] })
+  const useCommand = vi.fn()
+  const container = document.body.appendChild(document.createElement('div'))
+  const root = createRoot(container)
+  try {
+    await act(async () => root.render(<ExtensionContentsPanel extension={extension} onUseCommand={useCommand} />))
+    const shortcuts = [...container.querySelectorAll('.detail-command-list code')].map((item) => item.textContent)
+    expect(shortcuts).toEqual(['/订单排查'])
+    expect(container.textContent).not.toContain('命令说明')
+    expect(container.querySelector('[aria-label="查看完整套件说明"]')?.textContent).toContain('处理跨境订单问题')
+    await act(async () => container.querySelector<HTMLButtonElement>('.detail-command-list button')!.click())
+    expect(useCommand).toHaveBeenCalledWith('order-intake-check')
+  } finally { await act(async () => root.unmount()); container.remove() }
+})
+
 it('shows read errors instead of fabricating source content', async () => {
   vi.mocked(readExtensionContents).mockRejectedValue(new Error('扩展文件不可用'))
   const container = document.body.appendChild(document.createElement('div'))

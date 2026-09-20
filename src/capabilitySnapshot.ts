@@ -110,6 +110,42 @@ export function assertKnowledgeBaseRefsAvailable(snapshot: CapabilitySnapshot, a
   if (issues.length) throw resolutionError(issues)
 }
 
+/**
+ * Rebinds a retained task to the latest ready connector definitions.
+ *
+ * A task snapshot is intentionally stable while a turn is running, but it must
+ * not bypass a server-side disable, revocation, or configuration failure on a
+ * later turn. Ready connectors may change endpoint, tools, or version and are
+ * refreshed here; unavailable connectors fail before Harness starts.
+ */
+export function reconcileConnectorSnapshot(
+  snapshot: CapabilitySnapshot,
+  runtimeConnectors: ConnectorRuntimeDefinition[],
+  enabledConnectorIds: Iterable<string>,
+): CapabilitySnapshot {
+  const enabled = new Set(enabledConnectorIds)
+  const runtimeById = new Map(runtimeConnectors.map((connector) => [connector.id, connector]))
+  const issues: string[] = []
+  const connectors = snapshot.connectors.map((previous) => {
+    const current = runtimeById.get(previous.id)
+    if (!current) {
+      issues.push(`连接器「${previous.name || previous.id}」已从当前目录移除`)
+      return previous
+    }
+    if (!enabled.has(current.id) || !current.enabled) {
+      issues.push(`连接器「${current.name || current.id}」已被停用，请重新启用后再继续`)
+      return previous
+    }
+    if (current.status !== 'ready') {
+      issues.push(`连接器「${current.name || current.id}」当前不可用（${connectorStatusLabel(current.status)}）`)
+      return previous
+    }
+    return sanitizeConnector(current)
+  })
+  if (issues.length) throw resolutionError(issues)
+  return { ...snapshot, connectors: connectors.sort((left, right) => left.id.localeCompare(right.id)) }
+}
+
 function unavailableKnowledgeBaseIssues(references: Iterable<string>, available: Iterable<string>): string[] {
   const allowed = new Set(available)
   return [...new Set(references)].filter((reference) => !allowed.has(reference))
@@ -156,6 +192,10 @@ function sourceFor(kind: 'expert-kit' | 'skill', value: ExpertKitView | SkillVie
 
 function sanitizeConnector(connector: ConnectorRuntimeDefinition): ConnectorRuntimeDefinition {
   return { ...connector, toolNames: [...connector.toolNames], readOnlyTools: [...(connector.readOnlyTools ?? [])], environment: emptyValues(connector.environment), headers: emptyValues(connector.headers) }
+}
+
+function connectorStatusLabel(status: ConnectorRuntimeDefinition['status']): string {
+  return status === 'needs-configuration' ? '待配置' : status === 'unavailable' ? '不可用' : status === 'disabled' ? '已停用' : status
 }
 function canonicalSnapshot({ createdAt: _createdAt, ...snapshot }: CapabilitySnapshot): string {
   return JSON.stringify(snapshot, (_key, value) => value && typeof value === 'object' && !Array.isArray(value)

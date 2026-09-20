@@ -312,12 +312,13 @@ export class DeepSeekHarnessRuntime implements HarnessRuntime {
     const env = this.environment()
     const key = env.DEEPSEEK_API_KEY?.trim()
     const baseUrl = env.DEEPSEEK_BASE_URL?.trim()
+    const model = env.DSH_MODEL?.trim() || 'deepseek-v4-flash'
     if (!key || !baseUrl) return { status: 'unconfigured', latencyMs: 0, detail: '模型地址或凭据未配置' }
     let endpoint: URL
     try {
       const base = new URL(baseUrl)
       if (!['http:', 'https:'].includes(base.protocol)) throw new Error('unsupported protocol')
-      endpoint = new URL('models', base.toString().endsWith('/') ? base.toString() : `${base.toString()}/`)
+      endpoint = new URL('chat/completions', base.toString().endsWith('/') ? base.toString() : `${base.toString()}/`)
     } catch {
       return { status: 'unreachable', latencyMs: 0, detail: '模型地址无效' }
     }
@@ -326,22 +327,35 @@ export class DeepSeekHarnessRuntime implements HarnessRuntime {
     const timeout = setTimeout(() => controller.abort(), 10_000)
     try {
       const response = await fetch(endpoint, {
-        method: 'GET',
-        headers: { authorization: `Bearer ${key}`, accept: 'application/json' },
+        method: 'POST',
+        headers: { authorization: `Bearer ${key}`, accept: 'application/json', 'content-type': 'application/json' },
+        body: JSON.stringify({ model, messages: [{ role: 'user', content: 'Reply with OK.' }], max_tokens: 16, stream: false }),
         redirect: 'error',
         signal: controller.signal,
       })
       const latencyMs = Date.now() - startedAt
       try {
         if (response.status === 401 || response.status === 403) return { status: 'unauthorized', latencyMs, detail: '模型凭据未被服务接受' }
+        if (response.status === 429) return { status: 'unreachable', latencyMs, detail: '模型生成服务繁忙' }
         if (!response.ok) return { status: 'unreachable', latencyMs, detail: `模型服务返回 HTTP ${response.status}` }
-        return { status: 'available', latencyMs, detail: '模型服务可访问' }
+        const payload: unknown = await response.json().catch(() => undefined)
+        const choices = payload && typeof payload === 'object' && 'choices' in payload
+          ? (payload as { choices?: unknown }).choices
+          : undefined
+        const content = Array.isArray(choices) && choices[0] && typeof choices[0] === 'object' && 'message' in choices[0]
+          ? (choices[0] as { message?: unknown }).message
+          : undefined
+        const text = content && typeof content === 'object' && 'content' in content
+          ? (content as { content?: unknown }).content
+          : undefined
+        if (typeof text !== 'string' || !text.trim()) return { status: 'unreachable', latencyMs, detail: '模型生成响应无有效内容' }
+        return { status: 'available', latencyMs, detail: '模型生成可用' }
       } finally {
         await response.body?.cancel().catch(() => undefined)
       }
     } catch (error) {
       const latencyMs = Date.now() - startedAt
-      return { status: 'unreachable', latencyMs, detail: error instanceof Error && error.name === 'AbortError' ? '模型服务连接超时' : '模型服务无法访问' }
+      return { status: 'unreachable', latencyMs, detail: error instanceof Error && error.name === 'AbortError' ? '模型生成检查超时' : '模型服务无法访问' }
     } finally {
       clearTimeout(timeout)
     }

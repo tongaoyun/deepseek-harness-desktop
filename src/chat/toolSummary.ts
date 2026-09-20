@@ -3,8 +3,10 @@ import type { ToolSegment } from '../conversation/types'
 /** Classify actual tools, never infer file edits or web searches from prose. */
 export function toolActionLabel(toolName: string): string {
   const tool = toolName.replaceAll('.', '_')
+  if (tool.startsWith('mcp_')) return connectorToolLabel(tool)
   const known: Record<string, string> = {
     skill: '加载技能',
+    glob: '搜索文件', grep: '搜索文件', read: '读取文件',
     local_files_roots: '查看目录', local_files_list: '查看目录', local_files_search: '搜索文件',
     local_files_read_text: '读取文件', office_document_read: '读取文件',
     office_document_check: '检查文档结构', office_pdf_page: '查看 PDF 页面',
@@ -27,6 +29,31 @@ export function toolActionLabel(toolName: string): string {
   return known[tool] ?? '调用工具'
 }
 
+/** Human-facing completed action. Successful routine reads should read like a result, not an API call. */
+export function toolDisplayLabel(tool: ToolSegment): string {
+  if (tool.toolName.replaceAll('.', '_').startsWith('mcp_')) return connectorToolLabel(tool.toolName.replaceAll('.', '_'))
+  if (tool.status !== 'completed') return tool.label
+  const name = tool.toolName.replaceAll('.', '_')
+  if (name === 'local_files_list') {
+    return tool.path && tool.path !== '.' ? `已列出 ${tool.path} 中的文件` : '已列出当前目录中的文件'
+  }
+  if (name === 'local_files_roots') return '已检查可用工作目录'
+  if (name === 'local_files_search') return tool.label.startsWith('搜索') ? `已${tool.label}` : '已搜索文件'
+  return tool.label
+}
+
+function connectorToolLabel(toolName: string): string {
+  const operation = toolName.replace(/^mcp_[^_]+_/u, '')
+  const known: Record<string, string> = {
+    order_intake_diagnose_shop: '查询店铺订单概况',
+    order_intake_diagnose_order: '排查订单',
+    store_sales_summary: '查询销售汇总',
+    inventory_risk: '检查库存风险',
+  }
+  if (known[operation]) return known[operation]
+  return '调用连接器工具'
+}
+
 /** One-line summary of a run of tool cards, Claude Code style. */
 export function toolGroupLabel(tools: ToolSegment[]): string {
   if (!tools.length) return '暂无操作'
@@ -35,6 +62,9 @@ export function toolGroupLabel(tools: ToolSegment[]): string {
   const completed = meaningful.filter((tool) => tool.status === 'completed')
   const failed = tools.filter((tool) => tool.status === 'failed').length
   const canceled = tools.filter((tool) => tool.status === 'canceled').length
+  const directoryList = completed.findLast((tool) => tool.toolName.replaceAll('.', '_') === 'local_files_list')
+  const onlyDirectorySetup = meaningful.every((tool) => ['local_files_roots', 'local_files_list'].includes(tool.toolName.replaceAll('.', '_')))
+  if (directoryList && onlyDirectorySetup && !running.length && !failed && !canceled) return toolDisplayLabel(directoryList)
   const parts: string[] = []
   if (failed) parts.push(`${failed} 个操作失败`)
   if (canceled) parts.push(`${canceled} 个操作已停止`)
@@ -66,6 +96,7 @@ export function toolCategory(toolName: string): ToolCategory {
   if (tool === 'local_files_read_text' || tool === 'office_document_read' || tool === 'office_pdf_page'
     || tool === 'office_document_check' || tool === 'office_engine_status'
     || tool === 'local_files_list' || tool === 'local_files_roots' || tool === 'local_files_search'
+    || tool === 'glob' || tool === 'grep' || tool === 'read'
     || tool === 'session_search' || tool === 'session_event_search' || tool === 'session_trace'
     || tool === 'session_event_trace' || tool === 'session_event_read' || tool === 'list_agents') return 'read'
   if (tool.startsWith('local_files_') || tool.startsWith('office_') || tool === 'present') return 'write'
@@ -90,7 +121,7 @@ export function groupToolSegments<T extends { kind: string }>(segments: T[]): Ar
 export function formatDuration(seconds: number): string {
   if (seconds < 60) return `${seconds}秒`
   const minutes = Math.floor(seconds / 60)
-  return minutes < 60 ? `${minutes}分${seconds % 60}秒` : `${Math.floor(minutes / 60)}小时${minutes % 60}分`
+  return minutes < 60 ? `${minutes}分钟${seconds % 60}秒` : `${Math.floor(minutes / 60)}小时${minutes % 60}分钟`
 }
 
 export function turnDurationLabel(startedAt?: string, completedAt?: string): string {

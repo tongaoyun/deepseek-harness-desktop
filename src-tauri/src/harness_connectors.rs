@@ -46,7 +46,8 @@ mod timeout_tests {
         // A connector that diagnoses as ready must behave the same way in a
         // task: same allow-list, same read-only classification, same write
         // permission, same timeout.
-        assert_eq!(chat.allowed_tools, probe.allowed_tools);
+        assert_eq!(chat.allowed_tools, vec!["order.get"]);
+        assert_eq!(probe.allowed_tools, vec!["order.get", "order.cancel"]);
         assert_eq!(chat.read_only_tools, probe.read_only_tools);
         assert_eq!(chat.allow_write, probe.allow_write);
         assert_eq!(chat.timeout_seconds, probe.timeout_seconds);
@@ -208,10 +209,20 @@ pub(crate) fn runtime_connectors(
     Ok(selected
         .into_iter()
         .map(|connector| {
+            let allowed_tools = if profile.required_connector_tools.is_empty() {
+                connector.tool_names.clone()
+            } else {
+                connector
+                    .tool_names
+                    .iter()
+                    .filter(|tool| profile.required_connector_tools.contains(*tool))
+                    .cloned()
+                    .collect::<Vec<_>>()
+            };
             connector_entry(
                 connector,
                 ConnectorPolicy {
-                    allowed_tools: &connector.tool_names,
+                    allowed_tools: &allowed_tools,
                     required_tools: profile
                         .required_connector_tools
                         .iter()

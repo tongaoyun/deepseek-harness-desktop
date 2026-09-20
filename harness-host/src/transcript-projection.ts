@@ -550,7 +550,10 @@ function questionsFromValue(value: unknown): Array<Record<string, unknown>> {
           return item && label ? [{ label, ...(boundedText(item.description, 1_000) ? { description: boundedText(item.description, 1_000) } : {}) }] : []
         })
       : undefined
-    return [{ id, question: prompt, ...(boundedText(question.header, 200) ? { header: boundedText(question.header, 200) } : {}), ...(boundedText(question.detail, 64 * 1024) ? { detail: boundedText(question.detail, 64 * 1024) } : {}), ...(options?.length ? { options } : {}), ...(question.multiSelect === true ? { multiSelect: true } : {}) }]
+    const intent = record(question.intent)
+    const approve = boundedText(intent?.approve, 200)
+    return [{ id, question: prompt, ...(boundedText(question.header, 200) ? { header: boundedText(question.header, 200) } : {}), ...(boundedText(question.detail, 64 * 1024) ? { detail: boundedText(question.detail, 64 * 1024) } : {}), ...(options?.length ? { options } : {}), ...(question.multiSelect === true ? { multiSelect: true } : {}),
+      ...(intent?.kind === 'plan-review' && approve ? { intent: { kind: 'plan-review', approve } } : {}) }]
   })
 }
 

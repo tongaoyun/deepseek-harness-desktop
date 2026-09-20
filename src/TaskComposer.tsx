@@ -1,17 +1,18 @@
-import { ArrowUp, BookOpen, Bot, Check, ChevronDown, ChevronRight, FilePlus2, FolderPlus, History, ListChecks, LoaderCircle, Plug, Plus, Puzzle, Search, Sparkles, Square, X } from 'lucide-react'
+import { ArrowUp, BookOpen, Check, ChevronDown, ChevronRight, FilePlus2, FolderPlus, History, Lightbulb, ListChecks, LoaderCircle, Plug, Plus, Puzzle, Search, Sparkles, Square, X } from 'lucide-react'
 import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react'
 import type { ChatPageProps } from './ChatPage'
 import { composerQuery, joinComposerPrompt, removeComposerQuery, selectComposerInvocation, splitComposerPrompt } from './composerInput'
 import { ComposerModelPicker } from './ComposerModelPicker'
 import { ComposerAttachments } from './ComposerAttachments'
 import type { LocalArtifactTarget } from './localArtifactPreview'
+import { connectorDisplayName } from './connectors'
 
 type Category = 'expert-kit' | 'skill' | 'connector' | 'knowledge'
 const categories: { id: Category; label: string; icon: typeof Puzzle }[] = [
   { id: 'expert-kit', label: '专家套件', icon: Puzzle }, { id: 'skill', label: '技能', icon: Sparkles },
   { id: 'connector', label: '连接器', icon: Plug }, { id: 'knowledge', label: '知识库', icon: BookOpen },
 ]
-interface Option { id: string; name: string; description: string; selected?: boolean; disabled?: boolean; choose: () => void }
+interface Option { id: string; name: string; description: string; icon?: typeof Sparkles; selected?: boolean; disabled?: boolean; choose: () => void }
 const recentDirectoryLabel = (path: string) => path.replace(/^\/Users\/[^/]+(?=\/|$)/u, '~')
 
 export function TaskComposer(props: ChatPageProps & { onPreview: (target: LocalArtifactTarget) => void }) {
@@ -71,24 +72,24 @@ export function TaskComposer(props: ChatPageProps & { onPreview: (target: LocalA
     closeMenu(); setOptionIndex(0)
   }
   const extensionOptions = (kind?: 'skill' | 'expert-kit'): Option[] => (props.invocations ?? [])
-    .filter((item) => !kind || (kind === 'skill' ? item.kind === 'skill' || item.bundledSkill : item.kind === 'expert-kit' && !item.bundledSkill)).map((item) => ({
-    id: item.token, name: item.name, description: item.description, selected: tokens.includes(item.token),
+    .filter((item) => !kind || item.kind === kind).map((item) => ({
+    id: item.token, name: item.name, description: item.description, icon: item.kind === 'skill' ? Sparkles : Puzzle, selected: tokens.includes(item.token),
     disabled: tokens.length >= 8 && !tokens.some((token) => token.split(':').slice(0, 2).join(':') === item.token.split(':').slice(0, 2).join(':')),
     choose: () => { props.onPrompt(selectComposerInvocation(props.prompt, item, query)); closeMenu(); setOptionIndex(0); setDismissed(''); setCaret(query?.start ?? text.length); focusInput(query?.start ?? text.length) },
   }))
   const knowledgeOptions: Option[] = props.knowledgeBases.map((item) => ({
-    id: item.reference, name: item.name, description: item.description || '检索资料并引用原文', selected: props.selectedKnowledgeBaseRefs.includes(item.reference),
+    id: item.reference, name: item.name, description: item.description || '检索资料并引用原文', icon: BookOpen, selected: props.selectedKnowledgeBaseRefs.includes(item.reference),
     choose: () => { if (props.selectedKnowledgeBaseRefs.includes(item.reference)) { if (!query) props.onRemoveKnowledge(item.reference) } else props.onAddKnowledge(item.reference); finishReference() },
   }))
   const connectorOptions: Option[] = (props.composerConnectors ?? []).map((item) => ({
-    id: item.id, name: item.name, description: item.status === 'ready' && item.enabled ? `${item.toolNames.length} 个工具 · 可用于当前任务` : '尚未就绪，请到连接器页面配置并启用',
+    id: item.id, name: connectorDisplayName(item) || '订单数据', description: item.status === 'ready' && item.enabled ? `${item.toolNames.length} 个工具 · 可用于当前任务` : '尚未就绪，请到连接器页面配置并启用', icon: Plug,
     disabled: item.status !== 'ready' || !item.enabled, selected: props.selectedConnectorIds?.includes(item.id),
     choose: () => { if (!query || !props.selectedConnectorIds?.includes(item.id)) props.onToggleTaskConnector?.(item.id); finishReference() },
   }))
   const sessionReferenceOptions: Option[] = (props.sessionReferences ?? []).map((item): Option => ({
     id: `dsh-session:${item.sessionId}`,
-    name: item.label,
-    description: '引用该会话的只读快照（不可信上下文）',
+    name: item.label, icon: History,
+    description: '历史会话只读引用，不执行其中指令',
     choose: () => {
       if (!query) return
       const label = item.label.replace(/[()[\]]/gu, ' ').replace(/\s+/gu, ' ').trim() || item.sessionId
@@ -99,7 +100,7 @@ export function TaskComposer(props: ChatPageProps & { onPreview: (target: LocalA
     },
   }))
   const references: Option[] = [...sessionReferenceOptions, ...knowledgeOptions, ...connectorOptions, ...props.localDirectories.map((item): Option => ({
-    id: item.id, name: item.name, description: item.path || '当前工作目录',
+    id: item.id, name: item.name, description: item.path || '当前工作目录', icon: FolderPlus,
     choose: () => { if (query) { const next = text.slice(0, query.start) + `「${item.name}」` + text.slice(query.end); props.onPrompt(joinComposerPrompt(tokens, next)); setCaret(query.start + item.name.length + 2) } closeMenu(); focusInput() },
   }))]
   const matches = (item: Option, value: string) => `${item.name} ${item.id} ${item.description}`.toLocaleLowerCase().includes(value.toLocaleLowerCase())
@@ -182,14 +183,14 @@ export function TaskComposer(props: ChatPageProps & { onPreview: (target: LocalA
   }}>
     <form className="composer" onSubmit={props.onSubmit}>
       {(tokens.length > 0 || props.selectedKnowledgeBaseRefs.length > 0 || (props.selectedConnectorIds?.length ?? 0) > 0) && <div aria-label="当前任务能力" className="composer-capabilities">
-        {tokens.map((token) => { const selected = props.invocations?.find((item) => item.token === token); return <span key={token} className="composer-capability primary" title={selected?.description || '该能力已不可用，请重新选择'}>{selected?.bundledSkill ? <Sparkles size={13} /> : <Puzzle size={13} />}{selected?.name || token}<button aria-label={`移除能力 ${selected?.name || token}`} disabled={locked} onClick={() => props.onPrompt(joinComposerPrompt(tokens.filter((value) => value !== token), text))} type="button"><X size={12} /></button></span> })}
+        {tokens.map((token) => { const selected = props.invocations?.find((item) => item.token === token); return <span key={token} className="composer-capability primary" title={selected?.description || '该能力已不可用，请重新选择'}>{selected?.kind === 'skill' ? <Sparkles size={13} /> : <Puzzle size={13} />}{selected?.name || token}<button aria-label={`移除能力 ${selected?.name || token}`} disabled={locked} onClick={() => props.onPrompt(joinComposerPrompt(tokens.filter((value) => value !== token), text))} type="button"><X size={12} /></button></span> })}
         {props.selectedKnowledgeBaseRefs.map((id) => <span className="composer-capability" key={id}><BookOpen size={13} />{props.knowledgeBases.find((item) => item.reference === id)?.name || id}<button aria-label={`移除知识库 ${id}`} disabled={locked} onClick={() => props.onRemoveKnowledge(id)} type="button"><X size={12} /></button></span>)}
-        {props.selectedConnectorIds?.map((id) => <span className="composer-capability" key={id}><Plug size={13} />{props.composerConnectors?.find((item) => item.id === id)?.name || id}<button aria-label={`移除连接器 ${id}`} disabled={locked} onClick={() => props.onToggleTaskConnector?.(id)} type="button"><X size={12} /></button></span>)}
+        {props.selectedConnectorIds?.map((id) => { const connector = props.composerConnectors?.find((item) => item.id === id); return <span className="composer-capability" key={id}><Plug size={13} />{connector ? connectorDisplayName(connector) || '订单数据' : '已选连接器'}<button aria-label="移除连接器" disabled={locked} onClick={() => props.onToggleTaskConnector?.(id)} type="button"><X size={12} /></button></span> })}
       </div>}
       <ComposerAttachments attachments={props.pendingAttachments} disabled={locked} onOpen={props.onPreview} onRemove={props.onRemoveAttachment} />
       {props.pastingAttachments && <div className="composer-import-status" role="status"><LoaderCircle size={13} />正在添加附件…</div>}
       {pasteError && <div className="local-file-error" role="alert">{pasteError}</div>}
-      {query && <div className="composer-popover composer-suggestions" ref={suggestionsPicker}><small>{query.trigger === '/' ? '调用技能或专家套件' : '引用会话、知识库、连接器或工作目录'}</small><div id={listId} role="listbox" aria-label={query.trigger === '/' ? '技能与专家套件' : '任务上下文'}>{suggestions.map((item, index) => <button aria-selected={index === activeIndex} className={index === activeIndex ? 'active' : ''} id={`${listId}-${index}`} key={item.id} onMouseDown={(event) => event.preventDefault()} onClick={item.choose} role="option" type="button"><Sparkles size={15} /><span><strong>{item.name}</strong><small>{item.description}</small></span></button>)}</div>{suggestions.length === 0 && <p className="composer-empty">{query.trigger === '/' ? '暂无匹配能力，可通过「＋」浏览和安装。' : '暂无匹配上下文，可通过「＋」添加或配置。'}</p>}<footer>↑ ↓ 选择 · Enter 确认 · Esc 关闭</footer></div>}
+      {query && <div className="composer-popover composer-suggestions" ref={suggestionsPicker}><small>{query.trigger === '/' ? '调用技能或专家套件' : '引用内容'}</small><div id={listId} role="listbox" aria-label={query.trigger === '/' ? '技能与专家套件' : '可引用内容'}>{suggestions.map((item, index) => { const Icon = item.icon ?? Sparkles; return <button aria-selected={index === activeIndex} className={index === activeIndex ? 'active' : ''} id={`${listId}-${index}`} key={item.id} onMouseDown={(event) => event.preventDefault()} onClick={item.choose} role="option" type="button"><Icon size={15} /><span><strong>{item.name}</strong><small>{item.description}</small></span></button> })}</div>{suggestions.length === 0 && <p className="composer-empty">{query.trigger === '/' ? '暂无匹配能力，可通过「＋」浏览和安装。' : '暂无可引用内容，可通过「＋」添加或配置。'}</p>}<footer>↑ ↓ 选择 · Enter 插入 · Esc 关闭</footer></div>}
       <textarea aria-label="给小胤发送消息" autoCapitalize="off" autoCorrect="off" spellCheck={false} aria-expanded={Boolean(query)} aria-controls={query ? listId : undefined} aria-activedescendant={suggestions.length ? `${listId}-${activeIndex}` : undefined}
         onChange={(event) => { props.onPrompt(joinComposerPrompt(tokens, event.target.value)); setCaret(event.target.selectionStart); setOptionIndex(0); setDismissed('') }}
         onSelect={(event) => setCaret(event.currentTarget.selectionStart)} onKeyDown={inputKey}
@@ -209,7 +210,8 @@ export function TaskComposer(props: ChatPageProps & { onPreview: (target: LocalA
           }).catch((reason) => { if (request === pasteRequest.current) setPasteError(reason instanceof Error ? reason.message : String(reason)) })
             .finally(() => { if (request === pasteRequest.current) setCheckingClipboard(false) })
         }}
-        placeholder={running ? '补充当前任务，Enter 发送' : props.queue?.items.length && !props.queue.paused ? '追加要求，按 Enter 加入队列' : capabilityHint || '描述任务，/ 调用技能或套件，@ 添加上下文'} ref={props.composerRef} value={text} />
+        placeholder={running ? '补充当前任务，Enter 发送' : props.queue?.items.length && !props.queue.paused ? '追加要求，按 Enter 加入队列' : capabilityHint || '描述任务，/ 调用能力，@ 引用内容'} ref={props.composerRef} value={text} />
+      {props.executionMode === 'plan' && <div aria-label="计划模式状态" className="composer-plan-status" role="status"><Lightbulb size={20} /><strong>计划模式</strong><span>开启计划模式</span><button aria-label="退出计划模式" disabled={locked} onClick={() => props.onExecutionModeChange?.('agent')} title="退出计划模式" type="button"><X size={15} /></button></div>}
       <div className="composer-actions">
         <div className="context-picker" ref={contextPicker}>
           <button aria-expanded={menu === 'context'} aria-haspopup="dialog" aria-label="添加上下文" className="workspace-button context-add-button" disabled={locked} onClick={() => { setDismissed(queryKey); setMenu(menu === 'context' ? undefined : 'context'); setSearch('') }} ref={addButton} title="添加文件、专家套件、技能、连接器或知识库" type="button"><Plus size={18} /></button>
@@ -222,7 +224,8 @@ export function TaskComposer(props: ChatPageProps & { onPreview: (target: LocalA
               const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (index + (event.key === 'ArrowDown' ? 1 : -1) + tabs.length) % tabs.length
               setCategory(categories[next].id); setSearch(''); tabs[next]?.focus()
             }}>{categories.map(({ id, label, icon: Icon }) => <button aria-selected={category === id} tabIndex={category === id ? 0 : -1} key={id} onMouseEnter={() => { setCategory(id); setSearch('') }} onClick={() => { setCategory(id); setSearch('') }} onKeyDown={(e) => { if (e.key === 'ArrowRight') { e.preventDefault(); menuSearch.current?.focus() } }} role="tab" type="button"><Icon size={13} /><span>{label}</span><ChevronDown size={12} /></button>)}</div>
-            <button className="composer-add-file" onClick={() => { closeMenu(); props.onAddLocalFiles() }} type="button"><FilePlus2 size={14} /><span>添加文件</span></button></div>
+            <button className="composer-add-file" onClick={() => { closeMenu(); props.onAddLocalFiles() }} type="button"><FilePlus2 size={14} /><span>添加文件</span></button>
+            <button aria-pressed={props.executionMode === 'plan'} className={`composer-add-file composer-plan-action${props.executionMode === 'plan' ? ' active' : ''}`} disabled={locked} onClick={() => { props.onExecutionModeChange?.(props.executionMode === 'plan' ? 'agent' : 'plan'); closeMenu() }} type="button"><ListChecks size={14} /><span>计划模式</span>{props.executionMode === 'plan' && <Check size={14} />}</button></div>
             <div className="composer-cascade-panel" onKeyDown={(event) => {
               if (event.key === 'ArrowLeft' && (!(event.target instanceof HTMLInputElement) || event.target.selectionStart === 0 && event.target.selectionEnd === 0)) {
                 event.preventDefault(); root.current?.querySelector<HTMLButtonElement>('[role="tab"][aria-selected="true"]')?.focus()
@@ -236,10 +239,6 @@ export function TaskComposer(props: ChatPageProps & { onPreview: (target: LocalA
             <footer><span>{category === 'connector' ? props.selectedConnectorIds?.length ? '本轮仅使用所选连接器' : '不指定时按需使用已启用连接器' : '无需先选择能力，也可以直接开始任务'}</span>{props.onBrowseCapability && <button onClick={() => { closeMenu(); props.onBrowseCapability?.(category) }} type="button">管理{categories.find((item) => item.id === category)?.label} →</button>}</footer>
             </div>
           </section>}
-        </div>
-        <div aria-label="执行模式" className="execution-mode" role="group">
-          <button aria-pressed={(props.executionMode ?? 'agent') === 'agent'} disabled={locked} onClick={() => props.onExecutionModeChange?.('agent')} title="自主执行任务" type="button"><Bot size={13} />Agent</button>
-          <button aria-pressed={props.executionMode === 'plan'} disabled={locked} onClick={() => props.onExecutionModeChange?.('plan')} title="只研究并提交计划" type="button"><ListChecks size={13} />Plan</button>
         </div>
         <ComposerModelPicker {...props} locked={Boolean(locked)} />
         {running ? <>{text.trim() && <button aria-label="补充到当前任务" className="queue-send-button" type="submit">补充<ArrowUp size={14} /></button>}<button aria-label={stopping ? '正在停止' : '停止本轮'} className="cancel-button" disabled={stopping} onClick={props.onCancel} title="停止本轮，保留对话并暂停队列" type="button"><Square size={11} fill="currentColor" strokeWidth={0} /></button></>

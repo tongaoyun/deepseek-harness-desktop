@@ -4,6 +4,7 @@ import {
   assertKnowledgeBaseRefsAvailable,
   capabilitySnapshotChanged,
   capabilitySnapshotForExecution,
+  reconcileConnectorSnapshot,
   resolveCapabilitySnapshot,
 } from './capabilitySnapshot'
 import type { ExpertKitView } from './expertKits'
@@ -116,6 +117,26 @@ describe('capability resolver', () => {
       crm: { environment: { CRM_TOKEN: 'local-env' }, headers: { Authorization: 'local-header' } },
     })
     expect(executable.connectors[0]).toMatchObject({ environment: { CRM_TOKEN: 'local-env' }, headers: { Authorization: 'local-header' } })
+  })
+
+  it('rebinds a retained task to the latest ready connector definition without copying secrets', () => {
+    const first = resolveCapabilitySnapshot({
+      expertKits: [], skills: [], selections: [], selectedConnectorIds: ['crm'],
+      connectors: [{ ...connector('crm'), version: '1', url: 'https://old.example/mcp', toolNames: ['read'], environment: { TOKEN: 'old-secret' } }],
+    })
+    const next = reconcileConnectorSnapshot(first, [{
+      ...connector('crm', ['read', 'search']), version: '2', url: 'https://new.example/mcp', environment: { TOKEN: 'new-secret' }, enabled: true,
+    }], ['crm'])
+    expect(next.connectors[0]).toMatchObject({ version: '2', url: 'https://new.example/mcp', toolNames: ['read', 'search'], environment: { TOKEN: '' } })
+  })
+
+  it.each([
+    ['removed', [] as ConnectorRuntimeDefinition[], ['crm']],
+    ['disabled', [{ ...connector('crm'), status: 'disabled' as const, enabled: true }], ['crm']],
+    ['revoked locally', [{ ...connector('crm'), enabled: false }], []],
+  ])('blocks a retained task when a connector is %s', (_reason, current, enabled) => {
+    const snapshot = resolveCapabilitySnapshot({ expertKits: [], skills: [], selections: [], selectedConnectorIds: ['crm'], connectors: [connector('crm')] })
+    expect(() => reconcileConnectorSnapshot(snapshot, current, enabled)).toThrow(CapabilityResolutionError)
   })
 
   it('ignores bookkeeping timestamps when deciding whether a session must restart', () => {

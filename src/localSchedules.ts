@@ -31,33 +31,12 @@ function parseLocalSchedules(value: unknown): LocalSchedule[] {
   if (!Array.isArray(value) || value.some((item) => !item || typeof item.id !== 'string' || typeof item.prompt !== 'string' || !Array.isArray(item.runs) || !Array.isArray(item.directories) || !Number.isFinite(Date.parse(item.nextAt)))) {
     throw new Error('本机定时计划数据无法读取，已停止自动调度；原始数据保留')
   }
-  // Older records used the run row id implicitly. Normalize the explicit
-  // references on read so every subsequent execution has one stable chain.
-  return (value as LocalSchedule[]).map((item) => ({
-    ...item,
-    runs: item.runs.map((run) => ({
-      ...run,
-      scheduleId: run.scheduleId ?? item.id,
-      scheduleRunId: run.scheduleRunId ?? run.id,
-    })),
-  }))
+  return value as LocalSchedule[]
 }
 export async function readLocalSchedules(owner: string): Promise<LocalSchedule[]> {
   const storageKey = key(owner)
   if (!isTauri()) return parseLocalSchedules(JSON.parse(localStorage.getItem(storageKey) ?? '[]'))
-  let raw: string | null = null
-  try { raw = localStorage.getItem(storageKey) } catch { /* SQLite remains available without WebView storage. */ }
-  let value = await invoke<unknown>('load_local_schedules', { owner })
-  if (value === null) {
-    // Only a missing native record may import the old WebView copy.
-    const legacy = raw === null ? [] : parseLocalSchedules(JSON.parse(raw))
-    value = await invoke<unknown>('load_local_schedules', { owner, legacy })
-  }
-  const schedules = parseLocalSchedules(value)
-  if (raw !== null) {
-    try { localStorage.removeItem(storageKey) } catch { /* A stale legacy copy never overrides SQLite. */ }
-  }
-  return schedules
+  return parseLocalSchedules(await invoke<unknown>('load_local_schedules', { owner }))
 }
 async function writeLocalSchedules(owner: string, schedules: LocalSchedule[]) {
   if (isTauri()) await invoke('save_local_schedules', { owner, schedules })

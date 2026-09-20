@@ -31,7 +31,7 @@ describe('ChatPage conversation', () => {
         onSelectModel={() => undefined} onSubmit={() => undefined} onToggleModelMenu={() => undefined} prompt=""
         runtimeStatus="ready" selectedKnowledgeBaseRefs={[]} taskProjection={projection}
       />)
-      expect(html).toContain('<small>1分30秒</small>')
+      expect(html).toContain('已处理 1分钟30秒')
     } finally {
       vi.useRealTimers()
     }
@@ -55,11 +55,10 @@ describe('ChatPage conversation', () => {
     />)
     expect(html).toContain('不止聊天，搞定一切')
     expect(html).toContain('本地运行、自主规划、安全可控的 AI 工作搭子')
-    expect(html).toContain('placeholder="描述任务，/ 调用技能或套件，@ 添加上下文"')
+    expect(html).toContain('placeholder="描述任务，/ 调用能力，@ 引用内容"')
     expect(html).toContain('aria-label="添加上下文"')
-    expect(html).toContain('aria-label="执行模式"')
-    expect(html).toContain('title="自主执行任务"')
-    expect(html).toContain('title="只研究并提交计划"')
+    expect(html).not.toContain('>Agent<')
+    expect(html).not.toContain('>Plan<')
     expect(html).not.toContain('agent-mode')
     expect(html).not.toContain('<select')
     expect(html).not.toContain('自主规划并执行，自动加载技能和连接器')
@@ -103,7 +102,8 @@ describe('ChatPage conversation', () => {
     expect(html).toContain('保存为技能')
     expect(html).toContain('aria-label="检索原文"')
     expect(html).toContain('排序说明.md')
-    expect(html).toContain('class="artifact-name"')
+    expect(html).not.toContain('class="artifact-name"')
+    expect(html).not.toContain('class="turn-files"')
     expect(html).toContain('class="file-change-path"')
     expect(html).toContain('aria-label="文件改动"')
   })

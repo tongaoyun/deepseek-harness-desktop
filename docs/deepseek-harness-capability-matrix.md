@@ -36,7 +36,7 @@
 | 官方 Present 交付声明 | `dsh-tool-present`、`deliverables/presented` | 无小胤显式授权目录时，模型通过官方 Session filesystem 声明最终文件；投影转成员工哈希命名的 `harness-workspace-*` artifact。 |
 | Web Search / Fetch | `web`、`web-search-deepseek`、`web-fetch-http`、`tool-web` | `web_search`、`web_fetch` 已可用；不是浏览器自动化 |
 | Spill、超时、重复调用提醒 | `spill-local`、`spill-policy`、`timeout-policy`、`repeat-tool-reminder` | 保护长输出和工具链异常 |
-| 用户提问与 Plan 模式 | `user-questions`、`tool-ask-user`、`plan-mode` | 小胤桌面桥接结构化问题和计划审阅 |
+| 用户提问与计划模式 | `user-questions`、`tool-ask-user`、`plan-mode` | 小胤桌面桥接结构化问题和计划审阅 |
 | Settings / Credentials | `settings`、`credentials`、`llm-retry` | Harness 负责运行时读取，并将文件固定在员工隔离的 `DSH_HOME`；账号、模型目录和企业权限仍由小胤服务端维护 |
 | 遥测管线 | `session-telemetry-otel` | 运行时通过 `DSH_TELEMETRY_DISABLED=1` 明确关闭，企业会话不会默认外发 |
 

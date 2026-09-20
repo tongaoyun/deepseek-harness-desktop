@@ -54,8 +54,6 @@
     "allow-revoke-local-directory",
     "allow-clear-local-directories",
     "allow-load-local-tasks",
-    "allow-local-task-history-migrated",
-    "allow-import-local-task-history",
     "allow-load-local-task",
     "allow-save-local-task",
     "allow-append-local-task-capability-notice",
