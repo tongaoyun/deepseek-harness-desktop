@@ -93,7 +93,39 @@ function Invoke-BinaryUpload {
     [Parameter(Mandatory = $true)][string]$Uri,
     [Parameter(Mandatory = $true)][string]$Path
   )
-  Invoke-WebRequest -Uri $Uri -Method $Method -Headers $headers -ContentType "application/octet-stream" -InFile $Path -UseBasicParsing | Out-Null
+  # Invoke-WebRequest can misinterpret package paths ending in .sig on the Windows
+  # runner as a response filename. Stream the file with HttpClient instead so large
+  # installers and signatures use the same upload path without buffering in memory.
+  $client = [System.Net.Http.HttpClient]::new()
+  $client.Timeout = [TimeSpan]::FromMinutes(60)
+  $client.DefaultRequestHeaders.Authorization =
+    [System.Net.Http.Headers.AuthenticationHeaderValue]::new("Basic", $basicCredential)
+  $stream = [System.IO.File]::OpenRead($Path)
+  $content = [System.Net.Http.StreamContent]::new($stream)
+  $content.Headers.ContentType = [System.Net.Http.Headers.MediaTypeHeaderValue]::new("application/octet-stream")
+  $request = [System.Net.Http.HttpRequestMessage]::new(
+    [System.Net.Http.HttpMethod]::new($Method.ToUpperInvariant()),
+    $Uri
+  )
+  $request.Content = $content
+  $response = $null
+  try {
+    $response = $client.SendAsync(
+      $request,
+      [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead
+    ).GetAwaiter().GetResult()
+    if (-not $response.IsSuccessStatusCode) {
+      $body = $response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+      throw "Binary upload failed: HTTP $([int]$response.StatusCode) $($response.ReasonPhrase) $body"
+    }
+  }
+  finally {
+    if ($response) { $response.Dispose() }
+    $request.Dispose()
+    $content.Dispose()
+    $stream.Dispose()
+    $client.Dispose()
+  }
 }
 
 $expectedVersionToken = "_$($version)_"
