@@ -50,6 +50,10 @@ $basicCredential = [Convert]::ToBase64String(
 )
 $headers = @{ Authorization = "Basic $basicCredential" }
 $utf8WithoutBom = [System.Text.UTF8Encoding]::new($false)
+$httpClient = [System.Net.Http.HttpClient]::new()
+$httpClient.Timeout = [TimeSpan]::FromMinutes(60)
+$httpClient.DefaultRequestHeaders.Authorization =
+  [System.Net.Http.Headers.AuthenticationHeaderValue]::new("Basic", $basicCredential)
 
 function Write-JsonFile {
   param([Parameter(Mandatory = $true)][string]$Path, [Parameter(Mandatory = $true)]$Value)
@@ -87,33 +91,56 @@ function Invoke-JsonRequest {
   }
 }
 
-function Invoke-BinaryUpload {
+function Start-BinaryUpload {
   param(
     [Parameter(Mandatory = $true)][ValidateSet("Post", "Put")][string]$Method,
     [Parameter(Mandatory = $true)][string]$Uri,
-    [Parameter(Mandatory = $true)][string]$Path
+    [Parameter(Mandatory = $true)][string]$Path,
+    [Parameter(Mandatory = $true)][string]$Label
   )
   # Invoke-WebRequest can misinterpret package paths ending in .sig on the Windows
-  # runner as a response filename. Stream the file with HttpClient instead so large
-  # installers and signatures use the same upload path without buffering in memory.
-  $client = [System.Net.Http.HttpClient]::new()
-  $client.Timeout = [TimeSpan]::FromMinutes(60)
-  $client.DefaultRequestHeaders.Authorization =
-    [System.Net.Http.Headers.AuthenticationHeaderValue]::new("Basic", $basicCredential)
-  $stream = [System.IO.File]::OpenRead($Path)
-  $content = [System.Net.Http.StreamContent]::new($stream)
-  $content.Headers.ContentType = [System.Net.Http.Headers.MediaTypeHeaderValue]::new("application/octet-stream")
-  $request = [System.Net.Http.HttpRequestMessage]::new(
-    [System.Net.Http.HttpMethod]::new($Method.ToUpperInvariant()),
-    $Uri
-  )
-  $request.Content = $content
-  $response = $null
+  # runner as a response filename. Stream the file with one shared HttpClient so
+  # release assets reuse the same connection pool instead of reconnecting for
+  # every installer and metadata file.
+  $stream = $null
+  $content = $null
+  $request = $null
   try {
-    $response = $client.SendAsync(
+    $stream = [System.IO.File]::OpenRead($Path)
+    $content = [System.Net.Http.StreamContent]::new($stream)
+    $content.Headers.ContentType = [System.Net.Http.Headers.MediaTypeHeaderValue]::new("application/octet-stream")
+    $request = [System.Net.Http.HttpRequestMessage]::new(
+      [System.Net.Http.HttpMethod]::new($Method.ToUpperInvariant()),
+      $Uri
+    )
+    $request.Content = $content
+    $task = $httpClient.SendAsync(
       $request,
       [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead
-    ).GetAwaiter().GetResult()
+    )
+    return [pscustomobject]@{
+      Label = $Label
+      Path = $Path
+      Stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+      Task = $task
+      Request = $request
+      Content = $content
+      Stream = $stream
+    }
+  }
+  catch {
+    if ($request) { $request.Dispose() }
+    if ($content) { $content.Dispose() }
+    if ($stream) { $stream.Dispose() }
+    throw
+  }
+}
+
+function Complete-BinaryUpload {
+  param([Parameter(Mandatory = $true)]$Upload)
+  $response = $null
+  try {
+    $response = $Upload.Task.GetAwaiter().GetResult()
     if (-not $response.IsSuccessStatusCode) {
       $body = $response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
       throw "Binary upload failed: HTTP $([int]$response.StatusCode) $($response.ReasonPhrase) $body"
@@ -121,10 +148,46 @@ function Invoke-BinaryUpload {
   }
   finally {
     if ($response) { $response.Dispose() }
-    $request.Dispose()
-    $content.Dispose()
-    $stream.Dispose()
-    $client.Dispose()
+    $Upload.Request.Dispose()
+    $Upload.Content.Dispose()
+    $Upload.Stream.Dispose()
+    $Upload.Stopwatch.Stop()
+    $fileSize = (Get-Item -LiteralPath $Upload.Path).Length
+    Write-Output ("Uploaded {0} ({1:N0} bytes) in {2:N1}s" -f $Upload.Label, $fileSize, $Upload.Stopwatch.Elapsed.TotalSeconds)
+  }
+}
+
+function Invoke-BinaryUploadBatch {
+  param(
+    [Parameter(Mandatory = $true)][object[]]$Uploads,
+    [ValidateRange(1, 4)][int]$ThrottleLimit = 3
+  )
+  for ($offset = 0; $offset -lt $Uploads.Count; $offset += $ThrottleLimit) {
+    $pending = @()
+    $end = [Math]::Min($offset + $ThrottleLimit, $Uploads.Count)
+    try {
+      for ($index = $offset; $index -lt $end; $index++) {
+        $definition = $Uploads[$index]
+        $pending += Start-BinaryUpload -Method $definition.Method -Uri $definition.Uri -Path $definition.Path -Label $definition.Label
+      }
+    }
+    catch {
+      foreach ($upload in $pending) {
+        try { Complete-BinaryUpload -Upload $upload | Out-Null } catch { }
+      }
+      throw
+    }
+
+    $failure = $null
+    foreach ($upload in $pending) {
+      try {
+        Complete-BinaryUpload -Upload $upload
+      }
+      catch {
+        if ($null -eq $failure) { $failure = $_ }
+      }
+    }
+    if ($null -ne $failure) { throw $failure }
   }
 }
 
@@ -231,11 +294,16 @@ $releaseAssets = @(
     [ordered]@{ Name = "latest.json"; Path = $latestPath }
   )
 )
-foreach ($asset in $releaseAssets) {
-  $assetName = [Uri]::EscapeDataString([string]$asset.Name)
-  Invoke-BinaryUpload -Method Post -Uri "$api/releases/$($release.id)/assets?name=$assetName" -Path $asset.Path
-  Write-Output "Uploaded release asset: $($asset.Name)"
-}
+$releaseUploads = @($releaseAssets | ForEach-Object {
+  $assetName = [Uri]::EscapeDataString([string]$_.Name)
+  [pscustomobject]@{
+    Method = "Post"
+    Uri = "$api/releases/$($release.id)/assets?name=$assetName"
+    Path = $_.Path
+    Label = "release/$($_.Name)"
+  }
+})
+Invoke-BinaryUploadBatch -Uploads $releaseUploads
 
 # The updater feed points only to the NSIS installer. Keep the immutable
 # package small; MSI remains available as a Release asset for manual installs.
@@ -250,11 +318,16 @@ $versionPackageFiles = @(
     [ordered]@{ Name = "SHA256SUMS.txt"; Path = $checksumPath }
   )
 )
-foreach ($asset in $versionPackageFiles) {
-  $packageName = [Uri]::EscapeDataString([string]$asset.Name)
-  Invoke-BinaryUpload -Method Put -Uri "$versionPackageBase/$packageName" -Path $asset.Path
-  Write-Output "Published immutable package: $($asset.Name)"
-}
+$versionPackageUploads = @($versionPackageFiles | ForEach-Object {
+  $packageName = [Uri]::EscapeDataString([string]$_.Name)
+  [pscustomobject]@{
+    Method = "Put"
+    Uri = "$versionPackageBase/$packageName"
+    Path = $_.Path
+    Label = "package/$($_.Name)"
+  }
+})
+Invoke-BinaryUploadBatch -Uploads $versionPackageUploads
 
 $latestPackageApi = "$server/api/v1/packages/$owner/generic/xiaoyin-desktop-updater/latest"
 try {
@@ -264,7 +337,12 @@ catch {
   $statusCode = if ($_.Exception.Response) { [int]$_.Exception.Response.StatusCode } else { 0 }
   if ($statusCode -ne 404) { throw }
 }
-Invoke-BinaryUpload -Method Put -Uri $updaterMetadataUrl -Path $latestPath
+Invoke-BinaryUploadBatch -Uploads @([pscustomobject]@{
+  Method = "Put"
+  Uri = $updaterMetadataUrl
+  Path = $latestPath
+  Label = "updater/latest.json"
+})
 
 $publishedMetadata = Invoke-RestMethod -Uri $updaterMetadataUrl -Method Get -UseBasicParsing
 $publishedWindows = $publishedMetadata.platforms.PSObject.Properties["windows-x86_64"].Value
@@ -313,3 +391,4 @@ finally {
 
 Write-Output "Published Gitea release: $($release.html_url)"
 Write-Output "Updater metadata: $updaterMetadataUrl"
+$httpClient.Dispose()

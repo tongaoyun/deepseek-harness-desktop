@@ -7,6 +7,7 @@ const directory = new URL('../.gitea/workflows/', import.meta.url)
 const read = (name) => readFileSync(new URL(name, directory), 'utf8')
 const mac = read('macos-installer.yml')
 const win = read('windows-installer.yml')
+const windowsRuntime = readFileSync(new URL('../scripts/prepare-harness-runtime.ps1', import.meta.url), 'utf8')
 const quickWindows = JSON.parse(readFileSync(new URL('../src-tauri/tauri.quick.windows.conf.json', import.meta.url), 'utf8'))
 function expression(text, field, context) {
   const source = text.match(new RegExp(`^\\s*${field}: \\$\\{\\{ (.+) \\}\\}\\s*$`, 'm'))?.[1]
@@ -29,11 +30,11 @@ test('exactly three workflow entries retain shared checks and platform installer
   assert.match(ci, /cargo test\n/)
   assert.doesNotMatch(ci, /cargo test --no-run/)
 })
-test('macOS release reuses main CI and packages both architectures serially', () => {
+test('macOS release reuses main CI and can package both architectures in parallel', () => {
   const build = mac.split('  build-macos:')[1].split('  publish-macos-update:')[0]
   assert.doesNotMatch(mac, /  quality:/)
   assert.doesNotMatch(build, /needs: quality/)
-  assert.match(build, /max-parallel: 1/)
+  assert.match(build, /max-parallel: 2/)
   assert.match(build, /CARGO_BUILD_JOBS: "2"/)
   assert.match(build, /XIAOYIN_HARNESS_SMOKE_TIMEOUT_MS: "300000"/)
   assert.match(build, /CARGO_TARGET_DIR: \/tmp\/xiaoyin-desktop-builder\/target\/\$\{\{ matrix\.architecture \}\}/)
@@ -73,6 +74,13 @@ test('Windows quick mode is explicit and cannot weaken a tag release', () => {
   assert.doesNotMatch(win, /pnpm (lint|typecheck|test)|cargo (fmt|clippy|test)/)
   assert.doesNotMatch(win, /run_install_smoke/)
   assert.match(win, /if: \$\{\{ env\.XIAOYIN_BUILD_MODE == 'release' \}\}/)
+  assert.match(windowsRuntime, /platformPackagePattern/)
+  assert.match(windowsRuntime, /nodePtyPrebuilds/)
+  assert.match(windowsRuntime, /\.d\.ts.*\.map/)
+  const publisher = readFileSync(new URL('../scripts/publish-gitea-release.ps1', import.meta.url), 'utf8')
+  assert.match(publisher, /function Invoke-BinaryUploadBatch/)
+  assert.match(publisher, /ThrottleLimit = 3/)
+  assert.doesNotMatch(publisher, /foreach \(\$asset in \$releaseAssets\)/)
   assert.match(win, /ExpectedCount = if \(\$Quick\) \{ 1 \} else \{ 2 \}/)
   assert.match(win, /name: xiaoyin-desktop-windows-\$\{\{ env.XIAOYIN_BUILD_MODE \}\}/)
   assert.deepEqual(quickWindows.bundle.resources, [])

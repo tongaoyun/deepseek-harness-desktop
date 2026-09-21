@@ -504,7 +504,12 @@ impl LocalFileAuthorizations {
                     .map(|directory| RuntimeLocalFileRoot {
                         id: directory.id.clone(),
                         name: directory.name.clone(),
-                        path: directory.path.to_string_lossy().into_owned(),
+                        // Windows file pickers may return an extended-length
+                        // path (\\?\\C:\\...). The packaged Node runtime and
+                        // downstream tools expect a normal drive path.
+                        path: dunce::simplified(&directory.path)
+                            .to_string_lossy()
+                            .into_owned(),
                     })
                     .ok_or_else(|| format!("本地文件夹授权已失效：{id}"))
             })
@@ -878,9 +883,7 @@ mod tests {
                 .map(|root| root.path)
                 .collect::<Vec<_>>(),
             vec![
-                directory
-                    .canonicalize()
-                    .unwrap()
+                dunce::simplified(&directory.canonicalize().unwrap())
                     .to_string_lossy()
                     .into_owned()
             ]

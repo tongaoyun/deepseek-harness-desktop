@@ -47,6 +47,13 @@ it.each([false, true])('preserves real native login when DEV=%s and bypass is un
   expect(invoke).toHaveBeenNthCalledWith(1, 'erp_session')
 })
 
+it('can prepare the QR window without taking focus', async () => {
+  native()
+  vi.stubEnv('DEV', false)
+  await openErpLogin(false)
+  expect(invoke).toHaveBeenCalledWith('open_erp_login', { focus: false })
+})
+
 it.each([false, true])('returns to the local session after logout, native=%s', async (isNative) => {
   if (isNative) native()
   vi.stubEnv('VITE_SKIP_ERP_LOGIN', 'true')

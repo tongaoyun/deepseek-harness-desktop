@@ -30,10 +30,10 @@ export function useEnterpriseSession() {
       clearTimeout(timer)
       timer = setTimeout(() => void check(), delay)
     }
-    const openLogin = async (request: number) => {
+    const openLogin = async (request: number, focus: boolean) => {
       if (loginOpened || !current(request)) return
       try {
-        await openErpLogin()
+        await openErpLogin(focus)
         if (current(request)) loginOpened = true
       } catch {
         if (current(request)) setError('无法打开扫码窗口，请重新打开。')
@@ -59,6 +59,7 @@ export function useEnterpriseSession() {
           loginOpened = false
           if (next.expiresAt) schedule(Math.max(1_000, next.expiresAt * 1_000 - Date.now() - 5 * 60_000))
         } else {
+          const hadAcceptedSession = Boolean(accepted)
           if (startupCookieCheckPending && !manualRetry && next.diagnostic?.code === 'cookie_missing') {
             startupCookieCheckPending = false
             setState('checking')
@@ -78,7 +79,7 @@ export function useEnterpriseSession() {
             // Open the QR window after a confirmed cookie miss. Transient
             // network failures still stay on the login screen without a flash.
             const shouldOpenLogin = manualRetry || next.diagnostic?.code === 'cookie_missing' || next.diagnostic?.code === 'session_rejected'
-            if (shouldOpenLogin) await openLogin(request)
+            if (shouldOpenLogin) await openLogin(request, manualRetry || !hadAcceptedSession)
           }
           if (current(request)) schedule(LOGIN_POLL_MS)
         }

@@ -86,9 +86,10 @@ export async function resolveErpSession(): Promise<ErpSessionStatus> {
   return invoke<ErpSessionStatus>('erp_session')
 }
 
-export async function openErpLogin(): Promise<void> {
+export async function openErpLogin(focus = true): Promise<void> {
   if (usesLocalDevelopmentSession()) return
-  await invoke('open_erp_login')
+  if (focus) await invoke('open_erp_login')
+  else await invoke('open_erp_login', { focus: false })
 }
 
 export async function clearErpSession(): Promise<void> {

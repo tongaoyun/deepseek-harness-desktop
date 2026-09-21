@@ -25,9 +25,9 @@ test('invalid and universal targets are rejected rather than silently using host
 test('implicit native builds keep the standard Cargo directory', () => {
   assert.equal(config('', '/tmp/target').at(-1), '/tmp/target')
 })
-test('CI builds architectures serially on the memory-limited runner', () => {
+test('CI allows architectures to build in parallel when runners are available', () => {
   const workflow = readFileSync(new URL('../.gitea/workflows/macos-installer.yml', import.meta.url), 'utf8')
-  assert.match(workflow, /max-parallel: 1/)
+  assert.match(workflow, /max-parallel: 2/)
   assert.match(workflow, /CARGO_BUILD_JOBS: "2"/)
   assert.match(workflow, /XIAOYIN_HARNESS_SMOKE_TIMEOUT_MS: "300000"/)
   assert.match(workflow, /CARGO_TARGET_DIR: \/tmp\/xiaoyin-desktop-builder\/target\/\$\{\{ matrix\.architecture \}\}/)

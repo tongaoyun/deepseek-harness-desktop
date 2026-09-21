@@ -69,6 +69,22 @@ it('opens the QR window automatically after an expired ERP session', async () =>
   await mount()
   expect(latest.state).toBe('required')
   expect(open).toHaveBeenCalledTimes(1)
+  expect(open).toHaveBeenCalledWith(true)
+})
+
+it('does not focus the QR window when a background renewal expires', async () => {
+  await mount()
+  resolve.mockResolvedValue({ ...loggedOut, diagnostic: { ...missingCookie.diagnostic, code: 'session_rejected' } })
+  await advance(25 * 60_000)
+  expect(open).toHaveBeenLastCalledWith(false)
+})
+
+it('focuses the QR window only for an explicit retry', async () => {
+  resolve.mockResolvedValue(missingCookie)
+  await mount()
+  await advance(1_500)
+  await act(async () => latest.reopen())
+  expect(open).toHaveBeenLastCalledWith(true)
 })
 
 it('shows a manual retry in progress and a distinct result when ERP is still unavailable', async () => {

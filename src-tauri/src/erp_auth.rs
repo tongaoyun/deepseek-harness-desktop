@@ -256,7 +256,7 @@ fn validated_login_tmp_code(value: &str) -> Result<&str, String> {
 }
 
 #[tauri::command]
-pub(crate) fn open_erp_login(app: tauri::AppHandle) -> Result<(), String> {
+pub(crate) fn open_erp_login(app: tauri::AppHandle, focus: Option<bool>) -> Result<(), String> {
     let login_url = erp_login_window_url(&app)?;
     let window = app
         .get_webview_window("erp-login")
@@ -271,7 +271,10 @@ pub(crate) fn open_erp_login(app: tauri::AppHandle) -> Result<(), String> {
             .map_err(|error| format!("无法重置 ERP 扫码页面：{error}"))?;
     }
     window.show().map_err(|error| error.to_string())?;
-    window.set_focus().map_err(|error| error.to_string())
+    if focus.unwrap_or(true) {
+        window.set_focus().map_err(|error| error.to_string())?;
+    }
+    Ok(())
 }
 
 fn erp_login_window_url(app: &tauri::AppHandle) -> Result<tauri::Url, String> {
@@ -330,7 +333,11 @@ pub(crate) async fn erp_session(app: tauri::AppHandle) -> Result<ErpSessionStatu
     let control_plane_url = option_env!("VITE_XIAOYIN_SERVER_URL")
         .filter(|value| !value.is_empty())
         .ok_or_else(|| Diagnostic::new(Code::ConfigurationInvalid, None, None))?;
-    let result = resolve_session(&app, true, Some(control_plane_url)).await;
+    // Session checks also run from the background expiry/visibility timers.
+    // They must not bring Xiaoyin to the foreground when a renewal succeeds;
+    // the explicit QR completion flow is responsible for returning focus to
+    // the app after a user-initiated login.
+    let result = resolve_session(&app, false, Some(control_plane_url)).await;
     remember_employee(result.as_ref().ok());
     if !result.as_ref().err().is_some_and(transient_session_error) {
         clear_offline_employee();

@@ -1581,7 +1581,7 @@ impl HarnessProcess {
         let session_workspace = fingerprint
             .local_file_roots
             .first()
-            .map(|root| PathBuf::from(&root.path))
+            .map(|root| dunce::simplified(Path::new(&root.path)).to_path_buf())
             .filter(|path| path.is_dir())
             .unwrap_or_else(|| workspace.clone());
 

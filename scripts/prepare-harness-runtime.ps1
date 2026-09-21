@@ -73,6 +73,46 @@ try {
   if (Test-Path -LiteralPath $commandShims) {
     Remove-Item -LiteralPath $commandShims -Recurse -Force
   }
+
+  # Keep the Windows runtime aligned with the macOS staging path so Tauri
+  # spends less time hashing and compressing files Node never loads at runtime.
+  foreach ($path in @(
+    (Join-Path $hostStage "src"),
+    (Join-Path $hostStage "tsconfig.json"),
+    (Join-Path $hostStage "pnpm-lock.yaml")
+  )) {
+    if (Test-Path -LiteralPath $path) {
+      Remove-Item -LiteralPath $path -Recurse -Force
+    }
+  }
+  foreach ($directory in @(
+    (Join-Path $hostStage "node_modules\@types")
+  )) {
+    if (Test-Path -LiteralPath $directory) {
+      Remove-Item -LiteralPath $directory -Recurse -Force
+    }
+  }
+  Get-ChildItem -LiteralPath (Join-Path $hostStage "dist") -Recurse -File -ErrorAction SilentlyContinue |
+    Where-Object { $_.Extension -in @(".d.ts", ".map") } |
+    Remove-Item -Force
+  Get-ChildItem -LiteralPath (Join-Path $hostStage "node_modules") -Recurse -File -ErrorAction SilentlyContinue |
+    Where-Object { $_.Extension -in @(".map", ".pdb") } |
+    Remove-Item -Force
+
+  # Optional dependencies publish one package per platform. Do not carry
+  # Darwin/Linux/ARM native binaries into the Windows x64 installer.
+  $platformPackagePattern = "-(darwin|linux|freebsd|android|win32-arm64|win32-ia32)(-|$)"
+  Get-ChildItem -LiteralPath (Join-Path $hostStage "node_modules") -Recurse -Directory -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -match $platformPackagePattern } |
+    Sort-Object FullName -Descending |
+    ForEach-Object { Remove-Item -LiteralPath $_.FullName -Recurse -Force }
+
+  $nodePtyPrebuilds = Join-Path $hostStage "node_modules\node-pty\prebuilds"
+  if (Test-Path -LiteralPath $nodePtyPrebuilds) {
+    Get-ChildItem -LiteralPath $nodePtyPrebuilds -Directory |
+      Where-Object { $_.Name -notmatch "^win32-x64" } |
+      Remove-Item -Recurse -Force
+  }
 }
 finally {
   Pop-Location

@@ -8,11 +8,13 @@ Gitea 提供三个入口：
 | macOS 安装包 | 版本标签、手动 | 手动默认 ARM，可选 Intel 或全部；标签固定构建双架构 |
 | Windows 安装包 | 版本标签、手动 | 默认 release；手动可选 quick 生成开发验证用 Debug NSIS |
 
-代码检查在合并请求和 `main` 提交时运行：Web/Host Job 执行 `pnpm check:web`，Windows Job 检查 PowerShell 和 Rust。安装包工作流核对发布身份、打包和烟测，不重复整套质量检查。macOS 标签串行构建两个架构，分别验收内置 Node、原生模块、Harness 和最终安装包。
+代码检查在合并请求和 `main` 提交时运行：Web/Host Job 执行 `pnpm check:web`，Windows Job 检查 PowerShell 和 Rust。安装包工作流核对发布身份、打包和烟测，不重复整套质量检查。macOS 标签并行构建两个架构（Runner 不足时自动排队），分别验收内置 Node、原生模块、Harness 和最终安装包。
 
-macOS 的两个架构在同一 Runner 上串行构建，分别复用 `/tmp/xiaoyin-desktop-builder/target/arm64` 和 `/tmp/xiaoyin-desktop-builder/target/x64`。Windows 检查与安装包复用 `C:\xiaoyin-desktop-builder\target`。工具链、系统目标或依赖变化仍可能触发重新编译，缓存不保证固定构建时间。不要在构建前清空 Cargo 缓存。
+macOS 的两个架构使用矩阵并行构建，分别复用 `/tmp/xiaoyin-desktop-builder/target/arm64` 和 `/tmp/xiaoyin-desktop-builder/target/x64`；可用 Runner 不足时由 Gitea 自动排队。Windows 检查与安装包复用 `C:\xiaoyin-desktop-builder\target`。工具链、系统目标或依赖变化仍可能触发重新编译，缓存不保证固定构建时间。不要在构建前清空 Cargo 缓存。
 
 macOS 内置 Node 使用仓库锁定的版本和 SHA-256，首次下载并校验后复用 Runner 的 `~/Library/Caches/xiaoyin-desktop-builder`。版本或哈希变化时自动建立新缓存。
+
+Windows 正式发布会将 Release 资产和版本包按最多 3 个请求并行上传，更新索引始终最后发布；每个文件都会记录上传耗时，并在发布前后校验版本、签名、大小和哈希。上传失败会清理同批请求并停止发布，不会提前公开不完整的更新索引。
 
 Windows quick 只允许从普通分支手动运行，用于验证界面与基本启动；它生成 Debug NSIS，不执行安装卸载验收，也不发布更新源。release 生成 MSI、NSIS 和更新签名，并固定执行 NSIS 安装、内置 Harness、应用启动和卸载验收。从标签手动运行时，Windows 强制使用 release，macOS 强制构建双架构。
 
