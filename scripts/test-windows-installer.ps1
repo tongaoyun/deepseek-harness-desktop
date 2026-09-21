@@ -1,7 +1,6 @@
 [CmdletBinding()]
 param(
-  [Parameter(Mandatory = $true)]
-  [string]$InstallerPath,
+  [string]$InstallerPath = (Join-Path $env:TEMP "xiaoyin-installer-smoke.exe"),
 
   [string]$InstallRoot = (Join-Path $env:TEMP ("xiaoyin-installer-smoke-" + [guid]::NewGuid().ToString("N"))),
 
