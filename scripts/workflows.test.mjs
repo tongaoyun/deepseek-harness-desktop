@@ -85,7 +85,7 @@ test('Windows quick mode is explicit and cannot weaken a tag release', () => {
   assert.doesNotMatch(publisher, /foreach \(\$asset in \$releaseAssets\)/)
   assert.match(win, /ExpectedCount = if \(\$Quick\) \{ 1 \} else \{ 2 \}/)
   assert.match(win, /\$VersionPattern = .*\[regex\]::Escape\(\$ExpectedVersion\)/)
-  assert.match(win, /\$InstallerPath = Join-Path -Path \$env:TEMP -ChildPath "xiaoyin-installer-smoke\.exe"/)
+  assert.match(win, /\$InstallerPath = Join-Path -Path \(Get-Location\)\.Path -ChildPath "xiaoyin-installer-smoke\.exe"/)
   assert.match(win, /Copy-Item -LiteralPath \$Installers\[0\]\.FullName -Destination \$InstallerPath/)
   assert.match(win, /\.\\scripts\\test-windows-installer\.ps1\n/)
   assert.doesNotMatch(win, /-like "\*_\$\{ExpectedVersion\}_\*"/)
