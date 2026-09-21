@@ -191,9 +191,9 @@ function Invoke-BinaryUploadBatch {
   }
 }
 
-$expectedVersionToken = "_$($version)_"
-$nsisInstaller = @(Get-ChildItem $artifactDirectory -File -Filter "*.exe" | Where-Object { $_.Name -like "*$expectedVersionToken*" })
-$msiInstaller = @(Get-ChildItem $artifactDirectory -File -Filter "*.msi" | Where-Object { $_.Name -like "*$expectedVersionToken*" })
+$versionPattern = "(^|_)$([regex]::Escape($version))(?=_|-|\.)"
+$nsisInstaller = @(Get-ChildItem $artifactDirectory -File -Filter "*.exe" | Where-Object { $_.Name -match $versionPattern })
+$msiInstaller = @(Get-ChildItem $artifactDirectory -File -Filter "*.msi" | Where-Object { $_.Name -match $versionPattern })
 if ($nsisInstaller.Count -ne 1 -or $msiInstaller.Count -ne 1) {
   throw "Expected exactly one NSIS installer and one MSI installer."
 }

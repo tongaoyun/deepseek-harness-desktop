@@ -130,7 +130,8 @@ jobs:
         run: |
           $Bundle = Join-Path $env:CARGO_TARGET_DIR "release\bundle\nsis"
           $ExpectedVersion = (Get-Content "package.json" -Raw | ConvertFrom-Json).version
-          $Installers = @(Get-ChildItem $Bundle -Recurse -File -Filter "*.exe" | Where-Object { $_.Name -like "*_${ExpectedVersion}_*" })
+          $VersionPattern = "(^|_)$([regex]::Escape($ExpectedVersion))(?=_|-|\.)"
+          $Installers = @(Get-ChildItem $Bundle -Recurse -File -Filter "*.exe" | Where-Object { $_.Name -match $VersionPattern })
           if ($Installers.Count -ne 1) { throw "Expected one NSIS installer, found $($Installers.Count)" }
           .\scripts\test-windows-installer.ps1 -InstallerPath $Installers[0].FullName
 
@@ -142,8 +143,9 @@ jobs:
           $Bundle = Join-Path $env:CARGO_TARGET_DIR "$Profile\bundle"
           $Output = Join-Path (Get-Location).Path "windows-artifacts"
           $ExpectedVersion = (Get-Content "package.json" -Raw | ConvertFrom-Json).version
+          $VersionPattern = "(^|_)$([regex]::Escape($ExpectedVersion))(?=_|-|\.)"
           $Files = @(Get-ChildItem $Bundle -Recurse -File | Where-Object {
-            $_.Extension -in @(".exe", ".msi") -and $_.Name -like "*_${ExpectedVersion}_*"
+            $_.Extension -in @(".exe", ".msi") -and $_.Name -match $VersionPattern
           })
           $ExpectedCount = if ($Quick) { 1 } else { 2 }
           if ($Files.Count -ne $ExpectedCount) { throw "Expected $ExpectedCount installers, found $($Files.Count)" }
