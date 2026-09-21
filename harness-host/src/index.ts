@@ -10,6 +10,7 @@ import { DesktopToolBridge } from './desktop-tool-bridge.js'
 import { ConnectorCredentialBridge, type ConnectorCredentialResult } from './connector-credential-bridge.js'
 import { SessionProjectionBridge } from './session-projection-bridge.js'
 import { publicErrorMessage } from './public-error.js'
+import { data as structuredErrorData } from './errors.js'
 import './xiaoyin-projections-plugin.js'
 
 let stopping = false
@@ -68,7 +69,7 @@ lines.on('line', (line) => {
     emit({
       jsonrpc: '2.0',
       id: null,
-      error: { code: -32700, message: 'Parse error' },
+      error: { code: -32700, message: 'Parse error', data: structuredErrorData('XY-PARSE-ERROR', 'unknown', '请求格式错误', '请求不是有效 JSON', false, false) },
     })
     return
   }

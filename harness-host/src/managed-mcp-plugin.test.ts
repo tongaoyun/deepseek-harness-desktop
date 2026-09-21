@@ -81,7 +81,7 @@ it.each(['none', 'employee-bearer'] as const)('delivers images and preserves cal
     expect(saveImage).toHaveBeenCalledOnce()
     unauthorized = true
     const before = toolCalls
-    await expect(registered.get('mcp_images_order_cancel')!.execute({}, exec)).rejects.toThrow('[XY-CONNECTOR-AUTH]')
+    await expect(registered.get('mcp_images_order_cancel')!.execute({}, exec)).rejects.toMatchObject({ data: { code: 'XY-CONNECTOR-AUTH', category: 'connector', retryable: false } })
     expect(toolCalls - before).toBe(1)
     unauthorized = false
     failed = false

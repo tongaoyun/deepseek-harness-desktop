@@ -306,6 +306,71 @@ pub struct HarnessRunResult {
     outcome: Value,
 }
 
+/// Stable error envelope returned by the Tauri command. The desktop must not
+/// infer retry policy from localized text.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HarnessCommandError {
+    code: String,
+    category: String,
+    title: String,
+    detail: String,
+    infrastructure: bool,
+    retryable: bool,
+}
+
+impl HarnessCommandError {
+    fn from_message(message: String) -> Self {
+        if let Ok(value) = serde_json::from_str::<Self>(&message) {
+            if value.is_valid() {
+                return value;
+            }
+        }
+        Self {
+            code: "XY-UNSTRUCTURED-ERROR".to_string(),
+            category: "unknown".to_string(),
+            title: "任务执行失败".to_string(),
+            detail: message,
+            infrastructure: false,
+            retryable: false,
+        }
+    }
+
+    fn is_valid(&self) -> bool {
+        self.code.starts_with("XY-")
+            && self.code.len() <= 120
+            && self
+                .code
+                .chars()
+                .all(|value| value.is_ascii_uppercase() || value.is_ascii_digit() || value == '-')
+            && matches!(
+                self.category.as_str(),
+                "timeout"
+                    | "authentication"
+                    | "capacity"
+                    | "permission"
+                    | "connector"
+                    | "local-agent"
+                    | "model"
+                    | "unknown"
+            )
+            && !self.title.is_empty()
+            && !self.detail.is_empty()
+    }
+}
+
+impl From<String> for HarnessCommandError {
+    fn from(value: String) -> Self {
+        Self::from_message(value)
+    }
+}
+
+impl From<&str> for HarnessCommandError {
+    fn from(value: &str) -> Self {
+        Self::from_message(value.to_string())
+    }
+}
+
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ConnectorDiagnosticResult {
@@ -474,7 +539,7 @@ pub async fn run_harness(
     manager: tauri::State<'_, HarnessManager>,
     local_files: tauri::State<'_, LocalFileAuthorizations>,
     request: HarnessRunRequest,
-) -> Result<HarnessRunResult, String> {
+) -> Result<HarnessRunResult, HarnessCommandError> {
     validate_run_request(&request)?;
     crate::erp_auth::require_employee(&app, &request.employee_id).await?;
     local_files.ensure_employee(&request.employee_id)?;
@@ -540,7 +605,7 @@ pub async fn run_harness(
     let access_token = request.access_token;
     let task_id = request.task_id;
     let manager = manager.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || {
+    Ok(tauri::async_runtime::spawn_blocking(move || {
         let _active_run = active_run;
         manager.run(
             &task_id,
@@ -552,7 +617,7 @@ pub async fn run_harness(
         )
     })
     .await
-    .map_err(|error| format!("Harness 执行线程异常：{error}"))?
+    .map_err(|error| format!("Harness 执行线程异常：{error}"))??)
 }
 
 #[tauri::command]
@@ -560,15 +625,17 @@ pub async fn shutdown_harness(
     app: tauri::AppHandle,
     manager: tauri::State<'_, HarnessManager>,
     task_id: Option<String>,
-) -> Result<(), String> {
+) -> Result<(), HarnessCommandError> {
     if let Some(task_id) = task_id.as_deref() {
         let employee_id = crate::erp_auth::current_employee(&app).await?;
         manager.check_task_owner(task_id, &employee_id)?;
     }
     let manager = manager.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || manager.shutdown(task_id.as_deref()))
-        .await
-        .map_err(|error| format!("Harness 关闭线程异常：{error}"))?
+    Ok(
+        tauri::async_runtime::spawn_blocking(move || manager.shutdown(task_id.as_deref()))
+            .await
+            .map_err(|error| format!("Harness 关闭线程异常：{error}"))??,
+    )
 }
 
 #[tauri::command]
@@ -576,10 +643,10 @@ pub async fn cancel_harness(
     app: tauri::AppHandle,
     manager: tauri::State<'_, HarnessManager>,
     task_id: String,
-) -> Result<bool, String> {
+) -> Result<bool, HarnessCommandError> {
     let employee_id = crate::erp_auth::current_employee(&app).await?;
     manager.check_task_owner(&task_id, &employee_id)?;
-    manager.cancel(&task_id)
+    Ok(manager.cancel(&task_id)?)
 }
 
 #[tauri::command]
@@ -589,10 +656,10 @@ pub async fn respond_harness_approval(
     task_id: String,
     approval_id: String,
     decision: String,
-) -> Result<bool, String> {
+) -> Result<bool, HarnessCommandError> {
     let employee_id = crate::erp_auth::current_employee(&app).await?;
     manager.check_task_owner(&task_id, &employee_id)?;
-    manager.respond_to_approval(&task_id, &approval_id, &decision)
+    Ok(manager.respond_to_approval(&task_id, &approval_id, &decision)?)
 }
 
 #[tauri::command]
@@ -602,10 +669,10 @@ pub async fn respond_harness_question(
     task_id: String,
     question_id: String,
     answers: Vec<QuestionAnswerInput>,
-) -> Result<bool, String> {
+) -> Result<bool, HarnessCommandError> {
     let employee_id = crate::erp_auth::current_employee(&app).await?;
     manager.check_task_owner(&task_id, &employee_id)?;
-    manager.respond_to_question(&task_id, &question_id, answers)
+    Ok(manager.respond_to_question(&task_id, &question_id, answers)?)
 }
 
 #[tauri::command]
@@ -614,10 +681,10 @@ pub async fn steer_harness(
     manager: tauri::State<'_, HarnessManager>,
     task_id: String,
     prompt: String,
-) -> Result<bool, String> {
+) -> Result<bool, HarnessCommandError> {
     let employee_id = crate::erp_auth::current_employee(&app).await?;
     manager.check_task_owner(&task_id, &employee_id)?;
-    manager.steer(&task_id, &prompt)
+    Ok(manager.steer(&task_id, &prompt)?)
 }
 
 #[tauri::command]
@@ -625,10 +692,10 @@ pub async fn interrupt_harness(
     app: tauri::AppHandle,
     manager: tauri::State<'_, HarnessManager>,
     task_id: String,
-) -> Result<bool, String> {
+) -> Result<bool, HarnessCommandError> {
     let employee_id = crate::erp_auth::current_employee(&app).await?;
     manager.check_task_owner(&task_id, &employee_id)?;
-    manager.interrupt(&task_id)
+    Ok(manager.interrupt(&task_id)?)
 }
 
 #[tauri::command]
@@ -636,17 +703,17 @@ pub async fn regenerate_harness(
     app: tauri::AppHandle,
     manager: tauri::State<'_, HarnessManager>,
     task_id: String,
-) -> Result<String, String> {
+) -> Result<String, HarnessCommandError> {
     let employee_id = crate::erp_auth::current_employee(&app).await?;
     manager.check_task_owner(&task_id, &employee_id)?;
-    manager.regenerate(&task_id)
+    Ok(manager.regenerate(&task_id)?)
 }
 
 #[tauri::command]
 pub async fn diagnose_connectors(
     app: tauri::AppHandle,
     request: ConnectorDiagnosticRequest,
-) -> Result<Vec<ConnectorDiagnosticResult>, String> {
+) -> Result<Vec<ConnectorDiagnosticResult>, HarnessCommandError> {
     validate_access_token(&request.access_token)?;
     crate::erp_auth::require_employee(&app, &request.employee_id).await?;
     let connectors = diagnostic_connectors(&request.connectors)?;
@@ -676,7 +743,7 @@ pub async fn diagnose_connectors(
         memory_context: String::new(),
         credential_digest: credential_digest("", &request.access_token),
     };
-    tauri::async_runtime::spawn_blocking(move || {
+    Ok(tauri::async_runtime::spawn_blocking(move || {
         let mut process = HarnessProcess::start_uninitialized(
             &app,
             fingerprint,
@@ -688,14 +755,14 @@ pub async fn diagnose_connectors(
         serde_json::from_value(result?).map_err(|error| format!("连接器诊断结果无效：{error}"))
     })
     .await
-    .map_err(|error| format!("连接器诊断线程异常：{error}"))?
+    .map_err(|error| format!("连接器诊断线程异常：{error}"))??)
 }
 
 #[tauri::command]
 pub async fn self_test_local_capabilities(
     app: tauri::AppHandle,
     include_computer: Option<bool>,
-) -> Result<LocalCapabilitySelfTestResult, String> {
+) -> Result<LocalCapabilitySelfTestResult, HarnessCommandError> {
     crate::erp_auth::current_employee(&app).await?;
     let fingerprint = RuntimeFingerprint {
         skill_directories: Vec::new(),
@@ -720,7 +787,7 @@ pub async fn self_test_local_capabilities(
         memory_context: String::new(),
         credential_digest: credential_digest("", ""),
     };
-    tauri::async_runtime::spawn_blocking(move || {
+    Ok(tauri::async_runtime::spawn_blocking(move || {
         let mut process =
             HarnessProcess::start_uninitialized(&app, fingerprint, String::new(), String::new())?;
         let method = if include_computer.unwrap_or(true) {
@@ -733,7 +800,7 @@ pub async fn self_test_local_capabilities(
         serde_json::from_value(result?).map_err(|error| format!("本地能力自检结果无效：{error}"))
     })
     .await
-    .map_err(|error| format!("本地能力自检线程异常：{error}"))?
+    .map_err(|error| format!("本地能力自检线程异常：{error}"))??)
 }
 
 #[tauri::command]
@@ -745,7 +812,7 @@ pub async fn probe_harness_host(
     allow_lsp: Option<bool>,
     allow_external_agents: Option<bool>,
     allow_hooks: Option<bool>,
-) -> Result<HarnessHostHealth, String> {
+) -> Result<HarnessHostHealth, HarnessCommandError> {
     crate::erp_auth::current_employee(&app).await?;
     let fingerprint = RuntimeFingerprint {
         skill_directories: Vec::new(),
@@ -770,7 +837,7 @@ pub async fn probe_harness_host(
         memory_context: String::new(),
         credential_digest: credential_digest("", ""),
     };
-    tauri::async_runtime::spawn_blocking(move || {
+    Ok(tauri::async_runtime::spawn_blocking(move || {
         let mut process =
             HarnessProcess::start_uninitialized(&app, fingerprint, String::new(), String::new())?;
         // A health response is only meaningful after the same initialization
@@ -814,24 +881,24 @@ pub async fn probe_harness_host(
         Ok(health)
     })
     .await
-    .map_err(|error| format!("Harness Host 健康检查线程异常：{error}"))?
+    .map_err(|error| format!("Harness Host 健康检查线程异常：{error}"))??)
 }
 
 #[tauri::command]
 pub async fn check_harness_provider(
     app: tauri::AppHandle,
     request: HarnessProviderCheckRequest,
-) -> Result<HarnessProviderCheckResult, String> {
+) -> Result<HarnessProviderCheckResult, HarnessCommandError> {
     crate::erp_auth::current_employee(&app).await?;
     validate_http_url("模型", &request.litellm_base_url)?;
     if request.model.trim().is_empty() || request.model.len() > 512 {
-        return Err("模型标识无效".to_string());
+        return Err("模型标识无效".to_string().into());
     }
     if request.model_api_key.trim().is_empty()
         || request.model_api_key.len() > 16 * 1024
         || request.model_api_key.chars().any(char::is_control)
     {
-        return Err("模型凭据无效".to_string());
+        return Err("模型凭据无效".to_string().into());
     }
     let fingerprint = RuntimeFingerprint {
         skill_directories: Vec::new(),
@@ -856,7 +923,7 @@ pub async fn check_harness_provider(
         memory_context: String::new(),
         credential_digest: credential_digest(&request.model_api_key, ""),
     };
-    tauri::async_runtime::spawn_blocking(move || {
+    Ok(tauri::async_runtime::spawn_blocking(move || {
         let mut process = HarnessProcess::start_uninitialized(
             &app,
             fingerprint,
@@ -868,7 +935,7 @@ pub async fn check_harness_provider(
         serde_json::from_value(result?).map_err(|error| format!("模型服务检查响应无效：{error}"))
     })
     .await
-    .map_err(|error| format!("模型服务检查线程异常：{error}"))?
+    .map_err(|error| format!("模型服务检查线程异常：{error}"))??)
 }
 
 #[tauri::command]
@@ -876,10 +943,10 @@ pub async fn inspect_harness_session(
     app: tauri::AppHandle,
     employee_id: String,
     session_id: String,
-) -> Result<Option<HarnessSessionInspection>, String> {
+) -> Result<Option<HarnessSessionInspection>, HarnessCommandError> {
     validate_employee_id(&employee_id)?;
     if !is_valid_session_id(&session_id) {
-        return Err("Harness 会话标识无效".to_string());
+        return Err("Harness 会话标识无效".to_string().into());
     }
     crate::erp_auth::require_employee(&app, &employee_id).await?;
     let fingerprint = RuntimeFingerprint {
@@ -905,7 +972,7 @@ pub async fn inspect_harness_session(
         memory_context: String::new(),
         credential_digest: credential_digest("", ""),
     };
-    tauri::async_runtime::spawn_blocking(move || {
+    Ok(tauri::async_runtime::spawn_blocking(move || {
         let mut process =
             HarnessProcess::start_uninitialized(&app, fingerprint, String::new(), String::new())?;
         let result = process.request(
@@ -922,7 +989,7 @@ pub async fn inspect_harness_session(
         }
     })
     .await
-    .map_err(|error| format!("Harness 会话检查线程异常：{error}"))?
+    .map_err(|error| format!("Harness 会话检查线程异常：{error}"))??)
 }
 
 #[tauri::command]
@@ -933,20 +1000,20 @@ pub async fn search_harness_sessions(
     query: String,
     limit: Option<u32>,
     cursor: Option<String>,
-) -> Result<HarnessSessionSearchPage, String> {
+) -> Result<HarnessSessionSearchPage, HarnessCommandError> {
     validate_employee_id(&employee_id)?;
     if session_ids.len() > 2_000 || session_ids.iter().any(|id| !is_valid_session_id(id)) {
-        return Err("Harness 会话标识无效".to_string());
+        return Err("Harness 会话标识无效".to_string().into());
     }
     crate::erp_auth::require_employee(&app, &employee_id).await?;
     if query.trim().is_empty() || query.len() > 500 {
-        return Err("Harness 历史搜索词无效".to_string());
+        return Err("Harness 历史搜索词无效".to_string().into());
     }
     if cursor
         .as_ref()
         .is_some_and(|value| value.is_empty() || value.len() > 8_192)
     {
-        return Err("Harness 历史搜索游标无效".to_string());
+        return Err("Harness 历史搜索游标无效".to_string().into());
     }
     let fingerprint = RuntimeFingerprint {
         skill_directories: Vec::new(),
@@ -971,7 +1038,7 @@ pub async fn search_harness_sessions(
         memory_context: String::new(),
         credential_digest: credential_digest("", ""),
     };
-    tauri::async_runtime::spawn_blocking(move || {
+    Ok(tauri::async_runtime::spawn_blocking(move || {
         let mut process =
             HarnessProcess::start_uninitialized(&app, fingerprint, String::new(), String::new())?;
         let result = process.request(
@@ -986,7 +1053,7 @@ pub async fn search_harness_sessions(
             .map_err(|error| format!("Harness 历史搜索响应无效：{error}"))
     })
     .await
-    .map_err(|error| format!("Harness 历史搜索线程异常：{error}"))?
+    .map_err(|error| format!("Harness 历史搜索线程异常：{error}"))??)
 }
 
 impl HarnessManager {
@@ -1710,7 +1777,16 @@ impl HarnessProcess {
             self.deliver_pending_turn_intents()?;
             let line = match self.stdout.recv_timeout(Duration::from_millis(100)) {
                 Ok(Ok(line)) => line,
-                Ok(Err(error)) => return Err(format!("无法读取 Harness 响应：{error}")),
+                Ok(Err(error)) => {
+                    return Err(structured_wire_error(
+                        "XY-LOCAL-AGENT",
+                        "local-agent",
+                        "本地 Agent 异常",
+                        &format!("无法读取 Harness 响应：{error}"),
+                        true,
+                        true,
+                    ));
+                }
                 Err(mpsc::RecvTimeoutError::Timeout) => continue,
                 Err(mpsc::RecvTimeoutError::Disconnected) => String::new(),
             };
@@ -1725,7 +1801,14 @@ impl HarnessProcess {
                     .lock()
                     .map(|value| value.clone())
                     .unwrap_or_default();
-                return Err(unexpected_exit_message(status, &detail));
+                return Err(structured_wire_error(
+                    "XY-LOCAL-AGENT",
+                    "local-agent",
+                    "本地 Agent 异常",
+                    &unexpected_exit_message(status, &detail),
+                    true,
+                    true,
+                ));
             }
             let output: Value = serde_json::from_str(&line)
                 .map_err(|error| format!("Harness 输出不是有效 JSON-RPC：{error}"))?;
@@ -1928,7 +2011,14 @@ impl HarnessProcess {
                             Ok(answers) => answers,
                             Err(_) => {
                                 broker.remove(&self.notification_task_id, &question.question_id);
-                                return Err("等待问题回答超时，本轮已停止".to_string());
+                                return Err(structured_wire_error(
+                                    "XY-QUESTION-TIMEOUT",
+                                    "timeout",
+                                    "等待问题回答超时",
+                                    "等待问题回答超时，本轮已停止",
+                                    false,
+                                    false,
+                                ));
                             }
                         }
                     } else {
@@ -2000,11 +2090,17 @@ impl HarnessProcess {
                 continue;
             }
             if let Some(error) = output.get("error") {
-                let message = error
-                    .get("message")
-                    .and_then(Value::as_str)
-                    .unwrap_or("Harness 执行失败");
-                return Err(message.to_string());
+                let data = error.get("data").cloned().unwrap_or_else(|| json!({
+                    "code": "XY-HOST-ERROR",
+                    "category": "unknown",
+                    "title": "Harness 执行失败",
+                    "detail": error.get("message").and_then(Value::as_str).unwrap_or("Harness 执行失败"),
+                    "infrastructure": false,
+                    "retryable": false,
+                }));
+                return Err(
+                    serde_json::to_string(&data).unwrap_or_else(|_| "Harness 执行失败".to_string())
+                );
             }
             return output
                 .get("result")
@@ -2193,6 +2289,25 @@ fn unexpected_exit_message(status: Option<std::process::ExitStatus>, stderr: &st
     } else {
         format!("Harness Host 意外退出{status}：{detail}")
     }
+}
+
+fn structured_wire_error(
+    code: &str,
+    category: &str,
+    title: &str,
+    detail: &str,
+    infrastructure: bool,
+    retryable: bool,
+) -> String {
+    serde_json::to_string(&json!({
+        "code": code,
+        "category": category,
+        "title": title,
+        "detail": detail,
+        "infrastructure": infrastructure,
+        "retryable": retryable,
+    }))
+    .unwrap_or_else(|_| detail.to_string())
 }
 
 fn sanitize_harness_error(value: &str) -> String {
@@ -3443,4 +3558,33 @@ mod tests {
         assert!(message.ends_with(&"x".repeat(MAX_HARNESS_ERROR_CHARS)));
         assert!(message.contains('…'));
     }
+}
+#[test]
+fn command_errors_accept_only_the_structured_contract() {
+    let value = HarnessCommandError::from_message(
+        serde_json::json!({
+            "code": "XY-CAPACITY",
+            "category": "capacity",
+            "title": "模型服务繁忙",
+            "detail": "稍后重试",
+            "infrastructure": false,
+            "retryable": true,
+        })
+        .to_string(),
+    );
+    assert_eq!(value.code, "XY-CAPACITY");
+    assert!(value.retryable);
+    let invalid = HarnessCommandError::from_message(
+        serde_json::json!({
+            "code": "MODEL",
+            "category": "model",
+            "title": "模型失败",
+            "detail": "未知",
+            "infrastructure": false,
+            "retryable": true,
+        })
+        .to_string(),
+    );
+    assert_eq!(invalid.code, "XY-UNSTRUCTURED-ERROR");
+    assert!(!invalid.retryable);
 }

@@ -412,7 +412,7 @@ describe('persisted session follow-ups', () => {
       event('turn/start', { turn: 1 }),
       event('assistant/message', { message: { content: [{ type: 'text', text: '部分结果' }] } }),
       event('turn/end', { reason: { kind: 'error' } }),
-    ]), 'session-1', [{ type: 'text', text: '继续' }], () => {})).rejects.toThrow('执行失败')
+    ]), 'session-1', [{ type: 'text', text: '继续' }], () => {})).rejects.toMatchObject({ data: { code: 'XY-MODEL-UNKNOWN', category: 'model', retryable: false } })
   })
 
   it('does not accept completion while a dispatched tool has no receipt', async () => {
@@ -498,7 +498,7 @@ describe('persisted session follow-ups', () => {
       status('idle'),
     ]
     await expect(runSessionTurn(fakeClient(notifications), 'session-1', [{ type: 'text', text: '继续' }], () => undefined))
-      .rejects.toThrow('模型工具配置不兼容')
+      .rejects.toMatchObject({ data: { code: 'XY-MODEL-UNKNOWN', category: 'model', retryable: false } })
   })
 
   it('keeps the last visible assistant text when a later tool-only message arrives', async () => {

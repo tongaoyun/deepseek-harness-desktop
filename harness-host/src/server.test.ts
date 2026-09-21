@@ -28,7 +28,14 @@ describe('HostServer', () => {
 
     expect(output).toEqual([{
       jsonrpc: '2.0', id: 2,
-      error: { code: -32001, message: 'provider failed with [REDACTED]' },
+      error: {
+        code: -32001,
+        message: 'provider failed with [REDACTED]',
+        data: {
+          code: 'XY-HOST-ERROR', category: 'unknown', title: '任务执行失败',
+          detail: 'provider failed with [REDACTED]', infrastructure: false, retryable: false,
+        },
+      },
     }])
   })
 

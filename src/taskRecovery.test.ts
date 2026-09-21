@@ -7,7 +7,7 @@ const request = { taskId: 'task', sessionId: 'old' } as HarnessRunInput
 describe('runHarnessWithRecovery', () => {
   it('does not restart a turn stopped during recovery', async () => {
     let canceled = false
-    const execute = vi.fn().mockRejectedValue(new Error('模型本轮没有返回可显示文本'))
+    const execute = vi.fn().mockRejectedValue({ code: 'XY-CANCELED', category: 'unknown', title: '任务已停止', message: '本轮已停止', infrastructure: false, retryable: false })
     const onRetry = vi.fn()
     await expect(runHarnessWithRecovery(request, {
       getProjection: createXiaoyinTaskProjection, isCanceled: () => canceled, onRetry,
@@ -17,7 +17,7 @@ describe('runHarnessWithRecovery', () => {
   })
   it('retries one transient pre-tool failure with a fresh session', async () => {
     const execute = vi.fn()
-      .mockRejectedValueOnce(new Error('模型本轮没有返回可显示文本'))
+      .mockRejectedValueOnce({ code: 'XY-MODEL', category: 'model', title: '模型未能完成任务', message: '模型未返回结果', infrastructure: false, retryable: true })
       .mockResolvedValueOnce({ sessionId: 'fresh', finalResponse: '完成' })
     const reset = vi.fn().mockResolvedValue(undefined)
     const onRetry = vi.fn()
@@ -32,7 +32,7 @@ describe('runHarnessWithRecovery', () => {
   })
 
   it('does not retry after a tool starts', async () => {
-    const execute = vi.fn().mockRejectedValue(new Error('模型本轮没有返回可显示文本'))
+    const execute = vi.fn().mockRejectedValue({ code: 'XY-MODEL', category: 'model', title: '模型未能完成任务', message: '模型未返回结果', infrastructure: false, retryable: true })
     const reset = vi.fn().mockResolvedValue(undefined)
     await expect(runHarnessWithRecovery(request, {
       getProjection: () => ({ ...createXiaoyinTaskProjection(), steps: [{
@@ -40,7 +40,7 @@ describe('runHarnessWithRecovery', () => {
       }] }),
       isCanceled: () => false,
       onRetry: vi.fn(),
-    }, { execute, reset, sessionId: () => 'fresh' })).rejects.toThrow('模型本轮')
+    }, { execute, reset, sessionId: () => 'fresh' })).rejects.toMatchObject({ code: 'XY-MODEL', retryable: true })
     expect(execute).toHaveBeenCalledTimes(1)
     expect(reset).not.toHaveBeenCalled()
   })

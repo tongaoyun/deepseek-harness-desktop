@@ -10,6 +10,7 @@ import { mcpResultContent } from './mcp-result-content.js'
 import { erpCookieFetch, ErpCookieError } from './erp-cookie-fetch.js'
 import { connectorOAuthFetch } from './connector-oauth-fetch.js'
 import { WriteOperationJournal, UncertainOperationError } from './write-operation-journal.js'
+import { HarnessError, data as errorData } from './errors.js'
 import {
   Client,
   SSEClientTransport,
@@ -142,7 +143,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
         const message = connectorFailureMessage(error, connector, employeeToken)
         if (connector.required) {
           await cleanupBindings(bindings, mutatingTools)
-          throw new Error(message)
+          throw connectorFailure(error, connector, employeeToken)
         }
         process.stderr.write(`${message}；本次会话跳过该连接器\n`)
       // The employee asked for this connector: the turn says it was skipped
@@ -197,7 +198,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
       const message = connectorFailureMessage(error, connector, employeeToken)
       if (connector.required) {
         await cleanupBindings(bindings, mutatingTools)
-        throw new Error(message)
+        throw connectorFailure(error, connector, employeeToken)
       }
       process.stderr.write(`${message}；本次会话跳过该连接器\n`)
       // The employee asked for this connector: the turn says it was skipped
@@ -449,12 +450,22 @@ export async function discoverConnectorTools(
 
 export function connectorFailureMessage(error: unknown, connector: ManagedConnectorConfig, employeeToken?: string): string {
   const status = diagnosticFailureStatus(error)
-  const prefix = status === 'authentication-required' ? 'XY-CONNECTOR-AUTH' : status === 'access-denied' ? 'XY-CONNECTOR-PERMISSION' : 'XY-CONNECTOR'
-  const detail = status === 'authentication-required'
+  return status === 'authentication-required'
     ? connector.authMode === 'erp-cookie' ? 'ERP 登录已失效，请重新扫码登录后继续任务' : '凭据已失效，请在连接器详情更新凭据后继续任务'
     : status === 'access-denied' ? '当前账号或凭据没有访问权限，请检查授权范围'
     : diagnosticError(error, employeeToken, [...Object.values(connector.headers ?? {}), ...Object.values(connector.environment ?? {})])
-  return `[${prefix}] ${connector.name} (${connector.id})：${detail}`
+}
+
+function connectorFailure(error: unknown, connector: ManagedConnectorConfig, employeeToken?: string): HarnessError {
+  const status = diagnosticFailureStatus(error)
+  return new HarnessError(errorData(
+    status === 'authentication-required' ? 'XY-CONNECTOR-AUTH' : status === 'access-denied' ? 'XY-CONNECTOR-PERMISSION' : 'XY-CONNECTOR',
+    'connector',
+    status === 'authentication-required' ? '连接器需要重新授权' : status === 'access-denied' ? '连接器访问受限' : '连接器调用失败',
+    `${connector.name} (${connector.id})：${connectorFailureMessage(error, connector, employeeToken)}`,
+    false,
+    false,
+  ))
 }
 
 function validateConnector(connector: ManagedConnectorConfig, employeeToken: string | undefined): void {
@@ -562,7 +573,7 @@ export function toHarnessTool(
         return await mcpResultContent(result, ctx.attachments, connector.name, exec.signal)
       } catch (error) {
         if (error instanceof UncertainOperationError) throw error
-        throw new Error(connectorFailureMessage(error, connector, employeeToken))
+        throw connectorFailure(error, connector, employeeToken)
       }
     },
     isConcurrencySafe: () => isTrustedReadOnly(tool),

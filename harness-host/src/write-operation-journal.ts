@@ -3,10 +3,11 @@ import { chmodSync, mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import type { CallToolResult } from '@modelcontextprotocol/client'
+import { HarnessError, data as errorData } from './errors.js'
 
-export class UncertainOperationError extends Error {
+export class UncertainOperationError extends HarnessError {
   constructor(readonly operationId: string, detail: string) {
-    super(`[XY-OPERATION-UNCERTAIN] ${detail}；记录 ${operationId.slice(0, 12)}。请先查询服务端结果，禁止换参数重复提交。`)
+    super(errorData('XY-OPERATION-UNCERTAIN', 'connector', '外部操作结果待核对', `${detail}；记录 ${operationId.slice(0, 12)}。请先查询服务端结果，禁止换参数重复提交。`, false, false))
     this.name = 'UncertainOperationError'
   }
 }

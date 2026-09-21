@@ -24,6 +24,7 @@ import { TaskOutcomeTracker, type TaskOutcome } from './task-outcome.js'
 import { initialXiaoyinTaskView, reduceEvent, type XiaoyinTaskState, type XiaoyinTaskView } from './xiaoyin-projections-plugin.js'
 import { initialTranscriptState, reduceTranscriptEvent, type TranscriptEntry, type TranscriptState } from './transcript-projection.js'
 import { hasEligibleHarnessMcpConnector } from './managed-mcp-plugin.js'
+import { HarnessError, data as errorData, errorDataForProvider, type HarnessErrorData } from './errors.js'
 
 export interface RunInput {
   prompt: string
@@ -82,9 +83,9 @@ export interface HarnessRuntime {
   close(): Promise<void>
 }
 
-export class TurnTimeoutError extends Error {
+export class TurnTimeoutError extends HarnessError {
   constructor(readonly timeoutMs: number) {
-    super(`任务执行超过 ${formatDuration(timeoutMs)}，已停止本轮任务，请缩小任务范围后重试`)
+    super(errorData('XY-TIMEOUT', 'timeout', '任务运行超时', `任务执行超过 ${formatDuration(timeoutMs)}，已停止本轮任务，请缩小任务范围后重试`, false, false))
     this.name = 'TurnTimeoutError'
   }
 }
@@ -472,7 +473,7 @@ export class DeepSeekHarnessRuntime implements HarnessRuntime {
   }
 
   private getOrCreateHarness(): DeepSeekHarness {
-    if (this.closing) throw new Error('本轮已停止')
+    if (this.closing) throw new HarnessError(errorData('XY-CANCELED', 'unknown', '任务已停止', '本轮已停止', false, false))
     if (this.harness !== undefined) return this.harness
 
     const env = this.environment()
@@ -534,7 +535,7 @@ export async function runSessionTurn(
   let turnStarted = false
   let abortedByInterrupt = false
   let finalResponse = ''
-  let turnFailure = ''
+  let turnFailure: HarnessErrorData | undefined
   const pendingTools = new Set<string>()
   const streamedText = new Map<string, string>()
   const outcome = new TaskOutcomeTracker()
@@ -571,23 +572,23 @@ export async function runSessionTurn(
           case 'completed':
             break
           case 'error':
-            turnFailure = providerFailureMessage(reason) || '本轮执行失败，已保留部分结果，请检查后继续'
+            turnFailure = errorDataForProvider(reason)
             break
           case 'max-tokens':
-            turnFailure = '本轮达到模型输出上限，结果尚未完成，请继续处理剩余内容'
+            turnFailure = errorData('XY-MAX-TOKENS', 'model', '模型输出已达上限', '本轮达到模型输出上限，结果尚未完成，请继续处理剩余内容', false, false)
             break
           case 'aborted':
             if (isInterrupted?.()) { abortedByInterrupt = true; break }
-            turnFailure = '本轮已停止，已保留停止前的部分结果'
+            turnFailure = errorData('XY-ABORTED', 'unknown', '任务已停止', '本轮已停止，已保留停止前的部分结果', false, false)
             break
           case 'blocked':
-            turnFailure = '本轮输入未进入执行，请检查权限或运行状态后重试'
+            turnFailure = errorData('XY-BLOCKED', 'permission', '任务未进入执行', '本轮输入未进入执行，请检查权限或运行状态后重试', false, false)
             break
           case 'interrupted':
-            turnFailure = '本轮执行被意外中断，已保留中断前的部分结果，请检查后继续'
+            turnFailure = errorData('XY-INTERRUPTED', 'local-agent', '任务被中断', '本轮执行被意外中断，已保留中断前的部分结果，请检查后继续', true, false)
             break
           default:
-            turnFailure = '本轮以未知状态结束，不能确认任务已完成'
+            turnFailure = errorData('XY-UNKNOWN-TURN', 'unknown', '任务状态未知', '本轮以未知状态结束，不能确认任务已完成', false, false)
         }
         if (turnStarted) break
       }
@@ -597,8 +598,8 @@ export async function runSessionTurn(
   } finally {
     subscription.close()
   }
-  if (turnFailure && !(abortedByInterrupt)) throw new Error(turnFailure)
-  if (pendingTools.size && !(abortedByInterrupt)) throw new Error('本轮仍有工具操作未取得结果，请先核对实际结果后继续')
+  if (turnFailure && !(abortedByInterrupt)) throw new HarnessError(turnFailure)
+  if (pendingTools.size && !(abortedByInterrupt)) throw new HarnessError(errorData('XY-UNCERTAIN-TOOL', 'connector', '工具结果待核对', '本轮仍有工具操作未取得结果，请先核对实际结果后继续', false, false))
   // A completed turn without visible text is legitimate (file edits, plan
   // delivery); the desktop renders the turn from its streamed segments.
   return { sessionId, finalResponse, outcome: outcome.result(abortedByInterrupt ? '' : finalResponse), ...(abortedByInterrupt ? { interrupted: true } : {}) }
@@ -706,27 +707,6 @@ async function beforeDeadline<T>(
   } finally {
     if (timer) clearTimeout(timer)
   }
-}
-
-function providerFailureMessage(reason: Record<string, unknown>): string {
-  const error = record(reason.error) ?? record(reason.failure)
-  const message = typeof error?.message === 'string' ? error.message : ''
-  const normalized = message.toLocaleLowerCase('en-US')
-  if (message.includes("function.name") || message.includes("tools[")) {
-    return '模型工具配置不兼容，请重新启动小胤后再试'
-  }
-  if (message.includes('401') || normalized.includes('unauthorized')) return '模型服务认证失败，请联系管理员检查配置'
-  if (message.includes('429') || normalized.includes('rate limit')) return '模型服务繁忙，请稍后重试'
-  if (/context.{0,20}(length|window)|too many tokens|maximum context/u.test(normalized)) {
-    return '当前会话内容过长，请新建任务或缩短上下文后重试'
-  }
-  if (/econnrefused|enotfound|fetch failed|network|socket hang up/u.test(normalized)) {
-    return '模型服务暂时无法连接，请检查内网后重试'
-  }
-  if (/\b50[0-9]\b|bad gateway|service unavailable|gateway timeout/u.test(normalized)) {
-    return '模型服务暂时不可用，请稍后重试'
-  }
-  return message ? '模型服务未能完成本轮请求，请重试' : ''
 }
 
 function isPromptReceipt(notification: HarnessNotification, sessionId: string, messageId: string): boolean {

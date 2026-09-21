@@ -203,6 +203,15 @@ export interface XiaoyinTaskProjection {
     code: string
     category: string
     detail: string
+    title?: string
+    infrastructure?: boolean
+    retryable?: boolean
+  }
+  retry?: {
+    attempt: number
+    code: string
+    title: string
+    detail: string
   }
 }
 

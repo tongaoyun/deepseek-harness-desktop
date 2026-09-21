@@ -326,7 +326,7 @@ it('explains a slow first model response instead of showing an indefinite generi
   const startedAt = new Date(Date.now() - 11_000).toISOString()
   try {
     await act(async () => root.render(<ChatPage {...base} harnessRunning taskProjection={{ ...base.taskProjection, status: 'running', activity: '正在分析任务', startedAt }} entries={[assistantEntry('turn:1', [], { startedAt }, 'streaming')]} />))
-    expect(container.textContent).toContain('已处理 11秒')
+    expect(container.textContent).toContain('正在分析任务 · 已处理 11秒')
     expect(container.textContent).toContain('模型响应较慢，仍在等待')
   } finally { await act(async () => root.unmount()); container.remove() }
 })

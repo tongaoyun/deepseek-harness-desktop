@@ -37,6 +37,7 @@ import {
   checkHarnessProvider,
   clearLocalDirectories,
   classifyHarnessFailure,
+  createHarnessFailure,
   connectorDiagnosticsAvailable,
   createXiaoyinTaskProjection,
   diagnoseConnectors,
@@ -139,11 +140,11 @@ function sameValues(left: string[], right: string[]): boolean {
 }
 
 function taskProjectionRunning(current: XiaoyinTaskProjection, now: string): XiaoyinTaskProjection {
-  return { ...current, status: 'running', activity: '正在处理', updatedAt: now, startedAt: current.startedAt ?? now, executionStarted: false }
+  return { ...current, status: 'running', activity: '正在处理', updatedAt: now, startedAt: current.startedAt ?? now, executionStarted: false, retry: undefined }
 }
 
 function taskProjectionCompleted(current: XiaoyinTaskProjection, outcome: TaskOutcome, now: string): XiaoyinTaskProjection {
-  return { ...current, status: 'completed', activity: taskOutcomeLabel(outcome), outcome, updatedAt: now, completedAt: now }
+  return { ...current, status: 'completed', activity: taskOutcomeLabel(outcome), outcome, updatedAt: now, completedAt: now, retry: undefined }
 }
 
 function taskProjectionFailed(current: XiaoyinTaskProjection, failure: ReturnType<typeof classifyHarnessFailure>, canceled: boolean, now: string): XiaoyinTaskProjection {
@@ -153,7 +154,15 @@ function taskProjectionFailed(current: XiaoyinTaskProjection, failure: ReturnTyp
     activity: canceled ? '已停止' : '任务执行失败',
     updatedAt: now,
     completedAt: now,
-    failure: canceled ? undefined : { code: failure.code, category: failure.category, detail: failure.message.slice(0, 500) },
+    failure: canceled ? undefined : {
+      code: failure.code,
+      category: failure.category,
+      detail: failure.message.slice(0, 500),
+      title: failure.title,
+      infrastructure: failure.infrastructure,
+      retryable: failure.retryable,
+    },
+    retry: undefined,
     steps: current.steps.map((step) => step.status === 'running' ? { ...step, status: 'canceled', completedAt: now, label: `${step.label}（结果待核对）` } : step),
     timeline: current.timeline?.map((entry) => entry.status === 'running' ? { ...entry, status: 'canceled', completedAt: now, label: `${entry.label}（结果待核对）` } : entry),
     subagents: current.subagents?.map((agent) => agent.status === 'running' ? { ...agent, status: 'canceled', completedAt: now } : agent),
@@ -1185,7 +1194,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
       }
       if (streaming.cancellationRequested) {
         const completedAt = new Date().toISOString()
-        streaming.projection = taskProjectionFailed(streaming.projection, classifyHarnessFailure(new Error('本轮已停止')), true, completedAt)
+        streaming.projection = taskProjectionFailed(streaming.projection, createHarnessFailure({ code: 'XY-CANCELED', category: 'unknown', title: '任务已停止', message: '本轮已停止', infrastructure: false, retryable: false }), true, completedAt)
         streaming.entries = settleOpenTurn(streaming.entries, 'canceled', completedAt, { model: taskModel, reasoningEffort: taskReasoningEffort })
         const canceledTask = { ...runningTask, status: 'CANCELED' as const, updatedAt: completedAt, projection: streaming.projection, entries: streaming.entries }
         if (currentLocalTaskIdRef.current === taskId) {
@@ -1227,10 +1236,16 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
         }, {
           getProjection: () => streaming.projection,
           isCanceled: () => streaming.cancellationRequested,
-          onRetry: (sessionId) => {
+          onRetry: (sessionId, failure) => {
             executionSessionId = sessionId
             streaming.sessionId = sessionId
-            streaming.projection = taskProjectionRunning(streaming.projection, new Date().toISOString())
+            const attempt = (streaming.projection.retry?.attempt ?? 0) + 1
+            const now = new Date().toISOString()
+            streaming.projection = {
+              ...taskProjectionRunning(streaming.projection, now),
+              activity: `正在恢复执行（第 ${attempt + 1} 次尝试）`,
+              retry: { attempt: attempt + 1, code: failure.code, title: failure.title, detail: failure.message.slice(0, 500) },
+            }
             streaming.projectionSeq = -1
             streaming.projectionSeqByKey = {}
             // The retried turn starts from a clean assistant turn; the user
@@ -1245,10 +1260,10 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
             persistLocalTask({ ...runningTask, sessionId, updatedAt: streaming.projection.updatedAt, projection: streaming.projection, entries: streaming.entries })
           },
         })
-        if (streaming.cancellationRequested) throw new Error('本轮已停止')
+        if (streaming.cancellationRequested) throw createHarnessFailure({ code: 'XY-CANCELED', category: 'unknown', title: '任务已停止', message: '本轮已停止', infrastructure: false, retryable: false })
         // An interrupted turn settled with its partial receipts: keep what it
         // produced, mark it stopped, and let the employee continue.
-        if (result.interrupted) throw new Error('本轮已停止')
+        if (result.interrupted) throw createHarnessFailure({ code: 'XY-CANCELED', category: 'unknown', title: '任务已停止', message: '本轮已停止', infrastructure: false, retryable: false })
         // A completed turn may legitimately end without final text (file edits,
         // plan delivery). Success is decided by the reported outcome, and the
         // transcript already shows whatever the turn produced.
@@ -1354,7 +1369,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
     }
     if (streaming.phase === 'preparing') {
       const completedAt = new Date().toISOString()
-      streaming.projection = taskProjectionFailed(streaming.projection, classifyHarnessFailure(new Error('本轮已停止')), true, completedAt)
+      streaming.projection = taskProjectionFailed(streaming.projection, createHarnessFailure({ code: 'XY-CANCELED', category: 'unknown', title: '任务已停止', message: '本轮已停止', infrastructure: false, retryable: false }), true, completedAt)
       streaming.entries = settleOpenTurn(streaming.entries, 'canceled', completedAt)
       setRunningTaskIds((current) => current.filter((id) => id !== taskId))
       setLocalTasks((current) => current.map((task) => task.id === taskId

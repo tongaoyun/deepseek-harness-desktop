@@ -3,8 +3,8 @@ import type { BindableTask, DingTalkImConfiguration, LocalImRuntime, ScheduleRou
 import { diagnoseConfiguredConnectors } from './managed-mcp-plugin.js'
 import { runLocalCapabilitySelfTest } from './self-test.js'
 import type { QuestionAnswer } from './question-bridge.js'
-import { publicErrorMessage } from './public-error.js'
 import {
+  errorData,
   failure,
   isJsonRpcRequest,
   notification,
@@ -166,7 +166,8 @@ export class HostServer {
           this.emit(failure(value.id, -32601, `Method not found: ${value.method}`))
       }
     } catch (error) {
-      this.emit(failure(value.id, -32001, publicErrorMessage(error)))
+      const structured = errorData(error)
+      this.emit(failure(value.id, -32001, structured.detail, structured))
     }
   }
 }

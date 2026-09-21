@@ -114,7 +114,10 @@ function TurnActivity({ runState, startedAt, completedAt, status, waitingForFirs
     || segments.some((segment) => (segment.kind === 'question' || segment.kind === 'approval') && segment.status === 'running')
   const open = choice?.attention === attention ? choice.open : attention
   const processed = `已处理${duration ? ` ${duration}` : ''}`
-  const label = streaming ? runState?.activity === '正在停止' ? `正在停止 · ${processed}` : processed
+  const activity = runState?.activity?.trim()
+  const liveActivity = activity && activity !== '正在处理' ? activity : processed
+  const label = streaming ? liveActivity === '正在停止' ? `正在停止 · ${processed}`
+    : liveActivity === processed ? processed : `${liveActivity}${duration ? ` · ${processed}` : ''}`
     : status === 'completed' ? duration ? `用时 ${duration}` : '活动记录'
     : status === 'canceled' ? `已停止${duration ? ` · ${duration}` : ''}` : `执行失败${duration ? ` · ${duration}` : ''}`
   const groups = groupToolSegments(segments)

@@ -1,5 +1,17 @@
-export class ErpCookieError extends Error {
-  constructor(readonly status: number, message: string) { super(message); this.name = 'ErpCookieError' }
+import { HarnessError, data as errorData } from './errors.js'
+
+export class ErpCookieError extends HarnessError {
+  constructor(readonly status: number, message: string) {
+    super(errorData(
+      status === 401 ? 'XY-CONNECTOR-AUTH' : status === 403 ? 'XY-CONNECTOR-PERMISSION' : 'XY-CONNECTOR',
+      'connector',
+      status === 401 ? '连接器需要重新授权' : status === 403 ? '连接器访问受限' : '连接器调用失败',
+      message,
+      false,
+      false,
+    ))
+    this.name = 'ErpCookieError'
+  }
 }
 
 export function erpCookieFetch(connector: { id: string; url: string },

@@ -1,5 +1,11 @@
 export type JsonRpcId = string | number | null
 
+import { data, isHarnessErrorData, type HarnessErrorData } from './errors.js'
+
+export type { HarnessErrorCategory, HarnessErrorData } from './errors.js'
+export { errorData } from './errors.js'
+export { isHarnessErrorData } from './errors.js'
+
 export interface JsonRpcRequest {
   jsonrpc: '2.0'
   id: JsonRpcId
@@ -19,7 +25,7 @@ export interface JsonRpcFailure {
   error: {
     code: number
     message: string
-    data?: unknown
+    data: HarnessErrorData
   }
 }
 
@@ -46,15 +52,21 @@ export function failure(
   id: JsonRpcId,
   code: number,
   message: string,
-  data?: unknown,
+  errorData?: Partial<HarnessErrorData>,
 ): JsonRpcFailure {
+  const normalized: HarnessErrorData = {
+    ...data('XY-HOST-ERROR', 'unknown', '请求失败', message, false, false),
+    ...errorData,
+    detail: errorData?.detail ?? message,
+  }
+  if (!isHarnessErrorData(normalized)) throw new Error('Invalid Harness error envelope')
   return {
     jsonrpc: '2.0',
     id,
     error: {
       code,
       message,
-      ...(data === undefined ? {} : { data }),
+      data: normalized,
     },
   }
 }

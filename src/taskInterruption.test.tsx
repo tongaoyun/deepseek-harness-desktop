@@ -49,8 +49,8 @@ it('shows pending operations and blocks resume while another input or run is act
 })
 
 it('keeps connector authentication separate from model authentication and automatic retries', () => {
-  expect(classifyHarnessFailure('[XY-CONNECTOR-AUTH] ERP：401 Unauthorized')).toMatchObject({ code: 'XY-CONNECTOR-AUTH', category: 'connector', retryable: false })
-  expect(classifyHarnessFailure('model 401 Unauthorized').code).toBe('XY-AUTH')
+  expect(classifyHarnessFailure({ code: 'XY-CONNECTOR-AUTH', category: 'connector', title: '连接器需要重新授权', message: 'ERP 登录已失效', infrastructure: false, retryable: false })).toMatchObject({ code: 'XY-CONNECTOR-AUTH', category: 'connector', retryable: false })
+  expect(classifyHarnessFailure({ code: 'XY-AUTH', category: 'authentication', title: '模型认证失败', message: '模型服务认证失败', infrastructure: false, retryable: false }).code).toBe('XY-AUTH')
 })
 
 it('keeps an unsettled tool in the recovery record', () => {

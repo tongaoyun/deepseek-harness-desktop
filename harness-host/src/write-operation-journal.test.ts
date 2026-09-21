@@ -42,10 +42,10 @@ describe('durable MCP writes', () => {
     let fail!: (error: Error) => void
     const pending = first.execute(connector, 'create', { marker: 'one' }, () => new Promise((_, reject) => { fail = reject }))
     const call = vi.fn(async () => receipt)
-    await expect(second.execute(connector, 'create', { marker: 'one' }, call)).rejects.toThrow('XY-OPERATION-UNCERTAIN')
+    await expect(second.execute(connector, 'create', { marker: 'one' }, call)).rejects.toMatchObject({ data: { code: 'XY-OPERATION-UNCERTAIN' } })
     fail(new Error('connection lost'))
-    await expect(pending).rejects.toThrow('XY-OPERATION-UNCERTAIN')
-    await expect(second.execute(connector, 'create', { marker: 'one' }, call)).rejects.toThrow('XY-OPERATION-UNCERTAIN')
+    await expect(pending).rejects.toMatchObject({ data: { code: 'XY-OPERATION-UNCERTAIN' } })
+    await expect(second.execute(connector, 'create', { marker: 'one' }, call)).rejects.toMatchObject({ data: { code: 'XY-OPERATION-UNCERTAIN' } })
     expect(call).not.toHaveBeenCalled()
   })
   it('fails closed when persisting the success receipt fails after dispatch', async () => {
@@ -55,8 +55,8 @@ describe('durable MCP writes', () => {
       WHEN NEW.state='succeeded' BEGIN SELECT RAISE(ABORT, 'simulated disk failure'); END;`)
     sabotage.close()
     const call = vi.fn(async () => receipt)
-    await expect(journal.execute(connector, 'create', { marker: 'receipt-failure' }, call)).rejects.toThrow('XY-OPERATION-UNCERTAIN')
-    await expect(open(file, 'another-turn').execute(connector, 'create', { marker: 'receipt-failure' }, call)).rejects.toThrow('XY-OPERATION-UNCERTAIN')
+    await expect(journal.execute(connector, 'create', { marker: 'receipt-failure' }, call)).rejects.toMatchObject({ data: { code: 'XY-OPERATION-UNCERTAIN' } })
+    await expect(open(file, 'another-turn').execute(connector, 'create', { marker: 'receipt-failure' }, call)).rejects.toMatchObject({ data: { code: 'XY-OPERATION-UNCERTAIN' } })
     expect(call).toHaveBeenCalledTimes(1)
   })
   it('does not claim or dispatch an already canceled operation', async () => {
@@ -82,7 +82,7 @@ describe('durable MCP writes', () => {
     } finally { child.kill('SIGKILL'); await exited }
     expect(readFileSync(ledger, 'utf8')).toBe('ORDER-1')
     const call = vi.fn(async () => receipt)
-    await expect(open(file).execute(connector, 'create', { marker: 'one' }, call)).rejects.toThrow('XY-OPERATION-UNCERTAIN')
+    await expect(open(file).execute(connector, 'create', { marker: 'one' }, call)).rejects.toMatchObject({ data: { code: 'XY-OPERATION-UNCERTAIN' } })
     expect(call).not.toHaveBeenCalled()
   }, 15000)
 })

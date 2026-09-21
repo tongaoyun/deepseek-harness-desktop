@@ -81,7 +81,9 @@ export function useHarnessNotifications({
         if (projectionUpdate.key === 'xiaoyin.task') streaming.projectionSeq = projectionUpdate.seq
         const nextProjection = streaming.cancellationRequested && projectionUpdate.key === 'xiaoyin.task'
           ? mergeStoppingProjection(streaming.projection, projected)
-          : projected
+          : streaming.projection.retry && projected.status === 'running'
+            ? { ...projected, retry: streaming.projection.retry }
+            : projected
         streaming.projection = nextProjection
         latest.current.onTaskUpdate(taskId, nextProjection, streaming.entries)
         if (currentTaskIdRef.current === taskId) latest.current.onCurrentUpdate(nextProjection)

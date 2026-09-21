@@ -26,12 +26,10 @@ describe('Harness Session Projection', () => {
 
 })
 
-it('classifies failures by their real cause instead of a generic retry', () => {
-  expect(classifyHarnessFailure('[XY-CONNECTOR-AUTH] ERP：401 Unauthorized')).toMatchObject({ code: 'XY-CONNECTOR-AUTH', category: 'connector', retryable: false })
-  expect(classifyHarnessFailure('model 401 Unauthorized').code).toBe('XY-AUTH')
-  expect(classifyHarnessFailure('429 rate limit').category).toBe('capacity')
-  expect(classifyHarnessFailure('Harness Host ECONNRESET').category).toBe('local-agent')
-  expect(classifyHarnessFailure('任务执行超过 15 分钟').category).toBe('timeout')
+it('accepts only explicit structured failure metadata', () => {
+  expect(classifyHarnessFailure({ code: 'XY-CONNECTOR-AUTH', category: 'connector', title: '连接器需要重新授权', message: 'ERP 登录已失效', infrastructure: false, retryable: false })).toMatchObject({ code: 'XY-CONNECTOR-AUTH', category: 'connector', retryable: false })
+  expect(classifyHarnessFailure({ code: 'XY-CAPACITY', category: 'capacity', title: '模型服务繁忙', message: '稍后重试', infrastructure: false, retryable: true })).toMatchObject({ code: 'XY-CAPACITY', category: 'capacity', retryable: true })
+  expect(classifyHarnessFailure('429 rate limit')).toMatchObject({ code: 'XY-UNSTRUCTURED-ERROR', retryable: false })
 })
 
 it('keeps cancellation, drops and diagnostics safe outside Tauri', async () => {

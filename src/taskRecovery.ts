@@ -1,5 +1,6 @@
 import {
   classifyHarnessFailure,
+  createHarnessFailure,
   runHarness,
   shouldRetryHarnessFailure,
   shutdownHarness,
@@ -38,7 +39,7 @@ export async function runHarnessWithRecovery(
     const failure = classifyHarnessFailure(reason)
     if (callbacks.isCanceled() || !shouldRetryHarnessFailure(failure, callbacks.getProjection())) throw reason
     await runtime.reset(request.taskId)
-    if (callbacks.isCanceled()) throw new Error('本轮已停止')
+    if (callbacks.isCanceled()) throw createHarnessFailure({ code: 'XY-CANCELED', category: 'unknown', title: '任务已停止', message: '本轮已停止', infrastructure: false, retryable: false })
     const sessionId = runtime.sessionId()
     callbacks.onRetry(sessionId, failure)
     return runtime.execute({ ...request, sessionId })

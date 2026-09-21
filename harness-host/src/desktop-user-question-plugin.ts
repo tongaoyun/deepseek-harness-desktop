@@ -1,5 +1,6 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { AskUserQuestionAnswer } from '@deepseek-ai/dsh-user-questions/types'
+import { HarnessError, data as errorData } from './errors.js'
 
 export const name = 'xiaoyin-desktop-user-question'
 export const inject = ['userQuestions']
@@ -20,7 +21,7 @@ export function apply(ctx: Context): void {
       const value = await response.json() as AskUserQuestionAnswer
       return value
     } catch (error) {
-      if (request.signal?.aborted) throw new Error('本轮已停止，问题回答未交付')
+      if (request.signal?.aborted) throw new HarnessError(errorData('XY-CANCELED', 'unknown', '任务已停止', '本轮已停止，问题回答未交付', false, false))
       throw error
     }
   })

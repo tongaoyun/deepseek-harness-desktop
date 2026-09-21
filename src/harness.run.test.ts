@@ -1,6 +1,6 @@
 import { beforeEach, expect, it, vi } from 'vitest'
 import { invoke } from '@tauri-apps/api/core'
-import { runHarness, type HarnessRunInput } from './harness'
+import { classifyHarnessFailure, runHarness, type HarnessRunInput } from './harness'
 
 vi.mock('@tauri-apps/api/core', () => ({ isTauri: () => true, invoke: vi.fn() }))
 
@@ -20,4 +20,14 @@ it('passes only the Rust attachment wire fields while preserving local authoriza
     attachments: [{ id: 'root:report.xlsx', rootId: 'root', rootName: '资料', path: 'report.xlsx', name: 'report.xlsx', kind: 'file' }],
   } })
   expect(attachment.rootPath).toBe('/authorized')
+})
+
+it('uses structured runtime failure metadata before localized message matching', () => {
+  expect(classifyHarnessFailure({
+    code: 'XY-HOST-CAPACITY', category: 'capacity', title: '本地容量不足', message: 'localized detail',
+    infrastructure: true, retryable: false,
+  })).toEqual({
+    code: 'XY-HOST-CAPACITY', category: 'capacity', title: '本地容量不足', message: 'localized detail',
+    infrastructure: true, retryable: false,
+  })
 })
