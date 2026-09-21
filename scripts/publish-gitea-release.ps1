@@ -161,7 +161,9 @@ function Complete-BinaryUpload {
 function Invoke-BinaryUploadBatch {
   param(
     [Parameter(Mandatory = $true)][object[]]$Uploads,
-    [ValidateRange(1, 4)][int]$ThrottleLimit = 3
+    # Gitea's SQLite backend permits one writer at a time; concurrent asset
+    # uploads can surface SQLITE_BUSY even when the HTTP requests are valid.
+    [ValidateRange(1, 4)][int]$ThrottleLimit = 1
   )
   for ($offset = 0; $offset -lt $Uploads.Count; $offset += $ThrottleLimit) {
     $pending = @()
