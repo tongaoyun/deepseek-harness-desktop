@@ -29,6 +29,7 @@ if (Test-Path -LiteralPath $resolvedRoot) {
 $launchedProcess = $null
 $installedByThisRun = $false
 $uninstallCompleted = $false
+$desktopShortcutSnapshot = @()
 
 function Wait-PathState {
   param([string]$Path, [bool]$ShouldExist, [int]$TimeoutSeconds = 30)
@@ -45,6 +46,43 @@ function Find-Uninstaller {
   return Get-ChildItem -LiteralPath $Root -Recurse -File -ErrorAction SilentlyContinue |
     Where-Object { $_.Name -match "^(uninstall|unins.*)\.exe$" } |
     Select-Object -First 1
+}
+
+function Get-XiaoyinDesktopShortcuts {
+  $desktop = [Environment]::GetFolderPath("Desktop")
+  $shell = New-Object -ComObject WScript.Shell
+  return @(Get-ChildItem -LiteralPath $desktop -Filter "*.lnk" -File -ErrorAction SilentlyContinue | ForEach-Object {
+    $shortcut = $shell.CreateShortcut($_.FullName)
+    if ($shortcut.TargetPath -match "(?i)xiaoyin") {
+      [ordered]@{
+        path = $_.FullName
+        targetPath = $shortcut.TargetPath
+        arguments = $shortcut.Arguments
+        workingDirectory = $shortcut.WorkingDirectory
+        description = $shortcut.Description
+        iconLocation = $shortcut.IconLocation
+        hotkey = $shortcut.Hotkey
+        windowStyle = $shortcut.WindowStyle
+      }
+    }
+  })
+}
+
+function Restore-XiaoyinDesktopShortcuts {
+  param([object[]]$Snapshot)
+  if (-not $Snapshot -or $Snapshot.Count -eq 0) { return }
+  $shell = New-Object -ComObject WScript.Shell
+  foreach ($item in $Snapshot) {
+    $shortcut = $shell.CreateShortcut([string]$item.path)
+    $shortcut.TargetPath = [string]$item.targetPath
+    $shortcut.Arguments = [string]$item.arguments
+    $shortcut.WorkingDirectory = [string]$item.workingDirectory
+    $shortcut.Description = [string]$item.description
+    $shortcut.IconLocation = [string]$item.iconLocation
+    $shortcut.Hotkey = [string]$item.hotkey
+    $shortcut.WindowStyle = [int]$item.windowStyle
+    $shortcut.Save()
+  }
 }
 
 function Get-PeSubsystem {
@@ -64,6 +102,7 @@ function Get-PeSubsystem {
 }
 
 try {
+  $desktopShortcutSnapshot = Get-XiaoyinDesktopShortcuts
   $installer = Start-Process -FilePath $resolvedInstaller -ArgumentList @("/S", "/D=$resolvedRoot") -PassThru -Wait
   if ($installer.ExitCode -ne 0) { throw "Installer exited with code $($installer.ExitCode)." }
   $installedByThisRun = $true
@@ -128,4 +167,5 @@ finally {
       Start-Process -FilePath $cleanupUninstaller.FullName -ArgumentList "/S" -Wait -ErrorAction SilentlyContinue
     }
   }
+  Restore-XiaoyinDesktopShortcuts -Snapshot $desktopShortcutSnapshot
 }
