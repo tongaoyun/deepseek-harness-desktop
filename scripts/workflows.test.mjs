@@ -85,6 +85,7 @@ test('Windows quick mode is explicit and cannot weaken a tag release', () => {
   assert.doesNotMatch(publisher, /foreach \(\$asset in \$releaseAssets\)/)
   assert.match(win, /ExpectedCount = if \(\$Quick\) \{ 1 \} else \{ 2 \}/)
   assert.match(win, /\$VersionPattern = .*\[regex\]::Escape\(\$ExpectedVersion\)/)
+  assert.match(win, /\$InstallerPath = \$Installers \| Select-Object -First 1 -ExpandProperty FullName/)
   assert.doesNotMatch(win, /-like "\*_\$\{ExpectedVersion\}_\*"/)
   assert.match(win, /name: xiaoyin-desktop-windows-\$\{\{ env.XIAOYIN_BUILD_MODE \}\}/)
   assert.deepEqual(quickWindows.bundle.resources, [])
