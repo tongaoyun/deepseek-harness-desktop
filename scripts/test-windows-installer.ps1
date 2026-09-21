@@ -58,6 +58,7 @@ function Find-Uninstaller {
 
 function Get-XiaoyinDesktopShortcuts {
   $desktop = [Environment]::GetFolderPath("Desktop")
+  if ([string]::IsNullOrWhiteSpace($desktop) -or -not [System.IO.Directory]::Exists($desktop)) { return @() }
   $shell = New-Object -ComObject WScript.Shell
   return @(Get-ChildItem -LiteralPath $desktop -Filter "*.lnk" -File -ErrorAction SilentlyContinue | ForEach-Object {
     $shortcut = $shell.CreateShortcut($_.FullName)

@@ -12,6 +12,10 @@ $resolver = $ast.Find({
 }, $false)
 if (-not $resolver) { throw "Installer path resolver is missing" }
 Set-Item -Path Function:\Resolve-InstallerPath -Value $resolver.Body.GetScriptBlock()
+$shortcutSource = Get-Content -LiteralPath $scriptPath -Raw
+if ($shortcutSource -notmatch 'IsNullOrWhiteSpace\(\$desktop\).*Directory\]::Exists\(\$desktop\)') {
+  throw "Desktop shortcut discovery must tolerate a missing service-account Desktop directory"
+}
 
 $testRoot = Join-Path (Get-Location).Path ("xiaoyin-installer-path-test-" + [guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Path $testRoot | Out-Null
