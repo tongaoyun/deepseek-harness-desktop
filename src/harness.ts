@@ -106,22 +106,46 @@ export interface HarnessFailure {
   retryable: boolean
 }
 
-export function classifyHarnessFailure(reason: unknown): HarnessFailure {
-  const message = reason instanceof Error ? reason.message : String(reason)
-  if (message.includes('[XY-OPERATION-UNCERTAIN]')) return failure('connector', 'XY-OPERATION-UNCERTAIN', '外部操作结果待核对', message, false, false)
-  if (message.includes('[XY-CONNECTOR-AUTH]')) return failure('connector', 'XY-CONNECTOR-AUTH', '连接器需要重新授权', message, false, false)
-  if (message.includes('[XY-CONNECTOR-PERMISSION]')) return failure('connector', 'XY-CONNECTOR-PERMISSION', '连接器访问受限', message, false, false)
-  if (message.includes('[XY-CONNECTOR]')) return failure('connector', 'XY-CONNECTOR', '连接器调用失败', message, false, false)
-  if (/任务执行超过|timed?\s*out|timeout/iu.test(message)) return failure('timeout', 'XY-TIMEOUT', '任务运行超时', message, false, false)
-  if (/401|unauthorized|认证失败|invalid.*key/iu.test(message)) return failure('authentication', 'XY-AUTH', '模型认证失败', message, false, false)
-  if (/429|rate.?limit|服务繁忙|capacity|overloaded/iu.test(message)) return failure('capacity', 'XY-CAPACITY', '模型服务繁忙', message, false, true)
-  if (/permission|denied|权限|未授权|approval.*reject/iu.test(message)) return failure('permission', 'XY-PERMISSION', '操作未获授权', message, false, false)
-  if (/MCP|connector|连接器|tool.*(unavailable|not found)|unknown tool/iu.test(message)) return failure('connector', 'XY-CONNECTOR', '连接器调用失败', message, false, false)
-  if (/Harness Host|ECONNRESET|ECONNREFUSED|broken pipe|socket hang up|进程.*退出|connection.*closed/iu.test(message)) {
-    return failure('local-agent', 'XY-LOCAL-AGENT', '本地 Agent 异常', message, true, true)
+export class HarnessFailureError extends Error {
+  readonly failure: HarnessFailure
+
+  constructor(value: HarnessFailure) {
+    super(value.message)
+    this.name = 'HarnessFailureError'
+    this.failure = value
   }
-  if (/模型|provider|assistant|turn/iu.test(message)) return failure('model', 'XY-MODEL', '模型未能完成任务', message, false, true)
-  return failure('unknown', 'XY-UNKNOWN', '任务执行失败', message, false, false)
+}
+
+export function classifyHarnessFailure(reason: unknown): HarnessFailure {
+  const structured = structuredFailure(reason)
+  if (structured) return structured
+  const message = reason instanceof Error ? reason.message : String(reason)
+  return failure('unknown', 'XY-UNSTRUCTURED-ERROR', '任务执行失败', message, false, false)
+}
+
+/** The only accepted retry metadata is the explicit Harness error envelope. */
+function structuredFailure(reason: unknown): HarnessFailure | undefined {
+  if (reason instanceof HarnessFailureError) return reason.failure
+  if (!reason || typeof reason !== 'object') return undefined
+  const root = reason as Record<string, unknown>
+  const nested = root.error && typeof root.error === 'object' && !Array.isArray(root.error) ? root.error as Record<string, unknown> : undefined
+  const value = nested ?? root
+  const code = typeof value.code === 'string' ? value.code : undefined
+  const message = typeof value.message === 'string' ? value.message : typeof value.detail === 'string' ? value.detail : undefined
+  const category = value.category
+  const retryable = value.retryable
+  const title = value.title
+  const infrastructure = value.infrastructure
+  if (!code || !/^XY-[A-Z0-9-]+$/u.test(code) || !message || typeof title !== 'string' || typeof retryable !== 'boolean' || typeof infrastructure !== 'boolean' || !isFailureCategory(category)) return undefined
+  return failure(category, code, title, message, infrastructure, retryable)
+}
+
+export function createHarnessFailure(value: Omit<HarnessFailure, 'message'> & { message?: string; detail?: string }): HarnessFailure {
+  return failure(value.category, value.code, value.title, value.message ?? value.detail ?? '任务执行失败', value.infrastructure, value.retryable)
+}
+
+function isFailureCategory(value: unknown): value is HarnessFailureCategory {
+  return ['timeout', 'authentication', 'capacity', 'permission', 'connector', 'local-agent', 'model', 'unknown'].includes(String(value))
 }
 
 export function shouldRetryHarnessFailure(failure: HarnessFailure, projection: XiaoyinTaskProjection): boolean {
@@ -180,6 +204,7 @@ export function normalizeHarnessProjection(value: unknown): XiaoyinTaskProjectio
   const interruption = normalizeInterruption(projection.interruption)
   const outcome = normalizeOutcome(projection.outcome)
   const failure = normalizeFailure(projection.failure)
+  const retry = normalizeRetry(projection.retry)
   return {
     status: projection.status as XiaoyinTaskProjection['status'],
     activity: projection.activity,
@@ -202,6 +227,7 @@ export function normalizeHarnessProjection(value: unknown): XiaoyinTaskProjectio
     ...(interruption ? { interruption } : {}),
     ...(outcome ? { outcome } : {}),
     ...(failure ? { failure } : {}),
+    ...(retry ? { retry } : {}),
   }
 }
 
@@ -258,7 +284,22 @@ function normalizeOutcome(value: unknown): XiaoyinTaskProjection['outcome'] | un
 function normalizeFailure(value: unknown): XiaoyinTaskProjection['failure'] | undefined {
   const item = asRecord(value)
   return item && typeof item.code === 'string' && typeof item.category === 'string' && typeof item.detail === 'string'
-    ? { code: item.code, category: item.category, detail: item.detail }
+    ? {
+      code: item.code,
+      category: item.category,
+      detail: item.detail,
+      ...(typeof item.title === 'string' ? { title: item.title } : {}),
+      ...(typeof item.infrastructure === 'boolean' ? { infrastructure: item.infrastructure } : {}),
+      ...(typeof item.retryable === 'boolean' ? { retryable: item.retryable } : {}),
+    }
+    : undefined
+}
+
+function normalizeRetry(value: unknown): XiaoyinTaskProjection['retry'] | undefined {
+  const item = asRecord(value)
+  return item && Number.isSafeInteger(item.attempt) && Number(item.attempt) > 0
+    && typeof item.code === 'string' && typeof item.title === 'string' && typeof item.detail === 'string'
+    ? { attempt: Number(item.attempt), code: item.code, title: item.title, detail: item.detail }
     : undefined
 }
 
