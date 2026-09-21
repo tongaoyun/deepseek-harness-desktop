@@ -321,10 +321,10 @@ pub struct HarnessCommandError {
 
 impl HarnessCommandError {
     fn from_message(message: String) -> Self {
-        if let Ok(value) = serde_json::from_str::<Self>(&message) {
-            if value.is_valid() {
-                return value;
-            }
+        if let Ok(value) = serde_json::from_str::<Self>(&message)
+            && value.is_valid()
+        {
+            return value;
         }
         Self {
             code: "XY-UNSTRUCTURED-ERROR".to_string(),
