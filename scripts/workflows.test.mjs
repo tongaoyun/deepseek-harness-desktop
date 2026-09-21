@@ -43,7 +43,7 @@ test('macOS release reuses main CI and can package both architectures in paralle
   assert.doesNotMatch(build, /XIAOYIN_HTTPS_SERVER_URL|VITE_XIAOYIN_SERVER_URL/)
   assert.doesNotMatch(build, /pnpm (lint|typecheck|test)|cargo (clippy|test)/)
   assert.match(build, /smoke-test-macos-bundle.sh/)
-  assert.match(macDmg, /hdiutil create -volname "Xiaoyin-\$\{artifact_arch\}"/)
+  assert.match(macDmg, /LC_ALL=C hdiutil create -volname "Xiaoyin-\$\{artifact_arch\}"/)
   assert.doesNotMatch(macDmg, /hdiutil create -volname "小胤"/)
   assert.match(mac, /default: arm64/)
 })

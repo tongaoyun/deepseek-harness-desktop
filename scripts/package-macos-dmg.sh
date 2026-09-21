@@ -39,7 +39,10 @@ mkdir -p "$(dirname "$dmg")"
 # Matrix legs share one macOS runner. Use an ASCII, architecture-specific
 # volume name so parallel hdiutil mounts never collide or depend on locale
 # encoding for /Volumes paths.
-hdiutil create -volname "Xiaoyin-${artifact_arch}" -srcfolder "$stage" -ov -format UDZO "$dmg"
+# hdiutil traverses the packaged node_modules tree and can encounter byte
+# sequences that the runner's UTF-8 locale rejects. Its filesystem copier
+# accepts the same paths under the byte-preserving C locale.
+LC_ALL=C hdiutil create -volname "Xiaoyin-${artifact_arch}" -srcfolder "$stage" -ov -format UDZO "$dmg"
 
 echo "macOS application: $app"
 echo "macOS disk image: $dmg"
