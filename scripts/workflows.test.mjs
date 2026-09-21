@@ -7,6 +7,7 @@ const directory = new URL('../.gitea/workflows/', import.meta.url)
 const read = (name) => readFileSync(new URL(name, directory), 'utf8')
 const mac = read('macos-installer.yml')
 const win = read('windows-installer.yml')
+const quickWindows = JSON.parse(readFileSync(new URL('../src-tauri/tauri.quick.windows.conf.json', import.meta.url), 'utf8'))
 function expression(text, field, context) {
   const source = text.match(new RegExp(`^\\s*${field}: \\$\\{\\{ (.+) \\}\\}\\s*$`, 'm'))?.[1]
   assert.ok(source, `Missing ${field} expression`)
@@ -74,6 +75,8 @@ test('Windows quick mode is explicit and cannot weaken a tag release', () => {
   assert.match(win, /if: \$\{\{ env\.XIAOYIN_BUILD_MODE == 'release' \}\}/)
   assert.match(win, /ExpectedCount = if \(\$Quick\) \{ 1 \} else \{ 2 \}/)
   assert.match(win, /name: xiaoyin-desktop-windows-\$\{\{ env.XIAOYIN_BUILD_MODE \}\}/)
+  assert.deepEqual(quickWindows.bundle.resources, [])
+  assert.equal(quickWindows.bundle.createUpdaterArtifacts, false)
 })
 
 test('CI owns quality checks and validates every PowerShell script', () => {
