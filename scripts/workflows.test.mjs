@@ -85,8 +85,7 @@ test('Windows quick mode is explicit and cannot weaken a tag release', () => {
   assert.doesNotMatch(publisher, /foreach \(\$asset in \$releaseAssets\)/)
   assert.match(win, /ExpectedCount = if \(\$Quick\) \{ 1 \} else \{ 2 \}/)
   assert.match(win, /\$VersionPattern = .*\[regex\]::Escape\(\$ExpectedVersion\)/)
-  assert.match(win, /\$InstallerPath = Join-Path -Path \$env:TEMP -ChildPath \("xiaoyin-installer-smoke-\{0\}\.exe" -f \$ExpectedVersion\)/)
-  assert.match(win, /\$Installers \| Select-Object -First 1 \| Copy-Item -Destination \$InstallerPath -Force/)
+  assert.match(win, /Copy-Item -LiteralPath \$Installers\[0\]\.FullName -Destination \$InstallerPath/)
   assert.doesNotMatch(win, /-like "\*_\$\{ExpectedVersion\}_\*"/)
   assert.match(win, /name: xiaoyin-desktop-windows-\$\{\{ env.XIAOYIN_BUILD_MODE \}\}/)
   assert.deepEqual(quickWindows.bundle.resources, [])
@@ -105,6 +104,7 @@ test('CI owns quality checks and validates every PowerShell script', () => {
   assert.doesNotMatch(web, /node harness-host\/scripts\/acceptance-/)
   assert.doesNotMatch(web, /node --test scripts\//)
   assert.match(ci, /Get-ChildItem scripts -File -Filter '\*\.ps1'/)
+  assert.match(ci, /scripts\/test-windows-installer\.test\.ps1/)
 })
 
 test('installer jobs use concise labels and bounded execution time', () => {

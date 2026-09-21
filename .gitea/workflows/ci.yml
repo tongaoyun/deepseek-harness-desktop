@@ -48,6 +48,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Harness runtime checker tests failed" }
           powershell -NoProfile -ExecutionPolicy Bypass -File scripts/acceptance-windows.test.ps1
           if ($LASTEXITCODE -ne 0) { throw "Windows desktop preflight regression failed" }
+          powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-windows-installer.test.ps1
+          if ($LASTEXITCODE -ne 0) { throw "Windows installer path regression failed" }
           foreach ($Script in Get-ChildItem scripts -File -Filter '*.ps1') {
             $Tokens = $null
             $Errors = $null

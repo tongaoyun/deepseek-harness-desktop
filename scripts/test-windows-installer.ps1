@@ -1,7 +1,6 @@
 [CmdletBinding()]
 param(
   [Parameter(Mandatory = $true)]
-  [ValidateScript({ Test-Path -LiteralPath $_ -PathType Leaf })]
   [string]$InstallerPath,
 
   [string]$InstallRoot = (Join-Path $env:TEMP ("xiaoyin-installer-smoke-" + [guid]::NewGuid().ToString("N"))),
@@ -20,7 +19,14 @@ if ($env:XIAOYIN_WINDOWS_SMOKE -ne "1") {
   throw "Set XIAOYIN_WINDOWS_SMOKE=1 to confirm this is a disposable Windows smoke-test environment."
 }
 
-$resolvedInstaller = (Resolve-Path -LiteralPath $InstallerPath).Path
+function Resolve-InstallerPath {
+  param([AllowEmptyString()][string]$Path)
+  if ([string]::IsNullOrWhiteSpace($Path)) { throw "Installer path is empty." }
+  if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { throw "Installer was not found: $Path" }
+  return (Resolve-Path -LiteralPath $Path).Path
+}
+
+$resolvedInstaller = Resolve-InstallerPath -Path $InstallerPath
 $resolvedRoot = [System.IO.Path]::GetFullPath($InstallRoot)
 if (Test-Path -LiteralPath $resolvedRoot) {
   throw "Refusing to reuse an existing install directory: $resolvedRoot"
