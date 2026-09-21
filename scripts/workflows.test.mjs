@@ -8,6 +8,7 @@ const read = (name) => readFileSync(new URL(name, directory), 'utf8')
 const mac = read('macos-installer.yml')
 const win = read('windows-installer.yml')
 const windowsRuntime = readFileSync(new URL('../scripts/prepare-harness-runtime.ps1', import.meta.url), 'utf8')
+const macDmg = readFileSync(new URL('../scripts/package-macos-dmg.sh', import.meta.url), 'utf8')
 const quickWindows = JSON.parse(readFileSync(new URL('../src-tauri/tauri.quick.windows.conf.json', import.meta.url), 'utf8'))
 function expression(text, field, context) {
   const source = text.match(new RegExp(`^\\s*${field}: \\$\\{\\{ (.+) \\}\\}\\s*$`, 'm'))?.[1]
@@ -42,6 +43,8 @@ test('macOS release reuses main CI and can package both architectures in paralle
   assert.doesNotMatch(build, /XIAOYIN_HTTPS_SERVER_URL|VITE_XIAOYIN_SERVER_URL/)
   assert.doesNotMatch(build, /pnpm (lint|typecheck|test)|cargo (clippy|test)/)
   assert.match(build, /smoke-test-macos-bundle.sh/)
+  assert.match(macDmg, /hdiutil create -volname "Xiaoyin-\$\{artifact_arch\}"/)
+  assert.doesNotMatch(macDmg, /hdiutil create -volname "小胤"/)
   assert.match(mac, /default: arm64/)
 })
 test('macOS accepts selected architecture and always builds both on a version tag', () => {

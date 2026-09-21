@@ -36,7 +36,10 @@ trap 'rm -rf -- "$stage"' EXIT
 ditto "$app" "$stage/小胤.app"
 ln -s /Applications "$stage/Applications"
 mkdir -p "$(dirname "$dmg")"
-hdiutil create -volname "小胤" -srcfolder "$stage" -ov -format UDZO "$dmg"
+# Matrix legs share one macOS runner. Use an ASCII, architecture-specific
+# volume name so parallel hdiutil mounts never collide or depend on locale
+# encoding for /Volumes paths.
+hdiutil create -volname "Xiaoyin-${artifact_arch}" -srcfolder "$stage" -ov -format UDZO "$dmg"
 
 echo "macOS application: $app"
 echo "macOS disk image: $dmg"
