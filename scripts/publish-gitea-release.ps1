@@ -313,7 +313,9 @@ Invoke-BinaryUploadBatch -Uploads $releaseUploads
 $versionPackageFiles = @(
   @(
     [ordered]@{ Name = $nsisReleaseFile.Name; Path = $nsisReleaseFile.Path },
-    [ordered]@{ Name = $nsisSignature.Name; Path = $nsisSignature.FullName }
+    # Generic package names must use the same ASCII-safe names as Release
+    # assets; the bundled installer itself may have a localized source name.
+    [ordered]@{ Name = "$($nsisReleaseFile.Name).sig"; Path = $nsisSignature.FullName }
   ) +
   @(
     [ordered]@{ Name = "latest.json"; Path = $latestPath },

@@ -83,6 +83,8 @@ test('Windows quick mode is explicit and cannot weaken a tag release', () => {
   assert.match(publisher, /SQLite backend permits one writer at a time/)
   assert.match(publisher, /Add-Type -AssemblyName System\.Net\.Http/)
   assert.match(publisher, /\$versionPattern = .*\[regex\]::Escape\(\$version\)/)
+  assert.match(publisher, /Name = "\$\(\$nsisReleaseFile\.Name\)\.sig"; Path = \$nsisSignature\.FullName/)
+  assert.doesNotMatch(publisher, /Name = \$nsisSignature\.Name; Path = \$nsisSignature\.FullName/)
   assert.doesNotMatch(publisher, /expectedVersionToken/)
   assert.doesNotMatch(publisher, /foreach \(\$asset in \$releaseAssets\)/)
   assert.match(win, /ExpectedCount = if \(\$Quick\) \{ 1 \} else \{ 2 \}/)
