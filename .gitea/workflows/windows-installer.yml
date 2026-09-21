@@ -133,8 +133,9 @@ jobs:
           $VersionPattern = "(^|_)$([regex]::Escape($ExpectedVersion))(?=_|-|\.)"
           $Installers = @(Get-ChildItem $Bundle -Recurse -File -Filter "*.exe" | Where-Object { $_.Name -match $VersionPattern })
           if ($Installers.Count -ne 1) { throw "Expected one NSIS installer, found $($Installers.Count)" }
-          $InstallerPath = Join-Path -Path $Bundle -ChildPath ("小胤_{0}_x64-setup.exe" -f $ExpectedVersion)
-          if (-not (Test-Path -LiteralPath $InstallerPath -PathType Leaf)) { throw "NSIS installer was not found: $InstallerPath" }
+          $InstallerPath = Join-Path -Path $env:TEMP -ChildPath ("xiaoyin-installer-smoke-{0}.exe" -f $ExpectedVersion)
+          $Installers | Select-Object -First 1 | Copy-Item -Destination $InstallerPath -Force
+          if (-not (Test-Path -LiteralPath $InstallerPath -PathType Leaf)) { throw "NSIS smoke copy was not created: $InstallerPath" }
           .\scripts\test-windows-installer.ps1 -InstallerPath $InstallerPath
 
       - name: 收集安装包并生成 SHA-256 清单
