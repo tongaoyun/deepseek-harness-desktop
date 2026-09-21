@@ -94,10 +94,10 @@ try {
   }
   Get-ChildItem -LiteralPath (Join-Path $hostStage "dist") -Recurse -File -ErrorAction SilentlyContinue |
     Where-Object { $_.Extension -in @(".d.ts", ".map") } |
-    Remove-Item -Force
+    Remove-Item -Force -ErrorAction SilentlyContinue
   Get-ChildItem -LiteralPath (Join-Path $hostStage "node_modules") -Recurse -File -ErrorAction SilentlyContinue |
     Where-Object { $_.Extension -in @(".map", ".pdb") } |
-    Remove-Item -Force
+    Remove-Item -Force -ErrorAction SilentlyContinue
 
   # Optional dependencies publish one package per platform. Do not carry
   # Darwin/Linux/ARM native binaries into the Windows x64 installer.
@@ -105,13 +105,13 @@ try {
   Get-ChildItem -LiteralPath (Join-Path $hostStage "node_modules") -Recurse -Directory -ErrorAction SilentlyContinue |
     Where-Object { $_.Name -match $platformPackagePattern } |
     Sort-Object FullName -Descending |
-    ForEach-Object { Remove-Item -LiteralPath $_.FullName -Recurse -Force }
+    ForEach-Object { Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction SilentlyContinue }
 
   $nodePtyPrebuilds = Join-Path $hostStage "node_modules\node-pty\prebuilds"
   if (Test-Path -LiteralPath $nodePtyPrebuilds) {
     Get-ChildItem -LiteralPath $nodePtyPrebuilds -Directory |
       Where-Object { $_.Name -notmatch "^win32-x64" } |
-      Remove-Item -Recurse -Force
+      Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
   }
 }
 finally {

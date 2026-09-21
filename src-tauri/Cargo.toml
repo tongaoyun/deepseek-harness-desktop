@@ -1,6 +1,6 @@
 [package]
 name = "xiaoyin-desktop"
-version = "0.1.52"
+version = "0.1.53"
 description = "Xiaoyin enterprise desktop assistant"
 authors = ["InStudio"]
 edition = "2024"
