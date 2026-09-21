@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-  [string]$InstallerPath = (Join-Path $env:TEMP "xiaoyin-installer-smoke.exe"),
+  [string]$InstallerPath = "",
 
   [string]$InstallRoot = (Join-Path $env:TEMP ("xiaoyin-installer-smoke-" + [guid]::NewGuid().ToString("N"))),
 
@@ -20,9 +20,12 @@ if ($env:XIAOYIN_WINDOWS_SMOKE -ne "1") {
 
 function Resolve-InstallerPath {
   param([AllowEmptyString()][string]$Path)
+  if ([string]::IsNullOrWhiteSpace($Path)) {
+    $Path = [System.IO.Path]::Combine((Get-Location).Path, "xiaoyin-installer-smoke.exe")
+  }
   if ([string]::IsNullOrWhiteSpace($Path)) { throw "Installer path is empty." }
-  if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { throw "Installer was not found: $Path" }
-  return (Resolve-Path -LiteralPath $Path).Path
+  if (-not [System.IO.File]::Exists($Path)) { throw "Installer was not found: $Path" }
+  return [System.IO.Path]::GetFullPath($Path)
 }
 
 $resolvedInstaller = Resolve-InstallerPath -Path $InstallerPath

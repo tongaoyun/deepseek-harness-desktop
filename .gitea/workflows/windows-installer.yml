@@ -133,7 +133,7 @@ jobs:
           $VersionPattern = "(^|_)$([regex]::Escape($ExpectedVersion))(?=_|-|\.)"
           $Installers = @(Get-ChildItem $Bundle -Recurse -File -Filter "*.exe" | Where-Object { $_.Name -match $VersionPattern })
           if ($Installers.Count -ne 1) { throw "Expected one NSIS installer, found $($Installers.Count)" }
-          $InstallerPath = Join-Path -Path $env:TEMP -ChildPath "xiaoyin-installer-smoke.exe"
+          $InstallerPath = Join-Path -Path (Get-Location).Path -ChildPath "xiaoyin-installer-smoke.exe"
           try {
             if (Test-Path -LiteralPath $InstallerPath -PathType Leaf) { Remove-Item -LiteralPath $InstallerPath -Force }
             Copy-Item -LiteralPath $Installers[0].FullName -Destination $InstallerPath

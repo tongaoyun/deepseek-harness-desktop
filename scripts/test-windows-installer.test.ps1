@@ -13,7 +13,7 @@ $resolver = $ast.Find({
 if (-not $resolver) { throw "Installer path resolver is missing" }
 Set-Item -Path Function:\Resolve-InstallerPath -Value $resolver.Body.GetScriptBlock()
 
-$testRoot = Join-Path $env:TEMP ("xiaoyin-installer-path-test-" + [guid]::NewGuid().ToString("N"))
+$testRoot = Join-Path (Get-Location).Path ("xiaoyin-installer-path-test-" + [guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Path $testRoot | Out-Null
 try {
   foreach ($fileName in @("xiaoyin-installer.exe", ([char]0x5c0f + [char]0x80e4 + "_installer.exe"))) {
