@@ -80,6 +80,7 @@ test('Windows quick mode is explicit and cannot weaken a tag release', () => {
   const publisher = readFileSync(new URL('../scripts/publish-gitea-release.ps1', import.meta.url), 'utf8')
   assert.match(publisher, /function Invoke-BinaryUploadBatch/)
   assert.match(publisher, /ThrottleLimit = 3/)
+  assert.match(publisher, /Add-Type -AssemblyName System\.Net\.Http/)
   assert.match(publisher, /\$versionPattern = .*\[regex\]::Escape\(\$version\)/)
   assert.doesNotMatch(publisher, /expectedVersionToken/)
   assert.doesNotMatch(publisher, /foreach \(\$asset in \$releaseAssets\)/)

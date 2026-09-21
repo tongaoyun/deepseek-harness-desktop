@@ -50,6 +50,7 @@ $basicCredential = [Convert]::ToBase64String(
 )
 $headers = @{ Authorization = "Basic $basicCredential" }
 $utf8WithoutBom = [System.Text.UTF8Encoding]::new($false)
+Add-Type -AssemblyName System.Net.Http -ErrorAction Stop
 $httpClient = [System.Net.Http.HttpClient]::new()
 $httpClient.Timeout = [TimeSpan]::FromMinutes(60)
 $httpClient.DefaultRequestHeaders.Authorization =
