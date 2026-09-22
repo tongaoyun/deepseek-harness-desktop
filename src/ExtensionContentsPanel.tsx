@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { ArrowRight } from 'lucide-react'
 import { readExtensionContents, type ExtensionContents, type ExtensionDocument } from './expertKits'
+import { extensionCommandLabel } from './extensionInvocations'
 import type { InstalledExpertKit } from './types'
 import { ExtensionReaderDialog } from './ExtensionReaderDialog'
 import { ExtensionMarkdown as Markdown, ExtensionReadmeSection } from './ExtensionReadmeSection'
@@ -27,7 +28,7 @@ export function ExtensionContentsPanel({ extension, onUseCommand, beforeSkills }
     {contents.commands.length > 0 && <section className="expert-detail-section">
       <h3>快捷命令 <small>({contents.commands.length})</small></h3>
       <div className="detail-command-list">
-        {contents.commands.map((item) => <button aria-label={`使用命令：${item.name}`} disabled={!enabled || !onUseCommand} key={`command:${item.path}`} onClick={() => onUseCommand?.(item.id)} type="button"><code>{slashCommand(item.name)}</code><span>{item.summary}</span><ArrowRight size={15} /></button>)}
+        {contents.commands.map((item, index) => <button aria-label={`使用命令：${item.name}`} disabled={!enabled || !onUseCommand} key={`command:${item.path}`} onClick={() => onUseCommand?.(item.id)} type="button"><code>{slashCommand(item.name, item.id, index)}</code><span>{item.summary}</span><ArrowRight size={15} /></button>)}
       </div>
     </section>}
     {beforeSkills}
@@ -40,6 +41,7 @@ export function ExtensionContentsPanel({ extension, onUseCommand, beforeSkills }
   </>
 }
 
-function slashCommand(name: string): string {
-  return `/${name.replace(/^\/+/, '')}`
+function slashCommand(name: string, id: string, index: number): string {
+  const normalized = name.replace(/^\/+/, '')
+  return `/${normalized === id ? extensionCommandLabel(id, index) : normalized}`
 }

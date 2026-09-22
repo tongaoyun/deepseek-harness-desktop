@@ -56,7 +56,7 @@ it('shows published commands without duplicating bundled skills before installat
       knowledgeBases={[]} installing={false} removing={false} onClose={vi.fn()} onInstall={vi.fn()}
       onSchedule={vi.fn()} onUse={vi.fn()} />))
     const shortcuts = [...container.querySelectorAll('.detail-command-list code')].map((item) => item.textContent)
-    expect(shortcuts).toEqual(['/order-intake-check'])
+    expect(shortcuts).toEqual(['/订单排查'])
     expect(container.querySelector('.detail-command-list')?.textContent).not.toContain('API接口设计')
     expect(container.querySelector('.detail-skill-list')?.textContent).toContain('API接口设计')
   } finally {
