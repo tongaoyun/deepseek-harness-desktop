@@ -131,8 +131,49 @@ impl HarnessSlot {
         if active.is_some() {
             return Err("当前任务仍在执行".to_string());
         }
+        // A slot keeps its process warm between turns. Clear intents before the
+        // new run becomes visible so a stop/steer arriving at the old turn's
+        // boundary cannot leak into the next task.
+        self.intents
+            .interrupt_requested
+            .store(false, Ordering::SeqCst);
+        self.intents
+            .steer_inbox
+            .lock()
+            .map_err(|_| "插话队列不可用")?
+            .clear();
         *active = Some(ActiveRun::default());
         Ok(ActiveRunGuard(Arc::clone(self)))
+    }
+
+    fn queue_steer(&self, text: String) -> Result<bool, String> {
+        let active = self.active.lock().map_err(|_| "任务状态不可用")?;
+        if active.is_none() {
+            return Ok(false);
+        }
+        let mut inbox = self
+            .intents
+            .steer_inbox
+            .lock()
+            .map_err(|_| "插话队列不可用")?;
+        // A person typing mid-turn cannot outpace the agent; bound the queue so
+        // a runaway caller cannot grow it without limit.
+        if inbox.len() >= 20 {
+            return Err("插话过于频繁，请等待当前步骤完成".to_string());
+        }
+        inbox.push(text);
+        Ok(true)
+    }
+
+    fn request_interrupt(&self) -> Result<bool, String> {
+        let active = self.active.lock().map_err(|_| "任务状态不可用")?;
+        if active.is_none() {
+            return Ok(false);
+        }
+        self.intents
+            .interrupt_requested
+            .store(true, Ordering::SeqCst);
+        Ok(true)
     }
 
     fn is_running(&self) -> bool {
@@ -1203,21 +1244,7 @@ impl HarnessManager {
             .get(task_id)
             .cloned();
         let Some(slot) = slot else { return Ok(false) };
-        if !slot.is_running() {
-            return Ok(false);
-        }
-        let mut inbox = slot
-            .intents
-            .steer_inbox
-            .lock()
-            .map_err(|_| "插话队列不可用".to_string())?;
-        // A person typing mid-turn cannot outpace the agent; bound the queue so
-        // a runaway caller cannot grow it without limit.
-        if inbox.len() >= 20 {
-            return Err("插话过于频繁，请等待当前步骤完成".to_string());
-        }
-        inbox.push(text.trim().to_string());
-        Ok(true)
+        slot.queue_steer(text.trim().to_string())
     }
 
     /// Fork the task's session before its last prompt and return the new id.
@@ -1265,12 +1292,9 @@ impl HarnessManager {
             .get(task_id)
             .cloned();
         let Some(slot) = slot else { return Ok(false) };
-        if !slot.is_running() {
+        if !slot.request_interrupt()? {
             return Ok(false);
         }
-        slot.intents
-            .interrupt_requested
-            .store(true, Ordering::SeqCst);
         // A question or approval can block the stdout reader indefinitely;
         // releasing its broker lets the run loop observe cancellation now.
         self.questions.reject_task(task_id);
@@ -2999,6 +3023,11 @@ mod tests {
         // A finished turn accepts neither intent.
         assert_eq!(manager.steer("steered-task", "太晚了"), Ok(false));
         assert_eq!(manager.interrupt("steered-task"), Ok(false));
+        // A slot is reused with its warm Harness process, so stale intents
+        // must be removed before the next turn starts.
+        let _next = slot.begin().unwrap();
+        assert!(slot.intents.steer_inbox.lock().unwrap().is_empty());
+        assert!(!slot.intents.interrupt_requested.load(Ordering::SeqCst));
     }
 
     #[test]

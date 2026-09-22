@@ -17,6 +17,7 @@ import { ExtensionActionMenu, InstalledExtensionControls } from './InstalledExte
 import { ExtensionContentsPanel } from './ExtensionContentsPanel'
 import { ExtensionReadmeSection } from './ExtensionReadmeSection'
 import { extensionCategoryLabel } from './extensionCategories'
+import { versionRequirement } from './extensionVersion'
 import type { ExpertKitView } from './expertKits'
 import type { ConnectorRuntimeDefinition, KnowledgeBaseEntry, SkillCatalogEntry } from './types'
 
@@ -54,7 +55,7 @@ export function ExpertKitDetailsModal({
   const kitSkillById = new Map((kit.skillDetails ?? []).map((skill) => [skill.id, skill]))
   const connectorById = new Map(connectors.map((connector) => [connector.id, connector]))
   const knowledgeByReference = new Map(knowledgeBases.map((knowledgeBase) => [knowledgeBase.reference, knowledgeBase]))
-  const stateLabel = kit.localOnly ? '本地专家套件' : kit.installState === 'retired' ? '已下架' : kit.installState === 'installed' ? '已安装' : '安装确认'
+  const stateLabel = kit.localOnly ? '本地专家套件' : kit.installState === 'retired' ? '已下架' : kit.installState === 'incompatible' ? '需要升级桌面端' : kit.installState === 'installed' ? '已安装' : '安装确认'
   const issues = [...kit.connectorIssues, ...kit.knowledgeIssues]
   // An installed kit reads its guide from disk; before that the catalog serves it on demand.
   const [catalogReadme, setCatalogReadme] = useState('')
@@ -72,12 +73,12 @@ export function ExpertKitDetailsModal({
           {kit.installState === 'installed' && <button onClick={onSchedule} type="button"><CalendarClock size={14} />创建定时任务</button>}
           {onRemove && <button className="danger" disabled={removing} onClick={onRemove} type="button"><Trash2 size={14} />{removing ? '正在卸载…' : '卸载套件'}</button>}
         </ExtensionActionMenu>}
-        {kit.installed && kit.installState !== 'retired' && <InstalledExtensionControls extension={kit.installed} onChanged={onChanged} onCustomize={onCustomize} onExport={onExport} showLabels />}
-        {kit.installState === 'retired' || kit.installState === 'installed' ? null : <button disabled={installing || !kit.sha256} onClick={onInstall} type="button">{installing ? '正在校验并安装…' : '确认安装'}</button>}
+        {kit.installed && kit.installState === 'installed' && <InstalledExtensionControls extension={kit.installed} onChanged={onChanged} onCustomize={onCustomize} onExport={onExport} showLabels />}
+        {kit.installState === 'available' && <button disabled={installing || !kit.sha256} onClick={onInstall} type="button">{installing ? '正在校验并安装…' : '确认安装'}</button>}
   </>}>
       <div className="extension-profile">
         <ExtensionIcon installPath={kit.installed?.installPath} name={kit.name} />
-        <div><div className="extension-profile-title"><h2 id="expert-kit-title">{kit.name}</h2><span className="extension-profile-badge">{kit.localOnly ? '本地导入' : kit.installState === 'retired' ? '已下架' : '套件市场'}</span></div><p className="extension-reader-meta">{stateLabel} · {extensionCategoryLabel(kit.category)}</p></div>
+        <div><div className="extension-profile-title"><h2 id="expert-kit-title">{kit.name}</h2><span className="extension-profile-badge">{kit.localOnly ? '本地导入' : kit.installState === 'retired' ? '已下架' : kit.installState === 'incompatible' ? '需要升级' : '套件市场'}</span></div><p className="extension-reader-meta">{stateLabel} · {extensionCategoryLabel(kit.category)}</p></div>
       </div>
       <p className="extension-profile-summary">{kit.summary}</p>
 
@@ -86,6 +87,14 @@ export function ExpertKitDetailsModal({
       {kit.installState === 'retired' && <section className="expert-detail-section update-changes">
         <strong>该专家套件已从公司目录下架，桌面端和 IM 均不会再加载或执行它。</strong>
         <p>本地文件仅用于显示状态，可安全卸载；历史任务记录不会删除。</p>
+      </section>}
+      {kit.installState === 'incompatible' && <section className="expert-detail-section update-changes">
+        <strong>当前桌面端版本不支持此专家套件。</strong>
+        <p>{versionRequirement(kit.minimumDesktopVersion)}。升级后再安装，避免加载不兼容的扩展 Schema。</p>
+      </section>}
+      {kit.updateRequiresDesktopUpgrade && kit.installState === 'installed' && <section className="expert-detail-section update-changes">
+        <strong>已安装版本 {kit.installed?.manifest.version} 仍可使用；市场新版本暂不可更新。</strong>
+        <p>{versionRequirement(kit.minimumDesktopVersion)}，升级桌面端后可更新到 {kit.version}。</p>
       </section>}
 
       {!kit.installed && commands.length > 0 && <section className="expert-detail-section">

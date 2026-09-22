@@ -46,6 +46,6 @@ export function extensionMatches(
   if (category !== 'all' && (item.category ?? 'other') !== category) return false
   if (filter === 'builtin') return item.localOnly === true && item.installState !== 'retired'
   if (filter === 'installed') return item.installState === 'installed'
-  if (filter === 'attention') return item.installState === 'retired' || item.readiness === 'partial'
+  if (filter === 'attention') return item.installState === 'retired' || item.installState === 'incompatible' || item.readiness === 'partial'
   return item.installState !== 'retired' && item.localOnly !== true
 }

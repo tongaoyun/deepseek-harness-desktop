@@ -36,6 +36,16 @@ export function harnessError(data: HarnessErrorData): HarnessError {
 
 export function errorData(error: unknown): HarnessErrorData {
   if (error instanceof HarnessError) return error.data
+  if (error instanceof Error && error.message.includes('cannot create effect on inactive context')) {
+    return data(
+      'XY-AGENT-CONTEXT',
+      'local-agent',
+      '任务执行上下文已失效',
+      '当前任务执行上下文已失效，请重新发送任务',
+      true,
+      true,
+    )
+  }
   return {
     code: 'XY-HOST-ERROR',
     category: 'unknown',

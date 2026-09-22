@@ -63,6 +63,50 @@ describe('mergeExpertKits', () => {
     })
   })
 
+  it('uses a same-id developer kit as the complete local source of truth', () => {
+    const developer = {
+      ...installed,
+      source: 'developer' as const,
+      packageSha256: 'd'.repeat(64),
+      manifest: {
+        ...installed.manifest,
+        version: '9.0.0',
+        name: '本地店铺专家',
+        summary: '本地实现',
+        commands: [{ id: 'local-check', path: 'commands/local.md' }],
+        skills: [],
+        connectorRefs: [],
+        requiredTools: [],
+      },
+    }
+    const [view] = mergeExpertKits([catalogEntry], [installed, developer])
+    expect(view).toMatchObject({
+      name: '本地店铺专家', version: '9.0.0', summary: '本地实现', commandIds: ['local-check'],
+      skillIds: [], connectorRefs: [], requiredTools: [], localOnly: true,
+    })
+    expect(view.installed).toBe(developer)
+  })
+
+  it('keeps a compatible installed kit usable while its published update requires a newer desktop', () => {
+    const future = { ...catalogEntry, version: '2.0.0', minimumDesktopVersion: '0.2.0' }
+    expect(mergeExpertKits([future], [], [erpConnector])[0]).toMatchObject({ installState: 'incompatible' })
+    expect(mergeExpertKits([future], [installed], [erpConnector])[0]).toMatchObject({
+      installState: 'installed', installed, updateRequiresDesktopUpgrade: true,
+    })
+  })
+
+  it('allows replacing an incompatible local kit with a compatible catalog version', () => {
+    const incompatibleLocal = { ...installed, manifest: { ...installed.manifest, minimumDesktopVersion: '0.2.0' } }
+    expect(mergeExpertKits([catalogEntry], [incompatibleLocal])[0]).toMatchObject({
+      installState: 'available', installed: incompatibleLocal,
+    })
+  })
+
+  it('selects the newest installed version when the published version is absent', () => {
+    const newer = { ...installed, manifest: { ...installed.manifest, version: '1.2.0' } }
+    expect(mergeExpertKits([{ ...catalogEntry, version: '1.1.0' }], [installed, newer])[0].installed).toBe(newer)
+  })
+
   it('reports one active version per installed extension coordinate', () => {
     const older = { ...installed, manifest: { ...installed.manifest, version: '0.9.0' } }
     expect(installedExtensionSnapshot([installed, older, {

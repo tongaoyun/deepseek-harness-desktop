@@ -1,11 +1,18 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { discoveryGuidance } from './task-instructions.js'
+import { HarnessError, data as errorData } from './errors.js'
 
 export const name = 'xiaoyin-tool-discovery'
 export const inject = ['tools']
 
 const groups = ['files', 'office', 'knowledge', 'connectors', 'skills', 'web', 'code', 'desktop', 'workflow', 'other'] as const
 type Group = typeof groups[number]
+
+interface AgentState {
+  allowed: Set<string>
+  release: () => void
+  turn?: number
+}
 
 export function toolGroup(name: string): Group {
   if (/^(local_files_|read$|write$|edit$|read_image$|glob$|grep$|present$|list_dir|search_file)/u.test(name)) return 'files'
@@ -27,7 +34,43 @@ function initialAllowedTools(ctx: Context): Set<string> {
 }
 
 export function apply(ctx: Context): void {
-  const active = new WeakMap<object, { allowed: Set<string>; release: () => void; turn?: number }>()
+  const active = new WeakMap<object, AgentState>()
+  const states = new Set<AgentState>()
+
+  // Cordis disposes an Agent context before a stale async callback can be
+  // observed by the next lifecycle event. Releasing a restriction is normally
+  // idempotent, but the context itself may already be inactive at that point.
+  // Cleanup must never turn agent disposal into an unhandled task failure.
+  const release = (state: AgentState): void => {
+    const dispose = state.release
+    state.release = () => undefined
+    try {
+      dispose()
+    } catch (error) {
+      if (!isInactiveContextError(error)) throw error
+    }
+  }
+
+  const restrict = (agent: object, allowed: Set<string>, available: string[]): (() => void) => {
+    try {
+      return (agent as { ctx: { tools: { restrict: (filter: { allow: string[] }) => () => void } } }).ctx.tools.restrict({
+        allow: [...allowed].filter((tool) => available.includes(tool)),
+      })
+    } catch (error) {
+      if (isInactiveContextError(error)) {
+        throw new HarnessError(errorData(
+          'XY-AGENT-CONTEXT',
+          'local-agent',
+          '任务执行上下文已失效',
+          '当前任务执行上下文已失效，请重新发送任务',
+          true,
+          true,
+        ))
+      }
+      throw error
+    }
+  }
+
   const dispose = ctx.tools.register({
     name: 'tool_discover',
     description: '需要读取事实或执行操作时，选择所需工具类别；普通直接问答无需调用。解锁后下一步即可使用相应工具。可一次选多个类别。',
@@ -46,8 +89,8 @@ export function apply(ctx: Context): void {
       if (available.includes('task_report')) state.allowed.add('task_report')
       // Restrictions intersect. Lift the previous mask before installing its
       // replacement; the agent's other permission filters remain in force.
-      state.release()
-      state.release = exec.agent.ctx.tools.restrict({ allow: [...state.allowed].filter((tool) => available.includes(tool)) })
+      release(state)
+      state.release = restrict(exec.agent, state.allowed, available)
       const publishingTool = available.includes('local_files_publish') ? 'local_files_publish' : 'present'
       return {
         groups: selected,
@@ -59,18 +102,35 @@ export function apply(ctx: Context): void {
   })
   ctx.on('agent/created', ({ agent }) => {
     const allowed = initialAllowedTools(ctx)
-    const release = agent.ctx.tools.restrict({ allow: [...allowed] })
-    active.set(agent, { allowed, release })
+    const state: AgentState = { allowed, release: () => undefined }
+    state.release = restrict(agent, allowed, ctx.tools.schemas().map((tool) => tool.name))
+    active.set(agent, state)
+    states.add(state)
+  })
+  ctx.on('agent/disposed', ({ agent }) => {
+    const state = active.get(agent)
+    if (!state) return
+    active.delete(agent)
+    states.delete(state)
+    release(state)
   })
   ctx.on('agent/pre-step', ({ agent, turn }, next) => {
     const state = active.get(agent)
     if (state && typeof turn === 'number' && state.turn !== turn) {
       state.turn = turn
       state.allowed = initialAllowedTools(ctx)
-      state.release()
-      state.release = agent.ctx.tools.restrict({ allow: [...state.allowed] })
+      release(state)
+      state.release = restrict(agent, state.allowed, ctx.tools.schemas().map((tool) => tool.name))
     }
     return next()
   })
-  ctx.effect(() => dispose, 'tool discovery')
+  ctx.effect(() => () => {
+    for (const state of states) release(state)
+    states.clear()
+    dispose()
+  }, 'tool discovery')
+}
+
+function isInactiveContextError(error: unknown): boolean {
+  return error instanceof Error && error.message.includes('cannot create effect on inactive context')
 }

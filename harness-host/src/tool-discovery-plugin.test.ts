@@ -54,3 +54,37 @@ it('starts with one discovery schema, unlocks only selected tools per agent and 
   expect(visible.get(first)).toEqual(['tool_discover', 'ask_user_question', 'exit_plan_mode'])
   await expect(discovery.execute({ groups: ['unknown'] }, { agent: first } as never)).rejects.toThrow('无效的工具类别')
 })
+
+it('cleans restrictions when an agent is disposed and ignores stale pre-step events', () => {
+  const names = ['tool_discover', 'ask_user_question', 'exit_plan_mode']
+  const callbacks = new Map<string, (event: never, next?: () => string) => unknown>()
+  let discovery: ToolDefinition | undefined
+  let releaseCount = 0
+  const global = {
+    schemas: () => names.map((name) => ({ name })),
+    get: (name: string) => names.includes(name) ? { name } : undefined,
+    register: (tool: ToolDefinition) => { discovery = tool; return () => {} },
+  }
+  const ctx = {
+    tools: global,
+    on: (event: string, callback: (event: never, next?: () => string) => unknown) => { callbacks.set(event, callback); return () => {} },
+    effect: () => {},
+  } as unknown as Context
+  apply(ctx)
+  const value = {
+    ctx: {
+      tools: {
+        restrict: () => {
+          releaseCount += 1
+          return () => { releaseCount += 1 }
+        },
+      },
+    },
+  }
+  callbacks.get('agent/created')!({ agent: value } as never)
+  callbacks.get('agent/disposed')!({ agent: value } as never)
+  expect(releaseCount).toBe(2)
+  expect(() => callbacks.get('agent/pre-step')!({ agent: value, turn: 1 } as never, () => 'next')).not.toThrow()
+  expect(releaseCount).toBe(2)
+  expect(discovery).toBeDefined()
+})

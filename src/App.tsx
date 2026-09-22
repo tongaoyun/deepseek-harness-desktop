@@ -1458,7 +1458,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
   }
 
   const installKit = async (kit: ExpertKitView) => {
-    if (!bootstrap || !user || kit.installState === 'installed') return
+    if (!bootstrap || !user || kit.installState !== 'available') return
     setInstallingKitId(kit.id)
     setExpertKitError('')
     try {
@@ -1493,7 +1493,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
   }
 
   const installSkill = async (skill: SkillView) => {
-    if (!bootstrap || !user || skill.installState === 'installed') return
+    if (!bootstrap || !user || skill.installState !== 'available') return
     setInstallingSkillId(skill.id)
     setExpertKitError('')
     try {

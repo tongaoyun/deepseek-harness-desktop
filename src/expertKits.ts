@@ -8,13 +8,15 @@ import type {
   InstalledExtensionInventory,
   KnowledgeBaseEntry,
 } from './types'
+import { compareDesktopVersions, isDesktopVersionCompatible } from './extensionVersion'
 
-export type ExpertKitInstallState = 'available' | 'installed' | 'retired'
+export type ExpertKitInstallState = 'available' | 'installed' | 'retired' | 'incompatible'
 
 const REMOVED_EXPERT_KIT_IDS = new Set(['crossborder-operations'])
 
 export interface ExpertKitView extends ExpertKitCatalogEntry {
   installState: ExpertKitInstallState
+  updateRequiresDesktopUpgrade?: boolean
   readiness: 'ready' | 'partial'
   connectorIssues: string[]
   knowledgeIssues: string[]
@@ -165,10 +167,16 @@ export function mergeExpertKits(
   enabledConnectorIds?: Iterable<string>,
 ): ExpertKitView[] {
   const newestInstalled = new Map<string, InstalledExpertKit>()
+  const newestDeveloper = new Map<string, InstalledExpertKit>()
   for (const kit of installed) {
     if (kit.manifest.kind === 'skill') continue
     if (REMOVED_EXPERT_KIT_IDS.has(kit.manifest.id)) continue
-    if (!newestInstalled.has(kit.manifest.id)) newestInstalled.set(kit.manifest.id, kit)
+    const previous = newestInstalled.get(kit.manifest.id)
+    if (!previous || (compareDesktopVersions(kit.manifest.version, previous.manifest.version) ?? -1) > 0) newestInstalled.set(kit.manifest.id, kit)
+    if (kit.source === 'developer') {
+      const previousDeveloper = newestDeveloper.get(kit.manifest.id)
+      if (!previousDeveloper || (compareDesktopVersions(kit.manifest.version, previousDeveloper.manifest.version) ?? -1) > 0) newestDeveloper.set(kit.manifest.id, kit)
+    }
   }
 
   const connectorById = new Map(connectors.map((connector) => [connector.id, connector]))
@@ -201,25 +209,52 @@ export function mergeExpertKits(
 
   const activeCatalog = catalog.filter((kit) => !REMOVED_EXPERT_KIT_IDS.has(kit.id))
   const views = activeCatalog.map((kit): ExpertKitView => {
-    const local = installed.find((value) => value.manifest.kind === 'expert-kit'
+    const local = newestDeveloper.get(kit.id)
+      ?? installed.find((value) => value.manifest.kind === 'expert-kit'
       && value.manifest.id === kit.id && value.manifest.version === kit.version)
       ?? newestInstalled.get(kit.id)
-    return {
+    // Developer artifacts are the source of truth while iterating locally. A
+    // same-id catalog entry must not leave the UI describing one version while
+    // invocation and execution use another.
+    const developer = local?.source === 'developer' ? local.manifest : undefined
+    const metadata: ExpertKitCatalogEntry = developer ? {
       ...kit,
-      commandIds: kit.commandIds ?? [],
-      skillIds: kit.skillIds ?? [],
-      skillDetails: kit.skillDetails ?? [],
-      connectorRefs: kit.connectorRefs ?? [],
-      requiredTools: kit.requiredTools ?? [],
-      knowledgeBaseRefs: kit.knowledgeBaseRefs ?? [],
-      ...readiness(kit.connectorRefs ?? [], kit.requiredTools ?? [], kit.knowledgeBaseRefs ?? []),
+      id: developer.id,
+      name: developer.name,
+      author: developer.author,
+      version: developer.version,
+      summary: developer.summary,
+      category: developer.category,
+      minimumDesktopVersion: developer.minimumDesktopVersion,
+      commandIds: developer.commands.map((command) => command.id),
+      skillIds: developer.skills.map((skill) => skill.id),
+      skillDetails: [],
+      connectorRefs: developer.connectorRefs,
+      requiredTools: developer.requiredTools,
+      knowledgeBaseRefs: developer.knowledgeBaseRefs ?? [],
+      sha256: local?.packageSha256 ?? '',
+    } : kit
+    const catalogCompatible = isDesktopVersionCompatible(metadata.minimumDesktopVersion)
+    const localCompatible = local ? isDesktopVersionCompatible(local.manifest.minimumDesktopVersion) : false
+    return {
+      ...metadata,
+      commandIds: metadata.commandIds ?? [],
+      skillIds: metadata.skillIds ?? [],
+      skillDetails: metadata.skillDetails ?? [],
+      connectorRefs: metadata.connectorRefs ?? [],
+      requiredTools: metadata.requiredTools ?? [],
+      knowledgeBaseRefs: metadata.knowledgeBaseRefs ?? [],
+      ...readiness(metadata.connectorRefs ?? [], metadata.requiredTools ?? [], metadata.knowledgeBaseRefs ?? []),
       installed: local,
-      localOnly: false,
-      installState: local ? 'installed' : 'available',
+      localOnly: !!developer,
+      updateRequiresDesktopUpgrade: !developer && !!local && localCompatible && !catalogCompatible,
+      installState: local && localCompatible ? 'installed' : catalogCompatible ? 'available' : 'incompatible',
     }
   })
   const catalogIds = new Set(activeCatalog.map((kit) => kit.id))
-  for (const local of newestInstalled.values()) {
+  const localViews = new Map(newestInstalled)
+  for (const [id, local] of newestDeveloper) localViews.set(id, local)
+  for (const local of localViews.values()) {
     if (catalogIds.has(local.manifest.id)) continue
     views.push({
       id: local.manifest.id,
@@ -237,7 +272,9 @@ export function mergeExpertKits(
       knowledgeBaseRefs: local.manifest.knowledgeBaseRefs ?? [],
       sha256: local.packageSha256 ?? '',
       ...readiness(local.manifest.connectorRefs, local.manifest.requiredTools, local.manifest.knowledgeBaseRefs ?? []),
-      installState: local.source === 'developer' ? 'installed' : 'retired',
+      installState: local.source === 'developer'
+        ? isDesktopVersionCompatible(local.manifest.minimumDesktopVersion) ? 'installed' : 'incompatible'
+        : 'retired',
       installed: local,
       localOnly: local.source === 'developer',
     })

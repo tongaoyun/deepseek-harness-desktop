@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { data, errorDataForProvider, isHarnessErrorData } from './errors.js'
+import { data, errorData, errorDataForProvider, isHarnessErrorData } from './errors.js'
 import { failure } from './protocol.js'
 
 describe('Harness error contract', () => {
@@ -30,5 +30,13 @@ describe('Harness error contract', () => {
 
   it('accepts the provider status field in its serialized form', () => {
     expect(errorDataForProvider({ error: { statusCode: '503' } })).toMatchObject({ code: 'XY-MODEL-UNAVAILABLE', retryable: true })
+  })
+
+  it('turns an inactive Cordis context into a recoverable local-agent error', () => {
+    expect(errorData(new Error('cannot create effect on inactive context'))).toMatchObject({
+      code: 'XY-AGENT-CONTEXT',
+      category: 'local-agent',
+      retryable: true,
+    })
   })
 })

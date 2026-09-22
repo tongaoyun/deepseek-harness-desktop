@@ -5,11 +5,13 @@ import type {
   KnowledgeBaseEntry,
   SkillCatalogEntry,
 } from './types'
+import { compareDesktopVersions, isDesktopVersionCompatible } from './extensionVersion'
 
-export type SkillInstallState = 'available' | 'installed' | 'retired'
+export type SkillInstallState = 'available' | 'installed' | 'retired' | 'incompatible'
 
 export interface SkillView extends SkillCatalogEntry {
   installState: SkillInstallState
+  updateRequiresDesktopUpgrade?: boolean
   installedVersion?: string
   installed?: InstalledExpertKit
   readiness: 'ready' | 'partial'
@@ -26,9 +28,15 @@ export function mergeSkills(
   enabledConnectorIds?: Iterable<string>,
 ): SkillView[] {
   const localById = new Map<string, InstalledExpertKit>()
+  const developerById = new Map<string, InstalledExpertKit>()
   for (const artifact of installed) {
-    if (artifact.manifest.kind !== 'skill' || localById.has(artifact.manifest.id)) continue
-    localById.set(artifact.manifest.id, artifact)
+    if (artifact.manifest.kind !== 'skill') continue
+    const previous = localById.get(artifact.manifest.id)
+    if (!previous || (compareDesktopVersions(artifact.manifest.version, previous.manifest.version) ?? -1) > 0) localById.set(artifact.manifest.id, artifact)
+    if (artifact.source === 'developer') {
+      const previousDeveloper = developerById.get(artifact.manifest.id)
+      if (!previousDeveloper || (compareDesktopVersions(artifact.manifest.version, previousDeveloper.manifest.version) ?? -1) > 0) developerById.set(artifact.manifest.id, artifact)
+    }
   }
   const connectorById = new Map(connectors.map((connector) => [connector.id, connector]))
   const knowledgeReferences = new Set(knowledgeBases.map((entry) => entry.reference))
@@ -54,26 +62,48 @@ export function mergeSkills(
     }
   }
   const views = catalog.map((skill): SkillView => {
-    const connectorRefs = skill.connectorRefs ?? []
-    const requiredTools = skill.requiredTools ?? []
-    const knowledgeBaseRefs = skill.knowledgeBaseRefs ?? []
-    const local = localById.get(skill.id)
-    return {
+    const local = developerById.get(skill.id) ?? localById.get(skill.id)
+    const developer = local?.source === 'developer' ? local.manifest : undefined
+    const metadata: SkillCatalogEntry = developer ? {
       ...skill,
-      triggers: skill.triggers ?? [],
-      minimumDesktopVersion: skill.minimumDesktopVersion || '0.1.0',
+      id: developer.id,
+      name: developer.name,
+      author: developer.author,
+      version: developer.version,
+      summary: developer.summary,
+      category: developer.category,
+      sourceKitId: '',
+      triggers: developer.triggers ?? [],
+      minimumDesktopVersion: developer.minimumDesktopVersion,
+      connectorRefs: developer.connectorRefs,
+      requiredTools: developer.requiredTools,
+      knowledgeBaseRefs: developer.knowledgeBaseRefs ?? [],
+      sha256: local?.packageSha256 ?? '',
+    } : skill
+    const catalogCompatible = isDesktopVersionCompatible(metadata.minimumDesktopVersion || '0.1.0')
+    const localCompatible = local ? isDesktopVersionCompatible(local.manifest.minimumDesktopVersion) : false
+    const connectorRefs = metadata.connectorRefs ?? []
+    const requiredTools = metadata.requiredTools ?? []
+    const knowledgeBaseRefs = metadata.knowledgeBaseRefs ?? []
+    return {
+      ...metadata,
+      triggers: metadata.triggers ?? [],
+      minimumDesktopVersion: metadata.minimumDesktopVersion || '0.1.0',
       connectorRefs,
       requiredTools,
       knowledgeBaseRefs,
-      ...dependencyState(connectorRefs, requiredTools, knowledgeBaseRefs),
+      ...dependencyState(metadata.connectorRefs ?? [], metadata.requiredTools ?? [], metadata.knowledgeBaseRefs ?? []),
       installed: local,
       installedVersion: local?.manifest.version,
-      installState: local ? 'installed' : 'available',
-      localOnly: false,
+      updateRequiresDesktopUpgrade: !developer && !!local && localCompatible && !catalogCompatible,
+      installState: local && localCompatible ? 'installed' : catalogCompatible ? 'available' : 'incompatible',
+      localOnly: !!developer,
     }
   })
   const catalogIds = new Set(catalog.map((skill) => skill.id))
-  for (const local of localById.values()) {
+  const localViews = new Map(localById)
+  for (const [id, local] of developerById) localViews.set(id, local)
+  for (const local of localViews.values()) {
     if (catalogIds.has(local.manifest.id)) continue
     const manifest = local.manifest
     const connectorRefs = manifest.connectorRefs ?? []
@@ -95,7 +125,9 @@ export function mergeSkills(
       sha256: local.packageSha256 ?? '',
       installed: local,
       installedVersion: manifest.version,
-      installState: local.source === 'developer' ? 'installed' : 'retired',
+      installState: local.source === 'developer'
+        ? isDesktopVersionCompatible(local.manifest.minimumDesktopVersion) ? 'installed' : 'incompatible'
+        : 'retired',
       localOnly: local.source === 'developer',
       ...dependencyState(connectorRefs, requiredTools, knowledgeBaseRefs),
     })

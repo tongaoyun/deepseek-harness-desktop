@@ -41,7 +41,7 @@ export async function localSkillCommand(context: SkillCommandContext, action: st
     installed = await installGithubSkill(args.archiveId as string, args.path as string)
   } else {
     const skill = context.skills.find((item) => item.id === args.id)
-    if (!skill || skill.installState === 'retired') throw new Error('技能不在当前可用目录中，请重新搜索')
+    if (!skill || skill.installState === 'retired' || skill.installState === 'incompatible') throw new Error('技能不在当前桌面版本可用目录中，请升级后重试')
     if (skill.installState === 'installed') return { id: skill.id, installed: true, enabled: skill.installed?.enabled !== false, changed: false }
     const download = await createSkillDownload(context.endpoint, skill.id, context.employeeId, context.accessToken)
     context.assertActive()

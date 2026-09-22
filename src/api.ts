@@ -63,10 +63,12 @@ export async function createExpertKitDownload(
   kitId: string,
   employeeId: string,
   accessToken: string,
+  signal?: AbortSignal,
 ): Promise<ExpertKitDownload> {
   const base = endpoint.replace(/\/$/, '')
   const response = await fetch(serverUrl(`${base}/${encodeURIComponent(kitId)}/download`), {
     headers: enterpriseHeaders(employeeId, accessToken),
+    signal: boundedSignal(signal, 30_000),
   })
   if (!response.ok) throw new Error(`专家套件下载授权返回 ${response.status}`)
   return readServerData<ExpertKitDownload>(response)
@@ -86,10 +88,12 @@ export async function createSkillDownload(
   skillId: string,
   employeeId: string,
   accessToken: string,
+  signal?: AbortSignal,
 ): Promise<ExpertKitDownload> {
   const base = endpoint.replace(/\/$/, '')
   const response = await fetch(serverUrl(`${base}/${encodeURIComponent(skillId)}/download`), {
     headers: enterpriseHeaders(employeeId, accessToken),
+    signal: boundedSignal(signal, 30_000),
   })
   if (!response.ok) throw new Error(`技能下载授权返回 ${response.status}`)
   return readServerData<ExpertKitDownload>(response)
@@ -234,11 +238,13 @@ export async function uploadKnowledgeDocument(
   accessToken: string,
   knowledgeBaseId: string,
   file: File,
+  signal?: AbortSignal,
 ): Promise<KnowledgeDocumentEntry> {
   const form = new FormData()
   form.append('file', file, file.name)
   const response = await fetch(serverUrl(`${endpoint.replace(/\/$/, '')}/${encodeURIComponent(knowledgeBaseId)}/documents`), {
     method: 'POST', headers: knowledgeHeaders(employeeId, teamId, accessToken), body: form,
+    signal: boundedSignal(signal, 120_000),
   })
   if (!response.ok) throw new Error(`知识库文档上传返回 ${response.status}`)
   return readServerData<KnowledgeDocumentEntry>(response)

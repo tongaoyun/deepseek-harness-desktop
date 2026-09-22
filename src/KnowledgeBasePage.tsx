@@ -57,7 +57,9 @@ function KnowledgeWorkspace({ endpoint, employeeId, teamId, accessToken, onChang
   const searchRequest = useRef(0)
   const operation = useRef(false)
   const mounted = useRef(true)
+  const uploadController = useRef<AbortController | undefined>(undefined)
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; documentRequest.current += 1; searchRequest.current += 1 } }, [])
+  useEffect(() => () => uploadController.current?.abort(), [])
   const fileInput = useRef<HTMLInputElement>(null)
   const selected = bases.find((item) => item.id === selectedId)
   const isCurrent = (baseId = selectedId) => mounted.current && current.current.context === context && current.current.selectedId === baseId
@@ -148,6 +150,8 @@ function KnowledgeWorkspace({ endpoint, employeeId, teamId, accessToken, onChang
     if (!selectedId || files.length === 0 || operation.current || busy) return
     if (files.length > 20) { setError('一次最多上传 20 个文件，请分批上传；本次未上传任何文件。'); return }
     operation.current = true
+    const controller = new AbortController()
+    uploadController.current = controller
     documentRequest.current += 1
     setBusy(true); setError('')
     const failures: string[] = []
@@ -161,7 +165,7 @@ function KnowledgeWorkspace({ endpoint, employeeId, teamId, accessToken, onChang
         try {
           if (!/\.(pdf|docx|xlsx|txt|md|markdown)$/i.test(file.name)) throw new Error('不支持的文件类型')
           if (!file.size || file.size > 25 * 1024 * 1024) throw new Error('文件不能为空或超过 25 MiB')
-          const value = await uploadKnowledgeDocument(endpoint, employeeId, teamId, accessToken, selectedId, file)
+          const value = await uploadKnowledgeDocument(endpoint, employeeId, teamId, accessToken, selectedId, file, controller.signal)
           if (current.current.context === context && current.current.selectedId === selectedId) {
             setDocuments((values) => [value, ...values.filter((item) => item.id !== value.id)])
           }
@@ -171,6 +175,7 @@ function KnowledgeWorkspace({ endpoint, employeeId, teamId, accessToken, onChang
       if (isCurrent() && failures.length) setError(`以下文件上传失败，其余成功项已保留：${failures.join('；')}`)
     } finally {
       operation.current = false
+      if (uploadController.current === controller) uploadController.current = undefined
       setUploadProgress(undefined)
       setBusy(false); if (fileInput.current) fileInput.current.value = ''
     }

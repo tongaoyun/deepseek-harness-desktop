@@ -54,7 +54,7 @@ export function ExpertCatalogPage(props: CommonProps & {
     {!props.loading && props.all.length > 0 && visible.length === 0 && <div className="kit-empty">没有匹配的专家套件</div>}
     <div className="kit-grid expert-market-grid">{visible.map((kit) => {
       const installed = kit.installState === 'installed'
-      const actionLabel = kit.installState === 'retired' ? '查看并卸载' : installed ? '查看详情' : '查看并安装'
+      const actionLabel = kit.installState === 'retired' ? '查看并卸载' : kit.installState === 'incompatible' || kit.updateRequiresDesktopUpgrade ? '查看升级要求' : installed ? '查看详情' : '查看并安装'
       return <article className="market-card" key={kit.id}>
         <div className="market-card-title"><CatalogKitIcon installPath={kit.installed?.installPath} /><div><h3><button className="market-card-name" onClick={() => props.onOpen(kit.id)} type="button">{kit.name}</button></h3><small>{kit.localOnly ? '我的创作' : '小胤企业市场'}</small></div><button aria-label={`${actionLabel}：${kit.name}`} className={installed ? 'installed' : ''} disabled={props.installingId === kit.id} onClick={() => props.onOpen(kit.id)} title={actionLabel} type="button">{installed ? <Check size={18} /> : <Plus size={20} />}</button></div>
         <p>{kit.summary}</p>
@@ -86,11 +86,11 @@ export function SkillCatalogPage(props: CommonProps & { all: SkillView[]; visibl
     {visible.length > 0 && <h2 className="catalog-section-label">{props.filter === 'builtin' ? '本机技能' : props.filter === 'installed' ? '已安装技能' : '企业技能'}<span>{visible.length}</span></h2>}
     <div className={props.filter === 'market' ? 'kit-grid skill-market-grid' : 'installed-skill-list'}>{visible.map((skill) => {
       const installed = skill.installState === 'installed'
-      const actionLabel = skill.installState === 'retired' ? '查看并卸载' : installed ? '查看详情' : '查看并安装'
+      const actionLabel = skill.installState === 'retired' ? '查看并卸载' : skill.installState === 'incompatible' || skill.updateRequiresDesktopUpgrade ? '查看升级要求' : installed ? '查看详情' : '查看并安装'
       if (props.filter !== 'market') return <article className="installed-skill-row" key={skill.id}>
         <button className="installed-skill-info" onClick={() => props.onOpen(skill.id)} type="button"><span className="market-card-icon"><Sparkles size={18} /></span><span><strong>{skill.name}</strong><small>{skill.summary}</small></span></button>
         {installed && props.onUseSkill && <button className="installed-skill-use" disabled={skill.installed?.enabled === false} onClick={() => props.onUseSkill?.(skill.id)} type="button">使用</button>}
-        {skill.installed && skill.installState !== 'retired' ? <ExtensionEnableSwitch extension={skill.installed} onChanged={props.onChanged} /> : <button onClick={() => props.onOpen(skill.id)} type="button">{actionLabel}</button>}
+        {skill.installed && skill.installState === 'installed' ? <ExtensionEnableSwitch extension={skill.installed} onChanged={props.onChanged} /> : <button onClick={() => props.onOpen(skill.id)} type="button">{actionLabel}</button>}
       </article>
       return <article className="market-card skill-card" key={skill.id}>
         <div className="market-card-title"><span className="market-card-icon"><Sparkles size={18} /></span><div><h3><button className="market-card-name" onClick={() => props.onOpen(skill.id)} type="button">{skill.name}</button></h3><small>{skill.id}</small></div><button aria-label={`${actionLabel}：${skill.name}`} className={installed ? 'installed' : ''} onClick={() => props.onOpen(skill.id)} title={actionLabel} type="button">{installed ? <Check size={18} /> : <Plus size={20} />}</button></div>

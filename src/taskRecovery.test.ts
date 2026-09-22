@@ -44,4 +44,21 @@ describe('runHarnessWithRecovery', () => {
     expect(execute).toHaveBeenCalledTimes(1)
     expect(reset).not.toHaveBeenCalled()
   })
+
+  it('does not restart a transient failure when cancellation arrives during recovery', async () => {
+    let canceled = false
+    const execute = vi.fn().mockRejectedValue({ code: 'XY-MODEL', category: 'model', title: '模型未能完成任务', message: '模型服务暂时无响应', infrastructure: false, retryable: true })
+    const onRetry = vi.fn()
+    const reset = vi.fn(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 10))
+      canceled = true
+    })
+    await expect(runHarnessWithRecovery(request, {
+      getProjection: createXiaoyinTaskProjection,
+      isCanceled: () => canceled,
+      onRetry,
+    }, { execute, reset, sessionId: () => 'fresh' })).rejects.toMatchObject({ code: 'XY-CANCELED', retryable: false })
+    expect(execute).toHaveBeenCalledOnce()
+    expect(onRetry).not.toHaveBeenCalled()
+  })
 })

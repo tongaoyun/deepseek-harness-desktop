@@ -8,6 +8,7 @@ import {
   loadExpertKits,
   loadSkills,
   loadKnowledgeSource,
+  uploadKnowledgeDocument,
   submitAuditEvent,
   submitDeviceCapabilityReport,
   submitFeedback,
@@ -117,6 +118,19 @@ describe('loadBootstrap', () => {
       'X-Xiaoyin-Employee-Id': 'employee-1',
       'X-ERP-Session': 'token-1',
     })
+  })
+
+  it('bounds extension authorization and knowledge document uploads', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(wire({ id: 'kit', version: '1.0.0', sha256: 'a'.repeat(64), url: 'https://example.test/kit', expiresAt: '2099-01-01T00:00:00Z' })), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(wire({ id: 'doc', name: 'notes.txt', status: 'INDEXED' })), { status: 201 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await createExpertKitDownload('/api/v1/expert-kits', 'kit', 'employee-1', 'token-1')
+    await uploadKnowledgeDocument('/api/v1/knowledge-bases', 'employee-1', 'team-1', 'token-1', 'kb-1', new File(['notes'], 'notes.txt'))
+
+    expect(fetchMock.mock.calls[0][1].signal).toBeInstanceOf(AbortSignal)
+    expect(fetchMock.mock.calls[1][1].signal).toBeInstanceOf(AbortSignal)
   })
 
   it('submits redacted audit events without exposing a desktop audit feed', async () => {

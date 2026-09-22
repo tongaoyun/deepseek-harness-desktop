@@ -412,7 +412,7 @@ export class DeepSeekHarnessRuntime implements HarnessRuntime {
       // Do not let the native host tear down the process group before the SDK
       // has finished disposing detached shell/MCP children.
       if (this.closing) await this.closeTask?.catch(() => undefined)
-      if (error instanceof TurnTimeoutError && this.harness === harness) {
+      if ((error instanceof TurnTimeoutError || isAgentContextFailure(error)) && this.harness === harness) {
         this.harness = undefined
         await harness.close().catch(() => undefined)
       }
@@ -506,6 +506,10 @@ export class DeepSeekHarnessRuntime implements HarnessRuntime {
   }
 }
 
+function isAgentContextFailure(error: unknown): boolean {
+  return error instanceof HarnessError && error.data.code === 'XY-AGENT-CONTEXT'
+}
+
 
 interface SessionSubscription {
   next(): Promise<HarnessNotification>
@@ -593,7 +597,13 @@ export async function runSessionTurn(
         if (turnStarted) break
       }
       if (turnStarted && notification.method === 'session.status'
-        && notification.params.sessionId === sessionId && notification.params.status === 'idle') break
+        && notification.params.sessionId === sessionId && notification.params.status === 'idle') {
+        // Some providers acknowledge session/interrupt by returning to idle
+        // without emitting a turn/end(aborted) event. Preserve the same
+        // cancellation contract for both event shapes.
+        if (isInterrupted?.()) abortedByInterrupt = true
+        break
+      }
     }
   } finally {
     subscription.close()
