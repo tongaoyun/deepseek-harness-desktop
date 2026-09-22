@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { extensionCommandLabel, extensionInvocations, selectedInvocations } from './extensionInvocations'
+import { extensionCommandLabel, extensionCommandSlashLabel, extensionInvocations, selectedInvocations } from './extensionInvocations'
 import { mergeExpertKits } from './expertKits'
 import type { InstalledExpertKit } from './types'
 
@@ -12,6 +12,8 @@ describe('extension invocations', () => {
   it('keeps internal command ids out of the user-facing picker', () => {
     expect(extensionCommandLabel('order-intake-check')).toBe('订单排查')
     expect(extensionCommandLabel('unknown-command', 2)).toBe('快捷命令 3')
+    expect(extensionCommandSlashLabel('order-intake-check')).toBe('订单排查')
+    expect(extensionCommandSlashLabel('unknown-command', 2)).toBe('unknown-command')
   })
 
   it('exposes installed kits and their declared commands', () => {

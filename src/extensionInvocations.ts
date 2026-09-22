@@ -59,6 +59,11 @@ export function extensionCommandLabel(id: string, index = 0): string {
   return COMMAND_LABELS[id] ?? `快捷命令 ${index + 1}`
 }
 
+export function extensionCommandSlashLabel(id: string, index = 0): string {
+  const label = extensionCommandLabel(id, index)
+  return label.startsWith('快捷命令 ') ? id : label
+}
+
 export function extensionInvocations(kits: ExpertKitView[], skills: SkillView[]): ExtensionInvocation[] {
   return [
     ...skills.filter((skill) => skill.installed?.enabled !== false && skill.installState === 'installed').map((skill): ExtensionInvocation => ({

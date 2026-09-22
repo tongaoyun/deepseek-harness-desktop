@@ -18,7 +18,7 @@ import { ExtensionContentsPanel } from './ExtensionContentsPanel'
 import { ExtensionReadmeSection } from './ExtensionReadmeSection'
 import { extensionCategoryLabel } from './extensionCategories'
 import { versionRequirement } from './extensionVersion'
-import { extensionCommandLabel } from './extensionInvocations'
+import { extensionCommandSlashLabel } from './extensionInvocations'
 import type { ExpertKitView } from './expertKits'
 import type { ConnectorRuntimeDefinition, KnowledgeBaseEntry, SkillCatalogEntry } from './types'
 
@@ -101,7 +101,7 @@ export function ExpertKitDetailsModal({
       {!kit.installed && commands.length > 0 && <section className="expert-detail-section">
         <h3>快捷命令 <small>({commands.length})</small></h3>
         <div className="detail-command-list">
-          {commands.map((command, index) => <button disabled={!onUse} key={`command:${command.id}`} onClick={() => onUse?.(command.id)} type="button"><code>{slashCommand(extensionCommandLabel(command.id, index))}</code><span>{kitSkillById.get(command.skillId ?? command.id)?.summary || skillById.get(command.skillId ?? command.id)?.summary || '使用套件中的工作流程处理任务'}</span><ArrowRight size={15} /></button>)}
+          {commands.map((command, index) => <button disabled={!onUse} key={`command:${command.id}`} onClick={() => onUse?.(command.id)} type="button"><code>{slashCommand(extensionCommandSlashLabel(command.id, index))}</code><span>{kitSkillById.get(command.skillId ?? command.id)?.summary || skillById.get(command.skillId ?? command.id)?.summary || '使用套件中的工作流程处理任务'}</span><ArrowRight size={15} /></button>)}
         </div>
       </section>}
       {!kit.installed && kit.skillIds.length > 0 && <section className="expert-detail-section">

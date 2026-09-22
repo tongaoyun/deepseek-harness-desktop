@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { ArrowRight } from 'lucide-react'
 import { readExtensionContents, type ExtensionContents, type ExtensionDocument } from './expertKits'
-import { extensionCommandLabel } from './extensionInvocations'
+import { extensionCommandSlashLabel } from './extensionInvocations'
 import type { InstalledExpertKit } from './types'
 import { ExtensionReaderDialog } from './ExtensionReaderDialog'
 import { ExtensionMarkdown as Markdown, ExtensionReadmeSection } from './ExtensionReadmeSection'
@@ -43,5 +43,5 @@ export function ExtensionContentsPanel({ extension, onUseCommand, beforeSkills }
 
 function slashCommand(name: string, id: string, index: number): string {
   const normalized = name.replace(/^\/+/, '')
-  return `/${normalized === id ? extensionCommandLabel(id, index) : normalized}`
+  return `/${normalized === id ? extensionCommandSlashLabel(id, index) : normalized}`
 }
