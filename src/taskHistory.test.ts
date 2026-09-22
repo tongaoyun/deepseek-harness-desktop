@@ -68,13 +68,14 @@ describe('task history', () => {
     const storage = new MemoryStorage()
     const task: LocalTaskRun = {
       id: 'task-1', source: 'DESKTOP', name: '库存分析', status: 'RUNNING',
-      createdAt: '2026-08-28T01:00:00Z', updatedAt: '2026-08-28T01:00:00Z', projection, entries: [],
+      createdAt: '2026-08-28T01:00:00Z', updatedAt: '2026-08-28T01:00:00Z', lastOpenedAt: '2026-08-28T01:00:30Z', projection, entries: [],
     }
     saveLocalTask('employee-1', task, storage)
     saveLocalTask('employee-1', { ...task, status: 'COMPLETED', updatedAt: '2026-08-28T01:01:00Z' }, storage)
 
     expect(loadLocalTasks('employee-1', storage)).toHaveLength(1)
     expect(loadLocalTasks('employee-1', storage)[0].status).toBe('COMPLETED')
+    expect(loadLocalTasks('employee-1', storage)[0].lastOpenedAt).toBe('2026-08-28T01:00:30Z')
     expect(loadLocalTasks('employee-2', storage)).toEqual([])
   })
 

@@ -124,6 +124,7 @@ it('keeps streamed text in place exactly once while tool cards append below it',
   try {
     await act(async () => root.render(<ChatPage {...base} harnessRunning taskProjection={projection} entries={[streaming]} />))
     expect(container.querySelector('.turn-status-line')?.textContent).toContain('已处理')
+    expect(container.querySelector('.turn-status-line .turn-spinner')).not.toBeNull()
     expect(container.querySelector('.turn-activity')).not.toBeInstanceOf(HTMLDetailsElement)
     // The streamed text lives in the turn body exactly once, with the tool card below it.
     expect(container.textContent!.split('正在生成的正文')).toHaveLength(2)

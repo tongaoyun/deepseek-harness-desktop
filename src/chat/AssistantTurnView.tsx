@@ -128,7 +128,7 @@ function TurnActivity({ runState, startedAt, completedAt, status, waitingForFirs
       : <SegmentView key={`activity:${group.segment.kind}:${group.segment.id}:${index}`} segment={group.segment} streaming={streaming}
         approvalsEnabled={approvalsEnabled} onApprovalDecision={onApprovalDecision} onQuestionAnswer={onQuestionAnswer} />)}</div>}</>
   if (streaming) return <section aria-label={label} className={`turn-activity turn-status-${status}`}>
-    <div className="turn-status-line" role="status"><span>{label}</span></div>
+    <div className="turn-status-line" role="status"><LoaderCircle aria-hidden="true" className="turn-spinner" size={14} /><span>{label}</span></div>
     {content}
   </section>
   return <details className={`turn-activity turn-status-${status}`} open={open}>

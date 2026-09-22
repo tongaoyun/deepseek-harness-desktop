@@ -62,6 +62,9 @@ export function DesktopSidebar(props: Props) {
     }
   }, [menuTaskId])
   const listedTasks = props.visibleTasks.filter((task) => props.taskQuery.trim() || !task.archivedAt)
+  const taskUnread = (task: LocalTaskRun) => task.status !== 'RUNNING'
+    && !(props.page === 'chat' && props.activeTaskId === task.id)
+    && (!task.lastOpenedAt || task.updatedAt > task.lastOpenedAt)
   const navItem = (id: string, label: string, Icon: typeof Boxes) => <button aria-current={props.page === id ? 'page' : undefined} className={props.page === id ? 'nav-item active' : 'nav-item'} onClick={() => props.onPage(id)} title={props.collapsed ? label : undefined} type="button"><Icon size={17} /><span>{label}</span></button>
   return <aside className="sidebar">
     <div className="sidebar-brand">
@@ -87,7 +90,7 @@ export function DesktopSidebar(props: Props) {
         {listedTasks.map((task) => <div className="recent-task-wrap" data-task-menu={task.id} key={task.id}>
           {editingTaskId === task.id
             ? <form onSubmit={(event) => { event.preventDefault(); props.onRenameTask(task, editingName); setEditingTaskId('') }}><input autoFocus aria-label="任务名称" maxLength={120} onChange={(event) => setEditingName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Escape') setEditingTaskId('') }} value={editingName} /></form>
-            : <button aria-current={props.page === 'chat' && props.activeTaskId === task.id ? 'true' : undefined} aria-label={task.status === 'RUNNING' ? `${task.name}，运行中` : task.name} className={`recent-task${props.page === 'chat' && props.activeTaskId === task.id ? ' active' : ''}`} onClick={() => props.onOpenTask(task)} type="button"><span>{task.name}</span>{task.status === 'RUNNING' && <span aria-label="运行中" className="recent-task-state" title="运行中"><LoaderCircle className="recent-task-spinner" size={14} /></span>}</button>}
+            : <button aria-current={props.page === 'chat' && props.activeTaskId === task.id ? 'true' : undefined} aria-label={task.status === 'RUNNING' ? `${task.name}，运行中` : taskUnread(task) ? `${task.name}，有新结果` : task.name} className={`recent-task${props.page === 'chat' && props.activeTaskId === task.id ? ' active' : ''}`} onClick={() => props.onOpenTask(task)} type="button"><span>{task.name}</span>{task.status === 'RUNNING' ? <span aria-label="运行中" className="recent-task-state" title="运行中"><LoaderCircle className="recent-task-spinner" size={14} /></span> : taskUnread(task) ? <span aria-label="有新结果" className="recent-task-state recent-task-unread-dot" title="有新结果" /> : null}</button>}
           <button aria-expanded={menuTaskId === task.id} aria-label={`管理 ${task.name}`} className="recent-task-more" onClick={() => setMenuTaskId((current) => current === task.id ? '' : current)} type="button"><MoreHorizontal size={14} /></button>
           {menuTaskId === task.id && <div className="recent-task-menu" onKeyDown={navigateMenu} role="menu">
             {!task.archivedAt && <button disabled={task.status === 'RUNNING'} onClick={() => { setEditingName(task.name); setEditingTaskId(task.id); setMenuTaskId('') }} role="menuitem" type="button"><Pencil size={13} />重命名</button>}

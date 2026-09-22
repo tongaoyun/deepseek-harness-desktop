@@ -49,6 +49,25 @@ it('shows only a spinner for a running task in the history list', () => {
   expect(html).not.toContain('>运行中</small>')
 })
 
+it('shows a dot for an unread completed task and clears it for the active task', () => {
+  const unread = { ...task, id: 'unread', updatedAt: '2026-09-22T10:00:00Z' }
+  const html = renderToStaticMarkup(<DesktopSidebar {...props} activeTaskId={undefined} tasks={[unread]} visibleTasks={[unread]} />)
+  expect(html).toContain('aria-label="分析文档，有新结果"')
+  expect(html).toContain('recent-task-unread-dot')
+  const opened = { ...unread, lastOpenedAt: '2026-09-22T10:00:00Z' }
+  const openedHtml = renderToStaticMarkup(<DesktopSidebar {...props} activeTaskId={undefined} tasks={[opened]} visibleTasks={[opened]} />)
+  expect(openedHtml).not.toContain('recent-task-unread-dot')
+  const activeHtml = renderToStaticMarkup(<DesktopSidebar {...props} activeTaskId={unread.id} tasks={[unread]} visibleTasks={[unread]} />)
+  expect(activeHtml).not.toContain('recent-task-unread-dot')
+})
+
+it('prefers the running spinner over the unread marker', () => {
+  const running = { ...task, id: 'running', status: 'RUNNING' as const, updatedAt: '2026-09-22T10:00:00Z' }
+  const html = renderToStaticMarkup(<DesktopSidebar {...props} activeTaskId={undefined} tasks={[running]} visibleTasks={[running]} />)
+  expect(html).toContain('recent-task-spinner')
+  expect(html).not.toContain('recent-task-unread-dot')
+})
+
 it('only shows task/channel tabs and keeps archived tasks accessible through search', () => {
   const archived = { ...task, id: 'archived', name: '已收起的报告', archivedAt: '2026-09-06T00:00:00Z' }
   const data = { ...props, tasks: [archived], visibleTasks: [archived] }

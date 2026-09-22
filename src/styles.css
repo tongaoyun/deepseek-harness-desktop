@@ -65,6 +65,7 @@ button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 2px
 .recent-task-wrap { position: relative; }
 .recent-task-state { position: absolute; top: 11px; right: 10px; display: inline-flex; align-items: center; justify-content: center; color: #6e977a; }
 .recent-task-spinner { animation: spin .9s linear infinite; }
+.recent-task-unread-dot { width: 6px; height: 6px; border-radius: 50%; background: #5d9b70; }
 .recent-task-wrap:hover .recent-task { padding-right: 34px; background: #e8ece7; }
 .recent-task-more { position: absolute; z-index: 2; top: 8px; right: 5px; display: grid; width: 25px; height: 25px; place-items: center; padding: 0; border: 0; border-radius: 7px; color: #69716c; background: transparent; cursor: pointer; opacity: 0; }
 .recent-task-wrap:hover .recent-task-more, .recent-task-more[aria-expanded="true"] { opacity: 1; }

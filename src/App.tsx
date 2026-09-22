@@ -711,6 +711,13 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
     setTaskProjection(streaming?.projection ?? selectedTask.projection)
     const draft = user ? readTaskDraft(user.userId, selectedTask.id) : undefined
     setHarnessSessionId(restoredTaskSessionId(selectedTask, draft))
+    const openedAt = new Date().toISOString()
+    const openedTask = { ...selectedTask, lastOpenedAt: openedAt }
+    // Later completion/failure snapshots are based on the in-memory turn.
+    // Keep its read marker so opening a running task does not resurrect the
+    // unread dot when that turn settles.
+    if (streaming?.task) streaming.task.lastOpenedAt = openedAt
+    persistLocalTask(openedTask)
     void restoreDraftContext(draft ?? { ...emptyDraft(), prompt: joinComposerPrompt(selectedTask.invocationTokens ?? [], ''), directories: selectedTask.localDirectories ?? [], knowledgeRefs: selectedTask.capabilitySnapshot?.knowledgeBaseRefs ?? [], connectorIds: selectedTask.capabilitySnapshot?.connectors.map((connector) => connector.id) ?? [], model: selectedTask.model ?? activeModel, reasoningEffort: selectedTask.reasoningEffort, executionMode: selectedTask.executionMode ?? 'agent' })
     focusComposer()
   }

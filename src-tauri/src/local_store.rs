@@ -26,7 +26,7 @@ const READABLE_TASK_SQL: &str = "CASE WHEN json_valid(payload) THEN COALESCE(
     AND json_type(payload, '$.projection.steps') = 'array'
     AND json_type(payload, '$.projection.artifacts') = 'array'
     AND NOT EXISTS (SELECT 1 FROM json_each(payload) WHERE key NOT IN (
-      'id', 'source', 'name', 'status', 'createdAt', 'updatedAt', 'archivedAt', 'sessionId',
+      'id', 'source', 'name', 'status', 'createdAt', 'updatedAt', 'lastOpenedAt', 'archivedAt', 'sessionId',
       'scheduleId', 'scheduleRunId', 'invocationTokens', 'model', 'reasoningEffort', 'executionMode',
       'localDirectories', 'capabilitySnapshot', 'projection', 'entries', 'messagePreview',
       'processedImEventIds', 'capabilityNotices', 'interactionSegments'))
@@ -690,6 +690,7 @@ fn task_index_fields(task: &Value) -> Result<(&str, &str, &str, &str), String> {
         "status",
         "createdAt",
         "updatedAt",
+        "lastOpenedAt",
         "archivedAt",
         "sessionId",
         "scheduleId",
@@ -1158,7 +1159,7 @@ mod tests {
     fn valid_task_payload(id: &str, message_count: usize) -> String {
         serde_json::json!({
             "id": id, "source": "DESKTOP", "name": "任务", "status": "COMPLETED",
-            "createdAt": "2026-09-13", "updatedAt": "2026-09-13",
+            "createdAt": "2026-09-13", "updatedAt": "2026-09-13", "lastOpenedAt": "2026-09-13",
             "projection": {"status": "completed", "activity": "完成", "updatedAt": "2026-09-13", "steps": [], "artifacts": []},
             "entries": (0..message_count).map(|turn| serde_json::json!({"id": format!("u{turn}"), "role": "user", "text": format!("原始要求 {turn}")})).collect::<Vec<_>>()
         }).to_string()
@@ -1203,7 +1204,7 @@ mod tests {
     fn new_native_task_must_be_visible_to_the_projection_index() {
         let task = serde_json::json!({
             "id": "task", "source": "DESKTOP", "name": "新任务", "status": "COMPLETED",
-            "createdAt": "2026-09-13", "updatedAt": "2026-09-13", "entries": [],
+            "createdAt": "2026-09-13", "updatedAt": "2026-09-13", "lastOpenedAt": "2026-09-13", "entries": [],
             "capabilityNotices": [{"sessionId": "session-1", "turnId": "turn:1",
                 "segment": {"kind": "notice", "id": "notice:knowledge:scope",
                     "level": "warning", "text": "范围无效"}}],

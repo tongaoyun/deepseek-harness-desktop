@@ -222,6 +222,8 @@ export interface LocalTaskRun {
   status: 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELED'
   createdAt: string
   updatedAt: string
+  /** Last time the user successfully opened this task from the history list. */
+  lastOpenedAt?: string
   archivedAt?: string
   sessionId?: string
   /** Product scheduling references. Execution details remain in Harness events. */
