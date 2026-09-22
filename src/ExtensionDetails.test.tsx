@@ -145,6 +145,59 @@ it('opens the full README from its bounded preview and restores its opener', asy
   } finally { await act(async () => root.unmount()); container.remove() }
 })
 
+it('keeps the kit guide after skills and data connections for installed kits', async () => {
+  vi.mocked(readExtensionContents).mockResolvedValue({ readme: '# 开发指南', skills: [api], commands: [{ id: 'api-design', name: '/api-design', summary: '设计接口', userInvocable: true, path: 'commands/api-design.md', content: '# API 设计' }] })
+  const connector = { id: 'notion', name: 'Notion', version: '1', status: 'ready', transport: 'streamable-http', url: 'https://notion.test/mcp', authMode: 'oauth', enabled: true, toolNames: ['search'] } satisfies ConnectorRuntimeDefinition
+  const container = document.body.appendChild(document.createElement('div'))
+  const root = createRoot(container)
+  try {
+    await act(async () => root.render(<ExpertKitDetailsModal
+      kit={{ ...kit, connectorRefs: ['notion'] }}
+      skills={[]}
+      connectors={[connector]}
+      knowledgeBases={[]}
+      installing={false}
+      removing={false}
+      onClose={vi.fn()}
+      onInstall={vi.fn()}
+      onSchedule={vi.fn()}
+    />))
+    const sections = [...container.querySelectorAll<HTMLElement>('.expert-detail-section')]
+      .map((section) => section.querySelector('h3')?.textContent?.trim())
+    expect(sections).toEqual(['快捷命令 (1)', '技能 (1)', '数据连接 (1)', '套件说明'])
+  } finally {
+    await act(async () => root.unmount())
+    container.remove()
+  }
+})
+
+it('keeps data connections before the kit guide before installation', async () => {
+  const loadReadme = vi.fn(async () => '# 订单专家')
+  const connector = { id: 'erp-mcp', name: 'ERP', version: '1', status: 'ready', transport: 'streamable-http', url: 'https://erp.test/mcp', authMode: 'none', enabled: true, toolNames: ['summary'] } satisfies ConnectorRuntimeDefinition
+  const container = document.body.appendChild(document.createElement('div'))
+  const root = createRoot(container)
+  try {
+    await act(async () => root.render(<ExpertKitDetailsModal
+      kit={{ ...kit, installed: undefined, installState: 'available', connectorRefs: ['erp-mcp'] }}
+      skills={[]}
+      connectors={[connector]}
+      knowledgeBases={[]}
+      installing={false}
+      removing={false}
+      onClose={vi.fn()}
+      onInstall={vi.fn()}
+      onSchedule={vi.fn()}
+      onLoadReadme={loadReadme}
+    />))
+    const sections = [...container.querySelectorAll<HTMLElement>('.expert-detail-section')]
+      .map((section) => section.querySelector('h3')?.textContent?.trim())
+    expect(sections).toEqual(['技能 (2)', '数据连接 (1)', '套件说明'])
+  } finally {
+    await act(async () => root.unmount())
+    container.remove()
+  }
+})
+
 it('shows working connector controls and the Xiaoyin knowledge base entry', async () => {
   vi.mocked(readExtensionContents).mockResolvedValue({ readme: '', skills: [], commands: [] })
   const connector = { id: 'notion', name: 'Notion', version: '1', status: 'ready', transport: 'streamable-http', url: 'https://notion.test/mcp', authMode: 'oauth', enabled: true, toolNames: ['search', 'write'] } satisfies ConnectorRuntimeDefinition

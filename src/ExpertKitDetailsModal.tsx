@@ -112,7 +112,7 @@ export function ExpertKitDetailsModal({
           return <article key={id}><WandSparkles size={15} /><div><strong>{skill?.name ?? id}</strong><p>{bundledSkill?.argumentHint || skill?.summary || '随专家套件一起加载的工作方法'}</p></div></article>
         })}</div>
       </section>}
-      {kit.installed && <ExtensionContentsPanel extension={kit.installed} onUseCommand={onUse} beforeSkills={<CapabilitySections
+      {kit.installed && <ExtensionContentsPanel extension={kit.installed} onUseCommand={onUse} afterSkills={<CapabilitySections
         connectorRefs={kit.connectorRefs}
         connectorById={connectorById}
         knowledgeBaseRefs={kit.knowledgeBaseRefs}
@@ -121,7 +121,6 @@ export function ExpertKitDetailsModal({
         onConfigureKnowledge={onConfigureKnowledge}
         onToggleConnector={onToggleConnector}
       />} />}
-      {!kit.installed && <ExtensionReadmeSection readme={catalogReadme} />}
       {!kit.installed && <CapabilitySections
         connectorRefs={kit.connectorRefs}
         connectorById={connectorById}
@@ -131,6 +130,7 @@ export function ExpertKitDetailsModal({
         onConfigureKnowledge={onConfigureKnowledge}
         onToggleConnector={onToggleConnector}
       />}
+      {!kit.installed && <ExtensionReadmeSection readme={catalogReadme} />}
 
 
   </ExtensionDetailLayout>
