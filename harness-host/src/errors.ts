@@ -36,7 +36,7 @@ export function harnessError(data: HarnessErrorData): HarnessError {
 
 export function errorData(error: unknown): HarnessErrorData {
   if (error instanceof HarnessError) return error.data
-  if (error instanceof Error && error.message.includes('cannot create effect on inactive context')) {
+  if (errorMessage(error).includes('cannot create effect on inactive context')) {
     return data(
       'XY-AGENT-CONTEXT',
       'local-agent',
@@ -54,6 +54,15 @@ export function errorData(error: unknown): HarnessErrorData {
     infrastructure: false,
     retryable: false,
   }
+}
+
+function errorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message
+  if (typeof error === 'string') return error
+  const value = record(error)
+  if (typeof value?.message === 'string') return value.message
+  if (typeof value?.detail === 'string') return value.detail
+  return ''
 }
 
 export function errorDataForProvider(reason: Record<string, unknown>): HarnessErrorData {

@@ -38,5 +38,15 @@ describe('Harness error contract', () => {
       category: 'local-agent',
       retryable: true,
     })
+    expect(errorData({ message: 'cannot create effect on inactive context' })).toMatchObject({
+      code: 'XY-AGENT-CONTEXT',
+      category: 'local-agent',
+      retryable: true,
+    })
+    expect(errorData('cannot create effect on inactive context')).toMatchObject({
+      code: 'XY-AGENT-CONTEXT',
+      category: 'local-agent',
+      retryable: true,
+    })
   })
 })
