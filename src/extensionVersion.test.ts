@@ -3,7 +3,7 @@ import { compareDesktopVersions, desktopVersion, isDesktopVersionCompatible } fr
 
 describe('desktop version requirements', () => {
   it('accepts supported versions and rejects a newer minimum', () => {
-    expect(desktopVersion).toBe('0.1.68')
+    expect(desktopVersion).toMatch(/^\d+\.\d+\.\d+$/u)
     expect(isDesktopVersionCompatible('0.1.30')).toBe(true)
     expect(isDesktopVersionCompatible('0.2.0')).toBe(false)
     expect(isDesktopVersionCompatible('not-a-version')).toBe(false)

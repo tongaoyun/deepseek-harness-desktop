@@ -13,10 +13,6 @@ function GroupedTools({ tools }: { tools: ToolSegment[] }) {
   const [choice, setChoice] = useState<{ attention: boolean; open: boolean }>()
   const open = choice?.attention === attention ? choice.open : attention
   const representative = tools.find((tool) => tool.status === 'running') ?? tools[0]!
-  if (!attention) return <div className="tool-group tool-group-summary tool-group-summary-static" title={toolGroupStatus(tools)}>
-    <ToolIcon tool={representative} />
-    <span>{toolGroupLabel(tools).replaceAll(' · ', ' ')}</span>
-  </div>
   return <details className="tool-group tool-group-collapsible" open={open}>
     <summary className="tool-group-summary" onClick={(event) => { event.preventDefault(); setChoice({ attention, open: !open }) }} title={toolGroupStatus(tools)}>
       <ToolIcon tool={representative} />

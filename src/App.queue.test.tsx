@@ -1162,14 +1162,20 @@ it('rebuilds the session when the log cannot be forked for regeneration', async 
   })
 })
 
-it('stops a quiet turn without a delayed fallback timer', async () => {
+it('settles a quiet turn when native cancellation does not return', async () => {
   const first = deferredRun()
   vi.mocked(runHarnessWithRecovery).mockReturnValueOnce(first.promise)
+  vi.mocked(harness.cancelHarness).mockReturnValueOnce(new Promise<boolean>(() => {}))
+  vi.useFakeTimers()
   await fixture(async () => {
     await submit('查询这个订单')
     await act(async () => fixtures.chat!.onCancel())
     expect(harness.cancelHarness).toHaveBeenCalledOnce()
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_500) })
+    expect(fixtures.chat!.currentTaskRunning).toBe(false)
+    expect(fixtures.chat!.taskProjection.status).toBe('canceled')
   })
+  vi.useRealTimers()
 })
 
 it('does not need a delayed stop timer after the turn settles', async () => {

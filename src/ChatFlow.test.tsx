@@ -185,7 +185,7 @@ it('shows one quiet activity summary without nesting successful tool receipts', 
     await act(async () => root.render(<ChatPage {...base} entries={entries} />))
     const groups = container.querySelectorAll<HTMLElement>('.tool-group')
     expect(groups).toHaveLength(1)
-    expect(groups[0]).not.toBeInstanceOf(HTMLDetailsElement)
+    expect(groups[0]).toBeInstanceOf(HTMLDetailsElement)
     expect(groups[0].textContent).toContain('已加载技能 已读取文件 已检查文档结构')
     expect(container.textContent).toContain('合计 80.50。')
     expect(container.querySelector('.turn-commentary')?.textContent).toContain('我先检查工作簿。')
@@ -193,7 +193,9 @@ it('shows one quiet activity summary without nesting successful tool receipts', 
     expect(container.textContent).not.toContain('0秒')
     expect(container.textContent).not.toContain('思考过程')
     expect(container.textContent).not.toContain('Private model reasoning')
-    expect(groups[0].querySelectorAll('.timeline-tool')).toHaveLength(0)
+    expect((groups[0] as HTMLDetailsElement).open).toBe(false)
+    await act(async () => groups[0].querySelector('summary')!.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    expect(groups[0].querySelectorAll('.timeline-tool').length).toBeGreaterThan(0)
     expect(container.textContent).not.toContain('选择所需工具')
     expect(container.textContent).not.toContain('整理交付结果')
   } finally { await act(async () => root.unmount()); container.remove() }
@@ -213,10 +215,12 @@ it('condenses directory setup and listing into one Codex-style activity row', as
     const activity = container.querySelector<HTMLDetailsElement>('.turn-activity')!
     await act(async () => activity.querySelector('summary')!.click())
     const group = activity.querySelector<HTMLElement>('.tool-group')!
-    expect(group).not.toBeInstanceOf(HTMLDetailsElement)
-    expect(group.textContent).toBe('已列出当前目录中的文件')
-    expect(activity.querySelector('.timeline-tool')).toBeNull()
-    expect(activity.textContent).not.toContain('检查可用工作目录')
+    expect(group).toBeInstanceOf(HTMLDetailsElement)
+    expect(group.querySelector('summary')?.textContent).toBe('已列出当前目录中的文件')
+    expect((group as HTMLDetailsElement).open).toBe(false)
+    await act(async () => group.querySelector('summary')!.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    expect(activity.querySelector('.timeline-tool')).not.toBeNull()
+    expect(activity.textContent).toContain('检查可用工作目录')
     expect(activity.querySelector('.timeline-output')).toBeNull()
   } finally { await act(async () => root.unmount()); container.remove() }
 })

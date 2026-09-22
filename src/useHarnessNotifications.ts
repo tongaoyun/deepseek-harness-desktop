@@ -3,7 +3,7 @@ import { harnessLiveEvent, harnessProjectionUpdate, listenHarnessNotifications, 
 import { appendCapabilityNotice, applyLiveEvent, mergeSettledTurn } from './conversation/liveText'
 import { captureCapabilityNotices, type StoredCapabilityNotice } from './conversation/capabilityNotices'
 import { parseAssistantTurn, type ConversationEntry } from './conversation/types'
-import type { XiaoyinTaskProjection } from './types'
+import type { LocalTaskRun, XiaoyinTaskProjection } from './types'
 
 export interface StreamingTaskState {
   phase?: 'preparing' | 'running'
@@ -12,6 +12,7 @@ export interface StreamingTaskState {
   projectionSeq?: number
   projectionSeqByKey?: Record<string, number>
   entries: ConversationEntry[]
+  task?: LocalTaskRun
   cancellationRequested: boolean
   stopFallback?: number
 }

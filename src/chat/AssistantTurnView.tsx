@@ -118,7 +118,7 @@ function TurnActivity({ runState, startedAt, completedAt, status, waitingForFirs
   const liveActivity = activity && activity !== '正在处理' ? activity : processed
   const label = streaming ? liveActivity === '正在停止' ? `正在停止 · ${processed}`
     : liveActivity === processed ? processed : `${liveActivity}${duration ? ` · ${processed}` : ''}`
-    : status === 'completed' ? duration ? `用时 ${duration}` : '活动记录'
+    : status === 'completed' ? duration ? `用时 ${duration}` : '已完成'
     : status === 'canceled' ? `已停止${duration ? ` · ${duration}` : ''}` : `执行失败${duration ? ` · ${duration}` : ''}`
   const groups = groupToolSegments(segments)
   const content = <>{slowFirstOutput && <p className="turn-waiting-note">模型响应较慢，仍在等待</p>}

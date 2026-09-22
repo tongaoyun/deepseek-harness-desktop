@@ -1133,6 +1133,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
         projectionSeq: -1,
         projectionSeqByKey: {},
         entries: pendingEntries,
+        task: runningTask,
         cancellationRequested: false,
       }
       streamingTasksRef.current.set(taskId, streaming)
@@ -1382,6 +1383,27 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
       }
       return
     }
+    // Do not leave the composer locked if the native cancellation command or
+    // the Harness process stops responding. A late Harness event is ignored
+    // after this state is removed from the live-task map.
+    streaming.stopFallback = window.setTimeout(() => {
+      if (streamingTasksRef.current.get(taskId) !== streaming || !streaming.cancellationRequested) return
+      const completedAt = new Date().toISOString()
+      streaming.projection = taskProjectionFailed(streaming.projection, createHarnessFailure({ code: 'XY-CANCELED', category: 'unknown', title: '任务已停止', message: '本轮已停止', infrastructure: false, retryable: false }), true, completedAt)
+      streaming.entries = settleOpenTurn(streaming.entries, 'canceled', completedAt)
+      const canceledTask = streaming.task
+        ? { ...streaming.task, status: 'CANCELED' as const, updatedAt: completedAt, projection: streaming.projection, entries: streaming.entries }
+        : undefined
+      if (currentLocalTaskIdRef.current === taskId) {
+        taskProjectionRef.current = streaming.projection
+        setTaskProjection(streaming.projection)
+        setEntries(streaming.entries)
+      }
+      if (canceledTask) persistLocalTask(canceledTask)
+      void shutdownHarness(taskId).catch(() => undefined)
+      streamingTasksRef.current.delete(taskId)
+      setRunningTaskIds((current) => current.filter((id) => id !== taskId))
+    }, 1_500)
     // Kill the isolated Harness process immediately. The run loop still settles
     // the transcript and durable task record, but the UI no longer waits for a
     // model or connector to acknowledge a graceful interrupt.
