@@ -421,6 +421,7 @@ fn local_development_identity(identifier: &str, isolation: Option<&str>) -> bool
     cfg!(debug_assertions)
         && identifier == "com.instudio.xiaoyin.desktop.local-test"
         && isolation == Some("true")
+        && env::var("XIAOYIN_LOCAL_DEV_REAL_SESSION").ok().as_deref() != Some("true")
 }
 
 fn employee_matches(actual: &str, requested: &str) -> Result<(), String> {
@@ -806,7 +807,17 @@ pub(crate) async fn clear_erp_session(app: tauri::AppHandle) -> Result<(), Strin
 }
 
 fn session_store(app: &tauri::AppHandle) -> Result<persistence::SessionStore, Diagnostic> {
-    persistence::SessionStore::new(&app.config().identifier, &erp_cookie_url(), &erp_user_url())
+    let identifier = if cfg!(debug_assertions)
+        && app.config().identifier == "com.instudio.xiaoyin.desktop.local-test"
+        && env::var("XIAOYIN_LOCAL_DEV_REAL_SESSION").ok().as_deref() == Some("true")
+    {
+        // The acceptance app keeps its task data isolated but deliberately reuses the
+        // production app's OS credential entry when real-session mode is requested.
+        "com.instudio.xiaoyin.desktop"
+    } else {
+        &app.config().identifier
+    };
+    persistence::SessionStore::new(identifier, &erp_cookie_url(), &erp_user_url())
         .map_err(|_| Diagnostic::new(Code::CookieStoreFailed, None, None))
 }
 
