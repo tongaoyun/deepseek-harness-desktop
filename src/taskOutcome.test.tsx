@@ -7,17 +7,17 @@ import { createXiaoyinTaskProjection } from './harness'
 import { assistantEntry, userEntry } from './conversation/testing'
 import type { LocalTaskRun } from './types'
 
-it('shows outstanding work and check evidence without implying a finished turn completed the goal', () => {
+it('shows a compact outcome status without adding a custom acceptance card', () => {
   const outcome: TaskOutcome = { status: 'partial', summary: '表格已生成，尚未核对公式', remaining: ['安装重算引擎后核对公式'], checks: [{ description: '公式重算', result: 'not_run', evidence: '未找到 LibreOffice' }] }
   const projection = { ...createXiaoyinTaskProjection(), status: 'completed' as const, outcome }
   const html = renderToStaticMarkup(<TaskOutcomeDetails outcome={outcome} />)
   expect(html).toContain('部分完成')
-  expect(html).toContain('安装重算引擎后核对公式')
-  expect(html).toContain('未找到 LibreOffice')
-  expect(html).toContain('验收记录')
-  expect(html).not.toContain('<details open')
-  // Outstanding work now lives inside the details block.
-  expect(html.indexOf('安装重算引擎后核对公式')).toBeGreaterThan(html.indexOf('<details'))
+  expect(html).toContain('表格已生成，尚未核对公式')
+  expect(html).not.toContain('验收记录')
+  expect(html).not.toContain('项检查')
+  expect(html).not.toContain('项待办')
+  expect(html).not.toContain('安装重算引擎后核对公式')
+  expect(html).not.toContain('未找到 LibreOffice')
   const prompt = harnessPromptWithConversationReplay('继续核对', [userEntry('u1', '生成表格'), assistantEntry('turn:1', '表格已生成', { outcome })], true, projection)
   expect(prompt).toContain('部分完成')
   expect(prompt).toContain('安装重算引擎后核对公式')
