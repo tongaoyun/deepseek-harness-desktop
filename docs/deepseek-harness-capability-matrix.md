@@ -60,7 +60,7 @@
 | 专家套件 | Agent、Skill、Tool Filter、Session 能力装配 | 市场、版本、签名、安装、依赖闭包、组合规则和 `CapabilitySnapshot` |
 | 技能 | Skill Registry、filesystem、按需注入 | 企业目录、审核、发布、安装、更新和启停 |
 | 连接器 | Harness Tool Registry 接收工具调用事件 | MCP 目录、OAuth、员工权限、审计、重连和写操作核对；当前使用 `managed-mcp-plugin` + MCP SDK |
-| 知识库 | `knowledge_list` / `knowledge_search` 作为 Harness tools | 文档、索引、权限、引用来源和服务端检索 |
+| 知识库 | `knowledge_list` / `knowledge_search` 作为 Harness tools | 小胤负责权限与统一 API，WeKnora 负责文档、索引、检索和引用来源 |
 | 定时任务 | Harness Session、Turn、Checkpoint、Jobs 工具 | Cron、唤醒策略、执行历史、通知和本机生命周期 |
 | IM 频道 | 复用 Session 执行和 Projection | 钉钉身份映射、去重、队列、结果回传和频道权限 |
 | 附件 | Harness Session 可保存引用 | 小胤 content-addressed backend 实现 Harness `AttachmentStore` 抽象，按员工隔离二进制缓存；官方 `attachment-local` 被显式禁用，避免双存储 |

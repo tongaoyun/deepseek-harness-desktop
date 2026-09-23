@@ -295,7 +295,6 @@ export interface KnowledgeDocumentEntry {
   status: KnowledgeDocumentStatus
   chunkCount: number
   failureMessage?: string
-  indexRunId?: string
   createdAt: string
   updatedAt: string
 }
