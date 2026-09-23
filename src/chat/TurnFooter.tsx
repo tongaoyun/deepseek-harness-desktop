@@ -5,18 +5,20 @@ import type { AssistantTurn } from '../conversation/types'
 /** Codex-style quiet footer: completion time and actions, without billing telemetry in the transcript. */
 export function TurnFooter({ turn, actions }: {
   turn: AssistantTurn
-  actions?: { onRegenerate?: () => void; onEdit?: () => void }
+  actions?: { onRegenerate?: () => void; onEdit?: () => void; completedAt?: string; latest?: boolean }
 }) {
-  const completedAt = completionTime(turn.meta.completedAt)
-  const showActions = turn.status !== 'streaming' && (actions?.onRegenerate || actions?.onEdit)
+  const completedAtValue = turn.meta.completedAt ?? actions?.completedAt
+  const completedAt = completionTime(completedAtValue)
+  const hasText = turn.segments.some((segment) => segment.kind === 'text' && segment.text.trim())
+  const showActions = turn.status !== 'streaming' && (hasText || actions?.onRegenerate || actions?.onEdit)
   if (!completedAt && !showActions) return null
-  return <div className="turn-footer">
+  return <div className={`turn-footer${actions?.latest ? ' latest' : ''}`}>
     {showActions && <span className="turn-actions">
       <CopyTurnButton turn={turn} />
       {actions?.onRegenerate && <button aria-label="重新生成" onClick={actions.onRegenerate} title="用同样的输入重跑这一轮" type="button"><RotateCcw size={15} /></button>}
       {actions?.onEdit && <button aria-label="编辑后重发" onClick={actions.onEdit} title="把原问题和附件放回输入框，修改后发送" type="button"><SquarePen size={15} /></button>}
     </span>}
-    {completedAt && <time className="turn-time" dateTime={turn.meta.completedAt}>{completedAt}</time>}
+    {completedAt && <time className="turn-time" dateTime={completedAtValue}>{completedAt}</time>}
   </div>
 }
 

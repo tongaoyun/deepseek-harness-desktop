@@ -148,6 +148,22 @@ it('replays each answered question on its own row', async () => {
   } finally { await app.cleanup() }
 })
 
+it('keeps long answered questions and answers readable instead of truncating them', async () => {
+  const longQuestion = '请说明本次订单分析需要覆盖的业务范围、时间口径、异常订单处理方式以及最终需要输出的指标明细'
+  const longAnswer = '按自然月统计，包含退款和取消订单，并补充渠道、地区和商品维度的汇总结果'
+  const app = await mount(<QuestionCard segment={{
+    ...question,
+    status: 'completed',
+    questions: [{ id: 'long', question: longQuestion }],
+    answers: [{ id: 'long', selected: [], custom: longAnswer }],
+  }} enabled onAnswer={vi.fn()} />)
+  try {
+    const row = app.container.querySelector('.question-settled')
+    expect(row?.textContent).toContain(longQuestion)
+    expect(row?.textContent).toContain(`已回答：${longAnswer}`)
+  } finally { await app.cleanup() }
+})
+
 it('collapses an unanswered question when the turn stops', async () => {
   const app = await mount(<QuestionCard segment={question} enabled={false} onAnswer={vi.fn()} />)
   try {

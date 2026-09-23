@@ -235,8 +235,8 @@ it('hides the internal plan-review tool instead of exposing a failed tool row', 
   const root = createRoot(container)
   try {
     await act(async () => root.render(<ChatPage {...base} entries={[entry]} />))
-    expect(container.querySelector('.turn-activity')).toBeNull()
     expect(container.querySelector('.timeline-tool')).toBeNull()
+    expect(container.querySelector('.turn-activity-details')).toBeNull()
     expect(container.textContent).not.toContain('Error: The user chose to keep planning')
   } finally { await act(async () => root.unmount()); container.remove() }
 })
@@ -345,6 +345,31 @@ it('offers edit on the last turn and copy once the turn has text', async () => {
     await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="编辑后重发"]')!.click())
     expect(onEditTurn).toHaveBeenCalledOnce()
     expect(container.querySelector('[aria-label="复制回答"]')).not.toBeNull()
+  } finally { await act(async () => root.unmount()); container.remove() }
+})
+
+it('keeps the completed duration row for a plain first response', async () => {
+  const entry = assistantEntry('turn:1', '完成。', { startedAt: '2026-09-01T00:00:00.000Z', completedAt: '2026-09-01T00:00:02.000Z' })
+  const container = document.body.appendChild(document.createElement('div'))
+  const root = createRoot(container)
+  try {
+    await act(async () => root.render(<ChatPage {...base} entries={[entry]} />))
+    expect(container.querySelector('.turn-status-line')?.textContent).toContain('用时 2秒')
+    expect(container.querySelector<HTMLDetailsElement>('.turn-activity')?.open).toBe(false)
+    expect(container.querySelector('[aria-label="复制回答"]')).not.toBeNull()
+    expect(container.querySelector('.turn-footer.latest')).not.toBeNull()
+  } finally { await act(async () => root.unmount()); container.remove() }
+})
+
+it('uses the completed task timestamp when the settled turn metadata is incomplete', async () => {
+  const entry = assistantEntry('turn:1', '完成。', { startedAt: '2026-09-01T00:00:00.000Z' })
+  const projection = { ...base.taskProjection, status: 'completed' as const, startedAt: '2026-09-01T00:00:00.000Z', completedAt: '2026-09-01T00:00:03.000Z' }
+  const container = document.body.appendChild(document.createElement('div'))
+  const root = createRoot(container)
+  try {
+    await act(async () => root.render(<ChatPage {...base} taskProjection={projection} entries={[entry]} />))
+    expect(container.querySelector('.turn-status-line')?.textContent).toContain('用时 3秒')
+    expect(container.querySelector('.turn-time')?.getAttribute('dateTime')).toBe('2026-09-01T00:00:03.000Z')
   } finally { await act(async () => root.unmount()); container.remove() }
 })
 

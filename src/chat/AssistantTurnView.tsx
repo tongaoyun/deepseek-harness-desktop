@@ -23,15 +23,17 @@ export function AssistantTurnView({ turn, runState, elapsedStartedAt, onApproval
 }) {
   const streaming = turn.status === 'streaming'
   const approvalsEnabled = streaming && runState?.activity !== '正在停止'
+  const startedAt = elapsedStartedAt ?? turn.meta.startedAt ?? (streaming ? undefined : runState?.startedAt)
+  const completedAt = turn.meta.completedAt ?? (streaming ? undefined : runState?.completedAt)
   const visibleSegments = turn.segments.filter((segment) => segment.kind !== 'thinking' && !isInternalToolSegment(segment))
   const activitySegments = visibleSegments.filter(isActivitySegment)
   const responseSegments = visibleSegments.filter((segment) => !isActivitySegment(segment))
   const groups = groupToolSegments(responseSegments)
   return <div className={`assistant-turn-body ${turn.status}`}>
-    {(streaming || activitySegments.length > 0) && <TurnActivity
-      approvalsEnabled={approvalsEnabled} completedAt={turn.meta.completedAt} onApprovalDecision={onApprovalDecision}
+    {(streaming || activitySegments.length > 0 || Boolean(startedAt || completedAt)) && <TurnActivity
+      approvalsEnabled={approvalsEnabled} completedAt={completedAt} onApprovalDecision={onApprovalDecision}
       onQuestionAnswer={onQuestionAnswer} runState={runState} segments={activitySegments}
-      startedAt={elapsedStartedAt ?? turn.meta.startedAt} status={turn.status}
+      startedAt={startedAt} status={turn.status}
       waitingForFirstOutput={streaming && visibleSegments.length === 0 && runState?.executionStarted !== true}
     />}
     {groups.map((group, index) => group.kind === 'tools'

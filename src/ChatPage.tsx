@@ -236,7 +236,7 @@ export function ChatPage(props: ChatPageProps) {
           <span><Sparkles size={16} /><span><strong>继续完成创建</strong><small>把当前方案带入创作表单，确认后保存到本机。</small></span></span>
           <button onClick={() => props.onContinueCreation?.(turnTextOf(entry))} type="button">{props.creationKind === 'expert-kit' ? '保存为专家套件' : '保存为技能'}</button>
         </div>}
-        <TurnFooter turn={entry} actions={isLast ? { onRegenerate: props.onRegenerateTurn, onEdit: props.onEditTurn } : undefined} />
+        <TurnFooter turn={entry} actions={isLast ? { completedAt: props.taskProjection.completedAt, latest: true, onRegenerate: props.onRegenerateTurn, onEdit: props.onEditTurn } : undefined} />
       </article>
     })}</div>}
     {showScrollDown && <button aria-label="滚动到最新消息" className="scroll-to-latest" onClick={() => scrollToBottom()} title="滚动到最新消息" type="button"><ArrowDown size={18} /></button>}

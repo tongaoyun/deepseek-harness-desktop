@@ -2,7 +2,7 @@
 
 桌面通过系统 WebView 完成钉钉扫码，以 ERP `/erpMobile/erpMobile/pushController/getDbSysadmin` 返回的员工身份进入工作台。验证成功的 Cookie 保存在系统凭据库，重启时恢复到 WebView 并重新校验身份，不导出到配置文件。应用不会用权限接口或 Cookie 摘要生成员工身份。
 
-ERP 验证成功后，桌面原生层向构建时固定的控制中心地址查询身份，不签发小胤令牌。后续 Bootstrap、知识库、记忆、反馈、设备和扩展请求通过 `X-ERP-Session` 携带 ERP SESSION，通过 `X-Xiaoyin-Employee-Id` 携带员工 ID；服务端重新核验 ERP 身份，两者不一致即拒绝。员工姓名取自 ERP 的 `oper`，不通过客户端请求头传递。所有已验证的 ERP 员工拥有管理后台全部管理权限。当前公司控制中心使用固定的 RFC1918 内网 HTTP 地址；正式构建拒绝其他公网 HTTP 地址。
+ERP 验证成功后，桌面原生层向构建时固定的控制中心地址查询身份，不签发小胤令牌。后续 Bootstrap、知识库、记忆、反馈、设备和扩展请求通过 `X-ERP-Session` 携带 ERP SESSION，通过 `X-Xiaoyin-Employee-Id` 携带员工 ID；服务端重新核验 ERP 身份，两者不一致即拒绝。员工姓名取自 ERP 的 `oper`，不通过客户端请求头传递。普通业务接口按员工身份授权，管理后台仅对服务端配置的管理员白名单开放。当前公司控制中心使用固定的 RFC1918 内网 HTTP 地址；正式构建拒绝其他公网 HTTP 地址。
 
 Harness 将 ERP SESSION 仅用于知识库等小胤 API；`employee-bearer` MCP 连接器使用与当前 ERP 会话绑定的独立摘要令牌，不能拿它访问控制中心。连接器需要实际 ERP Cookie 时使用 `erp-cookie`，其他第三方凭据使用 OAuth。
 

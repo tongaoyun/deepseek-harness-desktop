@@ -68,7 +68,7 @@ export function FileChangesCard({ changes, onOpen, onReview, onUndone, busy = fa
       <div className="file-change-list">
         {visible.map((change) => <div className={`file-change-row ${change.action}`} key={change.id}>
           <button className="file-change-path" disabled={!onOpen || Boolean(change.undoneAt) || (change.action === 'deleted' && !change.backupPath)} onClick={() => onOpen?.(target(change))} title={`${change.rootName}/${change.path}`} type="button">{change.path}</button>
-          <small title={undoUnavailableReason(change)}>{change.undoneAt ? '已撤销' : actionLabel(change.action)}</small>
+          <small className="file-change-kind" title={undoUnavailableReason(change)}>{change.undoneAt ? '已撤销' : actionLabel(change.action)}</small>
           <code>{!change.undoneAt && <>{change.addedLines !== undefined && <ins>+{change.addedLines}</ins>}{change.deletedLines !== undefined && <del>-{change.deletedLines}</del>}</>}</code>
           <span className="file-change-actions">
             <button aria-label={`打开 ${change.name}`} disabled={!onOpen || Boolean(change.undoneAt) || (change.action === 'deleted' && !change.backupPath)} onClick={() => onOpen?.(target(change))} title="在小胤中审查" type="button"><ExternalLink size={14} /></button>
