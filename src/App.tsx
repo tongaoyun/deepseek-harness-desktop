@@ -9,9 +9,9 @@ import {
   localScheduleNamespace,
   submitFeedback,
 } from './api'
-import { ErpAuthScreen } from './ErpAuthScreen'
+import { DingTalkAuthScreen } from './DingTalkAuthScreen'
 import { TASK_RESUME_PROMPT } from './taskInterruption'
-import { openErpLogin } from './auth'
+import { openDingTalkLogin } from './auth'
 import { ExpertKitDetailsModal } from './ExpertKitDetailsModal'
 import { extensionCustomizationPrompt } from './expertKitDetails'
 import { SkillDetailsModal } from './SkillDetailsModal'
@@ -43,7 +43,7 @@ import {
   diagnoseConnectors,
   restoreLocalDirectories,
   inspectHarnessSession,
-  regenerateHarness,
+  forkHarness,
   respondHarnessApproval,
   respondHarnessQuestion,
   steerHarness,
@@ -51,7 +51,7 @@ import {
   shutdownHarness,
   type AuthorizedLocalDirectory,
 } from './harness'
-import { loadHarnessExternalAgentsEnabled, loadHarnessHooksEnabled, loadHarnessLspEnabled, loadHarnessShellEnabled, loadHarnessToolsMode, saveHarnessExternalAgentsEnabled, saveHarnessHooksEnabled, saveHarnessLspEnabled, saveHarnessShellEnabled, saveHarnessToolsMode, type HarnessToolsMode } from './runtimePreferences'
+import { loadHarnessExternalAgentsEnabled, loadHarnessHooksEnabled, loadHarnessLspEnabled, loadHarnessShellEnabled, saveHarnessExternalAgentsEnabled, saveHarnessHooksEnabled, saveHarnessLspEnabled, saveHarnessShellEnabled } from './runtimePreferences'
 import type {
   ConnectorCatalogEntry,
   LocalTaskAttachment,
@@ -70,8 +70,7 @@ import { attachmentSelectionError } from './attachmentLimits'
 import { restoredTaskSessionId } from './harnessSession'
 import { prepareTaskTurn } from './taskTurn'
 import { startLocalIm, stopLocalImRuntime } from './localIm'
-import { parseAssistantTurn, type ConversationEntry } from './conversation/types'
-import { mergeSettledTurn } from './conversation/liveText'
+import type { ConversationEntry } from './conversation/types'
 import { appendSteerToOpenTurn, ensureFinalText, reconcileTaskConversation, resetOpenTurn, settleOpenTurn } from './conversation/entries'
 import type { InstalledExpertKit, LocalTaskRun, XiaoyinTaskProjection } from './types'
 import { parseMemoryCommand, learnCompletedTask } from './memory'
@@ -122,7 +121,6 @@ import { useApplyDesktopPreferences } from './desktopPreferences'
 import { useLocalImSync } from './useLocalImSync'
 import { useHarnessNotifications, type StreamingTaskState } from './useHarnessNotifications'
 import { AUTOMATIC_TASK_LIMIT, useTaskQueue, type QueuedPrompt } from './useTaskQueue'
-import { parseTaskOutcome, taskOutcomeLabel, unverifiedTaskOutcome, type TaskOutcome } from './taskOutcome'
 import { clearStagedTaskDraft, draftRootPaths, loadTaskDraftState, readTaskDraft, recentWorkDirectories, rememberWorkDirectory, saveTaskDraft, stageTaskDraft, type TaskDraft } from './taskDrafts'
 import { joinComposerPrompt, splitComposerPrompt } from './composerInput'
 import './styles.css'
@@ -143,8 +141,8 @@ function taskProjectionRunning(current: XiaoyinTaskProjection, now: string): Xia
   return { ...current, status: 'running', activity: '正在处理', updatedAt: now, startedAt: current.startedAt ?? now, executionStarted: false, retry: undefined }
 }
 
-function taskProjectionCompleted(current: XiaoyinTaskProjection, outcome: TaskOutcome, now: string): XiaoyinTaskProjection {
-  return { ...current, status: 'completed', activity: taskOutcomeLabel(outcome), outcome, updatedAt: now, completedAt: now, retry: undefined }
+function taskProjectionCompleted(current: XiaoyinTaskProjection, now: string): XiaoyinTaskProjection {
+  return { ...current, status: 'completed', activity: '任务已完成', updatedAt: now, completedAt: now, retry: undefined }
 }
 
 function taskProjectionFailed(current: XiaoyinTaskProjection, failure: ReturnType<typeof classifyHarnessFailure>, canceled: boolean, now: string): XiaoyinTaskProjection {
@@ -198,7 +196,7 @@ export default function App() {
     return () => { obsolete = true }
   }, [activeOwner, owner, transitionAttempt])
   if (!workspaceReady || activeOwner !== owner || transitioning.current) {
-    return <ErpAuthScreen authorizing={false} checking={!transitionError} error={transitionError}
+    return <DingTalkAuthScreen authorizing={false} checking={!transitionError} error={transitionError}
       onReopen={() => setTransitionAttempt((value) => value + 1)} />
   }
   return <EmployeeWorkspace key={owner ? `employee:${owner}` : 'signed-out'} session={session} />
@@ -207,9 +205,12 @@ export default function App() {
 function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpriseSession> }) {
   useApplyDesktopPreferences()
   const { confirm: confirmAction, dialog: confirmationDialog, notify, toast } = useDesktopDialog()
-  const { accessToken, authorizing, error: authError, logout, reopen, state: authState, user } = session
+  const { sessionToken, authorizing, error: authError, logout, reopen, state: authState, user } = session
+  // API helpers still name their bearer argument accessToken; the session
+  // boundary itself is explicitly a sessionToken.
+  const accessToken = sessionToken
   const [connectionAttempt, setConnectionAttempt] = useState(0)
-  const { bootstrap, runtimeStatus, error: configurationError } = useEnterpriseBootstrap(authState === 'authenticated' ? user?.userId : undefined, accessToken, connectionAttempt)
+  const { bootstrap, runtimeStatus, error: configurationError } = useEnterpriseBootstrap(authState === 'authenticated' ? user?.userId : undefined, sessionToken, connectionAttempt)
   const memoryCommands = useMemoryCommands(confirmAction)
   useMemorySync(bootstrap ? user?.userId : undefined, bootstrap?.endpoints.memoryProfile ?? '/api/v1/memory-profile', accessToken,
     () => notify('记忆存在跨设备修改冲突，请到设置 → 记忆选择版本。本机内容已保留。', 'error'))
@@ -267,13 +268,11 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
   const [allowLsp, setAllowLsp] = useState(() => loadHarnessLspEnabled(runtimePreferenceOwner))
   const [allowExternalAgents, setAllowExternalAgents] = useState(() => loadHarnessExternalAgentsEnabled(runtimePreferenceOwner))
   const [allowHooks, setAllowHooks] = useState(() => loadHarnessHooksEnabled(runtimePreferenceOwner))
-  const [toolsMode, setToolsMode] = useState<HarnessToolsMode>(() => loadHarnessToolsMode(runtimePreferenceOwner))
   useEffect(() => {
     setAllowShell(loadHarnessShellEnabled(runtimePreferenceOwner))
     setAllowLsp(loadHarnessLspEnabled(runtimePreferenceOwner))
     setAllowExternalAgents(loadHarnessExternalAgentsEnabled(runtimePreferenceOwner))
     setAllowHooks(loadHarnessHooksEnabled(runtimePreferenceOwner))
-    setToolsMode(loadHarnessToolsMode(runtimePreferenceOwner))
   }, [runtimePreferenceOwner])
   const {
     health: harnessHealth,
@@ -281,7 +280,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
     hostHealth: harnessHostHealth,
     recover: recoverHarness,
     reportInfrastructureFailure,
-  } = useHarnessHealth(authState === 'authenticated', Boolean(bootstrap?.modelApiKey), allowShell, allowLsp, allowExternalAgents, allowHooks, toolsMode)
+  } = useHarnessHealth(authState === 'authenticated', Boolean(bootstrap?.modelApiKey), allowShell, allowLsp, allowExternalAgents, allowHooks)
   const harnessOperational = harnessHealth === 'idle' || harnessHealth === 'ready'
   const [taskProjection, setTaskProjection] = useState<XiaoyinTaskProjection>(createXiaoyinTaskProjection)
   const taskProjectionRef = useRef<XiaoyinTaskProjection>(taskProjection)
@@ -571,7 +570,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
   }, [draftSaveError])
 
   if (authState !== 'authenticated') {
-    return <ErpAuthScreen authorizing={authorizing} checking={authState === 'checking'} error={authError} onReopen={() => void reopen()} />
+    return <DingTalkAuthScreen authorizing={authorizing} checking={authState === 'checking'} error={authError} onReopen={() => void reopen()} />
   }
 
   const activeExpertKit = expertKits.find((kit) => kit.id === activeExpertKitId)
@@ -689,7 +688,6 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
         const hydrated = await loadTaskById(user.userId, task.id)
         if (!stillCurrent()) return
         if (!hydrated) { notify('该任务记录不可用，可能已删除。当前会话未切换。', 'error'); return }
-        if (hydrated.entries.length === 0) { notify('任务完整内容暂时无法读取，请稍后重试。当前会话未切换。', 'error'); return }
         selectedTask = hydrated
         setLocalTasks((current) => current.map((item) => item.id === hydrated.id ? hydrated : item))
       } catch (reason) {
@@ -971,7 +969,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
     catch (reason) { notify(reason instanceof Error ? reason.message : String(reason), 'error'); return 'blocked' as const }
   }
 
-  async function executeTask(rawInput: string, messageAttachments: LocalTaskAttachment[], queuedTask?: LocalTaskRun, accepted?: () => Promise<void>, queuedItemId?: string): Promise<boolean | 'canceled' | { outcome: TaskOutcome } | undefined> {
+  async function executeTask(rawInput: string, messageAttachments: LocalTaskAttachment[], queuedTask?: LocalTaskRun, accepted?: () => Promise<void>, queuedItemId?: string, forcedSessionId?: string): Promise<boolean | 'canceled' | undefined> {
     const input = rawInput.trim() || (messageAttachments.length > 0 ? '请查看并处理这些附件。' : '')
     if (!input) return
     if (!bootstrap || !user || runtimeStatus !== 'ready') {
@@ -997,30 +995,6 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
     const contextEntries = queuedTask?.entries ?? entries
     const contextProjection = queuedTask?.projection ?? taskProjectionRef.current
     const existingTask = queuedTask ?? localTasks.find((task) => task.id === contextTaskId)
-    // Identity/greeting turns must never enter the tool loop. A model can
-    // otherwise misclassify a one-word greeting as an incomplete task and
-    // block on ask_user_question before producing any visible reply.
-    const directReply = !queuedTask && messageAttachments.length === 0 && /^(你|你是|你是谁|你好|嗨|hi|hello)[？?！!。.\s]*$/iu.test(input)
-      ? '我是小胤，你的企业智能工作助手。可以直接回答问题，也可以帮你执行代码、文件和业务任务。'
-      : undefined
-    if (directReply) {
-      const timestamp = new Date().toISOString()
-      const projection = taskProjectionCompleted(
-        { ...createXiaoyinTaskProjection(timestamp), operationScope: crypto.randomUUID() },
-        { status: 'completed', summary: '直接回答完成', remaining: [], checks: [] }, timestamp,
-      )
-      const directEntries: ConversationEntry[] = [...contextEntries,
-        { id: `user-${crypto.randomUUID()}`, role: 'user', text: input },
-        { id: `direct-${crypto.randomUUID()}`, role: 'assistant', status: 'completed',
-          segments: [{ kind: 'text', id: 'direct:1', text: directReply }],
-          meta: { completedAt: timestamp, model: activeModel, outcome: { status: 'completed', summary: '直接回答完成', remaining: [], checks: [] } } },
-      ]
-      const directTask: LocalTaskRun = { ...existingTask, id: taskId, source: existingTask?.source ?? 'DESKTOP', name: existingTask?.name ?? input,
-        status: 'COMPLETED', createdAt: existingTask?.createdAt ?? timestamp, updatedAt: timestamp, projection, entries: directEntries, sessionId: '' }
-      if (isCurrent()) { selectCurrentLocalTaskId(taskId); setEntries(directEntries); taskProjectionRef.current = projection; setTaskProjection(projection); setPrompt('') }
-      persistLocalTask(directTask)
-      return true
-    }
     const taskModel = resolveSelectedModel(bootstrap.models, queuedTask ? queuedTask.model : activeModel)
     const taskReasoningEffort = resolveReasoningEffort(taskModel, queuedTask ? queuedTask.reasoningEffort : activeReasoningEffort)
     const taskExecutionMode = queuedTask?.executionMode ?? executionMode
@@ -1053,14 +1027,11 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
           reply = `记忆未更改：${error instanceof Error ? error.message : String(error)}`
         }
         const timestamp = new Date().toISOString()
-        const projection = taskProjectionCompleted(
-          { ...createXiaoyinTaskProjection(timestamp), operationScope: crypto.randomUUID() },
-          { status: 'completed', summary: '记忆处理完成', remaining: [], checks: [] }, timestamp,
-        )
+        const projection = taskProjectionCompleted({ ...createXiaoyinTaskProjection(timestamp), operationScope: crypto.randomUUID() }, timestamp)
         const rememberedEntries: ConversationEntry[] = [...contextEntries,
           { id: `user-${crypto.randomUUID()}`, role: 'user', text: input },
           { id: `memory-${crypto.randomUUID()}`, role: 'assistant', status: 'completed', segments: [{ kind: 'text', id: 'memory:1', text: reply }],
-            meta: { completedAt: timestamp, outcome: { status: 'completed', summary: '记忆处理完成', remaining: [], checks: [] } } },
+            meta: { completedAt: timestamp } },
         ]
         persistLocalTask({ ...existingTask, id: taskId, source: existingTask?.source ?? 'DESKTOP', name: existingTask?.name ?? input.slice(0, 60),
           status: 'COMPLETED', createdAt: existingTask?.createdAt ?? timestamp, updatedAt: timestamp, projection, entries: rememberedEntries, sessionId: '' })
@@ -1075,7 +1046,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
       }
       let taskDirectories = queuedTask ? await restoreLocalDirectories((queuedTask.localDirectories ?? []).flatMap((directory) => directory.path ? [directory.path] : [])) : localDirectories
       if (queuedTask && taskDirectories.length < (queuedTask.localDirectories?.length ?? 0)) { reportInputError('排队任务的工作目录不可用，请恢复原目录后继续，或移除该消息并在新任务中重新发送。'); return }
-      const taskSessionId = queuedTask ? queuedTask.sessionId ?? '' : harnessSessionId
+      const taskSessionId = queuedTask ? queuedTask.sessionId ?? '' : forcedSessionId ?? harnessSessionId
       let resetSessionForDirectoryChange = false
       const standardDirectories = standardLocalDirectories(input)
       if (standardDirectories.length > 0) {
@@ -1133,6 +1104,11 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
         entries: contextEntries, projection: contextProjection, attachments: messageAttachments, queuedItemId,
       })
       const previousSnapshot = currentCapabilitySnapshot
+      // Session history is owned by the official Harness Conversation source.
+      // The product shell may start before the browser bundle is available
+      // (for example during a cold Tauri boot), so failure to mount it is
+      // surfaced through diagnostics rather than silently creating another
+      // history source.
       const streaming: StreamingTaskState = {
         phase: 'preparing',
         sessionId: rootSessionId,
@@ -1224,7 +1200,6 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
           prompt: harnessPrompt,
           capabilitySnapshot: capabilitySnapshotForExecution(capabilitySnapshot, runtimeConnectors, connectorSecrets, enabledConnectorIds),
           executionMode: taskExecutionMode,
-          toolsMode,
           allowShell,
           allowLsp,
           allowExternalAgents,
@@ -1272,29 +1247,19 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
         // An interrupted turn settled with its partial receipts: keep what it
         // produced, mark it stopped, and let the employee continue.
         if (result.interrupted) throw createHarnessFailure({ code: 'XY-CANCELED', category: 'unknown', title: '任务已停止', message: '本轮已停止', infrastructure: false, retryable: false })
-        // A completed turn may legitimately end without final text (file edits,
-        // plan delivery). Success is decided by the reported outcome, and the
-        // transcript already shows whatever the turn produced.
-        const outcome = parseTaskOutcome(result.outcome) ?? unverifiedTaskOutcome()
-        const goalCompleted = outcome.status === 'completed'
-        const answerDelivered = outcome.status === 'answered'
-        if (!goalCompleted) void taskQueue.pause(taskId)
+        // A completed official turn may legitimately end without final text
+        // (for example after file edits or plan delivery).
         // The projection bridge is asynchronous. A turn can finish before its
         // last wire updates arrive, so reconcile with the durable session log.
         const inspection = await inspectHarnessSession(user!.userId, result.sessionId).catch(() => undefined)
-        const inspectedTurn = parseAssistantTurn(inspection?.transcript?.at(-1))
-        const openTurn = streaming.entries.at(-1)
-        if (inspectedTurn && openTurn?.role === 'assistant' && inspectedTurn.id === openTurn.id) {
-          streaming.entries = mergeSettledTurn(streaming.entries, inspectedTurn)
-        }
         if (inspection?.projection && inspection.sessionId === result.sessionId) {
           streaming.projection = { ...streaming.projection, ...inspection.projection }
         }
         const completedAt = new Date().toISOString()
-        streaming.projection = taskProjectionCompleted(streaming.projection, outcome, completedAt)
+        streaming.projection = taskProjectionCompleted(streaming.projection, completedAt)
         const completedProjection = streaming.projection
         streaming.entries = ensureFinalText(settleOpenTurn(streaming.entries, 'completed', completedAt, {
-          model: taskModel, reasoningEffort: taskReasoningEffort, outcome,
+          model: taskModel, reasoningEffort: taskReasoningEffort,
         }), result.finalResponse)
         const completedEntries = streaming.entries
         if (currentLocalTaskIdRef.current === taskId) {
@@ -1305,17 +1270,16 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
         }
         persistLocalTask({ ...runningTask, status: 'COMPLETED', updatedAt: new Date().toISOString(),
           sessionId: result.sessionId, projection: completedProjection, entries: completedEntries })
-        if (!queuedTask && goalCompleted) void learnCompletedTask(user.userId, bootstrap.endpoints.memoryProfile ?? '/api/v1/memory-profile', accessToken, input, taskId)
+        if (!queuedTask) void learnCompletedTask(user.userId, bootstrap.endpoints.memoryProfile ?? '/api/v1/memory-profile', accessToken, input, taskId)
           .catch((error) => notify(`任务已完成，自动记忆未写入：${error instanceof Error ? error.message : String(error)}`, 'error'))
         void reportTaskAudit({
           accessToken,
           employeeId: user!.userId,
           endpoint: bootstrap.endpoints.auditEvents ?? '/api/v1/audit-events',
-          outcome: goalCompleted || answerDelivered ? 'SUCCEEDED' : 'FAILED',
-          taskOutcome: outcome,
+          outcome: 'SUCCEEDED',
           taskId,
         })
-        return goalCompleted || (answerDelivered && !queuedTask) ? true : { outcome }
+        return true
       } catch (error) {
         void taskQueue.pause(taskId)
         const failure = classifyHarnessFailure(error)
@@ -1448,7 +1412,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
     }
     let sessionId: string
     try {
-      sessionId = await regenerateHarness(taskId)
+      sessionId = await forkHarness(taskId)
     } catch {
       // A log cut by a crash has no balanced prefix to fork. Rebuild the
       // session and replay the earlier conversation rather than dropping the
@@ -1738,6 +1702,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
         ) : page === 'chat' ? (
           <ChatPage
             employeeId={user?.userId}
+            sessionId={harnessSessionId}
             knowledgeContext={bootstrap && user ? { endpoint: resolveServerEndpoint(bootstrap.endpoints.knowledge), employeeId: user.userId, teamId: user.teamId, accessToken } : undefined}
             key={currentLocalTaskId || 'new-task'}
             taskId={currentLocalTaskId}
@@ -1824,6 +1789,33 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
             onEditTurn={editLastUserTurn}
             onRegenerateTurn={() => { void regenerateLastTurn() }}
             onPrompt={setPrompt}
+            onOfficialPrompt={(value, sessionId, mode = 'queue', attachments = [], requestId) => {
+              if (currentTaskRunning && mode === 'steer') {
+                if (attachments.length) { setLocalFileError('运行中的任务暂不支持用附件插话，请等待当前轮完成。'); return }
+                void steerRunningTask(value)
+                return
+              }
+              if (currentTaskRunning && mode === 'queue') {
+                if (attachments.length) { setLocalFileError('排队消息暂不支持附件，请等待当前轮完成。'); return }
+                void taskQueue.enqueue(currentLocalTaskId, value, requestId)
+                return
+              }
+              void executeTask(value, attachments, undefined, undefined, undefined, sessionId)
+            }}
+            onOfficialRename={(sessionId, title) => {
+              const task = localTasks.find((item) => item.sessionId === sessionId)
+              if (task) persistLocalTask({ ...task, name: title, updatedAt: new Date().toISOString() })
+            }}
+            onOfficialQueueUpdate={(sessionId, itemId, action) => {
+              const task = localTasks.find((item) => item.sessionId === sessionId)
+              if (!task) return
+              if (action.kind === 'remove') void taskQueue.remove(task.id, itemId)
+              else if (action.kind === 'edit') void taskQueue.edit(task.id, itemId, action.text)
+              else if (action.kind === 'steer' && currentLocalTaskId === task.id) {
+                const queued = taskQueue.queues[task.id]?.items.find((item) => item.id === itemId)
+                if (queued) void steerRunningTask(queued.text)
+              }
+            }}
             onReconnect={() => setConnectionAttempt((value) => value + 1)}
             onRecoverHarness={recoverHarness}
             onRemoveKnowledge={removeKnowledgeContext}
@@ -1894,8 +1886,6 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
               harnessVersion={harnessHostHealth?.version}
               onCheckHarness={recoverHarness}
               onCheckModelProvider={bootstrap ? () => checkHarnessProvider({ litellmBaseUrl: bootstrap.endpoints.litellm, model: activeModel, modelApiKey: bootstrap.modelApiKey }) : undefined}
-              toolsMode={toolsMode}
-              onToolsModeChange={(value) => updateRuntimePreference(value, (next) => saveHarnessToolsMode(runtimePreferenceOwner, next), setToolsMode)}
               allowShell={allowShell}
               onAllowShellChange={(value) => updateRuntimePreference(value, (next) => saveHarnessShellEnabled(runtimePreferenceOwner, next), setAllowShell)}
               allowLsp={allowLsp}
@@ -1938,7 +1928,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
                   const [result] = await diagnoseConnectors({ employeeId: user?.userId ?? '', accessToken, connectors: [{ ...connector, enabled: true }] })
                   return result
                 }}
-                onReauthorizeErp={openErpLogin}
+                onReauthorizeErp={openDingTalkLogin}
               />
             </>}
             {page === 'knowledge' && bootstrap && user && <KnowledgeBasePage key={`${user.userId}:${bootstrap.endpoints.knowledge}`}
@@ -2044,7 +2034,6 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
           modelApiKey: bootstrap.modelApiKey,
           accessToken,
           localFileRootIds: localDirectories.map((directory) => directory.id),
-          toolsMode,
           allowShell,
           allowLsp,
           allowExternalAgents,

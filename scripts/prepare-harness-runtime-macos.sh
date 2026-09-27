@@ -97,11 +97,18 @@ cp "$node_root/bin/node" "$next_stage/node/node"
 cp "$node_root/LICENSE" "$next_stage/node/LICENSE"
 chmod 755 "$next_stage/node/node"
 
+primary_target="mac-$node_arch"
+node "$script_dir/prepare-dsh-primary-runtime.mjs" \
+  --target "$primary_target" \
+  --output "$next_stage" \
+  --cache "$cache_root/primary-runtime"
+
 node_binary="$next_stage/node/node"
 entry="$host_stage/dist/index.js"
-pptx_worker="$host_stage/dist/pptx-render-worker.mjs"
 config="$host_stage/runtime/cordis.yml"
-for required in "$node_binary" "$entry" "$pptx_worker" "$config"; do
+primary_manifest="$next_stage/primary-runtime/runtime.json"
+office_checker="$next_stage/office-skills/scripts/check_office.py"
+for required in "$node_binary" "$entry" "$config" "$primary_manifest" "$office_checker"; do
   [[ -f "$required" ]] || { echo "Packaged Harness file is missing: $required" >&2; exit 1; }
 done
 

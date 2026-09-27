@@ -102,8 +102,8 @@ fn append_response_chunk(bytes: &mut Vec<u8>, chunk: &[u8]) -> Result<(), String
 
 #[tauri::command]
 pub async fn begin_dingtalk_registration(app: tauri::AppHandle) -> Result<Value, String> {
-    let employee_id = crate::erp_auth::current_employee(&app).await?;
-    let session_epoch = crate::erp_auth::mcp::session_epoch();
+    let employee_id = crate::dingtalk_auth::current_employee(&app).await?;
+    let session_epoch = crate::dingtalk_auth::mcp::session_epoch();
     let revision = {
         let mut state = REGISTRATION.lock().map_err(|_| "扫码状态不可用")?;
         state.revision = state.revision.wrapping_add(1);
@@ -118,8 +118,8 @@ pub async fn begin_dingtalk_registration(app: tauri::AppHandle) -> Result<Value,
         .await
         .map_err(RegistrationRequestError::message)?;
     let session = registration_session(&begin)?;
-    if crate::erp_auth::current_employee(&app).await? != employee_id
-        || crate::erp_auth::mcp::session_epoch() != session_epoch
+    if crate::dingtalk_auth::current_employee(&app).await? != employee_id
+        || crate::dingtalk_auth::mcp::session_epoch() != session_epoch
     {
         return Err("登录账号已切换，请重新获取二维码".into());
     }
@@ -161,8 +161,8 @@ pub async fn poll_dingtalk_registration(
     if device_code.trim().is_empty() || device_code.len() > 4096 {
         return Err("扫码会话无效".into());
     }
-    let employee_id = crate::erp_auth::current_employee(&app).await?;
-    let session_epoch = crate::erp_auth::mcp::session_epoch();
+    let employee_id = crate::dingtalk_auth::current_employee(&app).await?;
+    let session_epoch = crate::dingtalk_auth::mcp::session_epoch();
     {
         let state = REGISTRATION.lock().map_err(|_| "扫码状态不可用")?;
         if !state
@@ -178,8 +178,8 @@ pub async fn poll_dingtalk_registration(
         Err(RegistrationRequestError::Temporary(_)) => return Ok(json!({"status":"RETRY"})),
         Err(error) => return Err(error.message()),
     };
-    if crate::erp_auth::current_employee(&app).await? != employee_id
-        || crate::erp_auth::mcp::session_epoch() != session_epoch
+    if crate::dingtalk_auth::current_employee(&app).await? != employee_id
+        || crate::dingtalk_auth::mcp::session_epoch() != session_epoch
     {
         return Err("登录账号已切换，请重新获取二维码".into());
     }

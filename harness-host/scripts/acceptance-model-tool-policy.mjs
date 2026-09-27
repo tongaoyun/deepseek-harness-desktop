@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DeepSeekHarnessRuntime } from '../dist/runtime.js'
+import { toolNames, toolResultMessages, writeMessagesResponse } from './messages-fixture.mjs'
 
 const root = await mkdtemp(join(tmpdir(), 'xiaoyin-tool-policy-'))
 const workspace = join(root, 'workspace')
@@ -17,26 +18,23 @@ const server = createServer(async (request, response) => {
   for await (const chunk of request) chunks.push(chunk)
   const body = JSON.parse(Buffer.concat(chunks).toString())
   assert(Array.isArray(body.tools), 'The model request must include tool schemas')
-  const names = body.tools.map((tool) => tool.function?.name)
+  const names = toolNames(body)
   requestedTools.push(names)
   schemaBytes.push(Buffer.byteLength(JSON.stringify(body.tools)))
-  toolReplies.push(JSON.stringify(body.messages.filter((message) => message.role === 'tool')))
-  const discover = names.includes('tool_discover') && !names.includes('task_report')
-  response.writeHead(200, { 'Content-Type': 'text/event-stream' })
-  for (const choice of [
-    { index: 0, delta: discover ? { role: 'assistant', tool_calls: [{ index: 0, id: `discover-${requestedTools.length}`, type: 'function', function: { name: 'tool_discover', arguments: JSON.stringify({ groups: ['files', 'office', 'knowledge', 'connectors', 'skills', 'web', 'code', 'desktop', 'workflow', 'other'] }) } }] } : { role: 'assistant', content: '工具可见性验收完成。' }, finish_reason: null },
-    { index: 0, delta: {}, finish_reason: discover ? 'tool_calls' : 'stop' },
-  ]) {
-    response.write(`data: ${JSON.stringify({ id: 'tool-policy-completion', object: 'chat.completion.chunk', created: 1, model: 'deepseek-v4-flash', choices: [choice] })}\n\n`)
-  }
-  response.end('data: [DONE]\n\n')
+  toolReplies.push(JSON.stringify(toolResultMessages(body)))
+  writeMessagesResponse(response, {
+    text: '工具可见性验收完成。',
+  })
 })
 
 const officialFiles = ['read', 'write', 'edit', 'read_image', 'glob', 'grep', 'present']
 const productFiles = ['local_files_roots', 'local_files_list', 'local_files_search', 'local_files_read_text', 'local_files_publish']
-const shellTools = ['bash', 'pwsh', 'terminal_open', 'terminal_send', 'terminal_read', 'terminal_signal', 'terminal_close', 'terminal_list']
+const shellTools = ['bash', 'pwsh']
+const removedTerminalTools = ['terminal_open', 'terminal_send', 'terminal_read', 'terminal_signal', 'terminal_close', 'terminal_list']
 const sessionQueryTools = ['session_search', 'session_event_search', 'session_trace', 'session_event_trace', 'session_event_read']
 const browserTools = ['browser_open', 'browser_snapshot', 'browser_screenshot', 'browser_downloads']
+const removedDiscoveryTool = ['tool', 'discover'].join('_')
+const removedOutcomeTool = ['task', 'report'].join('_')
 
 function containsAll(names, expected, scenario) {
   for (const name of expected) assert(names.has(name), `${scenario}: missing ${name}`)
@@ -51,10 +49,9 @@ try {
   for (const scenario of [
     { name: 'native-default', shell: 'true', roots: [], mode: 'native', executionMode: 'agent', files: officialFiles, forbiddenFiles: productFiles, hasShell: true, query: true, browser: false },
     { name: 'native-no-shell', shell: 'false', roots: [], mode: 'native', executionMode: 'agent', files: officialFiles, forbiddenFiles: productFiles, hasShell: false, query: false, browser: false },
-    { name: 'native-authorized-roots', shell: 'false', roots: [{ id: 'workspace', name: 'Workspace', path: workspace }], mode: 'native', executionMode: 'agent', files: productFiles, forbiddenFiles: officialFiles, hasShell: false, query: true, browser: false },
-    { name: 'native-plan-authorized-roots', shell: 'false', roots: [{ id: 'workspace', name: 'Workspace', path: workspace }], mode: 'native', executionMode: 'plan', files: productFiles, forbiddenFiles: officialFiles, hasShell: false, query: true, browser: false },
+    { name: 'native-authorized-roots', shell: 'false', roots: [{ id: 'workspace', name: 'Workspace', path: workspace }], mode: 'native', executionMode: 'agent', files: officialFiles, forbiddenFiles: productFiles, hasShell: false, query: true, browser: false },
+    { name: 'native-plan-authorized-roots', shell: 'false', roots: [{ id: 'workspace', name: 'Workspace', path: workspace }], mode: 'native', executionMode: 'plan', files: officialFiles, forbiddenFiles: productFiles, hasShell: false, query: true, browser: false },
     { name: 'native-browser', shell: 'false', roots: [], mode: 'native', executionMode: 'agent', files: officialFiles, forbiddenFiles: productFiles, hasShell: false, query: false, browser: true },
-    { name: 'ptc-no-shell', shell: 'false', roots: [], mode: 'ptc', executionMode: 'agent', files: [], forbiddenFiles: [...officialFiles, ...productFiles], hasShell: false, query: true, browser: false },
   ]) {
     requestedTools = []
     schemaBytes = []
@@ -66,10 +63,8 @@ try {
       DSH_HOME: home,
       DSH_SESSION_ROOT: join(home, 'sessions'),
       DSH_CWD: workspace,
-      XIAOYIN_ATTACHMENT_ROOT: join(root, 'attachments'),
       XIAOYIN_LOCAL_FILE_ROOTS: JSON.stringify(scenario.roots),
       XIAOYIN_ALLOW_SHELL: scenario.shell,
-      XIAOYIN_TOOLS_MODE: scenario.mode,
       XIAOYIN_MCP_CONNECTORS: '[]',
       XIAOYIN_COMPUTER_USE_TOOLS: '[]',
       XIAOYIN_ALLOW_BROWSER: String(scenario.browser),
@@ -80,28 +75,26 @@ try {
     })
     try {
       const result = await runtime.run({ prompt: '验收本轮可用工具 policyhistorymarker。' }, () => {})
-      assert.equal(requestedTools.length, scenario.mode === 'ptc' ? 1 : 2, `${scenario.name}: discovery should add exactly one request`)
+      assert.equal(requestedTools.length, 1, `${scenario.name}: preset should keep one stable request`)
       const initial = new Set(requestedTools[0])
       if (scenario.mode === 'native') {
-        containsAll(initial, ['tool_discover', 'exit_plan_mode'], scenario.name)
-        containsNone(initial, [...officialFiles, ...productFiles, ...shellTools, ...sessionQueryTools, ...browserTools, 'task_report'], scenario.name)
-        assert(initial.size <= 6 && schemaBytes[0] < 10000, `${scenario.name}: initial model tool schema was not reduced (${initial.size} tools, ${schemaBytes[0]} bytes: ${[...initial].join(', ')})`)
+        containsAll(initial, ['exit_plan_mode'], scenario.name)
+        containsNone(initial, [...removedTerminalTools, ...(scenario.query ? [] : sessionQueryTools), removedOutcomeTool, removedDiscoveryTool], scenario.name)
+        assert(schemaBytes[0] > 0, `${scenario.name}: preset model tool schema is empty`)
       }
       const names = new Set(requestedTools.at(-1))
       if (scenario.mode === 'native') {
         containsAll(names, ['exit_plan_mode'], scenario.name)
-        assert(toolReplies.at(-1).includes('office_xlsx_recalculate'), `${scenario.name}: office instructions were not delivered after discovery`)
-        assert(toolReplies.at(-1).includes(scenario.roots.length ? 'local_files_publish' : 'present'), `${scenario.name}: publishing instructions did not match file policy`)
       }
       containsAll(names, scenario.files, scenario.name)
       containsNone(names, scenario.forbiddenFiles, scenario.name)
       if (scenario.hasShell) {
-        containsAll(names, [process.platform === 'win32' ? 'pwsh' : 'bash', ...shellTools.slice(2)], scenario.name)
+        containsAll(names, [process.platform === 'win32' ? 'pwsh' : 'bash'], scenario.name)
       } else {
         containsNone(names, shellTools, scenario.name)
       }
-      if (scenario.mode === 'ptc') containsAll(names, ['run_code'], scenario.name)
-      else containsNone(names, ['run_code'], scenario.name)
+      containsNone(names, removedTerminalTools, scenario.name)
+      containsNone(names, ['run_code'], scenario.name)
       if (scenario.mode === 'native' && scenario.query) containsAll(names, sessionQueryTools, scenario.name)
       else containsNone(names, sessionQueryTools, scenario.name)
       if (scenario.browser && scenario.mode === 'native') containsAll(names, browserTools, scenario.name)

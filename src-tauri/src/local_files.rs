@@ -78,7 +78,7 @@ pub async fn authorize_local_directory(
     app: tauri::AppHandle,
     authorizations: tauri::State<'_, LocalFileAuthorizations>,
 ) -> Result<Option<AuthorizedDirectoryView>, String> {
-    let employee_id = crate::erp_auth::current_employee(&app).await?;
+    let employee_id = crate::dingtalk_auth::current_employee(&app).await?;
     authorizations.ensure_employee(&employee_id)?;
     let picker_app = app.clone();
     let selected = tauri::async_runtime::spawn_blocking(move || {
@@ -96,7 +96,7 @@ pub async fn authorize_local_directory(
     let path = selected
         .into_path()
         .map_err(|error| format!("选择的文件夹路径无效：{error}"))?;
-    crate::erp_auth::require_employee(&app, &employee_id).await?;
+    crate::dingtalk_auth::require_employee(&app, &employee_id).await?;
     authorizations.ensure_employee(&employee_id)?;
     authorizations.authorize(path).map(Some)
 }
@@ -106,7 +106,7 @@ pub async fn authorize_local_files(
     app: tauri::AppHandle,
     authorizations: tauri::State<'_, LocalFileAuthorizations>,
 ) -> Result<DroppedPathAuthorization, String> {
-    let employee_id = crate::erp_auth::current_employee(&app).await?;
+    let employee_id = crate::dingtalk_auth::current_employee(&app).await?;
     authorizations.ensure_employee(&employee_id)?;
     let picker_app = app.clone();
     let selected = tauri::async_runtime::spawn_blocking(move || {
@@ -132,7 +132,7 @@ pub async fn authorize_local_files(
                 .map_err(|error| format!("选择的文件路径无效：{error}"))
         })
         .collect::<Result<Vec<_>, _>>()?;
-    crate::erp_auth::require_employee(&app, &employee_id).await?;
+    crate::dingtalk_auth::require_employee(&app, &employee_id).await?;
     authorizations.ensure_employee(&employee_id)?;
     authorize_paths(&authorizations, paths)
 }
@@ -143,7 +143,7 @@ pub async fn authorize_standard_local_directories(
     authorizations: tauri::State<'_, LocalFileAuthorizations>,
     request: StandardDirectoryRequest,
 ) -> Result<Vec<AuthorizedDirectoryView>, String> {
-    let employee_id = crate::erp_auth::current_employee(&app).await?;
+    let employee_id = crate::dingtalk_auth::current_employee(&app).await?;
     authorizations.ensure_employee(&employee_id)?;
     if request.directories.len() > 3 {
         return Err("系统目录请求数量无效".to_string());
@@ -174,7 +174,7 @@ pub async fn authorize_dropped_paths(
     authorizations: tauri::State<'_, LocalFileAuthorizations>,
     paths: Vec<String>,
 ) -> Result<DroppedPathAuthorization, String> {
-    let employee_id = crate::erp_auth::current_employee(&app).await?;
+    let employee_id = crate::dingtalk_auth::current_employee(&app).await?;
     authorizations.ensure_employee(&employee_id)?;
     if paths.is_empty() {
         return Ok(DroppedPathAuthorization {
@@ -263,7 +263,7 @@ pub async fn import_pasted_image(
     data: String,
     media_type: String,
 ) -> Result<DroppedPathAuthorization, String> {
-    let employee_id = crate::erp_auth::current_employee(&app).await?;
+    let employee_id = crate::dingtalk_auth::current_employee(&app).await?;
     authorizations.ensure_employee(&employee_id)?;
     let bytes = decode_pasted_image(&data, &media_type)?;
     let directory = app
@@ -335,7 +335,7 @@ pub async fn import_pasted_file(
     name: String,
     data: String,
 ) -> Result<DroppedPathAuthorization, String> {
-    let employee_id = crate::erp_auth::current_employee(&app).await?;
+    let employee_id = crate::dingtalk_auth::current_employee(&app).await?;
     authorizations.ensure_employee(&employee_id)?;
     let (filename, bytes) = decode_pasted_file(&name, &data)?;
     let directory = app
@@ -361,7 +361,7 @@ pub async fn restore_local_directories(
     authorizations: tauri::State<'_, LocalFileAuthorizations>,
     paths: Vec<String>,
 ) -> Result<Vec<AuthorizedDirectoryView>, String> {
-    let employee_id = crate::erp_auth::current_employee(&app).await?;
+    let employee_id = crate::dingtalk_auth::current_employee(&app).await?;
     authorizations.ensure_employee(&employee_id)?;
     if paths.len() > MAX_AUTHORIZED_DIRECTORIES {
         return Err(format!(
@@ -387,7 +387,7 @@ pub async fn revoke_local_directory(
     authorizations: tauri::State<'_, LocalFileAuthorizations>,
     id: String,
 ) -> Result<(), String> {
-    let employee_id = crate::erp_auth::current_employee(&app).await?;
+    let employee_id = crate::dingtalk_auth::current_employee(&app).await?;
     authorizations.ensure_employee(&employee_id)?;
     authorizations.revoke(&id)
 }

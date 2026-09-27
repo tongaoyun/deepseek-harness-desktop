@@ -4,11 +4,11 @@ import { appendFile, glob, mkdtemp, readFile, rm, writeFile } from 'node:fs/prom
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DeepSeekHarnessRuntime } from '../dist/runtime.js'
+import { writeMessagesResponse } from './messages-fixture.mjs'
 
 const root = await mkdtemp(join(tmpdir(), 'xiaoyin-session-recovery-'))
 let phase = 'initial'
 let failure
-let requests = 0
 let stopRuntime
 let streamDelivered
 const firstDelta = new Promise((resolve) => { streamDelivered = resolve })
@@ -17,7 +17,6 @@ const server = createServer(async (request, response) => {
     const chunks = []
     for await (const chunk of request) chunks.push(chunk)
     const body = JSON.parse(Buffer.concat(chunks).toString())
-    requests++
     if (phase === 'restored') {
       assert(JSON.stringify(body.messages).includes('XY-SESSION-PERSISTED'))
       assert(JSON.stringify(body.messages).includes('已记录第一轮任务'))
@@ -33,19 +32,13 @@ const server = createServer(async (request, response) => {
       stopRuntime()
       return
     }
-    response.writeHead(200, { 'Content-Type': 'text/event-stream' })
     const text = phase === 'initial' ? '已记录第一轮任务' : '会话恢复验证完成'
-    for (const choice of [{ index: 0, delta: { role: 'assistant', content: text }, finish_reason: null },
-      { index: 0, delta: {}, finish_reason: 'stop' }]) {
-      response.write(`data: ${JSON.stringify({ id: 'recovery-' + requests, object: 'chat.completion.chunk', created: 1, model: 'deepseek-v4-flash', choices: [choice] })}\n\n`)
-      if (phase === 'initial' && choice.delta.content) {
-        let timer
-        try {
-          await Promise.race([firstDelta, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Live text was not forwarded before model completion')), 5_000) })])
-        } finally { clearTimeout(timer) }
-      }
+    writeMessagesResponse(response, { text })
+    if (phase === 'initial') {
+      let timer
+      try { await Promise.race([firstDelta, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Live text was not forwarded before model completion')), 5_000) })]) }
+      finally { clearTimeout(timer) }
     }
-    response.end('data: [DONE]\n\n')
   } catch (error) {
     failure = error
     response.writeHead(400)
@@ -55,7 +48,7 @@ const server = createServer(async (request, response) => {
 await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
 const environment = {
   DEEPSEEK_API_KEY: 'local-fixture-only', DEEPSEEK_BASE_URL: `http://127.0.0.1:${server.address().port}`,
-  DSH_HOME: root, DSH_SESSION_ROOT: join(root, 'sessions'), XIAOYIN_ATTACHMENT_ROOT: join(root, 'attachments'),
+  DSH_HOME: root, DSH_SESSION_ROOT: join(root, 'sessions'),
   XIAOYIN_SESSION_QUERY_PATH: join(root, 'session-query.sqlite'),
   XIAOYIN_LOCAL_FILE_ROOTS: '[]', XIAOYIN_MCP_CONNECTORS: '[]', DSH_CUSTOM_SKILL_DIRS: '[]',
   XIAOYIN_ALLOW_BROWSER: 'false', XIAOYIN_COMPUTER_USE_TOOLS: '[]',
@@ -71,7 +64,7 @@ try {
   await runtime.close()
   await writeFile(environment.XIAOYIN_SESSION_QUERY_PATH, 'not a sqlite database')
   const logs = []
-  for await (const path of glob('**/session.v3.jsonl', { cwd: environment.DSH_SESSION_ROOT })) logs.push(join(environment.DSH_SESSION_ROOT, path))
+  for await (const path of glob('**/session.v4.jsonl', { cwd: environment.DSH_SESSION_ROOT })) logs.push(join(environment.DSH_SESSION_ROOT, path))
   assert.equal(logs.length, 1, 'Expected one current Session JSONL generation')
   await appendFile(logs[0], '{"type":"assistant/chunk","torn":"XY-TORN-TAIL"')
   runtime = new DeepSeekHarnessRuntime(environment)

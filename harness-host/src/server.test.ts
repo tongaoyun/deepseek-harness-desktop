@@ -226,11 +226,11 @@ it('rejects a blank steering prompt', async () => {
   expect(output.at(-1)).toMatchObject({ id: 12, error: expect.objectContaining({ message: expect.stringContaining('non-blank') }) })
 })
 
-it('forks the session before its last prompt for regeneration', async () => {
+it('forks the session through the official session/fork command', async () => {
   const output: JsonRpcOutput[] = []
   const runtime = fakeRuntime()
-  runtime.regenerate = async (sessionId) => ({ sessionId: `${sessionId}-r1` })
+  runtime.fork = async (sessionId) => ({ sessionId: `${sessionId}-r1` })
   const server = new HostServer(runtime, (value) => output.push(value))
-  await server.handle({ jsonrpc: '2.0', id: 20, method: 'session.regenerate', params: { sessionId: 'session-1' } })
+  await server.handle({ jsonrpc: '2.0', id: 20, method: 'session.fork', params: { sessionId: 'session-1' } })
   expect(output.at(-1)).toMatchObject({ id: 20, result: { sessionId: 'session-1-r1' } })
 })

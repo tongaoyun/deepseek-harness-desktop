@@ -5,7 +5,7 @@ import type { InstalledExpertKit, SkillCatalogEntry } from './types'
 const catalog: SkillCatalogEntry = {
   id: 'document-insight', name: '文档洞察', version: '1.1.0', summary: '分析文档', category: 'knowledge-research', sourceKitId: '',
   triggers: ['总结文档'], minimumDesktopVersion: '0.1.13', connectorRefs: [],
-  requiredTools: ['office.document.read'], knowledgeBaseRefs: [],
+  requiredTools: ['load_workspace_dependencies'], knowledgeBaseRefs: [],
   sha256: 'a'.repeat(64),
 }
 
@@ -15,7 +15,7 @@ const installed: InstalledExpertKit = {
     schemaVersion: '1', kind: 'skill', id: 'document-insight', name: '文档洞察', version: '1.0.0',
     summary: '分析文档', category: 'knowledge-research', triggers: ['总结文档'], minimumDesktopVersion: '0.1.13', commands: [],
     skills: [{ id: 'document-insight', path: 'skills/document-insight/SKILL.md' }],
-    requiredTools: ['office.document.read'], connectorRefs: [], knowledgeBaseRefs: [],
+    requiredTools: ['load_workspace_dependencies'], connectorRefs: [], knowledgeBaseRefs: [],
   },
 }
 

@@ -15,7 +15,6 @@ import type { ConversationEntry, AssistantTurn } from './conversation/types'
 import { mergeExpertKits, type ExpertKitView } from './expertKits'
 import { runHarnessWithRecovery } from './taskRecovery'
 import { reportTaskAudit } from './taskAudit'
-import type { TaskOutcome } from './taskOutcome'
 import { persistTaskHistory, loadTaskById, loadTaskHistory } from './taskHistory'
 import { readTaskDraft, saveTaskDraft } from './taskDrafts'
 import * as taskDrafts from './taskDrafts'
@@ -34,7 +33,7 @@ const fixtures = vi.hoisted(() => ({
   schedules: undefined as ComponentProps<typeof ScheduledTasksPage> | undefined,
   creationCatalog: undefined as ComponentProps<typeof CapabilityCatalogPage> | undefined,
 }))
-vi.mock('./useEnterpriseSession', () => ({ useEnterpriseSession: () => ({ state: fixtures.authState, user: fixtures.authState === 'authenticated' ? fixtures.user : null, accessToken: fixtures.authState === 'authenticated' ? 'test' : '' }) }))
+vi.mock('./useEnterpriseSession', () => ({ useEnterpriseSession: () => ({ state: fixtures.authState, user: fixtures.authState === 'authenticated' ? fixtures.user : null, sessionToken: fixtures.authState === 'authenticated' ? 'test' : '' }) }))
 vi.mock('./useEnterpriseCatalog', () => ({ useEnterpriseCatalog: () => fixtures.catalog }))
 vi.mock('./useHarnessHealth', () => ({ useHarnessHealth: () => ({ health: 'ready', detail: '', reportInfrastructureFailure: vi.fn() }) }))
 vi.mock('./useDeviceHeartbeat', () => ({ useDeviceHeartbeat: () => vi.fn() }))
@@ -50,12 +49,11 @@ vi.mock('./taskHistory', async (original) => ({ ...await original<object>(), loa
 vi.mock('./taskRecovery', () => ({ runHarnessWithRecovery: vi.fn() }))
 vi.mock('./taskAudit', () => ({ reportTaskAudit: vi.fn(async () => {}) }))
 vi.mock('./memory', async (original) => ({ ...await original<object>(), rememberInstruction: vi.fn(), learnCompletedTask: vi.fn(async () => undefined) }))
-vi.mock('./harness', async (original) => ({ ...await original<object>(), clearLocalDirectories: async () => {}, restoreLocalDirectories: async () => [], shutdownHarness: vi.fn(async () => {}), cancelHarness: vi.fn(async () => true), steerHarness: vi.fn(async () => false), interruptHarness: vi.fn(async () => false), regenerateHarness: vi.fn(async () => 'session-forked') }))
+vi.mock('./harness', async (original) => ({ ...await original<object>(), clearLocalDirectories: async () => {}, restoreLocalDirectories: async () => [], shutdownHarness: vi.fn(async () => {}), cancelHarness: vi.fn(async () => true), steerHarness: vi.fn(async () => false), interruptHarness: vi.fn(async () => false), forkHarness: vi.fn(async () => 'session-forked') }))
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 const entriesText = (entries: ConversationEntry[]) => entries.map((entry) => entry.role === 'user' ? entry.text : entry.segments.filter((segment) => segment.kind === 'text').map((segment) => segment.text).join(''))
 const lastText = (entries: ConversationEntry[]) => entriesText(entries).at(-1)
-const completedOutcome: TaskOutcome = { status: 'completed', summary: '已完成本次要求', remaining: [], checks: [] }
 
 const olderTask = (): LocalTaskRun => ({ id: 'older-task', source: 'DESKTOP', name: '更早的定时任务', status: 'COMPLETED', createdAt: '2026-09-01', updatedAt: '2026-09-01', projection: harness.createXiaoyinTaskProjection(), entries: [userEntry('u1', '保留原始需求'), assistantEntry('turn:1', '历史成果已生成')] })
 const strippedTask = (): LocalTaskRun => ({ ...olderTask(), id: 'stripped-task', sessionId: 'session-stripped', entries: [], messagePreview: '历史摘要' })
@@ -160,7 +158,6 @@ it('lets a later new task start while an earlier new-task write is still pending
   vi.mocked(runHarnessWithRecovery).mockImplementation(async (input) => ({
     finalResponse: `已完成：${input.prompt}`,
     sessionId: input.sessionId!,
-    outcome: completedOutcome,
   }))
   await fixture(async () => {
     await act(async () => fixtures.chat!.onPrompt('第一个任务'))
@@ -293,7 +290,7 @@ it('disables optional local execution capabilities when runtime preferences cann
   await fixture(async () => {
     await submit('整理资料')
     expect(vi.mocked(runHarnessWithRecovery).mock.calls[0][0]).toMatchObject({
-      toolsMode: 'native', allowShell: false, allowLsp: false, allowExternalAgents: false, allowHooks: false,
+      allowShell: false, allowLsp: false, allowExternalAgents: false, allowHooks: false,
     })
   })
 })
@@ -312,7 +309,7 @@ it('remains usable when WebView storage fails for every key', async () => {
     expect(document.querySelector('.desktop-toast.error')?.textContent).toContain('模型选择未能保存')
     await submit('整理资料')
     expect(vi.mocked(runHarnessWithRecovery).mock.calls[0][0]).toMatchObject({
-      model: 'other-model', toolsMode: 'native', allowShell: false, allowLsp: false,
+      model: 'other-model', allowShell: false, allowLsp: false,
       allowExternalAgents: false, allowHooks: false,
     })
   })
@@ -448,7 +445,7 @@ it('clears only the submitted creation draft and preserves the ordinary new-task
 it('runs a local schedule through the same desktop execution flow without replacing the open draft', async () => {
   const available = vi.spyOn(harness, 'connectorDiagnosticsAvailable').mockReturnValue(true)
   vi.stubGlobal('navigator', { locks: { request: async (_name: string, options: unknown, handler?: (lock: object) => unknown) => (handler ?? options as (lock: object) => unknown)({}) } })
-  vi.mocked(runHarnessWithRecovery).mockResolvedValue({ finalResponse: 'SCHEDULE_OK', sessionId: 'schedule-session', outcome: completedOutcome })
+  vi.mocked(runHarnessWithRecovery).mockResolvedValue({ finalResponse: 'SCHEDULE_OK', sessionId: 'schedule-session' })
   try {
     await fixture(async () => {
       await act(async () => fixtures.chat!.onPrompt('未发送的日常草稿'))
@@ -469,7 +466,7 @@ it('runs a local schedule through the same desktop execution flow without replac
 it.each(['other-model', 'removed-model'])('uses the scheduled model or pauses an unavailable model: %s', async (model) => {
   const available = vi.spyOn(harness, 'connectorDiagnosticsAvailable').mockReturnValue(true)
   vi.stubGlobal('navigator', { locks: { request: async (_name: string, options: unknown, handler?: (lock: object) => unknown) => (handler ?? options as (lock: object) => unknown)({}) } })
-  vi.mocked(runHarnessWithRecovery).mockResolvedValue({ finalResponse: 'MODEL_OK', sessionId: 'model-session', outcome: completedOutcome })
+  vi.mocked(runHarnessWithRecovery).mockResolvedValue({ finalResponse: 'MODEL_OK', sessionId: 'model-session' })
   try {
     await fixture(async () => {
       await act(async () => fixtures.sidebar!.onPage('schedules'))
@@ -493,7 +490,7 @@ it('restores scheduled attachment roots and forwards attachments to the ordinary
   const available = vi.spyOn(harness, 'connectorDiagnosticsAvailable').mockReturnValue(true)
   const restore = vi.spyOn(harness, 'restoreLocalDirectories').mockResolvedValue([{ id: 'attachment-root', name: '资料', path: '/fixture' }])
   vi.stubGlobal('navigator', { locks: { request: async (_name: string, options: unknown, handler?: (lock: object) => unknown) => (handler ?? options as (lock: object) => unknown)({}) } })
-  vi.mocked(runHarnessWithRecovery).mockResolvedValue({ finalResponse: '附件读取完成', sessionId: 'attachment-session', outcome: completedOutcome })
+  vi.mocked(runHarnessWithRecovery).mockResolvedValue({ finalResponse: '附件读取完成', sessionId: 'attachment-session' })
   const attachment = { id: 'attachment-root:input.csv', rootId: 'attachment-root', rootName: '资料', rootPath: '/fixture', path: 'input.csv', name: 'input.csv', kind: 'file' as const }
   try {
     await fixture(async () => {
@@ -598,7 +595,7 @@ it('recovers the last input after ERP automatically invalidates the workspace', 
     expect(localStorage.getItem('xiaoyin.pending-task-draft.queue-test')).toContain('刚输入还未写入 SQLite')
     fixtures.authState = 'required'
     await act(async () => root.render(<App />))
-    expect(document.querySelector('.erp-auth-screen')).not.toBeNull()
+    expect(document.querySelector('.dingtalk-auth-screen')).not.toBeNull()
     fixtures.authState = 'authenticated'
     await act(async () => root.render(<App />))
     expect(fixtures.chat!.prompt).toBe('刚输入还未写入 SQLite')
@@ -640,11 +637,11 @@ it('waits for old native tasks to stop and retries a failed account transition',
     fixtures.chat = undefined
     await act(async () => root.render(<App />))
     expect(fixtures.chat).toBeUndefined()
-    expect(document.querySelector('.erp-auth-screen')).not.toBeNull()
+    expect(document.querySelector('.dingtalk-auth-screen')).not.toBeNull()
     await act(async () => failStop(new Error('native shutdown failed')))
-    const retry = document.querySelector<HTMLButtonElement>('.erp-auth-screen button')
+    const retry = document.querySelector<HTMLButtonElement>('.dingtalk-auth-screen button')
     expect(retry).not.toBeNull()
-    expect(document.querySelector('.erp-auth-error')?.textContent).not.toContain('native shutdown failed')
+    expect(document.querySelector('.dingtalk-auth-error')?.textContent).not.toContain('native shutdown failed')
     await act(async () => retry!.click())
     expect(fixtures.chat).toBeDefined()
     expect(fixtures.chat!.entries).toEqual([])
@@ -674,7 +671,7 @@ it('does not reopen the old workspace while a rapid account switch is still clea
     expect(fixtures.chat).toBeUndefined()
     await act(async () => finishFirst())
     expect(fixtures.chat).toBeUndefined()
-    expect(document.querySelector('.erp-auth-screen')).not.toBeNull()
+    expect(document.querySelector('.dingtalk-auth-screen')).not.toBeNull()
     await act(async () => finishSecond())
     expect(fixtures.chat).toBeDefined()
   } finally {
@@ -704,67 +701,28 @@ it('continues in the original session and preserves another task’s draft and m
     expect(fixtures.chat!.queue?.items).toHaveLength(1)
     await act(async () => { fixtures.sidebar!.onNewTask() })
     await act(async () => { fixtures.chat!.onPrompt('另一个任务的草稿'); fixtures.chat!.onSelectModel('other-model') })
-    await act(async () => { first.resolve({ finalResponse: '排序说明', sessionId: original.sessionId!, outcome: completedOutcome }) })
+    await act(async () => { first.resolve({ finalResponse: '排序说明', sessionId: original.sessionId! }) })
     expect(runHarnessWithRecovery).toHaveBeenCalledTimes(2)
     const continuation = vi.mocked(runHarnessWithRecovery).mock.calls[1][0]
     expect(continuation).toMatchObject({ taskId: original.taskId, sessionId: original.sessionId, model: 'original-model', prompt: '再给一个例子' })
     expect(fixtures.chat!.prompt).toBe('另一个任务的草稿')
     expect(fixtures.chat!.activeModel).toBe('other-model')
     expect(fixtures.chat!.entries).toEqual([])
-    await act(async () => { second.resolve({ finalResponse: '示例', sessionId: original.sessionId!, outcome: completedOutcome }) })
+    await act(async () => { second.resolve({ finalResponse: '示例', sessionId: original.sessionId! }) })
     const saved = vi.mocked(persistTaskHistory).mock.calls.at(-1)![1] as LocalTaskRun
     expect(entriesText(saved.entries)).toEqual(['解释排序算法', '排序说明', '再给一个例子', '示例'])
     expect(fixtures.chat!.prompt).toBe('另一个任务的草稿')
   })
 })
 
-it.each(['partial', 'needs_input', 'needs_confirmation', 'blocked', 'unverified', undefined] as const)('retains incomplete outcomes and pauses queued work: %s', async (status) => {
-  const first = deferredRun()
-  const outcome: TaskOutcome | undefined = status ? { status, summary: '已生成初稿，尚待补充', remaining: ['补充销售数据'], checks: [] } : undefined
-  vi.mocked(runHarnessWithRecovery).mockReturnValueOnce(first.promise)
-  await fixture(async () => {
-    await submit('整理销售报告')
-    await submit('将报告发给团队')
-    await act(async () => first.resolve({ finalResponse: '已生成初稿', sessionId: 'report', outcome }))
-    expect(runHarnessWithRecovery).toHaveBeenCalledOnce()
-    expect(fixtures.chat!.queue).toMatchObject({ paused: true, items: [{ text: '将报告发给团队' }] })
-    expect(fixtures.chat!.taskProjection.outcome?.status).toBe(status ?? 'unverified')
-    const saved = vi.mocked(persistTaskHistory).mock.calls.at(-1)![1]
-    expect(saved.projection.outcome).toEqual(fixtures.chat!.taskProjection.outcome)
-    expect(saved.entries.at(-1)?.role === 'assistant' ? (saved.entries.at(-1) as ConversationEntry & { meta?: { outcome?: unknown } }).meta?.outcome : undefined).toEqual(saved.projection.outcome)
-    expect(reportTaskAudit).not.toHaveBeenCalledWith(expect.objectContaining({ outcome: 'SUCCEEDED' }))
-    expect(learnCompletedTask).not.toHaveBeenCalled()
-  })
-})
-
-it('renders a tool-free answer as delivered without learning a verified task completion', async () => {
-  vi.mocked(runHarnessWithRecovery).mockResolvedValueOnce({
-    finalResponse: '2', sessionId: 'answer',
-    outcome: { status: 'answered', summary: '回答已送达；未执行任务验收。', remaining: [], checks: [] },
-  })
+it('treats an officially completed tool-free turn as delivered and learnable', async () => {
+  vi.mocked(runHarnessWithRecovery).mockResolvedValueOnce({ finalResponse: '2', sessionId: 'answer' })
   await fixture(async () => {
     await submit('1+1=?')
-    expect(fixtures.chat!.taskProjection.outcome?.status).toBe('answered')
-    const lastEntry = fixtures.chat!.entries.at(-1)
-    expect(lastEntry?.role === 'assistant' ? lastEntry.meta?.outcome?.status : undefined).toBe('answered')
-    expect(learnCompletedTask).not.toHaveBeenCalled()
-    expect(reportTaskAudit).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'SUCCEEDED', taskOutcome: expect.objectContaining({ status: 'answered' }) }))
-  })
-})
-
-it('runs clarification directly while preserving the paused queue', async () => {
-  const first = deferredRun()
-  vi.mocked(runHarnessWithRecovery).mockReturnValueOnce(first.promise).mockResolvedValue({ finalResponse: '报告已补齐', sessionId: 'report', outcome: completedOutcome })
-  await fixture(async () => {
-    await submit('整理销售报告')
-    await submit('将报告发给团队')
-    await act(async () => first.resolve({ finalResponse: '缺少统计月份', sessionId: 'report', outcome: { status: 'needs_input', summary: '缺少统计月份', remaining: ['提供月份'], checks: [] } }))
-    await submit('统计八月份')
-    expect(runHarnessWithRecovery).toHaveBeenCalledTimes(2)
-    expect(vi.mocked(runHarnessWithRecovery).mock.calls[1][0].prompt).toBe('统计八月份')
-    expect(fixtures.chat!.queue).toMatchObject({ paused: true, items: [{ text: '将报告发给团队' }] })
-    expect(fixtures.chat!.taskProjection.outcome?.status).toBe('completed')
-    expect(reportTaskAudit).toHaveBeenLastCalledWith(expect.objectContaining({ outcome: 'SUCCEEDED' }))
+    expect(fixtures.chat!.taskProjection.status).toBe('completed')
+    expect(lastText(fixtures.chat!.entries)).toBe('2')
+    expect(learnCompletedTask).toHaveBeenCalledOnce()
+    expect(reportTaskAudit).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'SUCCEEDED' }))
   })
 })
 
@@ -789,7 +747,7 @@ it('keeps the queue paused when stop races with a successful completion', async 
     await submit('再给一个例子')
     await act(async () => { fixtures.chat!.onCancel() })
     const original = vi.mocked(runHarnessWithRecovery).mock.calls[0][0]
-    await act(async () => { first.resolve({ finalResponse: '完成', sessionId: original.sessionId!, outcome: completedOutcome }) })
+    await act(async () => { first.resolve({ finalResponse: '完成', sessionId: original.sessionId! }) })
     expect(runHarnessWithRecovery).toHaveBeenCalledOnce()
     expect(fixtures.chat!.queue?.paused).toBe(true)
     expect(fixtures.chat!.queue?.items[0].text).toBe('再给一个例子')
@@ -873,10 +831,10 @@ it('restores independent new-task and conversation drafts without clearing eithe
 it.each(['', '继续检查'])('resumes the persisted session after remount with an unchanged workspace draft: %s', async (prompt) => {
   const directories = [{ id: 'work', name: '工作', path: '/work' }]
   const task: LocalTaskRun = { ...olderTask(), sessionId: 'persisted-session', model: 'original-model', localDirectories: directories,
-    capabilitySnapshot: { schemaVersion: 1, createdAt: 'test', selections: [], artifacts: [], implicitArtifacts: [], requestedConnectorIds: [], connectors: [], requestedKnowledgeBaseRefs: [], knowledgeBaseRefs: [] } }
+    capabilitySnapshot: { schemaVersion: 2, createdAt: 'test', selections: [], artifacts: [], implicitArtifacts: [], localTools: [], requestedConnectorIds: [], connectors: [], requestedKnowledgeBaseRefs: [], knowledgeBaseRefs: [] } }
   vi.spyOn(harness, 'restoreLocalDirectories').mockResolvedValue(directories)
   await saveTaskDraft('queue-test', task.id, { prompt, attachments: [], directories, knowledgeRefs: [], connectorIds: [], model: 'original-model', updatedAt: 1 })
-  vi.mocked(runHarnessWithRecovery).mockResolvedValue({ finalResponse: '复查完成', sessionId: 'persisted-session', outcome: completedOutcome })
+  vi.mocked(runHarnessWithRecovery).mockResolvedValue({ finalResponse: '复查完成', sessionId: 'persisted-session' })
   await fixture(async () => {
     await act(async () => fixtures.sidebar!.onOpenTask(task))
     expect(fixtures.chat!.prompt).toBe(prompt)
@@ -887,7 +845,7 @@ it.each(['', '继续检查'])('resumes the persisted session after remount with 
 
 it('resumes an installed kit after native persistence reorders the capability snapshot', async () => {
   fixtures.catalog.expertKits = mergeExpertKits([], [{ installPath: '/extensions/reports', source: 'developer', packageSha256: 'a'.repeat(64), manifest: { schemaVersion: '2', kind: 'expert-kit', id: 'reports', name: '报告专家', version: '1.0.0', summary: '生成报告', category: 'other', minimumDesktopVersion: '0.1.30', commands: [], skills: [{ id: 'report', path: 'skills/report/SKILL.md' }], connectorRefs: [], requiredTools: [] } }])
-  vi.mocked(runHarnessWithRecovery).mockImplementation(async (request) => ({ finalResponse: '完成', sessionId: request.sessionId!, outcome: completedOutcome }))
+  vi.mocked(runHarnessWithRecovery).mockImplementation(async (request) => ({ finalResponse: '完成', sessionId: request.sessionId! }))
   let stored!: LocalTaskRun
   await fixture(async () => {
     await submit('/kit:reports 分析销售情况')
@@ -908,11 +866,11 @@ it('resumes an installed kit after native persistence reorders the capability sn
 
 it('starts a new session when a restored draft changes the workspace', async () => {
   const task: LocalTaskRun = { ...olderTask(), sessionId: 'persisted-session', model: 'original-model', localDirectories: [{ id: 'old', name: '旧目录', path: '/old' }],
-    capabilitySnapshot: { schemaVersion: 1, createdAt: 'test', selections: [], artifacts: [], implicitArtifacts: [], requestedConnectorIds: [], connectors: [], requestedKnowledgeBaseRefs: [], knowledgeBaseRefs: [] } }
+    capabilitySnapshot: { schemaVersion: 2, createdAt: 'test', selections: [], artifacts: [], implicitArtifacts: [], localTools: [], requestedConnectorIds: [], connectors: [], requestedKnowledgeBaseRefs: [], knowledgeBaseRefs: [] } }
   const directories = [{ id: 'new', name: '新目录', path: '/new' }]
   vi.spyOn(harness, 'restoreLocalDirectories').mockResolvedValue(directories)
   await saveTaskDraft('queue-test', task.id, { prompt: '继续', attachments: [], directories, knowledgeRefs: [], connectorIds: [], model: 'original-model', updatedAt: 1 })
-  vi.mocked(runHarnessWithRecovery).mockResolvedValue({ finalResponse: '完成', sessionId: 'new-session', outcome: completedOutcome })
+  vi.mocked(runHarnessWithRecovery).mockResolvedValue({ finalResponse: '完成', sessionId: 'new-session' })
   await fixture(async () => {
     await act(async () => fixtures.sidebar!.onOpenTask(task))
     await submit('检查当前目录')
@@ -1039,7 +997,7 @@ it('refreshes model policy between queued turns without interrupting a running m
     await act(async () => window.dispatchEvent(new Event('focus')))
     expect(runHarnessWithRecovery).toHaveBeenCalledTimes(1)
     expect(original.model).toBe('original-model')
-    await act(async () => first.resolve({ sessionId: original.sessionId!, finalResponse: '排序说明', outcome: completedOutcome }))
+    await act(async () => first.resolve({ sessionId: original.sessionId!, finalResponse: '排序说明' }))
     const next = vi.mocked(runHarnessWithRecovery).mock.calls[1][0]
     expect(next.model).toBe('replacement-model')
     // The new model resumes the same session: continuity without replay.
@@ -1131,15 +1089,15 @@ it('does not wait for a graceful interrupt acknowledgement before stopping', asy
 })
 
 it('regenerates the last turn on a forked session and keeps the earlier conversation', async () => {
-  vi.mocked(runHarnessWithRecovery).mockResolvedValueOnce({ finalResponse: '第一版答案', sessionId: 'session-one', outcome: completedOutcome })
+  vi.mocked(runHarnessWithRecovery).mockResolvedValueOnce({ finalResponse: '第一版答案', sessionId: 'session-one' })
   await fixture(async () => {
     await submit('解释排序算法')
     const taskId = vi.mocked(runHarnessWithRecovery).mock.calls[0][0].taskId
     expect(lastText(fixtures.chat!.entries)).toBe('第一版答案')
-    vi.mocked(harness.regenerateHarness).mockResolvedValue('session-one-r1')
-    vi.mocked(runHarnessWithRecovery).mockResolvedValueOnce({ finalResponse: '第二版答案', sessionId: 'session-one-r1', outcome: completedOutcome })
+    vi.mocked(harness.forkHarness).mockResolvedValue('session-one-r1')
+    vi.mocked(runHarnessWithRecovery).mockResolvedValueOnce({ finalResponse: '第二版答案', sessionId: 'session-one-r1' })
     await act(async () => { await fixtures.chat!.onRegenerateTurn!() })
-    expect(harness.regenerateHarness).toHaveBeenCalledWith(taskId)
+    expect(harness.forkHarness).toHaveBeenCalledWith(taskId)
     const regenerated = vi.mocked(runHarnessWithRecovery).mock.calls[1][0]
     // The forked session carries the earlier context; the prompt is just the turn's input.
     expect(regenerated.sessionId).toBe('session-one-r1')
@@ -1150,11 +1108,11 @@ it('regenerates the last turn on a forked session and keeps the earlier conversa
 })
 
 it('rebuilds the session when the log cannot be forked for regeneration', async () => {
-  vi.mocked(runHarnessWithRecovery).mockResolvedValueOnce({ finalResponse: '第一版答案', sessionId: 'session-one', outcome: completedOutcome })
+  vi.mocked(runHarnessWithRecovery).mockResolvedValueOnce({ finalResponse: '第一版答案', sessionId: 'session-one' })
   await fixture(async () => {
     await submit('解释排序算法')
-    vi.mocked(harness.regenerateHarness).mockRejectedValue(new Error('session log is not a balanced turn prefix'))
-    vi.mocked(runHarnessWithRecovery).mockResolvedValueOnce({ finalResponse: '重放后的答案', sessionId: 'session-fresh', outcome: completedOutcome })
+    vi.mocked(harness.forkHarness).mockRejectedValue(new Error('session log is not a balanced turn prefix'))
+    vi.mocked(runHarnessWithRecovery).mockResolvedValueOnce({ finalResponse: '重放后的答案', sessionId: 'session-fresh' })
     await act(async () => { await fixtures.chat!.onRegenerateTurn!() })
     const regenerated = vi.mocked(runHarnessWithRecovery).mock.calls[1][0]
     expect(regenerated.sessionId).not.toBe('session-one')

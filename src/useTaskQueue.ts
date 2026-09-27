@@ -134,10 +134,12 @@ export function useTaskQueue({ owner, ready, tasks, runningIds, run }: {
 
   return {
     queues: state.owner === owner ? state.queues : {}, error,
-    async enqueue(taskId: string, text: string) {
+    async enqueue(taskId: string, text: string, requestedId?: string) {
       if (!text.trim() || text.length > 20_000) { setError('每条排队消息限 20000 字符'); return false }
       if ((stateRef.current.queues[taskId]?.items.length ?? 0) >= 20) { setError('每个任务最多排队 20 条消息'); return false }
-      return await update(taskId, (queue) => ({ ...queue, items: [...queue.items, { id: crypto.randomUUID(), text: text.trim() }] }))
+      const id = requestedId?.trim() || crypto.randomUUID()
+      if (requestedId && stateRef.current.queues[taskId]?.items.some((item) => item.id === id)) return true
+      return await update(taskId, (queue) => ({ ...queue, items: [...queue.items, { id, text: text.trim() }] }))
     },
     remove: (taskId: string, id: string) => update(taskId, (queue) => ({ ...queue, items: queue.items.filter((item) => item.id !== id) })),
     edit: async (taskId: string, id: string, text: string) => text.trim().length > 0 && text.length <= 20_000 && await update(taskId, (queue) => ({ ...queue, items: queue.items.map((item) => item.id === id ? { ...item, text: text.trim() } : item) })),

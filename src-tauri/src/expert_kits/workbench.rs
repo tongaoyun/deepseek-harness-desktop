@@ -42,7 +42,7 @@ pub async fn set_extension_enabled(
     version: String,
     enabled: bool,
 ) -> Result<(), String> {
-    crate::erp_auth::current_employee(&app).await?;
+    crate::dingtalk_auth::current_employee(&app).await?;
     let directory = installed_directory(&app, &kind, &id, &version)?;
     set_enabled_marker(directory.parent().ok_or("扩展目录无效")?, enabled)
 }
@@ -67,7 +67,7 @@ pub async fn read_extension_contents(
     id: String,
     version: String,
 ) -> Result<ExtensionContents, String> {
-    crate::erp_auth::current_employee(&app).await?;
+    crate::dingtalk_auth::current_employee(&app).await?;
     let directory = installed_directory(&app, &kind, &id, &version)?;
     let manifest = load_and_validate_manifest(&directory, Some(&kind), Some(&id), Some(&version))?;
     let read = |references: &[FileReference]| -> Result<Vec<ExtensionDocument>, String> {
@@ -211,7 +211,7 @@ pub async fn reveal_extension_directory(
     id: String,
     version: String,
 ) -> Result<(), String> {
-    crate::erp_auth::current_employee(&app).await?;
+    crate::dingtalk_auth::current_employee(&app).await?;
     let directory = installed_directory(&app, &kind, &id, &version)?;
     #[cfg(target_os = "macos")]
     let mut command = std::process::Command::new("open");

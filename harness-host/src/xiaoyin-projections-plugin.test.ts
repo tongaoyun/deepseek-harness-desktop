@@ -40,21 +40,13 @@ describe('xiaoyin product projection', () => {
   })
 
   it('does not show read-only tools as file modifications or deliverables', () => {
-    for (const name of ['office_document_read', 'office_document_check', 'office_pdf_page', 'local_files_read_text']) {
+    for (const name of ['load_workspace_dependencies', 'local_files_read_text']) {
       const initial: XiaoyinTaskState = { value: initialXiaoyinTaskView(), toolNames: {} }
       const called = reduceEvent(initial, { type: 'tool/call', time: 1, data: { turn: 1, step: 1, callId: 'read', name } })
       const state = reduceEvent(called, { type: 'tool/result', time: 2, data: { turn: 1, step: 1, message: { content: [{ toolCallId: 'read', content: [{ type: 'text', text: JSON.stringify({ rootId: 'work', rootName: '工作目录', path: 'input.xlsx' }) }] }] } } })
       expect(state.value.artifacts, name).toEqual([])
       expect(state.value.changes, name).toEqual([])
     }
-  })
-
-  it('still records an Office update as a file modification', () => {
-    const initial: XiaoyinTaskState = { value: initialXiaoyinTaskView(), toolNames: {} }
-    const called = reduceEvent(initial, { type: 'tool/call', time: 1, data: { turn: 1, step: 1, callId: 'update', name: 'office_xlsx_update_cells' } })
-    const state = reduceEvent(called, { type: 'tool/result', time: 2, data: { turn: 1, step: 1, message: { content: [{ toolCallId: 'update', content: [{ type: 'text', text: JSON.stringify({ rootId: 'work', rootName: '工作目录', path: 'input.xlsx', backupPath: '.xiaoyin-backups/input.xlsx' }) }] }] } } })
-    expect(state.value.artifacts).toEqual([expect.objectContaining({ sourceTool: 'office_xlsx_update_cells' })])
-    expect(state.value.changes).toEqual([expect.objectContaining({ action: 'updated' })])
   })
 
   it('does not crash on malformed event timestamps', () => {

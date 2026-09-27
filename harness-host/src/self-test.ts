@@ -1,17 +1,16 @@
 import type { Context } from '@deepseek-ai/cordis'
-import { Document, Packer, Paragraph } from 'docx'
-import ExcelJS from 'exceljs'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { readPrimaryRuntime, workspaceDependencyPaths } from '@deepseek-ai/dsh-tool-workspace-dependencies'
+import { createRequire } from 'node:module'
+import { mkdtemp, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { ComputerUseBridge, runComputerUsePreflight } from './local-computer-use-plugin.js'
-import { parseDocx, parsePdf, parseXlsx, renderPdf, selectPdfFont } from './local-documents-plugin.js'
 import { discoverAuthorizedRoots, LocalFileBridge } from './local-files-plugin.js'
 
-const { Workbook } = ExcelJS
 const execFileAsync = promisify(execFile)
+const require = createRequire(import.meta.url)
 
 interface CapabilityCheck {
   key: string
@@ -31,19 +30,30 @@ export async function runLocalCapabilitySelfTest(includeComputer = true): Promis
     const localFile = await bridge.readText(authorizedRoot.id, 'local-file.txt')
     ensure(localFile.content === 'xiaoyin local file', 'Local file content mismatch')
 
-    const docxBytes = await Packer.toBuffer(new Document({ sections: [{ children: [new Paragraph('xiaoyin docx')] }] }))
-    await writeFile(join(root, 'self-test.docx'), docxBytes)
-    ensure(JSON.stringify(await parseDocx(docxBytes)).includes('xiaoyin docx'), 'DOCX round trip failed')
-
-    const workbook = new Workbook()
-    workbook.addWorksheet('Acceptance').addRows([['capability', 'status'], ['xlsx', 'ready']])
-    const xlsxBytes = Buffer.from(await workbook.xlsx.writeBuffer())
-    await writeFile(join(root, 'self-test.xlsx'), xlsxBytes)
-    ensure(JSON.stringify(await parseXlsx(xlsxBytes)).includes('ready'), 'XLSX round trip failed')
-
-    const pdfBytes = await renderPdf('Xiaoyin acceptance', ['PDF ready'], await selectPdfFont('PDF ready'))
-    await writeFile(join(root, 'self-test.pdf'), pdfBytes)
-    ensure(JSON.stringify(await parsePdf(pdfBytes)).includes('PDF ready'), 'PDF round trip failed')
+    const runtimeSource = process.env.DSH_PRIMARY_RUNTIME ?? process.env.DSH_BUNDLED_PRIMARY_RUNTIME
+    ensure(Boolean(runtimeSource?.trim()), 'Official Primary Runtime is not configured')
+    const runtimeRoot = resolve(runtimeSource!)
+    const manifest = await readPrimaryRuntime(runtimeRoot)
+    ensure(manifest.platform === process.platform && manifest.arch === process.arch, 'Primary Runtime target does not match this host')
+    const dependencies = workspaceDependencyPaths(runtimeRoot, manifest)
+    await ensureFile(dependencies.python, 'Bundled Python executable is missing')
+    await ensureDirectory(dependencies.pythonPackages, 'Bundled Python packages are missing')
+    const officeAssets = resolve(runtimeRoot, '..', 'office-skills')
+    const officeChecker = join(officeAssets, 'scripts', 'check_office.py')
+    await ensureFile(officeChecker, 'Official Office skill assets are missing')
+    for (const skill of ['office-docx', 'office-xlsx', 'office-pptx']) {
+      await ensureFile(join(officeAssets, skill, 'SKILL.md'), `Official ${skill} skill is missing`)
+    }
+    const python = await execFileAsync(dependencies.python, ['-I', '-B', '-c', [
+      'import docx, openpyxl, pptx, PIL, lxml, pandas, xlsxwriter',
+      'print("office-python-ready")',
+    ].join(';')], { timeout: 30_000 })
+    ensure(python.stdout.includes('office-python-ready'), 'Official Office Python dependencies failed to load')
+    const kitManifest = require.resolve('@deepseek-ai/libreoffice-kit/package.json')
+    const kitCli = join(dirname(kitManifest), 'lib', 'cli.js')
+    const kit = await execFileAsync(process.execPath, [kitCli, 'capabilities', '--json'], { timeout: 30_000 })
+    const capabilities: unknown = JSON.parse(kit.stdout)
+    ensure(isRecord(capabilities) && Array.isArray(capabilities.conversions), 'LibreOffice Kit returned invalid capabilities')
 
     const shell = process.platform === 'win32'
       ? await execFileAsync(
@@ -56,9 +66,9 @@ export async function runLocalCapabilitySelfTest(includeComputer = true): Promis
 
     const checks: CapabilityCheck[] = [
       { key: 'local-files', passed: true, detail: 'write and read' },
-      { key: 'office-docx', passed: true, detail: 'create and parse' },
-      { key: 'office-xlsx', passed: true, detail: 'create and parse' },
-      { key: 'office-pdf', passed: true, detail: 'create and parse' },
+      { key: 'office-runtime', passed: true, detail: `Python ${manifest.python} and pinned Office libraries` },
+      { key: 'office-skills', passed: true, detail: 'official DOCX, XLSX and PPTX skills' },
+      { key: 'libreoffice-kit', passed: true, detail: 'capability CLI ready' },
       { key: 'native-shell', passed: true, detail: 'Harness subprocess and platform shell ready' },
     ]
 
@@ -85,9 +95,6 @@ export async function runLocalCapabilitySelfTest(includeComputer = true): Promis
       }
     }
 
-    for (const file of ['self-test.docx', 'self-test.xlsx', 'self-test.pdf']) {
-      ensure((await readFile(join(root, file))).length > 0, `${file} is empty`)
-    }
     return { status: 'passed', checks }
   } finally {
     if (previousDshHome === undefined) delete process.env.DSH_HOME
@@ -98,4 +105,16 @@ export async function runLocalCapabilitySelfTest(includeComputer = true): Promis
 
 function ensure(condition: boolean, message: string): asserts condition {
   if (!condition) throw new Error(message)
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+async function ensureFile(path: string, message: string): Promise<void> {
+  ensure((await stat(path)).isFile(), message)
+}
+
+async function ensureDirectory(path: string, message: string): Promise<void> {
+  ensure((await stat(path)).isDirectory(), message)
 }

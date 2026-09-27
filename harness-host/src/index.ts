@@ -7,7 +7,6 @@ import { QuestionBridge } from './question-bridge.js'
 import { LocalImRuntime } from './im-runtime.js'
 import { ScheduleBridge } from './schedule-bridge.js'
 import { DesktopToolBridge } from './desktop-tool-bridge.js'
-import { ConnectorCredentialBridge, type ConnectorCredentialResult } from './connector-credential-bridge.js'
 import { SessionProjectionBridge } from './session-projection-bridge.js'
 import { publicErrorMessage } from './public-error.js'
 import { data as structuredErrorData } from './errors.js'
@@ -27,14 +26,6 @@ const scheduleBridge = new ScheduleBridge(emit)
 const scheduleEndpoint = await scheduleBridge.start()
 const skillBridge = new DesktopToolBridge(emit, 'skill', ['search', 'inspect_github', 'install'], 95000)
 const skillEndpoint = await skillBridge.start()
-const erpCookieBridge = new ConnectorCredentialBridge(emit)
-const erpCookieEndpoint = await erpCookieBridge.start()
-process.env.XIAOYIN_ERP_COOKIE_BRIDGE_URL = erpCookieEndpoint.url
-process.env.XIAOYIN_ERP_COOKIE_BRIDGE_TOKEN = erpCookieEndpoint.token
-const oauthBridge = new ConnectorCredentialBridge(emit, 'connector-oauth')
-const oauthEndpoint = await oauthBridge.start()
-process.env.XIAOYIN_OAUTH_BRIDGE_URL = oauthEndpoint.url
-process.env.XIAOYIN_OAUTH_BRIDGE_TOKEN = oauthEndpoint.token
 const projectionBridge = new SessionProjectionBridge(emit)
 const projectionEndpoint = await projectionBridge.start()
 const runtime = new DeepSeekHarnessRuntime({
@@ -73,11 +64,6 @@ lines.on('line', (line) => {
     })
     return
   }
-  if (typeof value === 'object' && value !== null && ['erp-cookie.respond', 'connector-oauth.respond'].includes(String((value as Record<string, unknown>).method))) {
-    const params = (value as { params?: { requestId?: string; result?: ConnectorCredentialResult } }).params
-    if (params?.requestId && params.result) ((value as Record<string, unknown>).method === 'connector-oauth.respond' ? oauthBridge : erpCookieBridge).respond(params.requestId, params.result)
-    return
-  }
   if (typeof value === 'object' && value !== null && ['schedule.respond', 'skill.respond'].includes(String((value as Record<string, unknown>).method))) {
     const params = (value as { params?: { requestId?: string; result?: unknown } }).params
     if (params?.requestId) ((value as Record<string, unknown>).method === 'skill.respond' ? skillBridge : scheduleBridge).respond(params.requestId, params.result)
@@ -106,7 +92,7 @@ function stop(): void {
   if (stopping) return
   stopping = true
   // EOF means the desktop has gone away: abort now, never wait for its active turn.
-  void Promise.allSettled([runtime.close(), imRuntime.stop(), approvalBridge.close(), questionBridge.close(), scheduleBridge.close(), skillBridge.close(), erpCookieBridge.close(), oauthBridge.close(), projectionBridge.close()])
+  void Promise.allSettled([runtime.close(), imRuntime.stop(), approvalBridge.close(), questionBridge.close(), scheduleBridge.close(), skillBridge.close(), projectionBridge.close()])
     .then(() => process.exit(0))
 }
 

@@ -36,7 +36,7 @@ pub async fn load_connector_secrets(
     employee_id: String,
 ) -> Result<ConnectorSecretStore, String> {
     validate_identifier("员工标识", &employee_id)?;
-    crate::erp_auth::require_employee(&app, &employee_id).await?;
+    crate::dingtalk_auth::require_employee(&app, &employee_id).await?;
     tauri::async_runtime::spawn_blocking(move || load_store(&app, &employee_id))
         .await
         .map_err(|_| "连接器凭据读取线程异常".to_string())?
@@ -50,7 +50,7 @@ pub async fn save_connector_secret(
     values: ConnectorSecretValues,
 ) -> Result<ConnectorSecretStore, String> {
     validate_identifier("员工标识", &employee_id)?;
-    crate::erp_auth::require_employee(&app, &employee_id).await?;
+    crate::dingtalk_auth::require_employee(&app, &employee_id).await?;
     validate_identifier("连接器标识", &connector_id)?;
     validate_values(&values)?;
     tauri::async_runtime::spawn_blocking(move || {
@@ -68,7 +68,7 @@ pub async fn delete_connector_secret(
     connector_id: String,
 ) -> Result<ConnectorSecretStore, String> {
     validate_identifier("员工标识", &employee_id)?;
-    crate::erp_auth::require_employee(&app, &employee_id).await?;
+    crate::dingtalk_auth::require_employee(&app, &employee_id).await?;
     validate_identifier("连接器标识", &connector_id)?;
     tauri::async_runtime::spawn_blocking(move || {
         delete_values(&app, &employee_id, &connector_id)?;

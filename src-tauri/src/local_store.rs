@@ -161,7 +161,7 @@ pub async fn load_local_task_queues(
     employee_id: String,
 ) -> Result<Value, String> {
     validate_employee_id(&employee_id)?;
-    crate::erp_auth::require_employee(&app, &employee_id).await?;
+    crate::dingtalk_auth::require_employee(&app, &employee_id).await?;
     with_database_async(app, move |database| {
         load_task_queue_payload(database, &account_key(&employee_id))
             .map(|value| value.unwrap_or(Value::Object(serde_json::Map::new())))
@@ -176,7 +176,7 @@ pub async fn save_local_task_queues(
     queues: Value,
 ) -> Result<(), String> {
     validate_employee_id(&employee_id)?;
-    crate::erp_auth::require_employee(&app, &employee_id).await?;
+    crate::dingtalk_auth::require_employee(&app, &employee_id).await?;
     with_database_async(app, move |database| {
         write_task_queue_payload(database, &account_key(&employee_id), &queues)
     })
@@ -262,7 +262,7 @@ pub async fn load_local_workspace_state(
     employee_id: String,
 ) -> Result<Value, String> {
     validate_employee_id(&employee_id)?;
-    crate::erp_auth::require_employee(&app, &employee_id).await?;
+    crate::dingtalk_auth::require_employee(&app, &employee_id).await?;
     with_database_async(app, move |database| {
         let account = account_key(&employee_id);
         load_workspace_state_payload(database, &account).map(|value| {
@@ -279,7 +279,7 @@ pub async fn save_local_workspace_state(
     state: Value,
 ) -> Result<(), String> {
     validate_employee_id(&employee_id)?;
-    crate::erp_auth::require_employee(&app, &employee_id).await?;
+    crate::dingtalk_auth::require_employee(&app, &employee_id).await?;
     with_database_async(app, move |database| {
         write_workspace_state_payload(database, &account_key(&employee_id), &state)
     })
@@ -371,7 +371,7 @@ pub async fn load_local_tasks(
     query: Option<TaskQuery>,
 ) -> Result<TaskPage, String> {
     validate_employee_id(&employee_id)?;
-    crate::erp_auth::require_employee(&app, &employee_id).await?;
+    crate::dingtalk_auth::require_employee(&app, &employee_id).await?;
     let query = query.unwrap_or(TaskQuery {
         query: String::new(),
         offset: 0,
@@ -425,7 +425,7 @@ pub async fn load_local_task(
     id: String,
 ) -> Result<Option<Value>, String> {
     validate_employee_id(&employee_id)?;
-    crate::erp_auth::require_employee(&app, &employee_id).await?;
+    crate::dingtalk_auth::require_employee(&app, &employee_id).await?;
     with_database_async(app, move |database| {
         let payload: Option<String> = database
             .query_row(
@@ -451,7 +451,7 @@ pub async fn save_local_task(
     task: Value,
 ) -> Result<(), String> {
     validate_employee_id(&employee_id)?;
-    crate::erp_auth::require_employee(&app, &employee_id).await?;
+    crate::dingtalk_auth::require_employee(&app, &employee_id).await?;
     with_database_async(app, move |database| {
         save_task_preserving_notices(database, &account_key(&employee_id), task)
     })
@@ -566,7 +566,7 @@ pub async fn append_local_task_capability_notice(
     notice: Value,
 ) -> Result<(), String> {
     validate_employee_id(&employee_id)?;
-    crate::erp_auth::require_employee(&app, &employee_id).await?;
+    crate::dingtalk_auth::require_employee(&app, &employee_id).await?;
     if id.trim().is_empty() || id.len() > 200 || id.chars().any(char::is_control) {
         return Err("会话标识无效".to_string());
     }
@@ -796,7 +796,7 @@ pub async fn delete_local_task(
     id: String,
 ) -> Result<(), String> {
     validate_employee_id(&employee_id)?;
-    crate::erp_auth::require_employee(&app, &employee_id).await?;
+    crate::dingtalk_auth::require_employee(&app, &employee_id).await?;
     if id.trim().is_empty() || id.len() > 200 || id.chars().any(char::is_control) {
         return Err("会话标识无效".to_string());
     }
@@ -818,7 +818,7 @@ pub async fn load_enterprise_catalog_cache(
     employee_id: String,
 ) -> Result<Option<EnterpriseCatalogCache>, String> {
     validate_employee_id(&employee_id)?;
-    crate::erp_auth::require_employee(&app, &employee_id).await?;
+    crate::dingtalk_auth::require_employee(&app, &employee_id).await?;
     with_database_async(app, move |database| {
         let payload = database.query_row(
             "SELECT payload FROM enterprise_catalog_cache WHERE employee_key = ?1",
@@ -843,7 +843,7 @@ pub async fn save_enterprise_catalog_cache(
     cache: EnterpriseCatalogCache,
 ) -> Result<(), String> {
     validate_employee_id(&employee_id)?;
-    crate::erp_auth::require_employee(&app, &employee_id).await?;
+    crate::dingtalk_auth::require_employee(&app, &employee_id).await?;
     with_database_async(app, move |database| {
         let payload = serde_json::to_string(&cache)
             .map_err(|error| format!("无法序列化企业目录缓存：{error}"))?;
@@ -937,7 +937,7 @@ async fn require_storage_owner(app: &tauri::AppHandle, owner: &str) -> Result<()
     if owner.trim().is_empty() || owner.len() > 4096 || owner.chars().any(char::is_control) {
         return Err("本机数据命名空间无效".to_string());
     }
-    let employee_id = crate::erp_auth::current_employee(app).await?;
+    let employee_id = crate::dingtalk_auth::current_employee(app).await?;
     if storage_owner_matches(&employee_id, owner) {
         Ok(())
     } else {

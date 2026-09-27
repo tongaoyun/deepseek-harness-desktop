@@ -1,14 +1,10 @@
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { join, basename } from 'node:path'
 import { tmpdir } from 'node:os'
 import { createServer } from 'node:http'
-import ExcelJS from 'exceljs'
 import { afterEach, expect, it, vi } from 'vitest'
 import { LocalImRuntime } from './im-runtime.js'
 import type { HarnessRuntime } from './runtime.js'
-import type { TaskOutcome } from './task-outcome.js'
-
-const incompleteOutcome: TaskOutcome = { status: 'partial', summary: '已生成初稿，缺少销售数据', remaining: ['补充销售数据'], checks: [{ description: '数据完整性', result: 'failed', evidence: '九月数据缺失' }] }
 
 afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); vi.restoreAllMocks() })
 
@@ -61,7 +57,7 @@ it('resumes only unsent files after a restart and retains the generated answer o
           type: 'tool-result', toolCallId: file, content: [{ type: 'text', text: JSON.stringify({ rootId: 'local-im-workspace', path: file }) }],
         }] } } } } }, 'root')
       }
-      return { sessionId: 'root', finalResponse: '两份报表已生成', outcome: incompleteOutcome }
+      return { sessionId: 'root', finalResponse: '两份报表已生成' }
     })
     const test = fixture(join(directory, 'state.json'), run); const queued = queuedEvent()
     test.internals.pendingEvents.set(queued.event.eventId, queued)
@@ -72,7 +68,6 @@ it('resumes only unsent files after a restart and retains the generated answer o
     expect(conversation.lastResponse).toBe('两份报表已生成')
     expect(conversation.messages.some((message) => message.text.includes('first.csv'))).toBe(true)
     expect(conversation.messages.some((message) => message.text === '两份报表已生成')).toBe(true)
-    expect(test.runtime.status().conversations[0]?.outcome).toEqual(incompleteOutcome)
     const restored = fixture(join(directory, 'state.json'))
     await restored.internals.loadSessions()
     await restored.internals.processQueuedEvent([...restored.internals.pendingEvents.values()][0]!)
@@ -81,8 +76,6 @@ it('resumes only unsent files after a restart and retains the generated answer o
     expect(restored.sendGeneratedFile).toHaveBeenCalledOnce()
     expect(restored.sendGeneratedFile.mock.calls[0]![1]).toBe(join(directory, 'first.csv'))
     expect([...restored.internals.conversations.values()][0]?.status).toBe('COMPLETED')
-    expect(restored.runtime.status().conversations[0]?.outcome).toEqual(incompleteOutcome)
-    expect(restored.runtime.status().conversations[0]?.messages.find((message) => message.text === '两份报表已生成')?.outcome).toEqual(incompleteOutcome)
   } finally { await rm(directory, { recursive: true, force: true }) }
 })
 
@@ -146,7 +139,7 @@ it('rejects duplicate retry clicks and does not overwrite a newer task when old 
   expect(test.run).toHaveBeenCalledOnce()
 })
 
-it('sends real generated XLSX bytes through a local HTTP receiver and retries only a failed file', async () => {
+it('sends generated attachment bytes through a local HTTP receiver and retries only a failed file', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'xiaoyin-im-http-'))
   const receipts: string[] = []
   let failFirst = true
@@ -176,9 +169,7 @@ it('sends real generated XLSX bytes through a local HTTP receiver and retries on
       return networkFetch(`http://127.0.0.1:${port}${parsed.pathname}`, options)
     })
     vi.stubEnv('XIAOYIN_LOCAL_FILE_ROOTS', JSON.stringify([{ id: 'local-im-workspace', path: directory }]))
-    for (const name of ['first.xlsx', 'second.xlsx']) {
-      const workbook = new ExcelJS.Workbook(); workbook.addWorksheet('验收').addRow(['合成资料', 200]); await workbook.xlsx.writeFile(join(directory, name))
-    }
+    for (const name of ['first.xlsx', 'second.xlsx']) await writeFile(join(directory, name), Buffer.from('PK\u0003\u0004synthetic-office-fixture'))
     const run = vi.fn<HarnessRuntime['run']>().mockImplementation(async (_input, notify) => {
       for (const name of ['first.xlsx', 'second.xlsx']) {
         notify({ method: 'session.event', params: { sessionId: 'root', event: { type: 'tool/call', data: { callId: name, name: 'local_files_publish' } } } }, 'root')

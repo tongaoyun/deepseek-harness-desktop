@@ -233,7 +233,7 @@ const EXTENSION_CONTEXT_TOTAL_MAX_BYTES: usize = 64 * 1024;
 pub async fn list_installed_expert_kits(
     app: tauri::AppHandle,
 ) -> Result<InstalledExtensionInventory, String> {
-    crate::erp_auth::current_employee(&app).await?;
+    crate::dingtalk_auth::current_employee(&app).await?;
     inventory::scan_installed_extensions(&app)
 }
 
@@ -242,7 +242,7 @@ pub async fn install_expert_kit(
     app: tauri::AppHandle,
     request: ExpertKitInstallRequest,
 ) -> Result<InstalledExpertKit, String> {
-    crate::erp_auth::current_employee(&app).await?;
+    crate::dingtalk_auth::current_employee(&app).await?;
     validate_artifact_kind(&request.kind)?;
     validate_identifier(&request.id)?;
     Version::parse(&request.version).map_err(|error| format!("专家套件版本无效：{error}"))?;
@@ -287,7 +287,7 @@ pub async fn select_developer_extension(
     kind: String,
     input: Option<String>,
 ) -> Result<Vec<String>, String> {
-    crate::erp_auth::current_employee(&app).await?;
+    crate::dingtalk_auth::current_employee(&app).await?;
     if kind != "expert-kit" && kind != "skill" {
         return Err("仅支持导入专家套件或技能".to_string());
     }
@@ -330,7 +330,7 @@ pub async fn install_developer_extension(
     input: Option<String>,
     path: Option<String>,
 ) -> Result<Option<InstalledExpertKit>, String> {
-    crate::erp_auth::current_employee(&app).await?;
+    crate::dingtalk_auth::current_employee(&app).await?;
     if kind != "expert-kit" && kind != "skill" {
         return Err("仅支持导入专家套件或技能".to_string());
     }
@@ -394,7 +394,7 @@ pub async fn create_developer_extension(
     app: tauri::AppHandle,
     request: CreateDeveloperExtensionRequest,
 ) -> Result<DeveloperExtensionPackage, String> {
-    crate::erp_auth::current_employee(&app).await?;
+    crate::dingtalk_auth::current_employee(&app).await?;
     let manifest = request.manifest;
     let payload_files = if let Some(base) = request.base {
         validate_artifact_kind(&manifest.kind)?;
@@ -601,7 +601,7 @@ pub async fn read_developer_extension(
     id: String,
     version: String,
 ) -> Result<DeveloperExtensionDraft, String> {
-    crate::erp_auth::current_employee(&app).await?;
+    crate::dingtalk_auth::current_employee(&app).await?;
     validate_artifact_kind(&kind)?;
     validate_identifier(&id)?;
     Version::parse(&version).map_err(|error| format!("扩展版本无效：{error}"))?;
@@ -636,7 +636,7 @@ pub async fn package_developer_extension(
     id: String,
     version: String,
 ) -> Result<DeveloperExtensionPackage, String> {
-    crate::erp_auth::current_employee(&app).await?;
+    crate::dingtalk_auth::current_employee(&app).await?;
     let directory = extensions_root(&app)?.join(&kind).join(&id).join(&version);
     let draft = read_developer_extension(app, kind, id, version).await?;
     let mut payload_files = Vec::new();
@@ -669,7 +669,7 @@ pub async fn customize_expert_kit(
     version: String,
     kind: Option<String>,
 ) -> Result<Option<String>, String> {
-    crate::erp_auth::current_employee(&app).await?;
+    crate::dingtalk_auth::current_employee(&app).await?;
     let kind = kind.as_deref().unwrap_or("expert-kit");
     validate_artifact_kind(kind)?;
     validate_identifier(&id)?;
@@ -728,7 +728,7 @@ pub async fn export_expert_kit(
     version: String,
     kind: Option<String>,
 ) -> Result<Option<String>, String> {
-    crate::erp_auth::current_employee(&app).await?;
+    crate::dingtalk_auth::current_employee(&app).await?;
     let kind = kind.as_deref().unwrap_or("expert-kit");
     validate_artifact_kind(kind)?;
     validate_identifier(&id)?;
@@ -885,7 +885,7 @@ pub async fn remove_developer_expert_kit(
     id: String,
     version: String,
 ) -> Result<(), String> {
-    crate::erp_auth::current_employee(&app).await?;
+    crate::dingtalk_auth::current_employee(&app).await?;
     validate_identifier(&id)?;
     Version::parse(&version).map_err(|error| format!("专家套件版本无效：{error}"))?;
     let root = extensions_root(&app)?.join("expert-kit");
@@ -914,7 +914,7 @@ pub async fn remove_developer_extension(
     id: String,
     version: String,
 ) -> Result<(), String> {
-    crate::erp_auth::current_employee(&app).await?;
+    crate::dingtalk_auth::current_employee(&app).await?;
     validate_artifact_kind(&kind)?;
     validate_identifier(&id)?;
     Version::parse(&version).map_err(|error| format!("扩展版本无效：{error}"))?;
@@ -944,7 +944,7 @@ pub async fn remove_catalog_extension(
     id: String,
     kind: String,
 ) -> Result<(), String> {
-    crate::erp_auth::current_employee(&app).await?;
+    crate::dingtalk_auth::current_employee(&app).await?;
     validate_identifier(&id)?;
     validate_artifact_kind(&kind)?;
     let root = extensions_root(&app)?.join(&kind);
@@ -1209,12 +1209,13 @@ pub fn harness_profile(
                 .required_tools
                 .iter()
                 .filter(|tool| {
-                    !tool.starts_with("office.")
-                        && !tool.starts_with("office_")
-                        && !tool.starts_with("computer_use_")
+                    !tool.starts_with("computer_use_")
+                        && !tool.starts_with("browser_")
                         && !matches!(
                             tool.as_str(),
-                            "bash"
+                            "load_workspace_dependencies"
+                                | "present"
+                                | "bash"
                                 | "pwsh"
                                 | "job_output"
                                 | "job_list"
@@ -1977,7 +1978,7 @@ mod tests {
     fn identifiers_and_tool_names_follow_the_manifest_contract() {
         assert!(validate_identifier("crossborder-operations").is_ok());
         assert!(validate_identifier("CrossBorder").is_err());
-        assert!(valid_tool_name("office.xlsx.create"));
+        assert!(valid_tool_name("load_workspace_dependencies"));
         assert!(!valid_tool_name("Office create"));
     }
 
@@ -2435,7 +2436,7 @@ mod tests {
         let manifest = r#"{
           "schemaVersion":"1","id":"document-insight","name":"文档洞察","version":"1.0.0",
           "summary":"分析员工授权的文档","category":"knowledge-research","triggers":["总结文档"],"minimumDesktopVersion":"0.1.9",
-          "requiredTools":["office.document.read"],"connectorRefs":[],"knowledgeBaseRefs":[]
+          "requiredTools":["load_workspace_dependencies"],"connectorRefs":[],"knowledgeBaseRefs":[]
         }"#;
         let encoder = GzEncoder::new(Vec::new(), Compression::default());
         let mut archive = tar::Builder::new(encoder);
@@ -2602,7 +2603,7 @@ mod tests {
         let manifest = r#"{
           "schemaVersion":"1","id":"document-insight","name":"文档洞察","version":"1.0.0",
           "summary":"分析员工授权的文档","category":"knowledge-research","triggers":["总结文档"],"minimumDesktopVersion":"0.1.9",
-          "requiredTools":["office.document.read"],"connectorRefs":[],"knowledgeBaseRefs":[]
+          "requiredTools":["load_workspace_dependencies"],"connectorRefs":[],"knowledgeBaseRefs":[]
         }"#;
         let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
         zip.start_file(

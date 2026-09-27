@@ -6,6 +6,7 @@ export interface BootstrapResponse {
   modelApiKey: string
   endpoints: {
     litellm: string
+    erpMcp: string
     artifacts: string
     expertKits: string
     skills: string
@@ -129,7 +130,7 @@ export interface TaskArtifact {
 export interface TaskVisualArtifact {
   id: string
   attachmentId: string
-  mediaType: 'image/png' | 'image/jpeg'
+  mediaType: 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif'
   name: string
   width: number
   height: number
@@ -168,7 +169,6 @@ export interface XiaoyinTaskProjection {
     cause: 'exit' | 'failure' | 'canceled'
     pendingOperations: Array<{ id: string; label: string; toolName?: string }>
   }
-  outcome?: import('./taskOutcome').TaskOutcome
   status: 'idle' | 'running' | 'completed' | 'failed' | 'canceled'
   activity: string
   updatedAt: string
@@ -256,11 +256,13 @@ export interface CapabilitySelection {
 }
 
 export interface CapabilitySnapshot {
-  schemaVersion: 1
+  schemaVersion: 2
   createdAt: string
   selections: CapabilitySelection[]
   artifacts: AllowedExtensionArtifact[]
   implicitArtifacts: AllowedExtensionArtifact[]
+  /** Official Harness/local bridge tools fixed for the lifetime of this session. */
+  localTools: string[]
   requestedConnectorIds: string[]
   connectors: ConnectorRuntimeDefinition[]
   requestedKnowledgeBaseRefs: string[]
@@ -327,7 +329,7 @@ export interface SkillCatalogEntry {
 }
 
 export type ConnectorStatus = 'ready' | 'needs-configuration' | 'unavailable' | 'disabled'
-export type ConnectorTransport = 'streamable-http' | 'sse' | 'stdio' | 'desktop'
+export type ConnectorTransport = 'streamable-http' | 'stdio'
 export type ConnectorAuthMode = 'employee-bearer' | 'erp-cookie' | 'oauth' | 'none'
 
 export interface ConnectorCatalogEntry {

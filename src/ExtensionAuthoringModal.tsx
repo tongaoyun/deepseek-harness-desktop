@@ -93,8 +93,7 @@ interface AuthoringForm {
   environment: string
   headers: string
   toolNames: string
-  readOnlyTools: string
-  transport: Exclude<ConnectorTransport, 'desktop'>
+  transport: ConnectorTransport
   authMode: ConnectorAuthMode
 }
 
@@ -102,7 +101,7 @@ const defaults: AuthoringForm = {
   id: '', name: '', author: '', version: '1.0.0', summary: '', category: 'other',
   instructions: '# 使用说明\n\n请在这里描述执行步骤、输入和输出。',
   triggers: '', allowImplicitInvocation: true, connectorRefs: '', requiredTools: '', url: '', command: '', arguments: '',
-  environment: '', headers: '', toolNames: '', readOnlyTools: '',
+  environment: '', headers: '', toolNames: '',
   transport: 'streamable-http',
   authMode: 'none',
 }
@@ -445,7 +444,7 @@ export function ExtensionAuthoringModal({
           <label>分类<select value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value as AuthoringForm['category'] })}>{(kind === 'connector' ? connectorCategories : extensionCategories).map((category) => <option key={category.id} value={category.id}>{category.label}</option>)}</select></label>
           <label className="wide">说明<input required value={form.summary} onChange={(event) => setForm({ ...form, summary: event.target.value })} /></label>
           {kind === 'connector' ? <>
-            <label>传输<select value={form.transport} onChange={(event) => setForm({ ...form, transport: event.target.value as typeof form.transport })}><option value="streamable-http">Streamable HTTP</option><option value="sse">SSE</option><option value="stdio">stdio 本地进程</option></select></label>
+            <label>传输<select value={form.transport} onChange={(event) => setForm({ ...form, transport: event.target.value as typeof form.transport })}><option value="streamable-http">Streamable HTTP</option><option value="stdio">stdio 本地进程</option></select></label>
             {form.transport !== 'stdio' && <label>认证<select value={form.authMode} onChange={(event) => setForm({ ...form, authMode: event.target.value as typeof form.authMode })}><option value="none">无</option><option value="employee-bearer">员工 Bearer Token</option><option value="erp-cookie">ERP 扫码会话</option></select></label>}
             {form.transport === 'stdio' ? <>
               <label className="wide">启动命令<input placeholder="例如 npx" required value={form.command} onChange={(event) => { setForm({ ...form, command: event.target.value }); setDiagnostic(undefined); setValidationEvidence(undefined) }} /></label>
@@ -510,14 +509,13 @@ function connectorForm(connector: ConnectorCatalogEntry): AuthoringForm {
     arguments: (connector.arguments ?? []).join('\n'),
     environment: formatRecord(connector.environment), headers: formatRecord(connector.headers),
     toolNames: connector.toolNames.join(', '),
-    readOnlyTools: (connector.readOnlyTools ?? []).join(', '),
-    transport: connector.transport === 'sse' || connector.transport === 'stdio' ? connector.transport : 'streamable-http',
+    transport: connector.transport === 'stdio' ? connector.transport : 'streamable-http',
     authMode: connector.authMode ?? 'none',
   }
 }
 
 function connectorFromForm(form: AuthoringForm): ConnectorCatalogEntry {
-  return { id: connectorId(form.id.trim() || form.name.trim()), name: form.name, version: form.version, summary: form.summary, category: form.category as ConnectorCategory, kind: 'personal-mcp', scope: 'PERSONAL', status: 'ready', managed: false, transport: form.transport, url: form.transport === 'stdio' ? '' : form.url.trim(), authMode: form.transport === 'stdio' ? 'none' : form.authMode, toolNames: split(form.toolNames), readOnlyTools: split(form.readOnlyTools), command: form.transport === 'stdio' ? form.command.trim() : '', arguments: form.transport === 'stdio' ? lines(form.arguments) : [], environment: form.transport === 'stdio' ? parseRecord(form.environment, '环境变量') : {}, headers: form.transport === 'stdio' ? {} : parseRecord(form.headers, 'Headers') }
+  return { id: connectorId(form.id.trim() || form.name.trim()), name: form.name, version: form.version, summary: form.summary, category: form.category as ConnectorCategory, kind: 'personal-mcp', scope: 'PERSONAL', status: 'ready', managed: false, transport: form.transport, url: form.transport === 'stdio' ? '' : form.url.trim(), authMode: form.transport === 'stdio' ? 'none' : form.authMode, toolNames: split(form.toolNames), readOnlyTools: [], command: form.transport === 'stdio' ? form.command.trim() : '', arguments: form.transport === 'stdio' ? lines(form.arguments) : [], environment: form.transport === 'stdio' ? parseRecord(form.environment, '环境变量') : {}, headers: form.transport === 'stdio' ? {} : parseRecord(form.headers, 'Headers') }
 }
 
 function manifestFromForm(kind: 'expert-kit' | 'skill', form: AuthoringForm, selectedSkillIds: string[]): ExpertKitManifest {

@@ -23,7 +23,7 @@ pub async fn undo_local_file_change(
     authorizations: tauri::State<'_, LocalFileAuthorizations>,
     request: UndoLocalFileChangeRequest,
 ) -> Result<String, String> {
-    let employee_id = crate::erp_auth::current_employee(&app).await?;
+    let employee_id = crate::dingtalk_auth::current_employee(&app).await?;
     authorizations.ensure_employee(&employee_id)?;
     let _guard = UNDO_LOCK.lock().map_err(|_| "撤销状态不可用")?;
     if !matches!(request.action.as_str(), "created" | "updated" | "copied") {

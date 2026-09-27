@@ -13,7 +13,9 @@ const closed = new Promise((resolve) => { requestClosed = resolve })
 const server = createServer((request, response) => {
   requestStarted()
   response.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' })
-  response.write(`data: ${JSON.stringify({ id: 'long-task', object: 'chat.completion.chunk', created: 1, model: 'deepseek-v4-flash', choices: [{ index: 0, delta: { role: 'assistant', content: '正在执行长任务。' }, finish_reason: null }] })}\n\n`)
+  response.write(`event: message_start\ndata: ${JSON.stringify({ type: 'message_start', message: { id: 'long-task', model: 'deepseek-v4-flash', usage: { input_tokens: 0, output_tokens: 0 } } })}\n\n`)
+  response.write(`event: content_block_start\ndata: ${JSON.stringify({ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } })}\n\n`)
+  response.write(`event: content_block_delta\ndata: ${JSON.stringify({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: '正在执行长任务。' } })}\n\n`)
   const keepAlive = setInterval(() => response.write(': keep-alive\n\n'), 50)
   request.once('close', () => { clearInterval(keepAlive); requestClosed(); response.destroy() })
 })
@@ -23,7 +25,6 @@ const runtime = new DeepSeekHarnessRuntime({
   DEEPSEEK_BASE_URL: `http://127.0.0.1:${server.address().port}`,
   DSH_HOME: root,
   DSH_SESSION_ROOT: join(root, 'sessions'),
-  XIAOYIN_ATTACHMENT_ROOT: join(root, 'attachments'),
   XIAOYIN_LOCAL_FILE_ROOTS: '[]',
   XIAOYIN_MCP_CONNECTORS: '[]',
   XIAOYIN_COMPUTER_USE_TOOLS: '[]',

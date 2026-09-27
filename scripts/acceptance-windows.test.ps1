@@ -62,18 +62,18 @@ try {
 
   $runtime = Join-Path $installDirectory "resources\harness-runtime"
   $hostRoot = Join-Path $runtime "harness-host"
-  New-Item -ItemType Directory -Path (Join-Path $runtime "node"), (Join-Path $hostRoot "dist"), (Join-Path $hostRoot "runtime") -Force | Out-Null
+  New-Item -ItemType Directory -Path (Join-Path $runtime "node"), (Join-Path $runtime "primary-runtime"), (Join-Path $runtime "office-skills\scripts"), (Join-Path $hostRoot "dist"), (Join-Path $hostRoot "runtime") -Force | Out-Null
   Copy-Item -LiteralPath $nodeExecutable -Destination (Join-Path $runtime "node\node.exe")
   Set-Content -LiteralPath (Join-Path $hostRoot "runtime\cordis.yml") -Value "fixture: true" -Encoding ASCII
   $fixture = @'
 const readline = require('node:readline');
-const checks = ['local-files', 'office-docx', 'office-xlsx', 'office-pdf', 'native-shell', 'computer-use'];
+const checks = ['local-files', 'office-runtime', 'office-skills', 'libreoffice-kit', 'native-shell', 'computer-use'];
 const statuses = {'host.initialize': 'initialized', 'host.health': 'ready', 'host.self-test': 'passed', 'host.shutdown': 'closed'};
 const shell = process.env.XIAOYIN_ALLOW_SHELL !== 'false';
 const capabilities = {
   sessionPersistence: 'enabled', sessionQuery: 'enabled', sessionReference: 'enabled', present: 'enabled',
+  workspaceChanges: 'enabled', workspaceDependencies: 'enabled', officeSkills: 'enabled', libreOfficeKit: 'enabled',
   shell: shell ? 'enabled' : 'gated', persistentTerminal: shell ? 'enabled' : 'gated',
-  codeRuntime: process.env.XIAOYIN_TOOLS_MODE === 'ptc' ? 'enabled' : 'gated',
   sessionQueryTools: process.env.XIAOYIN_ENABLE_SESSION_QUERY_TOOLS === 'false' ? 'gated' : 'enabled',
   mcpClient: 'gated',
 };
@@ -92,13 +92,15 @@ input.on('line', line => {
 process.stdin.on('end', () => { if (pending) process.exit(8); });
 '@
   $entry = Join-Path $hostRoot "dist\index.js"
-  $pptxWorker = Join-Path $hostRoot "dist\pptx-render-worker.mjs"
+  $primaryManifest = Join-Path $runtime "primary-runtime\runtime.json"
+  $officeChecker = Join-Path $runtime "office-skills\scripts\check_office.py"
   Set-Content -LiteralPath $entry -Value $fixture -Encoding ASCII
-  Set-Content -LiteralPath $pptxWorker -Value "process.exit(0)" -Encoding ASCII
+  Set-Content -LiteralPath $primaryManifest -Value "{}" -Encoding ASCII
+  Set-Content -LiteralPath $officeChecker -Value "# fixture" -Encoding ASCII
   Test-PackagedHarness -Executable $application
-  Remove-Item -LiteralPath $pptxWorker
+  Remove-Item -LiteralPath $officeChecker
   Assert-Throws { Test-PackagedHarness -Executable $application }
-  Set-Content -LiteralPath $pptxWorker -Value "process.exit(0)" -Encoding ASCII
+  Set-Content -LiteralPath $officeChecker -Value "# fixture" -Encoding ASCII
   Set-Content -LiteralPath $entry -Value "process.exit(7)" -Encoding ASCII
   Assert-Throws { Test-PackagedHarness -Executable $application }
   Write-Output "Packaged Harness request sequencing and failure propagation passed."

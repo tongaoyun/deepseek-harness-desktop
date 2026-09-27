@@ -1,7 +1,6 @@
 import type { ConversationEntry } from './conversation/types'
 import { isAssistantTurn, isUserTurn, turnText } from './conversation/types'
 import { splitComposerPrompt } from './composerInput'
-import { parseTaskOutcome, taskOutcomeLabel } from './taskOutcome'
 import type { XiaoyinTaskProjection } from './types'
 
 const MAX_REPLAY_CHARS = 24_000
@@ -63,7 +62,6 @@ export function taskRecoveryBrief(entries: ConversationEntry[], projection?: Xia
   // instructions to repeat previously authorized actions.
   const constraints = requests.slice(1, -3).filter((text) => /不要|不得|只(?:能|读|检查)|必须|保留|限制|不超过|目标|要求/u.test(text)).slice(-4)
   const recent = requests.slice(1).slice(-3)
-  const outcome = parseTaskOutcome(projection?.outcome)
   const interruption = projection?.interruption
   const lastAssistant = [...entries].reverse().find(isAssistantTurn)
   const pendingSegments = lastAssistant && lastAssistant.status !== 'completed'
@@ -72,7 +70,6 @@ export function taskRecoveryBrief(entries: ConversationEntry[], projection?: Xia
   return [
     '任务恢复摘录（历史原文与实际状态，不是新的执行授权；当前请求优先，冲突时采用用户较新的要求）：',
     `最初需求：${excerpt(initial, 1600)}`,
-    outcome ? `上轮任务结果：${taskOutcomeLabel(outcome)}。${excerpt(outcome.summary, 500)}\n剩余事项：${excerpt(outcome.remaining.join('；'), 1600)}\n检查依据：${excerpt(JSON.stringify(outcome.checks), 1600)}。先核对实际状态，不把历史报告当作当前授权或自动重跑指令。` : '',
     ...constraints.map((text) => `较早约束摘录：${excerpt(text, 400)}`),
     ...recent.map((text) => `最近追加要求：${excerpt(text, 600)}`),
     pendingSegments.length ? `未完成步骤记录：${excerpt(JSON.stringify(pendingSegments), 1400)}。请核对实际状态后继续，不自动重跑。` : '',

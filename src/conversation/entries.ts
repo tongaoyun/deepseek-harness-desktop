@@ -23,7 +23,7 @@ export function reconcileTaskConversation(entries: ConversationEntry[], status: 
     : normalized
 }
 
-/** Settle the open assistant turn with its outcome metadata. */
+/** Settle the open assistant turn with facts from the official turn lifecycle. */
 export function settleOpenTurn(
   entries: ConversationEntry[],
   status: TurnStatus,

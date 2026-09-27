@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { createRequire } from 'node:module'
 import { dirname, resolve, join } from 'node:path'
-import { lstat, mkdir, open, rm, symlink } from 'node:fs/promises'
+import { lstat, mkdir, open, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { setTimeout as delay } from 'node:timers/promises'
 import { Context } from '@deepseek-ai/cordis'
@@ -16,13 +16,10 @@ import {
   type SdkPromptContentBlock,
 } from '@deepseek-ai/dsh-sdk-client'
 import { deriveEventMessage, foldSurface } from '@deepseek-ai/dsh-session/surface'
-import { imageMetadata } from './local-attachment-store-plugin.js'
 import { visibleTaskPrompt, withTaskInstructions } from './task-instructions.js'
 import { IMAGE_LIMITS } from './image-limits.js'
 import { memoryContextForTask } from './memory-context.js'
-import { TaskOutcomeTracker, type TaskOutcome } from './task-outcome.js'
 import { initialXiaoyinTaskView, reduceEvent, type XiaoyinTaskState, type XiaoyinTaskView } from './xiaoyin-projections-plugin.js'
-import { initialTranscriptState, reduceTranscriptEvent, type TranscriptEntry, type TranscriptState } from './transcript-projection.js'
 import { hasEligibleHarnessMcpConnector } from './managed-mcp-plugin.js'
 import { HarnessError, data as errorData, errorDataForProvider, type HarnessErrorData } from './errors.js'
 
@@ -37,7 +34,6 @@ export interface ImageRunInput { data: Buffer; mediaType: 'image/png' | 'image/j
 export interface HarnessRunResult {
   sessionId: string
   finalResponse: string
-  outcome?: TaskOutcome
   /** True when the employee interrupted the turn before it completed. */
   interrupted?: boolean
 }
@@ -49,7 +45,8 @@ export interface SessionInspection {
   lastEventType?: string
   pendingTools: number
   projection?: XiaoyinTaskView
-  transcript: TranscriptEntry[]
+  /** Raw Harness Session journal consumed by the official browser Conversation assembler. */
+  events?: Array<Record<string, unknown>>
   messages: Array<{ id: string; role: 'user' | 'assistant'; text: string }>
 }
 
@@ -77,7 +74,7 @@ export interface HarnessRuntime {
   inspectSession?(sessionId: string): Promise<SessionInspection | undefined>
   steer?(sessionId: string, text: string): Promise<unknown>
   interrupt?(sessionId: string): Promise<{ interrupted: boolean }>
-  regenerate?(sessionId: string): Promise<{ sessionId: string }>
+  fork?(sessionId: string, atSeq?: number): Promise<{ sessionId: string }>
   searchSessions?(sessionIds: string[], query: string, limit?: number, cursor?: string): Promise<SessionSearchPage>
   checkProvider?(): Promise<ProviderCheckResult>
   close(): Promise<void>
@@ -104,15 +101,10 @@ const HARNESS_VERSION = typeof harnessPackage.version === 'string' && harnessPac
 // resolves bare entries from `$DSH_HOME/profiles/node_modules`, so an employee
 // home outside the packaged runtime needs a small, product-owned fallback.
 const EXTERNAL_HARNESS_PLUGINS = [
-  '@deepseek-ai/dsh-tool-terminal',
-  '@deepseek-ai/dsh-code-runtime-worker-thread',
-  '@deepseek-ai/dsh-lsp',
-  '@deepseek-ai/dsh-lsp-stdio',
-  '@deepseek-ai/dsh-tool-lsp',
-  '@deepseek-ai/dsh-subagent-codex',
-  '@deepseek-ai/dsh-subagent-claude-code',
-  '@deepseek-ai/dsh-subagent-acp',
-  '@deepseek-ai/dsh-subagent-dsh-sdk',
+  '@deepseek-ai/dsh-tool-bash-persistent',
+  '@deepseek-ai/dsh-tool-pwsh-persistent',
+  '@deepseek-ai/dsh-tool-session-query',
+  '@deepseek-ai/dsh-workspace-changes',
 ] as const
 
 export async function ensureExternalHarnessPlugins(env: NodeJS.ProcessEnv): Promise<void> {
@@ -149,6 +141,23 @@ export async function ensureExternalHarnessPlugins(env: NodeJS.ProcessEnv): Prom
   }
 }
 
+/**
+ * Install Xiaoyin's product policy as the official sdk profile layer. The
+ * Harness launcher owns profile composition; the desktop only supplies this
+ * deployment-owned overlay and never patches an upstream package.
+ */
+async function installProductProfile(env: NodeJS.ProcessEnv): Promise<void> {
+  const dshHome = env.DSH_HOME?.trim()
+  // Unit tests and direct library consumers may intentionally run without an
+  // isolated home; the desktop launcher always provides one.
+  if (!dshHome) return
+  const source = env.DSH_CORDIS_CONFIG?.trim() || resolve(moduleDirectory, '../runtime/cordis.yml')
+  const target = join(resolve(dshHome), 'profiles', 'sdk', 'cordis.patch.yml')
+  const content = await readFile(source, 'utf8')
+  await mkdir(dirname(target), { recursive: true })
+  await writeFile(target, content, 'utf8')
+}
+
 export function hasConfiguredLspServers(value: string | undefined): boolean {
   if (!value?.trim()) return false
   try {
@@ -166,6 +175,19 @@ export function hasConfiguredLspServers(value: string | undefined): boolean {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function messagesSseText(value: string): string {
+  const chunks: string[] = []
+  for (const line of value.split(/\r?\n/u)) {
+    if (!line.startsWith('data:')) continue
+    try {
+      const event: unknown = JSON.parse(line.slice(5).trim())
+      if (!isRecord(event) || event.type !== 'content_block_delta' || !isRecord(event.delta) || event.delta.type !== 'text_delta' || typeof event.delta.text !== 'string') continue
+      chunks.push(event.delta.text)
+    } catch { /* malformed provider data is treated as an empty response */ }
+  }
+  return chunks.join('')
 }
 
 export function hasHarnessPackage(name: string): boolean {
@@ -192,6 +214,10 @@ function officialCapability(name: string): 'enabled' | 'unconfigured' {
 
 function optionalCapability(name: string, enabled: boolean, disabled: 'gated' | 'unconfigured' = 'gated'): 'enabled' | 'gated' | 'unconfigured' {
   return enabled ? (hasHarnessPackage(name) ? 'enabled' : 'unconfigured') : disabled
+}
+
+function configuredPrimaryRuntime(env: NodeJS.ProcessEnv): boolean {
+  return Boolean((env.DSH_PRIMARY_RUNTIME ?? env.DSH_BUNDLED_PRIMARY_RUNTIME)?.trim())
 }
 
 export function assertHarnessDependencyClosure(): void {
@@ -227,7 +253,7 @@ export class DeepSeekHarnessRuntime implements HarnessRuntime {
         profile: this.initialized ? 'enabled' : 'gated',
         modelProvider: modelConfigured ? 'gated' : 'unconfigured',
         agentLoop: officialCapability('@deepseek-ai/dsh-agent-loop'),
-        sdkJsonRpc: officialCapability('@deepseek-ai/dsh-sdk-jsonrpc-server'),
+        sessionController: officialCapability('@deepseek-ai/dsh-api-session-controller'),
         sessionPersistence: officialCapability('@deepseek-ai/dsh-session-persistence-jsonl'),
         sessionCheckpoint: officialCapability('@deepseek-ai/dsh-session-checkpoint-policy'),
         sessionProjection: officialCapability('@deepseek-ai/dsh-session-projection'),
@@ -244,13 +270,16 @@ export class DeepSeekHarnessRuntime implements HarnessRuntime {
         subagent: officialCapability('@deepseek-ai/dsh-subagent'),
         todo: officialCapability('@deepseek-ai/dsh-tool-todo'),
         goal: officialCapability('@deepseek-ai/dsh-goal'),
-        ralph: officialCapability('@deepseek-ai/dsh-tool-ralph'),
+        ralph: optionalCapability('@deepseek-ai/dsh-tool-ralph', env.XIAOYIN_ENABLE_RALPH === 'true'),
         workflow: officialCapability('@deepseek-ai/dsh-tool-workflow'),
         compaction: officialCapability('@deepseek-ai/dsh-compaction-basic'),
         toolResultPruner: officialCapability('@deepseek-ai/dsh-compaction-tool-result-pruner'),
         tokenMeter: officialCapability('@deepseek-ai/dsh-token-meter'),
         jobs: officialCapability('@deepseek-ai/dsh-jobs-local'),
-        sessionReminders: officialCapability('@deepseek-ai/dsh-schedule'),
+        workspaceChanges: officialCapability('@deepseek-ai/dsh-workspace-changes'),
+        workspaceDependencies: optionalCapability('@deepseek-ai/dsh-tool-workspace-dependencies', configuredPrimaryRuntime(env), 'unconfigured'),
+        officeSkills: optionalCapability('@deepseek-ai/dsh-skill-office', configuredPrimaryRuntime(env), 'unconfigured'),
+        libreOfficeKit: optionalCapability('@deepseek-ai/libreoffice-kit', configuredPrimaryRuntime(env), 'unconfigured'),
         webSearch: optionalCapability('@deepseek-ai/dsh-web-search-deepseek', modelConfigured, 'unconfigured'),
         webFetch: optionalCapability('@deepseek-ai/dsh-web-fetch-http', modelConfigured, 'unconfigured'),
         settings: officialCapability('@deepseek-ai/dsh-settings-file'),
@@ -263,20 +292,16 @@ export class DeepSeekHarnessRuntime implements HarnessRuntime {
         sessionQueryTools: optionalCapability('@deepseek-ai/dsh-tool-session-query', env.XIAOYIN_ENABLE_SESSION_QUERY_TOOLS !== 'false'),
         sessionReference: optionalCapability('@deepseek-ai/dsh-session-reference', env.XIAOYIN_ENABLE_SESSION_REFERENCES !== 'false'),
         mcpClient: optionalCapability('@deepseek-ai/dsh-mcp-client', hasEligibleHarnessMcpConnector(env)),
-        codeRuntime: optionalCapability('@deepseek-ai/dsh-code-runtime-worker-thread', ['ptc', 'both'].includes(env.XIAOYIN_TOOLS_MODE ?? 'native')),
+        mcpResources: optionalCapability('@deepseek-ai/dsh-mcp-resources', hasEligibleHarnessMcpConnector(env)),
         persistentTerminal: optionalCapability('@deepseek-ai/dsh-terminal', env.XIAOYIN_ALLOW_SHELL !== 'false'),
         lsp: optionalCapability('@deepseek-ai/dsh-lsp', env.XIAOYIN_ALLOW_LSP !== 'false' && hasConfiguredLspServers(env.XIAOYIN_LSP_SERVERS), 'unconfigured'),
         codexSubagent: optionalCapability('@deepseek-ai/dsh-subagent-codex', env.XIAOYIN_ALLOW_EXTERNAL_AGENTS !== 'false' && env.XIAOYIN_ENABLE_CODEX_SUBAGENT === 'true', 'unconfigured'),
         claudeSubagent: optionalCapability('@deepseek-ai/dsh-subagent-claude-code', env.XIAOYIN_ALLOW_EXTERNAL_AGENTS !== 'false' && env.XIAOYIN_ENABLE_CLAUDE_SUBAGENT === 'true', 'unconfigured'),
         acpSubagent: optionalCapability('@deepseek-ai/dsh-subagent-acp', env.XIAOYIN_ALLOW_EXTERNAL_AGENTS !== 'false' && Boolean(env.XIAOYIN_ACP_COMMAND), 'unconfigured'),
         dshSubagent: optionalCapability('@deepseek-ai/dsh-subagent-dsh-sdk', env.XIAOYIN_ALLOW_EXTERNAL_AGENTS !== 'false' && env.XIAOYIN_ENABLE_DSH_SUBAGENT === 'true', 'unconfigured'),
-        // Xiaoyin's content-addressed backend implements the official
-        // AttachmentStore contract, so all model-facing image paths share
-        // Harness admission and references even though storage policy stays
-        // product-owned.
-        officialAttachment: 'enabled',
-        officialFilesystem: hasAuthorizedRoots(env.XIAOYIN_LOCAL_FILE_ROOTS) ? 'gated' : 'enabled',
-        present: hasAuthorizedRoots(env.XIAOYIN_LOCAL_FILE_ROOTS) ? 'gated' : optionalCapability('@deepseek-ai/dsh-tool-present', true),
+        officialAttachment: officialCapability('@deepseek-ai/dsh-attachment-local'),
+        officialFilesystem: officialCapability('@deepseek-ai/dsh-tool-fs'),
+        present: optionalCapability('@deepseek-ai/dsh-tool-present', true),
         shell: optionalCapability('@deepseek-ai/dsh-bash-local', env.XIAOYIN_ALLOW_SHELL !== 'false'),
         browser: env.XIAOYIN_ALLOW_BROWSER === 'true' ? 'enabled' : 'gated',
         codexHooks: optionalCapability('@deepseek-ai/dsh-hooks-codex', env.XIAOYIN_ALLOW_HOOKS !== 'false' && Boolean(env.XIAOYIN_CODEX_HOOKS_CONFIG)),
@@ -288,7 +313,9 @@ export class DeepSeekHarnessRuntime implements HarnessRuntime {
   async initialize(): Promise<{ status: string; runtime: string }> {
     try {
       assertHarnessDependencyClosure()
-      await ensureExternalHarnessPlugins(this.environment())
+      const env = this.environment()
+      await ensureExternalHarnessPlugins(env)
+      await installProductProfile(env)
       await this.getOrCreateHarness().start()
       this.initialized = true
     } catch (error) {
@@ -319,7 +346,8 @@ export class DeepSeekHarnessRuntime implements HarnessRuntime {
     try {
       const base = new URL(baseUrl)
       if (!['http:', 'https:'].includes(base.protocol)) throw new Error('unsupported protocol')
-      endpoint = new URL('chat/completions', base.toString().endsWith('/') ? base.toString() : `${base.toString()}/`)
+      const root = base.toString().replace(/\/+$/u, '')
+      endpoint = new URL(`${base.pathname.replace(/\/+$/u, '').endsWith('/v1') ? root : `${root}/v1`}/messages`)
     } catch {
       return { status: 'unreachable', latencyMs: 0, detail: '模型地址无效' }
     }
@@ -329,8 +357,8 @@ export class DeepSeekHarnessRuntime implements HarnessRuntime {
     try {
       const response = await fetch(endpoint, {
         method: 'POST',
-        headers: { authorization: `Bearer ${key}`, accept: 'application/json', 'content-type': 'application/json' },
-        body: JSON.stringify({ model, messages: [{ role: 'user', content: 'Reply with OK.' }], max_tokens: 16, stream: false }),
+        headers: { authorization: `Bearer ${key}`, accept: 'text/event-stream', 'content-type': 'application/json', 'anthropic-version': '2023-06-01' },
+        body: JSON.stringify({ model, messages: [{ role: 'user', content: [{ type: 'text', text: 'Reply with OK.' }] }], max_tokens: 16, stream: true, thinking: { type: 'disabled' } }),
         redirect: 'error',
         signal: controller.signal,
       })
@@ -339,17 +367,7 @@ export class DeepSeekHarnessRuntime implements HarnessRuntime {
         if (response.status === 401 || response.status === 403) return { status: 'unauthorized', latencyMs, detail: '模型凭据未被服务接受' }
         if (response.status === 429) return { status: 'unreachable', latencyMs, detail: '模型生成服务繁忙' }
         if (!response.ok) return { status: 'unreachable', latencyMs, detail: `模型服务返回 HTTP ${response.status}` }
-        const payload: unknown = await response.json().catch(() => undefined)
-        const choices = payload && typeof payload === 'object' && 'choices' in payload
-          ? (payload as { choices?: unknown }).choices
-          : undefined
-        const content = Array.isArray(choices) && choices[0] && typeof choices[0] === 'object' && 'message' in choices[0]
-          ? (choices[0] as { message?: unknown }).message
-          : undefined
-        const text = content && typeof content === 'object' && 'content' in content
-          ? (content as { content?: unknown }).content
-          : undefined
-        if (typeof text !== 'string' || !text.trim()) return { status: 'unreachable', latencyMs, detail: '模型生成响应无有效内容' }
+        if (!messagesSseText(await response.text()).trim()) return { status: 'unreachable', latencyMs, detail: '模型生成响应无有效内容' }
         return { status: 'available', latencyMs, detail: '模型生成可用' }
       } finally {
         await response.body?.cancel().catch(() => undefined)
@@ -386,7 +404,7 @@ export class DeepSeekHarnessRuntime implements HarnessRuntime {
     const env = this.environment()
     await ensureExternalHarnessPlugins(env)
     const prompt = withTaskInstructions(applyMemoryContext(input.prompt, env.XIAOYIN_MEMORY_CONTEXT), {
-      useOfficialPresent: !hasAuthorizedRoots(env.XIAOYIN_LOCAL_FILE_ROOTS),
+      useOfficialPresent: true,
     })
     if ((input.images?.length ?? 0) > IMAGE_LIMITS.maxImagesPerMessage) throw new Error('单条消息最多添加 4 张图片')
     const images = (input.images ?? []).map(encodedInputImage)
@@ -447,19 +465,20 @@ export class DeepSeekHarnessRuntime implements HarnessRuntime {
     }
   }
 
+  async fork(sessionId: string, atSeq?: number): Promise<{ sessionId: string }> {
+    const harness = this.harness
+    if (harness === undefined) throw new Error('本轮没有可分叉的会话')
+    const request = atSeq === undefined ? { sessionId } : { sessionId, atSeq }
+    const result = await harness.client.request('session/fork', request) as { sessionId?: unknown }
+    if (typeof result?.sessionId !== 'string' || !result.sessionId) throw new Error('会话分叉未返回新的会话')
+    return { sessionId: result.sessionId }
+  }
+
   /**
    * Fork the session before its last prompt so the caller can re-run that turn
    * with the earlier context intact. Runs between turns, never concurrently
    * with an active run.
    */
-  async regenerate(sessionId: string): Promise<{ sessionId: string }> {
-    const harness = this.harness
-    if (harness === undefined) throw new Error('本轮没有可重新生成的会话')
-    const result = await harness.client.request('session/regenerate', { sessionId } as never) as { sessionId?: unknown }
-    if (typeof result?.sessionId !== 'string' || !result.sessionId) throw new Error('重新生成未返回新的会话')
-    return { sessionId: result.sessionId }
-  }
-
   async close(): Promise<void> {
     if (this.closeTask) return this.closeTask
     this.closing = true
@@ -477,8 +496,6 @@ export class DeepSeekHarnessRuntime implements HarnessRuntime {
     if (this.harness !== undefined) return this.harness
 
     const env = this.environment()
-    const patchPath = env.DSH_CORDIS_CONFIG
-      ?? resolve(moduleDirectory, '../runtime/cordis.yml')
     const workspace = resolve(env.DSH_CWD ?? process.cwd())
 
     const maxTokens = positiveInteger(env.DSH_MAX_TOKENS)
@@ -487,7 +504,6 @@ export class DeepSeekHarnessRuntime implements HarnessRuntime {
     this.harness = new DeepSeekHarness({
       profile: 'sdk',
       initializeTimeoutMs: 60_000,
-      patches: [patchPath],
       cwd: workspace,
       processCwd: workspace,
       env: {
@@ -541,8 +557,9 @@ export async function runSessionTurn(
   let finalResponse = ''
   let turnFailure: HarnessErrorData | undefined
   const pendingTools = new Set<string>()
+  const pendingApprovals = new Set<string>()
+  const pendingQuestions = new Set<string>()
   const streamedText = new Map<string, string>()
-  const outcome = new TaskOutcomeTracker()
   const deadline = Date.now() + timeoutMs
   try {
     const messageId = await beforeDeadline(() => client.prompt(sessionId, content), deadline, timeoutMs)
@@ -556,13 +573,18 @@ export async function runSessionTurn(
       const data = record(event?.data)
       if (event?.type === 'tool/call' && typeof data?.callId === 'string') pendingTools.add(data.callId)
       if (event?.type === 'tool/result') {
-        const blocks = record(data?.message)?.content
+        const message = record(data?.message)
+        const blocks = message?.content
+        if (typeof message?.toolCallId === 'string') pendingTools.delete(message.toolCallId)
         for (const block of Array.isArray(blocks) ? blocks : []) {
           const result = record(block)
           if (result?.type === 'tool-result' && typeof result.toolCallId === 'string') pendingTools.delete(result.toolCallId)
         }
       }
-      outcome.observe(event)
+      if (event?.type === 'approval/request' && typeof data?.approvalId === 'string') pendingApprovals.add(data.approvalId)
+      if (event?.type === 'approval/decision' && typeof data?.approvalId === 'string') pendingApprovals.delete(data.approvalId)
+      if (event?.type === 'question/request' && typeof data?.questionId === 'string') pendingQuestions.add(data.questionId)
+      if (event?.type === 'question/answered' && typeof data?.questionId === 'string') pendingQuestions.delete(data.questionId)
       forwardVisibleText(notification, event, streamedText, onNotification)
       if (event?.type === 'turn/start') turnStarted = true
       if (event?.type === 'assistant/message') {
@@ -610,9 +632,12 @@ export async function runSessionTurn(
   }
   if (turnFailure && !(abortedByInterrupt)) throw new HarnessError(turnFailure)
   if (pendingTools.size && !(abortedByInterrupt)) throw new HarnessError(errorData('XY-UNCERTAIN-TOOL', 'connector', '工具结果待核对', '本轮仍有工具操作未取得结果，请先核对实际结果后继续', false, false))
+  if ((pendingApprovals.size || pendingQuestions.size) && !abortedByInterrupt) {
+    throw new HarnessError(errorData('XY-PENDING-INTERACTION', 'permission', '任务仍在等待操作', '本轮结束时仍有待审批或待回答事项，已暂停后续队列', false, false))
+  }
   // A completed turn without visible text is legitimate (file edits, plan
   // delivery); the desktop renders the turn from its streamed segments.
-  return { sessionId, finalResponse, outcome: outcome.result(abortedByInterrupt ? '' : finalResponse), ...(abortedByInterrupt ? { interrupted: true } : {}) }
+  return { sessionId, finalResponse, ...(abortedByInterrupt ? { interrupted: true } : {}) }
 }
 
 /**
@@ -748,10 +773,6 @@ function record(value: unknown): Record<string, unknown> | undefined {
 
 function encodedInputImage(input: ImageRunInput): SdkPromptContentBlock {
   if (input.data.length === 0 || input.data.length > IMAGE_LIMITS.maxImageBytes) throw new Error('图片为空或超过 10 MB，请缩小后重试')
-  const metadata = imageMetadata(input.data, input.mediaType)
-  if (metadata.width > IMAGE_LIMITS.maxImageDimension || metadata.height > IMAGE_LIMITS.maxImageDimension || metadata.width * metadata.height > IMAGE_LIMITS.maxImagePixels) {
-    throw new Error('图片分辨率超出当前运行时范围：最长边 2560 像素、总计 400 万像素，请裁剪或缩小后重试')
-  }
   return {
     type: 'image',
     data: input.data.toString('base64'),
@@ -810,13 +831,7 @@ async function inspectOfficialSession(sessionId: string, env: NodeJS.ProcessEnv 
     try {
       const { events } = await handle.read()
       const state = events.reduce<XiaoyinTaskState>((current, event) => reduceEvent(current, event), { value: initialXiaoyinTaskView(), toolNames: {} })
-      const outcomeTracker = new TaskOutcomeTracker()
-      for (const event of events) outcomeTracker.observe(event)
-      const hasOutcomeReport = events.some((event) => event.type === 'tool/call' && record(event.data)?.name === 'task_report')
-      const projection = hasOutcomeReport ? { ...state.value, outcome: outcomeTracker.result() as unknown as Record<string, unknown> } : state.value
-      // Same fold as the live `xiaoyin.transcript` projection: reload and
-      // live rendering share one transcript shape by construction.
-      const transcriptState = events.reduce<TranscriptState>((current, event) => reduceTranscriptEvent(current, event), initialTranscriptState())
+      const projection = state.value
       const messages = rebuildSessionMessages(events)
       const pendingTools = projection.steps.filter((step) => step.kind === 'tool' && step.status === 'running').length
       const lastEvent = events.at(-1)
@@ -828,7 +843,10 @@ async function inspectOfficialSession(sessionId: string, env: NodeJS.ProcessEnv 
         ...(lastEvent?.type ? { lastEventType: lastEvent.type } : {}),
         pendingTools,
         projection,
-        transcript: transcriptState.entries,
+        // The official browser Conversation assembler replays the Session
+        // journal itself. Keep this separate from the product projection so
+        // callers never mistake a Xiaoyin view for authoritative history.
+        events: events as unknown as Array<Record<string, unknown>>,
         messages,
       }
     } finally {
@@ -892,6 +910,35 @@ async function rebuildCorruptSessionQueryIndex(queryPath: string): Promise<void>
   }
 }
 
+async function acquireSessionQueryIndexLock(queryPath: string): Promise<{ close: () => Promise<void> }> {
+  const lockPath = `${queryPath}.access.lock`
+  for (let attempt = 0; attempt < 600; attempt += 1) {
+    try {
+      const handle = await open(lockPath, 'wx', 0o600)
+      return {
+        close: async () => {
+          await handle.close()
+          await rm(lockPath, { force: true })
+        },
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+      try {
+        const info = await lstat(lockPath)
+        if (Date.now() - info.mtimeMs > 30_000) {
+          await rm(lockPath, { force: true })
+          continue
+        }
+      } catch (reason) {
+        if ((reason as NodeJS.ErrnoException).code === 'ENOENT') continue
+        throw reason
+      }
+      await delay(50)
+    }
+  }
+  throw new Error('session-search derived index access lock timed out')
+}
+
 function isCorruptSessionQueryIndex(error: unknown): boolean {
   const messages: string[] = []
   let current: unknown = error
@@ -908,6 +955,7 @@ async function searchOfficialSessionsOnce(sessionIds: string[], query: string, l
   if (ids.length === 0) return { items: [] }
   const root = resolve(env.DSH_SESSION_ROOT ?? resolve(env.DSH_HOME ?? '.dsh', 'sessions'))
   const queryPath = resolve(env.XIAOYIN_SESSION_QUERY_PATH ?? resolve(env.DSH_HOME ?? '.dsh', 'session-query.sqlite'))
+  const indexLock = await acquireSessionQueryIndexLock(queryPath)
   const context = new Context()
   try {
     await context.plugin(SessionStore)
@@ -940,8 +988,12 @@ async function searchOfficialSessionsOnce(sessionIds: string[], query: string, l
       ...(page.nextCursor ? { nextCursor: String(page.nextCursor) } : {}),
     }
   } finally {
-    const dispose = (context as unknown as { dispose?: () => Promise<void> }).dispose
-    if (dispose) await dispose.call(context)
+    try {
+      const dispose = (context as unknown as { dispose?: () => Promise<void> }).dispose
+      if (dispose) await dispose.call(context)
+    } finally {
+      await indexLock.close()
+    }
   }
 }
 

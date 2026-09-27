@@ -13,7 +13,7 @@ describe('DeepSeek Harness dependency alignment', () => {
     const dependencies = Object.entries(packageJson.dependencies ?? {})
       .filter(([name]) => name.startsWith('@deepseek-ai/dsh'))
     const versions = [...new Set(dependencies.map(([, version]) => version))]
-    expect(versions).toEqual(['0.1.5-rc.2'])
+    expect(versions).toEqual(['0.1.7-rc.2'])
     expect(dependencies.every(([, version]) => version === versions[0])).toBe(true)
   })
 

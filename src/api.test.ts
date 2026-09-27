@@ -29,7 +29,9 @@ describe('loadBootstrap', () => {
     vi.stubGlobal('fetch', fetchMock)
     await loadBootstrap('employee', 'session')
     expect(fetchMock.mock.calls[0][0]).toBe('http://localhost:1421/api/v1/bootstrap')
-    expect(fetchMock.mock.calls[0][1].headers).toMatchObject({ 'X-ERP-Session': 'session', 'X-Xiaoyin-Employee-Id': 'employee' })
+    expect(fetchMock.mock.calls[0][1].headers).toMatchObject({
+      Authorization: 'Bearer session', 'X-Xiaoyin-Employee-Id': 'employee', 'X-Requested-With': 'XMLHttpRequest',
+    })
     expect(resolveServerEndpoint('/api/v1/knowledge-bases')).toBe('http://192.168.2.67:30081/api/v1/knowledge-bases')
     expect(localScheduleNamespace()).toBe('http://192.168.2.67:30081/api/v1/schedules')
     vi.stubEnv('DEV', false)
@@ -38,14 +40,15 @@ describe('loadBootstrap', () => {
   })
 
   it('rereads source identity with current account headers and explicit stale-source errors', async () => {
-    const fetchMock = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify(wire({ sourceId: '12', content: 'current' }))))
+    const sourceId = '123e4567-e89b-12d3-a456-426614174000'
+    const fetchMock = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify(wire({ sourceId, content: 'current' }))))
       .mockResolvedValueOnce(new Response(null, { status: 404 }))
     vi.stubGlobal('fetch', fetchMock)
     const context = { endpoint: '/api/v1/knowledge-bases/', employeeId: 'employee', teamId: 'team', accessToken: 'test-token' }
-    await expect(loadKnowledgeSource(context, '12')).resolves.toMatchObject({ sourceId: '12' })
-    expect(fetchMock.mock.calls[0][0]).toBe('http://192.168.2.67:30081/api/v1/knowledge-bases/sources/12')
-    expect(fetchMock.mock.calls[0][1]).toMatchObject({ headers: { 'X-Xiaoyin-Employee-Id': 'employee', 'X-Xiaoyin-Team-Id': 'team', 'X-ERP-Session': 'test-token' } })
-    await expect(loadKnowledgeSource(context, '12')).rejects.toThrow('历史摘录不能作为当前依据')
+    await expect(loadKnowledgeSource(context, sourceId)).resolves.toMatchObject({ sourceId })
+    expect(fetchMock.mock.calls[0][0]).toBe(`http://192.168.2.67:30081/api/v1/knowledge-bases/sources/${sourceId}`)
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({ headers: { 'X-Xiaoyin-Employee-Id': 'employee', 'X-Xiaoyin-Team-Id': 'team', Authorization: 'Bearer test-token' } })
+    await expect(loadKnowledgeSource(context, sourceId)).rejects.toThrow('历史摘录不能作为当前依据')
     await expect(loadKnowledgeSource(context, '../files')).rejects.toThrow()
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
@@ -76,7 +79,7 @@ describe('loadBootstrap', () => {
     expect(fetchMock).toHaveBeenCalledWith(
       'http://192.168.2.67:30081/api/v1/bootstrap',
       expect.objectContaining({
-        headers: { 'X-Xiaoyin-Employee-Id': 'local-development' },
+        headers: { 'X-Xiaoyin-Employee-Id': 'local-development', 'X-Requested-With': 'XMLHttpRequest' },
       }),
     )
   })
@@ -93,12 +96,12 @@ describe('loadBootstrap', () => {
     await loadExpertKits('/api/v1/expert-kits', 'employee-1', 'token-1')
     await createExpertKitDownload('/api/v1/expert-kits/', 'kit one', 'employee-1', 'token-1')
 
-    expect(fetchMock.mock.calls[0][0]).toBe('http://192.168.2.67:30081/api/v1/expert-kits')
+    expect(fetchMock.mock.calls[0][0]).toBe('http://192.168.2.67:30081/api/v1/expert-kits?page=1&size=100')
     expect(fetchMock.mock.calls[0][1].headers).toMatchObject({
-      'X-Xiaoyin-Employee-Id': 'employee-1',
-      'X-ERP-Session': 'token-1',
+      'X-Xiaoyin-Employee-Id': 'employee-1', 'X-Requested-With': 'XMLHttpRequest',
+      Authorization: 'Bearer token-1',
     })
-    expect(fetchMock.mock.calls[1][0]).toBe('http://192.168.2.67:30081/api/v1/expert-kits/kit%20one/download')
+    expect(fetchMock.mock.calls[1][0]).toBe('http://192.168.2.67:30081/api/v1/expert-kits/kit%20one/artifacts')
   })
 
   it('loads skills and connectors through the shared enterprise catalog contract', async () => {
@@ -111,12 +114,12 @@ describe('loadBootstrap', () => {
     await loadConnectors('/api/v1/connectors', 'employee-1', 'token-1')
 
     expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
-      'http://192.168.2.67:30081/api/v1/skills',
-      'http://192.168.2.67:30081/api/v1/connectors',
+      'http://192.168.2.67:30081/api/v1/skills?page=1&size=100',
+      'http://192.168.2.67:30081/api/v1/connectors?page=1&size=100',
     ])
     expect(fetchMock.mock.calls[1][1].headers).toMatchObject({
       'X-Xiaoyin-Employee-Id': 'employee-1',
-      'X-ERP-Session': 'token-1',
+      Authorization: 'Bearer token-1',
     })
   })
 
@@ -188,4 +191,8 @@ describe('loadBootstrap', () => {
 
 })
 
-function wire(data: unknown) { return { success: true, data } }
+function wire(data: unknown) {
+  return Array.isArray(data)
+    ? { success: true, data, totalCount: data.length, pageSize: 20, pageIndex: 1, totalPages: data.length ? 1 : 0 }
+    : { success: true, data }
+}

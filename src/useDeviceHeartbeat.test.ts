@@ -3,7 +3,7 @@ import { capabilityReportEntry } from './useDeviceHeartbeat'
 
 describe('device capability report', () => {
   it('requires real checks for policy capabilities and never assumes unknown capabilities are ready', () => {
-    const selfTest = { status: 'passed' as const, checks: ['local-files', 'native-shell', 'office-docx', 'office-xlsx', 'office-pdf'].map((key) => ({ key, passed: true, detail: '' })) }
+    const selfTest = { status: 'passed' as const, checks: ['local-files', 'native-shell', 'office-runtime', 'office-skills', 'libreoffice-kit'].map((key) => ({ key, passed: true, detail: '' })) }
     for (const key of ['desktop.runtime', 'office.documents']) {
       expect(capabilityReportEntry(key, 'idle', undefined, selfTest).status).toBe('READY')
       expect(capabilityReportEntry(key, 'idle').status).toBe('DEGRADED')
@@ -13,7 +13,7 @@ describe('device capability report', () => {
     expect(capabilityReportEntry('control.plane', 'idle').status).toBe('READY')
     expect(capabilityReportEntry('unknown', 'ready').status).toBe('UNSUPPORTED')
   })
-  const capabilities = { sessionPersistence: 'enabled' as const, codeRuntime: 'gated' as const, lsp: 'unconfigured' as const }
+  const capabilities = { sessionPersistence: 'enabled' as const, lsp: 'unconfigured' as const }
 
   it('reports the aggregate Harness state separately from component capabilities', () => {
     expect(capabilityReportEntry('harness', 'ready', capabilities)).toEqual({ key: 'harness', status: 'READY', detail: '本地 Agent 已检查可用' })
@@ -23,7 +23,6 @@ describe('device capability report', () => {
 
   it('preserves enabled, gated and unconfigured states after transport key normalization', () => {
     expect(capabilityReportEntry('harness.sessionpersistence', 'ready', capabilities).status).toBe('READY')
-    expect(capabilityReportEntry('harness.coderuntime', 'ready', capabilities).status).toBe('DEGRADED')
     expect(capabilityReportEntry('harness.lsp', 'ready', capabilities).status).toBe('UNSUPPORTED')
   })
 

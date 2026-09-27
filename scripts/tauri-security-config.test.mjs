@@ -1,9 +1,12 @@
 import assert from 'node:assert/strict'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
+import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { resolveTauriServerUrl, tauriSecurityConfig } from './tauri-security-config.mjs'
+
+const tauriRoot = fileURLToPath(new URL('../src-tauri', import.meta.url))
 
 test('adds the configured server origin to the packaged desktop CSP', () => {
   const csp = tauriSecurityConfig('https://xiaoyin.example.com:8443/base').app.security.csp
@@ -49,24 +52,19 @@ test('uses the company server by default and limits release HTTP to private netw
   }), /HTTP only for loopback or RFC1918/)
 })
 
-test('isolates the ERP login window from workspace process and updater permissions', () => {
-  const directory = join(process.cwd(), 'src-tauri', 'capabilities')
+test('keeps DingTalk OAuth in the system browser without a login window', () => {
+  const directory = join(tauriRoot, 'capabilities')
   const workspace = JSON.parse(readFileSync(join(directory, 'default.json'), 'utf8'))
-  const login = JSON.parse(readFileSync(join(directory, 'erp-login.json'), 'utf8'))
   assert.deepEqual(workspace.windows, ['main'])
-  assert.deepEqual(login.windows, ['erp-login'])
   assert.ok(workspace.permissions.includes('process:default'))
   assert.ok(workspace.permissions.includes('updater:default'))
-  assert.ok(!login.permissions.some((permission) => permission.startsWith('process:')))
-  assert.ok(!login.permissions.some((permission) => permission.startsWith('updater:')))
+  assert.equal(readFileSync(join(tauriRoot, 'tauri.conf.json'), 'utf8').includes('dingtalk-login'), false)
 })
 
 test('keeps every native command behind an explicit per-window ACL', () => {
-  const tauriRoot = join(process.cwd(), 'src-tauri')
   const build = readFileSync(join(tauriRoot, 'build.rs'), 'utf8')
   const library = readFileSync(join(tauriRoot, 'src', 'lib.rs'), 'utf8')
   const capability = JSON.parse(readFileSync(join(tauriRoot, 'capabilities', 'default.json'), 'utf8'))
-  const login = JSON.parse(readFileSync(join(tauriRoot, 'capabilities', 'erp-login.json'), 'utf8'))
   const manifestCommands = [...build.matchAll(/^\s+"([a-z0-9_]+)",$/gm)].map((match) => match[1]).sort()
   const handlers = library.match(/tauri::generate_handler!\[([\s\S]*?)\]/)?.[1]
   assert.ok(handlers, 'generate_handler command list is missing')
@@ -75,10 +73,5 @@ test('keeps every native command behind an explicit per-window ACL', () => {
   const workspaceCommands = capability.permissions
     .filter((permission) => permission.startsWith('allow-'))
     .map((permission) => permission.slice('allow-'.length).replaceAll('-', '_'))
-  const loginCommands = login.permissions
-    .filter((permission) => permission.startsWith('allow-'))
-    .map((permission) => permission.slice('allow-'.length).replaceAll('-', '_'))
-  assert.deepEqual(loginCommands.sort(), ['complete_erp_qr_login', 'erp_qr_login_configuration'])
-  assert.deepEqual(workspaceCommands.filter((command) => loginCommands.includes(command)), [])
-  assert.deepEqual([...workspaceCommands, ...loginCommands].sort(), manifestCommands)
+  assert.deepEqual(workspaceCommands.sort(), manifestCommands)
 })

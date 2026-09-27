@@ -4,6 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DeepSeekHarnessRuntime } from '../dist/runtime.js'
+import { writeMessagesResponse } from './messages-fixture.mjs'
 
 /**
  * The desktop restarts the host process whenever the model, the reasoning
@@ -25,14 +26,7 @@ const server = createServer(async (request, response) => {
   }
   requests.push(body)
   const text = requests.length === 1 ? '已记录第一轮任务。' : '第二轮完成。'
-  response.writeHead(200, { 'Content-Type': 'text/event-stream' })
-  for (const choice of [
-    { index: 0, delta: { role: 'assistant', content: text }, finish_reason: null },
-    { index: 0, delta: {}, finish_reason: 'stop' },
-  ]) {
-    response.write(`data: ${JSON.stringify({ id: `continuity-${requests.length}`, object: 'chat.completion.chunk', created: 1, model: 'fixture', choices: [choice] })}\n\n`)
-  }
-  response.end('data: [DONE]\n\n')
+  writeMessagesResponse(response, { text, model: 'fixture' })
 })
 await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
 
@@ -41,7 +35,6 @@ const environment = {
   DEEPSEEK_BASE_URL: `http://127.0.0.1:${server.address().port}`,
   DSH_HOME: root,
   DSH_SESSION_ROOT: join(root, 'sessions'),
-  XIAOYIN_ATTACHMENT_ROOT: join(root, 'attachments'),
   XIAOYIN_SESSION_QUERY_PATH: join(root, 'session-query.sqlite'),
   XIAOYIN_LOCAL_FILE_ROOTS: '[]',
   XIAOYIN_MCP_CONNECTORS: '[]',

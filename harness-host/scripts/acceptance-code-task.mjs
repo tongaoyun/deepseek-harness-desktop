@@ -36,7 +36,6 @@ const runTests = () => spawnSync(process.execPath, ['--test', 'median.test.mjs']
 assert.notEqual(runTests().status, 0, 'fixture must fail before the task')
 Object.assign(process.env, {
   DSH_HOME: join(root, 'home'), DSH_SESSION_ROOT: join(root, 'sessions'), DSH_CWD: workspace,
-  XIAOYIN_ATTACHMENT_ROOT: join(root, 'attachments'),
   XIAOYIN_LOCAL_FILE_ROOTS: JSON.stringify([{ id: 'project', name: '验收项目', path: workspace }]),
   XIAOYIN_MCP_CONNECTORS: '[]', XIAOYIN_COMPUTER_USE_TOOLS: '[]', XIAOYIN_ALLOW_BROWSER: 'false',
   DSH_CUSTOM_SKILL_DIRS: JSON.stringify(skills), XIAOYIN_EXECUTION_MODE: 'agent',

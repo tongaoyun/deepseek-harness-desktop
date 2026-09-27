@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createExpertKitDownload, createSkillDownload, loadConnectors, loadExpertKits, loadKnowledgeBases, loadSkills } from './api'
-import type { ErpUser } from './auth'
-import { withDesktopBuiltinConnectors } from './connectors'
+import type { DingTalkUser } from './auth'
 import { loadEnterpriseCatalogCache, saveEnterpriseCatalogCache } from './enterpriseCache'
 import { inspectInstalledExtensions, installExtension, mergeExpertKits, type ExpertKitView } from './expertKits'
 import { synchronizePublishedExtensions } from './publishedExtensionSync'
@@ -35,7 +34,7 @@ export function useEnterpriseCatalog({
   accessToken: string
   bootstrap?: BootstrapResponse
   enabledConnectorIds: string[]
-  user: ErpUser | null
+  user: DingTalkUser | null
 }) {
   const [expertKits, setExpertKits] = useState<ExpertKitView[]>([])
   const [expertKitCatalog, setExpertKitCatalog] = useState<ExpertKitCatalogEntry[]>([])
@@ -103,10 +102,10 @@ export function useEnterpriseCatalog({
             cacheRef.current = {
               ...cacheRef.current,
               ...cached,
-              connectors: withDesktopBuiltinConnectors([
+              connectors: [
                 ...personal,
                 ...cached.connectors.filter((item) => !isPersonalConnector(item) && !personal.some((value) => value.id === item.id)),
-              ]),
+              ],
             }
             applyCatalog()
           }
@@ -165,16 +164,16 @@ export function useEnterpriseCatalog({
         if (skillsResult.status === 'fulfilled') data.skills = skillsResult.value
         if (connectorsResult.status === 'fulfilled') {
           const personal = loadPersonalConnectors(user.userId)
-          data.connectors = withDesktopBuiltinConnectors([
+          data.connectors = [
             ...personal,
             ...connectorsResult.value.filter((item) => !personal.some((value) => value.id === item.id)),
-          ])
+          ]
         } else {
           const personal = loadPersonalConnectors(user.userId)
-          data.connectors = withDesktopBuiltinConnectors([
+          data.connectors = [
             ...personal,
             ...data.connectors.filter((item) => !isPersonalConnector(item) && !personal.some((value) => value.id === item.id)),
-          ])
+          ]
         }
         if (knowledgeResult.status === 'fulfilled') data.knowledge = knowledgeResult.value
         applyCatalog()

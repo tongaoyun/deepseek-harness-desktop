@@ -52,7 +52,7 @@ node scripts/check-harness-runtime.mjs "$(command -v node)" harness-host --self-
 
 `pnpm check:web` 包含 Harness Profile 启动、技能与结果契约、模型工具权限及 Session Query 多进程验收；这些使用隔离临时目录和模拟模型，不代表外部业务系统已通过。
 
-- 扫码登录、退出重启、会话到期、网络恢复和休眠唤醒。
+- 钉钉官方 OAuth 自动登录、退出重启、会话到期、网络恢复和休眠唤醒。
 - 原任务恢复后核对会话 ID、工作目录、附件与文件哈希。
 - 停止后进程退出，保留部分输出，迟到事件不改回成功。
 - 失败、停止和重启后的消息队列保持暂停，恢复只执行一次。

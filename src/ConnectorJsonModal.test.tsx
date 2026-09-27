@@ -18,7 +18,7 @@ it('awaits each save, reports partial failures and retries only unsaved entries'
     const input = container.querySelector('textarea')!
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(input, JSON.stringify({ mcpServers: {
-        first: { command: 'node' }, second: { type: 'sse', url: 'https://example.com/sse' }, existing: { command: 'node' }, bad: {},
+        first: { command: 'node' }, second: { type: 'streamable-http', url: 'https://example.com/mcp' }, existing: { command: 'node' }, bad: {},
       } }))
       input.dispatchEvent(new Event('input', { bubbles: true }))
     })

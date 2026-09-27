@@ -46,7 +46,7 @@ xiaoyin-server
 | `src/harnessSession.ts`、`src/taskTurn.ts` | 会话选择、恢复上下文、新轮次准备 |
 | `src/useHarnessNotifications.ts`、`src/taskHistory.ts` | 消费 Harness Session Projection、按序去重、任务历史持久化与恢复状态 |
 | `src/capabilitySnapshot.ts` | 产品能力解析、依赖闭包、凭据脱敏、不可变能力快照与语义变化判断 |
-| `src-tauri/src/` | 系统权限、ERP Cookie、凭据、持久化与进程控制 |
+| `src-tauri/src/` | 系统权限、钉钉会话、凭据、持久化与进程控制 |
 | `harness-host/src/runtime.ts` | 模型会话和工具运行时 |
 | `harness-host/src/task-instructions.ts` | 澄清、执行、验证和交付约定 |
 | `src/useDeviceHeartbeat.ts` | 上报脱敏的桌面与 Harness 能力状态，供设备诊断使用 |
@@ -55,7 +55,7 @@ xiaoyin-server
 
 | 场景 | 流程 |
 | --- | --- |
-| 登录 | 钉钉扫码、ERP Cookie、身份校验、员工工作台 |
+| 登录 | 钉钉官方 OAuth、不透明会话、身份校验、员工工作台 |
 | 执行 | 需求与工作区、能力快照、模型与工具、结果检查、交付 |
 | 恢复 | 读取任务与目录、恢复原会话；需要重建时携带有界的需求、文件与结果上下文 |
 | 扩展安装 | 下载制品、校验摘要与清单、检查路径、写入版本目录 |
@@ -64,7 +64,7 @@ xiaoyin-server
 | 定时任务 | 本机计划触发普通任务入口，保存运行记录；Harness `schedule_*` 仅处理当前 Session 内提醒 |
 | 钉钉 | Stream 收取消息、本地队列、Harness 执行、正文与成果回传 |
 
-登录检查避免并发请求。网络失败每 15 秒重试，有效期内保留已验证身份；过期后暂停使用并重查。窗口激活和网络恢复会检查到期状态，退出登录后丢弃先前请求。ERP 明确返回未登录时进入扫码，Cookie 有效期由 ERP 与 WebView 管理。
+登录检查避免并发请求。网络失败按有界退避重试，有效期内保留已验证身份；过期后暂停使用并重查。窗口激活和网络恢复会检查到期状态，退出登录后丢弃先前请求。钉钉会话过期后重新打开官方 OAuth 授权，不创建内嵌二维码窗口。
 
 身份接口的 401、403、网络异常与响应无效分别处理。脱敏诊断记录位置和升级验收见 [登录与会话](login.md)。
 
@@ -74,7 +74,7 @@ xiaoyin-server
 
 跨会话上下文使用 Harness 官方 `dsh-session-reference`：消息中的规范 `dsh-session:` 引用在运行时读取一次，生成有界、不可变并明确标记为不可信的快照。小胤任务历史仍只保存轻量索引和 Session 引用，完整会话内容不复制到第二套产品存储。
 
-桌面任务以 Harness `sessionId` 和官方 Session Log 为执行事实源。Harness 的 `ctx.sessionProjections` 生成实时投影，Host 通过本机 Bearer Bridge 转发；小胤注册 `xiaoyin.task` 产品投影，负责把工具、文件、成果、知识来源、子 Agent 和任务结果整理为桌面需要的稳定结构。任务索引只保存产品元数据、最近摘要和轻量状态；打开历史时通过官方 Persistence 重放事件并重建消息与投影，不再维护第二套 `ExecutionThread/Turn/Item/Event` 执行树，也不从文本猜测运行状态。
+桌面任务以 Harness `sessionId` 和官方 Session Log 为执行事实源。Harness 的官方 Conversation/Trajectory 生成实时对话与操作状态，Host 通过本机 Bearer Bridge 转发；小胤注册 `xiaoyin.product` 产品投影，只补充文件、成果、知识来源和产品标签。任务索引只保存产品元数据、最近摘要和轻量状态；打开历史时通过官方 Persistence 重放事件并重建消息与投影，不再维护第二套 `ExecutionThread/Turn/Item/Event` 执行树，也不从文本猜测运行状态。
 
 Harness 的持久化根目录、默认工作区和 IM 会话状态按员工标识的 SHA-256 命名空间隔离，Session inspect/search 也必须显式提供员工标识；员工标识不会直接写入路径。附件仍使用统一的内容寻址存储，因为预览只接受带 SHA-256 校验的不可变对象，避免为同一图片维护多份副本。浏览器 profile 同时按员工和任务隔离。
 
@@ -91,7 +91,7 @@ Harness 的官方 settings 与 credentials provider 显式写入员工隔离的 
 | 任务索引、定时计划、队列、草稿、最近工作目录和附件引用 | 按员工隔离的本机 SQLite 与应用数据目录 |
 | 用户工作文件和成果 | 员工授权目录 |
 | 扩展安装与设备启停 | 本机扩展版本目录 |
-| ERP Cookie | 系统 WebView |
+| 钉钉会话 | 系统凭据库 |
 | 模型、连接器、IM 凭据 | 受控进程或系统凭据库 |
 | 企业目录、审计、记忆同步与知识元数据 | 服务端 PostgreSQL |
 | 扩展制品、知识原文件和反馈图片 | MinIO |
@@ -108,6 +108,6 @@ Windows 支持 x64；macOS 支持 14+ 的 Apple Silicon 与 Intel。Intel 包可
 
 Computer Use 需要可交互桌面及相应系统权限。Mac 操作前核对进程、窗口位置和尺寸、截图尺寸；观察过期时重新观察。主显示器以外的布局与锁屏操作单独验收。
 
-LibreOffice 提供公式重算和 Office 转 PDF，需要在员工电脑安装。工具职责、大小限制和中文字体见 [Office 工具](office.md)。
+Harness 官方 Office Skills 使用安装包内的 Primary Runtime 和 LibreOffice Kit 完成生成、结构检查、公式重算、转换与渲染，不依赖员工电脑预装 Python 或 LibreOffice。见 [Office 文档能力](office.md)。
 
 交互细节见 [任务执行](task-execution.md)、[扩展](extensions.md)、[知识库](knowledge-base.md)、[记忆](memory.md)、[定时任务与 IM](schedules-and-im.md)。

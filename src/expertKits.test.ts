@@ -147,24 +147,14 @@ describe('mergeExpertKits', () => {
     expect(mergeExpertKits([removedCatalog], [removedInstalled], [erpConnector])).toEqual([])
   })
 
-  it('reports unavailable connectors and tools missing from referenced connectors', () => {
+  it('checks only MCP tools against referenced connectors and accepts official Harness tools', () => {
     const partial = mergeExpertKits([
-      { ...catalogEntry, connectorRefs: ['erp-mcp', 'desktop-office'], requiredTools: ['sales_summary', 'office.xlsx.create'] },
-    ], [], [erpConnector, {
-      id: 'desktop-office',
-      name: '本地 Office',
-      summary: '桌面 Office 能力',
-      category: 'recommended-system',
-      kind: 'desktop-builtin',
-      scope: 'device',
-      status: 'unavailable',
-      managed: true,
-      toolNames: [],
-    }])
+      { ...catalogEntry, connectorRefs: ['erp-mcp'], requiredTools: ['sales_summary', 'load_workspace_dependencies', 'missing_erp_tool'] },
+    ], [], [erpConnector])
 
     expect(partial[0].readiness).toBe('partial')
     expect(partial[0].connectorIssues).toEqual([
-      '本地 Office：当前不可用',
+      'missing_erp_tool 无可用连接器',
     ])
   })
 

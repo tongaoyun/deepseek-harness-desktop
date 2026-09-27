@@ -106,11 +106,10 @@ it('records missed offline windows without catch-up execution', async () => {
   expect(run).not.toHaveBeenCalled()
   expect((await readLocalSchedules('one'))[0].runs[0].status).toBe('MISSED')
 })
-it('persists a task needing input and pauses its schedule without losing the result link', async () => {
+it('pauses a schedule when its official run does not complete', async () => {
   await due()
-  const outcome = { status: 'needs_input' as const, summary: '缺少销售明细', remaining: ['提供明细文件'], checks: [] }
-  await tickLocalSchedules('one', () => true, async () => ({ outcome }), now)
-  expect((await readLocalSchedules('one'))[0]).toMatchObject({ active: false, runs: [{ status: 'NEEDS_ATTENTION', outcome, taskId: expect.any(String) }] })
+  await tickLocalSchedules('one', () => true, async () => false, now)
+  expect((await readLocalSchedules('one'))[0]).toMatchObject({ active: false, runs: [{ status: 'FAILED', taskId: expect.any(String) }] })
   const rerun = vi.fn(async () => true)
   await tickLocalSchedules('one', () => true, rerun, new Date(now.getTime() + 86400_000))
   expect(rerun).not.toHaveBeenCalled()

@@ -71,7 +71,7 @@ Qoder 套件 `plugin.json` 必须包含 `name`。支持 `skills`、`commands` �
 企业连接器目录必须提供完整配置：HTTP/SSE 包含 `transport`、`url` 和 `authMode`，STDIO 包含 `transport`、`command` 和所需参数。桌面只使用目录当前下发的配置。
 
 - JSON 导入支持单个服务和 `mcpServers`，接受 `type` / `transport`、`args` / `arguments`、`env` / `environment` 字段。显示名称可以使用中文，内部 ID 可自动生成。运行时只读判断以 MCP `tools/list` 返回的 `annotations.readOnlyHint=true` 为准；`destructiveHint=true` 始终按写操作处理。服务端下发的只读标记仅用于目录审核和诊断，不替代运行时注解。
-- HTTP/SSE 支持无认证、自定义请求头、OAuth、员工 Bearer Token 和 ERP 扫码会话。`authMode: "erp-cookie"` 自动使用当前扫码 Cookie，受信任来源和失效处理见[登录与会话](login.md#mcp-使用扫码会话)。
+- HTTP/SSE 支持无认证、自定义请求头、OAuth 和员工 Bearer Token。需要 ERP 数据时使用服务端托管的 `erp-mcp` 连接器，不在桌面端转发 ERP Cookie。
 - 导入逐项检查并报告保存结果，已有 ID 不会覆盖；失败项可以调整后重试。
 - 「已添加」保留停用的个人服务，可编辑配置或删除。停用保留配置，删除同时移除本机凭据。
 - 已启用服务在页面打开或配置变化时检测，区分连接中、待配置、待授权、无访问权限、正常和连接失败；展开工具详情可比较声明与实际发现的工具。

@@ -64,20 +64,14 @@ describe('local DingTalk runtime', () => {
     expect(generatedArtifactPath(imArtifactResult('outside', 'local-im-workspace', '../outside.csv'), calls, 'root', roots)).toBeUndefined()
   })
 
-  it('supports Office artifacts with string roots as well as stable roots', () => {
-    const calls = new Map([['office', 'office_xlsx_create']])
-    const roots = JSON.stringify([tmpdir()])
-    expect(generatedArtifactPath(imArtifactResult('office', 'local-root-1', 'report.xlsx'), calls, 'root', roots)).toBe(resolve(tmpdir(), 'report.xlsx'))
-  })
-  it('recognizes converted and recalculated copies as deliverable outputs, not their sources', () => {
-    const roots = JSON.stringify([{ id: 'office-root', path: tmpdir() }])
+  it('delivers files declared by the official present tool from the session workspace', () => {
+    const root = resolve(tmpdir(), 'xiaoyin-im-present-fixture')
+    const roots = JSON.stringify([{ id: 'local-im-workspace', path: root }])
     const calls = new Map<string, string>()
-    for (const [name, path] of [['office_document_export_pdf', 'report.pdf'], ['office_xlsx_recalculate', 'recalculated.xlsx']]) {
-      const call = { method: 'session.event', params: { sessionId: 'root', event: { type: 'tool/call', data: { callId: name, name, arguments: { rootId: 'office-root', path: 'source.xlsx', outputPath: path } } } } }
-      expect(generatedArtifactPath(call, calls, 'root', roots)).toBeUndefined()
-      expect(generatedArtifactPath(imArtifactResult(name, 'office-root', path), calls, 'root', roots)).toBe(resolve(tmpdir(), path))
-    }
-    expect(calls.size).toBe(0)
+    const call = { method: 'session.event', params: { sessionId: 'root', event: { type: 'tool/call', data: { callId: 'present', name: 'present' } } } }
+    const result = imArtifactResult('present', '', '', false, { turn: 1, files: [{ path: 'report.xlsx' }] })
+    expect(generatedArtifactPath(call, calls, 'root', roots)).toBeUndefined()
+    expect(generatedArtifactPath(result, calls, 'root', roots)).toBe(resolve(root, 'report.xlsx'))
   })
   it('parses in-channel task takeover commands exactly', () => {
     expect(parseTaskCommand('/bind')).toEqual({ kind: 'bind' })
@@ -136,9 +130,9 @@ describe('local DingTalk runtime', () => {
   })
 })
 
-function imArtifactResult(callId: string, rootId: string, path: string, isError = false) {
+function imArtifactResult(callId: string, rootId: string, path: string, isError = false, output: Record<string, unknown> = { rootId, path, size: 20 }) {
   return { method: 'session.event', params: { sessionId: 'root', event: { type: 'tool/result', data: { message: { content: [{
     type: 'tool-result', toolCallId: callId, isError,
-    content: [{ type: 'text', text: JSON.stringify({ rootId, path, size: 20 }) }],
+    content: [{ type: 'text', text: JSON.stringify(output) }],
   }] } } } } }
 }

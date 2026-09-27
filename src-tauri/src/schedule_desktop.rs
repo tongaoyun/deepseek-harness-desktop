@@ -13,7 +13,7 @@ pub async fn schedule_keep_awake(
     app: tauri::AppHandle,
     enabled: Option<bool>,
 ) -> Result<bool, String> {
-    crate::erp_auth::current_employee(&app).await?;
+    crate::dingtalk_auth::current_employee(&app).await?;
     keep_awake(enabled)
 }
 

@@ -19,7 +19,7 @@ execFileSync('xcrun', ['swiftc', fileURLToPath(new URL('../native/computer-use-f
 Object.assign(process.env, {
   DSH_HOME: home, DSH_SESSION_ROOT: join(home, 'sessions'), DSH_CWD: home,
   DSH_MODEL: process.env.DSH_MODEL || 'deepseek-v4-flash', XIAOYIN_TURN_TIMEOUT_MS: '240000',
-  XIAOYIN_ATTACHMENT_ROOT: join(home, 'attachments'), XIAOYIN_LOCAL_FILE_ROOTS: '[]', XIAOYIN_MCP_CONNECTORS: '[]',
+  XIAOYIN_LOCAL_FILE_ROOTS: '[]', XIAOYIN_MCP_CONNECTORS: '[]',
   XIAOYIN_COMPUTER_USE_TOOLS: JSON.stringify(['computer_use_observe', 'computer_use_click', 'computer_use_type', 'computer_use_key', 'computer_use_scroll']),
   XIAOYIN_ALLOW_BROWSER: 'false', DSH_CUSTOM_SKILL_DIRS: '[]',
 })

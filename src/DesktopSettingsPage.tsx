@@ -8,7 +8,6 @@ import type { MemoryProfile } from './memory'
 import { isUpdatableDesktop } from './updater'
 import { buildRuntimeDiagnostics, runtimeDiagnosticsFilename } from './runtimeDiagnostics'
 import type { HarnessProviderCheckResult } from './harness'
-import type { HarnessToolsMode } from './runtimePreferences'
 import type { HarnessHealth } from './useHarnessHealth'
 
 interface DesktopSettingsPageProps {
@@ -29,8 +28,6 @@ interface DesktopSettingsPageProps {
   harnessVersion?: string
   onCheckHarness?: () => Promise<void> | void
   onCheckModelProvider?: () => Promise<HarnessProviderCheckResult>
-  toolsMode?: HarnessToolsMode
-  onToolsModeChange?: (value: HarnessToolsMode) => void
   allowShell?: boolean
   onAllowShellChange?: (value: boolean) => void
   allowLsp?: boolean
@@ -61,8 +58,6 @@ export function DesktopSettingsPage({
   harnessVersion,
   onCheckHarness,
   onCheckModelProvider,
-  toolsMode = 'native',
-  onToolsModeChange = () => undefined,
   allowShell = true,
   onAllowShellChange = () => undefined,
   allowLsp = false,
@@ -100,7 +95,7 @@ export function DesktopSettingsPage({
     </aside>
     <section className="settings-content">
       {visibleSection === 'preferences' ? <DesktopPreferencesPanel /> : visibleSection === 'storage' ? <AttachmentStoragePanel /> : visibleSection === 'runtime'
-        ? <RuntimeCapabilitiesPanel capabilities={harnessCapabilities} health={harnessHealth} healthDetail={harnessHealthDetail} runtime={harnessRuntime} version={harnessVersion} onCheckHarness={onCheckHarness} onCheckModelProvider={onCheckModelProvider} toolsMode={toolsMode} onToolsModeChange={onToolsModeChange} allowShell={allowShell} onAllowShellChange={onAllowShellChange} allowLsp={allowLsp} onAllowLspChange={onAllowLspChange} allowExternalAgents={allowExternalAgents} onAllowExternalAgentsChange={onAllowExternalAgentsChange} allowHooks={allowHooks} onAllowHooksChange={onAllowHooksChange} /> : visibleSection === 'profile'
+        ? <RuntimeCapabilitiesPanel capabilities={harnessCapabilities} health={harnessHealth} healthDetail={harnessHealthDetail} runtime={harnessRuntime} version={harnessVersion} onCheckHarness={onCheckHarness} onCheckModelProvider={onCheckModelProvider} allowShell={allowShell} onAllowShellChange={onAllowShellChange} allowLsp={allowLsp} onAllowLspChange={onAllowLspChange} allowExternalAgents={allowExternalAgents} onAllowExternalAgentsChange={onAllowExternalAgentsChange} allowHooks={allowHooks} onAllowHooksChange={onAllowHooksChange} /> : visibleSection === 'profile'
         ? <section className="profile-settings settings-panel"><header><span><UserRound size={18} /></span><div><h2>个人资料</h2><p>当前登录的企业账号信息。</p></div></header><dl><div><dt>姓名</dt><dd>{displayName}</dd></div><div><dt>员工账号</dt><dd>{employeeId}</dd></div><div><dt>部门</dt><dd>{department || '未设置'}</dd></div><div><dt>岗位</dt><dd>{position || '未设置'}</dd></div><div><dt>企业</dt><dd>{companyName}</dd></div></dl></section>
         : visibleSection === 'memory'
         ? <MemoryPage
@@ -117,7 +112,7 @@ export function DesktopSettingsPage({
   </div>
 }
 
-function RuntimeCapabilitiesPanel({ capabilities, health, healthDetail, runtime, version, onCheckHarness, onCheckModelProvider, toolsMode, onToolsModeChange, allowShell, onAllowShellChange, allowLsp, onAllowLspChange, allowExternalAgents, onAllowExternalAgentsChange, allowHooks, onAllowHooksChange }: { capabilities: Record<string, 'enabled' | 'gated' | 'unconfigured'>; health: HarnessHealth; healthDetail: string; runtime?: string; version?: string; onCheckHarness?: () => Promise<void> | void; onCheckModelProvider?: () => Promise<HarnessProviderCheckResult>; toolsMode: HarnessToolsMode; onToolsModeChange: (value: HarnessToolsMode) => void; allowShell: boolean; onAllowShellChange: (value: boolean) => void; allowLsp: boolean; onAllowLspChange: (value: boolean) => void; allowExternalAgents: boolean; onAllowExternalAgentsChange: (value: boolean) => void; allowHooks: boolean; onAllowHooksChange: (value: boolean) => void }) {
+function RuntimeCapabilitiesPanel({ capabilities, health, healthDetail, runtime, version, onCheckHarness, onCheckModelProvider, allowShell, onAllowShellChange, allowLsp, onAllowLspChange, allowExternalAgents, onAllowExternalAgentsChange, allowHooks, onAllowHooksChange }: { capabilities: Record<string, 'enabled' | 'gated' | 'unconfigured'>; health: HarnessHealth; healthDetail: string; runtime?: string; version?: string; onCheckHarness?: () => Promise<void> | void; onCheckModelProvider?: () => Promise<HarnessProviderCheckResult>; allowShell: boolean; onAllowShellChange: (value: boolean) => void; allowLsp: boolean; onAllowLspChange: (value: boolean) => void; allowExternalAgents: boolean; onAllowExternalAgentsChange: (value: boolean) => void; allowHooks: boolean; onAllowHooksChange: (value: boolean) => void }) {
   const [providerCheck, setProviderCheck] = useState<HarnessProviderCheckResult>()
   const [providerChecking, setProviderChecking] = useState(false)
   const configured = (keys: string[]) => keys.some((key) => capabilities[key] && capabilities[key] !== 'unconfigured')
@@ -141,7 +136,6 @@ function RuntimeCapabilitiesPanel({ capabilities, health, healthDetail, runtime,
     <details className="runtime-advanced">
       <summary>高级设置与诊断</summary>
       <div className="runtime-control-list">
-        <label className="runtime-tools-mode"><span><strong>增强代码执行</strong><small>允许模型生成并运行 TypeScript。权限接近本地命令，仅建议开发任务开启。</small></span><input aria-label="启用增强代码执行" checked={toolsMode !== 'native'} onChange={(event) => onToolsModeChange(event.target.checked ? 'both' : 'native')} role="switch" type="checkbox" /></label>
         {configured(['lsp']) && <label className="runtime-tools-mode"><span><strong>代码语言服务</strong><small>使用管理员已配置的语言服务辅助代码理解。</small></span><input aria-label="启用代码语言服务" checked={allowLsp} onChange={(event) => onAllowLspChange(event.target.checked)} role="switch" type="checkbox" /></label>}
         {configured(['codexSubagent', 'claudeSubagent', 'acpSubagent', 'dshSubagent']) && <label className="runtime-tools-mode"><span><strong>外部协作 Agent</strong><small>允许调用管理员已配置的外部开发 Agent，可能启动本机进程。</small></span><input aria-label="启用外部协作 Agent" checked={allowExternalAgents} onChange={(event) => onAllowExternalAgentsChange(event.target.checked)} role="switch" type="checkbox" /></label>}
         {configured(['codexHooks', 'claudeHooks']) && <label className="runtime-tools-mode"><span><strong>自动化 Hooks</strong><small>允许管理员已配置的 Hooks 在任务期间执行本机命令。</small></span><input aria-label="启用自动化 Hooks" checked={allowHooks} onChange={(event) => onAllowHooksChange(event.target.checked)} role="switch" type="checkbox" /></label>}

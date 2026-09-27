@@ -1,8 +1,8 @@
 import { useEffect, useRef, type RefObject } from 'react'
-import { harnessLiveEvent, harnessProjectionUpdate, listenHarnessNotifications, normalizeHarnessProjection } from './harness'
-import { appendCapabilityNotice, applyLiveEvent, mergeSettledTurn } from './conversation/liveText'
+import { harnessProjectionUpdate, listenHarnessNotifications, normalizeHarnessProjection } from './harness'
+import { appendCapabilityNotice } from './conversation/capabilityNotices'
 import { captureCapabilityNotices, type StoredCapabilityNotice } from './conversation/capabilityNotices'
-import { parseAssistantTurn, type ConversationEntry } from './conversation/types'
+import type { ConversationEntry } from './conversation/types'
 import type { LocalTaskRun, XiaoyinTaskProjection } from './types'
 
 export interface StreamingTaskState {
@@ -60,27 +60,13 @@ export function useHarnessNotifications({
           if (stored) latest.current.onCapabilityNotice?.(taskId, stored)
           return
         }
-        if (projectionUpdate.key === 'xiaoyin.transcript') {
-          const lastSeq = streaming.projectionSeqByKey?.['xiaoyin.transcript'] ?? -1
-          if (projectionUpdate.seq <= lastSeq) return
-          // The wire view carries only the current turn: settled text, tool
-          // cards, approvals and questions in event order.
-          const turn = parseAssistantTurn((projectionUpdate.value as { turn?: unknown })?.turn)
-          if (turn) {
-            streaming.projectionSeqByKey = { ...streaming.projectionSeqByKey, 'xiaoyin.transcript': projectionUpdate.seq }
-            streaming.entries = mergeSettledTurn(streaming.entries, turn)
-            latest.current.onTaskUpdate(taskId, streaming.projection, streaming.entries)
-            if (currentTaskIdRef.current === taskId) latest.current.onCurrentUpdate(streaming.projection, streaming.entries)
-          }
-          return
-        }
-        const lastSeq = projectionUpdate.key === 'xiaoyin.task' ? streaming.projectionSeq ?? -1 : streaming.projectionSeqByKey?.[projectionUpdate.key] ?? -1
+        const lastSeq = projectionUpdate.key === 'xiaoyin.product' ? streaming.projectionSeq ?? -1 : streaming.projectionSeqByKey?.[projectionUpdate.key] ?? -1
         if (projectionUpdate.seq <= lastSeq) return
         const projected = projectionForKey(streaming.projection, projectionUpdate.key, projectionUpdate.value)
         if (!projected) return
         streaming.projectionSeqByKey = { ...streaming.projectionSeqByKey, [projectionUpdate.key]: projectionUpdate.seq }
-        if (projectionUpdate.key === 'xiaoyin.task') streaming.projectionSeq = projectionUpdate.seq
-        const nextProjection = streaming.cancellationRequested && projectionUpdate.key === 'xiaoyin.task'
+        if (projectionUpdate.key === 'xiaoyin.product') streaming.projectionSeq = projectionUpdate.seq
+        const nextProjection = streaming.cancellationRequested && projectionUpdate.key === 'xiaoyin.product'
           ? mergeStoppingProjection(streaming.projection, projected)
           : streaming.projection.retry && projected.status === 'running'
             ? { ...projected, retry: streaming.projection.retry }
@@ -90,22 +76,13 @@ export function useHarnessNotifications({
         if (currentTaskIdRef.current === taskId) latest.current.onCurrentUpdate(nextProjection)
         return
       }
-      // Live overlay: raw root-session events keep the open text segment
-      // typing between `assistant/message` settlements.
-      const live = harnessLiveEvent(notification)
-      if (!live) return
-      const entries = applyLiveEvent(streaming.entries, live)
-      if (entries === streaming.entries) return
-      streaming.entries = entries
-      latest.current.onTaskUpdate(taskId, streaming.projection, streaming.entries)
-      if (currentTaskIdRef.current === taskId) latest.current.onCurrentUpdate(streaming.projection, streaming.entries)
     }).then((dispose) => { if (disposed) disposeSilently(dispose); else unlisten = dispose })
     return () => { disposed = true; disposeSilently(unlisten) }
   }, [currentTaskIdRef, streamingTasksRef])
 }
 
 function projectionForKey(current: XiaoyinTaskProjection, key: string, value: unknown): XiaoyinTaskProjection | undefined {
-  if (key === 'xiaoyin.task') return normalizeHarnessProjection(value)
+  if (key === 'xiaoyin.product') return normalizeHarnessProjection(value)
   if (key === 'tokenUsage' && isTokenUsage(value)) return { ...current, tokenUsage: value }
   if (key === 'contextPressure' && isContextPressure(value)) return { ...current, contextPressure: value }
   return undefined

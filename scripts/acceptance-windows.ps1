@@ -54,9 +54,10 @@ function Test-PackagedHarness {
   $runtimeRoot = Join-Path $installRoot "resources\harness-runtime"
   $node = Join-Path $runtimeRoot "node\node.exe"
   $entry = Join-Path $runtimeRoot "harness-host\dist\index.js"
-  $pptxWorker = Join-Path $runtimeRoot "harness-host\dist\pptx-render-worker.mjs"
   $config = Join-Path $runtimeRoot "harness-host\runtime\cordis.yml"
-  foreach ($required in @($node, $entry, $pptxWorker, $config)) {
+  $primaryManifest = Join-Path $runtimeRoot "primary-runtime\runtime.json"
+  $officeChecker = Join-Path $runtimeRoot "office-skills\scripts\check_office.py"
+  foreach ($required in @($node, $entry, $config, $primaryManifest, $officeChecker)) {
     if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
       throw "安装包缺少 Harness 运行文件：$required"
     }
@@ -91,7 +92,7 @@ $cases = @(
   [ordered]@{ id = "preview"; name = "内置预览"; prompt = "打开刚才修改的说明.txt。"; expected = "文件在小胤右侧预览，不调用记事本或其他外部软件。" },
   [ordered]@{ id = "shell-job"; name = "Shell 与后台任务"; prompt = "在验收目录运行一个命令统计所有文件大小，并汇总结果；不要修改文件。"; expected = "展示精简命令进度和最终结果，无黑色控制台窗口。" },
   [ordered]@{ id = "browser"; name = "浏览器"; prompt = "打开 https://example.com，告诉我页面标题。"; expected = "小胤浏览器出现真实页面而非空白页，并返回 Example Domain。" },
-  [ordered]@{ id = "office"; name = "Office 产物"; prompt = "根据库存.csv生成库存分析.xlsx和库存简报.docx，保存到验收目录。"; expected = "两个文件均生成；点击后在小胤右侧预览；内容和表格可读。" },
+  [ordered]@{ id = "office"; name = "Office 产物"; prompt = "根据库存.csv生成库存分析.xlsx和库存简报.docx，保存到验收目录。"; expected = "两个文件均由官方 Office Skill 生成、重新读取检查并通过 present 交付；点击后可由本机应用打开。" },
   [ordered]@{ id = "credential-vault"; name = "连接器凭据库"; prompt = "创建一个个人测试连接器，密钥填 XY-VAULT-$stamp，保存并重启小胤后重新打开。"; expected = "重启后配置仍在；连接器草稿不展示明文；删除连接器后凭据同时移除。" },
   [ordered]@{ id = "multi-agent"; name = "多 Agent"; prompt = "并行检查验收目录的文本内容、CSV 数据质量和文件结构，最后统一汇总。"; expected = "复杂任务自动出现多个简洁协作活动；只有主 Agent 给最终答复。" },
   [ordered]@{ id = "extension-uninstall"; name = "扩展卸载"; prompt = "卸载本轮安装的单元测试 Skill 和全栈开发专家，重启小胤并核对列表，再尝试调用。"; expected = "扩展不再出现在已安装列表，重启后不恢复，运行时无法加载已卸载的技能。" }

@@ -105,7 +105,7 @@ export function ConnectorJsonModal({ existingIds, onClose, onSave }: { existingI
   }
 
   return <AddDialog title="通过 JSON 导入" description="粘贴 MCP 配置，支持单个连接器或多个 mcpServers 服务。" busy={busy} onClose={close} className="connector-json-add-dialog">
-    <textarea aria-label="MCP JSON 配置" autoFocus disabled={busy} onChange={(event) => { setValue(event.target.value); setFailures({}) }} placeholder={'{\n  "mcpServers": {\n    "我的服务": { "type": "sse", "url": "https://example.com/sse" }\n  }\n}'} spellCheck={false} value={value} />
+    <textarea aria-label="MCP JSON 配置" autoFocus disabled={busy} onChange={(event) => { setValue(event.target.value); setFailures({}) }} placeholder={'{\n  "mcpServers": {\n    "我的服务": { "type": "streamable-http", "url": "https://example.com/mcp" }\n  }\n}'} spellCheck={false} value={value} />
     {preview.error && <div className="kit-error" role="alert">{preview.error}</div>}
     <div aria-live="polite" className="connector-import-results">{preview.items.map((item, index) => {
       const id = item.connector?.id ?? ''

@@ -35,7 +35,7 @@ it('opens creation in a dialog, preserves failed input, and only closes after a 
     expect(input.value).toBe('我的资料')
     await save()
     expect(container.querySelector('[role="dialog"]')).toBeNull()
-    expect(createKnowledgeBase).toHaveBeenLastCalledWith('/knowledge', 'test', '', '', expect.objectContaining({ name: '我的资料', scope: 'PERSONAL' }))
+    expect(createKnowledgeBase).toHaveBeenLastCalledWith('/knowledge', 'test', '', '', expect.objectContaining({ name: '我的资料', scope: 'PERSONAL' }), expect.any(String))
   })
 })
 async function fixture(check: (container: HTMLDivElement) => Promise<void>) {

@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DeepSeekHarnessRuntime } from '../dist/runtime.js'
+import { writeMessagesResponse } from './messages-fixture.mjs'
 
 const root = await mkdtemp(join(tmpdir(), 'xiaoyin-skill-loading-'))
 const sources = [
@@ -16,26 +17,17 @@ for (const [path, name, marker] of sources) {
   await writeFile(join(root, path, 'SKILL.md'), `---\nname: ${name}\ndescription: Verify the installed development skill selection.\n---\n\n# ${name}\n\n${marker}\n`)
 }
 let expected
-let step = 0
 let toolMessages = []
+let step = 0
 const server = createServer(async (request, response) => {
   const chunks = []
   for await (const chunk of request) chunks.push(chunk)
   const body = JSON.parse(Buffer.concat(chunks).toString())
-  toolMessages = body.messages.filter((message) => message.role === 'tool')
-  const current = step++
-  const invoke = current < 2
-  const delta = current === 0 ? { role: 'assistant', tool_calls: [{ index: 0, id: 'discover-skill', type: 'function',
-    function: { name: 'tool_discover', arguments: '{"groups":["skills"]}' } }] }
-    : current === 1 ? { role: 'assistant', tool_calls: [{ index: 0, id: 'load-skill', type: 'function',
-      function: { name: 'skill', arguments: JSON.stringify({ name: 'api-design' }) } }] }
-    : { role: 'assistant', content: '技能加载验收完成。' }
-  response.writeHead(200, { 'Content-Type': 'text/event-stream' })
-  for (const choice of [{ index: 0, delta, finish_reason: null },
-    { index: 0, delta: {}, finish_reason: invoke ? 'tool_calls' : 'stop' }]) {
-    response.write(`data: ${JSON.stringify({ id: 'skill-completion', object: 'chat.completion.chunk', created: 1, model: 'deepseek-v4-flash', choices: [choice] })}\n\n`)
-  }
-  response.end('data: [DONE]\n\n')
+  toolMessages = body.messages
+  const toolCall = step++ === 0
+    ? { id: 'load-skill', name: 'skill', input: { name: 'api-design' } }
+    : undefined
+  writeMessagesResponse(response, { text: toolCall ? '' : '技能加载验收完成。', ...(toolCall ? { toolCalls: [toolCall] } : {}) })
 })
 await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
 try {
@@ -45,12 +37,12 @@ try {
     { name: 'disabled', directories: ['fullstack/code-review'], marker: 'unknown or no longer available' },
     { name: 'uninstalled', directories: [], marker: 'unknown or no longer available' },
   ]) {
-    step = 0
     expected = scenario.marker
+    step = 0
     const runtime = new DeepSeekHarnessRuntime({
       DEEPSEEK_API_KEY: 'local-fixture-only', DEEPSEEK_BASE_URL: `http://127.0.0.1:${server.address().port}`,
       DSH_HOME: join(root, scenario.name), DSH_SESSION_ROOT: join(root, scenario.name, 'sessions'),
-      XIAOYIN_ATTACHMENT_ROOT: join(root, 'attachments'), XIAOYIN_LOCAL_FILE_ROOTS: '[]',
+      XIAOYIN_LOCAL_FILE_ROOTS: '[]',
       XIAOYIN_MCP_CONNECTORS: '[]', XIAOYIN_COMPUTER_USE_TOOLS: '[]', XIAOYIN_ALLOW_BROWSER: 'false',
       DSH_CUSTOM_SKILL_DIRS: JSON.stringify(scenario.directories.map((path) => join(root, path))),
     })

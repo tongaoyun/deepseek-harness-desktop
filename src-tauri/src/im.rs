@@ -1,4 +1,3 @@
-use crate::harness_connectors::desktop_connector_enabled;
 use crate::{
     expert_kits,
     harness::{
@@ -101,8 +100,6 @@ pub struct ImConversationSummary {
     session_id: String,
     message_count: u64,
     status: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    outcome: Option<Value>,
     delivery_status: Option<String>,
     pending_delivery_count: Option<u64>,
     updated_at: String,
@@ -121,8 +118,6 @@ pub struct ImConversationMessage {
     role: String,
     text: String,
     created_at: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    outcome: Option<Value>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -161,7 +156,7 @@ pub async fn configure_local_dingtalk(
 ) -> Result<LocalImStatus, String> {
     validate_client_id(&request.client_id)?;
     validate_harness_context(&request.harness)?;
-    crate::erp_auth::require_employee(&app, &request.harness.employee_id).await?;
+    crate::dingtalk_auth::require_employee(&app, &request.harness.employee_id).await?;
     let employee_id = &request.harness.employee_id;
     let existing = load_configuration(&app, employee_id)?;
     let client_id = request.client_id.trim().to_string();
@@ -218,7 +213,7 @@ pub async fn start_local_im(
     harness: HarnessContext,
 ) -> Result<LocalImStatus, String> {
     validate_harness_context(&harness)?;
-    crate::erp_auth::require_employee(&app, &harness.employee_id).await?;
+    crate::dingtalk_auth::require_employee(&app, &harness.employee_id).await?;
     let Some(stored) = load_configuration(&app, &harness.employee_id)? else {
         manager.stop()?;
         return Ok(stopped_status(None, false));
@@ -242,7 +237,7 @@ pub async fn set_local_im_enabled(
     harness: HarnessContext,
 ) -> Result<LocalImStatus, String> {
     validate_harness_context(&harness)?;
-    crate::erp_auth::require_employee(&app, &harness.employee_id).await?;
+    crate::dingtalk_auth::require_employee(&app, &harness.employee_id).await?;
     let mut stored = load_configuration(&app, &harness.employee_id)?
         .ok_or_else(|| "尚未配置钉钉频道".to_string())?;
     stored.enabled = enabled;
@@ -263,7 +258,7 @@ pub async fn local_im_status(
     app: tauri::AppHandle,
     manager: tauri::State<'_, LocalImManager>,
 ) -> Result<LocalImStatus, String> {
-    let employee_id = crate::erp_auth::current_employee(&app).await?;
+    let employee_id = crate::dingtalk_auth::current_employee(&app).await?;
     if let Some(status) = manager.status(&employee_id)? {
         return Ok(status);
     }
@@ -281,7 +276,7 @@ pub async fn allow_local_im_pairing(
     if conversation_key.trim().is_empty() || conversation_key.len() > 1_024 {
         return Err("IM 会话标识无效".to_string());
     }
-    let employee_id = crate::erp_auth::current_employee(&app).await?;
+    let employee_id = crate::dingtalk_auth::current_employee(&app).await?;
     let mut stored =
         load_configuration(&app, &employee_id)?.ok_or_else(|| "尚未配置钉钉频道".to_string())?;
     if !stored.paired_conversations.contains(&conversation_key) {
@@ -302,7 +297,7 @@ pub async fn revoke_local_im_pairing(
     conversation_key: String,
 ) -> Result<LocalImStatus, String> {
     validate_binding_field("IM 会话标识", &conversation_key, 1_024)?;
-    let employee_id = crate::erp_auth::current_employee(&app).await?;
+    let employee_id = crate::dingtalk_auth::current_employee(&app).await?;
     let mut stored =
         load_configuration(&app, &employee_id)?.ok_or_else(|| "尚未配置钉钉频道".to_string())?;
     stored
@@ -325,7 +320,7 @@ pub async fn bind_local_im_task(
     task_name: String,
     session_id: String,
 ) -> Result<LocalImStatus, String> {
-    let employee_id = crate::erp_auth::current_employee(&app).await?;
+    let employee_id = crate::dingtalk_auth::current_employee(&app).await?;
     manager
         .bind_task(
             &employee_id,
@@ -343,7 +338,7 @@ pub async fn unbind_local_im_task(
     manager: tauri::State<'_, LocalImManager>,
     conversation_key: String,
 ) -> Result<LocalImStatus, String> {
-    let employee_id = crate::erp_auth::current_employee(&app).await?;
+    let employee_id = crate::dingtalk_auth::current_employee(&app).await?;
     manager
         .unbind_task(&employee_id, &conversation_key)?
         .ok_or_else(|| "钉钉频道当前未运行".to_string())
@@ -355,7 +350,7 @@ pub async fn sync_local_im_tasks(
     manager: tauri::State<'_, LocalImManager>,
     tasks: Vec<BindableTask>,
 ) -> Result<Option<LocalImStatus>, String> {
-    let employee_id = crate::erp_auth::current_employee(&app).await?;
+    let employee_id = crate::dingtalk_auth::current_employee(&app).await?;
     manager.sync_tasks(&employee_id, tasks)
 }
 
@@ -365,7 +360,7 @@ pub async fn retry_local_im_delivery(
     manager: tauri::State<'_, LocalImManager>,
     conversation_key: String,
 ) -> Result<LocalImStatus, String> {
-    let employee_id = crate::erp_auth::current_employee(&app).await?;
+    let employee_id = crate::dingtalk_auth::current_employee(&app).await?;
     manager
         .retry_delivery(&employee_id, &conversation_key)?
         .ok_or_else(|| "钉钉频道当前未运行".to_string())
@@ -378,7 +373,7 @@ pub async fn route_local_im_schedule(
     schedule_id: String,
     conversation_key: String,
 ) -> Result<LocalImStatus, String> {
-    let employee_id = crate::erp_auth::current_employee(&app).await?;
+    let employee_id = crate::dingtalk_auth::current_employee(&app).await?;
     manager
         .route_schedule(&employee_id, &schedule_id, &conversation_key)?
         .ok_or_else(|| "钉钉频道当前未运行".to_string())
@@ -394,7 +389,7 @@ pub async fn remove_local_dingtalk(
     app: tauri::AppHandle,
     manager: tauri::State<'_, LocalImManager>,
 ) -> Result<LocalImStatus, String> {
-    let employee_id = crate::erp_auth::current_employee(&app).await?;
+    let employee_id = crate::dingtalk_auth::current_employee(&app).await?;
     manager.stop()?;
     let path = configuration_path(&app, &employee_id)?;
     if path.exists() {
@@ -430,8 +425,11 @@ impl LocalImManager {
             .join(crate::harness::employee_namespace(&context.employee_id));
         fs::create_dir_all(&im_workspace)
             .map_err(|error| format!("无法创建 IM 工作目录：{error}"))?;
-        let allow_browser =
-            desktop_connector_enabled(&context.capability_snapshot.connectors, "desktop-browser");
+        let allow_browser = context
+            .capability_snapshot
+            .local_tools
+            .iter()
+            .any(|tool| tool.starts_with("browser_"));
         let connectors =
             runtime_connectors(&context.capability_snapshot.connectors, &profile, true)?;
         let fingerprint = RuntimeFingerprint {
@@ -443,9 +441,12 @@ impl LocalImManager {
                 path: im_workspace.to_string_lossy().into_owned(),
             }],
             allow_browser,
-            allowed_computer_tools: Vec::new(),
+            allowed_computer_tools: profile
+                .allowed_computer_tools
+                .into_iter()
+                .filter(|tool| context.capability_snapshot.local_tools.contains(tool))
+                .collect(),
             execution_mode: "agent".to_string(),
-            tools_mode: "native".to_string(),
             allow_shell: context.allow_shell,
             allow_lsp: context.allow_lsp,
             allow_external_agents: context.allow_external_agents,
@@ -943,11 +944,12 @@ mod tests {
             "litellmBaseUrl": "http://litellm.internal/v1",
             "knowledgeEndpoint": "http://xiaoyin-server.internal/api/v1/knowledge-bases",
             "capabilitySnapshot": {
-                "schemaVersion": 1,
+                "schemaVersion": 2,
                 "createdAt": "2026-09-11T00:00:00Z",
                 "selections": [],
                 "artifacts": [],
                 "implicitArtifacts": [],
+                "localTools": [],
                 "requestedConnectorIds": [],
                 "requestedKnowledgeBaseRefs": []
             },
@@ -994,23 +996,25 @@ mod tests {
 
     #[test]
     fn delivery_failure_survives_the_native_status_bridge_without_failing_execution() {
-        let outcome = json!({ "status": "partial", "summary": "缺少销售数据",
-            "remaining": ["补充销售数据"], "checks": [] });
         let status = parse_runtime_status(json!({
             "provider": "DINGTALK", "configured": true, "connected": true, "state": "DEGRADED",
             "clientId": "test", "accessPolicy": "open", "notifyTaskResults": false,
             "conversations": [{ "conversationKey": "test:private:one", "conversationType": "private",
                 "conversationTitle": "验收", "senderNick": "测试员工", "lastMessage": "生成文件", "lastResponse": "文件已生成",
                 "sessionId": "session", "messageCount": 1, "status": "COMPLETED", "updatedAt": "now",
-                "deliveryStatus": "FAILED", "pendingDeliveryCount": 1, "outcome": outcome,
+                "deliveryStatus": "FAILED", "pendingDeliveryCount": 1,
                 "messages": [{ "id": "reply", "role": "assistant", "text": "文件已生成",
-                    "createdAt": "now", "outcome": outcome }] }]
+                    "createdAt": "now" }] }]
         }), true, true).unwrap();
         let value = serde_json::to_value(status).unwrap();
         assert_eq!(value["conversations"][0]["status"], "COMPLETED");
         assert_eq!(value["conversations"][0]["deliveryStatus"], "FAILED");
         assert_eq!(value["conversations"][0]["pendingDeliveryCount"], 1);
-        assert_eq!(value["conversations"][0]["outcome"], outcome);
-        assert_eq!(value["conversations"][0]["messages"][0]["outcome"], outcome);
+        assert!(value["conversations"][0].get("outcome").is_none());
+        assert!(
+            value["conversations"][0]["messages"][0]
+                .get("outcome")
+                .is_none()
+        );
     }
 }

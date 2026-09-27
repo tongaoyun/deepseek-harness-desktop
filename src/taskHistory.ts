@@ -1,5 +1,4 @@
 import { invoke, isTauri } from '@tauri-apps/api/core'
-import type { ConversationEntry } from './conversation/types'
 import { appendStoredCapabilityNotice, captureCapabilityNotices, restoreCapabilityNotices, type StoredCapabilityNotice } from './conversation/capabilityNotices'
 import { captureInteractionSegments, restoreInteractionSegments } from './conversation/interactionSegments'
 import type { LocalTaskRun } from './types'
@@ -144,9 +143,6 @@ export async function loadTaskById(employeeId: string, id: string): Promise<Loca
   if (!isLocalTask(task)) throw invalidTaskError(task)
   const indexed = canonicalizeTaskProjection(task)
   const recovered = (await recoverInterruptedTasksWithHarness(employeeId, [indexed], new Date().toISOString(), true))[0]
-  if (indexed.sessionId && indexed.entries.length === 0 && recovered.entries.length === 0) {
-    throw new Error('Harness 会话内容暂时无法读取，无法打开完整任务；请稍后重试')
-  }
   return recovered
 }
 
@@ -223,17 +219,12 @@ export async function recoverInterruptedTasksWithHarness(employeeId: string, tas
     if (!result) return task.status === 'RUNNING' ? recoverWithLocalNotices(local, now) : local
     if (task.status === 'RUNNING' && (!result.projection || !['completed', 'failed'].includes(result.status))) return recoverWithLocalNotices(local, now)
     const status = result.status === 'completed' ? 'COMPLETED' : result.status === 'failed' ? 'FAILED' : task.status
-    // The transcript is the authoritative rebuild from the Harness session log.
-    const transcript = result.transcript?.map((entry) => entry as unknown as ConversationEntry)
-    const entries = transcript?.length ? restoreInteractionSegments(task.sessionId,
-      restoreCapabilityNotices(task.sessionId, transcript, task.capabilityNotices,
-        status === 'FAILED' ? 'failed' : 'completed'), task.interactionSegments) : undefined
     return {
       ...task,
       status: status as LocalTaskRun['status'],
       updatedAt: result.updatedAt || task.updatedAt,
       ...(result.projection ? { projection: result.projection } : {}),
-      ...(entries ? { entries, messagePreview: transcriptPreview(entries) } : local === task ? {} : { entries: localEntries }),
+      ...(local === task ? {} : { entries: localEntries }),
     }
   })
 }
@@ -246,13 +237,6 @@ function restoreLocalNotices(task: LocalTaskRun): LocalTaskRun {
   const entries = restoreInteractionSegments(task.sessionId,
     restoreCapabilityNotices(task.sessionId, task.entries, task.capabilityNotices), task.interactionSegments)
   return entries === task.entries ? task : { ...task, entries }
-}
-
-function transcriptPreview(entries: ConversationEntry[]): string {
-  const last = entries.at(-1)
-  if (!last) return ''
-  if (last.role === 'user') return last.text.slice(-500)
-  return last.segments.filter((segment) => segment.kind === 'text').map((segment) => segment.text).join('').slice(-500)
 }
 
 export async function persistTaskHistory(employeeId: string, task: LocalTaskRun): Promise<void> {

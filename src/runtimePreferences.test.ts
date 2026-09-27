@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { loadHarnessExternalAgentsEnabled, loadHarnessHooksEnabled, loadHarnessLspEnabled, loadHarnessShellEnabled, loadHarnessToolsMode, saveHarnessExternalAgentsEnabled, saveHarnessHooksEnabled, saveHarnessLspEnabled, saveHarnessShellEnabled, saveHarnessToolsMode } from './runtimePreferences'
+import { loadHarnessExternalAgentsEnabled, loadHarnessHooksEnabled, loadHarnessLspEnabled, loadHarnessShellEnabled, saveHarnessExternalAgentsEnabled, saveHarnessHooksEnabled, saveHarnessLspEnabled, saveHarnessShellEnabled } from './runtimePreferences'
 
 describe('runtime preferences', () => {
   beforeEach(() => {
@@ -11,8 +11,7 @@ describe('runtime preferences', () => {
     })
   })
 
-  it('defaults to the existing native tools and enabled shell behavior', () => {
-    expect(loadHarnessToolsMode('employee-one')).toBe('native')
+  it('defaults to enabled shell behavior and disabled optional capabilities', () => {
     expect(loadHarnessShellEnabled('employee-one')).toBe(true)
     expect(loadHarnessLspEnabled('employee-one')).toBe(false)
     expect(loadHarnessExternalAgentsEnabled('employee-one')).toBe(false)
@@ -20,17 +19,14 @@ describe('runtime preferences', () => {
   })
 
   it('round-trips explicit local capability choices without sharing them between employees', () => {
-    expect(saveHarnessToolsMode('employee-one', 'both')).toBe(true)
     expect(saveHarnessShellEnabled('employee-one', false)).toBe(true)
     expect(saveHarnessLspEnabled('employee-one', true)).toBe(true)
     expect(saveHarnessExternalAgentsEnabled('employee-one', true)).toBe(true)
     expect(saveHarnessHooksEnabled('employee-one', true)).toBe(true)
-    expect(loadHarnessToolsMode('employee-one')).toBe('both')
     expect(loadHarnessShellEnabled('employee-one')).toBe(false)
     expect(loadHarnessLspEnabled('employee-one')).toBe(true)
     expect(loadHarnessExternalAgentsEnabled('employee-one')).toBe(true)
     expect(loadHarnessHooksEnabled('employee-one')).toBe(true)
-    expect(loadHarnessToolsMode('employee-two')).toBe('native')
     expect(loadHarnessShellEnabled('employee-two')).toBe(true)
     expect(loadHarnessLspEnabled('employee-two')).toBe(false)
     expect(loadHarnessExternalAgentsEnabled('employee-two')).toBe(false)
@@ -42,12 +38,10 @@ describe('runtime preferences', () => {
       getItem: () => { throw new Error('storage unavailable') },
       setItem: () => { throw new Error('storage unavailable') },
     })
-    expect(loadHarnessToolsMode('employee-one')).toBe('native')
     expect(loadHarnessShellEnabled('employee-one')).toBe(false)
     expect(loadHarnessLspEnabled('employee-one')).toBe(false)
     expect(loadHarnessExternalAgentsEnabled('employee-one')).toBe(false)
     expect(loadHarnessHooksEnabled('employee-one')).toBe(false)
-    expect(saveHarnessToolsMode('employee-one', 'ptc')).toBe(false)
     expect(saveHarnessShellEnabled('employee-one', false)).toBe(false)
     expect(saveHarnessLspEnabled('employee-one', false)).toBe(false)
     expect(saveHarnessExternalAgentsEnabled('employee-one', true)).toBe(false)

@@ -4,11 +4,11 @@ pub async fn clipboard_file_paths(
     app: tauri::AppHandle,
     grants: tauri::State<'_, crate::feedback_images::FeedbackImageGrants>,
 ) -> Result<Vec<String>, String> {
-    crate::erp_auth::current_employee(&app).await?;
-    let epoch = crate::erp_auth::mcp::session_epoch();
+    crate::dingtalk_auth::current_employee(&app).await?;
+    let epoch = crate::dingtalk_auth::mcp::session_epoch();
     let paths = platform_paths()?;
-    crate::erp_auth::current_employee(&app).await?;
-    if crate::erp_auth::mcp::session_epoch() != epoch {
+    crate::dingtalk_auth::current_employee(&app).await?;
+    if crate::dingtalk_auth::mcp::session_epoch() != epoch {
         return Err("当前登录账号已变更，请重新粘贴文件".into());
     }
     grants.register(

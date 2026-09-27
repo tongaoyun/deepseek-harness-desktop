@@ -66,7 +66,7 @@ export async function checkHarnessCommand(command, args, env = process.env, time
           }
         }
         if (requests[index][0] === 'host.self-test') {
-          const required = ['local-files', 'office-docx', 'office-xlsx', 'office-pdf', 'native-shell']
+          const required = ['local-files', 'office-runtime', 'office-skills', 'libreoffice-kit', 'native-shell']
           if (process.platform === 'win32') required.push('computer-use')
           const passed = new Set((Array.isArray(value.result.checks) ? value.result.checks : []).filter((check) => check.passed === true).map((check) => check.key))
           const missing = required.filter((key) => !passed.has(key))
@@ -96,20 +96,20 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const args = [resolve(host, 'dist/index.js')]
   const env = {
     ...process.env, DSH_CORDIS_CONFIG: resolve(host, 'runtime/cordis.yml'),
+    DSH_BUNDLED_PRIMARY_RUNTIME: resolve(host, '..', 'primary-runtime'),
     XIAOYIN_ALLOW_SHELL: 'true', XIAOYIN_APPROVE_SHELL: 'false',
-    XIAOYIN_TOOLS_MODE: 'native',
   }
   const timeoutMs = harnessSmokeTimeout()
   await checkHarnessCommand(command, args, env, timeoutMs, {
     selfTest: mode === '--self-test',
-    requiredCapabilities: ['sessionPersistence', 'sessionQuery', 'sessionReference', 'present'],
-    expectedCapabilities: { shell: 'enabled', persistentTerminal: 'enabled', codeRuntime: 'gated', sessionQuery: 'enabled', sessionQueryTools: 'enabled', mcpClient: 'gated' },
+    requiredCapabilities: ['sessionPersistence', 'sessionQuery', 'sessionReference', 'present', 'workspaceChanges', 'workspaceDependencies', 'officeSkills', 'libreOfficeKit'],
+    expectedCapabilities: { shell: 'enabled', persistentTerminal: 'enabled', sessionQuery: 'enabled', sessionQueryTools: 'enabled', mcpClient: 'gated' },
   })
   await checkHarnessCommand(command, args, {
-    ...env, XIAOYIN_ALLOW_SHELL: 'false', XIAOYIN_TOOLS_MODE: 'ptc', XIAOYIN_ENABLE_SESSION_QUERY_TOOLS: 'false',
+    ...env, XIAOYIN_ALLOW_SHELL: 'false', XIAOYIN_ENABLE_SESSION_QUERY_TOOLS: 'false',
   }, timeoutMs, {
-    expectedCapabilities: { shell: 'gated', persistentTerminal: 'gated', codeRuntime: 'enabled', sessionQuery: 'enabled', sessionQueryTools: 'gated', mcpClient: 'gated' },
+    expectedCapabilities: { shell: 'gated', persistentTerminal: 'gated', sessionQuery: 'enabled', sessionQueryTools: 'gated', mcpClient: 'gated' },
   })
-  console.log('Harness native and restricted PTC capability policies verified')
+  console.log('Harness native and restricted capability policies verified')
   if (mode === '--self-test') console.log('Installed Harness local capability self-test verified')
 }

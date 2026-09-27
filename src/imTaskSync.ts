@@ -2,7 +2,6 @@ import { normalizeHarnessProjection } from './harness'
 import type { ConversationEntry } from './conversation/types'
 import type { LocalImStatus } from './localIm'
 import type { LocalTaskRun } from './types'
-import { parseTaskOutcome, taskOutcomeLabel, unverifiedTaskOutcome } from './taskOutcome'
 
 export function mergeImStatusIntoTasks(
   tasks: LocalTaskRun[], status: LocalImStatus,
@@ -28,21 +27,20 @@ export function mergeImStatusIntoTasks(
             role: 'assistant' as const,
             status: 'completed' as const,
             segments: [{ kind: 'text' as const, id: `${message.id}:text`, text: message.text }],
-            meta: message.outcome ? { outcome: message.outcome } : {},
+            meta: {},
           })
     let projection = task.projection
     if (current) {
-      const outcome = parseTaskOutcome(latest.outcome)
       const storedProjection = latest.taskProjection ? normalizeHarnessProjection(latest.taskProjection) : undefined
       projection = storedProjection ?? (latest.status === 'RUNNING'
         ? { ...projection, status: 'running', activity: '正在通过钉钉继续任务', updatedAt: latest.updatedAt }
         : latest.status === 'FAILED'
           ? { ...projection, status: 'failed', activity: '钉钉任务执行失败', updatedAt: latest.updatedAt, completedAt: latest.updatedAt }
-          : { ...projection, status: 'completed', activity: taskOutcomeLabel(outcome ?? unverifiedTaskOutcome()), outcome: outcome ?? unverifiedTaskOutcome(), updatedAt: latest.updatedAt, completedAt: latest.updatedAt })
+          : { ...projection, status: 'completed', activity: '任务已完成', updatedAt: latest.updatedAt, completedAt: latest.updatedAt })
       if (latest.status !== 'RUNNING') {
         projection = latest.status === 'FAILED'
           ? { ...projection, status: 'failed', activity: '钉钉任务执行失败', updatedAt: latest.updatedAt, completedAt: latest.updatedAt }
-          : { ...projection, status: 'completed', activity: taskOutcomeLabel(outcome ?? unverifiedTaskOutcome()), outcome: outcome ?? unverifiedTaskOutcome(), updatedAt: latest.updatedAt, completedAt: latest.updatedAt }
+          : { ...projection, status: 'completed', activity: '任务已完成', updatedAt: latest.updatedAt, completedAt: latest.updatedAt }
       }
     }
     const taskStatus = latest.status === 'RUNNING' ? 'RUNNING' : latest.status === 'FAILED' ? 'FAILED' : 'COMPLETED'
@@ -60,5 +58,4 @@ export function mergeImStatusIntoTasks(
   })
   return { tasks: changed.length > 0 ? next.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)) : tasks, changed }
 }
-
 

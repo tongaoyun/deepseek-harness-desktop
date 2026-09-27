@@ -18,7 +18,7 @@ await writeFile(warmup, '小胤临时验收窗口，请勿修改此文件。')
 Object.assign(process.env, {
   DSH_HOME: directory, DSH_SESSION_ROOT: join(directory, 'sessions'), DSH_CWD: directory,
   DSH_MODEL: process.env.DSH_MODEL || 'deepseek-v4-flash', XIAOYIN_TURN_TIMEOUT_MS: '300000',
-  XIAOYIN_ATTACHMENT_ROOT: join(directory, 'attachments'), XIAOYIN_LOCAL_FILE_ROOTS: '[]',
+  XIAOYIN_LOCAL_FILE_ROOTS: '[]',
   XIAOYIN_MCP_CONNECTORS: '[]', XIAOYIN_ALLOW_BROWSER: 'false', DSH_CUSTOM_SKILL_DIRS: '[]',
   XIAOYIN_COMPUTER_USE_TOOLS: JSON.stringify(['computer_use_observe', 'computer_use_click', 'computer_use_type', 'computer_use_key', 'computer_use_scroll']),
 })

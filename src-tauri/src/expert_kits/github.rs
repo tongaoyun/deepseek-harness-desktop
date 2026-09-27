@@ -222,7 +222,7 @@ pub async fn inspect_github_skills(
     app: tauri::AppHandle,
     source_url: String,
 ) -> Result<GithubSkillInspection, String> {
-    crate::erp_auth::current_employee(&app).await?;
+    crate::dingtalk_auth::current_employee(&app).await?;
     let source = github_source(&source_url)?;
     let mut url = reqwest::Url::parse("https://codeload.github.com").unwrap();
     url.path_segments_mut()
@@ -288,7 +288,7 @@ pub async fn install_github_skill(
     archive_id: String,
     path: String,
 ) -> Result<InstalledExpertKit, String> {
-    crate::erp_auth::current_employee(&app).await?;
+    crate::dingtalk_auth::current_employee(&app).await?;
     validate_sha256(&archive_id)?;
     let cache = app
         .path()

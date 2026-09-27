@@ -48,7 +48,7 @@ test('waits for the capability self-test and rejects missing or failed checks', 
       setTimeout(() => {
         pending = false;
         const status = { 'host.initialize': 'initialized', 'host.health': 'ready', 'host.self-test': 'passed', 'host.shutdown': 'closed' }[r.method];
-        const checks = ['local-files', 'office-docx', 'office-xlsx', 'office-pdf', 'native-shell', 'computer-use']
+        const checks = ['local-files', 'office-runtime', 'office-skills', 'libreoffice-kit', 'native-shell', 'computer-use']
           .filter(key => key !== process.env.OMIT_CHECK)
           .map(key => ({ key, passed: key !== process.env.FAIL_CHECK }));
         console.log(JSON.stringify({ id: r.id, result: { status, checks } }));
@@ -57,7 +57,7 @@ test('waits for the capability self-test and rejects missing or failed checks', 
     lines.on('close', () => process.exit(pending || methods.length ? 3 : 0));
   `
   await checkHarnessCommand(process.execPath, ['-e', fixture], process.env, 5000, { selfTest: true })
-  for (const env of [{ OMIT_CHECK: 'office-pdf' }, { FAIL_CHECK: 'native-shell' }]) {
+  for (const env of [{ OMIT_CHECK: 'office-skills' }, { FAIL_CHECK: 'native-shell' }]) {
     await assert.rejects(
       checkHarnessCommand(process.execPath, ['-e', fixture], { ...process.env, ...env }, 5000, { selfTest: true }),
       /Installed capabilities were not verified/,
@@ -95,13 +95,13 @@ test('verifies enabled and gated runtime capabilities exactly', async () => {
     lines.on('line', line => {
       const r = JSON.parse(line);
       const result = r.method === 'host.health'
-        ? { status: 'ready', capabilities: { shell: 'gated', persistentTerminal: 'gated', codeRuntime: 'enabled' } }
+        ? { status: 'ready', capabilities: { shell: 'gated', persistentTerminal: 'gated' } }
         : { status: r.method === 'host.initialize' ? 'initialized' : 'closed' };
       console.log(JSON.stringify({ id: r.id, result }));
     });
   `
   await checkHarnessCommand(process.execPath, ['-e', fixture], process.env, 5000, {
-    expectedCapabilities: { shell: 'gated', persistentTerminal: 'gated', codeRuntime: 'enabled' },
+    expectedCapabilities: { shell: 'gated', persistentTerminal: 'gated' },
   })
   await assert.rejects(
     checkHarnessCommand(process.execPath, ['-e', fixture], process.env, 5000, {

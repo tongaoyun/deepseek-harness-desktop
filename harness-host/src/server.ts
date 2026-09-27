@@ -144,10 +144,11 @@ export class HostServer {
           this.emit(success(value.id, await this.runtime.steer(input.sessionId, input.text)))
           return
         }
-        case 'session.regenerate': {
+        case 'session.fork': {
           const sessionId = parseSessionId(value.params)
-          if (!this.runtime.regenerate) throw new Error('Session regeneration is unavailable')
-          this.emit(success(value.id, await this.runtime.regenerate(sessionId)))
+          const atSeq = parseOptionalSequence(value.params)
+          if (!this.runtime.fork) throw new Error('Session forking is unavailable')
+          this.emit(success(value.id, await this.runtime.fork(sessionId, atSeq)))
           return
         }
         case 'session.interrupt': {
@@ -177,6 +178,14 @@ function parseSessionId(params: unknown): string {
   const sessionId = (params as Record<string, unknown>).sessionId
   if (typeof sessionId !== 'string' || !/^[-a-zA-Z0-9_:.]{1,256}$/u.test(sessionId)) throw new Error('session.inspect sessionId is invalid')
   return sessionId
+}
+
+function parseOptionalSequence(params: unknown): number | undefined {
+  if (typeof params !== 'object' || params === null || Array.isArray(params)) return undefined
+  const value = (params as Record<string, unknown>).atSeq
+  if (value === undefined) return undefined
+  if (!Number.isSafeInteger(value) || (value as number) < 0) throw new Error('session.fork atSeq is invalid')
+  return value as number
 }
 
 function parseSessionSearch(params: unknown): { sessionIds: string[]; query: string; limit: number; cursor?: string } {

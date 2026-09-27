@@ -6,6 +6,7 @@ import { createInterface } from 'node:readline'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { toolNames, toolResultMessages, writeMessagesResponse } from './messages-fixture.mjs'
 
 const root = await mkdtemp(join(tmpdir(), 'xiaoyin-skill-tools-'))
 const host = resolve(process.env.XIAOYIN_ACCEPTANCE_HOST ?? fileURLToPath(new URL('..', import.meta.url)))
@@ -15,17 +16,13 @@ const model = createServer(async (request, response) => {
   const chunks = []
   for await (const chunk of request) chunks.push(chunk)
   const body = JSON.parse(Buffer.concat(chunks).toString())
-  for (const tool of body.tools ?? []) tools.add(tool.function.name)
-  receipts.push(...body.messages.filter((message) => message.role === 'tool'))
-  const name = ['tool_discover', 'skills_search', 'skills_install'][step]
-  const args = step++ === 0 ? { groups: ['skills'] } : step === 2 ? { query: 'report' } : { id: 'report' }
-  const delta = name ? { role: 'assistant', tool_calls: [{ index: 0, id: `skill-${step}`, type: 'function', function: { name, arguments: JSON.stringify(args) } }] }
-    : { role: 'assistant', content: '技能已安装，下一轮任务可用。' }
-  response.writeHead(200, { 'content-type': 'text/event-stream' })
-  for (const choice of [{ index: 0, delta, finish_reason: null }, { index: 0, delta: {}, finish_reason: name ? 'tool_calls' : 'stop' }]) {
-    response.write(`data: ${JSON.stringify({ id: 'skill-tools', object: 'chat.completion.chunk', created: 1, model: 'deepseek-v4-flash', choices: [choice] })}\n\n`)
-  }
-  response.end('data: [DONE]\n\n')
+  for (const name of toolNames(body)) tools.add(name)
+  receipts.push(...toolResultMessages(body))
+  const name = ['skills_search', 'skills_install'][step]
+  const current = step++
+  const args = current === 0 ? { query: 'report' } : { id: 'report' }
+  const toolCall = name ? { id: `skill-${step}`, name, input: args } : undefined
+  writeMessagesResponse(response, { text: toolCall ? '' : '技能已安装，下一轮任务可用。', ...(toolCall ? { toolCalls: [toolCall] } : {}) })
 })
 await new Promise((done) => model.listen(0, '127.0.0.1', done))
 let child

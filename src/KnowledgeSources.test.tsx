@@ -8,7 +8,7 @@ import type { KnowledgeSearchHit } from './types'
 
 vi.mock('./api', () => ({ loadKnowledgeSource: vi.fn() }))
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
-const hit: KnowledgeSearchHit = { sourceId: '12', knowledgeBaseId: 'kb', knowledgeBaseName: '制度', documentId: 'doc', filename: '报销.md', locator: '正文', content: '历史摘录', score: 1 }
+const hit: KnowledgeSearchHit = { sourceId: '123e4567-e89b-12d3-a456-426614174000', knowledgeBaseId: 'kb', knowledgeBaseName: '制度', documentId: 'doc', filename: '报销.md', locator: '正文', content: '历史摘录', score: 1 }
 const context = { endpoint: '/knowledge', employeeId: 'one', teamId: '', accessToken: '' }
 beforeEach(() => vi.resetAllMocks())
 

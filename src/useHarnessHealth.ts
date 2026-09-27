@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { connectorDiagnosticsAvailable, probeHarnessHost, selfTestLocalCapabilities, type HarnessHostHealth } from './harness'
-import type { HarnessToolsMode } from './runtimePreferences'
 
 export type HarnessHealth = 'idle' | 'checking' | 'ready' | 'degraded'
 
-export function useHarnessHealth(authenticated: boolean, modelConfigured = false, allowShell = true, allowLsp = false, allowExternalAgents = false, allowHooks = false, toolsMode: HarnessToolsMode = 'native') {
+export function useHarnessHealth(authenticated: boolean, modelConfigured = false, allowShell = true, allowLsp = false, allowExternalAgents = false, allowHooks = false) {
   const [health, setHealth] = useState<HarnessHealth>('idle')
   const [detail, setDetail] = useState('本地执行环境将在任务开始时按需启动')
   const [hostHealth, setHostHealth] = useState<HarnessHostHealth>()
@@ -20,7 +19,7 @@ export function useHarnessHealth(authenticated: boolean, modelConfigured = false
     }
     setHealth('idle')
     setDetail('本地执行环境将在任务开始时按需启动')
-  }, [allowExternalAgents, allowHooks, allowLsp, allowShell, authenticated, modelConfigured, toolsMode])
+  }, [allowExternalAgents, allowHooks, allowLsp, allowShell, authenticated, modelConfigured])
 
   const recover = useCallback(async () => {
     if (!authenticated || !connectorDiagnosticsAvailable()) return
@@ -29,7 +28,7 @@ export function useHarnessHealth(authenticated: boolean, modelConfigured = false
     setHealth('checking')
     setDetail('正在检查本地执行环境')
     try {
-      const result = await probeHarnessHost(modelConfigured, allowShell, allowLsp, allowExternalAgents, allowHooks, toolsMode)
+      const result = await probeHarnessHost(modelConfigured, allowShell, allowLsp, allowExternalAgents, allowHooks)
       if (diagnosticRun.current !== run) return
       setHostHealth(result)
       if (result.status !== 'ready') throw new Error(`本地执行环境状态异常：${result.status}`)
@@ -43,7 +42,7 @@ export function useHarnessHealth(authenticated: boolean, modelConfigured = false
       setDetail(message(reason))
       setHostHealth(undefined)
     }
-  }, [allowExternalAgents, allowHooks, allowLsp, allowShell, authenticated, modelConfigured, toolsMode])
+  }, [allowExternalAgents, allowHooks, allowLsp, allowShell, authenticated, modelConfigured])
 
   const reportInfrastructureFailure = useCallback((reason: string) => {
     const run = diagnosticRun.current + 1

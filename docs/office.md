@@ -1,39 +1,32 @@
-# Office 工具
+# Office 文档能力
 
-本机工具支持 DOCX、XLSX、PPTX 和 PDF 的读取、生成、检查与交付。文件访问限定在任务授权目录。
+小胤直接使用 DeepSeek Harness `0.1.7-rc.2` 的官方 Office 能力，不维护独立的文档解析或生成引擎。
 
-PPTX 在独立进程中生成，单次执行最长 30 秒，输入上限 8 MiB，输出上限 25 MiB。超时、异常或超限时终止生成，不写入目标文件。
+## 运行方式
 
-## 工具职责
+- `office-docx`：Word 文档读取、创建、修改和结构检查。
+- `office-xlsx`：Excel 表格读取、计算、创建、修改和结构检查。
+- `office-pptx`：PowerPoint 读取、创建、修改和结构检查。
+- `load_workspace_dependencies`：返回随安装包提供的 Python 3.12、Office Python 库及其固定版本。
+- LibreOffice Kit：负责格式转换、公式重算和页面渲染。
+- `present`：声明最终交付文件。
 
-| 工具 | 作用 |
-| --- | --- |
-| `office_document_read` | 提取文档内容与表格数据 |
-| `office_document_check` | 只读检查结构、公式错误与缺失计算结果 |
-| `office_pdf_page` | 渲染指定 PDF 页供视觉核对 |
-| `office_engine_status` | 检测 LibreOffice |
-| `office_xlsx_recalculate` | 真实重算 XLSX 并保存新副本 |
-| `office_document_export_pdf` | 将 DOCX、XLSX、PPTX 导出为 PDF |
-| `office_xlsx_format_sheet` | 调整列宽、换行、估算行高和打印范围 |
+任务开始后，Agent 从技能目录加载对应的官方 Office 技能，按技能原文调用随包运行时。安装包固定并校验 Python、`python-docx`、`python-pptx`、`openpyxl`、`pandas`、Pillow、lxml、XlsxWriter 和 LibreOffice Kit；不依赖员工电脑预装 Python 或 LibreOffice。
 
-转换工具接收 `rootId`、源文件 `path` 和新文件 `outputPath`。保存成功后返回路径、哈希及检查结果；源文件和已存在的目标保持不变。
+## 文件边界
 
-## 公式与检查
+当前任务的主要工作目录是 Harness 官方文件系统的根目录。小胤负责员工工作目录选择、授权和多目录产品能力；Office 文件的读取、修改、检查与交付由 Harness 工作流完成。
 
-公式使用 `{"formula":"C2*D2"}` 显式声明，不接受调用方伪造缓存结果。以 `=` 开头的普通字符串按文本存储。只有真实重算后才能核对计算结果，数值 `0` 和布尔 `false` 均保留。
+IM 附件只保存原文件，不提前生成第二份解析结果。附件内容是不可信数据；Agent 必须加载相应技能并读取原文件后才能给出结论。
 
-结构检查最多扫描 100000 个非空单元格、报告 100 项问题，并标记截断。表格格式调整最多处理 2000 行、100 列，不自动处理合并单元格。结构检查和行高估算不能替代公式业务校验与导出后的页面核对。
+## 验收
 
-PDF 每次渲染一页，宽度 1400 像素，文件上限 25 MiB。视觉核对需要可处理图像的模型；扫描件文本识别与页面渲染是不同步骤。
+本机能力自检检查以下事实：
 
-## LibreOffice
+1. Primary Runtime 清单与当前平台、架构一致。
+2. 随包 Python 能导入全部固定 Office 依赖。
+3. 三个官方 Office 技能及共享结构检查器存在。
+4. LibreOffice Kit 能返回有效能力清单。
+5. Harness Shell、文件系统和 `present` 可用。
 
-公式重算和 Office 转 PDF 依赖本机 [LibreOffice](https://www.libreoffice.org/download/)，普通文档生成可独立运行。
-
-按 `XIAOYIN_SOFFICE_PATH`、标准安装目录和 PATH 查找。Mac 支持系统及用户 Applications 目录；Windows 支持 Program Files 下的 LibreOffice。环境变量需要传入原生应用或 Host 进程，配置后重启。
-
-转换使用独立用户配置与临时目录，单文件输入、输出上限均为 25 MiB，超时 90 秒。停止或超时清理进程树与临时文件；成功退出但未生成结果判为失败。输出目录需要支持硬链接。
-
-Mac 中文转换需要中文字库。默认临时 Fontconfig 配置加载系统、全局和用户字体；显式 `FONTCONFIG_FILE` 使用调用方配置。可安装 Noto Sans CJK SC。
-
-含宏、外部工作簿链接、专有函数、数据连接或复杂版面的文件，应在对应办公应用中核对。交付前分别确认源文件、公式结果、页面布局与业务数据。
+创建或修改 Office 文件后必须重新打开并执行技能要求的结构检查。需要版面确认时再渲染页面；结构检查、公式重算和视觉检查分别验证不同事实，不能互相替代。

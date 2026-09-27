@@ -102,7 +102,7 @@ pub(crate) async fn html_artifact_preview_url(
     root_id: String,
     path: String,
 ) -> Result<String, String> {
-    let employee_id = crate::erp_auth::current_employee(&app).await?;
+    let employee_id = crate::dingtalk_auth::current_employee(&app).await?;
     authorizations.ensure_employee(&employee_id)?;
     authorizations.resolve_artifact(&root_id, &path)?;
     let mut endpoint = server.0.lock().map_err(|_| "HTML 预览服务不可用")?;

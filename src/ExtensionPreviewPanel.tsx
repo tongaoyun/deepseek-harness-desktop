@@ -10,9 +10,6 @@ import {
 } from './harness'
 import type { ConnectorRuntimeDefinition, XiaoyinTaskProjection } from './types'
 import type { ExtensionValidationReport } from './extensionSubmissions'
-import type { HarnessToolsMode } from './runtimePreferences'
-import { parseTaskOutcome, taskOutcomeLabel, unverifiedTaskOutcome } from './taskOutcome'
-import { TaskOutcomeDetails } from './TaskOutcomeDetails'
 
 export interface ExtensionPreviewConfig {
   employeeId: string
@@ -25,7 +22,6 @@ export interface ExtensionPreviewConfig {
   modelApiKey: string
   accessToken: string
   localFileRootIds: string[]
-  toolsMode: HarnessToolsMode
   allowShell: boolean
   allowLsp: boolean
   allowExternalAgents: boolean
@@ -135,7 +131,6 @@ export function ExtensionPreviewPanel({ target, config, unavailableReason, onRun
         taskId: runId,
         prompt: prompt.trim(),
         executionMode: 'agent',
-        toolsMode: config.toolsMode,
         allowShell: config.allowShell,
         allowLsp: config.allowLsp,
         allowExternalAgents: config.allowExternalAgents,
@@ -143,7 +138,7 @@ export function ExtensionPreviewPanel({ target, config, unavailableReason, onRun
         employeeId: config.employeeId,
         teamId: config.teamId,
         capabilitySnapshot: {
-          schemaVersion: 1,
+          schemaVersion: 2,
           createdAt: startedAt,
           selections: [{
             mode: 'explicit', kind: target.kind, extensionId: target.id, extensionVersion: target.version,
@@ -151,6 +146,7 @@ export function ExtensionPreviewPanel({ target, config, unavailableReason, onRun
           }],
           artifacts: [{ kind: target.kind, id: target.id, version: target.version, sha256: target.sha256 }],
           implicitArtifacts: [],
+          localTools: [],
           requestedConnectorIds: config.connectors.map((connector) => connector.id),
           knowledgeBaseRefs: target.knowledgeBaseRefs,
           requestedKnowledgeBaseRefs: target.knowledgeBaseRefs,
@@ -167,12 +163,10 @@ export function ExtensionPreviewPanel({ target, config, unavailableReason, onRun
       })
       if (previewTaskIdRef.current !== runId || !runningRef.current) return
       if (!result.finalResponse.trim()) throw new Error('试运行未返回可显示文本，请重试')
-      const outcome = parseTaskOutcome(result.outcome) ?? unverifiedTaskOutcome()
       const completed: XiaoyinTaskProjection = {
         ...projectionRef.current,
         status: 'completed',
-        outcome,
-        activity: taskOutcomeLabel(outcome),
+        activity: '试运行完成',
         updatedAt: new Date().toISOString(),
       }
       projectionRef.current = completed
@@ -181,7 +175,7 @@ export function ExtensionPreviewPanel({ target, config, unavailableReason, onRun
       setResponse(finalResponse)
       const discoveredTools = [...new Set(completed.steps.flatMap((step) => step.toolName ? [step.toolName] : []))]
       onReport?.({
-        type: 'HARNESS', status: outcome.status === 'completed' ? 'PASSED' : 'FAILED', prompt: prompt.trim(), model: config.model,
+        type: 'HARNESS', status: 'PASSED', prompt: prompt.trim(), model: config.model,
         latencyMs: Math.max(0, Date.now() - startedAtMs), discoveredTools,
         steps: completed.steps.map((step) => ({ kind: step.kind, label: step.label, status: step.status, toolName: step.toolName ?? '' })),
         artifacts: completed.artifacts.map((artifact) => ({ name: artifact.name, kind: artifact.kind, sourceTool: artifact.sourceTool })),
@@ -227,7 +221,7 @@ export function ExtensionPreviewPanel({ target, config, unavailableReason, onRun
   }
 
   return <section className="extension-preview">
-    <header><span><strong>发布前试运行</strong><small>只在本机执行当前草稿，不提交审核、不写入正式任务记录。</small></span><em className={projection.status}>{projection.status === 'completed' ? taskOutcomeLabel(projection.outcome) : previewStatusLabel(projection.status)}</em></header>
+    <header><span><strong>发布前试运行</strong><small>只在本机执行当前草稿，不提交审核、不写入正式任务记录。</small></span><em className={projection.status}>{previewStatusLabel(projection.status)}</em></header>
     <div className="extension-preview-input">
       <textarea disabled={running} onChange={(event) => setPrompt(event.target.value)} value={prompt} />
       {running
@@ -238,7 +232,6 @@ export function ExtensionPreviewPanel({ target, config, unavailableReason, onRun
     {projection.steps.length > 0 && <div className="extension-preview-steps">{projection.steps.map((step) => <article key={step.id}><i className={step.status} /><span><strong>{step.label}</strong><small>{step.toolName ?? step.kind}</small></span><em>{stepStatusLabel(step.status)}</em></article>)}</div>}
     {projection.artifacts.length > 0 && <div className="extension-preview-artifacts"><strong>产物</strong>{projection.artifacts.map((artifact) => <span key={artifact.id}><FileText size={12} />{artifact.name}<small>{artifact.sourceTool}</small></span>)}</div>}
     {response && <div className="extension-preview-response"><strong>最终回复</strong><p>{response}</p></div>}
-    {projection.status === 'completed' && <TaskOutcomeDetails outcome={projection.outcome} />}
     {error && <div className="authoring-error">{error}</div>}
   </section>
 }

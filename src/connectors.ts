@@ -8,31 +8,6 @@ export function connectorDisplayName(connector: Pick<ConnectorCatalogEntry, 'id'
   return name
 }
 
-const DESKTOP_BROWSER: ConnectorCatalogEntry = {
-  id: 'desktop-browser',
-  name: '浏览器',
-  summary: '使用独立的 Chrome 或 Edge 会话打开网页、读取语义结构、点击、输入并截图。',
-  category: 'recommended-system',
-  kind: 'desktop-builtin',
-  scope: 'DEVICE',
-  status: 'ready',
-  managed: true,
-  version: '1',
-  transport: 'desktop',
-  authMode: 'none',
-  toolNames: [
-    'browser_open', 'browser_snapshot', 'browser_tabs', 'browser_switch_tab', 'browser_close_tab',
-    'browser_click', 'browser_click_text', 'browser_click_point', 'browser_type', 'browser_select',
-    'browser_scroll', 'browser_back', 'browser_reload', 'browser_press_key', 'browser_wait_for',
-    'browser_downloads', 'browser_human_takeover', 'browser_screenshot',
-  ],
-  command: '', arguments: [], environment: {}, headers: {},
-}
-
-export function withDesktopBuiltinConnectors(connectors: ConnectorCatalogEntry[]): ConnectorCatalogEntry[] {
-  return [DESKTOP_BROWSER, ...connectors.filter((connector) => connector.id !== DESKTOP_BROWSER.id)]
-}
-
 export function buildRuntimeConnectorCatalog(
   connectors: ConnectorCatalogEntry[],
   enabledConnectorIds: Iterable<string> = [],
@@ -41,13 +16,10 @@ export function buildRuntimeConnectorCatalog(
   const enabled = new Set(enabledConnectorIds)
   return connectors.map((connector) => {
     const configured = applyConnectorSecrets(connector, localSecrets[connector.id])
-    const transport = connector.transport
-      ?? (connector.kind === 'desktop-builtin' ? 'desktop' : 'streamable-http')
-    const incomplete = connector.kind !== 'desktop-builtin' && (
-      !connector.transport
+    const transport = connector.transport ?? 'streamable-http'
+    const incomplete = !connector.transport
       || transport === 'stdio' && !configured.command?.trim()
-      || (transport === 'streamable-http' || transport === 'sse') && (!connector.url?.trim() || !connector.authMode)
-    )
+      || transport === 'streamable-http' && (!connector.url?.trim() || !connector.authMode)
     return {
       id: connector.id,
       name: connector.name,

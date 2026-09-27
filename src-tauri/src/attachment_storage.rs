@@ -23,7 +23,7 @@ pub async fn attachment_storage(
     references: Vec<serde_json::Value>,
     clean: bool,
 ) -> Result<StorageUsage, String> {
-    crate::erp_auth::current_employee(&app).await?;
+    crate::dingtalk_auth::current_employee(&app).await?;
     tauri::async_runtime::spawn_blocking(move || inspect_storage(&app, references, clean))
         .await
         .map_err(|_| "附件存储检查线程异常".to_string())?

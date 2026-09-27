@@ -10,7 +10,7 @@ mod clipboard_files;
 mod connector_oauth;
 mod connector_secrets;
 mod device_identity;
-mod erp_auth;
+mod dingtalk_auth;
 mod expert_kits;
 mod feedback_images;
 mod harness;
@@ -23,7 +23,6 @@ mod local_file_undo;
 mod local_files;
 mod local_store;
 mod memory;
-mod office_preview;
 mod schedule_desktop;
 mod task_operations;
 #[cfg(target_os = "windows")]
@@ -130,21 +129,13 @@ pub fn run() {
             {
                 window
                     .state::<feedback_images::FeedbackImageGrants>()
-                    .register(paths, erp_auth::mcp::session_epoch());
+                    .register(paths, dingtalk_auth::mcp::session_epoch());
             }
-            if window.label() == "erp-login"
+            if window.label() == "main"
                 && let tauri::WindowEvent::CloseRequested { api, .. } = event
             {
                 api.prevent_close();
                 let _ = window.hide();
-            } else if window.label() == "main"
-                && let tauri::WindowEvent::CloseRequested { api, .. } = event
-            {
-                api.prevent_close();
-                let _ = window.hide();
-                if let Some(login_window) = window.app_handle().get_webview_window("erp-login") {
-                    let _ = login_window.hide();
-                }
             }
         })
         .invoke_handler(tauri::generate_handler![
@@ -156,11 +147,9 @@ pub fn run() {
             connector_secrets::save_connector_secret,
             connector_secrets::delete_connector_secret,
             runtime_info,
-            erp_auth::erp_session,
-            erp_auth::clear_erp_session,
-            erp_auth::open_erp_login,
-            erp_auth::erp_qr_login_configuration,
-            erp_auth::complete_erp_qr_login,
+            dingtalk_auth::dingtalk_session,
+            dingtalk_auth::clear_dingtalk_session,
+            dingtalk_auth::open_dingtalk_login,
             expert_kits::list_installed_expert_kits,
             expert_kits::install_expert_kit,
             expert_kits::github::inspect_github_skills,
@@ -218,7 +207,7 @@ pub fn run() {
             harness::cancel_harness,
             harness::steer_harness,
             harness::interrupt_harness,
-            harness::regenerate_harness,
+            harness::fork_harness,
             harness::respond_harness_approval,
             harness::respond_harness_question,
             schedule_desktop::schedule_keep_awake,

@@ -40,21 +40,13 @@ export interface LocalArtifactTarget {
 export interface LocalArtifactPreview {
   name: string
   path: string
-  kind: 'code' | 'text' | 'markdown' | 'image' | 'pdf' | 'spreadsheet' | 'document' | 'presentation' | 'audio' | 'video' | 'file'
+  kind: 'code' | 'text' | 'markdown' | 'image' | 'pdf' | 'audio' | 'video' | 'file'
   language?: string
   content?: string
   dataUrl?: string
   sizeBytes: number
   truncated: boolean
-  structured?: StructuredPreview
 }
-
-export interface PreviewCell { value: string; kind: 'text' | 'number' | 'date' | 'boolean' | 'error'; formula?: string }
-export interface PreviewSheet { name: string; rows: PreviewCell[][]; rowOffset: number; columnOffset: number; truncated: boolean }
-export type PreviewBlock = { type: 'paragraph'; text: string; level: number } | { type: 'table'; rows: string[][] }
-export type StructuredPreview = { type: 'spreadsheet'; sheets: PreviewSheet[] }
-  | { type: 'document'; blocks: PreviewBlock[] }
-  | { type: 'presentation'; slides: PreviewBlock[][] }
 
 export async function loadLocalArtifactPreview(target: LocalArtifactTarget): Promise<LocalArtifactPreview> {
   if (!isTauri()) throw new Error('文件预览仅在小胤桌面端可用')
@@ -85,7 +77,7 @@ export function artifactFailure(message: string): { kind: 'authorization' | 'mis
   return { kind: 'other', title: '无法打开文件', hint: '请重试读取，或选择本地文件打开。' }
 }
 
-export async function loadHarnessImagePreview(employeeId: string, attachmentId: string, mediaType: 'image/png' | 'image/jpeg'): Promise<string> {
+export async function loadHarnessImagePreview(employeeId: string, attachmentId: string, mediaType: 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif'): Promise<string> {
   if (!isTauri()) throw new Error('截图预览仅在小胤桌面端可用')
   return invoke<string>('read_harness_image_preview', { employeeId, attachmentId, mediaType })
 }

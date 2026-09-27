@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { listen } from '@tauri-apps/api/event'
-import { clearErpSession, isTauriRuntime, openErpLogin, resolveErpSession, sessionFailureMessage, usesLocalDevelopmentSession, type ErpSessionStatus } from './auth'
+import { clearDingTalkSession, isTauriRuntime, openDingTalkLogin, resolveDingTalkSession, sessionFailureMessage, usesLocalDevelopmentSession, type DingTalkSessionStatus } from './auth'
 
 type AuthState = 'checking' | 'required' | 'authorizing' | 'authenticated' | 'error'
 const RETRY_MS = 15_000
@@ -9,7 +9,7 @@ const STARTUP_COOKIE_GRACE_MS = 1_500
 
 export function useEnterpriseSession() {
   const [state, setState] = useState<AuthState>('checking')
-  const [session, setSession] = useState<ErpSessionStatus>()
+  const [session, setSession] = useState<DingTalkSessionStatus>()
   const [error, setError] = useState('')
   const actions = useRef({ reopen: async () => {}, logout: async () => {} })
 
@@ -18,7 +18,7 @@ export function useEnterpriseSession() {
     let generation = 0
     let checking: number | undefined
     let timer: ReturnType<typeof setTimeout> | undefined
-    let accepted: ErpSessionStatus | undefined
+    let accepted: DingTalkSessionStatus | undefined
     let loginOpened = false
     let pendingLogout = false
     let manualRetryQueued = false
@@ -30,13 +30,13 @@ export function useEnterpriseSession() {
       clearTimeout(timer)
       timer = setTimeout(() => void check(), delay)
     }
-    const openLogin = async (request: number, focus: boolean) => {
+    const openLogin = async (request: number) => {
       if (loginOpened || !current(request)) return
       try {
-        await openErpLogin(focus)
+        await openDingTalkLogin()
         if (current(request)) loginOpened = true
       } catch {
-        if (current(request)) setError('无法打开扫码窗口，请重新打开。')
+        if (current(request)) setError('无法打开钉钉授权，请重试。')
       }
     }
     async function check() {
@@ -47,7 +47,7 @@ export function useEnterpriseSession() {
       checking = request
       clearTimeout(timer)
       try {
-        const next = await resolveErpSession()
+        const next = await resolveDingTalkSession()
         if (!current(request)) return
         if (next.authenticated && next.user) {
           startupCookieCheckPending = false
@@ -59,7 +59,6 @@ export function useEnterpriseSession() {
           loginOpened = false
           if (next.expiresAt) schedule(Math.max(1_000, next.expiresAt * 1_000 - Date.now() - 5 * 60_000))
         } else {
-          const hadAcceptedSession = Boolean(accepted)
           if (startupCookieCheckPending && !manualRetry && next.diagnostic?.code === 'cookie_missing') {
             startupCookieCheckPending = false
             setState('checking')
@@ -70,16 +69,16 @@ export function useEnterpriseSession() {
           startupCookieCheckPending = false
           accepted = undefined
           setSession(undefined)
-          setError(authorizingUntil && authorizingUntil <= Date.now() ? '钉钉已确认，但 ERP 会话未建立，请重新扫码。' :
+          setError(authorizingUntil && authorizingUntil <= Date.now() ? '钉钉授权已结束，但小胤会话未建立，请重新打开钉钉。' :
             next.diagnostic?.code === 'session_rejected' ? sessionFailureMessage(next.diagnostic) : '')
           if (authorizingUntil > Date.now()) {
             setState('authorizing')
           } else {
             setState('required')
-            // Open the QR window after a confirmed cookie miss. Transient
-            // network failures still stay on the login screen without a flash.
+            // Open official DingTalk OAuth after a confirmed missing session.
+            // Transient network failures still stay on the login screen without a flash.
             const shouldOpenLogin = manualRetry || next.diagnostic?.code === 'cookie_missing' || next.diagnostic?.code === 'session_rejected'
-            if (shouldOpenLogin) await openLogin(request, manualRetry || !hadAcceptedSession)
+            if (shouldOpenLogin) await openLogin(request)
           }
           if (current(request)) schedule(LOGIN_POLL_MS)
         }
@@ -113,7 +112,7 @@ export function useEnterpriseSession() {
       setState('checking')
       setError('')
       try {
-        await clearErpSession()
+        await clearDingTalkSession()
         if (!current(request)) return
         pendingLogout = false
         loginOpened = false
@@ -146,7 +145,7 @@ export function useEnterpriseSession() {
     window.addEventListener('focus', wake)
     document.addEventListener('visibilitychange', wake)
     if (isTauriRuntime() && !usesLocalDevelopmentSession()) {
-      void listen<string>('erp-login-progress', (event) => {
+      void listen<string>('dingtalk-login-progress', (event) => {
         if (disposed || pendingLogout || accepted || event.payload !== 'authorizing') return
         authorizingUntil = Date.now() + 20_000
         setState('authorizing')
@@ -166,7 +165,7 @@ export function useEnterpriseSession() {
   }, [])
 
   return {
-    accessToken: session?.accessToken ?? '', authorizing: state === 'authorizing', error,
+    sessionToken: session?.sessionToken ?? '', authorizing: state === 'authorizing', error,
     logout: () => actions.current.logout(), reopen: () => actions.current.reopen(), state, user: session?.user ?? null,
   }
 }

@@ -26,15 +26,14 @@ export interface XiaoyinTaskView {
   outputRetention: { prunedResults: number; omittedTokens: number }
   compactions: number
   interruption?: Record<string, unknown>
-  outcome?: Record<string, unknown>
   failure?: Record<string, unknown>
 }
 
 export interface XiaoyinTaskState { value: XiaoyinTaskView; toolNames: Record<string, string>; lastSeq?: number }
 
 declare module '@deepseek-ai/dsh-session-projection' {
-  interface SessionProjectionMap { 'xiaoyin.task': XiaoyinTaskView }
-  interface SessionProjectionStateMap { 'xiaoyin.task': XiaoyinTaskState }
+  interface SessionProjectionMap { 'xiaoyin.product': XiaoyinTaskView }
+  interface SessionProjectionStateMap { 'xiaoyin.product': XiaoyinTaskState }
 }
 
 export const name = 'xiaoyin-product-projections'
@@ -53,8 +52,8 @@ export const initialXiaoyinTaskView = (): XiaoyinTaskView => ({
 })
 
 export function apply(ctx: Context): void {
-  const definition: ProjectionDefinition<'xiaoyin.task', XiaoyinTaskState> = {
-    key: 'xiaoyin.task',
+  const definition: ProjectionDefinition<'xiaoyin.product', XiaoyinTaskState> = {
+    key: 'xiaoyin.product',
     stateSchema: jsonSchema,
     stateVersion: 2,
     init: () => ({ value: initialXiaoyinTaskView(), toolNames: {}, lastSeq: -1 }),
@@ -97,15 +96,18 @@ function reduceEventValue(state: XiaoyinTaskState, event: SessionEvent): Xiaoyin
       ? upsert(current.subagents, { id: callId, label: text(recordValue(data?.arguments)?.description) ?? '委派子任务', status: 'running', startedAt: time })
       : current.subagents
     return { ...nextState(state, changed(current, {
-      status: 'running', activity: toolName.startsWith('mcp_') ? `正在等待连接器 ${connectorLabel(toolName)} 返回` : `正在调用 ${toolName}`, executionStarted: true,
+      status: 'running', activity: isOfficialMcpTool(toolName) ? `正在等待连接器 ${connectorLabel(toolName)} 返回` : `正在调用 ${toolName}`, executionStarted: true,
       steps: upsert(upsert(current.steps, { id: `analysis:${turn}:${step}`, kind: 'analysis', label: '分析任务', status: 'completed', startedAt: time, completedAt: time }), { id: stepId, kind: 'tool', label: toolName, toolName, status: 'running', startedAt: time }),
       timeline: upsert(current.timeline, { id: stepId, kind: 'tool', label: toolName, toolName, status: 'running', occurredAt: time }),
       ...(subagents !== current.subagents ? { subagents } : {}),
     })), toolNames: { ...state.toolNames, [callId]: toolName } }
   }
   if (event.type === 'tool/result') {
-    const result = record(data?.message)?.content
-    const block = Array.isArray(result) ? result.find((item) => record(item) && typeof item.toolCallId === 'string') as Record<string, unknown> | undefined : undefined
+    const message = record(data?.message)
+    const result = message?.content
+    const block = typeof message?.toolCallId === 'string'
+      ? { toolCallId: message.toolCallId, content: result, ...(message.isError === undefined ? {} : { isError: message.isError }) }
+      : Array.isArray(result) ? result.find((item) => record(item) && typeof item.toolCallId === 'string') as Record<string, unknown> | undefined : undefined
     const callId = text(block?.toolCallId)
     if (!callId) return nextState(state, changed(current, { updatedAt: time }))
     const failed = block?.isError === true || Boolean(data?.error)
@@ -226,9 +228,14 @@ function reduceEventValue(state: XiaoyinTaskState, event: SessionEvent): Xiaoyin
   return state
 }
 
-/** `mcp_<connector>_<tool>` reads as a connector name for the activity line. */
+/** Official dsh-mcp-client names are `mcp__<server>__<tool>`. */
+function isOfficialMcpTool(toolName: string): boolean {
+  return toolName.startsWith('mcp__') && toolName.indexOf('__', 5) > 5
+}
+
 function connectorLabel(toolName: string): string {
-  return toolName.slice(4).split('_')[0] || '连接器'
+  if (!isOfficialMcpTool(toolName)) return '连接器'
+  return toolName.slice(5, toolName.indexOf('__', 5)) || '连接器'
 }
 
 function changed(current: XiaoyinTaskView, patch: Partial<XiaoyinTaskView>): XiaoyinTaskView { return { ...current, ...patch, updatedAt: patch.updatedAt ?? new Date().toISOString() } }
@@ -266,17 +273,11 @@ function questionsFromValue(value: unknown): Array<Record<string, unknown>> {
     return [{ id, question: prompt, ...(boundedText(question.header, 200) ? { header: boundedText(question.header, 200) } : {}), ...(boundedText(question.detail, 64 * 1024) ? { detail: boundedText(question.detail, 64 * 1024) } : {}), ...(options?.length ? { options } : {}), ...(question.multiSelect === true ? { multiSelect: true } : {}) }]
   })
 }
-const officeWriteTools = new Set([
-  'office_docx_create', 'office_xlsx_create', 'office_xlsx_update_cells',
-  'office_xlsx_append_rows', 'office_xlsx_add_sheet', 'office_xlsx_format_sheet',
-  'office_xlsx_recalculate', 'office_pptx_create', 'office_pdf_create',
-  'office_document_export_pdf',
-])
 const localFileWriteTools = new Set([
   'local_files_write_text', 'local_files_copy', 'local_files_move',
   'local_files_delete', 'local_files_create_directory',
 ])
-function isArtifactTool(name: string): boolean { return officeWriteTools.has(name) || name === 'local_files_publish' }
+function isArtifactTool(name: string): boolean { return name === 'local_files_publish' }
 function isChangeTool(name: string): boolean { return isArtifactTool(name) || localFileWriteTools.has(name) }
 function artifactFromValue(toolName: string, value: Record<string, unknown> | unknown[] | undefined, createdAt: string): Record<string, unknown> | undefined {
   const item = record(value); const rootId = text(item?.rootId); const rootName = text(item?.rootName); const path = text(item?.path) ?? text(item?.destination); if (!rootId || !rootName || !path || path === '.' || path.startsWith('/')) return undefined

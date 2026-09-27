@@ -95,8 +95,7 @@ const CODE_EXTENSIONS: &[&str] = &[
     "yaml",
     "yml",
 ];
-const TEXT_EXTENSIONS: &[&str] = &["log", "md", "markdown", "txt"];
-const OFFICE_EXTENSIONS: &[&str] = &["csv", "tsv", "docx", "odt", "pptx", "xlsx"];
+const TEXT_EXTENSIONS: &[&str] = &["csv", "log", "md", "markdown", "tsv", "txt"];
 static PREVIEW_LOCK: futures_util::lock::Mutex<()> = futures_util::lock::Mutex::new(());
 
 #[derive(Serialize)]
@@ -110,8 +109,6 @@ pub struct LocalArtifactPreview {
     data_url: Option<String>,
     size_bytes: u64,
     truncated: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    structured: Option<crate::office_preview::StructuredPreview>,
 }
 
 #[tauri::command]
@@ -121,7 +118,7 @@ pub async fn read_local_artifact_preview(
     root_id: String,
     path: String,
 ) -> Result<LocalArtifactPreview, String> {
-    let employee_id = crate::erp_auth::current_employee(&app).await?;
+    let employee_id = crate::dingtalk_auth::current_employee(&app).await?;
     authorizations.ensure_employee(&employee_id)?;
     let _guard = PREVIEW_LOCK.lock().await;
     let authorizations = authorizations.inner().clone();
@@ -140,7 +137,7 @@ pub async fn reveal_local_artifact(
     root_id: String,
     path: String,
 ) -> Result<(), String> {
-    let employee_id = crate::erp_auth::current_employee(&app).await?;
+    let employee_id = crate::dingtalk_auth::current_employee(&app).await?;
     authorizations.ensure_employee(&employee_id)?;
     let target = authorizations.resolve_artifact(&root_id, &path)?;
     let target = validate_artifact_path(&target)?;
@@ -159,7 +156,7 @@ pub async fn open_local_artifact(
     root_id: String,
     path: String,
 ) -> Result<(), String> {
-    let employee_id = crate::erp_auth::current_employee(&app).await?;
+    let employee_id = crate::dingtalk_auth::current_employee(&app).await?;
     authorizations.ensure_employee(&employee_id)?;
     let target = authorizations.resolve_artifact(&root_id, &path)?;
     let target = validate_artifact_path(&target)?;
@@ -176,7 +173,7 @@ pub async fn read_harness_image_preview(
     media_type: String,
 ) -> Result<String, String> {
     crate::harness::validate_employee_id(&employee_id)?;
-    crate::erp_auth::require_employee(&app, &employee_id).await?;
+    crate::dingtalk_auth::require_employee(&app, &employee_id).await?;
     let hash = attachment_id
         .strip_prefix("sha256:")
         .filter(|value| {
@@ -186,6 +183,8 @@ pub async fn read_harness_image_preview(
     let mime = match media_type.as_str() {
         "image/png" => "image/png",
         "image/jpeg" => "image/jpeg",
+        "image/webp" => "image/webp",
+        "image/gif" => "image/gif",
         _ => return Err("截图格式不支持".to_string()),
     };
     let root = app
@@ -204,7 +203,10 @@ fn harness_attachment_path(root: &Path, employee_id: &str, hash: &str) -> PathBu
     root.join("harness")
         .join(crate::harness::employee_namespace(employee_id))
         .join("attachments")
-        .join(format!("{hash}.image"))
+        .join("v1")
+        .join("objects")
+        .join(&hash[..2])
+        .join(hash)
 }
 
 fn preview_file(target: &Path, relative_path: String) -> Result<LocalArtifactPreview, String> {
@@ -233,7 +235,6 @@ fn preview_file(target: &Path, relative_path: String) -> Result<LocalArtifactPre
             data_url: (!truncated).then(|| format!("data:{mime};base64,{}", BASE64.encode(bytes))),
             size_bytes: metadata.len(),
             truncated,
-            structured: None,
         });
     }
     if extension == "pdf" {
@@ -248,21 +249,6 @@ fn preview_file(target: &Path, relative_path: String) -> Result<LocalArtifactPre
                 .then(|| format!("data:application/pdf;base64,{}", BASE64.encode(bytes))),
             size_bytes: metadata.len(),
             truncated,
-            structured: None,
-        });
-    }
-    if OFFICE_EXTENSIONS.contains(&extension.as_str()) {
-        let (structured, truncated) = crate::office_preview::read(target, &extension)?;
-        return Ok(LocalArtifactPreview {
-            name,
-            path: relative_path,
-            kind: structured.kind().to_string(),
-            language: Some(extension),
-            content: None,
-            data_url: None,
-            size_bytes: metadata.len(),
-            truncated,
-            structured: Some(structured),
         });
     }
 
@@ -293,7 +279,6 @@ fn preview_file(target: &Path, relative_path: String) -> Result<LocalArtifactPre
         data_url: None,
         size_bytes: metadata.len(),
         truncated,
-        structured: None,
     })
 }
 
@@ -414,7 +399,7 @@ mod tests {
         let second = harness_attachment_path(root, "employee-2", "abc123");
         assert_ne!(first, second);
         assert!(!first.to_string_lossy().contains("employee-1"));
-        assert!(first.ends_with("attachments/abc123.image"));
+        assert!(first.ends_with("attachments/v1/objects/ab/abc123"));
     }
 
     #[test]

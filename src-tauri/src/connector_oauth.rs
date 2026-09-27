@@ -81,7 +81,7 @@ pub async fn connector_authorization(
     {
         return Err("连接器授权操作无效".into());
     }
-    crate::erp_auth::require_employee(&app, &request.employee_id).await?;
+    crate::dingtalk_auth::require_employee(&app, &request.employee_id).await?;
     let key = credential_key(
         &request.employee_id,
         &request.connector.id,
@@ -96,7 +96,7 @@ pub async fn connector_authorization(
         return Ok(json!({"status": "canceled"}));
     }
     let generation = slot.generation.load(Ordering::SeqCst);
-    let epoch = crate::erp_auth::mcp::session_epoch();
+    let epoch = crate::dingtalk_auth::mcp::session_epoch();
     tauri::async_runtime::spawn_blocking(move || {
         operate(
             &app,
@@ -139,7 +139,7 @@ fn operate(
     let valid = || {
         generation == slot.generation.load(Ordering::SeqCst)
             && epoch % 2 == 0
-            && epoch == crate::erp_auth::mcp::session_epoch()
+            && epoch == crate::dingtalk_auth::mcp::session_epoch()
     };
     if !valid() {
         return Err("连接器授权已取消".into());
@@ -284,7 +284,7 @@ pub(crate) fn token_result(
         let key = credential_key(employee, &connector.id, &connector.url)?;
         let slot = app.state::<ConnectorOAuthManager>().slot(&key)?;
         if let Some(token) = rejected_token {
-            if epoch % 2 == 1 || epoch != crate::erp_auth::mcp::session_epoch() {
+            if epoch % 2 == 1 || epoch != crate::dingtalk_auth::mcp::session_epoch() {
                 return Err("连接器会话已关闭".into());
             }
             let mut cache = slot.state.lock().map_err(|_| "授权状态不可用")?;

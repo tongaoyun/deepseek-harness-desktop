@@ -28,7 +28,6 @@ Harness Host 通过 stdin/stdout 提供逐行 JSON-RPC 2.0。stdout 只输出协
 | `XIAOYIN_APPROVE_SHELL` | Shell 审批策略开关 |
 | `XIAOYIN_EXECUTION_MODE` | `agent` 或官方持久化 `plan` 模式 |
 | `DSH_PERMISSION_MODE` | `read-only`、`workspace-write` 或 `danger-full-access`，默认 `workspace-write` |
-| `XIAOYIN_TOOLS_MODE` | `native`、`ptc` 或 `both`，PTC 默认不启用 |
 | `XIAOYIN_LSP_SERVERS` | LSP stdio server JSON 映射；未配置时不挂载 LSP |
 | `XIAOYIN_ALLOW_LSP` | 小胤运行时设置下发的 LSP 总开关；设为 `false` 时即使存在 Server map 也不挂载 |
 | `XIAOYIN_CODEX_HOOKS_CONFIG` | Codex Hooks 配置路径；未配置时不挂载 |
@@ -47,7 +46,7 @@ Harness Host 通过 stdin/stdout 提供逐行 JSON-RPC 2.0。stdout 只输出协
 - 审批和结构化问题桥只监听 `127.0.0.1`，每次启动使用随机 Bearer Token。
 - 缺少桌面响应、用户拒绝、取消或超时都会停止对应的交互等待。
 - MCP 工具使用显式白名单；专家套件声明的依赖用于路由和诊断，不会隐藏同一已授权连接器的其他工具。
-- MCP 连接器按连接器维护独立 Client/Transport/工具代际；收到 `notifications/tools/list_changed` 会刷新工具，刷新失败保留上一代；Transport 断开按连接器策略指数退避重连，关闭 Host 时取消所有重连任务。
+- MCP 连接器统一由官方 `dsh-mcp-client` 管理 Client、Transport、工具发现和重连；小胤只在客户端启动前提供不可变能力快照与凭据，官方工具名使用 `mcp__<server>__<tool>`。
 - 本地文件工具只访问 `XIAOYIN_LOCAL_FILE_ROOTS` 指定的目录。
 - 没有显式授权目录时，模型可使用官方 `present` 在 Session filesystem 中声明交付文件；投影中的工作区 root ID 使用员工哈希命名以保持隔离。存在小胤授权目录时关闭该工具，交付统一走 `local_files_publish`，避免出现两套路径和授权模型。
 - 默认沙箱为 `workspace-write` 且高风险调用需要确认；Plan 模式在官方 projection 中持久化，并动态拒绝修改型及未知工具。
@@ -55,7 +54,7 @@ Harness Host 通过 stdin/stdout 提供逐行 JSON-RPC 2.0。stdout 只输出协
 - Skill 先注入有预算的目录，完整 `SKILL.md` 按需加载，不随选择数量完整塞入上下文。
 - 子 Agent 使用独立持久 Session，支持后台继续、消息、停止和状态查询；子 Agent 不递归委派。
 - Goal、Todo、Jobs、自动压缩、Tool Result Pruner、Spill、Workflow、Ralph、Web Search/Fetch 和 AGENTS.md 指令由完整 `sdk` Profile 提供。
-- PTC、LSP、Hooks 和外部 Agent 具有本机代码或进程权限，只在配置完整时挂载，不暴露不可用的伪能力。
+- LSP、Hooks 和外部 Agent 具有本机代码或进程权限，只在配置完整时挂载，不暴露不可用的伪能力。
 - 遥测默认通过 `DSH_TELEMETRY_DISABLED=1` 关闭，避免企业会话被 Harness exporter 收集。
-- Session Projection 由 Harness 的 `ctx.sessionProjections` 驱动；Host 仅转发经过本机随机 Bearer Token 验证的变更，不在桌面端重新折叠 Session Log。
+- Session Projection 由 Harness 的 `ctx.sessionProjections` 驱动；Host 仅转发经过本机随机 Bearer Token 验证的变更，桌面端不维护第二份持久会话事实源。
 - 跨会话引用由 Harness `dsh-session-reference` 生成有界、不可变且标记为不可信的快照；它不会把小胤本地任务索引变成第二个 Session 事实源。

@@ -67,7 +67,7 @@ pub async fn load_memory_profile(
     employee_id: String,
 ) -> Result<MemoryProfile, String> {
     validate_employee_id(&employee_id)?;
-    crate::erp_auth::require_employee(&app, &employee_id).await?;
+    crate::dingtalk_auth::require_employee(&app, &employee_id).await?;
     tauri::async_runtime::spawn_blocking(move || load(&app, &employee_id))
         .await
         .map_err(|_| "记忆配置读取线程异常".to_string())?
@@ -80,7 +80,7 @@ pub async fn save_memory_profile(
     profile: MemoryProfile,
 ) -> Result<MemoryProfile, String> {
     validate_employee_id(&employee_id)?;
-    crate::erp_auth::require_employee(&app, &employee_id).await?;
+    crate::dingtalk_auth::require_employee(&app, &employee_id).await?;
     validate(&profile)?;
     tauri::async_runtime::spawn_blocking(move || save_profile(&app, &employee_id, profile))
         .await
@@ -133,7 +133,7 @@ pub async fn load_memory_history(
     employee_id: String,
 ) -> Result<Vec<MemoryRevision>, String> {
     validate_employee_id(&employee_id)?;
-    crate::erp_auth::require_employee(&app, &employee_id).await?;
+    crate::dingtalk_auth::require_employee(&app, &employee_id).await?;
     tauri::async_runtime::spawn_blocking(move || load_history(&app, &employee_id))
         .await
         .map_err(|_| "记忆历史读取线程异常".to_string())?

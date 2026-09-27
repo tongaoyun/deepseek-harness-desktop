@@ -21,14 +21,14 @@ describe('connector JSON import', () => {
 
   it('honors type aliases and preserves names and configuration for every server', () => {
     const items = parseConnectorImport(JSON.stringify({ mcpServers: {
-      '我的日历': { type: 'sse', url: 'https://calendar.example/sse', headers: { Authorization: 'Bearer secret' } },
+      '我的日历': { type: 'streamable-http', url: 'https://calendar.example/mcp', headers: { Authorization: 'Bearer secret' } },
       'My Files': { type: 'stdio', command: 'node', args: ['server.js', 'a path with spaces'], env: { KEY: 'value' } },
       api: { type: 'http', name: '内部 API', url: 'https://api.example/mcp' },
     } }))
-    expect(items.map((item) => item.connector?.transport)).toEqual(['sse', 'stdio', 'streamable-http'])
+    expect(items.map((item) => item.connector?.transport)).toEqual(['streamable-http', 'stdio', 'streamable-http'])
     expect(items[0]?.connector).toMatchObject({ name: '我的日历', headers: { Authorization: 'Bearer secret' } })
     expect(items[0]?.connector?.id).toMatch(/^[a-z0-9][a-z0-9-]{1,63}$/)
-    expect(parseConnectorJson(JSON.stringify({ name: '我的日历', type: 'sse', url: 'https://calendar.example/sse' })).id).toBe(items[0]?.connector?.id)
+    expect(parseConnectorJson(JSON.stringify({ name: '我的日历', type: 'streamable-http', url: 'https://calendar.example/mcp' })).id).toBe(items[0]?.connector?.id)
     expect(items[1]?.connector?.arguments).toEqual(['server.js', 'a path with spaces'])
     expect(items[2]?.connector?.name).toBe('内部 API')
   })
@@ -36,7 +36,7 @@ describe('connector JSON import', () => {
   it('reports invalid entries individually without losing valid servers', () => {
     const items = parseConnectorImport(JSON.stringify({ mcpServers: {
       good: { command: 'node' }, broken: null, unknown: { type: 'websocket', url: 'https://example.com' },
-      args: { command: 'node', args: 'server.js' }, badUrl: { type: 'sse', url: 'not-a-url' },
+      args: { command: 'node', args: 'server.js' }, badUrl: { type: 'streamable-http', url: 'not-a-url' },
     } }))
     expect(items[0]?.connector?.id).toBe('good')
     expect(items.slice(1).every((item) => Boolean(item.error) && !item.connector)).toBe(true)
@@ -61,7 +61,7 @@ describe('connector JSON import', () => {
     const persisted: Array<{ id: string; readOnlyTools?: string[] }> = []
     const failures = await persistBundledConnectors({ mcpServers: {
       existing: { command: 'node' },
-      added: { type: 'streamable-http', url: 'https://mcp.example.com', authMode: 'oauth', readOnlyTools: ['unsafe_write'] },
+      added: { type: 'streamable-http', url: 'https://mcp.example.com', authMode: 'oauth' },
       broken: {},
     } }, ['existing'], async (connector) => { persisted.push(connector) })
     expect(persisted).toEqual([expect.objectContaining({ id: 'added', readOnlyTools: [] })])

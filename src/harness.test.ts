@@ -3,10 +3,10 @@ import { authorizeDroppedPaths, cancelHarness, classifyHarnessFailure, diagnoseC
 
 describe('Harness Session Projection', () => {
   it('accepts the official projection envelope and rejects compact event payloads', () => {
-    const update = harnessProjectionUpdate({ requestId: 1, event: { method: 'session.projection', params: { sessionId: 's', key: 'xiaoyin.task', seq: 4, value: { status: 'running', activity: '处理', updatedAt: '2026-09-11T00:00:00Z', steps: [], artifacts: [] } } } })
-    expect(update).toMatchObject({ sessionId: 's', key: 'xiaoyin.task', seq: 4 })
+    const update = harnessProjectionUpdate({ requestId: 1, event: { method: 'session.projection', params: { sessionId: 's', key: 'xiaoyin.product', seq: 4, value: { status: 'running', activity: '处理', updatedAt: '2026-09-11T00:00:00Z', steps: [], artifacts: [] } } } })
+    expect(update).toMatchObject({ sessionId: 's', key: 'xiaoyin.product', seq: 4 })
     expect(normalizeHarnessProjection(update?.value)?.status).toBe('running')
-    expect(harnessProjectionUpdate({ requestId: 1, event: { sessionId: 's', key: 'xiaoyin.task', seq: 4, value: {} } })).toBeUndefined()
+    expect(harnessProjectionUpdate({ requestId: 1, event: { sessionId: 's', key: 'xiaoyin.product', seq: 4, value: {} } })).toBeUndefined()
   })
 
   it('normalizes optional Harness metrics and drops unknown wire fields', () => {

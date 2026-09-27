@@ -58,6 +58,9 @@ function KnowledgeWorkspace({ endpoint, employeeId, teamId, accessToken, onChang
   const operation = useRef(false)
   const mounted = useRef(true)
   const uploadController = useRef<AbortController | undefined>(undefined)
+  const createIdempotencyKey = useRef<string | undefined>(undefined)
+  const uploadIdempotencyKeys = useRef(new Map<string, string>())
+  const reindexIdempotencyKeys = useRef(new Map<string, string>())
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; documentRequest.current += 1; searchRequest.current += 1 } }, [])
   useEffect(() => () => uploadController.current?.abort(), [])
   const fileInput = useRef<HTMLInputElement>(null)
@@ -118,10 +121,12 @@ function KnowledgeWorkspace({ endpoint, employeeId, teamId, accessToken, onChang
     operation.current = true
     setBusy(true); setError('')
     try {
+      createIdempotencyKey.current ??= crypto.randomUUID()
       const value = await createKnowledgeBase(endpoint, employeeId, teamId, accessToken, {
         name: name.trim(), description: description.trim(), referenceKey: '', scope,
-      })
+      }, createIdempotencyKey.current)
       if (!mounted.current) return
+      createIdempotencyKey.current = undefined
       setBases((current) => [value, ...current]); setSelectedId(value.id); setName(''); setDescription('')
       setCreating(false)
       onChanged?.()
@@ -165,10 +170,14 @@ function KnowledgeWorkspace({ endpoint, employeeId, teamId, accessToken, onChang
         try {
           if (!/\.(pdf|docx|xlsx|txt|md|markdown)$/i.test(file.name)) throw new Error('不支持的文件类型')
           if (!file.size || file.size > 25 * 1024 * 1024) throw new Error('文件不能为空或超过 25 MiB')
-          const value = await uploadKnowledgeDocument(endpoint, employeeId, teamId, accessToken, selectedId, file, controller.signal)
+          const fileKey = `${selectedId}|${file.name}|${file.size}|${file.lastModified}`
+          const idempotencyKey = uploadIdempotencyKeys.current.get(fileKey) ?? crypto.randomUUID()
+          uploadIdempotencyKeys.current.set(fileKey, idempotencyKey)
+          const value = await uploadKnowledgeDocument(endpoint, employeeId, teamId, accessToken, selectedId, file, controller.signal, idempotencyKey)
           if (current.current.context === context && current.current.selectedId === selectedId) {
             setDocuments((values) => [value, ...values.filter((item) => item.id !== value.id)])
           }
+          uploadIdempotencyKeys.current.delete(fileKey)
         } catch (reason) { failures.push(`${file.name}：${message(reason)}`); retryFiles.push(file) }
       }
       if (mounted.current && retryFiles.length) setFailedUploads({ baseId: selectedId, files: retryFiles })
@@ -210,8 +219,12 @@ function KnowledgeWorkspace({ endpoint, employeeId, teamId, accessToken, onChang
     operation.current = true
     setBusy(true); setError('')
     try {
-      const value = await reindexKnowledgeDocument(endpoint, employeeId, teamId, accessToken, document.knowledgeBaseId, document.id)
+      const key = `${document.knowledgeBaseId}|${document.id}`
+      const idempotencyKey = reindexIdempotencyKeys.current.get(key) ?? crypto.randomUUID()
+      reindexIdempotencyKeys.current.set(key, idempotencyKey)
+      const value = await reindexKnowledgeDocument(endpoint, employeeId, teamId, accessToken, document.knowledgeBaseId, document.id, idempotencyKey)
       if (!isCurrent(document.knowledgeBaseId)) return
+      reindexIdempotencyKeys.current.delete(key)
       documentRequest.current += 1; searchRequest.current += 1
       setDocuments((current) => current.map((item) => item.id === value.id ? value : item))
       setHits((current) => current.filter((item) => item.documentId !== value.id))

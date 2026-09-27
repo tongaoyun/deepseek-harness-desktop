@@ -42,7 +42,7 @@ describe('capability resolver', () => {
       availableKnowledgeBaseRefs: ['team:sop'],
       createdAt: '2026-09-11T00:00:00Z',
     })
-    expect(snapshot.schemaVersion).toBe(1)
+    expect(snapshot.schemaVersion).toBe(2)
     expect(snapshot.selections.map((item) => `${item.kind}:${item.extensionId}`)).toEqual([
       'expert-kit:operations', 'expert-kit:analytics', 'skill:spreadsheets',
     ])
@@ -128,6 +128,17 @@ describe('capability resolver', () => {
       ...connector('crm', ['read', 'search']), version: '2', url: 'https://new.example/mcp', environment: { TOKEN: 'new-secret' }, enabled: true,
     }], ['crm'])
     expect(next.connectors[0]).toMatchObject({ version: '2', url: 'https://new.example/mcp', toolNames: ['read', 'search'], environment: { TOKEN: '' } })
+  })
+
+  it('uses the current catalog read-only tools derived from MCP annotations', () => {
+    const snapshot = resolveCapabilitySnapshot({
+      expertKits: [], skills: [], selections: [], selectedConnectorIds: ['erp'],
+      connectors: [{ ...connector('erp', ['sales.read', 'order.cancel']), readOnlyTools: ['sales.read'] }],
+    })
+    const executable = capabilitySnapshotForExecution(snapshot, [{
+      ...connector('erp', ['sales.read', 'order.cancel']), readOnlyTools: ['sales.read'],
+    }])
+    expect(executable.connectors[0]?.readOnlyTools).toEqual(['sales.read'])
   })
 
   it.each([

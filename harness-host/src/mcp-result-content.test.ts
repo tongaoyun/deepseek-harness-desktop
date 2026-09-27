@@ -1,21 +1,21 @@
 import { Context } from '@deepseek-ai/cordis'
+import LocalAttachmentStore from '@deepseek-ai/dsh-attachment-local'
 import type { CallToolResult } from '@modelcontextprotocol/client'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, it, vi } from 'vitest'
-import LocalAttachmentStore from './local-attachment-store-plugin.js'
 import { mcpResultContent } from './mcp-result-content.js'
 import { IMAGE_LIMITS } from './image-limits.js'
 
-const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII='
+const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
 const image = { type: 'image' as const, mimeType: 'image/png', data: png }
 const signal = () => new AbortController().signal
 
 it('persists MCP images and embedded resources with durable references alongside structured data and captions', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'xiaoyin-mcp-images-'))
   try {
-    const store = new LocalAttachmentStore(new Context(), { root: directory })
+    const store = new LocalAttachmentStore(new Context(), { dshHome: directory })
     const content = await mcpResultContent({ structuredContent: { completed: true }, content: [
       { type: 'text', text: '生成结果' }, image,
       { type: 'resource', resource: { uri: 'resource://poster', mimeType: 'image/png', blob: png } },
@@ -24,13 +24,14 @@ it('persists MCP images and embedded resources with durable references alongside
     const images = content.filter((block) => block.type === 'image')
     expect(images).toHaveLength(2)
     for (const block of images) {
-      expect(block.attachment).toMatchObject({ width: 1, height: 1, mediaType: 'image/png' })
+      expect(block.attachment).toMatchObject({ width: 1, height: 1 })
+      expect(['image/png', 'image/jpeg', 'image/webp']).toContain(block.attachment.mediaType)
       expect(block.attachment.attachmentId).toMatch(/^sha256:[a-f0-9]{64}$/)
-      expect(await readFile(join(directory, block.attachment.attachmentId.slice(7) + '.image'))).toEqual(Buffer.from(png, 'base64'))
+      expect(await readFile(store.imageHostPath(block.attachment))).toEqual(Buffer.from((await store.readImage(block.attachment)).data))
     }
     expect(JSON.stringify(content)).not.toContain(png)
-    const restored = new LocalAttachmentStore(new Context(), { root: directory })
-    expect((await restored.readImage(images[0].attachment)).data).toEqual(Buffer.from(png, 'base64'))
+    const restored = new LocalAttachmentStore(new Context(), { dshHome: directory })
+    expect(Buffer.from((await restored.readImage(images[0].attachment)).data)).toEqual(Buffer.from((await store.readImage(images[0].attachment)).data))
   } finally { await rm(directory, { recursive: true, force: true }) }
 })
 
@@ -50,7 +51,7 @@ it('keeps text results unchanged and does not download resource links', async ()
 it('isolates invalid images and reports unsupported formats and extra images without exposing base64', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'xiaoyin-mcp-invalid-'))
   try {
-    const store = new LocalAttachmentStore(new Context(), { root: directory })
+    const store = new LocalAttachmentStore(new Context(), { dshHome: directory })
     const content = await mcpResultContent({ content: [
       { type: 'text', text: '业务处理完成' }, { ...image, data: 'not-base64' }, { ...image, mimeType: 'image/webp' }, image,
       { ...image, data: Buffer.from('bad PNG').toString('base64') }, image,

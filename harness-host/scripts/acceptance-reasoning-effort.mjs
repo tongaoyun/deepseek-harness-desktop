@@ -11,12 +11,18 @@ const server = createServer(async (request, response) => {
   const chunks = []
   for await (const chunk of request) chunks.push(chunk)
   const body = JSON.parse(Buffer.concat(chunks).toString())
-  received.push({ model: body.model, effort: body.reasoning_effort, thinking: body.thinking })
+  received.push({ model: body.model, effort: body.output_config?.effort, thinking: body.thinking?.type })
   response.writeHead(200, { 'content-type': 'text/event-stream' })
-  for (const choice of [{ index: 0, delta: { role: 'assistant', content: 'OK' }, finish_reason: null }, { index: 0, delta: {}, finish_reason: 'stop' }]) {
-    response.write(`data: ${JSON.stringify({ id: 'fixture', object: 'chat.completion.chunk', model: body.model, choices: [choice] })}\n\n`)
-  }
-  response.end('data: [DONE]\n\n')
+  const events = [
+    ['message_start', { type: 'message_start', message: { usage: { input_tokens: 0, output_tokens: 0 } } }],
+    ['content_block_start', { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } }],
+    ['content_block_delta', { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'OK' } }],
+    ['content_block_stop', { type: 'content_block_stop', index: 0 }],
+    ['message_delta', { type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 1 } }],
+    ['message_stop', { type: 'message_stop' }],
+  ]
+  for (const [event, data] of events) response.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
+  response.end()
 })
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
 async function run(model, effort) {
@@ -32,7 +38,7 @@ async function run(model, effort) {
 try {
   for (const effort of ['low', 'medium', 'high', 'xhigh', 'ultra']) {
     await run('gpt-5.6-sol', effort)
-    assert.deepEqual(received.at(-1), { model: 'gpt-5.6-sol', effort, thinking: undefined })
+    assert.deepEqual(received.at(-1), { model: 'gpt-5.6-sol', effort, thinking: 'enabled' })
     console.log(JSON.stringify({ check: 'reasoning-wire-parameter', effort, passed: true }))
   }
   const count = received.length

@@ -20,7 +20,7 @@ pnpm evaluation:run --case=interrupted-write
 pnpm evaluation:run --case=crash-write --case=network-write
 ```
 
-环境要求：`DEEPSEEK_API_KEY`；按需设置 `DEEPSEEK_BASE_URL`、`DSH_MODEL`。`XIAOYIN_ACCEPTANCE_SKILL_DIRS` 为技能目录的 JSON 数组，需包含 unit-testing。表格评测需要本机 LibreOffice。凭据通过进程环境注入，不写入报告。
+环境要求：`DEEPSEEK_API_KEY`；按需设置 `DEEPSEEK_BASE_URL`、`DSH_MODEL`。`XIAOYIN_ACCEPTANCE_SKILL_DIRS` 为技能目录的 JSON 数组，需包含 unit-testing。表格评测使用安装包内的官方 Primary Runtime 和 LibreOffice Kit。凭据通过进程环境注入，不写入报告。
 
 `--case=<任务ID>` 可重复指定，只运行所选任务。技能目录仅代码评测需要。中断评测使用真实模型和本机受控 MCP 服务，不向真实业务系统创建订单。
 
@@ -36,4 +36,4 @@ pnpm evaluation:run --case=crash-write --case=network-write
 
 ## 连接器授权验收
 
-构建 Harness 后运行 `node scripts/acceptance-connector-oauth.mjs`，使用独立桌面应用标识和本机 OAuth/MCP 服务，验证浏览器 PKCE、系统钥匙串、并发刷新、401 不重放及断开授权。另验证任务检查点跨重启保留、账号隔离，以及 Cookie 传递、身份服务异常恢复和退出后的访问拒绝。测试会话使用 localhost 注入，不扫码、不访问真实业务账户；报告路径可由 `XIAOYIN_ACCEPTANCE_REPORT` 指定。
+构建 Harness 后运行 `node scripts/acceptance-connector-oauth.mjs`，使用隔离的本地开发身份和本机 OAuth/MCP 服务，验证浏览器 PKCE、系统钥匙串、并发刷新、401 不重放、断开授权、任务检查点跨重启保留和账号隔离。测试不读取或转发 ERP Cookie，不访问真实业务账户；报告路径可由 `XIAOYIN_ACCEPTANCE_REPORT` 指定。

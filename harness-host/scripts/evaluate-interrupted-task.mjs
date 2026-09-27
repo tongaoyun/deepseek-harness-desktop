@@ -57,7 +57,6 @@ await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
 await writeFile(join(root, 'operation.scope'), 'interrupted-order')
 Object.assign(process.env, {
   DSH_HOME: join(root, 'home'), DSH_SESSION_ROOT: join(root, 'sessions'), DSH_CWD: workspace,
-  XIAOYIN_ATTACHMENT_ROOT: join(root, 'attachments'),
   XIAOYIN_OPERATION_JOURNAL: join(root, 'operations.sqlite'), XIAOYIN_OPERATION_SCOPE_FILE: join(root, 'operation.scope'),
   XIAOYIN_LOCAL_FILE_ROOTS: JSON.stringify([{ id: 'project', name: '评测目录', path: workspace }]),
   XIAOYIN_MCP_CONNECTORS: JSON.stringify([{ id: 'orders', name: '订单验收服务', version: '1', transport: 'streamable-http', url: `http://127.0.0.1:${server.address().port}/mcp`, authMode: 'none', command: '', arguments: [], environment: {}, headers: {}, allowedTools: tools.map(tool => tool.name), requiredTools: tools.map(tool => tool.name), allowWrite: true, requireWriteApproval: false, required: true }]),

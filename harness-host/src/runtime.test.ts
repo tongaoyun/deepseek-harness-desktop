@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { createServer } from 'node:http'
 import type { HarnessNotification } from '@deepseek-ai/dsh-sdk-client'
 import { applyMemoryContext, assertHarnessDependencyClosure, DeepSeekHarnessRuntime, ensureExternalHarnessPlugins, hasConfiguredLspServers, hasHarnessPackage, runSessionTurn } from './runtime.js'
-import { discoveryGuidance, visibleTaskPrompt, withTaskInstructions } from './task-instructions.js'
+import { visibleTaskPrompt, withTaskInstructions } from './task-instructions.js'
 
 it('passes shared execution and delivery rules to actual runtime turns, including follow-ups', async () => {
   const runtime = new DeepSeekHarnessRuntime()
@@ -38,12 +38,8 @@ it('passes shared execution and delivery rules to actual runtime turns, includin
   expect(withTaskInstructions('用户原文')).toMatch(/本轮任务上下文与请求：\n用户原文$/u)
   expect(withTaskInstructions('用户原文', { useOfficialPresent: true })).toContain('使用 present 声明实际文件')
   expect(withTaskInstructions('用户原文', { useOfficialPresent: true })).not.toContain('使用 local_files_publish 登记实际文件')
-  expect(withTaskInstructions('用户原文')).toContain('必须填写 status、summary、remaining 和 checks')
-  expect(withTaskInstructions('用户原文')).not.toContain('office_xlsx_recalculate')
+  expect(withTaskInstructions('用户原文')).toContain('不要调用工具自报完成状态')
   expect(withTaskInstructions('用户原文').length).toBeLessThan(1_200)
-  expect(discoveryGuidance(['office'], 'local_files_publish')).toContain('不能反推业务只有一个仓库或期间')
-  expect(discoveryGuidance(['office'], 'local_files_publish')).toContain('office_xlsx_recalculate')
-  expect(discoveryGuidance(['workflow'], 'present')).toContain('可选信息未核实写在答复限制中')
   expect(visibleTaskPrompt('小胤任务执行约定：\n- 先判断本轮意图，运行约定\n\n本轮任务上下文与请求：\n历史问题')).toBe('历史问题')
   await runtime.close()
 })
@@ -67,7 +63,7 @@ it('uses constructor-scoped environment for execution prompts', async () => {
   await runtime.close()
 })
 
-it('keeps the Xiaoyin publishing contract when authorized roots are present', async () => {
+it('keeps the official present contract when authorized roots are present', async () => {
   const runtime = new DeepSeekHarnessRuntime({ XIAOYIN_LOCAL_FILE_ROOTS: '[{"id":"workspace"}]' })
   const observed: unknown[] = []
   const client = {
@@ -82,16 +78,16 @@ it('keeps the Xiaoyin publishing contract when authorized roots are present', as
   }
   Object.assign(runtime, { harness: { start: async () => {}, close: async () => {}, client } })
   await runtime.run({ sessionId: 'authorized-roots', prompt: '生成报告' }, () => {})
-  expect(JSON.stringify(observed[0])).toContain('使用 local_files_publish 登记实际文件')
-  expect(JSON.stringify(observed[0])).not.toContain('使用 present 声明实际文件')
+  expect(JSON.stringify(observed[0])).toContain('使用 present 声明实际文件')
+  expect(JSON.stringify(observed[0])).not.toContain('使用 local_files_publish 登记实际文件')
   await runtime.close()
 })
 
 it('reports Harness capability gates without advertising unconfigured providers', async () => {
-  const runtime = new DeepSeekHarnessRuntime({ XIAOYIN_ENABLE_SESSION_QUERY_TOOLS: 'false', XIAOYIN_TOOLS_MODE: 'native' })
+  const runtime = new DeepSeekHarnessRuntime({ XIAOYIN_ENABLE_SESSION_QUERY_TOOLS: 'false' })
   const health = await runtime.health()
   expect(health.status).toBe('uninitialized')
-  expect(health.capabilities).toMatchObject({ profile: 'gated', modelProvider: 'unconfigured', commands: 'enabled', commandFeedback: 'enabled', sessionQuery: 'enabled', sessionQueryTools: 'gated', sessionReference: 'enabled', sessionReminders: 'enabled', codeRuntime: 'gated', persistentTerminal: 'enabled', lsp: 'unconfigured', codexSubagent: 'unconfigured', present: 'enabled', mcpClient: 'gated', webSearch: 'unconfigured', webFetch: 'unconfigured' })
+  expect(health.capabilities).toMatchObject({ profile: 'gated', modelProvider: 'unconfigured', commands: 'enabled', commandFeedback: 'enabled', sessionQuery: 'enabled', sessionQueryTools: 'gated', sessionReference: 'enabled', workspaceChanges: 'enabled', workspaceDependencies: 'unconfigured', officeSkills: 'unconfigured', libreOfficeKit: 'unconfigured', persistentTerminal: 'enabled', lsp: 'unconfigured', codexSubagent: 'unconfigured', present: 'enabled', mcpClient: 'gated', webSearch: 'unconfigured', webFetch: 'unconfigured' })
 })
 
 it('reports a configured model provider without exposing its credential', async () => {
@@ -103,14 +99,16 @@ it('reports a configured model provider without exposing its credential', async 
 it('checks real model generation with fixed synthetic content', async () => {
   const server = createServer((request, response) => {
     expect(request.method).toBe('POST')
-    expect(request.url).toBe('/v1/chat/completions')
+    expect(request.url).toBe('/v1/messages')
     expect(request.headers.authorization).toBe('Bearer test-secret')
+    expect(request.headers.accept).toBe('text/event-stream')
+    expect(request.headers['anthropic-version']).toBe('2023-06-01')
     let body = ''
     request.setEncoding('utf8')
     request.on('data', (chunk) => { body += chunk })
     request.on('end', () => {
-      expect(JSON.parse(body)).toEqual({ model: 'test-model', messages: [{ role: 'user', content: 'Reply with OK.' }], max_tokens: 16, stream: false })
-      response.writeHead(200, { 'content-type': 'application/json' }).end('{"choices":[{"message":{"content":"OK"}}]}')
+      expect(JSON.parse(body)).toEqual({ model: 'test-model', messages: [{ role: 'user', content: [{ type: 'text', text: 'Reply with OK.' }] }], max_tokens: 16, stream: true, thinking: { type: 'disabled' } })
+      response.writeHead(200, { 'content-type': 'text/event-stream' }).end('event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"OK"}}\n\n')
     })
   })
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
@@ -127,7 +125,7 @@ it('checks real model generation with fixed synthetic content', async () => {
 
 it('rejects an HTTP-success provider response without generated content', async () => {
   const server = createServer((_request, response) => {
-    response.writeHead(200, { 'content-type': 'application/json' }).end('{"choices":[{"message":{"content":""}}]}')
+    response.writeHead(200, { 'content-type': 'text/event-stream' }).end('event: message_stop\ndata: {"type":"message_stop"}\n\n')
   })
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
   try {
@@ -141,7 +139,7 @@ it('rejects an HTTP-success provider response without generated content', async 
 
 it('does not follow provider redirects with the model credential', async () => {
   const server = createServer((_request, response) => {
-    response.writeHead(302, { location: 'https://unexpected.example/chat/completions' }).end()
+    response.writeHead(302, { location: 'https://unexpected.example/v1/messages' }).end()
   })
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
   try {
@@ -160,7 +158,7 @@ it('fails fast when the packaged official plugin dependency closure is incomplet
 
 it('resolves official plugins nested under the dsh launcher package', () => {
   expect(hasHarnessPackage('@deepseek-ai/dsh-agent-loop')).toBe(true)
-  expect(hasHarnessPackage('@deepseek-ai/dsh-sdk-jsonrpc-server')).toBe(true)
+  expect(hasHarnessPackage('@deepseek-ai/dsh-api-session-controller')).toBe(true)
   expect(hasHarnessPackage('@deepseek-ai/dsh-package-that-does-not-exist')).toBe(false)
 })
 
@@ -178,13 +176,18 @@ it('gates persistent terminal together with desktop shell access', async () => {
   expect(health.capabilities).toMatchObject({ shell: 'gated', persistentTerminal: 'gated' })
 })
 
-it('gates official present when Xiaoyin roots are authorized', async () => {
+it('keeps official filesystem delivery available when Xiaoyin roots are authorized', async () => {
   const health = await new DeepSeekHarnessRuntime({ XIAOYIN_LOCAL_FILE_ROOTS: '[{"id":"workspace"}]' }).health()
-  expect(health.capabilities.present).toBe('gated')
+  expect(health.capabilities).toMatchObject({ officialFilesystem: 'enabled', present: 'enabled' })
+})
+
+it('reports Office capabilities only when the official Primary Runtime is configured', async () => {
+  const health = await new DeepSeekHarnessRuntime({ DSH_BUNDLED_PRIMARY_RUNTIME: '/runtime/primary-runtime' }).health()
+  expect(health.capabilities).toMatchObject({ workspaceDependencies: 'enabled', officeSkills: 'enabled', libreOfficeKit: 'enabled' })
 })
 
 it('enables the read-only Session Query tools by default', async () => {
-  const health = await new DeepSeekHarnessRuntime({ XIAOYIN_TOOLS_MODE: 'native' }).health()
+  const health = await new DeepSeekHarnessRuntime().health()
   expect(health.capabilities).toMatchObject({ sessionQuery: 'enabled', sessionQueryTools: 'enabled' })
 })
 
@@ -273,16 +276,25 @@ it('passes an invalid official Session Query cursor through as a typed failure',
   }
 })
 
-it('projects non-upstream plugins into an external employee DSH_HOME', async () => {
+it('projects official plugins outside the sdk bundle into an external employee DSH_HOME', async () => {
   const home = await mkdtemp(join(tmpdir(), 'xiaoyin-plugin-fallback-'))
   try {
     await ensureExternalHarnessPlugins({ DSH_HOME: home })
-    const target = join(home, 'profiles', 'node_modules', '@deepseek-ai', 'dsh-tool-terminal')
-    const stat = await lstat(target)
-    expect(stat.isSymbolicLink() || stat.isDirectory()).toBe(true)
-    if (stat.isSymbolicLink()) expect(await readlink(target)).toContain('@deepseek-ai/dsh-tool-terminal')
+    const packageNames = [
+      process.platform === 'win32' ? 'dsh-tool-pwsh-persistent' : 'dsh-tool-bash-persistent',
+      'dsh-tool-session-query',
+    ]
+    for (const packageName of packageNames) {
+      const target = join(home, 'profiles', 'node_modules', '@deepseek-ai', packageName)
+      const stat = await lstat(target)
+      expect(stat.isSymbolicLink() || stat.isDirectory()).toBe(true)
+      if (stat.isSymbolicLink()) expect(await readlink(target)).toContain(`@deepseek-ai/${packageName}`)
+    }
     await ensureExternalHarnessPlugins({ DSH_HOME: home })
-    expect((await lstat(target)).isDirectory() || (await lstat(target)).isSymbolicLink()).toBe(true)
+    for (const packageName of packageNames) {
+      const target = join(home, 'profiles', 'node_modules', '@deepseek-ai', packageName)
+      expect((await lstat(target)).isDirectory() || (await lstat(target)).isSymbolicLink()).toBe(true)
+    }
   } finally {
     await rm(home, { recursive: true, force: true })
   }
@@ -355,22 +367,13 @@ describe('local cross-session memory', () => {
 })
 
 describe('persisted session follow-ups', () => {
-  it('preserves a waiting outcome from the root turn and never guesses completion from text', async () => {
-    const outcome = { status: 'needs_input', summary: '缺少源数据', remaining: ['提供销售明细'], checks: [] }
-    const report = (session: string) => [
-      eventFor(session, 'tool/call', { callId: 'report', name: 'task_report' }),
-      eventFor(session, 'tool/result', { message: { content: [{ type: 'tool-result', toolCallId: 'report', isError: false, content: [{ type: 'text', text: JSON.stringify({ xiaoyinTaskOutcome: 1, outcome }) }] }] } }),
-    ]
-    for (const session of ['session-1', 'child-1']) {
-      const result = await runSessionTurn(fakeClient([
-        event('agent/inbox/spliced', { inserted: [{ id: 'message-2' }] }), event('turn/start', { turn: 1 }),
-        ...report(session),
-        event('assistant/message', { message: { content: [{ type: 'text', text: '请提供销售明细。' }] } }),
-        event('turn/end', { reason: { kind: 'completed' } }),
-      ]), 'session-1', [{ type: 'text', text: '分析销售' }], () => {})
-      expect(result.outcome?.status).toBe(session === 'session-1' ? 'needs_input' : 'answered')
-      expect(result.finalResponse).toBe('请提供销售明细。')
-    }
+  it('returns only the official turn result and visible assistant response', async () => {
+    const result = await runSessionTurn(fakeClient([
+      event('agent/inbox/spliced', { inserted: [{ id: 'message-2' }] }), event('turn/start', { turn: 1 }),
+      event('assistant/message', { message: { content: [{ type: 'text', text: '请提供销售明细。' }] } }),
+      event('turn/end', { reason: { kind: 'completed' } }),
+    ]), 'session-1', [{ type: 'text', text: '分析销售' }], () => {})
+    expect(result).toEqual({ sessionId: 'session-1', finalResponse: '请提供销售明细。' })
   })
   it('fails a turn after partial output while still forwarding that output to the desktop', async () => {
     const observed: HarnessNotification[] = []

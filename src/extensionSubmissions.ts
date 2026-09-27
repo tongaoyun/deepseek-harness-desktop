@@ -33,7 +33,12 @@ export interface ExtensionValidationReport {
 }
 
 function headers(employeeId: string, accessToken: string, json = false): Record<string, string> {
-  return { 'X-Xiaoyin-Employee-Id': employeeId, ...(accessToken ? { 'X-ERP-Session': accessToken } : {}), ...(json ? { 'Content-Type': 'application/json' } : {}) }
+  return {
+    'X-Xiaoyin-Employee-Id': employeeId,
+    'X-Requested-With': 'XMLHttpRequest',
+    ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+    ...(json ? { 'Content-Type': 'application/json' } : {}),
+  }
 }
 
 async function checked<T>(response: Response, label: string): Promise<T> {
@@ -71,7 +76,7 @@ export async function submitPackage(manifest: ExpertKitManifest, bytes: number[]
     signal: AbortSignal.timeout(10 * 60_000),
   })
   if (!upload.ok) throw new Error(`上传扩展制品失败（${upload.status}）`)
-  const submission = await checked<ExtensionSubmission>(await fetch(resolveServerEndpoint(`/api/v1/extension-submissions/${manifest.kind}/${encodeURIComponent(manifest.id)}/versions/${encodeURIComponent(manifest.version)}/submit`), {
+  const submission = await checked<ExtensionSubmission>(await fetch(resolveServerEndpoint(`/api/v1/extension-submissions/${manifest.kind}/${encodeURIComponent(manifest.id)}/versions/${encodeURIComponent(manifest.version)}/submissions`), {
     method: 'POST', headers: headers(employeeId, accessToken), signal: submissionSignal(),
   }), '提交审核失败')
   if (validationReport) await saveValidationReport(manifest.kind, manifest.id, manifest.version, validationReport, employeeId, accessToken).catch(() => undefined)
@@ -88,7 +93,7 @@ export async function submitConnector(connector: ConnectorCatalogEntry, employee
 }
 
 export async function saveValidationReport(kind: ExtensionKind, id: string, version: string, report: ExtensionValidationReport, employeeId: string, accessToken: string): Promise<ExtensionValidationReport> {
-  return checked(await fetch(resolveServerEndpoint(`/api/v1/extension-submissions/${kind}/${encodeURIComponent(id)}/versions/${encodeURIComponent(version)}/validation-report`), {
+  return checked(await fetch(resolveServerEndpoint(`/api/v1/extension-submissions/${kind}/${encodeURIComponent(id)}/versions/${encodeURIComponent(version)}/validation-reports`), {
     method: 'POST', headers: headers(employeeId, accessToken, true), body: JSON.stringify(report), signal: submissionSignal(),
   }), '保存发布前验证结果失败')
 }

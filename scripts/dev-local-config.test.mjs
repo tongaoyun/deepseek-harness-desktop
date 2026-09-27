@@ -19,10 +19,7 @@ test('keeps the local Tauri identity and defers its isolated WebView creation', 
   assert.equal(config.build.devUrl, 'http://127.0.0.1:58151')
   assert.equal(config.app.windows[0].create, false)
   assert.equal('dataStoreIdentifier' in config.app.windows[0], false)
-  assert.deepEqual(config.app.windows.map((window) => window.label), ['main', 'erp-login'])
-  assert.equal(config.app.windows[1].url, 'index.html?window=erp-login')
-  assert.equal(config.app.windows[1].visible, false)
-  assert.equal(config.app.windows[1].resizable, false)
+  assert.deepEqual(config.app.windows.map((window) => window.label), ['main'])
 
   const rust = readFileSync(new URL('../src-tauri/src/lib.rs', import.meta.url), 'utf8')
   assert.match(rust, /cfg\(debug_assertions\)/u)

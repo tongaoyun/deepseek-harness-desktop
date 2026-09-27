@@ -1,8 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { copyFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-
-copyFileSync(new URL('../src/pptx-render-worker.mjs', import.meta.url), new URL('../dist/pptx-render-worker.mjs', import.meta.url))
 
 if (process.platform === 'darwin') {
   const source = fileURLToPath(new URL('../native/computer-use.swift', import.meta.url))

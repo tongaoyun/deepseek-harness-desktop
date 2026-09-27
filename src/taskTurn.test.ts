@@ -6,7 +6,7 @@ import { prepareTaskTurn } from './taskTurn'
 import type { CapabilitySnapshot, LocalTaskRun } from './types'
 
 const capability = (version = '1.0.0'): CapabilitySnapshot => ({
-  schemaVersion: 1, createdAt: '2026-09-11T00:00:00Z',
+  schemaVersion: 2, createdAt: '2026-09-11T00:00:00Z', localTools: [],
   selections: [{ mode: 'explicit', kind: 'expert-kit', extensionId: 'reports', extensionVersion: version, commandId: 'weekly' }],
   artifacts: [{ kind: 'expert-kit', id: 'reports', version, sha256: 'a'.repeat(64) }],
   implicitArtifacts: [],

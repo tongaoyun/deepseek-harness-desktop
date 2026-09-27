@@ -100,7 +100,7 @@ mod tests {
     #[test]
     fn history_is_bounded_and_repeated_polls_do_not_write() {
         let directory = std::env::temp_dir().join(format!("xiaoyin-auth-{}", uuid::Uuid::new_v4()));
-        let path = directory.join("erp-session.json");
+        let path = directory.join("dingtalk-session.json");
         let mut diagnostic = Diagnostic::new(Code::CookieMissing, Some(0), None);
         record(&path, &diagnostic).unwrap();
         record(&path, &diagnostic).unwrap();

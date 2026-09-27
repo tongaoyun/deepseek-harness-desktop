@@ -190,9 +190,8 @@ function ConnectorHealth({ connector, runtime, enabled, missing, onDiagnose, onA
   const [check, setCheck] = useState<{ key: string; result?: ConnectorDiagnosticResult; done: boolean }>()
   const latestDiagnose = useRef(onDiagnose)
   useEffect(() => { latestDiagnose.current = onDiagnose }, [onDiagnose])
-  const desktop = runtime?.transport === 'desktop' || connector.transport === 'desktop'
   const available = (runtime?.status ?? connector.status) === 'ready'
-  const canTest = enabled && !missing && !desktop && available
+  const canTest = enabled && !missing && available
   // Configuration changes invalidate old results, even when an earlier test finishes later.
   const key = JSON.stringify([runtime ?? connector, missing, retry])
   const current = check?.key === key ? check : undefined
@@ -220,8 +219,8 @@ function ConnectorHealth({ connector, runtime, enabled, missing, onDiagnose, onA
     return () => { disposed = true }
   }, [key, canTest, connector.id])
 
-  const state = !enabled ? 'closed' : missing ? 'configuration' : !available ? 'unavailable' : desktop ? 'unchecked' : testing ? 'testing' : result?.status ?? 'unchecked'
-  const label = !enabled ? '已关闭' : missing ? '待配置' : !available ? '当前不可用' : desktop ? '已启用 · 使用时检查' : testing ? '正在连接…' : result?.status === 'ready' ? '连接正常' : result?.status === 'drift' ? '工具配置有变化' : result?.status === 'authentication-required' ? '待授权' : result?.status === 'access-denied' ? '无访问权限' : result?.status === 'unavailable' ? '连接失败' : '未检测 · 请在桌面客户端测试'
+  const state = !enabled ? 'closed' : missing ? 'configuration' : !available ? 'unavailable' : testing ? 'testing' : result?.status ?? 'unchecked'
+  const label = !enabled ? '已关闭' : missing ? '待配置' : !available ? '当前不可用' : testing ? '正在连接…' : result?.status === 'ready' ? '连接正常' : result?.status === 'drift' ? '工具配置有变化' : result?.status === 'authentication-required' ? '待授权' : result?.status === 'access-denied' ? '无访问权限' : result?.status === 'unavailable' ? '连接失败' : '未检测 · 请在桌面客户端测试'
   const tools = result?.discoveredTools ?? connector.toolNames
   return <div className="connector-health-panel">
     <div className="connector-health-row">
@@ -235,7 +234,7 @@ function ConnectorHealth({ connector, runtime, enabled, missing, onDiagnose, onA
     {result?.error && <p className="connector-diagnostic-error">{result.error}</p>}
     {authorizationError && <p className="connector-diagnostic-error" role="alert">{authorizationError}</p>}
     <details className="connector-tool-details"><summary>工具与配置 · {tools.length} 个{result ? '已发现工具' : '声明工具'}</summary>
-      <p>{runtime?.transport ?? connector.transport} · {desktop ? '桌面内置能力' : (runtime?.transport ?? connector.transport) === 'stdio' ? connector.command : connector.url}</p>
+      <p>{runtime?.transport ?? connector.transport} · {(runtime?.transport ?? connector.transport) === 'stdio' ? connector.command : connector.url}</p>
       <small>检测使用与任务相同的工具策略，结果对应本次配置，不代表持续在线状态。</small>
       <ul>{tools.map((tool) => <li key={tool}><code>{tool}</code></li>)}</ul>
       {!tools.length && <p>{result?.status === 'ready' || result?.status === 'drift' ? '服务没有返回工具' : '连接成功后显示工具列表'}</p>}

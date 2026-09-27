@@ -66,7 +66,6 @@ export interface LocalImStatus {
 }
 
 export interface LocalImConversationSummary {
-  outcome?: import('./taskOutcome').TaskOutcome
   conversationKey: string
   conversationType: 'group' | 'private'
   conversationTitle: string
@@ -86,7 +85,6 @@ export interface LocalImConversationSummary {
 }
 
 export interface LocalImConversationMessage {
-  outcome?: import('./taskOutcome').TaskOutcome
   id: string
   role: 'user' | 'assistant'
   text: string

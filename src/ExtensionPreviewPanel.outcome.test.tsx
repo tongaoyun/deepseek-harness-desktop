@@ -4,7 +4,6 @@ import { createRoot } from 'react-dom/client'
 import { afterEach, expect, it, vi } from 'vitest'
 import { ExtensionPreviewPanel, type ExtensionPreviewConfig } from './ExtensionPreviewPanel'
 import { runHarness } from './harness'
-import type { TaskOutcome } from './taskOutcome'
 
 vi.mock('./harness', async (original) => ({ ...await original<object>(), runHarness: vi.fn(), cancelHarness: vi.fn(async () => true), listenHarnessNotifications: vi.fn(async () => () => {}) }))
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
@@ -16,7 +15,7 @@ async function fixture(check: (container: HTMLDivElement, report: ReturnType<typ
   const report = vi.fn()
   const config: ExtensionPreviewConfig = {
     employeeId: 'fixture', teamId: 'team', litellmBaseUrl: 'http://localhost', knowledgeEndpoint: '', scheduleEndpoint: '', connectors: [],
-    model: 'fixture', modelApiKey: '', accessToken: '', localFileRootIds: [], toolsMode: 'native',
+    model: 'fixture', modelApiKey: '', accessToken: '', localFileRootIds: [],
     allowShell: false, allowLsp: false, allowExternalAgents: false, allowHooks: false,
   }
   try {
@@ -25,17 +24,16 @@ async function fixture(check: (container: HTMLDivElement, report: ReturnType<typ
   } finally { await act(async () => root.unmount()); container.remove() }
 }
 
-it.each(['completed', 'needs_input', undefined] as const)('reports a preview as passed only for a completed goal: %s', async (status) => {
-  const outcome: TaskOutcome | undefined = status ? { status, summary: '试运行结果', remaining: status === 'completed' ? [] : ['补充资料'], checks: [] } : undefined
-  vi.mocked(runHarness).mockResolvedValue({ sessionId: 'fixture', finalResponse: '试运行回复', outcome })
+it('reports a preview as passed after the official turn completes', async () => {
+  vi.mocked(runHarness).mockResolvedValue({ sessionId: 'fixture', finalResponse: '试运行回复' })
   await fixture(async (container, report) => {
     await act(async () => container.querySelector<HTMLButtonElement>('.extension-preview-input button')!.click())
     expect(runHarness).toHaveBeenCalledWith(expect.objectContaining({ capabilitySnapshot: expect.objectContaining({ selections: [{
       mode: 'explicit', kind: 'skill', extensionId: 'fixture', extensionVersion: '1.0.0', skillId: 'fixture',
-    }] }), toolsMode: 'native', allowShell: false, allowLsp: false, allowExternalAgents: false, allowHooks: false }))
-    expect(report).toHaveBeenCalledWith(expect.objectContaining({ status: status === 'completed' ? 'PASSED' : 'FAILED' }))
+    }] }), allowShell: false, allowLsp: false, allowExternalAgents: false, allowHooks: false }))
+    expect(report).toHaveBeenCalledWith(expect.objectContaining({ status: 'PASSED' }))
     expect(container.querySelector('.extension-preview-response')?.textContent).toContain('试运行回复')
-    expect(container.querySelector('header em')?.textContent).toBe(status === 'completed' ? '已完成' : status === 'needs_input' ? '等待补充' : '本轮已结束')
+    expect(container.querySelector('header em')?.textContent).toBe('本轮已结束')
   })
 })
 
@@ -45,7 +43,7 @@ it('does not publish a late completed report after stop', async () => {
   await fixture(async (container, report) => {
     await act(async () => container.querySelector<HTMLButtonElement>('.extension-preview-input button')!.click())
     await act(async () => container.querySelector<HTMLButtonElement>('button.cancel')!.click())
-    await act(async () => finish({ sessionId: 'fixture', finalResponse: '完成', outcome: { status: 'completed', summary: '完成', remaining: [], checks: [] } }))
+    await act(async () => finish({ sessionId: 'fixture', finalResponse: '完成' }))
     expect(report).not.toHaveBeenCalled()
     expect(container.querySelector('header em')?.textContent).toBe('已取消')
   })

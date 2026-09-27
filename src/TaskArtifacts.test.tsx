@@ -89,7 +89,7 @@ it('keeps compact file rows accessible and opens the real artifact from its file
   try {
     await act(async () => root.render(<TaskArtifacts conversation onOpen={onOpen} artifacts={[{
       id: 'report', name: '调研.xlsx', path: 'reports/调研.xlsx', rootId: 'workspace', rootName: '工作目录',
-      kind: 'spreadsheet', sizeBytes: 2048, sourceTool: 'office.xlsx.create', createdAt: '',
+      kind: 'spreadsheet', sizeBytes: 2048, sourceTool: 'present', createdAt: '',
     }]} />))
     expect(container.querySelector('header.sr-only')?.textContent).toBe('生成了 1 个文件')
     expect(container.querySelector('article.artifact-spreadsheet')).not.toBeNull()

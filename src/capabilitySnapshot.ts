@@ -41,7 +41,7 @@ export function resolveCapabilitySnapshot(input: ResolveCapabilitySnapshotInput)
   const issues: string[] = []
   const selectedCoordinates = new Set<string>()
   const artifacts: AllowedExtensionArtifact[] = []
-  const dependencies = { connectors: new Set<string>(), tools: new Set<string>(), knowledge: new Set<string>() }
+  const dependencies = { connectors: new Set<string>(), tools: new Set<string>(), localTools: new Set<string>(), knowledge: new Set<string>() }
   for (const selection of input.selections) {
     const key = coordinate(selection.kind, selection.extensionId)
     if (selectedCoordinates.has(key)) {
@@ -60,7 +60,10 @@ export function resolveCapabilitySnapshot(input: ResolveCapabilitySnapshotInput)
     }
     artifacts.push(source.artifact)
     source.connectorRefs.forEach((id) => dependencies.connectors.add(id))
-    source.requiredTools.filter((name) => !desktopToolNames.has(name)).forEach((name) => dependencies.tools.add(name))
+    source.requiredTools.forEach((name) => {
+      if (desktopToolNames.has(name)) dependencies.localTools.add(name)
+      else dependencies.tools.add(name)
+    })
     source.knowledgeBaseRefs.forEach((reference) => dependencies.knowledge.add(reference))
   }
 
@@ -92,11 +95,12 @@ export function resolveCapabilitySnapshot(input: ResolveCapabilitySnapshotInput)
     .sort(compareArtifacts)
 
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     createdAt: input.createdAt ?? new Date().toISOString(),
     selections: input.selections.map((selection) => ({ ...selection })),
     artifacts: artifacts.sort(compareArtifacts),
     implicitArtifacts,
+    localTools: [...dependencies.localTools].sort(),
     requestedConnectorIds: [...new Set(input.selectedConnectorIds ?? [])].sort(),
     connectors: connectors.sort((left, right) => left.id.localeCompare(right.id)),
     requestedKnowledgeBaseRefs: [...new Set(input.knowledgeBaseRefs ?? [])].sort(),
@@ -165,7 +169,10 @@ export function capabilitySnapshotForExecution(
     connectors: snapshot.connectors.filter((item) => enabled?.has(item.id) !== false).map((item) => ({
       ...item,
       toolNames: [...item.toolNames],
-      readOnlyTools: [...(item.readOnlyTools ?? [])],
+      // The server catalog derives this list from the connector's MCP
+      // ToolSpec annotations. Keep that derived runtime value in the
+      // immutable session snapshot; publishers cannot supply an override.
+      readOnlyTools: [...(runtimeById.get(item.id)?.readOnlyTools ?? item.readOnlyTools ?? [])],
       environment: hydrateValues(item.environment, runtimeById.get(item.id)?.environment, localSecrets[item.id]?.environment),
       headers: hydrateValues(item.headers, runtimeById.get(item.id)?.headers, localSecrets[item.id]?.headers),
     })),

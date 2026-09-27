@@ -2,7 +2,7 @@ pub(crate) use crate::harness_connectors::{
     ConnectorDefinition, RuntimeConnector, runtime_connectors,
 };
 use crate::harness_connectors::{
-    desktop_connector_enabled, diagnostic_connectors, validate_connector_catalog, validate_http_url,
+    diagnostic_connectors, validate_connector_catalog, validate_http_url,
 };
 use crate::{
     expert_kits,
@@ -258,8 +258,6 @@ pub struct HarnessRunRequest {
     prompt: String,
     execution_mode: String,
     #[serde(default)]
-    tools_mode: Option<String>,
-    #[serde(default)]
     allow_shell: bool,
     #[serde(default)]
     allow_lsp: bool,
@@ -294,6 +292,7 @@ pub(crate) struct CapabilitySnapshot {
     pub(crate) selections: Vec<expert_kits::CapabilitySelection>,
     pub(crate) artifacts: Vec<expert_kits::AllowedExtensionArtifact>,
     pub(crate) implicit_artifacts: Vec<expert_kits::AllowedExtensionArtifact>,
+    pub(crate) local_tools: Vec<String>,
     pub(crate) requested_connector_ids: Vec<String>,
     #[serde(default)]
     pub(crate) connectors: Vec<ConnectorDefinition>,
@@ -344,7 +343,6 @@ pub struct ConnectorDiagnosticRequest {
 pub struct HarnessRunResult {
     session_id: String,
     final_response: String,
-    outcome: Value,
 }
 
 /// Stable error envelope returned by the Tauri command. The desktop must not
@@ -476,8 +474,10 @@ pub struct HarnessSessionInspection {
     pending_tools: u32,
     #[serde(default)]
     projection: Option<Value>,
+    /// Durable Harness Session events consumed by the official browser
+    /// Conversation assembler. Keep this separate from product projections.
     #[serde(default)]
-    transcript: Vec<Value>,
+    events: Vec<Value>,
     #[serde(default)]
     messages: Vec<Value>,
 }
@@ -524,7 +524,7 @@ fn ui_notification(
     }
 }
 
-#[derive(Clone, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq, Serialize)]
 pub(crate) struct RuntimeFingerprint {
     pub(crate) skill_directories: Vec<String>,
     pub(crate) connectors: Vec<RuntimeConnector>,
@@ -532,7 +532,6 @@ pub(crate) struct RuntimeFingerprint {
     pub(crate) allow_browser: bool,
     pub(crate) allowed_computer_tools: Vec<String>,
     pub(crate) execution_mode: String,
-    pub(crate) tools_mode: String,
     pub(crate) allow_shell: bool,
     pub(crate) allow_lsp: bool,
     pub(crate) allow_external_agents: bool,
@@ -550,8 +549,6 @@ pub(crate) struct RuntimeFingerprint {
 }
 
 pub(crate) struct HarnessProcess {
-    app: tauri::AppHandle,
-    erp_session_epoch: u64,
     child: Child,
     stdin: ChildStdin,
     stdout: mpsc::Receiver<Result<String, String>>,
@@ -572,6 +569,7 @@ pub(crate) struct HarnessRuntimePaths {
     pub(crate) node: PathBuf,
     pub(crate) entry: PathBuf,
     config: PathBuf,
+    primary_runtime: PathBuf,
 }
 
 #[tauri::command]
@@ -582,7 +580,7 @@ pub async fn run_harness(
     request: HarnessRunRequest,
 ) -> Result<HarnessRunResult, HarnessCommandError> {
     validate_run_request(&request)?;
-    crate::erp_auth::require_employee(&app, &request.employee_id).await?;
+    crate::dingtalk_auth::require_employee(&app, &request.employee_id).await?;
     local_files.ensure_employee(&request.employee_id)?;
     let active_run = manager
         .slot(&request.task_id)?
@@ -610,17 +608,23 @@ pub async fn run_harness(
     } else {
         local_files.resolve(&request.local_file_root_ids)?
     };
-    let allow_browser =
-        desktop_connector_enabled(&request.capability_snapshot.connectors, "desktop-browser");
+    let allow_browser = request
+        .capability_snapshot
+        .local_tools
+        .iter()
+        .any(|tool| tool.starts_with("browser_"));
     let connectors = runtime_connectors(&request.capability_snapshot.connectors, &profile, true)?;
     let fingerprint = RuntimeFingerprint {
         skill_directories: profile.skill_directories,
         connectors,
         local_file_roots,
         allow_browser,
-        allowed_computer_tools: profile.allowed_computer_tools,
+        allowed_computer_tools: profile
+            .allowed_computer_tools
+            .into_iter()
+            .filter(|tool| request.capability_snapshot.local_tools.contains(tool))
+            .collect(),
         execution_mode: request.execution_mode,
-        tools_mode: validate_tools_mode(request.tools_mode.as_deref())?,
         allow_shell: request.allow_shell,
         allow_lsp: request.allow_lsp,
         allow_external_agents: request.allow_external_agents,
@@ -668,7 +672,7 @@ pub async fn shutdown_harness(
     task_id: Option<String>,
 ) -> Result<(), HarnessCommandError> {
     if let Some(task_id) = task_id.as_deref() {
-        let employee_id = crate::erp_auth::current_employee(&app).await?;
+        let employee_id = crate::dingtalk_auth::current_employee(&app).await?;
         manager.check_task_owner(task_id, &employee_id)?;
     }
     let manager = manager.inner().clone();
@@ -685,7 +689,7 @@ pub async fn cancel_harness(
     manager: tauri::State<'_, HarnessManager>,
     task_id: String,
 ) -> Result<bool, HarnessCommandError> {
-    let employee_id = crate::erp_auth::current_employee(&app).await?;
+    let employee_id = crate::dingtalk_auth::current_employee(&app).await?;
     manager.check_task_owner(&task_id, &employee_id)?;
     Ok(manager.cancel(&task_id)?)
 }
@@ -698,7 +702,7 @@ pub async fn respond_harness_approval(
     approval_id: String,
     decision: String,
 ) -> Result<bool, HarnessCommandError> {
-    let employee_id = crate::erp_auth::current_employee(&app).await?;
+    let employee_id = crate::dingtalk_auth::current_employee(&app).await?;
     manager.check_task_owner(&task_id, &employee_id)?;
     Ok(manager.respond_to_approval(&task_id, &approval_id, &decision)?)
 }
@@ -711,7 +715,7 @@ pub async fn respond_harness_question(
     question_id: String,
     answers: Vec<QuestionAnswerInput>,
 ) -> Result<bool, HarnessCommandError> {
-    let employee_id = crate::erp_auth::current_employee(&app).await?;
+    let employee_id = crate::dingtalk_auth::current_employee(&app).await?;
     manager.check_task_owner(&task_id, &employee_id)?;
     Ok(manager.respond_to_question(&task_id, &question_id, answers)?)
 }
@@ -723,7 +727,7 @@ pub async fn steer_harness(
     task_id: String,
     prompt: String,
 ) -> Result<bool, HarnessCommandError> {
-    let employee_id = crate::erp_auth::current_employee(&app).await?;
+    let employee_id = crate::dingtalk_auth::current_employee(&app).await?;
     manager.check_task_owner(&task_id, &employee_id)?;
     Ok(manager.steer(&task_id, &prompt)?)
 }
@@ -734,20 +738,20 @@ pub async fn interrupt_harness(
     manager: tauri::State<'_, HarnessManager>,
     task_id: String,
 ) -> Result<bool, HarnessCommandError> {
-    let employee_id = crate::erp_auth::current_employee(&app).await?;
+    let employee_id = crate::dingtalk_auth::current_employee(&app).await?;
     manager.check_task_owner(&task_id, &employee_id)?;
     Ok(manager.interrupt(&task_id)?)
 }
 
 #[tauri::command]
-pub async fn regenerate_harness(
+pub async fn fork_harness(
     app: tauri::AppHandle,
     manager: tauri::State<'_, HarnessManager>,
     task_id: String,
 ) -> Result<String, HarnessCommandError> {
-    let employee_id = crate::erp_auth::current_employee(&app).await?;
+    let employee_id = crate::dingtalk_auth::current_employee(&app).await?;
     manager.check_task_owner(&task_id, &employee_id)?;
-    Ok(manager.regenerate(&task_id)?)
+    Ok(manager.fork(&task_id)?)
 }
 
 #[tauri::command]
@@ -756,7 +760,7 @@ pub async fn diagnose_connectors(
     request: ConnectorDiagnosticRequest,
 ) -> Result<Vec<ConnectorDiagnosticResult>, HarnessCommandError> {
     validate_access_token(&request.access_token)?;
-    crate::erp_auth::require_employee(&app, &request.employee_id).await?;
+    crate::dingtalk_auth::require_employee(&app, &request.employee_id).await?;
     let connectors = diagnostic_connectors(&request.connectors)?;
     if connectors.is_empty() {
         return Ok(Vec::new());
@@ -768,7 +772,6 @@ pub async fn diagnose_connectors(
         allow_browser: false,
         allowed_computer_tools: Vec::new(),
         execution_mode: "agent".to_string(),
-        tools_mode: "native".to_string(),
         allow_shell: true,
         allow_lsp: true,
         allow_external_agents: false,
@@ -804,7 +807,7 @@ pub async fn self_test_local_capabilities(
     app: tauri::AppHandle,
     include_computer: Option<bool>,
 ) -> Result<LocalCapabilitySelfTestResult, HarnessCommandError> {
-    crate::erp_auth::current_employee(&app).await?;
+    crate::dingtalk_auth::current_employee(&app).await?;
     let fingerprint = RuntimeFingerprint {
         skill_directories: Vec::new(),
         connectors: Vec::new(),
@@ -812,7 +815,6 @@ pub async fn self_test_local_capabilities(
         allow_browser: false,
         allowed_computer_tools: Vec::new(),
         execution_mode: "agent".to_string(),
-        tools_mode: "native".to_string(),
         allow_shell: true,
         allow_lsp: true,
         allow_external_agents: false,
@@ -848,13 +850,12 @@ pub async fn self_test_local_capabilities(
 pub async fn probe_harness_host(
     app: tauri::AppHandle,
     model_configured: Option<bool>,
-    tools_mode: Option<String>,
     allow_shell: Option<bool>,
     allow_lsp: Option<bool>,
     allow_external_agents: Option<bool>,
     allow_hooks: Option<bool>,
 ) -> Result<HarnessHostHealth, HarnessCommandError> {
-    crate::erp_auth::current_employee(&app).await?;
+    crate::dingtalk_auth::current_employee(&app).await?;
     let fingerprint = RuntimeFingerprint {
         skill_directories: Vec::new(),
         connectors: Vec::new(),
@@ -862,7 +863,6 @@ pub async fn probe_harness_host(
         allow_browser: false,
         allowed_computer_tools: Vec::new(),
         execution_mode: "agent".to_string(),
-        tools_mode: validate_tools_mode(tools_mode.as_deref())?,
         allow_shell: allow_shell.unwrap_or(false),
         allow_lsp: allow_lsp.unwrap_or(false),
         allow_external_agents: allow_external_agents.unwrap_or(false),
@@ -930,7 +930,7 @@ pub async fn check_harness_provider(
     app: tauri::AppHandle,
     request: HarnessProviderCheckRequest,
 ) -> Result<HarnessProviderCheckResult, HarnessCommandError> {
-    crate::erp_auth::current_employee(&app).await?;
+    crate::dingtalk_auth::current_employee(&app).await?;
     validate_http_url("模型", &request.litellm_base_url)?;
     if request.model.trim().is_empty() || request.model.len() > 512 {
         return Err("模型标识无效".to_string().into());
@@ -948,7 +948,6 @@ pub async fn check_harness_provider(
         allow_browser: false,
         allowed_computer_tools: Vec::new(),
         execution_mode: "agent".to_string(),
-        tools_mode: "native".to_string(),
         allow_shell: true,
         allow_lsp: true,
         allow_external_agents: false,
@@ -989,7 +988,7 @@ pub async fn inspect_harness_session(
     if !is_valid_session_id(&session_id) {
         return Err("Harness 会话标识无效".to_string().into());
     }
-    crate::erp_auth::require_employee(&app, &employee_id).await?;
+    crate::dingtalk_auth::require_employee(&app, &employee_id).await?;
     let fingerprint = RuntimeFingerprint {
         skill_directories: Vec::new(),
         connectors: Vec::new(),
@@ -997,7 +996,6 @@ pub async fn inspect_harness_session(
         allow_browser: false,
         allowed_computer_tools: Vec::new(),
         execution_mode: "agent".to_string(),
-        tools_mode: "native".to_string(),
         allow_shell: true,
         allow_lsp: true,
         allow_external_agents: false,
@@ -1046,7 +1044,7 @@ pub async fn search_harness_sessions(
     if session_ids.len() > 2_000 || session_ids.iter().any(|id| !is_valid_session_id(id)) {
         return Err("Harness 会话标识无效".to_string().into());
     }
-    crate::erp_auth::require_employee(&app, &employee_id).await?;
+    crate::dingtalk_auth::require_employee(&app, &employee_id).await?;
     if query.trim().is_empty() || query.len() > 500 {
         return Err("Harness 历史搜索词无效".to_string().into());
     }
@@ -1063,7 +1061,6 @@ pub async fn search_harness_sessions(
         allow_browser: false,
         allowed_computer_tools: Vec::new(),
         execution_mode: "agent".to_string(),
-        tools_mode: "native".to_string(),
         allow_shell: true,
         allow_lsp: true,
         allow_external_agents: false,
@@ -1250,7 +1247,7 @@ impl HarnessManager {
     /// Fork the task's session before its last prompt and return the new id.
     /// Called between turns, so it takes the process directly instead of the
     /// run loop's intent channel.
-    fn regenerate(&self, task_id: &str) -> Result<String, String> {
+    fn fork(&self, task_id: &str) -> Result<String, String> {
         let slot = self
             .slots
             .lock()
@@ -1271,7 +1268,7 @@ impl HarnessManager {
             .clone()
             .ok_or("该任务还没有可重新生成的会话")?;
         let result = process.request(
-            "session.regenerate",
+            "session.fork",
             Some(json!({ "sessionId": session_id })),
             None,
         )?;
@@ -1584,8 +1581,6 @@ impl HarnessProcess {
             .app_data_dir()
             .map_err(|error| format!("无法确定 Harness 数据目录：{error}"))?;
         let dsh_home = employee_harness_root(&app_data, &fingerprint.employee_id);
-        let attachment_root =
-            employee_harness_root(&app_data, &fingerprint.employee_id).join("attachments");
         let browser_home = task_id.map(|task_id| {
             let mut hasher = Sha256::new();
             hasher.update(fingerprint.employee_id.as_bytes());
@@ -1599,7 +1594,6 @@ impl HarnessProcess {
             .join("workspaces")
             .join(employee_namespace(&fingerprint.employee_id));
         std::fs::create_dir_all(&dsh_home)
-            .and_then(|_| std::fs::create_dir_all(&attachment_root))
             .and_then(|_| std::fs::create_dir_all(&workspace))
             .map_err(|error| format!("无法创建 Harness 数据目录：{error}"))?;
         let session_workspace = fingerprint
@@ -1611,7 +1605,13 @@ impl HarnessProcess {
 
         let skill_directories = serde_json::to_string(&fingerprint.skill_directories)
             .map_err(|error| format!("无法生成技能配置：{error}"))?;
-        let connectors = serde_json::to_string(&fingerprint.connectors)
+        let resolved_connectors = resolve_connector_credentials(
+            app,
+            &fingerprint.connectors,
+            &fingerprint.employee_id,
+            &access_token,
+        )?;
+        let connectors = serde_json::to_string(&resolved_connectors)
             .map_err(|error| format!("无法生成连接器配置：{error}"))?;
         let local_file_roots = serde_json::to_string(&fingerprint.local_file_roots)
             .map_err(|error| format!("无法生成本地文件授权配置：{error}"))?;
@@ -1619,6 +1619,7 @@ impl HarnessProcess {
             .map_err(|error| format!("无法生成知识库范围配置：{error}"))?;
         let computer_tools = serde_json::to_string(&fingerprint.allowed_computer_tools)
             .map_err(|error| format!("无法生成 Computer Use 工具配置：{error}"))?;
+        let preset_id = capability_preset_id(&fingerprint)?;
         let mut command = Command::new(&runtime.node);
         #[cfg(unix)]
         command.process_group(0);
@@ -1628,6 +1629,7 @@ impl HarnessProcess {
             .arg(&runtime.entry)
             .current_dir(&session_workspace)
             .env("DSH_CORDIS_CONFIG", &runtime.config)
+            .env("DSH_BUNDLED_PRIMARY_RUNTIME", &runtime.primary_runtime)
             .env("DSH_CWD", &session_workspace)
             .env("DSH_HOME", &dsh_home)
             .env("DSH_SESSION_ROOT", dsh_home.join("sessions"))
@@ -1654,7 +1656,14 @@ impl HarnessProcess {
             )
             .env("DSH_CUSTOM_SKILL_DIRS", skill_directories)
             .env("XIAOYIN_EXECUTION_MODE", &fingerprint.execution_mode)
-            .env("XIAOYIN_TOOLS_MODE", &fingerprint.tools_mode)
+            .env(
+                "DSH_PERMISSION_MODE",
+                if fingerprint.execution_mode == "plan" {
+                    "read-only"
+                } else {
+                    "workspace-write"
+                },
+            )
             .env("XIAOYIN_ALLOW_SHELL", fingerprint.allow_shell.to_string())
             .env("XIAOYIN_ALLOW_LSP", fingerprint.allow_lsp.to_string())
             .env(
@@ -1663,11 +1672,15 @@ impl HarnessProcess {
             )
             .env("XIAOYIN_ALLOW_HOOKS", fingerprint.allow_hooks.to_string())
             .env("XIAOYIN_MCP_CONNECTORS", connectors)
-            .env("XIAOYIN_MCP_IMPLEMENTATION", "harness")
+            .env("XIAOYIN_PRESET_ID", preset_id)
+            .env("XIAOYIN_PRESET_PLUGINS", "[]")
             .env("XIAOYIN_CONTROL_PLANE_TOKEN", &access_token)
             .env(
                 "XIAOYIN_EMPLOYEE_BEARER_TOKEN",
-                crate::erp_auth::connector_bearer_token(&fingerprint.employee_id, &access_token),
+                crate::dingtalk_auth::connector_bearer_token(
+                    &fingerprint.employee_id,
+                    &access_token,
+                ),
             )
             .env("XIAOYIN_EMPLOYEE_ID", &fingerprint.employee_id)
             .env("XIAOYIN_TEAM_ID", &fingerprint.team_id)
@@ -1678,7 +1691,6 @@ impl HarnessProcess {
             .env("XIAOYIN_SCHEDULE_ENDPOINT", &fingerprint.schedule_endpoint)
             .env("XIAOYIN_KNOWLEDGE_BASE_REFS", knowledge_base_refs)
             .env("XIAOYIN_LOCAL_FILE_ROOTS", local_file_roots)
-            .env("XIAOYIN_ATTACHMENT_ROOT", &attachment_root)
             .envs(browser_home.as_ref().map(|path| {
                 (
                     "XIAOYIN_BROWSER_PROFILE_DIR",
@@ -1728,8 +1740,6 @@ impl HarnessProcess {
             .map(|brokers| (Some(brokers.approval), Some(brokers.question)))
             .unwrap_or_default();
         let mut process = Self {
-            app: app.clone(),
-            erp_session_epoch: crate::erp_auth::mcp::session_epoch(),
             child,
             stdin,
             stdout,
@@ -1837,55 +1847,6 @@ impl HarnessProcess {
             let output: Value = serde_json::from_str(&line)
                 .map_err(|error| format!("Harness 输出不是有效 JSON-RPC：{error}"))?;
             if output.get("method").is_some() {
-                if matches!(
-                    output.get("method").and_then(Value::as_str),
-                    Some("erp-cookie.request" | "connector-oauth.request")
-                ) {
-                    let oauth = output["method"] == "connector-oauth.request";
-                    let params = &output["params"];
-                    let id = params["requestId"].as_str().unwrap_or("");
-                    if id.is_empty() || id.len() > 100 {
-                        return Err("ERP 会话请求标识无效".into());
-                    }
-                    let connector_id = params["connectorId"].as_str().unwrap_or("");
-                    let connector = self
-                        .fingerprint
-                        .connectors
-                        .iter()
-                        .find(|value| value.id == connector_id);
-                    let result = if oauth {
-                        crate::connector_oauth::token_result(
-                            &self.app,
-                            connector,
-                            params["url"].as_str().unwrap_or(""),
-                            &self.fingerprint.employee_id,
-                            self.erp_session_epoch,
-                            params["rejectedToken"].as_str(),
-                        )
-                    } else {
-                        tauri::async_runtime::block_on(crate::erp_auth::mcp::cookie_result(
-                            &self.app,
-                            connector,
-                            params["url"].as_str().unwrap_or(""),
-                            &self.fingerprint.employee_id,
-                            self.erp_session_epoch,
-                        ))
-                    };
-                    // This response stays on private IPC and never becomes a task notification.
-                    serde_json::to_writer(
-                        &mut self.stdin,
-                        &json!({
-                            "jsonrpc": "2.0", "id": null, "method": if oauth { "connector-oauth.respond" } else { "erp-cookie.respond" },
-                            "params": {"requestId": id, "result": result}
-                        }),
-                    )
-                    .map_err(|_| "无法发送 ERP 会话响应".to_string())?;
-                    self.stdin
-                        .write_all(b"\n")
-                        .and_then(|_| self.stdin.flush())
-                        .map_err(|_| "无法发送 ERP 会话响应".to_string())?;
-                    continue;
-                }
                 if matches!(
                     output.get("method").and_then(Value::as_str),
                     Some("schedule.request" | "skill.request")
@@ -2599,6 +2560,7 @@ pub(crate) fn resolve_runtime_paths(
             node: configured_path("XIAOYIN_HARNESS_NODE", defaults.node)?,
             entry: configured_path("XIAOYIN_HARNESS_HOST_ENTRY", defaults.entry)?,
             config: configured_path("XIAOYIN_HARNESS_CORDIS_CONFIG", defaults.config)?,
+            primary_runtime: configured_path("DSH_PRIMARY_RUNTIME", defaults.primary_runtime)?,
         };
         validate_runtime_paths(&paths)?;
         Ok(paths)
@@ -2614,6 +2576,7 @@ fn development_runtime_paths() -> Result<HarnessRuntimePaths, String> {
         node: PathBuf::from("node"),
         entry: repository.join("harness-host/dist/index.js"),
         config: repository.join("harness-host/runtime/cordis.yml"),
+        primary_runtime: repository.join("src-tauri/resources/harness-runtime/primary-runtime"),
     })
 }
 
@@ -2629,6 +2592,7 @@ fn packaged_runtime_paths(resource_dir: &Path) -> HarnessRuntimePaths {
         }),
         entry: root.join("harness-host/dist/index.js"),
         config: root.join("harness-host/runtime/cordis.yml"),
+        primary_runtime: root.join("primary-runtime"),
     }
 }
 
@@ -2659,6 +2623,19 @@ fn validate_runtime_paths(paths: &HarnessRuntimePaths) -> Result<(), String> {
     if !paths.config.is_file() {
         return Err(format!("找不到 Harness 配置：{}", paths.config.display()));
     }
+    if !paths.primary_runtime.join("runtime.json").is_file() {
+        return Err(format!(
+            "找不到官方 Office Runtime：{}",
+            paths.primary_runtime.display()
+        ));
+    }
+    if !paths
+        .primary_runtime
+        .parent()
+        .is_some_and(|root| root.join("office-skills/scripts/check_office.py").is_file())
+    {
+        return Err("找不到官方 Office Skills 资源".to_string());
+    }
     Ok(())
 }
 
@@ -2688,7 +2665,6 @@ fn validate_run_request(request: &HarnessRunRequest) -> Result<(), String> {
     if !matches!(request.execution_mode.as_str(), "agent" | "plan") {
         return Err("执行模式无效".to_string());
     }
-    validate_tools_mode(request.tools_mode.as_deref())?;
     validate_http_url("LiteLLM", &request.litellm_base_url)?;
     validate_http_url("知识库", &request.knowledge_endpoint)?;
     validate_http_url("定时任务", &request.schedule_endpoint)?;
@@ -2719,15 +2695,8 @@ fn validate_run_request(request: &HarnessRunRequest) -> Result<(), String> {
     Ok(())
 }
 
-fn validate_tools_mode(value: Option<&str>) -> Result<String, String> {
-    match value.unwrap_or("native") {
-        "native" | "ptc" | "both" => Ok(value.unwrap_or("native").to_string()),
-        _ => Err("工具运行模式无效".to_string()),
-    }
-}
-
 pub(crate) fn validate_capability_snapshot(snapshot: &CapabilitySnapshot) -> Result<(), String> {
-    if snapshot.schema_version != 1 {
+    if snapshot.schema_version != 2 {
         return Err("能力快照协议版本无效".to_string());
     }
     if snapshot.created_at.trim().is_empty()
@@ -2740,6 +2709,7 @@ pub(crate) fn validate_capability_snapshot(snapshot: &CapabilitySnapshot) -> Res
         return Err("能力快照中的选择项与制品数量不一致".to_string());
     }
     if snapshot.requested_connector_ids.len() > 64
+        || snapshot.local_tools.len() > 256
         || snapshot.requested_knowledge_base_refs.len() > 32
     {
         return Err("能力快照的产品选择范围过大".to_string());
@@ -2758,6 +2728,15 @@ pub(crate) fn validate_capability_snapshot(snapshot: &CapabilitySnapshot) -> Res
             })
     {
         return Err("能力快照的产品选择无效".to_string());
+    }
+    if snapshot.local_tools.iter().any(|tool| {
+        tool.trim().is_empty()
+            || tool.len() > 128
+            || tool.bytes().any(|value| {
+                !(value.is_ascii_alphanumeric() || matches!(value, b'.' | b'_' | b'-'))
+            })
+    }) {
+        return Err("能力快照中的本地工具无效".to_string());
     }
     validate_connector_catalog(&snapshot.connectors)?;
     expert_kits::validate_allowed_artifacts(&snapshot.artifacts)?;
@@ -2837,6 +2816,73 @@ fn is_valid_session_id(value: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b':' | b'.'))
 }
 
+fn resolve_connector_credentials(
+    app: &tauri::AppHandle,
+    connectors: &[RuntimeConnector],
+    employee_id: &str,
+    access_token: &str,
+) -> Result<Vec<RuntimeConnector>, String> {
+    let epoch = crate::dingtalk_auth::mcp::session_epoch();
+    connectors
+        .iter()
+        .cloned()
+        .map(|mut connector| {
+            let credential = match connector.auth_mode.as_str() {
+                "none" => None,
+                "employee-bearer" => {
+                    let token =
+                        crate::dingtalk_auth::connector_bearer_token(employee_id, access_token);
+                    if token.is_empty() {
+                        return Err(format!("连接器「{}」缺少员工登录凭据", connector.name));
+                    }
+                    Some(("authorization", format!("Bearer {token}")))
+                }
+                "oauth" => {
+                    let result = crate::connector_oauth::token_result(
+                        app,
+                        Some(&connector),
+                        &connector.url,
+                        employee_id,
+                        epoch,
+                        None,
+                    );
+                    let token = result["token"]
+                        .as_str()
+                        .filter(|value| !value.is_empty())
+                        .ok_or_else(|| {
+                            result["error"]
+                                .as_str()
+                                .unwrap_or("连接器需要重新授权")
+                                .to_string()
+                        })?;
+                    Some(("authorization", format!("Bearer {token}")))
+                }
+                "erp-cookie" => {
+                    let cookie = connector
+                        .headers
+                        .iter()
+                        .find(|(key, _)| key.eq_ignore_ascii_case("cookie"))
+                        .map(|(_, value)| value.trim())
+                        .filter(|value| !value.is_empty())
+                        .ok_or_else(|| format!("连接器「{}」需要重新登录", connector.name))?;
+                    if cookie.contains('\r') || cookie.contains('\n') {
+                        return Err(format!("连接器「{}」的登录凭据无效", connector.name));
+                    }
+                    None
+                }
+                _ => return Err(format!("连接器「{}」认证方式无效", connector.name)),
+            };
+            if let Some((header, value)) = credential {
+                connector
+                    .headers
+                    .retain(|key, _| !key.eq_ignore_ascii_case(header));
+                connector.headers.insert(header.to_string(), value);
+            }
+            Ok(connector)
+        })
+        .collect()
+}
+
 pub(crate) fn credential_digest(model_api_key: &str, access_token: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update((model_api_key.len() as u64).to_be_bytes());
@@ -2867,6 +2913,13 @@ pub(crate) fn validate_employee_id(value: &str) -> Result<(), String> {
 
 fn fingerprint_changed(current: Option<&RuntimeFingerprint>, next: &RuntimeFingerprint) -> bool {
     current.is_some_and(|value| value != next)
+}
+
+fn capability_preset_id(fingerprint: &RuntimeFingerprint) -> Result<String, String> {
+    let bytes = serde_json::to_vec(fingerprint)
+        .map_err(|error| format!("无法生成 Agent Preset 标识：{error}"))?;
+    let digest = Sha256::digest(bytes);
+    Ok(format!("xiaoyin-{:x}", digest))
 }
 
 #[cfg(test)]
@@ -2935,7 +2988,6 @@ mod tests {
             allow_browser: false,
             allowed_computer_tools: Vec::new(),
             execution_mode: "agent".to_string(),
-            tools_mode: "native".to_string(),
             allow_shell: true,
             allow_lsp: true,
             allow_external_agents: false,
@@ -2953,9 +3005,6 @@ mod tests {
         };
         assert!(!fingerprint_changed(None, &baseline));
         assert!(!fingerprint_changed(Some(&baseline), &baseline));
-        assert_eq!(validate_tools_mode(Some("ptc")), Ok("ptc".to_string()));
-        assert_eq!(validate_tools_mode(Some("both")), Ok("both".to_string()));
-        assert!(validate_tools_mode(Some("unknown")).is_err());
         for changed in [
             RuntimeFingerprint {
                 reasoning_effort: Some("medium".into()),
@@ -2975,10 +3024,6 @@ mod tests {
             },
             RuntimeFingerprint {
                 execution_mode: "plan".into(),
-                ..baseline.clone()
-            },
-            RuntimeFingerprint {
-                tools_mode: "ptc".into(),
                 ..baseline.clone()
             },
             RuntimeFingerprint {
@@ -3128,14 +3173,17 @@ mod tests {
     }
 
     #[test]
-    fn native_bridge_preserves_task_outcome() {
-        let outcome = json!({ "status": "needs_input", "summary": "缺少月份",
-            "remaining": ["提供统计月份"], "checks": [] });
+    fn native_bridge_preserves_harness_result() {
         let result: HarnessRunResult = serde_json::from_value(json!({
-            "sessionId": "session-1", "finalResponse": "请补充月份", "outcome": outcome
+            "sessionId": "session-1", "finalResponse": "请补充月份"
         }))
         .unwrap();
-        assert_eq!(serde_json::to_value(result).unwrap()["outcome"], outcome);
+        assert_eq!(
+            serde_json::to_value(result).unwrap(),
+            json!({
+                "sessionId": "session-1", "finalResponse": "请补充月份"
+            })
+        );
     }
 
     #[test]
@@ -3205,7 +3253,6 @@ mod tests {
             task_id: "task-1".to_string(),
             prompt: "分析库存".to_string(),
             execution_mode: "agent".to_string(),
-            tools_mode: Some("native".to_string()),
             allow_shell: true,
             allow_lsp: true,
             allow_external_agents: false,
@@ -3214,11 +3261,12 @@ mod tests {
             team_id: "crossborder".to_string(),
             session_id: None,
             capability_snapshot: CapabilitySnapshot {
-                schema_version: 1,
+                schema_version: 2,
                 created_at: "2026-09-11T00:00:00Z".to_string(),
                 selections: Vec::new(),
                 artifacts: Vec::new(),
                 implicit_artifacts: Vec::new(),
+                local_tools: Vec::new(),
                 requested_connector_ids: Vec::new(),
                 knowledge_base_refs: Vec::new(),
                 requested_knowledge_base_refs: Vec::new(),
@@ -3269,11 +3317,12 @@ mod tests {
             "teamId": "team-1",
             "sessionId": null,
             "capabilitySnapshot": {
-                "schemaVersion": 1,
+                "schemaVersion": 2,
                 "createdAt": "2026-09-11T00:00:00Z",
                 "selections": [],
                 "artifacts": [],
                 "implicitArtifacts": [],
+                "localTools": [],
                 "requestedConnectorIds": [],
                 "requestedKnowledgeBaseRefs": []
             },
@@ -3284,7 +3333,6 @@ mod tests {
             "accessToken": "token"
         }))
         .expect("request without optional authorizations should remain restricted");
-        assert_eq!(request.tools_mode, None);
         assert!(!request.allow_shell);
         assert!(!request.allow_lsp);
         assert!(!request.allow_external_agents);
@@ -3340,46 +3388,27 @@ mod tests {
 
     #[test]
     fn ready_connectors_are_session_capabilities_and_declared_dependencies_are_advisory() {
-        let catalog = vec![
-            ConnectorDefinition {
-                timeout_seconds: None,
-                id: "erp-mcp".to_string(),
-                name: "ERP".to_string(),
-                status: "ready".to_string(),
-                version: "1".to_string(),
-                transport: "streamable-http".to_string(),
-                url: "http://erp.internal/mcp".to_string(),
-                auth_mode: "employee-bearer".to_string(),
-                tool_names: vec!["sales_summary".to_string(), "order_cancel".to_string()],
-                read_only_tools: vec!["sales_summary".to_string()],
-                command: String::new(),
-                arguments: Vec::new(),
-                environment: std::collections::HashMap::new(),
-                headers: std::collections::HashMap::new(),
-                enabled: true,
-            },
-            ConnectorDefinition {
-                id: "desktop-browser".to_string(),
-                timeout_seconds: None,
-                name: "浏览器".to_string(),
-                status: "ready".to_string(),
-                version: "1".to_string(),
-                transport: "desktop".to_string(),
-                url: String::new(),
-                auth_mode: "none".to_string(),
-                tool_names: vec!["browser_open".to_string()],
-                read_only_tools: Vec::new(),
-                command: String::new(),
-                arguments: Vec::new(),
-                environment: std::collections::HashMap::new(),
-                headers: std::collections::HashMap::new(),
-                enabled: false,
-            },
-        ];
+        let catalog = vec![ConnectorDefinition {
+            timeout_seconds: None,
+            id: "erp-mcp".to_string(),
+            name: "ERP".to_string(),
+            status: "ready".to_string(),
+            version: "1".to_string(),
+            transport: "streamable-http".to_string(),
+            url: "http://erp.internal/mcp".to_string(),
+            auth_mode: "employee-bearer".to_string(),
+            tool_names: vec!["sales_summary".to_string(), "order_cancel".to_string()],
+            read_only_tools: vec!["sales_summary".to_string()],
+            command: String::new(),
+            arguments: Vec::new(),
+            environment: std::collections::HashMap::new(),
+            headers: std::collections::HashMap::new(),
+            enabled: true,
+        }];
         let profile = expert_kits::ExpertKitHarnessProfile {
             skill_directories: Vec::new(),
             knowledge_base_refs: Some(vec!["organization:operations-sop".to_string()]),
-            required_connector_tools: vec!["sales_summary".to_string(), "browser_open".to_string()],
+            required_connector_tools: vec!["sales_summary".to_string()],
             allowed_computer_tools: Vec::new(),
             prompt: String::new(),
         };
@@ -3396,42 +3425,23 @@ mod tests {
 
     #[test]
     fn diagnostics_include_only_ready_remote_connectors_and_all_declared_tools() {
-        let catalog = vec![
-            ConnectorDefinition {
-                timeout_seconds: None,
-                id: "erp-mcp".to_string(),
-                name: "ERP".to_string(),
-                status: "ready".to_string(),
-                version: "2".to_string(),
-                transport: "streamable-http".to_string(),
-                url: "http://erp.internal/mcp".to_string(),
-                auth_mode: "employee-bearer".to_string(),
-                tool_names: vec!["sales_summary".to_string(), "inventory_risk".to_string()],
-                read_only_tools: vec!["sales_summary".to_string(), "inventory_risk".to_string()],
-                command: String::new(),
-                arguments: Vec::new(),
-                environment: std::collections::HashMap::new(),
-                headers: std::collections::HashMap::new(),
-                enabled: false,
-            },
-            ConnectorDefinition {
-                id: "local-files".to_string(),
-                timeout_seconds: None,
-                name: "本地文件".to_string(),
-                status: "ready".to_string(),
-                version: "1".to_string(),
-                transport: "desktop".to_string(),
-                url: String::new(),
-                auth_mode: "none".to_string(),
-                tool_names: vec!["local_file_read".to_string()],
-                read_only_tools: Vec::new(),
-                command: String::new(),
-                arguments: Vec::new(),
-                environment: std::collections::HashMap::new(),
-                headers: std::collections::HashMap::new(),
-                enabled: false,
-            },
-        ];
+        let catalog = vec![ConnectorDefinition {
+            timeout_seconds: None,
+            id: "erp-mcp".to_string(),
+            name: "ERP".to_string(),
+            status: "ready".to_string(),
+            version: "2".to_string(),
+            transport: "streamable-http".to_string(),
+            url: "http://erp.internal/mcp".to_string(),
+            auth_mode: "employee-bearer".to_string(),
+            tool_names: vec!["sales_summary".to_string(), "inventory_risk".to_string()],
+            read_only_tools: vec!["sales_summary".to_string(), "inventory_risk".to_string()],
+            command: String::new(),
+            arguments: Vec::new(),
+            environment: std::collections::HashMap::new(),
+            headers: std::collections::HashMap::new(),
+            enabled: false,
+        }];
 
         let diagnostics = diagnostic_connectors(&catalog).expect("catalog should be valid");
         assert_eq!(diagnostics.len(), 1);

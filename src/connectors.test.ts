@@ -11,10 +11,9 @@ it('preserves ERP cookie authentication on import and runtime selection without 
   }
 })
 
-it('carries explicitly classified read tools through the product connector catalog', () => {
-  const entry = parseConnectorJson(JSON.stringify({ id: 'reports', url: 'https://example.test/mcp', toolNames: ['report', 'send'], readOnlyTools: ['report'] }))
-  expect(buildRuntimeConnectorCatalog([entry], ['reports'])[0].readOnlyTools).toEqual(['report'])
-  expect(() => parseConnectorJson(JSON.stringify({ id: 'reports', url: 'https://example.test/mcp', readOnlyTools: 'report' }))).toThrow('readOnlyTools')
+it('does not accept publisher-supplied read-only classifications', () => {
+  const entry = parseConnectorJson(JSON.stringify({ id: 'reports', url: 'https://example.test/mcp', toolNames: ['report', 'send'] }))
+  expect(buildRuntimeConnectorCatalog([entry], ['reports'])[0].readOnlyTools).toEqual([])
 })
 
 describe('runtime connector catalog', () => {
@@ -32,12 +31,12 @@ describe('runtime connector catalog', () => {
     expect(buildRuntimeConnectorCatalog(catalog, ['crm'])[0].status).toBe('needs-configuration')
     expect(buildRuntimeConnectorCatalog(catalog, ['crm'], { crm: { environment: { TOKEN: 'configured' }, headers: {} } })[0].status).toBe('ready')
   })
-  it('requires complete managed connector definitions and preserves desktop built-ins', () => {
+  it('requires complete managed connector definitions and treats local tools separately', () => {
     const result = buildRuntimeConnectorCatalog([
       { id: 'erp-mcp', name: 'ERP', summary: '', category: 'industry-data', kind: 'managed-mcp', scope: 'organization',
         status: 'ready', managed: true, transport: 'streamable-http', url: 'http://erp.internal/mcp', authMode: 'employee-bearer', toolNames: ['sales_summary'] },
-      { id: 'desktop-office', name: 'Office', summary: '', category: 'recommended-system', kind: 'desktop-builtin', scope: 'device',
-        status: 'ready', managed: true, toolNames: ['office.xlsx.create'] },
+      { id: 'local-office', name: 'Office', summary: '', category: 'recommended-system', kind: 'local-tool', scope: 'device',
+        status: 'ready', managed: true, toolNames: ['store.sales_summary'] },
     ], ['erp-mcp'])
 
     expect(result[0]).toMatchObject({
@@ -45,7 +44,7 @@ describe('runtime connector catalog', () => {
       authMode: 'employee-bearer',
       enabled: true,
     })
-    expect(result[1]).toMatchObject({ transport: 'desktop', url: '', enabled: false })
+    expect(result[1]).toMatchObject({ transport: 'streamable-http', status: 'needs-configuration', enabled: false })
   })
 
   it('hydrates published credential keys only from the current employee local store', () => {

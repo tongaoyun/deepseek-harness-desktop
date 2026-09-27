@@ -10,7 +10,7 @@ mod timeout_tests {
     fn erp_cookie_mode_is_forwarded_only_for_remote_connectors_without_static_auth() {
         let mut connector: ConnectorDefinition = serde_json::from_value(serde_json::json!({
             "id": "erp", "name": "ERP", "status": "ready", "version": "1",
-            "transport": "sse", "url": "https://erp.example/sse", "authMode": "erp-cookie"
+            "transport": "streamable-http", "url": "https://erp.example/mcp", "authMode": "erp-cookie"
         }))
         .unwrap();
         assert_eq!(
@@ -77,6 +77,17 @@ mod timeout_tests {
         assert!(validate_connector_catalog(&[connector.clone()]).is_err());
         connector.timeout_seconds = None;
         assert!(validate_connector_catalog(&[connector]).is_ok());
+    }
+
+    #[test]
+    fn read_only_snapshot_must_reference_a_declared_tool() {
+        let connector: ConnectorDefinition = serde_json::from_value(serde_json::json!({
+            "id": "erp-mcp", "name": "ERP", "status": "ready", "version": "1",
+            "transport": "streamable-http", "url": "http://erp.example/mcp", "authMode": "none",
+            "toolNames": [], "readOnlyTools": ["store.sales_summary"]
+        }))
+        .unwrap();
+        assert!(validate_connector_catalog(&[connector]).is_err());
     }
 }
 
@@ -178,7 +189,7 @@ pub(crate) fn diagnostic_connectors(
     validate_connector_catalog(catalog)?;
     Ok(catalog
         .iter()
-        .filter(|connector| connector.status == "ready" && connector.transport != "desktop")
+        .filter(|connector| connector.status == "ready")
         .map(|connector| {
             connector_entry(
                 connector,
@@ -202,9 +213,7 @@ pub(crate) fn runtime_connectors(
     validate_connector_catalog(catalog)?;
     let selected = catalog
         .iter()
-        .filter(|connector| {
-            connector.enabled && connector.transport != "desktop" && connector.status == "ready"
-        })
+        .filter(|connector| connector.enabled && connector.status == "ready")
         .collect::<Vec<_>>();
     Ok(selected
         .into_iter()
@@ -262,10 +271,7 @@ pub(crate) fn validate_connector_catalog(connectors: &[ConnectorDefinition]) -> 
         ) {
             return Err(format!("连接器状态无效：{}", connector.id));
         }
-        if !matches!(
-            connector.transport.as_str(),
-            "streamable-http" | "sse" | "stdio" | "desktop"
-        ) {
+        if !matches!(connector.transport.as_str(), "streamable-http" | "stdio") {
             return Err(format!("连接器传输方式无效：{}", connector.id));
         }
         if !matches!(
@@ -275,8 +281,8 @@ pub(crate) fn validate_connector_catalog(connectors: &[ConnectorDefinition]) -> 
             return Err(format!("连接器认证方式无效：{}", connector.id));
         }
         if matches!(connector.auth_mode.as_str(), "erp-cookie" | "oauth") {
-            if !matches!(connector.transport.as_str(), "streamable-http" | "sse") {
-                return Err("动态授权仅支持 HTTP/SSE 连接器".into());
+            if connector.transport != "streamable-http" {
+                return Err("动态授权仅支持 Streamable HTTP 连接器".into());
             }
             if connector.headers.keys().any(|key| {
                 key.eq_ignore_ascii_case("cookie") || key.eq_ignore_ascii_case("authorization")
@@ -284,11 +290,7 @@ pub(crate) fn validate_connector_catalog(connectors: &[ConnectorDefinition]) -> 
                 return Err("动态授权不能同时配置 Cookie 或 Authorization 请求头".into());
             }
         }
-        if connector.transport == "desktop" {
-            if !connector.url.is_empty() {
-                return Err(format!("桌面内置连接器不能配置远程地址：{}", connector.id));
-            }
-        } else if connector.transport == "stdio" {
+        if connector.transport == "stdio" {
             if connector.command.trim().is_empty() {
                 return Err(format!("stdio 连接器缺少启动命令：{}", connector.id));
             }
@@ -308,7 +310,7 @@ pub(crate) fn validate_connector_catalog(connectors: &[ConnectorDefinition]) -> 
         if connector.read_only_tools.iter().any(|tool| {
             !valid_identifier(tool)
                 || !read_only_tools.insert(tool.as_str())
-                || (!connector.tool_names.is_empty() && !tools.contains(tool.as_str()))
+                || !tools.contains(tool.as_str())
         }) {
             return Err(format!(
                 "连接器只读工具未在工具清单中声明：{}",
@@ -317,15 +319,6 @@ pub(crate) fn validate_connector_catalog(connectors: &[ConnectorDefinition]) -> 
         }
     }
     Ok(())
-}
-
-pub(crate) fn desktop_connector_enabled(catalog: &[ConnectorDefinition], id: &str) -> bool {
-    catalog.iter().any(|connector| {
-        connector.id == id
-            && connector.enabled
-            && connector.status == "ready"
-            && connector.transport == "desktop"
-    })
 }
 
 pub(crate) fn validate_http_url(name: &str, value: &str) -> Result<(), String> {

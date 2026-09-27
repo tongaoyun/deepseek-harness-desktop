@@ -211,20 +211,17 @@ describe('task history', () => {
     expect(() => loadLocalTasks('employee-1', storage)).toThrow('本地历史无法读取')
   })
 
-  it('round trips remaining work and evidence on both the task and assistant message', () => {
+  it('round trips official completed turn metadata', () => {
     const storage = new MemoryStorage()
-    const finishedProjection: LocalTaskRun['projection'] = { ...projection, status: 'completed', outcome: {
-      status: 'needs_confirmation', summary: '报告已生成，发送前需要确认收件人', remaining: ['确认收件人'],
-      checks: [{ description: '报告结构', result: 'passed', evidence: 'report.xlsx 包含销售和汇总表' }],
-    } }
+    const finishedProjection: LocalTaskRun['projection'] = { ...projection, status: 'completed' }
     const task: LocalTaskRun = { id: 'awaiting', source: 'DESKTOP', name: '销售报告', status: 'COMPLETED',
       createdAt: '2026-09-07', updatedAt: '2026-09-07', projection: finishedProjection,
-      entries: [assistantEntry('turn-1', '请确认收件人', { outcome: finishedProjection.outcome })],
+      entries: [assistantEntry('turn-1', '报告已生成', { completedAt: '2026-09-07T00:00:10Z' })],
     }
     saveLocalTask('employee-1', task, storage)
     const [restored] = recoverInterruptedTasks(loadLocalTasks('employee-1', storage))
-    expect(restored?.projection.outcome).toEqual(finishedProjection.outcome)
-    expect(restored?.entries[0]).toMatchObject({ meta: { outcome: finishedProjection.outcome } })
+    expect(restored?.projection.status).toBe('completed')
+    expect(restored?.entries[0]).toMatchObject({ meta: { completedAt: '2026-09-07T00:00:10Z' } })
   })
 
   it('turns tasks left running by an app exit into retryable failures', () => {

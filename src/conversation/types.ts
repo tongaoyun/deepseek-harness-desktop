@@ -1,13 +1,9 @@
 import type { LocalTaskAttachment, TaskQuestionAnswer, TaskQuestionItem } from '../types'
-import type { TaskOutcome } from '../taskOutcome'
 import type { ReasoningEffort } from '../modelReasoning'
 
 /**
- * The conversation the employee sees, mirroring the host's
- * `xiaoyin.transcript` projection fold: one entry per user turn and assistant
- * turn, with per-step text segments and tool cards in event order. The durable
- * authority stays the Harness session log; `entries` is the wire-safe read
- * model persisted on LocalTaskRun.
+ * Product-owned input and queue metadata. The official Harness Session Log,
+ * not these records, is the source for conversation rendering and replay.
  */
 
 export interface UserTurn {
@@ -42,7 +38,6 @@ export interface TurnMeta {
   completedAt?: string
   failure?: TurnFailure
   tokenUsage?: TurnTokenUsage
-  outcome?: TaskOutcome
 }
 
 export type TextSegment = { kind: 'text'; id: string; text: string; streaming?: boolean }

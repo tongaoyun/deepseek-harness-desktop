@@ -9,9 +9,8 @@ import { homedir } from 'node:os'
 import { WriteOperationJournal } from '../harness-host/dist/write-operation-journal.js'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
-const employeeId = `oauth-acceptance-${randomUUID()}`
+const employeeId = 'local-development'
 let base = '', child, childExit, challenge = '', refreshes = 0, revocations = 0, rejectNext = false
-let identityStatus = 200, cookieCalls = 0, seedRequests = 0, identityCalls = 0
 const queued = [], pending = new Map(), checks = []
 const script = `setInterval(async () => {
   for (const item of await (await fetch('/control')).json()) {
@@ -38,18 +37,6 @@ const server = createServer(async (req, res) => {
       return json({})
     }
     if (url.pathname === '/acceptance.js') return res.writeHead(200, { 'Content-Type': 'text/javascript' }).end(script)
-    if (url.pathname === '/erp-seed') { seedRequests += 1; return res.writeHead(200, { 'Set-Cookie': 'XY_ACCEPTANCE=fixture-session; Path=/; HttpOnly; SameSite=Lax' }).end('Session fixture') }
-    if (url.pathname === '/erp-identity') { identityCalls += 1; return json({ operId: employeeId, oper: 'Acceptance' }, identityStatus) }
-    if (url.pathname === '/erp-mcp') {
-      if (!req.headers.cookie?.includes('XY_ACCEPTANCE=fixture-session')) return json({}, 401)
-      cookieCalls += 1
-      if (req.method !== 'POST') return json({}, 405)
-      const message = JSON.parse(body)
-      if (message.id === undefined) return res.writeHead(202).end()
-      return json({ jsonrpc: '2.0', id: message.id, result: message.method === 'initialize'
-        ? { protocolVersion: message.params.protocolVersion, capabilities: { tools: {} }, serverInfo: { name: 'ERP acceptance', version: '1' } }
-        : { tools: [] } })
-    }
     if (url.pathname.startsWith('/.well-known/oauth-protected-resource')) return json({ resource: `${base}/mcp`, authorization_servers: [base], scopes_supported: ['orders:read'] })
     if (url.pathname.startsWith('/.well-known/')) return json({ issuer: base, authorization_endpoint: `${base}/authorize`, token_endpoint: `${base}/token`, registration_endpoint: `${base}/register`, revocation_endpoint: `${base}/revoke`, response_types_supported: ['code'], grant_types_supported: ['authorization_code', 'refresh_token'], code_challenge_methods_supported: ['S256'], token_endpoint_auth_methods_supported: ['none'], authorization_response_iss_parameter_supported: true })
     if (url.pathname === '/register') return json({ ...JSON.parse(body), client_id: 'native-fixture' }, 201)
@@ -81,9 +68,8 @@ const server = createServer(async (req, res) => {
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
 base = `http://localhost:${server.address().port}`
 const connector = { id: 'oauth-fixture', name: 'OAuth 验收', version: '1', status: 'ready', transport: 'streamable-http', url: `${base}/mcp`, authMode: 'oauth', enabled: true, toolNames: [] }
-const config = { identifier: `com.instudio.xiaoyin.oauth-test.${randomUUID()}`, build: { devUrl: base, beforeDevCommand: '' }, app: { windows: [
+const config = { identifier: 'com.instudio.xiaoyin.desktop.local-test', build: { devUrl: base, beforeDevCommand: '' }, app: { windows: [
   { label: 'main', title: '连接器授权验收', width: 920, height: 660 },
-  { label: 'erp-login', url: `${base}/erp-seed`, title: 'Session fixture', visible: false },
 ] } }
 function rpc(command, args) {
   const id = randomUUID()
@@ -95,7 +81,7 @@ function rpc(command, args) {
 const authorization = action => rpc('connector_authorization', { request: { employeeId, connector, action } })
 const diagnose = () => rpc('diagnose_connectors', { request: { employeeId, accessToken: 'fixture', connectors: [connector] } })
 function start(command, args) {
-  child = spawn(command, args, { cwd: root, env: { ...process.env, XIAOYIN_ERP_COOKIE_URL: `${base}/`, XIAOYIN_ERP_USER_URL: `${base}/erp-identity` }, stdio: ['ignore', 'pipe', 'pipe'], detached: true })
+  child = spawn(command, args, { cwd: root, env: { ...process.env, VITE_SKIP_DINGTALK_LOGIN: 'true', XIAOYIN_LOCAL_DEV_WEBVIEW_ISOLATION: 'true' }, stdio: ['ignore', 'pipe', 'pipe'], detached: true })
   let tail = ''
   for (const stream of [child.stdout, child.stderr]) stream.on('data', chunk => { tail = (tail + chunk).slice(-5000) })
   childExit = new Promise(resolve => { child.once('exit', code => { if (code) console.error(tail); resolve() }); child.once('error', error => { console.error(error.message); resolve() }) })
@@ -152,24 +138,6 @@ try {
   assert.equal((await authorization('disconnect')).status, 'disconnected'); assert.equal(revocations, 1)
   assert.equal((await diagnose())[0].status, 'authentication-required')
   checks.push('disconnect-revokes-running-worker-access'); console.log('PASS: disconnect revokes access')
-  const erpConnector = { ...connector, id: 'erp-fixture', authMode: 'erp-cookie', url: `${base}/erp-mcp` }
-  const diagnoseErp = employee => rpc('diagnose_connectors', { request: { employeeId: employee, accessToken: '', connectors: [erpConnector] } })
-  const erpResult = (await diagnoseErp(employeeId))[0]
-  assert.equal(erpResult.status, 'ready', JSON.stringify({ erpResult, seedRequests, identityCalls, cookieCalls }))
-  assert(cookieCalls > 0)
-  const callsBeforeRejection = cookieCalls
-  assert.equal((await diagnoseErp(`${employeeId}-other`))[0].status, 'access-denied')
-  assert.equal(cookieCalls, callsBeforeRejection)
-  identityStatus = 503
-  assert.equal((await diagnoseErp(employeeId))[0].status, 'unavailable')
-  assert.equal(cookieCalls, callsBeforeRejection)
-  identityStatus = 200
-  assert.equal((await diagnoseErp(employeeId))[0].status, 'ready')
-  await rpc('clear_erp_session')
-  const callsBeforeLogout = cookieCalls
-  assert.equal((await diagnoseErp(employeeId))[0].status, 'authentication-required')
-  assert.equal(cookieCalls, callsBeforeLogout)
-  checks.push('native-erp-cookie-bridge-identity-outage-and-logout'); console.log('PASS: native Cookie bridge checks account ownership, service recovery and logout without QR login')
   report.passed = true
 } catch (error) { report.error = error.message; process.exitCode = 1 }
 finally {

@@ -77,7 +77,7 @@ export function capabilityReportEntry(
 ): { key: string; status: 'READY' | 'DEGRADED' | 'UNSUPPORTED'; detail: string } {
   if (key === 'control.plane') return { key, status: 'READY', detail: '已通过身份验证并取得控制面配置' }
   if (key === 'desktop.runtime' || key === 'office.documents') {
-    const required = key === 'desktop.runtime' ? ['local-files', 'native-shell'] : ['office-docx', 'office-xlsx', 'office-pdf']
+    const required = key === 'desktop.runtime' ? ['local-files', 'native-shell'] : ['office-runtime', 'office-skills', 'libreoffice-kit']
     const passed = selfTest?.status === 'passed' && required.every((name) => selfTest.checks.some((check) => check.key === name && check.passed))
     return { key, status: passed ? 'READY' : 'DEGRADED', detail: passed ? '本地能力自检通过' : '本地能力自检未通过，请运行诊断' }
   }

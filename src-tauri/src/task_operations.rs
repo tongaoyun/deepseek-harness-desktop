@@ -53,7 +53,7 @@ pub async fn task_write_operations(
     manager: tauri::State<'_, HarnessManager>,
     request: OperationRequest,
 ) -> Result<Vec<TaskOperation>, String> {
-    crate::erp_auth::require_employee(&app, &request.employee_id).await?;
+    crate::dingtalk_auth::require_employee(&app, &request.employee_id).await?;
     let path = journal_path(&app, &request.employee_id, &request.task_id)?;
     let review_guard = if request.resolution.is_some() {
         Some(manager.begin_operation_review(&request.task_id, &request.employee_id)?)

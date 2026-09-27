@@ -14,19 +14,19 @@ it('starts Harness diagnostics only when explicitly requested', async () => {
   vi.mocked(selfTestLocalCapabilities).mockResolvedValue({ status: 'passed', checks: [{ key: 'local-files', passed: true, detail: 'ok' }] })
   const container = document.body.appendChild(document.createElement('div'))
   const root = createRoot(container)
-  function Probe({ mode }: { mode: 'native' | 'ptc' | 'both' }) {
-    const { health, recover } = useHarnessHealth(true, true, true, false, false, false, mode)
+  function Probe() {
+    const { health, recover } = useHarnessHealth(true, true, true, false, false, false)
     return <button onClick={() => void recover()}>{health}</button>
   }
   try {
-    await act(async () => root.render(<Probe mode="native" />))
+    await act(async () => root.render(<Probe />))
     expect(probeHarnessHost).not.toHaveBeenCalled()
     expect(container.textContent).toBe('idle')
-    await act(async () => root.render(<Probe mode="ptc" />))
+    await act(async () => root.render(<Probe />))
     expect(probeHarnessHost).not.toHaveBeenCalled()
     expect(container.textContent).toBe('idle')
     await act(async () => container.querySelector('button')!.click())
-    expect(probeHarnessHost).toHaveBeenLastCalledWith(true, true, false, false, false, 'ptc')
+    expect(probeHarnessHost).toHaveBeenLastCalledWith(true, true, false, false, false)
     expect(selfTestLocalCapabilities).toHaveBeenCalledOnce()
     expect(container.textContent).toBe('ready')
   } finally { await act(async () => root.unmount()); container.remove() }

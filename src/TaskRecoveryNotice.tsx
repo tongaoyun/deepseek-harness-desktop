@@ -1,6 +1,6 @@
 import { RotateCcw } from 'lucide-react'
 import type { XiaoyinTaskProjection } from './types'
-import './taskOutcome.css'
+import './taskRecovery.css'
 
 export function TaskRecoveryNotice({ projection, disabled, onResume }: { projection: XiaoyinTaskProjection; disabled: boolean; onResume?: () => void }) {
   const interruption = projection.interruption

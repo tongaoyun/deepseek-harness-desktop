@@ -19,25 +19,10 @@
         "minWidth": 900,
         "minHeight": 640,
         "resizable": true
-      },
-      {
-        "label": "erp-login",
-        "url": "index.html?window=erp-login",
-        "title": "小胤 · ERP 扫码登录",
-        "width": 420,
-        "height": 540,
-        "minWidth": 380,
-        "minHeight": 500,
-        "center": true,
-        "visible": false,
-        "focus": false,
-        "resizable": false,
-        "fullscreen": false,
-        "closable": true
       }
     ],
     "security": {
-      "csp": "default-src 'self'; connect-src 'self' http://127.0.0.1:8080 http://192.168.2.67:30081 http://192.168.2.67:32000; frame-src https://login.dingtalk.com blob: http://127.0.0.1:*; img-src 'self' asset: http://asset.localhost data: blob:; media-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'"
+        "csp": "default-src 'self'; connect-src 'self' http://127.0.0.1:8080 http://192.168.2.67:30081 http://192.168.2.67:32000; img-src 'self' asset: http://asset.localhost data: blob:; media-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'"
     }
   },
   "bundle": {

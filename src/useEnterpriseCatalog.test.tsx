@@ -7,7 +7,7 @@ import { createExpertKitDownload, createSkillDownload, loadConnectors, loadExper
 import { inspectInstalledExtensions, installExtension } from './expertKits'
 import { loadEnterpriseCatalogCache } from './enterpriseCache'
 import type { BootstrapResponse, ConnectorCatalogEntry, InstalledExpertKit } from './types'
-import type { ErpUser } from './auth'
+import type { DingTalkUser } from './auth'
 
 vi.mock('./api', () => ({ createExpertKitDownload: vi.fn(), createSkillDownload: vi.fn(), loadExpertKits: vi.fn(async () => []), loadSkills: vi.fn(async () => []), loadKnowledgeBases: vi.fn(async () => []), loadConnectors: vi.fn(async () => []) }))
 vi.mock('./enterpriseCache', () => ({ loadEnterpriseCatalogCache: vi.fn(async () => undefined), saveEnterpriseCatalogCache: vi.fn(async () => {}) }))
@@ -40,7 +40,7 @@ async function fixture(
   try { await check(async (owner) => { await act(async () => root.render(<Probe owner={owner} />)) }, () => state) }
   finally { await act(async () => root.unmount()) }
 }
-const users: Record<string, ErpUser> = { one: { userId: 'one' } as ErpUser, two: { userId: 'two' } as ErpUser }
+const users: Record<string, DingTalkUser> = { one: { userId: 'one' } as DingTalkUser, two: { userId: 'two' } as DingTalkUser }
 
 it('does not let an older background inventory overwrite a completed installation refresh', async () => {
   let resolve!: (value: ConnectorCatalogEntry[]) => void

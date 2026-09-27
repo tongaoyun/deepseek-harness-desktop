@@ -42,6 +42,7 @@ export function parseConnectorImport(value: string): ConnectorImportItem[] {
     let name = key || '未命名服务'
     try {
       const config = object(value, name)
+      if (config.readOnlyTools !== undefined) throw new Error('readOnlyTools 由 MCP ToolSpec 注解生成，不能在连接器清单中填写')
       name = optionalText(config.name, 'name') || key
       if (!name.trim()) throw new Error('请填写服务名称或 ID')
       const id = connectorId(optionalText(config.id, 'id') || key || name)
@@ -51,7 +52,7 @@ export function parseConnectorImport(value: string): ConnectorImportItem[] {
       const url = optionalText(config.url, 'url')
       if (transport === 'stdio' && !command) throw new Error('STDIO 服务必须包含 command')
       if (transport !== 'stdio') {
-        if (!url) throw new Error('HTTP/SSE 服务必须包含 url')
+        if (!url) throw new Error('Streamable HTTP 服务必须包含 url')
         let endpoint: URL
         try { endpoint = new URL(url) } catch { throw new Error('url 必须是完整的 HTTP(S) 地址') }
         if (!['http:', 'https:'].includes(endpoint.protocol)) throw new Error('url 必须使用 HTTP 或 HTTPS')
@@ -66,7 +67,7 @@ export function parseConnectorImport(value: string): ConnectorImportItem[] {
         if (endpoint.username || endpoint.password || endpoint.hash) throw new Error('OAuth 地址不能包含凭据或片段')
       }
       if (authMode === 'erp-cookie' || authMode === 'oauth') {
-        if (transport === 'stdio') throw new Error('ERP 扫码会话仅支持 HTTP/SSE 连接器')
+        if (transport === 'stdio') throw new Error('动态授权仅支持 Streamable HTTP 连接器')
         if (Object.keys(headers).some((key) => ['cookie', 'authorization'].includes(key.toLowerCase()))) throw new Error('ERP 扫码会话不能同时配置 Cookie 或 Authorization 请求头')
       }
       const timeoutSeconds = config.timeoutSeconds
@@ -82,7 +83,7 @@ export function parseConnectorImport(value: string): ConnectorImportItem[] {
         environment: record(config.env ?? config.environment, 'env'),
         headers,
         toolNames: strings(config.toolNames, 'toolNames'),
-        readOnlyTools: strings(config.readOnlyTools, 'readOnlyTools'),
+        readOnlyTools: [],
       }
       ids.add(id)
       return { name, connector }
@@ -135,8 +136,8 @@ function record(value: unknown, label: string): Record<string, string> {
   }))
 }
 
-function normalizeTransport(value: unknown, command: unknown, url: unknown): Exclude<ConnectorTransport, 'desktop'> {
-  if (value === 'sse' || value === 'streamable-http' || value === 'stdio') return value
+function normalizeTransport(value: unknown, command: unknown, url: unknown): ConnectorTransport {
+  if (value === 'streamable-http' || value === 'stdio') return value
   if (value === 'http') return 'streamable-http'
   if (value !== undefined) throw new Error(`不支持的服务类型：${String(value)}`)
   if (command) return 'stdio'

@@ -5,7 +5,7 @@ import { createServer, loadEnv } from 'vite'
 import { localDevelopmentPort, localDevelopmentTauriConfig } from './dev-local-config.mjs'
 
 const useRealEnterpriseSession = process.env.XIAOYIN_USE_REAL_ENTERPRISE_SESSION === 'true'
-process.env.VITE_SKIP_ERP_LOGIN = useRealEnterpriseSession ? 'false' : 'true'
+process.env.VITE_SKIP_DINGTALK_LOGIN = useRealEnterpriseSession ? 'false' : 'true'
 process.env.XIAOYIN_LOCAL_DEV_REAL_SESSION = useRealEnterpriseSession ? 'true' : 'false'
 process.env.XIAOYIN_LOCAL_DEV_WEBVIEW_ISOLATION = 'true'
 const root = fileURLToPath(new URL('..', import.meta.url))

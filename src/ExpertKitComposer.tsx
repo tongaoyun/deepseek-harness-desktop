@@ -90,7 +90,7 @@ export function ExpertKitComposer(props: Props) {
     </div>
     <div className="expert-composer-group">
       <h4><Plug size={13} />连接器 <small>{props.selectedConnectorIds.length} 个已选</small></h4>
-      <div className="expert-composer-chips">{props.connectors.filter((item) => item.transport !== 'desktop').map((connector) => {
+      <div className="expert-composer-chips">{props.connectors.map((connector) => {
         const selected = props.selectedConnectorIds.includes(connector.id)
         return <button className={selected ? 'selected' : ''} key={connector.id} onClick={() => props.onConnectorsChange(toggle(props.selectedConnectorIds, connector.id))} type="button">{connector.name}<small>{connector.status === 'ready' ? `${connector.toolNames.length} tools` : '当前未就绪'}</small></button>
       })}</div>

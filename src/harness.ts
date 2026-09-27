@@ -15,7 +15,6 @@ export interface HarnessRunInput {
   taskId: string
   prompt: string
   executionMode: 'agent' | 'plan'
-  toolsMode: 'native' | 'ptc' | 'both'
   allowShell: boolean
   allowLsp: boolean
   allowExternalAgents: boolean
@@ -38,7 +37,6 @@ export interface HarnessRunInput {
 export interface HarnessRunResult {
   sessionId: string
   finalResponse: string
-  outcome?: import('./taskOutcome').TaskOutcome
   /** The employee stopped this turn; partial results are preserved. */
   interrupted?: boolean
 }
@@ -80,7 +78,8 @@ export interface HarnessSessionInspection {
   lastEventType?: string
   pendingTools: number
   projection?: XiaoyinTaskProjection
-  transcript?: Array<Record<string, unknown>>
+  /** Raw official Harness Session events for Conversation assembler replay. */
+  events?: Array<Record<string, unknown>>
   messages?: Array<{ id: string; role: 'user' | 'assistant'; text: string }>
 }
 
@@ -202,7 +201,6 @@ export function normalizeHarnessProjection(value: unknown): XiaoyinTaskProjectio
   const outputRetention = normalizeOutputRetention(projection.outputRetention) ?? base.outputRetention
   const compactions = normalizeMetricInteger(projection.compactions)
   const interruption = normalizeInterruption(projection.interruption)
-  const outcome = normalizeOutcome(projection.outcome)
   const failure = normalizeFailure(projection.failure)
   const retry = normalizeRetry(projection.retry)
   return {
@@ -225,7 +223,6 @@ export function normalizeHarnessProjection(value: unknown): XiaoyinTaskProjectio
     ...(contextPressure ? { contextPressure } : {}),
     ...(compactions !== undefined ? { compactions } : {}),
     ...(interruption ? { interruption } : {}),
-    ...(outcome ? { outcome } : {}),
     ...(failure ? { failure } : {}),
     ...(retry ? { retry } : {}),
   }
@@ -268,17 +265,6 @@ function normalizeInterruption(value: unknown): XiaoyinTaskProjection['interrupt
     return [{ id: operation.id, label: operation.label, ...(typeof operation.toolName === 'string' ? { toolName: operation.toolName } : {}) }]
   })
   return { checkpointAt: item.checkpointAt, cause: item.cause as 'exit' | 'failure' | 'canceled', pendingOperations }
-}
-
-function normalizeOutcome(value: unknown): XiaoyinTaskProjection['outcome'] | undefined {
-  const item = asRecord(value)
-  if (!item || !['completed', 'answered', 'partial', 'needs_input', 'needs_confirmation', 'blocked', 'unverified'].includes(String(item.status)) || typeof item.summary !== 'string' || !Array.isArray(item.remaining) || item.remaining.some((entry) => typeof entry !== 'string') || !Array.isArray(item.checks)) return undefined
-  const checks = item.checks.flatMap((entry) => {
-    const check = asRecord(entry)
-    if (!check || typeof check.description !== 'string' || typeof check.evidence !== 'string' || !['passed', 'failed', 'not_run'].includes(String(check.result))) return []
-    return [{ description: check.description, result: check.result as 'passed' | 'failed' | 'not_run', evidence: check.evidence }]
-  })
-  return { status: item.status as NonNullable<XiaoyinTaskProjection['outcome']>['status'], summary: item.summary, remaining: item.remaining as string[], checks }
 }
 
 function normalizeFailure(value: unknown): XiaoyinTaskProjection['failure'] | undefined {
@@ -338,9 +324,9 @@ export async function selfTestLocalCapabilities(includeComputer = true): Promise
   return invoke<LocalCapabilitySelfTestResult>('self_test_local_capabilities', { includeComputer })
 }
 
-export async function probeHarnessHost(modelConfigured = false, allowShell = true, allowLsp = false, allowExternalAgents = false, allowHooks = false, toolsMode: 'native' | 'ptc' | 'both' = 'native'): Promise<HarnessHostHealth> {
+export async function probeHarnessHost(modelConfigured = false, allowShell = true, allowLsp = false, allowExternalAgents = false, allowHooks = false): Promise<HarnessHostHealth> {
   if (!isTauri()) throw new Error('Harness Host 仅在小胤桌面客户端中运行')
-  return invoke<HarnessHostHealth>('probe_harness_host', { modelConfigured, allowShell, allowLsp, allowExternalAgents, allowHooks, toolsMode })
+  return invoke<HarnessHostHealth>('probe_harness_host', { modelConfigured, allowShell, allowLsp, allowExternalAgents, allowHooks })
 }
 
 export async function checkHarnessProvider(input: { litellmBaseUrl: string; model: string; modelApiKey: string }): Promise<HarnessProviderCheckResult> {
@@ -450,9 +436,9 @@ export async function steerHarness(taskId: string, prompt: string): Promise<bool
  * Fork the task's session before its last prompt so the last turn can be
  * re-run with the earlier context intact. Returns the new session id.
  */
-export async function regenerateHarness(taskId: string): Promise<string> {
+export async function forkHarness(taskId: string): Promise<string> {
   if (!isTauri()) throw new Error('当前环境不支持重新生成')
-  return invoke<string>('regenerate_harness', { taskId })
+  return invoke<string>('fork_harness', { taskId })
 }
 
 /** Ask the running turn to stop, keeping its partial results. */
@@ -493,48 +479,6 @@ export async function listenHarnessNotifications(
 
 export function createXiaoyinTaskProjection(now = new Date().toISOString()): XiaoyinTaskProjection {
   return { status: 'idle', activity: '等待开始', updatedAt: now, steps: [], timeline: [], subagents: [], changes: [], artifacts: [], outputRetention: { prunedResults: 0, omittedTokens: 0 } }
-}
-
-function parseHarnessEvent(notification: HarnessNotification): {
-  method: string
-  params: Record<string, unknown>
-  event: Record<string, unknown>
-  type: string
-  data: Record<string, unknown>
-  isRootSession: boolean
-} | undefined {
-  const envelope = asRecord(notification.event)
-  const wireEvent = asRecord(envelope?.event)
-  const method = text(wireEvent?.method) ?? ''
-  const params = asRecord(wireEvent?.params) ?? {}
-  const event = asRecord(params.event) ?? {}
-  const rootSessionId = text(envelope?.rootSessionId)
-  const eventSessionId = text(params.sessionId)
-  return {
-    method,
-    params,
-    event,
-    type: text(event.type) ?? '',
-    data: asRecord(event.data) ?? {},
-    isRootSession: !rootSessionId || !eventSessionId || rootSessionId === eventSessionId,
-  }
-}
-
-/** Root-session session.event payloads for the desktop's live transcript overlay. */
-export interface HarnessLiveEvent {
-  type: string
-  data: Record<string, unknown>
-}
-
-export function harnessLiveEvent(notification: HarnessNotification): HarnessLiveEvent | undefined {
-  const parsed = parseHarnessEvent(notification)
-  if (!parsed?.isRootSession || parsed.method !== 'session.event') return undefined
-  return { type: parsed.type, data: parsed.data }
-}
-
-
-function text(value: unknown): string | undefined {
-  return typeof value === 'string' ? value : undefined
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {

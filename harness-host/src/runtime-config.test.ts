@@ -73,39 +73,39 @@ describe('Harness profile overlay', () => {
       'tool-fs-search': '@deepseek-ai/dsh-tool-fs-search',
       'tool-present': '@deepseek-ai/dsh-tool-present',
       'session-reference': '@deepseek-ai/dsh-session-reference',
-      'session-schedule': '@deepseek-ai/dsh-schedule',
+      'workspace-changes': '@deepseek-ai/dsh-workspace-changes',
+      'workspace-dependencies': '@deepseek-ai/dsh-tool-workspace-dependencies',
+      'skill-office': '@deepseek-ai/dsh-skill-office',
     }
     for (const [id, name] of Object.entries(official)) {
       expect(profileEntry(entries, id)).toMatchObject({ name })
       expect(profileEntry(entries, id).disabled).not.toBe(true)
     }
-    expect(profileEntry(entries, 'attachment-local').disabled).toBe(true)
+    expect(profileEntry(entries, 'attachment-local').disabled).not.toBe(true)
     expect(profileEntry(entries, 'session-persistence-jsonl').config?.root).toContain("dshHomePath('sessions')")
     expect(profileEntry(entries, 'session-query-sqlite').config?.path).toContain("dshHomePath('session-query.sqlite')")
     expect(profileEntry(entries, 'settings').config?.path).toBe("dshHomePath('settings.yaml')")
     expect(profileEntry(entries, 'credentials').config?.path).toBe("dshHomePath('.credentials.yaml')")
     for (const [id, filename] of Object.entries({
-      'local-attachments': 'local-attachment-store-plugin.js',
       'desktop-approval': 'desktop-approval-plugin.js',
       'session-projection-bridge': 'session-projection-plugin.js',
       'xiaoyin-product-projections': 'xiaoyin-projections-plugin.js',
     })) expect(profileEntry(entries, id).name?.endsWith(`/dist/${filename}`)).toBe(true)
   })
 
-  it('keeps filesystem, Shell and PTC product permission boundaries in the composed profile', () => {
+  it('delegates filesystem and Shell boundaries to official permission and sandbox services', () => {
     const entries = composedProfile()
-    const rootsPolicy = profileEntry(entries, 'tool-fs').disabled
-    expect(rootsPolicy).toContain('XIAOYIN_LOCAL_FILE_ROOTS')
-    expect(profileEntry(entries, 'tool-fs-search').disabled).toBe(rootsPolicy)
-    expect(profileEntry(entries, 'tool-present').disabled).toBe(rootsPolicy)
-    for (const id of ['bash-sandbox', 'pwsh-sandbox', 'tool-bash', 'tool-pwsh', 'terminal', 'terminal-bash', 'terminal-pwsh', 'tool-terminal']) {
+    expect(profileEntry(entries, 'tool-fs').disabled).toBe(false)
+    expect(profileEntry(entries, 'tool-fs-search').disabled).toBe(false)
+    expect(profileEntry(entries, 'tool-present').disabled).not.toBe(true)
+    for (const id of ['bash-sandbox', 'pwsh-sandbox', 'tool-bash', 'tool-pwsh', 'tool-bash-persistent', 'tool-pwsh-persistent']) {
       expect(profileEntry(entries, id).disabled).toContain("XIAOYIN_ALLOW_SHELL === 'false'")
     }
     expect(profileEntry(entries, 'permission').disabled).toContain("XIAOYIN_ALLOW_SHELL === 'false'")
-    expect(profileEntry(entries, 'native-shell-policy').config?.enabled).toContain('XIAOYIN_ALLOW_SHELL')
-    expect(profileEntry(entries, 'tools').config?.mode).toContain('XIAOYIN_TOOLS_MODE')
-    expect(profileEntry(entries, 'code-runtime').disabled).toContain('XIAOYIN_TOOLS_MODE')
+    expect(profileEntry(entries, 'sandbox-policy').config?.mode).toContain('DSH_PERMISSION_MODE')
+    expect(profileEntry(entries, 'permission').config?.defaultPreset).toContain('DSH_PERMISSION_MODE')
     expect(profileEntry(entries, 'tool-session-query').disabled).toContain('XIAOYIN_ENABLE_SESSION_QUERY_TOOLS')
+    expect(profileEntry(entries, 'tool-ralph').disabled).toContain('XIAOYIN_ENABLE_RALPH')
   })
 
   it('bounds a silent model stream instead of leaving the desktop running indefinitely', () => {

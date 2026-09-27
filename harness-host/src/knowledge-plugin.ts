@@ -74,7 +74,8 @@ export class KnowledgeClient {
   }
 
   async search(query: string, knowledgeBaseIds: string[], limit: number): Promise<unknown> {
-    return this.request('/search', {
+    const searchEndpoint = this.endpoint.replace(/\/api\/v1\/knowledge-bases\/?$/, '/api/v1/knowledge-searches')
+    return this.requestTo(searchEndpoint, {
       method: 'POST',
       body: JSON.stringify({
         query,
@@ -88,7 +89,11 @@ export class KnowledgeClient {
   }
 
   private async request(suffix: string, init: RequestInit = {}): Promise<unknown> {
-    const response = await fetch(`${this.endpoint}${suffix}`, {
+    return this.requestTo(`${this.endpoint}${suffix}`, init)
+  }
+
+  private async requestTo(target: string, init: RequestInit = {}): Promise<unknown> {
+    const response = await fetch(target, {
       ...init,
       signal: AbortSignal.timeout(30_000),
       headers: {

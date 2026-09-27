@@ -43,7 +43,7 @@ export function apply(ctx: Context, config: Config = {}) {
   ]
   const disposers = definitions.filter(([action]) => !config.readOnly || action === 'list').map(([action, description, properties, required]) => {
     const tool: ToolDefinition = {
-      name: `schedules_${action}`, description,
+      name: `schedule_${action}`, description,
       parameters: { type: 'object', properties, required, additionalProperties: false },
       output: { schema: {}, render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }] },
       execute: (input) => client.request(action, input),
@@ -51,7 +51,7 @@ export function apply(ctx: Context, config: Config = {}) {
     }
     return ctx.tools.register(tool)
   })
-  const stop = ctx.on('tools/pre-execute', (exec, next) => exec.name === 'schedules_delete'
+  const stop = ctx.on('tools/pre-execute', (exec, next) => exec.name === 'schedule_delete'
     ? Promise.resolve({ kind: 'ask' as const, reason: '删除这个定时任务？已有任务对话会保留。' }) : next())
   ctx.effect(() => () => { stop(); for (const dispose of disposers.reverse()) dispose() }, 'desktop schedule tools')
 }

@@ -71,15 +71,15 @@ pub async fn read_feedback_image(
     grants: tauri::State<'_, FeedbackImageGrants>,
     path: String,
 ) -> Result<FeedbackImage, String> {
-    crate::erp_auth::current_employee(&app).await?;
-    let epoch = crate::erp_auth::mcp::session_epoch();
+    crate::dingtalk_auth::current_employee(&app).await?;
+    let epoch = crate::dingtalk_auth::mcp::session_epoch();
     let path = PathBuf::from(path);
     grants.consume(&path, epoch)?;
     let image = tauri::async_runtime::spawn_blocking(move || read_image(&path))
         .await
         .map_err(|_| "读取反馈图片失败")??;
-    crate::erp_auth::current_employee(&app).await?;
-    if crate::erp_auth::mcp::session_epoch() != epoch {
+    crate::dingtalk_auth::current_employee(&app).await?;
+    if crate::dingtalk_auth::mcp::session_epoch() != epoch {
         return Err("当前登录账号已变更，请重新添加图片".into());
     }
     Ok(image)
@@ -167,7 +167,7 @@ mod tests {
         let grants = FeedbackImageGrants::default();
         let image = PathBuf::from("/tmp/feedback-image.png");
         let other = PathBuf::from("/tmp/unselected.png");
-        let epoch = crate::erp_auth::mcp::session_epoch();
+        let epoch = crate::dingtalk_auth::mcp::session_epoch();
         grants.register(std::slice::from_ref(&image), epoch);
         assert!(grants.consume(&other, epoch).is_err());
         assert!(grants.consume(&image, epoch.wrapping_add(1)).is_err());
@@ -180,7 +180,7 @@ mod tests {
     fn grants_expire_before_read() {
         let grants = FeedbackImageGrants::default();
         let path = PathBuf::from("/tmp/expired.png");
-        let epoch = crate::erp_auth::mcp::session_epoch();
+        let epoch = crate::dingtalk_auth::mcp::session_epoch();
         grants.0.lock().unwrap().push(FeedbackImageGrant {
             path: path.clone(),
             epoch,

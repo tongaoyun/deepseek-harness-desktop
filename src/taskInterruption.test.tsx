@@ -13,7 +13,7 @@ import type { LocalTaskRun, XiaoyinTaskProjection } from './types'
 const checkpoint = '2026-09-08T12:00:00.000Z'
 const projection: XiaoyinTaskProjection = { ...createXiaoyinTaskProjection(checkpoint), status: 'running',
   steps: [{ id: 'write', kind: 'tool', label: '提交订单', status: 'running', startedAt: checkpoint }],
-  timeline: [{ id: 'write', kind: 'tool', label: '提交订单', toolName: 'mcp_submit', status: 'running', occurredAt: checkpoint },
+  timeline: [{ id: 'write', kind: 'tool', label: '提交订单', toolName: 'mcp__erp__submit', status: 'running', occurredAt: checkpoint },
     { id: 'read', kind: 'tool', label: '读取订单', status: 'completed', occurredAt: checkpoint }],
 }
 
@@ -22,9 +22,9 @@ it('preserves uncertain operations in the recovery record and model context', ()
     entries: [userEntry('u1', '核对并提交订单'), assistantEntry('turn:1', '已核对价格', {}, 'streaming')] }
   const [recovered] = recoverInterruptedTasks([task], '2026-09-09T12:00:00.000Z')
   expect(recovered.projection.completedAt).toBe(checkpoint)
-  expect(recovered.projection.interruption).toEqual({ checkpointAt: checkpoint, cause: 'exit', pendingOperations: [{ id: 'write', label: '提交订单', toolName: 'mcp_submit' }] })
+  expect(recovered.projection.interruption).toEqual({ checkpointAt: checkpoint, cause: 'exit', pendingOperations: [{ id: 'write', label: '提交订单', toolName: 'mcp__erp__submit' }] })
   const replay = harnessPromptWithConversationReplay('继续', recovered.entries, true, recovered.projection)
-  expect(replay).toContain('mcp_submit')
+  expect(replay).toContain('mcp__erp__submit')
   expect(replay).toContain('先用只读方式核对')
   expect(replay).toContain('不能据此断言某操作未发生')
   expect(recoverInterruptedTasks([recovered])[0]).toBe(recovered)
@@ -59,17 +59,17 @@ it('keeps an unsettled tool in the recovery record', () => {
   const ended = { ...projection, steps: projection.steps.map((step) => step.status === 'running' ? { ...step, status: 'canceled' as const } : step) }
   expect(ended.steps[0]?.status).toBe('canceled')
   expect(taskInterruption(ended, 'failure').pendingOperations).toEqual([
-    { id: 'write', label: '提交订单', toolName: 'mcp_submit' },
+    { id: 'write', label: '提交订单', toolName: 'mcp__erp__submit' },
   ])
 })
 
 it('uses detailed file and connector timeline entries instead of generic step labels', () => {
   const record = taskInterruption({ ...projection, timeline: [
-    { id: 'write', kind: 'connector', label: '提交订单 XY-001', toolName: 'mcp_submit', status: 'running', occurredAt: checkpoint },
+    { id: 'write', kind: 'connector', label: '提交订单 XY-001', toolName: 'mcp__erp__submit', status: 'running', occurredAt: checkpoint },
     { id: 'file', kind: 'file', label: '写入 receipt.md', toolName: 'local_files_write_text', status: 'running', occurredAt: checkpoint },
   ] }, 'exit')
   expect(record.pendingOperations).toEqual([
-    { id: 'write', label: '提交订单 XY-001', toolName: 'mcp_submit' },
+    { id: 'write', label: '提交订单 XY-001', toolName: 'mcp__erp__submit' },
     { id: 'file', label: '写入 receipt.md', toolName: 'local_files_write_text' },
   ])
 })

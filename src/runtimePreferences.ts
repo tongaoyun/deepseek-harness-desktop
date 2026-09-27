@@ -1,6 +1,3 @@
-export type HarnessToolsMode = 'native' | 'ptc' | 'both'
-
-const TOOLS_MODE_KEY = 'tools-mode'
 const SHELL_KEY = 'allow-shell'
 const LSP_KEY = 'allow-lsp'
 const EXTERNAL_AGENTS_KEY = 'allow-external-agents'
@@ -26,15 +23,6 @@ function writePreference(owner: string, key: string, value: string): boolean {
     localStorage.setItem(storageKey, value)
     return localStorage.getItem(storageKey) === value
   } catch { return false }
-}
-
-export function loadHarnessToolsMode(owner: string): HarnessToolsMode {
-  const value = readPreference(owner, TOOLS_MODE_KEY)
-  return value === 'ptc' || value === 'both' ? value : 'native'
-}
-
-export function saveHarnessToolsMode(owner: string, value: HarnessToolsMode): boolean {
-  return writePreference(owner, TOOLS_MODE_KEY, value)
 }
 
 /** Shell and persistent terminal share one explicit local authorization boundary. */

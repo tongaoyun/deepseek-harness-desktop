@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { chmodSync, mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import type { CallToolResult } from '@modelcontextprotocol/client'
+import type { ToolExecutionResult } from '@deepseek-ai/dsh-tools'
 import { HarnessError, data as errorData } from './errors.js'
 
 export class UncertainOperationError extends HarnessError {
@@ -40,8 +40,10 @@ export class WriteOperationJournal {
       CREATE INDEX IF NOT EXISTS operations_signature ON operations(signature);`)
   }
 
+  /** Runs exactly one already-approved Harness dispatch. This method never
+   * talks to MCP directly; `call` is the next `tools/execute` listener. */
   async execute(connector: { id: string; name: string; url: string; command: string; arguments: string[] }, tool: string,
-    args: Record<string, unknown>, call: () => Promise<CallToolResult>, signal?: AbortSignal): Promise<CallToolResult> {
+    args: unknown, call: () => Promise<ToolExecutionResult>, signal?: AbortSignal): Promise<ToolExecutionResult> {
     signal?.throwIfAborted()
     const signature = digest([connector.id, connector.url, connector.command, connector.arguments, tool, args])
     const scope = typeof this.scope === 'function' ? this.scope() : this.scope
@@ -64,7 +66,7 @@ export class WriteOperationJournal {
       this.db.exec('COMMIT')
     } catch (error) { this.db.exec('ROLLBACK'); throw error }
     if (cached) {
-      if (cached.receipt) return JSON.parse(cached.receipt) as CallToolResult
+      if (cached.receipt) return JSON.parse(cached.receipt) as ToolExecutionResult
       throw new UncertainOperationError(id, '该写操作已确认完成，请查询现有成果，不要再次提交')
     }
     try {

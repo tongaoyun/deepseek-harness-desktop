@@ -16,12 +16,13 @@ export interface RuntimeDiagnostics {
 }
 
 const RUNTIME_CAPABILITY_KEYS = new Set([
-  'profile', 'modelProvider', 'agentLoop', 'sdkJsonRpc', 'sessionPersistence', 'sessionCheckpoint',
+  'profile', 'modelProvider', 'agentLoop', 'sessionController', 'sessionPersistence', 'sessionCheckpoint',
   'sessionProjection', 'projectionCache', 'sandbox', 'approval', 'planMode', 'askUser', 'filesystem',
   'fileSearch', 'skills', 'commands', 'commandFeedback', 'subagent', 'todo', 'goal', 'ralph', 'workflow',
-  'compaction', 'toolResultPruner', 'tokenMeter', 'jobs', 'sessionReminders', 'webSearch', 'webFetch',
+  'compaction', 'toolResultPruner', 'tokenMeter', 'jobs', 'workspaceChanges', 'workspaceDependencies',
+  'officeSkills', 'libreOfficeKit', 'webSearch', 'webFetch',
   'settings', 'credentials', 'llmRetry', 'outputRetention', 'spillPolicy', 'timeoutPolicy', 'sessionQuery',
-  'sessionQueryTools', 'sessionReference', 'mcpClient', 'codeRuntime', 'persistentTerminal', 'lsp',
+  'sessionQueryTools', 'sessionReference', 'mcpClient', 'persistentTerminal', 'lsp',
   'codexSubagent', 'claudeSubagent', 'acpSubagent', 'dshSubagent', 'officialAttachment',
   'officialFilesystem', 'present', 'shell', 'browser', 'codexHooks', 'claudeHooks',
 ])

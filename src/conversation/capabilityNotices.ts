@@ -77,3 +77,16 @@ export function appendStoredCapabilityNotice(saved: StoredCapabilityNotice[], no
   return [...saved.filter((item) => validNotice(item) && item.sessionId === notice.sessionId
     && !(item.turnId === notice.turnId && item.afterTurnId === notice.afterTurnId && item.segment.id === notice.segment.id)), notice].slice(-100)
 }
+
+/** Product-only capability warning; the official Conversation owns all turns and tool cards. */
+export function appendCapabilityNotice(entries: ConversationEntry[], notice: { kind: string; name: string; reason: string }): ConversationEntry[] {
+  const last = entries.at(-1)
+  if (last?.role !== 'assistant') return entries
+  const id = `notice:${notice.kind}:${notice.name}`.slice(0, 200)
+  if (last.segments.some((segment) => segment.id === id)) return entries
+  const label = notice.kind === 'connector' ? '连接器' : notice.kind === 'knowledge' ? '知识库' : '能力'
+  return [...entries.slice(0, -1), {
+    ...last,
+    segments: [...last.segments, { kind: 'notice', id, level: 'warning', text: `本轮未使用${label}「${notice.name}」：${notice.reason}`.slice(0, 2_000) }],
+  }]
+}

@@ -2,7 +2,6 @@ import { ExternalLink, Eye, FileCode2, FileDiff, FileText, FolderSearch, Image, 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { StructuredFilePreview } from './StructuredFilePreview'
 import { codeDiffRows } from './codeDiff'
 import { highlightedCode } from './codeHighlight'
 import { authorizeLocalDirectory, authorizeLocalFiles } from './harness'
@@ -194,7 +193,6 @@ export function LocalFilePreviewPanel({ onClose, onSelect, onOpenSelected, tabs 
       {!loading && htmlUrl && canPreviewHtml && view === 'preview' && <iframe key={`${htmlUrl}:${revision}`} className="local-html-preview" src={htmlUrl} sandbox="allow-scripts" referrerPolicy="no-referrer" title={`交互预览 ${target.name}`} />}
       {!loading && canReadMarkdown && view === 'preview' && <div className="markdown-content-preview message-markdown"><ReactMarkdown remarkPlugins={[remarkGfm]}>{lines.join('\n')}</ReactMarkdown></div>}
       {!loading && preview && hasText && !((canPreviewHtml || canReadMarkdown) && view === 'preview') && (view !== 'review' || !canReview) && <CodePreview language={preview.language} lines={lines} />}
-      {!loading && preview?.structured && <StructuredFilePreview key={`${target.rootId}:${target.path}:${revision}`} value={preview.structured} />}
       {!loading && preview && (preview.kind === 'audio' || preview.kind === 'video') && preview.dataUrl && <div className="local-media-preview">{preview.kind === 'audio' ? <audio controls preload="metadata" src={preview.dataUrl} aria-label={preview.name} onError={() => setActionError('音频无法解码，请使用本机应用打开')} /> : <video controls preload="metadata" src={preview.dataUrl} aria-label={preview.name} onError={() => setActionError('视频无法解码，请使用本机应用打开')} />}</div>}
       {!loading && preview && (preview.truncated || (hasText && (preview.content?.split('\n').length ?? 0) > MAX_RENDERED_LINES)) && <div className="local-preview-truncated">文件较大，仅展示部分内容</div>}
       {!loading && preview && ((preview.kind === 'image' || preview.kind === 'pdf') && !preview.dataUrl) && <PreviewUnavailable preview={preview} />}

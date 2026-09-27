@@ -2,19 +2,19 @@
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import type { ErpSessionStatus } from './auth'
+import type { DingTalkSessionStatus } from './auth'
 import { listen } from '@tauri-apps/api/event'
 import { useEnterpriseSession } from './useEnterpriseSession'
 
 const { resolve, clear, open } = vi.hoisted(() => ({ resolve: vi.fn(), clear: vi.fn(), open: vi.fn() }))
-vi.mock('./auth', async (importOriginal) => ({ ...await importOriginal<typeof import('./auth')>(), resolveErpSession: resolve, clearErpSession: clear, openErpLogin: open, isTauriRuntime: () => true, usesLocalDevelopmentSession: () => false }))
+vi.mock('./auth', async (importOriginal) => ({ ...await importOriginal<typeof import('./auth')>(), resolveDingTalkSession: resolve, clearDingTalkSession: clear, openDingTalkLogin: open, isTauriRuntime: () => true, usesLocalDevelopmentSession: () => false }))
 vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => {}) }))
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 let latest: ReturnType<typeof useEnterpriseSession>
 let root: ReturnType<typeof createRoot>
 let container: HTMLDivElement
-const valid = (): ErpSessionStatus => ({ authenticated: true, accessToken: 'fixture', expiresAt: Date.now() / 1_000 + 1_800, loginUrl: '', user: { userId: 'employee', displayName: 'Employee', department: '', teamId: '', position: '', dataPermission: '', companyId: '', companyName: '', role: 'operator' } })
-const loggedOut = { authenticated: false, accessToken: '', expiresAt: null, user: null, loginUrl: '' }
+const valid = (): DingTalkSessionStatus => ({ authenticated: true, sessionToken: 'fixture', expiresAt: Date.now() / 1_000 + 1_800, loginUrl: '', user: { userId: 'employee', displayName: 'Employee', department: '', teamId: '', position: '', dataPermission: '', companyId: '', companyName: '', role: 'operator' } })
+const loggedOut = { authenticated: false, sessionToken: '', expiresAt: null, user: null, loginUrl: '' }
 const missingCookie = { ...loggedOut, diagnostic: { code: 'cookie_missing' as const, cookieCount: 0, httpStatus: null, checkedAt: 0, appVersion: 'test', os: 'macos', arch: 'aarch64', runId: 'test', debugBuild: true } }
 beforeEach(() => {
   vi.resetAllMocks()
@@ -34,7 +34,7 @@ async function mount() {
 }
 const advance = (ms: number) => act(async () => { await vi.advanceTimersByTimeAsync(ms) })
 
-it('retries a startup network error without opening a QR window', async () => {
+it('retries a startup network error without opening an authorization page', async () => {
   resolve.mockRejectedValueOnce(new Error('timeout'))
   await mount()
   expect(latest.state).toBe('error')
@@ -43,7 +43,7 @@ it('retries a startup network error without opening a QR window', async () => {
   expect(latest.state).toBe('authenticated')
 })
 
-it('rechecks a startup cookie miss before opening the QR window', async () => {
+it('rechecks a startup session miss before opening authorization', async () => {
   resolve.mockResolvedValueOnce(missingCookie).mockResolvedValueOnce(valid())
   await mount()
   expect(latest.state).toBe('checking')
@@ -53,7 +53,7 @@ it('rechecks a startup cookie miss before opening the QR window', async () => {
   expect(open).not.toHaveBeenCalled()
 })
 
-it('opens the QR window automatically after a repeated startup cookie miss', async () => {
+it('opens official DingTalk authorization after a repeated startup session miss', async () => {
   resolve.mockResolvedValue(missingCookie)
   await mount()
   expect(latest.state).toBe('checking')
@@ -64,27 +64,27 @@ it('opens the QR window automatically after a repeated startup cookie miss', asy
   expect(open).toHaveBeenCalledTimes(2)
 })
 
-it('opens the QR window automatically after an expired ERP session', async () => {
+it('opens official DingTalk authorization after an expired session', async () => {
   resolve.mockResolvedValue({ ...loggedOut, diagnostic: { ...missingCookie.diagnostic, code: 'session_rejected' } })
   await mount()
   expect(latest.state).toBe('required')
   expect(open).toHaveBeenCalledTimes(1)
-  expect(open).toHaveBeenCalledWith(true)
+  expect(open).toHaveBeenCalled()
 })
 
-it('does not focus the QR window when a background renewal expires', async () => {
+it('opens authorization on a background renewal expiry', async () => {
   await mount()
   resolve.mockResolvedValue({ ...loggedOut, diagnostic: { ...missingCookie.diagnostic, code: 'session_rejected' } })
   await advance(25 * 60_000)
-  expect(open).toHaveBeenLastCalledWith(false)
+  expect(open).toHaveBeenCalled()
 })
 
-it('focuses the QR window only for an explicit retry', async () => {
+it('reopens authorization for an explicit retry', async () => {
   resolve.mockResolvedValue(missingCookie)
   await mount()
   await advance(1_500)
   await act(async () => latest.reopen())
-  expect(open).toHaveBeenLastCalledWith(true)
+  expect(open).toHaveBeenCalled()
 })
 
 it('shows a manual retry in progress and a distinct result when ERP is still unavailable', async () => {
@@ -99,7 +99,7 @@ it('shows a manual retry in progress and a distinct result when ERP is still una
   await act(async () => { fail({ code: 'network_error' }); await retry })
   expect(resolve).toHaveBeenCalledTimes(2)
   expect(latest.state).toBe('error')
-  expect(latest.error).toBe('重新检查后仍未成功：暂时无法连接 ERP，正在自动重试。')
+  expect(latest.error).toBe('重新检查后仍未成功：暂时无法连接小胤服务，正在自动重试。')
 })
 
 it('runs a requested manual retry after an automatic check already in flight', async () => {
@@ -122,7 +122,7 @@ it('keeps a valid session through a failed renewal and recovers online', async (
   resolve.mockRejectedValueOnce(new Error('offline'))
   await advance(25 * 60_000)
   expect(latest.state).toBe('authenticated')
-  expect(latest.accessToken).toBe('fixture')
+  expect(latest.sessionToken).toBe('fixture')
   expect(open).not.toHaveBeenCalled()
   resolve.mockResolvedValue(valid())
   await act(async () => { window.dispatchEvent(new Event('online')) })
@@ -134,7 +134,7 @@ it('blocks an expired session while the ERP remains unavailable', async () => {
   resolve.mockRejectedValue(new Error('offline'))
   await advance(30 * 60_000)
   expect(latest.state).toBe('error')
-  expect(latest.accessToken).toBe('')
+  expect(latest.sessionToken).toBe('')
   expect(open).not.toHaveBeenCalled()
 })
 
@@ -150,7 +150,7 @@ it('shows login without opening a window when the ERP confirms logout', async ()
 it('rechecks an overdue session after waking without overlapping checks', async () => {
   await mount()
   vi.setSystemTime(Date.now() + 31 * 60_000)
-  let finish!: (value: ErpSessionStatus) => void
+  let finish!: (value: DingTalkSessionStatus) => void
   resolve.mockImplementationOnce(() => new Promise((done) => { finish = done }))
   await act(async () => { window.dispatchEvent(new Event('focus')); window.dispatchEvent(new Event('online')) })
   expect(resolve).toHaveBeenCalledTimes(2)
@@ -160,14 +160,14 @@ it('rechecks an overdue session after waking without overlapping checks', async 
 
 it('ignores a renewal that completes after logout', async () => {
   await mount()
-  let finish!: (value: ErpSessionStatus) => void
+  let finish!: (value: DingTalkSessionStatus) => void
   resolve.mockImplementationOnce(() => new Promise((done) => { finish = done }))
   await advance(25 * 60_000)
   resolve.mockResolvedValue(loggedOut)
   await act(async () => latest.logout())
   await act(async () => finish(valid()))
   expect(latest.state).toBe('required')
-  expect(latest.accessToken).toBe('')
+  expect(latest.sessionToken).toBe('')
 })
 
 it('does not silently log back in after credential deletion fails', async () => {
@@ -186,21 +186,21 @@ it('does not silently log back in after credential deletion fails', async () => 
 it('ignores a late QR confirmation after authentication', async () => {
   await mount()
   const callback = vi.mocked(listen).mock.calls[0][1]
-  await act(async () => callback({ event: 'erp-login-progress', id: 1, payload: 'authorizing' }))
+  await act(async () => callback({ event: 'dingtalk-login-progress', id: 1, payload: 'authorizing' }))
   expect(latest.state).toBe('authenticated')
-  expect(latest.accessToken).toBe('fixture')
+  expect(latest.sessionToken).toBe('fixture')
   await advance(1_500)
   expect(resolve).toHaveBeenCalledTimes(1)
 })
 
-it('retries opening the QR window without misclassifying it as a network error', async () => {
+it('retries opening authorization without misclassifying it as a network error', async () => {
   resolve.mockResolvedValue(loggedOut)
   open.mockRejectedValueOnce(new Error('window unavailable'))
   await mount()
   expect(latest.state).toBe('required')
   expect(open).not.toHaveBeenCalled()
   await act(async () => latest.reopen())
-  expect(latest.error).toBe('无法打开扫码窗口，请重新打开。')
+  expect(latest.error).toBe('无法打开钉钉授权，请重试。')
   await act(async () => latest.reopen())
   expect(open).toHaveBeenCalledTimes(2)
   expect(latest.error).toBe('')
@@ -211,7 +211,7 @@ it('drops access immediately when the identity service explicitly denies permiss
   resolve.mockRejectedValue({ code: 'access_denied', httpStatus: 403 })
   await advance(25 * 60_000)
   expect(latest.state).toBe('error')
-  expect(latest.accessToken).toBe('')
+  expect(latest.sessionToken).toBe('')
   expect(latest.error).toContain('账号权限')
   expect(open).not.toHaveBeenCalled()
 })
@@ -219,6 +219,6 @@ it('drops access immediately when the identity service explicitly denies permiss
 it('distinguishes service failures from logout without exposing response details', async () => {
   resolve.mockRejectedValue({ code: 'identity_unavailable', httpStatus: 503, message: 'Cookie=secret' })
   await mount()
-  expect(latest.error).toBe('ERP 身份服务暂时不可用，正在自动重试。')
+  expect(latest.error).toBe('小胤身份服务暂时不可用，正在自动重试。')
   expect(open).not.toHaveBeenCalled()
 })

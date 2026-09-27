@@ -1,5 +1,4 @@
 import { Bot, Check, Clock3, ExternalLink, Inbox, Info, MessageCircle, MoreHorizontal, Pencil, Trash2, X } from 'lucide-react'
-import type { ConversationEntry } from './conversation/types'
 import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   allowLocalImPairing,
@@ -16,9 +15,7 @@ import {
 } from './localIm'
 import { XiaoyinMascot } from './XiaoyinMascot'
 import type { LocalTaskRun } from './types'
-import { createXiaoyinTaskProjection, normalizeHarnessProjection } from './harness'
-import { AssistantTurnView } from './chat/AssistantTurnView'
-import { TaskOutcomeDetails } from './TaskOutcomeDetails'
+import { OfficialConversationPanel } from './conversation/OfficialConversationPanel'
 import { useDesktopDialog } from './DesktopDialog'
 import { useDialogFocus } from './useDialogFocus'
 import { DingTalkRegistration } from './DingTalkRegistration'
@@ -272,31 +269,15 @@ export function ImChannelsPage(harness: Props) {
       const conversation = status.conversations.find((item) => item.conversationKey === activeConversationKey)
       if (!conversation) return null
       const boundTask = harness.localTasks.find((task) => task.id === conversation.boundTaskId)
-      const useBoundProjection = boundTask && boundTask.updatedAt > conversation.updatedAt
-      const storedProjection = conversation.taskProjection ? normalizeHarnessProjection(conversation.taskProjection) : undefined
-      const conversationProjection = storedProjection ?? createXiaoyinTaskProjection(conversation.updatedAt)
-      const projection = useBoundProjection ? boundTask.projection : { ...conversationProjection,
-        status: conversation.status === 'RUNNING' ? 'running' as const : conversation.status === 'FAILED' ? 'failed' as const : 'completed' as const,
-        outcome: conversation.outcome,
-      }
       return <div className="im-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setActiveConversationKey('') }}><section aria-label="频道会话" aria-modal="true" className="im-config-modal im-conversation-modal" ref={conversationRef} role="dialog">
         <button aria-label="关闭" className="im-modal-close" onClick={() => setActiveConversationKey('')} type="button"><X size={18} /></button>
         <h2>{conversation.conversationType === 'group' ? conversation.conversationTitle || '未命名群' : conversation.senderNick || '钉钉用户'}</h2>
         <p>{conversation.boundTaskName ? `已接管桌面任务：${conversation.boundTaskName}` : '独立钉钉任务'}</p>
-        <div className="im-message-history">{(conversation.messages ?? []).map((item) => <article className={item.role} key={item.id}><small>{item.role === 'user' ? conversation.senderNick || '员工' : '小胤'} · {new Date(item.createdAt).toLocaleString()}</small><p>{item.text}</p></article>)}
-          {(conversation.messages ?? []).length === 0 && <div className="kit-empty">暂无可显示的历史消息</div>}
-        </div>
-        {useBoundProjection && boundTaskLastTurn(boundTask.entries) && <AssistantTurnView turn={boundTaskLastTurn(boundTask.entries)!} runState={projection} />}
-        {projection.status === 'completed' && <TaskOutcomeDetails outcome={projection.outcome} />}
+        <OfficialConversationPanel employeeId={harness.employeeId} sessionId={conversation.sessionId ?? boundTask?.sessionId} />
       </section></div>
     })()}
     {dialog}
   </div>
-}
-
-function boundTaskLastTurn(entries: ConversationEntry[]): Extract<ConversationEntry, { role: 'assistant' }> | undefined {
-  const last = entries.at(-1)
-  return last?.role === 'assistant' ? last : undefined
 }
 
 function message(reason: unknown): string {
