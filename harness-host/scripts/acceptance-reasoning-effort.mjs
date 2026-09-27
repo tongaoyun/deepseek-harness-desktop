@@ -36,13 +36,15 @@ async function run(model, effort) {
   finally { await runtime.close() }
 }
 try {
-  for (const effort of ['low', 'medium', 'high', 'xhigh', 'ultra']) {
-    await run('gpt-5.6-sol', effort)
-    assert.deepEqual(received.at(-1), { model: 'gpt-5.6-sol', effort, thinking: 'enabled' })
+  // The official DeepSeek provider advertises only `low` for the fixture
+  // model. Unsupported values must be rejected before a provider request.
+  for (const effort of ['low']) {
+    await run('deepseek-v4-pro', effort)
+    assert.deepEqual(received.at(-1), { model: 'deepseek-v4-pro', effort, thinking: 'enabled' })
     console.log(JSON.stringify({ check: 'reasoning-wire-parameter', effort, passed: true }))
   }
   const count = received.length
-  await assert.rejects(run('gpt-5.5', 'ultra'))
+  await assert.rejects(run('deepseek-v4-flash', 'invalid'))
   assert.equal(received.length, count, 'Unsupported effort reached the provider')
 } finally {
   server.closeAllConnections()

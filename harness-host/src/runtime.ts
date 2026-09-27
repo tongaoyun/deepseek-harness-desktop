@@ -279,7 +279,7 @@ export class DeepSeekHarnessRuntime implements HarnessRuntime {
         sessionReference: optionalCapability('@deepseek-ai/dsh-session-reference', env.XIAOYIN_ENABLE_SESSION_REFERENCES !== 'false'),
         mcpClient: optionalCapability('@deepseek-ai/dsh-mcp-client', hasEligibleHarnessMcpConnector(env)),
         mcpResources: optionalCapability('@deepseek-ai/dsh-mcp-resources', hasEligibleHarnessMcpConnector(env)),
-        persistentTerminal: optionalCapability('@deepseek-ai/dsh-terminal', env.XIAOYIN_ALLOW_SHELL !== 'false'),
+        persistentTerminal: optionalCapability('@deepseek-ai/dsh-terminal', env.XIAOYIN_ALLOW_SHELL === 'true'),
         lsp: optionalCapability('@deepseek-ai/dsh-lsp', env.XIAOYIN_ALLOW_LSP !== 'false' && hasConfiguredLspServers(env.XIAOYIN_LSP_SERVERS), 'unconfigured'),
         codexSubagent: optionalCapability('@deepseek-ai/dsh-subagent-codex', env.XIAOYIN_ALLOW_EXTERNAL_AGENTS !== 'false' && env.XIAOYIN_ENABLE_CODEX_SUBAGENT === 'true', 'unconfigured'),
         claudeSubagent: optionalCapability('@deepseek-ai/dsh-subagent-claude-code', env.XIAOYIN_ALLOW_EXTERNAL_AGENTS !== 'false' && env.XIAOYIN_ENABLE_CLAUDE_SUBAGENT === 'true', 'unconfigured'),
@@ -401,42 +401,37 @@ export class DeepSeekHarnessRuntime implements HarnessRuntime {
     const executeTurn = async (activeHarness: DeepSeekHarness): Promise<HarnessRunResult> => {
       await activeHarness.start()
       this.initialized = true
-      return runSessionTurn(
-        activeHarness.client,
-        sessionId,
-        content,
-        onNotification,
-        turnTimeoutMs(env.XIAOYIN_TURN_TIMEOUT_MS),
-        () => this.interruptRequested,
-      )
-    }
-    for (let registrationRecoveryAttempt = 0; ; registrationRecoveryAttempt += 1) {
       try {
-        const interrupted = await executeTurn(harness)
-        if (!interrupted) this.interruptRequested = false
-        return interrupted
+        return await runSessionTurn(
+          activeHarness.client,
+          sessionId,
+          content,
+          onNotification,
+          turnTimeoutMs(env.XIAOYIN_TURN_TIMEOUT_MS),
+          () => this.interruptRequested,
+        )
       } catch (error) {
-        if (input.sessionId && isSessionAlreadyRegisteredError(error) && this.harness === harness
-          && !this.closing && registrationRecoveryAttempt < 4) {
-          // The official runtime can race its persisted-session registry during
-          // a process handoff. The rejected prompt is pre-acceptance, so closing
-          // that child and creating a fresh official client cannot duplicate a
-          // provider request. A bounded backoff lets the prior registry release.
-          this.harness = undefined
-          await harness.close().catch(() => undefined)
-          await delay(250 * (2 ** registrationRecoveryAttempt))
-          harness = this.getOrCreateHarness()
-          continue
-        }
-        // Do not let the native host tear down the process group before the SDK
-        // has finished disposing detached shell/MCP children.
-        if (this.closing) await this.closeTask?.catch(() => undefined)
-        if ((error instanceof TurnTimeoutError || isAgentContextFailure(error)) && this.harness === harness) {
-          this.harness = undefined
-          await harness.close().catch(() => undefined)
-        }
+        // The official SDK transport exposes shutdown as its process-level
+        // cancellation boundary. Stop closes that transport; translate its
+        // expected EOF into the product's interrupted result instead of
+        // surfacing a transport error to the conversation UI.
+        if (this.interruptRequested) return { sessionId, finalResponse: '', interrupted: true }
         throw error
       }
+    }
+    try {
+      const result = await executeTurn(harness)
+      if (!result.interrupted) this.interruptRequested = false
+      return result
+    } catch (error) {
+      // Do not let the native host tear down the process group before the SDK
+      // has finished disposing detached shell/MCP children.
+      if (this.closing) await this.closeTask?.catch(() => undefined)
+      if ((error instanceof TurnTimeoutError || isAgentContextFailure(error)) && this.harness === harness) {
+        this.harness = undefined
+        await harness.close().catch(() => undefined)
+      }
+      throw error
     }
   }
 
@@ -455,16 +450,15 @@ export class DeepSeekHarnessRuntime implements HarnessRuntime {
    * Ask the running turn to stop as a user cancellation, preserving partial
    * results. Harmless when nothing is running.
    */
-  async interrupt(sessionId: string): Promise<{ interrupted: boolean }> {
+  async interrupt(_sessionId: string): Promise<{ interrupted: boolean }> {
     const harness = this.harness
     if (harness === undefined) return { interrupted: false }
     this.interruptRequested = true
-    try {
-      const result = await harness.client.request('session/interrupt', { sessionId } as never) as { interrupted?: boolean }
-      return { interrupted: result?.interrupted === true }
-    } catch {
-      return { interrupted: false }
-    }
+    // The official SDK stdio profile intentionally exposes only initialize,
+    // prompt and shutdown. Closing the SDK client is the
+    // documented cancellation boundary and also disposes model/tool streams.
+    await harness.close().catch(() => undefined)
+    return { interrupted: true }
   }
 
   async fork(sessionId: string, atSeq?: number): Promise<{ sessionId: string }> {
@@ -570,7 +564,7 @@ export async function runSessionTurn(
   const streamedText = new Map<string, string>()
   const deadline = Date.now() + timeoutMs
   try {
-    const messageId = await promptWithSessionRegistrationRecovery(client, sessionId, content, deadline, timeoutMs)
+    const messageId = await promptWithDeadline(client, sessionId, content, deadline, timeoutMs)
     for (;;) {
       const notification = await beforeDeadline(() => subscription.next(), deadline, timeoutMs)
       if (!receivedPrompt) {
@@ -752,30 +746,15 @@ async function beforeDeadline<T>(
   }
 }
 
-/**
- * A restored official session can finish registration just after the SDK
- * server's first lookup. In that narrow case the server rejects the lookup
- * with "already exists" even though no prompt was accepted. Re-issue only
- * this lookup once; all provider/model requests remain single-dispatch.
- */
-async function promptWithSessionRegistrationRecovery(
+/** Keep the SDK request bound to the same deadline as the turn subscription. */
+async function promptWithDeadline(
   client: Pick<SessionClient, 'prompt'>,
   sessionId: string,
   content: SdkPromptContentBlock[],
   deadline: number,
   timeoutMs: number,
 ): Promise<string> {
-  try {
-    return await beforeDeadline(() => client.prompt(sessionId, content), deadline, timeoutMs)
-  } catch (error) {
-    if (!isSessionAlreadyRegisteredError(error)) throw error
-    await beforeDeadline(() => delay(50), deadline, timeoutMs)
-    return beforeDeadline(() => client.prompt(sessionId, content), deadline, timeoutMs)
-  }
-}
-
-function isSessionAlreadyRegisteredError(error: unknown): boolean {
-  return /session\s+"[^"\n]+"\s+already exists/u.test(error instanceof Error ? error.message : String(error))
+  return beforeDeadline(() => client.prompt(sessionId, content), deadline, timeoutMs)
 }
 
 function isPromptReceipt(notification: HarnessNotification, sessionId: string, messageId: string): boolean {

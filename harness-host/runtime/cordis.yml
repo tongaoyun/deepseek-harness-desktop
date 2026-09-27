@@ -70,7 +70,7 @@
     policy: ask
 
 - id: permission
-  disabled: !!js process.env.XIAOYIN_ALLOW_SHELL === 'false'
+  disabled: !!js process.env.XIAOYIN_ALLOW_SHELL !== 'true'
   config:
     presets:
       read-only:
@@ -85,18 +85,18 @@
     defaultPreset: !!js process.env.DSH_PERMISSION_MODE ?? 'workspace-write'
 
 - id: bash-sandbox
-  disabled: !!js process.platform === 'win32' || process.env.XIAOYIN_ALLOW_SHELL === 'false'
+  disabled: !!js process.platform === 'win32' || process.env.XIAOYIN_ALLOW_SHELL !== 'true'
   config:
     timeoutMs: 300000
 
 - id: pwsh-sandbox
-  disabled: !!js process.platform !== 'win32' || process.env.XIAOYIN_ALLOW_SHELL === 'false'
+  disabled: !!js process.platform !== 'win32' || process.env.XIAOYIN_ALLOW_SHELL !== 'true'
 
 - id: tool-bash
-  disabled: !!js process.platform === 'win32' || process.env.XIAOYIN_ALLOW_SHELL === 'false'
+  disabled: !!js process.platform === 'win32' || process.env.XIAOYIN_ALLOW_SHELL !== 'true'
 
 - id: tool-pwsh
-  disabled: !!js process.platform !== 'win32' || process.env.XIAOYIN_ALLOW_SHELL === 'false'
+  disabled: !!js process.platform !== 'win32' || process.env.XIAOYIN_ALLOW_SHELL !== 'true'
 
 - id: skill-filesystem
   config:
@@ -165,13 +165,20 @@
     - id: agent-preset-registry
       name: '@deepseek-ai/dsh-agent-preset-registry'
       config:
-        default: !!js process.env.XIAOYIN_PRESET_ID ?? 'xiaoyin-default'
+        default: xiaoyin-default
 
     - id: xiaoyin-agent-preset
       name: '@deepseek-ai/dsh-agent-preset'
       config:
-        id: !!js process.env.XIAOYIN_PRESET_ID ?? 'xiaoyin-default'
-        plugins: !!js JSON.parse(process.env.XIAOYIN_PRESET_PLUGINS ?? '[]')
+        id: xiaoyin-default
+        plugins: []
+
+    # The SDK JSON-RPC protocol remains the official wire boundary. For a
+    # cold persisted session, its create request is adapted to the official
+    # Agent Registry resume operation instead of replaying transcript text or
+    # patching the upstream SDK server.
+    - id: sdk-session-resume
+      name: '../dist/sdk-session-resume-plugin.js'
 
     # Persistent PTY is a separate capability from bounded shell calls. These
     # are product overlay rows because the upstream sdk profile has no terminal
@@ -179,14 +186,14 @@
     # prevents a silent "entry not found" patch warning.
     - id: tool-bash-persistent
       name: '@deepseek-ai/dsh-tool-bash-persistent'
-      disabled: !!js process.platform === 'win32' || process.env.XIAOYIN_ALLOW_SHELL === 'false'
+      disabled: !!js process.platform === 'win32' || process.env.XIAOYIN_ALLOW_SHELL !== 'true'
       config:
         enableRunInBackground: true
         maxResultBytes: 262144
 
     - id: tool-pwsh-persistent
       name: '@deepseek-ai/dsh-tool-pwsh-persistent'
-      disabled: !!js process.platform !== 'win32' || process.env.XIAOYIN_ALLOW_SHELL === 'false'
+      disabled: !!js process.platform !== 'win32' || process.env.XIAOYIN_ALLOW_SHELL !== 'true'
       config:
         enableRunInBackground: true
         maxResultBytes: 262144

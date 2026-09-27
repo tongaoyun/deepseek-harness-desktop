@@ -87,7 +87,7 @@ it('reports Harness capability gates without advertising unconfigured providers'
   const runtime = new DeepSeekHarnessRuntime({ XIAOYIN_ENABLE_SESSION_QUERY_TOOLS: 'false' })
   const health = await runtime.health()
   expect(health.status).toBe('uninitialized')
-  expect(health.capabilities).toMatchObject({ profile: 'gated', modelProvider: 'unconfigured', commands: 'enabled', commandFeedback: 'enabled', sessionQuery: 'enabled', sessionQueryTools: 'gated', sessionReference: 'enabled', workspaceChanges: 'enabled', workspaceDependencies: 'unconfigured', officeSkills: 'unconfigured', libreOfficeKit: 'unconfigured', persistentTerminal: 'enabled', lsp: 'unconfigured', codexSubagent: 'unconfigured', present: 'enabled', mcpClient: 'gated', webSearch: 'unconfigured', webFetch: 'unconfigured' })
+  expect(health.capabilities).toMatchObject({ profile: 'gated', modelProvider: 'unconfigured', commands: 'enabled', commandFeedback: 'enabled', sessionQuery: 'enabled', sessionQueryTools: 'gated', sessionReference: 'enabled', workspaceChanges: 'enabled', workspaceDependencies: 'unconfigured', officeSkills: 'unconfigured', libreOfficeKit: 'unconfigured', persistentTerminal: 'gated', lsp: 'unconfigured', codexSubagent: 'unconfigured', present: 'enabled', mcpClient: 'gated', webSearch: 'unconfigured', webFetch: 'unconfigured' })
 })
 
 it('reports a configured model provider without exposing its credential', async () => {

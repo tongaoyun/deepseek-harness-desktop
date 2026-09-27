@@ -99,9 +99,9 @@ describe('Harness profile overlay', () => {
     expect(profileEntry(entries, 'tool-fs-search').disabled).toBe(false)
     expect(profileEntry(entries, 'tool-present').disabled).not.toBe(true)
     for (const id of ['bash-sandbox', 'pwsh-sandbox', 'tool-bash', 'tool-pwsh', 'tool-bash-persistent', 'tool-pwsh-persistent']) {
-      expect(profileEntry(entries, id).disabled).toContain("XIAOYIN_ALLOW_SHELL === 'false'")
+      expect(profileEntry(entries, id).disabled).toContain("XIAOYIN_ALLOW_SHELL !== 'true'")
     }
-    expect(profileEntry(entries, 'permission').disabled).toContain("XIAOYIN_ALLOW_SHELL === 'false'")
+    expect(profileEntry(entries, 'permission').disabled).toContain("XIAOYIN_ALLOW_SHELL !== 'true'")
     expect(profileEntry(entries, 'sandbox-policy').config?.mode).toContain('DSH_PERMISSION_MODE')
     expect(profileEntry(entries, 'permission').config?.defaultPreset).toContain('DSH_PERMISSION_MODE')
     expect(profileEntry(entries, 'tool-session-query').disabled).toContain('XIAOYIN_ENABLE_SESSION_QUERY_TOOLS')

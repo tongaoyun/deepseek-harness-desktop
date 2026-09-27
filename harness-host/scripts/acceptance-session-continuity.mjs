@@ -76,10 +76,9 @@ try {
   const lastMessage = inspection?.messages.at(-1)
   assert(lastMessage?.role === 'assistant' && lastMessage.text.includes('第二轮完成'),
     'The official session log must remain readable across restart')
-  // Capability diagnostics are emitted only when a product bridge is mounted;
-  // this fixture intentionally exercises the official Session restart path
-  // without requiring that optional bridge to be present.
-  assert(notices.every((notice) => notice.sessionId === sessionId && notice.key === 'xiaoyin.capabilityNotice'),
+  // The product bridge may publish the current product projection as well as
+  // capability diagnostics. Neither is part of the official transcript.
+  assert(notices.every((notice) => notice.sessionId === sessionId && ['xiaoyin.product', 'xiaoyin.capabilityNotice'].includes(notice.key)),
     'Unexpected product notice reached the session projection bridge')
   assert(!JSON.stringify(inspection).includes('范围无效'), 'A product notice leaked into the official transcript')
   assert(!resumed.includes('范围无效'), 'A product warning leaked into the model conversation')

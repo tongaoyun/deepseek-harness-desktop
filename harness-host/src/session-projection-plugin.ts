@@ -18,6 +18,9 @@ export function apply(ctx: Context): void {
   if (!url || !token) return
   const registry = ctx.sessionProjections as unknown as ProjectionRegistry
   const dispose = registry.onChanged((session, key, value, seq) => {
+    // Harness-owned projections are consumed by the official Conversation
+    // client. Only Xiaoyin product projections belong on this bridge.
+    if (!key.startsWith('xiaoyin.')) return
     void fetch(url, {
       method: 'POST',
       headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },

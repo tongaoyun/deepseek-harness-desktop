@@ -1619,7 +1619,6 @@ impl HarnessProcess {
             .map_err(|error| format!("无法生成知识库范围配置：{error}"))?;
         let computer_tools = serde_json::to_string(&fingerprint.allowed_computer_tools)
             .map_err(|error| format!("无法生成 Computer Use 工具配置：{error}"))?;
-        let preset_id = capability_preset_id(&fingerprint)?;
         let mut command = Command::new(&runtime.node);
         #[cfg(unix)]
         command.process_group(0);
@@ -1672,8 +1671,10 @@ impl HarnessProcess {
             )
             .env("XIAOYIN_ALLOW_HOOKS", fingerprint.allow_hooks.to_string())
             .env("XIAOYIN_MCP_CONNECTORS", connectors)
-            .env("XIAOYIN_PRESET_ID", preset_id)
-            .env("XIAOYIN_PRESET_PLUGINS", "[]")
+            // The official preset is declared once in cordis.yml. Capability
+            // filtering remains process-scoped through the official Harness
+            // permission/profile environment; no second dynamic preset
+            // registry is created by the desktop bridge.
             .env("XIAOYIN_CONTROL_PLANE_TOKEN", &access_token)
             .env(
                 "XIAOYIN_EMPLOYEE_BEARER_TOKEN",
@@ -2913,13 +2914,6 @@ pub(crate) fn validate_employee_id(value: &str) -> Result<(), String> {
 
 fn fingerprint_changed(current: Option<&RuntimeFingerprint>, next: &RuntimeFingerprint) -> bool {
     current.is_some_and(|value| value != next)
-}
-
-fn capability_preset_id(fingerprint: &RuntimeFingerprint) -> Result<String, String> {
-    let bytes = serde_json::to_vec(fingerprint)
-        .map_err(|error| format!("无法生成 Agent Preset 标识：{error}"))?;
-    let digest = Sha256::digest(bytes);
-    Ok(format!("xiaoyin-{:x}", digest))
 }
 
 #[cfg(test)]

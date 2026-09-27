@@ -25,9 +25,12 @@ const runtime = new DeepSeekHarnessRuntime({
   DEEPSEEK_BASE_URL: `http://127.0.0.1:${server.address().port}`,
   DSH_HOME: root,
   DSH_SESSION_ROOT: join(root, 'sessions'),
+  XIAOYIN_SESSION_QUERY_PATH: join(root, 'session-query.sqlite'),
   XIAOYIN_LOCAL_FILE_ROOTS: '[]',
   XIAOYIN_MCP_CONNECTORS: '[]',
   XIAOYIN_COMPUTER_USE_TOOLS: '[]',
+  DSH_CUSTOM_SKILL_DIRS: '[]',
+  XIAOYIN_ALLOW_SHELL: 'false',
   XIAOYIN_ALLOW_BROWSER: 'false',
 })
 
