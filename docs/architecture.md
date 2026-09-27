@@ -108,6 +108,6 @@ Windows 支持 x64；macOS 支持 14+ 的 Apple Silicon 与 Intel。Intel 包可
 
 Computer Use 需要可交互桌面及相应系统权限。Mac 操作前核对进程、窗口位置和尺寸、截图尺寸；观察过期时重新观察。主显示器以外的布局与锁屏操作单独验收。
 
-Harness 官方 Office Skills 使用安装包内的 Primary Runtime 和 LibreOffice Kit 完成生成、结构检查、公式重算、转换与渲染，不依赖员工电脑预装 Python 或 LibreOffice。见 [Office 文档能力](office.md)。
+Harness 官方 Office Skills 使用安装包内的 Primary Runtime 和 LibreOffice Kit 完成生成、结构检查、公式重算、转换与渲染，不依赖员工电脑预装 Python 或 LibreOffice。Primary Runtime 来自固定版本 `0.1.7-rc.2` 的平台制品，不在小胤构建时下载或改写 Harness 源码；构建脚本只按平台选择归档、校验 SHA-256、解压并检查必需文件。见 [Office 文档能力](office.md) 和 [构建流程](build-workflows.md)。
 
 交互细节见 [任务执行](task-execution.md)、[扩展](extensions.md)、[知识库](knowledge-base.md)、[记忆](memory.md)、[定时任务与 IM](schedules-and-im.md)。

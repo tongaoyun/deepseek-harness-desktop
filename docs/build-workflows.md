@@ -14,6 +14,8 @@ macOS 的两个架构使用矩阵并行构建，分别复用 `/tmp/xiaoyin-deskt
 
 macOS 内置 Node 使用仓库锁定的版本和 SHA-256，首次下载并校验后复用 Runner 的 `~/Library/Caches/xiaoyin-desktop-builder`。版本或哈希变化时自动建立新缓存。
 
+Harness Primary Runtime 使用固定版本 `0.1.7-rc.2` 的内部 generic package 制品。Windows 和 macOS 构建按目标平台下载 `win-x64.tar.gz`、`mac-x64.tar.gz` 或 `mac-arm64.tar.gz`，随后校验清单中的 SHA-256 并检查 `primary-runtime/runtime.json` 与官方 Office Skill 检查器。下载器支持 Runner 缓存，但缓存命中也必须重新计算摘要；网络下载、摘要不匹配或归档内容不完整都会使构建失败。构建不访问上游源码、不应用本地 patch，也不复制上游源码到仓库。
+
 Windows 正式发布会将 Release 资产和版本包按最多 3 个请求并行上传，更新索引始终最后发布；每个文件都会记录上传耗时，并在发布前后校验版本、签名、大小和哈希。上传失败会清理同批请求并停止发布，不会提前公开不完整的更新索引。
 
 Windows quick 只允许从普通分支手动运行，用于验证界面与基本启动；它生成 Debug NSIS，不执行安装卸载验收，也不发布更新源。release 生成 MSI、NSIS 和更新签名，并固定执行 NSIS 安装、内置 Harness、应用启动和卸载验收。从标签手动运行时，Windows 强制使用 release，macOS 强制构建双架构。

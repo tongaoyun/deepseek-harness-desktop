@@ -39,6 +39,8 @@ pnpm tauri:dev
 
 `pnpm check:web` 是 CI 与本地共用的前端/Harness 门禁；`pnpm check` 还执行 Rust 格式、Clippy 和测试。发布条件与签名配置见[构建流程](docs/build-workflows.md)和[发布验收](docs/system-readiness.md)。
 
+安装包内置 DeepSeek Harness `0.1.7-rc.2` 官方运行时。构建阶段只下载固定平台制品并校验 SHA-256，不复制或修改 Harness 源码；Office 能力由随包的官方 Office Skills 和 LibreOffice Kit 提供。
+
 | 工作流 | 参数 | 产物 |
 | --- | --- | --- |
 | Windows 安装包 | `release` | MSI、NSIS、更新签名与 SHA-256 |

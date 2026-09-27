@@ -14,6 +14,8 @@ pnpm check
 
 检查覆盖版本、lint、类型、前端与 Host 测试、生产构建、Harness 运行时和契约验收、Rust 格式、Clippy 与测试。服务端在其仓库执行 `sh scripts/check.sh`。
 
+安装包运行时验收还必须确认平台归档来自 `scripts/official-harness-runtime.json` 声明的 `0.1.7-rc.2` 制品，SHA-256 校验通过，且包内存在 `primary-runtime/runtime.json`、三个官方 Office Skill 和 `office-skills/scripts/check_office.py`。这一步验证的是实际随包运行时，不以依赖树或源码目录存在作为替代。
+
 Gitea CI 的 Web/Host Job 执行 `pnpm check:web`；Windows Job 检查 PowerShell 与 Rust。安装包工作流只负责构建、签名、包内烟测和发布身份校验。
 
 安装包中的本地文件、Office、Shell 和 Computer Use 自测可另外运行：
