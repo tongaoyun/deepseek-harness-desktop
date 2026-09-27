@@ -554,7 +554,7 @@ export async function runSessionTurn(
   const streamedText = new Map<string, string>()
   const deadline = Date.now() + timeoutMs
   try {
-    const messageId = await beforeDeadline(() => client.prompt(sessionId, content), deadline, timeoutMs)
+    const messageId = await promptWithSessionRegistrationRecovery(client, sessionId, content, deadline, timeoutMs)
     for (;;) {
       const notification = await beforeDeadline(() => subscription.next(), deadline, timeoutMs)
       if (!receivedPrompt) {
@@ -734,6 +734,32 @@ async function beforeDeadline<T>(
   } finally {
     if (timer) clearTimeout(timer)
   }
+}
+
+/**
+ * A restored official session can finish registration just after the SDK
+ * server's first lookup. In that narrow case the server rejects the lookup
+ * with "already exists" even though no prompt was accepted. Re-issue only
+ * this lookup once; all provider/model requests remain single-dispatch.
+ */
+async function promptWithSessionRegistrationRecovery(
+  client: Pick<SessionClient, 'prompt'>,
+  sessionId: string,
+  content: SdkPromptContentBlock[],
+  deadline: number,
+  timeoutMs: number,
+): Promise<string> {
+  try {
+    return await beforeDeadline(() => client.prompt(sessionId, content), deadline, timeoutMs)
+  } catch (error) {
+    if (!isSessionAlreadyRegisteredError(error)) throw error
+    await beforeDeadline(() => delay(50), deadline, timeoutMs)
+    return beforeDeadline(() => client.prompt(sessionId, content), deadline, timeoutMs)
+  }
+}
+
+function isSessionAlreadyRegisteredError(error: unknown): boolean {
+  return /session\s+"[^"\n]+"\s+already exists/u.test(error instanceof Error ? error.message : String(error))
 }
 
 function isPromptReceipt(notification: HarnessNotification, sessionId: string, messageId: string): boolean {
