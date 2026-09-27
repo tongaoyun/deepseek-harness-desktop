@@ -385,7 +385,7 @@ export class DeepSeekHarnessRuntime implements HarnessRuntime {
     if (input.prompt.trim().length === 0) {
       throw new Error('prompt must not be blank')
     }
-    const harness = this.getOrCreateHarness()
+    let harness = this.getOrCreateHarness()
     const env = this.environment()
     await ensureExternalHarnessPlugins(env)
     const prompt = withTaskInstructions(applyMemoryContext(input.prompt, env.XIAOYIN_MEMORY_CONTEXT), {
@@ -398,20 +398,36 @@ export class DeepSeekHarnessRuntime implements HarnessRuntime {
       ...images,
     ]
     const sessionId = input.sessionId ?? `session-${randomUUID().replaceAll('-', '')}`
-    try {
-      await startHarnessWithRegistrationRecovery(harness)
+    const executeTurn = async (activeHarness: DeepSeekHarness): Promise<HarnessRunResult> => {
+      await activeHarness.start()
       this.initialized = true
-      const interrupted = await runSessionTurn(
-        harness.client,
+      return runSessionTurn(
+        activeHarness.client,
         sessionId,
         content,
         onNotification,
         turnTimeoutMs(env.XIAOYIN_TURN_TIMEOUT_MS),
         () => this.interruptRequested,
       )
+    }
+    try {
+      const interrupted = await executeTurn(harness)
       if (!interrupted) this.interruptRequested = false
       return interrupted
     } catch (error) {
+      if (input.sessionId && isSessionAlreadyRegisteredError(error) && this.harness === harness && !this.closing) {
+        // The official runtime can race its persisted-session registry during
+        // a process handoff. The rejected prompt is pre-acceptance, so closing
+        // that child and creating one fresh official client cannot duplicate a
+        // provider request.
+        this.harness = undefined
+        await harness.close().catch(() => undefined)
+        await delay(250)
+        harness = this.getOrCreateHarness()
+        const interrupted = await executeTurn(harness)
+        if (!interrupted) this.interruptRequested = false
+        return interrupted
+      }
       // Do not let the native host tear down the process group before the SDK
       // has finished disposing detached shell/MCP children.
       if (this.closing) await this.closeTask?.catch(() => undefined)
@@ -517,19 +533,6 @@ export class DeepSeekHarnessRuntime implements HarnessRuntime {
 function isAgentContextFailure(error: unknown): boolean {
   return error instanceof HarnessError && error.data.code === 'XY-AGENT-CONTEXT'
 }
-
-async function startHarnessWithRegistrationRecovery(harness: DeepSeekHarness): Promise<void> {
-  try {
-    await harness.start()
-  } catch (error) {
-    if (!isSessionAlreadyRegisteredError(error)) throw error
-    // The official SDK replaces its failed client after a rejected handshake;
-    // wait for that cleanup before asking it to establish the handshake again.
-    await delay(50)
-    await harness.start()
-  }
-}
-
 
 interface SessionSubscription {
   next(): Promise<HarnessNotification>
