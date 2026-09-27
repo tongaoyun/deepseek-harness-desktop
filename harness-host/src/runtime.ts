@@ -399,7 +399,7 @@ export class DeepSeekHarnessRuntime implements HarnessRuntime {
     ]
     const sessionId = input.sessionId ?? `session-${randomUUID().replaceAll('-', '')}`
     try {
-      await harness.start()
+      await startHarnessWithRegistrationRecovery(harness)
       this.initialized = true
       const interrupted = await runSessionTurn(
         harness.client,
@@ -516,6 +516,18 @@ export class DeepSeekHarnessRuntime implements HarnessRuntime {
 
 function isAgentContextFailure(error: unknown): boolean {
   return error instanceof HarnessError && error.data.code === 'XY-AGENT-CONTEXT'
+}
+
+async function startHarnessWithRegistrationRecovery(harness: DeepSeekHarness): Promise<void> {
+  try {
+    await harness.start()
+  } catch (error) {
+    if (!isSessionAlreadyRegisteredError(error)) throw error
+    // The official SDK replaces its failed client after a rejected handshake;
+    // wait for that cleanup before asking it to establish the handshake again.
+    await delay(50)
+    await harness.start()
+  }
 }
 
 
