@@ -410,32 +410,33 @@ export class DeepSeekHarnessRuntime implements HarnessRuntime {
         () => this.interruptRequested,
       )
     }
-    try {
-      const interrupted = await executeTurn(harness)
-      if (!interrupted) this.interruptRequested = false
-      return interrupted
-    } catch (error) {
-      if (input.sessionId && isSessionAlreadyRegisteredError(error) && this.harness === harness && !this.closing) {
-        // The official runtime can race its persisted-session registry during
-        // a process handoff. The rejected prompt is pre-acceptance, so closing
-        // that child and creating one fresh official client cannot duplicate a
-        // provider request.
-        this.harness = undefined
-        await harness.close().catch(() => undefined)
-        await delay(250)
-        harness = this.getOrCreateHarness()
+    for (let registrationRecoveryAttempt = 0; ; registrationRecoveryAttempt += 1) {
+      try {
         const interrupted = await executeTurn(harness)
         if (!interrupted) this.interruptRequested = false
         return interrupted
+      } catch (error) {
+        if (input.sessionId && isSessionAlreadyRegisteredError(error) && this.harness === harness
+          && !this.closing && registrationRecoveryAttempt < 4) {
+          // The official runtime can race its persisted-session registry during
+          // a process handoff. The rejected prompt is pre-acceptance, so closing
+          // that child and creating a fresh official client cannot duplicate a
+          // provider request. A bounded backoff lets the prior registry release.
+          this.harness = undefined
+          await harness.close().catch(() => undefined)
+          await delay(250 * (2 ** registrationRecoveryAttempt))
+          harness = this.getOrCreateHarness()
+          continue
+        }
+        // Do not let the native host tear down the process group before the SDK
+        // has finished disposing detached shell/MCP children.
+        if (this.closing) await this.closeTask?.catch(() => undefined)
+        if ((error instanceof TurnTimeoutError || isAgentContextFailure(error)) && this.harness === harness) {
+          this.harness = undefined
+          await harness.close().catch(() => undefined)
+        }
+        throw error
       }
-      // Do not let the native host tear down the process group before the SDK
-      // has finished disposing detached shell/MCP children.
-      if (this.closing) await this.closeTask?.catch(() => undefined)
-      if ((error instanceof TurnTimeoutError || isAgentContextFailure(error)) && this.harness === harness) {
-        this.harness = undefined
-        await harness.close().catch(() => undefined)
-      }
-      throw error
     }
   }
 
