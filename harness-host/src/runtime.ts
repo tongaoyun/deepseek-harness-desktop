@@ -506,6 +506,17 @@ export class DeepSeekHarnessRuntime implements HarnessRuntime {
       initializeTimeoutMs: 60_000,
       cwd: workspace,
       processCwd: workspace,
+      // Pass the employee-scoped home through the official SDK option as
+      // well as the environment. The launcher uses this option to resolve
+      // the profile's cordis.patch.yml before composing the sdk profile;
+      // relying on an inherited environment alone is ambiguous when the
+      // packaged Windows host starts with a different working directory.
+      ...(env.DSH_HOME?.trim() ? { dshHome: env.DSH_HOME } : {}),
+      // The official SDK accepts product-owned overlays as first-class
+      // profile layers. Pass the overlay explicitly so packaged hosts do not
+      // depend on profile auto-initialization timing when a fresh DSH_HOME is
+      // created for the first task.
+      patches: [env.DSH_CORDIS_CONFIG?.trim() || resolve(moduleDirectory, '../runtime/cordis.yml')],
       env: {
         ...env,
         DSH_CWD: workspace,

@@ -11,6 +11,7 @@ const sources = [
   ['standalone/api-design', 'api-design', 'SELECTED_STANDALONE'],
   ['fullstack/api-design', 'api-design', 'SELECTED_KIT'],
   ['fullstack/code-review', 'code-review', 'REVIEW_ONLY'],
+  ['disabled/code-review', 'code-review', 'DISABLED_ONLY'],
 ]
 for (const [path, name, marker] of sources) {
   await mkdir(join(root, path), { recursive: true })
@@ -32,9 +33,12 @@ const server = createServer(async (request, response) => {
 await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
 try {
   for (const scenario of [
-    { name: 'standalone-priority', directories: ['standalone/api-design', 'fullstack/code-review'], marker: 'SELECTED_STANDALONE' },
-    { name: 'selected-kit-priority', directories: ['fullstack/api-design', 'fullstack/code-review'], marker: 'SELECTED_KIT' },
-    { name: 'disabled', directories: ['fullstack/code-review'], marker: 'unknown or no longer available' },
+    // customSkillDirs are skill roots. Each root contains one directory per
+    // skill; passing an individual skill directory would make the official
+    // filesystem provider look for <dir>/<skill-name>/SKILL.md and hide it.
+    { name: 'standalone-priority', directories: ['standalone', 'fullstack'], marker: 'SELECTED_STANDALONE' },
+    { name: 'selected-kit-priority', directories: ['fullstack'], marker: 'SELECTED_KIT' },
+    { name: 'disabled', directories: ['disabled'], marker: 'unknown or no longer available' },
     { name: 'uninstalled', directories: [], marker: 'unknown or no longer available' },
   ]) {
     expected = scenario.marker
@@ -42,7 +46,14 @@ try {
     const runtime = new DeepSeekHarnessRuntime({
       DEEPSEEK_API_KEY: 'local-fixture-only', DEEPSEEK_BASE_URL: `http://127.0.0.1:${server.address().port}`,
       DSH_HOME: join(root, scenario.name), DSH_SESSION_ROOT: join(root, scenario.name, 'sessions'),
-      XIAOYIN_LOCAL_FILE_ROOTS: '[]',
+      // The official filesystem service resolves custom skills through the
+      // active session workspace. Keep the fixture inside that authorized
+      // root so discovery behaves the same in an installed Windows host.
+      DSH_CWD: root,
+      // Keep the fixture explicitly authorized for the same host policy used
+      // by a desktop-selected workspace. The official skill filesystem uses
+      // that policy when it reads custom roots.
+      XIAOYIN_LOCAL_FILE_ROOTS: JSON.stringify([{ id: 'fixture', path: root }]),
       XIAOYIN_MCP_CONNECTORS: '[]', XIAOYIN_COMPUTER_USE_TOOLS: '[]', XIAOYIN_ALLOW_BROWSER: 'false',
       DSH_CUSTOM_SKILL_DIRS: JSON.stringify(scenario.directories.map((path) => join(root, path))),
     })
