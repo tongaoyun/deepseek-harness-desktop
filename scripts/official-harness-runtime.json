@@ -1,0 +1,18 @@
+{
+  "version": "0.1.7-rc.2",
+  "baseUrl": "http://192.168.2.66:3300/api/packages/instudio/generic/xiaoyin-harness-primary-runtime/0.1.7-rc.2",
+  "targets": {
+    "win-x64": {
+      "archive": "win-x64.tar.gz",
+      "sha256": "4f875211fb28cf8547d525b343e74316c8b27c70e67454bd76d729dfdbae3a5e"
+    },
+    "mac-x64": {
+      "archive": "mac-x64.tar.gz",
+      "sha256": "b20283bbcb4ebced5b02d1830fb2dfca3b631786ac7af8f6a30b479e82432564"
+    },
+    "mac-arm64": {
+      "archive": "mac-arm64.tar.gz",
+      "sha256": "9364ef03063783102f8e4fd9712301ed14271cf927c2757d4dce012bbd614496"
+    }
+  }
+}

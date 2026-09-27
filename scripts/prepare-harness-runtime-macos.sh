@@ -98,7 +98,7 @@ cp "$node_root/LICENSE" "$next_stage/node/LICENSE"
 chmod 755 "$next_stage/node/node"
 
 primary_target="mac-$node_arch"
-node "$script_dir/prepare-dsh-primary-runtime.mjs" \
+node "$script_dir/download-official-harness-runtime.mjs" \
   --target "$primary_target" \
   --output "$next_stage" \
   --cache "$cache_root/primary-runtime"

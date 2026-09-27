@@ -143,7 +143,7 @@ $cacheBase = if ([string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
   $env:LOCALAPPDATA
 }
 $primaryCache = Join-Path $cacheBase "xiaoyin-desktop-builder\primary-runtime"
-& $nodeExecutable (Join-Path $PSScriptRoot "prepare-dsh-primary-runtime.mjs") `
+& $nodeExecutable (Join-Path $PSScriptRoot "download-official-harness-runtime.mjs") `
   --target win-x64 --output $stage --cache $primaryCache
 if ($LASTEXITCODE -ne 0) { throw "Official Primary Runtime preparation failed." }
 
