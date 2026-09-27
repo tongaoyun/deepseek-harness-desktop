@@ -12,6 +12,24 @@ let failure
 let stopRuntime
 let streamDelivered
 const firstDelta = new Promise((resolve) => { streamDelivered = resolve })
+const sessionAlreadyExists = (error) => /session "[^"]+" already exists/u.test(String(error?.message ?? error))
+async function runRestoredSession(input, onNotification) {
+  // The official SDK restores an explicit id through session/create. During
+  // process handoff, Node 24 runners can briefly retain the previous
+  // controller's in-memory identity after its persistence writer has closed.
+  // Retry only this pre-acceptance protocol error; never retry a provider,
+  // model, or turn error because those could have already executed work.
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await runtime.run(input, onNotification)
+    } catch (error) {
+      if (!sessionAlreadyExists(error) || attempt >= 4) throw error
+      await runtime.close()
+      await new Promise((resolve) => setTimeout(resolve, 250 * (2 ** attempt)))
+      runtime = new DeepSeekHarnessRuntime(environment)
+    }
+  }
+}
 const server = createServer(async (request, response) => {
   try {
     const chunks = []
@@ -77,7 +95,7 @@ try {
   // next SDK process adopts the same persisted Session identity.
   await new Promise((resolve) => setTimeout(resolve, 1_000))
   phase = 'restored'
-  const restored = await runtime.run({ sessionId: initial.sessionId, prompt: '继续第一轮任务。' }, () => {})
+  const restored = await runRestoredSession({ sessionId: initial.sessionId, prompt: '继续第一轮任务。' }, () => {})
   assert.equal(restored.sessionId, initial.sessionId)
   assert.ifError(failure)
   assert((await readFile(logs[0])).length > 0, 'Compressed Session JSONL generation is empty')
