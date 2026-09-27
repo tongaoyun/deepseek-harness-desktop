@@ -40,10 +40,9 @@
 - id: session-persistence-jsonl
   config:
     root: !!js process.env.DSH_SESSION_ROOT ?? dshHomePath('sessions')
-    # Node 24's bundled zstd stream can leave a persisted Session identity
-    # open across SDK process handoff. JSONL is the official fallback for the
-    # Windows runtime; newer Node releases keep the compact zstd format.
-    compression: !!js "process.versions.node.startsWith('24.') ? 'none' : 'zstd'"
+    # Match the official profile's default encoding across every supported
+    # Node runtime so cold query/recovery paths share one root format.
+    compression: zstd
 
 # Keep the official user-settings and credential documents inside the
 # employee-scoped DSH_HOME supplied by the desktop process. Explicit paths

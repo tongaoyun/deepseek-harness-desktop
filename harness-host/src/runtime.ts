@@ -514,6 +514,7 @@ export class DeepSeekHarnessRuntime implements HarnessRuntime {
       // relying on an inherited environment alone is ambiguous when the
       // packaged Windows host starts with a different working directory.
       ...(env.DSH_HOME?.trim() ? { dshHome: env.DSH_HOME } : {}),
+      patches: [env.DSH_CORDIS_CONFIG?.trim() || resolve(moduleDirectory, '../runtime/cordis.yml')],
       env: {
         ...env,
         DSH_CWD: workspace,
