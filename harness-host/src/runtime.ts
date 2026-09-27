@@ -23,7 +23,8 @@ import { initialXiaoyinTaskView, reduceEvent, type XiaoyinTaskState, type Xiaoyi
 import { hasEligibleHarnessMcpConnector } from './managed-mcp-plugin.js'
 import { HarnessError, data as errorData, errorDataForProvider, type HarnessErrorData } from './errors.js'
 
-const SESSION_COMPRESSION = process.versions.node.startsWith('24.') ? 'none' : 'zstd'
+// Session artifacts use the official runtime's stable encoding across Node versions.
+const SESSION_COMPRESSION = 'zstd'
 
 export interface RunInput {
   prompt: string
