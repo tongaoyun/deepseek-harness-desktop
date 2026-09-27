@@ -34,12 +34,12 @@ describe('IM task synchronization', () => {
       conversationKey: 'ding:user', boundTaskId: 'task-1', sessionId: 'session-1',
       status: 'COMPLETED', updatedAt: '2026-09-02T01:00:00Z',
       messages: [{ id: 'm1', role: 'user', text: '继续生成日报', createdAt: '2026-09-02T00:59:00Z' }],
-      taskProjection: { status: 'completed', activity: '已完成', updatedAt: '2026-09-02T01:00:00Z', steps: [{ id: 'read', kind: 'tool', label: '读取文件', toolName: 'local_files_read_text', status: 'completed' }], artifacts: [] },
+      taskProjection: { updatedAt: '2026-09-02T01:00:00Z', changes: [], artifacts: [], visuals: [], knowledgeSources: [] },
     }] } as unknown as LocalImStatus
     const first = mergeImStatusIntoTasks([task], status)
     expect(first.changed).toHaveLength(1)
     expect(first.tasks[0]).toMatchObject({ status: 'COMPLETED', entries: [{ id: 'm1', source: 'dingtalk' }] })
-    expect(first.tasks[0]!.projection.steps).toHaveLength(1)
+    expect(first.tasks[0]!.projection.updatedAt).toBe('2026-09-02T01:00:00Z')
     expect(mergeImStatusIntoTasks(first.tasks, status).changed).toHaveLength(0)
   })
 })

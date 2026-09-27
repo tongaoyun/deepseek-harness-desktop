@@ -1,4 +1,4 @@
-import { desktopToolNames } from './expertKits'
+import { isDesktopToolName } from './expertKits'
 import type {
   ConnectorCatalogEntry,
   InstalledExpertKit,
@@ -50,7 +50,7 @@ export function mergeSkills(
       return connector.status === 'ready' ? [] : [`${connector.name} 未就绪`]
     })
     const tools = new Set(referenced.flatMap((connector) => connector.toolNames))
-    for (const tool of requiredTools.filter((name) => !desktopToolNames.has(name))) {
+    for (const tool of requiredTools.filter((name) => !isDesktopToolName(name))) {
       if (!tools.has(tool)) connectorIssues.push(`${tool} 无可用连接器`)
     }
     const knowledgeIssues = knowledgeBaseRefs.filter((reference) => !knowledgeReferences.has(reference))

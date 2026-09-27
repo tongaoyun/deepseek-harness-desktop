@@ -1,5 +1,5 @@
 import { Check, Plug, Wrench } from 'lucide-react'
-import { desktopToolNames } from './expertKits'
+import { desktopToolNames, isDesktopToolName } from './expertKits'
 import type { SkillView } from './skills'
 import type { ConnectorCatalogEntry } from './types'
 
@@ -57,7 +57,7 @@ export function composerIssues(
   )
   for (const tool of dependencies.tools) {
     if (!selectedToolSet.has(tool)) issues.push(`所选技能依赖工具 ${tool}`)
-    if (!desktopToolNames.has(tool) && !providedTools.has(tool)) issues.push(`${tool} 没有可用的连接器提供`)
+    if (!isDesktopToolName(tool) && !providedTools.has(tool)) issues.push(`${tool} 没有可用的连接器提供`)
   }
   return unique(issues)
 }

@@ -308,9 +308,19 @@
         enabled: !!js process.env.XIAOYIN_EXECUTION_MODE !== 'plan'
         tools: !!js JSON.parse(process.env.XIAOYIN_COMPUTER_USE_TOOLS ?? '[]')
 
-    - id: local-browser
-      name: '../dist/local-browser-plugin.js'
+    # Browser automation is provided by the official per-Session Playwright
+    # MCP provider. The provider owns Chromium lifecycle, tool discovery,
+    # screenshots and browser state; Xiaoyin only decides whether the current
+    # capability snapshot is allowed to mount it.
+    - id: browser-use
+      name: '@deepseek-ai/dsh-browser-use'
+      disabled: !!js process.env.XIAOYIN_ALLOW_BROWSER !== 'true' || process.env.XIAOYIN_EXECUTION_MODE === 'plan'
+
+    - id: browser-use-playwright
+      name: '@deepseek-ai/dsh-experimental-browser-use-playwright-mcp'
+      disabled: !!js process.env.XIAOYIN_ALLOW_BROWSER !== 'true' || process.env.XIAOYIN_EXECUTION_MODE === 'plan'
       config:
-        enabled: !!js process.env.XIAOYIN_ALLOW_BROWSER === 'true' && process.env.XIAOYIN_EXECUTION_MODE !== 'plan'
-        executable: !!js process.env.XIAOYIN_BROWSER_EXECUTABLE ?? ''
-        debugUrl: !!js process.env.XIAOYIN_BROWSER_DEBUG_URL ?? ''
+        mode: launch
+        headless: false
+        executablePath: !!js process.env.XIAOYIN_BROWSER_EXECUTABLE || undefined
+        toolCallTimeoutMs: 120000

@@ -108,6 +108,8 @@ const EXTERNAL_HARNESS_PLUGINS = [
   '@deepseek-ai/dsh-tool-pwsh-persistent',
   '@deepseek-ai/dsh-tool-session-query',
   '@deepseek-ai/dsh-workspace-changes',
+  '@deepseek-ai/dsh-browser-use',
+  '@deepseek-ai/dsh-experimental-browser-use-playwright-mcp',
 ] as const
 
 export async function ensureExternalHarnessPlugins(env: NodeJS.ProcessEnv): Promise<void> {
@@ -289,7 +291,7 @@ export class DeepSeekHarnessRuntime implements HarnessRuntime {
         officialFilesystem: officialCapability('@deepseek-ai/dsh-tool-fs'),
         present: optionalCapability('@deepseek-ai/dsh-tool-present', true),
         shell: optionalCapability('@deepseek-ai/dsh-bash-local', env.XIAOYIN_ALLOW_SHELL !== 'false'),
-        browser: env.XIAOYIN_ALLOW_BROWSER === 'true' ? 'enabled' : 'gated',
+        browserUse: optionalCapability('@deepseek-ai/dsh-experimental-browser-use-playwright-mcp', env.XIAOYIN_ALLOW_BROWSER === 'true' && env.XIAOYIN_EXECUTION_MODE !== 'plan'),
         codexHooks: optionalCapability('@deepseek-ai/dsh-hooks-codex', env.XIAOYIN_ALLOW_HOOKS !== 'false' && Boolean(env.XIAOYIN_CODEX_HOOKS_CONFIG)),
         claudeHooks: optionalCapability('@deepseek-ai/dsh-hooks-claude-code', env.XIAOYIN_ALLOW_HOOKS !== 'false' && Boolean(env.XIAOYIN_CLAUDE_HOOKS_CONFIG)),
       },
@@ -846,15 +848,14 @@ async function inspectOfficialSession(sessionId: string, env: NodeJS.ProcessEnv 
       const state = events.reduce<XiaoyinTaskState>((current, event) => reduceEvent(current, event), { value: initialXiaoyinTaskView(), toolNames: {} })
       const projection = state.value
       const messages = rebuildSessionMessages(events)
-      const pendingTools = projection.steps.filter((step) => step.kind === 'tool' && step.status === 'running').length
       const lastEvent = events.at(-1)
-      const status = projection.status === 'running' ? 'running' : projection.status === 'completed' ? 'completed' : projection.status === 'failed' ? 'failed' : projection.status === 'canceled' ? 'idle' : 'unknown'
+      const lifecycle = sessionLifecycle(events)
       return {
         sessionId,
-        status,
-        updatedAt: projection.updatedAt,
+        status: lifecycle.status,
+        updatedAt: projection.updatedAt === new Date(0).toISOString() ? lifecycle.updatedAt : projection.updatedAt,
         ...(lastEvent?.type ? { lastEventType: lastEvent.type } : {}),
-        pendingTools,
+        pendingTools: lifecycle.pendingTools,
         projection,
         // The official browser Conversation assembler replays the Session
         // journal itself. Keep this separate from the product projection so
@@ -870,6 +871,27 @@ async function inspectOfficialSession(sessionId: string, env: NodeJS.ProcessEnv 
   } finally {
     await disposeCordisContext(context)
   }
+}
+
+/** Derive lifecycle facts from the official journal; product projection is not a state machine. */
+function sessionLifecycle(events: ReadonlyArray<{ type: string; time?: unknown; data?: unknown }>): { status: SessionInspection['status']; updatedAt: string; pendingTools: number } {
+  const pending = new Set<string>()
+  let status: SessionInspection['status'] = events.length ? 'running' : 'idle'
+  let updatedAt = new Date(0).toISOString()
+  for (const event of events) {
+    const date = new Date(typeof event.time === 'number' ? event.time : Number.NaN)
+    if (Number.isFinite(date.getTime())) updatedAt = date.toISOString()
+    const data = event.data && typeof event.data === 'object' && !Array.isArray(event.data) ? event.data as Record<string, unknown> : undefined
+    const callId = typeof data?.callId === 'string' ? data.callId : undefined
+    if (event.type === 'tool/call' && callId) pending.add(callId)
+    if (event.type === 'tool/result' && callId) pending.delete(callId)
+    if (event.type !== 'turn/end') continue
+    const reason = data?.reason && typeof data.reason === 'object' && !Array.isArray(data.reason) ? data.reason as Record<string, unknown> : undefined
+    const kind = typeof reason?.kind === 'string' ? reason.kind : undefined
+    status = kind === 'completed' ? 'completed' : kind === 'aborted' ? 'idle' : 'failed'
+  }
+  if (status === 'running' && pending.size === 0 && events.at(-1)?.type === 'assistant/message') status = 'completed'
+  return { status, updatedAt, pendingTools: pending.size }
 }
 
 async function searchOfficialSessions(sessionIds: string[], query: string, limit: number, cursor: string | undefined, env: NodeJS.ProcessEnv = process.env): Promise<SessionSearchPage> {

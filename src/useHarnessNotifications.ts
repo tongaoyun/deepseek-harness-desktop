@@ -82,7 +82,17 @@ export function useHarnessNotifications({
 }
 
 function projectionForKey(current: XiaoyinTaskProjection, key: string, value: unknown): XiaoyinTaskProjection | undefined {
-  if (key === 'xiaoyin.product') return normalizeHarnessProjection(value)
+  if (key === 'xiaoyin.product') {
+    const product = normalizeHarnessProjection(value)
+    return product ? {
+      ...current,
+      updatedAt: product.updatedAt,
+      changes: product.changes,
+      artifacts: product.artifacts,
+      visuals: product.visuals,
+      knowledgeSources: product.knowledgeSources,
+    } : undefined
+  }
   if (key === 'tokenUsage' && isTokenUsage(value)) return { ...current, tokenUsage: value }
   if (key === 'contextPressure' && isContextPressure(value)) return { ...current, contextPressure: value }
   return undefined

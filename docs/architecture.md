@@ -26,7 +26,7 @@ React 工作台
 Tauri 原生层
   | JSON-RPC / stdio
 Harness Host
-  +-- 模型、Skills、MCP、Shell、Office、浏览器、Computer Use
+  +-- 模型、Skills、MCP、Shell、Office、Browser Sidebar、Agent Browser、Computer Use
   +-- 桌面任务、定时任务、钉钉会话
   | HTTP
 xiaoyin-server
@@ -44,7 +44,7 @@ xiaoyin-server
 | `src/App.tsx` | 页面协调、任务调度与状态连接 |
 | `src/useEnterpriseSession.ts` | 登录检查、到期重查、网络恢复与退出 |
 | `src/harnessSession.ts`、`src/taskTurn.ts` | 会话选择、恢复上下文、新轮次准备 |
-| `src/useHarnessNotifications.ts`、`src/taskHistory.ts` | 消费 Harness Session Projection、按序去重、任务历史持久化与恢复状态 |
+| `src/useHarnessNotifications.ts`、`src/taskHistory.ts` | 消费官方 Session Projection、合并产品成果、任务历史索引与恢复 |
 | `src/capabilitySnapshot.ts` | 产品能力解析、依赖闭包、凭据脱敏、不可变能力快照与语义变化判断 |
 | `src-tauri/src/` | 系统权限、钉钉会话、凭据、持久化与进程控制 |
 | `harness-host/src/runtime.ts` | 模型会话和工具运行时 |
@@ -74,9 +74,9 @@ xiaoyin-server
 
 跨会话上下文使用 Harness 官方 `dsh-session-reference`：消息中的规范 `dsh-session:` 引用在运行时读取一次，生成有界、不可变并明确标记为不可信的快照。小胤任务历史仍只保存轻量索引和 Session 引用，完整会话内容不复制到第二套产品存储。
 
-桌面任务以 Harness `sessionId` 和官方 Session Log 为执行事实源。Harness 的官方 Conversation/Trajectory 生成实时对话与操作状态，Host 通过本机 Bearer Bridge 转发；小胤注册 `xiaoyin.product` 产品投影，只补充文件、成果、知识来源和产品标签。任务索引只保存产品元数据、最近摘要和轻量状态；打开历史时通过官方 Persistence 重放事件并重建消息与投影，不再维护第二套 `ExecutionThread/Turn/Item/Event` 执行树，也不从文本猜测运行状态。
+桌面任务以 Harness `sessionId` 和官方 Session Log 为执行事实源。Harness 的官方 Conversation/Trajectory 生成实时对话、操作状态、审批和失败信息，Host 通过本机 Bearer Bridge 转发；小胤注册 `xiaoyin.product` 产品投影，只补充文件、成果、知识来源和产品标签。任务索引只保存产品元数据和最近摘要；打开历史时通过官方 Persistence 重放事件并重建消息和状态，不再维护第二套 `ExecutionThread/Turn/Item/Event` 执行树，也不从文本猜测运行状态。
 
-Harness 的持久化根目录、默认工作区和 IM 会话状态按员工标识的 SHA-256 命名空间隔离，Session inspect/search 也必须显式提供员工标识；员工标识不会直接写入路径。附件仍使用统一的内容寻址存储，因为预览只接受带 SHA-256 校验的不可变对象，避免为同一图片维护多份副本。浏览器 profile 同时按员工和任务隔离。
+Harness 的持久化根目录、默认工作区和 IM 会话状态按员工标识的 SHA-256 命名空间隔离，Session inspect/search 也必须显式提供员工标识；员工标识不会直接写入路径。附件仍使用统一的内容寻址存储，因为预览只接受带 SHA-256 校验的不可变对象，避免为同一图片维护多份副本。浏览器由官方 Harness Playwright MCP provider 以 `--isolated` 模式按 Session 管理；浏览器状态只在活动 Session 内跨轮保留，Session 重启或恢复时重新启动浏览器，不由小胤保存 profile、Cookie 或下载目录。
 
 Harness 进程缓存只在完整 `RuntimeFingerprint` 相同时复用；模型、凭据摘要、员工/团队、能力目录、连接器、知识范围、执行模式或权限任一变化都会销毁旧进程并重新初始化，避免把上一轮上下文带入新任务。
 

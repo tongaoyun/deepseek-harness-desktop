@@ -429,7 +429,7 @@ impl LocalImManager {
             .capability_snapshot
             .local_tools
             .iter()
-            .any(|tool| tool.starts_with("browser_"));
+            .any(|tool| crate::harness::is_harness_browser_tool(tool));
         let connectors =
             runtime_connectors(&context.capability_snapshot.connectors, &profile, true)?;
         let fingerprint = RuntimeFingerprint {

@@ -76,6 +76,8 @@ describe('Harness profile overlay', () => {
       'workspace-changes': '@deepseek-ai/dsh-workspace-changes',
       'workspace-dependencies': '@deepseek-ai/dsh-tool-workspace-dependencies',
       'skill-office': '@deepseek-ai/dsh-skill-office',
+      'browser-use': '@deepseek-ai/dsh-browser-use',
+      'browser-use-playwright': '@deepseek-ai/dsh-experimental-browser-use-playwright-mcp',
     }
     for (const [id, name] of Object.entries(official)) {
       expect(profileEntry(entries, id)).toMatchObject({ name })
@@ -106,6 +108,9 @@ describe('Harness profile overlay', () => {
     expect(profileEntry(entries, 'permission').config?.defaultPreset).toContain('DSH_PERMISSION_MODE')
     expect(profileEntry(entries, 'tool-session-query').disabled).toContain('XIAOYIN_ENABLE_SESSION_QUERY_TOOLS')
     expect(profileEntry(entries, 'tool-ralph').disabled).toContain('XIAOYIN_ENABLE_RALPH')
+    expect(profileEntry(entries, 'browser-use').disabled).toContain('XIAOYIN_ALLOW_BROWSER')
+    expect(profileEntry(entries, 'browser-use-playwright').disabled).toContain('XIAOYIN_ALLOW_BROWSER')
+    expect(profileEntry(entries, 'browser-use-playwright').config).toMatchObject({ mode: 'launch', headless: false, toolCallTimeoutMs: 120000 })
   })
 
   it('bounds a silent model stream instead of leaving the desktop running indefinitely', () => {
