@@ -155,6 +155,7 @@ export async function loadOfficialClientRoster(): Promise<void> {
     '@deepseek-ai/dsh-client-ui-layout/client',
     '@deepseek-ai/dsh-client-ui-sidebar/client',
     '@deepseek-ai/dsh-client-ui-sidebar-right/client',
+    '@deepseek-ai/dsh-client-ui-sidebar-browser/client',
     '@deepseek-ai/dsh-client-ui-workspace/client',
     '@deepseek-ai/dsh-client-ui-conversation/client',
     '@deepseek-ai/dsh-client-ui-input-trigger/client',
@@ -253,6 +254,7 @@ async function importOfficialBundle(id: string): Promise<void> {
   else if (id === '@deepseek-ai/dsh-api-session-controller/client') await import('@deepseek-ai/dsh-api-session-controller/client')
   else if (id === '@deepseek-ai/dsh-client-ui-sidebar/client') await import('@deepseek-ai/dsh-client-ui-sidebar/client')
   else if (id === '@deepseek-ai/dsh-client-ui-sidebar-right/client') await import('@deepseek-ai/dsh-client-ui-sidebar-right/client')
+  else if (id === '@deepseek-ai/dsh-client-ui-sidebar-browser/client') await import('@deepseek-ai/dsh-client-ui-sidebar-browser/client')
   else if (id === '@deepseek-ai/dsh-client-ui-workspace/client') await import('@deepseek-ai/dsh-client-ui-workspace/client')
   else if (id === '@deepseek-ai/dsh-client-ui-input-trigger/client') await import('@deepseek-ai/dsh-client-ui-input-trigger/client')
   else if (id === '@deepseek-ai/dsh-client-ui-conversation/client') await import('@deepseek-ai/dsh-client-ui-conversation/client')

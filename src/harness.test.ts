@@ -3,24 +3,18 @@ import { authorizeDroppedPaths, cancelHarness, classifyHarnessFailure, diagnoseC
 
 describe('Harness Session Projection', () => {
   it('accepts the official projection envelope and rejects compact event payloads', () => {
-    const update = harnessProjectionUpdate({ requestId: 1, event: { method: 'session.projection', params: { sessionId: 's', key: 'xiaoyin.product', seq: 4, value: { status: 'running', activity: '处理', updatedAt: '2026-09-11T00:00:00Z', steps: [], artifacts: [] } } } })
+    const update = harnessProjectionUpdate({ requestId: 1, event: { method: 'session.projection', params: { sessionId: 's', key: 'xiaoyin.product', seq: 4, value: { updatedAt: '2026-09-11T00:00:00Z', changes: [], artifacts: [], visuals: [], knowledgeSources: [] } } } })
     expect(update).toMatchObject({ sessionId: 's', key: 'xiaoyin.product', seq: 4 })
-    expect(normalizeHarnessProjection(update?.value)?.status).toBe('running')
+    expect(normalizeHarnessProjection(update?.value)?.artifacts).toEqual([])
     expect(harnessProjectionUpdate({ requestId: 1, event: { sessionId: 's', key: 'xiaoyin.product', seq: 4, value: {} } })).toBeUndefined()
   })
 
   it('normalizes optional Harness metrics and drops unknown wire fields', () => {
     const normalized = normalizeHarnessProjection({
-      status: 'completed', activity: '完成', updatedAt: '2026-09-11T00:00:00Z', executionStarted: true,
-      steps: [], artifacts: [], tokenUsage: { uncachedInputTokens: 12, outputTokens: 5, cacheReadTokens: -1 },
-      contextPressure: { contextWindow: 1000, projectedTokens: 1200 }, outputRetention: { prunedResults: 2, omittedTokens: 80 },
-      compactions: 3, privateRawOutput: 'must not persist',
+      updatedAt: '2026-09-11T00:00:00Z', changes: [], artifacts: [], visuals: [], knowledgeSources: [],
+      privateRawOutput: 'must not persist',
     })
-    expect(normalized).toMatchObject({
-      tokenUsage: { uncachedInputTokens: 12, outputTokens: 5 },
-      contextPressure: { contextWindow: 1000, projectedTokens: 1200 },
-      outputRetention: { prunedResults: 2, omittedTokens: 80 }, compactions: 3,
-    })
+    expect(normalized).toMatchObject({ updatedAt: '2026-09-11T00:00:00Z', artifacts: [], changes: [] })
     expect(JSON.stringify(normalized)).not.toContain('privateRawOutput')
   })
 

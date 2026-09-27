@@ -1,4 +1,4 @@
-import { desktopToolNames } from './expertKits'
+import { isDesktopToolName } from './expertKits'
 import type { ExpertKitView } from './expertKits'
 import type { SkillView } from './skills'
 import type { AllowedExtensionArtifact, CapabilitySelection, CapabilitySnapshot, ConnectorRuntimeDefinition } from './types'
@@ -61,7 +61,7 @@ export function resolveCapabilitySnapshot(input: ResolveCapabilitySnapshotInput)
     artifacts.push(source.artifact)
     source.connectorRefs.forEach((id) => dependencies.connectors.add(id))
     source.requiredTools.forEach((name) => {
-      if (desktopToolNames.has(name)) dependencies.localTools.add(name)
+      if (isDesktopToolName(name)) dependencies.localTools.add(name)
       else dependencies.tools.add(name)
     })
     source.knowledgeBaseRefs.forEach((reference) => dependencies.knowledge.add(reference))

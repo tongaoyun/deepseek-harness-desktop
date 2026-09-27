@@ -19,6 +19,7 @@ use std::os::unix::process::CommandExt;
 use std::os::windows::process::CommandExt;
 use std::{
     collections::{HashMap, HashSet},
+    ffi::OsString,
     io::{BufRead, BufReader, Read, Write},
     path::{Path, PathBuf},
     process::{Child, ChildStdin, Command, Stdio},
@@ -564,6 +565,49 @@ pub(crate) struct HarnessProcess {
     pub(crate) fingerprint: RuntimeFingerprint,
 }
 
+/// Browser automation is supplied by Harness's Playwright MCP provider. Keep
+/// this predicate at the product boundary so Tauri does not depend on the
+/// provider's internal tool registry or reimplement browser discovery.
+pub(crate) fn is_harness_browser_tool(tool: &str) -> bool {
+    tool.starts_with("mcp__playwright-mcp__browser_")
+}
+
+/// The official Playwright MCP provider can use its bundled Chromium or an
+/// installed Chromium-family browser. Packaged desktop builds do not ship a
+/// second browser binary, so pass a detected system executable when one is
+/// available and let the provider handle the actual launch lifecycle.
+pub(crate) fn default_browser_executable() -> Option<OsString> {
+    let mut candidates = Vec::new();
+    if cfg!(target_os = "windows") {
+        for variable in ["PROGRAMFILES", "PROGRAMFILES(X86)", "LOCALAPPDATA"] {
+            if let Some(root) = std::env::var_os(variable) {
+                let root = PathBuf::from(root);
+                candidates.push(root.join("Google/Chrome/Application/chrome.exe"));
+                candidates.push(root.join("Microsoft/Edge/Application/msedge.exe"));
+                candidates.push(root.join("Chromium/Application/chrome.exe"));
+            }
+        }
+    } else if cfg!(target_os = "macos") {
+        candidates.extend([
+            PathBuf::from("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"),
+            PathBuf::from("/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge"),
+            PathBuf::from("/Applications/Chromium.app/Contents/MacOS/Chromium"),
+        ]);
+    } else {
+        candidates.extend([
+            PathBuf::from("/usr/bin/google-chrome"),
+            PathBuf::from("/usr/bin/google-chrome-stable"),
+            PathBuf::from("/usr/bin/chromium"),
+            PathBuf::from("/usr/bin/chromium-browser"),
+            PathBuf::from("/usr/bin/microsoft-edge"),
+        ]);
+    }
+    candidates
+        .into_iter()
+        .find(|path| path.is_file())
+        .map(|path| path.into_os_string())
+}
+
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) struct HarnessRuntimePaths {
     pub(crate) node: PathBuf,
@@ -612,7 +656,7 @@ pub async fn run_harness(
         .capability_snapshot
         .local_tools
         .iter()
-        .any(|tool| tool.starts_with("browser_"));
+        .any(|tool| is_harness_browser_tool(tool));
     let connectors = runtime_connectors(&request.capability_snapshot.connectors, &profile, true)?;
     let fingerprint = RuntimeFingerprint {
         skill_directories: profile.skill_directories,
@@ -1581,15 +1625,6 @@ impl HarnessProcess {
             .app_data_dir()
             .map_err(|error| format!("无法确定 Harness 数据目录：{error}"))?;
         let dsh_home = employee_harness_root(&app_data, &fingerprint.employee_id);
-        let browser_home = task_id.map(|task_id| {
-            let mut hasher = Sha256::new();
-            hasher.update(fingerprint.employee_id.as_bytes());
-            hasher.update([0]);
-            hasher.update(task_id.as_bytes());
-            app_data
-                .join("harness-browser")
-                .join(format!("{:x}", hasher.finalize()))
-        });
         let workspace = app_data
             .join("workspaces")
             .join(employee_namespace(&fingerprint.employee_id));
@@ -1692,18 +1727,7 @@ impl HarnessProcess {
             .env("XIAOYIN_SCHEDULE_ENDPOINT", &fingerprint.schedule_endpoint)
             .env("XIAOYIN_KNOWLEDGE_BASE_REFS", knowledge_base_refs)
             .env("XIAOYIN_LOCAL_FILE_ROOTS", local_file_roots)
-            .envs(browser_home.as_ref().map(|path| {
-                (
-                    "XIAOYIN_BROWSER_PROFILE_DIR",
-                    path.join("profile").into_os_string(),
-                )
-            }))
-            .envs(browser_home.as_ref().map(|path| {
-                (
-                    "XIAOYIN_BROWSER_DOWNLOAD_DIR",
-                    path.join("downloads").into_os_string(),
-                )
-            }))
+            .envs(default_browser_executable().map(|path| ("XIAOYIN_BROWSER_EXECUTABLE", path)))
             .env(
                 "XIAOYIN_ALLOW_BROWSER",
                 fingerprint.allow_browser.to_string(),
@@ -2972,6 +2996,15 @@ mod tests {
         assert!(validate_employee_id("employee-1").is_ok());
         assert!(validate_employee_id("").is_err());
         assert!(validate_employee_id("employee\n1").is_err());
+    }
+
+    #[test]
+    fn browser_capability_uses_the_official_mcp_namespace() {
+        assert!(is_harness_browser_tool(
+            "mcp__playwright-mcp__browser_navigate"
+        ));
+        assert!(!is_harness_browser_tool("browser_navigate"));
+        assert!(!is_harness_browser_tool("mcp__other__browser_navigate"));
     }
 
     #[test]

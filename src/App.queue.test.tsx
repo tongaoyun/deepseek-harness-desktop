@@ -45,7 +45,7 @@ vi.mock('./DesktopSidebar', () => ({ DesktopSidebar: (props: ComponentProps<type
 vi.mock('./ScheduledTasksPage', () => ({ ScheduledTasksPage: (props: ComponentProps<typeof ScheduledTasksPage>) => { fixtures.schedules = props; return null } }))
 vi.mock('./ExtensionCatalogPages', () => ({ CapabilityCatalogPage: (props: ComponentProps<typeof CapabilityCatalogPage>) => { fixtures.creationCatalog = props; return null } }))
 vi.mock('./api', async (original) => ({ ...await original<object>(), loadBootstrap: vi.fn(async () => ({ employeeId: fixtures.user.userId, models: [...fixtures.models], capabilities: [], endpoints: { litellm: '/model', knowledge: '/knowledge', schedules: '/schedules' } })), loadKnowledgeBases: vi.fn() }))
-vi.mock('./taskHistory', async (original) => ({ ...await original<object>(), loadTaskHistory: vi.fn(async () => ({ tasks: [], invalidCount: 0 })), loadTaskById: vi.fn(), persistTaskHistory: vi.fn(async () => {}) }))
+vi.mock('./taskHistory', async (original) => ({ ...await original<object>(), loadTaskHistory: vi.fn(async () => ({ tasks: [] })), loadTaskById: vi.fn(), persistTaskHistory: vi.fn(async () => {}) }))
 vi.mock('./taskRecovery', () => ({ runHarnessWithRecovery: vi.fn() }))
 vi.mock('./taskAudit', () => ({ reportTaskAudit: vi.fn(async () => {}) }))
 vi.mock('./memory', async (original) => ({ ...await original<object>(), rememberInstruction: vi.fn(), learnCompletedTask: vi.fn(async () => undefined) }))
@@ -233,7 +233,7 @@ it('opens an unloaded scheduled task directly from durable history', async () =>
 })
 
 it('keeps the current task open when a stripped history item cannot be hydrated', async () => {
-  vi.mocked(loadTaskHistory).mockResolvedValue({ tasks: [olderTask(), strippedTask()], invalidCount: 0 })
+  vi.mocked(loadTaskHistory).mockResolvedValue({ tasks: [olderTask(), strippedTask()] })
   vi.mocked(loadTaskById).mockRejectedValue(new Error('Harness 会话内容暂时无法读取'))
   await fixture(async () => {
     await vi.waitFor(() => expect(fixtures.sidebar!.tasks).toHaveLength(2))
@@ -534,7 +534,7 @@ beforeEach(() => {
   vi.mocked(harness.shutdownHarness).mockReset().mockResolvedValue(undefined)
   vi.mocked(loadTaskById).mockReset()
   vi.mocked(loadKnowledgeBases).mockReset().mockResolvedValue([])
-  vi.mocked(loadTaskHistory).mockResolvedValue({ tasks: [], invalidCount: 0 })
+  vi.mocked(loadTaskHistory).mockResolvedValue({ tasks: [] })
   fixtures.models = ['original-model', 'other-model']
   const values = new Map<string, string>()
   vi.stubGlobal('localStorage', { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => values.set(key, value), removeItem: (key: string) => values.delete(key) })
@@ -853,7 +853,7 @@ it('resumes an installed kit after native persistence reorders the capability sn
     stored = JSON.parse(JSON.stringify(task, (_key, value) => value && typeof value === 'object' && !Array.isArray(value)
       ? Object.fromEntries(Object.entries(value).sort(([left], [right]) => left.localeCompare(right))) : value))
   })
-  vi.mocked(loadTaskHistory).mockResolvedValue({ tasks: [stored], invalidCount: 0 })
+  vi.mocked(loadTaskHistory).mockResolvedValue({ tasks: [stored] })
   await fixture(async () => {
     await act(async () => fixtures.sidebar!.onOpenTask(stored))
     await submit('/kit:reports 只读复查')

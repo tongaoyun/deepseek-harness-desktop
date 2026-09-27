@@ -87,7 +87,12 @@ it('reports Harness capability gates without advertising unconfigured providers'
   const runtime = new DeepSeekHarnessRuntime({ XIAOYIN_ENABLE_SESSION_QUERY_TOOLS: 'false' })
   const health = await runtime.health()
   expect(health.status).toBe('uninitialized')
-  expect(health.capabilities).toMatchObject({ profile: 'gated', modelProvider: 'unconfigured', commands: 'enabled', commandFeedback: 'enabled', sessionQuery: 'enabled', sessionQueryTools: 'gated', sessionReference: 'enabled', workspaceChanges: 'enabled', workspaceDependencies: 'unconfigured', officeSkills: 'unconfigured', libreOfficeKit: 'unconfigured', persistentTerminal: 'gated', lsp: 'unconfigured', codexSubagent: 'unconfigured', present: 'enabled', mcpClient: 'gated', webSearch: 'unconfigured', webFetch: 'unconfigured' })
+  expect(health.capabilities).toMatchObject({ profile: 'gated', modelProvider: 'unconfigured', commands: 'enabled', commandFeedback: 'enabled', sessionQuery: 'enabled', sessionQueryTools: 'gated', sessionReference: 'enabled', workspaceChanges: 'enabled', workspaceDependencies: 'unconfigured', officeSkills: 'unconfigured', libreOfficeKit: 'unconfigured', persistentTerminal: 'gated', lsp: 'unconfigured', codexSubagent: 'unconfigured', present: 'enabled', mcpClient: 'gated', browserUse: 'gated', webSearch: 'unconfigured', webFetch: 'unconfigured' })
+})
+
+it('gates the official Browser Use provider by task authorization and plan mode', async () => {
+  await expect(new DeepSeekHarnessRuntime({ XIAOYIN_ALLOW_BROWSER: 'true', XIAOYIN_EXECUTION_MODE: 'agent' }).health()).resolves.toMatchObject({ capabilities: { browserUse: 'enabled' } })
+  await expect(new DeepSeekHarnessRuntime({ XIAOYIN_ALLOW_BROWSER: 'true', XIAOYIN_EXECUTION_MODE: 'plan' }).health()).resolves.toMatchObject({ capabilities: { browserUse: 'gated' } })
 })
 
 it('reports a configured model provider without exposing its credential', async () => {
@@ -283,6 +288,8 @@ it('projects official plugins outside the sdk bundle into an external employee D
     const packageNames = [
       process.platform === 'win32' ? 'dsh-tool-pwsh-persistent' : 'dsh-tool-bash-persistent',
       'dsh-tool-session-query',
+      'dsh-browser-use',
+      'dsh-experimental-browser-use-playwright-mcp',
     ]
     for (const packageName of packageNames) {
       const target = join(home, 'profiles', 'node_modules', '@deepseek-ai', packageName)

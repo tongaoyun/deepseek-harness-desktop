@@ -322,6 +322,7 @@ function bootGraph() {
     'dsh-client-file-upload', 'dsh-client-locale', 'dsh-client-ui-settings', 'dsh-client-ui-renderer', 'dsh-client-resources',
     'dsh-client-ui-theme', 'dsh-client-shortcuts', 'dsh-api-workspace-controller', 'dsh-api-session-controller',
     'dsh-client-ui-session', 'dsh-client-ui-layout', 'dsh-client-ui-sidebar', 'dsh-client-ui-sidebar-right',
+    'dsh-client-ui-sidebar-browser',
     'dsh-client-ui-workspace', 'dsh-client-ui-conversation', 'dsh-client-ui-input-trigger', 'dsh-client-ui-chat',
     'dsh-client-ui-tool', 'dsh-client-ui-approval', 'dsh-client-ui-user-questions', 'dsh-client-ui-trajectory',
   ]

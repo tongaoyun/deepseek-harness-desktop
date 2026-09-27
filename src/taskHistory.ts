@@ -19,13 +19,8 @@ function orderedWrite(employeeId: string, id: string, write: () => Promise<void>
 export interface LocalTaskPage {
   items: LocalTaskRun[]
   total: number
-  invalidCount?: number
   offset: number
   limit: number
-}
-
-export function unreadableHistoryWarning(count: number): string {
-  return `${count} 条旧格式或损坏的本地会话未显示，原始数据已保留`
 }
 
 /** Consume the official cursor until the candidate set is exhausted. */
@@ -125,7 +120,7 @@ export async function loadTaskHistoryPage(employeeId: string, query = '', offset
     ].map((task) => [task.id, task])).values()]
       .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt) || right.id.localeCompare(left.id))
     const page = { items: matches.slice(offset, offset + LIMIT), total: matches.length, offset, limit: LIMIT }
-    return { ...page, invalidCount: candidatesPage.invalidCount, items: await recoverInterruptedTasksWithHarness(employeeId, page.items) }
+    return { ...page, items: await recoverInterruptedTasksWithHarness(employeeId, page.items) }
   }
   const needle = query.trim().toLocaleLowerCase()
   const excluded = new Set(excludeIds)
@@ -146,9 +141,9 @@ export async function loadTaskById(employeeId: string, id: string): Promise<Loca
   return recovered
 }
 
-export async function loadTaskHistory(employeeId: string): Promise<{ tasks: LocalTaskRun[]; invalidCount: number }> {
+export async function loadTaskHistory(employeeId: string): Promise<{ tasks: LocalTaskRun[] }> {
   await Promise.all([...writes.entries()].filter(([key]) => JSON.parse(key)[0] === employeeId).map(([, write]) => write.catch(() => undefined)))
-  if (!isTauri()) return { tasks: await recoverInterruptedTasksWithHarness(employeeId, loadLocalTasks(employeeId).slice(0, LIMIT)), invalidCount: 0 }
+  if (!isTauri()) return { tasks: await recoverInterruptedTasksWithHarness(employeeId, loadLocalTasks(employeeId).slice(0, LIMIT)) }
   const page = await invoke<LocalTaskPage>('load_local_tasks', {
     employeeId,
     query: { query: '', offset: 0, limit: LIMIT },
@@ -158,9 +153,9 @@ export async function loadTaskHistory(employeeId: string): Promise<{ tasks: Loca
     const recovered = await recoverInterruptedTasksWithHarness(employeeId, tasks)
     await Promise.all(recovered.filter((task, index) => task !== tasks[index])
       .map((task) => persistTaskHistory(employeeId, task)))
-    return { tasks: recovered, invalidCount: page.invalidCount ?? 0 }
+    return { tasks: recovered }
   }
-  return { tasks: [], invalidCount: page.invalidCount ?? 0 }
+  return { tasks: [] }
 }
 
 export function recoverInterruptedTasks(tasks: LocalTaskRun[], now = new Date().toISOString()): LocalTaskRun[] {
@@ -175,20 +170,10 @@ export function recoverInterruptedTasks(tasks: LocalTaskRun[], now = new Date().
       interruption: {
         checkpointAt: task.updatedAt,
         cause: 'exit' as const,
-        pendingOperations: task.projection.steps.filter((step) => step.status === 'running').map((step) => {
-          const timeline = task.projection.timeline?.find((entry) => entry.id === step.id)
-          return { id: step.id, label: step.label, ...(step.toolName || timeline?.toolName ? { toolName: step.toolName ?? timeline?.toolName } : {}) }
-        }),
+        // Pending operations are authoritative only in Harness events. A
+        // local restart must not infer or replay writes from a product cache.
+        pendingOperations: [],
       },
-      steps: task.projection.steps.map((step) => step.status === 'running'
-        ? { ...step, status: 'canceled' as const, label: `${step.label}（结果待核对）`, completedAt: task.updatedAt }
-        : step),
-      timeline: task.projection.timeline?.map((entry) => entry.status === 'running'
-        ? { ...entry, status: 'canceled' as const, label: `${entry.label}（结果待核对）`, completedAt: task.updatedAt }
-        : entry),
-      subagents: task.projection.subagents?.map((agent) => agent.status === 'running'
-        ? { ...agent, status: 'canceled' as const, completedAt: task.updatedAt }
-        : agent),
       failure: { code: 'XY-INTERRUPTED', category: 'local-agent', detail: '应用关闭或本地执行进程中断。Harness Session 已保留，继续前请核对实际结果。' },
     }
     const interruptedNotice = '上次任务因应用关闭或本地 Agent 中断，未能完成。已保留最近保存的进度与成果，请检查实际结果后继续，不要重复已经完成的操作。'
@@ -219,11 +204,22 @@ export async function recoverInterruptedTasksWithHarness(employeeId: string, tas
     if (!result) return task.status === 'RUNNING' ? recoverWithLocalNotices(local, now) : local
     if (task.status === 'RUNNING' && (!result.projection || !['completed', 'failed'].includes(result.status))) return recoverWithLocalNotices(local, now)
     const status = result.status === 'completed' ? 'COMPLETED' : result.status === 'failed' ? 'FAILED' : task.status
+    const product = result.projection
+    const projection = product ? {
+      ...task.projection,
+      updatedAt: product.updatedAt || task.projection.updatedAt,
+      changes: product.changes ?? task.projection.changes,
+      artifacts: product.artifacts ?? task.projection.artifacts,
+      visuals: product.visuals ?? task.projection.visuals,
+      knowledgeSources: product.knowledgeSources ?? task.projection.knowledgeSources,
+      status: result.status === 'completed' ? 'completed' as const : result.status === 'failed' ? 'failed' as const : task.projection.status,
+      completedAt: ['completed', 'failed'].includes(result.status) ? (product.updatedAt || task.projection.completedAt) : task.projection.completedAt,
+    } : task.projection
     return {
       ...task,
       status: status as LocalTaskRun['status'],
       updatedAt: result.updatedAt || task.updatedAt,
-      ...(result.projection ? { projection: result.projection } : {}),
+      ...(product ? { projection } : {}),
       ...(local === task ? {} : { entries: localEntries }),
     }
   })
@@ -340,10 +336,7 @@ export function compactTaskForStorage(task: LocalTaskRun): LocalTaskRun {
 
 function hasHarnessSessionEvidence(task: LocalTaskRun): boolean {
   const projection = task.projection
-  return projection.executionStarted === true || projection.steps.length > 0
-    || Boolean(projection.timeline?.length || projection.tokenUsage || projection.compactions
-      || projection.contextPressure || projection.outputRetention?.prunedResults
-      || projection.outputRetention?.omittedTokens)
+  return Boolean(task.sessionId) || projection.artifacts.length > 0 || Boolean(projection.changes?.length || projection.knowledgeSources?.length)
 }
 
 function canonicalizeTaskProjection(task: LocalTaskRun): LocalTaskRun {
@@ -381,7 +374,9 @@ function isLocalTask(value: unknown): value is LocalTaskRun {
 function isTaskProjection(value: unknown): boolean {
   if (!value || typeof value !== 'object') return false
   const projection = value as Partial<LocalTaskRun['projection']>
-  return ['idle', 'running', 'completed', 'failed', 'canceled'].includes(projection.status ?? '')
-    && typeof projection.activity === 'string' && typeof projection.updatedAt === 'string'
-    && Array.isArray(projection.steps) && Array.isArray(projection.artifacts)
+  return typeof projection.updatedAt === 'string'
+    && Array.isArray(projection.changes)
+    && Array.isArray(projection.artifacts)
+    && Array.isArray(projection.visuals)
+    && Array.isArray(projection.knowledgeSources)
 }

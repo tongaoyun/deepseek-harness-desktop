@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { composerIssues, deriveSkillDependencies } from './ExpertKitComposer'
+import { isDesktopToolName } from './expertKits'
 import type { SkillView } from './skills'
 import type { ConnectorCatalogEntry } from './types'
 
@@ -23,6 +24,12 @@ const skill = {
 } as SkillView
 
 describe('expert kit composer', () => {
+  it('recognizes every official Playwright MCP tool as a Harness capability', () => {
+    expect(isDesktopToolName('mcp__playwright-mcp__browser_run_code_unsafe')).toBe(true)
+    expect(isDesktopToolName('mcp__playwright-mcp__browser_future_tool')).toBe(true)
+    expect(isDesktopToolName('browser_navigate')).toBe(false)
+  })
+
   it('derives connector and tool requirements from selected skills', () => {
     expect(deriveSkillDependencies([skill], ['order-review'])).toEqual({
       connectorIds: ['erp-mcp'],

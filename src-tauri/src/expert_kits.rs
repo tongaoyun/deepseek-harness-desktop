@@ -1210,7 +1210,7 @@ pub fn harness_profile(
                 .iter()
                 .filter(|tool| {
                     !tool.starts_with("computer_use_")
-                        && !tool.starts_with("browser_")
+                        && !crate::harness::is_harness_browser_tool(tool)
                         && !matches!(
                             tool.as_str(),
                             "load_workspace_dependencies"

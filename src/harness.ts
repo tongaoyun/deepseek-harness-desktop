@@ -192,105 +192,18 @@ export function harnessProjectionUpdate(notification: HarnessNotification): Harn
 
 export function normalizeHarnessProjection(value: unknown): XiaoyinTaskProjection | undefined {
   const projection = asRecord(value)
-  if (!projection || !['idle', 'running', 'completed', 'failed', 'canceled'].includes(String(projection.status))
-    || typeof projection.activity !== 'string' || typeof projection.updatedAt !== 'string'
-    || !Array.isArray(projection.steps) || !Array.isArray(projection.artifacts)) return undefined
+  if (!projection || typeof projection.updatedAt !== 'string'
+    || !Array.isArray(projection.changes) || !Array.isArray(projection.artifacts)
+    || !Array.isArray(projection.visuals) || !Array.isArray(projection.knowledgeSources)) return undefined
   const base = createXiaoyinTaskProjection(projection.updatedAt)
-  const tokenUsage = normalizeTokenUsage(projection.tokenUsage)
-  const contextPressure = normalizeContextPressure(projection.contextPressure)
-  const outputRetention = normalizeOutputRetention(projection.outputRetention) ?? base.outputRetention
-  const compactions = normalizeMetricInteger(projection.compactions)
-  const interruption = normalizeInterruption(projection.interruption)
-  const failure = normalizeFailure(projection.failure)
-  const retry = normalizeRetry(projection.retry)
   return {
-    status: projection.status as XiaoyinTaskProjection['status'],
-    activity: projection.activity,
+    ...base,
     updatedAt: projection.updatedAt,
-    executionStarted: projection.executionStarted === true,
-    ...(typeof projection.operationScope === 'string' ? { operationScope: projection.operationScope } : {}),
-    ...(typeof projection.startedAt === 'string' ? { startedAt: projection.startedAt } : {}),
-    ...(typeof projection.completedAt === 'string' ? { completedAt: projection.completedAt } : {}),
-    steps: projection.steps as XiaoyinTaskProjection['steps'],
-    timeline: Array.isArray(projection.timeline) ? projection.timeline as XiaoyinTaskProjection['timeline'] : [],
-    subagents: Array.isArray(projection.subagents) ? projection.subagents as XiaoyinTaskProjection['subagents'] : [],
     changes: Array.isArray(projection.changes) ? projection.changes as XiaoyinTaskProjection['changes'] : [],
     artifacts: projection.artifacts as XiaoyinTaskProjection['artifacts'],
     visuals: Array.isArray(projection.visuals) ? projection.visuals as XiaoyinTaskProjection['visuals'] : [],
     knowledgeSources: Array.isArray(projection.knowledgeSources) ? projection.knowledgeSources as XiaoyinTaskProjection['knowledgeSources'] : [],
-    outputRetention,
-    ...(tokenUsage ? { tokenUsage } : {}),
-    ...(contextPressure ? { contextPressure } : {}),
-    ...(compactions !== undefined ? { compactions } : {}),
-    ...(interruption ? { interruption } : {}),
-    ...(failure ? { failure } : {}),
-    ...(retry ? { retry } : {}),
   }
-}
-
-function normalizeTokenUsage(value: unknown): XiaoyinTaskProjection['tokenUsage'] | undefined {
-  const item = asRecord(value)
-  if (!item) return undefined
-  const uncachedInputTokens = normalizeMetricInteger(item.uncachedInputTokens)
-  const outputTokens = normalizeMetricInteger(item.outputTokens)
-  if (uncachedInputTokens === undefined || outputTokens === undefined) return undefined
-  const cacheReadTokens = normalizeMetricInteger(item.cacheReadTokens)
-  const cacheWriteTokens = normalizeMetricInteger(item.cacheWriteTokens)
-  return { uncachedInputTokens, outputTokens, ...(cacheReadTokens !== undefined ? { cacheReadTokens } : {}), ...(cacheWriteTokens !== undefined ? { cacheWriteTokens } : {}) }
-}
-
-function normalizeContextPressure(value: unknown): XiaoyinTaskProjection['contextPressure'] | undefined {
-  const item = asRecord(value)
-  if (!item) return undefined
-  const contextWindow = normalizeMetricInteger(item.contextWindow)
-  const pressureTokens = normalizeMetricInteger(item.pressureTokens)
-  const projectedTokens = normalizeMetricInteger(item.projectedTokens)
-  if (contextWindow === undefined && pressureTokens === undefined && projectedTokens === undefined) return undefined
-  return { ...(contextWindow !== undefined ? { contextWindow } : {}), ...(pressureTokens !== undefined ? { pressureTokens } : {}), ...(projectedTokens !== undefined ? { projectedTokens } : {}) }
-}
-
-function normalizeOutputRetention(value: unknown): XiaoyinTaskProjection['outputRetention'] | undefined {
-  const item = asRecord(value)
-  const prunedResults = normalizeMetricInteger(item?.prunedResults)
-  const omittedTokens = normalizeMetricInteger(item?.omittedTokens)
-  return prunedResults === undefined || omittedTokens === undefined ? undefined : { prunedResults, omittedTokens }
-}
-
-function normalizeInterruption(value: unknown): XiaoyinTaskProjection['interruption'] | undefined {
-  const item = asRecord(value)
-  if (!item || typeof item.checkpointAt !== 'string' || !['exit', 'failure', 'canceled'].includes(String(item.cause)) || !Array.isArray(item.pendingOperations)) return undefined
-  const pendingOperations = item.pendingOperations.flatMap((entry) => {
-    const operation = asRecord(entry)
-    if (!operation || typeof operation.id !== 'string' || typeof operation.label !== 'string') return []
-    return [{ id: operation.id, label: operation.label, ...(typeof operation.toolName === 'string' ? { toolName: operation.toolName } : {}) }]
-  })
-  return { checkpointAt: item.checkpointAt, cause: item.cause as 'exit' | 'failure' | 'canceled', pendingOperations }
-}
-
-function normalizeFailure(value: unknown): XiaoyinTaskProjection['failure'] | undefined {
-  const item = asRecord(value)
-  return item && typeof item.code === 'string' && typeof item.category === 'string' && typeof item.detail === 'string'
-    ? {
-      code: item.code,
-      category: item.category,
-      detail: item.detail,
-      ...(typeof item.title === 'string' ? { title: item.title } : {}),
-      ...(typeof item.infrastructure === 'boolean' ? { infrastructure: item.infrastructure } : {}),
-      ...(typeof item.retryable === 'boolean' ? { retryable: item.retryable } : {}),
-    }
-    : undefined
-}
-
-function normalizeRetry(value: unknown): XiaoyinTaskProjection['retry'] | undefined {
-  const item = asRecord(value)
-  return item && Number.isSafeInteger(item.attempt) && Number(item.attempt) > 0
-    && typeof item.code === 'string' && typeof item.title === 'string' && typeof item.detail === 'string'
-    ? { attempt: Number(item.attempt), code: item.code, title: item.title, detail: item.detail }
-    : undefined
-}
-
-function normalizeMetricInteger(value: unknown): number | undefined {
-  return Number.isSafeInteger(value) && Number(value) >= 0 ? Number(value) : undefined
 }
 
 export interface AuthorizedLocalDirectory {

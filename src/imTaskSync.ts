@@ -31,7 +31,8 @@ export function mergeImStatusIntoTasks(
           })
     let projection = task.projection
     if (current) {
-      const storedProjection = latest.taskProjection ? normalizeHarnessProjection(latest.taskProjection) : undefined
+      const storedProduct = latest.taskProjection ? normalizeHarnessProjection(latest.taskProjection) : undefined
+      const storedProjection = storedProduct ? { ...projection, updatedAt: storedProduct.updatedAt, changes: storedProduct.changes, artifacts: storedProduct.artifacts, visuals: storedProduct.visuals, knowledgeSources: storedProduct.knowledgeSources } : undefined
       projection = storedProjection ?? (latest.status === 'RUNNING'
         ? { ...projection, status: 'running', activity: '正在通过钉钉继续任务', updatedAt: latest.updatedAt }
         : latest.status === 'FAILED'
@@ -58,4 +59,3 @@ export function mergeImStatusIntoTasks(
   })
   return { tasks: changed.length > 0 ? next.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)) : tasks, changed }
 }
-

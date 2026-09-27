@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { existsSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -32,9 +33,21 @@ const productFiles = ['local_files_roots', 'local_files_list', 'local_files_sear
 const shellTools = ['bash', 'pwsh']
 const removedTerminalTools = ['terminal_open', 'terminal_send', 'terminal_read', 'terminal_signal', 'terminal_close', 'terminal_list']
 const sessionQueryTools = ['session_search', 'session_event_search', 'session_trace', 'session_event_trace', 'session_event_read']
-const browserTools = ['browser_open', 'browser_snapshot', 'browser_screenshot', 'browser_downloads']
+const browserTools = [
+  'mcp__playwright-mcp__browser_navigate',
+  'mcp__playwright-mcp__browser_snapshot',
+  'mcp__playwright-mcp__browser_take_screenshot',
+  'mcp__playwright-mcp__browser_tabs',
+]
 const removedDiscoveryTool = ['tool', 'discover'].join('_')
 const removedOutcomeTool = ['task', 'report'].join('_')
+const browserExecutable = process.env.XIAOYIN_BROWSER_EXECUTABLE || [
+  process.platform === 'darwin' ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' : '',
+  process.platform === 'darwin' ? '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge' : '',
+  process.platform === 'win32' ? `${process.env.PROGRAMFILES || ''}\\Google\\Chrome\\Application\\chrome.exe` : '',
+  process.platform === 'win32' ? `${process.env.LOCALAPPDATA || ''}\\Google\\Chrome\\Application\\chrome.exe` : '',
+  '/usr/bin/google-chrome', '/usr/bin/google-chrome-stable', '/usr/bin/chromium',
+].find((candidate) => candidate && existsSync(candidate)) || ''
 
 function containsAll(names, expected, scenario) {
   for (const name of expected) assert(names.has(name), `${scenario}: missing ${name}`)
@@ -46,13 +59,15 @@ function containsNone(names, forbidden, scenario) {
 
 await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
 try {
-  for (const scenario of [
+  const scenarios = [
     { name: 'native-default', shell: 'true', roots: [], mode: 'native', executionMode: 'agent', files: officialFiles, forbiddenFiles: productFiles, hasShell: true, query: true, browser: false },
     { name: 'native-no-shell', shell: 'false', roots: [], mode: 'native', executionMode: 'agent', files: officialFiles, forbiddenFiles: productFiles, hasShell: false, query: false, browser: false },
     { name: 'native-authorized-roots', shell: 'false', roots: [{ id: 'workspace', name: 'Workspace', path: workspace }], mode: 'native', executionMode: 'agent', files: officialFiles, forbiddenFiles: productFiles, hasShell: false, query: true, browser: false },
     { name: 'native-plan-authorized-roots', shell: 'false', roots: [{ id: 'workspace', name: 'Workspace', path: workspace }], mode: 'native', executionMode: 'plan', files: officialFiles, forbiddenFiles: productFiles, hasShell: false, query: true, browser: false },
-    { name: 'native-browser', shell: 'false', roots: [], mode: 'native', executionMode: 'agent', files: officialFiles, forbiddenFiles: productFiles, hasShell: false, query: false, browser: true },
-  ]) {
+  ]
+  if (browserExecutable) scenarios.push({ name: 'native-browser', shell: 'false', roots: [], mode: 'native', executionMode: 'agent', files: officialFiles, forbiddenFiles: productFiles, hasShell: false, query: false, browser: true })
+  else console.log(JSON.stringify({ scenario: 'native-browser', skipped: true, reason: '未检测到 Chromium，可通过 XIAOYIN_BROWSER_EXECUTABLE 指定' }))
+  for (const scenario of scenarios) {
     requestedTools = []
     schemaBytes = []
     toolReplies = []
@@ -68,6 +83,7 @@ try {
       XIAOYIN_MCP_CONNECTORS: '[]',
       XIAOYIN_COMPUTER_USE_TOOLS: '[]',
       XIAOYIN_ALLOW_BROWSER: String(scenario.browser),
+      XIAOYIN_BROWSER_EXECUTABLE: browserExecutable,
       XIAOYIN_ENABLE_SESSION_QUERY_TOOLS: String(scenario.query),
       XIAOYIN_ALLOW_EXTERNAL_AGENTS: 'false',
       XIAOYIN_EXECUTION_MODE: scenario.executionMode,

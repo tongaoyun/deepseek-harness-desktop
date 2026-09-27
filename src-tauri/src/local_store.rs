@@ -20,10 +20,8 @@ const READABLE_TASK_SQL: &str = "CASE WHEN json_valid(payload) THEN COALESCE(
     AND json_type(payload, '$.updatedAt') = 'text'
     AND json_type(payload, '$.entries') = 'array'
     AND json_type(payload, '$.projection') = 'object'
-    AND json_extract(payload, '$.projection.status') IN ('idle', 'running', 'completed', 'failed', 'canceled')
-    AND json_type(payload, '$.projection.activity') = 'text'
     AND json_type(payload, '$.projection.updatedAt') = 'text'
-    AND json_type(payload, '$.projection.steps') = 'array'
+    AND json_type(payload, '$.projection.changes') = 'array'
     AND json_type(payload, '$.projection.artifacts') = 'array'
     AND NOT EXISTS (SELECT 1 FROM json_each(payload) WHERE key NOT IN (
       'id', 'source', 'name', 'status', 'createdAt', 'updatedAt', 'lastOpenedAt', 'archivedAt', 'sessionId',
@@ -53,7 +51,6 @@ pub struct TaskQuery {
 pub struct TaskPage {
     items: Vec<Value>,
     total: u64,
-    invalid_count: u64,
     offset: u32,
     limit: u32,
 }
@@ -388,11 +385,11 @@ fn query_tasks(database: &Connection, account: &str, query: TaskQuery) -> Result
     let limit = query.limit.clamp(1, MAX_LIMIT);
     let excluded = serde_json::to_string(&query.exclude_ids).map_err(|error| error.to_string())?;
     let pattern = format!("%{}%", escape_like(query.query.trim()));
-    let (total, invalid_count) = database
+    let total = database
             .query_row(
-                &format!("SELECT COUNT(*) FILTER (WHERE {READABLE_TASK_SQL}), COUNT(*) FILTER (WHERE NOT ({READABLE_TASK_SQL})) FROM local_task WHERE employee_key = ?1 AND (?2 = '%%' OR name LIKE ?2 ESCAPE '\\' OR payload LIKE ?2 ESCAPE '\\') AND id NOT IN (SELECT value FROM json_each(?3))"),
+                &format!("SELECT COUNT(*) FROM local_task WHERE employee_key = ?1 AND (?2 = '%%' OR name LIKE ?2 ESCAPE '\\' OR payload LIKE ?2 ESCAPE '\\') AND id NOT IN (SELECT value FROM json_each(?3)) AND ({READABLE_TASK_SQL})"),
                 params![account, pattern, excluded],
-                |row| Ok((row.get::<_, u64>(0)?, row.get::<_, u64>(1)?)),
+                |row| row.get::<_, u64>(0),
             )
             .map_err(database_error)?;
     let mut statement = database
@@ -412,7 +409,6 @@ fn query_tasks(database: &Connection, account: &str, query: TaskQuery) -> Result
     Ok(TaskPage {
         items: values,
         total,
-        invalid_count,
         offset: query.offset,
         limit,
     })
@@ -749,12 +745,8 @@ fn task_index_fields(task: &Value) -> Result<(&str, &str, &str, &str), String> {
     let Some(projection) = object.get("projection").and_then(Value::as_object) else {
         return Err("本地会话缺少运行投影".to_string());
     };
-    if !matches!(
-        projection.get("status").and_then(Value::as_str),
-        Some("idle" | "running" | "completed" | "failed" | "canceled")
-    ) || !projection.get("activity").is_some_and(Value::is_string)
-        || !projection.get("updatedAt").is_some_and(Value::is_string)
-        || !projection.get("steps").is_some_and(Value::is_array)
+    if !projection.get("updatedAt").is_some_and(Value::is_string)
+        || !projection.get("changes").is_some_and(Value::is_array)
         || !projection.get("artifacts").is_some_and(Value::is_array)
     {
         return Err("本地会话运行投影无效".to_string());
@@ -1160,7 +1152,7 @@ mod tests {
         serde_json::json!({
             "id": id, "source": "DESKTOP", "name": "任务", "status": "COMPLETED",
             "createdAt": "2026-09-13", "updatedAt": "2026-09-13", "lastOpenedAt": "2026-09-13",
-            "projection": {"status": "completed", "activity": "完成", "updatedAt": "2026-09-13", "steps": [], "artifacts": []},
+            "projection": {"updatedAt": "2026-09-13", "changes": [], "artifacts": [], "visuals": [], "knowledgeSources": []},
             "entries": (0..message_count).map(|turn| serde_json::json!({"id": format!("u{turn}"), "role": "user", "text": format!("原始要求 {turn}")})).collect::<Vec<_>>()
         }).to_string()
     }
@@ -1208,7 +1200,7 @@ mod tests {
             "capabilityNotices": [{"sessionId": "session-1", "turnId": "turn:1",
                 "segment": {"kind": "notice", "id": "notice:knowledge:scope",
                     "level": "warning", "text": "范围无效"}}],
-            "projection": {"status": "completed", "activity": "完成", "updatedAt": "2026-09-13", "steps": [], "artifacts": []}
+            "projection": {"updatedAt": "2026-09-13", "changes": [], "artifacts": [], "visuals": [], "knowledgeSources": []}
         });
         assert_eq!(
             task_index_fields(&task).unwrap(),
@@ -1234,13 +1226,13 @@ mod tests {
         invalid["entries"] = serde_json::json!([{"role": "system", "text": "hidden"}]);
         assert!(task_index_fields(&invalid).unwrap_err().contains("消息"));
         invalid = task;
-        invalid["projection"]["steps"] = Value::Null;
+        invalid["projection"]["changes"] = Value::Null;
         assert!(
             task_index_fields(&invalid)
                 .unwrap_err()
                 .contains("运行投影")
         );
-        invalid["projection"]["steps"] = serde_json::json!([]);
+        invalid["projection"]["changes"] = serde_json::json!([]);
         invalid["unexpected"] = Value::Bool(true);
         assert!(
             task_index_fields(&invalid)
@@ -1267,8 +1259,7 @@ mod tests {
         serde_json::json!({
             "id": id, "source": "DESKTOP", "name": "测试任务", "status": "COMPLETED",
             "createdAt": "2026-09-13T00:00:00Z", "updatedAt": "2026-09-13T00:00:00Z",
-            "entries": [], "projection": {"status": "completed", "activity": "完成",
-                "updatedAt": "2026-09-13T00:00:00Z", "steps": [], "artifacts": []}
+            "entries": [], "projection": {"updatedAt": "2026-09-13T00:00:00Z", "changes": [], "artifacts": [], "visuals": [], "knowledgeSources": []}
         })
     }
 
@@ -1460,7 +1451,6 @@ mod tests {
             .map(|item| item["id"].as_str().unwrap().to_string())
             .collect();
         assert_eq!(first.items.len(), 200);
-        assert_eq!(first.invalid_count, 0);
         assert_eq!(first.items[0]["entries"].as_array().unwrap().len(), 160);
         assert_eq!(first.items[0]["entries"][0]["text"], "原始要求 0");
         database
@@ -1482,7 +1472,6 @@ mod tests {
         )
         .unwrap();
         assert_eq!(second.total, 5);
-        assert_eq!(second.invalid_count, 0);
         assert_eq!(second.items.len(), 5);
         assert_eq!(second.items[0]["id"], "task-000");
         assert!(
@@ -1532,7 +1521,6 @@ mod tests {
         )
         .unwrap();
         assert_eq!(first.total, 1);
-        assert_eq!(first.invalid_count, 4);
         assert_eq!(first.items[0]["id"], "valid");
         let searched = query_tasks(
             &database,
@@ -1546,7 +1534,6 @@ mod tests {
         )
         .unwrap();
         assert_eq!(searched.total, 0);
-        assert_eq!(searched.invalid_count, 1);
         let original: String = database
             .query_row(
                 "SELECT payload FROM local_task WHERE employee_key = 'employee' AND id = 'old'",

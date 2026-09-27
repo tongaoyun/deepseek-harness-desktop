@@ -37,6 +37,7 @@ profile 合成结果和小胤覆盖层共同判断，不以 `package.json` 中�
 | Web Search / Fetch | `web`、`web-search-deepseek`、`web-fetch-http`、`tool-web` | `web_search`、`web_fetch` 已可用；不是浏览器自动化 |
 | Spill、超时、重复调用提醒 | `spill-local`、`spill-policy`、`timeout-policy`、`repeat-tool-reminder` | 保护长输出和工具链异常 |
 | 用户提问与计划模式 | `user-questions`、`tool-ask-user`、`plan-mode` | 小胤桌面桥接结构化问题和计划审阅 |
+| 官方 Browser Sidebar | `dsh-client-ui-sidebar-browser` | 官方右侧栏 Browser 标签页、地址栏、前进后退、刷新、沙箱提示和 HTTP(S) 页面导航；Tauri 使用官方 iframe carrier，浏览器自动化仍由 Agent Browser provider 提供 |
 | Settings / Credentials | `settings`、`credentials`、`llm-retry` | Harness 负责运行时读取，并将文件固定在员工隔离的 `DSH_HOME`；账号、模型目录和企业权限仍由小胤服务端维护 |
 | 遥测管线 | `session-telemetry-otel` | 运行时通过 `DSH_TELEMETRY_DISABLED=1` 明确关闭，企业会话不会默认外发 |
 
@@ -49,7 +50,7 @@ profile 合成结果和小胤覆盖层共同判断，不以 `package.json` 中�
 | Ralph 循环 | `XIAOYIN_ENABLE_RALPH=true` | 关闭 | 直接使用官方 `tool-ralph`；只为明确的持续目标开启，避免普通办公任务进入无边界循环 |
 | Codex / Claude Code Hooks | 小胤设置“Hooks” + `XIAOYIN_CODEX_HOOKS_CONFIG`、`XIAOYIN_CLAUDE_HOOKS_CONFIG` | 关闭 | 配置可执行本机命令，必须同时打开桌面总开关，默认不加载 |
 | Shell / Persistent Terminal | 小胤设置“本地 Shell 与持久终端” -> `XIAOYIN_ALLOW_SHELL` | 默认开启，可在桌面设置关闭 | rc.2 由 `dsh-terminal` 管理持久 PTY，模型侧仅暴露对应平台的 `bash` 或 `pwsh`；不再暴露旧 `terminal_open/send/read/...` 工具 |
-| Browser | `XIAOYIN_ALLOW_BROWSER=true` | 关闭 | 这是小胤自己的 browser plugin，不是 Harness Web Search |
+| Browser Use | `dsh-browser-use` + `dsh-experimental-browser-use-playwright-mcp` | 关闭 | 当前任务允许时由官方 Playwright MCP provider 按 Session 启动隔离 Chromium；小胤只控制产品权限快照 |
 
 ## 小胤产品层，不应被 Harness 替代
 
@@ -62,7 +63,7 @@ profile 合成结果和小胤覆盖层共同判断，不以 `package.json` 中�
 | 定时任务 | Harness Session、Turn、Checkpoint、Jobs 工具 | Cron、唤醒策略、执行历史、通知和本机生命周期 |
 | IM 频道 | 复用 Session 执行和 Projection | 钉钉身份映射、去重、队列、结果回传和频道权限 |
 | 附件展示 | `dsh-attachment-local` 产生不可变引用 | 桌面只按当前员工的 `DSH_HOME` 读取官方对象并展示，不再实现附件存储后端 |
-| 浏览器/Computer Use | 无等价的完整 Harness 产品层 | `local-browser-plugin`、`local-computer-use-plugin` 和系统权限 |
+| 浏览器/Computer Use | Browser Use 已由官方 Provider 提供；Windows/macOS Computer Use 仍是产品桥接 | `local-computer-use-plugin` 和系统权限 |
 
 ## 尚未形成产品链路
 

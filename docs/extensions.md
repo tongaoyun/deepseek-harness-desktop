@@ -31,7 +31,7 @@
 
 压缩包允许根目录直接包含入口，或用一个顶层文件夹包裹。单独导入 `SKILL.md` 只包含该文件；需要脚本、模板、参考资料时使用目录或压缩包。标准技能无须手写小胤清单，名称和简介从 frontmatter 提取，缺失时补默认元数据。
 
-Qoder 套件 `plugin.json` 必须包含 `name`。支持 `skills`、`commands` 的相对路径或路径数组，默认读取 `skills/`、`commands/`；命令为 Markdown 文件。支持内嵌 `mcpServers`、指向配置文件的路径或根目录 `.mcp.json`，支持 STDIO、HTTP 和 SSE 配置。导入时将 `${QODER_PLUGIN_ROOT}` 转为 `${XIAOYIN_EXTENSION_ROOT}`，生成小胤清单和连接器配置，并移除 Qoder 清单。命令正文中的 `$ARGUMENTS` 使用任务文本。
+Qoder 套件 `plugin.json` 必须包含 `name`。支持 `skills`、`commands` 的相对路径或路径数组，默认读取 `skills/`、`commands/`；命令为 Markdown 文件。支持内嵌 `mcpServers`、指向配置文件的路径或根目录 `.mcp.json`，连接器仅支持 Streamable HTTP 和 STDIO。导入时将 `${QODER_PLUGIN_ROOT}` 转为 `${XIAOYIN_EXTENSION_ROOT}`，生成小胤清单和连接器配置，并移除 Qoder 清单。命令正文中的 `$ARGUMENTS` 使用任务文本。
 
 套件优先使用 `displayName` 和 `descriptionZh`，执行 ID 由 `name` 生成；`category` 按来源分类映射到小胤分类，无法识别或未声明时归入「其他」，导入后可自行调整。套件内技能的执行 ID 优先取 frontmatter `name`，`name` 不是合法标识（例如中文展示名）时改用技能所在目录名，两者都不可用才回退为带哈希的标识——这样套件内互相引用的技能 ID 不会在导入时失效。技能优先使用 `displayName`；`name` 是英文标识时，使用正文一级标题作为展示名称。安装、执行和导出只读取小胤原生清单。
 
@@ -66,12 +66,12 @@ Qoder 套件 `plugin.json` 必须包含 `name`。支持 `skills`、`commands` �
 
 ## 连接器
 
-在「扩展 → 连接器」添加企业或个人 MCP 服务，支持 Streamable HTTP、SSE 和 STDIO。
+在「扩展 → 连接器」添加企业或个人 MCP 服务，支持 Streamable HTTP 和 STDIO。
 
-企业连接器目录必须提供完整配置：HTTP/SSE 包含 `transport`、`url` 和 `authMode`，STDIO 包含 `transport`、`command` 和所需参数。桌面只使用目录当前下发的配置。
+企业连接器目录必须提供完整配置：Streamable HTTP 包含 `transport`、`url` 和 `authMode`，STDIO 包含 `transport`、`command` 和所需参数。桌面只使用目录当前下发的配置。
 
 - JSON 导入支持单个服务和 `mcpServers`，接受 `type` / `transport`、`args` / `arguments`、`env` / `environment` 字段。显示名称可以使用中文，内部 ID 可自动生成。运行时只读判断以 MCP `tools/list` 返回的 `annotations.readOnlyHint=true` 为准；`destructiveHint=true` 始终按写操作处理。服务端下发的只读标记仅用于目录审核和诊断，不替代运行时注解。
-- HTTP/SSE 支持无认证、自定义请求头、OAuth 和员工 Bearer Token。需要 ERP 数据时使用服务端托管的 `erp-mcp` 连接器，不在桌面端转发 ERP Cookie。
+- Streamable HTTP 支持无认证、自定义请求头、OAuth 和员工 Bearer Token。需要 ERP 数据时使用服务端托管的 `erp-mcp` 连接器，不在桌面端转发 ERP Cookie。
 - 导入逐项检查并报告保存结果，已有 ID 不会覆盖；失败项可以调整后重试。
 - 「已添加」保留停用的个人服务，可编辑配置或删除。停用保留配置，删除同时移除本机凭据。
 - 已启用服务在页面打开或配置变化时检测，区分连接中、待配置、待授权、无访问权限、正常和连接失败；展开工具详情可比较声明与实际发现的工具。

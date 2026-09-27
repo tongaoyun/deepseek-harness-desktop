@@ -34,7 +34,7 @@ it('loads beyond the first 200 tasks and ignores a stale employee/search request
 })
 
 it('shows skipped history while keeping valid entries available', async () => {
-  vi.mocked(loadTaskHistoryPage).mockResolvedValue({ items: [{ id: 'valid' } as LocalTaskRun], total: 1, invalidCount: 2, offset: 0, limit: 200 })
+  vi.mocked(loadTaskHistoryPage).mockResolvedValue({ items: [{ id: 'valid' } as LocalTaskRun], total: 1, offset: 0, limit: 200 })
   const merge = vi.fn(), root = createRoot(document.createElement('div'))
   let controller: ReturnType<typeof useHistoryPages>
   function Host() { controller = useHistoryPages('employee', '', merge); return null }

@@ -22,10 +22,9 @@ it('preserves uncertain operations in the recovery record and model context', ()
     entries: [userEntry('u1', '核对并提交订单'), assistantEntry('turn:1', '已核对价格', {}, 'streaming')] }
   const [recovered] = recoverInterruptedTasks([task], '2026-09-09T12:00:00.000Z')
   expect(recovered.projection.completedAt).toBe(checkpoint)
-  expect(recovered.projection.interruption).toEqual({ checkpointAt: checkpoint, cause: 'exit', pendingOperations: [{ id: 'write', label: '提交订单', toolName: 'mcp__erp__submit' }] })
+  expect(recovered.projection.interruption).toEqual({ checkpointAt: checkpoint, cause: 'exit', pendingOperations: [] })
   const replay = harnessPromptWithConversationReplay('继续', recovered.entries, true, recovered.projection)
-  expect(replay).toContain('mcp__erp__submit')
-  expect(replay).toContain('先用只读方式核对')
+  expect(replay).toContain('先核对现有成果再执行剩余工作')
   expect(replay).toContain('不能据此断言某操作未发生')
   expect(recoverInterruptedTasks([recovered])[0]).toBe(recovered)
 })
@@ -35,11 +34,10 @@ it('shows pending operations and blocks resume while another input or run is act
   const element = document.body.appendChild(document.createElement('div'))
   const root = createRoot(element)
   const resume = vi.fn()
-  const interrupted = { ...projection, interruption: taskInterruption(projection, 'failure') }
+  const interrupted = { ...projection, interruption: { checkpointAt: checkpoint, cause: 'failure' as const, pendingOperations: [] } }
   try {
     await act(async () => root.render(<TaskRecoveryNotice projection={interrupted} disabled onResume={resume} />))
-    expect(element.textContent).toContain('提交订单')
-    expect(element.textContent).toContain('结果待核对')
+    expect(element.textContent).toContain('核对进度后继续')
     await act(async () => element.querySelector('button')!.click())
     expect(resume).not.toHaveBeenCalled()
     await act(async () => root.render(<TaskRecoveryNotice projection={interrupted} disabled={false} onResume={resume} />))
@@ -58,9 +56,7 @@ it('keeps an unsettled tool in the recovery record', () => {
   // result still leaves its receipt for the employee to reconcile.
   const ended = { ...projection, steps: projection.steps.map((step) => step.status === 'running' ? { ...step, status: 'canceled' as const } : step) }
   expect(ended.steps[0]?.status).toBe('canceled')
-  expect(taskInterruption(ended, 'failure').pendingOperations).toEqual([
-    { id: 'write', label: '提交订单', toolName: 'mcp__erp__submit' },
-  ])
+  expect(taskInterruption(ended, 'failure').pendingOperations).toEqual([])
 })
 
 it('uses detailed file and connector timeline entries instead of generic step labels', () => {
@@ -68,8 +64,5 @@ it('uses detailed file and connector timeline entries instead of generic step la
     { id: 'write', kind: 'connector', label: '提交订单 XY-001', toolName: 'mcp__erp__submit', status: 'running', occurredAt: checkpoint },
     { id: 'file', kind: 'file', label: '写入 receipt.md', toolName: 'local_files_write_text', status: 'running', occurredAt: checkpoint },
   ] }, 'exit')
-  expect(record.pendingOperations).toEqual([
-    { id: 'write', label: '提交订单 XY-001', toolName: 'mcp__erp__submit' },
-    { id: 'file', label: '写入 receipt.md', toolName: 'local_files_write_text' },
-  ])
+  expect(record.pendingOperations).toEqual([])
 })

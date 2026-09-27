@@ -41,30 +41,46 @@ export const desktopToolNames = new Set([
   'get_goal',
   'create_goal',
   'update_goal',
-  'browser_open',
-  'browser_snapshot',
-  'browser_tabs',
-  'browser_switch_tab',
-  'browser_close_tab',
-  'browser_click',
-  'browser_click_text',
-  'browser_click_point',
-  'browser_type',
-  'browser_select',
-  'browser_scroll',
-  'browser_back',
-  'browser_reload',
-  'browser_press_key',
-  'browser_wait_for',
-  'browser_downloads',
-  'browser_human_takeover',
-  'browser_screenshot',
+  'mcp__playwright-mcp__browser_click',
+  'mcp__playwright-mcp__browser_close',
+  'mcp__playwright-mcp__browser_console_messages',
+  'mcp__playwright-mcp__browser_drag',
+  'mcp__playwright-mcp__browser_drop',
+  'mcp__playwright-mcp__browser_evaluate',
+  'mcp__playwright-mcp__browser_file_upload',
+  'mcp__playwright-mcp__browser_fill_form',
+  'mcp__playwright-mcp__browser_find',
+  'mcp__playwright-mcp__browser_handle_dialog',
+  'mcp__playwright-mcp__browser_hover',
+  'mcp__playwright-mcp__browser_navigate',
+  'mcp__playwright-mcp__browser_navigate_back',
+  'mcp__playwright-mcp__browser_network_request',
+  'mcp__playwright-mcp__browser_network_requests',
+  'mcp__playwright-mcp__browser_press_key',
+  'mcp__playwright-mcp__browser_resize',
+  'mcp__playwright-mcp__browser_run_code_unsafe',
+  'mcp__playwright-mcp__browser_select_option',
+  'mcp__playwright-mcp__browser_snapshot',
+  'mcp__playwright-mcp__browser_take_screenshot',
+  'mcp__playwright-mcp__browser_type',
+  'mcp__playwright-mcp__browser_wait_for',
+  'mcp__playwright-mcp__browser_tabs',
   'computer_use_observe',
   'computer_use_click',
   'computer_use_type',
   'computer_use_key',
   'computer_use_scroll',
 ])
+
+/**
+ * Browser tools are owned by the official Harness provider. Keep the
+ * namespace check here so a new upstream Playwright tool is treated as a
+ * local Harness capability without copying the provider registry into the
+ * product.
+ */
+export function isDesktopToolName(name: string): boolean {
+  return desktopToolNames.has(name) || name.startsWith('mcp__playwright-mcp__browser_')
+}
 
 export async function listInstalledExtensions(): Promise<InstalledExpertKit[]> {
   return (await inspectInstalledExtensions()).installed
@@ -202,7 +218,7 @@ export function mergeExpertKits(
       return [`${connector.name}：${connectorStatusLabel(connector.status)}`]
     })
     const providedTools = new Set(referencedConnectors.flatMap((connector) => connector.toolNames))
-    for (const tool of requiredTools.filter((name) => !desktopToolNames.has(name))) {
+    for (const tool of requiredTools.filter((name) => !isDesktopToolName(name))) {
       if (!providedTools.has(tool)) connectorIssues.push(`${tool} 无可用连接器`)
     }
     const knowledgeIssues = knowledgeBaseRefs

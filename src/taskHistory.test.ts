@@ -16,7 +16,7 @@ class MemoryStorage implements Storage {
 describe('task history', () => {
   afterEach(() => vi.unstubAllGlobals())
   const projection: LocalTaskRun['projection'] = {
-    status: 'idle', activity: '等待开始', updatedAt: '2026-08-28T01:00:00Z', steps: [], artifacts: [],
+    status: 'idle', activity: '等待开始', updatedAt: '2026-08-28T01:00:00Z', steps: [], changes: [], artifacts: [], visuals: [], knowledgeSources: [],
   }
 
   it('follows official session search cursors and stops on a repeated cursor', async () => {
@@ -131,7 +131,7 @@ describe('task history', () => {
     const paged = (await loadTaskHistoryPage('employee-1')).items[0]
     for (const restored of [opened, listed, paged]) {
       expect(restored?.status).toBe('FAILED')
-      expect(restored?.entries[1]).toMatchObject({ segments: [notice.segment, { kind: 'text', text: expect.stringContaining('上次任务') }] })
+      expect(restored?.entries.at(-1)).toMatchObject({ segments: expect.arrayContaining([notice.segment, expect.objectContaining({ kind: 'text', text: expect.stringContaining('上次任务') })]) })
     }
 
     saveLocalTask('employee-1', { ...task, projection: { ...projection, executionStarted: true }, capabilityNotices: [notice] }, storage)
@@ -179,11 +179,7 @@ describe('task history', () => {
       id: 'task-trace', source: 'DESKTOP', name: '店铺日报', status: 'COMPLETED',
       createdAt: '2026-08-29T01:00:00Z', updatedAt: '2026-08-29T01:01:00Z',
       projection: {
-        status: 'completed', activity: '任务已完成', updatedAt: '2026-08-29T01:01:00Z', artifacts: [], steps: [{
-          id: 'tool:call-1', kind: 'tool', label: '查询销售汇总', status: 'completed',
-          toolName: 'sales_summary', startedAt: '2026-08-29T01:00:10Z',
-          completedAt: '2026-08-29T01:00:11Z',
-        }],
+        status: 'completed', activity: '任务已完成', updatedAt: '2026-08-29T01:01:00Z', changes: [], artifacts: [], visuals: [], knowledgeSources: [], steps: [],
       },
       entries: [assistantEntry('turn-1', '分析完成')],
     }
@@ -228,7 +224,7 @@ describe('task history', () => {
     const task: LocalTaskRun = {
       id: 'task-interrupted', source: 'DESKTOP', name: '整理下载目录', status: 'RUNNING',
       createdAt: '2026-08-29T01:00:00Z', updatedAt: '2026-08-29T01:00:01Z',
-      projection: { status: 'running', activity: '正在读取文件', updatedAt: '2026-08-29T01:00:01Z', artifacts: [], steps: [
+      projection: { status: 'running', activity: '正在读取文件', updatedAt: '2026-08-29T01:00:01Z', changes: [], artifacts: [], visuals: [], knowledgeSources: [], steps: [
         { id: 'tool:1', kind: 'tool', label: '读取文件', status: 'running', startedAt: '2026-08-29T01:00:01Z' },
       ] },
       sessionId: 'interrupted-session',
@@ -240,9 +236,7 @@ describe('task history', () => {
     expect(recovered?.status).toBe('FAILED')
     expect(recovered?.projection.status).toBe('failed')
     expect(recovered?.projection.failure?.code).toBe('XY-INTERRUPTED')
-    expect(recovered?.projection.steps[0]?.status).toBe('canceled')
-    expect(recovered?.projection.steps[0]?.completedAt).toBe(task.updatedAt)
-    expect(recovered?.projection.steps[0]?.label).toContain('结果待核对')
+    expect(recovered?.projection.interruption?.pendingOperations).toEqual([])
     const last = recovered?.entries.at(-1)
     expect(last?.role).toBe('assistant')
     expect(last).toMatchObject({ status: 'failed' })

@@ -158,8 +158,10 @@ export interface TaskFileChange {
 }
 
 /**
- * Xiaoyin product read model derived from the Harness Session Projection.
- * This is UI/query data only; execution facts live in the Harness Session Log.
+ * Desktop task view. Execution facts are supplied by the official Harness
+ * Conversation/Trajectory. The product projection contributes only files,
+ * changes, visuals and knowledge references; lifecycle fields below are local
+ * transient UI state and are never emitted by `xiaoyin.product`.
  */
 export interface XiaoyinTaskProjection {
   executionStarted?: boolean
