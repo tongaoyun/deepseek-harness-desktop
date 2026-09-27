@@ -328,7 +328,11 @@ async fn resolve_xiaoyin_session(
             .await
             .map_err(|error| {
                 Diagnostic::new(
-                    if error.is_timeout() { Code::RequestTimeout } else { Code::NetworkError },
+                    if error.is_timeout() {
+                        Code::RequestTimeout
+                    } else {
+                        Code::NetworkError
+                    },
                     None,
                     None,
                 )
@@ -346,7 +350,11 @@ async fn resolve_xiaoyin_session(
         }
         if !response.status().is_success() {
             return Err(Diagnostic::new(
-                if refresh_status >= 500 || refresh_status == 429 { Code::IdentityUnavailable } else { Code::IdentityInvalid },
+                if refresh_status >= 500 || refresh_status == 429 {
+                    Code::IdentityUnavailable
+                } else {
+                    Code::IdentityInvalid
+                },
                 Some(0),
                 Some(refresh_status),
             ));
@@ -356,11 +364,17 @@ async fn resolve_xiaoyin_session(
             .await
             .map_err(|_| Diagnostic::new(Code::IdentityInvalid, Some(0), Some(refresh_status)))?;
         if !envelope.success {
-            return Err(Diagnostic::new(Code::IdentityInvalid, Some(0), Some(refresh_status)));
+            return Err(Diagnostic::new(
+                Code::IdentityInvalid,
+                Some(0),
+                Some(refresh_status),
+            ));
         }
         let refreshed = envelope
             .data
-            .filter(|session| !session.session_token.is_empty() && !session.employee.employee_id.is_empty())
+            .filter(|session| {
+                !session.session_token.is_empty() && !session.employee.employee_id.is_empty()
+            })
             .ok_or_else(|| Diagnostic::new(Code::IdentityInvalid, Some(0), Some(refresh_status)))?;
         snapshot = AccessTokenSnapshot {
             access_token: refreshed.session_token,
@@ -627,7 +641,8 @@ pub(crate) async fn clear_dingtalk_session(app: tauri::AppHandle) -> Result<(), 
                 .delete(format!("{base}/api/v1/employee-auth/session"))
                 .header("Authorization", format!("Bearer {}", snapshot.access_token))
                 .header("X-Requested-With", "XMLHttpRequest")
-                .send().await;
+                .send()
+                .await;
         }
     }
     tauri::async_runtime::spawn_blocking(move || store.clear())

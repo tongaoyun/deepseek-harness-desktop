@@ -40,7 +40,7 @@
 - id: session-persistence-jsonl
   config:
     root: !!js process.env.DSH_SESSION_ROOT ?? dshHomePath('sessions')
-    compression: none
+    compression: zstd
 
 # Keep the official user-settings and credential documents inside the
 # employee-scoped DSH_HOME supplied by the desktop process. Explicit paths

@@ -73,8 +73,8 @@ try {
   assert(!resumed.includes('以下是同一任务在重建本地执行会话前的可见对话'), 'The conversation was replayed as text instead of resumed')
   await runtime.close()
   const inspection = await runtime.inspectSession(sessionId)
-  const lastTurn = inspection?.transcript.at(-1)
-  assert(lastTurn?.role === 'assistant' && lastTurn.segments.some((segment) => segment.kind === 'text' && segment.text.includes('第二轮完成')),
+  const lastMessage = inspection?.messages.at(-1)
+  assert(lastMessage?.role === 'assistant' && lastMessage.text.includes('第二轮完成'),
     'The official session log must remain readable across restart')
   assert(notices.some((notice) => notice.sessionId === sessionId && notice.key === 'xiaoyin.capabilityNotice'
     && notice.value.kind === 'knowledge' && notice.value.reason.includes('范围无效')),
