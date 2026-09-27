@@ -2689,7 +2689,8 @@ fn validate_run_request(request: &HarnessRunRequest) -> Result<(), String> {
     {
         return Err("模型访问凭据无效".to_string());
     }
-    if request.session_token.len() > 16 * 1024 || request.session_token.chars().any(char::is_control)
+    if request.session_token.len() > 16 * 1024
+        || request.session_token.chars().any(char::is_control)
     {
         return Err("ERP 访问凭据无效".to_string());
     }
