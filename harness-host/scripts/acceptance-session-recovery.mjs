@@ -63,16 +63,18 @@ try {
   await assert.doesNotReject(runtime.searchSessions([initial.sessionId], 'PERSISTED', 10))
   await runtime.close()
   const logs = []
-  for await (const path of glob('**/session.v4.jsonl.zstd', { cwd: environment.DSH_SESSION_ROOT })) logs.push(join(environment.DSH_SESSION_ROOT, path))
+  for (const pattern of ['**/session.v4.jsonl', '**/session.v4.jsonl.zstd']) {
+    for await (const path of glob(pattern, { cwd: environment.DSH_SESSION_ROOT })) logs.push(join(environment.DSH_SESSION_ROOT, path))
+  }
   assert.equal(logs.length, 1, 'Expected one current Session JSONL generation')
   runtime = new DeepSeekHarnessRuntime(environment)
   phase = 'restored'
   const restored = await runtime.run({ sessionId: initial.sessionId, prompt: '继续第一轮任务。' }, () => {})
   assert.equal(restored.sessionId, initial.sessionId)
   assert.ifError(failure)
-  assert((await readFile(logs[0])).length > 0, 'Compressed Session JSONL generation is empty')
+  assert((await readFile(logs[0])).length > 0, 'Session JSONL generation is empty')
   assert((await runtime.inspectSession?.(initial.sessionId))?.messages.some((message) => message.text.includes('XY-SESSION-PERSISTED')))
-  console.log(JSON.stringify({ check: 'restart-with-history', passed: true, officialHistory: true, compressedHistoryReadable: true }))
+  console.log(JSON.stringify({ check: 'restart-with-history', passed: true, officialHistory: true, persistenceReadable: true }))
 
   phase = 'fail'
   await assert.rejects(runtime.run({ sessionId: initial.sessionId, prompt: 'XY-FAILED-TURN' }, () => {}))

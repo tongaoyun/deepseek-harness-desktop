@@ -23,6 +23,8 @@ import { initialXiaoyinTaskView, reduceEvent, type XiaoyinTaskState, type Xiaoyi
 import { hasEligibleHarnessMcpConnector } from './managed-mcp-plugin.js'
 import { HarnessError, data as errorData, errorDataForProvider, type HarnessErrorData } from './errors.js'
 
+const SESSION_COMPRESSION = process.versions.node.startsWith('24.') ? 'none' : 'zstd'
+
 export interface RunInput {
   prompt: string
   sessionId?: string
@@ -835,7 +837,7 @@ async function inspectOfficialSession(sessionId: string, env: NodeJS.ProcessEnv 
   let context: Context | undefined
   try {
     context = new Context()
-    const persistence = new JsonlSessionPersistence(context, { root, compression: 'zstd' })
+    const persistence = new JsonlSessionPersistence(context, { root, compression: SESSION_COMPRESSION })
     const snapshot = await persistence.stat(sessionId as never)
     if (!snapshot) return undefined
     const handle = await persistence.open(sessionId as never, 'read')
@@ -970,7 +972,7 @@ async function searchOfficialSessionsOnce(sessionIds: string[], query: string, l
   try {
     await context.plugin(SessionStore)
     await context.plugin(SessionProjectionRegistry)
-    await context.plugin(JsonlSessionPersistence, { root, compression: 'zstd' })
+    await context.plugin(JsonlSessionPersistence, { root, compression: SESSION_COMPRESSION })
     await context.plugin(SqliteSessionQueryEngine, { path: queryPath, openAt: 'first-search', defaultLimit: boundedLimit, maxLimit: boundedLimit })
     if (/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u.test(query)) return await searchCjkSessions(context, ids, query.trim(), boundedLimit, cursor)
     const page = await context.sessionQuery.searchSessions({
