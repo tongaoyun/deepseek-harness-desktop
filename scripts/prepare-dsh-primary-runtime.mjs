@@ -50,9 +50,12 @@ function adaptOfficialCarrierSource(source) {
   if (!source.includes(dependencyImport)) throw new Error('Official Primary Runtime dependency import changed')
   const versionRead = "const { version } = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')) as { version: string }"
   if (!source.includes(versionRead)) throw new Error('Official Primary Runtime carrier version source changed')
+  const pythonDownload = "return downloadPrimaryRuntimeAsset(`https://github.com/astral-sh/python-build-standalone/releases/download/${lock.pythonRelease}/${encodeURIComponent(filename)}`, artifact.pythonSha256, cache)"
+  if (!source.includes(pythonDownload)) throw new Error('Official Primary Runtime Python download source changed')
   return source
     .replace(dependencyImport, '@deepseek-ai/dsh-tool-workspace-dependencies')
     .replace(versionRead, "const version = '0.1.7-rc.2'")
+    .replace(pythonDownload, "return downloadPrimaryRuntimeAsset(`${process.env.XIAOYIN_PRIMARY_RUNTIME_MIRROR ? `${process.env.XIAOYIN_PRIMARY_RUNTIME_MIRROR}/${lock.pythonRelease}` : `https://github.com/astral-sh/python-build-standalone/releases/download/${lock.pythonRelease}`}/${encodeURIComponent(filename)}`, artifact.pythonSha256, cache)")
 }
 
 function parseArguments(args) {
