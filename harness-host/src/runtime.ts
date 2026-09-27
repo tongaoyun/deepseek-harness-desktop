@@ -514,11 +514,6 @@ export class DeepSeekHarnessRuntime implements HarnessRuntime {
       // relying on an inherited environment alone is ambiguous when the
       // packaged Windows host starts with a different working directory.
       ...(env.DSH_HOME?.trim() ? { dshHome: env.DSH_HOME } : {}),
-      // The official SDK accepts product-owned overlays as first-class
-      // profile layers. Pass the overlay explicitly so packaged hosts do not
-      // depend on profile auto-initialization timing when a fresh DSH_HOME is
-      // created for the first task.
-      patches: [env.DSH_CORDIS_CONFIG?.trim() || resolve(moduleDirectory, '../runtime/cordis.yml')],
       env: {
         ...env,
         DSH_CWD: workspace,
