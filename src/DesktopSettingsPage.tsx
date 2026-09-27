@@ -11,7 +11,7 @@ import type { HarnessProviderCheckResult } from './harness'
 import type { HarnessHealth } from './useHarnessHealth'
 
 interface DesktopSettingsPageProps {
-  accessToken: string
+  sessionToken: string
   employeeId: string
   memoryEndpoint: string
   memoryAvailable?: boolean
@@ -41,7 +41,7 @@ interface DesktopSettingsPageProps {
 type SettingsSection = 'preferences' | 'profile' | 'shortcuts' | 'memory' | 'updates' | 'storage' | 'runtime'
 
 export function DesktopSettingsPage({
-  accessToken,
+  sessionToken,
   employeeId,
   memoryEndpoint,
   memoryAvailable = true,
@@ -99,7 +99,7 @@ export function DesktopSettingsPage({
         ? <section className="profile-settings settings-panel"><header><span><UserRound size={18} /></span><div><h2>个人资料</h2><p>当前登录的企业账号信息。</p></div></header><dl><div><dt>姓名</dt><dd>{displayName}</dd></div><div><dt>员工账号</dt><dd>{employeeId}</dd></div><div><dt>部门</dt><dd>{department || '未设置'}</dd></div><div><dt>岗位</dt><dd>{position || '未设置'}</dd></div><div><dt>企业</dt><dd>{companyName}</dd></div></dl></section>
         : visibleSection === 'memory'
         ? <MemoryPage
-            accessToken={accessToken}
+            sessionToken={sessionToken}
             employeeId={employeeId}
             endpoint={memoryEndpoint}
             onSaved={onMemorySaved}

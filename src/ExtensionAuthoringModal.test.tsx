@@ -36,7 +36,7 @@ it('saves the implicit invocation choice in a new skill manifest', async () => {
   const root = createRoot(container)
   try {
     await act(async () => root.render(<ExtensionAuthoringModal
-      accessToken="token"
+      sessionToken="token"
       connectorSecrets={{}}
       connectors={[]}
       employeeId="employee"

@@ -32,11 +32,11 @@ export interface ExtensionValidationReport {
   completedAt: string
 }
 
-function headers(employeeId: string, accessToken: string, json = false): Record<string, string> {
+function headers(employeeId: string, sessionToken: string, json = false): Record<string, string> {
   return {
     'X-Xiaoyin-Employee-Id': employeeId,
     'X-Requested-With': 'XMLHttpRequest',
-    ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+    ...(sessionToken ? { Authorization: `Bearer ${sessionToken}` } : {}),
     ...(json ? { 'Content-Type': 'application/json' } : {}),
   }
 }
@@ -49,16 +49,16 @@ async function checked<T>(response: Response, label: string): Promise<T> {
   return readServerData<T>(response)
 }
 
-export async function loadMySubmissions(employeeId: string, accessToken: string): Promise<ExtensionSubmission[]> {
-  return checked(await fetch(resolveServerEndpoint('/api/v1/extension-submissions'), { headers: headers(employeeId, accessToken), signal: submissionSignal() }), '加载我的创作失败')
+export async function loadMySubmissions(employeeId: string, sessionToken: string): Promise<ExtensionSubmission[]> {
+  return checked(await fetch(resolveServerEndpoint('/api/v1/extension-submissions'), { headers: headers(employeeId, sessionToken), signal: submissionSignal() }), '加载我的创作失败')
 }
 
-export async function submitPackage(manifest: ExpertKitManifest, bytes: number[], employeeId: string, accessToken: string, validationReport?: ExtensionValidationReport): Promise<ExtensionSubmission> {
+export async function submitPackage(manifest: ExpertKitManifest, bytes: number[], employeeId: string, sessionToken: string, validationReport?: ExtensionValidationReport): Promise<ExtensionSubmission> {
   const file = new Uint8Array(bytes)
   const digest = await crypto.subtle.digest('SHA-256', file)
   const sha256 = [...new Uint8Array(digest)].map((value) => value.toString(16).padStart(2, '0')).join('')
   const prepared = await checked<{ uploadUrl: string }>(await fetch(resolveServerEndpoint('/api/v1/extension-submissions/releases'), {
-    method: 'POST', headers: headers(employeeId, accessToken, true), body: JSON.stringify({
+    method: 'POST', headers: headers(employeeId, sessionToken, true), body: JSON.stringify({
       kind: manifest.kind, id: manifest.id, name: manifest.name, version: manifest.version, summary: manifest.summary, category: manifest.category,
       triggers: manifest.triggers ?? [], minimumDesktopVersion: manifest.minimumDesktopVersion,
       commandIds: manifest.commands.map((item) => item.id), skillIds: manifest.skills.map((item) => item.id),
@@ -77,24 +77,24 @@ export async function submitPackage(manifest: ExpertKitManifest, bytes: number[]
   })
   if (!upload.ok) throw new Error(`上传扩展制品失败（${upload.status}）`)
   const submission = await checked<ExtensionSubmission>(await fetch(resolveServerEndpoint(`/api/v1/extension-submissions/${manifest.kind}/${encodeURIComponent(manifest.id)}/versions/${encodeURIComponent(manifest.version)}/submissions`), {
-    method: 'POST', headers: headers(employeeId, accessToken), signal: submissionSignal(),
+    method: 'POST', headers: headers(employeeId, sessionToken), signal: submissionSignal(),
   }), '提交审核失败')
-  if (validationReport) await saveValidationReport(manifest.kind, manifest.id, manifest.version, validationReport, employeeId, accessToken).catch(() => undefined)
+  if (validationReport) await saveValidationReport(manifest.kind, manifest.id, manifest.version, validationReport, employeeId, sessionToken).catch(() => undefined)
   return { ...submission, ...(validationReport ? { validationReport } : {}) }
 }
 
-export async function submitConnector(connector: ConnectorCatalogEntry, employeeId: string, accessToken: string, validationReport?: ExtensionValidationReport): Promise<ExtensionSubmission> {
+export async function submitConnector(connector: ConnectorCatalogEntry, employeeId: string, sessionToken: string, validationReport?: ExtensionValidationReport): Promise<ExtensionSubmission> {
   const template = connectorSecretTemplate(connector)
   const submission = await checked<ExtensionSubmission>(await fetch(resolveServerEndpoint('/api/v1/extension-submissions/connectors'), {
-    method: 'POST', headers: headers(employeeId, accessToken, true), body: JSON.stringify(template), signal: submissionSignal(),
+    method: 'POST', headers: headers(employeeId, sessionToken, true), body: JSON.stringify(template), signal: submissionSignal(),
   }), '提交连接器审核失败')
-  if (validationReport) await saveValidationReport('connector', connector.id, connector.version ?? '1.0.0', validationReport, employeeId, accessToken).catch(() => undefined)
+  if (validationReport) await saveValidationReport('connector', connector.id, connector.version ?? '1.0.0', validationReport, employeeId, sessionToken).catch(() => undefined)
   return { ...submission, validationReport }
 }
 
-export async function saveValidationReport(kind: ExtensionKind, id: string, version: string, report: ExtensionValidationReport, employeeId: string, accessToken: string): Promise<ExtensionValidationReport> {
+export async function saveValidationReport(kind: ExtensionKind, id: string, version: string, report: ExtensionValidationReport, employeeId: string, sessionToken: string): Promise<ExtensionValidationReport> {
   return checked(await fetch(resolveServerEndpoint(`/api/v1/extension-submissions/${kind}/${encodeURIComponent(id)}/versions/${encodeURIComponent(version)}/validation-reports`), {
-    method: 'POST', headers: headers(employeeId, accessToken, true), body: JSON.stringify(report), signal: submissionSignal(),
+    method: 'POST', headers: headers(employeeId, sessionToken, true), body: JSON.stringify(report), signal: submissionSignal(),
   }), '保存发布前验证结果失败')
 }
 

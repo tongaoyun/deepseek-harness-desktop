@@ -23,7 +23,7 @@ describe('desktop settings navigation', () => {
 
   it('keeps practical company settings without Qoder-only experimental entries', () => {
     const html = renderToStaticMarkup(<DesktopSettingsPage
-      accessToken=""
+      sessionToken=""
       companyName="示例企业"
       department="研发部"
       displayName="测试员工"
@@ -48,7 +48,7 @@ describe('desktop settings navigation', () => {
 
   it('keeps local settings available while disabling enterprise memory offline', () => {
     const html = renderToStaticMarkup(<DesktopSettingsPage
-      accessToken=""
+      sessionToken=""
       companyName="示例企业"
       department="研发部"
       displayName="测试员工"
@@ -72,7 +72,7 @@ describe('desktop settings navigation', () => {
     const container = document.body.appendChild(document.createElement('div'))
     const root = createRoot(container)
     const renderPage = (lsp: 'enabled' | 'unconfigured', codexHooks: 'enabled' | 'unconfigured') => <DesktopSettingsPage
-      accessToken=""
+      sessionToken=""
       companyName="示例企业"
       department="研发部"
       displayName="测试员工"
@@ -113,7 +113,7 @@ describe('desktop settings navigation', () => {
     const container = document.body.appendChild(document.createElement('div'))
     const root = createRoot(container)
     try {
-      await act(async () => root.render(<DesktopSettingsPage accessToken="" companyName="公司" department="" displayName="员工" employeeId="one" memoryEndpoint="" onMemorySaved={() => undefined} position="" onCheckModelProvider={check} />))
+      await act(async () => root.render(<DesktopSettingsPage sessionToken="" companyName="公司" department="" displayName="员工" employeeId="one" memoryEndpoint="" onMemorySaved={() => undefined} position="" onCheckModelProvider={check} />))
       await act(async () => container.querySelector<HTMLButtonElement>('.settings-navigation button:last-child')!.click())
       await act(async () => [...container.querySelectorAll<HTMLButtonElement>('button')].find((item) => item.textContent === '检查模型服务')!.click())
       expect(container.querySelector('.runtime-provider-check')?.textContent).toContain('model host unavailable')

@@ -277,7 +277,7 @@ pub struct HarnessRunRequest {
     #[serde(default)]
     reasoning_effort: Option<String>,
     model_api_key: String,
-    access_token: String,
+    session_token: String,
     #[serde(default)]
     local_file_root_ids: Vec<String>,
     #[serde(default)]
@@ -335,7 +335,7 @@ pub struct ConnectorDiagnosticRequest {
     employee_id: String,
     #[serde(default)]
     connectors: Vec<ConnectorDefinition>,
-    access_token: String,
+    session_token: String,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -638,7 +638,7 @@ pub async fn run_harness(
         model: request.model,
         reasoning_effort: request.reasoning_effort,
         memory_context: memory::context(&app, &request.employee_id)?,
-        credential_digest: credential_digest(&request.model_api_key, &request.access_token),
+        credential_digest: credential_digest(&request.model_api_key, &request.session_token),
     };
     let turn = HarnessTurnInput {
         operation_scope: request.operation_scope,
@@ -647,7 +647,7 @@ pub async fn run_harness(
         images,
     };
     let model_api_key = request.model_api_key;
-    let access_token = request.access_token;
+    let session_token = request.session_token;
     let task_id = request.task_id;
     let manager = manager.inner().clone();
     Ok(tauri::async_runtime::spawn_blocking(move || {
@@ -658,7 +658,7 @@ pub async fn run_harness(
             fingerprint,
             turn,
             model_api_key,
-            access_token,
+            session_token,
         )
     })
     .await
@@ -759,7 +759,7 @@ pub async fn diagnose_connectors(
     app: tauri::AppHandle,
     request: ConnectorDiagnosticRequest,
 ) -> Result<Vec<ConnectorDiagnosticResult>, HarnessCommandError> {
-    validate_access_token(&request.access_token)?;
+    validate_access_token(&request.session_token)?;
     crate::dingtalk_auth::require_employee(&app, &request.employee_id).await?;
     let connectors = diagnostic_connectors(&request.connectors)?;
     if connectors.is_empty() {
@@ -785,14 +785,14 @@ pub async fn diagnose_connectors(
         model: "connector-diagnostics".to_string(),
         reasoning_effort: None,
         memory_context: String::new(),
-        credential_digest: credential_digest("", &request.access_token),
+        credential_digest: credential_digest("", &request.session_token),
     };
     Ok(tauri::async_runtime::spawn_blocking(move || {
         let mut process = HarnessProcess::start_uninitialized(
             &app,
             fingerprint,
             String::new(),
-            request.access_token,
+            request.session_token,
         )?;
         let result = process.request("connectors.diagnose", None, None);
         process.shutdown();
@@ -1102,7 +1102,7 @@ impl HarnessManager {
         fingerprint: RuntimeFingerprint,
         turn: HarnessTurnInput,
         model_api_key: String,
-        access_token: String,
+        session_token: String,
     ) -> Result<HarnessRunResult, String> {
         let slot = self.slot(task_id)?;
         let mut guard = slot
@@ -1123,7 +1123,7 @@ impl HarnessManager {
                 task_id,
                 fingerprint,
                 model_api_key,
-                access_token,
+                session_token,
                 slot.intents.clone(),
                 InteractionBrokers {
                     approval: Arc::clone(&self.approvals),
@@ -1503,13 +1503,13 @@ impl HarnessProcess {
         app: &tauri::AppHandle,
         fingerprint: RuntimeFingerprint,
         model_api_key: String,
-        access_token: String,
+        session_token: String,
     ) -> Result<Self, String> {
         Self::start_internal(
             app,
             fingerprint,
             model_api_key,
-            access_token,
+            session_token,
             HarnessStartOptions {
                 initialize: true,
                 task_id: None,
@@ -1524,7 +1524,7 @@ impl HarnessProcess {
         task_id: &str,
         fingerprint: RuntimeFingerprint,
         model_api_key: String,
-        access_token: String,
+        session_token: String,
         intents: TurnIntents,
         brokers: InteractionBrokers,
     ) -> Result<Self, String> {
@@ -1532,7 +1532,7 @@ impl HarnessProcess {
             app,
             fingerprint,
             model_api_key,
-            access_token,
+            session_token,
             HarnessStartOptions {
                 initialize: false,
                 task_id: Some(task_id),
@@ -1546,13 +1546,13 @@ impl HarnessProcess {
         app: &tauri::AppHandle,
         fingerprint: RuntimeFingerprint,
         model_api_key: String,
-        access_token: String,
+        session_token: String,
     ) -> Result<Self, String> {
         Self::start_internal(
             app,
             fingerprint,
             model_api_key,
-            access_token,
+            session_token,
             HarnessStartOptions {
                 initialize: false,
                 task_id: None,
@@ -1566,7 +1566,7 @@ impl HarnessProcess {
         app: &tauri::AppHandle,
         fingerprint: RuntimeFingerprint,
         model_api_key: String,
-        access_token: String,
+        session_token: String,
         options: HarnessStartOptions<'_>,
     ) -> Result<Self, String> {
         let HarnessStartOptions {
@@ -1609,7 +1609,7 @@ impl HarnessProcess {
             app,
             &fingerprint.connectors,
             &fingerprint.employee_id,
-            &access_token,
+            &session_token,
         )?;
         let connectors = serde_json::to_string(&resolved_connectors)
             .map_err(|error| format!("无法生成连接器配置：{error}"))?;
@@ -1675,12 +1675,12 @@ impl HarnessProcess {
             // filtering remains process-scoped through the official Harness
             // permission/profile environment; no second dynamic preset
             // registry is created by the desktop bridge.
-            .env("XIAOYIN_CONTROL_PLANE_TOKEN", &access_token)
+            .env("XIAOYIN_CONTROL_PLANE_TOKEN", &session_token)
             .env(
                 "XIAOYIN_EMPLOYEE_BEARER_TOKEN",
                 crate::dingtalk_auth::connector_bearer_token(
                     &fingerprint.employee_id,
-                    &access_token,
+                    &session_token,
                 ),
             )
             .env("XIAOYIN_EMPLOYEE_ID", &fingerprint.employee_id)
@@ -2689,7 +2689,7 @@ fn validate_run_request(request: &HarnessRunRequest) -> Result<(), String> {
     {
         return Err("模型访问凭据无效".to_string());
     }
-    if request.access_token.len() > 16 * 1024 || request.access_token.chars().any(char::is_control)
+    if request.session_token.len() > 16 * 1024 || request.session_token.chars().any(char::is_control)
     {
         return Err("ERP 访问凭据无效".to_string());
     }
@@ -2802,8 +2802,8 @@ fn prepare_attachments(
     Ok((lines.join("\n"), images))
 }
 
-fn validate_access_token(access_token: &str) -> Result<(), String> {
-    if access_token.len() > 16 * 1024 || access_token.chars().any(char::is_control) {
+fn validate_access_token(session_token: &str) -> Result<(), String> {
+    if session_token.len() > 16 * 1024 || session_token.chars().any(char::is_control) {
         return Err("ERP 访问凭据无效".to_string());
     }
     Ok(())
@@ -2821,7 +2821,7 @@ fn resolve_connector_credentials(
     app: &tauri::AppHandle,
     connectors: &[RuntimeConnector],
     employee_id: &str,
-    access_token: &str,
+    session_token: &str,
 ) -> Result<Vec<RuntimeConnector>, String> {
     let epoch = crate::dingtalk_auth::mcp::session_epoch();
     connectors
@@ -2832,7 +2832,7 @@ fn resolve_connector_credentials(
                 "none" => None,
                 "employee-bearer" => {
                     let token =
-                        crate::dingtalk_auth::connector_bearer_token(employee_id, access_token);
+                        crate::dingtalk_auth::connector_bearer_token(employee_id, session_token);
                     if token.is_empty() {
                         return Err(format!("连接器「{}」缺少员工登录凭据", connector.name));
                     }
@@ -2884,12 +2884,12 @@ fn resolve_connector_credentials(
         .collect()
 }
 
-pub(crate) fn credential_digest(model_api_key: &str, access_token: &str) -> String {
+pub(crate) fn credential_digest(model_api_key: &str, session_token: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update((model_api_key.len() as u64).to_be_bytes());
     hasher.update(model_api_key.as_bytes());
-    hasher.update((access_token.len() as u64).to_be_bytes());
-    hasher.update(access_token.as_bytes());
+    hasher.update((session_token.len() as u64).to_be_bytes());
+    hasher.update(session_token.as_bytes());
     format!("{:x}", hasher.finalize())
 }
 
@@ -3288,7 +3288,7 @@ mod tests {
             model: "deepseek-chat".to_string(),
             model_api_key: "model-token".to_string(),
             reasoning_effort: None,
-            access_token: "erp-token".to_string(),
+            session_token: "erp-token".to_string(),
             local_file_root_ids: Vec::new(),
             attachments: Vec::new(),
         };
@@ -3324,7 +3324,7 @@ mod tests {
             "knowledgeEndpoint": "http://xiaoyin-server.internal/api/v1/knowledge-bases",
             "model": "deepseek-chat",
             "modelApiKey": "model-token",
-            "accessToken": "token"
+            "sessionToken": "token"
         }))
         .expect("request without optional authorizations should remain restricted");
         assert!(!request.allow_shell);

@@ -127,12 +127,12 @@ export function ImChannelsPage(harness: Props) {
     capabilitySnapshot: harness.capabilitySnapshot,
     model: harness.model,
     modelApiKey: harness.modelApiKey,
-    accessToken: harness.accessToken,
+    sessionToken: harness.sessionToken,
     allowShell: harness.allowShell,
     allowLsp: harness.allowLsp,
     allowExternalAgents: harness.allowExternalAgents,
     allowHooks: harness.allowHooks,
-  }), [harness.accessToken, harness.allowExternalAgents, harness.allowHooks, harness.allowLsp, harness.allowShell, harness.capabilitySnapshot, harness.employeeId, harness.knowledgeEndpoint, harness.litellmBaseUrl, harness.model, harness.modelApiKey, harness.scheduleEndpoint, harness.teamId])
+  }), [harness.sessionToken, harness.allowExternalAgents, harness.allowHooks, harness.allowLsp, harness.allowShell, harness.capabilitySnapshot, harness.employeeId, harness.knowledgeEndpoint, harness.litellmBaseUrl, harness.model, harness.modelApiKey, harness.scheduleEndpoint, harness.teamId])
 
   const save = async (event: FormEvent) => {
     event.preventDefault()

@@ -16,7 +16,7 @@ export function KnowledgeSources({ sources, context, excerpts = false }: {
       <button type="button" disabled={!context || !hit.sourceId} onClick={() => setSelected(hit)}><BookOpen size={14} /><span>{hit.filename} · {hit.locator}</span></button>
       {excerpts && <p>{hit.content}</p>}
     </article>)}</div>
-    {selected?.sourceId && context && <SourceDialog key={`${selected.sourceId}:${context.endpoint}:${context.employeeId}:${context.teamId}:${context.accessToken}`} sourceId={selected.sourceId} context={context} onClose={() => setSelected(undefined)} />}
+    {selected?.sourceId && context && <SourceDialog key={`${selected.sourceId}:${context.endpoint}:${context.employeeId}:${context.teamId}:${context.sessionToken}`} sourceId={selected.sourceId} context={context} onClose={() => setSelected(undefined)} />}
   </section>
 }
 
@@ -26,17 +26,17 @@ function SourceDialog({ sourceId, context, onClose }: { sourceId: string; contex
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
   const [attempt, setAttempt] = useState(0)
-  const { endpoint, employeeId, teamId, accessToken } = context
+  const { endpoint, employeeId, teamId, sessionToken } = context
   useDialogFocus(ref, sourceId, onClose)
   useEffect(() => {
     const controller = new AbortController()
     setSource(undefined); setLoading(true); setError('')
-    void loadKnowledgeSource({ endpoint, employeeId, teamId, accessToken }, sourceId, controller.signal)
+    void loadKnowledgeSource({ endpoint, employeeId, teamId, sessionToken }, sourceId, controller.signal)
       .then((value) => { if (!controller.signal.aborted) setSource(value) })
       .catch((reason) => { if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : String(reason)) })
       .finally(() => { if (!controller.signal.aborted) setLoading(false) })
     return () => controller.abort()
-  }, [sourceId, endpoint, employeeId, teamId, accessToken, attempt])
+  }, [sourceId, endpoint, employeeId, teamId, sessionToken, attempt])
   return createPortal(<div className="knowledge-source-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
     <section ref={ref} className="knowledge-source-dialog" role="dialog" aria-modal="true" aria-label="原文片段">
       <header><h2>原文片段</h2><button type="button" aria-label="关闭原文" onClick={onClose}><X size={18} /></button></header>

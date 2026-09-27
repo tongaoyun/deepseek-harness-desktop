@@ -16,9 +16,9 @@ import type {
 
 const DEFAULT_XIAOYIN_SERVER = 'http://192.168.2.67:30081'
 
-export async function loadBootstrap(employeeId = 'local-development', accessToken = '', signal?: AbortSignal): Promise<BootstrapResponse> {
+export async function loadBootstrap(employeeId = 'local-development', sessionToken = '', signal?: AbortSignal): Promise<BootstrapResponse> {
   const response = await fetch(serverUrl('/api/v1/bootstrap'), {
-    headers: enterpriseHeaders(employeeId, accessToken),
+    headers: enterpriseHeaders(employeeId, sessionToken),
     signal: boundedSignal(signal),
   })
   if (!response.ok) {
@@ -30,10 +30,10 @@ export async function loadBootstrap(employeeId = 'local-development', accessToke
 export async function loadExpertKits(
   endpoint: string,
   employeeId: string,
-  accessToken: string,
+  sessionToken: string,
   signal?: AbortSignal,
 ): Promise<ExpertKitCatalogEntry[]> {
-  return loadAllServerPages(endpoint, enterpriseHeaders(employeeId, accessToken), '专家套件目录', signal)
+  return loadAllServerPages(endpoint, enterpriseHeaders(employeeId, sessionToken), '专家套件目录', signal)
 }
 
 /** The catalog listing stays light, so a kit's own guide is fetched when its details are opened. */
@@ -41,12 +41,12 @@ export async function loadExpertKitReadme(
   endpoint: string,
   kitId: string,
   employeeId: string,
-  accessToken: string,
+  sessionToken: string,
   signal?: AbortSignal,
 ): Promise<string> {
   const base = endpoint.replace(/\/$/, '')
   const response = await fetch(serverUrl(`${base}/${encodeURIComponent(kitId)}/readme`), {
-    headers: enterpriseHeaders(employeeId, accessToken),
+    headers: enterpriseHeaders(employeeId, sessionToken),
     signal: boundedSignal(signal),
   })
   if (!response.ok) throw new Error(`套件说明返回 ${response.status}`)
@@ -57,12 +57,12 @@ export async function createExpertKitDownload(
   endpoint: string,
   kitId: string,
   employeeId: string,
-  accessToken: string,
+  sessionToken: string,
   signal?: AbortSignal,
 ): Promise<ExpertKitDownload> {
   const base = endpoint.replace(/\/$/, '')
   const response = await fetch(serverUrl(`${base}/${encodeURIComponent(kitId)}/artifacts`), {
-    headers: enterpriseHeaders(employeeId, accessToken),
+    headers: enterpriseHeaders(employeeId, sessionToken),
     signal: boundedSignal(signal, 30_000),
   })
   if (!response.ok) throw new Error(`专家套件下载授权返回 ${response.status}`)
@@ -72,22 +72,22 @@ export async function createExpertKitDownload(
 export async function loadSkills(
   endpoint: string,
   employeeId: string,
-  accessToken: string,
+  sessionToken: string,
   signal?: AbortSignal,
 ): Promise<SkillCatalogEntry[]> {
-  return loadCatalog(endpoint, employeeId, accessToken, '技能目录', signal)
+  return loadCatalog(endpoint, employeeId, sessionToken, '技能目录', signal)
 }
 
 export async function createSkillDownload(
   endpoint: string,
   skillId: string,
   employeeId: string,
-  accessToken: string,
+  sessionToken: string,
   signal?: AbortSignal,
 ): Promise<ExpertKitDownload> {
   const base = endpoint.replace(/\/$/, '')
   const response = await fetch(serverUrl(`${base}/${encodeURIComponent(skillId)}/artifacts`), {
-    headers: enterpriseHeaders(employeeId, accessToken),
+    headers: enterpriseHeaders(employeeId, sessionToken),
     signal: boundedSignal(signal, 30_000),
   })
   if (!response.ok) throw new Error(`技能下载授权返回 ${response.status}`)
@@ -97,21 +97,21 @@ export async function createSkillDownload(
 export async function loadConnectors(
   endpoint: string,
   employeeId: string,
-  accessToken: string,
+  sessionToken: string,
   signal?: AbortSignal,
 ): Promise<ConnectorCatalogEntry[]> {
-  return loadCatalog(endpoint, employeeId, accessToken, '连接器目录', signal)
+  return loadCatalog(endpoint, employeeId, sessionToken, '连接器目录', signal)
 }
 
 export async function submitDeviceHeartbeat(
   endpoint: string,
   employeeId: string,
-  accessToken: string,
+  sessionToken: string,
   request: DeviceHeartbeatContext & { installedExtensions: InstalledExtensionSnapshot[] },
 ): Promise<void> {
   const response = await fetch(serverUrl(`${endpoint.replace(/\/$/, '')}/presence`), {
     method: 'POST',
-    headers: { ...enterpriseHeaders(employeeId, accessToken), 'Content-Type': 'application/json' },
+    headers: { ...enterpriseHeaders(employeeId, sessionToken), 'Content-Type': 'application/json' },
     body: JSON.stringify(request),
     signal: boundedSignal(),
   })
@@ -121,14 +121,14 @@ export async function submitDeviceHeartbeat(
 export async function submitDeviceCapabilityReport(
   endpoint: string,
   employeeId: string,
-  accessToken: string,
+  sessionToken: string,
   request: DeviceHeartbeatContext & {
     capabilities: Array<{ key: string; status: 'READY' | 'DEGRADED' | 'UNSUPPORTED'; detail: string }>
   },
 ): Promise<void> {
   const response = await fetch(serverUrl(endpoint.replace(/\/$/, '')), {
     method: 'POST',
-    headers: { ...enterpriseHeaders(employeeId, accessToken), 'Content-Type': 'application/json' },
+    headers: { ...enterpriseHeaders(employeeId, sessionToken), 'Content-Type': 'application/json' },
     body: JSON.stringify(request),
     signal: boundedSignal(),
   })
@@ -138,12 +138,12 @@ export async function submitDeviceCapabilityReport(
 export async function submitAuditEvent(
   endpoint: string,
   employeeId: string,
-  accessToken: string,
+  sessionToken: string,
   event: SubmitAuditEvent,
 ): Promise<AuditEventEntry> {
   const response = await fetch(serverUrl(endpoint), {
     method: 'POST',
-    headers: { ...enterpriseHeaders(employeeId, accessToken), 'Content-Type': 'application/json' },
+    headers: { ...enterpriseHeaders(employeeId, sessionToken), 'Content-Type': 'application/json' },
     body: JSON.stringify(event),
     signal: boundedSignal(),
   })
@@ -153,7 +153,7 @@ export async function submitAuditEvent(
 
 export async function submitFeedback(
   employeeId: string,
-  accessToken: string,
+  sessionToken: string,
   message: string,
   context: { category: 'BUG' | 'SUGGESTION' | 'QUESTION' | 'OTHER'; desktopVersion?: string; deviceId?: string; taskId?: string },
   images: File[] = [],
@@ -163,7 +163,7 @@ export async function submitFeedback(
   images.forEach((file) => body.append('images', file))
   const response = await fetch(serverUrl('/api/v1/feedback'), {
     method: 'POST',
-    headers: enterpriseHeaders(employeeId, accessToken),
+    headers: enterpriseHeaders(employeeId, sessionToken),
     body,
     signal: AbortSignal.timeout(45_000),
   }).catch((reason) => {
@@ -181,50 +181,50 @@ export async function loadKnowledgeBases(
   endpoint: string,
   employeeId: string,
   teamId: string,
-  accessToken: string,
+  sessionToken: string,
   signal?: AbortSignal,
 ): Promise<KnowledgeBaseEntry[]> {
-  return loadAllServerPages(endpoint, knowledgeHeaders(employeeId, teamId, accessToken), '知识库', signal)
+  return loadAllServerPages(endpoint, knowledgeHeaders(employeeId, teamId, sessionToken), '知识库', signal)
 }
 
 export async function createKnowledgeBase(
   endpoint: string,
   employeeId: string,
   teamId: string,
-  accessToken: string,
+  sessionToken: string,
   request: { name: string; description: string; referenceKey: string; scope: KnowledgeBaseEntry['scope'] },
   idempotencyKey: string = crypto.randomUUID(),
 ): Promise<KnowledgeBaseEntry> {
-  return knowledgeRequest(endpoint, employeeId, teamId, accessToken, '', 'POST', request, idempotencyKey)
+  return knowledgeRequest(endpoint, employeeId, teamId, sessionToken, '', 'POST', request, idempotencyKey)
 }
 
 export async function deleteKnowledgeBase(
   endpoint: string,
   employeeId: string,
   teamId: string,
-  accessToken: string,
+  sessionToken: string,
   knowledgeBaseId: string,
 ): Promise<void> {
-  await knowledgeVoidRequest(endpoint, employeeId, teamId, accessToken, `/${encodeURIComponent(knowledgeBaseId)}`, 'DELETE')
+  await knowledgeVoidRequest(endpoint, employeeId, teamId, sessionToken, `/${encodeURIComponent(knowledgeBaseId)}`, 'DELETE')
 }
 
 export async function loadKnowledgeDocuments(
   endpoint: string,
   employeeId: string,
   teamId: string,
-  accessToken: string,
+  sessionToken: string,
   knowledgeBaseId: string,
   signal?: AbortSignal,
 ): Promise<KnowledgeDocumentEntry[]> {
   return loadAllServerPages(`${endpoint.replace(/\/$/, '')}/${encodeURIComponent(knowledgeBaseId)}/documents`,
-    knowledgeHeaders(employeeId, teamId, accessToken), '知识库文档', signal)
+    knowledgeHeaders(employeeId, teamId, sessionToken), '知识库文档', signal)
 }
 
 export async function uploadKnowledgeDocument(
   endpoint: string,
   employeeId: string,
   teamId: string,
-  accessToken: string,
+  sessionToken: string,
   knowledgeBaseId: string,
   file: File,
   signal?: AbortSignal,
@@ -233,7 +233,7 @@ export async function uploadKnowledgeDocument(
   const form = new FormData()
   form.append('file', file, file.name)
   const response = await fetch(serverUrl(`${endpoint.replace(/\/$/, '')}/${encodeURIComponent(knowledgeBaseId)}/documents`), {
-    method: 'POST', headers: { ...knowledgeHeaders(employeeId, teamId, accessToken), 'Idempotency-Key': idempotencyKey }, body: form,
+    method: 'POST', headers: { ...knowledgeHeaders(employeeId, teamId, sessionToken), 'Idempotency-Key': idempotencyKey }, body: form,
     signal: boundedSignal(signal, 120_000),
   })
   if (!response.ok) throw new Error(`知识库文档上传返回 ${response.status}`)
@@ -244,12 +244,12 @@ export async function reindexKnowledgeDocument(
   endpoint: string,
   employeeId: string,
   teamId: string,
-  accessToken: string,
+  sessionToken: string,
   knowledgeBaseId: string,
   documentId: string,
   idempotencyKey: string = crypto.randomUUID(),
 ): Promise<KnowledgeDocumentEntry> {
-  return knowledgeRequest(endpoint, employeeId, teamId, accessToken,
+  return knowledgeRequest(endpoint, employeeId, teamId, sessionToken,
     `/${encodeURIComponent(knowledgeBaseId)}/documents/${encodeURIComponent(documentId)}/index-jobs`, 'POST', undefined, idempotencyKey)
 }
 
@@ -257,11 +257,11 @@ export async function deleteKnowledgeDocument(
   endpoint: string,
   employeeId: string,
   teamId: string,
-  accessToken: string,
+  sessionToken: string,
   knowledgeBaseId: string,
   documentId: string,
 ): Promise<void> {
-  await knowledgeVoidRequest(endpoint, employeeId, teamId, accessToken,
+  await knowledgeVoidRequest(endpoint, employeeId, teamId, sessionToken,
     `/${encodeURIComponent(knowledgeBaseId)}/documents/${encodeURIComponent(documentId)}`, 'DELETE')
 }
 
@@ -269,22 +269,22 @@ export async function searchKnowledge(
   endpoint: string,
   employeeId: string,
   teamId: string,
-  accessToken: string,
+  sessionToken: string,
   query: string,
   knowledgeBaseIds: string[],
   knowledgeBaseRefs: string[] = [],
 ): Promise<KnowledgeSearchHit[]> {
-  return knowledgeRequest('/api/v1/knowledge-searches', employeeId, teamId, accessToken, '', 'POST', {
+  return knowledgeRequest('/api/v1/knowledge-searches', employeeId, teamId, sessionToken, '', 'POST', {
     query, knowledgeBaseIds, knowledgeBaseRefs, restrictToKnowledgeBaseRefs: false, limit: 8,
   })
 }
 
-export interface KnowledgeSourceContext { endpoint: string; employeeId: string; teamId: string; accessToken: string }
+export interface KnowledgeSourceContext { endpoint: string; employeeId: string; teamId: string; sessionToken: string }
 
 export async function loadKnowledgeSource(context: KnowledgeSourceContext, sourceId: string, signal?: AbortSignal): Promise<KnowledgeSearchHit> {
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sourceId)) throw new Error('原文引用无效，请重新检索')
   const response = await fetch(serverUrl(`${context.endpoint.replace(/\/$/, '')}/sources/${sourceId}`), {
-    headers: knowledgeHeaders(context.employeeId, context.teamId, context.accessToken), signal: boundedSignal(signal),
+    headers: knowledgeHeaders(context.employeeId, context.teamId, context.sessionToken), signal: boundedSignal(signal),
   })
   if (response.status === 404) throw new Error('原文已删除、正在重建或已更新，请重新检索。历史摘录不能作为当前依据。')
   if (!response.ok) throw new Error(`原文暂时无法读取（${response.status}），请重试。`)
@@ -295,7 +295,7 @@ async function knowledgeRequest<T>(
   endpoint: string,
   employeeId: string,
   teamId: string,
-  accessToken: string,
+  sessionToken: string,
   suffix: string,
   method: 'POST',
   request?: object,
@@ -304,7 +304,7 @@ async function knowledgeRequest<T>(
   const response = await fetch(serverUrl(`${endpoint.replace(/\/$/, '')}${suffix}`), {
     method,
     signal: boundedSignal(),
-    headers: { ...knowledgeHeaders(employeeId, teamId, accessToken), ...(request ? { 'Content-Type': 'application/json' } : {}), ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}) },
+    headers: { ...knowledgeHeaders(employeeId, teamId, sessionToken), ...(request ? { 'Content-Type': 'application/json' } : {}), ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}) },
     ...(request ? { body: JSON.stringify(request) } : {}),
   })
   if (!response.ok) throw new Error(`知识库操作返回 ${response.status}`)
@@ -315,12 +315,12 @@ async function knowledgeVoidRequest(
   endpoint: string,
   employeeId: string,
   teamId: string,
-  accessToken: string,
+  sessionToken: string,
   suffix: string,
   method: 'DELETE',
 ): Promise<void> {
   const response = await fetch(serverUrl(`${endpoint.replace(/\/$/, '')}${suffix}`), {
-    method, headers: knowledgeHeaders(employeeId, teamId, accessToken), signal: boundedSignal(),
+    method, headers: knowledgeHeaders(employeeId, teamId, sessionToken), signal: boundedSignal(),
   })
   if (!response.ok) throw new Error(`知识库删除操作返回 ${response.status}`)
 }
@@ -328,11 +328,11 @@ async function knowledgeVoidRequest(
 async function loadCatalog<T>(
   endpoint: string,
   employeeId: string,
-  accessToken: string,
+  sessionToken: string,
   label: string,
   signal?: AbortSignal,
 ): Promise<T[]> {
-  return loadAllServerPages(endpoint, enterpriseHeaders(employeeId, accessToken), label, signal)
+  return loadAllServerPages(endpoint, enterpriseHeaders(employeeId, sessionToken), label, signal)
 }
 
 async function loadAllServerPages<T>(endpoint: string, headers: Record<string, string>, label: string,
@@ -373,17 +373,17 @@ export function resolveServerEndpoint(path: string): string {
   return serverUrl(path, false)
 }
 
-function enterpriseHeaders(employeeId: string, accessToken: string): Record<string, string> {
+function enterpriseHeaders(employeeId: string, sessionToken: string): Record<string, string> {
   return {
     'X-Xiaoyin-Employee-Id': employeeId,
     'X-Requested-With': 'XMLHttpRequest',
-    ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+    ...(sessionToken ? { Authorization: `Bearer ${sessionToken}` } : {}),
   }
 }
 
-function knowledgeHeaders(employeeId: string, teamId: string, accessToken: string): Record<string, string> {
+function knowledgeHeaders(employeeId: string, teamId: string, sessionToken: string): Record<string, string> {
   return {
-    ...enterpriseHeaders(employeeId, accessToken),
+    ...enterpriseHeaders(employeeId, sessionToken),
     ...(teamId.trim() ? { 'X-Xiaoyin-Team-Id': teamId.trim() } : {}),
   }
 }

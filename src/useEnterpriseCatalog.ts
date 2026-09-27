@@ -26,12 +26,12 @@ interface CatalogData {
 const emptyCatalog = (): CatalogData => ({ catalog: [], installed: [], skills: [], connectors: [], knowledge: [] })
 
 export function useEnterpriseCatalog({
-  accessToken,
+  sessionToken,
   bootstrap,
   enabledConnectorIds,
   user,
 }: {
-  accessToken: string
+  sessionToken: string
   bootstrap?: BootstrapResponse
   enabledConnectorIds: string[]
   user: DingTalkUser | null
@@ -123,11 +123,11 @@ export function useEnterpriseCatalog({
         }
         const inventoryRevision = inventoryRevisionRef.current
         const results = await Promise.allSettled([
-          loadExpertKits(bootstrap.endpoints.expertKits, user.userId, accessToken, controller.signal),
+          loadExpertKits(bootstrap.endpoints.expertKits, user.userId, sessionToken, controller.signal),
           inspectInstalledExtensions(),
-          loadSkills(bootstrap.endpoints.skills, user.userId, accessToken, controller.signal),
-          loadConnectors(bootstrap.endpoints.connectors, user.userId, accessToken, controller.signal),
-          loadKnowledgeBases(bootstrap.endpoints.knowledge, user.userId, user.teamId, accessToken, controller.signal),
+          loadSkills(bootstrap.endpoints.skills, user.userId, sessionToken, controller.signal),
+          loadConnectors(bootstrap.endpoints.connectors, user.userId, sessionToken, controller.signal),
+          loadKnowledgeBases(bootstrap.endpoints.knowledge, user.userId, user.teamId, sessionToken, controller.signal),
         ] as const)
         if (controller.signal.aborted) return
         const [catalogResult, installedResult, skillsResult, connectorsResult, knowledgeResult] = results
@@ -152,8 +152,8 @@ export function useEnterpriseCatalog({
             latestInventory,
             {
               download: (kind, id) => kind === 'expert-kit'
-                ? createExpertKitDownload(bootstrap.endpoints.expertKits, id, user.userId, accessToken)
-                : createSkillDownload(bootstrap.endpoints.skills, id, user.userId, accessToken),
+                ? createExpertKitDownload(bootstrap.endpoints.expertKits, id, user.userId, sessionToken)
+                : createSkillDownload(bootstrap.endpoints.skills, id, user.userId, sessionToken),
               install: (kind, download) => installExtension(download, kind),
               onFailure: (kind, id) => syncFailures.push(`${kind === 'expert-kit' ? '专家套件' : '技能'}「${id}」更新失败`),
             },
@@ -199,7 +199,7 @@ export function useEnterpriseCatalog({
     const onFocus = () => { void synchronize(false) }
     if (bootstrap) window.addEventListener('focus', onFocus)
     return () => { if (timer) window.clearInterval(timer); window.removeEventListener('focus', onFocus); controller.abort() }
-  }, [accessToken, applyCatalog, bootstrap, refreshKey, user])
+  }, [sessionToken, applyCatalog, bootstrap, refreshKey, user])
 
   const refresh = useCallback(() => setRefreshKey((value) => value + 1), [])
 

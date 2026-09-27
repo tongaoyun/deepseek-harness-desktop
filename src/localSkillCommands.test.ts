@@ -10,7 +10,7 @@ vi.mock('./expertKits', () => ({ installExtension: vi.fn() }))
 vi.mock('./githubSkills', () => ({ inspectGithubSkills: vi.fn(), installGithubSkill: vi.fn() }))
 beforeEach(() => vi.resetAllMocks())
 const skill = { id: 'report', name: '销售报告', summary: '分析订单', version: '1.0.0', sha256: 'a'.repeat(64), installState: 'available', triggers: ['统计'], connectorIssues: [], knowledgeIssues: [] } as unknown as SkillView
-const context = (): SkillCommandContext => ({ skills: [skill], endpoint: '/skills', employeeId: 'employee', accessToken: 'test', assertActive: vi.fn(), refresh: vi.fn(async () => {}) })
+const context = (): SkillCommandContext => ({ skills: [skill], endpoint: '/skills', employeeId: 'employee', sessionToken: 'test', assertActive: vi.fn(), refresh: vi.fn(async () => {}) })
 
 it('searches real localized metadata and returns installation and dependency state', async () => {
   expect(await localSkillCommand(context(), 'search', { query: '统计' })).toMatchObject({ total: 1, skills: [{ id: 'report', name: '销售报告', enabled: false, installState: 'available' }] })

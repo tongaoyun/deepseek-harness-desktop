@@ -7,7 +7,7 @@ export interface SkillCommandContext {
   skills: SkillView[]
   employeeId: string
   endpoint: string
-  accessToken: string
+  sessionToken: string
   assertActive: () => void
   refresh: () => Promise<void>
 }
@@ -43,7 +43,7 @@ export async function localSkillCommand(context: SkillCommandContext, action: st
     const skill = context.skills.find((item) => item.id === args.id)
     if (!skill || skill.installState === 'retired' || skill.installState === 'incompatible') throw new Error('技能不在当前桌面版本可用目录中，请升级后重试')
     if (skill.installState === 'installed') return { id: skill.id, installed: true, enabled: skill.installed?.enabled !== false, changed: false }
-    const download = await createSkillDownload(context.endpoint, skill.id, context.employeeId, context.accessToken)
+    const download = await createSkillDownload(context.endpoint, skill.id, context.employeeId, context.sessionToken)
     context.assertActive()
     if (download.version !== skill.version || download.sha256 !== skill.sha256) throw new Error('技能目录已变化，请刷新后重试')
     installed = await installExtension(download, 'skill')

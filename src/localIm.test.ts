@@ -31,7 +31,7 @@ describe('local IM native bridge', () => {
         teamId: '跨境运营',
         litellmBaseUrl: 'http://litellm/v1', knowledgeEndpoint: 'http://xiaoyin-server/api/v1/knowledge-bases', scheduleEndpoint: 'http://xiaoyin-server/api/v1/schedules',
         capabilitySnapshot: { schemaVersion: 2, createdAt: 'test', selections: [], artifacts: [], implicitArtifacts: [], localTools: [], requestedConnectorIds: [], connectors: [], requestedKnowledgeBaseRefs: [], knowledgeBaseRefs: [] },
-        model: 'deepseek-v4-flash', modelApiKey: 'model-token', accessToken: 'employee-token',
+        model: 'deepseek-v4-flash', modelApiKey: 'model-token', sessionToken: 'employee-token',
         allowShell: false, allowLsp: false, allowExternalAgents: false, allowHooks: false,
       },
     })
@@ -48,7 +48,7 @@ describe('local IM native bridge', () => {
       teamId: '跨境运营',
       litellmBaseUrl: 'http://litellm/v1', knowledgeEndpoint: 'http://xiaoyin-server/api/v1/knowledge-bases', scheduleEndpoint: 'http://xiaoyin-server/api/v1/schedules',
       capabilitySnapshot: { schemaVersion: 2, createdAt: 'test', selections: [], artifacts: [], implicitArtifacts: [], localTools: [], requestedConnectorIds: [], connectors: [], requestedKnowledgeBaseRefs: [], knowledgeBaseRefs: [] },
-      model: 'deepseek-v4-flash', modelApiKey: 'model-token', accessToken: 'employee-token',
+      model: 'deepseek-v4-flash', modelApiKey: 'model-token', sessionToken: 'employee-token',
       allowShell: false, allowLsp: false, allowExternalAgents: false, allowHooks: false,
     })
     expect(invoke).toHaveBeenCalledWith('start_local_im', {

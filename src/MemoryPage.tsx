@@ -9,7 +9,7 @@ import './memory.css'
 interface Props {
   employeeId: string
   endpoint: string
-  accessToken: string
+  sessionToken: string
   onSaved: (profile: MemoryProfile) => Promise<void> | void
   onOpenTask?: (id: string) => void
 }
@@ -18,7 +18,7 @@ const styles = [
   ['细致严谨', '说明关键依据、假设和不确定性。交付前检查结果，必要时补充可验证的来源。'],
   ['耐心易懂', '使用清晰易懂的语言，解释必要术语。复杂任务分步说明，提供可操作的建议。'],
 ]
-export function MemoryPage({ employeeId, endpoint, accessToken, onSaved, onOpenTask }: Props) {
+export function MemoryPage({ employeeId, endpoint, sessionToken, onSaved, onOpenTask }: Props) {
   const [profile, setProfile] = useState<MemoryProfile>(emptyMemoryProfile)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -84,7 +84,7 @@ export function MemoryPage({ employeeId, endpoint, accessToken, onSaved, onOpenT
     let active = true
     setLoading(true)
     setLoadError('')
-    void Promise.all([loadSyncedMemoryProfile(employeeId, endpoint, accessToken), loadMemoryHistory(employeeId)])
+    void Promise.all([loadSyncedMemoryProfile(employeeId, endpoint, sessionToken), loadMemoryHistory(employeeId)])
       .then(([value, revisions]) => { if (active) {
         setBaseline(memoryContents(value)); setProfile(value); setHistory(revisions); setNewText(''); setMessage(value.syncPending ? memorySaveMessage(value) : '')
         try {
@@ -99,7 +99,7 @@ export function MemoryPage({ employeeId, endpoint, accessToken, onSaved, onOpenT
       .catch((error) => { if (active) setLoadError(String(error)) })
       .finally(() => { if (active) setLoading(false) })
     return () => { active = false }
-  }, [employeeId, endpoint, accessToken, reload, draftKey])
+  }, [employeeId, endpoint, sessionToken, reload, draftKey])
   const submit = async (event: FormEvent) => {
     event.preventDefault()
     if (saveLock.current || loading || loadError) return
@@ -111,7 +111,7 @@ export function MemoryPage({ employeeId, endpoint, accessToken, onSaved, onOpenT
       validateMemoryProfile(profile)
       const pairs = (profile.entries ?? []).flatMap((entry, index, entries) => relatedMemories(entries.slice(index + 1), entry.text).map((other) => `${entry.text}\n${other.text}`))
       if (pairs.length && !await confirm({ title: '这些记忆可能重复或冲突', message: pairs.slice(0, 3).join('\n\n') + '\n\n请确认需要同时保留；也可以取消后删除旧规则。', confirmLabel: '仍然保留并保存' })) return
-      const saved = await saveSyncedMemoryProfile(employeeId, endpoint, accessToken, profile)
+      const saved = await saveSyncedMemoryProfile(employeeId, endpoint, sessionToken, profile)
       setProfile(saved)
       setBaseline(memoryContents(saved))
       try { clearDraft() } catch { setDraftError('设置已保存，但草稿缓存清理失败。') }
@@ -144,7 +144,7 @@ export function MemoryPage({ employeeId, endpoint, accessToken, onSaved, onOpenT
     if (!await confirm({ title: useLocal ? '保留本机版本？' : '使用云端版本？', message: useLocal ? '用已保存到本机的完整内容替换最新云端版本。若云端再次变化会重新提示冲突。' : '用最新云端版本替换本机已保存内容；本机原内容仍可从版本记录恢复。', confirmLabel: '确认版本' })) return
     setSaving(true); saveLock.current = true
     try {
-      const saved = await resolveMemoryConflict(employeeId, endpoint, accessToken, useLocal, profile.updatedAt)
+      const saved = await resolveMemoryConflict(employeeId, endpoint, sessionToken, useLocal, profile.updatedAt)
       setProfile(saved); setBaseline(memoryContents(saved)); setMessage(memorySaveMessage(saved))
       try { clearDraft() } catch { setDraftError('设置已保存，但草稿缓存清理失败。') }
       await onSaved(saved)

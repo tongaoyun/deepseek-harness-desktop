@@ -23,7 +23,7 @@ it('manages entries, shows source tasks, and distinguishes local save from sync'
   const saved = vi.fn()
   const click = async (label: string) => act(async () => [...box.querySelectorAll('button')].find((button) => button.textContent === label)!.click())
   try {
-    await act(async () => root.render(<MemoryPage employeeId="u" endpoint="/memory" accessToken="" onSaved={saved} onOpenTask={open} />))
+    await act(async () => root.render(<MemoryPage employeeId="u" endpoint="/memory" sessionToken="" onSaved={saved} onOpenTask={open} />))
     expect(box.querySelectorAll('[role="switch"]')).toHaveLength(2)
     await click('来源任务')
     expect(open).toHaveBeenCalledWith('task-1')
@@ -40,7 +40,7 @@ it('manages entries, shows source tasks, and distinguishes local save from sync'
 it('retains an unfinished addition across page unmounts without saving it as a memory', async () => {
   const box = document.body.appendChild(document.createElement('div'))
   let root = createRoot(box)
-  const page = <MemoryPage employeeId="draft-user" endpoint="/memory" accessToken="" onSaved={() => {}} />
+  const page = <MemoryPage employeeId="draft-user" endpoint="/memory" sessionToken="" onSaved={() => {}} />
   try {
     await act(async () => root.render(page))
     await act(async () => [...box.querySelectorAll('button')].find((button) => button.textContent === '添加记忆')!.click())

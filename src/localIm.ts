@@ -32,7 +32,7 @@ export interface LocalImHarnessContext {
   capabilitySnapshot: CapabilitySnapshot
   model: string
   modelApiKey: string
-  accessToken: string
+  sessionToken: string
   allowShell: boolean
   allowLsp: boolean
   allowExternalAgents: boolean

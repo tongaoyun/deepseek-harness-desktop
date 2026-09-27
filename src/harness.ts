@@ -29,7 +29,7 @@ export interface HarnessRunInput {
   model: string
   reasoningEffort?: import('./modelReasoning').ReasoningEffort
   modelApiKey: string
-  accessToken: string
+  sessionToken: string
   localFileRootIds: string[]
   attachments: LocalTaskAttachment[]
 }
@@ -44,7 +44,7 @@ export interface HarnessRunResult {
 export interface ConnectorDiagnosticInput {
   employeeId: string
   connectors: ConnectorRuntimeDefinition[]
-  accessToken: string
+  sessionToken: string
 }
 
 export interface LocalCapabilityCheck {

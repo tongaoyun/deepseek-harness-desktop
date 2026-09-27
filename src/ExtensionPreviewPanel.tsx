@@ -20,7 +20,7 @@ export interface ExtensionPreviewConfig {
   connectors: ConnectorRuntimeDefinition[]
   model: string
   modelApiKey: string
-  accessToken: string
+  sessionToken: string
   localFileRootIds: string[]
   allowShell: boolean
   allowLsp: boolean
@@ -157,7 +157,7 @@ export function ExtensionPreviewPanel({ target, config, unavailableReason, onRun
         scheduleEndpoint: config.scheduleEndpoint,
         model: config.model,
         modelApiKey: config.modelApiKey,
-        accessToken: config.accessToken,
+        sessionToken: config.sessionToken,
         localFileRootIds: target.allowLocalFiles ? config.localFileRootIds : [],
         attachments: [],
       })

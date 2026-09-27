@@ -1,19 +1,19 @@
 import { submitAuditEvent } from './api'
 
 export async function reportTaskAudit({
-  accessToken,
+  sessionToken,
   employeeId,
   endpoint,
   outcome,
   taskId,
 }: {
-  accessToken: string
+  sessionToken: string
   employeeId: string
   endpoint: string
   outcome: 'SUCCEEDED' | 'FAILED' | 'CANCELED'
   taskId: string
 }): Promise<void> {
-  await submitAuditEvent(endpoint, employeeId, accessToken, {
+  await submitAuditEvent(endpoint, employeeId, sessionToken, {
     source: 'DESKTOP',
     category: 'AGENT',
     action: 'desktop.agent.run',

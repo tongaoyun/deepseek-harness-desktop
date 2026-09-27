@@ -27,7 +27,7 @@ const context: LocalImHarnessContext = {
   knowledgeEndpoint: 'http://knowledge', scheduleEndpoint: 'http://schedules',
   capabilitySnapshot: { schemaVersion: 2, createdAt: 'test', selections: [], artifacts: [], implicitArtifacts: [], localTools: [], requestedConnectorIds: [], connectors: [], requestedKnowledgeBaseRefs: [], knowledgeBaseRefs: [] },
   model: 'deepseek-v4-flash', modelApiKey: 'model-key',
-  accessToken: 'employee-token',
+  sessionToken: 'employee-token',
   allowShell: false, allowLsp: false, allowExternalAgents: false, allowHooks: false,
 }
 

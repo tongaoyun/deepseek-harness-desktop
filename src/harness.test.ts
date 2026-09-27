@@ -35,5 +35,5 @@ it('accepts only explicit structured failure metadata', () => {
 it('keeps cancellation, drops and diagnostics safe outside Tauri', async () => {
   await expect(cancelHarness('missing-task')).resolves.toBe(false)
   await expect(authorizeDroppedPaths([])).resolves.toEqual({ directories: [], attachments: [] })
-  await expect(diagnoseConnectors({ employeeId: 'e', connectors: [], accessToken: 't' })).rejects.toThrow('桌面客户端')
+  await expect(diagnoseConnectors({ employeeId: 'e', connectors: [], sessionToken: 't' })).rejects.toThrow('桌面客户端')
 })

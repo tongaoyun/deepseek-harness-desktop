@@ -3,8 +3,8 @@ import { loadBootstrap } from './api'
 import type { BootstrapResponse, RuntimeStatus } from './types'
 
 /** Refresh policy between turns without interrupting work already in flight. */
-export function useEnterpriseBootstrap(employeeId: string | undefined, accessToken: string, refreshKey: number) {
-  const key = JSON.stringify([employeeId, accessToken, refreshKey])
+export function useEnterpriseBootstrap(employeeId: string | undefined, sessionToken: string, refreshKey: number) {
+  const key = JSON.stringify([employeeId, sessionToken, refreshKey])
   const [snapshot, setSnapshot] = useState<{ key: string; bootstrap?: BootstrapResponse; runtimeStatus: RuntimeStatus; error: string }>(
     { key: '', runtimeStatus: 'connecting', error: '' },
   )
@@ -17,7 +17,7 @@ export function useEnterpriseBootstrap(employeeId: string | undefined, accessTok
       if (loading) return
       loading = true
       try {
-        const next = await loadBootstrap(employeeId, accessToken, controller.signal)
+        const next = await loadBootstrap(employeeId, sessionToken, controller.signal)
         if (controller.signal.aborted) return
         if (next.employeeId !== employeeId) throw new Error('控制中心员工身份不匹配')
         setSnapshot((current) => current.key === key ? {
@@ -37,7 +37,7 @@ export function useEnterpriseBootstrap(employeeId: string | undefined, accessTok
     const timer = window.setInterval(onFocus, 60_000)
     window.addEventListener('focus', onFocus)
     return () => { controller.abort(); window.clearInterval(timer); window.removeEventListener('focus', onFocus) }
-  }, [employeeId, accessToken, refreshKey])
+  }, [employeeId, sessionToken, refreshKey])
   return snapshot.key === key
     ? { bootstrap: snapshot.bootstrap, runtimeStatus: snapshot.runtimeStatus, error: snapshot.error }
     : { bootstrap: undefined, runtimeStatus: 'connecting' as RuntimeStatus, error: '' }

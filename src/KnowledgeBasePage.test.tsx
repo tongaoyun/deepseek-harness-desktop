@@ -40,7 +40,7 @@ it('opens creation in a dialog, preserves failed input, and only closes after a 
 })
 async function fixture(check: (container: HTMLDivElement) => Promise<void>) {
   const container = document.body.appendChild(document.createElement('div')); const root = createRoot(container)
-  try { await act(async () => root.render(<KnowledgeBasePage endpoint="/knowledge" employeeId="test" teamId="" accessToken="" />)); await check(container) }
+  try { await act(async () => root.render(<KnowledgeBasePage endpoint="/knowledge" employeeId="test" teamId="" sessionToken="" />)); await check(container) }
   finally { await act(async () => root.unmount()); container.remove() }
 }
 async function click(container: HTMLElement, selector: string) { await act(async () => container.querySelector<HTMLButtonElement>(selector)!.click()) }

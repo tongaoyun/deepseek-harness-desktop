@@ -44,7 +44,7 @@ describe('loadBootstrap', () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify(wire({ sourceId, content: 'current' }))))
       .mockResolvedValueOnce(new Response(null, { status: 404 }))
     vi.stubGlobal('fetch', fetchMock)
-    const context = { endpoint: '/api/v1/knowledge-bases/', employeeId: 'employee', teamId: 'team', accessToken: 'test-token' }
+    const context = { endpoint: '/api/v1/knowledge-bases/', employeeId: 'employee', teamId: 'team', sessionToken: 'test-token' }
     await expect(loadKnowledgeSource(context, sourceId)).resolves.toMatchObject({ sourceId })
     expect(fetchMock.mock.calls[0][0]).toBe(`http://192.168.2.67:30081/api/v1/knowledge-bases/sources/${sourceId}`)
     expect(fetchMock.mock.calls[0][1]).toMatchObject({ headers: { 'X-Xiaoyin-Employee-Id': 'employee', 'X-Xiaoyin-Team-Id': 'team', Authorization: 'Bearer test-token' } })

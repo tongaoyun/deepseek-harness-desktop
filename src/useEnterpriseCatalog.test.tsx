@@ -34,7 +34,7 @@ async function fixture(
   function Probe({ owner }: { owner: string }) {
     // Match the session hook's stable user object.
     const user = users[owner]
-    state = useEnterpriseCatalog({ accessToken: '', bootstrap: withBootstrap ? bootstrap : undefined, enabledConnectorIds, user }); return null
+    state = useEnterpriseCatalog({ sessionToken: '', bootstrap: withBootstrap ? bootstrap : undefined, enabledConnectorIds, user }); return null
   }
   const root = createRoot(document.createElement('div'))
   try { await check(async (owner) => { await act(async () => root.render(<Probe owner={owner} />)) }, () => state) }
@@ -165,7 +165,7 @@ it('hides the previous employee catalog on the first render after an account cha
   const renders: Array<{ owner: string; kits: string[] }> = []
   function Probe({ owner }: { owner: string }) {
     const state = useEnterpriseCatalog({
-      accessToken: '', bootstrap, enabledConnectorIds, user: users[owner] ?? null,
+      sessionToken: '', bootstrap, enabledConnectorIds, user: users[owner] ?? null,
     })
     renders.push({ owner, kits: state.expertKits.map((kit) => kit.id) })
     return null

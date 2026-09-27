@@ -206,13 +206,11 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
   useApplyDesktopPreferences()
   const { confirm: confirmAction, dialog: confirmationDialog, notify, toast } = useDesktopDialog()
   const { sessionToken, authorizing, error: authError, logout, reopen, state: authState, user } = session
-  // API helpers still name their bearer argument accessToken; the session
-  // boundary itself is explicitly a sessionToken.
-  const accessToken = sessionToken
+  const sessionTokenForApi = sessionToken
   const [connectionAttempt, setConnectionAttempt] = useState(0)
   const { bootstrap, runtimeStatus, error: configurationError } = useEnterpriseBootstrap(authState === 'authenticated' ? user?.userId : undefined, sessionToken, connectionAttempt)
   const memoryCommands = useMemoryCommands(confirmAction)
-  useMemorySync(bootstrap ? user?.userId : undefined, bootstrap?.endpoints.memoryProfile ?? '/api/v1/memory-profile', accessToken,
+  useMemorySync(bootstrap ? user?.userId : undefined, bootstrap?.endpoints.memoryProfile ?? '/api/v1/memory-profile', sessionTokenForApi,
     () => notify('记忆存在跨设备修改冲突，请到设置 → 记忆选择版本。本机内容已保留。', 'error'))
   const [prompt, setPrompt] = useState('')
   const [page, setPage] = useState('chat')
@@ -245,7 +243,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
     replaceConnectors,
     skills,
     skillViews,
-  } = useEnterpriseCatalog({ accessToken, bootstrap, enabledConnectorIds, user })
+  } = useEnterpriseCatalog({ sessionToken, bootstrap, enabledConnectorIds, user })
   const [developerKitBusy, setDeveloperKitBusy] = useState(false)
   const localExtensionInstallLock = useRef(false)
   const [installingKitId, setInstallingKitId] = useState('')
@@ -345,12 +343,12 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
     }),
     model: activeModel,
     modelApiKey: bootstrap.modelApiKey,
-    accessToken,
+    sessionToken,
     allowShell,
     allowLsp,
     allowExternalAgents,
     allowHooks,
-  } : undefined, [accessToken, activeModel, allowExternalAgents, allowHooks, allowLsp, allowShell, bootstrap, expertKits, runtimeConnectors, skillViews, user])
+  } : undefined, [sessionToken, activeModel, allowExternalAgents, allowHooks, allowLsp, allowShell, bootstrap, expertKits, runtimeConnectors, skillViews, user])
   const selectCurrentLocalTaskId = (id: string) => {
     currentLocalTaskIdRef.current = id
     setCurrentLocalTaskId(id)
@@ -381,7 +379,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
     })
   useLocalScheduleTools(user ? `${user.userId}:${localScheduleNamespace()}` : undefined, localSchedules, localTasks, runningTaskIds)
   useLocalSkillTools(authState === 'authenticated' && user && bootstrap ? `${user.userId}:${localScheduleNamespace()}` : undefined, {
-    skills: skillViews, employeeId: user?.userId ?? '', endpoint: bootstrap?.endpoints.skills ?? '', accessToken,
+    skills: skillViews, employeeId: user?.userId ?? '', endpoint: bootstrap?.endpoints.skills ?? '', sessionToken,
     refresh: () => refreshInstalledKits(),
   }, localTasks, runningTaskIds)
   const dragActive = useDesktopDrop({
@@ -391,7 +389,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
     onError: setLocalFileError,
   })
   const sendDeviceHeartbeat = useDeviceHeartbeat({
-    accessToken,
+    sessionToken,
     authenticated: authState === 'authenticated',
     bootstrap,
     employeeId: user?.userId,
@@ -900,7 +898,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
   const submitDesktopFeedback = async (message: string, category: 'BUG' | 'SUGGESTION' | 'QUESTION' | 'OTHER', images?: File[]) => {
     if (!bootstrap || !user) throw new Error('企业服务尚未连接')
     const device = await inspectDeviceHeartbeatContext().catch(() => undefined)
-    await submitFeedback(user.userId, accessToken, message, {
+    await submitFeedback(user.userId, sessionToken, message, {
       category,
       desktopVersion: device?.desktopVersion,
       deviceId: device?.deviceId,
@@ -1022,7 +1020,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
         setPrompt('')
         let reply = '未更改长期记忆。'
         try {
-          reply = await memoryCommands.run(memoryCommand, user.userId, bootstrap.endpoints.memoryProfile ?? '/api/v1/memory-profile', accessToken, taskId)
+          reply = await memoryCommands.run(memoryCommand, user.userId, bootstrap.endpoints.memoryProfile ?? '/api/v1/memory-profile', sessionToken, taskId)
         } catch (error) {
           reply = `记忆未更改：${error instanceof Error ? error.message : String(error)}`
         }
@@ -1153,7 +1151,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
       }
       try {
         if (capabilitySnapshot.knowledgeBaseRefs.length > 0) {
-          const currentBases = await loadKnowledgeBases(bootstrap.endpoints.knowledge, user.userId, user.teamId, accessToken)
+          const currentBases = await loadKnowledgeBases(bootstrap.endpoints.knowledge, user.userId, user.teamId, sessionToken)
           assertKnowledgeBaseRefsAvailable(capabilitySnapshot, currentBases.map((item) => item.reference))
         }
       } catch (reason) {
@@ -1213,7 +1211,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
           model: taskModel,
           reasoningEffort: taskReasoningEffort,
           modelApiKey: bootstrap.modelApiKey,
-          accessToken,
+          sessionToken,
           localFileRootIds: taskDirectories.map((directory) => directory.id),
           attachments: messageAttachments,
         }, {
@@ -1270,10 +1268,10 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
         }
         persistLocalTask({ ...runningTask, status: 'COMPLETED', updatedAt: new Date().toISOString(),
           sessionId: result.sessionId, projection: completedProjection, entries: completedEntries })
-        if (!queuedTask) void learnCompletedTask(user.userId, bootstrap.endpoints.memoryProfile ?? '/api/v1/memory-profile', accessToken, input, taskId)
+        if (!queuedTask) void learnCompletedTask(user.userId, bootstrap.endpoints.memoryProfile ?? '/api/v1/memory-profile', sessionToken, input, taskId)
           .catch((error) => notify(`任务已完成，自动记忆未写入：${error instanceof Error ? error.message : String(error)}`, 'error'))
         void reportTaskAudit({
-          accessToken,
+          sessionToken,
           employeeId: user!.userId,
           endpoint: bootstrap.endpoints.auditEvents ?? '/api/v1/audit-events',
           outcome: 'SUCCEEDED',
@@ -1307,7 +1305,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
         }
         if (canceled || infrastructureFailure) await shutdownHarness(taskId).catch(() => undefined)
         void reportTaskAudit({
-          accessToken,
+          sessionToken,
           employeeId: user!.userId,
           endpoint: bootstrap.endpoints.auditEvents ?? '/api/v1/audit-events',
           outcome: canceled ? 'CANCELED' : 'FAILED',
@@ -1459,7 +1457,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
         bootstrap.endpoints.expertKits,
         kit.id,
         user.userId,
-        accessToken,
+        sessionToken,
       )
       if (download.version !== kit.version || download.sha256 !== kit.sha256) {
         throw new Error('专家套件目录在安装期间发生变化，请刷新后重试')
@@ -1490,7 +1488,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
     setInstallingSkillId(skill.id)
     setExpertKitError('')
     try {
-      const download = await createSkillDownload(bootstrap.endpoints.skills, skill.id, user.userId, accessToken)
+      const download = await createSkillDownload(bootstrap.endpoints.skills, skill.id, user.userId, sessionToken)
       if (download.version !== skill.version || download.sha256 !== skill.sha256) {
         throw new Error('技能目录在安装期间发生变化，请刷新后重试')
       }
@@ -1703,7 +1701,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
           <ChatPage
             employeeId={user?.userId}
             sessionId={harnessSessionId}
-            knowledgeContext={bootstrap && user ? { endpoint: resolveServerEndpoint(bootstrap.endpoints.knowledge), employeeId: user.userId, teamId: user.teamId, accessToken } : undefined}
+            knowledgeContext={bootstrap && user ? { endpoint: resolveServerEndpoint(bootstrap.endpoints.knowledge), employeeId: user.userId, teamId: user.teamId, sessionToken } : undefined}
             key={currentLocalTaskId || 'new-task'}
             taskId={currentLocalTaskId}
             fileChangesBusy={runningTaskIds.length > 0}
@@ -1869,7 +1867,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
               query={extensionQuery}
             />}</div>}
             {page === 'settings' && user && <DesktopSettingsPage
-              accessToken={accessToken}
+              sessionToken={sessionToken}
               companyName={user.companyName}
               department={user.department}
               displayName={user.displayName}
@@ -1925,7 +1923,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
                 onDiagnose={async (connectorId) => {
                   const connector = runtimeConnectors.find((item) => item.id === connectorId)
                   if (!connector || !connectorDiagnosticsAvailable()) return undefined
-                  const [result] = await diagnoseConnectors({ employeeId: user?.userId ?? '', accessToken, connectors: [{ ...connector, enabled: true }] })
+                  const [result] = await diagnoseConnectors({ employeeId: user?.userId ?? '', sessionToken, connectors: [{ ...connector, enabled: true }] })
                   return result
                 }}
                 onReauthorizeErp={openDingTalkLogin}
@@ -1933,7 +1931,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
             </>}
             {page === 'knowledge' && bootstrap && user && <KnowledgeBasePage key={`${user.userId}:${bootstrap.endpoints.knowledge}`}
               onChanged={refreshEnterpriseCatalog}
-              accessToken={accessToken}
+              sessionToken={sessionToken}
               employeeId={user.userId}
               teamId={user.teamId}
               endpoint={bootstrap.endpoints.knowledge}
@@ -1949,7 +1947,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
               key={user.userId}
               selectedConversationKey={imConversationKey}
               onSelectConversation={setImConversationKey}
-              accessToken={accessToken}
+              sessionToken={sessionToken}
               employeeId={user.userId}
               teamId={user.teamId}
               capabilitySnapshot={localImContext.capabilitySnapshot}
@@ -1980,7 +1978,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
           ? () => void removeLocalAcceptanceKit(activeExpertKit)
           : activeExpertKit.installed ? () => void removeCatalogArtifact('expert-kit', activeExpertKit.id) : undefined}
         onSchedule={() => { setActiveExpertKitId(''); setPage('schedules') }}
-        onLoadReadme={bootstrap && user ? (id) => loadExpertKitReadme(bootstrap.endpoints.expertKits, id, user.userId, accessToken) : undefined}
+        onLoadReadme={bootstrap && user ? (id) => loadExpertKitReadme(bootstrap.endpoints.expertKits, id, user.userId, sessionToken) : undefined}
         onUse={activeExpertKit.installed?.enabled !== false && activeExpertKit.installState === 'installed' ? (command) => { setActiveExpertKitId(''); startNewTask(`/kit:${activeExpertKit.id}${command ? `:${command}` : ''} `) } : undefined}
         onConfigureConnectors={() => { setActiveExpertKitId(''); setExtensionQuery(''); setPage('connectors') }}
         onConfigureKnowledge={() => { setActiveExpertKitId(''); setPage('knowledge') }}
@@ -2014,7 +2012,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
       {uploadKind && <ExtensionUploadDialog kind={uploadKind} onClose={() => setUploadKind(undefined)} onInstall={(path) => installLocalExtension(uploadKind, 'archive', path)} />}
       {authoringKind === 'connector' && user && <McpConnectorDialog initial={editingConnector ? { ...editingConnector, ...connectorSecrets[editingConnector.id] } : undefined} existingIds={connectors.map((item) => item.id)} onClose={() => { setAuthoringKind(undefined); setEditingConnector(undefined) }} onSave={(connector) => persistPersonalConnector(connector, !editingConnector)} />}
       {authoringKind && authoringKind !== 'connector' && user && <ExtensionAuthoringModal
-        accessToken={accessToken}
+        sessionToken={sessionToken}
         connectors={connectors}
         connectorSecrets={connectorSecrets}
         employeeId={user.userId}
@@ -2032,7 +2030,7 @@ function EmployeeWorkspace({ session }: { session: ReturnType<typeof useEnterpri
           connectors: runtimeConnectors,
           model: activeModel,
           modelApiKey: bootstrap.modelApiKey,
-          accessToken,
+          sessionToken,
           localFileRootIds: localDirectories.map((directory) => directory.id),
           allowShell,
           allowLsp,

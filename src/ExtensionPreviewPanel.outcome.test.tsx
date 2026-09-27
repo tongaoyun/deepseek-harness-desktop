@@ -15,7 +15,7 @@ async function fixture(check: (container: HTMLDivElement, report: ReturnType<typ
   const report = vi.fn()
   const config: ExtensionPreviewConfig = {
     employeeId: 'fixture', teamId: 'team', litellmBaseUrl: 'http://localhost', knowledgeEndpoint: '', scheduleEndpoint: '', connectors: [],
-    model: 'fixture', modelApiKey: '', accessToken: '', localFileRootIds: [],
+    model: 'fixture', modelApiKey: '', sessionToken: '', localFileRootIds: [],
     allowShell: false, allowLsp: false, allowExternalAgents: false, allowHooks: false,
   }
   try {

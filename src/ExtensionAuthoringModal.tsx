@@ -54,7 +54,7 @@ interface Props {
   initialInstructions?: string
   initialConnector?: ConnectorCatalogEntry
   employeeId: string
-  accessToken: string
+  sessionToken: string
   skills: SkillView[]
   connectors: ConnectorCatalogEntry[]
   connectorSecrets: Record<string, ConnectorSecretValues>
@@ -107,7 +107,7 @@ const defaults: AuthoringForm = {
 }
 
 export function ExtensionAuthoringModal({
-  initialKind, initialInstructions = '', initialConnector, employeeId, accessToken, skills, connectors, connectorSecrets, previewConfig,
+  initialKind, initialInstructions = '', initialConnector, employeeId, sessionToken, skills, connectors, connectorSecrets, previewConfig,
   previewUnavailableReason, onPreviewRunningChange, onClose, onChanged,
 }: Props) {
   const { confirm, dialog } = useDesktopDialog()
@@ -140,7 +140,7 @@ export function ExtensionAuthoringModal({
     setError('')
     try {
       const [serverResult, installedResult] = await Promise.allSettled([
-        loadMySubmissions(employeeId, accessToken),
+        loadMySubmissions(employeeId, sessionToken),
         listInstalledExtensions(),
       ])
       if (serverResult.status === 'fulfilled') setSubmissions(serverResult.value)
@@ -296,11 +296,11 @@ export function ExtensionAuthoringModal({
       if (!currentDraftSaved) throw new Error('当前内容有修改，请先重新保存到本机')
       if (kind === 'connector') {
         if (!savedConnector) throw new Error('请先保存到本机，再提交审核')
-        await submitConnector(savedConnector, employeeId, accessToken,
+        await submitConnector(savedConnector, employeeId, sessionToken,
           validationEvidence?.fingerprint === draftFingerprint ? validationEvidence.report : undefined)
       } else {
         if (!created) throw new Error('请先保存到本机，再提交审核')
-        await submitPackage(created.manifest, created.bytes, employeeId, accessToken,
+        await submitPackage(created.manifest, created.bytes, employeeId, sessionToken,
           validationEvidence?.fingerprint === draftFingerprint ? validationEvidence.report : undefined)
       }
       setTab('mine')
@@ -318,10 +318,10 @@ export function ExtensionAuthoringModal({
     try {
       if (local.kind === 'connector') {
         if (!local.connector) throw new Error('本机连接器草稿不存在')
-        await submitConnector(local.connector, employeeId, accessToken)
+        await submitConnector(local.connector, employeeId, sessionToken)
       } else {
         const packaged = await packageDeveloperExtension(local.kind, local.id, local.version)
-        await submitPackage(packaged.installed.manifest, packaged.bytes, employeeId, accessToken)
+        await submitPackage(packaged.installed.manifest, packaged.bytes, employeeId, sessionToken)
       }
       await refreshMine()
     } catch (reason) {
@@ -366,7 +366,7 @@ export function ExtensionAuthoringModal({
       const id = connectorId(form.id.trim() || form.name.trim() || 'connector-draft')
       const [result] = await diagnoseConnectors({
         employeeId,
-        accessToken,
+        sessionToken,
         connectors: [{
           id, name: form.name.trim() || id, version: form.version, status: 'ready', enabled: true,
           transport: form.transport, url: form.url.trim(), authMode: form.authMode, toolNames: [],

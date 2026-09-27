@@ -56,7 +56,7 @@ pub struct HarnessContext {
     capability_snapshot: CapabilitySnapshot,
     model: String,
     model_api_key: String,
-    access_token: String,
+    session_token: String,
     #[serde(default)]
     allow_shell: bool,
     #[serde(default)]
@@ -460,7 +460,7 @@ impl LocalImManager {
             model: context.model,
             reasoning_effort: None,
             memory_context: memory::context(app, &context.employee_id)?,
-            credential_digest: credential_digest(&context.model_api_key, &context.access_token),
+            credential_digest: credential_digest(&context.model_api_key, &context.session_token),
         };
         let mut guard = self
             .process
@@ -478,7 +478,7 @@ impl LocalImManager {
                 app,
                 fingerprint,
                 context.model_api_key,
-                context.access_token,
+                context.session_token,
             )?);
         }
         let result = guard.as_mut().expect("IM Harness process was initialized").request(
@@ -905,7 +905,7 @@ fn validate_harness_context(value: &HarnessContext) -> Result<(), String> {
     {
         return Err("模型访问凭据无效".to_string());
     }
-    if value.access_token.len() > 16 * 1024 || value.access_token.chars().any(char::is_control) {
+    if value.session_token.len() > 16 * 1024 || value.session_token.chars().any(char::is_control) {
         return Err("ERP 访问凭据无效".to_string());
     }
     Ok(())
@@ -955,7 +955,7 @@ mod tests {
             },
             "model": "deepseek-chat",
             "modelApiKey": "model-token",
-            "accessToken": "token"
+            "sessionToken": "token"
         }))
         .expect("IM context should deserialize without authorization");
         assert!(!context.allow_shell);

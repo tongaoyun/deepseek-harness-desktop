@@ -7,7 +7,7 @@ import type { BootstrapResponse, ExpertKitCatalogEntry, SkillCatalogEntry } from
 import type { HarnessHealth } from './useHarnessHealth'
 
 export function useDeviceHeartbeat({
-  accessToken,
+  sessionToken,
   authenticated,
   bootstrap,
   employeeId,
@@ -17,7 +17,7 @@ export function useDeviceHeartbeat({
   runtimeReady,
   skills,
 }: {
-  accessToken: string
+  sessionToken: string
   authenticated: boolean
   bootstrap?: BootstrapResponse
   employeeId?: string
@@ -43,21 +43,21 @@ export function useDeviceHeartbeat({
           .map((key) => key.trim().toLowerCase())
           .filter((key) => /^[a-z][a-z0-9.-]{1,63}$/.test(key))
         await Promise.all([
-          submitDeviceHeartbeat(endpoint, employeeId, accessToken, {
+          submitDeviceHeartbeat(endpoint, employeeId, sessionToken, {
             ...context,
             installedExtensions: installedExtensionSnapshot(installed, [
               ...expertKits.map(({ id, version }) => ({ kind: 'expert-kit' as const, id, version })),
               ...skills.map(({ id, version }) => ({ kind: 'skill' as const, id, version })),
             ]),
           }),
-          submitDeviceCapabilityReport(endpoint, employeeId, accessToken, {
+          submitDeviceCapabilityReport(endpoint, employeeId, sessionToken, {
             ...context,
             capabilities: capabilityKeys.map((key) => capabilityReportEntry(key, harnessHealth, harnessCapabilities, selfTest)),
           }),
         ])
       }
     } catch { /* Device inventory is best effort and must never interrupt employee work. */ }
-  }, [accessToken, authenticated, bootstrap, employeeId, expertKits, harnessCapabilities, harnessHealth, runtimeReady, skills])
+  }, [sessionToken, authenticated, bootstrap, employeeId, expertKits, harnessCapabilities, harnessHealth, runtimeReady, skills])
 
   useEffect(() => {
     if (!authenticated || !runtimeReady || !bootstrap || !employeeId) return

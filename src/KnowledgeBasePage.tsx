@@ -23,15 +23,15 @@ interface KnowledgeBasePageProps {
   endpoint: string
   employeeId: string
   teamId: string
-  accessToken: string
+  sessionToken: string
   onChanged?: () => void
 }
 
 export function KnowledgeBasePage(props: KnowledgeBasePageProps) {
-  return <KnowledgeWorkspace key={JSON.stringify([props.endpoint, props.employeeId, props.teamId, props.accessToken])} {...props} />
+  return <KnowledgeWorkspace key={JSON.stringify([props.endpoint, props.employeeId, props.teamId, props.sessionToken])} {...props} />
 }
 
-function KnowledgeWorkspace({ endpoint, employeeId, teamId, accessToken, onChanged }: KnowledgeBasePageProps) {
+function KnowledgeWorkspace({ endpoint, employeeId, teamId, sessionToken, onChanged }: KnowledgeBasePageProps) {
   const { confirm, dialog } = useDesktopDialog()
   const [bases, setBases] = useState<KnowledgeBaseEntry[]>([])
   const [selectedId, setSelectedId] = useState('')
@@ -50,7 +50,7 @@ function KnowledgeWorkspace({ endpoint, employeeId, teamId, accessToken, onChang
   const [searched, setSearched] = useState(false)
   const [uploadProgress, setUploadProgress] = useState<{ completed: number; total: number; filename: string }>()
   const [failedUploads, setFailedUploads] = useState<{ baseId: string; files: File[] }>()
-  const context = JSON.stringify([endpoint, employeeId, teamId, accessToken])
+  const context = JSON.stringify([endpoint, employeeId, teamId, sessionToken])
   const current = useRef({ context, selectedId })
   current.current = { context, selectedId }
   const documentRequest = useRef(0)
@@ -68,18 +68,18 @@ function KnowledgeWorkspace({ endpoint, employeeId, teamId, accessToken, onChang
   const isCurrent = (baseId = selectedId) => mounted.current && current.current.context === context && current.current.selectedId === baseId
 
   const refreshBases = useCallback(async (signal?: AbortSignal) => {
-    const values = await loadKnowledgeBases(endpoint, employeeId, teamId, accessToken, signal)
+    const values = await loadKnowledgeBases(endpoint, employeeId, teamId, sessionToken, signal)
     if (signal?.aborted || current.current.context !== context) return
     setBases(values)
     setSelectedId((current) => values.some((item) => item.id === current) ? current : values[0]?.id ?? '')
-  }, [accessToken, context, employeeId, endpoint, teamId])
+  }, [sessionToken, context, employeeId, endpoint, teamId])
 
   const refreshDocuments = useCallback(async (signal?: AbortSignal) => {
     if (!selectedId) { setDocuments([]); return }
     const request = ++documentRequest.current
-    const values = await loadKnowledgeDocuments(endpoint, employeeId, teamId, accessToken, selectedId, signal)
+    const values = await loadKnowledgeDocuments(endpoint, employeeId, teamId, sessionToken, selectedId, signal)
     if (!signal?.aborted && request === documentRequest.current && current.current.context === context && current.current.selectedId === selectedId) setDocuments(values)
-  }, [accessToken, context, employeeId, endpoint, selectedId, teamId])
+  }, [sessionToken, context, employeeId, endpoint, selectedId, teamId])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -122,7 +122,7 @@ function KnowledgeWorkspace({ endpoint, employeeId, teamId, accessToken, onChang
     setBusy(true); setError('')
     try {
       createIdempotencyKey.current ??= crypto.randomUUID()
-      const value = await createKnowledgeBase(endpoint, employeeId, teamId, accessToken, {
+      const value = await createKnowledgeBase(endpoint, employeeId, teamId, sessionToken, {
         name: name.trim(), description: description.trim(), referenceKey: '', scope,
       }, createIdempotencyKey.current)
       if (!mounted.current) return
@@ -143,7 +143,7 @@ function KnowledgeWorkspace({ endpoint, employeeId, teamId, accessToken, onChang
     operation.current = true
     setBusy(true); setError('')
     try {
-      await deleteKnowledgeBase(endpoint, employeeId, teamId, accessToken, selected.id)
+      await deleteKnowledgeBase(endpoint, employeeId, teamId, sessionToken, selected.id)
       if (!mounted.current) return
       setBases((current) => current.filter((item) => item.id !== selected.id))
       if (current.current.selectedId === selected.id) { setSelectedId(''); setDocuments([]); setHits([]) }
@@ -173,7 +173,7 @@ function KnowledgeWorkspace({ endpoint, employeeId, teamId, accessToken, onChang
           const fileKey = `${selectedId}|${file.name}|${file.size}|${file.lastModified}`
           const idempotencyKey = uploadIdempotencyKeys.current.get(fileKey) ?? crypto.randomUUID()
           uploadIdempotencyKeys.current.set(fileKey, idempotencyKey)
-          const value = await uploadKnowledgeDocument(endpoint, employeeId, teamId, accessToken, selectedId, file, controller.signal, idempotencyKey)
+          const value = await uploadKnowledgeDocument(endpoint, employeeId, teamId, sessionToken, selectedId, file, controller.signal, idempotencyKey)
           if (current.current.context === context && current.current.selectedId === selectedId) {
             setDocuments((values) => [value, ...values.filter((item) => item.id !== value.id)])
           }
@@ -206,7 +206,7 @@ function KnowledgeWorkspace({ endpoint, employeeId, teamId, accessToken, onChang
     operation.current = true
     setBusy(true); setError('')
     try {
-      await deleteKnowledgeDocument(endpoint, employeeId, teamId, accessToken, document.knowledgeBaseId, document.id)
+      await deleteKnowledgeDocument(endpoint, employeeId, teamId, sessionToken, document.knowledgeBaseId, document.id)
       if (!isCurrent(document.knowledgeBaseId)) return
       documentRequest.current += 1; searchRequest.current += 1
       setDocuments((current) => current.filter((item) => item.id !== document.id))
@@ -222,7 +222,7 @@ function KnowledgeWorkspace({ endpoint, employeeId, teamId, accessToken, onChang
       const key = `${document.knowledgeBaseId}|${document.id}`
       const idempotencyKey = reindexIdempotencyKeys.current.get(key) ?? crypto.randomUUID()
       reindexIdempotencyKeys.current.set(key, idempotencyKey)
-      const value = await reindexKnowledgeDocument(endpoint, employeeId, teamId, accessToken, document.knowledgeBaseId, document.id, idempotencyKey)
+      const value = await reindexKnowledgeDocument(endpoint, employeeId, teamId, sessionToken, document.knowledgeBaseId, document.id, idempotencyKey)
       if (!isCurrent(document.knowledgeBaseId)) return
       reindexIdempotencyKeys.current.delete(key)
       documentRequest.current += 1; searchRequest.current += 1
@@ -238,7 +238,7 @@ function KnowledgeWorkspace({ endpoint, employeeId, teamId, accessToken, onChang
     const request = ++searchRequest.current
     setHits([]); setSearched(false)
     try {
-      const values = await searchKnowledge(endpoint, employeeId, teamId, accessToken, query.trim(), selectedId ? [selectedId] : [])
+      const values = await searchKnowledge(endpoint, employeeId, teamId, sessionToken, query.trim(), selectedId ? [selectedId] : [])
       if (request === searchRequest.current && current.current.context === context && current.current.selectedId === selectedId) { setHits(values); setSearched(true) }
     }
     catch (reason) { if (request === searchRequest.current && isCurrent()) setError(message(reason)) } finally { setBusy(false) }
@@ -284,7 +284,7 @@ function KnowledgeWorkspace({ endpoint, employeeId, teamId, accessToken, onChang
           <button aria-label="删除知识库" className="danger" disabled={busy} onClick={() => void removeBase()} title="删除知识库" type="button"><Trash2 size={14} /></button>
         </div></header>
         <form className="knowledge-search" onSubmit={search}><Search size={16} /><input aria-label="搜索知识库内容" onChange={(event) => { setQuery(event.target.value); searchRequest.current += 1; setHits([]); setSearched(false) }} placeholder="搜索知识库内容" value={query} />{query && <button aria-label="清空检索" title="清空检索" type="button" onClick={() => { setQuery(''); setHits([]); setSearched(false); searchRequest.current += 1 }}><X size={14} /></button>}<button disabled={busy || !query.trim()} type="submit">检索</button></form>
-        {hits.length > 0 && <div className="knowledge-hits"><KnowledgeSources sources={hits} context={{ endpoint, employeeId, teamId, accessToken }} excerpts /></div>}
+        {hits.length > 0 && <div className="knowledge-hits"><KnowledgeSources sources={hits} context={{ endpoint, employeeId, teamId, sessionToken }} excerpts /></div>}
         {searched && hits.length === 0 && <p className="kit-empty" role="status">未找到匹配原文。请检查文档是否已可检索，或换个关键词。</p>}
         <div className={`knowledge-drop-zone${dragging ? ' dragging' : ''}`} onDragEnter={(event) => { event.preventDefault(); setDragging(true) }} onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false) }} onDragOver={(event) => event.preventDefault()} onDrop={dropFiles}>
           <Upload size={17} /><span><strong>拖入文件即可上传</strong><small>一次最多 20 个文件，上传后自动索引</small></span>

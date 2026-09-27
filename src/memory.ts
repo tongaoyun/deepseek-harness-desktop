@@ -89,14 +89,14 @@ export async function loadMemoryHistory(employeeId: string): Promise<MemoryRevis
 export async function loadSyncedMemoryProfile(
   employeeId: string,
   endpoint: string,
-  accessToken: string,
+  sessionToken: string,
 ): Promise<MemoryProfile> {
-  return serialized(employeeId, () => loadSyncedProfile(employeeId, endpoint, accessToken))
+  return serialized(employeeId, () => loadSyncedProfile(employeeId, endpoint, sessionToken))
 }
 
-async function loadSyncedProfile(employeeId: string, endpoint: string, accessToken: string): Promise<MemoryProfile> {
+async function loadSyncedProfile(employeeId: string, endpoint: string, sessionToken: string): Promise<MemoryProfile> {
   const local = await loadMemoryProfile(employeeId)
-  const remote = await requestMemoryProfile(endpoint, employeeId, accessToken).catch(() => undefined)
+  const remote = await requestMemoryProfile(endpoint, employeeId, sessionToken).catch(() => undefined)
   if (local.syncPending) {
     if (remote && memoryContents(remote) === memoryContents(local)) return cacheMemoryProfile(employeeId, { ...remote, syncPending: false, syncConflict: false })
     if (remote && (remote.version ?? 0) !== (local.version ?? 0)) return cacheMemoryProfile(employeeId, { ...local, syncConflict: true })
@@ -129,15 +129,15 @@ export function memoryContents(profile: MemoryProfile): string {
 
 class MemorySyncConflict extends Error {}
 
-async function syncPendingProfile(employeeId: string, endpoint: string, accessToken: string, local: MemoryProfile): Promise<MemoryProfile> {
+async function syncPendingProfile(employeeId: string, endpoint: string, sessionToken: string, local: MemoryProfile): Promise<MemoryProfile> {
   if (local.syncConflict) return local
   try {
-    const remote = await putMemoryProfile(endpoint, employeeId, accessToken, local)
+    const remote = await putMemoryProfile(endpoint, employeeId, sessionToken, local)
     return await cacheMemoryProfile(employeeId, { ...remote, syncPending: false, syncConflict: false })
   } catch (error) {
     if (error instanceof MemorySyncConflict) {
       // A timed-out PUT may already have succeeded. A retry must not create a false conflict.
-      const remote = await requestMemoryProfile(endpoint, employeeId, accessToken).catch(() => undefined)
+      const remote = await requestMemoryProfile(endpoint, employeeId, sessionToken).catch(() => undefined)
       if (remote && memoryContents(remote) === memoryContents(local)) return cacheMemoryProfile(employeeId, { ...remote, syncPending: false, syncConflict: false })
       return cacheMemoryProfile(employeeId, { ...local, syncConflict: true })
     }
@@ -145,21 +145,21 @@ async function syncPendingProfile(employeeId: string, endpoint: string, accessTo
   }
 }
 
-export async function syncMemoryProfile(employeeId: string, endpoint: string, accessToken: string): Promise<MemoryProfile> {
+export async function syncMemoryProfile(employeeId: string, endpoint: string, sessionToken: string): Promise<MemoryProfile> {
   return serialized(employeeId, async () => {
     const local = await loadMemoryProfile(employeeId)
-    return local.syncPending ? syncPendingProfile(employeeId, endpoint, accessToken, local) : loadSyncedProfile(employeeId, endpoint, accessToken)
+    return local.syncPending ? syncPendingProfile(employeeId, endpoint, sessionToken, local) : loadSyncedProfile(employeeId, endpoint, sessionToken)
   })
 }
 
-export async function resolveMemoryConflict(employeeId: string, endpoint: string, accessToken: string, useLocal: boolean, expectedLocalUpdatedAt?: string): Promise<MemoryProfile> {
+export async function resolveMemoryConflict(employeeId: string, endpoint: string, sessionToken: string, useLocal: boolean, expectedLocalUpdatedAt?: string): Promise<MemoryProfile> {
   return serialized(employeeId, async () => {
     const local = await loadMemoryProfile(employeeId)
     if (local.updatedAt !== expectedLocalUpdatedAt) throw new Error('本机记忆又有更新，请重新读取后选择版本')
-    const remote = await requestMemoryProfile(endpoint, employeeId, accessToken)
+    const remote = await requestMemoryProfile(endpoint, employeeId, sessionToken)
     if (!useLocal) return cacheMemoryProfile(employeeId, { ...remote, syncPending: false, syncConflict: false })
     const next = await cacheMemoryProfile(employeeId, { ...local, version: remote.version ?? 0, syncPending: true, syncConflict: false })
-    return syncPendingProfile(employeeId, endpoint, accessToken, next)
+    return syncPendingProfile(employeeId, endpoint, sessionToken, next)
   })
 }
 
@@ -171,18 +171,18 @@ function timestamp(value: string | undefined): number {
 export async function saveSyncedMemoryProfile(
   employeeId: string,
   endpoint: string,
-  accessToken: string,
+  sessionToken: string,
   profile: MemoryProfile,
 ): Promise<MemoryProfile> {
-  return serialized(employeeId, () => saveSyncedProfile(employeeId, endpoint, accessToken, profile))
+  return serialized(employeeId, () => saveSyncedProfile(employeeId, endpoint, sessionToken, profile))
 }
 
-async function saveSyncedProfile(employeeId: string, endpoint: string, accessToken: string, profile: MemoryProfile): Promise<MemoryProfile> {
+async function saveSyncedProfile(employeeId: string, endpoint: string, sessionToken: string, profile: MemoryProfile): Promise<MemoryProfile> {
   validateMemoryProfile(profile)
   const latest = await loadMemoryProfile(employeeId)
   if (latest.updatedAt && latest.updatedAt !== profile.updatedAt) throw new Error('记忆已被其他任务更新，请重新读取后再修改；当前输入仍保留。')
   const local = await saveMemoryProfile(employeeId, profile)
-  return syncPendingProfile(employeeId, endpoint, accessToken, local)
+  return syncPendingProfile(employeeId, endpoint, sessionToken, local)
 }
 
 export function memoryInstruction(input: string): string {
@@ -217,7 +217,7 @@ export function automaticMemoryCandidate(input: string): string | undefined {
   return /^(我习惯|我偏好|我的偏好是|以后请|以后都|今后请|默认请).{2,}/.test(value) ? value : undefined
 }
 
-export async function learnCompletedTask(employeeId: string, endpoint: string, accessToken: string, input: string, taskId: string): Promise<MemoryProfile | undefined> {
+export async function learnCompletedTask(employeeId: string, endpoint: string, sessionToken: string, input: string, taskId: string): Promise<MemoryProfile | undefined> {
   const text = automaticMemoryCandidate(input)
   if (!text) return undefined
   return serialized(employeeId, async () => {
@@ -227,46 +227,46 @@ export async function learnCompletedTask(employeeId: string, endpoint: string, a
     if (relatedMemories(current.entries ?? [], text).length) throw new Error('这条偏好与已有记忆相似，请在记忆设置中确认是否替换')
     const next = upsertMemoryEntry(current, text, '自动记忆 · 用户明确偏好', taskId, 'preference')
     if (next === current) return undefined
-    return saveSyncedProfile(employeeId, endpoint, accessToken, next)
+    return saveSyncedProfile(employeeId, endpoint, sessionToken, next)
   })
 }
 
-export async function changeMemoryEntry(employeeId: string, endpoint: string, accessToken: string, entry: MemoryEntry, replacement?: string): Promise<MemoryProfile> {
+export async function changeMemoryEntry(employeeId: string, endpoint: string, sessionToken: string, entry: MemoryEntry, replacement?: string): Promise<MemoryProfile> {
   return serialized(employeeId, async () => {
-    const current = await loadSyncedProfile(employeeId, endpoint, accessToken)
+    const current = await loadSyncedProfile(employeeId, endpoint, sessionToken)
     if (!current.entries?.some((item) => item.id === entry.id && item.text === entry.text && item.updatedAt === entry.updatedAt)) throw new Error('这条记忆已更新，请重新选择')
     const entries = replacement === undefined ? current.entries.filter((item) => item.id !== entry.id)
       : current.entries.map((item) => item.id === entry.id ? { ...item, text: replacement.trim(), source: '用户对话修改', updatedAt: new Date().toISOString() } : item)
-    return saveSyncedProfile(employeeId, endpoint, accessToken, { ...current, entries })
+    return saveSyncedProfile(employeeId, endpoint, sessionToken, { ...current, entries })
   })
 }
 
-export async function forgetInstruction(employeeId: string, endpoint: string, accessToken: string, text: string): Promise<MemoryProfile> {
+export async function forgetInstruction(employeeId: string, endpoint: string, sessionToken: string, text: string): Promise<MemoryProfile> {
   return serialized(employeeId, async () => {
-    const current = await loadSyncedProfile(employeeId, endpoint, accessToken)
+    const current = await loadSyncedProfile(employeeId, endpoint, sessionToken)
     const entries = (current.entries ?? []).filter((entry) => entry.text !== text)
     if (entries.length === (current.entries ?? []).length) throw new Error('没有找到完全匹配的记忆，请在设置 → 记忆中选择要删除的条目。')
-    return saveSyncedProfile(employeeId, endpoint, accessToken, { ...current, entries })
+    return saveSyncedProfile(employeeId, endpoint, sessionToken, { ...current, entries })
   })
 }
 
 export async function rememberInstruction(
   employeeId: string,
   endpoint: string,
-  accessToken: string,
+  sessionToken: string,
   instruction: string,
   taskId = '',
 ): Promise<MemoryProfile> {
   return serialized(employeeId, async () => {
-    const current = await loadSyncedProfile(employeeId, endpoint, accessToken)
-    return saveSyncedProfile(employeeId, endpoint, accessToken, upsertMemoryEntry(current, instruction, '用户主动记住', taskId))
+    const current = await loadSyncedProfile(employeeId, endpoint, sessionToken)
+    return saveSyncedProfile(employeeId, endpoint, sessionToken, upsertMemoryEntry(current, instruction, '用户主动记住', taskId))
   })
 }
 
-async function requestMemoryProfile(endpoint: string, employeeId: string, accessToken: string): Promise<MemoryProfile> {
+async function requestMemoryProfile(endpoint: string, employeeId: string, sessionToken: string): Promise<MemoryProfile> {
   const response = await fetch(resolveServerEndpoint(endpoint), {
     signal: AbortSignal.timeout(10_000),
-    headers: enterpriseHeaders(employeeId, accessToken),
+    headers: enterpriseHeaders(employeeId, sessionToken),
   })
   if (!response.ok) throw new Error(`记忆同步返回 ${response.status}`)
   const profile: unknown = await readServerData(response)
@@ -277,12 +277,12 @@ async function requestMemoryProfile(endpoint: string, employeeId: string, access
 async function putMemoryProfile(
   endpoint: string,
   employeeId: string,
-  accessToken: string,
+  sessionToken: string,
   profile: MemoryProfile,
 ): Promise<MemoryProfile> {
   const response = await fetch(resolveServerEndpoint(endpoint), {
     signal: AbortSignal.timeout(10_000),
-    method: 'PUT', headers: { ...enterpriseHeaders(employeeId, accessToken), 'Content-Type': 'application/json' },
+    method: 'PUT', headers: { ...enterpriseHeaders(employeeId, sessionToken), 'Content-Type': 'application/json' },
     body: JSON.stringify({ enabled: profile.enabled, collaborationStyle: profile.collaborationStyle, workManual: profile.workManual, automaticMemory: profile.automaticMemory ?? false, entries: profile.entries ?? [], expectedVersion: profile.version ?? 0 }),
   })
   if (response.status === 409) throw new MemorySyncConflict('记忆版本冲突')
@@ -292,10 +292,10 @@ async function putMemoryProfile(
   return saved
 }
 
-function enterpriseHeaders(employeeId: string, accessToken: string): Record<string, string> {
+function enterpriseHeaders(employeeId: string, sessionToken: string): Record<string, string> {
   return {
     'X-Xiaoyin-Employee-Id': employeeId,
     'X-Requested-With': 'XMLHttpRequest',
-    ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+    ...(sessionToken ? { Authorization: `Bearer ${sessionToken}` } : {}),
   }
 }
