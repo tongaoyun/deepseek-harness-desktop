@@ -69,6 +69,10 @@ try {
   runtime = new DeepSeekHarnessRuntime(environment)
   const rebuilt = await runtime.searchSessions([initial.sessionId], 'PERSISTED', 10)
   assert(rebuilt.items.some((item) => item.sessionId === initial.sessionId), 'Derived search index was not rebuilt from Session JSONL')
+  // The official query backend commits its rebuilt SQLite index during
+  // context disposal. Allow the writer to settle before the next official
+  // Session Controller process adopts the same persisted identity.
+  await new Promise((resolve) => setTimeout(resolve, 250))
   phase = 'restored'
   const restored = await runtime.run({ sessionId: initial.sessionId, prompt: '继续第一轮任务。' }, () => {})
   assert.equal(restored.sessionId, initial.sessionId)
