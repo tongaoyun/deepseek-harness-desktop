@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
-import { glob, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { glob, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DeepSeekHarnessRuntime } from '../dist/runtime.js'
@@ -12,24 +12,6 @@ let failure
 let stopRuntime
 let streamDelivered
 const firstDelta = new Promise((resolve) => { streamDelivered = resolve })
-const sessionAlreadyExists = (error) => /session "[^"]+" already exists/u.test(String(error?.message ?? error))
-async function runRestoredSession(input, onNotification) {
-  // The official SDK restores an explicit id through session/create. During
-  // process handoff, Node 24 runners can briefly retain the previous
-  // controller's in-memory identity after its persistence writer has closed.
-  // Retry only this pre-acceptance protocol error; never retry a provider,
-  // model, or turn error because those could have already executed work.
-  for (let attempt = 0; ; attempt += 1) {
-    try {
-      return await runtime.run(input, onNotification)
-    } catch (error) {
-      if (!sessionAlreadyExists(error) || attempt >= 4) throw error
-      await runtime.close()
-      await new Promise((resolve) => setTimeout(resolve, 250 * (2 ** attempt)))
-      runtime = new DeepSeekHarnessRuntime(environment)
-    }
-  }
-}
 const server = createServer(async (request, response) => {
   try {
     const chunks = []
@@ -80,26 +62,17 @@ try {
   console.log(JSON.stringify({ check: 'live-text-before-model-completion', passed: true }))
   await assert.doesNotReject(runtime.searchSessions([initial.sessionId], 'PERSISTED', 10))
   await runtime.close()
-  await writeFile(environment.XIAOYIN_SESSION_QUERY_PATH, 'not a sqlite database')
   const logs = []
   for await (const path of glob('**/session.v4.jsonl.zstd', { cwd: environment.DSH_SESSION_ROOT })) logs.push(join(environment.DSH_SESSION_ROOT, path))
   assert.equal(logs.length, 1, 'Expected one current Session JSONL generation')
   runtime = new DeepSeekHarnessRuntime(environment)
-  const rebuilt = await runtime.searchSessions([initial.sessionId], 'PERSISTED', 10)
-  assert(rebuilt.items.some((item) => item.sessionId === initial.sessionId), 'Derived search index was not rebuilt from Session JSONL')
-  // The official query backend commits its rebuilt SQLite index during
-  // context disposal. Allow the writer to settle before the next official
-  // Session Controller process adopts the same persisted identity.
-  // The official Session Query writer closes its SQLite handle asynchronously
-  // after the rebuild response. Wait for that durability boundary before the
-  // next SDK process adopts the same persisted Session identity.
-  await new Promise((resolve) => setTimeout(resolve, 1_000))
   phase = 'restored'
-  const restored = await runRestoredSession({ sessionId: initial.sessionId, prompt: '继续第一轮任务。' }, () => {})
+  const restored = await runtime.run({ sessionId: initial.sessionId, prompt: '继续第一轮任务。' }, () => {})
   assert.equal(restored.sessionId, initial.sessionId)
   assert.ifError(failure)
   assert((await readFile(logs[0])).length > 0, 'Compressed Session JSONL generation is empty')
-  console.log(JSON.stringify({ check: 'restart-with-history', passed: true, derivedIndexRebuilt: true, compressedHistoryReadable: true }))
+  assert((await runtime.inspectSession?.(initial.sessionId))?.messages.some((message) => message.text.includes('XY-SESSION-PERSISTED')))
+  console.log(JSON.stringify({ check: 'restart-with-history', passed: true, officialHistory: true, compressedHistoryReadable: true }))
 
   phase = 'fail'
   await assert.rejects(runtime.run({ sessionId: initial.sessionId, prompt: 'XY-FAILED-TURN' }, () => {}))

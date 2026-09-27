@@ -971,46 +971,21 @@ async function searchOfficialSessionsOnce(sessionIds: string[], query: string, l
     await context.plugin(SessionStore)
     await context.plugin(SessionProjectionRegistry)
     await context.plugin(JsonlSessionPersistence, { root, compression: 'zstd' })
-    await context.plugin(SqliteSessionQueryEngine, {
-      path: queryPath,
-      openAt: 'first-search',
-      defaultLimit: boundedLimit,
-      maxLimit: boundedLimit,
-    })
-    // The upstream unicode61 FTS index matches tokens, not substrings within
-    // CJK text. Its own literal filter is the appropriate scan path here.
-    if (/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u.test(query)) {
-      return await searchCjkSessions(context, ids, query.trim(), boundedLimit, cursor)
-    }
+    await context.plugin(SqliteSessionQueryEngine, { path: queryPath, openAt: 'first-search', defaultLimit: boundedLimit, maxLimit: boundedLimit })
+    if (/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u.test(query)) return await searchCjkSessions(context, ids, query.trim(), boundedLimit, cursor)
     const page = await context.sessionQuery.searchSessions({
       query: query.trim(),
       sessionFilters: [{ kind: 'id', values: ids.map((id) => SessionId(id)) }],
       limit: boundedLimit,
-      // The provider owns the opaque cursor brand; the host only transports it.
       ...(cursor ? { cursor: cursor as never } : {}),
     })
     return {
-      items: page.items.map((hit) => ({
-      sessionId: String(hit.header.id),
-      updatedAt: new Date(hit.bestMatch.time).toISOString(),
-      excerpt: hit.bestMatch.snippet,
-      })),
+      items: page.items.map((hit) => ({ sessionId: String(hit.header.id), updatedAt: new Date(hit.bestMatch.time).toISOString(), excerpt: hit.bestMatch.snippet })),
       ...(page.nextCursor ? { nextCursor: String(page.nextCursor) } : {}),
     }
   } finally {
-    try {
-      await disposeCordisContext(context)
-    } finally {
-      await indexLock.close()
-    }
+    try { await disposeCordisContext(context) } finally { await indexLock.close() }
   }
-}
-
-/** Cordis owns async plugin cleanup on the root Fiber, not Context itself. */
-async function disposeCordisContext(context: Context | undefined): Promise<void> {
-  if (context === undefined) return
-  const fiber = (context as unknown as { fiber?: { dispose?: () => Promise<void> } }).fiber
-  await fiber?.dispose?.()
 }
 
 async function searchCjkSessions(context: Context, ids: string[], query: string, limit: number, cursor?: string): Promise<SessionSearchPage> {
@@ -1018,9 +993,7 @@ async function searchCjkSessions(context: Context, ids: string[], query: string,
   let offset = 0
   if (cursor !== undefined) {
     const parsed = /^scan-v1:([1-9]\d*):([a-f0-9]{64})$/u.exec(cursor)
-    if (!parsed || parsed[2] !== fingerprint || !Number.isSafeInteger(Number(parsed[1])) || Number(parsed[1]) >= ids.length) {
-      throw new Error('Session search cursor is invalid for this query')
-    }
+    if (!parsed || parsed[2] !== fingerprint || !Number.isSafeInteger(Number(parsed[1])) || Number(parsed[1]) >= ids.length) throw new Error('Session search cursor is invalid for this query')
     offset = Number(parsed[1])
   }
   const items: SessionSearchHit[] = []
@@ -1028,36 +1001,22 @@ async function searchCjkSessions(context: Context, ids: string[], query: string,
   while (offset < ids.length && items.length < limit) {
     const batch = ids.slice(offset, offset + 4)
     const matchesBySession = await Promise.all(batch.map(async (sessionId) => {
-      try {
-        return await context.sessionQuery.filterEvents(SessionId(sessionId), [{ kind: 'text', text: query }])
-      } catch (error) {
-        if (error && typeof error === 'object' && 'code' in error && error.code === 'SESSION_QUERY_SESSION_NOT_FOUND') return []
-        throw error
-      }
+      try { return await context.sessionQuery.filterEvents(SessionId(sessionId), [{ kind: 'text', text: query }]) }
+      catch (error) { if (error && typeof error === 'object' && 'code' in error && error.code === 'SESSION_QUERY_SESSION_NOT_FOUND') return []; throw error }
     }))
     for (const matches of matchesBySession) {
       const sessionId = ids[offset++]!
       const match = matches.at(-1)
       if (match) {
         const index = match.text.toLocaleLowerCase().indexOf(lowerQuery)
-        const excerpt = match.text.slice(Math.max(0, index - 60), Math.max(0, index - 60) + 240)
-        items.push({ sessionId, updatedAt: new Date(match.time).toISOString(), excerpt })
+        items.push({ sessionId, updatedAt: new Date(match.time).toISOString(), excerpt: match.text.slice(Math.max(0, index - 60), Math.max(0, index - 60) + 240) })
       }
       if (items.length >= limit) break
     }
   }
-  return {
-    items,
-    ...(offset < ids.length ? { nextCursor: `scan-v1:${offset}:${fingerprint}` } : {}),
-  }
+  return { items, ...(offset < ids.length ? { nextCursor: `scan-v1:${offset}:${fingerprint}` } : {}) }
 }
 
-/**
- * Another process creating the shared derived index is a race, not a foreign
- * database: the file carries our schema tables before its application id is
- * committed. Only that case is retried, so a genuinely foreign file still
- * fails fast and is never overwritten.
- */
 async function isIndexCreationRace(error: unknown, env: NodeJS.ProcessEnv): Promise<boolean> {
   if (!/is not an empty or recognized derived index/iu.test(String((error as { message?: unknown } | undefined)?.message ?? error))) return false
   const queryPath = resolve(env.XIAOYIN_SESSION_QUERY_PATH ?? resolve(env.DSH_HOME ?? '.dsh', 'session-query.sqlite'))
@@ -1067,23 +1026,25 @@ async function isIndexCreationRace(error: unknown, env: NodeJS.ProcessEnv): Prom
     try {
       const rows = database.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{ name?: unknown }>
       return rows.some((row) => ['persisted_sessions', 'search_state', 'persisted_docs'].includes(String(row.name)))
-    } finally {
-      database.close()
-    }
-  } catch {
-    return false
-  }
+    } finally { database.close() }
+  } catch { return false }
 }
 
 function isTransientSessionQueryIndexError(error: unknown): boolean {
   let current: unknown = error
   for (let depth = 0; current !== undefined && depth < 6; depth += 1) {
     const value = current as { message?: unknown; cause?: unknown }
-    // A second process can observe the upstream index while its tables are still being created.
     if (/database is locked|database table is locked|SQLITE_BUSY|no such table: (?:persisted_sessions|search_state|persisted_docs)/iu.test(String(value?.message ?? current))) return true
     current = value?.cause
   }
   return false
+}
+
+/** Cordis owns async plugin cleanup on the root Fiber, not Context itself. */
+async function disposeCordisContext(context: Context | undefined): Promise<void> {
+  if (context === undefined) return
+  const fiber = (context as unknown as { fiber?: { dispose?: () => Promise<void> } }).fiber
+  await fiber?.dispose?.()
 }
 
 /** Rebuild the product transcript from the Harness surface, never from a second local store. */
