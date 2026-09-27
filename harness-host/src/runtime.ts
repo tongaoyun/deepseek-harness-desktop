@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { createRequire } from 'node:module'
 import { dirname, resolve, join } from 'node:path'
-import { lstat, mkdir, open, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, open, rm, symlink } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { setTimeout as delay } from 'node:timers/promises'
 import { Context } from '@deepseek-ai/cordis'
@@ -141,23 +141,6 @@ export async function ensureExternalHarnessPlugins(env: NodeJS.ProcessEnv): Prom
       }
     }
   }
-}
-
-/**
- * Install Xiaoyin's product policy as the official sdk profile layer. The
- * Harness launcher owns profile composition; the desktop only supplies this
- * deployment-owned overlay and never patches an upstream package.
- */
-async function installProductProfile(env: NodeJS.ProcessEnv): Promise<void> {
-  const dshHome = env.DSH_HOME?.trim()
-  // Unit tests and direct library consumers may intentionally run without an
-  // isolated home; the desktop launcher always provides one.
-  if (!dshHome) return
-  const source = env.DSH_CORDIS_CONFIG?.trim() || resolve(moduleDirectory, '../runtime/cordis.yml')
-  const target = join(resolve(dshHome), 'profiles', 'sdk', 'cordis.patch.yml')
-  const content = await readFile(source, 'utf8')
-  await mkdir(dirname(target), { recursive: true })
-  await writeFile(target, content, 'utf8')
 }
 
 export function hasConfiguredLspServers(value: string | undefined): boolean {
@@ -317,7 +300,6 @@ export class DeepSeekHarnessRuntime implements HarnessRuntime {
       assertHarnessDependencyClosure()
       const env = this.environment()
       await ensureExternalHarnessPlugins(env)
-      await installProductProfile(env)
       await this.getOrCreateHarness().start()
       this.initialized = true
     } catch (error) {
