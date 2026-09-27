@@ -866,8 +866,7 @@ async function inspectOfficialSession(sessionId: string, env: NodeJS.ProcessEnv 
   } catch {
     return undefined
   } finally {
-    const dispose = (context as unknown as { dispose?: () => Promise<void> } | undefined)?.dispose
-    if (dispose) await dispose.call(context)
+    await disposeCordisContext(context)
   }
 }
 
@@ -1000,12 +999,18 @@ async function searchOfficialSessionsOnce(sessionIds: string[], query: string, l
     }
   } finally {
     try {
-      const dispose = (context as unknown as { dispose?: () => Promise<void> }).dispose
-      if (dispose) await dispose.call(context)
+      await disposeCordisContext(context)
     } finally {
       await indexLock.close()
     }
   }
+}
+
+/** Cordis owns async plugin cleanup on the root Fiber, not Context itself. */
+async function disposeCordisContext(context: Context | undefined): Promise<void> {
+  if (context === undefined) return
+  const fiber = (context as unknown as { fiber?: { dispose?: () => Promise<void> } }).fiber
+  await fiber?.dispose?.()
 }
 
 async function searchCjkSessions(context: Context, ids: string[], query: string, limit: number, cursor?: string): Promise<SessionSearchPage> {
