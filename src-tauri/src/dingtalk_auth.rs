@@ -635,15 +635,15 @@ pub(crate) async fn clear_dingtalk_session(app: tauri::AppHandle) -> Result<(), 
     }
     crate::schedule_desktop::stop_keep_awake();
     let store = access_token_store(&app)?;
-    if let Ok(Some(snapshot)) = store.load() {
-        if let Ok(base) = control_plane_url() {
-            let _ = reqwest::Client::new()
-                .delete(format!("{base}/api/v1/employee-auth/session"))
-                .header("Authorization", format!("Bearer {}", snapshot.access_token))
-                .header("X-Requested-With", "XMLHttpRequest")
-                .send()
-                .await;
-        }
+    if let Ok(Some(snapshot)) = store.load()
+        && let Ok(base) = control_plane_url()
+    {
+        let _ = reqwest::Client::new()
+            .delete(format!("{base}/api/v1/employee-auth/session"))
+            .header("Authorization", format!("Bearer {}", snapshot.access_token))
+            .header("X-Requested-With", "XMLHttpRequest")
+            .send()
+            .await;
     }
     tauri::async_runtime::spawn_blocking(move || store.clear())
         .await

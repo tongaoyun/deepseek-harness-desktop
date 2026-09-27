@@ -49,6 +49,7 @@ jobs:
       NPM_CONFIG_UPDATE_NOTIFIER: "false"
       PNPM_STORE_DIR: C:\xiaoyin-desktop-builder\pnpm-store
       XIAOYIN_PRIMARY_RUNTIME_MIRROR: http://192.168.2.66:3300/api/packages/instudio/generic/xiaoyin-primary-runtime
+      XIAOYIN_PRIMARY_RUNTIME_SOURCE_MIRROR: http://192.168.2.66:3300/api/packages/instudio/generic/xiaoyin-primary-runtime-source/0.1.7-rc.2
     steps:
       - name: 检出代码
         uses: http://192.168.2.66:3300/instudio/checkout@v4

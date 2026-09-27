@@ -72,7 +72,10 @@ try {
   // The official query backend commits its rebuilt SQLite index during
   // context disposal. Allow the writer to settle before the next official
   // Session Controller process adopts the same persisted identity.
-  await new Promise((resolve) => setTimeout(resolve, 250))
+  // The official Session Query writer closes its SQLite handle asynchronously
+  // after the rebuild response. Wait for that durability boundary before the
+  // next SDK process adopts the same persisted Session identity.
+  await new Promise((resolve) => setTimeout(resolve, 1_000))
   phase = 'restored'
   const restored = await runtime.run({ sessionId: initial.sessionId, prompt: '继续第一轮任务。' }, () => {})
   assert.equal(restored.sessionId, initial.sessionId)

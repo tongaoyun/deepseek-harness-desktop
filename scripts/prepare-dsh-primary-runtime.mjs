@@ -11,6 +11,7 @@ const repository = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 // upstream files at build time instead of copying their source into Xiaoyin.
 const officialCommit = '477b4f420553e8a52c2fbccc464d7561b239c443'
 const officialBaseUrl = `https://raw.githubusercontent.com/deepseek-ai/deepseek-harness/${officialCommit}`
+const sourceMirror = process.env.XIAOYIN_PRIMARY_RUNTIME_SOURCE_MIRROR?.trim()
 const upstreamFiles = {
   'scripts/primary-runtime/prepare.ts': '510f2ac2579ee348a98760faddee5e13e65b8bd0b759ce10f25d8cf74febd306',
   'scripts/primary-runtime/lock.json': '733c3c53d95ae524bddb123e1319c48ecacb0dc729be956c25188f930c095bd5',
@@ -21,13 +22,15 @@ const values = parseArguments(process.argv.slice(2))
 const staging = await mkdtemp(join(repository, 'scripts', '.primary-runtime-'))
 try {
   for (const [sourcePath, sha256] of Object.entries(upstreamFiles)) {
-    const response = await fetch(`${officialBaseUrl}/${sourcePath}`)
+    const sourceName = sourcePath.split('/').pop()
+    if (!sourceName) throw new Error(`Invalid official source path: ${sourcePath}`)
+    const sourceUrl = sourceMirror ? `${sourceMirror}/${encodeURIComponent(sourceName)}` : `${officialBaseUrl}/${sourcePath}`
+    const response = await fetchWithRetry(sourceUrl)
     if (!response.ok) throw new Error(`Official Primary Runtime source download failed: ${response.status} ${sourcePath}`)
     const bytes = Buffer.from(await response.arrayBuffer())
     const actual = createHash('sha256').update(bytes).digest('hex')
     if (actual !== sha256) throw new Error(`Official ${sourcePath} SHA-256 mismatch`)
-    const name = sourcePath.split('/').pop()
-    if (!name) throw new Error(`Invalid official source path: ${sourcePath}`)
+    const name = sourceName
     let content = bytes.toString('utf8')
     if (name === 'prepare.ts') {
       content = adaptOfficialCarrierSource(content)
@@ -43,6 +46,22 @@ try {
   ], { cwd: repository, stdio: 'inherit', timeout: 30 * 60_000 })
 } finally {
   await rm(staging, { recursive: true, force: true })
+}
+
+async function fetchWithRetry(url) {
+  let lastError
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      const response = await fetch(url, { signal: AbortSignal.timeout(30_000) })
+      if (response.ok || attempt === 3) return response
+      lastError = new Error(`HTTP ${response.status}`)
+    } catch (error) {
+      lastError = error
+      if (attempt === 3) throw error
+    }
+    await new Promise((resolve) => setTimeout(resolve, attempt * 1_000))
+  }
+  throw lastError ?? new Error('Official Primary Runtime source download failed')
 }
 
 function adaptOfficialCarrierSource(source) {
