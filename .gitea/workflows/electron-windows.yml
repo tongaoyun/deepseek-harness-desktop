@@ -27,6 +27,7 @@ jobs:
       NPM_CONFIG_FETCH_TIMEOUT: 120000
       NPM_CONFIG_UPDATE_NOTIFIER: "false"
       NPM_CONFIG_ELECTRON_MIRROR: https://cdn.npmmirror.com/binaries/electron/
+      DSH_DESKTOP_NPM_REGISTRY: https://registry.npmmirror.com/
       PNPM_STORE_DIR: C:\xiaoyin-desktop-builder\pnpm-store-electron
     steps:
       - name: Checkout

@@ -63,6 +63,11 @@ describe('Xiaoyin Electron workflows', () => {
     expect(source).toContain('NPM_CONFIG_ELECTRON_MIRROR: https://cdn.npmmirror.com/binaries/electron/')
   })
 
+  it('materializes the Windows application runtime from the reachable npm mirror', () => {
+    const source = readFileSync(resolve(import.meta.dirname, '..', '.gitea', 'workflows', 'electron-windows.yml'), 'utf8')
+    expect(source).toContain('DSH_DESKTOP_NPM_REGISTRY: https://registry.npmmirror.com/')
+  })
+
   it('fetches the pinned upstream tag before verifying its commit', () => {
     const steps = workflow('electron-ci.yml').jobs.desktop?.steps ?? []
     const fetch = steps.find(step => step.name === 'Fetch pinned Harness upstream')?.run ?? ''
