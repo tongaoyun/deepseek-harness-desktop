@@ -5,6 +5,10 @@ export const NS = 'xiaoyinProduct'
 export const zh = {
   title: '小胤产品',
   unavailable: '产品服务未连接',
+  authRequired: '需要登录企业钉钉后才能使用专家套件、技能、连接器和知识库。',
+  signIn: '使用钉钉登录',
+  signInFailed: '钉钉登录未完成，请重试。',
+  loadFailed: '产品目录暂时无法加载，请稍后重试。',
   loading: '加载中…',
   empty: '暂无数据',
   expertKits: '专家套件',
@@ -22,6 +26,10 @@ export const zh = {
 export const en = {
   title: 'Xiaoyin products',
   unavailable: 'Product services unavailable',
+  authRequired: 'Sign in with your organization DingTalk account to use product capabilities.',
+  signIn: 'Sign in with DingTalk',
+  signInFailed: 'DingTalk sign-in did not complete. Try again.',
+  loadFailed: 'Product catalogs are temporarily unavailable. Try again later.',
   loading: 'Loading…',
   empty: 'No data',
   expertKits: 'Expert kits',

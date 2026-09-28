@@ -7,7 +7,11 @@ import { useEffect, useState } from 'react'
 import { en, NS, zh, type XiaoyinProductKey } from '../locales.ts'
 import css from '../ProductPanel.module.css'
 
-type ProductApi = { invoke(method: string, payload?: unknown): Promise<unknown> }
+type ProductSession = { readonly authenticated?: boolean }
+type ProductApi = {
+  invoke(method: string, payload?: unknown): Promise<unknown>
+  getSession(): Promise<ProductSession>
+}
 type ProductWindow = { xiaoyin?: { product?: ProductApi } }
 type ProductKey = 'expertKits' | 'skills' | 'connectors' | 'knowledge' | 'schedules' | 'im'
 type ProductItem = { readonly id: string; readonly label: string; readonly description?: string }
@@ -37,17 +41,37 @@ export function ProductPanel(props: PropsRuntime<'sidebar.footer.action'> & Prop
   const [selected, setSelected] = useState<ProductKey>('expertKits')
   const [error, setError] = useState<string>()
   const [loading, setLoading] = useState(false)
+  const [authRequired, setAuthRequired] = useState(false)
   const t = props.t
   const refresh = async (): Promise<void> => {
     const api = (globalThis as ProductWindow).xiaoyin?.product
     if (api === undefined) { setError(t('unavailable')); return }
     setLoading(true); setError(undefined)
     try {
+      const session = await api.getSession()
+      if (session.authenticated !== true) {
+        setAuthRequired(true)
+        setCatalog({})
+        return
+      }
+      setAuthRequired(false)
       const next: ProductCatalog = {}
       for (const [key, method] of Object.entries(METHODS) as [ProductKey, string][]) next[key] = items(await api.invoke(method))
       setCatalog(next)
-    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
+    } catch { setError(t('loadFailed')) }
     finally { setLoading(false) }
+  }
+  const signIn = async (): Promise<void> => {
+    const api = (globalThis as ProductWindow).xiaoyin?.product
+    if (api === undefined) { setError(t('unavailable')); return }
+    setLoading(true); setError(undefined)
+    try {
+      await api.invoke('auth.ensureDingTalk')
+      await refresh()
+    } catch {
+      setAuthRequired(true)
+      setError(t('signInFailed'))
+    } finally { setLoading(false) }
   }
   useEffect(() => { if (open) void refresh() }, [open])
   if (!open) return <button className={css.trigger} type="button" title={t('open')} onClick={() => { setOpen(true) }}>{t('title')}</button>
@@ -60,7 +84,11 @@ export function ProductPanel(props: PropsRuntime<'sidebar.footer.action'> & Prop
     <div className={css.header}><span>{t('title')}</span><div className={css.headerActions}><button className={css.refresh} type="button" onClick={() => { void refresh() }} aria-label={t('refresh')}>↻</button><button className={css.refresh} type="button" onClick={() => { setOpen(false) }} aria-label={t('close')}>×</button></div></div>
     {loading && <div>{t('loading')}</div>}
     {error !== undefined && <div className={css.error}>{error}</div>}
-    {!loading && error === undefined && <>
+    {!loading && authRequired && <div className={css.auth}>
+      <span>{t('authRequired')}</span>
+      <button className={css.primary} type="button" onClick={() => { void signIn() }}>{t('signIn')}</button>
+    </div>}
+    {!loading && !authRequired && error === undefined && <>
       <div className={css.sections}>{sections.map(([key, label]) => <button className={`${css.section} ${selected === key ? css.selected : ''}`} type="button" key={key} onClick={() => { setSelected(key) }}><span>{t(label)}</span><span className={css.count}>{catalog[key]?.length ?? 0}</span></button>)}</div>
       <div className={css.list} aria-live="polite">{selectedItems.length === 0 ? <div className={css.empty}>{t('empty')}</div> : selectedItems.map(item => <div className={css.item} key={item.id}><strong>{item.label}</strong>{item.description !== undefined && <span>{item.description}</span>}</div>)}</div>
     </>}

@@ -6,6 +6,7 @@ export const PRODUCT_PROTOCOL = 'xiaoyin.native.v1' as const
 /** Allowlisted product and native sidecar operations. */
 export type ProductMethod =
   | 'auth.getSession'
+  | 'auth.ensureDingTalk'
   | 'auth.beginDingTalk'
   | 'auth.pollDingTalk'
   | 'auth.refresh'
@@ -75,7 +76,7 @@ export interface ProductEvent {
  */
 export function isProductMethod(value: unknown): value is ProductMethod {
   return typeof value === 'string' && [
-    'auth.getSession', 'auth.beginDingTalk', 'auth.pollDingTalk', 'auth.refresh', 'bootstrap.get', 'expertKits.list',
+    'auth.getSession', 'auth.ensureDingTalk', 'auth.beginDingTalk', 'auth.pollDingTalk', 'auth.refresh', 'bootstrap.get', 'expertKits.list',
     'skills.list', 'connectors.list', 'knowledge.bases.list', 'schedules.list',
     'im.channels.list', 'artifacts.list', 'native.filesystem.list', 'native.filesystem.read',
     'native.filesystem.write', 'native.secure-storage.get', 'native.secure-storage.set', 'native.secure-storage.delete',

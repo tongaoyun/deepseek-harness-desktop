@@ -442,11 +442,7 @@ async function main(): Promise<void> {
   const ensureXiaoyinAuth = (): Promise<void> => {
     xiaoyinAuthAttempt ??= ensureDingTalkSession(productBridge, async (url) => {
       await shell.openExternal(url)
-    }).then(() => undefined).catch((error: unknown) => {
-      // Product authentication is independent from the official Harness account. Keep the
-      // workspace available for local development, while the product panel can retry explicitly.
-      console.error('xiaoyin DingTalk authentication unavailable', error)
-    }).finally(() => { xiaoyinAuthAttempt = undefined })
+    }).then(() => undefined).finally(() => { xiaoyinAuthAttempt = undefined })
     return xiaoyinAuthAttempt
   }
   const assertProductSender = (event: IpcMainInvokeEvent): void => {
@@ -597,7 +593,11 @@ async function main(): Promise<void> {
   const reconcileBackend = (): Promise<void> => {
     startup ??= (async () => {
       await nativeSidecar.start()
-      void ensureXiaoyinAuth()
+      // Product authentication is independent from the official Harness account. Keep the
+      // workspace available while the product panel presents a localized retry action.
+      void ensureXiaoyinAuth().catch((error: unknown) => {
+        console.error('xiaoyin DingTalk authentication unavailable', error)
+      })
       const document = navigateMain(applicationUrl)
       const host = backend.start(async () => {
         await manager.applyRelease()
@@ -746,6 +746,10 @@ async function main(): Promise<void> {
   })
   ipcMain.handle(DESKTOP_IPC.productInvoke, async (event, method: unknown, payload: unknown) => {
     assertProductSender(event)
+    if (method === 'auth.ensureDingTalk') {
+      await ensureXiaoyinAuth()
+      return productBridge.getSession()
+    }
     const result = await productBridge.invoke(method, payload)
     if (method === 'auth.beginDingTalk' && typeof result === 'object' && result !== null
       && 'authorizationUrl' in result && typeof result.authorizationUrl === 'string') {

@@ -14,6 +14,9 @@
 .refresh { border: 0; background: transparent; color: inherit; cursor: pointer; padding: 4px; border-radius: 5px; }
 .refresh:hover { background: var(--dsh-color-fill-tertiary, #f2f3f5); }
 .error { color: var(--dsh-color-danger, #d03050); font-size: 12px; }
+.auth { display: grid; gap: 10px; color: var(--dsh-color-text-secondary, #86909c); font-size: 12px; line-height: 1.5; }
+.primary { justify-self: start; border: 0; padding: 7px 12px; color: #fff; background: var(--dsh-color-brand, #1677ff); border-radius: 6px; cursor: pointer; font: inherit; }
+.primary:hover { filter: brightness(.96); }
 .sections { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-bottom: 10px; }
 .section { display: flex; justify-content: space-between; gap: 8px; padding: 7px 8px; border: 1px solid transparent; color: inherit; background: var(--dsh-color-fill-secondary, #f7f8fa); border-radius: 6px; font-size: 12px; cursor: pointer; text-align: left; }
 .section:hover, .selected { border-color: var(--dsh-color-brand, #1677ff); background: var(--dsh-color-fill-tertiary, #f2f3f5); }
