@@ -14,6 +14,8 @@
 
 Renderer 只能调用白名单产品方法。`sessionToken` 只保存在 Electron 主进程或 `xiaoyin-native` sidecar，不能通过 `window` 暴露。产品层不创建 Turn、Step、Tool Card 或 Transcript，也不修改 Harness Session 状态。
 
+桌面端只有一个企业身份边界：先续期已保存的钉钉会话，失效时在系统浏览器完成钉钉 OAuth；再读取已认证的小胤 Bootstrap；最后用员工级模型虚拟 Key 和 LiteLLM 地址启动官方 Harness Host。官方 DeepSeek 欢迎页不是小胤登录入口。Bootstrap 机密只存在于主进程，不能通过 preload API 读取；模型请求和 Session 执行仍全部由 Harness Host 负责。
+
 需要原生权限的能力通过 `native/xiaoyin` 的 `xiaoyin.native.v1` 行协议接入。当前协议只提供受限的文件、附件、SQLite、凭据、钉钉状态、设备标识、图片预览和文件撤销方法；路径限制在 Electron 分配的数据目录内，文件载荷使用 hex 编码并限制为 8 MiB。该 sidecar 不承载 Harness 执行逻辑，不保留旧 Tauri `invoke` 协议。
 
 上游同步以 tag 和固定 commit 为单位。`pnpm run verify:upstream` 要求配置的 Git 远程仓库和本地 tag 均解析到该 commit。先验证官方测试和 Electron 构建，再验证产品包、sidecar 和服务端契约。

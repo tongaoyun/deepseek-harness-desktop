@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-The bridge keeps DingTalk credentials and product API access in the Electron main process while exposing a narrow typed interface to the Renderer. No companion is published because its typed bridge and server API cannot diverge independently.
+The bridge keeps DingTalk credentials, authenticated bootstrap access, and product API access in the Electron main process while exposing a narrow typed interface to the Renderer. Runtime bootstrap secrets are passed only to the official Harness Host and are not bridge methods. No companion is published because its typed bridge and server API cannot diverge independently.
 
 ## Table of Contents
 
@@ -26,11 +26,11 @@ The bridge keeps DingTalk credentials and product API access in the Electron mai
 
 #### What the model sees
 
-The bridge serves product metadata and authentication; official `Session` execution and conversation behavior remain model-facing authority.
+The bridge serves product metadata and authentication. The main process injects the employee-scoped inference configuration before Host startup; official `Session` execution and conversation behavior remain model-facing authority.
 
 #### Token effect
 
-No provider tokens are added.
+No product token is added to model context.
 
 #### KV Cache effect
 

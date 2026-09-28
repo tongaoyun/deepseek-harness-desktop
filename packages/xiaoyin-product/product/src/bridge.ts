@@ -3,11 +3,42 @@
 import { XiaoyinApiClient } from './http-client.ts'
 import { assertProductMethod, assertProductPayload, type ProductEvent, type ProductMethod, type ProductSession } from './protocol.ts'
 
+/** Main-process-only inference bootstrap. Secrets in this object never cross the preload bridge. */
+export interface ProductRuntimeBootstrap {
+  readonly modelApiKey: string
+  readonly endpoints: { readonly litellm: string }
+  readonly models: readonly string[]
+}
+
+function runtimeBootstrap(value: unknown): ProductRuntimeBootstrap {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error('xiaoyin product: invalid runtime bootstrap')
+  }
+  const record = value as Record<string, unknown>
+  const endpoints = record.endpoints
+  const rawModels: unknown = record.models
+  if (typeof record.modelApiKey !== 'string' || !/^[\x21-\x7e]+$/.test(record.modelApiKey)
+    || !Array.isArray(rawModels) || (rawModels as unknown[]).some(model => typeof model !== 'string')
+    || typeof endpoints !== 'object' || endpoints === null || Array.isArray(endpoints)
+    || typeof (endpoints as Record<string, unknown>).litellm !== 'string') {
+    throw new Error('xiaoyin product: invalid runtime bootstrap')
+  }
+  const endpoint = new URL((endpoints as Record<string, unknown>).litellm as string)
+  if (!['http:', 'https:'].includes(endpoint.protocol) || endpoint.username !== '' || endpoint.password !== ''
+    || endpoint.search !== '' || endpoint.hash !== '') {
+    throw new Error('xiaoyin product: invalid inference endpoint')
+  }
+  return { modelApiKey: record.modelApiKey, endpoints: { litellm: endpoint.href },
+    models: (rawModels as unknown[]).map(model => String(model)) }
+}
+
 /** Main-process dependencies used to construct the product bridge. */
 export interface ProductBridgeOptions {
   readonly serverUrl?: string | undefined
   readonly sessionToken?: string | undefined
   readonly initialSession?: ProductSession | undefined
+  /** Testable main-process HTTP transport. Renderer code never supplies this function. */
+  readonly fetch?: typeof fetch
   readonly persistSession?: (session: ProductSession, sessionToken: string | undefined) => void | Promise<void>
   /** Main-process native capability dispatcher. Renderer code never receives this function. */
   readonly nativeInvoke?: (method: string, payload: unknown) => Promise<unknown>
@@ -27,7 +58,9 @@ export class XiaoyinProductBridge {
     this.persistSession = options.persistSession
     this.nativeInvoke = options.nativeInvoke
     if (options.serverUrl !== undefined && options.serverUrl !== '') {
-      this.api = new XiaoyinApiClient({ baseUrl: options.serverUrl, getSessionToken: () => this.sessionToken })
+      this.api = new XiaoyinApiClient({ baseUrl: options.serverUrl, getSessionToken: () => this.sessionToken,
+        getEmployeeId: () => this.session.employeeId,
+        ...(options.fetch === undefined ? {} : { fetch: options.fetch }) })
     }
   }
 
@@ -35,6 +68,12 @@ export class XiaoyinProductBridge {
    * @returns Current product session.
    */
   getSession(): ProductSession { return this.session }
+
+  /** Read inference configuration for the Electron main process only. */
+  async loadRuntimeBootstrap(): Promise<ProductRuntimeBootstrap> {
+    if (this.api === undefined) throw new Error('xiaoyin product: server URL is not configured')
+    return runtimeBootstrap(await this.api.bootstrap<unknown>())
+  }
 
   /** Replace the current session and persist the opaque token outside the Renderer.
    * @param session - UI-safe employee session.
@@ -95,7 +134,13 @@ export class XiaoyinProductBridge {
       return result
     }
     if (method === 'auth.refresh') {
-      const result = await this.api.refreshSession<Record<string, unknown>>()
+      let result: Record<string, unknown>
+      try {
+        result = await this.api.refreshSession<Record<string, unknown>>()
+      } catch (error) {
+        this.setSession({ authenticated: false })
+        throw error
+      }
       const token = result.sessionToken
       if (typeof token === 'string' && token !== '') {
         const identity = result.employee as Record<string, unknown> | undefined
@@ -108,7 +153,6 @@ export class XiaoyinProductBridge {
       }
       return result
     }
-    if (method === 'bootstrap.get') return this.api.bootstrap<unknown>()
     const routes: Partial<Record<ProductMethod, string>> = {
       'expertKits.list': '/api/v1/expert-kits',
       'skills.list': '/api/v1/skills',

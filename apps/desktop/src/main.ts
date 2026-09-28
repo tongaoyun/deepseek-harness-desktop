@@ -2,7 +2,7 @@ import { WINDOWS_TITLEBAR_HEIGHT } from './windows-layout.ts'
 /** Electron shell: desktop project ownership, custom protocol, windows, and lifecycle. */
 
 import { readFile, writeFile } from 'node:fs/promises'
-import { readFileSync, writeFileSync } from 'node:fs'
+import { readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
@@ -228,9 +228,14 @@ function readStoredXiaoyinSession(): { session: ProductSession; token: string } 
 
 /** Persist only an OS-encrypted token and its non-secret identity projection. */
 function persistXiaoyinSession(session: ProductSession, token: string | undefined): void {
-  if (token === undefined || token === '' || !safeStorage.isEncryptionAvailable()) return
+  const path = join(app.getPath('userData'), 'xiaoyin-session.json')
+  if (token === undefined || token === '') {
+    rmSync(path, { force: true })
+    return
+  }
+  if (!safeStorage.isEncryptionAvailable()) return
   const encryptedToken = safeStorage.encryptString(token).toString('base64')
-  writeFileSync(join(app.getPath('userData'), 'xiaoyin-session.json'), JSON.stringify({
+  writeFileSync(path, JSON.stringify({
     version: 1, session, encryptedToken,
   } satisfies StoredXiaoyinSession), { mode: 0o600 })
 }
@@ -439,6 +444,7 @@ async function main(): Promise<void> {
   let pendingWelcomeNotice: WelcomeNotice | undefined
   let previousAccountStatus: string | undefined
   let xiaoyinAuthAttempt: Promise<void> | undefined
+  let hostEnvironment: NodeJS.ProcessEnv = process.env
   const ensureXiaoyinAuth = (): Promise<void> => {
     xiaoyinAuthAttempt ??= ensureDingTalkSession(productBridge, async (url) => {
       await shell.openExternal(url)
@@ -472,7 +478,7 @@ async function main(): Promise<void> {
   const backend = new DesktopBackendController((onFailure) => {
     const hostInspectPort = developmentHostInspectPort(development)
     const host = new DesktopHostProcess(resources.node, resources.dsh, activeProject,
-      hostInspectPort, process.env, onFailure,
+      hostInspectPort, hostEnvironment, onFailure,
       primaryRuntime,
       resources, (next) => { platformView.setSession(next) })
     return {
@@ -593,11 +599,15 @@ async function main(): Promise<void> {
   const reconcileBackend = (): Promise<void> => {
     startup ??= (async () => {
       await nativeSidecar.start()
-      // Product authentication is independent from the official Harness account. Keep the
-      // workspace available while the product panel presents a localized retry action.
-      void ensureXiaoyinAuth().catch((error: unknown) => {
-        console.error('xiaoyin DingTalk authentication unavailable', error)
-      })
+      // Xiaoyin uses one enterprise identity boundary. Authenticate before the official Host
+      // starts, then give that child only the employee-scoped inference configuration.
+      await ensureXiaoyinAuth()
+      const bootstrap = await productBridge.loadRuntimeBootstrap()
+      hostEnvironment = {
+        ...process.env,
+        DEEPSEEK_API_KEY: bootstrap.modelApiKey,
+        DEEPSEEK_BASE_URL: bootstrap.endpoints.litellm,
+      }
       const document = navigateMain(applicationUrl)
       const host = backend.start(async () => {
         await manager.applyRelease()

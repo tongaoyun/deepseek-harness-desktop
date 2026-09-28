@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-桥接在 Electron 主进程保存钉钉凭据并访问产品 API，只向 Renderer 暴露精简的类型化接口。不会发布 companion 包，因为类型化桥接和服务端 API 不会独立发生偏差。
+桥接在 Electron 主进程保存钉钉凭据、读取已认证的 Bootstrap 并访问产品 API，只向 Renderer 暴露精简的类型化接口。运行时 Bootstrap 机密只传给官方 Harness Host，不作为桥接方法暴露。不会发布 companion 包，因为类型化桥接和服务端 API 不会独立发生偏差。
 
 ## 目录
 
@@ -26,11 +26,11 @@ kind: "package-reference"
 
 #### 模型看到的内容
 
-桥接只提供产品元数据和认证，官方 `Session` 执行和对话行为仍是面向模型的权威来源。
+桥接只提供产品元数据和认证。主进程在 Host 启动前注入员工级推理配置；官方 `Session` 执行和对话行为仍是面向模型的权威来源。
 
 #### Token 影响
 
-无。
+不会向模型上下文加入产品令牌。
 
 #### KV Cache 影响
 

@@ -23,6 +23,7 @@ export interface PageResponse<T> {
 export interface ProductHttpClientOptions {
   readonly baseUrl: string
   readonly getSessionToken: () => string | undefined
+  readonly getEmployeeId?: () => string | undefined
   readonly fetch?: typeof globalThis.fetch
 }
 
@@ -53,7 +54,14 @@ export class XiaoyinApiClient {
     const headers = new Headers(init.headers)
     headers.set('accept', 'application/json')
     const token = this.options.getSessionToken()
-    if (token !== undefined) headers.set('authorization', `Bearer ${token}`)
+    if (token !== undefined) {
+      headers.set('authorization', `Bearer ${token}`)
+      const employeeId = this.options.getEmployeeId?.()
+      if (employeeId !== undefined && employeeId !== '') headers.set('x-xiaoyin-employee-id', employeeId)
+      if ((init.method ?? 'GET').toUpperCase() !== 'GET' && (init.method ?? 'GET').toUpperCase() !== 'HEAD') {
+        headers.set('x-requested-with', 'XMLHttpRequest')
+      }
+    }
     const response = await this.requestFetch(`${this.baseUrl}${path}`, { ...init, headers })
     const body = await response.json() as ColaResponse<T>
     if (!response.ok || !body.success || body.data === undefined) {

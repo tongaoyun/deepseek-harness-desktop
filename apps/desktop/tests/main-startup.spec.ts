@@ -314,6 +314,18 @@ vi.mock('../src/xiaoyin-product-config.ts', async importOriginal => ({
   ...await importOriginal<typeof import('../src/xiaoyin-product-config.ts')>(),
   resolveXiaoyinProductServerUrl: () => 'http://127.0.0.1:30081',
 }))
+vi.mock('@xiaoyin/product/bridge', () => ({
+  XiaoyinProductBridge: class {
+    private session = { authenticated: true }
+    getSession() { return this.session }
+    loadRuntimeBootstrap() {
+      return Promise.resolve({ modelApiKey: 'employee-virtual-key',
+        endpoints: { litellm: 'https://models.example.test/v1' }, models: ['deepseek-v4-pro'] })
+    }
+    invoke() { return Promise.resolve({}) }
+    subscribe() { return () => undefined }
+  },
+}))
 vi.mock('@xiaoyin/product/dingtalk-auth', () => ({
   ensureDingTalkSession: vi.fn().mockResolvedValue(undefined),
 }))
@@ -2069,7 +2081,11 @@ describe('desktop main startup', () => {
       primaryRuntime: join('desktop-test-resources', 'runtime', 'primary-runtime'),
       profile: 'desktop-test-profile',
     })
-    expect(harness.hosts[0]!.environment).toBe(process.env)
+    expect(harness.hosts[0]!.environment).toMatchObject({
+      DEEPSEEK_API_KEY: 'employee-virtual-key',
+      DEEPSEEK_BASE_URL: 'https://models.example.test/v1',
+    })
+    expect(harness.hosts[0]!.environment).not.toBe(process.env)
     expect(harness.hosts[0]!.start).toHaveBeenCalledTimes(1)
     expect(harness.windows).toHaveLength(1)
     expect(window.urls).toEqual(['dsh-app://app/'])

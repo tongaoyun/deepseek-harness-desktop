@@ -13,6 +13,8 @@
 
 产品桥只向 Renderer 暴露 `invoke`、`subscribe` 和 `getSession`。文件系统、凭据、SQLite、附件和设备身份操作都留在 `xiaoyin.native.v1` sidecar 协议之后。
 
+Electron 主进程在 Host 启动前续期钉钉身份，并自行读取已认证的运行时 Bootstrap。员工级模型虚拟 Key 和推理地址只传给官方 Host 子进程；`bootstrap.get` 不是 Renderer 桥接方法。
+
 ## 边界
 
 产品包只能使用公开的 Harness 包 API 和稳定扩展点，不得导入私有运行时模块，不得替换 Session Controller，也不得维护第二套会话 reducer。产品元数据通过官方 Sidebar 和 Slot 扩展点叠加。

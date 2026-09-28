@@ -38,7 +38,6 @@ export async function ensureDingTalkSession(
   openExternal: (url: string) => Promise<void>,
   options: { readonly timeoutMs?: number; readonly pollMs?: number } = {},
 ): Promise<ProductSession> {
-  if (bridge.getSession().authenticated) return bridge.getSession()
   try { await bridge.invoke('auth.refresh') } catch { /* A missing session starts a fresh OAuth attempt below. */ }
   if (bridge.getSession().authenticated) return bridge.getSession()
   const attempt = authorization(await bridge.invoke('auth.beginDingTalk'))

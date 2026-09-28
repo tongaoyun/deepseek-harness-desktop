@@ -10,7 +10,6 @@ export type ProductMethod =
   | 'auth.beginDingTalk'
   | 'auth.pollDingTalk'
   | 'auth.refresh'
-  | 'bootstrap.get'
   | 'expertKits.list'
   | 'skills.list'
   | 'connectors.list'
@@ -76,7 +75,7 @@ export interface ProductEvent {
  */
 export function isProductMethod(value: unknown): value is ProductMethod {
   return typeof value === 'string' && [
-    'auth.getSession', 'auth.ensureDingTalk', 'auth.beginDingTalk', 'auth.pollDingTalk', 'auth.refresh', 'bootstrap.get', 'expertKits.list',
+    'auth.getSession', 'auth.ensureDingTalk', 'auth.beginDingTalk', 'auth.pollDingTalk', 'auth.refresh', 'expertKits.list',
     'skills.list', 'connectors.list', 'knowledge.bases.list', 'schedules.list',
     'im.channels.list', 'artifacts.list', 'native.filesystem.list', 'native.filesystem.read',
     'native.filesystem.write', 'native.secure-storage.get', 'native.secure-storage.set', 'native.secure-storage.delete',

@@ -13,6 +13,8 @@ The Xiaoyin product layer adds enterprise capabilities around the official DeepS
 
 The product bridge exposes only `invoke`, `subscribe`, and `getSession` to the Renderer. Native filesystem, credentials, SQLite, attachments, and device identity operations stay behind the `xiaoyin.native.v1` sidecar protocol.
 
+The Electron main process refreshes DingTalk identity before Host startup and reads the authenticated runtime bootstrap itself. The employee-scoped model key and inference endpoint are passed only to the official Host process; `bootstrap.get` is not a Renderer bridge method.
+
 ## Boundary
 
 Product packages use public Harness package APIs and stable extension points. They do not import private runtime modules, replace the Session Controller, or maintain a second conversation reducer. Product metadata is attached through official Sidebar and Slot extension points.
