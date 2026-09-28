@@ -59,6 +59,11 @@ const experimentalPackageNamePrefix = '@deepseek-ai/dsh-experimental-'
 const standardReleaseMemberDirectory = /^(?:packages\/(?!experimental\/)[^/]+\/[^/]+|apps\/(?!desktop(?:-host)?$)[^/]+|vendor\/[^/]+)$/
 /** Installable application assembled by electron-builder rather than published to npm. */
 const desktopApplicationDirectory = 'apps/desktop'
+/** Xiaoyin product packages bundled into Desktop without joining the upstream npm release family. */
+const privateProductPackageDirectories = new Set([
+  'packages/extensions/ui-xiaoyin-product',
+  'packages/xiaoyin-product/product',
+])
 const localArtifactDirs = new Set(['node_modules'])
 const appPackageFiles: Readonly<Record<string, readonly string[]>> = {
   '@deepseek-ai/dsh': ['lib/*.js', 'lib/types/*.d.ts'],
@@ -392,7 +397,10 @@ export function checkWorkspaceManifest({ dir, manifest }: WorkspaceManifest): st
     && manifest.name !== undefined
     && publicNativePackages.has(manifest.name)
 
-  if (isPublicNativePackage) {
+  if (privateProductPackageDirectories.has(dir)) {
+    if (manifest.private !== true) errors.push(`${label}: Desktop product package must set "private": true`)
+    if (manifest.publishConfig !== undefined) errors.push(`${label}: Desktop product package must omit publishConfig`)
+  } else if (isPublicNativePackage) {
     if (manifest.private === true) {
       errors.push(`${label}: published Landlock package must not set "private": true`)
     }

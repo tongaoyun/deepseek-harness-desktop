@@ -254,6 +254,19 @@ describe('dsh family version coherence', () => {
   })
 })
 
+describe('Xiaoyin product package publication boundary', () => {
+  it.each([
+    ['packages/extensions/ui-xiaoyin-product', '@xiaoyin/product-ui'],
+    ['packages/xiaoyin-product/product', '@xiaoyin/product'],
+  ])('keeps %s private and outside the upstream release family', (dir, name) => {
+    expect(checkWorkspaceManifest({ dir, manifest: { name, private: true } })).toEqual([])
+    expect(checkWorkspaceManifest({ dir, manifest: { name, publishConfig: { access: 'public' } } })).toEqual([
+      `${dir}/package.json: ${name}: Desktop product package must set "private": true`,
+      `${dir}/package.json: ${name}: Desktop product package must omit publishConfig`,
+    ])
+  })
+})
+
 describe('package payload constraints', () => {
   it.each(['./art/icon.svg', 'art/icon.svg'])('includes declared icon %s in the canonical payload', (icon) => {
     expect(expectedDshPackageFiles({ icon, exports: { './locale/*.json': './locale/*.json' } })).toEqual([
