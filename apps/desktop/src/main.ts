@@ -357,6 +357,7 @@ async function main(): Promise<void> {
   const manager = new DesktopProjectManager(paths, resources)
   let quitting = false
   let startup: Promise<void> | undefined
+  let hostStartup: Promise<void> | undefined
   let workspaceRecovery: Promise<void> | undefined
   let mainWindow: BrowserWindow | undefined
   let welcomeWindow: BrowserWindow | undefined
@@ -597,18 +598,28 @@ async function main(): Promise<void> {
     startup ??= (async () => {
       await nativeSidecar.start()
       void ensureXiaoyinAuth()
-      await navigateMain(applicationUrl)
-      await backend.start(async () => {
+      const document = navigateMain(applicationUrl)
+      const host = backend.start(async () => {
         await manager.applyRelease()
       })
-      if (backend.host !== undefined) await openInitialWindow()
+      hostStartup = (async () => {
+        await host
+        if (backend.host !== undefined) await openInitialWindow({ deferWorkspace: true })
+      })()
+      await Promise.race([hostStartup, document])
+      await hostStartup
+      await document
+      await deferredInitialWorkspace
       if (backend.host !== undefined) updateJournal?.action('workspace-ready')
       // The existing Web document resumes through the boot IPC response.
     })().catch((error: unknown) => {
       updateJournal?.action('workspace-failed')
       reportFatal(error, 'main')
       throw error
-    }).finally(() => { startup = undefined })
+    }).finally(() => {
+      startup = undefined
+      hostStartup = undefined
+    })
     return startup
   }
 
@@ -708,7 +719,10 @@ async function main(): Promise<void> {
 
   ipcMain.handle(DESKTOP_IPC.boot, async (event) => {
     assertDesktopSender(event, ['app'])
-    await startup
+    // The initial document asks for this payload before it can finish loading.
+    // Wait only for Host readiness, not for the encompassing startup promise
+    // that also waits for this document to finish loading.
+    if (backend.host === undefined || hostUrl === undefined) await (hostStartup ?? startup)
     if (backend.host === undefined || hostUrl === undefined) throw new Error('Desktop Host is unavailable')
     return { injections, streamBaseUrl: new URL(hostUrl).origin }
   })
@@ -1227,7 +1241,8 @@ async function main(): Promise<void> {
     })().finally(() => { openingWelcome = undefined })
     return openingWelcome
   }
-  const openInitialWindow = async (): Promise<void> => {
+  let deferredInitialWorkspace: Promise<void> | undefined
+  const openInitialWindow = async ({ deferWorkspace = false }: { deferWorkspace?: boolean } = {}): Promise<void> => {
     if (quitting || recovery.active) return
     const state = await readWelcomeState()
     if (isQuitting() || backend.state.phase !== 'ready') return
@@ -1239,7 +1254,9 @@ async function main(): Promise<void> {
       raiseAfterUpdate = false
       await showWelcome()
     } else {
-      await enterWorkspace()
+      const workspace = enterWorkspace()
+      if (deferWorkspace) deferredInitialWorkspace = workspace
+      else await workspace
     }
   }
   focusPrimaryWindow = () => {

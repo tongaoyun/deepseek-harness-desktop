@@ -45,6 +45,7 @@ const harness = await vi.hoisted(async () => {
   let prepared = deferred()
   let hostStarted = deferred()
   let navigated = deferred()
+  let navigationGate: ReturnType<typeof deferred> | undefined
   let dialogShown = deferred()
   let quitCompleted = deferred()
   let policyBlocked = deferred()
@@ -111,7 +112,10 @@ const harness = await vi.hoisted(async () => {
     async loadURL(url: string) {
       this.urls.push(url)
       this.webContents.mainFrame.url = url
-      if (url === 'dsh-app://app/') navigated.resolve()
+      if (url === 'dsh-app://app/') {
+        navigated.resolve()
+        await navigationGate?.promise
+      }
     }
     static getAllWindows() { return windows.filter(window => !window.destroyed) }
     setMenu() {}
@@ -217,12 +221,15 @@ const harness = await vi.hoisted(async () => {
     set embeddedPolicy(value: unknown) { embeddedPolicy = value },
     nextNavigation() { navigated = deferred(); return navigated.promise },
     nextHostStart() { hostStarted = deferred(); return hostStarted.promise },
+    deferNavigation() { navigationGate = deferred(); return navigationGate },
     deferPlatformDispose() { platformDisposeDeferred = deferred(); return platformDisposeDeferred },
     deferPlatformClose() { platformCloseDeferred = deferred(); return platformCloseDeferred },
     get pluginsEnabled() { return pluginsEnabled },
     set pluginsEnabled(value: boolean) { pluginsEnabled = value },
     set closeWindowsOnQuit(value: boolean) { closeWindowsOnQuit = value },
     reset() {
+      navigationGate?.resolve()
+      navigationGate = undefined
       accountListener = undefined
       windows.length = 0; hosts.length = 0; handlers.clear(); app.removeAllListeners()
       trays.length = 0
@@ -303,6 +310,13 @@ vi.mock('node:fs/promises', async (importOriginal) => {
   }) }
 })
 vi.mock('../src/runtime-tree.ts', () => ({ readDesktopRuntime: () => ({ release: { version: '1.0.0' } }) }))
+vi.mock('../src/xiaoyin-product-config.ts', async importOriginal => ({
+  ...await importOriginal<typeof import('../src/xiaoyin-product-config.ts')>(),
+  resolveXiaoyinProductServerUrl: () => 'http://127.0.0.1:30081',
+}))
+vi.mock('@xiaoyin/product/dingtalk-auth', () => ({
+  ensureDingTalkSession: vi.fn().mockResolvedValue(undefined),
+}))
 vi.mock('../src/paths.ts', () => ({ resolveDesktopPaths: () => ({ profile: 'desktop-test-profile' }) }))
 vi.mock('../src/project-manager.ts', () => ({
   DesktopProjectManager: class {
@@ -1029,6 +1043,22 @@ describe('desktop main startup', () => {
     await harness.navigated.promise
     return harness.hosts[0]!
   }
+
+  it('lets initial Renderer boot wait for the Host without waiting for its own navigation', async () => {
+    const navigation = harness.deferNavigation()
+    await import('../src/main.ts')
+    await harness.preparing.promise
+    await harness.navigated.promise
+    harness.prepared.resolve()
+    await harness.hostStarted.promise
+    harness.hosts[0]!.ready.resolve()
+
+    await expect(Promise.resolve(invoke(DESKTOP_IPC.boot))).resolves.toMatchObject({
+      injections: [], streamBaseUrl: 'http://127.0.0.1:3080',
+    })
+    navigation.resolve()
+    await vi.advanceTimersByTimeAsync(0)
+  })
 
   it.each([
     ['win32', ['--updated'], true],
