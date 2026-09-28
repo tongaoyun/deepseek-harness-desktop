@@ -48,6 +48,15 @@ describe('Xiaoyin Electron workflows', () => {
     }
   })
 
+  it('fetches the pinned upstream tag before verifying repository provenance', () => {
+    const steps = workflow('electron-ci.yml').jobs.desktop?.steps ?? []
+    const fetch = steps.find(step => step.name === 'Fetch pinned Harness upstream')?.run ?? ''
+    expect(fetch).toContain('git remote add upstream https://github.com/deepseek-ai/deepseek-harness.git')
+    expect(fetch).toContain('refs/tags/dsh-v0.1.7-rc.2:refs/tags/dsh-v0.1.7-rc.2')
+    expect(steps.indexOf(steps.find(step => step.name === 'Fetch pinned Harness upstream')!))
+      .toBeLessThan(steps.findIndex(step => step.name === 'Verify upstream and product contracts'))
+  })
+
   it('builds the native sidecar before packaging both desktop platforms', () => {
     for (const [name, jobName] of [['electron-windows.yml', 'windows'], ['electron-macos.yml', 'macos']] as const) {
       const steps = workflow(name).jobs[jobName]?.steps ?? []
