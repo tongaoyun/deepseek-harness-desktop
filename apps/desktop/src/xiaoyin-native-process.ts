@@ -9,7 +9,7 @@ interface NativeResponse {
   readonly protocol?: string
   readonly request_id?: string
   readonly result?: unknown
-  readonly error?: { readonly code?: string; readonly message?: string }
+  readonly error?: { readonly code?: string; readonly message?: string } | null
 }
 
 interface Pending {
@@ -92,7 +92,7 @@ export class XiaoyinNativeProcess {
     if (pending === undefined) return
     clearTimeout(pending.timer)
     this.pending.delete(response.request_id)
-    if (response.error !== undefined) pending.reject(new Error(response.error.message ?? response.error.code ?? 'native sidecar error'))
+    if (response.error != null) pending.reject(new Error(response.error.message ?? response.error.code ?? 'native sidecar error'))
     else pending.resolve(response.result)
   }
 
