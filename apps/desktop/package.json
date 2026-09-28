@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ai/dsh-desktop",
-  "description": "Electron desktop shell for a bundled dsh runtime and external plugins",
+  "description": "Xiaoyin enterprise Agent desktop powered by DeepSeek Harness",
   "version": "0.1.7-rc.2",
   "private": true,
   "license": "MIT",

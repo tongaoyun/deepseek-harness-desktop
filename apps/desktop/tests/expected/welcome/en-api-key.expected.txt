@@ -1,7 +1,7 @@
-DeepSeek Harness
-DeepSeek Harness
+Xiaoyin
+Xiaoyin
 Add an API key to get started
-Configure official DeepSeek models to start using Harness
+Model access is managed by your enterprise
 Enter API key [password]
 Save and continue [disabled]
 Set up later

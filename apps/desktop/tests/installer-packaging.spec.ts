@@ -80,7 +80,7 @@ describe('installer preparation preserves application dependencies', () => {
       DSH_DESKTOP_TARGET_ARCH: 'x64',
       DSH_DESKTOP_UNSIGNED: '1',
     }, 'win32', 'x64')
-    expect(config.artifactName).toBe('deepseek-harness-${version}-${os}-${arch}-unsigned.${ext}')
+    expect(config.artifactName).toBe('xiaoyin-${version}-${os}-${arch}-unsigned.${ext}')
   })
 
   it('packages the native sidecar from Cargo\'s configured target directory', async () => {

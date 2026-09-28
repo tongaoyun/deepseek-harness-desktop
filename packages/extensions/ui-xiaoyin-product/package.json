@@ -1,7 +1,9 @@
 {
   "name": "@xiaoyin/product-ui",
   "version": "0.1.0",
-  "private": true,
+  "publishConfig": {
+    "access": "public"
+  },
   "repository": { "type": "git", "url": "git+https://github.com/deepseek-ai/deepseek-harness.git", "directory": "packages/extensions/ui-xiaoyin-product" },
   "license": "MIT",
   "type": "module",

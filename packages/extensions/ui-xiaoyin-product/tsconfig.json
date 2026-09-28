@@ -11,7 +11,7 @@
   },
   "include": ["src/**/*.ts", "src/**/*.tsx", "src/**/*.d.ts"],
   "references": [
-    { "path": "../../../packages/client/locale/tsconfig.host.json" },
+    { "path": "../../../packages/client/locale/tsconfig.client.json" },
     { "path": "../../../packages/client/ui-primitives/tsconfig.json" },
     { "path": "../../../packages/client/ui-renderer/tsconfig.json" },
     { "path": "../../../packages/client/ui-sidebar/tsconfig.json" },

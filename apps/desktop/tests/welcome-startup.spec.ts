@@ -86,6 +86,7 @@ vi.mock('electron', () => ({
   },
   net: { fetch: vi.fn() },
   nativeTheme: state.nativeTheme,
+  shell: { openExternal: vi.fn(async () => {}) },
   session: { defaultSession: {
     setPermissionCheckHandler: vi.fn(), setPermissionRequestHandler: vi.fn(), webRequest: { onBeforeSendHeaders: vi.fn() },
   } },
@@ -107,6 +108,33 @@ vi.mock('electron', () => ({
 vi.mock('../src/tray.ts', () => ({ DesktopTray: class { relabel() {} dispose() {} } }))
 
 vi.mock('../src/paths.ts', () => ({ resolveDesktopPaths: () => ({ profile: '/profile' }) }))
+vi.mock('../src/xiaoyin-product-config.ts', () => ({
+  resolveXiaoyinProductServerUrl: () => 'http://127.0.0.1:30081',
+}))
+vi.mock('../src/xiaoyin-native-process.ts', () => ({
+  XiaoyinNativeProcess: class {
+    start = vi.fn(async () => {})
+    stop = vi.fn(async () => {})
+    invoke = vi.fn(async () => ({}))
+  },
+}))
+vi.mock('@xiaoyin/product/bridge', () => ({
+  XiaoyinProductBridge: class {
+    getSession() { return { authenticated: true } }
+    loadRuntimeBootstrap() {
+      return Promise.resolve({
+        modelApiKey: 'employee-virtual-key',
+        endpoints: { litellm: 'https://models.example.test/v1' },
+        models: ['deepseek-v4-pro'],
+      })
+    }
+    invoke() { return Promise.resolve({}) }
+    subscribe() { return () => undefined }
+  },
+}))
+vi.mock('@xiaoyin/product/dingtalk-auth', () => ({
+  ensureDingTalkSession: vi.fn(async () => {}),
+}))
 vi.mock('../src/project-manager.ts', () => ({ DesktopProjectManager: class {
   applyRelease = vi.fn(async () => {})
   canRecoverProfile = vi.fn(() => true)
@@ -196,7 +224,7 @@ it.each([false, true])('starts welcome onboarding without carrying update focus 
   state.beforeWelcome.mockReturnValueOnce(loading.promise)
   const activate = () => {
     state.appListeners.get('second-instance')!()
-    state.appListeners.get('open-url')!({ preventDefault: vi.fn() }, 'dsh://open')
+    state.appListeners.get('open-url')!({ preventDefault: vi.fn() }, 'xiaoyin://open')
   }
   await import('../src/main.ts')
   await vi.waitFor(() => { expect(state.beforeRead).toHaveBeenCalledOnce() })
@@ -294,7 +322,7 @@ it.each([false, true])('starts welcome onboarding without carrying update focus 
   expect(state.focusWorkspace).not.toHaveBeenCalled()
   expect(state.moveTopWorkspace).not.toHaveBeenCalled()
   expect(state.openDevTools).not.toHaveBeenCalled()
-  state.appListeners.get('open-url')!({ preventDefault: vi.fn() }, 'dsh://open')
+  state.appListeners.get('open-url')!({ preventDefault: vi.fn() }, 'xiaoyin://open')
   expect(state.showWorkspace).toHaveBeenCalledOnce()
   expect(state.focusWorkspace).toHaveBeenCalledOnce()
 

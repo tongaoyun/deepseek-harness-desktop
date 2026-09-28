@@ -28,8 +28,8 @@ describe('client TypeScript aggregate', () => {
     if (read.error !== undefined) {
       throw new Error(ts.flattenDiagnosticMessageText(read.error.messageText, '\n'))
     }
-    const references = (read.config.references as { path: string }[] | undefined)
-      ?.map(reference => reference.path)
+    const config = read.config as { references?: readonly { path: string }[] }
+    const references = config.references?.map(reference => reference.path)
 
     expect(references).toContain('./packages/extensions/ui-xiaoyin-product')
   })
