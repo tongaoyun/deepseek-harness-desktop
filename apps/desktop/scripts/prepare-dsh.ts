@@ -36,6 +36,7 @@ import {
   desktopOfficeEnginePresent,
   resolveDesktopOfficeEngine,
 } from './office-engine-runtime.ts'
+import { retryRuntimeNetworkOperation } from './runtime-download.ts'
 
 const APP_ROOT = resolve(import.meta.dirname, '..')
 const BUILD_PATHS = resolveDesktopTargetBuildPaths()
@@ -126,12 +127,16 @@ async function main(): Promise<void> {
       cpSync(join(PACKAGE_SET_ROOT, DESKTOP_PACKAGES_DIR), join(BUILD_ROOT, DESKTOP_PACKAGES_DIR), { recursive: true })
       createRuntimeProjectMetadata(BUILD_ROOT, release)
     })
-    await packagingStep(process.env.DSH_DESKTOP_PACKAGING_RUN_DIR, 'runtime:lockfile', () => runPnpm(['install', '--lockfile-only']))
+    await packagingStep(process.env.DSH_DESKTOP_PACKAGING_RUN_DIR, 'runtime:lockfile', () => (
+      retryRuntimeNetworkOperation(() => runPnpm(['install', '--lockfile-only']))
+    ))
     verifyDesktopCoreLockfile(
       readFileSync(join(BUILD_ROOT, 'pnpm-lock.yaml'), 'utf8'),
       readDesktopCorePackageSet(BUILD_ROOT, release.version),
     )
-    await packagingStep(process.env.DSH_DESKTOP_PACKAGING_RUN_DIR, 'runtime:install', () => runPnpm(['install', '--prod', '--frozen-lockfile', '--trust-lockfile']))
+    await packagingStep(process.env.DSH_DESKTOP_PACKAGING_RUN_DIR, 'runtime:install', () => (
+      retryRuntimeNetworkOperation(() => runPnpm(['install', '--prod', '--frozen-lockfile', '--trust-lockfile']))
+    ))
     const packageSet = readDesktopCorePackageSet(BUILD_ROOT, release.version)
     const targetName = resolveDesktopBuildTarget()
     const target = { platform: process.platform, arch: targetName.endsWith('arm64') ? 'arm64' : 'x64' }
@@ -141,7 +146,7 @@ async function main(): Promise<void> {
       await packagingStep(
         process.env.DSH_DESKTOP_PACKAGING_RUN_DIR,
         'runtime:install-office-engine',
-        () => runPnpm(desktopOfficeEngineInstallArguments(office)),
+        () => retryRuntimeNetworkOperation(() => runPnpm(desktopOfficeEngineInstallArguments(office))),
       )
     }
     if (!desktopOfficeEnginePresent(office)) {

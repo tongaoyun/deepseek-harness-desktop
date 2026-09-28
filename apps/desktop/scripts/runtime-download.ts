@@ -1,4 +1,4 @@
-/** Retry immutable runtime downloads that are verified before packaging. */
+/** Retry immutable runtime network operations that are verified before packaging. */
 
 export interface RuntimeDownloadRetryOptions {
   readonly attempts?: number
@@ -13,14 +13,14 @@ function defaultWait(milliseconds: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, milliseconds))
 }
 
-/** Retry transient transport failures without accepting an incomplete artifact. */
-export async function retryRuntimeDownload<T>(
+/** Retry transient transport failures without accepting incomplete runtime content. */
+export async function retryRuntimeNetworkOperation<T>(
   operation: () => Promise<T>,
   options: RuntimeDownloadRetryOptions = {},
 ): Promise<T> {
   const attempts = options.attempts ?? DEFAULT_ATTEMPTS
   if (!Number.isSafeInteger(attempts) || attempts < 1) {
-    throw new Error('desktop runtime download: attempts must be a positive integer')
+    throw new Error('desktop runtime network operation: attempts must be a positive integer')
   }
   const wait = options.wait ?? defaultWait
   const warn = options.warn ?? (message => console.warn(message))
@@ -31,7 +31,7 @@ export async function retryRuntimeDownload<T>(
     } catch (error) {
       failure = error
       if (attempt === attempts) throw error
-      warn(`desktop runtime download: attempt ${attempt} failed; retrying`)
+      warn(`desktop runtime network operation: attempt ${attempt} failed; retrying`)
       await wait(RETRY_DELAY_MS * attempt)
     }
   }

@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
-import { retryRuntimeDownload } from '../scripts/runtime-download.ts'
+import { retryRuntimeNetworkOperation } from '../scripts/runtime-download.ts'
 
-describe('runtime download retry', () => {
+describe('runtime network retry', () => {
   it('returns immediately after a successful download', async () => {
     const operation = vi.fn(async () => 'archive')
     const wait = vi.fn(async () => {})
 
-    await expect(retryRuntimeDownload(operation, { wait })).resolves.toBe('archive')
+    await expect(retryRuntimeNetworkOperation(operation, { wait })).resolves.toBe('archive')
     expect(operation).toHaveBeenCalledOnce()
     expect(wait).not.toHaveBeenCalled()
   })
@@ -19,7 +19,7 @@ describe('runtime download retry', () => {
     const wait = vi.fn(async () => {})
     const warn = vi.fn()
 
-    await expect(retryRuntimeDownload(operation, { wait, warn })).resolves.toBe('archive')
+    await expect(retryRuntimeNetworkOperation(operation, { wait, warn })).resolves.toBe('archive')
     expect(operation).toHaveBeenCalledTimes(3)
     expect(wait.mock.calls).toEqual([[2_000], [4_000]])
     expect(warn).toHaveBeenCalledTimes(2)
@@ -29,7 +29,7 @@ describe('runtime download retry', () => {
     const failure = new Error('github unavailable')
     const operation = vi.fn(async () => { throw failure })
 
-    await expect(retryRuntimeDownload(operation, {
+    await expect(retryRuntimeNetworkOperation(operation, {
       attempts: 2,
       wait: async () => {},
       warn: () => {},
@@ -39,7 +39,7 @@ describe('runtime download retry', () => {
 
   it('rejects an invalid retry budget before downloading', async () => {
     const operation = vi.fn(async () => 'archive')
-    await expect(retryRuntimeDownload(operation, { attempts: 0 })).rejects.toThrow(/positive integer/u)
+    await expect(retryRuntimeNetworkOperation(operation, { attempts: 0 })).rejects.toThrow(/positive integer/u)
     expect(operation).not.toHaveBeenCalled()
   })
 })
