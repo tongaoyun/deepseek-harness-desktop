@@ -19,9 +19,9 @@ jobs:
       - name: Install dependencies
         run: |
           npm install -g pnpm@11.7.0 --prefer-offline --no-audit --fund=false \
-            --registry=http://192.168.2.9:4873/
+            --registry=https://registry.npmjs.org/
           pnpm config set store-dir /pnpm-store
-          pnpm install --frozen-lockfile --registry=http://192.168.2.9:4873/
+          pnpm install --frozen-lockfile --registry=https://registry.npmjs.org/
       - name: Verify upstream and product contracts
         run: |
           pnpm run verify:upstream

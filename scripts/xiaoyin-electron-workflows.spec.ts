@@ -40,6 +40,14 @@ describe('Xiaoyin Electron workflows', () => {
     }
   })
 
+  it('uses the reachable npm registry instead of the unavailable internal mirror', () => {
+    for (const name of ['electron-ci.yml', 'electron-windows.yml', 'electron-macos.yml']) {
+      const source = readFileSync(resolve(import.meta.dirname, '..', '.gitea', 'workflows', name), 'utf8')
+      expect(source).toContain('https://registry.npmjs.org/')
+      expect(source).not.toContain('192.168.2.9:4873')
+    }
+  })
+
   it('builds the native sidecar before packaging both desktop platforms', () => {
     for (const [name, jobName] of [['electron-windows.yml', 'windows'], ['electron-macos.yml', 'macos']] as const) {
       const steps = workflow(name).jobs[jobName]?.steps ?? []

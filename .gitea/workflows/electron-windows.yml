@@ -18,7 +18,7 @@ jobs:
     runs-on: windows-x64
     timeout-minutes: 120
     env:
-      NPM_CONFIG_REGISTRY: http://192.168.2.9:4873/
+      NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
       NPM_CONFIG_FETCH_RETRIES: 4
       NPM_CONFIG_FETCH_TIMEOUT: 120000
       NPM_CONFIG_UPDATE_NOTIFIER: "false"

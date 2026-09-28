@@ -13,8 +13,8 @@ jobs:
       - name: Install dependencies
         run: |
           npm install -g pnpm@11.7.0 --prefer-offline --no-audit --fund=false \
-            --registry=http://192.168.2.9:4873/
-          pnpm install --frozen-lockfile --registry=http://192.168.2.9:4873/
+            --registry=https://registry.npmjs.org/
+          pnpm install --frozen-lockfile --registry=https://registry.npmjs.org/
       - name: Load runner-owned signing configuration
         run: |
           release_config="$HOME/.xiaoyin-release/electron/.env.macos"
