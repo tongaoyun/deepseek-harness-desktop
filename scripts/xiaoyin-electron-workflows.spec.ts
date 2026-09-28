@@ -16,6 +16,7 @@ interface WorkflowJob {
 }
 
 interface Workflow {
+  readonly concurrency?: { readonly group: string; readonly 'cancel-in-progress': boolean }
   readonly jobs: Record<string, WorkflowJob>
 }
 
@@ -40,6 +41,15 @@ describe('Xiaoyin Electron workflows', () => {
     }
   })
 
+  it('cancels stale pull-request CI and Windows packaging runs', () => {
+    for (const name of ['electron-ci.yml', 'electron-windows.yml']) {
+      expect(workflow(name).concurrency).toEqual({
+        group: '${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}',
+        'cancel-in-progress': true,
+      })
+    }
+  })
+
   it('uses the reachable npm registry instead of the unavailable internal mirror', () => {
     for (const name of ['electron-ci.yml', 'electron-windows.yml', 'electron-macos.yml']) {
       const source = readFileSync(resolve(import.meta.dirname, '..', '.gitea', 'workflows', name), 'utf8')
@@ -52,7 +62,7 @@ describe('Xiaoyin Electron workflows', () => {
     const steps = workflow('electron-ci.yml').jobs.desktop?.steps ?? []
     const fetch = steps.find(step => step.name === 'Fetch pinned Harness upstream')?.run ?? ''
     expect(fetch).toContain('git remote add upstream https://github.com/deepseek-ai/deepseek-harness.git')
-    expect(fetch).toContain('refs/tags/dsh-v0.1.7-rc.2:refs/tags/dsh-v0.1.7-rc.2')
+    expect(fetch).toContain('git fetch --force --depth=1 origin refs/tags/dsh-v0.1.7-rc.2:refs/tags/dsh-v0.1.7-rc.2')
     expect(steps.indexOf(steps.find(step => step.name === 'Fetch pinned Harness upstream')!))
       .toBeLessThan(steps.findIndex(step => step.name === 'Verify upstream and product contracts'))
   })

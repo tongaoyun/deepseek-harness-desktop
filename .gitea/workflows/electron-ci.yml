@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   desktop:
     runs-on: ci-node
@@ -19,7 +23,7 @@ jobs:
       - name: Fetch pinned Harness upstream
         run: |
           git remote add upstream https://github.com/deepseek-ai/deepseek-harness.git
-          git fetch --force --depth=1 upstream refs/tags/dsh-v0.1.7-rc.2:refs/tags/dsh-v0.1.7-rc.2
+          git fetch --force --depth=1 origin refs/tags/dsh-v0.1.7-rc.2:refs/tags/dsh-v0.1.7-rc.2
       - name: Install dependencies
         run: |
           npm install -g pnpm@11.7.0 --prefer-offline --no-audit --fund=false \
