@@ -78,6 +78,29 @@ describe('desktop package-set selection', () => {
     ])
   })
 
+  it('includes the private Xiaoyin product UI required by the web app', () => {
+    const available = new Map<string, PackedDesktopPackage>([
+      ['@deepseek-ai/dsh', packed('@deepseek-ai/dsh', {
+        dependencies: { '@deepseek-ai/dsh-web-app': '^1.0.0' },
+      })],
+      ['@deepseek-ai/dsh-desktop-host', packed('@deepseek-ai/dsh-desktop-host')],
+      ['@deepseek-ai/dsh-web-app', packed('@deepseek-ai/dsh-web-app', {
+        dependencies: { '@xiaoyin/product-ui': '0.1.0' },
+      })],
+      ['@xiaoyin/product-ui', packed('@xiaoyin/product-ui', {
+        peerDependencies: { '@deepseek-ai/cordis': '^1.0.0' },
+      })],
+      ['@deepseek-ai/cordis', packed('@deepseek-ai/cordis')],
+    ])
+    expect(selectDesktopPackageClosure(available).map(entry => entry.manifest.name)).toEqual([
+      '@deepseek-ai/cordis',
+      '@deepseek-ai/dsh',
+      '@deepseek-ai/dsh-desktop-host',
+      '@deepseek-ai/dsh-web-app',
+      '@xiaoyin/product-ui',
+    ])
+  })
+
   it('requires the Desktop Host entry', () => {
     const files = [
       'package/lib/index.js',

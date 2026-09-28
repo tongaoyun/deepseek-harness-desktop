@@ -19,6 +19,7 @@ The bridge keeps DingTalk credentials and product API access in the Electron mai
 
 -----
 
+<a id="model-experience"></a>
 ## Model Experience
 
 ### Product bridge
@@ -33,7 +34,7 @@ No provider tokens are added.
 
 #### KV Cache effect
 
-No cache entries are created; the bridge does not assemble or send provider requests.
+No cache entries are created; the bridge does not assemble or send provider requests. <a id="known-limitations-and-deferred-work"></a>
 
 ## Known Limitations and Deferred Work
 

@@ -27,6 +27,7 @@ kind: "package-reference"
 
 在官方 Electron 桌面组合中启用此扩展，即可展示专家套件、技能、连接器、知识库、定时任务和 IM 导航。产品请求始终经过 preload 白名单并由主进程产品桥处理，Renderer 不会获得会话凭据或直接访问 sidecar 的能力。
 
+<a id="model-experience"></a>
 ## 模型体验
 
 ### 产品导航
@@ -41,7 +42,7 @@ kind: "package-reference"
 
 #### KV Cache 影响
 
-不会创建缓存条目；扩展只负责渲染产品导航。
+不会创建缓存条目；扩展只负责渲染产品导航。<a id="known-limitations-and-deferred-work"></a>
 
 ## 已知限制与延期工作
 

@@ -22,6 +22,18 @@ function clientCssDeclarations(): string[] {
 }
 
 describe('client TypeScript aggregate', () => {
+  it('builds the Xiaoyin product UI before bundling client entries', () => {
+    const configPath = resolve(root, 'tsconfig.client.json')
+    const read = ts.readConfigFile(configPath, file => ts.sys.readFile(file))
+    if (read.error !== undefined) {
+      throw new Error(ts.flattenDiagnosticMessageText(read.error.messageText, '\n'))
+    }
+    const references = (read.config.references as { path: string }[] | undefined)
+      ?.map(reference => reference.path)
+
+    expect(references).toContain('./packages/extensions/ui-xiaoyin-product')
+  })
+
   it('loads package CSS declarations without relying on workspace-link realpaths', () => {
     const configPath = resolve(root, 'tsconfig.client.json')
     const read = ts.readConfigFile(configPath, file => ts.sys.readFile(file))

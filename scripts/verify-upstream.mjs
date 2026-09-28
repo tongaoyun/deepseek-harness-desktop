@@ -5,10 +5,10 @@ import { promisify } from 'node:util'
 
 const root = resolve(import.meta.dirname, '..')
 const run = promisify(execFile)
+const upstreamCommit = (await readFile(resolve(root, 'UPSTREAM_COMMIT'), 'utf8')).trim()
 const expected = {
   UPSTREAM_REPOSITORY: 'https://github.com/deepseek-ai/deepseek-harness.git',
   UPSTREAM_TAG: 'dsh-v0.1.7-rc.2',
-  UPSTREAM_COMMIT: '477b4f420553e8a52c2fbccc464d7561b239c443',
 }
 
 for (const [file, value] of Object.entries(expected)) {
@@ -22,10 +22,10 @@ if (upstreamUrl !== expected.UPSTREAM_REPOSITORY) {
 }
 
 const tagCommit = (await run('git', ['rev-parse', `${expected.UPSTREAM_TAG}^{commit}`], { cwd: root })).stdout.trim()
-if (tagCommit !== expected.UPSTREAM_COMMIT) {
-  throw new Error(`upstream tag ${expected.UPSTREAM_TAG} must resolve to ${expected.UPSTREAM_COMMIT}, got ${tagCommit}`)
+if (tagCommit !== upstreamCommit) {
+  throw new Error(`upstream tag ${expected.UPSTREAM_TAG} must resolve to ${upstreamCommit}, got ${tagCommit}`)
 }
 
 const desktop = JSON.parse(await readFile(resolve(root, 'apps/desktop/package.json'), 'utf8'))
 if (desktop.name !== '@deepseek-ai/dsh-desktop') throw new Error('official Electron desktop package is missing')
-console.log(`verified DeepSeek Harness ${expected.UPSTREAM_TAG} (${expected.UPSTREAM_COMMIT})`)
+console.log(`verified DeepSeek Harness ${expected.UPSTREAM_TAG} (${upstreamCommit})`)

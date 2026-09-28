@@ -58,7 +58,12 @@ describe('Xiaoyin Electron workflows', () => {
     }
   })
 
-  it('fetches the pinned upstream tag before verifying repository provenance', () => {
+  it('downloads the Windows Electron runtime from the reachable binary mirror', () => {
+    const source = readFileSync(resolve(import.meta.dirname, '..', '.gitea', 'workflows', 'electron-windows.yml'), 'utf8')
+    expect(source).toContain('NPM_CONFIG_ELECTRON_MIRROR: https://cdn.npmmirror.com/binaries/electron/')
+  })
+
+  it('fetches the pinned upstream tag before verifying its commit', () => {
     const steps = workflow('electron-ci.yml').jobs.desktop?.steps ?? []
     const fetch = steps.find(step => step.name === 'Fetch pinned Harness upstream')?.run ?? ''
     expect(fetch).toContain('git remote add upstream https://github.com/deepseek-ai/deepseek-harness.git')
@@ -76,6 +81,28 @@ describe('Xiaoyin Electron workflows', () => {
       expect(native?.run).toContain('cargo build --release')
       expect(steps.indexOf(native!)).toBeLessThan(packaging)
     }
+  })
+
+  it('caches locked Windows runtime assets before the package-owned preparation', () => {
+    const steps = workflow('electron-windows.yml').jobs.windows?.steps ?? []
+    const assets = steps.find(step => step.name === 'Cache locked primary runtime assets')
+    const packaging = steps.findIndex(step => step.name === 'Package Windows')
+    const cacheScript = readFileSync(resolve(import.meta.dirname, '..', 'apps', 'desktop', 'scripts', 'prepare-windows-runtime-cache.ps1'), 'utf8')
+    expect(assets?.run).toContain('prepare-windows-runtime-cache.ps1')
+    expect(cacheScript).toContain('C:\\xiaoyin-desktop-builder\\runtime-downloads')
+    expect(cacheScript).toContain('New-Item -ItemType Junction')
+    expect(cacheScript).toContain('[IO.Directory]::Delete($DownloadCache)')
+    expect(cacheScript).toContain('scripts\\primary-runtime\\lock.json')
+    expect(cacheScript).toContain('Get-FileHash')
+    expect(cacheScript).toContain('[IO.FileShare]::None')
+    expect(cacheScript).toContain("[Guid]::NewGuid().ToString('N')")
+    expect(cacheScript).toContain('$Lock.Dispose()')
+    expect(cacheScript).toContain('cdn.npmmirror.com/binaries/node')
+    expect(cacheScript).toContain('ghfast.top/https://github.com/astral-sh/python-build-standalone')
+    expect(cacheScript).toContain('mirrors.aliyun.com/pypi')
+    expect(cacheScript).toContain('curl.exe -fL -C - --retry 4 --retry-all-errors')
+    expect(steps.find(step => step.name === 'Prepare reusable runtime downloads')).toBeUndefined()
+    expect(steps.indexOf(assets!)).toBeLessThan(packaging)
   })
 
   it('keeps unsigned Windows acceptance artifacts separate from formal releases', () => {

@@ -26,6 +26,7 @@ jobs:
       NPM_CONFIG_FETCH_RETRIES: 4
       NPM_CONFIG_FETCH_TIMEOUT: 120000
       NPM_CONFIG_UPDATE_NOTIFIER: "false"
+      NPM_CONFIG_ELECTRON_MIRROR: https://cdn.npmmirror.com/binaries/electron/
       PNPM_STORE_DIR: C:\xiaoyin-desktop-builder\pnpm-store-electron
     steps:
       - name: Checkout
@@ -70,6 +71,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Xiaoyin native tests failed" }
           cargo build --release --manifest-path native\xiaoyin\Cargo.toml
           if ($LASTEXITCODE -ne 0) { throw "Xiaoyin native build failed" }
+      - name: Cache locked primary runtime assets
+        shell: powershell
+        run: powershell -NoProfile -File apps\desktop\scripts\prepare-windows-runtime-cache.ps1
       - name: Package Windows
         shell: powershell
         run: |

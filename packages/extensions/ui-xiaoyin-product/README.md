@@ -27,6 +27,7 @@ The sidebar exposes product-owned catalogs without reimplementing Harness conver
 
 Enable this extension in the official Electron desktop composition to expose Expert Kits, Skills, Connectors, Knowledge, Schedules, and IM navigation. Product requests remain behind the preload allowlist and are handled by the main-process product bridge; the Renderer never receives session credentials or direct sidecar access.
 
+<a id="model-experience"></a>
 ## Model Experience
 
 ### Product navigation
@@ -41,7 +42,7 @@ No provider tokens are added.
 
 #### KV Cache effect
 
-No cache entries are created; the extension only renders product navigation.
+No cache entries are created; the extension only renders product navigation. <a id="known-limitations-and-deferred-work"></a>
 
 ## Known Limitations and Deferred Work
 

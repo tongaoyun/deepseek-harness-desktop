@@ -19,6 +19,7 @@ kind: "package-reference"
 
 -----
 
+<a id="model-experience"></a>
 ## 模型体验
 
 ### 产品桥
@@ -33,7 +34,7 @@ kind: "package-reference"
 
 #### KV Cache 影响
 
-不会创建缓存条目；桥接不会组装或发送模型请求。
+不会创建缓存条目；桥接不会组装或发送模型请求。<a id="known-limitations-and-deferred-work"></a>
 
 ## 已知限制与延期工作
 

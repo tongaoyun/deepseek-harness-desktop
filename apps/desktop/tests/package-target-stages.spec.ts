@@ -147,6 +147,17 @@ it.each([undefined, '2'])('passes macOS pack concurrency %s only to workspace pa
   expect(withMacOSNotarizationProxy).not.toHaveBeenCalled()
 })
 
+it('packs private Desktop product packages before preparing the package set', async () => {
+  const { run, stages } = supervisor()
+  await packageTarget(parseDesktopPackageInvocation(['win-x64', '--prepare-only'], 'win32', 'x64'), environment, run)
+  const hostPack = '--dir apps/desktop-host pack --pack-destination'
+  const productPack = '--dir packages/extensions/ui-xiaoyin-product pack --pack-destination'
+  expect(stages.some(stage => stage.startsWith(hostPack))).toBe(true)
+  expect(stages.some(stage => stage.startsWith(productPack))).toBe(true)
+  expect(stages.findIndex(stage => stage.startsWith(hostPack))).toBeLessThan(stages.indexOf('run prepare:packages'))
+  expect(stages.findIndex(stage => stage.startsWith(productPack))).toBeLessThan(stages.indexOf('run prepare:packages'))
+})
+
 it.each([false, true])('scopes the Apple proxy around notarization (directory=%s)', async (directory) => {
   const { run } = supervisor()
   await packageTarget(parseDesktopPackageInvocation(['mac-arm64', ...(directory ? ['--dir'] : [])], 'darwin', 'arm64'), {
