@@ -2,7 +2,7 @@ import { invoke, isTauri } from '@tauri-apps/api/core'
 import { appendStoredCapabilityNotice, captureCapabilityNotices, restoreCapabilityNotices, type StoredCapabilityNotice } from './conversation/capabilityNotices'
 import { captureInteractionSegments, restoreInteractionSegments } from './conversation/interactionSegments'
 import type { LocalTaskRun } from './types'
-import { inspectHarnessSession, searchHarnessSessionsPage, type HarnessSessionSearchHit, type HarnessSessionSearchPage } from './harness'
+import { createXiaoyinTaskProjection, inspectHarnessSession, searchHarnessSessionsPage, type HarnessSessionSearchHit, type HarnessSessionSearchPage } from './harness'
 
 const LIMIT = 200
 const writes = new Map<string, Promise<void>>()
@@ -316,7 +316,10 @@ export function compactTaskForStorage(task: LocalTaskRun): LocalTaskRun {
   else delete copy.interactionSegments
   // A session ID is reserved before Harness starts. Keep the prompt if a
   // failed or interrupted turn has no execution event to recover from yet.
-  if (!copy.sessionId || (copy.status !== 'COMPLETED' && !hasHarnessSessionEvidence(copy))) return copy
+  const productProjection = toProductProjection(copy.projection)
+  if (!copy.sessionId || (copy.status !== 'COMPLETED' && !hasHarnessSessionEvidence(copy))) {
+    return { ...copy, projection: productProjection }
+  }
   const lastEntry = copy.entries.at(-1)
   const preview = lastEntry?.role === 'user'
     ? lastEntry.text.trim()
@@ -325,22 +328,40 @@ export function compactTaskForStorage(task: LocalTaskRun): LocalTaskRun {
     ...copy,
     entries: [],
     ...(preview ? { messagePreview: preview.slice(-500) } : {}),
-    projection: {
-      ...copy.projection,
-      // Expandable execution details are rebuilt from the Harness event log.
-      steps: [], timeline: [], subagents: [], changes: [], visuals: [], knowledgeSources: [],
-      artifacts: copy.projection.artifacts.slice(-20),
-    },
+    // Only product receipts survive locally. Execution state is reconstructed
+    // from the official Harness Session Log when the task is opened.
+    projection: { ...productProjection, artifacts: productProjection.artifacts.slice(-20) },
   }
 }
 
 function hasHarnessSessionEvidence(task: LocalTaskRun): boolean {
   const projection = task.projection
-  return Boolean(task.sessionId) || projection.artifacts.length > 0 || Boolean(projection.changes?.length || projection.knowledgeSources?.length)
+  return Boolean(task.sessionId) || Boolean(projection.artifacts?.length || projection.changes?.length || projection.knowledgeSources?.length)
+}
+
+function toProductProjection(projection: LocalTaskRun['projection']): LocalTaskRun['projection'] {
+  return {
+    updatedAt: projection.updatedAt,
+    changes: projection.changes ?? [],
+    artifacts: projection.artifacts ?? [],
+    visuals: projection.visuals ?? [],
+    knowledgeSources: projection.knowledgeSources ?? [],
+  } as LocalTaskRun['projection']
 }
 
 function canonicalizeTaskProjection(task: LocalTaskRun): LocalTaskRun {
-  return task
+  const source = task.projection
+  const base = {
+    ...createXiaoyinTaskProjection(source.updatedAt),
+    status: task.status === 'RUNNING' ? 'running' as const : task.status === 'FAILED' ? 'failed' as const : task.status === 'CANCELED' ? 'canceled' as const : 'completed' as const,
+    activity: task.status === 'RUNNING' ? '正在处理' : task.status === 'FAILED' ? '任务执行失败' : task.status === 'CANCELED' ? '已停止' : '任务已完成',
+    updatedAt: source.updatedAt,
+    changes: source.changes ?? [],
+    artifacts: source.artifacts ?? [],
+    visuals: source.visuals ?? [],
+    knowledgeSources: source.knowledgeSources ?? [],
+  }
+  return { ...task, projection: base }
 }
 
 function storageKey(employeeId: string): string {

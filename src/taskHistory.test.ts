@@ -188,8 +188,14 @@ describe('task history', () => {
 
     const stored = JSON.parse(storage.getItem('xiaoyin.task-history.employee-1')!)
     expect(Object.hasOwn(stored[0], 'execution')).toBe(false)
-    expect(stored[0]?.projection).toEqual(task.projection)
-    expect(loadLocalTasks('employee-1', storage)[0].projection).toEqual(task.projection)
+    expect(stored[0]?.projection).toEqual({
+      updatedAt: task.projection.updatedAt,
+      changes: [], artifacts: [], visuals: [], knowledgeSources: [],
+    })
+    expect(loadLocalTasks('employee-1', storage)[0].projection).toMatchObject({
+      status: 'completed', activity: '任务已完成', updatedAt: task.projection.updatedAt,
+      changes: [], artifacts: [], visuals: [], knowledgeSources: [],
+    })
   })
 
   it('rejects a corrupted projection cache instead of rebuilding it from the desktop execution tree', () => {
@@ -255,7 +261,10 @@ describe('task history', () => {
     const compacted = compactTaskForStorage(task)
     expect(compacted.entries).toHaveLength(140)
     expect(entryText(compacted.entries[0])).toBe('消息 0')
-    expect(compacted).toEqual(task)
+    expect(compacted).toMatchObject({
+      id: task.id, entries: task.entries,
+      projection: { updatedAt: task.projection.updatedAt, changes: [], artifacts: [], visuals: [], knowledgeSources: [] },
+    })
     expect(lastEntryText(compacted.entries)).toBe('消息 139')
   })
 

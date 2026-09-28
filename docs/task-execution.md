@@ -13,7 +13,7 @@
 
 ## 会话与历史
 
-Harness JSONL Session Log 是对话、工具和执行状态的唯一事实源；官方 Persistence 负责读取和恢复，Session Query 提供搜索索引。小胤 SQLite 只保存任务产品索引、摘要、草稿、队列和定时计划，不复制完整会话正文。Host 通过 Session 事件适配器把同一份官方事件源提供给实时视图和历史回放，并注册 `xiaoyin.product` 产品投影，仅保存成果文件、文件变更、视觉产物和知识来源。状态、步骤、审批、提问、压缩、Token 和失败原因全部由官方 Conversation/Trajectory 从 Session Log 生成。
+Harness JSONL Session Log 是对话、工具和执行状态的唯一事实源；官方 Persistence 负责读取和恢复，Session Query 提供搜索索引。小胤 SQLite 只保存任务产品索引、摘要、草稿、队列和定时计划，不复制完整会话正文。Host 通过 Session 事件适配器把同一份官方事件源提供给实时视图和历史回放，并注册 `xiaoyin.product` 产品投影，仅保存 `updatedAt`、`changes`、`artifacts`、`visuals` 和 `knowledgeSources`。本地投影拒绝 `status`、`steps`、`timeline`、Token、压缩、审批、提问和失败状态等 Harness 生命周期字段；这些状态全部由官方 Conversation/Trajectory 从 Session Log 生成。
 
 侧栏先加载最近 200 个任务，可继续分页；对话正文每次展示 60 条。搜索合并本地标题/元数据与 Harness 正文结果，中文使用官方 `filterEvents` 字面量扫描，英文使用 FTS5。切换账号或搜索词后丢弃迟到结果。Session 暂不可读时提示恢复失败，不用列表摘要伪造对话。
 

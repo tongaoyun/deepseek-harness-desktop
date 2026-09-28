@@ -23,6 +23,10 @@ const READABLE_TASK_SQL: &str = "CASE WHEN json_valid(payload) THEN COALESCE(
     AND json_type(payload, '$.projection.updatedAt') = 'text'
     AND json_type(payload, '$.projection.changes') = 'array'
     AND json_type(payload, '$.projection.artifacts') = 'array'
+    AND json_type(payload, '$.projection.visuals') = 'array'
+    AND json_type(payload, '$.projection.knowledgeSources') = 'array'
+    AND NOT EXISTS (SELECT 1 FROM json_each(payload, '$.projection') WHERE key NOT IN (
+      'updatedAt', 'changes', 'artifacts', 'visuals', 'knowledgeSources'))
     AND NOT EXISTS (SELECT 1 FROM json_each(payload) WHERE key NOT IN (
       'id', 'source', 'name', 'status', 'createdAt', 'updatedAt', 'lastOpenedAt', 'archivedAt', 'sessionId',
       'scheduleId', 'scheduleRunId', 'invocationTokens', 'model', 'reasoningEffort', 'executionMode',
@@ -433,7 +437,10 @@ pub async fn load_local_task(
             .map_err(database_error)?;
         payload
             .map(|value| {
-                serde_json::from_str(&value).map_err(|error| format!("本地会话数据无效：{error}"))
+                let task: Value = serde_json::from_str(&value)
+                    .map_err(|error| format!("本地会话数据无效：{error}"))?;
+                task_index_fields(&task)?;
+                Ok(task)
             })
             .transpose()
     })
@@ -635,6 +642,7 @@ fn append_task_capability_notice(
     };
     let mut task: Value =
         serde_json::from_str(&payload).map_err(|error| format!("本地会话数据无效：{error}"))?;
+    task_index_fields(&task)?;
     if task.get("sessionId").and_then(Value::as_str) != Some(session_id) {
         return Ok(());
     }
@@ -748,6 +756,16 @@ fn task_index_fields(task: &Value) -> Result<(&str, &str, &str, &str), String> {
     if !projection.get("updatedAt").is_some_and(Value::is_string)
         || !projection.get("changes").is_some_and(Value::is_array)
         || !projection.get("artifacts").is_some_and(Value::is_array)
+        || !projection.get("visuals").is_some_and(Value::is_array)
+        || !projection
+            .get("knowledgeSources")
+            .is_some_and(Value::is_array)
+        || projection.keys().any(|key| {
+            !matches!(
+                key.as_str(),
+                "updatedAt" | "changes" | "artifacts" | "visuals" | "knowledgeSources"
+            )
+        })
     {
         return Err("本地会话运行投影无效".to_string());
     }
@@ -1225,7 +1243,7 @@ mod tests {
         invalid = task.clone();
         invalid["entries"] = serde_json::json!([{"role": "system", "text": "hidden"}]);
         assert!(task_index_fields(&invalid).unwrap_err().contains("消息"));
-        invalid = task;
+        invalid = task.clone();
         invalid["projection"]["changes"] = Value::Null;
         assert!(
             task_index_fields(&invalid)
@@ -1238,6 +1256,13 @@ mod tests {
             task_index_fields(&invalid)
                 .unwrap_err()
                 .contains("未知字段")
+        );
+        let mut legacy_projection = task.clone();
+        legacy_projection["projection"]["status"] = Value::String("completed".into());
+        assert!(
+            task_index_fields(&legacy_projection)
+                .unwrap_err()
+                .contains("运行投影")
         );
     }
 

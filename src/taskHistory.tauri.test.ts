@@ -5,7 +5,17 @@ import { loadTaskHistoryPage } from './taskHistory'
 import type { LocalTaskRun } from './types'
 
 vi.mock('@tauri-apps/api/core', () => ({ isTauri: () => true, invoke: vi.fn() }))
-vi.mock('./harness', () => ({ inspectHarnessSession: vi.fn(), searchHarnessSessionsPage: vi.fn() }))
+vi.mock('./harness', () => ({
+  createXiaoyinTaskProjection: (updatedAt = '') => ({
+    updatedAt,
+    changes: [],
+    artifacts: [],
+    visuals: [],
+    knowledgeSources: [],
+  }),
+  inspectHarnessSession: vi.fn(),
+  searchHarnessSessionsPage: vi.fn(),
+}))
 
 afterEach(() => { vi.resetAllMocks(); vi.unstubAllGlobals() })
 
@@ -15,7 +25,7 @@ it('paginates full-message Harness hits without repeating the first page', async
     createdAt: new Date(Date.UTC(2026, 8, 12, 0, index)).toISOString(),
     updatedAt: new Date(Date.UTC(2026, 8, 12, 0, index)).toISOString(),
     sessionId: `session-${index}`, entries: [],
-    projection: { status: 'completed', activity: '完成', updatedAt: '2026-09-12T00:00:00Z', steps: [], artifacts: [] },
+    projection: { status: 'completed', activity: '完成', updatedAt: '2026-09-12T00:00:00Z', steps: [], changes: [], artifacts: [], visuals: [], knowledgeSources: [] },
   })).reverse()
   vi.mocked(invoke).mockImplementation(async (_command, args) => {
     const { query, offset, limit, excludeIds } = (args as { query: { query: string; offset: number; limit: number; excludeIds: string[] } }).query
@@ -52,7 +62,7 @@ it('merges local metadata and Harness body matches in task recency order', async
     { id: 'unrelated', name: '排期', sessionId: 'session-unrelated', updatedAt: '2026-09-13T01:00:00Z' },
   ].map((value) => ({
     ...value, source: 'DESKTOP', status: 'COMPLETED', createdAt: value.updatedAt, entries: [],
-    projection: { status: 'completed', activity: '完成', updatedAt: value.updatedAt, steps: [], artifacts: [] },
+    projection: { status: 'completed', activity: '完成', updatedAt: value.updatedAt, steps: [], changes: [], artifacts: [], visuals: [], knowledgeSources: [] },
   }))
   vi.mocked(invoke).mockImplementation(async (_command, args) => {
     const { query, offset, limit, excludeIds } = (args as { query: { query: string; offset: number; limit: number; excludeIds: string[] } }).query
@@ -77,7 +87,7 @@ it('preserves local index pagination beyond the bounded Harness candidate set', 
   const task: LocalTaskRun = {
     id: 'older-local-match', source: 'DESKTOP', name: '库存记录', status: 'COMPLETED',
     createdAt: '2026-09-13T00:00:00Z', updatedAt: '2026-09-13T00:00:00Z',
-    entries: [], projection: { status: 'completed', activity: '完成', updatedAt: '2026-09-13T00:00:00Z', steps: [], artifacts: [] },
+    entries: [], projection: { status: 'completed', activity: '完成', updatedAt: '2026-09-13T00:00:00Z', steps: [], changes: [], artifacts: [], visuals: [], knowledgeSources: [] },
   }
   vi.mocked(invoke).mockResolvedValueOnce({ items: [task], total: 2_001, offset: 0, limit: 200 })
     .mockResolvedValueOnce({ items: [task], total: 2_001, offset: 0, limit: 200 })
@@ -94,7 +104,7 @@ it('finds a body match beyond the first 2,000 Session IDs using bounded requests
     createdAt: new Date(Date.UTC(2026, 8, 13, 0, index)).toISOString(),
     updatedAt: new Date(Date.UTC(2026, 8, 13, 0, index)).toISOString(),
     sessionId: `session-${index}`, entries: [],
-    projection: { status: 'completed', activity: '完成', updatedAt: '2026-09-13T00:00:00Z', steps: [], artifacts: [] },
+    projection: { status: 'completed', activity: '完成', updatedAt: '2026-09-13T00:00:00Z', steps: [], changes: [], artifacts: [], visuals: [], knowledgeSources: [] },
   })).reverse()
   vi.mocked(invoke).mockImplementation(async (_command, args) => {
     const { query, offset, limit, excludeIds } = (args as { query: { query: string; offset: number; limit: number; excludeIds: string[] } }).query
@@ -118,7 +128,7 @@ it('does not skip a candidate moved ahead of the current page while scanning', a
     createdAt: new Date(Date.UTC(2026, 8, 13, 0, index)).toISOString(),
     updatedAt: new Date(Date.UTC(2026, 8, 13, 0, index)).toISOString(),
     sessionId: `session-${index}`, entries: [],
-    projection: { status: 'completed', activity: '完成', updatedAt: '2026-09-13T00:00:00Z', steps: [], artifacts: [] },
+    projection: { status: 'completed', activity: '完成', updatedAt: '2026-09-13T00:00:00Z', steps: [], changes: [], artifacts: [], visuals: [], knowledgeSources: [] },
   }))
   let candidatePages = 0
   vi.mocked(invoke).mockImplementation(async (_command, args) => {
@@ -147,7 +157,7 @@ it('sorts a later Harness batch ahead of older local title matches', async () =>
     createdAt: new Date(Date.UTC(2026, 8, 13, 0, index)).toISOString(),
     updatedAt: new Date(Date.UTC(2026, 8, 13, 0, index)).toISOString(),
     sessionId: `session-${index}`, entries: [],
-    projection: { status: 'completed', activity: '完成', updatedAt: '2026-09-13T00:00:00Z', steps: [], artifacts: [] },
+    projection: { status: 'completed', activity: '完成', updatedAt: '2026-09-13T00:00:00Z', steps: [], changes: [], artifacts: [], visuals: [], knowledgeSources: [] },
   }))
   vi.mocked(invoke).mockImplementation(async (_command, args) => {
     const { query, offset, limit, excludeIds } = (args as { query: { query: string; offset: number; limit: number; excludeIds: string[] } }).query
@@ -172,7 +182,7 @@ it('stops launching Harness batches after a stale search is canceled', async () 
     createdAt: new Date(Date.UTC(2026, 8, 13, 0, index)).toISOString(),
     updatedAt: new Date(Date.UTC(2026, 8, 13, 0, index)).toISOString(),
     sessionId: `session-${index}`, entries: [],
-    projection: { status: 'completed', activity: '完成', updatedAt: '2026-09-13T00:00:00Z', steps: [], artifacts: [] },
+    projection: { status: 'completed', activity: '完成', updatedAt: '2026-09-13T00:00:00Z', steps: [], changes: [], artifacts: [], visuals: [], knowledgeSources: [] },
   }))
   vi.mocked(invoke).mockImplementation(async (_command, args) => {
     const { query, offset, limit, excludeIds } = (args as { query: { query: string; offset: number; limit: number; excludeIds: string[] } }).query
