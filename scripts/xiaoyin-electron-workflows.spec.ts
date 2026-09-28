@@ -96,6 +96,8 @@ describe('Xiaoyin Electron workflows', () => {
     expect(cacheScript).toContain('Get-FileHash')
     expect(cacheScript).toContain('[IO.FileShare]::None')
     expect(cacheScript).toContain("[Guid]::NewGuid().ToString('N')")
+    expect(cacheScript).toContain('[IO.File]::Move($Temporary, $Destination)')
+    expect(cacheScript).not.toContain('[IO.File]::Move($Temporary, $Destination, $true)')
     expect(cacheScript).toContain('$Lock.Dispose()')
     expect(cacheScript).toContain('cdn.npmmirror.com/binaries/node')
     expect(cacheScript).toContain('ghfast.top/https://github.com/astral-sh/python-build-standalone')

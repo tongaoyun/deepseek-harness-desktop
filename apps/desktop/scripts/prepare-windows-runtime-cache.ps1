@@ -44,7 +44,10 @@ function Save-LockedAsset([string] $Source, [string] $ExpectedHash) {
     if ($LASTEXITCODE -ne 0) { throw "Runtime asset download failed: $Source" }
     $ActualHash = (Get-FileHash -LiteralPath $Temporary -Algorithm SHA256).Hash.ToLowerInvariant()
     if ($ActualHash -ne $ExpectedHash) { throw "Runtime asset checksum mismatch: $Source" }
-    [IO.File]::Move($Temporary, $Destination, $true)
+    # Windows PowerShell 5 runs on .NET Framework, which only exposes the
+    # two-argument File.Move overload. The per-hash lock and removal above
+    # make this same-volume rename exclusive without an overwrite flag.
+    [IO.File]::Move($Temporary, $Destination)
   } finally {
     if (Test-Path -LiteralPath $Temporary) { Remove-Item -LiteralPath $Temporary -Force }
     $Lock.Dispose()

@@ -63,7 +63,7 @@ export class XiaoyinNativeProcess {
       }, 10_000)
       this.pending.set(requestId, { resolve, reject, timer })
       child.stdin.write(`${JSON.stringify({ protocol: 'xiaoyin.native.v1', request_id: requestId, method, payload })}\n`, (error) => {
-        if (error !== undefined) {
+        if (error !== undefined && error !== null) {
           clearTimeout(timer)
           this.pending.delete(requestId)
           reject(error instanceof Error ? error : new Error(String(error)))
