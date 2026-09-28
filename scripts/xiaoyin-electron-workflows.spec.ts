@@ -84,6 +84,8 @@ describe('Xiaoyin Electron workflows', () => {
     const packaging = steps.find(step => step.name === 'Package Windows')?.run ?? ''
     const upload = steps.find(step => step.name === 'Upload Windows artifacts')
     expect(prepare).toContain('C:\\xiaoyin-builder\\release\\electron\\.env.windows')
+    expect(prepare).toContain('-Encoding UTF8')
+    expect(prepare).not.toContain('utf8NoBOM')
     expect(packaging).toContain('package:desktop:win:x64:unsigned')
     expect(packaging).toContain('package:desktop:win:x64')
     expect(upload?.with?.path).toContain('.desktop-build/targets/win-x64/unsigned-artifacts/**')

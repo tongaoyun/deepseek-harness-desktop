@@ -61,7 +61,7 @@ jobs:
           DSH_DESKTOP_AUTO_UPDATE_ENV=test
           DSH_DESKTOP_MANDATORY_UPDATE_TEST_ORIGIN=https://xiaoyin-acceptance.invalid
           DSH_DESKTOP_MANDATORY_UPDATE_CONFIG='{"allowedAuthOrigins":["https://login-acceptance.invalid"]}'
-          '@ | Set-Content -LiteralPath "apps\desktop\.env.windows" -Encoding utf8NoBOM
+          '@ | Set-Content -LiteralPath "apps\desktop\.env.windows" -Encoding UTF8
           }
       - name: Build Xiaoyin native sidecar
         shell: powershell
