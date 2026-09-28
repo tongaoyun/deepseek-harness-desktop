@@ -117,6 +117,16 @@ describe('Xiaoyin Electron workflows', () => {
     expect(prepare).not.toContain('utf8NoBOM')
     expect(packaging).toContain('package:desktop:win:x64:unsigned')
     expect(packaging).toContain('package:desktop:win:x64')
-    expect(upload?.with?.path).toContain('.desktop-build/targets/win-x64/unsigned-artifacts/**')
+    expect(upload?.with?.path).toContain('apps/desktop/.desktop-build/targets/win-x64/unsigned-artifacts/**')
+  })
+
+  it('uploads platform artifacts from the desktop package build directory', () => {
+    const windows = workflow('electron-windows.yml').jobs.windows?.steps
+      .find(step => step.name === 'Upload Windows artifacts')?.with?.path
+    const macos = workflow('electron-macos.yml').jobs.macos?.steps
+      .find(step => step.name === 'Upload macOS artifacts')?.with?.path
+    expect(windows).toContain('apps/desktop/.desktop-build/targets/win-x64/artifacts/**')
+    expect(windows).toContain('apps/desktop/.desktop-build/targets/win-x64/unsigned-artifacts/**')
+    expect(macos).toBe('apps/desktop/.desktop-build/targets/mac-arm64/artifacts/**')
   })
 })

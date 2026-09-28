@@ -30,6 +30,6 @@ jobs:
         uses: http://192.168.2.66:3300/instudio/gitea-upload-artifact@v4
         with:
           name: xiaoyin-electron-macos-${{ github.sha }}
-          path: .desktop-build/targets/mac-arm64/artifacts/**
+          path: apps/desktop/.desktop-build/targets/mac-arm64/artifacts/**
           if-no-files-found: error
           retention-days: 30

@@ -99,8 +99,10 @@ export function createElectronBuilderConfig(
   const productVersion = JSON.parse(readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8')).version
   const buildVersion = resolveDesktopBuildVersion(env, productVersion)
   const packaged = resolveDesktopBuildCommit(env)
+  const nativeTarget = env.CARGO_TARGET_DIR
+    ?? join(REPOSITORY_ROOT, 'native', 'xiaoyin', 'target')
   const nativeSidecar = env.XIAOYIN_NATIVE_BINARY
-    ?? join(REPOSITORY_ROOT, 'native', 'xiaoyin', 'target', 'release', packagesWindows ? 'xiaoyin-native.exe' : 'xiaoyin-native')
+    ?? join(nativeTarget, 'release', packagesWindows ? 'xiaoyin-native.exe' : 'xiaoyin-native')
   return {
     appId,
     protocols: [{ name: 'DeepSeek Harness', schemes: ['dsh'] }],
