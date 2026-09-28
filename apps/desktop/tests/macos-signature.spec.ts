@@ -44,10 +44,11 @@ describe('desktop macOS release signature', () => {
     expect(config.protocols).toEqual([{ name: 'DeepSeek Harness', schemes: ['dsh'] }])
     expect(portablePath(config.directories.output)).toContain('/.desktop-build/targets/mac-arm64/artifacts')
     expect(config.mac.extendInfo.NSMicrophoneUsageDescription).toContain('microphone')
-    expect(config.extraResources).toHaveLength(3)
+    expect(config.extraResources).toHaveLength(4)
     expect(config.extraResources[0]?.to).toBe('runtime')
     expect(portablePath(config.extraResources[0]?.from ?? '')).toContain('/.desktop-build/targets/mac-arm64/runtime')
-    const nativeSidecar = config.extraResources[1]
+    expect(config.extraResources[1]?.to).toBe('xiaoyin/product.json')
+    const nativeSidecar = config.extraResources[2]
     const nativeSidecarPath = nativeSidecar !== undefined && 'from' in nativeSidecar && typeof nativeSidecar.from === 'string'
       ? nativeSidecar.from : ''
     expect(portablePath(nativeSidecarPath)).toContain('/native/xiaoyin/target/release/xiaoyin-native')

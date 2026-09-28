@@ -1,26 +1,86 @@
-name: Electron Windows Release
+name: Electron Windows
 
 on:
+  pull_request:
   workflow_dispatch:
+    inputs:
+      signing:
+        description: Build an unsigned acceptance installer or use the runner's SafeNet EV release configuration
+        required: true
+        default: unsigned
+        type: choice
+        options:
+          - unsigned
+          - signed
 
 jobs:
   windows:
-    runs-on: windows-latest
+    runs-on: windows-x64
+    timeout-minutes: 120
+    env:
+      NPM_CONFIG_REGISTRY: http://192.168.2.9:4873/
+      NPM_CONFIG_FETCH_RETRIES: 4
+      NPM_CONFIG_FETCH_TIMEOUT: 120000
+      NPM_CONFIG_UPDATE_NOTIFIER: "false"
+      PNPM_STORE_DIR: C:\xiaoyin-desktop-builder\pnpm-store-electron
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - name: Checkout
+        uses: http://192.168.2.66:3300/instudio/checkout@v4
+      - name: Verify toolchain
+        shell: powershell
+        run: |
+          node --version
+          rustc --version
+          cargo --version
+          if ((node -p "process.arch") -ne "x64") { throw "x64 Node.js is required" }
+      - name: Install dependencies
+        shell: powershell
+        run: |
+          npm install -g pnpm@11.7.0 --prefer-offline --no-audit --fund=false --registry=$env:NPM_CONFIG_REGISTRY
+          if ($LASTEXITCODE -ne 0) { throw "pnpm installation failed" }
+          pnpm config set store-dir $env:PNPM_STORE_DIR
+          pnpm install --frozen-lockfile --prefer-offline --registry=$env:NPM_CONFIG_REGISTRY
+          if ($LASTEXITCODE -ne 0) { throw "dependency installation failed" }
+      - name: Prepare package configuration
+        shell: powershell
+        run: |
+          $Signed = "${{ inputs.signing }}" -eq "signed"
+          if ($Signed) {
+            $ReleaseConfig = "C:\xiaoyin-builder\release\electron\.env.windows"
+            if (-not (Test-Path -LiteralPath $ReleaseConfig -PathType Leaf)) {
+              throw "Signed Electron packaging requires the runner-owned $ReleaseConfig"
+            }
+            Copy-Item -LiteralPath $ReleaseConfig -Destination "apps\desktop\.env.windows"
+          } else {
+            @'
+          DSH_DESKTOP_APP_ID=com.instudio.xiaoyin.desktop.acceptance
+          DSH_DESKTOP_AUTO_UPDATE_ENV=test
+          DSH_DESKTOP_MANDATORY_UPDATE_TEST_ORIGIN=https://xiaoyin-acceptance.invalid
+          DSH_DESKTOP_MANDATORY_UPDATE_CONFIG='{"allowedAuthOrigins":["https://login-acceptance.invalid"]}'
+          '@ | Set-Content -LiteralPath "apps\desktop\.env.windows" -Encoding utf8NoBOM
+          }
+      - name: Build Xiaoyin native sidecar
+        shell: powershell
+        run: |
+          cargo test --manifest-path native\xiaoyin\Cargo.toml
+          if ($LASTEXITCODE -ne 0) { throw "Xiaoyin native tests failed" }
+          cargo build --release --manifest-path native\xiaoyin\Cargo.toml
+          if ($LASTEXITCODE -ne 0) { throw "Xiaoyin native build failed" }
+      - name: Package Windows
+        shell: powershell
+        run: |
+          if ("${{ inputs.signing }}" -eq "signed") {
+            pnpm run package:desktop:win:x64
+          } else {
+            pnpm run package:desktop:win:x64:unsigned
+          }
+          if ($LASTEXITCODE -ne 0) { throw "Windows Electron packaging failed" }
+      - name: Upload Windows artifacts
+        uses: http://192.168.2.66:3300/instudio/gitea-upload-artifact@v4
         with:
-          version: 11.7.0
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22.19.0
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @deepseek-ai/dsh-desktop package:win:x64
-        env:
-          CSC_LINK: ${{ secrets.ELECTRON_WINDOWS_CERTIFICATE }}
-          CSC_KEY_PASSWORD: ${{ secrets.ELECTRON_WINDOWS_CERTIFICATE_PASSWORD }}
-      - uses: actions/upload-artifact@v4
-        with:
-          name: xiaoyin-electron-windows
-          path: apps/desktop/dist/**
+          name: xiaoyin-electron-windows-${{ github.sha }}
+          path: |
+            .desktop-build/targets/win-x64/artifacts/**
+            .desktop-build/targets/win-x64/unsigned-artifacts/**
+          if-no-files-found: error
+          retention-days: 30

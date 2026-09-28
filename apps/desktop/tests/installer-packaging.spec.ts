@@ -37,6 +37,12 @@ describe('installer preparation preserves application dependencies', () => {
     try {
       const { createElectronBuilderConfig } = await import('../electron-builder.config.mjs')
       const config = createElectronBuilderConfig(env, platform, 'x64')
+      const productConfig = config.extraResources.find(resource => resource.to === 'xiaoyin/product.json')
+      expect(productConfig).toBeDefined()
+      expect(JSON.parse(readFileSync(productConfig!.from, 'utf8'))).toEqual({
+        version: 1,
+        serverUrl: 'http://192.168.2.67:30081',
+      })
       const aboutIcon = config.extraResources.find(resource => resource.to === 'icon.png')
       expect(aboutIcon).toBeDefined()
       expect(readFileSync(aboutIcon!.from)).toEqual(readFileSync(new URL('../resources/icon-windows.png', import.meta.url)))

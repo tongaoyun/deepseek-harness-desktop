@@ -5,25 +5,31 @@ on:
 
 jobs:
   macos:
-    runs-on: macos-latest
+    runs-on: macos-arm64
+    timeout-minutes: 120
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - name: Checkout
+        uses: http://192.168.2.66:3300/instudio/checkout@v4
+      - name: Install dependencies
+        run: |
+          npm install -g pnpm@11.7.0 --prefer-offline --no-audit --fund=false \
+            --registry=http://192.168.2.9:4873/
+          pnpm install --frozen-lockfile --registry=http://192.168.2.9:4873/
+      - name: Load runner-owned signing configuration
+        run: |
+          release_config="$HOME/.xiaoyin-release/electron/.env.macos"
+          test -f "$release_config" || { echo "Missing runner-owned $release_config" >&2; exit 1; }
+          cp "$release_config" apps/desktop/.env.macos
+      - name: Build Xiaoyin native sidecar
+        run: |
+          cargo test --manifest-path native/xiaoyin/Cargo.toml
+          cargo build --release --manifest-path native/xiaoyin/Cargo.toml
+      - name: Package macOS
+        run: pnpm run package:desktop:mac:arm64
+      - name: Upload macOS artifacts
+        uses: http://192.168.2.66:3300/instudio/gitea-upload-artifact@v4
         with:
-          version: 11.7.0
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22.19.0
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @deepseek-ai/dsh-desktop package:mac:arm64
-        env:
-          CSC_LINK: ${{ secrets.ELECTRON_MAC_CERTIFICATE }}
-          CSC_KEY_PASSWORD: ${{ secrets.ELECTRON_MAC_CERTIFICATE_PASSWORD }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-      - uses: actions/upload-artifact@v4
-        with:
-          name: xiaoyin-electron-macos
-          path: apps/desktop/dist/**
+          name: xiaoyin-electron-macos-${{ github.sha }}
+          path: .desktop-build/targets/mac-arm64/artifacts/**
+          if-no-files-found: error
+          retention-days: 30

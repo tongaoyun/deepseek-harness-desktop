@@ -20,6 +20,8 @@ export interface DesktopElectronBuilderConfig {
   readonly asarUnpack: readonly string[]
   readonly extraResources: readonly [
     { readonly from: string, readonly to: 'runtime' },
+    { readonly from: string, readonly to: 'xiaoyin/product.json' },
+    { readonly from: string, readonly to: 'native/xiaoyin-native' | 'native/xiaoyin-native.exe' },
     { readonly from: string, readonly to: 'icon.png' },
     ...{ readonly from: string, readonly to: 'tray.ico' }[],
   ]

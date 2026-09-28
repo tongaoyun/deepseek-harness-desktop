@@ -61,6 +61,7 @@ import { DesktopBackgroundNotice } from './background-notice.ts'
 import { XiaoyinProductBridge, type ProductBridgeOptions } from '@xiaoyin/product/bridge'
 import { ensureDingTalkSession } from '@xiaoyin/product/dingtalk-auth'
 import { XiaoyinNativeProcess } from './xiaoyin-native-process.ts'
+import { resolveXiaoyinProductServerUrl } from './xiaoyin-product-config.ts'
 
 let focusPrimaryWindow = (): void => {}
 let stopForRecovery = async (): Promise<void> => {}
@@ -410,7 +411,11 @@ async function main(): Promise<void> {
   let hostCookie: string | undefined
   const browserGuests = new DesktopBrowserGuests(() => hostUrl)
   const storedXiaoyinSession = readStoredXiaoyinSession()
-  const serverUrl = process.env.XIAOYIN_SERVER_URL
+  const serverUrl = resolveXiaoyinProductServerUrl({
+    packaged: app.isPackaged,
+    resourcesPath: process.resourcesPath,
+    appPath: app.getAppPath(),
+  })
   const sessionToken = storedXiaoyinSession?.token ?? process.env.XIAOYIN_SESSION_TOKEN
   const nativeSidecar = new XiaoyinNativeProcess(
     process.env.XIAOYIN_NATIVE_BINARY
@@ -434,7 +439,6 @@ async function main(): Promise<void> {
   let previousAccountStatus: string | undefined
   let xiaoyinAuthAttempt: Promise<void> | undefined
   const ensureXiaoyinAuth = (): Promise<void> => {
-    if (serverUrl === undefined || serverUrl.trim() === '') return Promise.resolve()
     xiaoyinAuthAttempt ??= ensureDingTalkSession(productBridge, async (url) => {
       await shell.openExternal(url)
     }).then(() => undefined).catch((error: unknown) => {

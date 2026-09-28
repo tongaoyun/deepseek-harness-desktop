@@ -147,6 +147,7 @@ export function createElectronBuilderConfig(
     asarUnpack: unpack,
     extraResources: [
       { from: buildPaths.runtime, to: 'runtime' },
+      { from: fileURLToPath(new URL('../resources/xiaoyin-product.json', import.meta.url)), to: 'xiaoyin/product.json' },
       // Product-native capabilities are supervised by Electron and never
       // exposed directly to the renderer.
       { from: nativeSidecar, to: packagesWindows ? 'native/xiaoyin-native.exe' : 'native/xiaoyin-native' },

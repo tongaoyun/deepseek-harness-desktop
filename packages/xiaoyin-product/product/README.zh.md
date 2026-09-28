@@ -37,10 +37,10 @@ kind: "package-reference"
 
 ## 已知限制与延期工作
 
-- 远程产品方法需要配置小胤服务端。
+- 安装版从随包发布的 `xiaoyin/product.json` 读取小胤服务端地址；未打包的开发环境可以使用 `XIAOYIN_SERVER_URL` 覆盖。
 - 受监管的 sidecar 不可用时，原生方法会直接失败。
 
 <a id="dev-note"></a>
 ### 开发备注
 
-凭据和原生分发必须保留在 Electron 主进程。Renderer 只能使用 preload 白名单。
+产品配置、凭据和原生分发必须保留在 Electron 主进程。Renderer 只能使用 preload 白名单。

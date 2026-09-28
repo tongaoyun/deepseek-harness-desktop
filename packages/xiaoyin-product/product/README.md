@@ -37,10 +37,10 @@ No cache entries are created; the bridge does not assemble or send provider requ
 
 ## Known Limitations and Deferred Work
 
-- The bridge requires a configured Xiaoyin server for remote product methods.
+- Installed applications read the Xiaoyin server origin from the packaged `xiaoyin/product.json`; unpackaged development may override it with `XIAOYIN_SERVER_URL`.
 - Native methods fail closed when the supervised sidecar is unavailable.
 
 <a id="dev-note"></a>
 ### Dev Note
 
-Keep credentials and native dispatch in the Electron main process. Renderer code uses only the preload allowlist.
+Keep product configuration, credentials, and native dispatch in the Electron main process. Renderer code uses only the preload allowlist.

@@ -6,20 +6,27 @@ on:
   pull_request:
 
 jobs:
-  official-baseline:
-    runs-on: ubuntu-latest
+  desktop:
+    runs-on: ci-node
+    timeout-minutes: 45
+    container:
+      image: ci-node:1.0.0
+      volumes:
+        - /data/ci-cache/pnpm/xiaoyin-desktop-electron:/pnpm-store
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 11.7.0
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22.19.0
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @deepseek-ai/dsh-desktop typecheck
-      - run: pnpm --filter @deepseek-ai/dsh-desktop build
-      - run: pnpm --filter @xiaoyin/product build
-      - run: cargo check --manifest-path native/xiaoyin/Cargo.toml
-      - run: git diff --check
+      - name: Checkout
+        uses: http://192.168.2.66:3300/instudio/checkout@v4
+      - name: Install dependencies
+        run: |
+          npm install -g pnpm@11.7.0 --prefer-offline --no-audit --fund=false \
+            --registry=http://192.168.2.9:4873/
+          pnpm config set store-dir /pnpm-store
+          pnpm install --frozen-lockfile --registry=http://192.168.2.9:4873/
+      - name: Verify upstream and product contracts
+        run: |
+          pnpm run verify:upstream
+          pnpm run build:lib:host
+          pnpm run typecheck:contracts-ready
+          pnpm --dir packages/xiaoyin-product/product test
+          pnpm run verify-translation-pairing
+          git diff --check
