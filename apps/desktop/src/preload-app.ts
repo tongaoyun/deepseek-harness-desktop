@@ -1,8 +1,9 @@
 /** Origin-scoped boot, native directory selection, host paths of picked files, and update presentation with native confirmation actions. */
 
 import type { DesktopShortcutInput, ShortcutConfigSnapshot, ShortcutSaveResult } from '@deepseek-ai/dsh-client-shortcuts/protocol'
+import type { ProductEvent, ProductMethod, ProductSession } from '@xiaoyin/product/protocol'
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
-import { DESKTOP_IPC, SCHEME, type DshDesktopProductApi, type DesktopUpdatePresentation } from './ipc.ts'
+import { DESKTOP_IPC, SCHEME, type DshDesktopProductApi, type DesktopUpdatePresentation, type XiaoyinProductApi } from './ipc.ts'
 import { PLATFORM_IPC } from './platform-ipc.ts'
 import { markDocumentPlatform, syncWindowFullscreen } from './preload-platform.ts'
 import { syncNativeTheme } from './preload-theme.ts'
@@ -54,6 +55,16 @@ function createProductApi(): DshDesktopProductApi {
         return () => { ipcRenderer.off(DESKTOP_IPC.updatesPresentation, handle) }
       },
     },
+    product: {
+      invoke: (method: ProductMethod, payload?: unknown) =>
+        ipcRenderer.invoke(DESKTOP_IPC.productInvoke, method, payload) as Promise<unknown>,
+      getSession: () => ipcRenderer.invoke(DESKTOP_IPC.productSession) as Promise<ProductSession>,
+      subscribe(listener) {
+        const handle = (_event: Electron.IpcRendererEvent, event: ProductEvent): void => { listener(event) }
+        ipcRenderer.on(DESKTOP_IPC.productEvent, handle)
+        return () => { ipcRenderer.off(DESKTOP_IPC.productEvent, handle) }
+      },
+    },
   }
 }
 
@@ -96,7 +107,14 @@ markDocumentPlatform()
 syncWindowFullscreen()
 syncNativeTheme()
 // Main-process IPC also verifies the owning window and top frame.
-contextBridge.exposeInMainWorld('dshDesktop', location.protocol === `${SCHEME}:` && location.hostname === 'app' && process.isMainFrame ? createProductApi() : { protocolVersion: 1 })
+const ownedApplication = location.protocol === `${SCHEME}:` && location.hostname === 'app' && process.isMainFrame
+if (ownedApplication) {
+  const productApi = createProductApi()
+  contextBridge.exposeInMainWorld('dshDesktop', productApi)
+  contextBridge.exposeInMainWorld('xiaoyin', { product: productApi.product } satisfies XiaoyinProductApi)
+} else {
+  contextBridge.exposeInMainWorld('dshDesktop', { protocolVersion: 1 })
+}
 
 if (location.protocol === `${SCHEME}:` && location.hostname === 'app') {
   contextBridge.exposeInMainWorld('__DSH_LOCALE__', {

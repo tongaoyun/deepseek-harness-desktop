@@ -28,6 +28,12 @@
     // not declaration path aliases, keep each package/vendor source compiled
     // under its own tsconfig boundary.
     "paths": {
+      "@xiaoyin/product": ["./packages/xiaoyin-product/product/src/index.ts"],
+      "@xiaoyin/product/protocol": ["./packages/xiaoyin-product/product/src/protocol.ts"],
+      "@xiaoyin/product/bridge": ["./packages/xiaoyin-product/product/src/bridge.ts"],
+      "@xiaoyin/product/dingtalk-auth": ["./packages/xiaoyin-product/product/src/dingtalk-auth.ts"],
+      "@xiaoyin/product-ui": ["./packages/extensions/ui-xiaoyin-product/src/index.ts"],
+      "@xiaoyin/product-ui/client": ["./packages/extensions/ui-xiaoyin-product/src/client/index.ts"],
       "@deepseek-ai/dsh-client-ui-settings-account": ["./packages/client/ui-settings-account/src/index.ts"],
       "@deepseek-ai/dsh-client-ui-settings-account/client": ["./packages/client/ui-settings-account/src/client/index.ts"],
       "@deepseek-ai/dsh-api-gateway/stream-protocol": ["./packages/api/gateway/src/stream-protocol.ts"],

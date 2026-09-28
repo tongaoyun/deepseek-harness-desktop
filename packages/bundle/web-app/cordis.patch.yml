@@ -47,6 +47,9 @@
     - id: subagent-model-selection-settings
       name: '@deepseek-ai/dsh-tool-subagent/model-selection-settings'
 
+    - id: xiaoyin-product-ui
+      name: '@xiaoyin/product-ui'
+
     - id: message-feedback
       name: '@deepseek-ai/dsh-message-feedback'
       config:
@@ -321,6 +324,11 @@
 
     - id: ui-cordis
       name: '@deepseek-ai/dsh-client-ui-cordis'
+
+    # Xiaoyin product catalog entry. Execution and conversation remain owned
+    # by the official Harness packages; this plugin only exposes product data.
+    - id: xiaoyin-product
+      name: '@xiaoyin/product-ui'
 
     # Turn tail: the changed-files card and delivery cards under each closing
     # assistant message. Remove this entry to turn the surface off; the tail

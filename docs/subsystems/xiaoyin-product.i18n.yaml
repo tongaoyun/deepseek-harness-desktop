@@ -1,0 +1,13 @@
+# Bilingual-pair consistency record for xiaoyin-product.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/subsystems/xiaoyin-product.md
+/xiaoyin-product:
+  en: acfd199a6fc13b22
+  zh: 19793d9833c51b15
+/xiaoyin-product/product-owned-capabilities:
+  en: 2910b985ff493238
+  zh: 5284d2e1eebe5ded
+/xiaoyin-product/boundary:
+  en: de94bb5fa5b2564c
+  zh: 5cf80542d83b7612

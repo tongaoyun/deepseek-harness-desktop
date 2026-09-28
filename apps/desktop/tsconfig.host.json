@@ -9,6 +9,9 @@
   ],
   "references": [
     {
+      "path": "../../packages/xiaoyin-product/product"
+    },
+    {
       "path": "../../packages/boot/app-boot"
     },
     {

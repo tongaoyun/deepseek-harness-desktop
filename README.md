@@ -2,6 +2,12 @@
 
 English | [中文](README.zh.md)
 
+## Xiaoyin downstream desktop
+
+This repository is the Xiaoyin Electron downstream of DeepSeek Harness `dsh-v0.1.7-rc.2`, pinned by [`UPSTREAM_COMMIT`](UPSTREAM_COMMIT). The only desktop entry point is `apps/desktop`; the former Tauri shell and duplicate Harness host are not part of this tree.
+
+Product capabilities live in [`packages/xiaoyin-product/product`](packages/xiaoyin-product/product) and [`native/xiaoyin`](native/xiaoyin). They expose DingTalk identity, expert kits, skills, connectors, WeKnora, IM, schedules, artifacts and product references through a restricted bridge. Session, Agent, Conversation, Browser, Office, approval, cancellation, retry and replay remain official Harness capabilities.
+
 DeepSeek Harness (`dsh`) is an open-source agent harness developed by [DeepSeek AI](https://deepseek.com).
 
 It is built on an **everything-is-a-plugin** architecture and powered by [Cordis](https://github.com/cordiverse/cordis), whose design is described in [_A Programming Paradigm for Spatiotemporal Composability_](https://arxiv.org/abs/2608.25512).

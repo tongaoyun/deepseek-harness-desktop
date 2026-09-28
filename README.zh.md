@@ -2,6 +2,12 @@
 
 [English](README.md) | 中文
 
+## 小胤下游桌面端
+
+本仓库是小胤基于 DeepSeek Harness `dsh-v0.1.7-rc.2` 的 Electron 下游版本。上游基线固定在 [`UPSTREAM_COMMIT`](UPSTREAM_COMMIT)，桌面入口为 `apps/desktop`，不再使用 Tauri。
+
+小胤产品能力位于 [`packages/xiaoyin-product/product`](packages/xiaoyin-product/product) 和 [`native/xiaoyin`](native/xiaoyin)，只通过公开产品桥接接入专家套件、技能、连接器、WeKnora、钉钉登录、IM、定时任务及成果引用。Harness 的 Session、Agent、Conversation、Browser、Office、审批、停止、重试和回放保持官方实现。
+
 DeepSeek Harness（`dsh`）是由 [DeepSeek AI](https://deepseek.com) 开发的开源 agent harness（智能体框架）。
 
 它构建于**一切皆插件**的架构之上，由 [Cordis](https://github.com/cordiverse/cordis) 驱动，其设计参见论文 [_A Programming Paradigm for Spatiotemporal Composability_](https://arxiv.org/abs/2608.25512)。

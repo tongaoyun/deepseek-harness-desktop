@@ -34,6 +34,8 @@ import {
   writeMacOSAppUpdateConfig,
 } from './macos-app-update-config.mjs'
 
+const REPOSITORY_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
+
 /**
  * Create electron-builder configuration from one release environment.
  * @param {NodeJS.ProcessEnv} env - Packaging environment.
@@ -97,6 +99,8 @@ export function createElectronBuilderConfig(
   const productVersion = JSON.parse(readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8')).version
   const buildVersion = resolveDesktopBuildVersion(env, productVersion)
   const packaged = resolveDesktopBuildCommit(env)
+  const nativeSidecar = env.XIAOYIN_NATIVE_BINARY
+    ?? join(REPOSITORY_ROOT, 'native', 'xiaoyin', 'target', 'release', packagesWindows ? 'xiaoyin-native.exe' : 'xiaoyin-native')
   return {
     appId,
     protocols: [{ name: 'DeepSeek Harness', schemes: ['dsh'] }],
@@ -143,6 +147,9 @@ export function createElectronBuilderConfig(
     asarUnpack: unpack,
     extraResources: [
       { from: buildPaths.runtime, to: 'runtime' },
+      // Product-native capabilities are supervised by Electron and never
+      // exposed directly to the renderer.
+      { from: nativeSidecar, to: packagesWindows ? 'native/xiaoyin-native.exe' : 'native/xiaoyin-native' },
       { from: fileURLToPath(new URL('../resources/icon-windows.png', import.meta.url)), to: 'icon.png' },
       // Windows tray bitmaps; macOS keeps the Dock and ships no menu bar icon.
       ...(packagesWindows ? [{ from: fileURLToPath(new URL('../resources/tray-windows.ico', import.meta.url)), to: 'tray.ico' }] : []),

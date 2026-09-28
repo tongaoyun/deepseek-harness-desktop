@@ -1,0 +1,25 @@
+name: Electron Desktop CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  official-baseline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.19.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @deepseek-ai/dsh-desktop typecheck
+      - run: pnpm --filter @deepseek-ai/dsh-desktop build
+      - run: pnpm --filter @xiaoyin/product build
+      - run: cargo check --manifest-path native/xiaoyin/Cargo.toml
+      - run: git diff --check

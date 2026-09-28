@@ -2,6 +2,7 @@ import { WINDOWS_TITLEBAR_HEIGHT } from './windows-layout.ts'
 /** Electron shell: desktop project ownership, custom protocol, windows, and lifecycle. */
 
 import { readFile, writeFile } from 'node:fs/promises'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
@@ -17,6 +18,7 @@ import {
   net,
   protocol,
   session,
+  safeStorage,
   shell,
   type IpcMainInvokeEvent,
   type MenuItemConstructorOptions,
@@ -29,6 +31,7 @@ import { installDesktopDirectoryPicker } from './directory-picker.ts'
 import { installMicrophonePermissions } from './microphone-permissions.ts'
 import { DesktopBackendController } from './backend-controller.ts'
 import { DESKTOP_IPC, SCHEME, assertDesktopSender, type DesktopUpdateState } from './ipc.ts'
+import type { ProductSession } from '@xiaoyin/product/protocol'
 import { desktopUpdateReadyConfirmation, formatDesktopMessage, resolveDesktopLocale, resolveDesktopStartupLocale } from './locale.ts'
 import { claimDesktopSingleInstance } from './single-instance.ts'
 import { DesktopUpdateCoordinator } from './update-coordinator.ts'
@@ -55,6 +58,9 @@ import { DesktopUpdateOverlays } from './update-overlay.ts'
 import { DesktopQuitConfirmation } from './quit-confirmation.ts'
 import { DesktopTray } from './tray.ts'
 import { DesktopBackgroundNotice } from './background-notice.ts'
+import { XiaoyinProductBridge, type ProductBridgeOptions } from '@xiaoyin/product/bridge'
+import { ensureDingTalkSession } from '@xiaoyin/product/dingtalk-auth'
+import { XiaoyinNativeProcess } from './xiaoyin-native-process.ts'
 
 let focusPrimaryWindow = (): void => {}
 let stopForRecovery = async (): Promise<void> => {}
@@ -197,6 +203,35 @@ function platformLoginUrl(authorizeUrl: string): string {
   const url = new URL(authorizeUrl)
   url.searchParams.set('theme', nativeTheme.shouldUseDarkColors ? 'dark' : 'light')
   return url.href
+}
+
+interface StoredXiaoyinSession {
+  readonly version: number
+  readonly session: ProductSession
+  readonly encryptedToken: string
+}
+
+/** Restore the product session without exposing the opaque token to Renderer. */
+function readStoredXiaoyinSession(): { session: ProductSession; token: string } | undefined {
+  if (!safeStorage.isEncryptionAvailable()) return undefined
+  try {
+    const raw = JSON.parse(readFileSync(join(app.getPath('userData'), 'xiaoyin-session.json'), 'utf8')) as StoredXiaoyinSession
+    if (raw.version !== 1 || typeof raw.encryptedToken !== 'string' || raw.encryptedToken === '') return undefined
+    const token = safeStorage.decryptString(Buffer.from(raw.encryptedToken, 'base64'))
+    if (token === '') return undefined
+    return { session: raw.session, token }
+  } catch {
+    return undefined
+  }
+}
+
+/** Persist only an OS-encrypted token and its non-secret identity projection. */
+function persistXiaoyinSession(session: ProductSession, token: string | undefined): void {
+  if (token === undefined || token === '' || !safeStorage.isEncryptionAvailable()) return
+  const encryptedToken = safeStorage.encryptString(token).toString('base64')
+  writeFileSync(join(app.getPath('userData'), 'xiaoyin-session.json'), JSON.stringify({
+    version: 1, session, encryptedToken,
+  } satisfies StoredXiaoyinSession), { mode: 0o600 })
 }
 
 function createWindow(preload: string, show = false, primary = false): BrowserWindow {
@@ -374,6 +409,22 @@ async function main(): Promise<void> {
   let hostUrl: string | undefined
   let hostCookie: string | undefined
   const browserGuests = new DesktopBrowserGuests(() => hostUrl)
+  const storedXiaoyinSession = readStoredXiaoyinSession()
+  const serverUrl = process.env.XIAOYIN_SERVER_URL
+  const sessionToken = storedXiaoyinSession?.token ?? process.env.XIAOYIN_SESSION_TOKEN
+  const nativeSidecar = new XiaoyinNativeProcess(
+    process.env.XIAOYIN_NATIVE_BINARY
+      ?? (app.isPackaged ? join(process.resourcesPath, 'native', process.platform === 'win32' ? 'xiaoyin-native.exe' : 'xiaoyin-native') : undefined),
+    join(app.getPath('userData'), 'native'),
+  )
+  const productBridgeOptions: ProductBridgeOptions = {
+    persistSession: persistXiaoyinSession,
+    serverUrl,
+    sessionToken,
+    initialSession: storedXiaoyinSession?.session,
+    nativeInvoke: (method, payload) => nativeSidecar.invoke(method, payload),
+  }
+  const productBridge = new XiaoyinProductBridge(productBridgeOptions)
   let injections: readonly unknown[] = []
   let welcomeBackend: DesktopWelcomeBackend | undefined
   let stopAccount: (() => void) | undefined
@@ -381,6 +432,18 @@ async function main(): Promise<void> {
   let returnedAttempt: string | undefined
   let pendingWelcomeNotice: WelcomeNotice | undefined
   let previousAccountStatus: string | undefined
+  let xiaoyinAuthAttempt: Promise<void> | undefined
+  const ensureXiaoyinAuth = (): Promise<void> => {
+    if (serverUrl === undefined || serverUrl.trim() === '') return Promise.resolve()
+    xiaoyinAuthAttempt ??= ensureDingTalkSession(productBridge, async (url) => {
+      await shell.openExternal(url)
+    }).then(() => undefined).catch((error: unknown) => {
+      // Product authentication is independent from the official Harness account. Keep the
+      // workspace available for local development, while the product panel can retry explicitly.
+      console.error('xiaoyin DingTalk authentication unavailable', error)
+    }).finally(() => { xiaoyinAuthAttempt = undefined })
+    return xiaoyinAuthAttempt
+  }
   const assertProductSender = (event: IpcMainInvokeEvent): void => {
     assertDesktopSender(event, ['app'])
     if (mainWindow === undefined || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents
@@ -524,10 +587,12 @@ async function main(): Promise<void> {
     if (backend.host === undefined || welcomeBackend === undefined) throw new Error('desktop welcome: backend unavailable')
     return welcomeBackend.read()
   }
-  stopForRecovery = () => backend.close()
+  stopForRecovery = () => Promise.all([backend.close(), nativeSidecar.stop()]).then(() => undefined)
 
   const reconcileBackend = (): Promise<void> => {
     startup ??= (async () => {
+      await nativeSidecar.start()
+      void ensureXiaoyinAuth()
       await navigateMain(applicationUrl)
       await backend.start(async () => {
         await manager.applyRelease()
@@ -660,6 +725,26 @@ async function main(): Promise<void> {
   ipcMain.handle(DESKTOP_IPC.browserRelease, (event, lease: unknown) => {
     assertProductSender(event)
     return browserGuests.release(event.sender, lease)
+  })
+  ipcMain.handle(DESKTOP_IPC.productInvoke, async (event, method: unknown, payload: unknown) => {
+    assertProductSender(event)
+    const result = await productBridge.invoke(method, payload)
+    if (method === 'auth.beginDingTalk' && typeof result === 'object' && result !== null
+      && 'authorizationUrl' in result && typeof result.authorizationUrl === 'string') {
+      const authorizeUrl = new URL(result.authorizationUrl)
+      if (authorizeUrl.protocol !== 'https:' && authorizeUrl.protocol !== 'http:') {
+        throw new Error('xiaoyin product: invalid DingTalk authorization URL')
+      }
+      await shell.openExternal(authorizeUrl.href)
+    }
+    return result
+  })
+  ipcMain.handle(DESKTOP_IPC.productSession, (event) => {
+    assertProductSender(event)
+    return productBridge.getSession()
+  })
+  productBridge.subscribe((productEvent) => {
+    if (mainWindow !== undefined && !mainWindow.isDestroyed()) mainWindow.webContents.send(DESKTOP_IPC.productEvent, productEvent)
   })
 
   session.defaultSession.webRequest.onBeforeSendHeaders({ urls: ['ws://127.0.0.1/*'] }, (details, callback) => {
@@ -1195,7 +1280,7 @@ async function main(): Promise<void> {
     updateSchedule.dispose()
     updateDialog.dispose()
     mandatoryUI?.dispose()
-    void Promise.all([Promise.resolve(mandatoryPolicy?.dispose()).then(() => policyAuth?.dispose()), backend.close(),
+    void Promise.all([Promise.resolve(mandatoryPolicy?.dispose()).then(() => policyAuth?.dispose()), backend.close(), nativeSidecar.stop(),
       // A Platform cleanup failure is logged without cutting the remaining Host shutdown short.
       platformView.dispose().catch((error: unknown) => { console.error(error) })])
       .catch((error: unknown) => { console.error(error) }).finally(() => { app.quit() })

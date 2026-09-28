@@ -1,0 +1,20 @@
+{
+  "extends": "../../../tsconfig.base.client.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types",
+    "tsBuildInfoFile": "lib/tsconfig.tsbuildinfo",
+    "composite": true,
+    "declaration": true,
+    "declarationMap": true,
+    "jsx": "react-jsx"
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx", "src/**/*.d.ts"],
+  "references": [
+    { "path": "../../../packages/client/locale/tsconfig.host.json" },
+    { "path": "../../../packages/client/ui-primitives/tsconfig.json" },
+    { "path": "../../../packages/client/ui-renderer/tsconfig.json" },
+    { "path": "../../../packages/client/ui-sidebar/tsconfig.json" },
+    { "path": "../../../packages/client/ui-slots/tsconfig.json" }
+  ]
+}

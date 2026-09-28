@@ -1,10 +1,13 @@
 CLAUDE.local.md
 .env
+.env.local
 apps/desktop/.env.windows
 apps/desktop/.env.macos
 apps/desktop/*.p12
 node_modules/
 lib/
+lib.previous/
+lib.previous2/
 *.tsbuildinfo
 pnpm-debug.log
 .pnpm-store/
@@ -46,3 +49,4 @@ worktrees/
 .agents/worktrees/
 .typert-*/
 native/system/test/bin/
+native/xiaoyin/target/

@@ -3,6 +3,7 @@
 import type { DesktopKeyboardApi, DesktopShortcutsApi } from '@deepseek-ai/dsh-client-shortcuts/protocol'
 import type { IpcMainInvokeEvent } from 'electron'
 import type { DesktopBrowserBridge } from '@deepseek-ai/dsh-client-ui-sidebar-browser/types'
+import type { ProductEvent, ProductMethod, ProductSession } from '@xiaoyin/product/protocol'
 
 /** IPC channel names kept private to the desktop application bundle. */
 export const DESKTOP_IPC = {
@@ -30,6 +31,9 @@ export const DESKTOP_IPC = {
   windowFullscreen: 'dsh-desktop:window-fullscreen',
   windowsAppearance: 'dsh-desktop:windows-appearance',
   windowsMenu: 'dsh-desktop:windows-menu',
+  productInvoke: 'xiaoyin-product:invoke',
+  productSession: 'xiaoyin-product:session',
+  productEvent: 'xiaoyin-product:event',
 } as const
 
 /** Desktop release update state rendered by desktop-owned UI. */
@@ -78,6 +82,17 @@ export interface DshDesktopProductApi {
     open(): Promise<void>
     subscribe(listener: (state: DesktopUpdatePresentation) => void): () => void
   }
+  /** Product capabilities are isolated from Harness session execution. */
+  readonly product: {
+    invoke(method: ProductMethod, payload?: unknown): Promise<unknown>
+    subscribe(listener: (event: ProductEvent) => void): () => void
+    getSession(): Promise<ProductSession>
+  }
+}
+
+/** Product-only surface exposed under the downstream-owned namespace. */
+export interface XiaoyinProductApi {
+  readonly product: DshDesktopProductApi['product']
 }
 
 /** Scheme of Desktop-owned application documents. */

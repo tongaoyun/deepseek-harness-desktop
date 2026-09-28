@@ -282,6 +282,11 @@ vi.mock('electron', () => ({
   powerMonitor: harness.powerMonitor,
   Tray: harness.FakeTray,
   nativeImage: { createFromPath: (path: string) => ({ path }) },
+  safeStorage: {
+    isEncryptionAvailable: () => false,
+    encryptString: vi.fn(),
+    decryptString: vi.fn(),
+  },
 }))
 vi.mock('../src/background-notice.ts', () => ({ DesktopBackgroundNotice: class {
   constructor(options: { markerPath: string }) { harness.backgroundNotice.markerPath = options.markerPath }

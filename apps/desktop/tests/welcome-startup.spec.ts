@@ -97,6 +97,11 @@ vi.mock('electron', () => ({
   dialog: { showErrorBox: vi.fn(), showMessageBox: vi.fn() },
   Menu: { buildFromTemplate: state.menu, setApplicationMenu: vi.fn() },
   nativeImage: { createFromPath: (path: string) => ({ path }) },
+  safeStorage: {
+    isEncryptionAvailable: () => false,
+    encryptString: vi.fn(),
+    decryptString: vi.fn(),
+  },
 }))
 // The Windows tray relabels through Menu as well; keep the menu call counts below platform-neutral.
 vi.mock('../src/tray.ts', () => ({ DesktopTray: class { relabel() {} dispose() {} } }))
@@ -106,7 +111,8 @@ vi.mock('../src/project-manager.ts', () => ({ DesktopProjectManager: class {
   applyRelease = vi.fn(async () => {})
   canRecoverProfile = vi.fn(() => true)
 } }))
-vi.mock('../src/host-process.ts', () => ({
+vi.mock('../src/host-process.ts', async importOriginal => ({
+  ...await importOriginal<typeof import('../src/host-process.ts')>(),
   DesktopHostProcess: class {
     start = state.startHost
     stop = state.stopHost

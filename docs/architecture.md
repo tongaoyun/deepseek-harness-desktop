@@ -54,6 +54,8 @@ The [Electron desktop application](../apps/desktop/README.md) carries its exact 
 
 Electron starts the private Desktop Host in Electron Node mode. The Host invokes the shared CLI profile runner and complete Web application. The window immediately loads packaged Web assets and waits for boot injections before activating client plugins in the same document. Web owns RPC and streams; the desktop carrier connects the local page to the authenticated Host. Node IPC carries boot injections, readiness, fatal errors, and shutdown. Desktop defaults to port `19387`; profile configuration can override it. Shell-owned UI runs plugin transactions through bundled pnpm with normal user and profile configuration.
 
+See [Xiaoyin Electron architecture](xiaoyin-electron-architecture.md).
+
 ## Core packages
 
 Here are some core packages that contribute to the Cordis tree.

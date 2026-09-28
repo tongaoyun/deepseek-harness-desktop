@@ -1,0 +1,41 @@
+{
+  "name": "@xiaoyin/product",
+  "version": "0.1.0",
+  "private": true,
+  "repository": { "type": "git", "url": "git+https://github.com/deepseek-ai/deepseek-harness.git", "directory": "packages/xiaoyin-product/product" },
+  "license": "MIT",
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./protocol": {
+      "types": "./lib/types/protocol.d.ts",
+      "default": "./lib/protocol.js"
+    },
+    "./bridge": {
+      "types": "./lib/types/bridge.d.ts",
+      "default": "./lib/bridge.js"
+    },
+    "./dingtalk-auth": {
+      "types": "./lib/types/dingtalk-auth.d.ts",
+      "default": "./lib/dingtalk-auth.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "test": "vitest run --config vitest.config.ts"
+  },
+  "files": [
+    "lib/*.js",
+    "lib/types/**/*.d.ts"
+  ],
+  "devDependencies": {
+    "@types/node": "^22.20.0",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.8"
+  }
+}

@@ -337,6 +337,9 @@ export default defineConfig({
         'packages/client/ui-settings-models/src/client/welcome-store.ts',
         'packages/extensions/*/src/**/*.ts',
         'packages/extensions/*/src/**/*.tsx',
+        // Xiaoyin product packages ship only with the downstream Desktop and
+        // retain their focused package tests outside the upstream Harness coverage gate.
+        'packages/xiaoyin-product/*/src/**/*.{ts,tsx}',
         // Typert correctness is checked by its uninstrumented suites,
         // including compiler fixtures and byte-for-byte catalog reproduction.
         'packages/typert/*/src/**/*.{ts,tsx}',

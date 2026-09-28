@@ -1,0 +1,7 @@
+# Bilingual-pair consistency record for xiaoyin-electron-architecture.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/xiaoyin-electron-architecture.md
+/xiaoyin-electron-product-layer:
+  en: 7877dce2afd10821
+  zh: 9fffd6ada7cf0e98

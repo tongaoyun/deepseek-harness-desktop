@@ -1,0 +1,29 @@
+name: Electron macOS Release
+
+on:
+  workflow_dispatch:
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.19.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @deepseek-ai/dsh-desktop package:mac:arm64
+        env:
+          CSC_LINK: ${{ secrets.ELECTRON_MAC_CERTIFICATE }}
+          CSC_KEY_PASSWORD: ${{ secrets.ELECTRON_MAC_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: xiaoyin-electron-macos
+          path: apps/desktop/dist/**

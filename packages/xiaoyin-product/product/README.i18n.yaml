@@ -1,0 +1,37 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/xiaoyin-product/product/README.md
+/:
+  en: 19b711000d87f68a
+  zh: 98870a9a49a026e1
+/xiaoyin-product-bridge:
+  en: 11b6e36fafca78c2
+  zh: 3462625149a7256b
+/xiaoyin-product-bridge/summary:
+  en: 22857e9d0b099d2a
+  zh: 6bc2fb6dbcb544b2
+/xiaoyin-product-bridge/table-of-contents:
+  en: f198f5aa88fa3c17
+  zh: b4ac33c89b9950e1
+/xiaoyin-product-bridge/model-experience:
+  en: 215e7ba838619b7b
+  zh: a311da3843709f90
+/xiaoyin-product-bridge/model-experience/product-bridge:
+  en: f3141d838688fdb1
+  zh: 3c2aa7eeb3e764b8
+/xiaoyin-product-bridge/model-experience/product-bridge/what-the-model-sees:
+  en: 7ed1cfdbb92148dc
+  zh: 0d4dcb0f76cfe581
+/xiaoyin-product-bridge/model-experience/product-bridge/token-effect:
+  en: c1a3304a38371288
+  zh: fe2931812c2adc76
+/xiaoyin-product-bridge/model-experience/product-bridge/kv-cache-effect:
+  en: d88e79145bfe3e1d
+  zh: e8c9840540dcd7e1
+/xiaoyin-product-bridge/known-limitations-and-deferred-work:
+  en: d6adb60066e00893
+  zh: db025e73a790f4d4
+/xiaoyin-product-bridge/known-limitations-and-deferred-work/dev-note:
+  en: 084f68b66eab9b73
+  zh: ae6792037c36d96d
