@@ -84,12 +84,34 @@ jobs:
             pnpm run package:desktop:win:x64:unsigned
           }
           if ($LASTEXITCODE -ne 0) { throw "Windows Electron packaging failed" }
+      - name: Verify Windows artifacts
+        shell: powershell
+        run: |
+          $TargetRoot = "apps\desktop\.desktop-build\targets\win-x64"
+          $ArtifactRoot = if ("${{ inputs.signing }}" -eq "signed") {
+            Join-Path $TargetRoot "artifacts"
+          } else {
+            Join-Path $TargetRoot "unsigned-artifacts"
+          }
+          $Sidecar = Join-Path $ArtifactRoot "win-unpacked\resources\native\xiaoyin-native.exe"
+          if (-not (Test-Path -LiteralPath $Sidecar -PathType Leaf)) {
+            throw "Packaged Xiaoyin native sidecar is missing: $Sidecar"
+          }
+          $Installers = @(Get-ChildItem -LiteralPath $ArtifactRoot -File -Filter "*.exe")
+          if ($Installers.Count -ne 1) {
+            throw "Expected exactly one Windows installer, found $($Installers.Count)"
+          }
+          Get-FileHash -LiteralPath $Sidecar -Algorithm SHA256
+          Get-FileHash -LiteralPath $Installers[0].FullName -Algorithm SHA256
       - name: Upload Windows artifacts
         uses: http://192.168.2.66:3300/instudio/gitea-upload-artifact@v4
         with:
           name: xiaoyin-electron-windows-${{ github.sha }}
           path: |
-            apps/desktop/.desktop-build/targets/win-x64/artifacts/**
-            apps/desktop/.desktop-build/targets/win-x64/unsigned-artifacts/**
+            apps/desktop/.desktop-build/targets/win-x64/artifacts/*.exe
+            apps/desktop/.desktop-build/targets/win-x64/artifacts/*.blockmap
+            apps/desktop/.desktop-build/targets/win-x64/artifacts/*.yml
+            apps/desktop/.desktop-build/targets/win-x64/unsigned-artifacts/*.exe
+            apps/desktop/.desktop-build/targets/win-x64/unsigned-artifacts/*.blockmap
           if-no-files-found: error
           retention-days: 30

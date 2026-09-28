@@ -122,16 +122,22 @@ describe('Xiaoyin Electron workflows', () => {
     expect(prepare).not.toContain('utf8NoBOM')
     expect(packaging).toContain('package:desktop:win:x64:unsigned')
     expect(packaging).toContain('package:desktop:win:x64')
-    expect(upload?.with?.path).toContain('apps/desktop/.desktop-build/targets/win-x64/unsigned-artifacts/**')
+    expect(upload?.with?.path).toContain('apps/desktop/.desktop-build/targets/win-x64/unsigned-artifacts/*.exe')
+    expect(upload?.with?.path).toContain('apps/desktop/.desktop-build/targets/win-x64/unsigned-artifacts/*.blockmap')
   })
 
   it('uploads platform artifacts from the desktop package build directory', () => {
-    const windows = workflow('electron-windows.yml').jobs.windows?.steps
-      .find(step => step.name === 'Upload Windows artifacts')?.with?.path
+    const windowsSteps = workflow('electron-windows.yml').jobs.windows?.steps ?? []
+    const windows = windowsSteps.find(step => step.name === 'Upload Windows artifacts')?.with?.path
     const macos = workflow('electron-macos.yml').jobs.macos?.steps
       .find(step => step.name === 'Upload macOS artifacts')?.with?.path
-    expect(windows).toContain('apps/desktop/.desktop-build/targets/win-x64/artifacts/**')
-    expect(windows).toContain('apps/desktop/.desktop-build/targets/win-x64/unsigned-artifacts/**')
+    const verifyWindows = windowsSteps.find(step => step.name === 'Verify Windows artifacts')?.run ?? ''
+    expect(verifyWindows).toContain('win-unpacked\\resources\\native\\xiaoyin-native.exe')
+    expect(verifyWindows).toContain('Get-FileHash')
+    expect(windows).toContain('apps/desktop/.desktop-build/targets/win-x64/artifacts/*.exe')
+    expect(windows).toContain('apps/desktop/.desktop-build/targets/win-x64/unsigned-artifacts/*.exe')
+    expect(windows).not.toContain('win-unpacked')
+    expect(windows).not.toContain('/**')
     expect(macos).toBe('apps/desktop/.desktop-build/targets/mac-arm64/artifacts/**')
   })
 })
