@@ -119,39 +119,45 @@ export class XiaoyinProductBridge {
       const state = input.state
       if (typeof state !== 'string' || state.length < 8) throw new Error('xiaoyin product: authorization state is required')
       const result = await this.api.pollDingTalk<Record<string, unknown>>(state)
-      const session = result.session as Record<string, unknown> | undefined
-      if (session === undefined) return result
-      const token = session.sessionToken
+      const session = result.session
+      if (typeof session !== 'object' || session === null || Array.isArray(session)) return result
+      const authenticated = session as Record<string, unknown>
+      const token = authenticated.sessionToken
       if (typeof token === 'string' && token !== '') {
-        const identity = session.employee as Record<string, unknown> | undefined
+        const identity = authenticated.employee as Record<string, unknown> | undefined
         this.setSession({ authenticated: true,
           ...(typeof identity?.employeeId === 'string' ? { employeeId: identity.employeeId } : {}),
           ...(typeof identity?.employeeName === 'string' ? { displayName: identity.employeeName } : {}),
-          ...((typeof session.expiresAt === 'string' || typeof session.expiresAt === 'number')
-            ? { expiresAt: String(session.expiresAt) } : {}),
+          ...((typeof authenticated.expiresAt === 'string' || typeof authenticated.expiresAt === 'number')
+            ? { expiresAt: String(authenticated.expiresAt) } : {}),
         }, token)
       }
       return result
     }
     if (method === 'auth.refresh') {
-      let result: Record<string, unknown>
+      let result: unknown
       try {
-        result = await this.api.refreshSession<Record<string, unknown>>()
+        result = await this.api.refreshSession<unknown>()
       } catch (error) {
         this.setSession({ authenticated: false })
         throw error
       }
-      const token = result.sessionToken
+      if (typeof result !== 'object' || result === null || Array.isArray(result)) {
+        this.setSession({ authenticated: false })
+        throw new Error('xiaoyin product: invalid refreshed session')
+      }
+      const refreshed = result as Record<string, unknown>
+      const token = refreshed.sessionToken
       if (typeof token === 'string' && token !== '') {
-        const identity = result.employee as Record<string, unknown> | undefined
+        const identity = refreshed.employee as Record<string, unknown> | undefined
         this.setSession({ authenticated: true,
           ...(typeof identity?.employeeId === 'string' ? { employeeId: identity.employeeId } : {}),
           ...(typeof identity?.employeeName === 'string' ? { displayName: identity.employeeName } : {}),
-          ...((typeof result.expiresAt === 'string' || typeof result.expiresAt === 'number')
-            ? { expiresAt: String(result.expiresAt) } : {}),
+          ...((typeof refreshed.expiresAt === 'string' || typeof refreshed.expiresAt === 'number')
+            ? { expiresAt: String(refreshed.expiresAt) } : {}),
         }, token)
       }
-      return result
+      return refreshed
     }
     const routes: Partial<Record<ProductMethod, string>> = {
       'expertKits.list': '/api/v1/expert-kits',

@@ -43,6 +43,21 @@ describe('XiaoyinProductBridge', () => {
     expect(opened).toEqual(['https://login.example.test/dingtalk'])
   })
 
+  it('keeps waiting when DingTalk authorization has no session yet', async () => {
+    const bridge = new XiaoyinProductBridge({
+      serverUrl: 'https://xiaoyin.test',
+      fetch: (input) => {
+        const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+        expect(url).toContain('/api/v1/dingtalk-auth/authorization-requests/state-12345678')
+        return Promise.resolve(Response.json({ success: true, data: { status: 'pending', session: null } }))
+      },
+    })
+
+    await expect(bridge.invoke('auth.pollDingTalk', { state: 'state-12345678' }))
+      .resolves.toEqual({ status: 'pending', session: null })
+    expect(bridge.getSession()).toEqual({ authenticated: false })
+  })
+
   it('refreshes a restored session before trusting it', async () => {
     let session = { authenticated: true }
     const calls: string[] = []

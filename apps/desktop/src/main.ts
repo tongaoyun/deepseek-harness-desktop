@@ -81,6 +81,21 @@ let backendReady = false
 /** Error-level console output of the primary window, attached to crash reports. */
 const rendererConsole = new RendererConsoleTail()
 
+function xiaoyinAuthenticationPage(): string {
+  const html = `<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="color-scheme" content="light dark">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
+<title>小胤</title><style>
+:root{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif;color:#202124;background:#fff}
+@media(prefers-color-scheme:dark){:root{color:#f2f3f5;background:#171817}}
+body{min-height:100vh;margin:0;display:grid;place-items:center}.content{text-align:center;padding:32px}
+.mark{width:42px;height:42px;margin:0 auto 24px;border:3px solid #dfe5e1;border-top-color:#1f8f5f;border-radius:50%;animation:spin .8s linear infinite}
+h1{margin:0 0 10px;font-size:22px;font-weight:600;letter-spacing:0}p{margin:0;color:#777;font-size:14px;letter-spacing:0}
+@media(prefers-color-scheme:dark){p{color:#aaa}.mark{border-color:#343936;border-top-color:#4bc58a}}@keyframes spin{to{transform:rotate(360deg)}}
+</style></head><body><main class="content"><div class="mark" aria-hidden="true"></div><h1>正在连接钉钉</h1><p>请在系统浏览器中完成授权</p></main></body></html>`
+  return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`
+}
+
 // Platform-conventional logs directory (macOS ~/Library/Logs/<name>, otherwise under userData);
 // set before ready so the first fatal report already resolves under it.
 app.setAppLogsPath()
@@ -444,11 +459,23 @@ async function main(): Promise<void> {
   let pendingWelcomeNotice: WelcomeNotice | undefined
   let previousAccountStatus: string | undefined
   let xiaoyinAuthAttempt: Promise<void> | undefined
+  let xiaoyinAuthenticationVisible = false
   let hostEnvironment: NodeJS.ProcessEnv = process.env
+  const showXiaoyinAuthentication = async (): Promise<void> => {
+    const window = mainWindow
+    if (window === undefined || window.isDestroyed()) return
+    await window.loadURL(xiaoyinAuthenticationPage())
+    xiaoyinAuthenticationVisible = true
+    if (window.isMinimized()) window.restore()
+    window.show()
+    window.focus()
+  }
   const ensureXiaoyinAuth = (): Promise<void> => {
     xiaoyinAuthAttempt ??= ensureDingTalkSession(productBridge, async (url) => {
+      await showXiaoyinAuthentication()
       await shell.openExternal(url)
-    }).then(() => undefined).finally(() => { xiaoyinAuthAttempt = undefined })
+    }, { timeoutMs: 5 * 60_000 }).then(() => { xiaoyinAuthenticationVisible = false })
+      .finally(() => { xiaoyinAuthAttempt = undefined })
     return xiaoyinAuthAttempt
   }
   const assertProductSender = (event: IpcMainInvokeEvent): void => {
@@ -1283,7 +1310,14 @@ async function main(): Promise<void> {
       return
     }
     // Startup and sign-out select the visible window before activation may reveal the workspace.
-    if (window === mainWindow && !enteredWorkspace) return
+    if (window === mainWindow && !enteredWorkspace) {
+      if (xiaoyinAuthenticationVisible) {
+        if (window.isMinimized()) window.restore()
+        window.show()
+        window.focus()
+      }
+      return
+    }
     if (window.isMinimized()) window.restore()
     window.show()
     window.focus()
