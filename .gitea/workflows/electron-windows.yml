@@ -43,6 +43,9 @@ jobs:
         run: |
           @'
           DSH_DESKTOP_APP_ID=com.instudio.deepseek-harness.desktop
+          DSH_DESKTOP_AUTO_UPDATE_ENV=test
+          DSH_DESKTOP_MANDATORY_UPDATE_TEST_ORIGIN=https://deepseek-harness-acceptance.invalid
+          DSH_DESKTOP_MANDATORY_UPDATE_CONFIG='{"allowedAuthOrigins":["https://login-acceptance.invalid"]}'
           '@ | Set-Content -LiteralPath "apps\desktop\.env.windows" -Encoding UTF8
       - name: Build DeepSeek Harness native sidecar
         shell: powershell
