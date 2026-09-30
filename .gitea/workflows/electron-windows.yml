@@ -75,6 +75,17 @@ jobs:
           if ($Installers.Count -ne 1) {
             throw "Expected exactly one Windows installer, found $($Installers.Count)"
           }
+          $UnsignedTargets = @(
+            $Installers[0].FullName
+            (Join-Path $ArtifactRoot "win-unpacked\DeepSeek Harness.exe")
+            $Sidecar
+          )
+          foreach ($Target in $UnsignedTargets) {
+            $Signature = Get-AuthenticodeSignature -LiteralPath $Target
+            if ($Signature.Status -ne "NotSigned") {
+              throw "Expected an unsigned Windows artifact, but Authenticode status was $($Signature.Status): $Target"
+            }
+          }
           Get-FileHash -LiteralPath $Sidecar -Algorithm SHA256
           Get-FileHash -LiteralPath $Installers[0].FullName -Algorithm SHA256
       - name: Upload Windows artifacts

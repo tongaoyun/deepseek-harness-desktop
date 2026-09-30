@@ -149,6 +149,8 @@ describe('DeepSeekHarness Electron workflows', () => {
       .find(step => step.name === 'Upload macOS artifacts')?.with?.path
     const verifyWindows = windowsSteps.find(step => step.name === 'Verify Windows artifacts')?.run ?? ''
     expect(verifyWindows).toContain('win-unpacked\\resources\\native\\deepseek-harness-native.exe')
+    expect(verifyWindows).toContain('Get-AuthenticodeSignature')
+    expect(verifyWindows).toContain('$Signature.Status -ne "NotSigned"')
     expect(verifyWindows).toContain('Get-FileHash')
     expect(windows).toContain('apps/desktop/.desktop-build/targets/win-x64/unsigned-artifacts/*.exe')
     expect(windows).not.toContain('apps/desktop/.desktop-build/targets/win-x64/artifacts/')
