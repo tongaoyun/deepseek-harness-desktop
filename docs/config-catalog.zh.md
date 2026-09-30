@@ -1199,6 +1199,33 @@ export interface Config {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-experimental-tool-agent-team -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-expert-kit-readme -->
+<a id="deepseek-aidsh-expert-kit-readme"></a>
+
+## `@deepseek-ai/dsh-expert-kit-readme`
+
+- `inject`: `skills`
+- `source`: [`packages/deepseek-harness-product/expert-kit-readme/src/index.ts:29`](../packages/deepseek-harness-product/expert-kit-readme/src/index.ts)
+
+```ts config-catalog
+/** Expert Kit README provider configuration for one immutable Agent Preset. */
+export interface Config {
+  /** README entries belonging to the Preset's enabled Expert Kits. */
+  readonly entries: readonly ExpertKitReadmeEntry[]
+}
+
+/** One enabled Expert Kit README exposed to the model-facing skill catalog. */
+export interface ExpertKitReadmeEntry {
+  /** Collision-resistant kebab-case name used only by the model-facing skill loader. */
+  readonly name: string
+  /** Short routing summary included in the Session skill catalog. */
+  readonly description: string
+  /** Absolute path to the installed Expert Kit README. */
+  readonly path: string
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-expert-kit-readme -->
+
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-file-reference-local -->
 <a id="deepseek-aidsh-file-reference-local"></a>
 
@@ -4323,33 +4350,6 @@ export interface Config {
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-workspace-changes -->
-
-<!-- BEGIN GENERATED config-catalog:@deepseek-harness/expert-kit-readme -->
-<a id="deepseek-harnessexpert-kit-readme"></a>
-
-## `@deepseek-harness/expert-kit-readme`
-
-- `inject`: `skills`
-- `source`: [`packages/deepseek-harness-product/expert-kit-readme/src/index.ts:29`](../packages/deepseek-harness-product/expert-kit-readme/src/index.ts)
-
-```ts config-catalog
-/** Expert Kit README provider configuration for one immutable Agent Preset. */
-export interface Config {
-  /** README entries belonging to the Preset's enabled Expert Kits. */
-  readonly entries: readonly ExpertKitReadmeEntry[]
-}
-
-/** One enabled Expert Kit README exposed to the model-facing skill catalog. */
-export interface ExpertKitReadmeEntry {
-  /** Collision-resistant kebab-case name used only by the model-facing skill loader. */
-  readonly name: string
-  /** Short routing summary included in the Session skill catalog. */
-  readonly description: string
-  /** Absolute path to the installed Expert Kit README. */
-  readonly path: string
-}
-```
-<!-- END GENERATED config-catalog:@deepseek-harness/expert-kit-readme -->
 
 ## 无配置的可加载插件
 

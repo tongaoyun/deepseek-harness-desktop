@@ -1,7 +1,7 @@
 {
-  "name": "@deepseek-harness/expert-kit-readme",
+  "name": "@deepseek-ai/dsh-expert-kit-readme",
   "description": "Model-only Harness skill provider for DeepSeek Harness Expert Kit README instructions",
-  "version": "0.1.0",
+  "version": "0.2.0-rc.2",
   "publishConfig": {
     "access": "public"
   },

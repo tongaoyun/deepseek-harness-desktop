@@ -30,7 +30,7 @@ it('loads from an exact module URL when the profile cannot resolve the private p
 
   let stage = 'resolve module'
   try {
-    const pluginUrl = import.meta.resolve('@deepseek-harness/expert-kit-readme')
+    const pluginUrl = import.meta.resolve('@deepseek-ai/dsh-expert-kit-readme')
     stage = 'import module'
     const imported = await ctx.loader.import(pluginUrl) as { readonly name?: unknown; readonly inject?: unknown }
     if (imported.name !== 'deepseek-harness-expert-kit-readme' || JSON.stringify(imported.inject) !== '["skills"]') {

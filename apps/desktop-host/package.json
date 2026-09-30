@@ -34,7 +34,7 @@
     "@deepseek-ai/dsh-deepseek-account": "workspace:*",
     "@deepseek-ai/dsh-workspace": "workspace:*",
     "@deepseek-ai/cordis-plugin-include": "workspace:~",
-    "@deepseek-harness/expert-kit-readme": "workspace:*",
+    "@deepseek-ai/dsh-expert-kit-readme": "workspace:*",
     "@deepseek-harness/product": "workspace:*",
     "js-yaml": "^4.2.0",
     "tar": "^7.5.0"

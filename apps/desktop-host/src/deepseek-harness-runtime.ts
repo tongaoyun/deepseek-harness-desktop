@@ -41,7 +41,7 @@ const SESSION_INSPECTION_CONCURRENCY = 8
 // Preset trees resolve from the dsh profile, not from this private Host package's
 // dependency scope. Resolve the product plugin while the Host dependency graph
 // is authoritative, then give Loader the exact immutable module URL.
-const EXPERT_KIT_README_PLUGIN = import.meta.resolve('@deepseek-harness/expert-kit-readme')
+const EXPERT_KIT_README_PLUGIN = import.meta.resolve('@deepseek-ai/dsh-expert-kit-readme')
 
 export const inject = ['agentPresets', 'sessionQuery', 'settings', 'skills', 'systemPrompt', 'tools']
 
