@@ -11,6 +11,10 @@ import { expertKitGenerationPath, type ExpertKitSnapshotEntry } from '../src/dee
 
 const roots: string[] = []
 
+function cast<T>(value: object): T {
+  return value as T
+}
+
 afterEach(async () => {
   vi.restoreAllMocks()
   vi.unstubAllEnvs()
@@ -44,7 +48,7 @@ async function prepareExpertKit(home: string, kit: ExpertKitSnapshotEntry): Prom
 }
 
 function runtimeContext(sessionPresets: readonly string[], registrations: unknown[], failListing = false): Context {
-  return {
+  return cast<Context>({
     plugin: vi.fn(async () => {}),
     agentPresets: {
       readDocument: vi.fn(async () => ({ content: '[]' })),
@@ -65,7 +69,7 @@ function runtimeContext(sessionPresets: readonly string[], registrations: unknow
     },
     settings: { update: vi.fn(async () => {}) },
     effect: vi.fn(), on: vi.fn(), systemPrompt: { section: vi.fn() }, tools: { register: vi.fn() },
-  } as unknown as Context
+  })
 }
 
 async function mountRuntime(
@@ -82,9 +86,9 @@ async function mountRuntime(
     if (method === 'expertKits.enablement.list') return [kit.id]
     throw new Error(`unexpected product method ${method}`)
   })
-  await apply(runtimeContext(sessionPresets, registrations, failListing), {
+  await apply(runtimeContext(sessionPresets, registrations, failListing), cast<Parameters<typeof apply>[1]>({
     product: { invoke }, publishControl: vi.fn(),
-  } as unknown as Parameters<typeof apply>[1])
+  }))
 }
 
 describe('DeepSeekHarness expert kit runtime snapshots', () => {
@@ -150,7 +154,7 @@ describe('DeepSeekHarness expert kit runtime snapshots', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const headerPreset = `deepseek-harness-enabled-${'a'.repeat(12)}`
     const projectedPreset = `deepseek-harness-enabled-${'b'.repeat(12)}`
-    const ctx = { sessionQuery: {
+    const ctx = cast<Context>({ sessionQuery: {
       listSessions: vi.fn(async () => [
         { header: { id: 'readable', agentPreset: headerPreset } },
         { header: { id: 'broken' } },
@@ -159,7 +163,7 @@ describe('DeepSeekHarness expert kit runtime snapshots', () => {
         if (id === 'broken') throw new Error('unreadable')
         return { projections: { values: { agentPreset: projectedPreset } }, [Symbol.dispose]() {} }
       }),
-    } } as unknown as Context
+    } })
 
     const result = await referencedExpertKitPresetIds(ctx)
 

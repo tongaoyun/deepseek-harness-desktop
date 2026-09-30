@@ -2,7 +2,14 @@
   "name": "@deepseek-harness/expert-kit-readme",
   "description": "Model-only Harness skill provider for DeepSeek Harness Expert Kit README instructions",
   "version": "0.1.0",
-  "private": true,
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "directory": "packages/deepseek-harness-product/expert-kit-readme"
+  },
   "license": "MIT",
   "type": "module",
   "main": "lib/index.js",

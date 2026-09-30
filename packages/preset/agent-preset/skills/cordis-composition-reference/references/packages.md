@@ -161,6 +161,12 @@ Every package below exports a Cordis plugin that a bundle patch can name in a Lo
 | `@deepseek-ai/dsh-credentials-local` | yes | File-backed credentials provider ($DSH_HOME/.env under the live process environment) for the DeepSeek Harness |
 | `@deepseek-ai/dsh-deepseek-account-platform` | yes | Authorize DeepSeek accounts through browser PKCE |
 
+## deepseek-harness-product
+
+| Package | Config | Description |
+|---|---|---|
+| `@deepseek-harness/expert-kit-readme` | yes | Model-only Harness skill provider for DeepSeek Harness Expert Kit README instructions |
+
 ## deliverables
 
 | Package | Config | Description |
@@ -511,9 +517,3 @@ Every package below exports a Cordis plugin that a bundle patch can name in a Lo
 | Package | Config | Description |
 |---|---|---|
 | `@deepseek-ai/dsh-workspace` | no | Workspace entity registry (ctx.workspaceRegistry): durable workspace records with validated session attachment over the domain data form for the DeepSeek Harness |
-
-## deepseek-harness-product
-
-| Package | Config | Description |
-|---|---|---|
-| `@deepseek-harness/expert-kit-readme` | yes | Model-only Harness skill provider for DeepSeek Harness Expert Kit README instructions |

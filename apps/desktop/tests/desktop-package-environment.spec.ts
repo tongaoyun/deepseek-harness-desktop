@@ -118,7 +118,7 @@ describe('Desktop local packaging configuration', () => {
     })
   })
 
-  it('checks application and update configuration before Windows credentials while preserving unsigned and preparation modes', () => {
+  it('checks application and update configuration before Windows credentials while unsigned packages omit policy', () => {
     expect(() => {
       validateDesktopPackageEnvironment({}, WINDOWS, { unsigned: true })
     }).toThrow(/DSH_DESKTOP_APP_ID/u)
@@ -132,7 +132,7 @@ describe('Desktop local packaging configuration', () => {
       validateDesktopPackageEnvironment(RELEASE, WINDOWS)
     }).toThrow(/DSH_DESKTOP_WINDOWS_CER_FILE/u)
     expect(() => {
-      validateDesktopPackageEnvironment({ ...POLICY, DSH_DESKTOP_APP_ID: RELEASE.DSH_DESKTOP_APP_ID }, WINDOWS, { unsigned: true })
+      validateDesktopPackageEnvironment({ DSH_DESKTOP_APP_ID: RELEASE.DSH_DESKTOP_APP_ID }, WINDOWS, { unsigned: true })
     }).not.toThrow()
     expect(() => {
       validateDesktopPackageEnvironment({ ...POLICY, DSH_DESKTOP_APP_ID: RELEASE.DSH_DESKTOP_APP_ID }, WINDOWS, { prepareOnly: true })

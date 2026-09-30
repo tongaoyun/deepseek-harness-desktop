@@ -123,7 +123,7 @@ export async function readExpertKitPresetSnapshots(root: string): Promise<Expert
     try {
       const source = await readFile(path, 'utf8')
       if (Buffer.byteLength(source, 'utf8') > MAX_SNAPSHOT_BYTES) throw new Error('snapshot exceeds size limit')
-      const snapshot = validateSnapshot(JSON.parse(source) as unknown)
+      const snapshot = validateSnapshot(JSON.parse(source))
       if (file !== `${snapshot.id}.json`) throw new Error('snapshot filename does not match its preset id')
       snapshots.push(snapshot)
     } catch (error) {

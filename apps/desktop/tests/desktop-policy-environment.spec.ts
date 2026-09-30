@@ -47,9 +47,13 @@ it('rejects login origins in production', () => {
     .toThrow('must not configure allowedAuthOrigins')
 })
 
-it.each([{ unsigned: true }, { prepareOnly: true }, {}])('fails before signing/preparation when policy is absent in %j', (options) => {
+it.each([{ prepareOnly: true }, {}])('fails before signing/preparation when policy is absent in %j', (options) => {
   for (const platform of ['win32', 'darwin'] as const) {
     expect(() => { validateDesktopPackageEnvironment({ DSH_DESKTOP_APP_ID: 'com.example.test' }, { platform, arch: 'x64' }, options) })
       .toThrow('DSH_DESKTOP_MANDATORY_UPDATE_TEST_ORIGIN')
   }
+})
+
+it('allows unsigned Windows packaging without a mandatory-update policy', () => {
+  expect(() => validateDesktopPackageEnvironment({ DSH_DESKTOP_APP_ID: 'com.example.test' }, { platform: 'win32', arch: 'x64' }, { unsigned: true })).not.toThrow()
 })

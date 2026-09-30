@@ -24,6 +24,10 @@ const actions = () => ({
   useSkill: vi.fn(async () => {}),
 })
 
+function cast<T>(value: object): T {
+  return value as T
+}
+
 describe('DeepSeekHarness capability navigation', () => {
   it('keeps only the official settings action in the more menu', () => {
     const openSettings = vi.fn()
@@ -51,7 +55,7 @@ describe('DeepSeekHarness capability navigation', () => {
       },
     }
 
-    apply(ctx as unknown as ClientContext)
+    apply(cast<ClientContext>(ctx))
 
     expect(registrations.filter(entry => entry.options.name === 'settings.section')).toEqual([])
     expect(registrations.filter(entry => entry.options.name === 'sidebar.panelheading')
@@ -94,7 +98,7 @@ describe('DeepSeekHarness capability navigation', () => {
       }) } },
     }
 
-    apply(ctx as unknown as ClientContext)
+    apply(cast<ClientContext>(ctx))
     const expertKitRegistration = registrations.find(entry => entry.options.key === 'deepseek-harness-expert-kits')
     const skillRegistration = registrations.find(entry => entry.options.key === 'deepseek-harness-skills')
     const expertKitActions = (expertKitRegistration?.options.inject as (() => ReturnType<typeof actions>))()
