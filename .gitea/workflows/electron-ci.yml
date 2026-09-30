@@ -25,8 +25,16 @@ jobs:
           UPSTREAM_REPOSITORY="$(cat UPSTREAM_REPOSITORY)"
           UPSTREAM_TAG="$(cat UPSTREAM_TAG)"
           git remote add upstream "$UPSTREAM_REPOSITORY"
-          git fetch --force --depth=1 upstream \
-            "refs/tags/${UPSTREAM_TAG}:refs/tags/${UPSTREAM_TAG}"
+          for attempt in 1 2 3; do
+            if timeout 120 git -c http.version=HTTP/1.1 fetch --force --depth=1 upstream \
+              "refs/tags/${UPSTREAM_TAG}:refs/tags/${UPSTREAM_TAG}"; then
+              break
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              exit 1
+            fi
+            sleep "$((attempt * 5))"
+          done
       - name: Install dependencies
         run: |
           npm install -g pnpm@11.7.0 --prefer-offline --no-audit --fund=false \
