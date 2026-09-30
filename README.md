@@ -8,6 +8,8 @@ This repository is the DeepSeek Harness Electron downstream of DeepSeek Harness 
 
 Product capabilities live in [`packages/deepseek-harness-product/product`](packages/deepseek-harness-product/product) and [`native/deepseek-harness`](native/deepseek-harness). They expose DingTalk identity, expert kits, skills, connectors, WeKnora, schedules, artifacts and product references through the Electron product bridge. Session, Agent, Conversation, Browser, Office, approval, cancellation, retry and replay remain official Harness capabilities.
 
+The Gitea Windows workflow produces internal unsigned installers only. Installer and workflow artifact names include `unsigned`; these builds do not provide Windows publisher trust or an automatic-update release record.
+
 DeepSeek Harness (`dsh`) is an open-source agent harness developed by [DeepSeek AI](https://deepseek.com).
 
 It is built on an **everything-is-a-plugin** architecture and powered by [Cordis](https://github.com/cordiverse/cordis), whose design is described in [_A Programming Paradigm for Spatiotemporal Composability_](https://arxiv.org/abs/2608.25512).

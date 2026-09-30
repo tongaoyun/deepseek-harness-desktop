@@ -118,18 +118,25 @@ describe('DeepSeekHarness Electron workflows', () => {
     expect(steps.indexOf(assets!)).toBeLessThan(packaging)
   })
 
-  it('keeps unsigned Windows acceptance artifacts separate from formal releases', () => {
+  it('builds and uploads only unsigned Windows artifacts', () => {
+    const source = readFileSync(resolve(import.meta.dirname, '..', '.gitea', 'workflows', 'electron-windows.yml'), 'utf8')
     const steps = workflow('electron-windows.yml').jobs.windows?.steps ?? []
     const prepare = steps.find(step => step.name === 'Prepare package configuration')?.run ?? ''
     const packaging = steps.find(step => step.name === 'Package Windows')?.run ?? ''
     const upload = steps.find(step => step.name === 'Upload Windows artifacts')
-    expect(prepare).toContain('C:\\deepseek-harness-builder\\release\\electron\\.env.windows')
+    expect(source).not.toContain('signing:')
+    expect(source).not.toContain('inputs.signing')
+    expect(prepare).toContain('DSH_DESKTOP_APP_ID=com.instudio.deepseek-harness.desktop')
+    expect(prepare).not.toContain('ReleaseConfig')
+    expect(prepare).not.toContain('Copy-Item')
     expect(prepare).toContain('-Encoding UTF8')
     expect(prepare).not.toContain('utf8NoBOM')
     expect(packaging).toContain('package:desktop:win:x64:unsigned')
-    expect(packaging).toContain('package:desktop:win:x64')
+    expect(packaging).not.toMatch(/package:desktop:win:x64(?:\s|$)/u)
+    expect(upload?.with?.name).toContain('windows-unsigned-')
     expect(upload?.with?.path).toContain('apps/desktop/.desktop-build/targets/win-x64/unsigned-artifacts/*.exe')
     expect(upload?.with?.path).toContain('apps/desktop/.desktop-build/targets/win-x64/unsigned-artifacts/*.blockmap')
+    expect(upload?.with?.path).not.toContain('win-x64/artifacts/')
   })
 
   it('uploads platform artifacts from the desktop package build directory', () => {
@@ -140,8 +147,8 @@ describe('DeepSeekHarness Electron workflows', () => {
     const verifyWindows = windowsSteps.find(step => step.name === 'Verify Windows artifacts')?.run ?? ''
     expect(verifyWindows).toContain('win-unpacked\\resources\\native\\deepseek-harness-native.exe')
     expect(verifyWindows).toContain('Get-FileHash')
-    expect(windows).toContain('apps/desktop/.desktop-build/targets/win-x64/artifacts/*.exe')
     expect(windows).toContain('apps/desktop/.desktop-build/targets/win-x64/unsigned-artifacts/*.exe')
+    expect(windows).not.toContain('apps/desktop/.desktop-build/targets/win-x64/artifacts/')
     expect(windows).not.toContain('win-unpacked')
     expect(windows).not.toContain('/**')
     expect(macos).toBe('apps/desktop/.desktop-build/targets/mac-arm64/artifacts/**')

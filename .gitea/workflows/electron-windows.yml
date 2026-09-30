@@ -3,15 +3,6 @@ name: Electron Windows
 on:
   pull_request:
   workflow_dispatch:
-    inputs:
-      signing:
-        description: Build an unsigned acceptance installer or use the runner's SafeNet EV release configuration
-        required: true
-        default: unsigned
-        type: choice
-        options:
-          - unsigned
-          - signed
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -50,21 +41,9 @@ jobs:
       - name: Prepare package configuration
         shell: powershell
         run: |
-          $Signed = "${{ inputs.signing }}" -eq "signed"
-          if ($Signed) {
-            $ReleaseConfig = "C:\deepseek-harness-builder\release\electron\.env.windows"
-            if (-not (Test-Path -LiteralPath $ReleaseConfig -PathType Leaf)) {
-              throw "Signed Electron packaging requires the runner-owned $ReleaseConfig"
-            }
-            Copy-Item -LiteralPath $ReleaseConfig -Destination "apps\desktop\.env.windows"
-          } else {
-            @'
-          DSH_DESKTOP_APP_ID=com.instudio.deepseek-harness.desktop.acceptance
-          DSH_DESKTOP_AUTO_UPDATE_ENV=test
-          DSH_DESKTOP_MANDATORY_UPDATE_TEST_ORIGIN=https://deepseek-harness-acceptance.invalid
-          DSH_DESKTOP_MANDATORY_UPDATE_CONFIG='{"allowedAuthOrigins":["https://login-acceptance.invalid"]}'
+          @'
+          DSH_DESKTOP_APP_ID=com.instudio.deepseek-harness.desktop
           '@ | Set-Content -LiteralPath "apps\desktop\.env.windows" -Encoding UTF8
-          }
       - name: Build DeepSeek Harness native sidecar
         shell: powershell
         run: |
@@ -78,21 +57,13 @@ jobs:
       - name: Package Windows
         shell: powershell
         run: |
-          if ("${{ inputs.signing }}" -eq "signed") {
-            pnpm run package:desktop:win:x64
-          } else {
-            pnpm run package:desktop:win:x64:unsigned
-          }
+          pnpm run package:desktop:win:x64:unsigned
           if ($LASTEXITCODE -ne 0) { throw "Windows Electron packaging failed" }
       - name: Verify Windows artifacts
         shell: powershell
         run: |
           $TargetRoot = "apps\desktop\.desktop-build\targets\win-x64"
-          $ArtifactRoot = if ("${{ inputs.signing }}" -eq "signed") {
-            Join-Path $TargetRoot "artifacts"
-          } else {
-            Join-Path $TargetRoot "unsigned-artifacts"
-          }
+          $ArtifactRoot = Join-Path $TargetRoot "unsigned-artifacts"
           $Sidecar = Join-Path $ArtifactRoot "win-unpacked\resources\native\deepseek-harness-native.exe"
           if (-not (Test-Path -LiteralPath $Sidecar -PathType Leaf)) {
             throw "Packaged DeepSeek Harness native sidecar is missing: $Sidecar"
@@ -106,11 +77,8 @@ jobs:
       - name: Upload Windows artifacts
         uses: http://192.168.2.66:3300/instudio/gitea-upload-artifact@v4
         with:
-          name: deepseek-harness-electron-windows-${{ github.sha }}
+          name: deepseek-harness-electron-windows-unsigned-${{ github.sha }}
           path: |
-            apps/desktop/.desktop-build/targets/win-x64/artifacts/*.exe
-            apps/desktop/.desktop-build/targets/win-x64/artifacts/*.blockmap
-            apps/desktop/.desktop-build/targets/win-x64/artifacts/*.yml
             apps/desktop/.desktop-build/targets/win-x64/unsigned-artifacts/*.exe
             apps/desktop/.desktop-build/targets/win-x64/unsigned-artifacts/*.blockmap
           if-no-files-found: error
