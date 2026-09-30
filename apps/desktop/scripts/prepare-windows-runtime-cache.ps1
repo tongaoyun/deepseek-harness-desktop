@@ -1,5 +1,5 @@
 param(
-  [string] $Cache = "C:\xiaoyin-desktop-builder\runtime-downloads"
+  [string] $Cache = "C:\deepseek-harness-desktop-builder\runtime-downloads"
 )
 
 $ErrorActionPreference = "Stop"

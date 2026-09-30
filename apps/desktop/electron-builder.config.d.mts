@@ -4,7 +4,7 @@ import type { AfterPackContext, BeforePackContext } from 'app-builder-lib'
 export interface DesktopElectronBuilderConfig {
   readonly appId: string
   readonly artifactName: string
-  readonly protocols: readonly [{ readonly name: 'Xiaoyin'; readonly schemes: readonly ['xiaoyin'] }]
+  readonly protocols: readonly [{ readonly name: 'DeepSeek Harness'; readonly schemes: readonly ['dsh'] }]
   readonly directories: {
     readonly output: string
   }
@@ -20,13 +20,15 @@ export interface DesktopElectronBuilderConfig {
   readonly asarUnpack: readonly string[]
   readonly extraResources: readonly [
     { readonly from: string, readonly to: 'runtime' },
-    { readonly from: string, readonly to: 'xiaoyin/product.json' },
-    { readonly from: string, readonly to: 'native/xiaoyin-native' | 'native/xiaoyin-native.exe' },
+    { readonly from: string, readonly to: 'deepseek-harness/product.json' },
+    { readonly from: string, readonly to: 'native/deepseek-harness-native' | 'native/deepseek-harness-native.exe' },
     { readonly from: string, readonly to: 'icon.png' },
     ...{ readonly from: string, readonly to: 'tray.ico' }[],
   ]
   readonly mac: {
     readonly extendInfo: { readonly NSMicrophoneUsageDescription: string }
+    readonly entitlements: string
+    readonly entitlementsInherit: string
     readonly identity: string | undefined
     readonly forceCodeSigning: boolean
     readonly notarize: boolean

@@ -26,8 +26,8 @@ function quote(value: string): string { return `'${value.replaceAll("'", "'\\''"
  */
 export function prepareDevelopmentApp(options: DevelopmentAppOptions): string {
   const source = dirname(dirname(dirname(options.electron)))
-  const bundle = join(options.directory, 'Xiaoyin Dev.app')
-  const executable = join(bundle, 'Contents', 'MacOS', 'XiaoyinDev')
+  const bundle = join(options.directory, 'DeepSeek Harness Dev.app')
+  const executable = join(bundle, 'Contents', 'MacOS', 'DeepSeekHarnessDev')
   const stamp = join(bundle, 'Contents', 'Resources', 'dsh-development.json')
   const launcher = developmentLauncher(options, bundle)
   const identity = JSON.stringify({ ...options, launcher, plist: readFileSync(join(source, 'Contents', 'Info.plist'), 'utf8') })
@@ -36,11 +36,11 @@ export function prepareDevelopmentApp(options: DevelopmentAppOptions): string {
     execFileSync('/usr/bin/ditto', [source, bundle])
     const plist = join(bundle, 'Contents', 'Info.plist')
     const values = {
-      CFBundleIdentifier: `com.instudio.xiaoyin.dev.${createHash('sha256').update(options.appRoot).digest('hex').slice(0, 12)}`,
-      CFBundleName: 'Xiaoyin Dev',
-      CFBundleDisplayName: 'Xiaoyin Dev',
-      CFBundleExecutable: 'XiaoyinDev',
-      CFBundleURLTypes: [{ CFBundleURLName: 'Xiaoyin', CFBundleURLSchemes: ['xiaoyin'], CFBundleTypeRole: 'Viewer' }],
+      CFBundleIdentifier: `com.instudio.deepseek-harness.dev.${createHash('sha256').update(options.appRoot).digest('hex').slice(0, 12)}`,
+      CFBundleName: 'DeepSeek Harness Dev',
+      CFBundleDisplayName: 'DeepSeek Harness Dev',
+      CFBundleExecutable: 'DeepSeekHarnessDev',
+      CFBundleURLTypes: [{ CFBundleURLName: 'DeepSeek Harness', CFBundleURLSchemes: ['dsh'], CFBundleTypeRole: 'Viewer' }],
     }
     for (const [key, value] of Object.entries(values)) {
       execFileSync('/usr/bin/plutil', ['-replace', key, '-json', JSON.stringify(value), plist])

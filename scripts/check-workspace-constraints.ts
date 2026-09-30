@@ -59,16 +59,16 @@ const experimentalPackageNamePrefix = '@deepseek-ai/dsh-experimental-'
 const standardReleaseMemberDirectory = /^(?:packages\/(?!experimental\/)[^/]+\/[^/]+|apps\/(?!desktop(?:-host)?$)[^/]+|vendor\/[^/]+)$/
 /** Installable application assembled by electron-builder rather than published to npm. */
 const desktopApplicationDirectory = 'apps/desktop'
-/** Xiaoyin product packages bundled into Desktop without joining the upstream npm release family. */
+/** DeepSeekHarness product packages bundled into Desktop without joining the upstream npm release family. */
 const privateProductPackageDirectories = new Set([
-  'packages/extensions/ui-xiaoyin-product',
-  'packages/xiaoyin-product/product',
+  'packages/extensions/ui-deepseek-harness-product',
+  'packages/deepseek-harness-product/product',
 ])
 const localArtifactDirs = new Set(['node_modules'])
 const appPackageFiles: Readonly<Record<string, readonly string[]>> = {
   '@deepseek-ai/dsh': ['lib/*.js', 'lib/types/*.d.ts'],
   '@deepseek-ai/dsh-desktop-host': [
-    'lib/index.js',
+    'lib/index.js', 'lib/cli.js',
   ],
   // Sourcemaps stay out by payload policy; the worker-preview surface
   // (dist/preview.html and dist/preview/) backs opt-in experimental
@@ -212,7 +212,7 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   // The argv-prefix runner entry ships beside the lib as its own bundle;
   // sandbox-local resolves it through the package's ./runner export. tsdown
   // also shares its generated FFI code through a hashed runtime chunk.
-  '@deepseek-ai/dsh-sandbox-windows-acl': ['lib/runner.js', 'lib/types-*.js'],
+  '@deepseek-ai/dsh-sandbox-windows-acl': ['lib/runner.js', 'lib/types-*.js', 'assets'],
   '@deepseek-ai/dsh-skill-badge': ['assets'],
   '@deepseek-ai/dsh-skill-office': ['assets'],
   '@deepseek-ai/dsh-subprocess': ['lib/control.js'],

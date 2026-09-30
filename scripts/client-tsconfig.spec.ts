@@ -22,7 +22,7 @@ function clientCssDeclarations(): string[] {
 }
 
 describe('client TypeScript aggregate', () => {
-  it('builds the Xiaoyin product UI before bundling client entries', () => {
+  it('builds the DeepSeekHarness product UI before bundling client entries', () => {
     const configPath = resolve(root, 'tsconfig.client.json')
     const read = ts.readConfigFile(configPath, file => ts.sys.readFile(file))
     if (read.error !== undefined) {
@@ -31,7 +31,7 @@ describe('client TypeScript aggregate', () => {
     const config = read.config as { references?: readonly { path: string }[] }
     const references = config.references?.map(reference => reference.path)
 
-    expect(references).toContain('./packages/extensions/ui-xiaoyin-product')
+    expect(references).toContain('./packages/extensions/ui-deepseek-harness-product')
   })
 
   it('loads package CSS declarations without relying on workspace-link realpaths', () => {

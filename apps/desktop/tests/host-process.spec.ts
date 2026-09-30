@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import type { ProductRuntimeMethod } from '@deepseek-harness/product/protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DesktopHostFatalError, DesktopHostProcess, DesktopHostUncleanExitError, QUIT_INSPECTION_DEADLINE_MS } from '../src/host-process.ts'
 
@@ -40,6 +41,11 @@ process.on('message', message => {
     process.send({ type: 'quit-inspection', requestId: message.requestId, activeTasks: false, scheduledTasks: message.requestId % 2 === 1 })
     return
   }
+  if (message.type === 'expert-kits-sync') {
+    process.send({ type: 'expert-kits-sync', requestId: message.requestId,
+      presetId: message.ids.length === 0 ? 'standard' : 'deepseek-harness-enabled-' + message.ids.join('-') })
+    return
+  }
   if (message.type !== 'shutdown') return
   server.close(() => {
     writeFileSync(join(process.argv[3], 'stopped'), '')
@@ -73,6 +79,84 @@ afterEach(async () => {
 })
 
 describe('desktop host process', () => {
+  it('correlates allowlisted product requests without exposing main-process credentials', async () => {
+    const runtime = projectWithHost(`
+      process.on('message', message => {
+        if (message.type === 'shutdown') {
+          process.send({ type: 'shutdown-complete' }, () => process.disconnect())
+          return
+        }
+        if (message.type !== 'deepseek-harness-product-result') return
+        process.send({ type: 'ready', url: 'http://127.0.0.1:3080/', injections: [message] })
+      })
+      process.send({ type: 'deepseek-harness-product-invoke', requestId: 'request-1234', method: 'knowledge.search', payload: { query: 'orders' } })
+    `)
+    const invoke = vi.fn((method: ProductRuntimeMethod, payload: unknown) =>
+      Promise.resolve({ method, payload, authorization: 'kept-in-main' }))
+    const host = new DesktopHostProcess(process.execPath, runtime, runtime, undefined, process.env,
+      undefined, undefined, undefined, undefined, invoke)
+    hosts.push(host)
+    const ready = await host.start()
+    expect(invoke).toHaveBeenCalledWith('knowledge.search', { query: 'orders' }, expect.any(AbortSignal))
+    expect(ready.injections).toEqual([{
+      type: 'deepseek-harness-product-result', requestId: 'request-1234',
+      result: { method: 'knowledge.search', payload: { query: 'orders' }, authorization: 'kept-in-main' },
+    }])
+  })
+
+  it('cancels product work and identifies the operation without leaking its cause', async () => {
+    const runtime = projectWithHost(`
+      process.on('message', message => {
+        if (message.type === 'shutdown') {
+          process.send({ type: 'shutdown-complete' }, () => process.disconnect())
+          return
+        }
+        if (message.type !== 'deepseek-harness-product-result') return
+        process.send({ type: 'ready', url: 'http://127.0.0.1:3080/', injections: [message] })
+      })
+      process.send({ type: 'deepseek-harness-product-invoke', requestId: 'request-5678', method: 'knowledge.search', payload: { query: 'orders' } })
+      process.send({ type: 'deepseek-harness-product-cancel', requestId: 'request-5678' })
+    `)
+    const invoke = vi.fn((_method, _payload, signal: AbortSignal) => new Promise((_resolve, reject) => {
+      signal.addEventListener('abort', () => { reject(new Error('Bearer fixture-secret')) }, { once: true })
+    }))
+    const host = new DesktopHostProcess(process.execPath, runtime, runtime, undefined, process.env,
+      undefined, undefined, undefined, undefined, invoke)
+    hosts.push(host)
+    const ready = await host.start()
+    expect(ready.injections).toEqual([{
+      type: 'deepseek-harness-product-result', requestId: 'request-5678',
+      error: 'deepseek-harness product operation failed: knowledge.search',
+    }])
+    expect(JSON.stringify(ready.injections)).not.toContain('fixture-secret')
+  })
+
+  it('reports a safe API status and code without exposing the server message', async () => {
+    const runtime = projectWithHost(`
+      process.on('message', message => {
+        if (message.type === 'shutdown') {
+          process.send({ type: 'shutdown-complete' }, () => process.disconnect())
+          return
+        }
+        if (message.type !== 'deepseek-harness-product-result') return
+        process.send({ type: 'ready', url: 'http://127.0.0.1:3080/', injections: [message] })
+      })
+      process.send({ type: 'deepseek-harness-product-invoke', requestId: 'request-9012', method: 'skills.list' })
+    `)
+    const invoke = vi.fn(() => Promise.reject(Object.assign(new Error('Bearer fixture-secret'), {
+      name: 'DeepSeekHarnessApiError', status: 401, code: 'EMPLOYEE_UNAUTHORIZED',
+    })))
+    const host = new DesktopHostProcess(process.execPath, runtime, runtime, undefined, process.env,
+      undefined, undefined, undefined, undefined, invoke)
+    hosts.push(host)
+    const ready = await host.start()
+    expect(ready.injections).toEqual([{
+      type: 'deepseek-harness-product-result', requestId: 'request-9012',
+      error: 'deepseek-harness product operation failed: skills.list [EMPLOYEE_UNAUTHORIZED, HTTP 401]',
+    }])
+    expect(JSON.stringify(ready.injections)).not.toContain('fixture-secret')
+  })
+
   it('correlates task inspections and admission changes over private IPC', async () => {
     const host = hostProcess(projectWithHost())
     await expect(host.updateTasks('inspect')).rejects.toThrow('Host is unavailable')
@@ -95,6 +179,16 @@ describe('desktop host process', () => {
     expect(Date.now() - started).toBeGreaterThanOrEqual(QUIT_INSPECTION_DEADLINE_MS - 50)
     expect(await host.inspectQuit()).toEqual({ activeTasks: false, scheduledTasks: false })
   }, 15_000)
+
+  it('correlates enabled expert kit snapshots and validates ids before IPC', async () => {
+    const host = hostProcess(projectWithHost())
+    await expect(host.syncExpertKits(['order-expert'])).rejects.toThrow('Host is unavailable')
+    await host.start()
+    await expect(host.syncExpertKits(['order-expert', 'fullstack-expert']))
+      .resolves.toBe('deepseek-harness-enabled-order-expert-fullstack-expert')
+    await expect(host.syncExpertKits(['order-expert', 'order-expert'])).rejects.toThrow('invalid enabled expert kit ids')
+    await expect(host.syncExpertKits(['../invalid'])).rejects.toThrow('invalid enabled expert kit ids')
+  })
 
   it.each([
     'process.exit(17)',

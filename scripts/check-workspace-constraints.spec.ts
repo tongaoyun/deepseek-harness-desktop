@@ -254,10 +254,10 @@ describe('dsh family version coherence', () => {
   })
 })
 
-describe('Xiaoyin product package publication boundary', () => {
+describe('DeepSeekHarness product package publication boundary', () => {
   it.each([
-    ['packages/extensions/ui-xiaoyin-product', '@xiaoyin/product-ui'],
-    ['packages/xiaoyin-product/product', '@xiaoyin/product'],
+    ['packages/extensions/ui-deepseek-harness-product', '@deepseek-harness/product-ui'],
+    ['packages/deepseek-harness-product/product', '@deepseek-harness/product'],
   ])('keeps %s private and outside the upstream release family', (dir, name) => {
     expect(checkWorkspaceManifest({ dir, manifest: { name, private: true } })).toEqual([])
     expect(checkWorkspaceManifest({ dir, manifest: { name, publishConfig: { access: 'public' } } })).toEqual([

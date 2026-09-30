@@ -459,7 +459,7 @@ export async function packageTarget(
   ], buildEnv, REPOSITORY_ROOT)
   await execute([
     '--dir',
-    'packages/extensions/ui-xiaoyin-product',
+    'packages/extensions/ui-deepseek-harness-product',
     'pack',
     '--pack-destination',
     buildPaths.packedDsh,
@@ -497,7 +497,7 @@ export async function packageTarget(
   } else if (target.platform === 'darwin') {
     await execute([...desktopElectronBuilderArguments(target, true), '--config.mac.notarize=false'], electronBuilderEnv)
     await execute(['exec', 'tsx', 'scripts/smoke-packaged-runtime.ts'], targetEnv)
-    const appPath = join(buildPaths.artifacts, target.arch === 'arm64' ? 'mac-arm64' : 'mac', 'Xiaoyin.app')
+    const appPath = join(buildPaths.artifacts, target.arch === 'arm64' ? 'mac-arm64' : 'mac', 'DeepSeek Harness.app')
     await withMacOSNotarizationProxy(mac?.notarizationProxy,
       () => notarizeMacOS({ appPath, ...resolveMacOSNotarizationEnvironment(environment) }), undefined, undefined, proxyEvent)
   } else {

@@ -68,7 +68,7 @@ function PanelRow({ id, label, wide, usePanelInfo, selectPanel, renderSlot }: Pa
         onClick={() => { selectPanel(id) }}
       >
         <span className={css.panelGlyph} aria-hidden="true">
-          {renderSlot('sidebar.panellist', { size: wide ? 16 : 18, active }, { only: id })}
+          {renderSlot('sidebar.panellist', { size: wide ? 16 : 18, active, wide }, { only: id })}
         </span>
         {wide && (
           <span className={clsx(css.panelTitle, css.wide)}>
@@ -241,17 +241,15 @@ export function SidebarRoot({
           return darwinDesktop
             ? <span className={clsx(css.brand, css.wide)}>{identity}</span>
             : (
-              <Tooltip label={t('session.new.label')} shortcutKeys={newShortcut?.keys} delayMs={500}>
-                <button
-                  type="button"
-                  className={clsx(css.brand, css.wide)}
-                  aria-label={t('session.new.label')}
-                  aria-keyshortcuts={newShortcut?.aria}
-                  onClick={() => { startSession() }}
-                >
-                  {identity}
-                </button>
-              </Tooltip>
+              <button
+                type="button"
+                className={clsx(css.brand, css.wide)}
+                aria-label={t('session.new.label')}
+                aria-keyshortcuts={newShortcut?.aria}
+                onClick={() => { startSession() }}
+              >
+                {identity}
+              </button>
             )
         })()}
         {!darwinDesktop && toggle}
@@ -280,6 +278,9 @@ export function SidebarRoot({
 
       {panels.length > 0 && (
         <nav className={css.panelList} aria-label={t('panels.label')}>
+          <div className={css.panelHeadings}>
+            {renderSlot('sidebar.panelheading', { wide })}
+          </div>
           {panels.map(({ id, label }) => (
             <PanelRow
               key={id}

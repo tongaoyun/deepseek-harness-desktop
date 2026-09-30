@@ -955,7 +955,7 @@ def test_public_signatures_omit_unsupported_wire_parameters() -> None:
     assert "session_root" not in inspect.signature(HarnessClient.initialize).parameters
     assert "system_prompt" not in inspect.signature(HarnessClient.initialize).parameters
     assert "profile" not in inspect.signature(HarnessClient.session_prompt).parameters
-    assert "profile" not in inspect.signature(DeepSeekHarness.run).parameters
+    assert "profile" not in inspect.signature(DeepSeek Harness.run).parameters
     assert "profile" not in inspect.signature(Session.run).parameters
     assert "system_prompt" not in DeepSeekHarnessConfig.__dataclass_fields__
     assert "max_tokens" in DeepSeekHarnessConfig.__dataclass_fields__

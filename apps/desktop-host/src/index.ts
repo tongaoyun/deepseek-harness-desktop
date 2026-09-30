@@ -14,6 +14,8 @@ import { installDesktopUpdateTaskControl } from './update-tasks.ts'
 import { installDesktopQuitInspection } from './quit-inspection.ts'
 import { installPlatformSessionPublisher } from './platform-session.ts'
 import { installOfficeEngineResolution } from './office-engine.ts'
+import { DeepSeekHarnessProductIpc } from './deepseek-harness-product-ipc.ts'
+import * as deepseekHarnessRuntime from './deepseek-harness-runtime.ts'
 
 async function main(): Promise<void> {
   const runtimeDir = process.argv[2] as string
@@ -44,12 +46,15 @@ async function main(): Promise<void> {
   const control: {
     updateTasks?: ReturnType<typeof installDesktopUpdateTaskControl>
     quitInspection?: ReturnType<typeof installDesktopQuitInspection>
-  } = {}
+    expertKits: deepseekHarnessRuntime.DeepSeekHarnessRuntimeControl | undefined
+  } = { expertKits: undefined }
   const send = (message: object): Promise<void> => new Promise((resolve, reject) => {
     if (!process.connected || process.send === undefined) { resolve(); return }
     process.send(message, (error) => { if (error === null) resolve(); else reject(error) })
   })
+  const product = new DeepSeekHarnessProductIpc()
   const stop = (): Promise<void> => stopping ??= (async () => {
+    product.close('Host is shutting down')
     // Startup failure is reported by main; shutdown only owns a tree that booted.
     const running = await application.catch(() => undefined)
     await running?.shutdown.shutdown(0)
@@ -57,6 +62,7 @@ async function main(): Promise<void> {
     if (process.connected) process.disconnect()
   })()
   process.on('message', (message: unknown) => {
+    if (product.handle(message)) return
     if (typeof message !== 'object' || message === null || !('type' in message)) return
     if (message.type === 'shutdown') { void stop(); return }
     if (message.type === 'quit-inspection') {
@@ -70,6 +76,25 @@ async function main(): Promise<void> {
         } catch (error) {
           // The shell treats an unknown state as interruptible work and asks before quitting.
           await send({ type: 'quit-inspection', requestId, activeTasks: true, scheduledTasks: false,
+            error: error instanceof Error ? error.message : String(error) })
+        }
+      })().catch((error: unknown) => { console.error(error) })
+      return
+    }
+    if (message.type === 'expert-kits-sync') {
+      if (!('requestId' in message) || !Number.isSafeInteger(message.requestId)
+        || !('ids' in message) || !Array.isArray(message.ids)
+        || message.ids.some(id => typeof id !== 'string')) return
+      const requestId = message.requestId
+      void (async () => {
+        try {
+          if (stopping !== undefined || control.expertKits === undefined) {
+            throw new Error('deepseek-harness product: expert kit runtime is unavailable')
+          }
+          const presetId = await control.expertKits.syncEnabledExpertKits(message.ids as string[])
+          await send({ type: 'expert-kits-sync', requestId, presetId })
+        } catch (error) {
+          await send({ type: 'expert-kits-sync', requestId, presetId: '',
             error: error instanceof Error ? error.message : String(error) })
         }
       })().catch((error: unknown) => { console.error(error) })
@@ -96,6 +121,10 @@ async function main(): Promise<void> {
     runtimeDir,
     source: process.argv[4] ?? join(runtimeDir, '..', 'runtime', 'primary-runtime'),
     root: join(resolveDshHome(), 'dsh-runtimes', 'dsh-primary-runtime'),
+  })
+  await ctx.plugin(deepseekHarnessRuntime, {
+    product,
+    publishControl: (runtimeControl) => { control.expertKits = runtimeControl },
   })
   installPlatformSessionPublisher(ctx, (session) => {
     if (process.connected) process.send?.({ type: 'platform-session', session })

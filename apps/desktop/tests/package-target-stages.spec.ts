@@ -151,7 +151,7 @@ it('packs private Desktop product packages before preparing the package set', as
   const { run, stages } = supervisor()
   await packageTarget(parseDesktopPackageInvocation(['win-x64', '--prepare-only'], 'win32', 'x64'), environment, run)
   const hostPack = '--dir apps/desktop-host pack --pack-destination'
-  const productPack = '--dir packages/extensions/ui-xiaoyin-product pack --pack-destination'
+  const productPack = '--dir packages/extensions/ui-deepseek-harness-product pack --pack-destination'
   expect(stages.some(stage => stage.startsWith(hostPack))).toBe(true)
   expect(stages.some(stage => stage.startsWith(productPack))).toBe(true)
   expect(stages.findIndex(stage => stage.startsWith(hostPack))).toBeLessThan(stages.indexOf('run prepare:packages'))

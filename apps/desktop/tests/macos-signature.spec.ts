@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
 import type { NotarizeOptions } from '@electron/notarize'
 import {
   resolveDesktopAppId,
@@ -41,17 +42,23 @@ describe('desktop macOS release signature', () => {
   it('loads release identifiers from the environment and requires code signing', async () => {
     const { createElectronBuilderConfig } = await import('../electron-builder.config.mjs')
     const config = createElectronBuilderConfig(RELEASE_ENVIRONMENT, 'darwin', 'arm64')
-    expect(config.protocols).toEqual([{ name: 'Xiaoyin', schemes: ['xiaoyin'] }])
+    expect(config.protocols).toEqual([{ name: 'DeepSeek Harness', schemes: ['dsh'] }])
     expect(portablePath(config.directories.output)).toContain('/.desktop-build/targets/mac-arm64/artifacts')
     expect(config.mac.extendInfo.NSMicrophoneUsageDescription).toContain('microphone')
+    expect(config.mac.entitlementsInherit).toBe(config.mac.entitlements)
+    const entitlements = readFileSync(config.mac.entitlements, 'utf8')
+    for (const key of ['com.apple.security.cs.allow-jit', 'com.apple.security.cs.allow-unsigned-executable-memory',
+      'com.apple.security.cs.disable-library-validation', 'com.apple.security.device.audio-input']) {
+      expect(entitlements).toContain(`<key>${key}</key>\n    <true/>`)
+    }
     expect(config.extraResources).toHaveLength(4)
     expect(config.extraResources[0]?.to).toBe('runtime')
     expect(portablePath(config.extraResources[0]?.from ?? '')).toContain('/.desktop-build/targets/mac-arm64/runtime')
-    expect(config.extraResources[1]?.to).toBe('xiaoyin/product.json')
+    expect(config.extraResources[1]?.to).toBe('deepseek-harness/product.json')
     const nativeSidecar = config.extraResources[2]
     const nativeSidecarPath = nativeSidecar !== undefined && 'from' in nativeSidecar && typeof nativeSidecar.from === 'string'
       ? nativeSidecar.from : ''
-    expect(portablePath(nativeSidecarPath)).toContain('/native/xiaoyin/target/release/xiaoyin-native')
+    expect(portablePath(nativeSidecarPath)).toContain('/native/deepseek-harness/target/release/deepseek-harness-native')
     const [dshFiles, dshNodeModules] = config.files.slice(-2)
     if (!dshFiles || !dshNodeModules || typeof dshFiles === 'string' || typeof dshNodeModules === 'string') {
       throw new Error('desktop DSH resources must use electron-builder file mappings')

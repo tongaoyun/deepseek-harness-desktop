@@ -1,0 +1,37 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/deepseek-harness-product/expert-kit-readme/README.md
+/:
+  en: 2808c69169714686
+  zh: e03a213471dda352
+/deepseek-harness-expert-kit-readme:
+  en: 7c4c2411eb8bc196
+  zh: c357f23aee66a599
+/deepseek-harness-expert-kit-readme/summary:
+  en: 6d5064a64c99b068
+  zh: 2d71a8154e3bb560
+/deepseek-harness-expert-kit-readme/table-of-contents:
+  en: b4683d2a53256fda
+  zh: 705ecbe0b6cabec6
+/deepseek-harness-expert-kit-readme/model-experience:
+  en: 215e7ba838619b7b
+  zh: a311da3843709f90
+/deepseek-harness-expert-kit-readme/model-experience/expert-kit-instructions:
+  en: e5beb74029b33f14
+  zh: 6891471e9c656401
+/deepseek-harness-expert-kit-readme/model-experience/expert-kit-instructions/what-the-model-sees:
+  en: e3196a1a893dd681
+  zh: e807b85ac231980b
+/deepseek-harness-expert-kit-readme/model-experience/expert-kit-instructions/token-effect:
+  en: e23ffb24b250fc4d
+  zh: c8927929d3683ada
+/deepseek-harness-expert-kit-readme/model-experience/expert-kit-instructions/kv-cache-effect:
+  en: ce38fa4fadd80aad
+  zh: f182f6ea079fb4f7
+/deepseek-harness-expert-kit-readme/known-limitations-and-deferred-work:
+  en: 461444256d972137
+  zh: 9241f9d2428278e8
+/deepseek-harness-expert-kit-readme/known-limitations-and-deferred-work/dev-note:
+  en: dbdfa5dc6e7fd48f
+  zh: 9cb3112cbc64815e

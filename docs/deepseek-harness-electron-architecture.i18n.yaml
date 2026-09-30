@@ -1,0 +1,7 @@
+# Bilingual-pair consistency record for deepseek-harness-electron-architecture.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/deepseek-harness-electron-architecture.md
+/deepseek-harness-electron-product-layer:
+  en: 54acf9532653e9d4
+  zh: 6c54e478561766d0

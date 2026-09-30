@@ -3,6 +3,7 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { join } from 'node:path'
 import type { PlatformSession } from '@deepseek-ai/dsh-deepseek-account'
+import { isProductRuntimeMethod, type ProductRuntimeMethod } from '@deepseek-harness/product/protocol'
 import { desktopNodeEnvironment } from './node-environment.ts'
 
 interface ReadyEvent {
@@ -23,7 +24,19 @@ interface PlatformSessionEvent {
   readonly session: PlatformSession | null
 }
 
-type DesktopHostEvent = ReadyEvent | FatalEvent | PlatformSessionEvent | { readonly type: 'shutdown-complete' } | {
+interface ProductInvokeEvent {
+  readonly type: 'deepseek-harness-product-invoke'
+  readonly requestId: string
+  readonly method: ProductRuntimeMethod
+  readonly payload?: unknown
+}
+
+interface ProductCancelEvent {
+  readonly type: 'deepseek-harness-product-cancel'
+  readonly requestId: string
+}
+
+type DesktopHostEvent = ReadyEvent | FatalEvent | PlatformSessionEvent | ProductInvokeEvent | ProductCancelEvent | { readonly type: 'shutdown-complete' } | {
   readonly type: 'update-tasks'
   readonly requestId: number
   readonly active: boolean
@@ -33,6 +46,11 @@ type DesktopHostEvent = ReadyEvent | FatalEvent | PlatformSessionEvent | { reado
   readonly requestId: number
   readonly activeTasks: boolean
   readonly scheduledTasks: boolean
+  readonly error?: string
+} | {
+  readonly type: 'expert-kits-sync'
+  readonly requestId: number
+  readonly presetId: string
   readonly error?: string
 }
 
@@ -49,6 +67,16 @@ export interface DesktopQuitInspection {
 export const QUIT_INSPECTION_DEADLINE_MS = 2_000
 
 const MAX_HOST_DIAGNOSTIC_CHARS = 64 * 1024
+
+function productOperationError(method: ProductRuntimeMethod, error: unknown): string {
+  const prefix = `deepseek-harness product operation failed: ${method}`
+  if (typeof error !== 'object' || error === null || Array.isArray(error)) return prefix
+  const candidate = error as Record<string, unknown>
+  if (candidate.name !== 'DeepSeekHarnessApiError'
+    || !Number.isSafeInteger(candidate.status) || (candidate.status as number) < 400 || (candidate.status as number) > 599
+    || typeof candidate.code !== 'string' || !/^[A-Z][A-Z0-9_]{1,63}$/.test(candidate.code)) return prefix
+  return `${prefix} [${candidate.code}, HTTP ${String(candidate.status)}]`
+}
 
 function isDesktopHostEvent(message: unknown): message is DesktopHostEvent {
   if (typeof message !== 'object' || message === null || !('type' in message)) return false
@@ -77,6 +105,12 @@ function isDesktopHostEvent(message: unknown): message is DesktopHostEvent {
           && (url.protocol === 'https:' || (url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)))
       } catch { return false }
     }
+    case 'deepseek-harness-product-invoke':
+      return typeof candidate.requestId === 'string' && candidate.requestId.length >= 8
+        && candidate.requestId.length <= 128 && isProductRuntimeMethod(candidate.method)
+    case 'deepseek-harness-product-cancel':
+      return typeof candidate.requestId === 'string' && candidate.requestId.length >= 8
+        && candidate.requestId.length <= 128
     case 'fatal':
       return typeof candidate.message === 'string' && (candidate.diagnostic === undefined || typeof candidate.diagnostic === 'string')
     case 'update-tasks':
@@ -85,6 +119,9 @@ function isDesktopHostEvent(message: unknown): message is DesktopHostEvent {
     case 'quit-inspection':
       return Number.isSafeInteger(candidate.requestId) && typeof candidate.activeTasks === 'boolean'
         && typeof candidate.scheduledTasks === 'boolean' && (candidate.error === undefined || typeof candidate.error === 'string')
+    case 'expert-kits-sync':
+      return Number.isSafeInteger(candidate.requestId) && typeof candidate.presetId === 'string'
+        && (candidate.error === undefined || typeof candidate.error === 'string')
     default:
       return false
   }
@@ -153,6 +190,7 @@ export class DesktopHostProcess {
     resolve: (response: DesktopHostControlResponse) => void
     reject: (error: Error) => void
   }>()
+  private readonly productRequests = new Map<string, AbortController>()
 
   /**
    * @param node - Absolute Electron executable in Node mode.
@@ -177,6 +215,7 @@ export class DesktopHostProcess {
     private readonly packageManager?: { readonly pnpm: string; readonly nodeBin: string },
 
     private readonly onPlatformSession?: (session: PlatformSession | null) => void,
+    private readonly onProductInvoke?: (method: ProductRuntimeMethod, payload: unknown, signal: AbortSignal) => Promise<unknown>,
   ) {}
 
   /**
@@ -211,6 +250,26 @@ export class DesktopHostProcess {
       }
       if (message.type === 'ready') this.readyResolve({ url: message.url, injections: message.injections })
       else if (message.type === 'platform-session') this.onPlatformSession?.(message.session)
+      else if (message.type === 'deepseek-harness-product-invoke') {
+        const controller = new AbortController()
+        this.productRequests.set(message.requestId, controller)
+        const answer = async (): Promise<void> => {
+          if (this.onProductInvoke === undefined) throw new Error('deepseek-harness product bridge is unavailable')
+          const result = await this.onProductInvoke(message.method, message.payload, controller.signal)
+          await new Promise<void>((resolve, reject) => {
+            child.send({ type: 'deepseek-harness-product-result', requestId: message.requestId, result }, (error) => {
+              if (error === null) resolve()
+              else reject(error)
+            })
+          })
+        }
+        void answer().catch((error: unknown) => {
+          if (!child.connected) return
+          child.send({ type: 'deepseek-harness-product-result', requestId: message.requestId,
+            error: productOperationError(message.method, error) })
+        }).finally(() => { this.productRequests.delete(message.requestId) })
+      }
+      else if (message.type === 'deepseek-harness-product-cancel') this.productRequests.get(message.requestId)?.abort()
       else if (message.type === 'shutdown-complete') {
         if (this.stopping) this.shutdownCompleted = true
         else this.fail(new Error('dsh desktop host acknowledged an unrequested shutdown'))
@@ -257,13 +316,31 @@ export class DesktopHostProcess {
     return { activeTasks: response.activeTasks, scheduledTasks: response.scheduledTasks }
   }
 
+  /** Switch future Sessions to the Host snapshot for the enabled expert kits. */
+  async syncExpertKits(ids: readonly string[]): Promise<string> {
+    if (ids.length > 256 || new Set(ids).size !== ids.length
+      || ids.some(id => !/^[a-z][a-z0-9-]{2,63}$/.test(id))) {
+      throw new Error('deepseek-harness product: invalid enabled expert kit ids')
+    }
+    const response = await this.control({ type: 'expert-kits-sync', ids: [...ids] }, 30_000,
+      'deepseek-harness product: expert kit synchronization timed out')
+    if (response.type !== 'expert-kits-sync') {
+      throw new Error('deepseek-harness product: Host answered with a different control response')
+    }
+    return response.presetId
+  }
+
   private async control(
-    request: { readonly type: 'update-tasks'; readonly action: 'inspect' | 'lock' | 'unlock' } | { readonly type: 'quit-inspection' },
+    request: { readonly type: 'update-tasks'; readonly action: 'inspect' | 'lock' | 'unlock' }
+      | { readonly type: 'quit-inspection' }
+      | { readonly type: 'expert-kits-sync'; readonly ids: readonly string[] },
     deadlineMs: number, deadlineMessage: string,
   ): Promise<DesktopHostControlResponse> {
     const child = this.child
     if (child === undefined || !child.connected || this.failureReported || this.stopping) {
-      throw new Error(`${request.type === 'update-tasks' ? 'desktop update' : 'desktop quit'}: Host is unavailable`)
+      const owner = request.type === 'update-tasks' ? 'desktop update'
+        : request.type === 'quit-inspection' ? 'desktop quit' : 'deepseek-harness product'
+      throw new Error(`${owner}: Host is unavailable`)
     }
     const requestId = this.nextControlId++
     let timer: ReturnType<typeof setTimeout> | undefined
@@ -308,6 +385,8 @@ export class DesktopHostProcess {
   }
 
   private fail(error: Error): void {
+    for (const controller of this.productRequests.values()) controller.abort()
+    this.productRequests.clear()
     this.onPlatformSession?.(null)
     this.readyReject(error)
     for (const request of this.controlRequests.values()) request.reject(error)

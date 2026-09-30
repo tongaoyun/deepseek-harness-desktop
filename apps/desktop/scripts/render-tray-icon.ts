@@ -1,5 +1,5 @@
 /**
- * Render the Windows tray icon from Xiaoyin's high-resolution application icon.
+ * Render the Windows tray icon from DeepSeek Harness's high-resolution application icon.
  *
  * The tray shows the icon at 16 logical pixels, so Windows picks one of the
  * bundled bitmaps by display scale. Each size is rasterized independently from

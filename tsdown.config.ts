@@ -25,7 +25,7 @@ export default defineConfig(({ env }) => {
     // The product bridge has its own entrypoints and package-local build. It
     // is linked into Electron as a product dependency, but is not an official
     // Harness workspace target and must not inherit the root host entry.
-    exclude: ['packages/xiaoyin-product/product/**', '**/node_modules/**'],
+    exclude: ['packages/deepseek-harness-product/product/**', '**/node_modules/**'],
   }
   return {
     workspace,

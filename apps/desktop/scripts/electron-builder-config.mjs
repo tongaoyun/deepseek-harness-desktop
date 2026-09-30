@@ -100,21 +100,21 @@ export function createElectronBuilderConfig(
   const buildVersion = resolveDesktopBuildVersion(env, productVersion)
   const packaged = resolveDesktopBuildCommit(env)
   const nativeTarget = env.CARGO_TARGET_DIR
-    ?? join(REPOSITORY_ROOT, 'native', 'xiaoyin', 'target')
-  const nativeSidecar = env.XIAOYIN_NATIVE_BINARY
-    ?? join(nativeTarget, 'release', packagesWindows ? 'xiaoyin-native.exe' : 'xiaoyin-native')
+    ?? join(REPOSITORY_ROOT, 'native', 'deepseek-harness', 'target')
+  const nativeSidecar = env.DEEPSEEK_HARNESS_NATIVE_BINARY
+    ?? join(nativeTarget, 'release', packagesWindows ? 'deepseek-harness-native.exe' : 'deepseek-harness-native')
   return {
     appId,
-    protocols: [{ name: 'Xiaoyin', schemes: ['xiaoyin'] }],
+    protocols: [{ name: 'DeepSeek Harness', schemes: ['dsh'] }],
     extraMetadata: {
       dshDesktopAppId: appId,
       dshMandatoryUpdatePolicy: policy,
       ...buildVersion === productVersion ? {} : { version: buildVersion },
       ...packaged === undefined ? {} : { dshBuildCommit: packaged.commit, dshBuildDirty: packaged.dirty },
     },
-    productName: 'Xiaoyin',
+    productName: 'DeepSeek Harness',
     // Unsigned builds carry their own suffix so a shared file can never pass for a release artifact.
-    artifactName: `xiaoyin-\${version}-\${os}-\${arch}${unsigned ? '-unsigned' : ''}.\${ext}`,
+    artifactName: `deepseek-harness-\${version}-\${os}-\${arch}${unsigned ? '-unsigned' : ''}.\${ext}`,
     directories: { output: unsigned ? buildPaths.unsignedArtifacts : buildPaths.artifacts },
     asar: true,
     electronDist: buildPaths.electron,
@@ -149,10 +149,10 @@ export function createElectronBuilderConfig(
     asarUnpack: unpack,
     extraResources: [
       { from: buildPaths.runtime, to: 'runtime' },
-      { from: fileURLToPath(new URL('../resources/xiaoyin-product.json', import.meta.url)), to: 'xiaoyin/product.json' },
+      { from: fileURLToPath(new URL('../resources/deepseek-harness-product.json', import.meta.url)), to: 'deepseek-harness/product.json' },
       // Product-native capabilities are supervised by Electron and never
       // exposed directly to the renderer.
-      { from: nativeSidecar, to: packagesWindows ? 'native/xiaoyin-native.exe' : 'native/xiaoyin-native' },
+      { from: nativeSidecar, to: packagesWindows ? 'native/deepseek-harness-native.exe' : 'native/deepseek-harness-native' },
       { from: fileURLToPath(new URL('../resources/icon-windows.png', import.meta.url)), to: 'icon.png' },
       // Windows tray bitmaps; macOS keeps the Dock and ships no menu bar icon.
       ...(packagesWindows ? [{ from: fileURLToPath(new URL('../resources/tray-windows.ico', import.meta.url)), to: 'tray.ico' }] : []),
@@ -161,11 +161,15 @@ export function createElectronBuilderConfig(
       icon: fileURLToPath(new URL('../resources/icon-macos.png', import.meta.url)),
       category: 'public.app-category.developer-tools',
       // macOS matches the application locale against this bundle, not Electron Framework resources.
-      extendInfo: { CFBundleLocalizations: ['en', 'zh_CN'] },
+      extendInfo: {
+        CFBundleLocalizations: ['en', 'zh_CN'],
+        NSMicrophoneUsageDescription: 'DeepSeek Harness uses your microphone to transcribe speech into message drafts.',
+      },
       identity: macOSSigning?.signingIdentity,
       forceCodeSigning: true,
       hardenedRuntime: true,
-      extendInfo: { NSMicrophoneUsageDescription: 'Xiaoyin uses your microphone to transcribe speech into message drafts.' },
+      entitlements: fileURLToPath(new URL('./macos-entitlements.plist', import.meta.url)),
+      entitlementsInherit: fileURLToPath(new URL('./macos-entitlements.plist', import.meta.url)),
       // ASAR-unpacked native runtime files are pre-signed; PAK resources are sealed by their enclosing bundle.
       signIgnore: ['/Contents/Resources/app\\.asar\\.unpacked/dsh(?:/|$)', '/Contents/Resources/runtime/primary-runtime(?:/|$)', '\\.pak$'],
       notarize: true,
@@ -230,7 +234,7 @@ export function createElectronBuilderConfig(
     },
     win: {
       icon: fileURLToPath(new URL('../resources/icon-windows.png', import.meta.url)),
-      executableName: 'Xiaoyin',
+      executableName: 'DeepSeek Harness',
       forceCodeSigning: !unsigned,
       signtoolOptions: {
         sign: windowsSigner,

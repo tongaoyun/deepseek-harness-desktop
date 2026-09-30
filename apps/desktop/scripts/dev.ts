@@ -56,7 +56,24 @@ async function runPackageScript(script: string, cwd: string): Promise<void> {
   await run(process.execPath, [packageManager, 'run', script], cwd)
 }
 
-async function launchElectron(): Promise<void> {
+async function resolveNativeSidecar(): Promise<string> {
+  const configured = process.env.DEEPSEEK_HARNESS_NATIVE_BINARY?.trim()
+  if (configured !== undefined && configured !== '') {
+    const executable = resolve(configured)
+    if (!existsSync(executable)) throw new Error(`desktop development: missing native sidecar ${executable}`)
+    return executable
+  }
+  const executable = join(REPOSITORY_ROOT, 'native', 'deepseek-harness', 'target', 'release',
+    process.platform === 'win32' ? 'deepseek-harness-native.exe' : 'deepseek-harness-native')
+  if (!existsSync(executable)) {
+    await run('cargo', ['build', '--release', '--manifest-path', join(REPOSITORY_ROOT, 'native', 'deepseek-harness', 'Cargo.toml')],
+      REPOSITORY_ROOT)
+  }
+  if (!existsSync(executable)) throw new Error(`desktop development: missing native sidecar ${executable}`)
+  return executable
+}
+
+async function launchElectron(nativeSidecar: string): Promise<void> {
   const require = createRequire(import.meta.url)
   const electron: unknown = require('electron')
   if (typeof electron !== 'string') throw new Error('desktop development: electron executable is unavailable')
@@ -72,6 +89,7 @@ async function launchElectron(): Promise<void> {
     DSH_DESKTOP_HOST_INSPECT_PORT: String(hostPort),
     DSH_DESKTOP_OPEN_DEVTOOLS: process.env.DSH_DESKTOP_OPEN_DEVTOOLS ?? '1',
     ELECTRON_ENABLE_LOGGING: process.env.ELECTRON_ENABLE_LOGGING ?? '1',
+    DEEPSEEK_HARNESS_NATIVE_BINARY: nativeSidecar,
   }
   console.log(`desktop development: DSH_HOME=${home}`)
   console.log(`desktop development: userData=${userData}`)
@@ -121,7 +139,7 @@ async function main(): Promise<void> {
     target: resolveDesktopBuildTarget(),
   })
   await preparePrimaryRuntime()
-  await launchElectron()
+  await launchElectron(await resolveNativeSidecar())
 }
 
 await main().catch((error: unknown) => {

@@ -1,9 +1,9 @@
 /** Origin-scoped boot, native directory selection, host paths of picked files, and update presentation with native confirmation actions. */
 
 import type { DesktopShortcutInput, ShortcutConfigSnapshot, ShortcutSaveResult } from '@deepseek-ai/dsh-client-shortcuts/protocol'
-import type { ProductEvent, ProductMethod, ProductSession } from '@xiaoyin/product/protocol'
+import type { ProductEvent, ProductMethod, ProductSession } from '@deepseek-harness/product/protocol'
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
-import { DESKTOP_IPC, SCHEME, type DshDesktopProductApi, type DesktopUpdatePresentation, type XiaoyinProductApi } from './ipc.ts'
+import { DESKTOP_IPC, SCHEME, type DshDesktopProductApi, type DesktopUpdatePresentation, type DeepSeekHarnessProductApi } from './ipc.ts'
 import { PLATFORM_IPC } from './platform-ipc.ts'
 import { markDocumentPlatform, syncWindowFullscreen } from './preload-platform.ts'
 import { syncNativeTheme } from './preload-theme.ts'
@@ -15,6 +15,7 @@ function createProductApi(): DshDesktopProductApi {
   return {
     protocolVersion: 1,
     browser: createDesktopBrowserBridge(),
+    deviceInfo: () => ipcRenderer.invoke(DESKTOP_IPC.deviceInfo) as Promise<string>,
     keyboard: {
       closeWindow: revision => ipcRenderer.invoke(DESKTOP_IPC.shortcutsCloseWindow, revision) as Promise<void>,
       subscribe: (listener) => {
@@ -56,8 +57,9 @@ function createProductApi(): DshDesktopProductApi {
       },
     },
     product: {
-      invoke: (method: ProductMethod, payload?: unknown) =>
-        ipcRenderer.invoke(DESKTOP_IPC.productInvoke, method, payload) as Promise<unknown>,
+      invoke: (method: ProductMethod, payload?: unknown, requestId?: string) =>
+        ipcRenderer.invoke(DESKTOP_IPC.productInvoke, method, payload, requestId) as Promise<unknown>,
+      cancel: (requestId) => { ipcRenderer.send(DESKTOP_IPC.productCancel, requestId) },
       getSession: () => ipcRenderer.invoke(DESKTOP_IPC.productSession) as Promise<ProductSession>,
       subscribe(listener) {
         const handle = (_event: Electron.IpcRendererEvent, event: ProductEvent): void => { listener(event) }
@@ -111,7 +113,7 @@ const ownedApplication = location.protocol === `${SCHEME}:` && location.hostname
 if (ownedApplication) {
   const productApi = createProductApi()
   contextBridge.exposeInMainWorld('dshDesktop', productApi)
-  contextBridge.exposeInMainWorld('xiaoyin', { product: productApi.product } satisfies XiaoyinProductApi)
+  contextBridge.exposeInMainWorld('deepseekHarness', { product: productApi.product } satisfies DeepSeekHarnessProductApi)
 } else {
   contextBridge.exposeInMainWorld('dshDesktop', { protocolVersion: 1 })
 }

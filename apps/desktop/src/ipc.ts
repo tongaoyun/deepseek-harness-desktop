@@ -3,7 +3,7 @@
 import type { DesktopKeyboardApi, DesktopShortcutsApi } from '@deepseek-ai/dsh-client-shortcuts/protocol'
 import type { IpcMainInvokeEvent } from 'electron'
 import type { DesktopBrowserBridge } from '@deepseek-ai/dsh-client-ui-sidebar-browser/types'
-import type { ProductEvent, ProductMethod, ProductSession } from '@xiaoyin/product/protocol'
+import type { ProductEvent, ProductMethod, ProductSession } from '@deepseek-harness/product/protocol'
 
 /** IPC channel names kept private to the desktop application bundle. */
 export const DESKTOP_IPC = {
@@ -22,6 +22,7 @@ export const DESKTOP_IPC = {
   browserRelease: 'dsh-desktop:browser-release',
   browserOpenRequested: 'dsh-desktop:browser-open-requested',
   directoryPick: 'dsh-desktop:directory-pick',
+  deviceInfo: 'dsh-desktop:device-info',
   localeBootstrap: 'dsh-desktop:locale-bootstrap',
   localeChanged: 'dsh-desktop:locale-changed',
   updatesStatus: 'dsh-desktop:updates-status',
@@ -31,9 +32,10 @@ export const DESKTOP_IPC = {
   windowFullscreen: 'dsh-desktop:window-fullscreen',
   windowsAppearance: 'dsh-desktop:windows-appearance',
   windowsMenu: 'dsh-desktop:windows-menu',
-  productInvoke: 'xiaoyin-product:invoke',
-  productSession: 'xiaoyin-product:session',
-  productEvent: 'xiaoyin-product:event',
+  productInvoke: 'deepseek-harness-product:invoke',
+  productCancel: 'deepseek-harness-product:cancel',
+  productSession: 'deepseek-harness-product:session',
+  productEvent: 'deepseek-harness-product:event',
 } as const
 
 /** Desktop release update state rendered by desktop-owned UI. */
@@ -77,6 +79,11 @@ export interface DshDesktopProductApi {
   readonly browser: DesktopBrowserBridge
   readonly keyboard: DesktopKeyboardApi
   readonly shortcuts: DesktopShortcutsApi
+  /**
+   * Local machine description for the feedback questionnaire.
+   * @returns `name=value` fields separated by `; `, with no hostname, user name, or serial number.
+   */
+  deviceInfo(): Promise<string>
   readonly updates: {
     status(): Promise<DesktopUpdatePresentation>
     open(): Promise<void>
@@ -84,14 +91,15 @@ export interface DshDesktopProductApi {
   }
   /** Product capabilities are isolated from Harness session execution. */
   readonly product: {
-    invoke(method: ProductMethod, payload?: unknown): Promise<unknown>
+    invoke(method: ProductMethod, payload?: unknown, requestId?: string): Promise<unknown>
+    cancel(requestId: string): void
     subscribe(listener: (event: ProductEvent) => void): () => void
     getSession(): Promise<ProductSession>
   }
 }
 
 /** Product-only surface exposed under the downstream-owned namespace. */
-export interface XiaoyinProductApi {
+export interface DeepSeekHarnessProductApi {
   readonly product: DshDesktopProductApi['product']
 }
 

@@ -37,7 +37,7 @@ describe('installer preparation preserves application dependencies', () => {
     try {
       const { createElectronBuilderConfig } = await import('../electron-builder.config.mjs')
       const config = createElectronBuilderConfig(env, platform, 'x64')
-      const productConfig = config.extraResources.find(resource => resource.to === 'xiaoyin/product.json')
+      const productConfig = config.extraResources.find(resource => resource.to === 'deepseek-harness/product.json')
       expect(productConfig).toBeDefined()
       expect(JSON.parse(readFileSync(productConfig!.from, 'utf8'))).toEqual({
         version: 1,
@@ -80,7 +80,7 @@ describe('installer preparation preserves application dependencies', () => {
       DSH_DESKTOP_TARGET_ARCH: 'x64',
       DSH_DESKTOP_UNSIGNED: '1',
     }, 'win32', 'x64')
-    expect(config.artifactName).toBe('xiaoyin-${version}-${os}-${arch}-unsigned.${ext}')
+    expect(config.artifactName).toBe('deepseek-harness-${version}-${os}-${arch}-unsigned.${ext}')
   })
 
   it('packages the native sidecar from Cargo\'s configured target directory', async () => {
@@ -95,8 +95,8 @@ describe('installer preparation preserves application dependencies', () => {
       DSH_DESKTOP_UNSIGNED: '1',
     }, 'win32', 'x64')
     expect(config.extraResources).toContainEqual({
-      from: '/runner/cargo-target/release/xiaoyin-native.exe',
-      to: 'native/xiaoyin-native.exe',
+      from: '/runner/cargo-target/release/deepseek-harness-native.exe',
+      to: 'native/deepseek-harness-native.exe',
     })
   })
 

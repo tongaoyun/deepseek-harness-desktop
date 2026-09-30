@@ -108,18 +108,18 @@ vi.mock('electron', () => ({
 vi.mock('../src/tray.ts', () => ({ DesktopTray: class { relabel() {} dispose() {} } }))
 
 vi.mock('../src/paths.ts', () => ({ resolveDesktopPaths: () => ({ profile: '/profile' }) }))
-vi.mock('../src/xiaoyin-product-config.ts', () => ({
-  resolveXiaoyinProductServerUrl: () => 'http://127.0.0.1:30081',
+vi.mock('../src/deepseek-harness-product-config.ts', () => ({
+  resolveDeepSeekHarnessProductServerUrl: () => 'http://127.0.0.1:30081',
 }))
-vi.mock('../src/xiaoyin-native-process.ts', () => ({
-  XiaoyinNativeProcess: class {
+vi.mock('../src/deepseek-harness-native-process.ts', () => ({
+  DeepSeekHarnessNativeProcess: class {
     start = vi.fn(async () => {})
     stop = vi.fn(async () => {})
     invoke = vi.fn(async () => ({}))
   },
 }))
-vi.mock('@xiaoyin/product/bridge', () => ({
-  XiaoyinProductBridge: class {
+vi.mock('@deepseek-harness/product/bridge', () => ({
+  DeepSeekHarnessProductBridge: class {
     getSession() { return { authenticated: true } }
     loadRuntimeBootstrap() {
       return Promise.resolve({
@@ -132,8 +132,12 @@ vi.mock('@xiaoyin/product/bridge', () => ({
     subscribe() { return () => undefined }
   },
 }))
-vi.mock('@xiaoyin/product/dingtalk-auth', () => ({
+vi.mock('@deepseek-harness/product/dingtalk-auth', () => ({
   ensureDingTalkSession: vi.fn(async () => {}),
+}))
+vi.mock('../src/login-shell-environment.ts', async importOriginal => ({
+  ...await importOriginal<typeof import('../src/login-shell-environment.ts')>(),
+  readDesktopLoginShellEnvironment: async (base: NodeJS.ProcessEnv) => ({ environment: base, failures: [] }),
 }))
 vi.mock('../src/project-manager.ts', () => ({ DesktopProjectManager: class {
   applyRelease = vi.fn(async () => {})
@@ -153,6 +157,7 @@ vi.mock('../src/host-process.ts', async importOriginal => ({
 }))
 vi.mock('../src/welcome-backend.ts', () => ({
   connectDesktopWelcome: async () => ({
+    analyticsEnabled: async () => false,
     readLocalePreference: async () => state.preference,
     read: async () => {
       await state.beforeRead()
@@ -209,6 +214,7 @@ it.each([false, true])('starts welcome onboarding without carrying update focus 
   state.accountState.mockResolvedValue({ status: 'signed-out', attempt: null, links: { usageUrl: '', topUpUrl: '' } })
   if (updated) vi.stubGlobal('process', { ...process, platform: 'win32', argv: ['desktop', '--updated'] })
   vi.useFakeTimers()
+  vi.stubEnv('DSH_CLIENT_VERSION', '1.2.3')
   vi.stubEnv('DSH_DESKTOP_DEV_PROJECT_DIR', '/development-profile')
   vi.stubEnv('DSH_DESKTOP_NODE_BINARY', '/runtime/node')
   vi.stubEnv('DSH_DESKTOP_PNPM_ENTRY', '/runtime/pnpm')
@@ -224,7 +230,7 @@ it.each([false, true])('starts welcome onboarding without carrying update focus 
   state.beforeWelcome.mockReturnValueOnce(loading.promise)
   const activate = () => {
     state.appListeners.get('second-instance')!()
-    state.appListeners.get('open-url')!({ preventDefault: vi.fn() }, 'xiaoyin://open')
+    state.appListeners.get('open-url')!({ preventDefault: vi.fn() }, 'dsh://open')
   }
   await import('../src/main.ts')
   await vi.waitFor(() => { expect(state.beforeRead).toHaveBeenCalledOnce() })
@@ -322,7 +328,7 @@ it.each([false, true])('starts welcome onboarding without carrying update focus 
   expect(state.focusWorkspace).not.toHaveBeenCalled()
   expect(state.moveTopWorkspace).not.toHaveBeenCalled()
   expect(state.openDevTools).not.toHaveBeenCalled()
-  state.appListeners.get('open-url')!({ preventDefault: vi.fn() }, 'xiaoyin://open')
+  state.appListeners.get('open-url')!({ preventDefault: vi.fn() }, 'dsh://open')
   expect(state.showWorkspace).toHaveBeenCalledOnce()
   expect(state.focusWorkspace).toHaveBeenCalledOnce()
 

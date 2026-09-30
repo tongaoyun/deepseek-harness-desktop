@@ -89,7 +89,7 @@ class DeepSeekHarness:
         )
         self._initialized = False
 
-    def __enter__(self) -> "DeepSeekHarness":
+    def __enter__(self) -> "DeepSeek Harness":
         self.start()
         return self
 

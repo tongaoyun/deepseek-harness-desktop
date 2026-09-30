@@ -1,0 +1,37 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/deepseek-harness-product/product/README.md
+/:
+  en: 6bb0ba50e5ee0460
+  zh: 821740d67d739418
+/deepseek-harness-product-bridge:
+  en: 2c8621f77d6b2bf3
+  zh: d1ef543f6f798c41
+/deepseek-harness-product-bridge/summary:
+  en: 1ba68fb20f559118
+  zh: 223630ee44eb8689
+/deepseek-harness-product-bridge/table-of-contents:
+  en: b4683d2a53256fda
+  zh: 705ecbe0b6cabec6
+/deepseek-harness-product-bridge/model-experience:
+  en: 215e7ba838619b7b
+  zh: a311da3843709f90
+/deepseek-harness-product-bridge/model-experience/product-bridge:
+  en: f3141d838688fdb1
+  zh: 3c2aa7eeb3e764b8
+/deepseek-harness-product-bridge/model-experience/product-bridge/what-the-model-sees:
+  en: fae28d7a18ad67af
+  zh: 9cfa36fd57791815
+/deepseek-harness-product-bridge/model-experience/product-bridge/token-effect:
+  en: 233093e0c1f91d53
+  zh: 7d0520e609a2a862
+/deepseek-harness-product-bridge/model-experience/product-bridge/kv-cache-effect:
+  en: 68a75b713796601a
+  zh: daecd3b73614bd1e
+/deepseek-harness-product-bridge/known-limitations-and-deferred-work:
+  en: 0d51ae57f67711c1
+  zh: 9a2bc4054851d84b
+/deepseek-harness-product-bridge/known-limitations-and-deferred-work/dev-note:
+  en: 04f4ae8f17e09cc4
+  zh: 28468b001a9efa1a

@@ -49,4 +49,4 @@ worktrees/
 .agents/worktrees/
 .typert-*/
 native/system/test/bin/
-native/xiaoyin/target/
+native/deepseek-harness/target/

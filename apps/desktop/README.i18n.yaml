@@ -2,69 +2,78 @@
 # section, a hash of its English and Chinese blocks outside code blocks and generated regions.
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write apps/desktop/README.md
-/xiaoyin-desktop:
-  en: bbfd3cda3728f364
-  zh: 77e564afdad28e51
-/xiaoyin-desktop/closing-the-window-and-quitting:
-  en: b18d202736b51bd7
-  zh: dccdab7129a4099f
-/xiaoyin-desktop/key-technical-decisions:
-  en: dbb099022bc9187d
-  zh: 99a2e9ef2555c5fb
-/xiaoyin-desktop/key-technical-decisions/bundled-workspace-dependencies:
-  en: 31cbb7452be8e1ad
-  zh: 502ec556e2ec301e
-/xiaoyin-desktop/installation-ownership:
-  en: 8307baf6c5b691d0
-  zh: 86e46b9552017ff6
-/xiaoyin-desktop/installation-ownership/runtime-and-plugin-activation:
-  en: 684b54c136695f50
-  zh: 5dff78834ca5f693
-/xiaoyin-desktop/develop:
-  en: 9b9b362a9865e763
-  zh: c748901168e2db8c
-/xiaoyin-desktop/develop/startup-authentication:
-  en: 326673031ca53670
-  zh: 51860dd86adbbdcd
-/xiaoyin-desktop/develop/welcome-window-appearance:
+/deepseek-harness-desktop:
+  en: eccac345d51428fa
+  zh: 2a0e06b7f7b48379
+/deepseek-harness-desktop/terminal-command:
+  en: bef92953c237363f
+  zh: d21d6effd21b8c00
+/deepseek-harness-desktop/closing-the-window-and-quitting:
+  en: f708e8dccfbdf829
+  zh: 845f869ae0653906
+/deepseek-harness-desktop/key-technical-decisions:
+  en: 4b80942af9a66485
+  zh: 0615557edc0b6f2f
+/deepseek-harness-desktop/key-technical-decisions/bundled-workspace-dependencies:
+  en: 320733f93ede61a4
+  zh: 33206c3c4753c802
+/deepseek-harness-desktop/bundled-command-runtime:
+  en: beecf076aa2f0796
+  zh: c9001ce0f22d2379
+/deepseek-harness-desktop/installation-ownership:
+  en: 8869b995282599d8
+  zh: e3ef604e04d67bc0
+/deepseek-harness-desktop/installation-ownership/runtime-and-plugin-activation:
+  en: 0d11af8639977a6d
+  zh: 86b086b12d2210d3
+/deepseek-harness-desktop/installation-ownership/host-environment:
+  en: 84a9cc7ca9455aa8
+  zh: 4091b8aa8231b74a
+/deepseek-harness-desktop/develop:
+  en: 40d2ad4014bf445b
+  zh: 6a08de06df9ed042
+/deepseek-harness-desktop/develop/startup-authentication:
+  en: 5adb8e43492b884a
+  zh: 6c14332d56c59a9f
+/deepseek-harness-desktop/develop/welcome-window-appearance:
   en: 56188f1c65535709
   zh: 38c1455b93e729c5
-/xiaoyin-desktop/package:
+/deepseek-harness-desktop/package:
   en: 4cd8a8da6977928d
   zh: 9f624855a2edac37
-/xiaoyin-desktop/package/release-versions:
+/deepseek-harness-desktop/package/release-versions:
   en: f461b255133384cc
   zh: 2b9db718f22fdd04
-/xiaoyin-desktop/package/runtime-file-selection:
-  en: f0fcf2c7a753cd42
-  zh: 4feb5f100867f5aa
-/xiaoyin-desktop/package/upload-updates:
-  en: c64d7fe2fe2534b7
-  zh: 2188e1ae99ab4b33
-/xiaoyin-desktop/package/unsigned-windows-test-installer:
+/deepseek-harness-desktop/package/runtime-file-selection:
+  en: f0e345fd89868803
+  zh: fd2c775ad23fa2f0
+/deepseek-harness-desktop/package/upload-updates:
+  en: 72073b2e72590067
+  zh: 63b1f9790395c37d
+/deepseek-harness-desktop/package/unsigned-windows-test-installer:
   en: cfd5780dd26a8e46
   zh: f7a16b1ede793b7b
-/xiaoyin-desktop/package/windows-installer-interface:
+/deepseek-harness-desktop/package/windows-installer-interface:
   en: f176a8b1c7de3064
   zh: 6ea2dbe6bb808c34
-/xiaoyin-desktop/package/windows-ev-signing:
-  en: 91e197ff4de18bc9
-  zh: 70da89fe58e5faed
-/xiaoyin-desktop/updates:
+/deepseek-harness-desktop/package/windows-ev-signing:
+  en: 071e488b99b7fade
+  zh: 1e1bd8af5cc966e5
+/deepseek-harness-desktop/updates:
   en: d0df867b69cbffa4
   zh: eeb47b79b86fe5ee
-/xiaoyin-desktop/updates/mandatory-update-policy:
+/deepseek-harness-desktop/updates/mandatory-update-policy:
   en: 2f789a4949fafb12
   zh: d8b28c01cfee11b7
-/xiaoyin-desktop/updates/local-updater-qualification:
+/deepseek-harness-desktop/updates/local-updater-qualification:
   en: bc50fd8a4d96c227
   zh: fb0a6ce80c31cda6
-/xiaoyin-desktop/low-level-development-overrides:
+/deepseek-harness-desktop/low-level-development-overrides:
   en: 0b225f914142ef0b
   zh: 9ffd07768d37824e
-/xiaoyin-desktop/known-limitations:
-  en: d837ce339677ac79
-  zh: c15fa0618ed073fb
-/xiaoyin-desktop/dev-note:
+/deepseek-harness-desktop/known-limitations:
+  en: 1800558680dcaec4
+  zh: 95bc8d1af89393fb
+/deepseek-harness-desktop/dev-note:
   en: 8e26b460ba31f21b
   zh: fbcd0307b3867125

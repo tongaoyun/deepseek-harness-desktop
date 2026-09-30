@@ -78,16 +78,16 @@ describe('desktop package-set selection', () => {
     ])
   })
 
-  it('includes the private Xiaoyin product UI required by the web app', () => {
+  it('includes the private DeepSeekHarness product UI required by the web app', () => {
     const available = new Map<string, PackedDesktopPackage>([
       ['@deepseek-ai/dsh', packed('@deepseek-ai/dsh', {
         dependencies: { '@deepseek-ai/dsh-web-app': '^1.0.0' },
       })],
       ['@deepseek-ai/dsh-desktop-host', packed('@deepseek-ai/dsh-desktop-host')],
       ['@deepseek-ai/dsh-web-app', packed('@deepseek-ai/dsh-web-app', {
-        dependencies: { '@xiaoyin/product-ui': '0.1.0' },
+        dependencies: { '@deepseek-harness/product-ui': '0.1.0' },
       })],
-      ['@xiaoyin/product-ui', packed('@xiaoyin/product-ui', {
+      ['@deepseek-harness/product-ui', packed('@deepseek-harness/product-ui', {
         peerDependencies: { '@deepseek-ai/cordis': '^1.0.0' },
       })],
       ['@deepseek-ai/cordis', packed('@deepseek-ai/cordis')],
@@ -97,13 +97,14 @@ describe('desktop package-set selection', () => {
       '@deepseek-ai/dsh',
       '@deepseek-ai/dsh-desktop-host',
       '@deepseek-ai/dsh-web-app',
-      '@xiaoyin/product-ui',
+      '@deepseek-harness/product-ui',
     ])
   })
 
-  it('requires the Desktop Host entry', () => {
+  it('requires both Desktop Host and public CLI entries', () => {
     const files = [
       'package/lib/index.js',
+      'package/lib/cli.js',
     ]
     expect(() => {
       assertDesktopHostPackageFiles(files)
@@ -111,5 +112,6 @@ describe('desktop package-set selection', () => {
     expect(() => {
       assertDesktopHostPackageFiles(files.slice(1))
     }).toThrow(/lib\/index\.js/u)
+    expect(() => { assertDesktopHostPackageFiles(files.slice(0, 1)) }).toThrow(/lib\/cli\.js/u)
   })
 })

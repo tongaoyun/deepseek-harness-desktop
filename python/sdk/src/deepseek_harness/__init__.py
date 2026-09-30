@@ -4,7 +4,7 @@ from .errors import SdkProtocolError
 from .models import IncomingRequest, InitializeResponse, JsonObject, Notification, ServerInfo
 
 __all__ = [
-    "DeepSeekHarness",
+    "DeepSeek Harness",
     "DeepSeekHarnessConfig",
     "Session",
     "RunResult",

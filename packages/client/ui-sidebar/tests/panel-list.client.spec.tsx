@@ -121,6 +121,23 @@ async function mountPanels(runtime: SlotTestRuntime, locale: LocaleRuntime, beta
 }
 
 describe('sidebar global panels', () => {
+  it('renders panel headings as non-interactive labels', async () => {
+    const { runtime, view } = await bench()
+    await mountPanel(runtime, { id: ALPHA, heading: 'Alpha content', label: 'Alpha panel' })
+    await runtime.mount({
+      inject: ['slots'],
+      apply(ctx: Context) {
+        ctx.slots.inject('sidebar.panelheading', () => ctx.slots.register({
+          name: 'sidebar.panelheading', id: 'capabilities', order: 0,
+        }, ({ wide }: PropsRuntime<'sidebar.panelheading'>) => wide ? <span>Capabilities</span> : null))
+      },
+    })
+
+    const navigation = await view.findByRole('navigation', { name: 'Global panels' })
+    expect(within(navigation).getByText('Capabilities')).toBeTruthy()
+    expect(within(navigation).queryByRole('button', { name: 'Capabilities' })).toBeNull()
+  })
+
   it('adds late registrations, removes each plugin contribution, and leaves no empty panel-list DOM', async () => {
     const { runtime, locale, view } = await bench()
     expect(runtime.slots.entries('sidebar.panellist')).toEqual([])

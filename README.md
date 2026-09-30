@@ -2,11 +2,11 @@
 
 English | [中文](README.zh.md)
 
-## Xiaoyin downstream desktop
+## DeepSeek Harness downstream desktop
 
-This repository is the Xiaoyin Electron downstream of DeepSeek Harness `dsh-v0.1.7-rc.2`, pinned by [`UPSTREAM_COMMIT`](UPSTREAM_COMMIT). The only desktop entry point is `apps/desktop`; the former Tauri shell and duplicate Harness host are not part of this tree.
+This repository is the DeepSeek Harness Electron downstream of DeepSeek Harness `dsh-v0.2.0-rc.2`, pinned by [`UPSTREAM_COMMIT`](UPSTREAM_COMMIT). The only desktop entry point is `apps/desktop`; the former Tauri shell and duplicate Harness host are not part of this tree.
 
-Product capabilities live in [`packages/xiaoyin-product/product`](packages/xiaoyin-product/product) and [`native/xiaoyin`](native/xiaoyin). They expose DingTalk identity, expert kits, skills, connectors, WeKnora, IM, schedules, artifacts and product references through a restricted bridge. Session, Agent, Conversation, Browser, Office, approval, cancellation, retry and replay remain official Harness capabilities.
+Product capabilities live in [`packages/deepseek-harness-product/product`](packages/deepseek-harness-product/product) and [`native/deepseek-harness`](native/deepseek-harness). They expose DingTalk identity, expert kits, skills, connectors, WeKnora, schedules, artifacts and product references through the Electron product bridge. Session, Agent, Conversation, Browser, Office, approval, cancellation, retry and replay remain official Harness capabilities.
 
 DeepSeek Harness (`dsh`) is an open-source agent harness developed by [DeepSeek AI](https://deepseek.com).
 
@@ -50,7 +50,7 @@ pnpm dsh web
 
 - Submit feedback or bug reports through [GitHub Discussions](https://github.com/deepseek-ai/deepseek-harness/discussions).
 - Add the [`dsh-plugin`](https://github.com/topics/dsh-plugin) topic to your plugin repository for discoverability.
-- Join <a href="https://discord.gg/Ycq5dCaS4">DeepSeek Harness Discord community</a>.
+- Join <a href="https://discord.gg/4MrtZUhpxg">DeepSeek Harness Discord community</a>.
 
 ## Contributing
 

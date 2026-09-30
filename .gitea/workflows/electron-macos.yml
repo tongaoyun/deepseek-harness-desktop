@@ -17,19 +17,19 @@ jobs:
           pnpm install --frozen-lockfile --registry=https://registry.npmjs.org/
       - name: Load runner-owned signing configuration
         run: |
-          release_config="$HOME/.xiaoyin-release/electron/.env.macos"
+          release_config="$HOME/.deepseek-harness-release/electron/.env.macos"
           test -f "$release_config" || { echo "Missing runner-owned $release_config" >&2; exit 1; }
           cp "$release_config" apps/desktop/.env.macos
-      - name: Build Xiaoyin native sidecar
+      - name: Build DeepSeek Harness native sidecar
         run: |
-          cargo test --manifest-path native/xiaoyin/Cargo.toml
-          cargo build --release --manifest-path native/xiaoyin/Cargo.toml
+          cargo test --manifest-path native/deepseek-harness/Cargo.toml
+          cargo build --release --manifest-path native/deepseek-harness/Cargo.toml
       - name: Package macOS
         run: pnpm run package:desktop:mac:arm64
       - name: Upload macOS artifacts
         uses: http://192.168.2.66:3300/instudio/gitea-upload-artifact@v4
         with:
-          name: xiaoyin-electron-macos-${{ github.sha }}
+          name: deepseek-harness-electron-macos-${{ github.sha }}
           path: apps/desktop/.desktop-build/targets/mac-arm64/artifacts/**
           if-no-files-found: error
           retention-days: 30

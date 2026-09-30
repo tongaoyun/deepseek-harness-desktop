@@ -70,6 +70,7 @@ describe('ui-sidebar apply', () => {
     expect(b.slots.spec('sidebar.workspaces')).toEqual({ kind: 'single', scope: 'root' })
     expect(b.slots.spec('sidebar.settings')).toEqual({ kind: 'single', scope: 'root' })
     expect(b.slots.spec('sidebar.footer.action')).toEqual({ kind: 'list', scope: 'root' })
+    expect(b.slots.spec('sidebar.panelheading')).toEqual({ kind: 'list', scope: 'root' })
     expect(b.slots.spec('sidebar.panellist')).toEqual({ kind: 'list', scope: 'root' })
     // Copy rides the standard locale seat, not the inject face.
     expect(b.slots.entries('sidebar')[0]!.locale).toBe('sidebar')
@@ -152,6 +153,7 @@ describe('ui-sidebar apply', () => {
     expect(b.slots.spec('sidebar.brand.name')).toBeUndefined()
     expect(b.slots.spec('sidebar.workspaces')).toBeUndefined()
     expect(b.slots.spec('sidebar.footer.action')).toBeUndefined()
+    expect(b.slots.spec('sidebar.panelheading')).toBeUndefined()
     expect(b.slots.spec('sidebar.panellist')).toBeUndefined()
     expect(b.slots.entries('main')).toHaveLength(0)
   })

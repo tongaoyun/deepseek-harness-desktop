@@ -16,7 +16,7 @@ jobs:
     container:
       image: ci-node:1.0.0
       volumes:
-        - /data/ci-cache/pnpm/xiaoyin-desktop-electron:/pnpm-store
+        - /data/ci-cache/pnpm/deepseek-harness-desktop-electron:/pnpm-store
     steps:
       - name: Checkout
         uses: http://192.168.2.66:3300/instudio/checkout@v4
@@ -35,6 +35,6 @@ jobs:
           pnpm run verify:upstream
           pnpm run build:lib:host
           pnpm run typecheck:contracts-ready
-          pnpm --dir packages/xiaoyin-product/product test
+          pnpm --dir packages/deepseek-harness-product/product test
           pnpm run verify-translation-pairing
           git diff --check
