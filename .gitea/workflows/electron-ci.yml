@@ -22,8 +22,11 @@ jobs:
         uses: http://192.168.2.66:3300/instudio/checkout@v4
       - name: Fetch pinned Harness upstream
         run: |
-          git remote add upstream https://github.com/deepseek-ai/deepseek-harness.git
-          git fetch --force --depth=1 origin refs/tags/dsh-v0.1.7-rc.2:refs/tags/dsh-v0.1.7-rc.2
+          UPSTREAM_REPOSITORY="$(cat UPSTREAM_REPOSITORY)"
+          UPSTREAM_TAG="$(cat UPSTREAM_TAG)"
+          git remote add upstream "$UPSTREAM_REPOSITORY"
+          git fetch --force --depth=1 upstream \
+            "refs/tags/${UPSTREAM_TAG}:refs/tags/${UPSTREAM_TAG}"
       - name: Install dependencies
         run: |
           npm install -g pnpm@11.7.0 --prefer-offline --no-audit --fund=false \

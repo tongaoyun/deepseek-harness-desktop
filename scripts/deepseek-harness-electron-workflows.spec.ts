@@ -71,8 +71,12 @@ describe('DeepSeekHarness Electron workflows', () => {
   it('fetches the pinned upstream tag before verifying its commit', () => {
     const steps = workflow('electron-ci.yml').jobs.desktop?.steps ?? []
     const fetch = steps.find(step => step.name === 'Fetch pinned Harness upstream')?.run ?? ''
-    expect(fetch).toContain('git remote add upstream https://github.com/deepseek-ai/deepseek-harness.git')
-    expect(fetch).toContain('git fetch --force --depth=1 origin refs/tags/dsh-v0.1.7-rc.2:refs/tags/dsh-v0.1.7-rc.2')
+    expect(fetch).toContain('UPSTREAM_REPOSITORY="$(cat UPSTREAM_REPOSITORY)"')
+    expect(fetch).toContain('UPSTREAM_TAG="$(cat UPSTREAM_TAG)"')
+    expect(fetch).toContain('git remote add upstream "$UPSTREAM_REPOSITORY"')
+    expect(fetch).toContain('git fetch --force --depth=1 upstream')
+    expect(fetch).toContain('"refs/tags/${UPSTREAM_TAG}:refs/tags/${UPSTREAM_TAG}"')
+    expect(fetch).not.toContain('dsh-v0.1.7-rc.2')
     expect(steps.indexOf(steps.find(step => step.name === 'Fetch pinned Harness upstream')!))
       .toBeLessThan(steps.findIndex(step => step.name === 'Verify upstream and product contracts'))
   })
