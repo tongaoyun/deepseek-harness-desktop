@@ -19,8 +19,15 @@ int wmain() {
     HWND other = CreateWindowExW(0, L"STATIC", L"Other", WS_POPUP,
                                  120, 120, 300, 300, nullptr, nullptr, instance, nullptr);
     if (!installer || !other) return 1;
-    ShowWindow(installer, SW_SHOW);
-    ShowWindow(other, SW_SHOW);
+    // Establish the precondition explicitly.  The smoke test is launched with
+    // the child console hidden, so relying on ShowWindow's implicit z-order
+    // would make the result depend on the runner's foreground window.
+    ShowWindow(installer, SW_SHOWNOACTIVATE);
+    ShowWindow(other, SW_SHOWNOACTIVATE);
+    SetWindowPos(installer, HWND_BOTTOM, 0, 0, 0, 0,
+                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+    SetWindowPos(other, HWND_TOP, 0, 0, 0, 0,
+                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
     if (!Above(other, installer)) return 2;
     if (!InstallerPresentWelcome(installer)) return 3;
     if (!Above(installer, other)) return 4;
