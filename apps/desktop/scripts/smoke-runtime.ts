@@ -7,9 +7,20 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { fileURLToPath } from 'node:url'
 import { readPrimaryRuntime, workspaceDependencyPaths } from '../../../packages/skill/tool-workspace-dependencies/src/index.ts'
+import type { ProductRuntimeMethod } from '@deepseek-harness/product/protocol'
 import { DesktopHostProcess } from '../src/host-process.ts'
 import { createPluginProfile } from '../src/project-manager.ts'
 import type { DesktopRuntimeDescriptor } from '../src/runtime-tree.ts'
+
+const SMOKE_CATALOG_METHODS: ReadonlySet<ProductRuntimeMethod> = new Set([
+  'skills.list', 'expertKits.list', 'connectors.list', 'expertKits.enablement.list',
+])
+
+/** Supply empty product catalogs while verifying the packaged Host without employee credentials. */
+export async function invokeSmokeProduct(method: ProductRuntimeMethod): Promise<unknown> {
+  if (SMOKE_CATALOG_METHODS.has(method)) return []
+  throw new Error(`desktop runtime: unexpected product operation ${method}`)
+}
 
 /**
  * Check Host startup, its matching frontend, external plugins and real Office-to-PDF conversion.
@@ -27,7 +38,8 @@ export async function smokeDesktopRuntime(
   const profile = join(home, 'profiles', 'desktop')
   const host = new DesktopHostProcess(node, root, profile, undefined, { ...environment, DSH_HOME: home },
     undefined, join(resourcesRuntime, 'primary-runtime'),
-    { pnpm: join(resourcesRuntime, 'pnpm', 'bin', 'pnpm.cjs'), nodeBin: join(resourcesRuntime, 'bin') })
+    { pnpm: join(resourcesRuntime, 'pnpm', 'bin', 'pnpm.cjs'), nodeBin: join(resourcesRuntime, 'bin') },
+    undefined, invokeSmokeProduct)
   let timer: ReturnType<typeof setTimeout> | undefined
   try {
     createPluginProfile(profile)
