@@ -74,6 +74,8 @@ kind: "package-reference"
 
 模型看到每个工具都带有稳定的服务器限定名称：`mcp__<serverName>__<rawName>`，例如 `mcp__github__create_issue`——与 Claude Code 和 Codex 使用的命名形态相同。只要服务器保持相同的工具名称，名称就保持不变，因此会话历史与权限规则在重启和重载后仍然有效。两个服务器可以同时提供名为 `search` 的工具，分别以 `mcp__github__search` 和 `mcp__web__search` 共存。
 
+产品集成在匹配目录项与模型可见名称时，应从包根导入 `publicToolName`；源码文件子路径不是运行时 API。
+
 - 发布相同工具名称（例如 `search`）的两个服务器会在各自的 namespace 下共存。
 - 两条配置项使用相同的服务器名称时，后加载的一条会在加载时以明确错误失败。
 - 服务器在工具列表中两次列出同一工具时，其工具列表会被作为无效列表拒绝，上一组工具保持可用。

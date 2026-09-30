@@ -1,10 +1,11 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
   connectorServerName,
   connectorToolPolicy,
   parseConnectorCatalog,
 } from '../src/deepseek-harness-connector-contract.ts'
-import { publicToolName } from '@deepseek-ai/dsh-mcp-client/src/tools.ts'
+import { publicToolName } from '@deepseek-ai/dsh-mcp-client'
 
 const remote = (overrides: Record<string, unknown> = {}) => ({
   id: 'erp', name: 'ERP', transport: 'streamable-http', url: 'https://erp.example/mcp',
@@ -14,6 +15,12 @@ const remote = (overrides: Record<string, unknown> = {}) => ({
 })
 
 describe('DeepSeekHarness connector contract', () => {
+  it('uses only published dependency entry points at runtime', () => {
+    const source = readFileSync(new URL('../src/deepseek-harness-connector-contract.ts', import.meta.url), 'utf8')
+    expect(source).not.toMatch(/from ['"]@[^'"]+\/src\//)
+    expect(source).not.toMatch(/from ['"]@[^'"]+\.ts['"]/) // Runtime bundles must resolve JavaScript package exports.
+  })
+
   it('maps declared connector tools to Harness read and write policy', () => {
     const connectors = parseConnectorCatalog([remote()])
     const serverName = connectorServerName('erp')

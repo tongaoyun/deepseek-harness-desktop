@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { publicToolName } from '@deepseek-ai/dsh-mcp-client/src/tools.ts'
+import { publicToolName } from '@deepseek-ai/dsh-mcp-client'
 
 export interface DeepSeekHarnessConnector {
   readonly id: string

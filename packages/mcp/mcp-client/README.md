@@ -74,6 +74,8 @@ After startup, the server's tools appear as `mcp__<serverName>__<tool>` — try 
 
 The model sees each tool under a stable server-qualified name: `mcp__<serverName>__<rawName>`, for example `mcp__github__create_issue` — the same naming shape Claude Code and Codex use. Names stay stable while the server keeps the same tool name, so session history and permission rules survive restarts and reloads. Two servers can both offer a tool named `search` and coexist as `mcp__github__search` and `mcp__web__search`.
 
+Product integrations that match catalog entries to model-facing names import `publicToolName` from the package root; source-file subpaths are not a runtime API.
+
 - Two servers publishing the same tool name (for example `search`) coexist under their own namespaces.
 - Two entries using the same server name: the later one fails to load with a clear error.
 - A server that lists the same tool twice gets its tool list rejected as invalid, and the previous tool set stays active.
