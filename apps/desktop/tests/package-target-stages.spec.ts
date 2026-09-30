@@ -150,12 +150,17 @@ it.each([undefined, '2'])('passes macOS pack concurrency %s only to workspace pa
 it('packs private Desktop product packages before preparing the package set', async () => {
   const { run, stages } = supervisor()
   await packageTarget(parseDesktopPackageInvocation(['win-x64', '--prepare-only'], 'win32', 'x64'), environment, run)
-  const hostPack = '--dir apps/desktop-host pack --pack-destination'
-  const productPack = '--dir packages/extensions/ui-deepseek-harness-product pack --pack-destination'
-  expect(stages.some(stage => stage.startsWith(hostPack))).toBe(true)
-  expect(stages.some(stage => stage.startsWith(productPack))).toBe(true)
-  expect(stages.findIndex(stage => stage.startsWith(hostPack))).toBeLessThan(stages.indexOf('run prepare:packages'))
-  expect(stages.findIndex(stage => stage.startsWith(productPack))).toBeLessThan(stages.indexOf('run prepare:packages'))
+  const packageDirectories = [
+    'apps/desktop-host',
+    'packages/deepseek-harness-product/expert-kit-readme',
+    'packages/deepseek-harness-product/product',
+    'packages/extensions/ui-deepseek-harness-product',
+  ]
+  for (const directory of packageDirectories) {
+    const pack = `--dir ${directory} pack --pack-destination`
+    expect(stages.some(stage => stage.startsWith(pack))).toBe(true)
+    expect(stages.findIndex(stage => stage.startsWith(pack))).toBeLessThan(stages.indexOf('run prepare:packages'))
+  }
 })
 
 it.each([false, true])('scopes the Apple proxy around notarization (directory=%s)', async (directory) => {

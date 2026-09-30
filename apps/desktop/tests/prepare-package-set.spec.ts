@@ -101,6 +101,27 @@ describe('desktop package-set selection', () => {
     ])
   })
 
+  it('includes the private product packages required by Desktop Host', () => {
+    const available = new Map<string, PackedDesktopPackage>([
+      ['@deepseek-ai/dsh', packed('@deepseek-ai/dsh')],
+      ['@deepseek-ai/dsh-desktop-host', packed('@deepseek-ai/dsh-desktop-host', {
+        dependencies: {
+          '@deepseek-ai/dsh': '^1.0.0',
+          '@deepseek-harness/expert-kit-readme': '0.1.0',
+          '@deepseek-harness/product': '0.1.0',
+        },
+      })],
+      ['@deepseek-harness/expert-kit-readme', packed('@deepseek-harness/expert-kit-readme')],
+      ['@deepseek-harness/product', packed('@deepseek-harness/product')],
+    ])
+    expect(selectDesktopPackageClosure(available).map(entry => entry.manifest.name)).toEqual([
+      '@deepseek-ai/dsh',
+      '@deepseek-ai/dsh-desktop-host',
+      '@deepseek-harness/expert-kit-readme',
+      '@deepseek-harness/product',
+    ])
+  })
+
   it('requires both Desktop Host and public CLI entries', () => {
     const files = [
       'package/lib/index.js',

@@ -459,6 +459,20 @@ export async function packageTarget(
   ], buildEnv, REPOSITORY_ROOT)
   await execute([
     '--dir',
+    'packages/deepseek-harness-product/expert-kit-readme',
+    'pack',
+    '--pack-destination',
+    buildPaths.packedDsh,
+  ], buildEnv, REPOSITORY_ROOT)
+  await execute([
+    '--dir',
+    'packages/deepseek-harness-product/product',
+    'pack',
+    '--pack-destination',
+    buildPaths.packedDsh,
+  ], buildEnv, REPOSITORY_ROOT)
+  await execute([
+    '--dir',
     'packages/extensions/ui-deepseek-harness-product',
     'pack',
     '--pack-destination',
