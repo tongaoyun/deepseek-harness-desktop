@@ -88,7 +88,10 @@ jobs:
       - name: Run NSIS installer and uninstaller smoke tests
         shell: powershell
         run: |
-          pnpm --dir apps/desktop test:installer
+          # Gitea's Windows runner is a service account without an interactive window station.
+          # Keep the complete native UI test available for an interactive runner, while this
+          # release lane validates the real installer and uninstaller through silent execution.
+          pnpm --dir apps/desktop test:installer -- --headless
           if ($LASTEXITCODE -ne 0) { throw "Windows NSIS installer smoke tests failed" }
       - name: Upload Windows artifacts
         uses: http://192.168.2.66:3300/instudio/gitea-upload-artifact@v4
