@@ -38,11 +38,13 @@ try {
 
     Invoke-Process $uninstaller '/S'
     $timer = [Diagnostics.Stopwatch]::StartNew()
-    while (Test-Path -LiteralPath $installPath) {
-        if ($timer.Elapsed.TotalSeconds -gt 20) { throw 'Silent uninstaller did not remove the installation' }
+    while ((Test-Path -LiteralPath $installPath) -or (Test-Path -LiteralPath $registryPath)) {
+        if ($timer.Elapsed.TotalSeconds -gt 20) {
+            if (Test-Path -LiteralPath $installPath) { throw 'Silent uninstaller did not remove the installation' }
+            throw 'Silent uninstaller did not remove the registry entry'
+        }
         Start-Sleep -Milliseconds 100
     }
-    if (Test-Path -LiteralPath $registryPath) { throw 'Silent uninstaller left the registry entry behind' }
     Write-Output 'PASS: silent install, registry, and uninstall'
 } finally {
     if (Test-Path -LiteralPath $installPath) { Remove-Item -LiteralPath $installPath -Recurse -Force -ErrorAction SilentlyContinue }
