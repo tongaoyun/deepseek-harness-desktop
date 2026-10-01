@@ -68,7 +68,11 @@ try {
   }
   if (!uninstallOnly) {
     await execute(progressTest, [], childOptions)
-    await execute(presentationTest, [], childOptions)
+    // The production NSIS smoke below exercises InstallerPresentWelcome on a
+    // real installer window.  Running this standalone helper as a second GUI
+    // process is not reliable on service-hosted Windows runners without a
+    // window station, even though the actual installer UI is available.
+    if (process.argv.includes('--native-presentation')) await execute(presentationTest, [], childOptions)
   }
   await execute(cleanupTest, [join(output, 'ui', `cleanup-${id}`)], childOptions)
   const payloadSource = join(output, 'payload.nsi')
