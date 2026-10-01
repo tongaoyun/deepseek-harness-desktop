@@ -20,4 +20,4 @@ Host 只能通过私有 Electron IPC 请求目录、制品、连接器和知识�
 
 原生产品方法通过 `native/deepseek-harness` 的 `deepseek-harness.native.v1` 行协议接入。当前协议提供受限的文件、附件、SQLite、凭据、钉钉状态、设备标识、图片预览和文件撤销方法；路径限制在 Electron 分配的数据目录内，文件载荷使用 hex 编码并限制为 8 MiB。该 sidecar 不承载 Harness 执行逻辑，不保留旧 Tauri `invoke` 协议。
 
-上游同步以 tag 和固定 commit 为单位。`pnpm run verify:upstream` 要求配置的 Git 远程仓库和本地 tag 均解析到该 commit。先验证官方测试和 Electron 构建，再验证产品包、sidecar 和服务端契约。
+上游同步以 tag 和固定 commit 为单位。`UPSTREAM_REPOSITORY` 保留为 canonical GitHub 源，`UPSTREAM_MIRROR_REPOSITORY` 是 CI 使用的内部 Gitea 源。`pnpm run verify:upstream` 接受任一远程，但始终要求本地 tag 解析到固定 commit。先验证官方测试和 Electron 构建，再验证产品包、sidecar 和服务端契约。

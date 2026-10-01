@@ -3,5 +3,5 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/deepseek-harness-electron-architecture.md
 /deepseek-harness-electron-product-layer:
-  en: 54acf9532653e9d4
-  zh: 6c54e478561766d0
+  en: 0a4bb5aaa6ab5428
+  zh: bd1c5c69c537cea3
