@@ -8,7 +8,6 @@ $ErrorActionPreference = 'Stop'
 $OutputDirectory = [IO.Path]::GetFullPath($OutputDirectory)
 $installPath = Join-Path $OutputDirectory 'Headless App'
 $appPath = Join-Path $installPath ($ProductName + '.exe')
-$uninstaller = Join-Path $installPath ('Uninstall ' + $ProductName + '.exe')
 $registryPath = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\' + $RegistryKey
 
 function Invoke-Process([string]$FilePath, [string]$Arguments, [int]$TimeoutMs = 60000) {
@@ -27,7 +26,12 @@ try {
     if (Test-Path -LiteralPath $installPath) { Remove-Item -LiteralPath $installPath -Recurse -Force }
     Invoke-Process $Installer ('/S /D=' + $installPath)
     if (-not (Test-Path -LiteralPath $appPath -PathType Leaf)) { throw 'Silent install did not produce the application executable' }
-    if (-not (Test-Path -LiteralPath $uninstaller -PathType Leaf)) { throw 'Silent install did not produce the uninstaller' }
+    $uninstallers = @(Get-ChildItem -LiteralPath $installPath -File -Filter 'Uninstall*.exe')
+    if ($uninstallers.Count -ne 1) {
+        $names = ($uninstallers | ForEach-Object Name) -join ', '
+        throw "Silent install did not produce exactly one uninstaller: $names"
+    }
+    $uninstaller = $uninstallers[0].FullName
 
     $entry = Get-ItemProperty -LiteralPath $registryPath
     if ($entry.InstallLocation.TrimEnd('\') -ne $installPath.TrimEnd('\')) { throw 'Silent install registered an unexpected directory' }
