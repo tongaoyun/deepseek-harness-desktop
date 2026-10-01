@@ -7,6 +7,7 @@ const root = resolve(import.meta.dirname, '..')
 const run = promisify(execFile)
 const upstreamCommit = (await readFile(resolve(root, 'UPSTREAM_COMMIT'), 'utf8')).trim()
 const upstreamTag = (await readFile(resolve(root, 'UPSTREAM_TAG'), 'utf8')).trim()
+const upstreamMirror = (await readFile(resolve(root, 'UPSTREAM_MIRROR_REPOSITORY'), 'utf8')).trim()
 const expected = {
   UPSTREAM_REPOSITORY: 'https://github.com/deepseek-ai/deepseek-harness.git',
 }
@@ -21,8 +22,13 @@ if (!/^dsh-v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(upstreamTag)) {
 }
 
 const upstreamUrl = (await run('git', ['remote', 'get-url', 'upstream'], { cwd: root })).stdout.trim()
-if (upstreamUrl !== expected.UPSTREAM_REPOSITORY) {
-  throw new Error(`upstream remote must be ${expected.UPSTREAM_REPOSITORY}, got ${upstreamUrl}`)
+if (upstreamUrl !== expected.UPSTREAM_REPOSITORY && upstreamUrl !== upstreamMirror) {
+  throw new Error(`upstream remote must be ${expected.UPSTREAM_REPOSITORY} or ${upstreamMirror}, got ${upstreamUrl}`)
+}
+let canonicalRemote = ''
+try { canonicalRemote = (await run('git', ['remote', 'get-url', 'upstream-canonical'], { cwd: root })).stdout.trim() } catch {}
+if (canonicalRemote !== '' && canonicalRemote !== expected.UPSTREAM_REPOSITORY) {
+  throw new Error(`upstream-canonical remote must be ${expected.UPSTREAM_REPOSITORY}, got ${canonicalRemote}`)
 }
 
 const tagCommit = (await run('git', ['rev-parse', `${upstreamTag}^{commit}`], { cwd: root })).stdout.trim()

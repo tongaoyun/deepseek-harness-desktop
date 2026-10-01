@@ -1,0 +1,73 @@
+name: Electron Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing or new Gitea release tag
+        required: true
+        type: string
+      release_name:
+        description: Gitea release display name
+        required: true
+        type: string
+
+concurrency:
+  group: electron-release-${{ inputs.release_tag }}
+  cancel-in-progress: false
+
+env:
+  GITEA_API_URL: http://192.168.2.66:3300/api/v1
+  GITEA_REPOSITORY: ${{ github.repository }}
+  GITEA_RELEASE_TAG: ${{ inputs.release_tag }}
+  GITEA_RELEASE_NAME: ${{ inputs.release_name }}
+  GITEA_USERNAME: ${{ secrets.RELEASE_USERNAME }}
+  GITEA_PASSWORD: ${{ secrets.RELEASE_CREDENTIAL }}
+
+jobs:
+  windows:
+    runs-on: windows-x64
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: http://192.168.2.66:3300/instudio/checkout@v4
+      - name: Install dependencies
+        shell: powershell
+        run: |
+          npm install -g pnpm@11.7.0 --prefer-offline --no-audit --fund=false --registry=https://registry.npmjs.org/
+          pnpm install --frozen-lockfile --prefer-offline --registry=https://registry.npmjs.org/
+      - name: Prepare package configuration
+        shell: powershell
+        run: "\"DSH_DESKTOP_APP_ID=com.instudio.deepseek-harness.desktop\" | Set-Content -LiteralPath apps\\desktop\\.env.windows -Encoding UTF8"
+      - name: Build native sidecar
+        shell: powershell
+        run: cargo build --release --manifest-path native\deepseek-harness\Cargo.toml
+      - name: Package Windows unsigned
+        shell: powershell
+        run: pnpm run package:desktop:win:x64:unsigned
+      - name: Publish Windows assets
+        shell: powershell
+        run: |
+          $Version = node -p "require('./package.json').version"
+          node scripts/release/gitea-release.mjs --directory apps/desktop/.desktop-build/targets/win-x64/unsigned-artifacts --platform win-x64 --version $Version
+
+  macos:
+    runs-on: macos-arm64
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: http://192.168.2.66:3300/instudio/checkout@v4
+      - name: Install dependencies
+        run: |
+          npm install -g pnpm@11.7.0 --prefer-offline --no-audit --fund=false --registry=https://registry.npmjs.org/
+          pnpm install --frozen-lockfile --registry=https://registry.npmjs.org/
+      - name: Load runner-owned signing configuration
+        run: |
+          test -f "$HOME/.deepseek-harness-release/electron/.env.macos"
+          cp "$HOME/.deepseek-harness-release/electron/.env.macos" apps/desktop/.env.macos
+      - name: Build native sidecar
+        run: cargo build --release --manifest-path native/deepseek-harness/Cargo.toml
+      - name: Package macOS
+        run: pnpm run package:desktop:mac:arm64
+      - name: Publish macOS assets
+        run: node scripts/release/gitea-release.mjs --directory apps/desktop/.desktop-build/targets/mac-arm64/artifacts --platform mac-arm64 --version "$(node -p \"require('./package.json').version\")"

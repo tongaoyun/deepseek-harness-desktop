@@ -7,11 +7,19 @@ const run = promisify(execFile)
 const root = resolve(import.meta.dirname, '..')
 const text = async file => (await readFile(resolve(root, file), 'utf8')).trim()
 const repository = await text('UPSTREAM_REPOSITORY')
+const mirror = await text('UPSTREAM_MIRROR_REPOSITORY')
 const tag = await text('UPSTREAM_TAG')
 const commit = await text('UPSTREAM_COMMIT')
 
-if ((await run('git', ['remote', 'get-url', 'upstream'], { cwd: root })).stdout.trim() !== repository) {
+const upstreamUrl = (await run('git', ['remote', 'get-url', 'upstream'], { cwd: root })).stdout.trim()
+if (upstreamUrl !== repository && upstreamUrl !== mirror) {
   await run('git', ['remote', 'add', 'upstream', repository], { cwd: root })
+}
+let canonicalUrl = ''
+try { canonicalUrl = (await run('git', ['remote', 'get-url', 'upstream-canonical'], { cwd: root })).stdout.trim() } catch {}
+if (canonicalUrl !== repository) {
+  try { await run('git', ['remote', 'add', 'upstream-canonical', repository], { cwd: root }) }
+  catch { await run('git', ['remote', 'set-url', 'upstream-canonical', repository], { cwd: root }) }
 }
 await run('git', ['fetch', '--tags', 'upstream', tag], { cwd: root, maxBuffer: 10 * 1024 * 1024 })
 const { stdout } = await run('git', ['rev-parse', `${tag}^{commit}`], { cwd: root })

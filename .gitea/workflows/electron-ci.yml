@@ -23,8 +23,10 @@ jobs:
       - name: Fetch pinned Harness upstream
         run: |
           UPSTREAM_REPOSITORY="$(cat UPSTREAM_REPOSITORY)"
+          UPSTREAM_MIRROR_REPOSITORY="$(cat UPSTREAM_MIRROR_REPOSITORY)"
           UPSTREAM_TAG="$(cat UPSTREAM_TAG)"
-          git remote add upstream "$UPSTREAM_REPOSITORY"
+          git remote add upstream "$UPSTREAM_MIRROR_REPOSITORY"
+          git remote add upstream-canonical "$UPSTREAM_REPOSITORY"
           for attempt in 1 2 3; do
             if timeout 120 git -c http.version=HTTP/1.1 fetch --force --depth=1 upstream \
               "refs/tags/${UPSTREAM_TAG}:refs/tags/${UPSTREAM_TAG}"; then
