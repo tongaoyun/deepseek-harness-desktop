@@ -23,6 +23,7 @@ env:
   GITEA_RELEASE_NAME: ${{ inputs.release_name }}
   GITEA_RELEASE_COMMIT: ${{ github.sha }}
   GITEA_RELEASE_DRAFT: "true"
+  GITEA_RELEASE_DOWNLOAD_ORIGIN: http://192.168.2.66:3300
   GITEA_USERNAME: ${{ secrets.RELEASE_USERNAME }}
   GITEA_PASSWORD: ${{ secrets.RELEASE_CREDENTIAL }}
 
@@ -96,7 +97,7 @@ jobs:
   macos:
     needs: windows
     runs-on: macos-arm64
-    timeout-minutes: 120
+    timeout-minutes: 240
     steps:
       - name: Checkout
         uses: http://192.168.2.66:3300/instudio/checkout@v4
@@ -122,17 +123,29 @@ jobs:
         run: |
           cargo test --manifest-path native/deepseek-harness/Cargo.toml
           cargo build --release --manifest-path native/deepseek-harness/Cargo.toml
+          rustup target add x86_64-apple-darwin
+          CARGO_BUILD_TARGET=x86_64-apple-darwin cargo build --release --manifest-path native/deepseek-harness/Cargo.toml
       - name: Package macOS
         run: pnpm run package:desktop:mac:arm64
+      - name: Package macOS Intel
+        env:
+          CARGO_BUILD_TARGET: x86_64-apple-darwin
+          DEEPSEEK_HARNESS_NATIVE_BINARY: ${{ github.workspace }}/native/deepseek-harness/target/x86_64-apple-darwin/release/deepseek-harness-native
+        run: pnpm run package:desktop:mac:x64
       - name: Verify macOS release
         run: |
           artifact_root="apps/desktop/.desktop-build/targets/mac-arm64/artifacts"
+          intel_artifact_root="apps/desktop/.desktop-build/targets/mac-x64/artifacts"
           test -d "$artifact_root"
+          test -d "$intel_artifact_root"
           test "$(find "$artifact_root" -maxdepth 1 -type f -name '*.dmg' | wc -l | tr -d ' ')" -eq 1
           test "$(find "$artifact_root" -maxdepth 1 -type f -name '*.zip' | wc -l | tr -d ' ')" -eq 1
+          test "$(find "$intel_artifact_root" -maxdepth 1 -type f -name '*.dmg' | wc -l | tr -d ' ')" -eq 1
+          test "$(find "$intel_artifact_root" -maxdepth 1 -type f -name '*.zip' | wc -l | tr -d ' ')" -eq 1
           find "$artifact_root" -maxdepth 1 -type f \( -name '*.dmg' -o -name '*.zip' -o -name '*.blockmap' -o -name '*.yml' \) -print -quit | grep -q .
           while IFS= read -r file; do shasum -a 256 "$file"; done < <(find "$artifact_root" -maxdepth 1 -type f \( -name '*.dmg' -o -name '*.zip' -o -name '*.blockmap' -o -name '*.yml' \) -print | sort)
       - name: Publish macOS assets
         run: |
           VERSION="$(node -p "require('./package.json').version")"
-          GITEA_RELEASE_FINALIZE=true node scripts/release/gitea-release.mjs --directory apps/desktop/.desktop-build/targets/mac-arm64/artifacts --platform mac-arm64 --version "$VERSION"
+          node scripts/release/gitea-release.mjs --directory apps/desktop/.desktop-build/targets/mac-arm64/artifacts --platform mac-arm64 --version "$VERSION"
+          GITEA_RELEASE_FINALIZE=true node scripts/release/gitea-release.mjs --directory apps/desktop/.desktop-build/targets/mac-x64/artifacts --platform mac-x64 --version "$VERSION"

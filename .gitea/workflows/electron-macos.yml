@@ -6,7 +6,7 @@ on:
 jobs:
   macos:
     runs-on: macos-arm64
-    timeout-minutes: 120
+    timeout-minutes: 240
     steps:
       - name: Checkout
         uses: http://192.168.2.66:3300/instudio/checkout@v4
@@ -27,18 +27,31 @@ jobs:
         run: |
           cargo test --manifest-path native/deepseek-harness/Cargo.toml
           cargo build --release --manifest-path native/deepseek-harness/Cargo.toml
+          rustup target add x86_64-apple-darwin
+          CARGO_BUILD_TARGET=x86_64-apple-darwin cargo build --release --manifest-path native/deepseek-harness/Cargo.toml
       - name: Package macOS
         run: pnpm run package:desktop:mac:arm64
+      - name: Package macOS Intel
+        env:
+          CARGO_BUILD_TARGET: x86_64-apple-darwin
+          DEEPSEEK_HARNESS_NATIVE_BINARY: ${{ github.workspace }}/native/deepseek-harness/target/x86_64-apple-darwin/release/deepseek-harness-native
+        run: pnpm run package:desktop:mac:x64
       - name: Verify macOS artifacts
         run: |
           artifact_root="apps/desktop/.desktop-build/targets/mac-arm64/artifacts"
+          intel_artifact_root="apps/desktop/.desktop-build/targets/mac-x64/artifacts"
           test -d "$artifact_root"
+          test -d "$intel_artifact_root"
           find "$artifact_root" -maxdepth 1 -type f \( -name '*.dmg' -o -name '*.zip' -o -name '*.blockmap' -o -name '*.yml' \) -print -quit | grep -q .
           while IFS= read -r file; do shasum -a 256 "$file"; done < <(find "$artifact_root" -maxdepth 1 -type f \( -name '*.dmg' -o -name '*.zip' -o -name '*.blockmap' -o -name '*.yml' \) -print | sort)
+          find "$intel_artifact_root" -maxdepth 1 -type f \( -name '*.dmg' -o -name '*.zip' -o -name '*.blockmap' -o -name '*.yml' \) -print -quit | grep -q .
+          while IFS= read -r file; do shasum -a 256 "$file"; done < <(find "$intel_artifact_root" -maxdepth 1 -type f \( -name '*.dmg' -o -name '*.zip' -o -name '*.blockmap' -o -name '*.yml' \) -print | sort)
       - name: Upload macOS artifacts
         uses: http://192.168.2.66:3300/instudio/gitea-upload-artifact@v4
         with:
           name: deepseek-harness-electron-macos-${{ github.sha }}
-          path: apps/desktop/.desktop-build/targets/mac-arm64/artifacts/**
+          path: |
+            apps/desktop/.desktop-build/targets/mac-arm64/artifacts/**
+            apps/desktop/.desktop-build/targets/mac-x64/artifacts/**
           if-no-files-found: error
           retention-days: 30

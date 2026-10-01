@@ -1,4 +1,4 @@
-/** Resolve the Desktop auto-update channel and its Tencent COS destination. */
+/** Resolve the Desktop auto-update channel and its COS or internal Gitea destination. */
 
 import { valid } from 'semver'
 
@@ -120,6 +120,53 @@ function httpsOrigin(value, name) {
 }
 
 /**
+ * Resolve an internal release origin. The internal deployment intentionally
+ * permits HTTP; it never accepts credentials, a path, or a query in the
+ * configured origin.
+ * @param {string} value - Candidate internal origin.
+ * @param {string} name - Environment variable used in diagnostics.
+ * @returns {string} Normalized origin without a trailing slash.
+ */
+function internalOrigin(value, name) {
+  let parsed
+  try {
+    parsed = new URL(value)
+  }
+  catch {
+    throw new Error(`desktop auto-update: ${name} must be an absolute HTTP or HTTPS origin`)
+  }
+  if ((parsed.protocol !== 'http:' && parsed.protocol !== 'https:')
+    || parsed.username !== ''
+    || parsed.password !== ''
+    || parsed.pathname !== '/'
+    || parsed.search !== ''
+    || parsed.hash !== '') {
+    throw new Error(`desktop auto-update: ${name} must be an absolute HTTP or HTTPS origin without a path, credentials, query, or fragment`)
+  }
+  return parsed.origin
+}
+
+function resolveGiteaUpdateConfig(env, target, environment) {
+  const originValue = env.GITEA_RELEASE_DOWNLOAD_ORIGIN?.trim()
+  if (originValue === undefined || originValue === '') return undefined
+  const origin = internalOrigin(originValue, 'GITEA_RELEASE_DOWNLOAD_ORIGIN')
+  const repository = env.GITEA_REPOSITORY?.trim()
+  if (repository === undefined || repository === '' || !/^[^/]+\/[^/]+$/u.test(repository)) {
+    throw new Error('desktop auto-update: GITEA_REPOSITORY must be an owner/repository value when using Gitea releases')
+  }
+  // Gitea's browser download route is intentionally outside /api/v1.
+  const keyPrefix = `${repository}/releases/latest/download`
+  return {
+    environment,
+    target,
+    origin,
+    keyPrefix,
+    binaryKeyPrefix: keyPrefix,
+    publicUrl: `${origin}/${keyPrefix}/`,
+  }
+}
+
+/**
  * Resolve the public updater URL and object prefixes for one release target.
  * @param {NodeJS.ProcessEnv} env - Packaging or upload environment.
  * @param {NodeJS.Platform} platform - Target Node.js platform.
@@ -130,6 +177,8 @@ function httpsOrigin(value, name) {
 export function resolveDesktopAutoUpdateConfig(env, platform, arch) {
   const environment = resolveDesktopAutoUpdateEnvironment(env)
   const target = resolveDesktopAutoUpdateTarget(platform, arch)
+  const gitea = resolveGiteaUpdateConfig(env, target, environment)
+  if (gitea !== undefined) return gitea
   const deployment = UPDATE_ENVIRONMENTS[environment]
   let origin = deployment.fixedOrigin
   if (origin === undefined) {
@@ -165,6 +214,9 @@ export function resolveDesktopAutoUpdateConfig(env, platform, arch) {
  * @throws {Error} When the selected deployment lacks a bucket or valid updater configuration.
  */
 export function resolveDesktopUploadConfig(env, platform, arch) {
+  if (env.GITEA_RELEASE_DOWNLOAD_ORIGIN?.trim()) {
+    throw new Error('desktop auto-update: Gitea releases are published by scripts/release/gitea-release.mjs, not the COS uploader')
+  }
   const update = resolveDesktopAutoUpdateConfig(env, platform, arch)
   const deployment = UPDATE_ENVIRONMENTS[update.environment]
   return {

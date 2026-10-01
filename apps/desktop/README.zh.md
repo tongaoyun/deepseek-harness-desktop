@@ -265,6 +265,8 @@ Windows 操作人员可以在仓库外保存 CLIXML 对象，其中 `SecretId` �
 
 `DSH_DESKTOP_AUTO_UPDATE_ENV` 同时选择打包写入的 URL 与后续 COS 上传环境，可取 `test` 或 `production`；缺省为 `test`。测试打包通过 `DOWNLOAD_TEST_ORIGIN` 提供 HTTPS origin；生产使用 `https://download.deepseek.com`。上传通过 `DOWNLOAD_TEST_COS_BUCKET` 或 `DOWNLOAD_PROD_COS_BUCKET` 提供所选 bucket。生产清单位于 `dsh-desk/feeds/<target>/`，安装包位于 `dsh-desk/bin/<target>/`。测试发布必须配置 `DOWNLOAD_TEST_RELEASE_ID`：32 位小写十六进制字符，分别插入路径 `dsh-desk/<release-id>/feeds/<target>/` 和 `dsh-desk/<release-id>/bin/<target>/`。YAML 引用、稳定通道别名和 blockmap 都位于该发布目录内。目标为 `mac-arm64`、`mac-x64` 和 `win-x64`。
 
+内网 Gitea 发布流水线使用 `GITEA_RELEASE_DOWNLOAD_ORIGIN` 和 `GITEA_REPOSITORY`，不经过 COS。打包时更新地址为 `<origin>/<owner>/<repository>/releases/latest/download/`，发布脚本把更新清单、安装包、压缩包和 blockmap 上传到对应 Gitea Release。该内网地址可以使用 HTTP，与上面的可选 COS 上传命令相互独立。
+
 更新目标与上传凭据都与所选环境对应：
 
 | 环境 | 公开 origin | COS bucket | COS 凭据 |

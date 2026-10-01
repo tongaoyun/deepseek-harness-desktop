@@ -263,6 +263,8 @@ Windows operators can keep a CLIXML object with DPAPI-encrypted `SecretId` and `
 
 `DSH_DESKTOP_AUTO_UPDATE_ENV` selects `test` or `production` for both the URL embedded during packaging and the later COS upload; an absent value selects `test`. Test packaging requires its HTTPS origin in `DOWNLOAD_TEST_ORIGIN`; production uses `https://download.deepseek.com`. Upload requires the selected bucket in `DOWNLOAD_TEST_COS_BUCKET` or `DOWNLOAD_PROD_COS_BUCKET`. Production feeds use `dsh-desk/feeds/<target>/` and binaries use `dsh-desk/bin/<target>/`. Test releases require `DOWNLOAD_TEST_RELEASE_ID`: 32 lowercase hexadecimal characters inserted as `dsh-desk/<release-id>/feeds/<target>/` and `dsh-desk/<release-id>/bin/<target>/`. YAML references, stable-channel aliases, and blockmaps stay inside that release directory. Targets are `mac-arm64`, `mac-x64`, and `win-x64`.
 
+The internal Gitea release workflow uses `GITEA_RELEASE_DOWNLOAD_ORIGIN` together with `GITEA_REPOSITORY` instead of COS. Packaged updater feeds resolve to `<origin>/<owner>/<repository>/releases/latest/download/`; the release publisher uploads the feed, installer, archive, and blockmap assets to the matching Gitea Release. This internal path may use HTTP and is separate from the optional COS upload commands above.
+
 The update destination and upload credentials follow the selected deployment:
 
 | Environment | Public origin | COS bucket | COS credentials |

@@ -58,6 +58,34 @@ describe('desktop auto-update environment', () => {
     })
   })
 
+  it('resolves internal Gitea Release downloads for packaged builds', () => {
+    const environment = {
+      DSH_DESKTOP_AUTO_UPDATE_ENV: 'production',
+      GITEA_RELEASE_DOWNLOAD_ORIGIN: 'http://192.168.2.66:3300',
+      GITEA_REPOSITORY: 'instudio/deepseek-harness-desktop',
+    }
+    expect(resolveDesktopAutoUpdateConfig(environment, 'darwin', 'x64')).toEqual({
+      environment: 'production',
+      target: 'mac-x64',
+      origin: 'http://192.168.2.66:3300',
+      publicUrl: 'http://192.168.2.66:3300/instudio/deepseek-harness-desktop/releases/latest/download/',
+      keyPrefix: 'instudio/deepseek-harness-desktop/releases/latest/download',
+      binaryKeyPrefix: 'instudio/deepseek-harness-desktop/releases/latest/download',
+    })
+    expect(() => resolveDesktopUploadConfig(environment, 'darwin', 'x64')).toThrow(/Gitea releases are published/u)
+  })
+
+  it('rejects unsafe internal Gitea origins and repository names', () => {
+    expect(() => resolveDesktopAutoUpdateConfig({
+      GITEA_RELEASE_DOWNLOAD_ORIGIN: 'http://192.168.2.66:3300/releases',
+      GITEA_REPOSITORY: 'instudio/deepseek-harness-desktop',
+    }, 'darwin', 'arm64')).toThrow(/without a path/u)
+    expect(() => resolveDesktopAutoUpdateConfig({
+      GITEA_RELEASE_DOWNLOAD_ORIGIN: 'http://192.168.2.66:3300',
+      GITEA_REPOSITORY: 'instudio/deepseek-harness-desktop/extra',
+    }, 'darwin', 'arm64')).toThrow(/owner\/repository/u)
+  })
+
   it.each([undefined, RELEASE_ID, 'unused-test-value'])('keeps production paths independent of test release ID %s', (id) => {
     expect(resolveDesktopAutoUpdateConfig({
       DSH_DESKTOP_AUTO_UPDATE_ENV: 'production',
