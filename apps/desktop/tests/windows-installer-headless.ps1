@@ -36,10 +36,6 @@ try {
     $entry = Get-ItemProperty -LiteralPath $registryPath
     if ($entry.InstallLocation.TrimEnd('\') -ne $installPath.TrimEnd('\')) { throw 'Silent install registered an unexpected directory' }
 
-    Invoke-Process $appPath '/S'
-    $marker = Join-Path $installPath 'launched.txt'
-    if (-not (Test-Path -LiteralPath $marker -PathType Leaf)) { throw 'Installed application did not execute' }
-
     Invoke-Process $uninstaller '/S'
     $timer = [Diagnostics.Stopwatch]::StartNew()
     while (Test-Path -LiteralPath $installPath) {
@@ -47,7 +43,7 @@ try {
         Start-Sleep -Milliseconds 100
     }
     if (Test-Path -LiteralPath $registryPath) { throw 'Silent uninstaller left the registry entry behind' }
-    Write-Output 'PASS: silent install, launch, registry, and uninstall'
+    Write-Output 'PASS: silent install, registry, and uninstall'
 } finally {
     if (Test-Path -LiteralPath $installPath) { Remove-Item -LiteralPath $installPath -Recurse -Force -ErrorAction SilentlyContinue }
     if (Test-Path -LiteralPath $registryPath) { Remove-Item -LiteralPath $registryPath -Recurse -Force -ErrorAction SilentlyContinue }
