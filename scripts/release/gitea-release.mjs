@@ -36,13 +36,13 @@ async function hash(path) {
   return digest.digest('hex')
 }
 
-async function filesUnder(path, relative = '') {
+async function releaseFiles(path) {
   const entries = await readdir(path, { withFileTypes: true })
   const files = []
   for (const entry of entries) {
-    const child = join(path, entry.name)
-    if (entry.isDirectory()) files.push(...await filesUnder(child, join(relative, entry.name)))
-    else if (allowed.test(entry.name)) files.push({ path: child, name: join(relative, entry.name).replaceAll('\\', '/') })
+    // electron-builder keeps unpacked application contents beside release
+    // assets (for example win-unpacked). Only top-level files are distributable.
+    if (!entry.isDirectory() && allowed.test(entry.name)) files.push({ path: join(path, entry.name), name: entry.name })
   }
   return files
 }
@@ -70,39 +70,65 @@ async function getOrCreateRelease() {
   try { return await request(`/repos/${repository}/releases/tags/${encodeURIComponent(tag)}`) }
   catch (error) {
     if (error.status !== 404) throw error
-    return await request(`/repos/${repository}/releases`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tag_name: tag, name, body: `DeepSeek Harness ${version} desktop artifacts.\n\nWindows artifacts are unsigned.` }),
-    })
+    try {
+      return await request(`/repos/${repository}/releases`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tag_name: tag, name, body: `DeepSeek Harness ${version} desktop artifacts.\n\nWindows artifacts are unsigned.` }),
+      })
+    }
+    catch (createError) {
+      // Windows and macOS jobs may reach an empty release concurrently. The
+      // winner creates it; the loser must attach to that exact tag.
+      if (createError.status !== 409 && createError.status !== 422) throw createError
+      return request(`/repos/${repository}/releases/tags/${encodeURIComponent(tag)}`)
+    }
   }
+}
+
+async function upload(releaseId, assetName, contentType, body) {
+  return request(`/repos/${repository}/releases/${releaseId}/assets?name=${encodeURIComponent(assetName)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': contentType },
+    body,
+  })
 }
 
 const release = await getOrCreateRelease()
 const existing = await request(`/repos/${repository}/releases/${release.id}/assets`)
 const existingNames = new Set(existing.map(asset => asset.name))
-const sourceFiles = await filesUnder(directory)
+const sourceFiles = await releaseFiles(directory)
 if (sourceFiles.length === 0) throw new Error(`no release files found in ${directory}`)
 const manifest = []
+const metadata = []
+const sourceNames = new Set()
 for (const file of sourceFiles.sort((a, b) => a.name.localeCompare(b.name))) {
   const details = await stat(file.path)
   const digest = await hash(file.path)
-  manifest.push(`${digest}  ${file.name}`)
-  const assetName = `${platform}-${basename(file.name)}`
+  const assetName = basename(file.name)
+  if (sourceNames.has(assetName)) throw new Error(`duplicate release asset basename: ${assetName}`)
+  sourceNames.add(assetName)
+  manifest.push(`${digest}  ${assetName}`)
+  metadata.push({ name: assetName, size: details.size, sha256: digest })
   if (existingNames.has(assetName)) throw new Error(`release asset already exists; refusing overwrite: ${assetName}`)
-  await request(`/repos/${repository}/releases/${release.id}/assets?name=${encodeURIComponent(assetName)}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/octet-stream' },
-    body: await readFile(file.path),
-  })
+  await upload(release.id, assetName, 'application/octet-stream', await readFile(file.path))
   console.log(`uploaded ${assetName} (${details.size} bytes, sha256 ${digest})`)
 }
 const manifestName = `${platform}-SHA256SUMS.txt`
 if (existingNames.has(manifestName)) throw new Error(`release asset already exists; refusing overwrite: ${manifestName}`)
-await request(`/repos/${repository}/releases/${release.id}/assets?name=${encodeURIComponent(manifestName)}`, {
-  method: 'POST',
-  headers: { 'Content-Type': 'text/plain; charset=utf-8' },
-  body: `${manifest.join('\n')}\n`,
-})
-await writeFile(join(root, `.gitea-release-${platform}.json`), `${JSON.stringify({ tag, version, platform, releaseId: release.id, files: manifest }, null, 2)}\n`)
+await upload(release.id, manifestName, 'text/plain; charset=utf-8', `${manifest.join('\n')}\n`)
+
+const metadataName = `${platform}-release.json`
+if (existingNames.has(metadataName)) throw new Error(`release asset already exists; refusing overwrite: ${metadataName}`)
+const releaseMetadata = {
+  schemaVersion: 1,
+  tag,
+  version,
+  platform,
+  unsigned: platform.startsWith('win-'),
+  checksumManifest: manifestName,
+  assets: metadata,
+}
+await upload(release.id, metadataName, 'application/json; charset=utf-8', `${JSON.stringify(releaseMetadata, null, 2)}\n`)
+await writeFile(join(root, `.gitea-release-${platform}.json`), `${JSON.stringify({ ...releaseMetadata, releaseId: release.id }, null, 2)}\n`)
 console.log(`release ${tag}: ${platform} assets published at ${release.html_url}`)

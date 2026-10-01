@@ -8,7 +8,7 @@
 
 DeepSeek Harness产品能力位于 [`packages/deepseek-harness-product/product`](packages/deepseek-harness-product/product) 和 [`native/deepseek-harness`](native/deepseek-harness)，通过 Electron 产品桥接接入专家套件、技能、连接器、WeKnora、钉钉登录、定时任务及成果引用。Harness 的 Session、Agent、Conversation、Browser、Office、审批、停止、重试和回放保持官方实现。
 
-Gitea Windows 流水线生成未签名安装包，显式的 Electron Release 流程会把 Windows/macOS 资产和 SHA-256 清单发布到 Gitea Release。Windows 仍未签名，因此不提供 Windows 发布者信任；Release 资产只是分发记录，不能替代签名。
+Gitea Windows 流水线生成未签名安装包，显式的 Electron Release 流程会把 Windows/macOS 资产、平台 SHA-256 清单和发布元数据发布到 Gitea Release。资产名保持与 electron-builder 更新元数据一致，已签名的 macOS 更新 feed 无需改写即可使用。Windows 仍未签名，因此不提供 Windows 发布者信任；Release 资产只是分发记录，不能替代签名。
 
 DeepSeek Harness（`dsh`）是由 [DeepSeek AI](https://deepseek.com) 开发的开源 agent harness（智能体框架）。
 

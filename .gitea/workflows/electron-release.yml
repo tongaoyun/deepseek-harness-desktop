@@ -34,17 +34,38 @@ jobs:
       - name: Install dependencies
         shell: powershell
         run: |
-          npm install -g pnpm@11.7.0 --prefer-offline --no-audit --fund=false --registry=https://registry.npmjs.org/
+          if (-not (Get-Command pnpm -ErrorAction SilentlyContinue)) {
+            npm install -g pnpm@11.7.0 --prefer-offline --no-audit --fund=false --registry=https://registry.npmjs.org/
+          }
+          pnpm --version
           pnpm install --frozen-lockfile --prefer-offline --registry=https://registry.npmjs.org/
       - name: Prepare package configuration
         shell: powershell
         run: "\"DSH_DESKTOP_APP_ID=com.instudio.deepseek-harness.desktop\" | Set-Content -LiteralPath apps\\desktop\\.env.windows -Encoding UTF8"
       - name: Build native sidecar
         shell: powershell
-        run: cargo build --release --manifest-path native\deepseek-harness\Cargo.toml
+        run: |
+          cargo test --manifest-path native\deepseek-harness\Cargo.toml
+          if ($LASTEXITCODE -ne 0) { throw "DeepSeek Harness native tests failed" }
+          cargo build --release --manifest-path native\deepseek-harness\Cargo.toml
+          if ($LASTEXITCODE -ne 0) { throw "DeepSeek Harness native build failed" }
       - name: Package Windows unsigned
         shell: powershell
         run: pnpm run package:desktop:win:x64:unsigned
+      - name: Verify Windows release
+        shell: powershell
+        run: |
+          $ArtifactRoot = "apps\desktop\.desktop-build\targets\win-x64\unsigned-artifacts"
+          $Sidecar = Join-Path $ArtifactRoot "win-unpacked\resources\native\deepseek-harness-native.exe"
+          $Installers = @(Get-ChildItem -LiteralPath $ArtifactRoot -File -Filter "*.exe")
+          if ($Installers.Count -ne 1) { throw "Expected exactly one Windows installer, found $($Installers.Count)" }
+          foreach ($Target in @($Installers[0].FullName, (Join-Path $ArtifactRoot "win-unpacked\DeepSeek Harness.exe"), $Sidecar)) {
+            if ((Get-AuthenticodeSignature -LiteralPath $Target).Status -ne "NotSigned") {
+              throw "Windows release must remain unsigned: $Target"
+            }
+          }
+          pnpm --dir apps/desktop test:installer -- --headless
+          if ($LASTEXITCODE -ne 0) { throw "Windows NSIS installer smoke tests failed" }
       - name: Publish Windows assets
         shell: powershell
         run: |
@@ -69,9 +90,19 @@ jobs:
           test -f "$HOME/.deepseek-harness-release/electron/.env.macos"
           cp "$HOME/.deepseek-harness-release/electron/.env.macos" apps/desktop/.env.macos
       - name: Build native sidecar
-        run: cargo build --release --manifest-path native/deepseek-harness/Cargo.toml
+        run: |
+          cargo test --manifest-path native/deepseek-harness/Cargo.toml
+          cargo build --release --manifest-path native/deepseek-harness/Cargo.toml
       - name: Package macOS
         run: pnpm run package:desktop:mac:arm64
+      - name: Verify macOS release
+        run: |
+          artifact_root="apps/desktop/.desktop-build/targets/mac-arm64/artifacts"
+          test -d "$artifact_root"
+          test "$(find "$artifact_root" -maxdepth 1 -type f -name '*.dmg' | wc -l | tr -d ' ')" -eq 1
+          test "$(find "$artifact_root" -maxdepth 1 -type f -name '*.zip' | wc -l | tr -d ' ')" -eq 1
+          find "$artifact_root" -maxdepth 1 -type f \( -name '*.dmg' -o -name '*.zip' -o -name '*.blockmap' -o -name '*.yml' \) -print -quit | grep -q .
+          while IFS= read -r file; do shasum -a 256 "$file"; done < <(find "$artifact_root" -maxdepth 1 -type f \( -name '*.dmg' -o -name '*.zip' -o -name '*.blockmap' -o -name '*.yml' \) -print | sort)
       - name: Publish macOS assets
         run: |
           VERSION="$(node -p "require('./package.json').version")"
