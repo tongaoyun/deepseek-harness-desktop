@@ -73,4 +73,6 @@ jobs:
       - name: Package macOS
         run: pnpm run package:desktop:mac:arm64
       - name: Publish macOS assets
-        run: node scripts/release/gitea-release.mjs --directory apps/desktop/.desktop-build/targets/mac-arm64/artifacts --platform mac-arm64 --version "$(node -p \"require('./package.json').version\")"
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          node scripts/release/gitea-release.mjs --directory apps/desktop/.desktop-build/targets/mac-arm64/artifacts --platform mac-arm64 --version "$VERSION"
