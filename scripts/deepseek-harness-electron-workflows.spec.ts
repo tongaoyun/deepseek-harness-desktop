@@ -159,8 +159,7 @@ describe('DeepSeekHarness Electron workflows', () => {
     expect(windows).not.toContain('apps/desktop/.desktop-build/targets/win-x64/artifacts/')
     expect(windows).not.toContain('win-unpacked')
     expect(windows).not.toContain('/**')
-    expect(macos).toContain('apps/desktop/.desktop-build/targets/mac-arm64/artifacts/**')
-    expect(macos).toContain('apps/desktop/.desktop-build/targets/mac-x64/artifacts/**')
+    expect(macos).toBe('apps/desktop/.desktop-build/targets/mac-arm64/artifacts/**')
   })
 
   it('keeps the multi-platform Release private until macOS finalization', () => {
@@ -172,9 +171,9 @@ describe('DeepSeekHarness Electron workflows', () => {
     expect(source).toContain('prepare-windows-runtime-cache.ps1')
     expect(source).toContain('node scripts/verify-upstream.mjs')
     expect(source).toContain('GITEA_RELEASE_DOWNLOAD_ORIGIN: http://192.168.2.66:3300')
-    expect(source).toContain('Package macOS Intel')
-    expect(source).toContain('package:desktop:mac:x64')
-    expect(source).toContain('platform mac-x64')
+    expect(source).not.toContain('Package macOS Intel')
+    expect(source).not.toContain('package:desktop:mac:x64')
+    expect(source).not.toContain('platform mac-x64')
   })
 
   it('makes Gitea release uploads idempotent and memory bounded', () => {
