@@ -14,9 +14,14 @@ static bool Above(HWND upper, HWND lower) {
 
 int wmain() {
     HINSTANCE instance = GetModuleHandleW(nullptr);
-    HWND installer = CreateWindowExW(0, L"STATIC", L"Installer", WS_POPUP,
+    WNDCLASSW windowClass = {};
+    windowClass.lpfnWndProc = DefWindowProcW;
+    windowClass.hInstance = instance;
+    windowClass.lpszClassName = L"HarnessInstallerPresentationTest";
+    if (!RegisterClassW(&windowClass) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) return 1;
+    HWND installer = CreateWindowExW(0, windowClass.lpszClassName, L"Installer", WS_POPUP,
                                      100, 100, 300, 300, nullptr, nullptr, instance, nullptr);
-    HWND other = CreateWindowExW(0, L"STATIC", L"Other", WS_POPUP,
+    HWND other = CreateWindowExW(0, windowClass.lpszClassName, L"Other", WS_POPUP,
                                  120, 120, 300, 300, nullptr, nullptr, instance, nullptr);
     if (!installer || !other) return 1;
     // Establish the precondition explicitly.  The smoke test is launched with
