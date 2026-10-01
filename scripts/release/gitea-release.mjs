@@ -1,9 +1,12 @@
 import { createHash } from 'node:crypto'
+import { execFile } from 'node:child_process'
 import { createReadStream } from 'node:fs'
 import { readdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { basename, join, resolve } from 'node:path'
+import { promisify } from 'node:util'
 
 const root = resolve(import.meta.dirname, '../..')
+const run = promisify(execFile)
 const allowed = /\.(?:exe|dmg|zip|blockmap|ya?ml|json)$/u
 
 function arg(name) {
@@ -29,6 +32,24 @@ const api = (process.env.GITEA_API_URL ?? 'http://192.168.2.66:3300/api/v1').rep
 const repository = process.env.GITEA_REPOSITORY ?? process.env.GITHUB_REPOSITORY ?? 'instudio/deepseek-harness-desktop'
 const tag = process.env.GITEA_RELEASE_TAG ?? `desktop-v${version}`
 const name = process.env.GITEA_RELEASE_NAME ?? `DeepSeek Harness ${version}`
+const draft = process.env.GITEA_RELEASE_DRAFT === 'true'
+const finalize = process.env.GITEA_RELEASE_FINALIZE === 'true'
+const expectedCommit = process.env.GITEA_RELEASE_COMMIT?.trim()
+
+const rootManifest = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'))
+if (rootManifest.version !== version) {
+  throw new Error(`release version ${version} does not match package.json ${rootManifest.version}`)
+}
+if (tag !== `desktop-v${version}`) {
+  throw new Error(`release tag must be desktop-v${version}, got ${tag}`)
+}
+if (expectedCommit !== undefined && !/^[0-9a-f]{40}$/u.test(expectedCommit)) {
+  throw new Error(`GITEA_RELEASE_COMMIT must be a full commit SHA, got ${expectedCommit}`)
+}
+if (expectedCommit !== undefined) {
+  const head = (await run('git', ['rev-parse', 'HEAD'], { cwd: root })).stdout.trim()
+  if (head !== expectedCommit) throw new Error(`release checkout ${head} does not match GITEA_RELEASE_COMMIT ${expectedCommit}`)
+}
 
 async function hash(path) {
   const digest = createHash('sha256')
@@ -74,7 +95,7 @@ async function getOrCreateRelease() {
       return await request(`/repos/${repository}/releases`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tag_name: tag, name, body: `DeepSeek Harness ${version} desktop artifacts.\n\nWindows artifacts are unsigned.` }),
+        body: JSON.stringify({ tag_name: tag, name, draft, body: `DeepSeek Harness ${version} desktop artifacts.\n\nWindows artifacts are unsigned.` }),
       })
     }
     catch (createError) {
@@ -95,6 +116,7 @@ async function upload(releaseId, assetName, contentType, body) {
 }
 
 const release = await getOrCreateRelease()
+if (draft && release.draft !== true) throw new Error(`release ${tag} already exists and is not a draft`)
 const existing = await request(`/repos/${repository}/releases/${release.id}/assets`)
 const existingNames = new Set(existing.map(asset => asset.name))
 const sourceFiles = await releaseFiles(directory)
@@ -131,4 +153,11 @@ const releaseMetadata = {
 }
 await upload(release.id, metadataName, 'application/json; charset=utf-8', `${JSON.stringify(releaseMetadata, null, 2)}\n`)
 await writeFile(join(root, `.gitea-release-${platform}.json`), `${JSON.stringify({ ...releaseMetadata, releaseId: release.id }, null, 2)}\n`)
+if (finalize) {
+  await request(`/repos/${repository}/releases/${release.id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ draft: false }),
+  })
+}
 console.log(`release ${tag}: ${platform} assets published at ${release.html_url}`)

@@ -21,6 +21,8 @@ env:
   GITEA_REPOSITORY: ${{ github.repository }}
   GITEA_RELEASE_TAG: ${{ inputs.release_tag }}
   GITEA_RELEASE_NAME: ${{ inputs.release_name }}
+  GITEA_RELEASE_COMMIT: ${{ github.sha }}
+  GITEA_RELEASE_DRAFT: "true"
   GITEA_USERNAME: ${{ secrets.RELEASE_USERNAME }}
   GITEA_PASSWORD: ${{ secrets.RELEASE_CREDENTIAL }}
 
@@ -28,9 +30,25 @@ jobs:
   windows:
     runs-on: windows-x64
     timeout-minutes: 120
+    env:
+      NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
+      NPM_CONFIG_FETCH_RETRIES: 4
+      NPM_CONFIG_FETCH_TIMEOUT: 120000
+      NPM_CONFIG_UPDATE_NOTIFIER: "false"
+      NPM_CONFIG_ELECTRON_MIRROR: https://cdn.npmmirror.com/binaries/electron/
+      DSH_DESKTOP_NPM_REGISTRY: https://registry.npmmirror.com/
+      PNPM_STORE_DIR: C:\\deepseek-harness-desktop-builder\\pnpm-store-electron
     steps:
       - name: Checkout
         uses: http://192.168.2.66:3300/instudio/checkout@v4
+      - name: Verify pinned Harness upstream
+        shell: powershell
+        run: |
+          $tag = (Get-Content UPSTREAM_TAG -Raw).Trim()
+          $mirror = (Get-Content UPSTREAM_MIRROR_REPOSITORY -Raw).Trim()
+          git remote add upstream $mirror
+          git fetch --force --depth=1 upstream "refs/tags/$tag:refs/tags/$tag"
+          node scripts/verify-upstream.mjs
       - name: Install dependencies
         shell: powershell
         run: |
@@ -49,6 +67,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "DeepSeek Harness native tests failed" }
           cargo build --release --manifest-path native\deepseek-harness\Cargo.toml
           if ($LASTEXITCODE -ne 0) { throw "DeepSeek Harness native build failed" }
+      - name: Cache locked primary runtime assets
+        shell: powershell
+        run: powershell -NoProfile -File apps\desktop\scripts\prepare-windows-runtime-cache.ps1
       - name: Package Windows unsigned
         shell: powershell
         run: pnpm run package:desktop:win:x64:unsigned
@@ -73,11 +94,19 @@ jobs:
           node scripts/release/gitea-release.mjs --directory apps/desktop/.desktop-build/targets/win-x64/unsigned-artifacts --platform win-x64 --version $Version
 
   macos:
+    needs: windows
     runs-on: macos-arm64
     timeout-minutes: 120
     steps:
       - name: Checkout
         uses: http://192.168.2.66:3300/instudio/checkout@v4
+      - name: Verify pinned Harness upstream
+        run: |
+          tag="$(cat UPSTREAM_TAG)"
+          mirror="$(cat UPSTREAM_MIRROR_REPOSITORY)"
+          git remote add upstream "$mirror"
+          git fetch --force --depth=1 upstream "refs/tags/${tag}:refs/tags/${tag}"
+          node scripts/verify-upstream.mjs
       - name: Install dependencies
         run: |
           if ! command -v pnpm >/dev/null 2>&1; then
@@ -106,4 +135,4 @@ jobs:
       - name: Publish macOS assets
         run: |
           VERSION="$(node -p "require('./package.json').version")"
-          node scripts/release/gitea-release.mjs --directory apps/desktop/.desktop-build/targets/mac-arm64/artifacts --platform mac-arm64 --version "$VERSION"
+          GITEA_RELEASE_FINALIZE=true node scripts/release/gitea-release.mjs --directory apps/desktop/.desktop-build/targets/mac-arm64/artifacts --platform mac-arm64 --version "$VERSION"

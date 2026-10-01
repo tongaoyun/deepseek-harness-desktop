@@ -73,7 +73,9 @@ describe('DeepSeekHarness Electron workflows', () => {
     const fetch = steps.find(step => step.name === 'Fetch pinned Harness upstream')?.run ?? ''
     expect(fetch).toContain('UPSTREAM_REPOSITORY="$(cat UPSTREAM_REPOSITORY)"')
     expect(fetch).toContain('UPSTREAM_TAG="$(cat UPSTREAM_TAG)"')
-    expect(fetch).toContain('git remote add upstream "$UPSTREAM_REPOSITORY"')
+    expect(fetch).toContain('UPSTREAM_MIRROR_REPOSITORY="$(cat UPSTREAM_MIRROR_REPOSITORY)"')
+    expect(fetch).toContain('git remote add upstream "$UPSTREAM_MIRROR_REPOSITORY"')
+    expect(fetch).toContain('git remote add upstream-canonical "$UPSTREAM_REPOSITORY"')
     expect(fetch).toContain('for attempt in 1 2 3')
     expect(fetch).toContain('timeout 120 git -c http.version=HTTP/1.1 fetch --force --depth=1 upstream')
     expect(fetch).toContain('if [ "$attempt" -eq 3 ]')
@@ -158,5 +160,15 @@ describe('DeepSeekHarness Electron workflows', () => {
     expect(windows).not.toContain('win-unpacked')
     expect(windows).not.toContain('/**')
     expect(macos).toBe('apps/desktop/.desktop-build/targets/mac-arm64/artifacts/**')
+  })
+
+  it('keeps the multi-platform Release private until macOS finalization', () => {
+    const source = readFileSync(resolve(import.meta.dirname, '..', '.gitea', 'workflows', 'electron-release.yml'), 'utf8')
+    expect(source).toContain('GITEA_RELEASE_DRAFT: "true"')
+    expect(source).toContain('GITEA_RELEASE_COMMIT: ${{ github.sha }}')
+    expect(source).toContain('macos:\n    needs: windows')
+    expect(source).toContain('GITEA_RELEASE_FINALIZE=true node scripts/release/gitea-release.mjs')
+    expect(source).toContain('prepare-windows-runtime-cache.ps1')
+    expect(source).toContain('node scripts/verify-upstream.mjs')
   })
 })
