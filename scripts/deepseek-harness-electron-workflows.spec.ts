@@ -171,4 +171,15 @@ describe('DeepSeekHarness Electron workflows', () => {
     expect(source).toContain('prepare-windows-runtime-cache.ps1')
     expect(source).toContain('node scripts/verify-upstream.mjs')
   })
+
+  it('makes Gitea release uploads idempotent and memory bounded', () => {
+    const source = readFileSync(resolve(import.meta.dirname, '..', 'scripts', 'release', 'gitea-release.mjs'), 'utf8')
+    expect(source).toContain('createReadStream(file.path)')
+    expect(source).toContain('bodyFactory')
+    expect(source).toContain('await backoff(attempt)')
+    expect(source).toContain('GITEA_RELEASE_REPLACE_ASSETS')
+    expect(source).toContain('reconciled ${asset.name} after an interrupted upload')
+    expect(source).toContain('await deleteAsset(releaseId, existing.id)')
+    expect(source).not.toContain('await readFile(file.path)')
+  })
 })
