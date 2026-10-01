@@ -24,4 +24,11 @@ if (canonicalUrl !== repository) {
 await run('git', ['fetch', '--tags', 'upstream', tag], { cwd: root, maxBuffer: 10 * 1024 * 1024 })
 const { stdout } = await run('git', ['rev-parse', `${tag}^{commit}`], { cwd: root })
 if (stdout.trim() !== commit) throw new Error(`upstream tag ${tag} resolved to ${stdout.trim()}, expected ${commit}`)
+let mirrorUrl = ''
+try { mirrorUrl = (await run('git', ['remote', 'get-url', 'upstream-mirror'], { cwd: root })).stdout.trim() } catch {}
+if (mirrorUrl !== mirror) {
+  try { await run('git', ['remote', 'add', 'upstream-mirror', mirror], { cwd: root }) }
+  catch { await run('git', ['remote', 'set-url', 'upstream-mirror', mirror], { cwd: root }) }
+}
+await run('git', ['push', 'upstream-mirror', `${tag}:refs/tags/${tag}`], { cwd: root, maxBuffer: 10 * 1024 * 1024 })
 console.log(`verified upstream ${tag} at ${commit}; create a sync branch before applying changes`)
