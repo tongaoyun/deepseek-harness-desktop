@@ -12,8 +12,11 @@ jobs:
         uses: http://192.168.2.66:3300/instudio/checkout@v4
       - name: Install dependencies
         run: |
-          npm install -g pnpm@11.7.0 --prefer-offline --no-audit --fund=false \
-            --registry=https://registry.npmjs.org/
+          if ! command -v pnpm >/dev/null 2>&1; then
+            npm install -g pnpm@11.7.0 --prefer-offline --no-audit --fund=false \
+              --registry=https://registry.npmjs.org/
+          fi
+          pnpm --version
           pnpm install --frozen-lockfile --registry=https://registry.npmjs.org/
       - name: Load runner-owned signing configuration
         run: |
