@@ -72,7 +72,9 @@ describe('DeepSeekHarness capability navigation', () => {
     const setDraft = vi.fn()
     const focus = vi.fn()
     const openSession = vi.fn()
-    const create = vi.fn(async () => 'ordinary-session')
+    const create = vi.fn()
+      .mockResolvedValueOnce('expert-session')
+      .mockResolvedValueOnce('skill-session')
     const select = vi.fn(async () => ({ ok: true as const }))
     const invoke = vi.fn(async () => ({ presetId: 'deepseek-harness-expert-kit-orders' }))
     Object.defineProperty(globalThis, 'deepseekHarness', { configurable: true, value: { product: { invoke } } })
@@ -87,18 +89,18 @@ describe('DeepSeekHarness capability navigation', () => {
         },
       },
       sessions: {
-        list: { getSnapshot: () => ({ byId: {} }) }, create,
+        list: { getSnapshot: () => ({ byId: {
+          current: { id: 'current-session', retainedBy: { mainView: 1 } },
+        } }) }, create,
         binding: (sessionId: string) => ({ sessionId, ctx: {} }),
       },
       workspaces: {
-        list: { getSnapshot: () => ({ items: [{ workspaceId: 'workspace-1', sessionIds: [] }] }) },
+        list: { getSnapshot: () => ({ items: [{ workspaceId: 'workspace-1', sessionIds: ['current-session'] }] }) },
         initializeDefault: vi.fn(),
       },
       uiWorkspace: { openSession },
       remote: { agentPresets: { select } },
-      conversation: { input: { for: () => ({
-        state: { getSnapshot: () => ({ draft: '已有内容  ' }) }, setDraft, focus,
-      }) } },
+      conversation: { input: { for: () => ({ setDraft, focus }) } },
     }
 
     apply(castClientContext(ctx))
@@ -113,11 +115,11 @@ describe('DeepSeekHarness capability navigation', () => {
     expect(invoke).toHaveBeenCalledExactlyOnceWith('expertKits.preset.prepare', { id: 'orders' })
     expect(create).toHaveBeenNthCalledWith(1, { workspaceId: 'workspace-1' })
     expect(create).toHaveBeenNthCalledWith(2, { workspaceId: 'workspace-1' })
-    expect(select).toHaveBeenCalledExactlyOnceWith('ordinary-session', 'deepseek-harness-expert-kit-orders')
-    expect(openSession).toHaveBeenNthCalledWith(1, 'ordinary-session')
-    expect(openSession).toHaveBeenNthCalledWith(2, 'ordinary-session')
-    expect(setDraft).toHaveBeenNthCalledWith(1, '已有内容\n检查订单信息')
-    expect(setDraft).toHaveBeenNthCalledWith(2, '已有内容\n/writing ')
+    expect(select).toHaveBeenCalledExactlyOnceWith('expert-session', 'deepseek-harness-expert-kit-orders')
+    expect(openSession).toHaveBeenNthCalledWith(1, 'expert-session')
+    expect(openSession).toHaveBeenNthCalledWith(2, 'skill-session')
+    expect(setDraft).toHaveBeenNthCalledWith(1, '检查订单信息')
+    expect(setDraft).toHaveBeenNthCalledWith(2, '/writing ')
     expect(focus).toHaveBeenCalledTimes(2)
   })
 

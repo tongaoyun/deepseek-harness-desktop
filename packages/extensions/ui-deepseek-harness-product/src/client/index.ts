@@ -59,8 +59,7 @@ export function apply(ctx: ClientContext): void {
     const binding = ctx.sessions.binding(sessionId)
     if (binding === undefined) throw new Error(`deepseek-harness product: session ${sessionId} did not open`)
     const input = ctx.conversation.input.for(binding.ctx)
-    const current = input.state.getSnapshot().draft.trimEnd()
-    input.setDraft(current === '' ? draft : `${current}\n${draft}`)
+    input.setDraft(draft)
     input.focus()
   }
   const actions = {
@@ -81,8 +80,7 @@ export function apply(ctx: ClientContext): void {
       openDraft(sessionId, prompt ?? '')
     },
     async useSkill(skillId: string): Promise<void> {
-      const current = mainSessionId()
-      const sessionId = current ?? await ctx.sessions.create({
+      const sessionId = await ctx.sessions.create({
         workspaceId: (await ensureWorkspace()).workspaceId,
       })
       openDraft(sessionId, `/${skillId} `)
