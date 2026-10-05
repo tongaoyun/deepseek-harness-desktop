@@ -36,7 +36,7 @@ type ProductItem = {
 }
 export interface DeepSeekHarnessCatalogActions {
   startExpertKit(id: string, prompt?: string): Promise<void>
-  useSkill(skillId: string): Promise<void>
+  useSkill(skillId: string, skillName: string): Promise<void>
 }
 type ProductDetail = {
   readonly id: string
@@ -484,7 +484,7 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
     setActionPending(true)
     setActionError(false)
     try {
-      if (catalog === 'skills') await props.useSkill(product.id)
+      if (catalog === 'skills') await props.useSkill(product.id, product.name)
       else if (catalog === 'expertKits') await props.startExpertKit(product.id, task?.prompt)
     } catch {
       setActionError(true)

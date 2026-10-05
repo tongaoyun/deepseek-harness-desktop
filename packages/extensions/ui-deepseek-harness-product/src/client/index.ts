@@ -79,11 +79,11 @@ export function apply(ctx: ClientContext): void {
       if (!selected.ok) throw new Error(`deepseek-harness product: ${selected.error.message}`)
       openDraft(sessionId, prompt ?? '')
     },
-    async useSkill(skillId: string): Promise<void> {
+    async useSkill(_skillId: string, skillName: string): Promise<void> {
       const sessionId = await ctx.sessions.create({
         workspaceId: (await ensureWorkspace()).workspaceId,
       })
-      openDraft(sessionId, `/${skillId} `)
+      openDraft(sessionId, t('skillPrompt').replace('{name}', skillName))
     },
   }
   ctx.slots.inject('sidebar.panelheading', () => ctx.slots.register({

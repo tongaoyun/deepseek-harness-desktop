@@ -15,7 +15,7 @@ DeepSeek Harness产品层围绕官方 DeepSeek Harness 桌面端提供企业能�
 
 Electron 主进程在 Host 启动前续期钉钉身份，并自行读取已认证的运行时 Bootstrap。员工级模型虚拟 Key 和推理地址只传给官方 Host 子进程；`bootstrap.get` 不是 Renderer 桥接方法。
 
-Desktop Host 通过私有的关联 IPC 客户端读取产品目录。独立技能产物在流式下载时接受压缩大小限制，经过 SHA-256 校验和安全解压后进入产品管理的 Harness 目录，并通过 `dsh-skill-filesystem` 注册，因此官方 `/` 技能选择器和 `skill` 工具是唯一调用入口。本地技能使用 Harness 默认根目录，包括 `$DSH_HOME/skills` 和 `~/.agents/skills`；产品不会额外接入 `~/.codex/skills`。“使用技能”会创建普通官方会话，并预填 `/<skillId>`，但不自动发送。该操作不会复用专家套件会话，也不会带入其他会话的草稿。
+Desktop Host 通过私有的关联 IPC 客户端读取产品目录。独立技能产物在流式下载时接受压缩大小限制，经过 SHA-256 校验和安全解压后进入产品管理的 Harness 目录，并通过 `dsh-skill-filesystem` 注册；官方面向模型的 `skill` 工具和面向用户的 `/` 选择器仍是技能调用入口。本地技能使用 Harness 默认根目录，包括 `$DSH_HOME/skills` 和 `~/.agents/skills`；产品不会额外接入 `~/.codex/skills`。“使用技能”会创建普通官方会话，并预填包含技能名称的本地化任务提示，不自动发送，也不暴露技术 ID。该操作不会复用专家套件会话，也不会带入其他会话的草稿。输入框的 `/` 菜单继续提供 Harness 原生 `/<skillId>` 直接调用方式。
 
 每个专家套件制品保存在按内容寻址的 `<kitId>/<sha256>` 目录中。员工选择**开始使用**后，Host 注册一个不可变 Agent Preset，在 `standard` 基础上加入该套件的 Skill 目录、仅供模型调用的 README 入口、`dsh-mcp-client` 连接器和知识库引用；客户端随后创建官方 Session、绑定该 Preset 并打开 Session。常用任务使用相同流程，只把业务提示预填到输入框而不自动发送，也不绑定 Slash 前缀或 Skill ID。不含秘密的描述文件记录单个套件代和连接器元数据，Host 重启后只恢复被 Session 投影引用的 Preset。只有全部 Session 都成功检查后，Host 才会删除未被这些引用与当前目录覆盖的描述文件和产物代；检查不完整或清理失败时保留数据，且不会阻止 Host 启动。加载目录时会跳过无效或不可用套件，准备不存在的套件会直接失败，不会选择不完整 Preset。独立技能单独注册并继续使用官方 `/<skillId>` 调用方式。
 

@@ -110,7 +110,7 @@ describe('DeepSeekHarness capability navigation', () => {
     const skillActions = (skillRegistration?.options.inject as (() => ReturnType<typeof actions>))()
 
     await expertKitActions.startExpertKit('orders', '检查订单信息')
-    await skillActions.useSkill('writing')
+    await skillActions.useSkill('writing', 'AI 文本优化')
 
     expect(invoke).toHaveBeenCalledExactlyOnceWith('expertKits.preset.prepare', { id: 'orders' })
     expect(create).toHaveBeenNthCalledWith(1, { workspaceId: 'workspace-1' })
@@ -119,7 +119,7 @@ describe('DeepSeekHarness capability navigation', () => {
     expect(openSession).toHaveBeenNthCalledWith(1, 'expert-session')
     expect(openSession).toHaveBeenNthCalledWith(2, 'skill-session')
     expect(setDraft).toHaveBeenNthCalledWith(1, '检查订单信息')
-    expect(setDraft).toHaveBeenNthCalledWith(2, '/writing ')
+    expect(setDraft).toHaveBeenNthCalledWith(2, '请使用“AI 文本优化”技能处理以下内容：')
     expect(focus).toHaveBeenCalledTimes(2)
   })
 
@@ -226,7 +226,7 @@ describe('DeepSeekHarness capability navigation', () => {
     expect(invoke).toHaveBeenCalledWith('skills.get', { id: 'writing' }, expect.any(String))
     expect(invoke).toHaveBeenCalledWith('skills.readme', { id: 'writing' }, expect.any(String))
     fireEvent.click(screen.getByRole('button', { name: zh.useSkill }))
-    await waitFor(() => { expect(productActions.useSkill).toHaveBeenCalledExactlyOnceWith('writing') })
+    await waitFor(() => { expect(productActions.useSkill).toHaveBeenCalledExactlyOnceWith('writing', 'AI文本优化') })
     fireEvent.keyDown(globalThis, { key: 'Escape' })
     expect(screen.queryByRole('dialog')).toBeNull()
   })
@@ -250,7 +250,7 @@ describe('DeepSeekHarness capability navigation', () => {
     expect(screen.getByText(zh.sourceUnavailable)).not.toBeNull()
     expect(screen.queryByText(/resource not found/)).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: zh.useSkill }))
-    await waitFor(() => { expect(productActions.useSkill).toHaveBeenCalledExactlyOnceWith('writing') })
+    await waitFor(() => { expect(productActions.useSkill).toHaveBeenCalledExactlyOnceWith('writing', 'AI文本优化') })
   })
 
   it('starts an expert kit or a common task without exposing slash commands or Skill IDs', async () => {
