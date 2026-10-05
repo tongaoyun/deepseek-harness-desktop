@@ -30,6 +30,7 @@ describe('DeepSeekHarnessProductBridge', () => {
     const prepareExpertKit = vi.fn(() => Promise.resolve('deepseek-harness-expert-kit-fixture'))
     const bridge = new DeepSeekHarnessProductBridge({
       serverUrl: 'https://deepseek-harness.test', prepareExpertKit,
+      sessionToken: 'employee-session',
       initialSession: { authenticated: true, employeeId: 'employee-1' },
     })
 
@@ -43,7 +44,7 @@ describe('DeepSeekHarnessProductBridge', () => {
       serverUrl: 'https://deepseek-harness.test', prepareExpertKit: vi.fn(),
     })
     await expect(bridge.invoke('expertKits.preset.prepare', { id: 'order-expert' }))
-      .rejects.toThrow('authenticated employee')
+      .rejects.toThrow('Employee authentication is required')
   })
 
   it('opens DingTalk OAuth in the system browser and never creates a QR window', async () => {
