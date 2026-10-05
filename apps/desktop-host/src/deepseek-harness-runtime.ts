@@ -9,7 +9,6 @@ import type { PresetDefinition } from '@deepseek-ai/dsh-agent-preset-registry'
 import { entryListProblem } from '@deepseek-ai/dsh-agent-preset-registry'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import type {} from '@deepseek-ai/dsh-session-query'
-import type {} from '@deepseek-ai/dsh-settings'
 import * as SkillFilesystem from '@deepseek-ai/dsh-skill-filesystem'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { load } from 'js-yaml'
@@ -22,7 +21,7 @@ import {
   type DeepSeekHarnessConnector as Connector,
 } from './deepseek-harness-connector-contract.ts'
 import {
-  enabledExpertKitPresetId,
+  expertKitPresetId,
   expertKitGenerationPath,
   pruneExpertKitGenerations,
   pruneExpertKitPresetSnapshots,
@@ -32,7 +31,7 @@ import {
   type ExpertKitSnapshotEntry,
 } from './deepseek-harness-expert-kit-store.ts'
 
-export { enabledExpertKitPresetId } from './deepseek-harness-expert-kit-store.ts'
+export { expertKitPresetId } from './deepseek-harness-expert-kit-store.ts'
 
 const MAX_ARTIFACT_BYTES = 64 * 1024 * 1024
 const MAX_EXTRACTED_BYTES = 256 * 1024 * 1024
@@ -43,12 +42,12 @@ const SESSION_INSPECTION_CONCURRENCY = 8
 // is authoritative, then give Loader the exact immutable module URL.
 const EXPERT_KIT_README_PLUGIN = import.meta.resolve('@deepseek-ai/dsh-expert-kit-readme')
 
-export const inject = ['agentPresets', 'sessionQuery', 'settings', 'skills', 'systemPrompt', 'tools']
+export const inject = ['agentPresets', 'sessionQuery', 'skills', 'systemPrompt', 'tools']
 
 /** Live product controls published to the private Desktop Host IPC boundary. */
 export interface DeepSeekHarnessRuntimeControl {
-  /** Select the immutable capability snapshot used by subsequently created Sessions. */
-  syncEnabledExpertKits(ids: readonly string[]): Promise<string>
+  /** Prepare the immutable capability snapshot for one Expert Kit Session. */
+  prepareExpertKit(id: string): Promise<string>
 }
 
 /** Runtime dependencies supplied by the private Desktop Host. */
@@ -116,10 +115,6 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   for (const skill of skills) {
     await installArtifact(config.product, 'skills.artifact', skill, skillsRoot)
   }
-  await ctx.plugin(SkillFilesystem, {
-    providerName: 'deepseek-harness-product', includeDefaultRoots: false,
-    customSkillDirs: [skillsRoot], watch: false,
-  })
   const standardDocument = await ctx.agentPresets.readDocument('standard')
   const standardPlugins = parsePresetPlugins(standardDocument.content)
   const knowledgeRefsByPreset = new Map<string, readonly string[]>()
@@ -136,53 +131,60 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       console.error(`deepseek-harness product: expert kit ${kit.id} is unavailable`, error)
     }
   }
+  await ctx.plugin(SkillFilesystem, {
+    providerName: 'deepseek-harness-product', includeDefaultRoots: false,
+    customSkillDirs: [skillsRoot], watch: false,
+  })
 
   const registeredSnapshots = new Set<string>()
   const snapshotRegistrations = new Map<string, Promise<void>>()
-  const registerEnabledSnapshot = async (
-    selected: readonly InstalledExpertKit[],
+  const registerExpertKitSnapshot = async (
+    selected: InstalledExpertKit,
     persist: boolean,
     restoredConnectors?: readonly ExpertKitConnectorSnapshotEntry[],
   ): Promise<string> => {
     const selectedConnectors = restoredConnectors === undefined
-      ? connectorsForExpertKits(selected)
+      ? connectorsForExpertKit(selected)
       : restoredConnectors.map(snapshot => restoreConnector(snapshot, connectorById))
     const connectorSnapshots = selectedConnectors.map(connectorSnapshot)
-    const presetId = enabledExpertKitPresetId(
-      selected.map(({ kit }) => ({ id: kit.id, sha256: kit.sha256 })), connectorSnapshots,
-    )
+    const presetId = expertKitPresetId(selected.kit, connectorSnapshots)
     if (registeredSnapshots.has(presetId)) return presetId
     let pending = snapshotRegistrations.get(presetId)
     if (pending === undefined) {
       pending = (async () => {
-        const skillDirectories = selected.flatMap(entry => entry.skillDirectory === undefined ? [] : [entry.skillDirectory])
         const plugins: PresetDefinition['plugins'] = [
           ...standardPlugins,
           {
-            id: `deepseek-harness-enabled-readmes-${presetId}`,
+            id: `deepseek-harness-expert-kit-readme-${presetId}`,
             name: EXPERT_KIT_README_PLUGIN,
             config: {
-              entries: selected.map(entry => ({
-                name: `expert-kit-${entry.kit.id}`,
-                description: entry.kit.summary,
-                path: entry.readmePath,
-              })),
+              entries: [{
+                name: `expert-kit-${selected.kit.id}`,
+                description: selected.kit.summary,
+                path: selected.readmePath,
+              }],
             },
           },
-          ...(skillDirectories.length === 0 ? [] : [{
-            id: `deepseek-harness-enabled-skills-${presetId}`, name: '@deepseek-ai/dsh-skill-filesystem',
-            config: { providerName: presetId, includeDefaultRoots: false, customSkillDirs: skillDirectories, watch: false },
+          ...(selected.skillDirectory === undefined ? [] : [{
+            id: `deepseek-harness-expert-kit-skills-${presetId}`,
+            name: '@deepseek-ai/dsh-skill-filesystem',
+            config: {
+              providerName: presetId,
+              includeDefaultRoots: false,
+              customSkillDirs: [selected.skillDirectory],
+              watch: false,
+            },
           }]),
           ...selectedConnectors.map(connectorPlugin),
         ]
         if (persist) {
           await writeExpertKitPresetSnapshot(snapshotsRoot, {
-            id: presetId, kits: selected.map(entry => entry.kit), connectors: connectorSnapshots,
+            id: presetId, kit: selected.kit, connectors: connectorSnapshots,
           })
         }
-        await registerPreset(ctx, { id: presetId, name: '通用', description: '当前启用的企业能力', plugins })
+        await registerPreset(ctx, { id: presetId, name: selected.kit.name, description: selected.kit.summary, plugins })
         registeredSnapshots.add(presetId)
-        knowledgeRefsByPreset.set(presetId, [...new Set(selected.flatMap(({ kit }) => kit.knowledgeBaseRefs))].sort())
+        knowledgeRefsByPreset.set(presetId, [...new Set(selected.kit.knowledgeBaseRefs)].sort())
         connectorsByPreset.set(presetId, selectedConnectors)
       })()
       snapshotRegistrations.set(presetId, pending)
@@ -191,17 +193,9 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     return presetId
   }
 
-  const initiallyEnabled = enabledExpertKitIds(await config.product.invoke('expertKits.enablement.list'))
   const referencedSnapshots = await referencedExpertKitPresetIds(ctx)
   const sessionRequiredSnapshots = new Set(referencedSnapshots.ids)
   const requiredSnapshots = new Set(sessionRequiredSnapshots)
-  if (initiallyEnabled.length > 0) {
-    const selected = resolveEnabledExpertKits(initiallyEnabled, installedKits)
-    requiredSnapshots.add(enabledExpertKitPresetId(
-      selected.map(({ kit }) => ({ id: kit.id, sha256: kit.sha256 })),
-      connectorsForExpertKits(selected).map(connectorSnapshot),
-    ))
-  }
   const stored = await readExpertKitPresetSnapshots(snapshotsRoot)
   for (const diagnostic of stored.diagnostics) console.warn(`deepseek-harness product: ignored invalid Expert Kit snapshot ${diagnostic}`)
   const storedSnapshotIds = new Set(stored.snapshots.map(snapshot => snapshot.id))
@@ -214,32 +208,27 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     try {
       const restoredConnectors = snapshot.connectors.map(connector => restoreConnector(connector, connectorById))
       const restoredConnectorById = new Map(restoredConnectors.map(connector => [connector.id, connector]))
-      const selected = await Promise.all(snapshot.kits.map(kit => installedExpertKit(kit, kitsRoot, restoredConnectorById)))
-      const restored = await registerEnabledSnapshot(selected, false, snapshot.connectors)
+      const selected = await installedExpertKit(snapshot.kit, kitsRoot, restoredConnectorById)
+      const restored = await registerExpertKitSnapshot(selected, false, snapshot.connectors)
       if (restored !== snapshot.id) throw new Error(`snapshot identity changed from ${snapshot.id} to ${restored}`)
     } catch (error) {
       console.warn(`deepseek-harness product: Expert Kit snapshot ${snapshot.id} is unavailable`, error)
     }
   }
 
-  const syncEnabledExpertKits = async (ids: readonly string[]): Promise<string> => {
-    const selected = resolveEnabledExpertKits(ids, installedKits)
-    if (selected.length === 0) {
-      await ctx.settings.update('agent-preset-registry', { selectedDefault: 'standard' })
-      return 'standard'
-    }
-    const presetId = await registerEnabledSnapshot(selected, true)
-    await ctx.settings.update('agent-preset-registry', { selectedDefault: presetId })
+  const prepareExpertKit = async (id: string): Promise<string> => {
+    const selected = resolveExpertKit(id, installedKits)
+    const presetId = await registerExpertKitSnapshot(selected, true)
+    requiredSnapshots.add(presetId)
     return presetId
   }
 
-  await syncEnabledExpertKits(initiallyEnabled)
   if (retentionComplete) {
     try {
       await pruneExpertKitPresetSnapshots(snapshotsRoot, requiredSnapshots)
       const retainedGenerations = [
         ...kits,
-        ...stored.snapshots.filter(snapshot => requiredSnapshots.has(snapshot.id)).flatMap(snapshot => snapshot.kits),
+        ...stored.snapshots.filter(snapshot => requiredSnapshots.has(snapshot.id)).map(snapshot => snapshot.kit),
       ]
       await pruneExpertKitGenerations(kitsRoot, retainedGenerations)
     } catch (error) {
@@ -248,17 +237,10 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   } else {
     console.warn('deepseek-harness product: Expert Kit cleanup skipped because Session references were not fully inspected')
   }
-  const control: DeepSeekHarnessRuntimeControl = { syncEnabledExpertKits }
+  const control: DeepSeekHarnessRuntimeControl = { prepareExpertKit }
   config.publishControl(control)
   ctx.effect(() => () => { config.publishControl(undefined) }, 'deepseek-harness-product.runtime-control')
   installKnowledgeTool(ctx, config.product, knowledgeRefsByPreset)
-}
-
-function enabledExpertKitIds(value: unknown): readonly string[] {
-  if (!Array.isArray(value) || value.length > 256 || value.some(id => typeof id !== 'string')) {
-    throw new Error('deepseek-harness product: invalid enabled expert kit list')
-  }
-  return value as string[]
 }
 
 interface ReferencedExpertKitPresets {
@@ -277,7 +259,7 @@ export async function referencedExpertKitPresetIds(ctx: Context): Promise<Refere
   }
   let complete = true
   const remember = (value: unknown): void => {
-    if (typeof value === 'string' && value.startsWith('deepseek-harness-enabled-')) ids.add(value)
+    if (typeof value === 'string' && value.startsWith('deepseek-harness-expert-kit-')) ids.add(value)
   }
   let next = 0
   const inspect = async (): Promise<void> => {
@@ -302,19 +284,14 @@ export async function referencedExpertKitPresetIds(ctx: Context): Promise<Refere
   return { ids, complete }
 }
 
-function resolveEnabledExpertKits(
-  ids: readonly string[],
+function resolveExpertKit(
+  id: string,
   installed: ReadonlyMap<string, InstalledExpertKit>,
-): readonly InstalledExpertKit[] {
-  if (ids.length > 256 || new Set(ids).size !== ids.length) {
-    throw new Error('deepseek-harness product: enabled expert kit ids must be unique')
-  }
-  return [...ids].sort().map((id) => {
-    validateProductId(id)
-    const kit = installed.get(id)
-    if (kit === undefined) throw new Error(`deepseek-harness product: enabled expert kit ${id} is unavailable`)
-    return kit
-  })
+): InstalledExpertKit {
+  validateProductId(id)
+  const kit = installed.get(id)
+  if (kit === undefined) throw new Error(`deepseek-harness product: expert kit ${id} is unavailable`)
+  return kit
 }
 
 function validateRequiredTools(kit: ExpertKit, connectors: readonly Connector[]): void {
@@ -377,12 +354,8 @@ function installConnectorPolicy(
   })
 }
 
-function connectorsForExpertKits(selected: readonly InstalledExpertKit[]): readonly Connector[] {
-  const byId = new Map<string, Connector>()
-  for (const entry of selected) {
-    for (const connector of entry.connectors) byId.set(connector.id, connector)
-  }
-  return [...byId.values()].sort((left, right) => left.id.localeCompare(right.id))
+function connectorsForExpertKit(selected: InstalledExpertKit): readonly Connector[] {
+  return [...selected.connectors].sort((left, right) => left.id.localeCompare(right.id))
 }
 
 function connectorSnapshot(connector: Connector): ExpertKitConnectorSnapshotEntry {

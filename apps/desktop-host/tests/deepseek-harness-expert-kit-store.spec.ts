@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
-  enabledExpertKitPresetId,
+  expertKitPresetId,
   expertKitGenerationPath,
   pruneExpertKitGenerations,
   pruneExpertKitPresetSnapshots,
@@ -49,13 +49,13 @@ describe('DeepSeekHarness Expert Kit artifact generations', () => {
   it('round-trips non-secret Preset descriptors for Host restart', async () => {
     const root = await temporaryRoot()
     const entry = kit('a'.repeat(64))
-    const id = enabledExpertKitPresetId([entry], connectors)
-    await writeExpertKitPresetSnapshot(root, { id, kits: [entry], connectors })
+    const id = expertKitPresetId(entry, connectors)
+    await writeExpertKitPresetSnapshot(root, { id, kit: entry, connectors })
 
     const result = await readExpertKitPresetSnapshots(root)
-    expect(result).toEqual({ snapshots: [{ schema: 'deepseek-harness.expert-kit-preset.v2', id, kits: [{
+    expect(result).toEqual({ snapshots: [{ schema: 'deepseek-harness.expert-kit-preset.v3', id, kit: {
       ...entry, sha256: 'a'.repeat(64),
-    }], connectors }], diagnostics: [] })
+    }, connectors }], diagnostics: [] })
     const source = await readFile(join(root, `${id}.json`), 'utf8')
     expect(source).not.toContain('headers')
     expect(source).not.toContain('token')
@@ -64,19 +64,19 @@ describe('DeepSeekHarness Expert Kit artifact generations', () => {
   it('does not overwrite an existing generation descriptor with changed metadata', async () => {
     const root = await temporaryRoot()
     const entry = kit('b'.repeat(64))
-    const id = enabledExpertKitPresetId([entry], connectors)
-    await writeExpertKitPresetSnapshot(root, { id, kits: [entry], connectors })
+    const id = expertKitPresetId(entry, connectors)
+    await writeExpertKitPresetSnapshot(root, { id, kit: entry, connectors })
 
     await expect(writeExpertKitPresetSnapshot(root, {
-      id, kits: [{ ...entry, summary: '被篡改的说明。' }], connectors,
+      id, kit: { ...entry, summary: '被篡改的说明。' }, connectors,
     })).rejects.toThrow('is immutable')
   })
 
   it('isolates a corrupt snapshot without hiding valid generations', async () => {
     const root = await temporaryRoot()
     const entry = kit('c'.repeat(64))
-    const id = enabledExpertKitPresetId([entry], connectors)
-    await writeExpertKitPresetSnapshot(root, { id, kits: [entry], connectors })
+    const id = expertKitPresetId(entry, connectors)
+    await writeExpertKitPresetSnapshot(root, { id, kit: entry, connectors })
     await writeFile(join(root, 'broken.json'), '{not-json', 'utf8')
 
     const result = await readExpertKitPresetSnapshots(root)
@@ -91,10 +91,10 @@ describe('DeepSeekHarness Expert Kit artifact generations', () => {
     const historical = kit('a'.repeat(64))
     const current = { ...kit('b'.repeat(64)), version: '2.0.0' }
     const stale = { ...kit('c'.repeat(64)), version: '0.9.0' }
-    const historicalId = enabledExpertKitPresetId([historical], connectors)
-    const staleId = enabledExpertKitPresetId([stale], connectors)
-    await writeExpertKitPresetSnapshot(snapshotsRoot, { id: historicalId, kits: [historical], connectors })
-    await writeExpertKitPresetSnapshot(snapshotsRoot, { id: staleId, kits: [stale], connectors })
+    const historicalId = expertKitPresetId(historical, connectors)
+    const staleId = expertKitPresetId(stale, connectors)
+    await writeExpertKitPresetSnapshot(snapshotsRoot, { id: historicalId, kit: historical, connectors })
+    await writeExpertKitPresetSnapshot(snapshotsRoot, { id: staleId, kit: stale, connectors })
     await Promise.all([historical, current, stale].map(async (entry) => {
       const generation = expertKitGenerationPath(kitsRoot, entry)
       await mkdir(generation, { recursive: true })

@@ -14,8 +14,7 @@ export type ProductMethod =
   | 'expertKits.get'
   | 'expertKits.readme'
   | 'expertKits.artifact'
-  | 'expertKits.enablement.list'
-  | 'expertKits.enablement.set'
+  | 'expertKits.preset.prepare'
   | 'skills.list'
   | 'skills.get'
   | 'skills.readme'
@@ -46,7 +45,6 @@ export type ProductRuntimeMethod = Extract<ProductMethod,
   | 'expertKits.get'
   | 'expertKits.readme'
   | 'expertKits.artifact'
-  | 'expertKits.enablement.list'
   | 'skills.list'
   | 'skills.get'
   | 'skills.readme'
@@ -58,7 +56,6 @@ export type ProductRuntimeMethod = Extract<ProductMethod,
 
 const PRODUCT_RUNTIME_METHODS: readonly ProductRuntimeMethod[] = [
   'expertKits.list', 'expertKits.get', 'expertKits.readme', 'expertKits.artifact',
-  'expertKits.enablement.list',
   'skills.list', 'skills.get', 'skills.readme', 'skills.artifact',
   'connectors.list', 'knowledge.bases.list', 'knowledge.search',
 ]
@@ -113,8 +110,8 @@ export interface ProductEvent {
 export function isProductMethod(value: unknown): value is ProductMethod {
   return typeof value === 'string' && [
     'auth.getSession', 'auth.ensureDingTalk', 'auth.beginDingTalk', 'auth.pollDingTalk', 'auth.refresh', 'expertKits.list',
-    'expertKits.get', 'expertKits.readme', 'expertKits.artifact', 'expertKits.enablement.list',
-    'expertKits.enablement.set', 'skills.list', 'skills.get', 'skills.readme',
+    'expertKits.get', 'expertKits.readme', 'expertKits.artifact', 'expertKits.preset.prepare',
+    'skills.list', 'skills.get', 'skills.readme',
     'skills.artifact', 'connectors.list',
     'knowledge.bases.list', 'knowledge.search',
     'native.filesystem.list', 'native.filesystem.read',

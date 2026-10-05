@@ -81,20 +81,20 @@ async function main(): Promise<void> {
       })().catch((error: unknown) => { console.error(error) })
       return
     }
-    if (message.type === 'expert-kits-sync') {
+    if (message.type === 'expert-kit-prepare') {
       if (!('requestId' in message) || !Number.isSafeInteger(message.requestId)
-        || !('ids' in message) || !Array.isArray(message.ids)
-        || message.ids.some(id => typeof id !== 'string')) return
+        || !('id' in message) || typeof message.id !== 'string') return
       const requestId = message.requestId
+      const id = message.id
       void (async () => {
         try {
           if (stopping !== undefined || control.expertKits === undefined) {
             throw new Error('deepseek-harness product: expert kit runtime is unavailable')
           }
-          const presetId = await control.expertKits.syncEnabledExpertKits(message.ids as string[])
-          await send({ type: 'expert-kits-sync', requestId, presetId })
+          const presetId = await control.expertKits.prepareExpertKit(id)
+          await send({ type: 'expert-kit-prepare', requestId, presetId })
         } catch (error) {
-          await send({ type: 'expert-kits-sync', requestId, presetId: '',
+          await send({ type: 'expert-kit-prepare', requestId, presetId: '',
             error: error instanceof Error ? error.message : String(error) })
         }
       })().catch((error: unknown) => { console.error(error) })

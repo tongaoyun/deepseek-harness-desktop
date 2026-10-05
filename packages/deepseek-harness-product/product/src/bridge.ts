@@ -42,19 +42,12 @@ export interface ProductBridgeOptions {
   readonly persistSession?: (session: ProductSession, sessionToken: string | undefined) => void | Promise<void>
   /** Main-process native capability dispatcher. Renderer code never receives this function. */
   readonly nativeInvoke?: (method: string, payload: unknown) => Promise<unknown>
-  /** Switch the Host default to the immutable snapshot for these enabled kits. */
-  readonly syncEnabledExpertKits?: (ids: readonly string[]) => Promise<string>
+  /** Prepare the immutable Host Preset snapshot for one Expert Kit. */
+  readonly prepareExpertKit?: (id: string) => Promise<string>
 }
 
-const PRODUCT_DATABASE = 'deepseek-harness-product.sqlite'
 const SESSION_REFRESH_LEAD_SECONDS = 5 * 60
 const SESSION_REFRESH_RETRY_SECONDS = 30
-const CREATE_EXPERT_KIT_ENABLEMENT = `CREATE TABLE IF NOT EXISTS expert_kit_enablement (
-  employee_id TEXT NOT NULL,
-  kit_id TEXT NOT NULL,
-  enabled_at TEXT NOT NULL,
-  PRIMARY KEY (employee_id, kit_id)
-)`
 
 /** Main-process product API boundary exposed to the Renderer through preload. */
 export class DeepSeekHarnessProductBridge {
@@ -63,8 +56,7 @@ export class DeepSeekHarnessProductBridge {
   private readonly listeners = new Set<(event: ProductEvent) => void>()
   private readonly api?: DeepSeekHarnessApiClient
   private readonly nativeInvoke?: ProductBridgeOptions['nativeInvoke']
-  private readonly syncEnabledExpertKits?: ProductBridgeOptions['syncEnabledExpertKits']
-  private enablementWrites: Promise<void> = Promise.resolve()
+  private readonly prepareExpertKit?: ProductBridgeOptions['prepareExpertKit']
   private sessionRefresh: Promise<void> | undefined
   private sessionRefreshTimer: ReturnType<typeof setTimeout> | undefined
 
@@ -73,7 +65,7 @@ export class DeepSeekHarnessProductBridge {
     this.session = options.initialSession ?? (options.sessionToken === undefined ? { authenticated: false } : { authenticated: true })
     this.persistSession = options.persistSession
     this.nativeInvoke = options.nativeInvoke
-    this.syncEnabledExpertKits = options.syncEnabledExpertKits
+    this.prepareExpertKit = options.prepareExpertKit
     if (options.serverUrl !== undefined && options.serverUrl !== '') {
       this.api = new DeepSeekHarnessApiClient({ baseUrl: options.serverUrl, getSessionToken: () => this.sessionToken,
         getEmployeeId: () => this.session.employeeId,
@@ -141,14 +133,6 @@ export class DeepSeekHarnessProductBridge {
       if (this.nativeInvoke === undefined) throw new Error('deepseek-harness product: native sidecar is unavailable')
       return this.nativeInvoke(method.slice('native.'.length), input)
     }
-    if (method === 'expertKits.enablement.list') return this.listEnabledExpertKits()
-    if (method === 'expertKits.enablement.set') {
-      const id = requiredId(input)
-      if (typeof input.enabled !== 'boolean') throw new Error('deepseek-harness product: enabled must be a boolean')
-      const run = this.enablementWrites.then(() => this.setExpertKitEnabled(id, input.enabled as boolean))
-      this.enablementWrites = run.then(() => undefined, () => undefined)
-      return run
-    }
     if (this.api === undefined) throw new Error('deepseek-harness product: server URL is not configured')
     if (method === 'auth.beginDingTalk') return this.api.beginDingTalk<unknown>()
     if (method === 'auth.pollDingTalk') {
@@ -189,6 +173,11 @@ export class DeepSeekHarnessProductBridge {
     signal?: AbortSignal,
   ): Promise<unknown> {
     if (this.api === undefined) throw new Error('deepseek-harness product: server URL is not configured')
+    if (method === 'expertKits.preset.prepare') {
+      if (!this.session.authenticated) throw new Error('deepseek-harness product: authenticated employee is required')
+      if (this.prepareExpertKit === undefined) throw new Error('deepseek-harness product: expert kit runtime is unavailable')
+      return { presetId: await this.prepareExpertKit(requiredId(input)) }
+    }
     if (method === 'expertKits.get') {
       return this.api.request(`/api/v1/expert-kits/${encodeURIComponent(requiredId(input))}`)
     }
@@ -334,70 +323,6 @@ export class DeepSeekHarnessProductBridge {
     for (const listener of this.listeners) {
       try { listener(event) } catch (error) { console.error('deepseek-harness product event listener failed', error) }
     }
-  }
-
-  private async listEnabledExpertKits(): Promise<readonly string[]> {
-    const employeeId = this.requiredEmployeeId()
-    await this.initializeExpertKitEnablement()
-    const rows = await this.requireNativeInvoke()('sqlite.query', {
-      database: PRODUCT_DATABASE,
-      sql: 'SELECT kit_id AS kitId FROM expert_kit_enablement WHERE employee_id = ? ORDER BY kit_id ASC',
-      params: [employeeId],
-    })
-    if (!Array.isArray(rows) || rows.some(row => typeof row !== 'object' || row === null || Array.isArray(row)
-      || typeof (row as Record<string, unknown>).kitId !== 'string')) {
-      throw new Error('deepseek-harness product: invalid expert kit enablement rows')
-    }
-    return rows.map(row => (row as { readonly kitId: string }).kitId)
-  }
-
-  private async setExpertKitEnabled(
-    id: string,
-    enabled: boolean,
-  ): Promise<{ readonly enabledIds: readonly string[]; readonly presetId: string }> {
-    const previous = await this.listEnabledExpertKits()
-    if (this.syncEnabledExpertKits === undefined) throw new Error('deepseek-harness product: expert kit runtime is unavailable')
-    const next = [...new Set(enabled ? [...previous, id] : previous.filter(candidate => candidate !== id))].sort()
-    const presetId = await this.syncEnabledExpertKits(next)
-    try {
-      await this.initializeExpertKitEnablement()
-      await this.requireNativeInvoke()('sqlite.execute', enabled ? {
-        database: PRODUCT_DATABASE,
-        sql: `INSERT INTO expert_kit_enablement (employee_id, kit_id, enabled_at) VALUES (?, ?, ?)
-          ON CONFLICT(employee_id, kit_id) DO UPDATE SET enabled_at = excluded.enabled_at`,
-        params: [this.requiredEmployeeId(), id, new Date().toISOString()],
-      } : {
-        database: PRODUCT_DATABASE,
-        sql: 'DELETE FROM expert_kit_enablement WHERE employee_id = ? AND kit_id = ?',
-        params: [this.requiredEmployeeId(), id],
-      })
-    } catch (error) {
-      await this.syncEnabledExpertKits(previous).catch((rollbackError: unknown) => {
-        console.error('deepseek-harness product: failed to restore expert kit runtime snapshot', rollbackError)
-      })
-      throw error
-    }
-    this.emit({ type: 'catalog.changed', payload: { catalog: 'expertKits' } })
-    return { enabledIds: next, presetId }
-  }
-
-  private async initializeExpertKitEnablement(): Promise<void> {
-    await this.requireNativeInvoke()('sqlite.execute', {
-      database: PRODUCT_DATABASE, sql: CREATE_EXPERT_KIT_ENABLEMENT, params: [],
-    })
-  }
-
-  private requireNativeInvoke(): NonNullable<ProductBridgeOptions['nativeInvoke']> {
-    if (this.nativeInvoke === undefined) throw new Error('deepseek-harness product: native sidecar is unavailable')
-    return this.nativeInvoke
-  }
-
-  private requiredEmployeeId(): string {
-    if (!this.session.authenticated || typeof this.session.employeeId !== 'string'
-      || this.session.employeeId.trim() === '') {
-      throw new Error('deepseek-harness product: authenticated employee is required')
-    }
-    return this.session.employeeId
   }
 
   private readonly persistSession: ProductBridgeOptions['persistSession']

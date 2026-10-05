@@ -2,9 +2,9 @@ import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots
 import type { ComponentType, ReactNode } from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Button, IconAgentPresetOutlineRegular, IconChevronRightOutlineRegular, IconCloseOutlineRegular,
+  Button, IconAgentPresetOutlineRegular, IconChevronDownOutlineRegular, IconChevronRightOutlineRegular, IconCloseOutlineRegular,
   IconDatabaseOutlineRegular, IconLinkOutlineRegular, IconRefreshOutlineRegular, IconSearchOutlineRegular,
-  IconSkillOutlineRegular, MarkdownText, SegmentedTabs, Switch, Tooltip,
+  IconSkillOutlineRegular, MarkdownText, Menu, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { NS, type DeepSeekHarnessProductKey } from '../locales.ts'
 import css from '../DeepSeekHarnessProduct.module.css'
@@ -27,10 +27,15 @@ type ProductItem = {
   readonly status?: string
   readonly scope?: string
   readonly transport?: string
+  readonly authMode?: string
+  readonly managed?: boolean
+  readonly toolNames: readonly string[]
+  readonly readOnlyTools: readonly string[]
+  readonly createdAt?: string
+  readonly updatedAt?: string
 }
 export interface DeepSeekHarnessCatalogActions {
-  setExpertKitEnabled(id: string, enabled: boolean): Promise<void>
-  useExpertKitCommand(skillId: string, description: string): Promise<void>
+  startExpertKit(id: string, prompt?: string): Promise<void>
   useSkill(skillId: string): Promise<void>
 }
 type ProductDetail = {
@@ -40,18 +45,27 @@ type ProductDetail = {
   readonly version?: string
   readonly summary?: string
   readonly category?: string
-  readonly sha256: string
-  readonly commandDetails: readonly CommandDetail[]
+  readonly sha256?: string
+  readonly commonTasks: readonly CommonTask[]
   readonly readme: string
   readonly sourceAvailable: boolean
+  readonly status?: string
+  readonly scope?: string
+  readonly transport?: string
+  readonly authMode?: string
+  readonly managed?: boolean
+  readonly toolNames: readonly string[]
+  readonly readOnlyTools: readonly string[]
+  readonly createdAt?: string
+  readonly updatedAt?: string
 }
-type CommandDetail = {
+type CommonTask = {
   readonly id: string
   readonly name: string
   readonly description: string
-  readonly skillId: string
+  readonly prompt: string
 }
-type KitFilter = 'all' | 'enabled'
+type CategoryFilter = string
 
 const METHODS = {
   expertKits: 'expertKits.list',
@@ -74,7 +88,32 @@ const ICONS: Record<Catalog, ComponentType<{ readonly size?: number }>> = {
   knowledge: IconDatabaseOutlineRegular,
 }
 
+const CATEGORY_KEYS: Readonly<Record<string, DeepSeekHarnessProductKey>> = {
+  'office-productivity': 'categoryOfficeProductivity',
+  'content-creation': 'categoryContentCreation',
+  marketing: 'categoryMarketing',
+  'ecommerce-retail': 'categoryEcommerceRetail',
+  finance: 'categoryFinance',
+  legal: 'categoryLegal',
+  recruiting: 'categoryRecruiting',
+  'code-development': 'categoryCodeDevelopment',
+  'code-review': 'categoryCodeReview',
+  'security-testing': 'categorySecurityTesting',
+  'database-analysis': 'categoryDatabaseAnalysis',
+  'operations-deployment': 'categoryOperationsDeployment',
+  'developer-tools': 'categoryDeveloperTools',
+  design: 'categoryDesign',
+  'product-management': 'categoryProductManagement',
+  'knowledge-research': 'categoryKnowledgeResearch',
+  workflow: 'categoryWorkflow',
+  'agent-evolution': 'categoryAgentEvolution',
+  communication: 'categoryCommunication',
+  'industry-data': 'categoryIndustryData',
+  other: 'categoryOther',
+}
+
 let productRequestSequence = 0
+const AUTHORIZATION_TIMEOUT_MS = 60_000
 
 function nextProductRequestId(): string {
   productRequestSequence += 1
@@ -90,28 +129,35 @@ function text(record: Record<string, unknown>, key: string): string | undefined 
   return typeof value === 'string' && value.trim() !== '' ? value : undefined
 }
 
+function stringList(record: Record<string, unknown>, key: string): readonly string[] {
+  const value = record[key]
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
+}
+
 function items(value: unknown): readonly ProductItem[] {
   if (!Array.isArray(value)) return []
   return value.flatMap((entry, index) => {
     if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) return []
     const record = entry as Record<string, unknown>
     const id = text(record, 'id') ?? `${index}`
-    const label = [record.name, record.title, record.displayName]
+    const label = [record.displayName, record.name, record.title]
       .find((candidate): candidate is string => typeof candidate === 'string' && candidate.trim() !== '')
     if (label === undefined) return []
     const description = [record.description, record.summary]
       .find((candidate): candidate is string => typeof candidate === 'string' && candidate.trim() !== '')
     const metadata = Object.fromEntries(
-      ['author', 'category', 'version', 'status', 'scope', 'transport'].flatMap((key) => {
+      ['author', 'category', 'version', 'status', 'scope', 'transport', 'authMode', 'createdAt', 'updatedAt'].flatMap((key) => {
         const value = text(record, key)
         return value === undefined ? [] : [[key, value]]
       }),
     )
-    return [{ id, label, ...(description === undefined ? {} : { description }), ...metadata }]
+    return [{ id, label, ...(description === undefined ? {} : { description }), ...metadata,
+      ...(typeof record.managed === 'boolean' ? { managed: record.managed } : {}),
+      toolNames: stringList(record, 'toolNames'), readOnlyTools: stringList(record, 'readOnlyTools') }]
   })
 }
 
-function commandDetails(value: unknown): readonly CommandDetail[] {
+function commonTasks(value: unknown): readonly CommonTask[] {
   if (!Array.isArray(value)) return []
   return value.flatMap((entry) => {
     if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) return []
@@ -119,30 +165,29 @@ function commandDetails(value: unknown): readonly CommandDetail[] {
     const id = text(record, 'id')
     const name = text(record, 'name')
     const description = text(record, 'description')
-    const skillId = text(record, 'skillId')
-    return id === undefined || name === undefined || description === undefined || skillId === undefined
-      ? [] : [{ id, name, description, skillId }]
+    const prompt = text(record, 'prompt')
+    return id === undefined || name === undefined || description === undefined || prompt === undefined
+      ? [] : [{ id, name, description, prompt }]
   })
-}
-
-function enabledExpertKitIds(value: unknown): readonly string[] {
-  if (!Array.isArray(value) || value.some(id => typeof id !== 'string')) {
-    throw new Error('invalid expert kit enablement')
-  }
-  return value as string[]
 }
 
 function detail(value: unknown, readmeValue: unknown): ProductDetail | undefined {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
   const record = value as Record<string, unknown>
   const id = text(record, 'id')
-  const name = text(record, 'name')
+  const name = text(record, 'displayName') ?? text(record, 'name') ?? text(record, 'title')
+  if (id === undefined || name === undefined) return undefined
   const sha256 = text(record, 'sha256')
-  if (id === undefined || name === undefined || sha256 === undefined) return undefined
   const author = text(record, 'author')
   const version = text(record, 'version')
   const summary = text(record, 'summary')
   const category = text(record, 'category')
+  const status = text(record, 'status')
+  const scope = text(record, 'scope')
+  const transport = text(record, 'transport')
+  const authMode = text(record, 'authMode')
+  const createdAt = text(record, 'createdAt')
+  const updatedAt = text(record, 'updatedAt')
   const readmeRecord = typeof readmeValue === 'object' && readmeValue !== null && !Array.isArray(readmeValue)
     ? readmeValue as Record<string, unknown> : {}
   const sourceAvailable = typeof readmeRecord.readme === 'string'
@@ -152,39 +197,88 @@ function detail(value: unknown, readmeValue: unknown): ProductDetail | undefined
     ...(version === undefined ? {} : { version }),
     ...(summary === undefined ? {} : { summary }),
     ...(category === undefined ? {} : { category }),
-    sha256, commandDetails: commandDetails(record.commandDetails),
+    ...(sha256 === undefined ? {} : { sha256 }),
+    ...(status === undefined ? {} : { status }),
+    ...(scope === undefined ? {} : { scope }),
+    ...(transport === undefined ? {} : { transport }),
+    ...(authMode === undefined ? {} : { authMode }),
+    ...(typeof record.managed === 'boolean' ? { managed: record.managed } : {}),
+    toolNames: stringList(record, 'toolNames'), readOnlyTools: stringList(record, 'readOnlyTools'),
+    ...(createdAt === undefined ? {} : { createdAt }),
+    ...(updatedAt === undefined ? {} : { updatedAt }),
+    commonTasks: commonTasks(record.commonTasks),
     readme: text(readmeRecord, 'readme') ?? '', sourceAvailable,
   }
 }
 
 function localizedMetadata(value: string, t: (key: DeepSeekHarnessProductKey) => string): string {
   const keys: Record<string, DeepSeekHarnessProductKey> = {
-    ACTIVE: 'statusActive', ENABLED: 'statusEnabled', DISABLED: 'statusDisabled', PUBLISHED: 'statusPublished',
+    ACTIVE: 'statusActive', READY: 'statusReady', ENABLED: 'statusEnabled', DISABLED: 'statusDisabled',
+    PUBLISHED: 'statusPublished', 'NEEDS-CONFIGURATION': 'statusNeedsConfiguration', UNAVAILABLE: 'statusUnavailable',
     PERSONAL: 'scopePersonal', TEAM: 'scopeTeam', ORGANIZATION: 'scopeOrganization',
+    'STREAMABLE-HTTP': 'transportStreamableHttp', STDIO: 'transportStdio',
+    'EMPLOYEE-BEARER': 'authEmployeeBearer', 'ERP-COOKIE': 'authErpCookie', OAUTH: 'authOauth', NONE: 'authNone',
   }
-  const key = keys[value.toUpperCase()]
+  const key = CATEGORY_KEYS[value.toLocaleLowerCase()] ?? keys[value.toUpperCase()]
   return key === undefined ? value : t(key)
 }
 
 function itemMetadata(item: ProductItem, catalog: Catalog, t: (key: DeepSeekHarnessProductKey) => string): readonly string[] {
-  const values = catalog === 'connectors'
-    ? [item.status, item.scope, item.transport, item.version]
-    : catalog === 'knowledge'
-      ? [item.scope]
-      : [item.category, item.version === undefined ? undefined : `${t('versionPrefix')}${item.version}`, item.author]
+  if (catalog === 'connectors') {
+    const tools = item.toolNames.length === 0
+      ? t('connectorNoTools')
+      : t('connectorToolsCount').replace('{count}', String(item.toolNames.length))
+    const values = [item.status, item.authMode, tools]
+    return [...new Set(values.filter((value): value is string => value !== undefined)
+      .map(value => localizedMetadata(value, t)))]
+  }
+  const values = catalog === 'knowledge'
+    ? [item.scope, item.updatedAt === undefined ? undefined : `${t('updatedAtPrefix')}${formatDate(item.updatedAt)}`]
+    : [item.version === undefined ? undefined : `${t('versionPrefix')}${item.version}`, item.author]
   return [...new Set(values.filter((value): value is string => value !== undefined)
     .map(value => localizedMetadata(value, t)))]
 }
 
+function formatDate(value: string): string {
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(date)
+}
+
 function normalizedSearch(item: ProductItem): string {
-  return [item.label, item.description, item.author, item.category, item.version, item.status, item.scope, item.transport]
+  return [item.label, item.description, item.author, item.category, item.version, item.status, item.scope,
+    item.transport, item.authMode, ...item.toolNames]
     .filter((value): value is string => value !== undefined).join('\n').toLocaleLowerCase()
 }
 
+function classificationValue(item: ProductItem, catalog: Catalog): string | undefined {
+  return catalog === 'knowledge' ? item.scope : item.category
+}
+
 function groupLabel(item: ProductItem, catalog: Catalog, t: (key: DeepSeekHarnessProductKey) => string): string {
-  if (catalog === 'connectors') return item.category ?? t('otherConnectors')
+  if (catalog === 'connectors') {
+    return item.category === undefined ? t('otherConnectors') : localizedMetadata(item.category, t)
+  }
   if (catalog === 'knowledge') return item.scope === undefined ? t('otherKnowledge') : localizedMetadata(item.scope, t)
-  return ''
+  return item.category === undefined ? t('categoryOther') : localizedMetadata(item.category, t)
+}
+
+function localDetail(item: ProductItem): ProductDetail {
+  return {
+    id: item.id, name: item.label,
+    ...(item.description === undefined ? {} : { summary: item.description }),
+    ...(item.author === undefined ? {} : { author: item.author }),
+    ...(item.category === undefined ? {} : { category: item.category }),
+    ...(item.version === undefined ? {} : { version: item.version }),
+    ...(item.status === undefined ? {} : { status: item.status }),
+    ...(item.scope === undefined ? {} : { scope: item.scope }),
+    ...(item.transport === undefined ? {} : { transport: item.transport }),
+    ...(item.authMode === undefined ? {} : { authMode: item.authMode }),
+    ...(item.managed === undefined ? {} : { managed: item.managed }),
+    toolNames: item.toolNames, readOnlyTools: item.readOnlyTools,
+    ...(item.createdAt === undefined ? {} : { createdAt: item.createdAt }),
+    ...(item.updatedAt === undefined ? {} : { updatedAt: item.updatedAt }),
+    commonTasks: [], readme: '', sourceAvailable: false,
+  }
 }
 
 type CatalogSectionProps = PropsRuntime<'main'> & PropsLocale<typeof NS> & DeepSeekHarnessCatalogActions & {
@@ -203,14 +297,14 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
   const [authError, setAuthError] = useState(false)
   const [error, setError] = useState<string>()
   const [query, setQuery] = useState('')
-  const [kitFilter, setKitFilter] = useState<KitFilter>('all')
+  const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>('all')
+  const [categoryMenuOpen, setCategoryMenuOpen] = useState(false)
   const [selectedId, setSelectedId] = useState<string>()
   const [selected, setSelected] = useState<ProductDetail>()
   const [detailLoading, setDetailLoading] = useState(false)
   const [detailError, setDetailError] = useState(false)
   const [actionPending, setActionPending] = useState(false)
   const [actionError, setActionError] = useState(false)
-  const [enabledKitIds, setEnabledKitIds] = useState<ReadonlySet<string>>(new Set())
   const generation = useRef(0)
   const activeRequests = useRef(new Map<string, ProductApi>())
 
@@ -221,11 +315,24 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
     return generation.current
   }
 
-  const read = async (api: ProductApi, method: string, payload?: unknown): Promise<unknown> => {
+  const read = async (api: ProductApi, method: string, payload?: unknown, timeoutMs?: number): Promise<unknown> => {
     const requestId = nextProductRequestId()
     activeRequests.current.set(requestId, api)
-    try { return await api.invoke(method, payload, requestId) }
-    finally { activeRequests.current.delete(requestId) }
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try {
+      const request = api.invoke(method, payload, requestId)
+      if (timeoutMs === undefined) return await request
+      const timeout = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          try { api.cancel(requestId) }
+          finally { reject(new Error('authorization request timed out')) }
+        }, timeoutMs)
+      })
+      return await Promise.race([request, timeout])
+    } finally {
+      if (timer !== undefined) clearTimeout(timer)
+      activeRequests.current.delete(requestId)
+    }
   }
 
   const refresh = async (): Promise<void> => {
@@ -247,13 +354,9 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
         return
       }
       setAuthRequired(false)
-      const [catalogValue, enabledValue] = await Promise.all([
-        read(api, METHODS[catalog]),
-        catalog === 'expertKits' ? read(api, 'expertKits.enablement.list') : Promise.resolve([]),
-      ])
+      const catalogValue = await read(api, METHODS[catalog])
       if (currentGeneration !== generation.current) return
       setEntries(items(catalogValue))
-      setEnabledKitIds(new Set(enabledExpertKitIds(enabledValue)))
     } catch {
       if (currentGeneration !== generation.current) return
       const session = await api.getSession().catch(() => undefined)
@@ -276,7 +379,7 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
     setAuthPending(true)
     setAuthError(false)
     try {
-      await api.invoke('auth.ensureDingTalk')
+      await read(api, 'auth.ensureDingTalk', undefined, AUTHORIZATION_TIMEOUT_MS)
       await refresh()
     } catch {
       setAuthError(true)
@@ -287,7 +390,8 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
 
   useEffect(() => {
     setQuery('')
-    setKitFilter('all')
+    setCategoryFilter('all')
+    setCategoryMenuOpen(false)
     setSelectedId(undefined)
     setSelected(undefined)
     void refresh()
@@ -297,8 +401,18 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
   const filteredEntries = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase()
     return entries.filter(entry => (needle === '' || normalizedSearch(entry).includes(needle))
-      && (catalog !== 'expertKits' || kitFilter === 'all' || enabledKitIds.has(entry.id)))
-  }, [catalog, enabledKitIds, entries, kitFilter, query])
+      && (categoryFilter === 'all' || classificationValue(entry, catalog) === categoryFilter))
+  }, [catalog, categoryFilter, entries, query])
+
+  const categories = useMemo(() => {
+    return [...new Set(entries.map(entry => classificationValue(entry, catalog))
+      .filter((value): value is string => value !== undefined))]
+      .sort((left, right) => localizedMetadata(left, t).localeCompare(localizedMetadata(right, t)))
+  }, [catalog, entries])
+
+  useEffect(() => {
+    if (categoryFilter !== 'all' && !categories.includes(categoryFilter)) setCategoryFilter('all')
+  }, [categories, categoryFilter])
 
   const groupedEntries = useMemo(() => {
     const groups = new Map<string, ProductItem[]>()
@@ -308,7 +422,10 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
       group.push(entry)
       groups.set(label, group)
     }
-    return [...groups.entries()]
+    const values = [...groups.entries()]
+    return catalog === 'expertKits' || catalog === 'skills'
+      ? values.sort(([left], [right]) => left.localeCompare(right))
+      : values
   }, [catalog, filteredEntries])
 
   const closeDetail = (): void => {
@@ -330,7 +447,6 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
   }, [selectedId])
 
   const openDetail = async (id: string): Promise<void> => {
-    if (catalog !== 'expertKits' && catalog !== 'skills') return
     const api = productApi()
     if (api === undefined) return
     cancelReads()
@@ -340,6 +456,12 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
     setDetailError(false)
     setActionError(false)
     const currentGeneration = generation.current
+    if (catalog !== 'expertKits' && catalog !== 'skills') {
+      const entry = entries.find(candidate => candidate.id === id)
+      if (entry !== undefined) setSelected(localDetail(entry))
+      setDetailLoading(false)
+      return
+    }
     try {
       const prefix = catalog === 'expertKits' ? 'expertKits' : 'skills'
       const [metadata, readme] = await Promise.allSettled([
@@ -358,31 +480,13 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
     }
   }
 
-  const useProduct = async (product: ProductDetail, command?: CommandDetail): Promise<void> => {
+  const useProduct = async (product: ProductDetail, task?: CommonTask): Promise<void> => {
     setActionPending(true)
     setActionError(false)
     try {
       if (catalog === 'skills') await props.useSkill(product.id)
-      else if (command !== undefined) await props.useExpertKitCommand(command.skillId, command.description)
+      else if (catalog === 'expertKits') await props.startExpertKit(product.id, task?.prompt)
     } catch {
-      setActionError(true)
-    } finally {
-      setActionPending(false)
-    }
-  }
-
-  const setEnabled = async (id: string, enabled: boolean): Promise<void> => {
-    const previous = enabledKitIds
-    const next = new Set(previous)
-    if (enabled) next.add(id)
-    else next.delete(id)
-    setEnabledKitIds(next)
-    setActionPending(true)
-    setActionError(false)
-    try {
-      await props.setExpertKitEnabled(id, enabled)
-    } catch {
-      setEnabledKitIds(previous)
       setActionError(true)
     } finally {
       setActionPending(false)
@@ -390,11 +494,14 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
   }
 
   const Icon = ICONS[catalog]
-  const detailsAvailable = catalog === 'expertKits' || catalog === 'skills'
-  const filterTabs = [
-    { value: 'all' as const, label: t('all'), id: 'deepseek-harness-kits-all', panelId: 'deepseek-harness-catalog-results' },
-    { value: 'enabled' as const, label: t('enabled'), id: 'deepseek-harness-kits-enabled', panelId: 'deepseek-harness-catalog-results' },
-  ] as const
+  const showCatalogControls = loading || (!authRequired && error === undefined)
+  const categoryItems = [
+    { id: 'all', label: t('allCategories') },
+    ...categories.map(category => ({ id: category, label: localizedMetadata(category, t) })),
+  ]
+  const selectedCategoryLabel = categoryFilter === 'all'
+    ? t('allCategories')
+    : localizedMetadata(categoryFilter, t)
 
   return <section className={css.catalogPage} aria-label={t(labelKey)}>
     <div className={css.catalogScroll}>
@@ -403,34 +510,43 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
           <div><h1 className={css.catalogTitle}>{t(labelKey)}</h1>
             <p className={css.catalogDescription}>{t(DESCRIPTION_KEYS[catalog])}</p></div>
         </header>
-        <div className={css.catalogToolbar}>
+        {showCatalogControls && <div className={css.catalogToolbar}>
           <label className={css.searchField}>
             <IconSearchOutlineRegular size={16} />
             <span className={css.visuallyHidden}>{t('search')}</span>
             <input value={query} onChange={(event) => { setQuery(event.currentTarget.value) }}
               placeholder={t('searchPlaceholder')} type="search" />
           </label>
+          {categories.length > 0 && <Menu open={categoryMenuOpen} items={categoryItems}
+            selectedId={categoryFilter} portal align="end" compact className={css.categoryMenu}
+            listClassName={css.categoryMenuList}
+            onSelect={(id) => { setCategoryFilter(id); setCategoryMenuOpen(false) }}
+            onClose={() => { setCategoryMenuOpen(false) }}
+            anchor={<button className={css.categoryButton} type="button" aria-label={t('categoryFilter')}
+              aria-expanded={categoryMenuOpen} onClick={() => { setCategoryMenuOpen(value => !value) }}>
+              <span>{selectedCategoryLabel}</span><IconChevronDownOutlineRegular size={14} />
+            </button>} />}
           <Tooltip portal label={t('refresh')} side="bottom" delayMs={500}>
             <button className={css.iconButton} type="button" disabled={loading} aria-label={t('refresh')}
               onClick={() => { void refresh() }}><IconRefreshOutlineRegular size={16} /></button>
           </Tooltip>
-        </div>
-        {catalog === 'expertKits' && <SegmentedTabs items={filterTabs} value={kitFilter}
-          onChange={setKitFilter} label={t('kitFilter')} className={css.catalogTabs} />}
+        </div>}
         {!loading && error === undefined && !authRequired && <div className={css.resultSummary}>
           {t('itemCount').replace('{count}', String(filteredEntries.length))}
         </div>}
-        <div id="deepseek-harness-catalog-results" role={catalog === 'expertKits' ? 'tabpanel' : undefined}
-          aria-labelledby={catalog === 'expertKits'
-            ? kitFilter === 'all' ? 'deepseek-harness-kits-all' : 'deepseek-harness-kits-enabled'
-            : undefined}>
+        <div id="deepseek-harness-catalog-results">
           {loading && <p className={css.catalogStatus} role="status">{t('loading')}</p>}
-          {!loading && authRequired && <div className={css.authRequired} role="status">
-            <span>{t('authRequired')}</span>
-            <Button variant="primary" size="sm" disabled={authPending} onClick={() => { void signIn() }}>
+          {!loading && authRequired && <div className={css.authEmptyState} role="status" aria-live="polite">
+            <span className={css.authEmptyIcon} aria-hidden="true"><Icon size={22} /></span>
+            <div className={css.authEmptyCopy}>
+              <strong>{authPending ? t('authWaiting') : authError ? t('authFailedTitle') : t('authTitle')}</strong>
+              <span>{t('authRequired')}</span>
+              {authError && <span className={css.catalogError} role="alert">{t('signInFailed')}</span>}
+            </div>
+            <Button className={css.authAction} variant="primary" size="sm" disabled={authPending}
+              aria-busy={authPending} onClick={() => { void signIn() }}>
               {authPending ? t('signingIn') : t('signIn')}
             </Button>
-            {authError && <span className={css.catalogError} role="alert">{t('signInFailed')}</span>}
           </div>}
           {!loading && error !== undefined && <p className={css.catalogError} role="alert">{error}</p>}
           {!loading && error === undefined && !authRequired && (filteredEntries.length === 0
@@ -440,22 +556,14 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
               {group !== '' && <h2 className={css.groupTitle}>{group}<span>{groupItems.length}</span></h2>}
               <ul className={css.catalogList}>{groupItems.map(entry => <li className={css.catalogRow} key={entry.id}>
                 <span className={css.catalogArtwork} aria-hidden="true"><Icon size={20} /></span>
-                {detailsAvailable
-                  ? <button className={css.catalogItem} type="button" disabled={detailLoading}
-                    onClick={() => { void openDetail(entry.id) }}>
-                    <CatalogItemCopy entry={entry} catalog={catalog} t={t} />
-                    <IconChevronRightOutlineRegular size={16} />
-                  </button>
-                  : <div className={css.catalogItemStatic}><CatalogItemCopy entry={entry} catalog={catalog} t={t} /></div>}
-                {catalog === 'expertKits' && <div className={css.rowAction}>
-                  <Switch checked={enabledKitIds.has(entry.id)} disabled={actionPending}
-                    label={`${entry.label} ${t('enableInChat')}`}
-                    onChange={(enabled) => { void setEnabled(entry.id, enabled) }} />
-                </div>}
+                <button className={css.catalogItem} type="button" disabled={detailLoading}
+                  onClick={() => { void openDetail(entry.id) }}>
+                  <CatalogItemCopy entry={entry} catalog={catalog} t={t} />
+                  <IconChevronRightOutlineRegular size={16} />
+                </button>
               </li>)}</ul>
             </section>))}
         </div>
-        {actionError && selectedId === undefined && <p className={css.catalogError} role="alert">{t('enableFailed')}</p>}
       </div>
     </div>
     {selectedId !== undefined && <div className={css.drawerBackdrop} onMouseDown={(event) => {
@@ -473,9 +581,8 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
         {detailLoading && <p className={css.drawerStatus} role="status">{t('loading')}</p>}
         {!detailLoading && detailError && <p className={css.drawerStatusError} role="alert">{t('detailFailed')}</p>}
         {selected !== undefined && <CatalogDetail catalog={catalog} detail={selected}
-          actionPending={actionPending} actionError={actionError} enabled={enabledKitIds.has(selected.id)}
-          onEnabledChange={(enabled) => { void setEnabled(selected.id, enabled) }}
-          onUse={(command) => { void useProduct(selected, command) }} t={t} />}
+          actionPending={actionPending} actionError={actionError}
+          onUse={(task) => { void useProduct(selected, task) }} t={t} />}
       </aside>
     </div>}
   </section>
@@ -495,19 +602,20 @@ function CatalogItemCopy({ catalog, entry, t }: {
   </span>
 }
 
-function CatalogDetail({ actionError, actionPending, catalog, detail: product, enabled, onEnabledChange,
-  onUse, t }: {
+function CatalogDetail({ actionError, actionPending, catalog, detail: product, onUse, t }: {
   readonly catalog: Catalog
   readonly detail: ProductDetail
-  readonly enabled: boolean
-  readonly onEnabledChange: (enabled: boolean) => void
-  readonly onUse: (command?: CommandDetail) => void
+  readonly onUse: (task?: CommonTask) => void
   readonly actionPending: boolean
   readonly actionError: boolean
   readonly t: (key: DeepSeekHarnessProductKey) => string
 }): ReactNode {
   const skill = catalog === 'skills'
-  const Icon = skill ? IconSkillOutlineRegular : IconAgentPresetOutlineRegular
+  const expertKit = catalog === 'expertKits'
+  const connector = catalog === 'connectors'
+  const Icon = skill ? IconSkillOutlineRegular
+    : catalog === 'expertKits' ? IconAgentPresetOutlineRegular
+      : catalog === 'connectors' ? IconLinkOutlineRegular : IconDatabaseOutlineRegular
   const markdownLabels = useMemo(() => ({
     code: { copyLabel: t('copy'), copiedLabel: t('copied'), toolbarLabels: {
       codeLabel: t('code'), wrapLabel: t('wrap'), unwrapLabel: t('unwrap'),
@@ -521,7 +629,7 @@ function CatalogDetail({ actionError, actionPending, catalog, detail: product, e
           <div className={css.detailTitleLine}><h1>{product.name}</h1></div>
           <div className={css.detailMeta}>
             {product.version !== undefined && <span>{t('versionPrefix')}{product.version}</span>}
-            {product.category !== undefined && <span>{product.category}</span>}
+            {product.category !== undefined && <span>{localizedMetadata(product.category, t)}</span>}
             {product.author !== undefined && <span>{product.author}</span>}
           </div>
         </div>
@@ -530,13 +638,13 @@ function CatalogDetail({ actionError, actionPending, catalog, detail: product, e
         ? <Button variant="primary" size="sm" disabled={actionPending} onClick={() => { onUse() }}>
           {actionPending ? t('starting') : t('useSkill')}
         </Button>
-        : <div className={css.enablement}>
-          <div><strong>{t('enableInChat')}</strong><span>{t(enabled ? 'enabled' : 'disabled')}</span></div>
-          <Switch checked={enabled} disabled={actionPending} label={t('enableInChat')} onChange={onEnabledChange} />
-        </div>}
+        : expertKit
+          ? <Button variant="primary" size="sm" disabled={actionPending} onClick={() => { onUse() }}>
+            {actionPending ? t('starting') : t('startUsing')}
+          </Button>
+          : <span className={css.detailState}>{connector ? t('connectorDetails') : t('knowledgeDetails')}</span>}
     </header>
-    {actionPending && !skill && <p className={css.enablementHint} role="status">{t('saving')}</p>}
-    {actionError && <p className={css.catalogError} role="alert">{t(skill ? 'useFailed' : 'enableFailed')}</p>}
+    {actionError && <p className={css.catalogError} role="alert">{t('useFailed')}</p>}
     {product.summary !== undefined && <p className={css.detailSummary}>{product.summary}</p>}
     {skill
       ? <section className={css.sourcePanel} aria-label={t('skillSource')}>
@@ -544,27 +652,145 @@ function CatalogDetail({ actionError, actionPending, catalog, detail: product, e
         {!product.sourceAvailable ? <span>{t('sourceUnavailable')}</span>
           : product.readme === '' ? <span>{t('noGuide')}</span> : <pre>{product.readme}</pre>}
       </section>
-      : <>
-        <section className={css.detailSection}>
-          <h2>{t('quickCommands')} <span>{product.commandDetails.length}</span></h2>
-          {product.commandDetails.length === 0 ? <p className={css.catalogStatus}>{t('empty')}</p>
-            : <div className={css.commandList}>{product.commandDetails.map(command =>
-              <button className={css.commandRow} disabled={actionPending || !enabled} key={command.id}
-                title={enabled ? undefined : t('enableCommandHint')}
-                type="button" onClick={() => { onUse(command) }}>
-                <span className={css.commandCopy}><strong>/ {command.name}</strong><span>{command.description}</span></span>
-                <IconChevronRightOutlineRegular size={16} />
-              </button>)}</div>}
-        </section>
-        {!enabled && <p className={css.enablementHint}>{t('enableCommandHint')}</p>}
-        <section className={css.detailSection}>
-          <h2>{t('kitGuide')}</h2>
-          {!product.sourceAvailable ? <p className={css.catalogStatus}>{t('sourceUnavailable')}</p>
-            : product.readme === '' ? <p className={css.catalogStatus}>{t('noGuide')}</p>
-              : <div className={css.markdown}><MarkdownText text={product.readme} labels={markdownLabels} /></div>}
-        </section>
-      </>}
+      : expertKit
+        ? <>
+          <section className={css.detailSection}>
+            <h2>{t('commonTasks')} <span>{product.commonTasks.length}</span></h2>
+            {product.commonTasks.length === 0 ? <p className={css.catalogStatus}>{t('empty')}</p>
+              : <div className={css.commandList}>{product.commonTasks.map(task =>
+                <button className={css.commandRow} disabled={actionPending} key={task.id}
+                  type="button" onClick={() => { onUse(task) }}>
+                  <span className={css.commandCopy}><strong>{task.name}</strong><span>{task.description}</span></span>
+                  <IconChevronRightOutlineRegular size={16} />
+                </button>)}</div>}
+          </section>
+          <section className={css.detailSection}>
+            <h2>{t('kitGuide')}</h2>
+            {!product.sourceAvailable ? <p className={css.catalogStatus}>{t('sourceUnavailable')}</p>
+              : product.readme === '' ? <p className={css.catalogStatus}>{t('noGuide')}</p>
+                : <div className={css.markdown}><MarkdownText text={product.readme} labels={markdownLabels} /></div>}
+          </section>
+        </>
+        : connector
+          ? <ConnectorDetail product={product} t={t} />
+          : <KnowledgeDetail product={product} t={t} />}
   </article>
+}
+
+function ConnectorDetail({ product, t }: {
+  readonly product: ProductDetail
+  readonly t: (key: DeepSeekHarnessProductKey) => string
+}): ReactNode {
+  return <>
+    <section className={css.detailSection}>
+      <h2>{t('connectorConfiguration')}</h2>
+      <dl className={css.detailFacts}>
+        {product.status !== undefined && <Fact label={t('status')} value={localizedMetadata(product.status, t)} />}
+        {product.transport !== undefined && <Fact label={t('transport')} value={localizedMetadata(product.transport, t)} />}
+        {product.authMode !== undefined && <Fact label={t('authMode')} value={localizedMetadata(product.authMode, t)} />}
+        {product.scope !== undefined && <Fact label={t('scope')} value={localizedMetadata(product.scope, t)} />}
+      </dl>
+    </section>
+    <section className={css.detailSection}>
+      <h2>{t('connectorTools')} <span>{product.toolNames.length}</span></h2>
+      {product.toolNames.length === 0 ? <p className={css.catalogStatus}>{t('empty')}</p>
+        : <ul className={css.detailToolList}>{product.toolNames.map(tool =>
+          <li key={tool}><span>{tool}</span><span className={css.toolPermission}>
+            {product.readOnlyTools.includes(tool) ? t('readOnlyNoApproval') : t('writeApprovalRequired')}
+          </span></li>)}</ul>}
+    </section>
+  </>
+}
+
+function KnowledgeDetail({ product, t }: {
+  readonly product: ProductDetail
+  readonly t: (key: DeepSeekHarnessProductKey) => string
+}): ReactNode {
+  const [query, setQuery] = useState('')
+  const [results, setResults] = useState<readonly KnowledgeSearchResult[]>([])
+  const [searching, setSearching] = useState(false)
+  const [searchError, setSearchError] = useState(false)
+  const search = async (): Promise<void> => {
+    const value = query.trim()
+    const api = productApi()
+    if (value === '' || api === undefined || searching) return
+    setSearching(true)
+    setSearchError(false)
+    try {
+      const response = await api.invoke('knowledge.search', {
+        query: value, knowledgeBaseIds: [product.id], knowledgeBaseRefs: [], limit: 8,
+      })
+      setResults(searchResults(response))
+    } catch {
+      setResults([])
+      setSearchError(true)
+    } finally {
+      setSearching(false)
+    }
+  }
+  return <section className={css.detailSection}>
+    <h2>{t('knowledgeAccess')}</h2>
+    <dl className={css.detailFacts}>
+      {product.scope !== undefined && <Fact label={t('scope')} value={localizedMetadata(product.scope, t)} />}
+      {product.updatedAt !== undefined && <Fact label={t('updatedAt')} value={formatDate(product.updatedAt)} />}
+      {product.createdAt !== undefined && <Fact label={t('createdAt')} value={formatDate(product.createdAt)} />}
+    </dl>
+    <p className={css.detailHint}>{t('knowledgeSearchHint')}</p>
+    <div className={css.knowledgeSearch}>
+      <label className={css.searchField}>
+        <IconSearchOutlineRegular size={16} />
+        <span className={css.visuallyHidden}>{t('knowledgeSearch')}</span>
+        <input value={query} onChange={(event) => { setQuery(event.currentTarget.value) }}
+          onKeyDown={(event) => { if (event.key === 'Enter') void search() }}
+          placeholder={t('knowledgeSearchPlaceholder')} type="search" />
+      </label>
+      <Button variant="outline" size="sm" disabled={searching || query.trim() === ''} onClick={() => { void search() }}>
+        {searching ? t('searching') : t('search')}
+      </Button>
+    </div>
+    {searchError && <p className={css.catalogError} role="alert">{t('searchFailed')}</p>}
+    {results.length > 0 && <div className={css.knowledgeResults} aria-label={t('searchResults')}>
+      {results.map((result, index) => <article className={css.knowledgeResult} key={`${result.sourceId}-${String(index)}`}>
+        <strong>{result.filename ?? result.knowledgeBaseName ?? t('knowledge')}</strong>
+        {result.locator !== undefined && <span>{result.locator}</span>}
+        <p>{result.content}</p>
+      </article>)}
+    </div>}
+    {!searching && !searchError && query.trim() !== '' && results.length === 0
+      && <p className={css.catalogStatus}>{t('noSearchResults')}</p>}
+  </section>
+}
+
+type KnowledgeSearchResult = {
+  readonly sourceId?: string
+  readonly knowledgeBaseName?: string
+  readonly filename?: string
+  readonly locator?: string
+  readonly content?: string
+}
+
+function searchResults(value: unknown): readonly KnowledgeSearchResult[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((entry) => {
+    if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) return []
+    const record = entry as Record<string, unknown>
+    const content = text(record, 'content')
+    if (content === undefined) return []
+    const sourceId = text(record, 'sourceId')
+    const knowledgeBaseName = text(record, 'knowledgeBaseName')
+    const filename = text(record, 'filename')
+    const locator = text(record, 'locator')
+    return [{
+      ...(sourceId === undefined ? {} : { sourceId }),
+      ...(knowledgeBaseName === undefined ? {} : { knowledgeBaseName }),
+      ...(filename === undefined ? {} : { filename }),
+      ...(locator === undefined ? {} : { locator }), content,
+    }]
+  })
+}
+
+function Fact({ label, value }: { readonly label: string; readonly value: string }): ReactNode {
+  return <><dt>{label}</dt><dd>{value}</dd></>
 }
 
 /** Official main-slot panel for the Expert Kits directory. */

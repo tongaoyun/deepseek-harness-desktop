@@ -7,6 +7,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 import type {} from '@deepseek-ai/dsh-api-workspace-controller/client'
+import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
@@ -21,7 +22,9 @@ import {
 } from './DeepSeekHarnessCapabilitiesNavigation.tsx'
 import { DeepSeekHarnessSettingsMenu } from './DeepSeekHarnessSettingsMenu.tsx'
 
-export const inject = ['slots', 'locale', 'sessions', 'workspaces', 'uiWorkspace', 'conversation']
+export const inject = [
+  'slots', 'locale', 'sessions', 'workspaces', 'uiWorkspace', 'conversation', 'remote', 'remote.agentPresets',
+]
 
 const PANEL_COMPONENTS = {
   expertKits: ExpertKitsPanel,
@@ -61,16 +64,21 @@ export function apply(ctx: ClientContext): void {
     input.focus()
   }
   const actions = {
-    async setExpertKitEnabled(id: string, enabled: boolean): Promise<void> {
+    async startExpertKit(id: string, prompt?: string): Promise<void> {
       const api = (globalThis as { deepseekHarness?: { product?: { invoke(method: string, payload?: unknown): Promise<unknown> } } })
         .deepseekHarness?.product
       if (api === undefined) throw new Error('deepseek-harness product: product bridge is unavailable')
-      await api.invoke('expertKits.enablement.set', { id, enabled })
-    },
-    async useExpertKitCommand(skillId: string, description: string): Promise<void> {
+      const prepared = await api.invoke('expertKits.preset.prepare', { id })
+      if (typeof prepared !== 'object' || prepared === null || Array.isArray(prepared)
+        || typeof (prepared as Record<string, unknown>).presetId !== 'string') {
+        throw new Error('deepseek-harness product: invalid Expert Kit Preset response')
+      }
+      const presetId = (prepared as { readonly presetId: string }).presetId
       const workspace = await ensureWorkspace()
       const sessionId = await ctx.sessions.create({ workspaceId: workspace.workspaceId })
-      openDraft(sessionId, `/${skillId} ${description}`)
+      const selected = await ctx.remote.agentPresets.select(sessionId, presetId)
+      if (!selected.ok) throw new Error(`deepseek-harness product: ${selected.error.message}`)
+      openDraft(sessionId, prompt ?? '')
     },
     async useSkill(skillId: string): Promise<void> {
       const current = mainSessionId()

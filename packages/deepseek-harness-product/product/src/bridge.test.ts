@@ -26,57 +26,23 @@ describe('DeepSeekHarnessProductBridge', () => {
     expect(calls).toEqual([{ method: 'device-identity.get', payload: { scope: 'employee' } }])
   })
 
-  it('persists expert kit enablement per employee after the Host accepts the snapshot', async () => {
-    const enabled = new Map<string, Set<string>>()
-    const nativeInvoke = vi.fn((method: string, payloadValue: unknown): Promise<unknown> => {
-      const payload = payloadValue as { sql: string; params: string[] }
-      if (method === 'sqlite.query') {
-        return Promise.resolve([...(enabled.get(payload.params[0] ?? '') ?? [])].sort().map(kitId => ({ kitId })))
-      }
-      if (payload.sql.startsWith('INSERT')) {
-        const [employeeId, kitId] = payload.params
-        const values = enabled.get(employeeId) ?? new Set<string>()
-        values.add(kitId)
-        enabled.set(employeeId, values)
-      } else if (payload.sql.startsWith('DELETE')) {
-        enabled.get(payload.params[0] ?? '')?.delete(payload.params[1] ?? '')
-      }
-      return Promise.resolve({ rowsAffected: 1 })
+  it('prepares one immutable Expert Kit Preset without persisting global enablement', async () => {
+    const prepareExpertKit = vi.fn(() => Promise.resolve('deepseek-harness-expert-kit-fixture'))
+    const bridge = new DeepSeekHarnessProductBridge({
+      serverUrl: 'https://deepseek-harness.test', prepareExpertKit,
+      initialSession: { authenticated: true, employeeId: 'employee-1' },
     })
-    const sync = vi.fn((ids: readonly string[]) =>
-      Promise.resolve(ids.length === 0 ? 'standard' : 'deepseek-harness-enabled-fixture'))
-    const first = new DeepSeekHarnessProductBridge({ nativeInvoke, syncEnabledExpertKits: sync,
-      initialSession: { authenticated: true, employeeId: 'employee-1' } })
-    const second = new DeepSeekHarnessProductBridge({ nativeInvoke, syncEnabledExpertKits: sync,
-      initialSession: { authenticated: true, employeeId: 'employee-2' } })
 
-    await expect(first.invoke('expertKits.enablement.set', { id: 'order-expert', enabled: true }))
-      .resolves.toEqual({ enabledIds: ['order-expert'], presetId: 'deepseek-harness-enabled-fixture' })
-    await expect(first.invoke('expertKits.enablement.list')).resolves.toEqual(['order-expert'])
-    await expect(second.invoke('expertKits.enablement.list')).resolves.toEqual([])
-    expect(sync).toHaveBeenCalledWith(['order-expert'])
+    await expect(bridge.invoke('expertKits.preset.prepare', { id: 'order-expert' }))
+      .resolves.toEqual({ presetId: 'deepseek-harness-expert-kit-fixture' })
+    expect(prepareExpertKit).toHaveBeenCalledExactlyOnceWith('order-expert')
   })
 
-  it('restores the previous Host snapshot when expert kit persistence fails', async () => {
-    const sync = vi.fn((ids: readonly string[]) => Promise.resolve(ids.length === 0 ? 'standard' : 'next'))
-    const nativeInvoke = vi.fn((method: string, payloadValue: unknown): Promise<unknown> => {
-      const payload = payloadValue as { sql: string }
-      if (method === 'sqlite.query') return Promise.resolve([])
-      if (payload.sql.startsWith('INSERT')) return Promise.reject(new Error('disk full'))
-      return Promise.resolve({ rowsAffected: 0 })
+  it('requires an authenticated employee before preparing an Expert Kit Preset', async () => {
+    const bridge = new DeepSeekHarnessProductBridge({
+      serverUrl: 'https://deepseek-harness.test', prepareExpertKit: vi.fn(),
     })
-    const bridge = new DeepSeekHarnessProductBridge({ nativeInvoke, syncEnabledExpertKits: sync,
-      initialSession: { authenticated: true, employeeId: 'employee-1' } })
-
-    await expect(bridge.invoke('expertKits.enablement.set', { id: 'order-expert', enabled: true }))
-      .rejects.toThrow('disk full')
-    expect(sync.mock.calls).toEqual([[['order-expert']], [[]]])
-  })
-
-  it('requires an authenticated employee for expert kit enablement', async () => {
-    const bridge = new DeepSeekHarnessProductBridge({ nativeInvoke: vi.fn() })
-    await expect(bridge.invoke('expertKits.enablement.list')).rejects.toThrow('authenticated employee')
-    await expect(bridge.invoke('expertKits.enablement.set', { id: 'order-expert', enabled: true }))
+    await expect(bridge.invoke('expertKits.preset.prepare', { id: 'order-expert' }))
       .rejects.toThrow('authenticated employee')
   })
 

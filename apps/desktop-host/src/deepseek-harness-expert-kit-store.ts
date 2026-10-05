@@ -5,9 +5,9 @@ import type { Dirent } from 'node:fs'
 import { mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import { resolve, sep } from 'node:path'
 
-const SNAPSHOT_SCHEMA = 'deepseek-harness.expert-kit-preset.v2'
+const SNAPSHOT_SCHEMA = 'deepseek-harness.expert-kit-preset.v3'
 const MAX_SNAPSHOT_BYTES = 1024 * 1024
-const PRESET_ID = /^deepseek-harness-enabled-[0-9a-f]{12}$/u
+const PRESET_ID = /^deepseek-harness-expert-kit-[0-9a-f]{12}$/u
 const PRODUCT_ID = /^[a-z][a-z0-9-]{2,63}$/u
 const SHA256 = /^[a-fA-F0-9]{64}$/u
 
@@ -40,7 +40,7 @@ export interface ExpertKitConnectorSnapshotEntry {
 export interface ExpertKitPresetSnapshot {
   readonly schema: typeof SNAPSHOT_SCHEMA
   readonly id: string
-  readonly kits: readonly ExpertKitSnapshotEntry[]
+  readonly kit: ExpertKitSnapshotEntry
   readonly connectors: readonly ExpertKitConnectorSnapshotEntry[]
 }
 
@@ -50,20 +50,19 @@ export interface ExpertKitSnapshotReadResult {
   readonly diagnostics: readonly string[]
 }
 
-/** Stable Preset identity for a sorted set of Expert Kit artifact generations. */
-export function enabledExpertKitPresetId(
-  kits: readonly Pick<ExpertKitSnapshotEntry, 'id' | 'sha256'>[],
+/** Stable Preset identity for one Expert Kit artifact generation. */
+export function expertKitPresetId(
+  kit: Pick<ExpertKitSnapshotEntry, 'id' | 'sha256'>,
   connectors: readonly ExpertKitConnectorSnapshotEntry[],
 ): string {
-  const kitIdentity = [...kits].sort((left, right) => left.id.localeCompare(right.id))
-    .map(kit => `${kit.id}:${kit.sha256.toLowerCase()}`)
+  const kitIdentity = `${kit.id}:${kit.sha256.toLowerCase()}`
   const connectorIdentity = [...connectors].sort((left, right) => left.id.localeCompare(right.id))
     .map(connector => [
       connector.id, connector.name, connector.transport, connector.url ?? '', connector.command ?? '',
       connector.arguments.join('\0'), connector.toolNames.join('\0'), connector.readOnlyTools.join('\0'),
     ].join('\u0001'))
-  const identity = [...kitIdentity, '', ...connectorIdentity].join('\n')
-  return `deepseek-harness-enabled-${createHash('sha256').update(identity).digest('hex').slice(0, 12)}`
+  const identity = [kitIdentity, '', ...connectorIdentity].join('\n')
+  return `deepseek-harness-expert-kit-${createHash('sha256').update(identity).digest('hex').slice(0, 12)}`
 }
 
 /** Resolve the immutable content-addressed directory for one Expert Kit generation. */
@@ -196,11 +195,7 @@ function validateSnapshot(value: unknown): ExpertKitPresetSnapshot {
   if (record.schema !== SNAPSHOT_SCHEMA) throw new Error('unsupported Expert Kit Preset snapshot schema')
   const id = stringField(record, 'id')
   if (!PRESET_ID.test(id)) throw new Error(`invalid Expert Kit Preset id ${id}`)
-  if (!Array.isArray(record.kits) || record.kits.length === 0 || record.kits.length > 256) {
-    throw new Error('Expert Kit Preset snapshot requires between 1 and 256 kits')
-  }
-  const kits = record.kits.map(expertKitEntry)
-  if (new Set(kits.map(kit => kit.id)).size !== kits.length) throw new Error('duplicate Expert Kit snapshot id')
+  const kit = expertKitEntry(record.kit)
   if (!Array.isArray(record.connectors) || record.connectors.length > 256) {
     throw new Error('Expert Kit Preset snapshot has invalid connectors')
   }
@@ -208,8 +203,8 @@ function validateSnapshot(value: unknown): ExpertKitPresetSnapshot {
   if (new Set(connectors.map(connector => connector.id)).size !== connectors.length) {
     throw new Error('duplicate Expert Kit connector snapshot id')
   }
-  if (enabledExpertKitPresetId(kits, connectors) !== id) throw new Error('Expert Kit Preset snapshot identity mismatch')
-  return { schema: SNAPSHOT_SCHEMA, id, kits, connectors }
+  if (expertKitPresetId(kit, connectors) !== id) throw new Error('Expert Kit Preset snapshot identity mismatch')
+  return { schema: SNAPSHOT_SCHEMA, id, kit, connectors }
 }
 
 function expertKitEntry(value: unknown): ExpertKitSnapshotEntry {
