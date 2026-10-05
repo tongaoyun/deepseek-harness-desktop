@@ -48,7 +48,7 @@ type DesktopHostEvent = ReadyEvent | FatalEvent | PlatformSessionEvent | Product
   readonly scheduledTasks: boolean
   readonly error?: string
 } | {
-  readonly type: 'expert-kits-sync'
+  readonly type: 'expert-kit-prepare'
   readonly requestId: number
   readonly presetId: string
   readonly error?: string
@@ -119,7 +119,7 @@ function isDesktopHostEvent(message: unknown): message is DesktopHostEvent {
     case 'quit-inspection':
       return Number.isSafeInteger(candidate.requestId) && typeof candidate.activeTasks === 'boolean'
         && typeof candidate.scheduledTasks === 'boolean' && (candidate.error === undefined || typeof candidate.error === 'string')
-    case 'expert-kits-sync':
+    case 'expert-kit-prepare':
       return Number.isSafeInteger(candidate.requestId) && typeof candidate.presetId === 'string'
         && (candidate.error === undefined || typeof candidate.error === 'string')
     default:
@@ -316,15 +316,14 @@ export class DesktopHostProcess {
     return { activeTasks: response.activeTasks, scheduledTasks: response.scheduledTasks }
   }
 
-  /** Switch future Sessions to the Host snapshot for the enabled expert kits. */
-  async syncExpertKits(ids: readonly string[]): Promise<string> {
-    if (ids.length > 256 || new Set(ids).size !== ids.length
-      || ids.some(id => !/^[a-z][a-z0-9-]{2,63}$/.test(id))) {
-      throw new Error('deepseek-harness product: invalid enabled expert kit ids')
+  /** Prepare the immutable Host Preset for one Expert Kit Session. */
+  async prepareExpertKit(id: string): Promise<string> {
+    if (!/^[a-z][a-z0-9-]{2,63}$/.test(id)) {
+      throw new Error('deepseek-harness product: invalid expert kit id')
     }
-    const response = await this.control({ type: 'expert-kits-sync', ids: [...ids] }, 30_000,
-      'deepseek-harness product: expert kit synchronization timed out')
-    if (response.type !== 'expert-kits-sync') {
+    const response = await this.control({ type: 'expert-kit-prepare', id }, 30_000,
+      'deepseek-harness product: expert kit preparation timed out')
+    if (response.type !== 'expert-kit-prepare') {
       throw new Error('deepseek-harness product: Host answered with a different control response')
     }
     return response.presetId
@@ -333,7 +332,7 @@ export class DesktopHostProcess {
   private async control(
     request: { readonly type: 'update-tasks'; readonly action: 'inspect' | 'lock' | 'unlock' }
       | { readonly type: 'quit-inspection' }
-      | { readonly type: 'expert-kits-sync'; readonly ids: readonly string[] },
+      | { readonly type: 'expert-kit-prepare'; readonly id: string },
     deadlineMs: number, deadlineMessage: string,
   ): Promise<DesktopHostControlResponse> {
     const child = this.child

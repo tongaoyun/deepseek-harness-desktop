@@ -13,7 +13,7 @@ import { createPluginProfile } from '../src/project-manager.ts'
 import type { DesktopRuntimeDescriptor } from '../src/runtime-tree.ts'
 
 const SMOKE_CATALOG_METHODS: ReadonlySet<ProductRuntimeMethod> = new Set([
-  'skills.list', 'expertKits.list', 'connectors.list', 'expertKits.enablement.list',
+  'skills.list', 'expertKits.list', 'connectors.list',
 ])
 
 /** Supply empty product catalogs while verifying the packaged Host without employee credentials. */

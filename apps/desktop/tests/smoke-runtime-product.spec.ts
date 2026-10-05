@@ -7,7 +7,6 @@ describe('packaged runtime smoke product bridge', () => {
     'skills.list',
     'expertKits.list',
     'connectors.list',
-    'expertKits.enablement.list',
   ] satisfies ProductRuntimeMethod[])('provides an empty %s catalog without employee credentials', async (method) => {
     await expect(invokeSmokeProduct(method)).resolves.toEqual([])
   })

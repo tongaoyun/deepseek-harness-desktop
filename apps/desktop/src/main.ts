@@ -478,10 +478,10 @@ async function main(): Promise<void> {
     sessionToken,
     initialSession: storedDeepSeekHarnessSession?.session,
     nativeInvoke: (method, payload) => nativeSidecar.invoke(method, payload),
-    syncEnabledExpertKits: async (ids) => {
+    prepareExpertKit: async (id) => {
       const host = backend.host
       if (host === undefined) throw new Error('deepseek-harness product: Host is unavailable')
-      return host.syncExpertKits(ids)
+      return host.prepareExpertKit(id)
     },
   }
   const productBridge = new DeepSeekHarnessProductBridge(productBridgeOptions)
@@ -611,7 +611,7 @@ async function main(): Promise<void> {
       },
       updateTasks: (action: 'inspect' | 'lock' | 'unlock') => host.updateTasks(action),
       inspectQuit: () => host.inspectQuit(),
-      syncExpertKits: (ids: readonly string[]) => host.syncExpertKits(ids),
+      prepareExpertKit: (id: string) => host.prepareExpertKit(id),
     }
   }, (state) => {
     if (state.phase === 'error') reportFatal(state.failure, 'host')

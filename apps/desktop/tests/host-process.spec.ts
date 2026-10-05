@@ -41,9 +41,9 @@ process.on('message', message => {
     process.send({ type: 'quit-inspection', requestId: message.requestId, activeTasks: false, scheduledTasks: message.requestId % 2 === 1 })
     return
   }
-  if (message.type === 'expert-kits-sync') {
-    process.send({ type: 'expert-kits-sync', requestId: message.requestId,
-      presetId: message.ids.length === 0 ? 'standard' : 'deepseek-harness-enabled-' + message.ids.join('-') })
+  if (message.type === 'expert-kit-prepare') {
+    process.send({ type: 'expert-kit-prepare', requestId: message.requestId,
+      presetId: 'deepseek-harness-expert-kit-' + message.id })
     return
   }
   if (message.type !== 'shutdown') return
@@ -180,14 +180,13 @@ describe('desktop host process', () => {
     expect(await host.inspectQuit()).toEqual({ activeTasks: false, scheduledTasks: false })
   }, 15_000)
 
-  it('correlates enabled expert kit snapshots and validates ids before IPC', async () => {
+  it('correlates Expert Kit Preset preparation and validates ids before IPC', async () => {
     const host = hostProcess(projectWithHost())
-    await expect(host.syncExpertKits(['order-expert'])).rejects.toThrow('Host is unavailable')
+    await expect(host.prepareExpertKit('order-expert')).rejects.toThrow('Host is unavailable')
     await host.start()
-    await expect(host.syncExpertKits(['order-expert', 'fullstack-expert']))
-      .resolves.toBe('deepseek-harness-enabled-order-expert-fullstack-expert')
-    await expect(host.syncExpertKits(['order-expert', 'order-expert'])).rejects.toThrow('invalid enabled expert kit ids')
-    await expect(host.syncExpertKits(['../invalid'])).rejects.toThrow('invalid enabled expert kit ids')
+    await expect(host.prepareExpertKit('order-expert'))
+      .resolves.toBe('deepseek-harness-expert-kit-order-expert')
+    await expect(host.prepareExpertKit('../invalid')).rejects.toThrow('invalid expert kit id')
   })
 
   it.each([
