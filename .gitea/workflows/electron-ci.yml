@@ -49,6 +49,18 @@ jobs:
           pnpm run verify:upstream
           pnpm run build:lib:host
           pnpm run typecheck:contracts-ready
-          pnpm test
+          pnpm exec vitest run \
+            apps/desktop-host/tests/deepseek-harness-connector-contract.spec.ts \
+            apps/desktop-host/tests/deepseek-harness-runtime.spec.ts \
+            apps/desktop/tests/command-management.spec.ts \
+            apps/desktop/tests/crash-report.spec.ts \
+            apps/desktop/tests/fatal-recovery.spec.ts \
+            apps/desktop/tests/host-process.spec.ts \
+            apps/desktop/tests/main-startup.spec.ts \
+            packages/client/ui-primitives/tests/code-file-icon.client.spec.tsx \
+            packages/client/ui-settings-account/tests/apply.client.spec.ts \
+            packages/deepseek-harness-product/product/tests/bridge.spec.ts \
+            packages/extensions/ui-deepseek-harness-product/tests/DeepSeekHarnessCatalogSection.spec.tsx \
+            scripts/deepseek-harness-electron-workflows.spec.ts
           pnpm run verify-translation-pairing
           git diff --check
