@@ -71,7 +71,11 @@ export class AgentPresetRegistry extends TypertRemoteService {
   }
 
   /** Default preset for a subsequently created session. */
-  get defaultId(): string { return this.config.selectedDefault.get() ?? this.config.default }
+  get defaultId(): string {
+    const selected = this.config.selectedDefault.get()
+    if (selected === undefined) return this.config.default
+    return this.definitions.get(selected)?.config.defaultable === false ? this.config.default : selected
+  }
 
   /** Register and eagerly load a definition; activation failure remains visible in the roster.
    * @param definition Parsed configuration supplied by the declaring plugin.
@@ -158,6 +162,8 @@ export class AgentPresetRegistry extends TypertRemoteService {
         ...(record.config.name === undefined ? {} : { name: record.config.name }),
         ...(record.config.description === undefined ? {} : { description: record.config.description }),
         ...(record.config.order === undefined ? {} : { order: record.config.order }),
+        selectable: record.config.selectable !== false,
+        defaultable: record.config.defaultable !== false,
         ...(broken === undefined ? {} : { broken }),
       }
     }))
@@ -170,7 +176,12 @@ export class AgentPresetRegistry extends TypertRemoteService {
   @Remote('list')
   async remoteExportList(): Promise<AgentPresetRoster> {
     const defaultId = this.defaultId
-    return { presets: (await this.list()).map(row => ({ ...row, isDefault: row.id === defaultId })) }
+    return { presets: (await this.list()).map(row => ({
+      ...row,
+      selectable: row.selectable !== false,
+      defaultable: row.defaultable !== false,
+      isDefault: row.id === defaultId,
+    })) }
   }
 
   /** Resolve an identity without starting an Agent.

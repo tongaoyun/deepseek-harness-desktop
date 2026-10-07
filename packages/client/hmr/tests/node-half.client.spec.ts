@@ -283,21 +283,28 @@ it('broadcasts the desired graph without waiting for Host activation or cleanup'
   const fiber = ctx.plugin({ inject, Config, apply }, { pollIntervalMs: POLL_MS })
   await fiber.await()
   const route = routes[0]!
-  const connect = async () => {
+  const connect = async (origin?: string) => {
     const lines: string[] = []
     const response = Object.assign(new EventEmitter(), {
       writeHead: vi.fn(), write: (line: string) => { lines.push(line) },
       destroy: vi.fn(), end: vi.fn(),
     })
-    await route.handler({ method: 'GET' } as IncomingMessage, response as unknown as ServerResponse)
+    await route.handler({ method: 'GET', headers: origin === undefined ? {} : { origin } } as IncomingMessage,
+      response as unknown as ServerResponse)
     return { lines, response }
   }
   try {
-    const first = await connect()
+    const first = await connect('dsh-app://app')
     expect(first.lines).toHaveLength(2)
+    expect(first.response.writeHead).toHaveBeenCalledWith(200, expect.objectContaining({
+      'access-control-allow-origin': 'dsh-app://app', vary: 'origin',
+    }))
     const frame = JSON.parse(first.lines[1]!.slice(6)) as { graph: WebBootGraph }
     expect(frame.graph.entries.map(row => row.id)).toEqual(['a'])
     const second = await connect()
+    expect(second.response.writeHead).toHaveBeenCalledWith(200, expect.not.objectContaining({
+      'access-control-allow-origin': expect.anything(),
+    }))
     expect(second.lines[1]).toBe(first.lines[1])
     expect(first.lines).toHaveLength(2)
     release()
@@ -333,6 +340,28 @@ it('broadcasts the desired graph without waiting for Host activation or cleanup'
   } finally {
     release()
     cleaned()
+    await fiber.dispose()
+    await ctx.fiber.dispose()
+  }
+})
+
+it('does not grant HMR event access to an unrelated web origin', async () => {
+  const ctx = new Context()
+  const routes: WebRoute[] = []
+  ctx.provide('clientModules', fakeClientModuleHost(new Map()))
+  ctx.provide('webServer', fakeHttpServer(routes))
+  const fiber = ctx.plugin({ inject, Config, apply }, { pollIntervalMs: POLL_MS })
+  await fiber.await()
+  const response = Object.assign(new EventEmitter(), {
+    writeHead: vi.fn(), write: vi.fn(), destroy: vi.fn(), end: vi.fn(),
+  })
+  try {
+    await routes[0]!.handler({ method: 'GET', headers: { origin: 'https://unrelated.example' } } as IncomingMessage,
+      response as unknown as ServerResponse)
+    expect(response.writeHead).toHaveBeenCalledWith(200, expect.not.objectContaining({
+      'access-control-allow-origin': expect.anything(),
+    }))
+  } finally {
     await fiber.dispose()
     await ctx.fiber.dispose()
   }

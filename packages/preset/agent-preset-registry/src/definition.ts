@@ -7,6 +7,10 @@ export interface PresetDefinition {
   readonly name?: string
   readonly description?: string
   readonly order?: number
+  /** Whether new-session pickers offer this definition. Historical snapshots remain resolvable when false. */
+  readonly selectable?: boolean
+  /** Whether Settings may persist this definition as the default for future Sessions. */
+  readonly defaultable?: boolean
   readonly plugins: readonly (Omit<EntryOptions, 'id' | 'disabled'> & { id?: string; disabled?: EntryOptions['disabled'] | JsExpr })[]
 }
 

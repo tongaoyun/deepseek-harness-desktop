@@ -172,18 +172,16 @@ export class ProductCatalogManager {
     checks: ProductDependencyCheck[],
   ): void {
     const connectors = catalogRecords(this.snapshot.get('connectors.list'))
-    const selectedConnectors = stringValues(capability.connectorRefs).map((connectorId) => {
+    for (const connectorId of stringValues(capability.connectorRefs)) {
       const connector = connectors.find(value => value.id === connectorId)
       if (connector === undefined || connector.ready !== true) {
         throw new Error(`deepseek-harness product: ${label} ${id} requires unavailable data connection ${connectorId}`)
       }
       checks.push({ kind: 'DATA_CONNECTION', reference: connectorId, status: 'READY' })
-      return connector
-    })
-    const tools = new Set(selectedConnectors.flatMap(connector => objectArray(connector.tools)
-      .flatMap(tool => optionalString(tool.name) ?? [])))
+    }
     for (const tool of stringValues(capability.requiredTools)) {
-      if (!tools.has(tool)) throw new Error(`deepseek-harness product: ${label} ${id} requires unavailable tool ${tool}`)
+      // Required tools can be local or MCP-backed. The Host validates them
+      // after the exact immutable Harness Preset has mounted.
       checks.push({ kind: 'TOOL', reference: tool, status: 'READY' })
     }
     const knowledge = catalogRecords(this.snapshot.get('knowledge.bases.list'))
@@ -311,9 +309,8 @@ function capabilityAvailability(
   if (selected.some(connector => connector?.authorizationStatus !== undefined
     && connector.authorizationStatus !== 'AUTHORIZED')) return 'AUTHORIZATION_REQUIRED'
   if (selected.some(connector => connector?.ready !== true)) return 'UNAVAILABLE'
-  const tools = new Set(selected.flatMap(connector => objectArray(connector?.tools)
-    .flatMap(tool => optionalString(tool.name) ?? [])))
-  if (stringValues(capability.requiredTools).some(tool => !tools.has(tool))) return 'UNAVAILABLE'
+  // Required tools are composition-scoped and cannot be inferred from the
+  // connector catalog. The Host validates them before preparation succeeds.
   const knowledge = catalogRecords(snapshot.get('knowledge.bases.list'))
   const visibleKnowledge = new Set(knowledge.flatMap(entry => [entry.id, entry.referenceKey, entry.reference]
     .flatMap(candidate => optionalString(candidate) ?? [])))

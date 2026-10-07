@@ -84,6 +84,27 @@ describe('declarative preset revisions', () => {
     expect(await ctx.agentPresets.resolve()).toEqual({ id: 'standard' })
   })
 
+  it('keeps historical presets resolvable without offering or defaulting to them', async () => {
+    const ctx = await harness({ live: true })
+    contexts.push(ctx)
+    await declare(ctx, contribution('standard'))
+    await declare(ctx, {
+      ...contribution('historical'),
+      selectable: false,
+      defaultable: false,
+    })
+    await liveRegistries.get(ctx)!.update({ selectedDefault: 'historical' })
+
+    expect(ctx.agentPresets.defaultId).toBe('standard')
+    const roster = await ctx.agentPresets.remoteExportList()
+    expect(roster.presets).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'standard', selectable: true, defaultable: true, isDefault: true }),
+      expect.objectContaining({ id: 'historical', selectable: false, defaultable: false, isDefault: false }),
+    ]))
+    await using historical = await ctx.agentPresets.acquireScope('historical')
+    expect(ctx.tools.schemas(historical.key).map(tool => tool.name)).toEqual(['historical'])
+  })
+
   it('rebinds a blank scope and preserves a child inheriting its former revision', async () => {
     const ctx = await setup()
     await declare(ctx, contribution('standard'))

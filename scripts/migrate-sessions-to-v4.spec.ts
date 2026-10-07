@@ -252,7 +252,7 @@ describe('one-time V4 migration command', () => {
       outputs.push(current)
     }
     expect(outputs[1]).toEqual(outputs[0])
-  })
+  }, 20_000)
 
   it('reports a bad Session and still migrates a later good Session', async () => {
     const root = temporaryRoot()

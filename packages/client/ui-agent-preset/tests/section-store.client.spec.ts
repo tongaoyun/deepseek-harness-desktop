@@ -11,6 +11,18 @@ function fixture() {
 }
 
 describe('the preset roster', () => {
+  it('does not show historical snapshots in the new-session management roster', async () => {
+    const { controller, remote, state } = fixture()
+    remote.agentPresets.list.mockResolvedValueOnce({ ok: true, value: { presets: [
+      { id: 'standard', isDefault: true, selectable: true, defaultable: true },
+      { id: 'historical', isDefault: false, selectable: false, defaultable: false },
+    ] } } as never)
+
+    await controller.load()
+
+    expect(state().rows.map(row => row.id)).toEqual(['standard'])
+  })
+
   it('reads the roster once for simultaneous loads and surfaces failed reads', async () => {
     const { controller, remote, state } = fixture()
     await Promise.all([controller.load(), controller.load()])

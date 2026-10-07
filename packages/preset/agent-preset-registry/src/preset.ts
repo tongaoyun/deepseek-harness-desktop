@@ -6,6 +6,8 @@ export interface AgentPreset {
   readonly name?: string
   readonly description?: string
   readonly order?: number
+  readonly selectable?: boolean
+  readonly defaultable?: boolean
   readonly broken?: string
 }
 

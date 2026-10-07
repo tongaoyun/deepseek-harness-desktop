@@ -557,9 +557,6 @@ describe('DeepSeekHarnessProductBridge', () => {
 
   it.each([
     ['data connection', { connectorRefs: ['missing-connector'] }, {}, 'requires unavailable data connection'],
-    ['tool', { connectorRefs: ['erp'], requiredTools: ['missing-tool'] }, {
-      '/api/v1/connectors': [{ id: 'erp', ready: true, tools: [{ name: 'orders.get' }] }],
-    }, 'requires unavailable tool'],
     ['knowledge base', { knowledgeBaseRefs: ['organization:missing'] }, {}, 'requires unavailable knowledge'],
   ] as const)('blocks a standalone Skill with an unavailable %s dependency', async (_label, overrides, extra, message) => {
     const prepareSkill = vi.fn(() => Promise.resolve('must-not-run'))
@@ -580,9 +577,6 @@ describe('DeepSeekHarnessProductBridge', () => {
     ['desktop version', { minimumDesktopVersion: '9.0.0' }, {}, 'requires desktop'],
     ['Skill', { skillIds: ['missing-skill'] }, {}, 'requires unavailable Skill'],
     ['data connection', { connectorRefs: ['missing-connector'] }, {}, 'requires unavailable data connection'],
-    ['tool', { connectorRefs: ['erp'], requiredTools: ['missing-tool'] }, {
-      '/api/v1/connectors': [{ id: 'erp', ready: true, tools: [{ name: 'orders.get' }] }],
-    }, 'requires unavailable tool'],
     ['knowledge base', { knowledgeBaseRefs: ['organization:missing'] }, {}, 'requires unavailable knowledge'],
   ] as const)('blocks an Expert Kit with an unavailable %s dependency', async (_label, overrides, extra, message) => {
     const prepareExpertKit = vi.fn(() => Promise.resolve('must-not-run'))

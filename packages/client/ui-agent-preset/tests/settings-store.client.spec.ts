@@ -14,7 +14,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { createSnapshotStore, type ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import {
   AGENT_PRESET_SETTINGS_NS, AgentPresetSettingsController,
-  writeDefaultPreset,
+  presetOptions, writeDefaultPreset,
 } from '../src/client/settings-store.ts'
 
 /** The roster store over a scripted context. */
@@ -85,6 +85,13 @@ function fakeApi(
 }
 
 describe('the agent-preset roster store', () => {
+  it('omits historical snapshots from new-session options', () => {
+    expect(presetOptions([
+      { id: 'standard', selectable: true },
+      { id: 'historical', selectable: false },
+    ], true)).toEqual([{ id: 'standard' }])
+  })
+
   it('derives the display options from one roster call', async () => {
     const controller = derivedController(fakeApi([
       { id: 'standard', isDefault: true },

@@ -8,7 +8,7 @@
  * a development rebuild watcher also supplies bundle changes.
  */
 import { statSync } from 'node:fs'
-import type { ServerResponse } from 'node:http'
+import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 // Type imports carry the clientModules/webServer Context merges.
@@ -25,6 +25,8 @@ export const name = 'client-hmr'
 
 /** Required services: the client graph and Web route registry. */
 export const inject = ['clientModules', 'webServer']
+
+const DESKTOP_APP_ORIGIN = 'dsh-app://app'
 
 /** Plugin config, validated by the same-named schemastery schema. */
 export interface Config {
@@ -163,12 +165,17 @@ export function apply(ctx: Context, config: Config): void {
     for (const res of connections) res.write(line)
   }
 
-  const connect = (res: ServerResponse): void => {
-    res.writeHead(200, {
+  const connect = (req: IncomingMessage, res: ServerResponse): void => {
+    const headers: Record<string, string> = {
       'content-type': 'text/event-stream',
       'cache-control': 'no-cache',
       'connection': 'keep-alive',
-    })
+    }
+    if (req.headers.origin === DESKTOP_APP_ORIGIN) {
+      headers['access-control-allow-origin'] = DESKTOP_APP_ORIGIN
+      headers.vary = 'origin'
+    }
+    res.writeHead(200, headers)
     // Comment line on open so clients/proxies see a live channel even when
     // no rebuild ever happens; EventSource frame parsing skips it naturally.
     res.write(': connected\n\n')
@@ -189,7 +196,7 @@ export function apply(ctx: Context, config: Config): void {
           res.end()
           return
         }
-        connect(res)
+        connect(req, res)
       },
     })
     const unsubscribeGraph = ctx.clientModules.onGraphChanged(publishGraph)

@@ -25,7 +25,11 @@ export function apply(ctx: Context): void {
   }
 
   ctx.effect(() => {
-    const source = new EventSource(EVENTS_ROUTE)
+    const transport = globalThis as { __DSH_TRANSPORT__?: { streamBaseUrl?: string } }
+    const streamBaseUrl = transport.__DSH_TRANSPORT__?.streamBaseUrl
+    const source = new EventSource(streamBaseUrl === undefined
+      ? EVENTS_ROUTE
+      : new URL(EVENTS_ROUTE, streamBaseUrl).href)
     source.addEventListener('message', (event: MessageEvent<string>) => {
       let value: unknown
       try {

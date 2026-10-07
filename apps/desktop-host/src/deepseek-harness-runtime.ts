@@ -8,6 +8,7 @@ import { entryListSchema } from '@deepseek-ai/cordis-plugin-include'
 import type { PresetDefinition } from '@deepseek-ai/dsh-agent-preset-registry'
 import { entryListProblem } from '@deepseek-ai/dsh-agent-preset-registry'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
+import { publicToolName } from '@deepseek-ai/dsh-mcp-client'
 import type {} from '@deepseek-ai/dsh-session-query'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { ProductContentIdentity } from '@deepseek-harness/product/protocol'
@@ -138,6 +139,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     selected: InstalledExpertKit,
     persist: boolean,
     restoredConnectors?: readonly ExpertKitConnectorSnapshotEntry[],
+    selectable = persist,
   ): Promise<string> => {
     const selectedConnectors = restoredConnectors === undefined
       ? connectorsForExpertKit(selected)
@@ -178,7 +180,10 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
             id: presetId, kit: selected.kit, connectors: connectorSnapshots,
           })
         }
-        await registerPreset(ctx, { id: presetId, name: selected.kit.name, description: selected.kit.summary, plugins })
+        await registerPreset(ctx, {
+          id: presetId, name: selected.kit.name, description: selected.kit.summary,
+          selectable, defaultable: false, plugins,
+        }, () => validateRequiredTools(ctx, presetId, selected.kit, selectedConnectors, 'Expert Kit'))
         registeredSnapshots.add(presetId)
         knowledgeRefsByPreset.set(presetId, [...new Set(selected.kit.knowledgeBaseRefs)].sort())
         connectorsByPreset.set(presetId, selectedConnectors)
@@ -200,12 +205,22 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   for (const id of missingRequiredSnapshots) {
     console.warn(`deepseek-harness product: required Expert Kit snapshot ${id} is unavailable; cleanup is disabled`)
   }
+  const currentExpertKitPresetIds = currentPresetIds(
+    kits,
+    connectorById,
+    (kit, connectorSnapshots) => expertKitPresetId(kit, connectorSnapshots),
+  )
   for (const snapshot of stored.snapshots.filter(candidate => requiredSnapshots.has(candidate.id))) {
     try {
       const restoredConnectors = snapshot.connectors.map(connector => restoreConnector(connector, connectorById))
       const restoredConnectorById = new Map(restoredConnectors.map(connector => [connector.id, connector]))
       const selected = await installedExpertKit(snapshot.kit, kitsRoot, restoredConnectorById)
-      const restored = await registerExpertKitSnapshot(selected, false, snapshot.connectors)
+      const restored = await registerExpertKitSnapshot(
+        selected,
+        false,
+        snapshot.connectors,
+        currentExpertKitPresetIds.has(snapshot.id),
+      )
       if (restored !== snapshot.id) throw new Error(`snapshot identity changed from ${snapshot.id} to ${restored}`)
     } catch (error) {
       console.warn(`deepseek-harness product: Expert Kit snapshot ${snapshot.id} is unavailable`, error)
@@ -260,6 +275,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     persist: boolean,
     restoredConnectors?: readonly ExpertKitConnectorSnapshotEntry[],
     resolvedConnectors?: readonly Connector[],
+    selectable = persist,
   ): Promise<string> => {
     const selectedConnectors = resolvedConnectors ?? (restoredConnectors === undefined
       ? connectorsForCapability(skill, connectorById, 'Skill')
@@ -279,6 +295,8 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
           id: presetId,
           name: skill.name,
           description: skill.summary,
+          selectable,
+          defaultable: false,
           plugins: [...standardPlugins, {
             id: `deepseek-harness-skill-filesystem-${presetId}`,
             name: '@deepseek-ai/dsh-skill-filesystem',
@@ -289,7 +307,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
               watch: false,
             },
           }, ...selectedConnectors.map(connectorPlugin)],
-        })
+        }, () => validateRequiredTools(ctx, presetId, skill, selectedConnectors, 'Skill'))
         registeredSkillPresets.add(presetId)
         knowledgeRefsByPreset.set(presetId, [...new Set(skill.knowledgeBaseRefs)].sort())
         connectorsByPreset.set(presetId, selectedConnectors)
@@ -299,9 +317,20 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     }
     try { return await pending } finally { skillPreparations.delete(presetId) }
   }
+  const currentSkillPresetIds = currentPresetIds(
+    skills,
+    connectorById,
+    (skill, connectorSnapshots) => skillPresetId(skill, connectorSnapshots),
+  )
   for (const snapshot of storedSkills.snapshots.filter(candidate => requiredSkillSnapshots.has(candidate.id))) {
     try {
-      const restored = await registerSkillSnapshot(snapshot.skill, false, snapshot.connectors)
+      const restored = await registerSkillSnapshot(
+        snapshot.skill,
+        false,
+        snapshot.connectors,
+        undefined,
+        currentSkillPresetIds.has(snapshot.id),
+      )
       if (restored !== snapshot.id) throw new Error(`snapshot identity changed from ${snapshot.id} to ${restored}`)
     } catch (error) {
       console.warn(`deepseek-harness product: Skill snapshot ${snapshot.id} is unavailable`, error)
@@ -420,20 +449,38 @@ async function referencedPresetIds(
   return { ids, complete }
 }
 
-function validateRequiredTools(
+async function validateRequiredTools(
+  ctx: Context,
+  presetId: string,
   capability: Pick<ExpertKit | Skill, 'id' | 'requiredTools'>,
   connectors: readonly Connector[],
-  label: 'expert kit' | 'Skill' = 'expert kit',
-): void {
-  const available = new Set(connectors.flatMap(connector => connector.toolNames))
-  const missing = capability.requiredTools.filter(tool => !available.has(tool))
+  label: 'Expert Kit' | 'Skill',
+): Promise<void> {
+  if (capability.requiredTools.length === 0) return
+  await using preset = await ctx.agentPresets.acquireScope(presetId)
+  const available = new Set(ctx.tools.schemas(preset.key).map(tool => tool.name))
+  const missing = capability.requiredTools.filter((tool) => {
+    if (available.has(tool)) return false
+    return !connectors.some(connector => connector.toolNames.includes(tool)
+      && available.has(publicToolName(connectorServerName(connector.id), tool)))
+  })
   if (missing.length > 0) {
     throw new Error(`deepseek-harness product: ${label} ${capability.id} requires unavailable tools: ${missing.join(', ')}`)
   }
 }
 
-async function registerPreset(ctx: Context, definition: PresetDefinition): Promise<void> {
+async function registerPreset(
+  ctx: Context,
+  definition: PresetDefinition,
+  validate?: () => Promise<void>,
+): Promise<void> {
   const dispose = await ctx.agentPresets.register(definition)
+  try {
+    await validate?.()
+  } catch (error) {
+    await dispose()
+    throw error
+  }
   ctx.effect(() => dispose, `deepseek-harness-product.preset.${definition.id}`)
 }
 
@@ -498,8 +545,24 @@ function connectorsForCapability(
     if (connector === undefined) throw new Error(`${label} ${capability.id} requires unknown connector ${id}`)
     return connector
   }).sort((left, right) => left.id.localeCompare(right.id))
-  validateRequiredTools(capability, connectors, label === 'Skill' ? 'Skill' : 'expert kit')
   return connectors
+}
+
+function currentPresetIds<T extends Pick<ExpertKit | Skill, 'id' | 'connectorRefs' | 'requiredTools'>>(
+  capabilities: readonly T[],
+  connectorById: ReadonlyMap<string, Connector>,
+  identify: (capability: T, connectors: readonly ExpertKitConnectorSnapshotEntry[]) => string,
+): Set<string> {
+  const ids = new Set<string>()
+  for (const capability of capabilities) {
+    try {
+      const connectors = connectorsForCapability(capability, connectorById, 'Skill')
+      ids.add(identify(capability, connectors.map(connectorSnapshot)))
+    } catch {
+      // An unavailable current dependency cannot make a historical snapshot selectable.
+    }
+  }
+  return ids
 }
 
 function connectorSnapshot(connector: Connector): ExpertKitConnectorSnapshotEntry {
@@ -664,7 +727,6 @@ async function installedExpertKit(
     if (connector === undefined) throw new Error(`expert kit requires unknown connector ${id}`)
     return connector
   })
-  validateRequiredTools(kit, kitConnectors)
   return {
     kit,
     readmePath: await expertKitReadmePath(kitRoot),

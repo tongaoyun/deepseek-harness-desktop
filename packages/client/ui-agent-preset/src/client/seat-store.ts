@@ -108,7 +108,7 @@ export class AgentPresetSeatController {
     this.fallback = presets.find(preset => preset.isDefault)?.id ?? presets[0]?.id ?? ''
     const session = this.currentSession()
     this.set({
-      options: presetOptions(presets),
+      options: presetOptions(presets, true),
       // Staged pick first, then the composition the current session
       // already carries, then the Host-effective default. The middle term is
       // what keeps a late-landing load from regressing the display after

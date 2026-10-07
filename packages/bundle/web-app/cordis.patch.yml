@@ -66,9 +66,6 @@
     - id: subagent-model-selection-settings
       name: '@deepseek-ai/dsh-tool-subagent/model-selection-settings'
 
-    - id: deepseek-harness-product-ui
-      name: '@deepseek-harness/product-ui'
-
     - id: message-feedback
       name: '@deepseek-ai/dsh-message-feedback'
       config:

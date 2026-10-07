@@ -14,6 +14,10 @@ export interface AgentPresetRow {
   readonly name?: string
   /** One sentence on what this preset is for. */
   readonly description?: string
+  /** Whether a new Session may choose this Preset from a picker. */
+  readonly selectable: boolean
+  /** Whether this Preset may become the default for future Sessions. */
+  readonly defaultable: boolean
   /** Why this preset cannot compose a session; absent when it can. */
   readonly broken?: string
 }

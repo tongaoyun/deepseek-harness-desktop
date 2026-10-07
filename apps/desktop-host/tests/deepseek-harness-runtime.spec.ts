@@ -3,12 +3,14 @@ import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
+import { publicToolName } from '@deepseek-ai/dsh-mcp-client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   apply, expertKitPresetId, referencedExpertKitPresetIds, writeBoundedResponseBody,
   type DeepSeekHarnessRuntimeControl,
 } from '../src/deepseek-harness-runtime.ts'
 import { expertKitGenerationPath, type ExpertKitSnapshotEntry } from '../src/deepseek-harness-expert-kit-store.ts'
+import { connectorServerName } from '../src/deepseek-harness-connector-contract.ts'
 
 const roots: string[] = []
 
@@ -64,12 +66,26 @@ function runtimeContext(
   sessionPresets: readonly string[],
   registrations: unknown[],
   failListing = false,
+  availableTools: readonly string[] = [
+    publicToolName(connectorServerName('erp'), 'orders_v1'),
+    publicToolName(connectorServerName('erp'), 'orders_v2'),
+  ],
 ): Context {
   return asContext({
     plugin: vi.fn(async () => {}),
     agentPresets: {
       readDocument: vi.fn(async () => ({ content: '[]' })),
-      register: vi.fn(async (definition: unknown) => { registrations.push(definition); return () => {} }),
+      register: vi.fn(async (definition: unknown) => {
+        registrations.push(definition)
+        return () => {
+          const index = registrations.indexOf(definition)
+          if (index >= 0) registrations.splice(index, 1)
+        }
+      }),
+      acquireScope: vi.fn(async (presetId: string) => ({
+        key: presetId,
+        [Symbol.asyncDispose]: async () => {},
+      })),
       composedPreset: vi.fn(() => undefined),
     },
     sessionQuery: {
@@ -84,7 +100,10 @@ function runtimeContext(
         return { projections: { values: { agentPreset: sessionPresets[index] } }, [Symbol.dispose]() {} }
       }),
     },
-    effect: vi.fn(), on: vi.fn(), systemPrompt: { section: vi.fn() }, tools: { register: vi.fn() },
+    effect: vi.fn(), on: vi.fn(), systemPrompt: { section: vi.fn() }, tools: {
+      register: vi.fn(),
+      schemas: vi.fn(() => availableTools.map(name => ({ name }))),
+    },
   })
 }
 
@@ -126,7 +145,9 @@ describe('DeepSeekHarness expert kit runtime snapshots', () => {
     const presetId = await control.prepareExpertKit({ id: kit.id, version: kit.version, sha256: kit.sha256 })
 
     expect(presetId).toMatch(/^deepseek-harness-expert-kit-[0-9a-f]{12}$/u)
-    expect(registrations).toContainEqual(expect.objectContaining({ id: presetId, name: '订单专家' }))
+    expect(registrations).toContainEqual(expect.objectContaining({
+      id: presetId, name: '订单专家', selectable: true, defaultable: false,
+    }))
   })
 
   it('coalesces concurrent preparation for the same immutable Expert Kit generation', async () => {
@@ -226,6 +247,34 @@ describe('DeepSeekHarness expert kit runtime snapshots', () => {
     expect(calls.filter(method => method === 'skills.get')).toHaveLength(1)
     expect(calls.filter(method => method === 'connectors.list')).toHaveLength(1)
     expect(registrations.filter(value => JSON.stringify(value).includes(first))).toHaveLength(1)
+  })
+
+  it('withdraws a Preset when its mounted official tool catalog misses a required tool', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'deepseek-harness-runtime-home-'))
+    roots.push(home)
+    vi.stubEnv('DSH_HOME', home)
+    const skill = {
+      id: 'missing-tool', name: '缺失工具', version: '1.0.0', summary: '验证工具边界',
+      connectorRefs: ['erp'], requiredTools: ['orders_v1'], knowledgeBaseRefs: [], sha256: 'f'.repeat(64),
+    }
+    await prepareSkill(home, skill)
+    const registrations: unknown[] = []
+    const invoke = vi.fn(async (method: string): Promise<unknown> => {
+      if (method === 'skills.get') return skill
+      if (method === 'skills.list') return [skill]
+      if (method === 'connectors.list') return [connector('v1')]
+      if (method === 'expertKits.list') return []
+      throw new Error(`unexpected product method ${method}`)
+    })
+    let control: DeepSeekHarnessRuntimeControl | undefined
+    await apply(runtimeContext([], registrations, false, []), asRuntimeConfig({
+      product: { invoke }, publishControl: (value: DeepSeekHarnessRuntimeControl | undefined) => { control = value },
+    }))
+    if (control === undefined) throw new Error('runtime control was not published')
+
+    await expect(control.prepareSkill({ id: skill.id, version: skill.version, sha256: skill.sha256 }))
+      .rejects.toThrow('requires unavailable tools: orders_v1')
+    expect(registrations).toEqual([])
   })
 
   it('uses one kit identity, artifact generation, and connector policy deterministically', () => {
@@ -358,6 +407,8 @@ describe('DeepSeekHarness expert kit runtime snapshots', () => {
     expect(serialized.get(secondId)).toContain(join(secondGeneration, 'README.md'))
     expect(serialized.get(secondId)).toContain('dsh-skill-filesystem')
     expect(serialized.get(secondId)).toContain(secondConnector.url)
+    expect(restartedRegistrations).toContainEqual(expect.objectContaining({ id: firstId, selectable: false }))
+    expect(restartedRegistrations).toContainEqual(expect.objectContaining({ id: secondId, selectable: true }))
     expect(await readFile(join(firstGeneration, 'README.md'), 'utf8')).toBe('# v1\n')
     expect(await readFile(join(secondGeneration, 'README.md'), 'utf8')).toBe('# v2\n')
     expect((await readdir(join(home, 'deepseek-harness-product/expert-kit-presets'))).sort())
