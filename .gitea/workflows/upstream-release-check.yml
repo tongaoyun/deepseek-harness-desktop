@@ -1,0 +1,18 @@
+name: Check Harness Upstream Release
+
+on:
+  schedule:
+    - cron: "0 1 * * 1"
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ci-node
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: http://192.168.2.66:3300/instudio/checkout@v4
+      - name: Check release selection
+        run: |
+          node --test scripts/check-upstream-release.test.mjs
+          node scripts/check-upstream-release.mjs --fail-on-update

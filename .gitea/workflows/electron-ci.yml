@@ -47,6 +47,7 @@ jobs:
       - name: Verify upstream and product contracts
         run: |
           pnpm run verify:upstream
+          node --test scripts/check-upstream-release.test.mjs
           pnpm run build:lib:host
           pnpm run typecheck:contracts-ready
           pnpm exec vitest run \

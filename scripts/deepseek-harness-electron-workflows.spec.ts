@@ -30,6 +30,7 @@ describe('DeepSeekHarness Electron workflows', () => {
       ['electron-ci.yml', 'ci-node'],
       ['electron-windows.yml', 'windows-x64'],
       ['electron-macos.yml', 'macos-arm64'],
+      ['upstream-release-check.yml', 'ci-node'],
     ])
     for (const [name, runner] of expected) {
       const jobs = Object.values(workflow(name).jobs)
@@ -83,6 +84,16 @@ describe('DeepSeekHarness Electron workflows', () => {
     expect(fetch).not.toContain('dsh-v0.1.7-rc.2')
     expect(steps.indexOf(steps.find(step => step.name === 'Fetch pinned Harness upstream')!))
       .toBeLessThan(steps.findIndex(step => step.name === 'Verify upstream and product contracts'))
+  })
+
+  it('reports new upstream RC or stable tags without changing the pin', () => {
+    const source = readFileSync(resolve(import.meta.dirname, '..', '.gitea', 'workflows', 'upstream-release-check.yml'), 'utf8')
+    const steps = workflow('upstream-release-check.yml').jobs.check?.steps ?? []
+    expect(source).toContain('schedule:')
+    expect(steps.find(step => step.name === 'Check release selection')?.run)
+      .toContain('node scripts/check-upstream-release.mjs --fail-on-update')
+    expect(source).not.toContain('sync-upstream.mjs')
+    expect(source).not.toContain('git push')
   })
 
   it('builds the native sidecar before packaging both desktop platforms', () => {

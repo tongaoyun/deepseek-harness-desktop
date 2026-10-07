@@ -21,6 +21,7 @@
     "build:product": "pnpm --dir packages/deepseek-harness-product/product build && pnpm exec tsdown --config packages/deepseek-harness-product/product/tsdown.config.ts",
     "build:native-product": "cargo build --release --manifest-path native/deepseek-harness/Cargo.toml",
     "verify:upstream": "node scripts/verify-upstream.mjs",
+    "check:upstream-release": "node scripts/check-upstream-release.mjs",
     "sync:upstream": "node scripts/sync-upstream.mjs",
     "build": "tsx scripts/build.ts",
     "build:bench": "npm run build:native-system && npm run build:lib && tsdown --config benchmarks/tsdown.config.ts",
