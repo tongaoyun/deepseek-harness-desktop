@@ -7,6 +7,8 @@ import { DesktopHostFatalError, DesktopHostProcess, DesktopHostUncleanExitError,
 
 const roots: string[] = []
 const hosts: DesktopHostProcess[] = []
+const expertKitContent = { id: 'order-expert', version: '1.0.0', sha256: 'a'.repeat(64) }
+const skillContent = { id: 'document-insight', version: '2.0.0', sha256: 'b'.repeat(64) }
 
 const HTTP_HOST = `
 import { createServer } from 'node:http'
@@ -44,6 +46,11 @@ process.on('message', message => {
   if (message.type === 'expert-kit-prepare') {
     process.send({ type: 'expert-kit-prepare', requestId: message.requestId,
       presetId: 'deepseek-harness-expert-kit-' + message.id })
+    return
+  }
+  if (message.type === 'skill-prepare') {
+    process.send({ type: 'skill-prepare', requestId: message.requestId,
+      presetId: 'deepseek-harness-skill-' + message.id })
     return
   }
   if (message.type !== 'shutdown') return
@@ -182,11 +189,27 @@ describe('desktop host process', () => {
 
   it('correlates Expert Kit Preset preparation and validates ids before IPC', async () => {
     const host = hostProcess(projectWithHost())
-    await expect(host.prepareExpertKit('order-expert')).rejects.toThrow('Host is unavailable')
+    await expect(host.prepareExpertKit(expertKitContent)).rejects.toThrow('Host is unavailable')
     await host.start()
-    await expect(host.prepareExpertKit('order-expert'))
+    await expect(host.prepareExpertKit(expertKitContent))
       .resolves.toBe('deepseek-harness-expert-kit-order-expert')
-    await expect(host.prepareExpertKit('../invalid')).rejects.toThrow('invalid expert kit id')
+    await expect(host.prepareExpertKit({ ...expertKitContent, id: '../invalid' }))
+      .rejects.toThrow('invalid expert kit id')
+    await expect(host.prepareExpertKit({ ...expertKitContent, version: '' }))
+      .rejects.toThrow('invalid expert kit content identity')
+    await expect(host.prepareExpertKit({ ...expertKitContent, sha256: 'invalid' }))
+      .rejects.toThrow('invalid expert kit content identity')
+  })
+
+  it('correlates Skill Preset preparation and validates ids before IPC', async () => {
+    const host = hostProcess(projectWithHost())
+    await expect(host.prepareSkill(skillContent)).rejects.toThrow('Host is unavailable')
+    await host.start()
+    await expect(host.prepareSkill(skillContent))
+      .resolves.toBe('deepseek-harness-skill-document-insight')
+    await expect(host.prepareSkill({ ...skillContent, id: '../invalid' })).rejects.toThrow('invalid skill id')
+    await expect(host.prepareSkill({ ...skillContent, sha256: 'invalid' }))
+      .rejects.toThrow('invalid skill content identity')
   })
 
   it.each([

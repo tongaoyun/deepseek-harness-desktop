@@ -32,7 +32,7 @@ import { installDesktopDirectoryPicker } from './directory-picker.ts'
 import { installMicrophonePermissions } from './microphone-permissions.ts'
 import { DesktopBackendController } from './backend-controller.ts'
 import { DESKTOP_IPC, SCHEME, assertDesktopSender, type DesktopUpdateState } from './ipc.ts'
-import type { ProductSession } from '@deepseek-harness/product/protocol'
+import type { ProductContentIdentity, ProductSession } from '@deepseek-harness/product/protocol'
 import { readDeviceInfo } from './device-info.ts'
 import { desktopUpdateReadyConfirmation, formatDesktopMessage, resolveDesktopLocale, resolveDesktopStartupLocale } from './locale.ts'
 import { claimDesktopSingleInstance } from './single-instance.ts'
@@ -89,7 +89,7 @@ function deepseekHarnessAuthenticationPage(): string {
   const html = `<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="color-scheme" content="light dark">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
-<title>DeepSeekHarness</title><style>
+<title>DeepSeek Harness</title><style>
 :root{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif;color:#202124;background:#fff}
 @media(prefers-color-scheme:dark){:root{color:#f2f3f5;background:#171817}}
 body{min-height:100vh;margin:0;display:grid;place-items:center}.content{text-align:center;padding:32px}
@@ -473,15 +473,21 @@ async function main(): Promise<void> {
     join(app.getPath('userData'), 'native'),
   )
   const productBridgeOptions: ProductBridgeOptions = {
+    desktopVersion: app.getVersion(),
     persistSession: persistDeepSeekHarnessSession,
     serverUrl,
     sessionToken,
     initialSession: storedDeepSeekHarnessSession?.session,
     nativeInvoke: (method, payload) => nativeSidecar.invoke(method, payload),
-    prepareExpertKit: async (id) => {
+    prepareExpertKit: async (content) => {
       const host = backend.host
       if (host === undefined) throw new Error('deepseek-harness product: Host is unavailable')
-      return host.prepareExpertKit(id)
+      return host.prepareExpertKit(content)
+    },
+    prepareSkill: async (content) => {
+      const host = backend.host
+      if (host === undefined) throw new Error('deepseek-harness product: Host is unavailable')
+      return host.prepareSkill(content)
     },
   }
   const productBridge = new DeepSeekHarnessProductBridge(productBridgeOptions)
@@ -549,7 +555,7 @@ async function main(): Promise<void> {
       hostInspectPort, { ...hostEnvironment, DSH_CLIENT_VERSION: desktopClientVersion() }, onFailure,
       primaryRuntime,
       resources, (next) => { platformView.setSession(next) },
-      (method, payload, signal) => productBridge.invoke(method, payload, signal))
+      (method, payload, signal) => productBridge.invokeRuntime(method, payload, signal))
     return {
       start: async () => {
         const ready = await host.start()
@@ -611,7 +617,8 @@ async function main(): Promise<void> {
       },
       updateTasks: (action: 'inspect' | 'lock' | 'unlock') => host.updateTasks(action),
       inspectQuit: () => host.inspectQuit(),
-      prepareExpertKit: (id: string) => host.prepareExpertKit(id),
+      prepareExpertKit: (content: ProductContentIdentity) => host.prepareExpertKit(content),
+      prepareSkill: (content: ProductContentIdentity) => host.prepareSkill(content),
     }
   }, (state) => {
     if (state.phase === 'error') reportFatal(state.failure, 'host')
@@ -879,11 +886,12 @@ async function main(): Promise<void> {
     } finally {
       if (typeof requestId === 'string') rendererProductRequests.delete(requestId)
     }
-    if (method === 'auth.beginDingTalk' && typeof result === 'object' && result !== null
+    if ((method === 'auth.beginDingTalk' || method === 'connectors.authorization.begin')
+      && typeof result === 'object' && result !== null
       && 'authorizationUrl' in result && typeof result.authorizationUrl === 'string') {
       const authorizeUrl = new URL(result.authorizationUrl)
       if (authorizeUrl.protocol !== 'https:' && authorizeUrl.protocol !== 'http:') {
-        throw new Error('deepseek-harness product: invalid DingTalk authorization URL')
+        throw new Error('deepseek-harness product: invalid browser authorization URL')
       }
       await shell.openExternal(authorizeUrl.href)
     }
@@ -1117,8 +1125,10 @@ async function main(): Promise<void> {
     updates.dispose()
   })
 
-  const applicationIconPath = development ? join(app.getAppPath(), 'resources', 'icon-windows.png')
+  const applicationIconPath = development
+    ? join(app.getAppPath(), 'resources', process.platform === 'darwin' ? 'icon-macos.png' : 'icon-windows.png')
     : join(process.resourcesPath, 'icon.png')
+  if (development && process.platform === 'darwin') app.dock?.setIcon(applicationIconPath)
   app.setAboutPanelOptions({
     applicationName: 'DeepSeek Harness',
     applicationVersion: app.getVersion(),
@@ -1263,6 +1273,7 @@ async function main(): Promise<void> {
     browserGuests.bind(window, (guest, name) => shortcuts.attachGuest(window, guest, name))
     shortcuts.attach(window)
     window.on('focus', automaticCheck)
+    window.on('focus', () => { void productBridge.refreshCatalog().catch(() => undefined) })
     // Closing hides: the page and the Host keep running, and the next show resumes the same document.
     window.on('close', (event) => {
       if (quitting || shellInstallerOwnsQuit || sessionEnding) return

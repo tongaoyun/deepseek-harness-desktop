@@ -5,7 +5,7 @@ export interface DeepSeekHarnessConnector {
   readonly id: string
   readonly name: string
   readonly status: 'ready'
-  readonly authMode: 'none'
+  readonly authMode: 'none' | 'employee-bearer' | 'oauth'
   readonly transport: 'streamable-http' | 'stdio'
   readonly url?: string
   readonly command?: string
@@ -26,8 +26,8 @@ export function parseConnectorCatalog(value: unknown): DeepSeekHarnessConnector[
     const status = stringField(record, 'status')
     if (status !== 'ready') return []
     const authMode = stringField(record, 'authMode')
-    if (authMode !== 'none') {
-      throw new Error(`deepseek-harness product: connector ${stringField(record, 'id')} requires unsupported authentication ${authMode}`)
+    if (!['none', 'employee-bearer', 'oauth'].includes(authMode)) {
+      throw new Error(`deepseek-harness product: unsupported connector authentication ${authMode}`)
     }
     const transport = stringField(record, 'transport')
     if (transport !== 'streamable-http' && transport !== 'stdio') {
@@ -38,17 +38,15 @@ export function parseConnectorCatalog(value: unknown): DeepSeekHarnessConnector[
       throw new Error(`deepseek-harness product: invalid or duplicate connector id ${id}`)
     }
     connectorIds.add(id)
-    const toolNames = uniqueStringList(record.toolNames, 'toolNames')
+    const tools = connectorTools(record.tools)
+    const toolNames = tools.map(tool => tool.name)
     if (toolNames.length === 0) return []
-    const readOnlyTools = uniqueStringList(record.readOnlyTools, 'readOnlyTools')
-    const declaredTools = new Set(toolNames)
-    if (readOnlyTools.some(tool => !declaredTools.has(tool))) {
-      throw new Error(`deepseek-harness product: connector ${id} declares an unknown read-only tool`)
-    }
+    const readOnlyTools = tools.filter(tool => tool.access === 'READ').map(tool => tool.name)
     const headers = stringMap(record.headers, 'headers')
     validateHeaders(headers)
     const base: Omit<DeepSeekHarnessConnector, 'url' | 'command'> = {
-      id, name: stringField(record, 'name'), status, authMode, transport,
+      id, name: stringField(record, 'name'), status,
+      authMode: authMode as DeepSeekHarnessConnector['authMode'], transport,
       arguments: stringList(record.arguments, 'arguments'),
       environment: stringMap(record.environment, 'environment'),
       headers, toolNames, readOnlyTools,
@@ -62,6 +60,22 @@ export function parseConnectorCatalog(value: unknown): DeepSeekHarnessConnector[
       throw new Error(`deepseek-harness product: connector ${id} has no valid stdio command`)
     }
     return { ...base, command }
+  })
+}
+
+function connectorTools(value: unknown): Array<{ readonly name: string; readonly access: 'READ' | 'WRITE' }> {
+  if (!Array.isArray(value)) throw new Error('deepseek-harness product: invalid tools')
+  const names = new Set<string>()
+  return value.map((item) => {
+    const record = objectRecord(item, 'connector tool')
+    const name = stringField(record, 'name')
+    const access = stringField(record, 'access')
+    if (!/^[A-Za-z0-9._-]{1,128}$/.test(name) || names.has(name)) {
+      throw new Error('deepseek-harness product: duplicate tools')
+    }
+    if (access !== 'READ' && access !== 'WRITE') throw new Error('deepseek-harness product: invalid tool access')
+    names.add(name)
+    return { name, access }
   })
 }
 
@@ -123,12 +137,6 @@ function stringList(value: unknown, field: string): string[] {
     throw new Error(`deepseek-harness product: invalid ${field}`)
   }
   return value.map(item => String(item))
-}
-
-function uniqueStringList(value: unknown, field: string): string[] {
-  const items = stringList(value, field)
-  if (new Set(items).size !== items.length) throw new Error(`deepseek-harness product: duplicate ${field}`)
-  return items
 }
 
 function stringMap(value: unknown, field: string): Record<string, string> {

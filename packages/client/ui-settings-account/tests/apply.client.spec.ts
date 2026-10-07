@@ -19,6 +19,7 @@ import type { AccountSectionInjected } from '../src/client/AccountSection.tsx'
 import { CONTACT_CONFIG_GLOBAL } from '../src/contact-config.ts'
 import { AccountPlatformHost } from '../src/client/AccountPlatformHost.tsx'
 import type { AccountPlatformHostInjected } from '../src/client/AccountPlatformHost.tsx'
+import { AccountMenu } from '../src/client/AccountMenu.tsx'
 import { AccountQuotaNotice } from '../src/client/AccountQuotaNotice.tsx'
 import type { AccountQuotaNoticeInjected } from '../src/client/AccountQuotaNotice.tsx'
 
@@ -41,7 +42,9 @@ function bonus(orderId: string, message = 'Awarded 5.00'): AccountBonusBatch {
   }
 }
 function operations(c: TestClient): AccountSectionInjected {
-  const injected: object = c.ctx.slots.entries('settings.launcher')[0]!.inject!()
+  const entry = c.ctx.slots.entries('settings.launcher')
+    .find(candidate => candidate.component === AccountMenu)
+  const injected: object = entry!.inject!()
   return injected as AccountSectionInjected
 }
 /** The account take-over registered into the Chat-owned frame-wide quota notice chain. */
@@ -65,7 +68,8 @@ it('keeps account UI and account RPC inactive in a plain browser, including afte
   for (const reload of [false, true]) {
     if (reload) await c.reload(SELF)
     await c.flush()
-    expect(c.ctx.slots.entries('settings.launcher')).toHaveLength(0)
+    expect(c.ctx.slots.entries('settings.launcher')
+      .some(entry => entry.component === AccountMenu)).toBe(false)
     expect(c.ctx.slots.entries('settings.models.sign-in')).toHaveLength(0)
     expect(c.ctx.slots.entries('settings.section').some(entry => entry.options.id === 'account')).toBe(false)
     expect(quotaNoticeEntry(c)).toBeUndefined()
@@ -146,7 +150,8 @@ it('shares account actions across seats, publishes dialog ownership, and opens c
   expect(signedOutAgain.searchParams.has('prefill_uid')).toBe(false)
   expect(signedOutAgain.searchParams.get('hide_uid')).toBe('1')
   await c.unload(SELF)
-  expect(c.ctx.slots.entries('settings.launcher')).toHaveLength(0)
+  expect(c.ctx.slots.entries('settings.launcher')
+    .some(entry => entry.component === AccountMenu)).toBe(false)
 }, 60_000)
 
 it('prefills the native device description from the Desktop bridge on every click', async ({ start }) => {

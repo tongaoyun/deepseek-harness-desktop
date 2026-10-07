@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-桥接在 Electron 主进程保存钉钉会话令牌并读取已认证的 Bootstrap，同时向 Renderer 暴露类型化的产品和原生方法。运行时 Bootstrap 机密只传给官方 Harness Host，不作为桥接方法暴露。不会发布 companion 包，因为类型化桥接和服务端 API 不会独立发生偏差。
+桥接在 Electron 主进程保存钉钉会话并读取已认证的 Bootstrap，同时向 Renderer 暴露类型化的产品和原生方法。它管理最后一份成功的目录快照、合并刷新生命周期、按需准备 Skill 与专家套件，以及员工数据连接授权调用。准备状态使用不可变的 `id`、`version` 和 SHA-256 标识，新版本不会继承旧制品的可用状态。上游 OAuth Token 始终保留在服务端。运行时 Bootstrap 机密只传给官方 Harness Host。不会发布 companion 包，因为类型化桥接和服务端 API 不会独立发生偏差。
 
 ## 目录
 

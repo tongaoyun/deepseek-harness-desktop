@@ -1,7 +1,7 @@
 /** macOS development bundle that loads the current workspace through Electron. */
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
 /** Workspace and runtime settings captured for Launch Services cold starts. */
@@ -29,11 +29,17 @@ export function prepareDevelopmentApp(options: DevelopmentAppOptions): string {
   const bundle = join(options.directory, 'DeepSeek Harness Dev.app')
   const executable = join(bundle, 'Contents', 'MacOS', 'DeepSeekHarnessDev')
   const stamp = join(bundle, 'Contents', 'Resources', 'dsh-development.json')
+  const iconSource = join(options.appRoot, 'resources', 'icon-macos.icns')
+  if (!existsSync(iconSource)) throw new Error(`desktop development: missing application icon ${iconSource}`)
   const launcher = developmentLauncher(options, bundle)
-  const identity = JSON.stringify({ ...options, launcher, plist: readFileSync(join(source, 'Contents', 'Info.plist'), 'utf8') })
+  const identity = JSON.stringify({ ...options, launcher,
+    icon: createHash('sha256').update(readFileSync(iconSource)).digest('hex'),
+    plist: readFileSync(join(source, 'Contents', 'Info.plist'), 'utf8'),
+  })
   if (!existsSync(stamp) || readFileSync(stamp, 'utf8') !== identity) {
     rmSync(bundle, { recursive: true, force: true })
     execFileSync('/usr/bin/ditto', [source, bundle])
+    copyFileSync(iconSource, join(bundle, 'Contents', 'Resources', 'electron.icns'))
     const plist = join(bundle, 'Contents', 'Info.plist')
     const values = {
       CFBundleIdentifier: `com.instudio.deepseek-harness.dev.${createHash('sha256').update(options.appRoot).digest('hex').slice(0, 12)}`,

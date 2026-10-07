@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-The bridge keeps DingTalk session tokens and authenticated bootstrap access in the Electron main process while exposing typed product and native methods to the Renderer. Runtime bootstrap secrets are passed only to the official Harness Host and are not bridge methods. No companion is published because its typed bridge and server API cannot diverge independently.
+The bridge keeps DingTalk sessions and authenticated bootstrap access in the Electron main process while exposing typed product and native methods to the Renderer. It owns the last successful catalog snapshot, merged refresh lifecycle, on-demand Skill and Expert Kit preparation, and employee data-connection authorization calls. Preparation state uses the immutable `id`, `version`, and SHA-256 identity, so new versions never inherit old availability. Upstream OAuth tokens stay on the server. Runtime bootstrap secrets pass only to the official Harness Host. No companion is published because the typed bridge and server API cannot diverge independently.
 
 ## Table of Contents
 

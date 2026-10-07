@@ -166,6 +166,7 @@ const harness = await vi.hoisted(async () => {
     getAppPath: (): string => 'desktop-test-app',
     setAppLogsPath: vi.fn(),
     getPath: vi.fn<(name: string) => string>(),
+    dock: { setIcon: vi.fn<(path: string) => void>() },
     setAboutPanelOptions: vi.fn<(options: Electron.AboutPanelOptionsOptions) => void>(),
     requestSingleInstanceLock: () => true,
     setAsDefaultProtocolClient: vi.fn(),
@@ -253,6 +254,7 @@ const harness = await vi.hoisted(async () => {
       shellDialog.isOpen = false
       powerMonitor.removeAllListeners()
       app.isPackaged = true
+      app.dock.setIcon.mockReset()
       windowFailure = undefined
       pluginsEnabled = false
       closeWindowsOnQuit = false
@@ -350,6 +352,7 @@ vi.mock('@deepseek-harness/product/bridge', () => ({
       return Promise.resolve({ modelApiKey: 'employee-virtual-key',
         endpoints: { litellm: 'https://models.example.test/v1' }, models: ['deepseek-v4-pro'] })
     }
+    refreshCatalog() { return Promise.resolve() }
     invoke() { return Promise.resolve({}) }
     subscribe() { return () => undefined }
   },
@@ -583,7 +586,11 @@ describe('desktop main startup', () => {
     expect({ menu: [{ label: about!.label, role: about!.role }, separator], options: { ...options, iconPath: '<app icon>' } })
       .toEqual(expected[`${platform}:${locale}`])
     expect(options.iconPath).toBe(packaged ? join('desktop-test-resources', 'icon.png')
-      : join('desktop-test-app', 'resources', 'icon-windows.png'))
+      : join('desktop-test-app', 'resources', platform === 'darwin' ? 'icon-macos.png' : 'icon-windows.png'))
+    expect(harness.app.dock.setIcon).toHaveBeenCalledTimes(platform === 'darwin' && !packaged ? 1 : 0)
+    if (platform === 'darwin' && !packaged) {
+      expect(harness.app.dock.setIcon).toHaveBeenCalledWith(join('desktop-test-app', 'resources', 'icon-macos.png'))
+    }
     if (platform !== 'win32') { expect(about!.click).toBeUndefined(); return }
     // Windows reuses the dimmed update dialog because Electron's fallback is a bare message box.
     harness.dialog.showMessageBox.mockResolvedValueOnce({ response: 0 })

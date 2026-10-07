@@ -10,6 +10,7 @@ export type ProductMethod =
   | 'auth.beginDingTalk'
   | 'auth.pollDingTalk'
   | 'auth.refresh'
+  | 'catalog.refresh'
   | 'expertKits.list'
   | 'expertKits.get'
   | 'expertKits.readme'
@@ -19,7 +20,11 @@ export type ProductMethod =
   | 'skills.get'
   | 'skills.readme'
   | 'skills.artifact'
+  | 'skills.prepare'
   | 'connectors.list'
+  | 'connectors.authorization.status'
+  | 'connectors.authorization.begin'
+  | 'connectors.authorization.revoke'
   | 'knowledge.bases.list'
   | 'knowledge.search'
   | 'native.filesystem.list'
@@ -82,6 +87,27 @@ export interface ProductSession {
   readonly expiresAt?: string
 }
 
+/** Content-addressed catalog identity passed unchanged to the trusted Host. */
+export interface ProductContentIdentity {
+  readonly id: string
+  readonly version: string
+  readonly sha256: string
+}
+
+/** One dependency verified before creating an immutable product Preset. */
+export interface ProductDependencyCheck {
+  readonly kind: 'DESKTOP_VERSION' | 'SKILL' | 'DATA_CONNECTION' | 'TOOL' | 'KNOWLEDGE_BASE'
+  readonly reference: string
+  readonly status: 'READY'
+}
+
+/** Immutable content and dependency result returned by a prepare operation. */
+export interface ProductPrepareResult {
+  readonly presetId: string
+  readonly contentVersion: ProductContentIdentity
+  readonly dependencyChecks: readonly ProductDependencyCheck[]
+}
+
 /** Versioned request sent across the product bridge. */
 export interface ProductInvokeRequest {
   readonly protocol: typeof PRODUCT_PROTOCOL
@@ -109,10 +135,11 @@ export interface ProductEvent {
  */
 export function isProductMethod(value: unknown): value is ProductMethod {
   return typeof value === 'string' && [
-    'auth.getSession', 'auth.ensureDingTalk', 'auth.beginDingTalk', 'auth.pollDingTalk', 'auth.refresh', 'expertKits.list',
+    'auth.getSession', 'auth.ensureDingTalk', 'auth.beginDingTalk', 'auth.pollDingTalk', 'auth.refresh', 'catalog.refresh', 'expertKits.list',
     'expertKits.get', 'expertKits.readme', 'expertKits.artifact', 'expertKits.preset.prepare',
     'skills.list', 'skills.get', 'skills.readme',
-    'skills.artifact', 'connectors.list',
+    'skills.artifact', 'skills.prepare', 'connectors.list',
+    'connectors.authorization.status', 'connectors.authorization.begin', 'connectors.authorization.revoke',
     'knowledge.bases.list', 'knowledge.search',
     'native.filesystem.list', 'native.filesystem.read',
     'native.filesystem.write', 'native.secure-storage.get', 'native.secure-storage.set', 'native.secure-storage.delete',

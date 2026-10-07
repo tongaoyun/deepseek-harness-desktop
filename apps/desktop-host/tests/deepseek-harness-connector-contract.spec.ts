@@ -10,8 +10,10 @@ import { publicToolName } from '@deepseek-ai/dsh-mcp-client'
 const remote = (overrides: Record<string, unknown> = {}) => ({
   id: 'erp', name: 'ERP', transport: 'streamable-http', url: 'https://erp.example/mcp',
   status: 'ready', authMode: 'none',
-  arguments: [], environment: {}, headers: {}, toolNames: ['orders_read', 'orders_update'],
-  readOnlyTools: ['orders_read'], ...overrides,
+  arguments: [], environment: {}, headers: {}, tools: [
+    { name: 'orders_read', displayName: '查询订单', description: '读取订单', access: 'READ' },
+    { name: 'orders_update', displayName: '更新订单', description: '修改订单', access: 'WRITE' },
+  ], ...overrides,
 })
 
 describe('DeepSeekHarness connector contract', () => {
@@ -31,8 +33,10 @@ describe('DeepSeekHarness connector contract', () => {
   })
 
   it.each([
-    [remote({ toolNames: ['orders_read', 'orders_read'] }), 'duplicate toolNames'],
-    [remote({ readOnlyTools: ['missing'] }), 'unknown read-only tool'],
+    [remote({ tools: [
+      { name: 'orders_read', displayName: '读取', description: '', access: 'READ' },
+      { name: 'orders_read', displayName: '读取', description: '', access: 'READ' },
+    ] }), 'duplicate tools'],
     [remote({ url: 'file:///tmp/mcp' }), 'invalid URL'],
     [remote({ url: 'https://user:pass@erp.example/mcp' }), 'invalid URL'],
     [remote({ url: 'https://erp.example/mcp?token=secret' }), 'invalid URL'],
@@ -45,8 +49,10 @@ describe('DeepSeekHarness connector contract', () => {
   it('uses the official deterministic normalization for dotted and long MCP names', () => {
     const rawName = 'x'.repeat(64)
     const connectors = parseConnectorCatalog([remote({
-      toolNames: ['finance.smt_order_amount_explain', rawName],
-      readOnlyTools: ['finance.smt_order_amount_explain'],
+      tools: [
+        { name: 'finance.smt_order_amount_explain', displayName: '金额解释', description: '', access: 'READ' },
+        { name: rawName, displayName: '长名称', description: '', access: 'WRITE' },
+      ],
     })])
     const serverName = connectorServerName('erp')
     const dotted = publicToolName(serverName, 'finance.smt_order_amount_explain')
@@ -62,10 +68,15 @@ describe('DeepSeekHarness connector contract', () => {
       .toMatchObject([{ transport: 'stdio', command: 'node' }])
   })
 
-  it('does not mount unavailable connectors and rejects unsupported authentication', () => {
+  it('mounts server-proxied authenticated connectors and skips unavailable entries', () => {
     expect(parseConnectorCatalog([remote({ status: 'unavailable', authMode: 'oauth' })])).toEqual([])
-    expect(parseConnectorCatalog([remote({ toolNames: [], readOnlyTools: [] })])).toEqual([])
-    expect(() => parseConnectorCatalog([remote({ authMode: 'oauth' })]))
-      .toThrow('requires unsupported authentication oauth')
+    expect(parseConnectorCatalog([remote({ tools: [] })])).toEqual([])
+    expect(parseConnectorCatalog([remote({ authMode: 'oauth' })]))
+      .toMatchObject([{ id: 'erp', authMode: 'oauth', url: 'https://erp.example/mcp' }])
+  })
+
+  it('rejects unsupported connector authentication modes', () => {
+    expect(() => parseConnectorCatalog([remote({ authMode: 'session-cookie' })]))
+      .toThrow('unsupported connector authentication')
   })
 })

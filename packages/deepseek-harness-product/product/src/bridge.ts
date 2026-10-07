@@ -1,7 +1,8 @@
 /** Main-process product bridge. It owns credentials and exposes only product methods. */
 
 import { DeepSeekHarnessApiClient, DeepSeekHarnessApiError } from './http-client.ts'
-import { assertProductMethod, assertProductPayload, type ProductEvent, type ProductMethod, type ProductSession } from './protocol.ts'
+import { assertProductMethod, assertProductPayload, type ProductContentIdentity, type ProductEvent, type ProductMethod, type ProductRuntimeMethod, type ProductSession } from './protocol.ts'
+import { ProductCatalogManager } from './catalog-manager.ts'
 
 /** Main-process-only inference bootstrap. Secrets in this object never cross the preload bridge. */
 export interface ProductRuntimeBootstrap {
@@ -36,6 +37,7 @@ function runtimeBootstrap(value: unknown): ProductRuntimeBootstrap {
 export interface ProductBridgeOptions {
   readonly serverUrl?: string | undefined
   readonly sessionToken?: string | undefined
+  readonly desktopVersion?: string | undefined
   readonly initialSession?: ProductSession | undefined
   /** Testable main-process HTTP transport. Renderer code never supplies this function. */
   readonly fetch?: typeof fetch
@@ -43,12 +45,13 @@ export interface ProductBridgeOptions {
   /** Main-process native capability dispatcher. Renderer code never receives this function. */
   readonly nativeInvoke?: (method: string, payload: unknown) => Promise<unknown>
   /** Prepare the immutable Host Preset snapshot for one Expert Kit. */
-  readonly prepareExpertKit?: (id: string) => Promise<string>
+  readonly prepareExpertKit?: (content: ProductContentIdentity) => Promise<string>
+  /** Prepare the immutable Host Preset snapshot for one standalone Skill. */
+  readonly prepareSkill?: (content: ProductContentIdentity) => Promise<string>
 }
 
 const SESSION_REFRESH_LEAD_SECONDS = 5 * 60
 const SESSION_REFRESH_RETRY_SECONDS = 30
-
 /** Main-process product API boundary exposed to the Renderer through preload. */
 export class DeepSeekHarnessProductBridge {
   private sessionToken: string | undefined
@@ -57,6 +60,8 @@ export class DeepSeekHarnessProductBridge {
   private readonly api?: DeepSeekHarnessApiClient
   private readonly nativeInvoke?: ProductBridgeOptions['nativeInvoke']
   private readonly prepareExpertKit?: ProductBridgeOptions['prepareExpertKit']
+  private readonly prepareSkill?: ProductBridgeOptions['prepareSkill']
+  private readonly catalog: ProductCatalogManager
   private sessionRefresh: Promise<void> | undefined
   private sessionRefreshTimer: ReturnType<typeof setTimeout> | undefined
 
@@ -66,12 +71,21 @@ export class DeepSeekHarnessProductBridge {
     this.persistSession = options.persistSession
     this.nativeInvoke = options.nativeInvoke
     this.prepareExpertKit = options.prepareExpertKit
+    this.prepareSkill = options.prepareSkill
     if (options.serverUrl !== undefined && options.serverUrl !== '') {
       this.api = new DeepSeekHarnessApiClient({ baseUrl: options.serverUrl, getSessionToken: () => this.sessionToken,
         getEmployeeId: () => this.session.employeeId,
         ...(options.fetch === undefined ? {} : { fetch: options.fetch }) })
     }
+    this.catalog = new ProductCatalogManager({
+      api: this.api,
+      desktopVersion: options.desktopVersion ?? '0.0.0',
+      getSession: () => this.session,
+      ensureFreshSession: () => this.ensureFreshSession(),
+      emit: event => this.emit(event),
+    })
     this.scheduleSessionRefresh()
+    this.catalog.schedule()
   }
 
   /** Return the current UI-safe employee session snapshot.
@@ -98,8 +112,10 @@ export class DeepSeekHarnessProductBridge {
    * @param token - Opaque token retained by the main process.
    */
   setSession(session: ProductSession, token?: string): void {
+    const previousEmployee = this.session.employeeId
     this.session = { ...session }
     this.sessionToken = token
+    if (!session.authenticated || session.employeeId !== previousEmployee) this.catalog.reset()
     const persisted = this.persistSession?.(this.session, this.sessionToken)
     if (persisted instanceof Promise) {
       void persisted.catch((error: unknown) => {
@@ -107,7 +123,9 @@ export class DeepSeekHarnessProductBridge {
       })
     }
     this.scheduleSessionRefresh()
+    this.catalog.schedule()
     this.emit({ type: 'session.changed', payload: this.session })
+    if (session.authenticated) void this.catalog.refresh().catch(() => undefined)
   }
 
   /** Subscribe to product session and catalog events.
@@ -117,6 +135,21 @@ export class DeepSeekHarnessProductBridge {
   subscribe(listener: (event: ProductEvent) => void): () => void {
     this.listeners.add(listener)
     return () => { this.listeners.delete(listener) }
+  }
+
+  /** Refresh every employee-visible product directory as one immutable snapshot.
+   * Concurrent callers share one request. A failed refresh leaves the last successful snapshot intact.
+   */
+  async refreshCatalog(): Promise<void> {
+    return this.catalog.refresh()
+  }
+
+  /** Stop background timers owned by the product bridge. */
+  dispose(): void {
+    if (this.sessionRefreshTimer !== undefined) clearTimeout(this.sessionRefreshTimer)
+    this.sessionRefreshTimer = undefined
+    this.catalog.dispose()
+    this.listeners.clear()
   }
 
   /** Validate and dispatch one allowlisted product operation.
@@ -158,6 +191,10 @@ export class DeepSeekHarnessProductBridge {
       await this.refreshEmployeeSession()
       return this.session
     }
+    if (method === 'catalog.refresh') {
+      await this.refreshCatalog()
+      return { refreshed: true }
+    }
     await this.ensureFreshSession()
     try {
       return await this.invokeAuthenticated(method, input, signal)
@@ -165,6 +202,24 @@ export class DeepSeekHarnessProductBridge {
       this.handleAuthenticationFailure(error)
       throw error
     }
+  }
+
+  /** Dispatch one Host-owned product request. Connector results receive private
+   * runtime headers here and never enter the Renderer catalog snapshot.
+   * @param method - Allowlisted Host product method.
+   * @param payload - Optional method payload.
+   * @param signal - Request cancellation.
+   * @returns Host-safe product data.
+   */
+  async invokeRuntime(method: ProductRuntimeMethod, payload?: unknown, signal?: AbortSignal): Promise<unknown> {
+    const value = await this.invoke(method, payload, signal)
+    if (method !== 'connectors.list') return value
+    const api = this.api
+    const sessionToken = this.sessionToken
+    if (api === undefined || sessionToken === undefined || !Array.isArray(value)) {
+      throw new Error('deepseek-harness product: connector runtime requires an employee session')
+    }
+    return value.map(entry => runtimeConnector(entry, api, sessionToken))
   }
 
   private async invokeAuthenticated(
@@ -175,8 +230,17 @@ export class DeepSeekHarnessProductBridge {
     if (this.api === undefined) throw new Error('deepseek-harness product: server URL is not configured')
     if (method === 'expertKits.preset.prepare') {
       if (!this.session.authenticated) throw new Error('deepseek-harness product: authenticated employee is required')
-      if (this.prepareExpertKit === undefined) throw new Error('deepseek-harness product: expert kit runtime is unavailable')
-      return { presetId: await this.prepareExpertKit(requiredId(input)) }
+      const prepareExpertKit = this.prepareExpertKit
+      if (prepareExpertKit === undefined) throw new Error('deepseek-harness product: expert kit runtime is unavailable')
+      const id = requiredId(input)
+      return this.catalog.prepareExpertKit(id, content => prepareExpertKit(content))
+    }
+    if (method === 'skills.prepare') {
+      if (!this.session.authenticated) throw new Error('deepseek-harness product: authenticated employee is required')
+      const prepareSkill = this.prepareSkill
+      if (prepareSkill === undefined) throw new Error('deepseek-harness product: skill runtime is unavailable')
+      const id = requiredId(input)
+      return this.catalog.prepareSkill(id, content => prepareSkill(content))
     }
     if (method === 'expertKits.get') {
       return this.api.request(`/api/v1/expert-kits/${encodeURIComponent(requiredId(input))}`)
@@ -195,6 +259,25 @@ export class DeepSeekHarnessProductBridge {
     }
     if (method === 'skills.artifact') {
       return this.api.request(`/api/v1/skills/${encodeURIComponent(requiredId(input))}/artifacts`)
+    }
+    if (method === 'connectors.authorization.status') {
+      const result = await this.api.request(
+        `/api/v1/connectors/${encodeURIComponent(requiredId(input))}/authorization`,
+      )
+      if (authorizationStatus(result) === 'AUTHORIZED') await this.catalog.refresh()
+      return result
+    }
+    if (method === 'connectors.authorization.begin') {
+      return this.api.request(`/api/v1/connectors/${encodeURIComponent(requiredId(input))}/authorization-requests`, {
+        method: 'POST',
+      })
+    }
+    if (method === 'connectors.authorization.revoke') {
+      const result = await this.api.request(`/api/v1/connectors/${encodeURIComponent(requiredId(input))}/authorization`, {
+        method: 'DELETE',
+      })
+      await this.catalog.refresh()
+      return result
     }
     if (method === 'knowledge.search') {
       const query = input.query
@@ -216,18 +299,7 @@ export class DeepSeekHarnessProductBridge {
         }),
       })
     }
-    const routes: Partial<Record<ProductMethod, string>> = {
-      'expertKits.list': '/api/v1/expert-kits',
-      'skills.list': '/api/v1/skills',
-      'connectors.list': '/api/v1/connectors',
-      'knowledge.bases.list': '/api/v1/knowledge-bases',
-    }
-    const route = routes[method]
-    if (route === undefined) throw new Error(`deepseek-harness product: method ${method} is not available`)
-    const size = typeof input.size === 'number' ? input.size : 100
-    // Product directories are consumed as complete catalogs. The HTTP client
-    // validates every page and fails closed if the server omits metadata.
-    return this.api.listAll(route, size, signal)
+    return this.catalog.read(method)
   }
 
   private async ensureFreshSession(): Promise<void> {
@@ -326,6 +398,33 @@ export class DeepSeekHarnessProductBridge {
   }
 
   private readonly persistSession: ProductBridgeOptions['persistSession']
+}
+
+function runtimeConnector(value: unknown, api: DeepSeekHarnessApiClient, sessionToken: string): unknown {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error('deepseek-harness product: invalid connector runtime entry')
+  }
+  const record = value as Record<string, unknown>
+  const authMode = record.authMode
+  if (!['none', 'employee-bearer', 'oauth'].includes(String(authMode))) {
+    throw new Error('deepseek-harness product: invalid connector authentication mode')
+  }
+  if (record.transport !== 'streamable-http' || authMode === 'none') return record
+  if (typeof record.url !== 'string' || record.url === '') {
+    throw new Error('deepseek-harness product: authenticated connector URL is missing')
+  }
+  const headers = typeof record.headers === 'object' && record.headers !== null && !Array.isArray(record.headers)
+    ? record.headers as Record<string, string> : {}
+  return { ...record, url: api.absoluteUrl(record.url), headers: { ...headers, Authorization: `Bearer ${sessionToken}` } }
+}
+
+function authorizationStatus(value: unknown): string | undefined {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
+  return optionalString((value as Record<string, unknown>).status)
+}
+
+function optionalString(value: unknown): string | undefined {
+  return typeof value === 'string' && value !== '' ? value : undefined
 }
 
 function requiredId(input: Readonly<Record<string, unknown>>): string {

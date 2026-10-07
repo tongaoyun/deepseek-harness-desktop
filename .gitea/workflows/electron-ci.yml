@@ -49,6 +49,6 @@ jobs:
           pnpm run verify:upstream
           pnpm run build:lib:host
           pnpm run typecheck:contracts-ready
-          pnpm --dir packages/deepseek-harness-product/product test
+          pnpm test
           pnpm run verify-translation-pairing
           git diff --check

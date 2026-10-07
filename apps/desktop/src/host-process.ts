@@ -3,7 +3,7 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { join } from 'node:path'
 import type { PlatformSession } from '@deepseek-ai/dsh-deepseek-account'
-import { isProductRuntimeMethod, type ProductRuntimeMethod } from '@deepseek-harness/product/protocol'
+import { isProductRuntimeMethod, type ProductContentIdentity, type ProductRuntimeMethod } from '@deepseek-harness/product/protocol'
 import { desktopNodeEnvironment } from './node-environment.ts'
 
 interface ReadyEvent {
@@ -52,6 +52,11 @@ type DesktopHostEvent = ReadyEvent | FatalEvent | PlatformSessionEvent | Product
   readonly requestId: number
   readonly presetId: string
   readonly error?: string
+} | {
+  readonly type: 'skill-prepare'
+  readonly requestId: number
+  readonly presetId: string
+  readonly error?: string
 }
 
 /** Correlated answer to one shell control request. */
@@ -76,6 +81,15 @@ function productOperationError(method: ProductRuntimeMethod, error: unknown): st
     || !Number.isSafeInteger(candidate.status) || (candidate.status as number) < 400 || (candidate.status as number) > 599
     || typeof candidate.code !== 'string' || !/^[A-Z][A-Z0-9_]{1,63}$/.test(candidate.code)) return prefix
   return `${prefix} [${candidate.code}, HTTP ${String(candidate.status)}]`
+}
+
+function validateProductContent(content: ProductContentIdentity, label: string): void {
+  if (!/^[a-z][a-z0-9-]{2,63}$/u.test(content.id)) {
+    throw new Error(`deepseek-harness product: invalid ${label} id`)
+  }
+  if (content.version === '' || content.version.length > 128 || !/^[a-fA-F0-9]{64}$/u.test(content.sha256)) {
+    throw new Error(`deepseek-harness product: invalid ${label} content identity`)
+  }
 }
 
 function isDesktopHostEvent(message: unknown): message is DesktopHostEvent {
@@ -120,6 +134,7 @@ function isDesktopHostEvent(message: unknown): message is DesktopHostEvent {
       return Number.isSafeInteger(candidate.requestId) && typeof candidate.activeTasks === 'boolean'
         && typeof candidate.scheduledTasks === 'boolean' && (candidate.error === undefined || typeof candidate.error === 'string')
     case 'expert-kit-prepare':
+    case 'skill-prepare':
       return Number.isSafeInteger(candidate.requestId) && typeof candidate.presetId === 'string'
         && (candidate.error === undefined || typeof candidate.error === 'string')
     default:
@@ -317,13 +332,22 @@ export class DesktopHostProcess {
   }
 
   /** Prepare the immutable Host Preset for one Expert Kit Session. */
-  async prepareExpertKit(id: string): Promise<string> {
-    if (!/^[a-z][a-z0-9-]{2,63}$/.test(id)) {
-      throw new Error('deepseek-harness product: invalid expert kit id')
-    }
-    const response = await this.control({ type: 'expert-kit-prepare', id }, 30_000,
+  async prepareExpertKit(content: ProductContentIdentity): Promise<string> {
+    validateProductContent(content, 'expert kit')
+    const response = await this.control({ type: 'expert-kit-prepare', ...content }, 30_000,
       'deepseek-harness product: expert kit preparation timed out')
     if (response.type !== 'expert-kit-prepare') {
+      throw new Error('deepseek-harness product: Host answered with a different control response')
+    }
+    return response.presetId
+  }
+
+  /** Prepare the immutable Host Preset for one standalone Skill Session. */
+  async prepareSkill(content: ProductContentIdentity): Promise<string> {
+    validateProductContent(content, 'skill')
+    const response = await this.control({ type: 'skill-prepare', ...content }, 30_000,
+      'deepseek-harness product: skill preparation timed out')
+    if (response.type !== 'skill-prepare') {
       throw new Error('deepseek-harness product: Host answered with a different control response')
     }
     return response.presetId
@@ -332,7 +356,8 @@ export class DesktopHostProcess {
   private async control(
     request: { readonly type: 'update-tasks'; readonly action: 'inspect' | 'lock' | 'unlock' }
       | { readonly type: 'quit-inspection' }
-      | { readonly type: 'expert-kit-prepare'; readonly id: string },
+      | ({ readonly type: 'expert-kit-prepare' } & ProductContentIdentity)
+      | ({ readonly type: 'skill-prepare' } & ProductContentIdentity),
     deadlineMs: number, deadlineMessage: string,
   ): Promise<DesktopHostControlResponse> {
     const child = this.child

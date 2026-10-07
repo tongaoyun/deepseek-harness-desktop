@@ -1,6 +1,8 @@
 name: Electron Windows
 
 on:
+  push:
+    branches: [main]
   pull_request:
   workflow_dispatch:
 

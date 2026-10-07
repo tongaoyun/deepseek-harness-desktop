@@ -40,7 +40,6 @@ Different enabled-kit snapshots change the catalog and its cache prefix. Loading
 
 - No runtime invariant companion is published because this package only exposes model instructions and has no package-owned runtime checks.
 - README files are limited to 64 KiB.
-- Historical artifact generations are not automatically garbage-collected yet; cleanup must first prove that no Session references their Preset.
 
 <a id="dev-note"></a>
 ### Dev Note

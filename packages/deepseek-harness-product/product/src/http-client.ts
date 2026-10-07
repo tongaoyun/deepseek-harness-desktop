@@ -46,6 +46,20 @@ export class DeepSeekHarnessApiClient {
     this.requestFetch = options.fetch ?? globalThis.fetch
   }
 
+  /** Resolve one server-relative product URL without exposing credentials.
+   * @param path - Absolute URL or server-relative path.
+   * @returns Validated absolute HTTP URL.
+   */
+  absoluteUrl(path: string): string {
+    const value = new URL(/^https?:\/\//u.test(path)
+      ? path
+      : `${this.baseUrl}/${path.replace(/^\/+/, '')}`)
+    if (!['http:', 'https:'].includes(value.protocol) || value.username !== '' || value.password !== '') {
+      throw new Error('deepseek-harness product: invalid server URL')
+    }
+    return value.href
+  }
+
   private async send<T extends ColaResponse<unknown>>(path: string, init: RequestInit = {}): Promise<T> {
     const headers = new Headers(init.headers)
     headers.set('accept', 'application/json')

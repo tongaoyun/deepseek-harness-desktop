@@ -1,7 +1,7 @@
 /** DeepSeekHarness product capabilities mounted on official Harness extension points. */
 
 import { createHash } from 'node:crypto'
-import { mkdir, open, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, open, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join, posix, resolve, sep } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { entryListSchema } from '@deepseek-ai/cordis-plugin-include'
@@ -9,8 +9,8 @@ import type { PresetDefinition } from '@deepseek-ai/dsh-agent-preset-registry'
 import { entryListProblem } from '@deepseek-ai/dsh-agent-preset-registry'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import type {} from '@deepseek-ai/dsh-session-query'
-import * as SkillFilesystem from '@deepseek-ai/dsh-skill-filesystem'
 import { defineTool } from '@deepseek-ai/dsh-tools'
+import type { ProductContentIdentity } from '@deepseek-harness/product/protocol'
 import { load } from 'js-yaml'
 import * as tar from 'tar'
 import type { DeepSeekHarnessProductIpc } from './deepseek-harness-product-ipc.ts'
@@ -30,6 +30,15 @@ import {
   type ExpertKitConnectorSnapshotEntry,
   type ExpertKitSnapshotEntry,
 } from './deepseek-harness-expert-kit-store.ts'
+import {
+  pruneSkillGenerations,
+  pruneSkillPresetSnapshots,
+  readSkillPresetSnapshots,
+  skillGenerationPath,
+  skillPresetId,
+  writeSkillPresetSnapshot,
+  type SkillSnapshotEntry,
+} from './deepseek-harness-skill-store.ts'
 
 export { expertKitPresetId } from './deepseek-harness-expert-kit-store.ts'
 
@@ -47,7 +56,9 @@ export const inject = ['agentPresets', 'sessionQuery', 'skills', 'systemPrompt',
 /** Live product controls published to the private Desktop Host IPC boundary. */
 export interface DeepSeekHarnessRuntimeControl {
   /** Prepare the immutable capability snapshot for one Expert Kit Session. */
-  prepareExpertKit(id: string): Promise<string>
+  prepareExpertKit(content: ProductContentIdentity): Promise<string>
+  /** Prepare the immutable capability snapshot for one standalone Skill Session. */
+  prepareSkill(content: ProductContentIdentity): Promise<string>
 }
 
 /** Runtime dependencies supplied by the private Desktop Host. */
@@ -60,11 +71,7 @@ export interface Config {
 
 type ExpertKit = ExpertKitSnapshotEntry
 
-interface Skill {
-  readonly id: string
-  readonly version: string
-  readonly sha256: string
-}
+type Skill = SkillSnapshotEntry
 
 interface InstalledExpertKit {
   readonly kit: ExpertKit
@@ -97,44 +104,33 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   const skillsRoot = join(root, 'skills')
   const kitsRoot = join(root, 'expert-kits')
   const snapshotsRoot = join(root, 'expert-kit-presets')
+  const skillSnapshotsRoot = join(root, 'skill-presets')
   await Promise.all([
     mkdir(skillsRoot, { recursive: true }), mkdir(kitsRoot, { recursive: true }),
-    mkdir(snapshotsRoot, { recursive: true }),
+    mkdir(snapshotsRoot, { recursive: true }), mkdir(skillSnapshotsRoot, { recursive: true }),
   ])
 
-  const [skillsValue, kitsValue, connectorsValue] = await Promise.all([
-    config.product.invoke('skills.list'),
-    config.product.invoke('expertKits.list'),
-    config.product.invoke('connectors.list'),
+  const [connectors, kits, skills] = await Promise.all([
+    config.product.invoke('connectors.list').then(parseConnectorCatalog).catch((error: unknown) => {
+      console.warn('deepseek-harness product: live data connections are unavailable during snapshot restore', error)
+      return []
+    }),
+    config.product.invoke('expertKits.list').then(expertKitCatalog).catch((error: unknown) => {
+      console.warn('deepseek-harness product: Expert Kit catalog is unavailable during cache retention', error)
+      return []
+    }),
+    config.product.invoke('skills.list').then(skillCatalog).catch((error: unknown) => {
+      console.warn('deepseek-harness product: Skill catalog is unavailable during cache retention', error)
+      return []
+    }),
   ])
-  const skills = skillCatalog(skillsValue)
-  const kits = expertKitCatalog(kitsValue)
-  const connectors = parseConnectorCatalog(connectorsValue)
 
-  await pruneInstallRoot(skillsRoot, new Set(skills.map(skill => skill.id)))
-  for (const skill of skills) {
-    await installArtifact(config.product, 'skills.artifact', skill, skillsRoot)
-  }
   const standardDocument = await ctx.agentPresets.readDocument('standard')
   const standardPlugins = parsePresetPlugins(standardDocument.content)
   const knowledgeRefsByPreset = new Map<string, readonly string[]>()
   const connectorsByPreset = new Map<string, readonly Connector[]>()
   const connectorById = new Map(connectors.map(connector => [connector.id, connector]))
-  const installedKits = new Map<string, InstalledExpertKit>()
   installConnectorPolicy(ctx, connectors, connectorsByPreset)
-
-  for (const kit of kits) {
-    try {
-      await installExpertKitArtifact(config.product, kit, kitsRoot)
-      installedKits.set(kit.id, await installedExpertKit(kit, kitsRoot, connectorById))
-    } catch (error: unknown) {
-      console.error(`deepseek-harness product: expert kit ${kit.id} is unavailable`, error)
-    }
-  }
-  await ctx.plugin(SkillFilesystem, {
-    providerName: 'deepseek-harness-product', includeDefaultRoots: false,
-    customSkillDirs: [skillsRoot], watch: false,
-  })
 
   const registeredSnapshots = new Set<string>()
   const snapshotRegistrations = new Map<string, Promise<void>>()
@@ -146,7 +142,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     const selectedConnectors = restoredConnectors === undefined
       ? connectorsForExpertKit(selected)
       : restoredConnectors.map(snapshot => restoreConnector(snapshot, connectorById))
-    const connectorSnapshots = selectedConnectors.map(connectorSnapshot)
+    const connectorSnapshots = restoredConnectors ?? selectedConnectors.map(connectorSnapshot)
     const presetId = expertKitPresetId(selected.kit, connectorSnapshots)
     if (registeredSnapshots.has(presetId)) return presetId
     let pending = snapshotRegistrations.get(presetId)
@@ -216,11 +212,130 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     }
   }
 
-  const prepareExpertKit = async (id: string): Promise<string> => {
-    const selected = resolveExpertKit(id, installedKits)
+  const expertKitPreparations = new Map<string, Promise<string>>()
+  const prepareExpertKitOnce = async (content: ProductContentIdentity): Promise<string> => {
+    const { id } = content
+    validateProductId(id)
+    const [kitValue, connectorValue] = await Promise.all([
+      config.product.invoke('expertKits.get', { id }),
+      config.product.invoke('connectors.list'),
+    ])
+    const kit = expertKitCatalog([kitValue])[0]
+    if (kit === undefined || kit.id !== id) throw new Error(`deepseek-harness product: expert kit ${id} is unavailable`)
+    assertContentIdentity(kit, content, 'Expert Kit')
+    const liveConnectors = parseConnectorCatalog(connectorValue)
+    const liveConnectorById = new Map(liveConnectors.map(connector => [connector.id, connector]))
+    await installExpertKitArtifact(config.product, kit, kitsRoot)
+    const selected = await installedExpertKit(kit, kitsRoot, liveConnectorById)
     const presetId = await registerExpertKitSnapshot(selected, true)
     requiredSnapshots.add(presetId)
     return presetId
+  }
+  const prepareExpertKit = (content: ProductContentIdentity): Promise<string> => {
+    const key = contentIdentityKey(content)
+    const existing = expertKitPreparations.get(key)
+    if (existing !== undefined) return existing
+    const pending = prepareExpertKitOnce(content).finally(() => {
+      if (expertKitPreparations.get(key) === pending) expertKitPreparations.delete(key)
+    })
+    expertKitPreparations.set(key, pending)
+    return pending
+  }
+
+  const referencedSkillSnapshots = await referencedPresetIds(ctx, 'deepseek-harness-skill-', 'Skill')
+  const requiredSkillSnapshots = new Set(referencedSkillSnapshots.ids)
+  const storedSkills = await readSkillPresetSnapshots(skillSnapshotsRoot)
+  for (const diagnostic of storedSkills.diagnostics) console.warn(`deepseek-harness product: ignored invalid Skill snapshot ${diagnostic}`)
+  const storedSkillIds = new Set(storedSkills.snapshots.map(snapshot => snapshot.id))
+  const missingSkillSnapshots = [...requiredSkillSnapshots].filter(id => !storedSkillIds.has(id))
+  const skillRetentionComplete = referencedSkillSnapshots.complete && missingSkillSnapshots.length === 0
+  for (const id of missingSkillSnapshots) {
+    console.warn(`deepseek-harness product: required Skill snapshot ${id} is unavailable; cleanup is disabled`)
+  }
+
+  const registeredSkillPresets = new Set<string>()
+  const skillPreparations = new Map<string, Promise<string>>()
+  const registerSkillSnapshot = async (
+    skill: Skill,
+    persist: boolean,
+    restoredConnectors?: readonly ExpertKitConnectorSnapshotEntry[],
+    resolvedConnectors?: readonly Connector[],
+  ): Promise<string> => {
+    const selectedConnectors = resolvedConnectors ?? (restoredConnectors === undefined
+      ? connectorsForCapability(skill, connectorById, 'Skill')
+      : restoredConnectors.map(snapshot => restoreConnector(snapshot, connectorById)))
+    const connectorSnapshots = restoredConnectors ?? selectedConnectors.map(connectorSnapshot)
+    const presetId = skillPresetId(skill, connectorSnapshots)
+    if (registeredSkillPresets.has(presetId)) return presetId
+    let pending = skillPreparations.get(presetId)
+    if (pending === undefined) {
+      pending = (async () => {
+        const skillDirectory = skillGenerationPath(skillsRoot, skill)
+        if (await installedSha(skillDirectory) !== skill.sha256.toLowerCase()) {
+          throw new Error(`deepseek-harness product: Skill generation is unavailable: ${skill.id}@${skill.sha256}`)
+        }
+        if (persist) await writeSkillPresetSnapshot(skillSnapshotsRoot, skill, connectorSnapshots)
+        await registerPreset(ctx, {
+          id: presetId,
+          name: skill.name,
+          description: skill.summary,
+          plugins: [...standardPlugins, {
+            id: `deepseek-harness-skill-filesystem-${presetId}`,
+            name: '@deepseek-ai/dsh-skill-filesystem',
+            config: {
+              providerName: presetId,
+              includeDefaultRoots: false,
+              customSkillDirs: [dirname(skillDirectory)],
+              watch: false,
+            },
+          }, ...selectedConnectors.map(connectorPlugin)],
+        })
+        registeredSkillPresets.add(presetId)
+        knowledgeRefsByPreset.set(presetId, [...new Set(skill.knowledgeBaseRefs)].sort())
+        connectorsByPreset.set(presetId, selectedConnectors)
+        return presetId
+      })()
+      skillPreparations.set(presetId, pending)
+    }
+    try { return await pending } finally { skillPreparations.delete(presetId) }
+  }
+  for (const snapshot of storedSkills.snapshots.filter(candidate => requiredSkillSnapshots.has(candidate.id))) {
+    try {
+      const restored = await registerSkillSnapshot(snapshot.skill, false, snapshot.connectors)
+      if (restored !== snapshot.id) throw new Error(`snapshot identity changed from ${snapshot.id} to ${restored}`)
+    } catch (error) {
+      console.warn(`deepseek-harness product: Skill snapshot ${snapshot.id} is unavailable`, error)
+    }
+  }
+
+  const standaloneSkillPreparations = new Map<string, Promise<string>>()
+  const prepareSkillOnce = async (content: ProductContentIdentity): Promise<string> => {
+    const { id } = content
+    validateProductId(id)
+    const [skillValue, connectorValue] = await Promise.all([
+      config.product.invoke('skills.get', { id }),
+      config.product.invoke('connectors.list'),
+    ])
+    const skill = skillCatalog([skillValue])[0]
+    if (skill === undefined || skill.id !== id) throw new Error(`deepseek-harness product: skill ${id} is unavailable`)
+    assertContentIdentity(skill, content, 'Skill')
+    const liveConnectors = parseConnectorCatalog(connectorValue)
+    const liveConnectorById = new Map(liveConnectors.map(connector => [connector.id, connector]))
+    await installSkillArtifact(config.product, skill, skillsRoot)
+    const selectedConnectors = connectorsForCapability(skill, liveConnectorById, 'Skill')
+    const presetId = await registerSkillSnapshot(skill, true, undefined, selectedConnectors)
+    requiredSkillSnapshots.add(presetId)
+    return presetId
+  }
+  const prepareSkill = (content: ProductContentIdentity): Promise<string> => {
+    const key = contentIdentityKey(content)
+    const existing = standaloneSkillPreparations.get(key)
+    if (existing !== undefined) return existing
+    const pending = prepareSkillOnce(content).finally(() => {
+      if (standaloneSkillPreparations.get(key) === pending) standaloneSkillPreparations.delete(key)
+    })
+    standaloneSkillPreparations.set(key, pending)
+    return pending
   }
 
   if (retentionComplete) {
@@ -237,7 +352,20 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   } else {
     console.warn('deepseek-harness product: Expert Kit cleanup skipped because Session references were not fully inspected')
   }
-  const control: DeepSeekHarnessRuntimeControl = { prepareExpertKit }
+  if (skillRetentionComplete) {
+    try {
+      await pruneSkillPresetSnapshots(skillSnapshotsRoot, requiredSkillSnapshots)
+      await pruneSkillGenerations(skillsRoot, [
+        ...skills,
+        ...storedSkills.snapshots.filter(snapshot => requiredSkillSnapshots.has(snapshot.id)).map(snapshot => snapshot.skill),
+      ])
+    } catch (error) {
+      console.warn('deepseek-harness product: Skill cleanup failed without blocking Host startup', error)
+    }
+  } else {
+    console.warn('deepseek-harness product: Skill cleanup skipped because Session references were not fully inspected')
+  }
+  const control: DeepSeekHarnessRuntimeControl = { prepareExpertKit, prepareSkill }
   config.publishControl(control)
   ctx.effect(() => () => { config.publishControl(undefined) }, 'deepseek-harness-product.runtime-control')
   installKnowledgeTool(ctx, config.product, knowledgeRefsByPreset)
@@ -250,16 +378,24 @@ interface ReferencedExpertKitPresets {
 
 /** Collect Expert Kit Presets referenced by every readable Session. */
 export async function referencedExpertKitPresetIds(ctx: Context): Promise<ReferencedExpertKitPresets> {
+  return referencedPresetIds(ctx, 'deepseek-harness-expert-kit-', 'Expert Kit')
+}
+
+async function referencedPresetIds(
+  ctx: Context,
+  prefix: string,
+  label: 'Expert Kit' | 'Skill',
+): Promise<ReferencedExpertKitPresets> {
   const ids = new Set<string>()
   let records: Awaited<ReturnType<typeof ctx.sessionQuery.listSessions>>
   try { records = await ctx.sessionQuery.listSessions() }
   catch (error) {
-    console.warn('deepseek-harness product: could not list Sessions for Expert Kit retention', error)
+    console.warn(`deepseek-harness product: could not list Sessions for ${label} retention`, error)
     return { ids, complete: false }
   }
   let complete = true
   const remember = (value: unknown): void => {
-    if (typeof value === 'string' && value.startsWith('deepseek-harness-expert-kit-')) ids.add(value)
+    if (typeof value === 'string' && value.startsWith(prefix)) ids.add(value)
   }
   let next = 0
   const inspect = async (): Promise<void> => {
@@ -273,7 +409,7 @@ export async function referencedExpertKitPresetIds(ctx: Context): Promise<Refere
         remember(observation.projections?.values.agentPreset)
       } catch (error) {
         complete = false
-        console.warn(`deepseek-harness product: could not inspect Session ${record.header.id} for Expert Kit retention`, error)
+        console.warn(`deepseek-harness product: could not inspect Session ${record.header.id} for ${label} retention`, error)
       }
     }
   }
@@ -284,21 +420,15 @@ export async function referencedExpertKitPresetIds(ctx: Context): Promise<Refere
   return { ids, complete }
 }
 
-function resolveExpertKit(
-  id: string,
-  installed: ReadonlyMap<string, InstalledExpertKit>,
-): InstalledExpertKit {
-  validateProductId(id)
-  const kit = installed.get(id)
-  if (kit === undefined) throw new Error(`deepseek-harness product: expert kit ${id} is unavailable`)
-  return kit
-}
-
-function validateRequiredTools(kit: ExpertKit, connectors: readonly Connector[]): void {
+function validateRequiredTools(
+  capability: Pick<ExpertKit | Skill, 'id' | 'requiredTools'>,
+  connectors: readonly Connector[],
+  label: 'expert kit' | 'Skill' = 'expert kit',
+): void {
   const available = new Set(connectors.flatMap(connector => connector.toolNames))
-  const missing = kit.requiredTools.filter(tool => !available.has(tool))
+  const missing = capability.requiredTools.filter(tool => !available.has(tool))
   if (missing.length > 0) {
-    throw new Error(`deepseek-harness product: expert kit ${kit.id} requires unavailable tools: ${missing.join(', ')}`)
+    throw new Error(`deepseek-harness product: ${label} ${capability.id} requires unavailable tools: ${missing.join(', ')}`)
   }
 }
 
@@ -332,12 +462,12 @@ function connectorPlugin(connector: Connector): PresetDefinition['plugins'][numb
 
 function installConnectorPolicy(
   ctx: Context,
-  connectors: readonly Connector[],
+  _connectors: readonly Connector[],
   connectorsByPreset: ReadonlyMap<string, readonly Connector[]>,
 ): void {
   ctx.on('tools/pre-execute', (exec, next) => {
     const preset = exec.agent === undefined ? undefined : ctx.agentPresets.composedPreset(exec.agent.ctx)
-    const policy = connectorToolPolicy(preset === undefined ? connectors : connectorsByPreset.get(preset) ?? connectors, exec.name)
+    const policy = connectorToolPolicy(preset === undefined ? [] : connectorsByPreset.get(preset) ?? [], exec.name)
     if (policy === 'read-only' || policy === 'unrelated') return next()
     if (policy === 'write') {
       return Promise.resolve({
@@ -358,6 +488,20 @@ function connectorsForExpertKit(selected: InstalledExpertKit): readonly Connecto
   return [...selected.connectors].sort((left, right) => left.id.localeCompare(right.id))
 }
 
+function connectorsForCapability(
+  capability: Pick<ExpertKit | Skill, 'id' | 'connectorRefs' | 'requiredTools'>,
+  connectorById: ReadonlyMap<string, Connector>,
+  label: 'Expert Kit' | 'Skill',
+): readonly Connector[] {
+  const connectors = capability.connectorRefs.map((id) => {
+    const connector = connectorById.get(id)
+    if (connector === undefined) throw new Error(`${label} ${capability.id} requires unknown connector ${id}`)
+    return connector
+  }).sort((left, right) => left.id.localeCompare(right.id))
+  validateRequiredTools(capability, connectors, label === 'Skill' ? 'Skill' : 'expert kit')
+  return connectors
+}
+
 function connectorSnapshot(connector: Connector): ExpertKitConnectorSnapshotEntry {
   const common = {
     id: connector.id, name: connector.name, transport: connector.transport,
@@ -376,11 +520,20 @@ function restoreConnector(
   liveById: ReadonlyMap<string, Connector>,
 ): Connector {
   const live = liveById.get(snapshot.id)
-  if (live === undefined) throw new Error(`expert kit requires unavailable connector ${snapshot.id}`)
-  return {
-    ...snapshot, status: 'ready', authMode: 'none',
-    environment: live.environment, headers: live.headers,
+  if (live === undefined) throw new Error(`capability requires unavailable connector ${snapshot.id}`)
+  if (live.transport !== snapshot.transport) {
+    throw new Error(`capability connector ${snapshot.id} changed transport`)
   }
+  const current = {
+    ...snapshot, status: 'ready' as const, authMode: live.authMode,
+    arguments: live.arguments, environment: live.environment, headers: live.headers,
+  }
+  if (live.transport === 'streamable-http') {
+    if (live.url === undefined) throw new Error(`capability connector ${snapshot.id} has no current URL`)
+    return { ...current, transport: live.transport, url: live.url }
+  }
+  if (live.command === undefined) throw new Error(`capability connector ${snapshot.id} has no current command`)
+  return { ...current, transport: live.transport, command: live.command }
 }
 
 function installKnowledgeTool(
@@ -437,16 +590,19 @@ function installKnowledgeTool(
   }))
 }
 
-async function installArtifact(
+async function installSkillArtifact(
   product: DeepSeekHarnessProductIpc,
-  method: 'skills.artifact' | 'expertKits.artifact',
-  catalog: Pick<Skill, 'id' | 'version' | 'sha256'>,
-  parent: string,
+  catalog: Skill,
+  root: string,
 ): Promise<string> {
   validateProductId(catalog.id)
   validateSha256(catalog.sha256)
-  const target = resolve(parent, catalog.id)
-  return await installArtifactAt(product, method, catalog, parent, target)
+  const generation = resolve(root, catalog.sha256.toLowerCase())
+  assertChild(root, generation)
+  const target = resolve(generation, catalog.id)
+  assertChild(generation, target)
+  await installArtifactAt(product, 'skills.artifact', catalog, root, target)
+  return generation
 }
 
 async function installExpertKitArtifact(
@@ -634,16 +790,6 @@ async function installedSha(target: string): Promise<string | undefined> {
   }
 }
 
-async function pruneInstallRoot(parent: string, retainedIds: ReadonlySet<string>): Promise<void> {
-  const entries = await readdir(parent, { withFileTypes: true })
-  await Promise.all(entries.filter(entry => entry.isDirectory()
-    && (!retainedIds.has(entry.name) || entry.name.includes('.installing-'))).map(async (entry) => {
-    const target = resolve(parent, entry.name)
-    assertChild(parent, target)
-    await rm(target, { recursive: true, force: true })
-  }))
-}
-
 async function isDirectory(path: string): Promise<boolean> {
   try { return (await stat(path)).isDirectory() }
   catch (error) {
@@ -672,6 +818,28 @@ function validateSha256(value: string): void {
   if (!/^[a-fA-F0-9]{64}$/.test(value)) throw new Error('deepseek-harness product: invalid artifact SHA-256')
 }
 
+function contentIdentityKey(content: ProductContentIdentity): string {
+  validateProductId(content.id)
+  if (content.version === '' || content.version.length > 128) {
+    throw new Error('deepseek-harness product: invalid content version')
+  }
+  validateSha256(content.sha256)
+  return `${content.id}\0${content.version}\0${content.sha256.toLowerCase()}`
+}
+
+function assertContentIdentity(
+  actual: Pick<ExpertKit | Skill, 'id' | 'version' | 'sha256'>,
+  expected: ProductContentIdentity,
+  label: 'Expert Kit' | 'Skill',
+): void {
+  validateProductId(expected.id)
+  validateSha256(expected.sha256)
+  if (actual.id !== expected.id || actual.version !== expected.version
+    || actual.sha256.toLowerCase() !== expected.sha256.toLowerCase()) {
+    throw new Error(`deepseek-harness product: ${label} catalog version changed before preparation`)
+  }
+}
+
 function expertKitCatalog(value: unknown): ExpertKit[] {
   if (!Array.isArray(value)) throw new Error('deepseek-harness product: invalid expert kit catalog')
   return value.map((entry) => {
@@ -691,7 +859,13 @@ function skillCatalog(value: unknown): Skill[] {
   if (!Array.isArray(value)) throw new Error('deepseek-harness product: invalid skill catalog')
   return value.map((entry) => {
     const record = objectRecord(entry, 'skill')
-    return { id: stringField(record, 'id'), version: stringField(record, 'version'), sha256: stringField(record, 'sha256') }
+    return {
+      id: stringField(record, 'id'), name: stringField(record, 'name'), version: stringField(record, 'version'),
+      summary: stringField(record, 'summary'), connectorRefs: stringList(record.connectorRefs, 'connectorRefs'),
+      requiredTools: stringList(record.requiredTools, 'requiredTools'),
+      knowledgeBaseRefs: stringList(record.knowledgeBaseRefs, 'knowledgeBaseRefs'),
+      sha256: stringField(record, 'sha256'),
+    }
   })
 }
 

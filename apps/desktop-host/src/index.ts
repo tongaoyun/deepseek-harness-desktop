@@ -17,6 +17,23 @@ import { installOfficeEngineResolution } from './office-engine.ts'
 import { DeepSeekHarnessProductIpc } from './deepseek-harness-product-ipc.ts'
 import * as deepseekHarnessRuntime from './deepseek-harness-runtime.ts'
 
+function validContentIdentity(value: object): value is {
+  readonly id: string
+  readonly version: string
+  readonly sha256: string
+} {
+  return 'id' in value
+    && typeof value.id === 'string'
+    && /^[a-z][a-z0-9-]{2,63}$/u.test(value.id)
+    && 'version' in value
+    && typeof value.version === 'string'
+    && value.version !== ''
+    && value.version.length <= 128
+    && 'sha256' in value
+    && typeof value.sha256 === 'string'
+    && /^[a-fA-F0-9]{64}$/u.test(value.sha256)
+}
+
 async function main(): Promise<void> {
   const runtimeDir = process.argv[2] as string
   const projectDir = process.argv[3] as string
@@ -46,8 +63,8 @@ async function main(): Promise<void> {
   const control: {
     updateTasks?: ReturnType<typeof installDesktopUpdateTaskControl>
     quitInspection?: ReturnType<typeof installDesktopQuitInspection>
-    expertKits: deepseekHarnessRuntime.DeepSeekHarnessRuntimeControl | undefined
-  } = { expertKits: undefined }
+    productRuntime: deepseekHarnessRuntime.DeepSeekHarnessRuntimeControl | undefined
+  } = { productRuntime: undefined }
   const send = (message: object): Promise<void> => new Promise((resolve, reject) => {
     if (!process.connected || process.send === undefined) { resolve(); return }
     process.send(message, (error) => { if (error === null) resolve(); else reject(error) })
@@ -83,18 +100,37 @@ async function main(): Promise<void> {
     }
     if (message.type === 'expert-kit-prepare') {
       if (!('requestId' in message) || !Number.isSafeInteger(message.requestId)
-        || !('id' in message) || typeof message.id !== 'string') return
+        || !validContentIdentity(message)) return
       const requestId = message.requestId
-      const id = message.id
+      const content = { id: message.id, version: message.version, sha256: message.sha256 }
       void (async () => {
         try {
-          if (stopping !== undefined || control.expertKits === undefined) {
+          if (stopping !== undefined || control.productRuntime === undefined) {
             throw new Error('deepseek-harness product: expert kit runtime is unavailable')
           }
-          const presetId = await control.expertKits.prepareExpertKit(id)
+          const presetId = await control.productRuntime.prepareExpertKit(content)
           await send({ type: 'expert-kit-prepare', requestId, presetId })
         } catch (error) {
           await send({ type: 'expert-kit-prepare', requestId, presetId: '',
+            error: error instanceof Error ? error.message : String(error) })
+        }
+      })().catch((error: unknown) => { console.error(error) })
+      return
+    }
+    if (message.type === 'skill-prepare') {
+      if (!('requestId' in message) || !Number.isSafeInteger(message.requestId)
+        || !validContentIdentity(message)) return
+      const requestId = message.requestId
+      const content = { id: message.id, version: message.version, sha256: message.sha256 }
+      void (async () => {
+        try {
+          if (stopping !== undefined || control.productRuntime === undefined) {
+            throw new Error('deepseek-harness product: skill runtime is unavailable')
+          }
+          const presetId = await control.productRuntime.prepareSkill(content)
+          await send({ type: 'skill-prepare', requestId, presetId })
+        } catch (error) {
+          await send({ type: 'skill-prepare', requestId, presetId: '',
             error: error instanceof Error ? error.message : String(error) })
         }
       })().catch((error: unknown) => { console.error(error) })
@@ -124,7 +160,7 @@ async function main(): Promise<void> {
   })
   await ctx.plugin(deepseekHarnessRuntime, {
     product,
-    publishControl: (runtimeControl) => { control.expertKits = runtimeControl },
+    publishControl: (runtimeControl) => { control.productRuntime = runtimeControl },
   })
   installPlatformSessionPublisher(ctx, (session) => {
     if (process.connected) process.send?.({ type: 'platform-session', session })

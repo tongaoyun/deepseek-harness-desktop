@@ -9,6 +9,7 @@ import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 import type {} from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type { InputTriggerSource, ReferenceInsert } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
@@ -23,8 +24,14 @@ import {
 import { DeepSeekHarnessSettingsMenu } from './DeepSeekHarnessSettingsMenu.tsx'
 
 export const inject = [
-  'slots', 'locale', 'sessions', 'workspaces', 'uiWorkspace', 'conversation', 'remote', 'remote.agentPresets',
+  'slots', 'locale', 'sessions', 'workspaces', 'uiWorkspace', 'conversation', 'inputTriggers', 'remote', 'remote.agentPresets',
 ]
+
+const PRODUCT_SKILL_REFERENCE_SOURCE = 'deepseek-harness-product-skill'
+
+function skillReference(id: string, name: string): ReferenceInsert {
+  return { source: PRODUCT_SKILL_REFERENCE_SOURCE, ref: id, label: name, clipboardText: `/${id}` }
+}
 
 const PANEL_COMPONENTS = {
   expertKits: ExpertKitsPanel,
@@ -36,6 +43,15 @@ const PANEL_COMPONENTS = {
 /** Register DeepSeekHarness capability navigation in the official Harness sidebar. */
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'deepseek-harness-product: dictionaries')
+  const skillSource: InputTriggerSource = {
+    trigger: '/', name: PRODUCT_SKILL_REFERENCE_SOURCE, showGroupTitle: false,
+    candidates: async () => [], onPick: () => undefined,
+    codec: {
+      clipboardText: ref => `/${ref}`,
+      serialize: ref => Promise.resolve(`/${ref}`),
+    },
+  }
+  ctx.effect(() => ctx.inputTriggers.registerSource(skillSource), 'deepseek-harness-product: skill references')
   ctx.slots.inject('settings.launcher', () => ctx.slots.register({
     name: 'settings.launcher', priority: -100, locale: NS,
   }, DeepSeekHarnessSettingsMenu))
@@ -79,11 +95,30 @@ export function apply(ctx: ClientContext): void {
       if (!selected.ok) throw new Error(`deepseek-harness product: ${selected.error.message}`)
       openDraft(sessionId, prompt ?? '')
     },
-    async useSkill(_skillId: string, skillName: string): Promise<void> {
+    async useSkill(skillId: string, skillName: string): Promise<void> {
+      const api = (globalThis as { deepseekHarness?: { product?: { invoke(method: string, payload?: unknown): Promise<unknown> } } })
+        .deepseekHarness?.product
+      if (api === undefined) throw new Error('deepseek-harness product: product bridge is unavailable')
+      const prepared = await api.invoke('skills.prepare', { id: skillId })
+      if (typeof prepared !== 'object' || prepared === null || Array.isArray(prepared)
+        || typeof (prepared as Record<string, unknown>).presetId !== 'string') {
+        throw new Error('deepseek-harness product: invalid Skill Preset response')
+      }
       const sessionId = await ctx.sessions.create({
         workspaceId: (await ensureWorkspace()).workspaceId,
       })
-      openDraft(sessionId, t('skillPrompt').replace('{name}', skillName))
+      const selected = await ctx.remote.agentPresets.select(sessionId, (prepared as { readonly presetId: string }).presetId)
+      if (!selected.ok) throw new Error(`deepseek-harness product: ${selected.error.message}`)
+      ctx.uiWorkspace.openSession(sessionId)
+      const binding = ctx.sessions.binding(sessionId)
+      if (binding === undefined) throw new Error(`deepseek-harness product: session ${sessionId} did not open`)
+      const input = ctx.conversation.input.for(binding.ctx)
+      input.setDraft('')
+      const state = input.state.getSnapshot()
+      if (!input.insertReference(skillReference(skillId, skillName), { start: 0, end: 0, draftRev: state.draftRev })) {
+        throw new Error('deepseek-harness product: Skill reference could not be inserted')
+      }
+      input.focus()
     },
   }
   ctx.slots.inject('sidebar.panelheading', () => ctx.slots.register({

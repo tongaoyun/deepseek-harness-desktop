@@ -40,7 +40,6 @@ kind: "package-reference"
 
 - 不发布运行时不变量伴随包，因为本包只提供模型指令，不包含包自有的运行时检查。
 - README 文件最大为 64 KiB。
-- 历史制品代暂不自动回收；清理前必须先确认没有 Session 引用对应 Preset。
 
 <a id="dev-note"></a>
 ### 开发备注

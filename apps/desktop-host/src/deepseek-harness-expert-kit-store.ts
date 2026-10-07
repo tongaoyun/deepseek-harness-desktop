@@ -186,7 +186,7 @@ export async function pruneExpertKitGenerations(
       assertChild(kitRoot, path)
       await rm(path, { recursive: true, force: true })
     }
-    if ((await readdir(kitRoot)).length === 0) await rm(kitRoot, { force: true })
+    if ((await readdir(kitRoot)).length === 0) await rm(kitRoot, { recursive: true, force: true })
   }
 }
 

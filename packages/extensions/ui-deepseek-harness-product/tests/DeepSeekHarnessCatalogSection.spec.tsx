@@ -14,6 +14,7 @@ import { zh, type DeepSeekHarnessProductKey } from '../src/locales.ts'
 
 afterEach(() => {
   cleanup()
+  vi.useRealTimers()
   Reflect.deleteProperty(globalThis, 'deepseekHarness')
 })
 
@@ -52,6 +53,7 @@ describe('DeepSeekHarness capability navigation', () => {
           return () => {}
         },
       },
+      inputTriggers: { registerSource: vi.fn(() => () => {}) },
     }
 
     apply(castClientContext(ctx))
@@ -70,13 +72,15 @@ describe('DeepSeekHarness capability navigation', () => {
   it('uses official Sessions and composer state for expert kits and skills', async () => {
     const registrations: Array<{ options: Record<string, unknown>; component: unknown }> = []
     const setDraft = vi.fn()
+    const insertReference = vi.fn(() => true)
     const focus = vi.fn()
     const openSession = vi.fn()
     const create = vi.fn()
       .mockResolvedValueOnce('expert-session')
       .mockResolvedValueOnce('skill-session')
     const select = vi.fn(async () => ({ ok: true as const }))
-    const invoke = vi.fn(async () => ({ presetId: 'deepseek-harness-expert-kit-orders' }))
+    const invoke = vi.fn(async (method: string) => ({ presetId: method === 'skills.prepare'
+      ? 'deepseek-harness-skill-writing' : 'deepseek-harness-expert-kit-orders' }))
     Object.defineProperty(globalThis, 'deepseekHarness', { configurable: true, value: { product: { invoke } } })
     const ctx = {
       effect: (effect: () => unknown) => effect(),
@@ -88,6 +92,7 @@ describe('DeepSeekHarness capability navigation', () => {
           return () => {}
         },
       },
+      inputTriggers: { registerSource: vi.fn(() => () => {}) },
       sessions: {
         list: { getSnapshot: () => ({ byId: {
           current: { id: 'current-session', retainedBy: { mainView: 1 } },
@@ -100,7 +105,8 @@ describe('DeepSeekHarness capability navigation', () => {
       },
       uiWorkspace: { openSession },
       remote: { agentPresets: { select } },
-      conversation: { input: { for: () => ({ setDraft, focus }) } },
+      conversation: { input: { for: () => ({ setDraft, focus, insertReference,
+        state: { getSnapshot: () => ({ draftRev: 7 }) } }) } },
     }
 
     apply(castClientContext(ctx))
@@ -112,14 +118,19 @@ describe('DeepSeekHarness capability navigation', () => {
     await expertKitActions.startExpertKit('orders', '检查订单信息')
     await skillActions.useSkill('writing', 'AI 文本优化')
 
-    expect(invoke).toHaveBeenCalledExactlyOnceWith('expertKits.preset.prepare', { id: 'orders' })
+    expect(invoke).toHaveBeenNthCalledWith(1, 'expertKits.preset.prepare', { id: 'orders' })
+    expect(invoke).toHaveBeenNthCalledWith(2, 'skills.prepare', { id: 'writing' })
     expect(create).toHaveBeenNthCalledWith(1, { workspaceId: 'workspace-1' })
     expect(create).toHaveBeenNthCalledWith(2, { workspaceId: 'workspace-1' })
-    expect(select).toHaveBeenCalledExactlyOnceWith('expert-session', 'deepseek-harness-expert-kit-orders')
+    expect(select).toHaveBeenNthCalledWith(1, 'expert-session', 'deepseek-harness-expert-kit-orders')
+    expect(select).toHaveBeenNthCalledWith(2, 'skill-session', 'deepseek-harness-skill-writing')
     expect(openSession).toHaveBeenNthCalledWith(1, 'expert-session')
     expect(openSession).toHaveBeenNthCalledWith(2, 'skill-session')
     expect(setDraft).toHaveBeenNthCalledWith(1, '检查订单信息')
-    expect(setDraft).toHaveBeenNthCalledWith(2, '请使用“AI 文本优化”技能处理以下内容：')
+    expect(setDraft).toHaveBeenNthCalledWith(2, '')
+    expect(insertReference).toHaveBeenCalledExactlyOnceWith({
+      source: 'deepseek-harness-product-skill', ref: 'writing', label: 'AI 文本优化', clipboardText: '/writing',
+    }, { start: 0, end: 0, draftRev: 7 })
     expect(focus).toHaveBeenCalledTimes(2)
   })
 
@@ -366,8 +377,13 @@ describe('DeepSeekHarness capability navigation', () => {
     const invoke = vi.fn(async (): Promise<unknown> => [
       { id: 'erp', name: 'erp-mcp', displayName: 'ERP 数据连接', summary: '订单数据', category: 'industry-data',
         status: 'ACTIVE', scope: 'ORGANIZATION', transport: 'stdio', version: '0.4.0',
-        toolNames: ['orders_read', 'orders_update'], readOnlyTools: ['orders_read'], authMode: 'employee-bearer' },
-      { id: 'docs', name: '文档', summary: '企业文档', category: '知识文档', status: 'ACTIVE', toolNames: [] },
+        availabilityStatus: 'AVAILABLE',
+        tools: [
+          { name: 'orders_read', displayName: '查询订单', description: '读取订单', access: 'READ' },
+          { name: 'orders_update', displayName: '更新订单', description: '修改订单', access: 'WRITE' },
+        ], authMode: 'employee-bearer' },
+      { id: 'docs', name: '文档', summary: '企业文档', category: 'knowledge-research', status: 'ACTIVE',
+        availabilityStatus: 'AVAILABLE', tools: [] },
     ])
     Object.defineProperty(globalThis, 'deepseekHarness', { configurable: true, value: { product: {
       getSession: vi.fn(async () => ({ authenticated: true })), invoke, cancel: vi.fn(),
@@ -375,10 +391,10 @@ describe('DeepSeekHarness capability navigation', () => {
 
     render(<ConnectorsPanel t={t} {...actions()} />)
     expect(await screen.findByRole('region', { name: zh.categoryIndustryData })).not.toBeNull()
-    expect(screen.getByRole('region', { name: '知识文档' })).not.toBeNull()
+    expect(screen.getByRole('region', { name: zh.categoryKnowledgeResearch })).not.toBeNull()
     expect(screen.getByRole('button', { name: zh.categoryFilter })).not.toBeNull()
     expect(screen.getByText(zh.allCategories)).not.toBeNull()
-    expect(screen.getAllByText(zh.statusActive)).toHaveLength(2)
+    expect(screen.getAllByText(zh.availabilityAvailable)).toHaveLength(2)
     expect(screen.getByText(zh.connectorToolsCount.replace('{count}', '2'))).not.toBeNull()
     expect(screen.getByText(zh.connectorNoTools)).not.toBeNull()
     expect(screen.queryByText(zh.scopeOrganization)).toBeNull()
@@ -400,6 +416,100 @@ describe('DeepSeekHarness capability navigation', () => {
     expect(screen.getByText(zh.scopeOrganization)).not.toBeNull()
     expect(screen.getByText(zh.transportStdio)).not.toBeNull()
     expect(screen.getByText('v0.4.0')).not.toBeNull()
+  })
+
+  it('refreshes the catalog after a managed data connection is authorized', async () => {
+    let subscriber: ((event: { readonly type: string }) => void) | undefined
+    const invoke = vi.fn(async (method: string): Promise<unknown> => {
+      if (method === 'connectors.list') return [{ id: 'erp', displayName: 'ERP 数据连接',
+        authMode: 'oauth', authorizationStatus: 'REQUIRED', tools: [] }]
+      if (method === 'connectors.authorization.begin') return { authorizationUrl: 'https://auth.example/' }
+      if (method === 'connectors.authorization.status') {
+        subscriber?.({ type: 'catalog.changed' })
+        return { status: 'AUTHORIZED' }
+      }
+      throw new Error(`unexpected method: ${method}`)
+    })
+    Object.defineProperty(globalThis, 'deepseekHarness', { configurable: true, value: { product: {
+      getSession: vi.fn(async () => ({ authenticated: true })), invoke, cancel: vi.fn(),
+      subscribe: (listener: (event: { readonly type: string }) => void) => { subscriber = listener; return () => {} },
+    } } })
+
+    render(<ConnectorsPanel t={t} {...actions()} />)
+    fireEvent.click(await screen.findByRole('button', { name: /ERP 数据连接/ }))
+    vi.useFakeTimers()
+    fireEvent.click(screen.getByRole('button', { name: zh.authorize }))
+    await vi.advanceTimersByTimeAsync(1_000)
+    await vi.waitFor(() => { expect(invoke).toHaveBeenCalledWith(
+      'connectors.authorization.status', { id: 'erp' }, expect.any(String),
+    ) })
+    await vi.waitFor(() => { expect(invoke.mock.calls.filter(call => call[0] === 'connectors.list')).toHaveLength(2) })
+  })
+
+  it('stops managed authorization polling when the detail drawer closes', async () => {
+    const invoke = vi.fn(async (method: string): Promise<unknown> => {
+      if (method === 'connectors.list') return [{ id: 'erp', displayName: 'ERP 数据连接',
+        authMode: 'oauth', authorizationStatus: 'REQUIRED', tools: [] }]
+      if (method === 'connectors.authorization.begin') return { authorizationUrl: 'https://auth.example/' }
+      if (method === 'connectors.authorization.status') return { status: 'PENDING' }
+      throw new Error(`unexpected method: ${method}`)
+    })
+    const cancel = vi.fn()
+    Object.defineProperty(globalThis, 'deepseekHarness', { configurable: true, value: { product: {
+      getSession: vi.fn(async () => ({ authenticated: true })), invoke, cancel,
+    } } })
+
+    render(<ConnectorsPanel t={t} {...actions()} />)
+    fireEvent.click(await screen.findByRole('button', { name: /ERP 数据连接/ }))
+    vi.useFakeTimers()
+    fireEvent.click(screen.getByRole('button', { name: zh.authorize }))
+    await vi.waitFor(() => { expect(invoke).toHaveBeenCalledWith(
+      'connectors.authorization.begin', { id: 'erp' }, expect.any(String),
+    ) })
+    fireEvent.click(screen.getByRole('button', { name: zh.close }))
+    await vi.advanceTimersByTimeAsync(2_000)
+
+    expect(invoke.mock.calls.some(call => call[0] === 'connectors.authorization.status')).toBe(false)
+  })
+
+  it('shows reauthorization for an expired data connection', async () => {
+    const invoke = vi.fn(async (): Promise<unknown> => [{ id: 'erp', displayName: 'ERP 数据连接',
+      authMode: 'oauth', authorizationStatus: 'EXPIRED', tools: [] }])
+    Object.defineProperty(globalThis, 'deepseekHarness', { configurable: true, value: { product: {
+      getSession: vi.fn(async () => ({ authenticated: true })), invoke, cancel: vi.fn(),
+    } } })
+
+    render(<ConnectorsPanel t={t} {...actions()} />)
+    fireEvent.click(await screen.findByRole('button', { name: /ERP 数据连接/ }))
+
+    expect(screen.getByText(zh.statusExpired)).not.toBeNull()
+    expect(screen.getByRole('button', { name: zh.reauthorize })).not.toBeNull()
+  })
+
+  it('revokes a managed data connection and refreshes the catalog', async () => {
+    let subscriber: ((event: { readonly type: string }) => void) | undefined
+    const invoke = vi.fn(async (method: string): Promise<unknown> => {
+      if (method === 'connectors.list') return [{ id: 'erp', displayName: 'ERP 数据连接',
+        authMode: 'oauth', authorizationStatus: 'AUTHORIZED', tools: [] }]
+      if (method === 'connectors.authorization.revoke') {
+        subscriber?.({ type: 'catalog.changed' })
+        return undefined
+      }
+      throw new Error(`unexpected method: ${method}`)
+    })
+    Object.defineProperty(globalThis, 'deepseekHarness', { configurable: true, value: { product: {
+      getSession: vi.fn(async () => ({ authenticated: true })), invoke, cancel: vi.fn(),
+      subscribe: (listener: (event: { readonly type: string }) => void) => { subscriber = listener; return () => {} },
+    } } })
+
+    render(<ConnectorsPanel t={t} {...actions()} />)
+    fireEvent.click(await screen.findByRole('button', { name: /ERP 数据连接/ }))
+    fireEvent.click(screen.getByRole('button', { name: zh.revokeAuthorization }))
+
+    await waitFor(() => { expect(invoke).toHaveBeenCalledWith(
+      'connectors.authorization.revoke', { id: 'erp' }, expect.any(String),
+    ) })
+    await waitFor(() => { expect(invoke.mock.calls.filter(call => call[0] === 'connectors.list')).toHaveLength(2) })
   })
 
   it('opens a knowledge base detail drawer without a second API contract', async () => {
