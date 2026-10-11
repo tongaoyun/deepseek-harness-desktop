@@ -59,7 +59,7 @@ jobs:
       - name: Package Windows
         shell: powershell
         run: |
-          pnpm run package:desktop:win:x64:unsigned
+          pnpm --dir apps/product-desktop run package win-x64 --unsigned
           if ($LASTEXITCODE -ne 0) { throw "Windows Electron packaging failed" }
       - name: Verify Windows artifacts
         shell: powershell

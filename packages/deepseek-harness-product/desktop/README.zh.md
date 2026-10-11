@@ -23,6 +23,8 @@ description: "认证产品桌面用户，管理凭据、原生操作与产品资
 
 `createExtension` 向官方壳提供启动准备、产品分发、事件和关闭钩子。产品组合负责 `desktop-extension.json`、`assembly.json`、服务端资源与原生二进制。官方 profile 默认不加载产品扩展。参见[产品子系统](../../../docs/subsystems/deepseek-harness-product.zh.md)。
 
+通过 `pnpm --dir apps/product-desktop run package <target>` 打包产品，未签名制品添加 `--unsigned`。该入口为官方构建流程选择产品组合。内部桌面 CI 与发布流程使用此入口；根目录的 `package:desktop:*` 命令打包不含产品资源的官方桌面。
+
 桌面构建将 `electron` 保留为外部依赖，由正在运行的 Electron 进程提供主进程 API。
 
 `ExtensionAuthoring` 负责原生目录、ZIP 或独立 `SKILL.md` 选择、有界检查、员工隔离暂存、不可变制品上传和激活。选中文件路径和上传凭据不会返回渲染进程。非法路径、链接、重复文件、超限内容和哈希不匹配在激活前拒绝。独立 Markdown 限制为 64 KiB，附属资源需通过目录导入。导入资源随编辑保留，目录技能按选中版本下载复制。取消或关闭清理暂存，上传工作目录始终清理。个人技能保存成功后通过官方 Host 技能 Provider 安装，不准备任务。

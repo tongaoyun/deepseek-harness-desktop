@@ -14,7 +14,7 @@ it('generates a discoverable standard skill and complete release coordinates', (
   expect(new Set(EXTENSION_CATEGORIES).size).toBe(20)
 })
 
-it('pins copied skill provenance and calculates a sorted dependency union', () => {
+it('pins copied skill source identities and calculates a sorted dependency union', () => {
   const source = { id: skill.id, version: '1.0.0', sha256: 'a'.repeat(64) }
   const generated = extensionFiles(ExtensionDraftSchema.parse({ ...skill, kind: 'expert-kit', id: 'policy-kit',
     connectorRefs: ['ignored-parent'], skills: [
