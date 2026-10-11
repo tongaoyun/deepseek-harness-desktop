@@ -169,7 +169,7 @@ index a892a8548a3c87705420961179ac1426381a6288..d4e43fa02f2a6e030d872958446b1c47
      expect(() => {
        validateDesktopPackageEnvironment({ ...POLICY, DSH_DESKTOP_APP_ID: RELEASE.DSH_DESKTOP_APP_ID }, WINDOWS, { prepareOnly: true })
 diff --git a/apps/desktop/tests/desktop-policy-environment.spec.ts b/apps/desktop/tests/desktop-policy-environment.spec.ts
-index be5b4ede251c17e44c071e15f23a56968d9d94d2..81a3547bf1bb900a130d159e37dead8ef997863a 100644
+index be5b4ede251c17e44c071e15f23a56968d9d94d2..17875eb2f8d5d5a6a4478dde58cf9f87be161492 100644
 --- a/apps/desktop/tests/desktop-policy-environment.spec.ts
 +++ b/apps/desktop/tests/desktop-policy-environment.spec.ts
 @@ -47,14 +47,13 @@ it('rejects login origins in production', () => {
@@ -190,5 +190,5 @@ index be5b4ede251c17e44c071e15f23a56968d9d94d2..81a3547bf1bb900a130d159e37dead8e
  })
 +
 +it.each(['win32', 'darwin'] as const)('allows unsigned %s packaging without a mandatory-update policy', (platform) => {
-+  expect(() => validateDesktopPackageEnvironment({ DSH_DESKTOP_APP_ID: 'com.example.test' }, { platform, arch: 'x64' }, { unsigned: true })).not.toThrow()
++  expect(() => { validateDesktopPackageEnvironment({ DSH_DESKTOP_APP_ID: 'com.example.test' }, { platform, arch: 'x64' }, { unsigned: true }) }).not.toThrow()
 +})

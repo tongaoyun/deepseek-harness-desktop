@@ -54,7 +54,7 @@ async function fixture(outcome: ApprovalOutcome) {
     throw new Error(`Unexpected method ${method}`)
   })
   ctx.loader.builtins['knowledge-library-fixture'] = { name: 'knowledge-library-fixture', inject: Library.inject,
-    apply: (owner: Context) => Library.apply(owner, { product: { invoke } }) }
+    apply: (owner: Context) => { Library.apply(owner, { product: { invoke } }) } }
   await ctx.loader.root.update([{ id: 'knowledge-library', name: 'cordis:knowledge-library-fixture' }])
   await ctx.loader.await()
   await ctx.loader.resolve('knowledge-library').fiber?.await()
@@ -69,7 +69,7 @@ it('saves an explicit result through Loader, the official loop and approval with
   const { ctx, invoke, adapter, handle } = await fixture('allowed-once')
   expect(ctx.tools.schemas(handle.agent).map(tool => tool.name).sort()).toEqual(['knowledge_destinations', 'knowledge_save'])
   handle.agent.followup(createUserMessage({ content: [{ type: 'text', text: 'Save the review outcome to my personal knowledge base.' }], source: { kind: 'user' } }))
-  await vi.waitFor(() => expect(handle.agent.session.snapshotEvents().some(event => event.type === 'turn/end')).toBe(true))
+  await vi.waitFor(() => { expect(handle.agent.session.snapshotEvents().some(event => event.type === 'turn/end')).toBe(true) })
   const calls = invoke.mock.calls.filter(call => call[0] === 'knowledge.documents.save')
   expect(calls).toHaveLength(1)
   expect(calls[0]?.[1]).toEqual({ knowledgeBaseId: 'personal', title: 'Review outcome', content: savedContent,
@@ -83,7 +83,7 @@ it('saves an explicit result through Loader, the official loop and approval with
   expect(JSON.stringify(recording)).not.toContain('/private/file')
   expect(JSON.stringify(recording)).not.toContain('Company policy')
   const requestContent = adapter.requests.flatMap(request => request.messages.flatMap(message => message.content))
-    .filter(block => block.type === 'tool-call').map(block => JSON.parse(block.arguments))
+    .filter(block => block.type === 'tool-call').map((block): unknown => JSON.parse(block.arguments))
   expect(requestContent).toContainEqual({ knowledgeBaseId: 'personal', title: 'Review outcome', content: savedContent })
   await expect(JSON.stringify(recording, null, 2) + '\n').toMatchFileSnapshot('expected/knowledge-save.json')
   await ctx.loader.root.update([])
@@ -94,9 +94,9 @@ it('saves an explicit result through Loader, the official loop and approval with
 it('does not write when the official approval is rejected', async () => {
   const { invoke, handle } = await fixture('rejected')
   handle.agent.followup(createUserMessage({ content: [{ type: 'text', text: 'Save the result to my knowledge base.' }], source: { kind: 'user' } }))
-  await vi.waitFor(() => expect(handle.agent.session.snapshotEvents().some(event => event.type === 'turn/end')).toBe(true))
+  await vi.waitFor(() => { expect(handle.agent.session.snapshotEvents().some(event => event.type === 'turn/end')).toBe(true) })
   expect(invoke.mock.calls.map(call => call[0])).not.toContain('knowledge.documents.save')
-  expect(handle.agent.session.snapshotEvents()).toContainEqual(expect.objectContaining({ type: 'approval/decided', data: expect.objectContaining({ outcome: 'rejected' }) }))
+  expect(handle.agent.session.snapshotEvents().filter(event => event.type === 'approval/decided').map(event => event.data.outcome)).toContain('rejected')
 })
 
 it('cancels and awaits in-flight destination requests during plugin unload', async () => {
@@ -112,10 +112,10 @@ it('cancels and awaits in-flight destination requests during plugin unload', asy
   const request = ctx.tools.execute({ agent: handle.agent, name: 'knowledge_destinations', arguments: {},
     callId: ToolCallId('pending'), signal: new AbortController().signal })
   onTestFinished(() => settle?.())
-  await vi.waitFor(() => expect(settle).toBeDefined())
+  await vi.waitFor(() => { expect(settle).toBeDefined() })
   let disposed = false
   const unload = ctx.loader.resolve('knowledge-library').fiber?.dispose().then(() => { disposed = true })
-  await vi.waitFor(() => expect(signal?.aborted).toBe(true))
+  await vi.waitFor(() => { expect(signal?.aborted).toBe(true) })
   expect(disposed).toBe(false)
   settle?.()
   await request

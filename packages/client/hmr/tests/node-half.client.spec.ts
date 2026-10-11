@@ -302,9 +302,8 @@ it('broadcasts the desired graph without waiting for Host activation or cleanup'
     const frame = JSON.parse(first.lines[1]!.slice(6)) as { graph: WebBootGraph }
     expect(frame.graph.entries.map(row => row.id)).toEqual(['a'])
     const second = await connect()
-    expect(second.response.writeHead).toHaveBeenCalledWith(200, expect.not.objectContaining({
-      'access-control-allow-origin': expect.anything(),
-    }))
+    expect(second.response.writeHead).toHaveBeenCalledWith(200, expect.any(Object))
+    expect(second.response.writeHead.mock.calls[0]?.[1]).not.toHaveProperty('access-control-allow-origin')
     expect(second.lines[1]).toBe(first.lines[1])
     expect(first.lines).toHaveLength(2)
     release()
@@ -358,9 +357,8 @@ it('does not grant HMR event access to an unrelated web origin', async () => {
   try {
     await routes[0]!.handler({ method: 'GET', headers: { origin: 'https://unrelated.example' } } as IncomingMessage,
       response as unknown as ServerResponse)
-    expect(response.writeHead).toHaveBeenCalledWith(200, expect.not.objectContaining({
-      'access-control-allow-origin': expect.anything(),
-    }))
+    expect(response.writeHead).toHaveBeenCalledWith(200, expect.any(Object))
+    expect(response.writeHead.mock.calls[0]?.[1]).not.toHaveProperty('access-control-allow-origin')
   } finally {
     await fiber.dispose()
     await ctx.fiber.dispose()

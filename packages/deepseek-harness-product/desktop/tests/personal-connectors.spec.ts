@@ -16,7 +16,7 @@ it('discovers real MCP annotations without business calls, encrypts secrets, iso
   const headers: string[] = []
   const server = createServer((request, response) => { void (async () => {
     const chunks: Buffer[] = []
-    for await (const chunk of request) chunks.push(Buffer.from(chunk))
+    for await (const chunk of request) chunks.push(Buffer.from(chunk as Uint8Array))
     const call = JSON.parse(Buffer.concat(chunks).toString()) as { id?: number; method: string; params?: { protocolVersion?: string } }
     requests.push(call.method); headers.push(request.headers['x-private-secret'] as string)
     if (call.id === undefined) { response.writeHead(202).end(); return }
@@ -26,9 +26,9 @@ it('discovers real MCP annotations without business calls, encrypts secrets, iso
       : { tools: [{ name: 'read_orders', description: 'Read orders', inputSchema: { type: 'object' }, annotations: { readOnlyHint: true } },
         { name: 'destructive_read', inputSchema: { type: 'object' }, annotations: { readOnlyHint: true, destructiveHint: true } },
         { name: 'write_orders', inputSchema: { type: 'object' } }, { name: 'undeclared', inputSchema: { type: 'object' } }] } }))
-  })().catch(() => response.writeHead(500).end()) })
+  })().catch(() => { response.writeHead(500).end() }) })
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
-  onTestFinished(async () => { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())) })
+  onTestFinished(async () => { server.closeAllConnections(); await new Promise<void>((resolve) => { server.close(() => { resolve() }) }) })
   const address = server.address(); if (address === null || typeof address === 'string') throw new Error('No fixture port')
   const endpoint = `http://127.0.0.1:${address.port}/mcp`
   const key = randomBytes(32)
@@ -46,11 +46,12 @@ it('discovers real MCP annotations without business calls, encrypts secrets, iso
   let storedEntry: Record<string, unknown> = {}
   let failUpdate = false
   const api = new DeepSeekHarnessApiClient({ baseUrl: 'https://product.example', getSessionToken: () => 'employee-token',
-    fetch: vi.fn(async (_url, init) => {
+    fetch: vi.fn(async (_url: Parameters<typeof fetch>[0], init?: RequestInit) => {
       if (init?.method === 'DELETE') return Response.json({ success: true, data: true })
       if (!init?.body) return Response.json({ success: true, data: storedEntry })
+      if (typeof init.body !== 'string') throw new Error('Expected a JSON request body')
       if (failUpdate) throw new Error('offline')
-      const value = JSON.parse(String(init.body)) as Record<string, unknown>
+      const value = JSON.parse(init.body) as Record<string, unknown>
       saved.push(value)
       if (value.id === 'my-orders') storedEntry = { ...storedEntry, ...value, tools: (value.toolNames as string[]).map(name => ({ name })) }
       return Response.json({ success: true, data: {} })
@@ -161,7 +162,7 @@ it.each(['initialize', 'tools/list'])('applies the configured timeout to stalled
   const requests: string[] = []
   const server = createServer((request, response) => { void (async () => {
     const chunks: Buffer[] = []
-    for await (const chunk of request) chunks.push(Buffer.from(chunk))
+    for await (const chunk of request) chunks.push(Buffer.from(chunk as Uint8Array))
     const call = JSON.parse(Buffer.concat(chunks).toString()) as { id?: number; method: string; params?: { protocolVersion?: string } }
     requests.push(call.method)
     if (call.method === stalledMethod) return
@@ -170,9 +171,9 @@ it.each(['initialize', 'tools/list'])('applies the configured timeout to stalled
     response.end(JSON.stringify({ jsonrpc: '2.0', id: call.id, result: {
       protocolVersion: call.params?.protocolVersion, serverInfo: { name: 'stalled', version: '1' }, capabilities: { tools: {} },
     } }))
-  })().catch(() => response.writeHead(500).end()) })
+  })().catch(() => { response.writeHead(500).end() }) })
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
-  onTestFinished(async () => { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())) })
+  onTestFinished(async () => { server.closeAllConnections(); await new Promise<void>((resolve) => { server.close(() => { resolve() }) }) })
   const address = server.address(); if (!address || typeof address === 'string') throw new Error('No fixture port')
   const secure = { isEncryptionAvailable: () => true, encryptString: (text: string) => Buffer.from(text),
     decryptString: (bytes: Buffer) => bytes.toString() }

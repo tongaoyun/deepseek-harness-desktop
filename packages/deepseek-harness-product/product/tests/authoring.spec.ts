@@ -22,7 +22,7 @@ it('pins copied skill source identities and calculates a sorted dependency union
       { ...skill, id: 'policy-summary', connectorRefs: ['erp'], requiredTools: ['read_policy'], knowledgeBaseRefs: [] },
     ] }))
   expect(generated.release).toMatchObject({ connectorRefs: ['crm', 'erp'], requiredTools: ['read_policy'], knowledgeBaseRefs: ['organization:policy'] })
-  expect(JSON.parse(generated.files['.deepseek-harness-kit/kit.json']!).skills[0]).toMatchObject({ name: skill.name, source })
+  expect(JSON.parse(generated.files['.deepseek-harness-kit/kit.json']!)).toMatchObject({ skills: [{ name: skill.name, source }, {}] })
 })
 
 it('rejects unsupported categories, empty kits, owner forgery, malformed YAML and OAuth secret mixing', () => {

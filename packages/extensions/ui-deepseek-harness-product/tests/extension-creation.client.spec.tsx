@@ -50,7 +50,7 @@ it('loads a personal connector for modification, preserves masked values, and ke
   await screen.findByRole('alert')
   expect(screen.getByLabelText<HTMLInputElement>(zh.mcpServerName).value).toBe('Updated MCP')
   expect(invoke).toHaveBeenCalledWith('product', 'extensions.connector.update', expect.objectContaining({
-    id: draft.id, version: '1.0.0', draft: expect.objectContaining({ id: draft.id, version: '1.0.1', name: 'Updated MCP', headers: { TOKEN: '' } }),
+    id: draft.id, version: '1.0.0', draft: { ...draft, version: '1.0.1', name: 'Updated MCP', headers: { TOKEN: '' } },
   }), expect.any(String), 180_000)
 })
 

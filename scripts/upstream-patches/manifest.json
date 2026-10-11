@@ -463,7 +463,7 @@
         {
           "path": "packages/client/hmr/tests/node-half.client.spec.ts",
           "before": "59d640b87b1cd70c3ec1d5d3df56d5bff3a9cc434d649ed5b94e66c48767b1d7",
-          "after": "dd5d0e930503108dc07e6bf976f5e64fe709db6d7a7fba91cae6469e7eabc063"
+          "after": "dda833be52d24125b7409e572c759391fefe4cfa8f0c402010e372b8552f5d87"
         },
         {
           "path": "packages/client/hmr/tests/transport.client.spec.ts",
@@ -605,7 +605,7 @@
         {
           "path": "apps/desktop/tests/desktop-policy-environment.spec.ts",
           "before": "bb85d28e7c4f3a333bc92670a3a72caef19a2a76a0031b71f5ceaeb4b5d16349",
-          "after": "42b0f8233db3500d736840687b93bb6d4957177feffa96239c791d68f0ee11a6"
+          "after": "141a8dba980168612c14ba64e24d82ad8c67a098357e82b06ed326616ee459df"
         }
       ],
       "diff": "release-environments.patch"
