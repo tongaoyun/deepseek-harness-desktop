@@ -135,6 +135,27 @@ it.each(['KNOWLEDGE_PREVIEW_UNAVAILABLE', 'KNOWLEDGE_PREVIEW_TOO_LARGE', 'KNOWLE
     expect(api.invoke.mock.calls.map(row => row[1])).toEqual(['knowledge.documents.previewMetadata', 'knowledge.documents.preview.open'])
   })
 
+it.each([
+  ['KNOWLEDGE_TRANSFER_BUSY', zh.knowledgePreviewBusy],
+  ['KNOWLEDGE_DOCUMENT_CHANGED', zh.knowledgePreviewSourceChanged],
+])('shows an actionable original-file diagnostic for %s and retries without clearing library access', async (code, message) => {
+  let reads = 0
+  const denied = vi.fn()
+  const api = transport(async () => {
+    reads += 1
+    if (reads === 1) throw new ProductError(code, 'Private source URL', code === 'KNOWLEDGE_TRANSFER_BUSY')
+    return originalPreview('重试成功')
+  })
+  render(<KnowledgeDocumentReader {...props} onAccessDenied={denied} />)
+  expect((await screen.findByRole('alert')).textContent).toBe(`${message} (${code})`)
+  expect(screen.queryByText('Private source URL')).toBeNull()
+  expect(denied).not.toHaveBeenCalled()
+  fireEvent.click(screen.getByRole('button', { name: zh.retry }))
+  await screen.findByText('重试成功')
+  expect(denied).not.toHaveBeenCalled()
+  expect(api.invoke.mock.calls.some(row => row[1] === 'knowledge.documents.read')).toBe(false)
+})
+
 it('uses original Markdown for an online document whose display name has an Office suffix', async () => {
   const api = transport(async () => originalPreview('# 手写正文'), '部门预算.docx', 'manual')
   const { container } = render(<KnowledgeDocumentReader {...props} title="部门预算.docx" />)
