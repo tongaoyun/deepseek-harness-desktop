@@ -109,10 +109,10 @@ index 23f5ca00d6bb7e573b1067565922cbcb0bf02b33..fbab19733f9635ca24e11c0207c270ec
      })
      const unsubscribeGraph = ctx.clientModules.onGraphChanged(publishGraph)
 diff --git a/packages/client/hmr/tests/node-half.client.spec.ts b/packages/client/hmr/tests/node-half.client.spec.ts
-index 7965ca79b3a1c1f4084b9c15efa0f815c549a46a..0adc4bcc1bc5510bd14da9794ed7ad9b0bf61d45 100644
+index 7965ca79b3a1c1f4084b9c15efa0f815c549a46a..5055d3beae126a05a178eb34aadf06e4b5d54137 100644
 --- a/packages/client/hmr/tests/node-half.client.spec.ts
 +++ b/packages/client/hmr/tests/node-half.client.spec.ts
-@@ -283,21 +283,28 @@ it('broadcasts the desired graph without waiting for Host activation or cleanup'
+@@ -283,21 +283,27 @@ it('broadcasts the desired graph without waiting for Host activation or cleanup'
    const fiber = ctx.plugin({ inject, Config, apply }, { pollIntervalMs: POLL_MS })
    await fiber.await()
    const route = routes[0]!
@@ -138,13 +138,12 @@ index 7965ca79b3a1c1f4084b9c15efa0f815c549a46a..0adc4bcc1bc5510bd14da9794ed7ad9b
      const frame = JSON.parse(first.lines[1]!.slice(6)) as { graph: WebBootGraph }
      expect(frame.graph.entries.map(row => row.id)).toEqual(['a'])
      const second = await connect()
-+    expect(second.response.writeHead).toHaveBeenCalledWith(200, expect.not.objectContaining({
-+      'access-control-allow-origin': expect.anything(),
-+    }))
++    expect(second.response.writeHead).toHaveBeenCalledWith(200, expect.any(Object))
++    expect(second.response.writeHead.mock.calls[0]?.[1]).not.toHaveProperty('access-control-allow-origin')
      expect(second.lines[1]).toBe(first.lines[1])
      expect(first.lines).toHaveLength(2)
      release()
-@@ -337,3 +344,25 @@ it('broadcasts the desired graph without waiting for Host activation or cleanup'
+@@ -337,3 +343,24 @@ it('broadcasts the desired graph without waiting for Host activation or cleanup'
      await ctx.fiber.dispose()
    }
  })
@@ -162,9 +161,8 @@ index 7965ca79b3a1c1f4084b9c15efa0f815c549a46a..0adc4bcc1bc5510bd14da9794ed7ad9b
 +  try {
 +    await routes[0]!.handler({ method: 'GET', headers: { origin: 'https://unrelated.example' } } as IncomingMessage,
 +      response as unknown as ServerResponse)
-+    expect(response.writeHead).toHaveBeenCalledWith(200, expect.not.objectContaining({
-+      'access-control-allow-origin': expect.anything(),
-+    }))
++    expect(response.writeHead).toHaveBeenCalledWith(200, expect.any(Object))
++    expect(response.writeHead.mock.calls[0]?.[1]).not.toHaveProperty('access-control-allow-origin')
 +  } finally {
 +    await fiber.dispose()
 +    await ctx.fiber.dispose()

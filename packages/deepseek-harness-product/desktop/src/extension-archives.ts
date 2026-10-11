@@ -2,9 +2,9 @@
 import { constants } from 'node:fs'
 import { lstat, open as openFile, opendir } from 'node:fs/promises'
 import { basename, join } from 'node:path'
-import { open, type ZipFile } from 'yauzl'
+import { open, type Entry, type ZipFile } from 'yauzl'
 import { Readable } from 'node:stream'
-import { Parser } from 'tar'
+import { Parser, type ReadEntry } from 'tar'
 
 /** Security limits shared by every local package reader. */
 export const ARCHIVE_LIMITS = { files: 1024, extractedBytes: 64 * 1024 * 1024, compressedBytes: 32 * 1024 * 1024 } as const
@@ -94,9 +94,11 @@ export async function readExtensionZip(path: string, signal: AbortSignal): Promi
   signal.throwIfAborted()
   const stat = await lstat(path)
   if (!stat.isFile() || stat.isSymbolicLink() || stat.size > ARCHIVE_LIMITS.compressedBytes) throw new Error('Invalid or oversized ZIP')
-  const zip = await new Promise<ZipFile>((resolve, reject) => open(path, { lazyEntries: true, validateEntrySizes: true }, (error, file) => {
-    if (error || !file) reject(error ?? new Error('Cannot open ZIP')); else resolve(file)
-  }))
+  const zip = await new Promise<ZipFile>((resolve, reject) => {
+    open(path, { lazyEntries: true, validateEntrySizes: true }, (error, file) => {
+      if (error) reject(error); else resolve(file)
+    })
+  })
   const output = collector()
   let entries = 0
   let declaredBytes = 0
@@ -106,13 +108,17 @@ export async function readExtensionZip(path: string, signal: AbortSignal): Promi
     signal.throwIfAborted()
     if (zip.entryCount > ARCHIVE_LIMITS.files) throw new Error('ZIP has excessive entries')
     await new Promise<void>((resolve, reject) => {
-      const abort = (): void => { reject(signal.reason) }
+      const abort = (): void => {
+        // Cancellation reasons are caller-owned and must retain their identity.
+        // oxlint-disable-next-line typescript/prefer-promise-reject-errors
+        reject(signal.reason)
+      }
       signal.addEventListener('abort', abort, { once: true })
       const settled = (): void => { signal.removeEventListener('abort', abort) }
       zip.once('end', () => { settled(); resolve() })
-      zip.once('close', () => { settled(); if (signal.aborted) reject(signal.reason) })
+      zip.once('close', () => { settled(); if (signal.aborted) abort() })
       zip.once('error', reject)
-      zip.on('entry', (entry) => {
+      zip.on('entry', (entry: Entry) => {
         void (async () => {
           signal.throwIfAborted()
           archivePath(entry.fileName)
@@ -121,9 +127,11 @@ export async function readExtensionZip(path: string, signal: AbortSignal): Promi
           declaredBytes += entry.uncompressedSize
           if (declaredBytes > ARCHIVE_LIMITS.extractedBytes) throw new Error('ZIP exceeds extracted size limit')
           if (!entry.fileName.endsWith('/')) {
-            const stream = await new Promise<Readable>((accept, fail) => zip.openReadStream(entry, (error, value) => {
-              if (error || !value) fail(error ?? new Error('Cannot read ZIP entry')); else accept(value)
-            }))
+            const stream = await new Promise<Readable>((accept, fail) => {
+              zip.openReadStream(entry, (error, value) => {
+                if (error) fail(error); else accept(value)
+              })
+            })
             const abort = (): void => { stream.destroy(new Error('Import cancelled')) }
             signal.addEventListener('abort', abort, { once: true })
             const chunks: Buffer[] = []
@@ -131,7 +139,7 @@ export async function readExtensionZip(path: string, signal: AbortSignal): Promi
             try {
               for await (const chunk of stream) {
                 signal.throwIfAborted()
-                const part = Buffer.from(chunk)
+                const part = Buffer.from(chunk as Uint8Array)
                 bytes += part.length
                 if (bytes > entry.uncompressedSize) throw new Error('ZIP entry exceeds declared size')
                 chunks.push(part)
@@ -140,7 +148,12 @@ export async function readExtensionZip(path: string, signal: AbortSignal): Promi
             output.add(entry.fileName, Buffer.concat(chunks))
           }
           zip.readEntry()
-        })().catch((error) => { settled(); reject(error) })
+        })().catch((error: unknown) => {
+          settled()
+          // Preserve cancellation reasons and the original archive failure.
+          // oxlint-disable-next-line typescript/prefer-promise-reject-errors
+          reject(error)
+        })
       })
       zip.readEntry()
     })
@@ -162,7 +175,7 @@ export async function readExtensionTar(bytes: Buffer, signal: AbortSignal): Prom
   const pending: Promise<void>[] = []
   const paths = new Set<string>()
   let declaredBytes = 0
-  parser.on('entry', (entry) => {
+  parser.on('entry', (entry: ReadEntry) => {
     const operation = (async () => {
       const path = archivePath(entry.path)
       declaredBytes += entry.size
@@ -174,7 +187,7 @@ export async function readExtensionTar(bytes: Buffer, signal: AbortSignal): Prom
       let length = 0
       for await (const chunk of entry) {
         signal.throwIfAborted()
-        const value = Buffer.from(chunk)
+        const value = Buffer.from(chunk as Uint8Array)
         length += value.length
         if (length > entry.size) throw new Error('Artifact entry exceeds declared size')
         chunks.push(value)
@@ -183,7 +196,7 @@ export async function readExtensionTar(bytes: Buffer, signal: AbortSignal): Prom
       output.add(entry.path, Buffer.concat(chunks))
     })()
     pending.push(operation)
-    void operation.catch((error) => { parser.abort(error instanceof Error ? error : new Error('Invalid artifact')) })
+    void operation.catch((error: unknown) => { parser.abort(error instanceof Error ? error : new Error('Invalid artifact')) })
   })
   const abort = (): void => { parser.abort(new Error('Artifact read cancelled')) }
   try {
