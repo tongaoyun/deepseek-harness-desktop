@@ -25,6 +25,8 @@ description: "认证产品桌面用户，管理凭据、原生操作与产品资
 
 通过 `pnpm --dir apps/product-desktop run package <target>` 打包产品，未签名制品添加 `--unsigned`。该入口为官方构建流程选择产品组合。内部桌面 CI 与发布流程使用此入口；根目录的 `package:desktop:*` 命令打包不含产品资源的官方桌面。
 
+产品打包通过 Cargo metadata 解析原生二进制，支持 `CARGO_TARGET_DIR` 和 Cargo 配置。准备应用前先构建并检查 sidecar，打包进程退出后清理临时组合清单。
+
 桌面构建将 `electron` 保留为外部依赖，由正在运行的 Electron 进程提供主进程 API。
 
 `ExtensionAuthoring` 负责原生目录、ZIP 或独立 `SKILL.md` 选择、有界检查、员工隔离暂存、不可变制品上传和激活。选中文件路径和上传凭据不会返回渲染进程。非法路径、链接、重复文件、超限内容和哈希不匹配在激活前拒绝。独立 Markdown 限制为 64 KiB，附属资源需通过目录导入。导入资源随编辑保留，目录技能按选中版本下载复制。取消或关闭清理暂存，上传工作目录始终清理。个人技能保存成功后通过官方 Host 技能 Provider 安装，不准备任务。

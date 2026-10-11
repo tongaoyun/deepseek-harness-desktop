@@ -25,6 +25,8 @@ Sign in with DingTalk before opening the enterprise workspace. Employee tokens u
 
 Package the product through `pnpm --dir apps/product-desktop run package <target>`; add `--unsigned` for unsigned artifacts. This entry selects the product assembly for the official build pipeline. Internal desktop CI and release workflows use this entry; root `package:desktop:*` commands package the official desktop without product resources.
 
+Product packaging resolves the native binary from Cargo metadata, including `CARGO_TARGET_DIR` and Cargo configuration. It builds and verifies the sidecar before preparing the application, then releases its temporary assembly manifest after the packaging process exits.
+
 The desktop bundle keeps `electron` external so the running Electron process supplies its main-process API.
 
 `ExtensionAuthoring` owns native directory, ZIP, or standalone `SKILL.md` selection, bounded inspection, employee-scoped staging, immutable archive upload and activation. It never returns selected paths or upload credentials. Invalid paths, links, duplicate files, oversized content, and checksum mismatches fail before activation. Standalone Markdown is limited to 64 KiB; adjacent resources require directory import. Imported resources survive edits; copied catalog skills use the selected version download. Cancel or shutdown releases staging; upload work directories are always removed. A successful personal skill save installs through the official Host skill provider without preparing a task.

@@ -3,6 +3,7 @@ import { resolve } from 'node:path'
 import * as yaml from 'js-yaml'
 import { describe, expect, it } from 'vitest'
 import { readDesktopAssembly } from '../apps/desktop/scripts/desktop-assembly.mjs'
+import { productPackagingAssembly } from '../apps/product-desktop/scripts/packaging-assembly.mjs'
 
 interface WorkflowStep {
   readonly name?: string
@@ -128,7 +129,7 @@ describe('DeepSeekHarness Electron workflows', () => {
       expect(command).toContain(`pnpm --dir apps/product-desktop run package ${target}`)
     }
     const entry = readFileSync(resolve(import.meta.dirname, '..', 'apps/product-desktop/scripts/package.ts'), 'utf8')
-    expect(entry).toContain('DSH_DESKTOP_ASSEMBLY_MANIFEST: fileURLToPath')
+    expect(entry).toContain('DSH_DESKTOP_ASSEMBLY_MANIFEST: manifest')
     expect(entry).toContain('packages/deepseek-harness-product/desktop/assembly.json')
     const manifest = resolve(import.meta.dirname, '..', 'packages/deepseek-harness-product/desktop/assembly.json')
     const assembly = readDesktopAssembly({ DSH_DESKTOP_ASSEMBLY_MANIFEST: manifest }, 'win32')
@@ -137,6 +138,25 @@ describe('DeepSeekHarness Electron workflows', () => {
       'desktop-extension.json', 'deepseek-harness/product.json', 'native/deepseek-harness-native.exe',
     ]))
     expect(assembly.resources.some(resource => resource.to === 'native/deepseek-harness-native')).toBe(false)
+  })
+
+  it('uses Cargo target paths while preserving relocated product resource and package paths', () => {
+    const manifest = resolve(import.meta.dirname, '..', 'packages/deepseek-harness-product/desktop/assembly.json')
+    const original = readDesktopAssembly({ DSH_DESKTOP_ASSEMBLY_MANIFEST: manifest }, 'win32')
+    const target = resolve(import.meta.dirname, 'cargo-cache')
+    const prepared = productPackagingAssembly(manifest, target)
+    expect(prepared.resources.find(resource => resource.to === 'native/deepseek-harness-native.exe')?.from)
+      .toBe(resolve(target, 'release/deepseek-harness-native.exe'))
+    expect(prepared.resources.find(resource => resource.to === 'native/deepseek-harness-native')?.from)
+      .toBe(resolve(target, 'release/deepseek-harness-native'))
+    expect(prepared.resources.find(resource => resource.to === 'desktop-extension.json')?.from)
+      .toBe(original.resources.find(resource => resource.to === 'desktop-extension.json')?.from)
+    expect(prepared.packageDirectories).toEqual(original.packageDirectories)
+    expect(prepared.icons).toEqual(original.icons)
+    const entry = readFileSync(resolve(import.meta.dirname, '..', 'apps/product-desktop/scripts/package.ts'), 'utf8')
+    expect(entry).toContain("'metadata', '--format-version', '1', '--no-deps'")
+    expect(entry).toContain('if (!existsSync(binary)) throw')
+    expect(entry.indexOf('if (!existsSync(binary)) throw')).toBeLessThan(entry.indexOf('const child = spawn'))
   })
 
   it('caches locked Windows runtime assets before the package-owned preparation', () => {
