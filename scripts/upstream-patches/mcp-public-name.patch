@@ -1,0 +1,195 @@
+diff --git a/packages/mcp/mcp-client/README.i18n.yaml b/packages/mcp/mcp-client/README.i18n.yaml
+index 9a88686b..2c187a7b 100644
+--- a/packages/mcp/mcp-client/README.i18n.yaml
++++ b/packages/mcp/mcp-client/README.i18n.yaml
+@@ -18,11 +18,11 @@
+   en: e77871d58566601a
+   zh: c5ef229d22eb3ebf
+ /deepseek-ai-dsh-mcp-client/use-this-package/minimal-configuration:
+-  en: 4d8b58f6a5e0c3f1
+-  zh: 28e1c06aeef33131
++  en: acee7234af7a5b73
++  zh: 0c446a0c00365713
+ /deepseek-ai-dsh-mcp-client/use-this-package/tool-naming-and-coexistence:
+-  en: 75ae9745d5b04796
+-  zh: 8ae5b8ca6e73296e
++  en: 4c9085c0e8fdf471
++  zh: a1c96d6b3ed57f0c
+ /deepseek-ai-dsh-mcp-client/use-this-package/calling-tools-and-reading-results:
+   en: cad16c6102b0e316
+   zh: 03841eea6ead54cd
+@@ -90,8 +90,8 @@
+   en: 189198f7ace2a991
+   zh: 00948145a803d614
+ /deepseek-ai-dsh-mcp-client/known-limitations-and-deferred-work:
+-  en: 56be94497d0658a1
+-  zh: df9bfeee7300a101
++  en: d18c1dfcc6a93586
++  zh: f7cf703164077d20
+ /deepseek-ai-dsh-mcp-client/known-limitations-and-deferred-work/dev-note:
+-  en: 0ef388d17ea82af1
+-  zh: e7104aeb4b23c660
++  en: f58bcc301f0f5214
++  zh: a242d58f0bbf8a10
+diff --git a/packages/mcp/mcp-client/README.md b/packages/mcp/mcp-client/README.md
+index 950b9b8c..cbf752dd 100644
+--- a/packages/mcp/mcp-client/README.md
++++ b/packages/mcp/mcp-client/README.md
+@@ -58,7 +58,7 @@ Add one entry per server; nothing else is required. After the harness starts, th
+ | `serverName` | required | Namespace for the server's tool names; `[A-Za-z0-9_-]{1,32}`, unique inside one registration scope |
+ | `command` / `args` / `env` / `cwd` | — | stdio: executable, arguments, extra env merged over scrubbed ambient env, working directory |
+ | `url` / `headers` | — | streamable-http: endpoint URL and extra request headers |
+-| `toolCallTimeoutMs` | `60,000` | Timeout per `tools/call` or resource request |
++| `toolCallTimeoutMs` | `60,000` | Timeout per connection, tool discovery, tool call or resource request |
+ | `maxInstructionBytes` | `32,768` | Maximum UTF-8 bytes of server instructions including attribution; an oversized value rejects the connection |
+ | `failOnStartupError` | `false` | Reject plugin activation when the initial connection or tool synchronization fails |
+ | `reconnect.enabled` | `true` | Reconnect automatically after a lost connection |
+@@ -74,6 +74,8 @@ After startup, the server's tools appear as `mcp__<serverName>__<tool>` — try
+ 
+ The model sees each tool under a stable server-qualified name: `mcp__<serverName>__<rawName>`, for example `mcp__github__create_issue` — the same naming shape Claude Code and Codex use. Names stay stable while the server keeps the same tool name, so session history and permission rules survive restarts and reloads. Two servers can both offer a tool named `search` and coexist as `mcp__github__search` and `mcp__web__search`.
+ 
++Product integrations that match catalog entries to model-facing names import `publicToolName` from the package root; source-file subpaths are not a runtime API.
++
+ - Two servers publishing the same tool name (for example `search`) coexist under their own namespaces.
+ - Two entries using the same server name: the later one fails to load with a clear error.
+ - A server that lists the same tool twice gets its tool list rejected as invalid, and the previous tool set stays active.
+@@ -206,7 +208,7 @@ Unchanged instructions retain identical prompt text. Updated or removed instruct
+ These limits describe what you cannot do with this plugin and when it needs operational attention. They are current package constraints, not a comparison with other MCP clients or a task backlog.
+ 
+ - **Resources are read on demand** — shipped profiles provide the [shared resource service](../mcp-resources/README.md); resource subscriptions and MCP prompt templates are unsupported.
+-- **Startup and discovery timeouts are inherited from the MCP SDK** — the plugin exposes no separate connection or discovery timeout. Negotiation and discovery use the SDK's 60-second request default; discovery also uses its page limit. Plugin unload closes the transport to interrupt pending startup requests before awaiting teardown.
++- **Connection and discovery share the configured request timeout** — `toolCallTimeoutMs` supplies SDK negotiation, tool discovery, tool calls and resource requests. The default is 60 seconds; discovery retains the SDK page limit. Plugin unload closes the transport to interrupt pending startup requests before awaiting teardown.
+ - **Reconnect handles failed negotiation and transport close** — a failed initial probe or crashed stdio child uses the configured reconnect budget. Once HTTP is connected, request failures use the SDK transport's recovery rather than respawning the connection.
+ - **Image is the only durable rich-result bridge** — PNG, JPEG, WebP, and GIF enter Native context after exact capability proof. Audio and embedded-resource payloads remain execution-local with explicit diagnostics, while resource links preserve only their name and URI as text.
+ - **Invalid protocol results or output schemas fail through the SDK** — the bridge does not accept legacy `toolResult` substitutes or bypass advertised schema validation.
+@@ -221,7 +223,6 @@ These limits describe what you cannot do with this plugin and when it needs oper
+ This Dev Note is working context for maintainers: open design questions and directions that are not decided. It is explicitly non-authoritative — shipped behavior, limits, and accepted rationale live in the sections above, the package code, and the linked Agent Notes.
+ 
+ - The public-name algorithm is a v1 contract pinned by tests; changing it after release would break session history and permission rules.
+-- An explicit DSH-owned connection and discovery timeout is an open direction; the SDK's 60-second default bounds startup requests.
+ - Reconnect ownership for Streamable HTTP is open: per-request retry is SDK behavior, and the supervisor could also own the HTTP generation.
+ - MCP prompt templates need a separate user-selection and invocation mechanism.
+ - The pinned MCP SDK is still evolving; a breaking upstream change requires updating the bridge.
+diff --git a/packages/mcp/mcp-client/README.zh.md b/packages/mcp/mcp-client/README.zh.md
+index 3ba20384..ffc47aa7 100644
+--- a/packages/mcp/mcp-client/README.zh.md
++++ b/packages/mcp/mcp-client/README.zh.md
+@@ -58,7 +58,7 @@ kind: "package-reference"
+ | `serverName` | 必填 | 服务器工具名称的 namespace；`[A-Za-z0-9_-]{1,32}`，在一个注册作用域内唯一 |
+ | `command` / `args` / `env` / `cwd` | — | stdio：可执行文件、参数、合并到清洗过的环境之上的额外环境变量、工作目录 |
+ | `url` / `headers` | — | streamable-http：端点 URL 与额外请求标头 |
+-| `toolCallTimeoutMs` | `60,000` | 每次 `tools/call` 或资源请求的超时 |
++| `toolCallTimeoutMs` | `60,000` | 每次连接、工具发现、工具调用或资源请求的超时 |
+ | `maxInstructionBytes` | `32,768` | 包括服务器归属信息在内的服务器指令 UTF-8 字节上限；超出时连接失败 |
+ | `failOnStartupError` | `false` | 初始连接或工具同步失败时拒绝插件激活 |
+ | `reconnect.enabled` | `true` | 连接丢失后自动重新连接 |
+@@ -74,6 +74,8 @@ kind: "package-reference"
+ 
+ 模型看到每个工具都带有稳定的服务器限定名称：`mcp__<serverName>__<rawName>`，例如 `mcp__github__create_issue`——与 Claude Code 和 Codex 使用的命名形态相同。只要服务器保持相同的工具名称，名称就保持不变，因此会话历史与权限规则在重启和重载后仍然有效。两个服务器可以同时提供名为 `search` 的工具，分别以 `mcp__github__search` 和 `mcp__web__search` 共存。
+ 
++产品集成在匹配目录项与模型可见名称时，应从包根导入 `publicToolName`；源码文件子路径不是运行时 API。
++
+ - 发布相同工具名称（例如 `search`）的两个服务器会在各自的 namespace 下共存。
+ - 两条配置项使用相同的服务器名称时，后加载的一条会在加载时以明确错误失败。
+ - 服务器在工具列表中两次列出同一工具时，其工具列表会被作为无效列表拒绝，上一组工具保持可用。
+@@ -206,7 +208,7 @@ SDK 通过旧版通知或现代协议订阅接收工具列表变化。监督器
+ 这些限制说明你无法用本插件做什么、以及何时需要运维注意。它们是当前包约束，不是与其他 MCP 客户端的对比，也不是任务积压。
+ 
+ - **资源按需读取**——随附 profile 提供[共享资源服务](../mcp-resources/README.zh.md)；资源订阅与 MCP 提示词模板不受支持。
+-- **启动与发现超时继承自 MCP SDK**——插件不暴露单独的连接或发现超时。协商与发现使用 SDK 默认的 60 秒请求超时；发现也使用 SDK 的页数上限。插件卸载先关闭传输以中断待处理的启动请求，再等待清理。
++- **连接与发现共享配置的请求超时**——`toolCallTimeoutMs` 提供 SDK 协商、工具发现、工具调用及资源请求的期限。默认 60 秒，发现仍遵循 SDK 的页数上限。插件卸载先关闭传输以中断待处理的启动请求，再等待清理。
+ - **重连处理协商失败与传输关闭**——初始探测失败或 stdio 子进程崩溃都会使用配置的重连预算。HTTP 建立连接后，请求失败使用 SDK 传输的恢复机制，而非重新创建连接。
+ - **图片是唯一的持久丰富结果桥接**——PNG、JPEG、WebP 与 GIF 在确切能力得到证明后进入 Native 上下文。音频与嵌入资源载荷仍只存在于执行局部并带明确诊断，资源链接只以文本保留名称与 URI。
+ - **无效的协议结果或输出 schema 由 SDK 拒绝**——桥接器不接受旧式 `toolResult` 替代结果，也不绕过已声明的 schema 校验。
+@@ -221,7 +223,6 @@ SDK 通过旧版通知或现代协议订阅接收工具列表变化。监督器
+ 本开发备注是维护者的工作上下文：开放设计问题与尚未决定的探索方向。它明确不具权威性——已交付行为、限制与既定理由以上文、包代码与所链接的 Agent Note 为准。
+ 
+ - 公开名称算法是由测试固定的 v1 约定；发布后更改会破坏会话历史与权限规则。
+-- 由 DSH 显式拥有的连接与发现超时是开放的探索方向；SDK 的 60 秒默认值约束着启动请求。
+ - Streamable HTTP 的重连归属仍未决定：按请求重试是 SDK 行为，supervisor 也可以拥有 HTTP 世代。
+ - MCP 提示词模板需要独立的用户选择和模板调用机制。
+ - 固定的 MCP SDK 仍在演化；上游破坏性变更需要更新桥接。
+diff --git a/packages/mcp/mcp-client/src/connection.ts b/packages/mcp/mcp-client/src/connection.ts
+index 9a4ec912..9bd1094a 100644
+--- a/packages/mcp/mcp-client/src/connection.ts
++++ b/packages/mcp/mcp-client/src/connection.ts
+@@ -305,7 +305,7 @@ export function startConnection(ctx: Context, config: Config, policy: ResolvedRe
+     let instructions: string
+     try {
+       transport = createTransport(config)
+-      await generation.connect(transport)
++      await generation.connect(transport, { timeout: config.toolCallTimeoutMs })
+       if (hasClosed()) {
+         attemptSettled = true
+         generationDown(generation)
+diff --git a/packages/mcp/mcp-client/src/index.ts b/packages/mcp/mcp-client/src/index.ts
+index 3f89532b..3188c006 100644
+--- a/packages/mcp/mcp-client/src/index.ts
++++ b/packages/mcp/mcp-client/src/index.ts
+@@ -23,7 +23,7 @@ import { registerServerContext } from './server-context.ts'
+ // Side-effect type import: declaration-merges `ctx.tools` onto Context.
+ import type {} from '@deepseek-ai/dsh-tools'
+ 
+-export { createMcpToolDefinition } from './tools.ts'
++export { createMcpToolDefinition, publicToolName } from './tools.ts'
+ export type { McpResult, McpToolDefinitionOptions } from './tools.ts'
+ export type { ReconnectConfig, ResolvedReconnectPolicy } from './connection.ts'
+ 
+@@ -33,7 +33,7 @@ export const name = 'mcp-client'
+ /** Services required by this plugin. */
+ export const inject = ['tools']
+ 
+-/** Default timeout for individual MCP tool calls and resource requests (ms). */
++/** Default timeout for MCP connection, discovery, tool calls and resource requests (ms). */
+ const DEFAULT_TOOL_CALL_TIMEOUT_MS = 60_000
+ 
+ /** Valid `serverName`, kept below the public tool-name budget. */
+@@ -66,7 +66,7 @@ export interface StdioConfig {
+   env: Record<string, string>
+   /** Working directory for the child process. */
+   cwd: string
+-  /** Timeout per tool call or resource request in milliseconds. */
++  /** Timeout per connection, tool discovery, tool call or resource request in milliseconds. */
+   toolCallTimeoutMs: number
+   /** Fail plugin activation when the initial connection or tool synchronization fails. */
+   failOnStartupError: boolean
+@@ -90,7 +90,7 @@ export interface StreamableHttpConfig {
+   url: string
+   /** Additional headers attached to MCP requests. */
+   headers: Record<string, string>
+-  /** Timeout per tool call or resource request in milliseconds. */
++  /** Timeout per connection, tool discovery, tool call or resource request in milliseconds. */
+   toolCallTimeoutMs: number
+   /** Fail plugin activation when the initial connection or tool synchronization fails. */
+   failOnStartupError: boolean
+diff --git a/packages/mcp/mcp-client/src/tools.ts b/packages/mcp/mcp-client/src/tools.ts
+index 9e7b5c0a..e2428031 100644
+--- a/packages/mcp/mcp-client/src/tools.ts
++++ b/packages/mcp/mcp-client/src/tools.ts
+@@ -120,7 +120,7 @@ export async function syncTools(
+   const definitions = new Map<string, ToolDefinition>()
+   const response = client.getServerCapabilities()?.tools === undefined
+     ? { tools: [] }
+-    : await client.listTools(undefined, { cacheMode: 'refresh' })
++    : await client.listTools(undefined, { cacheMode: 'refresh', timeout: opts.toolCallTimeoutMs })
+   for (const tool of response.tools) {
+     const publicName = publicToolName(opts.serverName, tool.name)
+     if (definitions.has(publicName)) {
+diff --git a/packages/mcp/mcp-client/tests/apply.spec.ts b/packages/mcp/mcp-client/tests/apply.spec.ts
+index fff23892..187e0212 100644
+--- a/packages/mcp/mcp-client/tests/apply.spec.ts
++++ b/packages/mcp/mcp-client/tests/apply.spec.ts
+@@ -182,10 +182,10 @@ describe('apply (plugin lifecycle)', () => {
+   )
+ 
+   it('connects, syncs tools under the namespace, and registers a notification handler', async () => {
+-    await apply(ctx, stdioConfig)
++    await apply(ctx, { ...stdioConfig, toolCallTimeoutMs: 120_000 })
+ 
+-    expect(mockConnect).toHaveBeenCalled()
+-    expect(mockListTools).toHaveBeenCalled()
++    expect(mockConnect).toHaveBeenCalledWith(expect.anything(), { timeout: 120_000 })
++    expect(mockListTools).toHaveBeenCalledWith(undefined, { cacheMode: 'refresh', timeout: 120_000 })
+     expect(mockSetNotificationHandler).toHaveBeenCalled()
+     expect(ctx.tools.get('mcp__srv__remote')).toBeDefined()
+     expect(ctx.tools.get('remote')).toBeUndefined()

@@ -17,7 +17,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 import type { ComposerBlock } from './composer-blocks.ts'
 import type { DraftAttachmentId, InputActions, InputNotice, InputState } from './input.ts'
-import type { ComposerKeyboard, EditSelection } from './draft-editor.ts'
+import type { ComposerKeyboard, DraftSnapshot, EditSelection } from './draft-editor.ts'
 import type { createConversationStore } from '../stores.ts'
 import type { BusyEnterBehavior } from './composer-submission.ts'
 import type { ConversationSnapshot } from './snapshot.ts'
@@ -191,6 +191,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     'conversation.hero.brand.mark': { kind: 'single'; scope: 'root'; owner: HeroBrandMarkOwnerProps }
     /** Agent-preset control staged for a New Session. */
     'conversation.hero.agentPreset': { kind: 'single'; scope: 'session-maybe'; owner: HeroAgentPresetOwnerProps }
+    /** Ordered controls beside the workspace and agent-preset controls on the blank-session Hero. */
+    'conversation.hero.actions': { kind: 'list'; scope: 'session-maybe' }
     /** Full-width entries above the composer card. */
     'conversation.input.dock': { kind: 'list'; scope: 'session'; owner: InputZone }
     /** Floating entries rendered inside the resident composer card. */
@@ -236,6 +238,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
         'conversation.hero.brand.mark': { kind: 'single'; scope: 'root' }
         'conversation.hero.workspace': { kind: 'single'; scope: 'root' }
         'conversation.hero.agentPreset': { kind: 'single'; scope: 'session-maybe' }
+        'conversation.hero.actions': { kind: 'list'; scope: 'session-maybe' }
       }
       inject: ConversationInjected
       locale: 'conversation'
@@ -341,7 +344,7 @@ export interface ConversationSessionInjected {
     readonly inspectCall: ObservableSnapshot<ConvViewOwnerProps['inspectCall']>
   }
   /** Bind input draft persistence to the Session-owned store instance. */
-  bindDraftMirror: (write: (text: string) => void) => () => void
+  bindDraftPersistence: (write: (draft: DraftSnapshot) => void) => () => void
   /** Select and activate one View while addressing an opaque focus request to it. */
   openView: (view: string, focus: string) => void
 }

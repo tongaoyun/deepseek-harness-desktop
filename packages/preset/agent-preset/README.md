@@ -44,6 +44,9 @@ Define an Agent’s child plugins in ordinary Cordis YAML. Declare several prese
 | `name` | unset | Display name |
 | `description` | unset | Display description |
 | `order` | unset | Roster order |
+| `selectable` | true | Offer the definition in new-session pickers |
+| `defaultable` | true | Allow the definition as the saved default |
+| `selectionBase` | unset | Selectable origin shown for a hidden derived composition |
 
 The declaration row’s `id` addresses Loader edits; `config.id` is the preset identity saved by sessions. Child entry IDs may be omitted and assigned by Loader.
 
@@ -93,5 +96,3 @@ A live Agent’s composition stays stable; new Agents can use an updated definit
 None.
 
 </details>
-
-**Runtime invariant:** No companion is published. This plugin submits registry-owned definitions and has no independently mutable runtime state.

@@ -106,7 +106,7 @@ interface Agent {
    * turn and runs when the aborted activity converges to idle; a `disposed`
    * cancel leaves it parked. A wake submitted while already idle always opens
    * its turn boundary, even when its message is cleared before the driver
-   * claims ([cancel-convergence wake latch](../../../../.agents/notes/implemented/bug-fix/2026-08-07-cancel-convergence-wake-latch.md)).
+   * claims ([driver wake convergence](../../agent-loop/src/agent.ts)).
    * @param message - identified content and the source that supplied it.
    * @param target - the preferred next-turn or next-step inbox boundary.
    * @param wakeup - whether delivery may wake the driver.
@@ -409,6 +409,59 @@ type Branded<B extends string> = string & { readonly [BRAND]: B }
 
 The two core IDs are `ToolCallId` (correlates a tool call with its result; dsh-llm) and `SessionId` (the shared live agent and durable session identity; dsh-session). Capability packages brand their own ids too, such as `JobId` in [jobs.md](jobs.md).
 
+## Preset selection metadata
+
+`PresetDefinition` declares the execution composition. A hidden derived definition can identify a selectable origin with `selectionBase`; derivation flattens successive hidden compositions to that origin. The association affects mode presentation, while `agentPreset` in the Session projection and selection events remains the actual execution ID. Registration rejects empty or self-referencing origins and associations on selectable definitions. Reads validate the target as selectable without another association; when it is absent, they wait for the Host Loader to settle before reporting it unavailable. This supports concurrent declarations and rechecks the relation after removal or replacement. Broken associations prevent new bindings or selections while existing revision leases remain retained. Diagnostic reads must run outside Host row activation, which Loader settlement waits on.
+
+Source: [`packages/preset/agent-preset-registry/src/definition.ts`](../../packages/preset/agent-preset-registry/src/definition.ts)
+
+```ts type-equiv
+/** Identity, display fields and child Cordis plugins of one preset. */
+interface PresetDefinition {
+  readonly id: string
+  /** Resolution context retained by a detached composition. */
+  readonly resolutionBase?: string
+  readonly name?: string
+  readonly description?: string
+  readonly order?: number
+  /** Whether new-session pickers offer this definition. Historical snapshots remain resolvable when false. */
+  readonly selectable?: boolean
+  /** Whether Settings may persist this definition as the default for future Sessions. */
+  readonly defaultable?: boolean
+  /** Selectable base shown for a hidden derived composition; execution retains this definition's id. */
+  readonly selectionBase?: string
+  readonly plugins: readonly (Omit<EntryOptions, 'id' | 'disabled'> & { id?: string; disabled?: EntryOptions['disabled'] | JsExpr })[]
+}
+```
+
+`AgentPresetRow` exposes this association in the remote roster. Native mode pickers offer only selectable rows, display and check the selected composition's base, and leave the composition ID unchanged. The readonly Session label uses the same association.
+
+Source: [`packages/preset/agent-preset-registry/src/types.ts`](../../packages/preset/agent-preset-registry/src/types.ts)
+
+```ts type-equiv
+/**
+ * One declared preset as a client reads it.
+ */
+interface AgentPresetRow {
+  /** Stable identifier; also the label's fallback. */
+  readonly id: string
+  /** Whether a session naming no preset composes this one. */
+  readonly isDefault: boolean
+  /** Display name the preset published. */
+  readonly name?: string
+  /** One sentence on what this preset is for. */
+  readonly description?: string
+  /** Whether a new Session may choose this Preset from a picker. */
+  readonly selectable: boolean
+  /** Whether this Preset may become the default for future Sessions. */
+  readonly defaultable: boolean
+  /** Selectable base displayed for a hidden derived composition; its id still identifies execution. */
+  readonly selectionBase?: string
+  /** Why this preset cannot compose a session; absent when it can. */
+  readonly broken?: string
+}
+```
+
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
 <a id="cordis-surface"></a>
@@ -495,6 +548,12 @@ Registry of YAML-declared presets and the revisions live Agents retain.
  */
 async register(definition: PresetDefinition): Promise<() => Promise<void>>
 
+/** Inspect retained revisions, or the exact revision an Agent joined.
+ * @param ctx - optional Agent context; omission includes all retained revisions.
+ * @returns detached module references and isolation diagnostics; no match returns an empty list.
+ */
+inspectCompositions(ctx?: Context): AgentPresetInspection[]
+
 /** Read every declared preset, including activation failures.
  * @returns Display metadata and loading diagnostics.
  */
@@ -516,6 +575,13 @@ async resolve(id?: string): Promise<AgentPreset>
  * @returns The declared composition beside its published metadata.
  */
 @Remote('read') readDocument(agentPreset: string): Promise<AgentPresetDocument>
+
+/** Derive a detached composition without parsing its display document.
+ * @param baseId Registered composition to extend.
+ * @param definition Metadata and additional plugin rows; additional rows resolve in the base context.
+ * @returns Detached definition retaining the base Loader resolution context and, when hidden, selectable origin.
+ */
+derive(baseId: string, definition: PresetDefinition): PresetDefinition
 
 /** Bind an unpublished Agent to the current preset revision.
  * @param ctx Agent context from its setup callback.
@@ -1083,6 +1149,25 @@ Source: [`packages/core/agent-loop/src/index.ts`](../../packages/core/agent-loop
 <a id="agent-preset-events"></a>
 
 ### `agent-preset/*` events
+
+<a id="agent-presetresolve-selection--waterfall"></a>
+
+#### `agent-preset/resolve-selection` — waterfall
+
+Resolve a requested composition before selection commits.
+
+```ts cordis-catalog
+/** Resolve a requested composition before selection commits.
+ * @mode waterfall
+ * @param agent Target Agent whose blank-turn guard remains owned by the registry.
+ * @param requested Requested Preset identity.
+ * @param next Delegate to subsequent resolvers.
+ * @returns Registered composition to select; rejection leaves the selection unchanged.
+ */
+'agent-preset/resolve-selection'(agent: Agent, requested: string, next: () => Promise<string>): Promise<string>
+```
+
+Source: [`packages/preset/agent-preset-registry/src/index.ts`](../../packages/preset/agent-preset-registry/src/index.ts)
 
 <a id="agent-presetselected--emit"></a>
 

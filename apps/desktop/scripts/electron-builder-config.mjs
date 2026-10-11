@@ -1,3 +1,4 @@
+import { readDesktopAssembly } from './desktop-assembly.mjs'
 import { officePackageDirectories } from '../../../scripts/libreoffice-packages.mjs'
 import { X509Certificate } from 'node:crypto'
 import { readFileSync } from 'node:fs'
@@ -60,15 +61,12 @@ export function createElectronBuilderConfig(
     throw new Error('desktop package: DSH_DESKTOP_UNSIGNED must be 0 or 1')
   }
   const unsigned = env.DSH_DESKTOP_UNSIGNED === '1'
-  if (unsigned && resolvedPlatform !== 'win32') throw new Error('desktop package: unsigned builds require Windows')
-  // Internal unsigned packages do not publish or poll an update policy. A policy
-  // is required only for signed packages that participate in a deployment.
-  const policy = unsigned ? undefined : resolveDesktopPolicyEnvironment(env)
   const packagesMacOS = targetPlatform === 'darwin' || (targetPlatform === undefined && hostPlatform === 'darwin')
   const packagesWindows = resolvedPlatform === 'win32'
+  const policy = unsigned ? undefined : resolveDesktopPolicyEnvironment(env)
   if (resolvedPlatform === 'win32') installWindowsDirectoryInstaller()
-  const macOSSigning = packagesMacOS ? resolveMacOSSigningEnvironment(env) : undefined
-  if (packagesMacOS) resolveMacOSNotarizationEnvironment(env)
+  const macOSSigning = packagesMacOS && !unsigned ? resolveMacOSSigningEnvironment(env) : undefined
+  if (packagesMacOS && !unsigned) resolveMacOSNotarizationEnvironment(env)
   const buildPaths = desktopTargetBuildPaths(resolveDesktopBuildTarget(env, hostPlatform, hostArch))
   let primaryRuntimeDestination
   let dshDestination
@@ -101,16 +99,13 @@ export function createElectronBuilderConfig(
   const productVersion = JSON.parse(readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8')).version
   const buildVersion = resolveDesktopBuildVersion(env, productVersion)
   const packaged = resolveDesktopBuildCommit(env)
-  const nativeTarget = env.CARGO_TARGET_DIR
-    ?? join(REPOSITORY_ROOT, 'native', 'deepseek-harness', 'target')
-  const nativeSidecar = env.DEEPSEEK_HARNESS_NATIVE_BINARY
-    ?? join(nativeTarget, 'release', packagesWindows ? 'deepseek-harness-native.exe' : 'deepseek-harness-native')
+  const assembly = readDesktopAssembly(env, resolvedPlatform)
   return {
     appId,
     protocols: [{ name: 'DeepSeek Harness', schemes: ['dsh'] }],
     extraMetadata: {
       dshDesktopAppId: appId,
-      dshMandatoryUpdatePolicy: policy,
+      ...(policy === undefined ? {} : { dshMandatoryUpdatePolicy: policy }),
       ...buildVersion === productVersion ? {} : { version: buildVersion },
       ...packaged === undefined ? {} : { dshBuildCommit: packaged.commit, dshBuildDirty: packaged.dirty },
     },
@@ -151,34 +146,32 @@ export function createElectronBuilderConfig(
     asarUnpack: unpack,
     extraResources: [
       { from: buildPaths.runtime, to: 'runtime' },
-      { from: fileURLToPath(new URL('../resources/deepseek-harness-product.json', import.meta.url)), to: 'deepseek-harness/product.json' },
-      // Product-native capabilities are supervised by Electron and never
-      // exposed directly to the renderer.
-      { from: nativeSidecar, to: packagesWindows ? 'native/deepseek-harness-native.exe' : 'native/deepseek-harness-native' },
-      { from: fileURLToPath(new URL('../resources/icon-windows.png', import.meta.url)), to: 'icon.png' },
+      ...assembly.resources,
+      { from: assembly.icons.windows ?? fileURLToPath(new URL('../resources/icon-windows.png', import.meta.url)), to: 'icon.png' },
       // Windows tray bitmaps; macOS keeps the Dock and ships no menu bar icon.
-      ...(packagesWindows ? [{ from: fileURLToPath(new URL('../resources/tray-windows.ico', import.meta.url)), to: 'tray.ico' }] : []),
+      ...(packagesWindows ? [{ from: assembly.icons.tray ?? fileURLToPath(new URL('../resources/tray-windows.ico', import.meta.url)), to: 'tray.ico' }] : []),
     ],
     mac: {
-      icon: fileURLToPath(new URL('../resources/icon-macos.png', import.meta.url)),
+      icon: assembly.icons.macos ?? fileURLToPath(new URL('../resources/icon-macos.png', import.meta.url)),
       category: 'public.app-category.developer-tools',
       // macOS matches the application locale against this bundle, not Electron Framework resources.
       extendInfo: {
         CFBundleLocalizations: ['en', 'zh_CN'],
         NSMicrophoneUsageDescription: 'DeepSeek Harness uses your microphone to transcribe speech into message drafts.',
       },
-      identity: macOSSigning?.signingIdentity,
-      forceCodeSigning: true,
+      // Ad-hoc signing keeps the modified Electron executable runnable without a Developer ID.
+      identity: unsigned ? '-' : macOSSigning?.signingIdentity,
+      forceCodeSigning: !unsigned,
       hardenedRuntime: true,
       entitlements: fileURLToPath(new URL('./macos-entitlements.plist', import.meta.url)),
       entitlementsInherit: fileURLToPath(new URL('./macos-entitlements.plist', import.meta.url)),
-      // ASAR-unpacked native runtime files are pre-signed; PAK resources are sealed by their enclosing bundle.
+      // Prepared runtime files retain their signatures; PAK resources are sealed by their enclosing bundle.
       signIgnore: ['/Contents/Resources/app\\.asar\\.unpacked/dsh(?:/|$)', '/Contents/Resources/runtime/primary-runtime(?:/|$)', '\\.pak$'],
-      notarize: true,
-      target: ['dmg', 'zip'],
+      notarize: !unsigned,
+      target: unsigned ? ['dmg'] : ['dmg', 'zip'],
     },
     dmg: {
-      sign: true,
+      sign: !unsigned,
       writeUpdateInfo: false,
     },
     beforePack: async context => {
@@ -218,7 +211,7 @@ export function createElectronBuilderConfig(
         })
         await verifyWindowsAsarUnpack(buildPaths.dsh, context.packager.getResourcesDir(context.appOutDir), windowsCode)
       }
-      if (context.electronPlatformName !== 'darwin') return
+      if (context.electronPlatformName !== 'darwin' || unsigned) return
       const appPath = join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`)
       if (update !== undefined) {
         await verifyMacOSAppUpdateConfig(appPath, resolveMacOSAppUpdateFeed(context.packager.config.publish),
@@ -227,7 +220,7 @@ export function createElectronBuilderConfig(
       verifyMacOSSignatureAfterSign(context, macOSSigning ?? resolveMacOSSigningEnvironment(env))
     },
     artifactBuildCompleted: artifact => {
-      if (!artifact.file.endsWith('.dmg')) return
+      if (unsigned || !artifact.file.endsWith('.dmg')) return
       return notarizeMacOSDiskImageArtifact(
         artifact,
         env,
@@ -235,8 +228,7 @@ export function createElectronBuilderConfig(
       )
     },
     win: {
-      icon: fileURLToPath(new URL('../resources/icon-windows.png', import.meta.url)),
-      executableName: 'DeepSeek Harness',
+      icon: assembly.icons.windows ?? fileURLToPath(new URL('../resources/icon-windows.png', import.meta.url)),
       forceCodeSigning: !unsigned,
       signtoolOptions: {
         sign: windowsSigner,

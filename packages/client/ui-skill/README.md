@@ -29,6 +29,8 @@ Type `/` in the composer and pick a skill from the suggestions, or type `/name` 
 
 ### What the source offers
 
+Clients that change installed skill providers call the public `ctx.uiSkills.refresh(sessionId?)` service to invalidate slash-menu discovery. Omitting the Session ID refreshes every retained catalog. Refresh cancels pending catalog reads and previews, preserves drafts and Sessions, and fetches the current Host catalog on the next discovery. The service is released with this plugin.
+
 Ordinary-session candidates come from the `skills/list` Remote; the host serves every user-invocable skill, and a `modelInvocable: false` entry (a `disable-model-invocation` skill, whose only entry point is this path) wears the user-only marker as a description prefix in the active language. Results rank through the `/` menu's shared name ranker, `rankByName` from ui-primitives: the query matches a case-insensitive ordered subsequence of the skill name, prefix hits rank first, and ties keep the host order ([ranking decision](../../../.agents/notes/archived/feature/2026-08-04-web-slash-command-fuzzy-discovery.md)). A failed `skills/list` call is logged and folded into a silent menu-group drop — the menu shows only pending/ready states.
 
 ### The skill tool row
@@ -112,5 +114,3 @@ These limits define where the reference and the row fall back to generic behavio
 None.
 
 </details>
-
-**Runtime invariant:** No companion is published. The slash source, locale dictionaries, and keyed toolview are registry-owned registrations whose disposal is proven by the HMR-safety spec. They emit no Cordis events and own no cross-plugin mutable state.

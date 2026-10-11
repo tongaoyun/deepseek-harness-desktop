@@ -1,0 +1,1980 @@
+diff --git a/docs/subsystems/core.i18n.yaml b/docs/subsystems/core.i18n.yaml
+index c4c106c0..0e0ef18a 100644
+--- a/docs/subsystems/core.i18n.yaml
++++ b/docs/subsystems/core.i18n.yaml
+@@ -34,4 +34,7 @@
+   zh: 84241bb993f23ef2
+ /core/repo-wide-type-patterns/branded-ids:
+   en: 10f8ac0f97e7c54a
+-  zh: 75cd2311aabfe464
++  zh: 4fde9df713ac1cf1
++/core/preset-selection-metadata:
++  en: 6e37a40b4992cc7c
++  zh: caeffe8f8a2b5f3f
+diff --git a/packages/client/ui-agent-preset/README.i18n.yaml b/packages/client/ui-agent-preset/README.i18n.yaml
+index 71819423..7c5955bf 100644
+--- a/packages/client/ui-agent-preset/README.i18n.yaml
++++ b/packages/client/ui-agent-preset/README.i18n.yaml
+@@ -18,8 +18,8 @@
+   en: d616984e840f036e
+   zh: 3e7c97c7d10669eb
+ /deepseek-ai-dsh-client-ui-agent-preset/understand-the-implementation:
+-  en: b3221ef8bc6d8096
+-  zh: 68cb05566249da10
++  en: 61c7822f639c456a
++  zh: e40884f8394853ff
+ /deepseek-ai-dsh-client-ui-agent-preset/further-exploration:
+   en: bbae8d79844bc481
+   zh: 4302107fd1f460e6
+diff --git a/packages/client/ui-agent-preset/README.md b/packages/client/ui-agent-preset/README.md
+index 09df3e46..d63c734e 100644
+--- a/packages/client/ui-agent-preset/README.md
++++ b/packages/client/ui-agent-preset/README.md
+@@ -43,7 +43,7 @@ Entering Creator selects `cordis` for the receiving blank Session without changi
+ <details>
+ <summary>Implementation internals — click to expand</summary>
+ 
+-`agentPresets/list` supplies the roster and marks the current default, and `agentPresets/read` one declaration's YAML for the viewer; default changes write the `agent-preset-registry` settings namespace. The picker, blank-session synchronization and read-only session label use recorded preset identities. Connection resets and settings updates refresh the roster.
++`agentPresets/list` supplies the roster and marks the current default, and `agentPresets/read` one declaration's YAML for the viewer; default changes write the `agent-preset-registry` settings namespace. The native picker and read-only session label resolve a hidden composition's `selectionBase` to display and select its base mode; Session logs retain the actual composition ID. Unknown or broken compositions and invalid base associations show a generic unavailable state without exposing private snapshot IDs or selecting a guessed mode. Hidden definitions never enter the picker. A new composition returned by selection or observed through Session updates refreshes the roster before resolving its display. Rejected selection preserves the current composition, and completed requests for a previous Session do not update another Session's display. Connection resets and settings updates also refresh the roster.
+ 
+ `CreatePluginMenuItem` contributes to `plugins.add.actions` using the shared roster store. Its selection calls the owner's `onDismiss()` before the same `startCreatorDraft` callback exposed to Settings as `creatorDraft`. That callback stages `cordis` through `AgentPresetSeatController` and opens the task through `uiWorkspace.startSession` with explicit draft preservation; it can reuse a blank Session and applies the staged choice when a Session binding becomes available. The choice is consumed once applied. Both Coding Tools states use the same picker and selection store, and `AgentPresetSeat` renders refusals through the shared `Toast` component.
+ 
+diff --git a/packages/client/ui-agent-preset/README.zh.md b/packages/client/ui-agent-preset/README.zh.md
+index 7514fc99..8640a35d 100644
+--- a/packages/client/ui-agent-preset/README.zh.md
++++ b/packages/client/ui-agent-preset/README.zh.md
+@@ -43,7 +43,7 @@ kind: "package-reference"
+ <details>
+ <summary>实现细节 — 点击展开</summary>
+ 
+-`agentPresets/list` 提供列表并标记当前默认值，`agentPresets/read` 为查看器提供一条声明的 YAML；默认值的修改写入 `agent-preset-registry` settings 命名空间。选择器、空白会话同步和只读会话标签使用记录的 preset 标识。连接重置和设置更新会刷新列表。
++`agentPresets/list` 提供列表并标记当前默认值，`agentPresets/read` 为查看器提供一条声明的 YAML；默认值的修改写入 `agent-preset-registry` settings 命名空间。原生选择器和只读会话标签通过隐藏组合的 `selectionBase` 展示并勾选基础模式，Session 日志保留实际组合 ID。未知或损坏组合及失效基础关联显示通用不可用状态，不暴露私有快照 ID，也不猜测并勾选其他模式。隐藏定义不进入选择器。选择返回或 Session 更新中出现新组合时，先刷新列表再解析展示名称。选择被拒绝时保留当前组合，前一 Session 的请求完成后不会更新另一 Session 的展示。连接重置和设置更新也会刷新列表。
+ 
+ `CreatePluginMenuItem` 使用共享的预设列表 store，向 `plugins.add.actions` 贡献菜单项。选择时先调用页面传入的 `onDismiss()`，再调用与设置页 `creatorDraft` 相同的 `startCreatorDraft` 回调。该回调通过 `AgentPresetSeatController` 暂存 `cordis`，再通过显式保留草稿的 `uiWorkspace.startSession` 调用打开任务；它可以复用空白 Session，并在 Session 绑定可用时应用暂存选择。暂存选择应用后即清除。代码工作工具开启或关闭时均使用同一个选择器和选择 store，`AgentPresetSeat` 通过共享的 `Toast` 组件显示拒绝原因。
+ 
+diff --git a/packages/client/ui-agent-preset/src/client/AgentPresetLabel.tsx b/packages/client/ui-agent-preset/src/client/AgentPresetLabel.tsx
+index 26fdcfcb..8bf329c5 100644
+--- a/packages/client/ui-agent-preset/src/client/AgentPresetLabel.tsx
++++ b/packages/client/ui-agent-preset/src/client/AgentPresetLabel.tsx
+@@ -8,14 +8,14 @@
+  * new-session screen ({@link AgentPresetSeat}).
+  */
+ 
+-import { useEffect } from 'react'
++import { useEffect, useRef } from 'react'
+ import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
+ import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+ import { IconAgentPresetOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
+ // Type-only: pulls the ui-conversation SlotMap merge (the header actions).
+ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
+ import type {} from '@deepseek-ai/dsh-agent-preset-registry/types'
+-import type { AgentPresetSettingsState } from './settings-store.ts'
++import { isUnavailablePreset, selectionPresetId, type AgentPresetSettingsState } from './settings-store.ts'
+ import { presetDisplayText } from './locales.ts'
+ import css from './AgentPresetLabel.module.css'
+ 
+@@ -48,21 +48,28 @@ export function AgentPresetLabel({
+     return typeof value === 'string' ? value : undefined
+   })
+   const options = useAgentPresets(state => state.options)
++  const presets = useAgentPresets(state => state.presets)
++  const status = useAgentPresets(state => state.status)
++  const requestedPresets = useRef(new Set<string>())
+ 
+   useEffect(() => {
+     // Deployments that compose no presets never label anything, so the roster
+     // is only worth a request once a session reports one.
+-    if (preset !== undefined) void load()
+-  }, [preset, load])
++    if (preset === undefined || status === 'loading' || requestedPresets.current.has(preset)) return
++    requestedPresets.current.add(preset)
++    void load()
++  }, [preset, status, load])
+ 
+   if (preset === undefined) return null
+ 
+-  const option = options.find(entry => entry.id === preset)
++  const shownPreset = selectionPresetId(preset, presets)
++  const option = options.find(entry => entry.id === shownPreset)
+   const text = option === undefined ? undefined : presetDisplayText(option, t)
++  const label = isUnavailablePreset(preset, presets) ? t('compositionUnavailable') : text?.name ?? shownPreset
+   return (
+     <span className={css.label} title={text?.description ?? t('headerHint')}>
+       <IconAgentPresetOutlineRegular size={14} className={css.icon} />
+-      {text?.name ?? preset}
++      {label}
+     </span>
+   )
+ }
+diff --git a/packages/client/ui-agent-preset/src/client/AgentPresetSeat.tsx b/packages/client/ui-agent-preset/src/client/AgentPresetSeat.tsx
+index 07e4aa84..7d5f4c78 100644
+--- a/packages/client/ui-agent-preset/src/client/AgentPresetSeat.tsx
++++ b/packages/client/ui-agent-preset/src/client/AgentPresetSeat.tsx
+@@ -113,7 +113,7 @@ export function AgentPresetSeat({
+ 
+   const chosen = state.options.find(option => option.id === state.current)
+   const chosenText = chosen === undefined ? undefined : presetDisplayText(chosen, t)
+-  const label = chosenText?.name ?? state.current
++  const label = state.currentUnavailable ? t('compositionUnavailable') : chosenText?.name ?? state.current
+   const ready = state.options.length > 0 && state.current !== ''
+ 
+   // The introduce cue: the pick was staged from another screen (the settings
+diff --git a/packages/client/ui-agent-preset/src/client/index.ts b/packages/client/ui-agent-preset/src/client/index.ts
+index 184b7fd7..91e03e0b 100644
+--- a/packages/client/ui-agent-preset/src/client/index.ts
++++ b/packages/client/ui-agent-preset/src/client/index.ts
+@@ -77,7 +77,7 @@ export function apply(ctx: ClientContext): void {
+   const codingToolsDisabled = (): boolean => active && toolsSettings.getSnapshot().mode === 'host'
+     && toolsSettings.getSnapshot().value?.enabled === false
+   const controller = new AgentPresetSettingsController(ctx)
+-  const staged: AgentPresetStage = { id: undefined, introduce: false }
++  const staged: AgentPresetStage = { revision: 0, id: undefined, introduce: false }
+   const seats = new WeakMapWithValues<SessionBinding, AgentPresetSeatController>()
+   const boundSeatDisposers = new Set<() => Promise<void>>()
+   ctx.effect(() => async () => {
+@@ -112,6 +112,7 @@ export function apply(ctx: ClientContext): void {
+   const developerTools = ctx.configForms.developerTools.enabled
+   ctx.effect(() => developerTools.subscribe(() => {
+     if (developerTools.getSnapshot()) return
++    staged.revision += 1
+     staged.id = undefined
+     staged.introduce = false
+     void unboundSeat.apply()
+diff --git a/packages/client/ui-agent-preset/src/client/locales.ts b/packages/client/ui-agent-preset/src/client/locales.ts
+index 1863c2e1..14e07625 100644
+--- a/packages/client/ui-agent-preset/src/client/locales.ts
++++ b/packages/client/ui-agent-preset/src/client/locales.ts
+@@ -9,6 +9,7 @@ export type AgentPresetSettingsKey =
+   | 'customGroup'
+   | 'seatHint'
+   | 'headerHint'
++  | 'compositionUnavailable'
+   | 'nav'
+   | 'sectionIntro'
+   | 'setDefault'
+@@ -42,6 +43,7 @@ export const en: Record<AgentPresetSettingsKey, string> = {
+ 
+   seatHint: 'Choose the agent preset for your new task',
+   headerHint: 'The agent preset chosen when this task started',
++  compositionUnavailable: 'Unavailable composition',
+   nav: 'Agent presets',
+ 
+   setDefault: 'Set as new task default',
+@@ -87,6 +89,7 @@ export const zh: Record<AgentPresetSettingsKey, string> = {
+ 
+   seatHint: '选择新任务使用的 Agent 预设',
+   headerHint: '本任务的 Agent 预设，在任务开始时确定',
++  compositionUnavailable: '执行配置不可用',
+   nav: 'Agent 预设',
+ 
+   setDefault: '设为新任务默认',
+diff --git a/packages/client/ui-agent-preset/src/client/seat-store.ts b/packages/client/ui-agent-preset/src/client/seat-store.ts
+index dfa2c699..fc6d9fec 100644
+--- a/packages/client/ui-agent-preset/src/client/seat-store.ts
++++ b/packages/client/ui-agent-preset/src/client/seat-store.ts
+@@ -16,8 +16,8 @@ import type {} from '@deepseek-ai/dsh-api-remotes/client'
+ import type { SessionSummary } from '@deepseek-ai/dsh-api-session-controller/client'
+ import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
+ import type {} from '@deepseek-ai/dsh-agent-preset-registry/types'
+-import { presetOptions, readRoster } from './settings-store.ts'
+-import type { AgentPresetOption } from './settings-store.ts'
++import { isUnavailablePreset, presetOptions, readRoster, selectionPresetId } from './settings-store.ts'
++import type { AgentPresetOption, RosterPreset } from './settings-store.ts'
+ 
+ /** Hero-chip snapshot. */
+ export interface AgentPresetSeatState {
+@@ -25,6 +25,8 @@ export interface AgentPresetSeatState {
+   options: readonly AgentPresetOption[]
+   /** The staged choice, empty until the roster loads. */
+   current: string
++  /** An unnamed hidden composition has no recoverable selectable base. */
++  currentUnavailable: boolean
+   /** An error message; explicit selection failures also carry the preset for a Toast. */
+   error: string | { readonly preset: AgentPresetOption; readonly reason: string } | null
+   busy: boolean
+@@ -37,11 +39,13 @@ export interface AgentPresetSeatState {
+ }
+ 
+ const INITIAL: AgentPresetSeatState = {
+-  options: [], current: '', error: null, busy: false, introduce: false,
++  options: [], current: '', currentUnavailable: false, error: null, busy: false, introduce: false,
+ }
+ 
+ /** Mutable one-shot preset choice shared across Provider-bound seat controllers. */
+ export interface AgentPresetStage {
++  /** Distinguishes newer choices, including repeated picks of the same preset. */
++  revision: number
+   /** Preset awaiting application; absence means no staged choice. */
+   id: string | undefined
+   /** Whether the receiving chip should announce the applied choice once. */
+@@ -61,6 +65,12 @@ export class AgentPresetSeatController {
+ 
+   /** Only the newest roster read may publish after overlapping refreshes. */
+   private loadGeneration = 0
++  private presets: readonly RosterPreset[] = []
++  private rosterLoaded = false
++  /** One refresh per unknown identity until an explicit roster reload. */
++  private readonly missingPresetReads = new Map<string, Promise<void> | null>()
++  /** Selection responses may arrive before the matching Session projection. */
++  private committedSelection: { sessionId: SessionSummary['id']; before: string | undefined; id: string } | undefined
+   /** Completion of the active Host selection; Settings choices wait before staging. */
+   private pendingSelection: Promise<undefined> | undefined
+ 
+@@ -71,7 +81,7 @@ export class AgentPresetSeatController {
+       SessionSummary,
+       'id' | 'blank' | 'projectionValues'
+     > | undefined,
+-    private readonly staged: AgentPresetStage = { id: undefined, introduce: false },
++    private readonly staged: AgentPresetStage = { revision: 0, id: undefined, introduce: false },
+   ) {}
+ 
+   private set(patch: Partial<AgentPresetSeatState>): void {
+@@ -79,10 +89,65 @@ export class AgentPresetSeatController {
+   }
+ 
+   private clearStage(): void {
++    this.staged.revision += 1
+     this.staged.id = undefined
+     this.staged.introduce = false
+   }
+ 
++  private currentPreset(session: ReturnType<AgentPresetSeatController['currentSession']>): string | undefined {
++    const actual = presetOf(session)
++    const committed = this.committedSelection
++    if (committed === undefined) return actual
++    if (session?.id !== committed.sessionId || actual === committed.id || actual !== committed.before) {
++      this.committedSelection = undefined
++      return actual
++    }
++    return committed.id
++  }
++
++  private shownPreset(id: string | undefined): string {
++    return id === undefined ? '' : selectionPresetId(id, this.presets)
++  }
++
++  private unavailablePreset(id: string | undefined): boolean {
++    return id !== undefined && isUnavailablePreset(id, this.presets)
++  }
++
++  private reconcileCurrent(): void {
++    const session = this.currentSession()
++    const actual = this.currentPreset(session)
++    this.set({
++      current: this.staged.id ?? (session === undefined ? this.fallback : this.shownPreset(actual)),
++      currentUnavailable: this.staged.id === undefined && this.unavailablePreset(actual),
++    })
++  }
++
++  private refreshMissingPreset(id: string | undefined, force = false): Promise<void> | undefined {
++    if ((!this.rosterLoaded && !force) || id === undefined || this.presets.some(preset => preset.id === id)) return
++    const existing = this.missingPresetReads.get(id)
++    if (existing !== undefined) return existing ?? undefined
++    const generation = ++this.loadGeneration
++    const sessionId = this.currentSession()?.id
++    const refresh = readRoster(this.ctx).then((roster) => {
++      if (generation !== this.loadGeneration) return
++      if (!roster.ok) {
++        const error = this.store.getSnapshot().error
++        if (this.currentSession()?.id === sessionId && (error === null || typeof error !== 'object')) {
++          this.set({ error: roster.error })
++        }
++        return
++      }
++      this.presets = roster.value.presets
++      this.rosterLoaded = true
++      this.fallback = this.presets.find(preset => preset.isDefault)?.id ?? this.presets[0]?.id ?? ''
++      this.set({ options: presetOptions(this.presets, true) })
++    }).finally(() => {
++      if (this.missingPresetReads.get(id) === refresh) this.missingPresetReads.set(id, null)
++    })
++    this.missingPresetReads.set(id, refresh)
++    return refresh
++  }
++
+   /**
+    * Read the roster and open the chip on the Host-effective default.
+   * @returns once the snapshot reflects the host.
+@@ -98,17 +163,24 @@ export class AgentPresetSeatController {
+       return
+     }
+     const { presets } = roster.value
++    this.presets = presets
++    this.rosterLoaded = true
++    this.missingPresetReads.clear()
+     this.fallback = presets.find(preset => preset.isDefault)?.id ?? presets[0]?.id ?? ''
+     const session = this.currentSession()
++    const actual = this.currentPreset(session)
++    const before = this.store.getSnapshot()
+     this.set({
+-      options: presetOptions(presets),
++      options: presetOptions(presets, true),
+       // Staged pick first, then the composition the current session
+       // already carries, then the Host-effective default. The middle term is
+       // what keeps a late-landing load from regressing the display after
+       // an applied stage was consumed — the chip mounts (and loads) only
+       // once the flow's session is current, so the reply can arrive after
+       // apply() already composed it.
+-      current: this.staged.id ?? (session === undefined ? this.fallback : presetOf(session) ?? ''),
++      current: this.staged.id ?? (before.busy ? before.current : session === undefined ? this.fallback : this.shownPreset(actual)),
++      currentUnavailable: before.busy ? before.currentUnavailable
++        : this.staged.id === undefined && this.unavailablePreset(actual),
+       error: typeof error === 'object' ? error : null,
+       introduce: this.staged.introduce,
+     })
+@@ -142,9 +214,10 @@ export class AgentPresetSeatController {
+    * chip should announce itself on the session it lands on.
+    */
+   stage(id: string, introduce = false): void {
++    this.staged.revision += 1
+     this.staged.id = id
+     this.staged.introduce = introduce
+-    this.set({ current: id, error: null, introduce })
++    this.set({ current: id, currentUnavailable: false, error: null, introduce })
+   }
+ 
+   /** Acknowledge a displayed refusal without dismissing a newer attempt.
+@@ -201,18 +274,35 @@ export class AgentPresetSeatController {
+   async apply(): Promise<string | undefined> {
+     if (this.store.getSnapshot().busy) return
+     const staged = this.staged.id
+-    const session = this.currentSession()
++    const stageRevision = this.staged.revision
++    let session = this.currentSession()
++    const sessionId = session?.id
++    const current = this.currentPreset(session)
++    const refresh = this.refreshMissingPreset(current)
++    if (refresh !== undefined) await refresh
++    if (this.store.getSnapshot().busy) return
++    session = this.currentSession()
++    if (session?.id !== sessionId) {
++      if (this.staged.revision === stageRevision) this.clearStage()
++      this.reconcileCurrent()
++      return
++    }
++    // Another picker may have staged a newer choice during the roster read.
++    if (this.staged.revision !== stageRevision) return
+     if (staged === undefined) {
+-      const current = session === undefined ? this.fallback : presetOf(session) ?? ''
++      const actual = this.currentPreset(session)
++      const current = session === undefined ? this.fallback : this.shownPreset(actual)
++      const currentUnavailable = this.unavailablePreset(actual)
+       const shown = this.store.getSnapshot()
+-      if (current !== shown.current) this.set({ current })
++      if (current !== shown.current || currentUnavailable !== shown.currentUnavailable) this.set({ current, currentUnavailable })
+       return
+     }
+     if (session === undefined) return
+     // A started session's history was produced under its own composition; the
+     // host refuses the swap, so the stage is no longer meaningful.
+-    if (!session.blank || presetOf(session) === staged) {
++    if (!session.blank || this.shownPreset(this.currentPreset(session)) === staged) {
+       this.clearStage()
++      this.reconcileCurrent()
+       return
+     }
+     const completion = Promise.withResolvers<undefined>()
+@@ -221,13 +311,19 @@ export class AgentPresetSeatController {
+     const refuse = (reason: string) => {
+       this.set({
+         error: { reason, preset: this.store.getSnapshot().options.find(option => option.id === staged) ?? { id: staged } },
+-        current: this.staged.id ?? presetOf(session) ?? '',
+       })
++      this.reconcileCurrent()
+       return reason
+     }
+     try {
+       this.set({ busy: true, error: null })
++      const before = presetOf(session)
+       const result = await this.ctx.remote.agentPresets.select(session.id, staged)
++      const latest = this.currentSession()
++      if (latest?.id !== session.id) {
++        this.reconcileCurrent()
++        return
++      }
+       if (!result.ok) {
+         const { error } = result
+         // Prefer the bare cause; the Toast already names the rejected preset.
+@@ -236,8 +332,15 @@ export class AgentPresetSeatController {
+           : error.message
+         return refuse(refusal)
+       }
+-      this.set({ current: this.staged.id ?? result.value })
++      this.committedSelection = { sessionId: session.id, before, id: result.value }
++      const refresh = this.refreshMissingPreset(result.value, result.value !== staged)
++      if (refresh !== undefined) await refresh
++      this.reconcileCurrent()
+     } catch (error) {
++      if (this.currentSession()?.id !== session.id) {
++        this.reconcileCurrent()
++        return
++      }
+       return refuse(error instanceof Error ? error.message : String(error))
+     } finally {
+       this.pendingSelection = undefined
+diff --git a/packages/client/ui-agent-preset/src/client/section-store.ts b/packages/client/ui-agent-preset/src/client/section-store.ts
+index 3ab2bdd2..f2d1bed2 100644
+--- a/packages/client/ui-agent-preset/src/client/section-store.ts
++++ b/packages/client/ui-agent-preset/src/client/section-store.ts
+@@ -47,7 +47,11 @@ export class AgentPresetSectionController {
+     try {
+       const result = await this.ctx.remote.agentPresets.list()
+       if (!result.ok) throw new Error(result.error.message)
+-      this.set({ status: 'ready', error: null, rows: result.value.presets })
++      this.set({
++        status: 'ready',
++        error: null,
++        rows: result.value.presets.filter(row => row.selectable),
++      })
+     } catch (error) { this.set({ status: 'error', error: message(error) }) }
+   }
+ 
+diff --git a/packages/client/ui-agent-preset/src/client/settings-store.ts b/packages/client/ui-agent-preset/src/client/settings-store.ts
+index 6eb1ff6f..068d6a80 100644
+--- a/packages/client/ui-agent-preset/src/client/settings-store.ts
++++ b/packages/client/ui-agent-preset/src/client/settings-store.ts
+@@ -57,6 +57,32 @@ export function requiresCodingTools(preset: AgentPresetOption | undefined): bool
+ /** One roster entry exactly as the host reports it. */
+ export type RosterPreset = AgentPresetRoster['presets'][number]
+ 
++/** Resolve a derived composition to the selectable preset shown by mode controls.
++ * @param id Actual composition identity recorded by a Session.
++ * @param presets Complete roster, including hidden compositions.
++ * @returns The valid selectable base identity, or the unchanged identity when unavailable or unassociated.
++ */
++export function selectionPresetId(
++  id: string,
++  presets: readonly RosterPreset[],
++): string {
++  if (isUnavailablePreset(id, presets)) return id
++  return presets.find(preset => preset.id === id)?.selectionBase ?? id
++}
++
++/** Identify a composition whose metadata or selectable origin cannot be used.
++ * @param id Actual Session composition identity.
++ * @param presets Complete roster, including blocked compositions.
++ * @returns Whether mode controls must show the generic unavailable label.
++ */
++export function isUnavailablePreset(id: string, presets: readonly RosterPreset[]): boolean {
++  const preset = presets.find(row => row.id === id)
++  if (preset === undefined || preset.broken !== undefined) return true
++  if (preset.selectionBase === undefined) return !preset.selectable && preset.name === undefined
++  const base = presets.find(row => row.id === preset.selectionBase)
++  return base === undefined || base.broken !== undefined || !base.selectable || base.selectionBase !== undefined
++}
++
+ /** The roster, or the message to show in its place. */
+ export type RosterRead = { ok: true; value: AgentPresetRoster } | { ok: false; error: string }
+ 
+@@ -114,12 +140,15 @@ export async function beginRosterRead<S extends { status: string; error: string
+  * undefined" different shapes — so the spread dance belongs in one place rather than
+  * once per store.
+  * @param presets - the roster the host answered with.
++ * @param selectableOnly - whether hidden definitions are excluded from the picker.
+  * @returns one option per selectable preset, in roster order.
+  */
+ export function presetOptions(
+-  presets: readonly { id: string; name?: string; description?: string; broken?: string }[],
++  presets: readonly { id: string; name?: string; description?: string; broken?: string; selectable?: boolean }[],
++  selectableOnly = false,
+ ): AgentPresetOption[] {
+-  return presets.filter(preset => preset.broken === undefined).map(preset => ({
++  return presets.filter(preset => preset.broken === undefined
++    && (!selectableOnly || preset.selectable !== false)).map(preset => ({
+     id: preset.id,
+     ...preset.name === undefined ? {} : { name: preset.name },
+     ...preset.description === undefined ? {} : { description: preset.description },
+@@ -131,12 +160,15 @@ export interface AgentPresetSettingsState {
+   status: 'idle' | 'loading' | 'ready' | 'unavailable' | 'error'
+   error: string | null
+   options: readonly AgentPresetOption[]
++  /** Complete roster used to associate historical compositions with selectable modes. */
++  presets: readonly RosterPreset[]
+ }
+ 
+ const INITIAL: AgentPresetSettingsState = {
+   status: 'idle',
+   error: null,
+   options: [],
++  presets: [],
+ }
+ 
+ /** Reads the roster for the surfaces that only display it. */
+@@ -166,13 +198,14 @@ export class AgentPresetSettingsController {
+     if (roster === undefined) return
+     const { presets } = roster
+     if (presets.length === 0) {
+-      this.set({ status: 'unavailable', options: [] })
++      this.set({ status: 'unavailable', options: [], presets: [] })
+       return
+     }
+     this.set({
+       status: 'ready',
+       error: null,
+       options: presetOptions(presets),
++      presets,
+     })
+   }
+ 
+diff --git a/packages/client/ui-agent-preset/tests/apply.client.spec.ts b/packages/client/ui-agent-preset/tests/apply.client.spec.ts
+index f23bde9a..ef844ba7 100644
+--- a/packages/client/ui-agent-preset/tests/apply.client.spec.ts
++++ b/packages/client/ui-agent-preset/tests/apply.client.spec.ts
+@@ -39,7 +39,7 @@ function developerTools(enabled = true): { configForms: { developerTools: { enab
+ const ROSTER_ONE = {
+   ok: true as const,
+   value: {
+-    presets: [{ id: 'standard', isDefault: true }],
++    presets: [{ id: 'standard', isDefault: true, selectable: true, defaultable: true }],
+   },
+ }
+ 
+@@ -48,8 +48,8 @@ const ROSTER_AUTHORED = {
+   ok: true as const,
+   value: {
+     presets: [
+-      { id: 'standard', isDefault: true },
+-      { id: 'mine', isDefault: false },
++      { id: 'standard', isDefault: true, selectable: true, defaultable: true },
++      { id: 'mine', isDefault: false, selectable: true, defaultable: true },
+     ],
+   },
+ }
+@@ -59,18 +59,21 @@ const ROSTER_MOVED = {
+   ok: true as const,
+   value: {
+     presets: [
+-      { id: 'standard', isDefault: false },
+-      { id: 'minimal', isDefault: true },
++      { id: 'standard', isDefault: false, selectable: true, defaultable: true },
++      { id: 'minimal', isDefault: true, selectable: true, defaultable: true },
+     ],
+   },
+ }
+ 
++type RowInput = Omit<AgentPresetRow, 'selectable' | 'defaultable'>
++  & Partial<Pick<AgentPresetRow, 'selectable' | 'defaultable'>>
++
+ async function bench(options: {
+   failSettingsUpdate?: boolean
+   selectGate?: Promise<void>
+   settingsRosterGate?: Promise<undefined>
+   describeGate?: Promise<undefined>
+-  presets?: AgentPresetRow[]
++  presets?: RowInput[]
+   developerToolsEnabled?: boolean
+   memory?: boolean
+ } = {}) {
+@@ -78,7 +81,7 @@ async function bench(options: {
+   // The host's answer, mutable so a spec can move the default the way the
+   // settings surface does and watch who re-reads it.
+   let ROSTER: { ok: true; value: { presets: AgentPresetRow[] } } = options.presets === undefined
+-    ? ROSTER_ONE : { ok: true, value: { presets: options.presets } }
++    ? ROSTER_ONE : { ok: true, value: { presets: options.presets.map(row => ({ selectable: true, defaultable: true, ...row })) } }
+   const moveDefault = (): void => { ROSTER = ROSTER_MOVED }
+   await ctx.plugin(SlotRegistry).await()
+   const locale = new LocaleRuntime(ctx)
+@@ -428,7 +431,7 @@ describe('ui-agent-preset apply', () => {
+     await section.load()
+     await section.makeDefault('standard')
+     expect(section.hooks.agentPresetSection.getSnapshot().rows)
+-      .toEqual([{ id: 'standard', isDefault: true }])
++      .toEqual(ROSTER_ONE.value.presets)
+     await section.view('standard')
+     expect(section.hooks.agentPresetSection.getSnapshot().view)
+       .toEqual({ id: 'standard', title: 'standard', content: '# standard\n[]\n' })
+@@ -614,7 +617,7 @@ describe('ui-agent-preset apply', () => {
+       expect(seat.hooks.agentPresetSeat.getSnapshot().current).toBe('standard')
+       state.byId.s1.projectionValues.agentPreset = 'minimal'
+       sessions.notify()
+-      expect(seat.hooks.agentPresetSeat.getSnapshot().current).toBe('minimal')
++      await vi.waitFor(() => { expect(seat.hooks.agentPresetSeat.getSnapshot().current).toBe('minimal') })
+       expect(calls.filter(call => call.startsWith('select:'))).toEqual([])
+ 
+       const selecting = seat.select('standard')
+@@ -700,7 +703,7 @@ describe('ui-agent-preset apply', () => {
+       .inject as unknown as () => AgentPresetSectionInjected)()
+     await section.load()
+     expect(section.hooks.agentPresetSection.getSnapshot().rows)
+-      .toEqual([{ id: 'standard', isDefault: true }])
++      .toEqual(ROSTER_ONE.value.presets)
+ 
+     await section.makeDefault('minimal')
+ 
+@@ -1241,7 +1244,7 @@ describe('AgentPresetSeatController reconciliation', () => {
+     requests[1]!.outcome.resolve(refuseLatest ? refusal : { ok: true, value: 'cordis' })
+     await expect(settings).resolves.toBe(refuseLatest ? 'selection refused' : undefined)
+     expect(controller.store.getSnapshot()).toMatchObject({
+-      current: refuseLatest ? 'standard' : 'cordis', busy: false,
++      current: refuseLatest ? (refuseFirst ? 'standard' : 'minimal') : 'cordis', busy: false,
+       error: refuseLatest ? { preset: { id: 'cordis' }, reason: 'selection refused' } : null,
+     })
+   })
+diff --git a/packages/client/ui-agent-preset/tests/components.client.spec.tsx b/packages/client/ui-agent-preset/tests/components.client.spec.tsx
+index 79cc930e..9e9fc550 100644
+--- a/packages/client/ui-agent-preset/tests/components.client.spec.tsx
++++ b/packages/client/ui-agent-preset/tests/components.client.spec.tsx
+@@ -26,10 +26,15 @@ const ROSTER_READY: AgentPresetSettingsState = {
+   status: 'ready',
+   error: null,
+   options: [{ id: 'standard' }, { id: 'mine' }],
++  presets: [
++    { id: 'standard', isDefault: true, selectable: true, defaultable: true },
++    { id: 'mine', isDefault: false, selectable: true, defaultable: true },
++  ],
+ }
+ 
+ const SEAT_READY: AgentPresetSeatState = {
+   current: 'standard',
++  currentUnavailable: false,
+   options: [
+     { id: 'standard' },
+     { id: 'mine' },
+@@ -86,6 +91,9 @@ function renderLabel(
+   // The chip and the label read the same roster, metadata included.
+   const store = createSnapshotStore<AgentPresetSettingsState>({
+     ...ROSTER_READY, options: SEAT_READY.options, ...roster,
++    presets: roster.presets ?? (roster.options ?? SEAT_READY.options).map(option => ({
++      ...option, isDefault: false, selectable: true, defaultable: true,
++    })),
+   })
+   const sessions = createSnapshotStore({ byId: summary === undefined ? {} : { s1: summary } })
+   const load = vi.fn(() => Promise.resolve())
+@@ -96,10 +104,19 @@ function renderLabel(
+     useAgentPresets: bindSnapshotSelector(store),
+     t: (key: keyof typeof en) => en[key],
+   } as unknown as AgentPresetLabelProps)} />)
+-  return { load, view }
++  return { load, view, store, sessions }
+ }
+ 
+ describe('the new-session chip', () => {
++  it('labels a blocked composition without exposing its identity or marking a base mode', () => {
++    renderSeat({ current: 'product-task-damaged', currentUnavailable: true })
++
++    expect(screen.getByRole('button').textContent).toContain(en.compositionUnavailable)
++    expect(screen.queryByText('product-task-damaged')).toBeNull()
++    fireEvent.click(screen.getByRole('button'))
++    expect(screen.queryByRole('menuitemradio', { checked: true })).toBeNull()
++  })
++
+   it.each([false, true])('offers Standard, Creator and custom presets with Developer tools %s', (enabled) => {
+     const actions = renderSeat({ options: [
+       { id: 'standard' }, { id: 'ptc' }, { id: 'minimal' }, { id: 'cordis' }, { id: 'mine' },
+@@ -382,6 +399,87 @@ describe('the chip introduce cue', () => {
+ })
+ 
+ describe('the session-header label', () => {
++  it.each(['loading', 'error'] as const)('hides an unknown snapshot identity while the roster is %s', (status) => {
++    renderLabel({ blank: false, projectionValues: { agentPreset: 'product-task-new' } }, {
++      status, presets: [], options: [], error: status === 'error' ? 'Disconnected' : null,
++    })
++
++    expect(screen.getByTitle(en.headerHint).textContent).toBe(en.compositionUnavailable)
++    expect(screen.queryByText('product-task-new')).toBeNull()
++  })
++
++  it('hides a newly selected snapshot identity when its roster lookup fails', async () => {
++    const { load, sessions, store } = renderLabel({ blank: false, projectionValues: { agentPreset: 'standard' } })
++    await waitFor(() => { expect(load).toHaveBeenCalledTimes(1) })
++    await act(async () => {
++      sessions.set({ byId: { s1: { blank: false, projectionValues: { agentPreset: 'product-task-new' } } } })
++    })
++    await waitFor(() => { expect(load).toHaveBeenCalledTimes(2) })
++    await act(async () => { store.set({ ...store.getSnapshot(), status: 'error', error: 'Disconnected' }) })
++
++    expect(screen.getByTitle(en.headerHint).textContent).toBe(en.compositionUnavailable)
++    expect(screen.queryByText('product-task-new')).toBeNull()
++  })
++
++  it('shows a broken snapshot with a missing base as unavailable', () => {
++    renderLabel({ blank: false, projectionValues: { agentPreset: 'product-task-broken' } }, {
++      presets: [...ROSTER_READY.presets, {
++        id: 'product-task-broken', selectionBase: 'removed-mode', broken: 'Selection base is missing',
++        isDefault: false, selectable: false, defaultable: false,
++      }],
++    })
++
++    expect(screen.getByTitle(en.headerHint).textContent).toBe(en.compositionUnavailable)
++    expect(screen.queryByText('product-task-broken')).toBeNull()
++    expect(screen.queryByText('removed-mode')).toBeNull()
++  })
++
++  it('refreshes a newly selected composition after an older roster read settles', async () => {
++    const { load, store } = renderLabel({ blank: false, projectionValues: { agentPreset: 'new-snapshot' } }, {
++      status: 'loading',
++    })
++    expect(load).not.toHaveBeenCalled()
++    await act(async () => {
++      store.set({ ...store.getSnapshot(), status: 'ready' })
++    })
++    expect(load).toHaveBeenCalledTimes(1)
++    await act(async () => {
++      store.set({ ...store.getSnapshot(), presets: [
++        ...ROSTER_READY.presets,
++        { id: 'new-snapshot', isDefault: false, selectable: false, defaultable: false, selectionBase: 'standard' },
++      ] })
++    })
++
++    expect(screen.getByTitle(en.presetStandardDescription).textContent).toBe(en.presetStandardName)
++    expect(load).toHaveBeenCalledTimes(1)
++  })
++
++  it('labels an unnamed hidden composition as unavailable without choosing a base', () => {
++    renderLabel({ blank: false, projectionValues: { agentPreset: 'product-task-damaged' } }, {
++      presets: [
++        ...ROSTER_READY.presets,
++        { id: 'product-task-damaged', isDefault: false, selectable: false, defaultable: false },
++      ],
++    })
++
++    expect(screen.getByTitle(en.headerHint).textContent).toBe(en.compositionUnavailable)
++    expect(screen.queryByText('product-task-damaged')).toBeNull()
++    expect(screen.queryByText(en.presetStandardName)).toBeNull()
++  })
++
++  it('shows the selectable base of a hidden execution snapshot', () => {
++    renderLabel({ blank: false, projectionValues: { agentPreset: 'product-task-fixed' } }, {
++      presets: [
++        ...ROSTER_READY.presets,
++        { id: 'product-task-fixed', isDefault: false, selectable: false, defaultable: false, selectionBase: 'standard' },
++      ],
++    })
++
++    expect(screen.getByTitle(en.presetStandardDescription).textContent).toBe(en.presetStandardName)
++    expect(screen.queryByText('product-task-fixed')).toBeNull()
++    expect(screen.queryByRole('button')).toBeNull()
++  })
++
+   it('names the preset the session runs, and never offers a switch', async () => {
+     const { load } = renderLabel({
+       blank: false,
+@@ -400,15 +498,14 @@ describe('the session-header label', () => {
+     expect(screen.getByTitle(en.headerHint).textContent).toBe('mine')
+   })
+ 
+-  it('shows the id until the roster resolves it', () => {
++  it('shows an unavailable label until the roster resolves the recorded identity', () => {
+     renderLabel({
+       blank: false,
+       projectionValues: { agentPreset: 'standard' },
+     }, { options: [] })
+ 
+-    // The session's own summary is the authority on which preset it runs; the
+-    // roster only supplies the display name, and its arrival is a later frame.
+-    expect(screen.getByTitle(en.headerHint).textContent).toBe('standard')
++    expect(screen.getByTitle(en.headerHint).textContent).toBe(en.compositionUnavailable)
++    expect(screen.queryByText('standard')).toBeNull()
+   })
+ 
+   it('renders nothing, and reads no roster, when the session records no preset', async () => {
+diff --git a/packages/client/ui-agent-preset/tests/create-plugin-menu-item.client.spec.tsx b/packages/client/ui-agent-preset/tests/create-plugin-menu-item.client.spec.tsx
+index d1ecedaa..c9ad39c0 100644
+--- a/packages/client/ui-agent-preset/tests/create-plugin-menu-item.client.spec.tsx
++++ b/packages/client/ui-agent-preset/tests/create-plugin-menu-item.client.spec.tsx
+@@ -18,7 +18,8 @@ function unusedHook(): never {
+ 
+ function view(roster: Partial<AgentPresetSettingsState> = {}, inMenu = false) {
+   const agentPresets = createSnapshotStore<AgentPresetSettingsState>({
+-    status: 'ready', error: null, options: [{ id: 'standard' }, { id: 'cordis' }], ...roster,
++    status: 'ready', error: null, options: [{ id: 'standard' }, { id: 'cordis' }],
++    presets: ['standard', 'cordis'].map(id => ({ id, isDefault: id === 'standard', selectable: true, defaultable: true })), ...roster,
+   })
+   const calls: string[] = []
+   const startCreatorDraft = vi.fn(() => { calls.push('start') })
+@@ -81,7 +82,8 @@ describe('Create plugin menu item', () => {
+   it('disables the same entry when Creator leaves the roster', () => {
+     const actions = view()
+     const original = item()
+-    act(() => { actions.agentPresets.set({ status: 'ready', error: null, options: [{ id: 'standard' }] }) })
++    act(() => { actions.agentPresets.set({ status: 'ready', error: null, options: [{ id: 'standard' }],
++      presets: [{ id: 'standard', isDefault: true, selectable: true, defaultable: true }] }) })
+     expect(item()).toBe(original)
+     expect(item()).toHaveProperty('disabled', true)
+     expect(item().textContent).toContain(en.createPluginMissing)
+diff --git a/packages/client/ui-agent-preset/tests/derived-selection.client.spec.ts b/packages/client/ui-agent-preset/tests/derived-selection.client.spec.ts
+new file mode 100644
+index 00000000..d25b161c
+--- /dev/null
++++ b/packages/client/ui-agent-preset/tests/derived-selection.client.spec.ts
+@@ -0,0 +1,362 @@
++import { describe, expect, it, vi } from 'vitest'
++import type { SessionSummary } from '@deepseek-ai/dsh-api-session-controller/client'
++import { RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
++import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
++import { SessionId } from '@deepseek-ai/dsh-session/types'
++import type { AgentPresetRoster } from '@deepseek-ai/dsh-agent-preset-registry/types'
++import { AgentPresetSeatController, type AgentPresetStage } from '../src/client/seat-store.ts'
++import { isUnavailablePreset, selectionPresetId } from '../src/client/settings-store.ts'
++
++type SeatSession = Pick<SessionSummary, 'id' | 'blank' | 'projectionValues'>
++type Row = AgentPresetRoster['presets'][number]
++type Outcome = { ok: true; value: string } | { ok: false; error: RemoteError }
++
++const BASES: readonly Row[] = [
++  { id: 'standard', isDefault: true, selectable: true, defaultable: true },
++  { id: 'minimal', isDefault: false, selectable: true, defaultable: true },
++]
++
++function derived(id: string, selectionBase = 'minimal'): Row {
++  return { id, selectionBase, isDefault: false, selectable: false, defaultable: false }
++}
++
++function fixture(initial: readonly Row[] = BASES) {
++  let presets = initial
++  let current: SeatSession | undefined = {
++    id: SessionId('first'), blank: true, projectionValues: { agentPreset: 'standard' },
++  }
++  const list = vi.fn(() => Promise.resolve({ ok: true as const, value: { presets } }))
++  const select = vi.fn((_session: SessionId, preset: string): Promise<Outcome> => Promise.resolve({ ok: true, value: preset }))
++  const controller = new AgentPresetSeatController({
++    configForms: { developerTools: { enabled: createSnapshotStore(true) } },
++    remote: { agentPresets: { list, select } },
++  } as never, () => current)
++  return {
++    controller, list, select,
++    roster: (rows: readonly Row[]) => { presets = rows },
++    session: (value: SeatSession | undefined) => { current = value },
++    actual: (id: string) => {
++      if (current === undefined) throw new Error('expected a Session')
++      current = { ...current, projectionValues: { agentPreset: id } }
++    },
++  }
++}
++
++describe('native selection of derived compositions', () => {
++  it('maps hidden compositions while preserving unrelated identities', () => {
++    expect(selectionPresetId('snapshot', [...BASES, derived('snapshot')])).toBe('minimal')
++    expect(selectionPresetId('standard', [derived('snapshot')])).toBe('standard')
++  })
++
++  it.each([
++    [] as readonly Row[],
++    [{ ...BASES[0]!, broken: 'Failed base' }, derived('snapshot', 'standard')],
++    [{ ...derived('snapshot'), broken: 'Missing selection base' }],
++    [derived('minimal', 'standard'), derived('snapshot')],
++    [{ ...BASES[1]!, selectable: false }, derived('snapshot')],
++  ].map(presets => ({ presets })))('keeps an unavailable identity when its current declaration or selectable base is unusable', ({ presets }) => {
++    expect(isUnavailablePreset('snapshot', presets)).toBe(true)
++    expect(selectionPresetId('snapshot', presets)).toBe('snapshot')
++  })
++
++  it('offers a healthy selectable mode normally', () => {
++    expect(isUnavailablePreset('standard', BASES)).toBe(false)
++    expect(selectionPresetId('standard', BASES)).toBe('standard')
++  })
++
++  it('keeps a broken selectable mode unavailable even when its identity is known', () => {
++    const presets = [{ ...BASES[0]!, broken: 'Failed plugin' }]
++    expect(isUnavailablePreset('standard', presets)).toBe(true)
++    expect(selectionPresetId('standard', presets)).toBe('standard')
++  })
++
++  it('retains a broken snapshot identity without selecting its missing base', async () => {
++    const state = fixture([...BASES, {
++      ...derived('broken-snapshot', 'removed-mode'), broken: 'Selection base is missing',
++    }])
++    state.actual('broken-snapshot')
++    await state.controller.load()
++
++    expect(state.controller.store.getSnapshot()).toMatchObject({
++      current: 'broken-snapshot', currentUnavailable: true,
++      options: [{ id: 'standard' }, { id: 'minimal' }],
++    })
++    expect(state.select).not.toHaveBeenCalled()
++  })
++
++  it('checks the selectable base and treats reselecting it as a no-op', async () => {
++    const state = fixture([...BASES, derived('snapshot')])
++    state.actual('snapshot')
++    await state.controller.load()
++
++    expect(state.controller.store.getSnapshot()).toMatchObject({
++      current: 'minimal', options: [{ id: 'standard' }, { id: 'minimal' }],
++    })
++    await state.controller.select('minimal')
++    expect(state.select).not.toHaveBeenCalled()
++  })
++
++  it('refreshes a newly registered selection without repeating it or losing the committed mode', async () => {
++    const state = fixture()
++    await state.controller.load()
++    state.select.mockImplementation(async () => {
++      state.roster([...BASES, derived('new-snapshot')])
++      return { ok: true, value: 'new-snapshot' }
++    })
++
++    await state.controller.select('minimal')
++    expect(state.select).toHaveBeenCalledExactlyOnceWith(SessionId('first'), 'minimal')
++    expect(state.list).toHaveBeenCalledTimes(2)
++    expect(state.controller.store.getSnapshot().current).toBe('minimal')
++
++    await state.controller.load()
++    await state.controller.apply()
++    expect(state.controller.store.getSnapshot().current).toBe('minimal')
++    state.actual('new-snapshot')
++    await state.controller.apply()
++    expect(state.controller.store.getSnapshot().current).toBe('minimal')
++    expect(state.select).toHaveBeenCalledTimes(1)
++  })
++
++  it('resolves a derived selection made before the hero chip first loads', async () => {
++    const state = fixture([...BASES, derived('new-snapshot')])
++    state.select.mockResolvedValueOnce({ ok: true, value: 'new-snapshot' })
++
++    await state.controller.select('minimal')
++
++    expect(state.controller.store.getSnapshot().current).toBe('minimal')
++    expect(state.list).toHaveBeenCalledTimes(1)
++    expect(state.select).toHaveBeenCalledExactlyOnceWith(SessionId('first'), 'minimal')
++  })
++
++  it('marks an unresolved resolver result unavailable after its roster refresh fails', async () => {
++    const refusal = new RemoteError('gateway/internal', 'roster unavailable', {})
++    let actual = 'standard'
++    const list = vi.fn()
++      .mockResolvedValueOnce({ ok: true, value: { presets: BASES } })
++      .mockResolvedValue({ ok: false, error: refusal })
++    const select = vi.fn(() => Promise.resolve({ ok: true as const, value: 'new-snapshot' }))
++    const controller = new AgentPresetSeatController({
++      configForms: { developerTools: { enabled: createSnapshotStore(true) } },
++      remote: { agentPresets: { list, select } },
++    } as never, () => ({ id: SessionId('first'), blank: true, projectionValues: { agentPreset: actual } }))
++    await controller.load()
++
++    await controller.select('minimal')
++    expect(controller.store.getSnapshot()).toMatchObject({
++      current: 'new-snapshot', currentUnavailable: true, error: 'roster unavailable',
++    })
++    actual = 'new-snapshot'
++    await controller.apply()
++    expect(controller.store.getSnapshot().currentUnavailable).toBe(true)
++    expect(list).toHaveBeenCalledTimes(2)
++    expect(select).toHaveBeenCalledTimes(1)
++  })
++
++  it('refreshes a composition selected by another surface from the Session projection', async () => {
++    const state = fixture()
++    await state.controller.load()
++    state.roster([...BASES, derived('external')])
++    state.actual('external')
++
++    await Promise.all([state.controller.apply(), state.controller.apply()])
++    expect(state.controller.store.getSnapshot().current).toBe('minimal')
++    expect(state.list).toHaveBeenCalledTimes(2)
++    expect(state.select).not.toHaveBeenCalled()
++  })
++
++  it('limits unknown and refused refreshes to one read until an explicit reload', async () => {
++    const state = fixture()
++    const list = vi.fn(() => Promise.resolve({
++      ok: false as const, error: new RemoteError('gateway/internal', 'disconnected', {}),
++    }))
++    const current = { id: SessionId('first'), blank: true, projectionValues: { agentPreset: 'standard' } }
++    let actual = 'standard'
++    const controller = new AgentPresetSeatController({
++      configForms: { developerTools: { enabled: createSnapshotStore(true) } },
++      remote: { agentPresets: { list: vi.fn()
++        .mockResolvedValueOnce({ ok: true, value: { presets: BASES } })
++        .mockImplementation(list), select: state.select } },
++    } as never, () => ({ ...current, projectionValues: { agentPreset: actual } }))
++    await controller.load()
++    actual = 'unknown'
++    await controller.apply()
++    await controller.apply()
++    await controller.apply()
++
++    expect(list).toHaveBeenCalledTimes(1)
++    expect(controller.store.getSnapshot()).toMatchObject({ current: 'unknown', error: 'disconnected' })
++  })
++
++  it('keeps a blocked composition identity and marks its display as unavailable', async () => {
++    const state = fixture([...BASES, {
++      id: 'damaged', isDefault: false, selectable: false, defaultable: false,
++    }])
++    state.actual('damaged')
++    await state.controller.load()
++
++    expect(state.controller.store.getSnapshot()).toMatchObject({
++      current: 'damaged', currentUnavailable: true,
++      options: [{ id: 'standard' }, { id: 'minimal' }],
++    })
++    state.actual('standard')
++    await state.controller.apply()
++    expect(state.controller.store.getSnapshot()).toMatchObject({ current: 'standard', currentUnavailable: false })
++  })
++
++  it('keeps the pending selection display across an overlapping roster reload', async () => {
++    const state = fixture()
++    await state.controller.load()
++    const reply = Promise.withResolvers<Outcome>()
++    state.select.mockImplementationOnce(() => reply.promise)
++    const selection = state.controller.select('minimal')
++    await state.controller.load()
++
++    expect(state.controller.store.getSnapshot()).toMatchObject({ current: 'minimal', busy: true })
++    reply.resolve({ ok: true, value: 'minimal' })
++    await selection
++    expect(state.controller.store.getSnapshot()).toMatchObject({ current: 'minimal', busy: false })
++  })
++
++  it('refreshes an unknown identity only once even when it remains absent', async () => {
++    const state = fixture()
++    await state.controller.load()
++    state.actual('unknown')
++    await state.controller.apply()
++    await state.controller.apply()
++    await state.controller.apply()
++
++    expect(state.list).toHaveBeenCalledTimes(2)
++    expect(state.controller.store.getSnapshot().current).toBe('unknown')
++  })
++
++  it('does not replace a newer roster with an overlapping older refresh', async () => {
++    const state = fixture()
++    await state.controller.load()
++    const old = Promise.withResolvers<{ ok: true; value: AgentPresetRoster }>()
++    state.list.mockImplementationOnce(() => old.promise)
++    state.actual('external')
++    const refreshing = state.controller.apply()
++    state.roster([...BASES, derived('external')])
++    await state.controller.load()
++    old.resolve({ ok: true, value: { presets: BASES } })
++    await refreshing
++
++    expect(state.controller.store.getSnapshot().current).toBe('minimal')
++  })
++
++  it.each([false, true])('keeps a newer stage while a derived selection settles (refused: %s)', async (refused) => {
++    const state = fixture()
++    await state.controller.load()
++    const reply = Promise.withResolvers<Outcome>()
++    state.select.mockImplementationOnce(() => reply.promise)
++    const selection = state.controller.select('minimal')
++    state.controller.stage('standard', true)
++    state.roster([...BASES, derived('new-snapshot')])
++    reply.resolve(refused
++      ? { ok: false, error: new RemoteError('gateway/internal', 'refused', {}) }
++      : { ok: true, value: 'new-snapshot' })
++    await selection
++
++    expect(state.controller.store.getSnapshot()).toMatchObject({ current: 'standard', introduce: true, busy: false })
++  })
++
++  it.each([false, true])('keeps a newer same-ID stage while an older seat refreshes (previous Session left: %s)', async (leaveSession) => {
++    const refresh = Promise.withResolvers<{ ok: true; value: AgentPresetRoster }>()
++    const list = vi.fn()
++      .mockResolvedValueOnce({ ok: true, value: { presets: BASES } })
++      .mockImplementationOnce(() => refresh.promise)
++      .mockResolvedValue({ ok: true, value: { presets: BASES } })
++    const select = vi.fn((_session: SessionId, preset: string) => Promise.resolve({ ok: true as const, value: preset }))
++    const ctx = {
++      configForms: { developerTools: { enabled: createSnapshotStore(true) } },
++      remote: { agentPresets: { list, select } },
++    } as never
++    let current: SeatSession | undefined = {
++      id: SessionId('first'), blank: true, projectionValues: { agentPreset: 'standard' },
++    }
++    const staged: AgentPresetStage = { revision: 0, id: undefined, introduce: false }
++    const oldSeat = new AgentPresetSeatController(ctx, () => current, staged)
++    const nextSeat = new AgentPresetSeatController(ctx, () => undefined, staged)
++    await oldSeat.load()
++    current = { ...current, projectionValues: { agentPreset: 'unknown' } }
++    oldSeat.stage('minimal')
++    const applying = oldSeat.apply()
++    expect(list).toHaveBeenCalledTimes(2)
++    if (leaveSession) current = undefined
++    nextSeat.stage('minimal', true)
++    const newerRevision = staged.revision
++    refresh.resolve({ ok: true, value: { presets: BASES } })
++    await applying
++
++    expect(staged).toEqual({ revision: newerRevision, id: 'minimal', introduce: true })
++    expect(select).not.toHaveBeenCalled()
++    const receivingSeat = new AgentPresetSeatController(ctx, () => ({
++      id: SessionId('receiving'), blank: true, projectionValues: { agentPreset: 'standard' },
++    }), staged)
++    await receivingSeat.load()
++    expect(select).toHaveBeenCalledExactlyOnceWith(SessionId('receiving'), 'minimal')
++    expect(receivingSeat.store.getSnapshot()).toMatchObject({ current: 'minimal', introduce: true })
++  })
++
++  it.each([false, true])('does not publish an old Session result into its replacement (refused: %s)', async (refused) => {
++    const state = fixture()
++    await state.controller.load()
++    const reply = Promise.withResolvers<Outcome>()
++    state.select.mockImplementationOnce(() => reply.promise)
++    const selection = state.controller.select('minimal')
++    state.session({ id: SessionId('replacement'), blank: true, projectionValues: { agentPreset: 'standard' } })
++    reply.resolve(refused
++      ? { ok: false, error: new RemoteError('gateway/internal', 'old refusal', {}) }
++      : { ok: true, value: 'old-snapshot' })
++    await selection
++
++    expect(state.controller.store.getSnapshot()).toMatchObject({ current: 'standard', error: null, busy: false })
++    expect(state.list).toHaveBeenCalledTimes(1)
++  })
++
++  it('does not show a failed old Session roster refresh on its replacement', async () => {
++    const state = fixture()
++    await state.controller.load()
++    const refresh = Promise.withResolvers<{ ok: false; error: RemoteError }>()
++    const list = vi.fn()
++      .mockResolvedValueOnce({ ok: true, value: { presets: BASES } })
++      .mockImplementationOnce(() => refresh.promise)
++    let current: SeatSession = { id: SessionId('first'), blank: true, projectionValues: { agentPreset: 'standard' } }
++    const controller = new AgentPresetSeatController({
++      configForms: { developerTools: { enabled: createSnapshotStore(true) } },
++      remote: { agentPresets: { list, select: state.select } },
++    } as never, () => current)
++    await controller.load()
++    current = { ...current, projectionValues: { agentPreset: 'old-snapshot' } }
++    const updating = controller.apply()
++    current = { id: SessionId('replacement'), blank: true, projectionValues: { agentPreset: 'standard' } }
++    refresh.resolve({ ok: false, error: new RemoteError('gateway/internal', 'old refresh failure', {}) })
++    await updating
++
++    expect(controller.store.getSnapshot()).toMatchObject({ current: 'standard', error: null, busy: false })
++  })
++
++  it('returns to the existing selectable base after a refused selection', async () => {
++    const state = fixture([...BASES, derived('existing', 'standard')])
++    state.actual('existing')
++    await state.controller.load()
++    state.select.mockResolvedValueOnce({ ok: false, error: new RemoteError('gateway/internal', 'not allowed', {}) })
++
++    await expect(state.controller.select('minimal')).resolves.toBe('not allowed')
++    expect(state.controller.store.getSnapshot()).toMatchObject({ current: 'standard',
++      error: { preset: { id: 'minimal' }, reason: 'not allowed' } })
++  })
++
++  it('does not announce a rejected transport from an earlier Session on its replacement', async () => {
++    const state = fixture()
++    await state.controller.load()
++    const reply = Promise.withResolvers<Outcome>()
++    state.select.mockImplementationOnce(() => reply.promise)
++    const selecting = state.controller.select('minimal')
++    state.session({ id: SessionId('replacement'), blank: true, projectionValues: { agentPreset: 'standard' } })
++    reply.reject(new Error('old connection failed'))
++    await selecting
++    expect(state.controller.store.getSnapshot()).toMatchObject({ current: 'standard', error: null, busy: false })
++  })
++})
+diff --git a/packages/client/ui-agent-preset/tests/section-store.client.spec.ts b/packages/client/ui-agent-preset/tests/section-store.client.spec.ts
+index ba2d1841..7762b06e 100644
+--- a/packages/client/ui-agent-preset/tests/section-store.client.spec.ts
++++ b/packages/client/ui-agent-preset/tests/section-store.client.spec.ts
+@@ -5,13 +5,17 @@ import type { ConfigFormSnapshot } from '@deepseek-ai/dsh-client-ui-settings/cli
+ import type { AgentPresetRow } from '@deepseek-ai/dsh-agent-preset-registry/types'
+ import { en } from '../src/client/locales.ts'
+ 
++type RowInput = Omit<AgentPresetRow, 'selectable' | 'defaultable'>
++  & Partial<Pick<AgentPresetRow, 'selectable' | 'defaultable'>>
++const completeRow = (row: RowInput): AgentPresetRow => ({ selectable: true, defaultable: true, ...row })
++
+ function fixture() {
+   const form = createSnapshotStore<ConfigFormSnapshot<{ selectedDefault: string }>>({
+     status: 'ready', mode: 'host', writable: true, revision: 7, value: { selectedDefault: 'minimal' }, base: {}, user: {},
+   })
+   const remote = { agentPresets: {
+     list: vi.fn(async (): Promise<{ ok: true; value: { presets: AgentPresetRow[] } }> => ({
+-      ok: true, value: { presets: [{ id: 'standard', isDefault: true }] },
++      ok: true, value: { presets: [completeRow({ id: 'standard', isDefault: true })] },
+     })),
+     read: vi.fn(async (id: string) => ({ ok: true as const, value: { agentPreset: id, name: 'Standard', content: '- name: fs\n' } })),
+   }, settings: {
+@@ -24,6 +28,18 @@ function fixture() {
+ }
+ 
+ describe('the preset roster', () => {
++  it('does not show historical snapshots in the new-session management roster', async () => {
++    const { controller, remote, state } = fixture()
++    remote.agentPresets.list.mockResolvedValueOnce({ ok: true, value: { presets: [
++      { id: 'standard', isDefault: true, selectable: true, defaultable: true },
++      { id: 'historical', isDefault: false, selectable: false, defaultable: false },
++    ] } } as never)
++
++    await controller.load()
++
++    expect(state().rows.map(row => row.id)).toEqual(['standard'])
++  })
++
+   it('reads the roster once for simultaneous loads and surfaces failed reads', async () => {
+     const { controller, remote, state } = fixture()
+     await Promise.all([controller.load(), controller.load()])
+@@ -104,7 +120,7 @@ describe('the preset roster', () => {
+   it('skips blank-session synchronization when the roster marks no default', async () => {
+     const { controller, remote } = fixture()
+     const sync = vi.fn(async () => undefined)
+-    remote.agentPresets.list.mockResolvedValueOnce({ ok: true, value: { presets: [{ id: 'standard', isDefault: false }] } })
++    remote.agentPresets.list.mockResolvedValueOnce({ ok: true, value: { presets: [completeRow({ id: 'standard', isDefault: false })] } })
+ 
+     await controller.makeDefault('standard', sync)
+ 
+@@ -119,13 +135,13 @@ describe('Coding Tools default reconciliation', () => {
+     let rows: AgentPresetRow[] = [
+       { id: 'standard', isDefault: defaultId === 'standard' },
+       ...(defaultId === 'standard' ? [] : [{ id: defaultId, isDefault: true, ...(name === undefined ? {} : { name }) }]),
+-    ]
++    ].map(completeRow)
+     f.remote.agentPresets.list.mockImplementation(async () => ({ ok: true, value: { presets: rows } }))
+     f.remote.settings.update.mockImplementation(async (_ns, patch) => {
+       rows = rows.map(row => ({ ...row, isDefault: row.id === patch.selectedDefault }))
+       return { ok: true, value: {} }
+     })
+-    return { ...f, rows: () => rows, setRows: (next: AgentPresetRow[]) => { rows = next } }
++    return { ...f, rows: () => rows, setRows: (next: RowInput[]) => { rows = next.map(completeRow) } }
+   }
+ 
+   it.each(['ptc', 'minimal'])('saves Standard instead of built-in %s with the accepted revision', async (id) => {
+diff --git a/packages/client/ui-agent-preset/tests/section.client.spec.tsx b/packages/client/ui-agent-preset/tests/section.client.spec.tsx
+index 6505bceb..d2617297 100644
+--- a/packages/client/ui-agent-preset/tests/section.client.spec.tsx
++++ b/packages/client/ui-agent-preset/tests/section.client.spec.tsx
+@@ -4,6 +4,7 @@ import { afterEach, expect, it, vi } from 'vitest'
+ import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
+ import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+ import { Modal } from '@deepseek-ai/dsh-client-ui-primitives'
++import type { AgentPresetRow } from '@deepseek-ai/dsh-agent-preset-registry/types'
+ import { AgentPresetSection, type AgentPresetSectionProps } from '../src/client/AgentPresetSection.tsx'
+ import type { AgentPresetSectionState } from '../src/client/section-store.ts'
+ import { en } from '../src/client/locales.ts'
+@@ -12,11 +13,16 @@ const translations: ReadonlyMap<string, string> = new Map(Object.entries(en))
+ function unusedHook(): never {
+   throw new Error('This section does not read global slot sources')
+ }
+-function view(partial: Partial<AgentPresetSectionState> = {}, startCreatorDraft?: () => void, outerClose?: () => void, enabled = true) {
++type RowInput = Omit<AgentPresetRow, 'selectable' | 'defaultable'>
++  & Partial<Pick<AgentPresetRow, 'selectable' | 'defaultable'>>
++type ViewInput = Omit<Partial<AgentPresetSectionState>, 'rows'> & { rows?: readonly RowInput[] }
++const completeRow = (row: RowInput): AgentPresetRow => ({ selectable: true, defaultable: true, ...row })
++
++function view(partial: ViewInput = {}, startCreatorDraft?: () => void, outerClose?: () => void, enabled = true) {
++  const { rows = [{ id: 'standard', isDefault: true }, { id: 'mine', name: 'Mine', isDefault: false }], ...rest } = partial
+   const developerTools = createSnapshotStore(enabled)
+   const store = createSnapshotStore<AgentPresetSectionState>({ status: 'ready', error: null,
+-    saving: false, rows: [{ id: 'standard', isDefault: true }, { id: 'mine', name: 'Mine', isDefault: false }],
+-    view: null, ...partial })
++    saving: false, rows: rows.map(completeRow), view: null, ...rest })
+   const actions = { load: vi.fn(async () => {}), view: vi.fn(async () => {}), closeView: vi.fn(), makeDefault: vi.fn(async () => {}),
+     close: vi.fn() }
+   const props: AgentPresetSectionProps = { ...actions,
+diff --git a/packages/client/ui-agent-preset/tests/settings-store.client.spec.ts b/packages/client/ui-agent-preset/tests/settings-store.client.spec.ts
+index 73f412f5..a0a5eb7d 100644
+--- a/packages/client/ui-agent-preset/tests/settings-store.client.spec.ts
++++ b/packages/client/ui-agent-preset/tests/settings-store.client.spec.ts
+@@ -13,7 +13,7 @@ import type { SessionSummary } from '@deepseek-ai/dsh-api-session-controller/cli
+ import type { SessionId } from '@deepseek-ai/dsh-session/types'
+ import {
+   AGENT_PRESET_SETTINGS_NS, AgentPresetSettingsController,
+-  writeDefaultPreset,
++  presetOptions, writeDefaultPreset,
+ } from '../src/client/settings-store.ts'
+ 
+ /** The roster store over a scripted context. */
+@@ -43,7 +43,7 @@ function fakeRoster(
+           return Promise.resolve(options.failList === undefined
+             ? {
+               ok: true as const,
+-              value: { presets },
++              value: { presets: presets.map(preset => ({ selectable: true, defaultable: true, ...preset })) },
+             }
+             : {
+               ok: false as const,
+@@ -84,6 +84,13 @@ function fakeApi(
+ }
+ 
+ describe('the agent-preset roster store', () => {
++  it('omits historical snapshots from new-session options', () => {
++    expect(presetOptions([
++      { id: 'standard', selectable: true },
++      { id: 'historical', selectable: false },
++    ], true)).toEqual([{ id: 'standard' }])
++  })
++
+   it('derives the display options from one roster call', async () => {
+     const controller = derivedController(fakeApi([
+       { id: 'standard', isDefault: true },
+@@ -215,7 +222,7 @@ describe('the new-session chip controller', () => {
+             return Promise.resolve(options.failList === undefined
+               ? {
+                 ok: true as const,
+-                value: { presets },
++                value: { presets: presets.map(preset => ({ selectable: true, defaultable: true, ...preset })) },
+               }
+               : {
+                 ok: false as const,
+@@ -516,8 +523,8 @@ function remoteRoster(defaultId: string) {
+     ok: true as const,
+     value: {
+       presets: [
+-        { id: 'standard', isDefault: defaultId === 'standard' },
+-        { id: 'mine', isDefault: defaultId === 'mine' },
++        { id: 'standard', isDefault: defaultId === 'standard', selectable: true, defaultable: true },
++        { id: 'mine', isDefault: defaultId === 'mine', selectable: true, defaultable: true },
+       ],
+     },
+   }
+diff --git a/packages/client/ui-plugin-manager/tests/browser-plugin.client.spec.tsx b/packages/client/ui-plugin-manager/tests/browser-plugin.client.spec.tsx
+index 8dbe9365..52856522 100644
+--- a/packages/client/ui-plugin-manager/tests/browser-plugin.client.spec.tsx
++++ b/packages/client/ui-plugin-manager/tests/browser-plugin.client.spec.tsx
+@@ -145,7 +145,7 @@ describe('ui-plugin-manager browser plugin', () => {
+     const icon = b.slots.entries('sidebar.panellist')[0]!
+     expect(icon.component).toBe(PluginsPanelIcon)
+     const unread = () => { throw new Error('The sidebar icon must not read application state') }
+-    const glyph = render(<PluginsPanelIcon size={18} active={false}
++    const glyph = render(<PluginsPanelIcon size={18} active={false} wide={false}
+       usePanelInfo={unread} useSessions={unread} useSessionStatus={unread} useSessionRetainInfo={unread}
+       useWorkspaces={unread} useResource={unread} />)
+     expect(glyph.container.querySelector('svg')?.getAttribute('width')).toBe('18')
+diff --git a/packages/client/ui-schedule/tests/task-manager-page.client.spec.tsx b/packages/client/ui-schedule/tests/task-manager-page.client.spec.tsx
+index 52158d0e..7b81d23d 100644
+--- a/packages/client/ui-schedule/tests/task-manager-page.client.spec.tsx
++++ b/packages/client/ui-schedule/tests/task-manager-page.client.spec.tsx
+@@ -1592,6 +1592,7 @@ describe('Task manager details', () => {
+     return render(<TaskManagerIcon
+       size={size}
+       active={false}
++      wide={size === 16}
+       usePanelInfo={unread}
+       useSessions={unread}
+       useWorkspaces={unread}
+diff --git a/packages/client/ui-settings-account/tests/apply.client.spec.ts b/packages/client/ui-settings-account/tests/apply.client.spec.ts
+index 78ebf132..f32ed506 100644
+--- a/packages/client/ui-settings-account/tests/apply.client.spec.ts
++++ b/packages/client/ui-settings-account/tests/apply.client.spec.ts
+@@ -19,6 +19,7 @@ import type { AccountSectionInjected } from '../src/client/AccountSection.tsx'
+ import { CONTACT_CONFIG_GLOBAL } from '../src/contact-config.ts'
+ import { AccountPlatformHost } from '../src/client/AccountPlatformHost.tsx'
+ import type { AccountPlatformHostInjected } from '../src/client/AccountPlatformHost.tsx'
++import { AccountMenu } from '../src/client/AccountMenu.tsx'
+ import { AccountQuotaNotice } from '../src/client/AccountQuotaNotice.tsx'
+ import type { AccountQuotaNoticeInjected } from '../src/client/AccountQuotaNotice.tsx'
+ 
+@@ -41,7 +42,9 @@ function bonus(orderId: string, message = 'Awarded 5.00'): AccountBonusBatch {
+   }
+ }
+ function operations(c: TestClient): AccountSectionInjected {
+-  const injected: object = c.ctx.slots.entries('settings.launcher')[0]!.inject!()
++  const entry = c.ctx.slots.entries('settings.launcher')
++    .find(candidate => candidate.component === AccountMenu)
++  const injected: object = entry!.inject!()
+   return injected as AccountSectionInjected
+ }
+ /** The account take-over registered into the Chat-owned frame-wide quota notice chain. */
+@@ -69,7 +72,8 @@ it('keeps account UI and account RPC inactive in a plain browser, including afte
+   for (const reload of [false, true]) {
+     if (reload) await c.reload(SELF)
+     await c.flush()
+-    expect(c.ctx.slots.entries('settings.launcher')).toHaveLength(0)
++    expect(c.ctx.slots.entries('settings.launcher')
++      .some(entry => entry.component === AccountMenu)).toBe(false)
+     expect(c.ctx.slots.entries('settings.models.sign-in')).toHaveLength(0)
+     expect(c.ctx.slots.entries('settings.section').some(entry => entry.options.id === 'account')).toBe(false)
+     expect(quotaNoticeEntry(c)).toBeUndefined()
+@@ -152,7 +156,8 @@ it('shares account actions across seats, publishes dialog ownership, and opens c
+   expect(signedOutAgain.searchParams.has('prefill_uid')).toBe(false)
+   expect(signedOutAgain.searchParams.get('hide_uid')).toBe('1')
+   await c.unload(SELF)
+-  expect(c.ctx.slots.entries('settings.launcher')).toHaveLength(0)
++  expect(c.ctx.slots.entries('settings.launcher')
++    .some(entry => entry.component === AccountMenu)).toBe(false)
+ }, 60_000)
+ 
+ it('prefills the native device description from the Desktop bridge on every click', async ({ start }) => {
+diff --git a/packages/preset/agent-preset-registry/README.i18n.yaml b/packages/preset/agent-preset-registry/README.i18n.yaml
+index 19984aa4..a702d3c8 100644
+--- a/packages/preset/agent-preset-registry/README.i18n.yaml
++++ b/packages/preset/agent-preset-registry/README.i18n.yaml
+@@ -18,8 +18,8 @@
+   en: bbff250eba0f1b89
+   zh: b20a47f82d8ab6e0
+ /deepseek-ai-dsh-agent-preset-registry/use-this-package/minimal-configuration:
+-  en: cd28d9b4f46c46a8
+-  zh: 4921d853f98469fe
++  en: 920ce74b9b96bd09
++  zh: 608908188fc4d844
+ /deepseek-ai-dsh-agent-preset-registry/understand-the-implementation:
+   en: 1d479971c0adc694
+   zh: abc84b7220c9b5d5
+diff --git a/packages/preset/agent-preset-registry/README.md b/packages/preset/agent-preset-registry/README.md
+index 9de2a411..4227b198 100644
+--- a/packages/preset/agent-preset-registry/README.md
++++ b/packages/preset/agent-preset-registry/README.md
+@@ -47,6 +47,10 @@ The Web definitions come from the `dsh-web-app` bundle. Definitions are ordinary
+ 
+ The registry writes no declarations. The `read` Remote renders one declaration’s child list back as entry-list YAML (`!!js` conditions included) so a client can show what a preset composes; nothing accepts YAML back. A new preset or an override of a shipped one is a bundle patch: an `insert` of a `@deepseek-ai/dsh-agent-preset` row, or a patch keyed by that row’s id, installed into the profile with `plugin_manager`; Creator mode authors such bundles in conversation.
+ 
++Selection calls the `agent-preset/resolve-selection` waterfall before mounting. Extensions delegate with `next()` and may return a registered derived composition. The registry checks the turn boundary before and after resolution; rejection leaves the current binding and selection log unchanged.
++
++Hidden derived definitions can name a selectable `selectionBase` for mode presentation. `derive()` records and flattens this association when `selectable: false`; registration rejects empty or self-referencing bases and associations on selectable definitions. Reads wait for the Host Loader to settle when the base is absent, because declarations start concurrently, then diagnose missing, hidden, or associated bases and refuse new bindings or selections. Subsequent reads recheck the relation after base removal or replacement; existing revision leases remain retained. The roster exposes the association, while Session selection and logs continue to identify the complete execution composition. Derivation retains the base Loader resolution context and copies plugin rows without parsing display YAML. Do not read diagnostics from inside a Host row's activation: settlement waits for that activation to finish.
++
+ <a id="understand-the-implementation"></a>
+ ## Understand the implementation
+ 
+diff --git a/packages/preset/agent-preset-registry/README.zh.md b/packages/preset/agent-preset-registry/README.zh.md
+index 96ce2c18..2cdb000c 100644
+--- a/packages/preset/agent-preset-registry/README.zh.md
++++ b/packages/preset/agent-preset-registry/README.zh.md
+@@ -47,6 +47,10 @@ Web 内置定义来自 `dsh-web-app` bundle。定义使用普通插件行；注
+ 
+ 注册表不写入任何声明。`read` Remote 把一条声明的子插件列表按 entry-list YAML 方言（含 `!!js` 条件）渲染回来，供客户端展示 preset 的组成；没有任何接口接受 YAML 写回。新建 preset 或覆盖内置 preset 都是 bundle 补丁：插入一行 `@deepseek-ai/dsh-agent-preset`，或按该行 id 写覆盖补丁，再用 `plugin_manager` 安装到 profile；创造模式在对话中编写这类 bundle。
+ 
++选择操作在挂载前调用 `agent-preset/resolve-selection` waterfall。扩展通过 `next()` 委托后续处理，可以返回已注册的派生组合。注册表在解析前后检查回合边界；解析失败不会改变当前绑定或选择日志。
++
++隐藏的派生定义可以通过 `selectionBase` 指定可选择的基础模式，用于模式展示。`derive()` 在 `selectable: false` 时记录并展平该关联；注册时拒绝空值、自引用基础及可选择定义上的关联。由于声明并发启动，读取时若基础缺失，先等待 Host Loader 稳定，再将缺失、隐藏或含其他关联的基础标为不可用，拒绝新的绑定或选择。基础卸载或替换后，后续读取重新检查关联；现有版本租约继续保留。目录返回该关联，Session 选择和日志仍标识完整的执行组合。派生保留基础 Loader 解析上下文并复制插件行，不解析展示用 YAML。不要在 Host 行自身的激活过程中读取诊断，因为 Loader 稳定需要等待该激活完成。
++
+ <a id="understand-the-implementation"></a>
+ ## 理解实现
+ 
+diff --git a/packages/preset/agent-preset-registry/src/definition.ts b/packages/preset/agent-preset-registry/src/definition.ts
+index 548ad562..db42d679 100644
+--- a/packages/preset/agent-preset-registry/src/definition.ts
++++ b/packages/preset/agent-preset-registry/src/definition.ts
+@@ -4,9 +4,17 @@ import type { EntryOptions, JsExpr } from '@deepseek-ai/cordis-plugin-loader'
+ /** Identity, display fields and child Cordis plugins of one preset. */
+ export interface PresetDefinition {
+   readonly id: string
++  /** Resolution context retained by a detached composition. */
++  readonly resolutionBase?: string
+   readonly name?: string
+   readonly description?: string
+   readonly order?: number
++  /** Whether new-session pickers offer this definition. Historical snapshots remain resolvable when false. */
++  readonly selectable?: boolean
++  /** Whether Settings may persist this definition as the default for future Sessions. */
++  readonly defaultable?: boolean
++  /** Selectable base shown for a hidden derived composition; execution retains this definition's id. */
++  readonly selectionBase?: string
+   readonly plugins: readonly (Omit<EntryOptions, 'id' | 'disabled'> & { id?: string; disabled?: EntryOptions['disabled'] | JsExpr })[]
+ }
+ 
+diff --git a/packages/preset/agent-preset-registry/src/index.ts b/packages/preset/agent-preset-registry/src/index.ts
+index 05009229..511de1e9 100644
+--- a/packages/preset/agent-preset-registry/src/index.ts
++++ b/packages/preset/agent-preset-registry/src/index.ts
+@@ -23,6 +23,16 @@ export type { AgentPresetInspection } from './composition-inventory.ts'
+ export type { AgentPreset, Config } from './preset.ts'
+ 
+ declare module '@deepseek-ai/cordis' {
++  interface Events {
++    /** Resolve a requested composition before selection commits.
++     * @mode waterfall
++     * @param agent Target Agent whose blank-turn guard remains owned by the registry.
++     * @param requested Requested Preset identity.
++     * @param next Delegate to subsequent resolvers.
++     * @returns Registered composition to select; rejection leaves the selection unchanged.
++     */
++    'agent-preset/resolve-selection'(agent: Agent, requested: string, next: () => Promise<string>): Promise<string>
++  }
+   interface Context {
+     agentPresets: AgentPresetRegistry
+   }
+@@ -72,7 +82,11 @@ export class AgentPresetRegistry extends TypertRemoteService {
+   }
+ 
+   /** Default preset for a subsequently created session. */
+-  get defaultId(): string { return this.config.selectedDefault.get() ?? this.config.default }
++  get defaultId(): string {
++    const selected = this.config.selectedDefault.get()
++    if (selected === undefined) return this.config.default
++    return this.definitions.get(selected)?.config.defaultable === false ? this.config.default : selected
++  }
+ 
+   /** Register and eagerly load a definition; activation failure remains visible in the roster.
+    * @param definition Parsed configuration supplied by the declaring plugin.
+@@ -82,6 +96,12 @@ export class AgentPresetRegistry extends TypertRemoteService {
+     const context = this.ctx
+     if (!definition.id.trim()) throw new Error('Preset id must not be empty')
+     if (this.definitions.has(definition.id)) throw new Error(`Duplicate agent preset: ${definition.id}`)
++    if (definition.selectionBase !== undefined) {
++      if (definition.selectable !== false || !definition.selectionBase.trim()
++        || definition.selectionBase === definition.id) {
++        throw new Error(`Preset ${definition.id} must name a nonempty, distinct selection base for its hidden composition`)
++      }
++    }
+     const record: Definition = { config: definition, context, ready: Promise.resolve() }
+     this.definitions.set(definition.id, record)
+     let disposed = false
+@@ -106,7 +126,7 @@ export class AgentPresetRegistry extends TypertRemoteService {
+     try {
+       const problem = entryListProblem(record.config.plugins)
+       if (problem !== undefined) throw new Error(problem)
+-      const context = scope.ctx.extend({ baseUrl: record.context.baseUrl })
++      const context = scope.ctx.extend({ baseUrl: record.config.resolutionBase ?? record.context.baseUrl })
+       const mount = await mountPreset(context, record.config.id, record.config.plugins)
+       const generation: Generation = { scope, key, mount, users: 0, retired: false }
+       context.effect(() => {
+@@ -127,7 +147,8 @@ export class AgentPresetRegistry extends TypertRemoteService {
+    * A mount failure is final. A mounted tree is re-audited on every read: a
+    * row waiting for a Host service activates by itself once that provider
+    * finishes, so the audit waits for the Host Loader tree to settle before
+-   * reporting the row as unusable. Callers therefore must not run inside a
++   * reporting the row as unusable. A missing selection base also waits for
++   * settlement because Host declarations start concurrently. Callers must not run inside a
+    * Host row's own activation, which the settlement would wait on.
+    * @param record - the definition to audit.
+    * @returns one line per unusable row, or undefined when the definition is usable.
+@@ -137,11 +158,19 @@ export class AgentPresetRegistry extends TypertRemoteService {
+     if (record.generation === undefined) return record.broken
+     const tree = record.generation.mount.tree
+     let audit = await auditRows(tree)
+-    if (audit.pending.length > 0) {
++    const selectionBase = record.config.selectionBase
++    if (audit.pending.length > 0 || (selectionBase !== undefined && !this.definitions.has(selectionBase))) {
+       await this.owner.loader.await()
+       audit = await auditRows(tree)
+     }
+     const lines = [...audit.failed, ...audit.pending]
++    if (selectionBase !== undefined) {
++      const base = this.definitions.get(selectionBase)
++      if (base === undefined) lines.push(`Selection base ${selectionBase} is not registered`)
++      else if (base.config.selectable === false || base.config.selectionBase !== undefined) {
++        lines.push(`Selection base ${selectionBase} must be selectable and must not name another selection base`)
++      }
++    }
+     return lines.length === 0 ? undefined : lines.join('\n')
+   }
+ 
+@@ -182,6 +211,9 @@ export class AgentPresetRegistry extends TypertRemoteService {
+         ...(record.config.name === undefined ? {} : { name: record.config.name }),
+         ...(record.config.description === undefined ? {} : { description: record.config.description }),
+         ...(record.config.order === undefined ? {} : { order: record.config.order }),
++        selectable: record.config.selectable !== false,
++        defaultable: record.config.defaultable !== false,
++        ...(record.config.selectionBase === undefined ? {} : { selectionBase: record.config.selectionBase }),
+         ...(broken === undefined ? {} : { broken }),
+       }
+     }))
+@@ -194,7 +226,12 @@ export class AgentPresetRegistry extends TypertRemoteService {
+   @Remote('list')
+   async remoteExportList(): Promise<AgentPresetRoster> {
+     const defaultId = this.defaultId
+-    return { presets: (await this.list()).map(row => ({ ...row, isDefault: row.id === defaultId })) }
++    return { presets: (await this.list()).map(row => ({
++      ...row,
++      selectable: row.selectable !== false,
++      defaultable: row.defaultable !== false,
++      isDefault: row.id === defaultId,
++    })) }
+   }
+ 
+   /** Resolve an identity without starting an Agent.
+@@ -207,7 +244,11 @@ export class AgentPresetRegistry extends TypertRemoteService {
+     if (record === undefined) throw new RemoteError('agent-preset/not-found', `Unknown agent preset: ${wanted}`,
+       { agentPreset: wanted, available: [...this.definitions.keys()] })
+     const broken = await this.diagnostic(record)
+-    return { id: wanted, ...(broken === undefined ? {} : { broken }) }
++    return { id: wanted,
++      ...(record.config.selectable === undefined ? {} : { selectable: record.config.selectable }),
++      ...(record.config.defaultable === undefined ? {} : { defaultable: record.config.defaultable }),
++      ...(record.config.selectionBase === undefined ? {} : { selectionBase: record.config.selectionBase }),
++      ...(broken === undefined ? {} : { broken }) }
+   }
+ 
+   /** Read one declaration's child plugin list as YAML, for viewing only.
+@@ -229,6 +270,27 @@ export class AgentPresetRegistry extends TypertRemoteService {
+     })
+   }
+ 
++  /** Derive a detached composition without parsing its display document.
++   * @param baseId Registered composition to extend.
++   * @param definition Metadata and additional plugin rows; additional rows resolve in the base context.
++   * @returns Detached definition retaining the base Loader resolution context and, when hidden, selectable origin.
++   */
++  derive(baseId: string, definition: PresetDefinition): PresetDefinition {
++    const base = this.definitions.get(baseId)
++    if (base === undefined) throw new RemoteError('agent-preset/not-found', `Unknown agent preset: ${baseId}`, { agentPreset: baseId, available: [...this.definitions.keys()] })
++    const resolutionBase = base.config.resolutionBase ?? base.context.baseUrl
++    const selectionBase = definition.selectable === false ? base.config.selectionBase ?? baseId : undefined
++    if (definition.selectionBase !== undefined && definition.selectionBase !== selectionBase) {
++      throw new Error('Derived preset selectionBase must identify its selectable origin')
++    }
++    return {
++      ...structuredClone(definition),
++      ...(selectionBase === undefined ? {} : { selectionBase }),
++      ...(resolutionBase === undefined ? {} : { resolutionBase }),
++      plugins: structuredClone([...base.config.plugins, ...definition.plugins]),
++    }
++  }
++
+   private async retain(id?: string): Promise<Generation> {
+     const wanted = id ?? this.defaultId
+     while (true) {
+@@ -350,7 +412,12 @@ export class AgentPresetRegistry extends TypertRemoteService {
+       if (boundary !== undefined && (boundary.openTurnStartSeq !== null || boundary.lastTurn > 0)) {
+         throw new RemoteError('agent-preset/locked', 'This session has already started', { sessionId: agent.id, agentPreset })
+       }
+-      const preset = await this.recompose(agent.ctx, agentPreset)
++      const resolved = await this.owner.waterfall('agent-preset/resolve-selection', agent, agentPreset, () => Promise.resolve(agentPreset))
++      const latest = this.owner.sessionProjections.stateOf(agent.session, 'turnBoundary')
++      if (latest !== undefined && (latest.openTurnStartSeq !== null || latest.lastTurn > 0)) {
++        throw new RemoteError('agent-preset/locked', 'This session has already started', { sessionId: agent.id, agentPreset })
++      }
++      const preset = await this.recompose(agent.ctx, resolved)
+       agent.session.append('agent-preset/selected', { agentPreset: preset.id })
+       return preset.id
+     })
+diff --git a/packages/preset/agent-preset-registry/src/preset.ts b/packages/preset/agent-preset-registry/src/preset.ts
+index ae405a05..ca4b3e06 100644
+--- a/packages/preset/agent-preset-registry/src/preset.ts
++++ b/packages/preset/agent-preset-registry/src/preset.ts
+@@ -6,6 +6,9 @@ export interface AgentPreset {
+   readonly name?: string
+   readonly description?: string
+   readonly order?: number
++  readonly selectable?: boolean
++  readonly defaultable?: boolean
++  readonly selectionBase?: string
+   readonly broken?: string
+ }
+ 
+diff --git a/packages/preset/agent-preset-registry/src/types.ts b/packages/preset/agent-preset-registry/src/types.ts
+index c30141d6..e65bb3c8 100644
+--- a/packages/preset/agent-preset-registry/src/types.ts
++++ b/packages/preset/agent-preset-registry/src/types.ts
+@@ -14,6 +14,12 @@ export interface AgentPresetRow {
+   readonly name?: string
+   /** One sentence on what this preset is for. */
+   readonly description?: string
++  /** Whether a new Session may choose this Preset from a picker. */
++  readonly selectable: boolean
++  /** Whether this Preset may become the default for future Sessions. */
++  readonly defaultable: boolean
++  /** Selectable base displayed for a hidden derived composition; its id still identifies execution. */
++  readonly selectionBase?: string
+   /** Why this preset cannot compose a session; absent when it can. */
+   readonly broken?: string
+ }
+diff --git a/packages/preset/agent-preset-registry/tests/derive.spec.ts b/packages/preset/agent-preset-registry/tests/derive.spec.ts
+new file mode 100644
+index 00000000..0e4b2916
+--- /dev/null
++++ b/packages/preset/agent-preset-registry/tests/derive.spec.ts
+@@ -0,0 +1,178 @@
++import { expect, it, onTestFinished } from 'vitest'
++import type { Context } from '@deepseek-ai/cordis'
++import { createScope } from '@deepseek-ai/dsh-scope'
++import { harness, declare, contribution, agentOn } from './harness.ts'
++import Preset from '@deepseek-ai/dsh-agent-preset'
++
++it('derives detached rows and retains the declaring Loader base URL', async () => {
++  const ctx = await harness()
++  onTestFinished(() => ctx.fiber.dispose())
++  await declare(ctx, contribution('standard'))
++  const derived = ctx.agentPresets.derive('standard', { id: 'derived', plugins: [], selectable: false })
++  expect(derived.resolutionBase).toBe(ctx.baseUrl)
++  expect(derived.selectionBase).toBe('standard')
++  const row = derived.plugins[0]!
++  row.config = { tool: 'changed' }
++  expect(ctx.agentPresets.derive('standard', { id: 'second', plugins: [] }).plugins[0]?.config).toEqual({ tool: 'standard' })
++  const foreign = ctx.extend({ baseUrl: 'file:///unrelated/profile/' })
++  const dispose = await foreign.agentPresets.register(derived)
++  onTestFinished(dispose)
++  await using scope = await ctx.agentPresets.acquireScope('derived')
++  expect(ctx.tools.schemas(scope.key).map(tool => tool.name)).toEqual(['changed'])
++  expect(ctx.tools.schemas()).toEqual([])
++  expect(() => ctx.agentPresets.derive('missing', { id: 'bad', plugins: [] })).toThrow('Unknown agent preset')
++})
++
++it('flattens hidden derivations to their selectable origin while executing and logging the full composition', async () => {
++  const ctx = await harness()
++  onTestFinished(() => ctx.fiber.dispose())
++  await declare(ctx, contribution('standard'))
++  await declare(ctx, contribution('minimal'))
++  const first = ctx.agentPresets.derive('minimal', { id: 'snapshot-one', selectable: false, defaultable: false, plugins: [] })
++  await declare(ctx, first)
++  const second = ctx.agentPresets.derive(first.id, { id: 'snapshot-two', selectable: false, defaultable: false, plugins: [] })
++  expect(second.selectionBase).toBe('minimal')
++  await declare(ctx, second)
++  expect((await ctx.agentPresets.remoteExportList()).presets.find(row => row.id === second.id)).toMatchObject({
++    selectionBase: 'minimal', selectable: false, defaultable: false,
++  })
++  expect(await ctx.agentPresets.resolve(second.id)).toMatchObject({ selectionBase: 'minimal', selectable: false })
++  const agent = await agentOn(ctx, 'derived-mode')
++  ctx.on('agent-preset/resolve-selection', async (_agent, _requested, next) => { await next(); return second.id })
++  expect(await ctx.agentPresets.select(agent, 'minimal')).toBe(second.id)
++  expect(ctx.sessionProjections.stateOf(agent.session, 'agentPreset')).toBe(second.id)
++  expect(ctx.tools.schemas(agent).map(row => row.name)).toEqual(['minimal'])
++  expect(() => ctx.agentPresets.derive('minimal', {
++    id: 'misnamed', selectable: false, selectionBase: 'standard', plugins: [],
++  })).toThrow('selectable origin')
++})
++
++it('rejects malformed selectable origins before registration', async () => {
++  const ctx = await harness()
++  onTestFinished(() => ctx.fiber.dispose())
++  await declare(ctx, contribution('standard'))
++  await declare(ctx, { id: 'hidden', selectable: false, plugins: [] })
++  for (const selectionBase of ['', ' ', 'invalid']) {
++    await expect(ctx.agentPresets.register({ id: 'invalid', selectable: false, selectionBase, plugins: [] }))
++      .rejects.toThrow('nonempty, distinct selection base')
++  }
++  await expect(ctx.agentPresets.register({ id: 'invalid', selectionBase: 'standard', plugins: [] }))
++    .rejects.toThrow('hidden composition')
++  expect((await ctx.agentPresets.list()).map(row => row.id).sort()).toEqual(['hidden', 'standard'])
++})
++
++it('diagnoses missing and hidden bases without changing the current composition or Session events', async () => {
++  const ctx = await harness()
++  onTestFinished(() => ctx.fiber.dispose())
++  await declare(ctx, contribution('standard'))
++  await declare(ctx, { id: 'hidden', selectable: false, plugins: [] })
++  await declare(ctx, { id: 'associated', selectable: false, selectionBase: 'standard', plugins: [] })
++  const agent = await agentOn(ctx, 'invalid-origin')
++  const selected: string[] = []
++  ctx.on('session/event', (_session, event) => {
++    if (event.type === 'agent-preset/selected') selected.push(event.data.agentPreset)
++  })
++  for (const selectionBase of ['missing', 'hidden', 'associated']) {
++    const id = `snapshot-${selectionBase}`
++    await declare(ctx, { id, selectable: false, selectionBase, plugins: [] })
++    const reason = selectionBase === 'missing' ? 'is not registered' : 'must be selectable'
++    expect((await ctx.agentPresets.resolve(id)).broken).toContain(reason)
++    expect((await ctx.agentPresets.list()).find(row => row.id === id)?.broken).toContain(reason)
++    await expect(ctx.agentPresets.acquireScope(id)).rejects.toThrow(reason)
++    const scope = createScope(ctx, {})
++    await expect(ctx.agentPresets.mount(scope.ctx, id)).rejects.toThrow(reason)
++    await scope.dispose()
++    await expect(ctx.agentPresets.select(agent, id)).rejects.toThrow(reason)
++  }
++  expect(ctx.agentPresets.composedPreset(agent.ctx)).toBe('standard')
++  expect(ctx.tools.schemas(agent).map(tool => tool.name)).toEqual(['standard'])
++  expect(selected).toEqual([])
++})
++
++it('waits for a concurrently declared base after registering a real Loader hidden declaration', async () => {
++  const ctx = await harness()
++  onTestFinished(() => ctx.fiber.dispose())
++  ctx.loader.builtins.preset = Preset
++  let release!: () => void
++  const paused = new Promise<void>((resolve) => { release = resolve })
++  onTestFinished(release)
++  let entered!: () => void
++  const started = new Promise<void>((resolve) => { entered = resolve })
++  ctx.loader.builtins.slowPreset = {
++    inject: ['agentPresets'],
++    async* apply(host: Context) {
++      entered()
++      await paused
++      yield await host.agentPresets.register(contribution('standard'))
++    },
++  }
++  const update = ctx.loader.root.update([
++    { id: 'snapshot-declaration', name: 'cordis:preset', config: {
++      ...contribution('snapshot'), selectable: false, defaultable: false, selectionBase: 'standard',
++    } },
++    { id: 'base-declaration', name: 'cordis:slowPreset' },
++  ])
++  await started
++  const declaration = ctx.loader.resolve('snapshot-declaration')
++  await declaration._initTask
++  await declaration.fiber!.await()
++  const settle = ctx.loader.await.bind(ctx.loader)
++  let audited!: () => void
++  const awaitingBase = new Promise<void>((resolve) => { audited = resolve })
++  ctx.loader.await = () => { audited(); return settle() }
++  let completed = false
++  const acquiring = ctx.agentPresets.acquireScope('snapshot').then((lease) => { completed = true; return lease })
++  await awaitingBase
++  expect(completed).toBe(false)
++  release()
++  await update
++  await using lease = await acquiring
++  expect(await ctx.agentPresets.resolve('snapshot')).toEqual({
++    id: 'snapshot', selectable: false, defaultable: false, selectionBase: 'standard',
++  })
++  expect(ctx.tools.schemas(lease.key).map(tool => tool.name)).toEqual(['snapshot'])
++  await ctx.loader.root.update([])
++  await settle()
++  expect(await ctx.agentPresets.list()).toEqual([])
++  expect(ctx.tools.schemas(lease.key).map(tool => tool.name)).toEqual(['snapshot'])
++})
++
++it('re-audits unloaded and replaced bases while retaining a live composition revision', async () => {
++  const ctx = await harness()
++  onTestFinished(() => ctx.fiber.dispose())
++  const base = await declare(ctx, contribution('standard'))
++  await declare(ctx, { ...contribution('snapshot'), selectable: false, selectionBase: 'standard' })
++  const agent = await agentOn(ctx, 'retained-snapshot', 'snapshot')
++  await base.dispose()
++  expect((await ctx.agentPresets.resolve('snapshot')).broken).toContain('is not registered')
++  await expect(ctx.agentPresets.acquireScope('snapshot')).rejects.toThrow('is not registered')
++  expect(ctx.tools.schemas(agent).map(tool => tool.name)).toEqual(['snapshot'])
++  const hidden = await declare(ctx, { ...contribution('standard'), selectable: false })
++  expect((await ctx.agentPresets.resolve('snapshot')).broken).toContain('must be selectable')
++  await hidden.dispose()
++  await declare(ctx, contribution('standard'))
++  expect((await ctx.agentPresets.resolve('snapshot')).broken).toBeUndefined()
++  await using lease = await ctx.agentPresets.acquireScope('snapshot')
++  expect(ctx.tools.schemas(lease.key).map(tool => tool.name)).toEqual(['snapshot'])
++})
++
++it('retains visibility and selectable-origin metadata through the real Loader declaration schema', async () => {
++  const ctx = await harness()
++  onTestFinished(() => ctx.fiber.dispose())
++  ctx.loader.builtins.preset = Preset
++  const base = { id: 'base-declaration', name: 'cordis:preset', config: { id: 'standard', plugins: [] } }
++  await ctx.loader.root.update([base])
++  await ctx.loader.await()
++  await ctx.loader.root.update([base, {
++    id: 'snapshot-declaration', name: 'cordis:preset', config: {
++      id: 'snapshot', selectable: false, defaultable: false, selectionBase: 'standard', plugins: [],
++    },
++  }])
++  await ctx.loader.await()
++  expect((await ctx.agentPresets.remoteExportList()).presets.find(row => row.id === 'snapshot')).toMatchObject({
++    selectionBase: 'standard', selectable: false, defaultable: false,
++  })
++  await ctx.loader.root.update([])
++  await ctx.loader.await()
++  expect(await ctx.agentPresets.list()).toEqual([])
++})
+diff --git a/packages/preset/agent-preset-registry/tests/registry.spec.ts b/packages/preset/agent-preset-registry/tests/registry.spec.ts
+index 04ab9c00..6ccdf217 100644
+--- a/packages/preset/agent-preset-registry/tests/registry.spec.ts
++++ b/packages/preset/agent-preset-registry/tests/registry.spec.ts
+@@ -87,6 +87,27 @@ describe('declarative preset revisions', () => {
+     expect(await ctx.agentPresets.resolve()).toEqual({ id: 'standard' })
+   })
+ 
++  it('keeps historical presets resolvable without offering or defaulting to them', async () => {
++    const ctx = await harness({ live: true })
++    contexts.push(ctx)
++    await declare(ctx, contribution('standard'))
++    await declare(ctx, {
++      ...contribution('historical'),
++      selectable: false,
++      defaultable: false,
++    })
++    await liveRegistries.get(ctx)!.update({ selectedDefault: 'historical' })
++
++    expect(ctx.agentPresets.defaultId).toBe('standard')
++    const roster = await ctx.agentPresets.remoteExportList()
++    expect(roster.presets).toEqual(expect.arrayContaining([
++      expect.objectContaining({ id: 'standard', selectable: true, defaultable: true, isDefault: true }),
++      expect.objectContaining({ id: 'historical', selectable: false, defaultable: false, isDefault: false }),
++    ]))
++    await using historical = await ctx.agentPresets.acquireScope('historical')
++    expect(ctx.tools.schemas(historical.key).map(tool => tool.name)).toEqual(['historical'])
++  })
++
+   it('rebinds a blank scope and preserves a child inheriting its former revision', async () => {
+     const ctx = await setup()
+     await declare(ctx, contribution('standard'))
+@@ -113,6 +134,36 @@ describe('declarative preset revisions', () => {
+     await expect(ctx.agentPresets.select(agent, 'standard')).rejects.toThrow('already started')
+   })
+ 
++  it('resolves selection through a disposable extension and logs the resolved Preset', async () => {
++    const ctx = await setup()
++    await declare(ctx, contribution('standard'))
++    await declare(ctx, contribution('minimal'))
++    const agent = await agentOn(ctx, 'resolved-selection')
++    const release = ctx.on('agent-preset/resolve-selection', async (_agent, _requested, next) => {
++      await next()
++      return 'minimal'
++    })
++    expect(await ctx.agentPresets.select(agent, 'standard')).toBe('minimal')
++    expect(ctx.sessionProjections.stateOf(agent.session, 'agentPreset')).toBe('minimal')
++    release()
++    expect(await ctx.agentPresets.select(agent, 'standard')).toBe('standard')
++  })
++
++  it('rechecks the turn guard after asynchronous selection preparation', async () => {
++    const ctx = await setup()
++    await declare(ctx, contribution('standard'))
++    await declare(ctx, contribution('minimal'))
++    const agent = await agentOn(ctx, 'concurrent-preparation')
++    ctx.on('agent-preset/resolve-selection', async (_agent, _requested, next) => {
++      const id = await next()
++      agent.session.append('turn/start', { turn: 1 })
++      return id
++    })
++    await expect(ctx.agentPresets.select(agent, 'minimal')).rejects.toThrow('already started')
++    expect(ctx.agentPresets.composedPreset(agent.ctx)).toBe('standard')
++    expect(ctx.sessionProjections.stateOf(agent.session, 'agentPreset')).not.toBe('minimal')
++  })
++
+   it('inventories active and disabled child entries and declared display metadata', async () => {
+     const ctx = await setup()
+     await declare(ctx, { ...contribution('standard'), name: 'Standard', description: 'General', order: 2 })
+diff --git a/packages/preset/agent-preset/README.i18n.yaml b/packages/preset/agent-preset/README.i18n.yaml
+index a2b45603..cbe9580a 100644
+--- a/packages/preset/agent-preset/README.i18n.yaml
++++ b/packages/preset/agent-preset/README.i18n.yaml
+@@ -15,8 +15,8 @@
+   en: d152484eb41ac6b4
+   zh: b3ad7867f23dad1c
+ /deepseek-ai-dsh-agent-preset/use-this-package:
+-  en: 3e243b0ee04dd23f
+-  zh: 832841c35b57180a
++  en: fac759f266693f3c
++  zh: a4b38a512bf8ec7c
+ /deepseek-ai-dsh-agent-preset/understand-the-implementation:
+   en: 7ac55a3a3af4fcef
+   zh: 95fe36abba794967
+diff --git a/packages/preset/agent-preset/README.md b/packages/preset/agent-preset/README.md
+index 243d771e..aa0d1841 100644
+--- a/packages/preset/agent-preset/README.md
++++ b/packages/preset/agent-preset/README.md
+@@ -44,6 +44,9 @@ Define an Agent’s child plugins in ordinary Cordis YAML. Declare several prese
+ | `name` | unset | Display name |
+ | `description` | unset | Display description |
+ | `order` | unset | Roster order |
++| `selectable` | true | Offer the definition in new-session pickers |
++| `defaultable` | true | Allow the definition as the saved default |
++| `selectionBase` | unset | Selectable origin shown for a hidden derived composition |
+ 
+ The declaration row’s `id` addresses Loader edits; `config.id` is the preset identity saved by sessions. Child entry IDs may be omitted and assigned by Loader.
+ 
+diff --git a/packages/preset/agent-preset/README.zh.md b/packages/preset/agent-preset/README.zh.md
+index c7bde250..835ce4b4 100644
+--- a/packages/preset/agent-preset/README.zh.md
++++ b/packages/preset/agent-preset/README.zh.md
+@@ -44,6 +44,9 @@ kind: "package-reference"
+ | `name` | 未设置 | 展示名称 |
+ | `description` | 未设置 | 展示说明 |
+ | `order` | 未设置 | 列表排序 |
++| `selectable` | true | 在新会话选择器中提供此定义 |
++| `defaultable` | true | 允许将此定义保存为默认值 |
++| `selectionBase` | 未设置 | 隐藏派生组合展示的可选择基础模式 |
+ 
+ 声明行的 `id` 是 Loader 编辑地址；`config.id` 是会话保存的 preset 标识符。子插件可省略行 ID，由 Loader 分配。
+ 
+diff --git a/packages/preset/agent-preset/src/index.ts b/packages/preset/agent-preset/src/index.ts
+index 2e718fa4..66aebc7c 100644
+--- a/packages/preset/agent-preset/src/index.ts
++++ b/packages/preset/agent-preset/src/index.ts
+@@ -18,6 +18,9 @@ export default class AgentPreset {
+     name: z.string(),
+     description: z.string(),
+     order: z.number(),
++    selectable: z.boolean(),
++    defaultable: z.boolean(),
++    selectionBase: z.string(),
+     // Cordis owns individual plugin schemas; the registry validates entry structure.
+     plugins: z.array(z.any()).required(),
+   }) as z<Config>
+diff --git a/scripts/type-equiv.manifest.json b/scripts/type-equiv.manifest.json
+index 37f21e08..9380a641 100644
+--- a/scripts/type-equiv.manifest.json
++++ b/scripts/type-equiv.manifest.json
+@@ -1,6 +1,16 @@
+ {
+   "comment": "Maps each primary ` ```ts type-equiv ` or ` ```ts public-api ` block (by doc + declared symbol + projection) to the source declaration and original JSDoc it must match. Paired `.zh.md` blocks are byte-identical derivatives checked through their unsuffixed sibling and have no duplicate entry. Omit projection for the complete declaration; use public-api with a ` ```ts public-api ` block for a body-stripped public class declaration. verify-type-equiv.ts enforces a 1:1 correspondence between primary blocks and entries. Add an entry when you add a primary source-equivalence block; remove it when you remove the block.",
+   "entries": [
++    {
++      "doc": "docs/subsystems/core.md",
++      "symbol": "PresetDefinition",
++      "source": "packages/preset/agent-preset-registry/src/definition.ts"
++    },
++    {
++      "doc": "docs/subsystems/core.md",
++      "symbol": "AgentPresetRow",
++      "source": "packages/preset/agent-preset-registry/src/types.ts"
++    },
+     {
+       "doc": "docs/subsystems/compaction.md",
+       "symbol": "ImageOffloadTarget",

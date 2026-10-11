@@ -1,6 +1,6 @@
 ---
-description: "Electron main-process bridge for DeepSeek Harness authentication and enterprise product APIs."
-kind: "package-reference"
+description: "Product protocol, authentication, catalogs, and server access independent of Harness and Electron."
+kind: "package-library"
 ---
 
 # DeepSeek Harness Product Bridge
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-The bridge keeps DingTalk sessions and authenticated bootstrap access in the Electron main process while exposing typed product and native methods to the Renderer. It owns the last successful catalog snapshot, merged refresh lifecycle, on-demand Skill and Expert Kit preparation, and employee data-connection authorization calls. Preparation state uses the immutable `id`, `version`, and SHA-256 identity, so new versions never inherit old availability. Upstream OAuth tokens stay on the server. Runtime bootstrap secrets pass only to the official Harness Host. No companion is published because the typed bridge and server API cannot diverge independently.
+The bridge provides authenticated employee catalogs, task capability preparation, and connector authorization. It retains the last successful display catalog and merges refreshes; knowledge reads always query the server. Callers inject native capabilities and the task runtime. Skill and Kit installation operations address the authenticated employee's device through the Host; mutations emit catalog events after commit. Uninstall preserves server resources and started tasks. The desktop main process retains employee credentials; this protocol package does not depend on Harness or Electron.
 
 ## Table of Contents
 
@@ -44,4 +44,20 @@ No cache entries are created; the bridge does not assemble or send provider requ
 <a id="dev-note"></a>
 ### Dev Note
 
-Keep runtime bootstrap secrets and session tokens in the Electron main process. Renderer code can invoke the product and native methods declared by the preload allowlist.
+Use namespace transport and validate requests against the product protocol allowlist. `tasks.capabilities.prepare` is the sole Kit preparation entry. It returns a capability snapshot, execution location, and verified dependencies; official Preset and Session APIs own execution.
+
+Task capability reads and preparation results include `requiredConnectorIds`, resolved from the pinned Expert Kit. Consumers lock those task selections independently of account authorization or connector availability.
+
+`extensions.import.inspect`, `extensions.save`, `extensions.submit`, and `extensions.delete` delegate personal authoring to main; responses contain previews or business results. `extensions.import.release` clears employee-scoped previews. The `extension-draft` export provides browser-safe form schemas; `authoring` parses YAML and generates standard skill/kit files and the dependency union in main. Ownership comes from server authentication. Catalogs expose `visibility`, `ownerEmployeeId`, `canEdit`, `canSubmit`, `canDelete`, and review status; personal usability is independent of shared review. Knowledge reference resolution distinguishes absent, denied, ambiguous, and transient failures.
+
+Committed writes clear cached catalogs. A subsequent refresh failure does not fail the committed mutation; catalog reads report the refresh error rather than returning obsolete permissions.
+
+`extensions.authoring.begin/read/update/save/discard` manage conversation drafts. The trusted Host may read, update and save the matching conversation's personal resource. Each draft is employee-scoped, Session-bound and revision-checked; it records only its own Session identity. `authoring.changed` publishes committed changes without their content. Content draft schemas exclude connector secrets and staging handles. Save validation accepts bundled skills and shortcut commands only for Expert Kits. Shared submission remains a separate owner action.
+
+`extensions.connector.read/update/delete` manage owned personal connectors through main. Reads return public configuration and empty placeholders for configured private keys. Updates create an immutable version; deletion retires the resource ID. The server verifies ownership for every operation.
+
+Connector saves accept an integer `timeoutSeconds` from 1 through 600, defaulting to 60. It belongs to local MCP configuration and is excluded from conversation content drafts. Standard MCP JSON may provide the same field.
+
+`knowledge.documents.*`, `knowledge.folders.*`, and `knowledge.sources.read` dispatch authenticated management and reading through the product server. Pages expose one-based `page` with `items`, `size`, and `total`; filtering and totals come from server pagination. Writes validate bounded content and stable retry keys. Markdown updates require `expectedUpdatedAt`. File upload delegates selection to an injected native callback and rejects renderer paths and parser configuration. `pdfParseMode` accepts only `STANDARD` (default) or `TEXT` (PDF embedded text without OCR); the server owns engine selection. Responses retain asynchronous processing and deletion state. Caller cancellation and identity changes cancel remote operations. WeKnora addresses and credentials never cross this bridge.
+
+`knowledge.documents.previewMetadata` reads original metadata independently of indexing. `preview.open`, `preview.read`, and `preview.close` use employee-bound main-owned file handles; Renderer receives bounded `Uint8Array` chunks instead of whole-file Base64. Requests accept resource IDs, an opaque transfer ID, or a verified byte offset. Office rendering uses the official Host converter with bounded private JSON chunks. `download` and `openExternal` accept only resource IDs and delegate native file operations to main. The binary HTTP transport refuses redirects, streams into an owned sink, and preserves structured permission errors. Indexed citation fragments continue through `knowledge.sources.read`; opening an original creates no Session or retrieval input. [Desktop configuration](../desktop/README.md) defines product limits and temporary-file ownership.

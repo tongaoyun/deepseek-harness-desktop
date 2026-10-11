@@ -11,6 +11,7 @@ import { developmentRuntimeDirectory, resolveDesktopBuildTarget } from './deskto
 import { prepareDevelopmentProject } from './development-project.ts'
 import { prepareDevelopmentApp } from './development-app.ts'
 import { preparePrimaryRuntime } from './prepare-primary-runtime.ts'
+import { readDesktopAssembly } from './desktop-assembly.mjs'
 
 const APP_ROOT = resolve(import.meta.dirname, '..')
 const REPOSITORY_ROOT = resolve(APP_ROOT, '..', '..')
@@ -56,24 +57,7 @@ async function runPackageScript(script: string, cwd: string): Promise<void> {
   await run(process.execPath, [packageManager, 'run', script], cwd)
 }
 
-async function resolveNativeSidecar(): Promise<string> {
-  const configured = process.env.DEEPSEEK_HARNESS_NATIVE_BINARY?.trim()
-  if (configured !== undefined && configured !== '') {
-    const executable = resolve(configured)
-    if (!existsSync(executable)) throw new Error(`desktop development: missing native sidecar ${executable}`)
-    return executable
-  }
-  const executable = join(REPOSITORY_ROOT, 'native', 'deepseek-harness', 'target', 'release',
-    process.platform === 'win32' ? 'deepseek-harness-native.exe' : 'deepseek-harness-native')
-  if (!existsSync(executable)) {
-    await run('cargo', ['build', '--release', '--manifest-path', join(REPOSITORY_ROOT, 'native', 'deepseek-harness', 'Cargo.toml')],
-      REPOSITORY_ROOT)
-  }
-  if (!existsSync(executable)) throw new Error(`desktop development: missing native sidecar ${executable}`)
-  return executable
-}
-
-async function launchElectron(nativeSidecar: string): Promise<void> {
+async function launchElectron(): Promise<void> {
   const require = createRequire(import.meta.url)
   const electron: unknown = require('electron')
   if (typeof electron !== 'string') throw new Error('desktop development: electron executable is unavailable')
@@ -82,21 +66,23 @@ async function launchElectron(nativeSidecar: string): Promise<void> {
   const hostPort = debugPort('DSH_DESKTOP_HOST_INSPECT_PORT', 9230)
   const home = resolve(process.env.DSH_HOME ?? join(DEVELOPMENT_ROOT, 'home'))
   const userData = resolve(process.env.DSH_DESKTOP_USER_DATA_DIR ?? join(DEVELOPMENT_ROOT, 'electron-user-data'))
+  const primaryRuntime = resolve(process.env.DSH_DESKTOP_PRIMARY_RUNTIME_DIR ?? developmentRuntimeDirectory())
   const environment: NodeJS.ProcessEnv = {
     ...process.env,
     DSH_HOME: home,
-    DSH_DESKTOP_PRIMARY_RUNTIME_DIR: process.env.DSH_DESKTOP_PRIMARY_RUNTIME_DIR ?? developmentRuntimeDirectory(),
+    DSH_DESKTOP_PRIMARY_RUNTIME_DIR: primaryRuntime,
     DSH_DESKTOP_HOST_INSPECT_PORT: String(hostPort),
     DSH_DESKTOP_OPEN_DEVTOOLS: process.env.DSH_DESKTOP_OPEN_DEVTOOLS ?? '1',
     ELECTRON_ENABLE_LOGGING: process.env.ELECTRON_ENABLE_LOGGING ?? '1',
-    DEEPSEEK_HARNESS_NATIVE_BINARY: nativeSidecar,
   }
   console.log(`desktop development: DSH_HOME=${home}`)
   console.log(`desktop development: userData=${userData}`)
   console.log(`desktop development: inspectors main=${String(mainPort)}, renderer=${String(rendererPort)}, host=${String(hostPort)}`)
   if (process.platform === 'darwin') {
     const executable = prepareDevelopmentApp({ electron, appRoot: APP_ROOT, directory: DEVELOPMENT_ROOT, home, userData,
-      mainPort, rendererPort, hostPort, openDevtools: environment.DSH_DESKTOP_OPEN_DEVTOOLS! })
+      ...readDesktopAssembly().icons.development === undefined ? {} : { applicationIcon: readDesktopAssembly().icons.development! },
+      extensionEnvironment: JSON.parse(process.env.DSH_DESKTOP_EXTENSION_ENV ?? '{}'), primaryRuntime, mainPort, rendererPort, hostPort,
+      openDevtools: environment.DSH_DESKTOP_OPEN_DEVTOOLS! })
     await run(executable, [], APP_ROOT, environment)
     return
   }
@@ -139,7 +125,7 @@ async function main(): Promise<void> {
     target: resolveDesktopBuildTarget(),
   })
   await preparePrimaryRuntime()
-  await launchElectron(await resolveNativeSidecar())
+  await launchElectron()
 }
 
 await main().catch((error: unknown) => {

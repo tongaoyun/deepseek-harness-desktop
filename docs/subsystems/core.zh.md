@@ -110,7 +110,7 @@ interface Agent {
    * turn and runs when the aborted activity converges to idle; a `disposed`
    * cancel leaves it parked. A wake submitted while already idle always opens
    * its turn boundary, even when its message is cleared before the driver
-   * claims ([cancel-convergence wake latch](../../../../.agents/notes/implemented/bug-fix/2026-08-07-cancel-convergence-wake-latch.md)).
+   * claims ([driver wake convergence](../../agent-loop/src/agent.ts)).
    * @param message - identified content and the source that supplied it.
    * @param target - the preferred next-turn or next-step inbox boundary.
    * @param wakeup - whether delivery may wake the driver.
@@ -419,6 +419,61 @@ type Branded<B extends string> = string & { readonly [BRAND]: B }
 
 两个核心 ID 是 `ToolCallId`（关联工具调用及其结果；dsh-llm）和 `SessionId`（活跃 agent 与持久会话共享的标识；dsh-session）。能力包也会品牌化各自的 id，例如 [jobs.md](jobs.zh.md) 中的 `JobId`。
 
+<a id="preset-selection-metadata"></a>
+
+## Preset 选择元数据
+
+`PresetDefinition` 声明执行组合。隐藏的派生定义可以通过 `selectionBase` 标识可选择的基础模式，连续的隐藏组合派生会展平到该基础模式。关联只影响模式展示，Session 投影与选择事件中的 `agentPreset` 仍是实际执行 ID。注册时拒绝空值、自引用基础及可选择定义上的关联。读取时校验目标可选择且没有其他关联；若目标缺失，先等待 Host Loader 稳定，再标为不可用。这支持声明并发启动，并在基础卸载或替换后重新检查关联。失效关联阻止新的绑定或选择，现有版本租约继续保留。诊断读取必须在 Host 行激活之外进行，因为 Loader 稳定需要等待该激活完成。
+
+源码：[`packages/preset/agent-preset-registry/src/definition.ts`](../../packages/preset/agent-preset-registry/src/definition.ts)
+
+```ts type-equiv
+/** Identity, display fields and child Cordis plugins of one preset. */
+interface PresetDefinition {
+  readonly id: string
+  /** Resolution context retained by a detached composition. */
+  readonly resolutionBase?: string
+  readonly name?: string
+  readonly description?: string
+  readonly order?: number
+  /** Whether new-session pickers offer this definition. Historical snapshots remain resolvable when false. */
+  readonly selectable?: boolean
+  /** Whether Settings may persist this definition as the default for future Sessions. */
+  readonly defaultable?: boolean
+  /** Selectable base shown for a hidden derived composition; execution retains this definition's id. */
+  readonly selectionBase?: string
+  readonly plugins: readonly (Omit<EntryOptions, 'id' | 'disabled'> & { id?: string; disabled?: EntryOptions['disabled'] | JsExpr })[]
+}
+```
+
+`AgentPresetRow` 在远端目录中返回该关联。原生模式选择器仅提供可选择的定义，展示并勾选当前组合的基础模式，不改变组合 ID。只读 Session 标签使用同一关联。
+
+源码：[`packages/preset/agent-preset-registry/src/types.ts`](../../packages/preset/agent-preset-registry/src/types.ts)
+
+```ts type-equiv
+/**
+ * One declared preset as a client reads it.
+ */
+interface AgentPresetRow {
+  /** Stable identifier; also the label's fallback. */
+  readonly id: string
+  /** Whether a session naming no preset composes this one. */
+  readonly isDefault: boolean
+  /** Display name the preset published. */
+  readonly name?: string
+  /** One sentence on what this preset is for. */
+  readonly description?: string
+  /** Whether a new Session may choose this Preset from a picker. */
+  readonly selectable: boolean
+  /** Whether this Preset may become the default for future Sessions. */
+  readonly defaultable: boolean
+  /** Selectable base displayed for a hidden derived composition; its id still identifies execution. */
+  readonly selectionBase?: string
+  /** Why this preset cannot compose a session; absent when it can. */
+  readonly broken?: string
+}
+```
+
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
 <a id="cordis-surface"></a>
@@ -505,6 +560,12 @@ Registry of YAML-declared presets and the revisions live Agents retain.
  */
 async register(definition: PresetDefinition): Promise<() => Promise<void>>
 
+/** Inspect retained revisions, or the exact revision an Agent joined.
+ * @param ctx - optional Agent context; omission includes all retained revisions.
+ * @returns detached module references and isolation diagnostics; no match returns an empty list.
+ */
+inspectCompositions(ctx?: Context): AgentPresetInspection[]
+
 /** Read every declared preset, including activation failures.
  * @returns Display metadata and loading diagnostics.
  */
@@ -526,6 +587,13 @@ async resolve(id?: string): Promise<AgentPreset>
  * @returns The declared composition beside its published metadata.
  */
 @Remote('read') readDocument(agentPreset: string): Promise<AgentPresetDocument>
+
+/** Derive a detached composition without parsing its display document.
+ * @param baseId Registered composition to extend.
+ * @param definition Metadata and additional plugin rows; additional rows resolve in the base context.
+ * @returns Detached definition retaining the base Loader resolution context and, when hidden, selectable origin.
+ */
+derive(baseId: string, definition: PresetDefinition): PresetDefinition
 
 /** Bind an unpublished Agent to the current preset revision.
  * @param ctx Agent context from its setup callback.
@@ -1093,6 +1161,25 @@ Source: [`packages/core/agent-loop/src/index.ts`](../../packages/core/agent-loop
 <a id="agent-preset-events"></a>
 
 ### `agent-preset/*` events
+
+<a id="agent-presetresolve-selection--waterfall"></a>
+
+#### `agent-preset/resolve-selection` — waterfall
+
+Resolve a requested composition before selection commits.
+
+```ts cordis-catalog
+/** Resolve a requested composition before selection commits.
+ * @mode waterfall
+ * @param agent Target Agent whose blank-turn guard remains owned by the registry.
+ * @param requested Requested Preset identity.
+ * @param next Delegate to subsequent resolvers.
+ * @returns Registered composition to select; rejection leaves the selection unchanged.
+ */
+'agent-preset/resolve-selection'(agent: Agent, requested: string, next: () => Promise<string>): Promise<string>
+```
+
+Source: [`packages/preset/agent-preset-registry/src/index.ts`](../../packages/preset/agent-preset-registry/src/index.ts)
 
 <a id="agent-presetselected--emit"></a>
 

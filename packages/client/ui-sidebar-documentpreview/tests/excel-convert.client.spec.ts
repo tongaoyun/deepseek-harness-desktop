@@ -81,6 +81,23 @@ describe('Excel conversion', () => {
     await expect(convertExcel(new Uint8Array(await workbook.xlsx.writeBuffer()), 'xlsx', limits)).rejects.toMatchObject({ code: 'invalid' })
   })
 
+  it('keeps visible rows when the optional worksheet format properties are absent', async () => {
+    const relationshipNamespace = 'http://schemas.openxmlformats.org/package/2006/relationships'
+    const officeRelationshipNamespace = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
+    const worksheetNamespace = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
+    const files = {
+      '[Content_Types].xml': strToU8('<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>'),
+      '_rels/.rels': strToU8(`<Relationships xmlns="${relationshipNamespace}"><Relationship Id="rId1" Type="${officeRelationshipNamespace}/officeDocument" Target="xl/workbook.xml"/></Relationships>`),
+      'xl/workbook.xml': strToU8(`<workbook xmlns="${worksheetNamespace}" xmlns:r="${officeRelationshipNamespace}"><sheets><sheet name="Defaults" sheetId="1" r:id="rId1"/></sheets></workbook>`),
+      'xl/_rels/workbook.xml.rels': strToU8(`<Relationships xmlns="${relationshipNamespace}"><Relationship Id="rId1" Type="${officeRelationshipNamespace}/worksheet" Target="worksheets/sheet1.xml"/></Relationships>`),
+      'xl/worksheets/sheet1.xml': strToU8(`<worksheet xmlns="${worksheetNamespace}"><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>Visible original value</t></is></c></row><row r="2"><c r="A2"><f>SUM(1,2)</f><v>3</v></c></row></sheetData></worksheet>`),
+    }
+    const result = await convertExcel(new Uint8Array(zipSync(files)), 'xlsx', limits)
+    expect(result.sheets[0]).toMatchObject({ defaultRowHeight: 20, row: 2, column: 1 })
+    expect(result.sheets[0]!.celldata![0]!.v).toMatchObject({ v: 'Visible original value' })
+    expect(result.sheets[0]!.celldata![1]!.v).toMatchObject({ f: '=SUM(1,2)', v: 3, m: '3' })
+  })
+
   it('ignores row and column layout outside emitted cell bounds', async () => {
     const workbook = new ExcelJS.Workbook()
     const sheet = workbook.addWorksheet('Layout')

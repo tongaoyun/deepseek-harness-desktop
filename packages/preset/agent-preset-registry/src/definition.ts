@@ -4,6 +4,8 @@ import type { EntryOptions, JsExpr } from '@deepseek-ai/cordis-plugin-loader'
 /** Identity, display fields and child Cordis plugins of one preset. */
 export interface PresetDefinition {
   readonly id: string
+  /** Resolution context retained by a detached composition. */
+  readonly resolutionBase?: string
   readonly name?: string
   readonly description?: string
   readonly order?: number
@@ -11,6 +13,8 @@ export interface PresetDefinition {
   readonly selectable?: boolean
   /** Whether Settings may persist this definition as the default for future Sessions. */
   readonly defaultable?: boolean
+  /** Selectable base shown for a hidden derived composition; execution retains this definition's id. */
+  readonly selectionBase?: string
   readonly plugins: readonly (Omit<EntryOptions, 'id' | 'disabled'> & { id?: string; disabled?: EntryOptions['disabled'] | JsExpr })[]
 }
 

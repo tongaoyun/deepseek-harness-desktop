@@ -1,0 +1,53 @@
+- complementary:
+  - heading "Knowledge bases" [level=1]
+  - button "Refresh"
+  - navigation "Knowledge bases":
+    - region "Personal":
+      - heading "Personal New personal knowledge base" [level=2]:
+        - button "Personal" [expanded]
+        - button "New personal knowledge base"
+      - button "Personal notes" [expanded]
+      - button "Actions for “Personal notes”"
+      - navigation "Folders":
+        - text: Search material names…
+        - searchbox "Search material names…"
+        - button "Search"
+        - button "New folder"
+        - button "All materials"
+        - button "Unfiled"
+        - button "Order review.md"
+        - button "Office policy.docx"
+        - button "Order totals.xlsx"
+        - button "Policy 5.pdf"
+        - button "Policy 6.pdf"
+        - button "Policy 7.pdf"
+        - button "Policy 8.pdf"
+        - button "Policy 9.pdf"
+        - button "Policy 10.pdf"
+        - button "Policy 11.pdf"
+        - button "Policy 12.pdf"
+        - button "Policy 13.pdf"
+        - button "Policy 14.pdf"
+        - button "Policy 15.pdf"
+        - button "Policy 16.pdf"
+        - button "Policy 17.pdf"
+        - button "Policy 18.pdf"
+        - button "Policy 19.pdf"
+        - button "Policy 20.pdf"
+        - button "Policies"
+        - button "Folder actions for Policies"
+        - button "Policy 2.pdf": Policy 2.pdf Processing failed
+        - button "Previous materials page" [disabled]
+        - text: 1 / 2
+        - button "Next materials page"
+    - region "Department":
+      - heading "Department" [level=2]:
+        - button "Department" [expanded]
+      - heading "Sales (21)" [level=3]
+      - button "Sales procedures"
+      - heading "Sales (22)" [level=3]
+      - button "Sales playbook"
+    - region "Company":
+      - heading "Company" [level=2]:
+        - button "Company" [expanded]
+      - button "Operations playbook"

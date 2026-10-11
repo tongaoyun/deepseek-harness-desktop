@@ -18,7 +18,7 @@ const scopedStyles = `@scope ([data-excel-preview]) { ${fortuneCss} }`
  * @param props - Complete workbook bytes, limits, and locale.
  * @returns An isolated spreadsheet surface with cancellable loading.
  */
-export function ExcelBody({ content, format, limits, t, loading }: LoadedExcelBodyProps): ReactNode {
+export function ExcelBody({ content, format, limits, t, loading, signal }: LoadedExcelBodyProps): ReactNode {
   const data = content.kind === 'bytes' ? content.data : undefined
   const [state, setState] = useState<State>()
   const [attempt, setAttempt] = useState(0)
@@ -26,13 +26,14 @@ export function ExcelBody({ content, format, limits, t, loading }: LoadedExcelBo
   useEffect(() => {
     if (data === undefined) return
     const controller = new AbortController()
+    const reading = signal === undefined ? controller.signal : AbortSignal.any([controller.signal, signal])
     setState(undefined)
-    void parseExcel(data, format, limits, controller.signal).then(
-      (value) => { if (!controller.signal.aborted) setState({ data, format, value }) },
-      (error: unknown) => { if (!controller.signal.aborted) setState({ data, format, error: error instanceof Error ? error.message : 'invalid' }) },
+    void parseExcel(data, format, limits, reading).then(
+      (value) => { if (!reading.aborted) setState({ data, format, value }) },
+      (error: unknown) => { if (!reading.aborted) setState({ data, format, error: error instanceof Error ? error.message : 'invalid' }) },
     )
     return () => { controller.abort() }
-  }, [data, format, limits, attempt])
+  }, [data, format, limits, attempt, signal])
   useEffect(() => {
     const element = workbookRef.current
     if (element === null || typeof ResizeObserver === 'undefined') return

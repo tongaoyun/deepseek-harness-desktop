@@ -14,7 +14,7 @@ import type { RuntimeProcessOptions } from './launch.ts'
 import type { ContentBlock, DeepSeekHarnessOptions, HarnessNotification, RunResult, SdkPromptContentBlock } from './types.ts'
 
 /**
- * Reusable SDK for running DeepSeekHarness agent turns in a runtime
+ * Reusable SDK for running DeepSeek Harness agent turns in a runtime
  * subprocess. The subprocess starts lazily on first use and stays owned by
  * this instance until {@link close}; always close (or `await using`) so the
  * child is reaped.
@@ -84,7 +84,7 @@ export class DeepSeekHarness implements AsyncDisposable {
         } catch (cleanupError: unknown) {
           throw new AggregateError(
             [error, cleanupError],
-            'DeepSeekHarness initialization and cleanup failed',
+            'DeepSeek Harness initialization and cleanup failed',
           )
         }
         if (!this.closed) this.clientInstance = this.createClient()
@@ -96,7 +96,7 @@ export class DeepSeekHarness implements AsyncDisposable {
 
   /**
    * Open a session handle (no wire traffic; the runtime creates the session
-   * on its first prompt).
+   * on its first prompt or working-directory operation).
    * @param sessionId - explicit id to reuse; omitted mints a fresh one.
    * @returns the session handle.
    */
@@ -165,6 +165,25 @@ export class HarnessSession {
    * @param id - the wire session id this handle runs on.
    */
   constructor(readonly harness: DeepSeekHarness, readonly id: string) {}
+
+  /**
+   * Read the effective directory and recover a missing directory to the Session origin.
+   * @returns the absolute directory used by new independent operations.
+   */
+  async getWorkingDirectory(): Promise<string> {
+    await this.harness.start()
+    return this.harness.client.getWorkingDirectory(this.id)
+  }
+
+  /**
+   * Change the effective directory without moving existing processes or changing permissions.
+   * @param path - absolute or Session-current-directory-relative directory.
+   * @returns the validated absolute directory.
+   */
+  async setWorkingDirectory(path: string): Promise<string> {
+    await this.harness.start()
+    return this.harness.client.setWorkingDirectory(this.id, path)
+  }
 
   /**
    * Queue one prompt, then observe the whole session through its next idle.
@@ -260,8 +279,12 @@ function validatedTurnEndReason(value: unknown): TurnEndReason {
   return value as TurnEndReason
 }
 
-/** Validate the fields in a wire `session.event` envelope before returning the typed result. */
-function validatedSessionEvent(value: unknown): SessionEvent {
+/**
+ * Validate the event envelope and assistant/turn fields consumed by SDK readers.
+ * @param value - the raw `session.event` event payload.
+ * @returns the event, or throws a protocol error for malformed consumed fields.
+ */
+export function validatedSessionEvent(value: unknown): SessionEvent {
   if (!isRecord(value) || typeof value.type !== 'string') {
     throw new SdkProtocolError(`session.event carried no event envelope: ${JSON.stringify(value)}`)
   }

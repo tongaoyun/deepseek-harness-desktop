@@ -1,0 +1,20 @@
+- dialog "Task knowledge bases":
+  - heading "Task knowledge bases" [level=2]
+  - button "Close"
+  - text: Search knowledge bases…
+  - searchbox "Search knowledge bases…"
+  - heading "Personal" [level=3]
+  - checkbox "Personal notes"
+  - text: Personal notes
+  - heading "Department · Sales (21)" [level=3]
+  - checkbox "Sales procedures"
+  - text: Sales procedures
+  - heading "Department · Sales (22)" [level=3]
+  - checkbox "Sales playbook"
+  - text: Sales playbook
+  - heading "Company" [level=3]
+  - checkbox "Operations playbook"
+  - text: Operations playbook
+  - button "View knowledge bases"
+  - button "Cancel"
+  - button "Apply" [disabled]

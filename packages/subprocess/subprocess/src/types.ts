@@ -9,7 +9,7 @@
 
 import type { Duplex, Readable, Writable } from 'node:stream'
 
-/** Namespace prefix reserved for DeepSeekHarness-managed child environment facts. */
+/** Namespace prefix reserved for DeepSeek Harness-managed child environment facts. */
 export const DSH_ENV_PREFIX = 'DSH_' as const
 
 /** One environment key inside the managed {@link DSH_ENV_PREFIX} namespace. */

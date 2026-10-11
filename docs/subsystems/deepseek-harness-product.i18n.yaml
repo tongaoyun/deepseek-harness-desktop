@@ -3,11 +3,17 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/subsystems/deepseek-harness-product.md
 /deepseek-harness-product:
-  en: 35ae6065e5470aa1
-  zh: 3b6d8139c35caac7
-/deepseek-harness-product/product-owned-capabilities:
-  en: 18950b364a675b29
-  zh: e1f42d80c2f28b72
-/deepseek-harness-product/boundary:
-  en: ae99b77e9580f1c3
-  zh: f9ff4d6def296781
+  en: 6796766f1b580372
+  zh: b10954b815673b2e
+/deepseek-harness-product/packages:
+  en: d8a57cdd9cfc0572
+  zh: a9b61e9b70f908e7
+/deepseek-harness-product/task-capabilities:
+  en: 75355754908cab89
+  zh: a4e482a203605c38
+/deepseek-harness-product/permissions-and-retrieval:
+  en: 1bc33257f91b4131
+  zh: 8889e3ccf072bf4f
+/deepseek-harness-product/desktop-and-upstream-integration:
+  en: 7fb45669d6459740
+  zh: 3a7e1f20f17982a0

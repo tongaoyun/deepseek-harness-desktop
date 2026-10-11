@@ -1,0 +1,28 @@
+# Bilingual-pair consistency record for 2026-10-09-product-installed-skill-attribution.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/persistence-changes/2026-10-09-product-installed-skill-attribution.md
+/:
+  en: 3d5a424ae7d7e46b
+  zh: c22a8e4a62d8cc1a
+/2026-10-09-product-installed-skill-attribution:
+  en: 061a61e312ed9df8
+  zh: 17b833b26852cffc
+/2026-10-09-product-installed-skill-attribution/summary:
+  en: e075794d317a4c7c
+  zh: 1a4b26443f947623
+/2026-10-09-product-installed-skill-attribution/table-of-contents:
+  en: 6cf314a069ceb451
+  zh: 9adff678e9ecab3b
+/2026-10-09-product-installed-skill-attribution/declaration:
+  en: 6907136f28e48c90
+  zh: 02f8298485f3d8e7
+/2026-10-09-product-installed-skill-attribution/compatibility:
+  en: 92b11ee0ee8bdd09
+  zh: 8cca221d3a00aafe
+/2026-10-09-product-installed-skill-attribution/verification:
+  en: 8396db20b47b0918
+  zh: ea33c691c810014e
+/2026-10-09-product-installed-skill-attribution/dev-note:
+  en: b75c8458928b72b9
+  zh: 003ba4e17b4b5269

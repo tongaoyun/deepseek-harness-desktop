@@ -610,7 +610,10 @@ else process.exit(1);
       await mkdir(SHOT_DIR, { recursive: true })
       await saveFailureShot(page, `screenshots/0908-document-preview/smoke-${process.pid}`)
     })
-    expect(await page.locator('[data-slot="conversation.hero.agentPreset"] button').count()).toBe(0)
+    await page.locator('[data-slot="conversation.hero.agentPreset"]').getByRole('button', { name: 'Standard mode', exact: true }).click()
+    await expect.poll(() => page.getByRole('menuitem').count()).toBe(2)
+    expect(await page.getByRole('menuitem', { name: /^PTC mode|^Minimal mode/ }).count()).toBe(0)
+    await page.keyboard.press('Escape')
     expect(scaffold.ctx.settings.describe().find(row => row.ns === 'ui-settings')?.value).toEqual({ enabled: false })
     const settled = scaffold.whenTurnSettled()
     const input = page.locator('[data-composer-input]').first()
@@ -1254,7 +1257,7 @@ else process.exit(1);
     ].join('\n'))
 
     const officeMenus: number[] = []
-    const configurationGuide = 'Read failed: Office previews are unavailable. Enable the document preview service on the computer running DeepSeekHarness.'
+    const configurationGuide = 'Read failed: Office previews are unavailable. Enable the document preview service on the computer running DeepSeek Harness.'
     for (const extension of ['doc', 'docx', 'ppt', 'pptx']) {
       await openFile(`unavailable.${extension}`)
       expect(await preview.locator('[data-document-viewer-menu]').count()).toBe(0)

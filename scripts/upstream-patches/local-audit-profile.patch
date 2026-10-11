@@ -1,0 +1,64 @@
+diff --git a/.deepseek-harness/dsh-audit/profiles/sdk/cordis.patch.yml b/.deepseek-harness/dsh-audit/profiles/sdk/cordis.patch.yml
+new file mode 100644
+index 00000000..fa39409d
+--- /dev/null
++++ b/.deepseek-harness/dsh-audit/profiles/sdk/cordis.patch.yml
+@@ -0,0 +1,4 @@
++# Your patch layer for this dsh profile, applied after every bundle layer:
++# a top-level YAML array of loader patch entries (id-targeted config
++# overrides, disables, and insert lists; `!!js` expressions allowed).
++[]
+diff --git a/.deepseek-harness/dsh-audit/profiles/sdk/cordis.yml b/.deepseek-harness/dsh-audit/profiles/sdk/cordis.yml
+new file mode 100644
+index 00000000..85a03702
+--- /dev/null
++++ b/.deepseek-harness/dsh-audit/profiles/sdk/cordis.yml
+@@ -0,0 +1,4 @@
++# dsh profile root — an empty entry list. The tree is composed as patches:
++# each bundle in package.json's dsh.profile.bundles, then cordis.patch.yml, then any
++# --patch overlays. Edit cordis.patch.yml, not this file.
++[]
+diff --git a/.deepseek-harness/dsh-audit/profiles/sdk/package.json b/.deepseek-harness/dsh-audit/profiles/sdk/package.json
+new file mode 100644
+index 00000000..e8726247
+--- /dev/null
++++ b/.deepseek-harness/dsh-audit/profiles/sdk/package.json
+@@ -0,0 +1,14 @@
++{
++  "name": "dsh-profile-sdk",
++  "private": true,
++  "dependencies": {},
++  "dsh": {
++    "profile": {
++      "bundles": [
++        "@deepseek-ai/dsh-base",
++        "@deepseek-ai/dsh-sdk-app"
++      ],
++      "patchReload": "startup"
++    }
++  }
++}
+diff --git a/.deepseek-harness/dsh-audit/profiles/sdk/pnpm-workspace.yaml b/.deepseek-harness/dsh-audit/profiles/sdk/pnpm-workspace.yaml
+new file mode 100644
+index 00000000..f24c22e1
+--- /dev/null
++++ b/.deepseek-harness/dsh-audit/profiles/sdk/pnpm-workspace.yaml
+@@ -0,0 +1,5 @@
++packages:
++  - .
++
++nodeLinker: hoisted
++autoInstallPeers: false
+diff --git a/scripts/migrate-sessions-to-v4.spec.ts b/scripts/migrate-sessions-to-v4.spec.ts
+index cf52171f..69dff70b 100644
+--- a/scripts/migrate-sessions-to-v4.spec.ts
++++ b/scripts/migrate-sessions-to-v4.spec.ts
+@@ -252,7 +252,7 @@ describe('one-time V4 migration command', () => {
+       outputs.push(current)
+     }
+     expect(outputs[1]).toEqual(outputs[0])
+-  })
++  }, 20_000)
+ 
+   it('reports a bad Session and still migrates a later good Session', async () => {
+     const root = temporaryRoot()

@@ -361,7 +361,7 @@ describe('docsPages locale routes', () => {
       expect(projected).toContain('layout: false')
       expect(projected).toContain('http-equiv: refresh')
       expect(projected).toContain('content: 0; url=./guide/quickstart')
-      expect(projected).not.toContain('# DeepSeekHarness')
+      expect(projected).not.toContain('# DeepSeek Harness')
     }
   })
 
@@ -450,7 +450,7 @@ describe('docsPages locale routes', () => {
     const translated = rootPages.filter(page => page.contentLocale === 'zh-CN')
     const fallbacks = rootPages.filter(page => page.contentLocale === 'en-US')
 
-    expect(translated).toHaveLength(48)
+    expect(translated).toHaveLength(47)
     expect(translated.every(page => page.source.endsWith('.zh.md'))).toBe(true)
     expect(fallbacks).toEqual([])
   })
@@ -815,7 +815,7 @@ function relativeTargets(markdown: string): string[] {
 }
 
 describe('llmsTxt', () => {
-  const site = { base: '/x/', title: 'DeepSeekHarness', description: '插件化 SDK' }
+  const site = { base: '/x/', title: 'DeepSeek Harness', description: '插件化 SDK' }
 
   it('lists every sidebar page as a base-prefixed raw-Markdown link', () => {
     const text = llmsTxt(site)
@@ -833,7 +833,7 @@ describe('llmsTxt', () => {
 
   it('carries the site identity and the raw-Markdown convention', () => {
     const text = llmsTxt(site)
-    expect(text.startsWith('# DeepSeekHarness\n')).toBe(true)
+    expect(text.startsWith('# DeepSeek Harness\n')).toBe(true)
     expect(text).toContain('> 插件化 SDK')
     expect(text).toMatch(/`\.md`/)
   })

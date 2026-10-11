@@ -1,14 +1,11 @@
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { ProductRuntimeMethod } from '@deepseek-harness/product/protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { DesktopHostFatalError, DesktopHostProcess, DesktopHostUncleanExitError, QUIT_INSPECTION_DEADLINE_MS } from '../src/host-process.ts'
+import { DesktopHostFatalError, DesktopHostProcess, DesktopHostUncleanExitError, INDEX_INJECTIONS_DEADLINE_MS, QUIT_INSPECTION_DEADLINE_MS } from '../src/host-process.ts'
 
 const roots: string[] = []
 const hosts: DesktopHostProcess[] = []
-const expertKitContent = { id: 'order-expert', version: '1.0.0', sha256: 'a'.repeat(64) }
-const skillContent = { id: 'document-insight', version: '2.0.0', sha256: 'b'.repeat(64) }
 
 const HTTP_HOST = `
 import { createServer } from 'node:http'
@@ -33,6 +30,11 @@ server.listen(0, '127.0.0.1', () => {
   process.send({ type: 'ready', url: 'http://127.0.0.1:' + server.address().port + '/?token=fixture' })
 })
 process.on('message', message => {
+  if (message.type === 'index-injections') {
+    setTimeout(() => process.send({ type: 'index-injections', requestId: message.requestId,
+      injections: [{ type: 'script', src: 'plugins/client.js?rev=' + message.requestId }] }), message.requestId === 1 ? 20 : 0)
+    return
+  }
   if (message.type === 'update-tasks') {
     process.send({ type: 'update-tasks', requestId: message.requestId, active: message.action === 'lock' })
     return
@@ -43,14 +45,8 @@ process.on('message', message => {
     process.send({ type: 'quit-inspection', requestId: message.requestId, activeTasks: false, scheduledTasks: message.requestId % 2 === 1 })
     return
   }
-  if (message.type === 'expert-kit-prepare') {
-    process.send({ type: 'expert-kit-prepare', requestId: message.requestId,
-      presetId: 'deepseek-harness-expert-kit-' + message.id })
-    return
-  }
-  if (message.type === 'skill-prepare') {
-    process.send({ type: 'skill-prepare', requestId: message.requestId,
-      presetId: 'deepseek-harness-skill-' + message.id })
+  if (message.type === "extension-control") {
+    process.send({ type: "extension-control", requestId: message.requestId, result: { namespace: message.namespace, method: message.method, payload: message.payload } })
     return
   }
   if (message.type !== 'shutdown') return
@@ -86,6 +82,33 @@ afterEach(async () => {
 })
 
 describe('desktop host process', () => {
+  it('validates extension deadlines before admitting a Host request', async () => {
+    const host = hostProcess(projectWithHost())
+    for (const timeoutMs of [0, -1, 1.5, NaN, Infinity, 1_800_001]) {
+      await expect(host.requestExtension('fixture', 'read', undefined, undefined, timeoutMs))
+        .rejects.toThrow('Invalid extension request timeout')
+    }
+  })
+
+  it('uses the extension caller deadline and cancels unanswered Host work', async () => {
+    const runtime = projectWithHost(HTTP_HOST.replace('if (message.type === "extension-control") {', `
+      if (message.type === 'extension-control-cancel') {
+        writeFileSync(join(process.argv[3], 'extension-cancelled'), String(message.requestId))
+        return
+      }
+      if (message.type === 'extension-control' && message.method === 'unanswered') return
+      if (message.type === "extension-control") {`))
+    const host = hostProcess(runtime)
+    await host.start()
+    await expect(host.requestExtension('fixture', 'read', { value: 1 }, undefined, 2_000))
+      .resolves.toEqual({ namespace: 'fixture', method: 'read', payload: { value: 1 } })
+    await expect(host.requestExtension('fixture', 'unanswered', undefined, undefined, 50))
+      .rejects.toThrow('desktop extension: preparation timed out')
+    await vi.waitFor(() => { expect(existsSync(join(runtime, 'extension-cancelled'))).toBe(true) })
+    await expect(host.requestExtension('fixture', 'read', undefined, undefined, 2_000))
+      .resolves.toMatchObject({ method: 'read' })
+  })
+
   it('correlates allowlisted product requests without exposing main-process credentials', async () => {
     const runtime = projectWithHost(`
       process.on('message', message => {
@@ -93,20 +116,20 @@ describe('desktop host process', () => {
           process.send({ type: 'shutdown-complete' }, () => process.disconnect())
           return
         }
-        if (message.type !== 'deepseek-harness-product-result') return
+        if (message.type !== 'extension-result') return
         process.send({ type: 'ready', url: 'http://127.0.0.1:3080/', injections: [message] })
       })
-      process.send({ type: 'deepseek-harness-product-invoke', requestId: 'request-1234', method: 'knowledge.search', payload: { query: 'orders' } })
+      process.send({ type: 'extension-invoke', namespace: 'fixture', requestId: 'request-1234', method: 'knowledge.search', payload: { query: 'orders' } })
     `)
-    const invoke = vi.fn((method: ProductRuntimeMethod, payload: unknown) =>
+    const invoke = vi.fn((_namespace: string, method: string, payload: unknown) =>
       Promise.resolve({ method, payload, authorization: 'kept-in-main' }))
     const host = new DesktopHostProcess(process.execPath, runtime, runtime, undefined, process.env,
       undefined, undefined, undefined, undefined, invoke)
     hosts.push(host)
     const ready = await host.start()
-    expect(invoke).toHaveBeenCalledWith('knowledge.search', { query: 'orders' }, expect.any(AbortSignal))
+    expect(invoke).toHaveBeenCalledWith('fixture', 'knowledge.search', { query: 'orders' }, expect.any(AbortSignal))
     expect(ready.injections).toEqual([{
-      type: 'deepseek-harness-product-result', requestId: 'request-1234',
+      type: 'extension-result', requestId: 'request-1234',
       result: { method: 'knowledge.search', payload: { query: 'orders' }, authorization: 'kept-in-main' },
     }])
   })
@@ -118,13 +141,13 @@ describe('desktop host process', () => {
           process.send({ type: 'shutdown-complete' }, () => process.disconnect())
           return
         }
-        if (message.type !== 'deepseek-harness-product-result') return
+        if (message.type !== 'extension-result') return
         process.send({ type: 'ready', url: 'http://127.0.0.1:3080/', injections: [message] })
       })
-      process.send({ type: 'deepseek-harness-product-invoke', requestId: 'request-5678', method: 'knowledge.search', payload: { query: 'orders' } })
-      process.send({ type: 'deepseek-harness-product-cancel', requestId: 'request-5678' })
+      process.send({ type: 'extension-invoke', namespace: 'fixture', requestId: 'request-5678', method: 'knowledge.search', payload: { query: 'orders' } })
+      process.send({ type: 'extension-cancel', requestId: 'request-5678' })
     `)
-    const invoke = vi.fn((_method, _payload, signal: AbortSignal) => new Promise((_resolve, reject) => {
+    const invoke = vi.fn((_namespace, _method, _payload, signal: AbortSignal) => new Promise((_resolve, reject) => {
       signal.addEventListener('abort', () => { reject(new Error('Bearer fixture-secret')) }, { once: true })
     }))
     const host = new DesktopHostProcess(process.execPath, runtime, runtime, undefined, process.env,
@@ -132,8 +155,9 @@ describe('desktop host process', () => {
     hosts.push(host)
     const ready = await host.start()
     expect(ready.injections).toEqual([{
-      type: 'deepseek-harness-product-result', requestId: 'request-5678',
-      error: 'deepseek-harness product operation failed: knowledge.search',
+      type: 'extension-result', requestId: 'request-5678',
+      error: 'desktop extension operation failed: knowledge.search',
+      failure: { code: 'EXTENSION_OPERATION_FAILED', message: 'Desktop extension operation failed', retryable: true, resources: [] },
     }])
     expect(JSON.stringify(ready.injections)).not.toContain('fixture-secret')
   })
@@ -145,10 +169,10 @@ describe('desktop host process', () => {
           process.send({ type: 'shutdown-complete' }, () => process.disconnect())
           return
         }
-        if (message.type !== 'deepseek-harness-product-result') return
+        if (message.type !== 'extension-result') return
         process.send({ type: 'ready', url: 'http://127.0.0.1:3080/', injections: [message] })
       })
-      process.send({ type: 'deepseek-harness-product-invoke', requestId: 'request-9012', method: 'skills.list' })
+      process.send({ type: 'extension-invoke', namespace: 'fixture', requestId: 'request-9012', method: 'skills.list' })
     `)
     const invoke = vi.fn(() => Promise.reject(Object.assign(new Error('Bearer fixture-secret'), {
       name: 'DeepSeekHarnessApiError', status: 401, code: 'EMPLOYEE_UNAUTHORIZED',
@@ -158,8 +182,9 @@ describe('desktop host process', () => {
     hosts.push(host)
     const ready = await host.start()
     expect(ready.injections).toEqual([{
-      type: 'deepseek-harness-product-result', requestId: 'request-9012',
-      error: 'deepseek-harness product operation failed: skills.list [EMPLOYEE_UNAUTHORIZED, HTTP 401]',
+      type: 'extension-result', requestId: 'request-9012',
+      error: 'desktop extension operation failed: skills.list',
+      failure: { code: 'EXTENSION_OPERATION_FAILED', message: 'Desktop extension operation failed', retryable: true, resources: [] },
     }])
     expect(JSON.stringify(ready.injections)).not.toContain('fixture-secret')
   })
@@ -172,6 +197,63 @@ describe('desktop host process', () => {
       .toEqual([false, true, false])
     await host.stop(true)
     await expect(host.updateTasks('inspect')).rejects.toThrow('Host is unavailable')
+  })
+
+  it('reads current boot injections with independent correlation and rejects a stopped Host', async () => {
+    const host = hostProcess(projectWithHost())
+    await expect(host.readIndexInjections()).rejects.toThrow('desktop boot: Host is unavailable')
+    await host.start()
+    expect(await Promise.all([host.readIndexInjections(), host.updateTasks('inspect'), host.readIndexInjections()]))
+      .toEqual([
+        [{ type: 'script', src: 'plugins/client.js?rev=1' }], false,
+        [{ type: 'script', src: 'plugins/client.js?rev=3' }],
+      ])
+    expect(await host.readIndexInjections()).toEqual([{ type: 'script', src: 'plugins/client.js?rev=4' }])
+    await host.stop(true)
+    await expect(host.readIndexInjections()).rejects.toThrow('desktop boot: Host is unavailable')
+  })
+
+  it('expires an unanswered boot injection request and ignores its late reply during a later request', async () => {
+    const runtime = projectWithHost(HTTP_HOST.replace("if (message.type === 'index-injections') {", `
+      if (message.type === 'index-injections' && message.requestId === 1) return
+      if (message.type === 'index-injections' && message.requestId === 2) {
+        process.send({ type: 'index-injections', requestId: 1, injections: [{ type: 'script', src: 'plugins/client.js?rev=expired' }] })
+      }
+      if (message.type === 'index-injections') {`))
+    const host = hostProcess(runtime)
+    await host.start()
+    const started = Date.now()
+    await expect(host.readIndexInjections()).rejects.toThrow('desktop boot: index injection request timed out')
+    expect(Date.now() - started).toBeGreaterThanOrEqual(INDEX_INJECTIONS_DEADLINE_MS - 50)
+    expect(await host.readIndexInjections()).toEqual([{ type: 'script', src: 'plugins/client.js?rev=2' }])
+  }, 15_000)
+
+  it('propagates boot injection errors without falling back to ready metadata', async () => {
+    const runtime = projectWithHost(HTTP_HOST.replace("if (message.type === 'index-injections') {", `
+      if (message.type === 'index-injections') {
+        process.send({ type: 'index-injections', requestId: message.requestId, injections: [], error: 'module graph unavailable' })
+        return
+      }
+      if (message.type === 'index-injections') {`))
+    const host = hostProcess(runtime)
+    await host.start()
+    await expect(host.readIndexInjections()).rejects.toThrow('module graph unavailable')
+  })
+
+  it.each([
+    "{ type: 'index-injections', requestId: message.requestId, injections: 'invalid' }",
+    "{ type: 'update-tasks', requestId: message.requestId, active: false }",
+  ])('rejects an invalid or mismatched boot injection response: %s', async (response) => {
+    const runtime = projectWithHost(HTTP_HOST.replace("if (message.type === 'index-injections') {", `
+      if (message.type === 'index-injections') {
+        process.send(${response})
+        return
+      }
+      if (message.type === 'index-injections') {`))
+    const host = hostProcess(runtime)
+    await host.start()
+    await expect(host.readIndexInjections()).rejects.toThrow(response.includes("'invalid'")
+      ? 'invalid IPC event' : 'Host answered with a different control response')
   })
 
   it('correlates quit inspections with task requests and fails an unanswered one at its own deadline', async () => {
@@ -187,29 +269,12 @@ describe('desktop host process', () => {
     expect(await host.inspectQuit()).toEqual({ activeTasks: false, scheduledTasks: false })
   }, 15_000)
 
-  it('correlates Expert Kit Preset preparation and validates ids before IPC', async () => {
+  it('correlates namespace control requests without interpreting business payloads', async () => {
     const host = hostProcess(projectWithHost())
-    await expect(host.prepareExpertKit(expertKitContent)).rejects.toThrow('Host is unavailable')
+    await expect(host.requestExtension('fixture', 'prepare', { id: 'content' })).rejects.toThrow('Host is unavailable')
     await host.start()
-    await expect(host.prepareExpertKit(expertKitContent))
-      .resolves.toBe('deepseek-harness-expert-kit-order-expert')
-    await expect(host.prepareExpertKit({ ...expertKitContent, id: '../invalid' }))
-      .rejects.toThrow('invalid expert kit id')
-    await expect(host.prepareExpertKit({ ...expertKitContent, version: '' }))
-      .rejects.toThrow('invalid expert kit content identity')
-    await expect(host.prepareExpertKit({ ...expertKitContent, sha256: 'invalid' }))
-      .rejects.toThrow('invalid expert kit content identity')
-  })
-
-  it('correlates Skill Preset preparation and validates ids before IPC', async () => {
-    const host = hostProcess(projectWithHost())
-    await expect(host.prepareSkill(skillContent)).rejects.toThrow('Host is unavailable')
-    await host.start()
-    await expect(host.prepareSkill(skillContent))
-      .resolves.toBe('deepseek-harness-skill-document-insight')
-    await expect(host.prepareSkill({ ...skillContent, id: '../invalid' })).rejects.toThrow('invalid skill id')
-    await expect(host.prepareSkill({ ...skillContent, sha256: 'invalid' }))
-      .rejects.toThrow('invalid skill content identity')
+    await expect(host.requestExtension('fixture', 'prepare', { id: 'content' }))
+      .resolves.toEqual({ namespace: 'fixture', method: 'prepare', payload: { id: 'content' } })
   })
 
   it.each([

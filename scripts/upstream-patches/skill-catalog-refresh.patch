@@ -1,0 +1,226 @@
+diff --git a/.agents/notes/implemented/feature/2026-10-08-product-installed-skills.i18n.yaml b/.agents/notes/implemented/feature/2026-10-08-product-installed-skills.i18n.yaml
+new file mode 100644
+index 00000000..4a991a4e
+--- /dev/null
++++ b/.agents/notes/implemented/feature/2026-10-08-product-installed-skills.i18n.yaml
+@@ -0,0 +1,22 @@
++# Bilingual-pair consistency record for 2026-10-08-product-installed-skills.md (docs/i18n/README.md): per heading
++# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
++# After editing either side, bring the other along and re-record with:
++#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-10-08-product-installed-skills.md
++/agent-note-installed-enterprise-skills:
++  en: 78b3862604f6066c
++  zh: 64b709c8404d2377
++/agent-note-installed-enterprise-skills/problem:
++  en: d50a2a15606dbe04
++  zh: 35e71a0d0212c67e
++/agent-note-installed-enterprise-skills/decision:
++  en: 37722ec85c3c19ac
++  zh: dc354b4695c09ae2
++/agent-note-installed-enterprise-skills/consequences:
++  en: cfa385a6f975c5ae
++  zh: fb10e19bc54fd629
++/agent-note-installed-enterprise-skills/alternatives-considered:
++  en: 26ea3f28fee04cd1
++  zh: ac68059a2cdff7bd
++/agent-note-installed-enterprise-skills/verification:
++  en: ca8d38d424640794
++  zh: c1501123419750f5
+diff --git a/.agents/notes/implemented/feature/2026-10-08-product-installed-skills.md b/.agents/notes/implemented/feature/2026-10-08-product-installed-skills.md
+new file mode 100644
+index 00000000..21901355
+--- /dev/null
++++ b/.agents/notes/implemented/feature/2026-10-08-product-installed-skills.md
+@@ -0,0 +1,31 @@
++# Agent Note: Installed enterprise skills
++
++Status: implemented
++
++English | [中文](2026-10-08-product-installed-skills.zh.md)
++
++## Problem
++
++Selecting a marketplace Skill derived a task Preset even when it only supplied instructions. Users had to select every Skill before the model could discover it, and installing content changed task configuration.
++
++## Decision
++
++The product runtime owns an employee-scoped installation registry and contributes a per-agent official Skill Provider. Installation changes content availability without selecting a Preset or changing a draft. Skills have no enable or disable state. Skills and Expert Kits supply connector dependencies; available installed Skills mount their declared authorized connectors in the Agent scope. Knowledge remains task-selected to constrain retrieval scope.
++
++The first model-step boundary pins the directory and content identities for the Session. Installing a new version cannot change instructions midway through a task. Task dependencies filter discovery, and listing and loading recheck service permissions. Installed instructions use the official skill tool and slash invocation rather than a second execution loop.
++
++The official client exposes generic `uiSkills.refresh(sessionId?)` so installing-provider clients can invalidate cached discovery. Product methods remain in product packages. The complete client patch is registered for upstream upgrades. Per-task manual Skill selection is removed because it duplicates installation and prevents ordinary model discovery.
++
++## Consequences
++
++Installation no longer adjusts a task's mode, capabilities, or draft. Dependencies still require explicit task selection. Started tasks retain their pinned content, and installing or upgrading a Skill affects tasks that have not started. Installed content and Session snapshots remain on disk without automatic garbage collection.
++
++## Alternatives considered
++
++Keeping per-task Skill selection would preserve unnecessary Preset derivation and prevent ordinary discovery. Exposing every marketplace Skill without installation would download instructions implicitly and make available content depend on catalog refresh. A global mutable directory would let upgrades change running tasks. The scoped Provider and pinned directory retain the official execution path and stable task inputs.
++
++## Verification
++
++Real Loader tests cover discovery, official skill tool output, slash invocation, pinned versions, restart restoration, permissions, dependency filtering, employee isolation, and provider disposal. Client tests assert that installing a Skill does not create or select a Session or modify a draft. Built browser and Electron scenarios cover installation state, four directories, responsive layout, unchanged drafts, and the official profile without product extensions.
++
++The adapter fixture requests a Skill deterministically; it does not assess a live model's decision to choose a Skill from natural language.
+diff --git a/.agents/notes/implemented/feature/2026-10-08-product-installed-skills.zh.md b/.agents/notes/implemented/feature/2026-10-08-product-installed-skills.zh.md
+new file mode 100644
+index 00000000..b898afdf
+--- /dev/null
++++ b/.agents/notes/implemented/feature/2026-10-08-product-installed-skills.zh.md
+@@ -0,0 +1,31 @@
++# Agent Note：已安装的企业技能
++
++Status: implemented
++
++[English](2026-10-08-product-installed-skills.md) | 中文
++
++## 问题
++
++选择市场技能会派生任务 Preset，即便技能只提供说明。用户必须逐个选择技能，模型才能发现它们，安装内容也会改变任务配置。
++
++## 决策
++
++产品运行时管理按员工隔离的安装注册表，并为每个 Agent 提供官方技能 Provider。安装改变内容可见性，不选择 Preset 或改变草稿。技能没有启用、停用状态。技能和专家套件提供连接器依赖，可用的已安装技能在 Agent 作用域内挂载其声明的已授权连接器。知识库继续按任务选择，以限制检索范围。
++
++首个模型步骤边界固定 Session 的目录和内容标识。安装新版本不会在任务中途改变说明。任务依赖过滤发现，列出和加载时重新检查服务端权限。已安装说明使用官方技能工具和斜杠调用，不引入第二套执行循环。
++
++官方客户端提供通用的 `uiSkills.refresh(sessionId?)`，让安装 Provider 的客户端使发现缓存失效。产品方法留在产品包。完整客户端补丁已登记用于上游升级。删除按任务手动选择技能，因为它与安装重复且阻止普通模型发现。
++
++## 影响
++
++安装不再调整任务模式、能力或草稿。依赖仍需按任务明确选择。已开始任务保留固定内容，安装或升级技能影响尚未开始的任务。安装内容和 Session 快照保留在磁盘，暂不自动清理。
++
++## 考虑过的替代方案
++
++保留按任务选择技能会继续产生不必要的 Preset 派生，并阻止普通发现。无需安装就暴露全部市场技能会隐式下载说明，使可用内容取决于目录刷新。全局可变目录会让升级改变运行中任务。限定作用域的 Provider 与固定目录保留官方执行路径和稳定的任务输入。
++
++## 验证
++
++真实 Loader 测试覆盖发现、官方技能工具输出、斜杠调用、固定版本、重启恢复、权限、依赖过滤、员工隔离和 Provider 释放。客户端测试确认安装技能不创建或选择 Session，不修改草稿。构建后的浏览器及 Electron 场景覆盖安装状态、四类目录、响应式布局、草稿保留，以及不含产品扩展的官方 profile。
++
++适配器测试确定性地请求技能，不评估真实模型根据自然语言选择技能的决策质量。
+diff --git a/packages/client/ui-skill/README.i18n.yaml b/packages/client/ui-skill/README.i18n.yaml
+index 3f5d54b7..eeaf5205 100644
+--- a/packages/client/ui-skill/README.i18n.yaml
++++ b/packages/client/ui-skill/README.i18n.yaml
+@@ -18,8 +18,8 @@
+   en: 2f17d0875048ef3c
+   zh: 6878ee4c75f2b2cf
+ /deepseek-ai-dsh-client-ui-skill/use-this-package/what-the-source-offers:
+-  en: 2ba1a6158c85b46e
+-  zh: 9ab58ceef8743849
++  en: 959a8a3a1ba592ad
++  zh: 5ed60693a539e7f1
+ /deepseek-ai-dsh-client-ui-skill/use-this-package/the-skill-tool-row:
+   en: 975c6cd80af3684a
+   zh: 395c10e51c6a15f6
+diff --git a/packages/client/ui-skill/README.md b/packages/client/ui-skill/README.md
+index 08d2e113..06964312 100644
+--- a/packages/client/ui-skill/README.md
++++ b/packages/client/ui-skill/README.md
+@@ -29,6 +29,8 @@ Type `/` in the composer and pick a skill from the suggestions, or type `/name`
+ 
+ ### What the source offers
+ 
++Clients that change installed skill providers call the public `ctx.uiSkills.refresh(sessionId?)` service to invalidate slash-menu discovery. Omitting the Session ID refreshes every retained catalog. Refresh cancels pending catalog reads and previews, preserves drafts and Sessions, and fetches the current Host catalog on the next discovery. The service is released with this plugin.
++
+ Ordinary-session candidates come from the `skills/list` Remote; the host serves every user-invocable skill, and a `modelInvocable: false` entry (a `disable-model-invocation` skill, whose only entry point is this path) wears the user-only marker as a description prefix in the active language. Results rank through the `/` menu's shared name ranker, `rankByName` from ui-primitives: the query matches a case-insensitive ordered subsequence of the skill name, prefix hits rank first, and ties keep the host order ([ranking decision](../../../.agents/notes/archived/feature/2026-08-04-web-slash-command-fuzzy-discovery.md)). A failed `skills/list` call is logged and folded into a silent menu-group drop — the menu shows only pending/ready states.
+ 
+ ### The skill tool row
+diff --git a/packages/client/ui-skill/README.zh.md b/packages/client/ui-skill/README.zh.md
+index e07a5932..09787962 100644
+--- a/packages/client/ui-skill/README.zh.md
++++ b/packages/client/ui-skill/README.zh.md
+@@ -29,6 +29,8 @@ kind: "package-reference"
+ 
+ ### source 提供什么
+ 
++改变已安装技能 Provider 的客户端通过公开服务 `ctx.uiSkills.refresh(sessionId?)` 使斜杠菜单目录失效。省略 Session ID 会刷新所有保留的目录。刷新取消待处理的目录读取和预览，保留草稿及 Session；下次发现会获取当前 Host 目录。服务随此插件释放。
++
+ 普通会话的候选来自 `skills/list` Remote；宿主提供每一个用户可调用的 skill，`modelInvocable: false` 的条目（即 `disable-model-invocation` skill，此路径是其唯一入口）会以当前语言把仅限用户标记作为描述前缀带上。结果经 `/` 菜单共享的名字排序器（ui-primitives 的 `rankByName`）排名：查询作为不区分大小写的有序子序列匹配 skill 名，前缀命中排最前，同分保持宿主顺序（[排名决策](../../../.agents/notes/archived/feature/2026-08-04-web-slash-command-fuzzy-discovery.md)）。`skills/list` 调用失败时会被记录并静默丢弃该菜单组——菜单只显示 pending／ready 状态。
+ 
+ ### skill 工具行
+diff --git a/packages/client/ui-skill/src/client/index.ts b/packages/client/ui-skill/src/client/index.ts
+index 2b6cd12e..8103ca5c 100644
+--- a/packages/client/ui-skill/src/client/index.ts
++++ b/packages/client/ui-skill/src/client/index.ts
+@@ -33,7 +33,7 @@
+  */
+ // Type-only: the carrier types, the forwarded Host-event face and the ctx.remote merge.
+ import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
+-import type { Context as ClientContext } from '@deepseek-ai/cordis'
++import { Service, type Context as ClientContext } from '@deepseek-ai/cordis'
+ import type { SkillEntry } from '@deepseek-ai/dsh-api-remotes/client'
+ import type {} from '@deepseek-ai/dsh-api-session-controller/client'
+ import type { SessionId } from '@deepseek-ai/dsh-session/types'
+@@ -54,6 +54,24 @@ declare module '@deepseek-ai/dsh-api-session-controller/client' {
+   }
+ }
+ 
++declare module '@deepseek-ai/cordis' {
++  interface Context {
++    uiSkills: SkillCatalogClient
++  }
++}
++
++/** Public catalog refresh for clients that install or remove skill providers. */
++export class SkillCatalogClient extends Service {
++  constructor(ctx: ClientContext, private readonly invalidate: (sessionId?: SessionId) => void) {
++    super(ctx, 'uiSkills')
++  }
++  /** Drop cached discovery; the next slash menu fetches the current provider catalog.
++   * @param sessionId Session to refresh, or every retained catalog when omitted.
++   * @returns Nothing; existing drafts and Sessions remain unchanged.
++   */
++  refresh(sessionId?: SessionId): void { this.invalidate(sessionId) }
++}
++
+ declare module '@deepseek-ai/dsh-client-ui-slots' {
+   interface LocaleNamespaceMap {
+     /** The dedicated skill tool row's copy. */
+@@ -151,6 +169,7 @@ export function apply(ctx: ClientContext): void {
+   const clearAll = (): void => {
+     for (const key of [...fetches.keys()]) invalidate(key)
+   }
++  new SkillCatalogClient(ctx, (sessionId) => { if (sessionId === undefined) clearAll(); else invalidate(sessionId) })
+ 
+   // The bound translate resolves against the registered dictionaries with the
+   // locale service's own fallback ladder; candidate-time reads stay plain text.
+diff --git a/packages/client/ui-skill/tests/browser-plugin.client.spec.ts b/packages/client/ui-skill/tests/browser-plugin.client.spec.ts
+index b47abfe9..918f8f81 100644
+--- a/packages/client/ui-skill/tests/browser-plugin.client.spec.ts
++++ b/packages/client/ui-skill/tests/browser-plugin.client.spec.ts
+@@ -354,6 +354,20 @@ describe('catalog cache', () => {
+     expect(payloads[2]).toEqual({ sessionId: 's1' })
+   })
+ 
++  it('refreshes installed-provider catalogs through the public service without changing Sessions', async () => {
++    let rows = CATALOG
++    const { ctx, source, fiber } = await bench(payload => listOk(rows)(payload))
++    expect(await source.candidates(proj('s1'), req(''))).toHaveLength(3)
++    rows = [...CATALOG, { name: 'newly-installed', description: 'New skill', modelInvocable: true }]
++    expect(await source.candidates(proj('s1'), req(''))).toHaveLength(3)
++    ctx.uiSkills.refresh(sid('s1'))
++    expect(await source.candidates(proj('s1'), req(''))).toHaveLength(4)
++    ctx.uiSkills.refresh()
++    expect(await source.candidates(proj('s2'), req(''))).toHaveLength(4)
++    await fiber.dispose()
++    expect(ctx.get('uiSkills')).toBeUndefined()
++  })
++
+   it('connection/reset clears every cached session', async () => {
+     const { list, payloads } = countingList()
+     const { ctx, source } = await bench(list)
+diff --git a/scripts/gen-cordis-catalog.ts b/scripts/gen-cordis-catalog.ts
+index 2c012bde..ab5e83a9 100644
+--- a/scripts/gen-cordis-catalog.ts
++++ b/scripts/gen-cordis-catalog.ts
+@@ -180,6 +180,7 @@ export const SERVICE_WALK_EXEMPTIONS: Record<string, string> = {
+   fileUpload: 'client-side browser upload service — packages/client/file-upload/README.md owns the API',
+   uiRenderer: 'client-side interface-typed browser service — packages/client/ui-renderer/README.md owns the API',
+   uiSession: 'client-side Session source adapter — packages/client/ui-session/README.md owns the API',
++  uiSkills: 'client-side skill catalog refresh service — packages/client/ui-skill/README.md owns the API',
+   uiConversation: 'client-side Conversation registries and assembler — packages/client/ui-conversation/README.md owns the API',
+   uiWorkspace: 'client-side Workspace navigation adapter — packages/client/ui-workspace/README.md owns the API',
+   settingsSchema: 'client-side schema introspection service — packages/client/ui-settings/README.md owns the API',

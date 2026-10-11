@@ -108,33 +108,7 @@ vi.mock('electron', () => ({
 vi.mock('../src/tray.ts', () => ({ DesktopTray: class { relabel() {} dispose() {} } }))
 
 vi.mock('../src/paths.ts', () => ({ resolveDesktopPaths: () => ({ profile: '/profile' }) }))
-vi.mock('../src/deepseek-harness-product-config.ts', () => ({
-  resolveDeepSeekHarnessProductServerUrl: () => 'http://127.0.0.1:30081',
-}))
-vi.mock('../src/deepseek-harness-native-process.ts', () => ({
-  DeepSeekHarnessNativeProcess: class {
-    start = vi.fn(async () => {})
-    stop = vi.fn(async () => {})
-    invoke = vi.fn(async () => ({}))
-  },
-}))
-vi.mock('@deepseek-harness/product/bridge', () => ({
-  DeepSeekHarnessProductBridge: class {
-    getSession() { return { authenticated: true } }
-    loadRuntimeBootstrap() {
-      return Promise.resolve({
-        modelApiKey: 'employee-virtual-key',
-        endpoints: { litellm: 'https://models.example.test/v1' },
-        models: ['deepseek-v4-pro'],
-      })
-    }
-    invoke() { return Promise.resolve({}) }
-    subscribe() { return () => undefined }
-  },
-}))
-vi.mock('@deepseek-harness/product/dingtalk-auth', () => ({
-  ensureDingTalkSession: vi.fn(async () => {}),
-}))
+vi.mock('../src/settings.ts', () => ({ readDesktopSettings: () => ({ updates: { allowTestAuthPopupWindow: false } }) }))
 vi.mock('../src/login-shell-environment.ts', async importOriginal => ({
   ...await importOriginal<typeof import('../src/login-shell-environment.ts')>(),
   readDesktopLoginShellEnvironment: async (base: NodeJS.ProcessEnv) => ({ environment: base, failures: [] }),

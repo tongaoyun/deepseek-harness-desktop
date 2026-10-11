@@ -11,6 +11,7 @@ import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { AgentPresetRoster } from '@deepseek-ai/dsh-agent-preset-registry/types'
+import { isBuiltInPreset } from './locales.ts'
 
 /** The agent-preset settings namespace on the host wire. */
 export const AGENT_PRESET_SETTINGS_NS = 'agent-preset-registry'
@@ -23,13 +24,15 @@ export const AGENT_PRESET_SETTINGS_NS = 'agent-preset-registry'
  * the host resolves at session creation.
  * @param ctx - the browser plugin context carrying the Remote namespaces.
  * @param id - the preset to make default.
+ * @param expectedRevision - optional fence for an automatic correction based on a previous settings read.
  * @returns the failure message, or undefined once the write landed.
  */
 export async function writeDefaultPreset(
   ctx: ClientContext,
   id: string,
+  expectedRevision?: number,
 ): Promise<string | undefined> {
-  const response = await ctx.remote.settings.update(AGENT_PRESET_SETTINGS_NS, { selectedDefault: id }, undefined)
+  const response = await ctx.remote.settings.update(AGENT_PRESET_SETTINGS_NS, { selectedDefault: id }, expectedRevision)
   return response.ok ? undefined : response.error.message
 }
 
@@ -43,8 +46,42 @@ export interface AgentPresetOption {
   description?: string
 }
 
+/** Whether a shipped preset requires the Coding Tools preference.
+ * @param preset Roster entry; named custom overrides keep their own behavior.
+ * @returns True only for the built-in PTC and Minimal presets.
+ */
+export function requiresCodingTools(preset: AgentPresetOption | undefined): boolean {
+  return preset !== undefined && isBuiltInPreset(preset) && (preset.id === 'ptc' || preset.id === 'minimal')
+}
+
 /** One roster entry exactly as the host reports it. */
 export type RosterPreset = AgentPresetRoster['presets'][number]
+
+/** Resolve a derived composition to the selectable preset shown by mode controls.
+ * @param id Actual composition identity recorded by a Session.
+ * @param presets Complete roster, including hidden compositions.
+ * @returns The valid selectable base identity, or the unchanged identity when unavailable or unassociated.
+ */
+export function selectionPresetId(
+  id: string,
+  presets: readonly RosterPreset[],
+): string {
+  if (isUnavailablePreset(id, presets)) return id
+  return presets.find(preset => preset.id === id)?.selectionBase ?? id
+}
+
+/** Identify a composition whose metadata or selectable origin cannot be used.
+ * @param id Actual Session composition identity.
+ * @param presets Complete roster, including blocked compositions.
+ * @returns Whether mode controls must show the generic unavailable label.
+ */
+export function isUnavailablePreset(id: string, presets: readonly RosterPreset[]): boolean {
+  const preset = presets.find(row => row.id === id)
+  if (preset === undefined || preset.broken !== undefined) return true
+  if (preset.selectionBase === undefined) return !preset.selectable && preset.name === undefined
+  const base = presets.find(row => row.id === preset.selectionBase)
+  return base === undefined || base.broken !== undefined || !base.selectable || base.selectionBase !== undefined
+}
 
 /** The roster, or the message to show in its place. */
 export type RosterRead = { ok: true; value: AgentPresetRoster } | { ok: false; error: string }
@@ -103,6 +140,7 @@ export async function beginRosterRead<S extends { status: string; error: string 
  * undefined" different shapes — so the spread dance belongs in one place rather than
  * once per store.
  * @param presets - the roster the host answered with.
+ * @param selectableOnly - whether hidden definitions are excluded from the picker.
  * @returns one option per selectable preset, in roster order.
  */
 export function presetOptions(
@@ -122,12 +160,15 @@ export interface AgentPresetSettingsState {
   status: 'idle' | 'loading' | 'ready' | 'unavailable' | 'error'
   error: string | null
   options: readonly AgentPresetOption[]
+  /** Complete roster used to associate historical compositions with selectable modes. */
+  presets: readonly RosterPreset[]
 }
 
 const INITIAL: AgentPresetSettingsState = {
   status: 'idle',
   error: null,
   options: [],
+  presets: [],
 }
 
 /** Reads the roster for the surfaces that only display it. */
@@ -157,13 +198,14 @@ export class AgentPresetSettingsController {
     if (roster === undefined) return
     const { presets } = roster
     if (presets.length === 0) {
-      this.set({ status: 'unavailable', options: [] })
+      this.set({ status: 'unavailable', options: [], presets: [] })
       return
     }
     this.set({
       status: 'ready',
       error: null,
       options: presetOptions(presets),
+      presets,
     })
   }
 

@@ -10,6 +10,11 @@ export function TextBody({ content, useTabInfo }: DocumentPreviewProps): ReactNo
   const { tab } = useTabInfo()
   const params = tab.navigation.params
   const target = params !== undefined && 'line' in params ? params.line : undefined
+  return <TextDocumentView content={content} {...target === undefined ? {} : { target }} />
+}
+
+/** @param props - source pages and optional line target. @returns the shared plain-text viewer. */
+export function TextDocumentView({ content, target }: Pick<DocumentPreviewProps, 'content'> & { readonly target?: number }): ReactNode {
   if (content.kind !== 'text') return null
   return (
     <div className={css.textDocument} data-textpreview-plain>

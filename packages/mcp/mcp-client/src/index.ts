@@ -33,7 +33,7 @@ export const name = 'mcp-client'
 /** Services required by this plugin. */
 export const inject = ['tools']
 
-/** Default timeout for individual MCP tool calls and resource requests (ms). */
+/** Default timeout for MCP connection, discovery, tool calls and resource requests (ms). */
 const DEFAULT_TOOL_CALL_TIMEOUT_MS = 60_000
 
 /** Valid `serverName`, kept below the public tool-name budget. */
@@ -66,7 +66,7 @@ export interface StdioConfig {
   env: Record<string, string>
   /** Working directory for the child process. */
   cwd: string
-  /** Timeout per tool call or resource request in milliseconds. */
+  /** Timeout per connection, tool discovery, tool call or resource request in milliseconds. */
   toolCallTimeoutMs: number
   /** Fail plugin activation when the initial connection or tool synchronization fails. */
   failOnStartupError: boolean
@@ -90,7 +90,7 @@ export interface StreamableHttpConfig {
   url: string
   /** Additional headers attached to MCP requests. */
   headers: Record<string, string>
-  /** Timeout per tool call or resource request in milliseconds. */
+  /** Timeout per connection, tool discovery, tool call or resource request in milliseconds. */
   toolCallTimeoutMs: number
   /** Fail plugin activation when the initial connection or tool synchronization fails. */
   failOnStartupError: boolean

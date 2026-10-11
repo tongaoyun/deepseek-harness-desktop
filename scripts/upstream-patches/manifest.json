@@ -1,0 +1,1302 @@
+{
+  "baseline": "d743267388641bc76f17c45ce8b4c231aed1d32c",
+  "patches": [
+    {
+      "id": "product-package-classification",
+      "purpose": "Keep the generic product-use gate aware of independent application assemblies while preserving the official profile boundary. Assembly runtime and source entries are checked separately, product roles are explicit, accidental default-profile mounts fail, and malformed or unknown assembly packages are rejected.",
+      "tests": [
+        "scripts/verify-product-use.spec.ts"
+      ],
+      "files": [
+        {
+          "path": "scripts/product-package-policy.ts",
+          "before": "607d8f9ac14b0345fb97b6b2cec45eda38b2bc4c6b61d1740d12950dd69e5b7c",
+          "after": "cce55d0d9fb6d2709255cba4ec02403bf788ea3424195dd10abd7926814c64a1"
+        },
+        {
+          "path": "scripts/verify-product-use.spec.ts",
+          "before": "63ea0d19863f54fc85adb5a4ee3bc70c557c79eca7613b4123b9f3dbc7e30865",
+          "after": "ebee999a8304400639d9d90dd0861913dd6383cc39199e72eb4e424c7911bfba"
+        },
+        {
+          "path": "scripts/verify-product-use.ts",
+          "before": "2c86e81f400f932667f28c83d3f87c40b33df2ca1528892f458871140231df5d",
+          "after": "388742a942891430aa66eb9c6ac880d38ce1913addc8c275f6f3956f69fae96c"
+        }
+      ],
+      "diff": "product-package-classification.patch"
+    },
+    {
+      "id": "desktop-extension",
+      "purpose": "Generic trusted desktop lifecycle hooks, environment/profile overlays, namespaced bidirectional IPC, validated caller deadlines, sender checks, cancellation, credential-free structured failures, and teardown. Every renderer boot reads current Host index injections through correlated IPC with a bounded deadline and rejects Host replacement rather than reusing stale module revisions. No product protocol is embedded in Electron or Host.",
+      "tests": [
+        "apps/desktop/tests/main-startup.spec.ts",
+        "apps/desktop/tests/host-process.spec.ts",
+        "apps/desktop/tests/extension-transport.spec.ts",
+        "packages/deepseek-harness-product/runtime/tests/runtime-loader.spec.ts",
+        "apps/web/tests/deepseek-harness-catalog.e2e.ts"
+      ],
+      "files": [
+        {
+          "path": "apps/desktop-host/src/index.ts",
+          "before": "1f61890c63da8898cef678479450d7647163530c416751d161dde6b397c654d3",
+          "after": "4d2b4ada190f1027b8fb862f10ed507721ff62ff71b44f52bdad485ad0e9fed1"
+        },
+        {
+          "path": "apps/desktop/src/extension-errors.ts",
+          "before": null,
+          "after": "d6ca8913a2d208873a1fdcca055a3b68fde51b678b07878bd9cfac0b7cfd2337"
+        },
+        {
+          "path": "apps/desktop/src/extension-transport.ts",
+          "before": null,
+          "after": "6bbb0d842d97c89692c7887115aa922fb8c11ce10ba546f02f7adf6ebe7a2d46"
+        },
+        {
+          "path": "apps/desktop/src/extensions.ts",
+          "before": null,
+          "after": "5c60bc2f56d89d54ac608bcde5cfb8c69a0c00bd716a8e4abbc74b4c10f6c222"
+        },
+        {
+          "path": "apps/desktop/src/host-process.ts",
+          "before": "6b9d3e558f526b7832020fb43d6682a07a68bf2d5657f26951f50a4f3eabfa28",
+          "after": "15c6b8609ef5bb61ef4f4be6646d9d0f4c96fd7457b09944cb3a7a0ba29fa1a5"
+        },
+        {
+          "path": "apps/desktop/src/ipc.ts",
+          "before": "b7ee202112d7485c524741ffcfe257c5c4f6dca18281aa5ac01c4510b69c6a08",
+          "after": "e88532994252f42b944794a8af1edf08c5dc9251b81b26edd695bd132f95b094"
+        },
+        {
+          "path": "apps/desktop/src/main.ts",
+          "before": "19aae691feeb41e459f2de0c1000f02d6bea02a4b9f5d3c59f3b02b7a628edac",
+          "after": "1f6fc4c886c6a5a7935e3efdb6e8ff0ed6bdea9ae2db4c4dd0756b121f8872d3"
+        },
+        {
+          "path": "apps/desktop/src/preload-app.ts",
+          "before": "cff269a4f049d276a44974c3c40008ceb9d6a0b35105a54d6605f7dcf59a64eb",
+          "after": "aa7c67c9d1848d3871bdea8b8080d977359540f6f3bf5ea5fb580d92537c4c0b"
+        },
+        {
+          "path": "apps/desktop/tests/extension-transport.spec.ts",
+          "before": null,
+          "after": "b826fbd75f0f9ded71ef4de7cbec98724da9d4ab188ebf71331e6282a2bf9e81"
+        },
+        {
+          "path": "apps/desktop/tests/host-process.spec.ts",
+          "before": "b539b90d064ba2b52f2a5a2faf3a83d08911cc69f8644bc4783f17dbc98fcb86",
+          "after": "4300f54daef48de699d92c60e0dadc5fe95baa43ba0325244b2b4279fdaa2e38"
+        },
+        {
+          "path": "apps/desktop/tests/main-startup.spec.ts",
+          "before": "ef37e6257004ae386093afa73e63d16f10ead3421ba9d9982a6286437182fd3f",
+          "after": "5d50ae3769fac7a75c2a9c5a2ab75fa245847945ea7043b5f86d227a995f9d81"
+        },
+        {
+          "path": "apps/desktop/tests/welcome-startup.spec.ts",
+          "before": "cd3bf84a6aa420bd903bd1c1f2518a7eaad97c9a9021d8dcf50320cf42b22e3c",
+          "after": "23f5b2e5da1a515add2fc85b84b3c307072cb814f134eba584921af40b6c044c"
+        }
+      ],
+      "diff": "desktop-extension.patch"
+    },
+    {
+      "id": "desktop-assembly",
+      "purpose": "Generic desktop assembly manifests select extra runtime roots, packaging resources, icons, and build steps. Development descriptors persist trusted extension settings across macOS launchers.",
+      "tests": [
+        "apps/desktop/tests/desktop-assembly.spec.ts",
+        "apps/desktop/tests/development-app.spec.ts",
+        "apps/desktop/tests/package-target-stages.spec.ts",
+        "apps/desktop/tests/prepare-package-set.spec.ts"
+      ],
+      "files": [
+        {
+          "path": "apps/desktop/electron-builder.config.d.mts",
+          "before": "4fc5be7daed5c7000f65b6a9b5df94f2da96e6edb4946cda3351762ec2c46783",
+          "after": "10d34a4328fb026f9d361ef023ddb0c586efa9f7caca7607d6062008c96e4584"
+        },
+        {
+          "path": "apps/desktop/package.json",
+          "before": "ae8547bde6dd5c42aebb857c6c583dd3897808754017eb6a9228a3817112b377",
+          "after": "72dfb6e144bd09ef6f7c1eac86c22d05644d49c96d0a3b2462c0bbf33d6783d4"
+        },
+        {
+          "path": "apps/desktop/scripts/desktop-assembly.d.mts",
+          "before": null,
+          "after": "39b3011ca355924467599279a8fa8b27abca36246e688f9920edaecd286224a3"
+        },
+        {
+          "path": "apps/desktop/scripts/desktop-assembly.mjs",
+          "before": null,
+          "after": "8b6a3219f51b2d88bc8c19d23d956d1a51bc3c355143d1235c90921d38cc1016"
+        },
+        {
+          "path": "apps/desktop/scripts/dev.ts",
+          "before": "a48bc690d066d30ad68057e47b1af64b167694d34d0c8e1c735ea68a85a7095c",
+          "after": "0e0d2085dd35b34621259c67d45224c1f0be2aee3f672af62aac1ff2431244ab"
+        },
+        {
+          "path": "apps/desktop/scripts/development-app.ts",
+          "before": "9c2c8fad9979baf099d14d2fa43476f0845ad8202c7fbbdffc50eecf0403b1ef",
+          "after": "285759326871d2c499f76330d3cfee6e3c2de08eea53b2f8cc370ce79b96703f"
+        },
+        {
+          "path": "apps/desktop/scripts/electron-builder-config.mjs",
+          "before": "3f3b036aef8cff16b130b01c3512a2832473276b7cf9e79e59e648eac4e8c845",
+          "after": "2ef45e6ea4957f1916027f683cc738f8fa305d64450809c60b15d9584988fb06"
+        },
+        {
+          "path": "apps/desktop/scripts/package-target.ts",
+          "before": "86b3b275809f9d0c9b6e124e3ca9d12080ed9af24cc946ef506f717907aa5783",
+          "after": "e50d2aa7963db371a1bfc8b40d5bb542f7d4fa0cdfda5fedbffc9e2f40bce5d3"
+        },
+        {
+          "path": "apps/desktop/scripts/prepare-package-set.ts",
+          "before": "e242dec79dcb17180d87e22f8137b2b8452fd4a51a32922e65fa1c3f199c5d8e",
+          "after": "239fc22f08d3a1f3bd8b3ee197af6de1088d71f43edb901fdec8e21cc5dc3746"
+        },
+        {
+          "path": "apps/desktop/tests/desktop-assembly.spec.ts",
+          "before": null,
+          "after": "5732fd5b442cda4c8ddd1977e5be43a1235e39507d00803a2dfab6b75c982e39"
+        },
+        {
+          "path": "apps/desktop/tests/development-app.spec.ts",
+          "before": "ab33bf93b0f6d1d64ac5cc0a2feb9c7c3eaf683a9efc2b3f35636cf04be6e62f",
+          "after": "c8561692a4e212450c7086a7c445e27eef3edfad21da80e6eeb40da4b6eefb83"
+        },
+        {
+          "path": "apps/desktop/tests/package-target-stages.spec.ts",
+          "before": "d5111691a8b0799e45d5c38a12231959846c324aa8981e76bd5385973139e080",
+          "after": "d9c6ed9432cee64e25531feb00f7ad44392b521b6caefa584d0ede2be7a2f267"
+        },
+        {
+          "path": "apps/desktop/tests/prepare-package-set.spec.ts",
+          "before": "0ad0552f5d64693e37a2c092627e7b84a9d98647303d71f4fb65e5e198159ea4",
+          "after": "e0c440f6e2cf4714998b6784d7b8f56db205c64b86f6ddb928f57a477f8f9339"
+        }
+      ],
+      "diff": "desktop-assembly.patch"
+    },
+    {
+      "id": "preset-derivation",
+      "purpose": "Typed detached Preset derivation retains Loader resolution context. A scoped asynchronous selection resolver lets extensions preserve composed capabilities, with turn-boundary checks before and after resolution. Selectable/defaultable flags hide execution snapshots from pickers and defaults. Generic selectionBase metadata associates hidden compositions with their selectable origin; the original mode controller and read-only label use it without changing Session execution identities. Unknown or unavailable compositions never display a default mode.",
+      "tests": [
+        "packages/preset/agent-preset-registry/tests/derive.spec.ts",
+        "packages/preset/agent-preset-registry/tests/registry.spec.ts",
+        "packages/client/ui-agent-preset/tests/section-store.client.spec.ts",
+        "packages/client/ui-agent-preset/tests/settings-store.client.spec.ts",
+        "packages/client/ui-agent-preset/tests/apply.client.spec.ts",
+        "packages/client/ui-agent-preset/tests/components.client.spec.tsx",
+        "packages/client/ui-agent-preset/tests/derived-selection.client.spec.ts",
+        "packages/deepseek-harness-product/runtime/tests/runtime-loader.spec.ts",
+        "apps/web/tests/deepseek-harness-catalog.e2e.ts"
+      ],
+      "files": [
+        {
+          "path": "docs/subsystems/core.i18n.yaml",
+          "before": "739cada2af6365e668618941ce464b94c5d9856c3a13e8827ccd0156ae7633f0",
+          "after": "33cb43b38e325e022fdb21a735996dc330ed89c0e125301a067219ee6d7a3c78"
+        },
+        {
+          "path": "packages/client/ui-agent-preset/README.i18n.yaml",
+          "before": "d36282eaad361c8f5ec0f8e819f85732f4d1156b2839f1925c38e6360a74b3ae",
+          "after": "a05b663a8aee9b45aad029b9bae35feece7d81fb78e9467d1c4a5dec3ae1b7b8"
+        },
+        {
+          "path": "packages/client/ui-agent-preset/README.md",
+          "before": "1cfc8374b28cd7d7527be804d3bf43ef3347ff5958d9608de01085dee56e3355",
+          "after": "6fafb3dca7a74088b5745c394329764c1a905cdefab0c0ceb751bcc21905b392"
+        },
+        {
+          "path": "packages/client/ui-agent-preset/README.zh.md",
+          "before": "f617706fe14c56150b50b7a29b1b796e55794d90f8c60e47fb49c5ccbdb71fbb",
+          "after": "57384e400994c1599bcdf7c28528a65f91aed71a81c24f64f33d7fdc84f9969d"
+        },
+        {
+          "path": "packages/client/ui-agent-preset/src/client/AgentPresetLabel.tsx",
+          "before": "207ae1ba18f542b2e09ec9cb94061b6a2f3f20f40d02bd275f34f1f8a5cb3b93",
+          "after": "e0ad8dca9093753c0a01022127c0634a1498915a15f70f6a9d96d2ae3bc69146"
+        },
+        {
+          "path": "packages/client/ui-agent-preset/src/client/AgentPresetSeat.tsx",
+          "before": "e0f265cc34b7349e733945ad6e71edd11193596d8ae1743d3e597839632ab741",
+          "after": "42029d18463f6642cd96a941b014c2393325889f53919db965b75f6f48876c54"
+        },
+        {
+          "path": "packages/client/ui-agent-preset/src/client/index.ts",
+          "before": "65de5d53e03e537076498a0143a62a45bf988813f063ae4d2d4715d55aea0c6b",
+          "after": "4f616f028e7eeee17e6041b16322d0b334ff785e29bdeb8777d057565f52d3c7"
+        },
+        {
+          "path": "packages/client/ui-agent-preset/src/client/locales.ts",
+          "before": "b16ea12033151d7a7a0e05ae2ac63eadb78114ed0441960e6412fd686fb0855c",
+          "after": "c7db6ba77047b6f07ee11200f3210b735a7bd0b9503ed037053216bd9353905c"
+        },
+        {
+          "path": "packages/client/ui-agent-preset/src/client/seat-store.ts",
+          "before": "b4cb1c679fa5afddf0548787e6ee36edfdc85726cb9f625b84d4918a3b2c5c35",
+          "after": "e34f8b5d0908637c47d20e1139b7123db3eb0c4a7a4f81b9d934881e96a921ed"
+        },
+        {
+          "path": "packages/client/ui-agent-preset/src/client/section-store.ts",
+          "before": "5996aad0109c21b45aa36a99019c7e4bd63561c854ef8d2df2aef99934bd9814",
+          "after": "00ee89c665cde1913a8c0f3fb01bf007b1dbba596727fc031d43aa7f18537743"
+        },
+        {
+          "path": "packages/client/ui-agent-preset/src/client/settings-store.ts",
+          "before": "e2f312c303335be3bbebd086a1847d012e123d0befc968420979554857d68d42",
+          "after": "525452d5d666ecfeea98de880f050d0304efd71514da3fc259d2c073564145b3"
+        },
+        {
+          "path": "packages/client/ui-agent-preset/tests/apply.client.spec.ts",
+          "before": "f2338e8fdf582adca9c90970bc7c46115f68d5eab6fcdce9b8bb8dec428d27d8",
+          "after": "19f9bfdf2240d291f0a2f900319cf5059e90926fafdb8b47f273377e5abb562a"
+        },
+        {
+          "path": "packages/client/ui-agent-preset/tests/components.client.spec.tsx",
+          "before": "5516e22d81ecd3c2d3d805dfc6c1326331b71570279b30b34ca6db3f97167e94",
+          "after": "da77b6642ef4149d389cbd89d7e90e4800703208398735aaf9c1e89de6850d5c"
+        },
+        {
+          "path": "packages/client/ui-agent-preset/tests/create-plugin-menu-item.client.spec.tsx",
+          "before": "9df2f93be6c823cfa3ba37fc96873a902de79379f3a79d30e97fea8916baf281",
+          "after": "9e011900f4f652a9acddd43ed883c31f1b015818b192865ab1b8e1e24af1646c"
+        },
+        {
+          "path": "packages/client/ui-agent-preset/tests/derived-selection.client.spec.ts",
+          "before": null,
+          "after": "b59cf1703ed1bfa63fd3639e59b1eac7ed21a0be8ed561b8b700ce101622cd4c"
+        },
+        {
+          "path": "packages/client/ui-agent-preset/tests/section-store.client.spec.ts",
+          "before": "563af926a74c64f61eadb67343c25cddbec317a8d0157acda636e6b2ed437517",
+          "after": "62961b51f0b32c9798ad7d82a16606328896a2c5a534d6a8401518bad4439a39"
+        },
+        {
+          "path": "packages/client/ui-agent-preset/tests/section.client.spec.tsx",
+          "before": "75d32a9d83304334500790c47201e39b6f2c4645c192d993c09552e1e430f936",
+          "after": "64d64ac340bdca2ec17642aa95aaa0d080de3cf51eec4edda175f0af563933ee"
+        },
+        {
+          "path": "packages/client/ui-agent-preset/tests/settings-store.client.spec.ts",
+          "before": "c0478de3d5e0fd43a139cdb44d6bc181d446d51aef98ca3de5053b3df6a66a38",
+          "after": "1e6d77d8e8caa0ae62c2304f8f67968934053acacd6dd0ec164d532bef5b9f8d"
+        },
+        {
+          "path": "packages/client/ui-plugin-manager/tests/browser-plugin.client.spec.tsx",
+          "before": "0c7a2ac6b5dc055eba268ca2e6881f49b34b9aff25ba311175d87c6776856360",
+          "after": "0db721848e226c10eba1a680d052bef7af204dbff3a4ed9a0d3848448bb787ae"
+        },
+        {
+          "path": "packages/client/ui-schedule/tests/task-manager-page.client.spec.tsx",
+          "before": "4aa9ebd778cc7bc7a23d1c696aa8a5f1598514dba2aad5fd815e68633f0ab97e",
+          "after": "62c4a7df25cdeab52fac401a698295f2961600a5f1245da2a4a2198b674f42f8"
+        },
+        {
+          "path": "packages/client/ui-settings-account/tests/apply.client.spec.ts",
+          "before": "db6f3d5e3512b7969cefbf62273fc678158c0ac451a259b3dc826440138c5816",
+          "after": "0ba5493c9564d33097a4ccb0daaf6ca858c288694d7efdad61cb0814c906777b"
+        },
+        {
+          "path": "packages/preset/agent-preset-registry/README.i18n.yaml",
+          "before": "0e3067c12e0a55cd4c8d62a25b65c056769c89656944b650a2d0d781ab9b61d4",
+          "after": "4169ebbe592182e7dfb2d2e33b4df6b2863f341bbd96dea9106a98df8e3eb33c"
+        },
+        {
+          "path": "packages/preset/agent-preset-registry/README.md",
+          "before": "bf42961d832581cf001e90bacf719067e38a126707d37bdeb74572f08af4809a",
+          "after": "787b08e27d2f87e0f90ef4a20b845932947e981d0b2767ec0aa5b52925ae8fa8"
+        },
+        {
+          "path": "packages/preset/agent-preset-registry/README.zh.md",
+          "before": "3055202b7d948dbb2eae36f8f5cdc3c2b06ce768a9bf1c8d0b67b382fe50135a",
+          "after": "995a11ccda9b60985a1f015888eeba75d92f4e7493c6378bb18f58b62ebdfc40"
+        },
+        {
+          "path": "packages/preset/agent-preset-registry/src/definition.ts",
+          "before": "d952da79acd930954b8d1667ffe692b1e5223f853127b5cbda6de7cf9cd76903",
+          "after": "519bc31a578c162ffd6d6c37b87015351632ca2c330022e620548f347bae1b5e"
+        },
+        {
+          "path": "packages/preset/agent-preset-registry/src/index.ts",
+          "before": "07a587dfe3b9d3cbe7d960919567bdc754459c0b55f6a1b13502da194767188d",
+          "after": "69e547a8d04575b0700cd98c1715b356e9f2934484f741c81958489b47d4be92"
+        },
+        {
+          "path": "packages/preset/agent-preset-registry/src/preset.ts",
+          "before": "95a12c41d9fcd2587ebf70b4dbe32e8d1e73f5247c17f22dfaafb1909f313965",
+          "after": "0511eee191dd234b9276b7721e820ba2e16609593e323622cb4076b1f09e470d"
+        },
+        {
+          "path": "packages/preset/agent-preset-registry/src/types.ts",
+          "before": "6268655505d96c2f818dcd05fb3335e30e653de1ac4206b26a9acca2d5b39089",
+          "after": "41abc1715088578d93d5a7cf831ef3640267cf406dd40f48263e2fcecc569004"
+        },
+        {
+          "path": "packages/preset/agent-preset-registry/tests/derive.spec.ts",
+          "before": null,
+          "after": "079f4b5436f1941b802ba22e0e5e4b44c06d0850231575b9ef5ef252bc0f7f8e"
+        },
+        {
+          "path": "packages/preset/agent-preset-registry/tests/registry.spec.ts",
+          "before": "42ca21e69f159657929b467f5046302d3b4b2a7103da283c16aa70d78827ccb3",
+          "after": "23dc74d9b877f522a53ccbc1e5b847e3c2e5bda508bcb63a259f4f30d13585ef"
+        },
+        {
+          "path": "packages/preset/agent-preset/README.i18n.yaml",
+          "before": "84108dc53d5dcfeddc1411abd7bcf055f59d3b20c8fc2caec3bfbf8a7ad99ad4",
+          "after": "b72774254cccb86259e4c0de6175b218ec31f31a0d11ffc9ab5da7bb36b8203a"
+        },
+        {
+          "path": "packages/preset/agent-preset/README.md",
+          "before": "3bff455be098ec17094a43cfd418ede99afbe6d6b4d3cb874840ee7ccf1f9101",
+          "after": "539510f0bdbd1253afc0611a707546da02c1d82da960007b48aabd3a1700b72d"
+        },
+        {
+          "path": "packages/preset/agent-preset/README.zh.md",
+          "before": "b7d586c7b84a536ce65cb4c497a51e30224d9cbe8e6cd8de20674debbd577ff1",
+          "after": "a9b9efc0da8a8b8dcfac8aa8415df117f0636cbe30fcac7002be3500aa3ae206"
+        },
+        {
+          "path": "packages/preset/agent-preset/src/index.ts",
+          "before": "5bb8843f1a8d856ad439637b43ce2105aea5cb60a68786f8280e8bfdedef8279",
+          "after": "1e51833a3d9b5b0d541cc826e73055bb560c87a995fa190851fdfe790b975220"
+        },
+        {
+          "path": "scripts/type-equiv.manifest.json",
+          "before": "3281bc1e5317512871a1083c1ce044a8cb2c3a817e9b62a4fd9a39ea93af8ca8",
+          "after": "832274bd4cc169fd114f3f6a60ca45857e83b65baa7571c00e5156884c013f4a"
+        }
+      ],
+      "diff": "preset-derivation.patch"
+    },
+    {
+      "id": "sidebar-slots",
+      "purpose": "Generic sidebar panel headings and wide-row icon props allow additional grouped navigation through existing slots.",
+      "tests": [
+        "packages/client/ui-sidebar/tests/panel-list.client.spec.tsx",
+        "packages/client/ui-sidebar/tests/apply.client.spec.tsx"
+      ],
+      "files": [
+        {
+          "path": "packages/client/ui-sidebar/README.i18n.yaml",
+          "before": "8d862c6a58fd69a535b8721179081ee1b320ebd8a43b9591a85129ae59e44d55",
+          "after": "64745909fe5491dfc6a5daa0eac4ed52a87da3272f0d1dfca87f803782f29dae"
+        },
+        {
+          "path": "packages/client/ui-sidebar/README.md",
+          "before": "a0d342ae4d671feb1c25f0882b4ab18dd717b773ca99920025e9675b74ebe140",
+          "after": "65aaf108e099ca74fbc1ba580e69f759549c2c3ad88a225fab31392533ec442b"
+        },
+        {
+          "path": "packages/client/ui-sidebar/README.zh.md",
+          "before": "fdf99b35dfb999779d0e23f807ad583ac255a705f1c8911bf55c54c06f113818",
+          "after": "685579e4c888299bb4dfb7bd786b2919620ef265f9ef520ea7f4dbf020f9ca14"
+        },
+        {
+          "path": "packages/client/ui-sidebar/src/client/SidebarRoot.module.css",
+          "before": "6eaadd716ab135e0d08696f11e979449c14734b38b94ae65408601bdf5ff8393",
+          "after": "48cfaf422d83e5489d3080d0c655b939fd19d9a9b2cfab070e302c4445e5a7c2"
+        },
+        {
+          "path": "packages/client/ui-sidebar/src/client/SidebarRoot.tsx",
+          "before": "51d95e300ed74cdfdeb2c7f7daa8b32324af95071787c0e6d3905b450c9e4951",
+          "after": "d5f9ea5660d7a11c7e9f109b1d652747c3a64b1ca2612e71c8c52a704398c550"
+        },
+        {
+          "path": "packages/client/ui-sidebar/src/client/contract/slots.ts",
+          "before": "569396d1337d548ce6975c27ccc7282429c0e2ea57fdb3994ba162e013178d2d",
+          "after": "629a2d069e2035cc25a3679b93ce9ebe93edf3bcda26c9d82085ee0258bb70e3"
+        },
+        {
+          "path": "packages/client/ui-sidebar/src/client/index.ts",
+          "before": "05e1c2072f6961c64d95b1d5ac775e7d6b2b9cbe52e997a34fcb4e12b24a60cf",
+          "after": "7bf1a9acf3dc239eba2e218900406d3baaa2082c0aa1ee486d57bac014534aba"
+        },
+        {
+          "path": "packages/client/ui-sidebar/tests/apply.client.spec.tsx",
+          "before": "f49c7cb92c11008ca4c98cfe8017a6c23878adbccffe2068fe7b43f1b66b015e",
+          "after": "2418c57e017bbc0a90e876d91b83275cd5930362f4143de2525a58474117008a"
+        },
+        {
+          "path": "packages/client/ui-sidebar/tests/panel-list.client.spec.tsx",
+          "before": "81dff481a65d0647c6bae713d7f09ee4c8603ba3af51bfcfd2f1c638c6915394",
+          "after": "27dbb06a92cbe1954154f4f287dfe9a461ff0ab4bf489489be8b4a0ad900d63b"
+        }
+      ],
+      "diff": "sidebar-slots.patch"
+    },
+    {
+      "id": "hmr-transport",
+      "purpose": "Retained generic HMR transport fix supports unavailable Node execution and WebSocket close/reconnect without narrowing to one desktop product.",
+      "tests": [
+        "packages/client/hmr/tests/node-half.client.spec.ts",
+        "packages/client/hmr/tests/transport.client.spec.ts"
+      ],
+      "files": [
+        {
+          "path": "packages/client/hmr/README.i18n.yaml",
+          "before": "a299295e3c2fb3156e2c6db8ade97da1ab632f30f547d39e8905e6ee1900cf3d",
+          "after": "f1a890706952ab2d87f8fb33a3e2681e7278adf8bf667c4a0a9f361255a870c7"
+        },
+        {
+          "path": "packages/client/hmr/README.md",
+          "before": "c5974c7d2109dd03898bcb582e18a62ceb032160b378c1e21d41d44eb08cd7c4",
+          "after": "15807d2d8d0f57709df1ed960e16b639e7188fd58dfd142858d7654f00249c4e"
+        },
+        {
+          "path": "packages/client/hmr/README.zh.md",
+          "before": "2f74bd376e546c49fd7a4a4b28f899b3c6bea8e42c7b26682387011b918543cf",
+          "after": "85d0f03f65b1bca29ceac732080fa4b6d7351ca9c1ef67c87d892643fac6844f"
+        },
+        {
+          "path": "packages/client/hmr/src/client/index.ts",
+          "before": "569fb912a465a69ec3c971e73de5a6982f624bab8c3fafba293de1ca09313b42",
+          "after": "63df96f0a8ac5eab63097cae42e1783b06a8d42ab35179ede080c9eddaf4a293"
+        },
+        {
+          "path": "packages/client/hmr/src/index.ts",
+          "before": "c44bd4146a459aae2ebf75adaa31a5db96e3e5d17279ec6d80cb3682c1e17534",
+          "after": "b1952a40a92c2f55f4300094a2bf80ce9cc7efa82548cb8903c90aff843f585a"
+        },
+        {
+          "path": "packages/client/hmr/tests/node-half.client.spec.ts",
+          "before": "59d640b87b1cd70c3ec1d5d3df56d5bff3a9cc434d649ed5b94e66c48767b1d7",
+          "after": "dd5d0e930503108dc07e6bf976f5e64fe709db6d7a7fba91cae6469e7eabc063"
+        },
+        {
+          "path": "packages/client/hmr/tests/transport.client.spec.ts",
+          "before": "71b3ab181f6097c9d85de07ebf7803dc054ffc2aa394244ad2e65f814cee1bef",
+          "after": "07230591ca397277d91d3405abb72ca7f210a827caefbdc168399722c7c93bde"
+        }
+      ],
+      "diff": "hmr-transport.patch"
+    },
+    {
+      "id": "mcp-public-name",
+      "purpose": "Expose the official MCP public tool-name encoder and honor configured MCP request timeouts during connection and discovery so extensions can use the public client without product policy in Harness.",
+      "tests": [
+        "packages/deepseek-harness-product/runtime/tests/deepseek-harness-connector-contract.spec.ts",
+        "packages/mcp/mcp-client/tests/apply.spec.ts",
+        "packages/mcp/mcp-client/tests/mcp-client.spec.ts",
+        "packages/deepseek-harness-product/runtime/tests/runtime-loader.spec.ts"
+      ],
+      "files": [
+        {
+          "path": "packages/mcp/mcp-client/README.i18n.yaml",
+          "before": "342b303800175afd98281c1d60ed30707666fa575857e5d0bbbe81e828d6becd",
+          "after": "93df379180162b71c98bf87bf8da4103826b0197c97b4b60429ed30217216f88"
+        },
+        {
+          "path": "packages/mcp/mcp-client/README.md",
+          "before": "346ad21f0c7f8bd7248a021513228769fcde1dec7065a3ea77e809f999805806",
+          "after": "a706cdd8445592457bf9b32a5c029fc442a5873dd5b730b6b36b52e01bdc64ec"
+        },
+        {
+          "path": "packages/mcp/mcp-client/README.zh.md",
+          "before": "7238d7c53a955b818f6c765615b83eb54d371959e38d1ea677175772ac064cfb",
+          "after": "29fd49bbcb449e94b623a12fb998ef03a8e9de4db866e5aecca96f2d1f143cf1"
+        },
+        {
+          "path": "packages/mcp/mcp-client/src/connection.ts",
+          "before": "06dc1b3a1297b8b23f6ac5c44f3ba6740716c76db71c28cfb8f14d6c0340030e",
+          "after": "2cbb79ec26e64aadd94b095326b4fa23e3eadab6055a676265d79a8bc98bcb3f"
+        },
+        {
+          "path": "packages/mcp/mcp-client/src/index.ts",
+          "before": "f279bd88743ca73b0d9834915d1bb31e455e21c87f4990808cfd55b273db4d1c",
+          "after": "46ed8904022ffd3bc5004e188a0cc373e6648d51015437bfbde4687a9e6bb552"
+        },
+        {
+          "path": "packages/mcp/mcp-client/src/tools.ts",
+          "before": "59203150bda479a990afcdaf60483a35a836887926892e1074e02d0294c01af9",
+          "after": "da28525251de8495b01ec5cda2cc2fc01e3c92d8f459c81afa20a6df8a98bea9"
+        },
+        {
+          "path": "packages/mcp/mcp-client/tests/apply.spec.ts",
+          "before": "b84714d412e566129258a466d617758e287986adacec345978240d0ae30c0129",
+          "after": "045295fa337220755023e15fc3584732a5d289a444d1361b25379bf6111be88c"
+        }
+      ],
+      "diff": "mcp-public-name.patch"
+    },
+    {
+      "id": "runtime-provisioning",
+      "purpose": "Retained generic packaging fixes explicitly install the declared Office engine, retry verified runtime downloads, cache Windows runtime dependencies, and boot the correct private Host from smoke tests.",
+      "tests": [
+        "apps/desktop/tests/office-engine-runtime.spec.ts",
+        "apps/desktop/tests/runtime-download.spec.ts",
+        "apps/desktop/tests/primary-runtime-preparation.spec.ts"
+      ],
+      "files": [
+        {
+          "path": "apps/desktop/scripts/office-engine-runtime.ts",
+          "before": null,
+          "after": "dd074d6138c9f81127c410875b7657b66feb9b2de1fecdfda27aae53a05c9abb"
+        },
+        {
+          "path": "apps/desktop/scripts/prepare-dsh.ts",
+          "before": "76ed3b2bebde960ff572fefe12d6c07c3f38ae9513454e37a0ec6676921cadce",
+          "after": "0d731aea849ebd3d9e4ec19fd2b694a5224b4c56acc95aa419d3b320b7585107"
+        },
+        {
+          "path": "apps/desktop/scripts/prepare-runtime.ts",
+          "before": "a6459e1b0319ed5ced9d41c42c7a29e5a7953b8026453ac3fd4016bad6bcc79c",
+          "after": "4e3a18dfbecbfe6c1e4f7dd2b50f6eb099894049549c5e30db179baec037af99"
+        },
+        {
+          "path": "apps/desktop/scripts/prepare-windows-runtime-cache.ps1",
+          "before": null,
+          "after": "d58027eb06c2ea34a46acd7f0116f87c6e178589a69958bc657f28c508e9e709"
+        },
+        {
+          "path": "apps/desktop/scripts/runtime-download.ts",
+          "before": null,
+          "after": "516f48813ca608e63e30658e5b917d22a2e5e0e313ab71e001c210971ea150d7"
+        },
+        {
+          "path": "apps/desktop/tests/office-engine-runtime.spec.ts",
+          "before": null,
+          "after": "cfc2e8ffad12c457ec779fc13904cf86a963896b2ec76e2e590c100f5d4c3173"
+        },
+        {
+          "path": "apps/desktop/tests/runtime-download.spec.ts",
+          "before": null,
+          "after": "322368dac328d25c341c328f158855e673c2a36947abdec094d644e2e4c7cf5a"
+        }
+      ],
+      "diff": "runtime-provisioning.patch"
+    },
+    {
+      "id": "release-environments",
+      "purpose": "Retained release integration supports an explicit internal Gitea feed and unsigned Windows packages without a mandatory-update policy. Signed official package behavior retains its policy checks.",
+      "tests": [
+        "apps/desktop/tests/desktop-auto-update-environment.spec.ts",
+        "apps/desktop/tests/desktop-package-environment.spec.ts",
+        "apps/desktop/tests/desktop-policy-environment.spec.ts"
+      ],
+      "files": [
+        {
+          "path": "apps/desktop/.env.windows.example",
+          "before": "ade06e39bc199e8e90f05775d9438d15aed2142ad5a743814fa7ea2db12c8af6",
+          "after": "8a0ba86008f4eb717056974454f68dc9ec89da4fcfff832c78ef77e52d39ef90"
+        },
+        {
+          "path": "apps/desktop/scripts/desktop-auto-update-environment.mjs",
+          "before": "18e713339e93bb29659b3042c8c62d9d56b55c0462ef227268449bc653e12617",
+          "after": "4c2156d38dc2ae55e6d17ffde5a8b2086535f49c421f20c532519fdf5f7bac2a"
+        },
+        {
+          "path": "apps/desktop/scripts/desktop-package-environment.mjs",
+          "before": "13cf364ba733e39ac765570b1c01450efd00e7c56f251086f102f9f703830c7d",
+          "after": "3571d9fea3e5b9ee5e9d1c058dd183703c84db13364140d8f0932d9fdab78a0e"
+        },
+        {
+          "path": "apps/desktop/tests/desktop-auto-update-environment.spec.ts",
+          "before": "0d94ef998389a14863adc8b7cc4abb76c79096ffa3731b03ff3ee598dcac0b59",
+          "after": "b1f2f14c4bb387c38898564eea840316642b441c9fd737c2caeecb675d6064a1"
+        },
+        {
+          "path": "apps/desktop/tests/desktop-package-environment.spec.ts",
+          "before": "3a62788297c7e4e55654871b77bbb4ac8f9afef1eaf01c26af0fbadbabebcadf",
+          "after": "632d9494bb9a1b42540aa63d6783983cb25ea42dc6ecf3eac1a91d02bbecc6c9"
+        },
+        {
+          "path": "apps/desktop/tests/desktop-policy-environment.spec.ts",
+          "before": "bb85d28e7c4f3a333bc92670a3a72caef19a2a76a0031b71f5ceaeb4b5d16349",
+          "after": "42b0f8233db3500d736840687b93bb6d4957177feffa96239c791d68f0ee11a6"
+        }
+      ],
+      "diff": "release-environments.patch"
+    },
+    {
+      "id": "installer-qualification",
+      "purpose": "Retained Windows installer qualification supports service-hosted headless runners and a separate explicit native-presentation probe.",
+      "tests": [
+        "apps/desktop/tests/installer-packaging.spec.ts"
+      ],
+      "files": [
+        {
+          "path": "apps/desktop/scripts/test-windows-installer.mjs",
+          "before": "18892d87620bdf2a6375cef447a98b44289a183329b589d29400e04d185d5e2b",
+          "after": "6ff1ac57f5e1d056d3e7f47d969ec39ab58176d9b401448cd3c27398d98e6d7d"
+        },
+        {
+          "path": "apps/desktop/tests/installer-packaging.spec.ts",
+          "before": "0d0574102b6e1c156276eac0c29673925cac2f18cb8a34d7d5a6201d7b4ca39b",
+          "after": "850329217cad7eff87d5c775273784aef1606640de8864ce37bb6b9dc58a60e8"
+        },
+        {
+          "path": "apps/desktop/tests/windows-installer-headless.ps1",
+          "before": null,
+          "after": "144de17958cb1015229a5dbad58c7c2f9e3584b90eaf0fcb72689b9ff485a038"
+        },
+        {
+          "path": "apps/desktop/tests/windows-installer-presentation.cpp",
+          "before": "253e394597e1bec4864562429a708866319e01f105c0ba9277b13515ba5c5157",
+          "after": "5c134258277a4d3c7c52c82a03a50137fa61bda3cb5839c2c396248ead1c05b2"
+        }
+      ],
+      "diff": "installer-qualification.patch"
+    },
+    {
+      "id": "workspace-integration",
+      "purpose": "Workspace integration registers private external-namespace packages, their compiler programs and public exports, and product assembly commands. Official runtime manifests and sources have no product dependency. Product build configuration stays package-local.",
+      "tests": [
+        "scripts/check-workspace-constraints.spec.ts",
+        "scripts/client-tsconfig.spec.ts",
+        "scripts/verify-repository-references.spec.ts",
+        "scripts/upstream-boundaries.spec.ts",
+        "packages/deepseek-harness-product/runtime/tests/inference-default.spec.ts",
+        "packages/deepseek-harness-product/desktop/tests/inference-profile.spec.ts",
+        "packages/extensions/ui-deepseek-harness-product/tests/KnowledgeToolResult.client.spec.tsx"
+      ],
+      "files": [
+        {
+          "path": ".gitattributes",
+          "before": "946bed079ec10d6ce1fe3fc3d76e42a9587548135f0f4a7500d77303d9cbd398",
+          "after": "b2be90cadea9e2a3dd76ccf7cf7f5d94b2b9bc53ef685dcf9c0c7cfcbd1ff408"
+        },
+        {
+          "path": ".gitignore",
+          "before": "69aa6d10d236e1e188509ba9d6f9b1170c6edba9b3a1dd1b9a4a1b8a54dd3dfe",
+          "after": "dd3bceb1938179b9c08e8b037c763d0ecaa5ed543d49d02dc9c542dccf6047e2"
+        },
+        {
+          "path": "Makefile",
+          "before": "31d3c908181c6034eb955aad3ba25b50d16d941924f767c6d1be6b46b8201a04",
+          "after": "4da827551b59c0e7a7b66a01889cdd80806b6fd145254d127ce36cdf4d6c9b30"
+        },
+        {
+          "path": "apps/web/tsconfig.json",
+          "before": "c2aeee1dc3b154b0bfee6330bdb5568f45b2d6e9459ee6f4c73158bb3f3e2fbb",
+          "after": "7e0e87a8629e287775bcb2b1fe4cedddc36049514bfce4a018a14c28fcc6063f"
+        },
+        {
+          "path": "package.json",
+          "before": "c89d8e465b5540df1fd9df63f328df925490a200b7ed657f31665495581683f6",
+          "after": "1f1bf8a9d52b5677cd90a7a078e6ed273a404bc30aebc92124964718e91bd626"
+        },
+        {
+          "path": "pnpm-lock.yaml",
+          "before": "b45f8695fb0dca90d3ed07afc766e923356539962706ee36ac8cdb396e6d734d",
+          "after": "83e9d3a5814136f0faac0adda89086899a0d7d1221807609bf6c321312289997"
+        },
+        {
+          "path": "scripts/check-workspace-constraints.spec.ts",
+          "before": "f26f1ac308ff99cf0ad10008026430df4ad5c4880c89b3085ea0a8515198a580",
+          "after": "18840f95fccb78c98d3c8027d81ab41beb99d160783c365d8197fe66bae70406"
+        },
+        {
+          "path": "scripts/check-workspace-constraints.ts",
+          "before": "25c049259ecd5bd739e17dbec4122ac284f5e48ba1901e0bc0a1484a2f5d56fb",
+          "after": "e8df11a634cd532bf6433ca801c75cc500e889df9550a8e3085dfb18705c5d5e"
+        },
+        {
+          "path": "scripts/client-tsconfig.spec.ts",
+          "before": "17547f3657e61a0232616ec86e846fb2a544801d8bbbbe2e5f65f625dbb9fa88",
+          "after": "a690ff90ae8b660e8afbdb945ecc59432f0aa9e78366ae8f67e3f195b42cdb40"
+        },
+        {
+          "path": "scripts/verify-repository-references.spec.ts",
+          "before": "1d6a04e226e989826901cb87a6f3c84473e20a5542be3265d020f0f6b8b43d5c",
+          "after": "01715bf5f900e11cf8acfd16445d1eb28636b19ba386cc203d068ffc71b5a3e2"
+        },
+        {
+          "path": "scripts/verify-repository-references.ts",
+          "before": "da37b45d3b13a37316520a9d3d49e34f63563cfd2a70a9bbe489dbbb8cd1c671",
+          "after": "495d3c91de160fd1ea94c3dbad5cc364bb26647268a45adb646b64b8320381ac"
+        },
+        {
+          "path": "tsconfig.base.json",
+          "before": "389285ecae2d35682948a7372daa570e087aeb5bb62627c625d384869d78d89e",
+          "after": "31fdf19341b5161fe49f981f8d5f14f01114e71290a7ae26040cfb8f95bfc39f"
+        },
+        {
+          "path": "tsconfig.client.json",
+          "before": "c5266cb97605a2b2233e37383227de36a7434ff9a9f0182cf4dca89f94447acb",
+          "after": "ce274fee5ea62ee79999ad90b7275ea479554d3cd7f41a55589ae16d8014e99f"
+        },
+        {
+          "path": "tsconfig.host.json",
+          "before": "8820123d41d30ef02d9536b15d675573f2f91fd721df75cda496687f81804741",
+          "after": "384e90aed37fd76052ea54dda413cabc800be4be984179986b02d2679e12b409"
+        },
+        {
+          "path": "tsdown.config.ts",
+          "before": "45f6dc369ec7e1ca3db7b625a13840a9e0b6942dc9ceb0643c14ce3e6f62b65d",
+          "after": "023c35399f9e3d677189548fa159fa12bee600adbdd7a7504a6ce4614afe82a5"
+        }
+      ],
+      "diff": "workspace-integration.patch"
+    },
+    {
+      "id": "documentation-catalogs",
+      "purpose": "Maintained bilingual integration documentation and generated API/config/slot catalogs describe the public extension points and product-owned consumers. Generated product names are documentation data only. Persistence history acknowledges source-only message attribution without changing official Session formats.",
+      "tests": [
+        "scripts/doc-standard.spec.ts",
+        "scripts/project-doc-site.spec.ts",
+        "packages/extensions/cordis-client-runner/tests/api-catalog.client.spec.ts",
+        "scripts/gen-third-party-notices.spec.ts",
+        "scripts/persistence-changes.spec.ts",
+        "scripts/persistence-formats.spec.ts"
+      ],
+      "files": [
+        {
+          "path": "README.i18n.yaml",
+          "before": "700422df48df27704707a6832b7ba7234f1f44c42494ceffb3b8ee2210f989af",
+          "after": "9e0d3811c40554152924e5908417c733a594aa891ce130bb2b4ee5f5307047ff"
+        },
+        {
+          "path": "README.md",
+          "before": "0f5516be2acde776f05572cbc8c3093c90549afe04ce118e11157d073d5d15f4",
+          "after": "fb8f6252c363eed67ec5760745422b84389af69bedf2846562bb9138735f4793"
+        },
+        {
+          "path": "README.zh.md",
+          "before": "8f19db1b217e8ef30cf413b07056cc791048bc2ba2ec51ba104e383dcfb43c61",
+          "after": "40f88d415cc06a8c28e258d806670e697146f960ff9597f7036321faf51c7cf0"
+        },
+        {
+          "path": "THIRD_PARTY_NOTICES.md",
+          "before": "85e36cdc0679c5bf4f6eb8f863763bbb6371aa31ef79b57e48d436f49c37bf5a",
+          "after": "04da29f6124838b81fdd3355c3a35d6cc228811b4f631b08a2905d14cd5f2ca2"
+        },
+        {
+          "path": "apps/desktop/README.i18n.yaml",
+          "before": "55113c40907f9f36aba2109a6b157a3f302b9417f813ef33105b3cc69efdc36b",
+          "after": "e367262bc2d5cc4989582f0c3791eac5b112ea86e6a9e6344c975e8af8e5f5fa"
+        },
+        {
+          "path": "apps/desktop/README.md",
+          "before": "97c05df7e4e4d053c89ba0d5cf11094c76e7798fed118211f6a828ce2943ee19",
+          "after": "2d9a78a871ed3a68b583b6affb701ab620bfe8b5565f5252e9c4d6ee763dc8e1"
+        },
+        {
+          "path": "apps/desktop/README.zh.md",
+          "before": "324bb7f4dfe117e9f6ec99244aecfedac644e4159780ca7a4a96b90e05e551b7",
+          "after": "39f6e41f2a9a8031d3fefe010f71e553aeff6c6830b5a404e9c08285a867ba3f"
+        },
+        {
+          "path": "docs/architecture.i18n.yaml",
+          "before": "c638b73339dd0a9244332741f491d2bb5c978547be8d8f601ebb7e049d51b6d6",
+          "after": "a4c0a7b6aa2d0524a158ac6389a758e61d28e6a3532c5dcf3132402581d7d420"
+        },
+        {
+          "path": "docs/architecture.md",
+          "before": "95a7722c7096d665d8adedeb733b8f5ad7740e67cb5c6e9dc91ec05f430cb760",
+          "after": "b283a4c9a1f41bea9bceb9e94cd0d232f480e2f3f7ee8226d4a1d993160e45be"
+        },
+        {
+          "path": "docs/architecture.zh.md",
+          "before": "50167dd1435ca402f11aa0ae27dc642456a7a6e511faa76b81f1fed25c7e12de",
+          "after": "47c4441943e087e2e6a43b1f1487b010292c326bcac58bc764314ebe24e541e1"
+        },
+        {
+          "path": "docs/config-catalog.md",
+          "before": "98efde2c4a40e40c92b5ad0d1fe34fe99dc4d9de1aac6bf1b38093b91b617407",
+          "after": "c4396fdb88b47c1746ffe63f4256ae0b5992b57ea416869d3de83186a39c4c48"
+        },
+        {
+          "path": "docs/config-catalog.zh.md",
+          "before": "e2ca4d1cc2061c966ed8f4d916b0ba63a33b10a9ebf45163c90038d8edc5e684",
+          "after": "5e3d595107c59222026be0828e22390b66010011dc0c2293cbec573342c1f50e"
+        },
+        {
+          "path": "docs/event-producer-consumer.md",
+          "before": "643ce4a64c7fc07e7db05181218c87f750ec8b957ba75441530a4c9f53a6a23f",
+          "after": "98d14b721790ed2e320c3f465e1b42f97e41da941234a306009599be9c88304c"
+        },
+        {
+          "path": "docs/event-producer-consumer.zh.md",
+          "before": "d5ea9faa33826cdb53a36b4145b8dcfc89024b8e2bc2aca245fc3956c476f207",
+          "after": "20e18ebd5699a78c9dada49b2823861b8ba7b753d8cacf74221445b84f403e51"
+        },
+        {
+          "path": "docs/persistence-catalog.i18n.yaml",
+          "before": "59a7c24c281ded1ec6706fe88552112979efd10e289defc4d3d7627679bd15aa",
+          "after": "e50ceea0cdbc433ef1a2c08ccb85d0b1899096664986cc5eca21f8ff92fe6f58"
+        },
+        {
+          "path": "docs/persistence-catalog.md",
+          "before": "32bbaeb5dc5706427e4f2d8d9dea095f67d819bc1293a428af895cfe4efa4d43",
+          "after": "087ebc316ec02374e5b34c562b021089335f3f8ac34e78ab0d1377b5cdce10a3"
+        },
+        {
+          "path": "docs/persistence-catalog.zh.md",
+          "before": "239e98a6550eb1fb52d3da23122b6dfd6a683f2d87c2daa9618c609a593c16e6",
+          "after": "22ca99b9088b393154f92ccb725a595e8e38913063e3a029bed778698818e45a"
+        },
+        {
+          "path": "docs/persistence-changes/2026-10-09-product-installed-skill-attribution.i18n.yaml",
+          "before": null,
+          "after": "e88cf17b01a905dfa8e1d9ae77103abc357d4537005a2fe39c63e123d96a8d01"
+        },
+        {
+          "path": "docs/persistence-changes/2026-10-09-product-installed-skill-attribution.md",
+          "before": null,
+          "after": "586cba19cf40a808a152d3b44a1ec5840b4c7e041fcf206fde7f9009fb5a4557"
+        },
+        {
+          "path": "docs/persistence-changes/2026-10-09-product-installed-skill-attribution.schema.json",
+          "before": null,
+          "after": "b858ef9b2ea34c776b0e54256aa70dd42692b745f7e7dffab29775cef31beeac"
+        },
+        {
+          "path": "docs/persistence-changes/2026-10-09-product-installed-skill-attribution.zh.md",
+          "before": null,
+          "after": "11a413e7677dcba363e60f43e7bd44d7c93a3b98ca920769fc481ea35b41f2b0"
+        },
+        {
+          "path": "docs/persistence-changes/historical-formats/README.i18n.yaml",
+          "before": "9c48e6c0157d6ba3d68ccf1f76ddf1eaa0aeb5de56ba9865bd9dc37abdb5998a",
+          "after": "c6c4b5ca59206a2505d88a5d6ed96c3e28c64dd9fe5f50a0da63144b2c1162ad"
+        },
+        {
+          "path": "docs/persistence-changes/historical-formats/README.md",
+          "before": "124effc9a682710f6ea058f00c0bd8a511d9ba0c62712aa5203bd51e84dd43b4",
+          "after": "f2e22e5daf62f5a6b23b8caccdb2de7803d3a3650452626e989616a02b78c6ed"
+        },
+        {
+          "path": "docs/persistence-changes/historical-formats/README.zh.md",
+          "before": "0d82647db2117229a1568e44e07bca5f302ba777e281b731a1828166f1b5f79c",
+          "after": "48f226bb64600368048ee0f7e56ca9131109a3602c5fcecbaa92e959bbe2a62e"
+        },
+        {
+          "path": "docs/persistence-schema.json",
+          "before": "f82522e0533735b2e410919afc99ad026ebcb70fdf0daef6fa3be97011541d0d",
+          "after": "2a48f2f1770f133f5054b4a5178fe22bdf0f1cedea9de696f9fd014e6a8202ed"
+        },
+        {
+          "path": "docs/subsystems/README.i18n.yaml",
+          "before": "7e6aa37db58f836b2fd859cdcf639d915b39d09a572afe24764299a0dbdc1849",
+          "after": "62c8b07bfb74e95a2f334429a84716c51180b9a673dc6882f6df5663a4f8dcaa"
+        },
+        {
+          "path": "docs/subsystems/README.md",
+          "before": "e95e4144f8abf94b05881a305cbdbecce7d25f830d915b536a0eb90100bdaf21",
+          "after": "c316be6942fa53dd51bcc3d8d67fcfe10b67089cd166c7a5ff699497e6abe0c0"
+        },
+        {
+          "path": "docs/subsystems/README.zh.md",
+          "before": "e814a833e8315249f3aebc15a9f613d019fff69b5e88ce7f0374efc724183b0f",
+          "after": "6472d18ef287e06317d6fff9aedfbc358fd3559b5d10e2f9ac75732d76657e22"
+        },
+        {
+          "path": "docs/subsystems/core.md",
+          "before": "d4aa9ac988ca9bdcacff7ac62aac8489dd68a02fec7d63c85cd4035f079555dd",
+          "after": "5c00d67fd0c27f3983d08fe11c741bc9d0725a2c94bda490f3bd7342ea16e3a5"
+        },
+        {
+          "path": "docs/subsystems/core.zh.md",
+          "before": "00af7fb709a36cd37495fd76319bd92dd48cfa9694703234f6362c1b5ca4ac5d",
+          "after": "cf0d2093695920c42dcee622da1e3ee2e4cd75b9ed2bbf40f57b6bc57d8dd036"
+        },
+        {
+          "path": "packages/extensions/cordis-client-runner/src/client/api-catalog.ts",
+          "before": "6e0fce882ed2cc60fdb0be1d09f81cb50184d0bdec5fd33aaa2754e24967a3e5",
+          "after": "d5e69171869b2063e48755f6295f15b06b14ecf88f38cd81456eded48f676f32"
+        },
+        {
+          "path": "packages/extensions/cordis-client-runner/src/client/slot-catalog.ts",
+          "before": "62e751e3d5abec92aa866c4b5487cdc1b757f771d2766d7b31b2748ee91c1acf",
+          "after": "7de73b4a8638416f318429c7a6028e1931d6f126ef5563bced43a494a5705e73"
+        },
+        {
+          "path": "packages/extensions/tool-cordis/src/api-catalog.ts",
+          "before": "f373b22fca28ff877a1aa727276dc17a16d36e7bcf51bf1bf30103a0b14f9c59",
+          "after": "d14abfc2819931d8b69a50969ca109f8498b4e9d3c310ebaf44fe33961e2def2"
+        },
+        {
+          "path": "packages/preset/agent-preset/skills/cordis-composition-reference/references/packages.md",
+          "before": "30f160d857d4a28a536b7004623a382fbc44e5bfc04c649f5e5d48be27f49df3",
+          "after": "eb2b5d1d38bf0508538f6def74710a8af0b36cf38eacad69c978c4da17d11dd3"
+        },
+        {
+          "path": "scripts/doc-standard.spec.ts",
+          "before": "4d6d5eed2b461c84f0654d660871743668b42fbc4fe4db058f0331c789e79883",
+          "after": "81a71a66abb3841171c2502e155b377abdb578df76e3d031510dc6a880b0b1cf"
+        }
+      ],
+      "diff": "documentation-catalogs.patch"
+    },
+    {
+      "id": "local-audit-profile",
+      "purpose": "Preserve the existing keyless SDK audit profile as a local validation fixture; it is neither an official profile nor a product runtime dependency.",
+      "tests": [
+        "scripts/migrate-sessions-to-v4.spec.ts"
+      ],
+      "files": [
+        {
+          "path": ".deepseek-harness/dsh-audit/profiles/sdk/cordis.patch.yml",
+          "before": null,
+          "after": "ef189a8c27db6d63930aa3046a3040482e952eafcb7487c644d508e8d461f027"
+        },
+        {
+          "path": ".deepseek-harness/dsh-audit/profiles/sdk/cordis.yml",
+          "before": null,
+          "after": "c300dcf2ebc5f02062d6591268d29d3db6fe45e0cb138f5467276fe2ba06076e"
+        },
+        {
+          "path": ".deepseek-harness/dsh-audit/profiles/sdk/package.json",
+          "before": null,
+          "after": "19b5383808f5dd952b3b8cc6a223507112d79d49cfc10df521d01e5153712d32"
+        },
+        {
+          "path": ".deepseek-harness/dsh-audit/profiles/sdk/pnpm-workspace.yaml",
+          "before": null,
+          "after": "ae7c5b68e2f157528e62885804e69e88583897b775e03c86fcbe52feaf498aba"
+        },
+        {
+          "path": "scripts/migrate-sessions-to-v4.spec.ts",
+          "before": "c114bc5b2168497fdb5db2d6531a3b6657c64209be3c57cd36912188eb8ebc89",
+          "after": "0006e81a935416cda6ec1190db10b84ebeeabe31dd81f5704ce30a6e39d74189"
+        }
+      ],
+      "diff": "local-audit-profile.patch"
+    },
+    {
+      "id": "maintained-note-paths",
+      "purpose": "Correct stale package references in maintained bilingual Agent Notes to the current Chat and Session Controller owners; preserve the recorded decisions.",
+      "tests": [
+        "scripts/verify-package-paths.spec.ts",
+        "scripts/translation-pairing.spec.ts"
+      ],
+      "files": [
+        {
+          "path": ".agents/notes/implemented/feature/2026-08-05-context-form-vocabulary.i18n.yaml",
+          "before": "feb679260f242e0b71c80de0174989e6db4881a4f3e1f12d95b9f4cebc071735",
+          "after": "f0487d7abb6f1aef7487eb2625cfe23d748b057e30e7166676813b329e82a126"
+        },
+        {
+          "path": ".agents/notes/implemented/feature/2026-08-05-context-form-vocabulary.md",
+          "before": "41ee3d42b817a0039c8b3029a3c586c86fab28ce764dc2ae96b83c526a01b0cd",
+          "after": "388b9f3424fe4814c69a803e71927620c17a115fb5a405dc0c1a072a56432f10"
+        },
+        {
+          "path": ".agents/notes/implemented/feature/2026-08-05-context-form-vocabulary.zh.md",
+          "before": "38b5a09179199b12d6285b96db4445467e33534fcefde2a98d1ff43aa42957e6",
+          "after": "9d7c12e1de8d2e791c2e89ca336279a692dc2c218f262a3feffa7335367deafc"
+        },
+        {
+          "path": ".agents/notes/proposed/feature/2026-08-04-task-surface.i18n.yaml",
+          "before": "263e809840ed07b1a50bdd5c871093cad8984b89efd5a1516767c25eed1b5b22",
+          "after": "ad6e0392e5384688b8b6a46154a685bcaac93661fd6025d9b513e2b471682010"
+        },
+        {
+          "path": ".agents/notes/proposed/feature/2026-08-04-task-surface.md",
+          "before": "24f33116d821959a09d6753b73e8ada558e55d01be58a67c8d83da3cc6eeb5e0",
+          "after": "e1e7b1c2624f672410c4c01a3d752d606d5efd6cb17c4d3ca9314dec4e776837"
+        },
+        {
+          "path": ".agents/notes/proposed/feature/2026-08-04-task-surface.zh.md",
+          "before": "43f40697b74df866978596f661c0c2f1ecb9fb70db37d5dffc6619a72830ee31",
+          "after": "167ce308223eba310ffd741d15866c3746f1a5398af98337a1fe6fba85ed7b30"
+        }
+      ],
+      "diff": "maintained-note-paths.patch"
+    },
+    {
+      "id": "skill-catalog-refresh",
+      "purpose": "Expose a generic client service to invalidate cached skill discovery after provider installation or removal, preserving Sessions and drafts. Register its browser-only catalog ownership. Product installation uses the official Skill Provider and execution flow; the bilingual decision record documents ownership and version pinning.",
+      "tests": [
+        "packages/client/ui-skill/tests/browser-plugin.client.spec.ts",
+        "packages/deepseek-harness-product/runtime/tests/installed-skills.spec.ts",
+        "packages/extensions/ui-deepseek-harness-product/tests/harness-actions.client.spec.ts",
+        "apps/web/tests/deepseek-harness-catalog.e2e.ts"
+      ],
+      "files": [
+        {
+          "path": ".agents/notes/implemented/feature/2026-10-08-product-installed-skills.i18n.yaml",
+          "before": null,
+          "after": "4f0463ebe62dca52eb1bf1b1aa7f84990f7f9f80b73e58ef39a25f5c438163b0"
+        },
+        {
+          "path": ".agents/notes/implemented/feature/2026-10-08-product-installed-skills.md",
+          "before": null,
+          "after": "cc83183fbde42ff7589c073176058058b1035fca5fac9972313646454522d28c"
+        },
+        {
+          "path": ".agents/notes/implemented/feature/2026-10-08-product-installed-skills.zh.md",
+          "before": null,
+          "after": "9f1c43a0e06ea7ebb0ffbf78baf1870330eb9c4ff5bbe4347ba0e48cad706d60"
+        },
+        {
+          "path": "packages/client/ui-skill/README.i18n.yaml",
+          "before": "5626576dfb5aef247d4803dd546620857aec00e658f7ba2a53ad980c2d451aea",
+          "after": "70208caf5fb3100750d62e85401a81d9814a55e41e31aa37d7c7a366908b163c"
+        },
+        {
+          "path": "packages/client/ui-skill/README.md",
+          "before": "2cfd76d205c55c8f72ff9d99060e7f5641209447041509da767ea53c1edb1247",
+          "after": "5b102fadd0ba8aec7ba8b7fe3617853a80815c44262a7b04d7330c379973f386"
+        },
+        {
+          "path": "packages/client/ui-skill/README.zh.md",
+          "before": "d64e8726d84d96a5ff27f3d9452ebce8741451eef9b0e80577facae9710b665a",
+          "after": "ee022ce300f8e09bd04e603f156ebf55c4a899c58dfc763b207bd30109ed35da"
+        },
+        {
+          "path": "packages/client/ui-skill/src/client/index.ts",
+          "before": "04806935357b07313e9f23523e2c8c061acf7033187d1657f1261a7052d23dce",
+          "after": "c4a42c1347d77a766545646e65adad6183f9e1f58b99f7d3c09e3b8b9dd70472"
+        },
+        {
+          "path": "packages/client/ui-skill/tests/browser-plugin.client.spec.ts",
+          "before": "b4950954ed749949c93d90e76c660fed1cfbe1ba80d9420bf8e61ebf6c1300ba",
+          "after": "11a1c6bd9b6a3b43af9fe21c0201c2a67382303e2ebb2e55334bf9b6f03b86e4"
+        },
+        {
+          "path": "scripts/gen-cordis-catalog.ts",
+          "before": "75f433f72e99354ea24ec242a9e2d964e69988cb79064df9046b984a1c4942ba",
+          "after": "83449ffb014944e4c22d662ecbe5c9bc16ff25cf9a0add84d246a62fde7a4e73"
+        }
+      ],
+      "diff": "skill-catalog-refresh.patch"
+    },
+    {
+      "id": "conversation-hero-actions",
+      "purpose": "An ordered session-maybe Hero action slot accepts independent extension controls beside the unchanged official workspace and mode controls. Entries release independently and disappear when a task starts. The owner row wraps within narrow windows; slot declarations and catalogs document the public extension point.",
+      "tests": [
+        "packages/client/ui-conversation/tests/assembly-surfaces.client.spec.tsx",
+        "packages/client/ui-conversation/tests/skeleton.client.spec.tsx",
+        "apps/web/tests/deepseek-harness-catalog.e2e.ts"
+      ],
+      "files": [
+        {
+          "path": "docs/subsystems/slots.md",
+          "before": "be31fb51abbd208d8ac35795fbe7935d28d23f3d78f3a4773ccc2c48a98a5b4f",
+          "after": "7661249eab6261ae0f2047eafb2652be8998807c4ca500361507f889c434a87a"
+        },
+        {
+          "path": "docs/subsystems/slots.zh.md",
+          "before": "c745885f0d2cff4ed30eaeb5c8fa61e0c11e4f0917ff36420daa19f9fecbb81c",
+          "after": "64e98ed2538cdb3cd8b0a8360b0ae59f7eba407ee83d0245e6c18c6be7d45662"
+        },
+        {
+          "path": "packages/client/ui-conversation/src/client/apply.ts",
+          "before": "9cea82598bff782f7cbce300c898e231b2f7da82feb68781d0a1dc948307b1ef",
+          "after": "23b2587da153c222c2b1397b560cfc6011a45f2bb9b2d07f832d410c94a12949"
+        },
+        {
+          "path": "packages/client/ui-conversation/src/client/contract/slots.ts",
+          "before": "07b3d2fd5eb14e217e24e3b54a7f7be8aa6debd02b435aff8c989d44bcc318b0",
+          "after": "2e933d3e4933de0ef161fb0513bf38c89f7840fadff9a483a4c43374eab16928"
+        },
+        {
+          "path": "packages/client/ui-conversation/src/client/skeleton/ConversationContent.tsx",
+          "before": "3dfcc635e128f9b798673ba4dfb91a5e25ef96d001124603c672e7beafefa204",
+          "after": "ebc727e064c2929b8829d35cd2d10e691d689e7a8a615489b73837d7efa6b794"
+        },
+        {
+          "path": "packages/client/ui-conversation/src/client/skeleton/ConversationRoot.module.css",
+          "before": "d9d856868adfdc8a300600e060e6262afa42fc3bfc8019b5a597dec326b0c59c",
+          "after": "9b62cb586b1d05ed7c15aa7c1c0de30c3745116bfa26de2073c84e47b0d59445"
+        },
+        {
+          "path": "packages/client/ui-conversation/tests/assembly-surfaces.client.spec.tsx",
+          "before": "23a9d88060f396a8b2dbf398a68220749533d7bec6237e00ddb132947d248ee2",
+          "after": "9c5d3bc17648d05b248944aad11e3e9cd9f0005b9664db5078d2666123746664"
+        },
+        {
+          "path": "packages/client/ui-conversation/tests/skeleton.client.spec.tsx",
+          "before": "6236d82eba04ff38e78901a720f3ac4990c6afeaa14361eff701b9fa6468077c",
+          "after": "e56350fa5f6de93a7aea35285dc23542b6b6c84922d3f17dee3003f18cd2af81"
+        }
+      ],
+      "diff": "conversation-hero-actions.patch"
+    },
+    {
+      "id": "conversation-draft-initialization",
+      "purpose": "The public draft initializer accepts complete semantic drafts and persists successful explicit initialization before a Session scope is released. Pending submissions refuse initialization; storage failure restores the original draft. Ordinary draft edits retain the upstream mounted persistence lifecycle.",
+      "tests": [
+        "packages/client/ui-conversation/tests/conversation-store.client.spec.ts",
+        "packages/client/ui-conversation/tests/apply-inject.client.spec.tsx",
+        "packages/client/ui-conversation/tests/skeleton.client.spec.tsx",
+        "apps/web/tests/deepseek-harness-catalog.e2e.ts",
+        "packages/client/ui-conversation/tests/draft-hub.client.spec.ts",
+        "packages/extensions/ui-deepseek-harness-product/tests/harness-actions.client.spec.ts"
+      ],
+      "files": [
+        {
+          "path": "packages/client/ui-conversation/README.i18n.yaml",
+          "before": "927b3e3d43d0718925ce94accc0be550ea293c935bb28c9edecc7f04e93c4600",
+          "after": "d80d03ee7f58b7868dfc3dcf7407e9da826034bc8050565b51331502b6a8d50e"
+        },
+        {
+          "path": "packages/client/ui-conversation/README.md",
+          "before": "50ace8f2ba5a7c6788146d4c47b5419f2329c4580b107387b7a16c690225a1d6",
+          "after": "5eb67304565aef8ec4fc1cc4230cef9d9be287d38217376043651e2fdd3bdfb4"
+        },
+        {
+          "path": "packages/client/ui-conversation/README.zh.md",
+          "before": "4699186c1b143a34aa833b1af3c627721231e8bc5b3ef502fc09b5aeda3de25d",
+          "after": "a71b916e37dc410a5578399b7108929ec99e896d4066dc9c69d15bd2d912d797"
+        },
+        {
+          "path": "packages/client/ui-conversation/src/client/contract/input.ts",
+          "before": "7882d2b0e3344dfaac8d851190f8e524fa31de83894bffc36b9b5dca2074648c",
+          "after": "69e4298673233e311910e0231ce8523c6797f5fdf7e6f8a864bf6c784c15628d"
+        },
+        {
+          "path": "packages/client/ui-conversation/src/client/input/hub.ts",
+          "before": "9e55d5dd1bf9ee63b30c9c50fd5e2c12139e0c1863623af927d379312daea1dd",
+          "after": "65256423cc4b498d0aa3bccfeaf91f5d9030a7378a86986ae537e757947be380"
+        },
+        {
+          "path": "packages/client/ui-conversation/src/client/stores.ts",
+          "before": "054db5dbf668a3525bb808b2b868d24182a8e57489733ce977ff2e1c896dd164",
+          "after": "471fff98279cf8e42693fb38c8aa1d0dc58c4e0aec37704a7ea86d5359910504"
+        },
+        {
+          "path": "packages/client/ui-conversation/tests/apply-inject.client.spec.tsx",
+          "before": "5626b1942750578816e74e50be96ead5fc7d45278136d0786114e8429e579c6e",
+          "after": "f3720a8e31fe397f62a29aed0855c93682b76eeec66e5de0756d5f30afe609d4"
+        },
+        {
+          "path": "packages/client/ui-conversation/tests/conversation-store.client.spec.ts",
+          "before": "ed579e06c751b2a5f95ef6031bf796410cef594a87f5ff8b4a1cdef7632e93ab",
+          "after": "916842e17970f1c3a2f3573e30482105d6f48375fd7a5b6eb275148baac7dfe3"
+        },
+        {
+          "path": "packages/client/ui-conversation/tests/draft-hub.client.spec.ts",
+          "before": "53768deb3230351503d4692e932c034e8600e6e3dc4dab2c8ad4ed3c23b8f201",
+          "after": "dd9a8ff0f890e79e54d524e3cfdad6a5d775dd225fde70d9f6b5fd47f1ada0c0"
+        }
+      ],
+      "diff": "conversation-draft-initialization.patch"
+    },
+    {
+      "id": "document-preview-factory",
+      "purpose": "Expose a reusable root-scoped document.preview Factory for authorized non-Session sources. Reuse native document bodies without fabricated Sessions, cancel retired reads, clear inaccessible bytes, admit Office source reads through caller-owned conversion, and preserve visible XLSX rows when optional worksheet format properties are absent.",
+      "tests": [
+        "packages/client/ui-sidebar-documentpreview/tests/document-surface.client.spec.tsx",
+        "packages/client/ui-sidebar-documentpreview/tests/apply.client.spec.ts",
+        "packages/client/ui-sidebar-documentpreview/tests/pdf-body.client.spec.tsx",
+        "packages/client/ui-sidebar-documentpreview/tests/image-body.client.spec.tsx",
+        "packages/client/ui-sidebar-documentpreview/tests/markdown-body.client.spec.tsx",
+        "packages/client/ui-sidebar-documentpreview/tests/excel-convert.client.spec.ts",
+        "apps/web/tests/deepseek-harness-catalog.e2e.ts"
+      ],
+      "files": [
+        {
+          "path": "packages/client/ui-sidebar-documentpreview/README.i18n.yaml",
+          "before": "38b000c03615c4293c48ca8568ca00bc0f6b679d99adb0e0490f133f0c651c3b",
+          "after": "6518c06dd556a1ee777c450b54f19bd13fcdbe8567204bda8ae0708408fac408"
+        },
+        {
+          "path": "packages/client/ui-sidebar-documentpreview/README.md",
+          "before": "ccad809715af47772cdc303ac2b3e685e73c105b3d6fa9c18e11451063c8bf90",
+          "after": "63aeb6a6bf064ab4b223be42d1cc0e5cb9aa49c406e377c2eeffb98d9c93bd72"
+        },
+        {
+          "path": "packages/client/ui-sidebar-documentpreview/README.zh.md",
+          "before": "0b8fcb041f0591c9680b460617b1f3bfdfbef8b0b433c063c5b47954373ac90d",
+          "after": "6230239b2c853103f3a0f3ad1aa95a1e85fe2dec6c602a550a1a34c5e108fd7b"
+        },
+        {
+          "path": "packages/client/ui-sidebar-documentpreview/src/client/code/CodeBody.tsx",
+          "before": "189768299c97227af982f21aec4f21f72e00b37f170f7ad41114377512c52d77",
+          "after": "e0f802973b52fc6db112a5a0016d15f05669961f215bdbeeb445abbda965d53e"
+        },
+        {
+          "path": "packages/client/ui-sidebar-documentpreview/src/client/document/DocumentPreviewSurface.module.css",
+          "before": null,
+          "after": "33fe4bddde7e1ca520477346ac90a54e21778d5bbb215939c5d02a31866b6140"
+        },
+        {
+          "path": "packages/client/ui-sidebar-documentpreview/src/client/document/DocumentPreviewSurface.tsx",
+          "before": null,
+          "after": "8d90d3c3cefcd5f14b6ceafeac94d7426cb824d16b0b4a1413863fa13aabfd26"
+        },
+        {
+          "path": "packages/client/ui-sidebar-documentpreview/src/client/document/surface-bodies.tsx",
+          "before": null,
+          "after": "a4f35f1f9abe0191b7f3d8ade74d4094b111473492f10df39ae48b47082fdb2e"
+        },
+        {
+          "path": "packages/client/ui-sidebar-documentpreview/src/client/document/surface-contract.ts",
+          "before": null,
+          "after": "a5d93704657805e2c1314360dd4d4e9d5c500e9c10b9dd2294ff4acba9569edc"
+        },
+        {
+          "path": "packages/client/ui-sidebar-documentpreview/src/client/document/surface.ts",
+          "before": null,
+          "after": "700789a5388a8c9a12b2515907f0a409c3ba7e40d2672daed80e71b8e43f62ac"
+        },
+        {
+          "path": "packages/client/ui-sidebar-documentpreview/src/client/excel/LazyExcelBody.tsx",
+          "before": "5ddd0d15063725fce40ffa7e8e4ed7346aa83da9b19df434f7ddb766c2de6255",
+          "after": "5094c05dcdc0257fcdafa494ec8564c177c1fe929134cdd4afe37130c633f5e3"
+        },
+        {
+          "path": "packages/client/ui-sidebar-documentpreview/src/client/excel/excel.tsx",
+          "before": "37ffe5e647aec51d99ce2352bd1b5d475200e885fe4dccf3b24da0654b03b5e5",
+          "after": "17b7910bac7e923f58e312799f97f2d9684d22772c4e5fb8f254ef040298550e"
+        },
+        {
+          "path": "packages/client/ui-sidebar-documentpreview/src/client/excel/xlsx.ts",
+          "before": "7192d771db899ece3d7c300ec4cf5f7f1a77c664cd0d0db7a82c2932831178bf",
+          "after": "2dc63f767f6fc2887f43d5a6dc602af005656bbd8c74049a8ce666d5ab41ad13"
+        },
+        {
+          "path": "packages/client/ui-sidebar-documentpreview/src/client/html/HtmlBody.tsx",
+          "before": "e10a34ded1bc1f3fceff037756bee3408c2feec34061c96fa925c1dcd6d63dc5",
+          "after": "8c6c0aa41ba8f6b4417812a99177c56a8024ed63a116cea62c2d8bd7de76c01d"
+        },
+        {
+          "path": "packages/client/ui-sidebar-documentpreview/src/client/image/ImageBody.tsx",
+          "before": "2d478bc45d304a1198cc275a587027da3096af87813b65cdab00dd02a00031f3",
+          "after": "9069ee8a2daeed50cbe457ba703115e0e10df2fe9924484c36c2e97ae3ddfff8"
+        },
+        {
+          "path": "packages/client/ui-sidebar-documentpreview/src/client/index.ts",
+          "before": "f487b83f40bba076b6e83f5c72c4dc7210334ce8df37f65d52dced7ef4f21cac",
+          "after": "742d6941ac4ff40094f1dfb5b5b6468904a039d0a00727d3542739171db394e7"
+        },
+        {
+          "path": "packages/client/ui-sidebar-documentpreview/src/client/locales.ts",
+          "before": "496cfedfb13b19695a2a2d2c909d4eeea686289513599b02a1dd38a1ddb8c957",
+          "after": "43c84c344fd28f469d1b0cd48ff3fa89addae291546b53bb9a55c6c914088519"
+        },
+        {
+          "path": "packages/client/ui-sidebar-documentpreview/src/client/markdown/MarkdownBody.tsx",
+          "before": "a737f15db56ff0f0d051d4314ea30a28a6f66e3866801e4a212219fc8934d8ae",
+          "after": "3be773348eb91bd938c65e4e3c6efd0e65e40af3831d1d7a9ef8f747e4965e03"
+        },
+        {
+          "path": "packages/client/ui-sidebar-documentpreview/src/client/pdf/pdf.tsx",
+          "before": "62398432150c88965ad970a2bfab21aa1ac3f6908ebbd1c57ab53beb145c4b97",
+          "after": "8b4415df198c9eaa49ed773686fede92ea8505ba293cb11e040bb8be56022c5e"
+        },
+        {
+          "path": "packages/client/ui-sidebar-documentpreview/src/client/text/TextBody.tsx",
+          "before": "b693bcd6c6a27dc92c3a38c63054f666306f0007851190e3b595756518ffbc86",
+          "after": "7f2a63ed50835958d9cbbcc31f444f2054fae2b771af6e339b7cea69b833fe17"
+        },
+        {
+          "path": "packages/client/ui-sidebar-documentpreview/tests/apply.client.spec.ts",
+          "before": "550f8e82b5fd6b29449069711c92d78040c74feaf05d511cf77e84387c72718e",
+          "after": "1696045e585a19f96c2bbf542293ec1144b5ee1806f9c61c5b799f435a84597e"
+        },
+        {
+          "path": "packages/client/ui-sidebar-documentpreview/tests/document-preview-license-bundle.client.spec.ts",
+          "before": "7d6455a71d7e2f197ee50e06fc5ec43d685928d33037c26ea0e50a49a4ed356b",
+          "after": "c9fd2a04d9fa5722e9286e6e12dae291f0b1fcf057b23c6d1a2a4449b526b098"
+        },
+        {
+          "path": "packages/client/ui-sidebar-documentpreview/tests/document-surface.client.spec.tsx",
+          "before": null,
+          "after": "19ecb3db41dce220bc4c5db00902ca0fd7c8471191447332ede028ed69a1c4d2"
+        },
+        {
+          "path": "packages/client/ui-sidebar-documentpreview/tests/excel-convert.client.spec.ts",
+          "before": "d86411161bfb9167fc8244e7bc1669656aa7ba949318c6974a00b3ebaa709afc",
+          "after": "e2c7d7eee6c27d60c123036b7ba4caa3bb695838fbf78014b4467a474c0a2a83"
+        }
+      ],
+      "diff": "document-preview-factory.patch"
+    }
+  ]
+}

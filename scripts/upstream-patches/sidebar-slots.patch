@@ -1,0 +1,184 @@
+diff --git a/packages/client/ui-sidebar/README.i18n.yaml b/packages/client/ui-sidebar/README.i18n.yaml
+index da1a7525..8610ff87 100644
+--- a/packages/client/ui-sidebar/README.i18n.yaml
++++ b/packages/client/ui-sidebar/README.i18n.yaml
+@@ -21,8 +21,8 @@
+   en: 098f85b9287d3147
+   zh: b921c128ac37d2cd
+ /deepseek-ai-dsh-client-ui-sidebar/use-this-package/global-panel-entries:
+-  en: 5d3300d3506254c5
+-  zh: 541ae1ee1e10b921
++  en: 46faf5e36c3a6f27
++  zh: 2aeb209190acb1d4
+ /deepseek-ai-dsh-client-ui-sidebar/use-this-package/collapse-behavior:
+   en: 20e744360b4be2cc
+   zh: a90be7e8526bbb21
+diff --git a/packages/client/ui-sidebar/README.md b/packages/client/ui-sidebar/README.md
+index 927ee4de..7b4163f2 100644
+--- a/packages/client/ui-sidebar/README.md
++++ b/packages/client/ui-sidebar/README.md
+@@ -35,7 +35,7 @@ The expanded brand row renders `sidebar.brand.mark` and `sidebar.brand.name` as
+ 
+ ### Global panel entries
+ 
+-Plugins add an icon component to the root-scoped `sidebar.panellist` list with an `id`, optional `order`, and a string or locale-aware `label`. The same id addresses the component registered in the layout's root-scoped `main` keyed slot; selecting a missing main entry throws without changing the current selection. The label supplies plain visible text, the accessible name, and the collapsed tooltip. Each row reads its own selected state through `usePanelInfo`; moving DOM focus to search or a directory picker does not change the displayed panel or its selected row. With no registrations, neither the list nor spacing for it is rendered. The shipped composition registers no example panel.
++Plugins add an icon component to the root-scoped `sidebar.panellist` list with an `id`, optional `order`, and a string or locale-aware `label`. The same id addresses the component registered in the layout's root-scoped `main` keyed slot; selecting a missing main entry throws without changing the current selection. The label supplies plain visible text, the accessible name, and the collapsed tooltip. Icons receive `size`, `active`, and `wide`; plugins can add non-interactive labels above the rows through `sidebar.panelheading`, whose `wide` value lets them hide text in the collapsed rail. Each row reads its own selected state through `usePanelInfo`; moving DOM focus to search or a directory picker does not change the displayed panel or its selected row. With no panel registrations, neither the list nor its headings and spacing are rendered. The shipped composition registers no example panel.
+ 
+ ### Collapse behavior
+ 
+diff --git a/packages/client/ui-sidebar/README.zh.md b/packages/client/ui-sidebar/README.zh.md
+index 95f7c5ea..1e36fc13 100644
+--- a/packages/client/ui-sidebar/README.zh.md
++++ b/packages/client/ui-sidebar/README.zh.md
+@@ -35,7 +35,7 @@ dsh Web 客户端的侧边栏让用户识别当前构建、启动新会话、将
+ 
+ ### 全局面板入口
+ 
+-插件在 root 作用域的 `sidebar.panellist` list 中注册图标组件，提供 `id`、可选 `order`，以及字符串或 locale-aware 的 `label`。同一个 id 寻址布局中 root 作用域 `main` keyed slot 的组件；选择不存在的主面板条目会抛错，并保留当前选中态。标签提供普通可见文字、无障碍名称和折叠提示。每一行通过 `usePanelInfo` 读取自己的选中态；DOM 焦点移到搜索框或目录选择器时，显示的面板及其列表项选中态不变。没有注册项时，列表及其间距均不渲染。产品随附的组合不注册示例面板。
++插件在 root 作用域的 `sidebar.panellist` list 中注册图标组件，提供 `id`、可选 `order`，以及字符串或 locale-aware 的 `label`。同一个 id 寻址布局中 root 作用域 `main` keyed slot 的组件；选择不存在的主面板条目会抛错，并保留当前选中态。标签提供普通可见文字、无障碍名称和折叠提示。图标收到 `size`、`active` 和 `wide`；插件可通过 `sidebar.panelheading` 在列表项上方添加不可交互的标签，其 `wide` 值让标签在折叠轨道中隐藏文字。每一行通过 `usePanelInfo` 读取自己的选中态；DOM 焦点移到搜索框或目录选择器时，显示的面板及其列表项选中态不变。没有面板注册项时，列表、标题及其间距均不渲染。产品随附的组合不注册示例面板。
+ 
+ ### 折叠行为
+ 
+diff --git a/packages/client/ui-sidebar/src/client/SidebarRoot.module.css b/packages/client/ui-sidebar/src/client/SidebarRoot.module.css
+index 77873729..0b732f33 100644
+--- a/packages/client/ui-sidebar/src/client/SidebarRoot.module.css
++++ b/packages/client/ui-sidebar/src/client/SidebarRoot.module.css
+@@ -487,6 +487,10 @@
+   margin-bottom: 8px;
+ }
+ 
++.panelHeadings:empty {
++  display: none;
++}
++
+ /* Panel entries share the New Session bar's 12px radius and 2px inset, the
+    session rows' hover/selected surface, and the primary ink. */
+ .panelRow {
+diff --git a/packages/client/ui-sidebar/src/client/SidebarRoot.tsx b/packages/client/ui-sidebar/src/client/SidebarRoot.tsx
+index 46c01930..54d6b24f 100644
+--- a/packages/client/ui-sidebar/src/client/SidebarRoot.tsx
++++ b/packages/client/ui-sidebar/src/client/SidebarRoot.tsx
+@@ -68,7 +68,7 @@ function PanelRow({ id, label, wide, usePanelInfo, selectPanel, renderSlot }: Pa
+         onClick={() => { selectPanel(id) }}
+       >
+         <span className={css.panelGlyph} aria-hidden="true">
+-          {renderSlot('sidebar.panellist', { size: wide ? 16 : 18, active }, { only: id })}
++          {renderSlot('sidebar.panellist', { size: wide ? 16 : 18, active, wide }, { only: id })}
+         </span>
+         {wide && (
+           <span className={clsx(css.panelTitle, css.wide)}>
+@@ -278,6 +278,9 @@ export function SidebarRoot({
+ 
+       {panels.length > 0 && (
+         <nav className={css.panelList} aria-label={t('panels.label')}>
++          <div className={css.panelHeadings}>
++            {renderSlot('sidebar.panelheading', { wide })}
++          </div>
+           {panels.map(({ id, label }) => (
+             <PanelRow
+               key={id}
+diff --git a/packages/client/ui-sidebar/src/client/contract/slots.ts b/packages/client/ui-sidebar/src/client/contract/slots.ts
+index c6ba475f..b3dbaf6e 100644
+--- a/packages/client/ui-sidebar/src/client/contract/slots.ts
++++ b/packages/client/ui-sidebar/src/client/contract/slots.ts
+@@ -28,6 +28,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
+      * package's `sidebar` entry; the shell supplies a generic text fallback.
+      */
+     'sidebar.brand.name': { kind: 'single'; scope: 'root'; owner: SidebarBrandNameOwnerProps }
++    /** Non-interactive headings rendered above global panel rows. */
++    'sidebar.panelheading': { kind: 'list'; scope: 'root'; owner: SidebarPanelHeadingOwnerProps }
+     /**
+      * Global panel icons. Each list id addresses the matching main panel;
+      * the sidebar owns the button and resolves its label from list metadata.
+@@ -72,6 +74,14 @@ export interface SidebarPanelIconOwnerProps {
+   size: number
+   /** Whether this panel is selected in the main column. */
+   active: boolean
++  /** Whether the sidebar has room for its text label. */
++  wide: boolean
++}
++
++/** Display state supplied to a non-interactive panel-group heading. */
++export interface SidebarPanelHeadingOwnerProps {
++  /** Whether the sidebar has room for the heading. */
++  wide: boolean
+ }
+ 
+ /** Serializable metadata for one active global panel list registration. */
+@@ -140,6 +150,7 @@ export type SidebarRootComponentProps =
+     | 'sidebar.brand.mark'
+     | 'sidebar.brand.name'
+     | 'sidebar.toggle.badge'
++    | 'sidebar.panelheading'
+     | 'sidebar.panellist'
+     | 'sidebar.workspaces'
+     | 'sidebar.settings'
+diff --git a/packages/client/ui-sidebar/src/client/index.ts b/packages/client/ui-sidebar/src/client/index.ts
+index 3cd24cfc..f21a9489 100644
+--- a/packages/client/ui-sidebar/src/client/index.ts
++++ b/packages/client/ui-sidebar/src/client/index.ts
+@@ -17,7 +17,7 @@ import { en, zh, type SidebarKey } from './locales.ts'
+ 
+ export type {
+   SidebarBrandMarkOwnerProps, SidebarBrandNameOwnerProps, SidebarFooterActionOwnerProps,
+-  SidebarPanelIconOwnerProps, SidebarPanelMetadata,
++  SidebarPanelHeadingOwnerProps, SidebarPanelIconOwnerProps, SidebarPanelMetadata,
+   SidebarRootComponentProps, SidebarRootInjected, SidebarSectionOwnerProps, SidebarSettingsOwnerProps,
+ } from './contract/slots.ts'
+ export type { SidebarKey } from './locales.ts'
+@@ -80,6 +80,7 @@ export function apply(ctx: ClientContext): void {
+       'sidebar.brand.mark': { kind: 'single', scope: 'root' },
+       'sidebar.brand.name': { kind: 'single', scope: 'root' },
+       'sidebar.toggle.badge': { kind: 'single', scope: 'root' },
++      'sidebar.panelheading': { kind: 'list', scope: 'root' },
+       'sidebar.panellist': { kind: 'list', scope: 'root' },
+       'sidebar.workspaces': { kind: 'single', scope: 'root' },
+       'sidebar.settings': { kind: 'single', scope: 'root' },
+diff --git a/packages/client/ui-sidebar/tests/apply.client.spec.tsx b/packages/client/ui-sidebar/tests/apply.client.spec.tsx
+index 19be1201..cf31d9c7 100644
+--- a/packages/client/ui-sidebar/tests/apply.client.spec.tsx
++++ b/packages/client/ui-sidebar/tests/apply.client.spec.tsx
+@@ -70,6 +70,7 @@ describe('ui-sidebar apply', () => {
+     expect(b.slots.spec('sidebar.workspaces')).toEqual({ kind: 'single', scope: 'root' })
+     expect(b.slots.spec('sidebar.settings')).toEqual({ kind: 'single', scope: 'root' })
+     expect(b.slots.spec('sidebar.footer.action')).toEqual({ kind: 'list', scope: 'root' })
++    expect(b.slots.spec('sidebar.panelheading')).toEqual({ kind: 'list', scope: 'root' })
+     expect(b.slots.spec('sidebar.panellist')).toEqual({ kind: 'list', scope: 'root' })
+     // Copy rides the standard locale seat, not the inject face.
+     expect(b.slots.entries('sidebar')[0]!.locale).toBe('sidebar')
+@@ -152,6 +153,7 @@ describe('ui-sidebar apply', () => {
+     expect(b.slots.spec('sidebar.brand.name')).toBeUndefined()
+     expect(b.slots.spec('sidebar.workspaces')).toBeUndefined()
+     expect(b.slots.spec('sidebar.footer.action')).toBeUndefined()
++    expect(b.slots.spec('sidebar.panelheading')).toBeUndefined()
+     expect(b.slots.spec('sidebar.panellist')).toBeUndefined()
+     expect(b.slots.entries('main')).toHaveLength(0)
+   })
+diff --git a/packages/client/ui-sidebar/tests/panel-list.client.spec.tsx b/packages/client/ui-sidebar/tests/panel-list.client.spec.tsx
+index 5673aa95..9ef2ac1f 100644
+--- a/packages/client/ui-sidebar/tests/panel-list.client.spec.tsx
++++ b/packages/client/ui-sidebar/tests/panel-list.client.spec.tsx
+@@ -121,6 +121,23 @@ async function mountPanels(runtime: SlotTestRuntime, locale: LocaleRuntime, beta
+ }
+ 
+ describe('sidebar global panels', () => {
++  it('renders panel headings as non-interactive labels', async () => {
++    const { runtime, view } = await bench()
++    await mountPanel(runtime, { id: ALPHA, heading: 'Alpha content', label: 'Alpha panel' })
++    await runtime.mount({
++      inject: ['slots'],
++      apply(ctx: Context) {
++        ctx.slots.inject('sidebar.panelheading', () => ctx.slots.register({
++          name: 'sidebar.panelheading', id: 'capabilities', order: 0,
++        }, ({ wide }: PropsRuntime<'sidebar.panelheading'>) => wide ? <span>Capabilities</span> : null))
++      },
++    })
++
++    const navigation = await view.findByRole('navigation', { name: 'Global panels' })
++    expect(within(navigation).getByText('Capabilities')).toBeTruthy()
++    expect(within(navigation).queryByRole('button', { name: 'Capabilities' })).toBeNull()
++  })
++
+   it('adds late registrations, removes each plugin contribution, and leaves no empty panel-list DOM', async () => {
+     const { runtime, locale, view } = await bench()
+     expect(runtime.slots.entries('sidebar.panellist')).toEqual([])

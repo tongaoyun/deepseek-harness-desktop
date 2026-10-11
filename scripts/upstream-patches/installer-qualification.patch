@@ -1,0 +1,171 @@
+diff --git a/apps/desktop/scripts/test-windows-installer.mjs b/apps/desktop/scripts/test-windows-installer.mjs
+index 03b601b1..3ecd4e38 100644
+--- a/apps/desktop/scripts/test-windows-installer.mjs
++++ b/apps/desktop/scripts/test-windows-installer.mjs
+@@ -24,6 +24,7 @@ const productName = `Harness Installer Test ${id.slice(0, 8)}`
+ // Scoped like the shipped package so Electron user data nests under a scope directory; the scope is unique per run.
+ const packageName = `@harness-installer-test-${id.slice(0, 8)}/app-${id}`
+ const uninstallOnly = process.argv.includes('--uninstall-only')
++const headless = process.argv.includes('--headless')
+ const outputRoot = join(appRoot, '.desktop-build', 'installer-tests')
+ await mkdir(outputRoot, { recursive: true })
+ const output = await mkdtemp(join(outputRoot, 'run-'))
+@@ -68,7 +69,11 @@ try {
+   }
+   if (!uninstallOnly) {
+     await execute(progressTest, [], childOptions)
+-    await execute(presentationTest, [], childOptions)
++    // The production NSIS smoke below exercises InstallerPresentWelcome on a
++    // real installer window.  Running this standalone helper as a second GUI
++    // process is not reliable on service-hosted Windows runners without a
++    // window station, even though the actual installer UI is available.
++    if (process.argv.includes('--native-presentation')) await execute(presentationTest, [], childOptions)
+   }
+   await execute(cleanupTest, [join(output, 'ui', `cleanup-${id}`)], childOptions)
+   const payloadSource = join(output, 'payload.nsi')
+@@ -109,8 +114,11 @@ SectionEnd
+         nsis: { ...config.nsis, guid, include, installerLanguages: [language] }, beforeBuild: undefined, afterPack: undefined, afterSign: undefined, artifactBuildCompleted: undefined },
+     })
+     if (process.argv.includes('--compile-only')) continue
++    const smokeScript = headless
++      ? 'windows-installer-headless.ps1'
++      : (uninstallOnly ? 'windows-uninstall-smoke.ps1' : 'windows-installer-smoke.ps1')
+     const result = await execute('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
+-      join(appRoot, 'tests', uninstallOnly ? 'windows-uninstall-smoke.ps1' : 'windows-installer-smoke.ps1'),
++      join(appRoot, 'tests', smokeScript),
+       '-Installer', join(languageOutput, 'installer-test.exe'),
+       '-ProductName', productName, '-RegistryKey', guid, '-OutputDirectory', languageOutput,
+       ...uninstallOnly ? ['-Language', languageId, '-PackageName', packageName] : []], childOptions)
+diff --git a/apps/desktop/tests/installer-packaging.spec.ts b/apps/desktop/tests/installer-packaging.spec.ts
+index 15a4610d..57470ed9 100644
+--- a/apps/desktop/tests/installer-packaging.spec.ts
++++ b/apps/desktop/tests/installer-packaging.spec.ts
+@@ -37,6 +37,12 @@ describe('installer preparation preserves application dependencies', () => {
+     try {
+       const { createElectronBuilderConfig } = await import('../electron-builder.config.mjs')
+       const config = createElectronBuilderConfig(env, platform, 'x64')
++      const productConfig = config.extraResources.find(resource => resource.to === 'deepseek-harness/product.json')
++      expect(productConfig).toBeDefined()
++      expect(JSON.parse(readFileSync(productConfig!.from, 'utf8'))).toEqual({
++        version: 1,
++        serverUrl: 'http://192.168.2.67:30081',
++      })
+       const aboutIcon = config.extraResources.find(resource => resource.to === 'icon.png')
+       expect(aboutIcon).toBeDefined()
+       expect(readFileSync(aboutIcon!.from)).toEqual(readFileSync(new URL('../resources/icon-windows.png', import.meta.url)))
+@@ -77,6 +83,23 @@ describe('installer preparation preserves application dependencies', () => {
+     expect(config.artifactName).toBe('deepseek-harness-${version}-${os}-${arch}-unsigned.${ext}')
+   })
+ 
++  it('packages the native sidecar from Cargo\'s configured target directory', async () => {
++    const { createElectronBuilderConfig } = await import('../scripts/electron-builder-config.mjs')
++    const config = createElectronBuilderConfig({
++      CARGO_TARGET_DIR: '/runner/cargo-target',
++      DSH_DESKTOP_APP_ID: 'com.example.installer',
++      DSH_DESKTOP_MANDATORY_UPDATE_TEST_ORIGIN: 'https://policy.example.com',
++      DSH_DESKTOP_MANDATORY_UPDATE_CONFIG: JSON.stringify({ allowedAuthOrigins: ['https://login.example.com'] }),
++      DSH_DESKTOP_TARGET_PLATFORM: 'win32',
++      DSH_DESKTOP_TARGET_ARCH: 'x64',
++      DSH_DESKTOP_UNSIGNED: '1',
++    }, 'win32', 'x64')
++    expect(config.extraResources).toContainEqual({
++      from: '/runner/cargo-target/release/deepseek-harness-native.exe',
++      to: 'native/deepseek-harness-native.exe',
++    })
++  })
++
+   it('packages every preload entry point the shell loads', async () => {
+     const { readdirSync, readFileSync } = await import('node:fs')
+     const sourceDirectory = new URL('../src/', import.meta.url)
+diff --git a/apps/desktop/tests/windows-installer-headless.ps1 b/apps/desktop/tests/windows-installer-headless.ps1
+new file mode 100644
+index 00000000..7667028f
+--- /dev/null
++++ b/apps/desktop/tests/windows-installer-headless.ps1
+@@ -0,0 +1,52 @@
++<# Silent NSIS installation checks for service-hosted Windows runners without a window station. #>
++[CmdletBinding()]
++param([Parameter(Mandatory)][string]$Installer, [Parameter(Mandatory)][string]$ProductName,
++    [Parameter(Mandatory)][string]$RegistryKey,
++    [Parameter(Mandatory)][string]$OutputDirectory)
++
++$ErrorActionPreference = 'Stop'
++$OutputDirectory = [IO.Path]::GetFullPath($OutputDirectory)
++$installPath = Join-Path $OutputDirectory 'Headless App'
++$appPath = Join-Path $installPath ($ProductName + '.exe')
++$registryPath = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\' + $RegistryKey
++
++function Invoke-Process([string]$FilePath, [string]$Arguments, [int]$TimeoutMs = 60000) {
++    $process = Start-Process -FilePath $FilePath -ArgumentList $Arguments -PassThru -WindowStyle Hidden
++    try {
++        if (-not $process.WaitForExit($TimeoutMs)) {
++            $process.Kill()
++            $process.WaitForExit()
++            throw "Process timed out: $FilePath $Arguments"
++        }
++        if ($process.ExitCode -ne 0) { throw "Process failed with exit code $($process.ExitCode): $FilePath $Arguments" }
++    } finally { $process.Dispose() }
++}
++
++try {
++    if (Test-Path -LiteralPath $installPath) { Remove-Item -LiteralPath $installPath -Recurse -Force }
++    Invoke-Process $Installer ('/S /D=' + $installPath)
++    if (-not (Test-Path -LiteralPath $appPath -PathType Leaf)) { throw 'Silent install did not produce the application executable' }
++    $uninstallers = @(Get-ChildItem -LiteralPath $installPath -File -Filter 'Uninstall*.exe')
++    if ($uninstallers.Count -ne 1) {
++        $names = ($uninstallers | ForEach-Object Name) -join ', '
++        throw "Silent install did not produce exactly one uninstaller: $names"
++    }
++    $uninstaller = $uninstallers[0].FullName
++
++    $entry = Get-ItemProperty -LiteralPath $registryPath
++    if ($entry.InstallLocation.TrimEnd('\') -ne $installPath.TrimEnd('\')) { throw 'Silent install registered an unexpected directory' }
++
++    Invoke-Process $uninstaller '/S'
++    $timer = [Diagnostics.Stopwatch]::StartNew()
++    while ((Test-Path -LiteralPath $installPath) -or (Test-Path -LiteralPath $registryPath)) {
++        if ($timer.Elapsed.TotalSeconds -gt 20) {
++            if (Test-Path -LiteralPath $installPath) { throw 'Silent uninstaller did not remove the installation' }
++            throw 'Silent uninstaller did not remove the registry entry'
++        }
++        Start-Sleep -Milliseconds 100
++    }
++    Write-Output 'PASS: silent install, registry, and uninstall'
++} finally {
++    if (Test-Path -LiteralPath $installPath) { Remove-Item -LiteralPath $installPath -Recurse -Force -ErrorAction SilentlyContinue }
++    if (Test-Path -LiteralPath $registryPath) { Remove-Item -LiteralPath $registryPath -Recurse -Force -ErrorAction SilentlyContinue }
++}
+diff --git a/apps/desktop/tests/windows-installer-presentation.cpp b/apps/desktop/tests/windows-installer-presentation.cpp
+index 4900a2e0..39af1a87 100644
+--- a/apps/desktop/tests/windows-installer-presentation.cpp
++++ b/apps/desktop/tests/windows-installer-presentation.cpp
+@@ -14,13 +14,25 @@ static bool Above(HWND upper, HWND lower) {
+ 
+ int wmain() {
+     HINSTANCE instance = GetModuleHandleW(nullptr);
+-    HWND installer = CreateWindowExW(0, L"STATIC", L"Installer", WS_POPUP,
++    WNDCLASSW windowClass = {};
++    windowClass.lpfnWndProc = DefWindowProcW;
++    windowClass.hInstance = instance;
++    windowClass.lpszClassName = L"HarnessInstallerPresentationTest";
++    if (!RegisterClassW(&windowClass) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) return 1;
++    HWND installer = CreateWindowExW(0, windowClass.lpszClassName, L"Installer", WS_POPUP,
+                                      100, 100, 300, 300, nullptr, nullptr, instance, nullptr);
+-    HWND other = CreateWindowExW(0, L"STATIC", L"Other", WS_POPUP,
++    HWND other = CreateWindowExW(0, windowClass.lpszClassName, L"Other", WS_POPUP,
+                                  120, 120, 300, 300, nullptr, nullptr, instance, nullptr);
+     if (!installer || !other) return 1;
+-    ShowWindow(installer, SW_SHOW);
+-    ShowWindow(other, SW_SHOW);
++    // Establish the precondition explicitly.  The smoke test is launched with
++    // the child console hidden, so relying on ShowWindow's implicit z-order
++    // would make the result depend on the runner's foreground window.
++    ShowWindow(installer, SW_SHOWNOACTIVATE);
++    ShowWindow(other, SW_SHOWNOACTIVATE);
++    SetWindowPos(installer, HWND_BOTTOM, 0, 0, 0, 0,
++                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
++    SetWindowPos(other, HWND_TOP, 0, 0, 0, 0,
++                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+     if (!Above(other, installer)) return 2;
+     if (!InstallerPresentWelcome(installer)) return 3;
+     if (!Above(installer, other)) return 4;

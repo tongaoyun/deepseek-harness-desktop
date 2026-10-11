@@ -89,7 +89,7 @@ export function HtmlBody({
 }
 
 /** Static preview mounts a separate browsing context so a mode change retires running scripts. */
-function BasicHtmlFrame({ data, frameName, t }: Pick<FrameInput, 'data' | 'frameName'> & { t: HtmlBodyProps['t'] }): ReactNode {
+export function BasicHtmlFrame({ data, frameName, t }: Pick<FrameInput, 'data' | 'frameName'> & { t: HtmlBodyProps['t'] }): ReactNode {
   const html = useMemo(() => {
     try {
       return createBasicHtmlDocument(data)

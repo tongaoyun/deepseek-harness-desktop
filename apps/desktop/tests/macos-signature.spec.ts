@@ -51,14 +51,9 @@ describe('desktop macOS release signature', () => {
       'com.apple.security.cs.disable-library-validation', 'com.apple.security.device.audio-input']) {
       expect(entitlements).toContain(`<key>${key}</key>\n    <true/>`)
     }
-    expect(config.extraResources).toHaveLength(4)
+    expect(config.extraResources).toHaveLength(2)
     expect(config.extraResources[0]?.to).toBe('runtime')
     expect(portablePath(config.extraResources[0]?.from ?? '')).toContain('/.desktop-build/targets/mac-arm64/runtime')
-    expect(config.extraResources[1]?.to).toBe('deepseek-harness/product.json')
-    const nativeSidecar = config.extraResources[2]
-    const nativeSidecarPath = nativeSidecar !== undefined && 'from' in nativeSidecar && typeof nativeSidecar.from === 'string'
-      ? nativeSidecar.from : ''
-    expect(portablePath(nativeSidecarPath)).toContain('/native/deepseek-harness/target/release/deepseek-harness-native')
     const [dshFiles, dshNodeModules] = config.files.slice(-2)
     if (!dshFiles || !dshNodeModules || typeof dshFiles === 'string' || typeof dshNodeModules === 'string') {
       throw new Error('desktop DSH resources must use electron-builder file mappings')
@@ -98,9 +93,9 @@ describe('desktop macOS release signature', () => {
     const ignored = (path: string): boolean => config.mac.signIgnore.some(pattern => new RegExp(pattern).test(path))
     expect(ignored('/App.app/Contents/Frameworks/Electron.framework/Versions/A/Resources/en.lproj/locale.pak')).toBe(true)
     expect(ignored('/App.app/Contents/Frameworks/Electron.framework/Versions/A/Resources/resources.pak')).toBe(true)
+    expect(ignored('/App.app/Contents/Resources/runtime/primary-runtime/dependencies/pnpm/addon.node')).toBe(true)
     for (const path of [
       '/App.app/Contents/Resources/runtime/node/node',
-      '/App.app/Contents/Resources/runtime/pnpm/addon.node',
       '/App.app/Contents/Frameworks/Electron.framework/Versions/A/library.dylib',
       '/App.app/Contents/Frameworks/Electron.framework',
       '/App.app',
@@ -134,10 +129,31 @@ describe('desktop macOS release signature', () => {
     })
   })
 
-  it('rejects unsigned macOS builds and malformed signing modes', async () => {
+  it.each(['arm64', 'x64'])('builds local macOS %s DMGs without release credentials or update metadata', async (arch) => {
+    const { createElectronBuilderConfig } = await import('../scripts/electron-builder-config.mjs')
+    const config = createElectronBuilderConfig({
+      DSH_DESKTOP_APP_ID: RELEASE_ENVIRONMENT.DSH_DESKTOP_APP_ID,
+      DSH_DESKTOP_UNSIGNED: '1',
+    }, 'darwin', arch)
+    expect(portablePath(config.directories.output)).toContain(`/targets/mac-${arch}/unsigned-artifacts`)
+    expect(config.artifactName).toBe('deepseek-harness-${version}-${os}-${arch}-unsigned.${ext}')
+    expect(config.mac).toMatchObject({ identity: '-', forceCodeSigning: false, notarize: false, target: ['dmg'] })
+    expect(config.dmg).toMatchObject({ sign: false, writeUpdateInfo: false })
+    expect(config.publish).toBeNull()
+    expect(config.extraMetadata).not.toHaveProperty('dshMandatoryUpdatePolicy')
+    await expect(config.afterSign({ electronPlatformName: 'darwin' } as Parameters<typeof config.afterSign>[0])).resolves.toBeUndefined()
+    expect(config.artifactBuildCompleted({ file: '/tmp/local-unsigned.dmg' })).toBeUndefined()
+  })
+
+  it('omits mandatory-update policy from local macOS builds even when release settings are supplied', async () => {
+    const { createElectronBuilderConfig } = await import('../scripts/electron-builder-config.mjs')
+    const config = createElectronBuilderConfig({ ...RELEASE_ENVIRONMENT, DSH_DESKTOP_UNSIGNED: '1' }, 'darwin', 'arm64')
+    expect(config.extraMetadata).not.toHaveProperty('dshMandatoryUpdatePolicy')
+    expect(config.publish).toBeNull()
+  })
+
+  it('rejects malformed signing modes', async () => {
     const { createElectronBuilderConfig } = await import('../electron-builder.config.mjs')
-    expect(() => createElectronBuilderConfig({ ...RELEASE_ENVIRONMENT, DSH_DESKTOP_UNSIGNED: '1' }))
-      .toThrow(/unsigned builds require Windows/u)
     expect(() => createElectronBuilderConfig({ ...RELEASE_ENVIRONMENT, DSH_DESKTOP_UNSIGNED: 'yes' }))
       .toThrow(/must be 0 or 1/u)
   })

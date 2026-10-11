@@ -1,5 +1,5 @@
 /** Complete image bytes rendered in a shared zoom viewport. */
-import { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode, type RefCallback } from 'react'
 import type { PropsLocale, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
 import { pathPartsOf } from '@deepseek-ai/dsh-util-workspace-path'
 import type { DocumentPreviewProps } from '../document/contract.ts'
@@ -54,18 +54,33 @@ export function imageMediaType(path: string): ImageMediaType | undefined {
  * @returns a rounded image fitted or scaled at its intrinsic aspect ratio.
  */
 export function ImageBody(props: ImageBodyProps): ReactNode {
-  const { content, resourceAddress, t } = props
+  const { content, resourceAddress } = props
   const { tab } = props.useTabInfo()
   const preference = props.useStore(state => state.byTab[tab.id] ?? DEFAULT_ZOOM)
   const path = useMemo(() => hostFileOf(resourceAddress).path, [resourceAddress])
-  const mediaType = imageMediaType(path)
-  const data = content.kind === 'bytes' ? content.data : undefined
-  const [source, setSource] = useState<ImageSource>()
   const setPreference = useCallback((value: ZoomPreference): void => {
     props.actions.zoom(tab.id, value)
   }, [props.actions, tab.id])
-
   useEffect(() => { props.retainTab(tab.id, tab.signal) }, [props.retainTab, tab.id, tab.signal])
+  return <ImageDocumentView path={path} data={content.kind === 'bytes' ? content.data : undefined}
+    preference={preference} onPreference={setPreference} signal={tab.signal}
+    scrollportRef={props.scrollportRef} t={props.t} />
+}
+
+/** Complete image bytes and viewing inputs independent of a resource address. */
+export interface ImageDocumentProps extends PropsLocale<'sidebarImage'> {
+  readonly path: string
+  readonly data: Uint8Array<ArrayBuffer> | undefined
+  readonly preference: ZoomPreference
+  readonly onPreference: (value: ZoomPreference) => void
+  readonly signal: AbortSignal
+  readonly scrollportRef: RefCallback<HTMLElement>
+}
+
+/** @param props - authorized image bytes and caller-owned zoom. @returns the shared image viewer. */
+export function ImageDocumentView({ path, data, preference, onPreference, signal, scrollportRef, t }: ImageDocumentProps): ReactNode {
+  const mediaType = imageMediaType(path)
+  const [source, setSource] = useState<ImageSource>()
 
   useEffect(() => {
     if (data === undefined || mediaType === undefined) return
@@ -94,8 +109,8 @@ export function ImageBody(props: ImageBodyProps): ReactNode {
     fitWidth: t('zoomFitWidth'), value: percent => t('zoomValue', { percent }),
   }
   return <LoadedImage key={source.url} url={source.url} name={name} preference={preference}
-    onPreference={setPreference} labels={labels} signal={tab.signal}
-    scrollportRef={props.scrollportRef} t={t} />
+    onPreference={onPreference} labels={labels} signal={signal}
+    scrollportRef={scrollportRef} t={t} />
 }
 
 /** SVG stays in the browser's static image mode because its bytes only reach an img Blob URL. */

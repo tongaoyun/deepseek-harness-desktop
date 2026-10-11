@@ -26,7 +26,8 @@ export {
 } from './profile-compatibility.ts'
 import { prepareProfilePatches } from './compatibility-preflight.ts'
 export { prepareProfileEntries, prepareProfilePatches } from './compatibility-preflight.ts'
-export { readPluginMeta } from './package-meta.ts'
+export { readPluginMeta, resolvePluginResource } from './package-meta.ts'
+export { ON_DEMAND_BUNDLES, OFFICIAL_ON_DEMAND_CATALOG, type OfficialBundleCatalogEntry } from './official-bundles.ts'
 export { generateConfigSchema, type ConfigSchemaDump, type NativeConfigSchema } from './config-schema/index.ts'
 export { createConfigProjector, LOADER_EXPRESSION_SCHEMA, type ConfigProjection } from './config-schema/projector.ts'
 export { isNativeConfigSchema } from './config-schema/native.ts'
@@ -56,6 +57,7 @@ declare module '@deepseek-ai/cordis' {
 export {
   composeEntries,
   createRuntimeResolution,
+  ProfileRuntimeResolution,
   DEFAULT_PROFILE_BUNDLES,
   OPTIONAL_BUNDLES,
   bundlePatchFiles,
@@ -746,6 +748,7 @@ const FIBER_DISPOSED = 4 as FiberState.DISPOSED
 const requiredStartupEntryIds = new Set<string>([
   'agent-loop',
   'webserver',
+  'web-runtime',
   'modules',
   'connection',
   'headless-runner',
@@ -1061,6 +1064,6 @@ export function addHarnessSourceSection(ctx: Context, sourceRoot: string): (() =
   return systemPrompt.section({
     name: HARNESS_SOURCE_SECTION,
     order: systemPrompt.getSectionOrder('HARNESS_SOURCE'),
-    text: `The DeepSeekHarness implementation checkout is at ${sourceRoot}. The checkout location and current working directory are separate values and may differ; never infer the working directory from this path. Use pwd to determine the current working directory. Use this checkout only to inspect or extend DSH itself.`,
+    text: `The DeepSeek Harness implementation checkout is at ${sourceRoot}. The checkout location and current working directory are separate values and may differ; never infer the working directory from this path. Use pwd to determine the current working directory. Use this checkout only to inspect or extend DSH itself.`,
   })
 }

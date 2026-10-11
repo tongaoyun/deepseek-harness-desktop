@@ -22,14 +22,11 @@ export default defineConfig(({ env }) => {
     include: client
       ? ['vendor/*', 'packages/*/*', 'apps/cli']
       : ['vendor/*', 'packages/*/*', 'apps/cli', 'apps/desktop-host'],
-    // The product bridge has its own entrypoints and package-local build. It
-    // is linked into Electron as a product dependency, but is not an official
-    // Harness workspace target and must not inherit the root host entry.
-    exclude: ['packages/deepseek-harness-product/product/**', '**/node_modules/**'],
+    exclude: ['**/node_modules/**'],
   }
   return {
     workspace,
-    entry: client ? '' : ['lib/types/{index,invariant,startup}.js'],
+    entry: client ? '' : ['lib/types/{index,startup}.js'],
     outDir: 'lib',
     format: ['esm'],
     platform: 'node',

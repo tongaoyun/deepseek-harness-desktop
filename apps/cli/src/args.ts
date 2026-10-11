@@ -153,7 +153,7 @@ export function parseDshArgs(argv: readonly string[], version: string, manageDes
     .name('dsh')
     .version(version, '-V, --version', 'output the version number')
     .usage('[--profile] <name> [options] [app-args...]\n       dsh plugin --profile <name> <pnpm-args...>')
-    .description('dsh: boot a DeepSeekHarness profile — an ordered stack of plugin-bundle patch layers under your own overrides.')
+    .description('dsh: boot a DeepSeek Harness profile — an ordered stack of plugin-bundle patch layers under your own overrides.')
     .addHelpText('after', HELP_EXAMPLES)
     .exitOverride()
     // The launcher's flags come first and end at the first token it does not
@@ -187,6 +187,10 @@ export function parseDshArgs(argv: readonly string[], version: string, manageDes
   if (first === 'plugin') {
     const plugin = program.command('plugin').description('manage a profile\'s plugins by forwarding the remaining arguments to pnpm in the profile directory')
     plugin
+      // Commander copies the launcher's disabled help option into subcommands. The
+      // forwarder restores its own help and stops reading options at forwarded pnpm input.
+      .helpOption('-h, --help', 'show this help')
+      .passThroughOptions()
       .requiredOption('--profile <name>', 'the profile whose plugins to manage (initialized on first use)', selectProfile)
       .allowUnknownOption()
       .argument('[args...]', 'pnpm arguments, forwarded verbatim (add <pkg>, remove <pkg>, why <pkg>, ...)')

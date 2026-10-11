@@ -26,6 +26,8 @@ This group connects DeepSeek Harness enterprise services to public Harness exten
 |---|---|
 | [`expert-kit-readme`](expert-kit-readme/README.md) | Preset-scoped, model-only loading of Expert Kit README instructions |
 | [`product`](product/README.md) | Server client, DingTalk session adapter, capability snapshot, and Electron bridge |
+| [`runtime`](runtime/README.md) | Cordis task composition, content snapshots, and permission policy |
+| [`desktop`](desktop/README.md) | Main-process authentication, credentials, sidecar, and product packaging resources |
 
 <a id="related-documentation"></a>
 ## Related documentation

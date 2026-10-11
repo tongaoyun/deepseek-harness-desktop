@@ -1,0 +1,821 @@
+diff --git a/.gitattributes b/.gitattributes
+index e878c9db..a5da969b 100644
+--- a/.gitattributes
++++ b/.gitattributes
+@@ -8,6 +8,10 @@
+ 
+ *.pdf binary
+ 
++# Unified diffs preserve context prefixes, including blank lines and Makefile tabs.
++# verify:upstream checks their exact bytes; authored source retains whitespace checks.
++scripts/upstream-patches/*.patch -whitespace
++
+ # The persistence catalog is the readable projection of these generated schemas.
+ docs/persistence-schema.json linguist-generated=true
+ docs/persistence-changes/*.schema.json linguist-generated=true
+diff --git a/.gitignore b/.gitignore
+index 3cb86ce8..757de025 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -1,10 +1,13 @@
+ CLAUDE.local.md
+ .env
++.env.local
+ apps/desktop/.env.windows
+ apps/desktop/.env.macos
+ apps/desktop/*.p12
+ node_modules/
+ lib/
++lib.previous/
++lib.previous2/
+ *.tsbuildinfo
+ pnpm-debug.log
+ .pnpm-store/
+@@ -47,3 +50,4 @@ worktrees/
+ .agents/worktrees/
+ .typert-*/
+ native/system/test/bin/
++native/deepseek-harness/target/
+diff --git a/Makefile b/Makefile
+index 0836489e..e167e03a 100644
+--- a/Makefile
++++ b/Makefile
+@@ -1,7 +1,7 @@
+ # Short names for the Web and Desktop application commands. The package.json
+ # scripts they call stay the source of truth; docs/development.md documents both.
+ .DEFAULT_GOAL := help
+-.PHONY: help build clean web desktop dev-web dev-desktop
++.PHONY: help build clean web desktop dev-web dev-desktop product-desktop dev-product-desktop
+ 
+ PNPM ?= pnpm
+ ARGS ?=
+@@ -13,6 +13,8 @@ help:
+ 	@echo "make desktop      pnpm run start:desktop   launch the built Desktop artifacts"
+ 	@echo "make dev-web      pnpm run dev:web         build, serve, and rebuild Web on source edits"
+ 	@echo "make dev-desktop  pnpm run dev:desktop     build, then launch Desktop"
++	@echo "make product-desktop     pnpm run start:product-desktop   launch the product Desktop artifacts"
++	@echo "make dev-product-desktop pnpm run dev:product-desktop     build, then launch product Desktop"
+ 	@echo "ARGS='--no-open --port 3081' forwards options to the launched application;"
+ 	@echo "the Web commands accept dsh web flags, the Desktop launcher accepts none."
+ 
+@@ -33,3 +35,9 @@ dev-web:
+ 
+ dev-desktop:
+ 	$(PNPM) run dev:desktop $(ARGS)
++
++product-desktop:
++	$(PNPM) run start:product-desktop $(ARGS)
++
++dev-product-desktop:
++	$(PNPM) run dev:product-desktop $(ARGS)
+diff --git a/apps/web/tsconfig.json b/apps/web/tsconfig.json
+index 7c03df49..03cc9012 100644
+--- a/apps/web/tsconfig.json
++++ b/apps/web/tsconfig.json
+@@ -22,6 +22,7 @@
+   // this client-registered project must not also hold them (one program
+   // cannot see both sides of the cordis Context merges).
+   "exclude": [
++    "tests/deepseek-harness-catalog.e2e.ts",
+     "tests/collapse-timing.e2e.ts",
+     "tests/chat-flow-layout.e2e.ts",
+     "tests/layout-bottom.e2e.ts",
+diff --git a/package.json b/package.json
+index 2d768057..e82750ce 100644
+--- a/package.json
++++ b/package.json
+@@ -18,6 +18,11 @@
+   ],
+   "scripts": {
+     "prepare:primary-runtime": "tsx scripts/primary-runtime/prepare.ts",
++    "build:product": "pnpm --dir packages/deepseek-harness-product/product build && pnpm exec tsdown --config-loader native --config packages/deepseek-harness-product/product/tsdown.config.ts",
++    "build:native-product": "cargo build --release --manifest-path native/deepseek-harness/Cargo.toml",
++    "verify:upstream": "node scripts/verify-upstream.mjs",
++    "check:upstream-release": "node scripts/check-upstream-release.mjs",
++    "sync:upstream": "node scripts/sync-upstream.mjs",
+     "build": "tsx scripts/build.ts",
+     "build:bench": "npm run build:native-system && npm run build:lib && tsdown --config-loader native --config benchmarks/tsdown.config.ts",
+     "build:official": "tsx scripts/build.ts --profile official",
+@@ -28,6 +33,8 @@
+     "build:desktop": "pnpm --filter @deepseek-ai/dsh-desktop run build",
+     "dev:desktop": "pnpm --filter @deepseek-ai/dsh-desktop run dev",
+     "start:desktop": "pnpm --filter @deepseek-ai/dsh-desktop run start",
++    "dev:product-desktop": "pnpm --dir apps/product-desktop run dev",
++    "start:product-desktop": "pnpm --dir apps/product-desktop run start",
+     "prepare:desktop": "pnpm --filter @deepseek-ai/dsh-desktop run prepare:package",
+     "package:desktop": "pnpm --filter @deepseek-ai/dsh-desktop run package",
+     "package:desktop:dir": "pnpm --filter @deepseek-ai/dsh-desktop run package:dir",
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index dfaa1653..1889502c 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -115,12 +115,12 @@ importers:
+       '@types/node':
+         specifier: ^22.20.1
+         version: 22.20.1
+-      '@types/semver':
+-        specifier: ^7.8.0
+-        version: 7.8.0
+       '@types/papaparse':
+         specifier: ^5.5.2
+         version: 5.5.2
++      '@types/semver':
++        specifier: ^7.8.0
++        version: 7.8.0
+       '@types/spdx-expression-parse':
+         specifier: ^4.0.0
+         version: 4.0.0
+@@ -693,6 +693,9 @@ importers:
+       '@deepseek-ai/dsh-home-paths':
+         specifier: workspace:*
+         version: link:../../packages/util/home-paths
++      '@deepseek-ai/dsh-util-crypto':
++        specifier: workspace:*
++        version: link:../../packages/util/crypto
+       '@deepseek-ai/node-addon-system':
+         specifier: workspace:~
+         version: link:../../native/system/packages/entry
+@@ -818,6 +821,19 @@ importers:
+         specifier: workspace:*
+         version: link:../../packages/skill/skill
+ 
++  apps/product-desktop:
++    dependencies:
++      '@deepseek-ai/dsh-desktop':
++        specifier: workspace:*
++        version: link:../desktop
++      '@deepseek-harness/product-desktop':
++        specifier: workspace:*
++        version: link:../../packages/deepseek-harness-product/desktop
++    devDependencies:
++      tsx:
++        specifier: ^4.21.0
++        version: 4.23.13
++
+   apps/web:
+     devDependencies:
+       '@deepseek-ai/cordis-plugin-group':
+@@ -7255,6 +7271,210 @@ importers:
+         specifier: workspace:*
+         version: link:../../host/webserver
+ 
++  packages/deepseek-harness-product/desktop:
++    dependencies:
++      '@deepseek-ai/dsh-subprocess':
++        specifier: workspace:*
++        version: link:../../subprocess/subprocess
++      '@deepseek-harness/product':
++        specifier: workspace:*
++        version: link:../product
++      '@deepseek-harness/product-runtime':
++        specifier: workspace:*
++        version: link:../runtime
++      '@deepseek-harness/product-ui':
++        specifier: workspace:*
++        version: link:../../extensions/ui-deepseek-harness-product
++      '@modelcontextprotocol/client':
++        specifier: 2.0.0
++        version: 2.0.0
++      '@modelcontextprotocol/node':
++        specifier: 2.0.0
++        version: 2.0.0(@modelcontextprotocol/server@2.0.0)(hono@4.13.7)
++      '@modelcontextprotocol/server':
++        specifier: 2.0.0
++        version: 2.0.0
++      tar:
++        specifier: ^7.5.0
++        version: 7.5.22
++      yauzl:
++        specifier: ^3.2.0
++        version: 3.4.0
++      zod:
++        specifier: ^4.4.3
++        version: 4.4.3
++    devDependencies:
++      '@types/node':
++        specifier: ^22.20.0
++        version: 22.20.1
++      '@types/yauzl':
++        specifier: ^2.10.3
++        version: 2.10.3
++      electron:
++        specifier: ^44.0.0
++        version: 44.7.0(supports-color@9.4.0)
++
++  packages/deepseek-harness-product/expert-kit-readme:
++    devDependencies:
++      '@deepseek-ai/cordis':
++        specifier: workspace:~
++        version: link:../../../vendor/cordis
++      '@deepseek-ai/cordis-plugin-loader':
++        specifier: workspace:~
++        version: link:../../../vendor/loader
++      '@deepseek-ai/dsh-skill':
++        specifier: workspace:*
++        version: link:../../skill/skill
++
++  packages/deepseek-harness-product/product:
++    dependencies:
++      semver:
++        specifier: ^7.8.5
++        version: 7.8.5
++      yaml:
++        specifier: ^2.9.0
++        version: 2.9.0
++      zod:
++        specifier: ^4.4.3
++        version: 4.4.3
++    devDependencies:
++      '@types/node':
++        specifier: ^22.20.0
++        version: 22.20.1
++      '@types/semver':
++        specifier: ^7.8.0
++        version: 7.8.0
++      typescript:
++        specifier: ^6.0.3
++        version: 6.0.3
++      vitest:
++        specifier: ^4.1.8
++        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.20.1)(@vitest/coverage-v8@4.1.11)(happy-dom@20.11.6)(jsdom@29.1.1(@noble/hashes@2.4.0))(vite@8.2.2(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.0))
++
++  packages/deepseek-harness-product/runtime:
++    dependencies:
++      '@deepseek-ai/cordis':
++        specifier: workspace:~
++        version: link:../../../vendor/cordis
++      '@deepseek-ai/cordis-plugin-include':
++        specifier: workspace:~
++        version: link:../../../vendor/include
++      '@deepseek-ai/dsh-agent':
++        specifier: workspace:*
++        version: link:../../core/agent
++      '@deepseek-ai/dsh-agent-default-model':
++        specifier: workspace:*
++        version: link:../../core/agent-default-model
++      '@deepseek-ai/dsh-agent-preset-registry':
++        specifier: workspace:*
++        version: link:../../preset/agent-preset-registry
++      '@deepseek-ai/dsh-app-boot':
++        specifier: workspace:*
++        version: link:../../boot/app-boot
++      '@deepseek-ai/dsh-brand':
++        specifier: workspace:*
++        version: link:../../util/brand
++      '@deepseek-ai/dsh-client-connection':
++        specifier: workspace:*
++        version: link:../../client/connection
++      '@deepseek-ai/dsh-cmdline':
++        specifier: workspace:*
++        version: link:../../boot/cmdline
++      '@deepseek-ai/dsh-deepseek-account':
++        specifier: workspace:*
++        version: link:../../credentials/deepseek-account
++      '@deepseek-ai/dsh-home-paths':
++        specifier: workspace:*
++        version: link:../../util/home-paths
++      '@deepseek-ai/dsh-host-webserver':
++        specifier: workspace:*
++        version: link:../../host/webserver
++      '@deepseek-ai/dsh-jobs':
++        specifier: workspace:*
++        version: link:../../jobs/jobs
++      '@deepseek-ai/dsh-llm':
++        specifier: workspace:*
++        version: link:../../llm/llm
++      '@deepseek-ai/dsh-mcp-client':
++        specifier: workspace:*
++        version: link:../../mcp/mcp-client
++      '@deepseek-ai/dsh-office-to-pdf':
++        specifier: workspace:*
++        version: link:../../document/office-to-pdf
++      '@deepseek-ai/dsh-schedule':
++        specifier: workspace:*
++        version: link:../../schedule/schedule
++      '@deepseek-ai/dsh-session':
++        specifier: workspace:*
++        version: link:../../core/session
++      '@deepseek-ai/dsh-session-projection':
++        specifier: workspace:*
++        version: link:../../session/session-projection
++      '@deepseek-ai/dsh-session-query':
++        specifier: workspace:*
++        version: link:../../session-query/session-query
++      '@deepseek-ai/dsh-settings':
++        specifier: workspace:*
++        version: link:../../settings/settings
++      '@deepseek-ai/dsh-skill':
++        specifier: workspace:*
++        version: link:../../skill/skill
++      '@deepseek-ai/dsh-skill-filesystem':
++        specifier: workspace:*
++        version: link:../../skill/skill-filesystem
++      '@deepseek-ai/dsh-skill-office':
++        specifier: workspace:*
++        version: link:../../skill/skill-office
++      '@deepseek-ai/dsh-system-prompt':
++        specifier: workspace:*
++        version: link:../../core/system-prompt
++      '@deepseek-ai/dsh-tool-workspace-dependencies':
++        specifier: workspace:*
++        version: link:../../skill/tool-workspace-dependencies
++      '@deepseek-ai/dsh-tools':
++        specifier: workspace:*
++        version: link:../../core/tools
++      '@deepseek-ai/dsh-workspace':
++        specifier: workspace:*
++        version: link:../../workspace/workspace
++      '@deepseek-ai/schemastery':
++        specifier: link:../../../vendor/schemastery
++        version: link:../../../vendor/schemastery
++      '@deepseek-harness/product':
++        specifier: workspace:*
++        version: link:../product
++      '@deepseek-harness/product-expert-kit-readme':
++        specifier: workspace:*
++        version: link:../expert-kit-readme
++      koffi:
++        specifier: ^3.1.0
++        version: 3.1.1
++      tar:
++        specifier: ^7.5.0
++        version: 7.5.22
++      zod:
++        specifier: ^4.4.3
++        version: 4.4.3
++    devDependencies:
++      '@deepseek-ai/dsh-fs-local':
++        specifier: workspace:*
++        version: link:../../fs/fs-local
++      '@deepseek-ai/dsh-tool-skill':
++        specifier: workspace:*
++        version: link:../../skill/tool-skill
++      '@deepseek-ai/dsh-user-approval':
++        specifier: workspace:*
++        version: link:../../interaction/user-approval
++      '@deepseek-ai/dsh-working-directory':
++        specifier: workspace:*
++        version: link:../../session/working-directory
++      '@deepseek-ai/libreoffice-kit':
++        specifier: ^0.1.5
++        version: 0.1.5
++      '@types/node':
++        specifier: ^22.20.0
++        version: 22.20.1
++
+   packages/deliverables/tool-present:
+     dependencies:
+       '@deepseek-ai/schemastery':
+@@ -9562,6 +9782,87 @@ importers:
+         specifier: ^18.2.0
+         version: 18.3.1
+ 
++  packages/extensions/ui-deepseek-harness-product:
++    devDependencies:
++      '@deepseek-ai/cordis':
++        specifier: workspace:~
++        version: link:../../../vendor/cordis
++      '@deepseek-ai/dsh-agent-preset-registry':
++        specifier: workspace:*
++        version: link:../../preset/agent-preset-registry
++      '@deepseek-ai/dsh-api-remotes':
++        specifier: workspace:*
++        version: link:../../api/remotes
++      '@deepseek-ai/dsh-api-session-controller':
++        specifier: workspace:*
++        version: link:../../api/session-controller
++      '@deepseek-ai/dsh-api-workspace-controller':
++        specifier: workspace:*
++        version: link:../../api/workspace-controller
++      '@deepseek-ai/dsh-client-locale':
++        specifier: workspace:*
++        version: link:../../client/locale
++      '@deepseek-ai/dsh-client-ui-agent-preset':
++        specifier: workspace:*
++        version: link:../../client/ui-agent-preset
++      '@deepseek-ai/dsh-client-ui-commands':
++        specifier: workspace:*
++        version: link:../../client/ui-commands
++      '@deepseek-ai/dsh-client-ui-conversation':
++        specifier: workspace:*
++        version: link:../../client/ui-conversation
++      '@deepseek-ai/dsh-client-ui-input-trigger':
++        specifier: workspace:*
++        version: link:../../client/ui-input-trigger
++      '@deepseek-ai/dsh-client-ui-layout':
++        specifier: workspace:*
++        version: link:../../client/ui-layout
++      '@deepseek-ai/dsh-client-ui-primitives':
++        specifier: workspace:*
++        version: link:../../client/ui-primitives
++      '@deepseek-ai/dsh-client-ui-renderer':
++        specifier: workspace:*
++        version: link:../../client/ui-renderer
++      '@deepseek-ai/dsh-client-ui-settings':
++        specifier: workspace:*
++        version: link:../../client/ui-settings
++      '@deepseek-ai/dsh-client-ui-sidebar':
++        specifier: workspace:*
++        version: link:../../client/ui-sidebar
++      '@deepseek-ai/dsh-client-ui-sidebar-documentpreview':
++        specifier: workspace:*
++        version: link:../../client/ui-sidebar-documentpreview
++      '@deepseek-ai/dsh-client-ui-skill':
++        specifier: workspace:*
++        version: link:../../client/ui-skill
++      '@deepseek-ai/dsh-client-ui-slots':
++        specifier: workspace:*
++        version: link:../../client/ui-slots
++      '@deepseek-ai/dsh-client-ui-tool':
++        specifier: workspace:*
++        version: link:../../client/ui-tool
++      '@deepseek-ai/dsh-client-ui-workspace':
++        specifier: workspace:*
++        version: link:../../client/ui-workspace
++      '@deepseek-ai/dsh-session':
++        specifier: workspace:*
++        version: link:../../core/session
++      '@deepseek-ai/dsh-util-crypto':
++        specifier: workspace:*
++        version: link:../../util/crypto
++      '@deepseek-harness/product':
++        specifier: workspace:*
++        version: link:../../deepseek-harness-product/product
++      '@types/react':
++        specifier: ~18.3.1
++        version: 18.3.31
++      react:
++        specifier: ^18.2.0
++        version: 18.3.1
++      shell-quote:
++        specifier: ^1.12.0
++        version: 1.12.0
++
+   packages/feedback/command-feedback:
+     dependencies:
+       zod:
+@@ -15641,10 +15942,6 @@ importers:
+ 
+ packages:
+ 
+-  papaparse@5.5.3:
+-    resolution: {integrity: sha512-5QvjGxYVjxO59MGU2lHVYpRWBBtKHnlIAcSe1uNFCkkptUh63NFRj0FJQm7nR67puEruUci/ZkjmEFrjCAyP4A==}
+-
+-
+   '@agentclientprotocol/sdk@1.4.0':
+     resolution: {integrity: sha512-/eufudw+aFY1LKLolT6yFE6UMmYRl7fMJ/DEONSIyR6wI3slHWITBsANRGqXEY8FRzqUxwh7QEaGiZHcJPVThg==}
+     peerDependencies:
+@@ -17293,10 +17590,18 @@ packages:
+   '@mixmark-io/domino@2.2.0':
+     resolution: {integrity: sha512-Y28PR25bHXUg88kCV7nivXrP2Nj2RueZ3/l/jdx6J9f8J4nsEGcgX0Qe6lt7Pa+J79+kPiJU3LguR6O/6zrLOw==}
+ 
++  '@modelcontextprotocol/client@2.0.0':
++    resolution: {integrity: sha512-8f1OghQ2rjzIOfqgUCP+8GiUWqRs89njoWLNqAe8kWmDePv3s1fZXseej+QXemssEuuOvLLmLO/kqM3IQHtISw==}
++    engines: {node: '>=20'}
++
+   '@modelcontextprotocol/client@2.2.0':
+     resolution: {integrity: sha512-LxCou/CSYQ6dwEnjhLZY0KnEuc8V4UJ3IEQCl/uR2yHobSQIEdJKUlKLRYRF5i5FqRGHy1eK7une3aAWDHLtig==}
+     engines: {node: '>=20'}
+ 
++  '@modelcontextprotocol/core@2.0.0':
++    resolution: {integrity: sha512-pJCEwGG7Lfr/+PQp9ZTwKXNeO5wzbfKL7H3MYpCorM4oFBoQrdjnBgEoqG+RjhsvS1FKrDbKux+M1HhlnGWqcA==}
++    engines: {node: '>=20'}
++
+   '@modelcontextprotocol/core@2.2.0':
+     resolution: {integrity: sha512-iLhmprRmWI8EcosOA3wVvww22z02NkgqhV4fBH6f/odQBsi7xnJc0HGmi21yWO+/iKw2yzqVE127Zhna5/+JXw==}
+     engines: {node: '>=20'}
+@@ -17329,6 +17634,10 @@ packages:
+     resolution: {integrity: sha512-kKaFkyAh6oipvc9+EAbJ552JafnMnOq5nzmzWkp1jJdBhTAAGpmIpWihUG1+rfNhmEFM98gUZDdCHCDD4v6a7Q==}
+     hasBin: true
+ 
++  '@modelcontextprotocol/server@2.0.0':
++    resolution: {integrity: sha512-YhHWdHfpFMQfd0prsEnxKeS3Qz3ytIGmsS0sth4KDjnacIT7hxk6hXHkJ9KysxlkvTM+WZAtQbbcUhdoP4Hvtw==}
++    engines: {node: '>=20'}
++
+   '@modelcontextprotocol/server@2.2.0':
+     resolution: {integrity: sha512-qFnltjus6Gk8Lx6J1w2RXmr3YPN22MNT6qD6zjAkaiWIlFIFxWClz0rXHNuJF/KSUyn5YGhkSvXkWDbQHVLFEQ==}
+     engines: {node: '>=20'}
+@@ -21701,6 +22010,9 @@ packages:
+   pako@1.0.11:
+     resolution: {integrity: sha512-4hLB8Py4zZce5s4yd9XzopqwVv/yGNhV1Bl8NTmCq1763HeK2+EwVTv+leGeL13Dnh2wfbqowVPXCIO0z4taYw==}
+ 
++  papaparse@5.5.3:
++    resolution: {integrity: sha512-5QvjGxYVjxO59MGU2lHVYpRWBBtKHnlIAcSe1uNFCkkptUh63NFRj0FJQm7nR67puEruUci/ZkjmEFrjCAyP4A==}
++
+   papaparse@5.7.0:
+     resolution: {integrity: sha512-qBGxg/7Q3Kl9Wfhrz2Z74UnvnHTXLNG6jmKJFeBvP2+y4lV7So+7SR62+Zd47JvdrCkX+nDcnr0ObPzek/+6RA==}
+ 
+@@ -22243,6 +22555,10 @@ packages:
+     resolution: {integrity: sha512-7++dFhtcx3353uBaq8DDR4NuxBetBzC7ZQOhmTQInHEd6bSrXdiEyzCvG07Z44UYdLShWUyXt5M/yhz8ekcb1A==}
+     engines: {node: '>=8'}
+ 
++  shell-quote@1.12.0:
++    resolution: {integrity: sha512-PcByqNyT/38F2kDNi006HAMRJaULuBzq/FOsw3qdZvX/GA9W/jamDaRskgHjubHiftXK5sIFxLNkvrXUwcof6Q==}
++    engines: {node: '>= 0.4'}
++
+   sherpa-onnx-darwin-arm64@1.13.8:
+     resolution: {integrity: sha512-FPNgJMgnWVl/KhRTIhG3KL3A4Om63Rn4YKXc9/uHY7SzLcvqLJLc/h7UBWJwduXvv7K18t5NpxHR6XgXn4sjWw==}
+     cpu: [arm64]
+@@ -23227,9 +23543,6 @@ packages:
+ 
+ snapshots:
+ 
+-  papaparse@5.5.3: {}
+-
+-
+   '@agentclientprotocol/sdk@1.4.0(zod@4.4.3)':
+     dependencies:
+       zod: 4.4.3
+@@ -24769,6 +25082,16 @@ snapshots:
+ 
+   '@mixmark-io/domino@2.2.0': {}
+ 
++  '@modelcontextprotocol/client@2.0.0':
++    dependencies:
++      '@modelcontextprotocol/core': 2.0.0
++      cross-spawn: 7.0.6
++      eventsource: 3.0.7
++      eventsource-parser: 3.1.0
++      jose: 6.2.3
++      pkce-challenge: 5.0.1
++      zod: 4.4.3
++
+   '@modelcontextprotocol/client@2.2.0':
+     dependencies:
+       '@modelcontextprotocol/core': 2.2.0
+@@ -24779,10 +25102,21 @@ snapshots:
+       pkce-challenge: 5.0.1
+       zod: 4.4.3
+ 
++  '@modelcontextprotocol/core@2.0.0':
++    dependencies:
++      zod: 4.4.3
++
+   '@modelcontextprotocol/core@2.2.0':
+     dependencies:
+       zod: 4.4.3
+ 
++  '@modelcontextprotocol/node@2.0.0(@modelcontextprotocol/server@2.0.0)(hono@4.13.7)':
++    dependencies:
++      '@hono/node-server': 1.19.17(hono@4.13.7)
++      '@modelcontextprotocol/server': 2.0.0
++    optionalDependencies:
++      hono: 4.13.7
++
+   '@modelcontextprotocol/node@2.0.0(@modelcontextprotocol/server@2.2.0)(hono@4.13.7)':
+     dependencies:
+       '@hono/node-server': 1.19.17(hono@4.13.7)
+@@ -24834,6 +25168,11 @@ snapshots:
+       - supports-color
+       - zod
+ 
++  '@modelcontextprotocol/server@2.0.0':
++    dependencies:
++      '@modelcontextprotocol/core': 2.0.0
++      zod: 4.4.3
++
+   '@modelcontextprotocol/server@2.2.0':
+     dependencies:
+       '@modelcontextprotocol/core': 2.2.0
+@@ -25944,7 +26283,6 @@ snapshots:
+   '@types/yauzl@2.10.3':
+     dependencies:
+       '@types/node': 22.20.1
+-    optional: true
+ 
+   '@typescript-eslint/types@8.61.0': {}
+ 
+@@ -29443,6 +29781,8 @@ snapshots:
+ 
+   pako@1.0.11: {}
+ 
++  papaparse@5.5.3: {}
++
+   papaparse@5.7.0: {}
+ 
+   parse-ms@4.0.0: {}
+@@ -30047,6 +30387,8 @@ snapshots:
+ 
+   shebang-regex@3.0.0: {}
+ 
++  shell-quote@1.12.0: {}
++
+   sherpa-onnx-darwin-arm64@1.13.8:
+     optional: true
+ 
+diff --git a/scripts/check-workspace-constraints.spec.ts b/scripts/check-workspace-constraints.spec.ts
+index 6ee44787..ffb6e07d 100644
+--- a/scripts/check-workspace-constraints.spec.ts
++++ b/scripts/check-workspace-constraints.spec.ts
+@@ -287,6 +287,19 @@ describe('dsh family version coherence', () => {
+   })
+ })
+ 
++describe('DeepSeekHarness product package publication boundary', () => {
++  it.each([
++    ['packages/extensions/ui-deepseek-harness-product', '@deepseek-harness/product-ui'],
++    ['packages/deepseek-harness-product/product', '@deepseek-harness/product'],
++  ])('keeps %s private and outside the upstream release family', (dir, name) => {
++    expect(checkWorkspaceManifest({ dir, manifest: { name, private: true } })).toEqual([])
++    expect(checkWorkspaceManifest({ dir, manifest: { name, publishConfig: { access: 'public' } } })).toEqual([
++      `${dir}/package.json: ${name}: Desktop product package must set "private": true`,
++      `${dir}/package.json: ${name}: Desktop product package must omit publishConfig`,
++    ])
++  })
++})
++
+ describe('package payload constraints', () => {
+   it.each([
+     ['./art/icon.svg', ['art/icon.svg']],
+diff --git a/scripts/check-workspace-constraints.ts b/scripts/check-workspace-constraints.ts
+index 84750fad..9ce15572 100644
+--- a/scripts/check-workspace-constraints.ts
++++ b/scripts/check-workspace-constraints.ts
+@@ -420,7 +420,11 @@ export function checkWorkspaceManifest({ dir, manifest }: WorkspaceManifest): st
+     && manifest.name !== undefined
+     && publicNativePackages.has(manifest.name)
+ 
+-  if (isPublicNativePackage) {
++  if ((dir.startsWith('packages/') || dir.startsWith('apps/')) && manifest.name !== undefined
++    && !manifest.name.startsWith('@deepseek-ai/')) {
++    if (manifest.private !== true) errors.push(`${label}: Desktop product package must set "private": true`)
++    if (manifest.publishConfig !== undefined) errors.push(`${label}: Desktop product package must omit publishConfig`)
++  } else if (isPublicNativePackage) {
+     if (manifest.private === true) {
+       errors.push(`${label}: published Landlock package must not set "private": true`)
+     }
+diff --git a/scripts/client-tsconfig.spec.ts b/scripts/client-tsconfig.spec.ts
+index 0c746615..78aca9f7 100644
+--- a/scripts/client-tsconfig.spec.ts
++++ b/scripts/client-tsconfig.spec.ts
+@@ -22,6 +22,18 @@ function clientCssDeclarations(): string[] {
+ }
+ 
+ describe('client TypeScript aggregate', () => {
++  it('builds the DeepSeekHarness product UI before bundling client entries', () => {
++    const configPath = resolve(root, 'tsconfig.client.json')
++    const read = ts.readConfigFile(configPath, file => ts.sys.readFile(file))
++    if (read.error !== undefined) {
++      throw new Error(ts.flattenDiagnosticMessageText(read.error.messageText, '\n'))
++    }
++    const config = read.config as { references?: readonly { path: string }[] }
++    const references = config.references?.map(reference => reference.path)
++
++    expect(references).toContain('./packages/extensions/ui-deepseek-harness-product')
++  })
++
+   it('loads package CSS declarations without relying on workspace-link realpaths', () => {
+     const configPath = resolve(root, 'tsconfig.client.json')
+     const read = ts.readConfigFile(configPath, file => ts.sys.readFile(file))
+diff --git a/scripts/verify-repository-references.spec.ts b/scripts/verify-repository-references.spec.ts
+index 8b2f0a9d..2f9cdadf 100644
+--- a/scripts/verify-repository-references.spec.ts
++++ b/scripts/verify-repository-references.spec.ts
+@@ -120,12 +120,14 @@ describe('maintained repository reference policy', () => {
+     expect(scanRepositoryReferences(fixture.root)).toEqual([])
+   })
+ 
+-  it('excludes only ignored new files, vendored sources, frozen notes, and deleted files', (test) => {
++  it('excludes only ignored files, upstream metadata, vendored sources, frozen notes, and deleted files', (test) => {
+     const fixture = repository(test)
+     fixture.write('.gitignore', 'ignored.md\ntracked-ignore.md\n')
+     fixture.write('ignored.md', fixture.commit)
+     fixture.write('vendor/project/file.md', `${fixture.commit}\n${organizationUrl}`)
+     fixture.write('.agents/notes/archived/process/frozen.md', `${fixture.commit}\n${organizationUrl}`)
++    fixture.write('UPSTREAM_COMMIT', fixture.commit)
++    fixture.write('scripts/upstream-patches/manifest.json', JSON.stringify({ baseline: fixture.commit }))
+     fixture.write('tracked-ignore.md', fixture.commit)
+     fixture.git(['add', '--force', 'tracked-ignore.md'])
+     unlinkSync(join(fixture.root, 'tracked.md'))
+@@ -135,6 +137,14 @@ describe('maintained repository reference policy', () => {
+     ])
+   })
+ 
++  it('checks other files beside upstream metadata', (test) => {
++    const fixture = repository(test)
++    fixture.write('scripts/upstream-patches/unreviewed.json', fixture.commit)
++    expect(scanRepositoryReferences(fixture.root)).toEqual([
++      { file: 'scripts/upstream-patches/unreviewed.json', line: 1, kind: 'commit-hash' },
++    ])
++  })
++
+   it.skipIf(process.platform === 'win32')('inspects dangling symlink targets without following files outside the tree', (test) => {
+     const fixture = repository(test)
+     symlinkSync(`../${fixture.commit}`, join(fixture.root, 'reference-link'))
+diff --git a/scripts/verify-repository-references.ts b/scripts/verify-repository-references.ts
+index 92ad6aba..9aafb9db 100644
+--- a/scripts/verify-repository-references.ts
++++ b/scripts/verify-repository-references.ts
+@@ -13,6 +13,7 @@ const organizationUrl = new RegExp(`\\bgithub\\.com/${organization}(?![a-z0-9-])
+ const kitRepositoryUrl = new RegExp(`\\bgithub\\.com/${organization}/libreoffice-kit(?:\\.git)?(?=/|[^a-zA-Z0-9_.-]|$)`, 'g')
+ const commitCandidate = /(?<![a-z0-9])[\da-f]{7,40}(?![a-z0-9])/gi
+ const excludedPrefixes = ['vendor/', '.agents/notes/archived/']
++const excludedFiles = new Set(['UPSTREAM_COMMIT', 'scripts/upstream-patches/manifest.json'])
+ const gitOutputLimit = 64 * 1024 * 1024
+ 
+ /** One prohibited reference in a maintained source file. */
+@@ -26,7 +27,7 @@ export interface RepositoryReference {
+ }
+ 
+ function isMaintained(file: string): boolean {
+-  return !excludedPrefixes.some(prefix => file.startsWith(prefix))
++  return !excludedFiles.has(file) && !excludedPrefixes.some(prefix => file.startsWith(prefix))
+ }
+ 
+ /**
+diff --git a/tsconfig.base.json b/tsconfig.base.json
+index 4ad99dbb..e872a5f6 100644
+--- a/tsconfig.base.json
++++ b/tsconfig.base.json
+@@ -28,6 +28,21 @@
+     // not declaration path aliases, keep each package/vendor source compiled
+     // under its own tsconfig boundary.
+     "paths": {
++      "@deepseek-harness/product-runtime": ["./packages/deepseek-harness-product/runtime/src/index.ts"],
++      "@deepseek-harness/product-runtime/*": ["./packages/deepseek-harness-product/runtime/src/*.ts"],
++      "@deepseek-harness/product-desktop": ["./packages/deepseek-harness-product/desktop/src/index.ts"],
++      "@deepseek-harness/product-desktop/*": ["./packages/deepseek-harness-product/desktop/src/*.ts"],
++      "@deepseek-harness/product": ["./packages/deepseek-harness-product/product/src/index.ts"],
++      "@deepseek-harness/product/authoring": ["./packages/deepseek-harness-product/product/src/authoring.ts"],
++      "@deepseek-harness/product/extension-draft": ["./packages/deepseek-harness-product/product/src/extension-draft.ts"],
++      "@deepseek-harness/product/capabilities": ["./packages/deepseek-harness-product/product/src/capabilities.ts"],
++      "@deepseek-harness/product/errors": ["./packages/deepseek-harness-product/product/src/errors.ts"],
++      "@deepseek-harness/product/catalog-manager": ["./packages/deepseek-harness-product/product/src/catalog-manager.ts"],
++      "@deepseek-harness/product/protocol": ["./packages/deepseek-harness-product/product/src/protocol.ts"],
++      "@deepseek-harness/product/bridge": ["./packages/deepseek-harness-product/product/src/bridge.ts"],
++      "@deepseek-harness/product/dingtalk-auth": ["./packages/deepseek-harness-product/product/src/dingtalk-auth.ts"],
++      "@deepseek-harness/product-ui": ["./packages/extensions/ui-deepseek-harness-product/src/index.ts"],
++      "@deepseek-harness/product-ui/client": ["./packages/extensions/ui-deepseek-harness-product/src/client/index.ts"],
+       "@deepseek-ai/dsh-experimental-session-search": ["./packages/experimental/session-search/src/index.ts"],
+       "@deepseek-ai/dsh-experimental-ralph-bundle": ["./packages/experimental/ralph-bundle/src/index.ts"],
+       "@deepseek-ai/dsh-experimental-terminal-bundle": ["./packages/experimental/terminal-bundle/src/index.ts"],
+diff --git a/tsconfig.client.json b/tsconfig.client.json
+index a8f0a9ed..4ea29006 100644
+--- a/tsconfig.client.json
++++ b/tsconfig.client.json
+@@ -20,6 +20,7 @@
+     "apps/desktop/src/keybindings.ts",
+     "apps/desktop/src/browser-guests.ts",
+     "apps/desktop/src/ipc.ts",
++    "apps/desktop/src/extension-errors.ts",
+     "apps/desktop/src/update-overlay.ts",
+     "apps/desktop/tests/**/*.client.spec.tsx",
+     // Source-subpath test imports can arrive through workspace links whose
+@@ -88,6 +89,7 @@
+     { "path": "./packages/api/remotes/tsconfig.client.json" },
+     { "path": "./packages/extensions/cordis-client-runner" },
+     { "path": "./packages/extensions/ui-cordis" },
++    { "path": "./packages/extensions/ui-deepseek-harness-product" },
+     { "path": "./packages/test-support/client-runtime" },
+     { "path": "./packages/test-support/remote-mock" },
+     { "path": "./packages/client/shortcuts/tsconfig.client.json" },
+diff --git a/tsconfig.host.json b/tsconfig.host.json
+index af38cdb3..dc932a17 100644
+--- a/tsconfig.host.json
++++ b/tsconfig.host.json
+@@ -8,6 +8,7 @@
+     "rewriteRelativeImportExtensions": false
+   },
+   "include": [
++    "apps/web/tests/deepseek-harness-catalog.e2e.ts",
+     "apps/web/tests/collapse-timing.e2e.ts",
+     "apps/web/tests/chat-flow-layout.e2e.ts",
+     "apps/web/product-isolation.ts",
+@@ -221,6 +222,8 @@
+     "scripts/client-bundle-purity.spec.ts"
+   ],
+   "references": [
++    { "path": "./packages/deepseek-harness-product/runtime" },
++    { "path": "./packages/deepseek-harness-product/desktop" },
+     { "path": "./packages/experimental/client-ui-cot-translation/tsconfig.host.json" },
+     { "path": "./packages/experimental/cot-translation-bundle" },
+     { "path": "./packages/experimental/session-search" },
+@@ -483,6 +486,7 @@
+     { "path": "./packages/preset/agent-preset-registry" },
+     { "path": "./packages/preset/agent-preset" },
+     { "path": "./packages/preset/persona" },
++    { "path": "./packages/deepseek-harness-product/expert-kit-readme" },
+     { "path": "./packages/guard/repeat-tool-reminder" },
+     { "path": "./packages/extensions/cordis-host-runner" },
+     { "path": "./packages/extensions/tool-cordis" },
+diff --git a/tsdown.config.ts b/tsdown.config.ts
+index c378de37..55e3781f 100644
+--- a/tsdown.config.ts
++++ b/tsdown.config.ts
+@@ -18,10 +18,14 @@ function isBuildFaceClient(value: unknown): boolean {
+  */
+ export default defineConfig(({ env }) => {
+   const client = isBuildFaceClient(env?.DSH_BUILD_FACE)
+-  return {
+-    workspace: client
++  const workspace = {
++    include: client
+       ? ['vendor/*', 'packages/*/*', 'apps/cli']
+       : ['vendor/*', 'packages/*/*', 'apps/cli', 'apps/desktop-host'],
++    exclude: ['**/node_modules/**'],
++  }
++  return {
++    workspace,
+     entry: client ? '' : ['lib/types/{index,startup}.js'],
+     outDir: 'lib',
+     format: ['esm'],

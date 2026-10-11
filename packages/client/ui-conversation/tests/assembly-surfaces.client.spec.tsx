@@ -7,7 +7,7 @@ import { act, cleanup, fireEvent, waitFor, within } from '@testing-library/react
 import { useState } from 'react'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import type { ISession } from '@deepseek-ai/dsh-api-session-controller/client'
-import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
+import type { PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import {
   RemoteError, SlotTestRuntime, usePinnedBrowserLanguages, stubConfigForm,
 } from '@deepseek-ai/dsh-client-test-runtime'
@@ -79,6 +79,14 @@ function WorkspaceProbe({ open }: EmptyWorkspaceOwnerProps) {
   )
 }
 
+function HeroActionProbe({ sessionId, label }: PropsRuntime<'conversation.hero.actions'> & { label: string }) {
+  return <button data-testid="hero-action">{label}:{sessionId ?? 'none'}</button>
+}
+
+function PresetProbe() {
+  return <button data-testid="preset-probe">Native preset</button>
+}
+
 async function bench(opts?: { blank?: boolean }) {
   const runtime = await SlotTestRuntime.create()
   const openSession = provideWorkspaceNavigation(runtime)
@@ -102,6 +110,44 @@ async function bench(opts?: { blank?: boolean }) {
 }
 
 describe('resident composer', () => {
+  it('orders independent Hero actions beside the preset and supplies the optional Session', async () => {
+    const runtime = await SlotTestRuntime.create()
+    const openSession = provideWorkspaceNavigation(runtime)
+    runtime.ctx.provide('configForms', { developerTools: { enabled: createSnapshotStore(true) }, get: () => stubConfigForm().scope } as never)
+    const locale = new LocaleRuntime(runtime.ctx)
+    runtime.ctx.provide('locale', locale)
+    runtime.slots.installLocale(locale)
+    await runtime.root.declare(LAYOUT_CHILDREN, AppRoot)
+    await runtime.mount({ inject: [...inject], apply })
+    runtime.slots.register({ name: 'conversation.hero.agentPreset' }, PresetProbe)
+    runtime.slots.register({ name: 'conversation.hero.actions', id: 'later', order: 20,
+      inject: () => ({ label: 'Later' }) }, HeroActionProbe)
+    const disposeEarlier = runtime.slots.register({ name: 'conversation.hero.actions', id: 'earlier', order: 10,
+      inject: () => ({ label: 'Earlier' }) }, HeroActionProbe)
+    const view = runtime.renderRoot()
+    expect(view.getAllByTestId('hero-action').map(button => button.textContent)).toEqual(['Earlier:none', 'Later:none'])
+    const row = view.getByTestId('preset-probe').closest<HTMLElement>('[class*="heroWorkspaceRow"]')!
+    expect(within(row).getAllByRole('button').map(button => button.textContent)).toEqual([
+      expect.any(String), 'Native preset', 'Earlier:none', 'Later:none',
+    ])
+    await runtime.sessions.add({
+      id: SID, summary: { title: 'S', displayTitle: 'S', cwd: '/proj', blank: true }, snapshot: { blank: true },
+    })
+    openSession(SID)
+    await waitFor(() => {
+      expect(view.getAllByTestId('hero-action').map(button => button.textContent)).toEqual(['Earlier:s1', 'Later:s1'])
+    })
+    act(() => { disposeEarlier() })
+    await waitFor(() => {
+      expect(view.getAllByTestId('hero-action').map(button => button.textContent)).toEqual(['Later:s1'])
+    })
+    expect(view.getByTestId('preset-probe')).not.toBeNull()
+    await runtime.sessions.updateSessionSnapshot(SID, (draft) => { draft.blank = false })
+    expect(view.queryByTestId('hero-action')).toBeNull()
+    expect(view.queryByTestId('preset-probe')).toBeNull()
+    await runtime.dispose()
+  })
+
   it('renders the locked view state while no session exists at all', async () => {
     const runtime = await SlotTestRuntime.create()
     provideWorkspaceNavigation(runtime)

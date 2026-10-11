@@ -8,14 +8,14 @@
  * new-session screen ({@link AgentPresetSeat}).
  */
 
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { IconAgentPresetOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 // Type-only: pulls the ui-conversation SlotMap merge (the header actions).
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-agent-preset-registry/types'
-import type { AgentPresetSettingsState } from './settings-store.ts'
+import { isUnavailablePreset, selectionPresetId, type AgentPresetSettingsState } from './settings-store.ts'
 import { presetDisplayText } from './locales.ts'
 import css from './AgentPresetLabel.module.css'
 
@@ -48,21 +48,28 @@ export function AgentPresetLabel({
     return typeof value === 'string' ? value : undefined
   })
   const options = useAgentPresets(state => state.options)
+  const presets = useAgentPresets(state => state.presets)
+  const status = useAgentPresets(state => state.status)
+  const requestedPresets = useRef(new Set<string>())
 
   useEffect(() => {
     // Deployments that compose no presets never label anything, so the roster
     // is only worth a request once a session reports one.
-    if (preset !== undefined) void load()
-  }, [preset, load])
+    if (preset === undefined || status === 'loading' || requestedPresets.current.has(preset)) return
+    requestedPresets.current.add(preset)
+    void load()
+  }, [preset, status, load])
 
   if (preset === undefined) return null
 
-  const option = options.find(entry => entry.id === preset)
+  const shownPreset = selectionPresetId(preset, presets)
+  const option = options.find(entry => entry.id === shownPreset)
   const text = option === undefined ? undefined : presetDisplayText(option, t)
+  const label = isUnavailablePreset(preset, presets) ? t('compositionUnavailable') : text?.name ?? shownPreset
   return (
     <span className={css.label} title={text?.description ?? t('headerHint')}>
       <IconAgentPresetOutlineRegular size={14} className={css.icon} />
-      {text?.name ?? preset}
+      {label}
     </span>
   )
 }

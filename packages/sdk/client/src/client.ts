@@ -1,5 +1,5 @@
 /**
- * Low-level JSON-RPC client for a DeepSeekHarness SDK runtime subprocess.
+ * Low-level JSON-RPC client for a DeepSeek Harness SDK runtime subprocess.
  * {@link HarnessClient} owns the child process: it spawns the runtime, speaks
  * the `@deepseek-ai/dsh-sdk-protocol` wire over the child's stdio, fans
  * server notifications out to subscriptions, and tears the child down to
@@ -174,7 +174,7 @@ class NotificationSubscriptionImpl implements NotificationSubscription {
 }
 
 /**
- * JSON-RPC client for the DeepSeekHarness SDK runtime over subprocess stdio.
+ * JSON-RPC client for the DeepSeek Harness SDK runtime over subprocess stdio.
  *
  * The subprocess starts lazily on {@link start} and is owned by this instance
  * until {@link close}, which requests protocol `shutdown` and then walks the
@@ -209,7 +209,7 @@ export class HarnessClient {
    * the process is live; rejects reuse after {@link close}.
    */
   start(): void {
-    if (this.closeTask !== undefined) throw new TransportClosedError('DeepSeekHarness runtime client is closed')
+    if (this.closeTask !== undefined) throw new TransportClosedError('DeepSeek Harness runtime client is closed')
     if (this.child !== undefined) return
     const child = spawn(this.runtime.command, this.runtime.args, {
       cwd: this.runtime.cwd,
@@ -222,7 +222,7 @@ export class HarnessClient {
       // A spawn failure destroys the pipes without an input 'end' edge, so the
       // transport's pending requests must be failed here.
       this.transport?.close()
-      this.failSubscriptions(this.closedError('DeepSeekHarness runtime failed to start'))
+      this.failSubscriptions(this.closedError('DeepSeek Harness runtime failed to start'))
     })
     // Writes racing the runtime's death EPIPE on stdin; the exit edge below is
     // the real signal, so the stream-level error only needs to be non-fatal.
@@ -254,7 +254,7 @@ export class HarnessClient {
       this.exitCode = code
       settled.exited = true
       maybeSettle()
-      this.failSubscriptions(this.closedError('DeepSeekHarness runtime exited'))
+      this.failSubscriptions(this.closedError('DeepSeek Harness runtime exited'))
     })
     child.once('close', () => {
       // All stdio has settled: stdout 'end' already drained every tail frame,
@@ -298,6 +298,33 @@ export class HarnessClient {
   }
 
   /**
+   * Read a Session's effective working directory, recovering it if missing.
+   * @param sessionId - target Session; an unknown id creates it.
+   * @returns the absolute effective directory.
+   */
+  getWorkingDirectory(sessionId: string): Promise<string> {
+    return this.workingDirectoryRequest('session/working-directory/get', { sessionId })
+  }
+
+  /**
+   * Change a Session's effective directory without changing origin or permissions.
+   * @param sessionId - target Session; an unknown id creates it.
+   * @param path - absolute or Session-current-directory-relative path.
+   * @returns the validated absolute directory.
+   */
+  setWorkingDirectory(sessionId: string, path: string): Promise<string> {
+    return this.workingDirectoryRequest('session/working-directory/set', { sessionId, path })
+  }
+
+  private async workingDirectoryRequest(method: string, params: object): Promise<string> {
+    const result = await this.request(method, params)
+    if (!isRecord(result) || typeof result.cwd !== 'string') {
+      throw new SdkProtocolError(`${method} returned no working directory: ${JSON.stringify(result)}`)
+    }
+    return result.cwd
+  }
+
+  /**
    * Send one JSON-RPC request and await its result.
    * @param method - the wire method name.
    * @param params - the params object; omitted params send `{}`.
@@ -312,11 +339,11 @@ export class HarnessClient {
     // writing into a destroyed pipe and hanging until the timeout.
     if (this.exitCode !== undefined || this.spawnError !== undefined) {
       await this.settleStreams()
-      throw this.closedError('DeepSeekHarness runtime is not running')
+      throw this.closedError('DeepSeek Harness runtime is not running')
     }
     const transport = this.transport
     /* v8 ignore next -- start() either sets the transport or throws */
-    if (transport === undefined) throw new TransportClosedError('DeepSeekHarness runtime is not running')
+    if (transport === undefined) throw new TransportClosedError('DeepSeek Harness runtime is not running')
     const timeout = timeoutMs ?? this.runtime.requestTimeoutMs
     try {
       if (timeout === undefined) return await transport.request(method, params ?? {})
@@ -353,7 +380,7 @@ export class HarnessClient {
     const state: SubscriptionState = { queue: [], waiters: [], filter, failure: undefined }
     const subscription = new NotificationSubscriptionImpl(state, () => { this.subscriptions.delete(id) })
     if (this.closeTask !== undefined || this.exitCode !== undefined || this.spawnError !== undefined) {
-      subscription.fail(this.closedError('DeepSeekHarness runtime closed'))
+      subscription.fail(this.closedError('DeepSeek Harness runtime closed'))
       return subscription
     }
     this.subscriptions.set(id, subscription)
@@ -406,7 +433,7 @@ export class HarnessClient {
       disposeGraceMs: this.runtime.disposeGraceMs ?? 3_000,
     })
     this.transport?.close()
-    this.failSubscriptions(this.closedError('DeepSeekHarness runtime closed'))
+    this.failSubscriptions(this.closedError('DeepSeek Harness runtime closed'))
   }
 
   private dispatchNotification(notification: HarnessNotification): void {

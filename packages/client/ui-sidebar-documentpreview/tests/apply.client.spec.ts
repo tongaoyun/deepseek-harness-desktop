@@ -51,12 +51,17 @@ async function boot() {
   ctx.provide('configForms', { developerTools: { enabled: createSnapshotStore(true) } } as never)
   const tabs = new SidebarRightTabRegistry(ctx)
   const registered: Recorded[] = []
+  const factories = new Set<string>()
   const slots = {
     inject: vi.fn((_name: string, register: () => () => void) => register()),
     register: vi.fn((options: Omit<Recorded, 'component'>, component: unknown) => {
       const entry: Recorded = { ...options, component }
       registered.push(entry)
       return () => { registered.splice(registered.indexOf(entry), 1) }
+    }),
+    registerFactory: vi.fn((options: { name: string }) => {
+      factories.add(options.name)
+      return () => { factories.delete(options.name) }
     }),
   }
   const dictionaries = new Map<string, unknown>()
@@ -77,18 +82,18 @@ async function boot() {
   const fiber = ctx.plugin({ inject: [...inject], apply })
   onTestFinished(async () => { await fiber.dispose() })
   await fiber.await()
-  return { ctx, tabs, registered, dictionaries, fiber, read, readBytes }
+  return { ctx, tabs, registered, factories, dictionaries, fiber, read, readBytes }
 }
 
 describe('ui-sidebar-documentpreview apply', () => {
   it('registers the type, its dictionaries, and the body and title seats under the type\'s id, the body with a store and a face', async () => {
-    const { tabs, registered, dictionaries } = await boot()
+    const { tabs, registered, factories, dictionaries } = await boot()
     expect(tabs.get(TEXTPREVIEW_KIND)?.priority).toBe('fallback')
     expect(tabs.get(TEXTPREVIEW_KIND)?.id).toBe(TEXTPREVIEW_ID)
     expect(dictionaries.get('sidebarDocumentPreview')).toEqual({ zh, en })
     // The seat key is the implementation's id, not the kind: an extension may
     // take the kind over, and the seat must still find this body.
-    expect(registered.map(entry => [entry.name, entry.key, entry.locale, entry.component])).toEqual([
+    expect(registered.filter(entry => entry.name.startsWith('sidebar.')).map(entry => [entry.name, entry.key, entry.locale, entry.component])).toEqual([
       ['sidebar.right.pane.tab', TEXTPREVIEW_ID, 'sidebarDocumentPreview', TextPreview],
       ['sidebar.right.pane.tab.title', TEXTPREVIEW_ID, undefined, TextTitle],
       ['sidebar.right.tab.document', PLAIN_BODY_ID, undefined, TextBody],
@@ -102,15 +107,18 @@ describe('ui-sidebar-documentpreview apply', () => {
       ['sidebar.right.tab.document', '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/excel', 'sidebarExcel', LazyExcelBody],
       ['sidebar.right.tab.document', '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/code', 'sidebarCodePreview', CodeBody],
     ])
+    expect([...factories]).toEqual(['document.preview'])
+    expect(registered.filter(entry => entry.name === 'document.preview.body')).toHaveLength(8)
     expect(registered[0]?.store).toBeDefined()
     expect(typeof registered[0]?.inject).toBe('function')
   })
 
   it('takes every registration back when the plugin is disposed', async () => {
-    const { tabs, registered, dictionaries, fiber } = await boot()
+    const { tabs, registered, factories, dictionaries, fiber } = await boot()
     await fiber.dispose()
     expect(tabs.get(TEXTPREVIEW_KIND)).toBeUndefined()
     expect(registered).toEqual([])
+    expect(factories.size).toBe(0)
     expect(dictionaries.size).toBe(0)
   })
 

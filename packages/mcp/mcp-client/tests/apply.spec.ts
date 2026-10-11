@@ -182,10 +182,10 @@ describe('apply (plugin lifecycle)', () => {
   )
 
   it('connects, syncs tools under the namespace, and registers a notification handler', async () => {
-    await apply(ctx, stdioConfig)
+    await apply(ctx, { ...stdioConfig, toolCallTimeoutMs: 120_000 })
 
-    expect(mockConnect).toHaveBeenCalled()
-    expect(mockListTools).toHaveBeenCalled()
+    expect(mockConnect).toHaveBeenCalledWith(expect.anything(), { timeout: 120_000 })
+    expect(mockListTools).toHaveBeenCalledWith(undefined, { cacheMode: 'refresh', timeout: 120_000 })
     expect(mockSetNotificationHandler).toHaveBeenCalled()
     expect(ctx.tools.get('mcp__srv__remote')).toBeDefined()
     expect(ctx.tools.get('remote')).toBeUndefined()

@@ -1,0 +1,224 @@
+diff --git a/scripts/product-package-policy.ts b/scripts/product-package-policy.ts
+index 802ce76f..2bbd4dc3 100644
+--- a/scripts/product-package-policy.ts
++++ b/scripts/product-package-policy.ts
+@@ -1,7 +1,7 @@
+ /** Non-default package roles retained outside the experimental group. */
+ 
+ /** Product role that does not require a default runtime mount. */
+-export type ProductPackageCategory = 'optional' | 'sdk' | 'build' | 'test' | 'web-distribution' | 'declarations'
++export type ProductPackageCategory = 'optional' | 'sdk' | 'build' | 'test' | 'web-distribution' | 'declarations' | 'product'
+ 
+ /** One explicitly maintained package role and its reason. */
+ export interface ProductPackagePolicy {
+@@ -16,6 +16,21 @@ export interface ProductPackagePolicy {
+  * Optional integrations may be reached by an optional bundle without becoming default capabilities.
+  */
+ export const PRODUCT_PACKAGE_POLICY: Readonly<Record<string, ProductPackagePolicy>> = {
++  'packages/deepseek-harness-product/product': {
++    category: 'product', reason: 'Product protocol and server gateway loaded by the independent Desktop assembly.',
++  },
++  'packages/deepseek-harness-product/desktop': {
++    category: 'product', reason: 'Credential-owning Desktop extension loaded by the independent Product assembly.',
++  },
++  'packages/deepseek-harness-product/expert-kit-readme': {
++    category: 'product', reason: 'Product Expert Kit README provider loaded by the Product runtime composition.',
++  },
++  'packages/deepseek-harness-product/runtime': {
++    category: 'product', reason: 'Product Cordis runtime loaded by the independent Desktop profile.',
++  },
++  'packages/extensions/ui-deepseek-harness-product': {
++    category: 'product', reason: 'Product UI extension loaded by the independent Desktop profile and Web client.',
++  },
+   'packages/browser-use/browser-use': { category: 'optional', reason: 'Service definition used by explicitly selected browser providers.' },
+   'packages/computer-use/computer-use': { category: 'optional', reason: 'Service definition used by explicitly selected computer providers.' },
+   'packages/lsp/lsp': { category: 'optional', reason: 'Service definition for deployment-configured language servers.' },
+diff --git a/scripts/verify-product-use.spec.ts b/scripts/verify-product-use.spec.ts
+index 002af7c3..e9f157fa 100644
+--- a/scripts/verify-product-use.spec.ts
++++ b/scripts/verify-product-use.spec.ts
+@@ -35,6 +35,10 @@ function profiles(root: string, optional: string[] = [], onDemand: string[] = []
+   ))}\nexport const DEFAULT_PROFILE_BUNDLES = ['${base}']\nexport const OPTIONAL_BUNDLES = ${JSON.stringify(optional)}\n`)
+ }
+ 
++function assembly(root: string, packageDirectories: string[], runtimePackages: string[] = []): void {
++  write(root, 'packages/core/assembly-holder/assembly.json', { packageDirectories, runtimePackages })
++}
++
+ function fixture(): string {
+   const root = mkdtempSync(join(tmpdir(), 'dsh-product-use-'))
+   roots.push(root)
+@@ -78,6 +82,36 @@ describe('product package use', () => {
+     expect(failures(root, declarations())).toBe('')
+   })
+ 
++  it('recognizes an independent assembly without treating it as an official profile', () => {
++    const root = fixture()
++    pkg(root, candidateDir, candidate)
++    assembly(root, ['../candidate'], [candidate])
++    const result = verifyProductUse(root, { [candidateDir]: { category: 'product', reason: 'Fixture assembly.' } })
++    expect(result.failures).toEqual([])
++    expect(result.defaultPackages).not.toContain(candidateDir)
++    expect(result.assemblySourceCount).toBeGreaterThan(0)
++  })
++
++  it('rejects a product package accidentally mounted by an official profile', () => {
++    const root = fixture()
++    pkg(root, candidateDir, candidate)
++    assembly(root, ['../candidate'], [candidate])
++    write(root, patch, [{ insert: [{ name: candidate }] }])
++    expect(failures(root, { [candidateDir]: { category: 'product', reason: 'Fixture assembly.' } })).toContain('stale product policy')
++  })
++
++  it('rejects an assembly that names a package outside the workspace', () => {
++    const root = fixture()
++    assembly(root, ['../missing'])
++    expect(failures(root)).toContain('package directory packages/core/missing has no workspace package')
++  })
++
++  it('rejects an assembly that names an unknown runtime package', () => {
++    const root = fixture()
++    assembly(root, [], ['@deepseek-ai/dsh-missing'])
++    expect(failures(root)).toContain('runtime package @deepseek-ai/dsh-missing has no workspace package')
++  })
++
+   it.each([
+     `import type { Shape } from '${candidate}'`,
+     `import { type Shape } from '${candidate}'`,
+diff --git a/scripts/verify-product-use.ts b/scripts/verify-product-use.ts
+index 0c3837d8..4dcb05b3 100644
+--- a/scripts/verify-product-use.ts
++++ b/scripts/verify-product-use.ts
+@@ -1,7 +1,7 @@
+ /** Check that maintained packages have effective product use or an explicit non-default role. */
+ 
+ import { existsSync, globSync, readFileSync, statSync } from 'node:fs'
+-import { dirname, extname, relative, resolve } from 'node:path'
++import { dirname, extname, join, relative, resolve } from 'node:path'
+ import { fileURLToPath } from 'node:url'
+ import { JSDOM } from 'jsdom'
+ import ts from 'typescript'
+@@ -18,6 +18,7 @@ const PROFILE_SOURCE = 'packages/boot/app-boot/src/profile.ts'
+ const ON_DEMAND_SOURCE = 'packages/boot/app-boot/src/official-bundle-packages.ts'
+ const PROFILES = ['acp', 'web', 'headless', 'sdk', 'sdk-minimal']
+ const PICKER_SOURCE = 'packages/host/directory-picker-auto/src/index.ts'
++const ASSEMBLY_GLOB = ['packages/*/*/assembly.json', 'apps/*/assembly.json']
+ const DYNAMIC_MOUNTS: Readonly<Record<string, readonly string[]>> = {
+   [PICKER_SOURCE]: ['BACKEND_PACKAGES', 'SURFACE_PACKAGES'],
+ }
+@@ -47,6 +48,8 @@ export interface ProductUseResult {
+   packageCount: number
+   /** Distinct source modules reached across both selections. */
+   sourceCount: number
++  /** Distinct source modules reached from independent application assemblies. */
++  assemblySourceCount: number
+   /** Effective compositions read, including Include files. */
+   configCount: number
+ }
+@@ -67,6 +70,7 @@ export function verifyProductUse(
+   const configs = new Set<string>()
+   const defaults: Reachability = { packages: new Set(), sources: new Set() }
+   const optional: Reachability = { packages: new Set(), sources: new Set() }
++  const assembly: Reachability = { packages: new Set(), sources: new Set() }
+   const config = ts.readConfigFile(resolve(root, 'tsconfig.base.json'), path => ts.sys.readFile(path))
+   if (config.error !== undefined) throw new Error(ts.flattenDiagnosticMessageText(config.error.messageText, '\n'))
+   const converted = ts.convertCompilerOptionsFromJson(
+@@ -184,6 +188,54 @@ export function verifyProductUse(
+       scanEntries(entries, filename, reach, new Set([...stack, filename]))
+     }
+   }
++  /** Follow source entrypoints listed by each independent application assembly. */
++  for (const assemblyRelativePath of globSync(ASSEMBLY_GLOB, { cwd: root }).map(path => path.replaceAll('\\', '/')).sort()) {
++    const assemblyPath = resolve(root, assemblyRelativePath)
++    let value: unknown
++    try {
++      value = JSON.parse(readFileSync(assemblyPath, 'utf8'))
++    } catch (error) {
++      failures.push(`${assemblyRelativePath}: invalid assembly JSON (${String(error)})`)
++      continue
++    }
++    if (!isRecord(value)) {
++      failures.push(`${assemblyRelativePath}: assembly must be an object`)
++      continue
++    }
++    if (!Array.isArray(value.runtimePackages)
++      || !value.runtimePackages.every((entry): entry is string => typeof entry === 'string')) {
++      failures.push(`${assemblyRelativePath}: runtimePackages must be a string array`)
++    } else {
++      for (const packageName of value.runtimePackages) {
++        if (!packages.has(packageName)) {
++          failures.push(`${assemblyRelativePath}: runtime package ${packageName} has no workspace package`)
++          continue
++        }
++        mount(packageName, assemblyPath, assembly)
++      }
++    }
++    if (!Array.isArray(value.packageDirectories)
++      || !value.packageDirectories.every((entry): entry is string => typeof entry === 'string')) {
++      failures.push(`${assemblyRelativePath}: packageDirectories must be a string array`)
++      continue
++    }
++    for (const directory of value.packageDirectories) {
++      const absolute = resolve(dirname(assemblyPath), directory)
++      const packageDirectory = display(absolute)
++      if (directories.get(absolute) === undefined) {
++        failures.push(`${assemblyRelativePath}: package directory ${packageDirectory} has no workspace package`)
++        continue
++      }
++      const serverEntry = sourceFile(join(absolute, 'src/index.ts'))
++      if (serverEntry === undefined) {
++        failures.push(`${assemblyRelativePath}: ${packageDirectory} has no src/index.ts entry`)
++      } else scanSource(serverEntry, assembly)
++      // Client extensions are reached by the Web loader through the package's
++      // dsh.client declaration rather than by the Host entrypoint.
++      const clientEntry = sourceFile(join(absolute, 'src/client/index.ts'))
++      if (clientEntry !== undefined) scanSource(clientEntry, assembly)
++    }
++  }
+   const profilePath = resolve(root, PROFILE_SOURCE)
+   const profileFile = ts.createSourceFile(profilePath, readFileSync(profilePath, 'utf8'), ts.ScriptTarget.Latest, true)
+   const templates = literalDeclaration(profileFile, 'PROFILE_TEMPLATES')
+@@ -238,26 +290,31 @@ export function verifyProductUse(
+       continue
+     }
+     if (entry.reason.trim() === '') failures.push(`${path} (${pkg.name}): package policy requires a reason`)
+-    if (!validCategory(path, entry.category)) failures.push(`${path} (${pkg.name}): invalid policy category ${entry.category}`)
++    if (!validCategory(path, entry.category, assembly.packages)) failures.push(`${path} (${pkg.name}): invalid policy category ${entry.category}`)
+     if (entry.category !== 'web-distribution' && defaults.packages.has(path)) {
+       failures.push(`${path} (${pkg.name}): stale ${entry.category} policy; default runtime use requires removing this declaration`)
+     }
+     if (entry.category === 'web-distribution' && !defaults.packages.has(path)) {
+       failures.push(`${path} (${pkg.name}): stale web-distribution policy; restore its product source entry or correct its role`)
+     }
++    if (entry.category === 'product' && !assembly.packages.has(path)) {
++      failures.push(`${path} (${pkg.name}): stale product policy; restore its independent assembly entry or correct its role`)
++    }
+   }
+   for (const pkg of packages.values()) {
+     if (!pkg.directory.startsWith('packages/') || pkg.directory.startsWith('packages/experimental/')) continue
+-    if (!defaults.packages.has(pkg.directory) && !optional.packages.has(pkg.directory) && policy[pkg.directory] === undefined) {
++    if (!defaults.packages.has(pkg.directory) && !optional.packages.has(pkg.directory) && !assembly.packages.has(pkg.directory)
++      && policy[pkg.directory] === undefined) {
+       failures.push(`${pkg.directory} (${pkg.name}): no product runtime use; mount it, declare its maintained role, or move it to experimental`)
+     }
+   }
+   return { failures: [...new Set(failures)].sort(), defaultPackages: [...defaults.packages].sort(),
+     optionalPackages: [...optional.packages].filter(path => !defaults.packages.has(path)).sort(), packageCount: packages.size,
+-    sourceCount: new Set([...defaults.sources, ...optional.sources]).size, configCount: configs.size }
++    sourceCount: new Set([...defaults.sources, ...optional.sources]).size,
++    assemblySourceCount: assembly.sources.size, configCount: configs.size }
+ }
+ 
+-function validCategory(path: string, category: ProductPackagePolicy['category']): boolean {
++function validCategory(path: string, category: ProductPackagePolicy['category'], assemblyPackages: ReadonlySet<string>): boolean {
+   switch (category) {
+     case 'optional': return !path.startsWith('packages/test-support/')
+     case 'test': return path.startsWith('packages/test-support/')
+@@ -265,6 +322,7 @@ function validCategory(path: string, category: ProductPackagePolicy['category'])
+     case 'build': return path === 'packages/typert/generator'
+     case 'web-distribution': return path === 'packages/client/web' || path === 'packages/client/ui-dockkit'
+     case 'declarations': return path === 'packages/util/package-manifest'
++    case 'product': return assemblyPackages.has(path)
+     default: return assertNever(category)
+   }
+ }
