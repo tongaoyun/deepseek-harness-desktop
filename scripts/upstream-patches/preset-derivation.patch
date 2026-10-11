@@ -1,5 +1,5 @@
 diff --git a/docs/subsystems/core.i18n.yaml b/docs/subsystems/core.i18n.yaml
-index c4c106c0..0e0ef18a 100644
+index c4c106c066488b9f923a6dfb389e908ea8d09a27..0e0ef18a65326e5f1f259b7e806a5244205912ef 100644
 --- a/docs/subsystems/core.i18n.yaml
 +++ b/docs/subsystems/core.i18n.yaml
 @@ -34,4 +34,7 @@
@@ -12,7 +12,7 @@ index c4c106c0..0e0ef18a 100644
 +  en: 6e37a40b4992cc7c
 +  zh: caeffe8f8a2b5f3f
 diff --git a/packages/client/ui-agent-preset/README.i18n.yaml b/packages/client/ui-agent-preset/README.i18n.yaml
-index 71819423..7c5955bf 100644
+index 71819423094b8011229e92fffb36e212ba9b31ab..7c5955bfecb3404813e0ffeb636ef9b24ee636e0 100644
 --- a/packages/client/ui-agent-preset/README.i18n.yaml
 +++ b/packages/client/ui-agent-preset/README.i18n.yaml
 @@ -18,8 +18,8 @@
@@ -27,7 +27,7 @@ index 71819423..7c5955bf 100644
    en: bbae8d79844bc481
    zh: 4302107fd1f460e6
 diff --git a/packages/client/ui-agent-preset/README.md b/packages/client/ui-agent-preset/README.md
-index 09df3e46..d63c734e 100644
+index 09df3e46f360198797fc90ae18466131a3c61d97..d63c734e55304e29fa9e43afe437091ea475edb5 100644
 --- a/packages/client/ui-agent-preset/README.md
 +++ b/packages/client/ui-agent-preset/README.md
 @@ -43,7 +43,7 @@ Entering Creator selects `cordis` for the receiving blank Session without changi
@@ -40,7 +40,7 @@ index 09df3e46..d63c734e 100644
  `CreatePluginMenuItem` contributes to `plugins.add.actions` using the shared roster store. Its selection calls the owner's `onDismiss()` before the same `startCreatorDraft` callback exposed to Settings as `creatorDraft`. That callback stages `cordis` through `AgentPresetSeatController` and opens the task through `uiWorkspace.startSession` with explicit draft preservation; it can reuse a blank Session and applies the staged choice when a Session binding becomes available. The choice is consumed once applied. Both Coding Tools states use the same picker and selection store, and `AgentPresetSeat` renders refusals through the shared `Toast` component.
  
 diff --git a/packages/client/ui-agent-preset/README.zh.md b/packages/client/ui-agent-preset/README.zh.md
-index 7514fc99..8640a35d 100644
+index 7514fc9953be9ee19f15b65d8a09e91aac3bc08f..8640a35d774973a69706a0f8b0686df0f3a4fd53 100644
 --- a/packages/client/ui-agent-preset/README.zh.md
 +++ b/packages/client/ui-agent-preset/README.zh.md
 @@ -43,7 +43,7 @@ kind: "package-reference"
@@ -53,7 +53,7 @@ index 7514fc99..8640a35d 100644
  `CreatePluginMenuItem` 使用共享的预设列表 store，向 `plugins.add.actions` 贡献菜单项。选择时先调用页面传入的 `onDismiss()`，再调用与设置页 `creatorDraft` 相同的 `startCreatorDraft` 回调。该回调通过 `AgentPresetSeatController` 暂存 `cordis`，再通过显式保留草稿的 `uiWorkspace.startSession` 调用打开任务；它可以复用空白 Session，并在 Session 绑定可用时应用暂存选择。暂存选择应用后即清除。代码工作工具开启或关闭时均使用同一个选择器和选择 store，`AgentPresetSeat` 通过共享的 `Toast` 组件显示拒绝原因。
  
 diff --git a/packages/client/ui-agent-preset/src/client/AgentPresetLabel.tsx b/packages/client/ui-agent-preset/src/client/AgentPresetLabel.tsx
-index 26fdcfcb..8bf329c5 100644
+index 26fdcfcbf69fc2222aa3007c32f1d1d3e0d9793e..8bf329c50c1699013526868ba22f9b73a533f860 100644
 --- a/packages/client/ui-agent-preset/src/client/AgentPresetLabel.tsx
 +++ b/packages/client/ui-agent-preset/src/client/AgentPresetLabel.tsx
 @@ -8,14 +8,14 @@
@@ -107,7 +107,7 @@ index 26fdcfcb..8bf329c5 100644
    )
  }
 diff --git a/packages/client/ui-agent-preset/src/client/AgentPresetSeat.tsx b/packages/client/ui-agent-preset/src/client/AgentPresetSeat.tsx
-index 07e4aa84..7d5f4c78 100644
+index 07e4aa84c8a6e06f08d288cddb54309ffbd0a9f1..7d5f4c78b513155b51eea1a9b4478af63f84f860 100644
 --- a/packages/client/ui-agent-preset/src/client/AgentPresetSeat.tsx
 +++ b/packages/client/ui-agent-preset/src/client/AgentPresetSeat.tsx
 @@ -113,7 +113,7 @@ export function AgentPresetSeat({
@@ -120,7 +120,7 @@ index 07e4aa84..7d5f4c78 100644
  
    // The introduce cue: the pick was staged from another screen (the settings
 diff --git a/packages/client/ui-agent-preset/src/client/index.ts b/packages/client/ui-agent-preset/src/client/index.ts
-index 184b7fd7..91e03e0b 100644
+index 184b7fd791c793f3af540074abe1f478802e9df6..91e03e0be743768541d26e3d538243ba9f610871 100644
 --- a/packages/client/ui-agent-preset/src/client/index.ts
 +++ b/packages/client/ui-agent-preset/src/client/index.ts
 @@ -77,7 +77,7 @@ export function apply(ctx: ClientContext): void {
@@ -141,7 +141,7 @@ index 184b7fd7..91e03e0b 100644
      staged.introduce = false
      void unboundSeat.apply()
 diff --git a/packages/client/ui-agent-preset/src/client/locales.ts b/packages/client/ui-agent-preset/src/client/locales.ts
-index 1863c2e1..14e07625 100644
+index 1863c2e108cc4e139a25baaa3bcf4ee11ce8003b..14e07625545ece597db8a4fa84f13b0c2d273e90 100644
 --- a/packages/client/ui-agent-preset/src/client/locales.ts
 +++ b/packages/client/ui-agent-preset/src/client/locales.ts
 @@ -9,6 +9,7 @@ export type AgentPresetSettingsKey =
@@ -169,7 +169,7 @@ index 1863c2e1..14e07625 100644
  
    setDefault: '设为新任务默认',
 diff --git a/packages/client/ui-agent-preset/src/client/seat-store.ts b/packages/client/ui-agent-preset/src/client/seat-store.ts
-index dfa2c699..fc6d9fec 100644
+index dfa2c699456e10159e009423ebaad02743622f12..fc6d9fec08f3da8a759664a3e0692584f5221727 100644
 --- a/packages/client/ui-agent-preset/src/client/seat-store.ts
 +++ b/packages/client/ui-agent-preset/src/client/seat-store.ts
 @@ -16,8 +16,8 @@ import type {} from '@deepseek-ai/dsh-api-remotes/client'
@@ -413,7 +413,7 @@ index dfa2c699..fc6d9fec 100644
      } finally {
        this.pendingSelection = undefined
 diff --git a/packages/client/ui-agent-preset/src/client/section-store.ts b/packages/client/ui-agent-preset/src/client/section-store.ts
-index 3ab2bdd2..f2d1bed2 100644
+index 3ab2bdd2aa4f819e19b9b6d587d8cd96f93da5fb..f2d1bed2e7fe26cb71f0b1023cd9a28260a3860a 100644
 --- a/packages/client/ui-agent-preset/src/client/section-store.ts
 +++ b/packages/client/ui-agent-preset/src/client/section-store.ts
 @@ -47,7 +47,11 @@ export class AgentPresetSectionController {
@@ -430,7 +430,7 @@ index 3ab2bdd2..f2d1bed2 100644
    }
  
 diff --git a/packages/client/ui-agent-preset/src/client/settings-store.ts b/packages/client/ui-agent-preset/src/client/settings-store.ts
-index 6eb1ff6f..068d6a80 100644
+index 6eb1ff6fd26226207ca4ece75109d09131cebdf8..068d6a80eba777a7b3754bd9ce3f09f655bde029 100644
 --- a/packages/client/ui-agent-preset/src/client/settings-store.ts
 +++ b/packages/client/ui-agent-preset/src/client/settings-store.ts
 @@ -57,6 +57,32 @@ export function requiresCodingTools(preset: AgentPresetOption | undefined): bool
@@ -517,7 +517,7 @@ index 6eb1ff6f..068d6a80 100644
    }
  
 diff --git a/packages/client/ui-agent-preset/tests/apply.client.spec.ts b/packages/client/ui-agent-preset/tests/apply.client.spec.ts
-index f23bde9a..ef844ba7 100644
+index f23bde9a6e417868efb29c15ae434650a41c5cd7..ef844ba7ef48d5f8c55a1ed4eaf98b5768565051 100644
 --- a/packages/client/ui-agent-preset/tests/apply.client.spec.ts
 +++ b/packages/client/ui-agent-preset/tests/apply.client.spec.ts
 @@ -39,7 +39,7 @@ function developerTools(enabled = true): { configForms: { developerTools: { enab
@@ -611,7 +611,7 @@ index f23bde9a..ef844ba7 100644
      })
    })
 diff --git a/packages/client/ui-agent-preset/tests/components.client.spec.tsx b/packages/client/ui-agent-preset/tests/components.client.spec.tsx
-index 79cc930e..9e9fc550 100644
+index 79cc930e013a8726b9c8c908bd54e1e2fb46d92e..9e9fc550fc662c46ea613f0f9fd41416a72117bf 100644
 --- a/packages/client/ui-agent-preset/tests/components.client.spec.tsx
 +++ b/packages/client/ui-agent-preset/tests/components.client.spec.tsx
 @@ -26,10 +26,15 @@ const ROSTER_READY: AgentPresetSettingsState = {
@@ -769,7 +769,7 @@ index 79cc930e..9e9fc550 100644
  
    it('renders nothing, and reads no roster, when the session records no preset', async () => {
 diff --git a/packages/client/ui-agent-preset/tests/create-plugin-menu-item.client.spec.tsx b/packages/client/ui-agent-preset/tests/create-plugin-menu-item.client.spec.tsx
-index d1ecedaa..c9ad39c0 100644
+index d1ecedaa66a0a7c3784a66a5f060ea00a71b5be5..c9ad39c0ab4ad766d0e2d02e6795f81b66ea647d 100644
 --- a/packages/client/ui-agent-preset/tests/create-plugin-menu-item.client.spec.tsx
 +++ b/packages/client/ui-agent-preset/tests/create-plugin-menu-item.client.spec.tsx
 @@ -18,7 +18,8 @@ function unusedHook(): never {
@@ -794,7 +794,7 @@ index d1ecedaa..c9ad39c0 100644
      expect(item().textContent).toContain(en.createPluginMissing)
 diff --git a/packages/client/ui-agent-preset/tests/derived-selection.client.spec.ts b/packages/client/ui-agent-preset/tests/derived-selection.client.spec.ts
 new file mode 100644
-index 00000000..d25b161c
+index 0000000000000000000000000000000000000000..d25b161c9b1ca3de6b6471d24147ff398f593440
 --- /dev/null
 +++ b/packages/client/ui-agent-preset/tests/derived-selection.client.spec.ts
 @@ -0,0 +1,362 @@
@@ -1161,7 +1161,7 @@ index 00000000..d25b161c
 +  })
 +})
 diff --git a/packages/client/ui-agent-preset/tests/section-store.client.spec.ts b/packages/client/ui-agent-preset/tests/section-store.client.spec.ts
-index ba2d1841..7762b06e 100644
+index ba2d1841b92cdbf0890484c6ee8dadb072319b92..7762b06eba6462bcf2228c7c69e7970008d6170e 100644
 --- a/packages/client/ui-agent-preset/tests/section-store.client.spec.ts
 +++ b/packages/client/ui-agent-preset/tests/section-store.client.spec.ts
 @@ -5,13 +5,17 @@ import type { ConfigFormSnapshot } from '@deepseek-ai/dsh-client-ui-settings/cli
@@ -1228,7 +1228,7 @@ index ba2d1841..7762b06e 100644
  
    it.each(['ptc', 'minimal'])('saves Standard instead of built-in %s with the accepted revision', async (id) => {
 diff --git a/packages/client/ui-agent-preset/tests/section.client.spec.tsx b/packages/client/ui-agent-preset/tests/section.client.spec.tsx
-index 6505bceb..d2617297 100644
+index 6505bceb7f16df24dabe9fc54c6946e3ad908815..d2617297cc2cf529be76479804d0013fd0e58c8a 100644
 --- a/packages/client/ui-agent-preset/tests/section.client.spec.tsx
 +++ b/packages/client/ui-agent-preset/tests/section.client.spec.tsx
 @@ -4,6 +4,7 @@ import { afterEach, expect, it, vi } from 'vitest'
@@ -1260,7 +1260,7 @@ index 6505bceb..d2617297 100644
      close: vi.fn() }
    const props: AgentPresetSectionProps = { ...actions,
 diff --git a/packages/client/ui-agent-preset/tests/settings-store.client.spec.ts b/packages/client/ui-agent-preset/tests/settings-store.client.spec.ts
-index 73f412f5..a0a5eb7d 100644
+index 73f412f564c649395fb29df21847543f71939938..a0a5eb7dc8015913ff0d63bcac327ed917d6e096 100644
 --- a/packages/client/ui-agent-preset/tests/settings-store.client.spec.ts
 +++ b/packages/client/ui-agent-preset/tests/settings-store.client.spec.ts
 @@ -13,7 +13,7 @@ import type { SessionSummary } from '@deepseek-ai/dsh-api-session-controller/cli
@@ -1316,7 +1316,7 @@ index 73f412f5..a0a5eb7d 100644
      },
    }
 diff --git a/packages/client/ui-plugin-manager/tests/browser-plugin.client.spec.tsx b/packages/client/ui-plugin-manager/tests/browser-plugin.client.spec.tsx
-index 8dbe9365..52856522 100644
+index 8dbe936512d73034dc383c4353c30e77ac6f9ac9..52856522dc0998aec5eda237421cac65de17ad5f 100644
 --- a/packages/client/ui-plugin-manager/tests/browser-plugin.client.spec.tsx
 +++ b/packages/client/ui-plugin-manager/tests/browser-plugin.client.spec.tsx
 @@ -145,7 +145,7 @@ describe('ui-plugin-manager browser plugin', () => {
@@ -1329,7 +1329,7 @@ index 8dbe9365..52856522 100644
        useWorkspaces={unread} useResource={unread} />)
      expect(glyph.container.querySelector('svg')?.getAttribute('width')).toBe('18')
 diff --git a/packages/client/ui-schedule/tests/task-manager-page.client.spec.tsx b/packages/client/ui-schedule/tests/task-manager-page.client.spec.tsx
-index 52158d0e..7b81d23d 100644
+index 52158d0ed20bcec92d7151f55c06f35d1173d8c1..7b81d23d2dbb707cfd9f8a61ce586839f9a7d7fe 100644
 --- a/packages/client/ui-schedule/tests/task-manager-page.client.spec.tsx
 +++ b/packages/client/ui-schedule/tests/task-manager-page.client.spec.tsx
 @@ -1592,6 +1592,7 @@ describe('Task manager details', () => {
@@ -1341,7 +1341,7 @@ index 52158d0e..7b81d23d 100644
        useSessions={unread}
        useWorkspaces={unread}
 diff --git a/packages/client/ui-settings-account/tests/apply.client.spec.ts b/packages/client/ui-settings-account/tests/apply.client.spec.ts
-index 78ebf132..f32ed506 100644
+index 78ebf132c8568f3cae882a53d3e9adcb63b9827b..f32ed50693ded95fbd15b52b8d2b72fd283a0164 100644
 --- a/packages/client/ui-settings-account/tests/apply.client.spec.ts
 +++ b/packages/client/ui-settings-account/tests/apply.client.spec.ts
 @@ -19,6 +19,7 @@ import type { AccountSectionInjected } from '../src/client/AccountSection.tsx'
@@ -1384,7 +1384,7 @@ index 78ebf132..f32ed506 100644
  
  it('prefills the native device description from the Desktop bridge on every click', async ({ start }) => {
 diff --git a/packages/preset/agent-preset-registry/README.i18n.yaml b/packages/preset/agent-preset-registry/README.i18n.yaml
-index 19984aa4..a702d3c8 100644
+index 19984aa48e39e7429959ceb3f6cdee81e26ad0c8..a702d3c8a8f3c4898c95a83bf0a0c1a60312a78a 100644
 --- a/packages/preset/agent-preset-registry/README.i18n.yaml
 +++ b/packages/preset/agent-preset-registry/README.i18n.yaml
 @@ -18,8 +18,8 @@
@@ -1399,7 +1399,7 @@ index 19984aa4..a702d3c8 100644
    en: 1d479971c0adc694
    zh: abc84b7220c9b5d5
 diff --git a/packages/preset/agent-preset-registry/README.md b/packages/preset/agent-preset-registry/README.md
-index 9de2a411..4227b198 100644
+index 9de2a411071531e92d7f13b04cfa53f1750b2899..4227b198f3e484e01b88283bab41c39991ae9f55 100644
 --- a/packages/preset/agent-preset-registry/README.md
 +++ b/packages/preset/agent-preset-registry/README.md
 @@ -47,6 +47,10 @@ The Web definitions come from the `dsh-web-app` bundle. Definitions are ordinary
@@ -1414,7 +1414,7 @@ index 9de2a411..4227b198 100644
  ## Understand the implementation
  
 diff --git a/packages/preset/agent-preset-registry/README.zh.md b/packages/preset/agent-preset-registry/README.zh.md
-index 96ce2c18..2cdb000c 100644
+index 96ce2c18c5a160b116adbdcd1d8355f6fd09c403..2cdb000c909335e161c1a770e18f5cc2c3298b30 100644
 --- a/packages/preset/agent-preset-registry/README.zh.md
 +++ b/packages/preset/agent-preset-registry/README.zh.md
 @@ -47,6 +47,10 @@ Web 内置定义来自 `dsh-web-app` bundle。定义使用普通插件行；注
@@ -1429,7 +1429,7 @@ index 96ce2c18..2cdb000c 100644
  ## 理解实现
  
 diff --git a/packages/preset/agent-preset-registry/src/definition.ts b/packages/preset/agent-preset-registry/src/definition.ts
-index 548ad562..db42d679 100644
+index 548ad5623b30e7612c185d5b722c9e9e3a68655f..db42d6790b2b4fda49d09d9f4537932f041ec89e 100644
 --- a/packages/preset/agent-preset-registry/src/definition.ts
 +++ b/packages/preset/agent-preset-registry/src/definition.ts
 @@ -4,9 +4,17 @@ import type { EntryOptions, JsExpr } from '@deepseek-ai/cordis-plugin-loader'
@@ -1451,7 +1451,7 @@ index 548ad562..db42d679 100644
  }
  
 diff --git a/packages/preset/agent-preset-registry/src/index.ts b/packages/preset/agent-preset-registry/src/index.ts
-index 05009229..511de1e9 100644
+index 050092290485c431bd93f216cf740dad68e3fd84..511de1e99df4de696dd60d8ebda1f49729774c27 100644
 --- a/packages/preset/agent-preset-registry/src/index.ts
 +++ b/packages/preset/agent-preset-registry/src/index.ts
 @@ -23,6 +23,16 @@ export type { AgentPresetInspection } from './composition-inventory.ts'
@@ -1617,7 +1617,7 @@ index 05009229..511de1e9 100644
        return preset.id
      })
 diff --git a/packages/preset/agent-preset-registry/src/preset.ts b/packages/preset/agent-preset-registry/src/preset.ts
-index ae405a05..ca4b3e06 100644
+index ae405a05ad77c793311d665eebeb0141c0d8f4d1..ca4b3e060ad4c1ed0e4cf05dab2a92921885b763 100644
 --- a/packages/preset/agent-preset-registry/src/preset.ts
 +++ b/packages/preset/agent-preset-registry/src/preset.ts
 @@ -6,6 +6,9 @@ export interface AgentPreset {
@@ -1631,7 +1631,7 @@ index ae405a05..ca4b3e06 100644
  }
  
 diff --git a/packages/preset/agent-preset-registry/src/types.ts b/packages/preset/agent-preset-registry/src/types.ts
-index c30141d6..e65bb3c8 100644
+index c30141d621f327868b0386af964daa79ba5e4d8a..e65bb3c80fa1ab2d8052b576df5f24a25c325e78 100644
 --- a/packages/preset/agent-preset-registry/src/types.ts
 +++ b/packages/preset/agent-preset-registry/src/types.ts
 @@ -14,6 +14,12 @@ export interface AgentPresetRow {
@@ -1649,7 +1649,7 @@ index c30141d6..e65bb3c8 100644
  }
 diff --git a/packages/preset/agent-preset-registry/tests/derive.spec.ts b/packages/preset/agent-preset-registry/tests/derive.spec.ts
 new file mode 100644
-index 00000000..0e4b2916
+index 0000000000000000000000000000000000000000..0e4b29167a613525afe4df4f2654e38daf3cd0a2
 --- /dev/null
 +++ b/packages/preset/agent-preset-registry/tests/derive.spec.ts
 @@ -0,0 +1,178 @@
@@ -1832,7 +1832,7 @@ index 00000000..0e4b2916
 +  expect(await ctx.agentPresets.list()).toEqual([])
 +})
 diff --git a/packages/preset/agent-preset-registry/tests/registry.spec.ts b/packages/preset/agent-preset-registry/tests/registry.spec.ts
-index 04ab9c00..6ccdf217 100644
+index 04ab9c0096219cc76108c2994fb1753bf12ad00c..6ccdf217df4bc7f198274dd96368cb138ee539e1 100644
 --- a/packages/preset/agent-preset-registry/tests/registry.spec.ts
 +++ b/packages/preset/agent-preset-registry/tests/registry.spec.ts
 @@ -87,6 +87,27 @@ describe('declarative preset revisions', () => {
@@ -1901,7 +1901,7 @@ index 04ab9c00..6ccdf217 100644
      const ctx = await setup()
      await declare(ctx, { ...contribution('standard'), name: 'Standard', description: 'General', order: 2 })
 diff --git a/packages/preset/agent-preset/README.i18n.yaml b/packages/preset/agent-preset/README.i18n.yaml
-index a2b45603..cbe9580a 100644
+index a2b45603c1d567d27dcd352745cebd2a31c41918..cbe9580ae49165e72a4d72867774d35a2a27502a 100644
 --- a/packages/preset/agent-preset/README.i18n.yaml
 +++ b/packages/preset/agent-preset/README.i18n.yaml
 @@ -15,8 +15,8 @@
@@ -1916,7 +1916,7 @@ index a2b45603..cbe9580a 100644
    en: 7ac55a3a3af4fcef
    zh: 95fe36abba794967
 diff --git a/packages/preset/agent-preset/README.md b/packages/preset/agent-preset/README.md
-index 243d771e..aa0d1841 100644
+index 243d771ec704a2330ff6d301857c71d6c7437514..aa0d1841afff9853db37dba3b2c2f10fc68158ff 100644
 --- a/packages/preset/agent-preset/README.md
 +++ b/packages/preset/agent-preset/README.md
 @@ -44,6 +44,9 @@ Define an Agent’s child plugins in ordinary Cordis YAML. Declare several prese
@@ -1930,7 +1930,7 @@ index 243d771e..aa0d1841 100644
  The declaration row’s `id` addresses Loader edits; `config.id` is the preset identity saved by sessions. Child entry IDs may be omitted and assigned by Loader.
  
 diff --git a/packages/preset/agent-preset/README.zh.md b/packages/preset/agent-preset/README.zh.md
-index c7bde250..835ce4b4 100644
+index c7bde250e4072a350d5889a34f00c672c8874b0c..835ce4b4c28f04354c184ffdfc324adde3f6c606 100644
 --- a/packages/preset/agent-preset/README.zh.md
 +++ b/packages/preset/agent-preset/README.zh.md
 @@ -44,6 +44,9 @@ kind: "package-reference"
@@ -1944,7 +1944,7 @@ index c7bde250..835ce4b4 100644
  声明行的 `id` 是 Loader 编辑地址；`config.id` 是会话保存的 preset 标识符。子插件可省略行 ID，由 Loader 分配。
  
 diff --git a/packages/preset/agent-preset/src/index.ts b/packages/preset/agent-preset/src/index.ts
-index 2e718fa4..66aebc7c 100644
+index 2e718fa4543e6fe6e0c562044bf20e372000b071..66aebc7c01867c96687d6589b02c856239fe0457 100644
 --- a/packages/preset/agent-preset/src/index.ts
 +++ b/packages/preset/agent-preset/src/index.ts
 @@ -18,6 +18,9 @@ export default class AgentPreset {
@@ -1958,7 +1958,7 @@ index 2e718fa4..66aebc7c 100644
      plugins: z.array(z.any()).required(),
    }) as z<Config>
 diff --git a/scripts/type-equiv.manifest.json b/scripts/type-equiv.manifest.json
-index 37f21e08..9380a641 100644
+index 37f21e08c1f17062c6dc4e7e44ffa72253d08324..9380a6415a3677067377d7c39ee26d4d2b65ecf4 100644
 --- a/scripts/type-equiv.manifest.json
 +++ b/scripts/type-equiv.manifest.json
 @@ -1,6 +1,16 @@

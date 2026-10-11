@@ -1,5 +1,5 @@
 diff --git a/packages/client/ui-sidebar/README.i18n.yaml b/packages/client/ui-sidebar/README.i18n.yaml
-index da1a7525..8610ff87 100644
+index da1a7525e4610fa8d5a85c0d31244ca87d828580..8610ff8707c16df473bf046ff92d0a7e21ff4227 100644
 --- a/packages/client/ui-sidebar/README.i18n.yaml
 +++ b/packages/client/ui-sidebar/README.i18n.yaml
 @@ -21,8 +21,8 @@
@@ -14,7 +14,7 @@ index da1a7525..8610ff87 100644
    en: 20e744360b4be2cc
    zh: a90be7e8526bbb21
 diff --git a/packages/client/ui-sidebar/README.md b/packages/client/ui-sidebar/README.md
-index 927ee4de..7b4163f2 100644
+index 927ee4deaa59b688b0954177369d441c7fbaffab..7b4163f2c32c19692fb8f495917dc95af30d9161 100644
 --- a/packages/client/ui-sidebar/README.md
 +++ b/packages/client/ui-sidebar/README.md
 @@ -35,7 +35,7 @@ The expanded brand row renders `sidebar.brand.mark` and `sidebar.brand.name` as
@@ -27,7 +27,7 @@ index 927ee4de..7b4163f2 100644
  ### Collapse behavior
  
 diff --git a/packages/client/ui-sidebar/README.zh.md b/packages/client/ui-sidebar/README.zh.md
-index 95f7c5ea..1e36fc13 100644
+index 95f7c5eab7b06f2bf5b9153196107eaab5b58df2..1e36fc13bd991bd93e06316bc3a3218c99dfb841 100644
 --- a/packages/client/ui-sidebar/README.zh.md
 +++ b/packages/client/ui-sidebar/README.zh.md
 @@ -35,7 +35,7 @@ dsh Web 客户端的侧边栏让用户识别当前构建、启动新会话、将
@@ -40,7 +40,7 @@ index 95f7c5ea..1e36fc13 100644
  ### 折叠行为
  
 diff --git a/packages/client/ui-sidebar/src/client/SidebarRoot.module.css b/packages/client/ui-sidebar/src/client/SidebarRoot.module.css
-index 77873729..0b732f33 100644
+index 778737291480de41add78057b51d86fcee34ae93..0b732f33b92a62c037ad881476817d59ac9beca6 100644
 --- a/packages/client/ui-sidebar/src/client/SidebarRoot.module.css
 +++ b/packages/client/ui-sidebar/src/client/SidebarRoot.module.css
 @@ -487,6 +487,10 @@
@@ -55,7 +55,7 @@ index 77873729..0b732f33 100644
     session rows' hover/selected surface, and the primary ink. */
  .panelRow {
 diff --git a/packages/client/ui-sidebar/src/client/SidebarRoot.tsx b/packages/client/ui-sidebar/src/client/SidebarRoot.tsx
-index 46c01930..54d6b24f 100644
+index 46c019305f2012f55c86f8e167824687c23b5b50..54d6b24fcf52b57bafe69d5e75b3c8c8e2072a99 100644
 --- a/packages/client/ui-sidebar/src/client/SidebarRoot.tsx
 +++ b/packages/client/ui-sidebar/src/client/SidebarRoot.tsx
 @@ -68,7 +68,7 @@ function PanelRow({ id, label, wide, usePanelInfo, selectPanel, renderSlot }: Pa
@@ -78,7 +78,7 @@ index 46c01930..54d6b24f 100644
              <PanelRow
                key={id}
 diff --git a/packages/client/ui-sidebar/src/client/contract/slots.ts b/packages/client/ui-sidebar/src/client/contract/slots.ts
-index c6ba475f..b3dbaf6e 100644
+index c6ba475fece018791bec41f5f9f26711fe7df9c7..b3dbaf6eb97e786801f5af2ac1321b97e4492b7e 100644
 --- a/packages/client/ui-sidebar/src/client/contract/slots.ts
 +++ b/packages/client/ui-sidebar/src/client/contract/slots.ts
 @@ -28,6 +28,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -114,7 +114,7 @@ index c6ba475f..b3dbaf6e 100644
      | 'sidebar.workspaces'
      | 'sidebar.settings'
 diff --git a/packages/client/ui-sidebar/src/client/index.ts b/packages/client/ui-sidebar/src/client/index.ts
-index 3cd24cfc..f21a9489 100644
+index 3cd24cfc1252bf683ecc5a2aaadd50c43847e0c0..f21a94892c8f2bbba22593989c59a1f40d54b5e9 100644
 --- a/packages/client/ui-sidebar/src/client/index.ts
 +++ b/packages/client/ui-sidebar/src/client/index.ts
 @@ -17,7 +17,7 @@ import { en, zh, type SidebarKey } from './locales.ts'
@@ -135,7 +135,7 @@ index 3cd24cfc..f21a9489 100644
        'sidebar.workspaces': { kind: 'single', scope: 'root' },
        'sidebar.settings': { kind: 'single', scope: 'root' },
 diff --git a/packages/client/ui-sidebar/tests/apply.client.spec.tsx b/packages/client/ui-sidebar/tests/apply.client.spec.tsx
-index 19be1201..cf31d9c7 100644
+index 19be12019fac1882e52d9aedc1f136549801579c..cf31d9c794568ca8728067bf44e2ccda3b84241f 100644
 --- a/packages/client/ui-sidebar/tests/apply.client.spec.tsx
 +++ b/packages/client/ui-sidebar/tests/apply.client.spec.tsx
 @@ -70,6 +70,7 @@ describe('ui-sidebar apply', () => {
@@ -155,7 +155,7 @@ index 19be1201..cf31d9c7 100644
      expect(b.slots.entries('main')).toHaveLength(0)
    })
 diff --git a/packages/client/ui-sidebar/tests/panel-list.client.spec.tsx b/packages/client/ui-sidebar/tests/panel-list.client.spec.tsx
-index 5673aa95..9ef2ac1f 100644
+index 5673aa95ad7cbddac8453c27979fd3f85ea53d4e..9ef2ac1f6b80999271258675c4fc2a7e4ede974b 100644
 --- a/packages/client/ui-sidebar/tests/panel-list.client.spec.tsx
 +++ b/packages/client/ui-sidebar/tests/panel-list.client.spec.tsx
 @@ -121,6 +121,23 @@ async function mountPanels(runtime: SlotTestRuntime, locale: LocaleRuntime, beta

@@ -1,5 +1,5 @@
 diff --git a/README.i18n.yaml b/README.i18n.yaml
-index 5ce56b7a..49727563 100644
+index 5ce56b7a613a0709b4ccde53711317f34e5abdb0..49727563a9378d36e57ae4e799c1def8b4642619 100644
 --- a/README.i18n.yaml
 +++ b/README.i18n.yaml
 @@ -3,8 +3,11 @@
@@ -17,7 +17,7 @@ index 5ce56b7a..49727563 100644
    en: 4ef4d8a71ac143f0
    zh: 1bfc3149ba8e5543
 diff --git a/README.md b/README.md
-index 7941e30f..06538f80 100644
+index 7941e30f7bdca9391befe39b9115d211157fa42d..06538f804cf3321dd05b66a4245708447811737b 100644
 --- a/README.md
 +++ b/README.md
 @@ -2,6 +2,16 @@
@@ -38,7 +38,7 @@ index 7941e30f..06538f80 100644
  
  It is built on an **everything-is-a-plugin** architecture and powered by [Cordis](https://github.com/cordiverse/cordis), whose design is described in [_A Programming Paradigm for Spatiotemporal Composability_](https://arxiv.org/abs/2608.25512).
 diff --git a/README.zh.md b/README.zh.md
-index 3adc57ce..bdf5202b 100644
+index 3adc57ce89b3c30e6a6dbaa14dc35df944d52926..bdf5202bbfbbb41b1e3c2b6fd4b97b3cfe641441 100644
 --- a/README.zh.md
 +++ b/README.zh.md
 @@ -2,6 +2,16 @@
@@ -59,7 +59,7 @@ index 3adc57ce..bdf5202b 100644
  
  它构建于**一切皆插件**的架构之上，由 [Cordis](https://github.com/cordiverse/cordis) 驱动，其设计参见论文 [_A Programming Paradigm for Spatiotemporal Composability_](https://arxiv.org/abs/2608.25512)。
 diff --git a/THIRD_PARTY_NOTICES.md b/THIRD_PARTY_NOTICES.md
-index 2dbbb5cd..33a04a20 100644
+index 2dbbb5cd4076fab87d424c8e05df88965f23b837..33a04a205f9507708472a1489907082fafbc21ab 100644
 --- a/THIRD_PARTY_NOTICES.md
 +++ b/THIRD_PARTY_NOTICES.md
 @@ -49,7 +49,9 @@ External packages installed for runtime use or distributed inside the prebuilt b
@@ -117,7 +117,7 @@ index 2dbbb5cd..33a04a20 100644
  | [`typescript-language-server`](https://github.com/typescript-language-server/typescript-language-server) | Apache-2.0 |
  | [`vite`](https://github.com/vitejs/vite) | MIT |
 diff --git a/apps/desktop/README.i18n.yaml b/apps/desktop/README.i18n.yaml
-index a1259980..8bce14d2 100644
+index a125998069cadf537b54e5cbbbe6939b4e103c0d..8bce14d238cdfcc1ff4e69938f87762c0c3220c1 100644
 --- a/apps/desktop/README.i18n.yaml
 +++ b/apps/desktop/README.i18n.yaml
 @@ -3,17 +3,17 @@
@@ -220,7 +220,7 @@ index a1259980..8bce14d2 100644
    en: 8e26b460ba31f21b
    zh: fbcd0307b3867125
 diff --git a/apps/desktop/README.md b/apps/desktop/README.md
-index 60f14b90..cee502b1 100644
+index 60f14b908fec7a906092c79f2708121903199614..cee502b173eea736aaf4b34636bc0a842d1e1640 100644
 --- a/apps/desktop/README.md
 +++ b/apps/desktop/README.md
 @@ -8,6 +8,8 @@ The desktop application is an Electron shell around the complete dsh Web applica
@@ -353,7 +353,7 @@ index 60f14b90..cee502b1 100644
  Embedded Platform views remain hidden until document loading completes so the renderer loading indicator stays visible. Closing or replacing a pending view prevents it from appearing later. Reloading or replacing the owning application document, renderer termination, and window closure also destroy the native view without relying on React cleanup.
  
 diff --git a/apps/desktop/README.zh.md b/apps/desktop/README.zh.md
-index eb1cbe5b..fba2227d 100644
+index eb1cbe5b78e2038fb728f571aca14b69301ed41e..fba2227dae690a77859fb9a6e4d9d43c283a5582 100644
 --- a/apps/desktop/README.zh.md
 +++ b/apps/desktop/README.zh.md
 @@ -8,7 +8,9 @@
@@ -489,7 +489,7 @@ index eb1cbe5b..fba2227d 100644
  内嵌 Platform 视图在文档加载完成前保持隐藏，让渲染层加载图标可见。关闭或替换待加载视图后，该视图不会再次出现。 所属应用文档刷新或替换、渲染进程终止以及窗口关闭也会销毁原生视图，不依赖 React 清理。
  
 diff --git a/docs/architecture.i18n.yaml b/docs/architecture.i18n.yaml
-index 8206f3e6..51a605cd 100644
+index 8206f3e6dcec9307f3a1a52a34500fb136aadbfd..51a605cd188ea93bb962b0944823a1864e36b033 100644
 --- a/docs/architecture.i18n.yaml
 +++ b/docs/architecture.i18n.yaml
 @@ -9,14 +9,14 @@
@@ -511,7 +511,7 @@ index 8206f3e6..51a605cd 100644
    en: 20ef882e44b06a10
    zh: c10c3934ed5570e9
 diff --git a/docs/architecture.md b/docs/architecture.md
-index 03d88148..d29fe5c8 100644
+index 03d88148c7992f1c856efc44df0a930470f90f70..d29fe5c8eb98bb5e296e11d6dfadcccde7428c02 100644
 --- a/docs/architecture.md
 +++ b/docs/architecture.md
 @@ -14,7 +14,7 @@ There is no privileged core to patch: you extend dsh by mounting a plugin beside
@@ -533,7 +533,7 @@ index 03d88148..d29fe5c8 100644
  
  | Package | Owns | `ctx` key |
 diff --git a/docs/architecture.zh.md b/docs/architecture.zh.md
-index 870fa1c9..533299b8 100644
+index 870fa1c996ba569f882a7cb70e62f0bd655c64af..533299b8168c9a4a7c12e4caed770bf85d7314a4 100644
 --- a/docs/architecture.zh.md
 +++ b/docs/architecture.zh.md
 @@ -52,6 +52,8 @@ Python SDK 遵循相同的应用架构。其运行时 wheel 把普通 `dsh` CLI
@@ -546,7 +546,7 @@ index 870fa1c9..533299b8 100644
  
  | 包 | 职责 | `ctx` 键 |
 diff --git a/docs/config-catalog.md b/docs/config-catalog.md
-index 17856848..c94d4d3c 100644
+index 17856848d5081dc373249756e87257788b78427e..c94d4d3c50af6dadfec78f9b91b2a33a0659bfa2 100644
 --- a/docs/config-catalog.md
 +++ b/docs/config-catalog.md
 @@ -139,7 +139,7 @@ export type Config = PresetDefinition
@@ -638,7 +638,7 @@ index 17856848..c94d4d3c 100644
 +| `@deepseek-harness/product-desktop` | — | [`packages/deepseek-harness-product/desktop/src/index.ts`](../packages/deepseek-harness-product/desktop/src/index.ts) |
  <!-- END GENERATED config-catalog:library -->
 diff --git a/docs/config-catalog.zh.md b/docs/config-catalog.zh.md
-index c4ab85cd..ae5b7cbb 100644
+index c4ab85cddacdcf27cd449ed72489cd54a31fc4c9..ae5b7cbb36761a94c56a7a5bc1b1edd1d7cece90 100644
 --- a/docs/config-catalog.zh.md
 +++ b/docs/config-catalog.zh.md
 @@ -141,7 +141,7 @@ export type Config = PresetDefinition
@@ -730,7 +730,7 @@ index c4ab85cd..ae5b7cbb 100644
 +| `@deepseek-harness/product-desktop` | — | [`packages/deepseek-harness-product/desktop/src/index.ts`](../packages/deepseek-harness-product/desktop/src/index.ts) |
  <!-- END GENERATED config-catalog:library -->
 diff --git a/docs/event-producer-consumer.md b/docs/event-producer-consumer.md
-index 9691933d..08992b7b 100644
+index 9691933dda90c091bdd8f5e96223359aa74f2833..08992b7bc6a2e82ecad8f41b675f645f49a133f1 100644
 --- a/docs/event-producer-consumer.md
 +++ b/docs/event-producer-consumer.md
 @@ -9,15 +9,16 @@ This matrix shows which packages dispatch each harness-owned event and which pac
@@ -770,7 +770,7 @@ index 9691933d..08992b7b 100644
  | `tools/result` | `emit` | [`packages/core/tools/src/index.ts:199`](../packages/core/tools/src/index.ts) | [`tools`](../packages/core/tools) (`events.dispatch`) | [`agent-instructions`](../packages/context/agent-instructions), `claude-code-mods`, [`subagent`](../packages/subagent/subagent), [`tool-present`](../packages/deliverables/tool-present) |
  | `user-questions/request` | `waterfall` | [`packages/interaction/user-questions/src/types.ts:157`](../packages/interaction/user-questions/src/types.ts) | [`user-questions`](../packages/interaction/user-questions) (`waterfall`) | `remotes` |
 diff --git a/docs/event-producer-consumer.zh.md b/docs/event-producer-consumer.zh.md
-index cb8ea84a..6a3d9f01 100644
+index cb8ea84aac0a88a853864507f8a13edb0fb75121..6a3d9f013c26ab52b6dd66da8576621a1714248b 100644
 --- a/docs/event-producer-consumer.zh.md
 +++ b/docs/event-producer-consumer.zh.md
 @@ -11,15 +11,16 @@
@@ -810,7 +810,7 @@ index cb8ea84a..6a3d9f01 100644
  | `tools/result` | `emit` | [`packages/core/tools/src/index.ts:199`](../packages/core/tools/src/index.ts) | [`tools`](../packages/core/tools) (`events.dispatch`) | [`agent-instructions`](../packages/context/agent-instructions), `claude-code-mods`, [`subagent`](../packages/subagent/subagent), [`tool-present`](../packages/deliverables/tool-present) |
  | `user-questions/request` | `waterfall` | [`packages/interaction/user-questions/src/types.ts:157`](../packages/interaction/user-questions/src/types.ts) | [`user-questions`](../packages/interaction/user-questions) (`waterfall`) | `remotes` |
 diff --git a/docs/persistence-catalog.i18n.yaml b/docs/persistence-catalog.i18n.yaml
-index dab112d8..8f9e1763 100644
+index dab112d89bc9aaadf653e1516fa488af41d10a46..8f9e1763ac7489f9dac5790db009fbc22091c6d2 100644
 --- a/docs/persistence-catalog.i18n.yaml
 +++ b/docs/persistence-catalog.i18n.yaml
 @@ -9,8 +9,8 @@
@@ -1039,7 +1039,7 @@ index dab112d8..8f9e1763 100644
    en: f109997e295af37d
    zh: b2dcfd599f73b61c
 diff --git a/docs/persistence-catalog.md b/docs/persistence-catalog.md
-index 6d4c6943..3d2d2814 100644
+index 6d4c694309f13a83c20829e853c7a3d498893aa7..3d2d28144c75a223a762132f54004844a37fe358 100644
 --- a/docs/persistence-catalog.md
 +++ b/docs/persistence-catalog.md
 @@ -23,7 +23,7 @@ The [format references](persistence-changes/historical-formats/README.md) cover
@@ -1416,7 +1416,7 @@ index 6d4c6943..3d2d2814 100644
  | `seq` | required | `number` |
  | `sourceEventSeqs` | optional | [`number[]`](#persistence-type-sha256-5d03ba38734809bcbd2a55221bd938b3b3fc34b49bb686c6113e9e4931e3aa78) |
 diff --git a/docs/persistence-catalog.zh.md b/docs/persistence-catalog.zh.md
-index 92024676..53f803f4 100644
+index 92024676bd9f310b1a0f3bfa3368b00d8a135cdf..53f803f4d5d76a10275c0466702043b1f5227674 100644
 --- a/docs/persistence-catalog.zh.md
 +++ b/docs/persistence-catalog.zh.md
 @@ -25,7 +25,7 @@
@@ -1794,7 +1794,7 @@ index 92024676..53f803f4 100644
  | `sourceEventSeqs` | 可选 | [`number[]`](#persistence-type-sha256-5d03ba38734809bcbd2a55221bd938b3b3fc34b49bb686c6113e9e4931e3aa78) |
 diff --git a/docs/persistence-changes/2026-10-09-product-installed-skill-attribution.i18n.yaml b/docs/persistence-changes/2026-10-09-product-installed-skill-attribution.i18n.yaml
 new file mode 100644
-index 00000000..c9c004c7
+index 0000000000000000000000000000000000000000..c9c004c78bdd7be04cca0d78bfea548057db9edf
 --- /dev/null
 +++ b/docs/persistence-changes/2026-10-09-product-installed-skill-attribution.i18n.yaml
 @@ -0,0 +1,28 @@
@@ -1828,7 +1828,7 @@ index 00000000..c9c004c7
 +  zh: 003ba4e17b4b5269
 diff --git a/docs/persistence-changes/2026-10-09-product-installed-skill-attribution.md b/docs/persistence-changes/2026-10-09-product-installed-skill-attribution.md
 new file mode 100644
-index 00000000..0df29fbd
+index 0000000000000000000000000000000000000000..0df29fbd1231124a6b4e613afce6b06db0087de5
 --- /dev/null
 +++ b/docs/persistence-changes/2026-10-09-product-installed-skill-attribution.md
 @@ -0,0 +1,60 @@
@@ -1894,7 +1894,7 @@ index 00000000..0df29fbd
 +None.
 diff --git a/docs/persistence-changes/2026-10-09-product-installed-skill-attribution.schema.json b/docs/persistence-changes/2026-10-09-product-installed-skill-attribution.schema.json
 new file mode 100644
-index 00000000..51f30c54
+index 0000000000000000000000000000000000000000..51f30c54f27c4782cabc8dd7cfe7d1ddb27bfe37
 --- /dev/null
 +++ b/docs/persistence-changes/2026-10-09-product-installed-skill-attribution.schema.json
 @@ -0,0 +1,11548 @@
@@ -13448,7 +13448,7 @@ index 00000000..51f30c54
 +}
 diff --git a/docs/persistence-changes/2026-10-09-product-installed-skill-attribution.zh.md b/docs/persistence-changes/2026-10-09-product-installed-skill-attribution.zh.md
 new file mode 100644
-index 00000000..dc93ff3d
+index 0000000000000000000000000000000000000000..dc93ff3df5e46c87e3b30d467506e926a70d23cb
 --- /dev/null
 +++ b/docs/persistence-changes/2026-10-09-product-installed-skill-attribution.zh.md
 @@ -0,0 +1,60 @@
@@ -13513,7 +13513,7 @@ index 00000000..dc93ff3d
 +
 +无。
 diff --git a/docs/persistence-changes/historical-formats/README.i18n.yaml b/docs/persistence-changes/historical-formats/README.i18n.yaml
-index a85d9e2a..f8e9ae50 100644
+index a85d9e2a903cac932353979946b9ff9eff7b8fa3..f8e9ae50c04d151d2de1de8484382ddcf2ee25b8 100644
 --- a/docs/persistence-changes/historical-formats/README.i18n.yaml
 +++ b/docs/persistence-changes/historical-formats/README.i18n.yaml
 @@ -15,8 +15,8 @@
@@ -13528,7 +13528,7 @@ index a85d9e2a..f8e9ae50 100644
    en: b220062139ddac1e
    zh: 7c4c0efe05dafa9c
 diff --git a/docs/persistence-changes/historical-formats/README.md b/docs/persistence-changes/historical-formats/README.md
-index 8f06d0e1..ac101989 100644
+index 8f06d0e1eeeb519b0e9c98837c8242e885ca352f..ac101989cb364c2a6c3a1fb1927ab9efb88a4dc2 100644
 --- a/docs/persistence-changes/historical-formats/README.md
 +++ b/docs/persistence-changes/historical-formats/README.md
 @@ -32,7 +32,7 @@ The index is generated from validated snapshots and the current writer constant.
@@ -13541,7 +13541,7 @@ index 8f06d0e1..ac101989 100644
  <!-- persistence-format-index:end -->
  
 diff --git a/docs/persistence-changes/historical-formats/README.zh.md b/docs/persistence-changes/historical-formats/README.zh.md
-index f377a801..e5033268 100644
+index f377a801aa552a61c8ea8d9bd39bd39e4968f949..e503326893fbed11a55f5c8cf9303754c0512f26 100644
 --- a/docs/persistence-changes/historical-formats/README.zh.md
 +++ b/docs/persistence-changes/historical-formats/README.zh.md
 @@ -32,7 +32,7 @@ description: "查找从 V0 到工作区写入器版本的每个 Session 格式
@@ -13554,7 +13554,7 @@ index f377a801..e5033268 100644
  <!-- persistence-format-index:end -->
  
 diff --git a/docs/persistence-schema.json b/docs/persistence-schema.json
-index e9046242..740acc7c 100644
+index e9046242ff0e54223b7855f581ca0a1271f9ba21..740acc7caa0567c5fd9f9d09338014e0b21f8562 100644
 --- a/docs/persistence-schema.json
 +++ b/docs/persistence-schema.json
 @@ -406,7 +406,7 @@
@@ -20991,7 +20991,7 @@ index e9046242..740acc7c 100644
        "digest": "fe1a7acdeed4d0f5ab483396eaa5b3dc97263b7c10eb4da2f0028cb01728bfc9",
        "names": [],
 diff --git a/docs/subsystems/README.i18n.yaml b/docs/subsystems/README.i18n.yaml
-index ec9d159b..6c62151f 100644
+index ec9d159bbbf9844e9d1c2066bbf94712c60b55b3..6c62151f907ebebd5dab5c6c383e6289278eca7b 100644
 --- a/docs/subsystems/README.i18n.yaml
 +++ b/docs/subsystems/README.i18n.yaml
 @@ -3,5 +3,5 @@
@@ -21003,7 +21003,7 @@ index ec9d159b..6c62151f 100644
 +  en: f77009c92885df9d
 +  zh: 16e0351f408d78ff
 diff --git a/docs/subsystems/README.md b/docs/subsystems/README.md
-index c2a47fb7..182f3479 100644
+index c2a47fb70b206fc6a04c238df9fd79ed6aec172b..182f3479f634f7088e59b0dbfeb058de09965ca8 100644
 --- a/docs/subsystems/README.md
 +++ b/docs/subsystems/README.md
 @@ -72,5 +72,6 @@ One page per subsystem of the DeepSeek Harness: what it is, the data structures
@@ -21014,7 +21014,7 @@ index c2a47fb7..182f3479 100644
  
  > Type declarations and their JSDoc on these pages are source-equivalent and drift-checked by `pnpm run verify-type-equiv` (see [development.md](../development.md#documenting-types-verbatim-ts-type-equiv)). Ordinary blocks preserve complete declarations; `public-api` blocks preserve body-stripped public class declarations. Cordis services and events use each page's generated **Cordis API** section.
 diff --git a/docs/subsystems/README.zh.md b/docs/subsystems/README.zh.md
-index a1380713..94a86144 100644
+index a1380713bc2f7ebd8ae08df02df77604b59bc701..94a861441c70e188a3581bac4a2330b63d31dead 100644
 --- a/docs/subsystems/README.zh.md
 +++ b/docs/subsystems/README.zh.md
 @@ -72,5 +72,6 @@
@@ -21025,7 +21025,7 @@ index a1380713..94a86144 100644
  
  > 这些页面上的类型声明及其 JSDoc 与源码等价，并由 `pnpm run verify-type-equiv` 检查漂移（见 [development.md](../development.zh.md#documenting-types-verbatim-ts-type-equiv)）。普通块保留完整声明；`public-api` 块保留去除实现体的公开 class 声明。Cordis 服务与事件使用每页生成的 **Cordis API** 小节。
 diff --git a/docs/subsystems/core.md b/docs/subsystems/core.md
-index c6c02c6c..69fd320f 100644
+index c6c02c6c42e48e638a3cacafe1a9027e996ee1be..69fd320f34fda20b842be22d3169975a61c7e099 100644
 --- a/docs/subsystems/core.md
 +++ b/docs/subsystems/core.md
 @@ -409,6 +409,59 @@ type Branded<B extends string> = string & { readonly [BRAND]: B }
@@ -21129,7 +21129,7 @@ index c6c02c6c..69fd320f 100644
  
  #### `agent-preset/selected` — emit
 diff --git a/docs/subsystems/core.zh.md b/docs/subsystems/core.zh.md
-index 582a817f..afe05d87 100644
+index 582a817f1fd8a4d84625c9d5fb347ed15652d88c..afe05d873462ef9ac5dc7ca9c9057b2300b05926 100644
 --- a/docs/subsystems/core.zh.md
 +++ b/docs/subsystems/core.zh.md
 @@ -419,6 +419,61 @@ type Branded<B extends string> = string & { readonly [BRAND]: B }
@@ -21235,7 +21235,7 @@ index 582a817f..afe05d87 100644
  
  #### `agent-preset/selected` — emit
 diff --git a/packages/extensions/cordis-client-runner/src/client/api-catalog.ts b/packages/extensions/cordis-client-runner/src/client/api-catalog.ts
-index 4ff7bd72..762603e9 100644
+index 4ff7bd728dbb332f78e79f4926cce778c2b6cd99..762603e959d0d134d04110dcb3c3b46489f7c53d 100644
 --- a/packages/extensions/cordis-client-runner/src/client/api-catalog.ts
 +++ b/packages/extensions/cordis-client-runner/src/client/api-catalog.ts
 @@ -581,7 +581,19 @@ export const TYPE_API: readonly TypeApiEntry[] = [
@@ -21282,7 +21282,7 @@ index 4ff7bd72..762603e9 100644
      name: 'RegisterFactory',
      declaration: 'export interface RegisterFactory {\n    <F extends keyof SlotFactoryMap & string>(options: RegisterFactoryOptions<F>, component: SlotComponent<FactoryComponentPropsOf<F>>): () => void;\n}',
 diff --git a/packages/extensions/cordis-client-runner/src/client/slot-catalog.ts b/packages/extensions/cordis-client-runner/src/client/slot-catalog.ts
-index e134f1d9..c118e2b6 100644
+index e134f1d984e50c87acba3e03ad6744d7f055dd80..c118e2b6caabc82065744c68a9b99bb5efe724e7 100644
 --- a/packages/extensions/cordis-client-runner/src/client/slot-catalog.ts
 +++ b/packages/extensions/cordis-client-runner/src/client/slot-catalog.ts
 @@ -531,7 +531,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
@@ -21685,7 +21685,7 @@ index e134f1d9..c118e2b6 100644
      replaceRisk: 'shadows-shipped-ui',
      example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'tool.call.toolview\', () => ctx.slots.register(\n      { name: \'tool.call.toolview\', key: \'<one key the owner dispatches>\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
 diff --git a/packages/extensions/tool-cordis/src/api-catalog.ts b/packages/extensions/tool-cordis/src/api-catalog.ts
-index cac34cc6..d32e18d6 100644
+index cac34cc69229f38640b0b0e326436845481fe956..d32e18d6f509464ef1cf5c26ed7a8681d95c6718 100644
 --- a/packages/extensions/tool-cordis/src/api-catalog.ts
 +++ b/packages/extensions/tool-cordis/src/api-catalog.ts
 @@ -171,6 +171,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
@@ -21735,7 +21735,7 @@ index cac34cc6..d32e18d6 100644
    {
      name: 'PresetOption',
 diff --git a/packages/preset/agent-preset/skills/cordis-composition-reference/references/packages.md b/packages/preset/agent-preset/skills/cordis-composition-reference/references/packages.md
-index 7896c0ad..a766b80b 100644
+index 7896c0ad1c005de3d0e87aa558ae5b5532386663..a766b80b258e89b7d2d42449e22fd33134ad91ed 100644
 --- a/packages/preset/agent-preset/skills/cordis-composition-reference/references/packages.md
 +++ b/packages/preset/agent-preset/skills/cordis-composition-reference/references/packages.md
 @@ -161,6 +161,13 @@ Every package below exports a Cordis plugin that a bundle patch can name in a Lo
@@ -21761,7 +21761,7 @@ index 7896c0ad..a766b80b 100644
  ## feedback
  
 diff --git a/scripts/doc-standard.spec.ts b/scripts/doc-standard.spec.ts
-index d5ac3ba3..49a7519a 100644
+index d5ac3ba3c3416f2bcaad92f496d24005428d1b72..49a7519a60bf651a0dc0f992f9c256e3c83a2099 100644
 --- a/scripts/doc-standard.spec.ts
 +++ b/scripts/doc-standard.spec.ts
 @@ -55,6 +55,8 @@ const KIND_TEMPLATES: Readonly<Record<string, string>> = {

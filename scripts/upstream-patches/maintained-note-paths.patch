@@ -1,5 +1,5 @@
 diff --git a/.agents/notes/implemented/feature/2026-08-05-context-form-vocabulary.i18n.yaml b/.agents/notes/implemented/feature/2026-08-05-context-form-vocabulary.i18n.yaml
-index 19c93bd6..627e432a 100644
+index 19c93bd64dd9e897db43cfe034c92087fd302873..627e432afcc3569d92d8426f8c668ec02debbcca 100644
 --- a/.agents/notes/implemented/feature/2026-08-05-context-form-vocabulary.i18n.yaml
 +++ b/.agents/notes/implemented/feature/2026-08-05-context-form-vocabulary.i18n.yaml
 @@ -18,8 +18,8 @@
@@ -14,7 +14,7 @@ index 19c93bd6..627e432a 100644
    en: 15d3d98980ea3919
    zh: 4e14b65420de0df3
 diff --git a/.agents/notes/implemented/feature/2026-08-05-context-form-vocabulary.md b/.agents/notes/implemented/feature/2026-08-05-context-form-vocabulary.md
-index e1c909b7..e43eb45e 100644
+index e1c909b761fee60ebacb306ef204a4212a03baa4..e43eb45eeff30834dedfccf1bc19a8092578385b 100644
 --- a/.agents/notes/implemented/feature/2026-08-05-context-form-vocabulary.md
 +++ b/.agents/notes/implemented/feature/2026-08-05-context-form-vocabulary.md
 @@ -59,7 +59,7 @@ The tool presentation contract pairs its vocabulary with `presentCall(args)`, a
@@ -27,7 +27,7 @@ index e1c909b7..e43eb45e 100644
  - `packages/skill/tool-skill` pins the new source on first publication and replacement, republish behavior driven by the durable entries, and a malformed durable catalog leaving step observation intact.
  - The keyless assembled-Web seeded-history scenario expands a real `instructions` context in Chromium and asserts its file list, verbatim framing, and the unchanged disclosure geometry. `catalog` has no assembled coverage: the hermetic scaffold publishes no skills, so no catalog reaches a browser scenario.
 diff --git a/.agents/notes/implemented/feature/2026-08-05-context-form-vocabulary.zh.md b/.agents/notes/implemented/feature/2026-08-05-context-form-vocabulary.zh.md
-index 4d595bf5..8bf273ae 100644
+index 4d595bf52fba2f7323643ddc47bd365ce6508c9e..8bf273ae23d84994b5d7815addbf529f0254b468 100644
 --- a/.agents/notes/implemented/feature/2026-08-05-context-form-vocabulary.zh.md
 +++ b/.agents/notes/implemented/feature/2026-08-05-context-form-vocabulary.zh.md
 @@ -59,7 +59,7 @@ Status: implemented
@@ -40,7 +40,7 @@ index 4d595bf5..8bf273ae 100644
  - `packages/skill/tool-skill` 钉住首次发布与替换时的新来源、由持久条目驱动的重新发布行为，以及畸形持久目录不打断步骤观察。
  - 无密钥的组装 Web seeded-history 场景在 Chromium 中展开一条真实的 `instructions` 上下文，断言其文件列表、原样包装与未改动的展开项几何。`catalog` 没有组装态覆盖：隔离脚手架不发布任何 skill，因此没有目录能进入浏览器场景。
 diff --git a/.agents/notes/proposed/feature/2026-08-04-task-surface.i18n.yaml b/.agents/notes/proposed/feature/2026-08-04-task-surface.i18n.yaml
-index fbb5dea1..be024cdc 100644
+index fbb5dea1398dde6f1bdca82ee6ce281011428240..be024cdc5dcaadf9bdb67d3b75d48e87110fd591 100644
 --- a/.agents/notes/proposed/feature/2026-08-04-task-surface.i18n.yaml
 +++ b/.agents/notes/proposed/feature/2026-08-04-task-surface.i18n.yaml
 @@ -24,8 +24,8 @@
@@ -55,7 +55,7 @@ index fbb5dea1..be024cdc 100644
    en: 25d0951356cf412d
    zh: 994619aaab7c2348
 diff --git a/.agents/notes/proposed/feature/2026-08-04-task-surface.md b/.agents/notes/proposed/feature/2026-08-04-task-surface.md
-index bc8b0e9a..05753da1 100644
+index bc8b0e9ae71223e3786c24d1522bb7b9a125af8d..05753da1adaaae88ebbcb4f5c52cee117e11b893 100644
 --- a/.agents/notes/proposed/feature/2026-08-04-task-surface.md
 +++ b/.agents/notes/proposed/feature/2026-08-04-task-surface.md
 @@ -217,7 +217,7 @@ The capability is split where ownership changes:
@@ -68,7 +68,7 @@ index bc8b0e9a..05753da1 100644
  | `packages/client/ui-task-surface` | Static actionable `TaskSurfaceDock`, read-only keyed transcript row, declarative Web renderer that consumes the Task Surface model and `MarkdownText` in `alt-only` mode, per-Session draft store, and submit client |
  | `packages/host/apiproxy` | Typed active-read/submit/dismiss transport, user-source augmentation and carriage, queue-action restrictions, and routing of claim and terminal outcomes; delegates validation, pending coordination, and admission to the Task Surface service |
 diff --git a/.agents/notes/proposed/feature/2026-08-04-task-surface.zh.md b/.agents/notes/proposed/feature/2026-08-04-task-surface.zh.md
-index 3bb982f0..c84b5998 100644
+index 3bb982f03257269e63a4282a69d75a13e8fb4da3..c84b599878eb3b081fb703e45bdf0e5640a1d7d6 100644
 --- a/.agents/notes/proposed/feature/2026-08-04-task-surface.zh.md
 +++ b/.agents/notes/proposed/feature/2026-08-04-task-surface.zh.md
 @@ -217,7 +217,7 @@ Web 插件将未提交值保存在一个有界、按会话持久化的 slot stor

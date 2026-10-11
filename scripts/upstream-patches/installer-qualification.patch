@@ -1,5 +1,5 @@
 diff --git a/apps/desktop/scripts/test-windows-installer.mjs b/apps/desktop/scripts/test-windows-installer.mjs
-index 03b601b1..3ecd4e38 100644
+index 03b601b1874c13dc88db4088da301c5071889fab..3ecd4e384e7f90ff8196a8812dc991ea689b6d4d 100644
 --- a/apps/desktop/scripts/test-windows-installer.mjs
 +++ b/apps/desktop/scripts/test-windows-installer.mjs
 @@ -24,6 +24,7 @@ const productName = `Harness Installer Test ${id.slice(0, 8)}`
@@ -37,7 +37,7 @@ index 03b601b1..3ecd4e38 100644
        '-ProductName', productName, '-RegistryKey', guid, '-OutputDirectory', languageOutput,
        ...uninstallOnly ? ['-Language', languageId, '-PackageName', packageName] : []], childOptions)
 diff --git a/apps/desktop/tests/installer-packaging.spec.ts b/apps/desktop/tests/installer-packaging.spec.ts
-index 15a4610d..57470ed9 100644
+index 15a4610d9867d77f80c95022dc7eee6d12105d7d..57470ed922d604cc3cac36350a258f47d847589d 100644
 --- a/apps/desktop/tests/installer-packaging.spec.ts
 +++ b/apps/desktop/tests/installer-packaging.spec.ts
 @@ -37,6 +37,12 @@ describe('installer preparation preserves application dependencies', () => {
@@ -79,7 +79,7 @@ index 15a4610d..57470ed9 100644
      const sourceDirectory = new URL('../src/', import.meta.url)
 diff --git a/apps/desktop/tests/windows-installer-headless.ps1 b/apps/desktop/tests/windows-installer-headless.ps1
 new file mode 100644
-index 00000000..7667028f
+index 0000000000000000000000000000000000000000..7667028f009f0fe7e87adf53e62fafdf01220306
 --- /dev/null
 +++ b/apps/desktop/tests/windows-installer-headless.ps1
 @@ -0,0 +1,52 @@
@@ -136,7 +136,7 @@ index 00000000..7667028f
 +    if (Test-Path -LiteralPath $registryPath) { Remove-Item -LiteralPath $registryPath -Recurse -Force -ErrorAction SilentlyContinue }
 +}
 diff --git a/apps/desktop/tests/windows-installer-presentation.cpp b/apps/desktop/tests/windows-installer-presentation.cpp
-index 4900a2e0..39af1a87 100644
+index 4900a2e08912c1886cb087fc497eb7ecee28c6cb..39af1a87a7b7118a569d9767dc92da6ddf001ff6 100644
 --- a/apps/desktop/tests/windows-installer-presentation.cpp
 +++ b/apps/desktop/tests/windows-installer-presentation.cpp
 @@ -14,13 +14,25 @@ static bool Above(HWND upper, HWND lower) {

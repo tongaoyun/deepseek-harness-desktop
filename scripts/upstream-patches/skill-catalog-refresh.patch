@@ -1,6 +1,6 @@
 diff --git a/.agents/notes/implemented/feature/2026-10-08-product-installed-skills.i18n.yaml b/.agents/notes/implemented/feature/2026-10-08-product-installed-skills.i18n.yaml
 new file mode 100644
-index 00000000..4a991a4e
+index 0000000000000000000000000000000000000000..4a991a4ed15b89b17d0b6c926b1eee70866fd382
 --- /dev/null
 +++ b/.agents/notes/implemented/feature/2026-10-08-product-installed-skills.i18n.yaml
 @@ -0,0 +1,22 @@
@@ -28,7 +28,7 @@ index 00000000..4a991a4e
 +  zh: c1501123419750f5
 diff --git a/.agents/notes/implemented/feature/2026-10-08-product-installed-skills.md b/.agents/notes/implemented/feature/2026-10-08-product-installed-skills.md
 new file mode 100644
-index 00000000..21901355
+index 0000000000000000000000000000000000000000..21901355351b2177c79720c2e6d5a13f15dc8155
 --- /dev/null
 +++ b/.agents/notes/implemented/feature/2026-10-08-product-installed-skills.md
 @@ -0,0 +1,31 @@
@@ -65,7 +65,7 @@ index 00000000..21901355
 +The adapter fixture requests a Skill deterministically; it does not assess a live model's decision to choose a Skill from natural language.
 diff --git a/.agents/notes/implemented/feature/2026-10-08-product-installed-skills.zh.md b/.agents/notes/implemented/feature/2026-10-08-product-installed-skills.zh.md
 new file mode 100644
-index 00000000..b898afdf
+index 0000000000000000000000000000000000000000..b898afdfdc395ba34b38e4f945c5e017077185b8
 --- /dev/null
 +++ b/.agents/notes/implemented/feature/2026-10-08-product-installed-skills.zh.md
 @@ -0,0 +1,31 @@
@@ -101,7 +101,7 @@ index 00000000..b898afdf
 +
 +适配器测试确定性地请求技能，不评估真实模型根据自然语言选择技能的决策质量。
 diff --git a/packages/client/ui-skill/README.i18n.yaml b/packages/client/ui-skill/README.i18n.yaml
-index 3f5d54b7..eeaf5205 100644
+index 3f5d54b740a3e29f218b0c2757c305ac8e70cbf1..eeaf5205de4ee013dd45128e4110a2bf00b3b3ff 100644
 --- a/packages/client/ui-skill/README.i18n.yaml
 +++ b/packages/client/ui-skill/README.i18n.yaml
 @@ -18,8 +18,8 @@
@@ -116,7 +116,7 @@ index 3f5d54b7..eeaf5205 100644
    en: 975c6cd80af3684a
    zh: 395c10e51c6a15f6
 diff --git a/packages/client/ui-skill/README.md b/packages/client/ui-skill/README.md
-index 08d2e113..06964312 100644
+index 08d2e1137cc871f739a418ab76579fb6094eda37..06964312a7adee02c988652cca8e509e072ef153 100644
 --- a/packages/client/ui-skill/README.md
 +++ b/packages/client/ui-skill/README.md
 @@ -29,6 +29,8 @@ Type `/` in the composer and pick a skill from the suggestions, or type `/name`
@@ -129,7 +129,7 @@ index 08d2e113..06964312 100644
  
  ### The skill tool row
 diff --git a/packages/client/ui-skill/README.zh.md b/packages/client/ui-skill/README.zh.md
-index e07a5932..09787962 100644
+index e07a59326bc0ec696b71a501ac22de6e078dd354..097879627aaf1a9569cbcc0c5c392601028bd6f3 100644
 --- a/packages/client/ui-skill/README.zh.md
 +++ b/packages/client/ui-skill/README.zh.md
 @@ -29,6 +29,8 @@ kind: "package-reference"
@@ -142,7 +142,7 @@ index e07a5932..09787962 100644
  
  ### skill 工具行
 diff --git a/packages/client/ui-skill/src/client/index.ts b/packages/client/ui-skill/src/client/index.ts
-index 2b6cd12e..8103ca5c 100644
+index 2b6cd12ea28db567ad6b1e17d70bf582436ed1c1..8103ca5cc32358d9e76b35fc51f5cabb9b56192c 100644
 --- a/packages/client/ui-skill/src/client/index.ts
 +++ b/packages/client/ui-skill/src/client/index.ts
 @@ -33,7 +33,7 @@
@@ -188,7 +188,7 @@ index 2b6cd12e..8103ca5c 100644
    // The bound translate resolves against the registered dictionaries with the
    // locale service's own fallback ladder; candidate-time reads stay plain text.
 diff --git a/packages/client/ui-skill/tests/browser-plugin.client.spec.ts b/packages/client/ui-skill/tests/browser-plugin.client.spec.ts
-index b47abfe9..918f8f81 100644
+index b47abfe94983f8e0e2caaa4cdc30e4ea7d3ee215..918f8f8136368168d615fe00bc42ef8efc4638a6 100644
 --- a/packages/client/ui-skill/tests/browser-plugin.client.spec.ts
 +++ b/packages/client/ui-skill/tests/browser-plugin.client.spec.ts
 @@ -354,6 +354,20 @@ describe('catalog cache', () => {
@@ -213,7 +213,7 @@ index b47abfe9..918f8f81 100644
      const { list, payloads } = countingList()
      const { ctx, source } = await bench(list)
 diff --git a/scripts/gen-cordis-catalog.ts b/scripts/gen-cordis-catalog.ts
-index 2c012bde..ab5e83a9 100644
+index 2c012bde12aa2a51b0f6c92843a764c0829d338b..ab5e83a93ec8fe575aefcc99b7bc39a6fcd568ef 100644
 --- a/scripts/gen-cordis-catalog.ts
 +++ b/scripts/gen-cordis-catalog.ts
 @@ -180,6 +180,7 @@ export const SERVICE_WALK_EXEMPTIONS: Record<string, string> = {

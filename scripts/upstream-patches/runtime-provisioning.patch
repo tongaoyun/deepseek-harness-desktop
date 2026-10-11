@@ -1,6 +1,6 @@
 diff --git a/apps/desktop/scripts/office-engine-runtime.ts b/apps/desktop/scripts/office-engine-runtime.ts
 new file mode 100644
-index 00000000..99d2ffd9
+index 0000000000000000000000000000000000000000..99d2ffd94792a90f4e5bf6ac796093699fa662ba
 --- /dev/null
 +++ b/apps/desktop/scripts/office-engine-runtime.ts
 @@ -0,0 +1,52 @@
@@ -57,7 +57,7 @@ index 00000000..99d2ffd9
 +  return ['add', '--save-prod', '--save-exact', `${engine.packageName}@${engine.versionRange}`]
 +}
 diff --git a/apps/desktop/scripts/prepare-dsh.ts b/apps/desktop/scripts/prepare-dsh.ts
-index 7d290b94..d03a9687 100644
+index 7d290b945a58384fb344359810dd66873d77f46d..d03a9687c031e0e0bd85bb782bee0777be72ff20 100644
 --- a/apps/desktop/scripts/prepare-dsh.ts
 +++ b/apps/desktop/scripts/prepare-dsh.ts
 @@ -32,7 +32,12 @@ import {
@@ -129,7 +129,7 @@ index 7d290b94..d03a9687 100644
      if (process.platform === 'darwin' && process.env.DSH_DESKTOP_UNSIGNED !== '1') {
        await packagingStep(process.env.DSH_DESKTOP_PACKAGING_RUN_DIR, 'sign:dsh-native', () => signMacOSRuntime(DSH_OUTPUT_ROOT, resolveDesktopAppId(process.env), resolveMacOSSigningEnvironment(process.env), target.arch, join(BUILD_PATHS.root, 'signature-cache')))
 diff --git a/apps/desktop/scripts/prepare-runtime.ts b/apps/desktop/scripts/prepare-runtime.ts
-index ba92fef0..e906c767 100644
+index ba92fef0e65e025871a33549639b78eedbd70a2b..e906c767bf405c54df5141316cb9de7da29e8d2e 100644
 --- a/apps/desktop/scripts/prepare-runtime.ts
 +++ b/apps/desktop/scripts/prepare-runtime.ts
 @@ -11,6 +11,7 @@ import { readPrimaryRuntime } from '../../../packages/skill/tool-workspace-depen
@@ -153,7 +153,7 @@ index ba92fef0..e906c767 100644
    const executable = join(BUILD_PATHS.electron, platform === 'win32' ? 'electron.exe' : 'Electron.app/Contents/MacOS/Electron')
 diff --git a/apps/desktop/scripts/prepare-windows-runtime-cache.ps1 b/apps/desktop/scripts/prepare-windows-runtime-cache.ps1
 new file mode 100644
-index 00000000..284eb188
+index 0000000000000000000000000000000000000000..284eb1881ff16a5f5d49cb0155dd2b2eba8166f4
 --- /dev/null
 +++ b/apps/desktop/scripts/prepare-windows-runtime-cache.ps1
 @@ -0,0 +1,68 @@
@@ -227,7 +227,7 @@ index 00000000..284eb188
 +}
 diff --git a/apps/desktop/scripts/runtime-download.ts b/apps/desktop/scripts/runtime-download.ts
 new file mode 100644
-index 00000000..79674b79
+index 0000000000000000000000000000000000000000..79674b797c023d0aa659b47be7acb761d5e59265
 --- /dev/null
 +++ b/apps/desktop/scripts/runtime-download.ts
 @@ -0,0 +1,39 @@
@@ -272,7 +272,7 @@ index 00000000..79674b79
 +}
 diff --git a/apps/desktop/tests/office-engine-runtime.spec.ts b/apps/desktop/tests/office-engine-runtime.spec.ts
 new file mode 100644
-index 00000000..2d635423
+index 0000000000000000000000000000000000000000..2d635423b574f527d47c301e0af6c13384a7deab
 --- /dev/null
 +++ b/apps/desktop/tests/office-engine-runtime.spec.ts
 @@ -0,0 +1,57 @@
@@ -335,7 +335,7 @@ index 00000000..2d635423
 +})
 diff --git a/apps/desktop/tests/runtime-download.spec.ts b/apps/desktop/tests/runtime-download.spec.ts
 new file mode 100644
-index 00000000..6542ea7c
+index 0000000000000000000000000000000000000000..6542ea7ccbd786ffa925468f3bcdf4507140c3ca
 --- /dev/null
 +++ b/apps/desktop/tests/runtime-download.spec.ts
 @@ -0,0 +1,45 @@

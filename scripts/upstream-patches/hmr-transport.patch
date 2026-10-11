@@ -1,5 +1,5 @@
 diff --git a/packages/client/hmr/README.i18n.yaml b/packages/client/hmr/README.i18n.yaml
-index 7bde4169..e8f6f9e3 100644
+index 7bde4169bb56c39f08bea4e45fdb36296131068e..e8f6f9e36a1551ce49c834aa39b0bdd247b9b32b 100644
 --- a/packages/client/hmr/README.i18n.yaml
 +++ b/packages/client/hmr/README.i18n.yaml
 @@ -33,8 +33,8 @@
@@ -14,7 +14,7 @@ index 7bde4169..e8f6f9e3 100644
    en: 269ff43822114dc8
    zh: 8604c39c8050858a
 diff --git a/packages/client/hmr/README.md b/packages/client/hmr/README.md
-index a0c658ea..46a09bd0 100644
+index a0c658ea059dbd9f5b7862225baa0831218c4c9f..46a09bd00d12db89e0b4b1a0df801d61a47886ce 100644
 --- a/packages/client/hmr/README.md
 +++ b/packages/client/hmr/README.md
 @@ -59,7 +59,7 @@ This section explains how the reload chain is built; observable behavior is cove
@@ -27,7 +27,7 @@ index a0c658ea..46a09bd0 100644
  ### The browser swap
  
 diff --git a/packages/client/hmr/README.zh.md b/packages/client/hmr/README.zh.md
-index 7f6b7d17..9ae9b69a 100644
+index 7f6b7d17b764f7506ae7f203436a648667ac21ab..9ae9b69a77682705ed95fa991cb7befe98cc6036 100644
 --- a/packages/client/hmr/README.zh.md
 +++ b/packages/client/hmr/README.zh.md
 @@ -59,7 +59,7 @@ kind: "package-reference"
@@ -40,7 +40,7 @@ index 7f6b7d17..9ae9b69a 100644
  ### 浏览器侧替换
  
 diff --git a/packages/client/hmr/src/client/index.ts b/packages/client/hmr/src/client/index.ts
-index a0db1351..800d21c3 100644
+index a0db1351e69a758d0bfbe0ed0474d083617a47b3..800d21c3f85ef26480e16aaeceaf6fa9017f5831 100644
 --- a/packages/client/hmr/src/client/index.ts
 +++ b/packages/client/hmr/src/client/index.ts
 @@ -25,7 +25,11 @@ export function apply(ctx: Context): void {
@@ -57,7 +57,7 @@ index a0db1351..800d21c3 100644
        let value: unknown
        try {
 diff --git a/packages/client/hmr/src/index.ts b/packages/client/hmr/src/index.ts
-index 23f5ca00..fbab1973 100644
+index 23f5ca00d6bb7e573b1067565922cbcb0bf02b33..fbab19733f9635ca24e11c0207c270ec63819291 100644
 --- a/packages/client/hmr/src/index.ts
 +++ b/packages/client/hmr/src/index.ts
 @@ -8,7 +8,7 @@
@@ -109,7 +109,7 @@ index 23f5ca00..fbab1973 100644
      })
      const unsubscribeGraph = ctx.clientModules.onGraphChanged(publishGraph)
 diff --git a/packages/client/hmr/tests/node-half.client.spec.ts b/packages/client/hmr/tests/node-half.client.spec.ts
-index 7965ca79..0adc4bcc 100644
+index 7965ca79b3a1c1f4084b9c15efa0f815c549a46a..0adc4bcc1bc5510bd14da9794ed7ad9b0bf61d45 100644
 --- a/packages/client/hmr/tests/node-half.client.spec.ts
 +++ b/packages/client/hmr/tests/node-half.client.spec.ts
 @@ -283,21 +283,28 @@ it('broadcasts the desired graph without waiting for Host activation or cleanup'
@@ -171,7 +171,7 @@ index 7965ca79..0adc4bcc 100644
 +  }
 +})
 diff --git a/packages/client/hmr/tests/transport.client.spec.ts b/packages/client/hmr/tests/transport.client.spec.ts
-index 8b807c92..0961e5d9 100644
+index 8b807c92555967f6498c67cd8124204604d42244..0961e5d97165088f7bc24eb3e86f9226fb62568b 100644
 --- a/packages/client/hmr/tests/transport.client.spec.ts
 +++ b/packages/client/hmr/tests/transport.client.spec.ts
 @@ -15,13 +15,17 @@ it('forwards full graphs and rebuilt frames, contains wire errors and closes its

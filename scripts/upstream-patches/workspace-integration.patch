@@ -1,5 +1,5 @@
 diff --git a/.gitattributes b/.gitattributes
-index e878c9db..a5da969b 100644
+index e878c9db197bc62497cd2d8bc77bd45609d8fab2..a5da969b3e923dc9acb2ff04b5aa85c72140f15b 100644
 --- a/.gitattributes
 +++ b/.gitattributes
 @@ -8,6 +8,10 @@
@@ -14,7 +14,7 @@ index e878c9db..a5da969b 100644
  docs/persistence-schema.json linguist-generated=true
  docs/persistence-changes/*.schema.json linguist-generated=true
 diff --git a/.gitignore b/.gitignore
-index 3cb86ce8..757de025 100644
+index 3cb86ce87d98d7d68c3649cc0a3ae415aa822462..757de025263ea8574eeb265d9f618e8fb66be111 100644
 --- a/.gitignore
 +++ b/.gitignore
 @@ -1,10 +1,13 @@
@@ -37,7 +37,7 @@ index 3cb86ce8..757de025 100644
  native/system/test/bin/
 +native/deepseek-harness/target/
 diff --git a/Makefile b/Makefile
-index 0836489e..e167e03a 100644
+index 0836489ef8400225b79e2fdad6429842541c8d55..e167e03adc2b8c0870db0deb17b1e762728a71f7 100644
 --- a/Makefile
 +++ b/Makefile
 @@ -1,7 +1,7 @@
@@ -69,7 +69,7 @@ index 0836489e..e167e03a 100644
 +dev-product-desktop:
 +	$(PNPM) run dev:product-desktop $(ARGS)
 diff --git a/apps/web/tsconfig.json b/apps/web/tsconfig.json
-index 7c03df49..03cc9012 100644
+index 7c03df4930ea71fb0145305a58d0afc7e4b106e0..03cc9012d2a0ab5c7e021bb04202e1f7ae6ddf12 100644
 --- a/apps/web/tsconfig.json
 +++ b/apps/web/tsconfig.json
 @@ -22,6 +22,7 @@
@@ -81,7 +81,7 @@ index 7c03df49..03cc9012 100644
      "tests/chat-flow-layout.e2e.ts",
      "tests/layout-bottom.e2e.ts",
 diff --git a/package.json b/package.json
-index 2d768057..e82750ce 100644
+index 2d76805736259a7b267df42c3128db0433fb133c..e82750ce4004f63322ce52bcee5b7ed94795f368 100644
 --- a/package.json
 +++ b/package.json
 @@ -18,6 +18,11 @@
@@ -106,7 +106,7 @@ index 2d768057..e82750ce 100644
      "package:desktop": "pnpm --filter @deepseek-ai/dsh-desktop run package",
      "package:desktop:dir": "pnpm --filter @deepseek-ai/dsh-desktop run package:dir",
 diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
-index dfaa1653..1889502c 100644
+index dfaa16532d4a9500a31a3995bd0da8d3af579585..1889502c0e99615b0fb9df58a7ab2fd8f25befa6 100644
 --- a/pnpm-lock.yaml
 +++ b/pnpm-lock.yaml
 @@ -115,12 +115,12 @@ importers:
@@ -604,7 +604,7 @@ index dfaa1653..1889502c 100644
      optional: true
  
 diff --git a/scripts/check-workspace-constraints.spec.ts b/scripts/check-workspace-constraints.spec.ts
-index 6ee44787..ffb6e07d 100644
+index 6ee447873e9c5e836a97090dcc0ae79c9b12de8d..ffb6e07d6554f9c4d42c9cfff778e5ae6fb508d8 100644
 --- a/scripts/check-workspace-constraints.spec.ts
 +++ b/scripts/check-workspace-constraints.spec.ts
 @@ -287,6 +287,19 @@ describe('dsh family version coherence', () => {
@@ -628,7 +628,7 @@ index 6ee44787..ffb6e07d 100644
    it.each([
      ['./art/icon.svg', ['art/icon.svg']],
 diff --git a/scripts/check-workspace-constraints.ts b/scripts/check-workspace-constraints.ts
-index 84750fad..9ce15572 100644
+index 84750fad1c60032cfd6368f55342d768331ff71f..9ce155725fe63aa1eb92384c3997c4c9a9608156 100644
 --- a/scripts/check-workspace-constraints.ts
 +++ b/scripts/check-workspace-constraints.ts
 @@ -420,7 +420,11 @@ export function checkWorkspaceManifest({ dir, manifest }: WorkspaceManifest): st
@@ -645,7 +645,7 @@ index 84750fad..9ce15572 100644
        errors.push(`${label}: published Landlock package must not set "private": true`)
      }
 diff --git a/scripts/client-tsconfig.spec.ts b/scripts/client-tsconfig.spec.ts
-index 0c746615..78aca9f7 100644
+index 0c7466154dec3dc6ec05aeecb54be04a6e2ca1d7..78aca9f7eb26aa5ff3c9d6ec04895eef93c3dff4 100644
 --- a/scripts/client-tsconfig.spec.ts
 +++ b/scripts/client-tsconfig.spec.ts
 @@ -22,6 +22,18 @@ function clientCssDeclarations(): string[] {
@@ -668,7 +668,7 @@ index 0c746615..78aca9f7 100644
      const configPath = resolve(root, 'tsconfig.client.json')
      const read = ts.readConfigFile(configPath, file => ts.sys.readFile(file))
 diff --git a/scripts/verify-repository-references.spec.ts b/scripts/verify-repository-references.spec.ts
-index 8b2f0a9d..2f9cdadf 100644
+index 8b2f0a9d3cc7894694f63a9c7a78b1c0fb0b5a3c..2f9cdadf9811b1db73c9aedd3a9c4dd794e67e90 100644
 --- a/scripts/verify-repository-references.spec.ts
 +++ b/scripts/verify-repository-references.spec.ts
 @@ -120,12 +120,14 @@ describe('maintained repository reference policy', () => {
@@ -703,7 +703,7 @@ index 8b2f0a9d..2f9cdadf 100644
      const fixture = repository(test)
      symlinkSync(`../${fixture.commit}`, join(fixture.root, 'reference-link'))
 diff --git a/scripts/verify-repository-references.ts b/scripts/verify-repository-references.ts
-index 92ad6aba..9aafb9db 100644
+index 92ad6abacc0115f6dc093a9ff2e5067bf01fdc28..9aafb9db8103311649d81bf2aaa266689279edc5 100644
 --- a/scripts/verify-repository-references.ts
 +++ b/scripts/verify-repository-references.ts
 @@ -13,6 +13,7 @@ const organizationUrl = new RegExp(`\\bgithub\\.com/${organization}(?![a-z0-9-])
@@ -724,7 +724,7 @@ index 92ad6aba..9aafb9db 100644
  
  /**
 diff --git a/tsconfig.base.json b/tsconfig.base.json
-index 4ad99dbb..e872a5f6 100644
+index 4ad99dbb8931b7efab4682d27adc31fda029ab11..e872a5f66b66f80c2410d59bb0cc681e3cc23135 100644
 --- a/tsconfig.base.json
 +++ b/tsconfig.base.json
 @@ -28,6 +28,21 @@
@@ -750,7 +750,7 @@ index 4ad99dbb..e872a5f6 100644
        "@deepseek-ai/dsh-experimental-ralph-bundle": ["./packages/experimental/ralph-bundle/src/index.ts"],
        "@deepseek-ai/dsh-experimental-terminal-bundle": ["./packages/experimental/terminal-bundle/src/index.ts"],
 diff --git a/tsconfig.client.json b/tsconfig.client.json
-index a8f0a9ed..4ea29006 100644
+index a8f0a9ed96d6d8762a14148b6977e395c11bc9bf..4ea29006836cf6215fbe858e521930f8e9396ec9 100644
 --- a/tsconfig.client.json
 +++ b/tsconfig.client.json
 @@ -20,6 +20,7 @@
@@ -770,7 +770,7 @@ index a8f0a9ed..4ea29006 100644
      { "path": "./packages/test-support/remote-mock" },
      { "path": "./packages/client/shortcuts/tsconfig.client.json" },
 diff --git a/tsconfig.host.json b/tsconfig.host.json
-index af38cdb3..dc932a17 100644
+index af38cdb3419c3c32ce3233319b9cc6a8df8b780b..dc932a17f5707777e7123294b07fa1839fa0f83b 100644
 --- a/tsconfig.host.json
 +++ b/tsconfig.host.json
 @@ -8,6 +8,7 @@
@@ -799,7 +799,7 @@ index af38cdb3..dc932a17 100644
      { "path": "./packages/extensions/cordis-host-runner" },
      { "path": "./packages/extensions/tool-cordis" },
 diff --git a/tsdown.config.ts b/tsdown.config.ts
-index c378de37..55e3781f 100644
+index c378de376a065a7cb3e9759040f7662e1c510777..55e3781fdff13e6fc54174a9f832bb6f48c8e5be 100644
 --- a/tsdown.config.ts
 +++ b/tsdown.config.ts
 @@ -18,10 +18,14 @@ function isBuildFaceClient(value: unknown): boolean {

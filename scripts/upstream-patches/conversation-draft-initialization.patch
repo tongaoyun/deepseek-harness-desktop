@@ -1,5 +1,5 @@
 diff --git a/packages/client/ui-conversation/README.i18n.yaml b/packages/client/ui-conversation/README.i18n.yaml
-index 8b555526..b1478eeb 100644
+index 8b555526ad6b628f9461667b6ac533372e69fc36..b1478eebbf810e2e77cf0ea5f15273d3370c7881 100644
 --- a/packages/client/ui-conversation/README.i18n.yaml
 +++ b/packages/client/ui-conversation/README.i18n.yaml
 @@ -18,8 +18,8 @@
@@ -14,7 +14,7 @@ index 8b555526..b1478eeb 100644
    en: bb1244310f5c0382
    zh: 824b84077432b559
 diff --git a/packages/client/ui-conversation/README.md b/packages/client/ui-conversation/README.md
-index 98034004..e1cca041 100644
+index 980340048f01a3cd461fe0cf55f27355b59d56e7..e1cca04146e0f1cf134a4614bafff6eb44858b07 100644
 --- a/packages/client/ui-conversation/README.md
 +++ b/packages/client/ui-conversation/README.md
 @@ -70,8 +70,12 @@ Claimed commands retain their identity and highlight when only their arguments a
@@ -31,7 +31,7 @@ index 98034004..e1cca041 100644
  
  View selection is deterministic: a registered persisted selection wins, otherwise registered `chat` wins, otherwise no View renders. It never chooses the first registered View. Shell phase combines Session lifecycle with the active-target set; no target-specific snapshot is read by the shell.
 diff --git a/packages/client/ui-conversation/README.zh.md b/packages/client/ui-conversation/README.zh.md
-index d4a100e7..3c4fc173 100644
+index d4a100e7ddbc97600b0b78579f6c48b230784f62..3c4fc17342cc4c5c7b21a0fc78bdd7b8b29d27a3 100644
 --- a/packages/client/ui-conversation/README.zh.md
 +++ b/packages/client/ui-conversation/README.zh.md
 @@ -70,8 +70,12 @@ target package 通过 declaration merge 扩展 snapshot 与 Location data map，
@@ -48,7 +48,7 @@ index d4a100e7..3c4fc173 100644
  
  View 选择规则固定：有效且已注册的持久化选择优先，其次是已注册的 `chat`，否则不渲染 View；绝不选择第一个已注册 View。Shell phase 只组合 Session lifecycle 与 active-target set，不读取任何 target-specific 快照。
 diff --git a/packages/client/ui-conversation/src/client/contract/input.ts b/packages/client/ui-conversation/src/client/contract/input.ts
-index 52ec80ed..9573932d 100644
+index 52ec80eda9273b8b2249d282246fa9cb2ff12fae..9573932d1b04e83a8cb86d2403119b274f3d6e7e 100644
 --- a/packages/client/ui-conversation/src/client/contract/input.ts
 +++ b/packages/client/ui-conversation/src/client/contract/input.ts
 @@ -11,7 +11,7 @@ import type { SessionBinding } from '@deepseek-ai/dsh-api-session-controller/cli
@@ -73,7 +73,7 @@ index 52ec80ed..9573932d 100644
  }
  
 diff --git a/packages/client/ui-conversation/src/client/input/hub.ts b/packages/client/ui-conversation/src/client/input/hub.ts
-index fb8d8a73..41d434a0 100644
+index fb8d8a736f3722b058aee708add2c36628e38f56..41d434a0f099c11fc6572ae30d7ceffe6d26a774 100644
 --- a/packages/client/ui-conversation/src/client/input/hub.ts
 +++ b/packages/client/ui-conversation/src/client/input/hub.ts
 @@ -25,7 +25,7 @@ import type { InputSubmitMode } from '../contract/composer-submission.ts'
@@ -102,7 +102,7 @@ index fb8d8a73..41d434a0 100644
  
    /**
 diff --git a/packages/client/ui-conversation/src/client/stores.ts b/packages/client/ui-conversation/src/client/stores.ts
-index 34e4261a..7eb1ea65 100644
+index 34e4261a264e43793a270d9aaad57dce7312cdd6..7eb1ea655a0e87e3638d35184bc6ee7250d4065b 100644
 --- a/packages/client/ui-conversation/src/client/stores.ts
 +++ b/packages/client/ui-conversation/src/client/stores.ts
 @@ -55,6 +55,26 @@ export function readConversationDraft(sessionId: SessionId): DraftSnapshot {
@@ -133,7 +133,7 @@ index 34e4261a..7eb1ea65 100644
   * Read the persisted View preference before the Slot store is materialized.
   * @param sessionId - Session-scoped persistence suffix.
 diff --git a/packages/client/ui-conversation/tests/apply-inject.client.spec.tsx b/packages/client/ui-conversation/tests/apply-inject.client.spec.tsx
-index ce7386dd..f4f30344 100644
+index ce7386dde860c484ab004240a931a76e7ec17466..f4f30344d3ae8dcc8438753f8fb9756407dad05b 100644
 --- a/packages/client/ui-conversation/tests/apply-inject.client.spec.tsx
 +++ b/packages/client/ui-conversation/tests/apply-inject.client.spec.tsx
 @@ -366,8 +366,9 @@ describe('Conversation inject API', () => {
@@ -148,7 +148,7 @@ index ce7386dd..f4f30344 100644
      expect(b.inputApi(ROOT).state).toBe(state)
  
 diff --git a/packages/client/ui-conversation/tests/conversation-store.client.spec.ts b/packages/client/ui-conversation/tests/conversation-store.client.spec.ts
-index 6b01857c..0c55b3f8 100644
+index 6b01857c869354724a0d6692fd5667a1ebc7fbab..0c55b3f8801ea61d7c7543c9a9d6d0c038fe5164 100644
 --- a/packages/client/ui-conversation/tests/conversation-store.client.spec.ts
 +++ b/packages/client/ui-conversation/tests/conversation-store.client.spec.ts
 @@ -1,6 +1,8 @@
@@ -225,7 +225,7 @@ index 6b01857c..0c55b3f8 100644
  
    it('reads only a usable persisted View preference', () => {
 diff --git a/packages/client/ui-conversation/tests/draft-hub.client.spec.ts b/packages/client/ui-conversation/tests/draft-hub.client.spec.ts
-index 0800ae35..e2d859af 100644
+index 0800ae35ce07045c2c88ae11ec87da34202dec61..e2d859af781b9f3b7472ce04d52bc4e114f6aab4 100644
 --- a/packages/client/ui-conversation/tests/draft-hub.client.spec.ts
 +++ b/packages/client/ui-conversation/tests/draft-hub.client.spec.ts
 @@ -212,6 +212,43 @@ it('imports reference chips on the first Hub shell and preserves them without an

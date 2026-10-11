@@ -1,5 +1,5 @@
 diff --git a/apps/desktop-host/src/index.ts b/apps/desktop-host/src/index.ts
-index 3086755b..bd8182d5 100644
+index 3086755b0bf5da567f01531cef2093ee597c2fbb..bd8182d5514dcb2c8dad810cb876d1bf3529efb2 100644
 --- a/apps/desktop-host/src/index.ts
 +++ b/apps/desktop-host/src/index.ts
 @@ -15,18 +15,24 @@ import { installDesktopQuitInspection } from './quit-inspection.ts'
@@ -68,7 +68,7 @@ index 3086755b..bd8182d5 100644
      source: process.argv[4] ?? join(runtimeDir, '..', 'runtime', 'primary-runtime'),
 diff --git a/apps/desktop/src/extension-errors.ts b/apps/desktop/src/extension-errors.ts
 new file mode 100644
-index 00000000..6d51b1df
+index 0000000000000000000000000000000000000000..6d51b1dfb0430adbc390efd2eaf49454da5249a6
 --- /dev/null
 +++ b/apps/desktop/src/extension-errors.ts
 @@ -0,0 +1,29 @@
@@ -103,7 +103,7 @@ index 00000000..6d51b1df
 +}
 diff --git a/apps/desktop/src/extension-transport.ts b/apps/desktop/src/extension-transport.ts
 new file mode 100644
-index 00000000..185b72e9
+index 0000000000000000000000000000000000000000..185b72e960b5cd7d2b8c313cf1ae91a17be3df2f
 --- /dev/null
 +++ b/apps/desktop/src/extension-transport.ts
 @@ -0,0 +1,35 @@
@@ -144,7 +144,7 @@ index 00000000..185b72e9
 +}
 diff --git a/apps/desktop/src/extensions.ts b/apps/desktop/src/extensions.ts
 new file mode 100644
-index 00000000..47ef0677
+index 0000000000000000000000000000000000000000..47ef0677929d31aeb4b2598fc006ba505429fc87
 --- /dev/null
 +++ b/apps/desktop/src/extensions.ts
 @@ -0,0 +1,51 @@
@@ -200,7 +200,7 @@ index 00000000..47ef0677
 +  return extension as DesktopExtension
 +}
 diff --git a/apps/desktop/src/host-process.ts b/apps/desktop/src/host-process.ts
-index 948a88e6..aa15c80e 100644
+index 948a88e6b0e3a439a719aea46e3b77843e412abc..aa15c80e054acd19157aaab3ee5b283ee60d7bac 100644
 --- a/apps/desktop/src/host-process.ts
 +++ b/apps/desktop/src/host-process.ts
 @@ -1,5 +1,6 @@
@@ -417,7 +417,7 @@ index 948a88e6..aa15c80e 100644
      this.readyReject(error)
      for (const request of this.controlRequests.values()) request.reject(error)
 diff --git a/apps/desktop/src/ipc.ts b/apps/desktop/src/ipc.ts
-index fc19021f..e029a607 100644
+index fc19021fa6047bf5ef2a1c5e65c510adda71ee08..e029a607869651a29e663ceb3607ad2692bb5a15 100644
 --- a/apps/desktop/src/ipc.ts
 +++ b/apps/desktop/src/ipc.ts
 @@ -3,6 +3,7 @@
@@ -451,7 +451,7 @@ index fc19021f..e029a607 100644
  
  /** Scheme of Desktop-owned application documents. */
 diff --git a/apps/desktop/src/main.ts b/apps/desktop/src/main.ts
-index 1202670a..6b742a91 100644
+index 1202670a3e0330f2a9ce287ab8d95459fecffa9e..6b742a91ca25b109c96f4d2f7d1653e110153db8 100644
 --- a/apps/desktop/src/main.ts
 +++ b/apps/desktop/src/main.ts
 @@ -1,9 +1,12 @@
@@ -750,7 +750,7 @@ index 1202670a..6b742a91 100644
        platformView.dispose().catch((error: unknown) => { console.error(error) })])
        .catch((error: unknown) => { console.error(error) }).finally(() => { app.quit() })
 diff --git a/apps/desktop/src/preload-app.ts b/apps/desktop/src/preload-app.ts
-index f590b8bc..e3df6df6 100644
+index f590b8bc8b80a6ee007a0f36249097c77fb0b974..e3df6df6d9bc33099f3a7ef6f3f8d2a7844deb1f 100644
 --- a/apps/desktop/src/preload-app.ts
 +++ b/apps/desktop/src/preload-app.ts
 @@ -9,6 +9,7 @@ import { syncNativeTheme } from './preload-theme.ts'
@@ -798,7 +798,7 @@ index f590b8bc..e3df6df6 100644
    contextBridge.exposeInMainWorld('__DSH_LOCALE__', {
 diff --git a/apps/desktop/tests/extension-transport.spec.ts b/apps/desktop/tests/extension-transport.spec.ts
 new file mode 100644
-index 00000000..33441c05
+index 0000000000000000000000000000000000000000..33441c0571221c8712fcbbf34b661947005b6d91
 --- /dev/null
 +++ b/apps/desktop/tests/extension-transport.spec.ts
 @@ -0,0 +1,39 @@
@@ -842,7 +842,7 @@ index 00000000..33441c05
 +  expect(vi.getTimerCount()).toBe(0)
 +})
 diff --git a/apps/desktop/tests/host-process.spec.ts b/apps/desktop/tests/host-process.spec.ts
-index daeddc74..1e70d9f4 100644
+index daeddc74d0afc1315b0c632f61d2034bd0c9e31a..1e70d9f4e1da3a15a4505ed603fb6c5c1c6bca5b 100644
 --- a/apps/desktop/tests/host-process.spec.ts
 +++ b/apps/desktop/tests/host-process.spec.ts
 @@ -2,7 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync
@@ -1071,7 +1071,7 @@ index daeddc74..1e70d9f4 100644
      'process.exit(17)',
      'process.exit(0)',
 diff --git a/apps/desktop/tests/main-startup.spec.ts b/apps/desktop/tests/main-startup.spec.ts
-index d9a8f310..f4ac9294 100644
+index d9a8f3103b2a963ebf6825c62a86e8ee12064deb..f4ac92943aed5cc7e11f2a49a5bb1df0ff3152ee 100644
 --- a/apps/desktop/tests/main-startup.spec.ts
 +++ b/apps/desktop/tests/main-startup.spec.ts
 @@ -13,6 +13,7 @@ import { en, zh } from '../src/locale.ts'
@@ -1339,7 +1339,7 @@ index d9a8f310..f4ac9294 100644
    })
  
 diff --git a/apps/desktop/tests/welcome-startup.spec.ts b/apps/desktop/tests/welcome-startup.spec.ts
-index 79152482..298addd0 100644
+index 7915248243e408841a829b4f887face59d7bf419..298addd095d446e66fd0907db3ae53352e01e7e5 100644
 --- a/apps/desktop/tests/welcome-startup.spec.ts
 +++ b/apps/desktop/tests/welcome-startup.spec.ts
 @@ -86,6 +86,7 @@ vi.mock('electron', () => ({

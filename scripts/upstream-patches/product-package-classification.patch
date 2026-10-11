@@ -1,5 +1,5 @@
 diff --git a/scripts/product-package-policy.ts b/scripts/product-package-policy.ts
-index 802ce76f..2bbd4dc3 100644
+index 802ce76f48b6d5178c908ff7eaccc15dc9189ae2..2bbd4dc3b5f17fb3c40ac4528f02de32021f13da 100644
 --- a/scripts/product-package-policy.ts
 +++ b/scripts/product-package-policy.ts
 @@ -1,7 +1,7 @@
@@ -34,7 +34,7 @@ index 802ce76f..2bbd4dc3 100644
    'packages/computer-use/computer-use': { category: 'optional', reason: 'Service definition used by explicitly selected computer providers.' },
    'packages/lsp/lsp': { category: 'optional', reason: 'Service definition for deployment-configured language servers.' },
 diff --git a/scripts/verify-product-use.spec.ts b/scripts/verify-product-use.spec.ts
-index 002af7c3..e9f157fa 100644
+index 002af7c3b2c32d82d69fbb65fb5d8db23fa10a77..e9f157fa986ef43c4143f6aaf6f8234be5d0c783 100644
 --- a/scripts/verify-product-use.spec.ts
 +++ b/scripts/verify-product-use.spec.ts
 @@ -35,6 +35,10 @@ function profiles(root: string, optional: string[] = [], onDemand: string[] = []
@@ -86,7 +86,7 @@ index 002af7c3..e9f157fa 100644
      `import type { Shape } from '${candidate}'`,
      `import { type Shape } from '${candidate}'`,
 diff --git a/scripts/verify-product-use.ts b/scripts/verify-product-use.ts
-index 0c3837d8..4dcb05b3 100644
+index 0c3837d8a2097f02120d0f5730ff0650932126c7..4dcb05b34bdb28c3be6b267aefb346a93fce7d4e 100644
 --- a/scripts/verify-product-use.ts
 +++ b/scripts/verify-product-use.ts
 @@ -1,7 +1,7 @@

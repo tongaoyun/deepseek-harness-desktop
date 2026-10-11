@@ -1,5 +1,5 @@
 diff --git a/packages/client/ui-sidebar-documentpreview/README.i18n.yaml b/packages/client/ui-sidebar-documentpreview/README.i18n.yaml
-index 6a35e6a8..15e232a2 100644
+index 6a35e6a8d73a7efecc4326c49f53d9487a2b6cb5..15e232a26eb9192f972f220264ba0dbd61f546c6 100644
 --- a/packages/client/ui-sidebar-documentpreview/README.i18n.yaml
 +++ b/packages/client/ui-sidebar-documentpreview/README.i18n.yaml
 @@ -12,11 +12,14 @@
@@ -22,7 +22,7 @@ index 6a35e6a8..15e232a2 100644
    en: 949156aa02ec8b07
    zh: d3675754e2a37b5d
 diff --git a/packages/client/ui-sidebar-documentpreview/README.md b/packages/client/ui-sidebar-documentpreview/README.md
-index 588a95a7..e4e50c66 100644
+index 588a95a7e090fa4f71098872aedce1fc0242e56b..e4e50c66935a0a8168a02560c4ef3f4709fe4a4d 100644
 --- a/packages/client/ui-sidebar-documentpreview/README.md
 +++ b/packages/client/ui-sidebar-documentpreview/README.md
 @@ -14,6 +14,7 @@ Preview files in the right Sidebar and choose among registered renderers. Markdo
@@ -48,7 +48,7 @@ index 588a95a7..e4e50c66 100644
  ## Addresses
  
 diff --git a/packages/client/ui-sidebar-documentpreview/README.zh.md b/packages/client/ui-sidebar-documentpreview/README.zh.md
-index 89d90091..c22b4fee 100644
+index 89d90091f53ef963b22d7c33a976484468e3ee41..c22b4feebfd58fcab6dbd216f0ff7c030a928e3f 100644
 --- a/packages/client/ui-sidebar-documentpreview/README.zh.md
 +++ b/packages/client/ui-sidebar-documentpreview/README.zh.md
 @@ -14,6 +14,7 @@ kind: "package-reference"
@@ -74,7 +74,7 @@ index 89d90091..c22b4fee 100644
  ## 地址
  
 diff --git a/packages/client/ui-sidebar-documentpreview/src/client/code/CodeBody.tsx b/packages/client/ui-sidebar-documentpreview/src/client/code/CodeBody.tsx
-index 898c0eb5..29a3e26c 100644
+index 898c0eb596a1bee780d088e6ccfa42928a2ae7b5..29a3e26c8ed30b57b02f6f47364d2aa6e51dd5ca 100644
 --- a/packages/client/ui-sidebar-documentpreview/src/client/code/CodeBody.tsx
 +++ b/packages/client/ui-sidebar-documentpreview/src/client/code/CodeBody.tsx
 @@ -15,7 +15,13 @@ export function CodeBody({ resourceAddress, content, wrap, scrollportRef, t }: C
@@ -94,7 +94,7 @@ index 898c0eb5..29a3e26c 100644
        <CodeBlock
 diff --git a/packages/client/ui-sidebar-documentpreview/src/client/document/DocumentPreviewSurface.module.css b/packages/client/ui-sidebar-documentpreview/src/client/document/DocumentPreviewSurface.module.css
 new file mode 100644
-index 00000000..ddda4a22
+index 0000000000000000000000000000000000000000..ddda4a226bc2c4bc4c61ecc55eb1b106beefb5e4
 --- /dev/null
 +++ b/packages/client/ui-sidebar-documentpreview/src/client/document/DocumentPreviewSurface.module.css
 @@ -0,0 +1,68 @@
@@ -168,7 +168,7 @@ index 00000000..ddda4a22
 +}
 diff --git a/packages/client/ui-sidebar-documentpreview/src/client/document/DocumentPreviewSurface.tsx b/packages/client/ui-sidebar-documentpreview/src/client/document/DocumentPreviewSurface.tsx
 new file mode 100644
-index 00000000..744afb09
+index 0000000000000000000000000000000000000000..744afb09aef7e2e500fcd8b2189784038a58c651
 --- /dev/null
 +++ b/packages/client/ui-sidebar-documentpreview/src/client/document/DocumentPreviewSurface.tsx
 @@ -0,0 +1,95 @@
@@ -269,7 +269,7 @@ index 00000000..744afb09
 +}
 diff --git a/packages/client/ui-sidebar-documentpreview/src/client/document/surface-bodies.tsx b/packages/client/ui-sidebar-documentpreview/src/client/document/surface-bodies.tsx
 new file mode 100644
-index 00000000..4ca68fe5
+index 0000000000000000000000000000000000000000..4ca68fe5495846d1f172643eccd4665fc3e72305
 --- /dev/null
 +++ b/packages/client/ui-sidebar-documentpreview/src/client/document/surface-bodies.tsx
 @@ -0,0 +1,70 @@
@@ -345,7 +345,7 @@ index 00000000..4ca68fe5
 +}
 diff --git a/packages/client/ui-sidebar-documentpreview/src/client/document/surface-contract.ts b/packages/client/ui-sidebar-documentpreview/src/client/document/surface-contract.ts
 new file mode 100644
-index 00000000..1c1f53b4
+index 0000000000000000000000000000000000000000..1c1f53b4dedd84749172c1eece259cb91917c24e
 --- /dev/null
 +++ b/packages/client/ui-sidebar-documentpreview/src/client/document/surface-contract.ts
 @@ -0,0 +1,65 @@
@@ -416,7 +416,7 @@ index 00000000..1c1f53b4
 +export type DocumentPreviewSurfaceBodyProps = PropsRuntime<'document.preview.body'>
 diff --git a/packages/client/ui-sidebar-documentpreview/src/client/document/surface.ts b/packages/client/ui-sidebar-documentpreview/src/client/document/surface.ts
 new file mode 100644
-index 00000000..01ae3e72
+index 0000000000000000000000000000000000000000..01ae3e723d88aa1bb2af9a0740b3dfed8893f8ae
 --- /dev/null
 +++ b/packages/client/ui-sidebar-documentpreview/src/client/document/surface.ts
 @@ -0,0 +1,39 @@
@@ -460,7 +460,7 @@ index 00000000..01ae3e72
 +  ctx.effect(() => ctx.slots.register({ name: 'document.preview.body', key: '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/code', locale: 'sidebarCodePreview' }, SurfaceCode))
 +}
 diff --git a/packages/client/ui-sidebar-documentpreview/src/client/excel/LazyExcelBody.tsx b/packages/client/ui-sidebar-documentpreview/src/client/excel/LazyExcelBody.tsx
-index 1c4c657a..12c969ea 100644
+index 1c4c657a24719c0f07a0ec1075f6e0b01e2d4df0..12c969ea92ed6c437e812d7e31caabce8df7a6ec 100644
 --- a/packages/client/ui-sidebar-documentpreview/src/client/excel/LazyExcelBody.tsx
 +++ b/packages/client/ui-sidebar-documentpreview/src/client/excel/LazyExcelBody.tsx
 @@ -11,7 +11,11 @@ import { LoadingIndicator } from '../LoadingIndicator.tsx'
@@ -477,7 +477,7 @@ index 1c4c657a..12c969ea 100644
  const LoadedExcelBody = lazy(async () => ({ default: (await import('./excel.tsx')).ExcelBody }))
  
 diff --git a/packages/client/ui-sidebar-documentpreview/src/client/excel/excel.tsx b/packages/client/ui-sidebar-documentpreview/src/client/excel/excel.tsx
-index ca3fcb84..a3b1cad7 100644
+index ca3fcb8425588610d12e468a83497a37d3bb0175..a3b1cad75bc082faa204d14a45c4f338ad6933ee 100644
 --- a/packages/client/ui-sidebar-documentpreview/src/client/excel/excel.tsx
 +++ b/packages/client/ui-sidebar-documentpreview/src/client/excel/excel.tsx
 @@ -18,7 +18,7 @@ const scopedStyles = `@scope ([data-excel-preview]) { ${fortuneCss} }`
@@ -509,7 +509,7 @@ index ca3fcb84..a3b1cad7 100644
      const element = workbookRef.current
      if (element === null || typeof ResizeObserver === 'undefined') return
 diff --git a/packages/client/ui-sidebar-documentpreview/src/client/excel/xlsx.ts b/packages/client/ui-sidebar-documentpreview/src/client/excel/xlsx.ts
-index 7c4608cc..bb54d16f 100644
+index 7c4608cc04753d054006f8c0f67b4777208034e4..bb54d16f745b4b7e4a2446b55a0ef25d4479be61 100644
 --- a/packages/client/ui-sidebar-documentpreview/src/client/excel/xlsx.ts
 +++ b/packages/client/ui-sidebar-documentpreview/src/client/excel/xlsx.ts
 @@ -105,11 +105,13 @@ export async function convertXlsx(bytes: Uint8Array<ArrayBuffer>, limits: ExcelL
@@ -528,7 +528,7 @@ index 7c4608cc..bb54d16f 100644
      }
      if (worksheet.properties.defaultColWidth !== undefined) sheet.defaultColWidth = columnPixels(worksheet.properties.defaultColWidth)
 diff --git a/packages/client/ui-sidebar-documentpreview/src/client/html/HtmlBody.tsx b/packages/client/ui-sidebar-documentpreview/src/client/html/HtmlBody.tsx
-index 135609ac..abb55d22 100644
+index 135609acdd0faa2ab1488835a02c14b18c56bc7b..abb55d22afd11a05f11ea9d7b5fb552b41ad4d4b 100644
 --- a/packages/client/ui-sidebar-documentpreview/src/client/html/HtmlBody.tsx
 +++ b/packages/client/ui-sidebar-documentpreview/src/client/html/HtmlBody.tsx
 @@ -89,7 +89,7 @@ export function HtmlBody({
@@ -541,7 +541,7 @@ index 135609ac..abb55d22 100644
      try {
        return createBasicHtmlDocument(data)
 diff --git a/packages/client/ui-sidebar-documentpreview/src/client/image/ImageBody.tsx b/packages/client/ui-sidebar-documentpreview/src/client/image/ImageBody.tsx
-index 770c806b..75ef0f5c 100644
+index 770c806bd533d87636ff0f703636d80b867f8fef..75ef0f5c8df5c585df06ea79ee56401d08204227 100644
 --- a/packages/client/ui-sidebar-documentpreview/src/client/image/ImageBody.tsx
 +++ b/packages/client/ui-sidebar-documentpreview/src/client/image/ImageBody.tsx
 @@ -1,5 +1,5 @@
@@ -602,7 +602,7 @@ index 770c806b..75ef0f5c 100644
  
  /** SVG stays in the browser's static image mode because its bytes only reach an img Blob URL. */
 diff --git a/packages/client/ui-sidebar-documentpreview/src/client/index.ts b/packages/client/ui-sidebar-documentpreview/src/client/index.ts
-index 72a26771..3b50d1d6 100644
+index 72a26771d841ef5dc6dbeeefe5b1ef8ddce1ef84..3b50d1d6d8f0bbf8531cc89345a31a7b98d7d618 100644
 --- a/packages/client/ui-sidebar-documentpreview/src/client/index.ts
 +++ b/packages/client/ui-sidebar-documentpreview/src/client/index.ts
 @@ -39,6 +39,7 @@ import { apply as registerCode } from './code/index.ts'
@@ -628,7 +628,7 @@ index 72a26771..3b50d1d6 100644
 +  applyDocumentSurface(ctx, config)
  }
 diff --git a/packages/client/ui-sidebar-documentpreview/src/client/locales.ts b/packages/client/ui-sidebar-documentpreview/src/client/locales.ts
-index f7c7c645..74bd1552 100644
+index f7c7c645d61e26f9956ebe67193fb18cd1949c48..74bd1552af87866682d810cea8866c320427852d 100644
 --- a/packages/client/ui-sidebar-documentpreview/src/client/locales.ts
 +++ b/packages/client/ui-sidebar-documentpreview/src/client/locales.ts
 @@ -30,6 +30,7 @@ export const zh = {
@@ -646,7 +646,7 @@ index f7c7c645..74bd1552 100644
 +  readFailed: 'Unable to read the file. Try again.',
  } satisfies Record<SidebarDocumentPreviewKey, string>
 diff --git a/packages/client/ui-sidebar-documentpreview/src/client/markdown/MarkdownBody.tsx b/packages/client/ui-sidebar-documentpreview/src/client/markdown/MarkdownBody.tsx
-index 714d68ba..11a1c956 100644
+index 714d68bafeff523e07b971e6b62939d004027ade..11a1c9567f6c37a2fcbf0b4a124114e3172e7951 100644
 --- a/packages/client/ui-sidebar-documentpreview/src/client/markdown/MarkdownBody.tsx
 +++ b/packages/client/ui-sidebar-documentpreview/src/client/markdown/MarkdownBody.tsx
 @@ -36,6 +36,14 @@ export function MarkdownBody({ content, resourceAddress, useResource, t }: Markd
@@ -665,7 +665,7 @@ index 714d68ba..11a1c956 100644
    const copiedLabel = t('code.copied')
    const footnotes = t('footnotes')
 diff --git a/packages/client/ui-sidebar-documentpreview/src/client/pdf/pdf.tsx b/packages/client/ui-sidebar-documentpreview/src/client/pdf/pdf.tsx
-index bafa88f2..752a27ea 100644
+index bafa88f214dacb1be47de62fb1d7af625d99f896..752a27ea1daa5471b063f4ba2703dbe9a8b2a584 100644
 --- a/packages/client/ui-sidebar-documentpreview/src/client/pdf/pdf.tsx
 +++ b/packages/client/ui-sidebar-documentpreview/src/client/pdf/pdf.tsx
 @@ -1,5 +1,5 @@
@@ -781,7 +781,7 @@ index bafa88f2..752a27ea 100644
    </ZoomViewport>
  }
 diff --git a/packages/client/ui-sidebar-documentpreview/src/client/text/TextBody.tsx b/packages/client/ui-sidebar-documentpreview/src/client/text/TextBody.tsx
-index 51625919..fa700554 100644
+index 51625919675868c312cd0565f741f03ab8642471..fa70055425415bea572b1117399176e03372e9ee 100644
 --- a/packages/client/ui-sidebar-documentpreview/src/client/text/TextBody.tsx
 +++ b/packages/client/ui-sidebar-documentpreview/src/client/text/TextBody.tsx
 @@ -10,6 +10,11 @@ export function TextBody({ content, useTabInfo }: DocumentPreviewProps): ReactNo
@@ -797,7 +797,7 @@ index 51625919..fa700554 100644
    return (
      <div className={css.textDocument} data-textpreview-plain>
 diff --git a/packages/client/ui-sidebar-documentpreview/tests/apply.client.spec.ts b/packages/client/ui-sidebar-documentpreview/tests/apply.client.spec.ts
-index 124acfe7..1f665ff4 100644
+index 124acfe744f155e6b39171e053e413c0d7e99492..1f665ff40eb0bd1dd5e74e011a2f1044e7c78fd4 100644
 --- a/packages/client/ui-sidebar-documentpreview/tests/apply.client.spec.ts
 +++ b/packages/client/ui-sidebar-documentpreview/tests/apply.client.spec.ts
 @@ -51,6 +51,7 @@ async function boot() {
@@ -862,7 +862,7 @@ index 124acfe7..1f665ff4 100644
    })
  
 diff --git a/packages/client/ui-sidebar-documentpreview/tests/document-preview-license-bundle.client.spec.ts b/packages/client/ui-sidebar-documentpreview/tests/document-preview-license-bundle.client.spec.ts
-index d42317f4..bd55f16d 100644
+index d42317f4b81d1c2470ba692172638b55dc686b51..bd55f16d6942d4418ac7df41de4dec1f400483d3 100644
 --- a/packages/client/ui-sidebar-documentpreview/tests/document-preview-license-bundle.client.spec.ts
 +++ b/packages/client/ui-sidebar-documentpreview/tests/document-preview-license-bundle.client.spec.ts
 @@ -59,7 +59,7 @@ describe('published document preview licenses', () => {
@@ -876,7 +876,7 @@ index d42317f4..bd55f16d 100644
          .toEqual([])
 diff --git a/packages/client/ui-sidebar-documentpreview/tests/document-surface.client.spec.tsx b/packages/client/ui-sidebar-documentpreview/tests/document-surface.client.spec.tsx
 new file mode 100644
-index 00000000..2fa2100e
+index 0000000000000000000000000000000000000000..2fa2100e9d3c11191e4117eed58c3117f3491ab6
 --- /dev/null
 +++ b/packages/client/ui-sidebar-documentpreview/tests/document-surface.client.spec.tsx
 @@ -0,0 +1,138 @@
@@ -1019,7 +1019,7 @@ index 00000000..2fa2100e
 +  })
 +})
 diff --git a/packages/client/ui-sidebar-documentpreview/tests/excel-convert.client.spec.ts b/packages/client/ui-sidebar-documentpreview/tests/excel-convert.client.spec.ts
-index c4d7babe..eab003b9 100644
+index c4d7babea659c969aae8fa6f48b1f973fc905a70..eab003b9bc01a65e471cfbc817317ecd3791bb7e 100644
 --- a/packages/client/ui-sidebar-documentpreview/tests/excel-convert.client.spec.ts
 +++ b/packages/client/ui-sidebar-documentpreview/tests/excel-convert.client.spec.ts
 @@ -81,6 +81,23 @@ describe('Excel conversion', () => {

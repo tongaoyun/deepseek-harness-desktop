@@ -1,5 +1,5 @@
 diff --git a/packages/mcp/mcp-client/README.i18n.yaml b/packages/mcp/mcp-client/README.i18n.yaml
-index 9a88686b..2c187a7b 100644
+index 9a88686b464a77acabd1589d4d382e099fb18519..2c187a7bdb00e085e1b78918460122d49a07fdaf 100644
 --- a/packages/mcp/mcp-client/README.i18n.yaml
 +++ b/packages/mcp/mcp-client/README.i18n.yaml
 @@ -18,11 +18,11 @@
@@ -32,7 +32,7 @@ index 9a88686b..2c187a7b 100644
 +  en: f58bcc301f0f5214
 +  zh: a242d58f0bbf8a10
 diff --git a/packages/mcp/mcp-client/README.md b/packages/mcp/mcp-client/README.md
-index 950b9b8c..cbf752dd 100644
+index 950b9b8c8566a2db2f82c21d64c3b224bfbb2650..cbf752dd5b2027637ff60607ae4b39a53f1a24f9 100644
 --- a/packages/mcp/mcp-client/README.md
 +++ b/packages/mcp/mcp-client/README.md
 @@ -58,7 +58,7 @@ Add one entry per server; nothing else is required. After the harness starts, th
@@ -71,7 +71,7 @@ index 950b9b8c..cbf752dd 100644
  - MCP prompt templates need a separate user-selection and invocation mechanism.
  - The pinned MCP SDK is still evolving; a breaking upstream change requires updating the bridge.
 diff --git a/packages/mcp/mcp-client/README.zh.md b/packages/mcp/mcp-client/README.zh.md
-index 3ba20384..ffc47aa7 100644
+index 3ba2038418f27ce3a33227814e6d6386e228c754..ffc47aa76e5203f7854bebee4661c22024c1a92d 100644
 --- a/packages/mcp/mcp-client/README.zh.md
 +++ b/packages/mcp/mcp-client/README.zh.md
 @@ -58,7 +58,7 @@ kind: "package-reference"
@@ -110,7 +110,7 @@ index 3ba20384..ffc47aa7 100644
  - MCP 提示词模板需要独立的用户选择和模板调用机制。
  - 固定的 MCP SDK 仍在演化；上游破坏性变更需要更新桥接。
 diff --git a/packages/mcp/mcp-client/src/connection.ts b/packages/mcp/mcp-client/src/connection.ts
-index 9a4ec912..9bd1094a 100644
+index 9a4ec9123aea0e416178b45da6e788bade46274f..9bd1094a934b5ef9ff021d001ccef3ec25e149ba 100644
 --- a/packages/mcp/mcp-client/src/connection.ts
 +++ b/packages/mcp/mcp-client/src/connection.ts
 @@ -305,7 +305,7 @@ export function startConnection(ctx: Context, config: Config, policy: ResolvedRe
@@ -123,7 +123,7 @@ index 9a4ec912..9bd1094a 100644
          attemptSettled = true
          generationDown(generation)
 diff --git a/packages/mcp/mcp-client/src/index.ts b/packages/mcp/mcp-client/src/index.ts
-index 3f89532b..3188c006 100644
+index 3f89532b91d915cad20d65fa06ae52ace088958d..3188c0065a1e5414f539bfa3af3bcf0a1de16608 100644
 --- a/packages/mcp/mcp-client/src/index.ts
 +++ b/packages/mcp/mcp-client/src/index.ts
 @@ -23,7 +23,7 @@ import { registerServerContext } from './server-context.ts'
@@ -163,7 +163,7 @@ index 3f89532b..3188c006 100644
    /** Fail plugin activation when the initial connection or tool synchronization fails. */
    failOnStartupError: boolean
 diff --git a/packages/mcp/mcp-client/src/tools.ts b/packages/mcp/mcp-client/src/tools.ts
-index 9e7b5c0a..e2428031 100644
+index 9e7b5c0ab550dc2f2074126ca08c07b12f65dcce..e24280314a563a0a348cc93c162bae16236919a7 100644
 --- a/packages/mcp/mcp-client/src/tools.ts
 +++ b/packages/mcp/mcp-client/src/tools.ts
 @@ -120,7 +120,7 @@ export async function syncTools(
@@ -176,7 +176,7 @@ index 9e7b5c0a..e2428031 100644
      const publicName = publicToolName(opts.serverName, tool.name)
      if (definitions.has(publicName)) {
 diff --git a/packages/mcp/mcp-client/tests/apply.spec.ts b/packages/mcp/mcp-client/tests/apply.spec.ts
-index fff23892..187e0212 100644
+index fff238923f178a9f33469fd8c57bdaa11f6e05e7..187e02129bd291946902143c7e5415a46353063b 100644
 --- a/packages/mcp/mcp-client/tests/apply.spec.ts
 +++ b/packages/mcp/mcp-client/tests/apply.spec.ts
 @@ -182,10 +182,10 @@ describe('apply (plugin lifecycle)', () => {

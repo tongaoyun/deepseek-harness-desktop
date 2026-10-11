@@ -1,5 +1,5 @@
 diff --git a/apps/desktop/electron-builder.config.d.mts b/apps/desktop/electron-builder.config.d.mts
-index 4e978ec0..455df981 100644
+index 4e978ec00fa379ee72643c86da6e2b2c3f194c84..455df981bcca61e7d90f6d7718ebdf239736d8d4 100644
 --- a/apps/desktop/electron-builder.config.d.mts
 +++ b/apps/desktop/electron-builder.config.d.mts
 @@ -18,12 +18,9 @@ export interface DesktopElectronBuilderConfig {
@@ -26,7 +26,7 @@ index 4e978ec0..455df981 100644
      readonly signtoolOptions: {
        readonly publisherName: string | undefined
 diff --git a/apps/desktop/package.json b/apps/desktop/package.json
-index c1009cb5..e8c2ded1 100644
+index c1009cb57b5259ea56128ed854f147df3d4344b0..e8c2ded193d702754d999eaceebfddb72db7d3ab 100644
 --- a/apps/desktop/package.json
 +++ b/apps/desktop/package.json
 @@ -1,6 +1,6 @@
@@ -47,7 +47,7 @@ index c1009cb5..e8c2ded1 100644
      "@deepseek-ai/dsh-client-ui-sidebar-browser": "workspace:*",
 diff --git a/apps/desktop/scripts/desktop-assembly.d.mts b/apps/desktop/scripts/desktop-assembly.d.mts
 new file mode 100644
-index 00000000..594b8982
+index 0000000000000000000000000000000000000000..594b898207df5f3e4e19d41754ff2d84239c2e3e
 --- /dev/null
 +++ b/apps/desktop/scripts/desktop-assembly.d.mts
 @@ -0,0 +1,7 @@
@@ -60,7 +60,7 @@ index 00000000..594b8982
 +}
 diff --git a/apps/desktop/scripts/desktop-assembly.mjs b/apps/desktop/scripts/desktop-assembly.mjs
 new file mode 100644
-index 00000000..a75fa56f
+index 0000000000000000000000000000000000000000..a75fa56fc9127e32b159f2829921e5980b82ab0f
 --- /dev/null
 +++ b/apps/desktop/scripts/desktop-assembly.mjs
 @@ -0,0 +1,27 @@
@@ -92,7 +92,7 @@ index 00000000..a75fa56f
 +    packageDirectories: directories.map(directory => resolve(dirname(path), directory)) }
 +}
 diff --git a/apps/desktop/scripts/dev.ts b/apps/desktop/scripts/dev.ts
-index 1ae2f3e9..73d522de 100644
+index 1ae2f3e95242b1d0c21c9d7fce561d0b3797f1cd..73d522de68f35e6cbdd2c40f2d9f7cbed2d60f0e 100644
 --- a/apps/desktop/scripts/dev.ts
 +++ b/apps/desktop/scripts/dev.ts
 @@ -11,6 +11,7 @@ import { developmentRuntimeDirectory, resolveDesktopBuildTarget } from './deskto
@@ -128,7 +128,7 @@ index 1ae2f3e9..73d522de 100644
      return
    }
 diff --git a/apps/desktop/scripts/development-app.ts b/apps/desktop/scripts/development-app.ts
-index ff09b8b7..c371dfae 100644
+index ff09b8b783952179ceb1e9bed7e4aee989176005..c371dfaecd180cedc6c0074573044d1710ec3887 100644
 --- a/apps/desktop/scripts/development-app.ts
 +++ b/apps/desktop/scripts/development-app.ts
 @@ -1,7 +1,7 @@
@@ -180,7 +180,7 @@ index ff09b8b7..c371dfae 100644
      DSH_DESKTOP_OPEN_DEVTOOLS: options.openDevtools,
      ELECTRON_ENABLE_LOGGING: '1',
 diff --git a/apps/desktop/scripts/electron-builder-config.mjs b/apps/desktop/scripts/electron-builder-config.mjs
-index f08b7838..47e7f27d 100644
+index f08b783865e35563a124a23ef4b6d7fe136bcd7a..47e7f27df0050b89ad8b2ae2151acb55cf94e1cc 100644
 --- a/apps/desktop/scripts/electron-builder-config.mjs
 +++ b/apps/desktop/scripts/electron-builder-config.mjs
 @@ -1,3 +1,4 @@
@@ -253,7 +253,7 @@ index f08b7838..47e7f27d 100644
        signtoolOptions: {
          sign: windowsSigner,
 diff --git a/apps/desktop/scripts/package-target.ts b/apps/desktop/scripts/package-target.ts
-index a133ccdc..ab778a6d 100644
+index a133ccdcf869c5ff404343a621e4f6df9a5c709a..ab778a6d62c228bb35f02cc15f8a40d03581c609 100644
 --- a/apps/desktop/scripts/package-target.ts
 +++ b/apps/desktop/scripts/package-target.ts
 @@ -1,3 +1,4 @@
@@ -281,7 +281,7 @@ index a133ccdc..ab778a6d 100644
    rmSync(buildPaths.packedLandlock, { recursive: true, force: true })
    mkdirSync(buildPaths.packedLandlock, { recursive: true })
 diff --git a/apps/desktop/scripts/prepare-package-set.ts b/apps/desktop/scripts/prepare-package-set.ts
-index 7e7d62ee..22f36d3f 100644
+index 7e7d62eea289ae7f3beb7194a083e1aecae2a001..22f36d3f09c83ffeac45a91c3b6c2bf25d21e4c0 100644
 --- a/apps/desktop/scripts/prepare-package-set.ts
 +++ b/apps/desktop/scripts/prepare-package-set.ts
 @@ -26,6 +26,7 @@ import {
@@ -303,7 +303,7 @@ index 7e7d62ee..22f36d3f 100644
    }
 diff --git a/apps/desktop/tests/desktop-assembly.spec.ts b/apps/desktop/tests/desktop-assembly.spec.ts
 new file mode 100644
-index 00000000..972b451d
+index 0000000000000000000000000000000000000000..972b451db543807aae09450710379a86c47af1d2
 --- /dev/null
 +++ b/apps/desktop/tests/desktop-assembly.spec.ts
 @@ -0,0 +1,39 @@
@@ -347,7 +347,7 @@ index 00000000..972b451d
 +  expect(() => readDesktopAssembly(env)).toThrow('Invalid Desktop assembly resource')
 +})
 diff --git a/apps/desktop/tests/development-app.spec.ts b/apps/desktop/tests/development-app.spec.ts
-index 2f718b7b..1eea2ed6 100644
+index 2f718b7bc5feaebd4e655eb9a878aae6342babbb..1eea2ed64c7d63074016448c499721aa7a1a0bfa 100644
 --- a/apps/desktop/tests/development-app.spec.ts
 +++ b/apps/desktop/tests/development-app.spec.ts
 @@ -12,12 +12,15 @@ it.skipIf(process.platform === 'win32')('passes literal workspace paths and cold
@@ -370,7 +370,7 @@ index 2f718b7b..1eea2ed6 100644
      '--remote-debugging-port=9222', `--user-data-dir=${join(root, 'browser data')}`, root, '--test-launch-argument'])
  })
 diff --git a/apps/desktop/tests/package-target-stages.spec.ts b/apps/desktop/tests/package-target-stages.spec.ts
-index cde1b007..a66618de 100644
+index cde1b0079d99098cbd583073ef0becc2d6bee957..a66618ded84ca5d3f020ccb7ed04c7e4d025abc4 100644
 --- a/apps/desktop/tests/package-target-stages.spec.ts
 +++ b/apps/desktop/tests/package-target-stages.spec.ts
 @@ -176,6 +176,19 @@ it.each([undefined, '2'])('passes macOS pack concurrency %s only to workspace pa
@@ -394,7 +394,7 @@ index cde1b007..a66618de 100644
    const { run } = supervisor()
    await packageTarget(parseDesktopPackageInvocation(['mac-arm64', ...(directory ? ['--dir'] : [])], 'darwin', 'arm64'), {
 diff --git a/apps/desktop/tests/prepare-package-set.spec.ts b/apps/desktop/tests/prepare-package-set.spec.ts
-index 6db1ccbd..6d4e2d6a 100644
+index 6db1ccbd018bfba78fb6e58ff8d9968fe3220521..6d4e2d6ab67167617bb4f4e5f1f55b9f36d6aa2a 100644
 --- a/apps/desktop/tests/prepare-package-set.spec.ts
 +++ b/apps/desktop/tests/prepare-package-set.spec.ts
 @@ -78,6 +78,50 @@ describe('desktop package-set selection', () => {

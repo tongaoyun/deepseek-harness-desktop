@@ -65,7 +65,7 @@ export function completeDiff(root, baseline, paths) {
   try {
     run(['read-tree', baseline])
     run(['add', '-A', '--', ...paths])
-    return run(['diff', '--cached', '--binary', '--no-ext-diff', '--no-renames', baseline, '--', ...paths]).toString()
+    return run(['diff', '--cached', '--binary', '--full-index', '--no-ext-diff', '--no-renames', baseline, '--', ...paths]).toString()
   } finally {
     rmSync(directory, { recursive: true, force: true })
   }

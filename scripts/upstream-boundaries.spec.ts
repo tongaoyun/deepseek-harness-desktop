@@ -43,6 +43,17 @@ it('checks complete registered differences and rejects new, changed, and reverte
   expect(() =>{  verifyPatches(root, 'different', manifest) }).toThrow('baseline')
 })
 
+it('keeps patch identities stable across Git abbreviation settings and history sizes', () => {
+  const { root, baseline } = fixture()
+  const path = 'apps/host/src/index.ts'
+  writeFileSync(join(root, path), 'export const version = 2\n')
+  execFileSync('git', ['config', 'core.abbrev', '7'], { cwd: root })
+  const diff = completeDiff(root, baseline, [path])
+  expect(diff).toMatch(/index [a-f0-9]{40}\.\.[a-f0-9]{40} 100644/)
+  execFileSync('git', ['config', 'core.abbrev', '12'], { cwd: root })
+  expect(completeDiff(root, baseline, [path])).toBe(diff)
+})
+
 it('preserves patch context whitespace while rejecting whitespace in authored source', () => {
   const { root } = fixture()
   const git = (...args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' })
