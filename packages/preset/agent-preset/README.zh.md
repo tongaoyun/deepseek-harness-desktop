@@ -44,6 +44,9 @@ kind: "package-reference"
 | `name` | 未设置 | 展示名称 |
 | `description` | 未设置 | 展示说明 |
 | `order` | 未设置 | 列表排序 |
+| `selectable` | true | 在新会话选择器中提供此定义 |
+| `defaultable` | true | 允许将此定义保存为默认值 |
+| `selectionBase` | 未设置 | 隐藏派生组合展示的可选择基础模式 |
 
 声明行的 `id` 是 Loader 编辑地址；`config.id` 是会话保存的 preset 标识符。子插件可省略行 ID，由 Loader 分配。
 
@@ -93,5 +96,3 @@ kind: "package-reference"
 无。
 
 </details>
-
-**运行时不变量：** 不发布 companion；本插件仅提交由注册表管理的定义，没有可独立偏离的运行时状态。

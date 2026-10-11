@@ -1,0 +1,11 @@
+- region "E-commerce and retail":
+  - heading "E-commerce and retail 2" [level=2]
+  - list:
+    - listitem:
+      - button "Retail operations Operations team Investigate orders and inventory with your business data."
+      - text: 2 skills ·1 connectors ·v1.2.0
+      - button "Install expert kit"
+    - listitem:
+      - button "Customer success Sales team Prepare customer reviews and follow-up plans."
+      - text: Authorization required 1 skills ·1 connectors ·v1.0.0
+      - button "Install expert kit"

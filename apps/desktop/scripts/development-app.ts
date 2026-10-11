@@ -9,6 +9,9 @@ export interface DevelopmentAppOptions {
   readonly electron: string
   readonly appRoot: string
   readonly directory: string
+  readonly extensionEnvironment?: Readonly<Record<string, string>>
+  readonly applicationIcon?: string
+  readonly primaryRuntime: string
   readonly home: string
   readonly userData: string
   readonly mainPort: number
@@ -26,13 +29,13 @@ function quote(value: string): string { return `'${value.replaceAll("'", "'\\''"
  */
 export function prepareDevelopmentApp(options: DevelopmentAppOptions): string {
   const source = dirname(dirname(dirname(options.electron)))
-  const bundle = join(options.directory, 'DeepSeek Harness Dev.app')
-  const executable = join(bundle, 'Contents', 'MacOS', 'DeepSeekHarnessDev')
+  const bundle = join(options.directory, 'Harness Dev.app')
+  const executable = join(bundle, 'Contents', 'MacOS', 'HarnessDev')
   const stamp = join(bundle, 'Contents', 'Resources', 'dsh-development.json')
-  const iconSource = join(options.appRoot, 'resources', 'icon-macos.icns')
+  const iconSource = options.applicationIcon ?? join(source, 'Contents', 'Resources', 'electron.icns')
   if (!existsSync(iconSource)) throw new Error(`desktop development: missing application icon ${iconSource}`)
   const launcher = developmentLauncher(options, bundle)
-  const identity = JSON.stringify({ ...options, launcher,
+  const identity = JSON.stringify({ schemaVersion: 1, ...options, launcher,
     icon: createHash('sha256').update(readFileSync(iconSource)).digest('hex'),
     plist: readFileSync(join(source, 'Contents', 'Info.plist'), 'utf8'),
   })
@@ -42,10 +45,10 @@ export function prepareDevelopmentApp(options: DevelopmentAppOptions): string {
     copyFileSync(iconSource, join(bundle, 'Contents', 'Resources', 'electron.icns'))
     const plist = join(bundle, 'Contents', 'Info.plist')
     const values = {
-      CFBundleIdentifier: `com.instudio.deepseek-harness.dev.${createHash('sha256').update(options.appRoot).digest('hex').slice(0, 12)}`,
-      CFBundleName: 'DeepSeek Harness Dev',
-      CFBundleDisplayName: 'DeepSeek Harness Dev',
-      CFBundleExecutable: 'DeepSeekHarnessDev',
+      CFBundleIdentifier: `com.deepseek.harness.dev.${createHash('sha256').update(options.appRoot).digest('hex').slice(0, 12)}`,
+      CFBundleName: 'Harness Dev',
+      CFBundleDisplayName: 'Harness Dev',
+      CFBundleExecutable: 'HarnessDev',
       CFBundleURLTypes: [{ CFBundleURLName: 'DeepSeek Harness', CFBundleURLSchemes: ['dsh'], CFBundleTypeRole: 'Viewer' }],
     }
     for (const [key, value] of Object.entries(values)) {
@@ -68,7 +71,9 @@ export function prepareDevelopmentApp(options: DevelopmentAppOptions): string {
 export function developmentLauncher(options: DevelopmentAppOptions, bundle: string): string {
   const environment = {
     DSH_HOME: options.home,
+    ...options.extensionEnvironment,
     DSH_DESKTOP_DEV_APP: '1',
+    DSH_DESKTOP_PRIMARY_RUNTIME_DIR: options.primaryRuntime,
     DSH_DESKTOP_HOST_INSPECT_PORT: String(options.hostPort),
     DSH_DESKTOP_OPEN_DEVTOOLS: options.openDevtools,
     ELECTRON_ENABLE_LOGGING: '1',

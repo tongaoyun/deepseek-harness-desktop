@@ -26,10 +26,15 @@ const ROSTER_READY: AgentPresetSettingsState = {
   status: 'ready',
   error: null,
   options: [{ id: 'standard' }, { id: 'mine' }],
+  presets: [
+    { id: 'standard', isDefault: true, selectable: true, defaultable: true },
+    { id: 'mine', isDefault: false, selectable: true, defaultable: true },
+  ],
 }
 
 const SEAT_READY: AgentPresetSeatState = {
   current: 'standard',
+  currentUnavailable: false,
   options: [
     { id: 'standard' },
     { id: 'mine' },
@@ -57,7 +62,14 @@ function renderSeat(
 ) {
   const store = createSnapshotStore<AgentPresetSeatState>({ ...SEAT_READY, ...state })
   const developerTools = createSnapshotStore(enabled)
-  const actions = { load: vi.fn(() => Promise.resolve()), select: vi.fn(select), introduced: vi.fn() }
+  const actions = {
+    load: vi.fn(() => Promise.resolve()), select: vi.fn(select), introduced: vi.fn(),
+    dismissRefusal: vi.fn((error: AgentPresetSeatState['error']) => {
+      if (store.getSnapshot().error === error && error !== null && typeof error === 'object') {
+        store.set({ ...store.getSnapshot(), error: error.reason })
+      }
+    }),
+  }
   const props = {
     ...actions,
     sessionId: session === undefined ? undefined : SessionId(session.id),
@@ -69,7 +81,7 @@ function renderSeat(
     t: translate,
   } as AgentPresetSeatProps
   render(<AgentPresetSeat {...props} />)
-  return { ...actions, developerTools }
+  return { ...actions, developerTools, store }
 }
 
 function renderLabel(
@@ -79,6 +91,9 @@ function renderLabel(
   // The chip and the label read the same roster, metadata included.
   const store = createSnapshotStore<AgentPresetSettingsState>({
     ...ROSTER_READY, options: SEAT_READY.options, ...roster,
+    presets: roster.presets ?? (roster.options ?? SEAT_READY.options).map(option => ({
+      ...option, isDefault: false, selectable: true, defaultable: true,
+    })),
   })
   const sessions = createSnapshotStore({ byId: summary === undefined ? {} : { s1: summary } })
   const load = vi.fn(() => Promise.resolve())
@@ -89,14 +104,65 @@ function renderLabel(
     useAgentPresets: bindSnapshotSelector(store),
     t: (key: keyof typeof en) => en[key],
   } as unknown as AgentPresetLabelProps)} />)
-  return { load, view }
+  return { load, view, store, sessions }
 }
 
 describe('the new-session chip', () => {
-  it('renders nothing while Developer tools are off', () => {
-    renderSeat({}, undefined, undefined, false)
+  it('labels a blocked composition without exposing its identity or marking a base mode', () => {
+    renderSeat({ current: 'product-task-damaged', currentUnavailable: true })
 
-    expect(screen.queryByRole('button')).toBeNull()
+    expect(screen.getByRole('button').textContent).toContain(en.compositionUnavailable)
+    expect(screen.queryByText('product-task-damaged')).toBeNull()
+    fireEvent.click(screen.getByRole('button'))
+    expect(screen.queryByRole('menuitemradio', { checked: true })).toBeNull()
+  })
+
+  it.each([false, true])('offers Standard, Creator and custom presets with Developer tools %s', (enabled) => {
+    const actions = renderSeat({ options: [
+      { id: 'standard' }, { id: 'ptc' }, { id: 'minimal' }, { id: 'cordis' }, { id: 'mine' },
+    ] }, undefined, undefined, enabled)
+
+    fireEvent.click(screen.getByRole('button'))
+    expect(screen.getAllByRole('menuitem')).toHaveLength(enabled ? 5 : 3)
+    expect(screen.getByRole('menuitem', { name: /^Standard mode/ })).toBeTruthy()
+    expect(screen.getByRole('menuitem', { name: /^mine/ })).toBeTruthy()
+    expect(screen.queryByRole('menuitem', { name: /^PTC mode/ }) !== null).toBe(enabled)
+    expect(screen.queryByRole('menuitem', { name: /^Minimal mode/ }) !== null).toBe(enabled)
+    fireEvent.click(screen.getByRole('menuitem', { name: /^Creator mode/ }))
+    expect(actions.select).toHaveBeenCalledWith('cordis')
+  })
+
+  it('keeps a named custom preset that overrides a development preset id', () => {
+    renderSeat({ options: [{ id: 'ptc', name: 'My workflow' }] }, undefined, undefined, false)
+    fireEvent.click(screen.getByRole('button'))
+    expect(screen.getByRole('menuitem', { name: /^My workflow/ })).toBeTruthy()
+  })
+
+  it('keeps the current mode visible without opening a picker when all options are hidden', () => {
+    const actions = renderSeat({ current: 'minimal', options: [{ id: 'ptc' }, { id: 'minimal' }] }, undefined, undefined, false)
+    const trigger = screen.getByRole<HTMLButtonElement>('button', { name: en.presetMinimalName })
+    expect(trigger.disabled).toBe(true)
+    fireEvent.click(trigger)
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
+    expect(screen.queryByRole('menu')).toBeNull()
+    expect(actions.select).not.toHaveBeenCalled()
+  })
+
+  it('closes a picker when its last visible option disappears and keeps it closed when options return', () => {
+    const options = [{ id: 'minimal' }, { id: 'mine' }]
+    const actions = renderSeat({ current: 'minimal', options }, undefined, undefined, false)
+    const trigger = screen.getByRole<HTMLButtonElement>('button', { name: en.presetMinimalName })
+    fireEvent.click(trigger)
+    expect(screen.getByRole('menuitem', { name: /^mine/ })).toBeTruthy()
+    act(() => { actions.store.set({ ...actions.store.getSnapshot(), options: [{ id: 'ptc' }, { id: 'minimal' }] }) })
+    expect(trigger.disabled).toBe(true)
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
+    expect(screen.queryByRole('menu')).toBeNull()
+    act(() => { actions.store.set({ ...actions.store.getSnapshot(), options }) })
+    expect(trigger.disabled).toBe(false)
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
+    expect(screen.queryByRole('menu')).toBeNull()
+    expect(actions.select).not.toHaveBeenCalled()
   })
 
   it('renders only for a Session retained by the main view', () => {
@@ -137,7 +203,7 @@ describe('the new-session chip', () => {
     fireEvent.click(screen.getByRole('button'))
     expect(screen.getByText(en.presetStandardDescription)).toBeTruthy()
     act(() => { actions.developerTools.set(false) })
-    expect(screen.queryByRole('button')).toBeNull()
+    expect(screen.getByRole('button').getAttribute('aria-expanded')).toBe('false')
     expect(screen.queryByText(en.presetStandardDescription)).toBeNull()
     expect(actions.select).not.toHaveBeenCalled()
     act(() => { actions.developerTools.set(true) })
@@ -200,28 +266,34 @@ describe('the new-session chip', () => {
 })
 
 describe('a refused switch', () => {
-  it('announces the reason instead of letting the label snap back in silence', async () => {
+  it('announces delayed and repeated refusals even without a composed preset or Coding Tools', () => {
     // The banner's own timer has to be a fake one from the start, or the
     // lifetime assertion below would wait out its real nine seconds.
     vi.useFakeTimers({ shouldAdvanceTime: true })
     try {
       const reason = 'failed to import loader entry live-on-mac (@deepseek-ai/dsh-also-gone)'
-      renderSeat({}, () => Promise.resolve(reason))
-
-      fireEvent.click(screen.getByRole('button'))
-      fireEvent.click(screen.getByRole('menuitem', { name: /mine/ }))
+      const actions = renderSeat({ current: '' }, undefined, undefined, false)
+      const refusal = { preset: { id: 'cordis' }, reason }
+      act(() => { actions.store.set({ ...actions.store.getSnapshot(), error: refusal }) })
 
       // The host refuses a mount discovery reported healthy, so this banner is
       // the only place the cause appears — the chip has already reverted and
       // the settings row shows the preset as fine.
-      const banner = await screen.findByRole('alert')
+      const banner = screen.getByRole('alert')
       expect(banner.textContent).toContain(reason)
-      expect(banner.textContent).toContain('mine')
+      expect(banner.textContent).toContain(en.presetCordisName)
+      expect(screen.queryByRole('button')).toBeNull()
+
+      act(() => { vi.advanceTimersByTime(7000) })
+      act(() => { actions.store.set({ ...actions.store.getSnapshot(), error: { ...refusal } }) })
+      act(() => { vi.advanceTimersByTime(2001) })
+      expect(screen.getByRole('alert').textContent).toContain(reason)
 
       // Transient by design: it holds long enough to read a cause that names
       // packages, then leaves rather than sitting over the screen.
       act(() => { vi.advanceTimersByTime(9001) })
       expect(screen.queryByRole('alert')).toBeNull()
+      expect(actions.dismissRefusal).toHaveBeenCalledOnce()
     } finally {
       vi.useRealTimers()
     }
@@ -327,6 +399,87 @@ describe('the chip introduce cue', () => {
 })
 
 describe('the session-header label', () => {
+  it.each(['loading', 'error'] as const)('hides an unknown snapshot identity while the roster is %s', (status) => {
+    renderLabel({ blank: false, projectionValues: { agentPreset: 'product-task-new' } }, {
+      status, presets: [], options: [], error: status === 'error' ? 'Disconnected' : null,
+    })
+
+    expect(screen.getByTitle(en.headerHint).textContent).toBe(en.compositionUnavailable)
+    expect(screen.queryByText('product-task-new')).toBeNull()
+  })
+
+  it('hides a newly selected snapshot identity when its roster lookup fails', async () => {
+    const { load, sessions, store } = renderLabel({ blank: false, projectionValues: { agentPreset: 'standard' } })
+    await waitFor(() => { expect(load).toHaveBeenCalledTimes(1) })
+    await act(async () => {
+      sessions.set({ byId: { s1: { blank: false, projectionValues: { agentPreset: 'product-task-new' } } } })
+    })
+    await waitFor(() => { expect(load).toHaveBeenCalledTimes(2) })
+    await act(async () => { store.set({ ...store.getSnapshot(), status: 'error', error: 'Disconnected' }) })
+
+    expect(screen.getByTitle(en.headerHint).textContent).toBe(en.compositionUnavailable)
+    expect(screen.queryByText('product-task-new')).toBeNull()
+  })
+
+  it('shows a broken snapshot with a missing base as unavailable', () => {
+    renderLabel({ blank: false, projectionValues: { agentPreset: 'product-task-broken' } }, {
+      presets: [...ROSTER_READY.presets, {
+        id: 'product-task-broken', selectionBase: 'removed-mode', broken: 'Selection base is missing',
+        isDefault: false, selectable: false, defaultable: false,
+      }],
+    })
+
+    expect(screen.getByTitle(en.headerHint).textContent).toBe(en.compositionUnavailable)
+    expect(screen.queryByText('product-task-broken')).toBeNull()
+    expect(screen.queryByText('removed-mode')).toBeNull()
+  })
+
+  it('refreshes a newly selected composition after an older roster read settles', async () => {
+    const { load, store } = renderLabel({ blank: false, projectionValues: { agentPreset: 'new-snapshot' } }, {
+      status: 'loading',
+    })
+    expect(load).not.toHaveBeenCalled()
+    await act(async () => {
+      store.set({ ...store.getSnapshot(), status: 'ready' })
+    })
+    expect(load).toHaveBeenCalledTimes(1)
+    await act(async () => {
+      store.set({ ...store.getSnapshot(), presets: [
+        ...ROSTER_READY.presets,
+        { id: 'new-snapshot', isDefault: false, selectable: false, defaultable: false, selectionBase: 'standard' },
+      ] })
+    })
+
+    expect(screen.getByTitle(en.presetStandardDescription).textContent).toBe(en.presetStandardName)
+    expect(load).toHaveBeenCalledTimes(1)
+  })
+
+  it('labels an unnamed hidden composition as unavailable without choosing a base', () => {
+    renderLabel({ blank: false, projectionValues: { agentPreset: 'product-task-damaged' } }, {
+      presets: [
+        ...ROSTER_READY.presets,
+        { id: 'product-task-damaged', isDefault: false, selectable: false, defaultable: false },
+      ],
+    })
+
+    expect(screen.getByTitle(en.headerHint).textContent).toBe(en.compositionUnavailable)
+    expect(screen.queryByText('product-task-damaged')).toBeNull()
+    expect(screen.queryByText(en.presetStandardName)).toBeNull()
+  })
+
+  it('shows the selectable base of a hidden execution snapshot', () => {
+    renderLabel({ blank: false, projectionValues: { agentPreset: 'product-task-fixed' } }, {
+      presets: [
+        ...ROSTER_READY.presets,
+        { id: 'product-task-fixed', isDefault: false, selectable: false, defaultable: false, selectionBase: 'standard' },
+      ],
+    })
+
+    expect(screen.getByTitle(en.presetStandardDescription).textContent).toBe(en.presetStandardName)
+    expect(screen.queryByText('product-task-fixed')).toBeNull()
+    expect(screen.queryByRole('button')).toBeNull()
+  })
+
   it('names the preset the session runs, and never offers a switch', async () => {
     const { load } = renderLabel({
       blank: false,
@@ -345,15 +498,14 @@ describe('the session-header label', () => {
     expect(screen.getByTitle(en.headerHint).textContent).toBe('mine')
   })
 
-  it('shows the id until the roster resolves it', () => {
+  it('shows an unavailable label until the roster resolves the recorded identity', () => {
     renderLabel({
       blank: false,
       projectionValues: { agentPreset: 'standard' },
     }, { options: [] })
 
-    // The session's own summary is the authority on which preset it runs; the
-    // roster only supplies the display name, and its arrival is a later frame.
-    expect(screen.getByTitle(en.headerHint).textContent).toBe('standard')
+    expect(screen.getByTitle(en.headerHint).textContent).toBe(en.compositionUnavailable)
+    expect(screen.queryByText('standard')).toBeNull()
   })
 
   it('renders nothing, and reads no roster, when the session records no preset', async () => {

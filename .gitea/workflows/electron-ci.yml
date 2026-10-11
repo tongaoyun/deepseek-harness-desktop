@@ -51,8 +51,9 @@ jobs:
           pnpm run build:lib:host
           pnpm run typecheck:contracts-ready
           pnpm exec vitest run \
-            apps/desktop-host/tests/deepseek-harness-connector-contract.spec.ts \
-            apps/desktop-host/tests/deepseek-harness-runtime.spec.ts \
+            scripts/upstream-boundaries.spec.ts \
+            packages/deepseek-harness-product/runtime/tests/deepseek-harness-connector-contract.spec.ts \
+            packages/deepseek-harness-product/runtime/tests/deepseek-harness-runtime.spec.ts \
             apps/desktop/tests/command-management.spec.ts \
             apps/desktop/tests/crash-report.spec.ts \
             apps/desktop/tests/fatal-recovery.spec.ts \

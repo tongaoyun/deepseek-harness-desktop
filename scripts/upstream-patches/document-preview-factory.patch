@@ -1,0 +1,1048 @@
+diff --git a/packages/client/ui-sidebar-documentpreview/README.i18n.yaml b/packages/client/ui-sidebar-documentpreview/README.i18n.yaml
+index 6a35e6a8d73a7efecc4326c49f53d9487a2b6cb5..15e232a26eb9192f972f220264ba0dbd61f546c6 100644
+--- a/packages/client/ui-sidebar-documentpreview/README.i18n.yaml
++++ b/packages/client/ui-sidebar-documentpreview/README.i18n.yaml
+@@ -12,11 +12,14 @@
+   en: a74c16667d0baada
+   zh: 4fd709ff9f98b84f
+ /deepseek-ai-dsh-client-ui-sidebar-documentpreview/table-of-contents:
+-  en: 0dd8c3a22e28aacf
+-  zh: c27c11bf4b5cceba
++  en: 47d94332257b6784
++  zh: f6f44bf5659c997a
+ /deepseek-ai-dsh-client-ui-sidebar-documentpreview/what-it-registers:
+-  en: a8eaf01a3a3390ee
+-  zh: ddea36dbcc4a0159
++  en: fb8a57b5c19cd873
++  zh: 5d96f83753db2a74
++/deepseek-ai-dsh-client-ui-sidebar-documentpreview/reusable-preview:
++  en: b3b861a227e133a0
++  zh: 925c87500df360ec
+ /deepseek-ai-dsh-client-ui-sidebar-documentpreview/addresses:
+   en: 949156aa02ec8b07
+   zh: d3675754e2a37b5d
+diff --git a/packages/client/ui-sidebar-documentpreview/README.md b/packages/client/ui-sidebar-documentpreview/README.md
+index 588a95a7e090fa4f71098872aedce1fc0242e56b..e4e50c66935a0a8168a02560c4ef3f4709fe4a4d 100644
+--- a/packages/client/ui-sidebar-documentpreview/README.md
++++ b/packages/client/ui-sidebar-documentpreview/README.md
+@@ -14,6 +14,7 @@ Preview files in the right Sidebar and choose among registered renderers. Markdo
+ ## Table of Contents
+ 
+ - [What it registers](#what-it-registers)
++- [Reusable preview](#reusable-preview)
+ - [Addresses](#addresses)
+ - [How it reads](#how-it-reads)
+ - [Excel preview](#excel-preview)
+@@ -36,6 +37,13 @@ Document implementations register metadata with `ctx.documentPreviews.register({
+ 
+ `loading: 'text-pages'` and `'bytes-complete'` use the shared file reader. With `'renderer'`, the selected body mounts before any bytes are read and receives `content: { kind: 'renderer', revision, loaded, failed, reload }`. Its injected face owns content loading, errors, store updates, and cancellation. `loaded(version)` records the displayed source version and ends loading. `failed()` ends loading without recording a successful version, allowing a later file change to retry; reports from replaced revisions are ignored. `reload()` increments the revision, which the body observes to cancel and replace its request. The body also cancels on unmount and tab closure, retains settled content in its declared tab store, and releases that state when the tab ends. [Office previews](#office-preview) use this mode without putting converted bytes or font metadata in the shared file store.
+ 
++<a id="reusable-preview"></a>
++## Reusable preview
++
++Unrelated UI parents render the root-scoped `document.preview` Factory through `renderFactorySlot('document.preview', { fileName, read, renderOffice?, revision?, failureText? })`. No Session or Sidebar tab is required. `read(signal)` returns `{ data: Uint8Array<ArrayBuffer>, mediaType? }`; the source owner enforces authorization and complete-file size limits on every read. For Word and PowerPoint suffixes, the Factory calls `renderOffice(signal)` instead of `read`, allowing an authorized provider to defer reading until admission to the shared [Office converter](../../document/office-to-pdf/README.md). Its result contains PDF bytes and optional `missingFonts`. Changing the filename, reader, conversion callback, or revision aborts the old operation and clears its bytes; closing the occurrence or unloading the plugin also cancels it. A failed replacement never keeps old contents visible. The default error is fixed localized copy; `failureText(error)` may return a source-specific public explanation.
++
++The Factory selects implementations from the same `documentPreviews` registry and reuses the native PDF, Excel, image, Markdown, code, plain-text, and sanitized static HTML renderers. Extensions that serve both entry points register a root-scoped `document.preview.body` under their registry id in addition to the Sidebar body. Its inputs are `fileName`, `content`, `signal`, `wrap`, and `scrollportRef`, without Session or file-resource hooks. Source text is decoded as complete UTF-8 and invalid or NUL-containing text is rejected. HTML never executes scripts or reads related files, and Markdown has no local file resolver. Viewing preferences live only in the mounted occurrence; the source owner supplies refresh and does not persist bytes in Session history.
++
+ <a id="addresses"></a>
+ ## Addresses
+ 
+diff --git a/packages/client/ui-sidebar-documentpreview/README.zh.md b/packages/client/ui-sidebar-documentpreview/README.zh.md
+index 89d90091f53ef963b22d7c33a976484468e3ee41..c22b4feebfd58fcab6dbd216f0ff7c030a928e3f 100644
+--- a/packages/client/ui-sidebar-documentpreview/README.zh.md
++++ b/packages/client/ui-sidebar-documentpreview/README.zh.md
+@@ -14,6 +14,7 @@ kind: "package-reference"
+ ## 目录
+ 
+ - [注册了什么](#what-it-registers)
++- [复用预览](#reusable-preview)
+ - [地址](#addresses)
+ - [怎么读](#how-it-reads)
+ - [Excel 预览](#excel-preview)
+@@ -36,6 +37,13 @@ kind: "package-reference"
+ 
+ `loading: 'text-pages'` 和 `'bytes-complete'` 使用共享文件读取器。选择 `'renderer'` 时，所选正文在读取任何字节前挂载，并接收 `content: { kind: 'renderer', revision, loaded, failed, reload }`。其注入 face 负责内容加载、错误、store 更新和取消。`loaded(version)` 记录已展示的源版本并结束加载。`failed()` 结束加载但不记录成功版本，使后续文件变化可以重试；已被替换的 revision 所发出的报告会被忽略。`reload()` 增加 revision，正文据此取消并替换当前请求。正文也在卸载和 tab 关闭时取消请求，将已完成内容保留在自己声明的 tab store 中，并在 tab 结束时释放。[Office 预览](#office-preview) 使用此模式，转换后的字节和字体元数据不会进入共享文件 store。
+ 
++<a id="reusable-preview"></a>
++## 复用预览
++
++不同 UI 父组件通过 `renderFactorySlot('document.preview', { fileName, read, renderOffice?, revision?, failureText? })` 渲染 root 作用域的 `document.preview` Factory，无需 Session 或 Sidebar tab。`read(signal)` 返回 `{ data: Uint8Array<ArrayBuffer>, mediaType? }`；来源 owner 在每次读取时检查权限及完整文件大小。Word 和 PowerPoint 后缀调用 `renderOffice(signal)`，不会先调用 `read`，使已鉴权提供方可以等共享 [Office 转换器](../../document/office-to-pdf/README.zh.md) 接纳后再读取源文件。其结果包含 PDF 字节和可选的 `missingFonts`。文件名、读取回调、转换回调或 revision 改变时，中止旧操作并清除其字节；关闭实例或卸载插件也会取消。替换读取失败时不会继续展示旧内容。默认错误使用固定本地化文案；`failureText(error)` 可返回来源专用的公开说明。
++
++Factory 从同一个 `documentPreviews` 注册表选择实现，并复用原生 PDF、Excel、图片、Markdown、代码、纯文本和经过清理的静态 HTML 渲染器。支持两种入口的扩展在 Sidebar 正文之外，以注册表 id 注册 root 作用域的 `document.preview.body`。其输入为 `fileName`、`content`、`signal`、`wrap` 和 `scrollportRef`，不提供 Session 或文件资源钩子。源码文本按完整 UTF-8 解码，拒绝无效编码和含 NUL 的内容。HTML 不执行脚本或读取关联文件，Markdown 不使用本地文件解析器。视图偏好只保留在挂载实例中；来源 owner 提供刷新操作，不把字节写入 Session 历史。
++
+ <a id="addresses"></a>
+ ## 地址
+ 
+diff --git a/packages/client/ui-sidebar-documentpreview/src/client/code/CodeBody.tsx b/packages/client/ui-sidebar-documentpreview/src/client/code/CodeBody.tsx
+index 898c0eb596a1bee780d088e6ccfa42928a2ae7b5..29a3e26c8ed30b57b02f6f47364d2aa6e51dd5ca 100644
+--- a/packages/client/ui-sidebar-documentpreview/src/client/code/CodeBody.tsx
++++ b/packages/client/ui-sidebar-documentpreview/src/client/code/CodeBody.tsx
+@@ -15,7 +15,13 @@ export function CodeBody({ resourceAddress, content, wrap, scrollportRef, t }: C
+   if (content.kind !== 'text') return null
+   const file = parseFileAddress(resourceAddress)
+   if (file === undefined) throw new Error(`ui-sidebar-documentpreview: not a file address "${resourceAddress}"`)
+-  const language = languageForPath(file.path)
++  return <CodeDocumentView fileName={file.path} content={content} wrap={wrap} scrollportRef={scrollportRef} t={t} />
++}
++
++/** @param props - named source content and wrap controls. @returns the shared source viewer. */
++export function CodeDocumentView({ fileName, content, wrap, scrollportRef, t }: Pick<CodeBodyProps, 'content' | 'wrap' | 'scrollportRef' | 't'> & { readonly fileName: string }): ReactNode {
++  if (content.kind !== 'text') return null
++  const language = languageForPath(fileName)
+   return (
+     <div className={css.renderer} data-code-preview data-wrap={wrap}>
+       <CodeBlock
+diff --git a/packages/client/ui-sidebar-documentpreview/src/client/document/DocumentPreviewSurface.module.css b/packages/client/ui-sidebar-documentpreview/src/client/document/DocumentPreviewSurface.module.css
+new file mode 100644
+index 0000000000000000000000000000000000000000..ddda4a226bc2c4bc4c61ecc55eb1b106beefb5e4
+--- /dev/null
++++ b/packages/client/ui-sidebar-documentpreview/src/client/document/DocumentPreviewSurface.module.css
+@@ -0,0 +1,68 @@
++.surface {
++  display: flex;
++  flex-direction: column;
++  width: 100%;
++  height: 100%;
++  min-width: 0;
++  min-height: 0;
++}
++
++.toolbar {
++  display: flex;
++  justify-content: flex-end;
++  align-items: center;
++  gap: 6px;
++  flex: none;
++  padding: 4px 12px;
++  border-bottom: 1px solid var(--dsw-alias-border-l3);
++}
++
++.tool {
++  display: inline-flex;
++  align-items: center;
++  justify-content: center;
++  min-width: 28px;
++  height: 28px;
++  padding: 0 6px;
++  border: 0;
++  border-radius: 4px;
++  background: transparent;
++  color: var(--dsw-alias-label-secondary);
++  cursor: pointer;
++}
++
++.tool:hover {
++  background: var(--dsw-alias-bg-hover);
++}
++
++.body {
++  flex: 1;
++  min-width: 0;
++  min-height: 0;
++  overflow: auto;
++  white-space: pre;
++}
++
++.body.wrap {
++  white-space: pre-wrap;
++  overflow-wrap: anywhere;
++}
++
++.body:has([data-code-preview]) {
++  display: flex;
++  flex-direction: column;
++  overflow: hidden;
++}
++
++.body:has([data-pdf-preview]) {
++  background: var(--dsw-alias-bg-document-preview);
++}
++
++.status {
++  display: flex;
++  align-items: center;
++  justify-content: center;
++  gap: 12px;
++  padding: 24px;
++  color: var(--dsw-alias-label-secondary);
++}
+diff --git a/packages/client/ui-sidebar-documentpreview/src/client/document/DocumentPreviewSurface.tsx b/packages/client/ui-sidebar-documentpreview/src/client/document/DocumentPreviewSurface.tsx
+new file mode 100644
+index 0000000000000000000000000000000000000000..744afb09aef7e2e500fcd8b2189784038a58c651
+--- /dev/null
++++ b/packages/client/ui-sidebar-documentpreview/src/client/document/DocumentPreviewSurface.tsx
+@@ -0,0 +1,95 @@
++/** Source loading and renderer choice for independently mounted byte previews. */
++import { useEffect, useMemo, useState, type ReactNode } from 'react'
++import clsx from 'clsx'
++import { Button, Menu, IconWrapFillRegular, IconNowrapFillRegular } from '@deepseek-ai/dsh-client-ui-primitives'
++import { LoadingIndicator } from '../LoadingIndicator.tsx'
++import { PLAIN_BODY_ID } from '../text/index.ts'
++import { binaryDocumentPath, matchingDocumentPreviews } from './registry.ts'
++import { unviewableBinaryPath } from './unviewable.ts'
++import type { DocumentContent } from './contract.ts'
++import type { DocumentPreviewFile, DocumentPreviewSurfaceProps } from './surface-contract.ts'
++import css from './DocumentPreviewSurface.module.css'
++
++type Loaded = { readonly fileName: string; readonly read: DocumentPreviewSurfaceProps['read']; readonly renderOffice: DocumentPreviewSurfaceProps['renderOffice']; readonly revision: DocumentPreviewSurfaceProps['revision']; readonly attempt: number; readonly signal: AbortSignal } & (
++  | { readonly file: DocumentPreviewFile }
++  | { readonly error: unknown }
++)
++
++const ownsScrollport = (): void => {}
++
++/** @param props - authorized source readers and framework renderer seats. @returns the original-file preview. */
++export function DocumentPreviewSurface({
++  fileName, read, renderOffice, revision, failureText, t, useDocumentPreviews, renderSlot,
++}: DocumentPreviewSurfaceProps): ReactNode {
++  const definitions = useDocumentPreviews(value => value)
++  const candidates = useMemo(() => {
++    const matching = matchingDocumentPreviews(definitions, fileName)
++    if (binaryDocumentPath(definitions, fileName) || (matching.length === 0 && unviewableBinaryPath(fileName))) return matching
++    const fallback = definitions.find(definition => definition.id === PLAIN_BODY_ID)
++    return fallback === undefined ? matching : [...matching, fallback]
++  }, [definitions, fileName])
++  const [rendererId, setRendererId] = useState<string>()
++  const selected = candidates.find(candidate => candidate.id === rendererId) ?? candidates[0]
++  const [menuOpen, setMenuOpen] = useState(false)
++  const [wrap, setWrap] = useState(true)
++  const [attempt, setAttempt] = useState(0)
++  const [loaded, setLoaded] = useState<Loaded>()
++  const office = /\.(?:docx?|pptx?)$/iu.test(fileName)
++  useEffect(() => {
++    if (selected === undefined) return
++    const controller = new AbortController()
++    const source = { fileName, read, renderOffice, revision, attempt, signal: controller.signal }
++    setLoaded(undefined)
++    void (async () => {
++      try {
++        const reader = office ? renderOffice : read
++        if (reader === undefined) throw new Error('Office preview requires an authorized converter.')
++        const file = await reader(controller.signal)
++        if (!controller.signal.aborted) setLoaded({ ...source, file })
++      } catch (error: unknown) {
++        if (!controller.signal.aborted) setLoaded({ ...source, error })
++      }
++    })()
++    return () => { controller.abort() }
++  }, [fileName, read, renderOffice, revision, attempt, office, selected !== undefined])
++  const current = loaded !== undefined && loaded.fileName === fileName && loaded.read === read
++    && loaded.renderOffice === renderOffice && loaded.revision === revision && loaded.attempt === attempt
++    ? loaded : undefined
++  const content = useMemo((): DocumentContent | undefined => {
++    if (current === undefined || !('file' in current) || selected === undefined) return undefined
++    if (selected.loading !== 'text-pages') return { kind: 'bytes', data: current.file.data }
++    try {
++      const text = new TextDecoder('utf-8', { fatal: true }).decode(current.file.data)
++      if (text.includes('\0')) return undefined
++      return { kind: 'text', text, pages: [{ offset: 1, text, lines: text === '' ? 0 : text.split('\n').length }], eof: true }
++    } catch {
++      // Invalid text never falls back to replacement characters or binary source rendering.
++      return undefined
++    }
++  }, [current, selected])
++  if (selected === undefined) return <div className={css.status} role="alert">{t('unsupportedFile')}</div>
++  if (current === undefined) return <LoadingIndicator label={t('loading')} />
++  if ('error' in current) return <div className={css.status} role="alert" data-document-preview-failed>
++    <span>{failureText === undefined ? t('readFailed') : failureText(current.error)}</span>
++    <Button size="sm" onClick={() => { setAttempt(value => value + 1) }}>{t('retry')}</Button>
++  </div>
++  if (content === undefined) return <div className={css.status} role="alert">{t('unsupportedFile')}</div>
++  return <section className={css.surface} data-document-preview-surface data-document-preview={selected.id}>
++    {(candidates.length > 1 || selected.wrap === true || (current.file.missingFonts?.length ?? 0) > 0) && <div className={css.toolbar}>
++      {renderSlot('document.preview.fonts', { fonts: current.file.missingFonts ?? [] })}
++      {candidates.length > 1 && <Menu open={menuOpen} anchor={
++        <button type="button" className={css.tool} aria-label={t('openWith')} onClick={() => { setMenuOpen(value => !value) }}>{selected.title()}</button>
++      } items={candidates.map(candidate => ({ id: candidate.id, label: candidate.title() }))} selectedId={selected.id}
++      onSelect={(id) => { setRendererId(id); setMenuOpen(false) }} onClose={() => { setMenuOpen(false) }} align="end" />}
++      {selected.wrap === true && <button type="button" className={css.tool} aria-label={t('wrap.aria')}
++        title={t(wrap ? 'wrap.disable' : 'wrap.enable')} aria-pressed={wrap} onClick={() => { setWrap(value => !value) }}>
++        {wrap ? <IconNowrapFillRegular size={16} /> : <IconWrapFillRegular size={16} />}
++      </button>}
++    </div>}
++    <div className={clsx(css.body, wrap && css.wrap)} data-document-preview-surface-body>
++      {renderSlot('document.preview.body', { fileName, content, signal: current.signal, wrap, scrollportRef: ownsScrollport }, {
++        entryKey: selected.id, fallback: <div className={css.status} role="alert">{t('rendererUnavailable', { name: selected.title() })}</div>,
++      })}
++    </div>
++  </section>
++}
+diff --git a/packages/client/ui-sidebar-documentpreview/src/client/document/surface-bodies.tsx b/packages/client/ui-sidebar-documentpreview/src/client/document/surface-bodies.tsx
+new file mode 100644
+index 0000000000000000000000000000000000000000..4ca68fe5495846d1f172643eccd4665fc3e72305
+--- /dev/null
++++ b/packages/client/ui-sidebar-documentpreview/src/client/document/surface-bodies.tsx
+@@ -0,0 +1,70 @@
++/** Session-free adapters reuse the Sidebar's native document renderers. */
++import { lazy, Suspense, useCallback, useState, type ReactNode } from 'react'
++import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
++import { LoadingIndicator } from '../LoadingIndicator.tsx'
++import { ImageDocumentView } from '../image/ImageBody.tsx'
++import { MarkdownDocumentView } from '../markdown/MarkdownBody.tsx'
++import { TextDocumentView } from '../text/TextBody.tsx'
++import { CodeDocumentView } from '../code/CodeBody.tsx'
++import { BasicHtmlFrame } from '../html/HtmlBody.tsx'
++import { ZoomViewport, zoomSurfaceClass } from '../zoom/ZoomViewport.tsx'
++import { FIT_WIDTH, type ZoomPreference } from '../zoom/types.ts'
++import { excelFormat } from '../excel/format.ts'
++import type { ExcelLimits } from '../excel/model.ts'
++import type { PdfView } from '../pdf/store.ts'
++import type { DocumentPreviewSurfaceBodyProps } from './surface-contract.ts'
++
++const PdfDocumentView = lazy(async () => ({ default: (await import('../pdf/pdf.tsx')).PdfDocumentView }))
++const ExcelBody = lazy(async () => ({ default: (await import('../excel/excel.tsx')).ExcelBody }))
++
++/** @param props - authorized complete PDF bytes and locale. @returns the ordinary native PDF viewer. */
++export function SurfacePdf(props: DocumentPreviewSurfaceBodyProps & PropsLocale<'sidebarPdf'>): ReactNode {
++  const [view, setView] = useState<PdfView>({ page: 1 })
++  const onPage = useCallback((page: number): void => { setView(current => ({ ...current, page })) }, [])
++  const onZoom = useCallback((zoom: ZoomPreference): void => { setView(current => ({ ...current, zoom })) }, [])
++  const loading = <LoadingIndicator label={props.t('loading')} />
++  return <Suspense fallback={loading}>
++    <PdfDocumentView data={props.content.kind === 'bytes' ? props.content.data : undefined}
++      signal={props.signal} view={view} onPage={onPage} onZoom={onZoom} scrollportRef={props.scrollportRef}
++      ZoomViewport={ZoomViewport} zoomSurfaceClass={zoomSurfaceClass} t={props.t} loading={loading} />
++  </Suspense>
++}
++
++/** @param props - authorized spreadsheet bytes and configured parser limits. @returns the ordinary read-only workbook. */
++export function SurfaceExcel(props: DocumentPreviewSurfaceBodyProps & PropsLocale<'sidebarExcel'> & { readonly limits: ExcelLimits }): ReactNode {
++  const loading = <LoadingIndicator label={props.t('loading')} />
++  return <Suspense fallback={loading}>
++    <ExcelBody content={props.content} format={excelFormat(props.fileName)} limits={props.limits}
++      signal={props.signal} t={props.t} loading={loading} />
++  </Suspense>
++}
++
++/** @param props - authorized complete image bytes and locale. @returns the ordinary image viewer. */
++export function SurfaceImage(props: DocumentPreviewSurfaceBodyProps & PropsLocale<'sidebarImage'>): ReactNode {
++  const [preference, setPreference] = useState<ZoomPreference>(FIT_WIDTH)
++  return <ImageDocumentView data={props.content.kind === 'bytes' ? props.content.data : undefined}
++    path={props.fileName} preference={preference} onPreference={setPreference} signal={props.signal}
++    scrollportRef={props.scrollportRef} t={props.t} />
++}
++
++/** @param props - complete decoded source and locale. @returns the ordinary Markdown renderer without unauthorized related-file reads. */
++export function SurfaceMarkdown(props: DocumentPreviewSurfaceBodyProps & PropsLocale<'documentMarkdown'>): ReactNode {
++  return <MarkdownDocumentView content={props.content} t={props.t} />
++}
++
++/** @param props - complete decoded source. @returns the ordinary plain-text renderer. */
++export function SurfaceText(props: DocumentPreviewSurfaceBodyProps): ReactNode {
++  return <TextDocumentView content={props.content} />
++}
++
++/** @param props - complete decoded source and locale. @returns the ordinary highlighted source renderer. */
++export function SurfaceCode(props: DocumentPreviewSurfaceBodyProps & PropsLocale<'sidebarCodePreview'>): ReactNode {
++  return <CodeDocumentView fileName={props.fileName} content={props.content} wrap={props.wrap}
++    scrollportRef={props.scrollportRef} t={props.t} />
++}
++
++/** @param props - complete authorized HTML bytes and locale. @returns the ordinary sanitized static HTML frame. */
++export function SurfaceHtml(props: DocumentPreviewSurfaceBodyProps & PropsLocale<'documentHtml'>): ReactNode {
++  if (props.content.kind !== 'bytes') return null
++  return <BasicHtmlFrame data={props.content.data} frameName="dsh-document-preview" t={props.t} />
++}
+diff --git a/packages/client/ui-sidebar-documentpreview/src/client/document/surface-contract.ts b/packages/client/ui-sidebar-documentpreview/src/client/document/surface-contract.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..1c1f53b4dedd84749172c1eece259cb91917c24e
+--- /dev/null
++++ b/packages/client/ui-sidebar-documentpreview/src/client/document/surface-contract.ts
+@@ -0,0 +1,65 @@
++/** Reusable previews for authorized bytes from sources outside Session files. */
++import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
++import type { FactoryComponentPropsOf, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
++import type { RefCallback } from 'react'
++import type { DocumentContent } from './contract.ts'
++import type { DocumentPreviewDefinition } from './registry.ts'
++
++/** Transient bytes borrowed read-only by the document viewer. */
++export interface DocumentPreviewFile {
++  readonly data: Uint8Array<ArrayBuffer>
++  readonly mediaType?: string
++  readonly missingFonts?: readonly string[]
++}
++
++/** Authorized source read; its owner checks current access on every invocation. */
++export type DocumentPreviewSource = (signal: AbortSignal) => Promise<DocumentPreviewFile>
++
++/** Inputs to one independently mounted, Session-free preview occurrence. */
++export interface DocumentPreviewInput {
++  readonly fileName: string
++  readonly read: DocumentPreviewSource
++  /** Office conversion reads its source after converter admission; ordinary reads are not called first. */
++  readonly renderOffice?: DocumentPreviewSource
++  /** Changing the revision rechecks access and discards the previous content. */
++  readonly revision?: string | number
++  /** Return localized public copy; the default never exposes a thrown message. */
++  readonly failureText?: (error: unknown) => string
++}
++
++/** Transient content supplied to a reusable document implementation. */
++export interface DocumentPreviewSurfaceOwner {
++  readonly fileName: string
++  readonly content: DocumentContent
++  readonly signal: AbortSignal
++  readonly wrap: boolean
++  readonly scrollportRef: RefCallback<HTMLElement>
++}
++
++declare module '@deepseek-ai/dsh-client-ui-slots' {
++  interface SlotFactoryMap {
++    /** Independent document viewer for non-Session sources, with cancellable authorized reads. */
++    'document.preview': {
++      scope: 'root'
++      props: DocumentPreviewInput
++      locale: 'sidebarDocumentPreview'
++      children: {
++        'document.preview.body': { kind: 'keyed'; scope: 'root' }
++        'document.preview.fonts': { kind: 'list'; scope: 'root' }
++      }
++      inject: { hooks: { documentPreviews: ObservableSnapshot<readonly DocumentPreviewDefinition[]> } }
++    }
++  }
++  interface SlotMap {
++    /** Implementations use the same registry ids as the ordinary Sidebar preview. */
++    'document.preview.body': { kind: 'keyed'; scope: 'root'; owner: DocumentPreviewSurfaceOwner }
++    /** Missing-font details from an authorized Office conversion. */
++    'document.preview.fonts': { kind: 'list'; scope: 'root'; owner: { readonly fonts: readonly string[] } }
++  }
++}
++
++/** Framework-derived input for the reusable viewer. */
++export type DocumentPreviewSurfaceProps = FactoryComponentPropsOf<'document.preview'>
++
++/** Framework-derived input for a reusable document body. */
++export type DocumentPreviewSurfaceBodyProps = PropsRuntime<'document.preview.body'>
+diff --git a/packages/client/ui-sidebar-documentpreview/src/client/document/surface.ts b/packages/client/ui-sidebar-documentpreview/src/client/document/surface.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..01ae3e723d88aa1bb2af9a0740b3dfed8893f8ae
+--- /dev/null
++++ b/packages/client/ui-sidebar-documentpreview/src/client/document/surface.ts
+@@ -0,0 +1,39 @@
++/** Reversible reusable preview assembly independent of Session and Sidebar ownership. */
++import type { Context } from '@deepseek-ai/cordis'
++import type { Config } from '../../config.ts'
++import { DocumentPreviewSurface } from './DocumentPreviewSurface.tsx'
++import { SurfaceCode, SurfaceExcel, SurfaceHtml, SurfaceImage, SurfaceMarkdown, SurfacePdf, SurfaceText } from './surface-bodies.tsx'
++import { PDF_BODY_ID } from '../pdf/index.ts'
++import { IMAGE_BODY_ID } from '../image/index.ts'
++import { PLAIN_BODY_ID } from '../text/index.ts'
++import { FontNotice } from '../office/FontNotice.tsx'
++import type {} from './surface-contract.ts'
++
++/**
++ * Register the reusable document Factory and its native bodies.
++ * @param ctx - the registries and locale owned by the preview plugin.
++ * @param config - resolved preview limits.
++ */
++export function applyDocumentSurface(ctx: Context, config: Config): void {
++  const previews = ctx.documentPreviews
++  ctx.effect(() => ctx.slots.registerFactory({
++    name: 'document.preview', scope: 'root', locale: 'sidebarDocumentPreview',
++    children: {
++      'document.preview.body': { kind: 'keyed', scope: 'root' },
++      'document.preview.fonts': { kind: 'list', scope: 'root' },
++    },
++    inject: () => ({ hooks: { documentPreviews: { getSnapshot: previews.getSnapshot, subscribe: previews.subscribe } } }),
++  }, DocumentPreviewSurface))
++  ctx.effect(() => ctx.slots.register({ name: 'document.preview.fonts', id: 'missing-fonts', locale: 'sidebarOffice' }, FontNotice))
++  ctx.effect(() => ctx.slots.register({ name: 'document.preview.body', key: PDF_BODY_ID, locale: 'sidebarPdf' }, SurfacePdf))
++  ctx.effect(() => ctx.slots.register({ name: 'document.preview.body', key: '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/office', locale: 'sidebarPdf' }, SurfacePdf))
++  ctx.effect(() => ctx.slots.register({
++    name: 'document.preview.body', key: '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/excel', locale: 'sidebarExcel',
++    inject: () => ({ limits: config.excel }),
++  }, SurfaceExcel))
++  ctx.effect(() => ctx.slots.register({ name: 'document.preview.body', key: IMAGE_BODY_ID, locale: 'sidebarImage' }, SurfaceImage))
++  ctx.effect(() => ctx.slots.register({ name: 'document.preview.body', key: PLAIN_BODY_ID }, SurfaceText))
++  ctx.effect(() => ctx.slots.register({ name: 'document.preview.body', key: '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/markdown', locale: 'documentMarkdown' }, SurfaceMarkdown))
++  ctx.effect(() => ctx.slots.register({ name: 'document.preview.body', key: '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/html', locale: 'documentHtml' }, SurfaceHtml))
++  ctx.effect(() => ctx.slots.register({ name: 'document.preview.body', key: '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/code', locale: 'sidebarCodePreview' }, SurfaceCode))
++}
+diff --git a/packages/client/ui-sidebar-documentpreview/src/client/excel/LazyExcelBody.tsx b/packages/client/ui-sidebar-documentpreview/src/client/excel/LazyExcelBody.tsx
+index 1c4c657a24719c0f07a0ec1075f6e0b01e2d4df0..12c969ea92ed6c437e812d7e31caabce8df7a6ec 100644
+--- a/packages/client/ui-sidebar-documentpreview/src/client/excel/LazyExcelBody.tsx
++++ b/packages/client/ui-sidebar-documentpreview/src/client/excel/LazyExcelBody.tsx
+@@ -11,7 +11,11 @@ import { LoadingIndicator } from '../LoadingIndicator.tsx'
+ export type ExcelBodyProps = DocumentPreviewProps & PropsLocale<'sidebarExcel'> & { readonly limits: ExcelLimits }
+ 
+ /** Lazily loaded renderer input with the parser choice and main-bundle loading content. */
+-export type LoadedExcelBodyProps = ExcelBodyProps & { readonly format: ExcelFormat; readonly loading: ReactNode }
++export type LoadedExcelBodyProps = Pick<ExcelBodyProps, 'content' | 'limits' | 't'> & {
++  readonly format: ExcelFormat
++  readonly loading: ReactNode
++  readonly signal?: AbortSignal
++}
+ 
+ const LoadedExcelBody = lazy(async () => ({ default: (await import('./excel.tsx')).ExcelBody }))
+ 
+diff --git a/packages/client/ui-sidebar-documentpreview/src/client/excel/excel.tsx b/packages/client/ui-sidebar-documentpreview/src/client/excel/excel.tsx
+index ca3fcb8425588610d12e468a83497a37d3bb0175..a3b1cad75bc082faa204d14a45c4f338ad6933ee 100644
+--- a/packages/client/ui-sidebar-documentpreview/src/client/excel/excel.tsx
++++ b/packages/client/ui-sidebar-documentpreview/src/client/excel/excel.tsx
+@@ -18,7 +18,7 @@ const scopedStyles = `@scope ([data-excel-preview]) { ${fortuneCss} }`
+  * @param props - Complete workbook bytes, limits, and locale.
+  * @returns An isolated spreadsheet surface with cancellable loading.
+  */
+-export function ExcelBody({ content, format, limits, t, loading }: LoadedExcelBodyProps): ReactNode {
++export function ExcelBody({ content, format, limits, t, loading, signal }: LoadedExcelBodyProps): ReactNode {
+   const data = content.kind === 'bytes' ? content.data : undefined
+   const [state, setState] = useState<State>()
+   const [attempt, setAttempt] = useState(0)
+@@ -26,13 +26,14 @@ export function ExcelBody({ content, format, limits, t, loading }: LoadedExcelBo
+   useEffect(() => {
+     if (data === undefined) return
+     const controller = new AbortController()
++    const reading = signal === undefined ? controller.signal : AbortSignal.any([controller.signal, signal])
+     setState(undefined)
+-    void parseExcel(data, format, limits, controller.signal).then(
+-      (value) => { if (!controller.signal.aborted) setState({ data, format, value }) },
+-      (error: unknown) => { if (!controller.signal.aborted) setState({ data, format, error: error instanceof Error ? error.message : 'invalid' }) },
++    void parseExcel(data, format, limits, reading).then(
++      (value) => { if (!reading.aborted) setState({ data, format, value }) },
++      (error: unknown) => { if (!reading.aborted) setState({ data, format, error: error instanceof Error ? error.message : 'invalid' }) },
+     )
+     return () => { controller.abort() }
+-  }, [data, format, limits, attempt])
++  }, [data, format, limits, attempt, signal])
+   useEffect(() => {
+     const element = workbookRef.current
+     if (element === null || typeof ResizeObserver === 'undefined') return
+diff --git a/packages/client/ui-sidebar-documentpreview/src/client/excel/xlsx.ts b/packages/client/ui-sidebar-documentpreview/src/client/excel/xlsx.ts
+index 7c4608cc04753d054006f8c0f67b4777208034e4..bb54d16f745b4b7e4a2446b55a0ef25d4479be61 100644
+--- a/packages/client/ui-sidebar-documentpreview/src/client/excel/xlsx.ts
++++ b/packages/client/ui-sidebar-documentpreview/src/client/excel/xlsx.ts
+@@ -105,11 +105,13 @@ export async function convertXlsx(bytes: Uint8Array<ArrayBuffer>, limits: ExcelL
+     const visible = worksheet.state === 'visible'
+     const status = visible && !active ? 1 : 0
+     active ||= visible
++    // ExcelJS omits the 15pt default when the optional sheetFormatPr is absent.
++    const defaultRowHeight = worksheet.properties.defaultRowHeight as number | undefined
+     const sheet: Sheet = {
+       id: String(worksheet.id), name: worksheet.name, order, status, hide: visible ? 0 : 1,
+       row, column,
+       config, celldata, showGridLines: view?.showGridLines !== false,
+-      defaultRowHeight: worksheet.properties.defaultRowHeight * 96 / 72,
++      defaultRowHeight: (defaultRowHeight ?? 15) * 96 / 72,
+       luckysheet_select_save: initialSelection(config),
+     }
+     if (worksheet.properties.defaultColWidth !== undefined) sheet.defaultColWidth = columnPixels(worksheet.properties.defaultColWidth)
+diff --git a/packages/client/ui-sidebar-documentpreview/src/client/html/HtmlBody.tsx b/packages/client/ui-sidebar-documentpreview/src/client/html/HtmlBody.tsx
+index 135609acdd0faa2ab1488835a02c14b18c56bc7b..abb55d22afd11a05f11ea9d7b5fb552b41ad4d4b 100644
+--- a/packages/client/ui-sidebar-documentpreview/src/client/html/HtmlBody.tsx
++++ b/packages/client/ui-sidebar-documentpreview/src/client/html/HtmlBody.tsx
+@@ -89,7 +89,7 @@ export function HtmlBody({
+ }
+ 
+ /** Static preview mounts a separate browsing context so a mode change retires running scripts. */
+-function BasicHtmlFrame({ data, frameName, t }: Pick<FrameInput, 'data' | 'frameName'> & { t: HtmlBodyProps['t'] }): ReactNode {
++export function BasicHtmlFrame({ data, frameName, t }: Pick<FrameInput, 'data' | 'frameName'> & { t: HtmlBodyProps['t'] }): ReactNode {
+   const html = useMemo(() => {
+     try {
+       return createBasicHtmlDocument(data)
+diff --git a/packages/client/ui-sidebar-documentpreview/src/client/image/ImageBody.tsx b/packages/client/ui-sidebar-documentpreview/src/client/image/ImageBody.tsx
+index 770c806bd533d87636ff0f703636d80b867f8fef..75ef0f5c8df5c585df06ea79ee56401d08204227 100644
+--- a/packages/client/ui-sidebar-documentpreview/src/client/image/ImageBody.tsx
++++ b/packages/client/ui-sidebar-documentpreview/src/client/image/ImageBody.tsx
+@@ -1,5 +1,5 @@
+ /** Complete image bytes rendered in a shared zoom viewport. */
+-import { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
++import { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode, type RefCallback } from 'react'
+ import type { PropsLocale, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
+ import { pathPartsOf } from '@deepseek-ai/dsh-util-workspace-path'
+ import type { DocumentPreviewProps } from '../document/contract.ts'
+@@ -54,18 +54,33 @@ export function imageMediaType(path: string): ImageMediaType | undefined {
+  * @returns a rounded image fitted or scaled at its intrinsic aspect ratio.
+  */
+ export function ImageBody(props: ImageBodyProps): ReactNode {
+-  const { content, resourceAddress, t } = props
++  const { content, resourceAddress } = props
+   const { tab } = props.useTabInfo()
+   const preference = props.useStore(state => state.byTab[tab.id] ?? DEFAULT_ZOOM)
+   const path = useMemo(() => hostFileOf(resourceAddress).path, [resourceAddress])
+-  const mediaType = imageMediaType(path)
+-  const data = content.kind === 'bytes' ? content.data : undefined
+-  const [source, setSource] = useState<ImageSource>()
+   const setPreference = useCallback((value: ZoomPreference): void => {
+     props.actions.zoom(tab.id, value)
+   }, [props.actions, tab.id])
+-
+   useEffect(() => { props.retainTab(tab.id, tab.signal) }, [props.retainTab, tab.id, tab.signal])
++  return <ImageDocumentView path={path} data={content.kind === 'bytes' ? content.data : undefined}
++    preference={preference} onPreference={setPreference} signal={tab.signal}
++    scrollportRef={props.scrollportRef} t={props.t} />
++}
++
++/** Complete image bytes and viewing inputs independent of a resource address. */
++export interface ImageDocumentProps extends PropsLocale<'sidebarImage'> {
++  readonly path: string
++  readonly data: Uint8Array<ArrayBuffer> | undefined
++  readonly preference: ZoomPreference
++  readonly onPreference: (value: ZoomPreference) => void
++  readonly signal: AbortSignal
++  readonly scrollportRef: RefCallback<HTMLElement>
++}
++
++/** @param props - authorized image bytes and caller-owned zoom. @returns the shared image viewer. */
++export function ImageDocumentView({ path, data, preference, onPreference, signal, scrollportRef, t }: ImageDocumentProps): ReactNode {
++  const mediaType = imageMediaType(path)
++  const [source, setSource] = useState<ImageSource>()
+ 
+   useEffect(() => {
+     if (data === undefined || mediaType === undefined) return
+@@ -94,8 +109,8 @@ export function ImageBody(props: ImageBodyProps): ReactNode {
+     fitWidth: t('zoomFitWidth'), value: percent => t('zoomValue', { percent }),
+   }
+   return <LoadedImage key={source.url} url={source.url} name={name} preference={preference}
+-    onPreference={setPreference} labels={labels} signal={tab.signal}
+-    scrollportRef={props.scrollportRef} t={t} />
++    onPreference={onPreference} labels={labels} signal={signal}
++    scrollportRef={scrollportRef} t={t} />
+ }
+ 
+ /** SVG stays in the browser's static image mode because its bytes only reach an img Blob URL. */
+diff --git a/packages/client/ui-sidebar-documentpreview/src/client/index.ts b/packages/client/ui-sidebar-documentpreview/src/client/index.ts
+index 72a26771d841ef5dc6dbeeefe5b1ef8ddce1ef84..3b50d1d6d8f0bbf8531cc89345a31a7b98d7d618 100644
+--- a/packages/client/ui-sidebar-documentpreview/src/client/index.ts
++++ b/packages/client/ui-sidebar-documentpreview/src/client/index.ts
+@@ -39,6 +39,7 @@ import { apply as registerCode } from './code/index.ts'
+ import { apply as registerOffice } from './office/index.ts'
+ import { apply as registerExcel } from './excel/index.ts'
+ import { Config } from '../config.ts'
++import { applyDocumentSurface } from './document/surface.ts'
+ 
+ // Values stay package-private unless another package needs them; the plugin
+ // surface is `apply`, `inject`, and the store factory another registration may
+@@ -50,6 +51,7 @@ export type { ReadDocumentBytes, DocumentFileBytes, ReadWorkspaceFilePage, Sessi
+ export type { TextPage, TextState, TextStore, TextTabState } from './store.ts'
+ export type { DocumentContent, DocumentPreviewProps, DocumentTextPage } from './document/contract.ts'
+ export type { DocumentLoadMode, DocumentPreviewDefinition } from './document/registry.ts'
++export type { DocumentPreviewInput, DocumentPreviewFile, DocumentPreviewSource, DocumentPreviewSurfaceBodyProps } from './document/surface-contract.ts'
+ 
+ declare module '@deepseek-ai/cordis' {
+   interface Context {
+@@ -127,4 +129,5 @@ export function apply(ctx: ClientContext): void {
+   registerOffice(ctx, config.office)
+   registerExcel(ctx, config.excel)
+   registerCode(ctx)
++  applyDocumentSurface(ctx, config)
+ }
+diff --git a/packages/client/ui-sidebar-documentpreview/src/client/locales.ts b/packages/client/ui-sidebar-documentpreview/src/client/locales.ts
+index f7c7c645d61e26f9956ebe67193fb18cd1949c48..74bd1552af87866682d810cea8866c320427852d 100644
+--- a/packages/client/ui-sidebar-documentpreview/src/client/locales.ts
++++ b/packages/client/ui-sidebar-documentpreview/src/client/locales.ts
+@@ -30,6 +30,7 @@ export const zh = {
+   'error.notRegularFile': '该路径不是普通文件，没有可显示的内容',
+   'error.unavailable': '读取失败：{message}',
+   retry: '重试',
++  readFailed: '无法读取文件，请重试',
+ } satisfies Record<string, string>
+ 
+ /** Text-preview dictionary key union. */
+@@ -59,4 +60,5 @@ export const en = {
+   'error.notRegularFile': 'Not a regular file, nothing to display.',
+   'error.unavailable': 'Read failed: {message}',
+   retry: 'Retry',
++  readFailed: 'Unable to read the file. Try again.',
+ } satisfies Record<SidebarDocumentPreviewKey, string>
+diff --git a/packages/client/ui-sidebar-documentpreview/src/client/markdown/MarkdownBody.tsx b/packages/client/ui-sidebar-documentpreview/src/client/markdown/MarkdownBody.tsx
+index 714d68bafeff523e07b971e6b62939d004027ade..11a1c9567f6c37a2fcbf0b4a124114e3172e7951 100644
+--- a/packages/client/ui-sidebar-documentpreview/src/client/markdown/MarkdownBody.tsx
++++ b/packages/client/ui-sidebar-documentpreview/src/client/markdown/MarkdownBody.tsx
+@@ -36,6 +36,14 @@ export function MarkdownBody({ content, resourceAddress, useResource, t }: Markd
+   const pathImages = useMemo<MarkdownPathImages>(() => ({
+     resolve: value => markdownImageUrl(document.baseURI, absolutePath, value),
+   }), [absolutePath])
++  return <MarkdownDocumentView content={content} pathImages={pathImages} t={t} />
++}
++
++/** Markdown content without resource or Session readers. */
++export type MarkdownDocumentProps = Pick<MarkdownBodyProps, 'content' | 't'> & { readonly pathImages?: MarkdownPathImages }
++
++/** @param props - complete or accumulated source and optional authorized image resolver. @returns the shared Markdown viewer. */
++export function MarkdownDocumentView({ content, pathImages, t }: MarkdownDocumentProps): ReactNode {
+   const copyLabel = t('code.copy')
+   const copiedLabel = t('code.copied')
+   const footnotes = t('footnotes')
+diff --git a/packages/client/ui-sidebar-documentpreview/src/client/pdf/pdf.tsx b/packages/client/ui-sidebar-documentpreview/src/client/pdf/pdf.tsx
+index bafa88f214dacb1be47de62fb1d7af625d99f896..752a27ea1daa5471b063f4ba2703dbe9a8b2a584 100644
+--- a/packages/client/ui-sidebar-documentpreview/src/client/pdf/pdf.tsx
++++ b/packages/client/ui-sidebar-documentpreview/src/client/pdf/pdf.tsx
+@@ -1,5 +1,5 @@
+ /** PDF page presentation; binary content and tab information come from the document owner. */
+-import { useCallback, useEffect, useRef, useState, type ComponentType, type CSSProperties, type ReactNode } from 'react'
++import { useCallback, useEffect, useRef, useState, type ComponentType, type CSSProperties, type ReactNode, type RefCallback } from 'react'
+ import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
+ import type { PropsLocale, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
+ import type { TabId } from '@deepseek-ai/dsh-client-ui-dockkit'
+@@ -31,6 +31,19 @@ export interface PdfBodyInjected {
+ /** Standard document props plus the PDF entry's locale, viewing store, and lifetime callback. */
+ export type PdfBodyProps = DocumentPreviewProps & PropsLocale<'sidebarPdf'> & PropsStore<PdfStore> & PdfBodyInjected
+ 
++/** PDF rendering inputs independent of a Session or Sidebar tab. */
++export interface PdfDocumentProps extends PropsLocale<'sidebarPdf'> {
++  readonly data: Uint8Array<ArrayBuffer> | undefined
++  readonly signal: AbortSignal
++  readonly view: PdfView
++  readonly onPage: (page: number) => void
++  readonly onZoom: (zoom: ZoomPreference) => void
++  readonly scrollportRef: RefCallback<HTMLElement>
++  readonly ZoomViewport: ComponentType<ZoomViewportProps>
++  readonly zoomSurfaceClass: string
++  readonly loading: ReactNode
++}
++
+ type LoadState =
+   | { readonly kind: 'loaded'; readonly data: Uint8Array<ArrayBuffer>; readonly document: PdfDocument }
+   | { readonly kind: 'failed'; readonly data: Uint8Array<ArrayBuffer>; readonly error: unknown }
+@@ -45,44 +58,51 @@ const FIT_WIDTH: ZoomPreference = { kind: 'fit-width' }
+ export function PdfBody(props: PdfBodyProps & { readonly loading: ReactNode }): ReactNode {
+   const { tab } = props.useTabInfo()
+   const view = props.useStore(state => state.byTab[tab.id] ?? DEFAULT_PDF_VIEW)
+-  const data = props.content.kind === 'bytes' ? props.content.data : undefined
++  const pageVisible = useCallback((page: number): void => {
++    props.actions.page(tab.id, page)
++  }, [props.actions, tab.id])
++  const setPreference = useCallback((value: ZoomPreference): void => {
++    props.actions.zoom(tab.id, value)
++  }, [props.actions, tab.id])
++  useEffect(() => { props.retainTab(tab.id, tab.signal) }, [props.retainTab, tab.id, tab.signal])
++  return <PdfDocumentView data={props.content.kind === 'bytes' ? props.content.data : undefined}
++    signal={tab.signal} view={view} onPage={pageVisible} onZoom={setPreference}
++    scrollportRef={props.scrollportRef} ZoomViewport={props.ZoomViewport}
++    zoomSurfaceClass={props.zoomSurfaceClass} loading={props.loading} t={props.t} />
++}
++
++/** @param props - complete PDF bytes and caller-owned viewing preferences. @returns the shared PDF reader. */
++export function PdfDocumentView({
++  data, signal, view, onPage, onZoom, scrollportRef, t, ZoomViewport, zoomSurfaceClass, loading,
++}: PdfDocumentProps): ReactNode {
+   const [load, setLoad] = useState<LoadState>()
+   const [attempt, setAttempt] = useState(0)
+   const [pageWidth, setPageWidth] = useState<number>()
+   const [renderZoom, setRenderZoom] = useState(1)
+-  const { retainTab, actions, t, ZoomViewport, zoomSurfaceClass } = props
+   const preference = view.zoom ?? FIT_WIDTH
+   const labels: ZoomLabels = {
+     controls: t('zoomControls'), menu: t('zoomMenu'), out: t('zoomOut'), into: t('zoomIn'),
+     fitWidth: t('zoomFitWidth'), value: percent => t('zoomValue', { percent }),
+   }
+-  const pageVisible = useCallback((page: number): void => {
+-    actions.page(tab.id, page)
+-  }, [actions, tab.id])
+-  const setPreference = useCallback((value: ZoomPreference): void => {
+-    actions.zoom(tab.id, value)
+-  }, [actions, tab.id])
+-
+-  useEffect(() => { retainTab(tab.id, tab.signal) }, [retainTab, tab.id, tab.signal])
+   useEffect(() => {
+-    if (data === undefined || tab.signal.aborted) return
++    if (data === undefined || signal.aborted) return
+     const lifetime = new AbortController()
+-    const signal = AbortSignal.any([lifetime.signal, tab.signal])
++    const reading = AbortSignal.any([lifetime.signal, signal])
+     setLoad(undefined)
+-    const session = openPdf(data, signal, (error) => {
+-      if (!signal.aborted) setLoad({ kind: 'failed', data, error })
++    const session = openPdf(data, reading, (error) => {
++      if (!reading.aborted) setLoad({ kind: 'failed', data, error })
+     })
+     void session.document.then(
+-      (document) => { if (!signal.aborted) setLoad({ kind: 'loaded', data, document }) },
+-      (error: unknown) => { if (!signal.aborted) setLoad({ kind: 'failed', data, error }) },
++      (document) => { if (!reading.aborted) setLoad({ kind: 'loaded', data, document }) },
++      (error: unknown) => { if (!reading.aborted) setLoad({ kind: 'failed', data, error }) },
+     )
+     return () => {
+       lifetime.abort()
+       void session.dispose()
+     }
+-  }, [data, tab.signal, attempt])
++  }, [data, signal, attempt])
+   if (data === undefined) return <p className={css.status} role="alert">{t('unsupported')}</p>
+-  if (load?.data !== data) return props.loading
++  if (load?.data !== data) return loading
+   if (load.kind === 'failed') {
+     return <div className={css.status} role="alert">
+       <span>{failureText(load.error, t)}</span>
+@@ -92,12 +112,12 @@ export function PdfBody(props: PdfBodyProps & { readonly loading: ReactNode }):
+   const pages = <section className={css.body} data-pdf-preview>
+     {Array.from({ length: load.document.numPages }, (_, index) => (
+       <PdfPage key={index} document={load.document} page={index + 1}
+-        requested={index === 0 || view.page === index + 1} onVisible={pageVisible} signal={tab.signal}
++        requested={index === 0 || view.page === index + 1} onVisible={onPage} signal={signal}
+         onWidth={index === 0 ? setPageWidth : undefined} zoom={renderZoom} zoomSurfaceClass={zoomSurfaceClass} t={t} />
+     ))}
+   </section>
+   return <ZoomViewport preference={preference} intrinsicWidth={pageWidth} horizontalInset={24} labels={labels}
+-    signal={tab.signal} scrollportRef={props.scrollportRef} onPreference={setPreference} onRenderZoom={setRenderZoom}>
++    signal={signal} scrollportRef={scrollportRef} onPreference={onZoom} onRenderZoom={setRenderZoom}>
+     {pages}
+   </ZoomViewport>
+ }
+diff --git a/packages/client/ui-sidebar-documentpreview/src/client/text/TextBody.tsx b/packages/client/ui-sidebar-documentpreview/src/client/text/TextBody.tsx
+index 51625919675868c312cd0565f741f03ab8642471..fa70055425415bea572b1117399176e03372e9ee 100644
+--- a/packages/client/ui-sidebar-documentpreview/src/client/text/TextBody.tsx
++++ b/packages/client/ui-sidebar-documentpreview/src/client/text/TextBody.tsx
+@@ -10,6 +10,11 @@ export function TextBody({ content, useTabInfo }: DocumentPreviewProps): ReactNo
+   const { tab } = useTabInfo()
+   const params = tab.navigation.params
+   const target = params !== undefined && 'line' in params ? params.line : undefined
++  return <TextDocumentView content={content} {...target === undefined ? {} : { target }} />
++}
++
++/** @param props - source pages and optional line target. @returns the shared plain-text viewer. */
++export function TextDocumentView({ content, target }: Pick<DocumentPreviewProps, 'content'> & { readonly target?: number }): ReactNode {
+   if (content.kind !== 'text') return null
+   return (
+     <div className={css.textDocument} data-textpreview-plain>
+diff --git a/packages/client/ui-sidebar-documentpreview/tests/apply.client.spec.ts b/packages/client/ui-sidebar-documentpreview/tests/apply.client.spec.ts
+index 124acfe744f155e6b39171e053e413c0d7e99492..1f665ff40eb0bd1dd5e74e011a2f1044e7c78fd4 100644
+--- a/packages/client/ui-sidebar-documentpreview/tests/apply.client.spec.ts
++++ b/packages/client/ui-sidebar-documentpreview/tests/apply.client.spec.ts
+@@ -51,6 +51,7 @@ async function boot() {
+   ctx.provide('configForms', { developerTools: { enabled: createSnapshotStore(true) } } as never)
+   const tabs = new SidebarRightTabRegistry(ctx)
+   const registered: Recorded[] = []
++  const factories = new Set<string>()
+   const slots = {
+     inject: vi.fn((_name: string, register: () => () => void) => register()),
+     register: vi.fn((options: Omit<Recorded, 'component'>, component: unknown) => {
+@@ -58,6 +59,10 @@ async function boot() {
+       registered.push(entry)
+       return () => { registered.splice(registered.indexOf(entry), 1) }
+     }),
++    registerFactory: vi.fn((options: { name: string }) => {
++      factories.add(options.name)
++      return () => { factories.delete(options.name) }
++    }),
+   }
+   const dictionaries = new Map<string, unknown>()
+   const locale = {
+@@ -77,18 +82,18 @@ async function boot() {
+   const fiber = ctx.plugin({ inject: [...inject], apply })
+   onTestFinished(async () => { await fiber.dispose() })
+   await fiber.await()
+-  return { ctx, tabs, registered, dictionaries, fiber, read, readBytes }
++  return { ctx, tabs, registered, factories, dictionaries, fiber, read, readBytes }
+ }
+ 
+ describe('ui-sidebar-documentpreview apply', () => {
+   it('registers the type, its dictionaries, and the body and title seats under the type\'s id, the body with a store and a face', async () => {
+-    const { tabs, registered, dictionaries } = await boot()
++    const { tabs, registered, factories, dictionaries } = await boot()
+     expect(tabs.get(TEXTPREVIEW_KIND)?.priority).toBe('fallback')
+     expect(tabs.get(TEXTPREVIEW_KIND)?.id).toBe(TEXTPREVIEW_ID)
+     expect(dictionaries.get('sidebarDocumentPreview')).toEqual({ zh, en })
+     // The seat key is the implementation's id, not the kind: an extension may
+     // take the kind over, and the seat must still find this body.
+-    expect(registered.map(entry => [entry.name, entry.key, entry.locale, entry.component])).toEqual([
++    expect(registered.filter(entry => entry.name.startsWith('sidebar.')).map(entry => [entry.name, entry.key, entry.locale, entry.component])).toEqual([
+       ['sidebar.right.pane.tab', TEXTPREVIEW_ID, 'sidebarDocumentPreview', TextPreview],
+       ['sidebar.right.pane.tab.title', TEXTPREVIEW_ID, undefined, TextTitle],
+       ['sidebar.right.tab.document', PLAIN_BODY_ID, undefined, TextBody],
+@@ -102,15 +107,18 @@ describe('ui-sidebar-documentpreview apply', () => {
+       ['sidebar.right.tab.document', '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/excel', 'sidebarExcel', LazyExcelBody],
+       ['sidebar.right.tab.document', '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/code', 'sidebarCodePreview', CodeBody],
+     ])
++    expect([...factories]).toEqual(['document.preview'])
++    expect(registered.filter(entry => entry.name === 'document.preview.body')).toHaveLength(8)
+     expect(registered[0]?.store).toBeDefined()
+     expect(typeof registered[0]?.inject).toBe('function')
+   })
+ 
+   it('takes every registration back when the plugin is disposed', async () => {
+-    const { tabs, registered, dictionaries, fiber } = await boot()
++    const { tabs, registered, factories, dictionaries, fiber } = await boot()
+     await fiber.dispose()
+     expect(tabs.get(TEXTPREVIEW_KIND)).toBeUndefined()
+     expect(registered).toEqual([])
++    expect(factories.size).toBe(0)
+     expect(dictionaries.size).toBe(0)
+   })
+ 
+diff --git a/packages/client/ui-sidebar-documentpreview/tests/document-preview-license-bundle.client.spec.ts b/packages/client/ui-sidebar-documentpreview/tests/document-preview-license-bundle.client.spec.ts
+index d42317f4b81d1c2470ba692172638b55dc686b51..bd55f16d6942d4418ac7df41de4dec1f400483d3 100644
+--- a/packages/client/ui-sidebar-documentpreview/tests/document-preview-license-bundle.client.spec.ts
++++ b/packages/client/ui-sidebar-documentpreview/tests/document-preview-license-bundle.client.spec.ts
+@@ -59,7 +59,7 @@ describe('published document preview licenses', () => {
+       const client = run('tar', ['-xOf', resolve(packageRoot, packed.filename), 'package/lib/client.js'], packageRoot, task.timeout)
+       const pdf = run('tar', ['-xOf', resolve(packageRoot, packed.filename), 'package/lib/client.pdf.js'], packageRoot, task.timeout)
+       expect([...client.matchAll(/require\.async\("(\.\/client[^"/]*\.js)"\)/gu)].map(match => match[1]))
+-        .toEqual(['./client.frontmatter-fields.js', './client.pdf.js', './client.excel.js'])
++        .toEqual(['./client.frontmatter-fields.js', './client.pdf.js', './client.excel.js', './client.pdf.js', './client.excel.js'])
+       expect(client).not.toMatch(/\brequire\("\.\/client[^"/]*\.js"\)/u)
+       expect([...pdf.matchAll(/require\("(\.\/client[^"/]*\.js)"\)/gu)].map(match => match[1]))
+         .toEqual([])
+diff --git a/packages/client/ui-sidebar-documentpreview/tests/document-surface.client.spec.tsx b/packages/client/ui-sidebar-documentpreview/tests/document-surface.client.spec.tsx
+new file mode 100644
+index 0000000000000000000000000000000000000000..2fa2100e9d3c11191e4117eed58c3117f3491ab6
+--- /dev/null
++++ b/packages/client/ui-sidebar-documentpreview/tests/document-surface.client.spec.tsx
+@@ -0,0 +1,138 @@
++// @vitest-environment jsdom
++/** Reusable original-byte previews through the production Factory and renderer registries. */
++import { useState } from 'react'
++import { act, fireEvent, screen, waitFor } from '@testing-library/react'
++import { afterEach, describe, expect, it, vi } from 'vitest'
++import { SlotTestRuntime } from '@deepseek-ai/dsh-client-test-runtime'
++import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
++import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
++import type { PropsRenderFactories, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
++import { apply, inject } from '../src/client/index.ts'
++import type { DocumentPreviewFile, DocumentPreviewInput, DocumentPreviewSurfaceBodyProps } from '../src/client/document/surface-contract.ts'
++import { createResources, byteResult } from './fixtures.client.ts'
++
++let runtime: SlotTestRuntime | undefined
++afterEach(async () => { await runtime?.dispose(); runtime = undefined })
++
++const original = (text: string): DocumentPreviewFile => ({ data: new TextEncoder().encode(text) })
++
++async function boot(input: DocumentPreviewInput) {
++  const rt = await SlotTestRuntime.create()
++  runtime = rt
++  const locale = new LocaleRuntime(rt.ctx)
++  rt.ctx.provide('locale', locale)
++  rt.slots.installLocale(locale)
++  rt.ctx.provide('resources', createResources())
++  rt.ctx.provide('configForms', { developerTools: { enabled: createSnapshotStore(false) } } as never)
++  rt.ctx.provide('sidebarRightTabs', { register: () => () => {} } as never)
++  const workspaceRead = vi.fn()
++  const workspaceBytes = vi.fn(async () => byteResult())
++  rt.remote.provideNamespaces({ workspaceFiles: { read: workspaceRead, readBytes: workspaceBytes } })
++  const fiber = await rt.mount({ inject: [...inject], apply })
++  let update: (next: DocumentPreviewInput | undefined) => void = () => { throw new Error('Root has not rendered.') }
++  await rt.root.declare({}, ({ renderFactorySlot }: PropsRuntime<'root'> & PropsRenderFactories) => {
++    const [current, setCurrent] = useState<DocumentPreviewInput | undefined>(input)
++    update = setCurrent
++    return current === undefined ? null : renderFactorySlot('document.preview', current)
++  })
++  const view = rt.renderRoot()
++  return { rt, fiber, view, update, workspaceRead, workspaceBytes }
++}
++
++describe('original-byte document Factory', () => {
++  it('opens the original Markdown without any mounted Session or workspace read', async () => {
++    const read = vi.fn(async (_signal: AbortSignal) => original('# Original file\n\nA complete paragraph.'))
++    const h = await boot({ fileName: 'guide.md', read })
++    await waitFor(() => { expect(h.view.getByRole('heading', { name: 'Original file' })).toBeTruthy() })
++    expect(h.view.container.querySelector('[data-document-markdown]')?.textContent).toContain('A complete paragraph.')
++    expect(read).toHaveBeenCalledExactlyOnceWith(expect.any(AbortSignal))
++    expect(h.workspaceRead).not.toHaveBeenCalled()
++    expect(h.workspaceBytes).not.toHaveBeenCalled()
++  })
++
++  it('clears old bytes, aborts replaced reads and rejects stale completion', async () => {
++    const pending = Promise.withResolvers<DocumentPreviewFile>()
++    const read = vi.fn(async (_signal: AbortSignal) => pending.promise)
++    const h = await boot({ fileName: 'old.txt', read })
++    const signal = read.mock.calls[0]?.[0]
++    await act(async () => { h.update({ fileName: 'new.txt', read: async () => original('New original content') }) })
++    expect(signal?.aborted).toBe(true)
++    await waitFor(() => { expect(h.view.container.textContent).toContain('New original content') })
++    await act(async () => { pending.resolve(original('Stale private document')) })
++    expect(h.view.container.textContent).not.toContain('Stale private document')
++  })
++
++  it('rechecks access on refresh and never retains bytes beneath a permission failure', async () => {
++    const read = vi.fn(async (_signal: AbortSignal) => original('Private document'))
++    const h = await boot({ fileName: 'note.txt', read, revision: 1, failureText: () => 'Access revoked' })
++    await waitFor(() => { expect(h.view.container.textContent).toContain('Private document') })
++    read.mockRejectedValueOnce(new Error('sensitive upstream diagnostic'))
++    await act(async () => { h.update({ fileName: 'note.txt', read, revision: 2, failureText: () => 'Access revoked' }) })
++    await waitFor(() => { expect(screen.getByRole('alert').textContent).toContain('Access revoked') })
++    expect(h.view.container.textContent).not.toContain('Private document')
++    expect(h.view.container.textContent).not.toContain('sensitive upstream diagnostic')
++    fireEvent.click(screen.getByRole('button', { name: /重试|Retry/u }))
++    await waitFor(() => { expect(h.view.container.textContent).toContain('Private document') })
++    expect(read).toHaveBeenCalledTimes(3)
++  })
++
++  it('converts Office through the authorized converter without reading source bytes first', async () => {
++    const read = vi.fn(async (_signal: AbortSignal) => original('never preload queued Office input'))
++    const renderOffice = vi.fn(async (_signal: AbortSignal) => original('%PDF converted original'))
++    const h = await boot({ fileName: 'document.docx', read, renderOffice })
++    const definition = h.rt.ctx.documentPreviews.register({ id: 'test-office', extensions: ['docx'], loading: 'bytes-complete', title: () => 'Test Office' })
++    const body = h.rt.slots.register({ name: 'document.preview.body', key: 'test-office' }, (props: DocumentPreviewSurfaceBodyProps) => {
++      expect(props).not.toHaveProperty('sessionId')
++      return <span>{props.content.kind === 'bytes' ? new TextDecoder().decode(props.content.data) : ''}</span>
++    })
++    await waitFor(() => { expect(h.view.container.textContent).toContain('%PDF converted original') })
++    expect(read).not.toHaveBeenCalled()
++    expect(renderOffice).toHaveBeenCalledExactlyOnceWith(expect.any(AbortSignal))
++    body(); definition()
++  })
++
++  it('blocks unsupported binary and invalid text without displaying lossy bytes', async () => {
++    const read = vi.fn(async (_signal: AbortSignal) => ({ data: new Uint8Array([255, 0, 254]) }))
++    const h = await boot({ fileName: 'archive.zip', read })
++    await waitFor(() => { expect(screen.getByRole('alert')).toBeTruthy() })
++    expect(read).not.toHaveBeenCalled()
++    await act(async () => { h.update({ fileName: 'bad.txt', read }) })
++    await waitFor(() => { expect(read).toHaveBeenCalledOnce() })
++    await waitFor(() => { expect(screen.getByRole('alert')).toBeTruthy() })
++    expect(h.view.container.textContent).not.toContain('\uFFFD')
++  })
++
++  it('uses the native static HTML sandbox without scripts or parent-origin permissions', async () => {
++    const read = async () => original('<html><head><script>window.secret = "do-not-run"</script></head><body><h1>Original page</h1><a href="https://example.test/secret">Link</a></body></html>')
++    const h = await boot({ fileName: 'original.html', read })
++    await waitFor(() => { expect(h.view.container.querySelector('iframe[data-html-preview]')).not.toBeNull() })
++    const frame = h.view.container.querySelector('iframe')!
++    expect(frame.getAttribute('sandbox')).toBe('')
++    expect(frame.srcdoc).not.toContain('<script')
++    expect(frame.srcdoc).not.toContain('href=')
++    expect(frame.srcdoc).toContain("script-src 'none'")
++    expect(frame.srcdoc).toContain("connect-src 'none'")
++    expect(frame.srcdoc).toContain('Original page')
++  })
++
++  it('keeps source failure diagnostics private when no public error translator is supplied', async () => {
++    const h = await boot({ fileName: 'private.pdf', read: async () => { throw new Error('employee-token=private-secret; /private/server/path') } })
++    await waitFor(() => { expect(screen.getByRole('alert')).toBeTruthy() })
++    expect(h.view.container.textContent).not.toContain('private-secret')
++    expect(h.view.container.textContent).not.toContain('/private/server/path')
++    expect(h.view.container.textContent).toMatch(/无法读取文件|Unable to read the file/u)
++  })
++
++  it('aborts in-flight reads when the preview closes and removes its Factory on unload', async () => {
++    const pending = Promise.withResolvers<DocumentPreviewFile>()
++    const read = vi.fn(async (_signal: AbortSignal) => pending.promise)
++    const h = await boot({ fileName: 'pending.txt', read })
++    const signal = read.mock.calls[0]?.[0]
++    await act(async () => { h.update(undefined) })
++    expect(signal?.aborted).toBe(true)
++    await act(async () => { pending.resolve(original('Do not display after close')) })
++    expect(h.view.container.textContent).not.toContain('Do not display after close')
++    await h.fiber.dispose()
++    expect(() => h.rt.factoryOf('document.preview')).toThrow('no definition')
++  })
++})
+diff --git a/packages/client/ui-sidebar-documentpreview/tests/excel-convert.client.spec.ts b/packages/client/ui-sidebar-documentpreview/tests/excel-convert.client.spec.ts
+index c4d7babea659c969aae8fa6f48b1f973fc905a70..eab003b9bc01a65e471cfbc817317ecd3791bb7e 100644
+--- a/packages/client/ui-sidebar-documentpreview/tests/excel-convert.client.spec.ts
++++ b/packages/client/ui-sidebar-documentpreview/tests/excel-convert.client.spec.ts
+@@ -81,6 +81,23 @@ describe('Excel conversion', () => {
+     await expect(convertExcel(new Uint8Array(await workbook.xlsx.writeBuffer()), 'xlsx', limits)).rejects.toMatchObject({ code: 'invalid' })
+   })
+ 
++  it('keeps visible rows when the optional worksheet format properties are absent', async () => {
++    const relationshipNamespace = 'http://schemas.openxmlformats.org/package/2006/relationships'
++    const officeRelationshipNamespace = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
++    const worksheetNamespace = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
++    const files = {
++      '[Content_Types].xml': strToU8('<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>'),
++      '_rels/.rels': strToU8(`<Relationships xmlns="${relationshipNamespace}"><Relationship Id="rId1" Type="${officeRelationshipNamespace}/officeDocument" Target="xl/workbook.xml"/></Relationships>`),
++      'xl/workbook.xml': strToU8(`<workbook xmlns="${worksheetNamespace}" xmlns:r="${officeRelationshipNamespace}"><sheets><sheet name="Defaults" sheetId="1" r:id="rId1"/></sheets></workbook>`),
++      'xl/_rels/workbook.xml.rels': strToU8(`<Relationships xmlns="${relationshipNamespace}"><Relationship Id="rId1" Type="${officeRelationshipNamespace}/worksheet" Target="worksheets/sheet1.xml"/></Relationships>`),
++      'xl/worksheets/sheet1.xml': strToU8(`<worksheet xmlns="${worksheetNamespace}"><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>Visible original value</t></is></c></row><row r="2"><c r="A2"><f>SUM(1,2)</f><v>3</v></c></row></sheetData></worksheet>`),
++    }
++    const result = await convertExcel(new Uint8Array(zipSync(files)), 'xlsx', limits)
++    expect(result.sheets[0]).toMatchObject({ defaultRowHeight: 20, row: 2, column: 1 })
++    expect(result.sheets[0]!.celldata![0]!.v).toMatchObject({ v: 'Visible original value' })
++    expect(result.sheets[0]!.celldata![1]!.v).toMatchObject({ f: '=SUM(1,2)', v: 3, m: '3' })
++  })
++
+   it('ignores row and column layout outside emitted cell bounds', async () => {
+     const workbook = new ExcelJS.Workbook()
+     const sheet = workbook.addWorksheet('Layout')

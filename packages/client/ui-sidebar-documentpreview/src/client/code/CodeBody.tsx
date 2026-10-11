@@ -15,7 +15,13 @@ export function CodeBody({ resourceAddress, content, wrap, scrollportRef, t }: C
   if (content.kind !== 'text') return null
   const file = parseFileAddress(resourceAddress)
   if (file === undefined) throw new Error(`ui-sidebar-documentpreview: not a file address "${resourceAddress}"`)
-  const language = languageForPath(file.path)
+  return <CodeDocumentView fileName={file.path} content={content} wrap={wrap} scrollportRef={scrollportRef} t={t} />
+}
+
+/** @param props - named source content and wrap controls. @returns the shared source viewer. */
+export function CodeDocumentView({ fileName, content, wrap, scrollportRef, t }: Pick<CodeBodyProps, 'content' | 'wrap' | 'scrollportRef' | 't'> & { readonly fileName: string }): ReactNode {
+  if (content.kind !== 'text') return null
+  const language = languageForPath(fileName)
   return (
     <div className={css.renderer} data-code-preview data-wrap={wrap}>
       <CodeBlock

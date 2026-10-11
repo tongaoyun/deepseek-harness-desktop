@@ -8,6 +8,7 @@ export interface AgentPreset {
   readonly order?: number
   readonly selectable?: boolean
   readonly defaultable?: boolean
+  readonly selectionBase?: string
   readonly broken?: string
 }
 

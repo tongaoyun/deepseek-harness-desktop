@@ -18,14 +18,9 @@ export interface DesktopElectronBuilderConfig {
   ]
   readonly extraMetadata: { readonly dshDesktopAppId: string }
   readonly asarUnpack: readonly string[]
-  readonly extraResources: readonly [
-    { readonly from: string, readonly to: 'runtime' },
-    { readonly from: string, readonly to: 'deepseek-harness/product.json' },
-    { readonly from: string, readonly to: 'native/deepseek-harness-native' | 'native/deepseek-harness-native.exe' },
-    { readonly from: string, readonly to: 'icon.png' },
-    ...{ readonly from: string, readonly to: 'tray.ico' }[],
-  ]
+  readonly extraResources: readonly { readonly from: string, readonly to: string }[]
   readonly mac: {
+    readonly icon: string
     readonly extendInfo: { readonly NSMicrophoneUsageDescription: string }
     readonly entitlements: string
     readonly entitlementsInherit: string
@@ -39,6 +34,7 @@ export interface DesktopElectronBuilderConfig {
     readonly writeUpdateInfo: boolean
   }
   readonly win: {
+    readonly icon: string
     readonly forceCodeSigning: boolean
     readonly signtoolOptions: {
       readonly publisherName: string | undefined

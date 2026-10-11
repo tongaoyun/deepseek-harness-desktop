@@ -1,0 +1,40 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/deepseek-harness-product/runtime/README.md
+/:
+  en: 76ac118cd5ec4662
+  zh: 174a53bfb5ccb643
+/product-runtime:
+  en: e78eb44f70f33635
+  zh: a8239b802f2ef55f
+/product-runtime/summary:
+  en: 200fe58f6432cdd6
+  zh: ef8ea0d370950e19
+/product-runtime/table-of-contents:
+  en: 648fee9baabbb0d6
+  zh: 5a88497798cee339
+/product-runtime/composition:
+  en: 2e4edc162691a098
+  zh: 3b134685c497200b
+/product-runtime/model-experience:
+  en: 215e7ba838619b7b
+  zh: a311da3843709f90
+/product-runtime/model-experience/task-capabilities:
+  en: 48a2a9217a177479
+  zh: 66ab916fdb9980b1
+/product-runtime/model-experience/task-capabilities/what-the-model-sees:
+  en: 784524de4a6b8507
+  zh: a05a71a12d8fc609
+/product-runtime/model-experience/task-capabilities/token-effect:
+  en: 9883c546e5621061
+  zh: 8cc2f4d248f881e9
+/product-runtime/model-experience/task-capabilities/kv-cache-effect:
+  en: 44554cccc080415d
+  zh: 04fe7157104dd55e
+/product-runtime/known-limitations-and-deferred-work:
+  en: 2c0c39bffad66767
+  zh: 9940723078013927
+/product-runtime/known-limitations-and-deferred-work/dev-note:
+  en: ff8a4c5c79b31fb3
+  zh: 9b5024779eac80f2

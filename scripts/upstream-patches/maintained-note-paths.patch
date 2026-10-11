@@ -1,0 +1,82 @@
+diff --git a/.agents/notes/implemented/feature/2026-08-05-context-form-vocabulary.i18n.yaml b/.agents/notes/implemented/feature/2026-08-05-context-form-vocabulary.i18n.yaml
+index 19c93bd64dd9e897db43cfe034c92087fd302873..627e432afcc3569d92d8426f8c668ec02debbcca 100644
+--- a/.agents/notes/implemented/feature/2026-08-05-context-form-vocabulary.i18n.yaml
++++ b/.agents/notes/implemented/feature/2026-08-05-context-form-vocabulary.i18n.yaml
+@@ -18,8 +18,8 @@
+   en: 86f7f90f4c573316
+   zh: d8008512145a89b4
+ /agent-note-producer-declared-context-forms/testing:
+-  en: 5910183c18c3341e
+-  zh: 7c5d4e538a66533f
++  en: 6c1f0a0c473c9806
++  zh: 7eea6531dd112994
+ /agent-note-producer-declared-context-forms/consequences:
+   en: 15d3d98980ea3919
+   zh: 4e14b65420de0df3
+diff --git a/.agents/notes/implemented/feature/2026-08-05-context-form-vocabulary.md b/.agents/notes/implemented/feature/2026-08-05-context-form-vocabulary.md
+index e1c909b761fee60ebacb306ef204a4212a03baa4..e43eb45eeff30834dedfccf1bc19a8092578385b 100644
+--- a/.agents/notes/implemented/feature/2026-08-05-context-form-vocabulary.md
++++ b/.agents/notes/implemented/feature/2026-08-05-context-form-vocabulary.md
+@@ -59,7 +59,7 @@ The tool presentation contract pairs its vocabulary with `presentCall(args)`, a
+ 
+ ## Testing
+ 
+-- `packages/client/runtime` pins the form projection, including the unknown, empty, wrongly-typed, and absent values that must degrade to opaque.
++- `packages/client/ui-chat` pins the form projection, including the unknown, empty, wrongly-typed, and absent values that must degrade to opaque.
+ - `packages/client/ui-conversation` pins each body: the opaque body's preserved line breaks and source fields, the instructions body's file list and verbatim framing, the catalog body's entry list, and a catalog with unusable entries falling back to opaque.
+ - `packages/skill/tool-skill` pins the new source on first publication and replacement, republish behavior driven by the durable entries, and a malformed durable catalog leaving step observation intact.
+ - The keyless assembled-Web seeded-history scenario expands a real `instructions` context in Chromium and asserts its file list, verbatim framing, and the unchanged disclosure geometry. `catalog` has no assembled coverage: the hermetic scaffold publishes no skills, so no catalog reaches a browser scenario.
+diff --git a/.agents/notes/implemented/feature/2026-08-05-context-form-vocabulary.zh.md b/.agents/notes/implemented/feature/2026-08-05-context-form-vocabulary.zh.md
+index 4d595bf52fba2f7323643ddc47bd365ce6508c9e..8bf273ae23d84994b5d7815addbf529f0254b468 100644
+--- a/.agents/notes/implemented/feature/2026-08-05-context-form-vocabulary.zh.md
++++ b/.agents/notes/implemented/feature/2026-08-05-context-form-vocabulary.zh.md
+@@ -59,7 +59,7 @@ Status: implemented
+ 
+ ## 测试
+ 
+-- `packages/client/runtime` 钉住形态投影，包括必须降级为 opaque 的未知值、空值、类型不符与缺失。
++- `packages/client/ui-chat` 钉住形态投影，包括必须降级为 opaque 的未知值、空值、类型不符与缺失。
+ - `packages/client/ui-conversation` 逐个钉住内容区：opaque 的换行留存与来源字段、instructions 的文件列表与原样包装、catalog 的条目列表，以及条目不可用的 catalog 回落到 opaque。
+ - `packages/skill/tool-skill` 钉住首次发布与替换时的新来源、由持久条目驱动的重新发布行为，以及畸形持久目录不打断步骤观察。
+ - 无密钥的组装 Web seeded-history 场景在 Chromium 中展开一条真实的 `instructions` 上下文，断言其文件列表、原样包装与未改动的展开项几何。`catalog` 没有组装态覆盖：隔离脚手架不发布任何 skill，因此没有目录能进入浏览器场景。
+diff --git a/.agents/notes/proposed/feature/2026-08-04-task-surface.i18n.yaml b/.agents/notes/proposed/feature/2026-08-04-task-surface.i18n.yaml
+index fbb5dea1398dde6f1bdca82ee6ce281011428240..be024cdc5dcaadf9bdb67d3b75d48e87110fd591 100644
+--- a/.agents/notes/proposed/feature/2026-08-04-task-surface.i18n.yaml
++++ b/.agents/notes/proposed/feature/2026-08-04-task-surface.i18n.yaml
+@@ -24,8 +24,8 @@
+   en: 26beff219ebb0ce9
+   zh: 664d4c76adf56175
+ /agent-note-task-surface-for-structured-session-interaction/package-boundaries-and-dependencies:
+-  en: 02aad87dd24d822f
+-  zh: 9d49b5fa588e5e11
++  en: 9afd7c8462b20887
++  zh: be871a7418c125b5
+ /agent-note-task-surface-for-structured-session-interaction/delivery-stages:
+   en: 25d0951356cf412d
+   zh: 994619aaab7c2348
+diff --git a/.agents/notes/proposed/feature/2026-08-04-task-surface.md b/.agents/notes/proposed/feature/2026-08-04-task-surface.md
+index bc8b0e9ae71223e3786c24d1522bb7b9a125af8d..05753da1adaaae88ebbcb4f5c52cee117e11b893 100644
+--- a/.agents/notes/proposed/feature/2026-08-04-task-surface.md
++++ b/.agents/notes/proposed/feature/2026-08-04-task-surface.md
+@@ -217,7 +217,7 @@ The capability is split where ownership changes:
+ | `packages/core/agent` and `packages/core/agent-loop` | Generic terminal outcome for a claimed next-turn inbox occurrence, allowing a Host observer to distinguish durable admission from discard without Task Surface-specific types |
+ | `packages/task-surface/task-surface` | Browser-safe model, branded IDs, correlation and pending types, parser, limits, submission validator/formatter, Session event extension, projection unit, and Host service contract |
+ | `packages/task-surface/tool-task-surface` | `show_task_surface`, canonical output, presentation metadata, generic render intent, active-Surface check, and `concludeTurn()` behavior |
+-| `packages/client/runtime` | Generic queued-message `source` projection and Session-scoped active-projection access |
++| `packages/api/session-controller` | Generic queued-message `source` projection and Session-scoped active-projection access |
+ | `packages/client/ui-primitives` | Task Surface-agnostic `MarkdownText.remoteImages` policy, including the `alt-only` image branch and URL-policy tests |
+ | `packages/client/ui-task-surface` | Static actionable `TaskSurfaceDock`, read-only keyed transcript row, declarative Web renderer that consumes the Task Surface model and `MarkdownText` in `alt-only` mode, per-Session draft store, and submit client |
+ | `packages/host/apiproxy` | Typed active-read/submit/dismiss transport, user-source augmentation and carriage, queue-action restrictions, and routing of claim and terminal outcomes; delegates validation, pending coordination, and admission to the Task Surface service |
+diff --git a/.agents/notes/proposed/feature/2026-08-04-task-surface.zh.md b/.agents/notes/proposed/feature/2026-08-04-task-surface.zh.md
+index 3bb982f03257269e63a4282a69d75a13e8fb4da3..c84b599878eb3b081fb703e45bdf0e5640a1d7d6 100644
+--- a/.agents/notes/proposed/feature/2026-08-04-task-surface.zh.md
++++ b/.agents/notes/proposed/feature/2026-08-04-task-surface.zh.md
+@@ -217,7 +217,7 @@ Web 插件将未提交值保存在一个有界、按会话持久化的 slot stor
+ | `packages/core/agent` 和 `packages/core/agent-loop` | 为已认领的下一轮 inbox 条目提供通用终态结果，让 Host 观察方无需使用 Task Surface 专用类型，即可区分持久接纳和丢弃 |
+ | `packages/task-surface/task-surface` | 浏览器安全的模型、带品牌类型的 ID、关联和待处理类型、解析器、限制、提交校验器／格式化器、会话事件扩展、投影单元，以及 Host 服务约定 |
+ | `packages/task-surface/tool-task-surface` | `show_task_surface`、规范输出、呈现元数据、通用 render intent、活动 Surface 检查和 `concludeTurn()` 行为 |
+-| `packages/client/runtime` | 通用排队消息 `source` 投影和会话作用域的活动投影访问 |
++| `packages/api/session-controller` | 通用排队消息 `source` 投影和会话作用域的活动投影访问 |
+ | `packages/client/ui-primitives` | 与 Task Surface 无关的 `MarkdownText.remoteImages` 策略，包括 `alt-only` 图片分支和 URL 策略测试 |
+ | `packages/client/ui-task-surface` | 静态且可操作的 `TaskSurfaceDock`、带 key 的只读 transcript 行、消费 Task Surface 模型并以 `alt-only` 模式使用 `MarkdownText` 的声明式 Web 渲染器、按会话划分的草稿 store，以及提交客户端 |
+ | `packages/host/apiproxy` | 类型化的活动 Surface 读取／提交／关闭传输、用户消息来源扩展与传递、队列操作限制，以及认领和终态结果的路由；将校验、待处理协调和接纳委托给 Task Surface 服务 |

@@ -3,7 +3,7 @@
 import type { DesktopKeyboardApi, DesktopShortcutsApi } from '@deepseek-ai/dsh-client-shortcuts/protocol'
 import type { IpcMainInvokeEvent } from 'electron'
 import type { DesktopBrowserBridge } from '@deepseek-ai/dsh-client-ui-sidebar-browser/types'
-import type { ProductEvent, ProductMethod, ProductSession } from '@deepseek-harness/product/protocol'
+import type { ExtensionResponse } from './extension-errors.ts'
 
 /** IPC channel names kept private to the desktop application bundle. */
 export const DESKTOP_IPC = {
@@ -32,10 +32,9 @@ export const DESKTOP_IPC = {
   windowFullscreen: 'dsh-desktop:window-fullscreen',
   windowsAppearance: 'dsh-desktop:windows-appearance',
   windowsMenu: 'dsh-desktop:windows-menu',
-  productInvoke: 'deepseek-harness-product:invoke',
-  productCancel: 'deepseek-harness-product:cancel',
-  productSession: 'deepseek-harness-product:session',
-  productEvent: 'deepseek-harness-product:event',
+  extensionInvoke: 'dsh-desktop:extension-invoke',
+  extensionCancel: 'dsh-desktop:extension-cancel',
+  extensionEvent: 'dsh-desktop:extension-event',
 } as const
 
 /** Desktop release update state rendered by desktop-owned UI. */
@@ -89,18 +88,11 @@ export interface DshDesktopProductApi {
     open(): Promise<void>
     subscribe(listener: (state: DesktopUpdatePresentation) => void): () => void
   }
-  /** Product capabilities are isolated from Harness session execution. */
-  readonly product: {
-    invoke(method: ProductMethod, payload?: unknown, requestId?: string): Promise<unknown>
-    cancel(requestId: string): void
-    subscribe(listener: (event: ProductEvent) => void): () => void
-    getSession(): Promise<ProductSession>
+  readonly extensions: {
+    invoke(namespace: string, method: string, payload?: unknown, requestId?: string, timeoutMs?: number): Promise<ExtensionResponse>
+    cancel(namespace: string, requestId: string): void
+    subscribe(namespace: string, listener: (event: unknown) => void): () => void
   }
-}
-
-/** Product-only surface exposed under the downstream-owned namespace. */
-export interface DeepSeekHarnessProductApi {
-  readonly product: DshDesktopProductApi['product']
 }
 
 /** Scheme of Desktop-owned application documents. */

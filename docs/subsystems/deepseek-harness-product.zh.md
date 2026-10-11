@@ -1,30 +1,62 @@
-# DeepSeek Harness产品层
+# DeepSeek Harness 产品层
 
 [English](deepseek-harness-product.md) | 中文
 
-DeepSeek Harness产品层围绕官方 DeepSeek Harness 桌面端提供企业能力。产品层只负责产品数据和外部集成；会话、回合、工具、审批、会话界面、Browser、Office、权限以及会话持久化仍由 Harness 负责。
+企业目录扩展官方 Harness 的 Session、执行循环、审批和会话界面。产品包负责认证、下载、能力选择、连接器策略和限定范围的知识检索。
 
-## 产品能力
+## 包
 
-- 钉钉 OAuth 会话和员工初始化信息。
-- 专家套件、技能、数据连接和知识库目录。
-- 系统定时任务关联。
-- 产品引用、交付成果和 Electron 桥接。
+| 包 | 职责 |
+|---|---|
+| `@deepseek-harness/product` | 协议、认证、目录和服务端请求；不依赖 Harness 或 Electron |
+| `@deepseek-harness/product-runtime` | 内容校验、组合、快照、连接器策略和知识工具的 Cordis Loader 插件 |
+| `@deepseek-harness/product-desktop` | 钉钉登录、加密凭据、产品分发、sidecar 生命周期和打包资源 |
+| `@deepseek-harness/product-ui` | 通过官方 Sidebar/Main 插槽提供四类目录；统一适配 Session、Workspace、Preset 和草稿 |
 
-产品桥向 Renderer 暴露 `invoke`、`subscribe` 和 `getSession`。白名单内的文件、凭据、SQLite、附件、设备身份、图片预览和文件撤销操作通过 `invoke` 转发到 `deepseek-harness.native.v1` sidecar 协议。
+## 任务能力
 
-Electron 主进程在 Host 启动前续期钉钉身份，并自行读取已认证的运行时 Bootstrap。员工级模型虚拟 Key 和推理地址只传给官方 Host 子进程；`bootstrap.get` 不是 Renderer 桥接方法。
+专家套件从按内容哈希存储的文件生成 Provider 插件配置，准备过程不创建独立技能或套件 Preset。仅注册并保存完整任务组合。所选模式提供基础工具，依赖检查读取最终任务的工具目录。运行时使用 profile 配置的基础模式，不依赖 `standard` 定义。
 
-Desktop Host 通过私有的关联 IPC 客户端读取产品目录。目录管理器在登录后、窗口重新获得焦点时、每五分钟和手动请求时刷新；并发刷新合并为一次请求，失败时保留最后一份成功快照。成功的快照变更会向界面和 Host 发布真实 `catalog.changed` 事件。准备状态限定到目录条目的 `id`、`version` 和 SHA-256 标识，刷新后删除过期标识。新 Session 使用最新快照，已存在 Session 保持其记录的内容版本和 Preset。
+套件设备安装使用 `expertKits.install`、`expertKits.installed.read` 和 `expertKits.uninstall`。`ProductInstalledExpertKits.installed` 返回按员工隔离的内容标识。单独安装不创建 Preset 或任务。卸载只移除设备记录，保留服务端资源、不可变内容和已有任务组合。[运行时协议](../../packages/deepseek-harness-product/runtime/README.zh.md)定义持久化和生命周期行为。
 
-独立技能只在员工选择使用时准备。Host 以 `id`、`version` 和 SHA-256 标识不可变内容代，限制压缩大小，校验摘要，安全解压后原子替换，再通过 `dsh-skill-filesystem` 注册。Host 同时创建不可变的 Skill Preset，固定该目录版本的数据连接、工具声明和知识库引用；授权、工具或可见知识不满足时不创建 Session。“使用技能”创建绑定该 Preset 的官方 Session，并通过官方 Input Trigger Source 插入中文 Skill 引用 Chip；提交时由 `ReferenceCodec` 精确序列化为 `/<skillId>`。官方 `skill` 工具读取已准备的 Skill。本地技能使用 Harness 默认根目录，包括 `$DSH_HOME/skills` 和 `~/.agents/skills`；产品不额外接入 `~/.codex/skills`。
+`tasks.capabilities.read` 返回当前任务选择。`tasks.capabilities.prepare` 接收专家套件、连接器 ID 和知识库 ID，返回执行位置、不可变 Preset ID、实际能力快照和依赖检查。套件提供初始组合，附加能力保留已有选择，必需依赖不能取消。连接器授权与任务启用是独立操作。
 
-专家套件也只在使用时准备到按内容寻址的 `<kitId>/<sha256>` 目录。员工选择**开始使用**后，Host 注册一个不可变 Agent Preset，在 `standard` 基础上固定该快照的 README、Skill 版本、`dsh-mcp-client` 数据连接、知识库引用和工具权限；客户端随后创建官方 Session、绑定该 Preset 并打开 Session。常用任务使用相同流程，只把业务提示预填到输入框而不自动发送。不含秘密的描述文件用于 Host 重启后恢复被 Session 投影引用的 Preset。全部 Session 成功检查后，Host 才清理未被 Session 和当前目录引用的产物代；检查不完整或清理失败时保留数据且不阻止 Host 启动。单个条目准备失败只影响该条目，可重试且不阻止 Host 启动。
+两个任务接口通过 `requiredConnectorIds` 返回固定套件的必需连接器。技能和专家套件提供连接器依赖，产品 UI 不提供独立的连接器任务选择。连接器目录通过“全部 / 已连接”视图管理授权，两个视图均保留搜索和分类分组。参见 [UI 约定](../../packages/extensions/ui-deepseek-harness-product/README.zh.md)。
 
-`oauth` 数据连接由 Electron 主进程打开系统浏览器，服务端负责员工凭据保存、刷新、撤销和 MCP 代理。Renderer 和 Host 不获取上游 Access Token 或 Refresh Token。`none` 直连，`employee-bearer` 只在服务端代理中获取员工 Session。运行时读写级别只来自 MCP ToolSpec，未知工具作为写操作使用官方 Harness 审批。
+`skills.install` 校验内容并记录按员工隔离的安装，不修改任务或 Preset。技能没有启用、停用状态。`skills.installed.read` 返回安装标识和任务可见子集。`skills.uninstall` 移除设备安装记录，未开始任务不再发现该技能，已开始任务的固定内容和服务端资源保留。每个 Agent 的官方技能 Provider 发现依赖满足的已安装技能，通过官方 MCP 客户端挂载其声明的已授权连接器。首个模型步骤边界固定内容和连接器定义，日志目录消息记录这些信息且不包含凭据。加载说明使用官方技能事件。重启恢复固定内容并使用当前代理凭据；读取、加载和连接器执行时重新校验权限。参见[运行时协议](../../packages/deepseek-harness-product/runtime/README.zh.md)。
 
-全局 `knowledge_search` 工具按当前会话能力快照的知识库引用限制搜索范围，工具调用和结果写入正常的 Harness 会话日志。
+`basePresetId` 独立于产品能力选择执行模式。准备过程在替换基础插件集合时保留固定的产品插件，并检查必需工具。运行时处理通用的 `agent-preset/resolve-selection` waterfall，让官方选择入口保留任务能力。官方 Preset UI 显示组合快照的基础模式，任务开始后显示只读标签。`expertKitId: null` 清除套件组合，选择或取消套件保留已选知识库 ID。独立的套件选择器使用公开会话插槽，不覆盖官方模式控件。知识库使用独立的多选暂存入口，目录详情不修改任务选择。专家套件 README 预览可打开完整 Markdown 阅读弹窗，命令表格不声明可执行命令。
 
-## 边界
+空任务直接选择派生 Preset。开始回合后，客户端在相同 Workspace 创建新的官方 Session，并携带最新输入草稿。官方 Preset 选择检查处理并发开始。准备失败保留当前任务和草稿。已安装技能使用官方 `skill` 工具和纯文本 `/<skillName>` 调用，安装保留当前任务和草稿。
 
-产品包只能使用公开的 Harness 包 API 和稳定扩展点，不得导入私有运行时模块，不得替换 Session Controller，也不得维护第二套会话 reducer。产品能力通过官方 Sidebar/Main Slot 扩展点展示，设置页只保留通用设置。
+配置操作进入队列前捕获显式 Session ID，完成时只更新目标 Session，用户已导航到其他页面时保留当前视图。恢复通过一次准备请求退出套件、移除失权知识库 ID 并保留可用 ID；网络失败不能证明权限撤销。坏快照返回不可用诊断并要求显式恢复，对应历史仍可查看。
+
+快照固定内容标识、插件配置、连接器工具协议和能力选择。上游凭据留在主进程，重启时重新连接其私有 MCP 代理。作用域系统提示记录能力选择及内容标识。官方 `agent-preset/selected` 事件记录按哈希寻址的快照 ID；正常技能和工具事件保留模型可见内容、检索查询及结果。目录刷新只影响后续选择。任务快照及其内容保留，暂不自动清理任务快照。
+
+## 权限与检索
+
+已声明的 READ 连接器工具继续通过 Harness 策略，WRITE 工具请求官方审批。未声明连接器工具被拒绝。服务端负责实时权限校验和撤销。员工令牌留在主进程，上游连接器 OAuth 凭据留在服务端。
+
+知识库选择属于任务快照。搜索只接受查询和结果数量，引用片段阅读接受来源 ID。所选组合注册 `knowledge_search` 和 `knowledge_read`；空选择不注册检索工具，也不会扩大为全部可见知识库。解析后的知识库 ID 定义精确的搜索与阅读范围。服务端权限失败作为工具失败处理，超出所选 ID 的结果被拒绝。
+
+知识库归属使用 `PERSONAL`、`DEPARTMENT`、`COMPANY`。每次目录查询和检索，服务端通过 `org-directory` 优先解析已认证的钉钉 unionId；OAuth 缺少 unionId 时按 userid 解析，随后校验员工映射、userid、员工编号、在职状态及快照有效期。租户没有该员工的 unionId 时，经过校验的 userid 作为稳定归属键，绝不使用 openId。再授予个人、全部直属部门和配置公司的范围。上级、下级和其他分支不扩大权限。快照最大有效期默认两小时。组织服务故障拒绝访问并返回可重试诊断，不使用固定团队或任务中的旧授权代替目录。
+
+管理员将已有知识库绑定到目录员工或部门 ID，或配置公司。未绑定库不可检索。WeKnora 保留文档和索引，组织同步不创建库。执行前和加载说明时按资源 ID 重新检查套件权限，版本保持固定。产品失败包含错误码、相关资源、可重试性，以及准备失败时的依赖结果。
+
+产品元数据负责文件夹、归属及读取和管理权限。可读取不代表可写入：个人所有者、指定知识库管理者和配置的管理员 ID 可管理内容。员工显式创建个人库，共享库创建要求管理员权限。管理者可新建、重命名、删除单层文件夹，并上传到所选目录；Markdown 和链接仍在根目录创建，之后可移动。WeKnora 负责解析、索引、文档内容和原生文件夹路径。产品接口提供筛选后的文档分页、解析正文阅读、链接导入、Markdown 创建或修改、文件上传及异步删除。文件夹 ID 稳定且独立于展示名称，文件夹不影响授权。Markdown 时间检查将产品内编辑串行化，但无法对直接在 WeKnora 中修改提供原子冲突保护。实时协作编辑不属于此模块。
+
+任务结果保存需显式要求，独立于检索范围。可写入目标元数据与 Markdown 保存通过产品工具使用官方 Session 日志和审批，详见[运行时约定](../../packages/deepseek-harness-product/runtime/README.zh.md)。保存不会自动将目标加入当前任务，也不表示索引已完成。
+
+原文件查看独立于检索及索引就绪状态。服务端校验原文件元数据和字节的访问权限，产品 UI 通过公开的官方文档预览 Factory 展示内容，不创建 Session。主进程流式写入私有暂存文件，向渲染进程发送有界二进制块，官方 Host Office 转换使用有界 JSON 块。传输在完成、取消或释放时关闭。已认证的服务端限制和桌面策略共同限定预览、上传及下载，官方格式保护继续生效。原文件下载和桌面系统打开留在主进程，不返回本地路径。Office 转换重新检查权限与版本；[产品桥约定](../../packages/deepseek-harness-product/product/README.zh.md)定义限制和无凭据传输。没有保存原文件的网页导入不提供文件预览，其引用片段仍需通过检索权限检查。
+
+原件读取必须提供稳定的 `contentVersion`，服务端流传输、桌面分块校验及 Office 缓存统一使用该版本。索引处理时间不替代内容版本，原件标识缺失时拒绝读取。
+
+## 桌面与上游集成
+
+官方壳提供可信启动准备、环境与 profile overlay、命名空间 IPC、事件和清理。preload 传输结构化响应：`{ ok: true, result }` 或 `{ ok: false, failure }`。产品客户端在跨过隔离世界的桥后解析失败，保留错误码、相关资源和可重试性。产品自行校验方法白名单。Electron 保留窗口、来源和主 frame 检查。运行时注册和进程监听随 Cordis 插件释放。
+
+请求取消贯穿 Renderer、主进程、Host 和远端请求。产品释放时取消并等待在途操作，再释放监听和原生 sidecar。准备取消不会撤销其他调用方的注册或丢弃草稿。
+
+产品代码使用 Harness 公开出口，包括保留声明方 Loader 解析上下文的类型化 `agentPresets.derive`。`verify-upstream` 校验固定版本、登记补丁的完整差异、源码引用及依赖方向。升级依次更新基线、显式应用和解决补丁冲突、检查适配层并运行验收。官方 profile 可不加载产品 overlay 使用。
+
+参见[任务能力升级说明](../upgrade-guide/v0.2.0-rc.2/product-task-capabilities/guide.zh.md)、[知识库管理升级说明](../upgrade-guide/v0.2.1-alpha.2/product-knowledge-library/guide.zh.md)和[补丁清单](../../scripts/upstream-patches/manifest.json)。

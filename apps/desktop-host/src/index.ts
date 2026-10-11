@@ -14,39 +14,26 @@ import { installDesktopUpdateTaskControl } from './update-tasks.ts'
 import { installDesktopQuitInspection } from './quit-inspection.ts'
 import { installPlatformSessionPublisher } from './platform-session.ts'
 import { installOfficeEngineResolution } from './office-engine.ts'
-import { DeepSeekHarnessProductIpc } from './deepseek-harness-product-ipc.ts'
-import * as deepseekHarnessRuntime from './deepseek-harness-runtime.ts'
 
-function validContentIdentity(value: object): value is {
-  readonly id: string
-  readonly version: string
-  readonly sha256: string
-} {
-  return 'id' in value
-    && typeof value.id === 'string'
-    && /^[a-z][a-z0-9-]{2,63}$/u.test(value.id)
-    && 'version' in value
-    && typeof value.version === 'string'
-    && value.version !== ''
-    && value.version.length <= 128
-    && 'sha256' in value
-    && typeof value.sha256 === 'string'
-    && /^[a-fA-F0-9]{64}$/u.test(value.sha256)
+function desktopProfilePatches(): string[] {
+  const value: unknown = JSON.parse(process.env.DSH_DESKTOP_PROFILE_PATCHES ?? '[]')
+  if (!Array.isArray(value) || value.some(path => typeof path !== 'string')) throw new Error('Invalid Desktop profile overlays')
+  return value as string[]
 }
 
 async function main(): Promise<void> {
   const runtimeDir = process.argv[2] as string
   const projectDir = process.argv[3] as string
   installOfficeEngineResolution(runtimeDir)
-  const installAnchor = join(runtimeDir, 'node_modules', '@deepseek-ai', 'dsh', 'package.json')
+  const installAnchor = join(runtimeDir, 'node_modules', '@deepseek-ai', 'dsh-desktop-host', 'package.json')
   const profile = loadProfileDirectory('dsh', projectDir, installAnchor)
   reportSkippedBundles('dsh', profile)
   const application = runProfile({
     environment: loadLayeredEnv('dsh'),
     profile: 'desktop',
     resolvedProfile: { profile, installAnchor },
-    patchFiles: [],
-    args: ['--no-open', '--port', '19387'],
+    patchFiles: desktopProfilePatches(),
+    args: ['--no-open', '--host', '127.0.0.1', '--port', '0'],
     ...(process.argv[5] === undefined ? {} : {
       packageManager: {
         command: process.execPath,
@@ -63,15 +50,13 @@ async function main(): Promise<void> {
   const control: {
     updateTasks?: ReturnType<typeof installDesktopUpdateTaskControl>
     quitInspection?: ReturnType<typeof installDesktopQuitInspection>
-    productRuntime: deepseekHarnessRuntime.DeepSeekHarnessRuntimeControl | undefined
-  } = { productRuntime: undefined }
+    indexInjections?: () => readonly unknown[]
+  } = {}
   const send = (message: object): Promise<void> => new Promise((resolve, reject) => {
     if (!process.connected || process.send === undefined) { resolve(); return }
     process.send(message, (error) => { if (error === null) resolve(); else reject(error) })
   })
-  const product = new DeepSeekHarnessProductIpc()
   const stop = (): Promise<void> => stopping ??= (async () => {
-    product.close('Host is shutting down')
     // Startup failure is reported by main; shutdown only owns a tree that booted.
     const running = await application.catch(() => undefined)
     await running?.shutdown.shutdown(0)
@@ -79,9 +64,22 @@ async function main(): Promise<void> {
     if (process.connected) process.disconnect()
   })()
   process.on('message', (message: unknown) => {
-    if (product.handle(message)) return
     if (typeof message !== 'object' || message === null || !('type' in message)) return
     if (message.type === 'shutdown') { void stop(); return }
+    if (message.type === 'index-injections') {
+      if (!('requestId' in message) || !Number.isSafeInteger(message.requestId)) return
+      const requestId = message.requestId
+      void (async () => {
+        try {
+          if (stopping !== undefined || control.indexInjections === undefined) throw new Error('desktop boot: Host is unavailable')
+          await send({ type: 'index-injections', requestId, injections: control.indexInjections() })
+        } catch (error) {
+          await send({ type: 'index-injections', requestId, injections: [],
+            error: error instanceof Error ? error.message : String(error) })
+        }
+      })().catch((error: unknown) => { console.error(error) })
+      return
+    }
     if (message.type === 'quit-inspection') {
       if (!('requestId' in message) || !Number.isSafeInteger(message.requestId)) return
       const requestId = message.requestId
@@ -93,44 +91,6 @@ async function main(): Promise<void> {
         } catch (error) {
           // The shell treats an unknown state as interruptible work and asks before quitting.
           await send({ type: 'quit-inspection', requestId, activeTasks: true, scheduledTasks: false,
-            error: error instanceof Error ? error.message : String(error) })
-        }
-      })().catch((error: unknown) => { console.error(error) })
-      return
-    }
-    if (message.type === 'expert-kit-prepare') {
-      if (!('requestId' in message) || !Number.isSafeInteger(message.requestId)
-        || !validContentIdentity(message)) return
-      const requestId = message.requestId
-      const content = { id: message.id, version: message.version, sha256: message.sha256 }
-      void (async () => {
-        try {
-          if (stopping !== undefined || control.productRuntime === undefined) {
-            throw new Error('deepseek-harness product: expert kit runtime is unavailable')
-          }
-          const presetId = await control.productRuntime.prepareExpertKit(content)
-          await send({ type: 'expert-kit-prepare', requestId, presetId })
-        } catch (error) {
-          await send({ type: 'expert-kit-prepare', requestId, presetId: '',
-            error: error instanceof Error ? error.message : String(error) })
-        }
-      })().catch((error: unknown) => { console.error(error) })
-      return
-    }
-    if (message.type === 'skill-prepare') {
-      if (!('requestId' in message) || !Number.isSafeInteger(message.requestId)
-        || !validContentIdentity(message)) return
-      const requestId = message.requestId
-      const content = { id: message.id, version: message.version, sha256: message.sha256 }
-      void (async () => {
-        try {
-          if (stopping !== undefined || control.productRuntime === undefined) {
-            throw new Error('deepseek-harness product: skill runtime is unavailable')
-          }
-          const presetId = await control.productRuntime.prepareSkill(content)
-          await send({ type: 'skill-prepare', requestId, presetId })
-        } catch (error) {
-          await send({ type: 'skill-prepare', requestId, presetId: '',
             error: error instanceof Error ? error.message : String(error) })
         }
       })().catch((error: unknown) => { console.error(error) })
@@ -153,19 +113,16 @@ async function main(): Promise<void> {
   const { ctx } = await application
   control.updateTasks = installDesktopUpdateTaskControl(ctx)
   control.quitInspection = installDesktopQuitInspection(ctx)
+  control.indexInjections = () => ctx.webServer.collectIndexInjections()
   await ctx.plugin(desktopOffice, {
     runtimeDir,
     source: process.argv[4] ?? join(runtimeDir, '..', 'runtime', 'primary-runtime'),
     root: join(resolveDshHome(), 'dsh-runtimes', 'dsh-primary-runtime'),
   })
-  await ctx.plugin(deepseekHarnessRuntime, {
-    product,
-    publishControl: (runtimeControl) => { control.productRuntime = runtimeControl },
-  })
   installPlatformSessionPublisher(ctx, (session) => {
     if (process.connected) process.send?.({ type: 'platform-session', session })
   })
-  const url = ctx.connection.authenticatedUrl(`http://127.0.0.1:${String(ctx.webServer.port)}`)
+  const url = ctx.connection.authenticatedUrl(`${ctx.webServer.protocol}//127.0.0.1:${String(ctx.webServer.port)}`)
   if (process.connected) process.send?.({ type: 'ready', url, injections: ctx.webServer.collectIndexInjections() }, (error) => { if (error !== null) console.error(error) })
 }
 

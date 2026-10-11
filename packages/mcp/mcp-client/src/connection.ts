@@ -305,7 +305,7 @@ export function startConnection(ctx: Context, config: Config, policy: ResolvedRe
     let instructions: string
     try {
       transport = createTransport(config)
-      await generation.connect(transport)
+      await generation.connect(transport, { timeout: config.toolCallTimeoutMs })
       if (hasClosed()) {
         attemptSettled = true
         generationDown(generation)

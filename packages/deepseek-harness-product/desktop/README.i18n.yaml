@@ -1,0 +1,40 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/deepseek-harness-product/desktop/README.md
+/:
+  en: 7c71c5710dc2ec0f
+  zh: b1292d26f963624b
+/product-desktop:
+  en: b268a573cb597801
+  zh: 13facc929709c7b9
+/product-desktop/summary:
+  en: 34e7176ad1a3c057
+  zh: fdf4fe35a3be3381
+/product-desktop/table-of-contents:
+  en: 02fca53abf32d7e3
+  zh: 55b504751649346c
+/product-desktop/assembly:
+  en: e852ea3cb1cc3661
+  zh: 4d0622ee5816d085
+/product-desktop/model-experience:
+  en: 215e7ba838619b7b
+  zh: a311da3843709f90
+/product-desktop/model-experience/product-desktop:
+  en: 300da711e475ac12
+  zh: 5051ff73535a5c0c
+/product-desktop/model-experience/product-desktop/what-the-model-sees:
+  en: 8998db587c80757b
+  zh: 79c323998f0bc137
+/product-desktop/model-experience/product-desktop/token-effect:
+  en: 8cdfcb0538975ae5
+  zh: 46484cc34a923f50
+/product-desktop/model-experience/product-desktop/kv-cache-effect:
+  en: 04359d40537d1c8a
+  zh: 66fca69d40714375
+/product-desktop/known-limitations-and-deferred-work:
+  en: d0a4c134b7573c1e
+  zh: a0b8887dc7175a16
+/product-desktop/known-limitations-and-deferred-work/dev-note:
+  en: 9adef5f88c391776
+  zh: b79294ed5080f41d

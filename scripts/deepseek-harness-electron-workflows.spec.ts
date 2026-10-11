@@ -1,7 +1,9 @@
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import * as yaml from 'js-yaml'
 import { describe, expect, it } from 'vitest'
+import { readDesktopAssembly } from '../apps/desktop/scripts/desktop-assembly.mjs'
+import { productPackagingAssembly } from '../apps/product-desktop/scripts/packaging-assembly.mjs'
 
 interface WorkflowStep {
   readonly name?: string
@@ -25,6 +27,15 @@ function workflow(name: string): Workflow {
 }
 
 describe('DeepSeekHarness Electron workflows', () => {
+  it('runs existing product contract tests after the Host extraction', () => {
+    const command = workflow('electron-ci.yml').jobs.desktop?.steps
+      .find(step => step.name === 'Verify upstream and product contracts')?.run ?? ''
+    const tests = command.match(/\S+\.spec\.tsx?/gu) ?? []
+    expect(tests).toContain('packages/deepseek-harness-product/runtime/tests/deepseek-harness-connector-contract.spec.ts')
+    expect(tests).toContain('packages/deepseek-harness-product/runtime/tests/deepseek-harness-runtime.spec.ts')
+    for (const path of tests) expect(existsSync(resolve(import.meta.dirname, '..', path)), path).toBe(true)
+  })
+
   it('uses only available internal runners and actions', () => {
     const expected = new Map([
       ['electron-ci.yml', 'ci-node'],
@@ -107,6 +118,47 @@ describe('DeepSeekHarness Electron workflows', () => {
     }
   })
 
+  it('packages product resources through the application-owned assembly entry', () => {
+    for (const [file, jobName, stepName, target] of [
+      ['electron-windows.yml', 'windows', 'Package Windows', 'win-x64 --unsigned'],
+      ['electron-macos.yml', 'macos', 'Package macOS', 'mac-arm64'],
+      ['electron-release.yml', 'windows', 'Package Windows unsigned', 'win-x64 --unsigned'],
+      ['electron-release.yml', 'macos', 'Package macOS', 'mac-arm64'],
+    ] as const) {
+      const command = workflow(file).jobs[jobName]?.steps.find(step => step.name === stepName)?.run ?? ''
+      expect(command).toContain(`pnpm --dir apps/product-desktop run package ${target}`)
+    }
+    const entry = readFileSync(resolve(import.meta.dirname, '..', 'apps/product-desktop/scripts/package.ts'), 'utf8')
+    expect(entry).toContain('DSH_DESKTOP_ASSEMBLY_MANIFEST: manifest')
+    expect(entry).toContain('packages/deepseek-harness-product/desktop/assembly.json')
+    const manifest = resolve(import.meta.dirname, '..', 'packages/deepseek-harness-product/desktop/assembly.json')
+    const assembly = readDesktopAssembly({ DSH_DESKTOP_ASSEMBLY_MANIFEST: manifest }, 'win32')
+    expect(assembly.runtimePackages).toContain('@deepseek-harness/product-desktop')
+    expect(assembly.resources.map(resource => resource.to)).toEqual(expect.arrayContaining([
+      'desktop-extension.json', 'deepseek-harness/product.json', 'native/deepseek-harness-native.exe',
+    ]))
+    expect(assembly.resources.some(resource => resource.to === 'native/deepseek-harness-native')).toBe(false)
+  })
+
+  it('uses Cargo target paths while preserving relocated product resource and package paths', () => {
+    const manifest = resolve(import.meta.dirname, '..', 'packages/deepseek-harness-product/desktop/assembly.json')
+    const original = readDesktopAssembly({ DSH_DESKTOP_ASSEMBLY_MANIFEST: manifest }, 'win32')
+    const target = resolve(import.meta.dirname, 'cargo-cache')
+    const prepared = productPackagingAssembly(manifest, target)
+    expect(prepared.resources.find(resource => resource.to === 'native/deepseek-harness-native.exe')?.from)
+      .toBe(resolve(target, 'release/deepseek-harness-native.exe'))
+    expect(prepared.resources.find(resource => resource.to === 'native/deepseek-harness-native')?.from)
+      .toBe(resolve(target, 'release/deepseek-harness-native'))
+    expect(prepared.resources.find(resource => resource.to === 'desktop-extension.json')?.from)
+      .toBe(original.resources.find(resource => resource.to === 'desktop-extension.json')?.from)
+    expect(prepared.packageDirectories).toEqual(original.packageDirectories)
+    expect(prepared.icons).toEqual(original.icons)
+    const entry = readFileSync(resolve(import.meta.dirname, '..', 'apps/product-desktop/scripts/package.ts'), 'utf8')
+    expect(entry).toContain("'metadata', '--format-version', '1', '--no-deps'")
+    expect(entry).toContain('if (!existsSync(binary)) throw')
+    expect(entry.indexOf('if (!existsSync(binary)) throw')).toBeLessThan(entry.indexOf('const child = spawn'))
+  })
+
   it('caches locked Windows runtime assets before the package-owned preparation', () => {
     const steps = workflow('electron-windows.yml').jobs.windows?.steps ?? []
     const assets = steps.find(step => step.name === 'Cache locked primary runtime assets')
@@ -147,8 +199,8 @@ describe('DeepSeekHarness Electron workflows', () => {
     expect(prepare).not.toContain('DSH_DESKTOP_WINDOWS_')
     expect(prepare).toContain('-Encoding UTF8')
     expect(prepare).not.toContain('utf8NoBOM')
-    expect(packaging).toContain('package:desktop:win:x64:unsigned')
-    expect(packaging).not.toMatch(/package:desktop:win:x64(?:\s|$)/u)
+    expect(packaging).toContain('run package win-x64 --unsigned')
+    expect(packaging).not.toMatch(/run package win-x64(?:\s*$)/u)
     expect(steps.find(step => step.name === 'Run NSIS installer and uninstaller smoke tests')?.run).toContain('test:installer')
     expect(upload?.with?.name).toContain('windows-unsigned-')
     expect(upload?.with?.path).toContain('apps/desktop/.desktop-build/targets/win-x64/unsigned-artifacts/*.exe')

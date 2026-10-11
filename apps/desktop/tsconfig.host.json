@@ -9,9 +9,6 @@
   ],
   "references": [
     {
-      "path": "../../packages/deepseek-harness-product/product"
-    },
-    {
       "path": "../../packages/boot/app-boot"
     },
     {

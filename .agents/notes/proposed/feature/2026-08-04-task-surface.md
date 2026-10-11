@@ -81,9 +81,9 @@ Limits are schema-backed configuration on the Task Surface service. The initial 
 
 `show_task_surface` accepts `{ model: TaskSurfaceModelV1 }`. The Host parses and normalizes the complete model, rejects the call when that Session already has an open Task Surface, mints `surfaceId`, and returns canonical `{ surfaceId, model }` with the normalized model. `presentationMeta` persists `value.model`, so the projector and executor cannot disagree about normalization. The Native result names the Surface and explains that an ordinary message bypasses it when the client cannot render the panel. The tool then calls `exec.concludeTurn()` so the agent does not continue past the requested human checkpoint.
 
-The tool definition omits `isConcurrencySafe`. Under the existing tool-registry contract, omission classifies every call as an exclusive ordering barrier; no new `ToolDefinition` field is introduced. The tool is composed only in Web profiles that mount both the Host service and Web renderer. Version 1 supports `native` and `both` tool modes; a `ptc`-only profile does not advertise it because PTC mode dispatch is nested and cannot carry its presentation metadata to the outer result.
+The tool definition omits `isConcurrencySafe`. Under the existing tool-registry contract, omission classifies every call as an exclusive ordering barrier; no new `ToolDefinition` field is introduced. The tool is composed only in Web profiles that mount both the Host service and Web renderer. Version 1 supports `native` tool mode; a `ptc`-only profile does not advertise it because PTC mode dispatch is nested and cannot carry its presentation metadata to the outer result.
 
-The browser-safe domain package imports the type-only `Branded` primitive from `@deepseek-ai/dsh-brand` and owns all three Task Surface IDs. The canonical value is execution-local under the [canonical tool output contract](../../implemented/architecture/2026-07-20-canonical-tool-output-contract.md). Replay therefore uses `output.presentationMeta(args, value)` to persist this tagged payload with `tool/result.meta`:
+The browser-safe domain package imports the type-only `Branded` primitive from `@deepseek-ai/dsh-brand` and owns all three Task Surface IDs. The canonical value is execution-local under the [canonical tool output contract](../../../../packages/core/tools/README.md). Replay therefore uses `output.presentationMeta(args, value)` to persist this tagged payload with `tool/result.meta`:
 
 ```ts
 import type { Branded } from '@deepseek-ai/dsh-brand'
@@ -217,7 +217,7 @@ The capability is split where ownership changes:
 | `packages/core/agent` and `packages/core/agent-loop` | Generic terminal outcome for a claimed next-turn inbox occurrence, allowing a Host observer to distinguish durable admission from discard without Task Surface-specific types |
 | `packages/task-surface/task-surface` | Browser-safe model, branded IDs, correlation and pending types, parser, limits, submission validator/formatter, Session event extension, projection unit, and Host service contract |
 | `packages/task-surface/tool-task-surface` | `show_task_surface`, canonical output, presentation metadata, generic render intent, active-Surface check, and `concludeTurn()` behavior |
-| `packages/client/runtime` | Generic queued-message `source` projection and Session-scoped active-projection access |
+| `packages/api/session-controller` | Generic queued-message `source` projection and Session-scoped active-projection access |
 | `packages/client/ui-primitives` | Task Surface-agnostic `MarkdownText.remoteImages` policy, including the `alt-only` image branch and URL-policy tests |
 | `packages/client/ui-task-surface` | Static actionable `TaskSurfaceDock`, read-only keyed transcript row, declarative Web renderer that consumes the Task Surface model and `MarkdownText` in `alt-only` mode, per-Session draft store, and submit client |
 | `packages/host/apiproxy` | Typed active-read/submit/dismiss transport, user-source augmentation and carriage, queue-action restrictions, and routing of claim and terminal outcomes; delegates validation, pending coordination, and admission to the Task Surface service |
@@ -248,7 +248,7 @@ The implementation depends on the existing message log, canonical tool output, t
 
 ## Acceptance criteria
 
-- A real model in `native` or `both` mode can call one stable `show_task_surface` schema, the call ends its turn, and a capable Web client renders the same normalized model live and after replay; `ptc`-only mode does not advertise it.
+- A real model in `native` mode can call one stable `show_task_surface` schema, the call ends its turn, and a capable Web client renders the same normalized model live and after replay; `ptc`-only mode does not advertise it.
 - The static `TaskSurfaceDock` is the only editor and remains actionable for an active result outside the loaded history window; the keyed toolview remains a read-only transcript summary and replay. A composer takeover hides the still-mounted Dock, preserves its draft, and reveals the same owner after release.
 - Submitting produces exactly one visible user message per `submissionId`, starts the next turn through normal queue admission, and retains exact branded occurrence correlation while keeping `source.kind: 'user'`; dismissing records one log event and starts no turn.
 - The queued client row retains the correlated message source. `getActive` exposes `queued` or `claiming` across same-process reconnect; commit closes the projection, while explicit discard clears pending state and leaves the Surface open. Queue-row disappearance alone changes no UI state. Edit and steer are rejected, and remove succeeds only before claim.

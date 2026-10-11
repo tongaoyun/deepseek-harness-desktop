@@ -3,17 +3,18 @@ export * from './DeepSeekHarnessCapabilitiesNavigation.tsx'
 export * from './DeepSeekHarnessSettingsMenu.tsx'
 
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
-import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 import type {} from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
-import type { InputTriggerSource, ReferenceInsert } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
+import type {} from '@deepseek-ai/dsh-client-ui-commands/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { IconDatabaseOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import { en, NS, zh } from '../locales.ts'
 import {
   ConnectorsPanel, ExpertKitsPanel, KnowledgePanel, SkillsPanel,
@@ -22,16 +23,16 @@ import {
   CAPABILITY_PANELS, CapabilitiesHeading, createCapabilityChildIcon,
 } from './DeepSeekHarnessCapabilitiesNavigation.tsx'
 import { DeepSeekHarnessSettingsMenu } from './DeepSeekHarnessSettingsMenu.tsx'
+import { createHarnessActions } from './harness-actions.ts'
+import { TaskExpertKitSeat, TaskExpertKitHeader } from './TaskExpertKitSeat.tsx'
+import { TaskKnowledgeInput } from './TaskKnowledgeInput.tsx'
+import { registerKnowledgeToolResults } from './KnowledgeToolResult.tsx'
+import type {} from '@deepseek-ai/dsh-client-ui-agent-preset/client'
+import type {} from '@deepseek-ai/dsh-client-ui-skill/client'
 
 export const inject = [
-  'slots', 'locale', 'sessions', 'workspaces', 'uiWorkspace', 'conversation', 'inputTriggers', 'remote', 'remote.agentPresets',
+  'slots', 'locale', 'sessions', 'workspaces', 'uiWorkspace', 'conversation', 'layout', 'uiSkills', 'remote', 'remote.agentPresets', 'commandUi',
 ]
-
-const PRODUCT_SKILL_REFERENCE_SOURCE = 'deepseek-harness-product-skill'
-
-function skillReference(id: string, name: string): ReferenceInsert {
-  return { source: PRODUCT_SKILL_REFERENCE_SOURCE, ref: id, label: name, clipboardText: `/${id}` }
-}
 
 const PANEL_COMPONENTS = {
   expertKits: ExpertKitsPanel,
@@ -43,84 +44,47 @@ const PANEL_COMPONENTS = {
 /** Register DeepSeekHarness capability navigation in the official Harness sidebar. */
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'deepseek-harness-product: dictionaries')
-  const skillSource: InputTriggerSource = {
-    trigger: '/', name: PRODUCT_SKILL_REFERENCE_SOURCE, showGroupTitle: false,
-    candidates: async () => [], onPick: () => undefined,
-    codec: {
-      clipboardText: ref => `/${ref}`,
-      serialize: ref => Promise.resolve(`/${ref}`),
-    },
-  }
-  ctx.effect(() => ctx.inputTriggers.registerSource(skillSource), 'deepseek-harness-product: skill references')
+  registerKnowledgeToolResults(ctx)
   ctx.slots.inject('settings.launcher', () => ctx.slots.register({
-    name: 'settings.launcher', priority: -100, locale: NS,
+    // The browser slot facade assigns the product's shadowing rank. Supplying
+    // a fixed value here bypasses that rank and can leave the official account
+    // launcher as the winner when the product package is reloaded.
+    name: 'settings.launcher', locale: NS,
   }, DeepSeekHarnessSettingsMenu))
   const t = ctx.locale.bind(NS)
-  const mainSessionId = (): SessionId | undefined => Object.values(ctx.sessions.list.getSnapshot().byId)
-    .find(session => (session.retainedBy.mainView ?? 0) > 0)?.id
-  const workspaceForSession = (sessionId: SessionId) => ctx.workspaces.list.getSnapshot().items
-    .find(workspace => workspace.sessionIds.includes(sessionId))
-  const ensureWorkspace = async () => {
-    const current = mainSessionId()
-    const currentWorkspace = current === undefined ? undefined : workspaceForSession(current)
-    if (currentWorkspace !== undefined) return currentWorkspace
-    const existing = ctx.workspaces.list.getSnapshot().items[0]
-    if (existing !== undefined) return existing
-    const initialized = await ctx.workspaces.initializeDefault()
-    if (initialized === undefined) throw new Error('deepseek-harness product: no Workspace is available')
-    return initialized
-  }
-  const openDraft = (sessionId: SessionId, draft: string): void => {
-    ctx.uiWorkspace.openSession(sessionId)
-    const binding = ctx.sessions.binding(sessionId)
-    if (binding === undefined) throw new Error(`deepseek-harness product: session ${sessionId} did not open`)
-    const input = ctx.conversation.input.for(binding.ctx)
-    input.setDraft(draft)
-    input.focus()
-  }
-  const actions = {
-    async startExpertKit(id: string, prompt?: string): Promise<void> {
-      const api = (globalThis as { deepseekHarness?: { product?: { invoke(method: string, payload?: unknown): Promise<unknown> } } })
-        .deepseekHarness?.product
-      if (api === undefined) throw new Error('deepseek-harness product: product bridge is unavailable')
-      const prepared = await api.invoke('expertKits.preset.prepare', { id })
-      if (typeof prepared !== 'object' || prepared === null || Array.isArray(prepared)
-        || typeof (prepared as Record<string, unknown>).presetId !== 'string') {
-        throw new Error('deepseek-harness product: invalid Expert Kit Preset response')
-      }
-      const presetId = (prepared as { readonly presetId: string }).presetId
-      const workspace = await ensureWorkspace()
-      const sessionId = await ctx.sessions.create({ workspaceId: workspace.workspaceId })
-      const selected = await ctx.remote.agentPresets.select(sessionId, presetId)
-      if (!selected.ok) throw new Error(`deepseek-harness product: ${selected.error.message}`)
-      openDraft(sessionId, prompt ?? '')
-    },
-    async useSkill(skillId: string, skillName: string): Promise<void> {
-      const api = (globalThis as { deepseekHarness?: { product?: { invoke(method: string, payload?: unknown): Promise<unknown> } } })
-        .deepseekHarness?.product
-      if (api === undefined) throw new Error('deepseek-harness product: product bridge is unavailable')
-      const prepared = await api.invoke('skills.prepare', { id: skillId })
-      if (typeof prepared !== 'object' || prepared === null || Array.isArray(prepared)
-        || typeof (prepared as Record<string, unknown>).presetId !== 'string') {
-        throw new Error('deepseek-harness product: invalid Skill Preset response')
-      }
-      const sessionId = await ctx.sessions.create({
-        workspaceId: (await ensureWorkspace()).workspaceId,
-      })
-      const selected = await ctx.remote.agentPresets.select(sessionId, (prepared as { readonly presetId: string }).presetId)
-      if (!selected.ok) throw new Error(`deepseek-harness product: ${selected.error.message}`)
-      ctx.uiWorkspace.openSession(sessionId)
-      const binding = ctx.sessions.binding(sessionId)
-      if (binding === undefined) throw new Error(`deepseek-harness product: session ${sessionId} did not open`)
-      const input = ctx.conversation.input.for(binding.ctx)
-      input.setDraft('')
-      const state = input.state.getSnapshot()
-      if (!input.insertReference(skillReference(skillId, skillName), { start: 0, end: 0, draftRev: state.draftRev })) {
-        throw new Error('deepseek-harness product: Skill reference could not be inserted')
-      }
-      input.focus()
-    },
-  }
+  const actions = createHarnessActions(ctx)
+  const knowledgeOpeners = new Map<SessionId, () => void>()
+  ctx.effect(() => () => { knowledgeOpeners.clear() }, 'product-knowledge: input openers')
+  ctx.effect(() => ctx.commandUi.register({
+    name: 'knowledge', label: () => t('referenceKnowledge'), icon: IconDatabaseOutlineRegular,
+    available: session => knowledgeOpeners.has(session.sessionId) && ctx.sessions.subagentAddress(session.sessionId) === undefined,
+    ui: { kind: 'action', run: (session) => { knowledgeOpeners.get(session.sessionId)?.() } },
+  }), 'product-knowledge: Add menu')
+  ctx.slots.inject('conversation.input.left', () => ctx.slots.register({
+    name: 'conversation.input.left', id: 'product-knowledge', order: 10, locale: NS,
+    inject: sessionId => ({
+      readMode: actions.readMode, readKnowledgeCatalog: actions.readKnowledgeCatalog,
+      setKnowledgeSelection: actions.setKnowledgeSelection, recoverCapabilities: actions.recoverCapabilities,
+      openCatalog: actions.openCatalog,
+      subscribeOpen: (listener: () => void) => {
+        knowledgeOpeners.set(sessionId, listener)
+        return () => { if (knowledgeOpeners.get(sessionId) === listener) knowledgeOpeners.delete(sessionId) }
+      },
+    }),
+  }, TaskKnowledgeInput))
+  const kitInjected = () => ({
+    readMode: actions.readMode,
+    readExpertKits: actions.readExpertKits, setExpertKit: actions.setExpertKit,
+    openCatalog: actions.openCatalog,
+    recoverCapabilities: actions.recoverCapabilities,
+  })
+  ctx.slots.inject('conversation.hero.actions', () => ctx.slots.register({
+    name: 'conversation.hero.actions', id: 'product-expert-kit', order: 10, locale: NS, inject: kitInjected,
+  }, TaskExpertKitSeat))
+  ctx.slots.inject('conversation.session.header.actions', () => ctx.slots.register({
+    name: 'conversation.session.header.actions', id: 'product-expert-kit', order: -5, locale: NS,
+    inject: () => ({ readMode: actions.readMode, recoverCapabilities: actions.recoverCapabilities }),
+  }, TaskExpertKitHeader))
   ctx.slots.inject('sidebar.panelheading', () => ctx.slots.register({
     name: 'sidebar.panelheading', id: 'deepseek-harness-capabilities', order: -40, locale: NS,
   }, CapabilitiesHeading))

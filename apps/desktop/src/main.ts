@@ -1,10 +1,12 @@
 import type { ProductEventMap, ProductEvent } from '@deepseek-ai/dsh-client-product-analytics/types'
+import { loadDesktopExtension } from './extensions.ts'
+import { extensionFailure } from './extension-errors.ts'
 import { WINDOWS_TITLEBAR_HEIGHT } from './windows-layout.ts'
 /** Electron shell: desktop project ownership, custom protocol, windows, and lifecycle. */
 
 import { readFile, writeFile } from 'node:fs/promises'
-import { readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, readFileSync } from 'node:fs'
+import { isAbsolute, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   app,
@@ -19,7 +21,6 @@ import {
   net,
   protocol,
   session,
-  safeStorage,
   shell,
   type IpcMainInvokeEvent,
   type MenuItemConstructorOptions,
@@ -32,7 +33,6 @@ import { installDesktopDirectoryPicker } from './directory-picker.ts'
 import { installMicrophonePermissions } from './microphone-permissions.ts'
 import { DesktopBackendController } from './backend-controller.ts'
 import { DESKTOP_IPC, SCHEME, assertDesktopSender, type DesktopUpdateState } from './ipc.ts'
-import type { ProductContentIdentity, ProductSession } from '@deepseek-harness/product/protocol'
 import { readDeviceInfo } from './device-info.ts'
 import { desktopUpdateReadyConfirmation, formatDesktopMessage, resolveDesktopLocale, resolveDesktopStartupLocale } from './locale.ts'
 import { claimDesktopSingleInstance } from './single-instance.ts'
@@ -54,6 +54,7 @@ import { DesktopMandatoryUpdatePolicy, resolveDesktopPolicyConfig, type DesktopP
 import { desktopClientMetadata, desktopClientVersion } from './client-metadata.ts'
 import { DesktopMandatoryUpdateWindow } from './mandatory-update-window.ts'
 import { DesktopPolicyTestAuth } from './policy-test-auth.ts'
+import { readDesktopSettings } from './settings.ts'
 import { DesktopUpdateDialog, type UpdateDialogOptions } from './update-dialog.ts'
 import { readDesktopRuntime } from './runtime-tree.ts'
 import { DesktopBrowserGuests } from './browser-guests.ts'
@@ -62,10 +63,6 @@ import { DesktopUpdateOverlays } from './update-overlay.ts'
 import { DesktopQuitConfirmation } from './quit-confirmation.ts'
 import { DesktopTray } from './tray.ts'
 import { DesktopBackgroundNotice } from './background-notice.ts'
-import { DeepSeekHarnessProductBridge, type ProductBridgeOptions } from '@deepseek-harness/product/bridge'
-import { DingTalkAuthorizationTimeoutError, ensureDingTalkSession } from '@deepseek-harness/product/dingtalk-auth'
-import { DeepSeekHarnessNativeProcess } from './deepseek-harness-native-process.ts'
-import { resolveDeepSeekHarnessProductServerUrl } from './deepseek-harness-product-config.ts'
 
 let focusPrimaryWindow = (): void => {}
 let stopForRecovery = async (): Promise<void> => {}
@@ -84,21 +81,6 @@ let windowsLanguage: string | undefined
 let backendReady = false
 /** Error-level console output of the primary window, attached to crash reports. */
 const rendererConsole = new RendererConsoleTail()
-
-function deepseekHarnessAuthenticationPage(): string {
-  const html = `<!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="color-scheme" content="light dark">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
-<title>DeepSeek Harness</title><style>
-:root{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif;color:#202124;background:#fff}
-@media(prefers-color-scheme:dark){:root{color:#f2f3f5;background:#171817}}
-body{min-height:100vh;margin:0;display:grid;place-items:center}.content{text-align:center;padding:32px}
-.mark{width:42px;height:42px;margin:0 auto 24px;border:3px solid #dfe5e1;border-top-color:#1f8f5f;border-radius:50%;animation:spin .8s linear infinite}
-h1{margin:0 0 10px;font-size:22px;font-weight:600;letter-spacing:0}p{margin:0;color:#777;font-size:14px;letter-spacing:0}
-@media(prefers-color-scheme:dark){p{color:#aaa}.mark{border-color:#343936;border-top-color:#4bc58a}}@keyframes spin{to{transform:rotate(360deg)}}
-</style></head><body><main class="content"><div class="mark" aria-hidden="true"></div><h1>正在连接钉钉</h1><p>请在系统浏览器中完成授权</p></main></body></html>`
-  return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`
-}
 
 // Platform-conventional logs directory (macOS ~/Library/Logs/<name>, otherwise under userData);
 // set before ready so the first fatal report already resolves under it.
@@ -176,7 +158,7 @@ function runtimeResources(): RuntimeResources {
   const nodeBin = development ? join(app.getAppPath(), 'scripts', 'node-bin') : join(process.resourcesPath, 'runtime', 'bin')
   const pnpm = (development ? process.env.DSH_DESKTOP_PNPM_ENTRY : undefined)
     ?? (development ? join(app.getAppPath(), 'node_modules', 'pnpm', 'bin', 'pnpm.mjs')
-      : join(process.resourcesPath, 'runtime', 'pnpm', 'bin', 'pnpm.mjs'))
+      : join(process.resourcesPath, 'runtime', 'primary-runtime', 'dependencies', 'pnpm', 'bin', 'pnpm.mjs'))
   const dsh = (development ? process.env.DSH_DESKTOP_DSH_DIR : undefined)
     ?? (development ? join(app.getAppPath(), '.desktop-build', 'development', 'project') : join(app.getAppPath(), 'dsh'))
   return { node, nodeBin, pnpm, dsh }
@@ -184,10 +166,25 @@ function runtimeResources(): RuntimeResources {
 
 function developmentPrimaryRuntime(): string {
   const directory = process.env.DSH_DESKTOP_PRIMARY_RUNTIME_DIR
-  if (directory === undefined || directory === '') {
-    throw new Error('dsh desktop: DSH_DESKTOP_PRIMARY_RUNTIME_DIR is required for an unpackaged launch')
+  if (directory !== undefined && directory !== '') return directory
+  const descriptorPath = join(process.resourcesPath, 'dsh-development.json')
+  let descriptor: unknown
+  try {
+    descriptor = JSON.parse(readFileSync(descriptorPath, 'utf8'))
+  } catch {
+    throw new Error(`dsh desktop: unpackaged launch has no valid development descriptor at ${descriptorPath}`)
   }
-  return directory
+  if (typeof descriptor !== 'object' || descriptor === null || Array.isArray(descriptor)) {
+    throw new Error(`dsh desktop: invalid development descriptor at ${descriptorPath}`)
+  }
+  const record = descriptor as Record<string, unknown>
+  const primaryRuntime = record.primaryRuntime
+  if (record.schemaVersion !== 1 || record.appRoot !== app.getAppPath()
+    || typeof primaryRuntime !== 'string' || !isAbsolute(primaryRuntime)
+    || !existsSync(join(primaryRuntime, 'runtime.json'))) {
+    throw new Error(`dsh desktop: invalid development descriptor at ${descriptorPath}`)
+  }
+  return primaryRuntime
 }
 
 function developmentHostInspectPort(enabled: boolean): number | undefined {
@@ -223,40 +220,6 @@ function platformLoginUrl(authorizeUrl: string): string {
   const url = new URL(authorizeUrl)
   url.searchParams.set('theme', nativeTheme.shouldUseDarkColors ? 'dark' : 'light')
   return url.href
-}
-
-interface StoredDeepSeekHarnessSession {
-  readonly version: number
-  readonly session: ProductSession
-  readonly encryptedToken: string
-}
-
-/** Restore the product session without exposing the opaque token to Renderer. */
-function readStoredDeepSeekHarnessSession(): { session: ProductSession; token: string } | undefined {
-  if (!safeStorage.isEncryptionAvailable()) return undefined
-  try {
-    const raw = JSON.parse(readFileSync(join(app.getPath('userData'), 'deepseek-harness-session.json'), 'utf8')) as StoredDeepSeekHarnessSession
-    if (raw.version !== 1 || typeof raw.encryptedToken !== 'string' || raw.encryptedToken === '') return undefined
-    const token = safeStorage.decryptString(Buffer.from(raw.encryptedToken, 'base64'))
-    if (token === '') return undefined
-    return { session: raw.session, token }
-  } catch {
-    return undefined
-  }
-}
-
-/** Persist only an OS-encrypted token and its non-secret identity projection. */
-function persistDeepSeekHarnessSession(session: ProductSession, token: string | undefined): void {
-  const path = join(app.getPath('userData'), 'deepseek-harness-session.json')
-  if (token === undefined || token === '') {
-    rmSync(path, { force: true })
-    return
-  }
-  if (!safeStorage.isEncryptionAvailable()) return
-  const encryptedToken = safeStorage.encryptString(token).toString('base64')
-  writeFileSync(path, JSON.stringify({
-    version: 1, session, encryptedToken,
-  } satisfies StoredDeepSeekHarnessSession), { mode: 0o600 })
 }
 
 function createWindow(preload: string, show = false, primary = false): BrowserWindow {
@@ -369,6 +332,7 @@ function createWindow(preload: string, show = false, primary = false): BrowserWi
 }
 
 async function main(): Promise<void> {
+  const desktopSettings = readDesktopSettings(app.getPath('userData'))
   void pruneCrashReports(app.getPath('logs'))
   const journalDirectory = process.env.DSH_DESKTOP_UPDATE_JOURNAL_DIR
   const updateJournal = journalDirectory === undefined ? undefined : new DesktopUpdateJournal(journalDirectory, app.getVersion())
@@ -390,10 +354,10 @@ async function main(): Promise<void> {
     for (const failure of result.failures) console.warn(`desktop login shell: ${failure.shell} failed (${failure.reason})`)
     return result.environment
   })
-  let productHostEnvironment: NodeJS.ProcessEnv = {}
+  let extensionHostEnvironment: NodeJS.ProcessEnv = {}
   let hostEnvironment: NodeJS.ProcessEnv = process.env
   const prepareHostEnvironment = async (): Promise<void> => {
-    hostEnvironment = { ...await loginShell, ...productHostEnvironment }
+    hostEnvironment = { ...await loginShell, ...extensionHostEnvironment }
   }
   let quitting = false
   let startup: Promise<void> | undefined
@@ -460,38 +424,14 @@ async function main(): Promise<void> {
   let hostUrl: string | undefined
   let hostCookie: string | undefined
   const browserGuests = new DesktopBrowserGuests(() => hostUrl)
-  const storedDeepSeekHarnessSession = readStoredDeepSeekHarnessSession()
-  const serverUrl = resolveDeepSeekHarnessProductServerUrl({
-    packaged: app.isPackaged,
-    resourcesPath: process.resourcesPath,
-    appPath: app.getAppPath(),
-  })
-  const sessionToken = storedDeepSeekHarnessSession?.token ?? process.env.DEEPSEEK_HARNESS_SESSION_TOKEN
-  const nativeSidecar = new DeepSeekHarnessNativeProcess(
-    process.env.DEEPSEEK_HARNESS_NATIVE_BINARY
-      ?? (app.isPackaged ? join(process.resourcesPath, 'native', process.platform === 'win32' ? 'deepseek-harness-native.exe' : 'deepseek-harness-native') : undefined),
-    join(app.getPath('userData'), 'native'),
-  )
-  const productBridgeOptions: ProductBridgeOptions = {
-    desktopVersion: app.getVersion(),
-    persistSession: persistDeepSeekHarnessSession,
-    serverUrl,
-    sessionToken,
-    initialSession: storedDeepSeekHarnessSession?.session,
-    nativeInvoke: (method, payload) => nativeSidecar.invoke(method, payload),
-    prepareExpertKit: async (content) => {
+  const extension = await loadDesktopExtension({
+    getWindow: () => mainWindow, isQuitting: () => quitting,
+    requestHost: (namespace, method, payload, signal, timeoutMs) => {
       const host = backend.host
-      if (host === undefined) throw new Error('deepseek-harness product: Host is unavailable')
-      return host.prepareExpertKit(content)
+      if (host === undefined) throw new Error('Desktop Host is unavailable')
+      return host.requestExtension(namespace, method, payload, signal, timeoutMs)
     },
-    prepareSkill: async (content) => {
-      const host = backend.host
-      if (host === undefined) throw new Error('deepseek-harness product: Host is unavailable')
-      return host.prepareSkill(content)
-    },
-  }
-  const productBridge = new DeepSeekHarnessProductBridge(productBridgeOptions)
-  let injections: readonly unknown[] = []
+  }, app.isPackaged ? { root: process.resourcesPath, runtime: resources.dsh } : undefined)
   let welcomeBackend: DesktopWelcomeBackend | undefined
   let reportedLaunch = false
   let analyticsEnabled = false
@@ -506,25 +446,6 @@ async function main(): Promise<void> {
   let returnedAttempt: string | undefined
   let pendingWelcomeNotice: WelcomeNotice | undefined
   let previousAccountStatus: string | undefined
-  let deepseekHarnessAuthAttempt: Promise<void> | undefined
-  let deepseekHarnessAuthenticationVisible = false
-  const showDeepSeekHarnessAuthentication = async (): Promise<void> => {
-    const window = mainWindow
-    if (window === undefined || window.isDestroyed()) return
-    await window.loadURL(deepseekHarnessAuthenticationPage())
-    deepseekHarnessAuthenticationVisible = true
-    if (window.isMinimized()) window.restore()
-    window.show()
-    window.focus()
-  }
-  const ensureDeepSeekHarnessAuth = (showStatusPage = true): Promise<void> => {
-    deepseekHarnessAuthAttempt ??= ensureDingTalkSession(productBridge, async (url) => {
-      if (showStatusPage) await showDeepSeekHarnessAuthentication()
-      await shell.openExternal(url)
-    }, { timeoutMs: 5 * 60_000 }).then(() => { deepseekHarnessAuthenticationVisible = false })
-      .finally(() => { deepseekHarnessAuthAttempt = undefined })
-    return deepseekHarnessAuthAttempt
-  }
   const assertProductSender = (event: IpcMainInvokeEvent): void => {
     assertDesktopSender(event, ['app'])
     if (mainWindow === undefined || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents
@@ -555,14 +476,16 @@ async function main(): Promise<void> {
       hostInspectPort, { ...hostEnvironment, DSH_CLIENT_VERSION: desktopClientVersion() }, onFailure,
       primaryRuntime,
       resources, (next) => { platformView.setSession(next) },
-      (method, payload, signal) => productBridge.invokeRuntime(method, payload, signal))
+      (namespace, method, payload, signal) => {
+        if (extension === undefined || namespace !== extension.namespace) throw new Error('Unknown Desktop extension')
+        return extension.invokeRuntime(method, payload, signal)
+      })
     return {
       start: async () => {
         const ready = await host.start()
         hostCookie = await authenticateWebHost(ready.url)
         hostUrl = ready.url
         if (ready.injections === undefined) throw new Error('Desktop Host did not provide boot injections')
-        injections = ready.injections
         welcomeBackend = await connectDesktopWelcome(ready.url, (input, init) => net.fetch(input, init), async () => (await session.defaultSession.cookies.get({ url: ready.url })).map(cookie => `${cookie.name}=${cookie.value}`).join('; '))
         analyticsEnabled = await welcomeBackend.analyticsEnabled().catch(() => false)
         if (!reportedLaunch) { reportedLaunch = true; void track('desktop_app_launch', {}) }
@@ -617,8 +540,9 @@ async function main(): Promise<void> {
       },
       updateTasks: (action: 'inspect' | 'lock' | 'unlock') => host.updateTasks(action),
       inspectQuit: () => host.inspectQuit(),
-      prepareExpertKit: (content: ProductContentIdentity) => host.prepareExpertKit(content),
-      prepareSkill: (content: ProductContentIdentity) => host.prepareSkill(content),
+      readIndexInjections: () => host.readIndexInjections(),
+      requestExtension: (namespace: string, method: string, payload?: unknown, signal?: AbortSignal, timeoutMs?: number) =>
+        host.requestExtension(namespace, method, payload, signal, timeoutMs),
     }
   }, (state) => {
     if (state.phase === 'error') reportFatal(state.failure, 'host')
@@ -675,38 +599,13 @@ async function main(): Promise<void> {
     if (backend.host === undefined || welcomeBackend === undefined) throw new Error('desktop welcome: backend unavailable')
     return welcomeBackend.read()
   }
-  stopForRecovery = () => Promise.all([backend.close(), nativeSidecar.stop()]).then(() => undefined)
-
-  const authenticateDeepSeekHarness = async (): Promise<boolean> => {
-    while (!quitting) {
-      try {
-        await ensureDeepSeekHarnessAuth()
-        return true
-      } catch (error) {
-        if (!(error instanceof DingTalkAuthorizationTimeoutError)) throw error
-        await ordinaryMessageBox({
-          type: 'warning',
-          title: locale.messages.dingtalkAuthExpiredTitle,
-          message: locale.messages.dingtalkAuthExpired,
-          buttons: [locale.messages.dingtalkAuthRetry],
-          cancelId: 0,
-        })
-      }
-    }
-    return false
-  }
+  stopForRecovery = () => backend.close()
 
   const reconcileBackend = (): Promise<void> => {
     startup ??= (async () => {
-      await nativeSidecar.start()
-      // DeepSeekHarness uses one enterprise identity boundary. Authenticate before the official Host
-      // starts, then give that child only the employee-scoped inference configuration.
-      if (!await authenticateDeepSeekHarness()) return
-      const bootstrap = await productBridge.loadRuntimeBootstrap()
-      productHostEnvironment = {
-        DEEPSEEK_API_KEY: bootstrap.modelApiKey,
-        DEEPSEEK_BASE_URL: bootstrap.endpoints.litellm,
-      }
+      const extensionEnvironment = await extension?.prepareHost()
+      if (extension !== undefined && extensionEnvironment === undefined) return
+      extensionHostEnvironment = extensionEnvironment ?? {}
       const document = navigateMain(applicationUrl)
       const host = backend.start(async () => {
         await Promise.all([manager.applyRelease(), prepareHostEnvironment()])
@@ -840,8 +739,12 @@ async function main(): Promise<void> {
     // Wait only for Host readiness, not for the encompassing startup promise
     // that also waits for this document to finish loading.
     if (backend.host === undefined || hostUrl === undefined) await (hostStartup ?? startup)
-    if (backend.host === undefined || hostUrl === undefined) throw new Error('Desktop Host is unavailable')
-    return { injections, streamBaseUrl: new URL(hostUrl).origin }
+    const host = backend.host
+    const url = hostUrl
+    if (host === undefined || url === undefined) throw new Error('Desktop Host is unavailable')
+    const injections = await host.readIndexInjections()
+    if (backend.host !== host || hostUrl !== url) throw new Error('Desktop Host changed during renderer boot')
+    return { injections, streamBaseUrl: new URL(url).origin }
   })
 
   ipcMain.handle(DESKTOP_IPC.bootFailed, (event, message: unknown) => {
@@ -861,63 +764,48 @@ async function main(): Promise<void> {
     assertProductSender(event)
     return browserGuests.release(event.sender, lease)
   })
-  const rendererProductRequests = new Map<string, AbortController>()
-  ipcMain.handle(DESKTOP_IPC.productInvoke, async (
-    event, method: unknown, payload: unknown, requestId: unknown,
+  const rendererExtensionRequests = new Map<string, AbortController>()
+  ipcMain.handle(DESKTOP_IPC.extensionInvoke, async (
+    event, namespace: unknown, method: unknown, payload: unknown, requestId: unknown,
   ) => {
     assertProductSender(event)
-    if (method === 'auth.ensureDingTalk') {
-      // Reauthentication from an active product page must keep that page alive;
-      // only cold startup uses the temporary authorization status document.
-      await ensureDeepSeekHarnessAuth(false)
-      return productBridge.getSession()
-    }
+    if (extension === undefined || namespace !== extension.namespace) throw new Error('Unknown Desktop extension')
     if (requestId !== undefined && (typeof requestId !== 'string' || requestId.length < 8 || requestId.length > 128)) {
-      throw new Error('deepseek-harness product: invalid request id')
+      throw new Error('desktop extension: invalid request id')
     }
-    if (typeof requestId === 'string' && rendererProductRequests.has(requestId)) {
-      throw new Error('deepseek-harness product: duplicate request id')
+    if (typeof requestId === 'string' && rendererExtensionRequests.has(requestId)) {
+      throw new Error('desktop extension: duplicate request id')
     }
     const controller = typeof requestId === 'string' ? new AbortController() : undefined
-    if (controller !== undefined) rendererProductRequests.set(requestId as string, controller)
-    let result: unknown
+    if (controller !== undefined) rendererExtensionRequests.set(requestId as string, controller)
     try {
-      result = await productBridge.invoke(method, payload, controller?.signal)
+      return { ok: true, result: await extension.invoke(method, payload, controller?.signal) }
+    } catch (error) {
+      return { ok: false, failure: extensionFailure(error) }
     } finally {
-      if (typeof requestId === 'string') rendererProductRequests.delete(requestId)
+      if (typeof requestId === 'string') rendererExtensionRequests.delete(requestId)
     }
-    if ((method === 'auth.beginDingTalk' || method === 'connectors.authorization.begin')
-      && typeof result === 'object' && result !== null
-      && 'authorizationUrl' in result && typeof result.authorizationUrl === 'string') {
-      const authorizeUrl = new URL(result.authorizationUrl)
-      if (authorizeUrl.protocol !== 'https:' && authorizeUrl.protocol !== 'http:') {
-        throw new Error('deepseek-harness product: invalid browser authorization URL')
-      }
-      await shell.openExternal(authorizeUrl.href)
-    }
-    return result
   })
-  ipcMain.on(DESKTOP_IPC.productCancel, (event, requestId: unknown) => {
+  ipcMain.on(DESKTOP_IPC.extensionCancel, (event, namespace: unknown, requestId: unknown) => {
+    if (extension === undefined || namespace !== extension.namespace) return
     assertProductSender(event)
     if (typeof requestId !== 'string') return
-    rendererProductRequests.get(requestId)?.abort(new Error('deepseek-harness product: request cancelled'))
+    rendererExtensionRequests.get(requestId)?.abort(new Error('desktop extension: request cancelled'))
   })
-  ipcMain.handle(DESKTOP_IPC.productSession, (event) => {
-    assertProductSender(event)
-    return productBridge.getSession()
-  })
-  productBridge.subscribe((productEvent) => {
-    if (mainWindow !== undefined && !mainWindow.isDestroyed()) mainWindow.webContents.send(DESKTOP_IPC.productEvent, productEvent)
+  extension?.subscribe((productEvent) => {
+    if (mainWindow !== undefined && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send(DESKTOP_IPC.extensionEvent, extension.namespace, productEvent)
+    }
   })
 
-  session.defaultSession.webRequest.onBeforeSendHeaders({ urls: ['ws://127.0.0.1/*'] }, (details, callback) => {
+  session.defaultSession.webRequest.onBeforeSendHeaders({ urls: ['ws://127.0.0.1/*', 'wss://127.0.0.1/*'] }, (details, callback) => {
     if (hostUrl === undefined || hostCookie === undefined || details.webContentsId !== mainWindow?.webContents.id) {
       callback({})
       return
     }
     const target = new URL(hostUrl)
     const requested = new URL(details.url)
-    if (requested.host !== target.host) { callback({}); return }
+    if (requested.host !== target.host || requested.protocol !== (target.protocol === 'https:' ? 'wss:' : 'ws:')) { callback({}); return }
     const headers = Object.fromEntries(Object.entries(details.requestHeaders).map(([name, value]) => [name.toLowerCase(), value]))
     if (headers.origin !== 'dsh-app://app') { callback({ cancel: true }); return }
     callback({ requestHeaders: { ...headers, origin: target.origin, cookie: hostCookie, 'sec-fetch-site': 'same-origin' } })
@@ -1078,6 +966,7 @@ async function main(): Promise<void> {
     void authenticatePolicy().catch((error: unknown) => { console.error(error) })
   }
   const queuePolicyAuthentication = (): void => {
+    if (!desktopSettings.updates.allowTestAuthPopupWindow) return
     if (authenticationOperation !== undefined) {
       policyAuth?.focus(); updateDialog.focus()
       return
@@ -1086,7 +975,8 @@ async function main(): Promise<void> {
     flushQueuedPolicyAuthentication()
   }
   const runPolicyAuthentication = async () => {
-    if (policyAuth === undefined || mandatoryPolicy === undefined || quitting) return undefined
+    if (!desktopSettings.updates.allowTestAuthPopupWindow
+      || policyAuth === undefined || mandatoryPolicy === undefined || quitting) return undefined
     const parent = mandatoryUI?.confirmationWindow ?? currentDialogWindow()
     if (parent === undefined) return undefined
     const consent = await updateDialog.show(parent, { type: 'info', title: locale.messages.policyLoginTitle,
@@ -1108,7 +998,7 @@ async function main(): Promise<void> {
   const checkPolicyManually = async (authentication: 'immediate' | 'deferred' = 'immediate') => {
     if (authenticationOperation !== undefined) return authenticatePolicy()
     const policy = await mandatoryPolicy?.check('manual', true)
-    if (policy?.error !== 'authentication-required') return policy
+    if (policy?.error !== 'authentication-required' || !desktopSettings.updates.allowTestAuthPopupWindow) return policy
     if (authentication === 'immediate') return authenticatePolicy()
     queuePolicyAuthentication()
     return policy
@@ -1273,7 +1163,7 @@ async function main(): Promise<void> {
     browserGuests.bind(window, (guest, name) => shortcuts.attachGuest(window, guest, name))
     shortcuts.attach(window)
     window.on('focus', automaticCheck)
-    window.on('focus', () => { void productBridge.refreshCatalog().catch(() => undefined) })
+    window.on('focus', () => { void extension?.focus().catch(() => undefined) })
     // Closing hides: the page and the Host keep running, and the next show resumes the same document.
     window.on('close', (event) => {
       if (quitting || shellInstallerOwnsQuit || sessionEnding) return
@@ -1429,7 +1319,7 @@ async function main(): Promise<void> {
     }
     // Startup and sign-out select the visible window before activation may reveal the workspace.
     if (window === mainWindow && !enteredWorkspace) {
-      if (deepseekHarnessAuthenticationVisible) {
+      if (extension?.ownsStartupDocument) {
         if (window.isMinimized()) window.restore()
         window.show()
         window.focus()
@@ -1457,6 +1347,8 @@ async function main(): Promise<void> {
   const finishQuit = (): void => {
     quitting = true
     shuttingDown = true
+    for (const controller of rendererExtensionRequests.values()) controller.abort(new Error('Desktop is shutting down'))
+    rendererExtensionRequests.clear()
     updateJournal?.action('quit-requested')
     quitConfirmation.dispose()
     backgroundNotice?.dispose()
@@ -1467,7 +1359,7 @@ async function main(): Promise<void> {
     updateSchedule.dispose()
     updateDialog.dispose()
     mandatoryUI?.dispose()
-    void Promise.all([Promise.resolve(mandatoryPolicy?.dispose()).then(() => policyAuth?.dispose()), backend.close(), nativeSidecar.stop(),
+    void Promise.all([Promise.resolve(mandatoryPolicy?.dispose()).then(() => policyAuth?.dispose()), backend.close(), extension?.close(),
       // A Platform cleanup failure is logged without cutting the remaining Host shutdown short.
       platformView.dispose().catch((error: unknown) => { console.error(error) })])
       .catch((error: unknown) => { console.error(error) }).finally(() => { app.quit() })

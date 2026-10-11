@@ -1,0 +1,6 @@
+# Product-owned Desktop composition over the official Harness Web profile.
+- id: ui-settings-account
+  disabled: true
+- insert:
+    - id: deepseek-harness-product
+      name: './lib/index.js'

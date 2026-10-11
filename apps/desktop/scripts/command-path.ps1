@@ -137,7 +137,7 @@ if ($MyInvocation.InvocationName -ne '.') {
         try { $machinePath = [string]$machine.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames) }
         finally { $machine.Dispose() }
         $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
-        $state = Invoke-DshCommandPath -Request $request -EnvironmentKey 'Environment' -OwnerKey 'Software\DeepSeekHarness\Command' -MachinePath $machinePath -MutexName ('Global\DeepSeek Harness.Command.' + $sid)
+        $state = Invoke-DshCommandPath -Request $request -EnvironmentKey 'Environment' -OwnerKey 'Software\DeepSeekHarness\Command' -MachinePath $machinePath -MutexName ('Global\DeepSeekHarness.Command.' + $sid)
         if ($request.operation -ne 'inspect') {
             Send-DshCommandEnvironmentChange
         }

@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process'
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { promisify } from 'node:util'
+import { verifyPatches, verifyDependencies } from './upstream-boundaries.mjs'
 
 const root = resolve(import.meta.dirname, '..')
 const run = promisify(execFile)
@@ -38,4 +39,7 @@ if (tagCommit !== upstreamCommit) {
 
 const desktop = JSON.parse(await readFile(resolve(root, 'apps/desktop/package.json'), 'utf8'))
 if (desktop.name !== '@deepseek-ai/dsh-desktop') throw new Error('official Electron desktop package is missing')
+const patches = JSON.parse(await readFile(resolve(root, 'scripts/upstream-patches/manifest.json'), 'utf8'))
+verifyPatches(root, upstreamCommit, patches)
+verifyDependencies(root)
 console.log(`verified DeepSeek Harness ${upstreamTag} (${upstreamCommit})`)

@@ -4,11 +4,11 @@ English | [中文](README.zh.md)
 
 ## DeepSeek Harness downstream desktop
 
-This repository is the DeepSeek Harness Electron downstream of DeepSeek Harness `dsh-v0.2.0-rc.2`, pinned by [`UPSTREAM_COMMIT`](UPSTREAM_COMMIT). The only desktop entry point is `apps/desktop`; the former Tauri shell and duplicate Harness host are not part of this tree.
+This repository extends DeepSeek Harness `dsh-v0.2.1-alpha.2`, pinned by [`UPSTREAM_COMMIT`](UPSTREAM_COMMIT). `apps/desktop` runs the official profile; `apps/product-desktop` assembles the enterprise extension through the same Electron shell.
 
 `pnpm run check:upstream-release` reports newer RC or stable tags without changing the pinned version; the scheduled Gitea workflow runs the same check, while alpha tags remain informational.
 
-Product capabilities live in [`packages/deepseek-harness-product/product`](packages/deepseek-harness-product/product) and [`native/deepseek-harness`](native/deepseek-harness). They expose DingTalk identity, expert kits, skills, connectors, WeKnora, schedules, artifacts and product references through the Electron product bridge. Session, Agent, Conversation, Browser, Office, approval, cancellation, retry and replay remain official Harness capabilities.
+The [product subsystem](docs/subsystems/deepseek-harness-product.md) owns authentication, catalogs, per-task capability snapshots, and desktop resources in independent protocol, runtime, desktop, and UI packages. Harness Session, execution, approval, and replay APIs remain the integration points. [Registered patches](scripts/upstream-patches/manifest.json) record every official difference and its verification.
 
 The Gitea Windows workflow produces unsigned installers, and the explicit Electron Release workflow publishes Windows/macOS assets plus platform SHA-256 manifests and release metadata to a Gitea Release. Asset names remain identical to electron-builder's update metadata so a signed macOS feed can be consumed without rewriting. Windows remains unsigned and therefore does not provide Windows publisher trust; release assets are distribution records, not a signing substitute.
 

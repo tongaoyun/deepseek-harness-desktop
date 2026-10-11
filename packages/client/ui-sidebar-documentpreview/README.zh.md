@@ -14,6 +14,7 @@ kind: "package-reference"
 ## 目录
 
 - [注册了什么](#what-it-registers)
+- [复用预览](#reusable-preview)
 - [地址](#addresses)
 - [怎么读](#how-it-reads)
 - [Excel 预览](#excel-preview)
@@ -35,6 +36,13 @@ kind: "package-reference"
 文档实现在 `ctx.documentPreviews.register({ id, extensions, binaryExtensions?, priority, title, loading, wrap? })` 注册元数据，并以相同 `id` 向 keyed、Session 作用域的子 slot `sidebar.right.tab.document` 注册正文。`binaryExtensions` 列出 `extensions` 中不可按文本阅读的后缀，这些后缀不提供纯文本选项。两处注册都由 effect 持有，通过 `ctx.slots.inject` 等待子 slot。正文接收 `resourceAddress`、`content`、`wrap`、`scrollportRef`、`addResource`、`setResources` 和标准 `useTabInfo`/`useResource` 钩子。依赖成员由 tab 持有的 `ResourceGroup` 管理；替换依赖始终保留根 Resource。内部滚动元素挂载 `scrollportRef`；卸载时恢复共享正文的滚动职责。注册表保留所有匹配备选：`extension`（默认）优先于 `builtin`，随后按更长的后缀、再按注册顺序排列。所选实现仍可用时，下拉选择保持不变。HTML、SVG 和未匹配的扩展名保留纯文本回退，与加载方式无关。
 
 `loading: 'text-pages'` 和 `'bytes-complete'` 使用共享文件读取器。选择 `'renderer'` 时，所选正文在读取任何字节前挂载，并接收 `content: { kind: 'renderer', revision, loaded, failed, reload }`。其注入 face 负责内容加载、错误、store 更新和取消。`loaded(version)` 记录已展示的源版本并结束加载。`failed()` 结束加载但不记录成功版本，使后续文件变化可以重试；已被替换的 revision 所发出的报告会被忽略。`reload()` 增加 revision，正文据此取消并替换当前请求。正文也在卸载和 tab 关闭时取消请求，将已完成内容保留在自己声明的 tab store 中，并在 tab 结束时释放。[Office 预览](#office-preview) 使用此模式，转换后的字节和字体元数据不会进入共享文件 store。
+
+<a id="reusable-preview"></a>
+## 复用预览
+
+不同 UI 父组件通过 `renderFactorySlot('document.preview', { fileName, read, renderOffice?, revision?, failureText? })` 渲染 root 作用域的 `document.preview` Factory，无需 Session 或 Sidebar tab。`read(signal)` 返回 `{ data: Uint8Array<ArrayBuffer>, mediaType? }`；来源 owner 在每次读取时检查权限及完整文件大小。Word 和 PowerPoint 后缀调用 `renderOffice(signal)`，不会先调用 `read`，使已鉴权提供方可以等共享 [Office 转换器](../../document/office-to-pdf/README.zh.md) 接纳后再读取源文件。其结果包含 PDF 字节和可选的 `missingFonts`。文件名、读取回调、转换回调或 revision 改变时，中止旧操作并清除其字节；关闭实例或卸载插件也会取消。替换读取失败时不会继续展示旧内容。默认错误使用固定本地化文案；`failureText(error)` 可返回来源专用的公开说明。
+
+Factory 从同一个 `documentPreviews` 注册表选择实现，并复用原生 PDF、Excel、图片、Markdown、代码、纯文本和经过清理的静态 HTML 渲染器。支持两种入口的扩展在 Sidebar 正文之外，以注册表 id 注册 root 作用域的 `document.preview.body`。其输入为 `fileName`、`content`、`signal`、`wrap` 和 `scrollportRef`，不提供 Session 或文件资源钩子。源码文本按完整 UTF-8 解码，拒绝无效编码和含 NUL 的内容。HTML 不执行脚本或读取关联文件，Markdown 不使用本地文件解析器。视图偏好只保留在挂载实例中；来源 owner 提供刷新操作，不把字节写入 Session 历史。
 
 <a id="addresses"></a>
 ## 地址
@@ -64,6 +72,8 @@ PNG、JPEG、GIF、WebP、BMP、ICO 和 SVG 通过 Blob URL 在 `<img>` 静态�
 共享文案来自 `sidebarDocumentPreview`；各内置渲染器拥有自己的本地化标签。PDF 与转换后的 Office 预览在浅色模式下使用冷调浅灰底色，在深色模式下使用哑黑底色，页面带有轻微阴影并保留文档原色。PDF 与图片预览共用浮动控件，提供**适应宽度**、25%、50%、100%、150% 和 200% 选项，并在 25%–400% 固定范围内按 25% 逐级缩放。适应宽度是默认模式并跟随面板尺寸；100% 表示 PDF 的 96 DPI 页面尺寸或图片的固有 CSS 像素尺寸。在精细指针设备上，控件初始隐藏；指针进入底部 72 个 CSS 像素时向上滑入，离开 420 ms 后向下退出；控件悬停、键盘焦点、菜单展开和手势进行期间保持显示，无 hover 的设备则始终显示。Chromium 将 macOS 触控板捏合映射到与 Ctrl+滚轮相同的实时指针锚定路径；控件同步显示手势比例，静止后的值在正文重新挂载后继续保留，直至 tab 关闭。HTML 预览不显示缩放控件。缩放稳定或适应宽度发生变化后，视口附近的 PDF 页面按最终缩放比例乘以设备像素比重绘。新位图完成前保留原有画面和可选文字层；屏幕外的页面在接近视口时更新。
 
 首次读取及渲染器准备（包括 Office 转换）共用居中的 28px ongoing `StateDot`，下方显示本地化状态文字“文档渲染中...”。状态向辅助技术提供相同的名称，并遵循减少动态效果偏好。追加文本页时使用紧凑的行内转圈，同时保留已显示的内容。PDF 正文仅在 PDF 预览挂载时加载包内 `client.pdf.js` chunk；PDF.js、Worker 源码和内嵌支持数据不会进入启动 `client.js`。PDF 与转换后的 Word/PowerPoint 页面组成纵向序列，页间距与四周留白均为 12px，露出当前主题的文档背景色；适应宽度会预留此留白，页面在接近视口时惰性渲染；未渲染的页以安静的 3:4 占位块保持位置。PDF.js 官方 TextLayerBuilder 在与画面重合的文字层上管理选区边界和复制文本规范化。两种主题均使用半透明蓝色选区，画布保留文档文字，空白换行不高亮；对齐同时考虑 PDF 页面单位、页面旋转与视口宽度变化，页面释放时取消两层渲染。纯图片 PDF 不包含可选取的文字。代码预览使用 tertiary 色的语言名称和带提示的复制图标；换行仍由文档工具栏控制。默认显示源码行号，但复制文本不包含行号；纯文本与代码使用相同字号和行高。代码直接坐在分栏自身的背景上，而不是会话卡片的填充色；复制条与占满剩余高度的内部滚动区相邻，因此横纵滚动条都从复制控件下方开始。
+
+文档开头的 YAML frontmatter（首行 `---` 开始，以 `---` 或 `...` 结束）在 Markdown 正文上方显示为键值列表。字符串值显示解析后的文本，包括折叠与多行字符串；其他标量、列表、映射与别名保留原始 YAML 写法。无效 YAML 或非映射文档原样显示整个块，没有内容的块不显示。未闭合的块仍按 Markdown 渲染。YAML 解析器位于包内 `client.frontmatter-fields.js` 分块，仅在文档含 frontmatter 时加载；加载期间或加载失败时显示原样块。源文件不会被修改。
 
 <a id="excel-preview"></a>
 ## Excel 预览
@@ -153,5 +163,3 @@ Office Remote 通过 Connection 的 multipart 二进制传输返回原生 `Uint8
 无。
 
 </details>
-
-**运行时不变式：** 不发布伴生入口。渲染器元数据、文档加载和视图状态归本地注册表与声明的 Slot store 所有，没有可比对的独立运行时来源；注册释放和 tab 生命周期由行为测试覆盖。

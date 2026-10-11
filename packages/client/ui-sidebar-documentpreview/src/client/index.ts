@@ -39,6 +39,7 @@ import { apply as registerCode } from './code/index.ts'
 import { apply as registerOffice } from './office/index.ts'
 import { apply as registerExcel } from './excel/index.ts'
 import { Config } from '../config.ts'
+import { applyDocumentSurface } from './document/surface.ts'
 
 // Values stay package-private unless another package needs them; the plugin
 // surface is `apply`, `inject`, and the store factory another registration may
@@ -50,6 +51,7 @@ export type { ReadDocumentBytes, DocumentFileBytes, ReadWorkspaceFilePage, Sessi
 export type { TextPage, TextState, TextStore, TextTabState } from './store.ts'
 export type { DocumentContent, DocumentPreviewProps, DocumentTextPage } from './document/contract.ts'
 export type { DocumentLoadMode, DocumentPreviewDefinition } from './document/registry.ts'
+export type { DocumentPreviewInput, DocumentPreviewFile, DocumentPreviewSource, DocumentPreviewSurfaceBodyProps } from './document/surface-contract.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -127,4 +129,5 @@ export function apply(ctx: ClientContext): void {
   registerOffice(ctx, config.office)
   registerExcel(ctx, config.excel)
   registerCode(ctx)
+  applyDocumentSurface(ctx, config)
 }

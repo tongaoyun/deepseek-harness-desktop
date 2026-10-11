@@ -1,12 +1,10 @@
-/** Employee-scoped product catalogs, immutable preparation identities, and dependency checks. */
+/** Employee-scoped product catalogs and display-only availability estimates. */
 
 import type { DeepSeekHarnessApiClient } from './http-client.ts'
+import { compare, valid } from 'semver'
 import type {
-  ProductContentIdentity,
-  ProductDependencyCheck,
   ProductEvent,
   ProductMethod,
-  ProductPrepareResult,
   ProductSession,
 } from './protocol.ts'
 
@@ -18,8 +16,8 @@ const CATALOG_ROUTES = {
   'knowledge.bases.list': '/api/v1/knowledge-bases',
 } as const satisfies Partial<Record<ProductMethod, string>>
 type CatalogMethod = keyof typeof CATALOG_ROUTES
-type PreparationState = 'PREPARING' | 'AVAILABLE' | 'PREPARATION_FAILED'
 
+/** Employee identity, transport, and display version owned by Electron main. */
 export interface ProductCatalogManagerOptions {
   readonly api?: DeepSeekHarnessApiClient | undefined
   readonly desktopVersion: string
@@ -28,59 +26,57 @@ export interface ProductCatalogManagerOptions {
   readonly emit: (event: ProductEvent) => void
 }
 
-/** Owns one employee's complete catalog snapshot and local preparation state. */
+/** Owns one employee's complete catalog snapshot; knowledge reads always query the server. */
 export class ProductCatalogManager {
   private refreshOperation: Promise<void> | undefined
   private refreshTimer: ReturnType<typeof setTimeout> | undefined
   private epoch = 0
   private signature: string | undefined
   private readonly snapshot = new Map<CatalogMethod, unknown>()
-  private readonly preparation = new Map<string, PreparationState>()
+  private readonly lifecycle = new AbortController()
+  private readonly operations = new Set<Promise<void>>()
+  private closed = false
 
   constructor(private readonly options: ProductCatalogManagerOptions) {}
 
-  /** Refresh every catalog as one snapshot while retaining the last successful snapshot on failure. */
-  async refresh(): Promise<void> {
-    if (this.refreshOperation !== undefined) return this.refreshOperation
-    const refresh = this.loadSnapshot().finally(() => {
+  /** Refresh catalogs atomically, preserving the last display snapshot on failure.
+   * @param signal - Optional caller cancellation; absent callers share a background refresh.
+   * @returns Completion after all remote requests settle.
+   */
+  async refresh(signal?: AbortSignal): Promise<void> {
+    if (this.closed) throw new Error('Product catalog has been disposed')
+    if (signal === undefined && this.refreshOperation !== undefined) return this.refreshOperation
+    const requestSignal = signal === undefined ? this.lifecycle.signal : AbortSignal.any([signal, this.lifecycle.signal])
+    requestSignal.throwIfAborted()
+    const refresh = this.loadSnapshot(requestSignal).finally(() => {
+      this.operations.delete(refresh)
       if (this.refreshOperation === refresh) this.refreshOperation = undefined
       this.schedule()
     })
-    this.refreshOperation = refresh
+    this.operations.add(refresh)
+    if (signal === undefined) this.refreshOperation = refresh
     return refresh
   }
 
-  /** Read one complete catalog with local availability state applied. */
-  async read(method: ProductMethod): Promise<unknown> {
+  /** Read a catalog with display availability estimates; knowledge always queries the server.
+   * @param method - Catalog operation.
+   * @param signal - Optional cancellation for a fresh remote read.
+   * @returns Complete employee-visible catalog.
+   */
+  async read(method: ProductMethod, signal?: AbortSignal): Promise<unknown> {
     if (!isCatalogMethod(method)) throw new Error(`deepseek-harness product: method ${method} is not available`)
+    if (signal !== undefined || method === 'knowledge.bases.list') {
+      signal?.throwIfAborted()
+      const value = await this.options.api?.listAll(CATALOG_ROUTES[method], 100, signal)
+      if (value === undefined) throw new Error('Product server is unavailable')
+      return value.map(entry => catalogEntry(method, entry, this.snapshot, this.options.desktopVersion))
+    }
     if (!this.snapshot.has(method)) await this.refresh()
     const value = this.snapshot.get(method) ?? []
     if (!Array.isArray(value)) return value
     return value.map(entry => catalogEntry(
-      method, entry, this.snapshot, this.preparation, this.options.desktopVersion,
+      method, entry, this.snapshot, this.options.desktopVersion,
     ))
-  }
-
-  /** Validate and prepare one Expert Kit against the currently published snapshot. */
-  async prepareExpertKit(
-    id: string,
-    operation: (content: ProductContentIdentity) => Promise<string>,
-  ): Promise<ProductPrepareResult> {
-    if (!this.snapshot.has('expertKits.list')) await this.refresh()
-    const kit = catalogRecord(this.snapshot.get('expertKits.list'), id, 'Expert Kit')
-    const checks = this.requireCapabilityDependencies(id, kit, true)
-    return this.prepare('expertKits.list', kit, checks, operation)
-  }
-
-  /** Validate and prepare one standalone Skill against the currently published snapshot. */
-  async prepareSkill(
-    id: string,
-    operation: (content: ProductContentIdentity) => Promise<string>,
-  ): Promise<ProductPrepareResult> {
-    if (!this.snapshot.has('skills.list')) await this.refresh()
-    const skill = catalogRecord(this.snapshot.get('skills.list'), id, 'Skill')
-    const checks = this.requireCapabilityDependencies(id, skill, false)
-    return this.prepare('skills.list', skill, checks, operation)
   }
 
   /** Drop employee-scoped state when authentication identity changes. */
@@ -88,14 +84,13 @@ export class ProductCatalogManager {
     this.epoch += 1
     this.snapshot.clear()
     this.signature = undefined
-    this.preparation.clear()
   }
 
   /** Schedule the next refresh only while an employee is authenticated. */
   schedule(): void {
     if (this.refreshTimer !== undefined) clearTimeout(this.refreshTimer)
     this.refreshTimer = undefined
-    if (!this.options.getSession().authenticated || this.options.api === undefined) return
+    if (this.closed || !this.options.getSession().authenticated || this.options.api === undefined) return
     this.refreshTimer = setTimeout(() => {
       this.refreshTimer = undefined
       void this.refresh().catch(() => undefined)
@@ -104,112 +99,37 @@ export class ProductCatalogManager {
   }
 
   /** Stop the manager's background timer. */
-  dispose(): void {
+  async dispose(): Promise<void> {
+    this.closed = true
+    this.lifecycle.abort(new Error('Product catalog has been disposed'))
     if (this.refreshTimer !== undefined) clearTimeout(this.refreshTimer)
     this.refreshTimer = undefined
+    await Promise.allSettled([...this.operations])
   }
 
-  private async prepare(
-    method: CatalogMethod,
-    record: Readonly<Record<string, unknown>>,
-    checks: readonly ProductDependencyCheck[],
-    operation: (content: ProductContentIdentity) => Promise<string>,
-  ): Promise<ProductPrepareResult> {
-    const contentVersion = contentIdentity(record)
-    const key = preparationKey(method, contentVersion)
-    this.preparation.set(key, 'PREPARING')
-    this.emitChanged()
-    try {
-      const presetId = await operation(contentVersion)
-      this.preparation.set(key, 'AVAILABLE')
-      return { presetId, contentVersion, dependencyChecks: checks }
-    } catch (error) {
-      this.preparation.set(key, 'PREPARATION_FAILED')
-      throw error
-    } finally {
-      this.emitChanged()
-    }
-  }
-
-  private requireCapabilityDependencies(
-    id: string,
-    capability: Readonly<Record<string, unknown>>,
-    expertKit: boolean,
-  ): ProductDependencyCheck[] {
-    const label = expertKit ? 'Expert Kit' : 'Skill'
-    const checks: ProductDependencyCheck[] = []
-    const minimumVersion = optionalString(capability.minimumDesktopVersion)
-    if (minimumVersion !== undefined && compareVersions(this.options.desktopVersion, minimumVersion) < 0) {
-      throw new Error(`deepseek-harness product: ${label} ${id} requires desktop ${minimumVersion}`)
-    }
-    if (minimumVersion !== undefined) {
-      checks.push({ kind: 'DESKTOP_VERSION', reference: minimumVersion, status: 'READY' })
-    }
-    if (expertKit) this.requireSkills(id, capability, checks)
-    this.requireDataDependencies(label, id, capability, checks)
-    return checks
-  }
-
-  private requireSkills(
-    id: string,
-    kit: Readonly<Record<string, unknown>>,
-    checks: ProductDependencyCheck[],
-  ): void {
-    const skills = catalogIds(this.snapshot.get('skills.list'))
-    const embeddedSkills = new Set(objectArray(kit.skillDetails).flatMap(value => optionalString(value.id) ?? []))
-    for (const skillId of stringValues(kit.skillIds)) {
-      if (!skills.has(skillId) && !embeddedSkills.has(skillId)) {
-        throw new Error(`deepseek-harness product: Expert Kit ${id} requires unavailable Skill ${skillId}`)
-      }
-      checks.push({ kind: 'SKILL', reference: skillId, status: 'READY' })
-    }
-  }
-
-  private requireDataDependencies(
-    label: 'Expert Kit' | 'Skill',
-    id: string,
-    capability: Readonly<Record<string, unknown>>,
-    checks: ProductDependencyCheck[],
-  ): void {
-    const connectors = catalogRecords(this.snapshot.get('connectors.list'))
-    for (const connectorId of stringValues(capability.connectorRefs)) {
-      const connector = connectors.find(value => value.id === connectorId)
-      if (connector === undefined || connector.ready !== true) {
-        throw new Error(`deepseek-harness product: ${label} ${id} requires unavailable data connection ${connectorId}`)
-      }
-      checks.push({ kind: 'DATA_CONNECTION', reference: connectorId, status: 'READY' })
-    }
-    for (const tool of stringValues(capability.requiredTools)) {
-      // Required tools can be local or MCP-backed. The Host validates them
-      // after the exact immutable Harness Preset has mounted.
-      checks.push({ kind: 'TOOL', reference: tool, status: 'READY' })
-    }
-    const knowledge = catalogRecords(this.snapshot.get('knowledge.bases.list'))
-    const visibleKnowledge = new Set(knowledge.flatMap(value => [value.id, value.referenceKey, value.reference]
-      .flatMap(candidate => optionalString(candidate) ?? [])))
-    for (const reference of stringValues(capability.knowledgeBaseRefs)) {
-      if (!visibleKnowledge.has(reference)) {
-        throw new Error(`deepseek-harness product: ${label} ${id} requires unavailable knowledge ${reference}`)
-      }
-      checks.push({ kind: 'KNOWLEDGE_BASE', reference, status: 'READY' })
-    }
-  }
-
-  private async loadSnapshot(): Promise<void> {
+  private async loadSnapshot(signal: AbortSignal): Promise<void> {
     const api = this.options.api
     if (api === undefined) throw new Error('deepseek-harness product: server URL is not configured')
     await this.options.ensureFreshSession()
     const epoch = this.epoch
     const employeeId = this.options.getSession().employeeId
-    const entries = await Promise.all((Object.entries(CATALOG_ROUTES) as [CatalogMethod, string][])
-      .map(async ([method, route]) => [method, await api.listAll(route, 100)] as const))
+    const controller = new AbortController()
+    const requestSignal = AbortSignal.any([signal, controller.signal])
+    const requests = await Promise.allSettled((Object.entries(CATALOG_ROUTES) as [CatalogMethod, string][])
+      .map(async ([method, route]) => {
+        try { return [method, await api.listAll(route, 100, requestSignal)] as const }
+        catch (error) { controller.abort(error); throw error }
+      }))
+    const entries = requests.map((result) => {
+      if (result.status === 'rejected') throw result.reason
+      return result.value
+    })
     const current = this.options.getSession()
-    if (epoch !== this.epoch || !current.authenticated || employeeId !== current.employeeId) return
+    if (this.closed || epoch !== this.epoch || !current.authenticated || employeeId !== current.employeeId) return
     const nextSignature = JSON.stringify(entries)
     const changed = nextSignature !== this.signature
     this.snapshot.clear()
     for (const [method, value] of entries) this.snapshot.set(method, value)
-    retainCurrentPreparation(this.preparation, this.snapshot)
     this.signature = nextSignature
     if (changed) this.emitChanged()
   }
@@ -226,58 +146,16 @@ function isCatalogMethod(method: ProductMethod): method is CatalogMethod {
   return method in CATALOG_ROUTES
 }
 
-function contentIdentity(record: Readonly<Record<string, unknown>>): ProductContentIdentity {
-  const content = optionalContentIdentity(record)
-  if (content === undefined) {
-    throw new Error('deepseek-harness product: catalog entry has no immutable content version')
-  }
-  return content
-}
-
-function optionalContentIdentity(record: Readonly<Record<string, unknown>>): ProductContentIdentity | undefined {
-  const id = optionalString(record.id)
-  const version = optionalString(record.version)
-  const sha256 = optionalString(record.sha256)
-  if (id === undefined || version === undefined || sha256 === undefined || !/^[a-fA-F0-9]{64}$/u.test(sha256)) {
-    return undefined
-  }
-  return { id, version, sha256: sha256.toLowerCase() }
-}
-
-function preparationKey(method: CatalogMethod, content: ProductContentIdentity): string {
-  return `${method}:${content.id}:${content.version}:${content.sha256}`
-}
-
-function retainCurrentPreparation(
-  preparation: Map<string, PreparationState>,
-  snapshot: ReadonlyMap<CatalogMethod, unknown>,
-): void {
-  const current = new Set<string>()
-  for (const method of ['expertKits.list', 'skills.list'] as const) {
-    for (const record of catalogRecords(snapshot.get(method))) {
-      const content = optionalContentIdentity(record)
-      if (content !== undefined) current.add(preparationKey(method, content))
-    }
-  }
-  for (const key of preparation.keys()) {
-    if (!current.has(key)) preparation.delete(key)
-  }
-}
-
 function catalogEntry(
   method: CatalogMethod,
   value: unknown,
   snapshot: ReadonlyMap<CatalogMethod, unknown>,
-  preparation: ReadonlyMap<string, PreparationState>,
   desktopVersion: string,
 ): unknown {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return value
   const record = value as Record<string, unknown>
   const id = optionalString(record.id)
   if (id === undefined) return record
-  const content = optionalContentIdentity(record)
-  const local = content === undefined ? undefined : preparation.get(preparationKey(method, content))
-  if (local !== undefined) return { ...record, availabilityStatus: local }
   if (method === 'connectors.list') {
     return { ...record, availabilityStatus: record.authorizationStatus !== 'AUTHORIZED'
       ? 'AUTHORIZATION_REQUIRED' : record.ready === true ? 'AVAILABLE' : 'UNAVAILABLE' }
@@ -320,12 +198,6 @@ function capabilityAvailability(
   return 'AVAILABLE'
 }
 
-function catalogRecord(value: unknown, id: string, label: string): Record<string, unknown> {
-  const result = catalogRecords(value).find(entry => entry.id === id)
-  if (result === undefined) throw new Error(`deepseek-harness product: ${label} ${id} is unavailable`)
-  return result
-}
-
 function catalogRecords(value: unknown): Array<Record<string, unknown>> {
   if (!Array.isArray(value)) return []
   return value.filter((entry): entry is Record<string, unknown> =>
@@ -348,14 +220,12 @@ function optionalString(value: unknown): string | undefined {
   return typeof value === 'string' && value !== '' ? value : undefined
 }
 
-function compareVersions(left: string, right: string): number {
-  const parts = (value: string): number[] => value.replace(/^v/u, '').split(/[.-]/u)
-    .slice(0, 3).map(part => /^\d+$/u.test(part) ? Number(part) : 0)
-  const a = parts(left)
-  const b = parts(right)
-  for (let index = 0; index < 3; index += 1) {
-    const difference = (a[index] ?? 0) - (b[index] ?? 0)
-    if (difference !== 0) return difference
-  }
-  return 0
+/** Compare semantic desktop versions, including prerelease ordering.
+ * @param left - Installed desktop version.
+ * @param right - Minimum required release.
+ * @returns Negative, zero, or positive when installed versions are older, equal, or newer.
+ */
+export function compareVersions(left: string, right: string): number {
+  if (valid(left) === null || valid(right) === null) throw new Error('Invalid desktop semantic version')
+  return compare(left, right)
 }

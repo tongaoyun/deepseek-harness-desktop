@@ -1,0 +1,274 @@
+diff --git a/packages/client/ui-conversation/README.i18n.yaml b/packages/client/ui-conversation/README.i18n.yaml
+index 8b555526ad6b628f9461667b6ac533372e69fc36..b1478eebbf810e2e77cf0ea5f15273d3370c7881 100644
+--- a/packages/client/ui-conversation/README.i18n.yaml
++++ b/packages/client/ui-conversation/README.i18n.yaml
+@@ -18,8 +18,8 @@
+   en: 1d2a3a7f98c2cc9b
+   zh: f895dd5e9f91e0a9
+ /deepseek-ai-dsh-client-ui-conversation/shell-and-standard-props:
+-  en: 51c7c9e2537aa4be
+-  zh: c4084541a776689e
++  en: 4c1d3b5592ce07ec
++  zh: efd294613b73bb7c
+ /deepseek-ai-dsh-client-ui-conversation/temporary-composer-entries:
+   en: bb1244310f5c0382
+   zh: 824b84077432b559
+diff --git a/packages/client/ui-conversation/README.md b/packages/client/ui-conversation/README.md
+index 980340048f01a3cd461fe0cf55f27355b59d56e7..e1cca04146e0f1cf134a4614bafff6eb44858b07 100644
+--- a/packages/client/ui-conversation/README.md
++++ b/packages/client/ui-conversation/README.md
+@@ -70,8 +70,12 @@ Claimed commands retain their identity and highlight when only their arguments a
+ 
+ Workspace selection uses `uiWorkspace.openWorkspace` to prepare the target and commit navigation. Draft content, including structured references, and attachments move in its synchronous preparation callback only while that request is current; later navigation or owner disposal leaves the original draft intact.
+ 
++`conversation.input.requestDraftInitialization` accepts text or semantic content for an explicitly retained Session. Applied initialization persists before navigation, including when no composer is mounted, and survives the binding's release. Existing content is preserved unless replacement is requested. Pending submissions block initialization; persistence failure is reported to the caller. Ordinary `setDraft` writes keep the mounted store's persistence lifecycle.
++
+ The package occupies the root-scoped `main` key `conversation`. Its `main.conversation` shell keeps the resident `conversation.header` outside the optional-Session `conversation.content` Component Factory. The header hosts root-scoped navigation without a selected Session; titles, actions, and View tabs remain in its strict Session child. The Factory owns the shared body and Composer, reads the current Session through its standard Hook, and exposes strict-Session `views` plus root-scoped `widthControls` local positions. Its default adapter renders the existing `conversation.session` entry, while the main occurrence selects the width handles; an embedded occurrence can replace `views` and omit those handles without rendering the main Header. The shared body and Composer register the queue and Todo docks. The Todo dock uses the shared panel elevation above the composer; its rows use the shared idle, ongoing, and done markers for pending, in-progress, and completed items. `ctx.uiSession.provide()` materializes the Conversation and input sources from the same Session binding and supplies `inputActions` as a stable standard prop.
+ 
++`conversation.hero.actions` accepts ordered controls after the workspace and agent-preset controls in the blank-session Hero row. Each entry has an independent `id`; its `session-maybe` scope supplies the selected Session or `undefined` before workspace selection. The row wraps on narrow viewports. Entries coexist with the agent-preset control and leave the Hero when the conversation starts; features that remain available use the Session header's separate action list.
++
+ A blank Session retains the header's leading and corner controls, including the right-sidebar opener, while hiding its title, actions, utilities, and View tabs. Selecting a Workspace creates the Session needed by these controls; the first message is not required. Without a selected Session, the strict header is absent; the resident header keeps a 40px window strip on macOS desktop that it owns as its drag row, and no empty vertical space on Web, Windows, or Linux. Sidebar entries retain their own data and execution prerequisites. A started Session header uses one row when fewer than two Views are available; the tab row reserves space only while rendered.
+ 
+ View selection is deterministic: a registered persisted selection wins, otherwise registered `chat` wins, otherwise no View renders. It never chooses the first registered View. Shell phase combines Session lifecycle with the active-target set; no target-specific snapshot is read by the shell.
+diff --git a/packages/client/ui-conversation/README.zh.md b/packages/client/ui-conversation/README.zh.md
+index d4a100e7ddbc97600b0b78579f6c48b230784f62..3c4fc17342cc4c5c7b21a0fc78bdd7b8b29d27a3 100644
+--- a/packages/client/ui-conversation/README.zh.md
++++ b/packages/client/ui-conversation/README.zh.md
+@@ -70,8 +70,12 @@ target package 通过 declaration merge 扩展 snapshot 与 Location data map，
+ 
+ 工作区选择使用 `uiWorkspace.openWorkspace` 准备目标并提交导航。草稿内容（包括结构化引用）和附件仅在该请求仍为当前请求时，通过它的同步准备回调搬移；后续导航或所有者释放会保留原草稿。
+ 
++`conversation.input.requestDraftInitialization` 为调用方明确保留的 Session 接受文本或语义文档。初始化成功后在导航前持久化，即使输入框尚未挂载也能在 binding 释放后恢复。没有请求替换时保留已有内容。提交尚未完成时拒绝初始化，持久化失败会报告给调用方。普通 `setDraft` 写入仍遵循已挂载 store 的持久化生命周期。
++
+ 本包占据 root 作用域 `main` 中的 `conversation` key。其 `main.conversation` 外壳将常驻的 `conversation.header` 放在可选 Session 的 `conversation.content` Component Factory 外。未选中 Session 时，头部仍承载根作用域导航；标题、操作和 View 标签保留在严格 Session 子组件中。Factory 拥有共享正文与 Composer，通过其标准 Hook 读取当前 Session，并公开 strict-Session `views` 与 root-scoped `widthControls` 两个局部位置。默认 adapter 渲染现有 `conversation.session` entry，主 occurrence 选择宽度拖拽条；嵌入式 occurrence 可以替换 `views`、省略拖拽条，且不渲染主 Header。共享正文与 Composer 注册 queue dock 和 Todo dock。Todo dock 在 composer 上方使用共享面板 elevation；其中的行分别以共享 idle、ongoing 与 done 标记表示待处理、进行中与已完成。`ctx.uiSession.provide()` 从同一个 Session binding 物化 Conversation 与 input source，并将 `inputActions` 作为稳定标准 prop 提供。
+ 
++`conversation.hero.actions` 在 blank Session 的 Hero 行中，按顺序承载工作区和 agent-preset 控件之后的操作。每个 entry 使用独立 `id`；其 `session-maybe` 作用域提供选中的 Session，选择工作区之前则为 `undefined`。该行在窄视口中换行。Entry 与 agent-preset 控件共存，并在对话开始后离开 Hero；仍需提供的功能使用 Session 头部独立的操作列表。
++
+ blank Session 保留 header 的 leading 与 corner 控件，包括右侧栏展开入口，同时隐藏标题、actions、utilities 和 View tabs。选择 Workspace 会创建这些控件所需的 Session，无需先发送消息。没有选中 Session 时，strict header 不挂载；常驻 header 在 macOS 桌面保留 40px 的窗口顶条，由它自己作为拖拽行持有，在 Web、Windows 或 Linux 上不预留空白高度。侧栏各入口仍遵循自身的数据与执行环境要求。 已开始的 Session 在可用 View 少于两个时使用单行标题栏，仅在渲染标签行时保留其高度。
+ 
+ View 选择规则固定：有效且已注册的持久化选择优先，其次是已注册的 `chat`，否则不渲染 View；绝不选择第一个已注册 View。Shell phase 只组合 Session lifecycle 与 active-target set，不读取任何 target-specific 快照。
+diff --git a/packages/client/ui-conversation/src/client/contract/input.ts b/packages/client/ui-conversation/src/client/contract/input.ts
+index 52ec80eda9273b8b2249d282246fa9cb2ff12fae..9573932d1b04e83a8cb86d2403119b274f3d6e7e 100644
+--- a/packages/client/ui-conversation/src/client/contract/input.ts
++++ b/packages/client/ui-conversation/src/client/contract/input.ts
+@@ -11,7 +11,7 @@ import type { SessionBinding } from '@deepseek-ai/dsh-api-session-controller/cli
+ import type { InboxState } from '@deepseek-ai/dsh-agent/types'
+ import type { ObservableSnapshot, SnapshotStore } from '@deepseek-ai/dsh-client-store'
+ import type { Branded } from '@deepseek-ai/dsh-brand'
+-import type { ArbitrateKey, ArbitrateOutcome, Occurrence, ReferenceInsert, TokenSpan } from './draft-editor.ts'
++import type { ArbitrateKey, ArbitrateOutcome, DraftInput, Occurrence, ReferenceInsert, TokenSpan } from './draft-editor.ts'
+ import type { InputSubmitMode, MessageSubmission } from './composer-submission.ts'
+ 
+ /** Attachment payload passed to a claimed command submission. */
+@@ -222,9 +222,9 @@ export interface SessionInputResolver {
+   requestDraftInitialization(binding: SessionBinding, options: DraftInitializationOptions): DraftInitializationResult
+ }
+ 
+-/** Initial text for a target Session; attachments remain under their existing owner. */
++/** Initial document for a target Session; attachments remain under their existing owner. */
+ export interface DraftInitializationOptions {
+-  readonly prompt?: string
++  readonly prompt?: DraftInput
+   readonly clearPreviousDraft?: boolean
+ }
+ 
+diff --git a/packages/client/ui-conversation/src/client/input/hub.ts b/packages/client/ui-conversation/src/client/input/hub.ts
+index fb8d8a736f3722b058aee708add2c36628e38f56..41d434a0f099c11fc6572ae30d7ceffe6d26a774 100644
+--- a/packages/client/ui-conversation/src/client/input/hub.ts
++++ b/packages/client/ui-conversation/src/client/input/hub.ts
+@@ -25,7 +25,7 @@ import type { InputSubmitMode } from '../contract/composer-submission.ts'
+ import type { PopupDismissFace } from './facade.ts'
+ import { SessionInputShell } from './facade.ts'
+ import { reportMessageSubmission } from './submission-analytics.ts'
+-import { readConversationDraft } from '../stores.ts'
++import { readConversationDraft, writeInitializedConversationDraft } from '../stores.ts'
+ 
+ /** Structural command face for per-session popup resolution. */
+ interface CommandFace {
+@@ -83,7 +83,14 @@ export class InputHub implements SessionInputResolver {
+     if (this.sessions().binding(binding.sessionId) !== binding) {
+       throw new Error('conversation.input.requestDraftInitialization requires a retained Session binding')
+     }
+-    return this.shellFor(binding).requestDraftInitialization(options)
++    const shell = this.shellFor(binding)
++    const previous = shell.draftSnapshot
++    const result = shell.requestDraftInitialization(options)
++    if (result === 'applied') {
++      try { writeInitializedConversationDraft(binding.sessionId, shell.draftSnapshot) }
++      catch (error: unknown) { shell.setDraft(previous); throw error }
++    }
++    return result
+   }
+ 
+   /**
+diff --git a/packages/client/ui-conversation/src/client/stores.ts b/packages/client/ui-conversation/src/client/stores.ts
+index 34e4261a264e43793a270d9aaad57dce7312cdd6..7eb1ea655a0e87e3638d35184bc6ee7250d4065b 100644
+--- a/packages/client/ui-conversation/src/client/stores.ts
++++ b/packages/client/ui-conversation/src/client/stores.ts
+@@ -55,6 +55,26 @@ export function readConversationDraft(sessionId: SessionId): DraftSnapshot {
+   }
+ }
+ 
++/**
++ * Persist explicit initialization before a target Session has a mounted store writer.
++ * @param sessionId - Session-scoped persistence suffix.
++ * @param draft - semantic document owned by the input model.
++ * @throws when browser storage cannot retain the initialized draft.
++ */
++export function writeInitializedConversationDraft(sessionId: SessionId, draft: DraftSnapshot): void {
++  if (typeof localStorage === 'undefined') return
++  const key = `${CONVERSATION_STORE_KEY}.${sessionId}`
++  const raw = localStorage.getItem(key)
++  let stored: unknown
++  if (raw !== null) {
++    try { stored = JSON.parse(raw) }
++    catch (_error: unknown) { /* Invalid persisted content has no View state to preserve. */ }
++  }
++  const previous = typeof stored === 'object' && stored !== null && !Array.isArray(stored)
++    ? stored : { view: null, viewRequest: null }
++  localStorage.setItem(key, JSON.stringify({ ...previous, draft }))
++}
++
+ /**
+  * Read the persisted View preference before the Slot store is materialized.
+  * @param sessionId - Session-scoped persistence suffix.
+diff --git a/packages/client/ui-conversation/tests/apply-inject.client.spec.tsx b/packages/client/ui-conversation/tests/apply-inject.client.spec.tsx
+index ce7386dde860c484ab004240a931a76e7ec17466..f4f30344d3ae8dcc8438753f8fb9756407dad05b 100644
+--- a/packages/client/ui-conversation/tests/apply-inject.client.spec.tsx
++++ b/packages/client/ui-conversation/tests/apply-inject.client.spec.tsx
+@@ -366,8 +366,9 @@ describe('Conversation inject API', () => {
+ 
+     const mirrored: string[] = []
+     const unbind = injected.bindDraftPersistence(draft => mirrored.push(draft.text))
++    ;(actions as SessionInputShell).actions.persistDraft()
+     actions.setDraft('mirrored text')
+-    expect(mirrored).toEqual(['mirrored text'])
++    expect(mirrored).toEqual(['retry me', 'mirrored text'])
+     unbind()
+     expect(b.inputApi(ROOT).state).toBe(state)
+ 
+diff --git a/packages/client/ui-conversation/tests/conversation-store.client.spec.ts b/packages/client/ui-conversation/tests/conversation-store.client.spec.ts
+index 6b01857c869354724a0d6692fd5667a1ebc7fbab..0c55b3f8801ea61d7c7543c9a9d6d0c038fe5164 100644
+--- a/packages/client/ui-conversation/tests/conversation-store.client.spec.ts
++++ b/packages/client/ui-conversation/tests/conversation-store.client.spec.ts
+@@ -1,6 +1,8 @@
+ // @vitest-environment jsdom
+ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
++import type { Context } from '@deepseek-ai/cordis'
+ import type { SessionId } from '@deepseek-ai/dsh-session/types'
++import { SessionInputShell } from '../src/client/input/facade.ts'
+ import type { DraftSnapshot } from '../src/client/contract/draft-editor.ts'
+ import { createConversationStore, readConversationDraft, readConversationViewPreference } from '../src/client/stores.ts'
+ 
+@@ -18,23 +20,23 @@ afterEach(() => {
+ describe('createConversationStore', () => {
+   it('owns draft, selected View, and one-shot View requests', () => {
+     const store = createConversationStore().create()
+-    expect(store.store.getSnapshot()).toEqual({ draft: '', view: null, viewRequest: null })
++    expect(store.getSnapshot()).toEqual({ draft: '', view: null, viewRequest: null })
+ 
+     store.actions.setDraft('hello')
+     store.actions.setView('chat')
+-    expect(store.store.getSnapshot()).toEqual({
++    expect(store.getSnapshot()).toEqual({
+       draft: 'hello',
+       view: 'chat',
+       viewRequest: null,
+     })
+ 
+     store.actions.openView('trajectory', 'call-1')
+-    expect(store.store.getSnapshot()).toMatchObject({
++    expect(store.getSnapshot()).toMatchObject({
+       view: 'trajectory',
+       viewRequest: { view: 'trajectory', focus: 'call-1' },
+     })
+     store.actions.completeViewRequest()
+-    expect(store.store.getSnapshot().viewRequest).toBeNull()
++    expect(store.getSnapshot().viewRequest).toBeNull()
+   })
+ 
+   it('persists per Session scope and clears the persisted value', () => {
+@@ -45,7 +47,7 @@ describe('createConversationStore', () => {
+     expect(localStorage.getItem(`${KEY}.sess-2`)).toBeNull()
+ 
+     const restored = createConversationStore().create('sess-1')
+-    expect(restored.store.getSnapshot()).toMatchObject({
++    expect(restored.getSnapshot()).toMatchObject({
+       draft: 'draft for one',
+       view: 'chat',
+     })
+@@ -59,7 +61,25 @@ describe('createConversationStore', () => {
+     const first = handle.create()
+     const second = handle.create()
+     first.actions.setDraft('only first')
+-    expect(second.store.getSnapshot().draft).toBe('')
++    expect(second.getSnapshot().draft).toBe('')
++  })
++
++  it('persists a draft assigned before the composer mounts and restores it after remount', () => {
++    const shell = new SessionInputShell({
++      actx: {} as Context,
++      defaultSink: vi.fn(),
++      commandAttachments: { serialize: () => Promise.resolve([]), release: () => {}, unsupportedNotice: token => token },
++    })
++    shell.setDraft('Transferred task draft')
++    const handle = createConversationStore()
++    const store = handle.create('replacement-session')
++    const unbind = shell.bindDraftPersistence(store.actions.setDraft)
++    shell.persistCurrentDraft()
++    expect(handle.create('replacement-session').getSnapshot().draft).toEqual({ text: 'Transferred task draft', references: [] })
++    unbind()
++    shell.setDraft('Detached editor draft')
++    expect(handle.create('replacement-session').getSnapshot().draft).toEqual({ text: 'Transferred task draft', references: [] })
++    shell.dispose()
+   })
+ 
+   it('reads only a usable persisted View preference', () => {
+diff --git a/packages/client/ui-conversation/tests/draft-hub.client.spec.ts b/packages/client/ui-conversation/tests/draft-hub.client.spec.ts
+index 0800ae35ce07045c2c88ae11ec87da34202dec61..e2d859af781b9f3b7472ce04d52bc4e114f6aab4 100644
+--- a/packages/client/ui-conversation/tests/draft-hub.client.spec.ts
++++ b/packages/client/ui-conversation/tests/draft-hub.client.spec.ts
+@@ -212,6 +212,43 @@ it('imports reference chips on the first Hub shell and preserves them without an
+   expect(b.hub.shellFor(b.binding).draftSnapshot).toEqual({ text: '', references: [] })
+ })
+ 
++it('persists explicit semantic initialization before a view and restores it after Session release', async () => {
++  const b = await fixture('')
++  expect(b.hub.requestDraftInitialization(b.binding, { prompt: saved, clearPreviousDraft: true })).toBe('applied')
++  expect(JSON.parse(localStorage.getItem(b.key)!)).toEqual({ draft: saved, view: 'trajectory', viewRequest: null })
++  b.reference.release()
++  await vi.waitFor(() => {
++    expect(b.sessions.binding(b.id)).toBeUndefined()
++    expect(b.shell.requestDraftInitialization({ prompt: 'late write' })).toBe('blocked')
++  })
++  const reference = b.sessions.retain(b.id)
++  onTestFinished(() => { reference.release() })
++  await reference.ready
++  const restored = b.hub.shellFor(reference.binding)
++  expect(restored).not.toBe(b.shell)
++  expect(restored.draftSnapshot).toEqual(saved)
++  expect(restored.editor.getEditorState().read(() => $nodesOfType(ReferenceChipNode).length)).toBe(1)
++})
++
++it('keeps the persisted draft intact when initialization meets an in-flight submission', async () => {
++  const b = await fixture('unsent text')
++  const send = Promise.withResolvers<{ kind: 'success' }>()
++  b.ctx.provide('conversation', { sendSession: () => send.promise } as never)
++  b.shell.submit()
++  expect(b.hub.requestDraftInitialization(b.binding, { prompt: saved, clearPreviousDraft: true })).toBe('blocked')
++  expect(localStorage.getItem(b.key)).toBe(b.raw)
++  send.resolve({ kind: 'success' })
++})
++
++it('reports initialization persistence failure without changing the saved draft or View', async () => {
++  const b = await fixture('original')
++  const write = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('storage is full') })
++  onTestFinished(() => { write.mockRestore() })
++  expect(() => b.hub.requestDraftInitialization(b.binding, { prompt: saved, clearPreviousDraft: true })).toThrow('storage is full')
++  expect(b.shell.draftSnapshot).toEqual({ text: 'original', references: [] })
++  expect(localStorage.getItem(b.key)).toBe(b.raw)
++})
++
+ it('subscribes when a provider arrives and disconnects each withdrawn provider', async () => {
+   const b = await fixture(saved)
+   expect(b.shell.actions.insertText('/current', {

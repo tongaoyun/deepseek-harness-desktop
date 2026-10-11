@@ -120,7 +120,7 @@ export async function syncTools(
   const definitions = new Map<string, ToolDefinition>()
   const response = client.getServerCapabilities()?.tools === undefined
     ? { tools: [] }
-    : await client.listTools(undefined, { cacheMode: 'refresh' })
+    : await client.listTools(undefined, { cacheMode: 'refresh', timeout: opts.toolCallTimeoutMs })
   for (const tool of response.tools) {
     const publicName = publicToolName(opts.serverName, tool.name)
     if (definitions.has(publicName)) {

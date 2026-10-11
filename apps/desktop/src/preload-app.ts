@@ -1,15 +1,15 @@
 /** Origin-scoped boot, native directory selection, host paths of picked files, and update presentation with native confirmation actions. */
 
 import type { DesktopShortcutInput, ShortcutConfigSnapshot, ShortcutSaveResult } from '@deepseek-ai/dsh-client-shortcuts/protocol'
-import type { ProductEvent, ProductMethod, ProductSession } from '@deepseek-harness/product/protocol'
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
-import { DESKTOP_IPC, SCHEME, type DshDesktopProductApi, type DesktopUpdatePresentation, type DeepSeekHarnessProductApi } from './ipc.ts'
+import { DESKTOP_IPC, SCHEME, type DshDesktopProductApi, type DesktopUpdatePresentation } from './ipc.ts'
 import { PLATFORM_IPC } from './platform-ipc.ts'
 import { markDocumentPlatform, syncWindowFullscreen } from './preload-platform.ts'
 import { syncNativeTheme } from './preload-theme.ts'
 import { syncWindowsAppearance } from './preload-windows.ts'
 import { installMandatoryUpdateOverlay } from './preload-mandatory-overlay.ts'
 import { createDesktopBrowserBridge } from './preload-browser.ts'
+import { invokeExtension } from './extension-transport.ts'
 
 function createProductApi(): DshDesktopProductApi {
   return {
@@ -56,15 +56,17 @@ function createProductApi(): DshDesktopProductApi {
         return () => { ipcRenderer.off(DESKTOP_IPC.updatesPresentation, handle) }
       },
     },
-    product: {
-      invoke: (method: ProductMethod, payload?: unknown, requestId?: string) =>
-        ipcRenderer.invoke(DESKTOP_IPC.productInvoke, method, payload, requestId) as Promise<unknown>,
-      cancel: (requestId) => { ipcRenderer.send(DESKTOP_IPC.productCancel, requestId) },
-      getSession: () => ipcRenderer.invoke(DESKTOP_IPC.productSession) as Promise<ProductSession>,
-      subscribe(listener) {
-        const handle = (_event: Electron.IpcRendererEvent, event: ProductEvent): void => { listener(event) }
-        ipcRenderer.on(DESKTOP_IPC.productEvent, handle)
-        return () => { ipcRenderer.off(DESKTOP_IPC.productEvent, handle) }
+    extensions: {
+      invoke: (namespace, method, payload, requestId, timeoutMs) =>
+        invokeExtension((source, operation, input, id) => ipcRenderer.invoke(DESKTOP_IPC.extensionInvoke, source, operation, input, id),
+          (source, id) => { ipcRenderer.send(DESKTOP_IPC.extensionCancel, source, id) }, namespace, method, payload, requestId, timeoutMs),
+      cancel: (namespace, requestId) => { ipcRenderer.send(DESKTOP_IPC.extensionCancel, namespace, requestId) },
+      subscribe(namespace, listener) {
+        const handle = (_event: Electron.IpcRendererEvent, source: string, event: unknown): void => {
+          if (source === namespace) listener(event)
+        }
+        ipcRenderer.on(DESKTOP_IPC.extensionEvent, handle)
+        return () => { ipcRenderer.off(DESKTOP_IPC.extensionEvent, handle) }
       },
     },
   }
@@ -113,7 +115,6 @@ const ownedApplication = location.protocol === `${SCHEME}:` && location.hostname
 if (ownedApplication) {
   const productApi = createProductApi()
   contextBridge.exposeInMainWorld('dshDesktop', productApi)
-  contextBridge.exposeInMainWorld('deepseekHarness', { product: productApi.product } satisfies DeepSeekHarnessProductApi)
 } else {
   contextBridge.exposeInMainWorld('dshDesktop', { protocolVersion: 1 })
 }

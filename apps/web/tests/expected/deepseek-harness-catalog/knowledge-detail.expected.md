@@ -1,0 +1,87 @@
+- region "Knowledge bases":
+  - complementary:
+    - heading "Knowledge bases" [level=1]
+    - button "Refresh"
+    - navigation "Knowledge bases":
+      - region "Personal":
+        - heading "Personal New personal knowledge base" [level=2]:
+          - button "Personal" [expanded]
+          - button "New personal knowledge base"
+        - button "Personal notes"
+        - button "Actions for “Personal notes”"
+      - region "Department":
+        - heading "Department" [level=2]:
+          - button "Department" [expanded]
+        - heading "Sales (21)" [level=3]
+        - button "Sales procedures"
+        - heading "Sales (22)" [level=3]
+        - button "Sales playbook"
+      - region "Company":
+        - heading "Company" [level=2]:
+          - button "Company" [expanded]
+        - button "Operations playbook" [expanded]
+        - navigation "Folders":
+          - text: Search material names…
+          - searchbox "Search material names…"
+          - button "Search"
+          - button "All materials"
+          - button "Unfiled"
+          - button "Order review.md"
+          - button "Policies"
+          - button "Policy 2.pdf": Policy 2.pdf Processing failed
+  - main:
+    - navigation "All materials":
+      - button "Operations playbook"
+    - text: Type
+    - combobox "Type":
+      - option "All types" [selected]
+      - option "Online document"
+      - option "Website"
+      - option "PDF"
+      - option "DOCX"
+      - option "XLSX"
+      - option "MD"
+      - option "TXT"
+    - text: Status
+    - combobox "Status":
+      - option "All statuses" [selected]
+      - option "Searchable"
+      - option "Queued"
+      - option "Processing"
+      - option "Finalizing"
+      - option "Processing failed"
+      - option "Cancelled"
+      - option "Deleting"
+    - button "Refresh"
+    - table:
+      - rowgroup:
+        - row "Name Status Type Size Updated More actions":
+          - columnheader "Name"
+          - columnheader "Status"
+          - columnheader "Type"
+          - columnheader "Size"
+          - columnheader "Updated"
+          - columnheader "More actions"
+      - rowgroup:
+        - row "Order review.md Searchable Online document 2.0KB Oct 10, 2026 Actions for “Order review.md”":
+          - cell "Order review.md":
+            - button "Order review.md"
+          - cell "Searchable"
+          - cell "Online document"
+          - cell "2.0KB"
+          - cell "Oct 10, 2026"
+          - cell "Actions for “Order review.md”":
+            - button "Actions for “Order review.md”"
+        - row "Policy 2.pdf Processing failed PDF 2.0KB Oct 10, 2026 Actions for “Policy 2.pdf”":
+          - cell "Policy 2.pdf":
+            - button "Policy 2.pdf"
+          - cell "Processing failed"
+          - cell "PDF"
+          - cell "2.0KB"
+          - cell "Oct 10, 2026"
+          - cell "Actions for “Policy 2.pdf”":
+            - button "Actions for “Policy 2.pdf”"
+    - text: 2 items
+    - button "Previous page" [disabled]
+    - text: 1 / 1
+    - button "Next page" [disabled]

@@ -2,13 +2,13 @@
 
 [English](README.md) | 中文
 
-## DeepSeek Harness下游桌面端
+## DeepSeek Harness 下游桌面端
 
-本仓库是DeepSeek Harness基于 DeepSeek Harness `dsh-v0.2.0-rc.2` 的 Electron 下游版本。上游基线固定在 [`UPSTREAM_COMMIT`](UPSTREAM_COMMIT)，桌面入口为 `apps/desktop`，不再使用 Tauri。
+本仓库扩展 DeepSeek Harness `dsh-v0.2.1-alpha.2`，上游基线固定在 [`UPSTREAM_COMMIT`](UPSTREAM_COMMIT)。`apps/desktop` 运行官方 profile；`apps/product-desktop` 通过同一 Electron 壳组合企业扩展。
 
 `pnpm run check:upstream-release` 只报告新的 RC 或正式版本，不修改当前固定版本；Gitea 定时工作流执行同一检查，alpha 版本仅作提示。
 
-DeepSeek Harness产品能力位于 [`packages/deepseek-harness-product/product`](packages/deepseek-harness-product/product) 和 [`native/deepseek-harness`](native/deepseek-harness)，通过 Electron 产品桥接接入专家套件、技能、连接器、WeKnora、钉钉登录、定时任务及成果引用。Harness 的 Session、Agent、Conversation、Browser、Office、审批、停止、重试和回放保持官方实现。
+[产品子系统](docs/subsystems/deepseek-harness-product.zh.md)通过独立的协议、运行时、桌面和 UI 包管理认证、目录、任务能力快照及桌面资源。Harness 的 Session、执行、审批和回放 API 是集成入口。[登记补丁](scripts/upstream-patches/manifest.json)记录每项官方差异及验证方式。
 
 Gitea Windows 流水线生成未签名安装包，显式的 Electron Release 流程会把 Windows/macOS 资产、平台 SHA-256 清单和发布元数据发布到 Gitea Release。资产名保持与 electron-builder 更新元数据一致，已签名的 macOS 更新 feed 无需改写即可使用。Windows 仍未签名，因此不提供 Windows 发布者信任；Release 资产只是分发记录，不能替代签名。
 

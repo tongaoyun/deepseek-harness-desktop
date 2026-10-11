@@ -1,15 +1,7 @@
 {
-  "name": "@deepseek-ai/dsh-expert-kit-readme",
+  "name": "@deepseek-harness/product-expert-kit-readme",
   "description": "Model-only Harness skill provider for DeepSeek Harness Expert Kit README instructions",
-  "version": "0.2.0-rc.2",
-  "publishConfig": {
-    "access": "public"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
-    "directory": "packages/deepseek-harness-product/expert-kit-readme"
-  },
+  "version": "0.1.0",
   "license": "MIT",
   "type": "module",
   "main": "lib/index.js",
@@ -33,5 +25,6 @@
     "@deepseek-ai/cordis": "workspace:~",
     "@deepseek-ai/cordis-plugin-loader": "workspace:~",
     "@deepseek-ai/dsh-skill": "workspace:*"
-  }
+  },
+  "private": true
 }

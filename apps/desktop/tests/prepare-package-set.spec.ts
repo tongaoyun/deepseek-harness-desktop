@@ -107,18 +107,18 @@ describe('desktop package-set selection', () => {
       ['@deepseek-ai/dsh-desktop-host', packed('@deepseek-ai/dsh-desktop-host', {
         dependencies: {
           '@deepseek-ai/dsh': '^1.0.0',
-          '@deepseek-ai/dsh-expert-kit-readme': '0.2.0-rc.2',
+          '@deepseek-harness/product-expert-kit-readme': '0.2.0-rc.2',
           '@deepseek-harness/product': '0.1.0',
         },
       })],
-      ['@deepseek-ai/dsh-expert-kit-readme', packed('@deepseek-ai/dsh-expert-kit-readme')],
+      ['@deepseek-harness/product-expert-kit-readme', packed('@deepseek-harness/product-expert-kit-readme')],
       ['@deepseek-harness/product', packed('@deepseek-harness/product')],
     ])
     expect(selectDesktopPackageClosure(available).map(entry => entry.manifest.name)).toEqual([
       '@deepseek-ai/dsh',
       '@deepseek-ai/dsh-desktop-host',
-      '@deepseek-ai/dsh-expert-kit-readme',
       '@deepseek-harness/product',
+      '@deepseek-harness/product-expert-kit-readme',
     ])
   })
 

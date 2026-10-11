@@ -1,0 +1,217 @@
+diff --git a/packages/client/hmr/README.i18n.yaml b/packages/client/hmr/README.i18n.yaml
+index 7bde4169bb56c39f08bea4e45fdb36296131068e..e8f6f9e36a1551ce49c834aa39b0bdd247b9b32b 100644
+--- a/packages/client/hmr/README.i18n.yaml
++++ b/packages/client/hmr/README.i18n.yaml
+@@ -33,8 +33,8 @@
+   en: e5cdd3f10a344b10
+   zh: 70c8efd12531039d
+ /deepseek-ai-dsh-client-hmr/understand-the-implementation/design-concept:
+-  en: 90f8d06719b177bd
+-  zh: c5a770ddcacc0f87
++  en: 836d772476f1e8e1
++  zh: 9c3b095d7ca8d6ab
+ /deepseek-ai-dsh-client-hmr/understand-the-implementation/the-browser-swap:
+   en: 269ff43822114dc8
+   zh: 8604c39c8050858a
+diff --git a/packages/client/hmr/README.md b/packages/client/hmr/README.md
+index a0c658ea059dbd9f5b7862225baa0831218c4c9f..46a09bd00d12db89e0b4b1a0df801d61a47886ce 100644
+--- a/packages/client/hmr/README.md
++++ b/packages/client/hmr/README.md
+@@ -59,7 +59,7 @@ This section explains how the reload chain is built; observable behavior is cove
+ 
+ ### Design concept
+ 
+-The Host half watches each package's stamped entry artifact and serves `/plugins/events`. It forwards existing graph-change and rebuilt notifications; every new connection receives the current full graph. A graph describes the browser’s desired entries and carries no Host cleanup-completion guarantee. Host activation and cleanup remain owned by the Host lifecycle. The entry's mtime, ctime, and size identify the revision without hashing its contents; unchanged metadata requires no content read. Host restarts over unchanged artifacts keep the same revisions, so reconnecting the graph stream does not replace browser plugins. The browser half delegates both frame kinds to Client Modules, which serializes entry changes and waits for browser resource cleanup.
++The Host half watches each package's stamped entry artifact and serves `/plugins/events`. It forwards existing graph-change and rebuilt notifications; every new connection receives the current full graph. A graph describes the browser’s desired entries and carries no Host cleanup-completion guarantee. Host activation and cleanup remain owned by the Host lifecycle. The entry's mtime, ctime, and size identify the revision without hashing its contents; unchanged metadata requires no content read. Host restarts over unchanged artifacts keep the same revisions, so reconnecting the graph stream does not replace browser plugins. When a carrier publishes a Host stream origin, the browser connects there directly instead of proxying long-lived SSE through a custom document scheme. The browser half delegates both frame kinds to Client Modules, which serializes entry changes and waits for browser resource cleanup.
+ 
+ ### The browser swap
+ 
+diff --git a/packages/client/hmr/README.zh.md b/packages/client/hmr/README.zh.md
+index 7f6b7d17b764f7506ae7f203436a648667ac21ab..9ae9b69a77682705ed95fa991cb7befe98cc6036 100644
+--- a/packages/client/hmr/README.zh.md
++++ b/packages/client/hmr/README.zh.md
+@@ -59,7 +59,7 @@ kind: "package-reference"
+ 
+ ### 设计理念
+ 
+-Host 半侧监听每个包带完成标记的入口产物，并提供 `/plugins/events`。它转发现有的图变化与重建通知；每个新连接都会收到当前完整图。图描述浏览器的目标条目，不保证 Host 清理已经完成。Host 的激活与清理仍由 Host 生命周期管理。入口的 mtime、ctime 和大小共同标识 revision，无需对其内容求哈希；元数据未变时无需读取内容。Host 重启时若产物未变，revision 保持不变，因此图流重连不会替换浏览器插件。浏览器半侧将两种帧都交给 Client Modules，由它串行处理条目变更并等待浏览器资源清理。
++Host 半侧监听每个包带完成标记的入口产物，并提供 `/plugins/events`。它转发现有的图变化与重建通知；每个新连接都会收到当前完整图。图描述浏览器的目标条目，不保证 Host 清理已经完成。Host 的激活与清理仍由 Host 生命周期管理。入口的 mtime、ctime 和大小共同标识 revision，无需对其内容求哈希；元数据未变时无需读取内容。Host 重启时若产物未变，revision 保持不变，因此图流重连不会替换浏览器插件。carrier 提供 Host 流地址时，浏览器直接连接该地址，不让长连接 SSE 穿过自定义文档协议。浏览器半侧将两种帧都交给 Client Modules，由它串行处理条目变更并等待浏览器资源清理。
+ 
+ ### 浏览器侧替换
+ 
+diff --git a/packages/client/hmr/src/client/index.ts b/packages/client/hmr/src/client/index.ts
+index a0db1351e69a758d0bfbe0ed0474d083617a47b3..800d21c3f85ef26480e16aaeceaf6fa9017f5831 100644
+--- a/packages/client/hmr/src/client/index.ts
++++ b/packages/client/hmr/src/client/index.ts
+@@ -25,7 +25,11 @@ export function apply(ctx: Context): void {
+   }
+ 
+   ctx.effect(() => {
+-    const source = new EventSource(EVENTS_ROUTE)
++    const transport = globalThis as { __DSH_TRANSPORT__?: { streamBaseUrl?: string } }
++    const streamBaseUrl = transport.__DSH_TRANSPORT__?.streamBaseUrl
++    const source = new EventSource(streamBaseUrl === undefined
++      ? EVENTS_ROUTE
++      : new URL(EVENTS_ROUTE, streamBaseUrl).href)
+     source.addEventListener('message', (event: MessageEvent<string>) => {
+       let value: unknown
+       try {
+diff --git a/packages/client/hmr/src/index.ts b/packages/client/hmr/src/index.ts
+index 23f5ca00d6bb7e573b1067565922cbcb0bf02b33..fbab19733f9635ca24e11c0207c270ec63819291 100644
+--- a/packages/client/hmr/src/index.ts
++++ b/packages/client/hmr/src/index.ts
+@@ -8,7 +8,7 @@
+  * a development rebuild watcher also supplies bundle changes.
+  */
+ import { statSync } from 'node:fs'
+-import type { ServerResponse } from 'node:http'
++import type { IncomingMessage, ServerResponse } from 'node:http'
+ import type { Context } from '@deepseek-ai/cordis'
+ import z from '@deepseek-ai/schemastery'
+ // Type imports carry the clientModules/webServer Context merges.
+@@ -26,6 +26,8 @@ export const name = 'client-hmr'
+ /** Required services: the client graph and Web route registry. */
+ export const inject = ['clientModules', 'webServer']
+ 
++const DESKTOP_APP_ORIGIN = 'dsh-app://app'
++
+ /** Plugin config, validated by the same-named schemastery schema. */
+ export interface Config {
+   /** Bundle stat-poll interval in milliseconds (default 500, the build-side watcher's polling default). */
+@@ -163,12 +165,17 @@ export function apply(ctx: Context, config: Config): void {
+     for (const res of connections) res.write(line)
+   }
+ 
+-  const connect = (res: ServerResponse): void => {
+-    res.writeHead(200, {
++  const connect = (req: IncomingMessage, res: ServerResponse): void => {
++    const headers: Record<string, string> = {
+       'content-type': 'text/event-stream',
+       'cache-control': 'no-cache',
+       'connection': 'keep-alive',
+-    })
++    }
++    if (req.headers.origin === DESKTOP_APP_ORIGIN) {
++      headers['access-control-allow-origin'] = DESKTOP_APP_ORIGIN
++      headers.vary = 'origin'
++    }
++    res.writeHead(200, headers)
+     // Comment line on open so clients/proxies see a live channel even when
+     // no rebuild ever happens; EventSource frame parsing skips it naturally.
+     res.write(': connected\n\n')
+@@ -189,7 +196,7 @@ export function apply(ctx: Context, config: Config): void {
+           res.end()
+           return
+         }
+-        connect(res)
++        connect(req, res)
+       },
+     })
+     const unsubscribeGraph = ctx.clientModules.onGraphChanged(publishGraph)
+diff --git a/packages/client/hmr/tests/node-half.client.spec.ts b/packages/client/hmr/tests/node-half.client.spec.ts
+index 7965ca79b3a1c1f4084b9c15efa0f815c549a46a..0adc4bcc1bc5510bd14da9794ed7ad9b0bf61d45 100644
+--- a/packages/client/hmr/tests/node-half.client.spec.ts
++++ b/packages/client/hmr/tests/node-half.client.spec.ts
+@@ -283,21 +283,28 @@ it('broadcasts the desired graph without waiting for Host activation or cleanup'
+   const fiber = ctx.plugin({ inject, Config, apply }, { pollIntervalMs: POLL_MS })
+   await fiber.await()
+   const route = routes[0]!
+-  const connect = async () => {
++  const connect = async (origin?: string) => {
+     const lines: string[] = []
+     const response = Object.assign(new EventEmitter(), {
+       writeHead: vi.fn(), write: (line: string) => { lines.push(line) },
+       destroy: vi.fn(), end: vi.fn(),
+     })
+-    await route.handler({ method: 'GET' } as IncomingMessage, response as unknown as ServerResponse)
++    await route.handler({ method: 'GET', headers: origin === undefined ? {} : { origin } } as IncomingMessage,
++      response as unknown as ServerResponse)
+     return { lines, response }
+   }
+   try {
+-    const first = await connect()
++    const first = await connect('dsh-app://app')
+     expect(first.lines).toHaveLength(2)
++    expect(first.response.writeHead).toHaveBeenCalledWith(200, expect.objectContaining({
++      'access-control-allow-origin': 'dsh-app://app', vary: 'origin',
++    }))
+     const frame = JSON.parse(first.lines[1]!.slice(6)) as { graph: WebBootGraph }
+     expect(frame.graph.entries.map(row => row.id)).toEqual(['a'])
+     const second = await connect()
++    expect(second.response.writeHead).toHaveBeenCalledWith(200, expect.not.objectContaining({
++      'access-control-allow-origin': expect.anything(),
++    }))
+     expect(second.lines[1]).toBe(first.lines[1])
+     expect(first.lines).toHaveLength(2)
+     release()
+@@ -337,3 +344,25 @@ it('broadcasts the desired graph without waiting for Host activation or cleanup'
+     await ctx.fiber.dispose()
+   }
+ })
++
++it('does not grant HMR event access to an unrelated web origin', async () => {
++  const ctx = new Context()
++  const routes: WebRoute[] = []
++  ctx.provide('clientModules', fakeClientModuleHost(new Map()))
++  ctx.provide('webServer', fakeHttpServer(routes))
++  const fiber = ctx.plugin({ inject, Config, apply }, { pollIntervalMs: POLL_MS })
++  await fiber.await()
++  const response = Object.assign(new EventEmitter(), {
++    writeHead: vi.fn(), write: vi.fn(), destroy: vi.fn(), end: vi.fn(),
++  })
++  try {
++    await routes[0]!.handler({ method: 'GET', headers: { origin: 'https://unrelated.example' } } as IncomingMessage,
++      response as unknown as ServerResponse)
++    expect(response.writeHead).toHaveBeenCalledWith(200, expect.not.objectContaining({
++      'access-control-allow-origin': expect.anything(),
++    }))
++  } finally {
++    await fiber.dispose()
++    await ctx.fiber.dispose()
++  }
++})
+diff --git a/packages/client/hmr/tests/transport.client.spec.ts b/packages/client/hmr/tests/transport.client.spec.ts
+index 8b807c92555967f6498c67cd8124204604d42244..0961e5d97165088f7bc24eb3e86f9226fb62568b 100644
+--- a/packages/client/hmr/tests/transport.client.spec.ts
++++ b/packages/client/hmr/tests/transport.client.spec.ts
+@@ -15,13 +15,17 @@ it('forwards full graphs and rebuilt frames, contains wire errors and closes its
+   const errors = vi.spyOn(ctx.logger, 'error').mockImplementation(() => {})
+   let receive!: (event: { data: string }) => void
+   const close = vi.fn()
++  const eventUrls: string[] = []
++  vi.stubGlobal('__DSH_TRANSPORT__', { streamBaseUrl: 'http://127.0.0.1:43123/' })
+   vi.stubGlobal('EventSource', class {
+     close = close
++    constructor(url: string) { eventUrls.push(url) }
+     addEventListener(_name: string, listener: typeof receive) { receive = listener }
+   })
+   const fiber = ctx.plugin({ apply, inject })
+   try {
+     await fiber.await()
++    expect(eventUrls).toEqual(['http://127.0.0.1:43123/plugins/events'])
+     const graph = { rev: 'r', entries: [], batches: [] }
+     receive({ data: JSON.stringify({ type: 'graph', graph }) })
+     receive({ data: JSON.stringify({ type: 'rebuilt', id: 'a', rev: 'r1' }) })
+@@ -40,3 +44,22 @@ it('forwards full graphs and rebuilt frames, contains wire errors and closes its
+   }
+   expect(close).toHaveBeenCalledOnce()
+ })
++
++it('keeps the event route relative outside the desktop transport', async () => {
++  const ctx = new Context()
++  ctx.provide('modules', { entries: { sync: vi.fn(), reload: vi.fn() } } as unknown as ClientModuleLoader)
++  const eventUrls: string[] = []
++  vi.stubGlobal('EventSource', class {
++    constructor(url: string) { eventUrls.push(url) }
++    addEventListener() {}
++    close() {}
++  })
++  const fiber = ctx.plugin({ apply, inject })
++  try {
++    await fiber.await()
++    expect(eventUrls).toEqual(['plugins/events'])
++  } finally {
++    await fiber.dispose()
++    await ctx.fiber.dispose()
++  }
++})

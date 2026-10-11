@@ -1,0 +1,450 @@
+diff --git a/apps/desktop/electron-builder.config.d.mts b/apps/desktop/electron-builder.config.d.mts
+index 4e978ec00fa379ee72643c86da6e2b2c3f194c84..455df981bcca61e7d90f6d7718ebdf239736d8d4 100644
+--- a/apps/desktop/electron-builder.config.d.mts
++++ b/apps/desktop/electron-builder.config.d.mts
+@@ -18,12 +18,9 @@ export interface DesktopElectronBuilderConfig {
+   ]
+   readonly extraMetadata: { readonly dshDesktopAppId: string }
+   readonly asarUnpack: readonly string[]
+-  readonly extraResources: readonly [
+-    { readonly from: string, readonly to: 'runtime' },
+-    { readonly from: string, readonly to: 'icon.png' },
+-    ...{ readonly from: string, readonly to: 'tray.ico' }[],
+-  ]
++  readonly extraResources: readonly { readonly from: string, readonly to: string }[]
+   readonly mac: {
++    readonly icon: string
+     readonly extendInfo: { readonly NSMicrophoneUsageDescription: string }
+     readonly entitlements: string
+     readonly entitlementsInherit: string
+@@ -37,6 +34,7 @@ export interface DesktopElectronBuilderConfig {
+     readonly writeUpdateInfo: boolean
+   }
+   readonly win: {
++    readonly icon: string
+     readonly forceCodeSigning: boolean
+     readonly signtoolOptions: {
+       readonly publisherName: string | undefined
+diff --git a/apps/desktop/package.json b/apps/desktop/package.json
+index c1009cb57b5259ea56128ed854f147df3d4344b0..e8c2ded193d702754d999eaceebfddb72db7d3ab 100644
+--- a/apps/desktop/package.json
++++ b/apps/desktop/package.json
+@@ -1,6 +1,6 @@
+ {
+   "name": "@deepseek-ai/dsh-desktop",
+-  "description": "Electron desktop shell for a bundled dsh runtime and external plugins",
++  "description": "Official Harness Electron shell with generic assembly extension hooks",
+   "version": "0.2.1-alpha.2",
+   "private": true,
+   "license": "MIT",
+@@ -50,6 +50,7 @@
+     "@deepseek-ai/cordis": "workspace:~"
+   },
+   "devDependencies": {
++    "@deepseek-ai/dsh-util-crypto": "workspace:*",
+     "@deepseek-ai/dsh-app-boot": "workspace:*",
+     "@deepseek-ai/dsh-client-ui-settings-general": "workspace:*",
+     "@deepseek-ai/dsh-client-ui-sidebar-browser": "workspace:*",
+diff --git a/apps/desktop/scripts/desktop-assembly.d.mts b/apps/desktop/scripts/desktop-assembly.d.mts
+new file mode 100644
+index 0000000000000000000000000000000000000000..594b898207df5f3e4e19d41754ff2d84239c2e3e
+--- /dev/null
++++ b/apps/desktop/scripts/desktop-assembly.d.mts
+@@ -0,0 +1,7 @@
++export function readDesktopAssembly(environment?: NodeJS.ProcessEnv, platform?: string): {
++  runtimePackages: string[]
++  resources: { from: string; to: string }[]
++  buildSteps: string[][]
++  packageDirectories: string[]
++  icons: Partial<Record<'macos' | 'windows' | 'tray' | 'development', string>>
++}
+diff --git a/apps/desktop/scripts/desktop-assembly.mjs b/apps/desktop/scripts/desktop-assembly.mjs
+new file mode 100644
+index 0000000000000000000000000000000000000000..a75fa56fc9127e32b159f2829921e5980b82ab0f
+--- /dev/null
++++ b/apps/desktop/scripts/desktop-assembly.mjs
+@@ -0,0 +1,27 @@
++/** Optional application-owned resources and runtime roots, shared by both build stages. */
++import { readFileSync } from 'node:fs'
++import { dirname, isAbsolute, resolve } from 'node:path'
++
++export function readDesktopAssembly(environment = process.env, platform = process.platform) {
++  const path = environment.DSH_DESKTOP_ASSEMBLY_MANIFEST
++  if (path === undefined) return { runtimePackages: [], resources: [], buildSteps: [], packageDirectories: [], icons: {} }
++  const value = JSON.parse(readFileSync(path, 'utf8'))
++  if (!Array.isArray(value.runtimePackages) || value.runtimePackages.some(name => typeof name !== 'string')
++    || !Array.isArray(value.resources)) throw new Error('Invalid Desktop assembly manifest')
++  const resources = value.resources.filter(resource => resource.platform === undefined || resource.platform === platform)
++    .map(resource => {
++      if (typeof resource.from !== 'string' || typeof resource.to !== 'string' || isAbsolute(resource.to)
++        || resource.to.split(/[\\/]/).includes('..')) throw new Error('Invalid Desktop assembly resource')
++      return { from: resolve(dirname(path), resource.from), to: resource.to }
++    })
++  const buildSteps = value.buildSteps ?? []
++  if (!Array.isArray(buildSteps) || buildSteps.some(step => !Array.isArray(step) || step.some(arg => typeof arg !== 'string'))) throw new Error('Invalid Desktop assembly build steps')
++  const directories = value.packageDirectories ?? []
++  if (!Array.isArray(directories) || directories.some(path => typeof path !== 'string')) throw new Error('Invalid Desktop assembly package directories')
++  const icons = Object.fromEntries(Object.entries(value.icons ?? {}).map(([key, icon]) => {
++    if (!['macos', 'windows', 'tray', 'development'].includes(key) || typeof icon !== 'string') throw new Error('Invalid Desktop assembly icon')
++    return [key, resolve(dirname(path), icon)]
++  }))
++  return { runtimePackages: value.runtimePackages, resources, buildSteps, icons,
++    packageDirectories: directories.map(directory => resolve(dirname(path), directory)) }
++}
+diff --git a/apps/desktop/scripts/dev.ts b/apps/desktop/scripts/dev.ts
+index 1ae2f3e95242b1d0c21c9d7fce561d0b3797f1cd..73d522de68f35e6cbdd2c40f2d9f7cbed2d60f0e 100644
+--- a/apps/desktop/scripts/dev.ts
++++ b/apps/desktop/scripts/dev.ts
+@@ -11,6 +11,7 @@ import { developmentRuntimeDirectory, resolveDesktopBuildTarget } from './deskto
+ import { prepareDevelopmentProject } from './development-project.ts'
+ import { prepareDevelopmentApp } from './development-app.ts'
+ import { preparePrimaryRuntime } from './prepare-primary-runtime.ts'
++import { readDesktopAssembly } from './desktop-assembly.mjs'
+ 
+ const APP_ROOT = resolve(import.meta.dirname, '..')
+ const REPOSITORY_ROOT = resolve(APP_ROOT, '..', '..')
+@@ -65,10 +66,11 @@ async function launchElectron(): Promise<void> {
+   const hostPort = debugPort('DSH_DESKTOP_HOST_INSPECT_PORT', 9230)
+   const home = resolve(process.env.DSH_HOME ?? join(DEVELOPMENT_ROOT, 'home'))
+   const userData = resolve(process.env.DSH_DESKTOP_USER_DATA_DIR ?? join(DEVELOPMENT_ROOT, 'electron-user-data'))
++  const primaryRuntime = resolve(process.env.DSH_DESKTOP_PRIMARY_RUNTIME_DIR ?? developmentRuntimeDirectory())
+   const environment: NodeJS.ProcessEnv = {
+     ...process.env,
+     DSH_HOME: home,
+-    DSH_DESKTOP_PRIMARY_RUNTIME_DIR: process.env.DSH_DESKTOP_PRIMARY_RUNTIME_DIR ?? developmentRuntimeDirectory(),
++    DSH_DESKTOP_PRIMARY_RUNTIME_DIR: primaryRuntime,
+     DSH_DESKTOP_HOST_INSPECT_PORT: String(hostPort),
+     DSH_DESKTOP_OPEN_DEVTOOLS: process.env.DSH_DESKTOP_OPEN_DEVTOOLS ?? '1',
+     ELECTRON_ENABLE_LOGGING: process.env.ELECTRON_ENABLE_LOGGING ?? '1',
+@@ -78,7 +80,9 @@ async function launchElectron(): Promise<void> {
+   console.log(`desktop development: inspectors main=${String(mainPort)}, renderer=${String(rendererPort)}, host=${String(hostPort)}`)
+   if (process.platform === 'darwin') {
+     const executable = prepareDevelopmentApp({ electron, appRoot: APP_ROOT, directory: DEVELOPMENT_ROOT, home, userData,
+-      mainPort, rendererPort, hostPort, openDevtools: environment.DSH_DESKTOP_OPEN_DEVTOOLS! })
++      ...readDesktopAssembly().icons.development === undefined ? {} : { applicationIcon: readDesktopAssembly().icons.development! },
++      extensionEnvironment: JSON.parse(process.env.DSH_DESKTOP_EXTENSION_ENV ?? '{}'), primaryRuntime, mainPort, rendererPort, hostPort,
++      openDevtools: environment.DSH_DESKTOP_OPEN_DEVTOOLS! })
+     await run(executable, [], APP_ROOT, environment)
+     return
+   }
+diff --git a/apps/desktop/scripts/development-app.ts b/apps/desktop/scripts/development-app.ts
+index ff09b8b783952179ceb1e9bed7e4aee989176005..c371dfaecd180cedc6c0074573044d1710ec3887 100644
+--- a/apps/desktop/scripts/development-app.ts
++++ b/apps/desktop/scripts/development-app.ts
+@@ -1,7 +1,7 @@
+ /** macOS development bundle that loads the current workspace through Electron. */
+ import { execFileSync } from 'node:child_process'
+ import { createHash } from 'node:crypto'
+-import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
++import { copyFileSync, existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+ import { dirname, join } from 'node:path'
+ 
+ /** Workspace and runtime settings captured for Launch Services cold starts. */
+@@ -9,6 +9,9 @@ export interface DevelopmentAppOptions {
+   readonly electron: string
+   readonly appRoot: string
+   readonly directory: string
++  readonly extensionEnvironment?: Readonly<Record<string, string>>
++  readonly applicationIcon?: string
++  readonly primaryRuntime: string
+   readonly home: string
+   readonly userData: string
+   readonly mainPort: number
+@@ -29,11 +32,17 @@ export function prepareDevelopmentApp(options: DevelopmentAppOptions): string {
+   const bundle = join(options.directory, 'Harness Dev.app')
+   const executable = join(bundle, 'Contents', 'MacOS', 'HarnessDev')
+   const stamp = join(bundle, 'Contents', 'Resources', 'dsh-development.json')
++  const iconSource = options.applicationIcon ?? join(source, 'Contents', 'Resources', 'electron.icns')
++  if (!existsSync(iconSource)) throw new Error(`desktop development: missing application icon ${iconSource}`)
+   const launcher = developmentLauncher(options, bundle)
+-  const identity = JSON.stringify({ ...options, launcher, plist: readFileSync(join(source, 'Contents', 'Info.plist'), 'utf8') })
++  const identity = JSON.stringify({ schemaVersion: 1, ...options, launcher,
++    icon: createHash('sha256').update(readFileSync(iconSource)).digest('hex'),
++    plist: readFileSync(join(source, 'Contents', 'Info.plist'), 'utf8'),
++  })
+   if (!existsSync(stamp) || readFileSync(stamp, 'utf8') !== identity) {
+     rmSync(bundle, { recursive: true, force: true })
+     execFileSync('/usr/bin/ditto', [source, bundle])
++    copyFileSync(iconSource, join(bundle, 'Contents', 'Resources', 'electron.icns'))
+     const plist = join(bundle, 'Contents', 'Info.plist')
+     const values = {
+       CFBundleIdentifier: `com.deepseek.harness.dev.${createHash('sha256').update(options.appRoot).digest('hex').slice(0, 12)}`,
+@@ -62,7 +71,9 @@ export function prepareDevelopmentApp(options: DevelopmentAppOptions): string {
+ export function developmentLauncher(options: DevelopmentAppOptions, bundle: string): string {
+   const environment = {
+     DSH_HOME: options.home,
++    ...options.extensionEnvironment,
+     DSH_DESKTOP_DEV_APP: '1',
++    DSH_DESKTOP_PRIMARY_RUNTIME_DIR: options.primaryRuntime,
+     DSH_DESKTOP_HOST_INSPECT_PORT: String(options.hostPort),
+     DSH_DESKTOP_OPEN_DEVTOOLS: options.openDevtools,
+     ELECTRON_ENABLE_LOGGING: '1',
+diff --git a/apps/desktop/scripts/electron-builder-config.mjs b/apps/desktop/scripts/electron-builder-config.mjs
+index f08b783865e35563a124a23ef4b6d7fe136bcd7a..47e7f27df0050b89ad8b2ae2151acb55cf94e1cc 100644
+--- a/apps/desktop/scripts/electron-builder-config.mjs
++++ b/apps/desktop/scripts/electron-builder-config.mjs
+@@ -1,3 +1,4 @@
++import { readDesktopAssembly } from './desktop-assembly.mjs'
+ import { officePackageDirectories } from '../../../scripts/libreoffice-packages.mjs'
+ import { X509Certificate } from 'node:crypto'
+ import { readFileSync } from 'node:fs'
+@@ -34,6 +35,8 @@ import {
+   writeMacOSAppUpdateConfig,
+ } from './macos-app-update-config.mjs'
+ 
++const REPOSITORY_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
++
+ /**
+  * Create electron-builder configuration from one release environment.
+  * @param {NodeJS.ProcessEnv} env - Packaging environment.
+@@ -60,7 +63,7 @@ export function createElectronBuilderConfig(
+   const unsigned = env.DSH_DESKTOP_UNSIGNED === '1'
+   const packagesMacOS = targetPlatform === 'darwin' || (targetPlatform === undefined && hostPlatform === 'darwin')
+   const packagesWindows = resolvedPlatform === 'win32'
+-  const policy = packagesMacOS && unsigned ? undefined : resolveDesktopPolicyEnvironment(env)
++  const policy = unsigned ? undefined : resolveDesktopPolicyEnvironment(env)
+   if (resolvedPlatform === 'win32') installWindowsDirectoryInstaller()
+   const macOSSigning = packagesMacOS && !unsigned ? resolveMacOSSigningEnvironment(env) : undefined
+   if (packagesMacOS && !unsigned) resolveMacOSNotarizationEnvironment(env)
+@@ -96,6 +99,7 @@ export function createElectronBuilderConfig(
+   const productVersion = JSON.parse(readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8')).version
+   const buildVersion = resolveDesktopBuildVersion(env, productVersion)
+   const packaged = resolveDesktopBuildCommit(env)
++  const assembly = readDesktopAssembly(env, resolvedPlatform)
+   return {
+     appId,
+     protocols: [{ name: 'DeepSeek Harness', schemes: ['dsh'] }],
+@@ -142,20 +146,23 @@ export function createElectronBuilderConfig(
+     asarUnpack: unpack,
+     extraResources: [
+       { from: buildPaths.runtime, to: 'runtime' },
+-      { from: fileURLToPath(new URL('../resources/icon-windows.png', import.meta.url)), to: 'icon.png' },
++      ...assembly.resources,
++      { from: assembly.icons.windows ?? fileURLToPath(new URL('../resources/icon-windows.png', import.meta.url)), to: 'icon.png' },
+       // Windows tray bitmaps; macOS keeps the Dock and ships no menu bar icon.
+-      ...(packagesWindows ? [{ from: fileURLToPath(new URL('../resources/tray-windows.ico', import.meta.url)), to: 'tray.ico' }] : []),
++      ...(packagesWindows ? [{ from: assembly.icons.tray ?? fileURLToPath(new URL('../resources/tray-windows.ico', import.meta.url)), to: 'tray.ico' }] : []),
+     ],
+     mac: {
+-      icon: fileURLToPath(new URL('../resources/icon-macos.png', import.meta.url)),
++      icon: assembly.icons.macos ?? fileURLToPath(new URL('../resources/icon-macos.png', import.meta.url)),
+       category: 'public.app-category.developer-tools',
+       // macOS matches the application locale against this bundle, not Electron Framework resources.
+-      extendInfo: { CFBundleLocalizations: ['en', 'zh_CN'] },
++      extendInfo: {
++        CFBundleLocalizations: ['en', 'zh_CN'],
++        NSMicrophoneUsageDescription: 'DeepSeek Harness uses your microphone to transcribe speech into message drafts.',
++      },
+       // Ad-hoc signing keeps the modified Electron executable runnable without a Developer ID.
+       identity: unsigned ? '-' : macOSSigning?.signingIdentity,
+       forceCodeSigning: !unsigned,
+       hardenedRuntime: true,
+-      extendInfo: { NSMicrophoneUsageDescription: 'DeepSeek Harness uses your microphone to transcribe speech into message drafts.' },
+       entitlements: fileURLToPath(new URL('./macos-entitlements.plist', import.meta.url)),
+       entitlementsInherit: fileURLToPath(new URL('./macos-entitlements.plist', import.meta.url)),
+       // Prepared runtime files retain their signatures; PAK resources are sealed by their enclosing bundle.
+@@ -221,7 +228,7 @@ export function createElectronBuilderConfig(
+       )
+     },
+     win: {
+-      icon: fileURLToPath(new URL('../resources/icon-windows.png', import.meta.url)),
++      icon: assembly.icons.windows ?? fileURLToPath(new URL('../resources/icon-windows.png', import.meta.url)),
+       forceCodeSigning: !unsigned,
+       signtoolOptions: {
+         sign: windowsSigner,
+diff --git a/apps/desktop/scripts/package-target.ts b/apps/desktop/scripts/package-target.ts
+index a133ccdcf869c5ff404343a621e4f6df9a5c709a..ab778a6d62c228bb35f02cc15f8a40d03581c609 100644
+--- a/apps/desktop/scripts/package-target.ts
++++ b/apps/desktop/scripts/package-target.ts
+@@ -1,3 +1,4 @@
++import { readDesktopAssembly } from './desktop-assembly.mjs'
+ /** Build one release target with matching Electron and dsh architecture. */
+ 
+ import { spawn } from 'node:child_process'
+@@ -456,6 +457,8 @@ export async function packageTarget(
+     })
+   }
+   await execute(['run', 'build:official'], buildEnv, REPOSITORY_ROOT)
++  const assembly = readDesktopAssembly(buildEnv)
++  for (const step of assembly.buildSteps) await execute(step, buildEnv, REPOSITORY_ROOT)
+   await execute(['run', 'release:pack', '--family', 'dsh', '--out', buildPaths.packedDsh, ...packArguments], buildEnv, REPOSITORY_ROOT)
+   await execute([
+     '--dir',
+@@ -464,6 +467,9 @@ export async function packageTarget(
+     '--pack-destination',
+     buildPaths.packedDsh,
+   ], buildEnv, REPOSITORY_ROOT)
++  for (const directory of assembly.packageDirectories) {
++    await execute(['--dir', directory, 'pack', '--pack-destination', buildPaths.packedDsh], buildEnv, REPOSITORY_ROOT)
++  }
+   await execute(['run', 'release:pack', '--family', 'vendor', '--out', buildPaths.packedVendor, ...packArguments], buildEnv, REPOSITORY_ROOT)
+   rmSync(buildPaths.packedLandlock, { recursive: true, force: true })
+   mkdirSync(buildPaths.packedLandlock, { recursive: true })
+diff --git a/apps/desktop/scripts/prepare-package-set.ts b/apps/desktop/scripts/prepare-package-set.ts
+index 7e7d62eea289ae7f3beb7194a083e1aecae2a001..22f36d3f09c83ffeac45a91c3b6c2bf25d21e4c0 100644
+--- a/apps/desktop/scripts/prepare-package-set.ts
++++ b/apps/desktop/scripts/prepare-package-set.ts
+@@ -26,6 +26,7 @@ import {
+ import { capture } from '../../../scripts/release/process.ts'
+ import { tarballFiles } from '../../../scripts/release/tarball.ts'
+ import { resolveDesktopTargetBuildPaths } from './desktop-build-paths.mjs'
++import { readDesktopAssembly } from './desktop-assembly.mjs'
+ 
+ const DSH_PACKAGE = '@deepseek-ai/dsh'
+ const ROOT_PACKAGES = [DSH_PACKAGE, DESKTOP_HOST_PACKAGE] as const
+@@ -80,7 +81,7 @@ export function selectDesktopPackageClosure(
+       if (available.has(dependency)) visit(dependency)
+     }
+   }
+-  for (const name of ROOT_PACKAGES) {
++  for (const name of [...ROOT_PACKAGES, ...readDesktopAssembly().runtimePackages]) {
+     if (!available.has(name)) throw new Error(`desktop package set: packed inputs omit ${name}`)
+     visit(name)
+   }
+diff --git a/apps/desktop/tests/desktop-assembly.spec.ts b/apps/desktop/tests/desktop-assembly.spec.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..972b451db543807aae09450710379a86c47af1d2
+--- /dev/null
++++ b/apps/desktop/tests/desktop-assembly.spec.ts
+@@ -0,0 +1,39 @@
++import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
++import { tmpdir } from 'node:os'
++import { join } from 'node:path'
++import { expect, it } from 'vitest'
++import { readDesktopAssembly } from '../scripts/desktop-assembly.mjs'
++import { createElectronBuilderConfig } from '../scripts/electron-builder-config.mjs'
++
++it('keeps the official assembly empty without an application manifest', () => {
++  expect(readDesktopAssembly({})).toEqual({ runtimePackages: [], resources: [], buildSteps: [], packageDirectories: [], icons: {} })
++})
++
++it('adds application resources and icons through a platform-specific assembly', (test) => {
++  const root = mkdtempSync(join(tmpdir(), 'dsh-assembly-'))
++  test.onTestFinished(() => { rmSync(root, { recursive: true, force: true }) })
++  const manifest = join(root, 'assembly.json')
++  writeFileSync(manifest, JSON.stringify({
++    runtimePackages: ['example-extension'], packageDirectories: ['extension'],
++    buildSteps: [['run', 'build:extension']], icons: { windows: 'windows.png' },
++    resources: [
++      { from: 'extension.json', to: 'desktop-extension.json' },
++      { from: 'native.exe', to: 'native/example.exe', platform: 'win32' },
++      { from: 'native', to: 'native/example', platform: 'darwin' },
++    ],
++  }))
++  const env = { DSH_DESKTOP_ASSEMBLY_MANIFEST: manifest, DSH_DESKTOP_APP_ID: 'com.example.desktop',
++    DSH_DESKTOP_TARGET_PLATFORM: 'win32', DSH_DESKTOP_UNSIGNED: '1' }
++  const assembly = readDesktopAssembly(env, 'win32')
++  expect(assembly).toMatchObject({
++    runtimePackages: ['example-extension'], packageDirectories: [join(root, 'extension')],
++    buildSteps: [['run', 'build:extension']], icons: { windows: join(root, 'windows.png') },
++    resources: [{ from: join(root, 'extension.json'), to: 'desktop-extension.json' },
++      { from: join(root, 'native.exe'), to: 'native/example.exe' }],
++  })
++  const config = createElectronBuilderConfig(env, 'win32', 'x64')
++  expect(config.extraResources).toEqual(expect.arrayContaining(assembly.resources))
++  expect(config.win.icon).toBe(join(root, 'windows.png'))
++  writeFileSync(manifest, JSON.stringify({ runtimePackages: [], resources: [{ from: 'file', to: '../escape' }] }))
++  expect(() => readDesktopAssembly(env)).toThrow('Invalid Desktop assembly resource')
++})
+diff --git a/apps/desktop/tests/development-app.spec.ts b/apps/desktop/tests/development-app.spec.ts
+index 2f718b7bc5feaebd4e655eb9a878aae6342babbb..1eea2ed64c7d63074016448c499721aa7a1a0bfa 100644
+--- a/apps/desktop/tests/development-app.spec.ts
++++ b/apps/desktop/tests/development-app.spec.ts
+@@ -12,12 +12,15 @@ it.skipIf(process.platform === 'win32')('passes literal workspace paths and cold
+   const bundle = join(root, "Harness ' $(false).app")
+   const binary = join(bundle, 'Contents', 'MacOS', 'Electron')
+   mkdirSync(join(bundle, 'Contents', 'MacOS'), { recursive: true })
+-  writeFileSync(binary, '#!/bin/sh\nprintf "%s\\n" "$DSH_HOME" "$DSH_DESKTOP_DEV_APP" "$DSH_DESKTOP_OPEN_DEVTOOLS" "$@"\n', { mode: 0o755 })
++  writeFileSync(binary, '#!/bin/sh\nprintf "%s\\n" "$DSH_HOME" "$DEEPSEEK_HARNESS_NATIVE_BINARY" "$DSH_DESKTOP_DEV_APP" "$DSH_DESKTOP_PRIMARY_RUNTIME_DIR" "$DSH_DESKTOP_OPEN_DEVTOOLS" "$@"\n', { mode: 0o755 })
+   const launcher = join(root, 'launcher')
+   const home = join(root, "home ' $(false)")
++  const nativeSidecar = join(root, "native ' $(false)")
++  const primaryRuntime = join(root, "runtime ' $(false)")
+   writeFileSync(launcher, developmentLauncher({ electron: binary, appRoot: root, directory: root,
+-    home, userData: join(root, 'browser data'), mainPort: 9229, rendererPort: 9222, hostPort: 9230, openDevtools: '0' }, bundle))
++    home, extensionEnvironment: { DEEPSEEK_HARNESS_NATIVE_BINARY: nativeSidecar }, primaryRuntime, userData: join(root, 'browser data'), mainPort: 9229, rendererPort: 9222,
++    hostPort: 9230, openDevtools: '0' }, bundle))
+   const result = execFileSync('/bin/sh', [launcher, '--test-launch-argument'], { encoding: 'utf8' })
+-  expect(result.trimEnd().split('\n')).toEqual([home, '1', '0', '--inspect=127.0.0.1:9229',
++  expect(result.trimEnd().split('\n')).toEqual([home, nativeSidecar, '1', primaryRuntime, '0', '--inspect=127.0.0.1:9229',
+     '--remote-debugging-port=9222', `--user-data-dir=${join(root, 'browser data')}`, root, '--test-launch-argument'])
+ })
+diff --git a/apps/desktop/tests/package-target-stages.spec.ts b/apps/desktop/tests/package-target-stages.spec.ts
+index cde1b0079d99098cbd583073ef0becc2d6bee957..a66618ded84ca5d3f020ccb7ed04c7e4d025abc4 100644
+--- a/apps/desktop/tests/package-target-stages.spec.ts
++++ b/apps/desktop/tests/package-target-stages.spec.ts
+@@ -176,6 +176,19 @@ it.each([undefined, '2'])('passes macOS pack concurrency %s only to workspace pa
+   expect(withMacOSNotarizationProxy).not.toHaveBeenCalled()
+ })
+ 
++it('packs the private Desktop Host before preparing the package set', async () => {
++  const { run, stages } = supervisor()
++  await packageTarget(parseDesktopPackageInvocation(['win-x64', '--prepare-only'], 'win32', 'x64'), environment, run)
++  const packageDirectories = [
++    'apps/desktop-host',
++  ]
++  for (const directory of packageDirectories) {
++    const pack = `--dir ${directory} pack --pack-destination`
++    expect(stages.some(stage => stage.startsWith(pack))).toBe(true)
++    expect(stages.findIndex(stage => stage.startsWith(pack))).toBeLessThan(stages.indexOf('run prepare:packages'))
++  }
++})
++
+ it.each([false, true])('scopes the Apple proxy around notarization (directory=%s)', async (directory) => {
+   const { run } = supervisor()
+   await packageTarget(parseDesktopPackageInvocation(['mac-arm64', ...(directory ? ['--dir'] : [])], 'darwin', 'arm64'), {
+diff --git a/apps/desktop/tests/prepare-package-set.spec.ts b/apps/desktop/tests/prepare-package-set.spec.ts
+index 6db1ccbd018bfba78fb6e58ff8d9968fe3220521..6d4e2d6ab67167617bb4f4e5f1f55b9f36d6aa2a 100644
+--- a/apps/desktop/tests/prepare-package-set.spec.ts
++++ b/apps/desktop/tests/prepare-package-set.spec.ts
+@@ -78,6 +78,50 @@ describe('desktop package-set selection', () => {
+     ])
+   })
+ 
++  it('includes the private DeepSeekHarness product UI required by the web app', () => {
++    const available = new Map<string, PackedDesktopPackage>([
++      ['@deepseek-ai/dsh', packed('@deepseek-ai/dsh', {
++        dependencies: { '@deepseek-ai/dsh-web-app': '^1.0.0' },
++      })],
++      ['@deepseek-ai/dsh-desktop-host', packed('@deepseek-ai/dsh-desktop-host')],
++      ['@deepseek-ai/dsh-web-app', packed('@deepseek-ai/dsh-web-app', {
++        dependencies: { '@deepseek-harness/product-ui': '0.1.0' },
++      })],
++      ['@deepseek-harness/product-ui', packed('@deepseek-harness/product-ui', {
++        peerDependencies: { '@deepseek-ai/cordis': '^1.0.0' },
++      })],
++      ['@deepseek-ai/cordis', packed('@deepseek-ai/cordis')],
++    ])
++    expect(selectDesktopPackageClosure(available).map(entry => entry.manifest.name)).toEqual([
++      '@deepseek-ai/cordis',
++      '@deepseek-ai/dsh',
++      '@deepseek-ai/dsh-desktop-host',
++      '@deepseek-ai/dsh-web-app',
++      '@deepseek-harness/product-ui',
++    ])
++  })
++
++  it('includes the private product packages required by Desktop Host', () => {
++    const available = new Map<string, PackedDesktopPackage>([
++      ['@deepseek-ai/dsh', packed('@deepseek-ai/dsh')],
++      ['@deepseek-ai/dsh-desktop-host', packed('@deepseek-ai/dsh-desktop-host', {
++        dependencies: {
++          '@deepseek-ai/dsh': '^1.0.0',
++          '@deepseek-harness/product-expert-kit-readme': '0.2.0-rc.2',
++          '@deepseek-harness/product': '0.1.0',
++        },
++      })],
++      ['@deepseek-harness/product-expert-kit-readme', packed('@deepseek-harness/product-expert-kit-readme')],
++      ['@deepseek-harness/product', packed('@deepseek-harness/product')],
++    ])
++    expect(selectDesktopPackageClosure(available).map(entry => entry.manifest.name)).toEqual([
++      '@deepseek-ai/dsh',
++      '@deepseek-ai/dsh-desktop-host',
++      '@deepseek-harness/product',
++      '@deepseek-harness/product-expert-kit-readme',
++    ])
++  })
++
+   it('requires both Desktop Host and public CLI entries', () => {
+     const files = [
+       'package/lib/index.js',

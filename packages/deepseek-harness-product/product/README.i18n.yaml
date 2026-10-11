@@ -3,14 +3,14 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/deepseek-harness-product/product/README.md
 /:
-  en: 6bb0ba50e5ee0460
-  zh: 821740d67d739418
+  en: e91cbdc38bb0652b
+  zh: 4a6220318025c126
 /deepseek-harness-product-bridge:
   en: 2c8621f77d6b2bf3
   zh: d1ef543f6f798c41
 /deepseek-harness-product-bridge/summary:
-  en: a542daa9b3f86b61
-  zh: 05ae0b5642f937b8
+  en: 5b4e39f1774ebb6a
+  zh: 55828337401ad20d
 /deepseek-harness-product-bridge/table-of-contents:
   en: b4683d2a53256fda
   zh: 705ecbe0b6cabec6
@@ -33,5 +33,5 @@
   en: 0d51ae57f67711c1
   zh: 9a2bc4054851d84b
 /deepseek-harness-product-bridge/known-limitations-and-deferred-work/dev-note:
-  en: 04f4ae8f17e09cc4
-  zh: 28468b001a9efa1a
+  en: 5e95d9c283c6f875
+  zh: 21dfeabdca7b51ec

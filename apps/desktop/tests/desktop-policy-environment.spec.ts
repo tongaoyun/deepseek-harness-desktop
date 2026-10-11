@@ -54,6 +54,6 @@ it.each([{ prepareOnly: true }, {}])('fails before signing/preparation when poli
   }
 })
 
-it('allows unsigned Windows packaging without a mandatory-update policy', () => {
-  expect(() => validateDesktopPackageEnvironment({ DSH_DESKTOP_APP_ID: 'com.example.test' }, { platform: 'win32', arch: 'x64' }, { unsigned: true })).not.toThrow()
+it.each(['win32', 'darwin'] as const)('allows unsigned %s packaging without a mandatory-update policy', (platform) => {
+  expect(() => validateDesktopPackageEnvironment({ DSH_DESKTOP_APP_ID: 'com.example.test' }, { platform, arch: 'x64' }, { unsigned: true })).not.toThrow()
 })

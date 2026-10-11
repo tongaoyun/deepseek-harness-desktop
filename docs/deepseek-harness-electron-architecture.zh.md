@@ -2,9 +2,9 @@
 
 [English](deepseek-harness-electron-architecture.md) | 中文
 
-DeepSeek Harness桌面端以 DeepSeek Harness `dsh-v0.2.0-rc.2` 为唯一桌面、运行时和会话基线。Electron 官方窗口、`apps/desktop-host`、Harness Session、Conversation、Browser、Approval、Question、Tool、历史回放和 Office 由上游实现负责。
+DeepSeek Harness桌面端以 DeepSeek Harness `dsh-v0.2.1-alpha.2` 为唯一桌面、运行时和会话基线。Electron 官方窗口、`apps/desktop-host`、Harness Session、Conversation、Browser、Approval、Question、Tool、历史回放和 Office 由上游实现负责。
 
-DeepSeek Harness产品能力位于 `packages/deepseek-harness-product/product`，通过 `window.deepseek-harness.product` 访问（`window.dshDesktop.product` 是官方桌面载体上的同一桥接引用）：
+[产品子系统](subsystems/deepseek-harness-product.zh.md)定义独立的协议、运行时、桌面和 UI 包。产品 UI 使用 `window.dshDesktop.extensions` 的 `product` 命名空间访问：
 
 - 钉钉企业登录和员工会话；
 - 专家套件、技能和连接器目录；
@@ -12,12 +12,12 @@ DeepSeek Harness产品能力位于 `packages/deepseek-harness-product/product`�
 - 系统级定时任务；
 - 成果、业务引用和产品标签。
 
-Renderer 可以通过 preload 桥接调用白名单产品和原生方法，包括受限的文件、SQLite、凭据、附件、设备、图片预览和文件撤销操作。`sessionToken` 和员工级模型 Key 保留在 Electron 主进程中，不能通过 `window` 返回。产品层不创建 Turn、Step、Tool Card 或 Transcript，也不修改 Harness Session 状态。
+Renderer 通过通用 preload 传输调用产品和原生方法，产品包校验方法白名单。Electron 校验所属窗口、来源和主 frame。员工令牌保留在主进程；Host 接收推理配置和私有 loopback MCP relay 凭证，Renderer 不接收员工令牌或 Bootstrap 机密。UI 通过官方 Session、Workspace、Preset 和草稿 API 选择能力；Turn、Step、Tool Card 和 Transcript 由 Harness 管理。
 
-Host 只能通过私有 Electron IPC 请求目录、制品、连接器和知识库操作；任务取消会传递到进行中的知识库 HTTP 请求，主进程错误只返回不含凭据文本的通用诊断。产品制品在解压前后执行哈希、条目数量、压缩大小、解压大小、路径和文件类型限制。生成的 Skill、Agent Preset、MCP 工具、提示上下文和 Session 事件全部由官方 Harness 注册表管理。
+Host 只能通过私有 Electron IPC 请求目录、制品、连接器、知识库和桌面版本。取消传递到主进程、Host 和 HTTP 请求。公开失败保留错误码、相关资源和可重试性，不包含凭据文本；未知失败使用通用诊断。产品制品在解压前后执行哈希、条目数量、压缩大小、解压大小、路径和文件类型限制。生成的 Skill、Agent Preset、MCP 工具、提示上下文和 Session 事件全部由官方 Harness 注册表管理。
 
-桌面端只有一个企业身份边界：先续期已保存的钉钉会话，失效时在系统浏览器完成钉钉 OAuth；再读取已认证的DeepSeek Harness Bootstrap；最后用员工级模型虚拟 Key 和 LiteLLM 地址启动官方 Harness Host。官方 DeepSeek 欢迎页不是DeepSeek Harness登录入口。Bootstrap 机密只存在于主进程，不能通过 preload API 读取；模型请求和 Session 执行仍全部由 Harness Host 负责。
+产品桌面启动时续期已保存的钉钉会话或在系统浏览器完成钉钉 OAuth，读取已认证的 Bootstrap，再向官方 Host 提供推理配置和 Loader overlay。产品桌面包负责登录、加密存储、relay 和 sidecar 清理以及打包资源。官方 profile 可不加载这些扩展启动。模型请求和 Session 执行由 Host 负责。
 
 原生产品方法通过 `native/deepseek-harness` 的 `deepseek-harness.native.v1` 行协议接入。当前协议提供受限的文件、附件、SQLite、凭据、钉钉状态、设备标识、图片预览和文件撤销方法；路径限制在 Electron 分配的数据目录内，文件载荷使用 hex 编码并限制为 8 MiB。该 sidecar 不承载 Harness 执行逻辑，不保留旧 Tauri `invoke` 协议。
 
-上游同步以 tag 和固定 commit 为单位。`UPSTREAM_REPOSITORY` 保留为 canonical GitHub 源，`UPSTREAM_MIRROR_REPOSITORY` 是 CI 使用的内部 Gitea 源。`pnpm run verify:upstream` 接受任一远程，但始终要求本地 tag 解析到固定 commit。先验证官方测试和 Electron 构建，再验证产品包、sidecar 和服务端契约。
+上游同步以 tag 和固定 commit 为单位。`UPSTREAM_REPOSITORY` 保留为 canonical GitHub 源，`UPSTREAM_MIRROR_REPOSITORY` 是 CI 使用的内部 Gitea 源。`pnpm run verify:upstream` 校验 tag 解析到固定提交、官方改动匹配登记的完整补丁，以及产品仅使用 Harness 公开出口。升级时更新基线、显式应用补丁并解决冲突、验证适配层，再运行官方与产品验收。参见[破坏性变更指南](upgrade-guide/v0.2.0-rc.2/product-task-capabilities/guide.zh.md)。

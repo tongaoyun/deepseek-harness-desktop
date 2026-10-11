@@ -28,7 +28,7 @@ jobs:
           cargo test --manifest-path native/deepseek-harness/Cargo.toml
           cargo build --release --manifest-path native/deepseek-harness/Cargo.toml
       - name: Package macOS
-        run: pnpm run package:desktop:mac:arm64
+        run: pnpm --dir apps/product-desktop run package mac-arm64
       - name: Verify macOS artifacts
         run: |
           artifact_root="apps/desktop/.desktop-build/targets/mac-arm64/artifacts"

@@ -18,6 +18,8 @@ export interface AgentPresetRow {
   readonly selectable: boolean
   /** Whether this Preset may become the default for future Sessions. */
   readonly defaultable: boolean
+  /** Selectable base displayed for a hidden derived composition; its id still identifies execution. */
+  readonly selectionBase?: string
   /** Why this preset cannot compose a session; absent when it can. */
   readonly broken?: string
 }

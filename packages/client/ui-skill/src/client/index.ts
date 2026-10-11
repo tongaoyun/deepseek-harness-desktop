@@ -33,7 +33,7 @@
  */
 // Type-only: the carrier types, the forwarded Host-event face and the ctx.remote merge.
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
-import type { Context as ClientContext } from '@deepseek-ai/cordis'
+import { Service, type Context as ClientContext } from '@deepseek-ai/cordis'
 import type { SkillEntry } from '@deepseek-ai/dsh-api-remotes/client'
 import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -52,6 +52,24 @@ declare module '@deepseek-ai/dsh-api-session-controller/client' {
     /** A skill-catalog fetch waiting for initial history and its RPC result. */
     skillCatalog: unknown
   }
+}
+
+declare module '@deepseek-ai/cordis' {
+  interface Context {
+    uiSkills: SkillCatalogClient
+  }
+}
+
+/** Public catalog refresh for clients that install or remove skill providers. */
+export class SkillCatalogClient extends Service {
+  constructor(ctx: ClientContext, private readonly invalidate: (sessionId?: SessionId) => void) {
+    super(ctx, 'uiSkills')
+  }
+  /** Drop cached discovery; the next slash menu fetches the current provider catalog.
+   * @param sessionId Session to refresh, or every retained catalog when omitted.
+   * @returns Nothing; existing drafts and Sessions remain unchanged.
+   */
+  refresh(sessionId?: SessionId): void { this.invalidate(sessionId) }
 }
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -151,6 +169,7 @@ export function apply(ctx: ClientContext): void {
   const clearAll = (): void => {
     for (const key of [...fetches.keys()]) invalidate(key)
   }
+  new SkillCatalogClient(ctx, (sessionId) => { if (sessionId === undefined) clearAll(); else invalidate(sessionId) })
 
   // The bound translate resolves against the registered dictionaries with the
   // locale service's own fallback ladder; candidate-time reads stay plain text.

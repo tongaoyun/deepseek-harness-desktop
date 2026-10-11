@@ -1,0 +1,386 @@
+diff --git a/apps/desktop/scripts/office-engine-runtime.ts b/apps/desktop/scripts/office-engine-runtime.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..99d2ffd94792a90f4e5bf6ac796093699fa662ba
+--- /dev/null
++++ b/apps/desktop/scripts/office-engine-runtime.ts
+@@ -0,0 +1,52 @@
++/** Resolve and verify the Office engine required by one Desktop target. */
++
++import { existsSync, readFileSync } from 'node:fs'
++import { join } from 'node:path'
++import { selectOfficeEngine } from '../../../scripts/libreoffice-packages.mjs'
++
++export interface DesktopOfficeTarget {
++  readonly platform: string
++  readonly arch: string
++}
++
++export interface DesktopOfficeEngine {
++  readonly engine: string
++  readonly packageName: string
++  readonly versionRange: string
++  readonly manifestPath: string
++}
++
++interface OfficeKitManifest {
++  readonly optionalDependencies?: Record<string, string>
++}
++
++/** Read the adapter declaration that selects the target-specific Office engine. */
++export function resolveDesktopOfficeEngine(
++  modules: string,
++  target: DesktopOfficeTarget,
++): DesktopOfficeEngine {
++  const adapterPath = join(modules, '@deepseek-ai', 'libreoffice-kit', 'package.json')
++  const manifest = JSON.parse(readFileSync(adapterPath, 'utf8')) as OfficeKitManifest
++  const engine = selectOfficeEngine(manifest, target)
++  const packageName = `@deepseek-ai/libreoffice-kit-${engine}`
++  const versionRange = manifest.optionalDependencies?.[packageName]
++  if (typeof versionRange !== 'string' || versionRange.length === 0) {
++    throw new Error(`desktop runtime: ${packageName} has no declared version`)
++  }
++  return {
++    engine,
++    packageName,
++    versionRange,
++    manifestPath: join(modules, '@deepseek-ai', `libreoffice-kit-${engine}`, 'prebuilds.json'),
++  }
++}
++
++/** Optional native packages may be skipped after a registry transport failure. */
++export function desktopOfficeEnginePresent(engine: DesktopOfficeEngine): boolean {
++  return existsSync(engine.manifestPath)
++}
++
++/** Make a skipped optional engine a required install without changing its declared version. */
++export function desktopOfficeEngineInstallArguments(engine: DesktopOfficeEngine): readonly string[] {
++  return ['add', '--save-prod', '--save-exact', `${engine.packageName}@${engine.versionRange}`]
++}
+diff --git a/apps/desktop/scripts/prepare-dsh.ts b/apps/desktop/scripts/prepare-dsh.ts
+index 7d290b945a58384fb344359810dd66873d77f46d..d03a9687c031e0e0bd85bb782bee0777be72ff20 100644
+--- a/apps/desktop/scripts/prepare-dsh.ts
++++ b/apps/desktop/scripts/prepare-dsh.ts
+@@ -32,7 +32,12 @@ import {
+ } from './macos-runtime.ts'
+ import { desktopTargetPlatform, resolveDesktopBuildTarget, resolveDesktopTargetBuildPaths } from './desktop-build-paths.mjs'
+ import { desktopRuntimeFileExclusion } from './runtime-file-policy.ts'
+-import { selectOfficeEngine } from '../../../scripts/libreoffice-packages.mjs'
++import {
++  desktopOfficeEngineInstallArguments,
++  desktopOfficeEnginePresent,
++  resolveDesktopOfficeEngine,
++} from './office-engine-runtime.ts'
++import { retryRuntimeNetworkOperation } from './runtime-download.ts'
+ 
+ const APP_ROOT = resolve(import.meta.dirname, '..')
+ const BUILD_PATHS = resolveDesktopTargetBuildPaths()
+@@ -124,24 +129,37 @@ async function main(): Promise<void> {
+       createRuntimeProjectMetadata(BUILD_ROOT, release)
+       return prepareRuntimePatches(BUILD_ROOT, resolve(APP_ROOT, '..', '..'))
+     })
+-    await packagingStep(process.env.DSH_DESKTOP_PACKAGING_RUN_DIR, 'runtime:lockfile', () => runPnpm(['install', '--lockfile-only']))
++    await packagingStep(process.env.DSH_DESKTOP_PACKAGING_RUN_DIR, 'runtime:lockfile', () => (
++      retryRuntimeNetworkOperation(() => runPnpm(['install', '--lockfile-only']))
++    ))
+     verifyRuntimePatches(BUILD_ROOT, patches)
+     verifyDesktopCoreLockfile(
+       readFileSync(join(BUILD_ROOT, 'pnpm-lock.yaml'), 'utf8'),
+       readDesktopCorePackageSet(BUILD_ROOT, release.version),
+     )
+-    await packagingStep(process.env.DSH_DESKTOP_PACKAGING_RUN_DIR, 'runtime:install', () => runPnpm(['install', '--prod', '--frozen-lockfile', '--trust-lockfile']))
++    await packagingStep(process.env.DSH_DESKTOP_PACKAGING_RUN_DIR, 'runtime:install', () => (
++      retryRuntimeNetworkOperation(() => runPnpm(['install', '--prod', '--frozen-lockfile', '--trust-lockfile']))
++    ))
+     const packageSet = readDesktopCorePackageSet(BUILD_ROOT, release.version)
+     const targetName = resolveDesktopBuildTarget()
+     const target = { platform: process.platform, arch: desktopTargetPlatform(targetName).arch }
+     const modules = join(BUILD_ROOT, 'node_modules')
+-    const officeManifest = JSON.parse(readFileSync(join(modules, '@deepseek-ai/libreoffice-kit/package.json'), 'utf8'))
+-    const officeEngine = selectOfficeEngine(officeManifest, target)
++    const office = resolveDesktopOfficeEngine(modules, target)
++    if (!desktopOfficeEnginePresent(office)) {
++      await packagingStep(
++        process.env.DSH_DESKTOP_PACKAGING_RUN_DIR,
++        'runtime:install-office-engine',
++        () => retryRuntimeNetworkOperation(() => runPnpm(desktopOfficeEngineInstallArguments(office))),
++      )
++    }
++    if (!desktopOfficeEnginePresent(office)) {
++      throw new Error(`desktop runtime: missing required LibreOffice engine ${office.engine}`)
++    }
+     mkdirSync(DSH_OUTPUT_ROOT, { recursive: true })
+     await packagingStep(process.env.DSH_DESKTOP_PACKAGING_RUN_DIR, 'runtime:materialize-modules', async () => {
+       cpSync(modules, join(DSH_OUTPUT_ROOT, 'node_modules'), {
+         recursive: true, dereference: true,
+-        filter: source => desktopRuntimeFileExclusion(relative(modules, source), target, officeEngine) === undefined,
++        filter: source => desktopRuntimeFileExclusion(relative(modules, source), target, office.engine) === undefined,
+       })
+     })
+     writeFileSync(join(DSH_OUTPUT_ROOT, 'package.json'), `${JSON.stringify({
+@@ -153,8 +171,8 @@ async function main(): Promise<void> {
+         throw new Error(`desktop runtime: missing private Host file ${file}`)
+       }
+     }
+-    if (!existsSync(join(DSH_OUTPUT_ROOT, 'node_modules', '@deepseek-ai', `libreoffice-kit-${officeEngine}`, 'prebuilds.json'))) {
+-      throw new Error(`desktop runtime: missing required LibreOffice engine ${officeEngine}`)
++    if (!existsSync(join(DSH_OUTPUT_ROOT, 'node_modules', '@deepseek-ai', `libreoffice-kit-${office.engine}`, 'prebuilds.json'))) {
++      throw new Error(`desktop runtime: missing required LibreOffice engine ${office.engine}`)
+     }
+     if (process.platform === 'darwin' && process.env.DSH_DESKTOP_UNSIGNED !== '1') {
+       await packagingStep(process.env.DSH_DESKTOP_PACKAGING_RUN_DIR, 'sign:dsh-native', () => signMacOSRuntime(DSH_OUTPUT_ROOT, resolveDesktopAppId(process.env), resolveMacOSSigningEnvironment(process.env), target.arch, join(BUILD_PATHS.root, 'signature-cache')))
+diff --git a/apps/desktop/scripts/prepare-runtime.ts b/apps/desktop/scripts/prepare-runtime.ts
+index ba92fef0e65e025871a33549639b78eedbd70a2b..e906c767bf405c54df5141316cb9de7da29e8d2e 100644
+--- a/apps/desktop/scripts/prepare-runtime.ts
++++ b/apps/desktop/scripts/prepare-runtime.ts
+@@ -11,6 +11,7 @@ import { readPrimaryRuntime } from '../../../packages/skill/tool-workspace-depen
+ import { desktopTargetPlatform, resolveDesktopBuildTarget, resolveDesktopTargetBuildPaths } from './desktop-build-paths.mjs'
+ import { packagingStep } from './packaging-step.mjs'
+ import { preparePrimaryRuntime } from './prepare-primary-runtime.ts'
++import { retryRuntimeNetworkOperation } from './runtime-download.ts'
+ import { prepareDesktopCli } from './prepare-cli.ts'
+ import { prepareCommandLink } from './prepare-command-link.ts'
+ 
+@@ -24,7 +25,9 @@ async function prepareElectron({ platform, arch }: DesktopTarget): Promise<strin
+   const require = createRequire(import.meta.url)
+   const { version } = require('electron/package.json') as { version: string }
+   const archive = await packagingStep(process.env.DSH_DESKTOP_PACKAGING_RUN_DIR, 'download:electron',
+-    () => downloadArtifact({ version, platform, arch, artifactName: 'electron', cacheRoot: BUILD_PATHS.downloads }))
++    () => retryRuntimeNetworkOperation(
++      () => downloadArtifact({ version, platform, arch, artifactName: 'electron', cacheRoot: BUILD_PATHS.downloads }),
++    ))
+   rmSync(BUILD_PATHS.electron, { recursive: true, force: true })
+   await packagingStep(process.env.DSH_DESKTOP_PACKAGING_RUN_DIR, 'extract:electron', () => extractZip(archive, { dir: BUILD_PATHS.electron }))
+   const executable = join(BUILD_PATHS.electron, platform === 'win32' ? 'electron.exe' : 'Electron.app/Contents/MacOS/Electron')
+diff --git a/apps/desktop/scripts/prepare-windows-runtime-cache.ps1 b/apps/desktop/scripts/prepare-windows-runtime-cache.ps1
+new file mode 100644
+index 0000000000000000000000000000000000000000..284eb1881ff16a5f5d49cb0155dd2b2eba8166f4
+--- /dev/null
++++ b/apps/desktop/scripts/prepare-windows-runtime-cache.ps1
+@@ -0,0 +1,68 @@
++param(
++  [string] $Cache = "C:\deepseek-harness-desktop-builder\runtime-downloads"
++)
++
++$ErrorActionPreference = "Stop"
++$RepositoryRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..\..")
++$DownloadCache = Join-Path $RepositoryRoot "apps\desktop\.desktop-build\downloads"
++$RuntimeLockPath = Join-Path $RepositoryRoot "scripts\primary-runtime\lock.json"
++
++New-Item -ItemType Directory -Path $Cache -Force | Out-Null
++New-Item -ItemType Directory -Path (Split-Path -Parent $DownloadCache) -Force | Out-Null
++if (Test-Path -LiteralPath $DownloadCache) {
++  $Existing = Get-Item -LiteralPath $DownloadCache -Force
++  if (($Existing.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
++    [IO.Directory]::Delete($DownloadCache)
++  } else {
++    Remove-Item -LiteralPath $DownloadCache -Recurse -Force
++  }
++}
++New-Item -ItemType Junction -Path $DownloadCache -Target $Cache | Out-Null
++
++function Save-LockedAsset([string] $Source, [string] $ExpectedHash) {
++  $Destination = Join-Path $DownloadCache $ExpectedHash
++  $LockPath = "$Destination.lock"
++  $Lock = $null
++  $Deadline = [DateTime]::UtcNow.AddMinutes(12)
++  while ($null -eq $Lock) {
++    try {
++      $Lock = [IO.File]::Open($LockPath, [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
++    } catch [IO.IOException] {
++      if ([DateTime]::UtcNow -ge $Deadline) { throw "Runtime asset lock timed out: $ExpectedHash" }
++      Start-Sleep -Milliseconds 200
++    }
++  }
++  $Temporary = "$Destination.$PID.$([Guid]::NewGuid().ToString('N')).download"
++  try {
++    if ((Test-Path -LiteralPath $Destination -PathType Leaf) -and
++        ((Get-FileHash -LiteralPath $Destination -Algorithm SHA256).Hash.ToLowerInvariant() -eq $ExpectedHash)) {
++      Write-Output "Runtime cache hit: $ExpectedHash"
++      return
++    }
++    if (Test-Path -LiteralPath $Destination) { Remove-Item -LiteralPath $Destination -Force }
++    curl.exe -fL -C - --retry 4 --retry-all-errors --connect-timeout 30 --max-time 600 -o $Temporary $Source
++    if ($LASTEXITCODE -ne 0) { throw "Runtime asset download failed: $Source" }
++    $ActualHash = (Get-FileHash -LiteralPath $Temporary -Algorithm SHA256).Hash.ToLowerInvariant()
++    if ($ActualHash -ne $ExpectedHash) { throw "Runtime asset checksum mismatch: $Source" }
++    # Windows PowerShell 5 runs on .NET Framework, which only exposes the
++    # two-argument File.Move overload. The per-hash lock and removal above
++    # make this same-volume rename exclusive without an overwrite flag.
++    [IO.File]::Move($Temporary, $Destination)
++  } finally {
++    if (Test-Path -LiteralPath $Temporary) { Remove-Item -LiteralPath $Temporary -Force }
++    $Lock.Dispose()
++  }
++}
++
++$RuntimeLock = Get-Content -Raw $RuntimeLockPath | ConvertFrom-Json
++$TargetLock = $RuntimeLock.targets.PSObject.Properties['win-x64'].Value
++$NodeArchive = "node-v$($RuntimeLock.nodeVersion)-$($TargetLock.nodeArchive)"
++Save-LockedAsset "https://cdn.npmmirror.com/binaries/node/v$($RuntimeLock.nodeVersion)/$NodeArchive" $TargetLock.nodeSha256
++$PythonArchive = "cpython-$($RuntimeLock.pythonVersion)+$($RuntimeLock.pythonRelease)-$($TargetLock.pythonTarget)-install_only_stripped.tar.gz"
++$EncodedPythonArchive = [Uri]::EscapeDataString($PythonArchive)
++Save-LockedAsset "https://ghfast.top/https://github.com/astral-sh/python-build-standalone/releases/download/$($RuntimeLock.pythonRelease)/$EncodedPythonArchive" $TargetLock.pythonSha256
++$Wheels = @($TargetLock.wheels) + @($RuntimeLock.wheels)
++foreach ($Wheel in $Wheels) {
++  $WheelUri = [Uri] $Wheel.url
++  Save-LockedAsset "https://mirrors.aliyun.com/pypi$($WheelUri.AbsolutePath)" $Wheel.sha256
++}
+diff --git a/apps/desktop/scripts/runtime-download.ts b/apps/desktop/scripts/runtime-download.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..79674b797c023d0aa659b47be7acb761d5e59265
+--- /dev/null
++++ b/apps/desktop/scripts/runtime-download.ts
+@@ -0,0 +1,39 @@
++/** Retry immutable runtime network operations that are verified before packaging. */
++
++export interface RuntimeDownloadRetryOptions {
++  readonly attempts?: number
++  readonly wait?: (milliseconds: number) => Promise<void>
++  readonly warn?: (message: string) => void
++}
++
++const DEFAULT_ATTEMPTS = 3
++const RETRY_DELAY_MS = 2_000
++
++function defaultWait(milliseconds: number): Promise<void> {
++  return new Promise(resolve => setTimeout(resolve, milliseconds))
++}
++
++/** Retry transient transport failures without accepting incomplete runtime content. */
++export async function retryRuntimeNetworkOperation<T>(
++  operation: () => Promise<T>,
++  options: RuntimeDownloadRetryOptions = {},
++): Promise<T> {
++  const attempts = options.attempts ?? DEFAULT_ATTEMPTS
++  if (!Number.isSafeInteger(attempts) || attempts < 1) {
++    throw new Error('desktop runtime network operation: attempts must be a positive integer')
++  }
++  const wait = options.wait ?? defaultWait
++  const warn = options.warn ?? (message => console.warn(message))
++  let failure: unknown
++  for (let attempt = 1; attempt <= attempts; attempt += 1) {
++    try {
++      return await operation()
++    } catch (error) {
++      failure = error
++      if (attempt === attempts) throw error
++      warn(`desktop runtime network operation: attempt ${attempt} failed; retrying`)
++      await wait(RETRY_DELAY_MS * attempt)
++    }
++  }
++  throw failure
++}
+diff --git a/apps/desktop/tests/office-engine-runtime.spec.ts b/apps/desktop/tests/office-engine-runtime.spec.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..2d635423b574f527d47c301e0af6c13384a7deab
+--- /dev/null
++++ b/apps/desktop/tests/office-engine-runtime.spec.ts
+@@ -0,0 +1,57 @@
++import { afterEach, describe, expect, it } from 'vitest'
++import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
++import { tmpdir } from 'node:os'
++import { join } from 'node:path'
++import {
++  desktopOfficeEngineInstallArguments,
++  desktopOfficeEnginePresent,
++  resolveDesktopOfficeEngine,
++} from '../scripts/office-engine-runtime.ts'
++
++const roots: string[] = []
++
++afterEach(async () => {
++  await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true })))
++})
++
++async function modulesWithOfficeManifest(optionalDependencies: Record<string, unknown>): Promise<string> {
++  const root = await mkdtemp(join(tmpdir(), 'dsh-office-engine-'))
++  roots.push(root)
++  const modules = join(root, 'node_modules')
++  const adapter = join(modules, '@deepseek-ai', 'libreoffice-kit')
++  await mkdir(adapter, { recursive: true })
++  await writeFile(join(adapter, 'package.json'), JSON.stringify({ optionalDependencies }))
++  return modules
++}
++
++describe('Desktop Office engine recovery', () => {
++  it('uses the adapter-declared native package and version for a required retry', async () => {
++    const modules = await modulesWithOfficeManifest({
++      '@deepseek-ai/libreoffice-kit-wasm': '0.1.2',
++      '@deepseek-ai/libreoffice-kit-win32-x64': '0.1.2',
++    })
++    const engine = resolveDesktopOfficeEngine(modules, { platform: 'win32', arch: 'x64' })
++
++    expect(engine).toMatchObject({
++      engine: 'win32-x64',
++      packageName: '@deepseek-ai/libreoffice-kit-win32-x64',
++      versionRange: '0.1.2',
++    })
++    expect(desktopOfficeEnginePresent(engine)).toBe(false)
++    expect(desktopOfficeEngineInstallArguments(engine)).toEqual([
++      'add', '--save-prod', '--save-exact', '@deepseek-ai/libreoffice-kit-win32-x64@0.1.2',
++    ])
++
++    await mkdir(join(modules, '@deepseek-ai', 'libreoffice-kit-win32-x64'), { recursive: true })
++    await writeFile(engine.manifestPath, '{}')
++    expect(desktopOfficeEnginePresent(engine)).toBe(true)
++  })
++
++  it('rejects a selected engine without a declared package version', async () => {
++    const modules = await modulesWithOfficeManifest({
++      '@deepseek-ai/libreoffice-kit-wasm': 12,
++    })
++    expect(() => resolveDesktopOfficeEngine(modules, { platform: 'linux', arch: 'x64' }))
++      .toThrow(/has no declared version/u)
++  })
++})
+diff --git a/apps/desktop/tests/runtime-download.spec.ts b/apps/desktop/tests/runtime-download.spec.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..6542ea7ccbd786ffa925468f3bcdf4507140c3ca
+--- /dev/null
++++ b/apps/desktop/tests/runtime-download.spec.ts
+@@ -0,0 +1,45 @@
++import { describe, expect, it, vi } from 'vitest'
++import { retryRuntimeNetworkOperation } from '../scripts/runtime-download.ts'
++
++describe('runtime network retry', () => {
++  it('returns immediately after a successful download', async () => {
++    const operation = vi.fn(async () => 'archive')
++    const wait = vi.fn(async () => {})
++
++    await expect(retryRuntimeNetworkOperation(operation, { wait })).resolves.toBe('archive')
++    expect(operation).toHaveBeenCalledOnce()
++    expect(wait).not.toHaveBeenCalled()
++  })
++
++  it('retries transient failures with bounded backoff', async () => {
++    const operation = vi.fn()
++      .mockRejectedValueOnce(new Error('connect timeout'))
++      .mockRejectedValueOnce(new Error('connection reset'))
++      .mockResolvedValue('archive')
++    const wait = vi.fn(async () => {})
++    const warn = vi.fn()
++
++    await expect(retryRuntimeNetworkOperation(operation, { wait, warn })).resolves.toBe('archive')
++    expect(operation).toHaveBeenCalledTimes(3)
++    expect(wait.mock.calls).toEqual([[2_000], [4_000]])
++    expect(warn).toHaveBeenCalledTimes(2)
++  })
++
++  it('preserves the final error after the bounded attempts', async () => {
++    const failure = new Error('github unavailable')
++    const operation = vi.fn(async () => { throw failure })
++
++    await expect(retryRuntimeNetworkOperation(operation, {
++      attempts: 2,
++      wait: async () => {},
++      warn: () => {},
++    })).rejects.toBe(failure)
++    expect(operation).toHaveBeenCalledTimes(2)
++  })
++
++  it('rejects an invalid retry budget before downloading', async () => {
++    const operation = vi.fn(async () => 'archive')
++    await expect(retryRuntimeNetworkOperation(operation, { attempts: 0 })).rejects.toThrow(/positive integer/u)
++    expect(operation).not.toHaveBeenCalled()
++  })
++})

@@ -1,0 +1,15 @@
+- dialog "Connector details":
+  - heading "Connector details" [level=2]
+  - button "Close"
+  - banner:
+    - heading "Order management" [level=1]
+    - text: Industry data Shared
+  - paragraph: Orders, inventory, and fulfillment
+  - heading "Connection status" [level=2]
+  - term: Status
+  - definition: Available
+  - term: Authentication
+  - definition: Employee session
+  - heading "Business capabilities" [level=2]
+  - text: 1 read-only, no confirmation 1 write, confirmation required
+  - group: View capabilities (2)

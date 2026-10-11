@@ -26,6 +26,8 @@ kind: "package-group"
 |---|---|
 | [`expert-kit-readme`](expert-kit-readme/README.zh.md) | 在 Preset 作用域内按需向模型加载专家套件 README 说明 |
 | [`product`](product/README.zh.md) | 服务端客户端、钉钉会话适配器、能力快照和 Electron 桥接 |
+| [`runtime`](runtime/README.zh.md) | Cordis 任务能力组合、内容快照和权限策略 |
+| [`desktop`](desktop/README.zh.md) | 主进程认证、凭据、sidecar 与产品打包资源 |
 
 <a id="related-documentation"></a>
 ## 相关文档

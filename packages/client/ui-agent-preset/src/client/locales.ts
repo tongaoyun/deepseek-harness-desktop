@@ -9,6 +9,7 @@ export type AgentPresetSettingsKey =
   | 'customGroup'
   | 'seatHint'
   | 'headerHint'
+  | 'compositionUnavailable'
   | 'nav'
   | 'sectionIntro'
   | 'setDefault'
@@ -25,8 +26,14 @@ export type AgentPresetSettingsKey =
   | 'noDescription'
   | 'brokenBadge'
   | 'switchRefused'
+  | 'standardUnavailable'
   | 'close'
   | 'creatorDraft'
+  | 'createPlugin'
+  | 'createPluginDescription'
+  | 'createPluginChecking'
+  | 'createPluginUnavailable'
+  | 'createPluginMissing'
 
 /** English copy. */
 export const en: Record<AgentPresetSettingsKey, string> = {
@@ -36,6 +43,7 @@ export const en: Record<AgentPresetSettingsKey, string> = {
 
   seatHint: 'Choose the agent preset for your new task',
   headerHint: 'The agent preset chosen when this task started',
+  compositionUnavailable: 'Unavailable composition',
   nav: 'Agent presets',
 
   setDefault: 'Set as new task default',
@@ -60,10 +68,16 @@ export const en: Record<AgentPresetSettingsKey, string> = {
   brokenBadge: 'Failed to load',
 
   switchRefused: 'Could not switch to {name}: {reason}',
+  standardUnavailable: 'Standard mode is unavailable. Restore it or choose another available mode.',
 
   close: 'Close',
 
   creatorDraft: 'Let the agent help me create a preset',
+  createPlugin: 'Let the agent create a plugin',
+  createPluginDescription: 'Enter Creator mode and make your own DSH plugin',
+  createPluginChecking: 'Checking whether Creator mode is available',
+  createPluginUnavailable: 'Temporarily unavailable. Reopen this menu to retry',
+  createPluginMissing: 'Creator mode is not included in this configuration',
 
 }
 
@@ -75,6 +89,7 @@ export const zh: Record<AgentPresetSettingsKey, string> = {
 
   seatHint: '选择新任务使用的 Agent 预设',
   headerHint: '本任务的 Agent 预设，在任务开始时确定',
+  compositionUnavailable: '执行配置不可用',
   nav: 'Agent 预设',
 
   setDefault: '设为新任务默认',
@@ -95,10 +110,16 @@ export const zh: Record<AgentPresetSettingsKey, string> = {
   brokenBadge: '加载失败',
 
   switchRefused: '无法切换到「{name}」：{reason}',
+  standardUnavailable: '标准模式不可用，请恢复该模式或选择其他可用模式。',
 
   close: '关闭',
 
   creatorDraft: '让 Agent 帮我创建预设模式',
+  createPlugin: '让 Agent 创建插件',
+  createPluginDescription: '进入创造模式，制作属于你的 DSH 插件',
+  createPluginChecking: '正在确认创造模式是否可用',
+  createPluginUnavailable: '暂时不可用，请重新打开菜单重试',
+  createPluginMissing: '当前配置未提供创造模式',
 
 }
 

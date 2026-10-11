@@ -1,9 +1,9 @@
 /** Electron Node-mode child lifecycle for the shared Web application. */
 
+import { extensionFailure, extensionError, isExtensionFailure, type ExtensionFailure } from './extension-errors.ts'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { join } from 'node:path'
 import type { PlatformSession } from '@deepseek-ai/dsh-deepseek-account'
-import { isProductRuntimeMethod, type ProductContentIdentity, type ProductRuntimeMethod } from '@deepseek-harness/product/protocol'
 import { desktopNodeEnvironment } from './node-environment.ts'
 
 interface ReadyEvent {
@@ -24,19 +24,20 @@ interface PlatformSessionEvent {
   readonly session: PlatformSession | null
 }
 
-interface ProductInvokeEvent {
-  readonly type: 'deepseek-harness-product-invoke'
+interface ExtensionInvokeEvent {
+  readonly type: 'extension-invoke'
   readonly requestId: string
-  readonly method: ProductRuntimeMethod
+  readonly namespace: string
+  readonly method: string
   readonly payload?: unknown
 }
 
-interface ProductCancelEvent {
-  readonly type: 'deepseek-harness-product-cancel'
+interface ExtensionCancelEvent {
+  readonly type: 'extension-cancel'
   readonly requestId: string
 }
 
-type DesktopHostEvent = ReadyEvent | FatalEvent | PlatformSessionEvent | ProductInvokeEvent | ProductCancelEvent | { readonly type: 'shutdown-complete' } | {
+type DesktopHostEvent = ReadyEvent | FatalEvent | PlatformSessionEvent | ExtensionInvokeEvent | ExtensionCancelEvent | { readonly type: 'shutdown-complete' } | {
   readonly type: 'update-tasks'
   readonly requestId: number
   readonly active: boolean
@@ -48,14 +49,15 @@ type DesktopHostEvent = ReadyEvent | FatalEvent | PlatformSessionEvent | Product
   readonly scheduledTasks: boolean
   readonly error?: string
 } | {
-  readonly type: 'expert-kit-prepare'
+  readonly type: 'index-injections'
   readonly requestId: number
-  readonly presetId: string
+  readonly injections: readonly unknown[]
   readonly error?: string
 } | {
-  readonly type: 'skill-prepare'
+  readonly type: 'extension-control'
+  readonly failure?: ExtensionFailure
   readonly requestId: number
-  readonly presetId: string
+  readonly result?: unknown
   readonly error?: string
 }
 
@@ -71,26 +73,10 @@ export interface DesktopQuitInspection {
 /** Quit inspection deadline; a slower Host counts as unknown work and the shell asks before quitting. */
 export const QUIT_INSPECTION_DEADLINE_MS = 2_000
 
+/** Boot injection requests fail instead of returning a stale module graph. */
+export const INDEX_INJECTIONS_DEADLINE_MS = 10_000
+
 const MAX_HOST_DIAGNOSTIC_CHARS = 64 * 1024
-
-function productOperationError(method: ProductRuntimeMethod, error: unknown): string {
-  const prefix = `deepseek-harness product operation failed: ${method}`
-  if (typeof error !== 'object' || error === null || Array.isArray(error)) return prefix
-  const candidate = error as Record<string, unknown>
-  if (candidate.name !== 'DeepSeekHarnessApiError'
-    || !Number.isSafeInteger(candidate.status) || (candidate.status as number) < 400 || (candidate.status as number) > 599
-    || typeof candidate.code !== 'string' || !/^[A-Z][A-Z0-9_]{1,63}$/.test(candidate.code)) return prefix
-  return `${prefix} [${candidate.code}, HTTP ${String(candidate.status)}]`
-}
-
-function validateProductContent(content: ProductContentIdentity, label: string): void {
-  if (!/^[a-z][a-z0-9-]{2,63}$/u.test(content.id)) {
-    throw new Error(`deepseek-harness product: invalid ${label} id`)
-  }
-  if (content.version === '' || content.version.length > 128 || !/^[a-fA-F0-9]{64}$/u.test(content.sha256)) {
-    throw new Error(`deepseek-harness product: invalid ${label} content identity`)
-  }
-}
 
 function isDesktopHostEvent(message: unknown): message is DesktopHostEvent {
   if (typeof message !== 'object' || message === null || !('type' in message)) return false
@@ -119,10 +105,11 @@ function isDesktopHostEvent(message: unknown): message is DesktopHostEvent {
           && (url.protocol === 'https:' || (url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)))
       } catch { return false }
     }
-    case 'deepseek-harness-product-invoke':
+    case 'extension-invoke':
       return typeof candidate.requestId === 'string' && candidate.requestId.length >= 8
-        && candidate.requestId.length <= 128 && isProductRuntimeMethod(candidate.method)
-    case 'deepseek-harness-product-cancel':
+        && candidate.requestId.length <= 128 && typeof candidate.method === 'string'
+        && typeof candidate.namespace === 'string' && /^[a-z][a-z0-9-]{0,63}$/.test(candidate.namespace)
+    case 'extension-cancel':
       return typeof candidate.requestId === 'string' && candidate.requestId.length >= 8
         && candidate.requestId.length <= 128
     case 'fatal':
@@ -133,10 +120,11 @@ function isDesktopHostEvent(message: unknown): message is DesktopHostEvent {
     case 'quit-inspection':
       return Number.isSafeInteger(candidate.requestId) && typeof candidate.activeTasks === 'boolean'
         && typeof candidate.scheduledTasks === 'boolean' && (candidate.error === undefined || typeof candidate.error === 'string')
-    case 'expert-kit-prepare':
-    case 'skill-prepare':
-      return Number.isSafeInteger(candidate.requestId) && typeof candidate.presetId === 'string'
+    case 'index-injections':
+      return Number.isSafeInteger(candidate.requestId) && Array.isArray(candidate.injections)
         && (candidate.error === undefined || typeof candidate.error === 'string')
+    case 'extension-control':
+      return Number.isSafeInteger(candidate.requestId) && (candidate.error === undefined || typeof candidate.error === 'string')
     default:
       return false
   }
@@ -205,7 +193,7 @@ export class DesktopHostProcess {
     resolve: (response: DesktopHostControlResponse) => void
     reject: (error: Error) => void
   }>()
-  private readonly productRequests = new Map<string, AbortController>()
+  private readonly extensionRequests = new Map<string, AbortController>()
 
   /**
    * @param node - Absolute Electron executable in Node mode.
@@ -230,7 +218,7 @@ export class DesktopHostProcess {
     private readonly packageManager?: { readonly pnpm: string; readonly nodeBin: string },
 
     private readonly onPlatformSession?: (session: PlatformSession | null) => void,
-    private readonly onProductInvoke?: (method: ProductRuntimeMethod, payload: unknown, signal: AbortSignal) => Promise<unknown>,
+    private readonly onExtensionInvoke?: (namespace: string, method: string, payload: unknown, signal: AbortSignal) => Promise<unknown>,
   ) {}
 
   /**
@@ -265,14 +253,14 @@ export class DesktopHostProcess {
       }
       if (message.type === 'ready') this.readyResolve({ url: message.url, injections: message.injections })
       else if (message.type === 'platform-session') this.onPlatformSession?.(message.session)
-      else if (message.type === 'deepseek-harness-product-invoke') {
+      else if (message.type === 'extension-invoke') {
         const controller = new AbortController()
-        this.productRequests.set(message.requestId, controller)
+        this.extensionRequests.set(message.requestId, controller)
         const answer = async (): Promise<void> => {
-          if (this.onProductInvoke === undefined) throw new Error('deepseek-harness product bridge is unavailable')
-          const result = await this.onProductInvoke(message.method, message.payload, controller.signal)
+          if (this.onExtensionInvoke === undefined) throw new Error('desktop extension bridge is unavailable')
+          const result = await this.onExtensionInvoke(message.namespace, message.method, message.payload, controller.signal)
           await new Promise<void>((resolve, reject) => {
-            child.send({ type: 'deepseek-harness-product-result', requestId: message.requestId, result }, (error) => {
+            child.send({ type: 'extension-result', requestId: message.requestId, result }, (error) => {
               if (error === null) resolve()
               else reject(error)
             })
@@ -280,11 +268,11 @@ export class DesktopHostProcess {
         }
         void answer().catch((error: unknown) => {
           if (!child.connected) return
-          child.send({ type: 'deepseek-harness-product-result', requestId: message.requestId,
-            error: productOperationError(message.method, error) })
-        }).finally(() => { this.productRequests.delete(message.requestId) })
+          child.send({ type: 'extension-result', requestId: message.requestId,
+            error: `desktop extension operation failed: ${message.method}`, failure: extensionFailure(error) })
+        }).finally(() => { this.extensionRequests.delete(message.requestId) })
       }
-      else if (message.type === 'deepseek-harness-product-cancel') this.productRequests.get(message.requestId)?.abort()
+      else if (message.type === 'extension-cancel') this.extensionRequests.get(message.requestId)?.abort()
       else if (message.type === 'shutdown-complete') {
         if (this.stopping) this.shutdownCompleted = true
         else this.fail(new Error('dsh desktop host acknowledged an unrequested shutdown'))
@@ -293,7 +281,8 @@ export class DesktopHostProcess {
       else {
         const request = this.controlRequests.get(message.requestId)
         if (message.error === undefined) request?.resolve(message)
-        else request?.reject(new Error(message.error))
+        else request?.reject(message.type === 'extension-control' && isExtensionFailure(message.failure)
+          ? extensionError(message.failure) : new Error(message.error))
       }
     })
     child.once('error', (error) => { this.fail(error) })
@@ -331,51 +320,63 @@ export class DesktopHostProcess {
     return { activeTasks: response.activeTasks, scheduledTasks: response.scheduledTasks }
   }
 
-  /** Prepare the immutable Host Preset for one Expert Kit Session. */
-  async prepareExpertKit(content: ProductContentIdentity): Promise<string> {
-    validateProductContent(content, 'expert kit')
-    const response = await this.control({ type: 'expert-kit-prepare', ...content }, 30_000,
-      'deepseek-harness product: expert kit preparation timed out')
-    if (response.type !== 'expert-kit-prepare') {
-      throw new Error('deepseek-harness product: Host answered with a different control response')
-    }
-    return response.presetId
+  /**
+   * Read the current Web module graph for one renderer boot or reload.
+   * @returns Current index injections; rejects if the Host is unavailable or misses the deadline.
+   */
+  async readIndexInjections(): Promise<readonly unknown[]> {
+    const response = await this.control({ type: 'index-injections' }, INDEX_INJECTIONS_DEADLINE_MS,
+      'desktop boot: index injection request timed out')
+    if (response.type !== 'index-injections') throw new Error('desktop boot: Host answered with a different control response')
+    return response.injections
   }
 
-  /** Prepare the immutable Host Preset for one standalone Skill Session. */
-  async prepareSkill(content: ProductContentIdentity): Promise<string> {
-    validateProductContent(content, 'skill')
-    const response = await this.control({ type: 'skill-prepare', ...content }, 30_000,
-      'deepseek-harness product: skill preparation timed out')
-    if (response.type !== 'skill-prepare') {
-      throw new Error('deepseek-harness product: Host answered with a different control response')
-    }
-    return response.presetId
+  /** Invoke a configured extension through the correlated Host control channel.
+   * @param namespace - Configured extension namespace.
+   * @param method - Extension-owned operation name.
+   * @param payload - Operation input.
+   * @param signal - Optional caller cancellation.
+   * @param timeoutMs - Trusted caller deadline, 1 to 1800000 milliseconds; defaults to 60000.
+   * @returns Correlated extension result.
+   */
+  async requestExtension(namespace: string, method: string, payload?: unknown, signal?: AbortSignal, timeoutMs = 60_000): Promise<unknown> {
+    if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 1_800_000) throw new Error('Invalid extension request timeout')
+    const response = await this.control({ type: 'extension-control', namespace, method, payload }, timeoutMs,
+      'desktop extension: preparation timed out', signal)
+    if (response.type !== 'extension-control') throw new Error('Unexpected extension response')
+    return response.result
   }
 
   private async control(
     request: { readonly type: 'update-tasks'; readonly action: 'inspect' | 'lock' | 'unlock' }
       | { readonly type: 'quit-inspection' }
-      | ({ readonly type: 'expert-kit-prepare' } & ProductContentIdentity)
-      | ({ readonly type: 'skill-prepare' } & ProductContentIdentity),
-    deadlineMs: number, deadlineMessage: string,
+      | { readonly type: 'index-injections' }
+      | { readonly type: 'extension-control'; readonly namespace: string; readonly method: string; readonly payload?: unknown },
+    deadlineMs: number, deadlineMessage: string, signal?: AbortSignal,
   ): Promise<DesktopHostControlResponse> {
+    signal?.throwIfAborted()
     const child = this.child
     if (child === undefined || !child.connected || this.failureReported || this.stopping) {
       const owner = request.type === 'update-tasks' ? 'desktop update'
-        : request.type === 'quit-inspection' ? 'desktop quit' : 'deepseek-harness product'
+        : request.type === 'quit-inspection' ? 'desktop quit'
+          : request.type === 'index-injections' ? 'desktop boot' : 'desktop extension'
       throw new Error(`${owner}: Host is unavailable`)
     }
     const requestId = this.nextControlId++
     let timer: ReturnType<typeof setTimeout> | undefined
+    let abort: (() => void) | undefined
     try {
       return await new Promise<DesktopHostControlResponse>((resolve, reject) => {
         this.controlRequests.set(requestId, { resolve, reject })
-        timer = setTimeout(() => { reject(new Error(deadlineMessage)) }, deadlineMs)
+        const cancel = () => { if (request.type === 'extension-control') child.send({ type: 'extension-control-cancel', namespace: request.namespace, requestId }) }
+        abort = () => { cancel(); reject(signal?.reason instanceof Error ? signal.reason : new Error('Desktop extension request cancelled')) }
+        signal?.addEventListener('abort', abort, { once: true })
+        timer = setTimeout(() => { cancel(); reject(new Error(deadlineMessage)) }, deadlineMs)
         child.send({ ...request, requestId }, (error) => { if (error !== null) reject(error) })
       })
     } finally {
       clearTimeout(timer)
+      if (abort !== undefined) signal?.removeEventListener('abort', abort)
       this.controlRequests.delete(requestId)
     }
   }
@@ -409,8 +410,8 @@ export class DesktopHostProcess {
   }
 
   private fail(error: Error): void {
-    for (const controller of this.productRequests.values()) controller.abort()
-    this.productRequests.clear()
+    for (const controller of this.extensionRequests.values()) controller.abort()
+    this.extensionRequests.clear()
     this.onPlatformSession?.(null)
     this.readyReject(error)
     for (const request of this.controlRequests.values()) request.reject(error)

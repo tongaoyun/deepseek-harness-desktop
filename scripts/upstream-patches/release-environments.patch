@@ -1,0 +1,194 @@
+diff --git a/apps/desktop/.env.windows.example b/apps/desktop/.env.windows.example
+index 4950c70b27ea1fffcc324c64101d01b43d5fa755..1bc6abd969e7b887b0b7936ab82e1cc15b2c8f76 100644
+--- a/apps/desktop/.env.windows.example
++++ b/apps/desktop/.env.windows.example
+@@ -12,7 +12,7 @@ DOWNLOAD_TEST_RELEASE_ID=
+ # DSH_DESKTOP_NPM_REGISTRY=https://registry.npmmirror.com
+ 
+ 
+-# The selected mandatory-update origin is required, including unsigned and preparation builds.
++# Signed builds require the selected mandatory-update origin. Unsigned Windows builds omit policy.
+ DSH_DESKTOP_MANDATORY_UPDATE_TEST_ORIGIN=
+ DSH_DESKTOP_MANDATORY_UPDATE_PROD_ORIGIN=
+ # Set approved login origins for test builds; omit allowedAuthOrigins for production.
+diff --git a/apps/desktop/scripts/desktop-auto-update-environment.mjs b/apps/desktop/scripts/desktop-auto-update-environment.mjs
+index 464d079b4dd6aeea5265b731ac2f7b13909f1e4d..1f4f3d07d5732b2b14023af1f4f22ac5026357a0 100644
+--- a/apps/desktop/scripts/desktop-auto-update-environment.mjs
++++ b/apps/desktop/scripts/desktop-auto-update-environment.mjs
+@@ -1,4 +1,4 @@
+-/** Resolve the Desktop auto-update channel and its Tencent COS destination. */
++/** Resolve the Desktop auto-update channel and its COS or internal Gitea destination. */
+ 
+ import { valid } from 'semver'
+ 
+@@ -119,6 +119,53 @@ function httpsOrigin(value, name) {
+   return parsed.origin
+ }
+ 
++/**
++ * Resolve an internal release origin. The internal deployment intentionally
++ * permits HTTP; it never accepts credentials, a path, or a query in the
++ * configured origin.
++ * @param {string} value - Candidate internal origin.
++ * @param {string} name - Environment variable used in diagnostics.
++ * @returns {string} Normalized origin without a trailing slash.
++ */
++function internalOrigin(value, name) {
++  let parsed
++  try {
++    parsed = new URL(value)
++  }
++  catch {
++    throw new Error(`desktop auto-update: ${name} must be an absolute HTTP or HTTPS origin`)
++  }
++  if ((parsed.protocol !== 'http:' && parsed.protocol !== 'https:')
++    || parsed.username !== ''
++    || parsed.password !== ''
++    || parsed.pathname !== '/'
++    || parsed.search !== ''
++    || parsed.hash !== '') {
++    throw new Error(`desktop auto-update: ${name} must be an absolute HTTP or HTTPS origin without a path, credentials, query, or fragment`)
++  }
++  return parsed.origin
++}
++
++function resolveGiteaUpdateConfig(env, target, environment) {
++  const originValue = env.GITEA_RELEASE_DOWNLOAD_ORIGIN?.trim()
++  if (originValue === undefined || originValue === '') return undefined
++  const origin = internalOrigin(originValue, 'GITEA_RELEASE_DOWNLOAD_ORIGIN')
++  const repository = env.GITEA_REPOSITORY?.trim()
++  if (repository === undefined || repository === '' || !/^[^/]+\/[^/]+$/u.test(repository)) {
++    throw new Error('desktop auto-update: GITEA_REPOSITORY must be an owner/repository value when using Gitea releases')
++  }
++  // Gitea's browser download route is intentionally outside /api/v1.
++  const keyPrefix = `${repository}/releases/latest/download`
++  return {
++    environment,
++    target,
++    origin,
++    keyPrefix,
++    binaryKeyPrefix: keyPrefix,
++    publicUrl: `${origin}/${keyPrefix}/`,
++  }
++}
++
+ /**
+  * Resolve the public updater URL and object prefixes for one release target.
+  * @param {NodeJS.ProcessEnv} env - Packaging or upload environment.
+@@ -130,6 +177,8 @@ function httpsOrigin(value, name) {
+ export function resolveDesktopAutoUpdateConfig(env, platform, arch) {
+   const environment = resolveDesktopAutoUpdateEnvironment(env)
+   const target = resolveDesktopAutoUpdateTarget(platform, arch)
++  const gitea = resolveGiteaUpdateConfig(env, target, environment)
++  if (gitea !== undefined) return gitea
+   const deployment = UPDATE_ENVIRONMENTS[environment]
+   let origin = deployment.fixedOrigin
+   if (origin === undefined) {
+@@ -165,6 +214,9 @@ export function resolveDesktopAutoUpdateConfig(env, platform, arch) {
+  * @throws {Error} When the selected deployment lacks a bucket or valid updater configuration.
+  */
+ export function resolveDesktopUploadConfig(env, platform, arch) {
++  if (env.GITEA_RELEASE_DOWNLOAD_ORIGIN?.trim()) {
++    throw new Error('desktop auto-update: Gitea releases are published by scripts/release/gitea-release.mjs, not the COS uploader')
++  }
+   const update = resolveDesktopAutoUpdateConfig(env, platform, arch)
+   const deployment = UPDATE_ENVIRONMENTS[update.environment]
+   return {
+diff --git a/apps/desktop/scripts/desktop-package-environment.mjs b/apps/desktop/scripts/desktop-package-environment.mjs
+index 51b878100a0c04a4f7357edbca11445e27dcce07..a346d6aa3ad3b3599f0a965d921744534e37fc53 100644
+--- a/apps/desktop/scripts/desktop-package-environment.mjs
++++ b/apps/desktop/scripts/desktop-package-environment.mjs
+@@ -92,7 +92,7 @@ function requireReadableFile(environment, name) {
+ export function validateDesktopPackageEnvironment(environment, target, options = {}) {
+   resolveDesktopAppId(environment)
+   resolveNpmRegistry(environment)
+-  if (target.platform !== 'darwin' || !options.unsigned) resolveDesktopPolicyEnvironment(environment)
++  if (!options.unsigned) resolveDesktopPolicyEnvironment(environment)
+   if (target.platform === 'darwin') resolveMacOSPackageSettings(environment)
+   else resolveWindowsPackageSettings(environment)
+   if (options.unsigned) return
+diff --git a/apps/desktop/tests/desktop-auto-update-environment.spec.ts b/apps/desktop/tests/desktop-auto-update-environment.spec.ts
+index c33a9384df71ece8d878ad7aba6a802093a2827b..f09c138929f3f70c83933536848297fb9f307997 100644
+--- a/apps/desktop/tests/desktop-auto-update-environment.spec.ts
++++ b/apps/desktop/tests/desktop-auto-update-environment.spec.ts
+@@ -58,6 +58,34 @@ describe('desktop auto-update environment', () => {
+     })
+   })
+ 
++  it('resolves internal Gitea Release downloads for packaged builds', () => {
++    const environment = {
++      DSH_DESKTOP_AUTO_UPDATE_ENV: 'production',
++      GITEA_RELEASE_DOWNLOAD_ORIGIN: 'http://192.168.2.66:3300',
++      GITEA_REPOSITORY: 'instudio/deepseek-harness-desktop',
++    }
++    expect(resolveDesktopAutoUpdateConfig(environment, 'darwin', 'x64')).toEqual({
++      environment: 'production',
++      target: 'mac-x64',
++      origin: 'http://192.168.2.66:3300',
++      publicUrl: 'http://192.168.2.66:3300/instudio/deepseek-harness-desktop/releases/latest/download/',
++      keyPrefix: 'instudio/deepseek-harness-desktop/releases/latest/download',
++      binaryKeyPrefix: 'instudio/deepseek-harness-desktop/releases/latest/download',
++    })
++    expect(() => resolveDesktopUploadConfig(environment, 'darwin', 'x64')).toThrow(/Gitea releases are published/u)
++  })
++
++  it('rejects unsafe internal Gitea origins and repository names', () => {
++    expect(() => resolveDesktopAutoUpdateConfig({
++      GITEA_RELEASE_DOWNLOAD_ORIGIN: 'http://192.168.2.66:3300/releases',
++      GITEA_REPOSITORY: 'instudio/deepseek-harness-desktop',
++    }, 'darwin', 'arm64')).toThrow(/without a path/u)
++    expect(() => resolveDesktopAutoUpdateConfig({
++      GITEA_RELEASE_DOWNLOAD_ORIGIN: 'http://192.168.2.66:3300',
++      GITEA_REPOSITORY: 'instudio/deepseek-harness-desktop/extra',
++    }, 'darwin', 'arm64')).toThrow(/owner\/repository/u)
++  })
++
+   it.each([undefined, RELEASE_ID, 'unused-test-value'])('keeps production paths independent of test release ID %s', (id) => {
+     expect(resolveDesktopAutoUpdateConfig({
+       DSH_DESKTOP_AUTO_UPDATE_ENV: 'production',
+diff --git a/apps/desktop/tests/desktop-package-environment.spec.ts b/apps/desktop/tests/desktop-package-environment.spec.ts
+index a892a8548a3c87705420961179ac1426381a6288..d4e43fa02f2a6e030d872958446b1c475c50217b 100644
+--- a/apps/desktop/tests/desktop-package-environment.spec.ts
++++ b/apps/desktop/tests/desktop-package-environment.spec.ts
+@@ -137,7 +137,7 @@ describe('Desktop local packaging configuration', () => {
+     })
+   })
+ 
+-  it('checks application and update configuration before Windows credentials while preserving unsigned and preparation modes', () => {
++  it('checks application and update configuration before Windows credentials while unsigned packages omit policy', () => {
+     expect(() => {
+       validateDesktopPackageEnvironment({}, WINDOWS, { unsigned: true })
+     }).toThrow(/DSH_DESKTOP_APP_ID/u)
+@@ -151,7 +151,7 @@ describe('Desktop local packaging configuration', () => {
+       validateDesktopPackageEnvironment(RELEASE, WINDOWS)
+     }).toThrow(/DSH_DESKTOP_WINDOWS_CER_FILE/u)
+     expect(() => {
+-      validateDesktopPackageEnvironment({ ...POLICY, DSH_DESKTOP_APP_ID: RELEASE.DSH_DESKTOP_APP_ID }, WINDOWS, { unsigned: true })
++      validateDesktopPackageEnvironment({ DSH_DESKTOP_APP_ID: RELEASE.DSH_DESKTOP_APP_ID }, WINDOWS, { unsigned: true })
+     }).not.toThrow()
+     expect(() => {
+       validateDesktopPackageEnvironment({ ...POLICY, DSH_DESKTOP_APP_ID: RELEASE.DSH_DESKTOP_APP_ID }, WINDOWS, { prepareOnly: true })
+diff --git a/apps/desktop/tests/desktop-policy-environment.spec.ts b/apps/desktop/tests/desktop-policy-environment.spec.ts
+index be5b4ede251c17e44c071e15f23a56968d9d94d2..81a3547bf1bb900a130d159e37dead8ef997863a 100644
+--- a/apps/desktop/tests/desktop-policy-environment.spec.ts
++++ b/apps/desktop/tests/desktop-policy-environment.spec.ts
+@@ -47,14 +47,13 @@ it('rejects login origins in production', () => {
+     .toThrow('must not configure allowedAuthOrigins')
+ })
+ 
+-it.each([{ unsigned: true }, { prepareOnly: true }, {}])('requires policy outside local macOS builds in %j', (options) => {
++it.each([{ prepareOnly: true }, {}])('fails before signing/preparation when policy is absent in %j', (options) => {
+   for (const platform of ['win32', 'darwin'] as const) {
+-    if (platform === 'darwin' && options.unsigned) {
+-      expect(() => { validateDesktopPackageEnvironment({ DSH_DESKTOP_APP_ID: 'com.example.test' }, { platform, arch: 'x64' }, options) })
+-        .not.toThrow()
+-      continue
+-    }
+     expect(() => { validateDesktopPackageEnvironment({ DSH_DESKTOP_APP_ID: 'com.example.test' }, { platform, arch: 'x64' }, options) })
+       .toThrow('DSH_DESKTOP_MANDATORY_UPDATE_TEST_ORIGIN')
+   }
+ })
++
++it.each(['win32', 'darwin'] as const)('allows unsigned %s packaging without a mandatory-update policy', (platform) => {
++  expect(() => validateDesktopPackageEnvironment({ DSH_DESKTOP_APP_ID: 'com.example.test' }, { platform, arch: 'x64' }, { unsigned: true })).not.toThrow()
++})
