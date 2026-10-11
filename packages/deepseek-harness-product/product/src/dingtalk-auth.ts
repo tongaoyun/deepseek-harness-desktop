@@ -1,4 +1,5 @@
 import type { ProductSession } from './protocol.ts'
+import { setTimeout as delay } from 'node:timers/promises'
 
 /** Product bridge operations required by the DingTalk OAuth flow. */
 export interface DingTalkAuthInvoker {
@@ -32,8 +33,6 @@ function authorization(value: unknown): DingTalkAuthorization {
   return { state: value.state, authorizationUrl: url.href }
 }
 
-const wait = (milliseconds: number): Promise<void> => new Promise((resolve) => { setTimeout(resolve, milliseconds) })
-
 /**
  * Refresh an existing enterprise session or complete one browser-based OAuth attempt.
  * @param bridge - Product bridge used for session refresh and OAuth polling.
@@ -44,15 +43,16 @@ const wait = (milliseconds: number): Promise<void> => new Promise((resolve) => {
 export async function ensureDingTalkSession(
   bridge: DingTalkAuthInvoker,
   openExternal: (url: string) => Promise<void>,
-  options: { readonly timeoutMs?: number; readonly pollMs?: number } = {},
+  options: { readonly timeoutMs?: number; readonly pollMs?: number; readonly signal?: AbortSignal } = {},
 ): Promise<ProductSession> {
+  options.signal?.throwIfAborted()
   try { await bridge.invoke('auth.refresh') } catch { /* A missing session starts a fresh OAuth attempt below. */ }
   if (bridge.getSession().authenticated) return bridge.getSession()
   const attempt = authorization(await bridge.invoke('auth.beginDingTalk'))
   await openExternal(attempt.authorizationUrl)
   const deadline = Date.now() + (options.timeoutMs ?? 120_000)
   while (Date.now() < deadline) {
-    await wait(options.pollMs ?? 1_500)
+    await delay(options.pollMs ?? 1_500, undefined, { signal: options.signal })
     const poll = await bridge.invoke('auth.pollDingTalk', { state: attempt.state })
     if (bridge.getSession().authenticated) return bridge.getSession()
     if (record(poll) && (poll.status === 'expired' || poll.status === 'invalid')) {

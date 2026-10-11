@@ -1,8 +1,10 @@
 /** Main-process product bridge. It owns credentials and exposes only product methods. */
 
 import { DeepSeekHarnessApiClient, DeepSeekHarnessApiError } from './http-client.ts'
-import { assertProductMethod, assertProductPayload, type ProductContentIdentity, type ProductEvent, type ProductMethod, type ProductRuntimeMethod, type ProductSession } from './protocol.ts'
+import { assertProductMethod, assertProductPayload, type KnowledgeFileMethod, type ProductEvent, type ProductMethod, type ProductRuntimeMethod, type ProductSession } from './protocol.ts'
 import { ProductCatalogManager } from './catalog-manager.ts'
+import { invokeKnowledge, type KnowledgeUpload } from './knowledge-bridge.ts'
+import { ProductError } from './errors.ts'
 
 /** Main-process-only inference bootstrap. Secrets in this object never cross the preload bridge. */
 export interface ProductRuntimeBootstrap {
@@ -19,7 +21,9 @@ function runtimeBootstrap(value: unknown): ProductRuntimeBootstrap {
   const endpoints = record.endpoints
   const rawModels: unknown = record.models
   if (typeof record.modelApiKey !== 'string' || !/^[\x21-\x7e]+$/.test(record.modelApiKey)
-    || !Array.isArray(rawModels) || (rawModels as unknown[]).some(model => typeof model !== 'string')
+    || !Array.isArray(rawModels) || rawModels.length === 0
+    || (rawModels as unknown[]).some(model => typeof model !== 'string' || model.trim() !== model || model === '' || /[\x00-\x20\x7f]/.test(model))
+    || new Set(rawModels).size !== rawModels.length
     || typeof endpoints !== 'object' || endpoints === null || Array.isArray(endpoints)
     || typeof (endpoints as Record<string, unknown>).litellm !== 'string') {
     throw new Error('deepseek-harness product: invalid runtime bootstrap')
@@ -35,6 +39,11 @@ function runtimeBootstrap(value: unknown): ProductRuntimeBootstrap {
 
 /** Main-process dependencies used to construct the product bridge. */
 export interface ProductBridgeOptions {
+  /** Main-owned original streaming, file handles, native download and system opening. */
+  readonly knowledgeFiles?: (method: KnowledgeFileMethod, payload: Readonly<Record<string, unknown>>, api: DeepSeekHarnessApiClient,
+    session: ProductSession, signal?: AbortSignal) => Promise<unknown>
+  /** Native knowledge-file picker and upload; renderer code cannot choose filesystem paths. */
+  readonly knowledgeUpload?: KnowledgeUpload
   readonly serverUrl?: string | undefined
   readonly sessionToken?: string | undefined
   readonly desktopVersion?: string | undefined
@@ -43,11 +52,17 @@ export interface ProductBridgeOptions {
   readonly fetch?: typeof fetch
   readonly persistSession?: (session: ProductSession, sessionToken: string | undefined) => void | Promise<void>
   /** Main-process native capability dispatcher. Renderer code never receives this function. */
-  readonly nativeInvoke?: (method: string, payload: unknown) => Promise<unknown>
-  /** Prepare the immutable Host Preset snapshot for one Expert Kit. */
-  readonly prepareExpertKit?: (content: ProductContentIdentity) => Promise<string>
-  /** Prepare the immutable Host Preset snapshot for one standalone Skill. */
-  readonly prepareSkill?: (content: ProductContentIdentity) => Promise<string>
+  readonly nativeInvoke?: (method: string, payload: unknown, signal?: AbortSignal) => Promise<unknown>
+  /** Dispatch task capability operations to the trusted runtime. */
+  readonly taskCapabilities?: (method: 'read' | 'prepare', payload: Readonly<Record<string, unknown>>, signal?: AbortSignal) => Promise<unknown>
+  /** Dispatch local installation and task-visible skill reads to the Host. */
+  readonly installedSkills?: (method: 'install' | 'uninstall' | 'read', payload: Readonly<Record<string, unknown>>, signal?: AbortSignal) => Promise<unknown>
+  readonly installedExpertKits?: (method: 'install' | 'uninstall' | 'read', payload: Readonly<Record<string, unknown>>, signal?: AbortSignal) => Promise<unknown>
+  /** Main-owned authoring, with authenticated API access and UI-safe employee identity. */
+  readonly authoring?: (method: string, payload: Readonly<Record<string, unknown>>, api: DeepSeekHarnessApiClient,
+    session: ProductSession, signal?: AbortSignal) => Promise<unknown>
+  /** Resolve device-owned MCP configuration in main before projecting a credential-free catalog. */
+  readonly connectorRuntime?: (value: unknown, signal?: AbortSignal) => Promise<unknown>
 }
 
 const SESSION_REFRESH_LEAD_SECONDS = 5 * 60
@@ -55,23 +70,37 @@ const SESSION_REFRESH_RETRY_SECONDS = 30
 /** Main-process product API boundary exposed to the Renderer through preload. */
 export class DeepSeekHarnessProductBridge {
   private sessionToken: string | undefined
+  private identityLifecycle = new AbortController()
   private session: ProductSession
   private readonly listeners = new Set<(event: ProductEvent) => void>()
   private readonly api?: DeepSeekHarnessApiClient
   private readonly nativeInvoke?: ProductBridgeOptions['nativeInvoke']
-  private readonly prepareExpertKit?: ProductBridgeOptions['prepareExpertKit']
-  private readonly prepareSkill?: ProductBridgeOptions['prepareSkill']
+  private readonly optionsTaskCapabilities?: ProductBridgeOptions['taskCapabilities']
+  private readonly installedSkills?: ProductBridgeOptions['installedSkills']
+  private readonly installedExpertKits?: ProductBridgeOptions['installedExpertKits']
+  private readonly authoring?: ProductBridgeOptions['authoring']
+  private readonly connectorRuntime?: ProductBridgeOptions['connectorRuntime']
   private readonly catalog: ProductCatalogManager
+  private readonly desktopVersion: string
+  private readonly knowledgeUpload: KnowledgeUpload | undefined
+  private readonly knowledgeFiles: ProductBridgeOptions['knowledgeFiles']
   private sessionRefresh: Promise<void> | undefined
   private sessionRefreshTimer: ReturnType<typeof setTimeout> | undefined
+  private closed = false
 
   constructor(options: ProductBridgeOptions = {}) {
+    this.knowledgeUpload = options.knowledgeUpload
+    this.knowledgeFiles = options.knowledgeFiles
+    this.desktopVersion = options.desktopVersion ?? '0.0.0'
     this.sessionToken = options.sessionToken
     this.session = options.initialSession ?? (options.sessionToken === undefined ? { authenticated: false } : { authenticated: true })
     this.persistSession = options.persistSession
     this.nativeInvoke = options.nativeInvoke
-    this.prepareExpertKit = options.prepareExpertKit
-    this.prepareSkill = options.prepareSkill
+    this.optionsTaskCapabilities = options.taskCapabilities
+    this.installedSkills = options.installedSkills
+    this.installedExpertKits = options.installedExpertKits
+    this.authoring = options.authoring
+    this.connectorRuntime = options.connectorRuntime
     if (options.serverUrl !== undefined && options.serverUrl !== '') {
       this.api = new DeepSeekHarnessApiClient({ baseUrl: options.serverUrl, getSessionToken: () => this.sessionToken,
         getEmployeeId: () => this.session.employeeId,
@@ -82,7 +111,7 @@ export class DeepSeekHarnessProductBridge {
       desktopVersion: options.desktopVersion ?? '0.0.0',
       getSession: () => this.session,
       ensureFreshSession: () => this.ensureFreshSession(),
-      emit: event => this.emit(event),
+      emit: (event) => { this.emit(event) },
     })
     this.scheduleSessionRefresh()
     this.catalog.schedule()
@@ -112,10 +141,15 @@ export class DeepSeekHarnessProductBridge {
    * @param token - Opaque token retained by the main process.
    */
   setSession(session: ProductSession, token?: string): void {
+    if (this.closed) return
     const previousEmployee = this.session.employeeId
     this.session = { ...session }
     this.sessionToken = token
-    if (!session.authenticated || session.employeeId !== previousEmployee) this.catalog.reset()
+    if (!session.authenticated || session.employeeId !== previousEmployee) {
+      this.identityLifecycle.abort(new Error('Product employee identity changed'))
+      this.identityLifecycle = new AbortController()
+      this.catalog.reset()
+    }
     const persisted = this.persistSession?.(this.session, this.sessionToken)
     if (persisted instanceof Promise) {
       void persisted.catch((error: unknown) => {
@@ -138,18 +172,24 @@ export class DeepSeekHarnessProductBridge {
   }
 
   /** Refresh every employee-visible product directory as one immutable snapshot.
-   * Concurrent callers share one request. A failed refresh leaves the last successful snapshot intact.
+   * Background callers share one request; cancellable callers own separate requests.
+   * A failed refresh leaves the last successful display snapshot intact.
+   * @param signal - Optional caller cancellation.
+   * @returns Completion after all directory requests settle.
    */
-  async refreshCatalog(): Promise<void> {
-    return this.catalog.refresh()
+  async refreshCatalog(signal?: AbortSignal): Promise<void> {
+    return this.catalog.refresh(signal)
   }
 
-  /** Stop background timers owned by the product bridge. */
-  dispose(): void {
+  /** Cancel and await background requests, suppressing later events and timers. */
+  async dispose(): Promise<void> {
+    this.closed = true
+    this.identityLifecycle.abort(new Error('Product bridge closed'))
+    this.listeners.clear()
+    this.api?.close()
     if (this.sessionRefreshTimer !== undefined) clearTimeout(this.sessionRefreshTimer)
     this.sessionRefreshTimer = undefined
-    this.catalog.dispose()
-    this.listeners.clear()
+    await Promise.allSettled([this.catalog.dispose(), this.sessionRefresh ?? Promise.resolve()])
   }
 
   /** Validate and dispatch one allowlisted product operation.
@@ -159,21 +199,24 @@ export class DeepSeekHarnessProductBridge {
    * @returns The operation result.
    */
   async invoke(method: unknown, payload?: unknown, signal?: AbortSignal): Promise<unknown> {
+    if (this.closed) throw new Error('Product bridge has been disposed')
     assertProductMethod(method)
     const input = assertProductPayload(payload)
     if (method === 'auth.getSession') return this.session
     if (method.startsWith('native.')) {
       if (this.nativeInvoke === undefined) throw new Error('deepseek-harness product: native sidecar is unavailable')
-      return this.nativeInvoke(method.slice('native.'.length), input)
+      return this.nativeInvoke(method.slice('native.'.length), input, signal)
     }
     if (this.api === undefined) throw new Error('deepseek-harness product: server URL is not configured')
-    if (method === 'auth.beginDingTalk') return this.api.beginDingTalk<unknown>()
+    if (method === 'auth.beginDingTalk') return this.api.beginDingTalk<unknown>(signal)
     if (method === 'auth.pollDingTalk') {
       const state = input.state
       if (typeof state !== 'string' || state.length < 8) throw new Error('deepseek-harness product: authorization state is required')
-      const result = await this.api.pollDingTalk<Record<string, unknown>>(state)
+      const result = await this.api.pollDingTalk<Record<string, unknown>>(state, signal)
       const session = result.session
-      if (typeof session !== 'object' || session === null || Array.isArray(session)) return result
+      if (typeof session !== 'object' || session === null || Array.isArray(session)) {
+        return { status: typeof result.status === 'string' ? result.status : undefined, session: null }
+      }
       const authenticated = session as Record<string, unknown>
       const token = authenticated.sessionToken
       if (typeof token === 'string' && token !== '') {
@@ -185,17 +228,24 @@ export class DeepSeekHarnessProductBridge {
             ? { expiresAt: String(authenticated.expiresAt) } : {}),
         }, token)
       }
-      return result
+      return { status: typeof result.status === 'string' ? result.status : undefined,
+        session: this.session.authenticated ? this.getSession() : null }
     }
     if (method === 'auth.refresh') {
       await this.refreshEmployeeSession()
       return this.session
     }
     if (method === 'catalog.refresh') {
-      await this.refreshCatalog()
+      await this.refreshCatalog(signal)
       return { refreshed: true }
     }
+    if (method === 'skills.install' || method === 'skills.uninstall' || method === 'skills.installed.read'
+      || method === 'expertKits.install' || method === 'expertKits.uninstall' || method === 'expertKits.installed.read'
+      || method === 'tasks.capabilities.read' || method === 'tasks.capabilities.prepare' || method.startsWith('knowledge.')) {
+      signal = AbortSignal.any([this.identityLifecycle.signal, ...signal ? [signal] : []])
+    }
     await this.ensureFreshSession()
+    signal?.throwIfAborted()
     try {
       return await this.invokeAuthenticated(method, input, signal)
     } catch (error) {
@@ -212,14 +262,29 @@ export class DeepSeekHarnessProductBridge {
    * @returns Host-safe product data.
    */
   async invokeRuntime(method: ProductRuntimeMethod, payload?: unknown, signal?: AbortSignal): Promise<unknown> {
-    const value = await this.invoke(method, payload, signal)
-    if (method !== 'connectors.list') return value
+    if (method.startsWith('runtime.knowledge.preview.')) {
+      if (this.closed) throw new Error('Product bridge has been disposed')
+      const lifetime = AbortSignal.any([this.identityLifecycle.signal, ...signal ? [signal] : []])
+      await this.ensureFreshSession()
+      lifetime.throwIfAborted()
+      if (this.api === undefined || this.knowledgeFiles === undefined) throw new ProductError('KNOWLEDGE_PREVIEW_UNAVAILABLE', 'File transport is unavailable', true)
+      try {
+        return await this.knowledgeFiles(method as KnowledgeFileMethod, assertProductPayload(payload), this.api, this.session, lifetime)
+      }
+      catch (cause) { this.handleAuthenticationFailure(cause); throw cause }
+    }
+    if (method === 'runtime.environment') return { desktopVersion: this.desktopVersion }
+    if (method !== 'connectors.list') return this.invoke(method, payload, signal)
+    await this.ensureFreshSession()
+    signal = AbortSignal.any([this.identityLifecycle.signal, ...signal ? [signal] : []])
+    const value = await this.catalog.read(method, signal)
     const api = this.api
     const sessionToken = this.sessionToken
     if (api === undefined || sessionToken === undefined || !Array.isArray(value)) {
       throw new Error('deepseek-harness product: connector runtime requires an employee session')
     }
-    return value.map(entry => runtimeConnector(entry, api, sessionToken))
+    const runtime = value.map(entry => runtimeConnector(entry, api, sessionToken))
+    return this.connectorRuntime ? this.connectorRuntime(runtime, signal) : runtime
   }
 
   private async invokeAuthenticated(
@@ -228,55 +293,98 @@ export class DeepSeekHarnessProductBridge {
     signal?: AbortSignal,
   ): Promise<unknown> {
     if (this.api === undefined) throw new Error('deepseek-harness product: server URL is not configured')
-    if (method === 'expertKits.preset.prepare') {
-      if (!this.session.authenticated) throw new Error('deepseek-harness product: authenticated employee is required')
-      const prepareExpertKit = this.prepareExpertKit
-      if (prepareExpertKit === undefined) throw new Error('deepseek-harness product: expert kit runtime is unavailable')
-      const id = requiredId(input)
-      return this.catalog.prepareExpertKit(id, content => prepareExpertKit(content))
+    if (method.startsWith('extensions.')) {
+      signal = AbortSignal.any([this.identityLifecycle.signal, ...signal ? [signal] : []])
+      if (!this.session.authenticated || !this.session.employeeId) throw new Error('Authenticated employee is required')
+      if (this.authoring === undefined) throw new Error('Personal extension editor is unavailable')
+      const result = await this.authoring(method, input, this.api, this.session, signal)
+      if (method === 'extensions.authoring.update' || method === 'extensions.authoring.save') this.emit({ type: 'authoring.changed', payload: { sessionId: input.sessionId } })
+      if (method === 'extensions.save' || method === 'extensions.authoring.save' || method === 'extensions.submit'
+        || method === 'extensions.delete' || method === 'extensions.connector.update' || method === 'extensions.connector.delete') {
+        this.catalog.reset()
+        // The write is committed; catalog refresh failures are reported by subsequent reads.
+        await this.catalog.refresh(signal).catch(() => undefined)
+      }
+      return result
     }
-    if (method === 'skills.prepare') {
-      if (!this.session.authenticated) throw new Error('deepseek-harness product: authenticated employee is required')
-      const prepareSkill = this.prepareSkill
-      if (prepareSkill === undefined) throw new Error('deepseek-harness product: skill runtime is unavailable')
-      const id = requiredId(input)
-      return this.catalog.prepareSkill(id, content => prepareSkill(content))
+    if (method === 'knowledge.references.resolve') {
+      return this.api.request('/api/v1/knowledge-references/resolve', { method: 'POST',
+        headers: { 'content-type': 'application/json' }, body: JSON.stringify(input), ...(signal ? { signal } : {}) })
+    }
+    if (method === 'skills.install' || method === 'skills.uninstall' || method === 'skills.installed.read') {
+      await this.ensureFreshSession()
+      signal?.throwIfAborted()
+      if (!this.session.authenticated) throw new Error('Authenticated employee is required')
+      if (this.installedSkills === undefined) throw new Error('Installed skill runtime is unavailable')
+      if (method !== 'skills.installed.read') requiredId(input)
+      if (method === 'skills.install') {
+        const id = requiredId(input)
+        const skills = await this.catalog.read('skills.list', signal)
+        const skill: unknown = Array.isArray(skills) ? skills.find((entry: unknown) =>
+          typeof entry === 'object' && entry !== null && 'id' in entry && entry.id === id) : undefined
+        if (typeof skill !== 'object' || skill === null || ('availabilityStatus' in skill && skill.availabilityStatus === 'INCOMPATIBLE')) {
+          throw new Error('Skill installation is unavailable')
+        }
+      }
+      signal?.throwIfAborted()
+      const operation = method === 'skills.install' ? 'install' : method === 'skills.uninstall' ? 'uninstall' : 'read'
+      const result = await this.installedSkills(operation, input, signal)
+      signal?.throwIfAborted()
+      if (operation !== 'read') this.emit({ type: 'catalog.changed' })
+      return result
+    }
+    if (method === 'expertKits.install' || method === 'expertKits.uninstall' || method === 'expertKits.installed.read') {
+      await this.ensureFreshSession()
+      signal?.throwIfAborted()
+      if (!this.session.authenticated) throw new Error('Authenticated employee is required')
+      if (this.installedExpertKits === undefined) throw new Error('Installed Expert Kit runtime is unavailable')
+      if (method !== 'expertKits.installed.read') requiredId(input)
+      const operation = method === 'expertKits.install' ? 'install' : method === 'expertKits.uninstall' ? 'uninstall' : 'read'
+      const result = await this.installedExpertKits(operation, input, signal)
+      if (operation !== 'read') this.emit({ type: 'catalog.changed' })
+      return result
+    }
+    if (method === 'tasks.capabilities.read' || method === 'tasks.capabilities.prepare') {
+      await this.ensureFreshSession()
+      signal?.throwIfAborted()
+      if (this.optionsTaskCapabilities === undefined) throw new Error('Product task runtime is unavailable')
+      return this.optionsTaskCapabilities(method.endsWith('.read') ? 'read' : 'prepare', input, signal)
     }
     if (method === 'expertKits.get') {
-      return this.api.request(`/api/v1/expert-kits/${encodeURIComponent(requiredId(input))}`)
+      return this.api.request(`/api/v1/expert-kits/${encodeURIComponent(requiredId(input))}`, { ...(signal === undefined ? {} : { signal }) })
     }
     if (method === 'expertKits.readme') {
-      return this.api.request(`/api/v1/expert-kits/${encodeURIComponent(requiredId(input))}/readme`)
+      return this.api.request(`/api/v1/expert-kits/${encodeURIComponent(requiredId(input))}/readme`, { ...(signal === undefined ? {} : { signal }) })
     }
     if (method === 'expertKits.artifact') {
-      return this.api.request(`/api/v1/expert-kits/${encodeURIComponent(requiredId(input))}/artifacts`)
+      return this.api.request(`/api/v1/expert-kits/${encodeURIComponent(requiredId(input))}/artifacts`, { ...(signal === undefined ? {} : { signal }) })
     }
     if (method === 'skills.get') {
-      return this.api.request(`/api/v1/skills/${encodeURIComponent(requiredId(input))}`)
+      return this.api.request(`/api/v1/skills/${encodeURIComponent(requiredId(input))}`, { ...(signal === undefined ? {} : { signal }) })
     }
     if (method === 'skills.readme') {
-      return this.api.request(`/api/v1/skills/${encodeURIComponent(requiredId(input))}/readme`)
+      return this.api.request(`/api/v1/skills/${encodeURIComponent(requiredId(input))}/readme`, { ...(signal === undefined ? {} : { signal }) })
     }
     if (method === 'skills.artifact') {
-      return this.api.request(`/api/v1/skills/${encodeURIComponent(requiredId(input))}/artifacts`)
+      return this.api.request(`/api/v1/skills/${encodeURIComponent(requiredId(input))}/artifacts`, { ...(signal === undefined ? {} : { signal }) })
     }
     if (method === 'connectors.authorization.status') {
       const result = await this.api.request(
-        `/api/v1/connectors/${encodeURIComponent(requiredId(input))}/authorization`,
+        `/api/v1/connectors/${encodeURIComponent(requiredId(input))}/authorization`, { ...(signal === undefined ? {} : { signal }) },
       )
-      if (authorizationStatus(result) === 'AUTHORIZED') await this.catalog.refresh()
+      if (authorizationStatus(result) === 'AUTHORIZED') await this.catalog.refresh(signal)
       return result
     }
     if (method === 'connectors.authorization.begin') {
       return this.api.request(`/api/v1/connectors/${encodeURIComponent(requiredId(input))}/authorization-requests`, {
-        method: 'POST',
+        method: 'POST', ...(signal === undefined ? {} : { signal }),
       })
     }
     if (method === 'connectors.authorization.revoke') {
       const result = await this.api.request(`/api/v1/connectors/${encodeURIComponent(requiredId(input))}/authorization`, {
-        method: 'DELETE',
+        method: 'DELETE', ...(signal === undefined ? {} : { signal }),
       })
-      await this.catalog.refresh()
+      await this.catalog.refresh(signal)
       return result
     }
     if (method === 'knowledge.search') {
@@ -289,17 +397,38 @@ export class DeepSeekHarnessProductBridge {
         || !Number.isSafeInteger(limit) || (limit as number) < 1 || (limit as number) > 12) {
         throw new Error('deepseek-harness product: invalid knowledge search request')
       }
+      if (input.restrictToKnowledgeBaseRefs === true && knowledgeBaseRefs.length === 0 && knowledgeBaseIds.length === 0) return []
       return this.api.request('/api/v1/knowledge-searches', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         ...(signal === undefined ? {} : { signal }),
         body: JSON.stringify({
           query: query.trim(), knowledgeBaseRefs, knowledgeBaseIds,
-          restrictToKnowledgeBaseRefs: knowledgeBaseRefs.length > 0, limit,
+          restrictToKnowledgeBaseRefs: input.restrictToKnowledgeBaseRefs === true || knowledgeBaseRefs.length > 0, limit,
         }),
       })
     }
-    return this.catalog.read(method)
+    if (method === 'knowledge.bases.list') return this.api.listAll('/api/v1/knowledge-bases', 100, signal)
+    if (method.startsWith('knowledge.documents.preview.') || method === 'knowledge.documents.download' || method === 'knowledge.documents.openExternal') {
+      if (!this.session.authenticated || !this.session.employeeId) throw new ProductError('KNOWLEDGE_ACCESS_DENIED', 'Authenticated employee is required', false)
+      if (this.knowledgeFiles === undefined) throw new ProductError('KNOWLEDGE_PREVIEW_UNAVAILABLE', 'File transport is unavailable', true)
+      return this.knowledgeFiles(method as KnowledgeFileMethod, input, this.api, this.session, signal)
+    }
+    if (method.startsWith('knowledge.documents.') || method.startsWith('knowledge.folders.') || method === 'knowledge.sources.read'
+      || method === 'knowledge.bases.create' || method === 'knowledge.files.limits') {
+      return invokeKnowledge(this.api, method, input, this.knowledgeUpload, signal)
+    }
+    if (method === 'knowledge.bases.delete') {
+      const result = await invokeKnowledge(this.api, method, input, this.knowledgeUpload, signal)
+      this.catalog.reset()
+      // Deletion is already committed on the server. A stale catalog should
+      // be refreshed opportunistically without turning success into failure.
+      await this.catalog.refresh(signal).catch(() => undefined)
+      return result
+    }
+    const value = method === 'connectors.list' && this.connectorRuntime
+      ? await this.invokeRuntime(method, input, signal) : await this.catalog.read(method, signal)
+    return method === 'connectors.list' && Array.isArray(value) ? value.map(rendererConnector) : value
   }
 
   private async ensureFreshSession(): Promise<void> {
@@ -352,7 +481,7 @@ export class DeepSeekHarnessProductBridge {
   private scheduleSessionRefresh(): void {
     if (this.sessionRefreshTimer !== undefined) clearTimeout(this.sessionRefreshTimer)
     this.sessionRefreshTimer = undefined
-    if (!this.session.authenticated || this.sessionToken === undefined) return
+    if (this.closed || !this.session.authenticated || this.sessionToken === undefined) return
     const expiresAt = Number(this.session.expiresAt)
     if (!Number.isFinite(expiresAt)) return
     const delay = Math.max(0, (expiresAt - Date.now() / 1_000 - SESSION_REFRESH_LEAD_SECONDS) * 1_000)
@@ -364,6 +493,7 @@ export class DeepSeekHarnessProductBridge {
   }
 
   private scheduleSessionRefreshRetry(): void {
+    if (this.closed) return
     if (this.sessionRefreshTimer !== undefined) clearTimeout(this.sessionRefreshTimer)
     const expiresAt = Number(this.session.expiresAt)
     const remainingSeconds = Number.isFinite(expiresAt) ? expiresAt - Date.now() / 1_000 : SESSION_REFRESH_RETRY_SECONDS
@@ -413,9 +543,25 @@ function runtimeConnector(value: unknown, api: DeepSeekHarnessApiClient, session
   if (typeof record.url !== 'string' || record.url === '') {
     throw new Error('deepseek-harness product: authenticated connector URL is missing')
   }
+  const endpoint = new URL(api.absoluteUrl(record.url))
+  const expected = new URL(api.absoluteUrl(`/api/v1/connectors/${encodeURIComponent(String(record.id))}/mcp`))
+  if (endpoint.href !== expected.href || endpoint.username || endpoint.password) {
+    throw new Error('deepseek-harness product: authenticated connector must use the product server proxy')
+  }
   const headers = typeof record.headers === 'object' && record.headers !== null && !Array.isArray(record.headers)
     ? record.headers as Record<string, string> : {}
-  return { ...record, url: api.absoluteUrl(record.url), headers: { ...headers, Authorization: `Bearer ${sessionToken}` } }
+  return { ...record, url: endpoint.href, headers: { ...headers, Authorization: `Bearer ${sessionToken}` } }
+}
+
+function rendererConnector(value: unknown): unknown {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error('Invalid connector catalog entry')
+  const record = value as Record<string, unknown>
+  const metadata = ['id', 'name', 'displayName', 'summary', 'description', 'category', 'icon', 'author', 'version',
+    'status', 'ready', 'authMode', 'authorizationStatus', 'availabilityStatus', 'transport', 'minimumDesktopVersion',
+    'visibility', 'ownerEmployeeId', 'canEdit', 'canSubmit', 'canDelete', 'reviewStatus', 'configurationStatus']
+  const tools = Array.isArray(record.tools) ? record.tools.map((tool: Record<string, unknown>) =>
+    Object.fromEntries(['name', 'displayName', 'description', 'access'].filter(key => key in tool).map(key => [key, tool[key]]))) : []
+  return { ...Object.fromEntries(metadata.filter(key => key in record).map(key => [key, record[key]])), tools }
 }
 
 function authorizationStatus(value: unknown): string | undefined {

@@ -27,6 +27,8 @@ export interface ExpertKitReadmeEntry {
 
 /** Expert Kit README provider configuration for one immutable Agent Preset. */
 export interface Config {
+  /** Live catalog resource identity; file contents remain pinned to the installed generation. */
+  readonly expertKitId?: string
   /** README entries belonging to the Preset's enabled Expert Kits. */
   readonly entries: readonly ExpertKitReadmeEntry[]
 }
@@ -49,12 +51,19 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   const entries = await resolveEntries(config.entries)
   const byName = new Map(entries.map(entry => [entry.name, entry]))
   const candidates = entries.map(candidate)
+  const authorize = async (signal?: AbortSignal) => {
+    if (config.expertKitId === undefined) return
+    const data = ctx.get('productData') as { invoke(method: string, payload: unknown, signal?: AbortSignal): Promise<unknown> } | undefined
+    if (data === undefined) throw new Error('Expert Kit authorization service is unavailable')
+    await data.invoke('expertKits.get', { id: config.expertKitId }, signal)
+  }
   ctx.skills.registerProvider((): SkillProvider => ({
     name: PROVIDER_NAME,
-    list: () => Promise.resolve(candidates),
+    async list(options) { await authorize(options.signal); return candidates },
     async get(selected, options): Promise<SkillDefinition | undefined> {
       const entry = byName.get(selected.name)
       if (entry === undefined || selected.provider !== PROVIDER_NAME) return undefined
+      await authorize(options.signal)
       const content = await readFile(entry.path, { encoding: 'utf8', signal: options.signal })
       if (Buffer.byteLength(content, 'utf8') > MAX_README_BYTES) {
         throw new Error(`Expert Kit README exceeds ${String(MAX_README_BYTES)} bytes: ${entry.path}`)

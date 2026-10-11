@@ -1,7 +1,13 @@
+import type { ProductApi } from '../src/client/product-api.ts'
+import { productFailure, ProductError } from '@deepseek-harness/product/errors'
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
+import type { CommandContribution } from '@deepseek-ai/dsh-client-ui-commands/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { ProductContentIdentity } from '@deepseek-harness/product/protocol'
+import type { DraftInitializationOptions } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import {
   ConnectorsPanel, ExpertKitsPanel, KnowledgePanel, SkillsPanel, DeepSeekHarnessCatalogSection,
 } from '../src/client/DeepSeekHarnessCatalogSection.tsx'
@@ -10,18 +16,40 @@ import {
 } from '../src/client/DeepSeekHarnessCapabilitiesNavigation.tsx'
 import { apply } from '../src/client/index.ts'
 import { DeepSeekHarnessSettingsMenu } from '../src/client/DeepSeekHarnessSettingsMenu.tsx'
-import { zh, type DeepSeekHarnessProductKey } from '../src/locales.ts'
+import { en, zh, type DeepSeekHarnessProductKey } from '../src/locales.ts'
+import { createPreviewFixture, originalFromFixture, originalMetadata, originalPreview, renderKnowledgePreview } from './knowledge-preview-fixture.client.tsx'
 
 afterEach(() => {
   cleanup()
   vi.useRealTimers()
-  Reflect.deleteProperty(globalThis, 'deepseekHarness')
+  Reflect.deleteProperty(globalThis, 'dshDesktop')
 })
+
+function installProductApi(api: Partial<ProductApi> & Pick<ProductApi, 'invoke'>): void {
+  const preview = createPreviewFixture()
+  Object.defineProperty(globalThis, 'dshDesktop', { configurable: true, value: { extensions: {
+    invoke: async (_namespace: string, method: string, payload?: unknown, requestId?: string) => {
+      try {
+        if (method === 'knowledge.documents.previewMetadata') return { ok: true, result: originalMetadata('orders', 'document-1', '订单政策.md') }
+        const result = await (method === 'auth.getSession' ? api.getSession?.() ?? Promise.resolve({ authenticated: true })
+          : preview(method, payload, (operation, input) => requestId === undefined
+            ? api.invoke(operation, input) : api.invoke(operation, input, requestId)))
+        return { ok: true, result: method === 'knowledge.documents.preview' ? originalFromFixture(result) : result }
+      } catch (error) { return { ok: false, failure: productFailure(error) } }
+    },
+    cancel: (_namespace: string, requestId: string) => api.cancel?.(requestId),
+    subscribe: (_namespace: string, listener: (event: { type: string }) => void) => api.subscribe?.(listener) ?? (() => {}),
+  } } })
+}
 
 const t = (key: DeepSeekHarnessProductKey): string => zh[key]
 const actions = () => ({
+  renderFactorySlot: renderKnowledgePreview,
   startExpertKit: vi.fn(async () => {}),
-  useSkill: vi.fn(async () => {}),
+  installSkill: vi.fn(async () => {}),
+  readInstalledSkills: vi.fn(async () => ({ installed: [], available: [], frozen: false })),
+  installExpertKit: vi.fn(async () => {}),
+  readInstalledExpertKits: vi.fn(async () => ({ installed: [] })),
 })
 
 function castClientContext(value: object): ClientContext {
@@ -29,6 +57,114 @@ function castClientContext(value: object): ClientContext {
 }
 
 describe('DeepSeekHarness capability navigation', () => {
+  it.each([
+    ['skills.list', SkillsPanel, 'skill', zh, '请修改技能「文档 $& 洞察」。'],
+    ['expertKits.list', ExpertKitsPanel, 'expert-kit', zh, '请修改专家套件「文档 $& 洞察」。'],
+    ['skills.list', SkillsPanel, 'skill', en, 'Please modify the skill "文档 $& 洞察".'],
+    ['expertKits.list', ExpertKitsPanel, 'expert-kit', en, 'Please modify the expert kit "文档 $& 洞察".'],
+  ] as const)('identifies the loaded modification target in the %s draft', async (method, Panel, kind, locale, prefix) => {
+    const stageId = '00000000-0000-4000-8000-000000000001'
+    const invoke = vi.fn(async (operation: string): Promise<unknown> => {
+      if (operation === method) return [{ id: 'my-resource', name: '目录名称', version: '1.0.0', canEdit: true }]
+      if (operation === 'extensions.import.inspect') return {
+        stageId, draft: { kind, id: 'my-resource', name: '文档 $& 洞察', version: '1.0.1' }, files: [], missingFields: [],
+      }
+      return undefined
+    })
+    const startExtensionAuthoring = vi.fn(async () => undefined)
+    installProductApi({ invoke })
+    render(<Panel t={(key: DeepSeekHarnessProductKey): string => locale[key]} {...actions()}
+      startExtensionAuthoring={startExtensionAuthoring} />)
+    fireEvent.click(await screen.findByRole('button', { name: locale.resourceActions }))
+    fireEvent.click(screen.getByRole('menuitem', { name: locale.modifyResource }))
+    await waitFor(() => { expect(startExtensionAuthoring).toHaveBeenCalledOnce() })
+    expect(startExtensionAuthoring).toHaveBeenCalledWith(kind, {
+      prompt: prefix + (locale === zh ? '先读取现有内容，和我确认要调整的地方，完成后直接保存新版本。'
+        : ' Read its existing content, confirm the requested changes with me, then save the new version directly.'),
+      stageId, edit: true,
+    })
+    expect(invoke).toHaveBeenCalledWith('extensions.import.inspect', { kind, source: 'catalog', id: 'my-resource' }, expect.any(String))
+  })
+
+  it.each([
+    ['skills.list', SkillsPanel, 'skill', 'extensions.delete'],
+    ['expertKits.list', ExpertKitsPanel, 'expert-kit', 'extensions.delete'],
+    ['connectors.list', ConnectorsPanel, 'connector', 'extensions.connector.delete'],
+  ] as const)('confirms owner deletion and retains the resource on failure in %s', async (method, Panel, kind, deletion) => {
+    let removed = false
+    let fail = true
+    const entry = { id: 'my-resource', name: '我的资源', version: '1.0.0', canEdit: true, canSubmit: true, canDelete: true, visibility: 'PERSONAL' }
+    const invoke = vi.fn(async (operation: string): Promise<unknown> => {
+      if (operation === method) return removed ? [] : [entry]
+      if (operation === deletion) {
+        if (fail) throw new Error('network')
+        removed = true
+        return { removed: true }
+      }
+      return undefined
+    })
+    installProductApi({ invoke })
+    render(<Panel t={t} {...actions()} />)
+    fireEvent.click(await screen.findByRole('button', { name: zh.resourceActions }))
+    expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual([zh.modifyResource, zh.submitShared, zh.deleteResource])
+    fireEvent.click(screen.getByRole('menuitem', { name: zh.deleteResource }))
+    const confirmation = screen.getByRole('dialog', { name: zh.resourceDeleteTitle.replace('{name}', entry.name) })
+    expect(within(confirmation).getByText(zh.resourceDeleteConfirmation)).not.toBeNull()
+    expect(invoke).not.toHaveBeenCalledWith(deletion, expect.anything(), expect.anything())
+    fireEvent.click(within(confirmation).getByRole('button', { name: zh.cancel }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: zh.resourceActions }))
+    fireEvent.click(screen.getByRole('menuitem', { name: zh.deleteResource }))
+    fireEvent.click(screen.getByRole('button', { name: zh.deleteResource, exact: true }))
+    await waitFor(() => { expect(screen.getByRole('alert').textContent).toBe(zh.deleteFailed) })
+    expect(screen.getByText(entry.name)).not.toBeNull()
+    fail = false
+    fireEvent.click(screen.getByRole('button', { name: zh.deleteResource, exact: true }))
+    await waitFor(() => { expect(screen.queryByRole('dialog')).toBeNull() })
+    expect(invoke).toHaveBeenCalledWith(deletion, { kind, id: entry.id, version: entry.version }, expect.any(String))
+    expect(screen.queryByText(entry.name)).toBeNull()
+  })
+
+  it('explains sharing, shows review status and blocks deletion of an already shared resource', async () => {
+    let submitted = false
+    const invoke = vi.fn(async (method: string): Promise<unknown> => {
+      if (method === 'skills.list') return [{ id: 'my-skill', name: '我的技能', version: '1.0.1', canEdit: true,
+        canSubmit: !submitted, canDelete: false, visibility: 'PERSONAL', reviewStatus: submitted ? 'SUBMITTED' : 'DRAFT' }]
+      if (method === 'extensions.submit') { submitted = true; return { submitted: true } }
+      return undefined
+    })
+    installProductApi({ invoke })
+    render(<SkillsPanel t={t} {...actions()} />)
+    fireEvent.click(await screen.findByRole('button', { name: zh.resourceActions }))
+    expect(screen.getByRole('menuitem', { name: zh.deleteResource }).hasAttribute('disabled')).toBe(true)
+    expect(screen.getByText(zh.resourceDeleteShared)).not.toBeNull()
+    fireEvent.click(screen.getByRole('menuitem', { name: zh.submitShared }))
+    const dialog = screen.getByRole('dialog', { name: zh.submitResourceTitle })
+    expect(within(dialog).getByText(zh.submitResourceConfirmation.replace('{name}', '我的技能'))).not.toBeNull()
+    fireEvent.click(within(dialog).getByRole('button', { name: zh.submitShared }))
+    await waitFor(() => { expect(screen.queryByRole('dialog')).toBeNull() })
+    await waitFor(() => { expect(screen.getByRole('button', { name: zh.resourceActions }).hasAttribute('disabled')).toBe(false) })
+    fireEvent.click(screen.getByRole('button', { name: zh.resourceActions }))
+    expect(screen.getByText(zh.reviewPending)).not.toBeNull()
+    expect(screen.queryByRole('menuitem', { name: zh.submitShared })).toBeNull()
+  })
+
+  it('keeps the owner menu in the skill footer and hides it for shared resources', async () => {
+    const invoke = vi.fn(async (method: string): Promise<unknown> => method === 'skills.list'
+      ? [{ id: 'mine', name: '我的技能', version: '1.0.0', canEdit: true, canSubmit: true, canDelete: true },
+        { id: 'shared', name: '共享技能', version: '1.0.0', canEdit: false }]
+      : method === 'skills.readme.read' ? { readme: '# Skill\n\nInstructions' }
+        : { id: 'mine', name: '我的技能', version: '1.0.0', canEdit: true, canSubmit: true, canDelete: true })
+    installProductApi({ invoke })
+    render(<SkillsPanel t={t} {...actions()} />)
+    await screen.findByText('我的技能')
+    expect(screen.getAllByRole('button', { name: zh.resourceActions })).toHaveLength(1)
+    fireEvent.click(screen.getByRole('button', { name: '我的技能', exact: true }))
+    const dialog = screen.getByRole('dialog', { name: zh.skillDetails })
+    const more = await within(dialog).findByRole('button', { name: zh.resourceActions })
+    expect(more.closest('[data-skill-detail-body]')).toBeNull()
+  })
+
   it('keeps only the official settings action in the more menu', () => {
     const openSettings = vi.fn()
     render(<DeepSeekHarnessSettingsMenu t={t} wide settingsOpen={false} openSettings={openSettings}
@@ -43,8 +179,11 @@ describe('DeepSeekHarness capability navigation', () => {
   it('registers capability panels in the sidebar and none in Settings', () => {
     const registrations: Array<{ options: Record<string, unknown>; component: unknown }> = []
     const selectPanel = vi.fn()
+    const registerCommand = vi.fn((_command: CommandContribution) => () => {})
     const ctx = {
       effect: (effect: () => unknown) => effect(),
+      commandUi: { register: registerCommand },
+      sessions: { subagentAddress: vi.fn(() => undefined) },
       locale: { register: vi.fn(() => () => {}), bind: vi.fn(() => t) },
       slots: {
         inject: (_name: string, register: () => unknown) => register(),
@@ -53,7 +192,6 @@ describe('DeepSeekHarness capability navigation', () => {
           return () => {}
         },
       },
-      inputTriggers: { registerSource: vi.fn(() => () => {}) },
     }
 
     apply(castClientContext(ctx))
@@ -65,25 +203,40 @@ describe('DeepSeekHarness capability navigation', () => {
       .map(entry => entry.options.id)).toEqual(CAPABILITY_PANELS.map(panel => panel.id))
     expect(registrations.filter(entry => entry.options.name === 'main')
       .map(entry => entry.options.key)).toEqual(CAPABILITY_PANELS.map(panel => panel.id))
-    expect(registrations.filter(entry => entry.options.name === 'settings.launcher')).toHaveLength(1)
+    const settingsLaunchers = registrations.filter(entry => entry.options.name === 'settings.launcher')
+    expect(settingsLaunchers).toHaveLength(1)
+    // Let the browser slot facade allocate the shadowing rank so this product
+    // launcher replaces the official account launcher after a reload.
+    expect(settingsLaunchers[0]?.options.priority).toBeUndefined()
+    expect(registrations.filter(entry => entry.options.name === 'conversation.input.left')
+      .map(entry => entry.options.id)).toEqual(['product-knowledge'])
+    expect(registrations.filter(entry => entry.options.name === 'conversation.hero.agentPreset')).toEqual([])
+    expect(registrations.filter(entry => entry.options.name === 'conversation.hero.actions')
+      .map(entry => entry.options.id)).toEqual(['product-expert-kit'])
+    expect(registrations.filter(entry => entry.options.name === 'conversation.session.header.actions')
+      .map(entry => entry.options.id)).toEqual(['product-expert-kit'])
+    expect(registerCommand).toHaveBeenCalledOnce()
+    expect(registerCommand.mock.calls[0]?.[0].name).toBe('knowledge')
+    expect(registerCommand.mock.calls[0]?.[0].label?.()).toBe(zh.referenceKnowledge)
     expect(selectPanel).not.toHaveBeenCalled()
   })
 
-  it('uses official Sessions and composer state for expert kits and skills', async () => {
+  it('opens knowledge selection only in its mounted Session and releases the command with the plugin', () => {
     const registrations: Array<{ options: Record<string, unknown>; component: unknown }> = []
-    const setDraft = vi.fn()
-    const insertReference = vi.fn(() => true)
-    const focus = vi.fn()
-    const openSession = vi.fn()
-    const create = vi.fn()
-      .mockResolvedValueOnce('expert-session')
-      .mockResolvedValueOnce('skill-session')
-    const select = vi.fn(async () => ({ ok: true as const }))
-    const invoke = vi.fn(async (method: string) => ({ presetId: method === 'skills.prepare'
-      ? 'deepseek-harness-skill-writing' : 'deepseek-harness-expert-kit-orders' }))
-    Object.defineProperty(globalThis, 'deepseekHarness', { configurable: true, value: { product: { invoke } } })
+    const disposers: Array<() => void> = []
+    const unregisterCommand = vi.fn()
+    const registerCommand = vi.fn((_command: CommandContribution) => unregisterCommand)
+    const sessionA = 'session-a' as SessionId
+    const sessionB = 'session-b' as SessionId
+    const subagent = 'subagent' as SessionId
     const ctx = {
-      effect: (effect: () => unknown) => effect(),
+      effect: (effect: () => unknown) => {
+        const dispose = effect()
+        if (typeof dispose === 'function') disposers.push(dispose as () => void)
+        return dispose
+      },
+      commandUi: { register: registerCommand },
+      sessions: { subagentAddress: vi.fn((id: SessionId) => id === subagent ? {} : undefined) },
       locale: { register: vi.fn(() => () => {}), bind: vi.fn(() => t) },
       slots: {
         inject: (_name: string, register: () => unknown) => register(),
@@ -92,21 +245,85 @@ describe('DeepSeekHarness capability navigation', () => {
           return () => {}
         },
       },
-      inputTriggers: { registerSource: vi.fn(() => () => {}) },
+    }
+    apply(castClientContext(ctx))
+    const command = registerCommand.mock.calls[0][0]
+    const knowledge = registrations.find(entry => entry.options.id === 'product-knowledge')!
+    const injectKnowledge = knowledge.options.inject as (sessionId: SessionId) => {
+      subscribeOpen(listener: () => void): () => void
+    }
+    const openA = vi.fn()
+    const openB = vi.fn()
+    expect(command.available({ sessionId: sessionA })).toBe(false)
+    const releaseA = injectKnowledge(sessionA).subscribeOpen(openA)
+    const releaseB = injectKnowledge(sessionB).subscribeOpen(openB)
+    const releaseSubagent = injectKnowledge(subagent).subscribeOpen(vi.fn())
+    expect(command.available({ sessionId: sessionA })).toBe(true)
+    expect(command.available({ sessionId: subagent })).toBe(false)
+    if (command.ui.kind !== 'action') throw new Error('Knowledge selection must be an action')
+    command.ui.run({ sessionId: sessionA })
+    expect(openA).toHaveBeenCalledOnce()
+    expect(openB).not.toHaveBeenCalled()
+    command.ui.run({ sessionId: sessionB })
+    expect(openB).toHaveBeenCalledOnce()
+    releaseA()
+    expect(command.available({ sessionId: sessionA })).toBe(false)
+    command.ui.run({ sessionId: sessionA })
+    expect(openA).toHaveBeenCalledOnce()
+    releaseSubagent()
+    for (const dispose of disposers.reverse()) dispose()
+    expect(unregisterCommand).toHaveBeenCalledOnce()
+    expect(command.available({ sessionId: sessionB })).toBe(false)
+    command.ui.run({ sessionId: sessionB })
+    expect(openB).toHaveBeenCalledOnce()
+    releaseB()
+  })
+
+  it('uses official Sessions and composer state for expert kits and skills', async () => {
+    const registrations: Array<{ options: Record<string, unknown>; component: unknown }> = []
+    const initializeDraft = vi.fn((_binding: object, _options: DraftInitializationOptions) => 'applied' as const)
+    const focus = vi.fn()
+    const openSession = vi.fn()
+    const create = vi.fn().mockResolvedValueOnce('expert-session').mockResolvedValueOnce('derived-skill-session')
+    const select = vi.fn(async () => ({ ok: true as const }))
+    const skillExecution: Record<string, unknown> = { kind: 'NEW_SESSION', skillName: 'writing' }
+    const invoke = vi.fn(async (method: string) => method === 'tasks.capabilities.prepare'
+      ? { ...skillExecution, invocation: skillExecution.skillName, presetId: skillExecution.presetId ?? 'deepseek-harness-expert-kit-orders' }
+      : { connectorIds: [], requiredConnectorIds: [], knowledgeBaseIds: [], requiredKnowledgeBaseIds: [] })
+    installProductApi({ invoke })
+    const ctx = {
+      effect: (effect: () => unknown) => effect(),
+      commandUi: { register: vi.fn((_command: CommandContribution) => () => {}) },
+      locale: { register: vi.fn(() => () => {}), bind: vi.fn(() => t) },
+      slots: {
+        inject: (_name: string, register: () => unknown) => register(),
+        register: (options: Record<string, unknown>, component: unknown) => {
+          registrations.push({ options, component })
+          return () => {}
+        },
+      },
       sessions: {
+        subagentAddress: vi.fn(() => undefined),
         list: { getSnapshot: () => ({ byId: {
           current: { id: 'current-session', retainedBy: { mainView: 1 } },
         } }) }, create,
-        binding: (sessionId: string) => ({ sessionId, ctx: {} }),
+        retain: (sessionId: string) => ({ ready: Promise.resolve(), release: vi.fn(), binding: { ctx: { sessionId } } }),
+        using: async (sessionId: string, _options: unknown, action: (reference: object) => Promise<void>) =>
+          action({ binding: { ctx: { sessionId } } }),
+        binding: (sessionId: string) => ({ sessionId, ctx: { sessionId } }),
       },
       workspaces: {
         list: { getSnapshot: () => ({ items: [{ workspaceId: 'workspace-1', sessionIds: ['current-session'] }] }) },
         initializeDefault: vi.fn(),
       },
+      layout: { beginNavigation: () => new AbortController().signal },
       uiWorkspace: { openSession },
+      uiSkills: { refresh: vi.fn() },
       remote: { agentPresets: { select } },
-      conversation: { input: { for: () => ({ setDraft, focus, insertReference,
-        state: { getSnapshot: () => ({ draftRev: 7 }) } }) } },
+      conversation: { input: { requestDraftInitialization: initializeDraft, for: (bindingContext: { sessionId: string }) => ({ focus,
+        state: { getSnapshot: () => ({ draft: bindingContext.sessionId === 'current-session'
+          ? '继续优化这份内容'
+          : '', occurrences: [] }) } }) } },
     }
 
     apply(castClientContext(ctx))
@@ -116,22 +333,21 @@ describe('DeepSeekHarness capability navigation', () => {
     const skillActions = (skillRegistration?.options.inject as (() => ReturnType<typeof actions>))()
 
     await expertKitActions.startExpertKit('orders', '检查订单信息')
-    await skillActions.useSkill('writing', 'AI 文本优化')
+    await skillActions.installSkill('writing')
+    await skillActions.installSkill('order-query')
 
-    expect(invoke).toHaveBeenNthCalledWith(1, 'expertKits.preset.prepare', { id: 'orders' })
-    expect(invoke).toHaveBeenNthCalledWith(2, 'skills.prepare', { id: 'writing' })
+    expect(invoke).toHaveBeenNthCalledWith(1, 'tasks.capabilities.prepare', { expertKitId: 'orders', sessionId: 'current-session' }, expect.any(String))
+    expect(invoke).toHaveBeenNthCalledWith(2, 'skills.install', { id: 'writing' }, expect.any(String))
+    expect(invoke).toHaveBeenNthCalledWith(3, 'skills.install', { id: 'order-query' }, expect.any(String))
     expect(create).toHaveBeenNthCalledWith(1, { workspaceId: 'workspace-1' })
-    expect(create).toHaveBeenNthCalledWith(2, { workspaceId: 'workspace-1' })
+    expect(create).toHaveBeenCalledOnce()
     expect(select).toHaveBeenNthCalledWith(1, 'expert-session', 'deepseek-harness-expert-kit-orders')
-    expect(select).toHaveBeenNthCalledWith(2, 'skill-session', 'deepseek-harness-skill-writing')
+    expect(select).toHaveBeenCalledOnce()
     expect(openSession).toHaveBeenNthCalledWith(1, 'expert-session')
-    expect(openSession).toHaveBeenNthCalledWith(2, 'skill-session')
-    expect(setDraft).toHaveBeenNthCalledWith(1, '检查订单信息')
-    expect(setDraft).toHaveBeenNthCalledWith(2, '')
-    expect(insertReference).toHaveBeenCalledExactlyOnceWith({
-      source: 'deepseek-harness-product-skill', ref: 'writing', label: 'AI 文本优化', clipboardText: '/writing',
-    }, { start: 0, end: 0, draftRev: 7 })
-    expect(focus).toHaveBeenCalledTimes(2)
+    expect(openSession).toHaveBeenCalledOnce()
+    expect(initializeDraft).toHaveBeenCalledExactlyOnceWith({ ctx: { sessionId: 'expert-session' } },
+      { prompt: '检查订单信息', clearPreviousDraft: true })
+    expect(focus).toHaveBeenCalledOnce()
   })
 
   it('renders Capability as a non-interactive group heading', () => {
@@ -154,41 +370,60 @@ describe('DeepSeekHarness capability navigation', () => {
     ['connectors.list', ConnectorsPanel],
     ['knowledge.bases.list', KnowledgePanel],
   ] as const)('loads the protected %s catalog from its main panel', async (method, Panel) => {
-    const invoke = vi.fn(async (): Promise<unknown> => [
-      { id: 'kit-1', name: '全栈开发专家', summary: '默认套件' },
-    ])
+    const invoke = vi.fn(async (operation: string): Promise<unknown> => operation === method
+      ? [{ id: 'kit-1', name: '全栈开发专家', summary: '默认套件' }]
+      : { items: [], page: 1, size: 20, total: 0 })
     const cancel = vi.fn()
-    Object.defineProperty(globalThis, 'deepseekHarness', { configurable: true, value: { product: {
+    installProductApi({
       getSession: vi.fn(async () => ({ authenticated: true })), invoke, cancel,
-    } } })
+    })
 
     render(<Panel t={t} {...actions()} />)
-    expect(await screen.findByText('全栈开发专家')).not.toBeNull()
-    expect(screen.getByText('默认套件')).not.toBeNull()
+    if (method === 'knowledge.bases.list') {
+      await waitFor(() => { expect(within(screen.getByRole('navigation', { name: zh.knowledge }))
+        .getByRole('button', { name: '全栈开发专家', exact: true })).not.toBeNull() })
+      expect(screen.queryByRole('dialog')).toBeNull()
+    } else {
+      expect(await screen.findByText('全栈开发专家')).not.toBeNull()
+      expect(screen.getByText('默认套件')).not.toBeNull()
+    }
     expect(invoke).toHaveBeenCalledWith(method, undefined, expect.any(String))
   })
 
   it('shows a safe failure without exposing server details', async () => {
-    Object.defineProperty(globalThis, 'deepseekHarness', { configurable: true, value: { product: {
+    installProductApi({
       getSession: vi.fn(async () => ({ authenticated: true })),
       invoke: vi.fn(async () => { throw new Error('internal detail') }),
       cancel: vi.fn(),
-    } } })
+    })
 
     render(<ExpertKitsPanel t={t} {...actions()} />)
     await waitFor(() => { expect(screen.getByRole('alert').textContent).toBe(zh.loadFailed) })
     expect(screen.queryByText(/internal detail/)).toBeNull()
   })
 
+  it('explains a missing employee mapping in the knowledge directory', async () => {
+    installProductApi({
+      getSession: vi.fn(async () => ({ authenticated: true })),
+      invoke: vi.fn(async () => { throw new ProductError('ORGANIZATION_EMPLOYEE_UNMAPPED', 'private upstream diagnostic') }),
+      cancel: vi.fn(),
+    })
+    render(<KnowledgePanel t={t} {...actions()} />)
+    expect((await screen.findByRole('alert')).textContent)
+      .toBe(`${zh.organizationEmployeeUnmapped} (ORGANIZATION_EMPLOYEE_UNMAPPED)`)
+    expect(screen.queryByText('private upstream diagnostic')).toBeNull()
+    expect(screen.queryByText(zh.authRequired)).toBeNull()
+  })
+
   it('shows an expired-login action instead of reporting a catalog outage', async () => {
     const getSession = vi.fn()
       .mockResolvedValueOnce({ authenticated: true })
       .mockResolvedValue({ authenticated: false })
-    Object.defineProperty(globalThis, 'deepseekHarness', { configurable: true, value: { product: {
+    installProductApi({
       getSession,
       invoke: vi.fn(async () => { throw new Error('Error invoking remote method') }),
       cancel: vi.fn(),
-    } } })
+    })
 
     render(<SkillsPanel t={t} {...actions()} />)
     expect(await screen.findByText(zh.authRequired)).not.toBeNull()
@@ -204,9 +439,9 @@ describe('DeepSeekHarness capability navigation', () => {
       if (method === 'skills.list') return [{ id: 'writing', name: 'AI文本优化' }]
       throw new Error(`unexpected method: ${method}`)
     })
-    Object.defineProperty(globalThis, 'deepseekHarness', { configurable: true, value: { product: {
+    installProductApi({
       getSession: vi.fn(async () => ({ authenticated })), invoke, cancel: vi.fn(),
-    } } })
+    })
 
     render(<SkillsPanel t={t} {...actions()} />)
     fireEvent.click(await screen.findByRole('button', { name: zh.signIn }))
@@ -215,34 +450,49 @@ describe('DeepSeekHarness capability navigation', () => {
     expect(invoke).toHaveBeenCalledWith('skills.list', undefined, expect.any(String))
   })
 
-  it('opens a standalone skill and shows its original SKILL.md', async () => {
-    const source = '---\nname: writing\n---\n# 文本优化'
+  it('renders only the SKILL.md body, retaining its title and formatting', async () => {
+    const source = '---\nname: writing\n---\n# AI文本优化\n\n## 文档中的适用场景\n\n- 校对文字\n\n**保留格式**'
     const invoke = vi.fn(async (method: string): Promise<unknown> => {
       if (method === 'skills.list') return [{ id: 'writing', name: 'AI文本优化', summary: '让文本更自然' }]
       if (method === 'skills.get') return { id: 'writing', name: 'AI文本优化', author: 'DeepSeekHarness',
-        version: '1.0.0', summary: '让文本更自然', sha256: 'a'.repeat(64), commonTasks: [] }
+        version: '1.0.0', summary: '让文本更自然', triggers: ['元数据中的触发场景'], sha256: 'a'.repeat(64), commonTasks: [] }
       if (method === 'skills.readme') return { id: 'writing', version: '1.0.0', readme: source }
       throw new Error(`unexpected method: ${method}`)
     })
     const cancel = vi.fn()
-    Object.defineProperty(globalThis, 'deepseekHarness', { configurable: true, value: { product: {
+    installProductApi({
       getSession: vi.fn(async () => ({ authenticated: true })), invoke, cancel,
-    } } })
+    })
 
     const productActions = actions()
     render(<SkillsPanel t={t} {...productActions} />)
-    fireEvent.click(await screen.findByRole('button', { name: /AI文本优化/ }))
-    expect(await screen.findByRole('heading', { name: 'AI文本优化' })).not.toBeNull()
-    expect(screen.getByText((_, element) => element?.tagName === 'PRE' && element.textContent === source)).not.toBeNull()
+    const opener = await screen.findByRole('button', { name: /AI文本优化/ })
+    opener.focus()
+    fireEvent.click(opener)
+    expect(await screen.findByRole('dialog', { name: zh.skillDetails })).not.toBeNull()
+    const dialog = screen.getByRole('dialog', { name: zh.skillDetails })
+    expect(await within(dialog).findByRole('heading', { name: 'AI文本优化', level: 1 })).not.toBeNull()
+    expect(within(dialog).getByRole('heading', { name: '文档中的适用场景' })).not.toBeNull()
+    expect(within(dialog).getByRole('listitem').textContent).toBe('校对文字')
+    expect(within(dialog).getByText('保留格式').tagName).toBe('STRONG')
+    expect(within(dialog).queryByText('让文本更自然')).toBeNull()
+    expect(within(dialog).queryByText('DeepSeekHarness')).toBeNull()
+    expect(within(dialog).queryByText('元数据中的触发场景')).toBeNull()
+    expect(within(dialog).queryByText(zh.applicableScenarios)).toBeNull()
+    expect(within(dialog).queryByText(zh.usageGuide)).toBeNull()
+    expect(within(dialog).queryByText(zh.skillSource)).toBeNull()
+    expect(document.body.textContent).not.toContain('name: writing')
+    expect(within(dialog).getAllByText('AI文本优化')).toHaveLength(1)
     expect(invoke).toHaveBeenCalledWith('skills.get', { id: 'writing' }, expect.any(String))
     expect(invoke).toHaveBeenCalledWith('skills.readme', { id: 'writing' }, expect.any(String))
-    fireEvent.click(screen.getByRole('button', { name: zh.useSkill }))
-    await waitFor(() => { expect(productActions.useSkill).toHaveBeenCalledExactlyOnceWith('writing', 'AI文本优化') })
-    fireEvent.keyDown(globalThis, { key: 'Escape' })
+    fireEvent.click(screen.getAllByRole('button', { name: zh.installSkill }).at(-1)!)
+    await waitFor(() => { expect(productActions.installSkill).toHaveBeenCalledExactlyOnceWith('writing') })
+    fireEvent.keyDown(document, { key: 'Escape' })
     expect(screen.queryByRole('dialog')).toBeNull()
+    expect(document.activeElement).toBe(opener)
   })
 
-  it('keeps skill metadata usable when only its SKILL.md resource is unavailable', async () => {
+  it('shows an unavailable document while retaining the skill install action', async () => {
     const invoke = vi.fn(async (method: string): Promise<unknown> => {
       if (method === 'skills.list') return [{ id: 'writing', name: 'AI文本优化', summary: '让文本更自然' }]
       if (method === 'skills.get') return { id: 'writing', name: 'AI文本优化', author: 'DeepSeekHarness',
@@ -250,18 +500,17 @@ describe('DeepSeekHarness capability navigation', () => {
       if (method === 'skills.readme') throw new Error('resource not found')
       throw new Error(`unexpected method: ${method}`)
     })
-    Object.defineProperty(globalThis, 'deepseekHarness', { configurable: true, value: { product: {
+    installProductApi({
       getSession: vi.fn(async () => ({ authenticated: true })), invoke, cancel: vi.fn(),
-    } } })
+    })
 
     const productActions = actions()
     render(<SkillsPanel t={t} {...productActions} />)
     fireEvent.click(await screen.findByRole('button', { name: /AI文本优化/ }))
-    expect(await screen.findByRole('heading', { name: 'AI文本优化' })).not.toBeNull()
-    expect(screen.getByText(zh.sourceUnavailable)).not.toBeNull()
+    expect(await screen.findByText(zh.sourceUnavailable)).not.toBeNull()
     expect(screen.queryByText(/resource not found/)).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: zh.useSkill }))
-    await waitFor(() => { expect(productActions.useSkill).toHaveBeenCalledExactlyOnceWith('writing', 'AI文本优化') })
+    fireEvent.click(screen.getAllByRole('button', { name: zh.installSkill }).at(-1)!)
+    await waitFor(() => { expect(productActions.installSkill).toHaveBeenCalledExactlyOnceWith('writing') })
   })
 
   it('starts an expert kit or a common task without exposing slash commands or Skill IDs', async () => {
@@ -270,31 +519,65 @@ describe('DeepSeekHarness capability navigation', () => {
       if (method === 'expertKits.get') return {
         id: 'product-design', name: '产品设计', author: 'DeepSeekHarness', version: '1.0.0',
         summary: '设计师全流程工具箱', sha256: 'b'.repeat(64),
+        minimumDesktopVersion: '0.2.0', requiredTools: ['browser_navigate'],
+        skillDetails: [{ id: 'accessibility', name: '无障碍审查', summary: '检查界面可访问性' }],
+        connectorRefs: ['erp', 'missing-connector'], knowledgeBaseRefs: ['design-guide', 'missing-knowledge'],
         commonTasks: [{ id: 'access', name: '无障碍检查', description: '检查页面的无障碍问题', prompt: '请检查以下页面：' }],
       }
-      if (method === 'expertKits.readme') return { id: 'product-design', version: '1.0.0', readme: '# 套件说明' }
+      if (method === 'expertKits.readme') return { id: 'product-design', version: '1.0.0', readme: '# 套件说明\n\n使用设计流程。' }
+      if (method === 'connectors.list') return [{ id: 'erp', displayName: 'ERP 连接器', summary: '订单数据' }]
+      if (method === 'knowledge.bases.list') return [{ id: 'design-guide', name: '设计规范', summary: '企业设计规则' }]
+      if (method === 'knowledge.references.resolve') return [
+        { reference: 'design-guide', status: 'RESOLVED', base: { id: 'design-guide', name: '设计规范', scope: 'COMPANY' } },
+        { reference: 'missing-knowledge', status: 'NOT_FOUND' },
+      ]
       throw new Error(`unexpected method: ${method}`)
     })
     const cancel = vi.fn()
-    Object.defineProperty(globalThis, 'deepseekHarness', { configurable: true, value: { product: {
+    installProductApi({
       getSession: vi.fn(async () => ({ authenticated: true })), invoke, cancel,
-    } } })
+    })
 
-    const productActions = actions()
+    const productActions = { ...actions(), readInstalledExpertKits: vi.fn(async () => ({ installed: [
+      { id: 'product-design', version: '1.0.0', sha256: 'b'.repeat(64) },
+    ] })) }
     render(<ExpertKitsPanel t={t} {...productActions} />)
     fireEvent.click(await screen.findByRole('button', { name: /产品设计/ }))
+    expect(screen.queryByRole('dialog')).toBeNull()
     expect(await screen.findByText('无障碍检查')).not.toBeNull()
     expect(screen.getByText('检查页面的无障碍问题')).not.toBeNull()
     expect(screen.queryByText(/accessibility/)).toBeNull()
     expect(screen.queryByText('/ 无障碍检查')).toBeNull()
-    expect(screen.getByRole('button', { name: zh.close })).not.toBeNull()
+    expect(screen.getAllByText('ERP 连接器')).toHaveLength(1)
+    expect(screen.getAllByText('设计规范')).toHaveLength(1)
+    expect(screen.getAllByText('missing-connector')).toHaveLength(1)
+    expect(screen.getAllByText('missing-knowledge')).toHaveLength(1)
+    expect(screen.getAllByText(zh.referenceNotFound)).toHaveLength(2)
+    expect(screen.queryByText(zh.toolPermissionCount.replace('{count}', '1'))).toBeNull()
+    const guideHeading = screen.getByRole('heading', { level: 2, name: zh.kitGuide })
+    expect(screen.getAllByText(zh.kitGuide)).toHaveLength(1)
+    expect(screen.getByText('使用设计流程。')).not.toBeNull()
+    expect(screen.queryByText('product-design')).toBeNull()
+    expect(screen.queryByText('b'.repeat(64))).toBeNull()
+    const knowledgeHeading = screen.getByRole('heading', { level: 2, name: new RegExp(zh.knowledgeScope, 'u') })
+    expect(knowledgeHeading.compareDocumentPosition(guideHeading) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
+    expect(screen.getByRole('button', { name: zh.backToCatalog })).not.toBeNull()
+    const reader = screen.getByRole('button', { name: zh.viewFullGuide })
+    reader.focus()
+    fireEvent.click(reader)
+    const dialog = screen.getByRole('dialog', { name: zh.kitGuide })
+    expect(within(dialog).getByRole('heading', { name: '产品设计' })).not.toBeNull()
+    expect(within(dialog).getByRole('heading', { name: zh.kitGuide, level: 1 })).not.toBeNull()
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(document.activeElement).toBe(reader)
     fireEvent.click(screen.getByRole('button', { name: zh.startUsing }))
     await waitFor(() => { expect(productActions.startExpertKit)
       .toHaveBeenNthCalledWith(1, 'product-design', undefined) })
     fireEvent.click(screen.getByRole('button', { name: /无障碍检查/ }))
     await waitFor(() => { expect(productActions.startExpertKit)
       .toHaveBeenNthCalledWith(2, 'product-design', '请检查以下页面：') })
-    fireEvent.click(screen.getByRole('button', { name: zh.close }))
+    fireEvent.click(screen.getByRole('button', { name: zh.backToCatalog }))
     expect(screen.queryByRole('heading', { name: '产品设计' })).toBeNull()
   })
 
@@ -303,9 +586,9 @@ describe('DeepSeekHarness capability navigation', () => {
       { id: 'writing', name: 'AI文本优化', summary: '让文本更自然', category: '内容' },
       { id: 'analysis', name: '数据分析', summary: '分析业务数据', category: '数据' },
     ])
-    Object.defineProperty(globalThis, 'deepseekHarness', { configurable: true, value: { product: {
+    installProductApi({
       getSession: vi.fn(async () => ({ authenticated: true })), invoke, cancel: vi.fn(),
-    } } })
+    })
 
     render(<SkillsPanel t={t} {...actions()} />)
     expect(await screen.findByText('AI文本优化')).not.toBeNull()
@@ -316,14 +599,266 @@ describe('DeepSeekHarness capability navigation', () => {
     expect(invoke).toHaveBeenCalledOnce()
   })
 
+  it('installs a skill from its card and reports an installation failure', async () => {
+    const invoke = vi.fn(async (): Promise<unknown> => [
+      { id: 'writing', name: 'AI文本优化', summary: '让文本更自然', availabilityStatus: 'AVAILABLE' },
+    ])
+    const installSkill = vi.fn(async () => { throw new Error('prepare failed') })
+    installProductApi({
+      getSession: vi.fn(async () => ({ authenticated: true })), invoke, cancel: vi.fn(),
+    })
+
+    render(<SkillsPanel t={t} startExpertKit={vi.fn(async () => {})} installSkill={installSkill} />)
+    fireEvent.click(await screen.findByRole('button', { name: zh.installSkill }))
+    expect(screen.queryByText(zh.availabilityAvailable)).toBeNull()
+
+    await waitFor(() => { expect(installSkill).toHaveBeenCalledExactlyOnceWith('writing') })
+    expect((await screen.findByRole('alert')).textContent).toBe(zh.installFailed)
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it.each(['card', 'detail'] as const)('uninstalls and reinstalls a shared skill from its %s with confirmation and retry', async (surface) => {
+    const identity = { id: 'writing', name: 'AI文本优化', version: '1.0.0', sha256: 'a'.repeat(64) }
+    const installed: ProductContentIdentity[] = [identity]
+    const entry = { ...identity, visibility: 'SHARED', canEdit: false, canSubmit: false, canDelete: false }
+    let failUninstall = true
+    const invoke = vi.fn(async (method: string): Promise<unknown> => {
+      if (method === 'skills.list') return [entry]
+      if (method === 'skills.get') return entry
+      if (method === 'skills.readme') return { readme: '# AI文本优化\n\n让文本更自然。' }
+      if (method === 'skills.uninstall') {
+        if (failUninstall) { failUninstall = false; throw new Error('network') }
+        installed.splice(0, installed.length)
+        return { id: identity.id }
+      }
+      return []
+    })
+    const productActions = {
+      ...actions(),
+      installSkill: vi.fn(async () => { installed.push(identity) }),
+      readInstalledSkills: vi.fn(async () => ({ installed: [...installed], available: [...installed], frozen: false })),
+    }
+    installProductApi({ invoke })
+    render(<SkillsPanel t={t} {...productActions} />)
+    await screen.findByText(zh.skillInstalled)
+    if (surface === 'detail') fireEvent.click(screen.getByRole('button', { name: identity.name, exact: true }))
+    const scope = surface === 'detail' ? within(await screen.findByRole('dialog', { name: zh.skillDetails })) : screen
+    const more = await scope.findByRole('button', { name: zh.resourceActions })
+    fireEvent.click(more)
+    expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual([zh.uninstallResource])
+    fireEvent.click(screen.getByRole('menuitem', { name: zh.uninstallResource }))
+    const title = zh.resourceUninstallTitle.replace('{name}', identity.name)
+    const confirmation = screen.getByRole('dialog', { name: title })
+    expect(within(confirmation).getByText(zh.skillUninstallConfirmation)).not.toBeNull()
+    expect(invoke.mock.calls.some(([method]) => method === 'skills.uninstall')).toBe(false)
+    fireEvent.click(within(confirmation).getByRole('button', { name: zh.cancel }))
+    expect(screen.queryByRole('dialog', { name: title })).toBeNull()
+    fireEvent.click(more)
+    fireEvent.click(screen.getByRole('menuitem', { name: zh.uninstallResource }))
+    fireEvent.click(within(screen.getByRole('dialog', { name: title })).getByRole('button', { name: zh.uninstallResource, exact: true }))
+    const failureDialog = within(await screen.findByRole('dialog', { name: title }))
+    expect((await failureDialog.findByRole('alert')).textContent).toBe(zh.resourceUninstallFailed)
+    expect(installed).toEqual([identity])
+    fireEvent.click(failureDialog.getByRole('button', { name: zh.uninstallResource, exact: true }))
+    await waitFor(() => { expect(screen.queryByRole('dialog', { name: title })).toBeNull() })
+    const install = await scope.findByRole('button', { name: zh.installSkill })
+    expect(scope.queryByText(zh.skillInstalled)).toBeNull()
+    expect(scope.queryByRole('button', { name: zh.resourceActions })).toBeNull()
+    expect(invoke.mock.calls.filter(([method]) => method === 'skills.uninstall')).toHaveLength(2)
+    expect(invoke).toHaveBeenCalledWith('skills.uninstall', {
+      kind: 'skill', id: identity.id, version: identity.version,
+    }, expect.any(String))
+    expect(productActions.startExpertKit).not.toHaveBeenCalled()
+    expect(invoke.mock.calls.some(([method]) => method === 'extensions.delete')).toBe(false)
+    expect(scope.getByText(identity.name, { selector: surface === 'detail' ? 'h1' : 'span' })).not.toBeNull()
+    fireEvent.click(install)
+    await scope.findByText(zh.skillInstalled)
+    expect(productActions.installSkill).toHaveBeenCalledExactlyOnceWith(identity.id)
+    fireEvent.click(scope.getByRole('button', { name: zh.resourceActions }))
+    expect(screen.getByRole('menuitem', { name: zh.uninstallResource })).not.toBeNull()
+  })
+
+  it('keeps an older installed skill removable while offering its latest version for installation', async () => {
+    let version = '1.0.0'
+    const installed: ProductContentIdentity[] = [{ id: 'writing', version, sha256: 'a'.repeat(64) }]
+    const productActions = { ...actions(),
+      readInstalledSkills: vi.fn(async () => ({ installed: [...installed], available: [...installed], frozen: false })),
+    }
+    const invoke = vi.fn(async () => [{ id: 'writing', name: 'AI文本优化', version, sha256: 'a'.repeat(64) }])
+    installProductApi({ invoke })
+    render(<SkillsPanel t={t} {...productActions} />)
+    await screen.findByText(zh.skillInstalled)
+    version = '1.0.1'
+    fireEvent.click(screen.getByRole('button', { name: zh.refresh }))
+    expect((await screen.findByRole('button', { name: zh.installSkill })).disabled).toBe(false)
+    expect(screen.queryByText(zh.skillInstalled)).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: zh.resourceActions }))
+    expect(screen.getByRole('menuitem', { name: zh.uninstallResource })).not.toBeNull()
+    expect(invoke).not.toHaveBeenCalledWith('skills.uninstall', expect.anything(), expect.anything())
+  })
+
+  it('installs an expert kit without preparing a task and keeps dependency authorization visible', async () => {
+    const installed: ProductContentIdentity[] = []
+    const identity = { id: 'operations', name: '订单专家', version: '1.0.0', sha256: 'a'.repeat(64) }
+    const productActions = {
+      ...actions(),
+      installExpertKit: vi.fn(async (_id: string) => { installed.push(identity) }),
+      readInstalledExpertKits: vi.fn(async () => ({ installed: [...installed] })),
+    }
+    productActions.installExpertKit.mockRejectedValueOnce(new Error('network'))
+    installProductApi({ invoke: async () => [{ ...identity, availabilityStatus: 'AUTHORIZATION_REQUIRED' }] })
+    render(<ExpertKitsPanel t={t} {...productActions} />)
+    const install = await screen.findByRole('button', { name: zh.installExpertKit })
+    expect(install.disabled).toBe(false)
+    fireEvent.click(install)
+    expect((await screen.findByRole('alert')).textContent).toBe(zh.installFailed)
+    expect(installed).toEqual([])
+    await waitFor(() => { expect(install.disabled).toBe(false) })
+    fireEvent.click(install)
+    await screen.findByText(zh.expertKitInstalled)
+    expect(screen.queryByRole('button', { name: zh.expertKitInstalled })).toBeNull()
+    expect(screen.getByText(zh.availabilityAuthorizationRequired)).not.toBeNull()
+    expect(productActions.installExpertKit).toHaveBeenNthCalledWith(1, identity.id)
+    expect(productActions.installExpertKit).toHaveBeenNthCalledWith(2, identity.id)
+    expect(productActions.startExpertKit).not.toHaveBeenCalled()
+  })
+
+  it('requires an explicit installation before using the kit or its shortcut commands', async () => {
+    const identity = { id: 'operations', name: '订单专家', version: '1.0.0', sha256: 'a'.repeat(64) }
+    const installed: ProductContentIdentity[] = []
+    const entry = { ...identity, commonTasks: [{ id: 'review', name: '核对订单', description: '复核最新订单', prompt: '核对订单。' }] }
+    const invoke = vi.fn(async (method: string): Promise<unknown> => {
+      if (method === 'expertKits.list') return [entry]
+      if (method === 'expertKits.get') return entry
+      if (method === 'expertKits.readme') return { readme: '# 订单专家' }
+      throw new Error(`Unexpected call: ${method}`)
+    })
+    const productActions = { ...actions(),
+      readInstalledExpertKits: vi.fn(async () => ({ installed: [...installed] })),
+      installExpertKit: vi.fn(async () => { installed.push(identity) }),
+    }
+    productActions.installExpertKit.mockRejectedValueOnce(new Error('Install failed'))
+    installProductApi({ invoke })
+    render(<ExpertKitsPanel t={t} {...productActions} />)
+    fireEvent.click(await screen.findByRole('button', { name: identity.name, exact: true }))
+    const shortcut = await screen.findByRole('button', { name: /核对订单/ })
+    expect(shortcut.disabled).toBe(true)
+    expect(screen.queryByRole('button', { name: zh.startUsing })).toBeNull()
+    fireEvent.click(shortcut)
+    expect(productActions.startExpertKit).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: zh.installExpertKit }))
+    await screen.findByRole('alert')
+    expect(shortcut.disabled).toBe(true)
+    expect(screen.queryByRole('button', { name: zh.startUsing })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: zh.installExpertKit }))
+    await waitFor(() => { expect(shortcut.disabled).toBe(false) })
+    expect(screen.getByRole('button', { name: zh.startUsing }).disabled).toBe(false)
+    expect(productActions.startExpertKit).not.toHaveBeenCalled()
+    const readsBeforeUse = productActions.readInstalledExpertKits.mock.calls.length
+    fireEvent.click(shortcut)
+    await waitFor(() => { expect(productActions.startExpertKit).toHaveBeenCalledWith(identity.id, '核对订单。') })
+    expect(productActions.readInstalledExpertKits).toHaveBeenCalledTimes(readsBeforeUse)
+  })
+
+  it.each(['card', 'detail'] as const)('uninstalls a shared expert kit from its %s with confirmation and retry', async (surface) => {
+    const identity = { id: 'operations', name: '订单专家', version: '1.0.0', sha256: 'a'.repeat(64) }
+    const installed: ProductContentIdentity[] = [identity]
+    const entry = { ...identity, visibility: 'SHARED', canEdit: false, canSubmit: false, canDelete: false }
+    let failUninstall = true
+    const invoke = vi.fn(async (method: string): Promise<unknown> => {
+      if (method === 'expertKits.list') return [entry]
+      if (method === 'expertKits.get') return entry
+      if (method === 'expertKits.readme') return { readme: '# 订单专家\n\n核对订单。' }
+      if (method === 'expertKits.uninstall') {
+        if (failUninstall) { failUninstall = false; throw new Error('network') }
+        installed.splice(0, installed.length)
+        return { id: identity.id }
+      }
+      return []
+    })
+    const productActions = {
+      ...actions(),
+      readInstalledExpertKits: vi.fn(async () => ({ installed: [...installed] })),
+    }
+    installProductApi({ invoke })
+    render(<ExpertKitsPanel t={t} {...productActions} />)
+    await screen.findByText(zh.expertKitInstalled)
+    if (surface === 'detail') fireEvent.click(screen.getByRole('button', { name: identity.name, exact: true }))
+    const more = await screen.findByRole('button', { name: zh.resourceActions })
+    fireEvent.click(more)
+    expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual([zh.uninstallResource])
+    fireEvent.click(screen.getByRole('menuitem', { name: zh.uninstallResource }))
+    const title = zh.resourceUninstallTitle.replace('{name}', identity.name)
+    const confirmation = screen.getByRole('dialog', { name: title })
+    expect(within(confirmation).getByText(zh.expertKitUninstallConfirmation)).not.toBeNull()
+    expect(invoke.mock.calls.some(([method]) => method === 'expertKits.uninstall')).toBe(false)
+    fireEvent.click(within(confirmation).getByRole('button', { name: zh.cancel }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    fireEvent.click(more)
+    fireEvent.click(screen.getByRole('menuitem', { name: zh.uninstallResource }))
+    fireEvent.click(screen.getByRole('button', { name: zh.uninstallResource, exact: true }))
+    const failureDialog = within(await screen.findByRole('dialog', { name: title }))
+    expect((await failureDialog.findByRole('alert')).textContent).toBe(zh.resourceUninstallFailed)
+    expect(installed).toEqual([identity])
+    fireEvent.click(failureDialog.getByRole('button', { name: zh.uninstallResource, exact: true }))
+    await waitFor(() => { expect(screen.queryByRole('dialog')).toBeNull() })
+    await screen.findByRole('button', { name: zh.installExpertKit })
+    expect(screen.queryByText(zh.expertKitInstalled)).toBeNull()
+    expect(invoke.mock.calls.filter(([method]) => method === 'expertKits.uninstall')).toHaveLength(2)
+    expect(invoke).toHaveBeenCalledWith('expertKits.uninstall', {
+      kind: 'expert-kit', id: identity.id, version: identity.version,
+    }, expect.any(String))
+    expect(productActions.startExpertKit).not.toHaveBeenCalled()
+    expect(screen.queryByRole('button', { name: zh.resourceActions })).toBeNull()
+    expect(invoke.mock.calls.some(([method]) => method === 'extensions.delete')).toBe(false)
+    expect(screen.getByText(identity.name, { selector: surface === 'detail' ? 'h1' : 'span' })).not.toBeNull()
+  })
+
+  it('offers the latest kit version for installation while the previous version remains removable', async () => {
+    let version = '1.0.0'
+    const installed: ProductContentIdentity[] = [{ id: 'operations', version, sha256: 'a'.repeat(64) }]
+    const productActions = { ...actions(), readInstalledExpertKits: vi.fn(async () => ({ installed: [...installed] })) }
+    const invoke = vi.fn(async () => [{ id: 'operations', name: '订单专家', version, sha256: 'a'.repeat(64) }])
+    installProductApi({ invoke })
+    render(<ExpertKitsPanel t={t} {...productActions} />)
+    await screen.findByText(zh.expertKitInstalled)
+    version = '1.0.1'
+    fireEvent.click(screen.getByRole('button', { name: zh.refresh }))
+    expect((await screen.findByRole('button', { name: zh.installExpertKit })).disabled).toBe(false)
+    expect(screen.queryByText(zh.expertKitInstalled)).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: zh.resourceActions }))
+    expect(screen.getByRole('menuitem', { name: zh.uninstallResource })).not.toBeNull()
+    expect(invoke).not.toHaveBeenCalledWith('expertKits.uninstall', expect.anything(), expect.anything())
+  })
+
+  it('allows installation before connector authorization and distinguishes published versions', async () => {
+    let version = '1'
+    const installed: { id: string; version: string; sha256: string }[] = []
+    const installSkill = vi.fn(async () => { installed.splice(0, installed.length, { id: 'writing', version, sha256: 'a'.repeat(64) }) })
+    installProductApi({ invoke: async () => [{ id: 'writing', name: 'AI文本优化', version,
+      sha256: 'a'.repeat(64), availabilityStatus: 'AUTHORIZATION_REQUIRED' }] })
+    render(<SkillsPanel t={t} startExpertKit={vi.fn(async () => {})} installSkill={installSkill}
+      readInstalledSkills={async () => ({ installed, available: [], frozen: false })} />)
+    const button = await screen.findByRole('button', { name: zh.installSkill })
+    expect((button as HTMLButtonElement).disabled).toBe(false)
+    fireEvent.click(button)
+    expect(await screen.findByText(zh.skillInstalled)).not.toBeNull()
+    expect(screen.queryByRole('button', { name: zh.skillInstalled })).toBeNull()
+    expect(screen.getByText(zh.availabilityAuthorizationRequired)).not.toBeNull()
+    version = '2'
+    fireEvent.click(screen.getByRole('button', { name: zh.refresh }))
+    expect((await screen.findByRole('button', { name: zh.installSkill })).disabled).toBe(false)
+    expect(screen.queryByRole('button', { name: /启用|停用/ })).toBeNull()
+  })
+
   it('groups and filters skills by the product category without changing Harness skills', async () => {
     const invoke = vi.fn(async (): Promise<unknown> => [
       { id: 'writing', name: 'AI文本优化', summary: '让文本更自然', category: 'content-creation' },
       { id: 'analysis', name: '数据分析', summary: '分析业务数据', category: 'database-analysis' },
     ])
-    Object.defineProperty(globalThis, 'deepseekHarness', { configurable: true, value: { product: {
+    installProductApi({
       getSession: vi.fn(async () => ({ authenticated: true })), invoke, cancel: vi.fn(),
-    } } })
+    })
 
     render(<SkillsPanel t={t} {...actions()} />)
     expect(await screen.findByRole('region', { name: zh.categoryContentCreation })).not.toBeNull()
@@ -339,33 +874,37 @@ describe('DeepSeekHarness capability navigation', () => {
     expect(invoke).toHaveBeenCalledOnce()
   })
 
-  it('localizes the category code in skill details', async () => {
+  it('keeps directory metadata out of the skill document', async () => {
     const invoke = vi.fn(async (method: string): Promise<unknown> => {
       if (method === 'skills.list') return [{ id: 'insight', name: '文档洞察', category: 'knowledge-research' }]
       if (method === 'skills.get') return { id: 'insight', name: '文档洞察', category: 'knowledge-research' }
-      if (method === 'skills.readme') return { readme: '# 文档洞察' }
+      if (method === 'skills.readme') return { readme: '# 文档洞察\n\n先读取文件，再输出结论。' }
       throw new Error(`unexpected method: ${method}`)
     })
-    Object.defineProperty(globalThis, 'deepseekHarness', { configurable: true, value: { product: {
+    installProductApi({
       getSession: vi.fn(async () => ({ authenticated: true })), invoke, cancel: vi.fn(),
-    } } })
+    })
 
     render(<SkillsPanel t={t} {...actions()} />)
     expect(await screen.findByRole('button', { name: zh.categoryFilter })).not.toBeNull()
     expect(screen.getByText(zh.allCategories)).not.toBeNull()
     fireEvent.click(await screen.findByRole('button', { name: /文档洞察/ }))
     expect(await screen.findByRole('heading', { name: '文档洞察' })).not.toBeNull()
-    expect(screen.getAllByText(zh.categoryKnowledgeResearch)).toHaveLength(2)
+    const dialog = screen.getByRole('dialog', { name: zh.skillDetails })
+    expect(within(dialog).queryByText(zh.categoryKnowledgeResearch)).toBeNull()
     expect(screen.queryByText('knowledge-research')).toBeNull()
+    expect(screen.getByText('先读取文件，再输出结论。')).not.toBeNull()
+    expect(screen.queryByText(zh.fullUsageGuide)).toBeNull()
+    expect(screen.queryByText(zh.advancedInformation)).toBeNull()
   })
 
   it('does not expose global Expert Kit enablement controls', async () => {
     const invoke = vi.fn(async (): Promise<unknown> => [
       { id: 'orders', name: '订单专家', category: 'ecommerce-retail' },
     ])
-    Object.defineProperty(globalThis, 'deepseekHarness', { configurable: true, value: { product: {
+    installProductApi({
       getSession: vi.fn(async () => ({ authenticated: true })), invoke, cancel: vi.fn(),
-    } } })
+    })
 
     render(<ExpertKitsPanel t={t} {...actions()} />)
     expect(await screen.findByText('订单专家')).not.toBeNull()
@@ -375,8 +914,8 @@ describe('DeepSeekHarness capability navigation', () => {
 
   it('presents connector business metadata while retaining operational details', async () => {
     const invoke = vi.fn(async (): Promise<unknown> => [
-      { id: 'erp', name: 'erp-mcp', displayName: 'ERP 数据连接', summary: '订单数据', category: 'industry-data',
-        status: 'ACTIVE', scope: 'ORGANIZATION', transport: 'stdio', version: '0.4.0',
+      { id: 'erp', name: 'erp-mcp', displayName: 'ERP 连接器', summary: '订单数据', category: 'industry-data',
+        status: 'ACTIVE', scope: 'COMPANY', transport: 'stdio', version: '0.4.0',
         availabilityStatus: 'AVAILABLE',
         tools: [
           { name: 'orders_read', displayName: '查询订单', description: '读取订单', access: 'READ' },
@@ -385,43 +924,83 @@ describe('DeepSeekHarness capability navigation', () => {
       { id: 'docs', name: '文档', summary: '企业文档', category: 'knowledge-research', status: 'ACTIVE',
         availabilityStatus: 'AVAILABLE', tools: [] },
     ])
-    Object.defineProperty(globalThis, 'deepseekHarness', { configurable: true, value: { product: {
+    installProductApi({
       getSession: vi.fn(async () => ({ authenticated: true })), invoke, cancel: vi.fn(),
-    } } })
+    })
 
     render(<ConnectorsPanel t={t} {...actions()} />)
     expect(await screen.findByRole('region', { name: zh.categoryIndustryData })).not.toBeNull()
     expect(screen.getByRole('region', { name: zh.categoryKnowledgeResearch })).not.toBeNull()
     expect(screen.getByRole('button', { name: zh.categoryFilter })).not.toBeNull()
     expect(screen.getByText(zh.allCategories)).not.toBeNull()
-    expect(screen.getAllByText(zh.availabilityAvailable)).toHaveLength(2)
-    expect(screen.getByText(zh.connectorToolsCount.replace('{count}', '2'))).not.toBeNull()
-    expect(screen.getByText(zh.connectorNoTools)).not.toBeNull()
-    expect(screen.queryByText(zh.scopeOrganization)).toBeNull()
+    const results = document.querySelector('#deepseek-harness-catalog-results')
+    expect(results).not.toBeNull()
+    expect(results?.textContent?.match(new RegExp(zh.connectorConnected, 'gu'))).toHaveLength(2)
+    expect(screen.getByText(zh.readCapabilityShort.replace('{count}', '1'))).not.toBeNull()
+    expect(screen.getByText(zh.writeCapabilityShort.replace('{count}', '1'))).not.toBeNull()
+    expect(screen.queryByText(zh.scopeCompany)).toBeNull()
     expect(screen.queryByText(zh.transportStdio)).toBeNull()
     expect(screen.queryByText('0.4.0')).toBeNull()
-    expect(screen.getByText('ERP 数据连接')).not.toBeNull()
+    expect(screen.getByText('ERP 连接器')).not.toBeNull()
     expect(screen.queryByText('erp-mcp')).toBeNull()
 
     fireEvent.click(screen.getByRole('button', { name: zh.categoryFilter }))
     fireEvent.click(screen.getByRole('menuitem', { name: zh.categoryIndustryData }))
-    expect(screen.getByText('ERP 数据连接')).not.toBeNull()
+    expect(screen.getByText('ERP 连接器')).not.toBeNull()
     expect(screen.queryByText('文档')).toBeNull()
 
-    fireEvent.click(screen.getByRole('button', { name: /ERP 数据连接/ }))
+    fireEvent.click(screen.getByRole('button', { name: /ERP 连接器/ }))
+    expect(await screen.findByRole('dialog', { name: zh.connectorDetails })).not.toBeNull()
     expect(await screen.findByText(zh.connectorTools)).not.toBeNull()
-    expect(screen.getByText('orders_read')).not.toBeNull()
-    expect(screen.getByText(zh.readOnlyNoApproval)).not.toBeNull()
-    expect(screen.getByText(zh.writeApprovalRequired)).not.toBeNull()
-    expect(screen.getByText(zh.scopeOrganization)).not.toBeNull()
+    expect(screen.getByText(zh.readCapabilityCount.replace('{count}', '1'))).not.toBeNull()
+    expect(screen.getByText(zh.writeCapabilityCount.replace('{count}', '1'))).not.toBeNull()
+    expect(screen.getByText(zh.scopeCompany)).not.toBeNull()
+    const capability = screen.getByText(zh.viewConnectorTools.replace('{count}', '2')).closest('details')
+    expect(screen.queryByText(zh.advancedInformation)).toBeNull()
+    expect(screen.getByText(zh.transportStdio).closest('details')).toBeNull()
+    expect(capability?.open).toBe(false)
+    fireEvent.click(screen.getByText(zh.viewConnectorTools.replace('{count}', '2')))
+    expect(capability?.open).toBe(true)
+    expect(screen.getByText('查询订单', { selector: 'strong' })).not.toBeNull()
+    expect(screen.getByText(zh.readOnlyLabel)).not.toBeNull()
+    expect(screen.getByText(zh.writeLabel)).not.toBeNull()
+    expect(screen.queryByText('orders_read')).toBeNull()
     expect(screen.getByText(zh.transportStdio)).not.toBeNull()
-    expect(screen.getByText('v0.4.0')).not.toBeNull()
   })
 
-  it('refreshes the catalog after a managed data connection is authorized', async () => {
+  it('separates connected accounts from the catalog without reloading or changing the task', async () => {
+    const invoke = vi.fn(async (): Promise<unknown> => [
+      { id: 'ready', displayName: '订单连接器', availabilityStatus: 'AVAILABLE', tools: [] },
+      { id: 'oauth', displayName: '客户连接器', authMode: 'oauth', authorizationStatus: 'REQUIRED', availabilityStatus: 'AUTHORIZATION_REQUIRED', tools: [] },
+      { id: 'offline', displayName: '暂不可用连接器', authMode: 'oauth', authorizationStatus: 'AUTHORIZED', availabilityStatus: 'UNAVAILABLE', tools: [] },
+      { id: 'expired', displayName: '授权过期连接器', authMode: 'oauth', authorizationStatus: 'EXPIRED', availabilityStatus: 'AUTHORIZATION_REQUIRED', tools: [] },
+    ])
+    installProductApi({
+      getSession: vi.fn(async () => ({ authenticated: true })), invoke, cancel: vi.fn(),
+    })
+
+    const productActions = actions()
+    render(<ConnectorsPanel t={t} {...productActions} />)
+    expect(await screen.findByText('订单连接器')).not.toBeNull()
+    const connected = screen.getByRole('tab', { name: new RegExp(`^${zh.connectorFilterConnected}\\s*2$`, 'u') })
+    expect(screen.getByText(zh.statusExpired)).not.toBeNull()
+    fireEvent.click(connected)
+    expect(screen.getByText('订单连接器')).not.toBeNull()
+    expect(screen.getByText('暂不可用连接器')).not.toBeNull()
+    expect(screen.queryByText('客户连接器')).toBeNull()
+    expect(screen.queryByText('授权过期连接器')).toBeNull()
+    expect(connected.getAttribute('aria-selected')).toBe('true')
+    fireEvent.keyDown(connected, { key: 'ArrowLeft' })
+    expect(screen.getByText('客户连接器')).not.toBeNull()
+    expect(screen.getAllByRole('tab', { name: zh.connectorFilterAll }).some(tab => tab.getAttribute('aria-selected') === 'true')).toBe(true)
+    expect(invoke).toHaveBeenCalledOnce()
+    expect(productActions.startExpertKit).not.toHaveBeenCalled()
+  })
+
+  it('refreshes the catalog after a managed connector is authorized', async () => {
     let subscriber: ((event: { readonly type: string }) => void) | undefined
     const invoke = vi.fn(async (method: string): Promise<unknown> => {
-      if (method === 'connectors.list') return [{ id: 'erp', displayName: 'ERP 数据连接',
+      if (method === 'connectors.list') return [{ id: 'erp', displayName: 'ERP 连接器',
         authMode: 'oauth', authorizationStatus: 'REQUIRED', tools: [] }]
       if (method === 'connectors.authorization.begin') return { authorizationUrl: 'https://auth.example/' }
       if (method === 'connectors.authorization.status') {
@@ -430,13 +1009,13 @@ describe('DeepSeekHarness capability navigation', () => {
       }
       throw new Error(`unexpected method: ${method}`)
     })
-    Object.defineProperty(globalThis, 'deepseekHarness', { configurable: true, value: { product: {
+    installProductApi({
       getSession: vi.fn(async () => ({ authenticated: true })), invoke, cancel: vi.fn(),
       subscribe: (listener: (event: { readonly type: string }) => void) => { subscriber = listener; return () => {} },
-    } } })
+    })
 
     render(<ConnectorsPanel t={t} {...actions()} />)
-    fireEvent.click(await screen.findByRole('button', { name: /ERP 数据连接/ }))
+    fireEvent.click(await screen.findByRole('button', { name: /ERP 连接器/ }))
     vi.useFakeTimers()
     fireEvent.click(screen.getByRole('button', { name: zh.authorize }))
     await vi.advanceTimersByTimeAsync(1_000)
@@ -448,19 +1027,19 @@ describe('DeepSeekHarness capability navigation', () => {
 
   it('stops managed authorization polling when the detail drawer closes', async () => {
     const invoke = vi.fn(async (method: string): Promise<unknown> => {
-      if (method === 'connectors.list') return [{ id: 'erp', displayName: 'ERP 数据连接',
+      if (method === 'connectors.list') return [{ id: 'erp', displayName: 'ERP 连接器',
         authMode: 'oauth', authorizationStatus: 'REQUIRED', tools: [] }]
       if (method === 'connectors.authorization.begin') return { authorizationUrl: 'https://auth.example/' }
       if (method === 'connectors.authorization.status') return { status: 'PENDING' }
       throw new Error(`unexpected method: ${method}`)
     })
     const cancel = vi.fn()
-    Object.defineProperty(globalThis, 'deepseekHarness', { configurable: true, value: { product: {
+    installProductApi({
       getSession: vi.fn(async () => ({ authenticated: true })), invoke, cancel,
-    } } })
+    })
 
     render(<ConnectorsPanel t={t} {...actions()} />)
-    fireEvent.click(await screen.findByRole('button', { name: /ERP 数据连接/ }))
+    fireEvent.click(await screen.findByRole('button', { name: /ERP 连接器/ }))
     vi.useFakeTimers()
     fireEvent.click(screen.getByRole('button', { name: zh.authorize }))
     await vi.waitFor(() => { expect(invoke).toHaveBeenCalledWith(
@@ -472,24 +1051,24 @@ describe('DeepSeekHarness capability navigation', () => {
     expect(invoke.mock.calls.some(call => call[0] === 'connectors.authorization.status')).toBe(false)
   })
 
-  it('shows reauthorization for an expired data connection', async () => {
-    const invoke = vi.fn(async (): Promise<unknown> => [{ id: 'erp', displayName: 'ERP 数据连接',
+  it('shows reauthorization for an expired connector', async () => {
+    const invoke = vi.fn(async (): Promise<unknown> => [{ id: 'erp', displayName: 'ERP 连接器',
       authMode: 'oauth', authorizationStatus: 'EXPIRED', tools: [] }])
-    Object.defineProperty(globalThis, 'deepseekHarness', { configurable: true, value: { product: {
+    installProductApi({
       getSession: vi.fn(async () => ({ authenticated: true })), invoke, cancel: vi.fn(),
-    } } })
+    })
 
     render(<ConnectorsPanel t={t} {...actions()} />)
-    fireEvent.click(await screen.findByRole('button', { name: /ERP 数据连接/ }))
+    fireEvent.click(await screen.findByRole('button', { name: /ERP 连接器/ }))
 
-    expect(screen.getByText(zh.statusExpired)).not.toBeNull()
+    expect(within(screen.getByRole('dialog')).getByText(zh.statusExpired)).not.toBeNull()
     expect(screen.getByRole('button', { name: zh.reauthorize })).not.toBeNull()
   })
 
-  it('revokes a managed data connection and refreshes the catalog', async () => {
+  it('revokes a managed connector and refreshes the catalog', async () => {
     let subscriber: ((event: { readonly type: string }) => void) | undefined
     const invoke = vi.fn(async (method: string): Promise<unknown> => {
-      if (method === 'connectors.list') return [{ id: 'erp', displayName: 'ERP 数据连接',
+      if (method === 'connectors.list') return [{ id: 'erp', displayName: 'ERP 连接器',
         authMode: 'oauth', authorizationStatus: 'AUTHORIZED', tools: [] }]
       if (method === 'connectors.authorization.revoke') {
         subscriber?.({ type: 'catalog.changed' })
@@ -497,13 +1076,13 @@ describe('DeepSeekHarness capability navigation', () => {
       }
       throw new Error(`unexpected method: ${method}`)
     })
-    Object.defineProperty(globalThis, 'deepseekHarness', { configurable: true, value: { product: {
+    installProductApi({
       getSession: vi.fn(async () => ({ authenticated: true })), invoke, cancel: vi.fn(),
       subscribe: (listener: (event: { readonly type: string }) => void) => { subscriber = listener; return () => {} },
-    } } })
+    })
 
     render(<ConnectorsPanel t={t} {...actions()} />)
-    fireEvent.click(await screen.findByRole('button', { name: /ERP 数据连接/ }))
+    fireEvent.click(await screen.findByRole('button', { name: /ERP 连接器/ }))
     fireEvent.click(screen.getByRole('button', { name: zh.revokeAuthorization }))
 
     await waitFor(() => { expect(invoke).toHaveBeenCalledWith(
@@ -512,28 +1091,32 @@ describe('DeepSeekHarness capability navigation', () => {
     await waitFor(() => { expect(invoke.mock.calls.filter(call => call[0] === 'connectors.list')).toHaveLength(2) })
   })
 
-  it('opens a knowledge base detail drawer without a second API contract', async () => {
-    const invoke = vi.fn(async (method: string): Promise<unknown> => method === 'knowledge.search' ? [{
-      sourceId: 'source-1', filename: 'orders.md', locator: '第 2 节', content: '订单退款规则', score: 0.9,
-    }] : [{
-      id: 'orders', name: '订单知识库', description: '订单规则', scope: 'ORGANIZATION',
-      updatedAt: '2026-09-30T00:00:00Z',
-    }])
-    Object.defineProperty(globalThis, 'deepseekHarness', { configurable: true, value: { product: {
+  it('opens knowledge documents in its main workspace without changing the task', async () => {
+    const invoke = vi.fn(async (method: string): Promise<unknown> => {
+      if (method === 'knowledge.documents.list') return { items: [{ id: 'document-1', knowledgeBaseId: 'orders', filename: 'orders.md',
+        mediaType: 'text/markdown', sizeBytes: 120, status: 'READY', chunkCount: 1, updatedAt: '2026-09-30T00:00:00Z' }], page: 1, size: 20, total: 1 }
+      if (method === 'knowledge.documents.preview.open') return originalPreview('订单退款规则')
+      if (method === 'knowledge.folders.list') return { items: [], page: 1, size: 20, total: 0 }
+      return [{ id: 'orders', name: '订单知识库', description: '订单规则', scope: 'COMPANY', updatedAt: '2026-09-30T00:00:00Z' }]
+    })
+    installProductApi({
       getSession: vi.fn(async () => ({ authenticated: true })), invoke, cancel: vi.fn(),
-    } } })
+    })
 
-    render(<KnowledgePanel t={t} {...actions()} />)
-    expect(await screen.findByRole('button', { name: zh.categoryFilter })).not.toBeNull()
-    expect(screen.getByText(zh.allCategories)).not.toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: zh.categoryFilter }))
-    fireEvent.click(screen.getByRole('menuitem', { name: zh.scopeOrganization }))
-    fireEvent.click(await screen.findByRole('button', { name: /订单知识库/ }))
-    expect(await screen.findByText(zh.knowledgeAccess)).not.toBeNull()
-    expect(screen.getByText(zh.knowledgeSearchHint)).not.toBeNull()
-    fireEvent.change(screen.getByPlaceholderText(zh.knowledgeSearchPlaceholder), { target: { value: '退款' } })
-    fireEvent.click(screen.getByRole('button', { name: zh.search }))
+    const taskActions = actions()
+    const { container } = render(<KnowledgePanel t={t} {...taskActions} />)
+    const documentButton = await waitFor(() => within(screen.getByRole('navigation', { name: zh.knowledge }))
+      .getByRole('button', { name: 'orders.md', exact: true }))
+    fireEvent.click(documentButton)
     expect(await screen.findByText('订单退款规则')).not.toBeNull()
+    expect(container.querySelector('[data-knowledge-inline-reader]')).not.toBeNull()
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(screen.queryByRole('button', { name: zh.categoryFilter })).toBeNull()
+    expect(screen.queryByRole('checkbox')).toBeNull()
+    expect(invoke).toHaveBeenCalledWith('knowledge.documents.preview.open', {
+      knowledgeBaseId: 'orders', documentId: 'document-1',
+    }, expect.any(String))
+    expect(taskActions.startExpertKit).not.toHaveBeenCalled()
   })
 
   it('shows a safe error when an Expert Kit Session cannot start', async () => {
@@ -544,10 +1127,12 @@ describe('DeepSeekHarness capability navigation', () => {
       throw new Error(`unexpected method: ${method}`)
     })
     const cancel = vi.fn()
-    Object.defineProperty(globalThis, 'deepseekHarness', { configurable: true, value: { product: {
+    installProductApi({
       getSession: vi.fn(async () => ({ authenticated: true })), invoke, cancel,
-    } } })
-    const productActions = actions()
+    })
+    const productActions = { ...actions(), readInstalledExpertKits: vi.fn(async () => ({ installed: [
+      { id: 'orders', version: '1.0.0', sha256: 'c'.repeat(64) },
+    ] })) }
     productActions.startExpertKit.mockRejectedValueOnce(new Error('runtime unavailable'))
 
     render(<ExpertKitsPanel t={t} {...productActions} />)
@@ -561,9 +1146,9 @@ describe('DeepSeekHarness capability navigation', () => {
     const pending = new Promise<unknown>(() => {})
     const invoke = vi.fn((_method: string, _payload?: unknown, _requestId?: string) => pending)
     const cancel = vi.fn()
-    Object.defineProperty(globalThis, 'deepseekHarness', { configurable: true, value: { product: {
+    installProductApi({
       getSession: vi.fn(async () => ({ authenticated: true })), invoke, cancel,
-    } } })
+    })
 
     const view = render(<SkillsPanel t={t} {...actions()} />)
     await waitFor(() => { expect(invoke).toHaveBeenCalledOnce() })
@@ -581,9 +1166,9 @@ describe('DeepSeekHarness capability navigation', () => {
       ? pendingSkills
       : Promise.resolve([{ id: 'erp', name: 'ERP 连接器' }]))
     const cancel = vi.fn()
-    Object.defineProperty(globalThis, 'deepseekHarness', { configurable: true, value: { product: {
+    installProductApi({
       getSession: vi.fn(async () => ({ authenticated: true })), invoke, cancel,
-    } } })
+    })
 
     const view = render(<DeepSeekHarnessCatalogSection t={t} {...actions()} catalog="skills" labelKey="skills" />)
     await waitFor(() => { expect(invoke).toHaveBeenCalledWith('skills.list', undefined, expect.any(String)) })

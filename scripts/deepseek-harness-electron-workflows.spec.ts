@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import * as yaml from 'js-yaml'
 import { describe, expect, it } from 'vitest'
@@ -25,6 +25,15 @@ function workflow(name: string): Workflow {
 }
 
 describe('DeepSeekHarness Electron workflows', () => {
+  it('runs existing product contract tests after the Host extraction', () => {
+    const command = workflow('electron-ci.yml').jobs.desktop?.steps
+      .find(step => step.name === 'Verify upstream and product contracts')?.run ?? ''
+    const tests = command.match(/\S+\.spec\.tsx?/gu) ?? []
+    expect(tests).toContain('packages/deepseek-harness-product/runtime/tests/deepseek-harness-connector-contract.spec.ts')
+    expect(tests).toContain('packages/deepseek-harness-product/runtime/tests/deepseek-harness-runtime.spec.ts')
+    for (const path of tests) expect(existsSync(resolve(import.meta.dirname, '..', path)), path).toBe(true)
+  })
+
   it('uses only available internal runners and actions', () => {
     const expected = new Map([
       ['electron-ci.yml', 'ci-node'],

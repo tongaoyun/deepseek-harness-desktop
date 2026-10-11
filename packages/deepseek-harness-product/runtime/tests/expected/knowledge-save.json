@@ -1,0 +1,61 @@
+{
+  "tools": [
+    {
+      "name": "knowledge_destinations",
+      "description": "List knowledge base names and ownership available for explicitly saving a task result. Does not read documents or change the task retrieval selection.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "knowledge_save",
+      "description": "Save content as a new Markdown document only when the user explicitly asks to save a task result. Choose an exact writable ID from knowledge_destinations. Save to a department or company base only when the user explicitly chooses that destination. Do not save automatically, change ownership, or change task selection. Indexing continues after saving.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "knowledgeBaseId": {
+            "type": "string",
+            "description": "Writable knowledge base ID chosen by the user."
+          },
+          "title": {
+            "type": "string",
+            "description": "Document title."
+          },
+          "content": {
+            "type": "string",
+            "description": "Complete Markdown content to save."
+          }
+        },
+        "required": [
+          "knowledgeBaseId",
+          "title",
+          "content"
+        ]
+      }
+    }
+  ],
+  "savedRequest": {
+    "knowledgeBaseId": "personal",
+    "title": "Review outcome",
+    "content": "# Review outcome\n\nThe policy is approved for internal testing.",
+    "operationId": "0121c054268b8b2cc29ad331662fe9662226f260497a26a04da1bdb4e01e8434"
+  },
+  "approvals": [
+    "allowed-once"
+  ],
+  "results": [
+    [
+      {
+        "type": "text",
+        "text": "{\"entries\":[{\"id\":\"personal\",\"name\":\"Personal notes\",\"scope\":\"PERSONAL\",\"ownerName\":\"Employee\"}],\"truncated\":false}"
+      }
+    ],
+    [
+      {
+        "type": "text",
+        "text": "{\"document\":{\"id\":\"document\",\"title\":\"Review outcome\",\"status\":\"PENDING\"},\"message\":\"Document saved; use its processing state to determine when retrieval is ready.\"}"
+      }
+    ]
+  ]
+}

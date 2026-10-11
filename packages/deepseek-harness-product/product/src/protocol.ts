@@ -3,8 +3,63 @@
 /** Protocol identifier for the product sidecar bridge. */
 export const PRODUCT_PROTOCOL = 'deepseek-harness.native.v1' as const
 
+/** PDF upload parsing: standard document processing or embedded text without OCR. */
+export type KnowledgePdfParseMode = 'STANDARD' | 'TEXT'
+
+/** Opaque identity for a main-owned, employee-bound temporary file. */
+export type KnowledgeTransferId = string & { readonly __knowledgeTransferId: unique symbol }
+
+/** Public descriptor excludes local paths and remote credentials. */
+export interface KnowledgeFileTransfer {
+  readonly transferId: KnowledgeTransferId
+  readonly fileName: string
+  readonly mediaType: string
+  readonly byteLength: number
+  readonly maxBytes: number
+  readonly chunkSize: number
+  readonly missingFonts?: readonly string[]
+}
+
+/** Renderer chunks use structured clone rather than JSON or whole-file Base64. */
+export interface KnowledgeFileChunk {
+  readonly data: Uint8Array
+  readonly offset: number
+  readonly eof: boolean
+}
+
+/** File operations owned by Electron main, including private Host conversion transport. */
+export type KnowledgeFileMethod =
+  | 'knowledge.documents.preview.open'
+  | 'knowledge.documents.preview.read'
+  | 'knowledge.documents.preview.close'
+  | 'knowledge.documents.download'
+  | 'knowledge.documents.openExternal'
+  | 'runtime.knowledge.preview.readChunk'
+  | 'runtime.knowledge.preview.policy'
+  | 'runtime.knowledge.preview.write.open'
+  | 'runtime.knowledge.preview.write.append'
+  | 'runtime.knowledge.preview.write.commit'
+  | 'runtime.knowledge.preview.write.close'
+
 /** Allowlisted product and native sidecar operations. */
 export type ProductMethod =
+  | 'extensions.authoring.begin'
+  | 'extensions.authoring.read'
+  | 'extensions.authoring.update'
+  | 'extensions.authoring.save'
+  | 'extensions.authoring.discard'
+  | 'extensions.import.inspect'
+  | 'extensions.import.release'
+  | 'extensions.save'
+  | 'extensions.submit'
+  | 'extensions.delete'
+  | 'extensions.bundledSkill.read'
+  | 'extensions.connector.read'
+  | 'extensions.connector.update'
+  | 'extensions.connector.delete'
+  | 'knowledge.references.resolve'
+  | 'tasks.capabilities.read'
+  | 'tasks.capabilities.prepare'
   | 'auth.getSession'
   | 'auth.ensureDingTalk'
   | 'auth.beginDingTalk'
@@ -15,18 +70,41 @@ export type ProductMethod =
   | 'expertKits.get'
   | 'expertKits.readme'
   | 'expertKits.artifact'
-  | 'expertKits.preset.prepare'
+  | 'expertKits.install'
+  | 'expertKits.uninstall'
+  | 'expertKits.installed.read'
   | 'skills.list'
   | 'skills.get'
   | 'skills.readme'
   | 'skills.artifact'
-  | 'skills.prepare'
+  | 'skills.install'
+  | 'skills.uninstall'
+  | 'skills.installed.read'
   | 'connectors.list'
   | 'connectors.authorization.status'
   | 'connectors.authorization.begin'
   | 'connectors.authorization.revoke'
   | 'knowledge.bases.list'
+  | 'knowledge.bases.create'
+  | 'knowledge.bases.delete'
+  | 'knowledge.files.limits'
   | 'knowledge.search'
+  | 'knowledge.sources.read'
+  | 'knowledge.documents.list'
+  | 'knowledge.documents.get'
+  | 'knowledge.documents.previewMetadata'
+  | Extract<KnowledgeFileMethod, `knowledge.${string}`>
+  | 'knowledge.documents.read'
+  | 'knowledge.documents.upload'
+  | 'knowledge.documents.save'
+  | 'knowledge.documents.importUrl'
+  | 'knowledge.documents.delete'
+  | 'knowledge.documents.reindex'
+  | 'knowledge.documents.move'
+  | 'knowledge.folders.list'
+  | 'knowledge.folders.create'
+  | 'knowledge.folders.rename'
+  | 'knowledge.folders.delete'
   | 'native.filesystem.list'
   | 'native.filesystem.read'
   | 'native.filesystem.write'
@@ -46,6 +124,10 @@ export type ProductMethod =
 
 /** Product operations the trusted Harness Host may request from Electron main. */
 export type ProductRuntimeMethod = Extract<ProductMethod,
+  | 'extensions.authoring.read'
+  | 'extensions.authoring.update'
+  | 'extensions.authoring.save'
+  | 'auth.getSession'
   | 'expertKits.list'
   | 'expertKits.get'
   | 'expertKits.readme'
@@ -57,12 +139,24 @@ export type ProductRuntimeMethod = Extract<ProductMethod,
   | 'connectors.list'
   | 'knowledge.bases.list'
   | 'knowledge.search'
->
+  | 'knowledge.sources.read'
+  | 'knowledge.documents.get'
+  | 'knowledge.documents.previewMetadata'
+  | 'knowledge.documents.preview.open'
+  | 'knowledge.documents.preview.close'
+  | 'knowledge.documents.save'
+> | Extract<KnowledgeFileMethod, `runtime.${string}`> | 'runtime.environment'
 
 const PRODUCT_RUNTIME_METHODS: readonly ProductRuntimeMethod[] = [
+  'extensions.authoring.read', 'extensions.authoring.update', 'extensions.authoring.save',
+  'runtime.environment',
+  'auth.getSession',
   'expertKits.list', 'expertKits.get', 'expertKits.readme', 'expertKits.artifact',
   'skills.list', 'skills.get', 'skills.readme', 'skills.artifact',
-  'connectors.list', 'knowledge.bases.list', 'knowledge.search',
+  'connectors.list', 'knowledge.bases.list', 'knowledge.search', 'knowledge.sources.read', 'knowledge.documents.save',
+  'knowledge.documents.get', 'knowledge.documents.previewMetadata', 'knowledge.documents.preview.open', 'knowledge.documents.preview.close',
+  'runtime.knowledge.preview.policy', 'runtime.knowledge.preview.readChunk', 'runtime.knowledge.preview.write.open', 'runtime.knowledge.preview.write.append',
+  'runtime.knowledge.preview.write.commit', 'runtime.knowledge.preview.write.close',
 ]
 
 /** Return whether a method is available to the Harness Host product adapter.
@@ -89,23 +183,67 @@ export interface ProductSession {
 
 /** Content-addressed catalog identity passed unchanged to the trusted Host. */
 export interface ProductContentIdentity {
+  /** Display name pinned alongside the content version when available. */
+  readonly name?: string
   readonly id: string
   readonly version: string
   readonly sha256: string
 }
 
-/** One dependency verified before creating an immutable product Preset. */
+/** Effective capabilities pinned to a task's immutable execution snapshot. */
+export interface ProductTaskCapabilities {
+  /** Execution mode underlying the immutable task composition. */
+  readonly basePresetId?: string
+  readonly expertKit?: ProductContentIdentity
+  readonly skills: readonly ProductContentIdentity[]
+  readonly connectorIds: readonly string[]
+  /** Connectors required by the pinned Expert Kit and locked against task removal. */
+  readonly requiredConnectorIds: readonly string[]
+  readonly knowledgeBaseIds: readonly string[]
+  /** Required aliases resolved once into immutable IDs during kit preparation. */
+  readonly requiredKnowledgeBaseIds: readonly string[]
+  readonly knowledgeBaseRefs: readonly string[]
+  readonly unavailable?: import('./errors.ts').ProductFailure
+}
+
+/** Locally installed skills and the subset available to one task. */
+export interface ProductInstalledSkills {
+  readonly installed: readonly ProductContentIdentity[]
+  readonly available: readonly ProductContentIdentity[]
+  readonly frozen: boolean
+}
+
+/** Employee-scoped Expert Kit installations on the current device, independent of tasks. */
+export interface ProductInstalledExpertKits {
+  readonly installed: readonly ProductContentIdentity[]
+}
+
+/** Incremental task configuration; omitted selections retain the task's current values. */
+export interface ProductTaskCapabilityRequest {
+  /** Change execution mode while retaining the task's selected capabilities. */
+  readonly basePresetId?: string
+  readonly sessionId?: string
+  /** Select a kit, or clear its composition with null while retaining selected knowledge. */
+  readonly expertKitId?: string | null
+  readonly connectorIds?: readonly string[]
+  readonly knowledgeBaseIds?: readonly string[]
+  /** Explicitly exit the kit and remove only resources denied by a successful live query. */
+  readonly recoverCapabilities?: boolean
+}
+
+/** Preparation does not modify a Session; the official selection API commits the result. */
+export interface ProductTaskCapabilityResult {
+  readonly kind: 'CURRENT_SESSION' | 'NEW_SESSION'
+  readonly presetId: string
+  readonly capabilities: ProductTaskCapabilities
+  readonly dependencyChecks: readonly ProductDependencyCheck[]
+}
+
+/** One dependency verified before preparing a product capability. */
 export interface ProductDependencyCheck {
   readonly kind: 'DESKTOP_VERSION' | 'SKILL' | 'DATA_CONNECTION' | 'TOOL' | 'KNOWLEDGE_BASE'
   readonly reference: string
-  readonly status: 'READY'
-}
-
-/** Immutable content and dependency result returned by a prepare operation. */
-export interface ProductPrepareResult {
-  readonly presetId: string
-  readonly contentVersion: ProductContentIdentity
-  readonly dependencyChecks: readonly ProductDependencyCheck[]
+  readonly status: 'READY' | 'MISSING' | 'UNAUTHORIZED' | 'INCOMPATIBLE' | 'NOT_CHECKED'
 }
 
 /** Versioned request sent across the product bridge. */
@@ -125,7 +263,7 @@ export interface ProductInvokeResponse {
 
 /** Product event delivered to subscribed Renderer listeners. */
 export interface ProductEvent {
-  readonly type: 'session.changed' | 'catalog.changed' | 'auth.required'
+  readonly type: 'session.changed' | 'catalog.changed' | 'authoring.changed' | 'auth.required'
   readonly payload?: unknown
 }
 
@@ -135,12 +273,21 @@ export interface ProductEvent {
  */
 export function isProductMethod(value: unknown): value is ProductMethod {
   return typeof value === 'string' && [
+    'tasks.capabilities.read', 'tasks.capabilities.prepare',
+    'extensions.authoring.begin', 'extensions.authoring.read', 'extensions.authoring.update', 'extensions.authoring.save', 'extensions.authoring.discard',
+    'extensions.import.inspect', 'extensions.import.release', 'extensions.save', 'extensions.submit', 'extensions.delete', 'extensions.bundledSkill.read',
+    'extensions.connector.read', 'extensions.connector.update', 'extensions.connector.delete', 'knowledge.references.resolve',
     'auth.getSession', 'auth.ensureDingTalk', 'auth.beginDingTalk', 'auth.pollDingTalk', 'auth.refresh', 'catalog.refresh', 'expertKits.list',
-    'expertKits.get', 'expertKits.readme', 'expertKits.artifact', 'expertKits.preset.prepare',
+    'expertKits.get', 'expertKits.readme', 'expertKits.artifact', 'expertKits.install', 'expertKits.uninstall', 'expertKits.installed.read',
     'skills.list', 'skills.get', 'skills.readme',
-    'skills.artifact', 'skills.prepare', 'connectors.list',
+    'skills.artifact', 'skills.install', 'skills.uninstall', 'skills.installed.read', 'connectors.list',
     'connectors.authorization.status', 'connectors.authorization.begin', 'connectors.authorization.revoke',
-    'knowledge.bases.list', 'knowledge.search',
+    'knowledge.bases.list', 'knowledge.bases.create', 'knowledge.bases.delete', 'knowledge.files.limits', 'knowledge.search', 'knowledge.sources.read',
+    'knowledge.documents.list', 'knowledge.documents.get', 'knowledge.documents.previewMetadata', 'knowledge.documents.read', 'knowledge.documents.upload',
+    'knowledge.documents.preview.open', 'knowledge.documents.preview.read', 'knowledge.documents.preview.close',
+    'knowledge.documents.download', 'knowledge.documents.openExternal',
+    'knowledge.documents.save', 'knowledge.documents.importUrl', 'knowledge.documents.delete', 'knowledge.documents.reindex',
+    'knowledge.documents.move', 'knowledge.folders.list', 'knowledge.folders.create', 'knowledge.folders.rename', 'knowledge.folders.delete',
     'native.filesystem.list', 'native.filesystem.read',
     'native.filesystem.write', 'native.secure-storage.get', 'native.secure-storage.set', 'native.secure-storage.delete',
     'native.sqlite.query', 'native.sqlite.execute', 'native.dingtalk-auth.state',
