@@ -24,6 +24,8 @@ Acceptance builds produce a Windows EXE or macOS DMG; any additional archives or
 
 ## Local Checks
 
+The internal synchronization step optionally reads `DESKTOP_GITHUB_PROXY_URL` from Gitea Secrets. Node and Git use that authenticated proxy only within this step, and GitHub Git requests use HTTP/1.1. Keep the URL out of repository variables and source; checkout, dependency installation, and hosted packaging retain their own network configuration.
+
 Workflow selection controls files under `.github/workflows/`. GitHub-managed dynamic workflows, such as Dependabot, use separate repository settings and cannot be disabled through the workflow API.
 
 Upstream regressions run on every hosted platform. Executable-bit changes are tested on macOS and Linux, where filesystem permissions represent them; dangling-symlink checks also run on Windows.
