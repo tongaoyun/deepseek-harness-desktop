@@ -974,6 +974,8 @@ describe('DeepSeekHarness capability navigation', () => {
       { id: 'oauth', displayName: '客户连接器', authMode: 'oauth', authorizationStatus: 'REQUIRED', availabilityStatus: 'AUTHORIZATION_REQUIRED', tools: [] },
       { id: 'offline', displayName: '暂不可用连接器', authMode: 'oauth', authorizationStatus: 'AUTHORIZED', availabilityStatus: 'UNAVAILABLE', tools: [] },
       { id: 'expired', displayName: '授权过期连接器', authMode: 'oauth', authorizationStatus: 'EXPIRED', availabilityStatus: 'AUTHORIZATION_REQUIRED', tools: [] },
+      { id: 'unconfigured', displayName: '待配置连接器', status: 'needs-configuration', ready: false,
+        authMode: 'none', authorizationStatus: 'AUTHORIZED', availabilityStatus: 'AVAILABLE', tools: [] },
     ])
     installProductApi({
       getSession: vi.fn(async () => ({ authenticated: true })), invoke, cancel: vi.fn(),
@@ -982,6 +984,7 @@ describe('DeepSeekHarness capability navigation', () => {
     const productActions = actions()
     render(<ConnectorsPanel t={t} {...productActions} />)
     expect(await screen.findByText('订单连接器')).not.toBeNull()
+    expect(screen.getByText(zh.statusNeedsConfiguration)).not.toBeNull()
     const connected = screen.getByRole('tab', { name: new RegExp(`^${zh.connectorFilterConnected}\\s*2$`, 'u') })
     expect(screen.getByText(zh.statusExpired)).not.toBeNull()
     fireEvent.click(connected)
@@ -989,6 +992,7 @@ describe('DeepSeekHarness capability navigation', () => {
     expect(screen.getByText('暂不可用连接器')).not.toBeNull()
     expect(screen.queryByText('客户连接器')).toBeNull()
     expect(screen.queryByText('授权过期连接器')).toBeNull()
+    expect(screen.queryByText('待配置连接器')).toBeNull()
     expect(connected.getAttribute('aria-selected')).toBe('true')
     fireEvent.keyDown(connected, { key: 'ArrowLeft' })
     expect(screen.getByText('客户连接器')).not.toBeNull()

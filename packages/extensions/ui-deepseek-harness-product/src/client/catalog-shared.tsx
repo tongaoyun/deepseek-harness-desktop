@@ -502,21 +502,23 @@ export function AvailabilityStatus({ status, t }: {
 
 /** Account connection state is independent of task selection and current server availability.
  * @param connector - Connector catalog metadata returned by the product server.
- * @returns Whether authorization or a ready managed connection is present.
+ * @returns Whether the device is configured and authorization or a managed connection is present.
  */
-export function isConnectorConnected(connector: Pick<ProductItem, 'authMode' | 'authorizationStatus' | 'availabilityStatus'>): boolean {
+export function isConnectorConnected(connector: Pick<ProductItem, 'authMode' | 'authorizationStatus' | 'availabilityStatus' | 'status'>): boolean {
+  if (connector.status === 'needs-configuration') return false
   if (connector.authorizationStatus !== undefined) return connector.authorizationStatus === 'AUTHORIZED'
   return connector.authMode !== 'oauth' && connector.availabilityStatus === 'AVAILABLE'
 }
 
 /** Show connector authorization and availability without implying task selection. */
 export function ConnectorStatus({ connector, t }: {
-  readonly connector: Pick<ProductItem, 'authorizationStatus' | 'availabilityStatus'>
+  readonly connector: Pick<ProductItem, 'authorizationStatus' | 'availabilityStatus' | 'status'>
   readonly t: (key: DeepSeekHarnessProductKey) => string
 }): ReactNode {
-  const status = connector.authorizationStatus === 'EXPIRED' ? 'EXPIRED'
-    : connector.authorizationStatus === 'REQUIRED' ? 'AUTHORIZATION_REQUIRED'
-      : connector.availabilityStatus ?? (connector.authorizationStatus === 'AUTHORIZED' ? 'AVAILABLE' : undefined)
+  const status = connector.status === 'needs-configuration' ? 'NEEDS-CONFIGURATION'
+    : connector.authorizationStatus === 'EXPIRED' ? 'EXPIRED'
+      : connector.authorizationStatus === 'REQUIRED' ? 'AUTHORIZATION_REQUIRED'
+        : connector.availabilityStatus ?? (connector.authorizationStatus === 'AUTHORIZED' ? 'AVAILABLE' : undefined)
   if (status === undefined) return null
   return <span className={css.availabilityStatus} data-status={status}>
     {status === 'AVAILABLE' && <IconCheckOutlineRegular size={12} />}

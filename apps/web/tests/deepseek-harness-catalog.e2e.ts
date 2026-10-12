@@ -1376,7 +1376,10 @@ for (const mode of ['official', 'product'] as const) {
         '/api/v1/connectors': [{ id: 'erp', version: '1.0.0', name: 'Order management', displayName: 'Order management',
           status: 'ready', ready: true, authorizationStatus: 'AUTHORIZED', authMode: 'employee-bearer',
           transport: 'streamable-http', url: '/api/v1/connectors/erp/mcp', arguments: [], headers: {}, environment: {},
-          tools: [{ name: 'orders_read', access: 'READ' }] }],
+          tools: [{ name: 'orders_read', access: 'READ' }] },
+        { id: 'local-unconfigured', version: '1.0.0', name: 'Device configuration missing',
+          status: 'needs-configuration', ready: false, authorizationStatus: 'AUTHORIZED', authMode: 'none',
+          transport: 'stdio', command: 'fixture-unconfigured', arguments: [], headers: {}, environment: {}, tools: [] }],
         '/api/v1/knowledge-bases': [...organizationKnowledge,
           { id: 'policy', name: 'Operations playbook', scope: 'COMPANY', companyId: 'fixture-company', ownerName: 'Fixture company', referenceKey: 'company:policy', canRead: true, canManage: false }],
       }
@@ -1672,7 +1675,7 @@ for (const mode of ['official', 'product'] as const) {
         }
         await page.setViewportSize({ width: 1440, height: 900 })
         for (const [mode, label] of [['TEXT', /^(Upload text PDF \(text layer, no OCR\)|上传文本型 PDF（保留文字，无 OCR）)$/],
-          ['STANDARD', /^(Upload file \(standard parsing\)|上传文件（标准解析）)$/]] as const) {
+          ['STANDARD', /^(Upload file \(standard parsing\)|上传文件（通用解析）)$/]] as const) {
           await ownMaterials.getByRole('button', { name: /^(Upload files|上传文件)$/, exact: true }).click()
           await page.getByRole('menuitem', { name: label, exact: true }).click()
           await expect.poll(() => uploadedFiles.at(-1)?.mode).toBe(mode)
@@ -1684,7 +1687,7 @@ for (const mode of ['official', 'product'] as const) {
         expect(uploadedFiles).toEqual([{ mode: 'TEXT', filename: 'text-policy.pdf' }, { mode: 'STANDARD', filename: 'standard-policy.pdf' }])
         await (await openKnowledgeNavigation(page)).getByRole('button', { name: 'Policies', exact: true }).click()
         await ownMaterials.getByRole('button', { name: /^(Upload files|上传文件)$/, exact: true }).click()
-        await page.getByRole('menuitem', { name: /^(Upload file \(standard parsing\)|上传文件（标准解析）)$/, exact: true }).click()
+        await page.getByRole('menuitem', { name: /^(Upload file \(standard parsing\)|上传文件（通用解析）)$/, exact: true }).click()
         await expect.poll(() => uploadedFiles.at(-1)?.folderId).toBe('folder-policies')
         expect(await (await openKnowledgeNavigation(page)).getByRole('button', { name: 'Policies', exact: true }).getAttribute('aria-current')).toBe('page')
         await (await openKnowledgeNavigation(page)).getByRole('button', { name: /^(New personal knowledge base|新建个人知识库)$/, exact: true }).click()
@@ -1966,6 +1969,10 @@ for (const mode of ['official', 'product'] as const) {
         await expect.poll(async () => (await invoke('tasks.capabilities.read', { sessionId }) as ProductTaskCapabilities).expertKit).toBeUndefined()
         await page.getByRole('button', { name: /^(Connectors|连接器)$/, exact: true }).click()
         await page.getByRole('button', { name: /Order management/ }).waitFor()
+        await page.getByText(/^(Needs configuration|待配置)$/, { exact: true }).waitFor()
+        const connectedCatalog = page.getByRole('tab', { name: /^(Connected|已连接)\s*1$/ })
+        await connectedCatalog.click()
+        expect(await page.getByRole('button', { name: /Device configuration missing/ }).count()).toBe(0)
         await page.getByRole('button', { name: /Order management/ }).click()
         expect(await page.getByRole('dialog').getByRole('checkbox').count()).toBe(0)
         await expect.poll(() => invoke('tasks.capabilities.read', { sessionId }))
