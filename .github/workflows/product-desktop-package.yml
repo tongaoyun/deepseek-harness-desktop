@@ -115,6 +115,26 @@ jobs:
           }
           pnpm --dir apps/desktop test:installer -- --headless
           if ($LASTEXITCODE -ne 0) { throw 'Installer lifecycle smoke failed' }
+      - name: Test native Electron UI profiles
+        env:
+          DSH_DESKTOP_SMOKE: '1'
+          DSH_SNAPSHOT: replay
+        run: >-
+          pnpm exec vitest run --config vitest.web.config.ts
+          apps/web/tests/deepseek-harness-catalog.e2e.ts
+          -t 'boots the built .* Electron assembly'
+          --reporter=default --reporter=json
+          --outputFile=.artifacts/desktop-ui-${{ matrix.target }}.json
+      - name: Upload desktop UI evidence
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: harness-desktop-ui-${{ matrix.target }}-${{ github.run_number }}-${{ github.run_attempt }}
+          path: |
+            .artifacts/desktop-ui-${{ matrix.target }}.json
+            .artifacts/deepseek-harness-catalog/electron-*.png
+          if-no-files-found: warn
+          retention-days: 14
       - name: Record verified artifact checksums
         env:
           PACKAGE_TARGET: ${{ matrix.target }}

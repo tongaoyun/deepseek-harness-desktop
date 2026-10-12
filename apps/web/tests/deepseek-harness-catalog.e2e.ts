@@ -1340,7 +1340,7 @@ interface DesktopSmokeBridge {
 }
 
 for (const mode of ['official', 'product'] as const) {
-  it.skipIf(process.env.DSH_DESKTOP_SMOKE !== '1' || process.platform !== 'darwin')(
+  it.skipIf(process.env.DSH_DESKTOP_SMOKE !== '1' || (process.platform !== 'darwin' && process.platform !== 'win32'))(
     `boots the built ${mode} Electron assembly with an isolated profile`, async () => {
       const root = await mkdtemp(join(tmpdir(), `product-desktop-${mode}-`))
       const home = join(root, 'home')
@@ -1577,7 +1577,8 @@ for (const mode of ['official', 'product'] as const) {
           ...mode === 'official' ? {} : {
             DSH_DESKTOP_EXTENSION: join(REPO_ROOT, 'packages/deepseek-harness-product/desktop/lib/index.js'),
             DEEPSEEK_HARNESS_SERVER_URL: origin, DEEPSEEK_HARNESS_SESSION_TOKEN: secret,
-            DEEPSEEK_HARNESS_NATIVE_BINARY: join(REPO_ROOT, 'native/deepseek-harness/target/release/deepseek-harness-native'),
+            DEEPSEEK_HARNESS_NATIVE_BINARY: join(REPO_ROOT, 'native/deepseek-harness/target/release',
+              process.platform === 'win32' ? 'deepseek-harness-native.exe' : 'deepseek-harness-native'),
           },
         }, timeout: 60_000 }
       app = await _electron.launch(launchOptions)
@@ -2147,6 +2148,6 @@ for (const mode of ['official', 'product'] as const) {
       expect(tripwire.pageErrors).toEqual([])
       await mkdir(screenshots, { recursive: true })
       await page.screenshot({ path: join(screenshots, `electron-${mode}.png`) })
-    }, 120_000,
+    },
   )
 }
