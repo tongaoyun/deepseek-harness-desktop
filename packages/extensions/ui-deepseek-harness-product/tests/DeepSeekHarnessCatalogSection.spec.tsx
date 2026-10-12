@@ -1110,8 +1110,9 @@ describe('DeepSeekHarness capability navigation', () => {
 
     const taskActions = actions()
     const { container } = render(<KnowledgePanel t={t} {...taskActions} />)
-    const documentButton = await waitFor(() => within(screen.getByRole('navigation', { name: zh.knowledge }))
-      .getByRole('button', { name: 'orders.md', exact: true }))
+    const documentButton = await screen.findByRole('button', { name: 'orders.md', exact: true })
+    expect(within(screen.getByRole('navigation', { name: zh.knowledge }))
+      .queryByRole('button', { name: 'orders.md', exact: true })).toBeNull()
     fireEvent.click(documentButton)
     expect(await screen.findByText('订单退款规则')).not.toBeNull()
     expect(container.querySelector('[data-knowledge-inline-reader]')).not.toBeNull()

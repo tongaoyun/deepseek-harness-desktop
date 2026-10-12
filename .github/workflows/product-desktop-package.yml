@@ -148,6 +148,17 @@ jobs:
             .artifacts/deepseek-harness-catalog/electron-*-startup.txt
           if-no-files-found: warn
           retention-days: 14
+      - name: Upload failed packaging diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: harness-packaging-failure-${{ matrix.target }}-${{ github.run_number }}-${{ github.run_attempt }}
+          include-hidden-files: true
+          path: |
+            apps/desktop/.desktop-build/packaging-runs/**/events.jsonl
+            apps/desktop/.desktop-build/packaging-runs/**/*.log
+          if-no-files-found: warn
+          retention-days: 14
       - name: Record verified artifact checksums
         env:
           PACKAGE_TARGET: ${{ matrix.target }}

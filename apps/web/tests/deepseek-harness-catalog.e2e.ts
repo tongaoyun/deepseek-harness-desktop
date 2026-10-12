@@ -1529,6 +1529,10 @@ for (const { mode, installed } of desktopCarriers) {
           response.end(kitArchive)
         } else if (path === '/api/v1/skills/order-analysis') {
           response.end(JSON.stringify({ success: true, data: catalogRows['/api/v1/skills']![0] }))
+        } else if (path === '/api/v1/skills/order-analysis/readme') {
+          response.end(JSON.stringify({ success: true, data: {
+            readme: '---\nname: order-analysis\ndescription: Analyze order trends.\n---\nCompare orders and report exceptions.\n',
+          } }))
         } else if (path === '/api/v1/skills/order-analysis/artifacts') {
           response.end(JSON.stringify({ success: true, data: { id: 'order-analysis', version: '1.0.0',
             sha256: skillDigest, url: origin + '/skill.tar.gz' } }))
@@ -1888,8 +1892,10 @@ for (const { mode, installed } of desktopCarriers) {
         await page.getByRole('button', { name: /^(Skills|技能)$/, exact: true }).click()
         await page.getByRole('button', { name: /Order analysis/ }).click()
         const skillDetail = page.getByRole('dialog', { name: /^(Skill details|技能详情)$/, exact: true })
+        await skillDetail.getByText('Compare orders and report exceptions.', { exact: true }).waitFor()
         await skillDetail.getByRole('button', { name: /^(More actions|更多操作)$/, exact: true }).click()
-        expect(await page.getByRole('menuitem').count()).toBe(1)
+        const skillActions = page.getByRole('menu').filter({ has: page.getByRole('menuitem', { name: /^(Uninstall|卸载)$/, exact: true }) })
+        await expect.poll(() => skillActions.getByRole('menuitem').allTextContents()).toEqual([expect.stringMatching(/^(Uninstall|卸载)$/)])
         await page.getByRole('menuitem', { name: /^(Uninstall|卸载)$/, exact: true }).click()
         const skillUninstall = page.getByRole('dialog', { name: /Order analysis/ })
         await skillUninstall.getByRole('button', { name: /^(Cancel|取消)$/, exact: true }).click()
@@ -1933,7 +1939,8 @@ for (const { mode, installed } of desktopCarriers) {
           installed: [{ id: 'operations', version: '1.0.0', sha256: kitDigest }],
         })
         await page.getByRole('button', { name: /^(More actions|更多操作)$/, exact: true }).click()
-        expect(await page.getByRole('menuitem').count()).toBe(1)
+        const kitActions = page.getByRole('menu').filter({ has: page.getByRole('menuitem', { name: /^(Uninstall|卸载)$/, exact: true }) })
+        await expect.poll(() => kitActions.getByRole('menuitem').allTextContents()).toEqual([expect.stringMatching(/^(Uninstall|卸载)$/)])
         await page.getByRole('menuitem', { name: /^(Uninstall|卸载)$/, exact: true }).click()
         const kitUninstall = page.getByRole('dialog', { name: /Retail operations/ })
         await kitUninstall.getByRole('button', { name: /^(Cancel|取消)$/, exact: true }).click()

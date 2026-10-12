@@ -253,6 +253,14 @@ test('uses three native hosted runners and product packaging without publishing 
   assert.match(evidence.with.path, /desktop-ui-.*\.json/u)
   assert.match(evidence.with.path, /electron-\*\.png/u)
   assert.equal(evidence.with['retention-days'], 14)
+  const packagingEvidence = steps.find(step => step.name === 'Upload failed packaging diagnostics')
+  assert.equal(packagingEvidence.if, 'failure()')
+  assert.equal(packagingEvidence.with['include-hidden-files'], true)
+  assert.deepEqual(packagingEvidence.with.path.trim().split('\n'), [
+    'apps/desktop/.desktop-build/packaging-runs/**/events.jsonl',
+    'apps/desktop/.desktop-build/packaging-runs/**/*.log',
+  ])
+  assert.equal(packagingEvidence.with['retention-days'], 14)
   assert.doesNotMatch(steps.find(step => step.name === 'Upload installers').with.path, /desktop-ui|electron-\*/u)
   assert.doesNotMatch(source, /192\.168\.|secrets\.|release:publish|upload:latest|CSC_LINK|APPLE_API_KEY/u)
 })
