@@ -165,6 +165,7 @@ test('uses three native hosted runners and product packaging without publishing 
   assert.match(steps.find(step => step.name === 'Package Windows').run, /apps\/product-desktop run package win-x64 --unsigned/u)
   assert.match(steps.find(step => step.name === 'Package macOS').run, /apps\/product-desktop run package.*--unsigned/u)
   assert.match(steps.find(step => step.name === 'Upload installers').with.path, /build-manifest\.json/u)
+  assert.equal(steps.find(step => step.name === 'Upload installers').with['retention-days'], 1)
   const uiIndex = steps.findIndex(step => step.name === 'Test native Electron UI profiles')
   const ui = steps[uiIndex]
   assert.ok(uiIndex > steps.findIndex(step => step.name === 'Package Windows'))
