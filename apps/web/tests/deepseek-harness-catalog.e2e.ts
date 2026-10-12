@@ -108,17 +108,20 @@ async function openKnowledgeNavigation(page: Page) {
   return navigation
 }
 
+async function openKnowledgeFile(page: Page, name: string): Promise<void> {
+  await (await openKnowledgeNavigation(page)).getByRole('button', { name: /^(All materials|全部资料)$/, exact: true }).click()
+  await page.locator('[data-knowledge-content]').getByRole('button', { name, exact: true }).click()
+}
+
 async function expectKnowledgeNavigationFits(navigation: Locator): Promise<void> {
   await expect.poll(async () => navigation.evaluate((element) => {
     const rect = (value: Element | null): DOMRect | undefined => value?.getBoundingClientRect()
     const heading = element.querySelector('button[aria-current="page"][class*="knowledgeLibraryRow"]')
     const tree = element.querySelector('[class*="knowledgeWorkspaceTree"]')
-    const search = tree?.querySelector('form') ?? null
     const controls = tree === null ? [] : [...tree.querySelectorAll('button, input')]
     const navigationRect = element.getBoundingClientRect()
     const headingRect = rect(heading)
     const treeRect = rect(tree)
-    const searchRect = rect(search)
     const isInsideNavigation = (value: DOMRect | undefined): boolean => value !== undefined
       && value.width > 0 && value.height > 0
       && value.left >= navigationRect.left - 1 && value.right <= navigationRect.right + 1
@@ -127,7 +130,6 @@ async function expectKnowledgeNavigationFits(navigation: Locator): Promise<void>
       headingHasWidth: (headingRect?.width ?? 0) > 0 && (heading?.querySelector('span')?.getBoundingClientRect().width ?? 0) > 0,
       headingIsAboveTree: headingRect !== undefined && treeRect !== undefined && headingRect.bottom <= treeRect.top + 1,
       treeInsideNavigation: isInsideNavigation(treeRect),
-      searchInsideNavigation: isInsideNavigation(searchRect),
       controlsInsideNavigation,
       navigationOverflow: element.scrollWidth > element.clientWidth + 1,
       treeOverflow: tree !== null && tree.scrollWidth > tree.clientWidth + 1,
@@ -136,7 +138,6 @@ async function expectKnowledgeNavigationFits(navigation: Locator): Promise<void>
     headingHasWidth: true,
     headingIsAboveTree: true,
     treeInsideNavigation: true,
-    searchInsideNavigation: true,
     controlsInsideNavigation: true,
     navigationOverflow: false,
     treeOverflow: false,
@@ -201,7 +202,7 @@ async function fixtureRequestBody(request: IncomingMessage): Promise<Record<stri
 async function expectOriginalPreviews(page: Page, prefix: string): Promise<void> {
   await page.setViewportSize({ width: 1440, height: 900 })
   expect(await page.locator('[data-knowledge-workspace]').textContent()).not.toContain(parserDiagnostic)
-  await (await openKnowledgeNavigation(page)).getByRole('button', { name: 'Policy 2.pdf', exact: true }).click()
+  await openKnowledgeFile(page, 'Policy 2.pdf')
   const reader = page.locator('[data-knowledge-inline-reader]')
   await expectPdfPixels(page)
   expect(await reader.locator('[data-pdf-page]').count()).toBe(2)
@@ -213,7 +214,7 @@ async function expectOriginalPreviews(page: Page, prefix: string): Promise<void>
     await page.screenshot({ path: join(screenshots, `${prefix}-knowledge-original-pdf-${width}.png`), animations: 'disabled' })
   }
   await page.setViewportSize({ width: 1440, height: 900 })
-  await (await openKnowledgeNavigation(page)).getByRole('button', { name: 'Order totals.xlsx', exact: true }).click()
+  await openKnowledgeFile(page, 'Order totals.xlsx')
   await reader.locator('[data-excel-preview]').waitFor()
   await reader.getByText('Preview', { exact: true }).waitFor()
   await expect.poll(() => reader.locator('[data-excel-preview] canvas').first().evaluate((canvas) => {
@@ -233,7 +234,7 @@ async function expectOriginalPreviews(page: Page, prefix: string): Promise<void>
     return textPixels
   })).toBeGreaterThan(20)
   await page.screenshot({ path: join(screenshots, `${prefix}-knowledge-original-xlsx.png`), animations: 'disabled' })
-  await (await openKnowledgeNavigation(page)).getByRole('button', { name: 'Office policy.docx', exact: true }).click()
+  await openKnowledgeFile(page, 'Office policy.docx')
   await expect.poll(() => reader.locator('[data-pdf-page="1"] canvas').evaluate((canvas) => {
     const element = canvas as HTMLCanvasElement
     return element.width > 0 && element.height > 0
@@ -253,7 +254,7 @@ async function expectPdfPixels(page: Page): Promise<void> {
 }
 
 async function expectLargeOriginalPreview(page: Page, prefix: string): Promise<void> {
-  await (await openKnowledgeNavigation(page)).getByRole('button', { name: 'Policy 2.pdf', exact: true }).click()
+  await openKnowledgeFile(page, 'Policy 2.pdf')
   await page.locator('[data-knowledge-inline-reader] [data-pdf-page="1"] canvas').waitFor({ timeout: 60_000 })
   await expectPdfPixels(page)
   await page.locator('[data-knowledge-inline-reader]').getByText('Selectable PDF text', { exact: true }).first().waitFor()
@@ -428,7 +429,7 @@ it('keeps native themes and responsive catalogs while using official details and
   let transferSequence = 0
   let largePreview = false
   const newPersonalBases: Record<string, unknown>[] = []
-  const managedFolders: { id: string; name: string }[] = [{ id: 'folder-policies', name: 'Policies' }]
+  const managedFolders: { id: string; name: string; parentId: string | null }[] = [{ id: 'folder-policies', name: 'Policies', parentId: null }]
   const materialRequests: {
     readonly knowledgeBaseId?: string
     readonly documentId?: string
@@ -458,7 +459,7 @@ it('keeps native themes and responsive catalogs while using official details and
     else installedExpertKits.splice(index, 1, identity)
     return identity
   }
-  await page.exposeFunction('__productInvoke', (method: string, payload?: { sessionId?: string; revision?: number; id?: string; name?: string; kind?: string; version?: string; draft?: Record<string, unknown>; expertKitId?: string | null; expertKitTaskId?: string; basePresetId?: string; connectorIds?: string[]; knowledgeBaseIds?: string[]; knowledgeBaseId?: string; documentId?: string; query?: string; page?: number; size?: number; folderId?: string | null; pdfParseMode?: string; rendered?: boolean; transferId?: string; offset?: number }): unknown => {
+  await page.exposeFunction('__productInvoke', (method: string, payload?: { sessionId?: string; revision?: number; id?: string; name?: string; kind?: string; version?: string; draft?: Record<string, unknown>; expertKitId?: string | null; expertKitTaskId?: string; basePresetId?: string; connectorIds?: string[]; knowledgeBaseIds?: string[]; knowledgeBaseId?: string; documentId?: string; query?: string; page?: number; size?: number; folderId?: string | null; parentId?: string | null; pdfParseMode?: string; rendered?: boolean; transferId?: string; offset?: number }): unknown => {
     calls.push(method)
     switch (method) {
       case 'auth.getSession': return { authenticated: true }
@@ -590,7 +591,7 @@ it('keeps native themes and responsive catalogs while using official details and
       }
       case 'knowledge.folders.list': return { items: managedFolders, page: payload?.page ?? 1, size: payload?.size ?? 100, total: managedFolders.length }
       case 'knowledge.folders.create': {
-        const folder = { id: 'created-folder', name: payload?.name ?? '' }
+        const folder = { id: `created-folder${managedFolders.some(folder => folder.id === 'created-folder') ? '-child' : ''}`, name: payload?.name ?? '', parentId: payload?.parentId ?? null }
         managedFolders.push(folder)
         return folder
       }
@@ -700,7 +701,7 @@ it('keeps native themes and responsive catalogs while using official details and
       await knowledgeList.getByRole('button', { name: 'Sales procedures', exact: true }).waitFor()
       await knowledgeList.getByRole('heading', { name: 'Sales (21)', exact: true }).waitFor()
       await knowledgeList.getByRole('heading', { name: 'Sales (22)', exact: true }).waitFor()
-      await knowledgeList.getByRole('button', { name: 'Order review.md', exact: true }).waitFor()
+      await knowledgeList.getByRole('button', { name: 'Policies', exact: true }).waitFor()
       await expectKnowledgeNavigationFits(knowledgeList)
       expect(await page.locator('[data-knowledge-workspace]').evaluate(region => region.scrollWidth > region.clientWidth)).toBe(false)
       await page.screenshot({ path: join(screenshots, `knowledge-${theme}-${viewport.width}.png`) })
@@ -1040,7 +1041,7 @@ it('keeps native themes and responsive catalogs while using official details and
   await materials.getByRole('button', { name: 'Order review.md', exact: true }).waitFor()
   expect(await page.getByRole('checkbox').count()).toBe(0)
   expect(await materials.getByRole('button', { name: /^(Upload files|New)$/, exact: true }).count()).toBe(0)
-  expect(await materials.getByRole('button', { name: /^Actions for/ }).count()).toBe(2)
+  expect(await materials.getByRole('button', { name: /^Actions for/ }).count()).toBe(1)
   expect(await page.getByRole('dialog').count()).toBe(0)
   await snapshot('knowledge-detail', '[data-knowledge-workspace]')
   const beforeMaterials = calls.filter(method => method === 'tasks.capabilities.prepare').length
@@ -1050,7 +1051,7 @@ it('keeps native themes and responsive catalogs while using official details and
     await page.screenshot({ path: join(screenshots, `knowledge-materials-readonly-${width}.png`), animations: 'disabled' })
   }
   await page.setViewportSize({ width: 1440, height: 900 })
-  await (await openKnowledgeNavigation(page)).getByRole('button', { name: 'Order review.md', exact: true }).click()
+  await openKnowledgeFile(page, 'Order review.md')
   const contentReader = page.locator('[data-knowledge-inline-reader]')
   await contentReader.getByText('Check order totals before changing delivery details.', { exact: true }).waitFor()
   await contentReader.getByRole('heading', { name: 'Order review', exact: true }).waitFor()
@@ -1092,11 +1093,12 @@ it('keeps native themes and responsive catalogs while using official details and
     await expect.poll(() => personalMaterials.getByRole('button', { name: 'Upload files', exact: true }).isEnabled()).toBe(true)
   }
   expect(uploadModes).toEqual(['STANDARD', 'TEXT'])
+  await (await openKnowledgeNavigation(page)).getByRole('button', { name: 'All materials', exact: true }).click()
   await personalMaterials.getByRole('button', { name: 'Next page', exact: true }).click()
   await personalMaterials.getByRole('button', { name: 'Handover guide.md', exact: true }).waitFor()
   expect(materialRequests.at(-1)).toMatchObject({ knowledgeBaseId: 'personal-notes', page: 2, size: 20 })
-  await (await openKnowledgeNavigation(page)).getByRole('searchbox').fill('handover')
-  await (await openKnowledgeNavigation(page)).getByRole('button', { name: 'Search', exact: true }).click()
+  await page.locator('[data-knowledge-content]').getByRole('searchbox').fill('handover')
+  await page.locator('[data-knowledge-content]').getByRole('button', { name: 'Search', exact: true }).click()
   await expect.poll(() => personalMaterials.getByRole('row').count()).toBe(2)
   expect(materialRequests.at(-1)).toMatchObject({ knowledgeBaseId: 'personal-notes', query: 'handover', page: 1 })
   for (const width of [1440, 390]) {
@@ -1105,8 +1107,8 @@ it('keeps native themes and responsive catalogs while using official details and
     await page.screenshot({ path: join(screenshots, `knowledge-materials-manager-${width}.png`), animations: 'disabled' })
   }
   await page.setViewportSize({ width: 1440, height: 900 })
-  await (await openKnowledgeNavigation(page)).getByRole('searchbox').fill('')
-  await (await openKnowledgeNavigation(page)).getByRole('button', { name: 'Search', exact: true }).click()
+  await page.locator('[data-knowledge-content]').getByRole('searchbox').fill('')
+  await page.locator('[data-knowledge-content]').getByRole('button', { name: 'Search', exact: true }).click()
   await personalMaterials.getByRole('button', { name: 'Order review.md', exact: true }).waitFor()
   await expectOriginalPreviews(page, 'web')
   largePreview = true
@@ -1161,6 +1163,27 @@ it('keeps native themes and responsive catalogs while using official details and
     await page.keyboard.press('Escape')
   }
   await page.setViewportSize({ width: 1440, height: 900 })
+  await (await openKnowledgeNavigation(page)).getByRole('button', { name: 'Folder actions for Project records', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'New subfolder', exact: true }).click()
+  const subfolderEditor = page.getByRole('dialog', { name: 'New folder', exact: true })
+  expect(await subfolderEditor.getByRole('combobox', { name: 'Parent folder', exact: true }).inputValue()).toBe('created-folder')
+  await subfolderEditor.getByRole('textbox', { name: 'Folder name', exact: true }).fill('October')
+  await subfolderEditor.getByRole('button', { name: 'Save', exact: true }).click()
+  await expect.poll(async () => (await openKnowledgeNavigation(page)).getByRole('button', { name: 'October', exact: true }).getAttribute('aria-current')).toBe('page')
+  expect(await personalMaterials.getByRole('navigation').textContent()).toContain('Project records')
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 900 })
+    const tree = await openKnowledgeNavigation(page)
+    await expectKnowledgeNavigationFits(tree)
+    await page.screenshot({ path: join(screenshots, `knowledge-nested-folders-${width}.png`), animations: 'disabled' })
+    await tree.getByRole('button', { name: 'October', exact: true }).click()
+    await expectKnowledgeMainFits(page)
+  }
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await (await openKnowledgeNavigation(page)).getByRole('button', { name: 'Folder actions for October', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Delete folder', exact: true }).click()
+  await page.getByRole('dialog', { name: 'Delete folder', exact: true }).getByRole('button', { name: 'Delete', exact: true }).click()
+  await expect.poll(async () => (await openKnowledgeNavigation(page)).getByRole('button', { name: 'Project records', exact: true }).getAttribute('aria-current')).toBe('page')
   await (await openKnowledgeNavigation(page)).getByRole('button', { name: 'Folder actions for Project records', exact: true }).click()
   await page.getByRole('menuitem', { name: 'Delete folder', exact: true }).click()
   await page.getByRole('dialog', { name: 'Delete folder', exact: true }).getByRole('button', { name: 'Delete', exact: true }).click()
@@ -1398,7 +1421,7 @@ for (const { mode, installed } of desktopCarriers) {
       }
       let knowledgeUnavailable = false
       const uploadedFiles: { mode: string; filename: string; folderId?: string }[] = []
-      const folderRows = [{ id: 'folder-policies', name: 'Policies' }]
+      const folderRows: { id: string; name: string; parentId: string | null }[] = [{ id: 'folder-policies', name: 'Policies', parentId: null }]
       let largePreview = false
       const server = createServer((request, response) => {
         const url = new URL(request.url ?? '/', 'http://localhost')
@@ -1461,7 +1484,7 @@ for (const { mode, installed } of desktopCarriers) {
             } else if (request.method === 'POST' || request.method === 'PUT') {
               void fixtureRequestBody(request).then((body) => {
                 if (typeof body.name !== 'string') throw new Error('Missing folder name')
-                const folder = request.method === 'PUT' ? folderRows.find(row => row.id === parts[6]) : { id: 'created-folder', name: body.name }
+                const folder = request.method === 'PUT' ? folderRows.find(row => row.id === parts[6]) : { id: `created-folder${folderRows.some(folder => folder.id === 'created-folder') ? '-child' : ''}`, name: body.name, parentId: typeof body.parentId === 'string' ? body.parentId : null }
                 if (folder === undefined) throw new Error('Missing folder')
                 folder.name = body.name
                 if (request.method === 'POST') folderRows.push(folder)
@@ -1680,7 +1703,7 @@ for (const { mode, installed } of desktopCarriers) {
         const navigation = await openKnowledgeNavigation(page)
         await navigation.getByRole('heading', { name: 'Sales (21)', exact: true }).waitFor()
         await navigation.getByRole('heading', { name: 'Sales (22)', exact: true }).waitFor()
-        await navigation.getByRole('button', { name: 'Order review.md', exact: true }).click()
+        await openKnowledgeFile(page, 'Order review.md')
         const reader = page.locator('[data-knowledge-inline-reader]')
         await reader.getByRole('heading', { name: 'Order review', exact: true }).waitFor()
         await reader.getByText('Final policy passage: preserve the audit record.', { exact: true }).waitFor()
@@ -1694,7 +1717,7 @@ for (const { mode, installed } of desktopCarriers) {
           const tree = await openKnowledgeNavigation(page)
           await tree.getByRole('button', { name: 'Policies', exact: true }).waitFor()
           await page.screenshot({ path: join(screenshots, `electron-${carrier}-product-knowledge-navigation-${width}.png`), animations: 'disabled' })
-          await tree.getByRole('button', { name: 'Order review.md', exact: true }).click()
+          await openKnowledgeFile(page, 'Order review.md')
         }
         await page.setViewportSize({ width: 1440, height: 900 })
         await (await openKnowledgeNavigation(page)).getByRole('button', { name: 'Policies', exact: true }).click()
@@ -1762,6 +1785,27 @@ for (const { mode, installed } of desktopCarriers) {
         await renameEditor.getByRole('button', { name: /^(Save|保存)$/, exact: true }).click()
         const folderAction = (await openKnowledgeNavigation(page)).getByRole('button', { name: /^(Folder actions for Desktop records|Desktop records的文件夹操作)$/, exact: true })
         await folderAction.click()
+        await page.getByRole('menuitem', { name: /^(New subfolder|新建子文件夹)$/, exact: true }).click()
+        const subfolderEditor = page.getByRole('dialog', { name: /^(New folder|新建文件夹)$/, exact: true })
+        expect(await subfolderEditor.getByRole('combobox', { name: /^(Parent folder|上级文件夹)$/, exact: true }).inputValue()).toBe('created-folder')
+        await subfolderEditor.getByRole('textbox', { name: /^(Folder name|文件夹名称)$/, exact: true }).fill('October')
+        await subfolderEditor.getByRole('button', { name: /^(Save|保存)$/, exact: true }).click()
+        await expect.poll(async () => (await openKnowledgeNavigation(page)).getByRole('button', { name: 'October', exact: true }).getAttribute('aria-current')).toBe('page')
+        for (const width of [1440, 390]) {
+          await page.setViewportSize({ width, height: 900 })
+          const tree = await openKnowledgeNavigation(page)
+          await expectKnowledgeNavigationFits(tree)
+          await page.screenshot({ path: join(screenshots, `electron-${carrier}-knowledge-nested-folders-${width}.png`), animations: 'disabled' })
+          await tree.getByRole('button', { name: 'October', exact: true }).click()
+          await expectKnowledgeMainFits(page)
+        }
+        await page.setViewportSize({ width: 1440, height: 900 })
+        await (await openKnowledgeNavigation(page)).getByRole('button', { name: /^(Folder actions for October|October的文件夹操作)$/, exact: true }).click()
+        await page.getByRole('menuitem', { name: /^(Delete folder|删除文件夹)$/, exact: true }).click()
+        await page.getByRole('dialog', { name: /^(Delete folder|删除文件夹)$/, exact: true })
+          .getByRole('button', { name: /^(Delete|删除)$/, exact: true }).click()
+        await expect.poll(async () => (await openKnowledgeNavigation(page)).getByRole('button', { name: 'Desktop records', exact: true }).getAttribute('aria-current')).toBe('page')
+        await folderAction.click()
         await page.screenshot({ path: join(screenshots, `electron-${carrier}-product-knowledge-folder-actions.png`), animations: 'disabled' })
         await page.getByRole('menuitem', { name: /^(Delete folder|删除文件夹)$/, exact: true }).click()
         await page.getByRole('dialog', { name: /^(Delete folder|删除文件夹)$/, exact: true })
@@ -1787,10 +1831,11 @@ for (const { mode, installed } of desktopCarriers) {
         if (typeof openedPath !== 'string') throw new Error('Missing system-open file')
         expect(createHash('sha256').update(await readFile(openedPath)).digest('hex'))
           .toBe(createHash('sha256').update(realOfficeBytes('docx')).digest('hex'))
+        await (await openKnowledgeNavigation(page)).getByRole('button', { name: /^(All materials|全部资料)$/, exact: true }).click()
         await ownMaterials.getByRole('button', { name: /^(Next page|下一页)$/, exact: true }).click()
         await ownMaterials.getByRole('button', { name: 'Handover guide.md', exact: true }).waitFor()
-        await (await openKnowledgeNavigation(page)).getByRole('searchbox').fill('handover')
-        await (await openKnowledgeNavigation(page)).getByRole('button', { name: /^(Search|搜索)$/, exact: true }).click()
+        await page.locator('[data-knowledge-content]').getByRole('searchbox').fill('handover')
+        await page.locator('[data-knowledge-content]').getByRole('button', { name: /^(Search|搜索)$/, exact: true }).click()
         await expect.poll(() => ownMaterials.getByRole('row').count()).toBe(2)
         for (const width of [1440, 390]) {
           await page.setViewportSize({ width, height: 900 })

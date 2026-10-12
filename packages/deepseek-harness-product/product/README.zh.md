@@ -60,6 +60,6 @@ kind: "package-library"
 
 连接器保存接受 1–600 的整数 `timeoutSeconds`，默认 60 秒。该字段属于本机 MCP 配置，不能写入对话内容草稿。标准 MCP JSON 可提供同一字段。
 
-`knowledge.documents.*`、`knowledge.folders.*` 和 `knowledge.sources.read` 通过产品服务端分发已认证的管理与阅读操作。分页返回从一开始的 `page` 以及 `items`、`size`、`total`，筛选与总数来自服务端分页。写入校验内容大小和稳定重试键；Markdown 修改必须提供 `expectedUpdatedAt`。文件上传通过注入的原生回调选择文件，拒绝渲染进程提交路径和解析器配置。`pdfParseMode` 仅接受 `STANDARD`（默认）或 `TEXT`（提取 PDF 内嵌文字，不执行 OCR），解析引擎由服务端决定。响应保留异步处理和删除状态。调用取消与身份切换会取消远端操作。WeKnora 地址与凭据不会经过产品桥返回。
+`knowledge.documents.*`、`knowledge.folders.*` 和 `knowledge.sources.read` 通过产品服务端分发已认证的管理与阅读操作。分页返回从一开始的 `page` 以及 `items`、`size`、`total`，筛选与总数来自服务端分页。写入校验内容大小和稳定重试键。文件夹创建发送可为 null 的稳定 `parentId`，响应保留上级标识，名称限制为 80 字符，重命名不改变上级或内容位置；Markdown 修改必须提供 `expectedUpdatedAt`。文件上传通过注入的原生回调选择文件，拒绝渲染进程提交路径和解析器配置。`pdfParseMode` 仅接受 `STANDARD`（默认）或 `TEXT`（提取 PDF 内嵌文字，不执行 OCR），解析引擎由服务端决定。响应保留异步处理和删除状态。调用取消与身份切换会取消远端操作。WeKnora 地址与凭据不会经过产品桥返回。
 
 `knowledge.documents.previewMetadata` 读取原文件元数据，不依赖索引状态。`preview.open`、`preview.read`、`preview.close` 使用按员工隔离、由主进程持有的文件句柄；Renderer 收到有界 `Uint8Array` 分块，不再接收整文件 Base64。请求仅接受资源 ID、不透明传输 ID 或经校验的字节偏移。Office 渲染通过私有 JSON 分块调用官方 Host 转换服务。`download`、`openExternal` 仅接受资源 ID，将原生文件操作交给主进程。二进制 HTTP 传输拒绝重定向，流式写入调用方持有的目标，保留结构化权限错误。索引引用片段继续通过 `knowledge.sources.read` 阅读，打开原文件不会创建 Session 或增加检索输入。[桌面配置](../desktop/README.zh.md) 定义产品限制和临时文件归属。

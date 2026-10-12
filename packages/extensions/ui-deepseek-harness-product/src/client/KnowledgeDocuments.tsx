@@ -1,6 +1,6 @@
 /** Paginated library materials and manager actions, independent of task selection. */
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import { Button, FileTypeIcon, IconChevronLeftOutlineRegular, IconChevronRightOutlineRegular, IconDownloadOutlineRegular, IconEditOutlineRegular, IconEllipsisOutlineRegular, IconFolderOpenOutlineRegular, IconLinkOutlineRegular, IconPlusOutlineRegular, IconRefreshOutlineRegular, IconSearchOutlineRegular, IconTrashOutlineRegular, Menu, Modal, Tooltip, fileSizeText, type MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, FileTypeIcon, IconChevronDownOutlineRegular, IconChevronLeftOutlineRegular, IconChevronRightOutlineRegular, IconDownloadOutlineRegular, IconEditOutlineRegular, IconEllipsisOutlineRegular, IconFolderOpenOutlineRegular, IconLinkOutlineRegular, IconPlusOutlineRegular, IconRefreshOutlineRegular, IconSearchOutlineRegular, IconTrashOutlineRegular, Menu, Modal, Tooltip, fileSizeText, type MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { KnowledgePdfParseMode } from '@deepseek-harness/product/protocol'
 import type { PropsRenderFactories } from '@deepseek-ai/dsh-client-ui-slots'
 import type { DeepSeekHarnessProductKey } from '../locales.ts'
@@ -9,6 +9,7 @@ import { formatDate, type ProductDetail } from './catalog-shared.tsx'
 import { isKnowledgeAccessDenied, knowledgeDocument, knowledgeFolder, knowledgePage, useKnowledgeRequests, type KnowledgeDocument, type KnowledgeFolder, type KnowledgePage } from './knowledge-data.ts'
 import { KnowledgeDocumentReader } from './KnowledgeDocumentReader.tsx'
 import { KnowledgeEditor, type KnowledgeEditorTarget } from './KnowledgeEditor.tsx'
+import { knowledgeFolderTrail } from './knowledge-folders.ts'
 import { productErrorMessage } from './product-errors.ts'
 
 type Confirmation = { readonly kind: 'document'; readonly document: KnowledgeDocument; readonly operationId: string }
@@ -41,7 +42,8 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
   const request = useKnowledgeRequests()
   const [data, setData] = useState<KnowledgePage<KnowledgeDocument>>()
   const [folders, setFolders] = useState<readonly KnowledgeFolder[]>([])
-  const [folderId, setFolderId] = useState<string | null>()
+  const [folderId, setFolderId] = useState<string | null | undefined>(null)
+  const [expandedFolders, setExpandedFolders] = useState<ReadonlySet<string>>(new Set())
   const [query, setQuery] = useState('')
   const [search, setSearch] = useState('')
   const [format, setFormat] = useState('')
@@ -134,16 +136,12 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
         values.push(...result.items); total = result.total; next += 1
         if (result.items.length === 0) break
       }
+      for (const folder of values) knowledgeFolderTrail(values, folder.id)
       return values
     })().then((value) => {
       if (signal.aborted) return
       setFolders(value)
-      // Folder deletion or a permission refresh can invalidate the selected
-      // stable ID. Fall back to the library root rather than showing an empty
-      // view for a folder that no longer exists.
-      if (typeof folderId === 'string' && !value.some(folder => folder.id === folderId)) {
-        setFolderId(undefined); setPage(1); setData(undefined); setReader(undefined)
-      }
+      setFolderId(current => typeof current === 'string' && !value.some(folder => folder.id === current) ? null : current)
     })
       .catch((failure: unknown) => {
         if (signal.aborted) return
@@ -151,7 +149,7 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
         if (isKnowledgeAccessDenied(failure)) denyAccess()
       })
     return () => { controller.abort() }
-  }, [request, product.id, folderId, revision, refreshRevision, accessDenied, denyAccess, t])
+  }, [request, product.id, revision, refreshRevision, accessDenied, denyAccess, t])
   useEffect(() => {
     if (loading || accessDenied) return
     if (!data?.items.some(row => ['QUEUED', 'PROCESSING', 'FINALIZING', 'DELETING'].includes(deleted.includes(row.id) ? 'DELETING' : row.status))) return
@@ -184,7 +182,11 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
   }
   const selectFolder = (value: string | null | undefined) => {
     setReader(undefined)
+    if (typeof value === 'string') setExpandedFolders(previous => new Set([
+      ...previous, ...knowledgeFolderTrail(availableFolders, value).map(folder => folder.id),
+    ]))
     if (value !== folderId || page !== 1) { setFolderId(value); setPage(1); setData(undefined) }
+    if (value !== folderId) { setQuery(''); setSearch(''); setFormat(''); setStatus('') }
     onNavigate?.()
   }
   const closeConfirmation = () => {
@@ -196,7 +198,10 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
   const pages = Math.max(1, Math.ceil((availableData?.total ?? 0) / 20))
   const currentFolder = availableFolders.find(row => row.id === folderId)
   const breadcrumbFolderId = reader ? reader.folderId : folderId
-  const breadcrumbFolder = availableFolders.find(row => row.id === breadcrumbFolderId)
+  const breadcrumbTrail = typeof breadcrumbFolderId === 'string' && availableFolders.some(row => row.id === breadcrumbFolderId)
+    ? knowledgeFolderTrail(availableFolders, breadcrumbFolderId) : []
+  const childFolders = folderId === undefined || search || format || status ? []
+    : availableFolders.filter(row => row.parentId === folderId)
   const documentAction = (id: string, row: KnowledgeDocument) => {
     if (id === 'read') openReader(row)
     else if (id === 'edit') { beginMutation(); setEditor({ kind: 'markdown', document: row }) }
@@ -227,6 +232,7 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
   }
   const folderAction = (id: string, folder: KnowledgeFolder) => {
     if (id === 'rename') { beginMutation(); setEditor({ kind: 'folder', folder }) }
+    else if (id === 'create') { beginMutation(); setEditor({ kind: 'folder', parentId: folder.id }) }
     else if (id === 'delete') { beginMutation(); setConfirmation({ kind: 'folder', folder }) }
     else if (id === 'upload') void upload('STANDARD', folder.id)
   }
@@ -242,11 +248,11 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
   </form>
   const toolbar = <>
     <div className={css.knowledgeMaterialsToolbar}>
-      {!renderNavigation && materialSearch}
+      {materialSearch}
       {canManage && <div className={css.knowledgeAddActions}>
         <KnowledgeUploadMenu disabled={pending} onSelect={(mode) => { void upload(mode) }} t={t} />
         <KnowledgeAddMenu disabled={pending} withinFolder={typeof folderId === 'string'} onSelect={(kind) => {
-          beginMutation(); setEditor({ kind })
+          beginMutation(); setEditor(kind === 'folder' ? { kind, parentId: folderId ?? null } : { kind })
         }} t={t} />
       </div>}
     </div>
@@ -268,18 +274,6 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
         }}><IconRefreshOutlineRegular size={16} /></button></Tooltip>
     </div>
   </>
-  const navigation = <nav className={css.knowledgeFolderNavigation} aria-label={t('knowledgeFolders')}>
-    <button type="button" aria-current={folderId === undefined ? 'page' : undefined} onClick={() => { selectFolder(undefined) }}>{t('knowledgeAllMaterials')}</button>
-    <button type="button" aria-current={folderId === null ? 'page' : undefined} onClick={() => { selectFolder(null) }}>{t('knowledgeRootFolder')}</button>
-    {availableFolders.map(row => <button type="button" key={row.id} aria-current={folderId === row.id ? 'page' : undefined}
-      onClick={() => { selectFolder(row.id) }}><IconFolderOpenOutlineRegular size={14} /><span>{row.name}</span></button>)}
-  </nav>
-  const folderHeading = currentFolder && canManage && <div className={css.knowledgeFolderHeading}><strong>{currentFolder.name}</strong>
-    <Tooltip label={t('knowledgeRenameFolder')}><button className={css.iconButton} disabled={pending} type="button" aria-label={t('knowledgeRenameFolder')}
-      onClick={() => { beginMutation(); setEditor({ kind: 'folder', folder: currentFolder }) }}><IconEditOutlineRegular size={14} /></button></Tooltip>
-    <Tooltip label={t('knowledgeDeleteFolder')}><button className={css.iconButton} disabled={pending} type="button" aria-label={t('knowledgeDeleteFolder')}
-      onClick={() => { beginMutation(); setConfirmation({ kind: 'folder', folder: currentFolder }) }}><IconTrashOutlineRegular size={14} /></button></Tooltip>
-  </div>
   const materials = <>
     {(error || mutationError) && <p role="alert" className={css.catalogError}>{error || mutationError}</p>}
     <div className={css.knowledgeTableScroll} aria-busy={loading}>
@@ -287,7 +281,13 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
         <thead><tr><th>{t('knowledgeDocumentTitle')}</th><th>{t('status')}</th><th>{t('knowledgeFormat')}</th>
           <th>{t('knowledgeSize')}</th><th>{t('updatedAt')}</th>
           <th><span className={css.visuallyHidden}>{t('resourceActions')}</span></th></tr></thead>
-        <tbody>{availableData?.items.map((row) => {
+        <tbody>{page === 1 && childFolders.map(folder => <tr key={`folder:${folder.id}`} data-knowledge-child-folder={folder.id}>
+          <td><button type="button" className={css.knowledgeDocumentName} onClick={() => { selectFolder(folder.id) }}>
+            <IconFolderOpenOutlineRegular size={18} /><span>{folder.name}</span></button></td>
+          <td></td><td>{t('knowledgeFolderType')}</td><td></td><td></td>
+          <td>{canManage && <KnowledgeFolderActions folder={folder} disabled={pending}
+            onSelect={(id) => { folderAction(id, folder) }} t={t} />}</td>
+        </tr>)}{availableData?.items.map((row) => {
           const deleting = deleted.includes(row.id) || row.status === 'DELETING'
           return <tr key={row.id}>
             <td><button type="button" className={css.knowledgeDocumentName} disabled={deleting} onClick={() => { openReader(row) }}>
@@ -302,59 +302,54 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
         })}</tbody>
       </table>
       {loading && availableData === undefined && <p role="status" className={css.catalogStatus}>{t('loading')}</p>}
-      {!loading && !error && availableData?.items.length === 0 && <p className={css.catalogStatus}>{t(search || format || status ? 'noSearchResults' : 'knowledgeNoMaterials')}</p>}
+      {!loading && !error && availableData?.items.length === 0 && childFolders.length === 0 && <p className={css.catalogStatus}>{t(search || format || status ? 'noSearchResults' : 'knowledgeNoMaterials')}</p>}
     </div>
-    <div className={css.knowledgePagination}>
-      <span>{t('itemCount').replace('{count}', String(availableData?.total ?? 0))}</span>
-      <div><Button variant="ghost" size="sm" disabled={loading || page <= 1} aria-label={t('previousPage')} onClick={() => { setPage(value => value - 1) }}><IconChevronLeftOutlineRegular size={16} /></Button>
+    {(page > 1 || (availableData?.total ?? 0) > 0 || childFolders.length > 0) && <div className={css.knowledgePagination}>
+      <span>{t('itemCount').replace('{count}', String((availableData?.total ?? 0) + childFolders.length))}</span>
+      <div><Button variant="ghost" size="sm" disabled={loading || page <= 1} aria-label={t('previousPage')} onClick={() => { setPage(value => value - 1); setData(undefined) }}><IconChevronLeftOutlineRegular size={16} /></Button>
         <span>{t('knowledgePageCount').replace('{page}', String(page)).replace('{pages}', String(pages))}</span>
-        <Button variant="ghost" size="sm" disabled={loading || page >= pages} aria-label={t('nextPage')} onClick={() => { setPage(value => value + 1) }}><IconChevronRightOutlineRegular size={16} /></Button></div>
-    </div>
+        <Button variant="ghost" size="sm" disabled={loading || page >= pages} aria-label={t('nextPage')} onClick={() => { setPage(value => value + 1); setData(undefined) }}><IconChevronRightOutlineRegular size={16} /></Button></div>
+    </div>}
   </>
   const documentReader = reader && <KnowledgeDocumentReader key={reader.id} knowledgeBaseId={product.id} documentId={reader.id}
     title={reader.filename} inline={renderNavigation !== undefined} refreshRevision={refreshRevision}
     renderFactorySlot={renderFactorySlot} onAccessDenied={readAccessDenied} onClose={() => { setReader(undefined) }} t={t} />
-  const documentRows = (rows: readonly KnowledgeDocument[]) => rows.map((row) => {
-    const deleting = deleted.includes(row.id) || row.status === 'DELETING'
-    return <div key={row.id}>
-      <button type="button" className={css.knowledgeWorkspaceTreeRow} data-kind="document" title={row.filename} aria-label={row.filename}
-        aria-current={reader?.id === row.id ? 'page' : undefined} disabled={deleting} onClick={() => { openReader(row) }}>
-        <FileTypeIcon path={row.filename} size={16} /><span className={css.knowledgeWorkspaceTreeLabel}>{row.filename}</span>
-        {(deleting || row.status !== 'READY') && <span className={css.knowledgeWorkspaceTreeStatus} data-status={deleting ? 'DELETING' : row.status}>
-          {knowledgeStatus(deleting ? 'DELETING' : row.status, t)}</span>}
-      </button>
-    </div>
-  })
+  const folderBranches = (parentId: string | null, depth = 0): ReactNode => availableFolders
+    .filter(row => row.parentId === parentId).map((row) => {
+      const hasChildren = availableFolders.some(child => child.parentId === row.id)
+      const expanded = expandedFolders.has(row.id)
+      return <div key={row.id} data-knowledge-folder={row.id}>
+        <div className={css.knowledgeWorkspaceFolderRow} style={{ paddingLeft: Math.min(depth, 5) * 12 }}>
+          {hasChildren ? <button type="button" className={`${css.iconButton} ${css.knowledgeFolderExpander}`}
+            aria-label={t(expanded ? 'knowledgeCollapseFolder' : 'knowledgeExpandFolder').replace('{name}', row.name)}
+            aria-expanded={expanded} onClick={() => { setExpandedFolders((previous) => {
+              const next = new Set(previous)
+              if (next.has(row.id)) next.delete(row.id)
+              else next.add(row.id)
+              return next
+            }) }}>{expanded ? <IconChevronDownOutlineRegular size={12} /> : <IconChevronRightOutlineRegular size={12} />}</button>
+            : <span className={css.knowledgeFolderExpander} />}
+          <button type="button" className={css.knowledgeWorkspaceTreeRow}
+            title={knowledgeFolderTrail(availableFolders, row.id).map(folder => folder.name).join(' / ')}
+            aria-current={folderId === row.id ? 'page' : undefined} onClick={() => { selectFolder(row.id) }}>
+            <IconFolderOpenOutlineRegular size={16} /><span className={css.knowledgeWorkspaceTreeLabel}>{row.name}</span></button>
+          {canManage && <KnowledgeFolderActions folder={row} disabled={pending} onSelect={(id) => { folderAction(id, row) }} t={t} />}
+        </div>
+        {expanded && folderBranches(row.id, depth + 1)}
+      </div>
+    })
   const tree = <nav className={css.knowledgeWorkspaceTree} aria-label={t('knowledgeFolders')} aria-busy={loading}>
-    <div className={css.knowledgeWorkspaceTreeToolbar}>{materialSearch}{canManage && <Tooltip label={t('knowledgeCreateFolder')}>
+    <div className={css.knowledgeWorkspaceTreeToolbar}><span>{t('knowledgeFolders')}</span>{canManage && <Tooltip label={t('knowledgeCreateFolder')}>
       <button type="button" disabled={pending} className={css.iconButton} aria-label={t('knowledgeCreateFolder')}
-        onClick={() => { beginMutation(); setEditor({ kind: 'folder' }) }}><IconPlusOutlineRegular size={16} /></button></Tooltip>}</div>
-    <button type="button" className={css.knowledgeWorkspaceTreeRow} aria-current={folderId === undefined && !reader ? 'page' : undefined}
-      onClick={() => { selectFolder(undefined) }}><IconFolderOpenOutlineRegular size={16} /><span className={css.knowledgeWorkspaceTreeLabel}>{t('knowledgeAllMaterials')}</span></button>
+        onClick={() => { beginMutation(); setEditor({ kind: 'folder', parentId: folderId ?? null }) }}><IconPlusOutlineRegular size={16} /></button></Tooltip>}</div>
     <div data-knowledge-folder="root">
-      <button type="button" className={css.knowledgeWorkspaceTreeRow} aria-current={folderId === null && !reader ? 'page' : undefined}
+      <button type="button" className={css.knowledgeWorkspaceTreeRow} aria-current={folderId === null ? 'page' : undefined}
         onClick={() => { selectFolder(null) }}><IconFolderOpenOutlineRegular size={16} /><span className={css.knowledgeWorkspaceTreeLabel}>{t('knowledgeRootFolder')}</span></button>
-      {documentRows(availableData?.items.filter(row => row.folderId === null || row.folderId === undefined) ?? [])}
     </div>
-    {availableFolders.map(row => <div key={row.id} data-knowledge-folder={row.id}>
-      <div className={css.knowledgeWorkspaceFolderRow}><button type="button" className={css.knowledgeWorkspaceTreeRow}
-        aria-current={folderId === row.id && !reader ? 'page' : undefined} onClick={() => { selectFolder(row.id) }}>
-        <IconFolderOpenOutlineRegular size={16} /><span className={css.knowledgeWorkspaceTreeLabel}>{row.name}</span></button>
-      {canManage && <KnowledgeFolderActions folder={row} disabled={pending} onSelect={(id) => { folderAction(id, row) }} t={t} />}</div>
-      {documentRows(availableData?.items.filter(document => document.folderId === row.id) ?? [])}
-    </div>)}
-    {availableData?.items.some(row => typeof row.folderId === 'string' && !availableFolders.some(folder => folder.id === row.folderId)) && <div data-knowledge-folder="unknown">
-      <p className={css.knowledgeWorkspaceTreeLabel}>{t('knowledgeMaterials')}</p>
-      {documentRows(availableData.items.filter(row => typeof row.folderId === 'string' && !availableFolders.some(folder => folder.id === row.folderId)))}
-    </div>}
+    {folderBranches(null)}
+    <button type="button" className={css.knowledgeWorkspaceTreeRow} aria-current={folderId === undefined ? 'page' : undefined}
+      onClick={() => { selectFolder(undefined) }}><IconSearchOutlineRegular size={16} /><span className={css.knowledgeWorkspaceTreeLabel}>{t('knowledgeAllMaterials')}</span></button>
     {folderError && <p role="alert" className={css.catalogError}>{folderError}</p>}
-    {pages > 1 && <div className={css.knowledgeWorkspaceTreePagination}>
-      <Button variant="ghost" size="sm" disabled={loading || page <= 1} aria-label={t('knowledgeBrowsePreviousPage')}
-        onClick={() => { setPage(value => value - 1) }}><IconChevronLeftOutlineRegular size={16} /></Button>
-      <span>{t('knowledgePageCount').replace('{page}', String(page)).replace('{pages}', String(pages))}</span>
-      <Button variant="ghost" size="sm" disabled={loading || page >= pages} aria-label={t('knowledgeBrowseNextPage')}
-        onClick={() => { setPage(value => value + 1) }}><IconChevronRightOutlineRegular size={16} /></Button>
-    </div>}
   </nav>
   return <>
     {renderNavigation ? <div className={css.knowledgeWorkspace} data-knowledge-workspace-content>
@@ -362,26 +357,38 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
       <main className={css.knowledgeWorkspaceMain} data-knowledge-content>
         <header className={css.knowledgeWorkspaceDocumentHeader}>
           <nav className={css.knowledgeWorkspaceBreadcrumb} aria-label={t('knowledgeAllMaterials')}>
-            <button type="button" onClick={() => { selectFolder(undefined) }}>{product.name}</button>
-            {(breadcrumbFolderId === null || breadcrumbFolder) && <><IconChevronRightOutlineRegular size={14} />
-              <button type="button" onClick={() => { selectFolder(breadcrumbFolderId) }}>{breadcrumbFolder?.name ?? t('knowledgeRootFolder')}</button></>}
+            <button type="button" onClick={() => { selectFolder(null) }}>{product.name}</button>
+            {breadcrumbFolderId === undefined && <><IconChevronRightOutlineRegular size={14} /><span aria-current={reader ? undefined : 'page'}>{t('knowledgeAllMaterials')}</span></>}
+            {breadcrumbTrail.map(folder => <span key={folder.id} className={css.knowledgeBreadcrumbPart}>
+              <IconChevronRightOutlineRegular size={14} /><button type="button" aria-current={!reader && folder.id === folderId ? 'page' : undefined}
+                onClick={() => { selectFolder(folder.id) }}>{folder.name}</button></span>)}
             {reader && <><IconChevronRightOutlineRegular size={14} /><span aria-current="page">{reader.filename}</span></>}
           </nav>
           {reader && <div className={css.knowledgeWorkspaceDocumentActions}>
-            <Button variant="ghost" size="sm" onClick={() => { setReader(undefined); onNavigate?.() }}><IconChevronLeftOutlineRegular size={16} />{t('knowledgeAllMaterials')}</Button>
+            <Button variant="ghost" size="sm" onClick={() => { setReader(undefined); onNavigate?.() }}><IconChevronLeftOutlineRegular size={16} />{t('knowledgeBackToFolder')}</Button>
             <KnowledgeDocumentActions document={reader} disabled={pending || deleted.includes(reader.id) || accessDenied}
               canManage={canManage} canOpenExternal={canOpenExternal} onSelect={(id) => { documentAction(id, reader) }} t={t} />
           </div>}
+          {!reader && currentFolder && canManage && <KnowledgeFolderActions folder={currentFolder} disabled={pending}
+            onSelect={(id) => { folderAction(id, currentFolder) }} t={t} />}
         </header>
         <div className={css.knowledgeWorkspaceBody}>
           {reader ? <>{(error || mutationError) && <p role="alert" className={css.catalogError}>{error || mutationError}</p>}{documentReader}</>
-            : <>{toolbar}{folderHeading}{materials}</>}
+            : <>{toolbar}{materials}</>}
         </div>
       </main>
-    </div> : <>{toolbar}{navigation}
-      {folderError && <p role="alert" className={css.catalogError}>{folderError}</p>}{folderHeading}{materials}{documentReader}</>}
-    {editor && <KnowledgeEditor knowledgeBaseId={product.id} target={editor} onClose={() => { setEditor(undefined) }}
-      onSaved={() => {
+    </div> : <>{toolbar}{tree}{materials}{documentReader}</>}
+    {editor && <KnowledgeEditor knowledgeBaseId={product.id} target={editor} folders={availableFolders}
+      onClose={() => { setEditor(undefined) }}
+      onSaved={(folder) => {
+        if (folder && editor.kind === 'folder' && !editor.folder) {
+          setFolders(previous => [...previous, folder]); setFolderId(folder.id)
+          setQuery(''); setSearch(''); setFormat(''); setStatus(''); setData(undefined)
+          const ancestors = folder.parentId === null || availableFolders.some(row => row.id === folder.parentId)
+            ? knowledgeFolderTrail([...availableFolders, folder], folder.id).map(row => row.id) : [folder.id]
+          setExpandedFolders(previous => new Set([...previous, ...ancestors]))
+          onNavigate?.()
+        }
         setEditor(undefined); setReader(undefined); setPage(1); setRevision(value => value + 1)
       }} t={t} />}
     {confirmation && <Modal open title={t(confirmation.kind === 'document' ? 'knowledgeDeleteDocument' : 'knowledgeDeleteFolder')}
@@ -390,7 +397,9 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
         <Button variant="primary" className={css.knowledgeDanger} size="sm" disabled={pending} onClick={() => {
           if (confirmation.kind === 'folder') void mutate('knowledge.folders.delete',
             { knowledgeBaseId: product.id, folderId: confirmation.folder.id }, () => {
-              setConfirmation(undefined); selectFolder(undefined)
+              setConfirmation(undefined)
+              setFolders(previous => previous.filter(folder => folder.id !== confirmation.folder.id))
+              if (folderId === confirmation.folder.id) selectFolder(confirmation.folder.parentId)
             })
           else {
             const id = confirmation.document.id
@@ -471,6 +480,7 @@ function KnowledgeFolderActions({ folder, disabled, onSelect, t }: {
 }): ReactNode {
   const [open, setOpen] = useState(false)
   return <Menu open={open && !disabled} portal align="end" onClose={() => { setOpen(false) }} items={[
+    { id: 'create', label: t('knowledgeCreateSubfolder'), icon: <IconPlusOutlineRegular size={16} /> },
     { id: 'upload', label: t('knowledgeUpload'), icon: <IconDownloadOutlineRegular size={16} /> },
     { type: 'separator', id: 'manage-folder' },
     { id: 'rename', label: t('knowledgeRenameFolder'), icon: <IconEditOutlineRegular size={16} /> },
@@ -496,7 +506,9 @@ function KnowledgeMoveDialog({ document, folders, pending, error, onClose, onMov
     <Button variant="primary" size="sm" disabled={pending} onClick={() => { onMove(destination || null) }}>{t('knowledgeMove')}</Button>
   </>}><label className={css.knowledgeMoveLabel}>{t('knowledgeDestinationFolder')}<select value={destination} disabled={pending}
       onChange={(event) => { setDestination(event.currentTarget.value) }}><option value="">{t('knowledgeRootFolder')}</option>
-      {folders.map(folder => <option key={folder.id} value={folder.id}>{folder.name}</option>)}</select></label>
+      {folders.map(folder => <option key={folder.id} value={folder.id}>
+        {knowledgeFolderTrail(folders, folder.id).map(row => row.name).join(' / ')}
+      </option>)}</select></label>
     {error && <p className={css.catalogError} role="alert">{error}</p>}
   </Modal>
 }

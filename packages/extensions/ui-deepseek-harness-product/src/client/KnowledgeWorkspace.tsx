@@ -64,7 +64,9 @@ export function KnowledgeWorkspace({ entries, loading, refreshRevision = 0, erro
           ? !['PERSONAL', 'DEPARTMENT', 'COMPANY'].includes(entry.scope ?? '') : entry.scope === scope)
         const groups = new Map<string, ProductItem[]>()
         for (const entry of values) {
-          const department = scope === 'DEPARTMENT' ? `${entry.ownerName ?? t('scopeDepartment')} (${entry.ownerDepartmentId ?? ''})` : ''
+          const duplicateName = new Set(values.filter(value => value.ownerName === entry.ownerName)
+            .map(value => value.ownerDepartmentId)).size > 1
+          const department = scope === 'DEPARTMENT' ? `${entry.ownerName ?? t('scopeDepartment')}${duplicateName ? ` (${entry.ownerDepartmentId ?? ''})` : ''}` : ''
           groups.set(department, [...groups.get(department) ?? [], entry])
         }
         return <section className={css.knowledgeLibraryGroup} key={scope} aria-label={scope === 'OTHER' ? t('otherKnowledge') : localizedMetadata(scope, t)}>

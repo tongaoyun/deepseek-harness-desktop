@@ -112,7 +112,9 @@ export async function invokeKnowledge(api: DeepSeekHarnessApiClient, method: str
     const updating = method === 'knowledge.folders.rename'
     return api.request(`${base}/folders${updating ? `/${resource(input, 'folderId')}` : ''}`, {
       ...options, method: updating ? 'PUT' : 'POST', headers: updating ? { 'content-type': 'application/json' } : writeHeaders(input),
-      body: JSON.stringify({ name: field(input, 'name', 120) }),
+      body: JSON.stringify({ name: field(input, 'name', 80),
+        ...(!updating ? { parentId: input.parentId == null ? null : decodedResource(input, 'parentId') } : {}),
+      }),
     })
   }
   if (method === 'knowledge.folders.delete') {

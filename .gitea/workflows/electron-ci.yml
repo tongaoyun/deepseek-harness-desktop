@@ -76,6 +76,10 @@ jobs:
             packages/client/ui-primitives/tests/code-file-icon.client.spec.tsx \
             packages/client/ui-settings-account/tests/apply.client.spec.ts \
             packages/deepseek-harness-product/product/tests/bridge.spec.ts \
+            packages/deepseek-harness-product/product/tests/knowledge-bridge.spec.ts \
+            packages/extensions/ui-deepseek-harness-product/tests/KnowledgeView.client.spec.tsx \
+            packages/extensions/ui-deepseek-harness-product/tests/KnowledgeWorkspace.client.spec.tsx \
+            packages/extensions/ui-deepseek-harness-product/tests/knowledge-folders.client.spec.ts \
             packages/extensions/ui-deepseek-harness-product/tests/DeepSeekHarnessCatalogSection.spec.tsx \
             packages/extensions/ui-deepseek-harness-product/tests/harness-actions.client.spec.ts \
             scripts/deepseek-harness-electron-workflows.spec.ts

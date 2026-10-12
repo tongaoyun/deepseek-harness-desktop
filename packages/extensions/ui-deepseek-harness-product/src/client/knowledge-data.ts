@@ -34,7 +34,7 @@ export interface KnowledgeChunk {
 }
 
 /** Stable product folder identity, distinct from its visible name. */
-export interface KnowledgeFolder { readonly id: string; readonly name: string }
+export interface KnowledgeFolder { readonly id: string; readonly name: string; readonly parentId: string | null }
 
 /** One-based server pagination with a total after filtering. */
 export interface KnowledgePage<T> { readonly items: readonly T[]; readonly page: number; readonly size: number; readonly total: number }
@@ -167,7 +167,7 @@ export async function readKnowledgeFile(request: ReturnType<typeof useKnowledgeR
  */
 export function knowledgeFolder(value: unknown): KnowledgeFolder {
   const row = record(value)
-  return { id: string(row.id), name: string(row.name) }
+  return { id: string(row.id), name: string(row.name), parentId: row.parentId === null ? null : string(row.parentId) }
 }
 
 /** Read retrieval passages without treating document text as interface configuration.

@@ -39,16 +39,16 @@ it('browses paginated materials and filters at the server without changing task 
   expect(screen.queryByRole('button', { name: zh.knowledgeAddMaterial })).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: zh.nextPage }))
   await waitFor(() => { expect(api.invoke).toHaveBeenCalledWith('product', 'knowledge.documents.list', {
-    knowledgeBaseId: 'policy', page: 2, size: 20,
+    knowledgeBaseId: 'policy', page: 2, size: 20, folderId: null,
   }, expect.any(String)) })
   fireEvent.change(screen.getByRole('searchbox', { name: zh.knowledgeFindFiles }), { target: { value: '合同' } })
   fireEvent.click(screen.getByRole('button', { name: zh.search }))
   await waitFor(() => { expect(api.invoke).toHaveBeenCalledWith('product', 'knowledge.documents.list', {
-    knowledgeBaseId: 'policy', page: 1, size: 20, query: '合同',
+    knowledgeBaseId: 'policy', page: 1, size: 20, folderId: null, query: '合同',
   }, expect.any(String)) })
   fireEvent.change(screen.getByRole('combobox', { name: zh.knowledgeFormat }), { target: { value: 'pdf' } })
   await waitFor(() => { expect(api.invoke).toHaveBeenCalledWith('product', 'knowledge.documents.list', {
-    knowledgeBaseId: 'policy', page: 1, size: 20, query: '合同', format: 'pdf',
+    knowledgeBaseId: 'policy', page: 1, size: 20, folderId: null, query: '合同', format: 'pdf',
   }, expect.any(String)) })
 })
 
@@ -110,7 +110,7 @@ it('preserves edits and the idempotency key after a failed manual document save'
     if (failed) throw new Error('Temporary outage')
     return document
   })
-  render(<KnowledgeEditor knowledgeBaseId="policy" target={{ kind: 'markdown', document }} onClose={vi.fn()} onSaved={saved} t={t} />)
+  render(<KnowledgeEditor knowledgeBaseId="policy" target={{ kind: 'markdown', document }} folders={[]} onClose={vi.fn()} onSaved={saved} t={t} />)
   const body = await screen.findByDisplayValue('# 原正文')
   fireEvent.change(body, { target: { value: '# 修改后的正文' } })
   fireEvent.click(screen.getByRole('button', { name: zh.knowledgeSave }))
@@ -135,7 +135,7 @@ it('exposes upload and creation only to a library manager and accepts native pic
   await waitFor(() => { expect(screen.getByRole('button', { name: zh.knowledgeUpload }).hasAttribute('disabled')).toBe(false) })
   expect(screen.queryByRole('alert')).toBeNull()
   expect(api.invoke).toHaveBeenCalledWith('product', 'knowledge.documents.upload', {
-    knowledgeBaseId: 'policy', operationId: expect.any(String) as string, pdfParseMode: 'STANDARD',
+    knowledgeBaseId: 'policy', operationId: expect.any(String) as string, pdfParseMode: 'STANDARD', folderId: null,
   }, expect.any(String), 300_000)
   fireEvent.click(screen.getByRole('button', { name: zh.knowledgeAddMaterial }))
   fireEvent.click(await screen.findByRole('menuitem', { name: zh.knowledgeNewDocument }))
@@ -148,7 +148,7 @@ it('offers no-OCR PDF extraction without accepting a renderer file path or chang
   fireEvent.click(screen.getByRole('button', { name: zh.knowledgeUpload }))
   fireEvent.click(await screen.findByRole('menuitem', { name: zh.knowledgeUploadTextPdf }))
   await waitFor(() => { expect(api.invoke).toHaveBeenCalledWith('product', 'knowledge.documents.upload', {
-    knowledgeBaseId: 'policy', operationId: expect.any(String) as string, pdfParseMode: 'TEXT',
+    knowledgeBaseId: 'policy', operationId: expect.any(String) as string, pdfParseMode: 'TEXT', folderId: null,
   }, expect.any(String), 300_000) })
   expect(api.invoke.mock.calls.some(row => row[1].startsWith('tasks.'))).toBe(false)
   expect(screen.queryByRole('alert')).toBeNull()
@@ -171,9 +171,9 @@ it.each([
 })
 
 it('keeps folder browsing scoped to stable folder IDs and retains server-side permissions', async () => {
-  const api = transport(async method => method === 'knowledge.folders.list' ? page([{ id: 'folder-1', name: '业务制度' }]) : page([]))
+  const api = transport(async method => method === 'knowledge.folders.list' ? page([{ id: 'folder-1', name: '业务制度', parentId: null }]) : page([]))
   render(<KnowledgeDetail renderFactorySlot={renderKnowledgePreview} product={library()} t={t} />)
-  fireEvent.click(await screen.findByRole('button', { name: '业务制度' }))
+  fireEvent.click((await screen.findAllByRole('button', { name: '业务制度' }))[0]!)
   await waitFor(() => { expect(api.invoke).toHaveBeenCalledWith('product', 'knowledge.documents.list', {
     knowledgeBaseId: 'policy', page: 1, size: 20, folderId: 'folder-1',
   }, expect.any(String)) })
@@ -213,7 +213,7 @@ it('retains the delete confirmation and operation identity after a temporary fai
 
 it('rechecks manager permissions before loading editable manual text', async () => {
   const api = transport(async () => ({ ...document, canManage: false }))
-  render(<KnowledgeEditor knowledgeBaseId="policy" target={{ kind: 'markdown', document }} onClose={vi.fn()} onSaved={vi.fn()} t={t} />)
+  render(<KnowledgeEditor knowledgeBaseId="policy" target={{ kind: 'markdown', document }} folders={[]} onClose={vi.fn()} onSaved={vi.fn()} t={t} />)
   await screen.findByText(zh.knowledgeReadFailed)
   expect(screen.getByRole('button', { name: zh.knowledgeSave }).hasAttribute('disabled')).toBe(true)
   expect(api.invoke.mock.calls.some(row => row[1] === 'knowledge.documents.save')).toBe(false)

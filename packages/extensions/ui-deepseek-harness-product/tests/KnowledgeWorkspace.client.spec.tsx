@@ -17,7 +17,7 @@ const entries = items([
 const documentRow = (baseId: string) => ({ id: 'shared-document-id', knowledgeBaseId: baseId, filename: '业务规范.md',
   mediaType: 'text/markdown', sizeBytes: 120, status: 'READY', chunkCount: 1, updatedAt: '2026-10-10T00:00:00Z', folderId: null })
 const page = (values: readonly unknown[]) => ({ items: values, page: 1, size: 20, total: values.length })
-const folders = page([{ id: 'stable-folder', name: '业务制度' }])
+const folders = page([{ id: 'stable-folder', name: '业务制度', parentId: null }])
 const props = { entries, loading: false, authRequired: false, authPending: false, authError: false,
   onRefresh: vi.fn(), onSignIn: vi.fn(), renderFactorySlot: renderKnowledgePreview, t }
 
@@ -50,6 +50,92 @@ function deferred() {
 }
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.clearAllMocks() })
+
+it('creates nested folders with retained retry input, browses their paths and deletes back to the parent', async () => {
+  const values = [
+    { id: 'root', name: '项目资料', parentId: null as string | null },
+    { id: 'other', name: '其他资料', parentId: null as string | null },
+  ]
+  let failed = true
+  const api = transport(async (method, payload) => {
+    if (method === 'knowledge.folders.list') return page([...values])
+    if (method === 'knowledge.folders.create') {
+      if (failed) throw new Error('Temporary outage')
+      const value = { id: 'child', name: String(payload.name), parentId: String(payload.parentId) }
+      values.push(value); return value
+    }
+    if (method === 'knowledge.folders.delete') {
+      const index = values.findIndex(folder => folder.id === payload.folderId)
+      values.splice(index, 1); return { deleted: true }
+    }
+    return page([])
+  })
+  const view = render(<KnowledgeWorkspace {...props} />)
+  const { navigation, content } = parts(view.container)
+  await content.findByRole('button', { name: '项目资料' })
+  expect(navigation.queryByRole('button', { name: documentRow('personal').filename })).toBeNull()
+  fireEvent.click(navigation.getByRole('button', { name: zh.knowledgeFolderActions.replace('{name}', '项目资料') }))
+  fireEvent.click(screen.getByRole('menuitem', { name: zh.knowledgeCreateSubfolder }))
+  const dialog = await screen.findByRole('dialog', { name: zh.knowledgeCreateFolder })
+  const name = within(dialog).getByRole<HTMLInputElement>('textbox', { name: zh.knowledgeFolderName })
+  expect(name.maxLength).toBe(80)
+  expect(within(dialog).getByRole<HTMLSelectElement>('combobox', { name: zh.knowledgeParentFolder }).value).toBe('root')
+  fireEvent.change(name, { target: { value: '验收记录' } })
+  fireEvent.click(within(dialog).getByRole('button', { name: zh.knowledgeSave }))
+  await within(dialog).findByRole('alert')
+  expect(name.value).toBe('验收记录')
+  failed = false
+  fireEvent.click(within(dialog).getByRole('button', { name: zh.knowledgeSave }))
+  await waitFor(() => { expect(screen.queryByRole('dialog')).toBeNull() })
+  const creates = api.invoke.mock.calls.filter(call => call[1] === 'knowledge.folders.create')
+  expect(creates).toHaveLength(2)
+  expect(creates[0]?.[2]).toEqual(creates[1]?.[2])
+  expect(creates[0]?.[2]).toMatchObject({ parentId: 'root', name: '验收记录' })
+  const child = await navigation.findByRole('button', { name: '验收记录' })
+  expect(child.getAttribute('aria-current')).toBe('page')
+  const breadcrumb = content.getByRole('navigation', { name: zh.knowledgeAllMaterials })
+  expect(within(breadcrumb).getAllByRole('button').map(button => button.textContent)).toEqual(['我的资料', '项目资料', '验收记录'])
+  fireEvent.click(navigation.getByRole('button', { name: zh.knowledgeCollapseFolder.replace('{name}', '项目资料') }))
+  expect(navigation.queryByRole('button', { name: '验收记录' })).toBeNull()
+  fireEvent.click(navigation.getByRole('button', { name: zh.knowledgeExpandFolder.replace('{name}', '项目资料') }))
+  fireEvent.click(navigation.getByRole('button', { name: zh.knowledgeFolderActions.replace('{name}', '验收记录') }))
+  fireEvent.click(screen.getByRole('menuitem', { name: zh.knowledgeDeleteFolder }))
+  fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: zh.deleteResource }))
+  await waitFor(() => { expect(navigation.queryByRole('button', { name: '验收记录' })).toBeNull() })
+  expect(navigation.getByRole('button', { name: '项目资料' }).getAttribute('aria-current')).toBe('page')
+  expect(api.invoke.mock.calls.some(call => call[1].startsWith('tasks.'))).toBe(false)
+})
+
+it('keeps an unrelated folder selected when another empty folder is deleted', async () => {
+  let deleted = false
+  transport(async method => method === 'knowledge.folders.list'
+    ? page([{ id: 'current', name: '当前目录', parentId: null }, ...deleted ? [] : [{ id: 'other', name: '其他目录', parentId: null }]])
+    : method === 'knowledge.folders.delete' ? (deleted = true, { deleted: true }) : page([]))
+  const view = render(<KnowledgeWorkspace {...props} />)
+  const { navigation } = parts(view.container)
+  fireEvent.click(await navigation.findByRole('button', { name: '当前目录' }))
+  fireEvent.click(navigation.getByRole('button', { name: zh.knowledgeFolderActions.replace('{name}', '其他目录') }))
+  fireEvent.click(screen.getByRole('menuitem', { name: zh.knowledgeDeleteFolder }))
+  fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: zh.deleteResource }))
+  await waitFor(() => { expect(navigation.queryByRole('button', { name: '其他目录' })).toBeNull() })
+  expect(navigation.getByRole('button', { name: '当前目录' }).getAttribute('aria-current')).toBe('page')
+})
+
+it('clears file filters when entering a different folder and keeps the directory listing independent of document pages', async () => {
+  const api = transport(async method => method === 'knowledge.folders.list' ? folders : page([]))
+  const view = render(<KnowledgeWorkspace {...props} />)
+  const { navigation, content } = parts(view.container)
+  fireEvent.change(content.getByRole('searchbox'), { target: { value: '旧查询' } })
+  fireEvent.click(content.getByRole('button', { name: zh.search }))
+  fireEvent.change(content.getByRole('combobox', { name: zh.knowledgeFormat }), { target: { value: 'pdf' } })
+  fireEvent.click(await navigation.findByRole('button', { name: '业务制度' }))
+  await waitFor(() => { expect(api.invoke).toHaveBeenCalledWith('product', 'knowledge.documents.list', {
+    knowledgeBaseId: 'personal', page: 1, size: 20, folderId: 'stable-folder',
+  }, expect.any(String)) })
+  expect(content.getByRole<HTMLInputElement>('searchbox').value).toBe('')
+  expect(content.getByRole<HTMLSelectElement>('combobox', { name: zh.knowledgeFormat }).value).toBe('')
+  expect(api.invoke.mock.calls.filter(call => call[1] === 'knowledge.folders.list')).toHaveLength(1)
+})
 
 it('creates a personal library from an empty personal group and selects it after catalog refresh', async () => {
   const created = { id: 'new-personal', name: '我的项目资料', scope: 'PERSONAL', canManage: true }
@@ -226,7 +312,7 @@ it.each(['cancel', 'close'] as const)('clears a failed folder deletion after %s 
   fireEvent.click(within(dialog).getByRole('button', { name: action === 'cancel' ? zh.cancel : zh.close }))
   expect(screen.queryByRole('dialog')).toBeNull()
   expect(parts(view.container).navigation.getByRole('button', { name: '业务制度' }).getAttribute('aria-current')).toBe('page')
-  fireEvent.click(await parts(view.container).navigation.findByRole('button', { name: '业务规范.md' }))
+  fireEvent.click(await parts(view.container).content.findByRole('button', { name: '业务规范.md' }))
   await parts(view.container).content.findByRole('heading', { name: 'Current document' })
   expect(parts(view.container).content.queryByRole('alert')).toBeNull()
   expect(api.invoke.mock.calls.filter(row => row[1] === 'knowledge.folders.delete')).toHaveLength(1)
@@ -244,7 +330,7 @@ it('uploads from another folder menu without replacing the current reader on can
     return page([documentRow('personal')])
   })
   const view = render(<KnowledgeWorkspace {...props} />)
-  fireEvent.click(await parts(view.container).navigation.findByRole('button', { name: '业务规范.md' }))
+  fireEvent.click(await parts(view.container).content.findByRole('button', { name: '业务规范.md' }))
   await parts(view.container).content.findByRole('heading', { name: 'Current document' })
   for (const next of ['cancel', 'failure', 'success'] as const) {
     outcome = next
@@ -272,7 +358,7 @@ it('allows a reader to download an unavailable preview without offering shared m
   })
   const view = render(<KnowledgeWorkspace {...props} />)
   fireEvent.click(parts(view.container).navigation.getByRole('button', { name: '公司规范' }))
-  fireEvent.click(await parts(view.container).navigation.findByRole('button', { name: '业务规范.md' }))
+  fireEvent.click(await parts(view.container).content.findByRole('button', { name: '业务规范.md' }))
   await parts(view.container).content.findByRole('alert')
   fireEvent.click(parts(view.container).content.getByRole('button', { name: zh.knowledgeDocumentActions.replace('{name}', '业务规范.md') }))
   expect(screen.queryByRole('menuitem', { name: zh.knowledgeOpenExternal })).toBeNull()
@@ -290,11 +376,11 @@ it.each(['FAILED', 'PROCESSING', 'QUEUED', 'CANCELLED'])(
       : method === 'knowledge.documents.preview.open' ? page([{ content: '# 原文件正常' }])
         : page([{ ...documentRow('personal'), status, failureMessage }]))
     const { container } = render(<KnowledgeWorkspace {...props} />)
-    const file = await parts(container).navigation.findByRole('button', { name: '业务规范.md' })
+    const file = await parts(container).content.findByRole('button', { name: '业务规范.md' })
     expect(file.hasAttribute('disabled')).toBe(false)
     expect(container.textContent).not.toContain(failureMessage)
     if (status === 'FAILED') {
-      expect(parts(container).navigation.getByText(zh.knowledgeIndexFailed)).toBeDefined()
+      expect(parts(container).navigation.queryByText(zh.knowledgeIndexFailed)).toBeNull()
       expect(within(parts(container).content.getByRole('table')).getByText(zh.knowledgeIndexFailed)).toBeDefined()
     }
     fireEvent.click(file)
@@ -314,7 +400,7 @@ it('groups actual department identities and reads the personal library inline wi
   expect(navigation.getByRole('heading', { name: '销售部 (21)' })).toBeDefined()
   expect(navigation.getByRole('heading', { name: '销售部 (22)' })).toBeDefined()
   expect(navigation.getByRole('button', { name: '我的资料' }).getAttribute('aria-current')).toBe('page')
-  fireEvent.click(await navigation.findByRole('button', { name: '业务规范.md' }))
+  fireEvent.click(await parts(container).content.findByRole('button', { name: '业务规范.md' }))
   await content.findByRole('heading', { name: '正文' })
   expect(container.querySelector('[data-knowledge-inline-reader]')).not.toBeNull()
   expect(screen.queryByRole('dialog')).toBeNull()
@@ -330,7 +416,7 @@ it('cancels a pending reader when switching folders and never fills the next sco
     : method === 'knowledge.folders.list' ? folders : page(payload.folderId === 'stable-folder' ? [] : [documentRow('personal')]))
   const { container } = render(<KnowledgeWorkspace {...props} />)
   const { navigation } = parts(container)
-  fireEvent.click(await navigation.findByRole('button', { name: '业务规范.md' }))
+  fireEvent.click(await parts(container).content.findByRole('button', { name: '业务规范.md' }))
   await waitFor(() => { expect(api.invoke.mock.calls.some(row => row[1] === 'knowledge.documents.preview.open')).toBe(true) })
   const read = api.invoke.mock.calls.find(row => row[1] === 'knowledge.documents.preview.open')
   fireEvent.click(await navigation.findByRole('button', { name: '业务制度' }))
@@ -356,12 +442,12 @@ it('releases the old library reader even when the next library reuses the same d
     return page([documentRow(String(payload.knowledgeBaseId))])
   })
   const { container } = render(<KnowledgeWorkspace {...props} />)
-  fireEvent.click(await parts(container).navigation.findByRole('button', { name: '业务规范.md' }))
+  fireEvent.click(await parts(container).content.findByRole('button', { name: '业务规范.md' }))
   await waitFor(() => { expect(api.invoke.mock.calls.some(row => row[1] === 'knowledge.documents.preview.open')).toBe(true) })
   const read = api.invoke.mock.calls.find(row => row[1] === 'knowledge.documents.preview.open')
   fireEvent.click(parts(container).navigation.getByRole('button', { name: '销售制度' }))
   expect(api.cancel).toHaveBeenCalledWith('product', read?.[3])
-  fireEvent.click(await parts(container).navigation.findByRole('button', { name: '业务规范.md' }))
+  fireEvent.click(await parts(container).content.findByRole('button', { name: '业务规范.md' }))
   await parts(container).content.findByRole('heading', { name: '部门正文' })
   await act(async () => { stale.resolve(page([{ id: 'stale', documentId: 'shared-document-id', content: '# 个人旧正文', locator: '' }])) })
   expect(screen.queryByText('个人旧正文')).toBeNull()
@@ -381,11 +467,11 @@ it.each(['KNOWLEDGE_ACCESS_DENIED', 'KNOWLEDGE_ACCESS_REVOKED', 'ORGANIZATION_EM
     })
     const { container } = render(<KnowledgeWorkspace {...props} />)
     fireEvent.click(parts(container).navigation.getByRole('button', { name: '公司规范' }))
-    fireEvent.click(await parts(container).navigation.findByRole('button', { name: '业务规范.md' }))
+    fireEvent.click(await parts(container).content.findByRole('button', { name: '业务规范.md' }))
     const alert = await parts(container).content.findByRole('alert')
     expect(alert.textContent).not.toContain('private diagnostic')
     expect(container.querySelector('[data-knowledge-inline-reader]')).toBeNull()
-    expect(parts(container).navigation.queryByRole('button', { name: '业务规范.md' })).toBeNull()
+    expect(parts(container).content.queryByRole('button', { name: '业务规范.md' })).toBeNull()
     expect(parts(container).navigation.queryByRole('button', { name: '业务制度' })).toBeNull()
     expect(api.invoke).toHaveBeenCalledWith('product', 'knowledge.documents.preview.open', {
       knowledgeBaseId: 'company', documentId: 'shared-document-id',
@@ -399,7 +485,7 @@ it('cancels pending content when a catalog refresh removes the selected library'
   const api = transport(async (method, payload) => method === 'knowledge.documents.preview.open' ? stale.promise
     : method === 'knowledge.folders.list' ? folders : page([documentRow(String(payload.knowledgeBaseId))]))
   const { container, rerender } = render(<KnowledgeWorkspace {...props} />)
-  fireEvent.click(await parts(container).navigation.findByRole('button', { name: '业务规范.md' }))
+  fireEvent.click(await parts(container).content.findByRole('button', { name: '业务规范.md' }))
   await waitFor(() => { expect(api.invoke.mock.calls.some(row => row[1] === 'knowledge.documents.preview.open')).toBe(true) })
   const read = api.invoke.mock.calls.find(row => row[1] === 'knowledge.documents.preview.open')
   rerender(<KnowledgeWorkspace {...props} entries={entries.filter(row => row.id !== 'personal')} />)
@@ -417,7 +503,7 @@ it('closes mobile navigation after selecting a document and supports an empty co
   const browse = screen.getByRole('button', { name: zh.knowledgeBrowse })
   fireEvent.click(browse)
   expect(browse.getAttribute('aria-expanded')).toBe('true')
-  fireEvent.click(await parts(container).navigation.findByRole('button', { name: '业务规范.md' }))
+  fireEvent.click(await parts(container).content.findByRole('button', { name: '业务规范.md' }))
   await parts(container).content.findByRole('heading', { name: '当前正文' })
   expect(browse.getAttribute('aria-expanded')).toBe('false')
   expect(within(parts(container).navigation.getByRole('region', { name: zh.scopeCompany })).getByText(zh.empty)).toBeDefined()
@@ -426,15 +512,15 @@ it('closes mobile navigation after selecting a document and supports an empty co
 it('removes content on directory failure and exposes retry without running a task', async () => {
   transport(async method => method === 'knowledge.folders.list' ? folders : page([documentRow('personal')]))
   const { container, rerender } = render(<KnowledgeWorkspace {...props} />)
-  await parts(container).navigation.findByRole('button', { name: '业务规范.md' })
+  await parts(container).content.findByRole('button', { name: '业务规范.md' })
   rerender(<KnowledgeWorkspace {...props} error="组织目录暂不可用" />)
   expect(parts(container).content.getByRole('alert').textContent).toBe('组织目录暂不可用')
-  expect(parts(container).navigation.queryByRole('button', { name: '业务规范.md' })).toBeNull()
+  expect(parts(container).content.queryByRole('button', { name: '业务规范.md' })).toBeNull()
   fireEvent.click(parts(container).content.getByRole('button', { name: zh.retry }))
   expect(props.onRefresh).toHaveBeenCalledOnce()
 })
 
-it('keeps a reader across document pages and closes it only after an explicit access revocation', async () => {
+it('pages the file list and clears it after an explicit access revocation', async () => {
   const api = transport(async (method, payload) => {
     if (method === 'knowledge.folders.list') return folders
     if (method === 'knowledge.documents.preview.open') return page([{ id: 'read', documentId: 'shared-document-id', content: '# 保留正文', locator: '' }])
@@ -443,21 +529,22 @@ it('keeps a reader across document pages and closes it only after an explicit ac
       page: Number(payload.page), size: 20, total: 41 }
   })
   const { container } = render(<KnowledgeWorkspace {...props} />)
-  fireEvent.click(await parts(container).navigation.findByRole('button', { name: '业务规范.md' }))
+  fireEvent.click(await parts(container).content.findByRole('button', { name: '业务规范.md' }))
   await parts(container).content.findByRole('heading', { name: '保留正文' })
-  fireEvent.click(parts(container).navigation.getByRole('button', { name: zh.knowledgeBrowseNextPage }))
-  await parts(container).navigation.findByRole('button', { name: '下一页.md' })
-  expect(parts(container).content.getByRole('heading', { name: '保留正文' })).toBeDefined()
-  fireEvent.click(parts(container).navigation.getByRole('button', { name: zh.knowledgeBrowseNextPage }))
+  fireEvent.click(parts(container).content.getByRole('button', { name: zh.knowledgeBackToFolder }))
+  fireEvent.click(parts(container).content.getByRole('button', { name: zh.nextPage }))
+  await parts(container).content.findByRole('button', { name: '下一页.md' })
+  expect(parts(container).content.queryByRole('heading', { name: '保留正文' })).toBeNull()
+  fireEvent.click(parts(container).content.getByRole('button', { name: zh.nextPage }))
   await parts(container).content.findByRole('alert')
   expect(container.querySelector('[data-knowledge-inline-reader]')).toBeNull()
   expect(screen.queryByRole('heading', { name: '保留正文' })).toBeNull()
   expect(api.invoke).toHaveBeenCalledWith('product', 'knowledge.documents.list', {
-    knowledgeBaseId: 'personal', page: 3, size: 20,
+    knowledgeBaseId: 'personal', page: 3, size: 20, folderId: null,
   }, expect.any(String))
 })
 
-it('retains an open reader when document pagination fails temporarily', async () => {
+it('offers previous-page navigation when the next file page fails temporarily', async () => {
   transport(async (method, payload) => {
     if (method === 'knowledge.folders.list') return folders
     if (method === 'knowledge.documents.preview.open') return page([{ id: 'read', documentId: 'shared-document-id', content: '# 当前正文', locator: '' }])
@@ -465,28 +552,30 @@ it('retains an open reader when document pagination fails temporarily', async ()
     return { items: [documentRow('personal')], page: 1, size: 20, total: 21 }
   })
   const { container } = render(<KnowledgeWorkspace {...props} />)
-  fireEvent.click(await parts(container).navigation.findByRole('button', { name: '业务规范.md' }))
+  fireEvent.click(await parts(container).content.findByRole('button', { name: '业务规范.md' }))
   await parts(container).content.findByRole('heading', { name: '当前正文' })
-  fireEvent.click(parts(container).navigation.getByRole('button', { name: zh.knowledgeBrowseNextPage }))
-  await waitFor(() => { expect(parts(container).navigation.getByRole('button', { name: zh.knowledgeBrowsePreviousPage }).hasAttribute('disabled')).toBe(false) })
-  expect(parts(container).content.getByRole('heading', { name: '当前正文' })).toBeDefined()
-  expect(container.querySelector('[data-knowledge-inline-reader]')).not.toBeNull()
+  fireEvent.click(parts(container).content.getByRole('button', { name: zh.knowledgeBackToFolder }))
+  fireEvent.click(parts(container).content.getByRole('button', { name: zh.nextPage }))
+  await waitFor(() => { expect(parts(container).content.getByRole('button', { name: zh.previousPage }).hasAttribute('disabled')).toBe(false) })
+  expect(parts(container).content.queryByRole('heading', { name: '当前正文' })).toBeNull()
+  expect(container.querySelector('[data-knowledge-inline-reader]')).toBeNull()
   expect(screen.queryByText('private network diagnostic')).toBeNull()
 })
 
-it('searches the current library from the navigation and cancels its pending reader', async () => {
+it('returns to files and searches the current folder without keeping a pending reader', async () => {
   const stale = deferred()
   const api = transport(async (method, payload) => method === 'knowledge.documents.preview.open' ? stale.promise
     : method === 'knowledge.folders.list' ? folders : page(payload.query ? [] : [documentRow('personal')]))
   const { container } = render(<KnowledgeWorkspace {...props} />)
-  fireEvent.click(await parts(container).navigation.findByRole('button', { name: '业务规范.md' }))
+  fireEvent.click(await parts(container).content.findByRole('button', { name: '业务规范.md' }))
   await waitFor(() => { expect(api.invoke.mock.calls.some(row => row[1] === 'knowledge.documents.preview.open')).toBe(true) })
   const read = api.invoke.mock.calls.find(row => row[1] === 'knowledge.documents.preview.open')
-  fireEvent.change(parts(container).navigation.getByRole('searchbox', { name: zh.knowledgeFindFiles }), { target: { value: '合同' } })
-  fireEvent.click(parts(container).navigation.getByRole('button', { name: zh.search }))
+  fireEvent.click(parts(container).content.getByRole('button', { name: zh.knowledgeBackToFolder }))
+  fireEvent.change(parts(container).content.getByRole('searchbox', { name: zh.knowledgeFindFiles }), { target: { value: '合同' } })
+  fireEvent.click(parts(container).content.getByRole('button', { name: zh.search }))
   expect(api.cancel).toHaveBeenCalledWith('product', read?.[3])
   await waitFor(() => { expect(api.invoke).toHaveBeenCalledWith('product', 'knowledge.documents.list', {
-    knowledgeBaseId: 'personal', query: '合同', page: 1, size: 20,
+    knowledgeBaseId: 'personal', query: '合同', page: 1, size: 20, folderId: null,
   }, expect.any(String)) })
   await act(async () => { stale.resolve(page([{ id: 'old', documentId: 'shared-document-id', content: '搜索前正文', locator: '' }])) })
   expect(screen.queryByText('搜索前正文')).toBeNull()
@@ -496,13 +585,13 @@ it('searches the current library from the navigation and cancels its pending rea
 it('rechecks a same-ID library and its open document after a directory refresh', async () => {
   let generation = 0
   const api = transport(async (method, payload) => {
-    if (method === 'knowledge.folders.list') return page([{ id: 'stable-folder', name: generation === 0 ? '业务制度' : '当前制度' }])
+    if (method === 'knowledge.folders.list') return page([{ id: 'stable-folder', parentId: null, name: generation === 0 ? '业务制度' : '当前制度' }])
     if (method === 'knowledge.documents.preview.open') return page([{ id: 'read', documentId: 'shared-document-id',
       content: generation === 0 ? '# 初始正文' : '# 当前授权正文', locator: '' }])
     return page([documentRow(String(payload.knowledgeBaseId))])
   })
   const { container, rerender } = render(<KnowledgeWorkspace {...props} refreshRevision={0} />)
-  fireEvent.click(await parts(container).navigation.findByRole('button', { name: '业务规范.md' }))
+  fireEvent.click(await parts(container).content.findByRole('button', { name: '业务规范.md' }))
   await parts(container).content.findByRole('heading', { name: '初始正文' })
   generation = 1
   rerender(<KnowledgeWorkspace {...props} refreshRevision={1} />)
@@ -532,7 +621,7 @@ it.each([
     return method === 'knowledge.folders.list' ? folders : page([documentRow(String(payload.knowledgeBaseId))])
   })
   const { container, rerender } = render(<KnowledgeWorkspace {...props} />)
-  fireEvent.click(await parts(container).navigation.findByRole('button', { name: '业务规范.md' }))
+  fireEvent.click(await parts(container).content.findByRole('button', { name: '业务规范.md' }))
   await parts(container).content.findByRole('heading', { name: '旧正文' })
   refreshing = true
   rerender(<KnowledgeWorkspace {...props} refreshRevision={1} />)
@@ -546,7 +635,7 @@ it.each([
   const concurrentRequest = api.invoke.mock.calls.filter(row => row[1] === successMethod).at(-1)
   expect(api.cancel).toHaveBeenCalledWith('product', concurrentRequest?.[3])
   await act(async () => { late.resolve(successMethod === 'knowledge.folders.list' ? folders : page([documentRow('personal')])) })
-  expect(parts(container).navigation.queryByRole('button', { name: '业务规范.md' })).toBeNull()
+  expect(parts(container).content.queryByRole('button', { name: '业务规范.md' })).toBeNull()
   expect(parts(container).navigation.queryByRole('button', { name: '业务制度' })).toBeNull()
   expect(screen.queryByRole('heading', { name: '旧正文' })).toBeNull()
   expect(parts(container).content.queryByRole('button', { name: zh.knowledgeUpload })).toBeNull()
@@ -569,14 +658,14 @@ it.each(['ORGANIZATION_SERVICE_UNAVAILABLE', 'ORGANIZATION_SYNC_EXPIRED'])(
       return page([documentRow(String(payload.knowledgeBaseId))])
     })
     const { container, rerender } = render(<KnowledgeWorkspace {...props} />)
-    fireEvent.click(await parts(container).navigation.findByRole('button', { name: '业务规范.md' }))
+    fireEvent.click(await parts(container).content.findByRole('button', { name: '业务规范.md' }))
     await parts(container).content.findByRole('heading', { name: '已读正文' })
     refreshing = true
     rerender(<KnowledgeWorkspace {...props} refreshRevision={1} />)
     await parts(container).content.findByRole('alert')
     expect(parts(container).content.queryByRole('heading', { name: '已读正文' })).toBeNull()
     expect(parts(container).content.getByRole('button', { name: zh.retry })).toBeDefined()
-    expect(parts(container).navigation.getByRole('button', { name: '业务规范.md' })).toBeDefined()
+    expect(within(parts(container).content.getByRole('navigation', { name: zh.knowledgeAllMaterials })).getByText('业务规范.md')).toBeDefined()
     expect(container.querySelector('[data-knowledge-inline-reader]')).not.toBeNull()
     expect(screen.queryByText('private temporary organization diagnostic')).toBeNull()
   })
@@ -586,7 +675,7 @@ it('removes material management when refreshed library metadata grants reading o
     : method === 'knowledge.documents.preview.open' ? page([{ id: 'read', documentId: 'shared-document-id', content: '# 可读正文', locator: '' }])
       : page([documentRow(String(payload.knowledgeBaseId))]))
   const { container, rerender } = render(<KnowledgeWorkspace {...props} />)
-  await parts(container).navigation.findByRole('button', { name: '业务规范.md' })
+  await parts(container).content.findByRole('button', { name: '业务规范.md' })
   expect(parts(container).content.getByRole('button', { name: zh.knowledgeUpload })).toBeDefined()
   fireEvent.click(parts(container).content.getByRole('button', { name: zh.knowledgeAddMaterial }))
   fireEvent.click(screen.getByRole('menuitem', { name: zh.knowledgeNewDocument }))
@@ -596,7 +685,7 @@ it('removes material management when refreshed library metadata grants reading o
   expect(parts(container).content.queryByRole('button', { name: zh.knowledgeUpload })).toBeNull()
   expect(parts(container).content.queryByRole('button', { name: zh.knowledgeAddMaterial })).toBeNull()
   expect(screen.queryByRole('dialog')).toBeNull()
-  fireEvent.click(parts(container).navigation.getByRole('button', { name: '业务规范.md' }))
+  fireEvent.click(parts(container).content.getByRole('button', { name: '业务规范.md' }))
   await parts(container).content.findByRole('heading', { name: '可读正文' })
   fireEvent.click(parts(container).content.getByRole('button', { name: zh.knowledgeDocumentActions.replace('{name}', '业务规范.md') }))
   expect(screen.getByRole('menuitem', { name: zh.knowledgeDownloadOriginal })).toBeDefined()
@@ -606,32 +695,32 @@ it('removes material management when refreshed library metadata grants reading o
 it('returns to the first materials page after the library becomes empty', async () => {
   let empty = false
   const api = transport(async (method, payload) => {
-    if (method === 'knowledge.folders.list') return folders
+    if (method === 'knowledge.folders.list') return page([])
     if (payload.page === 2) empty = true
     return { items: empty ? [] : [documentRow('personal')], page: Number(payload.page), size: 20, total: empty ? 0 : 21 }
   })
   const { container } = render(<KnowledgeWorkspace {...props} />)
-  await parts(container).navigation.findByRole('button', { name: '业务规范.md' })
-  fireEvent.click(parts(container).navigation.getByRole('button', { name: zh.knowledgeBrowseNextPage }))
+  await parts(container).content.findByRole('button', { name: '业务规范.md' })
+  fireEvent.click(parts(container).content.getByRole('button', { name: zh.nextPage }))
   await parts(container).content.findByText(zh.knowledgeNoMaterials)
   expect(api.invoke.mock.calls.filter(row => row[1] === 'knowledge.documents.list' && row[2].page === 1)).toHaveLength(2)
-  expect(parts(container).navigation.queryByRole('button', { name: zh.knowledgeBrowsePreviousPage })).toBeNull()
-  expect(parts(container).content.getByRole('button', { name: zh.previousPage }).hasAttribute('disabled')).toBe(true)
-  expect(parts(container).content.getByRole('button', { name: zh.nextPage }).hasAttribute('disabled')).toBe(true)
+  expect(parts(container).navigation.queryByRole('button', { name: zh.previousPage })).toBeNull()
+  expect(parts(container).content.queryByRole('button', { name: zh.previousPage })).toBeNull()
+  expect(parts(container).content.queryByRole('button', { name: zh.nextPage })).toBeNull()
 })
 
-it('places documents under their actual folder and shows that folder when opening from all materials', async () => {
+it('shows files only in the main list and resolves their folder in the reader breadcrumb', async () => {
   const api = transport(async method => method === 'knowledge.folders.list' ? folders
     : method === 'knowledge.documents.preview.open' ? page([{ id: 'read', documentId: 'shared-document-id', content: '# 文件夹正文', locator: '' }])
       : page([{ ...documentRow('personal'), folderId: 'stable-folder' }, { ...documentRow('personal'), id: 'root-document', filename: '未归档.md' }]))
   const { container } = render(<KnowledgeWorkspace {...props} />)
-  await parts(container).navigation.findByRole('button', { name: '业务规范.md' })
+  await parts(container).content.findByRole('button', { name: '业务规范.md' })
   const folder = await parts(container).navigation.findByRole('button', { name: '业务制度' })
-  const document = parts(container).navigation.getByRole('button', { name: '业务规范.md' })
+  const document = parts(container).content.getByRole('button', { name: '业务规范.md' })
   const branch = folder.closest('[data-knowledge-folder]')
   if (!branch) throw new Error('Missing folder branch')
-  expect(branch.contains(document)).toBe(true)
-  expect(branch.contains(parts(container).navigation.getByRole('button', { name: '未归档.md' }))).toBe(false)
+  expect(branch.contains(document)).toBe(false)
+  expect(branch.contains(parts(container).content.getByRole('button', { name: '未归档.md' }))).toBe(false)
   fireEvent.click(document)
   await parts(container).content.findByRole('heading', { name: '文件夹正文' })
   const breadcrumb = parts(container).content.getByRole('navigation', { name: zh.knowledgeAllMaterials })

@@ -3,28 +3,31 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Button, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { DeepSeekHarnessProductKey } from '../locales.ts'
 import css from '../DeepSeekHarnessProduct.module.css'
-import { knowledgeDocument, useKnowledgeRequests, type KnowledgeDocument, type KnowledgeFolder } from './knowledge-data.ts'
+import { knowledgeDocument, knowledgeFolder, useKnowledgeRequests, type KnowledgeDocument, type KnowledgeFolder } from './knowledge-data.ts'
+import { knowledgeFolderTrail } from './knowledge-folders.ts'
 import { productErrorMessage } from './product-errors.ts'
 
 /** A manager's create or edit action captured before opening the form. */
 export type KnowledgeEditorTarget = { readonly kind: 'markdown'; readonly document?: KnowledgeDocument }
-  | { readonly kind: 'url' } | { readonly kind: 'folder'; readonly folder?: KnowledgeFolder }
+  | { readonly kind: 'url' } | { readonly kind: 'folder'; readonly folder?: KnowledgeFolder; readonly parentId?: string | null }
 
 /** Preserve content and retry identity on failed saves; closing cancels in-flight work.
  * @param props Current library, editor action, and commit callback.
  * @returns Text or URL editor with guarded manual-document modification.
  */
-export function KnowledgeEditor({ knowledgeBaseId, target, onClose, onSaved, t }: {
+export function KnowledgeEditor({ knowledgeBaseId, target, folders, onClose, onSaved, t }: {
   readonly knowledgeBaseId: string
   readonly target: KnowledgeEditorTarget
+  readonly folders: readonly KnowledgeFolder[]
   readonly onClose: () => void
-  readonly onSaved: () => void
+  readonly onSaved: (folder?: KnowledgeFolder) => void
   readonly t: (key: DeepSeekHarnessProductKey) => string
 }): ReactNode {
   const request = useKnowledgeRequests()
   const [title, setTitle] = useState(target.kind === 'folder' ? target.folder?.name ?? '' : target.kind === 'markdown' ? target.document?.filename.replace(/\.md$/iu, '') ?? '' : '')
   const [content, setContent] = useState('')
   const [url, setUrl] = useState('')
+  const [parentId, setParentId] = useState(target.kind === 'folder' ? target.folder?.parentId ?? target.parentId ?? null : null)
   const [metadata, setMetadata] = useState<KnowledgeDocument>()
   const [loading, setLoading] = useState(target.kind === 'markdown' && target.document !== undefined)
   const [pending, setPending] = useState(false)
@@ -61,10 +64,11 @@ export function KnowledgeEditor({ knowledgeBaseId, target, onClose, onSaved, t }
     const controller = operation.current.controller
     try {
       if (target.kind === 'folder') {
-        await request(target.folder ? 'knowledge.folders.rename' : 'knowledge.folders.create', {
+        const saved = await request(target.folder ? 'knowledge.folders.rename' : 'knowledge.folders.create', {
           knowledgeBaseId, name: title.trim(), operationId,
-          ...(target.folder ? { folderId: target.folder.id } : {}),
+          ...(target.folder ? { folderId: target.folder.id } : { parentId }),
         }, controller.signal)
+        if (!controller.signal.aborted) onSaved(knowledgeFolder(saved))
       } else if (target.kind === 'url') {
         await request('knowledge.documents.importUrl', { knowledgeBaseId, url: url.trim(), operationId,
           ...(title.trim() ? { title: title.trim() } : {}) }, controller.signal)
@@ -73,7 +77,7 @@ export function KnowledgeEditor({ knowledgeBaseId, target, onClose, onSaved, t }
           ...(metadata ? { documentId: metadata.id, expectedUpdatedAt: metadata.updatedAt } : {}),
         }, controller.signal)
       }
-      if (!controller.signal.aborted) onSaved()
+      if (!controller.signal.aborted && target.kind !== 'folder') onSaved()
     } catch (failure) { if (!controller.signal.aborted) setError(productErrorMessage(failure, t, 'knowledgeSaveFailed')) }
     finally { if (!controller.signal.aborted) setPending(false) }
   }
@@ -87,15 +91,24 @@ export function KnowledgeEditor({ knowledgeBaseId, target, onClose, onSaved, t }
   })()
   const valid = target.kind === 'url' ? validUrl : title.trim() !== '' && (target.kind === 'folder' || content.trim() !== '')
   const editable = target.kind !== 'markdown' || target.document === undefined || metadata !== undefined
-  return <Modal open title={t(titleKey)} closeLabel={t('close')} onClose={onClose} className={css.knowledgeEditorModal as string}
+  return <Modal open title={t(titleKey)} closeLabel={t('close')} onClose={onClose}
+    className={(target.kind === 'folder' ? css.knowledgeBaseEditorModal : css.knowledgeEditorModal) as string}
     contentClassName={css.knowledgeEditorContent as string} footer={<>
       <Button variant="ghost" size="sm" onClick={onClose}>{t('cancel')}</Button>
       <Button variant="primary" size="sm" disabled={pending || loading || !valid || !editable} onClick={() => { void save() }}>{t(pending ? 'saving' : 'knowledgeSave')}</Button>
     </>}>
     <form className={css.knowledgeEditorForm} onSubmit={(event) => { event.preventDefault(); if (valid && editable) void save() }}>
       <label>{t(target.kind === 'folder' ? 'knowledgeFolderName' : 'knowledgeDocumentTitle')}
-        <input data-modal-autofocus value={title} maxLength={120} disabled={pending || loading}
+        <input data-modal-autofocus value={title} maxLength={target.kind === 'folder' ? 80 : 120} disabled={pending || loading}
           onChange={(event) => { change(setTitle, event.currentTarget.value) }} /></label>
+      {target.kind === 'folder' && !target.folder && <label className={css.knowledgeMoveLabel}>{t('knowledgeParentFolder')}
+        <select value={parentId ?? ''} disabled={pending} onChange={(event) => {
+          setParentId(event.currentTarget.value || null); setError(''); delete operation.current.id
+        }}><option value="">{t('knowledgeRootFolder')}</option>
+          {folders.map(folder => <option key={folder.id} value={folder.id}>
+            {knowledgeFolderTrail(folders, folder.id).map(item => item.name).join(' / ')}
+          </option>)}
+        </select></label>}
       {target.kind === 'url' && <label>{t('knowledgeWebsiteUrl')}<input value={url} type="url" maxLength={2_000} disabled={pending}
         onChange={(event) => { change(setUrl, event.currentTarget.value) }} /></label>}
       {target.kind === 'markdown' && <label>{t('knowledgeMarkdownContent')}<textarea value={content} disabled={pending || loading || !editable}

@@ -52,6 +52,26 @@ it('deletes a personal library through the server-owned 204 endpoint', async () 
   } finally { api.close() }
 })
 
+it('creates nested folders with a stable retry key and an explicit parent without changing paths on rename', async () => {
+  const parentId = '00000000-0000-0000-0000-000000000001'
+  const transport = vi.fn<typeof fetch>(async () => Response.json({ success: true, data: { id: 'folder', name: '资料', parentId } }))
+  const api = client(transport)
+  try {
+    const input = { knowledgeBaseId: 'base', name: ' 资料 ', parentId, operationId }
+    await invokeKnowledge(api, 'knowledge.folders.create', input)
+    await invokeKnowledge(api, 'knowledge.folders.create', input)
+    const init = transport.mock.calls[0]?.[1]
+    expect(init?.body).toBe(JSON.stringify({ name: '资料', parentId }))
+    expect(new Headers(init?.headers).get('idempotency-key')).toBe(operationId)
+    expect(transport.mock.calls[1]?.[1]?.body).toBe(init?.body)
+    await invokeKnowledge(api, 'knowledge.folders.rename', { ...input, folderId: 'folder', name: '名称' })
+    expect(transport.mock.calls[2]?.[1]?.body).toBe(JSON.stringify({ name: '名称' }))
+    await expect(invokeKnowledge(api, 'knowledge.folders.create', { ...input, parentId: '../other' })).rejects.toMatchObject({ code: 'KNOWLEDGE_REQUEST_INVALID' })
+    await expect(invokeKnowledge(api, 'knowledge.folders.create', { ...input, name: 'x'.repeat(81) })).rejects.toMatchObject({ code: 'KNOWLEDGE_REQUEST_INVALID' })
+    expect(transport).toHaveBeenCalledTimes(3)
+  } finally { api.close() }
+})
+
 it('reads server-owned file limits without allowing renderer overrides', async () => {
   const limits = { previewMaxBytes: 50_000_000, downloadMaxBytes: 250_000_000, uploadMaxBytes: 50_000_000 }
   const transport = vi.fn<typeof fetch>(async () => Response.json({ success: true, data: limits }))

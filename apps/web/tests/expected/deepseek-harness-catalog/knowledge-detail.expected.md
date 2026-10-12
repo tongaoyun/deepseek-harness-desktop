@@ -21,17 +21,16 @@
           - button "Company" [expanded]
         - button "Operations playbook" [expanded]
         - navigation "Folders":
-          - text: Search material names…
-          - searchbox "Search material names…"
-          - button "Search"
-          - button "All materials"
-          - button "Unfiled"
-          - button "Order review.md"
+          - text: Folders
+          - button "Root folder"
           - button "Policies"
-          - button "Policy 2.pdf": Policy 2.pdf Processing failed
+          - button "All materials"
   - main:
     - navigation "All materials":
       - button "Operations playbook"
+    - text: Search material names…
+    - searchbox "Search material names…"
+    - button "Search"
     - text: Type
     - combobox "Type":
       - option "All types" [selected]
@@ -63,6 +62,14 @@
           - columnheader "Updated"
           - columnheader "More actions"
       - rowgroup:
+        - row "Policies Folder":
+          - cell "Policies":
+            - button "Policies"
+          - cell
+          - cell "Folder"
+          - cell
+          - cell
+          - cell
         - row "Order review.md Searchable Online document 2.0KB Oct 10, 2026 Actions for “Order review.md”":
           - cell "Order review.md":
             - button "Order review.md"
@@ -72,15 +79,6 @@
           - cell "Oct 10, 2026"
           - cell "Actions for “Order review.md”":
             - button "Actions for “Order review.md”"
-        - row "Policy 2.pdf Processing failed PDF 2.0KB Oct 10, 2026 Actions for “Policy 2.pdf”":
-          - cell "Policy 2.pdf":
-            - button "Policy 2.pdf"
-          - cell "Processing failed"
-          - cell "PDF"
-          - cell "2.0KB"
-          - cell "Oct 10, 2026"
-          - cell "Actions for “Policy 2.pdf”":
-            - button "Actions for “Policy 2.pdf”"
     - text: 2 items
     - button "Previous page" [disabled]
     - text: 1 / 1
