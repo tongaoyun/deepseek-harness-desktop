@@ -76,6 +76,7 @@ jobs:
         run: |
           pnpm run verify:upstream
           node --test apps/product-desktop/tests/github-delivery.test.mjs
+          pnpm exec vitest run scripts/upstream-boundaries.spec.ts
       - name: Test product sidecar
         run: cargo test --manifest-path native/deepseek-harness/Cargo.toml
       - name: Package Windows

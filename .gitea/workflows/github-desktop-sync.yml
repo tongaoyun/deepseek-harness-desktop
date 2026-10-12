@@ -29,8 +29,8 @@ jobs:
           pnpm install --frozen-lockfile --registry=https://registry.npmjs.org/
       - name: Verify source and synchronize
         env:
-          GITHUB_DESKTOP_REPOSITORY: ${{ vars.GITHUB_DESKTOP_REPOSITORY }}
-          GITHUB_DESKTOP_TOKEN: ${{ secrets.GITHUB_DESKTOP_TOKEN }}
+          GITHUB_DESKTOP_REPOSITORY: ${{ vars.DESKTOP_GITHUB_REPOSITORY }}
+          GITHUB_DESKTOP_TOKEN: ${{ secrets.DESKTOP_GITHUB_TOKEN }}
         run: |
           pnpm run verify:upstream
           node --test apps/product-desktop/tests/github-delivery.test.mjs

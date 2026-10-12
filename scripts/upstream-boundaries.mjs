@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { existsSync, lstatSync, mkdtempSync, readFileSync, readlinkSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { join, resolve, sep } from 'node:path'
 import ts from 'typescript'
 
 export const productRoots = ['packages/deepseek-harness-product/', 'packages/extensions/ui-deepseek-harness-product/',
@@ -145,7 +145,7 @@ export function verifyDependencies(root) {
       }
       if (specifier.startsWith('.')) {
         const target = resolve(root, path, '..', specifier)
-        if (!productRoots.some(prefix => target.startsWith(resolve(root, prefix) + '/'))) throw new Error(`Product imports private source: ${path}: ${specifier}`)
+        if (!productRoots.some(prefix => target.startsWith(resolve(root, prefix) + sep))) throw new Error(`Product imports private source: ${path}: ${specifier}`)
       }
       if (specifier.startsWith('@deepseek-ai/dsh')) {
         const packageName = specifier.split('/').slice(0, 2).join('/')

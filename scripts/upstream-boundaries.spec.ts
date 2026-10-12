@@ -179,4 +179,6 @@ it('rejects official dependencies on product packages and private product import
   expect(() =>{  verifyDependencies(root) }).toThrow('private source')
   writeFileSync(join(root, 'packages/deepseek-harness-product/runtime/src/index.ts'), "import '@deepseek-ai/dsh-host'\n")
   expect(() =>{  verifyDependencies(root) }).not.toThrow()
+  writeFileSync(join(root, 'packages/deepseek-harness-product/runtime/src/index.ts'), "import './local.ts'\n")
+  expect(() =>{  verifyDependencies(root) }).not.toThrow()
 })

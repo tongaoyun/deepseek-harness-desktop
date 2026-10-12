@@ -155,7 +155,7 @@ test('internal synchronization fetches main and its own baseline without disclos
   assert.equal(workflow.jobs.sync.steps[0].with.ref, 'main')
   assert.equal(workflow.jobs.sync.steps[0].with['fetch-depth'], 0)
   assert.doesNotMatch(source, /--depth[= ]/u)
-  assert.match(source, /secrets\.GITHUB_DESKTOP_TOKEN/u)
+  assert.match(source, /secrets\.DESKTOP_GITHUB_TOKEN/u)
   assert.doesNotMatch(source, /--force|--mirror|--delete|https:\/\/\$.*TOKEN/u)
   assert.match(source, /verify:upstream/u)
 })
