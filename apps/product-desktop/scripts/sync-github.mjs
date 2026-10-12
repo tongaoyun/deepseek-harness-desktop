@@ -5,8 +5,17 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
+import { apiClient } from './deliver-desktop.mjs'
 
 export const PACKAGE_WORKFLOW = '.github/workflows/product-desktop-package.yml'
+
+/** @param {string} token Controlled GitHub credential. @param {object} transport Optional isolated test transport. @returns {Function} Complete-read retries and single-attempt mutations. */
+export function githubSyncRequest(token, transport = {}) {
+  return apiClient('https://api.github.com', `Bearer ${token}`, {
+    ...transport, timeoutMs: 30_000,
+    headers: { Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' },
+  }).request
+}
 
 /**
  * Keep only product packaging enabled among repository workflow files; GitHub-managed workflows are not configurable here.
@@ -95,15 +104,7 @@ if (process.argv[1] !== undefined && resolve(process.argv[1]) === import.meta.fi
     try { token = execFileSync('gh', ['auth', 'token', '--hostname', 'github.com'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim() }
     catch { throw new Error('Log in through gh auth login or configure GITHUB_DESKTOP_TOKEN') }
   }
-  const request = async (method, path, body) => {
-    const response = await fetch(`https://api.github.com${path}`, {
-      method, headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json',
-        'X-GitHub-Api-Version': '2022-11-28', 'Content-Type': 'application/json' },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.timeout(30_000),
-    })
-    if (!response.ok) throw new Error(`GitHub ${method} ${path} failed (${response.status})`)
-    return response.status === 204 ? {} : response.json()
-  }
+  const request = githubSyncRequest(token)
   const push = async (destination, source, baselineTag) => {
     const temporary = mkdtempSync(join(tmpdir(), 'harness-github-askpass-'))
     try {
@@ -115,8 +116,8 @@ if (process.argv[1] !== undefined && resolve(process.argv[1]) === import.meta.fi
         env: { ...process.env, GIT_ASKPASS: askpass, GIT_TERMINAL_PROMPT: '0', GITHUB_DESKTOP_TOKEN: token },
       })
     } catch (error) {
-      const diagnostic = error.stderr?.toString().replaceAll(token, '[REDACTED]').slice(-2000).trim()
-      throw new Error(`GitHub push failed${diagnostic ? `: ${diagnostic}` : ''}. Actions remain disabled`)
+      const reason = error.signal ? 'process interrupted' : Number.isInteger(error.status) ? `exit ${error.status}` : 'process failed'
+      throw new Error(`GitHub atomic push failed (${reason}). Actions remain disabled; inspect remote main and baseline before retrying`)
     }
     finally { rmSync(temporary, { recursive: true, force: true }) }
   }

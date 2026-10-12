@@ -5,12 +5,63 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 import yaml from 'js-yaml'
 import { artifactManifest, githubBuildVersion } from '../scripts/github-package.mjs'
-import { PACKAGE_WORKFLOW, selectPackagingWorkflow, synchronizeDesktop } from '../scripts/sync-github.mjs'
+import { githubSyncRequest, PACKAGE_WORKFLOW, selectPackagingWorkflow, synchronizeDesktop } from '../scripts/sync-github.mjs'
+import { selectInstaller } from '../scripts/test-installed.mjs'
 
 const commit = 'a'.repeat(40)
 const tag = 'dsh-v0.2.1-alpha.2'
 const repository = 'example/harness-desktop'
 const identity = { PACKAGE_SOURCE_SHA: commit, GITHUB_RUN_NUMBER: '23', GITHUB_RUN_ATTEMPT: '2' }
+
+test('installed acceptance rejects missing, ambiguous and non-native installer output', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'harness-installer-selection-'))
+  try {
+    await assert.rejects(selectInstaller(directory, 'darwin'), /exactly one/u)
+    writeFileSync(join(directory, 'harness.dmg'), '')
+    assert.equal(await selectInstaller(directory, 'darwin'), join(directory, 'harness.dmg'))
+    await assert.rejects(selectInstaller(directory, 'win32'), /exactly one/u)
+    writeFileSync(join(directory, 'other.dmg'), '')
+    await assert.rejects(selectInstaller(directory, 'darwin'), /exactly one/u)
+    await assert.rejects(selectInstaller(directory, 'linux'), /Windows or macOS/u)
+  } finally { rmSync(directory, { recursive: true, force: true }) }
+})
+
+test('source synchronization retries interrupted complete reads without leaking transport credentials', async () => {
+  const progress = []
+  let attempts = 0
+  const request = githubSyncRequest('fixture-token', { sleep: async () => {}, progress: message => progress.push(message),
+    fetchImpl: async (url, options) => {
+      assert.equal(url, `https://api.github.com/repos/${repository}`)
+      assert.equal(options.headers.Accept, 'application/vnd.github+json')
+      assert.equal(options.headers['X-GitHub-Api-Version'], '2022-11-28')
+      assert.equal(options.headers.Authorization, 'Bearer fixture-token')
+      attempts++
+      if (attempts === 1) throw new TypeError('fetch failed', { cause: Object.assign(new Error('proxy://user:fixture-password@host'), { code: 'ECONNRESET' }) })
+      if (attempts === 2) return { ok: true, status: 200, json: async () => { throw Object.assign(new Error('interrupted body'), { code: 'UND_ERR_SOCKET' }) } }
+      return Response.json({ private: false })
+    } })
+  assert.deepEqual(await request('GET', `/repos/${repository}`), { private: false })
+  assert.equal(attempts, 3)
+  assert.match(progress.join('\n'), /ECONNRESET/u)
+  assert.doesNotMatch(progress.join('\n'), /fixture-password|fixture-token/u)
+})
+
+test('uncertain source mutations execute once and require reconciliation', async () => {
+  for (const [method, path] of [['POST', '/user/repos'], ['POST', `/repos/${repository}/actions/workflows/product-desktop-package.yml/dispatches`],
+    ['PUT', `/repos/${repository}/actions/permissions`]]) {
+    let attempts = 0
+    const request = githubSyncRequest('fixture-token', { fetchImpl: async () => {
+      attempts++
+      throw new TypeError('fetch failed', { cause: Object.assign(new Error('fixture-secret'), { code: 'ETIMEDOUT' }) })
+    } })
+    await assert.rejects(request(method, path, { ref: 'main' }), error => {
+      assert.match(error.message, /ETIMEDOUT.*reconcile before retrying/u)
+      assert.doesNotMatch(error.message, /fixture-secret|fixture-token/u)
+      return true
+    })
+    assert.equal(attempts, 1)
+  }
+})
 
 function fixture(overrides = {}) {
   const calls = []
@@ -178,6 +229,17 @@ test('uses three native hosted runners and product packaging without publishing 
   assert.match(steps.find(step => step.name === 'Upload installers').with.path, /build-manifest\.json/u)
   assert.equal(steps.find(step => step.name === 'Upload installers').with['retention-days'], 1)
   const uiIndex = steps.findIndex(step => step.name === 'Test native Electron UI profiles')
+  const installedIndex = steps.findIndex(step => step.name === 'Test installed product desktop')
+  assert.ok(installedIndex > uiIndex)
+  assert.ok(installedIndex < steps.findIndex(step => step.name === 'Upload desktop UI evidence'))
+  assert.ok(installedIndex < steps.findIndex(step => step.name === 'Upload installers'))
+  assert.match(steps[installedIndex].run, /test:installed --target/u)
+  const windowsInstalledIndex = steps.findIndex(step => step.name === 'Test installed Windows product desktop')
+  assert.ok(windowsInstalledIndex > uiIndex)
+  assert.ok(windowsInstalledIndex < steps.findIndex(step => step.name === 'Upload desktop UI evidence'))
+  assert.equal(steps[windowsInstalledIndex].shell, 'pwsh')
+  assert.equal(steps[windowsInstalledIndex].if, "matrix.target == 'win-x64'")
+  assert.match(steps[windowsInstalledIndex].run, /LASTEXITCODE/u)
   const ui = steps[uiIndex]
   assert.ok(uiIndex > steps.findIndex(step => step.name === 'Package Windows'))
   assert.ok(uiIndex > steps.findIndex(step => step.name === 'Package macOS'))

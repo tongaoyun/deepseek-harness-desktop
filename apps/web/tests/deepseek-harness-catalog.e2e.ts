@@ -1,11 +1,11 @@
 /** Product overlay mounted through the real Harness Loader, with only the external product bridge replaced. */
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 import { createServer, type IncomingMessage } from 'node:http'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { _electron, chromium, type ElectronApplication, type Locator, type Page } from 'playwright'
 import { expect, it, onTestFinished } from 'vitest'
@@ -1339,9 +1339,12 @@ interface DesktopSmokeBridge {
   extensions: { invoke(namespace: string, method: string, payload?: object): Promise<unknown> }
 }
 
-for (const mode of ['official', 'product'] as const) {
+const desktopCarriers: { mode: 'official' | 'product'; installed?: string }[] = [{ mode: 'official' }, { mode: 'product' }]
+if (process.env.DSH_INSTALLED_EXECUTABLE) desktopCarriers.push({ mode: 'product', installed: process.env.DSH_INSTALLED_EXECUTABLE })
+for (const { mode, installed } of desktopCarriers) {
+  const carrier = installed === undefined ? 'built' : 'installed'
   it.skipIf(process.env.DSH_DESKTOP_SMOKE !== '1' || (process.platform !== 'darwin' && process.platform !== 'win32'))(
-    `boots the built ${mode} Electron assembly with an isolated profile`, async () => {
+    `boots the ${carrier} ${mode} Electron assembly with an isolated profile`, async () => {
       const root = await mkdtemp(join(tmpdir(), `product-desktop-${mode}-`))
       const home = join(root, 'home')
       const userData = join(root, 'electron')
@@ -1546,19 +1549,34 @@ for (const mode of ['official', 'product'] as const) {
         }))
         await rm(root, { recursive: true, force: true })
       })
-      const electronExecutable: unknown = createRequire(join(REPO_ROOT, 'apps/desktop/package.json'))('electron')
+      const electronExecutable: unknown = installed ?? createRequire(join(REPO_ROOT, 'apps/desktop/package.json'))('electron')
       if (typeof electronExecutable !== 'string') throw new Error('Electron executable is unavailable')
-      const manifest = JSON.parse(await readFile(join(REPO_ROOT, 'apps/desktop/package.json'), 'utf8')) as { version: unknown }
-      const pnpm = JSON.parse(await readFile(join(REPO_ROOT, 'apps/desktop/node_modules/pnpm/package.json'), 'utf8')) as { version: unknown }
-      const release = parseDesktopRelease({ schemaVersion: 1, version: manifest.version,
-        hostProtocolVersion: DESKTOP_HOST_PROTOCOL_VERSION,
-        nodeVersion: execFileSync(electronExecutable, ['-p', 'process.versions.node'],
-          { encoding: 'utf8', env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' } }).trim(),
-        pnpmVersion: pnpm.version })
-      const target = resolveDesktopBuildTarget({}, process.platform, process.arch)
-      prepareDevelopmentProject({ projectDir: project, cliDir: join(REPO_ROOT, 'apps/cli'),
-        hostDir: join(REPO_ROOT, 'apps/desktop-host'), dependencyDir: join(REPO_ROOT, 'node_modules/.pnpm/node_modules'),
-        target, release })
+      if (installed !== undefined) {
+        // The installer copy owns this configuration; production endpoints must not receive fixture identities.
+        const installationRoot = process.env.DSH_INSTALLED_ROOT
+        if (!installationRoot) throw new Error('Installed acceptance requires a private installation root')
+        const resources = process.platform === 'darwin' ? resolve(dirname(installed), '../Resources') : join(dirname(installed), 'resources')
+        const configPath = join(resources, 'deepseek-harness/product.json')
+        if (!(await realpath(configPath)).startsWith(await realpath(installationRoot) + sep)) {
+          throw new Error('Installed configuration is outside the private installation root')
+        }
+        const original = await readFile(configPath, 'utf8')
+        onTestFinished(() => writeFile(configPath, original))
+        await writeFile(configPath, JSON.stringify({ ...JSON.parse(original), serverUrl: origin }))
+      }
+      if (installed === undefined) {
+        const manifest = JSON.parse(await readFile(join(REPO_ROOT, 'apps/desktop/package.json'), 'utf8')) as { version: unknown }
+        const pnpm = JSON.parse(await readFile(join(REPO_ROOT, 'apps/desktop/node_modules/pnpm/package.json'), 'utf8')) as { version: unknown }
+        const release = parseDesktopRelease({ schemaVersion: 1, version: manifest.version,
+          hostProtocolVersion: DESKTOP_HOST_PROTOCOL_VERSION,
+          nodeVersion: execFileSync(electronExecutable, ['-p', 'process.versions.node'],
+            { encoding: 'utf8', env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' } }).trim(),
+          pnpmVersion: pnpm.version })
+        const target = resolveDesktopBuildTarget({}, process.platform, process.arch)
+        prepareDevelopmentProject({ projectDir: project, cliDir: join(REPO_ROOT, 'apps/cli'),
+          hostDir: join(REPO_ROOT, 'apps/desktop-host'), dependencyDir: join(REPO_ROOT, 'node_modules/.pnpm/node_modules'),
+          target, release })
+      }
       const profile = join(home, 'profiles/desktop')
       createPluginProfile(profile)
       await writeFile(join(profile, 'cordis.patch.yml'),
@@ -1568,20 +1586,28 @@ for (const mode of ['official', 'product'] as const) {
       await mkdir(userData)
       const environment = Object.fromEntries(Object.entries(process.env).filter(([key]) =>
         !key.startsWith('DSH_') && !key.startsWith('DEEPSEEK_') && key !== 'ELECTRON_RUN_AS_NODE'))
-      const launchOptions = { executablePath: electronExecutable, args: [`--user-data-dir=${userData}`, join(REPO_ROOT, 'apps/desktop')],
-        env: { ...environment, DSH_HOME: home, DSH_DESKTOP_DSH_DIR: project,
+      const launchOptions = { executablePath: electronExecutable,
+        args: [`--user-data-dir=${userData}`, ...installed === undefined ? [join(REPO_ROOT, 'apps/desktop')] : []],
+        env: { ...environment, DSH_HOME: home,
           DSH_DESKTOP_OPEN_DEVTOOLS: '0',
-          DSH_DESKTOP_PRIMARY_RUNTIME_DIR: developmentRuntimeDirectory({}, process.platform, process.arch),
+          ...installed === undefined ? { DSH_DESKTOP_DSH_DIR: project,
+            DSH_DESKTOP_PRIMARY_RUNTIME_DIR: developmentRuntimeDirectory({}, process.platform, process.arch) } : {},
           DEEPSEEK_API_KEY: 'fixture-model-key',
           DEEPSEEK_BASE_URL: model.baseURL + '/v1',
           ...mode === 'official' ? {} : {
-            DSH_DESKTOP_EXTENSION: join(REPO_ROOT, 'packages/deepseek-harness-product/desktop/lib/index.js'),
             DEEPSEEK_HARNESS_SERVER_URL: origin, DEEPSEEK_HARNESS_SESSION_TOKEN: secret,
-            DEEPSEEK_HARNESS_NATIVE_BINARY: join(REPO_ROOT, 'native/deepseek-harness/target/release',
-              process.platform === 'win32' ? 'deepseek-harness-native.exe' : 'deepseek-harness-native'),
+            ...installed === undefined ? { DSH_DESKTOP_EXTENSION: join(REPO_ROOT, 'packages/deepseek-harness-product/desktop/lib/index.js'),
+              DEEPSEEK_HARNESS_NATIVE_BINARY: join(REPO_ROOT, 'native/deepseek-harness/target/release',
+                process.platform === 'win32' ? 'deepseek-harness-native.exe' : 'deepseek-harness-native') } : {},
           },
         }, timeout: 60_000 }
       app = await _electron.launch(launchOptions)
+      expect(await app.evaluate(({ app }) => app.isPackaged)).toBe(installed !== undefined)
+      if (installed !== undefined) {
+        const appPath = await app.evaluate(({ app }) => app.getAppPath())
+        expect(appPath).toContain('app.asar')
+        expect(appPath).not.toContain(REPO_ROOT)
+      }
       const diagnostics: string[] = []
       app.process().stderr?.on('data', (chunk: Buffer) => diagnostics.push(chunk.toString()))
       let page = await app.firstWindow()
@@ -1590,7 +1616,7 @@ for (const mode of ['official', 'product'] as const) {
         if (task.result?.state !== 'fail') return
         console.error('Desktop process diagnostics:', diagnostics.join(''))
         await mkdir(screenshots, { recursive: true })
-        await page.screenshot({ path: join(screenshots, `electron-${mode}-failure.png`), timeout: 5000 })
+        await page.screenshot({ path: join(screenshots, `electron-${carrier}-${mode}-failure.png`), timeout: 5000 })
         console.error('Desktop workflow failure:', await page.locator('body').innerText(), tripwire)
       })
       await page.waitForURL('dsh-app://app/', { timeout: 60_000 })
@@ -1635,10 +1661,10 @@ for (const mode of ['official', 'product'] as const) {
           await expectKnowledgeMainFits(page)
           expect(await page.getByRole('dialog').count()).toBe(0)
           expect(await page.locator('[data-knowledge-workspace]').evaluate(region => region.scrollWidth > region.clientWidth)).toBe(false)
-          await page.screenshot({ path: join(screenshots, `electron-product-knowledge-inline-reader-${width}.png`), animations: 'disabled' })
+          await page.screenshot({ path: join(screenshots, `electron-${carrier}-product-knowledge-inline-reader-${width}.png`), animations: 'disabled' })
           const tree = await openKnowledgeNavigation(page)
           await tree.getByRole('button', { name: 'Policies', exact: true }).waitFor()
-          await page.screenshot({ path: join(screenshots, `electron-product-knowledge-navigation-${width}.png`), animations: 'disabled' })
+          await page.screenshot({ path: join(screenshots, `electron-${carrier}-product-knowledge-navigation-${width}.png`), animations: 'disabled' })
           await tree.getByRole('button', { name: 'Order review.md', exact: true }).click()
         }
         await page.setViewportSize({ width: 1440, height: 900 })
@@ -1671,7 +1697,7 @@ for (const mode of ['official', 'product'] as const) {
           const uploadMenu = page.getByRole('menu')
           await uploadMenu.getByRole('menuitem', { name: /^(Upload text PDF \(text layer, no OCR\)|上传文本型 PDF（保留文字，无 OCR）)$/, exact: true }).waitFor()
           expect(await uploadMenu.evaluate(element => element.scrollWidth > element.clientWidth)).toBe(false)
-          await page.screenshot({ path: join(screenshots, `electron-product-knowledge-upload-menu-${width}.png`), animations: 'disabled' })
+          await page.screenshot({ path: join(screenshots, `electron-${carrier}-product-knowledge-upload-menu-${width}.png`), animations: 'disabled' })
           await page.keyboard.press('Escape')
         }
         await page.setViewportSize({ width: 1440, height: 900 })
@@ -1707,7 +1733,7 @@ for (const mode of ['official', 'product'] as const) {
         await renameEditor.getByRole('button', { name: /^(Save|保存)$/, exact: true }).click()
         const folderAction = (await openKnowledgeNavigation(page)).getByRole('button', { name: /^(Folder actions for Desktop records|Desktop records的文件夹操作)$/, exact: true })
         await folderAction.click()
-        await page.screenshot({ path: join(screenshots, 'electron-product-knowledge-folder-actions.png'), animations: 'disabled' })
+        await page.screenshot({ path: join(screenshots, `electron-${carrier}-product-knowledge-folder-actions.png`), animations: 'disabled' })
         await page.getByRole('menuitem', { name: /^(Delete folder|删除文件夹)$/, exact: true }).click()
         await page.getByRole('dialog', { name: /^(Delete folder|删除文件夹)$/, exact: true })
           .getByRole('button', { name: /^(Delete|删除)$/, exact: true }).click()
@@ -1741,7 +1767,7 @@ for (const mode of ['official', 'product'] as const) {
           await page.setViewportSize({ width, height: 900 })
           await expectKnowledgeMainFits(page)
           await mkdir(screenshots, { recursive: true })
-          await page.screenshot({ path: join(screenshots, `electron-product-knowledge-materials-${width}.png`), animations: 'disabled' })
+          await page.screenshot({ path: join(screenshots, `electron-${carrier}-product-knowledge-materials-${width}.png`), animations: 'disabled' })
         }
         await page.setViewportSize({ width: 1440, height: 900 })
         await page.keyboard.press('Escape')
@@ -1953,7 +1979,7 @@ for (const mode of ['official', 'product'] as const) {
             expect(bounds!.x).toBeGreaterThanOrEqual(0)
             expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width)
           }
-          await page.screenshot({ path: join(screenshots, `electron-product-native-hero-${width}.png`), animations: 'disabled' })
+          await page.screenshot({ path: join(screenshots, `electron-${carrier}-product-native-hero-${width}.png`), animations: 'disabled' })
         }
         await page.setViewportSize({ width: 1440, height: 900 })
         expect(await page.locator('[data-composer-card]').getByRole('button', {
@@ -1984,7 +2010,7 @@ for (const mode of ['official', 'product'] as const) {
         expect(await composer.textContent()).toBe('Keep this task draft')
         await page.keyboard.press('Escape')
         await openTaskKnowledge(page)
-        await page.screenshot({ path: join(screenshots, 'electron-product-knowledge-groups.png'), animations: 'disabled' })
+        await page.screenshot({ path: join(screenshots, `electron-${carrier}-product-knowledge-groups.png`), animations: 'disabled' })
         await page.keyboard.press('Escape')
         await composer.fill('Review enterprise policy')
         await composer.press('Enter')
@@ -2011,7 +2037,7 @@ for (const mode of ['official', 'product'] as const) {
             }).toBe(true)
             expect(await modeLabel.evaluate(label => label.scrollWidth > label.clientWidth)).toBe(false)
           }
-          await page.screenshot({ path: join(screenshots, `electron-product-native-header-${width}.png`), animations: 'disabled' })
+          await page.screenshot({ path: join(screenshots, `electron-${carrier}-product-native-header-${width}.png`), animations: 'disabled' })
         }
         await page.setViewportSize({ width: 1440, height: 900 })
         await composer.fill('Replacement task draft')
@@ -2078,7 +2104,7 @@ for (const mode of ['official', 'product'] as const) {
         expect(model.requests.length).toBeGreaterThan(0)
         expect(model.requests[0]?.body).toMatchObject({ model: 'deepseek-v4-flash' })
         expect(JSON.stringify(model.requests.map(request => request.body))).not.toContain(secret)
-        await page.screenshot({ path: join(screenshots, 'electron-product-recovered-task.png'), animations: 'disabled' })
+        await page.screenshot({ path: join(screenshots, `electron-${carrier}-product-recovered-task.png`), animations: 'disabled' })
         const pinnedKitPicker = page.getByRole('button', { name: /^(Choose expert kit|选择专家套件)$/, exact: true })
         const currentInstallKit = page.getByRole('button', { name: /^(Install expert kit|安装专家套件)$/, exact: true })
         const pinnedKitUninstall = page.getByRole('dialog', { name: /Retail operations/ })
@@ -2111,7 +2137,7 @@ for (const mode of ['official', 'product'] as const) {
             }).toBe(true)
             expect(await pinnedKitLabel.evaluate(label => label.scrollWidth > label.clientWidth)).toBe(false)
           }
-          await page.screenshot({ path: join(screenshots, `electron-product-kit-readonly-header-${width}.png`), animations: 'disabled' })
+          await page.screenshot({ path: join(screenshots, `electron-${carrier}-product-kit-readonly-header-${width}.png`), animations: 'disabled' })
         }
         await page.setViewportSize({ width: 1440, height: 900 })
         await page.getByRole('button', { name: /^(Expert kits|专家套件)$/, exact: true }).click()
@@ -2136,7 +2162,7 @@ for (const mode of ['official', 'product'] as const) {
         expect(JSON.stringify(kitRequest)).toContain('`expert-kit-operations`: Review orders using policy evidence.')
         expect(JSON.stringify(kitRequest)).toContain(kitDigest)
         expect(JSON.stringify(kitRequest)).not.toContain(secret)
-        await page.screenshot({ path: join(screenshots, 'electron-product-kit-pinned-after-uninstall.png'), animations: 'disabled' })
+        await page.screenshot({ path: join(screenshots, `electron-${carrier}-product-kit-pinned-after-uninstall.png`), animations: 'disabled' })
         await page.getByRole('button', { name: /^(New session|新建会话)$/, exact: true }).last().click()
         await expect.poll(currentSession).not.toBe(recoveredSession)
         await pinnedKitPicker.click()
@@ -2147,7 +2173,7 @@ for (const mode of ['official', 'product'] as const) {
       }
       expect(tripwire.pageErrors).toEqual([])
       await mkdir(screenshots, { recursive: true })
-      await page.screenshot({ path: join(screenshots, `electron-${mode}.png`) })
+      await page.screenshot({ path: join(screenshots, `electron-${carrier}-${mode}.png`) })
     },
   )
 }

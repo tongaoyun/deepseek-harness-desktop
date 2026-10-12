@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import type { ComponentProps } from 'react'
+import { SessionId } from '@deepseek-ai/dsh-session'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { ProductError } from '@deepseek-harness/product/errors'
@@ -27,6 +28,28 @@ function fixture() {
   } satisfies ComponentProps<typeof TaskKnowledgeSelector>
   return { ...props, open: () => { act(() => { open?.() }) } }
 }
+
+it('retains an Add-menu request while task capabilities load', async () => {
+  const f = fixture()
+  const view = render(<TaskKnowledgeSelector {...f} sessionId={SessionId('loading-task')} capabilities={undefined} />)
+  f.open()
+  expect(screen.queryByRole('dialog')).toBeNull()
+  view.rerender(<TaskKnowledgeSelector {...f} sessionId={SessionId('loading-task')} />)
+  expect(await screen.findByRole('dialog', {}, { timeout: 500 })).not.toBeNull()
+  expect((await screen.findByRole<HTMLInputElement>('checkbox', { name: '业务规范' })).checked).toBe(true)
+  expect(f.setKnowledgeSelection).not.toHaveBeenCalled()
+})
+
+it('discards a pending Add-menu request when the user switches tasks', async () => {
+  const f = fixture()
+  const view = render(<TaskKnowledgeSelector {...f} sessionId={SessionId('source-task')} capabilities={undefined} />)
+  f.open()
+  view.rerender(<TaskKnowledgeSelector {...f} sessionId={SessionId('target-task')} />)
+  await screen.findByText('业务规范')
+  expect(screen.queryByRole('dialog')).toBeNull()
+  f.open()
+  expect(await screen.findByRole('dialog')).not.toBeNull()
+})
 
 it('locks kit requirements and applies multiple optional bases once', async () => {
   const f = fixture()

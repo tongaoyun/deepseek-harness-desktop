@@ -94,11 +94,11 @@ async function response(url, headers, options = {}) {
 
 /** @param {string} base API URL. @param {string} authorization Controlled credential. @param {object} transport Optional isolated test transport. @returns {object} HTTP adapter with selectable download media type. */
 export function apiClient(base, authorization, transport = {}) {
-  const headers = { Authorization: authorization, Accept: 'application/json' }
+  const headers = { Accept: 'application/json', ...transport.headers, Authorization: authorization }
   return {
     request: async (method, path, body) => {
       const operation = async () => {
-        const result = await response(base + path, headers, { method, fetchImpl: transport.fetchImpl,
+        const result = await response(base + path, headers, { method, fetchImpl: transport.fetchImpl, timeoutMs: transport.timeoutMs,
           ...(body === undefined ? {} : { body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' } }) })
         try { return result.status === 204 ? {} : await result.json() }
         catch (error) {

@@ -125,6 +125,17 @@ jobs:
           -t 'boots the built .* Electron assembly'
           --reporter=default --reporter=json
           --outputFile=.artifacts/desktop-ui-${{ matrix.target }}.json
+      - name: Test installed product desktop
+        if: matrix.target != 'win-x64'
+        env:
+          PACKAGE_TARGET: ${{ matrix.target }}
+        run: pnpm --dir apps/product-desktop run test:installed --target "$PACKAGE_TARGET"
+      - name: Test installed Windows product desktop
+        if: matrix.target == 'win-x64'
+        shell: pwsh
+        run: |
+          pnpm --dir apps/product-desktop run test:installed --target win-x64
+          if ($LASTEXITCODE -ne 0) { throw 'Installed desktop UI acceptance failed' }
       - name: Upload desktop UI evidence
         if: always()
         uses: actions/upload-artifact@v7.0.1
@@ -132,6 +143,7 @@ jobs:
           name: harness-desktop-ui-${{ matrix.target }}-${{ github.run_number }}-${{ github.run_attempt }}
           path: |
             .artifacts/desktop-ui-${{ matrix.target }}.json
+            .artifacts/desktop-installed-${{ matrix.target }}.json
             .artifacts/deepseek-harness-catalog/electron-*.png
           if-no-files-found: warn
           retention-days: 14

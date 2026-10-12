@@ -39,6 +39,8 @@ export function TaskKnowledgeSelector({
   const [selected, setSelected] = useState<readonly string[]>([])
   const [query, setQuery] = useState('')
   const [revision, setRevision] = useState(0)
+  const [openRequests, setOpenRequests] = useState(0)
+  const consumedRequests = useRef(0)
   const loadFailed = loadError !== ''
   const ids = capabilities?.knowledgeBaseIds ?? []
   const identity = ids.join('\n')
@@ -49,12 +51,24 @@ export function TaskKnowledgeSelector({
   activeKey.current = selectionKey
   useEffect(() => () => { activeKey.current = '' }, [])
   useEffect(() => {
-    if (capabilities === undefined) return
+    consumedRequests.current = openRequests
+  }, [sessionId])
+  useEffect(() => {
+    setOpen(false)
+    setFailed('')
+    setPending(false)
+  }, [selectionKey])
+  useEffect(() => {
     return subscribeOpen(() => {
       if (disabled || pending) return
-      setSelected([...ids]); setQuery(''); setFailed(''); setOpen(true)
+      setOpenRequests(value => value + 1)
     })
-  }, [subscribeOpen, selectionKey, disabled, pending])
+  }, [subscribeOpen, disabled, pending])
+  useEffect(() => {
+    if (capabilities === undefined || consumedRequests.current === openRequests || disabled || pending) return
+    consumedRequests.current = openRequests
+    setSelected([...ids]); setQuery(''); setFailed(''); setOpen(true)
+  }, [openRequests, selectionKey, capabilities === undefined, disabled, pending])
   useEffect(() => {
     if (!open && identity === '') return
     let active = true
@@ -68,11 +82,6 @@ export function TaskKnowledgeSelector({
       .finally(() => { if (active) setLoading(false) })
     return () => { active = false; controller.abort() }
   }, [open, identity, readKnowledgeCatalog, revision])
-  useEffect(() => {
-    setOpen(false)
-    setFailed('')
-    setPending(false)
-  }, [selectionKey])
   const options: readonly (Partial<ProductItem> & Pick<ProductItem, 'id' | 'label'>)[] = [
     ...catalog ?? [], ...ids.filter(id => !catalog?.some(row => row.id === id)).map(id => ({ id, label: id })),
   ]
