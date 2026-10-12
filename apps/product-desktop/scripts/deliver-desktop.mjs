@@ -92,7 +92,7 @@ async function response(url, headers, options = {}) {
   return result
 }
 
-/** @param {string} base API URL. @param {string} authorization Controlled credential. @param {object} transport Optional isolated test transport. @returns {object} HTTP adapter. */
+/** @param {string} base API URL. @param {string} authorization Controlled credential. @param {object} transport Optional isolated test transport. @returns {object} HTTP adapter with selectable download media type. */
 export function apiClient(base, authorization, transport = {}) {
   const headers = { Authorization: authorization, Accept: 'application/json' }
   return {
@@ -114,7 +114,7 @@ export function apiClient(base, authorization, transport = {}) {
         throw new Error(`${label} failed (${networkFailure(error).detail}); reconcile before retrying`, { cause: error })
       }
     },
-    download: async path => (await response(base + path, { ...headers, Accept: 'application/octet-stream' },
+    download: async (path, { accept = 'application/octet-stream' } = {}) => (await response(base + path, { ...headers, Accept: accept },
       { download: true, fetchImpl: transport.fetchImpl, timeoutMs: 15 * 60_000 })).body,
     response: (url, options) => {
       const target = new URL(url)
@@ -195,7 +195,7 @@ export function releaseDestination(name, client, repository, { github = false, t
 export async function stageBuildArchive(client, path, directory, options = {}) {
   await retryReleaseRead(async () => {
     await rm(directory, { recursive: true, force: true })
-    await extractBuildArchive(await client.download(path), directory)
+    await extractBuildArchive(await client.download(path, { accept: 'application/vnd.github+json' }), directory)
   }, { ...options, label: 'Hosted artifact download' })
 }
 

@@ -21,6 +21,28 @@ const socketFailure = () => new TypeError('fetch failed', {
   cause: Object.assign(new Error('synthetic credential and signed URL must remain private'), { code: 'ECONNRESET' }),
 })
 
+test('uses the Actions API media type for artifact ZIP redirects and binary media type for release assets', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'harness-release-media-'))
+  t.after(() => rm(directory, { recursive: true, force: true }))
+  const zip = zipSync({ 'build-manifest.json': Buffer.from('{}'), 'Harness.exe': Buffer.from('installer') })
+  const requests = []
+  const client = apiClient('https://api.github.com', 'Bearer synthetic-credential', { fetchImpl: async (url, options) => {
+    requests.push({ url, accept: options.headers.Accept })
+    if (url.includes('/actions/')) {
+      if (options.headers.Accept !== 'application/vnd.github+json') return new Response('', { status: 415 })
+      return new Response(zip)
+    }
+    if (options.headers.Accept !== 'application/octet-stream') return new Response('', { status: 415 })
+    return new Response('installer')
+  } })
+  await stageBuildArchive(client, '/repos/test/build/actions/artifacts/7/zip', join(directory, 'target'))
+  const binary = await client.download('/repos/test/downloads/releases/assets/9')
+  let text = ''
+  for await (const chunk of binary) text += Buffer.from(chunk).toString()
+  assert.equal(text, 'installer')
+  assert.deepEqual(requests.map(request => request.accept), ['application/vnd.github+json', 'application/octet-stream'])
+})
+
 test('retries complete GET reads after proxy resets, HTTP failures and interrupted JSON bodies', async () => {
   for (const kind of ['socket', 'status', 'body']) {
     let calls = 0
