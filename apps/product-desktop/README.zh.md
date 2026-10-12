@@ -14,7 +14,7 @@
 node apps/product-desktop/scripts/sync-github.mjs --repository OWNER/deepseek-harness-desktop --create
 ```
 
-已有构建仓库时省略 `--create`。同步拒绝公开仓库、fork、归档仓库、未提交源码和不一致的基线。脚本只原子推送 `main` 和固定基线 tag；引用分叉时直接失败，不强推、不删除引用、不修改 remote。上传期间 Actions 保持禁用。适配层禁用复制过来的上游工作流，仅启用产品打包工作流，限制允许使用的 Actions，再触发上传的精确提交。工作流尚未被索引或推送失败时 Actions 保持禁用；解决报错后省略 `--create` 重试。
+已有构建仓库时省略 `--create`。同步拒绝公开仓库、fork、归档仓库、未提交源码、浅克隆历史和不一致的基线。浅克隆先通过 `git fetch --unshallow origin` 从现有桌面仓库补齐历史，再进行同步。脚本只原子推送 `main` 和固定基线 tag；引用分叉时直接失败，不强推、不删除引用、不修改 remote。上传期间 Actions 保持禁用。适配层禁用复制过来的上游工作流，仅启用产品打包工作流，限制允许使用的 Actions，再触发上传的精确提交。工作流尚未被索引或推送失败时 Actions 保持禁用；解决报错后省略 `--create` 重试。
 
 内网手动工作流 **Sync desktop packages to GitHub** 读取仓库变量 `GITHUB_DESKTOP_REPOSITORY` 和 secret `GITHUB_DESKTOP_TOKEN`。变量只保存 owner/name；secret 保存限定构建仓库的凭据，并授予 Contents、Workflows、Actions 和 Administration 写权限。任务获取 Gitea 的 `main` 及其固定基线，验证登记补丁后同步该源码。GitHub runner 不访问内网 Gitea 或生产凭据。桌面私有 Git 历史会上传至 GitHub；服务端和控制中心仓库仍在内网。
 

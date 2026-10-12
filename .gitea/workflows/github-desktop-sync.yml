@@ -18,10 +18,11 @@ jobs:
         uses: http://192.168.2.66:3300/instudio/checkout@v4
         with:
           ref: main
+          fetch-depth: 0
       - name: Fetch stored Harness baseline
         run: |
           tag="$(cat UPSTREAM_TAG)"
-          git fetch --depth=1 origin "refs/tags/${tag}:refs/tags/${tag}"
+          git fetch origin "refs/tags/${tag}:refs/tags/${tag}"
       - name: Install locked dependencies
         run: |
           npm install -g pnpm@11.28.5 --no-audit --fund=false --registry=https://registry.npmjs.org/

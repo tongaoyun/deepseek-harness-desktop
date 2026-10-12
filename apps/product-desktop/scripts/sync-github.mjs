@@ -75,6 +75,9 @@ if (process.argv[1] !== undefined && resolve(process.argv[1]) === import.meta.fi
   const root = resolve(import.meta.dirname, '../../..')
   const git = args => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
   if (git(['status', '--porcelain']) !== '') throw new Error('Commit desktop changes before synchronizing')
+  if (git(['rev-parse', '--is-shallow-repository']) === 'true') {
+    throw new Error('Complete desktop history is required; run git fetch --unshallow origin before synchronizing')
+  }
   const commit = git(['rev-parse', 'HEAD'])
   const tag = git(['show', 'HEAD:UPSTREAM_TAG'])
   const baseline = git(['show', 'HEAD:UPSTREAM_COMMIT'])
