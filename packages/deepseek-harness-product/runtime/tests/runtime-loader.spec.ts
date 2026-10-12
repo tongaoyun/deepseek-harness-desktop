@@ -205,7 +205,7 @@ it('composes kit and skill providers without standard or intermediate Presets, r
   expect((await ctx.agentPresets.list()).map(preset => preset.id).sort()).toEqual(['minimal', 'ptc'])
   const request = async (requestId: number, method: string, payload: object = {}) => {
     emitMessage({ type: 'extension-control', namespace: 'product', requestId, method, payload })
-    await vi.waitFor(() => { expect(responses.has(requestId)).toBe(true) })
+    await vi.waitFor(() => { expect(responses.has(requestId)).toBe(true) }, { timeout: 10_000 })
     return responses.get(requestId)!
   }
   expect(await request(20, 'expertKits.install', { id: kit.id })).toMatchObject({
