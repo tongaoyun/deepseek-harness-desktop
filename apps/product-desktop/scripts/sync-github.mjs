@@ -103,7 +103,10 @@ if (process.argv[1] !== undefined && resolve(process.argv[1]) === import.meta.fi
         cwd: root, stdio: ['ignore', 'pipe', 'pipe'], timeout: 300_000,
         env: { ...process.env, GIT_ASKPASS: askpass, GIT_TERMINAL_PROMPT: '0', GITHUB_DESKTOP_TOKEN: token },
       })
-    } catch { throw new Error('GitHub push failed; check repository write permission and divergent refs. Actions remain disabled') }
+    } catch (error) {
+      const diagnostic = error.stderr?.toString().replaceAll(token, '[REDACTED]').slice(-2000).trim()
+      throw new Error(`GitHub push failed${diagnostic ? `: ${diagnostic}` : ''}. Actions remain disabled`)
+    }
     finally { rmSync(temporary, { recursive: true, force: true }) }
   }
   try {
