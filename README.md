@@ -10,7 +10,7 @@ This repository extends DeepSeek Harness `dsh-v0.2.1-alpha.2`, pinned by [`UPSTR
 
 The [product subsystem](docs/subsystems/deepseek-harness-product.md) owns authentication, catalogs, per-task capability snapshots, and desktop resources in independent protocol, runtime, desktop, and UI packages. Harness Session, execution, approval, and replay APIs remain the integration points. [Registered patches](scripts/upstream-patches/manifest.json) record every official difference and its verification.
 
-The Gitea Windows workflow produces unsigned installers, and the explicit Electron Release workflow publishes Windows/macOS assets plus platform SHA-256 manifests and release metadata to a Gitea Release. Asset names remain identical to electron-builder's update metadata so a signed macOS feed can be consumed without rewriting. Windows remains unsigned and therefore does not provide Windows publisher trust; release assets are distribution records, not a signing substitute.
+Gitea runs desktop CI, upstream version checks, and manual synchronization to the private GitHub build repository. [Product desktop packaging](apps/product-desktop/README.md) builds unsigned Windows x64, macOS ARM64, and macOS Intel installers. Publishing verified installers to the public GitHub download repository and mirroring them to Gitea Releases are separate operations; packaging does not publish Releases or automatic update feeds.
 
 DeepSeek Harness (`dsh`) is an open-source agent harness developed by [DeepSeek AI](https://deepseek.com).
 
