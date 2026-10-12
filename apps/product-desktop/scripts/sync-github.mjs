@@ -1,4 +1,4 @@
-/** Synchronize the selected desktop commit and stored baseline to a private build repository. */
+/** Synchronize the selected desktop commit and stored baseline without changing repository visibility. */
 import { execFileSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
@@ -54,11 +54,11 @@ export async function synchronizeDesktop({ repository, commit, tag, create = fal
     const identity = await request('GET', '/user')
     const [owner, name] = repository.split('/')
     const path = identity.login.toLowerCase() === owner.toLowerCase() ? '/user/repos' : `/orgs/${owner}/repos`
-    await request('POST', path, { name, private: true, auto_init: false, description: 'Private desktop packaging mirror; source of truth is internal Gitea' })
+    await request('POST', path, { name, private: true, auto_init: false, description: 'Desktop packaging mirror; source of truth is internal Gitea' })
   }
   const metadata = await request('GET', `/repos/${repository}`)
-  if (metadata.private !== true || metadata.fork === true || metadata.archived === true) {
-    throw new Error('Use an active private non-fork build repository')
+  if (typeof metadata.private !== 'boolean' || metadata.fork === true || metadata.archived === true) {
+    throw new Error('Use an active non-fork build repository with known visibility')
   }
   if (metadata.size > 0 && metadata.default_branch !== 'main') throw new Error('Build repository must use main as its default branch')
   await request('PUT', `/repos/${repository}/actions/permissions`, { enabled: false })

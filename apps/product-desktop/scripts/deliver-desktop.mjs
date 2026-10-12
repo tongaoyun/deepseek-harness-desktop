@@ -233,10 +233,11 @@ async function main() {
   if (resumed && !/^[1-9]\d*$/u.test(resumed)) throw new Error('A numeric GitHub build run ID is required')
   if (commit !== head && !resumed) throw new Error('Different delivery code is allowed only when resuming an exact build')
   if (execFileSync('git', ['status', '--porcelain'], { cwd: root, encoding: 'utf8' }).trim()) throw new Error('Commit all desktop source before delivery')
-  const privateRepo = await github.request('GET', `/repos/${repository}`)
+  const buildRepo = await github.request('GET', `/repos/${repository}`)
   const publicRepo = await github.request('GET', `/repos/${downloads}`)
   const internalRepo = await gitea.request('GET', `/repos/${internal}`)
-  if (privateRepo.private !== true || publicRepo.private !== false || !publicRepo.permissions?.push
+  if (typeof buildRepo.private !== 'boolean' || buildRepo.archived || buildRepo.fork || !buildRepo.permissions?.push
+    || publicRepo.private !== false || !publicRepo.permissions?.push
     || publicRepo.archived || publicRepo.fork || !internalRepo.permissions?.push) throw new Error('Release repository permissions or visibility are invalid')
   if ((await gitea.request('GET', `/repos/${internal}/git/commits/${commit}`)).sha !== commit) {
     throw new Error('Requested source is not stored in Gitea')

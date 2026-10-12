@@ -39,12 +39,23 @@ test('numbers each platform with the same source, UTC date, run and attempt', ()
   }
 })
 
-test('refuses public, forked, archived and unrelated build repositories before pushing', async () => {
-  for (const invalid of [{ private: false }, { fork: true }, { archived: true }, { default_branch: 'master' }]) {
+test('refuses unknown visibility, forked, archived and unrelated build repositories before pushing', async () => {
+  for (const invalid of [{ private: undefined }, { private: 'false' }, { fork: true }, { archived: true }, { default_branch: 'master' }]) {
     const { options, calls } = fixture(invalid)
     await assert.rejects(synchronizeDesktop(options))
     assert.equal(calls.some(call => call.push), false)
     assert.equal(calls.some(call => call.method === 'PUT'), false)
+  }
+})
+
+test('synchronizes public and private source without changing visibility', async () => {
+  for (const visibility of [false, true]) {
+    const { options, calls } = fixture({ private: visibility })
+    await synchronizeDesktop(options)
+    assert.equal(calls.filter(call => call.push).length, 1)
+    assert.equal(calls.some(call => call.body && Object.hasOwn(call.body, 'private')), false)
+    assert.equal(calls.find(call => call.push).push[0], repository)
+    assert.deepEqual(calls.find(call => call.path?.endsWith('/dispatches')).body, { ref: 'main', inputs: { source_sha: commit } })
   }
 })
 
