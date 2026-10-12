@@ -150,7 +150,7 @@ test('uses three native hosted runners and product packaging without publishing 
   const source = readFileSync(new URL('../../../.github/workflows/product-desktop-package.yml', import.meta.url), 'utf8')
   const workflow = yaml.load(source)
   assert.deepEqual(Object.keys(workflow.on), ['workflow_dispatch'])
-  assert.deepEqual(workflow.permissions, { contents: 'read' })
+  assert.deepEqual(workflow.permissions, { contents: 'read', actions: 'read' })
   assert.deepEqual(workflow.jobs.package.strategy.matrix.include, [
     { target: 'win-x64', runner: 'windows-2025', arch: 'x64' },
     { target: 'mac-arm64', runner: 'macos-15', arch: 'arm64' },
