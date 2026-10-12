@@ -3,7 +3,7 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, w
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, it, onTestFinished } from 'vitest'
-import { assertPublicImport, completeDiff, importSpecifiers, inventory, productOwned, verifyDependencies, verifyPatches } from './upstream-boundaries.mjs'
+import { assertPublicImport, completeDiff, importSpecifiers, inventory, productOwned, verifyDependencies, verifyPatches, verifyPinnedBaseline } from './upstream-boundaries.mjs'
 
 it('isolates the registered product knowledge guide without exempting other upgrade documents', () => {
   expect(productOwned('docs/upgrade-guide/v0.2.1-alpha.2/product-knowledge-library/guide.md')).toBe(true)
@@ -24,6 +24,22 @@ function fixture() {
   git('commit', '-qm', 'baseline')
   return { root, baseline: git('rev-parse', 'HEAD') }
 }
+
+it('verifies a stored official baseline without an upstream remote and rejects missing or mismatched tags', () => {
+  const { root, baseline } = fixture()
+  const git = (...args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim()
+  const tag = 'dsh-v0.2.1-alpha.2'
+  expect(() => verifyPinnedBaseline(root, tag, baseline)).toThrow('fetch refs/tags/')
+  git('tag', tag, baseline)
+  expect(git('remote')).toBe('')
+  expect(() => verifyPinnedBaseline(root, tag, baseline)).not.toThrow()
+  expect(() => verifyPinnedBaseline(root, tag, '0'.repeat(40))).toThrow('must resolve')
+  expect(() => verifyPinnedBaseline(root, '--help', baseline)).toThrow('release tag')
+  expect(() => verifyPinnedBaseline(root, tag, baseline.slice(0, 7))).toThrow('full commit ID')
+  git('tag', '-d', tag)
+  git('tag', '-a', tag, '-m', 'official release', baseline)
+  expect(() => verifyPinnedBaseline(root, tag, baseline)).not.toThrow()
+})
 
 it('checks complete registered differences and rejects new, changed, and reverted patches', () => {
   const { root, baseline } = fixture()

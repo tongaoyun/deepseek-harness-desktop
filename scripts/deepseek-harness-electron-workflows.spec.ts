@@ -80,21 +80,36 @@ describe('DeepSeekHarness Electron workflows', () => {
     expect(source).toContain('DSH_DESKTOP_NPM_REGISTRY: https://registry.npmmirror.com/')
   })
 
-  it('fetches the pinned upstream tag before verifying its commit', () => {
+  it('fetches the pinned baseline from the desktop repository before verifying its commit', () => {
     const steps = workflow('electron-ci.yml').jobs.desktop?.steps ?? []
-    const fetch = steps.find(step => step.name === 'Fetch pinned Harness upstream')?.run ?? ''
-    expect(fetch).toContain('UPSTREAM_REPOSITORY="$(cat UPSTREAM_REPOSITORY)"')
+    const fetch = steps.find(step => step.name === 'Fetch stored Harness baseline')?.run ?? ''
     expect(fetch).toContain('UPSTREAM_TAG="$(cat UPSTREAM_TAG)"')
-    expect(fetch).toContain('UPSTREAM_MIRROR_REPOSITORY="$(cat UPSTREAM_MIRROR_REPOSITORY)"')
-    expect(fetch).toContain('git remote add upstream "$UPSTREAM_MIRROR_REPOSITORY"')
-    expect(fetch).toContain('git remote add upstream-canonical "$UPSTREAM_REPOSITORY"')
     expect(fetch).toContain('for attempt in 1 2 3')
-    expect(fetch).toContain('timeout 120 git -c http.version=HTTP/1.1 fetch --force --depth=1 upstream')
+    expect(fetch).toContain('timeout 120 git -c http.version=HTTP/1.1 fetch --depth=1 origin')
     expect(fetch).toContain('if [ "$attempt" -eq 3 ]')
     expect(fetch).toContain('"refs/tags/${UPSTREAM_TAG}:refs/tags/${UPSTREAM_TAG}"')
     expect(fetch).not.toContain('dsh-v0.1.7-rc.2')
-    expect(steps.indexOf(steps.find(step => step.name === 'Fetch pinned Harness upstream')!))
+    expect(steps.indexOf(steps.find(step => step.name === 'Fetch stored Harness baseline')!))
       .toBeLessThan(steps.findIndex(step => step.name === 'Verify upstream and product contracts'))
+  })
+
+  it('keeps CI and release baseline verification independent of GitHub and a mirror repository', () => {
+    for (const name of ['electron-ci.yml', 'electron-release.yml']) {
+      const source = readFileSync(resolve(import.meta.dirname, '..', '.gitea', 'workflows', name), 'utf8')
+      expect(source).not.toContain('UPSTREAM_REPOSITORY')
+      expect(source).not.toContain('UPSTREAM_MIRROR_REPOSITORY')
+      expect(source).not.toContain('git remote add upstream')
+      expect(source).not.toContain('--force')
+      for (const job of Object.values(workflow(name).jobs)) {
+        const fetch = job.steps.findIndex(step => step.name === 'Fetch stored Harness baseline')
+        const install = job.steps.findIndex(step => step.name === 'Install dependencies')
+        const verify = job.steps.findIndex(step => (step.run ?? '').includes('verify-upstream.mjs')
+          || (step.run ?? '').includes('pnpm run verify:upstream'))
+        expect(fetch).toBeGreaterThanOrEqual(0)
+        expect(fetch).toBeLessThan(install)
+        expect(install).toBeLessThan(verify)
+      }
+    }
   })
 
   it('reports new upstream RC or stable tags without changing the pin', () => {

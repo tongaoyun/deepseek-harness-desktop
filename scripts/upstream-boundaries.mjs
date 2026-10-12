@@ -7,7 +7,7 @@ import ts from 'typescript'
 
 export const productRoots = ['packages/deepseek-harness-product/', 'packages/extensions/ui-deepseek-harness-product/',
   'apps/product-desktop/', 'native/deepseek-harness/', 'scripts/upstream-patches/']
-const owned = new Set(['UPSTREAM_COMMIT', 'UPSTREAM_TAG', 'UPSTREAM_REPOSITORY', 'UPSTREAM_MIRROR_REPOSITORY',
+const owned = new Set(['UPSTREAM_COMMIT', 'UPSTREAM_TAG', 'UPSTREAM_REPOSITORY',
   'scripts/verify-upstream.mjs', 'scripts/upstream-boundaries.mjs', 'scripts/upstream-boundaries.spec.ts',
   'scripts/upstream-boundaries.d.mts',
   'scripts/sync-upstream.mjs', 'scripts/check-upstream-release.mjs', 'scripts/check-upstream-release.test.mjs',
@@ -27,6 +27,26 @@ export function productOwned(path) {
 const git = (root, args) => execFileSync('git', args, { cwd: root, maxBuffer: 64 * 1024 * 1024 })
 const list = bytes => bytes.toString().split('\0').filter(Boolean)
 const digest = value => createHash('sha256').update(value).digest('hex')
+
+/**
+ * Checks a locally stored official release tag against its pinned commit without network access.
+ * @param root - Repository directory.
+ * @param tag - Selected official release tag.
+ * @param commit - Full pinned commit ID.
+ */
+export function verifyPinnedBaseline(root, tag, commit) {
+  if (!/^dsh-v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(tag)) {
+    throw new Error(`UPSTREAM_TAG must be a pinned DeepSeek Harness release tag, got ${tag}`)
+  }
+  if (!/^[a-f0-9]{40}$/.test(commit)) throw new Error('UPSTREAM_COMMIT must be a full commit ID')
+  let actual
+  try {
+    actual = git(root, ['rev-parse', '--verify', '--quiet', `refs/tags/${tag}^{commit}`]).toString().trim()
+  } catch (error) {
+    throw new Error(`Stored upstream tag ${tag} is missing; fetch refs/tags/${tag} from origin`, { cause: error })
+  }
+  if (actual !== commit) throw new Error(`upstream tag ${tag} must resolve to ${commit}, got ${actual}`)
+}
 
 export function inventory(root, baseline) {
   const original = new Map(list(git(root, ['ls-tree', '-r', '-z', baseline]))

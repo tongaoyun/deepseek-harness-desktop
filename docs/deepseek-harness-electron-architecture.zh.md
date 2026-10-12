@@ -20,4 +20,4 @@ Host 只能通过私有 Electron IPC 请求目录、制品、连接器、知识�
 
 原生产品方法通过 `native/deepseek-harness` 的 `deepseek-harness.native.v1` 行协议接入。当前协议提供受限的文件、附件、SQLite、凭据、钉钉状态、设备标识、图片预览和文件撤销方法；路径限制在 Electron 分配的数据目录内，文件载荷使用 hex 编码并限制为 8 MiB。该 sidecar 不承载 Harness 执行逻辑，不保留旧 Tauri `invoke` 协议。
 
-上游同步以 tag 和固定 commit 为单位。`UPSTREAM_REPOSITORY` 保留为 canonical GitHub 源，`UPSTREAM_MIRROR_REPOSITORY` 是 CI 使用的内部 Gitea 源。`pnpm run verify:upstream` 校验 tag 解析到固定提交、官方改动匹配登记的完整补丁，以及产品仅使用 Harness 公开出口。升级时更新基线、显式应用补丁并解决冲突、验证适配层，再运行官方与产品验收。参见[破坏性变更指南](upgrade-guide/v0.2.0-rc.2/product-task-capabilities/guide.zh.md)。
+上游同步以 tag 和固定 commit 为单位。桌面仓库保存固定的官方 tag 及其 Git 对象；CI 和发布任务从 `origin` 获取该 tag，无需拉取 GitHub 或使用独立镜像仓库。`UPSTREAM_REPOSITORY` 标识官方源，仅用于显式升级和可选的版本检查。`pnpm run verify:upstream` 在本地校验 tag 解析、登记的完整补丁和 Harness 公开出口，不要求上游 remote 或网络连接。升级时更新固定版本，运行 `pnpm run sync:upstream` 获取选定的官方 tag 并保存到 `origin`，显式应用补丁并解决冲突、验证适配层，再运行官方与产品验收。参见[破坏性变更指南](upgrade-guide/v0.2.0-rc.2/product-task-capabilities/guide.zh.md)。

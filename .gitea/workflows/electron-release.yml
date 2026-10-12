@@ -42,14 +42,12 @@ jobs:
     steps:
       - name: Checkout
         uses: http://192.168.2.66:3300/instudio/checkout@v4
-      - name: Verify pinned Harness upstream
+      - name: Fetch stored Harness baseline
         shell: powershell
         run: |
           $tag = (Get-Content UPSTREAM_TAG -Raw).Trim()
-          $mirror = (Get-Content UPSTREAM_MIRROR_REPOSITORY -Raw).Trim()
-          git remote add upstream $mirror
-          git fetch --force --depth=1 upstream "refs/tags/$tag:refs/tags/$tag"
-          node scripts/verify-upstream.mjs
+          git fetch --depth=1 origin "refs/tags/$tag:refs/tags/$tag"
+          if ($LASTEXITCODE -ne 0) { throw "Harness baseline fetch failed" }
       - name: Install dependencies
         shell: powershell
         run: |
@@ -58,6 +56,11 @@ jobs:
           }
           pnpm --version
           pnpm install --frozen-lockfile --prefer-offline --registry=https://registry.npmjs.org/
+      - name: Verify pinned Harness upstream
+        shell: powershell
+        run: |
+          node scripts/verify-upstream.mjs
+          if ($LASTEXITCODE -ne 0) { throw "Harness baseline verification failed" }
       - name: Prepare package configuration
         shell: powershell
         run: "\"DSH_DESKTOP_APP_ID=com.instudio.deepseek-harness.desktop\" | Set-Content -LiteralPath apps\\desktop\\.env.windows -Encoding UTF8"
@@ -101,13 +104,10 @@ jobs:
     steps:
       - name: Checkout
         uses: http://192.168.2.66:3300/instudio/checkout@v4
-      - name: Verify pinned Harness upstream
+      - name: Fetch stored Harness baseline
         run: |
           tag="$(cat UPSTREAM_TAG)"
-          mirror="$(cat UPSTREAM_MIRROR_REPOSITORY)"
-          git remote add upstream "$mirror"
-          git fetch --force --depth=1 upstream "refs/tags/${tag}:refs/tags/${tag}"
-          node scripts/verify-upstream.mjs
+          git fetch --depth=1 origin "refs/tags/${tag}:refs/tags/${tag}"
       - name: Install dependencies
         run: |
           if ! command -v pnpm >/dev/null 2>&1; then
@@ -115,6 +115,8 @@ jobs:
           fi
           pnpm --version
           pnpm install --frozen-lockfile --registry=https://registry.npmjs.org/
+      - name: Verify pinned Harness upstream
+        run: node scripts/verify-upstream.mjs
       - name: Load runner-owned signing configuration
         run: |
           test -f "$HOME/.deepseek-harness-release/electron/.env.macos"
