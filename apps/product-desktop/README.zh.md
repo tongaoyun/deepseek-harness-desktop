@@ -20,7 +20,7 @@ node apps/product-desktop/scripts/sync-github.mjs --repository OWNER/deepseek-ha
 
 每个平台使用原生托管 runner 安装锁定依赖、验证基线、测试产品 sidecar，并调用产品打包入口。Windows 使用原生 PowerShell，验证未签名安装包、应用、sidecar 及安装卸载流程。打包过程包含官方打包运行时 smoke。每次构建产出未签名安装包、配套 blockmap 和 `build-manifest.json`，记录版本、源码提交、目标平台、大小及 SHA-256。可在运行记录的 Artifacts 区域下载，保留十四天。任务失败时不上传不完整安装包。
 
-验收构建产出 Windows EXE 或 macOS DMG；官方管线产出的其他压缩包或 blockmap 也会一并上传。这些构建不创建 Release、不发布更新源、不使用签名证书，也不进行 macOS 公证。两个 macOS 目标沿用官方未签名本地构建的应用标识；Windows 使用配置的产品应用标识。未签名安装包可能需要正常的操作系统确认。Gitea 保留桌面 CI、手动 GitHub 同步和上游版本检查；原生安装包由 GitHub 工作流构建。正式签名分发需要单独配置发布流程。
+验收构建产出 Windows EXE 或 macOS DMG；官方管线产出的其他压缩包或 blockmap 也会一并上传。这些构建不创建 Release、不发布更新源、不使用签名证书，也不进行 macOS 公证。两个 macOS 目标沿用官方未签名本地构建的应用标识；Windows 使用配置的产品应用标识。未签名安装包可能需要正常的操作系统确认。Gitea 保留桌面 CI 和手动 GitHub 同步；原生安装包由 GitHub 工作流构建。正式签名分发需要单独配置发布流程。
 
 ## 本地检查
 

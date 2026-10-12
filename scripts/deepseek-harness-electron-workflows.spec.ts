@@ -26,10 +26,10 @@ function workflow(name: string): Workflow {
 }
 
 describe('DeepSeekHarness Electron workflows', () => {
-  it('keeps internal CI, GitHub synchronization, and upstream checks without duplicate packaging workflows', () => {
+  it('keeps only internal CI and manual GitHub synchronization workflows', () => {
     const files = readdirSync(resolve(import.meta.dirname, '..', '.gitea', 'workflows'))
       .filter(name => /\.ya?ml$/u.test(name)).sort()
-    expect(files).toEqual(['electron-ci.yml', 'github-desktop-sync.yml', 'upstream-release-check.yml'])
+    expect(files).toEqual(['electron-ci.yml', 'github-desktop-sync.yml'])
   })
 
   it('runs existing product contract tests after the Host extraction', () => {
@@ -42,7 +42,7 @@ describe('DeepSeekHarness Electron workflows', () => {
   })
 
   it('uses only available internal runners and actions', () => {
-    for (const name of ['electron-ci.yml', 'github-desktop-sync.yml', 'upstream-release-check.yml']) {
+    for (const name of ['electron-ci.yml', 'github-desktop-sync.yml']) {
       const jobs = Object.values(workflow(name).jobs)
       expect(jobs).toHaveLength(1)
       expect(jobs[0]?.['runs-on']).toBe('ci-node')
@@ -96,16 +96,6 @@ describe('DeepSeekHarness Electron workflows', () => {
         expect(install).toBeLessThan(verify)
       }
     }
-  })
-
-  it('reports new upstream RC or stable tags without changing the pin', () => {
-    const source = readFileSync(resolve(import.meta.dirname, '..', '.gitea', 'workflows', 'upstream-release-check.yml'), 'utf8')
-    const steps = workflow('upstream-release-check.yml').jobs.check?.steps ?? []
-    expect(source).toContain('schedule:')
-    expect(steps.find(step => step.name === 'Check release selection')?.run)
-      .toContain('node scripts/check-upstream-release.mjs --fail-on-update')
-    expect(source).not.toContain('sync-upstream.mjs')
-    expect(source).not.toContain('git push')
   })
 
   it('packages product resources through the application-owned assembly entry', () => {

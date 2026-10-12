@@ -676,7 +676,7 @@
         {
           "path": "package.json",
           "before": "c89d8e465b5540df1fd9df63f328df925490a200b7ed657f31665495581683f6",
-          "after": "1f1bf8a9d52b5677cd90a7a078e6ed273a404bc30aebc92124964718e91bd626"
+          "after": "7f4784297a6ddb80dbefae3260e328d48b1aa83f09bddfb89a294fa326b19371"
         },
         {
           "path": "pnpm-lock.yaml",
@@ -746,17 +746,17 @@
         {
           "path": "README.i18n.yaml",
           "before": "700422df48df27704707a6832b7ba7234f1f44c42494ceffb3b8ee2210f989af",
-          "after": "2bb3b106fde557899178b47ffc62d0a404bacbb62ecbdaca8136deb2f5923778"
+          "after": "4bd5e2f2452421bee6e9568ee32091b31836b28cd773e1170659508147f6d060"
         },
         {
           "path": "README.md",
           "before": "0f5516be2acde776f05572cbc8c3093c90549afe04ce118e11157d073d5d15f4",
-          "after": "184644491a5f39c6ad24916fa3b5e706466723fe1134729d03c20c7696a8a98e"
+          "after": "5b0eba911583cadb87e9db0f66ae3cb05284e52ccdffb8b9314a5c02b0f3e6de"
         },
         {
           "path": "README.zh.md",
           "before": "8f19db1b217e8ef30cf413b07056cc791048bc2ba2ec51ba104e383dcfb43c61",
-          "after": "e63e0dc24e6fdc0e16fc7a1801c0debc28e80b992a159d5e42b2119732f3e1a5"
+          "after": "68bc0ec4b7badd7d358673fd5459cc4588ed59711622fb56e37bf489a7f91ee2"
         },
         {
           "path": "THIRD_PARTY_NOTICES.md",

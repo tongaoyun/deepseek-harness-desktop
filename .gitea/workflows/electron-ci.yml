@@ -43,7 +43,6 @@ jobs:
       - name: Verify upstream and product contracts
         run: |
           pnpm run verify:upstream
-          node --test scripts/check-upstream-release.test.mjs
           node --test apps/product-desktop/tests/github-delivery.test.mjs
           pnpm run build:lib:host
           pnpm run typecheck:contracts-ready

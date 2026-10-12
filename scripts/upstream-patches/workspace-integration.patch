@@ -81,22 +81,21 @@ index 7c03df4930ea71fb0145305a58d0afc7e4b106e0..03cc9012d2a0ab5c7e021bb04202e1f7
      "tests/chat-flow-layout.e2e.ts",
      "tests/layout-bottom.e2e.ts",
 diff --git a/package.json b/package.json
-index 2d76805736259a7b267df42c3128db0433fb133c..e82750ce4004f63322ce52bcee5b7ed94795f368 100644
+index 2d76805736259a7b267df42c3128db0433fb133c..942a6d9fede381580ef5f9c87080a84fc83fc68c 100644
 --- a/package.json
 +++ b/package.json
-@@ -18,6 +18,11 @@
+@@ -18,6 +18,10 @@
    ],
    "scripts": {
      "prepare:primary-runtime": "tsx scripts/primary-runtime/prepare.ts",
 +    "build:product": "pnpm --dir packages/deepseek-harness-product/product build && pnpm exec tsdown --config-loader native --config packages/deepseek-harness-product/product/tsdown.config.ts",
 +    "build:native-product": "cargo build --release --manifest-path native/deepseek-harness/Cargo.toml",
 +    "verify:upstream": "node scripts/verify-upstream.mjs",
-+    "check:upstream-release": "node scripts/check-upstream-release.mjs",
 +    "sync:upstream": "node scripts/sync-upstream.mjs",
      "build": "tsx scripts/build.ts",
      "build:bench": "npm run build:native-system && npm run build:lib && tsdown --config-loader native --config benchmarks/tsdown.config.ts",
      "build:official": "tsx scripts/build.ts --profile official",
-@@ -28,6 +33,8 @@
+@@ -28,6 +32,8 @@
      "build:desktop": "pnpm --filter @deepseek-ai/dsh-desktop run build",
      "dev:desktop": "pnpm --filter @deepseek-ai/dsh-desktop run dev",
      "start:desktop": "pnpm --filter @deepseek-ai/dsh-desktop run start",
