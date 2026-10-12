@@ -746,17 +746,17 @@
         {
           "path": "README.i18n.yaml",
           "before": "700422df48df27704707a6832b7ba7234f1f44c42494ceffb3b8ee2210f989af",
-          "after": "9e0d3811c40554152924e5908417c733a594aa891ce130bb2b4ee5f5307047ff"
+          "after": "2bb3b106fde557899178b47ffc62d0a404bacbb62ecbdaca8136deb2f5923778"
         },
         {
           "path": "README.md",
           "before": "0f5516be2acde776f05572cbc8c3093c90549afe04ce118e11157d073d5d15f4",
-          "after": "fb8f6252c363eed67ec5760745422b84389af69bedf2846562bb9138735f4793"
+          "after": "184644491a5f39c6ad24916fa3b5e706466723fe1134729d03c20c7696a8a98e"
         },
         {
           "path": "README.zh.md",
           "before": "8f19db1b217e8ef30cf413b07056cc791048bc2ba2ec51ba104e383dcfb43c61",
-          "after": "40f88d415cc06a8c28e258d806670e697146f960ff9597f7036321faf51c7cf0"
+          "after": "e63e0dc24e6fdc0e16fc7a1801c0debc28e80b992a159d5e42b2119732f3e1a5"
         },
         {
           "path": "THIRD_PARTY_NOTICES.md",

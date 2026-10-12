@@ -1,5 +1,5 @@
 diff --git a/README.i18n.yaml b/README.i18n.yaml
-index 5ce56b7a613a0709b4ccde53711317f34e5abdb0..49727563a9378d36e57ae4e799c1def8b4642619 100644
+index 5ce56b7a613a0709b4ccde53711317f34e5abdb0..d044611e09b51b301517ac1e25c64cc6db08e88d 100644
 --- a/README.i18n.yaml
 +++ b/README.i18n.yaml
 @@ -3,8 +3,11 @@
@@ -11,13 +11,13 @@ index 5ce56b7a613a0709b4ccde53711317f34e5abdb0..49727563a9378d36e57ae4e799c1def8
 +  en: 2a567d9e9bf21506
 +  zh: e5f30eff0160234a
 +/deepseek-harness/deepseek-harness-downstream-desktop:
-+  en: 31146ba768fc43cf
-+  zh: ee6afcaff62e61f6
++  en: fcec264cf7bd7f40
++  zh: 82ac9acb7828bca3
  /deepseek-harness/developer-preview:
    en: 4ef4d8a71ac143f0
    zh: 1bfc3149ba8e5543
 diff --git a/README.md b/README.md
-index 7941e30f7bdca9391befe39b9115d211157fa42d..06538f804cf3321dd05b66a4245708447811737b 100644
+index 7941e30f7bdca9391befe39b9115d211157fa42d..7474b550983de6ce8a918195038b53e8bd5b38d6 100644
 --- a/README.md
 +++ b/README.md
 @@ -2,6 +2,16 @@
@@ -32,13 +32,13 @@ index 7941e30f7bdca9391befe39b9115d211157fa42d..06538f804cf3321dd05b66a424570844
 +
 +The [product subsystem](docs/subsystems/deepseek-harness-product.md) owns authentication, catalogs, per-task capability snapshots, and desktop resources in independent protocol, runtime, desktop, and UI packages. Harness Session, execution, approval, and replay APIs remain the integration points. [Registered patches](scripts/upstream-patches/manifest.json) record every official difference and its verification.
 +
-+The Gitea Windows workflow produces unsigned installers, and the explicit Electron Release workflow publishes Windows/macOS assets plus platform SHA-256 manifests and release metadata to a Gitea Release. Asset names remain identical to electron-builder's update metadata so a signed macOS feed can be consumed without rewriting. Windows remains unsigned and therefore does not provide Windows publisher trust; release assets are distribution records, not a signing substitute.
++Gitea runs desktop CI, upstream version checks, and manual synchronization to the private GitHub build repository. [Product desktop packaging](apps/product-desktop/README.md) builds unsigned Windows x64, macOS ARM64, and macOS Intel installers. Publishing verified installers to the public GitHub download repository and mirroring them to Gitea Releases are separate operations; packaging does not publish Releases or automatic update feeds.
 +
  DeepSeek Harness (`dsh`) is an open-source agent harness developed by [DeepSeek AI](https://deepseek.com).
  
  It is built on an **everything-is-a-plugin** architecture and powered by [Cordis](https://github.com/cordiverse/cordis), whose design is described in [_A Programming Paradigm for Spatiotemporal Composability_](https://arxiv.org/abs/2608.25512).
 diff --git a/README.zh.md b/README.zh.md
-index 3adc57ce89b3c30e6a6dbaa14dc35df944d52926..bdf5202bbfbbb41b1e3c2b6fd4b97b3cfe641441 100644
+index 3adc57ce89b3c30e6a6dbaa14dc35df944d52926..3fa79a47c5aa31fd654df7fb5d36fb63a31fee4d 100644
 --- a/README.zh.md
 +++ b/README.zh.md
 @@ -2,6 +2,16 @@
@@ -53,7 +53,7 @@ index 3adc57ce89b3c30e6a6dbaa14dc35df944d52926..bdf5202bbfbbb41b1e3c2b6fd4b97b3c
 +
 +[产品子系统](docs/subsystems/deepseek-harness-product.zh.md)通过独立的协议、运行时、桌面和 UI 包管理认证、目录、任务能力快照及桌面资源。Harness 的 Session、执行、审批和回放 API 是集成入口。[登记补丁](scripts/upstream-patches/manifest.json)记录每项官方差异及验证方式。
 +
-+Gitea Windows 流水线生成未签名安装包，显式的 Electron Release 流程会把 Windows/macOS 资产、平台 SHA-256 清单和发布元数据发布到 Gitea Release。资产名保持与 electron-builder 更新元数据一致，已签名的 macOS 更新 feed 无需改写即可使用。Windows 仍未签名，因此不提供 Windows 发布者信任；Release 资产只是分发记录，不能替代签名。
++Gitea 执行桌面 CI、上游版本检查和向 GitHub 私有构建仓库的手动同步。[产品桌面打包](apps/product-desktop/README.zh.md)生成未签名的 Windows x64、macOS ARM64 和 macOS Intel 安装包。将已验证安装包发布到 GitHub 公共下载仓库，以及同步到 Gitea Release，均为独立操作；打包不会发布 Release 或自动更新 feed。
 +
  DeepSeek Harness（`dsh`）是由 [DeepSeek AI](https://deepseek.com) 开发的开源 agent harness（智能体框架）。
  
