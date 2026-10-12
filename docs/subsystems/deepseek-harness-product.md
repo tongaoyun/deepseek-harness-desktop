@@ -2,7 +2,7 @@
 
 English | [中文](deepseek-harness-product.zh.md)
 
-Enterprise catalogs extend the official Harness Session, execution loop, approvals, and conversation UI. Product packages own authentication, downloads, capability selection, connector policy, and scoped knowledge retrieval.
+Enterprise catalogs extend the official Harness Session, execution loop, approvals, and conversation UI. Product packages own authentication, downloads, capability selection, connector policy, and scoped knowledge retrieval. The [product overview](../../apps/product-desktop/docs/README.md) maps employee workflows and repository responsibilities.
 
 ## Packages
 
@@ -29,7 +29,7 @@ Both task responses expose `requiredConnectorIds` resolved from the pinned kit. 
 
 `basePresetId` selects the execution mode independently of product capabilities. Preparation preserves pinned product plugins while replacing the base plugin set and checking required tools. The runtime handles the generic `agent-preset/resolve-selection` waterfall so official selection entries retain task capabilities. The official Preset UI shows the base mode of a composed snapshot and becomes read-only after a task starts. `expertKitId: null` clears the Kit composition; selecting or clearing a Kit retains selected knowledge IDs. The independent Kit selector uses public conversation slots without replacing the official mode controls. Knowledge selection uses a separate staged multi-selector. Catalog details do not modify task selection. Expert Kit README previews have a full Markdown reader; command tables do not declare executable commands.
 
-An empty task selects the derived Preset directly. Once a turn starts, the client creates a new official Session in the same Workspace and carries the latest composer draft into it. The official Preset selection guard handles concurrent starts. Preparation failure leaves the current task and draft intact. Installed Skills use the official `skill` tool and plain-text `/<skillName>` invocation; installation leaves the current task and draft intact.
+An empty task selects the derived Preset directly. The Expert Kit selector appears before a task starts; a started task shows its pinned Kit as a read-only header label. Choosing another Kit requires a new conversation. Knowledge adjustments, explicit recovery, shortcut preparation, or a concurrent start can require a new official Session in the same Workspace, carrying the latest composer draft. The official Preset selection guard handles concurrent starts. Preparation failure leaves the current task and draft intact. Installed Skills use the official `skill` tool and plain-text `/<skillName>` invocation; installation leaves the current task and draft intact.
 
 Configuration actions capture an explicit Session ID before entering the queue. Completion updates that Session and preserves the current view when the user has navigated elsewhere. Recovery is one preparation request: exit the Kit, remove revoked knowledge IDs, and retain available IDs. Network failure does not establish revocation. Invalid snapshots expose an unavailable diagnostic and require explicit recovery; affected history remains readable.
 

@@ -4,7 +4,14 @@
 
 ## 概要
 
-产品 assembly 通过官方 Electron 管线打包企业桌面。内网 Gitea 负责开发和审核；GitHub 源码仓库接收选定的已提交源码及其固定 Harness 基线，使用托管 runner 构建 Windows x64、macOS ARM64 和 macOS Intel 安装包。
+产品 assembly 通过官方 Electron 管线启动和打包企业桌面。内网 Gitea 负责开发和审核；GitHub 源码仓库接收选定的已提交源码及其固定 Harness 基线，使用托管 runner 构建 Windows x64、macOS ARM64 和 macOS Intel 安装包。产品流程和架构从[项目总览](docs/README.zh.md)开始阅读。
+
+<a id="local-development"></a>
+## 本地开发
+
+完成仓库构建和原生运行时准备后，在仓库根目录执行 `pnpm run start:product-desktop` 打开当前产品装配；`pnpm run dev:product-desktop` 会先构建再启动。钉钉登录和企业目录使用这些入口，官方 `dev:desktop` 和 `start:desktop` 不选择产品扩展。
+
+产品启动器在 `apps/desktop/.desktop-build/product-development/` 下使用独立 home 和 Electron 用户数据目录，可通过 `DSH_PRODUCT_HOME` 和 `DSH_PRODUCT_USER_DATA` 显式覆盖。继承的官方 `DSH_HOME` 和 `DSH_DESKTOP_USER_DATA_DIR` 不决定产品状态目录。开发时可用 `DEEPSEEK_HARNESS_SERVER_URL` 覆盖服务端 origin，安装版读取打包资源。已保存的员工会话过期时需正常钉钉登录，不在 profile 之间复制令牌。
 
 ## GitHub 打包
 
@@ -26,6 +33,7 @@ node apps/product-desktop/scripts/sync-github.mjs --repository OWNER/deepseek-ha
 
 验收构建产出 Windows EXE 或 macOS DMG；官方管线产出的其他压缩包或 blockmap 也会一并上传。内网交付工作流将已验证的未签名安装包发布到公开 GitHub 和内网 Gitea 预发布。单独运行 GitHub 打包仍只上传 Actions 产物。两种流程均不发布自动更新源、不使用签名证书，也不进行 macOS 公证。两个 macOS 目标沿用官方未签名本地构建的应用标识；Windows 使用配置的产品应用标识。未签名安装包可能需要正常的操作系统确认。Gitea 保留桌面 CI 和手动 GitHub 同步；原生安装包由 GitHub 工作流构建。正式签名分发需要单独配置发布流程。
 
+<a id="local-checks"></a>
 ## 本地检查
 
 内部桌面 CI 覆盖制品导入、对话修改、草稿重启和真实 Loader 的技能及套件组合。[工作流回归](../../scripts/deepseek-harness-electron-workflows.spec.ts)要求这些测试保留在实际执行的 CI 命令中。托管打包开始前，精确源码提交必须通过 main CI。

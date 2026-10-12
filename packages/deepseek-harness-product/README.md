@@ -32,7 +32,7 @@ This group connects DeepSeek Harness enterprise services to public Harness exten
 <a id="related-documentation"></a>
 ## Related documentation
 
-The [DeepSeek Harness product subsystem](../../docs/subsystems/deepseek-harness-product.md) defines the product responsibilities and integration points.
+Start with the [enterprise desktop overview](../../apps/product-desktop/docs/README.md) for product workflows and repository responsibilities. The [DeepSeek Harness product subsystem](../../docs/subsystems/deepseek-harness-product.md) defines integration points, and the [desktop assembly](../../apps/product-desktop/README.md) owns local launch and delivery.
 
 <a id="dev-note"></a>
 ## Dev Note

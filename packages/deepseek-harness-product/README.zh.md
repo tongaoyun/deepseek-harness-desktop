@@ -32,7 +32,7 @@ kind: "package-group"
 <a id="related-documentation"></a>
 ## 相关文档
 
-[DeepSeek Harness产品子系统](../../docs/subsystems/deepseek-harness-product.zh.md)定义产品职责和集成点。
+从[企业桌面项目总览](../../apps/product-desktop/docs/README.zh.md)了解产品流程和仓库职责。[DeepSeek Harness 产品子系统](../../docs/subsystems/deepseek-harness-product.zh.md)定义集成点，[桌面装配](../../apps/product-desktop/README.zh.md)维护本地启动和交付说明。
 
 <a id="dev-note"></a>
 ## 开发备注

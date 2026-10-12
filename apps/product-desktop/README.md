@@ -4,7 +4,14 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-The product assembly packages the enterprise desktop through the official Electron pipeline. Internal Gitea owns development and review. A GitHub source repository receives selected committed source and its stored Harness baseline for hosted Windows x64, macOS ARM64, and macOS Intel builds.
+The product assembly launches and packages the enterprise desktop through the official Electron pipeline. Internal Gitea owns development and review. A GitHub source repository receives selected committed source and its stored Harness baseline for hosted Windows x64, macOS ARM64, and macOS Intel builds. Start with the [product overview](docs/README.md) for workflows and architecture.
+
+<a id="local-development"></a>
+## Local Development
+
+After the repository build and native runtime preparation, run `pnpm run start:product-desktop` from the repository root to open the current product assembly. `pnpm run dev:product-desktop` also builds before launch. Use these entries for DingTalk login and enterprise catalogs; the official `dev:desktop` and `start:desktop` entries do not select the product extension.
+
+The product launcher owns separate home and Electron user-data directories under `apps/desktop/.desktop-build/product-development/`. `DSH_PRODUCT_HOME` and `DSH_PRODUCT_USER_DATA` explicitly override them. Inherited official `DSH_HOME` and `DSH_DESKTOP_USER_DATA_DIR` do not select product state. `DEEPSEEK_HARNESS_SERVER_URL` may override the server origin for development; installed applications read the packaged resource. A saved expired employee session requires normal DingTalk login. Do not copy tokens between profiles.
 
 ## GitHub Packaging
 
@@ -26,6 +33,7 @@ Each native hosted runner installs locked dependencies, verifies the baseline, t
 
 Acceptance builds produce a Windows EXE or macOS DMG; any additional archives or blockmaps are included when the official pipeline produces them. The internal delivery workflow publishes verified unsigned installers to public GitHub and internal Gitea prereleases. Standalone GitHub packaging still only uploads Actions artifacts. Neither path publishes automatic update feeds, uses signing certificates, or notarizes macOS applications. Both macOS targets use the official unsigned local-build application identifier; Windows uses the configured product application identifier. Unsigned packages may require normal operating-system confirmation. Gitea keeps desktop CI and manual GitHub synchronization; native installers are built by the GitHub workflow. Signed distribution requires a separately configured release process.
 
+<a id="local-checks"></a>
 ## Local Checks
 
 Internal desktop CI covers archive import, conversation editing, draft restart, and the real Loader skill and kit compositions. The [workflow regression](../../scripts/deepseek-harness-electron-workflows.spec.ts) requires these tests to remain in the executed CI command. Main CI must succeed for the exact source commit before hosted packaging starts.
