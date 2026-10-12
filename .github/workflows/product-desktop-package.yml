@@ -1,0 +1,125 @@
+name: Product desktop packages
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Exact desktop source commit
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: product-desktop-${{ inputs.source_sha }}
+  cancel-in-progress: false
+
+jobs:
+  package:
+    name: ${{ matrix.target }} unsigned
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: win-x64
+            runner: windows-2025
+            arch: x64
+          - target: mac-arm64
+            runner: macos-15
+            arch: arm64
+          - target: mac-x64
+            runner: macos-15-intel
+            arch: x64
+    defaults:
+      run:
+        shell: bash
+    env:
+      DSH_TELEMETRY_DISABLED: '1'
+      NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
+      DSH_DESKTOP_NPM_REGISTRY: https://registry.npmjs.org/
+      NPM_CONFIG_FETCH_RETRIES: '4'
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Fetch stored Harness baseline
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh auth setup-git
+          tag="$(cat UPSTREAM_TAG)"
+          git fetch --depth=1 origin "refs/tags/${tag}:refs/tags/${tag}"
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v5.0.0
+      - name: Set up Node
+        uses: actions/setup-node@v7.0.0
+        with:
+          node-version: '24'
+          cache: pnpm
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Verify source and native architecture
+        env:
+          PACKAGE_SOURCE_SHA: ${{ inputs.source_sha }}
+          PACKAGE_ARCH: ${{ matrix.arch }}
+        run: node apps/product-desktop/scripts/github-package.mjs prepare
+      - name: Verify upstream and product delivery contracts
+        run: |
+          pnpm run verify:upstream
+          node --test apps/product-desktop/tests/github-delivery.test.mjs
+      - name: Test product sidecar
+        run: cargo test --manifest-path native/deepseek-harness/Cargo.toml
+      - name: Package Windows
+        if: matrix.target == 'win-x64'
+        shell: pwsh
+        run: |
+          pnpm --dir apps/product-desktop run package win-x64 --unsigned --build-version $env:PACKAGE_VERSION
+          if ($LASTEXITCODE -ne 0) { throw 'Windows packaging failed' }
+      - name: Package macOS
+        if: matrix.target != 'win-x64'
+        env:
+          PACKAGE_TARGET: ${{ matrix.target }}
+        run: pnpm --dir apps/product-desktop run package "$PACKAGE_TARGET" --unsigned --build-version "$PACKAGE_VERSION"
+      - name: Validate Windows signatures and installer lifecycle
+        if: matrix.target == 'win-x64'
+        shell: pwsh
+        run: |
+          $ArtifactRoot = 'apps/desktop/.desktop-build/targets/win-x64/unsigned-artifacts'
+          $Installers = @(Get-ChildItem -LiteralPath $ArtifactRoot -File -Filter '*.exe')
+          if ($Installers.Count -ne 1) { throw 'Expected exactly one Windows installer' }
+          $Files = @($Installers[0].FullName,
+            (Join-Path $ArtifactRoot 'win-unpacked/DeepSeek Harness.exe'),
+            (Join-Path $ArtifactRoot 'win-unpacked/resources/native/deepseek-harness-native.exe'))
+          foreach ($File in $Files) {
+            if ((Get-AuthenticodeSignature -LiteralPath $File).Status -ne 'NotSigned') {
+              throw "Expected unsigned artifact: $File"
+            }
+          }
+          pnpm --dir apps/desktop test:installer -- --headless
+          if ($LASTEXITCODE -ne 0) { throw 'Installer lifecycle smoke failed' }
+      - name: Record verified artifact checksums
+        env:
+          PACKAGE_TARGET: ${{ matrix.target }}
+        run: node apps/product-desktop/scripts/github-package.mjs artifacts
+      - name: Upload installers
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: harness-${{ matrix.target }}-unsigned-${{ github.run_number }}-${{ github.run_attempt }}
+          include-hidden-files: true
+          path: |
+            apps/desktop/.desktop-build/targets/${{ matrix.target }}/unsigned-artifacts/*.exe
+            apps/desktop/.desktop-build/targets/${{ matrix.target }}/unsigned-artifacts/*.dmg
+            apps/desktop/.desktop-build/targets/${{ matrix.target }}/unsigned-artifacts/*.zip
+            apps/desktop/.desktop-build/targets/${{ matrix.target }}/unsigned-artifacts/*.blockmap
+            apps/desktop/.desktop-build/targets/${{ matrix.target }}/unsigned-artifacts/build-manifest.json
+          if-no-files-found: error
+          retention-days: 14

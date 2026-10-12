@@ -1,0 +1,36 @@
+name: Sync desktop packages to GitHub
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: github-desktop-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ci-node
+    timeout-minutes: 30
+    container:
+      image: ci-node:1.0.0
+    steps:
+      - name: Checkout main
+        uses: http://192.168.2.66:3300/instudio/checkout@v4
+        with:
+          ref: main
+      - name: Fetch stored Harness baseline
+        run: |
+          tag="$(cat UPSTREAM_TAG)"
+          git fetch --depth=1 origin "refs/tags/${tag}:refs/tags/${tag}"
+      - name: Install locked dependencies
+        run: |
+          npm install -g pnpm@11.28.5 --no-audit --fund=false --registry=https://registry.npmjs.org/
+          pnpm install --frozen-lockfile --registry=https://registry.npmjs.org/
+      - name: Verify source and synchronize
+        env:
+          GITHUB_DESKTOP_REPOSITORY: ${{ vars.GITHUB_DESKTOP_REPOSITORY }}
+          GITHUB_DESKTOP_TOKEN: ${{ secrets.GITHUB_DESKTOP_TOKEN }}
+        run: |
+          pnpm run verify:upstream
+          node --test apps/product-desktop/tests/github-delivery.test.mjs
+          node apps/product-desktop/scripts/sync-github.mjs

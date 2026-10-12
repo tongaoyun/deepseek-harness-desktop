@@ -10,6 +10,12 @@ it('isolates the registered product knowledge guide without exempting other upgr
   expect(productOwned('docs/upgrade-guide/v0.2.1-alpha.2/official-profile/guide.md')).toBe(false)
 })
 
+it('owns only the product GitHub packaging workflow', () => {
+  expect(productOwned('.github/workflows/product-desktop-package.yml')).toBe(true)
+  expect(productOwned('.github/workflows/release.yml')).toBe(false)
+  expect(productOwned('.github/workflows/unregistered.yml')).toBe(false)
+})
+
 function fixture() {
   const root = mkdtempSync(join(tmpdir(), 'harness-upstream-boundary-'))
   onTestFinished(() =>{  rmSync(root, { recursive: true, force: true }) })
@@ -29,16 +35,16 @@ it('verifies a stored official baseline without an upstream remote and rejects m
   const { root, baseline } = fixture()
   const git = (...args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim()
   const tag = 'dsh-v0.2.1-alpha.2'
-  expect(() => verifyPinnedBaseline(root, tag, baseline)).toThrow('fetch refs/tags/')
+  expect(() =>{  verifyPinnedBaseline(root, tag, baseline) }).toThrow('fetch refs/tags/')
   git('tag', tag, baseline)
   expect(git('remote')).toBe('')
-  expect(() => verifyPinnedBaseline(root, tag, baseline)).not.toThrow()
-  expect(() => verifyPinnedBaseline(root, tag, '0'.repeat(40))).toThrow('must resolve')
-  expect(() => verifyPinnedBaseline(root, '--help', baseline)).toThrow('release tag')
-  expect(() => verifyPinnedBaseline(root, tag, baseline.slice(0, 7))).toThrow('full commit ID')
+  expect(() =>{  verifyPinnedBaseline(root, tag, baseline) }).not.toThrow()
+  expect(() =>{  verifyPinnedBaseline(root, tag, '0'.repeat(40)) }).toThrow('must resolve')
+  expect(() =>{  verifyPinnedBaseline(root, '--help', baseline) }).toThrow('release tag')
+  expect(() =>{  verifyPinnedBaseline(root, tag, baseline.slice(0, 7)) }).toThrow('full commit ID')
   git('tag', '-d', tag)
   git('tag', '-a', tag, '-m', 'official release', baseline)
-  expect(() => verifyPinnedBaseline(root, tag, baseline)).not.toThrow()
+  expect(() =>{  verifyPinnedBaseline(root, tag, baseline) }).not.toThrow()
 })
 
 it('checks complete registered differences and rejects new, changed, and reverted patches', () => {

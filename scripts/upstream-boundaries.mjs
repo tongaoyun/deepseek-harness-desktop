@@ -8,6 +8,7 @@ import ts from 'typescript'
 export const productRoots = ['packages/deepseek-harness-product/', 'packages/extensions/ui-deepseek-harness-product/',
   'apps/product-desktop/', 'native/deepseek-harness/', 'scripts/upstream-patches/']
 const owned = new Set(['UPSTREAM_COMMIT', 'UPSTREAM_TAG', 'UPSTREAM_REPOSITORY',
+  '.github/workflows/product-desktop-package.yml',
   'scripts/verify-upstream.mjs', 'scripts/upstream-boundaries.mjs', 'scripts/upstream-boundaries.spec.ts',
   'scripts/upstream-boundaries.d.mts',
   'scripts/sync-upstream.mjs', 'scripts/check-upstream-release.mjs', 'scripts/check-upstream-release.test.mjs',
