@@ -2,6 +2,7 @@ export interface FileRevision { path: string; before: string | null; after: stri
 export interface PatchManifest { baseline: string; patches: { id: string; purpose: string; tests: string[]; files: FileRevision[]; diff: string }[] }
 export const productRoots: string[]
 export function productOwned(path: string): boolean
+export function verifyPinnedBaseline(root: string, tag: string, commit: string): void
 export function inventory(root: string, baseline: string): FileRevision[]
 export function completeDiff(root: string, baseline: string, paths: string[]): string
 export function importSpecifiers(path: string, source: string): string[]
