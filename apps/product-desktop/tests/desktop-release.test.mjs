@@ -148,6 +148,39 @@ test('Gitea HTTP adapter streams multipart attachments and verifies relative aut
   assert.throws(() => client.response('https://other.invalid/blob', {}), /forward credentials/u)
 })
 
+test('finds unpublished GitHub drafts across pages when the tag endpoint returns 404 and reconciles a lost create response', async () => {
+  const draft = { id: 7, tag_name: 'test-tag', draft: true }
+  const calls = []
+  const client = { request: async (method, path) => {
+    calls.push({ method, path })
+    if (method === 'POST') throw socketFailure()
+    if (path.includes('/tags/')) throw Object.assign(new Error('Not found'), { status: 404 })
+    if (path.endsWith('page=1')) return Array.from({ length: 50 }, (_, id) => ({ tag_name: `another-${id}` }))
+    return [draft]
+  } }
+  const destination = releaseDestination('GitHub', client, 'owner/repo', { github: true, target: commit })
+  assert.deepEqual(await destination.find('test-tag'), draft)
+  assert.deepEqual(await destination.create({ tag: 'test-tag', version, body: 'test' }), draft)
+  assert.equal(calls.filter(call => call.method === 'POST').length, 1)
+  assert.equal(calls.filter(call => call.path.endsWith('page=2')).length, 2)
+  client.request = async () => { throw Object.assign(new Error('Denied'), { status: 403 }) }
+  await assert.rejects(destination.find('test-tag'), /Denied/u)
+})
+
+test('refuses ambiguous GitHub drafts and returns no match only after inspecting the release list', async () => {
+  const client = { request: async (method, path) => {
+    if (path.includes('/tags/')) throw Object.assign(new Error('Not found'), { status: 404 })
+    return [{ tag_name: 'test-tag', draft: true }, { tag_name: 'test-tag', draft: true }]
+  } }
+  const destination = releaseDestination('GitHub', client, 'owner/repo', { github: true, target: commit })
+  await assert.rejects(destination.find('test-tag'), /Ambiguous/u)
+  client.request = async (method, path) => {
+    if (path.includes('/tags/')) throw Object.assign(new Error('Not found'), { status: 404 })
+    return []
+  }
+  assert.equal(await destination.find('test-tag'), undefined)
+})
+
 async function staged(t) {
   const folder = await mkdtemp(join(tmpdir(), 'harness-release-test-'))
   t.after(() => rm(folder, { recursive: true, force: true }))

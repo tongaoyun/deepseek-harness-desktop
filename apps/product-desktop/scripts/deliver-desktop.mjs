@@ -129,19 +129,30 @@ export function apiClient(base, authorization, transport = {}) {
 /** @param {string} name Destination label. @param {object} client HTTP adapter. @param {string} repository Owner/repo. @param {object} options API and tag target. @returns {object} Release adapter. */
 export function releaseDestination(name, client, repository, { github = false, target, base }) {
   const prefix = `/repos/${repository}/releases`
+  const find = async tag => {
+    try { return await client.request('GET', `${prefix}/tags/${encodeURIComponent(tag)}`) }
+    catch (error) { if (error.status !== 404) throw error }
+    if (!github) return undefined
+    const matches = []
+    for (let page = 1; ; page++) {
+      const rows = await client.request('GET', `${prefix}?per_page=50&page=${page}`)
+      matches.push(...rows.filter(release => release.tag_name === tag))
+      if (rows.length < 50) break
+    }
+    if (matches.length > 1) throw new Error(`Ambiguous release drafts at ${name}`)
+    return matches[0]
+  }
   return {
     name,
-    find: async tag => {
-      try { return await client.request('GET', `${prefix}/tags/${encodeURIComponent(tag)}`) }
-      catch (error) { if (error.status === 404) return undefined; throw error }
-    },
+    find,
     create: async release => {
       const payload = { tag_name: release.tag, name: `DeepSeek Harness ${release.version}`, body: release.body,
         draft: true, prerelease: true, target_commitish: target }
       try { return await client.request('POST', prefix, payload) }
       catch (error) {
         if (error.status && error.status < 500 && ![409, 422].includes(error.status)) throw error
-        const existing = await client.request('GET', `${prefix}/tags/${encodeURIComponent(release.tag)}`)
+        const existing = await find(release.tag)
+        if (!existing) throw error
         return existing
       }
     },
