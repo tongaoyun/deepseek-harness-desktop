@@ -87,3 +87,5 @@ A new capability composition or creation conversation can change the request pre
 ### Dev Note
 
 All registrations, IPC listeners, and outstanding product requests follow Cordis disposal. Use public Harness package exports and typed Preset derivation. The real Loader tests cover scoped tools, unloading, and restart restoration.
+
+[Large shortcut instruction regression](tests/kit-skills-loader.spec.ts) generates an authored kit, loads its long-description skill through the official filesystem provider, and checks complete instructions in the first model request and Session log. Restored execution retains that content without duplicate injection. The model adapter is deterministic; this verifies delivery and replay rather than a live model's reasoning.

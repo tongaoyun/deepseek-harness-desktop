@@ -145,6 +145,7 @@ jobs:
             .artifacts/desktop-ui-${{ matrix.target }}.json
             .artifacts/desktop-installed-${{ matrix.target }}.json
             .artifacts/deepseek-harness-catalog/electron-*.png
+            .artifacts/deepseek-harness-catalog/electron-*-startup.txt
           if-no-files-found: warn
           retention-days: 14
       - name: Record verified artifact checksums

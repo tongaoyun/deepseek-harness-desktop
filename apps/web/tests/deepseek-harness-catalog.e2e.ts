@@ -6,7 +6,7 @@ import { createServer, type IncomingMessage } from 'node:http'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve, sep } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { _electron, chromium, type ElectronApplication, type Locator, type Page } from 'playwright'
 import { expect, it, onTestFinished } from 'vitest'
 import * as tar from 'tar'
@@ -1596,9 +1596,26 @@ for (const { mode, installed } of desktopCarriers) {
       await mkdir(userData)
       const environment = Object.fromEntries(Object.entries(process.env).filter(([key]) =>
         !key.startsWith('DSH_') && !key.startsWith('DEEPSEEK_') && key !== 'ELECTRON_RUN_AS_NODE'))
+      const startupDiagnostic = join(root, 'desktop-startup.txt')
+      onTestFinished(async ({ task }) => {
+        if (task.result?.state !== 'fail') return
+        const diagnostic = await readFile(startupDiagnostic, 'utf8').catch((error: unknown) => {
+          if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return undefined
+          throw error
+        })
+        if (diagnostic !== undefined) {
+          const safe = diagnostic.replaceAll(secret, '<EMPLOYEE_TOKEN>').replaceAll('fixture-model-key', '<MODEL_KEY>')
+          console.error('Desktop startup diagnostic:', safe)
+          await mkdir(screenshots, { recursive: true })
+          await writeFile(join(screenshots, `electron-${carrier}-${mode}-startup.txt`), safe)
+        }
+      })
       const launchOptions = { executablePath: electronExecutable,
-        args: [`--user-data-dir=${userData}`, ...installed === undefined ? [join(REPO_ROOT, 'apps/desktop')] : []],
+        // A disposable profile must not wait for interactive access to a runner's login keychain.
+        args: [`--user-data-dir=${userData}`, ...process.platform === 'darwin' ? ['--use-mock-keychain'] : [],
+          ...installed === undefined ? [join(REPO_ROOT, 'apps/desktop')] : []],
         env: { ...environment, DSH_HOME: home,
+          DSH_DESKTOP_DIAGNOSTIC_FILE: startupDiagnostic,
           DSH_DESKTOP_OPEN_DEVTOOLS: '0',
           ...installed === undefined ? { DSH_DESKTOP_DSH_DIR: project,
             DSH_DESKTOP_PRIMARY_RUNTIME_DIR: developmentRuntimeDirectory({}, process.platform, process.arch) } : {},
@@ -1606,7 +1623,7 @@ for (const { mode, installed } of desktopCarriers) {
           DEEPSEEK_BASE_URL: model.baseURL + '/v1',
           ...mode === 'official' ? {} : {
             DEEPSEEK_HARNESS_SERVER_URL: origin, DEEPSEEK_HARNESS_SESSION_TOKEN: secret,
-            ...installed === undefined ? { DSH_DESKTOP_EXTENSION: join(REPO_ROOT, 'packages/deepseek-harness-product/desktop/lib/index.js'),
+            ...installed === undefined ? { DSH_DESKTOP_EXTENSION: pathToFileURL(join(REPO_ROOT, 'packages/deepseek-harness-product/desktop/lib/index.js')).href,
               DEEPSEEK_HARNESS_NATIVE_BINARY: join(REPO_ROOT, 'native/deepseek-harness/target/release',
                 process.platform === 'win32' ? 'deepseek-harness-native.exe' : 'deepseek-harness-native') } : {},
           },
@@ -1620,11 +1637,13 @@ for (const { mode, installed } of desktopCarriers) {
       }
       const diagnostics: string[] = []
       app.process().stderr?.on('data', (chunk: Buffer) => diagnostics.push(chunk.toString()))
+      onTestFinished(({ task }) => {
+        if (task.result?.state === 'fail') console.error('Desktop process diagnostics:', diagnostics.join(''))
+      })
       let page = await app.firstWindow()
       let tripwire = watchConsole(page)
       onTestFinished(async ({ task }) => {
         if (task.result?.state !== 'fail') return
-        console.error('Desktop process diagnostics:', diagnostics.join(''))
         await mkdir(screenshots, { recursive: true })
         await page.screenshot({ path: join(screenshots, `electron-${carrier}-${mode}-failure.png`), timeout: 5000 })
         console.error('Desktop workflow failure:', await page.locator('body').innerText(), tripwire)

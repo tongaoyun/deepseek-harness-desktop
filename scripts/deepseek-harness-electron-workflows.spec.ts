@@ -38,6 +38,14 @@ describe('DeepSeekHarness Electron workflows', () => {
     const tests = command.match(/\S+\.spec\.tsx?/gu) ?? []
     expect(tests).toContain('packages/deepseek-harness-product/runtime/tests/deepseek-harness-connector-contract.spec.ts')
     expect(tests).toContain('packages/deepseek-harness-product/runtime/tests/deepseek-harness-runtime.spec.ts')
+    for (const path of [
+      'packages/deepseek-harness-product/expert-kit-readme/tests/loader-composition.spec.ts',
+      'packages/deepseek-harness-product/desktop/tests/extension-authoring.spec.ts',
+      'packages/deepseek-harness-product/desktop/tests/extension-archives.spec.ts',
+      'packages/deepseek-harness-product/desktop/tests/authoring-sessions.spec.ts',
+      'packages/deepseek-harness-product/runtime/tests/conversation-authoring-loader.spec.ts',
+      'packages/deepseek-harness-product/runtime/tests/kit-skills-loader.spec.ts',
+    ]) expect(tests).toContain(path)
     for (const path of tests) expect(existsSync(resolve(import.meta.dirname, '..', path)), path).toBe(true)
   })
 
@@ -57,6 +65,34 @@ describe('DeepSeekHarness Electron workflows', () => {
       group: '${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}',
       'cancel-in-progress': true,
     })
+  })
+
+  it('confines the mock keychain to isolated macOS UI acceptance', () => {
+    const root = resolve(import.meta.dirname, '..')
+    const smoke = readFileSync(resolve(root, 'apps/web/tests/deepseek-harness-catalog.e2e.ts'), 'utf8')
+    expect(smoke).toContain("process.env.DSH_DESKTOP_SMOKE !== '1'")
+    expect(smoke).toContain("...process.platform === 'darwin' ? ['--use-mock-keychain'] : []")
+    const paths = ['apps/desktop/electron-builder.config.mjs',
+      'packages/deepseek-harness-product/desktop/assembly.json']
+    for (const directory of ['apps/desktop/src', 'apps/desktop/scripts', 'apps/product-desktop/scripts',
+      'packages/deepseek-harness-product/desktop/src']) {
+      for (const path of readdirSync(resolve(root, directory), { recursive: true })) {
+        if (typeof path === 'string' && /\.(?:ts|mjs|json)$/u.test(path)) paths.push(`${directory}/${path}`)
+      }
+    }
+    for (const path of paths) expect(readFileSync(resolve(root, path), 'utf8'), path).not.toContain('--use-mock-keychain')
+  })
+
+  it('passes product extension file URLs to the ESM loader in development and UI acceptance', () => {
+    const root = resolve(import.meta.dirname, '..')
+    const development = readFileSync(resolve(root, 'apps/product-desktop/scripts/dev.ts'), 'utf8')
+    expect(development).toContain("pathToFileURL(require.resolve('@deepseek-harness/product-desktop')).href")
+    const smoke = readFileSync(resolve(root, 'apps/web/tests/deepseek-harness-catalog.e2e.ts'), 'utf8')
+    expect(smoke).toContain("DSH_DESKTOP_EXTENSION: pathToFileURL(join(REPO_ROOT, 'packages/deepseek-harness-product/desktop/lib/index.js')).href")
+    expect(smoke).toContain('DSH_DESKTOP_DIAGNOSTIC_FILE: startupDiagnostic')
+    expect(smoke).toContain("if (task.result?.state !== 'fail') return")
+    const hosted = readFileSync(resolve(root, '.github/workflows/product-desktop-package.yml'), 'utf8')
+    expect(hosted).toContain('.artifacts/deepseek-harness-catalog/electron-*-startup.txt')
   })
 
   it('uses the reachable npm registry instead of the unavailable internal mirror', () => {

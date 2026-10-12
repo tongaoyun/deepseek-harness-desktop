@@ -28,6 +28,8 @@ node apps/product-desktop/scripts/sync-github.mjs --repository OWNER/deepseek-ha
 
 ## 本地检查
 
+内部桌面 CI 覆盖制品导入、对话修改、草稿重启和真实 Loader 的技能及套件组合。[工作流回归](../../scripts/deepseek-harness-electron-workflows.spec.ts)要求这些测试保留在实际执行的 CI 命令中。托管打包开始前，精确源码提交必须通过 main CI。
+
 内网同步步骤可从 Gitea Secrets 读取 `DESKTOP_GITHUB_PROXY_URL`。Node 和 Git 仅在该步骤内使用此认证代理，GitHub Git 请求使用 HTTP/1.1。代理 URL 不写入仓库变量或源码；源码获取、依赖安装和托管打包使用各自的网络配置。
 
 源码同步与发布共用完整读取重试：暂时网络错误或 HTTP 408/429/500/502/503/504 按 1/2/4 秒间隔最多尝试四次，也覆盖响应正文读取中断。产物中断后从空的私有暂存目录重新下载；内容非法、权限拒绝及校验和冲突不重试。源码同步写操作，包括启动构建，只执行一次；结果不确定时，必须核对远端状态后再重试。诊断只包含安全错误码和操作名称，不包含凭据、签名 URL 查询参数或响应正文。Git 推送失败只报告进程状态，避免 stderr 泄露代理凭据。
@@ -44,3 +46,7 @@ pnpm --dir apps/product-desktop run test:installed --target mac-arm64
 ```
 
 安装后验收需要原生 Windows 或 macOS runner 及其生成的安装包。使用 `--installer /absolute/path/to/installer.dmg`（或 EXE）可验证已有下载包，无需重新构建。验收使用私有临时目录，结束后清理；不要在 Windows 上与同一产品的其他安装操作同时运行。
+
+macOS 界面验收在一次性配置目录中使用 Chromium 测试钥匙串，避免等待访问 runner 登录钥匙串的交互授权。这验证凭据传递和重启行为，不验证系统钥匙串保护及其授权弹窗。应用启动入口和打包配置不含该测试标志；正常启动仍使用操作系统加密存储。
+
+开发启动和构建后配置验收在所有平台都通过文件 URL 传递产品扩展的 ESM 入口。首个窗口出现前的启动错误以脱敏诊断制品记录，仅在失败时保留。

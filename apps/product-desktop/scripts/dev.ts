@@ -2,7 +2,7 @@
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { join } from 'node:path'
 import { productDevelopmentEnvironment } from './environment.ts'
 
@@ -20,7 +20,7 @@ const native = process.env.DEEPSEEK_HARNESS_NATIVE_BINARY ?? join(root, 'native/
   process.platform === 'win32' ? 'deepseek-harness-native.exe' : 'deepseek-harness-native')
 if (!existsSync(native)) await run('cargo', ['build', '--release', '--manifest-path', join(root, 'native/deepseek-harness/Cargo.toml')])
 const require = createRequire(import.meta.url)
-const entry = require.resolve('@deepseek-harness/product-desktop')
+const entry = pathToFileURL(require.resolve('@deepseek-harness/product-desktop')).href
 const assembly = require.resolve('@deepseek-harness/product-desktop/assembly.json')
 await run(process.execPath, ['--import', 'tsx/esm', join(root, 'apps/desktop/scripts/dev.ts'), ...process.argv.slice(2)], {
   ...productDevelopmentEnvironment(root, process.env),

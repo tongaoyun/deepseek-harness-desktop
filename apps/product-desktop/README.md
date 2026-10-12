@@ -28,6 +28,8 @@ Acceptance builds produce a Windows EXE or macOS DMG; any additional archives or
 
 ## Local Checks
 
+Internal desktop CI covers archive import, conversation editing, draft restart, and the real Loader skill and kit compositions. The [workflow regression](../../scripts/deepseek-harness-electron-workflows.spec.ts) requires these tests to remain in the executed CI command. Main CI must succeed for the exact source commit before hosted packaging starts.
+
 The internal synchronization step optionally reads `DESKTOP_GITHUB_PROXY_URL` from Gitea Secrets. Node and Git use that authenticated proxy only within this step, and GitHub Git requests use HTTP/1.1. Keep the URL out of repository variables and source; checkout, dependency installation, and hosted packaging retain their own network configuration.
 
 Source synchronization and publication share complete-read retries: transient network errors or HTTP 408/429/500/502/503/504 get up to four attempts with 1/2/4-second delays, including interrupted response bodies. An interrupted artifact restarts in an empty private stage; malformed content, denied access and checksum conflicts do not retry. Source synchronization writes, including build dispatch, execute once; an uncertain outcome requires checking remote state before retrying. Diagnostics include safe codes and operation labels, never credentials, signed URL queries or response bodies. Git push failures report process status without exposing proxy credentials from stderr.
@@ -44,3 +46,7 @@ pnpm --dir apps/product-desktop run test:installed --target mac-arm64
 ```
 
 Installed acceptance requires a native Windows or macOS runner and its generated installer. Use `--installer /absolute/path/to/installer.dmg` (or EXE) to exercise an existing download without rebuilding. It uses private temporary directories and cleans them after acceptance; do not run Windows installation acceptance alongside another installation of the same product.
+
+macOS UI acceptance uses Chromium's test keychain in the disposable profile to avoid interactive access to the runner's login keychain. This covers credential routing and restart behavior, not system keychain protection or its authorization dialogs. The test flag is absent from application launchers and packaging configuration; ordinary launches retain OS-backed encrypted storage.
+
+Development and built-profile acceptance pass a file URL for the product extension's ESM entry on every platform. Startup errors before the first window are captured in sanitized, failure-only diagnostic artifacts.
