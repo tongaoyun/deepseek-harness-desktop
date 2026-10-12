@@ -1,4 +1,4 @@
-name: Sync desktop packages to GitHub
+name: 同步桌面构建到 GitHub
 
 on:
   workflow_dispatch:

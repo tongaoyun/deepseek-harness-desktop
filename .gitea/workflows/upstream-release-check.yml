@@ -1,4 +1,4 @@
-name: Check Harness Upstream Release
+name: 检查 Harness 上游版本
 
 on:
   schedule:

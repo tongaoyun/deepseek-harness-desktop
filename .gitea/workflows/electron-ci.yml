@@ -1,4 +1,4 @@
-name: Electron Desktop CI
+name: 桌面持续集成
 
 on:
   push:
