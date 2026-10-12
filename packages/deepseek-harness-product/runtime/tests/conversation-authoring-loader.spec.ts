@@ -13,14 +13,20 @@ import * as Authoring from '../src/conversation-authoring.ts'
 
 const draft = { kind: 'skill' as const, id: 'fact-review', version: '1.0.0', name: 'Fact review', summary: 'Check claims.',
   category: 'knowledge-research', body: '# Review\n\nCheck each claim against evidence.', triggers: ['Review claims'] }
+const kitDraft = { ...draft, kind: 'expert-kit' as const, id: 'fact-review-kit', skills: [{
+  id: 'qa', importedId: 'qa', name: 'Fact review', summary: 'Check claims.',
+  description: `Check claims. ${'Use for detailed evidence review. '.repeat(12)}`.trim(),
+  body: draft.body, triggers: draft.triggers,
+}] }
 
 class RecordingAdapter extends LlmAdapter {
   readonly requests: GenerateOptions[] = []
+  constructor(private readonly content: typeof draft | typeof kitDraft) { super() }
   override async resolveModel(provider: string, model: string) { return { provider, id: model, name: model } }
   override async *stream(request: GenerateOptions): AsyncIterable<StreamChunk> {
     this.requests.push(request)
     const calls = [{ name: 'extension_draft', arguments: '{}' }, { name: 'extension_catalog', arguments: '{"kind":"connectors"}' },
-      { name: 'extension_draft_update', arguments: JSON.stringify({ revision: 0, content: JSON.stringify(draft) }) },
+      { name: 'extension_draft_update', arguments: JSON.stringify({ revision: 0, content: JSON.stringify(this.content) }) },
       { name: 'extension_save', arguments: '{"revision":1}' }]
     const call = calls[this.requests.length - 1]
     if (call) {
@@ -29,13 +35,14 @@ class RecordingAdapter extends LlmAdapter {
       yield { type: 'finish', reason: { kind: 'tool-calls' } }
     } else {
       yield { type: 'block-start', index: 0, blockType: 'text' }
-      yield { type: 'block-end', index: 0, block: { type: 'text', text: 'Skill saved to your directory and installed.' } }
+      yield { type: 'block-end', index: 0, block: { type: 'text', text: this.content.kind === 'skill'
+        ? 'Skill saved to your directory and installed.' : 'Expert kit saved to your directory.' } }
       yield { type: 'finish', reason: { kind: 'stop' } }
     }
   }
 }
 
-it('runs scoped creation through Loader and the official loop, records its draft, restores it and removes tools on unload', async () => {
+it.each([draft, kitDraft])('runs scoped $kind creation through Loader and the official loop, records its draft, restores it and removes tools on unload', async (draft) => {
   const ctx = new Context()
   ctx.baseUrl = import.meta.url
   onTestFinished(() => ctx.fiber.dispose())
@@ -48,7 +55,7 @@ it('runs scoped creation through Loader and the official loop, records its draft
   await ctx.plugin(Agents)
   await ctx.plugin(AgentLoop, { agents: [] })
   let state = ExtensionAuthoringSnapshotSchema.parse({ authoringId: '00000000-0000-4000-8000-000000000001',
-    sessionId: 'creation', revision: 0, draft: { kind: 'skill', id: draft.id, version: draft.version },
+    sessionId: 'creation', revision: 0, draft: { kind: draft.kind, id: draft.id, version: draft.version },
     files: [{ path: 'assets/example.txt', bytes: 5 }], missingFields: ['name', 'body'] })
   const invoke = vi.fn(async (method: string, input?: unknown, _signal?: AbortSignal) => {
     const payload = input as Record<string, unknown> | undefined
@@ -64,7 +71,7 @@ it('runs scoped creation through Loader and the official loop, records its draft
       expect(payload.revision).toBe(state.revision)
       state = ExtensionAuthoringSnapshotSchema.parse({ ...state, revision: state.revision + 1,
         saved: { id: draft.id, version: draft.version } })
-      return { kind: 'skill', id: draft.id, version: draft.version, visibility: 'PERSONAL', installed: true }
+      return { kind: draft.kind, id: draft.id, version: draft.version, visibility: 'PERSONAL', installed: draft.kind === 'skill' }
     }
     throw new Error(`Unexpected method: ${method}`)
   })
@@ -74,7 +81,7 @@ it('runs scoped creation through Loader and the official loop, records its draft
   await ctx.loader.root.update(structuredClone(profile))
   await ctx.loader.await()
   await ctx.loader.resolve('authoring').fiber?.await()
-  const adapter = new RecordingAdapter()
+  const adapter = new RecordingAdapter(draft)
   ctx.llm.registerAdapter(['fixture'], adapter)
   const normal = await ctx.agents.create({ sessionId: SessionId('normal') })
   onTestFinished(() => normal.dispose())
@@ -96,7 +103,8 @@ it('runs scoped creation through Loader and the official loop, records its draft
   expect(state.revision).toBe(2)
   expect(state.saved).toEqual({ id: draft.id, version: draft.version })
   expect(invoke.mock.calls.map(call => call[0])).toContain('extensions.authoring.save')
-  await expect(JSON.stringify(recording, null, 2) + '\n').toMatchFileSnapshot('expected/conversation-authoring.json')
+  await expect(JSON.stringify(recording, null, 2) + '\n').toMatchFileSnapshot(draft.kind === 'skill'
+    ? 'expected/conversation-authoring.json' : 'expected/conversation-authoring-kit.json')
   await ctx.loader.root.update([])
   await ctx.loader.await()
   expect(ctx.tools.schemas(handle.agent)).toEqual([])

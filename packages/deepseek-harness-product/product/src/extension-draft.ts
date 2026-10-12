@@ -10,16 +10,35 @@ export const EXTENSION_CATEGORIES = ['office-productivity', 'content-creation', 
 const id = z.string().regex(/^[a-z][a-z0-9-]{2,63}$/)
 const fileId = z.string().regex(/^[a-z][a-z0-9-]{1,63}$/)
 const version = z.string().regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/)
+/** Project native discovery text to the server's bounded catalog summary.
+ * @param description Complete native skill description.
+ * @returns Whitespace-normalized summary of at most 300 UTF-16 units.
+ */
+export function skillCatalogSummary(description: string): string {
+  const text = description.trim().replace(/\s+/g, ' ')
+  if (text.length <= 300) return text
+  const sentence = text.match(/^.*?[。．.!?！？](?=\s|$)/)?.[0]?.trim() ?? ''
+  return sentence && sentence.length <= 300 ? sentence : `${text.slice(0, 299)}…`
+}
+
 const dependencies = {
   connectorRefs: z.array(id).max(128).default([]),
   requiredTools: z.array(z.string().regex(/^[a-z][a-z0-9_.-]+$/)).max(128).default([]),
   knowledgeBaseRefs: z.array(z.string().regex(/^(personal|team|organization):[a-z][a-z0-9-]{2,63}$/)).max(32).default([]),
 }
 const skill = z.object({ id: fileId, name: z.string().trim().min(1).max(80), summary: z.string().trim().min(1).max(300),
-  body: z.string().trim().min(1).max(60_000), triggers: z.array(z.string().min(2).max(120)).max(20).default([]),
+  description: z.string().min(1).max(262_144).optional(),
+  body: z.string().trim().min(1).max(262_144), triggers: z.array(z.string().min(2).max(120)).max(20).default([]),
   ...dependencies,
-  importedId: id.optional(),
+  importedId: fileId.optional(),
   source: z.object({ id, version, sha256: z.string().regex(/^[a-f0-9]{64}$/) }).optional(),
+}).superRefine((value, context) => {
+  if (value.description !== undefined && value.summary !== value.description && value.summary !== skillCatalogSummary(value.description)) {
+    context.addIssue({ code: 'custom', path: ['summary'], message: 'Summary must match the native description or its catalog projection' })
+  }
+  if (new TextEncoder().encode(value.body).length > 262_144 || new TextEncoder().encode(value.description ?? '').length > 262_144) {
+    context.addIssue({ code: 'custom', path: ['body'], message: 'Bundled skill exceeds 256 KiB' })
+  }
 })
 /** Explicit shortcut routing to skills contained in the same immutable kit. */
 export const ExpertKitCommonTaskSchema = z.object({ id: fileId, name: z.string().trim().min(1).max(80).refine(name => !name.startsWith('/')),

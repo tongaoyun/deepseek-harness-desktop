@@ -192,7 +192,7 @@ export class ExtensionAuthoring {
         if (!importedIds.has(skill.importedId)) throw new ProductError('EXTENSION_IMPORT_INVALID', 'Imported skill identity is invalid', false)
         const prefix = `skills/${skill.importedId}/`
         for (const [path, bytes] of original.files) {
-          if (path.startsWith(prefix) && path !== `${prefix}SKILL.md`) resources.set(`skills/${skill.id}/${path.slice(prefix.length)}`, bytes)
+          if (path.startsWith(prefix)) resources.set(`skills/${skill.id}/${path.slice(prefix.length)}`, bytes)
         }
       }
     } else if (draft.skills.some(skill => skill.importedId !== undefined)) {
@@ -205,11 +205,12 @@ export class ExtensionAuthoring {
       const { skill: fixed, files: content } = await this.catalogSkill(api, skill, signal)
       skills.push(fixed)
       for (const [path, data] of content) {
-        if (path !== 'SKILL.md' && !path.startsWith('.deepseek-harness-skill/')) resources.set(`skills/${fixed.id}/${path}`, data)
+        if (!path.startsWith('.deepseek-harness-skill/')) resources.set(`skills/${fixed.id}/${path}`, data)
       }
     }
     draft = ExtensionDraftSchema.parse({ ...draft, skills })
-    const generated = extensionFiles(draft)
+    const generated = extensionFiles(draft, Object.fromEntries([...generatedFilesOnly(resources)]
+      .filter(([path]) => path.endsWith('SKILL.md')).map(([path, bytes]) => [path, bytes.toString('utf8')])))
     for (const path of generatedFilesOnly(resources).keys()) resources.delete(path)
     for (const [path, value] of Object.entries(generated.files)) resources.set(path, Buffer.from(value))
     const work = await mkdtemp(join(tmpdir(), 'harness-extension-'))
@@ -301,10 +302,11 @@ export class ExtensionAuthoring {
         || item.path !== `skills/${item.id}/SKILL.md`) throw new Error('Invalid bundled skill path')
       const source = files.get(item.path)
       if (!source) throw new Error('Missing bundled SKILL.md')
-      const fields = parseSkillMarkdown(source.toString('utf8'))
+      const fields = parseSkillMarkdown(source.toString('utf8'), true)
       if (fields.id !== item.id) throw new Error('Bundled skill identity differs from manifest')
       return { id: fields.id, importedId: fields.id, name: typeof item.name === 'string' ? item.name : fields.id,
-        summary: fields.summary, body: fields.body, triggers: item.triggers ?? [], connectorRefs: item.connectorRefs ?? [],
+        summary: fields.summary, description: fields.description, body: fields.body, triggers: item.triggers ?? [],
+        connectorRefs: item.connectorRefs ?? [],
         requiredTools: item.requiredTools ?? [], knowledgeBaseRefs: item.knowledgeBaseRefs ?? [] }
     }) : []
     const { schemaVersion: _schema, allowImplicitInvocation: _implicit, skills: _skills, ...editable } = manifest

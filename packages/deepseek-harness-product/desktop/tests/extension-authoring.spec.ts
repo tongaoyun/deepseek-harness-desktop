@@ -6,14 +6,84 @@ import { createServer } from 'node:http'
 import { buffer } from 'node:stream/consumers'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import { DeepSeekHarnessApiClient } from '@deepseek-harness/product'
-import { ExtensionDraftSchema, extensionFiles } from '@deepseek-harness/product/authoring'
+import { ExtensionDraftSchema, extensionFiles, parseSkillMarkdown } from '@deepseek-harness/product/authoring'
 import { ExtensionAuthoring } from '../src/extension-authoring.ts'
 import { readExtensionMarkdown, readExtensionTar } from '../src/extension-archives.ts'
 import { c as createTar } from 'tar'
+import { ExtensionAuthoringSnapshotSchema, ExtensionImportDraftSchema } from '@deepseek-harness/product/extension-draft'
 
 const skill = { kind: 'skill', id: 'my-review', version: '1.0.0', name: 'My review', summary: 'Review facts.',
   category: 'legal', body: 'Review the facts first.', triggers: ['Review a document'] } as const
 const identity = { authenticated: true, employeeId: 'employee-one' }
+
+it('imports and edits a large bundled skill across restart without losing discovery text, frontmatter or resources', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'extension-large-kit-test-'))
+  onTestFinished(() => rm(root, { force: true, recursive: true }))
+  const description = `Review policy evidence. ${'Use for detailed review. '.repeat(30)}`.trim()
+  const markdown = `---\nname: qa\ndescription: >\n  ${description}\nargument-hint: document\nchain:\n  next: brief\n---\n\n${'Evidence '.repeat(10_000)}\n`
+  const directory = join(root, 'kit')
+  const generated = extensionFiles(ExtensionDraftSchema.parse({ ...skill, kind: 'expert-kit', id: 'review-kit',
+    skills: [{ ...skill, id: 'qa', summary: 'Review policy evidence.' }] }))
+  generated.files['skills/qa/SKILL.md'] = markdown
+  generated.files['skills/qa/assets/example.txt'] = 'fixed resource'
+  for (const [path, text] of Object.entries(generated.files)) {
+    await mkdir(join(directory, path, '..'), { recursive: true })
+    await writeFile(join(directory, path), text)
+  }
+  let uploaded: Buffer | undefined
+  const server = createServer((request, response) => { void (async () => {
+    uploaded = await buffer(request); response.end('ok')
+  })() })
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+  onTestFinished(async () => { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => { resolve() })) })
+  const address = server.address(); if (address === null || typeof address === 'string') throw new Error('Missing fixture port')
+  let fail = true
+  const api = new DeepSeekHarnessApiClient({ baseUrl: 'https://product.example', getSessionToken: () => 'employee-secret',
+    fetch: async (_url, init) => {
+      if (fail) throw new Error('network failure')
+      if (typeof init?.body === 'string') expect(JSON.parse(init.body)).toMatchObject({
+        skillDetails: [{ id: 'qa', summary: 'Review policy evidence.' }], version: '1.0.1',
+      })
+      return Response.json({ success: true, data: { uploadUrl: `http://127.0.0.1:${address.port}/upload`, assessment: { status: 'READY' } } })
+    } })
+  const options = { directory: join(root, 'conversations'), selectImport: async () => directory,
+    installSkill: async () => undefined, saveConnector: async () => undefined }
+  const authoring = new ExtensionAuthoring(options)
+  onTestFinished(() => authoring.close())
+  const signal = new AbortController().signal
+  const preview = await authoring.invoke('extensions.import.inspect', { kind: 'expert-kit', source: 'directory' }, api, identity, signal) as {
+    stageId: string
+    draft: unknown
+    missingFields: string[]
+  }
+  const imported = ExtensionImportDraftSchema.parse(preview.draft)
+  expect(imported.skills?.[0]).toMatchObject({ id: 'qa', importedId: 'qa', summary: 'Review policy evidence.' })
+  expect(imported.skills?.[0]?.description?.trim()).toBe(description)
+  expect(preview.missingFields).toEqual([])
+  const state = ExtensionAuthoringSnapshotSchema.parse(await authoring.invoke('extensions.authoring.begin',
+    { kind: 'expert-kit', sessionId: 'large-kit-edit', stageId: preview.stageId, edit: true }, api, identity, signal))
+  const originalSkill = state.draft.skills?.[0]; if (!originalSkill) throw new Error('Missing imported skill')
+  const updated = ExtensionAuthoringSnapshotSchema.parse(await authoring.invoke('extensions.authoring.update',
+    { sessionId: state.sessionId, authoringId: state.authoringId, revision: state.revision,
+      draft: { ...state.draft, skills: [{ ...originalSkill, body: originalSkill.body + '\nModified instructions.' }] } }, api, identity, signal))
+  const save = { sessionId: state.sessionId, authoringId: state.authoringId, revision: updated.revision }
+  await expect(authoring.invoke('extensions.authoring.save', save, api, identity, signal)).rejects.toThrow('network')
+  await authoring.close()
+  const restored = new ExtensionAuthoring(options)
+  onTestFinished(() => restored.close())
+  expect(await restored.invoke('extensions.authoring.read', { sessionId: state.sessionId }, api, identity, signal))
+    .toMatchObject({ revision: updated.revision, draft: { skills: [{ description: originalSkill.description }] } })
+  fail = false
+  await expect(restored.invoke('extensions.authoring.save', save, api, identity, signal)).resolves.toMatchObject({ id: 'review-kit', version: '1.0.1' })
+  if (!uploaded) throw new Error('Missing uploaded archive')
+  const files = await readExtensionTar(uploaded, signal)
+  const saved = files.get('skills/qa/SKILL.md')?.toString('utf8') ?? ''
+  expect(parseSkillMarkdown(saved, true).description?.trim()).toBe(description)
+  expect(saved).toContain('argument-hint: document')
+  expect(saved).toContain('next: brief')
+  expect(saved).toContain('Modified instructions.')
+  expect(files.get('skills/qa/assets/example.txt')?.toString()).toBe('fixed resource')
+})
 
 it.each(['skill', 'expert-kit'])('deletes %s through authenticated main transport without changing local authoring or installations', async (kind) => {
   const root = await mkdtemp(join(tmpdir(), 'extension-delete-test-'))
@@ -116,6 +186,7 @@ it('copies the selected immutable skill version and resources even after the dir
   const content = join(root, 'content')
   await mkdir(join(content, 'assets'), { recursive: true })
   const source = extensionFiles(ExtensionDraftSchema.parse(skill))
+  source.files['SKILL.md'] = source.files['SKILL.md']!.replace('---\n\n', 'argument-hint: document\nchain:\n  next: brief\n---\n\n')
   for (const [path, text] of Object.entries(source.files)) {
     await mkdir(join(content, path, '..'), { recursive: true })
     await writeFile(join(content, path), text)
@@ -162,4 +233,5 @@ it('copies the selected immutable skill version and resources even after the dir
   expect(files.get(`skills/${skill.id}/assets/fixed.txt`)?.toString()).toBe('original version resource')
   expect(files.get(`skills/${skill.id}/SKILL.md`)?.toString()).toContain(skill.body)
   expect(files.get(`skills/${skill.id}/SKILL.md`)?.toString()).not.toContain('placeholder')
+  expect(files.get(`skills/${skill.id}/SKILL.md`)?.toString()).toBe(source.files['SKILL.md'])
 })

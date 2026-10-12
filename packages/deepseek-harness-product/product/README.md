@@ -54,6 +54,8 @@ Committed writes clear cached catalogs. A subsequent refresh failure does not fa
 
 `extensions.authoring.begin/read/update/save/discard` manage conversation drafts. The trusted Host may read, update and save the matching conversation's personal resource. Each draft is employee-scoped, Session-bound and revision-checked; it records only its own Session identity. `authoring.changed` publishes committed changes without their content. Content draft schemas exclude connector secrets and staging handles. Save validation accepts bundled skills and shortcut commands only for Expert Kits. Shared submission remains a separate owner action.
 
+Bundled skill drafts retain the optional full native `description` separately from the 300-character catalog `summary`. The summary must equal the description or its whitespace-normalized projection: the first complete sentence when it fits, otherwise 299 UTF-16 units followed by an ellipsis. Bundled skill IDs and imported resource IDs accept two-character names. `extensionFiles` retains extra frontmatter from main-owned original Markdown and validates the complete emitted skill against the standalone 64 KiB or bundled 256 KiB UTF-8 limit.
+
 `extensions.connector.read/update/delete` manage owned personal connectors through main. Reads return public configuration and empty placeholders for configured private keys. Updates create an immutable version; deletion retires the resource ID. The server verifies ownership for every operation.
 
 Connector saves accept an integer `timeoutSeconds` from 1 through 600, defaulting to 60. It belongs to local MCP configuration and is excluded from conversation content drafts. Standard MCP JSON may provide the same field.
