@@ -123,9 +123,9 @@ test('repeated synchronization keeps already selected workflow states without fo
 test('writes credential-free identities only after all required installers exist', () => {
   const directory = mkdtempSync(join(tmpdir(), 'harness-github-artifacts-'))
   try {
-    writeFileSync(join(directory, 'Harness.dmg'), 'installer')
-    assert.throws(() => artifactManifest(directory, 'mac-arm64', commit, '0.2.1'), /\.zip/u)
     writeFileSync(join(directory, 'Harness.zip'), 'archive')
+    assert.throws(() => artifactManifest(directory, 'mac-arm64', commit, '0.2.1'), /\.dmg/u)
+    writeFileSync(join(directory, 'Harness.dmg'), 'installer')
     writeFileSync(join(directory, '.env'), 'TOKEN=private')
     const manifest = artifactManifest(directory, 'mac-arm64', commit, '0.2.1')
     assert.equal(manifest.commit, commit)
@@ -133,6 +133,8 @@ test('writes credential-free identities only after all required installers exist
     assert.deepEqual(manifest.artifacts.map(value => value.name), ['Harness.dmg', 'Harness.zip'])
     assert.ok(manifest.artifacts.every(value => /^[a-f0-9]{64}$/u.test(value.sha256)))
     assert.equal(JSON.stringify(manifest).includes('private'), false)
+    rmSync(join(directory, 'Harness.zip'))
+    assert.deepEqual(artifactManifest(directory, 'mac-x64', commit, '0.2.1').artifacts.map(value => value.name), ['Harness.dmg'])
     writeFileSync(join(directory, 'Harness.exe'), '')
     assert.throws(() => artifactManifest(directory, 'win-x64', commit, '0.2.1'), /Empty/u)
     writeFileSync(join(directory, 'Other.dmg'), 'duplicate')

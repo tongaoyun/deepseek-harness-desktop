@@ -34,7 +34,7 @@ export function artifactManifest(directory, target, commit, version) {
   if (!/^[a-f0-9]{40}$/u.test(commit)) throw new Error('An exact source commit is required')
   const names = readdirSync(directory, { withFileTypes: true })
     .filter(entry => entry.isFile() && /\.(?:exe|dmg|zip|blockmap)$/u.test(entry.name)).map(entry => entry.name).sort()
-  const required = target === 'win-x64' ? ['.exe'] : ['.dmg', '.zip']
+  const required = target === 'win-x64' ? ['.exe'] : ['.dmg']
   for (const extension of required) {
     if (names.filter(name => name.endsWith(extension)).length !== 1) throw new Error(`Expected one ${extension} installer for ${target}`)
   }
