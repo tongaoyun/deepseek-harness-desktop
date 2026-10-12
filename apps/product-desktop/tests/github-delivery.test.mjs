@@ -20,7 +20,7 @@ function fixture(overrides = {}) {
       if (path === '/user') return { login: 'example' }
       if (/^\/repos\/[^/]+\/[^/]+$/u.test(path) && method === 'GET') return { private: true, size: 1, default_branch: 'main', ...overrides }
       if (path.includes('/actions/workflows?')) return { workflows: [
-        { id: 1, path: PACKAGE_WORKFLOW }, { id: 2, path: '.github/workflows/release.yml' },
+        { id: 1, path: PACKAGE_WORKFLOW, state: 'disabled_manually' }, { id: 2, path: '.github/workflows/release.yml', state: 'active' },
       ] }
       return {}
     }, push: async (...args) => { calls.push({ push: args }) },
@@ -100,11 +100,24 @@ test('inspects every workflow page before enabling packaging', async () => {
     calls.push(path)
     if (method !== 'GET') return {}
     return { workflows: path.endsWith('page=1')
-      ? Array.from({ length: 100 }, (_, id) => ({ id: id + 2, path: `.github/workflows/official-${id}.yml` }))
-      : [{ id: 1, path: PACKAGE_WORKFLOW }] }
+      ? Array.from({ length: 100 }, (_, id) => ({ id: id + 2, path: `.github/workflows/official-${id}.yml`, state: 'active' }))
+      : [{ id: 1, path: PACKAGE_WORKFLOW, state: 'disabled_manually' }] }
   }, repository)
   assert.equal(calls.filter(path => path.endsWith('/disable')).length, 100)
   assert.ok(calls.findIndex(path => path.endsWith('page=2')) < calls.findIndex(path => path.endsWith('/1/enable')))
+})
+
+test('repeated synchronization keeps already selected workflow states without forbidden disable calls', async () => {
+  const calls = []
+  await selectPackagingWorkflow(async (method, path) => {
+    calls.push({ method, path })
+    return { workflows: [
+      { id: 1, path: PACKAGE_WORKFLOW, state: 'active' },
+      { id: 2, path: '.github/workflows/release.yml', state: 'disabled_manually' },
+      { id: 3, path: '.github/workflows/ci.yml', state: 'disabled_inactivity' },
+    ] }
+  }, repository)
+  assert.equal(calls.some(call => call.method === 'PUT'), false)
 })
 
 test('writes credential-free identities only after all required installers exist', () => {

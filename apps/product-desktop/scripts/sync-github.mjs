@@ -23,8 +23,11 @@ export async function selectPackagingWorkflow(request, repository) {
   const selected = workflows.find(workflow => workflow.path === PACKAGE_WORKFLOW)
   if (!selected) throw new Error('Product packaging workflow has not been indexed; Actions remain disabled, retry synchronization')
   for (const workflow of workflows) {
-    const action = workflow.id === selected.id ? 'enable' : 'disable'
-    await request('PUT', `/repos/${repository}/actions/workflows/${workflow.id}/${action}`)
+    if (workflow.id === selected.id) {
+      if (workflow.state !== 'active') await request('PUT', `/repos/${repository}/actions/workflows/${workflow.id}/enable`)
+    } else if (workflow.state === 'active') {
+      await request('PUT', `/repos/${repository}/actions/workflows/${workflow.id}/disable`)
+    }
   }
 }
 
