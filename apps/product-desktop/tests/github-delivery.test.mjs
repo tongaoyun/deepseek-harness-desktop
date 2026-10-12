@@ -171,7 +171,7 @@ test('uses three native hosted runners and product packaging without publishing 
 test('internal synchronization fetches main and its own baseline without disclosing the token', () => {
   const source = readFileSync(new URL('../../../.gitea/workflows/github-desktop-sync.yml', import.meta.url), 'utf8')
   const workflow = yaml.load(source)
-  assert.equal(workflow.jobs.sync.steps[0].with.ref, "${{ inputs.source_sha || 'main' }}")
+  assert.equal(workflow.jobs.sync.steps[0].with.ref, "${{ inputs.github_run_id && 'main' || inputs.source_sha || 'main' }}")
   assert.equal(workflow.jobs.sync.steps[0].with['fetch-depth'], 0)
   assert.doesNotMatch(source, /--depth[= ]/u)
   assert.match(source, /secrets\.DESKTOP_GITHUB_TOKEN/u)
@@ -183,6 +183,7 @@ test('internal synchronization fetches main and its own baseline without disclos
   const sync = workflow.jobs.sync.steps.find(step => step.name === 'Verify source and synchronize')
   assert.equal(sync.env.HTTPS_PROXY, '${{ secrets.DESKTOP_GITHUB_PROXY_URL }}')
   assert.equal(sync.env.NODE_USE_ENV_PROXY, '1')
+  assert.equal(sync.env.DESKTOP_SOURCE_SHA, '${{ inputs.source_sha }}')
   assert.equal(sync.env.GIT_CONFIG_KEY_0, 'http.https://github.com/.version')
   assert.equal(sync.env.GIT_CONFIG_VALUE_0, 'HTTP/1.1')
   assert.equal(workflow.jobs.sync.steps.filter(step => step.env?.HTTPS_PROXY !== undefined).length, 1)

@@ -2,7 +2,7 @@
 import { execFileSync } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
 import { createReadStream } from 'node:fs'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { Readable } from 'node:stream'
@@ -16,9 +16,63 @@ const required = name => {
   return value
 }
 
+const transientCodes = new Set(['ECONNRESET', 'ECONNREFUSED', 'ETIMEDOUT', 'ENOTFOUND', 'EAI_AGAIN',
+  'ENETUNREACH', 'EHOSTUNREACH', 'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_SOCKET', 'UND_ERR_HEADERS_TIMEOUT',
+  'UND_ERR_BODY_TIMEOUT', 'UND_ERR_RES_CONTENT_LENGTH_MISMATCH'])
+
+function networkFailure(error) {
+  const pending = [error]
+  const codes = new Set()
+  let timeout = false
+  let transportError = false
+  for (let count = 0; pending.length && count < 16; count++) {
+    const current = pending.shift()
+    if (!current || typeof current !== 'object') continue
+    if (transientCodes.has(current.code)) codes.add(current.code)
+    if (current.name === 'TimeoutError') timeout = true
+    if (current instanceof TypeError && current.message === 'fetch failed') transportError = true
+    pending.push(current.cause)
+    if (current instanceof AggregateError) pending.push(...current.errors)
+  }
+  const status = error?.status
+  return { retryable: timeout || codes.size > 0 || transportError
+    || [408, 429, 500, 502, 503, 504].includes(status),
+  detail: status ? `HTTP ${status}` : timeout ? 'TIMEOUT' : [...codes].join(', ') || 'NETWORK_ERROR' }
+}
+
+/**
+ * Retry complete, repeatable reads only; report safe codes rather than credential-bearing exception text.
+ * @param {Function} operation Complete read operation, including body consumption.
+ * @param {object} options Safe label and optional test transport timing.
+ * @returns {Promise<unknown>} Completed read result.
+ */
+export async function retryReleaseRead(operation, { label, sleep = ms => new Promise(resolve => setTimeout(resolve, ms)),
+  progress = console.warn } = {}) {
+  for (let attempt = 0; ; attempt++) {
+    try { return await operation() }
+    catch (error) {
+      const failure = networkFailure(error)
+      if (!failure.retryable) throw error
+      if (attempt === 3) {
+        const exhausted = new Error(`${label} failed after 4 attempts (${failure.detail})`, { cause: error })
+        exhausted.status = error.status
+        throw exhausted
+      }
+      progress(`${label} retry ${attempt + 1}/3 (${failure.detail})`)
+      await sleep(1000 * 2 ** attempt)
+    }
+  }
+}
+
 async function response(url, headers, options = {}) {
-  const result = await fetch(url, { ...options, headers: { ...headers, ...options.headers }, redirect: 'manual',
-    signal: AbortSignal.timeout(options.timeoutMs ?? 60_000), duplex: options.body instanceof Readable ? 'half' : undefined })
+  const { fetchImpl = fetch, ...requestOptions } = options
+  let result
+  try {
+    result = await fetchImpl(url, { ...requestOptions, headers: { ...headers, ...options.headers }, redirect: 'manual',
+      signal: AbortSignal.timeout(options.timeoutMs ?? 60_000), duplex: options.body instanceof Readable ? 'half' : undefined })
+  } catch (error) {
+    throw new Error(`Release transfer ${options.method ?? 'GET'} ${new URL(url).host} failed (${networkFailure(error).detail})`, { cause: error })
+  }
   if (result.status >= 300 && result.status < 400 && options.download === true) {
     const location = result.headers.get('location')
     await result.body?.cancel()
@@ -27,7 +81,7 @@ async function response(url, headers, options = {}) {
     if (!target || !(target.protocol === 'https:' || sameOrigin && target.protocol === 'http:')
       || (options.redirects ?? 0) >= 5) throw new Error('Invalid artifact download redirect')
     // Signed blob downloads never receive repository credentials.
-    return response(target.href, sameOrigin ? headers : {}, { download: true, timeoutMs: options.timeoutMs, redirects: (options.redirects ?? 0) + 1 })
+    return response(target.href, sameOrigin ? headers : {}, { download: true, fetchImpl, timeoutMs: options.timeoutMs, redirects: (options.redirects ?? 0) + 1 })
   }
   if (!result.ok) {
     await result.body?.cancel()
@@ -38,23 +92,36 @@ async function response(url, headers, options = {}) {
   return result
 }
 
-/** @param {string} base API URL. @param {string} authorization Controlled credential. @returns {object} HTTP adapter. */
-export function apiClient(base, authorization) {
+/** @param {string} base API URL. @param {string} authorization Controlled credential. @param {object} transport Optional isolated test transport. @returns {object} HTTP adapter. */
+export function apiClient(base, authorization, transport = {}) {
   const headers = { Authorization: authorization, Accept: 'application/json' }
   return {
     request: async (method, path, body) => {
-      const result = await response(base + path, headers, { method,
-        ...(body === undefined ? {} : { body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' } }) })
-      return result.status === 204 ? {} : result.json()
+      const operation = async () => {
+        const result = await response(base + path, headers, { method, fetchImpl: transport.fetchImpl,
+          ...(body === undefined ? {} : { body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' } }) })
+        try { return result.status === 204 ? {} : await result.json() }
+        catch (error) {
+          if (error instanceof SyntaxError) throw new Error('Invalid release API JSON response', { cause: error })
+          throw error
+        }
+      }
+      const label = `Release ${method} ${new URL(base).host}${path.split('?')[0]}`
+      if (method === 'GET') return retryReleaseRead(operation, { ...transport, label })
+      try { return await operation() }
+      catch (error) {
+        if (!networkFailure(error).retryable) throw error
+        throw new Error(`${label} failed (${networkFailure(error).detail}); reconcile before retrying`, { cause: error })
+      }
     },
     download: async path => (await response(base + path, { ...headers, Accept: 'application/octet-stream' },
-      { download: true, timeoutMs: 15 * 60_000 })).body,
+      { download: true, fetchImpl: transport.fetchImpl, timeoutMs: 15 * 60_000 })).body,
     response: (url, options) => {
       const target = new URL(url)
       if (target.origin !== new URL(base).origin && !(base === 'https://api.github.com' && target.origin === 'https://uploads.github.com')) {
         throw new Error('Release transfer cannot forward credentials to another origin')
       }
-      return response(url, headers, options)
+      return response(url, headers, { fetchImpl: transport.fetchImpl, ...options })
     },
   }
 }
@@ -86,7 +153,8 @@ export function releaseDestination(name, client, repository, { github = false, t
         if (rows.length < 50) return assets
       }
     },
-    hash: async asset => {
+    hash: asset => retryReleaseRead(async () => {
+      console.log(`Verifying ${name} release asset: ${asset.name}`)
       const chunks = github ? await client.download(`${prefix}/assets/${asset.id}`)
         : (await client.response(asset.browser_download_url, { download: true, timeoutMs: 15 * 60_000 })).body
       const hash = createHash('sha256')
@@ -98,8 +166,9 @@ export function releaseDestination(name, client, repository, { github = false, t
       }
       if (size !== asset.size) throw new Error('Remote release asset is truncated')
       return hash.digest('hex')
-    },
+    }, { label: `${name} asset verification` }),
     upload: async (id, file) => {
+      console.log(`Uploading ${name} release asset: ${file.name}`)
       let url
       let headers
       let body
@@ -122,6 +191,14 @@ export function releaseDestination(name, client, repository, { github = false, t
   }
 }
 
+/** @param {object} client Download adapter. @param {string} path Artifact API path. @param {string} directory Private staging directory. @param {object} options Read retry timing. @returns {Promise<void>} Complete extracted archive. */
+export async function stageBuildArchive(client, path, directory, options = {}) {
+  await retryReleaseRead(async () => {
+    await rm(directory, { recursive: true, force: true })
+    await extractBuildArchive(await client.download(path), directory)
+  }, { ...options, label: 'Hosted artifact download' })
+}
+
 async function main() {
   const repository = required('GITHUB_DESKTOP_REPOSITORY')
   const downloads = required('GITHUB_DOWNLOAD_REPOSITORY')
@@ -138,7 +215,12 @@ async function main() {
   const github = apiClient('https://api.github.com', `Bearer ${required('GITHUB_DESKTOP_TOKEN')}`)
   const gitea = apiClient(base, process.env.GITEA_TOKEN
     ? `token ${process.env.GITEA_TOKEN}` : `Basic ${Buffer.from(`${required('GITEA_USERNAME')}:${required('GITEA_PASSWORD')}`).toString('base64')}`)
-  const commit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim()
+  const head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim()
+  const commit = process.env.DESKTOP_SOURCE_SHA?.trim() || head
+  const resumed = process.env.DESKTOP_BUILD_RUN_ID?.trim()
+  if (!/^[a-f0-9]{40}$/u.test(commit)) throw new Error('An exact desktop source commit is required')
+  if (resumed && !/^[1-9]\d*$/u.test(resumed)) throw new Error('A numeric GitHub build run ID is required')
+  if (commit !== head && !resumed) throw new Error('Different delivery code is allowed only when resuming an exact build')
   if (execFileSync('git', ['status', '--porcelain'], { cwd: root, encoding: 'utf8' }).trim()) throw new Error('Commit all desktop source before delivery')
   const privateRepo = await github.request('GET', `/repos/${repository}`)
   const publicRepo = await github.request('GET', `/repos/${downloads}`)
@@ -149,19 +231,20 @@ async function main() {
     throw new Error('Requested source is not stored in Gitea')
   }
   const deadline = Date.now() + 20 * 60_000
-  while (true) {
-    const result = await gitea.request('GET', `/repos/${internal}/actions/runs?limit=50&page=1`)
-    const ci = result.workflow_runs.find(run => run.head_sha === commit && run.event === 'push' && run.path === 'electron-ci.yml@refs/heads/main')
-    if (!ci) throw new Error('Exact source main CI is missing')
-    if (ci.status === 'completed') {
-      if (ci.conclusion !== 'success') throw new Error('Exact source main CI failed; release stopped')
-      break
+  for (const source of new Set([head, commit])) {
+    while (true) {
+      const result = await gitea.request('GET', `/repos/${internal}/actions/runs?limit=50&page=1`)
+      const ci = result.workflow_runs.find(run => run.head_sha === source && run.event === 'push' && run.path === 'electron-ci.yml@refs/heads/main')
+      if (!ci) throw new Error('Exact source main CI is missing')
+      if (ci.status === 'completed') {
+        if (ci.conclusion !== 'success') throw new Error('Exact source main CI failed; release stopped')
+        break
+      }
+      if (Date.now() >= deadline) throw new Error('Timed out waiting for exact source main CI')
+      await new Promise(resolve => setTimeout(resolve, 15_000))
     }
-    if (Date.now() >= deadline) throw new Error('Timed out waiting for exact source main CI')
-    await new Promise(resolve => setTimeout(resolve, 15_000))
   }
-  const resumed = process.env.DESKTOP_BUILD_RUN_ID?.trim()
-  if (resumed && !/^[1-9]\d*$/u.test(resumed)) throw new Error('A numeric GitHub build run ID is required')
+  console.log(`Delivery code ${head}; desktop source ${commit}`)
   const deliveryId = randomUUID()
   if (!resumed) {
     execFileSync(process.execPath, [join(import.meta.dirname, 'sync-github.mjs'), '--delivery-id', deliveryId], { cwd: root, stdio: 'inherit' })
@@ -181,9 +264,11 @@ async function main() {
       const name = `harness-${target}-unsigned-${run.run_number}-${run.run_attempt}`
       const matches = allArtifacts.filter(artifact => artifact.name === name && artifact.expired === false)
       if (matches.length !== 1) throw new Error(`Missing or ambiguous hosted artifact: ${target}`)
-      await extractBuildArchive(await github.download(`/repos/${repository}/actions/artifacts/${matches[0].id}/zip`), join(stage, target))
+      console.log(`Downloading verified build target: ${target}`)
+      await stageBuildArchive(github, `/repos/${repository}/actions/artifacts/${matches[0].id}/zip`, join(stage, target))
     }
-    const productVersion = JSON.parse(await readFile(join(root, 'apps/desktop/package.json'), 'utf8')).version
+    const productVersion = JSON.parse(execFileSync('git', ['show', `${commit}:apps/desktop/package.json`],
+      { cwd: root, encoding: 'utf8' })).version
     const release = await collectDesktopRelease(stage, run, commit, productVersion)
     const links = await publishDesktopRelease(release, [
       releaseDestination('Gitea', gitea, internal, { target: commit, base }),

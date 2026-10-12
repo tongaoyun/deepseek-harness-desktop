@@ -25,10 +25,10 @@ jobs:
       volumes:
         - /data/ci-cache/pnpm/deepseek-harness-desktop-electron:/pnpm-store
     steps:
-      - name: Checkout main
+      - name: Checkout delivery code
         uses: http://192.168.2.66:3300/instudio/checkout@v4
         with:
-          ref: ${{ inputs.source_sha || 'main' }}
+          ref: ${{ inputs.github_run_id && 'main' || inputs.source_sha || 'main' }}
           fetch-depth: 0
       - name: Fetch stored Harness baseline
         run: |
@@ -49,6 +49,7 @@ jobs:
           GITEA_USERNAME: ${{ secrets.RELEASE_USERNAME }}
           GITEA_PASSWORD: ${{ secrets.RELEASE_CREDENTIAL }}
           DESKTOP_BUILD_RUN_ID: ${{ inputs.github_run_id }}
+          DESKTOP_SOURCE_SHA: ${{ inputs.source_sha }}
           HTTPS_PROXY: ${{ secrets.DESKTOP_GITHUB_PROXY_URL }}
           NODE_USE_ENV_PROXY: '1'
           GIT_CONFIG_COUNT: '1'

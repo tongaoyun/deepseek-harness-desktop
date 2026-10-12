@@ -8,7 +8,7 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 import { zipSync } from 'fflate'
 import { collectDesktopRelease, extractBuildArchive, publishDesktopRelease, RELEASE_TARGETS, waitForDesktopBuild } from '../scripts/desktop-release.mjs'
-import { apiClient, releaseDestination } from '../scripts/deliver-desktop.mjs'
+import { apiClient, releaseDestination, stageBuildArchive } from '../scripts/deliver-desktop.mjs'
 
 const commit = 'a'.repeat(40)
 const version = '0.2.1-alpha.2.20261012.9.1'
@@ -16,6 +16,78 @@ const productVersion = '0.2.1-alpha.2'
 const hash = value => createHash('sha256').update(value).digest('hex')
 const run = { id: 99, head_sha: commit, status: 'completed', conclusion: 'success', run_number: 9,
   run_attempt: 1, created_at: '2026-10-12T23:59:00Z', event: 'workflow_dispatch', path: '.github/workflows/product-desktop-package.yml' }
+
+const socketFailure = () => new TypeError('fetch failed', {
+  cause: Object.assign(new Error('synthetic credential and signed URL must remain private'), { code: 'ECONNRESET' }),
+})
+
+test('retries complete GET reads after proxy resets, HTTP failures and interrupted JSON bodies', async () => {
+  for (const kind of ['socket', 'status', 'body']) {
+    let calls = 0
+    const delays = []
+    const messages = []
+    const client = apiClient('https://api.github.com', 'Bearer synthetic-credential', {
+      sleep: async ms => { delays.push(ms) }, progress: message => { messages.push(message) },
+      fetchImpl: async () => {
+        calls++
+        if (calls === 1) {
+          if (kind === 'socket') throw socketFailure()
+          if (kind === 'status') return new Response('', { status: 503 })
+          return { ok: true, status: 200, json: async () => { throw socketFailure() } }
+        }
+        return Response.json({ status: 'completed' })
+      },
+    })
+    assert.deepEqual(await client.request('GET', '/repos/test/build/actions/runs/9?private=synthetic-query'), { status: 'completed' })
+    assert.equal(calls, 2)
+    assert.deepEqual(delays, [1000])
+    assert.match(messages[0], /retry 1\/3.*(?:ECONNRESET|HTTP 503)/u)
+    assert.doesNotMatch(messages.join('\n'), /credential|private|synthetic-query/u)
+  }
+})
+
+test('bounds network retries and never blindly retries mutations, denied requests or malformed JSON', async () => {
+  for (const kind of ['exhausted', 'mutation', 'denied', 'json']) {
+    let calls = 0
+    const client = apiClient('https://api.github.com', 'Bearer synthetic-credential', {
+      sleep: async () => {}, progress: () => {}, fetchImpl: async () => {
+        calls++
+        if (kind === 'denied') return new Response('', { status: 403 })
+        if (kind === 'json') return new Response('synthetic-private-response')
+        throw socketFailure()
+      },
+    })
+    await assert.rejects(client.request(kind === 'mutation' ? 'POST' : 'GET', '/resource'), error => {
+      assert.doesNotMatch(error.message, /synthetic|credential/u)
+      if (kind === 'exhausted') assert.match(error.message, /after 4 attempts.*ECONNRESET/u)
+      if (kind === 'mutation') assert.match(error.message, /reconcile before retrying/u)
+      if (kind === 'denied') assert.equal(error.status, 403)
+      return true
+    })
+    assert.equal(calls, kind === 'exhausted' ? 4 : 1)
+  }
+})
+
+test('restarts interrupted artifact extraction in an empty stage and rejects invalid ZIPs without retry', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'harness-release-read-'))
+  t.after(() => rm(directory, { recursive: true, force: true }))
+  const bytes = zipSync({ 'build-manifest.json': Buffer.from('{}'), 'Harness.exe': Buffer.from('installer') })
+  let calls = 0
+  const client = { download: async () => (async function* () {
+    calls++
+    if (calls === 1) { yield bytes.subarray(0, 55); throw socketFailure() }
+    yield bytes
+  })() }
+  const output = join(directory, 'target')
+  await stageBuildArchive(client, '/artifact', output, { sleep: async () => {}, progress: () => {} })
+  assert.equal(calls, 2)
+  assert.equal(await readFile(join(output, 'Harness.exe'), 'utf8'), 'installer')
+  calls = 0
+  await assert.rejects(stageBuildArchive({ download: async () => (async function* () {
+    calls++; yield zipSync({ '../escape.exe': Buffer.from('bad') })
+  })() }, '/artifact', join(directory, 'invalid'), { sleep: async () => {}, progress: () => {} }), /Invalid/u)
+  assert.equal(calls, 1)
+})
 
 test('Gitea HTTP adapter streams multipart attachments and verifies relative authenticated downloads', async t => {
   const directory = await mkdtemp(join(tmpdir(), 'harness-release-http-'))

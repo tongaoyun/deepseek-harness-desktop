@@ -18,7 +18,7 @@ node apps/product-desktop/scripts/sync-github.mjs --repository OWNER/deepseek-ha
 
 内部手动工作流 **同步桌面构建到 GitHub** 读取仓库变量 `DESKTOP_GITHUB_REPOSITORY`（私有源码）和 `DESKTOP_GITHUB_DOWNLOAD_REPOSITORY`（公开下载）。Gitea 保留以 `GITHUB_` 开头的名称。`DESKTOP_GITHUB_TOKEN` 需要源码同步权限和下载仓库的 Contents 写权限，优先使用仅限这两个仓库的凭据。`RELEASE_USERNAME` 和 `RELEASE_CREDENTIAL` 用于内网 Gitea Release。GitHub runner 不接收这些发布凭据，也不访问内部 Gitea 或生产服务。桌面私有 Git 历史只上传到构建仓库；服务端和控制中心仓库留在内网。
 
-任务检出 `main` 或明确填写的 `source_sha`，要求该提交的 main CI 成功，校验登记补丁、同步源码，然后等待本次关联的 GitHub 构建。三个平台从托管运行的 UTC 开始日期、编号和重试次数生成同一版本。任一平台失败、取消、缺失或身份不符都会停止发布。内网 runner 流式解压有界 ZIP，按清单检查每个安装包，并生成汇总的 `build-manifest.json` 和 `SHA256SUMS.txt`。公开下载仓库只接收安装文件及这些元数据，不推送源码。
+新构建检出 `main` 或明确填写的 `source_sha`，要求该提交的 main CI 成功，校验登记补丁、同步源码，然后等待本次关联的 GitHub 构建。填写 `github_run_id` 恢复发布时，从当前 `main` 获取发布脚本，`source_sha` 仍指向已构建源码；两个提交都必须通过 main CI。版本和产物校验使用已构建源码，不使用发布脚本的提交。三个平台从托管运行的 UTC 开始日期、编号和重试次数生成同一版本。任一平台失败、取消、缺失或身份不符都会停止发布。内网 runner 流式解压有界 ZIP，按清单检查每个安装包，并生成汇总的 `build-manifest.json` 和 `SHA256SUMS.txt`。公开下载仓库只接收安装文件及这些元数据，不推送源码。
 
 两个目标先创建开发预发布草稿。每个上传文件都重新下载并校验大小及 SHA-256，全部通过后才完成 Release 发布。发布不替换身份或内容不同的文件及 tag，也不删除旧下载。失败时保留已验证的草稿供重试。两个服务的发布依次执行：第二个发布失败时，第一个完整 Release 可能已经可见。填写 `github_run_id` 和对应的 `source_sha` 可复用同一次成功构建，核对中断上传并完成发布，无需重新打包。托管产物必须尚未过期；产物过期或运行重试次数变化后应重跑全部平台。工作流允许 180 分钟，其中 main CI 最多等待 20 分钟、托管构建最多等待 150 分钟。
 
@@ -29,6 +29,8 @@ node apps/product-desktop/scripts/sync-github.mjs --repository OWNER/deepseek-ha
 ## 本地检查
 
 内网同步步骤可从 Gitea Secrets 读取 `DESKTOP_GITHUB_PROXY_URL`。Node 和 Git 仅在该步骤内使用此认证代理，GitHub Git 请求使用 HTTP/1.1。代理 URL 不写入仓库变量或源码；源码获取、依赖安装和托管打包使用各自的网络配置。
+
+完整 API 读取、产物下载和远端哈希读取遇到临时网络错误或 HTTP 408/429/500/502/503/504 时，最多尝试四次，间隔为 1/2/4 秒。中断的产物下载从空的私有暂存目录重来；内容损坏、拒绝访问和哈希冲突不重试。写入必须先核对 Release 状态再重试。诊断只包含安全错误码和操作名称，不包含凭据、签名 URL 查询参数或响应正文。
 
 工作流选择只管理 `.github/workflows/` 下的文件。Dependabot 等由 GitHub 管理的动态工作流使用独立仓库设置，无法通过工作流 API 停用。
 
