@@ -24,6 +24,8 @@ Acceptance builds do not create Releases, publish update feeds, use signing cert
 
 ## Local Checks
 
+Upstream regressions run on every hosted platform. Executable-bit changes are tested on macOS and Linux, where filesystem permissions represent them; dangling-symlink checks also run on Windows.
+
 ```sh
 node --test apps/product-desktop/tests/github-delivery.test.mjs
 pnpm exec vitest run scripts/upstream-boundaries.spec.ts scripts/deepseek-harness-electron-workflows.spec.ts

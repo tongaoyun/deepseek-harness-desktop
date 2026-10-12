@@ -145,14 +145,19 @@ it('compares new upstream files against the pin without changing the user index'
   expect(completeDiff(root, baseline, [path])).toBe(diff)
 })
 
-it('includes executable changes and dangling symlinks in complete patches', () => {
+it.skipIf(process.platform === 'win32')('includes executable changes in complete patches', () => {
   const { root, baseline } = fixture()
   const path = 'apps/host/src/index.ts'
   chmodSync(join(root, path), 0o755)
+  expect(inventory(root, baseline).map(item => item.path)).toEqual([path])
+  expect(completeDiff(root, baseline, [path])).toContain('old mode 100644\nnew mode 100755')
+})
+
+it('includes dangling symlinks in complete patches', () => {
+  const { root, baseline } = fixture()
   symlinkSync('missing-target', join(root, 'link'))
-  expect(inventory(root, baseline).map(item => item.path)).toEqual([path, 'link'])
-  const diff = completeDiff(root, baseline, [path, 'link'])
-  expect(diff).toContain('old mode 100644\nnew mode 100755')
+  expect(inventory(root, baseline).map(item => item.path)).toEqual(['link'])
+  const diff = completeDiff(root, baseline, ['link'])
   expect(diff).toContain('new file mode 120000')
   expect(diff).toContain('+missing-target')
 })
