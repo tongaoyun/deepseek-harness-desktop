@@ -24,6 +24,8 @@ Acceptance builds produce a Windows EXE or macOS DMG; any additional archives or
 
 ## Local Checks
 
+Workflow selection controls files under `.github/workflows/`. GitHub-managed dynamic workflows, such as Dependabot, use separate repository settings and cannot be disabled through the workflow API.
+
 Upstream regressions run on every hosted platform. Executable-bit changes are tested on macOS and Linux, where filesystem permissions represent them; dangling-symlink checks also run on Windows.
 
 ```sh

@@ -115,6 +115,7 @@ test('repeated synchronization keeps already selected workflow states without fo
       { id: 1, path: PACKAGE_WORKFLOW, state: 'active' },
       { id: 2, path: '.github/workflows/release.yml', state: 'disabled_manually' },
       { id: 3, path: '.github/workflows/ci.yml', state: 'disabled_inactivity' },
+      { id: 4, path: 'dynamic/dependabot/dependabot-updates', state: 'active' },
     ] }
   }, repository)
   assert.equal(calls.some(call => call.method === 'PUT'), false)

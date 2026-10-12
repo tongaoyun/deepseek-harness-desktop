@@ -8,7 +8,7 @@ import { parseArgs } from 'node:util'
 export const PACKAGE_WORKFLOW = '.github/workflows/product-desktop-package.yml'
 
 /**
- * Keep only the product packaging workflow enabled, including newly synchronized official workflows.
+ * Keep only product packaging enabled among repository workflow files; GitHub-managed workflows are not configurable here.
  * @param {Function} request Authenticated GitHub API operation.
  * @param {string} repository Validated owner/name.
  * @returns {Promise<void>} Resolves once every discovered workflow has the selected state.
@@ -23,6 +23,7 @@ export async function selectPackagingWorkflow(request, repository) {
   const selected = workflows.find(workflow => workflow.path === PACKAGE_WORKFLOW)
   if (!selected) throw new Error('Product packaging workflow has not been indexed; Actions remain disabled, retry synchronization')
   for (const workflow of workflows) {
+    if (!workflow.path.startsWith('.github/workflows/')) continue
     if (workflow.id === selected.id) {
       if (workflow.state !== 'active') await request('PUT', `/repos/${repository}/actions/workflows/${workflow.id}/enable`)
     } else if (workflow.state === 'active') {
