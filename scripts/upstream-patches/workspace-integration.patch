@@ -105,7 +105,7 @@ index 2d76805736259a7b267df42c3128db0433fb133c..942a6d9fede381580ef5f9c87080a84f
      "package:desktop": "pnpm --filter @deepseek-ai/dsh-desktop run package",
      "package:desktop:dir": "pnpm --filter @deepseek-ai/dsh-desktop run package:dir",
 diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
-index dfaa16532d4a9500a31a3995bd0da8d3af579585..1889502c0e99615b0fb9df58a7ab2fd8f25befa6 100644
+index dfaa16532d4a9500a31a3995bd0da8d3af579585..68ff9f08305a11826a29358f527de109df59a911 100644
 --- a/pnpm-lock.yaml
 +++ b/pnpm-lock.yaml
 @@ -115,12 +115,12 @@ importers:
@@ -134,7 +134,7 @@ index dfaa16532d4a9500a31a3995bd0da8d3af579585..1889502c0e99615b0fb9df58a7ab2fd8
        '@deepseek-ai/node-addon-system':
          specifier: workspace:~
          version: link:../../native/system/packages/entry
-@@ -818,6 +821,19 @@ importers:
+@@ -818,6 +821,22 @@ importers:
          specifier: workspace:*
          version: link:../../packages/skill/skill
  
@@ -150,11 +150,14 @@ index dfaa16532d4a9500a31a3995bd0da8d3af579585..1889502c0e99615b0fb9df58a7ab2fd8
 +      tsx:
 +        specifier: ^4.21.0
 +        version: 4.23.13
++      yauzl:
++        specifier: ^3.4.0
++        version: 3.4.0
 +
    apps/web:
      devDependencies:
        '@deepseek-ai/cordis-plugin-group':
-@@ -7255,6 +7271,210 @@ importers:
+@@ -7255,6 +7274,210 @@ importers:
          specifier: workspace:*
          version: link:../../host/webserver
  
@@ -365,7 +368,7 @@ index dfaa16532d4a9500a31a3995bd0da8d3af579585..1889502c0e99615b0fb9df58a7ab2fd8
    packages/deliverables/tool-present:
      dependencies:
        '@deepseek-ai/schemastery':
-@@ -9562,6 +9782,87 @@ importers:
+@@ -9562,6 +9785,87 @@ importers:
          specifier: ^18.2.0
          version: 18.3.1
  
@@ -453,7 +456,7 @@ index dfaa16532d4a9500a31a3995bd0da8d3af579585..1889502c0e99615b0fb9df58a7ab2fd8
    packages/feedback/command-feedback:
      dependencies:
        zod:
-@@ -15641,10 +15942,6 @@ importers:
+@@ -15641,10 +15945,6 @@ importers:
  
  packages:
  
@@ -464,7 +467,7 @@ index dfaa16532d4a9500a31a3995bd0da8d3af579585..1889502c0e99615b0fb9df58a7ab2fd8
    '@agentclientprotocol/sdk@1.4.0':
      resolution: {integrity: sha512-/eufudw+aFY1LKLolT6yFE6UMmYRl7fMJ/DEONSIyR6wI3slHWITBsANRGqXEY8FRzqUxwh7QEaGiZHcJPVThg==}
      peerDependencies:
-@@ -17293,10 +17590,18 @@ packages:
+@@ -17293,10 +17593,18 @@ packages:
    '@mixmark-io/domino@2.2.0':
      resolution: {integrity: sha512-Y28PR25bHXUg88kCV7nivXrP2Nj2RueZ3/l/jdx6J9f8J4nsEGcgX0Qe6lt7Pa+J79+kPiJU3LguR6O/6zrLOw==}
  
@@ -483,7 +486,7 @@ index dfaa16532d4a9500a31a3995bd0da8d3af579585..1889502c0e99615b0fb9df58a7ab2fd8
    '@modelcontextprotocol/core@2.2.0':
      resolution: {integrity: sha512-iLhmprRmWI8EcosOA3wVvww22z02NkgqhV4fBH6f/odQBsi7xnJc0HGmi21yWO+/iKw2yzqVE127Zhna5/+JXw==}
      engines: {node: '>=20'}
-@@ -17329,6 +17634,10 @@ packages:
+@@ -17329,6 +17637,10 @@ packages:
      resolution: {integrity: sha512-kKaFkyAh6oipvc9+EAbJ552JafnMnOq5nzmzWkp1jJdBhTAAGpmIpWihUG1+rfNhmEFM98gUZDdCHCDD4v6a7Q==}
      hasBin: true
  
@@ -494,7 +497,7 @@ index dfaa16532d4a9500a31a3995bd0da8d3af579585..1889502c0e99615b0fb9df58a7ab2fd8
    '@modelcontextprotocol/server@2.2.0':
      resolution: {integrity: sha512-qFnltjus6Gk8Lx6J1w2RXmr3YPN22MNT6qD6zjAkaiWIlFIFxWClz0rXHNuJF/KSUyn5YGhkSvXkWDbQHVLFEQ==}
      engines: {node: '>=20'}
-@@ -21701,6 +22010,9 @@ packages:
+@@ -21701,6 +22013,9 @@ packages:
    pako@1.0.11:
      resolution: {integrity: sha512-4hLB8Py4zZce5s4yd9XzopqwVv/yGNhV1Bl8NTmCq1763HeK2+EwVTv+leGeL13Dnh2wfbqowVPXCIO0z4taYw==}
  
@@ -504,7 +507,7 @@ index dfaa16532d4a9500a31a3995bd0da8d3af579585..1889502c0e99615b0fb9df58a7ab2fd8
    papaparse@5.7.0:
      resolution: {integrity: sha512-qBGxg/7Q3Kl9Wfhrz2Z74UnvnHTXLNG6jmKJFeBvP2+y4lV7So+7SR62+Zd47JvdrCkX+nDcnr0ObPzek/+6RA==}
  
-@@ -22243,6 +22555,10 @@ packages:
+@@ -22243,6 +22558,10 @@ packages:
      resolution: {integrity: sha512-7++dFhtcx3353uBaq8DDR4NuxBetBzC7ZQOhmTQInHEd6bSrXdiEyzCvG07Z44UYdLShWUyXt5M/yhz8ekcb1A==}
      engines: {node: '>=8'}
  
@@ -515,7 +518,7 @@ index dfaa16532d4a9500a31a3995bd0da8d3af579585..1889502c0e99615b0fb9df58a7ab2fd8
    sherpa-onnx-darwin-arm64@1.13.8:
      resolution: {integrity: sha512-FPNgJMgnWVl/KhRTIhG3KL3A4Om63Rn4YKXc9/uHY7SzLcvqLJLc/h7UBWJwduXvv7K18t5NpxHR6XgXn4sjWw==}
      cpu: [arm64]
-@@ -23227,9 +23543,6 @@ packages:
+@@ -23227,9 +23546,6 @@ packages:
  
  snapshots:
  
@@ -525,7 +528,7 @@ index dfaa16532d4a9500a31a3995bd0da8d3af579585..1889502c0e99615b0fb9df58a7ab2fd8
    '@agentclientprotocol/sdk@1.4.0(zod@4.4.3)':
      dependencies:
        zod: 4.4.3
-@@ -24769,6 +25082,16 @@ snapshots:
+@@ -24769,6 +25085,16 @@ snapshots:
  
    '@mixmark-io/domino@2.2.0': {}
  
@@ -542,7 +545,7 @@ index dfaa16532d4a9500a31a3995bd0da8d3af579585..1889502c0e99615b0fb9df58a7ab2fd8
    '@modelcontextprotocol/client@2.2.0':
      dependencies:
        '@modelcontextprotocol/core': 2.2.0
-@@ -24779,10 +25102,21 @@ snapshots:
+@@ -24779,10 +25105,21 @@ snapshots:
        pkce-challenge: 5.0.1
        zod: 4.4.3
  
@@ -564,7 +567,7 @@ index dfaa16532d4a9500a31a3995bd0da8d3af579585..1889502c0e99615b0fb9df58a7ab2fd8
    '@modelcontextprotocol/node@2.0.0(@modelcontextprotocol/server@2.2.0)(hono@4.13.7)':
      dependencies:
        '@hono/node-server': 1.19.17(hono@4.13.7)
-@@ -24834,6 +25168,11 @@ snapshots:
+@@ -24834,6 +25171,11 @@ snapshots:
        - supports-color
        - zod
  
@@ -576,7 +579,7 @@ index dfaa16532d4a9500a31a3995bd0da8d3af579585..1889502c0e99615b0fb9df58a7ab2fd8
    '@modelcontextprotocol/server@2.2.0':
      dependencies:
        '@modelcontextprotocol/core': 2.2.0
-@@ -25944,7 +26283,6 @@ snapshots:
+@@ -25944,7 +26286,6 @@ snapshots:
    '@types/yauzl@2.10.3':
      dependencies:
        '@types/node': 22.20.1
@@ -584,7 +587,7 @@ index dfaa16532d4a9500a31a3995bd0da8d3af579585..1889502c0e99615b0fb9df58a7ab2fd8
  
    '@typescript-eslint/types@8.61.0': {}
  
-@@ -29443,6 +29781,8 @@ snapshots:
+@@ -29443,6 +29784,8 @@ snapshots:
  
    pako@1.0.11: {}
  
@@ -593,7 +596,7 @@ index dfaa16532d4a9500a31a3995bd0da8d3af579585..1889502c0e99615b0fb9df58a7ab2fd8
    papaparse@5.7.0: {}
  
    parse-ms@4.0.0: {}
-@@ -30047,6 +30387,8 @@ snapshots:
+@@ -30047,6 +30390,8 @@ snapshots:
  
    shebang-regex@3.0.0: {}
  

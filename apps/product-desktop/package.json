@@ -8,5 +8,5 @@
     "@deepseek-ai/dsh-desktop": "workspace:*",
     "@deepseek-harness/product-desktop": "workspace:*"
   },
-  "devDependencies": { "tsx": "^4.21.0" }
+  "devDependencies": { "tsx": "^4.21.0", "yauzl": "^3.4.0" }
 }

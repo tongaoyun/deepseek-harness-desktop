@@ -6,7 +6,7 @@ import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { zipSync } from 'fflate'
+import { Zip, ZipPassThrough, zipSync } from 'fflate'
 import { collectDesktopRelease, extractBuildArchive, publishDesktopRelease, RELEASE_TARGETS, waitForDesktopBuild } from '../scripts/desktop-release.mjs'
 import { apiClient, releaseDestination, stageBuildArchive } from '../scripts/deliver-desktop.mjs'
 
@@ -219,6 +219,45 @@ test('extracts chunked ZIPs and rejects paths, duplicate output and oversized ma
     await assert.rejects(extractBuildArchive(chunks(zipSync(entries)), join(root, id)))
   }
   await assert.rejects(extractBuildArchive(chunks(bytes.subarray(0, 25)), join(root, 'truncated')))
+})
+
+test('extracts descriptor-based binary entries containing embedded ZIP signatures using the central directory', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'harness-release-descriptor-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const installer = Buffer.concat([Buffer.from('binary installer'),
+    zipSync({ '../embedded.exe': Buffer.from('embedded binary data') }, { level: 0 })])
+  const output = []
+  const zip = new Zip((error, bytes) => { assert.ifError(error); output.push(bytes) })
+  for (const [name, bytes] of [['build-manifest.json', Buffer.from('{}')], ['Harness.exe', installer]]) {
+    const file = new ZipPassThrough(name)
+    zip.add(file)
+    file.push(bytes, true)
+  }
+  zip.end()
+  async function* chunks() { for (const bytes of output) yield bytes }
+  const directory = join(root, 'target')
+  await extractBuildArchive(chunks(), directory)
+  assert.deepEqual(await readFile(join(directory, 'Harness.exe')), installer)
+  assert.deepEqual((await readdir(directory)).sort(), ['Harness.exe', 'build-manifest.json'])
+})
+
+test('rejects duplicate central-directory names and symbolic links and removes the temporary archive', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'harness-release-invalid-entry-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  for (const kind of ['duplicate', 'symlink']) {
+    const output = []
+    const zip = new Zip((error, bytes) => { assert.ifError(error); output.push(bytes) })
+    for (const name of ['build-manifest.json', 'Harness.exe', ...(kind === 'duplicate' ? ['Harness.exe'] : [])]) {
+      const file = new ZipPassThrough(name)
+      if (kind === 'symlink' && name === 'Harness.exe') { file.os = 3; file.attrs = 0xa1ff0000 }
+      zip.add(file)
+      file.push(Buffer.from(name === 'build-manifest.json' ? '{}' : 'installer'), true)
+    }
+    zip.end()
+    const directory = join(root, kind)
+    await assert.rejects(extractBuildArchive((async function* () { yield* output })(), directory), /Invalid/u)
+    assert.equal((await readdir(directory)).includes('.download.zip'), false)
+  }
 })
 
 test('correlates a new dispatch instead of using another successful build', async () => {

@@ -1,9 +1,12 @@
 /** Verify hosted build archives and stage identical, immutable desktop releases. */
 import { createHash } from 'node:crypto'
-import { createReadStream, closeSync, mkdirSync, openSync, writeSync } from 'node:fs'
-import { readFile, readdir, stat, writeFile } from 'node:fs/promises'
+import { once } from 'node:events'
+import { createReadStream, createWriteStream } from 'node:fs'
+import { mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { Unzip, UnzipInflate } from 'fflate'
+import { Readable, Transform } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
+import { openPromise } from 'yauzl'
 import { githubBuildVersion } from './github-package.mjs'
 
 export const RELEASE_TARGETS = ['win-x64', 'mac-arm64', 'mac-x64']
@@ -20,58 +23,52 @@ export async function fileHash(path) {
 }
 
 /**
- * Extract flat build output with entry, path and expanded-byte limits.
+ * Stage a bounded ZIP and extract central-directory entries with path and expanded-byte limits.
  * @param {AsyncIterable<Uint8Array>} chunks Downloaded ZIP chunks.
  * @param {string} directory New staging directory.
  * @returns {Promise<void>} Resolves after the complete archive is decoded.
  */
 export async function extractBuildArchive(chunks, directory) {
-  mkdirSync(directory, { recursive: false, mode: 0o700 })
-  const handles = new Set()
+  await mkdir(directory, { recursive: false, mode: 0o700 })
+  const archive = join(directory, '.download.zip')
   const names = new Set()
-  let failure
   let expanded = 0
   let compressed = 0
-  let unfinished = 0
-  const unzip = new Unzip(file => {
-    if (failure) return
-    if (!safeName(file.name) || !(file.name === 'build-manifest.json' || /\.(?:exe|dmg|zip|blockmap)$/u.test(file.name))
-      || names.has(file.name) || names.size >= 16 || file.originalSize > MAX_FILE) {
-      failure = new Error('Invalid hosted artifact entry')
-      return
-    }
-    names.add(file.name)
-    const handle = openSync(join(directory, file.name), 'wx', 0o600)
-    handles.add(handle)
-    unfinished++
-    let size = 0
-    file.ondata = (error, bytes, final) => {
-      if (failure) return
-      if (error) { failure = new Error('Corrupt hosted artifact ZIP'); return }
-      size += bytes.length
-      expanded += bytes.length
-      if (size > MAX_FILE || expanded > MAX_ARCHIVE || file.name === 'build-manifest.json' && size > 64 * 1024) {
-        failure = new Error('Hosted artifact exceeds extraction limits')
-        return
-      }
-      for (let offset = 0; offset < bytes.length;) offset += writeSync(handle, bytes, offset)
-      if (final) { closeSync(handle); handles.delete(handle); unfinished-- }
-    }
-    file.start()
-  })
-  unzip.register(UnzipInflate)
+  let zip
+  let inspecting = false
   try {
-    for await (const bytes of chunks) {
+    await pipeline(Readable.from(chunks), new Transform({ transform(bytes, encoding, callback) {
       compressed += bytes.length
-      if (compressed > MAX_ARCHIVE) throw new Error('Hosted artifact archive exceeds download limits')
-      unzip.push(bytes)
-      if (failure) throw failure
+      callback(compressed > MAX_ARCHIVE ? new Error('Hosted artifact archive exceeds download limits') : null, bytes)
+    } }), createWriteStream(archive, { flags: 'wx', mode: 0o600 }))
+    inspecting = true
+    zip = await openPromise(archive, { lazyEntries: true, strictFileNames: true, autoClose: false })
+    for await (const entry of zip.eachEntry()) {
+      const name = entry.fileName
+      const type = (entry.externalFileAttributes >>> 16) & 0xf000
+      if (!safeName(name) || !(name === 'build-manifest.json' || /\.(?:exe|dmg|zip|blockmap)$/u.test(name))
+        || names.has(name) || names.size >= 16 || ![0, 0x8000].includes(type)
+        || entry.isEncrypted() || entry.uncompressedSize > MAX_FILE) throw new Error('Invalid hosted artifact entry')
+      names.add(name)
+      let size = 0
+      await pipeline(await zip.openReadStreamPromise(entry), new Transform({ transform(bytes, encoding, callback) {
+        size += bytes.length
+        expanded += bytes.length
+        callback(size > MAX_FILE || expanded > MAX_ARCHIVE || name === 'build-manifest.json' && size > 64 * 1024
+          ? new Error('Hosted artifact exceeds extraction limits') : null, bytes)
+      } }), createWriteStream(join(directory, name), { flags: 'wx', mode: 0o600 }))
     }
-    unzip.push(new Uint8Array(), true)
-    if (failure) throw failure
-    if (unfinished !== 0 || !names.has('build-manifest.json')) throw new Error('Incomplete hosted artifact archive')
+    if (!names.has('build-manifest.json')) throw new Error('Incomplete hosted artifact archive')
+  } catch (error) {
+    if (!inspecting) throw error
+    throw new Error('Invalid hosted artifact ZIP')
   } finally {
-    for (const handle of handles) closeSync(handle)
+    if (zip?.isOpen) {
+      const closed = once(zip, 'close')
+      zip.close()
+      await closed
+    }
+    await rm(archive, { force: true })
   }
 }
 

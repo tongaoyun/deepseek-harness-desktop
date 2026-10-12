@@ -833,6 +833,9 @@ importers:
       tsx:
         specifier: ^4.21.0
         version: 4.23.13
+      yauzl:
+        specifier: ^3.4.0
+        version: 3.4.0
 
   apps/web:
     devDependencies:
