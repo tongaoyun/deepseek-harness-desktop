@@ -287,8 +287,9 @@ describe('DeepSeekHarness capability navigation', () => {
     const create = vi.fn().mockResolvedValueOnce('expert-session').mockResolvedValueOnce('derived-skill-session')
     const select = vi.fn(async () => ({ ok: true as const }))
     const skillExecution: Record<string, unknown> = { kind: 'NEW_SESSION', skillName: 'writing' }
-    const invoke = vi.fn(async (method: string) => method === 'tasks.capabilities.prepare'
-      ? { ...skillExecution, invocation: skillExecution.skillName, presetId: skillExecution.presetId ?? 'deepseek-harness-expert-kit-orders' }
+    const invoke = vi.fn(async (method: string, payload?: { expertKitTaskId?: string }) => method === 'tasks.capabilities.prepare'
+      ? { ...skillExecution, invocation: skillExecution.skillName, presetId: skillExecution.presetId ?? 'deepseek-harness-expert-kit-orders',
+        ...payload?.expertKitTaskId === undefined ? {} : { prompt: '核对以下订单：' } }
       : { connectorIds: [], requiredConnectorIds: [], knowledgeBaseIds: [], requiredKnowledgeBaseIds: [] })
     installProductApi({ invoke })
     const ctx = {
@@ -332,11 +333,11 @@ describe('DeepSeekHarness capability navigation', () => {
     const expertKitActions = (expertKitRegistration?.options.inject as (() => ReturnType<typeof actions>))()
     const skillActions = (skillRegistration?.options.inject as (() => ReturnType<typeof actions>))()
 
-    await expertKitActions.startExpertKit('orders', '检查订单信息')
+    await expertKitActions.startExpertKit('orders', 'check-orders')
     await skillActions.installSkill('writing')
     await skillActions.installSkill('order-query')
 
-    expect(invoke).toHaveBeenNthCalledWith(1, 'tasks.capabilities.prepare', { expertKitId: 'orders', sessionId: 'current-session' }, expect.any(String))
+    expect(invoke).toHaveBeenNthCalledWith(1, 'tasks.capabilities.prepare', { expertKitId: 'orders', expertKitTaskId: 'check-orders', sessionId: 'current-session' }, expect.any(String))
     expect(invoke).toHaveBeenNthCalledWith(2, 'skills.install', { id: 'writing' }, expect.any(String))
     expect(invoke).toHaveBeenNthCalledWith(3, 'skills.install', { id: 'order-query' }, expect.any(String))
     expect(create).toHaveBeenNthCalledWith(1, { workspaceId: 'workspace-1' })
@@ -346,7 +347,7 @@ describe('DeepSeekHarness capability navigation', () => {
     expect(openSession).toHaveBeenNthCalledWith(1, 'expert-session')
     expect(openSession).toHaveBeenCalledOnce()
     expect(initializeDraft).toHaveBeenCalledExactlyOnceWith({ ctx: { sessionId: 'expert-session' } },
-      { prompt: '检查订单信息', clearPreviousDraft: true })
+      { prompt: '核对以下订单：', clearPreviousDraft: true })
     expect(focus).toHaveBeenCalledOnce()
   })
 
@@ -576,7 +577,7 @@ describe('DeepSeekHarness capability navigation', () => {
       .toHaveBeenNthCalledWith(1, 'product-design', undefined) })
     fireEvent.click(screen.getByRole('button', { name: /无障碍检查/ }))
     await waitFor(() => { expect(productActions.startExpertKit)
-      .toHaveBeenNthCalledWith(2, 'product-design', '请检查以下页面：') })
+      .toHaveBeenNthCalledWith(2, 'product-design', 'access') })
     fireEvent.click(screen.getByRole('button', { name: zh.backToCatalog }))
     expect(screen.queryByRole('heading', { name: '产品设计' })).toBeNull()
   })
@@ -756,7 +757,7 @@ describe('DeepSeekHarness capability navigation', () => {
     expect(productActions.startExpertKit).not.toHaveBeenCalled()
     const readsBeforeUse = productActions.readInstalledExpertKits.mock.calls.length
     fireEvent.click(shortcut)
-    await waitFor(() => { expect(productActions.startExpertKit).toHaveBeenCalledWith(identity.id, '核对订单。') })
+    await waitFor(() => { expect(productActions.startExpertKit).toHaveBeenCalledWith(identity.id, 'review') })
     expect(productActions.readInstalledExpertKits).toHaveBeenCalledTimes(readsBeforeUse)
   })
 

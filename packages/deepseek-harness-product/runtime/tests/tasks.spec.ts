@@ -72,6 +72,33 @@ it('enables an independent connector and retains it when adding knowledge', asyn
   expect(persisted.join('')).not.toContain('Bearer private')
 })
 
+it('pins shortcut skills, retains them through mode changes and clears them with the kit', async () => {
+  const f = await setup()
+  f.deps.content.mockResolvedValueOnce({ identity: { id: 'orders', name: 'Orders', version: '1', sha256: 'a'.repeat(64) },
+    connectorRefs: [], knowledgeBaseRefs: [], plugins: [{ id: 'orders', name: 'kit', config: { initialSkillIds: ['order-review'] } }],
+    shortcut: { id: 'review-orders', name: 'Review orders', skillIds: ['order-review'], prompt: 'Review these orders.' } })
+  const first = await f.tasks.prepare({ sessionId: 'session', expertKitId: 'orders', expertKitTaskId: 'review-orders' })
+  expect(f.deps.content).toHaveBeenCalledWith('kit', 'orders', undefined, 'review-orders')
+  expect(first.prompt).toBe('Review these orders.')
+  f.select(first.presetId)
+  const mode = await f.tasks.prepare({ sessionId: 'session', basePresetId: 'ptc' })
+  expect(mode.capabilities.expertKitTask).toEqual(first.capabilities.expertKitTask)
+  expect(f.definitions.get(mode.presetId)?.plugins).toContainEqual(expect.objectContaining({ config: { initialSkillIds: ['order-review'] } }))
+  f.select(mode.presetId)
+  const restored = await createTaskCapabilities(f.ctx, f.deps)
+  expect((await restored.read({ sessionId: 'session' })).expertKitTask).toEqual(first.capabilities.expertKitTask)
+  const cleared = await restored.prepare({ sessionId: 'session', expertKitId: null })
+  expect(cleared.capabilities.expertKitTask).toBeUndefined()
+})
+
+it('rejects unmapped shortcuts without persisting or registering a task', async () => {
+  const f = await setup()
+  await expect(f.tasks.prepare({ expertKitTaskId: 'review-orders' })).rejects.toMatchObject({ code: 'KIT_TASK_INVALID' })
+  await expect(f.tasks.prepare({ expertKitId: 'orders', expertKitTaskId: 'review-orders' })).rejects.toMatchObject({ code: 'KIT_TASK_INVALID' })
+  expect(f.register).not.toHaveBeenCalled()
+  expect(await readdir(f.root)).toEqual([])
+})
+
 it('switches execution modes without re-fetching pinned kit and skill content, and restores that mode', async () => {
   const f = await setup()
   const kit = await f.tasks.prepare({ expertKitId: 'order-expert', knowledgeBaseIds: ['manuals'] })

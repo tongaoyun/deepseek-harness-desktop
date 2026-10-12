@@ -681,7 +681,7 @@
         {
           "path": "pnpm-lock.yaml",
           "before": "b45f8695fb0dca90d3ed07afc766e923356539962706ee36ac8cdb396e6d734d",
-          "after": "9b059880a0616987e0774384413075336a5debacf53aaaa4935a1c4e4f6bbe37"
+          "after": "044c143323bea27f5483eb34841db8df3d3332caff17485b5051afd0e08da1e0"
         },
         {
           "path": "scripts/check-workspace-constraints.spec.ts",
@@ -796,37 +796,37 @@
         {
           "path": "docs/config-catalog.md",
           "before": "98efde2c4a40e40c92b5ad0d1fe34fe99dc4d9de1aac6bf1b38093b91b617407",
-          "after": "c4396fdb88b47c1746ffe63f4256ae0b5992b57ea416869d3de83186a39c4c48"
+          "after": "cbfb5d2a5407788935ff907717459a45600a17f9bd94b3466f16266f421f288c"
         },
         {
           "path": "docs/config-catalog.zh.md",
           "before": "e2ca4d1cc2061c966ed8f4d916b0ba63a33b10a9ebf45163c90038d8edc5e684",
-          "after": "5e3d595107c59222026be0828e22390b66010011dc0c2293cbec573342c1f50e"
+          "after": "fa2c9676885f983e2eca2a749d40cb8535d08b1673cdde15d47559d1b35909ce"
         },
         {
           "path": "docs/event-producer-consumer.md",
           "before": "643ce4a64c7fc07e7db05181218c87f750ec8b957ba75441530a4c9f53a6a23f",
-          "after": "98d14b721790ed2e320c3f465e1b42f97e41da941234a306009599be9c88304c"
+          "after": "c36229bb1df2c991d656da0739d9043398878a129ae0f0c0aa2a7e0258ca0233"
         },
         {
           "path": "docs/event-producer-consumer.zh.md",
           "before": "d5ea9faa33826cdb53a36b4145b8dcfc89024b8e2bc2aca245fc3956c476f207",
-          "after": "20e18ebd5699a78c9dada49b2823861b8ba7b753d8cacf74221445b84f403e51"
+          "after": "7f5fd3e0bc5fe72f9908d9aaee3c97a7ada9391d35dbc15828f328c2a9eef1ce"
         },
         {
           "path": "docs/persistence-catalog.i18n.yaml",
           "before": "59a7c24c281ded1ec6706fe88552112979efd10e289defc4d3d7627679bd15aa",
-          "after": "e50ceea0cdbc433ef1a2c08ccb85d0b1899096664986cc5eca21f8ff92fe6f58"
+          "after": "e9c747b0389da57a3c33bdd24821cde26d9526608e91b9c55dc705f3dbf89e66"
         },
         {
           "path": "docs/persistence-catalog.md",
           "before": "32bbaeb5dc5706427e4f2d8d9dea095f67d819bc1293a428af895cfe4efa4d43",
-          "after": "087ebc316ec02374e5b34c562b021089335f3f8ac34e78ab0d1377b5cdce10a3"
+          "after": "2e613b037867860195ec08c0a9458e2d6a18c0a04e1ad7e6f4732ff6c79b78cf"
         },
         {
           "path": "docs/persistence-catalog.zh.md",
           "before": "239e98a6550eb1fb52d3da23122b6dfd6a683f2d87c2daa9618c609a593c16e6",
-          "after": "22ca99b9088b393154f92ccb725a595e8e38913063e3a029bed778698818e45a"
+          "after": "55e73fac8391d6ab16c1fe566f9838fef9995391f70ff0e50e55e3f40bf26511"
         },
         {
           "path": "docs/persistence-changes/2026-10-09-product-installed-skill-attribution.i18n.yaml",
@@ -851,22 +851,22 @@
         {
           "path": "docs/persistence-changes/historical-formats/README.i18n.yaml",
           "before": "9c48e6c0157d6ba3d68ccf1f76ddf1eaa0aeb5de56ba9865bd9dc37abdb5998a",
-          "after": "c6c4b5ca59206a2505d88a5d6ed96c3e28c64dd9fe5f50a0da63144b2c1162ad"
+          "after": "99e4bf8a8af5a6f58b8a57eb68e1454e8f30f7b21651f68e2f1d74c835a0ad43"
         },
         {
           "path": "docs/persistence-changes/historical-formats/README.md",
           "before": "124effc9a682710f6ea058f00c0bd8a511d9ba0c62712aa5203bd51e84dd43b4",
-          "after": "f2e22e5daf62f5a6b23b8caccdb2de7803d3a3650452626e989616a02b78c6ed"
+          "after": "97b54843e463c2f6c0b78dae5590243b727e6f0d7dce9c9a10c9fb8562cbdffa"
         },
         {
           "path": "docs/persistence-changes/historical-formats/README.zh.md",
           "before": "0d82647db2117229a1568e44e07bca5f302ba777e281b731a1828166f1b5f79c",
-          "after": "48f226bb64600368048ee0f7e56ca9131109a3602c5fcecbaa92e959bbe2a62e"
+          "after": "92be1c059c15ecbeaff613ccec93488126824130d9504d6e9485b55cadf0048e"
         },
         {
           "path": "docs/persistence-schema.json",
           "before": "f82522e0533735b2e410919afc99ad026ebcb70fdf0daef6fa3be97011541d0d",
-          "after": "2a48f2f1770f133f5054b4a5178fe22bdf0f1cedea9de696f9fd014e6a8202ed"
+          "after": "95713035a8cb79a82ebe351c886ee3f2705508137da571220341981de3a41dec"
         },
         {
           "path": "docs/subsystems/README.i18n.yaml",

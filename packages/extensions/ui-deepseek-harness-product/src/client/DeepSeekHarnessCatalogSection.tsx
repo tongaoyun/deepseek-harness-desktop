@@ -306,7 +306,7 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
         await rememberInstallation(product)
       }
       else if (catalog === 'expertKits') {
-        await props.startExpertKit(product.id, task?.prompt)
+        await props.startExpertKit(product.id, task?.id)
       }
     } catch (error) {
       setActionError(true)

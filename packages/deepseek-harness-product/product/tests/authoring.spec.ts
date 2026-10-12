@@ -35,3 +35,14 @@ it('rejects unsupported categories, empty kits, owner forgery, malformed YAML an
   expect(() => parseSkillMarkdown('---\nname: first\nname: second\ndescription: Test\n---\nBody')).toThrow()
   expect(() => parseSkillMarkdown('---\nname: skill-test\ndescription: !exec run\n---\nBody')).toThrow()
 })
+
+it('requires explicit shortcut bindings and preserves them in the release and artifact', () => {
+  const kit = { ...skill, kind: 'expert-kit', id: 'policy-kit', skills: [skill],
+    commonTasks: [{ id: 'review-policy', name: 'Review', description: 'Review policy', prompt: 'Review this policy', skillIds: [skill.id] }] }
+  const generated = extensionFiles(ExtensionDraftSchema.parse(kit))
+  expect(generated.release).toMatchObject({ commonTasks: kit.commonTasks })
+  expect(JSON.parse(generated.files['.deepseek-harness-kit/kit.json']!)).toMatchObject({ commonTasks: kit.commonTasks })
+  for (const skillIds of [undefined, [], ['missing'], [skill.id, skill.id]]) {
+    expect(ExtensionDraftSchema.safeParse({ ...kit, commonTasks: [{ ...kit.commonTasks[0], skillIds }] }).success).toBe(false)
+  }
+})

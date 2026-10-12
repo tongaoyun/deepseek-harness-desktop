@@ -33,7 +33,13 @@ function fixture() {
     return 'applied'
   })
   const invoke = vi.fn(async (_namespace: string, method: string,
-    request: { connectorIds?: string[]; knowledgeBaseIds?: string[]; sessionId?: string; kind?: string }): Promise<unknown> => {
+    request: {
+      connectorIds?: string[]
+      knowledgeBaseIds?: string[]
+      sessionId?: string
+      kind?: string
+      expertKitTaskId?: string
+    }): Promise<unknown> => {
     if (method === 'extensions.authoring.begin') return { authoringId: '00000000-0000-4000-8000-000000000001',
       sessionId: request.sessionId, revision: 0,
       draft: { kind: request.kind, id: 'created-resource', version: '1.0.0' }, files: [], missingFields: ['name'] }
@@ -41,7 +47,9 @@ function fixture() {
     if (method.endsWith('.read')) return structuredClone(capabilities)
     if (request.connectorIds) capabilities.connectorIds = request.connectorIds
     if (request.knowledgeBaseIds) capabilities.knowledgeBaseIds = request.knowledgeBaseIds
-    return { kind: 'CURRENT_SESSION', presetId: 'prepared', capabilities }
+    return { kind: 'CURRENT_SESSION', presetId: 'prepared', capabilities,
+      ...request.expertKitTaskId === undefined ? {} : { prompt: request.expertKitTaskId === 'design-api'
+        ? 'Design an API for order review.' : 'Review these orders.' } }
   })
   vi.stubGlobal('dshDesktop', { extensions: {
     invoke: async (...args: Parameters<typeof invoke>) => ({ ok: true, result: await invoke(...args) }),
@@ -154,7 +162,7 @@ it('keeps the source task and draft when the official initializer refuses a pend
 
 it('starts an explicit shortcut in a new task without changing the source composition or draft', async () => {
   const f = fixture()
-  await f.actions.startExpertKit('orders', 'Review these orders.')
+  await f.actions.startExpertKit('orders', 'review-orders')
   expect(f.create).toHaveBeenCalledExactlyOnceWith({ workspaceId: 'workspace' })
   expect(f.select).toHaveBeenCalledExactlyOnceWith('new-1', 'prepared')
   expect(f.active()).toBe('new-1')
@@ -167,12 +175,24 @@ it.each(['blocked', 'storage failure'])('keeps the source composition and draft 
   const f = fixture()
   if (failure === 'blocked') f.requestDraftInitialization.mockReturnValueOnce('blocked')
   else f.requestDraftInitialization.mockImplementationOnce(() => { throw new Error('storage failure') })
-  await expect(f.actions.startExpertKit('orders', 'Review these orders.')).rejects.toThrow(
+  await expect(f.actions.startExpertKit('orders', 'review-orders')).rejects.toThrow(
     failure === 'blocked' ? 'pending submission' : 'storage failure')
   expect(f.select).toHaveBeenCalledExactlyOnceWith('new-1', 'prepared')
   expect(f.active()).toBe('original')
   expect(f.drafts.get('original')).toBe('  unfinished draft  ')
   expect(f.selectedPresets.get('original')).toBe('standard')
+})
+
+it('sends a shortcut identity and rejects a preparation without its authoritative prompt before creating a task', async () => {
+  const f = fixture()
+  f.invoke.mockResolvedValueOnce({ kind: 'CURRENT_SESSION', presetId: 'prepared', capabilities: f.capabilities })
+  await expect(f.actions.startExpertKit('orders', 'review-orders')).rejects.toThrow('pinned prompt')
+  expect(f.invoke).toHaveBeenCalledWith('product', 'tasks.capabilities.prepare',
+    { expertKitId: 'orders', expertKitTaskId: 'review-orders', sessionId: 'original' }, expect.any(String))
+  expect(f.create).not.toHaveBeenCalled()
+  expect(f.select).not.toHaveBeenCalled()
+  expect(f.drafts.get('original')).toBe('  unfinished draft  ')
+  expect(f.active()).toBe('original')
 })
 
 it('starts a separate official creation conversation, initializes its tools before Agent creation and preserves the source draft', async () => {
@@ -227,7 +247,7 @@ it('applies an Expert Kit to the current empty task and preserves its draft', as
 
 it('installs skills without selecting a Preset or changing the common-task draft', async () => {
   const f = fixture()
-  await f.actions.startExpertKit('development', 'Design an API for order review.')
+  await f.actions.startExpertKit('development', 'design-api')
   f.create.mockClear()
   f.select.mockClear()
   await f.actions.installSkill('writing')

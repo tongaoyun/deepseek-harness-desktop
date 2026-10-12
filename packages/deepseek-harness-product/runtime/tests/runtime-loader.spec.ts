@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { EventEmitter } from 'node:events'
@@ -33,11 +33,10 @@ class FixtureAdapter extends LlmAdapter {
   override async *stream(request: GenerateOptions): AsyncIterable<StreamChunk> {
     this.requests.push(request)
     const calls = [
+      { id: 'read-orders', name: ordersRead, arguments: '{}' },
       { id: 'retrieve-policy', name: 'knowledge_search', arguments: '{"query":"policy","limit":2}' },
       { id: 'read-policy-source', name: 'knowledge_read', arguments: '{"sourceId":"source"}' },
-      { id: 'read-kit-guide', name: 'skill', arguments: '{"name":"expert-kit-policy-kit"}' },
       { id: 'read-task-skill', name: 'skill', arguments: '{"name":"policy-review"}' },
-      { id: 'read-orders', name: ordersRead, arguments: '{}' },
     ]
     const call = calls[this.requests.length - 1]
     if (call !== undefined) {
@@ -112,6 +111,10 @@ it('composes kit and skill providers without standard or intermediate Presets, r
   await mkdir(join(kitRoot, 'skills/kit-check'), { recursive: true })
   await mkdir(skillRoot, { recursive: true })
   await writeFile(join(kitRoot, 'README.md'), '# Policy kit\n\nUse policy evidence before making a recommendation.\n')
+  await mkdir(join(kitRoot, '.deepseek-harness-kit'))
+  await writeFile(join(kitRoot, '.deepseek-harness-kit/kit.json'), JSON.stringify({ id: kit.id, version: kit.version,
+    commonTasks: [{ id: 'check-policy', name: 'Check policy', description: 'Check policy scope.',
+      prompt: 'Find the policy.', skillIds: ['kit-check'] }] }))
   await writeFile(join(kitRoot, 'skills/kit-check/SKILL.md'), '---\nname: kit-check\ndescription: Check the policy.\n---\nConfirm policy scope.\n')
   await writeFile(join(skillRoot, 'SKILL.md'), '---\nname: policy-review\ndescription: Compare policy evidence.\n---\nCompare the retrieved policy before reporting.\n')
   await writeFile(join(kitRoot, '.deepseek-harness-sha256'), kit.sha256)
@@ -242,9 +245,11 @@ it('composes kit and skill providers without standard or intermediate Presets, r
   expect(await request(52, 'expertKits.installed.read')).toMatchObject({ result: { installed: [] } })
   expect(await request(53, 'expertKits.install', { id: kit.id })).toMatchObject({ result: { id: kit.id } })
   emitMessage({ type: 'extension-control', namespace: 'product', requestId: 1,
-    method: 'tasks.capabilities.prepare', payload: { sessionId: 'recorded', expertKitId: kit.id } })
+    method: 'tasks.capabilities.prepare', payload: { sessionId: 'recorded', expertKitId: kit.id, expertKitTaskId: 'check-policy' } })
   await vi.waitFor(() =>{  expect(responses.has(1)).toBe(true) })
   expect(responses.get(1)?.error).toBeUndefined()
+  expect(responses.get(1)?.result).toMatchObject({ prompt: 'Find the policy.',
+    capabilities: { expertKitTask: { id: 'check-policy', skillIds: ['kit-check'] } } })
   const result = responses.get(1)?.result as { presetId: string }
   const selected = result.presetId
   selection.id = selected
@@ -331,6 +336,11 @@ it('composes kit and skill providers without standard or intermediate Presets, r
   const events = handle.agent.session.snapshotEvents()
   expect(events.some(event => event.type === 'working-directory/change' && event.data.cwd === root)).toBe(true)
   expect(JSON.stringify(adapter.requests[0]?.messages)).toContain('Current working directory:')
+  expect(JSON.stringify(adapter.requests[0]?.messages)).toContain('Use policy evidence before making a recommendation.')
+  expect(JSON.stringify(adapter.requests[0]?.messages)).toContain('Confirm policy scope.')
+  expect(events.filter(event => event.type === 'user/message' && event.data.source.kind === 'product-expert-kit-instructions')).toHaveLength(1)
+  expect(events.findIndex(event => event.type === 'user/message' && event.data.source.kind === 'product-expert-kit-instructions'))
+    .toBeLessThan(events.findIndex(event => event.type === 'tool/call' && event.data.name === ordersRead))
   expect(events.flatMap(event => event.type === 'user/message'
     ? event.data.content.flatMap(block => block.type === 'text' ? [block.text] : []) : []).join('\n')).toContain('"timeoutSeconds":120')
   const system = events.find(event => event.type === 'system/message')
@@ -340,6 +350,8 @@ it('composes kit and skill providers without standard or intermediate Presets, r
     workingDirectory: events.flatMap(event => event.type === 'working-directory/change' ? [event.data] : []),
     tools: adapter.requests[0]?.tools,
     installed: events.filter(event => event.type === 'user/message' && event.data.source.kind === 'product-installed-skills')
+      .map(event => event.type === 'user/message' ? { source: event.data.source, content: event.data.content } : undefined),
+    kitInstructions: events.filter(event => event.type === 'user/message' && event.data.source.kind === 'product-expert-kit-instructions')
       .map(event => event.type === 'user/message' ? { source: event.data.source, content: event.data.content } : undefined),
     catalog: events.filter(event => event.type === 'user/message' && event.data.source?.kind === 'skill-catalog')
       .map(event => event.type === 'user/message' ? { source: event.data.source, content: event.data.content } : undefined),
@@ -370,7 +382,8 @@ it('composes kit and skill providers without standard or intermediate Presets, r
   expect(JSON.stringify(events)).not.toContain(relayCredential)
   expect(JSON.stringify(events)).toContain('product.invalid/erp')
   expect(events.filter(event => event.type === 'tool/result').every(event => !event.data.message.isError)).toBe(true)
-  await expect(`${JSON.stringify(recording, null, 2).replaceAll(root, '<HOME>')}\n`).toMatchFileSnapshot('./expected/capabilities-session.json')
+  await expect(`${JSON.stringify(recording, null, 2).replaceAll(await realpath(root), '<HOME>').replaceAll(root, '<HOME>')}\n`)
+    .toMatchFileSnapshot('./expected/capabilities-session.json')
   const execute = (name: string) => ctx.tools.execute({ agent: handle.agent, name, arguments: {},
     callId: ToolCallId(`check-${name}`), signal: new AbortController().signal })
   const decisions: string[] = []
@@ -421,6 +434,8 @@ it('composes kit and skill providers without standard or intermediate Presets, r
   for (const assembly of assemblies) expect(assembly.tools.map(tool => tool.name)).toContain(ordersRead)
   restored.agent.followup(createUserMessage({ content: [{ type: 'text', text: 'Continue the review.' }], source: { kind: 'user' } }))
   await vi.waitFor(() => { expect(restored.agent.session.snapshotEvents().filter(event => event.type === 'turn/end')).toHaveLength(2) })
+  expect(restored.agent.session.snapshotEvents().filter(event => event.type === 'user/message'
+    && event.data.source.kind === 'product-expert-kit-instructions')).toHaveLength(1)
   const resumed = await ctx.tools.execute({ agent: restored.agent, name: ordersRead, arguments: {}, callId: ToolCallId('resumed-read'), signal: new AbortController().signal })
   expect(resumed.isError).toBe(true)
   expect(decisions.at(-1)).toBe('ask')

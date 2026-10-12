@@ -16,6 +16,8 @@ const messageKeys: Readonly<Record<string, DeepSeekHarnessProductKey>> = {
   EXPERT_KIT_PACKAGE_NOT_FOUND: 'importInvalid',
   EXPERT_KIT_RELEASE_CONFLICT: 'resourceConflict',
   KIT_NOT_INSTALLED: 'expertKitNotInstalled',
+  KIT_TASK_INVALID: 'expertKitTaskInvalid',
+  KIT_SKILL_MISSING: 'expertKitSkillMissing',
   KIT_INSTALLED_VERSION_CHANGED: 'expertKitInstalledVersionChanged',
   TASK_SNAPSHOT_INVALID: 'taskSnapshotUnavailable',
   TASK_SNAPSHOT_MISSING: 'taskSnapshotUnavailable',

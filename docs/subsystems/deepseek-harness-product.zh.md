@@ -21,6 +21,8 @@
 
 `tasks.capabilities.read` 返回当前任务选择。`tasks.capabilities.prepare` 接收专家套件、连接器 ID 和知识库 ID，返回执行位置、不可变 Preset ID、实际能力快照和依赖检查。套件提供初始组合，附加能力保留已有选择，必需依赖不能取消。连接器授权与任务启用是独立操作。
 
+快捷任务准备提交 `expertKitTaskId`，由已安装制品提供提示词和内置 `skillIds`，快照通过 `expertKitTask` 固定该选择。官方执行前消息流程在模型执行前记录套件说明和绑定技能指令；其他技能保留原生语义发现。缺失绑定时明确失败。[README 插件约定](../../packages/deepseek-harness-product/expert-kit-readme/README.zh.md)定义加载、去重和权限检查。
+
 两个任务接口通过 `requiredConnectorIds` 返回固定套件的必需连接器。技能和专家套件提供连接器依赖，产品 UI 不提供独立的连接器任务选择。连接器目录通过“全部 / 已连接”视图管理授权，两个视图均保留搜索和分类分组。参见 [UI 约定](../../packages/extensions/ui-deepseek-harness-product/README.zh.md)。
 
 `skills.install` 校验内容并记录按员工隔离的安装，不修改任务或 Preset。技能没有启用、停用状态。`skills.installed.read` 返回安装标识和任务可见子集。`skills.uninstall` 移除设备安装记录，未开始任务不再发现该技能，已开始任务的固定内容和服务端资源保留。每个 Agent 的官方技能 Provider 发现依赖满足的已安装技能，通过官方 MCP 客户端挂载其声明的已授权连接器。首个模型步骤边界固定内容和连接器定义，日志目录消息记录这些信息且不包含凭据。加载说明使用官方技能事件。重启恢复固定内容并使用当前代理凭据；读取、加载和连接器执行时重新校验权限。参见[运行时协议](../../packages/deepseek-harness-product/runtime/README.zh.md)。

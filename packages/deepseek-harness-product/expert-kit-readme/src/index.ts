@@ -3,9 +3,13 @@
 import { readFile, realpath, stat } from 'node:fs/promises'
 import { basename, dirname, isAbsolute } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-agent'
+import { createUserMessage, type MessageSource } from '@deepseek-ai/dsh-llm'
+import { ProductError } from '@deepseek-harness/product/errors'
 import {
   BUNDLED_SKILL_RANK,
   isSkillName,
+  renderSkillContent,
   type SkillCandidate,
   type SkillDefinition,
   type SkillProvider,
@@ -31,6 +35,27 @@ export interface Config {
   readonly expertKitId?: string
   /** README entries belonging to the Preset's enabled Expert Kits. */
   readonly entries: readonly ExpertKitReadmeEntry[]
+  /** Exact bundled skill names loaded together with the guide before the first model request. */
+  readonly initialSkillIds?: readonly string[]
+  /** Pinned provider owning the shortcut skills; collisions never substitute another definition. */
+  readonly skillProviderName?: string
+}
+
+/** Selected kit content committed by the official pre-step message pipeline. */
+export interface ExpertKitInstructionSource {
+  readonly kind: 'product-expert-kit-instructions'
+  readonly form: 'instructions'
+  readonly expertKitId: string
+  readonly names: readonly string[]
+}
+
+declare module '@deepseek-ai/dsh-llm' {
+  interface MessageSourceMap {
+    /** Instructions remain ordinary message text when this product producer is absent.
+     * @persistenceAttribution
+     */
+    'product-expert-kit-instructions': ExpertKitInstructionSource
+  }
 }
 
 interface ResolvedEntry extends ExpertKitReadmeEntry {
@@ -42,15 +67,21 @@ export const name = 'deepseek-harness-expert-kit-readme'
 /** Harness service required by this provider. */
 export const inject = ['skills']
 
-/** Register enabled Expert Kit READMEs as model-only, lazily loaded Harness skills.
+/** Register pinned kit content and enter its guide and shortcut skills before model execution.
  * @param ctx - Preset-scoped Cordis context.
  * @param config - Installed README paths and routing summaries.
  * @returns A promise that settles after every README path is validated and the provider is registered.
  */
 export async function apply(ctx: Context, config: Config): Promise<void> {
+  if ((config.initialSkillIds?.length ?? 0) > 8 || config.initialSkillIds?.some(id => !isSkillName(id))
+    || new Set(config.initialSkillIds).size !== (config.initialSkillIds?.length ?? 0)
+    || ((config.initialSkillIds?.length ?? 0) > 0 && !config.skillProviderName)) {
+    throw new ProductError('KIT_TASK_INVALID', 'Shortcut skill configuration is invalid')
+  }
   const entries = await resolveEntries(config.entries)
   const byName = new Map(entries.map(entry => [entry.name, entry]))
   const candidates = entries.map(candidate)
+  const selectionId = config.expertKitId ?? name
   const authorize = async (signal?: AbortSignal) => {
     if (config.expertKitId === undefined) return
     const data = ctx.get('productData') as { invoke(method: string, payload: unknown, signal?: AbortSignal): Promise<unknown> } | undefined
@@ -71,6 +102,36 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       return definition(entry, content)
     },
   }))
+  ctx.on('agent/pre-step', async ({ agent, signal }, next) => {
+    const decision = await next()
+    if (decision.kind === 'reject') return decision
+    await authorize(signal)
+    const names = [...entries.map(entry => entry.name), ...(config.initialSkillIds ?? [])]
+    const loaded = (source: MessageSource) => source.kind === 'product-expert-kit-instructions'
+      && source.expertKitId === selectionId && names.every(name => source.names.includes(name))
+    if (names.length === 0) return decision
+    if (agent.session.deriveMessages().some(message => message.role === 'user' && loaded(message.source))
+      || decision.messages.some(message => loaded(message.source))) return decision
+    const contents: string[] = []
+    for (const entry of entries) {
+      const content = await readFile(entry.path, { encoding: 'utf8', signal })
+      if (Buffer.byteLength(content, 'utf8') > MAX_README_BYTES) throw new Error('Expert Kit README exceeds the package limit')
+      contents.push(renderSkillContent(definition(entry, content)))
+    }
+    for (const name of config.initialSkillIds ?? []) {
+      const skill = await ctx.skills.get(name, { scope: agent, signal })
+      if (skill === undefined || skill.provider !== config.skillProviderName) {
+        throw new ProductError('KIT_SKILL_MISSING', 'Pinned shortcut skill is unavailable', false,
+          [{ kind: 'skill', id: name }, { kind: 'expert-kit', id: selectionId }])
+      }
+      contents.push(renderSkillContent(skill))
+    }
+    signal.throwIfAborted()
+    return { ...decision, messages: [...decision.messages, createUserMessage({
+      content: [{ type: 'text', text: contents.join('\n\n') }],
+      source: { kind: 'product-expert-kit-instructions', form: 'instructions', expertKitId: selectionId, names },
+    })] }
+  })
 }
 
 async function resolveEntries(entries: readonly ExpertKitReadmeEntry[]): Promise<readonly ResolvedEntry[]> {

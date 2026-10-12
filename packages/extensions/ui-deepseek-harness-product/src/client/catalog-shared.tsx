@@ -65,7 +65,7 @@ export type ProductItem = {
 export interface DeepSeekHarnessCatalogActions {
   /** Create a separate official conversation without submitting its initial draft. */
   startExtensionAuthoring?(kind: 'skill' | 'expert-kit', options: { prompt: string; stageId?: string; edit?: boolean }): Promise<void>
-  startExpertKit(id: string, prompt?: string): Promise<void>
+  startExpertKit(id: string, taskId?: string): Promise<void>
   installSkill(skillId: string): Promise<void>
   readInstalledSkills?(this: void): Promise<ProductInstalledSkills>
   /** Install on this device without changing tasks or drafts. */

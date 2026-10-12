@@ -23,6 +23,8 @@ export function productOwned(path) {
     || path.startsWith('docs/upgrade-guide/v0.2.0-rc.2/product-task-capabilities/')
     || path.startsWith('docs/upgrade-guide/v0.2.0-rc.2/personal-extensions/')
     || path.startsWith('docs/upgrade-guide/v0.2.1-alpha.2/product-knowledge-library/')
+    || path.startsWith('docs/upgrade-guide/v0.2.1-alpha.2/expert-kit-shortcut-instructions/')
+    || path.startsWith('docs/persistence-changes/2026-10-13-product-expert-kit-instructions.')
 }
 
 const git = (root, args) => execFileSync('git', args, { cwd: root, maxBuffer: 64 * 1024 * 1024 })

@@ -4498,7 +4498,7 @@ export interface Config {
 ## `@deepseek-harness/product-expert-kit-readme`
 
 - `inject`: `skills`
-- `source`: [`packages/deepseek-harness-product/expert-kit-readme/src/index.ts:29`](../packages/deepseek-harness-product/expert-kit-readme/src/index.ts)
+- `source`: [`packages/deepseek-harness-product/expert-kit-readme/src/index.ts:33`](../packages/deepseek-harness-product/expert-kit-readme/src/index.ts)
 
 ```ts config-catalog
 /** Expert Kit README provider configuration for one immutable Agent Preset. */
@@ -4507,6 +4507,10 @@ export interface Config {
   readonly expertKitId?: string
   /** README entries belonging to the Preset's enabled Expert Kits. */
   readonly entries: readonly ExpertKitReadmeEntry[]
+  /** Exact bundled skill names loaded together with the guide before the first model request. */
+  readonly initialSkillIds?: readonly string[]
+  /** Pinned provider owning the shortcut skills; collisions never substitute another definition. */
+  readonly skillProviderName?: string
 }
 
 /** One enabled Expert Kit README exposed to the model-facing skill catalog. */

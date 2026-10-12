@@ -67,7 +67,7 @@ const kits = [
     author: 'Operations team', category: 'ecommerce-retail', version: '1.2.0', availabilityStatus: 'AVAILABLE',
     skillDetails: skills.slice(0, 2), connectorRefs: ['erp'], knowledgeBaseRefs: ['organization:playbook'],
     commonTasks: [{ id: 'daily-review', name: 'Daily order review', description: 'Check order changes and delivery exceptions.',
-      prompt: 'Review today\'s orders and summarize delivery exceptions.' }] },
+      prompt: 'Review today\'s orders and summarize delivery exceptions.', skillIds: ['order-analysis'] }] },
   { id: 'customer-success', name: 'Customer success', summary: 'Prepare customer reviews and follow-up plans.',
     author: 'Sales team', category: 'ecommerce-retail', version: '1.0.0', availabilityStatus: 'AUTHORIZATION_REQUIRED',
     skillDetails: skills.slice(2), connectorRefs: ['crm'], knowledgeBaseRefs: [] },
@@ -458,7 +458,7 @@ it('keeps native themes and responsive catalogs while using official details and
     else installedExpertKits.splice(index, 1, identity)
     return identity
   }
-  await page.exposeFunction('__productInvoke', (method: string, payload?: { sessionId?: string; revision?: number; id?: string; name?: string; kind?: string; version?: string; draft?: Record<string, unknown>; expertKitId?: string | null; basePresetId?: string; connectorIds?: string[]; knowledgeBaseIds?: string[]; knowledgeBaseId?: string; documentId?: string; query?: string; page?: number; size?: number; folderId?: string | null; pdfParseMode?: string; rendered?: boolean; transferId?: string; offset?: number }): unknown => {
+  await page.exposeFunction('__productInvoke', (method: string, payload?: { sessionId?: string; revision?: number; id?: string; name?: string; kind?: string; version?: string; draft?: Record<string, unknown>; expertKitId?: string | null; expertKitTaskId?: string; basePresetId?: string; connectorIds?: string[]; knowledgeBaseIds?: string[]; knowledgeBaseId?: string; documentId?: string; query?: string; page?: number; size?: number; folderId?: string | null; pdfParseMode?: string; rendered?: boolean; transferId?: string; offset?: number }): unknown => {
     calls.push(method)
     switch (method) {
       case 'auth.getSession': return { authenticated: true }
@@ -470,7 +470,7 @@ it('keeps native themes and responsive catalogs while using official details and
             name: kind === 'skill' ? 'Personal review' : 'Personal operations', summary: 'Review the available evidence.',
             category: 'knowledge-research', body: '# Review\n\nCheck the evidence.', triggers: ['Review facts'],
             skills: kind === 'skill' ? [] : [{ id: 'daily-review', name: 'Daily review', summary: 'Review daily facts.', body: '# Daily review' }],
-            commonTasks: kind === 'skill' ? [] : [{ id: 'daily-summary', name: 'Daily summary', description: 'Review changes', prompt: 'Review today and summarize changes.' }],
+            commonTasks: kind === 'skill' ? [] : [{ id: 'daily-summary', name: 'Daily summary', description: 'Review changes', prompt: 'Review today and summarize changes.', skillIds: ['daily-review'] }],
           } })
         creationDrafts.set(state.sessionId, state)
         return state
@@ -522,7 +522,10 @@ it('keeps native themes and responsive catalogs while using official details and
           capabilities = kit === undefined ? retained
             : { ...retained, expertKit: { id: kit.id, name: kit.name, version: kit.version, sha256: 'a'.repeat(64) } }
         }
-        return { kind: 'CURRENT_SESSION', presetId: 'standard', capabilities, dependencyChecks: [] }
+        const task = typeof payload?.expertKitTaskId === 'string'
+          ? kits.find(kit => kit.id === payload.expertKitId)?.commonTasks?.find(task => task.id === payload.expertKitTaskId) : undefined
+        return { kind: 'CURRENT_SESSION', presetId: 'standard', capabilities, dependencyChecks: [],
+          ...task === undefined ? {} : { prompt: task.prompt } }
       }
       case 'expertKits.list': return [...kits, ...personalResources.filter(row => row.kind === 'expert-kit')]
       case 'skills.list': return [...skills, ...personalResources.filter(row => row.kind === 'skill')]
@@ -1362,8 +1365,14 @@ for (const { mode, installed } of desktopCarriers) {
       const kitSource = join(root, 'kit-source')
       await mkdir(kitSource)
       await writeFile(join(kitSource, 'README.md'), '# Retail operations\n\nUse policy evidence to review orders.\n')
+      await mkdir(join(kitSource, '.deepseek-harness-kit'))
+      await mkdir(join(kitSource, 'skills/policy-review'), { recursive: true })
+      await writeFile(join(kitSource, 'skills/policy-review/SKILL.md'), '---\nname: policy-review\ndescription: Review policy evidence.\n---\nUse policy evidence to review orders.\n')
+      await writeFile(join(kitSource, '.deepseek-harness-kit/kit.json'), JSON.stringify({ id: 'operations', version: '1.0.0',
+        commonTasks: [{ id: 'policy-review', name: 'Review policy', description: 'Review order policy evidence.',
+          prompt: 'Review order policy evidence.', skillIds: ['policy-review'] }] }))
       const kitArchivePath = join(root, 'kit.tar.gz')
-      await tar.c({ cwd: kitSource, file: kitArchivePath, gzip: true }, ['README.md'])
+      await tar.c({ cwd: kitSource, file: kitArchivePath, gzip: true }, ['README.md', '.deepseek-harness-kit', 'skills'])
       const kitArchive = await readFile(kitArchivePath)
       const kitDigest = createHash('sha256').update(kitArchive).digest('hex')
       const model = await startMockLlmServer({ sequence: ['success'], repeatLast: true,
@@ -1371,9 +1380,10 @@ for (const { mode, installed } of desktopCarriers) {
       onTestFinished(() => model.close())
       const catalogRows: Record<string, object[]> = {
         '/api/v1/expert-kits': [{ id: 'operations', name: 'Retail operations', version: '1.0.0',
-          summary: 'Review orders using policy evidence.', sha256: kitDigest, skillIds: [], skillDetails: [], connectorRefs: [],
+          summary: 'Review orders using policy evidence.', sha256: kitDigest, skillIds: ['policy-review'],
+          skillDetails: [{ id: 'policy-review', name: 'Policy review', summary: 'Review policy evidence.' }], connectorRefs: [],
           requiredTools: [], knowledgeBaseRefs: ['company:policy'], commonTasks: [{ id: 'policy-review',
-            name: 'Review policy', description: 'Review order policy evidence.', prompt: 'Review order policy evidence.' }] }],
+            name: 'Review policy', description: 'Review order policy evidence.', prompt: 'Review order policy evidence.', skillIds: ['policy-review'] }] }],
         '/api/v1/skills': [{ id: 'order-analysis', name: 'Order analysis', version: '1.0.0',
           summary: 'Analyze order trends.', sha256: skillDigest, connectorRefs: ['erp'], requiredTools: ['orders_read'], knowledgeBaseRefs: [] }],
         '/api/v1/connectors': [{ id: 'erp', version: '1.0.0', name: 'Order management', displayName: 'Order management',
@@ -1852,8 +1862,8 @@ for (const { mode, installed } of desktopCarriers) {
         await expect(invoke('expertKits.installed.read')).resolves.toEqual({ installed: [] })
         await installKit.click()
         await page.getByText(/^(Installed|已安装)$/, { exact: true }).waitFor()
-        expect(await kitDetail.getByRole('button', { name: /^(Start using|开始使用)$/, exact: true }).isEnabled()).toBe(true)
-        expect(await kitCommand.isEnabled()).toBe(true)
+        await expect.poll(() => kitDetail.getByRole('button', { name: /^(Start using|开始使用)$/, exact: true }).isEnabled()).toBe(true)
+        await expect.poll(() => kitCommand.isEnabled()).toBe(true)
         expect(await page.getByRole('button', { name: /^(Installed|已安装)$/, exact: true }).count()).toBe(0)
         await expect(invoke('expertKits.installed.read')).resolves.toMatchObject({
           installed: [{ id: 'operations', version: '1.0.0', sha256: kitDigest }],

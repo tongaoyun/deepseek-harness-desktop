@@ -6,6 +6,9 @@
   },
   "include": ["src"],
   "references": [
+    { "path": "../product" },
+    { "path": "../../core/agent" },
+    { "path": "../../llm/llm" },
     { "path": "../../../vendor/cosmokit" },
     { "path": "../../../vendor/cordis" },
     { "path": "../../skill/skill" }

@@ -8,26 +8,31 @@ export const EXTENSION_CATEGORIES = ['office-productivity', 'content-creation', 
   'agent-evolution', 'communication', 'other'] as const
 
 const id = z.string().regex(/^[a-z][a-z0-9-]{2,63}$/)
+const fileId = z.string().regex(/^[a-z][a-z0-9-]{1,63}$/)
 const version = z.string().regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/)
 const dependencies = {
   connectorRefs: z.array(id).max(128).default([]),
   requiredTools: z.array(z.string().regex(/^[a-z][a-z0-9_.-]+$/)).max(128).default([]),
   knowledgeBaseRefs: z.array(z.string().regex(/^(personal|team|organization):[a-z][a-z0-9-]{2,63}$/)).max(32).default([]),
 }
-const skill = z.object({ id, name: z.string().trim().min(1).max(80), summary: z.string().trim().min(1).max(300),
+const skill = z.object({ id: fileId, name: z.string().trim().min(1).max(80), summary: z.string().trim().min(1).max(300),
   body: z.string().trim().min(1).max(60_000), triggers: z.array(z.string().min(2).max(120)).max(20).default([]),
   ...dependencies,
   importedId: id.optional(),
   source: z.object({ id, version, sha256: z.string().regex(/^[a-f0-9]{64}$/) }).optional(),
 })
+/** Explicit shortcut routing to skills contained in the same immutable kit. */
+export const ExpertKitCommonTaskSchema = z.object({ id: fileId, name: z.string().trim().min(1).max(80).refine(name => !name.startsWith('/')),
+  description: z.string().min(1).max(300), prompt: z.string().min(1).max(1000),
+  skillIds: z.array(fileId).min(1).max(8).refine(ids => new Set(ids).size === ids.length),
+}).strict()
 const DraftFields = z.object({ kind: z.enum(['skill', 'expert-kit', 'connector']), id, version,
   name: z.string().trim().min(1).max(80), summary: z.string().trim().min(1).max(300),
   author: z.string().trim().max(80).optional(), category: z.string().min(1).max(80),
   triggers: z.array(z.string().min(2).max(120)).max(20).default([]),
   body: z.string().max(60_000).default(''), minimumDesktopVersion: version.default('0.1.0'), ...dependencies,
   skills: z.array(skill).max(128).default([]),
-  commonTasks: z.array(z.object({ id, name: z.string().min(1).max(80), description: z.string().min(1).max(300),
-    prompt: z.string().min(1).max(1000) })).max(12).default([]),
+  commonTasks: z.array(ExpertKitCommonTaskSchema).max(12).default([]),
   transport: z.enum(['streamable-http', 'stdio']).optional(), url: z.string().max(2000).optional(),
   oauthProviderId: id.optional(),
   timeoutSeconds: z.number().int().min(1).max(600).default(60),
@@ -70,6 +75,15 @@ export const ExtensionDraftSchema = DraftFields.superRefine((draft, context) => 
   }
   if (new Set(draft.skills.map(value => value.id)).size !== draft.skills.length) {
     context.addIssue({ code: 'custom', path: ['skills'], message: 'Bundled skill IDs must be unique' })
+  }
+  const bundled = new Set(draft.skills.map(value => value.id))
+  for (const [index, task] of draft.commonTasks.entries()) {
+    if (new Set(task.skillIds).size !== task.skillIds.length || task.skillIds.some(id => !bundled.has(id))) {
+      context.addIssue({ code: 'custom', path: ['commonTasks', index, 'skillIds'], message: 'Shortcut skills must be unique bundled skill IDs' })
+    }
+  }
+  if (new Set(draft.commonTasks.map(task => task.id)).size !== draft.commonTasks.length) {
+    context.addIssue({ code: 'custom', path: ['commonTasks'], message: 'Shortcut IDs must be unique' })
   }
   if (draft.kind === 'connector') {
     if (draft.oauthProviderId && (draft.transport !== 'streamable-http' || Object.keys(draft.headers).length || Object.keys(draft.environment).length)) {
