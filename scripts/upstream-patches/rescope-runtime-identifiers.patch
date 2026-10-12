@@ -1,0 +1,123 @@
+diff --git a/scripts/rescope-vendor.spec.ts b/scripts/rescope-vendor.spec.ts
+index f05658ce64c50be84c61b447e3bcb00cf59ad2ae..21fe775a4ddc21ba8b3a75a865433e5273331c1b 100644
+--- a/scripts/rescope-vendor.spec.ts
++++ b/scripts/rescope-vendor.spec.ts
+@@ -1,7 +1,7 @@
+ /** Recorded npm evidence stays intact while authored files and exact edits remain checked. */
+ 
+ import { describe, expect, it } from 'vitest'
+-import { exactEditState, isRescopeExcluded } from './rescope-vendor.ts'
++import { exactEditState, isRescopeExcluded, rescopeText } from './rescope-vendor.ts'
+ 
+ const ANCHOR = '\n## Sync procedure'
+ const INSERTED = `\n15. **rescope**: one log entry.\n${ANCHOR}`
+@@ -9,6 +9,7 @@ const INSERTED = `\n15. **rescope**: one log entry.\n${ANCHOR}`
+ describe('rescope file selection', () => {
+   it('preserves the recorded npm resolution', () => {
+     expect(isRescopeExcluded('scripts/dependency-catalog/package-lock.json')).toBe(true)
++    expect(isRescopeExcluded('scripts/rescope-vendor.spec.ts')).toBe(true)
+   })
+ 
+   it.each([
+@@ -22,6 +23,31 @@ describe('rescope file selection', () => {
+   })
+ })
+ 
++describe('runtime identifier preservation', () => {
++  it.each([
++    'packages/client/ui-agent-preset/src/client/CreatePluginMenuItem.tsx',
++    'apps/web/tests/agent-preset-selection.e2e.ts',
++    'packages/bundle/web-app/cordis.patch.yml',
++    'docs/subsystems/schedule.md',
++    'docs/upgrade-guide/v0.2.0-rc.2/schedule-bundle-retired/guide.md',
++  ])('preserves the preset ID in %s while checking other package names', (file) => {
++    const text = 'Use `cordis` and `@cordisjs/plugin-loader`.\n'
++    expect(isRescopeExcluded(file)).toBe(false)
++    expect(rescopeText(text, file)).toBe('Use `cordis` and `@deepseek-ai/cordis-plugin-loader`.\n')
++  })
++
++  it('preserves Inspector event names while rewriting actual plugin imports', () => {
++    const text = "ctx.on('cordis/inspect-query', handler)\nimport Loader from '@cordisjs/plugin-loader'\n"
++    expect(rescopeText(text, 'snapshots/session/cordis-inspect-timeout/client-fixture.mjs'))
++      .toBe("ctx.on('cordis/inspect-query', handler)\nimport Loader from '@deepseek-ai/cordis-plugin-loader'\n")
++  })
++
++  it('continues rewriting unregistered bare package imports', () => {
++    expect(rescopeText("import { Context } from 'cordis'\n", 'packages/example/src/index.ts'))
++      .toBe("import { Context } from '@deepseek-ai/cordis'\n")
++  })
++})
++
+ describe('exactEditState', () => {
+   it('classifies an insertion by its target form, so a duplicate is invalid', () => {
+     expect(exactEditState(`log\n${ANCHOR}\n`, ANCHOR, INSERTED, 1)).toBe('pending')
+diff --git a/scripts/rescope-vendor.ts b/scripts/rescope-vendor.ts
+index e6292fb2a5a19230b71dc2a06f08a3617108ca2e..1318b93908d8f641e85db0b3930697431dc7f04e 100644
+--- a/scripts/rescope-vendor.ts
++++ b/scripts/rescope-vendor.ts
+@@ -89,14 +89,29 @@ const GENERIC_SKIPS: readonly GenericSkip[] = [
+   // product data, not a package reference. Renaming it changed which preset
+   // the creator flow stages and which id the roster reports.
+   { file: 'packages/client/ui-agent-preset/src/client/AgentPresetSection.tsx', upstream: ['cordis'] },
++  { file: 'packages/client/ui-agent-preset/src/client/CreatePluginMenuItem.tsx', upstream: ['cordis'] },
+   { file: 'packages/client/ui-agent-preset/src/client/PresetGuideDialog.tsx', upstream: ['cordis'] },
+   { file: 'packages/client/ui-agent-preset/src/client/index.ts', upstream: ['cordis'] },
+   { file: 'packages/client/ui-agent-preset/tests/apply.client.spec.ts', upstream: ['cordis'] },
+   { file: 'packages/client/ui-agent-preset/tests/locales.client.spec.ts', upstream: ['cordis'] },
+   { file: 'packages/client/ui-agent-preset/tests/section.client.spec.tsx', upstream: ['cordis'] },
++  { file: 'packages/client/ui-agent-preset/tests/components.client.spec.tsx', upstream: ['cordis'] },
++  { file: 'packages/client/ui-agent-preset/tests/create-plugin-menu-item.client.spec.tsx', upstream: ['cordis'] },
++  { file: 'packages/client/ui-agent-preset/tests/section-store.client.spec.ts', upstream: ['cordis'] },
+   { file: 'apps/cli/tests/web-agent-presets.e2e.ts', upstream: ['cordis'] },
++  { file: 'apps/cli/tests/optional-bundle-transitions.e2e.ts', upstream: ['cordis'] },
+   { file: 'apps/cli/tests/profiles/web/tests/fixtures/creator-plugin-manager.mjs', upstream: ['cordis'] },
+   { file: 'apps/web/tests/agent-preset-authoring.e2e.ts', upstream: ['cordis'] },
++  { file: 'apps/web/tests/agent-preset-selection.e2e.ts', upstream: ['cordis'] },
++  { file: 'apps/web/tests/developer-tools-settings.e2e.ts', upstream: ['cordis'] },
++  // Schedule composition and guides name the shipped preset, including the retired-bundle guide.
++  { file: 'packages/bundle/web-app/cordis.patch.yml', upstream: ['cordis'] },
++  { file: 'docs/subsystems/schedule.md', upstream: ['cordis'] },
++  { file: 'docs/subsystems/schedule.zh.md', upstream: ['cordis'] },
++  { file: 'docs/user/guide/schedule.md', upstream: ['cordis'] },
++  { file: 'docs/user/guide/schedule.zh.md', upstream: ['cordis'] },
++  { file: 'docs/upgrade-guide/v0.2.0-rc.2/schedule-bundle-retired/guide.md', upstream: ['cordis'] },
++  { file: 'docs/upgrade-guide/v0.2.0-rc.2/schedule-bundle-retired/guide.zh.md', upstream: ['cordis'] },
+   { file: 'packages/preset/agent-preset-registry/tests/session.spec.ts', upstream: ['cordis'] },
+   // The preset-roster loop names the `cordis` preset id, not a package.
+   { file: 'apps/cli/tests/windows-shell.spec.ts', upstream: ['cordis'] },
+@@ -118,6 +133,9 @@ const GENERIC_SKIPS: readonly GenericSkip[] = [
+   { file: 'packages/extensions/cordis-host-runner/src/inspect-registry.ts', upstream: ['cordis'] },
+   { file: 'packages/extensions/cordis-host-runner/src/types.ts', upstream: ['cordis'] },
+   { file: 'packages/extensions/cordis-host-runner/tests/helpers.ts', upstream: ['cordis'] },
++  { file: 'packages/extensions/cordis-host-runner/tests/inspect-registry.spec.ts', upstream: ['cordis'] },
++  { file: 'snapshots/session/cordis-inspect-liveness/client-fixture.mjs', upstream: ['cordis'] },
++  { file: 'snapshots/session/cordis-inspect-timeout/client-fixture.mjs', upstream: ['cordis'] },
+   { file: 'packages/extensions/cordis-host-runner/tests/runner.spec.ts', upstream: ['cordis'] },
+   { file: 'packages/extensions/cordis-host-runner/tests/versioning.spec.ts', upstream: ['cordis'] },
+   { file: 'packages/extensions/tool-cordis/src/api-catalog.ts', upstream: ['cordis'] },
+@@ -431,7 +449,7 @@ const VENDORED_LIBRARY = /^@deepseek-ai\\/(cosmokit|schemastery)(\\/|$)/
+  * @returns Whether the codemod must preserve the file without scanning its tokens.
+  */
+ export function isRescopeExcluded(file: string): boolean {
+-  if (file === 'scripts/rescope-vendor.ts') return true // the mapping itself
++  if (file === 'scripts/rescope-vendor.ts' || file === 'scripts/rescope-vendor.spec.ts') return true // mapping and rename fixtures
+   if (file.startsWith('.agents/notes/')) return true // notes record what was true when written
+   // Recorded model payloads quote documentation verbatim, so they must mirror the
+   // sources on disk — including the notes this rescope leaves alone.
+@@ -519,6 +537,16 @@ function rewrite(text: string, file: string, all: readonly Pattern[]): { text: s
+   return { text: out.join('\n'), lines }
+ }
+ 
++/** Apply token rewrites while preserving the file's declared runtime identifiers.
++ * @param text - Authored file contents.
++ * @param file - Repository-relative file path.
++ * @param reverse - Restore upstream names instead of applying the vendored scope.
++ * @returns Contents after the same token pass used by the codemod.
++ */
++export function rescopeText(text: string, file: string, reverse = false): string {
++  return rewrite(text, file, patterns(reverse)).text
++}
++
+ function classify(file: string): string {
+   if (/^vendor\/[^/]+\/package\.json$/.test(file)) return 'vendor manifest name'
+   if (file.endsWith('package.json')) return 'package.json dependencies'

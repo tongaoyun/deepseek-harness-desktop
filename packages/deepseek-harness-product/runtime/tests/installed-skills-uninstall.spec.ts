@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { mkdtemp, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { Context } from '@deepseek-ai/cordis'
+import { Context } from '@deepseek-ai/cordis'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import { createInstalledSkills } from '../src/installed-skills.ts'
 import type { SkillContent } from '../src/content.ts'
@@ -15,11 +15,16 @@ vi.mock('node:fs/promises', async (importOriginal) => {
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'installed-skills-uninstall-'))
   let employee = 'employee-one'
-  const releases: (() => void | Promise<void>)[] = []
-  const ctx = {
-    sessionProjections: { register: vi.fn() }, agents: { list: () => [], get: () => undefined }, on: vi.fn(),
-    effect: (factory: () => () => void | Promise<void>) => { releases.push(factory()) },
-  } as unknown as Context
+  const ctx = new Context()
+  const releases = [() => ctx.fiber.dispose()]
+  onTestFinished(async () => {
+    await ctx.fiber.dispose()
+    await rm(root, { recursive: true, force: true })
+  })
+  const projections: Pick<Context['sessionProjections'], 'register'> = { register: vi.fn() }
+  const agents: Pick<Context['agents'], 'list' | 'get'> = { list: () => [], get: () => undefined }
+  ctx.provide('sessionProjections', projections as Context['sessionProjections'])
+  ctx.provide('agents', agents as Context['agents'])
   const skill = (id: string): SkillContent => ({ id, name: id, version: '1', sha256: 'a'.repeat(64),
     summary: 'Review facts.', connectorRefs: [], knowledgeBaseRefs: [], requiredTools: [] })
   const invoke = vi.fn(async (method: string, payload?: unknown) => method === 'auth.getSession'
@@ -31,10 +36,6 @@ async function fixture() {
     root, product: { invoke }, parse: value => value as SkillContent[], install, load,
     capabilities: async () => ({ skills: [], connectorIds: [], requiredConnectorIds: [], knowledgeBaseIds: [],
       requiredKnowledgeBaseIds: [], knowledgeBaseRefs: [] }), connectors: async () => [], mountConnectors: async () => async () => {},
-  })
-  onTestFinished(async () => {
-    await Promise.all(releases.map(release => Promise.resolve(release())))
-    await rm(root, { recursive: true, force: true })
   })
   return { root, skills, install, load, invoke, releases, employee: (value: string) => { employee = value },
     path: (id = 'employee-one') => join(root, `installed-${createHash('sha256').update(id).digest('hex')}.json`) }

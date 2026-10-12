@@ -354,9 +354,10 @@ it('does not grant HMR event access to an unrelated web origin', async () => {
   const response = Object.assign(new EventEmitter(), {
     writeHead: vi.fn(), write: vi.fn(), destroy: vi.fn(), end: vi.fn(),
   })
+  const serverResponse: Pick<ServerResponse, 'writeHead' | 'write' | 'destroy' | 'end'> = response
   try {
     await routes[0]!.handler({ method: 'GET', headers: { origin: 'https://unrelated.example' } } as IncomingMessage,
-      response as unknown as ServerResponse)
+      serverResponse as ServerResponse)
     expect(response.writeHead).toHaveBeenCalledWith(200, expect.any(Object))
     expect(response.writeHead.mock.calls[0]?.[1]).not.toHaveProperty('access-control-allow-origin')
   } finally {

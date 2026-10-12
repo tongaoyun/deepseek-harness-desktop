@@ -9866,7 +9866,7 @@ importers:
         specifier: workspace:*
         version: link:../../util/crypto
       '@deepseek-harness/product':
-        specifier: workspace:*
+        specifier: workspace:~
         version: link:../../deepseek-harness-product/product
       '@types/react':
         specifier: ~18.3.1

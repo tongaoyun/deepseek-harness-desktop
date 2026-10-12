@@ -47,7 +47,11 @@ it('forwards full graphs and rebuilt frames, contains wire errors and closes its
 
 it('keeps the event route relative outside the desktop transport', async () => {
   const ctx = new Context()
-  ctx.provide('modules', { entries: { sync: vi.fn(), reload: vi.fn() } } as unknown as ClientModuleLoader)
+  const entries: Pick<ClientModuleLoader['entries'], 'sync' | 'reload'> = { sync: vi.fn(), reload: vi.fn() }
+  const modules: Pick<ClientModuleLoader, 'entries'> = {
+    entries: entries as ClientModuleLoader['entries'],
+  }
+  ctx.provide('modules', modules as ClientModuleLoader)
   const eventUrls: string[] = []
   vi.stubGlobal('EventSource', class {
     constructor(url: string) { eventUrls.push(url) }

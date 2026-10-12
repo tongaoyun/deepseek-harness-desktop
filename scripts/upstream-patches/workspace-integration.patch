@@ -105,7 +105,7 @@ index 2d76805736259a7b267df42c3128db0433fb133c..942a6d9fede381580ef5f9c87080a84f
      "package:desktop": "pnpm --filter @deepseek-ai/dsh-desktop run package",
      "package:desktop:dir": "pnpm --filter @deepseek-ai/dsh-desktop run package:dir",
 diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
-index dfaa16532d4a9500a31a3995bd0da8d3af579585..771c00f329c057c76769cc38f58d60ee0ed2306f 100644
+index dfaa16532d4a9500a31a3995bd0da8d3af579585..2593bcd01ccf6efb8ee6feec438a8bf92787bd2b 100644
 --- a/pnpm-lock.yaml
 +++ b/pnpm-lock.yaml
 @@ -115,12 +115,12 @@ importers:
@@ -453,7 +453,7 @@ index dfaa16532d4a9500a31a3995bd0da8d3af579585..771c00f329c057c76769cc38f58d60ee
 +        specifier: workspace:*
 +        version: link:../../util/crypto
 +      '@deepseek-harness/product':
-+        specifier: workspace:*
++        specifier: workspace:~
 +        version: link:../../deepseek-harness-product/product
 +      '@types/react':
 +        specifier: ~18.3.1

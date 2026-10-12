@@ -47,14 +47,21 @@ jobs:
           node --test apps/product-desktop/tests/desktop-release.test.mjs
           pnpm run build:lib:host
           pnpm run typecheck:contracts-ready
+          pnpm run rescope-vendor:check
+          pnpm run verify-package-dependencies
+          pnpm run verify-no-unknown-casts
           pnpm exec vitest run \
             scripts/upstream-boundaries.spec.ts \
+            scripts/rescope-vendor.spec.ts \
             packages/deepseek-harness-product/expert-kit-readme/tests/expert-kit-readme.spec.ts \
             packages/deepseek-harness-product/product/tests/authoring.spec.ts \
             packages/deepseek-harness-product/runtime/tests/deepseek-harness-connector-contract.spec.ts \
             packages/deepseek-harness-product/runtime/tests/deepseek-harness-runtime.spec.ts \
             packages/deepseek-harness-product/runtime/tests/runtime-loader.spec.ts \
             packages/deepseek-harness-product/runtime/tests/tasks.spec.ts \
+            packages/deepseek-harness-product/runtime/tests/installed-skills-uninstall.spec.ts \
+            packages/client/hmr/tests/node-half.client.spec.ts \
+            packages/client/hmr/tests/transport.client.spec.ts \
             apps/desktop/tests/command-management.spec.ts \
             apps/desktop/tests/crash-report.spec.ts \
             apps/desktop/tests/fatal-recovery.spec.ts \

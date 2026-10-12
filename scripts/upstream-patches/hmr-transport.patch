@@ -109,7 +109,7 @@ index 23f5ca00d6bb7e573b1067565922cbcb0bf02b33..fbab19733f9635ca24e11c0207c270ec
      })
      const unsubscribeGraph = ctx.clientModules.onGraphChanged(publishGraph)
 diff --git a/packages/client/hmr/tests/node-half.client.spec.ts b/packages/client/hmr/tests/node-half.client.spec.ts
-index 7965ca79b3a1c1f4084b9c15efa0f815c549a46a..5055d3beae126a05a178eb34aadf06e4b5d54137 100644
+index 7965ca79b3a1c1f4084b9c15efa0f815c549a46a..2d65921bfd3e36da0250b9ae5badf2051d4c4087 100644
 --- a/packages/client/hmr/tests/node-half.client.spec.ts
 +++ b/packages/client/hmr/tests/node-half.client.spec.ts
 @@ -283,21 +283,27 @@ it('broadcasts the desired graph without waiting for Host activation or cleanup'
@@ -143,7 +143,7 @@ index 7965ca79b3a1c1f4084b9c15efa0f815c549a46a..5055d3beae126a05a178eb34aadf06e4
      expect(second.lines[1]).toBe(first.lines[1])
      expect(first.lines).toHaveLength(2)
      release()
-@@ -337,3 +343,24 @@ it('broadcasts the desired graph without waiting for Host activation or cleanup'
+@@ -337,3 +343,25 @@ it('broadcasts the desired graph without waiting for Host activation or cleanup'
      await ctx.fiber.dispose()
    }
  })
@@ -158,9 +158,10 @@ index 7965ca79b3a1c1f4084b9c15efa0f815c549a46a..5055d3beae126a05a178eb34aadf06e4
 +  const response = Object.assign(new EventEmitter(), {
 +    writeHead: vi.fn(), write: vi.fn(), destroy: vi.fn(), end: vi.fn(),
 +  })
++  const serverResponse: Pick<ServerResponse, 'writeHead' | 'write' | 'destroy' | 'end'> = response
 +  try {
 +    await routes[0]!.handler({ method: 'GET', headers: { origin: 'https://unrelated.example' } } as IncomingMessage,
-+      response as unknown as ServerResponse)
++      serverResponse as ServerResponse)
 +    expect(response.writeHead).toHaveBeenCalledWith(200, expect.any(Object))
 +    expect(response.writeHead.mock.calls[0]?.[1]).not.toHaveProperty('access-control-allow-origin')
 +  } finally {
@@ -169,7 +170,7 @@ index 7965ca79b3a1c1f4084b9c15efa0f815c549a46a..5055d3beae126a05a178eb34aadf06e4
 +  }
 +})
 diff --git a/packages/client/hmr/tests/transport.client.spec.ts b/packages/client/hmr/tests/transport.client.spec.ts
-index 8b807c92555967f6498c67cd8124204604d42244..0961e5d97165088f7bc24eb3e86f9226fb62568b 100644
+index 8b807c92555967f6498c67cd8124204604d42244..6cd7f2af2a66c18ed14e59e63c85e3ea5db7f738 100644
 --- a/packages/client/hmr/tests/transport.client.spec.ts
 +++ b/packages/client/hmr/tests/transport.client.spec.ts
 @@ -15,13 +15,17 @@ it('forwards full graphs and rebuilt frames, contains wire errors and closes its
@@ -190,14 +191,18 @@ index 8b807c92555967f6498c67cd8124204604d42244..0961e5d97165088f7bc24eb3e86f9226
      const graph = { rev: 'r', entries: [], batches: [] }
      receive({ data: JSON.stringify({ type: 'graph', graph }) })
      receive({ data: JSON.stringify({ type: 'rebuilt', id: 'a', rev: 'r1' }) })
-@@ -40,3 +44,22 @@ it('forwards full graphs and rebuilt frames, contains wire errors and closes its
+@@ -40,3 +44,26 @@ it('forwards full graphs and rebuilt frames, contains wire errors and closes its
    }
    expect(close).toHaveBeenCalledOnce()
  })
 +
 +it('keeps the event route relative outside the desktop transport', async () => {
 +  const ctx = new Context()
-+  ctx.provide('modules', { entries: { sync: vi.fn(), reload: vi.fn() } } as unknown as ClientModuleLoader)
++  const entries: Pick<ClientModuleLoader['entries'], 'sync' | 'reload'> = { sync: vi.fn(), reload: vi.fn() }
++  const modules: Pick<ClientModuleLoader, 'entries'> = {
++    entries: entries as ClientModuleLoader['entries'],
++  }
++  ctx.provide('modules', modules as ClientModuleLoader)
 +  const eventUrls: string[] = []
 +  vi.stubGlobal('EventSource', class {
 +    constructor(url: string) { eventUrls.push(url) }

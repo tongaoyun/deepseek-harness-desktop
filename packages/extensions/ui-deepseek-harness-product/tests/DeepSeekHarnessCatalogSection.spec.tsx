@@ -53,7 +53,7 @@ const actions = () => ({
 })
 
 function castClientContext(value: object): ClientContext {
-  return value as unknown as ClientContext
+  return value as ClientContext
 }
 
 describe('DeepSeekHarness capability navigation', () => {

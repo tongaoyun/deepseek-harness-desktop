@@ -1,7 +1,7 @@
 /** Recorded npm evidence stays intact while authored files and exact edits remain checked. */
 
 import { describe, expect, it } from 'vitest'
-import { exactEditState, isRescopeExcluded } from './rescope-vendor.ts'
+import { exactEditState, isRescopeExcluded, rescopeText } from './rescope-vendor.ts'
 
 const ANCHOR = '\n## Sync procedure'
 const INSERTED = `\n15. **rescope**: one log entry.\n${ANCHOR}`
@@ -9,6 +9,7 @@ const INSERTED = `\n15. **rescope**: one log entry.\n${ANCHOR}`
 describe('rescope file selection', () => {
   it('preserves the recorded npm resolution', () => {
     expect(isRescopeExcluded('scripts/dependency-catalog/package-lock.json')).toBe(true)
+    expect(isRescopeExcluded('scripts/rescope-vendor.spec.ts')).toBe(true)
   })
 
   it.each([
@@ -19,6 +20,31 @@ describe('rescope file selection', () => {
     'packages/example/package.json',
   ])('keeps %s subject to upstream package-name checks', (file) => {
     expect(isRescopeExcluded(file)).toBe(false)
+  })
+})
+
+describe('runtime identifier preservation', () => {
+  it.each([
+    'packages/client/ui-agent-preset/src/client/CreatePluginMenuItem.tsx',
+    'apps/web/tests/agent-preset-selection.e2e.ts',
+    'packages/bundle/web-app/cordis.patch.yml',
+    'docs/subsystems/schedule.md',
+    'docs/upgrade-guide/v0.2.0-rc.2/schedule-bundle-retired/guide.md',
+  ])('preserves the preset ID in %s while checking other package names', (file) => {
+    const text = 'Use `cordis` and `@cordisjs/plugin-loader`.\n'
+    expect(isRescopeExcluded(file)).toBe(false)
+    expect(rescopeText(text, file)).toBe('Use `cordis` and `@deepseek-ai/cordis-plugin-loader`.\n')
+  })
+
+  it('preserves Inspector event names while rewriting actual plugin imports', () => {
+    const text = "ctx.on('cordis/inspect-query', handler)\nimport Loader from '@cordisjs/plugin-loader'\n"
+    expect(rescopeText(text, 'snapshots/session/cordis-inspect-timeout/client-fixture.mjs'))
+      .toBe("ctx.on('cordis/inspect-query', handler)\nimport Loader from '@deepseek-ai/cordis-plugin-loader'\n")
+  })
+
+  it('continues rewriting unregistered bare package imports', () => {
+    expect(rescopeText("import { Context } from 'cordis'\n", 'packages/example/src/index.ts'))
+      .toBe("import { Context } from '@deepseek-ai/cordis'\n")
   })
 })
 

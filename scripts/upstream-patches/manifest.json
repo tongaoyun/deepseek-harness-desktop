@@ -2,6 +2,26 @@
   "baseline": "d743267388641bc76f17c45ce8b4c231aed1d32c",
   "patches": [
     {
+      "id": "rescope-runtime-identifiers",
+      "purpose": "Preserve shipped Cordis preset IDs and Inspector event names in the generic vendor-rescope check. Only named files and the cordis token are exempted; other vendor package names remain checked. Regression fixtures cover preserved identifiers and continued package-name rewrites.",
+      "tests": [
+        "scripts/rescope-vendor.spec.ts"
+      ],
+      "files": [
+        {
+          "path": "scripts/rescope-vendor.ts",
+          "before": "cc64e6b550cabb1486d2ad7f04f19f86a4e55625202e08ed8f3cbc55b0c690d8",
+          "after": "ac299d223067013ff4636946f77f858a657e72188026416604fc618e91b5eaeb"
+        },
+        {
+          "path": "scripts/rescope-vendor.spec.ts",
+          "before": "352e5360f61d387d7731ee358aeda8426ff7b48cedf9d7a5c6fc95ccda96eb31",
+          "after": "e3942a91a195261e0e9db4466e68868bd92fd4de4b4f7c03355ca4f5e61ac0df"
+        }
+      ],
+      "diff": "rescope-runtime-identifiers.patch"
+    },
+    {
       "id": "product-package-classification",
       "purpose": "Keep the generic product-use gate aware of independent application assemblies while preserving the official profile boundary. Assembly runtime and source entries are checked separately, product roles are explicit, accidental default-profile mounts fail, and malformed or unknown assembly packages are rejected.",
       "tests": [
@@ -463,12 +483,12 @@
         {
           "path": "packages/client/hmr/tests/node-half.client.spec.ts",
           "before": "59d640b87b1cd70c3ec1d5d3df56d5bff3a9cc434d649ed5b94e66c48767b1d7",
-          "after": "dda833be52d24125b7409e572c759391fefe4cfa8f0c402010e372b8552f5d87"
+          "after": "b699d3af1d3f1764a9c63a3253949459f9cea9fec24e5f2b73fb32cc46747ace"
         },
         {
           "path": "packages/client/hmr/tests/transport.client.spec.ts",
           "before": "71b3ab181f6097c9d85de07ebf7803dc054ffc2aa394244ad2e65f814cee1bef",
-          "after": "07230591ca397277d91d3405abb72ca7f210a827caefbdc168399722c7c93bde"
+          "after": "280b673961f32dc371ee0d071b5e0e38629c54c0ec9f9586c0edaf8ab6742c08"
         }
       ],
       "diff": "hmr-transport.patch"
@@ -681,7 +701,7 @@
         {
           "path": "pnpm-lock.yaml",
           "before": "b45f8695fb0dca90d3ed07afc766e923356539962706ee36ac8cdb396e6d734d",
-          "after": "044c143323bea27f5483eb34841db8df3d3332caff17485b5051afd0e08da1e0"
+          "after": "a2ab1c5a2e8ea228e382500ca9bf376ed83904bbb0ba5ab265f319eab7674748"
         },
         {
           "path": "scripts/check-workspace-constraints.spec.ts",
