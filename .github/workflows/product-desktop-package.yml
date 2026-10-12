@@ -1,4 +1,5 @@
 name: Product desktop packages
+run-name: Desktop ${{ inputs.source_sha }} / ${{ inputs.delivery_id }}
 
 on:
   workflow_dispatch:
@@ -7,6 +8,10 @@ on:
         description: Exact desktop source commit
         type: string
         required: true
+      delivery_id:
+        description: Internal delivery correlation ID
+        type: string
+        required: false
 
 permissions:
   contents: read
@@ -54,6 +59,8 @@ jobs:
         run: |
           set -euo pipefail
           gh auth setup-git
+          build_date="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" --jq '.created_at')"
+          printf 'PACKAGE_BUILD_DATE=%s\n' "$build_date" >> "$GITHUB_ENV"
           tag="$(cat UPSTREAM_TAG)"
           git fetch --depth=1 origin "refs/tags/${tag}:refs/tags/${tag}"
       - name: Set up pnpm

@@ -17,7 +17,9 @@ export function githubBuildVersion(environment, productVersion, now = new Date()
   for (const name of ['GITHUB_RUN_NUMBER', 'GITHUB_RUN_ATTEMPT']) {
     if (!/^[1-9]\d*$/u.test(environment[name] ?? '')) throw new Error(`${name} must be a positive integer`)
   }
-  const date = now.toISOString().slice(0, 10).replaceAll('-', '')
+  const started = environment.PACKAGE_BUILD_DATE === undefined ? now : new Date(environment.PACKAGE_BUILD_DATE)
+  if (!Number.isFinite(started.getTime())) throw new Error('A valid build start date is required')
+  const date = started.toISOString().slice(0, 10).replaceAll('-', '')
   return `${desktopBuildVersionPrefix(productVersion)}${date}.${environment.GITHUB_RUN_NUMBER}.${environment.GITHUB_RUN_ATTEMPT}`
 }
 

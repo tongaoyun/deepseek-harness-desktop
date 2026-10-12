@@ -1,5 +1,5 @@
 diff --git a/README.i18n.yaml b/README.i18n.yaml
-index 5ce56b7a613a0709b4ccde53711317f34e5abdb0..b3c2bbe75439c178b12361c958f0b3e1f1af842f 100644
+index 5ce56b7a613a0709b4ccde53711317f34e5abdb0..ffe4fb6882ac5fb11280bc76c3ea50ad461de892 100644
 --- a/README.i18n.yaml
 +++ b/README.i18n.yaml
 @@ -3,8 +3,11 @@
@@ -11,13 +11,13 @@ index 5ce56b7a613a0709b4ccde53711317f34e5abdb0..b3c2bbe75439c178b12361c958f0b3e1
 +  en: 2a567d9e9bf21506
 +  zh: e5f30eff0160234a
 +/deepseek-harness/deepseek-harness-downstream-desktop:
-+  en: 793d34c5c3cb2415
-+  zh: b952add684630cf8
++  en: 6f81a1d90e5c5b14
++  zh: bc7e74205b3217fb
  /deepseek-harness/developer-preview:
    en: 4ef4d8a71ac143f0
    zh: 1bfc3149ba8e5543
 diff --git a/README.md b/README.md
-index 7941e30f7bdca9391befe39b9115d211157fa42d..65448ad78c98cc5e4974d1fbb4df9ec0993d82e9 100644
+index 7941e30f7bdca9391befe39b9115d211157fa42d..2b3264d8c78cc1f2be061afc3a00e3ac2081e2cf 100644
 --- a/README.md
 +++ b/README.md
 @@ -2,6 +2,14 @@
@@ -30,13 +30,13 @@ index 7941e30f7bdca9391befe39b9115d211157fa42d..65448ad78c98cc5e4974d1fbb4df9ec0
 +
 +The [product subsystem](docs/subsystems/deepseek-harness-product.md) owns authentication, catalogs, per-task capability snapshots, and desktop resources in independent protocol, runtime, desktop, and UI packages. Harness Session, execution, approval, and replay APIs remain the integration points. [Registered patches](scripts/upstream-patches/manifest.json) record every official difference and its verification.
 +
-+Gitea runs desktop CI and manual synchronization to the private GitHub build repository. [Product desktop packaging](apps/product-desktop/README.md) builds unsigned Windows x64, macOS ARM64, and macOS Intel installers. Publishing verified installers to the public GitHub download repository and mirroring them to Gitea Releases are separate operations; packaging does not publish Releases or automatic update feeds.
++Gitea runs desktop CI and manual synchronization to the private GitHub build repository. [Product desktop delivery](apps/product-desktop/README.md) waits for unsigned Windows x64, macOS ARM64, and macOS Intel builds, verifies their files, and publishes matching prereleases to public GitHub downloads and internal Gitea. Standalone GitHub packaging only uploads Actions artifacts; neither path publishes automatic update feeds.
 +
  DeepSeek Harness (`dsh`) is an open-source agent harness developed by [DeepSeek AI](https://deepseek.com).
  
  It is built on an **everything-is-a-plugin** architecture and powered by [Cordis](https://github.com/cordiverse/cordis), whose design is described in [_A Programming Paradigm for Spatiotemporal Composability_](https://arxiv.org/abs/2608.25512).
 diff --git a/README.zh.md b/README.zh.md
-index 3adc57ce89b3c30e6a6dbaa14dc35df944d52926..01022710689f8f2b85e75c00590a061eadcba374 100644
+index 3adc57ce89b3c30e6a6dbaa14dc35df944d52926..a6964e03749d9121dad4cfa6e8655d5b80a717df 100644
 --- a/README.zh.md
 +++ b/README.zh.md
 @@ -2,6 +2,14 @@
@@ -49,7 +49,7 @@ index 3adc57ce89b3c30e6a6dbaa14dc35df944d52926..01022710689f8f2b85e75c00590a061e
 +
 +[产品子系统](docs/subsystems/deepseek-harness-product.zh.md)通过独立的协议、运行时、桌面和 UI 包管理认证、目录、任务能力快照及桌面资源。Harness 的 Session、执行、审批和回放 API 是集成入口。[登记补丁](scripts/upstream-patches/manifest.json)记录每项官方差异及验证方式。
 +
-+Gitea 执行桌面 CI 和向 GitHub 私有构建仓库的手动同步。[产品桌面打包](apps/product-desktop/README.zh.md)生成未签名的 Windows x64、macOS ARM64 和 macOS Intel 安装包。将已验证安装包发布到 GitHub 公共下载仓库，以及同步到 Gitea Release，均为独立操作；打包不会发布 Release 或自动更新 feed。
++Gitea 执行桌面 CI 和向 GitHub 私有构建仓库的手动同步。[产品桌面交付](apps/product-desktop/README.zh.md)等待未签名的 Windows x64、macOS ARM64 和 macOS Intel 构建，校验文件，并向公开 GitHub 下载仓库及内网 Gitea 发布相同的预发布版本。单独运行 GitHub 打包只上传 Actions 产物；两种流程均不发布自动更新 feed。
 +
  DeepSeek Harness（`dsh`）是由 [DeepSeek AI](https://deepseek.com) 开发的开源 agent harness（智能体框架）。
  

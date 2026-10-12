@@ -31,6 +31,9 @@ function fixture(overrides = {}) {
 test('numbers each platform with the same source, UTC date, run and attempt', () => {
   assert.equal(githubBuildVersion(identity, '0.2.1-alpha.2', new Date('2026-10-12T03:00:00Z')), '0.2.1-alpha.2.20261012.23.2')
   assert.equal(githubBuildVersion(identity, '0.2.1', new Date('2026-10-12T03:00:00Z')), '0.2.1-test.20261012.23.2')
+  assert.equal(githubBuildVersion({ ...identity, PACKAGE_BUILD_DATE: '2026-10-12T23:59:00Z' }, '0.2.1',
+    new Date('2026-10-13T01:00:00Z')), '0.2.1-test.20261012.23.2')
+  assert.throws(() => githubBuildVersion({ ...identity, PACKAGE_BUILD_DATE: 'bad' }, '0.2.1'))
   for (const invalid of [{ PACKAGE_SOURCE_SHA: 'main' }, { GITHUB_RUN_NUMBER: '0' }, { GITHUB_RUN_ATTEMPT: '2\nTOKEN=secret' }]) {
     assert.throws(() => githubBuildVersion({ ...identity, ...invalid }, '0.2.1'))
   }
@@ -168,12 +171,15 @@ test('uses three native hosted runners and product packaging without publishing 
 test('internal synchronization fetches main and its own baseline without disclosing the token', () => {
   const source = readFileSync(new URL('../../../.gitea/workflows/github-desktop-sync.yml', import.meta.url), 'utf8')
   const workflow = yaml.load(source)
-  assert.equal(workflow.jobs.sync.steps[0].with.ref, 'main')
+  assert.equal(workflow.jobs.sync.steps[0].with.ref, "${{ inputs.source_sha || 'main' }}")
   assert.equal(workflow.jobs.sync.steps[0].with['fetch-depth'], 0)
   assert.doesNotMatch(source, /--depth[= ]/u)
   assert.match(source, /secrets\.DESKTOP_GITHUB_TOKEN/u)
   assert.doesNotMatch(source, /--force|--mirror|--delete|https:\/\/\$.*TOKEN/u)
   assert.match(source, /verify:upstream/u)
+  assert.match(source, /deliver-desktop\.mjs/u)
+  assert.match(source, /vars\.DESKTOP_GITHUB_DOWNLOAD_REPOSITORY/u)
+  assert.equal(workflow.jobs.sync['timeout-minutes'], 180)
   const sync = workflow.jobs.sync.steps.find(step => step.name === 'Verify source and synchronize')
   assert.equal(sync.env.HTTPS_PROXY, '${{ secrets.DESKTOP_GITHUB_PROXY_URL }}')
   assert.equal(sync.env.NODE_USE_ENV_PROXY, '1')

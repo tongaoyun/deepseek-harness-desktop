@@ -1,5 +1,6 @@
 /** Synchronize the selected desktop commit and stored baseline to a private build repository. */
 import { execFileSync } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -39,14 +40,16 @@ export async function selectPackagingWorkflow(request, repository) {
  * @param {string} options.commit Exact desktop source commit.
  * @param {string} options.tag Stored official baseline tag.
  * @param {boolean} options.create Whether to create a new private repository.
+ * @param {string} [options.deliveryId] Correlation ID for the dispatched build.
  * @param {Function} options.request Authenticated API operation.
  * @param {Function} options.push Pushes only main and the baseline, without force or deletion.
  * @returns {Promise<void>} Resolves after GitHub accepts the build dispatch.
  */
-export async function synchronizeDesktop({ repository, commit, tag, create = false, request, push }) {
+export async function synchronizeDesktop({ repository, commit, tag, create = false, deliveryId, request, push }) {
   if (!/^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\/[A-Za-z0-9_.-]+$/u.test(repository)) throw new Error('Use a GitHub owner/name')
   if (!/^[a-f0-9]{40}$/u.test(commit)) throw new Error('An exact source commit is required')
   if (!/^dsh-v\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?$/u.test(tag)) throw new Error('A pinned Harness baseline tag is required')
+  if (deliveryId !== undefined && !/^[a-f0-9-]{36}$/u.test(deliveryId)) throw new Error('A delivery UUID is required')
   if (create) {
     const identity = await request('GET', '/user')
     const [owner, name] = repository.split('/')
@@ -68,12 +71,13 @@ export async function synchronizeDesktop({ repository, commit, tag, create = fal
     patterns_allowed: ['pnpm/action-setup@*', 'dtolnay/rust-toolchain@*'],
   })
   await request('POST', `/repos/${repository}/actions/workflows/product-desktop-package.yml/dispatches`, {
-    ref: 'main', inputs: { source_sha: commit },
+    ref: 'main', inputs: { source_sha: commit, ...(deliveryId === undefined ? {} : { delivery_id: deliveryId }) },
   })
 }
 
 if (process.argv[1] !== undefined && resolve(process.argv[1]) === import.meta.filename) {
-  const { values } = parseArgs({ options: { repository: { type: 'string' }, create: { type: 'boolean', default: false } } })
+  const { values } = parseArgs({ options: { repository: { type: 'string' }, create: { type: 'boolean', default: false },
+    'delivery-id': { type: 'string' } } })
   const repository = values.repository ?? process.env.GITHUB_DESKTOP_REPOSITORY
   if (!repository) throw new Error('Set --repository owner/name or GITHUB_DESKTOP_REPOSITORY')
   const root = resolve(import.meta.dirname, '../../..')
@@ -117,7 +121,8 @@ if (process.argv[1] !== undefined && resolve(process.argv[1]) === import.meta.fi
     finally { rmSync(temporary, { recursive: true, force: true }) }
   }
   try {
-    await synchronizeDesktop({ repository, commit, tag, create: values.create, request, push })
+    await synchronizeDesktop({ repository, commit, tag, create: values.create,
+      deliveryId: values['delivery-id'] ?? randomUUID(), request, push })
     console.log(`Synchronized ${commit}; packages: https://github.com/${repository}/actions/workflows/product-desktop-package.yml`)
   } catch (error) {
     console.error(error instanceof Error ? error.message : 'GitHub desktop synchronization failed')

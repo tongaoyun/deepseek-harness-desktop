@@ -44,6 +44,7 @@ jobs:
         run: |
           pnpm run verify:upstream
           node --test apps/product-desktop/tests/github-delivery.test.mjs
+          node --test apps/product-desktop/tests/desktop-release.test.mjs
           pnpm run build:lib:host
           pnpm run typecheck:contracts-ready
           pnpm exec vitest run \
