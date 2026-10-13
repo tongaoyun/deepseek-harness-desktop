@@ -63,6 +63,9 @@ export interface ProductBridgeOptions {
     session: ProductSession, signal?: AbortSignal) => Promise<unknown>
   /** Resolve device-owned MCP configuration in main before projecting a credential-free catalog. */
   readonly connectorRuntime?: (value: unknown, signal?: AbortSignal) => Promise<unknown>
+  /** Main-owned device metadata and employee-initiated feedback; no arbitrary transport is exposed. */
+  readonly support?: (method: string, payload: Readonly<Record<string, unknown>>, api: DeepSeekHarnessApiClient,
+    session: ProductSession, signal: AbortSignal) => Promise<unknown>
 }
 
 const SESSION_REFRESH_LEAD_SECONDS = 5 * 60
@@ -80,6 +83,7 @@ export class DeepSeekHarnessProductBridge {
   private readonly installedExpertKits?: ProductBridgeOptions['installedExpertKits']
   private readonly authoring?: ProductBridgeOptions['authoring']
   private readonly connectorRuntime?: ProductBridgeOptions['connectorRuntime']
+  private readonly support?: ProductBridgeOptions['support']
   private readonly catalog: ProductCatalogManager
   private readonly desktopVersion: string
   private readonly knowledgeUpload: KnowledgeUpload | undefined
@@ -101,6 +105,7 @@ export class DeepSeekHarnessProductBridge {
     this.installedExpertKits = options.installedExpertKits
     this.authoring = options.authoring
     this.connectorRuntime = options.connectorRuntime
+    this.support = options.support
     if (options.serverUrl !== undefined && options.serverUrl !== '') {
       this.api = new DeepSeekHarnessApiClient({ baseUrl: options.serverUrl, getSessionToken: () => this.sessionToken,
         getEmployeeId: () => this.session.employeeId,
@@ -293,6 +298,12 @@ export class DeepSeekHarnessProductBridge {
     signal?: AbortSignal,
   ): Promise<unknown> {
     if (this.api === undefined) throw new Error('deepseek-harness product: server URL is not configured')
+    if (method.startsWith('support.')) {
+      const lifetime = AbortSignal.any([this.identityLifecycle.signal, ...signal ? [signal] : []])
+      if (!this.session.authenticated || !this.session.employeeId) throw new ProductError('EMPLOYEE_UNAUTHORIZED', 'Employee sign-in is required')
+      if (!this.support) throw new ProductError('FEATURE_UNAVAILABLE', 'Desktop support is unavailable')
+      return this.support(method, input, this.api, this.session, lifetime)
+    }
     if (method.startsWith('extensions.')) {
       signal = AbortSignal.any([this.identityLifecycle.signal, ...signal ? [signal] : []])
       if (!this.session.authenticated || !this.session.employeeId) throw new Error('Authenticated employee is required')

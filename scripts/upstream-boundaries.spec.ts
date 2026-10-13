@@ -7,6 +7,7 @@ import { assertPublicImport, completeDiff, importSpecifiers, inventory, productO
 
 it('isolates the registered product knowledge guide without exempting other upgrade documents', () => {
   expect(productOwned('docs/upgrade-guide/v0.2.1-alpha.2/product-knowledge-library/guide.md')).toBe(true)
+  expect(productOwned('docs/upgrade-guide/v0.2.1-alpha.2/product-support/guide.md')).toBe(true)
   expect(productOwned('docs/upgrade-guide/v0.2.1-alpha.2/official-profile/guide.md')).toBe(false)
 })
 

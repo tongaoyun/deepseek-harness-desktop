@@ -14,6 +14,7 @@ Sign in with DingTalk before opening the enterprise workspace. Employee tokens u
 ## Table of Contents
 
 - [Assembly](#assembly)
+- [Device and feedback](#device-and-feedback)
 - [Model Experience](#model-experience)
 - [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
 - [Dev Note](#dev-note)
@@ -56,6 +57,12 @@ The packaged `product.json` accepts a `knowledgeFiles` object. Defaults are `pre
 Startup writes a credential-free model overlay from the server bootstrap's exact model IDs. DeepSeek models use the official DeepSeek adapter; other models use the official pi-ai adapter's OpenAI-compatible gateway route. The product profile omits the public account route. A valid saved default is retained; an unavailable default is replaced with the server's first model before task creation. Existing Session model selections remain explicit and can be changed through the official model selector.
 
 Local MCP configuration stores `timeoutSeconds` with encrypted device settings, from 1 through 600, defaulting to 60. Connection, complete paginated discovery, and tool calls honor this deadline and caller cancellation. Host receives the credential-free timeout and applies it through the official MCP client. Creating a connector allows two operation deadlines plus server-save time in the generic desktop transport; Host catalog requests allow the maximum connection and discovery deadlines. Configured OAuth retains the default timeout.
+
+## Device and feedback
+
+`DesktopSupport` reports main-owned app version, platform, architecture, display scales and native method availability after employee authentication. A stable UUIDv8 derived from the native installation identity identifies the device. Packaged `product.json` requires `support.heartbeatIntervalMs` (60,000–3,600,000) and `support.reportIntervalMs` (at least the heartbeat interval, at most 86,400,000). Presence is reported between full capability reports; metadata changes force a full report. Failures retain a visible degraded reporting state and retry on focus or the next interval without blocking conversations. Identity changes cancel requests and reset employee state; shutdown cancels and waits for in-flight operations before stopping the sidecar.
+
+The product settings launcher exposes employee-initiated feedback with text, category and up to four explicit PNG/JPEG/WebP screenshots of at most 5 MiB each. Main validates payloads, adds the true version and device ID, and submits with an employee-scoped UUID idempotency key. Renderer receives only the receipt ID. Failed or cancelled requests retain the draft and key for retry; changing content creates a new key. Device reporting and feedback never collect conversation history, local paths, employee tokens, or runtime bootstrap secrets. The product has no desktop execution-audit API.
 
 <a id="model-experience"></a>
 ## Model Experience

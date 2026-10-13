@@ -1,7 +1,17 @@
 import { describe, expect, it } from 'vitest'
-import { resolveDeepSeekHarnessProductServerUrl } from '../src/deepseek-harness-product-config.ts'
+import { resolveDeepSeekHarnessProductServerUrl, resolveDesktopSupportPolicy } from '../src/deepseek-harness-product-config.ts'
 
 describe('DeepSeekHarness product configuration', () => {
+  it('requires bounded main-owned support intervals in the product resource', () => {
+    const options = { packaged: true, resourcesPath: '/installed/resources', appPath: '/installed/app.asar' }
+    const support = { heartbeatIntervalMs: 300000, reportIntervalMs: 86400000 }
+    expect(resolveDesktopSupportPolicy({ ...options, readFile: () => JSON.stringify({ version: 1, support }) })).toEqual(support)
+    for (const invalid of [undefined, { ...support, heartbeatIntervalMs: 59999 },
+      { ...support, reportIntervalMs: 200000 }, { ...support, reportIntervalMs: 86400001 }]) {
+      expect(() => resolveDesktopSupportPolicy({ ...options, readFile: () => JSON.stringify({ version: 1, support: invalid }) }))
+        .toThrow('Invalid desktop support policy')
+    }
+  })
   it('reads the packaged resource and ignores process overrides', () => {
     const reads: string[] = []
     const result = resolveDeepSeekHarnessProductServerUrl({

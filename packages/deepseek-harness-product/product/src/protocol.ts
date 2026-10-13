@@ -43,6 +43,9 @@ export type KnowledgeFileMethod =
 
 /** Allowlisted product and native sidecar operations. */
 export type ProductMethod =
+  | 'support.device.read'
+  | 'support.device.report'
+  | 'support.feedback.submit'
   | 'extensions.authoring.begin'
   | 'extensions.authoring.read'
   | 'extensions.authoring.update'
@@ -279,6 +282,7 @@ export interface ProductEvent {
  */
 export function isProductMethod(value: unknown): value is ProductMethod {
   return typeof value === 'string' && [
+    'support.device.read', 'support.device.report', 'support.feedback.submit',
     'tasks.capabilities.read', 'tasks.capabilities.prepare',
     'extensions.authoring.begin', 'extensions.authoring.read', 'extensions.authoring.update', 'extensions.authoring.save', 'extensions.authoring.discard',
     'extensions.import.inspect', 'extensions.import.release', 'extensions.save', 'extensions.submit', 'extensions.delete', 'extensions.bundledSkill.read',

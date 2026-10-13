@@ -2,12 +2,13 @@
 import { readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { app, dialog, safeStorage, shell, type BrowserWindow } from 'electron'
+import { app, dialog, safeStorage, screen, shell, type BrowserWindow } from 'electron'
 import { DeepSeekHarnessProductBridge, type ProductBridgeOptions } from '@deepseek-harness/product/bridge'
 import { ensureDingTalkSession, DingTalkAuthorizationTimeoutError } from '@deepseek-harness/product/dingtalk-auth'
 import { isProductRuntimeMethod, type ProductSession } from '@deepseek-harness/product/protocol'
 import { DeepSeekHarnessNativeProcess } from './deepseek-harness-native-process.ts'
-import { resolveDeepSeekHarnessKnowledgeFilePolicy, resolveDeepSeekHarnessProductServerUrl } from './deepseek-harness-product-config.ts'
+import { resolveDeepSeekHarnessKnowledgeFilePolicy, resolveDeepSeekHarnessProductServerUrl, resolveDesktopSupportPolicy } from './deepseek-harness-product-config.ts'
+import { DesktopSupport } from './desktop-support.ts'
 import { ConnectorProxy } from './connector-proxy.ts'
 import { inferenceProfile } from './inference-profile.ts'
 import { ExtensionAuthoring } from './extension-authoring.ts'
@@ -116,6 +117,14 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
       ?? (app.isPackaged ? join(process.resourcesPath, 'native', process.platform === 'win32' ? 'deepseek-harness-native.exe' : 'deepseek-harness-native') : undefined),
     join(app.getPath('userData'), 'native'),
   )
+  const supportPolicy = resolveDesktopSupportPolicy({ packaged: app.isPackaged,
+    resourcesPath: process.resourcesPath, appPath: app.getAppPath() })
+  const support = new DesktopSupport({ policy: supportPolicy,
+    native: (method, input, signal) => nativeSidecar.invoke(method, input, signal),
+    metadata: () => ({ desktopVersion: app.getVersion(), platform: process.platform, architecture: process.arch,
+      displayScalePercents: screen.getAllDisplays().map(display => Math.round(display.scaleFactor * 100)),
+      encryptedStorage: safeStorage.isEncryptionAvailable() }),
+  })
   const personalConnectors = new PersonalConnectors(join(app.getPath('userData'), 'personal-connectors'), safeStorage,
     () => productBridge.getSession().employeeId, async (id, signal) => {
       const value = await productBridge.invokeRuntime('connectors.list', {}, signal)
@@ -140,6 +149,7 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
     saveConnector: (draft, api, employee, signal) => personalConnectors.save(draft, api, employee, signal),
   })
   const productBridgeOptions: ProductBridgeOptions = {
+    support: (method, input, api, session, signal) => support.invoke(method, input, api, session, signal),
     knowledgeFiles: (method, input, api, session, signal) => knowledgeFiles.invoke(method, input, api, session, signal),
     knowledgeUpload: async (baseId, operationId, pdfParseMode, folderId, api, signal) => {
       signal?.throwIfAborted()
@@ -218,6 +228,7 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
   }
 
   let closed = false
+  let supportTimer: ReturnType<typeof setInterval> | undefined
   const operations = new Set<Promise<unknown>>()
   const track = <T>(signal: AbortSignal | undefined, operation: (signal: AbortSignal) => Promise<T>): Promise<T> => {
     const combined = AbortSignal.any([lifecycle.signal, ...signal === undefined ? [] : [signal]])
@@ -225,6 +236,11 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
     operations.add(pending)
     void pending.finally(() => operations.delete(pending)).catch(() => undefined)
     return pending
+  }
+  const reportDevice = (): void => {
+    void track(undefined, signal => productBridge.invoke('support.device.report', {}, signal)).catch(() => {
+      // DesktopSupport retains a visible degraded status; reporting must not block conversations.
+    })
   }
   return {
     namespace: 'product',
@@ -236,6 +252,11 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
       if (!await authenticateDeepSeekHarness()) return undefined
       const bootstrap = await productBridge.loadRuntimeBootstrap()
       if (closed) return undefined
+      reportDevice()
+      if (supportTimer === undefined) {
+        supportTimer = setInterval(reportDevice, supportPolicy.heartbeatIntervalMs)
+        supportTimer.unref()
+      }
       const modelProfile = join(app.getPath('userData'), 'product-inference.patch.json')
       writeFileSync(modelProfile, JSON.stringify(inferenceProfile(bootstrap,
         fileURLToPath(import.meta.resolve('@deepseek-harness/product-runtime/inference-default')))), { mode: 0o600 })
@@ -275,11 +296,13 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
       })
     },
     subscribe: (listener: (event: unknown) => void) => productBridge.subscribe(listener),
-    focus: () => track(undefined, signal => productBridge.refreshCatalog(signal)),
+    focus: () => track(undefined, async (signal) => { reportDevice(); await productBridge.refreshCatalog(signal) }),
     async close(): Promise<void> {
       closed = true
+      if (supportTimer !== undefined) clearInterval(supportTimer)
       lifecycle.abort(new Error('Product extension is closed'))
       await productBridge.dispose()
+      await support.close()
       await knowledgeFiles.close()
       await connectorProxy.close()
       await personalConnectors.close()

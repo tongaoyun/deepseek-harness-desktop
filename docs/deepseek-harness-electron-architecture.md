@@ -9,6 +9,7 @@ The [product subsystem](subsystems/deepseek-harness-product.md) defines the inde
 - DingTalk enterprise sign-in and employee session;
 - expert-kit, skill, and connector catalogs;
 - WeKnora knowledge base;
+- device reporting status and employee-initiated feedback;
 - System schedules;
 - artifacts, business references, and product labels.
 
@@ -19,6 +20,8 @@ The Host requests only catalog, artifact, connector, knowledge, and desktop-vers
 Product desktop startup refreshes the stored DingTalk session or completes DingTalk OAuth in the system browser, reads the authenticated bootstrap, and supplies inference configuration and Loader overlays to the official Host. The desktop product package owns login, encrypted storage, relay and sidecar cleanup, and packaging resources. The official profile boots without these extensions. Host owns all model requests and Session execution.
 
 Native product methods use the `deepseek-harness.native.v1` line protocol in `native/deepseek-harness`. The protocol provides bounded filesystem, attachment, SQLite, credential, DingTalk state, device identity, image preview, and file undo methods. Paths stay within Electron's assigned data directory and file payloads use hex encoding with an 8 MiB limit. The sidecar does not host Harness execution and has no legacy Tauri `invoke` protocol.
+
+The [product desktop package](../packages/deepseek-harness-product/desktop/README.md#device-and-feedback) owns lifecycle-bound device reports and explicit employee feedback. Execution audit is not reported to the server; official Session history remains local.
 
 The [product delivery reference](../apps/product-desktop/README.md) owns private GitHub synchronization, hosted Windows/macOS acceptance builds, and verified development releases. Internal Gitea remains the source of truth. GitHub runs only the product packaging workflow; the internal delivery runner publishes complete verified installers to public GitHub downloads and internal Gitea without sharing internal release credentials with hosted runners.
 

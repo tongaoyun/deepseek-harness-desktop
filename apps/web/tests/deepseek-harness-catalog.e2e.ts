@@ -1422,6 +1422,8 @@ for (const { mode, installed } of desktopCarriers) {
       }
       let knowledgeUnavailable = false
       const uploadedFiles: { mode: string; filename: string; folderId?: string }[] = []
+      const deviceReports: Record<string, unknown>[] = []
+      const feedbackBodies: string[] = []
       const folderRows: { id: string; name: string; parentId: string | null }[] = [{ id: 'folder-policies', name: 'Policies', parentId: null }]
       let largePreview = false
       const server = createServer((request, response) => {
@@ -1434,6 +1436,21 @@ for (const { mode, installed } of desktopCarriers) {
         } else if (path === '/api/v1/bootstrap') {
           response.end(JSON.stringify({ success: true, data: { modelApiKey: 'fixture-model-key',
             endpoints: { litellm: model.baseURL + '/v1' }, models: ['deepseek-v4-flash'] } }))
+        } else if (path === '/api/v1/device-capabilities' || path === '/api/v1/device-capabilities/presence') {
+          void fixtureRequestBody(request).then((body) => {
+            deviceReports.push(body)
+            if (path.endsWith('/presence')) { response.statusCode = 204; response.end() }
+            else response.end(JSON.stringify({ success: true, data: { createdAt: new Date().toISOString() } }))
+          }).catch(() => { response.statusCode = 400; response.end() })
+        } else if (path === '/api/v1/feedback' && request.method === 'POST') {
+          void (async () => {
+            const chunks: Buffer[] = []
+            for await (const chunk of request) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+            feedbackBodies.push(Buffer.concat(chunks).toString('utf8'))
+            expect(request.headers['idempotency-key']).toMatch(/^[0-9a-f-]{36}$/u)
+            expect(request.headers.authorization).toBe(`Bearer ${secret}`)
+            response.end(JSON.stringify({ success: true, data: { id: 'feedback-fixture' } }))
+          })().catch(() => { response.statusCode = 400; response.end() })
         } else if (path === '/api/v1/knowledge-file-limits') {
           response.end(JSON.stringify({ success: true, data: { previewMaxBytes: 50 * 1024 * 1024,
             downloadMaxBytes: 250 * 1024 * 1024, uploadMaxBytes: 50 * 1024 * 1024 } }))
@@ -1715,6 +1732,27 @@ for (const { mode, installed } of desktopCarriers) {
         expect(await page.getByRole('button', { name: /^(Expert kits|专家套件)$/, exact: true }).count()).toBe(0)
         await expect(invoke('auth.getSession')).rejects.toThrow()
       } else {
+        await expect.poll(() => deviceReports.length).toBeGreaterThan(0)
+        expect(JSON.stringify(deviceReports)).not.toContain(secret)
+        expect(deviceReports[0]?.deviceId).toMatch(/^[0-9a-f-]{36}$/u)
+        await page.getByRole('button', { name: /^(More menu|更多菜单)$/, exact: true }).click()
+        await page.getByRole('menuitem', { name: /^(Feedback|反馈)$/, exact: true }).click()
+        const feedbackDialog = page.getByRole('dialog', { name: /^(Feedback|反馈)$/, exact: true })
+        await feedbackDialog.getByLabel(/^(Message|反馈内容)$/, { exact: true }).fill('Desktop support acceptance')
+        for (const width of [1440, 390]) {
+          await page.setViewportSize({ width, height: 900 })
+          const box = await feedbackDialog.boundingBox()
+          expect(box?.x).toBeGreaterThanOrEqual(0)
+          expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual(width)
+          await page.screenshot({ path: join(screenshots, `electron-${carrier}-product-feedback-${width}.png`), animations: 'disabled' })
+        }
+        await page.setViewportSize({ width: 1440, height: 900 })
+        await feedbackDialog.getByRole('button', { name: /^(Submit feedback|提交反馈)$/, exact: true }).click()
+        await feedbackDialog.getByText('feedback-fixture', { exact: true }).waitFor()
+        expect(feedbackBodies).toHaveLength(1)
+        expect(feedbackBodies[0]).toContain('Desktop support acceptance')
+        expect(feedbackBodies[0]).not.toContain(secret)
+        await feedbackDialog.getByRole('button', { name: /^(Close|关闭)$/, exact: true }).last().click()
         await composer.fill('Keep this task draft')
         const currentSession = async () => page.locator('[data-conversation-session]').last().getAttribute('data-conversation-session')
         const originalSession = await currentSession()

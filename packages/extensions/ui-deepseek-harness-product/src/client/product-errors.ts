@@ -3,6 +3,8 @@ import { productFailure } from '@deepseek-harness/product/errors'
 import type { DeepSeekHarnessProductKey } from '../locales.ts'
 
 const messageKeys: Readonly<Record<string, DeepSeekHarnessProductKey>> = {
+  FEEDBACK_INVALID: 'feedbackSendFailed',
+  FEEDBACK_IMAGES_INVALID: 'feedbackImagesInvalid',
   EXTENSION_DRAFT_CHANGED: 'draftChanged',
   EXTENSION_VERSION_CONFLICT: 'resourceConflict',
   EXTENSION_REQUEST_TIMEOUT: 'extensionRequestTimeout',

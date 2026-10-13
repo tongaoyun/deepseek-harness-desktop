@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { resolveKnowledgeFilePolicy, type KnowledgeFilePolicy } from './knowledge-file-policy.ts'
+import type { DesktopSupportPolicy } from './desktop-support.ts'
 
 /** Inputs used to locate and validate the packaged product configuration. */
 export interface DeepSeekHarnessProductConfigOptions {
@@ -76,4 +77,23 @@ export function resolveDeepSeekHarnessKnowledgeFilePolicy(options: DeepSeekHarne
     throw new Error(`deepseek-harness product: ${path} must use schema version 1`)
   }
   return resolveKnowledgeFilePolicy('knowledgeFiles' in document ? document.knowledgeFiles : undefined)
+}
+
+/** Read deployment-owned heartbeat intervals from the packaged product configuration.
+ * @param options - Product resource location and optional test reader.
+ * @returns Validated presence and full-report intervals.
+ */
+export function resolveDesktopSupportPolicy(options: DeepSeekHarnessProductConfigOptions): DesktopSupportPolicy {
+  const path = options.packaged ? join(options.resourcesPath, 'deepseek-harness', 'product.json')
+    : fileURLToPath(new URL('../resources/product.json', import.meta.url))
+  const document: unknown = JSON.parse((options.readFile ?? ((file: string) => readFileSync(file, 'utf8')))(path))
+  if (typeof document !== 'object' || document === null || !('support' in document)
+    || typeof document.support !== 'object' || document.support === null
+    || !('heartbeatIntervalMs' in document.support) || typeof document.support.heartbeatIntervalMs !== 'number'
+    || !Number.isSafeInteger(document.support.heartbeatIntervalMs) || document.support.heartbeatIntervalMs < 60_000
+    || document.support.heartbeatIntervalMs > 3_600_000
+    || !('reportIntervalMs' in document.support) || typeof document.support.reportIntervalMs !== 'number'
+    || !Number.isSafeInteger(document.support.reportIntervalMs) || document.support.reportIntervalMs < document.support.heartbeatIntervalMs
+    || document.support.reportIntervalMs > 86_400_000) throw new Error('Invalid desktop support policy')
+  return { heartbeatIntervalMs: document.support.heartbeatIntervalMs, reportIntervalMs: document.support.reportIntervalMs }
 }

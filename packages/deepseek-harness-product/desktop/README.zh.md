@@ -14,6 +14,7 @@ description: "认证产品桌面用户，管理凭据、原生操作与产品资
 ## 目录
 
 - [组合](#assembly)
+- [设备与反馈](#device-and-feedback)
 - [模型体验](#model-experience)
 - [已知限制与延期工作](#known-limitations-and-deferred-work)
 - [开发备注](#dev-note)
@@ -56,6 +57,13 @@ description: "认证产品桌面用户，管理凭据、原生操作与产品资
 启动时按服务端 Bootstrap 的精确模型 ID 生成不含凭据的模型 overlay。DeepSeek 模型使用官方 DeepSeek 适配器，其余模型使用官方 pi-ai 适配器的 OpenAI 兼容网关路由。产品 profile 不加载公共账号路由。有效的已保存默认模型会保留，不可用的默认模型在创建任务前替换为服务端第一个模型。已有 Session 的模型选择仍然显式保存，可通过官方模型选择器修改。
 
 本机 MCP 配置将 `timeoutSeconds` 保存在加密设备配置中，范围 1–600 秒，默认 60 秒。连接、完整的分页工具发现和工具调用遵循该期限及调用方取消。Host 接收无凭据超时配置并交给官方 MCP 客户端。创建连接器的通用桌面传输期限包含两次操作期限和服务端保存时间，Host 目录查询允许最大连接及发现期限。已配置 OAuth 保留默认超时。
+
+<a id="device-and-feedback"></a>
+## 设备与反馈
+
+`DesktopSupport` 在员工认证后上报主进程提供的应用版本、平台、架构、显示缩放及原生方法可用性。设备标识为原生安装标识派生的稳定 UUIDv8。打包的 `product.json` 必须提供 `support.heartbeatIntervalMs`（60,000–3,600,000）及 `support.reportIntervalMs`（不小于心跳间隔，不超过 86,400,000）。完整能力上报之间发送在线心跳，元信息变更触发完整上报。失败保留可见的异常状态，在窗口聚焦或下一周期重试，不阻塞对话。账号切换取消请求并重置员工状态；关闭时取消并等待在途操作，再停止 sidecar。
+
+产品设置入口提供员工主动反馈，包含正文、分类及最多四张主动选择的 PNG/JPEG/WebP 截图，每张不超过 5 MiB。主进程校验内容、补充真实版本和设备 ID，并使用员工范围内的 UUID 幂等键提交；渲染进程仅收到回执 ID。失败或取消保留草稿及重试键，修改内容生成新键。设备上报和反馈不收集对话历史、本地路径、员工令牌或运行 Bootstrap 密钥。产品不提供桌面执行审计 API。
 
 <a id="model-experience"></a>
 ## 模型体验

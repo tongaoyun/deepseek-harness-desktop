@@ -9,6 +9,7 @@ DeepSeek Harness桌面端以 DeepSeek Harness `dsh-v0.2.1-alpha.2` 为唯一桌�
 - 钉钉企业登录和员工会话；
 - 专家套件、技能和连接器目录；
 - WeKnora 知识库；
+- 设备上报状态及员工主动反馈；
 - 系统级定时任务；
 - 成果、业务引用和产品标签。
 
@@ -19,6 +20,8 @@ Host 只能通过私有 Electron IPC 请求目录、制品、连接器、知识�
 产品桌面启动时续期已保存的钉钉会话或在系统浏览器完成钉钉 OAuth，读取已认证的 Bootstrap，再向官方 Host 提供推理配置和 Loader overlay。产品桌面包负责登录、加密存储、relay 和 sidecar 清理以及打包资源。官方 profile 可不加载这些扩展启动。模型请求和 Session 执行由 Host 负责。
 
 原生产品方法通过 `native/deepseek-harness` 的 `deepseek-harness.native.v1` 行协议接入。当前协议提供受限的文件、附件、SQLite、凭据、钉钉状态、设备标识、图片预览和文件撤销方法；路径限制在 Electron 分配的数据目录内，文件载荷使用 hex 编码并限制为 8 MiB。该 sidecar 不承载 Harness 执行逻辑，不保留旧 Tauri `invoke` 协议。
+
+[产品桌面包](../packages/deepseek-harness-product/desktop/README.zh.md#device-and-feedback)负责随生命周期管理的设备上报和员工主动反馈。执行审计不上传服务端，官方 Session 历史保留在本地。
 
 [产品交付参考](../apps/product-desktop/README.zh.md)说明 GitHub 私有仓库同步、托管 Windows/macOS 验收构建及已验证的开发预发布。内网 Gitea 仍是开发主仓库。GitHub 只运行产品打包工作流；内网交付 runner 向公开 GitHub 下载仓库和内网 Gitea 发布完整、已验证的安装包，不向托管 runner 提供内网发布凭据。
 

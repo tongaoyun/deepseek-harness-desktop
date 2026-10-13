@@ -11,8 +11,10 @@ vi.mock('electron', () => ({
   app: { isPackaged: false, getPath: () => '/unused-fixture', getAppPath: () => '/unused-fixture', getVersion: () => '0.1.0' },
   dialog: { showMessageBox: fixture.dialog }, shell: { openExternal: vi.fn(async () => {}) },
   safeStorage: { isEncryptionAvailable: () => false },
+  screen: { getAllDisplays: () => [{ scaleFactor: 2 }] },
 }))
 vi.mock('../src/deepseek-harness-product-config.ts', () => ({ resolveDeepSeekHarnessProductServerUrl: () => 'https://example.test',
+  resolveDesktopSupportPolicy: () => ({ heartbeatIntervalMs: 300000, reportIntervalMs: 86400000 }),
   resolveDeepSeekHarnessKnowledgeFilePolicy: () => ({ previewMaxBytes: 1024, spreadsheetMaxBytes: 1024, officeInputMaxBytes: 1024,
     officeOutputMaxBytes: 1024, downloadMaxBytes: 1024, uploadMaxBytes: 1024, transferLifetimeMs: 60_000,
     fileRequestTimeoutMs: 60_000, maxTransfers: 8 }) }))
@@ -27,7 +29,8 @@ vi.mock('@deepseek-harness/product/dingtalk-auth', async original => ({
 }))
 vi.mock('@deepseek-harness/product/bridge', () => ({ DeepSeekHarnessProductBridge: class {
   constructor(options: ProductBridgeOptions) { fixture.bridgeOptions(options) }
-  dispose = fixture.dispose; invokeRuntime = async () => []; subscribe = () => () => {}; refreshCatalog = async () => {}
+  dispose = fixture.dispose; invoke = async () => ({}); invokeRuntime = async () => []
+  subscribe = () => () => {}; refreshCatalog = async () => {}
   loadRuntimeBootstrap = async () => ({ modelApiKey: 'model-key', endpoints: { litellm: 'https://example.test/v1' }, models: ['deepseek-v4-flash', 'gpt-example'] })
 } }))
 beforeEach(() => { vi.clearAllMocks(); fixture.authenticate.mockResolvedValue({ authenticated: true }) })
