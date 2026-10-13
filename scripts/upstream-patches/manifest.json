@@ -2,6 +2,43 @@
   "baseline": "d743267388641bc76f17c45ce8b4c231aed1d32c",
   "patches": [
     {
+      "id": "electron-profile-module-identity",
+      "purpose": "Electron profile resolution canonicalizes file-module URLs and lookup directories with archive-aware native realpath. Windows short paths and directory aliases share initial startup module instances; query strings and fragments remain distinct for HMR. Plain Node and packaged executable resolution retain their existing behavior. The real archived Electron regression exercises the built resolver and fails on duplicate identity when canonicalization is removed.",
+      "tests": [
+        "packages/boot/app-boot/tests/profile-resolution.spec.ts",
+        "apps/desktop/tests/host-process-archive.built.e2e.ts",
+        "apps/web/tests/deepseek-harness-catalog.e2e.ts"
+      ],
+      "files": [
+        {
+          "path": "packages/boot/app-boot/src/profile-resolution/resolver.ts",
+          "before": "2e6790adf769de81a2f8f7195f9e14e0a2d08731499c77ff34a41121e05b4ac3",
+          "after": "352b853f17aaf9c1e499e01004f2dd1c7bc47061a9f304d9bd85808f85b6fef9"
+        },
+        {
+          "path": "packages/boot/app-boot/tests/profile-resolution.spec.ts",
+          "before": "877e11a6ace29a6b849d9edbe16a375a64bd364bdeb8962e97af75f817edd594",
+          "after": "02ec5bb5b022a5b20155247049601ecee8045403ff31c71bfd6cbd234767eaae"
+        },
+        {
+          "path": "packages/boot/app-boot/README.md",
+          "before": "627815301ce1062dfd67c808c214dc6c20f3edff9c6171e78fe21d73a39eb239",
+          "after": "5b19a243032277ef685c93dbaf59bebdcdd8ae2ba790b52dc40c4e0533852aa8"
+        },
+        {
+          "path": "packages/boot/app-boot/README.zh.md",
+          "before": "6a365cee70d8cd9dc95952a41923ca049b456007f58b88de4960be3d3c2062bf",
+          "after": "d40addb90c66897e0a48f32250e675424008555db806bbb912d0b457070b6278"
+        },
+        {
+          "path": "packages/boot/app-boot/README.i18n.yaml",
+          "before": "375bdf74f4b5d2c71536bca34ec2abc0a585a95fd4e96df038aa794d09795af1",
+          "after": "e27b2b54539a8358bb4ddac0f8d69ffdad558c05bb022712d8330f3ac32431a0"
+        }
+      ],
+      "diff": "electron-profile-module-identity.patch"
+    },
+    {
       "id": "rescope-runtime-identifiers",
       "purpose": "Preserve shipped Cordis preset IDs and Inspector event names in the generic vendor-rescope check. Only named files and the cordis token are exempted; other vendor package names remain checked. Regression fixtures cover preserved identifiers and continued package-name rewrites.",
       "tests": [
@@ -106,7 +143,7 @@
         {
           "path": "apps/desktop/tests/host-process-archive.built.e2e.ts",
           "before": null,
-          "after": "578dbc098d8cb61a0382260bd0fe7af6f4523231304b3df11fc2ef4a59ba8f9d"
+          "after": "02a49363cfb1a337a77ac545c876d4cfd76133c80bf3e314b3108f2d0bf2ca34"
         },
         {
           "path": "apps/desktop/tests/host-process.spec.ts",

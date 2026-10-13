@@ -175,6 +175,32 @@ async function resolutionOf(f: ReturnType<typeof fixture>): Promise<RuntimeResol
   })
 }
 
+it('canonicalizes Electron file modules while retaining revisions and builtin resolution', async () => {
+  const f = fixture()
+  const parent = pathToFileURL(join(f.profile.dir, 'entry.mjs')).href
+  const revision = pathToFileURL(join(f.installed, 'index.js'))
+  revision.search = '?revision=1'
+  revision.hash = '#fixture'
+  const original = Object.getOwnPropertyDescriptor(process.versions, 'electron')
+  Object.defineProperty(process.versions, 'electron', { configurable: true, value: 'fixture' })
+  let registration: RuntimeInterception | undefined
+  try {
+    registration = installRuntimeInterception(await resolutionOf(f))
+    expect(resolveFrom('@deepseek-ai/dsh-core', parent))
+      .toBe(pathToFileURL(realpathSync.native(join(f.installed, 'index.js'))).href)
+    expect(resolveFrom('node:fs', parent)).toBe('node:fs')
+    expect(resolveFrom(revision.href, parent)).toBe(revision.href)
+    const current = await importFrom('@deepseek-ai/dsh-core', parent)
+    const versioned = await importFrom(revision.href, parent)
+    expect(versioned).not.toBe(current)
+    expect(await importFrom(revision.href, parent)).toBe(versioned)
+  } finally {
+    registration?.dispose()
+    if (original === undefined) Reflect.deleteProperty(process.versions, 'electron')
+    else Object.defineProperty(process.versions, 'electron', original)
+  }
+})
+
 /**
  * Ancestor node_modules layers of a profile importer, innermost first:
  * private (plugin-private), profile (profile node_modules), shared
