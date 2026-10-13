@@ -75,6 +75,8 @@ Conversation `knowledge_search` and `knowledge_read` rows expose recorded source
 
 Skill, Kit and Connector cards and details place owner-only resource operations in **More actions**: **Modify**, **Submit for shared review**, then separated red **Delete**. Review status replaces repeat submission. Sharing confirmation explains company availability after approval and continued personal use during review. Deletion confirmation names the resource and preserves conversation history; resources with a published version require unpublishing first. Skill and Connector management stays in the fixed dialog footer while content scrolls. Failed writes retain the dialog and resource for retry; successful deletion removes the resource without changing the current task or draft.
 
+The feedback dialog accepts selected, pasted or dropped PNG, JPEG and WebP screenshots, with up to four images of 5 MB each. Thumbnails show filenames and individual removal controls. A failed or cancelled submission retains the text, files and operation ID for retry; changing accounts clears the draft. Closing the dialog releases preview URLs while retaining unsent files. The main process supplies employee and device metadata; feedback contains no conversation history.
+
 <a id="model-experience"></a>
 ## Model Experience
 

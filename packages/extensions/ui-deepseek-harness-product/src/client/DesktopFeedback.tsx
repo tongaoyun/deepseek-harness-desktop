@@ -1,6 +1,6 @@
 /** Explicit employee feedback; failed or cancelled submissions retain the draft and operation ID. */
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { Button, IconCloseOutlineRegular, IconRefreshOutlineRegular, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconCloseOutlineRegular, IconPaperclipOutlineRegular, IconRefreshOutlineRegular, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
 import type { DeepSeekHarnessProductKey } from '../locales.ts'
 import css from '../DeepSeekHarnessProduct.module.css'
@@ -23,9 +23,17 @@ export function DesktopFeedback({ open, onClose, t }: {
   const [reportPending, setReportPending] = useState(false)
   const [deviceState, setDeviceState] = useState<'PENDING' | 'READY' | 'DEGRADED'>('PENDING')
   const operationId = useRef(randomUUID())
+  const imageInput = useRef<HTMLInputElement>(null)
   const identityKnown = useRef(false)
   const operation = useRef<{ live: boolean; request?: string; reportRequest?: string; employeeId?: string | undefined }>({ live: true })
   const resetReceipt = () => { operationId.current = randomUUID(); setReceipt(''); setError('') }
+  const addImages = (selected: File[]) => {
+    if (pending || !selected.length) return
+    if (images.length + selected.length > 4 || selected.some(file => file.size < 1 || file.size > 5 * 1024 * 1024 || !['image/png', 'image/jpeg', 'image/webp'].includes(file.type))) {
+      setError(t('feedbackImagesInvalid')); return
+    }
+    setImages(current => [...current, ...selected]); resetReceipt()
+  }
   useEffect(() => {
     operation.current.live = true
     return () => {
@@ -120,24 +128,51 @@ export function DesktopFeedback({ open, onClose, t }: {
       }
     }
   }
-  return <Modal open={open} onClose={close} title={t('feedbackTitle')} closeLabel={t('close')} className={css.feedbackModal as string}
+  return <Modal open={open} onClose={close} title={t('feedbackTitle')} closeLabel={t('close')} className={css.feedbackModal as string} contentClassName={css.feedbackContent as string}
     footer={<><Button variant="ghost" size="sm" onClick={close}>{t('close')}</Button><Button size="sm" disabled={pending || !message.trim()} onClick={() => { void submit() }}>{t(pending ? 'feedbackSending' : 'feedbackSend')}</Button></>}>
-    <div className={css.feedbackBody}>
+    <div className={css.feedbackBody} onPaste={(event) => {
+      const files = Array.from(event.clipboardData.files)
+      if (files.length) { event.preventDefault(); addImages(files) }
+    }} onDragOver={(event) => {
+      if (event.dataTransfer.types.includes('Files')) { event.preventDefault(); event.dataTransfer.dropEffect = pending ? 'none' : 'copy' }
+    }} onDrop={(event) => {
+      if (event.dataTransfer.types.includes('Files')) { event.preventDefault(); addImages(Array.from(event.dataTransfer.files)) }
+    }}>
       {error && <p role="alert" className={css.catalogError}>{error}</p>}
       {receipt && <p role="status" className={css.catalogStatus}>{t('feedbackSent')} <span>{receipt}</span></p>}
       <label>{t('feedbackCategory')}<select disabled={pending} value={category} onChange={(event) => { setCategory(event.target.value); resetReceipt() }}>
         <option value="BUG">{t('feedbackBug')}</option><option value="SUGGESTION">{t('feedbackSuggestion')}</option><option value="QUESTION">{t('feedbackQuestion')}</option><option value="OTHER">{t('feedbackOther')}</option>
       </select></label>
       <label>{t('feedbackMessage')}<textarea data-modal-autofocus disabled={pending} maxLength={2000} rows={7} value={message} onChange={(event) => { setMessage(event.target.value); resetReceipt() }} /></label>
-      <div className={css.feedbackImages}><label>{t('feedbackAddImages')}<input aria-label={t('feedbackAddImages')} type="file" accept="image/png,image/jpeg,image/webp" multiple disabled={pending} onChange={(event) => {
-        const selected = Array.from(event.target.files ?? []); event.target.value = ''
-        if (images.length + selected.length > 4 || selected.some(file => file.size < 1 || file.size > 5 * 1024 * 1024 || !['image/png', 'image/jpeg', 'image/webp'].includes(file.type))) {
-          setError(t('feedbackImagesInvalid')); return
-        }
-        setImages(current => [...current, ...selected]); resetReceipt()
-      }} /></label>
-      {images.map((file, index) => <div key={`${index}-${file.name}`}><span>{file.name}</span><button type="button" disabled={pending} title={t('remove')} aria-label={`${t('remove')} ${file.name}`} onClick={() => { setImages(current => current.filter((_, i) => i !== index)); resetReceipt() }}><IconCloseOutlineRegular size={14} /></button></div>)}</div>
+      <section className={css.feedbackImages} aria-label={t('feedbackImages')}>
+        <div className={css.feedbackImageHeader}><span>{t('feedbackImages')} <small>{images.length}/4</small></span><Button variant="ghost" size="sm" disabled={pending || images.length >= 4} onClick={() => imageInput.current?.click()}><IconPaperclipOutlineRegular size={14} />{t('feedbackAddImages')}</Button></div>
+        <input ref={imageInput} hidden aria-label={t('feedbackAddImages')} type="file" accept="image/png,image/jpeg,image/webp" multiple disabled={pending} onChange={(event) => {
+          const selected = Array.from(event.target.files ?? []); event.target.value = ''; addImages(selected)
+        }} />
+        {images.length > 0 && <div className={css.feedbackImageGrid}>{images.map((file, index) => <FeedbackImagePreview key={`${index}-${file.name}`} file={file} pending={pending} t={t} onRemove={() => { setImages(current => current.filter((_, i) => i !== index)); resetReceipt() }} />)}</div>}
+        <small className={css.feedbackImageLimit}>{t('feedbackImagesLimit')}</small>
+      </section>
       <div className={css.feedbackDevice}><span>{t(deviceState === 'READY' ? 'deviceReportReady' : deviceState === 'DEGRADED' ? 'deviceReportFailed' : 'deviceReportPending')}</span><Button variant="ghost" size="sm" disabled={reportPending} onClick={() => { void retryDevice() }}><IconRefreshOutlineRegular size={14} />{t('deviceReportRetry')}</Button></div>
     </div>
   </Modal>
+}
+
+function FeedbackImagePreview({ file, pending, t, onRemove }: {
+  file: File
+  pending: boolean
+  t: (key: DeepSeekHarnessProductKey) => string
+  onRemove: () => void
+}): ReactNode {
+  const [url, setUrl] = useState('')
+  const [failed, setFailed] = useState(false)
+  useEffect(() => {
+    const preview = URL.createObjectURL(file)
+    setUrl(preview); setFailed(false)
+    return () => { URL.revokeObjectURL(preview) }
+  }, [file])
+  return <div className={css.feedbackImageItem}>
+    <div className={css.feedbackImageFrame}>{failed ? <span>{t('feedbackImagePreviewFailed')}</span> : url && <img src={url} alt={file.name} onError={() => { setFailed(true) }} />}
+      <button type="button" disabled={pending} title={t('remove')} aria-label={`${t('remove')} ${file.name}`} onClick={onRemove}><IconCloseOutlineRegular size={14} /></button>
+    </div><small title={file.name}>{file.name}</small>
+  </div>
 }

@@ -1445,7 +1445,11 @@ for (const { mode, installed } of desktopCarriers) {
         } else if (path === '/api/v1/feedback' && request.method === 'POST') {
           void (async () => {
             const chunks: Buffer[] = []
-            for await (const chunk of request) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+            for await (const value of request) {
+              const chunk: unknown = value
+              if (!Buffer.isBuffer(chunk)) throw new Error('Expected feedback bytes')
+              chunks.push(Buffer.from(new Uint8Array(chunk)))
+            }
             feedbackBodies.push(Buffer.concat(chunks).toString('utf8'))
             expect(request.headers['idempotency-key']).toMatch(/^[0-9a-f-]{36}$/u)
             expect(request.headers.authorization).toBe(`Bearer ${secret}`)
@@ -1739,6 +1743,8 @@ for (const { mode, installed } of desktopCarriers) {
         await page.getByRole('menuitem', { name: /^(Feedback|反馈)$/, exact: true }).click()
         const feedbackDialog = page.getByRole('dialog', { name: /^(Feedback|反馈)$/, exact: true })
         await feedbackDialog.getByLabel(/^(Message|反馈内容)$/, { exact: true }).fill('Desktop support acceptance')
+        await feedbackDialog.locator('input[type="file"]').setInputFiles({ name: 'support-screenshot.png', mimeType: 'image/png', buffer: await page.screenshot() })
+        await feedbackDialog.getByRole('img', { name: 'support-screenshot.png', exact: true }).waitFor()
         for (const width of [1440, 390]) {
           await page.setViewportSize({ width, height: 900 })
           const box = await feedbackDialog.boundingBox()
@@ -1751,7 +1757,10 @@ for (const { mode, installed } of desktopCarriers) {
         await feedbackDialog.getByText('feedback-fixture', { exact: true }).waitFor()
         expect(feedbackBodies).toHaveLength(1)
         expect(feedbackBodies[0]).toContain('Desktop support acceptance')
+        expect(feedbackBodies[0]).toContain('support-screenshot.png')
+        expect(feedbackBodies[0]).toContain('image/png')
         expect(feedbackBodies[0]).not.toContain(secret)
+        expect(await feedbackDialog.getByRole('img').count()).toBe(0)
         await feedbackDialog.getByRole('button', { name: /^(Close|关闭)$/, exact: true }).last().click()
         await composer.fill('Keep this task draft')
         const currentSession = async () => page.locator('[data-conversation-session]').last().getAttribute('data-conversation-session')
