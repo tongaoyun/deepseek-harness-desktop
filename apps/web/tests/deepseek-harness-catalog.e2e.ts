@@ -1664,6 +1664,12 @@ for (const { mode, installed } of desktopCarriers) {
       }
       const diagnostics: string[] = []
       app.process().stderr?.on('data', (chunk: Buffer) => diagnostics.push(chunk.toString()))
+      const startupWarnings: string[] = []
+      app.context().on('console', (message) => {
+        if (message.type() !== 'warning' && message.type() !== 'error') return
+        startupWarnings.push(message.text().replaceAll(secret, '<EMPLOYEE_TOKEN>')
+          .replaceAll('fixture-model-key', '<MODEL_KEY>'))
+      })
       onTestFinished(({ task }) => {
         if (task.result?.state === 'fail') console.error('Desktop process diagnostics:', diagnostics.join(''))
       })
@@ -1673,7 +1679,7 @@ for (const { mode, installed } of desktopCarriers) {
         if (task.result?.state !== 'fail') return
         await mkdir(screenshots, { recursive: true })
         await page.screenshot({ path: join(screenshots, `electron-${carrier}-${mode}-failure.png`), timeout: 5000 })
-        console.error('Desktop workflow failure:', await page.locator('body').innerText(), tripwire)
+        console.error('Desktop workflow failure:', await page.locator('body').innerText(), tripwire, startupWarnings)
       })
       await page.waitForURL('dsh-app://app/', { timeout: 60_000 })
       await page.setViewportSize({ width: 1440, height: 900 })
