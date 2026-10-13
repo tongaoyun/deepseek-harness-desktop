@@ -43,6 +43,8 @@ describe('DeepSeekHarness Electron workflows', () => {
       'packages/deepseek-harness-product/desktop/tests/extension-authoring.spec.ts',
       'packages/deepseek-harness-product/desktop/tests/extension-archives.spec.ts',
       'packages/deepseek-harness-product/desktop/tests/authoring-sessions.spec.ts',
+      'packages/deepseek-harness-product/desktop/tests/desktop-support.spec.ts',
+      'packages/extensions/ui-deepseek-harness-product/tests/DesktopFeedback.client.spec.tsx',
       'packages/deepseek-harness-product/runtime/tests/conversation-authoring-loader.spec.ts',
       'packages/deepseek-harness-product/runtime/tests/kit-skills-loader.spec.ts',
     ]) expect(tests).toContain(path)
