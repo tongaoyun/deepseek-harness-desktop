@@ -1,10 +1,12 @@
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DesktopHostFatalError, DesktopHostProcess, DesktopHostUncleanExitError, INDEX_INJECTIONS_DEADLINE_MS, QUIT_INSPECTION_DEADLINE_MS } from '../src/host-process.ts'
 
 const roots: string[] = []
+const aliases: string[] = []
 const hosts: DesktopHostProcess[] = []
 
 const HTTP_HOST = `
@@ -78,6 +80,7 @@ function hostProcess(
 
 afterEach(async () => {
   await Promise.all(hosts.splice(0).map(host => host.stop()))
+  for (const alias of aliases.splice(0)) unlinkSync(alias)
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
 
@@ -370,7 +373,24 @@ describe('desktop host process', () => {
     })
     const { url } = await host.start()
     const response = await fetch(url)
-    expect(await response.json()).toEqual({ runtime, profile, cwd: realpathSync(profile), nodePath: '/custom', registry: 'https://registry.example.test/', nodeOptions: '--no-warnings', runAsNode: '1', internals: true })
+    expect(await response.json()).toEqual({ runtime: realpathSync.native(runtime), profile, cwd: realpathSync(profile), nodePath: '/custom', registry: 'https://registry.example.test/', nodeOptions: '--no-warnings', runAsNode: '1', internals: true })
+  })
+
+  it('passes the canonical runtime path when launched through a directory alias', async () => {
+    const runtime = projectWithHost(HTTP_HOST.replace('runtime: process.argv[2]',
+      'entry: import.meta.url, runtime: process.argv[2]'))
+    const aliasRoot = mkdtempSync(join(tmpdir(), 'desktop-host-alias-'))
+    roots.push(aliasRoot)
+    const alias = join(aliasRoot, 'Runtime Alias')
+    symlinkSync(runtime, alias, process.platform === 'win32' ? 'junction' : 'dir')
+    aliases.push(alias)
+    const host = hostProcess(alias)
+    const { url } = await host.start()
+    const canonical = realpathSync.native(runtime)
+    expect(await (await fetch(url)).json()).toMatchObject({
+      runtime: canonical,
+      entry: pathToFileURL(join(canonical, 'node_modules', '@deepseek-ai', 'dsh-desktop-host', 'lib', 'index.js')).href,
+    })
   })
 
   it.each([

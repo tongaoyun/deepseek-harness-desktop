@@ -48,7 +48,7 @@
     },
     {
       "id": "desktop-extension",
-      "purpose": "Generic trusted desktop lifecycle hooks, environment/profile overlays, namespaced bidirectional IPC, validated caller deadlines, sender checks, cancellation, credential-free structured failures, and teardown. Every renderer boot reads current Host index injections through correlated IPC with a bounded deadline and rejects Host replacement rather than reusing stale module revisions. No product protocol is embedded in Electron or Host.",
+      "purpose": "Generic trusted desktop lifecycle hooks, environment/profile overlays, namespaced bidirectional IPC, validated caller deadlines, sender checks, cancellation, credential-free structured failures, and teardown. Every renderer boot reads current Host index injections through correlated IPC with a bounded deadline and rejects Host replacement rather than reusing stale module revisions. Host startup canonicalizes the runtime with native realpath so entry imports and profile resolution share module identities, including Windows short paths. No product protocol is embedded in Electron or Host.",
       "tests": [
         "apps/desktop/tests/main-startup.spec.ts",
         "apps/desktop/tests/host-process.spec.ts",
@@ -80,7 +80,7 @@
         {
           "path": "apps/desktop/src/host-process.ts",
           "before": "6b9d3e558f526b7832020fb43d6682a07a68bf2d5657f26951f50a4f3eabfa28",
-          "after": "15c6b8609ef5bb61ef4f4be6646d9d0f4c96fd7457b09944cb3a7a0ba29fa1a5"
+          "after": "24d31b3d222f010287c4e6097f5d5378ca01630de3f4cbef5c4edc270fd22887"
         },
         {
           "path": "apps/desktop/src/ipc.ts",
@@ -105,7 +105,7 @@
         {
           "path": "apps/desktop/tests/host-process.spec.ts",
           "before": "b539b90d064ba2b52f2a5a2faf3a83d08911cc69f8644bc4783f17dbc98fcb86",
-          "after": "4300f54daef48de699d92c60e0dadc5fe95baa43ba0325244b2b4279fdaa2e38"
+          "after": "76a1b30efd4e91c57cfdc85f9103cf2afe67add5c4cc2b5c6c3c36b4d8469886"
         },
         {
           "path": "apps/desktop/tests/main-startup.spec.ts",
@@ -786,17 +786,17 @@
         {
           "path": "apps/desktop/README.i18n.yaml",
           "before": "55113c40907f9f36aba2109a6b157a3f302b9417f813ef33105b3cc69efdc36b",
-          "after": "e367262bc2d5cc4989582f0c3791eac5b112ea86e6a9e6344c975e8af8e5f5fa"
+          "after": "143a26e7f3bf236e754a7245cbedf44d284b243f26c26626223d63ab723b78b3"
         },
         {
           "path": "apps/desktop/README.md",
           "before": "97c05df7e4e4d053c89ba0d5cf11094c76e7798fed118211f6a828ce2943ee19",
-          "after": "2d9a78a871ed3a68b583b6affb701ab620bfe8b5565f5252e9c4d6ee763dc8e1"
+          "after": "cb2eaf50e36022a1bca85c0e53b67c4ad30b851d553acbf70d8743b5496e1fc2"
         },
         {
           "path": "apps/desktop/README.zh.md",
           "before": "324bb7f4dfe117e9f6ec99244aecfedac644e4159780ca7a4a96b90e05e551b7",
-          "after": "39f6e41f2a9a8031d3fefe010f71e553aeff6c6830b5a404e9c08285a867ba3f"
+          "after": "34494894e32755eff60c3d07e667504aa7ad1fd12005a9c1a9e4fa2642811f87"
         },
         {
           "path": "docs/architecture.i18n.yaml",

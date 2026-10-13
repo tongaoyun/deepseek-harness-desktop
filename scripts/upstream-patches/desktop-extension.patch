@@ -200,17 +200,19 @@ index 0000000000000000000000000000000000000000..47ef0677929d31aeb4b2598fc006ba50
 +  return extension as DesktopExtension
 +}
 diff --git a/apps/desktop/src/host-process.ts b/apps/desktop/src/host-process.ts
-index 948a88e6b0e3a439a719aea46e3b77843e412abc..aa15c80e054acd19157aaab3ee5b283ee60d7bac 100644
+index 948a88e6b0e3a439a719aea46e3b77843e412abc..7e6869c082903033d9f05fd20ae8fcfd484ed840 100644
 --- a/apps/desktop/src/host-process.ts
 +++ b/apps/desktop/src/host-process.ts
-@@ -1,5 +1,6 @@
+@@ -1,6 +1,8 @@
  /** Electron Node-mode child lifecycle for the shared Web application. */
  
 +import { extensionFailure, extensionError, isExtensionFailure, type ExtensionFailure } from './extension-errors.ts'
  import { spawn, type ChildProcess } from 'node:child_process'
++import { realpathSync } from 'node:fs'
  import { join } from 'node:path'
  import type { PlatformSession } from '@deepseek-ai/dsh-deepseek-account'
-@@ -23,7 +24,20 @@ interface PlatformSessionEvent {
+ import { desktopNodeEnvironment } from './node-environment.ts'
+@@ -23,7 +25,20 @@ interface PlatformSessionEvent {
    readonly session: PlatformSession | null
  }
  
@@ -232,7 +234,7 @@ index 948a88e6b0e3a439a719aea46e3b77843e412abc..aa15c80e054acd19157aaab3ee5b283e
    readonly type: 'update-tasks'
    readonly requestId: number
    readonly active: boolean
-@@ -34,6 +48,17 @@ type DesktopHostEvent = ReadyEvent | FatalEvent | PlatformSessionEvent | { reado
+@@ -34,6 +49,17 @@ type DesktopHostEvent = ReadyEvent | FatalEvent | PlatformSessionEvent | { reado
    readonly activeTasks: boolean
    readonly scheduledTasks: boolean
    readonly error?: string
@@ -250,7 +252,7 @@ index 948a88e6b0e3a439a719aea46e3b77843e412abc..aa15c80e054acd19157aaab3ee5b283e
  }
  
  /** Correlated answer to one shell control request. */
-@@ -48,6 +73,9 @@ export interface DesktopQuitInspection {
+@@ -48,6 +74,9 @@ export interface DesktopQuitInspection {
  /** Quit inspection deadline; a slower Host counts as unknown work and the shell asks before quitting. */
  export const QUIT_INSPECTION_DEADLINE_MS = 2_000
  
@@ -260,7 +262,7 @@ index 948a88e6b0e3a439a719aea46e3b77843e412abc..aa15c80e054acd19157aaab3ee5b283e
  const MAX_HOST_DIAGNOSTIC_CHARS = 64 * 1024
  
  function isDesktopHostEvent(message: unknown): message is DesktopHostEvent {
-@@ -77,6 +105,13 @@ function isDesktopHostEvent(message: unknown): message is DesktopHostEvent {
+@@ -77,6 +106,13 @@ function isDesktopHostEvent(message: unknown): message is DesktopHostEvent {
            && (url.protocol === 'https:' || (url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)))
        } catch { return false }
      }
@@ -274,7 +276,7 @@ index 948a88e6b0e3a439a719aea46e3b77843e412abc..aa15c80e054acd19157aaab3ee5b283e
      case 'fatal':
        return typeof candidate.message === 'string' && (candidate.diagnostic === undefined || typeof candidate.diagnostic === 'string')
      case 'update-tasks':
-@@ -85,6 +120,11 @@ function isDesktopHostEvent(message: unknown): message is DesktopHostEvent {
+@@ -85,6 +121,11 @@ function isDesktopHostEvent(message: unknown): message is DesktopHostEvent {
      case 'quit-inspection':
        return Number.isSafeInteger(candidate.requestId) && typeof candidate.activeTasks === 'boolean'
          && typeof candidate.scheduledTasks === 'boolean' && (candidate.error === undefined || typeof candidate.error === 'string')
@@ -286,7 +288,7 @@ index 948a88e6b0e3a439a719aea46e3b77843e412abc..aa15c80e054acd19157aaab3ee5b283e
      default:
        return false
    }
-@@ -153,6 +193,7 @@ export class DesktopHostProcess {
+@@ -153,6 +194,7 @@ export class DesktopHostProcess {
      resolve: (response: DesktopHostControlResponse) => void
      reject: (error: Error) => void
    }>()
@@ -294,7 +296,7 @@ index 948a88e6b0e3a439a719aea46e3b77843e412abc..aa15c80e054acd19157aaab3ee5b283e
  
    /**
     * @param node - Absolute Electron executable in Node mode.
-@@ -177,6 +218,7 @@ export class DesktopHostProcess {
+@@ -177,6 +219,7 @@ export class DesktopHostProcess {
      private readonly packageManager?: { readonly pnpm: string; readonly nodeBin: string },
  
      private readonly onPlatformSession?: (session: PlatformSession | null) => void,
@@ -302,7 +304,27 @@ index 948a88e6b0e3a439a719aea46e3b77843e412abc..aa15c80e054acd19157aaab3ee5b283e
    ) {}
  
    /**
-@@ -211,6 +253,26 @@ export class DesktopHostProcess {
+@@ -185,14 +228,16 @@ export class DesktopHostProcess {
+    */
+   async start(): Promise<DesktopHostReady> {
+     if (this.child !== undefined) return this.readyPromise
+-    const entry = join(this.runtimeDir, 'node_modules', '@deepseek-ai', 'dsh-desktop-host', 'lib', 'index.js')
++    // Profile resolution uses native real paths; the initial module imports must use the same archive identity.
++    const runtimeDir = realpathSync.native(this.runtimeDir)
++    const entry = join(runtimeDir, 'node_modules', '@deepseek-ai', 'dsh-desktop-host', 'lib', 'index.js')
+     const child = spawn(this.node, [
+       '--expose-internals',
+       ...(this.inspectPort === undefined ? [] : [`--inspect=127.0.0.1:${String(this.inspectPort)}`]),
+       entry,
+-      this.runtimeDir,
++      runtimeDir,
+       this.projectDir,
+-      this.primaryRuntime ?? join(this.runtimeDir, '..', 'runtime', 'primary-runtime'),
++      this.primaryRuntime ?? join(runtimeDir, '..', 'runtime', 'primary-runtime'),
+       ...this.packageManager === undefined ? [] : [this.packageManager.pnpm, this.packageManager.nodeBin],
+     ], {
+       cwd: this.projectDir,
+@@ -211,6 +256,26 @@ export class DesktopHostProcess {
        }
        if (message.type === 'ready') this.readyResolve({ url: message.url, injections: message.injections })
        else if (message.type === 'platform-session') this.onPlatformSession?.(message.session)
@@ -329,7 +351,7 @@ index 948a88e6b0e3a439a719aea46e3b77843e412abc..aa15c80e054acd19157aaab3ee5b283e
        else if (message.type === 'shutdown-complete') {
          if (this.stopping) this.shutdownCompleted = true
          else this.fail(new Error('dsh desktop host acknowledged an unrequested shutdown'))
-@@ -219,7 +281,8 @@ export class DesktopHostProcess {
+@@ -219,7 +284,8 @@ export class DesktopHostProcess {
        else {
          const request = this.controlRequests.get(message.requestId)
          if (message.error === undefined) request?.resolve(message)
@@ -339,7 +361,7 @@ index 948a88e6b0e3a439a719aea46e3b77843e412abc..aa15c80e054acd19157aaab3ee5b283e
        }
      })
      child.once('error', (error) => { this.fail(error) })
-@@ -257,24 +320,63 @@ export class DesktopHostProcess {
+@@ -257,24 +323,63 @@ export class DesktopHostProcess {
      return { activeTasks: response.activeTasks, scheduledTasks: response.scheduledTasks }
    }
  
@@ -407,7 +429,7 @@ index 948a88e6b0e3a439a719aea46e3b77843e412abc..aa15c80e054acd19157aaab3ee5b283e
        this.controlRequests.delete(requestId)
      }
    }
-@@ -308,6 +410,8 @@ export class DesktopHostProcess {
+@@ -308,6 +413,8 @@ export class DesktopHostProcess {
    }
  
    private fail(error: Error): void {
@@ -842,19 +864,25 @@ index 0000000000000000000000000000000000000000..33441c0571221c8712fcbbf34b661947
 +  expect(vi.getTimerCount()).toBe(0)
 +})
 diff --git a/apps/desktop/tests/host-process.spec.ts b/apps/desktop/tests/host-process.spec.ts
-index daeddc74d0afc1315b0c632f61d2034bd0c9e31a..1e70d9f4e1da3a15a4505ed603fb6c5c1c6bca5b 100644
+index daeddc74d0afc1315b0c632f61d2034bd0c9e31a..f0fa8ae67bd7c10d9b6ed8d970773ea70d19e9aa 100644
 --- a/apps/desktop/tests/host-process.spec.ts
 +++ b/apps/desktop/tests/host-process.spec.ts
-@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync
+@@ -1,10 +1,12 @@
+-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
++import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
  import { tmpdir } from 'node:os'
  import { join } from 'node:path'
++import { pathToFileURL } from 'node:url'
  import { afterEach, describe, expect, it, vi } from 'vitest'
 -import { DesktopHostFatalError, DesktopHostProcess, DesktopHostUncleanExitError, QUIT_INSPECTION_DEADLINE_MS } from '../src/host-process.ts'
 +import { DesktopHostFatalError, DesktopHostProcess, DesktopHostUncleanExitError, INDEX_INJECTIONS_DEADLINE_MS, QUIT_INSPECTION_DEADLINE_MS } from '../src/host-process.ts'
  
  const roots: string[] = []
++const aliases: string[] = []
  const hosts: DesktopHostProcess[] = []
-@@ -30,6 +30,11 @@ server.listen(0, '127.0.0.1', () => {
+ 
+ const HTTP_HOST = `
+@@ -30,6 +32,11 @@ server.listen(0, '127.0.0.1', () => {
    process.send({ type: 'ready', url: 'http://127.0.0.1:' + server.address().port + '/?token=fixture' })
  })
  process.on('message', message => {
@@ -866,7 +894,7 @@ index daeddc74d0afc1315b0c632f61d2034bd0c9e31a..1e70d9f4e1da3a15a4505ed603fb6c5c
    if (message.type === 'update-tasks') {
      process.send({ type: 'update-tasks', requestId: message.requestId, active: message.action === 'lock' })
      return
-@@ -40,6 +45,10 @@ process.on('message', message => {
+@@ -40,6 +47,10 @@ process.on('message', message => {
      process.send({ type: 'quit-inspection', requestId: message.requestId, activeTasks: false, scheduledTasks: message.requestId % 2 === 1 })
      return
    }
@@ -877,7 +905,12 @@ index daeddc74d0afc1315b0c632f61d2034bd0c9e31a..1e70d9f4e1da3a15a4505ed603fb6c5c
    if (message.type !== 'shutdown') return
    server.close(() => {
      writeFileSync(join(process.argv[3], 'stopped'), '')
-@@ -73,6 +82,113 @@ afterEach(async () => {
+@@ -69,10 +80,118 @@ function hostProcess(
+ 
+ afterEach(async () => {
+   await Promise.all(hosts.splice(0).map(host => host.stop()))
++  for (const alias of aliases.splice(0)) unlinkSync(alias)
+   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
  })
  
  describe('desktop host process', () => {
@@ -991,7 +1024,7 @@ index daeddc74d0afc1315b0c632f61d2034bd0c9e31a..1e70d9f4e1da3a15a4505ed603fb6c5c
    it('correlates task inspections and admission changes over private IPC', async () => {
      const host = hostProcess(projectWithHost())
      await expect(host.updateTasks('inspect')).rejects.toThrow('Host is unavailable')
-@@ -83,6 +199,63 @@ describe('desktop host process', () => {
+@@ -83,6 +202,63 @@ describe('desktop host process', () => {
      await expect(host.updateTasks('inspect')).rejects.toThrow('Host is unavailable')
    })
  
@@ -1055,7 +1088,7 @@ index daeddc74d0afc1315b0c632f61d2034bd0c9e31a..1e70d9f4e1da3a15a4505ed603fb6c5c
    it('correlates quit inspections with task requests and fails an unanswered one at its own deadline', async () => {
      const host = hostProcess(projectWithHost())
      await expect(host.inspectQuit()).rejects.toThrow('desktop quit: Host is unavailable')
-@@ -96,6 +269,14 @@ describe('desktop host process', () => {
+@@ -96,6 +272,14 @@ describe('desktop host process', () => {
      expect(await host.inspectQuit()).toEqual({ activeTasks: false, scheduledTasks: false })
    }, 15_000)
  
@@ -1070,6 +1103,32 @@ index daeddc74d0afc1315b0c632f61d2034bd0c9e31a..1e70d9f4e1da3a15a4505ed603fb6c5c
    it.each([
      'process.exit(17)',
      'process.exit(0)',
+@@ -189,7 +373,24 @@ describe('desktop host process', () => {
+     })
+     const { url } = await host.start()
+     const response = await fetch(url)
+-    expect(await response.json()).toEqual({ runtime, profile, cwd: realpathSync(profile), nodePath: '/custom', registry: 'https://registry.example.test/', nodeOptions: '--no-warnings', runAsNode: '1', internals: true })
++    expect(await response.json()).toEqual({ runtime: realpathSync.native(runtime), profile, cwd: realpathSync(profile), nodePath: '/custom', registry: 'https://registry.example.test/', nodeOptions: '--no-warnings', runAsNode: '1', internals: true })
++  })
++
++  it('passes the canonical runtime path when launched through a directory alias', async () => {
++    const runtime = projectWithHost(HTTP_HOST.replace('runtime: process.argv[2]',
++      'entry: import.meta.url, runtime: process.argv[2]'))
++    const aliasRoot = mkdtempSync(join(tmpdir(), 'desktop-host-alias-'))
++    roots.push(aliasRoot)
++    const alias = join(aliasRoot, 'Runtime Alias')
++    symlinkSync(runtime, alias, process.platform === 'win32' ? 'junction' : 'dir')
++    aliases.push(alias)
++    const host = hostProcess(alias)
++    const { url } = await host.start()
++    const canonical = realpathSync.native(runtime)
++    expect(await (await fetch(url)).json()).toMatchObject({
++      runtime: canonical,
++      entry: pathToFileURL(join(canonical, 'node_modules', '@deepseek-ai', 'dsh-desktop-host', 'lib', 'index.js')).href,
++    })
+   })
+ 
+   it.each([
 diff --git a/apps/desktop/tests/main-startup.spec.ts b/apps/desktop/tests/main-startup.spec.ts
 index d9a8f3103b2a963ebf6825c62a86e8ee12064deb..f4ac92943aed5cc7e11f2a49a5bb1df0ff3152ee 100644
 --- a/apps/desktop/tests/main-startup.spec.ts

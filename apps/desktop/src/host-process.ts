@@ -2,6 +2,7 @@
 
 import { extensionFailure, extensionError, isExtensionFailure, type ExtensionFailure } from './extension-errors.ts'
 import { spawn, type ChildProcess } from 'node:child_process'
+import { realpathSync } from 'node:fs'
 import { join } from 'node:path'
 import type { PlatformSession } from '@deepseek-ai/dsh-deepseek-account'
 import { desktopNodeEnvironment } from './node-environment.ts'
@@ -227,14 +228,16 @@ export class DesktopHostProcess {
    */
   async start(): Promise<DesktopHostReady> {
     if (this.child !== undefined) return this.readyPromise
-    const entry = join(this.runtimeDir, 'node_modules', '@deepseek-ai', 'dsh-desktop-host', 'lib', 'index.js')
+    // Profile resolution uses native real paths; the initial module imports must use the same archive identity.
+    const runtimeDir = realpathSync.native(this.runtimeDir)
+    const entry = join(runtimeDir, 'node_modules', '@deepseek-ai', 'dsh-desktop-host', 'lib', 'index.js')
     const child = spawn(this.node, [
       '--expose-internals',
       ...(this.inspectPort === undefined ? [] : [`--inspect=127.0.0.1:${String(this.inspectPort)}`]),
       entry,
-      this.runtimeDir,
+      runtimeDir,
       this.projectDir,
-      this.primaryRuntime ?? join(this.runtimeDir, '..', 'runtime', 'primary-runtime'),
+      this.primaryRuntime ?? join(runtimeDir, '..', 'runtime', 'primary-runtime'),
       ...this.packageManager === undefined ? [] : [this.packageManager.pnpm, this.packageManager.nodeBin],
     ], {
       cwd: this.projectDir,

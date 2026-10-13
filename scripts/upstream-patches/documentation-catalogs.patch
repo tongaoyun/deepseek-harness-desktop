@@ -113,7 +113,7 @@ index 2dbbb5cd4076fab87d424c8e05df88965f23b837..33a04a205f9507708472a1489907082f
  | [`typescript-language-server`](https://github.com/typescript-language-server/typescript-language-server) | Apache-2.0 |
  | [`vite`](https://github.com/vitejs/vite) | MIT |
 diff --git a/apps/desktop/README.i18n.yaml b/apps/desktop/README.i18n.yaml
-index a125998069cadf537b54e5cbbbe6939b4e103c0d..8bce14d238cdfcc1ff4e69938f87762c0c3220c1 100644
+index a125998069cadf537b54e5cbbbe6939b4e103c0d..d09ca7b94f3d87a8fc429fc1e21e07fac8717533 100644
 --- a/apps/desktop/README.i18n.yaml
 +++ b/apps/desktop/README.i18n.yaml
 @@ -3,17 +3,17 @@
@@ -122,8 +122,8 @@ index a125998069cadf537b54e5cbbbe6939b4e103c0d..8bce14d238cdfcc1ff4e69938f87762c
  /deepseek-harness-desktop:
 -  en: 5b8518fd5e0030ef
 -  zh: 02efee59c39647dc
-+  en: bdc4d269ea6a9e55
-+  zh: 9e42fdd714e46f8b
++  en: c4a781a6e492570c
++  zh: cbbdc380532c98b8
  /deepseek-harness-desktop/terminal-command:
    en: bef92953c237363f
    zh: d21d6effd21b8c00
@@ -216,18 +216,20 @@ index a125998069cadf537b54e5cbbbe6939b4e103c0d..8bce14d238cdfcc1ff4e69938f87762c
    en: 8e26b460ba31f21b
    zh: fbcd0307b3867125
 diff --git a/apps/desktop/README.md b/apps/desktop/README.md
-index 60f14b908fec7a906092c79f2708121903199614..cee502b173eea736aaf4b34636bc0a842d1e1640 100644
+index 60f14b908fec7a906092c79f2708121903199614..4a1e92c2d0a22bce0123be41c95d2ac1bf872929 100644
 --- a/apps/desktop/README.md
 +++ b/apps/desktop/README.md
-@@ -8,6 +8,8 @@ The desktop application is an Electron shell around the complete dsh Web applica
+@@ -6,7 +6,9 @@ Desktop analytics follows the [product collection policy](../../packages/client/
  
- Desktop binds `127.0.0.1`, the address Electron dials for the ready URL and the WebSocket credential filter. WebSocket streams use `ws:` or `wss:` according to the Host listener; credentials require matching authority and scheme.
+ The desktop application is an Electron shell around the complete dsh Web application. An Electron RunAsNode child starts the shared profile runner, and Electron immediately loads the packaged Web entry at `dsh-app://app/`. Its shared loading page waits for Host boot injections, then starts the client without navigating to another document. Electron forwards application HTTP requests to the authenticated Web Host, dropping connection-level response headers (`transfer-encoding`, `connection`, `keep-alive`) that describe the Node fetch rather than the resource, and marking plugin bundle responses `no-store` because their per-launch revisions would only accumulate in Chromium's disk cache; WebSocket streams connect to that Host with credentials attached only for the owned application window. Node IPC carries boot injections, readiness, and shutdown. Desktop listens on an OS-assigned port by default, so it cannot collide with Web’s `3080` or a reserved port; a `webserver.config.port` patch can override it.
  
-+Each renderer boot or reload requests the Host's current index injections over correlated Node IPC, with a ten-second deadline. Rebuilt client bundles therefore use their current revisions. A failed read or a Host replacement during the request rejects boot; the shell never falls back to the startup injection table. Module revision and renderer-source checks remain enforced.
+-Desktop binds `127.0.0.1`, the address Electron dials for the ready URL and the WebSocket credential filter. WebSocket streams use `ws:` or `wss:` according to the Host listener; credentials require matching authority and scheme.
++Desktop binds `127.0.0.1`, the address Electron dials for the ready URL and the WebSocket credential filter. WebSocket streams use `ws:` or `wss:` according to the Host listener; credentials require matching authority and scheme. Before starting the Host, Desktop resolves its runtime directory with native realpath so startup imports and profile package resolution use the same module URLs, including Windows short-path aliases.
 +
++Each renderer boot or reload requests the Host's current index injections over correlated Node IPC, with a ten-second deadline. Rebuilt client bundles therefore use their current revisions. A failed read or a Host replacement during the request rejects boot; the shell never falls back to the startup injection table. Module revision and renderer-source checks remain enforced.
+ 
  The first application-menu command, **About DeepSeek Harness**, opens Electron's native About panel with the application icon, product name, and installed release version. The menu follows the Desktop shell locale. On macOS, Hide, Hide Others, Show All, and Quit use localized labels; Hide and Quit include the DeepSeek Harness product name. These commands retain their native actions and shortcuts. macOS reads the icon from its application bundle, so an unpackaged development launch displays Electron's icon; Windows receives the packaged PNG.
  
- Desktop’s local native directory flow opens an Electron folder dialog attached to the application window, restoring, showing, and focusing that window first. Concurrent requests share one dialog; cancellation returns no path and failures remain retryable. Ordinary Web uses the Host chooser. Browse mode lists Host directories. On Linux without zenity or kdialog, automatic selection uses browse instead of the Electron dialog.
 @@ -36,7 +38,7 @@ Command registration is optional after installing Desktop. Use **Manage dsh Comm
  
  Closing the main window (macOS close button and ⌘W; Windows ×, Alt+F4, and the taskbar Close window command) hides it; Windows asks for acknowledgement before the first hide. The page and the Host keep running, tasks continue, and the next show presents the same document with its session, drafts, and scroll position; a fullscreen macOS window leaves fullscreen before hiding. The window returns through the Dock icon, a second launch, or `dsh://open` on macOS, and through the tray on Windows. Minimize is unchanged. Closing the welcome window before the workspace opens quits on Windows and, on macOS, keeps the application in the Dock without a window.
@@ -349,12 +351,15 @@ index 60f14b908fec7a906092c79f2708121903199614..cee502b173eea736aaf4b34636bc0a84
  Embedded Platform views remain hidden until document loading completes so the renderer loading indicator stays visible. Closing or replacing a pending view prevents it from appearing later. Reloading or replacing the owning application document, renderer termination, and window closure also destroy the native view without relying on React cleanup.
  
 diff --git a/apps/desktop/README.zh.md b/apps/desktop/README.zh.md
-index eb1cbe5b78e2038fb728f571aca14b69301ed41e..fba2227dae690a77859fb9a6e4d9d43c283a5582 100644
+index eb1cbe5b78e2038fb728f571aca14b69301ed41e..1ff11091c1d87b9ce6bb5889534283b68419431b 100644
 --- a/apps/desktop/README.zh.md
 +++ b/apps/desktop/README.zh.md
-@@ -8,7 +8,9 @@
+@@ -6,9 +6,11 @@
  
- Desktop 绑定 `127.0.0.1`，即 Electron 为就绪 URL 与 WebSocket 凭据过滤器拨号的地址。WebSocket 流按 Host 监听器使用 `ws:` 或 `wss:`；附加凭据要求 authority 与 scheme 均匹配。
+ 桌面应用是完整 dsh Web 应用外的一层 Electron 壳。Electron RunAsNode 子进程启动共享 profile runner，Electron 立即从 `dsh-app://app/` 加载打包内的 Web 入口。共享加载页等待 Host 启动注入，然后在同一文档中启动客户端。Electron 将应用 HTTP 请求转发给已认证的 Web Host，转发时丢弃描述 Node fetch 连接而非资源本身的响应头（`transfer-encoding`、`connection`、`keep-alive`），并把插件 bundle 响应标记为 `no-store`，因为其每次启动都变化的 revision 只会在 Chromium 磁盘缓存中累积；WebSocket 流连接到该 Host，仅为归属的应用窗口附加凭据。Node IPC 承载启动注入、就绪与关闭。Desktop 默认监听系统分配的端口，因此不会与 Web 的 `3080` 或系统保留端口冲突；可通过 `webserver.config.port` patch 覆盖。
+ 
+-Desktop 绑定 `127.0.0.1`，即 Electron 为就绪 URL 与 WebSocket 凭据过滤器拨号的地址。WebSocket 流按 Host 监听器使用 `ws:` 或 `wss:`；附加凭据要求 authority 与 scheme 均匹配。
++Desktop 绑定 `127.0.0.1`，即 Electron 为就绪 URL 与 WebSocket 凭据过滤器拨号的地址。WebSocket 流按 Host 监听器使用 `ws:` 或 `wss:`；附加凭据要求 authority 与 scheme 均匹配。启动 Host 前，Desktop 通过原生 realpath 解析运行时目录，使启动导入与 profile 包解析使用相同的模块 URL，包括使用 Windows 短路径别名时。
  
 -应用菜单第一项“**关于 DeepSeek Harness**”打开 Electron 原生关于面板，展示应用图标、产品名称和当前安装的发布版本。菜单文案跟随桌面壳的语言。macOS 的隐藏、隐藏其他、显示全部和退出条目使用本地化文案，隐藏和退出条目包含 DeepSeek Harness 产品名称。这些条目保留原生动作和快捷键。macOS 从应用包读取图标，因此未打包的开发启动会显示 Electron 图标；Windows 使用随包分发的 PNG。
 +渲染进程每次启动或重载都通过关联 Node IPC 请求 Host 当前的 index 注入，请求时限为十秒，因此重建后的客户端 bundle 使用当前 revision。读取失败或请求期间 Host 被替换时，该次启动失败；桌面壳不会回退到启动时的注入表。模块 revision 与渲染进程来源检查继续生效。
