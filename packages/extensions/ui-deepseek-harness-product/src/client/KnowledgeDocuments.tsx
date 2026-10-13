@@ -251,8 +251,8 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
       {materialSearch}
       {canManage && <div className={css.knowledgeAddActions}>
         <KnowledgeUploadMenu disabled={pending} onSelect={(mode) => { void upload(mode) }} t={t} />
-        <KnowledgeAddMenu disabled={pending} withinFolder={typeof folderId === 'string'} onSelect={(kind) => {
-          beginMutation(); setEditor(kind === 'folder' ? { kind, parentId: folderId ?? null } : { kind })
+        <KnowledgeAddMenu disabled={pending} onSelect={(kind) => {
+          beginMutation(); setEditor(kind === 'folder' ? { kind, parentId: folderId ?? null } : { kind, folderId: folderId ?? null })
         }} t={t} />
       </div>}
     </div>
@@ -433,19 +433,18 @@ function KnowledgeUploadMenu({ disabled, onSelect, t }: {
     onClick={() => { setOpen(!open) }}><IconDownloadOutlineRegular size={14} />{t('knowledgeUpload')}</Button>} />
 }
 
-function KnowledgeAddMenu({ disabled, withinFolder, onSelect, t }: {
+function KnowledgeAddMenu({ disabled, onSelect, t }: {
   readonly disabled: boolean
-  readonly withinFolder: boolean
   readonly onSelect: (kind: 'markdown' | 'url' | 'folder') => void
   readonly t: (key: DeepSeekHarnessProductKey) => string
 }): ReactNode {
   const [open, setOpen] = useState(false)
   return <Menu open={open && !disabled} onClose={() => { setOpen(false) }} portal align="end" items={[
-    { id: 'markdown', label: t('knowledgeNewDocument'), icon: <IconEditOutlineRegular size={16} />, disabled: withinFolder },
-    { id: 'url', label: t('knowledgeImportUrl'), icon: <IconLinkOutlineRegular size={16} />, disabled: withinFolder },
+    { id: 'markdown', label: t('knowledgeNewDocument'), icon: <IconEditOutlineRegular size={16} /> },
+    { id: 'url', label: t('knowledgeImportUrl'), icon: <IconLinkOutlineRegular size={16} /> },
     { type: 'separator', id: 'folders' }, { id: 'folder', label: t('knowledgeCreateFolder'), icon: <IconFolderOpenOutlineRegular size={16} /> },
   ]} onSelect={(id) => { setOpen(false); if (id === 'markdown' || id === 'url' || id === 'folder') onSelect(id) }}
-  anchor={<Button variant="outline" size="sm" disabled={disabled} title={withinFolder ? t('knowledgeCreationAtRoot') : undefined} aria-haspopup="menu" aria-expanded={open}
+  anchor={<Button variant="outline" size="sm" disabled={disabled} aria-haspopup="menu" aria-expanded={open}
     onClick={() => { setOpen(!open) }}><IconPlusOutlineRegular size={14} />{t('knowledgeAddMaterial')}</Button>} />
 }
 

@@ -127,6 +127,21 @@ it('preserves edits and the idempotency key after a failed manual document save'
     title: '业务规范', content: '# 修改后的正文', operationId: expect.any(String) as string })
 })
 
+it.each(['markdown', 'url'] as const)('preserves %s creation destination and edits after an unconfirmed placement', async (kind) => {
+  const saved = vi.fn()
+  const api = transport(async () => { throw new ProductError('IDEMPOTENCY_OPERATION_UNKNOWN', 'Remote result unknown', false) })
+  render(<KnowledgeEditor knowledgeBaseId="policy" target={{ kind, folderId: 'folder' }} folders={[]} onClose={vi.fn()} onSaved={saved} t={t} />)
+  fireEvent.change(screen.getByLabelText(zh.knowledgeDocumentTitle), { target: { value: 'Notes' } })
+  fireEvent.change(screen.getByLabelText(kind === 'markdown' ? zh.knowledgeMarkdownContent : zh.knowledgeWebsiteUrl),
+    { target: { value: kind === 'markdown' ? '# Notes' : 'https://example.test' } })
+  fireEvent.click(screen.getByRole('button', { name: zh.knowledgeSave }))
+  await screen.findByText(`${zh.knowledgeOperationUnknown} (IDEMPOTENCY_OPERATION_UNKNOWN)`)
+  expect(screen.getByDisplayValue(kind === 'markdown' ? '# Notes' : 'https://example.test')).toBeDefined()
+  expect(saved).not.toHaveBeenCalled()
+  expect(api.invoke).toHaveBeenCalledWith('product', kind === 'markdown' ? 'knowledge.documents.save' : 'knowledge.documents.importUrl',
+    expect.objectContaining({ knowledgeBaseId: 'policy', folderId: 'folder', title: 'Notes', operationId: expect.any(String) as string }), expect.any(String))
+})
+
 it('exposes upload and creation only to a library manager and accepts native picker cancellation', async () => {
   const api = transport(async method => method === 'knowledge.documents.upload' ? { cancelled: true } : page([]))
   render(<StrictMode><KnowledgeDetail renderFactorySlot={renderKnowledgePreview} product={library(true)} t={t} /></StrictMode>)

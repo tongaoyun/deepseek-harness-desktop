@@ -273,7 +273,8 @@ it('uploads into the selected folder and preserves the destination after cancell
   expect(within(confirmation).queryByRole('alert')).toBeNull()
   fireEvent.click(within(confirmation).getByRole('button', { name: zh.cancel }))
   fireEvent.click(parts(view.container).content.getByRole('button', { name: zh.knowledgeAddMaterial }))
-  expect(screen.getByRole('menuitem', { name: zh.knowledgeNewDocument }).hasAttribute('disabled')).toBe(true)
+  expect(screen.getByRole('menuitem', { name: zh.knowledgeNewDocument }).hasAttribute('disabled')).toBe(false)
+  expect(screen.getByRole('menuitem', { name: zh.knowledgeImportUrl }).hasAttribute('disabled')).toBe(false)
   expect(screen.getByRole('menuitem', { name: zh.knowledgeCreateFolder }).hasAttribute('disabled')).toBe(false)
 })
 

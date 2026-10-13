@@ -77,21 +77,22 @@ export async function invokeKnowledge(api: DeepSeekHarnessApiClient, method: str
     return upload(decodeURIComponent(baseId), operation(input), pdfParseMode, folderId, api, signal)
   }
   if (method === 'knowledge.documents.save') {
-    if (input.folderId !== undefined && input.folderId !== null) invalid('folderId for text creation')
     const title = field(input, 'title', 255)
     const content = field(input, 'content', 1_000_000, false)
     if (new TextEncoder().encode(content).byteLength > 2 * 1024 * 1024) invalid('content')
     const updating = input.documentId !== undefined
-    const body = { title, content, ...(updating ? { expectedUpdatedAt: field(input, 'expectedUpdatedAt', 80) } : {}) }
+    if (updating && input.folderId !== undefined) invalid('folderId for text update')
+    const body = { title, content, ...(updating ? { expectedUpdatedAt: field(input, 'expectedUpdatedAt', 80) }
+      : { folderId: input.folderId == null ? null : decodedResource(input, 'folderId') }) }
     return api.request(`${documents}/texts${updating ? `/${resource(input, 'documentId')}` : ''}`, {
       ...options, method: updating ? 'PUT' : 'POST', headers: writeHeaders(input), body: JSON.stringify(body),
     })
   }
   if (method === 'knowledge.documents.importUrl') {
-    if (input.folderId !== undefined && input.folderId !== null) invalid('folderId for website creation')
     const url = new URL(field(input, 'url', 2_000))
     if (!['http:', 'https:'].includes(url.protocol) || url.username !== '' || url.password !== '') invalid('url')
-    const body = { url: url.href, ...(input.title === undefined ? {} : { title: field(input, 'title', 255) }) }
+    const body = { url: url.href, folderId: input.folderId == null ? null : decodedResource(input, 'folderId'),
+      ...(input.title === undefined ? {} : { title: field(input, 'title', 255) }) }
     return api.request(`${documents}/links`, { ...options, method: 'POST', headers: writeHeaders(input), body: JSON.stringify(body) })
   }
   if (method === 'knowledge.documents.reindex') {

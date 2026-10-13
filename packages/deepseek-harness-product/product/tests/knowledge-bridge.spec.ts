@@ -121,6 +121,24 @@ it('retains the retry key and optimistic update timestamp without trusting an ow
   } finally { api.close() }
 })
 
+it.each(['knowledge.documents.save', 'knowledge.documents.importUrl'] as const)('forwards the selected creation folder for %s with stable retries', async (method) => {
+  const transport = vi.fn<typeof fetch>(async () => Response.json({ success: true, data: { id: 'document', folderId: 'folder' } }))
+  const api = client(transport)
+  try {
+    const input = method === 'knowledge.documents.save'
+      ? { knowledgeBaseId: 'base', title: 'Policy', content: '# Notes', operationId, folderId: 'folder' }
+      : { knowledgeBaseId: 'base', url: 'https://example.test', title: 'Policy', operationId, folderId: 'folder' }
+    await invokeKnowledge(api, method, input)
+    await invokeKnowledge(api, method, input)
+    const init = transport.mock.calls[0]?.[1]
+    if (typeof init?.body !== 'string') throw new Error('Creation request body is missing')
+    expect(init.body).toContain('"folderId":"folder"')
+    expect(init.body).toContain('"title":"Policy"')
+    expect(new Headers(init?.headers).get('idempotency-key')).toBe(operationId)
+    expect(transport.mock.calls[1]?.[1]?.body).toBe(init?.body)
+  } finally { api.close() }
+})
+
 it('returns asynchronous deletion state instead of treating it as completion', async () => {
   const api = client(async () => Response.json({ success: true, data: { taskId: 'delete-1', status: 'DELETING' } }))
   try {
@@ -166,8 +184,9 @@ it.each([
   ['knowledge.bases.create', { name: '', operationId }],
   ['knowledge.bases.create', { name: 'Private files', description: 42, operationId }],
   ['knowledge.documents.save', { knowledgeBaseId: 'base', title: 'Policy', content: 'text' }],
-  ['knowledge.documents.save', { knowledgeBaseId: 'base', title: 'Policy', content: 'text', operationId, folderId: 'folder' }],
-  ['knowledge.documents.importUrl', { knowledgeBaseId: 'base', url: 'https://example.test', operationId, folderId: 'folder' }],
+  ['knowledge.documents.save', { knowledgeBaseId: 'base', title: 'Policy', content: 'text', operationId, folderId: '../other' }],
+  ['knowledge.documents.save', { knowledgeBaseId: 'base', documentId: 'document', title: 'Policy', content: 'text', operationId, folderId: 'folder' }],
+  ['knowledge.documents.importUrl', { knowledgeBaseId: 'base', url: 'https://example.test', operationId, folderId: '../other' }],
   ['knowledge.documents.importUrl', { knowledgeBaseId: 'base', url: 'https://employee:secret@example.test', operationId }],
 ] as const)('rejects invalid %s inputs before HTTP', async (method, input) => {
   const transport = vi.fn<typeof fetch>(async () => Response.json({ success: true, data: [] }))

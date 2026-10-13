@@ -8,8 +8,8 @@ import { knowledgeFolderTrail } from './knowledge-folders.ts'
 import { productErrorMessage } from './product-errors.ts'
 
 /** A manager's create or edit action captured before opening the form. */
-export type KnowledgeEditorTarget = { readonly kind: 'markdown'; readonly document?: KnowledgeDocument }
-  | { readonly kind: 'url' } | { readonly kind: 'folder'; readonly folder?: KnowledgeFolder; readonly parentId?: string | null }
+export type KnowledgeEditorTarget = { readonly kind: 'markdown'; readonly document?: KnowledgeDocument; readonly folderId?: string | null }
+  | { readonly kind: 'url'; readonly folderId?: string | null } | { readonly kind: 'folder'; readonly folder?: KnowledgeFolder; readonly parentId?: string | null }
 
 /** Preserve content and retry identity on failed saves; closing cancels in-flight work.
  * @param props Current library, editor action, and commit callback.
@@ -71,10 +71,11 @@ export function KnowledgeEditor({ knowledgeBaseId, target, folders, onClose, onS
         if (!controller.signal.aborted) onSaved(knowledgeFolder(saved))
       } else if (target.kind === 'url') {
         await request('knowledge.documents.importUrl', { knowledgeBaseId, url: url.trim(), operationId,
+          folderId: target.folderId ?? null,
           ...(title.trim() ? { title: title.trim() } : {}) }, controller.signal)
       } else {
         await request('knowledge.documents.save', { knowledgeBaseId, title: title.trim(), content, operationId,
-          ...(metadata ? { documentId: metadata.id, expectedUpdatedAt: metadata.updatedAt } : {}),
+          ...(metadata ? { documentId: metadata.id, expectedUpdatedAt: metadata.updatedAt } : { folderId: target.folderId ?? null }),
         }, controller.signal)
       }
       if (!controller.signal.aborted && target.kind !== 'folder') onSaved()

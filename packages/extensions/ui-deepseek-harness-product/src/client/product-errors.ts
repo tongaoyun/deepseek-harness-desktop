@@ -34,6 +34,7 @@ const messageKeys: Readonly<Record<string, DeepSeekHarnessProductKey>> = {
   KNOWLEDGE_ACCESS_DENIED: 'knowledgeAccessDenied',
   KNOWLEDGE_MANAGEMENT_FORBIDDEN: 'knowledgeManageForbidden',
   KNOWLEDGE_DOCUMENT_CONFLICT: 'knowledgeDocumentChanged',
+  IDEMPOTENCY_OPERATION_UNKNOWN: 'knowledgeOperationUnknown',
   KNOWLEDGE_DOCUMENT_CHANGED: 'knowledgePreviewSourceChanged',
   KNOWLEDGE_DOCUMENT_DUPLICATE: 'knowledgeDocumentDuplicate',
   KNOWLEDGE_PREVIEW_UNAVAILABLE: 'knowledgePreviewUnavailable',

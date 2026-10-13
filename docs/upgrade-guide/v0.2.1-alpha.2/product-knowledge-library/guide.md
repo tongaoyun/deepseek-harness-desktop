@@ -21,7 +21,7 @@ Preview reads the authorized original independently of indexing, using official 
 
 File limits use the lower server or desktop policy; official format limits still apply. Server defaults are 50 MiB for preview/upload and 250 MiB for download. Download uses a native save dialog; system-open uses a main-owned file. Neither exposes paths or credentials. Webpages without stored originals cannot preview; citations remain readable.
 
-Employees can create personal libraries. Managers can create nested folders and upload into the selected folder, retained on failure or cancellation. Folder responses require `parentId`, with null for roots. The hierarchy migration preserves existing roots and content paths; sibling names are unique and only empty folders can be deleted. Markdown and webpages start at the root and can be moved. Department/company creation requires an administrator. See [product architecture](../../../subsystems/deepseek-harness-product.md) for implementation details.
+Employees can create personal libraries. Managers can create nested folders; uploads, Markdown and webpages use the selected folder. Folder responses require `parentId`, with null for roots. The hierarchy migration preserves existing roots and content paths; sibling names are unique and only empty folders can be deleted. Manual and URL creation use create then move; unconfirmed placement preserves edits and requires checking All materials before another creation. Destination participates in creation hashes; inspect resources before retrying unfinished pre-upgrade commands with a new key. Department/company creation requires an administrator. See [product architecture](../../../subsystems/deepseek-harness-product.md).
 
 ## Migration
 
