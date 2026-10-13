@@ -180,7 +180,7 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
     connectorRuntime: (value, signal) => personalConnectors.enrich(value, signal),
   }
   const productBridge = new DeepSeekHarnessProductBridge(productBridgeOptions)
-  const connectorProxy = new ConnectorProxy(async () => productBridge.invokeRuntime('connectors.list'),
+  const connectorProxy = new ConnectorProxy(signal => productBridge.invokeRuntime('connectors.list', undefined, signal),
     (request, response, connector, signal) => personalConnectors.serveStdio(request, response, connector, signal))
   let deepseekHarnessAuthAttempt: Promise<void> | undefined
   let deepseekHarnessAuthenticationVisible = false

@@ -18,21 +18,24 @@ interface Connector {
 export class ConnectorProxy {
   private readonly server: Server
   private readonly lifetime = new AbortController()
+  private readonly operations = new Set<Promise<void>>()
   private readonly key = randomUUID()
   private origin: string | undefined
-  private readonly catalogSource: () => Promise<unknown>
+  private readonly catalogSource: (signal: AbortSignal) => Promise<unknown>
 
-  constructor(catalogSource: () => Promise<unknown>,
+  constructor(catalogSource: (signal: AbortSignal) => Promise<unknown>,
     serveStdio?: (request: IncomingMessage, response: ServerResponse, connector: unknown, signal: AbortSignal) => Promise<void>) {
     this.catalogSource = catalogSource
     this.server = createServer((request, response) => {
+      if (this.lifetime.signal.aborted) { response.destroy(); return }
       const abort = new AbortController()
       response.once('close', () => { abort.abort() })
       const lifetime = AbortSignal.any([abort.signal, this.lifetime.signal])
-      void (async () => {
+      const operation = (async () => {
         if (request.headers.authorization !== `Bearer ${this.key}`) throw new Error('Unauthorized relay')
         const id = decodeURIComponent(new URL(request.url ?? '/', 'http://localhost').pathname.slice(1))
-        const value = await this.catalogSource()
+        const value = await this.catalogSource(lifetime)
+        lifetime.throwIfAborted()
         if (!Array.isArray(value)) throw new Error('Invalid connector catalog')
         const connector = value.find((entry: Connector) => entry.id === id) as Connector | undefined
         if (connector?.status !== 'ready') {
@@ -82,9 +85,12 @@ export class ConnectorProxy {
           })()), response, { signal })
         }
       })().catch(() => {
+        if (response.destroyed) return
         if (response.headersSent) response.destroy()
         else { response.statusCode = 502; response.end('Connector request failed') }
       })
+      this.operations.add(operation)
+      void operation.finally(() => this.operations.delete(operation)).catch(() => undefined)
     })
   }
 
@@ -114,11 +120,14 @@ export class ConnectorProxy {
     } : entry)
   }
 
-  /** Abort in-flight MCP calls and close every loopback connection. */
+  /** Abort in-flight MCP calls, close loopback connections and await catalog and stdio cleanup. */
   async close(): Promise<void> {
     this.lifetime.abort()
     this.server.closeAllConnections()
-    if (!this.server.listening) return
-    await new Promise<void>((resolve, reject) => this.server.close((error) => { if (error) reject(error); else resolve() }))
+    try {
+      if (this.server.listening) {
+        await new Promise<void>((resolve, reject) => this.server.close((error) => { if (error) reject(error); else resolve() }))
+      }
+    } finally { await Promise.allSettled([...this.operations]) }
   }
 }
