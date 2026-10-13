@@ -87,6 +87,10 @@ jobs:
           pnpm exec vitest run scripts/upstream-boundaries.spec.ts
       - name: Test product sidecar
         run: cargo test --manifest-path native/deepseek-harness/Cargo.toml
+      - name: Test archived Host startup
+        run: >-
+          pnpm exec vitest run --config vitest.e2e.config.ts
+          apps/desktop/tests/host-process-archive.built.e2e.ts --retry=0
       - name: Package Windows
         if: matrix.target == 'win-x64'
         shell: pwsh

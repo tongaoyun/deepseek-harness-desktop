@@ -3,7 +3,7 @@
 import { extensionFailure, extensionError, isExtensionFailure, type ExtensionFailure } from './extension-errors.ts'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { realpathSync } from 'node:fs'
-import { join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import type { PlatformSession } from '@deepseek-ai/dsh-deepseek-account'
 import { desktopNodeEnvironment } from './node-environment.ts'
 
@@ -229,7 +229,10 @@ export class DesktopHostProcess {
   async start(): Promise<DesktopHostReady> {
     if (this.child !== undefined) return this.readyPromise
     // Profile resolution uses native real paths; the initial module imports must use the same archive identity.
-    const runtimeDir = realpathSync.native(this.runtimeDir)
+    const parent = dirname(this.runtimeDir)
+    const runtimeDir = basename(parent) === 'app.asar'
+      ? join(realpathSync.native(parent), basename(this.runtimeDir))
+      : realpathSync.native(this.runtimeDir)
     const entry = join(runtimeDir, 'node_modules', '@deepseek-ai', 'dsh-desktop-host', 'lib', 'index.js')
     const child = spawn(this.node, [
       '--expose-internals',

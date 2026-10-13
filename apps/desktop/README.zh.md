@@ -6,7 +6,7 @@
 
 桌面应用是完整 dsh Web 应用外的一层 Electron 壳。Electron RunAsNode 子进程启动共享 profile runner，Electron 立即从 `dsh-app://app/` 加载打包内的 Web 入口。共享加载页等待 Host 启动注入，然后在同一文档中启动客户端。Electron 将应用 HTTP 请求转发给已认证的 Web Host，转发时丢弃描述 Node fetch 连接而非资源本身的响应头（`transfer-encoding`、`connection`、`keep-alive`），并把插件 bundle 响应标记为 `no-store`，因为其每次启动都变化的 revision 只会在 Chromium 磁盘缓存中累积；WebSocket 流连接到该 Host，仅为归属的应用窗口附加凭据。Node IPC 承载启动注入、就绪与关闭。Desktop 默认监听系统分配的端口，因此不会与 Web 的 `3080` 或系统保留端口冲突；可通过 `webserver.config.port` patch 覆盖。
 
-Desktop 绑定 `127.0.0.1`，即 Electron 为就绪 URL 与 WebSocket 凭据过滤器拨号的地址。WebSocket 流按 Host 监听器使用 `ws:` 或 `wss:`；附加凭据要求 authority 与 scheme 均匹配。启动 Host 前，Desktop 通过原生 realpath 解析运行时目录，使启动导入与 profile 包解析使用相同的模块 URL，包括使用 Windows 短路径别名时。
+Desktop 绑定 `127.0.0.1`，即 Electron 为就绪 URL 与 WebSocket 凭据过滤器拨号的地址。WebSocket 流按 Host 监听器使用 `ws:` 或 `wss:`；附加凭据要求 authority 与 scheme 均匹配。启动 Host 前，Desktop 通过原生 realpath 解析运行时目录，使启动导入与 profile 包解析使用相同的模块 URL，包括使用 Windows 短路径别名时。对于归档中的运行时，解析 `app.asar` 文件后保留内部目录，使普通 Node 打包检查也能启动 Electron Host。
 
 渲染进程每次启动或重载都通过关联 Node IPC 请求 Host 当前的 index 注入，请求时限为十秒，因此重建后的客户端 bundle 使用当前 revision。读取失败或请求期间 Host 被替换时，该次启动失败；桌面壳不会回退到启动时的注入表。模块 revision 与渲染进程来源检查继续生效。
 

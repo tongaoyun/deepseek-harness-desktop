@@ -200,18 +200,20 @@ index 0000000000000000000000000000000000000000..47ef0677929d31aeb4b2598fc006ba50
 +  return extension as DesktopExtension
 +}
 diff --git a/apps/desktop/src/host-process.ts b/apps/desktop/src/host-process.ts
-index 948a88e6b0e3a439a719aea46e3b77843e412abc..7e6869c082903033d9f05fd20ae8fcfd484ed840 100644
+index 948a88e6b0e3a439a719aea46e3b77843e412abc..043b82bedf049e9bb56888e78c8c33972c392cb0 100644
 --- a/apps/desktop/src/host-process.ts
 +++ b/apps/desktop/src/host-process.ts
-@@ -1,6 +1,8 @@
+@@ -1,7 +1,9 @@
  /** Electron Node-mode child lifecycle for the shared Web application. */
  
 +import { extensionFailure, extensionError, isExtensionFailure, type ExtensionFailure } from './extension-errors.ts'
  import { spawn, type ChildProcess } from 'node:child_process'
+-import { join } from 'node:path'
 +import { realpathSync } from 'node:fs'
- import { join } from 'node:path'
++import { basename, dirname, join } from 'node:path'
  import type { PlatformSession } from '@deepseek-ai/dsh-deepseek-account'
  import { desktopNodeEnvironment } from './node-environment.ts'
+ 
 @@ -23,7 +25,20 @@ interface PlatformSessionEvent {
    readonly session: PlatformSession | null
  }
@@ -304,13 +306,16 @@ index 948a88e6b0e3a439a719aea46e3b77843e412abc..7e6869c082903033d9f05fd20ae8fcfd
    ) {}
  
    /**
-@@ -185,14 +228,16 @@ export class DesktopHostProcess {
+@@ -185,14 +228,19 @@ export class DesktopHostProcess {
     */
    async start(): Promise<DesktopHostReady> {
      if (this.child !== undefined) return this.readyPromise
 -    const entry = join(this.runtimeDir, 'node_modules', '@deepseek-ai', 'dsh-desktop-host', 'lib', 'index.js')
 +    // Profile resolution uses native real paths; the initial module imports must use the same archive identity.
-+    const runtimeDir = realpathSync.native(this.runtimeDir)
++    const parent = dirname(this.runtimeDir)
++    const runtimeDir = basename(parent) === 'app.asar'
++      ? join(realpathSync.native(parent), basename(this.runtimeDir))
++      : realpathSync.native(this.runtimeDir)
 +    const entry = join(runtimeDir, 'node_modules', '@deepseek-ai', 'dsh-desktop-host', 'lib', 'index.js')
      const child = spawn(this.node, [
        '--expose-internals',
@@ -324,7 +329,7 @@ index 948a88e6b0e3a439a719aea46e3b77843e412abc..7e6869c082903033d9f05fd20ae8fcfd
        ...this.packageManager === undefined ? [] : [this.packageManager.pnpm, this.packageManager.nodeBin],
      ], {
        cwd: this.projectDir,
-@@ -211,6 +256,26 @@ export class DesktopHostProcess {
+@@ -211,6 +259,26 @@ export class DesktopHostProcess {
        }
        if (message.type === 'ready') this.readyResolve({ url: message.url, injections: message.injections })
        else if (message.type === 'platform-session') this.onPlatformSession?.(message.session)
@@ -351,7 +356,7 @@ index 948a88e6b0e3a439a719aea46e3b77843e412abc..7e6869c082903033d9f05fd20ae8fcfd
        else if (message.type === 'shutdown-complete') {
          if (this.stopping) this.shutdownCompleted = true
          else this.fail(new Error('dsh desktop host acknowledged an unrequested shutdown'))
-@@ -219,7 +284,8 @@ export class DesktopHostProcess {
+@@ -219,7 +287,8 @@ export class DesktopHostProcess {
        else {
          const request = this.controlRequests.get(message.requestId)
          if (message.error === undefined) request?.resolve(message)
@@ -361,7 +366,7 @@ index 948a88e6b0e3a439a719aea46e3b77843e412abc..7e6869c082903033d9f05fd20ae8fcfd
        }
      })
      child.once('error', (error) => { this.fail(error) })
-@@ -257,24 +323,63 @@ export class DesktopHostProcess {
+@@ -257,24 +326,63 @@ export class DesktopHostProcess {
      return { activeTasks: response.activeTasks, scheduledTasks: response.scheduledTasks }
    }
  
@@ -429,7 +434,7 @@ index 948a88e6b0e3a439a719aea46e3b77843e412abc..7e6869c082903033d9f05fd20ae8fcfd
        this.controlRequests.delete(requestId)
      }
    }
-@@ -308,6 +413,8 @@ export class DesktopHostProcess {
+@@ -308,6 +416,8 @@ export class DesktopHostProcess {
    }
  
    private fail(error: Error): void {
@@ -862,6 +867,71 @@ index 0000000000000000000000000000000000000000..33441c0571221c8712fcbbf34b661947
 +  }
 +  expect(invoke).toHaveBeenCalledOnce()
 +  expect(vi.getTimerCount()).toBe(0)
++})
+diff --git a/apps/desktop/tests/host-process-archive.built.e2e.ts b/apps/desktop/tests/host-process-archive.built.e2e.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..9a45ad7e055bbdddaf953e21a46ca63c861fcde6
+--- /dev/null
++++ b/apps/desktop/tests/host-process-archive.built.e2e.ts
+@@ -0,0 +1,59 @@
++/** Plain Node packaging checks start an Electron Host inside a real ASAR archive. */
++import { mkdir, mkdtemp, rm, symlink, unlink, writeFile } from 'node:fs/promises'
++import { realpathSync, type WriteStream } from 'node:fs'
++import { createRequire } from 'node:module'
++import { tmpdir } from 'node:os'
++import { join } from 'node:path'
++import { finished } from 'node:stream/promises'
++import { pathToFileURL } from 'node:url'
++import { expect, it } from 'vitest'
++import { DesktopHostProcess } from '../src/host-process.ts'
++
++const require = createRequire(import.meta.url)
++const builderRequire = createRequire(require.resolve('app-builder-lib/package.json'))
++const { createPackageWithOptions } = builderRequire('@electron/asar') as {
++  createPackageWithOptions: (source: string, destination: string, options: object) => Promise<WriteStream>
++}
++
++it('starts an archived Host from plain Node through a directory alias', { retry: 0 }, async () => {
++  const root = await mkdtemp(join(tmpdir(), 'desktop-archived-host-'))
++  let alias: string | undefined
++  let host: DesktopHostProcess | undefined
++  try {
++    const source = join(root, 'source')
++    const packageRoot = join(source, 'dsh', 'node_modules', '@deepseek-ai', 'dsh-desktop-host')
++    await mkdir(join(packageRoot, 'lib'), { recursive: true })
++    await writeFile(join(packageRoot, 'package.json'), '{"type":"module"}\n')
++    await writeFile(join(packageRoot, 'lib', 'index.js'), `
++import { createServer } from 'node:http'
++const server = createServer((_request, response) => {
++  response.setHeader('content-type', 'application/json')
++  response.end(JSON.stringify({ entry: import.meta.url, runtime: process.argv[2] }))
++})
++server.listen(0, '127.0.0.1', () => {
++  process.send({ type: 'ready', url: 'http://127.0.0.1:' + server.address().port + '/' })
++})
++process.on('message', message => {
++  if (message.type !== 'shutdown') return
++  server.close(() => process.send({ type: 'shutdown-complete' }, () => process.disconnect()))
++  server.closeAllConnections()
++})
++`)
++    const archive = join(root, 'app.asar')
++    await finished(await createPackageWithOptions(source, archive, {}), { cleanup: true })
++    const aliasPath = join(root, 'Archive Alias')
++    await symlink(root, aliasPath, process.platform === 'win32' ? 'junction' : 'dir')
++    alias = aliasPath
++    host = new DesktopHostProcess(require('electron') as string, join(alias, 'app.asar', 'dsh'), root)
++    const { url } = await host.start()
++    const canonical = join(realpathSync.native(archive), 'dsh')
++    expect(await (await fetch(url)).json()).toEqual({
++      runtime: canonical,
++      entry: pathToFileURL(join(canonical, 'node_modules', '@deepseek-ai', 'dsh-desktop-host', 'lib', 'index.js')).href,
++    })
++  } finally {
++    await host?.stop()
++    if (alias !== undefined) await unlink(alias)
++    await rm(root, { recursive: true, force: true })
++  }
 +})
 diff --git a/apps/desktop/tests/host-process.spec.ts b/apps/desktop/tests/host-process.spec.ts
 index daeddc74d0afc1315b0c632f61d2034bd0c9e31a..f0fa8ae67bd7c10d9b6ed8d970773ea70d19e9aa 100644

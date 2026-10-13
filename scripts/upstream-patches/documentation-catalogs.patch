@@ -113,7 +113,7 @@ index 2dbbb5cd4076fab87d424c8e05df88965f23b837..33a04a205f9507708472a1489907082f
  | [`typescript-language-server`](https://github.com/typescript-language-server/typescript-language-server) | Apache-2.0 |
  | [`vite`](https://github.com/vitejs/vite) | MIT |
 diff --git a/apps/desktop/README.i18n.yaml b/apps/desktop/README.i18n.yaml
-index a125998069cadf537b54e5cbbbe6939b4e103c0d..d09ca7b94f3d87a8fc429fc1e21e07fac8717533 100644
+index a125998069cadf537b54e5cbbbe6939b4e103c0d..daa577e184d16c769f4798632f35691cb819c96a 100644
 --- a/apps/desktop/README.i18n.yaml
 +++ b/apps/desktop/README.i18n.yaml
 @@ -3,17 +3,17 @@
@@ -122,8 +122,8 @@ index a125998069cadf537b54e5cbbbe6939b4e103c0d..d09ca7b94f3d87a8fc429fc1e21e07fa
  /deepseek-harness-desktop:
 -  en: 5b8518fd5e0030ef
 -  zh: 02efee59c39647dc
-+  en: c4a781a6e492570c
-+  zh: cbbdc380532c98b8
++  en: 6a8166589b176491
++  zh: 3a898b1186fbc2e3
  /deepseek-harness-desktop/terminal-command:
    en: bef92953c237363f
    zh: d21d6effd21b8c00
@@ -216,7 +216,7 @@ index a125998069cadf537b54e5cbbbe6939b4e103c0d..d09ca7b94f3d87a8fc429fc1e21e07fa
    en: 8e26b460ba31f21b
    zh: fbcd0307b3867125
 diff --git a/apps/desktop/README.md b/apps/desktop/README.md
-index 60f14b908fec7a906092c79f2708121903199614..4a1e92c2d0a22bce0123be41c95d2ac1bf872929 100644
+index 60f14b908fec7a906092c79f2708121903199614..7aa089344c78fa35ab9c25418bbb5f798a57aa5a 100644
 --- a/apps/desktop/README.md
 +++ b/apps/desktop/README.md
 @@ -6,7 +6,9 @@ Desktop analytics follows the [product collection policy](../../packages/client/
@@ -224,7 +224,7 @@ index 60f14b908fec7a906092c79f2708121903199614..4a1e92c2d0a22bce0123be41c95d2ac1
  The desktop application is an Electron shell around the complete dsh Web application. An Electron RunAsNode child starts the shared profile runner, and Electron immediately loads the packaged Web entry at `dsh-app://app/`. Its shared loading page waits for Host boot injections, then starts the client without navigating to another document. Electron forwards application HTTP requests to the authenticated Web Host, dropping connection-level response headers (`transfer-encoding`, `connection`, `keep-alive`) that describe the Node fetch rather than the resource, and marking plugin bundle responses `no-store` because their per-launch revisions would only accumulate in Chromium's disk cache; WebSocket streams connect to that Host with credentials attached only for the owned application window. Node IPC carries boot injections, readiness, and shutdown. Desktop listens on an OS-assigned port by default, so it cannot collide with Web’s `3080` or a reserved port; a `webserver.config.port` patch can override it.
  
 -Desktop binds `127.0.0.1`, the address Electron dials for the ready URL and the WebSocket credential filter. WebSocket streams use `ws:` or `wss:` according to the Host listener; credentials require matching authority and scheme.
-+Desktop binds `127.0.0.1`, the address Electron dials for the ready URL and the WebSocket credential filter. WebSocket streams use `ws:` or `wss:` according to the Host listener; credentials require matching authority and scheme. Before starting the Host, Desktop resolves its runtime directory with native realpath so startup imports and profile package resolution use the same module URLs, including Windows short-path aliases.
++Desktop binds `127.0.0.1`, the address Electron dials for the ready URL and the WebSocket credential filter. WebSocket streams use `ws:` or `wss:` according to the Host listener; credentials require matching authority and scheme. Before starting the Host, Desktop resolves its runtime directory with native realpath so startup imports and profile package resolution use the same module URLs, including Windows short-path aliases. For an archived runtime, it resolves the `app.asar` file and retains the internal directory, allowing plain Node packaging checks to start the Electron Host.
 +
 +Each renderer boot or reload requests the Host's current index injections over correlated Node IPC, with a ten-second deadline. Rebuilt client bundles therefore use their current revisions. A failed read or a Host replacement during the request rejects boot; the shell never falls back to the startup injection table. Module revision and renderer-source checks remain enforced.
  
@@ -351,7 +351,7 @@ index 60f14b908fec7a906092c79f2708121903199614..4a1e92c2d0a22bce0123be41c95d2ac1
  Embedded Platform views remain hidden until document loading completes so the renderer loading indicator stays visible. Closing or replacing a pending view prevents it from appearing later. Reloading or replacing the owning application document, renderer termination, and window closure also destroy the native view without relying on React cleanup.
  
 diff --git a/apps/desktop/README.zh.md b/apps/desktop/README.zh.md
-index eb1cbe5b78e2038fb728f571aca14b69301ed41e..1ff11091c1d87b9ce6bb5889534283b68419431b 100644
+index eb1cbe5b78e2038fb728f571aca14b69301ed41e..12a48cca6deecad90cf72662b9eab1be61a10cc3 100644
 --- a/apps/desktop/README.zh.md
 +++ b/apps/desktop/README.zh.md
 @@ -6,9 +6,11 @@
@@ -359,7 +359,7 @@ index eb1cbe5b78e2038fb728f571aca14b69301ed41e..1ff11091c1d87b9ce6bb5889534283b6
  桌面应用是完整 dsh Web 应用外的一层 Electron 壳。Electron RunAsNode 子进程启动共享 profile runner，Electron 立即从 `dsh-app://app/` 加载打包内的 Web 入口。共享加载页等待 Host 启动注入，然后在同一文档中启动客户端。Electron 将应用 HTTP 请求转发给已认证的 Web Host，转发时丢弃描述 Node fetch 连接而非资源本身的响应头（`transfer-encoding`、`connection`、`keep-alive`），并把插件 bundle 响应标记为 `no-store`，因为其每次启动都变化的 revision 只会在 Chromium 磁盘缓存中累积；WebSocket 流连接到该 Host，仅为归属的应用窗口附加凭据。Node IPC 承载启动注入、就绪与关闭。Desktop 默认监听系统分配的端口，因此不会与 Web 的 `3080` 或系统保留端口冲突；可通过 `webserver.config.port` patch 覆盖。
  
 -Desktop 绑定 `127.0.0.1`，即 Electron 为就绪 URL 与 WebSocket 凭据过滤器拨号的地址。WebSocket 流按 Host 监听器使用 `ws:` 或 `wss:`；附加凭据要求 authority 与 scheme 均匹配。
-+Desktop 绑定 `127.0.0.1`，即 Electron 为就绪 URL 与 WebSocket 凭据过滤器拨号的地址。WebSocket 流按 Host 监听器使用 `ws:` 或 `wss:`；附加凭据要求 authority 与 scheme 均匹配。启动 Host 前，Desktop 通过原生 realpath 解析运行时目录，使启动导入与 profile 包解析使用相同的模块 URL，包括使用 Windows 短路径别名时。
++Desktop 绑定 `127.0.0.1`，即 Electron 为就绪 URL 与 WebSocket 凭据过滤器拨号的地址。WebSocket 流按 Host 监听器使用 `ws:` 或 `wss:`；附加凭据要求 authority 与 scheme 均匹配。启动 Host 前，Desktop 通过原生 realpath 解析运行时目录，使启动导入与 profile 包解析使用相同的模块 URL，包括使用 Windows 短路径别名时。对于归档中的运行时，解析 `app.asar` 文件后保留内部目录，使普通 Node 打包检查也能启动 Electron Host。
  
 -应用菜单第一项“**关于 DeepSeek Harness**”打开 Electron 原生关于面板，展示应用图标、产品名称和当前安装的发布版本。菜单文案跟随桌面壳的语言。macOS 的隐藏、隐藏其他、显示全部和退出条目使用本地化文案，隐藏和退出条目包含 DeepSeek Harness 产品名称。这些条目保留原生动作和快捷键。macOS 从应用包读取图标，因此未打包的开发启动会显示 Electron 图标；Windows 使用随包分发的 PNG。
 +渲染进程每次启动或重载都通过关联 Node IPC 请求 Host 当前的 index 注入，请求时限为十秒，因此重建后的客户端 bundle 使用当前 revision。读取失败或请求期间 Host 被替换时，该次启动失败；桌面壳不会回退到启动时的注入表。模块 revision 与渲染进程来源检查继续生效。

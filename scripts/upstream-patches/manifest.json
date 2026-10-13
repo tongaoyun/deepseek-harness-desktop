@@ -48,10 +48,11 @@
     },
     {
       "id": "desktop-extension",
-      "purpose": "Generic trusted desktop lifecycle hooks, environment/profile overlays, namespaced bidirectional IPC, validated caller deadlines, sender checks, cancellation, credential-free structured failures, and teardown. Every renderer boot reads current Host index injections through correlated IPC with a bounded deadline and rejects Host replacement rather than reusing stale module revisions. Host startup canonicalizes the runtime with native realpath so entry imports and profile resolution share module identities, including Windows short paths. No product protocol is embedded in Electron or Host.",
+      "purpose": "Generic trusted desktop lifecycle hooks, environment/profile overlays, namespaced bidirectional IPC, validated caller deadlines, sender checks, cancellation, credential-free structured failures, and teardown. Every renderer boot reads current Host index injections through correlated IPC with a bounded deadline and rejects Host replacement rather than reusing stale module revisions. Host startup canonicalizes the runtime with native realpath so entry imports and profile resolution share module identities, including Windows short paths. Archived runtimes resolve the archive file without requiring plain Node to traverse its virtual directories; a real archived Electron child exercises this path. No product protocol is embedded in Electron or Host.",
       "tests": [
         "apps/desktop/tests/main-startup.spec.ts",
         "apps/desktop/tests/host-process.spec.ts",
+        "apps/desktop/tests/host-process-archive.built.e2e.ts",
         "apps/desktop/tests/extension-transport.spec.ts",
         "packages/deepseek-harness-product/runtime/tests/runtime-loader.spec.ts",
         "apps/web/tests/deepseek-harness-catalog.e2e.ts"
@@ -80,7 +81,7 @@
         {
           "path": "apps/desktop/src/host-process.ts",
           "before": "6b9d3e558f526b7832020fb43d6682a07a68bf2d5657f26951f50a4f3eabfa28",
-          "after": "24d31b3d222f010287c4e6097f5d5378ca01630de3f4cbef5c4edc270fd22887"
+          "after": "57a7b1e09925f69c220ad75dc97bdefb2284b4fc4d146d783ab302686dd513f5"
         },
         {
           "path": "apps/desktop/src/ipc.ts",
@@ -101,6 +102,11 @@
           "path": "apps/desktop/tests/extension-transport.spec.ts",
           "before": null,
           "after": "b826fbd75f0f9ded71ef4de7cbec98724da9d4ab188ebf71331e6282a2bf9e81"
+        },
+        {
+          "path": "apps/desktop/tests/host-process-archive.built.e2e.ts",
+          "before": null,
+          "after": "578dbc098d8cb61a0382260bd0fe7af6f4523231304b3df11fc2ef4a59ba8f9d"
         },
         {
           "path": "apps/desktop/tests/host-process.spec.ts",
@@ -786,17 +792,17 @@
         {
           "path": "apps/desktop/README.i18n.yaml",
           "before": "55113c40907f9f36aba2109a6b157a3f302b9417f813ef33105b3cc69efdc36b",
-          "after": "143a26e7f3bf236e754a7245cbedf44d284b243f26c26626223d63ab723b78b3"
+          "after": "bec7e18ffed5f22ab79d38168061c4db457f2aaa527bdb1a2abef8007712e091"
         },
         {
           "path": "apps/desktop/README.md",
           "before": "97c05df7e4e4d053c89ba0d5cf11094c76e7798fed118211f6a828ce2943ee19",
-          "after": "cb2eaf50e36022a1bca85c0e53b67c4ad30b851d553acbf70d8743b5496e1fc2"
+          "after": "d2ddcbf217f777eb663b82295d9d03ad2a04db1ef8f6f03bbc7c2ada04a3d6ef"
         },
         {
           "path": "apps/desktop/README.zh.md",
           "before": "324bb7f4dfe117e9f6ec99244aecfedac644e4159780ca7a4a96b90e05e551b7",
-          "after": "34494894e32755eff60c3d07e667504aa7ad1fd12005a9c1a9e4fa2642811f87"
+          "after": "fff020d46bdf41070f657f201dab7ea6ac9e9e5a20aa40912bee2b0c7550d56a"
         },
         {
           "path": "docs/architecture.i18n.yaml",
