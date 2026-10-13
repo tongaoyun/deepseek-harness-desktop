@@ -1,7 +1,7 @@
 import type { ProductApi } from '../src/client/product-api.ts'
 import { productFailure, ProductError } from '@deepseek-harness/product/errors'
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type { CommandContribution } from '@deepseek-ai/dsh-client-ui-commands/client'
@@ -52,11 +52,110 @@ const actions = () => ({
   readInstalledExpertKits: vi.fn(async () => ({ installed: [] })),
 })
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((complete) => { resolve = complete })
+  return { promise, resolve }
+}
+
 function castClientContext(value: object): ClientContext {
   return value as ClientContext
 }
 
 describe('DeepSeekHarness capability navigation', () => {
+  it.each([
+    ['skills', SkillsPanel], ['expertKits', ExpertKitsPanel], ['connectors', ConnectorsPanel],
+  ] as const)('clears %s private details and confirmations on identity change but retains them on token refresh', async (prefix, Panel) => {
+    let employeeId: string | undefined = 'employee-one'
+    let listener: Parameters<ProductApi['subscribe']>[0] | undefined
+    const entry = { id: 'private-resource', name: '上一员工的私有资源', version: '1.0.0', canEdit: true, canDelete: true }
+    const detailName = prefix === 'connectors' ? entry.name : '私有内容'
+    installProductApi({
+      getSession: async () => ({ authenticated: employeeId !== undefined, employeeId }),
+      subscribe: (callback) => { listener = callback; return () => { listener = undefined } },
+      invoke: async method => method.endsWith('.list') ? employeeId === 'employee-one' ? [entry] : []
+        : method.endsWith('.readme') ? { readme: '# 私有内容' } : entry,
+    })
+    render(<Panel t={t} {...actions()} />)
+    fireEvent.click(await screen.findByRole('button', { name: entry.name, exact: true }))
+    await screen.findAllByRole('heading', { name: detailName, exact: true })
+    await act(async () => { listener?.({ type: 'session.changed', payload: { authenticated: true, employeeId } }) })
+    expect(screen.getAllByRole('heading', { name: detailName, exact: true }).length).toBeGreaterThan(0)
+    fireEvent.click(screen.getAllByRole('button', { name: zh.resourceActions }).at(-1)!)
+    fireEvent.click(screen.getByRole('menuitem', { name: zh.deleteResource }))
+    expect(screen.getByRole('dialog', { name: zh.resourceDeleteTitle.replace('{name}', entry.name) })).not.toBeNull()
+    employeeId = 'employee-two'
+    await act(async () => { listener?.({ type: 'session.changed', payload: { authenticated: true, employeeId } }) })
+    await waitFor(() => { expect(screen.queryByText(entry.name)).toBeNull() })
+    expect(screen.queryByRole('dialog')).toBeNull()
+    employeeId = 'employee-one'
+    await act(async () => { listener?.({ type: 'session.changed', payload: { authenticated: true, employeeId } }) })
+    fireEvent.click(await screen.findByRole('button', { name: entry.name, exact: true }))
+    await screen.findAllByRole('heading', { name: detailName, exact: true })
+    employeeId = undefined
+    await act(async () => { listener?.({ type: 'session.changed', payload: { authenticated: false } }) })
+    await waitFor(() => { expect(screen.queryByText(entry.name)).toBeNull() })
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(screen.getByText(zh.authRequired)).not.toBeNull()
+  })
+
+  it('ignores an older session read after a newer authenticated catalog refresh', async () => {
+    const earlier = deferred<{ authenticated: boolean }>()
+    let first = true
+    let listener: Parameters<ProductApi['subscribe']>[0] | undefined
+    installProductApi({
+      getSession: () => {
+        if (first) { first = false; return earlier.promise }
+        return Promise.resolve({ authenticated: true, employeeId: 'employee-two' })
+      },
+      subscribe: (callback) => { listener = callback; return () => {} },
+      invoke: async () => [{ id: 'current', name: '当前员工资源' }],
+    })
+    render(<SkillsPanel t={t} {...actions()} />)
+    await act(async () => { listener?.({ type: 'session.changed', payload: { authenticated: true, employeeId: 'employee-two' } }) })
+    await screen.findByText('当前员工资源')
+    await act(async () => { earlier.resolve({ authenticated: false }) })
+    expect(screen.queryByText(zh.authRequired)).toBeNull()
+    expect(screen.getByText('当前员工资源')).not.toBeNull()
+  })
+
+  it.each(['skills.readme', 'extensions.import.inspect'] as const)('ignores a late %s response after switching employees', async (pendingMethod) => {
+    let employeeId = 'employee-one'
+    let listener: Parameters<ProductApi['subscribe']>[0] | undefined
+    const pending = deferred<unknown>()
+    const invoke = vi.fn(async (method: string) => method === pendingMethod ? pending.promise
+      : method === 'skills.list' ? employeeId === 'employee-one'
+        ? [{ id: 'private-skill', name: '私有技能', version: '1.0.0', canEdit: true }] : []
+        : { id: 'private-skill', name: '私有技能', version: '1.0.0' })
+    const startExtensionAuthoring = vi.fn(async () => {})
+    const cancel = vi.fn()
+    installProductApi({ invoke, cancel, getSession: async () => ({ authenticated: true, employeeId }),
+      subscribe: (callback) => { listener = callback; return () => {} } })
+    render(<SkillsPanel t={t} {...actions()} startExtensionAuthoring={startExtensionAuthoring} />)
+    await screen.findByText('私有技能')
+    if (pendingMethod === 'skills.readme') fireEvent.click(screen.getByRole('button', { name: '私有技能', exact: true }))
+    else {
+      fireEvent.click(screen.getByRole('button', { name: zh.resourceActions }))
+      fireEvent.click(screen.getByRole('menuitem', { name: zh.modifyResource }))
+    }
+    await waitFor(() => { expect(invoke.mock.calls.some(([method]) => method === pendingMethod)).toBe(true) })
+    employeeId = 'employee-two'
+    await act(async () => { listener?.({ type: 'session.changed', payload: { authenticated: true, employeeId } }) })
+    expect(cancel).toHaveBeenCalled()
+    await act(async () => { pending.resolve(pendingMethod === 'skills.readme' ? { readme: '# 旧员工正文' }
+      : { stageId: '00000000-0000-4000-8000-000000000001', draft: { kind: 'skill', id: 'private-skill', name: '私有技能', version: '1.0.1' }, files: [] }) })
+    expect(screen.queryByText('旧员工正文')).toBeNull()
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(startExtensionAuthoring).not.toHaveBeenCalled()
+  })
+
+  it('reports an unavailable identity transport without claiming the employee signed out', async () => {
+    installProductApi({ getSession: async () => { throw new Error('IPC unavailable') }, invoke: async () => [] })
+    render(<SkillsPanel t={t} {...actions()} />)
+    await screen.findByText(zh.loadFailed)
+    expect(screen.queryByText(zh.authRequired)).toBeNull()
+  })
+
   it.each([
     ['skills.list', SkillsPanel, 'skill', zh, '请修改技能「文档 $& 洞察」。'],
     ['expertKits.list', ExpertKitsPanel, 'expert-kit', zh, '请修改专家套件「文档 $& 洞察」。'],

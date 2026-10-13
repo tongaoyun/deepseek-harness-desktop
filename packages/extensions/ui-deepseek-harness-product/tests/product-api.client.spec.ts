@@ -13,13 +13,13 @@ it('restores public failures after plain structured replies cross the isolated-w
   expect(invoke).toHaveBeenCalledWith('product', 'knowledge.bases.list', undefined, 'request-id')
 })
 
-it('unwraps replies and reads only the public authentication status', async () => {
+it('unwraps replies and reads the public authentication status and employee identity', async () => {
   const invoke = vi.fn(async (_namespace: string, method: string) => ({ ok: true,
-    result: method === 'auth.getSession' ? { authenticated: true, employeeId: 'employee' } : ['policy'] }))
+    result: method === 'auth.getSession' ? { authenticated: true, employeeId: 'employee', sessionToken: 'private' } : ['policy'] }))
   const cancel = vi.fn()
   vi.stubGlobal('dshDesktop', { extensions: { invoke, cancel } })
   const api = productApi()!
-  await expect(api.getSession()).resolves.toEqual({ authenticated: true })
+  await expect(api.getSession()).resolves.toEqual({ authenticated: true, employeeId: 'employee' })
   await expect(api.invoke('knowledge.bases.list')).resolves.toEqual(['policy'])
   api.cancel('request-id')
   expect(cancel).toHaveBeenCalledWith('product', 'request-id')

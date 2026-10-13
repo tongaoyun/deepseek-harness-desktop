@@ -11,7 +11,7 @@ import { publicToolName } from '@deepseek-ai/dsh-mcp-client'
 import type {} from '@deepseek-ai/dsh-session-projection'
 import { z } from 'zod'
 import type { ProductContentIdentity, ProductInstalledSkills, ProductTaskCapabilities } from '@deepseek-harness/product/protocol'
-import { ProductError } from '@deepseek-harness/product/errors'
+import { isProductFailure, ProductError } from '@deepseek-harness/product/errors'
 import type { SkillContent } from './content.ts'
 import type { DeepSeekHarnessProductIpc } from './deepseek-harness-product-ipc.ts'
 import { connectorServerName, hydrateConnectors, parseConnectorSnapshots, snapshotConnector, type ConnectorSnapshot, type DeepSeekHarnessConnector } from './deepseek-harness-connector-contract.ts'
@@ -168,6 +168,10 @@ export function createInstalledSkills(ctx: Context, deps: Dependencies) {
         }))))
     const permissions = await Promise.allSettled(candidates.map(async (skill) => { await permitted(skill, signal); return skill }))
     signal?.throwIfAborted()
+    for (const result of permissions) {
+      if (result.status === 'rejected' && !(isProductFailure(result.reason)
+        && result.reason.code === 'EXPERT_KIT_NOT_FOUND' && !result.reason.retryable)) throw result.reason
+    }
     const skills = permissions.flatMap(result => result.status === 'fulfilled' ? [result.value] : [])
     const ids = new Set(skills.flatMap(skill => skill.connectorRefs))
     return { skills, connectors: connectors.filter(connector => ids.has(connector.id)).sort((a, b) => a.id.localeCompare(b.id)) }
@@ -201,6 +205,9 @@ export function createInstalledSkills(ctx: Context, deps: Dependencies) {
     const available = await eligible(agent, await installed(employee), signal)
     snapshot = { employee, skills: available.skills, connectors: available.connectors.map(snapshotConnector) }
     if (freeze) {
+      const loaded = await Promise.allSettled(snapshot.skills.map(skill => deps.load(skill)))
+      signal?.throwIfAborted()
+      for (const result of loaded) if (result.status === 'rejected') throw result.reason
       await save(path, { ...snapshot, digest: hash(JSON.stringify(snapshot)) }, signal)
       catalogs.set(sessionId, snapshot)
     }
@@ -226,7 +233,10 @@ export function createInstalledSkills(ctx: Context, deps: Dependencies) {
               locator: skill.id, metadata: { ...definition.metadata, productContent: identity(skill) } }
           }))
           options.signal?.throwIfAborted()
-          return results.flatMap(result => result.status === 'fulfilled' ? [result.value] : [])
+          return results.map((result) => {
+            if (result.status === 'rejected') throw result.reason
+            return result.value
+          })
         },
         async get(candidate, options) {
           const snapshot = await catalog(agent, false, options.signal)

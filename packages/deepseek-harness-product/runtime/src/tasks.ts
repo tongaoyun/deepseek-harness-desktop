@@ -76,7 +76,10 @@ export async function createTaskCapabilities(ctx: Context, deps: TaskDependencie
   const blockedPresets = new Map<string, () => Promise<void>>()
   const registerBlocked = async (id: string) => {
     if (blockedPresets.has(id)) return
-    const dispose = await deps.register({ id, plugins: [], selectable: false, defaultable: false }, [])
+    const failure = failures.get(id)
+    if (failure === undefined) throw new Error(`Blocked task requires a restoration diagnostic: ${id}`)
+    const dispose = await deps.register({ id, plugins: [{ id: 'product-blocked-task', name: CAPABILITY_PROMPT, config: { failure } }],
+      selectable: false, defaultable: false }, [])
     blockedPresets.set(id, dispose)
   }
   let committing = Promise.resolve()
@@ -181,9 +184,11 @@ export async function createTaskCapabilities(ctx: Context, deps: TaskDependencie
         continue
       }
       // Restored providers may depend on services supplied by this activating Host plugin.
-      try { await register(snapshot, hydrateConnectors(snapshot.connectors, await deps.connectors()), false) }
+      try { await register(snapshot, hydrateConnectors(snapshot.connectors,
+        snapshot.connectors.length === 0 ? [] : await deps.connectors()), false) }
       catch (error) {
         failures.set(id, productFailure(error))
+        await registerBlocked(id)
         ctx.logger.warn(`Task ${id} cannot restore its selected capabilities: ${String(error)}`)
       }
     }
@@ -333,7 +338,7 @@ export async function createTaskCapabilities(ctx: Context, deps: TaskDependencie
         }
         capabilities = { ...capabilities, knowledgeBaseIds: sorted(resolvedKnowledge), requiredKnowledgeBaseIds: sorted(requiredKnowledge) }
         if (capabilities.expertKit !== undefined) await deps.authorizeKit?.(capabilities.expertKit.id, signal)
-        const live = await deps.connectors(signal)
+        const live = capabilities.connectorIds.length === 0 ? [] : await deps.connectors(signal)
         dependencyChecks.push(...capabilities.connectorIds.map(reference => ({ kind: 'DATA_CONNECTION' as const, reference,
           status: live.some(row => row.id === reference) ? 'READY' as const : 'UNAUTHORIZED' as const })))
         const connectors = selectedConnectors(capabilities.connectorIds, live).map((connector) => {

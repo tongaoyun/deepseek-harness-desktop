@@ -12,7 +12,7 @@ it('relays MCP with main-owned credentials, refuses revoked authorization, and c
   await new Promise<void>(resolve => upstream.listen(0, '127.0.0.1', resolve))
   onTestFinished(async () => {
     upstream.closeAllConnections()
-    await new Promise<void>((resolve, reject) => upstream.close(error => error ? reject(error) : resolve()))
+    await new Promise<void>((resolve, reject) => upstream.close((error) => { if (error) reject(error); else resolve() }))
   })
   const address = upstream.address()
   if (address === null || typeof address === 'string') throw new Error('Fixture did not bind')
@@ -46,7 +46,7 @@ it('bounds a stalled upstream request by the connector timeout', async () => {
   await new Promise<void>(resolve => upstream.listen(0, '127.0.0.1', resolve))
   onTestFinished(async () => {
     upstream.closeAllConnections()
-    await new Promise<void>((resolve, reject) => upstream.close(error => error ? reject(error) : resolve()))
+    await new Promise<void>((resolve, reject) => upstream.close((error) => { if (error) reject(error); else resolve() }))
   })
   const address = upstream.address(); if (!address || typeof address === 'string') throw new Error('No fixture port')
   const connector = { id: 'slow', status: 'ready', transport: 'streamable-http', timeoutSeconds: 1,
@@ -68,17 +68,17 @@ it('cancels catalog requests when the caller disconnects', async () => {
   const cancelled = Promise.withResolvers<undefined>()
   const proxy = new ConnectorProxy(async (signal) => {
     entered.resolve(signal)
-    return new Promise((_resolve, reject) => signal.addEventListener('abort', () => {
+    return new Promise((_resolve, reject) => { signal.addEventListener('abort', () => {
       cancelled.resolve(undefined)
-      reject(signal.reason)
-    }, { once: true }))
+      reject(new Error('Catalog request cancelled'))
+    }, { once: true }) })
   })
   onTestFinished(() => proxy.close())
   await proxy.start()
   const [entry] = proxy.catalog([{ id: 'pending', transport: 'streamable-http' }]) as { url: string; headers: Record<string, string> }[]
   if (!entry) throw new Error('No relay connector')
   const controller = new AbortController()
-  const request = fetch(entry.url, { headers: entry.headers, signal: controller.signal }).catch(error => error)
+  const request = fetch(entry.url, { headers: entry.headers, signal: controller.signal }).catch((error: unknown) => error)
   onTestFinished(async () => { controller.abort(); await request })
   const signal = await entered.promise
   expect(signal).toBeInstanceOf(AbortSignal)
@@ -95,7 +95,7 @@ it('waits for in-flight stdio cleanup before closing and rejects new connections
   const connector = { id: 'stdio', status: 'ready', transport: 'stdio', visibility: 'PERSONAL' }
   let cleaned = false
   const proxy = new ConnectorProxy(async () => [connector], async (_request, response, _connector, signal) => {
-    signal.addEventListener('abort', () => cancelled.resolve(undefined), { once: true })
+    signal.addEventListener('abort', () => { cancelled.resolve(undefined) }, { once: true })
     entered.resolve(undefined)
     response.end('accepted')
     await release.promise
@@ -132,10 +132,10 @@ it('does not start a connector after a cancelled catalog returns late', async ()
   const [entry] = proxy.catalog([connector]) as { url: string; headers: Record<string, string> }[]
   if (!entry) throw new Error('No relay connector')
   const controller = new AbortController()
-  const request = fetch(entry.url, { headers: entry.headers, signal: controller.signal }).catch(error => error)
+  const request = fetch(entry.url, { headers: entry.headers, signal: controller.signal }).catch((error: unknown) => error)
   onTestFinished(async () => { controller.abort(); await request })
   const signal = await entered.promise
-  const cancelled = new Promise<void>(resolve => signal.addEventListener('abort', () => resolve(), { once: true }))
+  const cancelled = new Promise<void>((resolve) => { signal.addEventListener('abort', () => { resolve() }, { once: true }) })
   controller.abort()
   await cancelled
   release.resolve(undefined)

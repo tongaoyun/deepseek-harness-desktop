@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readdir, rm } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -20,6 +20,7 @@ import { expect, it, onTestFinished } from 'vitest'
 import { createInstalledSkills } from '../src/installed-skills.ts'
 import type { SkillContent } from '../src/content.ts'
 import type { DeepSeekHarnessConnector } from '../src/deepseek-harness-connector-contract.ts'
+import { ProductError } from '@deepseek-harness/product/errors'
 
 class Adapter extends LlmAdapter {
   readonly requests: GenerateOptions[] = []
@@ -59,6 +60,8 @@ it('discovers installed skills in an unchanged mode, pins versions, restores, de
   await ctx.agentPresets.register({ id: 'minimal', plugins: [{ id: 'skill-loader', name: 'cordis:official-skill-tool' }] })
   let employee = 'employee-one'
   let revoked = false
+  let permissionFailure: Error | undefined
+  let damaged = false
   let version = '1'
   let selected = false
   let connectorRevoked = false
@@ -77,14 +80,18 @@ it('discovers installed skills in an unchanged mode, pins versions, restores, de
       controls = createInstalledSkills(owner, {
         root, product: { invoke: async (method, payload) => {
           if (method === 'auth.getSession') return { authenticated: true, employeeId: employee }
-          if (revoked) throw new Error('permission revoked')
+          if (method === 'skills.get' && permissionFailure !== undefined) throw permissionFailure
+          if (method === 'skills.get' && revoked) throw new ProductError('EXPERT_KIT_NOT_FOUND', 'permission revoked')
           if (method === 'connectors.list') return [{ id: 'erp', status: connectorRevoked ? 'unavailable' : 'ready' }]
           if (method === 'knowledge.bases.list') return [{ id: 'manuals', referenceKey: 'company:manuals' }]
           return skill((payload as { id: string }).id)
         } },
         parse: value => value as SkillContent[], install: async () => {},
-        load: async entry => ({ name: entry.id, description: entry.summary, provider: 'fixture', source: 'user',
-          invocation: { modelInvocable: true, userInvocable: true }, content: `Use version ${entry.version} instructions.` }),
+        load: async (entry) => {
+          if (damaged) throw new Error('installed content damaged')
+          return { name: entry.id, description: entry.summary, provider: 'fixture', source: 'user',
+            invocation: { modelInvocable: true, userInvocable: true }, content: `Use version ${entry.version} instructions.` }
+        },
         capabilities: async () => ({ skills: [], connectorIds: selected ? ['erp'] : [], requiredConnectorIds: [],
           knowledgeBaseIds: selected ? ['manuals'] : [], requiredKnowledgeBaseIds: [], knowledgeBaseRefs: [] }),
         connectors: async () => connectorRevoked ? [] : [connector],
@@ -110,6 +117,31 @@ it('discovers installed skills in an unchanged mode, pins versions, restores, de
   expect((await ctx.skills.list({ scope: handle.agent })).map(row => row.name)).toEqual(['dependent-skill', 'review-skill'])
   const adapter = new Adapter()
   ctx.llm.registerAdapter(['fixture'], adapter)
+  const interrupted = await create('interrupted')
+  const errors: unknown[] = []
+  ctx.on('agent/error', ({ error }) => { errors.push(error) })
+  for (const error of [new ProductError('REMOTE_UNAVAILABLE', 'permission service offline', true),
+    new ProductError('EMPLOYEE_FORBIDDEN', 'employee identity mismatch'), new Error('invalid permission response')]) {
+    permissionFailure = error
+    interrupted.agent.followup(createUserMessage({ content: [{ type: 'text', text: 'Review this report.' }], source: { kind: 'user' } }))
+    await expect.poll(() => errors.at(-1)).toBe(error)
+    await expect.poll(() => interrupted.agent.status).toBe('idle')
+    expect(adapter.requests).toEqual([])
+    expect(await readdir(root)).not.toContain(`session-${createHash('sha256').update('interrupted').digest('hex')}.json`)
+  }
+  permissionFailure = undefined
+  damaged = true
+  interrupted.agent.followup(createUserMessage({ content: [{ type: 'text', text: 'Review this report.' }], source: { kind: 'user' } }))
+  await expect.poll(() => errors.at(-1)).toMatchObject({ message: 'installed content damaged' })
+  await expect.poll(() => interrupted.agent.status).toBe('idle')
+  expect(adapter.requests).toEqual([])
+  expect(await readdir(root)).not.toContain(`session-${createHash('sha256').update('interrupted').digest('hex')}.json`)
+  damaged = false
+  interrupted.agent.followup(createUserMessage({ content: [{ type: 'text', text: 'Review this report.' }], source: { kind: 'user' } }))
+  await expect.poll(() => adapter.requests.length).toBe(2)
+  await expect.poll(() => interrupted.agent.status).toBe('idle')
+  expect(JSON.stringify(interrupted.agent.session.snapshotEvents())).toContain('Use version 1 instructions.')
+  adapter.requests.splice(0)
   handle.agent.followup(createUserMessage({ content: [{ type: 'text', text: 'Review this report.' }], source: { kind: 'user' } }))
   await expect.poll(() => handle.agent.session.snapshotEvents().some(event => event.type === 'turn/end')).toBe(true)
   const events = handle.agent.session.snapshotEvents()

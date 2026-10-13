@@ -9,6 +9,7 @@ import { dirname, join, resolve, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { _electron, chromium, type ElectronApplication, type Locator, type Page } from 'playwright'
 import { expect, it, onTestFinished } from 'vitest'
+import { z } from 'zod'
 import * as tar from 'tar'
 import { captureStableAria, compareOrRefreshGolden, launchWebScaffold, seedSession, watchConsole, webSnapshotMode } from './scaffold.ts'
 import { expandOwningTurnProcess, newEnglishPage, REPO_ROOT } from './support.ts'
@@ -1695,7 +1696,8 @@ for (const { mode, installed } of desktopCarriers) {
         if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return undefined
         throw error
       }), { timeout: 60_000 }).toBeDefined()
-      const identities: { modules: string[]; loaderSharesRoot: boolean } = JSON.parse(await readFile(hostDiagnostic, 'utf8'))
+      const identities = z.object({ modules: z.array(z.string()), loaderSharesRoot: z.boolean() })
+        .parse(JSON.parse(await readFile(hostDiagnostic, 'utf8')))
       expect(identities.loaderSharesRoot).toBe(true)
       expect(identities.modules.filter(url => /\/(?:dsh-)?app-boot\/lib\/index\.js$/u.test(url))).toHaveLength(1)
       await page.setViewportSize({ width: 1440, height: 900 })

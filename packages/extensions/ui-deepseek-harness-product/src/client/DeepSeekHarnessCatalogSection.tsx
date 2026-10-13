@@ -63,12 +63,31 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
   const activeRequests = useRef(new Map<string, ProductApi>())
   const writes = useRef(new Map<string, ProductApi>())
   const managementLifetime = useRef(0)
+  const employee = useRef<string | undefined>(undefined)
+  const [identityRevision, setIdentityRevision] = useState(0)
 
   const cancelReads = (): number => {
     generation.current += 1
     for (const [requestId, api] of activeRequests.current) api.cancel(requestId)
     activeRequests.current.clear()
     return generation.current
+  }
+
+  const synchronizeIdentity = (session: Awaited<ReturnType<ProductApi['getSession']>>): void => {
+    const identity = session.authenticated === true ? session.employeeId ?? '' : undefined
+    if (employee.current === identity) return
+    employee.current = identity
+    managementLifetime.current += 1
+    for (const [requestId, api] of writes.current) api.cancel(requestId)
+    writes.current.clear()
+    setIdentityRevision(value => value + 1)
+    setEntries([])
+    setSelectedId(undefined); setSelected(undefined); setReference(undefined)
+    setEditor(undefined); setImporter(false); setImportMenu(false); setConfirmation(undefined)
+    setManagementPending(false); setManagementError(undefined)
+    setActionPending(false); setActionError(false); setActionFailure(undefined)
+    setDetailLoading(false); setDetailError(false)
+    setInstalledSkills(new Map()); setInstalledExpertKits(new Map()); setInstallationsKnown(false)
   }
 
   const read = async (api: ProductApi, method: string, payload?: unknown, timeoutMs?: number): Promise<unknown> => {
@@ -104,6 +123,8 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
     setAuthError(false)
     try {
       const session = await api.getSession()
+      if (currentGeneration !== generation.current) return
+      synchronizeIdentity(session)
       if (session.authenticated !== true) {
         setAuthRequired(true)
         setEntries([])
@@ -111,7 +132,9 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
       }
       setAuthRequired(false)
       if (force) await read(api, 'catalog.refresh')
+      if (currentGeneration !== generation.current) return
       const catalogValue = await read(api, METHODS[catalog])
+      if (currentGeneration !== generation.current) return
       if (catalog === 'skills') {
         const value = await props.readInstalledSkills?.()
         if (currentGeneration !== generation.current) return
@@ -131,7 +154,8 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
       if (currentGeneration !== generation.current) return
       const session = await api.getSession().catch(() => undefined)
       if (currentGeneration !== generation.current) return
-      if (session?.authenticated !== true) {
+      if (session !== undefined) synchronizeIdentity(session)
+      if (session?.authenticated === false) {
         setAuthRequired(true)
         setEntries([])
         setError(undefined)
@@ -185,6 +209,11 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
     const api = productApi()
     if (api?.subscribe === undefined) return
     return api.subscribe((event) => {
+      if (event.type === 'session.changed' && typeof event.payload === 'object' && event.payload !== null
+        && 'authenticated' in event.payload && typeof event.payload.authenticated === 'boolean') {
+        synchronizeIdentity({ authenticated: event.payload.authenticated,
+          ...'employeeId' in event.payload && typeof event.payload.employeeId === 'string' ? { employeeId: event.payload.employeeId } : {} })
+      }
       if (event.type === 'catalog.changed' || event.type === 'session.changed') void refresh()
     })
   }, [catalog])
@@ -297,52 +326,63 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
   }
 
   const useProduct = async (product: ProductDetail, task?: CommonTask): Promise<void> => {
+    const lifetime = managementLifetime.current
     setActionPending(true)
     setActionError(false)
     setActionFailure(undefined)
     try {
       if (catalog === 'skills') {
         await props.installSkill(product.id)
-        await rememberInstallation(product)
+        if (lifetime === managementLifetime.current) await rememberInstallation(product, lifetime)
       }
       else if (catalog === 'expertKits') {
         await props.startExpertKit(product.id, task?.id)
       }
     } catch (error) {
+      if (lifetime !== managementLifetime.current) return
       setActionError(true)
       setActionFailure(productErrorMessage(error, t, 'useFailed'))
     } finally {
-      setActionPending(false)
+      if (lifetime === managementLifetime.current) setActionPending(false)
     }
   }
 
-  const rememberInstallation = async (skill: { id: string; version?: string; sha256?: string }): Promise<void> => {
+  const rememberInstallation = async (
+    skill: { id: string; version?: string; sha256?: string }, lifetime = managementLifetime.current,
+  ): Promise<void> => {
     const value = await props.readInstalledSkills?.()
+    if (lifetime !== managementLifetime.current) return
     setInstalledSkills(previous => value === undefined
       ? new Map([...previous, [skill.id, skill]]) : new Map(value.installed.map(entry => [entry.id, entry])))
   }
-  const rememberKitInstallation = async (kit: { id: string; version?: string; sha256?: string }): Promise<void> => {
+  const rememberKitInstallation = async (
+    kit: { id: string; version?: string; sha256?: string }, lifetime = managementLifetime.current,
+  ): Promise<void> => {
     const value = await props.readInstalledExpertKits?.()
+    if (lifetime !== managementLifetime.current) return
     setInstalledExpertKits(previous => value === undefined
       ? new Map([...previous, [kit.id, kit]]) : new Map(value.installed.map(entry => [entry.id, entry])))
   }
   const installKit = async (kit: { id: string; version?: string; sha256?: string }): Promise<void> => {
+    const lifetime = managementLifetime.current
     setActionPending(true); setActionFailure(undefined)
     try {
       if (!props.installExpertKit) throw new Error(t('unavailable'))
       await props.installExpertKit(kit.id)
-      await rememberKitInstallation(kit)
-    } catch (error) { setActionFailure(productErrorMessage(error, t, 'installFailed')) }
-    finally { setActionPending(false) }
+      if (lifetime === managementLifetime.current) await rememberKitInstallation(kit, lifetime)
+    } catch (error) { if (lifetime === managementLifetime.current) setActionFailure(productErrorMessage(error, t, 'installFailed')) }
+    finally { if (lifetime === managementLifetime.current) setActionPending(false) }
   }
 
   const inspectImport = async (source: 'directory' | 'zip' | 'catalog', entry?: Pick<ProductItem, 'id'>): Promise<void> => {
     const api = productApi()
     if (!api || (catalog !== 'skills' && catalog !== 'expertKits')) return
+    const lifetime = managementLifetime.current
     setImportMenu(false); setActionPending(true); setActionFailure(undefined)
     try {
       const result = await read(api, 'extensions.import.inspect', { kind: catalog === 'skills' ? 'skill' : 'expert-kit', source,
         ...(entry ? { id: entry.id } : {}) })
+      if (lifetime !== managementLifetime.current) return
       if (typeof result !== 'object' || result === null || !('stageId' in result) || !('draft' in result)) return
       if (typeof result.stageId !== 'string' || !('files' in result) || !Array.isArray(result.files)) throw new Error(t('detailFailed'))
       const imported = { stageId: result.stageId, draft: ExtensionImportDraftSchema.parse(result.draft),
@@ -350,13 +390,14 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
           ? result.missingFields.filter((value): value is string => typeof value === 'string') : [] }
       if (source === 'catalog') await startAuthoring(imported, true)
       else setEditor({ imported })
-    } catch (error) { setActionFailure(productErrorMessage(error, t, 'loadFailed')) }
-    finally { setActionPending(false) }
+    } catch (error) { if (lifetime === managementLifetime.current) setActionFailure(productErrorMessage(error, t, 'loadFailed')) }
+    finally { if (lifetime === managementLifetime.current) setActionPending(false) }
   }
 
   const startAuthoring = async (imported?: ExtensionImportPreview, edit = false): Promise<void> => {
     if (catalog !== 'skills' && catalog !== 'expertKits') return
     if (!props.startExtensionAuthoring) throw new Error(t('unavailable'))
+    const lifetime = managementLifetime.current
     const kind = catalog === 'skills' ? 'skill' : 'expert-kit'
     let prompt = t(imported ? 'completeExtensionPrompt' : kind === 'skill' ? 'createSkillPrompt' : 'createKitPrompt')
     if (edit) {
@@ -368,14 +409,16 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
       prompt,
       ...imported ? { stageId: imported.stageId, edit } : {},
     })
+    if (lifetime !== managementLifetime.current) return
     if (imported) void productApi()?.invoke('extensions.import.release', { stageId: imported.stageId }, nextProductRequestId()).catch(() => undefined)
     setEditor(undefined)
   }
   const createContent = async (): Promise<void> => {
+    const lifetime = managementLifetime.current
     setActionPending(true); setActionFailure(undefined)
     try { await startAuthoring() }
-    catch (error) { setActionFailure(productErrorMessage(error, t, 'loadFailed')) }
-    finally { setActionPending(false) }
+    catch (error) { if (lifetime === managementLifetime.current) setActionFailure(productErrorMessage(error, t, 'loadFailed')) }
+    finally { if (lifetime === managementLifetime.current) setActionPending(false) }
   }
 
   const editResource = (entry: ProductItem | ProductDetail): void => {
@@ -455,21 +498,25 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
   const openReference = async (value: ProductReference): Promise<void> => {
     const api = productApi()
     if (!api || !value.kind) return
+    const lifetime = managementLifetime.current
+    const currentGeneration = generation.current
     try {
       if (value.kind === 'skills') {
         const skill = selected?.skillDetails.find(skill => skill.id === value.id)
         if (skill && selected) {
           const markdown = await read(api, 'extensions.bundledSkill.read', { id: selected.id, skillId: skill.id })
+          if (lifetime !== managementLifetime.current || currentGeneration !== generation.current) return
           const parsed = detail({ id: skill.id, name: skill.name, summary: skill.summary, version: selected.version }, markdown)
           if (parsed) setReference({ kind: 'skills', detail: parsed })
         }
       } else {
         const values = items(await read(api, METHODS[value.kind]))
+        if (lifetime !== managementLifetime.current || currentGeneration !== generation.current) return
         const item = values.find(entry => entry.id === value.id)
         if (!item) throw new Error(t('referenceUnauthorized'))
         setReference({ kind: value.kind, detail: localDetail(item) })
       }
-    } catch (error) { setActionFailure(productErrorMessage(error, t, 'detailFailed')) }
+    } catch (error) { if (lifetime === managementLifetime.current && currentGeneration === generation.current) setActionFailure(productErrorMessage(error, t, 'detailFailed')) }
   }
   const referenceModal = reference?.kind === 'connectors' ? <ConnectorDetailModal open detail={reference.detail} loading={false} error={false}
     onClose={() => { setReference(undefined) }} onCatalogChanged={() => refresh(true)} t={t} />
@@ -496,7 +543,7 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
     ? t('allCategories')
     : classificationLabel(categoryFilter)
 
-  if (catalog === 'knowledge') return <KnowledgeWorkspace entries={entries} loading={loading} refreshRevision={knowledgeRevision}
+  if (catalog === 'knowledge') return <KnowledgeWorkspace key={identityRevision} entries={entries} loading={loading} refreshRevision={knowledgeRevision}
     {...error === undefined ? {} : { error }}
     renderFactorySlot={props.renderFactorySlot}
     authRequired={authRequired} authPending={authPending} authError={authError} t={t}

@@ -355,7 +355,8 @@ it('quarantines an invalid nested snapshot and preserves it when explicit recove
   const restored = await createTaskCapabilities(f.ctx, f.deps)
   expect((await restored.read({ sessionId: 'session' })).unavailable?.code).toBe('TASK_SNAPSHOT_INVALID')
   await expect(restored.validate(prepared.presetId)).rejects.toThrow('cannot be restored')
-  expect(f.register).toHaveBeenLastCalledWith({ id: prepared.presetId, plugins: [], selectable: false, defaultable: false }, [])
+  expect(f.register).toHaveBeenLastCalledWith({ id: prepared.presetId,
+    plugins: [expect.objectContaining({ id: 'product-blocked-task' })], selectable: false, defaultable: false }, [])
   const repaired = await restored.prepare({ sessionId: 'session', recoverCapabilities: true, knowledgeBaseIds: ['manuals'] })
   const preserved = (await readdir(f.root)).find(name => name.startsWith(`${prepared.presetId}.json.invalid-`))
   expect(preserved).toBeDefined()
@@ -378,6 +379,39 @@ it('clears a restored diagnostic after successfully preparing the same snapshot'
   expect((await restored.read({ sessionId: 'session' })).unavailable).toBeUndefined()
 })
 
+it('restores tasks without connectors while the remote connector directory is offline', async () => {
+  const f = await setup()
+  const prepared = await f.tasks.prepare({ knowledgeBaseIds: ['manuals'] })
+  f.select(prepared.presetId)
+  f.deps.connectors.mockClear()
+  f.deps.connectors.mockRejectedValue(new Error('connector directory offline'))
+  const restored = await createTaskCapabilities(f.ctx, f.deps)
+  expect(f.deps.connectors).not.toHaveBeenCalled()
+  await expect(restored.validate(prepared.presetId)).resolves.toBeUndefined()
+  expect((await restored.read({ sessionId: 'session' })).unavailable).toBeUndefined()
+  await expect(restored.prepare({ sessionId: 'session', knowledgeBaseIds: ['manuals'] })).resolves.toMatchObject({ presetId: prepared.presetId })
+  expect(f.deps.connectors).not.toHaveBeenCalled()
+})
+
+it('keeps failed remote restoration accessible for history and retries pinned content through explicit preparation', async () => {
+  const f = await setup()
+  const prepared = await f.tasks.prepare({ connectorIds: ['erp'] })
+  f.select(prepared.presetId)
+  const path = join(f.root, `${prepared.presetId}.json`)
+  const original = await readFile(path, 'utf8')
+  f.deps.connectors.mockRejectedValueOnce(new Error('connector directory offline'))
+  const restored = await createTaskCapabilities(f.ctx, f.deps)
+  expect(f.register.mock.calls.at(-1)?.[0]).toMatchObject({ id: prepared.presetId, selectable: false, defaultable: false,
+    plugins: [expect.objectContaining({ id: 'product-blocked-task' })] })
+  expect((await restored.read({ sessionId: 'session' })).unavailable?.retryable).toBe(true)
+  await expect(restored.validate(prepared.presetId)).rejects.toMatchObject({ retryable: true })
+  f.start()
+  const retried = await restored.prepare({ sessionId: 'session' })
+  expect(retried).toMatchObject({ kind: 'NEW_SESSION', presetId: prepared.presetId, capabilities: prepared.capabilities })
+  expect(await readFile(path, 'utf8')).toBe(original)
+  await expect(restored.validate(retried.presetId)).resolves.toBeUndefined()
+})
+
 it('restores the blocked composition when recovering the same identity fails registration', async () => {
   const f = await setup()
   const prepared = await f.tasks.prepare({ knowledgeBaseIds: ['manuals'] })
@@ -388,7 +422,8 @@ it('restores the blocked composition when recovering the same identity fails reg
   f.deps.validateTools.mockRejectedValueOnce(new Error('composition validation failed'))
   await expect(restored.prepare({ sessionId: 'session', recoverCapabilities: true, knowledgeBaseIds: ['manuals'] }))
     .rejects.toThrow('composition validation failed')
-  expect(f.register).toHaveBeenLastCalledWith({ id: prepared.presetId, plugins: [], selectable: false, defaultable: false }, [])
+  expect(f.register).toHaveBeenLastCalledWith({ id: prepared.presetId,
+    plugins: [expect.objectContaining({ id: 'product-blocked-task' })], selectable: false, defaultable: false }, [])
   expect(await readFile(path, 'utf8')).toBe('{broken snapshot')
   await expect(restored.validate(prepared.presetId)).rejects.toThrow('cannot be restored')
   await restored.prepare({ sessionId: 'session', recoverCapabilities: true, knowledgeBaseIds: ['manuals'] })
