@@ -45,15 +45,21 @@ it('discovers real MCP annotations without business calls, encrypts secrets, iso
   const saved: unknown[] = []
   let storedEntry: Record<string, unknown> = {}
   let failUpdate = false
+  let lostReceipt = false
+  let confirmationOffline = false
   const api = new DeepSeekHarnessApiClient({ baseUrl: 'https://product.example', getSessionToken: () => 'employee-token',
     fetch: vi.fn(async (_url: Parameters<typeof fetch>[0], init?: RequestInit) => {
       if (init?.method === 'DELETE') return Response.json({ success: true, data: true })
-      if (!init?.body) return Response.json({ success: true, data: storedEntry })
+      if (!init?.body) {
+        if (confirmationOffline) throw new Error('confirmation offline')
+        return Response.json({ success: true, data: storedEntry })
+      }
       if (typeof init.body !== 'string') throw new Error('Expected a JSON request body')
       if (failUpdate) throw new Error('offline')
       const value = JSON.parse(init.body) as Record<string, unknown>
       saved.push(value)
       if (value.id === 'my-orders') storedEntry = { ...storedEntry, ...value, tools: (value.toolNames as string[]).map(name => ({ name })) }
+      if (lostReceipt) throw new Error('commit receipt lost')
       return Response.json({ success: true, data: {} })
     }) })
   const signal = new AbortController().signal
@@ -107,15 +113,51 @@ it('discovers real MCP annotations without business calls, encrypts secrets, iso
   await expect(manager.manage('extensions.connector.update', { id: draft.id, version: draft.version,
     draft: { ...update, url: 'https://another.example/mcp' } }, api, owner, signal)).rejects.toMatchObject({ code: 'CONNECTOR_CONFIGURATION_REQUIRED' })
   failUpdate = true
-  await expect(manager.manage('extensions.connector.update', { id: draft.id, version: draft.version, draft: update }, api, owner, signal)).rejects.toThrow('offline')
+  const edited = { ...update, name: 'Updated orders' }
+  await expect(manager.manage('extensions.connector.update', { id: draft.id, version: draft.version, draft: edited }, api, owner, signal))
+    .rejects.toMatchObject({ code: 'CONNECTOR_SAVE_PENDING', retryable: true })
+  expect((await readdir(root)).filter(name => name.endsWith('.pending'))).toHaveLength(1)
+  const resumed = await manager.manage('extensions.connector.read', { id: draft.id, version: draft.version }, api, owner, signal)
+  expect(resumed).toMatchObject({ savePending: true, draft: { name: 'Updated orders', headers: { 'x-private-secret': '' } } })
+  expect(JSON.stringify(resumed)).not.toContain('device-secret')
+  await expect(manager.manage('extensions.connector.update', { id: draft.id, version: draft.version, draft: update }, api, owner, signal))
+    .rejects.toMatchObject({ code: 'CONNECTOR_SAVE_PENDING' })
   failUpdate = false
-  expect(await manager.manage('extensions.connector.update', { id: draft.id, version: draft.version, draft: { ...update, name: 'Updated orders' } }, api, owner, signal))
+  expect(await manager.manage('extensions.connector.update', { id: draft.id, version: draft.version, draft: edited }, api, owner, signal))
     .toMatchObject({ version: '1.0.1' })
   expect(saved[2]).toMatchObject({ version: '1.0.1', name: 'Updated orders', headers: {} })
   expect(headers.every(value => value === 'device-secret')).toBe(true)
   await expect(manager.manage('extensions.connector.read', { id: draft.id, version: '1.0.0' }, api, owner, signal)).rejects.toMatchObject({ code: 'EXTENSION_VERSION_CONFLICT' })
   await expect(manager.manage('extensions.connector.read', { id: draft.id, version: '1.0.1' }, api, 'another', signal)).rejects.toMatchObject({ code: 'EXTENSION_OWNER_REQUIRED' })
-  expect(await manager.manage('extensions.connector.delete', { id: draft.id, version: '1.0.1' }, api, owner, signal)).toMatchObject({ removed: true })
+  const next = await manager.manage('extensions.connector.read', { id: draft.id, version: '1.0.1' }, api, owner, signal) as { draft: unknown }
+  lostReceipt = true
+  expect(await manager.manage('extensions.connector.update', { id: draft.id, version: '1.0.1', draft: next.draft }, api, owner, signal))
+    .toMatchObject({ version: '1.0.2' })
+  expect((await readdir(root)).some(name => name.endsWith('.pending'))).toBe(false)
+  expect(await manager.enrich([storedEntry], signal)).toMatchObject([{ configurationStatus: 'CONFIGURED' }])
+  const last = await manager.manage('extensions.connector.read', { id: draft.id, version: '1.0.2' }, api, owner, signal) as { draft: unknown }
+  // The commit succeeds, then neither its receipt nor the confirmation request is available.
+  const lastDraft = ExtensionDraftSchema.parse(last.draft)
+  confirmationOffline = true
+  await expect(manager.save({ ...lastDraft, headers: draft.headers }, api, owner, signal))
+    .rejects.toMatchObject({ code: 'CONNECTOR_SAVE_PENDING' })
+  const pendingFiles = (await readdir(root)).filter(name => name.endsWith('.pending'))
+  expect(pendingFiles).toHaveLength(1)
+  expect((await readFile(join(root, pendingFiles[0]!))).toString()).not.toContain('device-secret')
+  await manager.close()
+  const reopened = new PersonalConnectors(root, secure, () => owner)
+  onTestFinished(() => reopened.close())
+  owner = 'employee-two'
+  expect(await reopened.enrich([{ ...storedEntry, ownerEmployeeId: owner }], signal)).toMatchObject([{ configurationStatus: 'REQUIRED' }])
+  expect((await readdir(root)).filter(name => name.endsWith('.pending'))).toHaveLength(1)
+  owner = 'employee-one'
+  confirmationOffline = false; lostReceipt = false
+  expect(await reopened.enrich([storedEntry], signal)).toMatchObject([{ configurationStatus: 'CONFIGURED' }])
+  expect((await readdir(root)).some(name => name.endsWith('.pending'))).toBe(false)
+  const restored = await reopened.manage('extensions.connector.read', { id: draft.id, version: '1.0.3' }, api, owner, signal)
+  expect(restored).toMatchObject({ configured: true })
+  expect(JSON.stringify(restored)).not.toContain('device-secret')
+  expect(await reopened.manage('extensions.connector.delete', { id: draft.id, version: '1.0.3' }, api, owner, signal)).toMatchObject({ removed: true })
   expect(requests).not.toContain('tools/call')
   await manager.resetIdentity(undefined)
   owner = 'employee-two'

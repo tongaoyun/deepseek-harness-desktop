@@ -65,6 +65,7 @@ export function apply(ctx: ClientContext): void {
     inject: sessionId => ({
       readMode: actions.readMode, readKnowledgeCatalog: actions.readKnowledgeCatalog,
       setKnowledgeSelection: actions.setKnowledgeSelection, recoverCapabilities: actions.recoverCapabilities,
+      retryCapabilities: actions.retryCapabilities,
       openCatalog: actions.openCatalog,
       subscribeOpen: (listener: () => void) => {
         knowledgeOpeners.set(sessionId, listener)
@@ -77,13 +78,15 @@ export function apply(ctx: ClientContext): void {
     readExpertKits: actions.readExpertKits, setExpertKit: actions.setExpertKit,
     openCatalog: actions.openCatalog,
     recoverCapabilities: actions.recoverCapabilities,
+    retryCapabilities: actions.retryCapabilities,
   })
   ctx.slots.inject('conversation.hero.actions', () => ctx.slots.register({
     name: 'conversation.hero.actions', id: 'product-expert-kit', order: 10, locale: NS, inject: kitInjected,
   }, TaskExpertKitSeat))
   ctx.slots.inject('conversation.session.header.actions', () => ctx.slots.register({
     name: 'conversation.session.header.actions', id: 'product-expert-kit', order: -5, locale: NS,
-    inject: () => ({ readMode: actions.readMode, recoverCapabilities: actions.recoverCapabilities }),
+    inject: () => ({ readMode: actions.readMode, recoverCapabilities: actions.recoverCapabilities,
+      retryCapabilities: actions.retryCapabilities }),
   }, TaskExpertKitHeader))
   ctx.slots.inject('sidebar.panelheading', () => ctx.slots.register({
     name: 'sidebar.panelheading', id: 'deepseek-harness-capabilities', order: -40, locale: NS,

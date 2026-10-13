@@ -9,7 +9,7 @@ import { productErrorMessage } from './product-errors.ts'
 import css from '../DeepSeekHarnessProduct.module.css'
 
 interface KnowledgeInjected extends Pick<TaskModeActions,
-  'readMode' | 'readKnowledgeCatalog' | 'setKnowledgeSelection' | 'recoverCapabilities' | 'openCatalog'> {
+  'readMode' | 'readKnowledgeCatalog' | 'setKnowledgeSelection' | 'recoverCapabilities' | 'retryCapabilities' | 'openCatalog'> {
   subscribeOpen: (listener: () => void) => () => void
 }
 
@@ -18,7 +18,8 @@ interface KnowledgeInjected extends Pick<TaskModeActions,
  * @returns Knowledge tags, their selection dialog, and capability-load diagnostics.
  */
 export function TaskKnowledgeInput({
-  sessionId, useSessions, readMode, readKnowledgeCatalog, setKnowledgeSelection, recoverCapabilities, openCatalog, subscribeOpen, t,
+  sessionId, useSessions, readMode, readKnowledgeCatalog, setKnowledgeSelection,
+  recoverCapabilities, retryCapabilities, openCatalog, subscribeOpen, t,
 }: PropsRuntime<'conversation.input.left'> & PropsLocale<typeof NS> & InjectFace<KnowledgeInjected>) {
   const presetId = useSessions(state => state.byId[sessionId]?.projectionValues?.agentPreset)
   const [state, setState] = useState<Awaited<ReturnType<TaskModeActions['readMode']>>>()
@@ -41,7 +42,8 @@ export function TaskKnowledgeInput({
   }, [sessionId, presetId, revision, readMode, t])
   return <>
     <TaskKnowledgeSelector sessionId={sessionId} capabilities={state?.capabilities} readKnowledgeCatalog={readKnowledgeCatalog}
-      setKnowledgeSelection={setKnowledgeSelection} recoverCapabilities={recoverCapabilities} openCatalog={openCatalog}
+      setKnowledgeSelection={setKnowledgeSelection} recoverCapabilities={recoverCapabilities}
+      retryCapabilities={retryCapabilities} openCatalog={openCatalog}
       subscribeOpen={subscribeOpen} onApplied={() => { setRevision(value => value + 1) }} onPendingChange={setPending}
       disabled={pending} t={t} />
     {failure && <span role="alert" className={css.catalogError}>{failure}</span>}

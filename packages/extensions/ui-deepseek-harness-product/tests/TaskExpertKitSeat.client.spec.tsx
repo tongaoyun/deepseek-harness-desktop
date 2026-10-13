@@ -30,6 +30,7 @@ function fixture() {
   ]))
   const openCatalog = vi.fn()
   const recoverCapabilities = vi.fn<TaskModeActions['recoverCapabilities']>(async () => {})
+  const retryCapabilities = vi.fn<TaskModeActions['retryCapabilities']>(async () => {})
   const props: ComponentProps<typeof TaskExpertKitSeat> & ComponentProps<typeof TaskExpertKitHeader> = {
     sessionId, useSessions: selector => selector({
       ids: [sessionId], phase: 'ready', projectionsBySession: {}, byId: {
@@ -44,11 +45,23 @@ function fixture() {
     usePanelInfo: unusedHook, useSessionStatus: unusedHook,
     useSessionRetainInfo: unusedHook, useWorkspaces: unusedHook, useResource: unusedHook,
     readExpertKits, setExpertKit, openCatalog,
-    recoverCapabilities,
+    recoverCapabilities, retryCapabilities,
     t: key => translations.get(key) ?? key,
   }
-  return { props, readMode, readExpertKits, setExpertKit, recoverCapabilities, openCatalog }
+  return { props, readMode, readExpertKits, setExpertKit, recoverCapabilities, retryCapabilities, openCatalog }
 }
+
+it.each([TaskExpertKitSeat, TaskExpertKitHeader])('retries transient restoration without resetting the kit', async (Component) => {
+  const f = fixture()
+  const state = await f.readMode()
+  f.readMode.mockResolvedValue({ ...state, capabilities: { ...state.capabilities,
+    unavailable: { code: 'CONNECTOR_DISCOVERY_FAILED', message: 'offline', retryable: true, resources: [] } } })
+  render(<Component {...f.props} />)
+  fireEvent.click(await screen.findByRole('button', { name: zh.retry }))
+  await waitFor(() => { expect(f.retryCapabilities).toHaveBeenCalledExactlyOnceWith('session') })
+  expect(f.recoverCapabilities).not.toHaveBeenCalled()
+  expect(f.setExpertKit).not.toHaveBeenCalled()
+})
 
 it('renders only the independent kit selector and leaves execution mode to the native plugin', async () => {
   const f = fixture()
@@ -237,7 +250,7 @@ it('offers explicit recovery for an unavailable snapshot without displaying a fa
   f.readMode.mockResolvedValue({ ...current, capabilities: { ...current.capabilities,
     unavailable: { code: 'TASK_SNAPSHOT_INVALID', message: 'Snapshot damaged', retryable: false, resources: [] } } })
   render(<TaskExpertKitSeat {...f.props} />)
-  await screen.findByText('Snapshot damaged')
+  await screen.findByText(`${zh.taskSnapshotUnavailable} (TASK_SNAPSHOT_INVALID)`)
   expect(screen.queryByText('标准模式')).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: zh.taskRecovery }))
   await waitFor(() => { expect(f.recoverCapabilities).toHaveBeenCalledWith('session') })

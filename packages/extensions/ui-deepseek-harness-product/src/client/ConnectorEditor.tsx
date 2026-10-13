@@ -58,8 +58,9 @@ export function ConnectorEditor({ onClose, onSaved, editing, t }: {
     try {
       const value = await invoke('extensions.connector.read', editing)
       if (lifecycle.current.closed) return
-      const result = value as { draft: unknown }
+      const result = value as { draft: unknown; savePending?: boolean }
       applyJson(ExtensionDraftSchema.parse(result.draft), true)
+      if (result.savePending) setError(t('connectorSavePending'))
       setReady(true)
     } catch (error) { if (!lifecycle.current.closed) setError(productErrorMessage(error, t, 'loadFailed')) }
     finally { if (!lifecycle.current.closed) setLoading(false) }

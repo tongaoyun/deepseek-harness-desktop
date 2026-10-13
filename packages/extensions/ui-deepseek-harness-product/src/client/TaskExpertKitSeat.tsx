@@ -11,10 +11,10 @@ import { productApi } from './product-api.ts'
 import { productErrorMessage } from './product-errors.ts'
 
 type KitInjected = Pick<TaskModeActions,
-  'readMode' | 'readExpertKits' | 'setExpertKit' | 'recoverCapabilities' | 'openCatalog'>
+  'readMode' | 'readExpertKits' | 'setExpertKit' | 'recoverCapabilities' | 'retryCapabilities' | 'openCatalog'>
 type KitProps = PropsRuntime<'conversation.hero.actions'> & PropsLocale<typeof NS> & InjectFace<KitInjected>
 type KitHeaderProps = PropsRuntime<'conversation.session.header.actions'> & PropsLocale<typeof NS>
-  & InjectFace<Pick<TaskModeActions, 'readMode' | 'recoverCapabilities'>>
+  & InjectFace<Pick<TaskModeActions, 'readMode' | 'recoverCapabilities' | 'retryCapabilities'>>
 
 /** Select an Expert Kit without replacing the official mode control.
  * @param props Public Session selectors, catalog access, and guarded task actions.
@@ -22,7 +22,7 @@ type KitHeaderProps = PropsRuntime<'conversation.session.header.actions'> & Prop
  */
 export function TaskExpertKitSeat({
   sessionId, useSessions, readMode, readExpertKits, setExpertKit,
-  recoverCapabilities, openCatalog, t,
+  recoverCapabilities, retryCapabilities, openCatalog, t,
 }: KitProps) {
   const presetId = useSessions(state => sessionId === undefined ? undefined : state.byId[sessionId]?.projectionValues?.agentPreset)
   const [state, setState] = useState<Awaited<ReturnType<TaskModeActions['readMode']>>>()
@@ -100,10 +100,10 @@ export function TaskExpertKitSeat({
         <IconChevronDownOutlineRegular size={14} />
       </button>} />
     {state?.capabilities.unavailable !== undefined && <span role="alert" className={css.catalogError}>
-      {state.capabilities.unavailable.message}
+      {productErrorMessage(state.capabilities.unavailable, t, 'taskSelectionFailed')}
       <button type="button" disabled={pending} onClick={() => {
-        apply(recoverCapabilities(sessionId))
-      }}>{t('taskRecovery')}</button>
+        apply(state.capabilities.unavailable?.retryable ? retryCapabilities(sessionId) : recoverCapabilities(sessionId))
+      }}>{t(state.capabilities.unavailable.retryable ? 'retry' : 'taskRecovery')}</button>
     </span>}
     {failed && <span role="alert" className={css.catalogError}>{failed}</span>}
   </div>
@@ -113,7 +113,7 @@ export function TaskExpertKitSeat({
  * @param props Session selectors, pinned task access, and explicit snapshot recovery.
  * @returns A read-only Kit label, with failures and recovery independent of the label.
  */
-export function TaskExpertKitHeader({ sessionId, useSessions, readMode, recoverCapabilities, t }: KitHeaderProps) {
+export function TaskExpertKitHeader({ sessionId, useSessions, readMode, recoverCapabilities, retryCapabilities, t }: KitHeaderProps) {
   const presetId = useSessions(state => state.byId[sessionId]?.projectionValues?.agentPreset)
   const [view, setView] = useState<{
     sessionId: typeof sessionId
@@ -155,14 +155,14 @@ export function TaskExpertKitHeader({ sessionId, useSessions, readMode, recoverC
           const { error: _error, ...retained } = value
           return retained
         })
-        void recoverCapabilities(captured).then(() => {
+        void (unavailable.retryable ? retryCapabilities(captured) : recoverCapabilities(captured)).then(() => {
           if (activeSession.current === captured) setRevision(value => value + 1)
         }).catch((error: unknown) => {
           if (activeSession.current === captured) setView(value => value === undefined ? value : {
             ...value, error: productErrorMessage(error, t, 'taskSelectionFailed'),
           })
         }).finally(() => { if (activeSession.current === captured) setPending(false) })
-      }}>{t('taskRecovery')}</button>
+      }}>{t(unavailable.retryable ? 'retry' : 'taskRecovery')}</button>
     </span>}
     {current?.error !== undefined && <span role="alert" className={css.catalogError}>{current.error}</span>}
   </div>

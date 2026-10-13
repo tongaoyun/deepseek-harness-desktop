@@ -9,7 +9,7 @@ import { Server } from '@modelcontextprotocol/server'
 import { NodeStreamableHTTPServerTransport } from '@modelcontextprotocol/node'
 import { scrubbedParentEnv } from '@deepseek-ai/dsh-subprocess'
 import { ExtensionDraftSchema, type ExtensionDraft } from '@deepseek-harness/product/authoring'
-import type { DeepSeekHarnessApiClient } from '@deepseek-harness/product'
+import { DeepSeekHarnessApiError, type DeepSeekHarnessApiClient } from '@deepseek-harness/product'
 import { ProductError } from '@deepseek-harness/product/errors'
 import { z } from 'zod'
 
@@ -28,11 +28,14 @@ const PublicConnector = z.looseObject({ id: z.string(), version: z.string(), own
   tools: z.array(z.looseObject({ name: z.string() })).default([]),
 })
 type PublicConnector = z.infer<typeof PublicConnector>
+const PendingConfiguration = z.object({ employee: z.string(), config: Configuration, body: z.string() })
+const PendingMetadata = z.object({ id: z.string(), version: z.string(), name: z.string(), summary: z.string(), category: z.string() })
 
 /** Owns authenticated personal configuration and SDK connections for the desktop lifetime. */
 export class PersonalConnectors {
   private readonly lifetime = new AbortController()
   private readonly clients = new Map<string, Promise<Client>>()
+  private readonly saves = new Map<string, Promise<void>>()
   private identity: string | undefined
   constructor(private readonly root: string, private readonly secure: SecureStorage, private readonly employee: () => string | undefined,
     private readonly oauthConnector?: (id: string, signal: AbortSignal) => Promise<unknown>) {}
@@ -57,20 +60,32 @@ export class PersonalConnectors {
       await api.request(`/api/v1/connectors/${encodeURIComponent(entry.id)}`, { method: 'DELETE', signal })
       await this.resetIdentity(undefined)
       await rm(this.filename(employee, entry.id, entry.version), { force: true })
+      await rm(`${this.filename(employee, entry.id, entry.version)}.pending`, { force: true })
       return { removed: true, id: entry.id }
     }
-    const config = entry.authMode === 'oauth' ? undefined : await this.configuration(entry, employee)
+    let config = entry.authMode === 'oauth' ? undefined : await this.configuration(entry, employee)
     const [major, minor, patch] = entry.version.split('-')[0]?.split('.') ?? []
     if (!major || !minor || !patch || !/^\d+$/.test(patch)) throw new Error('Invalid connector version')
     const nextVersion = `${major}.${minor}.${String(BigInt(patch) + 1n)}`
+    const pending = entry.authMode === 'oauth' ? undefined : await this.pending(this.filename(employee, entry.id, nextVersion))
+    const pendingDraft = pending === undefined ? undefined : ExtensionDraftSchema.parse({
+      ...PendingMetadata.parse(JSON.parse(pending.body)), kind: 'connector', ...pending.config,
+      url: pending.config.url, command: pending.config.command,
+    })
+    if (pending && (pending.employee !== employee || pendingDraft?.id !== entry.id || pendingDraft.version !== nextVersion)) {
+      throw new ProductError('EXTENSION_PRIVATE_CONFIGURATION_INVALID', 'Pending connector identity is invalid', false)
+    }
+    if (pending) config = pending.config
     const draft = ExtensionDraftSchema.parse({ kind: 'connector', id: entry.id, version: nextVersion,
-      name: entry.name ?? entry.displayName, summary: entry.summary, category: entry.category,
-      transport: entry.transport, url: entry.url, command: entry.command, arguments: entry.arguments,
+      name: pendingDraft?.name ?? entry.name ?? entry.displayName, summary: pendingDraft?.summary ?? entry.summary,
+      category: pendingDraft?.category ?? entry.category,
+      transport: config?.transport ?? entry.transport, url: config?.url ?? entry.url, command: config?.command ?? entry.command,
+      arguments: config?.arguments ?? entry.arguments,
       ...(entry.authMode === 'oauth' ? { oauthProviderId: entry.oauthProviderId } : {}), timeoutSeconds: config?.timeoutSeconds ?? 60,
       headers: Object.fromEntries(Object.keys(config?.headers ?? {}).map(key => [key, ''])),
       environment: Object.fromEntries(Object.keys(config?.environment ?? {}).map(key => [key, ''])),
     })
-    if (method === 'extensions.connector.read') return { draft, configured: config !== undefined }
+    if (method === 'extensions.connector.read') return { draft, configured: config !== undefined, savePending: pending !== undefined }
     if (method !== 'extensions.connector.update') throw new Error('Unsupported connector operation')
     let edited = ExtensionDraftSchema.parse(input.draft)
     if (edited.kind !== 'connector' || edited.id !== entry.id || edited.version !== nextVersion) throw new Error('Connector identity is fixed')
@@ -92,9 +107,22 @@ export class PersonalConnectors {
    * @param draft Validated renderer form without tool access declarations.
    * @param api Authenticated product API.
    * @param employee Authenticated owner.
-   * @param signal Cancellation.
+   * @param signal Cancellation. A dispatched request with an unknown outcome retains encrypted pending settings.
    */
-  async save(draft: ExtensionDraft, api: DeepSeekHarnessApiClient, employee: string, signal: AbortSignal): Promise<void> {
+  async save(draft: ExtensionDraft, api: DeepSeekHarnessApiClient, employee: string,
+    signal: AbortSignal): Promise<void> {
+    const key = this.key(employee, draft.id, '')
+    const previous = this.saves.get(key)
+    const operation = (previous === undefined ? Promise.resolve() : previous.catch(() => undefined))
+      .then(() => this.saveConfiguration(draft, api, employee, AbortSignal.any([signal, this.lifetime.signal])))
+    this.saves.set(key, operation)
+    try { await operation }
+    finally { if (this.saves.get(key) === operation) this.saves.delete(key) }
+  }
+
+  private async saveConfiguration(draft: ExtensionDraft, api: DeepSeekHarnessApiClient, employee: string,
+    signal: AbortSignal): Promise<void> {
+    signal.throwIfAborted()
     await this.resetIdentity(employee)
     if (draft.oauthProviderId) {
       const provider = PublicConnector.parse(await this.oauthConnector?.(draft.oauthProviderId, signal))
@@ -123,28 +151,50 @@ export class PersonalConnectors {
     try { tools = await this.discover(client, signal, config.timeoutSeconds) } finally { await client.close() }
     if (!tools.length) throw new Error('MCP server exposes no usable tools')
     const filename = this.filename(employee, draft.id, draft.version)
-    let previous: Buffer | undefined
-    try { previous = await readFile(filename) } catch (error) { if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error }
     await mkdir(this.root, { recursive: true, mode: 0o700 })
-    const encrypted = this.secure.encryptString(JSON.stringify(config))
-    const staging = `${filename}.${randomUUID()}.pending`
-    try {
-      await writeFile(staging, encrypted, { mode: 0o600, signal, flag: 'wx' })
-      await api.request('/api/v1/connectors', { method: 'POST', signal, headers: { 'content-type': 'application/json' }, body: JSON.stringify({
-        id: draft.id, name: draft.name, summary: draft.summary, category: draft.category, version: draft.version,
-        transport: config.transport, url: config.url ?? null, command: config.command ?? null, arguments: config.arguments,
-        environment: {}, headers: {}, authMode: 'none', toolNames: tools.map(tool => tool.name),
-      }) })
-      await rename(staging, filename)
-      const key = this.key(employee, draft.id, draft.version)
-      const old = this.clients.get(key)
-      this.clients.delete(key)
-      if (old) await (await old).close()
-    } catch (error) {
-      await rm(staging, { force: true })
-      if (previous) await writeFile(filename, previous, { mode: 0o600 })
-      throw error
+    const body = JSON.stringify({
+      id: draft.id, name: draft.name, summary: draft.summary, category: draft.category, version: draft.version,
+      transport: config.transport, url: config.url ?? null, command: config.command ?? null, arguments: config.arguments,
+      environment: {}, headers: {}, authMode: 'none', toolNames: tools.map(tool => tool.name),
+    })
+    const pending = await this.pending(filename)
+    if (pending && (pending.employee !== employee || pending.body !== body || JSON.stringify(pending.config) !== JSON.stringify(config))) {
+      throw new ProductError('CONNECTOR_SAVE_PENDING', 'Retry the previous save before changing this version', true,
+        [{ kind: 'connector', id: draft.id }])
     }
+    if (!pending) {
+      const staging = `${filename}.${randomUUID()}.tmp`
+      try {
+        await writeFile(staging, this.secure.encryptString(JSON.stringify({ employee, config, body })), { mode: 0o600, signal, flag: 'wx', flush: true })
+        await rename(staging, `${filename}.pending`)
+      } finally { await rm(staging, { force: true }) }
+    }
+    try {
+      await api.request('/api/v1/connectors', { method: 'POST', signal, headers: { 'content-type': 'application/json' }, body })
+    } catch (error) {
+      signal.throwIfAborted()
+      if (error instanceof DeepSeekHarnessApiError && !error.retryable && error.status < 500 && error.status !== 408) {
+        await rm(`${filename}.pending`, { force: true })
+        throw error
+      }
+      // An authenticated immutable catalog entry can confirm a lost commit receipt.
+      let confirmed = false
+      try {
+        const entry = PublicConnector.parse(await api.request(`/api/v1/connectors/${encodeURIComponent(draft.id)}`, { signal }))
+        confirmed = this.matchesPending(entry, employee, { employee, config, body })
+      } catch (_confirmationError) { signal.throwIfAborted() }
+      if (!confirmed) throw new ProductError('CONNECTOR_SAVE_PENDING', 'Save outcome is unknown; encrypted settings are retained for retry', true,
+        [{ kind: 'connector', id: draft.id }], { cause: error })
+    }
+    try { await this.finalize(filename, config) }
+    catch (error) {
+      throw new ProductError('CONNECTOR_SAVE_PENDING', 'Server save succeeded; encrypted device settings await restoration', true,
+        [{ kind: 'connector', id: draft.id }], { cause: error })
+    }
+    const key = this.key(employee, draft.id, draft.version)
+    const old = this.clients.get(key)
+    this.clients.delete(key)
+    if (old) await (await old).close()
   }
 
   /** Augment personal runtime data with local configuration and live read-only annotations.
@@ -219,6 +269,7 @@ export class PersonalConnectors {
   /** Cancel pending connects and close every child process owned by this desktop extension. */
   async close(): Promise<void> {
     this.lifetime.abort(new Error('Personal connector manager closed'))
+    await Promise.allSettled([...this.saves.values()])
     await Promise.allSettled([...this.clients.values()].map(async client => (await client).close()))
     this.clients.clear()
   }
@@ -236,9 +287,42 @@ export class PersonalConnectors {
 
   private key(employee: string, id: string, version: string): string { return createHash('sha256').update(JSON.stringify([employee, id, version])).digest('hex') }
   private filename(employee: string, id: string, version: string): string { return join(this.root, `${this.key(employee, id, version)}.bin`) }
+  private async pending(filename: string): Promise<z.infer<typeof PendingConfiguration> | undefined> {
+    let encrypted: Buffer
+    try { encrypted = await readFile(`${filename}.pending`) }
+    catch (error) { if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return undefined; throw error }
+    return PendingConfiguration.parse(JSON.parse(this.secure.decryptString(encrypted)))
+  }
+  private matchesPending(entry: PublicConnector, employee: string, pending: z.infer<typeof PendingConfiguration>): boolean {
+    const publicFields = z.object({ id: z.string(), version: z.string(), name: z.string(), summary: z.string(), category: z.string(),
+      toolNames: z.array(z.string()) }).parse(JSON.parse(pending.body))
+    return pending.employee === employee && entry.ownerEmployeeId === employee && entry.visibility === 'PERSONAL'
+      && entry.authMode === 'none' && entry.id === publicFields.id && entry.version === publicFields.version && entry.name === publicFields.name
+      && entry.summary === publicFields.summary && entry.category === publicFields.category
+      && entry.transport === pending.config.transport && entry.url === pending.config.url && entry.command === pending.config.command
+      && JSON.stringify(entry.arguments) === JSON.stringify(pending.config.arguments)
+      && JSON.stringify(entry.tools.map(tool => tool.name).sort()) === JSON.stringify([...publicFields.toolNames].sort())
+  }
+  private async finalize(filename: string, config: Configuration): Promise<void> {
+    const staging = `${filename}.${randomUUID()}.tmp`
+    try {
+      await writeFile(staging, this.secure.encryptString(JSON.stringify(config)), { mode: 0o600, flag: 'wx', flush: true })
+      await rename(staging, filename)
+      await rm(`${filename}.pending`, { force: true })
+    } finally { await rm(staging, { force: true }) }
+  }
   private async configuration(entry: PublicConnector, employee: string): Promise<Configuration | undefined> {
     try {
-      const encrypted = await readFile(this.filename(employee, entry.id, entry.version))
+      const filename = this.filename(employee, entry.id, entry.version)
+      const pending = await this.pending(filename)
+      if (pending && this.matchesPending(entry, employee, pending)) {
+        await this.finalize(filename, pending.config)
+        const key = this.key(employee, entry.id, entry.version)
+        const old = this.clients.get(key)
+        this.clients.delete(key)
+        if (old) await (await old).close()
+      }
+      const encrypted = await readFile(filename)
       const config = Configuration.parse(JSON.parse(this.secure.decryptString(encrypted)))
       if (config.transport !== entry.transport || config.url !== entry.url || config.command !== entry.command
         || JSON.stringify(config.arguments) !== JSON.stringify(entry.arguments)) {

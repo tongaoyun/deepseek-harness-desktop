@@ -194,6 +194,22 @@ export function createHarnessActions(ctx: Context): DeepSeekHarnessCatalogAction
     setExpertKit: (id, sessionId) => enqueue({ expertKitId: id }, sessionId),
     setKnowledgeSelection: (ids, sessionId) => enqueue({ knowledgeBaseIds: ids }, sessionId),
     recoverCapabilities: sessionId => enqueue({ recoverCapabilities: true }, sessionId),
+    retryCapabilities: (sessionId = currentSession()) => {
+      if (sessionId === undefined) return Promise.reject(new Error('Task retry requires a Session'))
+      const source = ctx.sessions.retain(sessionId, { source: 'gateway' })
+      return serialize(async () => {
+        try {
+          await source.ready
+          const presetId = ctx.sessions.list.getSnapshot().byId[sessionId]?.projectionValues?.agentPreset
+          if (typeof presetId !== 'string' || !presetId.startsWith('product-task-')) throw new Error('Task retry requires a pinned capability snapshot')
+          const value = await invoke('tasks.capabilities.prepare', { sessionId })
+          if (typeof value !== 'object' || value === null || !('presetId' in value) || value.presetId !== presetId
+            || ctx.sessions.list.getSnapshot().byId[sessionId]?.projectionValues?.agentPreset !== presetId) {
+            throw new Error('Task composition changed during retry; refresh the task')
+          }
+        } finally { source.release() }
+      })
+    },
     startExpertKit: (id, taskId) => enqueue({ expertKitId: id,
       ...taskId === undefined ? {} : { expertKitTaskId: taskId } }),
     installSkill: id => serialize(async () => {
@@ -239,4 +255,6 @@ export interface TaskModeActions {
   /** Apply a complete knowledge selection once, retaining other task configuration. */
   readonly setKnowledgeSelection: (ids: readonly string[], sessionId?: SessionId) => Promise<void>
   readonly recoverCapabilities: (sessionId?: SessionId) => Promise<void>
+  /** Restore the pinned snapshot registration without selecting a Preset, navigating, or changing drafts. */
+  readonly retryCapabilities: (sessionId?: SessionId) => Promise<void>
 }

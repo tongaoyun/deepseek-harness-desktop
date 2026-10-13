@@ -15,11 +15,12 @@ import css from '../DeepSeekHarnessProduct.module.css'
  * @returns Referenced knowledge tags and a staged multi-selection dialog opened by the Add menu.
  */
 export function TaskKnowledgeSelector({
-  sessionId, recoverCapabilities, capabilities, readKnowledgeCatalog, setKnowledgeSelection,
+  sessionId, recoverCapabilities, retryCapabilities, capabilities, readKnowledgeCatalog, setKnowledgeSelection,
   openCatalog, onApplied, onPendingChange, subscribeOpen, t, disabled = false,
 }: {
   readonly sessionId?: SessionId | undefined
   readonly recoverCapabilities: TaskModeActions['recoverCapabilities']
+  readonly retryCapabilities: TaskModeActions['retryCapabilities']
   readonly capabilities: ProductTaskCapabilities | undefined
   readonly readKnowledgeCatalog: TaskModeActions['readKnowledgeCatalog']
   readonly setKnowledgeSelection: TaskModeActions['setKnowledgeSelection']
@@ -152,8 +153,8 @@ export function TaskKnowledgeSelector({
                 </div>)}</section>)}
       </div>
       {(unavailable || capabilities?.unavailable !== undefined) && !loadFailed && <Button variant="outline" size="sm" disabled={pending || loading} onClick={() => {
-        apply(recoverCapabilities(sessionId))
-      }}>{t(capabilities?.unavailable === undefined ? 'knowledgeRecovery' : 'taskRecovery')}</Button>}
+        apply(capabilities?.unavailable?.retryable ? retryCapabilities(sessionId) : recoverCapabilities(sessionId))
+      }}>{t(capabilities?.unavailable?.retryable ? 'retry' : capabilities?.unavailable === undefined ? 'knowledgeRecovery' : 'taskRecovery')}</Button>}
       {failed && <p role="alert" className={css.catalogError}>{failed}</p>}
       <div className={css.knowledgeSelectionFooter}>
         <Button variant="ghost" size="sm" disabled={pending} onClick={() => { setOpen(false); openCatalog('knowledge') }}>{t('knowledgeDirectory')}</Button>

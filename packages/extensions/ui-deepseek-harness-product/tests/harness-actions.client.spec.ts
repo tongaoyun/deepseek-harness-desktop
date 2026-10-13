@@ -2,6 +2,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { DraftInitializationOptions, DraftInitializationResult, DraftReference } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { afterEach, expect, it, vi } from 'vitest'
 import { createHarnessActions } from '../src/client/harness-actions.ts'
+import { SessionId } from '@deepseek-ai/dsh-session/types'
 
 afterEach(() => vi.unstubAllGlobals())
 const asContext = (value: object) => value as Context
@@ -59,7 +60,8 @@ function fixture() {
     effect: (effect: () => unknown) => effect(),
     uiSkills: { refresh: vi.fn() },
     sessions: { list: { getSnapshot: () => ({ byId: Object.fromEntries([...drafts.keys()]
-      .map(id => [id, { id, retainedBy: { mainView: id === active ? 1 : 0 } }])) }) },
+      .map(id => [id, { id, retainedBy: { mainView: id === active ? 1 : 0 },
+        projectionValues: { agentPreset: selectedPresets.get(id) } }])) }) },
     retain: (id: string) => ({ ready: Promise.resolve(), release: vi.fn(), binding: { ctx: { id } } }),
     using: async (id: string, _options: unknown, action: (reference: object) => Promise<void>) => action({ binding: { ctx: { id } } }),
     create, binding: (id: string) => ({ ctx: { id } }) },
@@ -72,6 +74,37 @@ function fixture() {
   return { actions: createHarnessActions(ctx), capabilities, drafts, selectedPresets, references, setDraft, requestDraftInitialization,
     select, selectPanel, create, invoke, active: () => active, switchTo: (id: string) => { drafts.set(id, 'other draft'); active = id } }
 }
+
+it('restores a started task in place without changing its pinned composition, draft, or navigation', async () => {
+  const f = fixture()
+  f.selectedPresets.set('original', 'product-task-pinned')
+  f.capabilities.connectorIds = ['erp']
+  f.capabilities.knowledgeBaseIds = ['orders-kb']
+  const reply = Promise.withResolvers<unknown>()
+  f.invoke.mockImplementationOnce(() => reply.promise)
+  const operation = f.actions.retryCapabilities(SessionId('original'))
+  await vi.waitFor(() => { expect(f.invoke).toHaveBeenCalledOnce() })
+  f.switchTo('other')
+  f.drafts.set('original', 'latest draft')
+  reply.resolve({ kind: 'NEW_SESSION', presetId: 'product-task-pinned', capabilities: f.capabilities })
+  await operation
+  expect(f.invoke).toHaveBeenCalledExactlyOnceWith('product', 'tasks.capabilities.prepare', { sessionId: 'original' }, expect.any(String))
+  expect(f.create).not.toHaveBeenCalled()
+  expect(f.select).not.toHaveBeenCalled()
+  expect(f.requestDraftInitialization).not.toHaveBeenCalled()
+  expect(f.active()).toBe('other')
+  expect(f.drafts.get('original')).toBe('latest draft')
+  expect(f.capabilities.connectorIds).toEqual(['erp'])
+})
+
+it('rejects a retry response for a different snapshot without replacing the task', async () => {
+  const f = fixture()
+  f.selectedPresets.set('original', 'product-task-pinned')
+  await expect(f.actions.retryCapabilities()).rejects.toThrow('composition changed')
+  expect(f.create).not.toHaveBeenCalled()
+  expect(f.select).not.toHaveBeenCalled()
+  expect(f.drafts.get('original')).toBe('  unfinished draft  ')
+})
 
 it('updates an empty task and preserves draft whitespace', async () => {
   const f = fixture()

@@ -17,7 +17,8 @@ function fixture() {
       requiredKnowledgeBaseIds: ['policy'] as string[], knowledgeBaseRefs: ['company:policy'] },
     readKnowledgeCatalog: vi.fn(async () => items([{ id: 'policy', name: '业务规范', referenceKey: 'company:policy' },
       { id: 'manuals', name: '业务手册' }, { id: 'research', name: '调研资料' }])),
-    recoverCapabilities: vi.fn(async () => {}), setKnowledgeSelection: vi.fn(async (_ids: readonly string[]) => {}),
+    recoverCapabilities: vi.fn(async () => {}), retryCapabilities: vi.fn(async () => {}),
+    setKnowledgeSelection: vi.fn(async (_ids: readonly string[]) => {}),
     openCatalog: vi.fn(), onApplied: vi.fn(), onPendingChange: vi.fn(),
     subscribeOpen: (listener: () => void) => {
       open = listener
@@ -28,6 +29,17 @@ function fixture() {
   } satisfies ComponentProps<typeof TaskKnowledgeSelector>
   return { ...props, open: () => { act(() => { open?.() }) } }
 }
+
+it('retries a temporary task failure without removing its knowledge or kit', async () => {
+  const f = fixture()
+  render(<TaskKnowledgeSelector {...f} capabilities={{ ...f.capabilities,
+    unavailable: { code: 'CONNECTOR_DISCOVERY_FAILED', message: 'offline', retryable: true, resources: [] } }} />)
+  f.open()
+  fireEvent.click(await screen.findByRole('button', { name: zh.retry }))
+  await waitFor(() => { expect(f.retryCapabilities).toHaveBeenCalledExactlyOnceWith(undefined) })
+  expect(f.recoverCapabilities).not.toHaveBeenCalled()
+  expect(f.setKnowledgeSelection).not.toHaveBeenCalled()
+})
 
 it('retains an Add-menu request while task capabilities load', async () => {
   const f = fixture()
