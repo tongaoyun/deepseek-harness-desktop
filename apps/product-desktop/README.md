@@ -57,4 +57,4 @@ Installed acceptance requires a native Windows or macOS runner and its generated
 
 macOS UI acceptance uses Chromium's test keychain in the disposable profile to avoid interactive access to the runner's login keychain. This covers credential routing and restart behavior, not system keychain protection or its authorization dialogs. The test flag is absent from application launchers and packaging configuration; ordinary launches retain OS-backed encrypted storage.
 
-Development and built-profile acceptance pass a file URL for the product extension's ESM entry on every platform. Startup errors before the first window are captured in sanitized, failure-only diagnostic artifacts.
+Development and built-profile acceptance pass a file URL for the product extension's ESM entry on every platform. Startup errors before the first window are captured in sanitized, failure-only diagnostic artifacts. A test-only profile plugin records loaded boot-module URLs and root Include identities after application readiness; failed acceptance prints this credential-free evidence alongside renderer startup warnings.

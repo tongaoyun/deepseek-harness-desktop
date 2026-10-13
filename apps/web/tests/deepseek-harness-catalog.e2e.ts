@@ -1,5 +1,5 @@
 /** Product overlay mounted through the real Harness Loader, with only the external product bridge replaced. */
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 import { createServer, type IncomingMessage } from 'node:http'
@@ -1616,10 +1616,14 @@ for (const { mode, installed } of desktopCarriers) {
       }
       const profile = join(home, 'profiles/desktop')
       createPluginProfile(profile)
+      const hostDiagnostic = join(root, 'host-modules.json')
+      const diagnosticPlugin = join(root, 'desktop-module-diagnostics.mjs')
+      await copyFile(join(REPO_ROOT, 'apps/product-desktop/tests/fixtures/desktop-module-diagnostics.mjs'), diagnosticPlugin)
       await writeFile(join(profile, 'cordis.patch.yml'),
         '- id: webserver\n  config:\n    host: 127.0.0.1\n    port: 0\n'
         + '- id: ui-plugin-manager\n  config:\n    registryProbeEnabled: false\n'
-        + `- id: workspace-controller\n  config:\n    documentsDirectory: ${JSON.stringify(join(root, 'Documents'))}\n`)
+        + `- id: workspace-controller\n  config:\n    documentsDirectory: ${JSON.stringify(join(root, 'Documents'))}\n`
+        + `- insert:\n  - id: acceptance-module-diagnostics\n    name: ${JSON.stringify(pathToFileURL(diagnosticPlugin).href)}\n    config:\n      output: ${JSON.stringify(hostDiagnostic)}\n`)
       await mkdir(userData)
       const environment = Object.fromEntries(Object.entries(process.env).filter(([key]) =>
         !key.startsWith('DSH_') && !key.startsWith('DEEPSEEK_') && key !== 'ELECTRON_RUN_AS_NODE'))
@@ -1636,6 +1640,11 @@ for (const { mode, installed } of desktopCarriers) {
           await mkdir(screenshots, { recursive: true })
           await writeFile(join(screenshots, `electron-${carrier}-${mode}-startup.txt`), safe)
         }
+        const modules = await readFile(hostDiagnostic, 'utf8').catch((error: unknown) => {
+          if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return undefined
+          throw error
+        })
+        if (modules !== undefined) console.error('Desktop Host module identities:', modules)
       })
       const launchOptions = { executablePath: electronExecutable,
         // A disposable profile must not wait for interactive access to a runner's login keychain.
@@ -1682,6 +1691,13 @@ for (const { mode, installed } of desktopCarriers) {
         console.error('Desktop workflow failure:', await page.locator('body').innerText(), tripwire, startupWarnings)
       })
       await page.waitForURL('dsh-app://app/', { timeout: 60_000 })
+      await expect.poll(() => readFile(hostDiagnostic, 'utf8').catch((error: unknown) => {
+        if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return undefined
+        throw error
+      }), { timeout: 60_000 }).toBeDefined()
+      const identities: { modules: string[]; loaderSharesRoot: boolean } = JSON.parse(await readFile(hostDiagnostic, 'utf8'))
+      expect(identities.loaderSharesRoot).toBe(true)
+      expect(identities.modules.filter(url => /\/(?:dsh-)?app-boot\/lib\/index\.js$/u.test(url))).toHaveLength(1)
       await page.setViewportSize({ width: 1440, height: 900 })
       let composer = page.locator('[data-composer-input][contenteditable="true"]').last()
       await composer.waitFor({ timeout: 60_000 })
