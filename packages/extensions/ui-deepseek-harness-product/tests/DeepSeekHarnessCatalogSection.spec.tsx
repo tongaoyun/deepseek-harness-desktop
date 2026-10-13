@@ -264,14 +264,18 @@ describe('DeepSeekHarness capability navigation', () => {
     expect(more.closest('[data-skill-detail-body]')).toBeNull()
   })
 
-  it('keeps only the official settings action in the more menu', () => {
+  it('opens official settings and product feedback from the more menu', () => {
     const openSettings = vi.fn()
     render(<DeepSeekHarnessSettingsMenu t={t} wide settingsOpen={false} openSettings={openSettings}
       openOnboarding={vi.fn()} />)
 
     fireEvent.click(screen.getByRole('button', { name: zh.menu }))
-    expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual([zh.settings])
+    expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual([zh.settings, zh.feedbackTitle])
     fireEvent.click(screen.getByRole('menuitem', { name: zh.settings }))
+    expect(openSettings).toHaveBeenCalledOnce()
+    fireEvent.click(screen.getByRole('button', { name: zh.menu }))
+    fireEvent.click(screen.getByRole('menuitem', { name: zh.feedbackTitle }))
+    expect(screen.getByRole('dialog', { name: zh.feedbackTitle })).not.toBeNull()
     expect(openSettings).toHaveBeenCalledOnce()
   })
 
