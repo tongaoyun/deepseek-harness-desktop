@@ -60,6 +60,8 @@ The installed UI command has a ten-minute deadline independent of the packaging 
 
 Each Electron restart and final close has a ten-second graceful budget. A stalled close terminates the application tree, waits for exit, and fails the test. Windows additionally stops orphaned executables whose resolved paths are inside the private installation before uninstalling, even when their parents have exited. Recovery does not select by application name; other installations and unrelated processes remain outside its scope. Windows CI tests this with an orphaned executable and an unrelated live process.
 
+Process-cleanup regressions require every fixture process to stop executing. On Linux, `/proc` distinguishes live processes from zombie/dead entries awaiting the container's PID 1; those entries no longer execute or hold files. Other platforms require the PID to disappear. Direct commands are also joined through their close events.
+
 macOS UI acceptance uses Chromium's test keychain in the disposable profile to avoid interactive access to the runner's login keychain. This covers credential routing and restart behavior, not system keychain protection or its authorization dialogs. The test flag is absent from application launchers and packaging configuration; ordinary launches retain OS-backed encrypted storage.
 
 Development and built-profile acceptance pass a file URL for the product extension's ESM entry on every platform. Startup errors before the first window are captured in sanitized, failure-only diagnostic artifacts. A test-only profile plugin records loaded boot-module URLs and root Include identities after application readiness; failed acceptance prints this credential-free evidence alongside renderer startup warnings.

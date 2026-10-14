@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
 import { runAcceptanceProcess } from '../scripts/acceptance-process.mjs'
 import { stopInstalledProcesses } from '../scripts/installed-processes.mjs'
+import { processIsRunning as alive } from './process-running.mjs'
 
 const fixture = fileURLToPath(new URL('./fixtures/acceptance-process-tree.mjs', import.meta.url))
 
@@ -20,11 +21,6 @@ async function waitFor(observe) {
     await delay(20)
   }
   throw new Error('Fixture did not reach the expected state')
-}
-
-function alive(pid) {
-  try { process.kill(pid, 0); return true }
-  catch (error) { if (error.code !== 'ESRCH') throw error; return false }
 }
 
 async function treeFixture(t) {

@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url'
 import { expect, it, onTestFinished } from 'vitest'
 import { closeElectronAcceptance } from '../scripts/close-electron.mjs'
 import { terminateAcceptanceTree } from '../scripts/acceptance-process.mjs'
+import { processIsRunning } from './process-running.mjs'
 
 async function waitFor<T>(observe: () => Promise<T | undefined>): Promise<T> {
   const deadline = Date.now() + 10_000
@@ -48,11 +49,7 @@ it('fails a stalled Electron close after terminating its real child and grandchi
   await expect(closeElectronAcceptance({ process: () => child, close: () => new Promise(() => {}) }, 1000))
     .rejects.toThrow('close timed out after 1000 ms')
   await waitFor(async () => {
-    for (const pid of pids) {
-      try { process.kill(pid, 0); return undefined }
-      catch (error) { if (!(error instanceof Error && 'code' in error && error.code === 'ESRCH')) throw error }
-    }
-    return true
+    return pids.every(pid => !processIsRunning(pid)) ? true : undefined
   })
   expect(child.listenerCount('close')).toBe(0)
 }, 30_000)
