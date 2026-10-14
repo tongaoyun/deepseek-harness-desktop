@@ -52,7 +52,7 @@ Python SDK 遵循相同的应用架构。其运行时 wheel 把普通 `dsh` CLI 
 
 Electron 使用 Electron Node 模式启动私有 Desktop Host。Host 调用共享 CLI profile runner 与完整 Web 应用。窗口立即加载打包 Web 资源，等待启动注入后在同一文档中激活客户端插件。Web 负责 RPC 与流；桌面载体将本地页面连接到已认证的 Host。Node IPC 承载启动注入、就绪、致命错误与关闭。Desktop 默认监听系统分配的端口，profile 配置可覆盖。壳拥有的 UI 通过内置 pnpm 执行插件事务，并遵循正常用户与 profile 配置。
 
-参见[DeepSeek Harness Electron 架构](deepseek-harness-electron-architecture.zh.md)。
+参见[DeepSeek Harness Electron 架构](deepseek-harness-electron-architecture.md)。
 
 ## 核心包
 

@@ -810,7 +810,7 @@
         {
           "path": "README.i18n.yaml",
           "before": "700422df48df27704707a6832b7ba7234f1f44c42494ceffb3b8ee2210f989af",
-          "after": "60f90b1607645b7133462636d98a907cad781913ca569f391036d35ab63c8632"
+          "after": "7bf69dfc4cdde24ec14cdbd00d90997c5f7a72280030238fbfefc861caca607d"
         },
         {
           "path": "README.md",
@@ -820,7 +820,7 @@
         {
           "path": "README.zh.md",
           "before": "8f19db1b217e8ef30cf413b07056cc791048bc2ba2ec51ba104e383dcfb43c61",
-          "after": "f0257897292f75c9b0775bd283dbf18f58e51f3e02e95d0a39c0a861f216dd2b"
+          "after": "e6701b6233b99e3066c0a92d6df7939c002ffc9289e73096dbc8680d111c722d"
         },
         {
           "path": "THIRD_PARTY_NOTICES.md",
@@ -830,7 +830,7 @@
         {
           "path": "apps/desktop/README.i18n.yaml",
           "before": "55113c40907f9f36aba2109a6b157a3f302b9417f813ef33105b3cc69efdc36b",
-          "after": "bec7e18ffed5f22ab79d38168061c4db457f2aaa527bdb1a2abef8007712e091"
+          "after": "31718829ef637f76291f2fd4f4bcc6b3edead50b010182a6d90de7b7a316d17c"
         },
         {
           "path": "apps/desktop/README.md",
@@ -840,12 +840,12 @@
         {
           "path": "apps/desktop/README.zh.md",
           "before": "324bb7f4dfe117e9f6ec99244aecfedac644e4159780ca7a4a96b90e05e551b7",
-          "after": "fff020d46bdf41070f657f201dab7ea6ac9e9e5a20aa40912bee2b0c7550d56a"
+          "after": "d0b716fd02b4ba815eea4e26aff8b533f5baa0be38e07fe798fdb9e193ec7aec"
         },
         {
           "path": "docs/architecture.i18n.yaml",
           "before": "c638b73339dd0a9244332741f491d2bb5c978547be8d8f601ebb7e049d51b6d6",
-          "after": "a4c0a7b6aa2d0524a158ac6389a758e61d28e6a3532c5dcf3132402581d7d420"
+          "after": "b5d61e6fbe9e7a8974d1bd0741810d23cd05b94b21753b09823d9e7572136811"
         },
         {
           "path": "docs/architecture.md",
@@ -855,7 +855,7 @@
         {
           "path": "docs/architecture.zh.md",
           "before": "50167dd1435ca402f11aa0ae27dc642456a7a6e511faa76b81f1fed25c7e12de",
-          "after": "47c4441943e087e2e6a43b1f1487b010292c326bcac58bc764314ebe24e541e1"
+          "after": "4da9e6e80223c07d992450275d11e787f2e75a8c61d66e04166f512f71f1bcc2"
         },
         {
           "path": "docs/config-catalog.md",
@@ -935,7 +935,7 @@
         {
           "path": "docs/subsystems/README.i18n.yaml",
           "before": "7e6aa37db58f836b2fd859cdcf639d915b39d09a572afe24764299a0dbdc1849",
-          "after": "62c8b07bfb74e95a2f334429a84716c51180b9a673dc6882f6df5663a4f8dcaa"
+          "after": "295fac1009df3c1f7917ff86db819cd46e08d9f4e7287906b13d31069c9d066c"
         },
         {
           "path": "docs/subsystems/README.md",
@@ -945,7 +945,7 @@
         {
           "path": "docs/subsystems/README.zh.md",
           "before": "e814a833e8315249f3aebc15a9f613d019fff69b5e88ce7f0374efc724183b0f",
-          "after": "6472d18ef287e06317d6fff9aedfbc358fd3559b5d10e2f9ac75732d76657e22"
+          "after": "b810d6fd2b0991fa3eb9ade3a12bdec956da22daaf72bffd0c69537c93635b96"
         },
         {
           "path": "docs/subsystems/core.md",
@@ -980,7 +980,7 @@
         {
           "path": "scripts/doc-standard.spec.ts",
           "before": "4d6d5eed2b461c84f0654d660871743668b42fbc4fe4db058f0331c789e79883",
-          "after": "81a71a66abb3841171c2502e155b377abdb578df76e3d031510dc6a880b0b1cf"
+          "after": "8096b6ef7f8d6b264c14666364fa60847295fbe693d47ee8fe0e2e85719f5e35"
         }
       ],
       "diff": "documentation-catalogs.patch"
@@ -1361,6 +1361,70 @@
         }
       ],
       "diff": "document-preview-factory.patch"
+    },
+    {
+      "id": "chinese-document-structural-validation",
+      "purpose": "通用文档校验支持以中文作为唯一维护版本；只规范化解析出的章节标题，保留正文、代码和行号，中文模型条目生成非空锚点。翻译清单显式排除产品中文单版文档，不缩小内容检查范围。 显式非配对的持久化记录仍校验声明、快照及正文；目录索引支持没有翻译副本的单版文档。",
+      "tests": [
+        "scripts/markdown-validation.spec.ts",
+        "scripts/verify-package-readme-summaries.spec.ts",
+        "scripts/doc-standard.spec.ts",
+        "scripts/persistence-changes.spec.ts",
+        "scripts/project-doc-site.spec.ts"
+      ],
+      "files": [
+        {
+          "path": "scripts/markdown-validation.spec.ts",
+          "before": null,
+          "after": "c3940fe147836b754a2b8606352b07e2c5e0ad67513f5cd7dc8f28e221d77f93"
+        },
+        {
+          "path": "scripts/markdown.ts",
+          "before": "36a06b42080cc2cb78e43adf51370e09d2d6dd308ea341b496b15fa8bb793e1f",
+          "after": "3560a893d189191dea8bf18e3eeeab1eeb6a6616c6ffac1e524f23779784f2b6"
+        },
+        {
+          "path": "scripts/persistence-changes.spec.ts",
+          "before": "2d7dedb7a089010391d56ced545675cd63422bd208f9150fc16eaec85dc60764",
+          "after": "a38329f614078d661f63d3cd205bae1a93f95b93518d5e1fb45dbbe2f1eb37ec"
+        },
+        {
+          "path": "scripts/persistence-changes.ts",
+          "before": "b22865562e3c61ae45bcd7f1ed9cae911ee758bfac80d44c5afdd5931be51b2e",
+          "after": "5c9d956445194b96219c387ff07a6942510f98aa656bf289d3d7cc3b7d888f42"
+        },
+        {
+          "path": "scripts/project-doc-site.spec.ts",
+          "before": "b7d8aa940ee42debb20298f38d4e9ac3df82841475aec3e9a963d79e397c8cc2",
+          "after": "8502f756e82b27432986e4100333d9825538b41f9b404d887c0014c27322973e"
+        },
+        {
+          "path": "scripts/translation-pairing.manifest.json",
+          "before": "9944a604474c609318ec2793512661aa0dfc67f124d6789df4f285e8c5910153",
+          "after": "f4bcd89816708846487ae3bd43fe878f29c2b98a26df66922c7977eec4f398b2"
+        },
+        {
+          "path": "scripts/verify-package-readme-limitations.ts",
+          "before": "9b41f0969603176b2b93c4196f83c1135b9540ea0582cb524facb474e2e50b7e",
+          "after": "ccf5cb7003dfbcde351bf999bf683e50cf9831dd2ad20a0a431f798804703ff6"
+        },
+        {
+          "path": "scripts/verify-package-readme-model-experience.ts",
+          "before": "d1dfd04d7e620fc9fb19199f6ef21b52e8c6b990abc0e631d20b7cfc2f419051",
+          "after": "a6577886d95bba7ea1e71c5f2cb3886265fd9070141750d4362abd50ed73e9d7"
+        },
+        {
+          "path": "scripts/verify-package-readme-summaries.ts",
+          "before": "9503d16986f655dbb4deccf000d4c9343be3e61ac7286242454dd8314742eb14",
+          "after": "53c05d11ddd381c18aa8bcb03b6272ce60f84cdba964cd297ce9d23753306310"
+        },
+        {
+          "path": "scripts/verify-upgrade-guides.ts",
+          "before": "6a4eee5fcc06228374eb8081e1ab0b7c27c3b8f6cb649822d572573fa2a72e6c",
+          "after": "614694be7c1e8926d68220abd4b7036b3135a389b8d943c9a59f37fcb0e468ca"
+        }
+      ],
+      "diff": "chinese-document-structural-validation.patch"
     }
   ]
 }

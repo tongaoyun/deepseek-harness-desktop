@@ -1,7 +1,17 @@
 import { describe, expect, it } from 'vitest'
-import { resolveDeepSeekHarnessProductServerUrl, resolveDesktopSupportPolicy } from '../src/deepseek-harness-product-config.ts'
+import { resolveDeepSeekHarnessConnectorProxyPolicy, resolveDeepSeekHarnessProductServerUrl, resolveDesktopSupportPolicy } from '../src/deepseek-harness-product-config.ts'
 
 describe('DeepSeekHarness product configuration', () => {
+  it('reads MCP deadlines from the main-owned packaged resource', () => {
+    const options = { packaged: true, resourcesPath: '/installed/resources', appPath: '/installed/app.asar' }
+    const connectorProxy = { responseTimeoutMs: 2000, streamIdleTimeoutMs: 5000 }
+    expect(resolveDeepSeekHarnessConnectorProxyPolicy({ ...options, readFile: () => JSON.stringify({ version: 1, connectorProxy }) }))
+      .toEqual(connectorProxy)
+    expect(() => resolveDeepSeekHarnessConnectorProxyPolicy({ ...options,
+      readFile: () => JSON.stringify({ version: 1, connectorProxy: { ...connectorProxy, streamIdleTimeoutMs: -1 } }) })).toThrow()
+    expect(() => resolveDeepSeekHarnessConnectorProxyPolicy({ ...options, readFile: () => JSON.stringify({ version: 2 }) }))
+      .toThrow('Invalid product configuration')
+  })
   it('requires bounded main-owned support intervals in the product resource', () => {
     const options = { packaged: true, resourcesPath: '/installed/resources', appPath: '/installed/app.asar' }
     const support = { heartbeatIntervalMs: 300000, reportIntervalMs: 86400000 }

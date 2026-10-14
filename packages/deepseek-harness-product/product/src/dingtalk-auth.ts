@@ -3,7 +3,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 
 /** Product bridge operations required by the DingTalk OAuth flow. */
 export interface DingTalkAuthInvoker {
-  invoke(method: 'auth.getSession' | 'auth.refresh' | 'auth.beginDingTalk' | 'auth.pollDingTalk', payload?: unknown): Promise<unknown>
+  invoke(method: 'auth.getSession' | 'auth.refresh' | 'auth.beginDingTalk' | 'auth.pollDingTalk', payload?: unknown, signal?: AbortSignal): Promise<unknown>
   getSession(): ProductSession
 }
 
@@ -37,7 +37,7 @@ function authorization(value: unknown): DingTalkAuthorization {
  * Refresh an existing enterprise session or complete one browser-based OAuth attempt.
  * @param bridge - Product bridge used for session refresh and OAuth polling.
  * @param openExternal - System-browser opener for the authorization URL.
- * @param options - Optional timeout and polling intervals.
+ * @param options - Complete sign-in timeout, polling interval and caller cancellation.
  * @returns The authenticated employee session.
  */
 export async function ensureDingTalkSession(
@@ -46,18 +46,27 @@ export async function ensureDingTalkSession(
   options: { readonly timeoutMs?: number; readonly pollMs?: number; readonly signal?: AbortSignal } = {},
 ): Promise<ProductSession> {
   options.signal?.throwIfAborted()
-  try { await bridge.invoke('auth.refresh') } catch { /* A missing session starts a fresh OAuth attempt below. */ }
-  if (bridge.getSession().authenticated) return bridge.getSession()
-  const attempt = authorization(await bridge.invoke('auth.beginDingTalk'))
-  await openExternal(attempt.authorizationUrl)
-  const deadline = Date.now() + (options.timeoutMs ?? 120_000)
-  while (Date.now() < deadline) {
-    await delay(options.pollMs ?? 1_500, undefined, { signal: options.signal })
-    const poll = await bridge.invoke('auth.pollDingTalk', { state: attempt.state })
+  const timeout = AbortSignal.timeout(options.timeoutMs ?? 120_000)
+  const signal = AbortSignal.any([timeout, ...options.signal ? [options.signal] : []])
+  try {
+    try { await bridge.invoke('auth.refresh', undefined, signal) } catch { /* A missing session starts a fresh OAuth attempt below. */ }
+    signal.throwIfAborted()
     if (bridge.getSession().authenticated) return bridge.getSession()
-    if (record(poll) && (poll.status === 'expired' || poll.status === 'invalid')) {
-      throw new DingTalkAuthorizationTimeoutError()
+    const attempt = authorization(await bridge.invoke('auth.beginDingTalk', undefined, signal))
+    signal.throwIfAborted()
+    await openExternal(attempt.authorizationUrl)
+    for (;;) {
+      await delay(options.pollMs ?? 1_500, undefined, { signal })
+      const poll = await bridge.invoke('auth.pollDingTalk', { state: attempt.state }, signal)
+      signal.throwIfAborted()
+      if (bridge.getSession().authenticated) return bridge.getSession()
+      if (record(poll) && (poll.status === 'expired' || poll.status === 'invalid')) {
+        throw new DingTalkAuthorizationTimeoutError()
+      }
     }
+  } catch (error) {
+    options.signal?.throwIfAborted()
+    if (timeout.aborted) throw new DingTalkAuthorizationTimeoutError()
+    throw error
   }
-  throw new DingTalkAuthorizationTimeoutError()
 }

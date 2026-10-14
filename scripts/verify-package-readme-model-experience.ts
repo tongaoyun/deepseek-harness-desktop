@@ -7,7 +7,7 @@
 
 import { existsSync, globSync, readFileSync } from 'node:fs'
 import { relative, resolve, sep } from 'node:path'
-import { markdownHeadingLines, markdownProseLines, type MarkdownProseLine } from './markdown.ts'
+import { markdownHeadingLines, markdownProseLines, markdownValidationSource, type MarkdownProseLine } from './markdown.ts'
 
 const root = resolve(import.meta.dirname, '..')
 const HEADING = '## Model Experience'
@@ -301,9 +301,9 @@ function validateNestedVerbatim(raw: readonly string[], fragments: Set<string>):
   return { blocks }
 }
 
-/** GitHub-style fragment for the simple ASCII nested titles allowed by these rules. */
+/** GitHub-style fragment retaining authored Unicode letters and numbers. */
 function headingFragment(title: string): string {
-  return title.toLowerCase().replaceAll('`', '').replaceAll(/[^a-z0-9 _-]/g, '').trim().replaceAll(/\s+/g, '-')
+  return title.toLowerCase().replaceAll('`', '').replaceAll(/[^\p{L}\p{N} _-]/gu, '').trim().replaceAll(/\s+/g, '-')
 }
 
 /** A direct stable system-prompt contribution, as named by the README rules. */
@@ -366,7 +366,7 @@ for (const packageJson of packageJsons) {
     continue
   }
 
-  const text = readFileSync(abs, 'utf8')
+  const text = markdownValidationSource(readFileSync(abs, 'utf8'))
   const rawLines = text.split('\n')
   const lines = markdownProseLines(text)
   const headings = markdownHeadingLines(text)

@@ -44,6 +44,25 @@ export function parseMarkdown(source: string): Nodes {
   return fromMarkdown(source, { extensions: [gfm()], mdastExtensions: [gfmFromMarkdown()] })
 }
 
+/** Normalize Chinese documentation headings for language-independent structural checks.
+ * @param source Authored Markdown; code blocks and prose remain unchanged.
+ * @returns Validation text with the same physical line count as the source.
+ */
+export function markdownValidationSource(source: string): string {
+  const names: Readonly<Record<string, string>> = {
+    '概述': 'Summary', '目录': 'Table of Contents', '模型体验': 'Model Experience',
+    '已知限制与延期工作': 'Known Limitations and Deferred Work', '开发备注': 'Dev Note',
+    '模型看到的内容': 'What the model sees', 'Token 影响': 'Token effect', 'KV Cache 影响': 'KV Cache effect',
+    '变更': 'Change', '迁移': 'Migration',
+  }
+  const lines = source.split('\n')
+  for (const heading of markdownHeadingLines(source)) {
+    const name = names[heading.text]
+    if (name !== undefined && /^#{1,6} /.test(heading.raw)) lines[heading.index - 1] = `${'#'.repeat(heading.depth)} ${name}`
+  }
+  return lines.join('\n')
+}
+
 /**
  * Visit a Markdown tree depth-first; returning false prunes a node's children.
  * @param node - current tree node.

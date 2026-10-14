@@ -90,8 +90,10 @@ export class DeepSeekHarnessProductBridge {
   private readonly knowledgeUpload: KnowledgeUpload | undefined
   private readonly knowledgeFiles: ProductBridgeOptions['knowledgeFiles']
   private sessionRefresh: Promise<void> | undefined
+  private readonly refreshOperations = new Set<Promise<void>>()
   private sessionRefreshTimer: ReturnType<typeof setTimeout> | undefined
   private closed = false
+  private authorizationAttempt: { readonly controller: AbortController; readonly signal: AbortSignal; state?: string } | undefined
 
   constructor(options: ProductBridgeOptions = {}) {
     this.knowledgeUpload = options.knowledgeUpload
@@ -117,6 +119,7 @@ export class DeepSeekHarnessProductBridge {
       desktopVersion: options.desktopVersion ?? '0.0.0',
       getSession: () => this.session,
       ensureFreshSession: () => this.ensureFreshSession(),
+      getIdentitySignal: () => this.identityLifecycle.signal,
       emit: (event) => { this.emit(event) },
     })
     this.scheduleSessionRefresh()
@@ -133,13 +136,8 @@ export class DeepSeekHarnessProductBridge {
    */
   async loadRuntimeBootstrap(): Promise<ProductRuntimeBootstrap> {
     if (this.api === undefined) throw new Error('deepseek-harness product: server URL is not configured')
-    await this.ensureFreshSession()
-    try {
-      return runtimeBootstrap(await this.api.bootstrap<unknown>())
-    } catch (error) {
-      this.handleAuthenticationFailure(error)
-      throw error
-    }
+    const api = this.api
+    return this.withEmployeeSession(undefined, async signal => runtimeBootstrap(await api.bootstrap<unknown>(signal)))
   }
 
   /** Replace the current session and persist the opaque token outside the Renderer.
@@ -148,12 +146,15 @@ export class DeepSeekHarnessProductBridge {
    */
   setSession(session: ProductSession, token?: string): void {
     if (this.closed) return
+    this.authorizationAttempt?.controller.abort(new Error('Product employee session changed'))
+    this.authorizationAttempt = undefined
     const previousEmployee = this.session.employeeId
     this.session = { ...session }
     this.sessionToken = token
     if (!session.authenticated || session.employeeId !== previousEmployee) {
       this.identityLifecycle.abort(new Error('Product employee identity changed'))
       this.identityLifecycle = new AbortController()
+      this.sessionRefresh = undefined
       this.catalog.reset()
     }
     const persisted = this.persistSession?.(this.session, this.sessionToken)
@@ -191,11 +192,13 @@ export class DeepSeekHarnessProductBridge {
   async dispose(): Promise<void> {
     this.closed = true
     this.identityLifecycle.abort(new Error('Product bridge closed'))
+    this.authorizationAttempt?.controller.abort(new Error('Product bridge closed'))
+    this.authorizationAttempt = undefined
     this.listeners.clear()
     this.api?.close()
     if (this.sessionRefreshTimer !== undefined) clearTimeout(this.sessionRefreshTimer)
     this.sessionRefreshTimer = undefined
-    await Promise.allSettled([this.catalog.dispose(), this.sessionRefresh ?? Promise.resolve()])
+    await Promise.allSettled([this.catalog.dispose(), ...this.refreshOperations])
   }
 
   /** Validate and dispatch one allowlisted product operation.
@@ -214,11 +217,28 @@ export class DeepSeekHarnessProductBridge {
       return this.nativeInvoke(method.slice('native.'.length), input, signal)
     }
     if (this.api === undefined) throw new Error('deepseek-harness product: server URL is not configured')
-    if (method === 'auth.beginDingTalk') return this.api.beginDingTalk<unknown>(signal)
+    if (method === 'auth.beginDingTalk') {
+      this.authorizationAttempt?.controller.abort(new Error('DingTalk authorization was superseded'))
+      const controller = new AbortController()
+      const lifetime = AbortSignal.any([controller.signal, this.identityLifecycle.signal, ...signal ? [signal] : []])
+      lifetime.throwIfAborted()
+      const attempt: NonNullable<typeof this.authorizationAttempt> = { controller, signal: lifetime }
+      this.authorizationAttempt = attempt
+      const result = await this.api.beginDingTalk<Record<string, unknown>>(lifetime)
+      lifetime.throwIfAborted()
+      if (typeof result.state !== 'string' || result.state.length < 8) throw new Error('Invalid DingTalk authorization state')
+      attempt.state = result.state
+      return result
+    }
     if (method === 'auth.pollDingTalk') {
       const state = input.state
       if (typeof state !== 'string' || state.length < 8) throw new Error('deepseek-harness product: authorization state is required')
-      const result = await this.api.pollDingTalk<Record<string, unknown>>(state, signal)
+      const attempt = this.authorizationAttempt
+      if (attempt?.state !== state) throw new Error('DingTalk authorization is no longer current')
+      const lifetime = AbortSignal.any([attempt.signal, ...signal ? [signal] : []])
+      lifetime.throwIfAborted()
+      const result = await this.api.pollDingTalk<Record<string, unknown>>(state, lifetime)
+      lifetime.throwIfAborted()
       const session = result.session
       if (typeof session !== 'object' || session === null || Array.isArray(session)) {
         return { status: typeof result.status === 'string' ? result.status : undefined, session: null }
@@ -238,26 +258,15 @@ export class DeepSeekHarnessProductBridge {
         session: this.session.authenticated ? this.getSession() : null }
     }
     if (method === 'auth.refresh') {
-      await this.refreshEmployeeSession()
+      await this.refreshEmployeeSession(signal)
       return this.session
     }
     if (method === 'catalog.refresh') {
       await this.refreshCatalog(signal)
       return { refreshed: true }
     }
-    if (method === 'skills.install' || method === 'skills.uninstall' || method === 'skills.installed.read'
-      || method === 'expertKits.install' || method === 'expertKits.uninstall' || method === 'expertKits.installed.read'
-      || method === 'tasks.capabilities.read' || method === 'tasks.capabilities.prepare' || method.startsWith('knowledge.')) {
-      signal = AbortSignal.any([this.identityLifecycle.signal, ...signal ? [signal] : []])
-    }
-    await this.ensureFreshSession()
-    signal?.throwIfAborted()
-    try {
-      return await this.invokeAuthenticated(method, input, signal)
-    } catch (error) {
-      this.handleAuthenticationFailure(error)
-      throw error
-    }
+    const freshCatalog = signal !== undefined
+    return this.withEmployeeSession(signal, lifetime => this.invokeAuthenticated(method, input, lifetime, freshCatalog))
   }
 
   /** Dispatch one Host-owned product request. Connector results receive private
@@ -270,33 +279,31 @@ export class DeepSeekHarnessProductBridge {
   async invokeRuntime(method: ProductRuntimeMethod, payload?: unknown, signal?: AbortSignal): Promise<unknown> {
     if (method.startsWith('runtime.knowledge.preview.')) {
       if (this.closed) throw new Error('Product bridge has been disposed')
-      const lifetime = AbortSignal.any([this.identityLifecycle.signal, ...signal ? [signal] : []])
-      await this.ensureFreshSession()
-      lifetime.throwIfAborted()
-      if (this.api === undefined || this.knowledgeFiles === undefined) throw new ProductError('KNOWLEDGE_PREVIEW_UNAVAILABLE', 'File transport is unavailable', true)
-      try {
+      return this.withEmployeeSession(signal, async (lifetime) => {
+        if (this.api === undefined || this.knowledgeFiles === undefined) throw new ProductError('KNOWLEDGE_PREVIEW_UNAVAILABLE', 'File transport is unavailable', true)
         return await this.knowledgeFiles(method as KnowledgeFileMethod, assertProductPayload(payload), this.api, this.session, lifetime)
-      }
-      catch (cause) { this.handleAuthenticationFailure(cause); throw cause }
+      })
     }
     if (method === 'runtime.environment') return { desktopVersion: this.desktopVersion }
     if (method !== 'connectors.list') return this.invoke(method, payload, signal)
-    await this.ensureFreshSession()
-    signal = AbortSignal.any([this.identityLifecycle.signal, ...signal ? [signal] : []])
-    const value = await this.catalog.read(method, signal)
-    const api = this.api
-    const sessionToken = this.sessionToken
-    if (api === undefined || sessionToken === undefined || !Array.isArray(value)) {
-      throw new Error('deepseek-harness product: connector runtime requires an employee session')
-    }
-    const runtime = value.map(entry => runtimeConnector(entry, api, sessionToken))
-    return this.connectorRuntime ? this.connectorRuntime(runtime, signal) : runtime
+    return this.withEmployeeSession(signal, async (lifetime) => {
+      const value = await this.catalog.read(method, lifetime)
+      lifetime.throwIfAborted()
+      const api = this.api
+      const sessionToken = this.sessionToken
+      if (api === undefined || sessionToken === undefined || !Array.isArray(value)) {
+        throw new Error('deepseek-harness product: connector runtime requires an employee session')
+      }
+      const runtime = value.map(entry => runtimeConnector(entry, api, sessionToken))
+      return this.connectorRuntime ? this.connectorRuntime(runtime, lifetime) : runtime
+    })
   }
 
   private async invokeAuthenticated(
     method: ProductMethod,
     input: Readonly<Record<string, unknown>>,
     signal?: AbortSignal,
+    freshCatalog = true,
   ): Promise<unknown> {
     if (this.api === undefined) throw new Error('deepseek-harness product: server URL is not configured')
     if (method.startsWith('support.')) {
@@ -309,15 +316,18 @@ export class DeepSeekHarnessProductBridge {
       signal = AbortSignal.any([this.identityLifecycle.signal, ...signal ? [signal] : []])
       if (!this.session.authenticated || !this.session.employeeId) throw new Error('Authenticated employee is required')
       if (this.authoring === undefined) throw new Error('Personal extension editor is unavailable')
-      const result = await this.authoring(method, input, this.api, this.session, signal)
-      if (method === 'extensions.authoring.update' || method === 'extensions.authoring.save') this.emit({ type: 'authoring.changed', payload: { sessionId: input.sessionId } })
-      if (method === 'extensions.save' || method === 'extensions.authoring.save' || method === 'extensions.submit'
-        || method === 'extensions.delete' || method === 'extensions.connector.update' || method === 'extensions.connector.delete') {
-        this.catalog.reset()
-        // The write is committed; catalog refresh failures are reported by subsequent reads.
-        await this.catalog.refresh(signal).catch(() => undefined)
+      try { return await this.authoring(method, input, this.api, this.session, signal) }
+      finally {
+        if (!signal.aborted) {
+          if (method === 'extensions.authoring.update' || method === 'extensions.authoring.save') this.emit({ type: 'authoring.changed', payload: { sessionId: input.sessionId } })
+          if (method === 'extensions.save' || method === 'extensions.authoring.save' || method === 'extensions.submit'
+            || method === 'extensions.delete' || method === 'extensions.connector.update' || method === 'extensions.connector.delete') {
+            this.catalog.reset()
+            // A remote commit can precede a device failure; refresh the authoritative catalog.
+            await this.catalog.refresh(signal).catch(() => undefined)
+          }
+        }
       }
-      return result
     }
     if (method === 'knowledge.references.resolve') {
       return this.api.request('/api/v1/knowledge-references/resolve', { method: 'POST',
@@ -439,7 +449,7 @@ export class DeepSeekHarnessProductBridge {
       return result
     }
     const value = method === 'connectors.list' && this.connectorRuntime
-      ? await this.invokeRuntime(method, input, signal) : await this.catalog.read(method, signal)
+      ? await this.invokeRuntime(method, input, signal) : await this.catalog.read(method, freshCatalog ? signal : undefined)
     return method === 'connectors.list' && Array.isArray(value) ? value.map(rendererConnector) : value
   }
 
@@ -457,13 +467,18 @@ export class DeepSeekHarnessProductBridge {
     if (remaining <= SESSION_REFRESH_LEAD_SECONDS) await this.refreshEmployeeSession()
   }
 
-  private refreshEmployeeSession(): Promise<void> {
-    if (this.sessionRefresh !== undefined) return this.sessionRefresh
+  private refreshEmployeeSession(signal?: AbortSignal): Promise<void> {
+    signal?.throwIfAborted()
+    if (signal === undefined && this.sessionRefresh !== undefined) return this.sessionRefresh
     if (this.api === undefined || !this.session.authenticated || this.sessionToken === undefined) {
       this.clearSession()
       return Promise.reject(new DeepSeekHarnessApiError(401, 'EMPLOYEE_UNAUTHORIZED', 'Employee authentication is required'))
     }
-    const refresh = this.api.refreshSession<unknown>().then((result) => {
+    const refreshLifetime = AbortSignal.any([this.identityLifecycle.signal, ...signal ? [signal] : []])
+    const tokenBeforeRefresh = this.sessionToken
+    const refresh = this.api.refreshSession<unknown>(refreshLifetime).then((result) => {
+      refreshLifetime.throwIfAborted()
+      if (this.sessionToken !== tokenBeforeRefresh) throw new Error('Product employee session changed')
       if (typeof result !== 'object' || result === null || Array.isArray(result)) {
         throw new Error('deepseek-harness product: invalid refreshed session')
       }
@@ -480,13 +495,17 @@ export class DeepSeekHarnessProductBridge {
           ? { expiresAt: String(refreshed.expiresAt) } : {}),
       }, token)
     }).catch((error: unknown) => {
-      this.handleAuthenticationFailure(error)
-      if (this.session.authenticated) this.scheduleSessionRefreshRetry()
+      if (!refreshLifetime.aborted && this.sessionToken === tokenBeforeRefresh) {
+        this.handleAuthenticationFailure(error)
+        if (this.session.authenticated) this.scheduleSessionRefreshRetry()
+      }
       throw error
     }).finally(() => {
       if (this.sessionRefresh === refresh) this.sessionRefresh = undefined
+      this.refreshOperations.delete(refresh)
     })
-    this.sessionRefresh = refresh
+    if (signal === undefined) this.sessionRefresh = refresh
+    this.refreshOperations.add(refresh)
     return refresh
   }
 
@@ -531,6 +550,23 @@ export class DeepSeekHarnessProductBridge {
     if (!this.session.authenticated && this.sessionToken === undefined) return
     this.setSession({ authenticated: false })
     this.emit({ type: 'auth.required' })
+  }
+
+  private async withEmployeeSession<T>(signal: AbortSignal | undefined, operation: (signal: AbortSignal) => Promise<T>): Promise<T> {
+    const lifetime = AbortSignal.any([this.identityLifecycle.signal, ...signal ? [signal] : []])
+    lifetime.throwIfAborted()
+    await this.ensureFreshSession()
+    lifetime.throwIfAborted()
+    const token = this.sessionToken
+    try {
+      const result = await operation(lifetime)
+      lifetime.throwIfAborted()
+      return result
+    } catch (error) {
+      lifetime.throwIfAborted()
+      if (this.sessionToken === token) this.handleAuthenticationFailure(error)
+      throw error
+    }
   }
 
   private emit(event: ProductEvent): void {

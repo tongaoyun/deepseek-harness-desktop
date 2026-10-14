@@ -1,97 +1,97 @@
 ---
 kind: package-reference
-description: "Prepare and restore immutable enterprise capabilities for official Harness tasks."
+description: "为官方 Harness 任务准备和恢复不可变的企业能力组合。"
 ---
 
-# Product Runtime
+# 产品运行时
 
-English | [中文](README.zh.md)
+## 概述
 
-## Summary
+企业技能安装一次后通过官方 Harness 技能 Provider 自动发现。技能和专家套件提供连接器依赖，知识库按任务选择。重启恢复固定组合。准备过程校验下载内容。员工凭据不进入快照。
 
-Install enterprise Skills once for automatic discovery through the official Harness Skill Provider. Skills and Expert Kits supply connector dependencies; Knowledge is selected per task. Restart restores the pinned composition. Preparation verifies downloaded content. Employee credentials remain outside snapshots.
+## 目录
 
-## Table of Contents
-
-- [Composition](#composition)
-- [Model Experience](#model-experience)
-- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
-- [Dev Note](#dev-note)
+- [组合](#composition)
+- [模型体验](#model-experience)
+- [已知限制与延期工作](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
 
 <a id="composition"></a>
-## Composition
+## 组合
 
-`skills.install` verifies and installs content in an employee-scoped registry without creating a Preset or changing a Session. There is no per-skill enable or disable state. A per-agent Skill Provider contributes installed instructions to the official catalog when the task satisfies their connector, knowledge, and tool dependencies. Installation does not require those dependencies. `skills.installed.read` distinguishes installed content from task-visible content.
+`skills.install` 校验内容并写入按员工隔离的安装注册表，不创建 Preset 或改变 Session。技能没有启用、停用状态。每个 Agent 的技能 Provider 在任务满足连接器、知识库和工具依赖时，将已安装说明加入官方目录。安装不要求这些依赖。`skills.installed.read` 区分已安装内容与任务可见内容。
 
-`skills.uninstall` atomically removes the employee's device installation record and invalidates live Skill Provider catalogs. Tasks that have not started no longer discover the skill. Started tasks keep their pinned catalogs and content, including after restart, with continuing server permission checks. Uninstall preserves server resources, immutable content, and Session history. Installation and uninstall share a serialized queue; disposal waits for in-flight operations. Reinstall restores discovery for subsequent tasks.
+`skills.uninstall` 原子移除员工的设备安装记录，并使活动技能 Provider 的目录缓存失效。未开始任务不再发现该技能。已开始任务保留固定目录和内容，重启后也保留，继续校验服务端权限。卸载保留服务端资源、不可变内容和 Session 历史。安装与卸载共用串行队列，释放等待在途操作结束。重新安装恢复后续任务的技能发现。
 
-The first model-step boundary freezes the installed directory, versions, hashes, and connector tool definitions for that Session. Authorized connectors declared by available installed Skills mount through the official MCP client in that Agent's scope; unrelated authorized connectors do not mount. Installation does not change the task Preset. New installations affect tasks that have not started. Restart restores pinned instructions and connector definitions with fresh relay credentials. Listing and loading recheck server permissions and task dependencies. The official `skill` tool loads instructions on model request; user invocation uses `/<skillName>`.
+首个模型步骤边界固定该 Session 的安装目录、版本、哈希和连接器工具定义。可用的已安装技能所声明的已授权连接器，通过官方 MCP 客户端挂载到对应 Agent 的作用域；无关的已授权连接器不会挂载。安装不改变任务 Preset。新安装影响尚未开始的任务。重启恢复固定说明和连接器定义，并使用当前代理凭据重新连接。列出和加载时重新检查服务端权限及任务依赖。官方 `skill` 工具根据模型请求加载说明，用户通过 `/<skillName>` 显式调用。
 
-Only the server's nonretryable `EXPERT_KIT_NOT_FOUND` response removes an inaccessible installed Skill from discovery. Transport failures, identity errors, malformed responses, and damaged local content stop preparation; they do not freeze an empty directory. The first boundary validates eligible content before saving the catalog, allowing the same task to retry after the underlying failure is resolved.
+只有服务端不可重试的 `EXPERT_KIT_NOT_FOUND` 响应会将无权访问的已安装技能移出发现目录。传输故障、身份错误、非法响应和本地内容损坏会阻止准备，不会固定空目录。首次边界在保存目录前校验可用技能内容，故障解决后可在同一任务重试。
 
-Expert Kits resolve directly to immutable Skill Provider and README Provider rows. Content preparation neither mounts nor persists an intermediate Preset. The runtime derives the selected base mode and registers one task execution snapshot, then checks required tools against that final composition. No `standard` Preset is required by the product runtime. Connector and knowledge plugins belong to the task composition.
+专家套件直接解析为不可变的技能 Provider 和 README Provider 插件配置。内容准备不挂载或保存中间 Preset。运行时派生所选基础模式并注册一个任务执行快照，再根据最终组合检查必需工具。产品运行时无需 `standard` Preset。连接器和知识库插件属于任务组合。
 
-`expertKits.install` validates packaged content and records an employee-scoped device installation without preparing a task. A new selection requires that installation and the same catalog version and SHA-256; preparation never writes installation records. `KIT_NOT_INSTALLED` requires installation, and `KIT_INSTALLED_VERSION_CHANGED` requires explicitly installing the current version. `expertKits.installed.read` returns `ProductInstalledExpertKits.installed`, the pinned content identities on this device. `expertKits.uninstall` atomically removes the employee's installation record and prevents new selections. Existing task snapshots, providers, and immutable content remain retained for execution, restart, and mode or knowledge changes without installation; server authorization still applies. Installation, selection content preparation, and uninstall share a serialized queue; disposal awaits in-flight work.
+`expertKits.install` 校验包内内容并记录按员工隔离的设备安装，不准备任务。新选择要求当前员工已安装，且安装版本和 SHA-256 与目录一致；任务准备不写安装记录。`KIT_NOT_INSTALLED` 要求安装，`KIT_INSTALLED_VERSION_CHANGED` 要求显式安装当前版本。`expertKits.installed.read` 返回 `ProductInstalledExpertKits.installed`，即本机安装的固定内容标识。`expertKits.uninstall` 原子移除当前员工的安装记录，阻止后续新选择。已有任务快照、Provider 和不可变内容继续保留，无需安装即可执行、重启恢复或调整模式与知识库，服务端权限检查仍然生效。安装、任务内容准备与卸载共享串行队列；插件释放等待在途操作完成。
 
-Restart registers retained task compositions during Host activation. Tasks without connectors do not query the connector directory for restore or preparation. Failed external restoration retains the valid snapshot and registers a blocked composition for history access. Explicit preparation retries current dependencies against the pinned content; a started task receives a new Session. An Agent already mounted on the blocked generation remains blocked even when that identity is registered successfully for a replacement. Required tools are checked before each model step, after Host services have settled; new preparation checks them immediately and withdraws a failed registration. Preparation of an already registered snapshot repeats dependency checks.
+重启时，在 Host 加载阶段注册保留的任务组合。没有连接器的任务在恢复和准备时不查询连接器目录。外部依赖恢复失败时保留有效快照，并注册阻止执行的组合供查看历史。显式准备按固定内容重新检查当前依赖；已开始任务使用新的 Session。已挂载失败组合的 Agent 继续阻止执行，即使相同标识已经为替代任务成功注册。Host 服务加载完成后，每个模型步骤前检查必需工具；新任务准备立即检查，失败时撤销注册。准备已注册的快照时也会重新检查依赖。
 
-The exported `cordis.patch.yml` mounts this Loader plugin through its package-relative built entry, so the official Host needs no product dependency. Product desktop supplies its parent-process IPC provider. Task capability methods return the selected Preset and dependency checks; clients use official Session selection. The [product subsystem](../../../docs/subsystems/deepseek-harness-product.md) defines task transitions and permission behavior.
+导出的 `cordis.patch.yml` 通过包内相对构建入口挂载此 Loader 插件，官方 Host 无需声明产品依赖。产品桌面提供父进程 IPC。任务能力方法返回所选 Preset 和依赖检查，客户端使用官方 Session 选择。[产品子系统](../../../docs/subsystems/deepseek-harness-product.md)定义任务切换和权限行为。
 
-Task snapshots record `basePresetId`, pinned base plugin keys, required tools, and catalog display names. Mode changes replace only the base composition and revalidate dependencies; existing product content stays pinned. The selection resolver preserves these capabilities for every official Preset selection entry. Explicit selection accepts selectable modes even when `defaultable: false`; that flag only controls the saved default for future Sessions. Snapshots without base plugin metadata remain readable but require a new task before changing mode.
+任务快照记录 `basePresetId`、固定的基础插件标识、必需工具和目录展示名称。切换模式只替换基础组合并重新校验依赖，已有产品内容保持固定。选择解析器让所有官方 Preset 选择入口保留这些能力。显式选择接受 `defaultable: false` 的可选择模式；该标记只限制未来 Session 的保存默认值。缺少基础插件元数据的快照仍可读取，切换模式前需创建新任务。
 
-New execution definitions record `selectionBase` equal to `basePresetId`. Restore projects this display association from the snapshot's fixed `basePresetId` without changing stored content or hashes; missing base metadata or a conflicting association requires explicit recovery. Restore does not diagnose the target during Host activation: a subsequent read waits for the Loader to settle before marking an absent base unavailable. Official mode surfaces display that selectable base, while execution and Session logs retain the immutable task composition ID. Product UI supplies independent Kit and Knowledge controls without replacing the official mode component or controller.
+新执行定义记录与 `basePresetId` 相同的 `selectionBase`。恢复时从快照固定的 `basePresetId` 投影该展示关联，不改变已保存内容或哈希；基础元数据缺失或关联冲突时须显式恢复。恢复不在 Host 激活中诊断关联目标；后续读取先等待 Loader 稳定，再将缺失基础标为不可用。官方模式界面展示该可选择基础模式，执行及 Session 日志保留不可变任务组合 ID。产品界面提供独立的套件与知识库控件，不替换官方模式组件或控制器。
 
-`expertKitId: null` clears Kit providers and dependencies. Selecting or clearing a Kit preserves selected knowledge IDs; former required bases remain selected but become removable. Required connectors from the old Kit are replaced by the new Kit dependencies. `knowledgeBaseIds` submits the complete scope, including any required bases; an empty scope contributes no retrieval tool.
+`expertKitId: null` 清除套件 Provider 和依赖。选择或取消套件保留已选知识库 ID，原必需库保持选中但可移除。旧套件的必需连接器替换为新套件依赖。`knowledgeBaseIds` 提交包括必需库在内的完整范围，空范围不提供检索工具。
 
-Task reads and preparation expose `requiredConnectorIds` from the pinned kit, including after restart. Connector authorization is managed in the directory, without a task selection control. Unavailable dependencies exclude installed Skills from discovery; authorization is checked before connector execution. READ, WRITE approval, and undeclared-tool policies apply to both Kit and installed-Skill connectors. Agent disposal and product plugin unloading release MCP registrations and connections.
+任务读取和准备通过 `requiredConnectorIds` 返回固定套件的必需连接器，重启后也保留该信息。连接器授权由目录管理，不提供任务选择控件。依赖不可用时，已安装技能不会进入可发现目录；执行连接器工具前检查授权。READ、WRITE 审批和未声明工具拒绝策略同时适用于套件和已安装技能的连接器。Agent 释放及产品插件卸载时，MCP 注册和连接一并释放。
 
-Before execution and every Kit README or embedded Skill load, the runtime checks current server access by Kit ID. Published updates do not replace pinned content. Preparation checks the main-process desktop version, every declared packaged Skill, required tools, connectors, and knowledge. Failures include resource IDs and dependency results; `NOT_CHECKED` identifies checks not reached after a failure.
+执行前以及每次加载套件 README 或内置技能时，运行时按套件 ID 检查当前服务端权限。发布更新不替换固定内容。准备检查主进程提供的桌面版本、全部声明的制品内技能、必需工具、连接器及知识库。失败返回资源 ID 和依赖结果，`NOT_CHECKED` 表示失败后尚未执行的检查。
 
-`expertKitTaskId` selects a shortcut from the installed kit manifest. Preparation returns its pinned `prompt` and records `{ id, name, skillIds }` as `expertKitTask` in the capability snapshot. Bindings must reference existing bundled skills. The README plugin enters the pinned guide and selected skill instructions through official pre-step messages before model execution, deduplicating current visible history. Model-driven skill discovery remains available for other skills. Mode and knowledge changes retain shortcut selection; clearing the kit removes it.
+`expertKitTaskId` 从已安装套件清单中选择快捷任务。准备结果返回固定的 `prompt`，能力快照以 `expertKitTask` 保存 `{ id, name, skillIds }`。绑定必须引用实际存在的内置技能。README 插件通过官方执行前消息加载固定的套件说明和所选技能指令，再执行模型请求，并按当前可见历史去重。其他技能仍可由模型发现。修改模式或知识库保留快捷任务选择；清除套件时移除该选择。
 
-Snapshots use version 2 and pin `requiredKnowledgeBaseIds` after resolving required references once. `recoverCapabilities: true` exits the Kit and retains only knowledge IDs returned by a successful live directory query. A failed query preserves all selections. Corrupt or missing snapshots block only affected tasks; raw files and diagnostics are retained. A nonselectable Preset with a scoped execution blocker keeps history and drafts accessible while every model step is rejected. Explicit recovery creates a replacement composition. Failed registration or persistence rolls back.
+快照使用版本 2，将必需引用一次解析为固定的 `requiredKnowledgeBaseIds`。`recoverCapabilities: true` 退出套件，仅保留一次成功实时目录查询返回的已选知识库 ID，查询失败则保留全部选择。损坏或丢失的快照仅阻止对应任务，保留原始文件和诊断。不可选择的 Preset 注册作用域内的执行阻断，保持历史和草稿可访问，同时拒绝所有模型步骤。显式恢复会创建替代组合。注册或落盘失败会回滚。
 
-Before publishing controls, startup collects content generations unreferenced by any employee installation or retained task and skill snapshots. Official Session headers, selection events and installed-skill publication events identify retained and required snapshots through public query APIs; a missing required snapshot, unavailable history, oversized record or invalid digest stops collection with a diagnostic. Valid snapshots unreferenced by any existing Session are collected, unless a task diagnostic accompanies them. Referenced snapshots and diagnostics remain unchanged. Only regular, checksum-marked generations are deleted; links, special files, unknown directories and damaged markers are preserved. Abandoned installation stages and snapshot temporary files are removed only in managed directories.
+开放操作接口前，启动清理不被任何员工安装记录或保留的任务、技能快照引用的内容版本。官方 Session 的头部、模式选择事件和技能目录发布事件通过公开查询接口确定保留及必需的快照；必需快照缺失、历史不可读、记录超限或哈希错误时停止回收并记录诊断。不被任何现存 Session 引用的有效快照会被回收，附有诊断文件的任务快照除外。仍被引用的快照和诊断文件保持原样。只删除普通文件构成且校验标记完整的版本目录，保留链接、特殊文件、未知目录和坏标记。遗留安装暂存目录及快照临时文件只在托管目录内清理。
 
-The public `withFileLock` helper serializes startup ownership and collection. Process ownership records persist until actual process exit, including after plugin unloading, to protect pending readers. Any live owner defers collection; the next sole Host startup removes records whose PIDs are absent and collects unused content. Ownership applies to processes on one host and PID namespace. An unreadable or malformed ownership directory blocks storage initialization rather than collecting uncertain content.
+公开的 `withFileLock` 工具串行化启动归属登记和回收。进程归属记录一直保留到进程实际退出，插件卸载后也保留，以保护尚未结束的读取。任一归属进程存活时跳过回收；下一次仅有一个 Host 的启动清除 PID 已不存在的记录，并回收无引用内容。归属判断限于同一主机和 PID 命名空间。归属目录不可读或格式损坏时阻止存储初始化，不回收无法确认归属的内容。
 
-Creation conversations use the official Session and Agent loop without deriving a product execution Preset. `conversation-authoring` reads main-owned creation records at Agent creation and attaches `extension_draft`, `extension_catalog`, `extension_draft_update`, and `extension_save` only to the matching Session. When the requested content is complete, the model saves directly to the personal directory; successful skill saves install on this device. These tools cannot publish shared resources. Public catalog projection excludes connection secrets. Update results include the committed draft after resolving catalog skill content. Reads, updates and saves travel through official tool events; the scoped system section and schemas enter official request history. Unloading the product plugin removes the scoped tools even while an Agent remains alive, cancels requests and waits for them to settle. Restored Agents reconnect to the durable draft by Session ID and employee identity.
+创建对话使用官方 Session 和 Agent 循环，不派生产品执行 Preset。`conversation-authoring` 在 Agent 创建时读取主进程的创建记录，仅向匹配的 Session 注册 `extension_draft`、`extension_catalog`、`extension_draft_update` 和 `extension_save`。内容满足用户要求后，模型直接保存到个人目录；技能保存成功后安装到本机。这些工具不能发布共享资源。公开目录投影排除连接凭据。更新结果包含已提交的草稿及解析后的目录技能正文。读取、更新和保存通过官方工具事件记录，会话内系统提示及工具定义进入官方请求历史。卸载产品插件会移除工具，即使 Agent 仍在运行，同时取消请求并等待其结束。恢复的 Agent 按 Session ID 和员工身份连接持久草稿。
 
-Selected knowledge registers `knowledge_search` and `knowledge_read`. Search accepts only query and count; reading accepts a cited fragment ID and rejects content outside the pinned base IDs. The server rechecks current access and indexing state. Empty task selection supplies neither retrieval tool. Search results retain document and fragment IDs for citation; returned content enters official tool results.
+`extension_draft` 以布尔值返回 `pendingSave`，不返回固定作者元数据。待确认版本只允许原内容重试保存；`saved` 记录已提交的服务端内容，后续 `extension_save` 仅重试本机安装。安装失败与保存成功分别报告。已安装技能的知识库依赖只在当前可见目录与任务固定知识库 ID 的交集内解析；每个引用必须唯一。两个已选 ID 共用引用时，该技能不进入发现目录，目录顺序不影响结果；重复的同一 ID 不构成歧义，仅有引用但没有所选 ID 不能授予能力。
 
-Both retrieval tools attach credential-free source identities as official `tool/result.meta`, retaining the library, document, fragment, filename and original locator for Client replay. `knowledge_read` returns the structured hit to programmatic callers; its model-facing JSON text remains unchanged. Opening a recorded source rechecks live access and does not add model input.
+所选知识库注册 `knowledge_search` 和 `knowledge_read`。搜索只接受查询和数量；阅读接受引用片段 ID，并拒绝固定知识库 ID 范围之外的内容。服务端重新检查当前权限和索引状态。空任务选择不提供任何检索工具。搜索结果保留文档与片段 ID 供引用，返回内容进入官方工具结果。
 
-The product runtime also supplies `knowledge_destinations` and `knowledge_save` without changing task selection. Destination discovery exposes writable base names and ownership only. Saving a user-requested task result creates Markdown through official tool approval; rejection performs no write. Department and company destinations require an explicit user choice. A Session and call ID determine the retry key. Save results report asynchronous processing rather than retrieval readiness. Plugin unloading cancels requests and awaits their settlement.
+两个检索工具均将不含凭据的来源标识附加到官方 `tool/result.meta`，保留知识库、文档、片段、文件名和原始位置供 Client 重放。`knowledge_read` 向程序调用方返回结构化命中，其模型可见 JSON 文本保持不变。打开已记录来源会重新检查当前权限，不增加模型输入。
 
-Knowledge Office previews use the official `officeToPdf` service outside Session execution. The main process authorizes original metadata before queue admission; source bytes are fetched only after admission, with another permission and version check. Cache identities include the employee and document. Returning any PDF rechecks current permission and source version. Private input and output transfers use bounded 256 KiB JSON chunks; the result contains only a main-owned file descriptor. Cancellation and plugin disposal propagate through the converter and file requests, close input handles, and discard incomplete output handles. Official conversion limits and [desktop file policy](../desktop/README.md) both apply; credentials, server addresses, engine diagnostics, and private paths are excluded from results.
+产品运行时还提供 `knowledge_destinations` 和 `knowledge_save`，不改变任务选择。目标发现只展示可写知识库的名称和归属。保存用户明确要求保留的任务结果时，经官方工具审批创建 Markdown；拒绝审批不会写入。部门和公司目标必须由用户明确选择。Session 与调用 ID 决定重试键。保存结果报告异步处理状态，不表示已经可以检索。插件卸载取消请求并等待其结束。
 
-Stable `contentVersion` identifies the original used by conversion and caching. Indexing timestamp changes retain the same version; original replacement or Markdown edits invalidate it. Metadata without this version cannot be rendered.
+知识库 Office 预览在 Session 执行之外调用官方 `officeToPdf` 服务。主进程在队列接纳前校验原文件元数据权限，接纳后才读取文件字节，并再次检查权限和版本。缓存标识包含员工及文档；返回任何 PDF 前都复查当前权限和原文件版本。私有输入与输出传输使用最大 256 KiB 的 JSON 分块，结果只包含由主进程持有的文件描述。取消及插件释放贯穿转换服务和文件请求，关闭输入句柄并丢弃未完成的输出句柄。官方转换限制与[桌面文件策略](../desktop/README.md) 同时生效；结果不包含凭据、服务地址、转换引擎诊断或私有路径。
+
+转换和缓存使用稳定的 `contentVersion` 标识原件。索引时间变化保留同一版本，替换原件或编辑 Markdown 则使旧版本失效。缺少内容版本的元数据不能用于转换。
 
 <a id="model-experience"></a>
-## Model Experience
+## 模型体验
 
-### Task capabilities
+### 任务能力
 
-#### What the model sees
+#### 模型看到的内容
 
-Installed skill summaries enter the official catalog; their full instructions load through the official skill mechanism. Kit instructions and connectors enter the composed Preset; installed-Skill connectors register in the Agent scope. `knowledge_search` and `knowledge_read` use the immutable task scope; `knowledge_save` exposes writable destination metadata and requires official approval. The scoped system prompt records capability selections and content identities. Official Session events record installed catalog identities, credential-free connector definitions, loaded skill content, tool inputs, and results.
+已安装技能的摘要进入官方目录，完整说明通过官方技能机制加载。套件说明和连接器进入组合后的 Preset；已安装技能的连接器在 Agent 作用域内注册。`knowledge_search` 和 `knowledge_read` 使用不可变任务范围；`knowledge_save` 展示可写入的目标元数据并要求官方审批。限定任务范围的系统提示记录能力选择和内容身份。官方 Session 事件记录安装目录标识、不含凭据的连接器定义、加载的技能内容、工具输入和结果。
 
-#### Token effect
+#### Token 影响
 
-Selected instructions, tool schemas, retrieval results, saved Markdown arguments, and creation drafts consume provider tokens. No employee credential is model-visible.
+所选说明、工具 schema、检索结果、保存 Markdown 的参数和创建草稿消耗模型 Token。员工凭据不会进入模型输入。
 
-#### KV Cache effect
+#### KV Cache 影响
 
-A new capability composition or creation conversation can change the request prefix. Existing tasks retain their recorded composition; creation draft updates are logged tool results.
+新能力组合或创建对话可能改变请求前缀，已有任务保留其记录的组合，创建草稿的更新通过工具结果记录。
 
-## Known Limitations and Deferred Work
+## 已知限制与延期工作
 <a id="known-limitations-and-deferred-work"></a>
 
-- Existing Session history and task diagnostics retain their pinned content. Valid orphan snapshots and unused generations are reclaimed only at a sole Host startup. Damaged records stop collection; PID reuse can conservatively postpone it. Legacy product caches are unsupported. Live service permission checks remain necessary for connector calls and retrieval.
+- 现存 Session 历史与任务诊断保留其固定内容。有效孤儿快照和无引用版本仅在单一 Host 启动时回收。损坏记录会停止回收；PID 被复用时可能保守地延后回收。旧产品缓存不受支持。连接器调用和检索仍需实时检查服务端权限。
 
 <a id="dev-note"></a>
-### Dev Note
+### 开发备注
 
-All registrations, IPC listeners, and outstanding product requests follow Cordis disposal. Use public Harness package exports and typed Preset derivation. The real Loader tests cover scoped tools, unloading, and restart restoration.
+所有注册、IPC 监听和待处理产品请求随 Cordis 插件释放。使用 Harness 公开包出口和类型化 Preset 派生。真实 Loader 测试覆盖工具作用域、卸载与重启恢复。
 
-[Large shortcut instruction regression](tests/kit-skills-loader.spec.ts) generates an authored kit, loads its long-description skill through the official filesystem provider, and checks complete instructions in the first model request and Session log. Restored execution retains that content without duplicate injection. The model adapter is deterministic; this verifies delivery and replay rather than a live model's reasoning.
+[大技能快捷任务回归](tests/kit-skills-loader.spec.ts)生成编辑后的套件，通过官方文件系统 Provider 加载长描述技能，并检查首次模型请求及 Session 日志中的完整指令。恢复执行保留相同内容，不重复注入。模型适配器使用确定性模拟；该测试验证内容送达和回放，不验证真实模型的推理。

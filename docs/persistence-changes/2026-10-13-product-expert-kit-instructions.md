@@ -1,25 +1,23 @@
 ---
-description: "Records a persistence type transition and its compatibility acknowledgement."
+description: "记录持久化类型更改及其兼容性确认。"
 kind: persistence-change
 ---
 
 # 2026-10-13-product-expert-kit-instructions
 
-English | [中文](2026-10-13-product-expert-kit-instructions.zh.md)
+## 概述
 
-## Summary
+通过带产品归属的普通用户消息记录固定的专家套件说明和快捷任务技能指令。
 
-Records pinned Expert Kit guide and shortcut skill instructions as ordinary user messages with product attribution.
+## 目录
 
-## Table of Contents
-
-- [Declaration](#declaration)
-- [Compatibility](#compatibility)
-- [Verification](#verification)
-- [Dev Note](#dev-note)
+- [声明](#declaration)
+- [兼容性](#compatibility)
+- [验证](#verification)
+- [开发备注](#dev-note)
 
 <a id="declaration"></a>
-## Declaration
+## 声明
 
 ```yaml persistence-change
 schemaVersion: 1
@@ -45,16 +43,16 @@ changes:
 ```
 
 <a id="compatibility"></a>
-## Compatibility
+## 兼容性
 
-Existing records remain readable. The new source kind and metadata identify the producer only; unknown sources preserve the message text without this plugin. Product duplicate suppression reads its own attribution from the current model-visible history. Required shortcut selection and provider settings are enforced by separate hashed product task snapshots; older runtime snapshot schemas refuse unsupported fields rather than execute default capabilities. Official Session format and execution meanings remain unchanged.
+已有记录继续可读。新来源类型和元数据仅标记生产者；未加载本插件时，未知来源仍保留消息正文。产品去重读取当前模型可见历史中的自身归属。必需的快捷任务选择和 Provider 配置由独立哈希产品快照校验；旧运行时快照 Schema 拒绝不支持的字段，不会改用默认能力执行。官方 Session 格式和执行语义保持不变。
 
 <a id="verification"></a>
-## Verification
+## 验证
 
-The real Loader runtime-loader.spec.ts recording verifies full guide and selected skill content before the first direct MCP call, pinned snapshot restoration, no duplicate injection after restart, live authorization denial and credential exclusion. expert-kit-readme.spec.ts verifies visible-history deduplication, restoration after surface replacement, wrong-provider denial and disposal.
+真实 Loader 的 runtime-loader.spec.ts 记录验证首次直接 MCP 调用前已提供完整说明和所选技能、固定快照恢复、重启不重复注入、实时权限拒绝和凭据排除。expert-kit-readme.spec.ts 验证可见历史去重、上下文替换后恢复、错误 Provider 拒绝和插件释放。
 
 <a id="dev-note"></a>
-## Dev Note
+## 开发备注
 
-None.
+无。

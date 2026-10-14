@@ -6,6 +6,8 @@ const messageKeys: Readonly<Record<string, DeepSeekHarnessProductKey>> = {
   FEEDBACK_INVALID: 'feedbackSendFailed',
   FEEDBACK_IMAGES_INVALID: 'feedbackImagesInvalid',
   EXTENSION_DRAFT_CHANGED: 'draftChanged',
+  EXTENSION_SAVE_PENDING: 'extensionSavePending',
+  EXTENSION_INSTALL_FAILED: 'extensionInstallFailed',
   EXTENSION_VERSION_CONFLICT: 'resourceConflict',
   EXTENSION_REQUEST_TIMEOUT: 'extensionRequestTimeout',
   EXTENSION_PRIVATE_CONFIGURATION_INVALID: 'invalidPrivateConfiguration',

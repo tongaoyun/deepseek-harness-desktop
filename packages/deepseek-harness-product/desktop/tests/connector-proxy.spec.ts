@@ -1,6 +1,6 @@
 import { createServer } from 'node:http'
 import { expect, it, onTestFinished, vi } from 'vitest'
-import { ConnectorProxy } from '../src/connector-proxy.ts'
+import { ConnectorProxy, resolveConnectorProxyPolicy } from '../src/connector-proxy.ts'
 
 it('relays MCP with main-owned credentials, refuses revoked authorization, and closes connections', async () => {
   const requests: string[] = []
@@ -41,7 +41,7 @@ it('relays MCP with main-owned credentials, refuses revoked authorization, and c
   await expect(fetch(entry.url)).rejects.toThrow()
 })
 
-it('bounds a stalled upstream request by the connector timeout', async () => {
+it('bounds a stalled upstream request by the response-header timeout', async () => {
   const upstream = createServer(() => undefined)
   await new Promise<void>(resolve => upstream.listen(0, '127.0.0.1', resolve))
   onTestFinished(async () => {
@@ -51,7 +51,7 @@ it('bounds a stalled upstream request by the connector timeout', async () => {
   const address = upstream.address(); if (!address || typeof address === 'string') throw new Error('No fixture port')
   const connector = { id: 'slow', status: 'ready', transport: 'streamable-http', timeoutSeconds: 1,
     url: `http://127.0.0.1:${address.port}/mcp`, headers: {} }
-  const proxy = new ConnectorProxy(async () => [connector])
+  const proxy = new ConnectorProxy(async () => [connector], undefined, { responseTimeoutMs: 1000, streamIdleTimeoutMs: 1000 })
   onTestFinished(() => proxy.close())
   await proxy.start()
   const [entry] = proxy.catalog([connector]) as typeof connector[]
@@ -61,6 +61,51 @@ it('bounds a stalled upstream request by the connector timeout', async () => {
   expect(response.status).toBe(502)
   expect(Date.now() - started).toBeLessThan(4000)
   expect(await response.text()).toBe('Connector request failed')
+})
+
+it.each(['idle', 'active'] as const)('bounds idle reads while retaining an %s SSE stream beyond transport deadlines', async (mode) => {
+  const upstream = createServer((_request, response) => {
+    response.writeHead(200, { 'content-type': 'text/event-stream' })
+    response.write('data: first\n\n')
+    if (mode === 'idle') return
+    let heartbeats = 0
+    const timer = setInterval(() => {
+      response.write('data: heartbeat\n\n')
+      if (++heartbeats === 14) { clearInterval(timer); response.end() }
+    }, 100)
+    response.once('close', () => { clearInterval(timer) })
+  })
+  await new Promise<void>(resolve => upstream.listen(0, '127.0.0.1', resolve))
+  onTestFinished(async () => {
+    upstream.closeAllConnections()
+    await new Promise<void>(resolve => upstream.close(() => { resolve() }))
+  })
+  const address = upstream.address(); if (!address || typeof address === 'string') throw new Error('No fixture port')
+  const connector = { id: 'stream', status: 'ready', transport: 'streamable-http', timeoutSeconds: 1,
+    url: `http://127.0.0.1:${address.port}/mcp`, headers: {} }
+  const proxy = new ConnectorProxy(async () => [connector], undefined, { responseTimeoutMs: 1000, streamIdleTimeoutMs: 1000 })
+  onTestFinished(() => proxy.close())
+  await proxy.start()
+  const [entry] = proxy.catalog([connector]) as typeof connector[]
+  if (!entry) throw new Error('No relay connector')
+  const started = Date.now()
+  const response = await fetch(entry.url, { headers: entry.headers })
+  if (mode === 'idle') {
+    await expect(response.text()).rejects.toThrow()
+    expect(Date.now() - started).toBeLessThan(3500)
+  } else {
+    expect((await response.text()).match(/data: heartbeat/g)).toHaveLength(14)
+    expect(Date.now() - started).toBeGreaterThan(1000)
+  }
+})
+
+it('validates independently configurable response and idle deadlines', () => {
+  expect(resolveConnectorProxyPolicy()).toEqual({ responseTimeoutMs: 30000, streamIdleTimeoutMs: 120000 })
+  expect(resolveConnectorProxyPolicy({ responseTimeoutMs: 1000, streamIdleTimeoutMs: 3600000 }))
+    .toEqual({ responseTimeoutMs: 1000, streamIdleTimeoutMs: 3600000 })
+  for (const invalid of [{ responseTimeoutMs: 0 }, { streamIdleTimeoutMs: 3600001 }, { timeoutSeconds: 1 }]) {
+    expect(() => resolveConnectorProxyPolicy(invalid)).toThrow()
+  }
 })
 
 it('cancels catalog requests when the caller disconnects', async () => {

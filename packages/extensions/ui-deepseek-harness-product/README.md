@@ -1,116 +1,116 @@
 ---
-description: "Official Harness sidebar navigation for DeepSeek Harness product capabilities."
+description: "DeepSeek Harness产品能力的官方 Harness 侧边栏导航扩展。"
 kind: "package-reference"
 ---
 
-# DeepSeek Harness Product Capabilities
+# DeepSeek Harness产品能力
 
-English | [中文](README.zh.md)
+此包在 Harness 官方侧边栏中发布DeepSeek Harness产品能力导航。不会发布 companion 包，因为所有产品操作都通过 Electron 产品方法白名单和 `deepseek-harness.native.v1` sidecar 分发。
 
-This package publishes DeepSeek Harness product navigation in the official Harness sidebar. No companion is published because every product operation is dispatched through the Electron product method allowlist and the `deepseek-harness.native.v1` sidecar.
+## 概述
 
-## Summary
+能力面板展示产品目录，不重新实现 Harness 的对话或任务状态。
 
-The capability panels expose product-owned catalogs without reimplementing Harness conversation or task state.
+## 目录
 
-## Table of Contents
-
-- [Use this package](#use-this-package)
-- [Model Experience](#model-experience)
-- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
-- [Dev Note](#dev-note)
+- [使用此包](#use-this-package)
+- [模型体验](#model-experience)
+- [已知限制与延期工作](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
 
 -----
 
 <a id="use-this-package"></a>
-## Use this package
+## 使用此包
 
-Enable this extension in the official Electron desktop composition to expose the Capabilities group and its Expert Kits, Skills, Connectors, and Knowledge entries in the official sidebar. Product requests remain behind the product method allowlist and are handled by the main-process product bridge; the Renderer never receives employee session credentials or upstream connector credentials.
+在官方 Electron 桌面组合中启用此扩展，即可在官方侧边栏中展示“能力”分组及专家套件、技能、连接器和知识库四个入口。产品请求始终经过 产品方法白名单并由主进程产品桥处理，Renderer 不会获得员工会话凭据或上游连接器凭据。
 
-Directories search the complete server-backed catalog. Skills and Kits group by category, Connectors by their own categories, and Knowledge by organization ownership. Compact cards retain names, summaries, authors, versions, and actual status. Wide layouts show two Kit or Connector columns and three Skill columns, reducing columns as the panel narrows. Harness theme tokens, icons, and primitives supply both themes. Skill details render the `SKILL.md` body directly in the official Modal, preserving document headings and formatting without catalog metadata or additional sections. YAML frontmatter is hidden. Only the document scrolls; the title, close button, and install action remain visible. Escape closes the dialog and restores focus. Kits open a full main-panel detail. Connector **All** and **Connected** tabs distinguish account authorization from task selection. OAuth exposes authorize, reauthorize, and revoke while the server retains credentials. The UI does not infer permissions or installation absent from server metadata.
+目录在服务端完整目录上执行本地搜索。技能和套件按分类分组，连接器使用自身分类，知识库按组织归属分组。紧凑卡片保留名称、简介、作者、版本和实际状态。宽屏下套件与连接器显示两列，技能三列，随面板变窄减少列数。Harness 主题变量、图标和基础组件支持明暗主题。技能详情在官方 Modal 中直接渲染 `SKILL.md` 正文，保留文档标题和排版，不添加目录元数据或额外分区。YAML frontmatter 隐藏。只有正文滚动，标题、关闭按钮和安装操作始终可见；Escape 关闭弹窗并恢复焦点。套件在主面板打开完整详情。连接器“全部 / 已连接”区分账号授权和任务选择。OAuth 提供授权、重新授权和撤销，凭据由服务端保管。界面不推断元数据之外的权限或安装状态。
 
-Connectors missing device-local configuration show **Needs configuration** and are excluded from **Connected**, even when the server reports authorization. Authorized connectors with temporary server outages remain in that filter and show their actual availability.
+缺少设备本地配置的连接器显示**待配置**，并从**已连接**筛选中排除，即使服务端报告已授权。已授权但服务端暂时不可用的连接器仍在该筛选中，并显示真实可用状态。
 
-Signing out or changing employees clears open resource details, references, editors, confirmations, installation state, and the knowledge reader. Pending directory reads and management writes are canceled; late responses cannot reopen the former employee's content or start its modification conversation. Refreshing the same employee's session retains open details. An unavailable identity transport reports a loading failure rather than a sign-out.
+退出登录或切换员工会清除已打开的资源详情、引用、编辑器、确认框、安装状态和知识库阅读器。目录读取和管理写入会取消；迟到的响应不能重新打开上一员工的内容或发起其修改对话。同一员工刷新会话时保留已打开的详情。身份传输不可用时显示加载失败，不误报为退出登录。
 
-**Install skill** downloads and verifies content once, then shows **Installed** for that content version. Skills have no enable or disable state. Installation preserves the current Session, mode, and draft. The official skill catalog automatically discovers installed skills when task dependencies are satisfied; the model can request their instructions and users can invoke `/<skillName>` explicitly. Started tasks retain their pinned skill versions, while new content versions can be installed for subsequent tasks.
+**安装技能**下载并校验一次内容，然后为该内容版本显示**已安装**。技能没有启用、停用状态。安装保留当前 Session、模式和草稿。任务依赖满足时，官方技能目录自动发现已安装技能，模型可请求加载说明，用户也可通过 `/<skillName>` 显式调用。已开始的任务保留固定技能版本，新内容版本可安装供后续任务使用。
 
-Installed Skill cards and details, including shared resources, offer **More actions → Uninstall** with a named confirmation. Uninstall removes the current device installation; new tasks no longer discover the Skill. Started tasks retain their fixed content, history, and drafts. The server resource stays available for reinstall. Failure retains the confirmation for retry, and success restores **Install skill** without changing the current task or draft.
+已安装技能的卡片和详情，包括共享资源，均提供**更多操作 → 卸载**，确认框显示技能名称。卸载移除当前设备安装，新任务不再发现该技能。已开始任务保留固定内容、历史和草稿。服务端资源保留，可重新安装。失败时保留确认框供重试，成功后恢复**安装技能**，当前任务与草稿不变。
 
-Expert Kits supply the initial capability composition. Selecting Knowledge retains existing capabilities. Empty tasks adjust directly without rewriting the editor; after a turn starts, the official selection guard creates a new task in the same Workspace and carries the latest text and reference chips while preserving history. Explicit shortcut commands always prepare a new task in the source Workspace, preserving the source composition and draft. The official draft initializer persists receiving content before navigation; pending submission or persistence failure leaves the source task and draft intact. Skills and Expert Kits declare connector dependencies; the connector directory manages account authorization.
+专家套件提供初始能力组合。选择知识库时保留已有能力。空任务直接调整，不重写编辑器；开始后通过官方选择检查创建同一工作区的新任务，带入最新文字与引用胶囊，原历史保留。显式快捷命令始终在来源工作区准备新任务，保留来源任务的能力组合和草稿。官方草稿初始化接口在导航前持久化目标内容；提交未完成或持久化失败时保留来源任务和草稿。技能和专家套件声明连接器依赖，连接器目录管理账号授权。
 
-Retryable restoration failures expose **Retry**, which reloads the pinned snapshot for the captured Session without selecting a Preset, creating a Session, navigating or changing drafts. The adapter rejects a response whose execution identity changed. Nonretryable snapshot or access failures retain the separate explicit configuration recovery action; a temporary outage never clears the Kit, connectors or selected knowledge.
+可重试的恢复加载失败提供**重试**，只重新加载点击时捕获的 Session 固定快照，不选择 Preset、不创建 Session、不导航、不修改草稿。执行标识发生变化的响应由适配层拒绝。不可重试的快照或权限失败保留独立的显式配置恢复操作；临时故障不会清空套件、连接器或选中的知识库。
 
-Kit cards and details expose **Install expert kit** or a noninteractive **Installed** status for the current catalog version. Install before using a Kit: uninstalled details hide **Start using** and disable shortcut commands. New selections require the installed version and hash to match the accessible catalog version; a published update requires explicit installation. Task preparation never changes installation records. New Kit selections reject absent or mismatched installations with `KIT_NOT_INSTALLED` or `KIT_INSTALLED_VERSION_CHANGED`.
+套件卡片和详情显示**安装专家套件**或当前目录版本不可点击的**已安装**状态。使用套件前须先安装：未安装详情隐藏**开始使用**并禁用快捷命令。新选择要求本机安装的版本和哈希与可访问目录版本一致；发布新版本后须显式安装更新。准备任务不修改安装记录。新选择套件时，缺少安装或版本不匹配分别返回 `KIT_NOT_INSTALLED` 或 `KIT_INSTALLED_VERSION_CHANGED`。
 
-Installed Kits, including shared resources, expose **Uninstall** in **More actions**. Confirmation names the Kit and explains that the device installation is removed while the directory and existing task content remain available. Failed uninstall retains the confirmation for retry. Successful uninstall restores **Install expert kit**, preserving the current task and draft. Task preparation never reinstalls a removed Kit. Existing tasks retain pinned content and history; adjusting their mode or knowledge does not require reinstalling the pinned Kit. Execution and instruction loading still check current access permissions. Owner-only editing, review, and deletion remain separate resource operations.
+已安装套件，包括共享资源，均在**更多操作**中提供**卸载**。确认框显示套件名称，说明移除本机安装，同时保留目录和已有任务内容。卸载失败保留确认框供重试；成功后恢复**安装专家套件**，当前任务与草稿保留。准备任务不会重新安装已卸载套件。已有任务保留固定内容和历史；调整模式或知识库无需重新安装快照中的套件。执行与加载说明时仍检查当前访问权限。所有者的修改、审核和删除仍是独立的资源操作。
 
-Execution mode uses the [official Preset UI](../../client/ui-agent-preset/README.md) and its controller: the empty-task menu shows names and descriptions, obeys Developer tools, and becomes a read-only header label after a turn starts. Composed task snapshots display and select their base mode while retaining their actual execution identity in Session logs. The product does not replace either official mode slot.
+执行模式直接使用[官方 Preset UI](../../client/ui-agent-preset/README.zh.md)及控制器：空任务菜单展示名称和描述，受开发者工具设置控制，开始一轮执行后在标题栏显示只读标签。组合任务快照按基础模式显示和勾选，Session 日志仍保留实际执行标识。产品不覆盖这两个官方模式插槽。
 
-An independent **Expert kits** selector sits beside the official mode on the empty-task screen, with the same plain button style. Its choices include only accessible catalog Kits whose current version and hash are installed on this device. It displays the pinned Kit name, or **Expert kits** when none is selected; an unavailable current choice remains visible without becoming selectable. **No expert kit** clears the composition. Kit changes retain knowledge; official mode changes retain pinned product content.
+独立的**专家套件**选择器位于空任务的官方模式旁，使用同样的无框按钮样式。候选仅包含可访问目录中当前版本和哈希已安装到本机的套件。它显示固定的套件名称，未选时显示**专家套件**；当前选择不可用时仍显示名称，但不能作为候选选择。**不使用套件**清除组合，切换套件保留已选知识库，官方模式切换保留固定产品内容。
 
-After conversation starts, the header displays a selected Kit as a read-only label alongside the official mode, with no border, chevron, or menu. It omits the Kit label when no Kit is selected. To use another Kit, open its directory detail and choose **Start using** or a shortcut command; these actions prepare a new task through the official guard, preserving the original history and draft. Knowledge changes remain available from the input and follow the same official task boundary.
+对话开始后，标题栏在官方模式旁以只读标签显示已选套件，不显示边框、箭头或菜单。未选套件时不显示标签。使用其他套件时，从目录详情选择**开始使用**或快捷命令，通过官方检查准备新任务，保留原任务历史和草稿。知识库仍可从输入框调整，并遵循同样的官方任务边界。
 
-**+ → Reference knowledge bases** opens searchable multi-selection and commits it once with **Apply**. Selected bases appear as compact tags inside the input, with full names on hover and bounded horizontal scrolling. Optional tags can be removed; required Kit bases remain locked. An empty scope shows no tags. Cancel discards staged changes; preparation failure retains them for retry. Catalog failures retain selected identities. Knowledge catalogs and task selection distinguish missing employee mappings, inactive employees, invalid DingTalk sources, expired synchronization, and organization outages using localized messages and diagnostic codes; they never display private upstream exception text or offer permission recovery while the catalog is unavailable. Knowledge selection remains in the input after a task starts and prepares a new task through the official guard. The sidebar **Capabilities → Knowledge** directory remains available. Private snapshot IDs never label controls.
+**+ → 引用知识库**支持搜索、多选暂存，再通过**应用**一次提交。已选知识库在输入框内显示为紧凑标签，悬停显示完整名称，超出宽度时横向滚动。可移除可选库；套件必需库保持锁定。未选择时不显示标签。取消丢弃暂存调整，准备失败保留暂存选择供重试。目录失败时保留已选标识。知识目录和任务选择通过本地化文案及诊断码区分员工映射缺失、员工停用、钉钉来源无效、同步过期和组织服务故障；不显示私有上游异常文本，目录不可用时不提供失权恢复动作。任务开始后知识库选择仍在输入框内，调整通过官方检查准备新任务。左侧**能力 → 知识库**目录保持可用。控件不展示私有快照 ID。
 
-The knowledge Add-menu entry registers with the composer before capability reads finish. An opening request waits for that task's capabilities; switching tasks discards the pending request. Returning from a directory does not require waiting for a completed capability read before opening selection.
+知识库“+”菜单入口随输入框注册，不等待能力读取完成。加载期间的打开请求会等待当前任务的能力就绪；切换任务会丢弃待处理请求。从目录返回后，无需先等待能力读取完成再打开选择器。
 
-Expert Kit details show identity, summary, shortcut commands, skills, connectors, knowledge bases, and the kit guide in that order. Dependency checks run during task preparation and report concrete failures. Skill rows show names and summaries; connector rows show authorization; knowledge rows resolve stable references and show organization ownership. Missing, denied, ambiguous, and failed lookups remain unavailable. Kit details omit technical IDs and hashes. A compact framed Markdown preview opens the full reader when clicked or activated with the keyboard; Escape restores focus without leaving the detail. Shortcut commands prepare a new official task and fill its draft for confirmation.
+专家套件详情依次显示名称与版本、作者与来源、简介、快捷命令、技能、连接器、知识库和套件说明。依赖检查在准备任务时执行并显示具体失败原因。技能行显示名称和简介，连接器行显示授权状态，知识库行解析稳定引用并显示组织归属。引用不存在、无权访问、歧义和查询失败均不能显示为可用。套件详情不展示技术 ID 和哈希。说明显示紧凑的带边框 Markdown 预览，点击或通过键盘激活即可完整阅读，Esc 关闭并恢复焦点。快捷命令准备新的官方任务并预填草稿，由用户确认发送。
 
-Skills and Expert Kits offer all 20 fixed categories, including empty categories, and **All / Mine** filters. Cards omit the normal **Available** label and retain dependency warnings; Skill cards show **Install** or a noninteractive **Installed** status for this device. **Add** groups creation and import. Creating or modifying content opens a separate official conversation in the source Workspace with a prefilled unsent draft. Modification drafts name the resource type and loaded content's name. The source task and draft remain intact; later navigation prevents focus changes. Scoped model tools update the content and save it directly to the personal directory, installing skills on this device. Creation conversations have no preview or save-confirmation control. Modifying a personal resource prepares a new version while old tasks keep their content. Shared review remains a separate owner action.
+技能和专家套件提供固定的全部 20 类，包括空分类，以及“全部 / 我的”筛选。卡片不展示正常状态的“可使用”标签，保留依赖异常提示；技能卡片显示“安装”操作或当前设备的“已安装”状态，后者不可点击。“添加”统一创建和导入入口。创建或修改内容时，在来源工作区打开独立的官方对话，预填草稿但不自动发送。修改草稿明确显示资源类型和载入内容的名称。原任务和草稿保留；用户后续导航时不抢焦点。模型通过会话内工具更新内容并直接保存到个人目录，技能同时安装到本机。创建对话不显示预览或保存确认控件。修改个人资源准备新版本，旧任务保留原内容。提交共享审核仍是所有者的独立操作。
 
-Import starts with file or folder selection and a read-only preview. Standard directories and ZIP packages retain resources; a standalone `SKILL.md` requires missing product metadata before saving. **Continue in conversation** completes metadata or changes content. Kits require at least one skill; accessible catalog skills are copied by fixed version and hash with their resources. Failed saves preserve the creation draft; closing the preview cancels its requests. Unused import staging is released, while drafts attached to a creation Session survive desktop restart. Conversation navigation uses the official sidebar.
+导入先选择文件或文件夹，再打开只读预览。标准目录和 ZIP 保留资源；单独导入 `SKILL.md` 时，保存前必须补齐产品元数据。“通过对话完善”补齐信息或调整内容。套件至少包含一个技能，选取可访问目录技能时按固定版本和哈希复制内容及资源。保存失败保留创建草稿，关闭预览取消其请求。未使用的导入暂存会释放，已关联创建 Session 的草稿在桌面重启后保留。对话切换使用官方侧栏。
 
-Connectors offer **Add** and **Mine**, alongside account authorization. **Add** opens one **Add MCP server** dialog with **Manual configuration / Paste JSON** tabs, stable dimensions, and a fixed **Add** footer. The form provides a server-type selector, name, HTTP endpoint or complete stdio command, and private key/value rows. Resource ID, version, summary and category use generated defaults without an advanced editor. Literal command parsing preserves quoted arguments and rejects shell operations and variable expansion. Clipboard paste accepts JSON string maps or `KEY=VALUE` lines. Standard MCP JSON fills the form; multiple servers require selecting one. Switching tabs preserves entered content. A local timeout accepts 1–600 seconds, defaulting to 60, for connection, discovery and tool calls. Only explicit **Add** discovers tools, without business calls. Private values are masked and write-only; unsaved credentials stay in the local form. Configured OAuth providers reuse server authorization and its default timeout; local configuration is required on each device.
+连接器在授权管理之外提供“添加”和“我的”。“添加”直接打开一个“添加 MCP 服务器”弹窗，内部使用“手动填写 / 粘贴 JSON”标签，尺寸稳定，底部固定“添加”按钮。表单提供服务器类型、名称、HTTP 地址或完整 stdio 命令及私密键值行。资源 ID、版本、简介和分类使用系统生成的默认值，不提供高级编辑。命令解析保留带引号参数，拒绝 shell 操作和变量展开。剪贴板粘贴支持 JSON 字符串映射或每行 `KEY=VALUE`。标准 MCP JSON 填入表单；多个服务器须选择其中一个。切换标签保留已输入内容。本机超时设置接受 1–600 秒，默认 60 秒，用于连接、发现工具和工具调用。仅显式点击“添加”时发现工具，不调用业务工具。私密值遮蔽并只写不读，未保存凭据留在本地表单。已配置 OAuth 复用服务端授权及默认超时；本地配置需要在各设备填写。
 
-Connector details use a compact dialog with connection status, transport, authentication and authorization actions, without a task selection checkbox or advanced disclosure. Owners can modify personal connectors in the same MCP dialog or confirm deletion. Failed saves retain input; loading configuration must succeed before editing. Private keys appear with blank values; unchanged destinations can retain them. Read and write summaries share a separate band; the capability list expands independently and omits technical tool names. Narrow windows wrap status fields and summaries without horizontal scrolling. The Expert Kit selector lists Kit names without summaries and refreshes when the active task or Preset changes.
+连接器详情使用紧凑弹窗展示连接状态、连接类型、认证方式和授权操作，不提供任务勾选框或高级信息折叠项。所有者可通过同一个 MCP 弹窗修改个人连接器，或确认删除。保存失败保留输入，配置加载成功后才允许编辑。私密键显示空值，目标未改变时可以留空保留。读写能力摘要使用独立横栏，能力列表单独折叠，不展示工具技术名称。窄窗口下状态字段和摘要自动换行，不产生横向滚动。专家套件选择器仅显示套件名称，不显示简介，并在当前任务或 Preset 变化时刷新。
 
-Knowledge remains under **Capabilities → Knowledge**. Its main panel shows a personal, direct-department and company library tree beside the materials and reading area. Department headings show their names; identical department names include their stable IDs. Selecting a library or folder lists its materials; selecting a file opens its original bytes in the official document preview, with a persistent breadcrumb and manager actions. An incomplete or failed retrieval index does not disable original-file viewing. Narrow panels toggle between navigation and reading. Document names, formats and processing states filter on the server, with pagination. The main toolbar groups file search, upload and creation. The sidebar lists folders only; the main list shows direct subfolders followed by files, and the reader returns to that list. Refresh discards the prior preview and rechecks current access; explicit denial clears library materials, while network errors retain the selected file and offer retry. Library and document changes cancel prior requests and discard prior reading state; browsing never changes the task or draft. Referenced library details retain separate **Documents** and **Search** views; search hits open indexed citations, whose **View original file** action opens the document preview. Only server-confirmed managers see upload, Markdown creation or editing, URL import, reindex, move, delete, and folder management. The upload menu offers regular files with standard processing and text PDF extraction explicitly labeled **no OCR**; scanned PDFs use regular upload. A duplicate upload does not change an existing document's parsing mode. Markdown edits check the latest document timestamp; failed saves retain the editor. Deletion reports a submitted background job. Folders organize content within a base and do not grant access.
+知识库继续位于**能力 → 知识库**。主面板左侧按个人、直属部门和公司展示资料树，右侧显示资料列表和阅读区。部门标题显示真实名称，仅同名部门附带稳定 ID。选择知识库或文件夹查看对应资料；点击文件将原始字节交给官方文档预览，面包屑和管理操作保持可见。检索索引未完成或失败不影响原文件查看。窄屏可在资料导航和阅读区之间切换。文件名称、格式和处理状态由服务端筛选并分页。右侧工具栏集中搜索、上传和创建操作；左侧仅展示文件夹，右侧列表先列直属子文件夹再列文件，阅读器返回该列表。刷新丢弃旧预览并重新校验当前权限；明确失权清理库内资料，网络故障保留已选文件并提示重试。切换库或文档取消旧请求、清除旧阅读状态，浏览不改变任务或草稿。被引用的知识库详情仍区分**资料**和**检索**；检索命中打开索引片段，其中的**查看原文件**打开文档预览。只有服务端确认的管理者能看到上传、Markdown 新建或修改、网页导入、重建、移动、删除和文件夹管理。上传菜单区分沿用标准处理的普通文件和明确标注**无 OCR**的文本型 PDF 提取；扫描 PDF 使用普通上传。重复上传不改变已有文档的解析方式。Markdown 编辑检查最新文档时间戳，失败保存保留编辑器；删除表示后台任务已提交。文件夹只整理库内资料，不授予访问权。
 
-Original-file viewing uses the official Session-free `document.preview` factory: PDF shows pages, Excel shows a read-only workbook, and Word or PowerPoint uses the official Office-to-PDF converter. Missing-font notices remain visible. Markdown, text, HTML and images use the same official renderers as Sidebar documents. The authenticated product bridge accepts resource IDs only and supplies bounded bytes, without upstream URLs or credentials; each read and conversion checks current permission. Retrieval continues through WeKnora's indexed passages. An unavailable original file, oversized response or failed conversion produces a localized error instead of falling back to indexed text. Transfer saturation asks the user to retry later; a version change during reading asks them to reopen the preview. Both retain library access and allow an explicit retry.
+原文件查看使用官方无需 Session 的 `document.preview` 工厂：PDF 展示页面，Excel 展示只读工作簿，Word 或 PowerPoint 使用官方 Office 转 PDF 能力。缺失字体提示仍可见。Markdown、文本、HTML 和图片与侧栏文档使用相同的官方渲染器。经过认证的产品桥接仅接受资源 ID 并返回有大小限制的字节，不提供上游 URL 或凭据；每次读取和转换均重新校验权限。检索继续使用 WeKnora 索引片段。原文件不存在、响应超限或转换失败时显示本地化错误，不回退为索引正文。传输名额已满时提示稍后重试，读取期间版本变化时提示重新预览；两者保留知识库访问资格并允许用户主动重试。
 
-The personal group offers **New personal knowledge base**; the server fixes ownership to the authenticated employee. The folder tree exposes **New folder** and a per-folder menu for creating subfolders, uploading, renaming and deleting. Creation selects the new folder; deletion returns to its parent only when deleting the current folder. The parent picker, breadcrumbs and move picker display complete folder paths. Names are unique within a parent; deletion requires no files or subfolders. Uploads retain the selected destination after completion, cancellation or failure. Markdown and website creation capture that destination when the editor opens and retain it after saving. Unconfirmed placement preserves edits and asks the user to inspect All materials before creating again. Shared libraries expose only authorized reading and original-file downloads unless the server grants management. File menus retain **Download original file** even when preview fails; **Open in system app** appears only in the desktop. Previews receive bounded binary chunks through a temporary main-process transfer, closing the transfer after success, failure or cancellation instead of carrying an entire Base64 file through IPC.
+个人分组提供**新建个人知识库**，服务端将归属固定为已认证员工。文件夹树提供**新建文件夹**，每个文件夹菜单提供新建子文件夹、上传、重命名和删除。创建后选择新目录；删除当前目录回到上级，删除其他目录不改变当前位置。上级选择、面包屑和移动选择显示完整路径。同级名称唯一，仅无资料和子文件夹的目录可以删除。上传完成、取消或失败均保留已选目标目录。Markdown 和网页新建在打开编辑器时固定目标，保存后保留当前位置；位置未确认时保留编辑，提示先检查全部资料再决定是否重新创建。共享库仅提供获准的读取和原文件下载，服务端授予管理权后才展示管理操作。预览失败后，文件菜单仍提供**下载原文件**；**用系统应用打开**仅在桌面展示。预览通过主进程临时传输句柄读取有大小限制的二进制分块，成功、失败或取消后均关闭句柄，不再通过 IPC 传递整个 Base64 文件。
 
-Document trees and materials tables show localized processing states without raw parser diagnostics.
+文件树和资料列表仅显示本地化处理状态，不展示解析引擎的原始诊断。
 
-Deleting a personal library preserves the library currently being browsed. Only deleting the current library selects a replacement from the latest directory; failed deletion retains the confirmation and browsing position.
+删除个人知识库保留当前浏览的知识库。只有删除当前库才从最新目录选择替代库；删除失败保留确认弹窗和浏览位置。
 
-Folder branches load one server page when opened. The current path is read by folder identity independently of tree pages, so paging does not change the displayed location or creation destination. Parent and move pickers browse their own paginated branches and permit root, ancestor and nested selections; failed path reads block submission without resetting to root. Document processing polls refresh only materials; folder mutations and explicit refreshes reload directory metadata without scanning the library. Markdown editors load title, body and conflict timestamp from the same document response.
+文件夹分支在展开时读取服务端一页。当前位置按文件夹 ID 独立读取路径，目录树翻页不会改变显示位置或创建目标。上级与移动选择器独立分页浏览，支持根目录、上级和子目录选择；路径读取失败时阻止提交，不重置到根目录。文档处理轮询只刷新资料；文件夹写入和显式刷新更新目录元数据，不扫描整个知识库。Markdown 编辑器从同一详情响应加载标题、正文及冲突检查时间戳。
 
-The main list queries its own folder page and combines folders followed by documents into 20-row pages. Its total includes all direct folders and filtered documents; paging the sidebar never changes these rows. Filtered and All materials views contain documents only. Failed uploads retain their operation ID, parsing mode and destination; **Retry upload** reuses the main-owned file, while **End retry** releases its selection and refreshes the materials list without cancelling a server write that may already have committed. Closing the library releases retained selections. A changed original file requires ending the retry before selecting it again.
+编辑冲突保留草稿，并阻止携带旧元数据继续保存。**读取最新版本**独立展示服务端当前内容；检查后点击**确认，继续编辑当前草稿**采用新时间戳，不替换草稿，保存仍需主动点击。读取失败保留草稿及冲突状态；再次发生并发修改时须重新检查。
 
-Conversation `knowledge_search` and `knowledge_read` rows expose recorded sources through the official keyed toolview. Expanding a result shows the filename, library name and unchanged locator; selecting it reads the authorized fragment, and **View original file** opens the correct document through the official preview. Source metadata survives Session replay without a directory query. Opening a source rechecks current access; failed or unsupported metadata retains recorded output without creating a source link. Locators remain visible while reading the original; automatic page or spreadsheet-cell navigation is unavailable in the official Session-free preview API.
+右侧列表独立查询文件夹分页，按文件夹在前、文件在后组合为每页 20 行。总数包含全部直属文件夹和筛选后的文件，左侧翻页不改变右侧结果。筛选和全部资料视图只显示文件。上传失败保留请求编号、解析方式和目标目录；**重试上传**复用主进程持有的原文件，**结束重试**释放文件选择并刷新资料列表，不取消可能已经提交的服务端写入。关闭知识库释放保留的文件选择。原文件内容变化时，需结束重试再重新选择。
 
-Skill, Kit and Connector cards and details place owner-only resource operations in **More actions**: **Modify**, **Submit for shared review**, then separated red **Delete**. Review status replaces repeat submission. Sharing confirmation explains company availability after approval and continued personal use during review. Deletion confirmation names the resource and preserves conversation history; resources with a published version require unpublishing first. Skill and Connector management stays in the fixed dialog footer while content scrolls. Failed writes retain the dialog and resource for retry; successful deletion removes the resource without changing the current task or draft.
+对话中的 `knowledge_search` 和 `knowledge_read` 行通过官方 keyed toolview 展示已记录来源。展开结果显示文件名、知识库名称和原样位置；点击来源读取已授权片段，**查看原文件**通过官方预览打开对应文档。来源元数据随 Session 重放，无需查询目录。打开来源重新检查当前权限；失败结果或不支持的元数据保留已记录输出，不生成来源链接。阅读原文件时保留位置提示；官方无 Session 预览 API 不支持自动定位页码或表格单元格。
 
-The feedback dialog accepts selected, pasted or dropped PNG, JPEG and WebP screenshots, with up to four images of 5 MB each. Thumbnails show filenames and individual removal controls. A failed or cancelled submission retains the text, files and operation ID for retry; changing accounts clears the draft. Closing the dialog releases preview URLs while retaining unsent files. The main process supplies employee and device metadata; feedback contains no conversation history.
+技能、套件和连接器的卡片与详情将仅所有者可用的资源操作放在**更多操作**菜单，依次为**修改**、**提交共享审核**，再分隔展示红色**删除**。审核状态替代重复提交入口。共享确认说明审核通过后供公司使用，审核期间本人仍可使用。删除确认显示资源名称并保留对话历史，存在已发布版本时须先下架。技能和连接器的管理入口固定在弹窗底部，不随正文滚动。写入失败保留弹窗和资源供重试，删除成功后移除资源，不改变当前任务或草稿。
+
+反馈弹窗接受选择、粘贴或拖入的 PNG、JPEG、WebP 截图，最多四张，每张不超过 5 MB。缩略图显示文件名和单张移除入口。提交失败或取消保留文字、图片和操作 ID 供重试；切换账号清空草稿。关闭弹窗释放预览地址并保留未发送的文件。主进程补充员工和设备信息，反馈不包含对话历史。
 
 <a id="model-experience"></a>
-## Model Experience
+## 模型体验
 
-### Product navigation
+### 产品导航
 
-#### What the model sees
+#### 模型看到的内容
 
-The extension adds no `ToolDefinition`, prompt section, or other model-facing behavior; it only renders capability navigation and catalog panels.
+扩展只负责渲染能力导航和目录面板，不增加 `ToolDefinition`、提示词片段或其他面向模型的行为。
 
-#### Token effect
+#### Token 影响
 
-No provider tokens are added.
+不会增加模型 token。
 
-#### KV Cache effect
+#### KV Cache 影响
 
-No cache entries are created; the extension only renders product settings.
+不会创建缓存条目；扩展只负责渲染产品能力目录。
 
-## Known Limitations and Deferred Work
+## 已知限制与延期工作
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- The capability panels require the Electron product bridge and a reachable DeepSeek Harness server.
-- It does not provide an offline catalog or a second execution path.
+- 能力面板需要 Electron 产品桥和可访问的DeepSeek Harness服务端。
+- 不提供离线目录或第二套执行路径。
 
-### Dev Note
+### 开发备注
 
 <a id="dev-note"></a>
 
-Build the extension with the repository's standard package build. The Desktop Host applies this package's exported `cordis.patch.yml` over the official Web profile, mounting product navigation and disabling official account onboarding. The Host installation supplies the product plugin without adding it to the upstream Web bundle. `harness-actions.ts` owns the client integration with official Session, Workspace, composer, and Preset services; the registration entry only connects slots and actions. Keep product API calls in `packages/deepseek-harness-product/product`.
+使用仓库标准包构建流程构建此扩展。Desktop Host 在官方 Web profile 上应用本包导出的 `cordis.patch.yml`，装配产品导航并关闭官方账号引导。Host 安装提供产品插件，无需将它加入上游 Web bundle。`harness-actions.ts` 集中对接官方 Session、Workspace、输入框和 Preset 服务，注册入口只连接 slot 和操作。产品 API 调用放在 `packages/deepseek-harness-product/product`。

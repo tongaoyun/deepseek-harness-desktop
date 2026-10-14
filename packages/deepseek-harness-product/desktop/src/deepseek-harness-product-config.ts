@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { resolveKnowledgeFilePolicy, type KnowledgeFilePolicy } from './knowledge-file-policy.ts'
 import type { DesktopSupportPolicy } from './desktop-support.ts'
+import { resolveConnectorProxyPolicy, type ConnectorProxyPolicy } from './connector-proxy.ts'
 
 /** Inputs used to locate and validate the packaged product configuration. */
 export interface DeepSeekHarnessProductConfigOptions {
@@ -96,4 +97,17 @@ export function resolveDesktopSupportPolicy(options: DeepSeekHarnessProductConfi
     || !Number.isSafeInteger(document.support.reportIntervalMs) || document.support.reportIntervalMs < document.support.heartbeatIntervalMs
     || document.support.reportIntervalMs > 86_400_000) throw new Error('Invalid desktop support policy')
   return { heartbeatIntervalMs: document.support.heartbeatIntervalMs, reportIntervalMs: document.support.reportIntervalMs }
+}
+
+/** Read deployment-owned MCP transport deadlines from the product resource.
+ * @param options - Product resource location and optional test reader.
+ * @returns Validated header and idle deadlines for the main-process relay.
+ */
+export function resolveDeepSeekHarnessConnectorProxyPolicy(options: DeepSeekHarnessProductConfigOptions): ConnectorProxyPolicy {
+  const path = options.packaged ? join(options.resourcesPath, 'deepseek-harness', 'product.json')
+    : fileURLToPath(new URL('../resources/product.json', import.meta.url))
+  const document: unknown = JSON.parse((options.readFile ?? ((file: string) => readFileSync(file, 'utf8')))(path))
+  if (typeof document !== 'object' || document === null || Array.isArray(document)
+    || !('version' in document) || document.version !== 1) throw new Error('Invalid product configuration')
+  return resolveConnectorProxyPolicy('connectorProxy' in document ? document.connectorProxy : undefined)
 }

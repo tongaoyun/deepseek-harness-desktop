@@ -8,6 +8,7 @@ import SessionProjections from '@deepseek-ai/dsh-session-projection'
 import Agents from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { ExtensionAuthoringSnapshotSchema } from '@deepseek-harness/product/extension-draft'
+import { ProductError } from '@deepseek-harness/product/errors'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import * as Authoring from '../src/conversation-authoring.ts'
 
@@ -21,13 +22,14 @@ const kitDraft = { ...draft, kind: 'expert-kit' as const, id: 'fact-review-kit',
 
 class RecordingAdapter extends LlmAdapter {
   readonly requests: GenerateOptions[] = []
-  constructor(private readonly content: typeof draft | typeof kitDraft) { super() }
+  constructor(private readonly content: typeof draft | typeof kitDraft, private readonly retryInstallation = false) { super() }
   override async resolveModel(provider: string, model: string) { return { provider, id: model, name: model } }
   override async *stream(request: GenerateOptions): AsyncIterable<StreamChunk> {
     this.requests.push(request)
     const calls = [{ name: 'extension_draft', arguments: '{}' }, { name: 'extension_catalog', arguments: '{"kind":"connectors"}' },
       { name: 'extension_draft_update', arguments: JSON.stringify({ revision: 0, content: JSON.stringify(this.content) }) },
-      { name: 'extension_save', arguments: '{"revision":1}' }]
+      { name: 'extension_save', arguments: '{"revision":1}' },
+      ...this.retryInstallation ? [{ name: 'extension_draft', arguments: '{}' }, { name: 'extension_save', arguments: '{"revision":2}' }] : []]
     const call = calls[this.requests.length - 1]
     if (call) {
       yield { type: 'block-start', index: 0, blockType: 'tool-call' }
@@ -42,7 +44,8 @@ class RecordingAdapter extends LlmAdapter {
   }
 }
 
-it.each([draft, kitDraft])('runs scoped $kind creation through Loader and the official loop, records its draft, restores it and removes tools on unload', async (draft) => {
+it.each([{ content: draft, retryInstallation: false }, { content: kitDraft, retryInstallation: false },
+  { content: draft, retryInstallation: true }])('runs scoped $content.kind creation with installation recovery=$retryInstallation through Loader and the official loop', async ({ content: draft, retryInstallation }) => {
   const ctx = new Context()
   ctx.baseUrl = import.meta.url
   onTestFinished(() => ctx.fiber.dispose())
@@ -69,8 +72,11 @@ it.each([draft, kitDraft])('runs scoped $kind creation through Loader and the of
     }
     if (method === 'extensions.authoring.save') {
       expect(payload.revision).toBe(state.revision)
-      state = ExtensionAuthoringSnapshotSchema.parse({ ...state, revision: state.revision + 1,
-        saved: { id: draft.id, version: draft.version } })
+      if (!state.saved) {
+        state = ExtensionAuthoringSnapshotSchema.parse({ ...state, revision: state.revision + 1,
+          saved: { id: draft.id, version: draft.version } })
+        if (retryInstallation) throw new ProductError('EXTENSION_INSTALL_FAILED', 'Skill saved, device installation unavailable', true)
+      }
       return { kind: draft.kind, id: draft.id, version: draft.version, visibility: 'PERSONAL', installed: draft.kind === 'skill' }
     }
     throw new Error(`Unexpected method: ${method}`)
@@ -81,7 +87,7 @@ it.each([draft, kitDraft])('runs scoped $kind creation through Loader and the of
   await ctx.loader.root.update(structuredClone(profile))
   await ctx.loader.await()
   await ctx.loader.resolve('authoring').fiber?.await()
-  const adapter = new RecordingAdapter(draft)
+  const adapter = new RecordingAdapter(draft, retryInstallation)
   ctx.llm.registerAdapter(['fixture'], adapter)
   const normal = await ctx.agents.create({ sessionId: SessionId('normal') })
   onTestFinished(() => normal.dispose())
@@ -103,8 +109,8 @@ it.each([draft, kitDraft])('runs scoped $kind creation through Loader and the of
   expect(state.revision).toBe(2)
   expect(state.saved).toEqual({ id: draft.id, version: draft.version })
   expect(invoke.mock.calls.map(call => call[0])).toContain('extensions.authoring.save')
-  await expect(JSON.stringify(recording, null, 2) + '\n').toMatchFileSnapshot(draft.kind === 'skill'
-    ? 'expected/conversation-authoring.json' : 'expected/conversation-authoring-kit.json')
+  await expect(JSON.stringify(recording, null, 2) + '\n').toMatchFileSnapshot(retryInstallation ? 'expected/conversation-authoring-install-recovery.json'
+    : draft.kind === 'skill' ? 'expected/conversation-authoring.json' : 'expected/conversation-authoring-kit.json')
   await ctx.loader.root.update([])
   await ctx.loader.await()
   expect(ctx.tools.schemas(handle.agent)).toEqual([])

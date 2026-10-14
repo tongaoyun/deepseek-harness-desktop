@@ -1,35 +1,33 @@
 ---
 kind: upgrade-guide
-description: "Product knowledge writes require management permission and citation source IDs identify parsed fragments."
+description: "产品知识库写入要求管理权限，引用来源 ID 标识解析片段。"
 ---
 
-# Product Knowledge Library
+# 产品知识库
 
-English | [中文](guide.zh.md)
+## 变更
 
-## Change
+知识库读取权限不再授予写入或管理权限。个人所有者、指定知识库管理者和已配置管理员可管理知识库。没有管理者的已有共享库须由管理员管理。授权使用已认证 ID，不使用展示姓名。
 
-Knowledge read access no longer grants write or management rights. Personal owners, designated base managers, and configured administrators can manage libraries. Existing shared bases without a manager require an administrator. Authorization uses authenticated IDs, never display names.
+搜索中的 `sourceId` 标识解析片段，`documentId` 标识所属文档。阅读重新检查实时权限和索引就绪状态。列表使用分页，处理和删除返回异步状态。Markdown 编辑要求当前 `expectedUpdatedAt`；WeKnora 网页端编辑不具备原子冲突保护。
 
-Search `sourceId` identifies a parsed fragment; `documentId` identifies its document. Reading rechecks live permission and indexing readiness. Lists are paginated, with asynchronous processing and deletion states. Markdown editing requires current `expectedUpdatedAt`; WeKnora webpage edits lack atomic conflict protection.
+官方工具支持需审批的任务结果保存和引用片段阅读。空任务选择不提供检索工具，保存不改变检索选择。
 
-Official tools support approved task-result saving and cited-fragment reading. Empty task selection provides no retrieval tool. Saving does not change retrieval selection.
+程序调用 `knowledge_read` 时返回结构化命中，不再接收 `content` 中的 JSON；模型文本不变。来源标识持久化到官方 `tool/result.meta`。旧结果仍可阅读，不补造链接。
 
-Programmatic `knowledge_read` returns a structured hit rather than JSON inside `content`; model text is unchanged. Source identities persist in official `tool/result.meta`. Older results remain readable without invented links.
+预览读取已授权原文件，不依赖索引，使用官方组件和本地 Office 转换。传输使用有界分块和私有暂存文件，关闭、取消或释放时清理。移除整文件 Base64 IPC。预览不创建 Session，也不以索引片段替代原文件。
 
-Preview reads the authorized original independently of indexing, using official renderers and local Office conversion. Transfers use bounded chunks and private temporary files, cleaned on close, cancellation, or disposal. Whole-file Base64 IPC is removed. Preview creates no Session and never substitutes indexed passages for originals.
+文件限制采用服务端和桌面策略中较小值，官方格式限制仍生效。服务端默认预览和上传各 50 MiB，下载 250 MiB。下载使用系统保存对话框，系统打开使用主进程文件，两者都不暴露路径或凭据。没有保存原文件的网页不可预览，引用仍可阅读。
 
-File limits use the lower server or desktop policy; official format limits still apply. Server defaults are 50 MiB for preview/upload and 250 MiB for download. Download uses a native save dialog; system-open uses a main-owned file. Neither exposes paths or credentials. Webpages without stored originals cannot preview; citations remain readable.
+员工可创建个人知识库。管理者可创建多层文件夹；上传、Markdown 和网页使用所选文件夹。文件夹响应必须包含 `parentId`，根目录下为 null；层级迁移保留已有根级文件夹和内容路径，同级名称唯一，仅空目录可删除。在线文档及网页先创建再移动；位置未确认时保留编辑，须先检查全部资料再重新创建。目标参与创建哈希；升级前未完成的命令先检查真实资源，再使用新键重试。部门和公司库创建要求管理员。详见[产品架构](../../../subsystems/deepseek-harness-product.md)。
 
-Employees can create personal libraries. Managers can create nested folders; uploads, Markdown and webpages use the selected folder. Folder responses require `parentId`, with null for roots. The hierarchy migration preserves existing roots and content paths; sibling names are unique and only empty folders can be deleted. Manual and URL creation use create then move; unconfirmed placement preserves edits and requires checking All materials before another creation. Destination participates in creation hashes; inspect resources before retrying unfinished pre-upgrade commands with a new key. Department/company creation requires an administrator. See [product architecture](../../../subsystems/deepseek-harness-product.md).
+## 迁移
 
-## Migration
+原件元数据要求 `contentVersion`，索引时间不是原件标识。替换原件或编辑 Markdown 会使传输和转换失效。缺少标识时拒绝预览和下载。
 
-Original metadata requires `contentVersion`; indexing timestamps are not original identity. Replacing originals or editing Markdown invalidates transfers and conversions. Missing identity rejects preview/download.
-
-1. Upgrade the server and run ownership/folder migrations before desktop upgrades. Preserve library IDs, WeKnora content, and Session history; existing documents need no content migration.
-2. Configure `deepseek-harness.auth.admin-employee-ids` using authenticated employee IDs. Shared libraries without managers remain administrator-managed.
-3. Update citation clients to use `sourceId` for fragments and `documentId` for documents. Preserve pagination and job states.
-4. Read fresh Markdown metadata; submit `expectedUpdatedAt` and a stable retry key through product editing. Stale edits must report conflicts.
-5. Verify read-only members cannot write, personal owners can manage, empty scopes cannot retrieve, and denied save approval produces no write.
-6. Configure `deepseek-harness.knowledge.files.*-max-bytes` and desktop `knowledgeFiles`. Verify failed-index originals, cleanup, download, live access checks, Office content versions, and selected-folder upload. Old preview IPC is unsupported.
+1. 桌面升级前先升级服务端并执行归属和文件夹迁移。保留知识库 ID、WeKnora 内容和 Session 历史，已有文档无需内容迁移。
+2. 在 `deepseek-harness.auth.admin-employee-ids` 配置已认证员工 ID。没有管理者的共享库仍由管理员管理。
+3. 引用客户端使用 `sourceId` 阅读片段，使用 `documentId` 查询文档。保留分页和任务状态。
+4. 读取新 Markdown 元数据，通过产品编辑提交 `expectedUpdatedAt` 和稳定重试键。旧编辑必须提示冲突。
+5. 验证只读成员不可写入、个人所有者可管理、空范围不可检索、拒绝保存审批不会写入。
+6. 配置 `deepseek-harness.knowledge.files.*-max-bytes` 和桌面 `knowledgeFiles`。验证索引失败原件、清理、下载、实时权限、Office 内容版本及所选文件夹上传。旧预览 IPC 不再支持。

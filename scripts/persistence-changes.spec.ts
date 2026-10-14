@@ -671,6 +671,19 @@ describe('persistence changes current-tree commands', () => {
     expect(() => loadPersistenceHistory(root)).toThrow('unreferenced')
   })
 
+  it('accepts explicitly unpaired history while still checking its prose and snapshot', () => {
+    const root = fixture()
+    baseline(root)
+    const path = `docs/persistence-changes/${BASE_ID}.md`
+    mkdirSync(join(root, 'scripts'), { recursive: true })
+    writeFileSync(join(root, 'scripts/translation-pairing.manifest.json'), JSON.stringify({ excluded: [path] }))
+    rmSync(join(root, 'docs/persistence-changes', `${BASE_ID}.zh.md`))
+    expect(loadPersistenceHistory(root).entries).toHaveLength(1)
+    const source = readFileSync(join(root, path), 'utf8')
+    writeFileSync(join(root, path), source.replaceAll('Optional payload metadata preserves the recorded value.', 'TODO: explain this change.'))
+    expect(() => loadPersistenceHistory(root)).toThrow('complete compatibility')
+  })
+
   it('excludes nested historical format documents and schemas from acknowledgements', () => {
     const root = fixture()
     baseline(root)

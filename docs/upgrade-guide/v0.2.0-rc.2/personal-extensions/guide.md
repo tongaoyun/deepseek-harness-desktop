@@ -1,28 +1,28 @@
 ---
 kind: upgrade-guide
-description: "Personal extension activation and standard import metadata replace executable drafts and unresolved dependency references."
+description: "个人扩展激活与标准导入元数据替代可执行草稿和未解析依赖引用。"
 ---
 
-# Personal Extensions
+# 个人扩展
 
-English | [中文](guide.zh.md)
+## 变更
 
-## Change
+技能和专家套件使用固定 20 类，接受标准目录或 ZIP 导入。套件详情展示快捷命令和已解析资源，不显示启动检查，但准备任务时仍执行依赖校验。知识引用必须解析到真实可访问 ID 后才能显示可用。
 
-Skills and Expert Kits use 20 fixed categories and standard directory or ZIP imports. Kit details show shortcuts and resolved resources; preparation checks remain enforced without a startup-check panel. Knowledge references must resolve to real accessible IDs before they appear usable.
+套件详情移除高级信息，点击说明预览框打开完整阅读。独立的套件选择器仅显示名称，不显示简介。技能详情直接渲染 `SKILL.md` 正文，不添加额外元数据分区。“添加 MCP 服务器”接受完整 stdio 命令、私密变量粘贴及 1–600 秒的本机 `timeoutSeconds`。官方 MCP 客户端已有的 `toolCallTimeoutMs` 同时控制连接和工具发现，非默认值会影响启动。通用桌面命名空间传输接受可选的最后一个 `timeoutMs` 参数。
 
-Kit details omit advanced information; the framed guide preview opens the full reader. The separate Kit selector shows names without summaries. Skill details render the `SKILL.md` body without additional metadata sections. **Add MCP server** accepts a complete stdio command, pasted private variables, and a local `timeoutSeconds` from 1 through 600. The official MCP client's existing `toolCallTimeoutMs` also governs connection and discovery; non-default values now affect startup. The generic desktop namespace transport accepts an optional final `timeoutMs` argument.
+个人可用资格独立于共享审核。已上传草稿须显式校验制品并激活。服务端目录合并本人可用版本与已发布共享资源，返回归属及审核元数据。所有者固定，编辑创建新的不可变版本。创建资源不创建执行 Preset。
 
-Personal availability is independent of shared review. Uploaded drafts require explicit artifact validation and activation. Server catalogs merge personal available versions with published shared resources and return ownership and review metadata. Owners remain fixed; editing creates a new immutable version. Creating resources never creates an execution Preset.
+桌面编辑使用 `extensions.import.inspect`、`extensions.save`、`extensions.submit`、`extensions.delete`。技能保存后安装到设备。个人连接器通过 MCP 发现 HTTP/stdio 工具，私密 Header 与环境变量在主进程加密保存。OAuth 保留服务端授权托管。只有实际非破坏性只读注解免审批。
 
-Desktop authoring uses `extensions.import.inspect`, `extensions.save`, `extensions.submit`, and `extensions.delete`. Skill save installs on the device. Personal connectors support MCP HTTP/stdio discovery; private headers and environment stay encrypted in main. OAuth retains server-managed authorization. Only actual non-destructive read-only annotations bypass approval.
+技能和套件创建、修改使用独立的官方对话，预填草稿但不自动发送，替代手动表单和创建预览。会话工具直接保存个人资源。导入预览保持只读，缺失信息通过对话补齐。主进程在 `extension-conversations-v1` 中持久保存员工隔离的草稿及资源，过时修订失败。Host 不能发布共享内容。三类资源统一使用**更多操作 → 修改 / 提交共享审核 / 删除**，共享和删除须确认。删除退役全部版本并保留制品及 Session 历史，存在已发布版本时须先下架。技能操作不随正文滚动消失。
 
-Skill and Kit creation and modification use separate official conversations with unsent drafts, replacing manual forms and creation previews. Session tools save personal resources directly. Import previews stay read-only; missing information is completed in conversation. Main persists employee-scoped drafts and resources under `extension-conversations-v1`; stale revisions fail. The Host cannot publish shared content. All three types use **More actions → Modify / Submit for sharing / Delete**, with sharing and deletion confirmations. Deletion retires all versions and retains artifacts and Session history; published versions require unpublishing first. Skill actions stay visible while scrolling.
+## 迁移
 
-## Migration
+保存与安装分开提交。创建记录新增 `pendingSave` 固定提交作者及内容，结果未确认时拒绝修改同一版本；首次准备明确被拒绝仍可编辑。激活成功先落盘 `saved`，再安装技能。安装失败后在原对话读取最新修订号并重试保存，此时只安装，不再次发布。目录也可安装已保存技能。模型系统提示及无密钥会话快照记录这些结果，员工令牌和上传凭据保持在主进程。产品升级须同步桌面、协议和运行时包。
 
-1. Apply server migrations `V50__personal_extension_activation.sql`, `V51__retire_personal_connectors.sql`, and `V52__retire_personal_artifacts.sql`. Keep published resources, historical artifacts, and Session data. Existing drafts require validation and activation.
-2. Update product desktop and server together. Use standard `SKILL.md` with product metadata or kit schema 3 manifests; complete missing import metadata in conversation. Qoder exports are not converted.
-3. Re-create unsupported product caches through explicit recovery. Keep content-addressed artifacts and task snapshots; new versions affect subsequent selections. Creation conversations use sidebar navigation; remove the retired `sourceSessionId` field from existing `extension-conversations-v1/*/draft.json` records while Desktop is closed, retaining all other fields and resources.
-4. Use server-derived ownership, visibility and `canDelete`. Submit no owner declarations or manual READ policies. Configure private connector credentials on each device.
-5. Use **Add → Create** or **More actions → Modify**, then send the requirements draft. The model saves completed content directly. Retain desktop user data for unsaved conversations. Check non-default `toolCallTimeoutMs` against startup time. Verify personal isolation, fixed-version copying, skill discovery, preparation, deletion, cancellation, restart, and both profiles. Run `pnpm run verify:upstream` before upgrading Harness.
+1. 应用服务端迁移 `V50__personal_extension_activation.sql`、`V51__retire_personal_connectors.sql` 和 `V52__retire_personal_artifacts.sql`，保留已发布资源、历史制品和 Session 数据。已有草稿须校验激活。
+2. 同步更新产品桌面和服务端。技能使用标准 `SKILL.md` 及产品元数据，套件使用 schema 3 清单。导入缺少元数据时通过对话补齐，不转换 Qoder 导出。
+3. 通过显式恢复处理不支持的产品缓存，保留按内容寻址的制品和任务快照，新版本只影响后续选择。创建对话使用侧栏导航；关闭桌面后，从已有 `extension-conversations-v1/*/draft.json` 记录移除已废弃的 `sourceSessionId` 字段，保留其他字段及资源。
+4. 使用服务端推导的归属、可见性和 `canDelete`，不提交所有者声明或手工 READ 策略。各设备单独配置连接器私密凭据。
+5. 使用**添加 → 创建**或**更多操作 → 修改**，发送需求草稿。模型直接保存完成的内容。保留桌面用户数据以恢复未保存对话。检查非默认 `toolCallTimeoutMs` 是否足够完成启动。验证个人隔离、固定版本复制、技能发现、准备、删除、取消、重启和两种 profile。升级 Harness 前运行 `pnpm run verify:upstream`。

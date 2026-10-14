@@ -1,40 +1,38 @@
 ---
-description: "DeepSeek Harness product packages layered on public DeepSeek Harness extension points."
+description: "叠加在 DeepSeek Harness 公开扩展点之上的DeepSeek Harness产品包。"
 kind: "package-group"
 ---
 
-# DeepSeek Harness Product Packages
+# DeepSeek Harness产品包
 
-English | [中文](README.zh.md)
+## 概述
 
-## Summary
+此包组将DeepSeek Harness企业服务接入 Harness 公开扩展点。执行、会话、对话、工具、审批、Browser、Office 和持久化仍由官方 Harness 包负责。
 
-This group connects DeepSeek Harness enterprise services to public Harness extension points. Official Harness packages continue to own execution, Sessions, Conversation, tools, approvals, Browser, Office, and persistence.
+## 目录
 
-## Table of Contents
-
-- [Packages](#packages)
-- [Related documentation](#related-documentation)
-- [Dev Note](#dev-note)
+- [包](#packages)
+- [相关文档](#related-documentation)
+- [开发备注](#dev-note)
 
 -----
 
 <a id="packages"></a>
-## Packages
+## 包
 
-| Package | Role |
+| 包 | 职责 |
 |---|---|
-| [`expert-kit-readme`](expert-kit-readme/README.md) | Preset-scoped, model-only loading of Expert Kit README instructions |
-| [`product`](product/README.md) | Server client, DingTalk session adapter, capability snapshot, and Electron bridge |
-| [`runtime`](runtime/README.md) | Cordis task composition, content snapshots, and permission policy |
-| [`desktop`](desktop/README.md) | Main-process authentication, credentials, sidecar, and product packaging resources |
+| [`expert-kit-readme`](expert-kit-readme/README.md) | 在 Preset 作用域内按需向模型加载专家套件 README 说明 |
+| [`product`](product/README.md) | 服务端客户端、钉钉会话适配器、能力快照和 Electron 桥接 |
+| [`runtime`](runtime/README.md) | Cordis 任务能力组合、内容快照和权限策略 |
+| [`desktop`](desktop/README.md) | 主进程认证、凭据、sidecar 与产品打包资源 |
 
 <a id="related-documentation"></a>
-## Related documentation
+## 相关文档
 
-Start with the [enterprise desktop overview](../../apps/product-desktop/docs/README.md) for product workflows and repository responsibilities. The [DeepSeek Harness product subsystem](../../docs/subsystems/deepseek-harness-product.md) defines integration points, and the [desktop assembly](../../apps/product-desktop/README.md) owns local launch and delivery.
+从[企业桌面项目总览](../../apps/product-desktop/docs/README.md)了解产品流程和仓库职责。[DeepSeek Harness 产品子系统](../../docs/subsystems/deepseek-harness-product.md)定义集成点，[桌面装配](../../apps/product-desktop/README.md)维护本地启动和交付说明。
 
 <a id="dev-note"></a>
-## Dev Note
+## 开发备注
 
-Product packages may depend only on public Harness APIs and do not replace or patch the Harness runtime.
+产品包只能依赖 Harness 公开 API，不替换或修改 Harness 运行时。

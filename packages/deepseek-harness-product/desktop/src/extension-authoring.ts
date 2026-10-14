@@ -6,14 +6,19 @@ import { extname, join } from 'node:path'
 import { c as createTar } from 'tar'
 import { ExtensionDraftSchema, ExtensionImportDraftSchema, extensionFiles, parseSkillMarkdown, type ExtensionDraft,
   type ExtensionImportPreview, type ExtensionSaveResult } from '@deepseek-harness/product/authoring'
-import type { DeepSeekHarnessApiClient } from '@deepseek-harness/product'
+import { DeepSeekHarnessApiError, type DeepSeekHarnessApiClient } from '@deepseek-harness/product'
 import type { ProductSession } from '@deepseek-harness/product/protocol'
 import { ARCHIVE_LIMITS, readExtensionDirectory, readExtensionMarkdown, readExtensionTar, readExtensionZip } from './extension-archives.ts'
 import { ProductError } from '@deepseek-harness/product/errors'
 import { ExtensionContentDraftSchema } from '@deepseek-harness/product/extension-draft'
 import { AuthoringSessions, assertAuthoringRevision } from './authoring-sessions.ts'
 
-interface Stage { readonly owner: string; readonly files: Map<string, Buffer>; readonly expiresAt: number }
+interface Stage {
+  readonly owner: string
+  readonly files: Map<string, Buffer>
+  readonly expiresAt: number
+  readonly saved?: { readonly draft: string; readonly result: ExtensionSaveResult }
+}
 interface AuthoringOptions {
   readonly directory: string
   readonly selectImport: (source: 'directory' | 'zip' | 'file', kind: 'skill' | 'expert-kit') => Promise<string | undefined>
@@ -82,8 +87,16 @@ export class ExtensionAuthoring {
         }
         assertAuthoringRevision(state, input)
         if (method === 'extensions.authoring.discard') { await this.conversations.discard(employee, state); return { discarded: true } }
-        if (state.saved) throw new ProductError('EXTENSION_VERSION_CONFLICT', 'This version has already been saved; start a new modification conversation', false)
+        if (state.saved) {
+          if (method === 'extensions.authoring.save') {
+            const kind = state.draft.kind
+            if (kind !== 'skill' && kind !== 'expert-kit') throw new Error('Invalid saved content kind')
+            return this.installSaved({ kind, ...state.saved, visibility: 'PERSONAL', installed: false }, signal)
+          }
+          throw new ProductError('EXTENSION_VERSION_CONFLICT', 'This version has already been saved; start a new modification conversation', false)
+        }
         if (method === 'extensions.authoring.update') {
+          if (state.pendingSave) throw new ProductError('EXTENSION_SAVE_PENDING', 'Retry the fixed save before changing this content', true)
           let draft = ExtensionContentDraftSchema.parse(input.draft)
           if (draft.kind !== state.draft.kind || state.editing && (draft.id !== state.draft.id || draft.version !== state.draft.version)) throw new Error('Creation resource identity and version are fixed')
           if (draft.kind === 'expert-kit') {
@@ -101,10 +114,24 @@ export class ExtensionAuthoring {
         if (files.size > 0) this.stages.set(stageId, { owner: employee, files, expiresAt: Date.now() + 60 * 60_000 })
         try {
           const complete = ExtensionDraftSchema.parse(state.draft)
-          const result = await this.invoke('extensions.save', { ...complete, ...files.size > 0 ? { stageId } : {} }, api, session, signal)
-          await this.conversations.write(employee, { ...state, revision: state.revision + 1,
-            saved: { id: complete.id, version: complete.version } }, signal)
-          return result
+          const intent = state.pendingSave ?? { author: (session.displayName ?? employee).slice(0, 80) }
+          const content = { ...complete, author: intent.author, ...files.size > 0 ? { stageId } : {} }
+          const result = await this.saveContent(content, api, session, signal,
+            async (operation) => {
+              if (!state.pendingSave) await this.conversations.write(employee, { ...state, pendingSave: intent }, signal)
+              try { return await operation() }
+              catch (error) {
+                if (!state.pendingSave && error instanceof DeepSeekHarnessApiError && !error.retryable
+                  && error.status >= 400 && error.status < 500) {
+                  await this.conversations.write(employee, state, new AbortController().signal)
+                }
+                throw error
+              }
+            })
+          // Server success is durable even if cancellation or device installation follows.
+          await this.conversations.write(employee, { ...state, pendingSave: undefined, revision: state.revision + 1,
+            saved: { id: complete.id, version: complete.version } }, new AbortController().signal)
+          return await this.installSaved(result, signal)
         } finally { this.stages.delete(stageId) }
       })
     }
@@ -174,6 +201,33 @@ export class ExtensionAuthoring {
       return { submitted: true, id: input.id, version: input.version }
     }
     if (method !== 'extensions.save') throw new Error('Unsupported authoring operation')
+    const stage = typeof input.stageId === 'string' ? this.stages.get(input.stageId) : undefined
+    const encoded = JSON.stringify(ExtensionDraftSchema.parse(input))
+    if (stage?.saved && stage.saved.draft !== encoded) throw new ProductError('EXTENSION_VERSION_CONFLICT', 'The imported version is saved; start a new modification conversation', false)
+    const result = stage?.saved?.result ?? await this.saveContent(input, api, session, signal)
+    if (stage && typeof input.stageId === 'string') this.stages.set(input.stageId, { ...stage, saved: { draft: encoded, result } })
+    const installed = await this.installSaved(result, signal)
+    if (typeof input.stageId === 'string') this.stages.delete(input.stageId)
+    return installed
+  }
+
+  private async installSaved(result: ExtensionSaveResult, signal: AbortSignal): Promise<ExtensionSaveResult> {
+    signal.throwIfAborted()
+    if (result.kind !== 'skill') return result
+    try { await this.options.installSkill(result.id, signal) }
+    catch (error) {
+      signal.throwIfAborted()
+      throw new ProductError('EXTENSION_INSTALL_FAILED', 'The skill is saved; retry device installation without saving a new version', true,
+        [{ kind: 'skill', id: result.id }], { cause: error })
+    }
+    return { ...result, installed: true }
+  }
+
+  private async saveContent(input: Readonly<Record<string, unknown>>, api: DeepSeekHarnessApiClient,
+    session: ProductSession, signal: AbortSignal,
+    prepare?: (operation: () => Promise<unknown>) => Promise<unknown>): Promise<ExtensionSaveResult> {
+    const employee = session.employeeId
+    if (!session.authenticated || !employee) throw new Error('Authenticated employee is required')
     let draft = ExtensionDraftSchema.parse(input)
     if (!draft.author?.trim()) draft = { ...draft, author: (session.displayName ?? employee).slice(0, 80) }
     if (draft.kind === 'connector') {
@@ -232,16 +286,15 @@ export class ExtensionAuthoring {
       const bytes = await readFile(archive, { signal })
       if (bytes.length > ARCHIVE_LIMITS.compressedBytes) throw new Error('Extension exceeds upload size limit')
       const sha256 = createHash('sha256').update(bytes).digest('hex')
-      const prepared = record(await api.request('/api/v1/extension-submissions/releases', { method: 'POST', signal,
-        headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...generated.release, sha256 }) }))
+      const request = () => api.request('/api/v1/extension-submissions/releases', { method: 'POST', signal,
+        headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...generated.release, sha256 }) })
+      const prepared = record(await (prepare ? prepare(request) : request()))
       if (record(prepared.assessment).status === 'BLOCKED') throw new Error('Extension dependencies did not pass server validation')
       if (typeof prepared.uploadUrl !== 'string') throw new Error('Upload URL is missing')
       const upload = await fetch(prepared.uploadUrl, { method: 'PUT', signal, redirect: 'error', headers: { 'content-type': 'application/gzip' }, body: bytes })
       if (!upload.ok) throw new Error('Extension upload failed')
       await api.request(`/api/v1/extension-submissions/${draft.kind}/${encodeURIComponent(draft.id)}/versions/${encodeURIComponent(draft.version)}/activations`, { method: 'POST', signal })
-      if (draft.kind === 'skill') await this.options.installSkill(draft.id, signal)
-      if (draft.stageId) this.stages.delete(draft.stageId)
-      return { kind: draft.kind, id: draft.id, version: draft.version, visibility: 'PERSONAL', installed: draft.kind === 'skill' } satisfies ExtensionSaveResult
+      return { kind: draft.kind, id: draft.id, version: draft.version, visibility: 'PERSONAL', installed: false } satisfies ExtensionSaveResult
     } finally { await rm(work, { recursive: true, force: true }) }
   }
 

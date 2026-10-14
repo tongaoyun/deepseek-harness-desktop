@@ -3,6 +3,22 @@ import { randomUUID } from 'node:crypto'
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'node:http'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
+import { z } from 'zod'
+
+/** Header and idle deadlines apply to forwarding; active streams have no total deadline. */
+export interface ConnectorProxyPolicy {
+  readonly responseTimeoutMs: number
+  readonly streamIdleTimeoutMs: number
+}
+
+/** Validate deployment-owned relay deadlines.
+ * @param value Product configuration, or undefined for the standard deadlines.
+ * @returns Header and idle limits independent of tool-call timeouts.
+ */
+export function resolveConnectorProxyPolicy(value?: unknown): ConnectorProxyPolicy {
+  return z.object({ responseTimeoutMs: z.number().int().min(1_000).max(300_000).default(30_000),
+    streamIdleTimeoutMs: z.number().int().min(1_000).max(3_600_000).default(120_000) }).strict().parse(value ?? {})
+}
 
 interface Connector {
   readonly visibility?: string
@@ -11,7 +27,6 @@ interface Connector {
   readonly transport: string
   readonly url?: string
   readonly headers?: Readonly<Record<string, string>>
-  readonly timeoutSeconds?: number
 }
 
 /** Credential-owning HTTP relay for the existing Harness MCP client. */
@@ -24,7 +39,8 @@ export class ConnectorProxy {
   private readonly catalogSource: (signal: AbortSignal) => Promise<unknown>
 
   constructor(catalogSource: (signal: AbortSignal) => Promise<unknown>,
-    serveStdio?: (request: IncomingMessage, response: ServerResponse, connector: unknown, signal: AbortSignal) => Promise<void>) {
+    serveStdio?: (request: IncomingMessage, response: ServerResponse, connector: unknown, signal: AbortSignal) => Promise<void>,
+    policy: ConnectorProxyPolicy = resolveConnectorProxyPolicy()) {
     this.catalogSource = catalogSource
     this.server = createServer((request, response) => {
       if (this.lifetime.signal.aborted) { response.destroy(); return }
@@ -41,9 +57,8 @@ export class ConnectorProxy {
         if (connector?.status !== 'ready') {
           throw new Error('Connector authorization is unavailable')
         }
-        const signal = AbortSignal.any([lifetime, AbortSignal.timeout((connector.timeoutSeconds ?? 60) * 1000)])
         if (connector.transport === 'stdio' && connector.visibility === 'PERSONAL' && serveStdio) {
-          await serveStdio(request, response, connector, signal)
+          await serveStdio(request, response, connector, lifetime)
           return
         }
         if (connector.transport !== 'streamable-http' || connector.url === undefined) throw new Error('Invalid connector transport')
@@ -62,10 +77,17 @@ export class ConnectorProxy {
           const value = request.headers[name]
           if (typeof value === 'string') headers.set(name, value)
         }
-        const upstream = await fetch(connector.url, {
-          method: request.method ?? 'GET', headers, signal, redirect: 'error',
-          ...(length === 0 ? {} : { body: Buffer.concat(chunks) }),
-        })
+        const transport = new AbortController()
+        const signal = AbortSignal.any([lifetime, transport.signal])
+        const headerDeadline = setTimeout(() => { transport.abort(new Error('Connector response timeout')) }, policy.responseTimeoutMs)
+        headerDeadline.unref()
+        let upstream: Response
+        try {
+          upstream = await fetch(connector.url, {
+            method: request.method ?? 'GET', headers, signal, redirect: 'error',
+            ...(length === 0 ? {} : { body: Buffer.concat(chunks) }),
+          })
+        } finally { clearTimeout(headerDeadline) }
         response.statusCode = upstream.status
         for (const name of ['content-type', 'mcp-session-id', 'mcp-protocol-version']) {
           const value = upstream.headers.get(name)
@@ -77,11 +99,18 @@ export class ConnectorProxy {
           await pipeline(Readable.from((async function* () {
             try {
               for (;;) {
-                const result = await reader.read()
+                const idleDeadline = setTimeout(() => { transport.abort(new Error('Connector stream idle timeout')) }, policy.streamIdleTimeoutMs)
+                idleDeadline.unref()
+                let result: ReadableStreamReadResult<Uint8Array>
+                try { result = await reader.read() }
+                finally { clearTimeout(idleDeadline) }
                 if (result.done) return
                 yield result.value
               }
-            } finally { reader.releaseLock() }
+            } finally {
+              try { await reader.cancel() }
+              finally { reader.releaseLock() }
+            }
           })()), response, { signal })
         }
       })().catch(() => {

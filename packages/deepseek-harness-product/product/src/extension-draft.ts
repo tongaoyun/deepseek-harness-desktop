@@ -69,6 +69,7 @@ export const ExtensionContentDraftSchema = DraftFields.omit({ transport: true, u
 export const ExtensionAuthoringSnapshotSchema = z.object({
   authoringId: z.uuid(), sessionId: z.string().min(1).max(256), revision: z.number().int().nonnegative(),
   editing: z.boolean().optional(),
+  pendingSave: z.object({ author: z.string().trim().max(80) }).strict().optional(),
   draft: ExtensionContentDraftSchema, saved: z.object({ id, version }).optional(),
   files: z.array(z.object({ path: z.string(), bytes: z.number().int().nonnegative() })),
   missingFields: z.array(z.string()),

@@ -1,50 +1,50 @@
-# Product desktop delivery
+# 产品桌面构建
 
-English | [中文](README.zh.md)
+## 概要
 
-## Summary
-
-The product assembly launches and packages the enterprise desktop through the official Electron pipeline. Internal Gitea owns development and review. A GitHub source repository receives selected committed source and its stored Harness baseline for hosted Windows x64, macOS ARM64, and macOS Intel builds. Start with the [product overview](docs/README.md) for workflows and architecture.
+产品 assembly 通过官方 Electron 管线启动和打包企业桌面。内网 Gitea 负责开发和审核；GitHub 源码仓库接收选定的已提交源码及其固定 Harness 基线，使用托管 runner 构建 Windows x64、macOS ARM64 和 macOS Intel 安装包。产品流程和架构从[项目总览](docs/README.md)开始阅读。
 
 <a id="local-development"></a>
-## Local Development
+## 本地开发
 
-After the repository build and native runtime preparation, run `pnpm run start:product-desktop` from the repository root to open the current product assembly. `pnpm run dev:product-desktop` also builds before launch. Use these entries for DingTalk login and enterprise catalogs; the official `dev:desktop` and `start:desktop` entries do not select the product extension.
+完成仓库构建和原生运行时准备后，在仓库根目录执行 `pnpm run start:product-desktop` 打开当前产品装配；`pnpm run dev:product-desktop` 会先构建再启动。钉钉登录和企业目录使用这些入口，官方 `dev:desktop` 和 `start:desktop` 不选择产品扩展。
 
-The product launcher owns separate home and Electron user-data directories under `apps/desktop/.desktop-build/product-development/`. `DSH_PRODUCT_HOME` and `DSH_PRODUCT_USER_DATA` explicitly override them. Inherited official `DSH_HOME` and `DSH_DESKTOP_USER_DATA_DIR` do not select product state. `DEEPSEEK_HARNESS_SERVER_URL` may override the server origin for development; installed applications read the packaged resource. A saved expired employee session requires normal DingTalk login. Do not copy tokens between profiles.
+产品启动器在 `apps/desktop/.desktop-build/product-development/` 下使用独立 home 和 Electron 用户数据目录，可通过 `DSH_PRODUCT_HOME` 和 `DSH_PRODUCT_USER_DATA` 显式覆盖。继承的官方 `DSH_HOME` 和 `DSH_DESKTOP_USER_DATA_DIR` 不决定产品状态目录。开发时可用 `DEEPSEEK_HARNESS_SERVER_URL` 覆盖服务端 origin，安装版读取打包资源。已保存的员工会话过期时需正常钉钉登录，不在 profile 之间复制令牌。
 
-## GitHub Packaging
+## GitHub 打包
 
-Authenticate with `gh auth login --hostname github.com --git-protocol https --scopes workflow`. The account needs repository administration, source upload, workflow update, and Actions dispatch access. Commit and validate the source before synchronizing. This command creates an empty private repository and starts the first acceptance build:
+归档 Host 启动测试在产品打包生成编译后的 bootstrap 文件后运行，安装包上传前必须通过；干净 runner 不依赖已有编译缓存。
+
+通过 `gh auth login --hostname github.com --git-protocol https --scopes workflow` 登录。账号需要仓库管理、源码上传、工作流更新和 Actions 触发权限。同步前提交并验证源码。以下命令创建空的私有仓库，并触发首次验收构建：
 
 ```sh
 node apps/product-desktop/scripts/sync-github.mjs --repository OWNER/deepseek-harness-desktop --create
 ```
 
-For an existing build repository, omit `--create`. Synchronization accepts public or private source repositories without changing their visibility. Public source and its Git history are readable by anyone; standard hosted runners have free runtime minutes for public repositories. This workflow uses no larger paid runners. New repositories remain private by default. Synchronization rejects unknown visibility, forks, archived repositories, dirty source, shallow history, and an inconsistent baseline. Complete a shallow checkout with `git fetch --unshallow origin` from the existing desktop repository before synchronizing. It atomically pushes only `main` and the pinned baseline tag; divergent refs fail without force, deletion, or remote changes. Actions stay disabled during upload. The adapter disables all copied upstream workflows, enables only the product packaging workflow, restricts allowed Actions, and dispatches the exact uploaded commit. A workflow indexing or push failure leaves Actions disabled; retry without `--create` after resolving the reported failure.
+已有构建仓库时省略 `--create`。同步支持公开或私有源码仓库，不改变仓库可见性。公开仓库的源码和 Git 历史任何人均可读取；公开仓库使用标准托管 runner 的运行分钟免费，此工作流不使用付费大型 runner。新建仓库默认保持私有。同步拒绝未知可见性、fork、归档仓库、未提交源码、浅克隆历史和不一致的基线。浅克隆先通过 `git fetch --unshallow origin` 从现有桌面仓库补齐历史，再进行同步。脚本只原子推送 `main` 和固定基线 tag；引用分叉时直接失败，不强推、不删除引用、不修改 remote。上传期间 Actions 保持禁用。适配层禁用复制过来的上游工作流，仅启用产品打包工作流，限制允许使用的 Actions，再触发上传的精确提交。工作流尚未被索引或推送失败时 Actions 保持禁用；解决报错后省略 `--create` 重试。
 
-The internal manual **同步桌面构建到 GitHub** workflow reads repository variables `DESKTOP_GITHUB_REPOSITORY` (source) and `DESKTOP_GITHUB_DOWNLOAD_REPOSITORY` (public downloads). Gitea reserves names starting with `GITHUB_`. `DESKTOP_GITHUB_TOKEN` requires source synchronization permissions and Contents write access to the download repository; prefer a credential limited to these repositories. `RELEASE_USERNAME` and `RELEASE_CREDENTIAL` authorize internal Gitea releases. GitHub runners receive none of these release credentials and never access internal Gitea or production services. Desktop Git history is uploaded only to the build repository; server and control-center repositories stay internal.
+内部手动工作流 **同步桌面构建到 GitHub** 读取仓库变量 `DESKTOP_GITHUB_REPOSITORY`（源码）和 `DESKTOP_GITHUB_DOWNLOAD_REPOSITORY`（公开下载）。Gitea 保留以 `GITHUB_` 开头的名称。`DESKTOP_GITHUB_TOKEN` 需要源码同步权限和下载仓库的 Contents 写权限，优先使用仅限这两个仓库的凭据。`RELEASE_USERNAME` 和 `RELEASE_CREDENTIAL` 用于内网 Gitea Release。GitHub runner 不接收这些发布凭据，也不访问内部 Gitea 或生产服务。桌面 Git 历史只上传到构建仓库；服务端和控制中心仓库留在内网。
 
-New builds check out `main` or the explicitly supplied `source_sha`, require successful main CI for that exact commit, verify registered patches, synchronize source, and wait for their correlated GitHub build. Resuming with `github_run_id` checks out current `main` for delivery scripts while `source_sha` remains the built source; both commits require successful main CI. Version and artifact validation use the built source rather than the delivery code. All platforms derive the same version from the hosted run's UTC start date, number and attempt. A failed, cancelled, missing or mismatched platform stops publication. The internal runner stages a bounded ZIP, extracts regular files using its central directory, checks every installer against its manifest, and produces one aggregate `build-manifest.json` and `SHA256SUMS.txt`. Temporary archives are removed after extraction. Only installer files and those metadata files enter the public download repository; source is never pushed there.
+新构建检出 `main` 或明确填写的 `source_sha`，要求该提交的 main CI 成功，校验登记补丁、同步源码，然后等待本次关联的 GitHub 构建。填写 `github_run_id` 恢复发布时，从当前 `main` 获取发布脚本，`source_sha` 仍指向已构建源码；两个提交都必须通过 main CI。版本和产物校验使用已构建源码，不使用发布脚本的提交。三个平台从托管运行的 UTC 开始日期、编号和重试次数生成同一版本。任一平台失败、取消、缺失或身份不符都会停止发布。内网 runner 暂存有界 ZIP，根据中央目录解压普通文件，按清单检查每个安装包，并生成汇总的 `build-manifest.json` 和 `SHA256SUMS.txt`。解压结束清理临时压缩包。公开下载仓库只接收安装文件及这些元数据，不推送源码。
 
-Both destinations stage development prereleases as drafts. Every uploaded asset is downloaded and checked by size and SHA-256 before either release is finalized. Publication does not replace an asset or tag with different identity/content, nor delete old downloads. A failure leaves verified drafts available for retry. GitHub draft recovery inspects every release-list page when the tag endpoint returns 404 and rejects duplicate tags. Finalization across two services is sequential: one complete release may become visible before the other finalization fails. Retry with `github_run_id` and the matching `source_sha` to reuse the same successful hosted run, reconcile interrupted uploads and complete publication without rebuilding. Hosted artifacts must still be unexpired; rerun all platforms after expiry or a changed run attempt. The workflow allows 180 minutes, including up to 20 minutes for main CI and 150 minutes for the hosted build.
+两个目标先创建开发预发布草稿。每个上传文件都重新下载并校验大小及 SHA-256，全部通过后才完成 Release 发布。发布不替换身份或内容不同的文件及 tag，也不删除旧下载。失败时保留已验证的草稿供重试。GitHub 的 tag 接口返回 404 时，草稿恢复检查全部 Release 列表分页，并拒绝重复 tag。两个服务的发布依次执行：第二个发布失败时，第一个完整 Release 可能已经可见。填写 `github_run_id` 和对应的 `source_sha` 可复用同一次成功构建，核对中断上传并完成发布，无需重新打包。托管产物必须尚未过期；产物过期或运行重试次数变化后应重跑全部平台。工作流允许 180 分钟，其中 main CI 最多等待 20 分钟、托管构建最多等待 150 分钟。
 
-Each native hosted runner installs locked dependencies, verifies the baseline, tests the product sidecar, and runs the product packaging entry. The archived Host startup test runs after packaging generates the compiled bootstrap and before installers are uploaded. Windows validates unsigned files and the installer lifecycle; packaging includes the official runtime smoke. Runners exercise built official and product profiles, then the installed product application: Windows silently installs the EXE into a private directory and uninstalls afterward; macOS copies the DMG application into a private directory and detaches afterward. Installed acceptance launches the packaged ASAR, bundled Host, extension, and sidecar without source runtime overrides. Only the disposable installation's server configuration points to a local fixture service, with isolated data, fixture identities and a mock model. The same keyless UI regression covers catalogs, skill and kit installation, connector states, original knowledge previews, task selection and restart recovery. It neither authenticates real employees nor verifies OS signing prompts. Screenshots and JSON reports are retained for fourteen days, including on failure; logs and artifacts follow source repository visibility. UI failures block installer publication. Successful runs produce unsigned installers, blockmaps and `build-manifest.json` with version, source commit, platform, size and SHA-256. Installer Actions artifacts last one day; published Release downloads do not automatically expire.
+每个平台使用原生托管 runner 安装锁定依赖、验证基线、测试产品 sidecar，并调用产品打包入口。Windows 验证未签名文件和安装器生命周期；打包包含官方运行时 smoke。runner 先运行已构建的官方及产品 profile，再运行安装后的产品应用：Windows 将 EXE 静默安装到私有目录，结束后卸载；macOS 将 DMG 中的应用复制到私有目录，结束后卸载磁盘映像。安装后验收启动打包的 ASAR、内置 Host、扩展和 sidecar，不使用源码运行时覆盖。仅将临时安装副本的服务地址指向本地测试服务，使用独立数据、测试身份和模拟模型。同一无密钥界面回归覆盖目录、技能与套件安装、连接器状态、知识库原文件预览、任务选择及重启恢复，不登录真实员工，也不验证系统签名提示。截图和 JSON 报告保留十四天，失败时也上传；日志及产物遵循源码仓库可见性。界面失败会阻止安装包发布。成功构建生成未签名安装包、blockmap 和 `build-manifest.json`，记录版本、源码提交、平台、大小及 SHA-256。Actions 安装包产物保留一天；已发布的 Release 下载文件不自动过期。
 
-Acceptance builds produce a Windows EXE or macOS DMG; any additional archives or blockmaps are included when the official pipeline produces them. The internal delivery workflow publishes verified unsigned installers to public GitHub and internal Gitea prereleases. Standalone GitHub packaging still only uploads Actions artifacts. Neither path publishes automatic update feeds, uses signing certificates, or notarizes macOS applications. Both macOS targets use the official unsigned local-build application identifier; Windows uses the configured product application identifier. Unsigned packages may require normal operating-system confirmation. Gitea keeps desktop CI and manual GitHub synchronization; native installers are built by the GitHub workflow. Signed distribution requires a separately configured release process.
+验收构建产出 Windows EXE 或 macOS DMG；官方管线产出的其他压缩包或 blockmap 也会一并上传。内网交付工作流将已验证的未签名安装包发布到公开 GitHub 和内网 Gitea 预发布。单独运行 GitHub 打包仍只上传 Actions 产物。两种流程均不发布自动更新源、不使用签名证书，也不进行 macOS 公证。两个 macOS 目标沿用官方未签名本地构建的应用标识；Windows 使用配置的产品应用标识。未签名安装包可能需要正常的操作系统确认。Gitea 保留桌面 CI 和手动 GitHub 同步；原生安装包由 GitHub 工作流构建。正式签名分发需要单独配置发布流程。
 
 <a id="local-checks"></a>
-## Local Checks
+## 本地检查
 
-Internal desktop CI covers archive import, conversation editing, draft restart, and the real Loader skill and kit compositions. The [workflow regression](../../scripts/deepseek-harness-electron-workflows.spec.ts) requires these tests to remain in the executed CI command. Main CI must succeed for the exact source commit before hosted packaging starts.
+内部桌面 CI 覆盖制品导入、对话修改、草稿重启和真实 Loader 的技能及套件组合。[工作流回归](../../scripts/deepseek-harness-electron-workflows.spec.ts)要求这些测试保留在实际执行的 CI 命令中。托管打包开始前，精确源码提交必须通过 main CI。
 
-The internal synchronization step optionally reads `DESKTOP_GITHUB_PROXY_URL` from Gitea Secrets. Node and Git use that authenticated proxy only within this step, and GitHub Git requests use HTTP/1.1. Keep the URL out of repository variables and source; checkout, dependency installation, and hosted packaging retain their own network configuration.
+内网同步步骤可从 Gitea Secrets 读取 `DESKTOP_GITHUB_PROXY_URL`。Node 和 Git 仅在该步骤内使用此认证代理，GitHub Git 请求使用 HTTP/1.1。代理 URL 不写入仓库变量或源码；源码获取、依赖安装和托管打包使用各自的网络配置。
 
-Source synchronization and publication share complete-read retries: transient network errors or HTTP 408/429/500/502/503/504 get up to four attempts with 1/2/4-second delays, including interrupted response bodies. An interrupted artifact restarts in an empty private stage; malformed content, denied access and checksum conflicts do not retry. Source synchronization writes, including build dispatch, execute once. A failed atomic push reads remote main and the stored baseline, including annotated tags; synchronization continues only when both match the requested commits. Other failures leave Actions disabled. Diagnostics include safe codes and operation labels, never credentials, signed URL queries or response bodies. Git push failures distinguish TLS, proxy authorization, network and ref conflicts without returning stderr.
+源码同步与发布共用完整读取重试：暂时网络错误或 HTTP 408/429/500/502/503/504 按 1/2/4 秒间隔最多尝试四次，也覆盖响应正文读取中断。产物中断后从空的私有暂存目录重新下载；内容非法、权限拒绝及校验和冲突不重试。源码同步写操作，包括启动构建，只执行一次。原子推送失败后回读远端 main 和固定基线，包含附注标签；仅两个提交均与请求一致时继续同步，其他失败保持 Actions 关闭。诊断只包含安全错误码和操作名称，不包含凭据、签名 URL 查询参数或响应正文。Git 推送失败区分 TLS、代理授权、网络和版本冲突，不返回 stderr。
 
-Workflow selection controls files under `.github/workflows/`. GitHub-managed dynamic workflows, such as Dependabot, use separate repository settings and cannot be disabled through the workflow API.
+工作流选择只管理 `.github/workflows/` 下的文件。Dependabot 等由 GitHub 管理的动态工作流使用独立仓库设置，无法通过工作流 API 停用。
 
-Upstream regressions run on every hosted platform. Executable-bit changes are tested on macOS and Linux, where filesystem permissions represent them; dangling-symlink checks also run on Windows.
+上游回归在所有托管平台运行。执行权限位变化在文件系统支持该权限的 macOS 和 Linux 上验证；失效符号链接检查也在 Windows 上运行。
 
 ```sh
 node --test apps/product-desktop/tests/github-delivery.test.mjs apps/product-desktop/tests/desktop-release.test.mjs apps/product-desktop/tests/acceptance-process.test.mjs
@@ -54,14 +54,14 @@ pnpm run verify:upstream
 pnpm --dir apps/product-desktop run test:installed --target mac-arm64
 ```
 
-Installed acceptance requires a native Windows or macOS runner and its generated installer. Use `--installer /absolute/path/to/installer.dmg` (or EXE) to exercise an existing download without rebuilding. It uses private temporary directories and cleans them after acceptance; do not run Windows installation acceptance alongside another installation of the same product.
+安装后验收需要原生 Windows 或 macOS runner 及其生成的安装包。使用 `--installer /absolute/path/to/installer.dmg`（或 EXE）可验证已有下载包，无需重新构建。验收使用私有临时目录，结束后清理；不要在 Windows 上与同一产品的其他安装操作同时运行。
 
-The installed UI command has a ten-minute deadline independent of the packaging job. Timeout and SIGINT/SIGTERM cancellation fail acceptance, terminate the running command's process tree (`taskkill /T /F` on Windows, a private process group on macOS), and wait for the command to close before uninstalling. Process termination and close each allow ten seconds; cleanup errors fail the run. Native runners also test timeout and cancellation against a real child and grandchild. This bounds a hung test; it does not turn an incomplete acceptance into a successful build.
+安装版界面命令使用独立于打包任务的十分钟超时。超时或 SIGINT/SIGTERM 取消会使验收失败，终止正在运行的命令进程树（Windows 使用 `taskkill /T /F`，macOS 使用独立进程组），等待命令关闭后再卸载。进程终止与关闭分别最多等待十秒，清理错误也会使运行失败。原生 runner 使用真实子进程及孙进程验证超时和取消。这限制测试卡住的影响，不会将未完成的验收视为成功构建。
 
-Each Electron restart and final close has a ten-second graceful budget. Restart acceptance waits for the official Agent idle UI before quitting; rendered reply text alone does not establish task completion. Ownership is released before closing, so a failed restart cannot close a disposed Playwright application again. Closed pages retain process diagnostics instead of attempting a failure screenshot. A stalled close terminates the application tree, waits for exit, and fails the test. Windows additionally stops orphaned executables whose resolved paths are inside the private installation before uninstalling, even when their parents have exited. Recovery does not select by application name; other installations and unrelated processes remain outside its scope. Windows CI tests this with an orphaned executable and an unrelated live process.
+每次 Electron 重启和最终关闭都最多等待十秒正常退出。重启验收先等待官方 Agent 空闲 UI，不能仅凭回复文字判断任务完成；关闭前释放当前应用所有权，失败后不会再次关闭已释放的 Playwright 应用。页面已关闭时保留进程诊断，不再尝试失败截图。关闭卡住时会终止应用进程树、等待退出并使测试失败。Windows 卸载前还会终止解析后可执行路径位于私有安装目录内的孤儿进程，即使父进程已经退出。恢复不按应用名称匹配，其他安装和无关进程不在清理范围。Windows CI 使用孤儿可执行进程及无关存活进程验证该限制。
 
-Process-cleanup regressions require every fixture process to stop executing. On Linux, `/proc` distinguishes live processes from zombie/dead entries awaiting the container's PID 1; those entries no longer execute or hold files. Other platforms require the PID to disappear. Direct commands are also joined through their close events.
+进程清理回归要求所有测试进程停止执行。Linux 通过 `/proc` 区分存活进程与等待容器 PID 1 回收的僵尸或已死亡记录；后者已停止执行并释放文件。其他平台要求 PID 消失。直接命令还必须通过关闭事件确认退出。
 
-macOS UI acceptance uses Chromium's test keychain in the disposable profile to avoid interactive access to the runner's login keychain. This covers credential routing and restart behavior, not system keychain protection or its authorization dialogs. The test flag is absent from application launchers and packaging configuration; ordinary launches retain OS-backed encrypted storage.
+macOS 界面验收在一次性配置目录中使用 Chromium 测试钥匙串，避免等待访问 runner 登录钥匙串的交互授权。这验证凭据传递和重启行为，不验证系统钥匙串保护及其授权弹窗。应用启动入口和打包配置不含该测试标志；正常启动仍使用操作系统加密存储。
 
-Development and built-profile acceptance pass a file URL for the product extension's ESM entry on every platform. Startup errors before the first window are captured in sanitized, failure-only diagnostic artifacts. A test-only profile plugin records loaded boot-module URLs and root Include identities after application readiness; failed acceptance prints this credential-free evidence alongside renderer startup warnings.
+开发启动和构建后配置验收在所有平台都通过文件 URL 传递产品扩展的 ESM 入口。首个窗口出现前的启动错误以脱敏诊断制品记录，仅在失败时保留。仅用于测试的 profile 插件在应用就绪后记录已加载的启动模块 URL 和根 Include 标识；验收失败时，将这些不含凭据的证据与渲染进程启动警告一起输出。

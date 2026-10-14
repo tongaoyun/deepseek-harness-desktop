@@ -2,6 +2,7 @@
 
 import { globSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { markdownValidationSource } from './markdown.ts'
 
 const root = resolve(import.meta.dirname, '..')
 
@@ -38,7 +39,7 @@ function readKind(source: string): string | undefined {
  * @returns Diagnostics for a missing or oversized Summary.
  */
 export function packageReadmeSummaryErrors(file: string, source: string): string[] {
-  const summary = h2Body(source, 'Summary')
+  const summary = h2Body(markdownValidationSource(source), 'Summary')
   if (summary === undefined) return [`${file}: missing \`## Summary\``]
 
   const words = countWords(summary)

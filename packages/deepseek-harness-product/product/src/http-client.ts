@@ -95,6 +95,7 @@ export class DeepSeekHarnessApiClient {
     // Treat that status as a successful empty response while preserving the
     // normal envelope validation for every response carrying a body.
     const body = response.status === 204 ? { success: true } as T : await response.json() as T
+    signal.throwIfAborted()
     if (!response.ok || !body.success) {
       const failure = { ...typeof body.data === 'object' && body.data !== null ? body.data : {},
         code: body.errCode ?? 'SERVER_ERROR', message: body.errMessage ?? `HTTP ${String(response.status)}` }
@@ -224,9 +225,10 @@ export class DeepSeekHarnessApiClient {
   }
 
   /** Read the employee bootstrap document.
+   * @param signal - Employee request lifetime.
    * @returns Unwrapped bootstrap data.
    */
-  bootstrap<T>(): Promise<T> { return this.request<T>('/api/v1/bootstrap') }
+  bootstrap<T>(signal?: AbortSignal): Promise<T> { return this.request<T>('/api/v1/bootstrap', signal === undefined ? {} : { signal }) }
   /** Start a DingTalk browser authorization request.
    * @param signal - Optional caller cancellation.
    * @returns Authorization request data.
@@ -241,9 +243,10 @@ export class DeepSeekHarnessApiClient {
    */
   pollDingTalk<T>(state: string, signal?: AbortSignal): Promise<T> { return this.request<T>(`/api/v1/dingtalk-auth/authorization-requests/${encodeURIComponent(state)}`, signal === undefined ? {} : { signal }) }
   /** Refresh the current employee session.
+   * @param signal - Employee request lifetime.
    * @returns Refreshed session data.
    */
-  refreshSession<T>(): Promise<T> { return this.request<T>('/api/v1/employee-auth/session/refresh', { method: 'POST' }) }
+  refreshSession<T>(signal?: AbortSignal): Promise<T> { return this.request<T>('/api/v1/employee-auth/session/refresh', { method: 'POST', ...(signal === undefined ? {} : { signal }) }) }
   /** Read one validated page from a product directory.
    * @param path - Directory endpoint path.
    * @param page - One-based page number.
