@@ -1,47 +1,45 @@
 ---
-description: "Model-only Harness skill provider that loads DeepSeek Harness Expert Kit instructions directly from README files."
+description: "直接从 README 文件加载DeepSeek Harness专家套件说明的模型专用 Harness 技能提供器。"
 kind: "package-reference"
 ---
 
-# DeepSeek Harness Expert Kit README
+# DeepSeek Harness专家套件 README
 
-English | [中文](README.zh.md)
+## 概述
 
-## Summary
+这个 Preset 作用域插件通过官方 `agent/pre-step` 消息流程，在首次模型请求前加载已选专家套件的原始 README 和快捷任务绑定的技能。README 同时进入官方技能目录供模型查询，不出现在用户命令目录中。
 
-This Preset-scoped plugin loads the selected Expert Kit's original README and any shortcut-bound skills before the first model request, through the official `agent/pre-step` message pipeline. It also publishes the README to the official skill catalog for model lookup; the entry is absent from user command catalogs.
+## 目录
 
-## Table of Contents
-
-- [Model Experience](#model-experience)
-- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
-- [Dev Note](#dev-note)
+- [模型体验](#model-experience)
+- [已知限制与延期工作](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
 
 -----
 
 <a id="model-experience"></a>
-## Model Experience
+## 模型体验
 
-### Expert Kit instructions
+### 专家套件说明
 
-#### What the model sees
+#### 模型看到的内容
 
-The first request includes the pinned kit guide and the full instructions of explicitly bound shortcut skills, with their package resource bases. The Session records these as `product-expert-kit-instructions` user messages. Other kit skills remain available through native semantic discovery and the official `skill` tool.
+首次请求包含固定版本的套件说明和快捷任务明确绑定的技能全文，以及各自的包资源基准路径。Session 将其记录为 `product-expert-kit-instructions` 用户消息。其他套件技能仍通过原生语义发现和官方 `skill` 工具加载。
 
-#### Token effect
+#### Token 影响
 
-The guide and selected shortcut skills consume context from the first request. Instructions are deduplicated against the current model-visible history and loaded again if context replacement removes them.
+套件说明和已选快捷任务的技能从首次请求起占用上下文。指令按当前模型可见历史去重；上下文替换移除指令后，会重新加载。
 
-#### KV Cache effect
+#### KV Cache 影响
 
-Pinned content remains stable across requests and Host restart. Changing kit or shortcut selection changes the task snapshot and its cache prefix. Current server authorization is checked before every step and instruction load. <a id="known-limitations-and-deferred-work"></a>
+固定内容在后续请求和 Host 重启后保持稳定。更改套件或快捷任务选择会改变任务快照及缓存前缀。每个模型步骤和说明加载前都会检查当前服务端权限。 <a id="known-limitations-and-deferred-work"></a>
 
-## Known Limitations and Deferred Work
+## 已知限制与延期工作
 
-- Shortcut skills must resolve from their pinned kit provider; missing or conflicting definitions stop execution.
-- README files are limited to 64 KiB.
+- 快捷任务技能必须来自固定的套件 Provider；技能缺失或定义冲突会阻止执行。
+- README 文件最大为 64 KiB。
 
 <a id="dev-note"></a>
-### Dev Note
+### 开发备注
 
-Keep instructions in packaged README and SKILL.md files. Product runtime supplies the explicit shortcut mapping; this plugin reads pinned content and lets the official pipeline persist it before model execution.
+指令保留在制品 README 和 SKILL.md 中。产品运行时提供明确的快捷任务绑定，本插件读取固定内容，并由官方消息流程在模型执行前持久化。

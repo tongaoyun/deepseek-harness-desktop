@@ -1,5 +1,5 @@
 diff --git a/README.i18n.yaml b/README.i18n.yaml
-index 5ce56b7a613a0709b4ccde53711317f34e5abdb0..ffe4fb6882ac5fb11280bc76c3ea50ad461de892 100644
+index 5ce56b7a613a0709b4ccde53711317f34e5abdb0..efe0a1aa13ada6b6d6fa7bca495e4e68d5ba23f5 100644
 --- a/README.i18n.yaml
 +++ b/README.i18n.yaml
 @@ -3,8 +3,11 @@
@@ -11,8 +11,8 @@ index 5ce56b7a613a0709b4ccde53711317f34e5abdb0..ffe4fb6882ac5fb11280bc76c3ea50ad
 +  en: 2a567d9e9bf21506
 +  zh: e5f30eff0160234a
 +/deepseek-harness/deepseek-harness-downstream-desktop:
-+  en: 6f81a1d90e5c5b14
-+  zh: bc7e74205b3217fb
++  en: 730938405c952cd4
++  zh: 0554a35b7acc0a5d
  /deepseek-harness/developer-preview:
    en: 4ef4d8a71ac143f0
    zh: 1bfc3149ba8e5543
@@ -36,7 +36,7 @@ index 7941e30f7bdca9391befe39b9115d211157fa42d..2b3264d8c78cc1f2be061afc3a00e3ac
  
  It is built on an **everything-is-a-plugin** architecture and powered by [Cordis](https://github.com/cordiverse/cordis), whose design is described in [_A Programming Paradigm for Spatiotemporal Composability_](https://arxiv.org/abs/2608.25512).
 diff --git a/README.zh.md b/README.zh.md
-index 3adc57ce89b3c30e6a6dbaa14dc35df944d52926..a6964e03749d9121dad4cfa6e8655d5b80a717df 100644
+index 3adc57ce89b3c30e6a6dbaa14dc35df944d52926..9d86cceac2fc8ad131860d22feee70a4bd4a5265 100644
 --- a/README.zh.md
 +++ b/README.zh.md
 @@ -2,6 +2,14 @@
@@ -47,9 +47,9 @@ index 3adc57ce89b3c30e6a6dbaa14dc35df944d52926..a6964e03749d9121dad4cfa6e8655d5b
 +
 +本仓库扩展 DeepSeek Harness `dsh-v0.2.1-alpha.2`，上游基线固定在 [`UPSTREAM_COMMIT`](UPSTREAM_COMMIT)。`apps/desktop` 运行官方 profile；`apps/product-desktop` 通过同一 Electron 壳组合企业扩展。
 +
-+[产品子系统](docs/subsystems/deepseek-harness-product.zh.md)通过独立的协议、运行时、桌面和 UI 包管理认证、目录、任务能力快照及桌面资源。Harness 的 Session、执行、审批和回放 API 是集成入口。[登记补丁](scripts/upstream-patches/manifest.json)记录每项官方差异及验证方式。
++[产品子系统](docs/subsystems/deepseek-harness-product.md)通过独立的协议、运行时、桌面和 UI 包管理认证、目录、任务能力快照及桌面资源。Harness 的 Session、执行、审批和回放 API 是集成入口。[登记补丁](scripts/upstream-patches/manifest.json)记录每项官方差异及验证方式。
 +
-+Gitea 执行桌面 CI 和向 GitHub 私有构建仓库的手动同步。[产品桌面交付](apps/product-desktop/README.zh.md)等待未签名的 Windows x64、macOS ARM64 和 macOS Intel 构建，校验文件，并向公开 GitHub 下载仓库及内网 Gitea 发布相同的预发布版本。单独运行 GitHub 打包只上传 Actions 产物；两种流程均不发布自动更新 feed。
++Gitea 执行桌面 CI 和向 GitHub 私有构建仓库的手动同步。[产品桌面交付](apps/product-desktop/README.md)等待未签名的 Windows x64、macOS ARM64 和 macOS Intel 构建，校验文件，并向公开 GitHub 下载仓库及内网 Gitea 发布相同的预发布版本。单独运行 GitHub 打包只上传 Actions 产物；两种流程均不发布自动更新 feed。
 +
  DeepSeek Harness（`dsh`）是由 [DeepSeek AI](https://deepseek.com) 开发的开源 agent harness（智能体框架）。
  
@@ -113,7 +113,7 @@ index 2dbbb5cd4076fab87d424c8e05df88965f23b837..33a04a205f9507708472a1489907082f
  | [`typescript-language-server`](https://github.com/typescript-language-server/typescript-language-server) | Apache-2.0 |
  | [`vite`](https://github.com/vitejs/vite) | MIT |
 diff --git a/apps/desktop/README.i18n.yaml b/apps/desktop/README.i18n.yaml
-index a125998069cadf537b54e5cbbbe6939b4e103c0d..daa577e184d16c769f4798632f35691cb819c96a 100644
+index a125998069cadf537b54e5cbbbe6939b4e103c0d..71842977d3bbfa59c2c8647e02ee5eaab892bbd9 100644
 --- a/apps/desktop/README.i18n.yaml
 +++ b/apps/desktop/README.i18n.yaml
 @@ -3,17 +3,17 @@
@@ -159,8 +159,8 @@ index a125998069cadf537b54e5cbbbe6939b4e103c0d..daa577e184d16c769f4798632f35691c
 -  en: a51346b8d880ddba
 -  zh: 7913214c1c66063c
 +/deepseek-harness-desktop/develop/startup-authentication:
-+  en: 015d5516aa348668
-+  zh: 86c5157f0b5102b2
++  en: 58d00b984b0657bd
++  zh: 81afb2e47e83aecc
  /deepseek-harness-desktop/develop/welcome-window-appearance:
 -  en: ae319a496639b38d
 -  zh: ef044103240ac9da
@@ -210,8 +210,8 @@ index a125998069cadf537b54e5cbbbe6939b4e103c0d..daa577e184d16c769f4798632f35691c
  /deepseek-harness-desktop/known-limitations:
 -  en: 5b77213c86bbcfb6
 -  zh: b34bf21773bb852b
-+  en: c54ee8d33eb69921
-+  zh: 173c97a7127ae838
++  en: b3b0d15469adb39f
++  zh: a93fe6ce4a43c5e7
  /deepseek-harness-desktop/dev-note:
    en: 8e26b460ba31f21b
    zh: fbcd0307b3867125
@@ -351,7 +351,7 @@ index 60f14b908fec7a906092c79f2708121903199614..7aa089344c78fa35ab9c25418bbb5f79
  Embedded Platform views remain hidden until document loading completes so the renderer loading indicator stays visible. Closing or replacing a pending view prevents it from appearing later. Reloading or replacing the owning application document, renderer termination, and window closure also destroy the native view without relying on React cleanup.
  
 diff --git a/apps/desktop/README.zh.md b/apps/desktop/README.zh.md
-index eb1cbe5b78e2038fb728f571aca14b69301ed41e..12a48cca6deecad90cf72662b9eab1be61a10cc3 100644
+index eb1cbe5b78e2038fb728f571aca14b69301ed41e..d0782ab4bd10882438dbfb892f21fff95e33cef8 100644
 --- a/apps/desktop/README.zh.md
 +++ b/apps/desktop/README.zh.md
 @@ -6,9 +6,11 @@
@@ -409,7 +409,7 @@ index eb1cbe5b78e2038fb728f571aca14b69301ed41e..12a48cca6deecad90cf72662b9eab1be
 +### 启动认证
  
 -API Key 输入框初始为空，并通过 `autocomplete="new-password"` 请求 Chromium 不要自动填入已保存的登录密码。
-+官方桌面使用正常的账号和 API Key 引导。可信组合可以提供启动扩展，准备 Host 环境和 profile overlay；产品认证由扩展负责。参见[产品桌面](../../packages/deepseek-harness-product/desktop/README.zh.md)。
++官方桌面使用正常的账号和 API Key 引导。可信组合可以提供启动扩展，准备 Host 环境和 profile overlay；产品认证由扩展负责。参见[产品桌面](../../packages/deepseek-harness-product/desktop/README.md)。
  
 -重复启动和 `dsh://open` 会保持工作区隐藏，直到启动凭据检查或欢迎页操作允许进入。从 Welcome 进入时，键盘焦点落在文档上，不选中侧边栏控件；Tab 导航仍可使用。
 +壳通过通用扩展钩子接收准备好的环境和 overlay 路径。命名空间 IPC 校验窗口、来源和主 frame，扩展校验方法白名单。关闭时取消待处理的渲染进程请求，并释放 Host 与扩展资源。
@@ -483,14 +483,14 @@ index eb1cbe5b78e2038fb728f571aca14b69301ed41e..12a48cca6deecad90cf72662b9eab1be
 -登录超时后显示超时标题，并提供重新登录和添加 API Key 按钮。打开 API Key 表单会关闭授权视图；后续账号状态通知不会覆盖正在填写的密钥。
 +扩展认证和凭据遵循所属扩展的策略，官方 profile 保留账号和 API Key 配置。
 +
-+命名空间扩展请求将取消传递到主进程和 Host。公开失败携带错误码、资源 ID 与可重试性，不包含凭据文本；未知失败使用通用诊断。可信扩展负责方法校验，并在关闭时等待在途操作。企业任务恢复和组织知识库行为见[产品子系统](../../docs/subsystems/deepseek-harness-product.zh.md)。
++命名空间扩展请求将取消传递到主进程和 Host。公开失败携带错误码、资源 ID 与可重试性，不包含凭据文本；未知失败使用通用诊断。可信扩展负责方法校验，并在关闭时等待在途操作。企业任务恢复和组织知识库行为见[产品子系统](../../docs/subsystems/deepseek-harness-product.md)。
 +
 +渲染进程命名空间传输默认期限为 60000 毫秒。可选的最后一个 `timeoutMs` 参数接受 1–1800000 的整数，超时取消同一请求 ID。该参数只调整传输等待时间，不增加方法权限或改变来源校验。
  
  内嵌 Platform 视图在文档加载完成前保持隐藏，让渲染层加载图标可见。关闭或替换待加载视图后，该视图不会再次出现。 所属应用文档刷新或替换、渲染进程终止以及窗口关闭也会销毁原生视图，不依赖 React 清理。
  
 diff --git a/docs/architecture.i18n.yaml b/docs/architecture.i18n.yaml
-index 8206f3e6dcec9307f3a1a52a34500fb136aadbfd..51a605cd188ea93bb962b0944823a1864e36b033 100644
+index 8206f3e6dcec9307f3a1a52a34500fb136aadbfd..c8136732e5990ae6462794e7e0d78861c39bf9a8 100644
 --- a/docs/architecture.i18n.yaml
 +++ b/docs/architecture.i18n.yaml
 @@ -9,14 +9,14 @@
@@ -506,8 +506,8 @@ index 8206f3e6dcec9307f3a1a52a34500fb136aadbfd..51a605cd188ea93bb962b0944823a186
  /deepseek-harness-architecture/desktop-application:
 -  en: b9eeb18645121a8b
 -  zh: 70d87a12c43e042a
-+  en: 54711a2fd1179b5f
-+  zh: 05bbc8f9c57dad82
++  en: ef91b2cf92d142cd
++  zh: d33ba4eaa0c37fd5
  /deepseek-harness-architecture/core-packages:
    en: 20ef882e44b06a10
    zh: c10c3934ed5570e9
@@ -534,14 +534,14 @@ index 03d88148c7992f1c856efc44df0a930470f90f70..d29fe5c8eb98bb5e296e11d6dfadcccd
  
  | Package | Owns | `ctx` key |
 diff --git a/docs/architecture.zh.md b/docs/architecture.zh.md
-index 870fa1c996ba569f882a7cb70e62f0bd655c64af..533299b8168c9a4a7c12e4caed770bf85d7314a4 100644
+index 870fa1c996ba569f882a7cb70e62f0bd655c64af..e4630a876520302e23235f1543bdece66b27fb3a 100644
 --- a/docs/architecture.zh.md
 +++ b/docs/architecture.zh.md
 @@ -52,6 +52,8 @@ Python SDK 遵循相同的应用架构。其运行时 wheel 把普通 `dsh` CLI
  
  Electron 使用 Electron Node 模式启动私有 Desktop Host。Host 调用共享 CLI profile runner 与完整 Web 应用。窗口立即加载打包 Web 资源，等待启动注入后在同一文档中激活客户端插件。Web 负责 RPC 与流；桌面载体将本地页面连接到已认证的 Host。Node IPC 承载启动注入、就绪、致命错误与关闭。Desktop 默认监听系统分配的端口，profile 配置可覆盖。壳拥有的 UI 通过内置 pnpm 执行插件事务，并遵循正常用户与 profile 配置。
  
-+参见[DeepSeek Harness Electron 架构](deepseek-harness-electron-architecture.zh.md)。
++参见[DeepSeek Harness Electron 架构](deepseek-harness-electron-architecture.md)。
 +
  ## 核心包
  
@@ -23657,7 +23657,7 @@ index e9046242ff0e54223b7855f581ca0a1271f9ba21..951f92bf947d8cf12045065716abab9d
        "digest": "fec5442b9ee4122e10514d81d5a43648003fe8bfb7ee2ba50c0cdbdd383ed394",
        "names": [
 diff --git a/docs/subsystems/README.i18n.yaml b/docs/subsystems/README.i18n.yaml
-index ec9d159bbbf9844e9d1c2066bbf94712c60b55b3..6c62151f907ebebd5dab5c6c383e6289278eca7b 100644
+index ec9d159bbbf9844e9d1c2066bbf94712c60b55b3..50d6adaebce077d639867b74edb640862c9aee5c 100644
 --- a/docs/subsystems/README.i18n.yaml
 +++ b/docs/subsystems/README.i18n.yaml
 @@ -3,5 +3,5 @@
@@ -23666,8 +23666,8 @@ index ec9d159bbbf9844e9d1c2066bbf94712c60b55b3..6c62151f907ebebd5dab5c6c383e6289
  /subsystems:
 -  en: 1d4818dbb07391a7
 -  zh: f1e27ce66c181295
-+  en: f77009c92885df9d
-+  zh: 16e0351f408d78ff
++  en: b14fcd45d7d00db6
++  zh: 5d64700213b68b83
 diff --git a/docs/subsystems/README.md b/docs/subsystems/README.md
 index c2a47fb70b206fc6a04c238df9fd79ed6aec172b..182f3479f634f7088e59b0dbfeb058de09965ca8 100644
 --- a/docs/subsystems/README.md
@@ -23680,14 +23680,14 @@ index c2a47fb70b206fc6a04c238df9fd79ed6aec172b..182f3479f634f7088e59b0dbfeb058de
  
  > Type declarations and their JSDoc on these pages are source-equivalent and drift-checked by `pnpm run verify-type-equiv` (see [development.md](../development.md#documenting-types-verbatim-ts-type-equiv)). Ordinary blocks preserve complete declarations; `public-api` blocks preserve body-stripped public class declarations. Cordis services and events use each page's generated **Cordis API** section.
 diff --git a/docs/subsystems/README.zh.md b/docs/subsystems/README.zh.md
-index a1380713bc2f7ebd8ae08df02df77604b59bc701..94a861441c70e188a3581bac4a2330b63d31dead 100644
+index a1380713bc2f7ebd8ae08df02df77604b59bc701..2f45d2555af8c83ffe1742ed9947eb1547dc6182 100644
 --- a/docs/subsystems/README.zh.md
 +++ b/docs/subsystems/README.zh.md
 @@ -72,5 +72,6 @@
  | [session-telemetry.md](session-telemetry.zh.md) | 对外会话上报能力 seam：`SessionTelemetryRecord`/`SessionTelemetrySeverity`、`SessionTelemetrySink` 约定和 `session-telemetry/record` 脱敏 waterfall（瀑布式事件） |
  | [otel.md](otel.zh.md) | 共享普通事件与 Session 日志 OTLP 通道 |
  | [product-telemetry.md](product-telemetry.zh.md) | 显式产品分析事件提交与 OTLP/HTTP 传输 |
-+| [deepseek-harness-product.md](deepseek-harness-product.zh.md) | DeepSeek Harness产品桥、Electron 产品能力与产品目录集成 |
++| [deepseek-harness-product.md](deepseek-harness-product.md) | DeepSeek Harness产品桥、Electron 产品能力与产品目录集成 |
  
  > 这些页面上的类型声明及其 JSDoc 与源码等价，并由 `pnpm run verify-type-equiv` 检查漂移（见 [development.md](../development.zh.md#documenting-types-verbatim-ts-type-equiv)）。普通块保留完整声明；`public-api` 块保留去除实现体的公开 class 声明。Cordis 服务与事件使用每页生成的 **Cordis API** 小节。
 diff --git a/docs/subsystems/core.md b/docs/subsystems/core.md
@@ -24427,10 +24427,18 @@ index 7896c0ad1c005de3d0e87aa558ae5b5532386663..a766b80b258e89b7d2d42449e22fd331
  ## feedback
  
 diff --git a/scripts/doc-standard.spec.ts b/scripts/doc-standard.spec.ts
-index d5ac3ba3c3416f2bcaad92f496d24005428d1b72..49a7519a60bf651a0dc0f992f9c256e3c83a2099 100644
+index d5ac3ba3c3416f2bcaad92f496d24005428d1b72..10252261ac11b51a9c7f617d4731c4c51cb05ced 100644
 --- a/scripts/doc-standard.spec.ts
 +++ b/scripts/doc-standard.spec.ts
-@@ -55,6 +55,8 @@ const KIND_TEMPLATES: Readonly<Record<string, string>> = {
+@@ -13,6 +13,7 @@ import { resolve, sep } from 'node:path'
+ import { JSON_SCHEMA, load } from 'js-yaml'
+ import { describe, expect, it } from 'vitest'
+ import { readCurrentSessionFormatVersion } from './gen-session-format-catalog.ts'
++import { markdownValidationSource } from './markdown.ts'
+ 
+ const root = resolve(import.meta.dirname, '..')
+ const PACKAGE_README_GLOBS = [
+@@ -55,6 +56,8 @@ const KIND_TEMPLATES: Readonly<Record<string, string>> = {
   * library; the check re-derives the entry shape so a stale entry fails loud.
   */
  const PACKAGE_LIBRARIES: Readonly<Record<string, string>> = {
@@ -24439,3 +24447,13 @@ index d5ac3ba3c3416f2bcaad92f496d24005428d1b72..49a7519a60bf651a0dc0f992f9c256e3
    'packages/experimental/browser-use-runtime': 'Provider-owned browser resource management and MCP integration helpers; no plugin entry.',
    'packages/boot/app-boot': 'Boot library the app bins import; plain helper exports.',
    'packages/boot/cmdline': 'Command-line library the app bins import; plain module exports.',
+@@ -154,7 +157,8 @@ function packageReadmeStructureErrors(file: string, source: string): string[] {
+   const required = chinese
+     ? [[/^## 概述$/m, '概述'], [/^## 目录$/m, '目录'], [/^#{2,3} 开发备注$/m, '开发备注']] as const
+     : [[/^## Summary$/m, 'Summary'], [/^## Table of Contents$/m, 'Table of Contents'], [/^#{2,3} Dev Note$/m, 'Dev Note']] as const
+-  return required.flatMap(([pattern, label]) => pattern.test(source) ? [] : [`missing ${label}`])
++  const text = chinese || required.every(([pattern]) => pattern.test(source)) ? source : markdownValidationSource(source)
++  return required.flatMap(([pattern, label]) => pattern.test(text) ? [] : [`missing ${label}`])
+ }
+ 
+ interface SessionFormatRelease {

@@ -84,7 +84,7 @@ it('authorizes Office conversion in main and cancels it when employee identity c
     fetch: async () => Response.json({ success: true, data: [], pageIndex: 1, pageSize: 100, totalCount: 0, totalPages: 0 }) })
   try {
     const request = bridge.invoke('knowledge.documents.preview.open', { knowledgeBaseId: 'base', documentId: 'document', rendered: true })
-    const rejected = expect(request).rejects.toThrow('Identity changed')
+    const rejected = expect(request).rejects.toThrow('Product employee identity changed')
     await vi.waitFor(() => { expect(officeSignal).toBeDefined() })
     bridge.setSession({ authenticated: true, employeeId: 'employee-b' }, 'new-token')
     await rejected

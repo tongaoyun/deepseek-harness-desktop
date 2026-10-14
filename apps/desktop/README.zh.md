@@ -174,7 +174,7 @@ Web 侧的对应命令是 `pnpm run dev:web` 与 `pnpm run start:web`，见[开�
 
 ### 启动认证
 
-官方桌面使用正常的账号和 API Key 引导。可信组合可以提供启动扩展，准备 Host 环境和 profile overlay；产品认证由扩展负责。参见[产品桌面](../../packages/deepseek-harness-product/desktop/README.zh.md)。
+官方桌面使用正常的账号和 API Key 引导。可信组合可以提供启动扩展，准备 Host 环境和 profile overlay；产品认证由扩展负责。参见[产品桌面](../../packages/deepseek-harness-product/desktop/README.md)。
 
 壳通过通用扩展钩子接收准备好的环境和 overlay 路径。命名空间 IPC 校验窗口、来源和主 frame，扩展校验方法白名单。关闭时取消待处理的渲染进程请求，并释放 Host 与扩展资源。
 
@@ -559,7 +559,7 @@ node apps/desktop/node_modules/pnpm/bin/pnpm.mjs --dir apps/desktop run test:upd
 
 扩展认证和凭据遵循所属扩展的策略，官方 profile 保留账号和 API Key 配置。
 
-命名空间扩展请求将取消传递到主进程和 Host。公开失败携带错误码、资源 ID 与可重试性，不包含凭据文本；未知失败使用通用诊断。可信扩展负责方法校验，并在关闭时等待在途操作。企业任务恢复和组织知识库行为见[产品子系统](../../docs/subsystems/deepseek-harness-product.zh.md)。
+命名空间扩展请求将取消传递到主进程和 Host。公开失败携带错误码、资源 ID 与可重试性，不包含凭据文本；未知失败使用通用诊断。可信扩展负责方法校验，并在关闭时等待在途操作。企业任务恢复和组织知识库行为见[产品子系统](../../docs/subsystems/deepseek-harness-product.md)。
 
 渲染进程命名空间传输默认期限为 60000 毫秒。可选的最后一个 `timeoutMs` 参数接受 1–1800000 的整数，超时取消同一请求 ID。该参数只调整传输等待时间，不增加方法权限或改变来源校验。
 

@@ -1,23 +1,21 @@
 ---
 kind: upgrade-guide
-description: "Expert Kit guides and explicitly bound shortcut skills enter model context before execution."
+description: "专家套件说明和明确绑定的快捷任务技能在执行前进入模型上下文。"
 ---
 
-# Expert Kit Shortcut Instructions
+# 专家套件快捷任务指令
 
-English | [中文](guide.zh.md)
+## 变更
 
-## Change
+选择专家套件后，模型执行前自动加载固定版本的 README。快捷任务的 `skillIds` 明确选择 1–8 个不重复的内置技能，技能全文随套件说明加载。其他已安装技能和内置技能继续使用原生语义发现。MCP 和审批使用官方执行循环。
 
-Selecting an Expert Kit automatically loads its pinned README before model execution. A shortcut's `skillIds` explicitly selects 1–8 unique bundled skills whose full instructions load with the guide. Other installed and bundled skills retain native semantic discovery. MCP and approval use the official execution loop.
+客户端向 `tasks.capabilities.prepare` 提交 `expertKitTaskId`；Host 从已安装的不可变制品解析任务，返回权威 `prompt`。能力快照固定 `expertKitTask` 和 Provider 配置。官方执行前消息记录模型可见内容，归属来源为 `product-expert-kit-instructions`。可见指令在后续步骤和重启后去重；上下文替换移除指令后重新加载。每个步骤都检查权限。
 
-The client sends `expertKitTaskId` to `tasks.capabilities.prepare`; Host resolves the task from the immutable installed artifact and returns its authoritative `prompt`. Capability snapshots pin `expertKitTask` and the provider configuration. Official pre-step messages record model-visible content with the attribution source `product-expert-kit-instructions`. Visible instructions are deduplicated across steps and restart, and restored after context replacement. Authorization is checked on every step.
+新套件版本和导入必须提供快捷任务绑定。技能 ID 缺失、重复或未声明时准备失败。旧制品字节和 Session 历史保持原样；没有映射的旧快捷任务不能启动新任务。普通套件选择仍可使用。
 
-New kit releases and imports require shortcut bindings. Missing, duplicate or unknown skill IDs fail preparation. Legacy artifact bytes and Session history stay unchanged; an unmapped legacy shortcut cannot start a new task. Ordinary kit selection remains available.
+## 迁移
 
-## Migration
-
-1. Apply server migration V55 and deploy the shortcut metadata contract before submitting new releases.
-2. Add `skillIds` to each shortcut and publish a new kit version, retaining older artifacts and task snapshots. Install the new version on the device.
-3. Upgrade desktop runtime and adapters together. Do not submit a shortcut prompt as its identity or infer skill bindings from display names.
-4. Verify first-request instructions, missing bindings, permission revocation, restart, context replacement, draft preservation, and `verify:upstream`. Installed distributions require a fresh desktop build.
+1. 提交新版本前，应用服务端 V55 迁移并部署快捷任务元数据契约。
+2. 为每项快捷任务添加 `skillIds`，发布新的套件版本；保留旧制品和任务快照。在设备上安装新版本。
+3. 一起升级桌面运行时和适配层。禁止把提示词作为快捷任务身份提交，也不能按展示名称推断技能绑定。
+4. 验证首次请求指令、缺失绑定、权限撤销、重启、上下文替换、草稿保留和 `verify:upstream`。安装版需要重新构建桌面包。

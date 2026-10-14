@@ -23,6 +23,7 @@ export interface ProductCatalogManagerOptions {
   readonly desktopVersion: string
   readonly getSession: () => ProductSession
   readonly ensureFreshSession: () => Promise<void>
+  readonly getIdentitySignal: () => AbortSignal
   readonly emit: (event: ProductEvent) => void
 }
 
@@ -84,6 +85,7 @@ export class ProductCatalogManager {
     this.epoch += 1
     this.snapshot.clear()
     this.signature = undefined
+    this.refreshOperation = undefined
   }
 
   /** Schedule the next refresh only while an employee is authenticated. */
@@ -108,9 +110,11 @@ export class ProductCatalogManager {
   }
 
   private async loadSnapshot(signal: AbortSignal): Promise<void> {
+    signal = AbortSignal.any([signal, this.options.getIdentitySignal()])
     const api = this.options.api
     if (api === undefined) throw new Error('deepseek-harness product: server URL is not configured')
     await this.options.ensureFreshSession()
+    signal.throwIfAborted()
     const epoch = this.epoch
     const employeeId = this.options.getSession().employeeId
     const controller = new AbortController()

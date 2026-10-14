@@ -428,7 +428,8 @@ describe('docsPages locale routes', () => {
     for (const readme of ['README.md', 'README.zh.md']) {
       const rows = readFileSync(join(repositoryRoot, 'docs/subsystems', readme), 'utf8')
       const missing = pages.filter((page) => {
-        const target = readme.endsWith('.zh.md') ? page.replace(/\.md$/, '.zh.md') : page
+        const translated = page.replace(/\.md$/, '.zh.md')
+        const target = readme.endsWith('.zh.md') && existsSync(resolve(repositoryRoot, 'docs/subsystems', translated)) ? translated : page
         return !rows.includes(`| [${page}](${target}) |`)
       })
       expect(missing, `${readme} must carry one table row per subsystem page`).toEqual([])

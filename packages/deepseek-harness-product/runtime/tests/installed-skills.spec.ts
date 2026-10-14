@@ -65,6 +65,9 @@ it('discovers installed skills in an unchanged mode, pins versions, restores, de
   let version = '1'
   let selected = false
   let connectorRevoked = false
+  let knowledgeCatalog = [{ id: 'manuals', referenceKey: 'company:manuals' }]
+  let selectedKnowledgeIds = ['manuals']
+  let selectedKnowledgeRefs: string[] = []
   const connector: DeepSeekHarnessConnector = { id: 'erp', name: 'Orders', status: 'ready', authMode: 'oauth',
     timeoutSeconds: 120,
     transport: 'streamable-http', url: 'http://localhost/mcp', arguments: [], environment: {}, headers: { Authorization: 'private-relay-token' },
@@ -83,7 +86,7 @@ it('discovers installed skills in an unchanged mode, pins versions, restores, de
           if (method === 'skills.get' && permissionFailure !== undefined) throw permissionFailure
           if (method === 'skills.get' && revoked) throw new ProductError('EXPERT_KIT_NOT_FOUND', 'permission revoked')
           if (method === 'connectors.list') return [{ id: 'erp', status: connectorRevoked ? 'unavailable' : 'ready' }]
-          if (method === 'knowledge.bases.list') return [{ id: 'manuals', referenceKey: 'company:manuals' }]
+          if (method === 'knowledge.bases.list') return knowledgeCatalog
           return skill((payload as { id: string }).id)
         } },
         parse: value => value as SkillContent[], install: async () => {},
@@ -93,7 +96,7 @@ it('discovers installed skills in an unchanged mode, pins versions, restores, de
             invocation: { modelInvocable: true, userInvocable: true }, content: `Use version ${entry.version} instructions.` }
         },
         capabilities: async () => ({ skills: [], connectorIds: selected ? ['erp'] : [], requiredConnectorIds: [],
-          knowledgeBaseIds: selected ? ['manuals'] : [], requiredKnowledgeBaseIds: [], knowledgeBaseRefs: [] }),
+          knowledgeBaseIds: selected ? selectedKnowledgeIds : [], requiredKnowledgeBaseIds: [], knowledgeBaseRefs: selectedKnowledgeRefs }),
         connectors: async () => connectorRevoked ? [] : [connector],
         mountConnectors: async () => async () => {},
       })
@@ -171,6 +174,24 @@ it('discovers installed skills in an unchanged mode, pins versions, restores, de
   selected = true
   ctx.emit('agent-preset/selected', fresh.agent.session.id, 'minimal')
   expect((await ctx.skills.list({ scope: fresh.agent })).map(row => row.name)).toContain('dependent-skill')
+  expect((await ctx.skills.list({ scope: fresh.agent })).map(row => row.name)).toContain('knowledge-skill')
+  knowledgeCatalog = [{ id: 'manuals', referenceKey: 'company:manuals' }, { id: 'other-manuals', referenceKey: 'company:manuals' }]
+  for (const catalog of [knowledgeCatalog, [...knowledgeCatalog].reverse()]) {
+    knowledgeCatalog = catalog
+    ctx.emit('agent-preset/selected', fresh.agent.session.id, 'minimal')
+    expect((await ctx.skills.list({ scope: fresh.agent })).map(row => row.name)).toContain('knowledge-skill')
+  }
+  selectedKnowledgeIds = ['manuals', 'other-manuals']
+  ctx.emit('agent-preset/selected', fresh.agent.session.id, 'minimal')
+  expect((await ctx.skills.list({ scope: fresh.agent })).map(row => row.name)).not.toContain('knowledge-skill')
+  selectedKnowledgeIds = []
+  selectedKnowledgeRefs = ['company:manuals']
+  ctx.emit('agent-preset/selected', fresh.agent.session.id, 'minimal')
+  expect((await ctx.skills.list({ scope: fresh.agent })).map(row => row.name)).not.toContain('knowledge-skill')
+  selectedKnowledgeIds = ['manuals']
+  selectedKnowledgeRefs = []
+  knowledgeCatalog = [{ id: 'manuals', referenceKey: 'company:manuals' }, { id: 'manuals', referenceKey: 'company:manuals' }]
+  ctx.emit('agent-preset/selected', fresh.agent.session.id, 'minimal')
   expect((await ctx.skills.list({ scope: fresh.agent })).map(row => row.name)).toContain('knowledge-skill')
   expect((await ctx.skills.list({ scope: fresh.agent })).map(row => row.name)).not.toContain('tool-dependent')
   connectorRevoked = true

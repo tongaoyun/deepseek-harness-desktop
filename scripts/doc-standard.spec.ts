@@ -13,6 +13,7 @@ import { resolve, sep } from 'node:path'
 import { JSON_SCHEMA, load } from 'js-yaml'
 import { describe, expect, it } from 'vitest'
 import { readCurrentSessionFormatVersion } from './gen-session-format-catalog.ts'
+import { markdownValidationSource } from './markdown.ts'
 
 const root = resolve(import.meta.dirname, '..')
 const PACKAGE_README_GLOBS = [
@@ -156,7 +157,8 @@ function packageReadmeStructureErrors(file: string, source: string): string[] {
   const required = chinese
     ? [[/^## 概述$/m, '概述'], [/^## 目录$/m, '目录'], [/^#{2,3} 开发备注$/m, '开发备注']] as const
     : [[/^## Summary$/m, 'Summary'], [/^## Table of Contents$/m, 'Table of Contents'], [/^#{2,3} Dev Note$/m, 'Dev Note']] as const
-  return required.flatMap(([pattern, label]) => pattern.test(source) ? [] : [`missing ${label}`])
+  const text = chinese || required.every(([pattern]) => pattern.test(source)) ? source : markdownValidationSource(source)
+  return required.flatMap(([pattern, label]) => pattern.test(text) ? [] : [`missing ${label}`])
 }
 
 interface SessionFormatRelease {

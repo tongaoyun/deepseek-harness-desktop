@@ -14,6 +14,7 @@ vi.mock('electron', () => ({
   screen: { getAllDisplays: () => [{ scaleFactor: 2 }] },
 }))
 vi.mock('../src/deepseek-harness-product-config.ts', () => ({ resolveDeepSeekHarnessProductServerUrl: () => 'https://example.test',
+  resolveDeepSeekHarnessConnectorProxyPolicy: () => ({ responseTimeoutMs: 30000, streamIdleTimeoutMs: 120000 }),
   resolveDesktopSupportPolicy: () => ({ heartbeatIntervalMs: 300000, reportIntervalMs: 86400000 }),
   resolveDeepSeekHarnessKnowledgeFilePolicy: () => ({ previewMaxBytes: 1024, spreadsheetMaxBytes: 1024, officeInputMaxBytes: 1024,
     officeOutputMaxBytes: 1024, downloadMaxBytes: 1024, uploadMaxBytes: 1024, transferLifetimeMs: 60_000,
@@ -30,10 +31,43 @@ vi.mock('@deepseek-harness/product/dingtalk-auth', async original => ({
 vi.mock('@deepseek-harness/product/bridge', () => ({ DeepSeekHarnessProductBridge: class {
   constructor(options: ProductBridgeOptions) { fixture.bridgeOptions(options) }
   dispose = fixture.dispose; invoke = async () => ({}); invokeRuntime = async () => []
+  getSession = () => ({ authenticated: true })
   subscribe = () => () => {}; refreshCatalog = async () => {}
   loadRuntimeBootstrap = async () => ({ modelApiKey: 'model-key', endpoints: { litellm: 'https://example.test/v1' }, models: ['deepseek-v4-flash', 'gpt-example'] })
 } }))
 beforeEach(() => { vi.clearAllMocks(); fixture.authenticate.mockResolvedValue({ authenticated: true }) })
+
+it('cancels a shared sign-in only after its last caller cancels and allows a new attempt', async () => {
+  const entered = Promise.withResolvers<AbortSignal>()
+  fixture.authenticate.mockImplementationOnce(async (_bridge, _open, options) => {
+    const signal = options?.signal
+    if (!signal) throw new Error('No authentication signal')
+    entered.resolve(signal)
+    return new Promise((_resolve, reject) => {
+      signal.addEventListener('abort', () => { reject(new Error('Authorization cancelled', { cause: signal.reason })) }, { once: true })
+    })
+  })
+  const extension = createExtension({ getWindow: () => undefined, isQuitting: () => false, requestHost: async () => ({}) })
+  const first = new AbortController()
+  const second = new AbortController()
+  try {
+    const pendingFirst = extension.invoke('auth.ensureDingTalk', undefined, first.signal)
+    const rejectedFirst = expect(pendingFirst).rejects.toThrow('First cancelled')
+    const underlying = await entered.promise
+    const pendingSecond = extension.invoke('auth.ensureDingTalk', undefined, second.signal)
+    const rejectedSecond = expect(pendingSecond).rejects.toThrow('Second cancelled')
+    await Promise.resolve()
+    first.abort(new Error('First cancelled'))
+    await rejectedFirst
+    expect(underlying.aborted).toBe(false)
+    expect(fixture.authenticate).toHaveBeenCalledOnce()
+    second.abort(new Error('Second cancelled'))
+    await rejectedSecond
+    expect(underlying.aborted).toBe(true)
+    await expect(extension.invoke('auth.ensureDingTalk')).resolves.toEqual({ authenticated: true })
+    expect(fixture.authenticate).toHaveBeenCalledTimes(2)
+  } finally { first.abort(); second.abort(); await extension.close() }
+})
 
 it('retries expired DingTalk sign-in and supplies only model configuration and profile overlays to Host', async () => {
   fixture.authenticate.mockRejectedValueOnce(new DingTalkAuthorizationTimeoutError())

@@ -1,69 +1,73 @@
 ---
-description: "Product protocol, authentication, catalogs, and server access independent of Harness and Electron."
+description: "提供产品协议、认证、目录与服务端访问，不依赖 Harness 或 Electron。"
 kind: "package-library"
 ---
 
-# DeepSeek Harness Product Bridge
+# DeepSeek Harness产品桥
 
-English | [中文](README.zh.md)
+## 概述
 
-## Summary
+文件夹列表请求使用 `parentId` 选择一个分支，null 代表根目录直属子项。桥接转发上级标识和指定页码、页大小，不读取完整目录层级。
 
-Folder pages select one `parentId`; null selects root children. The bridge forwards that scope and pagination without reading the entire hierarchy.
+产品桥提供已认证的员工目录、任务能力准备和连接器授权，保留最后成功的展示目录并合并刷新；知识库读取始终查询服务端。调用方注入原生能力及任务运行时。技能和套件的安装操作通过 Host 管理已认证员工的设备；写入提交后才发送目录事件。卸载保留服务端资源和已开始任务。员工凭据由桌面主进程保管，协议包不依赖 Harness 或 Electron。
 
-The bridge provides authenticated employee catalogs, task capability preparation, and connector authorization. It retains the last successful display catalog and merges refreshes; knowledge reads always query the server. Callers inject native capabilities and the task runtime. Skill and Kit installation operations address the authenticated employee's device through the Host; mutations emit catalog events after commit. Uninstall preserves server resources and started tasks. The desktop main process retains employee credentials; this protocol package does not depend on Harness or Electron.
+## 目录
 
-## Table of Contents
-
-- [Model Experience](#model-experience)
-- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
-- [Dev Note](#dev-note)
+- [模型体验](#model-experience)
+- [已知限制与延期工作](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
 
 -----
 
 <a id="model-experience"></a>
-## Model Experience
+## 模型体验
 
-### Product bridge
+### 产品桥
 
-#### What the model sees
+#### 模型看到的内容
 
-The bridge serves product metadata and authentication. The main process injects the employee-scoped inference configuration before Host startup; official `Session` execution and conversation behavior remain model-facing authority.
+桥接只提供产品元数据和认证。主进程在 Host 启动前注入员工级推理配置；官方 `Session` 执行和对话行为仍是面向模型的权威来源。
 
-#### Token effect
+#### Token 影响
 
-No product token is added to model context.
+不会向模型上下文加入产品令牌。
 
-#### KV Cache effect
+#### KV Cache 影响
 
-No cache entries are created; the bridge does not assemble or send provider requests. <a id="known-limitations-and-deferred-work"></a>
+不会创建缓存条目；桥接不会组装或发送模型请求。<a id="known-limitations-and-deferred-work"></a>
 
-## Known Limitations and Deferred Work
+## 已知限制与延期工作
 
-- Installed applications read the DeepSeek Harness server origin from the packaged `deepseek-harness/product.json`; unpackaged development may override it with `DEEPSEEK_HARNESS_SERVER_URL`.
-- Native methods fail closed when the supervised sidecar is unavailable.
+- 安装版从随包发布的 `deepseek-harness/product.json` 读取DeepSeek Harness服务端地址；未打包的开发环境可以使用 `DEEPSEEK_HARNESS_SERVER_URL` 覆盖。
+- 受监管的 sidecar 不可用时，原生方法会直接失败。
 
 <a id="dev-note"></a>
-### Dev Note
+### 开发备注
 
-`knowledge.folders.get` reads one folder by ID within the selected library, forwarding cancellation and current server authorization. It accepts only library and folder IDs; clients can resolve ancestry independently of loaded directory pages.
+已认证请求、推理配置、后台目录和会话续期归属启动时捕获的员工生命周期。身份切换取消旧请求并拒绝迟到响应。旧令牌的认证失败不会退出已续期会话；续期仅在原身份及令牌仍有效时提交。释放桥接等待全部在途续期结束。
 
-Use namespace transport and validate requests against the product protocol allowlist. `tasks.capabilities.prepare` is the sole Kit preparation entry. It returns a capability snapshot, execution location, and verified dependencies; official Preset and Session APIs own execution.
+钉钉授权轮询绑定当前授权尝试。切换账号、发起新授权或调用方取消后，迟到的登录响应不能提交。续期、创建授权和轮询均接收调用方取消信号；登录期限覆盖完整流程。
 
-Task capability reads and preparation results include `requiredConnectorIds`, resolved from the pinned Expert Kit. Consumers lock those task selections independently of account authorization or connector availability.
+`knowledge.folders.get` 按 ID 读取指定知识库内的一个文件夹，转发取消信号并由服务端检查当前权限。仅接受知识库和文件夹 ID；客户端可独立于已加载目录页解析上级路径。
 
-`extensions.import.inspect`, `extensions.save`, `extensions.submit`, and `extensions.delete` delegate personal authoring to main; responses contain previews or business results. `extensions.import.release` clears employee-scoped previews. The `extension-draft` export provides browser-safe form schemas; `authoring` parses YAML and generates standard skill/kit files and the dependency union in main. Ownership comes from server authentication. Catalogs expose `visibility`, `ownerEmployeeId`, `canEdit`, `canSubmit`, `canDelete`, and review status; personal usability is independent of shared review. Knowledge reference resolution distinguishes absent, denied, ambiguous, and transient failures.
+使用命名空间传输，并由产品协议白名单校验请求。`tasks.capabilities.prepare` 是唯一的套件准备入口，返回能力快照、执行位置及已校验的依赖，官方 Preset 与 Session API 负责执行。
 
-Committed writes clear cached catalogs. A subsequent refresh failure does not fail the committed mutation; catalog reads report the refresh error rather than returning obsolete permissions.
+任务能力读取和准备结果包含从固定专家套件解析的 `requiredConnectorIds`。调用方据此锁定任务选择，该选择独立于账号授权和连接器可用状态。
 
-`extensions.authoring.begin/read/update/save/discard` manage conversation drafts. The trusted Host may read, update and save the matching conversation's personal resource. Each draft is employee-scoped, Session-bound and revision-checked; it records only its own Session identity. `authoring.changed` publishes committed changes without their content. Content draft schemas exclude connector secrets and staging handles. Save validation accepts bundled skills and shortcut commands only for Expert Kits. Shared submission remains a separate owner action.
+`extensions.import.inspect`、`extensions.save`、`extensions.submit`、`extensions.delete` 将个人扩展编辑交给主进程，返回预览或业务结果。`extensions.import.release` 清理员工隔离的预览。`extension-draft` 出口提供浏览器可用的表单校验，`authoring` 在主进程解析 YAML，生成标准技能/套件文件和依赖并集。所有者来自服务端认证。目录返回 `visibility`、`ownerEmployeeId`、`canEdit`、`canSubmit`、`canDelete` 和审核状态，个人可用资格独立于共享审核。知识引用解析区分不存在、无权访问、歧义与临时故障。
 
-Bundled skill drafts retain the optional full native `description` separately from the 300-character catalog `summary`. The summary must equal the description or its whitespace-normalized projection: the first complete sentence when it fits, otherwise 299 UTF-16 units followed by an ellipsis. Bundled skill IDs and imported resource IDs accept two-character names. `extensionFiles` retains extra frontmatter from main-owned original Markdown and validates the complete emitted skill against the standalone 64 KiB or bundled 256 KiB UTF-8 limit.
+写入提交后清空目录缓存。随后的刷新失败不会将已提交操作报告为失败，目录读取显示刷新错误，不返回过时权限。
 
-`extensions.connector.read/update/delete` manage owned personal connectors through main. Reads return public configuration and empty placeholders for configured private keys. Updates create an immutable version; deletion retires the resource ID. The server verifies ownership for every operation.
+扩展保存可能在服务端提交后于本机安装阶段失败。桥接仍使目录缓存失效并通知创建记录重读，返回原始错误。`EXTENSION_INSTALL_FAILED` 表示已保存但本机安装可重试；`EXTENSION_SAVE_PENDING` 表示提交结果待确认，须重试固定内容。取消或身份切换后不发送旧员工通知。创建快照的 `pendingSave` 固定主进程提供的作者，`saved` 固定资源与版本，两者不包含凭据。
 
-Connector saves accept an integer `timeoutSeconds` from 1 through 600, defaulting to 60. It belongs to local MCP configuration and is excluded from conversation content drafts. Standard MCP JSON may provide the same field.
+`extensions.authoring.begin/read/update/save/discard` 管理创建对话草稿。受信 Host 可以读取、更新并保存对应创建对话的个人资源。草稿按员工隔离、关联 Session 并校验修订号，仅记录自身 Session 标识。`authoring.changed` 通知已提交的变动，不携带内容。内容草稿校验排除连接器凭据和暂存标识。保存校验只允许专家套件包含内置技能和快捷命令。提交共享仍是所有者的独立操作。
 
-`knowledge.documents.*`, `knowledge.folders.*`, and `knowledge.sources.read` dispatch authenticated management and reading through the product server. Pages expose one-based `page` with `items`, `size`, and `total`; filtering and totals come from server pagination. Writes validate bounded content and stable retry keys. Folder creation sends a nullable stable `parentId`; folder responses retain the parent identity. Names are limited to 80 characters. Rename does not change a folder's parent or content location. Markdown and URL creation forward the selected `folderId`; Markdown updates require `expectedUpdatedAt` and reject folder changes. Unconfirmed creation outcomes retain the same retry key and require checking real resources. File upload delegates selection to an injected native callback and rejects renderer paths and parser configuration. `pdfParseMode` accepts only `STANDARD` (default) or `TEXT` (PDF embedded text without OCR); the server owns engine selection. Responses retain asynchronous processing and deletion state. Caller cancellation and identity changes cancel remote operations. WeKnora addresses and credentials never cross this bridge.
+内置技能草稿通过可选的 `description` 保留完整原生描述，与最多 300 字符的目录 `summary` 分开。简介必须等于描述或其空白归一化投影：首个完整句子能容纳时取该句，否则取前 299 个 UTF-16 单元并追加省略号。内置技能 ID 和导入资源 ID 支持两个字符的名称。`extensionFiles` 从主进程持有的原始 Markdown 保留额外 frontmatter，并按 UTF-8 字节检查完整生成文件：独立技能 64 KiB，内置技能 256 KiB。
 
-`knowledge.documents.previewMetadata` reads original metadata independently of indexing. `preview.open`, `preview.read`, and `preview.close` use employee-bound main-owned file handles; Renderer receives bounded `Uint8Array` chunks instead of whole-file Base64. Requests accept resource IDs, an opaque transfer ID, or a verified byte offset. Office rendering uses the official Host converter with bounded private JSON chunks. `download` and `openExternal` accept only resource IDs and delegate native file operations to main. The binary HTTP transport refuses redirects, streams into an owned sink, and preserves structured permission errors. Indexed citation fragments continue through `knowledge.sources.read`; opening an original creates no Session or retrieval input. [Desktop configuration](../desktop/README.md) defines product limits and temporary-file ownership.
+`extensions.connector.read/update/delete` 通过主进程管理本人创建的个人连接器。读取仅返回公开配置及已配置私密键的空占位值。修改创建不可变的新版本，删除使资源 ID 退役。服务端对每项操作校验所有者。
+
+连接器保存接受 1–600 的整数 `timeoutSeconds`，默认 60 秒。该字段属于本机 MCP 配置，不能写入对话内容草稿。标准 MCP JSON 可提供同一字段。
+
+`knowledge.documents.*`、`knowledge.folders.*` 和 `knowledge.sources.read` 通过产品服务端分发已认证的管理与阅读操作。分页返回从一开始的 `page` 以及 `items`、`size`、`total`，筛选与总数来自服务端分页。写入校验内容大小和稳定重试键。文件夹创建发送可为 null 的稳定 `parentId`，响应保留上级标识，名称限制为 80 字符，重命名不改变上级或内容位置。Markdown 和网页新建转发所选 `folderId`；Markdown 修改必须提供 `expectedUpdatedAt`，拒绝同时改变文件夹。创建结果未确认时保留重试键，须先检查真实资源。文件上传通过注入的原生回调选择文件，拒绝渲染进程提交路径和解析器配置。`pdfParseMode` 仅接受 `STANDARD`（默认）或 `TEXT`（提取 PDF 内嵌文字，不执行 OCR），解析引擎由服务端决定。响应保留异步处理和删除状态。调用取消与身份切换会取消远端操作。WeKnora 地址与凭据不会经过产品桥返回。
+
+`knowledge.documents.previewMetadata` 读取原文件元数据，不依赖索引状态。`preview.open`、`preview.read`、`preview.close` 使用按员工隔离、由主进程持有的文件句柄；Renderer 收到有界 `Uint8Array` 分块，不再接收整文件 Base64。请求仅接受资源 ID、不透明传输 ID 或经校验的字节偏移。Office 渲染通过私有 JSON 分块调用官方 Host 转换服务。`download`、`openExternal` 仅接受资源 ID，将原生文件操作交给主进程。二进制 HTTP 传输拒绝重定向，流式写入调用方持有的目标，保留结构化权限错误。索引引用片段继续通过 `knowledge.sources.read` 阅读，打开原文件不会创建 Session 或增加检索输入。[桌面配置](../desktop/README.md) 定义产品限制和临时文件归属。

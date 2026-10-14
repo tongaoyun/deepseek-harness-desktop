@@ -4,10 +4,26 @@
     ".agents/notes/implemented/AGENTS.md",
     ".agents/notes/implemented/CLAUDE.md",
     ".github/review-ownership/README.md",
+    "apps/product-desktop/README.md",
+    "apps/product-desktop/docs/README.md",
     "docs/AGENTS.md",
     "docs/cordis-api/inherited.md",
+    "docs/deepseek-harness-electron-architecture.md",
     "docs/i18n/style-samples.md",
     "docs/i18n/terminology.md",
-    "docs/i18n/translation-prompt.md"
+    "docs/i18n/translation-prompt.md",
+    "docs/persistence-changes/2026-10-13-product-expert-kit-instructions.md",
+    "docs/subsystems/deepseek-harness-product.md",
+    "docs/upgrade-guide/v0.2.0-rc.2/personal-extensions/guide.md",
+    "docs/upgrade-guide/v0.2.0-rc.2/product-task-capabilities/guide.md",
+    "docs/upgrade-guide/v0.2.1-alpha.2/expert-kit-shortcut-instructions/guide.md",
+    "docs/upgrade-guide/v0.2.1-alpha.2/product-knowledge-library/guide.md",
+    "docs/upgrade-guide/v0.2.1-alpha.2/product-support/guide.md",
+    "packages/deepseek-harness-product/README.md",
+    "packages/deepseek-harness-product/desktop/README.md",
+    "packages/deepseek-harness-product/expert-kit-readme/README.md",
+    "packages/deepseek-harness-product/product/README.md",
+    "packages/deepseek-harness-product/runtime/README.md",
+    "packages/extensions/ui-deepseek-harness-product/README.md"
   ]
 }

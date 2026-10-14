@@ -153,13 +153,18 @@ export function createInstalledSkills(ctx: Context, deps: Dependencies) {
     const live = entries.some(skill => skill.connectorRefs.length > 0) ? await deps.connectors(signal) : []
     const connectors = pinned === undefined ? live : hydrateConnectors(pinned.filter(contract =>
       live.some(connector => connector.id === contract.id && connector.transport === contract.transport)), live)
-    const knowledge = new Map((entries.some(skill => skill.knowledgeBaseRefs.length > 0) ? await visible() : [])
+    const knowledge = new Map<string, Set<string>>()
+    for (const [reference, id] of (entries.some(skill => skill.knowledgeBaseRefs.length > 0) ? await visible() : [])
       .flatMap(record => typeof record.id !== 'string' ? [] : [record.id, record.referenceKey, record.reference]
-        .filter((id): id is string => typeof id === 'string').map(reference => [reference, record.id as string] as const)))
+        .filter((id): id is string => typeof id === 'string').map(reference => [reference, record.id as string] as const))) {
+      if (!capabilities.knowledgeBaseIds.includes(id)) continue
+      const candidates = knowledge.get(reference) ?? new Set<string>()
+      candidates.add(id)
+      knowledge.set(reference, candidates)
+    }
     const candidates = entries.filter(skill => skill.connectorRefs.every(id => connectors.some(connector => connector.id === id))
       && skill.knowledgeBaseRefs.every((id) => {
-        const baseId = knowledge.get(id)
-        return baseId !== undefined && (capabilities.knowledgeBaseIds.includes(baseId) || capabilities.knowledgeBaseRefs.includes(id))
+        return knowledge.get(id)?.size === 1
       })
       && skill.requiredTools.every(name => tools.has(name) || connectors.some(connector =>
         skill.connectorRefs.includes(connector.id) && connector.toolNames.some((tool) => {

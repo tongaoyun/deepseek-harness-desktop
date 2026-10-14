@@ -1,6 +1,7 @@
 /** Manual documents, website imports, and folders use explicit idempotent save operations. */
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Button, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
+import { ProductError, productFailure } from '@deepseek-harness/product/errors'
 import type { DeepSeekHarnessProductKey } from '../locales.ts'
 import css from '../DeepSeekHarnessProduct.module.css'
 import { knowledgeDocument, knowledgeFolder, useKnowledgeRequests, type KnowledgeDocument, type KnowledgeFolder } from './knowledge-data.ts'
@@ -29,6 +30,8 @@ export function KnowledgeEditor({ knowledgeBaseId, target, onClose, onSaved, t }
   const [parentId, setParentId] = useState(target.kind === 'folder' ? target.folder?.parentId ?? target.parentId ?? null : null)
   const [parentReady, setParentReady] = useState(false)
   const [metadata, setMetadata] = useState<KnowledgeDocument>()
+  const [conflict, setConflict] = useState(false)
+  const [latest, setLatest] = useState<KnowledgeDocument>()
   const [loading, setLoading] = useState(target.kind === 'markdown' && target.document !== undefined)
   const [pending, setPending] = useState(false)
   const [error, setError] = useState('')
@@ -57,7 +60,7 @@ export function KnowledgeEditor({ knowledgeBaseId, target, onClose, onSaved, t }
     set(value); setError(''); delete operation.current.id
   }
   const save = async (): Promise<void> => {
-    if (pending || loading || target.kind === 'folder' && !target.folder && !parentReady) return
+    if (pending || loading || conflict || target.kind === 'folder' && !target.folder && !parentReady) return
     setPending(true); setError('')
     operation.current.id ??= globalThis.crypto.randomUUID()
     const operationId = operation.current.id
@@ -79,8 +82,29 @@ export function KnowledgeEditor({ knowledgeBaseId, target, onClose, onSaved, t }
         }, controller.signal)
       }
       if (!controller.signal.aborted && target.kind !== 'folder') onSaved()
-    } catch (failure) { if (!controller.signal.aborted) setError(productErrorMessage(failure, t, 'knowledgeSaveFailed')) }
+    } catch (failure) {
+      if (!controller.signal.aborted) {
+        if (productFailure(failure).code === 'KNOWLEDGE_DOCUMENT_CONFLICT') { setConflict(true); setLatest(undefined) }
+        setError(productErrorMessage(failure, t, 'knowledgeSaveFailed'))
+      }
+    }
     finally { if (!controller.signal.aborted) setPending(false) }
+  }
+  const readLatest = async (): Promise<void> => {
+    if (!metadata || loading || pending) return
+    const controller = operation.current.controller
+    setLoading(true); setError('')
+    try {
+      const document = knowledgeDocument(await request('knowledge.documents.get', {
+        knowledgeBaseId, documentId: metadata.id,
+      }, controller.signal))
+      controller.signal.throwIfAborted()
+      if (document.sourceType !== 'manual' || document.canManage !== true || document.manualContent === undefined) {
+        throw new ProductError('KNOWLEDGE_MANAGEMENT_FORBIDDEN', 'Document is not editable')
+      }
+      setLatest(document)
+    } catch (failure) { if (!controller.signal.aborted) setError(productErrorMessage(failure, t, 'knowledgeReadFailed')) }
+    finally { if (!controller.signal.aborted) setLoading(false) }
   }
   const titleKey = target.kind === 'folder' ? target.folder ? 'knowledgeRenameFolder' : 'knowledgeCreateFolder'
     : target.kind === 'url' ? 'knowledgeImportUrl' : target.document ? 'knowledgeEditDocument' : 'knowledgeNewDocument'
@@ -97,7 +121,7 @@ export function KnowledgeEditor({ knowledgeBaseId, target, onClose, onSaved, t }
     className={(target.kind === 'folder' ? css.knowledgeBaseEditorModal : css.knowledgeEditorModal) as string}
     contentClassName={css.knowledgeEditorContent as string} footer={<>
       <Button variant="ghost" size="sm" onClick={onClose}>{t('cancel')}</Button>
-      <Button variant="primary" size="sm" disabled={pending || loading || !valid || !editable} onClick={() => { void save() }}>{t(pending ? 'saving' : 'knowledgeSave')}</Button>
+      <Button variant="primary" size="sm" disabled={pending || loading || conflict || !valid || !editable} onClick={() => { void save() }}>{t(pending ? 'saving' : 'knowledgeSave')}</Button>
     </>}>
     <form className={css.knowledgeEditorForm} onSubmit={(event) => { event.preventDefault(); if (valid && editable) void save() }}>
       <label>{t(target.kind === 'folder' ? 'knowledgeFolderName' : 'knowledgeDocumentTitle')}
@@ -112,6 +136,17 @@ export function KnowledgeEditor({ knowledgeBaseId, target, onClose, onSaved, t }
         onChange={(event) => { change(setContent, event.currentTarget.value) }} /></label>}
       {loading && <p role="status" className={css.catalogStatus}>{t('loading')}</p>}
       {error && <p role="alert" className={css.catalogError}>{error}</p>}
+      {conflict && <>
+        <p>{t('knowledgeConflictDraftRetained')}</p>
+        <Button variant="outline" size="sm" disabled={loading || pending} onClick={() => { void readLatest() }}>{t('knowledgeReadLatest')}</Button>
+        {latest && <>
+          <details><summary>{t('knowledgeLatestVersion')}</summary><p>{latest.filename}</p>
+            <textarea readOnly aria-label={t('knowledgeLatestVersion')} value={latest.manualContent ?? ''} /></details>
+          <Button variant="outline" size="sm" disabled={loading || pending} onClick={() => {
+            setMetadata(latest); setConflict(false); setLatest(undefined); setError(''); delete operation.current.id
+          }}>{t('knowledgeContinueDraft')}</Button>
+        </>}
+      </>}
       {!loading && !editable && <Button variant="outline" size="sm" onClick={() => { setRevision(value => value + 1) }}>{t('retry')}</Button>}
     </form>
   </Modal>

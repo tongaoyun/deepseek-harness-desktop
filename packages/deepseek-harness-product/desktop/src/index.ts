@@ -7,7 +7,7 @@ import { DeepSeekHarnessProductBridge, type ProductBridgeOptions } from '@deepse
 import { ensureDingTalkSession, DingTalkAuthorizationTimeoutError } from '@deepseek-harness/product/dingtalk-auth'
 import { isProductRuntimeMethod, type ProductSession } from '@deepseek-harness/product/protocol'
 import { DeepSeekHarnessNativeProcess } from './deepseek-harness-native-process.ts'
-import { resolveDeepSeekHarnessKnowledgeFilePolicy, resolveDeepSeekHarnessProductServerUrl, resolveDesktopSupportPolicy } from './deepseek-harness-product-config.ts'
+import { resolveDeepSeekHarnessConnectorProxyPolicy, resolveDeepSeekHarnessKnowledgeFilePolicy, resolveDeepSeekHarnessProductServerUrl, resolveDesktopSupportPolicy } from './deepseek-harness-product-config.ts'
 import { DesktopSupport } from './desktop-support.ts'
 import { ConnectorProxy } from './connector-proxy.ts'
 import { inferenceProfile } from './inference-profile.ts'
@@ -184,8 +184,11 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
   }
   const productBridge = new DeepSeekHarnessProductBridge(productBridgeOptions)
   const connectorProxy = new ConnectorProxy(signal => productBridge.invokeRuntime('connectors.list', undefined, signal),
-    (request, response, connector, signal) => personalConnectors.serveStdio(request, response, connector, signal))
-  let deepseekHarnessAuthAttempt: Promise<void> | undefined
+    (request, response, connector, signal) => personalConnectors.serveStdio(request, response, connector, signal),
+    resolveDeepSeekHarnessConnectorProxyPolicy({ packaged: app.isPackaged,
+      resourcesPath: process.resourcesPath, appPath: app.getAppPath() }))
+  let deepseekHarnessAuthAttempt: { readonly controller: AbortController; readonly owners: Set<symbol>; promise: Promise<void> } | undefined
+  const authenticationOperations = new Set<Promise<void>>()
   let deepseekHarnessAuthenticationVisible = false
   const showDeepSeekHarnessAuthentication = async (): Promise<void> => {
     const window = context.getWindow()
@@ -196,13 +199,45 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
     window.show()
     window.focus()
   }
-  const ensureDeepSeekHarnessAuth = (showStatusPage = true): Promise<void> => {
-    deepseekHarnessAuthAttempt ??= ensureDingTalkSession(productBridge, async (url) => {
-      if (showStatusPage) await showDeepSeekHarnessAuthentication()
-      await shell.openExternal(url)
-    }, { timeoutMs: 5 * 60_000, signal: lifecycle.signal }).then(() => { deepseekHarnessAuthenticationVisible = false })
-      .finally(() => { deepseekHarnessAuthAttempt = undefined })
-    return deepseekHarnessAuthAttempt
+  const ensureDeepSeekHarnessAuth = async (showStatusPage = true, signal?: AbortSignal): Promise<void> => {
+    const caller = AbortSignal.any([lifecycle.signal, ...signal ? [signal] : []])
+    caller.throwIfAborted()
+    if (deepseekHarnessAuthAttempt === undefined) {
+      const controller = new AbortController()
+      const attempt = { controller, owners: new Set<symbol>(), promise: Promise.resolve() }
+      deepseekHarnessAuthAttempt = attempt
+      attempt.promise = ensureDingTalkSession(productBridge, async (url) => {
+        if (showStatusPage) await showDeepSeekHarnessAuthentication()
+        await shell.openExternal(url)
+      }, { timeoutMs: 5 * 60_000, signal: AbortSignal.any([controller.signal, lifecycle.signal]) })
+        .then(() => { if (deepseekHarnessAuthAttempt === attempt) deepseekHarnessAuthenticationVisible = false })
+        .finally(() => {
+          if (deepseekHarnessAuthAttempt === attempt) deepseekHarnessAuthAttempt = undefined
+          authenticationOperations.delete(attempt.promise)
+        })
+      authenticationOperations.add(attempt.promise)
+    }
+    const attempt = deepseekHarnessAuthAttempt
+    const owner = Symbol()
+    attempt.owners.add(owner)
+    let cancel: (() => void) | undefined
+    try {
+      await new Promise<void>((resolve, reject) => {
+        cancel = () => {
+          reject(caller.reason instanceof Error ? caller.reason : new Error('DingTalk sign-in cancelled', { cause: caller.reason }))
+        }
+        caller.addEventListener('abort', cancel, { once: true })
+        attempt.promise.then(resolve, reject)
+      })
+      caller.throwIfAborted()
+    } finally {
+      if (cancel !== undefined) caller.removeEventListener('abort', cancel)
+      attempt.owners.delete(owner)
+      if (attempt.owners.size === 0 && deepseekHarnessAuthAttempt === attempt) {
+        deepseekHarnessAuthAttempt = undefined
+        attempt.controller.abort(new Error('DingTalk sign-in is no longer requested'))
+      }
+    }
   }
   const authenticateDeepSeekHarness = async (): Promise<boolean> => {
     while (!context.isQuitting()) {
@@ -268,7 +303,7 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
       return track(signal, async (signal) => {
         if (closed) throw new Error('Product extension is closed')
         if (method === 'auth.ensureDingTalk') {
-          await ensureDeepSeekHarnessAuth(false)
+          await ensureDeepSeekHarnessAuth(false, signal)
           return productBridge.getSession()
         }
         const result = await productBridge.invoke(method, payload, signal)
@@ -303,7 +338,7 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
       await authoring.close()
       await nativeSidecar.stop()
       await Promise.allSettled([...operations])
-      await deepseekHarnessAuthAttempt?.catch(() => undefined)
+      await Promise.allSettled([...authenticationOperations])
     },
   }
 }

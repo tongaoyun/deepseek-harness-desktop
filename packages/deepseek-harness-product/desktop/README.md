@@ -1,96 +1,101 @@
 ---
 kind: package-library
-description: "Authenticate product desktop users and manage credentials, native operations, and product resources."
+description: "认证产品桌面用户，管理凭据、原生操作与产品资源。"
 ---
 
-# Product Desktop
+# 产品桌面
 
-English | [中文](README.zh.md)
+## 概述
 
-## Summary
+进入企业工作区前通过钉钉登录。员工令牌由 Electron 主进程使用操作系统加密存储。可信桌面扩展管理产品请求和原生 sidecar。
 
-Sign in with DingTalk before opening the enterprise workspace. Employee tokens use OS-encrypted storage in Electron main. Product requests and the native sidecar are managed by a trusted desktop extension.
+## 目录
 
-## Table of Contents
-
-- [Assembly](#assembly)
-- [Device and feedback](#device-and-feedback)
-- [Model Experience](#model-experience)
-- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
-- [Dev Note](#dev-note)
+- [组合](#assembly)
+- [设备与反馈](#device-and-feedback)
+- [模型体验](#model-experience)
+- [已知限制与延期工作](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
 
 <a id="assembly"></a>
-## Assembly
+## 组合
 
-`createExtension` supplies startup preparation, product dispatch, events, and shutdown hooks to the official shell. The product assembly owns `desktop-extension.json`, `assembly.json`, server resources, and the native binary. The official profile loads no product extension by default. See the [product subsystem](../../../docs/subsystems/deepseek-harness-product.md).
+`createExtension` 向官方壳提供启动准备、产品分发、事件和关闭钩子。产品组合负责 `desktop-extension.json`、`assembly.json`、服务端资源与原生二进制。官方 profile 默认不加载产品扩展。参见[产品子系统](../../../docs/subsystems/deepseek-harness-product.md)。
 
-Package the product through `pnpm --dir apps/product-desktop run package <target>`; add `--unsigned` for unsigned artifacts. This entry selects the product assembly for the official build pipeline. Internal desktop CI and release workflows use this entry; root `package:desktop:*` commands package the official desktop without product resources.
+通过 `pnpm --dir apps/product-desktop run package <target>` 打包产品，未签名制品添加 `--unsigned`。该入口为官方构建流程选择产品组合。内部桌面 CI 与发布流程使用此入口；根目录的 `package:desktop:*` 命令打包不含产品资源的官方桌面。
 
-Product packaging resolves the native binary from Cargo metadata, including `CARGO_TARGET_DIR` and Cargo configuration. It builds and verifies the sidecar before preparing the application, then releases its temporary assembly manifest after the packaging process exits.
+产品打包通过 Cargo metadata 解析原生二进制，支持 `CARGO_TARGET_DIR` 和 Cargo 配置。准备应用前先构建并检查 sidecar，打包进程退出后清理临时组合清单。
 
-The desktop bundle keeps `electron` external so the running Electron process supplies its main-process API.
+桌面构建将 `electron` 保留为外部依赖，由正在运行的 Electron 进程提供主进程 API。
 
-`ExtensionAuthoring` owns native directory, ZIP, or standalone `SKILL.md` selection, bounded inspection, employee-scoped staging, immutable archive upload and activation. It never returns selected paths or upload credentials. Invalid paths, links, duplicate files, oversized content, and checksum mismatches fail before activation. Standalone Markdown is limited to 64 KiB; adjacent resources require directory import. Imported resources survive edits; copied catalog skills use the selected version download. Cancel or shutdown releases staging; upload work directories are always removed. A successful personal skill save installs through the official Host skill provider without preparing a task.
+`ExtensionAuthoring` 负责原生目录、ZIP 或独立 `SKILL.md` 选择、有界检查、员工隔离暂存、不可变制品上传和激活。选中文件路径和上传凭据不会返回渲染进程。非法路径、链接、重复文件、超限内容和哈希不匹配在激活前拒绝。独立 Markdown 限制为 64 KiB，附属资源需通过目录导入。导入资源随编辑保留，目录技能按选中版本下载复制。取消或关闭清理暂存，上传工作目录始终清理。个人技能保存成功后通过官方 Host 技能 Provider 安装，不准备任务。
 
-Kit import and bundled skill reading accept complete skill files up to 256 KiB, including long native descriptions. Conversation edits retain those descriptions, extra YAML fields, and associated files from main-owned staging across restart. Unchanged skill Markdown is copied byte-for-byte; body or identity edits retain its remaining frontmatter. Catalog copies preserve the selected immutable source Markdown. Native description and catalog summary validation belongs to the [product bridge](../product/README.md).
+套件导入和内置技能阅读支持最多 256 KiB 的完整技能文件，包括较长的原生描述。对话修改通过主进程暂存保留这些描述、额外 YAML 字段及关联文件，重启后仍可恢复。未修改的技能 Markdown 按原始字节复制；修改正文或标识时保留其余 frontmatter。目录技能复制保留选中不可变版本的原始 Markdown。原生描述和目录简介的校验由[产品桥](../product/README.md)负责。
 
-`extensions.delete` forwards Skill or Kit ID and version to authenticated server retirement. Employee ownership and shared-version protection are enforced on the server. Local immutable content, task snapshots, and official Session history are retained; later execution still requires server access. Connector retirement uses `PersonalConnectors` and clears its device configuration only after server deletion succeeds.
+`extensions.delete` 将技能或套件 ID 和版本转发到已认证服务端进行退役，服务端校验员工所有权并保护共享版本。本机不可变内容、任务快照及官方 Session 历史保留，后续执行仍须通过服务端授权。连接器退役由 `PersonalConnectors` 处理，仅在服务端删除成功后清理设备配置。
 
-`AuthoringSessions` stores atomic employee-scoped drafts and original resources under `extension-conversations-v1` in desktop user data. Creation records bind to preallocated official Session IDs before Agent creation and store only that Session identity. Model updates resolve catalog skill content and dependencies by immutable coordinate before committing the draft. Updates and saves serialize on a revision; stale requests fail without replacing newer content. The Host allowlist grants read, update and personal save for the matching Session; shared submission remains separate. Completed saves freeze the version. Failed saves and desktop restart retain drafts and resources; corrupt records retain raw bytes and fail only their own reads. Drafts are limited to 2 MiB and package resources to the import limits. Unsaved conversation drafts remain local to this device.
+`AuthoringSessions` 在桌面用户数据的 `extension-conversations-v1` 目录中原子保存按员工隔离的草稿及原始资源。创建记录在 Agent 创建前关联预分配的官方 Session ID，仅保存该 Session 标识。模型更新在提交草稿前，按不可变版本坐标解析目录技能的正文和依赖。更新和保存按修订号串行执行，过时请求无法替换更新的内容。Host 白名单允许对应 Session 读取、更新并保存个人资源，提交共享仍是独立操作。保存完成后固定该版本。保存失败和桌面重启保留草稿及资源；损坏记录保留原始文件，仅自身读取失败。草稿限制为 2 MiB，包资源遵循导入限制。未保存的创建草稿仅保留在本设备。
 
-`PersonalConnectors` discovers MCP tools, encrypts private headers and environment with OS storage, and relays stdio through loopback HTTP. Only actual non-destructive read-only annotations permit READ; other declared tools use official approval. Undeclared tools are refused. Public configuration goes to the server, private configuration stays employee-scoped on the device. Account changes and shutdown close owned SDK connections and children. Employee tokens only reach the product server's exact managed MCP route; configured OAuth uses the existing server provider.
+首次发送版本准备前持久保存 `pendingSave`，固定作者及完整草稿，回执丢失后按相同版本和哈希重试，不允许改写。首次准备被服务端明确拒绝时恢复编辑。激活成功先以独立的本地提交保存 `saved`，再安装技能；随后取消或安装失败不改变已保存事实。`EXTENSION_INSTALL_FAILED` 可重试本机安装，重启后不会再次上传。导入安装失败保留暂存及成功回执，修改已保存内容须另建版本。上传凭据和员工令牌不进入这些记录。
 
-`ConnectorProxy` propagates caller disconnect and shutdown cancellation through catalog reads and forwarding. Shutdown stops accepting connections and waits for pending catalog requests and stdio relay cleanup; a catalog result arriving after cancellation cannot start another upstream request.
+`PersonalConnectors` 发现 MCP 工具，使用操作系统存储加密私密 Header 与环境变量，并通过本地 HTTP 转发 stdio。只有实际非破坏性只读注解允许 READ，其他已声明工具走官方审批，未声明工具拒绝。公开配置同步服务端，私密配置按员工隔离留在设备。切换账号与关闭会结束 SDK 连接和子进程。员工令牌只发送到产品服务端精确的托管 MCP 路径，已配置 OAuth 复用现有服务端提供方。
 
-Personal connector saves serialize per employee and resource. Before sending a version, main atomically retains encrypted pending settings. A lost receipt is confirmed against the authenticated immutable catalog; restart or catalog refresh restores settings only when owner, version, public metadata, endpoint and tool names match. Unknown outcomes preserve pending settings and require retrying the same configuration; confirmed rejection removes them. Shutdown cancels and waits for saves. Pending records and temporary files never expose credentials to Renderer.
+`ConnectorProxy` 将调用方断开连接和关闭应用的取消信号贯穿目录查询与转发。关闭时停止接收连接，等待在途目录请求和 stdio 代理清理完成；取消后迟到的目录结果不能发起新的上游请求。
 
-Owner editing reads public fields with empty placeholders for local private keys. A blank value retains the existing secret only when transport, endpoint, command and arguments are unchanged; a changed destination requires new private values. Saving discovers tools and creates a new version. Deletion retires all server versions, closes cached connections and removes the current device configuration. Failed updates preserve the previous configuration.
+主进程拥有的 `product.json` 通过 `connectorProxy.responseTimeoutMs`（默认 30,000，范围 1,000–300,000）和 `streamIdleTimeoutMs`（默认 120,000，范围 1,000–3,600,000）配置 HTTP 转发。两者分别限制响应头等待和每次无数据读取。活跃 SSE 没有总时长限制；SDK 的单次操作仍使用 `timeoutSeconds` 期限。
 
-Main supplies `runtime.environment.desktopVersion` from Electron; Renderer cannot override it. Caller cancellation combines with the extension lifetime signal for Host, HTTP, and native requests. Shutdown stops background refreshes, cancels pending operations, waits for settlement, and confirms sidecar exit. Credential-free product diagnostics retain error codes, resource IDs, retryability, and dependency results.
+并发登录调用共享一次授权尝试。取消一个调用方只结束其等待；最后一个调用方取消时结束授权。关闭会取消并等待全部授权尝试，旧响应不能替换当前员工会话。
 
-Knowledge uploads use the main-process native file picker and retain the selected folder. Standard upload preserves server document processing. Text PDF upload uses a PDF-only picker and requests embedded text extraction without OCR; non-PDF selections are rejected. Main opens one regular file without following symbolic links and uploads bytes, the finite `pdfParseMode`, and the selected folder to the authenticated product server. The upload cap is the smaller of the live server limit and main-owned `knowledgeFiles.uploadMaxBytes`. Cancelling the picker returns a cancellation result without a write. Request cancellation settles native picker and save-dialog waits promptly; late choices are discarded. Local paths and WeKnora credentials are never returned to Renderer or Host; open file handles close on failure or cancellation.
+个人连接器保存按员工与资源串行执行。提交版本前，主进程原子保留加密的待确认配置。回执丢失时通过已认证的不可变目录核对；重启或刷新目录仅在所有者、版本、公开元数据、连接目标和工具名称一致时恢复配置。结果未知时保留待确认配置，需重试同一配置；明确拒绝时清理。关闭应用取消并等待保存完成。待确认记录和临时文件不会向渲染进程暴露凭据。
 
-Original preview downloads stream into random private directories with 0700 directories and 0600 files. Opaque handles bind the employee, knowledge base, document and content version. Each chunk rechecks current permission and version; cancellation, identity changes, expiry and shutdown remove private files. Startup removes abandoned owned transfers without following symbolic links. Renderer receives 256 KiB `Uint8Array` chunks; Host conversion uses bounded JSON chunks. Original downloads use the native save dialog. Manual documents export with a Markdown suffix; private filenames fit the UTF-8 byte budget while retaining ordinary extensions. System opening permits document and image formats and retains a private file until its transfer expires or the application closes.
+所有者修改时读取公开字段，本机私密键只返回空占位值。仅连接类型、地址、命令和参数均未改变时，留空才保留已有密钥；修改目标地址需要重新填写私密值。保存发现工具并创建新版本。删除使服务端全部版本退役，关闭缓存连接并移除当前版本的本机配置。修改失败保留原配置。
 
-Original metadata must provide a stable `contentVersion`. Indexing status and its `updatedAt` do not change this identity; replacement originals and edited Markdown do. Missing content identity fails closed. Office conversion and its cache use the same version.
+主进程从 Electron 提供 `runtime.environment.desktopVersion`，Renderer 无法覆盖。Host、HTTP 和原生请求将调用方取消与扩展生命周期信号组合。关闭时停止后台刷新，取消待处理操作并等待完成，确认 sidecar 已退出。不含凭据的产品诊断保留错误码、资源 ID、可重试性和依赖结果。
 
-`KnowledgeUploads` retains at most 16 employee-scoped native selections until renderer acknowledgement or explicit discard. Retries reuse the operation ID, file path, target and parsing mode, reread the live byte limit, and verify SHA-256 before sending bytes. Paths and hashes remain in main; the renderer receives only business results. Lost HTTP or IPC receipts retain the selection for retry. File changes fail before another write; discard, account changes and desktop shutdown release selections. Selections are held only for the current desktop process, and a discarded upload can still have committed remotely.
+知识库上传使用主进程原生文件选择器，保留所选文件夹。普通上传保留服务端文档处理方式；文本型 PDF 上传仅可选择 PDF，要求提取内嵌文字且不执行 OCR，非 PDF 文件拒绝上传。主进程打开单个普通文件，不跟随符号链接，并将字节、有限枚举 `pdfParseMode` 和所选文件夹上传到已认证的产品服务端。上传上限取实时服务端限制与主进程 `knowledgeFiles.uploadMaxBytes` 中较小的值。取消选择器返回取消结果，不执行写入。请求取消及时结束对原生选择器和保存窗口的等待，丢弃迟到的选择结果。本地路径和 WeKnora 凭据不会返回 Renderer 或 Host，失败或取消均关闭文件句柄。
 
-The packaged `product.json` accepts a `knowledgeFiles` object. Defaults are `previewMaxBytes` 32 MiB, `spreadsheetMaxBytes` 16 MiB, `officeInputMaxBytes` 50 MiB, `officeOutputMaxBytes` 100 MiB, `downloadMaxBytes` 250 MiB, `uploadMaxBytes` 50 MiB, `transferLifetimeMs` 15 minutes, `fileRequestTimeoutMs` 5 minutes, and `maxTransfers` 8. Values must be positive bounded integers; byte limits combine with the live server limit, while official renderers retain their own protections. Renderer cannot override this configuration.
+原文件预览流式写入随机私有目录，目录权限为 0700，文件权限为 0600。不透明句柄绑定员工、知识库、文档及内容版本；每个分块都重新检查当前权限和版本。取消、身份变化、过期及关闭应用均清理私有文件。启动时清理遗留的受管传输，不跟随符号链接。Renderer 收到最大 256 KiB 的 `Uint8Array` 分块，Host 转换使用有界 JSON 分块。下载原文件使用原生保存对话框；在线文档带 Markdown 后缀导出，私有文件名按 UTF-8 字节预算截断并保留普通扩展名。系统打开只允许文档和图片格式，私有文件保留至传输过期或应用关闭。
 
-Startup writes a credential-free model overlay from the server bootstrap's exact model IDs. DeepSeek models use the official DeepSeek adapter; other models use the official pi-ai adapter's OpenAI-compatible gateway route. The product profile omits the public account route. A valid saved default is retained; an unavailable default is replaced with the server's first model before task creation. Existing Session model selections remain explicit and can be changed through the official model selector.
+原件元数据必须提供稳定的 `contentVersion`。索引状态及其 `updatedAt` 不改变内容标识，替换原件或编辑 Markdown 则会改变。内容标识缺失时拒绝读取，Office 转换及其缓存使用同一版本。
 
-Local MCP configuration stores `timeoutSeconds` with encrypted device settings, from 1 through 600, defaulting to 60. Connection, complete paginated discovery, and tool calls honor this deadline and caller cancellation. Host receives the credential-free timeout and applies it through the official MCP client. Creating a connector allows two operation deadlines plus server-save time in the generic desktop transport; Host catalog requests allow the maximum connection and discovery deadlines. Configured OAuth retains the default timeout.
+`KnowledgeUploads` 最多保留 16 个按员工隔离的原生文件选择，直到渲染进程确认或明确结束重试。重试复用请求编号、文件路径、目标和解析方式，重新读取实时字节限制，并在发送前校验 SHA-256。路径和哈希仅留在主进程，渲染进程只收到业务结果。HTTP 或 IPC 响应丢失时保留选择以供重试；文件变化在再次写入前拒绝。结束重试、切换账号和桌面关闭释放选择。选择仅保留在本次桌面进程内，结束重试的上传仍可能已在远端提交。
 
-## Device and feedback
+打包的 `product.json` 支持 `knowledgeFiles` 对象，默认值为：`previewMaxBytes` 32 MiB、`spreadsheetMaxBytes` 16 MiB、`officeInputMaxBytes` 50 MiB、`officeOutputMaxBytes` 100 MiB、`downloadMaxBytes` 250 MiB、`uploadMaxBytes` 50 MiB、`transferLifetimeMs` 15 分钟、`fileRequestTimeoutMs` 5 分钟、`maxTransfers` 8。配置值必须是有界正整数；字节限制与实时服务端上限共同生效，官方查看器仍保留自身保护。Renderer 不能覆盖该配置。
 
-`DesktopSupport` reports main-owned app version, platform, architecture, display scales and native method availability after employee authentication. A stable UUIDv8 derived from the native installation identity identifies the device. Packaged `product.json` requires `support.heartbeatIntervalMs` (60,000–3,600,000) and `support.reportIntervalMs` (at least the heartbeat interval, at most 86,400,000). Presence is reported between full capability reports; metadata changes force a full report. Failures retain a visible degraded reporting state and retry on focus or the next interval without blocking conversations. Identity changes cancel requests and reset employee state; shutdown cancels and waits for in-flight operations before stopping the sidecar.
+启动时按服务端 Bootstrap 的精确模型 ID 生成不含凭据的模型 overlay。DeepSeek 模型使用官方 DeepSeek 适配器，其余模型使用官方 pi-ai 适配器的 OpenAI 兼容网关路由。产品 profile 不加载公共账号路由。有效的已保存默认模型会保留，不可用的默认模型在创建任务前替换为服务端第一个模型。已有 Session 的模型选择仍然显式保存，可通过官方模型选择器修改。
 
-The product settings launcher exposes employee-initiated feedback with text, category and up to four explicit PNG/JPEG/WebP screenshots of at most 5 MiB each. Main validates payloads, adds the true version and device ID, and submits with an employee-scoped UUID idempotency key. Renderer receives only the receipt ID. Failed or cancelled requests retain the draft and key for retry; changing content creates a new key. Device reporting and feedback never collect conversation history, local paths, employee tokens, or runtime bootstrap secrets. The product has no desktop execution-audit API.
+本机 MCP 配置将 `timeoutSeconds` 保存在加密设备配置中，范围 1–600 秒，默认 60 秒。连接、完整的分页工具发现和工具调用遵循该期限及调用方取消。Host 接收无凭据超时配置并交给官方 MCP 客户端。创建连接器的通用桌面传输期限包含两次操作期限和服务端保存时间，Host 目录查询允许最大连接及发现期限。已配置 OAuth 保留默认超时。
+
+<a id="device-and-feedback"></a>
+## 设备与反馈
+
+`DesktopSupport` 在员工认证后上报主进程提供的应用版本、平台、架构、显示缩放及原生方法可用性。设备标识为原生安装标识派生的稳定 UUIDv8。打包的 `product.json` 必须提供 `support.heartbeatIntervalMs`（60,000–3,600,000）及 `support.reportIntervalMs`（不小于心跳间隔，不超过 86,400,000）。完整能力上报之间发送在线心跳，元信息变更触发完整上报。失败保留可见的异常状态，在窗口聚焦或下一周期重试，不阻塞对话。账号切换取消请求并重置员工状态；关闭时取消并等待在途操作，再停止 sidecar。
+
+产品设置入口提供员工主动反馈，包含正文、分类及最多四张主动选择的 PNG/JPEG/WebP 截图，每张不超过 5 MiB。主进程校验内容、补充真实版本和设备 ID，并使用员工范围内的 UUID 幂等键提交；渲染进程仅收到回执 ID。失败或取消保留草稿及重试键，修改内容生成新键。设备上报和反馈不收集对话历史、本地路径、员工令牌或运行 Bootstrap 密钥。产品不提供桌面执行审计 API。
 
 <a id="model-experience"></a>
-## Model Experience
+## 模型体验
 
-### Product desktop
+### 产品桌面
 
-#### What the model sees
+#### 模型看到的内容
 
-Main supplies inference configuration to Host through `prepareHost`. Its loopback MCP relay replaces upstream credentials with a private relay capability and checks connector availability on each request. Employee tokens remain in main; Renderer receives no employee token or runtime bootstrap secret.
+主进程通过 `prepareHost` 向 Host 提供推理配置。本地 MCP 代理将上游凭据替换为私有代理凭证，并逐请求检查连接器可用性。员工令牌留在主进程，Renderer 不接收员工令牌或运行时 Bootstrap 机密。
 
-#### Token effect
+#### Token 影响
 
-Authentication and native operations add no provider tokens.
+认证和原生操作不增加模型 Token。
 
-#### KV Cache effect
+#### KV Cache 影响
 
-This package does not assemble provider requests or cache entries.
+此包不组装模型请求或缓存条目。
 
-## Known Limitations and Deferred Work
+## 已知限制与延期工作
 <a id="known-limitations-and-deferred-work"></a>
 
-- Live DingTalk login needs a reachable product service. Packaging and native binaries require the target platform toolchain; signing and deployment are separate operations.
+- 真实钉钉登录需要可访问的产品服务。打包和原生二进制依赖目标平台工具链，签名和部署是独立操作。
 
 <a id="dev-note"></a>
-### Dev Note
+### 开发备注
 
-Shutdown cancels authentication polling, disposes product refreshes, and stops the sidecar. Method allowlists belong to the product protocol; preload transports namespaced requests and the shell validates their sender. After building and preparing the local macOS runtime, run `DSH_DESKTOP_SMOKE=1 DSH_SNAPSHOT=replay pnpm exec vitest run --config vitest.web.config.ts apps/web/tests/deepseek-harness-catalog.e2e.ts` to verify both Electron profiles against an isolated product fixture.
+关闭时取消认证轮询、停止产品刷新并结束 sidecar。方法白名单属于产品协议，preload 传输命名空间请求，壳校验请求来源。构建并准备本地 macOS 运行时后，执行 `DSH_DESKTOP_SMOKE=1 DSH_SNAPSHOT=replay pnpm exec vitest run --config vitest.web.config.ts apps/web/tests/deepseek-harness-catalog.e2e.ts`，用独立产品服务夹具验证两种 Electron profile。

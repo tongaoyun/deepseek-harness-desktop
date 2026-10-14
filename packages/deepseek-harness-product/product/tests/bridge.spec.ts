@@ -128,6 +128,56 @@ describe('DeepSeekHarnessProductBridge', () => {
     expect(calls).toEqual([{ method: 'device-identity.get', payload: { scope: 'employee' } }])
   })
 
+  it('refreshes committed content and authoring state after a device installation failure', async () => {
+    let reads = 0
+    const failure = new ProductError('EXTENSION_INSTALL_FAILED', 'Saved, but installation failed', true)
+    const bridge = new DeepSeekHarnessProductBridge({ serverUrl: 'https://deepseek-harness.test',
+      sessionToken: 'private-token', initialSession: { authenticated: true, employeeId: 'employee-1' },
+      authoring: async () => { throw failure },
+      fetch: (input) => { reads++; return catalogFetch(input) },
+    })
+    const events: ProductEvent[] = []
+    bridge.subscribe(event => events.push(event))
+    try {
+      await bridge.invoke('skills.list')
+      const before = reads
+      await expect(bridge.invoke('extensions.authoring.save', { sessionId: 'creation', revision: 1 })).rejects.toBe(failure)
+      expect(reads).toBeGreaterThan(before)
+      expect(events).toContainEqual({ type: 'authoring.changed', payload: { sessionId: 'creation' } })
+      expect(events).toContainEqual(expect.objectContaining({ type: 'catalog.changed' }))
+    } finally { await bridge.dispose() }
+  })
+
+  it('does not publish a delayed authoring result to another employee', async () => {
+    let settle: (() => void) | undefined
+    let requestSignal: AbortSignal | undefined
+    const fetch = vi.fn(catalogFetch)
+    const bridge = new DeepSeekHarnessProductBridge({ serverUrl: 'https://deepseek-harness.test', fetch,
+      sessionToken: 'first-token', initialSession: { authenticated: true, employeeId: 'employee-1' },
+      authoring: async (_method, _payload, _api, _identity, signal) => {
+        requestSignal = signal
+        await new Promise<void>((resolve) => { settle = resolve })
+        throw new ProductError('EXTENSION_INSTALL_FAILED', 'Saved before the identity change', true)
+      },
+    })
+    const events: ProductEvent[] = []
+    bridge.subscribe(event => events.push(event))
+    const pending = bridge.invoke('extensions.authoring.save', { sessionId: 'first-creation', revision: 1 })
+    const rejected = expect(pending).rejects.toThrow()
+    try {
+      await vi.waitFor(() => { expect(settle).toBeDefined() })
+      bridge.setSession({ authenticated: true, employeeId: 'employee-2' }, 'second-token')
+      await bridge.refreshCatalog()
+      events.length = 0
+      const requests = fetch.mock.calls.length
+      expect(requestSignal?.aborted).toBe(true)
+      settle?.()
+      await rejected
+      expect(events).toEqual([])
+      expect(fetch).toHaveBeenCalledTimes(requests)
+    } finally { settle?.(); await bridge.dispose() }
+  })
+
   it('prepares an Expert Kit through the task runtime with its captured Session and cancellation', async () => {
     const result = { kind: 'CURRENT_SESSION', presetId: 'product-task-fixture', dependencyChecks: [] }
     const taskCapabilities = vi.fn(() => Promise.resolve(result))
@@ -417,26 +467,33 @@ describe('DeepSeekHarnessProductBridge', () => {
       serverUrl: 'https://deepseek-harness.test',
       fetch: (input) => {
         const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+        if (url.endsWith('/authorization-requests')) return Promise.resolve(Response.json({ success: true,
+          data: { state: 'state-12345678', authorizationUrl: 'https://login.example.test/dingtalk' } }))
         expect(url).toContain('/api/v1/dingtalk-auth/authorization-requests/state-12345678')
         return Promise.resolve(Response.json({ success: true, data: { status: 'pending', session: null } }))
       },
     })
 
+    await bridge.invoke('auth.beginDingTalk')
     await expect(bridge.invoke('auth.pollDingTalk', { state: 'state-12345678' }))
       .resolves.toEqual({ status: 'pending', session: null })
     expect(bridge.getSession()).toEqual({ authenticated: false })
+    await bridge.dispose()
   })
 
   it('keeps the completed DingTalk employee token outside the Renderer response', async () => {
     const expiresAt = Math.floor(Date.now() / 1_000) + 1_800
     const bridge = new DeepSeekHarnessProductBridge({
       serverUrl: 'https://deepseek-harness.test',
-      fetch: async () => Response.json({ success: true, data: {
-        status: 'authorized', session: { sessionToken: 'private-employee-token', expiresAt,
-          employee: { employeeId: 'employee-1', employeeName: 'Employee' } }, extraSecret: 'private-employee-token',
-      } }),
+      fetch: async input => new Request(input).url.endsWith('/authorization-requests')
+        ? Response.json({ success: true, data: { state: 'state-12345678', authorizationUrl: 'https://login.example.test/dingtalk' } })
+        : Response.json({ success: true, data: {
+          status: 'authorized', session: { sessionToken: 'private-employee-token', expiresAt,
+            employee: { employeeId: 'employee-1', employeeName: 'Employee' } }, extraSecret: 'private-employee-token',
+        } }),
     })
     try {
+      await bridge.invoke('auth.beginDingTalk')
       const result = await bridge.invoke('auth.pollDingTalk', { state: 'state-12345678' })
       expect(result).toEqual({ status: 'authorized', session: { authenticated: true,
         employeeId: 'employee-1', displayName: 'Employee', expiresAt: String(expiresAt) } })

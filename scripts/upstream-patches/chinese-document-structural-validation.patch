@@ -1,0 +1,252 @@
+diff --git a/scripts/markdown-validation.spec.ts b/scripts/markdown-validation.spec.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..4a48c874668d2ea14bccf211978ad12388b831ed
+--- /dev/null
++++ b/scripts/markdown-validation.spec.ts
+@@ -0,0 +1,16 @@
++import { describe, expect, it } from 'vitest'
++import { markdownValidationSource } from './markdown.ts'
++
++describe('Chinese documentation validation headings', () => {
++  it('normalizes structural headings while preserving source lines and entry titles', () => {
++    const source = '# 产品\n\n## 概述\n\n正文\n\n## 模型体验\n\n### 知识检索\n\n#### 模型看到的内容\n\n#### Token 影响\n\n#### KV Cache 影响\n\n## 迁移\n'
++    const normalized = markdownValidationSource(source)
++    expect(normalized).toBe('# 产品\n\n## Summary\n\n正文\n\n## Model Experience\n\n### 知识检索\n\n#### What the model sees\n\n#### Token effect\n\n#### KV Cache effect\n\n## Migration\n')
++    expect(normalized.split('\n')).toHaveLength(source.split('\n').length)
++  })
++
++  it('does not rewrite prose, fenced code, comments or existing English headings', () => {
++    const source = '概述\n\n```md\n## 概述\n```\n\n<!--\n## 模型体验\n-->\n\n## Summary\n\n## 未知章节\n'
++    expect(markdownValidationSource(source)).toBe(source)
++  })
++})
+diff --git a/scripts/markdown.ts b/scripts/markdown.ts
+index f221d1c342b9fe25440b21f9c8583949f5c019f4..09c4daeca527afc7c914a3427db14f209ed4eb08 100644
+--- a/scripts/markdown.ts
++++ b/scripts/markdown.ts
+@@ -44,6 +44,25 @@ export function parseMarkdown(source: string): Nodes {
+   return fromMarkdown(source, { extensions: [gfm()], mdastExtensions: [gfmFromMarkdown()] })
+ }
+ 
++/** Normalize Chinese documentation headings for language-independent structural checks.
++ * @param source Authored Markdown; code blocks and prose remain unchanged.
++ * @returns Validation text with the same physical line count as the source.
++ */
++export function markdownValidationSource(source: string): string {
++  const names: Readonly<Record<string, string>> = {
++    '概述': 'Summary', '目录': 'Table of Contents', '模型体验': 'Model Experience',
++    '已知限制与延期工作': 'Known Limitations and Deferred Work', '开发备注': 'Dev Note',
++    '模型看到的内容': 'What the model sees', 'Token 影响': 'Token effect', 'KV Cache 影响': 'KV Cache effect',
++    '变更': 'Change', '迁移': 'Migration',
++  }
++  const lines = source.split('\n')
++  for (const heading of markdownHeadingLines(source)) {
++    const name = names[heading.text]
++    if (name !== undefined && /^#{1,6} /.test(heading.raw)) lines[heading.index - 1] = `${'#'.repeat(heading.depth)} ${name}`
++  }
++  return lines.join('\n')
++}
++
+ /**
+  * Visit a Markdown tree depth-first; returning false prunes a node's children.
+  * @param node - current tree node.
+diff --git a/scripts/persistence-changes.spec.ts b/scripts/persistence-changes.spec.ts
+index 9cd0734b64aaf35afcda39a7b3023d4e551b9de2..41b13e8ae6fca202d078ba7f11b4aaca42b6d374 100644
+--- a/scripts/persistence-changes.spec.ts
++++ b/scripts/persistence-changes.spec.ts
+@@ -671,6 +671,19 @@ describe('persistence changes current-tree commands', () => {
+     expect(() => loadPersistenceHistory(root)).toThrow('unreferenced')
+   })
+ 
++  it('accepts explicitly unpaired history while still checking its prose and snapshot', () => {
++    const root = fixture()
++    baseline(root)
++    const path = `docs/persistence-changes/${BASE_ID}.md`
++    mkdirSync(join(root, 'scripts'), { recursive: true })
++    writeFileSync(join(root, 'scripts/translation-pairing.manifest.json'), JSON.stringify({ excluded: [path] }))
++    rmSync(join(root, 'docs/persistence-changes', `${BASE_ID}.zh.md`))
++    expect(loadPersistenceHistory(root).entries).toHaveLength(1)
++    const source = readFileSync(join(root, path), 'utf8')
++    writeFileSync(join(root, path), source.replaceAll('Optional payload metadata preserves the recorded value.', 'TODO: explain this change.'))
++    expect(() => loadPersistenceHistory(root)).toThrow('complete compatibility')
++  })
++
+   it('excludes nested historical format documents and schemas from acknowledgements', () => {
+     const root = fixture()
+     baseline(root)
+diff --git a/scripts/persistence-changes.ts b/scripts/persistence-changes.ts
+index 6ba52e70726eb3d849dd4de68e9ed98d3a0d6775..d7f66be3e3a29bf93ede946c8f622d8ae5715aa1 100644
+--- a/scripts/persistence-changes.ts
++++ b/scripts/persistence-changes.ts
+@@ -12,6 +12,7 @@ import { persistenceCatalogArtifacts } from './gen-persistence-catalog.ts'
+ import { renderPersistencePair } from './persistence-artifacts.ts'
+ import { loadPersistenceFinalization } from './persistence-finalization.ts'
+ import type { PersistenceArtifact } from './persistence-artifacts.ts'
++import { isTranslationPairingManifestExcluded, parseTranslationPairingManifest } from './translation-pairing.ts'
+ 
+ const HISTORY_DIRECTORY = 'docs/persistence-changes'
+ const CURRENT_SCHEMA = 'docs/persistence-schema.json'
+@@ -648,6 +649,8 @@ function readPersistenceEntries(root: string, allowIncompleteId?: string): Persi
+   const files = readdirSync(directory).sort()
+   const documents = files.filter(file => file.endsWith('.md') && !file.endsWith('.zh.md') && file !== 'README.md' && file !== 'AGENTS.md')
+   const snapshots = new Set(files.filter(file => file.endsWith('.schema.json')))
++  const manifestPath = join(root, 'scripts/translation-pairing.manifest.json')
++  const manifest = existsSync(manifestPath) ? parseTranslationPairingManifest(readFileSync(manifestPath, 'utf8')) : { excluded: [] }
+   const entries = documents.map((filename) => {
+     const source = readFileSync(join(directory, filename), 'utf8').replaceAll('\r\n', '\n')
+     const allowIncomplete = filename === `${allowIncompleteId}.md`
+@@ -655,6 +658,7 @@ function readPersistenceEntries(root: string, allowIncompleteId?: string): Persi
+     const snapshotName = `${change.id}.schema.json`
+     if (!snapshots.delete(snapshotName)) throw new Error(`${filename}: missing schema snapshot ${snapshotName}`)
+     const snapshot = parsePersistenceSnapshot(JSON.parse(readFileSync(join(directory, snapshotName), 'utf8')))
++    if (isTranslationPairingManifestExcluded(`${HISTORY_DIRECTORY}/${filename}`, manifest)) return { record: change, snapshot }
+     const translatedName = `${change.id}.zh.md`
+     if (!files.includes(translatedName)) throw new Error(`${filename}: missing Chinese counterpart`)
+     const translated = readFileSync(join(directory, translatedName), 'utf8').replaceAll('\r\n', '\n')
+diff --git a/scripts/project-doc-site.spec.ts b/scripts/project-doc-site.spec.ts
+index a35da334b75f698fc56f5ea3b2a9315fa8ff96dc..4e866c3cf668ac7402bffdb0233f48ba5ef02c83 100644
+--- a/scripts/project-doc-site.spec.ts
++++ b/scripts/project-doc-site.spec.ts
+@@ -428,7 +428,8 @@ describe('docsPages locale routes', () => {
+     for (const readme of ['README.md', 'README.zh.md']) {
+       const rows = readFileSync(join(repositoryRoot, 'docs/subsystems', readme), 'utf8')
+       const missing = pages.filter((page) => {
+-        const target = readme.endsWith('.zh.md') ? page.replace(/\.md$/, '.zh.md') : page
++        const translated = page.replace(/\.md$/, '.zh.md')
++        const target = readme.endsWith('.zh.md') && existsSync(resolve(repositoryRoot, 'docs/subsystems', translated)) ? translated : page
+         return !rows.includes(`| [${page}](${target}) |`)
+       })
+       expect(missing, `${readme} must carry one table row per subsystem page`).toEqual([])
+diff --git a/scripts/translation-pairing.manifest.json b/scripts/translation-pairing.manifest.json
+index f9bb1549a2395e139e66d2f7e51f1c5df482c97e..d2afc1b99bea41aab89beb9cb2766f982249b0bd 100644
+--- a/scripts/translation-pairing.manifest.json
++++ b/scripts/translation-pairing.manifest.json
+@@ -4,10 +4,26 @@
+     ".agents/notes/implemented/AGENTS.md",
+     ".agents/notes/implemented/CLAUDE.md",
+     ".github/review-ownership/README.md",
++    "apps/product-desktop/README.md",
++    "apps/product-desktop/docs/README.md",
+     "docs/AGENTS.md",
+     "docs/cordis-api/inherited.md",
++    "docs/deepseek-harness-electron-architecture.md",
+     "docs/i18n/style-samples.md",
+     "docs/i18n/terminology.md",
+-    "docs/i18n/translation-prompt.md"
++    "docs/i18n/translation-prompt.md",
++    "docs/persistence-changes/2026-10-13-product-expert-kit-instructions.md",
++    "docs/subsystems/deepseek-harness-product.md",
++    "docs/upgrade-guide/v0.2.0-rc.2/personal-extensions/guide.md",
++    "docs/upgrade-guide/v0.2.0-rc.2/product-task-capabilities/guide.md",
++    "docs/upgrade-guide/v0.2.1-alpha.2/expert-kit-shortcut-instructions/guide.md",
++    "docs/upgrade-guide/v0.2.1-alpha.2/product-knowledge-library/guide.md",
++    "docs/upgrade-guide/v0.2.1-alpha.2/product-support/guide.md",
++    "packages/deepseek-harness-product/README.md",
++    "packages/deepseek-harness-product/desktop/README.md",
++    "packages/deepseek-harness-product/expert-kit-readme/README.md",
++    "packages/deepseek-harness-product/product/README.md",
++    "packages/deepseek-harness-product/runtime/README.md",
++    "packages/extensions/ui-deepseek-harness-product/README.md"
+   ]
+ }
+diff --git a/scripts/verify-package-readme-limitations.ts b/scripts/verify-package-readme-limitations.ts
+index 4f640823651d11fd790acc73fe6b607c06943942..d84c739cb5a6aaae819109e259c856dd10258d10 100644
+--- a/scripts/verify-package-readme-limitations.ts
++++ b/scripts/verify-package-readme-limitations.ts
+@@ -8,7 +8,7 @@
+ 
+ import { existsSync, globSync, readFileSync } from 'node:fs'
+ import { resolve, sep } from 'node:path'
+-import { markdownHeadingLines, markdownProseLines } from './markdown.ts'
++import { markdownHeadingLines, markdownProseLines, markdownValidationSource } from './markdown.ts'
+ 
+ const root = resolve(import.meta.dirname, '..')
+ 
+@@ -50,7 +50,7 @@ for (const pkg of scannedPackages) {
+     failures.push(`${readme}: package manifest has no sibling README with the \`${CANONICAL}\` section`)
+     continue
+   }
+-  const source = readFileSync(resolve(root, readme), 'utf8')
++  const source = markdownValidationSource(readFileSync(resolve(root, readme), 'utf8'))
+   const lines = markdownProseLines(source)
+   const headings = markdownHeadingLines(source)
+   const limitations = headings.filter(heading => isLimitationsLike(heading.text))
+diff --git a/scripts/verify-package-readme-model-experience.ts b/scripts/verify-package-readme-model-experience.ts
+index 5aa525a4d6f8729329337d2b7fcc4fceb2cbd636..4b4aefb7d6584e5cf9de98dd13f6615780485dd5 100644
+--- a/scripts/verify-package-readme-model-experience.ts
++++ b/scripts/verify-package-readme-model-experience.ts
+@@ -7,7 +7,7 @@
+ 
+ import { existsSync, globSync, readFileSync } from 'node:fs'
+ import { relative, resolve, sep } from 'node:path'
+-import { markdownHeadingLines, markdownProseLines, type MarkdownProseLine } from './markdown.ts'
++import { markdownHeadingLines, markdownProseLines, markdownValidationSource, type MarkdownProseLine } from './markdown.ts'
+ 
+ const root = resolve(import.meta.dirname, '..')
+ const HEADING = '## Model Experience'
+@@ -301,9 +301,9 @@ function validateNestedVerbatim(raw: readonly string[], fragments: Set<string>):
+   return { blocks }
+ }
+ 
+-/** GitHub-style fragment for the simple ASCII nested titles allowed by these rules. */
++/** GitHub-style fragment retaining authored Unicode letters and numbers. */
+ function headingFragment(title: string): string {
+-  return title.toLowerCase().replaceAll('`', '').replaceAll(/[^a-z0-9 _-]/g, '').trim().replaceAll(/\s+/g, '-')
++  return title.toLowerCase().replaceAll('`', '').replaceAll(/[^\p{L}\p{N} _-]/gu, '').trim().replaceAll(/\s+/g, '-')
+ }
+ 
+ /** A direct stable system-prompt contribution, as named by the README rules. */
+@@ -366,7 +366,7 @@ for (const packageJson of packageJsons) {
+     continue
+   }
+ 
+-  const text = readFileSync(abs, 'utf8')
++  const text = markdownValidationSource(readFileSync(abs, 'utf8'))
+   const rawLines = text.split('\n')
+   const lines = markdownProseLines(text)
+   const headings = markdownHeadingLines(text)
+diff --git a/scripts/verify-package-readme-summaries.ts b/scripts/verify-package-readme-summaries.ts
+index bc96d2b1c74c668219ef2a046c6518c38e35decc..803a5f866088f589d0840f8347e89293a48ae958 100644
+--- a/scripts/verify-package-readme-summaries.ts
++++ b/scripts/verify-package-readme-summaries.ts
+@@ -2,6 +2,7 @@
+ 
+ import { globSync, readFileSync } from 'node:fs'
+ import { resolve } from 'node:path'
++import { markdownValidationSource } from './markdown.ts'
+ 
+ const root = resolve(import.meta.dirname, '..')
+ 
+@@ -38,7 +39,7 @@ function readKind(source: string): string | undefined {
+  * @returns Diagnostics for a missing or oversized Summary.
+  */
+ export function packageReadmeSummaryErrors(file: string, source: string): string[] {
+-  const summary = h2Body(source, 'Summary')
++  const summary = h2Body(markdownValidationSource(source), 'Summary')
+   if (summary === undefined) return [`${file}: missing \`## Summary\``]
+ 
+   const words = countWords(summary)
+diff --git a/scripts/verify-upgrade-guides.ts b/scripts/verify-upgrade-guides.ts
+index bb067cb41fbe0d4293db8334cf252ad7f8ed1863..fc1be79e86382e1eb73a188342ea5a4cb59dfee5 100644
+--- a/scripts/verify-upgrade-guides.ts
++++ b/scripts/verify-upgrade-guides.ts
+@@ -9,6 +9,7 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs'
+ import { join, resolve } from 'node:path'
+ import { JSON_SCHEMA, load } from 'js-yaml'
+ import { fromMarkdown } from 'mdast-util-from-markdown'
++import { markdownValidationSource } from './markdown.ts'
+ 
+ const ROOT = resolve(import.meta.dirname, '..')
+ const GUIDE_ROOT = 'docs/upgrade-guide'
+@@ -68,7 +69,10 @@ export function collectUpgradeGuideViolations(root: string): string[] {
+       continue
+     }
+     if (name === 'guide.md' || name === 'guide.zh.md') {
+-      for (const violation of guideViolations(readFileSync(join(directory, file), 'utf8'), LANGUAGES[name])) violations.push(`${path}: ${violation}`)
++      const source = readFileSync(join(directory, file), 'utf8')
++      for (const violation of guideViolations(name === 'guide.md' ? markdownValidationSource(source) : source, LANGUAGES[name])) {
++        violations.push(`${path}: ${violation}`)
++      }
+     }
+   }
+   return violations

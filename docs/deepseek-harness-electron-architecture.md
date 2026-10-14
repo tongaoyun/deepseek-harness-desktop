@@ -1,28 +1,26 @@
-# DeepSeek Harness Electron product layer
+# DeepSeek Harness Electron 产品层
 
-English | [中文](deepseek-harness-electron-architecture.zh.md)
+DeepSeek Harness桌面端以 DeepSeek Harness `dsh-v0.2.1-alpha.2` 为唯一桌面、运行时和会话基线。Electron 官方窗口、`apps/desktop-host`、Harness Session、Conversation、Browser、Approval、Question、Tool、历史回放和 Office 由上游实现负责。
 
-The DeepSeek Harness desktop uses DeepSeek Harness `dsh-v0.2.1-alpha.2` as its only desktop, runtime, and session baseline. The official Electron window, `apps/desktop-host`, Harness Session, Conversation, Browser, Approval, Question, Tool, history replay, and Office are owned by upstream.
+[产品子系统](subsystems/deepseek-harness-product.md)定义独立的协议、运行时、桌面和 UI 包。产品 UI 使用 `window.dshDesktop.extensions` 的 `product` 命名空间访问：
 
-The [product subsystem](subsystems/deepseek-harness-product.md) defines the independent protocol, runtime, desktop, and UI packages. The product UI uses the `product` namespace of `window.dshDesktop.extensions` for:
+- 钉钉企业登录和员工会话；
+- 专家套件、技能和连接器目录；
+- WeKnora 知识库；
+- 设备上报状态及员工主动反馈；
+- 系统级定时任务；
+- 成果、业务引用和产品标签。
 
-- DingTalk enterprise sign-in and employee session;
-- expert-kit, skill, and connector catalogs;
-- WeKnora knowledge base;
-- device reporting status and employee-initiated feedback;
-- System schedules;
-- artifacts, business references, and product labels.
+Renderer 通过通用 preload 传输调用产品和原生方法，产品包校验方法白名单。Electron 校验所属窗口、来源和主 frame。员工令牌保留在主进程；Host 接收推理配置和私有 loopback MCP relay 凭证，Renderer 不接收员工令牌或 Bootstrap 机密。UI 通过官方 Session、Workspace、Preset 和草稿 API 选择能力；Turn、Step、Tool Card 和 Transcript 由 Harness 管理。
 
-Renderer calls product and native methods through the generic preload transport; the product package validates its method allowlist. Electron validates the owning window, origin, and main frame. Employee tokens remain in main. Host receives inference configuration and a private loopback MCP relay capability, while Renderer receives neither employee tokens nor bootstrap secrets. The UI selects capabilities through official Session, Workspace, Preset, and draft APIs; Harness owns Turns, Steps, Tool Cards, and Transcripts.
+Host 只能通过私有 Electron IPC 请求目录、制品、连接器、知识库和桌面版本。取消传递到主进程、Host 和 HTTP 请求。公开失败保留错误码、相关资源和可重试性，不包含凭据文本；未知失败使用通用诊断。产品制品在解压前后执行哈希、条目数量、压缩大小、解压大小、路径和文件类型限制。生成的 Skill、Agent Preset、MCP 工具、提示上下文和 Session 事件全部由官方 Harness 注册表管理。
 
-The Host requests only catalog, artifact, connector, knowledge, and desktop-version operations over private Electron IPC. Cancellation reaches main, Host, and HTTP requests. Published failures retain codes, related resources, and retryability without credential text; unknown failures use generic diagnostics. Product archives are verified and extracted with entry-count, compressed-size, expanded-size, path, and file-type limits. Official Harness registries own the resulting Skills, Agent Presets, MCP tools, prompt context, and Session events.
+产品桌面启动时续期已保存的钉钉会话或在系统浏览器完成钉钉 OAuth，读取已认证的 Bootstrap，再向官方 Host 提供推理配置和 Loader overlay。产品桌面包负责登录、加密存储、relay 和 sidecar 清理以及打包资源。官方 profile 可不加载这些扩展启动。模型请求和 Session 执行由 Host 负责。
 
-Product desktop startup refreshes the stored DingTalk session or completes DingTalk OAuth in the system browser, reads the authenticated bootstrap, and supplies inference configuration and Loader overlays to the official Host. The desktop product package owns login, encrypted storage, relay and sidecar cleanup, and packaging resources. The official profile boots without these extensions. Host owns all model requests and Session execution.
+原生产品方法通过 `native/deepseek-harness` 的 `deepseek-harness.native.v1` 行协议接入。当前协议提供受限的文件、附件、SQLite、凭据、钉钉状态、设备标识、图片预览和文件撤销方法；路径限制在 Electron 分配的数据目录内，文件载荷使用 hex 编码并限制为 8 MiB。该 sidecar 不承载 Harness 执行逻辑，不保留旧 Tauri `invoke` 协议。
 
-Native product methods use the `deepseek-harness.native.v1` line protocol in `native/deepseek-harness`. The protocol provides bounded filesystem, attachment, SQLite, credential, DingTalk state, device identity, image preview, and file undo methods. Paths stay within Electron's assigned data directory and file payloads use hex encoding with an 8 MiB limit. The sidecar does not host Harness execution and has no legacy Tauri `invoke` protocol.
+[产品桌面包](../packages/deepseek-harness-product/desktop/README.md#device-and-feedback)负责随生命周期管理的设备上报和员工主动反馈。执行审计不上传服务端，官方 Session 历史保留在本地。
 
-The [product desktop package](../packages/deepseek-harness-product/desktop/README.md#device-and-feedback) owns lifecycle-bound device reports and explicit employee feedback. Execution audit is not reported to the server; official Session history remains local.
+[产品交付参考](../apps/product-desktop/README.md)说明 GitHub 私有仓库同步、托管 Windows/macOS 验收构建及已验证的开发预发布。内网 Gitea 仍是开发主仓库。GitHub 只运行产品打包工作流；内网交付 runner 向公开 GitHub 下载仓库和内网 Gitea 发布完整、已验证的安装包，不向托管 runner 提供内网发布凭据。
 
-The [product delivery reference](../apps/product-desktop/README.md) owns private GitHub synchronization, hosted Windows/macOS acceptance builds, and verified development releases. Internal Gitea remains the source of truth. GitHub runs only the product packaging workflow; the internal delivery runner publishes complete verified installers to public GitHub downloads and internal Gitea without sharing internal release credentials with hosted runners.
-
-Upstream synchronization uses tags and a pinned commit. The desktop repository stores the pinned official tag and its Git objects; CI and release jobs fetch that tag from `origin` without fetching GitHub or using a separate mirror repository. `UPSTREAM_REPOSITORY` identifies the official source used only by explicit upgrades. `pnpm run verify:upstream` checks local tag resolution, registered complete patches, and public Harness imports without requiring an upstream remote or network access. Upgrade by updating the pin, running `pnpm run sync:upstream` to fetch the selected official tag and publish it to `origin`, explicitly applying and resolving patches, validating the adapter, and running official and product acceptance tests. See the [breaking change guide](upgrade-guide/v0.2.0-rc.2/product-task-capabilities/guide.md).
+上游同步以 tag 和固定 commit 为单位。桌面仓库保存固定的官方 tag 及其 Git 对象；CI 和发布任务从 `origin` 获取该 tag，无需拉取 GitHub 或使用独立镜像仓库。`UPSTREAM_REPOSITORY` 标识官方源，仅用于显式升级。`pnpm run verify:upstream` 在本地校验 tag 解析、登记的完整补丁和 Harness 公开出口，不要求上游 remote 或网络连接。升级时更新固定版本，运行 `pnpm run sync:upstream` 获取选定的官方 tag 并保存到 `origin`，显式应用补丁并解决冲突、验证适配层，再运行官方与产品验收。参见[破坏性变更指南](upgrade-guide/v0.2.0-rc.2/product-task-capabilities/guide.md)。
