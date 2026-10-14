@@ -9,6 +9,18 @@ import { apiClient } from './deliver-desktop.mjs'
 
 export const PACKAGE_WORKFLOW = '.github/workflows/product-desktop-package.yml'
 
+/** Classify captured Git stderr without returning URLs, headers, credentials or arbitrary remote text. */
+export function gitPushFailureCode(error) {
+  const diagnostic = String(error.stderr ?? '')
+  if (/407|proxy authentication required/iu.test(diagnostic)) return 'PROXY_AUTHENTICATION'
+  if (/Authentication failed|403|could not read Username/iu.test(diagnostic)) return 'GITHUB_AUTHORIZATION'
+  if (/non-fast-forward|fetch first|would clobber existing tag/iu.test(diagnostic)) return 'REMOTE_REF_CONFLICT'
+  if (/SSL_ERROR_SYSCALL|SSL_connect|TLS.*handshake|gnutls_handshake/iu.test(diagnostic)) return 'TLS_HANDSHAKE_FAILED'
+  if (/timed? out|ETIMEDOUT/iu.test(diagnostic) || error.code === 'ETIMEDOUT') return 'NETWORK_TIMEOUT'
+  if (/Could not resolve|Could not connect|Failed to connect/iu.test(diagnostic)) return 'NETWORK_UNAVAILABLE'
+  return error.signal ? 'PROCESS_INTERRUPTED' : 'GIT_PUSH_FAILED'
+}
+
 /** @param {string} token Controlled GitHub credential. @param {object} transport Optional isolated test transport. @returns {Function} Complete-read retries and single-attempt mutations. */
 export function githubSyncRequest(token, transport = {}) {
   return apiClient('https://api.github.com', `Bearer ${token}`, {
@@ -48,15 +60,17 @@ export async function selectPackagingWorkflow(request, repository) {
  * @param {string} options.repository GitHub owner/name.
  * @param {string} options.commit Exact desktop source commit.
  * @param {string} options.tag Stored official baseline tag.
+ * @param {string} options.baseline Exact stored baseline commit.
  * @param {boolean} options.create Whether to create a new private repository.
  * @param {string} [options.deliveryId] Correlation ID for the dispatched build.
  * @param {Function} options.request Authenticated API operation.
  * @param {Function} options.push Pushes only main and the baseline, without force or deletion.
  * @returns {Promise<void>} Resolves after GitHub accepts the build dispatch.
  */
-export async function synchronizeDesktop({ repository, commit, tag, create = false, deliveryId, request, push }) {
+export async function synchronizeDesktop({ repository, commit, tag, baseline, create = false, deliveryId, request, push }) {
   if (!/^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\/[A-Za-z0-9_.-]+$/u.test(repository)) throw new Error('Use a GitHub owner/name')
   if (!/^[a-f0-9]{40}$/u.test(commit)) throw new Error('An exact source commit is required')
+  if (!/^[a-f0-9]{40}$/u.test(baseline)) throw new Error('An exact baseline commit is required')
   if (!/^dsh-v\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?$/u.test(tag)) throw new Error('A pinned Harness baseline tag is required')
   if (deliveryId !== undefined && !/^[a-f0-9-]{36}$/u.test(deliveryId)) throw new Error('A delivery UUID is required')
   if (create) {
@@ -71,7 +85,19 @@ export async function synchronizeDesktop({ repository, commit, tag, create = fal
   }
   if (metadata.size > 0 && metadata.default_branch !== 'main') throw new Error('Build repository must use main as its default branch')
   await request('PUT', `/repos/${repository}/actions/permissions`, { enabled: false })
-  await push(repository, commit, tag)
+  try { await push(repository, commit, tag) }
+  catch (error) {
+    // A disconnected client can miss the server's successful atomic update. Read both refs before continuing.
+    const [head, stored] = await Promise.all([
+      request('GET', `/repos/${repository}/git/ref/heads/main`),
+      request('GET', `/repos/${repository}/git/ref/tags/${tag}`),
+    ]).catch(() => { throw error })
+    const target = stored.object?.type === 'tag'
+      ? (await request('GET', `/repos/${repository}/git/tags/${stored.object.sha}`).catch(() => { throw error })).object
+      : stored.object
+    if (head.object?.type !== 'commit' || head.object.sha !== commit
+      || target?.type !== 'commit' || target.sha !== baseline) throw error
+  }
   await request('PATCH', `/repos/${repository}`, { default_branch: 'main', has_issues: false, has_wiki: false })
   await selectPackagingWorkflow(request, repository)
   await request('PUT', `/repos/${repository}/actions/permissions`, { enabled: true, allowed_actions: 'selected' })
@@ -117,12 +143,12 @@ if (process.argv[1] !== undefined && resolve(process.argv[1]) === import.meta.fi
       })
     } catch (error) {
       const reason = error.signal ? 'process interrupted' : Number.isInteger(error.status) ? `exit ${error.status}` : 'process failed'
-      throw new Error(`GitHub atomic push failed (${reason}). Actions remain disabled; inspect remote main and baseline before retrying`)
+      throw new Error(`GitHub atomic push failed (${gitPushFailureCode(error)}, ${reason}). Actions remain disabled unless both remote refs confirm completion; inspect remote main and baseline before retrying`)
     }
     finally { rmSync(temporary, { recursive: true, force: true }) }
   }
   try {
-    await synchronizeDesktop({ repository, commit, tag, create: values.create,
+    await synchronizeDesktop({ repository, commit, tag, baseline, create: values.create,
       deliveryId: values['delivery-id'] ?? randomUUID(), request, push })
     console.log(`Synchronized ${commit}; packages: https://github.com/${repository}/actions/workflows/product-desktop-package.yml`)
   } catch (error) {

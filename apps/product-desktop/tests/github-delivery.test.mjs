@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 import yaml from 'js-yaml'
 import { artifactManifest, githubBuildVersion } from '../scripts/github-package.mjs'
-import { githubSyncRequest, PACKAGE_WORKFLOW, selectPackagingWorkflow, synchronizeDesktop } from '../scripts/sync-github.mjs'
+import { gitPushFailureCode, githubSyncRequest, PACKAGE_WORKFLOW, selectPackagingWorkflow, synchronizeDesktop } from '../scripts/sync-github.mjs'
 import { selectInstaller } from '../scripts/test-installed.mjs'
 
 const commit = 'a'.repeat(40)
@@ -65,7 +65,7 @@ test('uncertain source mutations execute once and require reconciliation', async
 
 function fixture(overrides = {}) {
   const calls = []
-  const options = { repository, commit, tag,
+  const options = { repository, commit, tag, baseline: 'b'.repeat(40),
     request: async (method, path, body) => {
       calls.push({ method, path, body })
       if (path === '/user') return { login: 'example' }
@@ -78,6 +78,35 @@ function fixture(overrides = {}) {
   }
   return { calls, options }
 }
+
+test('classifies Git network failures without disclosing credentials from diagnostics', () => {
+  const secret = 'https://user:fixture-password@proxy.example'
+  assert.equal(gitPushFailureCode({ stderr: `fatal: ${secret} SSL_ERROR_SYSCALL` }), 'TLS_HANDSHAKE_FAILED')
+  assert.equal(gitPushFailureCode({ stderr: `fatal: ${secret} 407` }), 'PROXY_AUTHENTICATION')
+  assert.equal(gitPushFailureCode({ stderr: `fatal: ${secret} connection timed out` }), 'NETWORK_TIMEOUT')
+  assert.equal(gitPushFailureCode({ stderr: `fatal: ${secret} (non-fast-forward)` }), 'REMOTE_REF_CONFLICT')
+  assert.equal(gitPushFailureCode({ stderr: secret, signal: 'SIGTERM' }), 'PROCESS_INTERRUPTED')
+})
+
+test('reconciles an uncertain atomic push only when both remote commits match without pushing again', async () => {
+  for (const scenario of ['matching', 'mismatch', 'annotated']) {
+    const mismatch = scenario === 'mismatch'
+    const { options, calls } = fixture()
+    const request = options.request
+    let pushes = 0
+    options.push = async () => { pushes++; throw new Error('TLS_HANDSHAKE_FAILED') }
+    options.request = async (method, path, body) => {
+      if (path.endsWith('/git/ref/heads/main')) return { object: { type: 'commit', sha: commit } }
+      if (path.endsWith('/git/ref/tags/' + tag)) return { object: { type: scenario === 'annotated' ? 'tag' : 'commit', sha: (mismatch ? 'c' : 'b').repeat(40) } }
+      if (path.endsWith('/git/tags/' + 'b'.repeat(40))) return { object: { type: 'commit', sha: 'b'.repeat(40) } }
+      return request(method, path, body)
+    }
+    if (mismatch) await assert.rejects(synchronizeDesktop(options), /TLS_HANDSHAKE_FAILED/)
+    else await synchronizeDesktop(options)
+    assert.equal(pushes, 1)
+    assert.equal(calls.some(call => call.path?.endsWith('/dispatches')), !mismatch)
+  }
+})
 
 test('numbers each platform with the same source, UTC date, run and attempt', () => {
   assert.equal(githubBuildVersion(identity, '0.2.1-alpha.2', new Date('2026-10-12T03:00:00Z')), '0.2.1-alpha.2.20261012.23.2')

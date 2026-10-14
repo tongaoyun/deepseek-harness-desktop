@@ -1615,7 +1615,9 @@ for (const { mode, installed } of desktopCarriers) {
       const origin = `http://127.0.0.1:${address.port}`
       let app: ElectronApplication | undefined = undefined
       onTestFinished(async () => {
-        try { if (app !== undefined) await closeElectronAcceptance(app) }
+        const closing = app
+        app = undefined
+        try { if (closing !== undefined) await closeElectronAcceptance(closing) }
         finally {
           try {
             server.closeAllConnections()
@@ -1726,6 +1728,10 @@ for (const { mode, installed } of desktopCarriers) {
       let tripwire = watchConsole(page)
       onTestFinished(async ({ task }) => {
         if (task.result?.state !== 'fail') return
+        if (page.isClosed()) {
+          console.error('Desktop workflow failure after window closure:', tripwire, startupWarnings)
+          return
+        }
         await mkdir(screenshots, { recursive: true })
         await page.screenshot({ path: join(screenshots, `electron-${carrier}-${mode}-failure.png`), timeout: 5000 })
         console.error('Desktop workflow failure:', await page.locator('body').innerText(), tripwire, startupWarnings)
@@ -2226,7 +2232,10 @@ for (const { mode, installed } of desktopCarriers) {
         const pinnedPath = join(home, 'product-capabilities-v1/tasks-v1', `${prepared.presetId}.json`)
         const restart = async () => {
           expect(tripwire.pageErrors).toEqual([])
-          await closeElectronAcceptance(app!)
+          await expect.poll(() => page.getByRole('button', { name: /^(Stop generating|停止生成)$/, exact: true }).count()).toBe(0)
+          const closing = app!
+          app = undefined
+          await closeElectronAcceptance(closing)
           app = await _electron.launch(launchOptions)
           app.process().stderr?.on('data', (chunk: Buffer) => diagnostics.push(chunk.toString()))
           page = await app.firstWindow()
