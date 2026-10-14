@@ -2,8 +2,29 @@ import { expect, it, vi } from 'vitest'
 import { DeepSeekHarnessApiClient } from '../src/http-client.ts'
 import { invokeKnowledge } from '../src/knowledge-bridge.ts'
 import { DeepSeekHarnessProductBridge } from '../src/bridge.ts'
+import { isProductRuntimeMethod } from '../src/protocol.ts'
 
 const operationId = 'knowledge-operation-0001'
+
+it('cancels document processing through an authenticated write without exposing it to the model', async () => {
+  const transport = vi.fn<typeof fetch>(async () => Response.json({ success: true, data: { id: 'doc', status: 'CANCELLED' } }))
+  const api = client(transport)
+  const controller = new AbortController()
+  try {
+    const input = { knowledgeBaseId: 'base', documentId: 'doc', operationId }
+    await expect(invokeKnowledge(api, 'knowledge.documents.cancel', input, undefined, controller.signal)).resolves.toMatchObject({ status: 'CANCELLED' })
+    const call = transport.mock.calls[0]!
+    expect(requestUrl(call[0])).toBe('https://product.test/api/v1/knowledge-bases/base/documents/doc/index-jobs')
+    expect(call[1]?.method).toBe('DELETE')
+    expect(new Headers(call[1]?.headers).get('idempotency-key')).toBe(operationId)
+    expect(new Headers(call[1]?.headers).get('x-deepseek-harness-employee-id')).toBe('employee')
+    expect(call[1]?.signal).toBeDefined()
+    expect(isProductRuntimeMethod('knowledge.documents.cancel')).toBe(false)
+    await expect(invokeKnowledge(api, 'knowledge.documents.cancel', { ...input, employeeId: 'other' })).rejects.toMatchObject({ code: 'KNOWLEDGE_REQUEST_INVALID' })
+    await expect(invokeKnowledge(api, 'knowledge.documents.cancel', { ...input, operationId: '' })).rejects.toMatchObject({ code: 'KNOWLEDGE_REQUEST_INVALID' })
+    expect(transport).toHaveBeenCalledOnce()
+  } finally { api.close() }
+})
 
 it('reads one folder by identity with cancellation and rejects forged ownership or paths', async () => {
   const signal = new AbortController().signal

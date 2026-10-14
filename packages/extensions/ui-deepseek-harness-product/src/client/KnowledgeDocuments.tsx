@@ -1,6 +1,6 @@
 /** Paginated library materials and manager actions, independent of task selection. */
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import { Button, FileTypeIcon, IconChevronDownOutlineRegular, IconChevronLeftOutlineRegular, IconChevronRightOutlineRegular, IconDownloadOutlineRegular, IconEditOutlineRegular, IconEllipsisOutlineRegular, IconFolderOpenOutlineRegular, IconLinkOutlineRegular, IconPlusOutlineRegular, IconRefreshOutlineRegular, IconSearchOutlineRegular, IconTrashOutlineRegular, Menu, Modal, Tooltip, fileSizeText, type MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, FileTypeIcon, IconChevronDownOutlineRegular, IconChevronLeftOutlineRegular, IconChevronRightOutlineRegular, IconDownloadOutlineRegular, IconEditOutlineRegular, IconEllipsisOutlineRegular, IconFolderOpenOutlineRegular, IconLinkOutlineRegular, IconPlusOutlineRegular, IconRefreshOutlineRegular, IconSearchOutlineRegular, IconStopFillRegular, IconTrashOutlineRegular, Menu, Modal, Tooltip, fileSizeText, type MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { KnowledgePdfParseMode } from '@deepseek-harness/product/protocol'
 import type { PropsRenderFactories } from '@deepseek-ai/dsh-client-ui-slots'
 import type { DeepSeekHarnessProductKey } from '../locales.ts'
@@ -77,6 +77,7 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
   const operation = useRef(new AbortController())
   const accessOperation = useRef(new AbortController())
   const reindexOperations = useRef(new Map<string, string>())
+  const cancelOperations = useRef(new Map<string, string>())
   const loadedPage = useRef<number>()
   useEffect(() => {
     const controller = new AbortController()
@@ -259,7 +260,13 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
       const operationId = reindexOperations.current.get(row.id) ?? globalThis.crypto.randomUUID()
       reindexOperations.current.set(row.id, operationId)
       void mutate('knowledge.documents.reindex', { knowledgeBaseId: product.id, documentId: row.id, operationId },
-        () => { reindexOperations.current.delete(row.id) })
+        () => { reindexOperations.current.delete(row.id); cancelOperations.current.delete(row.id) })
+    }
+    else if (id === 'cancel') {
+      const operationId = cancelOperations.current.get(row.id) ?? globalThis.crypto.randomUUID()
+      cancelOperations.current.set(row.id, operationId)
+      void mutate('knowledge.documents.cancel', { knowledgeBaseId: product.id, documentId: row.id, operationId },
+        () => { cancelOperations.current.delete(row.id) })
     }
   }
   const fileAction = async (action: 'download' | 'openExternal', row: KnowledgeDocument): Promise<void> => {
@@ -343,7 +350,8 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
           return <tr key={row.id}>
             <td><button type="button" className={css.knowledgeDocumentName} disabled={deleting} onClick={() => { openReader(row) }}>
               <FileTypeIcon path={row.filename} size={18} /><span>{row.filename}</span></button></td>
-            <td><span className={css.knowledgeDocumentStatus} data-status={deleting ? 'DELETING' : row.status}>{knowledgeStatus(deleting ? 'DELETING' : row.status, t)}</span></td>
+            <td><span className={css.knowledgeDocumentStatus} data-status={deleting ? 'DELETING' : row.status}
+              title={!deleting && row.sourceType !== 'url' && ['QUEUED', 'PROCESSING', 'FINALIZING'].includes(row.status) ? t('knowledgeProcessingHint') : undefined}>{knowledgeStatus(deleting ? 'DELETING' : row.status, t)}</span></td>
             <td>{row.sourceType === 'manual' ? t('knowledgeOnlineDocument') : row.sourceType === 'url' ? t('knowledgeWebsite') : row.filename.split('.').at(-1)?.toUpperCase()}</td>
             <td>{fileSizeText(row.sizeBytes)}</td><td>{formatDate(row.updatedAt)}</td>
             <td><KnowledgeDocumentActions document={row} disabled={pending || deleting}
@@ -498,6 +506,7 @@ function KnowledgeDocumentActions({ document, disabled, canManage, canOpenExtern
   items.push({ id: 'download', label: t('knowledgeDownloadOriginal'), icon: <IconDownloadOutlineRegular size={16} /> })
   if (canOpenExternal) items.push({ id: 'openExternal', label: t('knowledgeOpenExternal'), icon: <IconLinkOutlineRegular size={16} /> })
   if (canManage && document.sourceType === 'manual') items.push({ id: 'edit', label: t('modifyResource'), icon: <IconEditOutlineRegular size={16} />, disabled: processing })
+  if (canManage && processing) items.push({ id: 'cancel', label: t('knowledgeStopProcessing'), icon: <IconStopFillRegular size={16} /> })
   if (canManage) items.push({ id: 'move', label: t('knowledgeMoveDocument'), icon: <IconFolderOpenOutlineRegular size={16} /> },
     { id: 'reindex', label: t('knowledgeReindex'), icon: <IconRefreshOutlineRegular size={16} />, disabled: processing },
     { type: 'separator', id: 'delete-separator' }, { id: 'delete', label: t('deleteResource'), icon: <IconTrashOutlineRegular size={16} />, danger: true })
