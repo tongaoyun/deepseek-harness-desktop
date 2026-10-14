@@ -15,12 +15,21 @@ public static class AcceptancePath {
   public static extern uint GetLongPathName(string source, StringBuilder destination, uint length);
 }
 '@
-$expanded = New-Object System.Text.StringBuilder 32768
-if ([AcceptancePath]::GetLongPathName($env:HARNESS_ACCEPTANCE_INSTALLATION, $expanded, $expanded.Capacity) -eq 0) { throw 'Cannot resolve private installation directory' }
-$prefix = $expanded.ToString().TrimEnd('\\') + '\\'
+function Expand-AcceptancePath([string]$path) {
+  $expanded = New-Object System.Text.StringBuilder 32768
+  if ([AcceptancePath]::GetLongPathName($path, $expanded, $expanded.Capacity) -eq 0) { return $null }
+  return $expanded.ToString()
+}
+$installation = Expand-AcceptancePath $env:HARNESS_ACCEPTANCE_INSTALLATION
+if (-not $installation) { throw 'Cannot resolve private installation directory' }
+$prefix = $installation.TrimEnd('\\') + '\\'
 $deadline = [DateTime]::UtcNow.AddSeconds(10)
 do {
-  $owned = @(Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase) })
+  $owned = @(Get-CimInstance Win32_Process | Where-Object {
+    if (-not $_.ExecutablePath) { return $false }
+    $image = Expand-AcceptancePath $_.ExecutablePath
+    return $image -and $image.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)
+  })
   if ($owned.Count -eq 0) { break }
   foreach ($process in $owned) {
     Stop-Process -Id $process.ProcessId -Force -ErrorAction SilentlyContinue

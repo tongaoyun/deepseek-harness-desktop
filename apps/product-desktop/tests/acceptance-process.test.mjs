@@ -101,11 +101,22 @@ test('Windows installation recovery stops orphaned executables only inside the p
     let installed = false
     let outside
     let outsideExit
+    let pids = []
     t.after(async () => {
       try { if (installed) stopInstalledProcesses(installation) }
       finally {
-        try { if (outside) { outside.kill('SIGKILL'); await outsideExit } }
-        finally { await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }) }
+        try {
+          // Failed recovery must still join the fixture processes before removing the installation.
+          for (const pid of pids) {
+            if (alive(pid)) execFileSync('taskkill.exe', ['/PID', String(pid), '/T', '/F'],
+              { windowsHide: true, timeout: 10_000, stdio: 'ignore' })
+          }
+          await waitFor(() => pids.every(pid => !alive(pid)))
+        }
+        finally {
+          if (outside) { outside.kill('SIGKILL'); await outsideExit }
+        }
+        await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
       }
     })
     await mkdir(installation)
@@ -117,13 +128,20 @@ test('Windows installation recovery stops orphaned executables only inside the p
     const ownedExit = new Promise(resolve => owned.once('close', resolve))
     outside = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' })
     outsideExit = new Promise(resolve => outside.once('close', resolve))
-    const pids = await waitFor(async () => {
+    pids = await waitFor(async () => {
       try { return JSON.parse(await readFile(ready, 'utf8')) }
       catch (error) { if (error.code === 'ENOENT' || error instanceof SyntaxError) return; throw error }
     })
     await ownedExit
     assert.equal(alive(pids[0]), false)
     assert.equal(alive(pids[1]), true)
+    const paths = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', `
+$ErrorActionPreference = 'Stop'
+$image = (Get-CimInstance Win32_Process -Filter ('ProcessId = ' + $env:HARNESS_ACCEPTANCE_PID)).ExecutablePath
+ConvertTo-Json -Compress -InputObject @{ installation = $env:HARNESS_ACCEPTANCE_INSTALLATION; image = $image }
+`], { encoding: 'utf8', timeout: 20_000, windowsHide: true,
+      env: { ...process.env, HARNESS_ACCEPTANCE_PID: String(pids[1]), HARNESS_ACCEPTANCE_INSTALLATION: installation } })
+    t.diagnostic(`Executable-path ownership: ${paths.trim()}`)
     stopInstalledProcesses(installation)
     await waitFor(() => !alive(pids[1]))
     assert.equal(alive(outside.pid), true)
