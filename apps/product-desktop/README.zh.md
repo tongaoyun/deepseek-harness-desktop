@@ -15,6 +15,8 @@
 
 ## GitHub 打包
 
+归档 Host 启动测试在产品打包生成编译后的 bootstrap 文件后运行，安装包上传前必须通过；干净 runner 不依赖已有编译缓存。
+
 通过 `gh auth login --hostname github.com --git-protocol https --scopes workflow` 登录。账号需要仓库管理、源码上传、工作流更新和 Actions 触发权限。同步前提交并验证源码。以下命令创建空的私有仓库，并触发首次验收构建：
 
 ```sh
