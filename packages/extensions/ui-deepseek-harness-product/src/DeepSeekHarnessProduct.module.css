@@ -537,6 +537,9 @@
 .knowledgeBaseEditorModal.knowledgeBaseEditorModal { width: min(420px, calc(100vw - 32px)); }
 .knowledgeEditorContent { min-height: 0; max-height: 70vh; overflow: auto; }
 .knowledgeEditorForm { display: grid; gap: 16px; }
+.knowledgeFolderPicker { min-width: 0; margin: 0; padding: 10px; border: 0.5px solid var(--dsw-alias-border-l2); border-radius: 6px; }
+.knowledgeFolderPicker legend { padding: 0 4px; color: var(--dsw-alias-label-secondary); font-size: 12px; }
+.knowledgeFolderPickerRows { display: grid; max-height: 240px; overflow: auto; margin-top: 8px; }
 .knowledgeEditorForm label, .knowledgeMoveLabel { display: grid; gap: 7px; color: var(--dsw-alias-label-secondary); font-size: 12px; line-height: 18px; }
 .knowledgeEditorForm input, .knowledgeEditorForm textarea { box-sizing: border-box; width: 100%; min-width: 0; padding: 9px 10px; border: 0.5px solid var(--dsw-alias-border-l2); border-radius: 6px; background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); font: inherit; font-size: 13px; line-height: 20px; }
 .knowledgeEditorForm textarea { min-height: 280px; resize: vertical; }

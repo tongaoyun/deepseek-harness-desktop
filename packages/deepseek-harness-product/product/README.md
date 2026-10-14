@@ -46,6 +46,8 @@ No cache entries are created; the bridge does not assemble or send provider requ
 <a id="dev-note"></a>
 ### Dev Note
 
+`knowledge.folders.get` reads one folder by ID within the selected library, forwarding cancellation and current server authorization. It accepts only library and folder IDs; clients can resolve ancestry independently of loaded directory pages.
+
 Use namespace transport and validate requests against the product protocol allowlist. `tasks.capabilities.prepare` is the sole Kit preparation entry. It returns a capability snapshot, execution location, and verified dependencies; official Preset and Session APIs own execution.
 
 Task capability reads and preparation results include `requiredConnectorIds`, resolved from the pinned Expert Kit. Consumers lock those task selections independently of account authorization or connector availability.

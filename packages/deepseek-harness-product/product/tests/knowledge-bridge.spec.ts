@@ -4,6 +4,25 @@ import { invokeKnowledge } from '../src/knowledge-bridge.ts'
 import { DeepSeekHarnessProductBridge } from '../src/bridge.ts'
 
 const operationId = 'knowledge-operation-0001'
+
+it('reads one folder by identity with cancellation and rejects forged ownership or paths', async () => {
+  const signal = new AbortController().signal
+  const transport = vi.fn<typeof fetch>(async (input) => {
+    expect(requestUrl(input)).toBe('https://product.test/api/v1/knowledge-bases/base/folders/folder')
+    return Response.json({ success: true, data: { id: 'folder', name: '目录', parentId: null } })
+  })
+  const api = client(transport)
+  try {
+    await expect(invokeKnowledge(api, 'knowledge.folders.get', { knowledgeBaseId: 'base', folderId: 'folder' }, undefined, signal))
+      .resolves.toMatchObject({ id: 'folder' })
+    expect(transport.mock.calls[0]?.[1]?.signal).toBeDefined()
+    for (const input of [{ knowledgeBaseId: 'base', folderId: '../other' },
+      { knowledgeBaseId: 'base', folderId: 'folder', employeeId: 'other' }]) {
+      await expect(invokeKnowledge(api, 'knowledge.folders.get', input)).rejects.toMatchObject({ code: 'KNOWLEDGE_REQUEST_INVALID' })
+    }
+    expect(transport).toHaveBeenCalledOnce()
+  } finally { api.close() }
+})
 function client(transport: typeof fetch) {
   return new DeepSeekHarnessApiClient({ baseUrl: 'https://product.test', getSessionToken: () => 'main-only-token',
     getEmployeeId: () => 'employee', fetch: transport })

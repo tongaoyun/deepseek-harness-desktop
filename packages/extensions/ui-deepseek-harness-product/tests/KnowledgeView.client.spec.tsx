@@ -110,7 +110,7 @@ it('preserves edits and the idempotency key after a failed manual document save'
     if (failed) throw new Error('Temporary outage')
     return document
   })
-  render(<KnowledgeEditor knowledgeBaseId="policy" target={{ kind: 'markdown', document }} folders={[]} onClose={vi.fn()} onSaved={saved} t={t} />)
+  render(<KnowledgeEditor knowledgeBaseId="policy" target={{ kind: 'markdown', document }} onClose={vi.fn()} onSaved={saved} t={t} />)
   const body = await screen.findByDisplayValue('# 原正文')
   fireEvent.change(body, { target: { value: '# 修改后的正文' } })
   fireEvent.click(screen.getByRole('button', { name: zh.knowledgeSave }))
@@ -130,7 +130,7 @@ it('preserves edits and the idempotency key after a failed manual document save'
 it.each(['markdown', 'url'] as const)('preserves %s creation destination and edits after an unconfirmed placement', async (kind) => {
   const saved = vi.fn()
   const api = transport(async () => { throw new ProductError('IDEMPOTENCY_OPERATION_UNKNOWN', 'Remote result unknown', false) })
-  render(<KnowledgeEditor knowledgeBaseId="policy" target={{ kind, folderId: 'folder' }} folders={[]} onClose={vi.fn()} onSaved={saved} t={t} />)
+  render(<KnowledgeEditor knowledgeBaseId="policy" target={{ kind, folderId: 'folder' }} onClose={vi.fn()} onSaved={saved} t={t} />)
   fireEvent.change(screen.getByLabelText(zh.knowledgeDocumentTitle), { target: { value: 'Notes' } })
   fireEvent.change(screen.getByLabelText(kind === 'markdown' ? zh.knowledgeMarkdownContent : zh.knowledgeWebsiteUrl),
     { target: { value: kind === 'markdown' ? '# Notes' : 'https://example.test' } })
@@ -228,7 +228,7 @@ it('retains the delete confirmation and operation identity after a temporary fai
 
 it('rechecks manager permissions before loading editable manual text', async () => {
   const api = transport(async () => ({ ...document, canManage: false }))
-  render(<KnowledgeEditor knowledgeBaseId="policy" target={{ kind: 'markdown', document }} folders={[]} onClose={vi.fn()} onSaved={vi.fn()} t={t} />)
+  render(<KnowledgeEditor knowledgeBaseId="policy" target={{ kind: 'markdown', document }} onClose={vi.fn()} onSaved={vi.fn()} t={t} />)
   await screen.findByText(zh.knowledgeReadFailed)
   expect(screen.getByRole('button', { name: zh.knowledgeSave }).hasAttribute('disabled')).toBe(true)
   expect(api.invoke.mock.calls.some(row => row[1] === 'knowledge.documents.save')).toBe(false)

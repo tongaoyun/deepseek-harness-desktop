@@ -12,6 +12,7 @@
         - text: Folders
         - button "New folder"
         - button "Root folder"
+        - button "Expand Policies"
         - button "Policies"
         - button "Folder actions for Policies"
         - button "All materials"

@@ -46,6 +46,8 @@ kind: "package-library"
 <a id="dev-note"></a>
 ### 开发备注
 
+`knowledge.folders.get` 按 ID 读取指定知识库内的一个文件夹，转发取消信号并由服务端检查当前权限。仅接受知识库和文件夹 ID；客户端可独立于已加载目录页解析上级路径。
+
 使用命名空间传输，并由产品协议白名单校验请求。`tasks.capabilities.prepare` 是唯一的套件准备入口，返回能力快照、执行位置及已校验的依赖，官方 Preset 与 Session API 负责执行。
 
 任务能力读取和准备结果包含从固定专家套件解析的 `requiredConnectorIds`。调用方据此锁定任务选择，该选择独立于账号授权和连接器可用状态。

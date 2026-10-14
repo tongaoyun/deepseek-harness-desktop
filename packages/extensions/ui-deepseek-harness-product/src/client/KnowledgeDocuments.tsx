@@ -10,6 +10,8 @@ import { isKnowledgeAccessDenied, knowledgeDocument, knowledgeFolder, knowledgeP
 import { KnowledgeDocumentReader } from './KnowledgeDocumentReader.tsx'
 import { KnowledgeEditor, type KnowledgeEditorTarget } from './KnowledgeEditor.tsx'
 import { knowledgeFolderTrail, replaceKnowledgeFolderBranch } from './knowledge-folders.ts'
+import { useKnowledgeFolderLocation } from './knowledge-folder-location.ts'
+import { KnowledgeFolderPicker } from './KnowledgeFolderPicker.tsx'
 import { productErrorMessage } from './product-errors.ts'
 
 type Confirmation = { readonly kind: 'document'; readonly document: KnowledgeDocument; readonly operationId: string }
@@ -88,6 +90,13 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
   }, [refreshRevision])
   const availableData = accessDenied ? undefined : data
   const availableFolders = accessDenied ? [] : folders
+  const breadcrumbFolderId = reader ? reader.folderId : folderId
+  const location = useKnowledgeFolderLocation(product.id, accessDenied ? null : breadcrumbFolderId, `${folderRevision}:${refreshRevision}`)
+  useEffect(() => {
+    if (location.failure !== undefined && isKnowledgeAccessDenied(location.failure)) readAccessDenied(location.failure)
+  }, [location.failure, readAccessDenied])
+  const navigationFolders = [...availableFolders.filter(folder => !location.trail?.some(item => item.id === folder.id)),
+    ...location.trail ?? []]
   const canManage = product.canManage === true && !accessDenied
   const canOpenExternal = globalThis.location.protocol === 'dsh-app:' && globalThis.location.hostname === 'app'
   useEffect(() => {
@@ -162,7 +171,7 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
   const selectFolder = (value: string | null | undefined) => {
     setReader(undefined)
     if (typeof value === 'string') setExpandedFolders(previous => new Set([
-      ...previous, ...knowledgeFolderTrail(availableFolders, value).map(folder => folder.id),
+      ...previous, ...knowledgeFolderTrail(navigationFolders, value).map(folder => folder.id),
     ]))
     if (value !== folderId || page !== 1) { setFolderId(value); setPage(1); setData(undefined) }
     if (value !== folderId) { setQuery(''); setSearch(''); setFormat(''); setStatus('') }
@@ -175,10 +184,8 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
   const beginMutation = () => { setMutationError('') }
   const openReader = (row: KnowledgeDocument) => { if (!accessDenied) { setReader(row); onNavigate?.() } }
   const pages = Math.max(1, Math.ceil((availableData?.total ?? 0) / 20))
-  const currentFolder = availableFolders.find(row => row.id === folderId)
-  const breadcrumbFolderId = reader ? reader.folderId : folderId
-  const breadcrumbTrail = typeof breadcrumbFolderId === 'string' && availableFolders.some(row => row.id === breadcrumbFolderId)
-    ? knowledgeFolderTrail(availableFolders, breadcrumbFolderId) : []
+  const currentFolder = reader ? undefined : location.trail?.at(-1)
+  const breadcrumbTrail = location.trail ?? []
   const childFolders = folderId === undefined || search || format || status ? []
     : availableFolders.filter(row => row.parentId === folderId)
   const documentAction = (id: string, row: KnowledgeDocument) => {
@@ -323,6 +330,8 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
           <nav className={css.knowledgeWorkspaceBreadcrumb} aria-label={t('knowledgeAllMaterials')}>
             <button type="button" onClick={() => { selectFolder(null) }}>{product.name}</button>
             {breadcrumbFolderId === undefined && <><IconChevronRightOutlineRegular size={14} /><span aria-current={reader ? undefined : 'page'}>{t('knowledgeAllMaterials')}</span></>}
+            {location.loading && <span role="status">{t('loading')}</span>}
+            {location.failure !== undefined && <span role="alert" className={css.catalogError}>{productErrorMessage(location.failure, t, 'knowledgeFoldersFailed')}</span>}
             {breadcrumbTrail.map(folder => <span key={folder.id} className={css.knowledgeBreadcrumbPart}>
               <IconChevronRightOutlineRegular size={14} /><button type="button" aria-current={!reader && folder.id === folderId ? 'page' : undefined}
                 onClick={() => { selectFolder(folder.id) }}>{folder.name}</button></span>)}
@@ -342,15 +351,13 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
         </div>
       </main>
     </div> : <>{toolbar}{tree}{materials}{documentReader}</>}
-    {editor && <KnowledgeEditor knowledgeBaseId={product.id} target={editor} folders={availableFolders}
+    {editor && <KnowledgeEditor knowledgeBaseId={product.id} target={editor}
       onClose={() => { setEditor(undefined) }}
       onSaved={(folder) => {
         if (folder && editor.kind === 'folder' && !editor.folder) {
           setFolders(previous => [...previous, folder]); setFolderId(folder.id)
           setQuery(''); setSearch(''); setFormat(''); setStatus(''); setData(undefined)
-          const ancestors = folder.parentId === null || availableFolders.some(row => row.id === folder.parentId)
-            ? knowledgeFolderTrail([...availableFolders, folder], folder.id).map(row => row.id) : [folder.id]
-          setExpandedFolders(previous => new Set([...previous, ...ancestors]))
+          setExpandedFolders(previous => new Set([...previous, folder.id, ...folder.parentId === null ? [] : [folder.parentId]]))
           onNavigate?.()
         }
         if (editor.kind === 'folder') setFolderRevision(value => value + 1)
@@ -378,7 +385,7 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
         .replace('{name}', confirmation.kind === 'document' ? confirmation.document.filename : confirmation.folder.name)}</p>
       {mutationError && <p role="alert" className={css.catalogError}>{mutationError}</p>}
     </Modal>}
-    {move && <KnowledgeMoveDialog document={move} folders={availableFolders} pending={pending} error={mutationError}
+    {move && <KnowledgeMoveDialog knowledgeBaseId={product.id} document={move} pending={pending} error={mutationError}
       onClose={() => { if (!pending) setMove(undefined) }}
       onMove={(id) => { void mutate('knowledge.documents.move', { knowledgeBaseId: product.id, documentId: move.id, folderId: id }, () => { setMove(undefined); setReader(undefined) }) }} t={t} />}
   </>
@@ -525,9 +532,9 @@ function KnowledgeFolderActions({ folder, disabled, onSelect, t }: {
       <IconEllipsisOutlineRegular size={16} /></button></Tooltip>} />
 }
 
-function KnowledgeMoveDialog({ document, folders, pending, error, onClose, onMove, t }: {
+function KnowledgeMoveDialog({ knowledgeBaseId, document, pending, error, onClose, onMove, t }: {
+  readonly knowledgeBaseId: string
   readonly document: KnowledgeDocument
-  readonly folders: readonly KnowledgeFolder[]
   readonly pending: boolean
   readonly error: string
   readonly onClose: () => void
@@ -535,14 +542,12 @@ function KnowledgeMoveDialog({ document, folders, pending, error, onClose, onMov
   readonly t: (key: DeepSeekHarnessProductKey) => string
 }): ReactNode {
   const [destination, setDestination] = useState(document.folderId ?? '')
+  const [ready, setReady] = useState(false)
   return <Modal open title={t('knowledgeMoveDocument')} closeLabel={t('close')} onClose={onClose} footer={<>
     <Button variant="ghost" size="sm" disabled={pending} onClick={onClose}>{t('cancel')}</Button>
-    <Button variant="primary" size="sm" disabled={pending} onClick={() => { onMove(destination || null) }}>{t('knowledgeMove')}</Button>
-  </>}><label className={css.knowledgeMoveLabel}>{t('knowledgeDestinationFolder')}<select value={destination} disabled={pending}
-      onChange={(event) => { setDestination(event.currentTarget.value) }}><option value="">{t('knowledgeRootFolder')}</option>
-      {folders.map(folder => <option key={folder.id} value={folder.id}>
-        {knowledgeFolderTrail(folders, folder.id).map(row => row.name).join(' / ')}
-      </option>)}</select></label>
+    <Button variant="primary" size="sm" disabled={pending || !ready} onClick={() => { onMove(destination || null) }}>{t('knowledgeMove')}</Button>
+  </>}><KnowledgeFolderPicker knowledgeBaseId={knowledgeBaseId} label={t('knowledgeDestinationFolder')} value={destination || null}
+      disabled={pending} onReady={setReady} onChange={(id) => { setDestination(id ?? ''); setReady(false) }} t={t} />
     {error && <p className={css.catalogError} role="alert">{error}</p>}
   </Modal>
 }

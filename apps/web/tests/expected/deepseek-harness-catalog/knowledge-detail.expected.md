@@ -23,6 +23,7 @@
         - navigation "Folders":
           - text: Folders
           - button "Root folder"
+          - button "Expand Policies"
           - button "Policies"
           - button "All materials"
   - main:

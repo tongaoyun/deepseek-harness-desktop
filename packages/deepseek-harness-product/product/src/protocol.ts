@@ -105,6 +105,7 @@ export type ProductMethod =
   | 'knowledge.documents.reindex'
   | 'knowledge.documents.move'
   | 'knowledge.folders.list'
+  | 'knowledge.folders.get'
   | 'knowledge.folders.create'
   | 'knowledge.folders.rename'
   | 'knowledge.folders.delete'
@@ -297,7 +298,7 @@ export function isProductMethod(value: unknown): value is ProductMethod {
     'knowledge.documents.preview.open', 'knowledge.documents.preview.read', 'knowledge.documents.preview.close',
     'knowledge.documents.download', 'knowledge.documents.openExternal',
     'knowledge.documents.save', 'knowledge.documents.importUrl', 'knowledge.documents.delete', 'knowledge.documents.reindex',
-    'knowledge.documents.move', 'knowledge.folders.list', 'knowledge.folders.create', 'knowledge.folders.rename', 'knowledge.folders.delete',
+    'knowledge.documents.move', 'knowledge.folders.list', 'knowledge.folders.get', 'knowledge.folders.create', 'knowledge.folders.rename', 'knowledge.folders.delete',
     'native.filesystem.list', 'native.filesystem.read',
     'native.filesystem.write', 'native.secure-storage.get', 'native.secure-storage.set', 'native.secure-storage.delete',
     'native.sqlite.query', 'native.sqlite.execute', 'native.dingtalk-auth.state',

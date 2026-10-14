@@ -47,6 +47,10 @@ export async function invokeKnowledge(api: DeepSeekHarnessApiClient, method: str
   const baseId = resource(input, 'knowledgeBaseId')
   const base = `/api/v1/knowledge-bases/${baseId}`
   const documents = `${base}/documents`
+  if (method === 'knowledge.folders.get') {
+    if (Object.keys(input).some(key => !['knowledgeBaseId', 'folderId'].includes(key))) invalid('folder payload')
+    return api.request(`${base}/folders/${resource(input, 'folderId')}`, options)
+  }
   if (method === 'knowledge.documents.previewMetadata') {
     const documentId = knowledgePreviewIdentity(input).documentId
     return api.request(`${documents}/${encodeURIComponent(documentId)}/preview/metadata`, options)

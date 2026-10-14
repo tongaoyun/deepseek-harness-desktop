@@ -590,7 +590,17 @@ it('keeps native themes and responsive catalogs while using official details and
         const documents = filteredKnowledgeDocuments(payload?.knowledgeBaseId ?? '', payload?.query, payload?.folderId)
         return { items: documents.slice((page - 1) * size, page * size), page, size, total: documents.length }
       }
-      case 'knowledge.folders.list': return { items: managedFolders, page: payload?.page ?? 1, size: payload?.size ?? 100, total: managedFolders.length }
+      case 'knowledge.folders.get': {
+        const folder = managedFolders.find(row => row.id === payload?.folderId)
+        if (!folder) throw new Error('Missing managed folder')
+        return folder
+      }
+      case 'knowledge.folders.list': {
+        const page = payload?.page ?? 1
+        const size = payload?.size ?? 100
+        const folders = managedFolders.filter(row => row.parentId === (payload?.parentId ?? null))
+        return { items: folders.slice((page - 1) * size, page * size), page, size, total: folders.length }
+      }
       case 'knowledge.folders.create': {
         const folder = { id: `created-folder${managedFolders.some(folder => folder.id === 'created-folder') ? '-child' : ''}`, name: payload?.name ?? '', parentId: payload?.parentId ?? null }
         managedFolders.push(folder)
@@ -1167,7 +1177,7 @@ it('keeps native themes and responsive catalogs while using official details and
   await (await openKnowledgeNavigation(page)).getByRole('button', { name: 'Folder actions for Project records', exact: true }).click()
   await page.getByRole('menuitem', { name: 'New subfolder', exact: true }).click()
   const subfolderEditor = page.getByRole('dialog', { name: 'New folder', exact: true })
-  expect(await subfolderEditor.getByRole('combobox', { name: 'Parent folder', exact: true }).inputValue()).toBe('created-folder')
+  await expect.poll(() => subfolderEditor.getByRole('button', { name: 'Project records', exact: true }).getAttribute('aria-current')).toBe('page')
   await subfolderEditor.getByRole('textbox', { name: 'Folder name', exact: true }).fill('October')
   await subfolderEditor.getByRole('button', { name: 'Save', exact: true }).click()
   await expect.poll(async () => (await openKnowledgeNavigation(page)).getByRole('button', { name: 'October', exact: true }).getAttribute('aria-current')).toBe('page')
@@ -1512,8 +1522,16 @@ for (const { mode, installed } of desktopCarriers) {
                 if (request.method === 'POST') folderRows.push(folder)
                 response.end(JSON.stringify({ success: true, data: folder }))
               }).catch(() => { response.statusCode = 400; response.end(JSON.stringify({ success: false, errCode: 'INVALID_FOLDER' })) })
-            } else response.end(JSON.stringify({ success: true, data: folderRows,
-              pageIndex: page, pageSize: size, totalCount: folderRows.length, totalPages: 1 }))
+            } else if (parts[6] !== undefined) {
+              const folder = folderRows.find(row => row.id === parts[6])
+              if (!folder) response.statusCode = 404
+              response.end(JSON.stringify(folder ? { success: true, data: folder } : { success: false, errCode: 'FOLDER_NOT_FOUND' }))
+            } else {
+              const parentId = url.searchParams.get('parentId') || null
+              const folders = folderRows.filter(row => row.parentId === parentId)
+              response.end(JSON.stringify({ success: true, data: folders.slice((page - 1) * size, page * size),
+                pageIndex: page, pageSize: size, totalCount: folders.length, totalPages: Math.ceil(folders.length / size) }))
+            }
           } else if (parts[7] === 'contents') {
             const contents = knowledgeContents(parts[6] ?? '', page, size)
             response.end(JSON.stringify({ success: true, data: contents.items, pageIndex: page,
@@ -1533,7 +1551,7 @@ for (const { mode, installed } of desktopCarriers) {
             const documents = filteredKnowledgeDocuments(baseId, query,
               url.searchParams.has('folderId') ? url.searchParams.get('folderId') || null : undefined)
             response.end(JSON.stringify({ success: true, data: documents.slice((page - 1) * size, page * size),
-              pageIndex: page, pageSize: size, totalCount: documents.length, totalPages: Math.max(1, Math.ceil(documents.length / size)) }))
+              pageIndex: page, pageSize: size, totalCount: documents.length, totalPages: Math.ceil(documents.length / size) }))
           }
         } else if (path === '/api/v1/knowledge-searches' || path === '/api/v1/knowledge-bases/sources/policy-source') {
           const source = { sourceId: 'policy-source', documentId: 'document-1', filename: 'Order review.md',
@@ -1862,7 +1880,7 @@ for (const { mode, installed } of desktopCarriers) {
         await folderAction.click()
         await page.getByRole('menuitem', { name: /^(New subfolder|新建子文件夹)$/, exact: true }).click()
         const subfolderEditor = page.getByRole('dialog', { name: /^(New folder|新建文件夹)$/, exact: true })
-        expect(await subfolderEditor.getByRole('combobox', { name: /^(Parent folder|上级文件夹)$/, exact: true }).inputValue()).toBe('created-folder')
+        await expect.poll(() => subfolderEditor.getByRole('button', { name: 'Desktop records', exact: true }).getAttribute('aria-current')).toBe('page')
         await subfolderEditor.getByRole('textbox', { name: /^(Folder name|文件夹名称)$/, exact: true }).fill('October')
         await subfolderEditor.getByRole('button', { name: /^(Save|保存)$/, exact: true }).click()
         await expect.poll(async () => (await openKnowledgeNavigation(page)).getByRole('button', { name: 'October', exact: true }).getAttribute('aria-current')).toBe('page')

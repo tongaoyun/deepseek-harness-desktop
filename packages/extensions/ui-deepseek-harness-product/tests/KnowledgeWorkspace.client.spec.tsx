@@ -23,15 +23,28 @@ const props = { entries, loading: false, authRequired: false, authPending: false
 
 function transport(handler: (method: string, payload: Record<string, unknown>) => Promise<unknown>) {
   const preview = createPreviewFixture()
+  const folderMetadata = new Map<string, unknown>()
   const invoke = vi.fn(async (_namespace: string, method: string, payload: Record<string, unknown>, _requestId?: string) => {
     try {
+      if (method === 'knowledge.folders.get') {
+        const result = folderMetadata.get(`${payload.knowledgeBaseId}:${payload.folderId}`)
+        if (!result) throw new Error('Folder not found')
+        return { ok: true, result }
+      }
       if (method === 'knowledge.documents.previewMetadata') return { ok: true,
         result: originalMetadata(String(payload.knowledgeBaseId), String(payload.documentId)) }
       const result = await preview(method, payload, (name, data) => handler(name, data as Record<string, unknown>))
       if (method === 'knowledge.folders.list' && typeof result === 'object' && result !== null && 'items' in result && Array.isArray(result.items)) {
+        const folderRows: readonly unknown[] = result.items
+        for (const folder of folderRows) if (typeof folder === 'object' && folder !== null && 'id' in folder) {
+          folderMetadata.set(`${payload.knowledgeBaseId}:${folder.id}`, folder)
+        }
         const items = result.items.filter((folder: unknown) => typeof folder === 'object' && folder !== null
           && 'parentId' in folder && folder.parentId === (payload.parentId ?? null))
         return { ok: true, result: { ...result, items, total: items.length === result.items.length && 'total' in result ? result.total : items.length } }
+      }
+      if (method === 'knowledge.folders.create' && typeof result === 'object' && result !== null && 'id' in result) {
+        folderMetadata.set(`${payload.knowledgeBaseId}:${result.id}`, result)
       }
       return { ok: true, result }
     }
@@ -128,7 +141,7 @@ it('creates nested folders with retained retry input, browses their paths and de
   const dialog = await screen.findByRole('dialog', { name: zh.knowledgeCreateFolder })
   const name = within(dialog).getByRole<HTMLInputElement>('textbox', { name: zh.knowledgeFolderName })
   expect(name.maxLength).toBe(80)
-  expect(within(dialog).getByRole<HTMLSelectElement>('combobox', { name: zh.knowledgeParentFolder }).value).toBe('root')
+  await within(dialog).findByRole('button', { name: '项目资料', current: 'page' })
   fireEvent.change(name, { target: { value: '验收记录' } })
   fireEvent.click(within(dialog).getByRole('button', { name: zh.knowledgeSave }))
   await within(dialog).findByRole('alert')
