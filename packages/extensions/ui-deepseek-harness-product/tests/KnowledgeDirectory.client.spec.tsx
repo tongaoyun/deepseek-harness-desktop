@@ -62,6 +62,7 @@ it('moves to another page and an unexpanded nested destination without preloadin
   const view = render(<KnowledgeWorkspace {...props} />)
   const navigation = within(view.container.querySelector<HTMLElement>('[data-knowledge-navigation]')!)
   await navigation.findByRole('button', { name: '目录1' })
+  fireEvent.click(navigation.getByRole('button', { name: zh.knowledgeAllMaterials }))
   await screen.findByRole('button', { name: document.filename })
   fireEvent.click(screen.getByRole('button', { name: zh.knowledgeDocumentActions.replace('{name}', document.filename) }))
   fireEvent.click(screen.getByRole('menuitem', { name: zh.knowledgeMoveDocument }))
@@ -100,7 +101,9 @@ it('retains the selected path and create location after the sidebar changes page
 
 it('loads title and content from the same document revision before saving', async () => {
   const invoke = transport()
-  render(<KnowledgeWorkspace {...props} />)
+  const view = render(<KnowledgeWorkspace {...props} />)
+  const navigation = within(view.container.querySelector<HTMLElement>('[data-knowledge-navigation]')!)
+  fireEvent.click(navigation.getByRole('button', { name: zh.knowledgeAllMaterials }))
   await screen.findByRole('button', { name: document.filename })
   fireEvent.click(screen.getByRole('button', { name: zh.knowledgeDocumentActions.replace('{name}', document.filename) }))
   fireEvent.click(screen.getByRole('menuitem', { name: zh.modifyResource }))
@@ -110,6 +113,25 @@ it('loads title and content from the same document revision before saving', asyn
   fireEvent.click(screen.getByRole('button', { name: zh.knowledgeSave }))
   await waitFor(() => { expect(invoke.mock.calls.some(call => call[1] === 'knowledge.documents.save'
     && call[2].title === '他人新标题' && call[2].expectedUpdatedAt === '2026-10-14T00:00:00Z')).toBe(true) })
+})
+
+it('paginates folders and documents together without following navigation pagination', async () => {
+  const invoke = transport()
+  const view = render(<KnowledgeWorkspace {...props} />)
+  const navigation = within(view.container.querySelector<HTMLElement>('[data-knowledge-navigation]')!)
+  const content = within(view.container.querySelector<HTMLElement>('[data-knowledge-content]')!)
+  await content.findByRole('button', { name: '目录1' })
+  expect(content.queryByRole('button', { name: document.filename })).toBeNull()
+  expect(content.getByText(zh.itemCount.replace('{count}', '22'))).toBeTruthy()
+  fireEvent.click(navigation.getByRole('button', { name: zh.nextPage }))
+  await navigation.findByRole('button', { name: '目录21' })
+  expect(content.getByRole('button', { name: '目录1' })).toBeTruthy()
+  expect(content.queryByRole('button', { name: '目录21' })).toBeNull()
+  fireEvent.click(content.getByRole('button', { name: zh.nextPage }))
+  await content.findByRole('button', { name: document.filename })
+  expect(content.getByRole('button', { name: '目录21' })).toBeTruthy()
+  expect(content.queryByRole('button', { name: '目录1' })).toBeNull()
+  expect(invoke.mock.calls.some(call => call[1] === 'knowledge.documents.list')).toBe(true)
 })
 
 it('blocks creation in a missing folder and preserves the entered name without submitting to root', async () => {

@@ -13,7 +13,7 @@ import { ConnectorProxy } from './connector-proxy.ts'
 import { inferenceProfile } from './inference-profile.ts'
 import { ExtensionAuthoring } from './extension-authoring.ts'
 import { PersonalConnectors } from './personal-connectors.ts'
-import { knowledgeUploadDialogOptions, uploadKnowledgeFile } from './knowledge-upload.ts'
+import { knowledgeUploadDialogOptions, KnowledgeUploads } from './knowledge-upload.ts'
 import { KnowledgeFiles } from './knowledge-files.ts'
 import { waitForNativeDialog } from './native-dialog.ts'
 interface ExtensionContext {
@@ -112,6 +112,13 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
     openPath: path => shell.openPath(path),
   })
   let knowledgeFileEmployeeId = storedDeepSeekHarnessSession?.session.employeeId
+  const knowledgeUploads = new KnowledgeUploads(() => productBridge.getSession().employeeId, async (mode, signal) => {
+    const window = context.getWindow()
+    const options = knowledgeUploadDialogOptions(mode)
+    const selected = await waitForNativeDialog(() => window
+      ? dialog.showOpenDialog(window, options) : dialog.showOpenDialog(options), signal)
+    return selected.canceled ? undefined : selected.filePaths[0]
+  }, knowledgeFilePolicy.uploadMaxBytes)
   const nativeSidecar = new DeepSeekHarnessNativeProcess(
     process.env.DEEPSEEK_HARNESS_NATIVE_BINARY
       ?? (app.isPackaged ? join(process.resourcesPath, 'native', process.platform === 'win32' ? 'deepseek-harness-native.exe' : 'deepseek-harness-native') : undefined),
@@ -151,28 +158,14 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
   const productBridgeOptions: ProductBridgeOptions = {
     support: (method, input, api, session, signal) => support.invoke(method, input, api, session, signal),
     knowledgeFiles: (method, input, api, session, signal) => knowledgeFiles.invoke(method, input, api, session, signal),
-    knowledgeUpload: async (baseId, operationId, pdfParseMode, folderId, api, signal) => {
-      signal?.throwIfAborted()
-      const limits = await api.request<Readonly<Record<string, unknown>>>('/api/v1/knowledge-file-limits', signal === undefined ? {} : { signal })
-      if (typeof limits.uploadMaxBytes !== 'number' || !Number.isSafeInteger(limits.uploadMaxBytes) || limits.uploadMaxBytes < 1) {
-        throw new Error('Invalid knowledge upload limits')
-      }
-      const window = context.getWindow()
-      const options = knowledgeUploadDialogOptions(pdfParseMode)
-      const selected = await waitForNativeDialog(() => window
-        ? dialog.showOpenDialog(window, options) : dialog.showOpenDialog(options), signal)
-      signal?.throwIfAborted()
-      const path = selected.filePaths[0]
-      if (selected.canceled || path === undefined) return { cancelled: true }
-      return uploadKnowledgeFile(path, baseId, operationId, pdfParseMode, api, signal,
-        { folderId, maxBytes: Math.min(limits.uploadMaxBytes, knowledgeFilePolicy.uploadMaxBytes) })
-    },
+    knowledgeUpload: knowledgeUploads,
     desktopVersion: app.getVersion(),
     persistSession: async (session, token) => {
       persistDeepSeekHarnessSession(session, token)
       const employeeId = session.authenticated ? session.employeeId : undefined
       if (employeeId !== knowledgeFileEmployeeId) {
         knowledgeFileEmployeeId = employeeId
+        knowledgeUploads.resetIdentity()
         await knowledgeFiles.resetIdentity()
       }
       await personalConnectors.resetIdentity(session.authenticated ? session.employeeId : undefined)
@@ -301,6 +294,7 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
       closed = true
       if (supportTimer !== undefined) clearInterval(supportTimer)
       lifecycle.abort(new Error('Product extension is closed'))
+      knowledgeUploads.close()
       await productBridge.dispose()
       await support.close()
       await knowledgeFiles.close()

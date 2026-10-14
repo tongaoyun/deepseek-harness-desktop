@@ -54,6 +54,8 @@ description: "认证产品桌面用户，管理凭据、原生操作与产品资
 
 原件元数据必须提供稳定的 `contentVersion`。索引状态及其 `updatedAt` 不改变内容标识，替换原件或编辑 Markdown 则会改变。内容标识缺失时拒绝读取，Office 转换及其缓存使用同一版本。
 
+`KnowledgeUploads` 最多保留 16 个按员工隔离的原生文件选择，直到渲染进程确认或明确结束重试。重试复用请求编号、文件路径、目标和解析方式，重新读取实时字节限制，并在发送前校验 SHA-256。路径和哈希仅留在主进程，渲染进程只收到业务结果。HTTP 或 IPC 响应丢失时保留选择以供重试；文件变化在再次写入前拒绝。结束重试、切换账号和桌面关闭释放选择。选择仅保留在本次桌面进程内，结束重试的上传仍可能已在远端提交。
+
 打包的 `product.json` 支持 `knowledgeFiles` 对象，默认值为：`previewMaxBytes` 32 MiB、`spreadsheetMaxBytes` 16 MiB、`officeInputMaxBytes` 50 MiB、`officeOutputMaxBytes` 100 MiB、`downloadMaxBytes` 250 MiB、`uploadMaxBytes` 50 MiB、`transferLifetimeMs` 15 分钟、`fileRequestTimeoutMs` 5 分钟、`maxTransfers` 8。配置值必须是有界正整数；字节限制与实时服务端上限共同生效，官方查看器仍保留自身保护。Renderer 不能覆盖该配置。
 
 启动时按服务端 Bootstrap 的精确模型 ID 生成不含凭据的模型 overlay。DeepSeek 模型使用官方 DeepSeek 适配器，其余模型使用官方 pi-ai 适配器的 OpenAI 兼容网关路由。产品 profile 不加载公共账号路由。有效的已保存默认模型会保留，不可用的默认模型在创建任务前替换为服务端第一个模型。已有 Session 的模型选择仍然显式保存，可通过官方模型选择器修改。

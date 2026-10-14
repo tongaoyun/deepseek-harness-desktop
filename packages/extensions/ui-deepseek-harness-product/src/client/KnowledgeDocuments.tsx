@@ -13,9 +13,15 @@ import { knowledgeFolderTrail, replaceKnowledgeFolderBranch } from './knowledge-
 import { useKnowledgeFolderLocation } from './knowledge-folder-location.ts'
 import { KnowledgeFolderPicker } from './KnowledgeFolderPicker.tsx'
 import { productErrorMessage } from './product-errors.ts'
+import { readMaterialDocuments } from './knowledge-materials.ts'
 
 type Confirmation = { readonly kind: 'document'; readonly document: KnowledgeDocument; readonly operationId: string }
   | { readonly kind: 'folder'; readonly folder: KnowledgeFolder }
+type UploadSelection = {
+  readonly operationId: string
+  readonly mode: KnowledgePdfParseMode
+  readonly destination: string | null | undefined
+}
 
 /** Display authorized documents with server-side filters and paginated results.
  * @param props Library permissions, labels, optional workspace navigation, and selection callback.
@@ -43,6 +49,8 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
 }): ReactNode {
   const request = useKnowledgeRequests()
   const [data, setData] = useState<KnowledgePage<KnowledgeDocument>>()
+  const [materialFolderPage, setMaterialFolderPage] = useState<{ key: string; value: KnowledgePage<KnowledgeFolder> }>()
+  const [folderError, setFolderError] = useState('')
   const [folders, setFolders] = useState<readonly KnowledgeFolder[]>([])
   const [folderId, setFolderId] = useState<string | null | undefined>(null)
   const [expandedFolders, setExpandedFolders] = useState<ReadonlySet<string>>(new Set())
@@ -58,6 +66,8 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
   const [error, setError] = useState('')
   const [mutationError, setMutationError] = useState('')
   const [pending, setPending] = useState(false)
+  const [uploadRetry, setUploadRetry] = useState<UploadSelection>()
+  const uploadSelection = useRef<UploadSelection>()
   const [accessDenied, setAccessDenied] = useState(false)
   const [reader, setReader] = useState<KnowledgeDocument>()
   const [editor, setEditor] = useState<KnowledgeEditorTarget>()
@@ -71,8 +81,12 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
   useEffect(() => {
     const controller = new AbortController()
     operation.current = controller
-    return () => { controller.abort(); accessOperation.current.abort() }
-  }, [])
+    return () => {
+      controller.abort(); accessOperation.current.abort()
+      const retained = uploadSelection.current
+      if (retained) void request('knowledge.documents.upload.discard', { knowledgeBaseId: product.id, operationId: retained.operationId }).catch(() => undefined)
+    }
+  }, [request, product.id])
   const denyAccess = useCallback(() => {
     accessOperation.current.abort()
     setAccessDenied(true); setData(undefined); setFolders([]); setReader(undefined); setLoading(false)
@@ -99,6 +113,8 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
     ...location.trail ?? []]
   const canManage = product.canManage === true && !accessDenied
   const canOpenExternal = globalThis.location.protocol === 'dsh-app:' && globalThis.location.hostname === 'app'
+  const folderSelectionKey = JSON.stringify([folderId === undefined ? 'all-materials' : folderId, page, Boolean(search || format || status), folderRevision, refreshRevision])
+  const materialFolders = accessDenied || materialFolderPage?.key !== folderSelectionKey ? undefined : materialFolderPage.value
   useEffect(() => {
     if (!canManage) { setEditor(undefined); setConfirmation(undefined); setMove(undefined) }
   }, [canManage])
@@ -106,14 +122,37 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
     if (accessDenied) return
     const controller = new AbortController()
     const signal = AbortSignal.any([controller.signal, accessOperation.current.signal])
+    setFolderError(''); setError(''); setData(undefined); setLoading(true)
+    if (folderId === undefined || search || format || status) {
+      setMaterialFolderPage({ key: folderSelectionKey, value: { items: [], page, size: 20, total: 0 } })
+    } else {
+      void request('knowledge.folders.list', { knowledgeBaseId: product.id, parentId: folderId, page, size: 20 }, signal)
+        .then((value) => {
+          if (signal.aborted) return
+          const result = knowledgePage(value, knowledgeFolder)
+          if (result.items.some(folder => folder.parentId !== folderId || folder.id === folderId)) throw new Error('Invalid knowledge folder branch')
+          setMaterialFolderPage({ key: folderSelectionKey, value: result })
+        }).catch((failure: unknown) => {
+          if (signal.aborted) return
+          setFolderError(productErrorMessage(failure, t, 'knowledgeFoldersFailed'))
+          setLoading(false)
+          if (isKnowledgeAccessDenied(failure)) denyAccess()
+        })
+    }
+    return () => { controller.abort() }
+  }, [request, product.id, folderSelectionKey, accessDenied, denyAccess, t])
+  useEffect(() => {
+    if (accessDenied || materialFolders === undefined) return
+    const controller = new AbortController()
+    const signal = AbortSignal.any([controller.signal, accessOperation.current.signal])
     setLoading(true); setError('')
-    void request('knowledge.documents.list', { knowledgeBaseId: product.id, page, size: 20,
+    void readMaterialDocuments(request, { knowledgeBaseId: product.id,
       ...(folderId === undefined ? {} : { folderId }), ...(search ? { query: search } : {}),
       ...(format ? { format } : {}), ...(status ? { status } : {}),
-    }, signal).then((value) => {
+    }, materialFolders, page, signal).then((result) => {
       if (signal.aborted) return
-      const result = knowledgePage(value, knowledgeDocument)
-      if (page > 1 && result.items.length === 0) { setPage(Math.max(1, Math.ceil(result.total / 20))); return }
+      const total = result.total + materialFolders.total
+      if (page > 1 && (page - 1) * 20 >= total) { setPage(Math.max(1, Math.ceil(total / 20))); return }
       const previousPage = loadedPage.current
       loadedPage.current = result.page
       setData(result)
@@ -134,7 +173,7 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
     })
       .finally(() => { if (!signal.aborted) setLoading(false) })
     return () => { controller.abort() }
-  }, [request, product.id, folderId, page, search, format, status, revision, refreshRevision, accessDenied, denyAccess, t])
+  }, [request, product.id, folderId, page, search, format, status, revision, refreshRevision, materialFolders, accessDenied, denyAccess, t])
   useEffect(() => {
     if (loading || accessDenied) return
     if (!data?.items.some(row => ['QUEUED', 'PROCESSING', 'FINALIZING', 'DELETING'].includes(deleted.includes(row.id) ? 'DELETING' : row.status))) return
@@ -154,19 +193,39 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
     } catch (failure) { if (!controller.signal.aborted) setMutationError(productErrorMessage(failure, t, 'knowledgeChangeFailed')) }
     finally { if (!controller.signal.aborted) setPending(false) }
   }
-  const upload = async (pdfParseMode: KnowledgePdfParseMode, destination = folderId): Promise<void> => {
+  const upload = async (pdfParseMode: KnowledgePdfParseMode, destination = folderId, retry?: UploadSelection): Promise<void> => {
     if (pending) return
+    if (uploadSelection.current && retry === undefined) { setMutationError(t('knowledgeUploadPending')); return }
     const controller = operation.current
+    const selected = retry ?? { operationId: globalThis.crypto.randomUUID(), mode: pdfParseMode, destination }
+    uploadSelection.current = selected
     setPending(true); setMutationError('')
     try {
       const value = await request('knowledge.documents.upload', { knowledgeBaseId: product.id,
-        operationId: globalThis.crypto.randomUUID(), pdfParseMode,
+        operationId: selected.operationId, pdfParseMode,
         ...(destination === undefined ? {} : { folderId: destination }) }, controller.signal)
-      if (!controller.signal.aborted && !(typeof value === 'object' && value !== null && 'cancelled' in value && value.cancelled === true)) {
-        knowledgeDocument(value); setRevision(row => row + 1)
+      if (!controller.signal.aborted) {
+        if (!(typeof value === 'object' && value !== null && 'cancelled' in value && value.cancelled === true)) {
+          knowledgeDocument(value)
+          await request('knowledge.documents.upload.discard', { knowledgeBaseId: product.id, operationId: selected.operationId }, controller.signal)
+          controller.signal.throwIfAborted()
+          setRevision(row => row + 1)
+        }
+        uploadSelection.current = undefined; setUploadRetry(undefined)
       }
-    } catch (failure) { if (!controller.signal.aborted) setMutationError(productErrorMessage(failure, t, 'knowledgeUploadFailed')) }
+    } catch (failure) {
+      if (!controller.signal.aborted) { setUploadRetry(selected); setMutationError(productErrorMessage(failure, t, 'knowledgeUploadFailed')) }
+    }
     finally { if (!controller.signal.aborted) setPending(false) }
+  }
+  const discardUpload = async (): Promise<void> => {
+    if (pending || uploadRetry === undefined) return
+    setPending(true)
+    try {
+      await request('knowledge.documents.upload.discard', { knowledgeBaseId: product.id, operationId: uploadRetry.operationId }, operation.current.signal)
+      uploadSelection.current = undefined; setUploadRetry(undefined); setMutationError(''); setRevision(value => value + 1)
+    } catch (failure) { if (!operation.current.signal.aborted) setMutationError(productErrorMessage(failure, t, 'knowledgeUploadFailed')) }
+    finally { if (!operation.current.signal.aborted) setPending(false) }
   }
   const selectFolder = (value: string | null | undefined) => {
     setReader(undefined)
@@ -183,11 +242,11 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
   }
   const beginMutation = () => { setMutationError('') }
   const openReader = (row: KnowledgeDocument) => { if (!accessDenied) { setReader(row); onNavigate?.() } }
-  const pages = Math.max(1, Math.ceil((availableData?.total ?? 0) / 20))
+  const materialTotal = (availableData?.total ?? 0) + (materialFolders?.total ?? 0)
+  const pages = Math.max(1, Math.ceil(materialTotal / 20))
   const currentFolder = reader ? undefined : location.trail?.at(-1)
   const breadcrumbTrail = location.trail ?? []
-  const childFolders = folderId === undefined || search || format || status ? []
-    : availableFolders.filter(row => row.parentId === folderId)
+  const childFolders = materialFolders?.items ?? []
   const documentAction = (id: string, row: KnowledgeDocument) => {
     if (id === 'read') openReader(row)
     else if (id === 'edit') { beginMutation(); setEditor({ kind: 'markdown', document: row }) }
@@ -236,7 +295,7 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
     <div className={css.knowledgeMaterialsToolbar}>
       {materialSearch}
       {canManage && <div className={css.knowledgeAddActions}>
-        <KnowledgeUploadMenu disabled={pending} onSelect={(mode) => { void upload(mode) }} t={t} />
+        <KnowledgeUploadMenu disabled={pending || uploadRetry !== undefined} onSelect={(mode) => { void upload(mode) }} t={t} />
         <KnowledgeAddMenu disabled={pending} onSelect={(kind) => {
           beginMutation(); setEditor(kind === 'folder' ? { kind, parentId: folderId ?? null } : { kind, folderId: folderId ?? null })
         }} t={t} />
@@ -261,14 +320,19 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
         }}><IconRefreshOutlineRegular size={16} /></button></Tooltip>
     </div>
   </>
+  const uploadRecovery = uploadRetry && <div className={css.knowledgeAddActions}>
+    <Button variant="outline" size="sm" disabled={pending} onClick={() => { void upload(uploadRetry.mode, uploadRetry.destination, uploadRetry) }}>{t('knowledgeRetryUpload')}</Button>
+    <Button variant="ghost" size="sm" disabled={pending} onClick={() => { void discardUpload() }}>{t('knowledgeDiscardUpload')}</Button>
+  </div>
   const materials = <>
-    {(error || mutationError) && <p role="alert" className={css.catalogError}>{error || mutationError}</p>}
+    {(folderError || error || mutationError) && <p role="alert" className={css.catalogError}>{folderError || error || mutationError}</p>}
+    {uploadRecovery}
     <div className={css.knowledgeTableScroll} aria-busy={loading}>
       <table className={css.knowledgeTable}>
         <thead><tr><th>{t('knowledgeDocumentTitle')}</th><th>{t('status')}</th><th>{t('knowledgeFormat')}</th>
           <th>{t('knowledgeSize')}</th><th>{t('updatedAt')}</th>
           <th><span className={css.visuallyHidden}>{t('resourceActions')}</span></th></tr></thead>
-        <tbody>{page === 1 && childFolders.map(folder => <tr key={`folder:${folder.id}`} data-knowledge-child-folder={folder.id}>
+        <tbody>{childFolders.map(folder => <tr key={`folder:${folder.id}`} data-knowledge-child-folder={folder.id}>
           <td><button type="button" className={css.knowledgeDocumentName} onClick={() => { selectFolder(folder.id) }}>
             <IconFolderOpenOutlineRegular size={18} /><span>{folder.name}</span></button></td>
           <td></td><td>{t('knowledgeFolderType')}</td><td></td><td></td>
@@ -288,11 +352,11 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
           </tr>
         })}</tbody>
       </table>
-      {loading && availableData === undefined && <p role="status" className={css.catalogStatus}>{t('loading')}</p>}
-      {!loading && !error && availableData?.items.length === 0 && childFolders.length === 0 && <p className={css.catalogStatus}>{t(search || format || status ? 'noSearchResults' : 'knowledgeNoMaterials')}</p>}
+      {!folderError && (loading || materialFolders === undefined) && availableData === undefined && <p role="status" className={css.catalogStatus}>{t('loading')}</p>}
+      {!loading && !folderError && !error && availableData?.items.length === 0 && childFolders.length === 0 && <p className={css.catalogStatus}>{t(search || format || status ? 'noSearchResults' : 'knowledgeNoMaterials')}</p>}
     </div>
-    {(page > 1 || (availableData?.total ?? 0) > 0 || childFolders.length > 0) && <div className={css.knowledgePagination}>
-      <span>{t('itemCount').replace('{count}', String((availableData?.total ?? 0) + childFolders.length))}</span>
+    {(page > 1 || materialTotal > 0) && <div className={css.knowledgePagination}>
+      <span>{t('itemCount').replace('{count}', String(materialTotal))}</span>
       <div><Button variant="ghost" size="sm" disabled={loading || page <= 1} aria-label={t('previousPage')} onClick={() => { setPage(value => value - 1); setData(undefined) }}><IconChevronLeftOutlineRegular size={16} /></Button>
         <span>{t('knowledgePageCount').replace('{page}', String(page)).replace('{pages}', String(pages))}</span>
         <Button variant="ghost" size="sm" disabled={loading || page >= pages} aria-label={t('nextPage')} onClick={() => { setPage(value => value + 1); setData(undefined) }}><IconChevronRightOutlineRegular size={16} /></Button></div>
@@ -346,7 +410,7 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
             onSelect={(id) => { folderAction(id, currentFolder) }} t={t} />}
         </header>
         <div className={css.knowledgeWorkspaceBody}>
-          {reader ? <>{(error || mutationError) && <p role="alert" className={css.catalogError}>{error || mutationError}</p>}{documentReader}</>
+          {reader ? <>{(folderError || error || mutationError) && <p role="alert" className={css.catalogError}>{folderError || error || mutationError}</p>}{uploadRecovery}{documentReader}</>
             : <>{toolbar}{materials}</>}
         </div>
       </main>

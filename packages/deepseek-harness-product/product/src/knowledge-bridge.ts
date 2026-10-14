@@ -4,9 +4,13 @@ import { ProductError } from './errors.ts'
 import type { KnowledgePdfParseMode } from './protocol.ts'
 
 /** Native file selection is owned by the desktop; renderer payloads contain no paths. */
-export type KnowledgeUpload = (baseId: string, operationId: string, pdfParseMode: KnowledgePdfParseMode,
-  folderId: string | null | undefined, api: DeepSeekHarnessApiClient,
-  signal?: AbortSignal) => Promise<unknown>
+export interface KnowledgeUpload {
+  /** Select once and retry the same file with the same request identity. */
+  send(baseId: string, operationId: string, pdfParseMode: KnowledgePdfParseMode,
+    folderId: string | null | undefined, api: DeepSeekHarnessApiClient, signal?: AbortSignal): Promise<unknown>
+  /** Release a retained native selection without repeating its remote write. */
+  discard(baseId: string, operationId: string): void
+}
 
 /** Dispatch knowledge management without exposing upstream URLs or credentials.
  * @param api Authenticated, main-owned server transport.
@@ -81,7 +85,13 @@ export async function invokeKnowledge(api: DeepSeekHarnessApiClient, method: str
     if (pdfParseMode !== 'STANDARD' && pdfParseMode !== 'TEXT') invalid('pdfParseMode')
     if (upload === undefined) throw new ProductError('KNOWLEDGE_UPLOAD_UNAVAILABLE', 'File selection is unavailable', false)
     const folderId = input.folderId === null || input.folderId === undefined ? input.folderId : decodedResource(input, 'folderId')
-    return upload(decodeURIComponent(baseId), operation(input), pdfParseMode, folderId, api, signal)
+    return upload.send(decodeURIComponent(baseId), operation(input), pdfParseMode, folderId, api, signal)
+  }
+  if (method === 'knowledge.documents.upload.discard') {
+    if (Object.keys(input).some(key => !['knowledgeBaseId', 'operationId'].includes(key))) invalid('upload discard payload')
+    if (upload === undefined) throw new ProductError('KNOWLEDGE_UPLOAD_UNAVAILABLE', 'File selection is unavailable', false)
+    upload.discard(decodeURIComponent(baseId), operation(input))
+    return { discarded: true }
   }
   if (method === 'knowledge.documents.save') {
     const title = field(input, 'title', 255)

@@ -3,9 +3,86 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import { DeepSeekHarnessApiClient } from '@deepseek-harness/product'
-import { knowledgeUploadDialogOptions, uploadKnowledgeFile } from '../src/knowledge-upload.ts'
+import { knowledgeUploadDialogOptions, uploadKnowledgeFile, KnowledgeUploads } from '../src/knowledge-upload.ts'
 
 const uploadPolicy = { maxBytes: 50 * 1024 * 1024 }
+
+it('reuses the native file and operation after a lost server or IPC receipt, and refuses changed bytes', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'knowledge-upload-retry-'))
+  onTestFinished(() => rm(root, { recursive: true, force: true }))
+  const path = join(root, 'policy.md')
+  await writeFile(path, '# Original')
+  const select = vi.fn(async () => path)
+  let fail = true
+  const keys: string[] = []
+  const transport = vi.fn<typeof fetch>(async (_url, init) => {
+    if ((_url instanceof Request ? _url.url : _url.toString()).endsWith('/knowledge-file-limits')) return Response.json({ success: true, data: { uploadMaxBytes: 1000 } })
+    keys.push(new Headers(init?.headers).get('idempotency-key') ?? '')
+    if (fail) { fail = false; throw new Error('Lost receipt') }
+    return Response.json({ success: true, data: { id: 'document', status: 'QUEUED' } })
+  })
+  const api = new DeepSeekHarnessApiClient({ baseUrl: 'https://product.test', getSessionToken: () => 'private-token', fetch: transport })
+  const uploads = new KnowledgeUploads(() => 'employee', select, 1000)
+  onTestFinished(() => { uploads.close(); api.close() })
+  await expect(uploads.send('base', 'stable-operation-0001', 'STANDARD', 'folder', api)).rejects.toThrow()
+  await expect(uploads.send('base', 'stable-operation-0001', 'STANDARD', 'folder', api)).resolves.toEqual({ id: 'document', status: 'QUEUED' })
+  // A main-process success is retained until the renderer acknowledges it.
+  await uploads.send('base', 'stable-operation-0001', 'STANDARD', 'folder', api)
+  expect(select).toHaveBeenCalledTimes(1)
+  expect(keys).toEqual(['stable-operation-0001', 'stable-operation-0001', 'stable-operation-0001'])
+  await expect(uploads.send('base', 'stable-operation-0001', 'TEXT', 'folder', api)).rejects.toMatchObject({ code: 'IDEMPOTENCY_KEY_REUSED' })
+  await writeFile(path, '# Changed!')
+  await expect(uploads.send('base', 'stable-operation-0001', 'STANDARD', 'folder', api)).rejects.toMatchObject({ code: 'KNOWLEDGE_FILE_CHANGED' })
+  expect(keys).toHaveLength(3)
+  uploads.discard('base', 'stable-operation-0001')
+  await uploads.send('base', 'stable-operation-0002', 'STANDARD', 'folder', api)
+  expect(select).toHaveBeenCalledTimes(2)
+})
+
+it('drops selections on employee changes and cancels preparation on close', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'knowledge-upload-identity-'))
+  onTestFinished(() => rm(root, { recursive: true, force: true }))
+  const path = join(root, 'policy.md')
+  await writeFile(path, '# Original')
+  let employee = 'first'
+  const select = vi.fn(async () => path)
+  const api = new DeepSeekHarnessApiClient({ baseUrl: 'https://product.test', getSessionToken: () => employee,
+    fetch: async url => (url instanceof Request ? url.url : url.toString()).endsWith('/knowledge-file-limits')
+      ? Response.json({ success: true, data: { uploadMaxBytes: 1000 } }) : Promise.reject(new Error('Lost receipt')) })
+  const uploads = new KnowledgeUploads(() => employee, select, 1000)
+  onTestFinished(() => { uploads.close(); api.close() })
+  await expect(uploads.send('base', 'stable-operation-0001', 'STANDARD', null, api)).rejects.toThrow()
+  employee = 'second'; uploads.resetIdentity()
+  await expect(uploads.send('base', 'stable-operation-0001', 'STANDARD', null, api)).rejects.toThrow()
+  expect(select).toHaveBeenCalledTimes(2)
+  uploads.close()
+  await expect(uploads.send('base', 'stable-operation-0001', 'STANDARD', null, api)).rejects.toThrow()
+  expect(select).toHaveBeenCalledTimes(2)
+})
+
+it.each(['close', 'employee-change'] as const)('blocks a late native selection after %s and releases its active operation', async (action) => {
+  const root = await mkdtemp(join(tmpdir(), 'knowledge-upload-pending-'))
+  onTestFinished(() => rm(root, { recursive: true, force: true }))
+  const path = join(root, 'policy.md')
+  await writeFile(path, '# Original')
+  const entered = Promise.withResolvers<undefined>()
+  const picker = Promise.withResolvers<string>()
+  let employee = 'first'
+  const transport = vi.fn<typeof fetch>(async () => Response.json({ success: true, data: { uploadMaxBytes: 1000 } }))
+  const api = new DeepSeekHarnessApiClient({ baseUrl: 'https://product.test', getSessionToken: () => employee, fetch: transport })
+  const uploads = new KnowledgeUploads(() => employee, () => { entered.resolve(undefined); return picker.promise }, 1000)
+  const pending = uploads.send('base', 'stable-operation-0001', 'STANDARD', null, api)
+  onTestFinished(async () => { uploads.close(); picker.resolve(path); await pending.catch(() => undefined); api.close() })
+  await entered.promise
+  await expect(uploads.send('base', 'stable-operation-0001', 'STANDARD', null, api))
+    .rejects.toMatchObject({ code: 'IDEMPOTENCY_OPERATION_IN_PROGRESS' })
+  if (action === 'close') uploads.close()
+  else { employee = 'second'; uploads.resetIdentity() }
+  const rejected = expect(pending).rejects.toThrow()
+  picker.resolve(path)
+  await rejected
+  expect(transport).toHaveBeenCalledTimes(1)
+})
 
 it('uploads a user-selected file with its basename and stable retry identity', async () => {
   const root = await mkdtemp(join(tmpdir(), 'knowledge-upload-'))

@@ -183,30 +183,35 @@ it('returns asynchronous deletion state instead of treating it as completion', a
 
 it('only lets the main-owned picker supply an upload file', async () => {
   const api = client(async () => { throw new Error('Unexpected HTTP') })
-  const upload = vi.fn(async () => ({ cancelled: true }))
+  const send = vi.fn(async () => ({ cancelled: true }))
+  const upload = { send, discard: vi.fn() }
   try {
     await expect(invokeKnowledge(api, 'knowledge.documents.upload', { knowledgeBaseId: 'base', operationId }, upload))
       .resolves.toEqual({ cancelled: true })
     await expect(invokeKnowledge(api, 'knowledge.documents.upload', { knowledgeBaseId: 'base', operationId, path: '/private/file' }, upload))
       .rejects.toMatchObject({ code: 'KNOWLEDGE_REQUEST_INVALID' })
-    expect(upload).toHaveBeenCalledTimes(1)
-    expect(upload).toHaveBeenCalledWith('base', operationId, 'STANDARD', undefined, api, undefined)
+    expect(send).toHaveBeenCalledTimes(1)
+    expect(send).toHaveBeenCalledWith('base', operationId, 'STANDARD', undefined, api, undefined)
     await invokeKnowledge(api, 'knowledge.documents.upload', { knowledgeBaseId: 'base', operationId, pdfParseMode: 'TEXT' }, upload)
-    expect(upload).toHaveBeenLastCalledWith('base', operationId, 'TEXT', undefined, api, undefined)
+    expect(send).toHaveBeenLastCalledWith('base', operationId, 'TEXT', undefined, api, undefined)
     for (const pdfParseMode of ['markitdown', '', null, { engine: 'markitdown' }]) {
       await expect(invokeKnowledge(api, 'knowledge.documents.upload', { knowledgeBaseId: 'base', operationId, pdfParseMode }, upload))
         .rejects.toMatchObject({ code: 'KNOWLEDGE_REQUEST_INVALID' })
     }
     await expect(invokeKnowledge(api, 'knowledge.documents.upload', { knowledgeBaseId: 'base', operationId,
       pdfParseMode: 'TEXT', engine: 'markitdown' }, upload)).rejects.toMatchObject({ code: 'KNOWLEDGE_REQUEST_INVALID' })
-    expect(upload).toHaveBeenCalledTimes(2)
+    expect(send).toHaveBeenCalledTimes(2)
     await invokeKnowledge(api, 'knowledge.documents.upload', { knowledgeBaseId: 'base', operationId, folderId: 'folder-1' }, upload)
-    expect(upload).toHaveBeenLastCalledWith('base', operationId, 'STANDARD', 'folder-1', api, undefined)
+    expect(send).toHaveBeenLastCalledWith('base', operationId, 'STANDARD', 'folder-1', api, undefined)
     await invokeKnowledge(api, 'knowledge.documents.upload', { knowledgeBaseId: 'base', operationId, folderId: null }, upload)
-    expect(upload).toHaveBeenLastCalledWith('base', operationId, 'STANDARD', null, api, undefined)
+    expect(send).toHaveBeenLastCalledWith('base', operationId, 'STANDARD', null, api, undefined)
     await expect(invokeKnowledge(api, 'knowledge.documents.upload', { knowledgeBaseId: 'base', operationId, folderId: '../other' }, upload))
       .rejects.toMatchObject({ code: 'KNOWLEDGE_REQUEST_INVALID' })
-    expect(upload).toHaveBeenCalledTimes(4)
+    expect(send).toHaveBeenCalledTimes(4)
+    await invokeKnowledge(api, 'knowledge.documents.upload.discard', { knowledgeBaseId: 'base', operationId }, upload)
+    expect(upload.discard).toHaveBeenCalledExactlyOnceWith('base', operationId)
+    await expect(invokeKnowledge(api, 'knowledge.documents.upload.discard', { knowledgeBaseId: 'base', operationId, path: '/private/file' }, upload))
+      .rejects.toMatchObject({ code: 'KNOWLEDGE_REQUEST_INVALID' })
   } finally { api.close() }
 })
 

@@ -89,6 +89,7 @@ it('pages folder branches independently and never reloads them during document p
   expect(api.invoke.mock.calls.filter(call => call[1] === 'knowledge.folders.list')).toHaveLength(before)
   expect(api.invoke.mock.calls.filter(call => call[1] === 'knowledge.folders.list').map(call => call[2])).toEqual([
     { knowledgeBaseId: 'personal', parentId: null, page: 1, size: 20 },
+    { knowledgeBaseId: 'personal', parentId: null, page: 1, size: 20 },
     { knowledgeBaseId: 'personal', parentId: null, page: 2, size: 20 },
     { knowledgeBaseId: 'personal', parentId: 'parent-2', page: 1, size: 20 },
   ])
@@ -107,7 +108,7 @@ it('reloads folder branches on explicit refresh and discards externally removed 
   fireEvent.click(content.getByRole('button', { name: zh.refresh }))
   await navigation.findByRole('button', { name: '保留目录' })
   expect(navigation.queryByRole('button', { name: '删除目录' })).toBeNull()
-  expect(api.invoke.mock.calls.filter(call => call[1] === 'knowledge.folders.list')).toHaveLength(2)
+  expect(api.invoke.mock.calls.filter(call => call[1] === 'knowledge.folders.list')).toHaveLength(4)
   fireEvent.click(navigation.getByRole('button', { name: '保留目录' }))
   await waitFor(() => { expect(api.invoke).toHaveBeenCalledWith('product', 'knowledge.documents.list',
     expect.objectContaining({ folderId: 'kept' }), expect.any(String)) })
@@ -198,6 +199,8 @@ it('clears file filters when entering a different folder and keeps the directory
   expect(content.getByRole<HTMLSelectElement>('combobox', { name: zh.knowledgeFormat }).value).toBe('')
   expect(api.invoke.mock.calls.filter(call => call[1] === 'knowledge.folders.list').map(call => call[2])).toEqual([
     { knowledgeBaseId: 'personal', parentId: null, page: 1, size: 20 },
+    { knowledgeBaseId: 'personal', parentId: null, page: 1, size: 20 },
+    { knowledgeBaseId: 'personal', parentId: 'stable-folder', page: 1, size: 20 },
     { knowledgeBaseId: 'personal', parentId: 'stable-folder', page: 1, size: 20 },
   ])
 })
@@ -401,8 +404,11 @@ it('uploads from another folder menu without replacing the current reader on can
   for (const next of ['cancel', 'failure', 'success'] as const) {
     outcome = next
     const count = api.invoke.mock.calls.filter(row => row[1] === 'knowledge.documents.upload').length
-    fireEvent.click(parts(view.container).navigation.getByRole('button', { name: zh.knowledgeFolderActions.replace('{name}', '业务制度') }))
-    fireEvent.click(screen.getByRole('menuitem', { name: zh.knowledgeUpload }))
+    if (next === 'success') fireEvent.click(parts(view.container).content.getByRole('button', { name: zh.knowledgeRetryUpload }))
+    else {
+      fireEvent.click(parts(view.container).navigation.getByRole('button', { name: zh.knowledgeFolderActions.replace('{name}', '业务制度') }))
+      fireEvent.click(screen.getByRole('menuitem', { name: zh.knowledgeUpload }))
+    }
     await waitFor(() => { expect(api.invoke.mock.calls.filter(row => row[1] === 'knowledge.documents.upload')).toHaveLength(count + 1) })
     await waitFor(() => { expect(parts(view.container).navigation.getByRole('button', {
       name: zh.knowledgeFolderActions.replace('{name}', '业务制度'),
@@ -413,6 +419,30 @@ it('uploads from another folder menu without replacing the current reader on can
   for (const call of api.invoke.mock.calls.filter(row => row[1] === 'knowledge.documents.upload')) {
     expect(call[2]).toMatchObject({ knowledgeBaseId: 'personal', folderId: 'stable-folder', pdfParseMode: 'STANDARD' })
   }
+  const attempts = api.invoke.mock.calls.filter(row => row[1] === 'knowledge.documents.upload')
+  expect(attempts[1]?.[2]).toEqual(attempts[2]?.[2])
+  expect(parts(view.container).content.queryByRole('button', { name: zh.knowledgeRetryUpload })).toBeNull()
+})
+
+it('ends an unresolved upload without repeating a write and refreshes the materials', async () => {
+  const api = transport(async (method) => {
+    if (method === 'knowledge.folders.list') return page([])
+    if (method === 'knowledge.documents.upload') throw new Error('Lost receipt')
+    return page([])
+  })
+  const view = render(<KnowledgeWorkspace {...props} />)
+  const { content } = parts(view.container)
+  fireEvent.click(content.getByRole('button', { name: zh.knowledgeUpload }))
+  fireEvent.click(await screen.findByRole('menuitem', { name: zh.knowledgeUploadStandard }))
+  await content.findByRole('button', { name: zh.knowledgeRetryUpload })
+  const attempt = api.invoke.mock.calls.find(row => row[1] === 'knowledge.documents.upload')!
+  const before = api.invoke.mock.calls.filter(row => row[1] === 'knowledge.documents.list').length
+  fireEvent.click(content.getByRole('button', { name: zh.knowledgeDiscardUpload }))
+  await waitFor(() => { expect(content.queryByRole('button', { name: zh.knowledgeRetryUpload })).toBeNull() })
+  expect(api.invoke.mock.calls.find(row => row[1] === 'knowledge.documents.upload.discard')?.[2])
+    .toEqual({ knowledgeBaseId: 'personal', operationId: attempt[2].operationId })
+  expect(api.invoke.mock.calls.filter(row => row[1] === 'knowledge.documents.upload')).toHaveLength(1)
+  await waitFor(() => { expect(api.invoke.mock.calls.filter(row => row[1] === 'knowledge.documents.list').length).toBeGreaterThan(before) })
 })
 
 it('allows a reader to download an unavailable preview without offering shared material mutation', async () => {
@@ -665,7 +695,7 @@ it('rechecks a same-ID library and its open document after a directory refresh',
   await parts(container).content.findByRole('heading', { name: '当前授权正文' })
   expect(screen.queryByRole('heading', { name: '初始正文' })).toBeNull()
   for (const method of ['knowledge.documents.list', 'knowledge.folders.list', 'knowledge.documents.preview.open']) {
-    expect(api.invoke.mock.calls.filter(row => row[1] === method)).toHaveLength(2)
+    expect(api.invoke.mock.calls.filter(row => row[1] === method)).toHaveLength(method === 'knowledge.folders.list' ? 4 : 2)
   }
 })
 
@@ -678,9 +708,13 @@ it.each([
   let refreshing = false
   const denied = deferred()
   const late = deferred()
+  let folderRefreshReads = 0
   const api = transport(async (method, payload) => {
     if (method === 'knowledge.documents.preview.open') return page([{ id: 'read', documentId: 'shared-document-id', content: '# 旧正文', locator: '' }])
     if (refreshing) {
+      // The material query needs its own folder count before reading files;
+      // the sidebar request remains in flight to exercise late settlement.
+      if (method === 'knowledge.folders.list' && ++folderRefreshReads === 2) return folders
       if (method === deniedMethod) { await denied.promise; throw new ProductError(code, 'private permission diagnostic', false) }
       return late.promise
     }
@@ -693,12 +727,12 @@ it.each([
   rerender(<KnowledgeWorkspace {...props} refreshRevision={1} />)
   await waitFor(() => {
     expect(api.invoke.mock.calls.filter(row => row[1] === 'knowledge.documents.list')).toHaveLength(2)
-    expect(api.invoke.mock.calls.filter(row => row[1] === 'knowledge.folders.list')).toHaveLength(2)
+    expect(api.invoke.mock.calls.filter(row => row[1] === 'knowledge.folders.list')).toHaveLength(4)
   })
   await act(async () => { denied.resolve(undefined) })
   await waitFor(() => { expect(container.querySelector('[data-knowledge-inline-reader]')).toBeNull() })
   const successMethod = deniedMethod === 'knowledge.folders.list' ? 'knowledge.documents.list' : 'knowledge.folders.list'
-  const concurrentRequest = api.invoke.mock.calls.filter(row => row[1] === successMethod).at(-1)
+  const concurrentRequest = api.invoke.mock.calls.filter(row => row[1] === successMethod).at(successMethod === 'knowledge.folders.list' ? -2 : -1)
   expect(api.cancel).toHaveBeenCalledWith('product', concurrentRequest?.[3])
   await act(async () => { late.resolve(successMethod === 'knowledge.folders.list' ? folders : page([documentRow('personal')])) })
   expect(parts(container).content.queryByRole('button', { name: '业务规范.md' })).toBeNull()

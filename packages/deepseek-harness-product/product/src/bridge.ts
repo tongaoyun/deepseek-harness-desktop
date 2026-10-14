@@ -4,6 +4,7 @@ import { DeepSeekHarnessApiClient, DeepSeekHarnessApiError } from './http-client
 import { assertProductMethod, assertProductPayload, type KnowledgeFileMethod, type ProductEvent, type ProductMethod, type ProductRuntimeMethod, type ProductSession } from './protocol.ts'
 import { ProductCatalogManager } from './catalog-manager.ts'
 import { invokeKnowledge, type KnowledgeUpload } from './knowledge-bridge.ts'
+export type { KnowledgeUpload } from './knowledge-bridge.ts'
 import { ProductError } from './errors.ts'
 
 /** Main-process-only inference bootstrap. Secrets in this object never cross the preload bridge. */

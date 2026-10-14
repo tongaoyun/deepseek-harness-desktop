@@ -186,7 +186,8 @@ it.each([
 })
 
 it('keeps folder browsing scoped to stable folder IDs and retains server-side permissions', async () => {
-  const api = transport(async method => method === 'knowledge.folders.list' ? page([{ id: 'folder-1', name: '业务制度', parentId: null }]) : page([]))
+  const api = transport(async (method, payload) => method === 'knowledge.folders.list' && typeof payload === 'object' && payload !== null && 'parentId' in payload && payload.parentId === null
+    ? page([{ id: 'folder-1', name: '业务制度', parentId: null }]) : page([]))
   render(<KnowledgeDetail renderFactorySlot={renderKnowledgePreview} product={library()} t={t} />)
   fireEvent.click((await screen.findAllByRole('button', { name: '业务制度' }))[0]!)
   await waitFor(() => { expect(api.invoke).toHaveBeenCalledWith('product', 'knowledge.documents.list', {

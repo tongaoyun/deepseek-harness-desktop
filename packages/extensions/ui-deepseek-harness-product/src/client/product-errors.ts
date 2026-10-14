@@ -38,6 +38,8 @@ const messageKeys: Readonly<Record<string, DeepSeekHarnessProductKey>> = {
   IDEMPOTENCY_OPERATION_UNKNOWN: 'knowledgeOperationUnknown',
   KNOWLEDGE_DOCUMENT_CHANGED: 'knowledgePreviewSourceChanged',
   KNOWLEDGE_DOCUMENT_DUPLICATE: 'knowledgeDocumentDuplicate',
+  KNOWLEDGE_FILE_CHANGED: 'knowledgeUploadFileChanged',
+  KNOWLEDGE_UPLOAD_PENDING_LIMIT: 'knowledgeUploadPendingLimit',
   KNOWLEDGE_PREVIEW_UNAVAILABLE: 'knowledgePreviewUnavailable',
   KNOWLEDGE_PREVIEW_TOO_LARGE: 'knowledgePreviewTooLarge',
   KNOWLEDGE_FILE_TOO_LARGE: 'knowledgeFileTooLarge',
