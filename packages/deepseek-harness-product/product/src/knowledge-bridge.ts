@@ -63,6 +63,9 @@ export async function invokeKnowledge(api: DeepSeekHarnessApiClient, method: str
     if (method === 'knowledge.documents.list' && input.folderId !== undefined) {
       params.set('folderId', input.folderId === null ? '' : decodedResource(input, 'folderId'))
     }
+    if (method === 'knowledge.folders.list') {
+      params.set('parentId', input.parentId == null ? '' : decodedResource(input, 'parentId'))
+    }
     if (params.size > 0) path += `?${params.toString()}`
     const result = await api.list<unknown>(path, page, size, signal)
     return { items: result.data, page: result.pageIndex, size: result.pageSize, total: result.totalCount }

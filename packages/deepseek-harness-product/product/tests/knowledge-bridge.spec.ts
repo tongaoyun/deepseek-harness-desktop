@@ -103,6 +103,21 @@ it('preserves filtered one-based paging metadata through the product bridge', as
   } finally { api.close() }
 })
 
+it('queries only the explicit folder parent page without fetching the complete directory', async () => {
+  const transport = vi.fn<typeof fetch>(async () => Response.json({ success: true, data: [], pageIndex: 2,
+    pageSize: 20, totalCount: 25, totalPages: 2 }))
+  const api = client(transport)
+  try {
+    await invokeKnowledge(api, 'knowledge.folders.list', { knowledgeBaseId: 'base', parentId: 'parent', page: 2, size: 20 })
+    const url = new URL(requestUrl(transport.mock.calls[0]![0]))
+    expect(Object.fromEntries(url.searchParams)).toEqual({ parentId: 'parent', page: '2', size: '20' })
+    expect(transport).toHaveBeenCalledOnce()
+    await expect(invokeKnowledge(api, 'knowledge.folders.list', { knowledgeBaseId: 'base', parentId: '../other' }))
+      .rejects.toMatchObject({ code: 'KNOWLEDGE_REQUEST_INVALID' })
+    expect(transport).toHaveBeenCalledOnce()
+  } finally { api.close() }
+})
+
 it('retains the retry key and optimistic update timestamp without trusting an owner claim', async () => {
   const transport = vi.fn<typeof fetch>(async () => Response.json({ success: true, data: { id: 'document', status: 'QUEUED' } }))
   const api = client(transport)

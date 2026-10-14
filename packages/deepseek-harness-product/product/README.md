@@ -9,6 +9,8 @@ English | [中文](README.zh.md)
 
 ## Summary
 
+Folder pages select one `parentId`; null selects root children. The bridge forwards that scope and pagination without reading the entire hierarchy.
+
 The bridge provides authenticated employee catalogs, task capability preparation, and connector authorization. It retains the last successful display catalog and merges refreshes; knowledge reads always query the server. Callers inject native capabilities and the task runtime. Skill and Kit installation operations address the authenticated employee's device through the Host; mutations emit catalog events after commit. Uninstall preserves server resources and started tasks. The desktop main process retains employee credentials; this protocol package does not depend on Harness or Electron.
 
 ## Table of Contents

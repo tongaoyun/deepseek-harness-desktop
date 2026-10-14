@@ -27,7 +27,13 @@ function transport(handler: (method: string, payload: Record<string, unknown>) =
     try {
       if (method === 'knowledge.documents.previewMetadata') return { ok: true,
         result: originalMetadata(String(payload.knowledgeBaseId), String(payload.documentId)) }
-      return { ok: true, result: await preview(method, payload, (name, data) => handler(name, data as Record<string, unknown>)) }
+      const result = await preview(method, payload, (name, data) => handler(name, data as Record<string, unknown>))
+      if (method === 'knowledge.folders.list' && typeof result === 'object' && result !== null && 'items' in result && Array.isArray(result.items)) {
+        const items = result.items.filter((folder: unknown) => typeof folder === 'object' && folder !== null
+          && 'parentId' in folder && folder.parentId === (payload.parentId ?? null))
+        return { ok: true, result: { ...result, items, total: items.length === result.items.length && 'total' in result ? result.total : items.length } }
+      }
+      return { ok: true, result }
     }
     catch (error) { return { ok: false, failure: productFailure(error) } }
   })
@@ -50,6 +56,30 @@ function deferred() {
 }
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.clearAllMocks() })
+
+it('pages folder branches independently and never reloads them during document processing polls', async () => {
+  const api = transport(async (method, payload) => {
+    if (method === 'knowledge.folders.list') return payload.parentId === null
+      ? { items: [{ id: `parent-${payload.page}`, name: `目录 ${payload.page}`, parentId: null }], page: payload.page, size: 20, total: 21 }
+      : page([{ id: 'child', name: '子目录', parentId: payload.parentId }])
+    return page([{ ...documentRow('personal'), status: 'PROCESSING' }])
+  })
+  const view = render(<KnowledgeWorkspace {...props} />)
+  const { navigation } = parts(view.container)
+  await navigation.findByRole('button', { name: '目录 1' })
+  fireEvent.click(navigation.getByRole('button', { name: zh.nextPage }))
+  await navigation.findByRole('button', { name: '目录 2' })
+  fireEvent.click(navigation.getByRole('button', { name: zh.knowledgeExpandFolder.replace('{name}', '目录 2') }))
+  await navigation.findByRole('button', { name: '子目录' })
+  const before = api.invoke.mock.calls.filter(call => call[1] === 'knowledge.folders.list').length
+  await waitFor(() => { expect(api.invoke.mock.calls.filter(call => call[1] === 'knowledge.documents.list').length).toBeGreaterThan(1) }, { timeout: 5_000 })
+  expect(api.invoke.mock.calls.filter(call => call[1] === 'knowledge.folders.list')).toHaveLength(before)
+  expect(api.invoke.mock.calls.filter(call => call[1] === 'knowledge.folders.list').map(call => call[2])).toEqual([
+    { knowledgeBaseId: 'personal', parentId: null, page: 1, size: 20 },
+    { knowledgeBaseId: 'personal', parentId: null, page: 2, size: 20 },
+    { knowledgeBaseId: 'personal', parentId: 'parent-2', page: 1, size: 20 },
+  ])
+})
 
 it('creates nested folders with retained retry input, browses their paths and deletes back to the parent', async () => {
   const values = [
@@ -98,7 +128,7 @@ it('creates nested folders with retained retry input, browses their paths and de
   fireEvent.click(navigation.getByRole('button', { name: zh.knowledgeCollapseFolder.replace('{name}', '项目资料') }))
   expect(navigation.queryByRole('button', { name: '验收记录' })).toBeNull()
   fireEvent.click(navigation.getByRole('button', { name: zh.knowledgeExpandFolder.replace('{name}', '项目资料') }))
-  fireEvent.click(navigation.getByRole('button', { name: zh.knowledgeFolderActions.replace('{name}', '验收记录') }))
+  fireEvent.click(await navigation.findByRole('button', { name: zh.knowledgeFolderActions.replace('{name}', '验收记录') }))
   fireEvent.click(screen.getByRole('menuitem', { name: zh.knowledgeDeleteFolder }))
   fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: zh.deleteResource }))
   await waitFor(() => { expect(navigation.queryByRole('button', { name: '验收记录' })).toBeNull() })
@@ -134,7 +164,10 @@ it('clears file filters when entering a different folder and keeps the directory
   }, expect.any(String)) })
   expect(content.getByRole<HTMLInputElement>('searchbox').value).toBe('')
   expect(content.getByRole<HTMLSelectElement>('combobox', { name: zh.knowledgeFormat }).value).toBe('')
-  expect(api.invoke.mock.calls.filter(call => call[1] === 'knowledge.folders.list')).toHaveLength(1)
+  expect(api.invoke.mock.calls.filter(call => call[1] === 'knowledge.folders.list').map(call => call[2])).toEqual([
+    { knowledgeBaseId: 'personal', parentId: null, page: 1, size: 20 },
+    { knowledgeBaseId: 'personal', parentId: 'stable-folder', page: 1, size: 20 },
+  ])
 })
 
 it('creates a personal library from an empty personal group and selects it after catalog refresh', async () => {
