@@ -108,6 +108,13 @@ it('keeps active files readable without showing processing management to ordinar
   expect(api.invoke.mock.calls.some(row => row[1] === 'knowledge.documents.cancel')).toBe(false)
 })
 
+it('does not promise an original file for a webpage still processing', async () => {
+  transport(async method => method === 'knowledge.documents.list' ? page([{ ...document, status: 'PROCESSING', sourceType: 'url' }]) : page([]))
+  render(<KnowledgeDetail renderFactorySlot={renderKnowledgePreview} product={library()} t={t} />)
+  await screen.findByRole('button', { name: document.filename })
+  expect(within(screen.getByRole('table')).getByText(zh.knowledgeProcessing).getAttribute('title')).toBeNull()
+})
+
 it('reads document passages and cancels outstanding content requests when closed', async () => {
   let content!: (value: unknown) => void
   const api = transport(async (method) => {

@@ -351,7 +351,7 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
             <td><button type="button" className={css.knowledgeDocumentName} disabled={deleting} onClick={() => { openReader(row) }}>
               <FileTypeIcon path={row.filename} size={18} /><span>{row.filename}</span></button></td>
             <td><span className={css.knowledgeDocumentStatus} data-status={deleting ? 'DELETING' : row.status}
-              title={!deleting && ['QUEUED', 'PROCESSING', 'FINALIZING'].includes(row.status) ? t('knowledgeProcessingHint') : undefined}>{knowledgeStatus(deleting ? 'DELETING' : row.status, t)}</span></td>
+              title={!deleting && row.sourceType !== 'url' && ['QUEUED', 'PROCESSING', 'FINALIZING'].includes(row.status) ? t('knowledgeProcessingHint') : undefined}>{knowledgeStatus(deleting ? 'DELETING' : row.status, t)}</span></td>
             <td>{row.sourceType === 'manual' ? t('knowledgeOnlineDocument') : row.sourceType === 'url' ? t('knowledgeWebsite') : row.filename.split('.').at(-1)?.toUpperCase()}</td>
             <td>{fileSizeText(row.sizeBytes)}</td><td>{formatDate(row.updatedAt)}</td>
             <td><KnowledgeDocumentActions document={row} disabled={pending || deleting}
