@@ -47,13 +47,18 @@ Workflow selection controls files under `.github/workflows/`. GitHub-managed dyn
 Upstream regressions run on every hosted platform. Executable-bit changes are tested on macOS and Linux, where filesystem permissions represent them; dangling-symlink checks also run on Windows.
 
 ```sh
-node --test apps/product-desktop/tests/github-delivery.test.mjs apps/product-desktop/tests/desktop-release.test.mjs
+node --test apps/product-desktop/tests/github-delivery.test.mjs apps/product-desktop/tests/desktop-release.test.mjs apps/product-desktop/tests/acceptance-process.test.mjs
 pnpm exec vitest run scripts/upstream-boundaries.spec.ts scripts/deepseek-harness-electron-workflows.spec.ts
+pnpm exec vitest run apps/product-desktop/tests/close-electron.spec.ts
 pnpm run verify:upstream
 pnpm --dir apps/product-desktop run test:installed --target mac-arm64
 ```
 
 Installed acceptance requires a native Windows or macOS runner and its generated installer. Use `--installer /absolute/path/to/installer.dmg` (or EXE) to exercise an existing download without rebuilding. It uses private temporary directories and cleans them after acceptance; do not run Windows installation acceptance alongside another installation of the same product.
+
+The installed UI command has a ten-minute deadline independent of the packaging job. Timeout and SIGINT/SIGTERM cancellation fail acceptance, terminate the running command's process tree (`taskkill /T /F` on Windows, a private process group on macOS), and wait for the command to close before uninstalling. Process termination and close each allow ten seconds; cleanup errors fail the run. Native runners also test timeout and cancellation against a real child and grandchild. This bounds a hung test; it does not turn an incomplete acceptance into a successful build.
+
+Each Electron restart and final close has a ten-second graceful budget. A stalled close terminates the application tree, waits for exit, and fails the test. Windows additionally stops orphaned executables whose resolved paths are inside the private installation before uninstalling, even when their parents have exited. Recovery does not select by application name; other installations and unrelated processes remain outside its scope. Windows CI tests this with an orphaned executable and an unrelated live process.
 
 macOS UI acceptance uses Chromium's test keychain in the disposable profile to avoid interactive access to the runner's login keychain. This covers credential routing and restart behavior, not system keychain protection or its authorization dialogs. The test flag is absent from application launchers and packaging configuration; ordinary launches retain OS-backed encrypted storage.
 

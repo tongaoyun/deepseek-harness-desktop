@@ -49,13 +49,18 @@ node apps/product-desktop/scripts/sync-github.mjs --repository OWNER/deepseek-ha
 上游回归在所有托管平台运行。执行权限位变化在文件系统支持该权限的 macOS 和 Linux 上验证；失效符号链接检查也在 Windows 上运行。
 
 ```sh
-node --test apps/product-desktop/tests/github-delivery.test.mjs apps/product-desktop/tests/desktop-release.test.mjs
+node --test apps/product-desktop/tests/github-delivery.test.mjs apps/product-desktop/tests/desktop-release.test.mjs apps/product-desktop/tests/acceptance-process.test.mjs
 pnpm exec vitest run scripts/upstream-boundaries.spec.ts scripts/deepseek-harness-electron-workflows.spec.ts
+pnpm exec vitest run apps/product-desktop/tests/close-electron.spec.ts
 pnpm run verify:upstream
 pnpm --dir apps/product-desktop run test:installed --target mac-arm64
 ```
 
 安装后验收需要原生 Windows 或 macOS runner 及其生成的安装包。使用 `--installer /absolute/path/to/installer.dmg`（或 EXE）可验证已有下载包，无需重新构建。验收使用私有临时目录，结束后清理；不要在 Windows 上与同一产品的其他安装操作同时运行。
+
+安装版界面命令使用独立于打包任务的十分钟超时。超时或 SIGINT/SIGTERM 取消会使验收失败，终止正在运行的命令进程树（Windows 使用 `taskkill /T /F`，macOS 使用独立进程组），等待命令关闭后再卸载。进程终止与关闭分别最多等待十秒，清理错误也会使运行失败。原生 runner 使用真实子进程及孙进程验证超时和取消。这限制测试卡住的影响，不会将未完成的验收视为成功构建。
+
+每次 Electron 重启和最终关闭都最多等待十秒正常退出。关闭卡住时会终止应用进程树、等待退出并使测试失败。Windows 卸载前还会终止解析后可执行路径位于私有安装目录内的孤儿进程，即使父进程已经退出。恢复不按应用名称匹配，其他安装和无关进程不在清理范围。Windows CI 使用孤儿可执行进程及无关存活进程验证该限制。
 
 macOS 界面验收在一次性配置目录中使用 Chromium 测试钥匙串，避免等待访问 runner 登录钥匙串的交互授权。这验证凭据传递和重启行为，不验证系统钥匙串保护及其授权弹窗。应用启动入口和打包配置不含该测试标志；正常启动仍使用操作系统加密存储。
 

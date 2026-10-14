@@ -81,10 +81,15 @@ jobs:
           PACKAGE_ARCH: ${{ matrix.arch }}
         run: node apps/product-desktop/scripts/github-package.mjs prepare
       - name: Verify upstream and product delivery contracts
-        run: |
-          pnpm run verify:upstream
-          node --test apps/product-desktop/tests/github-delivery.test.mjs
-          pnpm exec vitest run scripts/upstream-boundaries.spec.ts
+        run: pnpm run verify:upstream
+      - name: Test product source synchronization
+        run: node --test apps/product-desktop/tests/github-delivery.test.mjs
+      - name: Test acceptance process cleanup
+        run: node --test apps/product-desktop/tests/acceptance-process.test.mjs
+      - name: Test Electron close lifecycle
+        run: pnpm exec vitest run apps/product-desktop/tests/close-electron.spec.ts
+      - name: Test upstream boundaries
+        run: pnpm exec vitest run scripts/upstream-boundaries.spec.ts
       - name: Test product sidecar
         run: cargo test --manifest-path native/deepseek-harness/Cargo.toml
       - name: Package Windows

@@ -1,9 +1,11 @@
 /** Exercise a private installation of the release artifact, then uninstall it. */
-import { execFileSync, spawn } from 'node:child_process'
+import { execFileSync } from 'node:child_process'
 import { mkdtemp, readdir, rm, access } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
+import { runAcceptanceProcess } from './acceptance-process.mjs'
+import { stopInstalledProcesses } from './installed-processes.mjs'
 
 const root = resolve(import.meta.dirname, '../../..')
 
@@ -30,29 +32,23 @@ if ($process.ExitCode -ne 0) { throw ('Installer failed: ' + $process.ExitCode) 
 async function runAcceptance(executable, target, installationRoot) {
   const manager = process.env.npm_execpath
   if (!manager) throw new Error('Run installed acceptance through pnpm')
-  const child = spawn(process.execPath, [manager, 'exec', 'vitest', 'run', '--config', 'vitest.web.config.ts',
-    'apps/web/tests/deepseek-harness-catalog.e2e.ts', '-t', 'boots the installed product Electron assembly',
-    '--reporter=default', '--reporter=json', `--outputFile=.artifacts/desktop-installed-${target}.json`], {
-    cwd: root, stdio: 'inherit', env: { ...process.env, DSH_DESKTOP_SMOKE: '1', DSH_SNAPSHOT: 'replay',
-      DSH_INSTALLED_EXECUTABLE: executable, DSH_INSTALLED_ROOT: installationRoot },
-  })
-  let interrupted = false
-  const stop = () => { interrupted = true; child.kill('SIGTERM') }
-  process.once('SIGINT', stop)
-  process.once('SIGTERM', stop)
+  const cancellation = new AbortController()
+  const stop = signal => cancellation.abort(new Error(`Received ${signal}`))
+  const interrupt = () => stop('SIGINT')
+  const terminate = () => stop('SIGTERM')
+  process.once('SIGINT', interrupt)
+  process.once('SIGTERM', terminate)
   try {
-    await new Promise((resolve, reject) => {
-      let startupError
-      child.once('error', error => { startupError = error })
-      child.once('close', (code, signal) => {
-        if (startupError) reject(startupError)
-        else if (interrupted || signal || code !== 0) reject(new Error('Installed desktop UI acceptance failed or was interrupted'))
-        else resolve()
-      })
+    await runAcceptanceProcess(process.execPath, [manager, 'exec', 'vitest', 'run', '--config', 'vitest.web.config.ts',
+      'apps/web/tests/deepseek-harness-catalog.e2e.ts', '-t', 'boots the installed product Electron assembly',
+      '--reporter=default', '--reporter=json', `--outputFile=.artifacts/desktop-installed-${target}.json`], {
+      cwd: root, timeoutMs: 600_000, signal: cancellation.signal,
+      env: { ...process.env, DSH_DESKTOP_SMOKE: '1', DSH_SNAPSHOT: 'replay',
+        DSH_INSTALLED_EXECUTABLE: executable, DSH_INSTALLED_ROOT: installationRoot },
     })
   } finally {
-    process.off('SIGINT', stop)
-    process.off('SIGTERM', stop)
+    process.off('SIGINT', interrupt)
+    process.off('SIGTERM', terminate)
   }
 }
 
@@ -93,7 +89,10 @@ async function main() {
     await runAcceptance(executable, target, stage)
   } finally {
     try {
-      if (installed) windowsSetup(join(destination, 'Uninstall DeepSeek Harness.exe'), destination, true)
+      if (installed) {
+        stopInstalledProcesses(destination)
+        windowsSetup(join(destination, 'Uninstall DeepSeek Harness.exe'), destination, true)
+      }
     } finally {
       try {
         if (mounted) execFileSync('hdiutil', ['detach', join(stage, 'volume')], { stdio: 'inherit', timeout: 120_000 })

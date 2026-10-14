@@ -219,6 +219,10 @@ test('uses three native hosted runners and product packaging without publishing 
     { target: 'mac-x64', runner: 'macos-15-intel', arch: 'x64' },
   ])
   const steps = workflow.jobs.package.steps
+  assert.match(steps.find(step => step.name === 'Test acceptance process cleanup').run,
+    /node --test apps\/product-desktop\/tests\/acceptance-process\.test\.mjs/u)
+  assert.match(steps.find(step => step.name === 'Test Electron close lifecycle').run,
+    /pnpm exec vitest run apps\/product-desktop\/tests\/close-electron\.spec\.ts/u)
   for (const name of ['Package Windows', 'Validate Windows signatures and installer lifecycle']) {
     assert.equal(steps.find(step => step.name === name).shell, 'pwsh')
   }

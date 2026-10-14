@@ -25,6 +25,7 @@ import { ToolCallId, createAssistantMessage, createToolResultMessage, createUser
 import { SESSION_FORMAT_VERSION, Session, SessionId } from '@deepseek-ai/dsh-session'
 import { pdfFixture } from '../../../packages/client/ui-sidebar-documentpreview/tests/pdf-fixture.ts'
 import { realOfficeBytes } from './office-fixture.ts'
+import { closeElectronAcceptance } from '../../product-desktop/scripts/close-electron.mjs'
 
 const packageDir = join(REPO_ROOT, 'packages/extensions/ui-deepseek-harness-product')
 const expectedDir = fileURLToPath(new URL('./expected/deepseek-harness-catalog', import.meta.url))
@@ -1614,17 +1615,16 @@ for (const { mode, installed } of desktopCarriers) {
       const origin = `http://127.0.0.1:${address.port}`
       let app: ElectronApplication | undefined = undefined
       onTestFinished(async () => {
-        if (app !== undefined) {
-          const child = app.process()
-          const timeout = setTimeout(() => child.kill('SIGKILL'), 10_000)
-          try { await app.close() } finally { clearTimeout(timeout) }
+        try { if (app !== undefined) await closeElectronAcceptance(app) }
+        finally {
+          try {
+            server.closeAllConnections()
+            await new Promise<void>((resolve, reject) => server.close((error) => {
+              if (error === undefined) resolve()
+              else reject(error)
+            }))
+          } finally { await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }) }
         }
-        server.closeAllConnections()
-        await new Promise<void>((resolve, reject) => server.close((error) => {
-          if (error === undefined) resolve()
-          else reject(error)
-        }))
-        await rm(root, { recursive: true, force: true })
       })
       const electronExecutable: unknown = installed ?? createRequire(join(REPO_ROOT, 'apps/desktop/package.json'))('electron')
       if (typeof electronExecutable !== 'string') throw new Error('Electron executable is unavailable')
@@ -2226,7 +2226,7 @@ for (const { mode, installed } of desktopCarriers) {
         const pinnedPath = join(home, 'product-capabilities-v1/tasks-v1', `${prepared.presetId}.json`)
         const restart = async () => {
           expect(tripwire.pageErrors).toEqual([])
-          await app!.close()
+          await closeElectronAcceptance(app!)
           app = await _electron.launch(launchOptions)
           app.process().stderr?.on('data', (chunk: Buffer) => diagnostics.push(chunk.toString()))
           page = await app.firstWindow()
