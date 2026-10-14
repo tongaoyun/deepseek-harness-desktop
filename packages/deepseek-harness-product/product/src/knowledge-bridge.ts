@@ -112,9 +112,10 @@ export async function invokeKnowledge(api: DeepSeekHarnessApiClient, method: str
       ...(input.title === undefined ? {} : { title: field(input, 'title', 255) }) }
     return api.request(`${documents}/links`, { ...options, method: 'POST', headers: writeHeaders(input), body: JSON.stringify(body) })
   }
-  if (method === 'knowledge.documents.reindex') {
+  if (method === 'knowledge.documents.reindex' || method === 'knowledge.documents.cancel') {
+    if (Object.keys(input).some(key => !['knowledgeBaseId', 'documentId', 'operationId'].includes(key))) invalid('index job payload')
     return api.request(`${documents}/${resource(input, 'documentId')}/index-jobs`, {
-      ...options, method: 'POST', headers: writeHeaders(input),
+      ...options, method: method === 'knowledge.documents.cancel' ? 'DELETE' : 'POST', headers: writeHeaders(input),
     })
   }
   if (method === 'knowledge.documents.delete') {

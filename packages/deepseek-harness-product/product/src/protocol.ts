@@ -104,6 +104,7 @@ export type ProductMethod =
   | 'knowledge.documents.importUrl'
   | 'knowledge.documents.delete'
   | 'knowledge.documents.reindex'
+  | 'knowledge.documents.cancel'
   | 'knowledge.documents.move'
   | 'knowledge.folders.list'
   | 'knowledge.folders.get'
@@ -298,7 +299,7 @@ export function isProductMethod(value: unknown): value is ProductMethod {
     'knowledge.documents.list', 'knowledge.documents.get', 'knowledge.documents.previewMetadata', 'knowledge.documents.read', 'knowledge.documents.upload', 'knowledge.documents.upload.discard',
     'knowledge.documents.preview.open', 'knowledge.documents.preview.read', 'knowledge.documents.preview.close',
     'knowledge.documents.download', 'knowledge.documents.openExternal',
-    'knowledge.documents.save', 'knowledge.documents.importUrl', 'knowledge.documents.delete', 'knowledge.documents.reindex',
+    'knowledge.documents.save', 'knowledge.documents.importUrl', 'knowledge.documents.delete', 'knowledge.documents.reindex', 'knowledge.documents.cancel',
     'knowledge.documents.move', 'knowledge.folders.list', 'knowledge.folders.get', 'knowledge.folders.create', 'knowledge.folders.rename', 'knowledge.folders.delete',
     'native.filesystem.list', 'native.filesystem.read',
     'native.filesystem.write', 'native.secure-storage.get', 'native.secure-storage.set', 'native.secure-storage.delete',

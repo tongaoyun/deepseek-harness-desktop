@@ -62,6 +62,52 @@ it('shows the localized failed index state without exposing parser diagnostics i
   expect(container.textContent).not.toContain(failureMessage)
 })
 
+it('lets managers stop active processing and reprocess while preserving original reading', async () => {
+  let status = 'PROCESSING'
+  let failed = true
+  const api = transport(async (method) => {
+    if (method === 'knowledge.documents.list') return page([{ ...document, status }])
+    if (method === 'knowledge.documents.cancel') {
+      if (failed) throw new Error('Temporary outage')
+      status = 'CANCELLED'
+      return { ...document, status }
+    }
+    return page([])
+  })
+  render(<KnowledgeDetail renderFactorySlot={renderKnowledgePreview} product={library(true)} t={t} />)
+  await screen.findByRole('button', { name: document.filename })
+  expect(within(screen.getByRole('table')).getByText(zh.knowledgeProcessing).getAttribute('title')).toBe(zh.knowledgeProcessingHint)
+  const actions = () => screen.getByRole('button', { name: zh.knowledgeDocumentActions.replace('{name}', document.filename) })
+  fireEvent.click(actions())
+  expect(screen.getByRole('menuitem', { name: zh.knowledgeReindex }).hasAttribute('disabled')).toBe(true)
+  fireEvent.click(screen.getByRole('menuitem', { name: zh.knowledgeStopProcessing }))
+  await screen.findByText(zh.knowledgeChangeFailed)
+  failed = false
+  fireEvent.click(actions())
+  fireEvent.click(screen.getByRole('menuitem', { name: zh.knowledgeStopProcessing }))
+  await within(screen.getByRole('table')).findByText(zh.knowledgeCancelled)
+  const calls = api.invoke.mock.calls.filter(row => row[1] === 'knowledge.documents.cancel')
+  expect(calls).toHaveLength(2)
+  expect(calls[0]?.[2]).toEqual(calls[1]?.[2])
+  fireEvent.click(actions())
+  expect(screen.queryByRole('menuitem', { name: zh.knowledgeStopProcessing })).toBeNull()
+  expect(screen.getByRole('menuitem', { name: zh.knowledgeReindex }).hasAttribute('disabled')).toBe(false)
+  fireEvent.click(screen.getByRole('menuitem', { name: zh.knowledgeReadDocument }))
+  await screen.findByRole('dialog', { name: document.filename })
+  await waitFor(() => { expect(api.invoke.mock.calls.some(row => row[1] === 'knowledge.documents.preview.open')).toBe(true) })
+})
+
+it('keeps active files readable without showing processing management to ordinary employees', async () => {
+  const api = transport(async method => method === 'knowledge.documents.list' ? page([{ ...document, status: 'QUEUED' }]) : page([]))
+  render(<KnowledgeDetail renderFactorySlot={renderKnowledgePreview} product={library()} t={t} />)
+  await screen.findByRole('button', { name: document.filename })
+  fireEvent.click(screen.getByRole('button', { name: zh.knowledgeDocumentActions.replace('{name}', document.filename) }))
+  expect(screen.queryByRole('menuitem', { name: zh.knowledgeStopProcessing })).toBeNull()
+  fireEvent.click(screen.getByRole('menuitem', { name: zh.knowledgeReadDocument }))
+  await screen.findByRole('dialog', { name: document.filename })
+  expect(api.invoke.mock.calls.some(row => row[1] === 'knowledge.documents.cancel')).toBe(false)
+})
+
 it('reads document passages and cancels outstanding content requests when closed', async () => {
   let content!: (value: unknown) => void
   const api = transport(async (method) => {
