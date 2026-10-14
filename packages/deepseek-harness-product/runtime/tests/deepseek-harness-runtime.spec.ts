@@ -51,6 +51,12 @@ async function installFixtures(home: string): Promise<void> {
   await writeFile(join(skillRoot, 'SKILL.md'), instructions)
   await writeFile(join(kitRoot, '.deepseek-harness-sha256'), kit.sha256)
   await writeFile(join(skillRoot, '.deepseek-harness-sha256'), skill.sha256)
+  const cacheOwner = createHash('sha256').update('fixture-cache-owner').digest('hex')
+  for (const [directory, entries] of [['installed-skills-v1', [skill]], ['installed-expert-kits-v1', [kit]]] as const) {
+    const path = join(home, 'product-capabilities-v1', directory)
+    await mkdir(path, { recursive: true })
+    await writeFile(join(path, `installed-${cacheOwner}.json`), JSON.stringify(entries))
+  }
 }
 
 async function setup() {
@@ -116,6 +122,29 @@ async function setup() {
 }
 
 describe('Product task composition', () => {
+  it('retains task content referenced by past official Preset selection events', async () => {
+    const f = await setup()
+    await f.control.installExpertKit(kit.id)
+    const prepared = await f.control.prepareCapabilities({ expertKitId: kit.id })
+    const root = join(f.home, 'product-capabilities-v1')
+    const path = join(root, 'tasks-v1', `${prepared.presetId}.json`)
+    const original = await readFile(path, 'utf8')
+    await rm(join(root, 'installed-expert-kits-v1'), { recursive: true })
+    // The process-ownership test covers real exits; this fixture re-enters startup collection.
+    await rm(join(root, 'content-owners', `${process.pid}.owner`))
+    Object.assign(f.ctx, { sessionQuery: {
+      listSessions: async () => [{ header: { id: 'session', agentPreset: 'minimal' } }],
+      observeSession: async () => ({ header: { agentPreset: 'minimal' },
+        projections: { values: { agentPreset: 'minimal' } },
+        events: [{ type: 'agent-preset/selected', data: { agentPreset: prepared.presetId } }],
+        [Symbol.dispose]() {} }),
+    } })
+    await f.mount()
+    expect(await readFile(path, 'utf8')).toBe(original)
+    expect(await readFile(join(expertKitGenerationPath(join(root, 'expert-kits'), kit), 'README.md'), 'utf8')).toContain('Order expert')
+    expect(f.ctx.logger.warn).not.toHaveBeenCalled()
+  })
+
   it('keeps concurrent kit preparations independent when the first caller cancels', async () => {
     const f = await setup()
     await f.control.installExpertKit(kit.id)
@@ -197,7 +226,7 @@ describe('Product task composition', () => {
     ])
     expect(f.derive.mock.calls.map(call => call[0])).toEqual(['minimal'])
     expect((await readdir(join(f.home, 'product-capabilities-v1'))).sort()).toEqual([
-      'expert-kits', 'installed-expert-kits-v1', 'installed-skills-v1', 'skills', 'tasks-v1',
+      'content-owners', 'expert-kits', 'installed-expert-kits-v1', 'installed-skills-v1', 'skills', 'tasks-v1',
     ])
     const persisted = await readFile(join(f.home, 'product-capabilities-v1/tasks-v1', `${prepared.presetId}.json`), 'utf8')
     expect(persisted).not.toContain('Authorization')

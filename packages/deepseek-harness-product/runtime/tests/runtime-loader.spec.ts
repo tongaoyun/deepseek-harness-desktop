@@ -61,6 +61,7 @@ it('composes kit and skill providers without standard or intermediate Presets, r
   const descriptors = new Map(['connected', 'send'].map(key => [key, Object.getOwnPropertyDescriptor(process, key)]))
   const selection: { id: string | undefined } = { id: undefined }
   const responses = new Map<number, Record<string, unknown>>()
+  const responseWaiters = new Map<number, (response: Record<string, unknown>) => void>()
   const kit = { id: 'policy-kit', name: 'Policy kit', version: '1', summary: 'Review enterprise policy.',
     skillIds: ['kit-check'], connectorRefs: [], requiredTools: ['knowledge_search'],
     knowledgeBaseRefs: ['company:policy'], sha256: 'a'.repeat(64) }
@@ -119,6 +120,16 @@ it('composes kit and skill providers without standard or intermediate Presets, r
   await writeFile(join(skillRoot, 'SKILL.md'), '---\nname: policy-review\ndescription: Compare policy evidence.\n---\nCompare the retrieved policy before reporting.\n')
   await writeFile(join(kitRoot, '.deepseek-harness-sha256'), kit.sha256)
   await writeFile(join(skillRoot, '.deepseek-harness-sha256'), skill.sha256)
+  const contentRoot = join(root, 'product-capabilities-v1')
+  const cacheOwner = createHash('sha256').update('fixture-cache-owner').digest('hex')
+  for (const [directory, entries] of [['installed-skills-v1', [skill]], ['installed-expert-kits-v1', [kit]]] as const) {
+    const path = join(contentRoot, directory)
+    await mkdir(path, { recursive: true })
+    await writeFile(join(path, `installed-${cacheOwner}.json`), JSON.stringify(entries))
+  }
+  const obsoleteRoot = join(contentRoot, 'skills', 'c'.repeat(64), 'unused-skill')
+  await mkdir(obsoleteRoot, { recursive: true })
+  await writeFile(join(obsoleteRoot, '.deepseek-harness-sha256'), 'c'.repeat(64))
   Object.defineProperty(process, 'connected', { value: true, configurable: true })
   Object.defineProperty(process, 'send', { configurable: true, value: (message: Record<string, unknown>, callback?: (error: Error | null) => void) => {
     callback?.(null)
@@ -147,7 +158,12 @@ it('composes kit and skill providers without standard or intermediate Presets, r
             : message.method === 'knowledge.bases.list' ? [{ id: 'policy', referenceKey: 'company:policy' }]
               : message.method === 'knowledge.search' ? [policyHit] : message.method === 'knowledge.sources.read' ? policyHit : [],
     }))
-    if (message.type === 'extension-control') responses.set(message.requestId as number, message)
+    if (message.type === 'extension-control') {
+      const id = message.requestId as number
+      responses.set(id, message)
+      responseWaiters.get(id)?.(message)
+      responseWaiters.delete(id)
+    }
     return true
   } })
   onTestFinished(async () => {
@@ -202,11 +218,12 @@ it('composes kit and skill providers without standard or intermediate Presets, r
   expect(ctx.loader.resolve('product-runtime').fiber).toBeDefined()
   for (const name of ['agentPresets', 'agents', 'sessionQuery', 'skills', 'systemPrompt', 'tools']) expect(ctx.get(name), name).toBeDefined()
   expect(process.listenerCount('message')).toBe(before + 1)
+  await expect(readFile(join(obsoleteRoot, '.deepseek-harness-sha256'))).rejects.toMatchObject({ code: 'ENOENT' })
   expect((await ctx.agentPresets.list()).map(preset => preset.id).sort()).toEqual(['minimal', 'ptc'])
   const request = async (requestId: number, method: string, payload: object = {}) => {
+    const response = new Promise<Record<string, unknown>>(resolve => responseWaiters.set(requestId, resolve))
     emitMessage({ type: 'extension-control', namespace: 'product', requestId, method, payload })
-    await vi.waitFor(() => { expect(responses.has(requestId)).toBe(true) }, { timeout: 10_000 })
-    return responses.get(requestId)!
+    return response
   }
   expect(await request(20, 'expertKits.install', { id: kit.id })).toMatchObject({
     result: { id: kit.id, version: kit.version, sha256: kit.sha256 },

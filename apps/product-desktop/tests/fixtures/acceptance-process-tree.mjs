@@ -6,7 +6,10 @@ if (process.argv[2] === 'descendant') {
   process.send({ pid: process.pid })
   setInterval(() => {}, 1000)
 } else {
-  const child = spawn(process.execPath, [import.meta.filename, 'descendant'], { stdio: ['ignore', 'ignore', 'ignore', 'ipc'] })
+  const child = spawn(process.execPath, [import.meta.filename, 'descendant'], {
+    detached: process.argv[3] === 'leave-descendant',
+    stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
+  })
   child.once('message', async message => {
     await writeFile(process.argv[2], JSON.stringify([process.pid, message.pid]))
     if (process.argv[3] === 'leave-descendant') process.exit(0)

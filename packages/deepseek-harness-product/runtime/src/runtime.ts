@@ -1,7 +1,7 @@
 /** Product capabilities mounted on public Harness extension points. */
 
 import { createHash } from 'node:crypto'
-import { mkdir, open, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, open, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join, posix, resolve, sep } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
@@ -20,6 +20,7 @@ import { z } from 'zod'
 import { createTaskCapabilities, type TaskContent } from './tasks.ts'
 import { createInstalledSkills } from './installed-skills.ts'
 import { createInstalledExpertKits } from './installed-expert-kits.ts'
+import { prepareProductContentStorage } from './content-retention.ts'
 import * as ConversationAuthoring from './conversation-authoring.ts'
 import * as KnowledgeLibrary from './knowledge-library.ts'
 import * as tar from 'tar'
@@ -89,7 +90,34 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   const skillsRoot = join(root, 'skills')
   const kitsRoot = join(root, 'expert-kits')
   await Promise.all([mkdir(skillsRoot, { recursive: true }), mkdir(kitsRoot, { recursive: true })])
-  await cleanInstallationStages(root)
+  await prepareProductContentStorage(root, (message) => { ctx.logger.warn(message) }, async () => {
+    const files = new Set<string>()
+    const required = new Set<string>()
+    const retainPreset = (id: string | undefined) => {
+      if (!id?.startsWith('product-task-')) return
+      if (!/^product-task-[a-f0-9]{64}$/u.test(id)) throw new Error('Invalid recorded product task identity')
+      const path = join(root, 'tasks-v1', `${id}.json`)
+      files.add(path)
+      required.add(path)
+    }
+    for (const session of await ctx.sessionQuery.listSessions()) {
+      const key = createHash('sha256').update(session.header.id).digest('hex')
+      const skills = join(root, 'installed-skills-v1', `session-${key}.json`)
+      files.add(skills)
+      retainPreset(session.header.agentPreset)
+      using observation = await ctx.sessionQuery.observeSession(session.header.id)
+      retainPreset(observation.header.agentPreset)
+      const selected = observation.projections?.values.agentPreset
+      if (typeof selected === 'string') retainPreset(selected)
+      for (const event of observation.events) {
+        if (event.type === 'agent-preset/selected') retainPreset(event.data.agentPreset)
+        if (event.type === 'user/message' && event.data.source.kind === 'product-installed-skills') {
+          required.add(skills)
+        }
+      }
+    }
+    return { retainedFiles: files, requiredFiles: required }
+  })
   const connectorsByPreset = new Map<string, readonly Connector[]>()
   const connectorsByAgent = new Map<Agent, readonly Connector[]>()
   installConnectorPolicy(ctx, connectorsByPreset, connectorsByAgent, config.product)
@@ -266,16 +294,6 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     readInstalledExpertKits: signal => installedKits.read(signal),
   })
   ctx.effect(() => () => { config.publishControl(undefined) }, 'deepseek-harness-product.runtime-control')
-}
-
-async function cleanInstallationStages(root: string): Promise<void> {
-  for (const entry of await readdir(root, { withFileTypes: true })) {
-    const path = join(root, entry.name)
-    if (entry.isSymbolicLink()) continue
-    if (/\.installing-\d+-[a-z0-9]+$/.test(entry.name) || /^product-task-[a-f0-9]{64}\.json\.[a-f0-9-]+\.tmp$/.test(entry.name)) {
-      await rm(path, { recursive: entry.isDirectory(), force: true })
-    } else if (entry.isDirectory()) await cleanInstallationStages(path)
-  }
 }
 
 /** Capability rows contain product providers only; the task owns its base mode and dependencies. */

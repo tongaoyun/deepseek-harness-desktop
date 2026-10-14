@@ -103,6 +103,10 @@ jobs:
         env:
           PACKAGE_TARGET: ${{ matrix.target }}
         run: pnpm --dir apps/product-desktop run package "$PACKAGE_TARGET" --unsigned --build-version "$PACKAGE_VERSION"
+      - name: Test product content retention
+        run: >-
+          pnpm exec vitest run
+          packages/deepseek-harness-product/runtime/tests/content-retention.spec.ts
       - name: Test archived Host startup
         run: >-
           pnpm exec vitest run --config vitest.e2e.config.ts

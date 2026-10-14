@@ -712,6 +712,7 @@
         "scripts/verify-repository-references.spec.ts",
         "scripts/upstream-boundaries.spec.ts",
         "packages/deepseek-harness-product/runtime/tests/inference-default.spec.ts",
+        "packages/deepseek-harness-product/runtime/tests/content-retention.spec.ts",
         "packages/deepseek-harness-product/desktop/tests/inference-profile.spec.ts",
         "packages/extensions/ui-deepseek-harness-product/tests/KnowledgeToolResult.client.spec.tsx"
       ],
@@ -744,7 +745,7 @@
         {
           "path": "pnpm-lock.yaml",
           "before": "b45f8695fb0dca90d3ed07afc766e923356539962706ee36ac8cdb396e6d734d",
-          "after": "a2ab1c5a2e8ea228e382500ca9bf376ed83904bbb0ba5ab265f319eab7674748"
+          "after": "d38ddef09e6f95e25c20f094045f1b75bba1aab32534a6f8f55d7f0721945c4d"
         },
         {
           "path": "scripts/check-workspace-constraints.spec.ts",

@@ -66,6 +66,49 @@ const capabilitySnapshot = z.object({
   && value.requiredConnectorIds.every(id => value.connectorIds.includes(id))
   && (value.expertKitTask === undefined || value.expertKit !== undefined))
 
+/** Validate a durable task generation before restoring or collecting its content.
+ * @param raw Stored JSON, already checked against the snapshot byte limit.
+ * @param filename Expected immutable generation filename.
+ * @returns The validated snapshot, including its pinned content identities.
+ */
+export function parseTaskSnapshot(raw: string, filename: string): Snapshot {
+  const candidate: unknown = JSON.parse(raw)
+  if (typeof candidate !== 'object' || candidate === null) throw new Error(`Invalid task snapshot: ${filename}`)
+  const value = candidate as Omit<Partial<Snapshot>, 'definition' | 'capabilities' | 'skillInvocations'> & {
+    definition?: PresetDefinition | null
+    capabilities?: ProductTaskCapabilities | null
+    skillInvocations?: unknown
+  }
+  if (value.version !== 2 || `${value.presetId}.json` !== filename || value.definition == null
+    || value.capabilities == null || value.definition.id !== value.presetId
+    || entryListProblem(value.definition.plugins) !== undefined
+    || !Array.isArray(value.capabilities.skills) || !Array.isArray(value.capabilities.connectorIds)
+    || !Array.isArray(value.capabilities.requiredKnowledgeBaseIds)
+    || !Array.isArray(value.capabilities.knowledgeBaseIds) || !Array.isArray(value.capabilities.knowledgeBaseRefs)
+    || !Array.isArray(value.requiredConnectorIds) || !Array.isArray(value.connectors)
+    || (value.basePluginKeys !== undefined && (!Array.isArray(value.basePluginKeys) || value.basePluginKeys.some(key => typeof key !== 'string')))
+    || (value.requiredTools !== undefined && (!Array.isArray(value.requiredTools) || value.requiredTools.some(key => typeof key !== 'string')))
+    || typeof value.skillInvocations !== 'object' || value.skillInvocations === null
+    || Array.isArray(value.skillInvocations)
+    || Object.values(value.skillInvocations).some(name => typeof name !== 'string')) throw new Error(`Invalid task snapshot: ${filename}`)
+  capabilitySnapshot.parse(value.capabilities)
+  if (typeof value.capabilities.basePresetId !== 'string'
+    || (value.definition.selectionBase !== undefined && value.definition.selectionBase !== value.capabilities.basePresetId)
+    || value.definition.selectable !== false || value.definition.defaultable !== false) {
+    throw new Error(`Inconsistent task selection base: ${filename}`)
+  }
+  identifiers.parse(value.requiredConnectorIds)
+  parseConnectorSnapshots(value.connectors)
+  if (JSON.stringify(value.requiredConnectorIds) !== JSON.stringify(value.capabilities.requiredConnectorIds)) {
+    throw new Error(`Inconsistent required connectors: ${filename}`)
+  }
+  const snapshot = value as Snapshot
+  const expected = identify(snapshot.definition, snapshot.capabilities,
+    snapshot.requiredConnectorIds, snapshot.connectors, snapshot.skillInvocations, snapshot.basePluginKeys, snapshot.requiredTools)
+  if (expected !== snapshot.presetId) throw new Error(`Task snapshot identity mismatch: ${filename}`)
+  return snapshot
+}
+
 /** Task configuration uses official selection and never changes a running Agent. */
 export async function createTaskCapabilities(ctx: Context, deps: TaskDependencies) {
   await mkdir(deps.root, { recursive: true })
@@ -116,40 +159,7 @@ export async function createTaskCapabilities(ctx: Context, deps: TaskDependencie
     try {
       if ((await stat(path)).size > 2 * 1024 * 1024) throw new Error('Task snapshot exceeds size limit')
       const raw = await readFile(path, 'utf8')
-      const candidate: unknown = JSON.parse(raw)
-      if (typeof candidate !== 'object' || candidate === null) throw new Error(`Invalid task snapshot: ${filename}`)
-      const value = candidate as Omit<Partial<Snapshot>, 'definition' | 'capabilities' | 'skillInvocations'> & {
-        definition?: PresetDefinition | null
-        capabilities?: ProductTaskCapabilities | null
-        skillInvocations?: unknown
-      }
-      if (value.version !== 2 || `${value.presetId}.json` !== filename || value.definition == null
-      || value.capabilities == null || value.definition.id !== value.presetId
-      || entryListProblem(value.definition.plugins) !== undefined
-      || !Array.isArray(value.capabilities.skills) || !Array.isArray(value.capabilities.connectorIds)
-      || !Array.isArray(value.capabilities.requiredKnowledgeBaseIds)
-      || !Array.isArray(value.capabilities.knowledgeBaseIds) || !Array.isArray(value.capabilities.knowledgeBaseRefs)
-      || !Array.isArray(value.requiredConnectorIds) || !Array.isArray(value.connectors)
-      || (value.basePluginKeys !== undefined && (!Array.isArray(value.basePluginKeys) || value.basePluginKeys.some(key => typeof key !== 'string')))
-      || (value.requiredTools !== undefined && (!Array.isArray(value.requiredTools) || value.requiredTools.some(key => typeof key !== 'string')))
-      || typeof value.skillInvocations !== 'object' || value.skillInvocations === null
-      || Array.isArray(value.skillInvocations)
-      || Object.values(value.skillInvocations).some(name => typeof name !== 'string')) throw new Error(`Invalid task snapshot: ${filename}`)
-      capabilitySnapshot.parse(value.capabilities)
-      if (typeof value.capabilities.basePresetId !== 'string'
-        || (value.definition.selectionBase !== undefined && value.definition.selectionBase !== value.capabilities.basePresetId)
-        || value.definition.selectable !== false || value.definition.defaultable !== false) {
-        throw new Error(`Inconsistent task selection base: ${filename}`)
-      }
-      identifiers.parse(value.requiredConnectorIds)
-      parseConnectorSnapshots(value.connectors)
-      if (JSON.stringify(value.requiredConnectorIds) !== JSON.stringify(value.capabilities.requiredConnectorIds)) {
-        throw new Error(`Inconsistent required connectors: ${filename}`)
-      }
-      const snapshot = value as Snapshot
-      const expected = identify(snapshot.definition, snapshot.capabilities,
-        snapshot.requiredConnectorIds, snapshot.connectors, snapshot.skillInvocations, snapshot.basePluginKeys, snapshot.requiredTools)
-      if (expected !== snapshot.presetId) throw new Error(`Task snapshot identity mismatch: ${filename}`)
+      const snapshot = parseTaskSnapshot(raw, filename)
       snapshots.set(snapshot.presetId, snapshot)
     } catch (error) {
       const id = filename.slice(0, -5)
@@ -162,8 +172,6 @@ export async function createTaskCapabilities(ctx: Context, deps: TaskDependencie
       })
     }
   }
-  // Keep all task content until a later explicit retention policy can inspect every reference.
-  // Catalog refresh does not delete content pinned by a task.
   const references = await ctx.sessionQuery.listSessions()
   const needed = new Set<string>()
   for (const session of references) {

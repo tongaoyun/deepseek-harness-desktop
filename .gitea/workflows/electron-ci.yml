@@ -67,6 +67,7 @@ jobs:
             packages/deepseek-harness-product/runtime/tests/kit-skills-loader.spec.ts \
             packages/deepseek-harness-product/runtime/tests/deepseek-harness-connector-contract.spec.ts \
             packages/deepseek-harness-product/runtime/tests/deepseek-harness-runtime.spec.ts \
+            packages/deepseek-harness-product/runtime/tests/content-retention.spec.ts \
             packages/deepseek-harness-product/runtime/tests/runtime-loader.spec.ts \
             packages/deepseek-harness-product/runtime/tests/tasks.spec.ts \
             packages/deepseek-harness-product/runtime/tests/installed-skills-uninstall.spec.ts \

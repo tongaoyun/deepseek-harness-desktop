@@ -8,6 +8,7 @@
     "src"
   ],
   "references": [
+    { "path": "../../../packages/util/atomic-write" },
     { "path": "../../../packages/util/brand" },
     { "path": "../../../packages/document/office-to-pdf" },
     { "path": "../../../vendor/schemastery" },
