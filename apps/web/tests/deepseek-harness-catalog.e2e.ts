@@ -577,6 +577,12 @@ it('keeps native themes and responsive catalogs while using official details and
         newPersonalBases.push(base)
         return base
       }
+      case 'knowledge.bases.delete': {
+        const index = newPersonalBases.findIndex(base => base.id === payload?.knowledgeBaseId)
+        if (index < 0) throw new Error('Unknown personal library')
+        newPersonalBases.splice(index, 1)
+        return undefined
+      }
       case 'knowledge.references.resolve': return [{ reference: 'company:playbook', status: 'RESOLVED', base: {
         id: 'playbook', name: 'Operations playbook', scope: 'COMPANY', companyId: 'fixture-company', ownerName: 'Fixture company',
       } }]
@@ -1207,6 +1213,22 @@ it('keeps native themes and responsive catalogs while using official details and
   expect(fileTransfers.size).toBe(0)
   expect(calls.filter(method => method === 'tasks.capabilities.prepare')).toHaveLength(beforeMaterials)
   await page.keyboard.press('Escape')
+  const knowledgeNavigation = await openKnowledgeNavigation(page)
+  await knowledgeNavigation.getByRole('button', { name: 'Sales procedures', exact: true }).click()
+  await knowledgeNavigation.getByRole('button', { name: 'Actions for “Personal project files”', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Delete knowledge base', exact: true }).click()
+  await page.getByRole('dialog', { name: 'Delete knowledge base', exact: true }).getByRole('button', { name: 'Delete', exact: true }).click()
+  await expect.poll(() => knowledgeNavigation.getByRole('button', { name: 'Personal project files', exact: true }).count()).toBe(0)
+  expect(await knowledgeNavigation.getByRole('button', { name: 'Sales procedures', exact: true }).getAttribute('aria-current')).toBe('page')
+  expect(newPersonalBases).toHaveLength(0)
+  expect(calls.filter(method => method === 'tasks.capabilities.prepare')).toHaveLength(beforeMaterials)
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 900 })
+    const navigation = await openKnowledgeNavigation(page)
+    expect(await navigation.getByRole('button', { name: 'Sales procedures', exact: true }).getAttribute('aria-current')).toBe('page')
+    await page.screenshot({ path: join(screenshots, `knowledge-unrelated-delete-${width}.png`), animations: 'disabled' })
+  }
+  await page.setViewportSize({ width: 1440, height: 900 })
   await page.locator('[data-row-key^="session:"]').first().click()
   await openTaskKnowledge(page)
   await page.getByRole('checkbox', { name: 'Operations playbook' }).click()

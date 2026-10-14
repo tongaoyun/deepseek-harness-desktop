@@ -1,5 +1,5 @@
 /** Organization libraries and their materials share one navigation and reading surface. */
-import { useState, type ReactNode } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 import { Button, IconChevronDownOutlineRegular, IconChevronRightOutlineRegular, IconDatabaseOutlineRegular, IconEllipsisOutlineRegular, IconFolderOpenOutlineRegular, IconPlusOutlineRegular, IconRefreshOutlineRegular, IconTrashOutlineRegular, Menu, Modal, Tooltip, type MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsRenderFactories } from '@deepseek-ai/dsh-client-ui-slots'
 import type { DeepSeekHarnessProductKey } from '../locales.ts'
@@ -34,6 +34,8 @@ export function KnowledgeWorkspace({ entries, loading, refreshRevision = 0, erro
   const [deleting, setDeleting] = useState<ProductItem>()
   const [deletePending, setDeletePending] = useState(false)
   const [deleteError, setDeleteError] = useState('')
+  const currentEntries = useRef(entries)
+  currentEntries.current = entries
   const request = useKnowledgeRequests()
   const selected = entries.find(entry => entry.id === selectedId)
     ?? entries.find(entry => entry.scope === 'PERSONAL') ?? entries[0]
@@ -96,10 +98,13 @@ export function KnowledgeWorkspace({ entries, loading, refreshRevision = 0, erro
     setDeletePending(true); setDeleteError('')
     try {
       await request('knowledge.bases.delete', { knowledgeBaseId: deleting.id })
-      const fallback = entries.find(entry => entry.id !== deleting.id)
       setDeleting(undefined)
-      setSelectedId(fallback?.id)
-      setNavigationVisible(false)
+      setSelectedId((current) => {
+        const latest = currentEntries.current
+        const selected = latest.find(entry => entry.id === current)
+          ?? latest.find(entry => entry.scope === 'PERSONAL') ?? latest[0]
+        return selected?.id === deleting.id ? latest.find(entry => entry.id !== deleting.id)?.id : current
+      })
       onRefresh()
     } catch (failure) {
       setDeleteError(productErrorMessage(failure, t, 'knowledgeDeleteBaseFailed'))

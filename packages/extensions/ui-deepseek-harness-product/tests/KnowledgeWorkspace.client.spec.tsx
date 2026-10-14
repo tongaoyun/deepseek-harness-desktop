@@ -283,6 +283,48 @@ it('keeps the personal-library confirmation open when deletion fails', async () 
   expect(parts(view.container).navigation.getByRole('button', { name: '我的资料' }).getAttribute('aria-current')).toBe('page')
 })
 
+it.each([false, true])('preserves the currently browsed library when another deletion completes (delayed: %s)', async (delayed) => {
+  const deletion = deferred()
+  const refresh = vi.fn()
+  const api = transport(async method => method === 'knowledge.bases.delete' ? deletion.promise : page([]))
+  const view = render(<KnowledgeWorkspace {...props} onRefresh={refresh} />)
+  const navigation = () => parts(view.container).navigation
+  fireEvent.click(navigation().getByRole('button', { name: '销售制度' }))
+  fireEvent.click(navigation().getByRole('button', {
+    name: zh.knowledgeLibraryActions.replace('{name}', '我的资料'),
+  }))
+  fireEvent.click(screen.getByRole('menuitem', { name: zh.knowledgeDeleteBase }))
+  const dialog = await screen.findByRole('dialog', { name: zh.knowledgeDeleteBase })
+  fireEvent.click(within(dialog).getByRole('button', { name: zh.deleteResource }))
+  await waitFor(() => { expect(api.invoke.mock.calls.some(row => row[1] === 'knowledge.bases.delete')).toBe(true) })
+  if (delayed) {
+    fireEvent.click(navigation().getByRole('button', { name: '销售案例' }))
+    view.rerender(<KnowledgeWorkspace {...props} entries={[...entries].reverse()} onRefresh={refresh} />)
+  }
+  await act(async () => { deletion.resolve(undefined); await deletion.promise })
+  await waitFor(() => { expect(refresh).toHaveBeenCalledOnce() })
+  expect(navigation().getByRole('button', { name: delayed ? '销售案例' : '销售制度' }).getAttribute('aria-current')).toBe('page')
+  expect(screen.queryByRole('dialog', { name: zh.knowledgeDeleteBase })).toBeNull()
+})
+
+it('uses the latest directory for replacement when deleting the selected library', async () => {
+  const deletion = deferred()
+  const refresh = vi.fn()
+  const api = transport(async method => method === 'knowledge.bases.delete' ? deletion.promise : page([]))
+  const view = render(<KnowledgeWorkspace {...props} onRefresh={refresh} />)
+  fireEvent.click(parts(view.container).navigation.getByRole('button', {
+    name: zh.knowledgeLibraryActions.replace('{name}', '我的资料'),
+  }))
+  fireEvent.click(screen.getByRole('menuitem', { name: zh.knowledgeDeleteBase }))
+  const dialog = await screen.findByRole('dialog', { name: zh.knowledgeDeleteBase })
+  fireEvent.click(within(dialog).getByRole('button', { name: zh.deleteResource }))
+  await waitFor(() => { expect(api.invoke.mock.calls.some(row => row[1] === 'knowledge.bases.delete')).toBe(true) })
+  view.rerender(<KnowledgeWorkspace {...props} entries={entries.filter(entry => entry.id !== 'company')} onRefresh={refresh} />)
+  await act(async () => { deletion.resolve(undefined); await deletion.promise })
+  await waitFor(() => { expect(refresh).toHaveBeenCalledOnce() })
+  expect(parts(view.container).navigation.getByRole('button', { name: '销售制度' }).getAttribute('aria-current')).toBe('page')
+})
+
 it('does not expose personal-library deletion for shared or read-only libraries', () => {
   const readOnly = entries.map(entry => ({ ...entry, canManage: false }))
   const view = render(<KnowledgeWorkspace {...props} entries={readOnly} />)
