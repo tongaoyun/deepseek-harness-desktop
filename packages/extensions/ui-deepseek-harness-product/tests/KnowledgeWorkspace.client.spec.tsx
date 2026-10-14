@@ -81,6 +81,25 @@ it('pages folder branches independently and never reloads them during document p
   ])
 })
 
+it('reloads folder branches on explicit refresh and discards externally removed folders', async () => {
+  let removed = false
+  const api = transport(async method => method === 'knowledge.folders.list'
+    ? page([{ id: 'kept', name: '保留目录', parentId: null },
+      ...removed ? [] : [{ id: 'removed', name: '删除目录', parentId: null }]])
+    : page([documentRow('personal')]))
+  const view = render(<KnowledgeWorkspace {...props} />)
+  const { navigation, content } = parts(view.container)
+  await navigation.findByRole('button', { name: '删除目录' })
+  removed = true
+  fireEvent.click(content.getByRole('button', { name: zh.refresh }))
+  await navigation.findByRole('button', { name: '保留目录' })
+  expect(navigation.queryByRole('button', { name: '删除目录' })).toBeNull()
+  expect(api.invoke.mock.calls.filter(call => call[1] === 'knowledge.folders.list')).toHaveLength(2)
+  fireEvent.click(navigation.getByRole('button', { name: '保留目录' }))
+  await waitFor(() => { expect(api.invoke).toHaveBeenCalledWith('product', 'knowledge.documents.list',
+    expect.objectContaining({ folderId: 'kept' }), expect.any(String)) })
+})
+
 it('creates nested folders with retained retry input, browses their paths and deletes back to the parent', async () => {
   const values = [
     { id: 'root', name: '项目资料', parentId: null as string | null },

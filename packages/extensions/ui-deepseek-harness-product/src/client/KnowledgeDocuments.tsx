@@ -250,6 +250,7 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
         aria-label={t('refresh')} onClick={() => {
           accessOperation.current.abort(); accessOperation.current = new AbortController()
           setData(undefined); setFolders([]); setAccessDenied(false); setRevision(value => value + 1)
+          setFolderRevision(value => value + 1)
         }}><IconRefreshOutlineRegular size={16} /></button></Tooltip>
     </div>
   </>
