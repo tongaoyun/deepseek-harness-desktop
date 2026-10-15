@@ -1,14 +1,17 @@
 import { beforeEach, expect, it, vi } from 'vitest'
 import { DingTalkAuthorizationTimeoutError } from '@deepseek-harness/product/dingtalk-auth'
 import type { ProductBridgeOptions } from '@deepseek-harness/product/bridge'
+import { ProductError } from '@deepseek-harness/product/errors'
+import { DeepSeekHarnessApiError } from '@deepseek-harness/product'
 import { createExtension } from '../src/index.ts'
 
 const fixture = vi.hoisted(() => ({ authenticate: vi.fn<typeof import('@deepseek-harness/product/dingtalk-auth').ensureDingTalkSession>(),
-  dialog: vi.fn(async () => ({ response: 0 })),
+  dialog: vi.fn(async (..._args: unknown[]) => ({ response: 0 })), quit: vi.fn(),
+  bootstrap: vi.fn(async () => ({ modelApiKey: 'model-key', endpoints: { litellm: 'https://example.test/v1' }, models: ['deepseek-v4-flash', 'gpt-example'] })),
   stop: vi.fn(async () => {}), dispose: vi.fn(), writeFile: vi.fn(), bridgeOptions: vi.fn<(options: ProductBridgeOptions) => void>() }))
 vi.mock('node:fs', async original => ({ ...await original<typeof import('node:fs')>(), writeFileSync: fixture.writeFile }))
 vi.mock('electron', () => ({
-  app: { isPackaged: false, getPath: () => '/unused-fixture', getAppPath: () => '/unused-fixture', getVersion: () => '0.1.0' },
+  app: { isPackaged: false, getPath: () => '/unused-fixture', getAppPath: () => '/unused-fixture', getVersion: () => '0.1.0', quit: fixture.quit },
   dialog: { showMessageBox: fixture.dialog }, shell: { openExternal: vi.fn(async () => {}) },
   safeStorage: { isEncryptionAvailable: () => false },
   screen: { getAllDisplays: () => [{ scaleFactor: 2 }] },
@@ -33,7 +36,7 @@ vi.mock('@deepseek-harness/product/bridge', () => ({ DeepSeekHarnessProductBridg
   dispose = fixture.dispose; invoke = async () => ({}); invokeRuntime = async () => []
   getSession = () => ({ authenticated: true })
   subscribe = () => () => {}; refreshCatalog = async () => {}
-  loadRuntimeBootstrap = async () => ({ modelApiKey: 'model-key', endpoints: { litellm: 'https://example.test/v1' }, models: ['deepseek-v4-flash', 'gpt-example'] })
+  loadRuntimeBootstrap = fixture.bootstrap
 } }))
 beforeEach(() => { vi.clearAllMocks(); fixture.authenticate.mockResolvedValue({ authenticated: true }) })
 
@@ -75,7 +78,7 @@ it('retries expired DingTalk sign-in and supplies only model configuration and p
   try {
     const environment = await extension.prepareHost()
     expect(fixture.authenticate).toHaveBeenCalledTimes(2)
-    expect(fixture.dialog).toHaveBeenCalledWith(expect.objectContaining({ title: 'DingTalk sign-in timed out' }))
+    expect(fixture.dialog).toHaveBeenCalledWith(expect.objectContaining({ message: '钉钉登录已超时' }))
     expect(environment).toMatchObject({ DEEPSEEK_API_KEY: 'model-key' })
     expect(environment?.DEEPSEEK_HARNESS_SESSION_TOKEN).toBeUndefined()
     const saved = String(fixture.writeFile.mock.calls[0]?.[1])
@@ -89,6 +92,70 @@ it('retries expired DingTalk sign-in and supplies only model configuration and p
   expect(fixture.dispose).toHaveBeenCalledOnce()
   const signal = fixture.authenticate.mock.calls[0]?.[2]?.signal as AbortSignal
   expect(signal.aborted).toBe(true)
+})
+
+it.each(['authentication', 'bootstrap'] as const)('waits for explicit retry after a network failure during %s', async (phase) => {
+  const failure = new ProductError('PRODUCT_NETWORK_UNAVAILABLE', 'private diagnostic', true)
+  if (phase === 'authentication') fixture.authenticate.mockRejectedValueOnce(failure)
+  else fixture.bootstrap.mockRejectedValueOnce(failure)
+  const choice = Promise.withResolvers<{ response: number }>()
+  const shown = Promise.withResolvers<undefined>()
+  fixture.dialog.mockImplementationOnce(async () => { shown.resolve(undefined); return choice.promise })
+  const extension = createExtension({ getWindow: () => undefined, isQuitting: () => false, requestHost: async () => ({}) })
+  try {
+    const pending = extension.prepareHost()
+    await shown.promise
+    expect(fixture.writeFile).not.toHaveBeenCalled()
+    expect(fixture.bootstrap).toHaveBeenCalledTimes(phase === 'authentication' ? 0 : 1)
+    expect(JSON.stringify(fixture.dialog.mock.calls)).not.toContain('private diagnostic')
+    choice.resolve({ response: 0 })
+    await expect(pending).resolves.toMatchObject({ DEEPSEEK_API_KEY: 'model-key' })
+    expect(fixture.authenticate).toHaveBeenCalledTimes(2)
+    expect(fixture.quit).not.toHaveBeenCalled()
+  } finally { choice.resolve({ response: 1 }); await extension.close() }
+})
+
+it('exits without writing inference configuration when startup retry is declined', async () => {
+  fixture.authenticate.mockRejectedValueOnce(new DeepSeekHarnessApiError(503, 'UNAVAILABLE', 'private'))
+  fixture.dialog.mockResolvedValueOnce({ response: 1 })
+  const extension = createExtension({ getWindow: () => undefined, isQuitting: () => false, requestHost: async () => ({}) })
+  try {
+    await expect(extension.prepareHost()).resolves.toBeUndefined()
+    expect(fixture.quit).toHaveBeenCalledOnce()
+    expect(fixture.bootstrap).not.toHaveBeenCalled()
+    expect(fixture.writeFile).not.toHaveBeenCalled()
+  } finally { await extension.close() }
+})
+
+it('keeps invalid startup configuration as a failure', async () => {
+  const failure = new Error('Invalid runtime bootstrap')
+  fixture.bootstrap.mockRejectedValueOnce(failure)
+  const extension = createExtension({ getWindow: () => undefined, isQuitting: () => false, requestHost: async () => ({}) })
+  try {
+    await expect(extension.prepareHost()).rejects.toBe(failure)
+    expect(fixture.dialog).not.toHaveBeenCalled()
+    expect(fixture.writeFile).not.toHaveBeenCalled()
+  } finally { await extension.close() }
+})
+
+it('settles startup on close and ignores a late retry choice', async () => {
+  fixture.authenticate.mockRejectedValueOnce(new ProductError('PRODUCT_NETWORK_UNAVAILABLE', 'Unavailable', true))
+  const shown = Promise.withResolvers<undefined>()
+  const choice = Promise.withResolvers<{ response: number }>()
+  fixture.dialog.mockImplementationOnce(async () => { shown.resolve(undefined); return choice.promise })
+  const extension = createExtension({ getWindow: () => undefined, isQuitting: () => false, requestHost: async () => ({}) })
+  const pending = extension.prepareHost()
+  try {
+    await shown.promise
+    await extension.close()
+    await expect(pending).resolves.toBeUndefined()
+    choice.resolve({ response: 0 })
+    await Promise.resolve()
+    expect(fixture.authenticate).toHaveBeenCalledOnce()
+    expect(fixture.bootstrap).not.toHaveBeenCalled()
+    expect(fixture.writeFile).not.toHaveBeenCalled()
+    expect(fixture.quit).not.toHaveBeenCalled()
+  } finally { choice.resolve({ response: 1 }); await pending }
 })
 
 it('routes device Skill install, inspection, and uninstall through the Host product namespace', async () => {

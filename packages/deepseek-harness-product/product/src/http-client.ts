@@ -90,11 +90,29 @@ export class DeepSeekHarnessApiClient {
     const signal = AbortSignal.any([this.lifecycle.signal, AbortSignal.timeout(this.options.requestTimeoutMs ?? 60_000),
       ...init.signal === undefined || init.signal === null ? [] : [init.signal]])
     signal.throwIfAborted()
-    const response = await this.requestFetch(`${this.baseUrl}${path}`, { ...init, headers, signal })
+    let response: Response
+    try {
+      response = await this.requestFetch(`${this.baseUrl}${path}`, { ...init, headers, signal })
+    } catch (cause) {
+      this.lifecycle.signal.throwIfAborted()
+      init.signal?.throwIfAborted()
+      if (!(cause instanceof TypeError) && !signal.aborted) throw cause
+      throw new ProductError('PRODUCT_NETWORK_UNAVAILABLE',
+        'Unable to reach the product service. The request outcome is unknown.', true, [], { cause })
+    }
     // DELETE endpoints may intentionally return 204 with no COLA envelope.
     // Treat that status as a successful empty response while preserving the
     // normal envelope validation for every response carrying a body.
-    const body = response.status === 204 ? { success: true } as T : await response.json() as T
+    let body: T
+    try {
+      body = response.status === 204 ? { success: true } as T : await response.json() as T
+    } catch (cause) {
+      this.lifecycle.signal.throwIfAborted()
+      init.signal?.throwIfAborted()
+      if (!(cause instanceof TypeError) && !signal.aborted) throw cause
+      throw new ProductError('PRODUCT_NETWORK_UNAVAILABLE',
+        'Unable to read the product service response. The request outcome is unknown.', true, [], { cause })
+    }
     signal.throwIfAborted()
     if (!response.ok || !body.success) {
       const failure = { ...typeof body.data === 'object' && body.data !== null ? body.data : {},

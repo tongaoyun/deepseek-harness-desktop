@@ -1,4 +1,5 @@
 import type { ProductSession } from './protocol.ts'
+import { DeepSeekHarnessApiError } from './http-client.ts'
 import { setTimeout as delay } from 'node:timers/promises'
 
 /** Product bridge operations required by the DingTalk OAuth flow. */
@@ -49,7 +50,10 @@ export async function ensureDingTalkSession(
   const timeout = AbortSignal.timeout(options.timeoutMs ?? 120_000)
   const signal = AbortSignal.any([timeout, ...options.signal ? [options.signal] : []])
   try {
-    try { await bridge.invoke('auth.refresh', undefined, signal) } catch { /* A missing session starts a fresh OAuth attempt below. */ }
+    try { await bridge.invoke('auth.refresh', undefined, signal) } catch (error) {
+      if (!(error instanceof DeepSeekHarnessApiError)
+        || error.status !== 401 || error.code !== 'EMPLOYEE_UNAUTHORIZED') throw error
+    }
     signal.throwIfAborted()
     if (bridge.getSession().authenticated) return bridge.getSession()
     const attempt = authorization(await bridge.invoke('auth.beginDingTalk', undefined, signal))
