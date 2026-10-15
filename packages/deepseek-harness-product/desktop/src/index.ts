@@ -3,7 +3,9 @@ import { readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { app, dialog, safeStorage, screen, shell, type BrowserWindow } from 'electron'
-import { DeepSeekHarnessProductBridge, type ProductBridgeOptions } from '@deepseek-harness/product/bridge'
+import { DeepSeekHarnessProductBridge, type ProductBridgeOptions, type ProductRuntimeBootstrap } from '@deepseek-harness/product/bridge'
+import { DeepSeekHarnessApiError } from '@deepseek-harness/product'
+import { ProductError } from '@deepseek-harness/product/errors'
 import { ensureDingTalkSession, DingTalkAuthorizationTimeoutError } from '@deepseek-harness/product/dingtalk-auth'
 import { isProductRuntimeMethod, type ProductSession } from '@deepseek-harness/product/protocol'
 import { DeepSeekHarnessNativeProcess } from './deepseek-harness-native-process.ts'
@@ -239,20 +241,46 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
       }
     }
   }
-  const authenticateDeepSeekHarness = async (): Promise<boolean> => {
-    while (!context.isQuitting()) {
+  const prepareDeepSeekHarnessBootstrap = async (): Promise<ProductRuntimeBootstrap | undefined> => {
+    let operation = '钉钉登录'
+    const stopped = (): boolean => context.isQuitting() || lifecycle.signal.aborted
+    while (!stopped()) {
       try {
+        operation = '钉钉登录'
         await ensureDeepSeekHarnessAuth()
-        return true
+        operation = '加载工作区配置'
+        return await productBridge.loadRuntimeBootstrap()
       } catch (error) {
-        if (!(error instanceof DingTalkAuthorizationTimeoutError)) throw error
-        await dialog.showMessageBox({
-          type: 'warning', title: 'DingTalk sign-in timed out',
-          message: 'The sign-in request has expired. Start a new DingTalk sign-in to continue.', buttons: ['Sign in again'], cancelId: 0,
+        if (stopped()) return undefined
+        const expired = error instanceof DingTalkAuthorizationTimeoutError
+        const unauthorized = error instanceof DeepSeekHarnessApiError
+          && error.status === 401 && error.code === 'EMPLOYEE_UNAUTHORIZED'
+        if (unauthorized) continue
+        const unavailable = error instanceof ProductError && (error.code === 'PRODUCT_NETWORK_UNAVAILABLE'
+          || error instanceof DeepSeekHarnessApiError && (error.status >= 500 || error.status === 429))
+        if (!expired && !unavailable) throw error
+        const options = {
+          type: 'warning' as const, title: '暂时无法进入工作区',
+          message: expired ? '钉钉登录已超时' : `${operation}失败，暂时无法连接服务`,
+          detail: expired ? '请重试并在浏览器中完成钉钉授权。' : '请检查网络连接后重试。工作区尚未启动，已有任务和登录数据已保留。',
+          buttons: ['重试', '退出'], defaultId: 0, cancelId: 1,
+        }
+        const window = context.getWindow()
+        if (window && !window.isDestroyed()) {
+          if (window.isMinimized()) window.restore()
+          window.show()
+          window.focus()
+        }
+        const result = await waitForNativeDialog(() => window && !window.isDestroyed()
+          ? dialog.showMessageBox(window, options) : dialog.showMessageBox(options), lifecycle.signal).catch((error: unknown) => {
+          if (!lifecycle.signal.aborted) throw error
+          return { response: 1 }
         })
+        if (stopped()) return undefined
+        if (result.response !== 0) { app.quit(); return undefined }
       }
     }
-    return false
+    return undefined
   }
 
   let closed = false
@@ -277,9 +305,8 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
       await knowledgeFiles.prepare()
       await connectorProxy.start()
       await nativeSidecar.start()
-      if (!await authenticateDeepSeekHarness()) return undefined
-      const bootstrap = await productBridge.loadRuntimeBootstrap()
-      if (closed) return undefined
+      const bootstrap = await prepareDeepSeekHarnessBootstrap()
+      if (closed || bootstrap === undefined) return undefined
       reportDevice()
       if (supportTimer === undefined) {
         supportTimer = setInterval(reportDevice, supportPolicy.heartbeatIntervalMs)

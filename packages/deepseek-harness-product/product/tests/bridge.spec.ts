@@ -599,8 +599,10 @@ describe('DeepSeekHarnessProductBridge', () => {
       fetch: () => Promise.reject(new TypeError('network unavailable')),
     })
 
-    await expect(bridge.invoke('skills.list')).rejects.toThrow('network unavailable')
-    expect(bridge.getSession()).toMatchObject({ authenticated: true, employeeId: 'employee-1' })
+    try {
+      await expect(bridge.invoke('skills.list')).rejects.toMatchObject({ code: 'PRODUCT_NETWORK_UNAVAILABLE' })
+      expect(bridge.getSession()).toMatchObject({ authenticated: true, employeeId: 'employee-1' })
+    } finally { await bridge.dispose() }
   })
 
   it('keeps inference credentials on the main-process bootstrap boundary', async () => {
@@ -763,7 +765,7 @@ describe('DeepSeekHarnessProductBridge', () => {
     await bridge.invoke('skills.list')
     fail = true
 
-    await expect(bridge.invoke('catalog.refresh')).rejects.toThrow('catalog unavailable')
+    await expect(bridge.invoke('catalog.refresh')).rejects.toMatchObject({ code: 'PRODUCT_NETWORK_UNAVAILABLE' })
     await expect(bridge.invoke('skills.list')).resolves.toEqual([
       { id: '/api/v1/skills', availabilityStatus: 'AVAILABLE' },
     ])
@@ -959,7 +961,7 @@ describe('DeepSeekHarnessProductBridge', () => {
     knowledge = [{ id: 'department-support', scope: 'DEPARTMENT' }]
     await expect(bridge.invoke('knowledge.bases.list')).resolves.toMatchObject([{ id: 'department-support' }])
     fail = true
-    await expect(bridge.invoke('knowledge.bases.list')).rejects.toThrow('directory unavailable')
+    await expect(bridge.invoke('knowledge.bases.list')).rejects.toMatchObject({ code: 'PRODUCT_NETWORK_UNAVAILABLE' })
     expect(calls.filter(path => path === '/api/v1/knowledge-bases')).toHaveLength(4)
     await bridge.dispose()
   })

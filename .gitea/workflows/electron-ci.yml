@@ -65,6 +65,7 @@ jobs:
             packages/deepseek-harness-product/desktop/tests/connector-proxy.spec.ts \
             packages/deepseek-harness-product/desktop/tests/deepseek-harness-product-config.spec.ts \
             packages/deepseek-harness-product/desktop/tests/desktop-support.spec.ts \
+            packages/deepseek-harness-product/desktop/tests/extension.spec.ts \
             packages/deepseek-harness-product/desktop/tests/personal-connectors.spec.ts \
             packages/deepseek-harness-product/runtime/tests/conversation-authoring-loader.spec.ts \
             packages/deepseek-harness-product/runtime/tests/kit-skills-loader.spec.ts \
@@ -85,6 +86,7 @@ jobs:
             packages/client/ui-primitives/tests/code-file-icon.client.spec.tsx \
             packages/client/ui-settings-account/tests/apply.client.spec.ts \
             packages/deepseek-harness-product/product/tests/bridge.spec.ts \
+            packages/deepseek-harness-product/product/tests/startup-network.spec.ts \
             packages/deepseek-harness-product/product/tests/employee-lifecycle.spec.ts \
             packages/deepseek-harness-product/product/tests/knowledge-bridge.spec.ts \
             packages/extensions/ui-deepseek-harness-product/tests/KnowledgeView.client.spec.tsx \
