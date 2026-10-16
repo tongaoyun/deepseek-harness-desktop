@@ -35,6 +35,10 @@ describe('DeepSeekHarness Electron workflows', () => {
   it('runs existing product contract tests after the Host extraction', () => {
     const command = workflow('electron-ci.yml').jobs.desktop?.steps
       .find(step => step.name === 'Verify upstream and product contracts')?.run ?? ''
+    expect(command).toContain('pnpm exec tsx scripts/compile-referenced-projects.ts host-libraries')
+    expect(command).toContain('pnpm run typecheck\n')
+    expect(command).not.toContain('pnpm run build:lib:host')
+    expect(command).not.toContain('pnpm run typecheck:contracts-ready')
     const tests = command.match(/\S+\.spec\.tsx?/gu) ?? []
     expect(tests).toContain('packages/deepseek-harness-product/runtime/tests/deepseek-harness-connector-contract.spec.ts')
     expect(tests).toContain('packages/deepseek-harness-product/runtime/tests/deepseek-harness-runtime.spec.ts')
