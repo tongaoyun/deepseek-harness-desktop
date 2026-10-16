@@ -50,9 +50,13 @@ export async function ensureDingTalkSession(
   const timeout = AbortSignal.timeout(options.timeoutMs ?? 120_000)
   const signal = AbortSignal.any([timeout, ...options.signal ? [options.signal] : []])
   try {
+    const sessionBeforeRefresh = bridge.getSession()
     try { await bridge.invoke('auth.refresh', undefined, signal) } catch (error) {
-      if (!(error instanceof DeepSeekHarnessApiError)
-        || error.status !== 401 || error.code !== 'EMPLOYEE_UNAUTHORIZED') throw error
+      signal.throwIfAborted()
+      const unauthorized = error instanceof DeepSeekHarnessApiError
+        && error.status === 401 && error.code === 'EMPLOYEE_UNAUTHORIZED'
+      const invalidated = sessionBeforeRefresh.authenticated && !bridge.getSession().authenticated
+      if (!unauthorized && !invalidated) throw error
     }
     signal.throwIfAborted()
     if (bridge.getSession().authenticated) return bridge.getSession()
