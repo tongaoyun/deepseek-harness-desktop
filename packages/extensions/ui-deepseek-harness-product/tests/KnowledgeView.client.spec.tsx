@@ -171,7 +171,7 @@ it('preserves edits and the idempotency key after a failed manual document save'
   expect(screen.getByDisplayValue('# 修改后的正文')).toBeDefined()
   expect(saved).not.toHaveBeenCalled()
   failed = false
-  fireEvent.click(screen.getByRole('button', { name: zh.knowledgeSave }))
+  fireEvent.click(screen.getByRole('button', { name: zh.knowledgeRetrySave }))
   await waitFor(() => { expect(saved).toHaveBeenCalledOnce() })
   const calls = api.invoke.mock.calls.filter(row => row[1] === 'knowledge.documents.save')
   expect(calls).toHaveLength(2)

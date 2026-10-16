@@ -93,6 +93,7 @@ jobs:
             packages/extensions/ui-deepseek-harness-product/tests/KnowledgeWorkspace.client.spec.tsx \
             packages/extensions/ui-deepseek-harness-product/tests/KnowledgeDirectory.client.spec.tsx \
             packages/extensions/ui-deepseek-harness-product/tests/KnowledgeEditor.client.spec.tsx \
+            packages/extensions/ui-deepseek-harness-product/tests/KnowledgeSaveRecovery.client.spec.tsx \
             packages/extensions/ui-deepseek-harness-product/tests/knowledge-folders.client.spec.ts \
             packages/extensions/ui-deepseek-harness-product/tests/DeepSeekHarnessCatalogSection.spec.tsx \
             packages/extensions/ui-deepseek-harness-product/tests/DesktopFeedback.client.spec.tsx \

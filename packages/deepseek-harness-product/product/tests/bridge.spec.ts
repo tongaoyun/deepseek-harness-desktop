@@ -37,6 +37,46 @@ function catalogTransport(catalog: Readonly<Record<string, readonly unknown[]>>)
 }
 
 describe('DeepSeekHarnessProductBridge', () => {
+  it.each(['extensions.save', 'extensions.authoring.save', 'extensions.submit', 'extensions.delete',
+    'extensions.connector.update', 'extensions.connector.delete'])(
+    'returns committed %s without waiting for a stalled knowledge catalog', async (method) => {
+      const started = Promise.withResolvers<undefined>()
+      const committed = vi.fn(async () => ({ committed: true }))
+      let stalled = false
+      const bridge = new DeepSeekHarnessProductBridge({
+        serverUrl: 'https://deepseek-harness.test', authoring: committed,
+        sessionToken: 'employee-session', initialSession: { authenticated: true, employeeId: 'employee-1' },
+        fetch: async (input, init) => {
+          if (stalled && requestUrl(input).pathname === '/api/v1/knowledge-bases') {
+            started.resolve(undefined)
+            return new Promise((_resolve, reject) => {
+              const signal = init?.signal
+              if (!signal) { reject(new Error('Missing request cancellation')); return }
+              if (signal.aborted) reject(new Error('Catalog cancelled', { cause: signal.reason }))
+              else signal.addEventListener('abort', () => { reject(new Error('Catalog cancelled', { cause: signal.reason })) }, { once: true })
+            })
+          }
+          return catalogFetch(input)
+        },
+      })
+      const controller = new AbortController()
+      const events: ProductEvent[] = []
+      bridge.subscribe(event => events.push(event))
+      try {
+        await bridge.refreshCatalog()
+        stalled = true
+        let observed: unknown
+        const result = bridge.invoke(method, { kind: 'skill', id: 'document-insight', version: '1.0.0' }, controller.signal)
+          .then((value) => { observed = value }, (error: unknown) => { observed = error })
+        await started.promise
+        await vi.waitFor(() => { expect(observed).toEqual({ committed: true }) })
+        expect(events).toContainEqual({ type: 'catalog.changed' })
+        await result
+        await bridge.dispose()
+      } finally { controller.abort(); await bridge.dispose() }
+    },
+  )
+
   it('dispatches personal library creation and limits through authenticated knowledge APIs', async () => {
     const created = { id: 'personal-1', name: 'My files', scope: 'PERSONAL', canManage: true }
     const limits = { previewMaxBytes: 50_000_000, downloadMaxBytes: 250_000_000, uploadMaxBytes: 50_000_000 }

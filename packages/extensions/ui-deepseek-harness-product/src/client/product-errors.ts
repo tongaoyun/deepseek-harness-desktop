@@ -58,6 +58,15 @@ const messageKeys: Readonly<Record<string, DeepSeekHarnessProductKey>> = {
   KNOWLEDGE_FOLDER_NOT_EMPTY: 'knowledgeFolderNotEmpty',
 }
 
+/** Keep a failed knowledge mutation's payload and identity fixed until its result is confirmed.
+ * @param error Published failure from the save request.
+ * @returns Whether the request may still have committed or be executing remotely.
+ */
+export function isKnowledgeSaveUnconfirmed(error: unknown): boolean {
+  const failure = productFailure(error)
+  return failure.retryable || ['IDEMPOTENCY_OPERATION_UNKNOWN', 'IDEMPOTENCY_OPERATION_IN_PROGRESS'].includes(failure.code)
+}
+
 /** Format recognized public failures without displaying remote exception text.
  * @param error - Failure returned by product transport.
  * @param t - Current locale dictionary.

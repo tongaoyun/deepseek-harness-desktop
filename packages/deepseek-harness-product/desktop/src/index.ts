@@ -152,8 +152,7 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
       return result.canceled ? undefined : result.filePaths[0]
     },
     installSkill: async (id, signal) => {
-      await productBridge.refreshCatalog(signal)
-      await context.requestHost('product', 'skills.install', { id }, signal)
+      await productBridge.invoke('skills.install', { id }, signal)
     },
     saveConnector: (draft, api, employee, signal) => personalConnectors.save(draft, api, employee, signal),
   })

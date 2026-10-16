@@ -188,7 +188,7 @@ export class DeepSeekHarnessProductBridge {
     return this.catalog.refresh(signal)
   }
 
-  private connectorAuthorizationChanged(): void {
+  private catalogChanged(): void {
     this.catalog.reset()
     this.emit({ type: 'catalog.changed' })
     void this.catalog.refresh().catch((_error: unknown) => {
@@ -330,9 +330,7 @@ export class DeepSeekHarnessProductBridge {
           if (method === 'extensions.authoring.update' || method === 'extensions.authoring.save') this.emit({ type: 'authoring.changed', payload: { sessionId: input.sessionId } })
           if (method === 'extensions.save' || method === 'extensions.authoring.save' || method === 'extensions.submit'
             || method === 'extensions.delete' || method === 'extensions.connector.update' || method === 'extensions.connector.delete') {
-            this.catalog.reset()
-            // A remote commit can precede a device failure; refresh the authoritative catalog.
-            await this.catalog.refresh(signal).catch(() => undefined)
+            this.catalogChanged()
           }
         }
       }
@@ -402,7 +400,7 @@ export class DeepSeekHarnessProductBridge {
       const result = await this.api.request(
         `/api/v1/connectors/${encodeURIComponent(requiredId(input))}/authorization`, { ...(signal === undefined ? {} : { signal }) },
       )
-      if (authorizationStatus(result) === 'AUTHORIZED') this.connectorAuthorizationChanged()
+      if (authorizationStatus(result) === 'AUTHORIZED') this.catalogChanged()
       return result
     }
     if (method === 'connectors.authorization.begin') {
@@ -414,7 +412,7 @@ export class DeepSeekHarnessProductBridge {
       const result = await this.api.request(`/api/v1/connectors/${encodeURIComponent(requiredId(input))}/authorization`, {
         method: 'DELETE', ...(signal === undefined ? {} : { signal }),
       })
-      this.connectorAuthorizationChanged()
+      this.catalogChanged()
       return result
     }
     if (method === 'knowledge.search') {
