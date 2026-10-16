@@ -519,7 +519,7 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
     } catch (error) { if (lifetime === managementLifetime.current && currentGeneration === generation.current) setActionFailure(productErrorMessage(error, t, 'detailFailed')) }
   }
   const referenceModal = reference?.kind === 'connectors' ? <ConnectorDetailModal open detail={reference.detail} loading={false} error={false}
-    onClose={() => { setReference(undefined) }} onCatalogChanged={() => refresh(true)} t={t} />
+    onClose={() => { setReference(undefined) }} onCatalogChanged={() => refresh()} t={t} />
     : reference?.kind === 'skills' ? <SkillDetailModal open bundled detail={reference.detail}
       loading={false} error={false} installed={false}
       installationsKnown={false} actionPending={false} actionError={false}
@@ -689,7 +689,7 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
     {catalog === 'connectors' && <ConnectorDetailModal open={selectedId !== undefined} detail={selected}
       loading={detailLoading} error={detailError} onClose={closeDetail}
       managementActions={selected ? managementActions(selected) : undefined}
-      onCatalogChanged={() => { closeDetail(); return refresh(true) }} t={t} />}
+      onCatalogChanged={() => { closeDetail(); return refresh() }} t={t} />}
     {importer && (catalog === 'skills' || catalog === 'expertKits') && <ExtensionImporter kind={catalog === 'skills' ? 'skill' : 'expert-kit'}
       onClose={() => { setImporter(false) }} onInspected={(imported) => { setImporter(false); setEditor({ imported }) }} t={t} />}
     {editor?.imported && <ExtensionPreview preview={editor.imported} onClose={() => { setEditor(undefined) }}
