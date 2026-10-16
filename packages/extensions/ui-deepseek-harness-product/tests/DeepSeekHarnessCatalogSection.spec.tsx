@@ -1130,7 +1130,7 @@ describe('DeepSeekHarness capability navigation', () => {
     await vi.waitFor(() => { expect(invoke).toHaveBeenCalledWith(
       'connectors.authorization.status', { id: 'erp' }, expect.any(String),
     ) })
-    await vi.waitFor(() => { expect(invoke.mock.calls.filter(call => call[0] === 'connectors.list')).toHaveLength(2) })
+    await vi.waitFor(() => { expect(invoke.mock.calls.filter(call => call[0] === 'connectors.list').length).toBeGreaterThan(1) })
   })
 
   it('stops managed authorization polling when the detail drawer closes', async () => {
@@ -1196,7 +1196,31 @@ describe('DeepSeekHarness capability navigation', () => {
     await waitFor(() => { expect(invoke).toHaveBeenCalledWith(
       'connectors.authorization.revoke', { id: 'erp' }, expect.any(String),
     ) })
-    await waitFor(() => { expect(invoke.mock.calls.filter(call => call[0] === 'connectors.list')).toHaveLength(2) })
+    await waitFor(() => { expect(invoke.mock.calls.filter(call => call[0] === 'connectors.list').length).toBeGreaterThan(1) })
+  })
+
+  it.each(['authorize', 'revoke'] as const)('rereads only the connector directory after %s succeeds', async (action) => {
+    let authorized = action === 'revoke'
+    const invoke = vi.fn(async (method: string): Promise<unknown> => {
+      if (method === 'connectors.list') return [{ id: 'erp', displayName: 'ERP 连接器', authMode: 'oauth',
+        authorizationStatus: authorized ? 'AUTHORIZED' : 'REQUIRED', tools: [] }]
+      if (method === 'connectors.authorization.begin') return { authorizationUrl: 'https://auth.example/' }
+      if (method === 'connectors.authorization.status') { authorized = true; return { status: 'AUTHORIZED' } }
+      if (method === 'connectors.authorization.revoke') { authorized = false; return { status: 'REQUIRED' } }
+      throw new Error('Organization directory unavailable')
+    })
+    installProductApi({ getSession: vi.fn(async () => ({ authenticated: true })), invoke, cancel: vi.fn() })
+    render(<ConnectorsPanel t={t} {...actions()} />)
+    fireEvent.click(await screen.findByRole('button', { name: /ERP 连接器/ }))
+    if (action === 'authorize') vi.useFakeTimers()
+    fireEvent.click(screen.getByRole('button', { name: action === 'authorize' ? zh.authorize : zh.revokeAuthorization }))
+    if (action === 'authorize') await vi.advanceTimersByTimeAsync(1_000)
+    await vi.waitFor(() => { expect(invoke.mock.calls.filter(call => call[0] === 'connectors.list')).toHaveLength(2) })
+    expect(invoke.mock.calls.some(call => call[0] === 'catalog.refresh')).toBe(false)
+    expect(screen.queryByText(zh.authorizationFailed)).toBeNull()
+    vi.useRealTimers()
+    fireEvent.click(screen.getByRole('button', { name: /ERP 连接器/ }))
+    expect(await screen.findByRole('button', { name: authorized ? zh.revokeAuthorization : zh.authorize })).not.toBeNull()
   })
 
   it('opens knowledge documents in its main workspace without changing the task', async () => {

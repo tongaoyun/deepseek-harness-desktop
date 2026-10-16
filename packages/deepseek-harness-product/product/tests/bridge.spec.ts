@@ -820,6 +820,83 @@ describe('DeepSeekHarnessProductBridge', () => {
     await bridge.dispose()
   })
 
+  it.each(['connectors.authorization.status', 'connectors.authorization.revoke'])(
+    'returns the authoritative %s result when a dependent directory is unavailable', async (method) => {
+      let offline = false
+      const events: ProductEvent[] = []
+      const bridge = new DeepSeekHarnessProductBridge({
+        serverUrl: 'https://deepseek-harness.test', sessionToken: 'employee-session',
+        initialSession: { authenticated: true, employeeId: 'employee-1' },
+        fetch: (input) => {
+          const path = requestUrl(input).pathname
+          if (path.endsWith('/authorization')) return Promise.resolve(Response.json({ success: true,
+            data: { status: method.endsWith('.revoke') ? 'REQUIRED' : 'AUTHORIZED' } }))
+          if (offline && path.endsWith('/knowledge-bases')) return Promise.resolve(Response.json({ success: false,
+            errCode: 'ORGANIZATION_UNAVAILABLE', errMessage: 'Organization service unavailable' }, { status: 503 }))
+          return catalogFetch(input)
+        },
+      })
+      bridge.subscribe((event) => { events.push(event) })
+      try {
+        await bridge.refreshCatalog()
+        events.length = 0
+        offline = true
+        await expect(bridge.invoke(method, { id: 'erp' })).resolves.toEqual({
+          status: method.endsWith('.revoke') ? 'REQUIRED' : 'AUTHORIZED',
+        })
+        expect(events.some(event => event.type === 'catalog.changed')).toBe(true)
+        await expect(bridge.invoke('catalog.refresh')).rejects.toMatchObject({ code: 'ORGANIZATION_UNAVAILABLE' })
+        await expect(bridge.invoke('connectors.list')).rejects.toMatchObject({ code: 'ORGANIZATION_UNAVAILABLE' })
+      } finally { await bridge.dispose() }
+    },
+  )
+
+  it('returns a committed revocation before a stalled refresh and drains it during disposal', async () => {
+    let finishRefresh: (() => void) | undefined
+    let refreshSettled = false
+    const refreshStarted = new Promise<void>((resolve) => { finishRefresh = resolve })
+    const bridge = new DeepSeekHarnessProductBridge({
+      serverUrl: 'https://deepseek-harness.test', sessionToken: 'employee-session',
+      initialSession: { authenticated: true, employeeId: 'employee-1' },
+      fetch: async (input, init) => {
+        const path = requestUrl(input).pathname
+        if (path.endsWith('/authorization')) return Response.json({ success: true, data: { status: 'REQUIRED' } })
+        if (!path.endsWith('/knowledge-bases')) return catalogFetch(input)
+        const signal = init?.signal
+        if (!signal) throw new Error('Missing refresh cancellation')
+        signal.throwIfAborted()
+        finishRefresh?.()
+        try {
+          return await new Promise<never>((_resolve, reject) => {
+            signal.addEventListener('abort', () => {
+              reject(signal.reason instanceof Error ? signal.reason : new Error('Catalog refresh aborted'))
+            }, { once: true })
+          })
+        } finally { refreshSettled = true }
+      },
+    })
+    try {
+      await expect(bridge.invoke('connectors.authorization.revoke', { id: 'erp' })).resolves.toEqual({ status: 'REQUIRED' })
+      await refreshStarted
+      expect(refreshSettled).toBe(false)
+    } finally { await bridge.dispose() }
+    expect(refreshSettled).toBe(true)
+  })
+
+  it('preserves authorization failures without publishing a catalog change', async () => {
+    const events: ProductEvent[] = []
+    const bridge = new DeepSeekHarnessProductBridge({
+      serverUrl: 'https://deepseek-harness.test', sessionToken: 'employee-session',
+      initialSession: { authenticated: true, employeeId: 'employee-1' },
+      fetch: async () => Response.json({ success: false, errCode: 'CONNECTOR_FORBIDDEN', errMessage: 'Access denied' }, { status: 403 }),
+    })
+    bridge.subscribe((event) => { events.push(event) })
+    try {
+      await expect(bridge.invoke('connectors.authorization.revoke', { id: 'erp' })).rejects.toMatchObject({ code: 'CONNECTOR_FORBIDDEN' })
+      expect(events).toEqual([])
+    } finally { await bridge.dispose() }
+  })
+
   it('uses employee-scoped authorization resources and refreshes the catalog after revocation', async () => {
     const requests: Request[] = []
     const bridge = new DeepSeekHarnessProductBridge({

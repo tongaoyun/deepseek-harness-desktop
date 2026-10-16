@@ -188,6 +188,14 @@ export class DeepSeekHarnessProductBridge {
     return this.catalog.refresh(signal)
   }
 
+  private connectorAuthorizationChanged(): void {
+    this.catalog.reset()
+    this.emit({ type: 'catalog.changed' })
+    void this.catalog.refresh().catch((_error: unknown) => {
+      // Cached permissions remain invalid; foreground directory reads report refresh failures.
+    })
+  }
+
   /** Cancel and await background requests, suppressing later events and timers. */
   async dispose(): Promise<void> {
     this.closed = true
@@ -394,7 +402,7 @@ export class DeepSeekHarnessProductBridge {
       const result = await this.api.request(
         `/api/v1/connectors/${encodeURIComponent(requiredId(input))}/authorization`, { ...(signal === undefined ? {} : { signal }) },
       )
-      if (authorizationStatus(result) === 'AUTHORIZED') await this.catalog.refresh(signal)
+      if (authorizationStatus(result) === 'AUTHORIZED') this.connectorAuthorizationChanged()
       return result
     }
     if (method === 'connectors.authorization.begin') {
@@ -406,7 +414,7 @@ export class DeepSeekHarnessProductBridge {
       const result = await this.api.request(`/api/v1/connectors/${encodeURIComponent(requiredId(input))}/authorization`, {
         method: 'DELETE', ...(signal === undefined ? {} : { signal }),
       })
-      await this.catalog.refresh(signal)
+      this.connectorAuthorizationChanged()
       return result
     }
     if (method === 'knowledge.search') {
