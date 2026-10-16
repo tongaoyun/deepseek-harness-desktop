@@ -44,7 +44,7 @@ async function fixture(outcome: ApprovalOutcome) {
   await ctx.plugin(AgentLoop, { agents: [] })
   await ctx.plugin(ApprovalService, { policy: 'ask' })
   ctx.on('approval/request', () => Promise.resolve(outcome))
-  const invoke = vi.fn(async (method: string, _payload?: unknown, _signal?: AbortSignal) => {
+  const invoke = vi.fn(async (method: string, _payload?: unknown, _signal?: AbortSignal): Promise<unknown> => {
     if (method === 'knowledge.bases.list') return [
       { id: 'personal', name: 'Personal notes', scope: 'PERSONAL', ownerName: 'Employee', canManage: true,
         apiKey: 'private-weknora-key', path: '/private/file' },
@@ -97,6 +97,31 @@ it('does not write when the official approval is rejected', async () => {
   await vi.waitFor(() => { expect(handle.agent.session.snapshotEvents().some(event => event.type === 'turn/end')).toBe(true) })
   expect(invoke.mock.calls.map(call => call[0])).not.toContain('knowledge.documents.save')
   expect(handle.agent.session.snapshotEvents().filter(event => event.type === 'approval/decided').map(event => event.data.outcome)).toContain('rejected')
+})
+
+it('searches and pages all writable destinations beyond the previous 128-entry limit', async () => {
+  const { ctx, invoke, handle } = await fixture('allowed-once')
+  invoke.mockImplementation(async () => [
+    ...Array.from({ length: 129 }, (_, index) => ({ id: `base-${String(index).padStart(3, '0')}`,
+      name: `Destination ${index}`, scope: 'PERSONAL', canManage: true, ownerName: 'Employee', apiKey: 'private-key' })),
+    { id: 'read-only', name: 'Destination 128', scope: 'COMPANY', canManage: false },
+  ].reverse())
+  const execute = async (args: Record<string, unknown>) => ctx.tools.execute({ agent: handle.agent,
+    name: 'knowledge_destinations', arguments: args, callId: ToolCallId('page'), signal: new AbortController().signal })
+  const second = await execute({ page: 2, size: 100 })
+  const output = second.content.filter(block => block.type === 'text').map(block => block.text).join('')
+  expect(output).toContain('base-128')
+  expect(output).toContain('"total":129')
+  expect(output).toContain('"hasMore":false')
+  expect(output).not.toContain('base-099')
+  expect(output).not.toContain('private-key')
+  const searched = await execute({ query: 'DESTINATION 128' })
+  const result = searched.content.filter(block => block.type === 'text').map(block => block.text).join('')
+  expect(result).toContain('base-128')
+  expect(result).toContain('"total":1')
+  expect(result).not.toContain('read-only')
+  const invalid = await execute({ page: 0, size: 101 })
+  expect(invalid.isError).toBe(true)
 })
 
 it('cancels and awaits in-flight destination requests during plugin unload', async () => {

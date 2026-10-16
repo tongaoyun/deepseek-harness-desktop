@@ -16,6 +16,30 @@ const skill = { kind: 'skill', id: 'my-review', version: '1.0.0', name: 'My revi
   category: 'legal', body: 'Review the facts first.', triggers: ['Review a document'] } as const
 const identity = { authenticated: true, employeeId: 'employee-one' }
 
+it('reuses a committed version without another upload and still activates and installs it', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'extension-committed-test-'))
+  onTestFinished(() => rm(root, { force: true, recursive: true }))
+  const calls: string[] = []
+  const api = new DeepSeekHarnessApiClient({ baseUrl: 'https://product.example', getSessionToken: () => 'employee-secret',
+    fetch: async (url) => {
+      const path = typeof url === 'string' ? url : url instanceof URL ? url.href : url.url; calls.push(path)
+      return Response.json({ success: true, data: path.endsWith('/releases')
+        ? { uploadUrl: null, assessment: { status: 'READY' } } : { activated: true } })
+    } })
+  const upload = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Unexpected direct upload'))
+  onTestFinished(() => { upload.mockRestore() })
+  const install = vi.fn(async () => undefined)
+  const authoring = new ExtensionAuthoring({ directory: root, selectImport: async () => undefined,
+    installSkill: install, saveConnector: async () => undefined })
+  onTestFinished(() => authoring.close())
+  await expect(authoring.invoke('extensions.save', skill, api, identity, new AbortController().signal))
+    .resolves.toMatchObject({ id: skill.id, installed: true })
+  expect(upload).not.toHaveBeenCalled()
+  expect(calls).toHaveLength(2)
+  expect(calls[1]).toContain('/activations')
+  expect(install).toHaveBeenCalledOnce()
+})
+
 it('imports and edits a large bundled skill across restart without losing discovery text, frontmatter or resources', async () => {
   const root = await mkdtemp(join(tmpdir(), 'extension-large-kit-test-'))
   onTestFinished(() => rm(root, { force: true, recursive: true }))

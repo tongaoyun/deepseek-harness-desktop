@@ -13,6 +13,8 @@ description: "产品知识库写入要求管理权限，引用来源 ID 标识�
 
 官方工具支持需审批的任务结果保存和引用片段阅读。空任务选择不提供检索工具，保存不改变检索选择。
 
+`knowledge_destinations` 返回分页字段 `entries`、`page`、`size`、`total` 和 `hasMore`，移除 `truncated`。通过 `query` 搜索或 `page` 翻页读取全部可写目标，默认每页 20 个、最多 100 个；服务端继续检查保存权限。
+
 程序调用 `knowledge_read` 时返回结构化命中，不再接收 `content` 中的 JSON；模型文本不变。来源标识持久化到官方 `tool/result.meta`。旧结果仍可阅读，不补造链接。
 
 预览读取已授权原文件，不依赖索引，使用官方组件和本地 Office 转换。传输使用有界分块和私有暂存文件，关闭、取消或释放时清理。移除整文件 Base64 IPC。预览不创建 Session，也不以索引片段替代原文件。
@@ -31,3 +33,4 @@ description: "产品知识库写入要求管理权限，引用来源 ID 标识�
 4. 读取新 Markdown 元数据，通过产品编辑提交 `expectedUpdatedAt` 和稳定重试键。旧编辑必须提示冲突。
 5. 验证只读成员不可写入、个人所有者可管理、空范围不可检索、拒绝保存审批不会写入。
 6. 配置 `deepseek-harness.knowledge.files.*-max-bytes` 和桌面 `knowledgeFiles`。验证索引失败原件、清理、下载、实时权限、Office 内容版本及所选文件夹上传。旧预览 IPC 不再支持。
+7. 目标发现调用方读取 `hasMore` 并继续翻页，或按名称、ID、归属搜索。验证第 129 个可写目标仍可选择，且只读目标不返回。

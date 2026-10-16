@@ -290,9 +290,11 @@ export class ExtensionAuthoring {
         headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...generated.release, sha256 }) })
       const prepared = record(await (prepare ? prepare(request) : request()))
       if (record(prepared.assessment).status === 'BLOCKED') throw new Error('Extension dependencies did not pass server validation')
-      if (typeof prepared.uploadUrl !== 'string') throw new Error('Upload URL is missing')
-      const upload = await fetch(prepared.uploadUrl, { method: 'PUT', signal, redirect: 'error', headers: { 'content-type': 'application/gzip' }, body: bytes })
-      if (!upload.ok) throw new Error('Extension upload failed')
+      if (prepared.uploadUrl !== null) {
+        if (typeof prepared.uploadUrl !== 'string') throw new Error('Upload URL is missing')
+        const upload = await fetch(prepared.uploadUrl, { method: 'PUT', signal, redirect: 'error', headers: { 'content-type': 'application/gzip' }, body: bytes })
+        if (!upload.ok) throw new Error('Extension upload failed')
+      }
       await api.request(`/api/v1/extension-submissions/${draft.kind}/${encodeURIComponent(draft.id)}/versions/${encodeURIComponent(draft.version)}/activations`, { method: 'POST', signal })
       return { kind: draft.kind, id: draft.id, version: draft.version, visibility: 'PERSONAL', installed: false } satisfies ExtensionSaveResult
     } finally { await rm(work, { recursive: true, force: true }) }

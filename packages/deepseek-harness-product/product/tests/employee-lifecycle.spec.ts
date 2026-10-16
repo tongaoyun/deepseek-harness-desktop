@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
 import { DeepSeekHarnessProductBridge } from '../src/bridge.ts'
 import { ensureDingTalkSession, DingTalkAuthorizationTimeoutError } from '../src/dingtalk-auth.ts'
 
@@ -21,6 +21,33 @@ function authorized() {
     sessionToken: 'token-a', employee: { employeeId: 'employee-a' },
   } } })
 }
+
+it('continues browser sign-in when a concurrent refresh invalidates an expired stored session', async () => {
+  let refreshes = 0
+  const opened = vi.fn(async (_url: string) => {})
+  const bridge = new DeepSeekHarnessProductBridge({ serverUrl: 'https://product.test',
+    sessionToken: 'expired-token', initialSession: { authenticated: true, employeeId: 'employee-a',
+      expiresAt: String(Date.now() / 1000 + 10) },
+    fetch: async (input, init) => {
+      const url = new Request(input).url
+      if (url.endsWith('/session/refresh')) {
+        if (++refreshes === 1) {
+          return new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), { once: true })
+          })
+        }
+        return Response.json({ success: false, errCode: 'EMPLOYEE_UNAUTHORIZED', errMessage: 'Expired session' }, { status: 401 })
+      }
+      if (url.endsWith('/authorization-requests')) return authorization()
+      if (url.includes('/authorization-requests/')) return authorized()
+      return Response.json({ success: true, data: [], pageIndex: 1, pageSize: 100, totalCount: 0, totalPages: 0 })
+    } })
+  try {
+    await expect(ensureDingTalkSession(bridge, opened, { pollMs: 0 })).resolves.toMatchObject({ authenticated: true, employeeId: 'employee-a' })
+    expect(refreshes).toBe(2)
+    expect(opened).toHaveBeenCalledExactlyOnceWith('https://login.test/dingtalk')
+  } finally { await bridge.dispose() }
+})
 
 it.each(['employee-changed', 'superseded', 'cancelled'] as const)('rejects an obsolete OAuth poll after %s', async (reason) => {
   const started = deferred<boolean>()

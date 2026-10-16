@@ -63,6 +63,113 @@ function castClientContext(value: object): ClientContext {
 }
 
 describe('DeepSeekHarness capability navigation', () => {
+  it('configures private values for a shared connector without editing its resource or version', async () => {
+    const entry = { id: 'shared-orders', name: '共享订单连接器', version: '1.0.0', visibility: 'COMPANY',
+      status: 'needs-configuration', ready: false, canEdit: false, canConfigure: true, authMode: 'none', tools: [] }
+    let fail = true
+    const invoke = vi.fn(async (method: string, _payload?: unknown, _requestId?: string) => {
+      if (method === 'connectors.list') return [entry]
+      if (method === 'extensions.connector.configuration.read') return { transport: 'streamable-http',
+        url: 'https://mcp.example.test', arguments: [], headers: ['Authorization'], environment: [], configured: false, timeoutSeconds: 60 }
+      if (method === 'extensions.connector.configuration.save') {
+        if (fail) throw new ProductError('CONNECTOR_DISCOVERY_FAILED', 'Discovery failed', true)
+        return { id: entry.id, version: entry.version, configured: true }
+      }
+      return []
+    })
+    installProductApi({ invoke, cancel: vi.fn(), getSession: async () => ({ authenticated: true, employeeId: 'recipient' }) })
+    render(<ConnectorsPanel t={t} {...actions()} />)
+    fireEvent.click(await screen.findByRole('button', { name: /共享订单连接器/ }))
+    fireEvent.click(await screen.findByRole('button', { name: zh.configureDevice }))
+    expect(screen.queryByRole('button', { name: zh.editConnector })).toBeNull()
+    const secret = await screen.findByLabelText<HTMLInputElement>('Authorization')
+    const input = screen.getByDisplayValue<HTMLInputElement>('https://mcp.example.test')
+    fireEvent.change(secret, { target: { value: 'recipient-private-key' } })
+    expect(secret.type).toBe('password')
+    fireEvent.click(screen.getByRole('button', { name: zh.saveConnector }))
+    await screen.findByRole('alert')
+    expect(secret.value).toBe('recipient-private-key')
+    expect(input.readOnly).toBe(true)
+    fail = false
+    fireEvent.click(screen.getByRole('button', { name: zh.saveConnector }))
+    await waitFor(() => { expect(screen.queryByRole('dialog', { name: zh.configureDevice })).toBeNull() })
+    expect(invoke).toHaveBeenCalledWith('extensions.connector.configuration.save', { id: entry.id, version: '1.0.0',
+      configuration: { headers: { Authorization: 'recipient-private-key' }, environment: {}, timeoutSeconds: 60 } }, expect.any(String))
+    expect(invoke.mock.calls.some(([method]) => method === 'extensions.connector.update' || method === 'extensions.save')).toBe(false)
+  })
+
+  it.each([
+    ['skills', 'catalog.changed', SkillsPanel], ['skills', 'session.changed', SkillsPanel],
+    ['expertKits', 'catalog.changed', ExpertKitsPanel], ['expertKits', 'session.changed', ExpertKitsPanel],
+  ] as const)('finishes loading %s detail during %s without cancelling its requests', async (prefix, eventType, Panel) => {
+    let listener: Parameters<ProductApi['subscribe']>[0] | undefined
+    const pending = deferred<unknown>()
+    const entry = { id: 'review-resource', name: '详情资源', version: '1.0.0' }
+    const invoke = vi.fn(async (method: string, _payload?: unknown, _requestId?: string) => method === `${prefix}.list` ? [entry]
+      : method === `${prefix}.readme` ? pending.promise : method === `${prefix}.get` ? entry : [])
+    const cancel = vi.fn()
+    installProductApi({ invoke, cancel, getSession: async () => ({ authenticated: true, employeeId: 'employee-one' }),
+      subscribe: (callback) => { listener = callback; return () => {} } })
+    render(<Panel t={t} {...actions()} />)
+    fireEvent.click(await screen.findByRole('button', { name: entry.name, exact: true }))
+    await waitFor(() => { expect(invoke.mock.calls.some(([method]) => method === `${prefix}.readme`)).toBe(true) })
+    const detailRequests = invoke.mock.calls.filter(([method]) => method === `${prefix}.readme` || method === `${prefix}.get`)
+    await act(async () => { listener?.({ type: eventType, payload: { authenticated: true, employeeId: 'employee-one' } }) })
+    for (const request of detailRequests) expect(cancel).not.toHaveBeenCalledWith(request[2])
+    await act(async () => { pending.resolve({ readme: '# 详情正文' }) })
+    await screen.findByRole('heading', { name: '详情正文' })
+    expect(screen.queryByText(zh.loading)).toBeNull()
+    if (prefix === 'expertKits') expect(screen.getByRole('button', { name: zh.backToCatalog })).not.toBeNull()
+  })
+
+  it('shows a detail failure and return action after a catalog refresh', async () => {
+    let listener: Parameters<ProductApi['subscribe']>[0] | undefined
+    const pending = deferred<unknown>()
+    const invoke = vi.fn(async (method: string) => method === 'expertKits.list' ? [{ id: 'kit', name: '待加载套件' }]
+      : method === 'expertKits.get' ? pending.promise : [])
+    installProductApi({ invoke, getSession: async () => ({ authenticated: true, employeeId: 'employee-one' }),
+      subscribe: (callback) => { listener = callback; return () => {} } })
+    render(<ExpertKitsPanel t={t} {...actions()} />)
+    fireEvent.click(await screen.findByRole('button', { name: '待加载套件', exact: true }))
+    await act(async () => { listener?.({ type: 'catalog.changed' }) })
+    await act(async () => { pending.resolve(null) })
+    await screen.findByRole('alert')
+    fireEvent.click(screen.getByRole('button', { name: zh.backToCatalog }))
+    await screen.findByRole('button', { name: '待加载套件', exact: true })
+  })
+
+  it.each(['close', 'unmount'] as const)('cancels detail reads on %s while respecting the catalog lifetime', async (action) => {
+    let listener: Parameters<ProductApi['subscribe']>[0] | undefined
+    const catalog = deferred<unknown>()
+    const readme = deferred<unknown>()
+    const entry = { id: 'skill', name: '待加载技能', version: '1.0.0' }
+    let refresh = false
+    const invoke = vi.fn(async (method: string, _payload?: unknown, _requestId?: string) => method === 'skills.list'
+      ? refresh ? catalog.promise : [entry] : method === 'skills.readme' ? readme.promise : entry)
+    const cancel = vi.fn()
+    installProductApi({ invoke, cancel, getSession: async () => ({ authenticated: true, employeeId: 'employee-one' }),
+      subscribe: (callback) => { listener = callback; return () => {} } })
+    const view = render(<SkillsPanel t={t} {...actions()} />)
+    fireEvent.click(await screen.findByRole('button', { name: entry.name, exact: true }))
+    await waitFor(() => { expect(invoke.mock.calls.some(([method]) => method === 'skills.readme')).toBe(true) })
+    refresh = true
+    await act(async () => { listener?.({ type: 'catalog.changed' }) })
+    const detailId = invoke.mock.calls.find(([method]) => method === 'skills.readme')![2]
+    const catalogId = invoke.mock.calls.filter(([method]) => method === 'skills.list').at(-1)![2]
+    if (action === 'unmount') view.unmount()
+    else fireEvent.click(screen.getByRole('button', { name: zh.close }))
+    expect(cancel).toHaveBeenCalledWith(detailId)
+    if (action === 'unmount') expect(cancel).toHaveBeenCalledWith(catalogId)
+    else expect(cancel).not.toHaveBeenCalledWith(catalogId)
+    await act(async () => {
+      readme.resolve({ readme: '# 关闭后的正文' })
+      catalog.resolve([{ id: 'new-skill', name: '刷新后的技能' }])
+    })
+    expect(screen.queryByText('关闭后的正文')).toBeNull()
+    expect(screen.queryByRole('dialog')).toBeNull()
+    if (action === 'close') await screen.findByRole('button', { name: '刷新后的技能', exact: true })
+  })
+
   it.each([
     ['skills', SkillsPanel], ['expertKits', ExpertKitsPanel], ['connectors', ConnectorsPanel],
   ] as const)('clears %s private details and confirmations on identity change but retains them on token refresh', async (prefix, Panel) => {

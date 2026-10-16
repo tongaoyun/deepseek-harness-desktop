@@ -60,6 +60,8 @@ export type ProductMethod =
   | 'extensions.connector.read'
   | 'extensions.connector.update'
   | 'extensions.connector.delete'
+  | 'extensions.connector.configuration.read'
+  | 'extensions.connector.configuration.save'
   | 'knowledge.references.resolve'
   | 'tasks.capabilities.read'
   | 'tasks.capabilities.prepare'
@@ -289,7 +291,8 @@ export function isProductMethod(value: unknown): value is ProductMethod {
     'tasks.capabilities.read', 'tasks.capabilities.prepare',
     'extensions.authoring.begin', 'extensions.authoring.read', 'extensions.authoring.update', 'extensions.authoring.save', 'extensions.authoring.discard',
     'extensions.import.inspect', 'extensions.import.release', 'extensions.save', 'extensions.submit', 'extensions.delete', 'extensions.bundledSkill.read',
-    'extensions.connector.read', 'extensions.connector.update', 'extensions.connector.delete', 'knowledge.references.resolve',
+    'extensions.connector.read', 'extensions.connector.update', 'extensions.connector.delete',
+    'extensions.connector.configuration.read', 'extensions.connector.configuration.save', 'knowledge.references.resolve',
     'auth.getSession', 'auth.ensureDingTalk', 'auth.beginDingTalk', 'auth.pollDingTalk', 'auth.refresh', 'catalog.refresh', 'expertKits.list',
     'expertKits.get', 'expertKits.readme', 'expertKits.artifact', 'expertKits.install', 'expertKits.uninstall', 'expertKits.installed.read',
     'skills.list', 'skills.get', 'skills.readme',
