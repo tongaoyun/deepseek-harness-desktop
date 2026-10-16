@@ -34,12 +34,23 @@ export function apply(ctx: Context, config: Config): void {
     : next())
   ctx.effect(() => ctx.tools.register(defineTool({
     name: 'knowledge_destinations',
-    description: 'List knowledge base names and ownership available for explicitly saving a task result. Does not read documents or change the task retrieval selection.',
-    parameters: {},
+    description: 'Find writable knowledge bases for explicitly saving a task result. Search by query or request successive pages while hasMore is true. Does not read documents or change task retrieval selection.',
+    parameters: {
+      query: { type: 'string', description: 'Search names, IDs or ownership. Maximum 200 characters.' },
+      page: { type: 'integer', description: 'Page number starting at 1. Defaults to 1.' },
+      size: { type: 'integer', description: 'Results per page, from 1 to 100. Defaults to 20.' },
+    },
     output: { schema: { type: 'object', additionalProperties: false, properties: { content: { type: 'string', required: true } } },
       render: (_args, result) => [{ type: 'text', text: result.content }] },
     isConcurrencySafe: () => true,
-    async execute(_args, exec) {
+    async execute(args, exec) {
+      const page = args.page ?? 1
+      const size = args.size ?? 20
+      const query = args.query ?? ''
+      if (!Number.isSafeInteger(page) || page < 1 || page > 1_000_000
+        || !Number.isSafeInteger(size) || size < 1 || size > 100 || query.length > 200) {
+        throw new Error('Invalid knowledge destination query')
+      }
       const result = await invoke('knowledge.bases.list', {}, exec.signal)
       if (!Array.isArray(result)) throw new Error('Invalid knowledge destination response')
       const entries = result.flatMap((entry: unknown) => {
@@ -53,7 +64,13 @@ export function apply(ctx: Context, config: Config): void {
         return [{ id: row.id, name: row.name, scope: row.scope,
           ...row.ownerName !== undefined ? { ownerName: row.ownerName } : {} }]
       })
-      return { content: JSON.stringify({ entries: entries.slice(0, 128), truncated: entries.length > 128 }) }
+      const needle = query.trim().toLowerCase()
+      const matches = entries.filter(entry => [entry.id, entry.name, entry.scope, entry.ownerName ?? '']
+        .some(value => String(value).toLowerCase().includes(needle)))
+        .sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+      const start = (page - 1) * size
+      return { content: JSON.stringify({ entries: matches.slice(start, start + size), page, size,
+        total: matches.length, hasMore: start + size < matches.length }) }
     },
   })), 'product-knowledge-library.destinations')
   ctx.effect(() => ctx.tools.register(defineTool({

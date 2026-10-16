@@ -4,6 +4,7 @@ import { Button, IconChevronRightOutlineRegular, IconLinkOutlineRegular, Modal }
 import { type DeepSeekHarnessProductKey } from '../locales.ts'
 import css from '../DeepSeekHarnessProduct.module.css'
 import { productApi, type ProductApi } from './product-api.ts'
+import { productErrorMessage } from './product-errors.ts'
 import { type ProductDetail, AUTHORIZATION_TIMEOUT_MS, AUTHORIZATION_POLL_INTERVAL_MS, nextProductRequestId, abortableDelay, text, localizedMetadata, DetailIdentity } from './catalog-shared.tsx'
 
 export function ConnectorDetailModal({ detail: product, error, loading, onCatalogChanged, managementActions, onClose, open, t }: {
@@ -40,6 +41,7 @@ export function ConnectorDetail({ product, onCatalogChanged, t }: {
 }): ReactNode {
   const [authorizationPending, setAuthorizationPending] = useState(false)
   const [authorizationError, setAuthorizationError] = useState(false)
+  const [configuring, setConfiguring] = useState(false)
   const mounted = useRef(true)
   const authorizationAbort = useRef<AbortController>()
   const activeRequests = useRef(new Map<string, ProductApi>())
@@ -129,7 +131,12 @@ export function ConnectorDetail({ product, onCatalogChanged, t }: {
           </Button>}
         {authorizationError && <span className={css.catalogError} role="alert">{t('authorizationFailed')}</span>}
       </div>}
+      {product.canConfigure === true && <div className={css.detailActions}>
+        <Button variant="outline" size="sm" onClick={() => { setConfiguring(true) }}><IconLinkOutlineRegular size={14} />{t('configureDevice')}</Button>
+      </div>}
     </section>
+    {configuring && <ConnectorDeviceConfiguration product={product} onClose={() => { setConfiguring(false) }}
+      onSaved={async () => { await onCatalogChanged(); if (mounted.current) setConfiguring(false) }} t={t} />}
     <section className={css.connectorSection}>
       <h2>{t('connectorTools')}</h2>
       {product.tools.length > 0 && <div className={css.toolSummary}>
@@ -152,4 +159,88 @@ export function ConnectorDetail({ product, onCatalogChanged, t }: {
         </details>}
     </section>
   </>
+}
+
+type DeviceConfiguration = {
+  readonly transport: string
+  readonly url?: string
+  readonly command?: string
+  readonly arguments: readonly string[]
+  readonly headers: readonly string[]
+  readonly environment: readonly string[]
+  readonly configured: boolean
+  readonly timeoutSeconds: number
+}
+
+function ConnectorDeviceConfiguration({ product, onClose, onSaved, t }: {
+  readonly product: ProductDetail
+  readonly onClose: () => void
+  readonly onSaved: () => Promise<void>
+  readonly t: (key: DeepSeekHarnessProductKey) => string
+}): ReactNode {
+  const [configuration, setConfiguration] = useState<DeviceConfiguration>()
+  const [headers, setHeaders] = useState<Record<string, string>>({})
+  const [environment, setEnvironment] = useState<Record<string, string>>({})
+  const [timeout, setTimeout] = useState(60)
+  const [error, setError] = useState<string>()
+  const [pending, setPending] = useState(false)
+  const lifecycle = useRef({ closed: false, requests: new Map<string, ProductApi>() })
+  const invoke = async (method: string, input: unknown): Promise<unknown> => {
+    const api = productApi()
+    if (!api) throw new Error('Product transport unavailable')
+    const requestId = nextProductRequestId(); lifecycle.current.requests.set(requestId, api)
+    try { return await api.invoke(method, input, requestId, timeout * 2000 + 60_000) }
+    finally { lifecycle.current.requests.delete(requestId) }
+  }
+  const load = async (): Promise<void> => {
+    setError(undefined)
+    try {
+      const value = await invoke('extensions.connector.configuration.read', { id: product.id, version: product.version }) as DeviceConfiguration
+      if (!lifecycle.current.closed) { setConfiguration(value); setTimeout(value.timeoutSeconds) }
+    } catch (error) { if (!lifecycle.current.closed) setError(productErrorMessage(error, t, 'loadFailed')) }
+  }
+  useEffect(() => {
+    lifecycle.current.closed = false
+    void load()
+    return () => {
+      lifecycle.current.closed = true
+      for (const [id, api] of lifecycle.current.requests) api.cancel(id)
+    }
+  }, [])
+  const save = async (): Promise<void> => {
+    if (!configuration || pending) return
+    if (!Number.isInteger(timeout) || timeout < 1 || timeout > 600) { setError(t('connectorTimeoutInvalid')); return }
+    setPending(true); setError(undefined)
+    try {
+      await invoke('extensions.connector.configuration.save', { id: product.id, version: product.version,
+        configuration: { headers, environment, timeoutSeconds: timeout } })
+      if (!lifecycle.current.closed) await onSaved()
+    } catch (error) { if (!lifecycle.current.closed) setError(productErrorMessage(error, t, 'saveFailed')) }
+    finally { if (!lifecycle.current.closed) setPending(false) }
+  }
+  const fields = (keys: readonly string[], values: Record<string, string>, set: (values: Record<string, string>) => void,
+    label: DeepSeekHarnessProductKey): ReactNode => keys.length > 0 && <section className={css.configurationSection}>
+    <h3>{t(label)}</h3>
+    {keys.map(key => <label key={key} className={css.editorField}><span>{key}</span>
+      <input type="password" autoComplete="off" aria-label={key} disabled={pending} value={values[key] ?? ''}
+        placeholder={t(configuration?.configured ? 'privateValueRetained' : 'configurationValue')}
+        onChange={(event) => { set({ ...values, [key]: event.currentTarget.value }) }} /></label>)}
+  </section>
+  return <Modal open onClose={onClose} title={t('configureDevice')} closeLabel={t('close')}
+    className={css.connectorDeviceModal as string} contentClassName={css.connectorEditorContent as string}
+    footer={<Button variant="primary" disabled={!configuration || pending} onClick={() => { void save() }}>
+      {pending ? t('connectingConnector') : t('saveConnector')}</Button>}>
+    {error && <p className={css.catalogError} role="alert">{error}</p>}
+    {!configuration && (error ? <Button variant="outline" onClick={() => { void load() }}>{t('retry')}</Button> : <p role="status">{t('loading')}</p>)}
+    {configuration && <div className={`${css.editorForm} ${css.connectorForm}`}>
+      <label className={css.editorField}><span>{t(configuration.transport === 'stdio' ? 'connectorExecutable' : 'connectorEndpoint')}</span>
+        <input readOnly value={configuration.transport === 'stdio'
+          ? [configuration.command, ...configuration.arguments].join(' ') : configuration.url ?? ''} /></label>
+      {fields(configuration.headers, headers, setHeaders, 'privateHeaders')}
+      {fields(configuration.environment, environment, setEnvironment, 'privateEnvironment')}
+      <label className={css.editorField}><span>{t('connectorTimeout')}</span>
+        <input type="number" min={1} max={600} aria-label={t('connectorTimeout')} disabled={pending} value={timeout}
+          onChange={(event) => { setTimeout(Number(event.currentTarget.value)) }} /></label>
+    </div>}
+  </Modal>
 }

@@ -62,7 +62,8 @@ it.each([{ content: draft, retryInstallation: false }, { content: kitDraft, retr
     files: [{ path: 'assets/example.txt', bytes: 5 }], missingFields: ['name', 'body'] })
   const invoke = vi.fn(async (method: string, input?: unknown, _signal?: AbortSignal) => {
     const payload = input as Record<string, unknown> | undefined
-    if (method === 'connectors.list') return [{ id: 'company-erp', name: 'ERP', headers: { Authorization: 'private-relay' }, url: 'https://private.example' }]
+    if (method === 'connectors.list') return [{ id: 'company-erp', name: 'ERP', headers: { Authorization: 'private-relay' }, url: 'https://private.example',
+      tools: [{ name: 'orders.get', displayName: 'Read orders', description: 'Read order details.', access: 'READ', private: 'private-tool-secret' }] }]
     if (payload?.sessionId !== 'creation') return null
     if (method === 'extensions.authoring.read') return structuredClone(state)
     if (method === 'extensions.authoring.update') {
@@ -106,6 +107,8 @@ it.each([{ content: draft, retryInstallation: false }, { content: kitDraft, retr
   }
   expect(JSON.stringify(recording)).not.toContain('private-relay')
   expect(JSON.stringify(recording)).not.toContain('private.example')
+  expect(JSON.stringify(recording)).not.toContain('private-tool-secret')
+  expect(JSON.stringify(recording)).toContain('orders.get')
   expect(state.revision).toBe(2)
   expect(state.saved).toEqual({ id: draft.id, version: draft.version })
   expect(invoke.mock.calls.map(call => call[0])).toContain('extensions.authoring.save')

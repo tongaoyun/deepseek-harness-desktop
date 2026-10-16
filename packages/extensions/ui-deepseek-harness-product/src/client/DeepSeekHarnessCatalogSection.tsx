@@ -26,6 +26,11 @@ type CatalogSectionProps = PropsRuntime<'main'> & PropsLocale<typeof NS> & Props
   readonly labelKey: DeepSeekHarnessProductKey
 }
 
+interface ReadScope {
+  generation: number
+  readonly requests: Map<string, ProductApi>
+}
+
 /** Main-panel content for one DeepSeekHarness product directory. */
 export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): ReactNode {
   const { catalog, labelKey } = props
@@ -59,24 +64,25 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
   const [installedSkills, setInstalledSkills] = useState<InstalledSkills>(new Map())
   const [installedExpertKits, setInstalledExpertKits] = useState<InstalledSkills>(new Map())
   const [installationsKnown, setInstallationsKnown] = useState(false)
-  const generation = useRef(0)
-  const activeRequests = useRef(new Map<string, ProductApi>())
+  const catalogReads = useRef<ReadScope>({ generation: 0, requests: new Map() })
+  const detailReads = useRef<ReadScope>({ generation: 0, requests: new Map() })
   const writes = useRef(new Map<string, ProductApi>())
   const managementLifetime = useRef(0)
   const employee = useRef<string | undefined>(undefined)
   const [identityRevision, setIdentityRevision] = useState(0)
 
-  const cancelReads = (): number => {
-    generation.current += 1
-    for (const [requestId, api] of activeRequests.current) api.cancel(requestId)
-    activeRequests.current.clear()
-    return generation.current
+  const cancelReads = (scope: ReadScope = detailReads.current): number => {
+    scope.generation += 1
+    for (const [requestId, api] of scope.requests) api.cancel(requestId)
+    scope.requests.clear()
+    return scope.generation
   }
 
   const synchronizeIdentity = (session: Awaited<ReturnType<ProductApi['getSession']>>): void => {
     const identity = session.authenticated === true ? session.employeeId ?? '' : undefined
     if (employee.current === identity) return
     employee.current = identity
+    cancelReads()
     managementLifetime.current += 1
     for (const [requestId, api] of writes.current) api.cancel(requestId)
     writes.current.clear()
@@ -90,9 +96,10 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
     setInstalledSkills(new Map()); setInstalledExpertKits(new Map()); setInstallationsKnown(false)
   }
 
-  const read = async (api: ProductApi, method: string, payload?: unknown, timeoutMs?: number): Promise<unknown> => {
+  const read = async (api: ProductApi, method: string, payload?: unknown, timeoutMs?: number,
+    scope: ReadScope = detailReads.current): Promise<unknown> => {
     const requestId = nextProductRequestId()
-    activeRequests.current.set(requestId, api)
+    scope.requests.set(requestId, api)
     let timer: ReturnType<typeof setTimeout> | undefined
     try {
       const request = api.invoke(method, payload, requestId)
@@ -106,12 +113,13 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
       return await Promise.race([request, timeout])
     } finally {
       if (timer !== undefined) clearTimeout(timer)
-      activeRequests.current.delete(requestId)
+      scope.requests.delete(requestId)
     }
   }
 
   const refresh = async (force = false): Promise<void> => {
-    const currentGeneration = cancelReads()
+    const scope = catalogReads.current
+    const currentGeneration = cancelReads(scope)
     const api = productApi()
     if (api === undefined) {
       setError(t('unavailable'))
@@ -123,7 +131,7 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
     setAuthError(false)
     try {
       const session = await api.getSession()
-      if (currentGeneration !== generation.current) return
+      if (currentGeneration !== scope.generation) return
       synchronizeIdentity(session)
       if (session.authenticated !== true) {
         setAuthRequired(true)
@@ -131,29 +139,29 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
         return
       }
       setAuthRequired(false)
-      if (force) await read(api, 'catalog.refresh')
-      if (currentGeneration !== generation.current) return
-      const catalogValue = await read(api, METHODS[catalog])
-      if (currentGeneration !== generation.current) return
+      if (force) await read(api, 'catalog.refresh', undefined, undefined, scope)
+      if (currentGeneration !== scope.generation) return
+      const catalogValue = await read(api, METHODS[catalog], undefined, undefined, scope)
+      if (currentGeneration !== scope.generation) return
       if (catalog === 'skills') {
         const value = await props.readInstalledSkills?.()
-        if (currentGeneration !== generation.current) return
+        if (currentGeneration !== scope.generation) return
         setInstalledSkills(new Map(value?.installed.map(skill => [skill.id, skill]) ?? []))
         setInstallationsKnown(true)
       }
       if (catalog === 'expertKits') {
         const value = await props.readInstalledExpertKits?.()
-        if (currentGeneration !== generation.current) return
+        if (currentGeneration !== scope.generation) return
         setInstalledExpertKits(new Map(value?.installed.map(kit => [kit.id, kit]) ?? []))
         setInstallationsKnown(true)
       }
-      if (currentGeneration !== generation.current) return
+      if (currentGeneration !== scope.generation) return
       setEntries(items(catalogValue))
       if (catalog === 'knowledge') setKnowledgeRevision(value => value + 1)
     } catch (error: unknown) {
-      if (currentGeneration !== generation.current) return
+      if (currentGeneration !== scope.generation) return
       const session = await api.getSession().catch(() => undefined)
-      if (currentGeneration !== generation.current) return
+      if (currentGeneration !== scope.generation) return
       if (session !== undefined) synchronizeIdentity(session)
       if (session?.authenticated === false) {
         setAuthRequired(true)
@@ -163,7 +171,7 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
         setError(productErrorMessage(error, t, 'loadFailed'))
       }
     } finally {
-      if (currentGeneration === generation.current) setLoading(false)
+      if (currentGeneration === scope.generation) setLoading(false)
     }
   }
 
@@ -198,6 +206,7 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
     setManagementError(undefined)
     void refresh()
     return () => {
+      cancelReads(catalogReads.current)
       cancelReads()
       managementLifetime.current += 1
       for (const [requestId, api] of writes.current) api.cancel(requestId)
@@ -288,7 +297,7 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
     setDetailLoading(true)
     setDetailError(false)
     setActionError(false)
-    const currentGeneration = generation.current
+    const currentGeneration = detailReads.current.generation
     if (catalog !== 'expertKits' && catalog !== 'skills') {
       const entry = entries.find(candidate => candidate.id === id)
       if (entry !== undefined) setSelected(localDetail(entry))
@@ -301,13 +310,13 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
         read(api, `${prefix}.get`, { id }), read(api, `${prefix}.readme`, { id }),
         catalog === 'expertKits' ? read(api, 'connectors.list') : Promise.resolve([]),
       ] as const)
-      if (currentGeneration !== generation.current) return
+      if (currentGeneration !== detailReads.current.generation) return
       if (metadata.status === 'rejected') throw metadata.reason
       const parsed = detail(metadata.value, readme.status === 'fulfilled' ? readme.value : undefined)
       if (parsed === undefined) throw new Error('invalid product detail')
       const knowledgeBases = await Promise.allSettled([catalog === 'expertKits' && parsed.knowledgeBaseRefs.length > 0
         ? read(api, 'knowledge.references.resolve', { references: parsed.knowledgeBaseRefs }) : Promise.resolve([])])
-      if (currentGeneration !== generation.current) return
+      if (currentGeneration !== detailReads.current.generation) return
       const availabilityStatus = entries.find(entry => entry.id === id)?.availabilityStatus
       const withReferences = catalog === 'expertKits' ? {
         ...parsed,
@@ -318,10 +327,10 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
       } : parsed
       setSelected(availabilityStatus === undefined ? withReferences : { ...withReferences, availabilityStatus })
     } catch {
-      if (currentGeneration !== generation.current) return
+      if (currentGeneration !== detailReads.current.generation) return
       setDetailError(true)
     } finally {
-      if (currentGeneration === generation.current) setDetailLoading(false)
+      if (currentGeneration === detailReads.current.generation) setDetailLoading(false)
     }
   }
 
@@ -499,24 +508,24 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
     const api = productApi()
     if (!api || !value.kind) return
     const lifetime = managementLifetime.current
-    const currentGeneration = generation.current
+    const currentGeneration = detailReads.current.generation
     try {
       if (value.kind === 'skills') {
         const skill = selected?.skillDetails.find(skill => skill.id === value.id)
         if (skill && selected) {
           const markdown = await read(api, 'extensions.bundledSkill.read', { id: selected.id, skillId: skill.id })
-          if (lifetime !== managementLifetime.current || currentGeneration !== generation.current) return
+          if (lifetime !== managementLifetime.current || currentGeneration !== detailReads.current.generation) return
           const parsed = detail({ id: skill.id, name: skill.name, summary: skill.summary, version: selected.version }, markdown)
           if (parsed) setReference({ kind: 'skills', detail: parsed })
         }
       } else {
         const values = items(await read(api, METHODS[value.kind]))
-        if (lifetime !== managementLifetime.current || currentGeneration !== generation.current) return
+        if (lifetime !== managementLifetime.current || currentGeneration !== detailReads.current.generation) return
         const item = values.find(entry => entry.id === value.id)
         if (!item) throw new Error(t('referenceUnauthorized'))
         setReference({ kind: value.kind, detail: localDetail(item) })
       }
-    } catch (error) { if (lifetime === managementLifetime.current && currentGeneration === generation.current) setActionFailure(productErrorMessage(error, t, 'detailFailed')) }
+    } catch (error) { if (lifetime === managementLifetime.current && currentGeneration === detailReads.current.generation) setActionFailure(productErrorMessage(error, t, 'detailFailed')) }
   }
   const referenceModal = reference?.kind === 'connectors' ? <ConnectorDetailModal open detail={reference.detail} loading={false} error={false}
     onClose={() => { setReference(undefined) }} onCatalogChanged={() => refresh()} t={t} />

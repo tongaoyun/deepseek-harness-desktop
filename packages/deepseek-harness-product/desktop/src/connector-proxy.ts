@@ -57,7 +57,7 @@ export class ConnectorProxy {
         if (connector?.status !== 'ready') {
           throw new Error('Connector authorization is unavailable')
         }
-        if (connector.transport === 'stdio' && connector.visibility === 'PERSONAL' && serveStdio) {
+        if (connector.transport === 'stdio' && serveStdio) {
           await serveStdio(request, response, connector, lifetime)
           return
         }
@@ -142,7 +142,7 @@ export class ConnectorProxy {
    */
   catalog(value: unknown): unknown {
     if (this.origin === undefined || !Array.isArray(value)) throw new Error('Connector relay is unavailable')
-    return value.map((entry: Connector) => entry.transport === 'streamable-http' || entry.visibility === 'PERSONAL' ? {
+    return value.map((entry: Connector) => entry.transport === 'streamable-http' || entry.transport === 'stdio' ? {
       ...entry, url: `${this.origin}/${encodeURIComponent(entry.id)}`,
       transport: 'streamable-http', command: undefined, arguments: [],
       headers: { Authorization: `Bearer ${this.key}` }, environment: {},

@@ -70,6 +70,8 @@ JSON 请求的网络中断或内部请求期限超时返回 `PRODUCT_NETWORK_UNA
 
 `extensions.connector.read/update/delete` 通过主进程管理本人创建的个人连接器。读取仅返回公开配置及已配置私密键的空占位值。修改创建不可变的新版本，删除使资源 ID 退役。服务端对每项操作校验所有者。
 
+`extensions.connector.configuration.read/save` 管理本人设备上的连接凭据，适用于当前可访问的非托管、无 OAuth 连接器，无需资源编辑权限。读取返回固定目标、所需字段名、超时和配置状态；保存只接收私密 Header、环境变量与超时，不允许更换目标或提升版本。公开列表仅返回 `canConfigure` 和配置状态；私密值不返回 Renderer 或 Host。配置完成使连接器目录缓存失效。
+
 连接器保存接受 1–600 的整数 `timeoutSeconds`，默认 60 秒。该字段属于本机 MCP 配置，不能写入对话内容草稿。标准 MCP JSON 可提供同一字段。
 
 `knowledge.documents.*`、`knowledge.folders.*` 和 `knowledge.sources.read` 通过产品服务端分发已认证的管理与阅读操作。分页返回从一开始的 `page` 以及 `items`、`size`、`total`，筛选与总数来自服务端分页。写入校验内容大小和稳定重试键。文件夹创建发送可为 null 的稳定 `parentId`，响应保留上级标识，名称限制为 80 字符，重命名不改变上级或内容位置。Markdown 和网页新建转发所选 `folderId`；Markdown 修改必须提供 `expectedUpdatedAt`，拒绝同时改变文件夹。创建结果未确认时保留重试键，须先检查真实资源。文件上传通过注入的原生回调选择文件，拒绝渲染进程提交路径和解析器配置。`pdfParseMode` 仅接受 `STANDARD`（默认）或 `TEXT`（提取 PDF 内嵌文字，不执行 OCR），解析引擎由服务端决定。响应保留异步处理和删除状态。调用取消与身份切换会取消远端操作。WeKnora 地址与凭据不会经过产品桥返回。

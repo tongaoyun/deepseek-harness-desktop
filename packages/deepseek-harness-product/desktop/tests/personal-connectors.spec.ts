@@ -66,11 +66,12 @@ it('discovers real MCP annotations without business calls, encrypts secrets, iso
   const draft = ExtensionDraftSchema.parse({ kind: 'connector', id: 'my-orders', version: '1.0.0', name: 'Orders', summary: 'Orders',
     category: 'developer-tools', transport: 'streamable-http', url: endpoint, headers: { 'x-private-secret': 'device-secret' } })
   await manager.save(draft, api, owner, signal)
-  expect(saved).toMatchObject([{ headers: {}, environment: {}, toolNames: ['read_orders', 'destructive_read', 'write_orders', 'undeclared'] }])
+  expect(saved).toMatchObject([{ headers: { 'x-private-secret': '' }, environment: {}, toolNames: ['read_orders', 'destructive_read', 'write_orders', 'undeclared'] }])
   expect(JSON.stringify(saved)).not.toContain('device-secret')
   const encrypted = await readFile(join(root, (await readdir(root))[0]!))
   expect(encrypted.toString()).not.toContain('device-secret')
   const entry = { id: draft.id, version: draft.version, transport: draft.transport, url: endpoint, command: '', arguments: [],
+    headers: { 'x-private-secret': '' },
     ownerEmployeeId: owner, visibility: 'PERSONAL', authMode: 'none', status: 'ready', ready: true,
     tools: [{ name: 'read_orders', access: 'WRITE' }, { name: 'destructive_read', access: 'WRITE' }, { name: 'write_orders', access: 'WRITE' }] }
   storedEntry = { ...entry, canEdit: true, name: draft.name, summary: draft.summary, category: draft.category }
@@ -85,6 +86,40 @@ it('discovers real MCP annotations without business calls, encrypts secrets, iso
   const safe = proxy.catalog(enriched)
   expect(JSON.stringify(safe)).not.toContain('device-secret')
   expect(JSON.stringify(safe)).not.toContain('employee-token')
+  const device = new PersonalConnectors(join(root, 'another-device'), secure, () => owner)
+  onTestFinished(() => device.close())
+  expect(await device.enrich([storedEntry], signal)).toMatchObject([{ configurationStatus: 'REQUIRED', canConfigure: true }])
+  const personalEntry = storedEntry
+  storedEntry = { ...storedEntry, visibility: 'COMPANY', canEdit: false, canSubmit: false, canDelete: false }
+  owner = 'recipient'
+  const target = { id: draft.id, version: draft.version }
+  const deviceRead = await device.manage('extensions.connector.configuration.read', target, api, owner, signal)
+  expect(deviceRead).toMatchObject({ configured: false, headers: ['x-private-secret'], environment: [] })
+  expect(JSON.stringify(deviceRead)).not.toContain('device-secret')
+  await expect(device.manage('extensions.connector.read', target, api, owner, signal)).rejects.toMatchObject({ code: 'EXTENSION_OWNER_REQUIRED' })
+  await expect(device.manage('extensions.connector.configuration.save', { ...target,
+    configuration: { headers: {}, environment: {}, timeoutSeconds: 60 } }, api, owner, signal))
+    .rejects.toMatchObject({ code: 'CONNECTOR_CONFIGURATION_REQUIRED' })
+  await expect(device.manage('extensions.connector.configuration.save', { ...target,
+    configuration: { headers: { 'x-private-secret': 'device-secret' }, environment: {}, timeoutSeconds: 60, url: 'https://other.example' } }, api, owner, signal)).rejects.toThrow()
+  const beforeConfigure = saved.length
+  expect(await device.manage('extensions.connector.configuration.save', { ...target,
+    configuration: { headers: { 'x-private-secret': 'device-secret' }, environment: {}, timeoutSeconds: 60 } }, api, owner, signal))
+    .toEqual({ ...target, configured: true })
+  expect(saved).toHaveLength(beforeConfigure)
+  expect(await device.enrich([storedEntry], signal)).toMatchObject([{ version: '1.0.0', configurationStatus: 'CONFIGURED',
+    tools: [{ access: 'READ' }, { access: 'WRITE' }, { access: 'WRITE' }] }])
+  expect(JSON.stringify(await device.manage('extensions.connector.configuration.read', target, api, owner, signal))).not.toContain('device-secret')
+  expect(await device.manage('extensions.connector.configuration.save', { ...target,
+    configuration: { headers: { 'x-private-secret': '' }, environment: {}, timeoutSeconds: 30 } }, api, owner, signal)).toMatchObject({ configured: true })
+  owner = 'another-recipient'
+  expect(await device.enrich([storedEntry], signal)).toMatchObject([{ configurationStatus: 'REQUIRED' }])
+  const disabled = { ...storedEntry, status: 'disabled', ready: false }
+  expect(await device.enrich([disabled], signal)).toMatchObject([{ status: 'disabled', ready: false }])
+  storedEntry = disabled
+  await expect(device.manage('extensions.connector.configuration.save', { ...target, configuration: {} }, api, owner, signal)).rejects.toMatchObject({ code: 'FEATURE_UNAVAILABLE' })
+  storedEntry = personalEntry; owner = 'employee-one'
+  await device.close()
   const oauth = new PersonalConnectors(join(root, 'oauth'), secure, () => owner, async () => ({
     id: 'configured-provider', version: '1.0.0', transport: 'streamable-http', url: endpoint,
     authMode: 'oauth', ready: true, visibility: 'SHARED', headers: { 'x-private-secret': 'device-secret' },
@@ -125,7 +160,7 @@ it('discovers real MCP annotations without business calls, encrypts secrets, iso
   failUpdate = false
   expect(await manager.manage('extensions.connector.update', { id: draft.id, version: draft.version, draft: edited }, api, owner, signal))
     .toMatchObject({ version: '1.0.1' })
-  expect(saved[2]).toMatchObject({ version: '1.0.1', name: 'Updated orders', headers: {} })
+  expect(saved[2]).toMatchObject({ version: '1.0.1', name: 'Updated orders', headers: { 'x-private-secret': '' } })
   expect(headers.every(value => value === 'device-secret')).toBe(true)
   await expect(manager.manage('extensions.connector.read', { id: draft.id, version: '1.0.0' }, api, owner, signal)).rejects.toMatchObject({ code: 'EXTENSION_VERSION_CONFLICT' })
   await expect(manager.manage('extensions.connector.read', { id: draft.id, version: '1.0.1' }, api, 'another', signal)).rejects.toMatchObject({ code: 'EXTENSION_OWNER_REQUIRED' })
@@ -190,7 +225,7 @@ it('closes discovery and cached stdio children and scrubs ambient credentials', 
     category: 'developer-tools', transport: 'stdio', command: process.execPath, arguments: ['--input-type=module', '-e', child], environment: { PRIVATE_VALUE: 'secret' } })
   await manager.save(draft, api, 'employee-one', new AbortController().signal)
   const enriched = await manager.enrich([{ id: draft.id, version: draft.version, ownerEmployeeId: 'employee-one', visibility: 'PERSONAL',
-    transport: 'stdio', command: draft.command, arguments: draft.arguments, ready: true, status: 'ready', tools: [{ name: 'read' }] }]) as { tools: { description: string }[] }[]
+    transport: 'stdio', command: draft.command, arguments: draft.arguments, authMode: 'none', ready: true, status: 'ready', tools: [{ name: 'read' }] }]) as { tools: { description: string }[] }[]
   const evidence = JSON.parse(enriched[0]!.tools[0]!.description) as { pid: number; scrubbed: boolean; configured: boolean }
   expect(evidence).toMatchObject({ scrubbed: true, configured: true })
   expect(() => process.kill(evidence.pid, 0)).not.toThrow()

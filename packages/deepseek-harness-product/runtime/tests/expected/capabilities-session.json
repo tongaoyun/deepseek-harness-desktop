@@ -13,10 +13,23 @@
   "tools": [
     {
       "name": "knowledge_destinations",
-      "description": "List knowledge base names and ownership available for explicitly saving a task result. Does not read documents or change the task retrieval selection.",
+      "description": "Find writable knowledge bases for explicitly saving a task result. Search by query or request successive pages while hasMore is true. Does not read documents or change task retrieval selection.",
       "parameters": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search names, IDs or ownership. Maximum 200 characters."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number starting at 1. Defaults to 1."
+          },
+          "size": {
+            "type": "integer",
+            "description": "Results per page, from 1 to 100. Defaults to 20."
+          }
+        }
       }
     },
     {

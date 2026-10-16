@@ -329,7 +329,8 @@ export class DeepSeekHarnessProductBridge {
         if (!signal.aborted) {
           if (method === 'extensions.authoring.update' || method === 'extensions.authoring.save') this.emit({ type: 'authoring.changed', payload: { sessionId: input.sessionId } })
           if (method === 'extensions.save' || method === 'extensions.authoring.save' || method === 'extensions.submit'
-            || method === 'extensions.delete' || method === 'extensions.connector.update' || method === 'extensions.connector.delete') {
+            || method === 'extensions.delete' || method === 'extensions.connector.update' || method === 'extensions.connector.delete'
+            || method === 'extensions.connector.configuration.save') {
             this.catalogChanged()
           }
         }
@@ -612,7 +613,7 @@ function rendererConnector(value: unknown): unknown {
   const record = value as Record<string, unknown>
   const metadata = ['id', 'name', 'displayName', 'summary', 'description', 'category', 'icon', 'author', 'version',
     'status', 'ready', 'authMode', 'authorizationStatus', 'availabilityStatus', 'transport', 'minimumDesktopVersion',
-    'visibility', 'ownerEmployeeId', 'canEdit', 'canSubmit', 'canDelete', 'reviewStatus', 'configurationStatus']
+    'visibility', 'ownerEmployeeId', 'canEdit', 'canSubmit', 'canDelete', 'reviewStatus', 'configurationStatus', 'canConfigure', 'managed']
   const tools = Array.isArray(record.tools) ? record.tools.map((tool: Record<string, unknown>) =>
     Object.fromEntries(['name', 'displayName', 'description', 'access'].filter(key => key in tool).map(key => [key, tool[key]]))) : []
   return { ...Object.fromEntries(metadata.filter(key => key in record).map(key => [key, record[key]])), tools }

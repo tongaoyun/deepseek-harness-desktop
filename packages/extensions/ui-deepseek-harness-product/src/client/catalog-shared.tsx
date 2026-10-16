@@ -32,6 +32,7 @@ export type ProductItem = {
   readonly canEdit?: boolean
   readonly canSubmit?: boolean
   readonly canDelete?: boolean
+  readonly canConfigure?: boolean
   readonly reviewStatus?: string
   readonly id: string
   readonly label: string
@@ -83,6 +84,7 @@ export type ProductDetail = {
   readonly canEdit?: boolean
   readonly canSubmit?: boolean
   readonly canDelete?: boolean
+  readonly canConfigure?: boolean
   readonly reviewStatus?: string
   readonly id: string
   readonly name: string
@@ -281,6 +283,7 @@ export function items(value: unknown): readonly ProductItem[] {
       ...(typeof record.canEdit === 'boolean' ? { canEdit: record.canEdit } : {}),
       ...(typeof record.canSubmit === 'boolean' ? { canSubmit: record.canSubmit } : {}),
       ...(typeof record.canDelete === 'boolean' ? { canDelete: record.canDelete } : {}),
+      ...(typeof record.canConfigure === 'boolean' ? { canConfigure: record.canConfigure } : {}),
       ...(typeof record.canRead === 'boolean' ? { canRead: record.canRead } : {}),
       ...(typeof record.canManage === 'boolean' ? { canManage: record.canManage } : {}),
       tools: connectorTools(record.tools), triggers: stringList(record, 'triggers'),
@@ -332,6 +335,7 @@ export function detail(value: unknown, readmeValue: unknown): ProductDetail | un
     ...(typeof record.canEdit === 'boolean' ? { canEdit: record.canEdit } : {}),
     ...(typeof record.canSubmit === 'boolean' ? { canSubmit: record.canSubmit } : {}),
     ...(typeof record.canDelete === 'boolean' ? { canDelete: record.canDelete } : {}),
+    ...(typeof record.canConfigure === 'boolean' ? { canConfigure: record.canConfigure } : {}),
     ...(typeof record.canRead === 'boolean' ? { canRead: record.canRead } : {}),
     ...(typeof record.canManage === 'boolean' ? { canManage: record.canManage } : {}),
     ...(author === undefined ? {} : { author }),
@@ -475,6 +479,7 @@ export function localDetail(item: ProductItem): ProductDetail {
     ...(item.status === undefined ? {} : { status: item.status }),
     ...(item.scope === undefined ? {} : { scope: item.scope }),
     ...Object.fromEntries(['companyId', 'ownerEmployeeId', 'ownerDepartmentId', 'ownerName'].flatMap(key => item[key as keyof ProductItem] === undefined ? [] : [[key, item[key as keyof ProductItem]]])),
+    ...(item.canConfigure === undefined ? {} : { canConfigure: item.canConfigure }),
     ...(item.transport === undefined ? {} : { transport: item.transport }),
     ...(item.authMode === undefined ? {} : { authMode: item.authMode }),
     ...(item.managed === undefined ? {} : { managed: item.managed }),

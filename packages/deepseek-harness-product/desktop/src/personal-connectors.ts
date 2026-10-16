@@ -23,6 +23,8 @@ type Configuration = z.infer<typeof Configuration>
 interface SecureStorage { isEncryptionAvailable(): boolean; encryptString(value: string): Buffer; decryptString(value: Buffer): string }
 const PublicConnector = z.looseObject({ id: z.string(), version: z.string(), ownerEmployeeId: z.string().optional(),
   visibility: z.string().optional(), authMode: z.string().optional(), ready: z.boolean().optional(),
+  managed: z.boolean().optional(), status: z.string().optional(),
+  headers: z.record(z.string(), z.string()).default({}), environment: z.record(z.string(), z.string()).default({}),
   transport: z.string(), url: z.string().nullish().transform(value => value || undefined),
   command: z.string().nullish().transform(value => value || undefined), arguments: z.array(z.string()).default([]),
   tools: z.array(z.looseObject({ name: z.string() })).default([]),
@@ -51,11 +53,57 @@ export class PersonalConnectors {
   async manage(method: string, input: Readonly<Record<string, unknown>>, api: DeepSeekHarnessApiClient,
     employee: string, signal: AbortSignal): Promise<unknown> {
     if (typeof input.id !== 'string' || !/^[a-z][a-z0-9-]{2,63}$/.test(input.id)) throw new Error('Invalid connector ID')
-    const entry = PublicConnector.parse(await api.request(`/api/v1/connectors/${encodeURIComponent(input.id)}`, { signal }))
+    const deviceConfiguration = method.startsWith('extensions.connector.configuration.')
+    const entry = PublicConnector.parse(await api.request(`/api/v1/connectors/${encodeURIComponent(input.id)}${deviceConfiguration ? '/configuration-template' : ''}`, { signal }))
+    if (input.version !== entry.version) throw new ProductError('EXTENSION_VERSION_CONFLICT', 'Connector changed; reopen its configuration', true)
+    if (deviceConfiguration) {
+      if (!this.localConfigurationAllowed(entry) || entry.status !== 'ready') {
+        throw new ProductError('FEATURE_UNAVAILABLE', 'This connector does not support device configuration', false)
+      }
+      if (method === 'extensions.connector.configuration.read') {
+        const config = await this.configuration(entry, employee)
+        return { id: entry.id, version: entry.version, transport: entry.transport, url: entry.url,
+          command: entry.command, arguments: entry.arguments, configured: config !== undefined,
+          headers: Object.keys(entry.headers), environment: Object.keys(entry.environment), timeoutSeconds: config?.timeoutSeconds ?? 60 }
+      }
+      if (method !== 'extensions.connector.configuration.save') throw new Error('Unsupported connector configuration operation')
+      await this.serialSave(employee, entry.id, signal, async (lifetime) => {
+        if (!this.secure.isEncryptionAvailable()) throw new Error('OS credential encryption is unavailable')
+        const values = z.object({ headers: z.record(z.string().min(1).max(200), z.string().max(4000)),
+          environment: z.record(z.string().min(1).max(200), z.string().max(4000)),
+          timeoutSeconds: z.number().int().min(1).max(600) }).strict().parse(input.configuration)
+        const previous = await this.configuration(entry, employee)
+        const requiredValues = (provided: Record<string, string>, required: Record<string, string>, saved: Record<string, string>) => {
+          if (Object.keys(provided).some(key => !Object.hasOwn(required, key))) throw new Error('Unknown private configuration key')
+          return Object.fromEntries(Object.keys(required).map((key) => {
+            const value = provided[key] || saved[key]
+            if (!value) throw new ProductError('CONNECTOR_CONFIGURATION_REQUIRED', 'Enter the required private values', false)
+            return [key, value]
+          }))
+        }
+        const config = Configuration.parse({ transport: entry.transport, url: entry.url, command: entry.command,
+          arguments: entry.arguments, timeoutSeconds: values.timeoutSeconds,
+          headers: requiredValues(values.headers, entry.headers, previous?.headers ?? {}),
+          environment: requiredValues(values.environment, entry.environment, previous?.environment ?? {}) })
+        const client = await this.connect(config, lifetime)
+        try {
+          const actual = new Set((await this.discover(client, lifetime, config.timeoutSeconds)).map(tool => tool.name))
+          if (!entry.tools.length || entry.tools.some(tool => !actual.has(tool.name))) {
+            throw new ProductError('CONNECTOR_DISCOVERY_FAILED', 'Declared MCP tools are missing', false)
+          }
+        } finally { await client.close() }
+        lifetime.throwIfAborted()
+        await mkdir(this.root, { recursive: true, mode: 0o700 })
+        await this.finalize(this.filename(employee, entry.id, entry.version), config)
+        const key = this.key(employee, entry.id, entry.version)
+        const old = this.clients.get(key); this.clients.delete(key)
+        if (old) await (await old).close()
+      })
+      return { id: entry.id, version: entry.version, configured: true }
+    }
     if (entry.visibility !== 'PERSONAL' || entry.ownerEmployeeId !== employee || entry.canEdit !== true) {
       throw new ProductError('EXTENSION_OWNER_REQUIRED', 'Only the owner can manage a personal connector', false)
     }
-    if (input.version !== entry.version) throw new ProductError('EXTENSION_VERSION_CONFLICT', 'Connector changed; reopen its configuration', true)
     if (method === 'extensions.connector.delete') {
       await api.request(`/api/v1/connectors/${encodeURIComponent(entry.id)}`, { method: 'DELETE', signal })
       await this.resetIdentity(undefined)
@@ -82,8 +130,8 @@ export class PersonalConnectors {
       transport: config?.transport ?? entry.transport, url: config?.url ?? entry.url, command: config?.command ?? entry.command,
       arguments: config?.arguments ?? entry.arguments,
       ...(entry.authMode === 'oauth' ? { oauthProviderId: entry.oauthProviderId } : {}), timeoutSeconds: config?.timeoutSeconds ?? 60,
-      headers: Object.fromEntries(Object.keys(config?.headers ?? {}).map(key => [key, ''])),
-      environment: Object.fromEntries(Object.keys(config?.environment ?? {}).map(key => [key, ''])),
+      headers: this.template(config?.headers ?? entry.headers),
+      environment: this.template(config?.environment ?? entry.environment),
     })
     if (method === 'extensions.connector.read') return { draft, configured: config !== undefined, savePending: pending !== undefined }
     if (method !== 'extensions.connector.update') throw new Error('Unsupported connector operation')
@@ -111,10 +159,15 @@ export class PersonalConnectors {
    */
   async save(draft: ExtensionDraft, api: DeepSeekHarnessApiClient, employee: string,
     signal: AbortSignal): Promise<void> {
-    const key = this.key(employee, draft.id, '')
+    await this.serialSave(employee, draft.id, signal, lifetime => this.saveConfiguration(draft, api, employee, lifetime))
+  }
+
+  private async serialSave(employee: string, id: string, signal: AbortSignal,
+    save: (signal: AbortSignal) => Promise<void>): Promise<void> {
+    const key = this.key(employee, id, '')
     const previous = this.saves.get(key)
     const operation = (previous === undefined ? Promise.resolve() : previous.catch(() => undefined))
-      .then(() => this.saveConfiguration(draft, api, employee, AbortSignal.any([signal, this.lifetime.signal])))
+      .then(() => { const lifetime = AbortSignal.any([signal, this.lifetime.signal]); lifetime.throwIfAborted(); return save(lifetime) })
     this.saves.set(key, operation)
     try { await operation }
     finally { if (this.saves.get(key) === operation) this.saves.delete(key) }
@@ -155,7 +208,7 @@ export class PersonalConnectors {
     const body = JSON.stringify({
       id: draft.id, name: draft.name, summary: draft.summary, category: draft.category, version: draft.version,
       transport: config.transport, url: config.url ?? null, command: config.command ?? null, arguments: config.arguments,
-      environment: {}, headers: {}, authMode: 'none', toolNames: tools.map(tool => tool.name),
+      environment: this.template(config.environment), headers: this.template(config.headers), authMode: 'none', toolNames: tools.map(tool => tool.name),
     })
     const pending = await this.pending(filename)
     if (pending && (pending.employee !== employee || pending.body !== body || JSON.stringify(pending.config) !== JSON.stringify(config))) {
@@ -209,7 +262,10 @@ export class PersonalConnectors {
     const entries: unknown[] = value
     return Promise.all(entries.map(async (raw) => {
       const entry = PublicConnector.parse(raw)
-      if (entry.visibility !== 'PERSONAL' || entry.ownerEmployeeId !== employee || !employee) return raw
+      if (!employee || entry.status !== 'ready') return raw
+      const deviceConfiguration = this.localConfigurationAllowed(entry) && (entry.visibility === 'PERSONAL'
+        || entry.transport === 'stdio' || Object.keys(entry.headers).length > 0 || Object.keys(entry.environment).length > 0)
+      if (!deviceConfiguration && !(entry.authMode === 'oauth' && entry.visibility === 'PERSONAL' && entry.ownerEmployeeId === employee)) return raw
       try {
         if (entry.authMode === 'oauth') {
           if (entry.ready !== true) return raw
@@ -223,15 +279,15 @@ export class PersonalConnectors {
           } finally { await client.close() }
         }
         const config = await this.configuration(entry, employee)
-        if (!config) return { ...entry, status: 'needs-configuration', ready: false, configurationStatus: 'REQUIRED', headers: {}, environment: {} }
+        if (!config) return { ...entry, status: 'needs-configuration', ready: false, configurationStatus: 'REQUIRED', canConfigure: true, headers: {}, environment: {} }
         const client = await this.client(entry, employee, config, signal)
         const declared = entry.tools.map(tool => tool.name)
         const tools = (await this.discover(client, signal, config.timeoutSeconds)).filter(tool => declared.includes(tool.name))
-        return { ...entry, ...config, configurationStatus: 'CONFIGURED', tools: tools.map(tool => ({ name: tool.name,
+        return { ...entry, ...config, canConfigure: true, configurationStatus: 'CONFIGURED', tools: tools.map(tool => ({ name: tool.name,
           displayName: tool.title ?? tool.name, description: tool.description ?? '', access: tool.annotations?.readOnlyHint === true && tool.annotations.destructiveHint !== true ? 'READ' : 'WRITE' })) }
       } catch (_error) {
         signal.throwIfAborted()
-        return { ...entry, status: 'unavailable', ready: false, configurationStatus: 'FAILED', headers: {}, environment: {}, tools: [] }
+        return { ...entry, status: 'unavailable', ready: false, canConfigure: this.localConfigurationAllowed(entry), configurationStatus: 'FAILED', headers: {}, environment: {}, tools: [] }
       }
     }))
   }
@@ -245,7 +301,7 @@ export class PersonalConnectors {
   async serveStdio(request: IncomingMessage, response: ServerResponse, value: unknown, signal: AbortSignal): Promise<void> {
     const entry = PublicConnector.parse(value)
     const employee = this.employee()
-    if (!employee || entry.visibility !== 'PERSONAL' || entry.ownerEmployeeId !== employee) throw new Error('Personal connector access denied')
+    if (!employee || entry.status !== 'ready' || !this.localConfigurationAllowed(entry)) throw new Error('Device connector access denied')
     const config = await this.configuration(entry, employee)
     if (!config) throw new Error('Private connector configuration is missing')
     const client = await this.client(entry, employee, config, signal)
@@ -286,6 +342,8 @@ export class PersonalConnectors {
   }
 
   private key(employee: string, id: string, version: string): string { return createHash('sha256').update(JSON.stringify([employee, id, version])).digest('hex') }
+  private template(values: Record<string, string>): Record<string, string> { return Object.fromEntries(Object.keys(values).map(key => [key, ''])) }
+  private localConfigurationAllowed(entry: PublicConnector): boolean { return entry.authMode === 'none' && entry.managed !== true }
   private filename(employee: string, id: string, version: string): string { return join(this.root, `${this.key(employee, id, version)}.bin`) }
   private async pending(filename: string): Promise<z.infer<typeof PendingConfiguration> | undefined> {
     let encrypted: Buffer
@@ -301,6 +359,8 @@ export class PersonalConnectors {
       && entry.summary === publicFields.summary && entry.category === publicFields.category
       && entry.transport === pending.config.transport && entry.url === pending.config.url && entry.command === pending.config.command
       && JSON.stringify(entry.arguments) === JSON.stringify(pending.config.arguments)
+      && JSON.stringify(Object.keys(entry.headers).sort()) === JSON.stringify(Object.keys(pending.config.headers).sort())
+      && JSON.stringify(Object.keys(entry.environment).sort()) === JSON.stringify(Object.keys(pending.config.environment).sort())
       && JSON.stringify(entry.tools.map(tool => tool.name).sort()) === JSON.stringify([...publicFields.toolNames].sort())
   }
   private async finalize(filename: string, config: Configuration): Promise<void> {
