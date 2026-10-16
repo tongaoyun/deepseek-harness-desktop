@@ -148,7 +148,7 @@ it('creates nested folders with retained retry input, browses their paths and de
   await within(dialog).findByRole('alert')
   expect(name.value).toBe('验收记录')
   failed = false
-  fireEvent.click(within(dialog).getByRole('button', { name: zh.knowledgeSave }))
+  fireEvent.click(within(dialog).getByRole('button', { name: zh.knowledgeRetrySave }))
   await waitFor(() => { expect(screen.queryByRole('dialog')).toBeNull() })
   const creates = api.invoke.mock.calls.filter(call => call[1] === 'knowledge.folders.create')
   expect(creates).toHaveLength(2)
@@ -240,7 +240,7 @@ it('preserves the personal library name and retry identity after creation fails'
   await screen.findByText(zh.knowledgeCreateBaseFailed)
   expect(screen.getByRole<HTMLInputElement>('textbox', { name: zh.knowledgeBaseName }).value).toBe('项目资料')
   failed = false
-  fireEvent.click(screen.getByRole('button', { name: zh.knowledgeCreate }))
+  fireEvent.click(screen.getByRole('button', { name: zh.knowledgeRetrySave }))
   await waitFor(() => { expect(screen.queryByRole('dialog')).toBeNull() })
   const calls = api.invoke.mock.calls.filter(row => row[1] === 'knowledge.bases.create')
   expect(calls).toHaveLength(2)

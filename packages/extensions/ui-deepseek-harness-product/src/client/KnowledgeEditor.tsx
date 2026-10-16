@@ -6,7 +6,7 @@ import type { DeepSeekHarnessProductKey } from '../locales.ts'
 import css from '../DeepSeekHarnessProduct.module.css'
 import { knowledgeDocument, knowledgeFolder, useKnowledgeRequests, type KnowledgeDocument, type KnowledgeFolder } from './knowledge-data.ts'
 import { KnowledgeFolderPicker } from './KnowledgeFolderPicker.tsx'
-import { productErrorMessage } from './product-errors.ts'
+import { isKnowledgeSaveUnconfirmed, productErrorMessage } from './product-errors.ts'
 
 /** A manager's create or edit action captured before opening the form. */
 export type KnowledgeEditorTarget = { readonly kind: 'markdown'; readonly document?: KnowledgeDocument; readonly folderId?: string | null }
@@ -34,16 +34,20 @@ export function KnowledgeEditor({ knowledgeBaseId, target, onClose, onSaved, t }
   const [latest, setLatest] = useState<KnowledgeDocument>()
   const [loading, setLoading] = useState(target.kind === 'markdown' && target.document !== undefined)
   const [pending, setPending] = useState(false)
+  const [unconfirmed, setUnconfirmed] = useState(false)
   const [error, setError] = useState('')
   const [revision, setRevision] = useState(0)
-  const operation = useRef<{ controller: AbortController; id?: string }>({ controller: new AbortController() })
+  const operation = useRef<{
+    controller: AbortController
+    save?: { readonly method: string; readonly payload: Readonly<Record<string, unknown>> }
+  }>({ controller: new AbortController() })
   useEffect(() => {
     const controller = new AbortController()
     operation.current.controller = controller
     return () => { controller.abort() }
   }, [])
   useEffect(() => {
-    if (target.kind !== 'markdown' || !target.document) return
+    if (target.kind !== 'markdown' || !target.document || operation.current.save) return
     const controller = new AbortController()
     setLoading(true); setError('')
     void request('knowledge.documents.get', { knowledgeBaseId, documentId: target.document.id }, controller.signal)
@@ -57,34 +61,35 @@ export function KnowledgeEditor({ knowledgeBaseId, target, onClose, onSaved, t }
     return () => { controller.abort() }
   }, [request, knowledgeBaseId, target, revision, t])
   const change = (set: (value: string) => void, value: string) => {
-    set(value); setError(''); delete operation.current.id
+    if (pending || unconfirmed) return
+    set(value); setError(''); delete operation.current.save
   }
   const save = async (): Promise<void> => {
     if (pending || loading || conflict || target.kind === 'folder' && !target.folder && !parentReady) return
     setPending(true); setError('')
-    operation.current.id ??= globalThis.crypto.randomUUID()
-    const operationId = operation.current.id
+    const operationId = operation.current.save?.payload.operationId ?? globalThis.crypto.randomUUID()
+    const saveRequest = operation.current.save ??= target.kind === 'folder'
+      ? { method: target.folder ? 'knowledge.folders.rename' : 'knowledge.folders.create', payload: {
+        knowledgeBaseId, name: title.trim(), operationId,
+        ...(target.folder ? { folderId: target.folder.id } : { parentId }),
+      } }
+      : target.kind === 'url'
+        ? { method: 'knowledge.documents.importUrl', payload: { knowledgeBaseId, url: url.trim(), operationId,
+          folderId: target.folderId ?? null, ...(title.trim() ? { title: title.trim() } : {}) } }
+        : { method: 'knowledge.documents.save', payload: { knowledgeBaseId, title: title.trim(), content, operationId,
+          ...(metadata ? { documentId: metadata.id, expectedUpdatedAt: metadata.updatedAt } : { folderId: target.folderId ?? null }) } }
     const controller = operation.current.controller
     try {
+      const saved = await request(saveRequest.method, saveRequest.payload, controller.signal)
       if (target.kind === 'folder') {
-        const saved = await request(target.folder ? 'knowledge.folders.rename' : 'knowledge.folders.create', {
-          knowledgeBaseId, name: title.trim(), operationId,
-          ...(target.folder ? { folderId: target.folder.id } : { parentId }),
-        }, controller.signal)
         if (!controller.signal.aborted) onSaved(knowledgeFolder(saved))
-      } else if (target.kind === 'url') {
-        await request('knowledge.documents.importUrl', { knowledgeBaseId, url: url.trim(), operationId,
-          folderId: target.folderId ?? null,
-          ...(title.trim() ? { title: title.trim() } : {}) }, controller.signal)
-      } else {
-        await request('knowledge.documents.save', { knowledgeBaseId, title: title.trim(), content, operationId,
-          ...(metadata ? { documentId: metadata.id, expectedUpdatedAt: metadata.updatedAt } : { folderId: target.folderId ?? null }),
-        }, controller.signal)
       }
       if (!controller.signal.aborted && target.kind !== 'folder') onSaved()
     } catch (failure) {
       if (!controller.signal.aborted) {
-        if (productFailure(failure).code === 'KNOWLEDGE_DOCUMENT_CONFLICT') { setConflict(true); setLatest(undefined) }
+        if (productFailure(failure).code === 'KNOWLEDGE_DOCUMENT_CONFLICT') {
+          setConflict(true); setLatest(undefined); setUnconfirmed(false)
+        } else if (isKnowledgeSaveUnconfirmed(failure)) setUnconfirmed(true)
         setError(productErrorMessage(failure, t, 'knowledgeSaveFailed'))
       }
     }
@@ -121,21 +126,22 @@ export function KnowledgeEditor({ knowledgeBaseId, target, onClose, onSaved, t }
     className={(target.kind === 'folder' ? css.knowledgeBaseEditorModal : css.knowledgeEditorModal) as string}
     contentClassName={css.knowledgeEditorContent as string} footer={<>
       <Button variant="ghost" size="sm" onClick={onClose}>{t('cancel')}</Button>
-      <Button variant="primary" size="sm" disabled={pending || loading || conflict || !valid || !editable} onClick={() => { void save() }}>{t(pending ? 'saving' : 'knowledgeSave')}</Button>
+      <Button variant="primary" size="sm" disabled={pending || loading || conflict || !valid || !editable} onClick={() => { void save() }}>{t(pending ? 'saving' : unconfirmed ? 'knowledgeRetrySave' : 'knowledgeSave')}</Button>
     </>}>
     <form className={css.knowledgeEditorForm} onSubmit={(event) => { event.preventDefault(); if (valid && editable) void save() }}>
       <label>{t(target.kind === 'folder' ? 'knowledgeFolderName' : 'knowledgeDocumentTitle')}
-        <input data-modal-autofocus value={title} maxLength={target.kind === 'folder' ? 80 : 120} disabled={pending || loading}
+        <input data-modal-autofocus value={title} maxLength={target.kind === 'folder' ? 80 : 120} disabled={pending || loading || unconfirmed}
           onChange={(event) => { change(setTitle, event.currentTarget.value) }} /></label>
       {target.kind === 'folder' && !target.folder && <KnowledgeFolderPicker knowledgeBaseId={knowledgeBaseId}
-        label={t('knowledgeParentFolder')} value={parentId} disabled={pending} onReady={setParentReady}
-        onChange={(id) => { setParentId(id); setParentReady(false); setError(''); delete operation.current.id }} t={t} />}
-      {target.kind === 'url' && <label>{t('knowledgeWebsiteUrl')}<input value={url} type="url" maxLength={2_000} disabled={pending}
+        label={t('knowledgeParentFolder')} value={parentId} disabled={pending || unconfirmed} onReady={setParentReady}
+        onChange={(id) => { if (pending || unconfirmed) return; setParentId(id); setParentReady(false); setError(''); delete operation.current.save }} t={t} />}
+      {target.kind === 'url' && <label>{t('knowledgeWebsiteUrl')}<input value={url} type="url" maxLength={2_000} disabled={pending || unconfirmed}
         onChange={(event) => { change(setUrl, event.currentTarget.value) }} /></label>}
-      {target.kind === 'markdown' && <label>{t('knowledgeMarkdownContent')}<textarea value={content} disabled={pending || loading || !editable}
+      {target.kind === 'markdown' && <label>{t('knowledgeMarkdownContent')}<textarea value={content} disabled={pending || loading || unconfirmed || !editable}
         onChange={(event) => { change(setContent, event.currentTarget.value) }} /></label>}
       {loading && <p role="status" className={css.catalogStatus}>{t('loading')}</p>}
       {error && <p role="alert" className={css.catalogError}>{error}</p>}
+      {unconfirmed && <p role="status" className={css.catalogStatus}>{t('knowledgeSaveUnconfirmed')}</p>}
       {conflict && <>
         <p>{t('knowledgeConflictDraftRetained')}</p>
         <Button variant="outline" size="sm" disabled={loading || pending} onClick={() => { void readLatest() }}>{t('knowledgeReadLatest')}</Button>
@@ -143,7 +149,7 @@ export function KnowledgeEditor({ knowledgeBaseId, target, onClose, onSaved, t }
           <details><summary>{t('knowledgeLatestVersion')}</summary><p>{latest.filename}</p>
             <textarea readOnly aria-label={t('knowledgeLatestVersion')} value={latest.manualContent ?? ''} /></details>
           <Button variant="outline" size="sm" disabled={loading || pending} onClick={() => {
-            setMetadata(latest); setConflict(false); setLatest(undefined); setError(''); delete operation.current.id
+            setMetadata(latest); setConflict(false); setLatest(undefined); setError(''); delete operation.current.save
           }}>{t('knowledgeContinueDraft')}</Button>
         </>}
       </>}
