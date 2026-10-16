@@ -101,7 +101,7 @@ index 0000000000000000000000000000000000000000..b898afdfdc395ba34b38e4f945c5e017
 +
 +适配器测试确定性地请求技能，不评估真实模型根据自然语言选择技能的决策质量。
 diff --git a/packages/client/ui-skill/README.i18n.yaml b/packages/client/ui-skill/README.i18n.yaml
-index 3f5d54b740a3e29f218b0c2757c305ac8e70cbf1..eeaf5205de4ee013dd45128e4110a2bf00b3b3ff 100644
+index 8d82e8e675653f93985f6ba98f165dd7be7f9ec6..fd48b4e798abda0d295c62da3ee6d1532f6687a6 100644
 --- a/packages/client/ui-skill/README.i18n.yaml
 +++ b/packages/client/ui-skill/README.i18n.yaml
 @@ -18,8 +18,8 @@
@@ -116,7 +116,7 @@ index 3f5d54b740a3e29f218b0c2757c305ac8e70cbf1..eeaf5205de4ee013dd45128e4110a2bf
    en: 975c6cd80af3684a
    zh: 395c10e51c6a15f6
 diff --git a/packages/client/ui-skill/README.md b/packages/client/ui-skill/README.md
-index 08d2e1137cc871f739a418ab76579fb6094eda37..06964312a7adee02c988652cca8e509e072ef153 100644
+index 4340f3f78e3a104def165abe7bafafacdef275d0..8c297acb92a133a57423edd265e55962628d05ea 100644
 --- a/packages/client/ui-skill/README.md
 +++ b/packages/client/ui-skill/README.md
 @@ -29,6 +29,8 @@ Type `/` in the composer and pick a skill from the suggestions, or type `/name`
@@ -129,7 +129,7 @@ index 08d2e1137cc871f739a418ab76579fb6094eda37..06964312a7adee02c988652cca8e509e
  
  ### The skill tool row
 diff --git a/packages/client/ui-skill/README.zh.md b/packages/client/ui-skill/README.zh.md
-index e07a59326bc0ec696b71a501ac22de6e078dd354..097879627aaf1a9569cbcc0c5c392601028bd6f3 100644
+index d18c52f30dc80aba6534e1b812867e441d4c970b..383036f7628d2360677ef5d035df2d710ee5ebfc 100644
 --- a/packages/client/ui-skill/README.zh.md
 +++ b/packages/client/ui-skill/README.zh.md
 @@ -29,6 +29,8 @@ kind: "package-reference"
@@ -142,7 +142,7 @@ index e07a59326bc0ec696b71a501ac22de6e078dd354..097879627aaf1a9569cbcc0c5c392601
  
  ### skill 工具行
 diff --git a/packages/client/ui-skill/src/client/index.ts b/packages/client/ui-skill/src/client/index.ts
-index 2b6cd12ea28db567ad6b1e17d70bf582436ed1c1..8103ca5cc32358d9e76b35fc51f5cabb9b56192c 100644
+index ee67b91e4cc59e2890367ee81a496031e83cdb73..f8f1672dc3dcca370e9d586673be278913f28ff0 100644
 --- a/packages/client/ui-skill/src/client/index.ts
 +++ b/packages/client/ui-skill/src/client/index.ts
 @@ -33,7 +33,7 @@
@@ -154,7 +154,7 @@ index 2b6cd12ea28db567ad6b1e17d70bf582436ed1c1..8103ca5cc32358d9e76b35fc51f5cabb
  import type { SkillEntry } from '@deepseek-ai/dsh-api-remotes/client'
  import type {} from '@deepseek-ai/dsh-api-session-controller/client'
  import type { SessionId } from '@deepseek-ai/dsh-session/types'
-@@ -54,6 +54,24 @@ declare module '@deepseek-ai/dsh-api-session-controller/client' {
+@@ -58,6 +58,24 @@ declare module '@deepseek-ai/dsh-api-session-controller/client' {
    }
  }
  
@@ -179,7 +179,7 @@ index 2b6cd12ea28db567ad6b1e17d70bf582436ed1c1..8103ca5cc32358d9e76b35fc51f5cabb
  declare module '@deepseek-ai/dsh-client-ui-slots' {
    interface LocaleNamespaceMap {
      /** The dedicated skill tool row's copy. */
-@@ -151,6 +169,7 @@ export function apply(ctx: ClientContext): void {
+@@ -156,6 +174,7 @@ export function apply(ctx: ClientContext): void {
    const clearAll = (): void => {
      for (const key of [...fetches.keys()]) invalidate(key)
    }
@@ -188,10 +188,10 @@ index 2b6cd12ea28db567ad6b1e17d70bf582436ed1c1..8103ca5cc32358d9e76b35fc51f5cabb
    // The bound translate resolves against the registered dictionaries with the
    // locale service's own fallback ladder; candidate-time reads stay plain text.
 diff --git a/packages/client/ui-skill/tests/browser-plugin.client.spec.ts b/packages/client/ui-skill/tests/browser-plugin.client.spec.ts
-index b47abfe94983f8e0e2caaa4cdc30e4ea7d3ee215..918f8f8136368168d615fe00bc42ef8efc4638a6 100644
+index fa997d86b4b094cdac26ef7802bd63711fc7c196..513cc319ce0cf8ae9073568728e9e5589c2aaf6f 100644
 --- a/packages/client/ui-skill/tests/browser-plugin.client.spec.ts
 +++ b/packages/client/ui-skill/tests/browser-plugin.client.spec.ts
-@@ -354,6 +354,20 @@ describe('catalog cache', () => {
+@@ -364,6 +364,20 @@ describe('catalog cache', () => {
      expect(payloads[2]).toEqual({ sessionId: 's1' })
    })
  
@@ -213,10 +213,10 @@ index b47abfe94983f8e0e2caaa4cdc30e4ea7d3ee215..918f8f8136368168d615fe00bc42ef8e
      const { list, payloads } = countingList()
      const { ctx, source } = await bench(list)
 diff --git a/scripts/gen-cordis-catalog.ts b/scripts/gen-cordis-catalog.ts
-index 2c012bde12aa2a51b0f6c92843a764c0829d338b..ab5e83a93ec8fe575aefcc99b7bc39a6fcd568ef 100644
+index ebd752714286dd59491439c88a697bfa84f3b6f2..ee4e563de0a8fa2c92cac10faf406da0cca00ccb 100644
 --- a/scripts/gen-cordis-catalog.ts
 +++ b/scripts/gen-cordis-catalog.ts
-@@ -180,6 +180,7 @@ export const SERVICE_WALK_EXEMPTIONS: Record<string, string> = {
+@@ -183,6 +183,7 @@ export const SERVICE_WALK_EXEMPTIONS: Record<string, string> = {
    fileUpload: 'client-side browser upload service — packages/client/file-upload/README.md owns the API',
    uiRenderer: 'client-side interface-typed browser service — packages/client/ui-renderer/README.md owns the API',
    uiSession: 'client-side Session source adapter — packages/client/ui-session/README.md owns the API',

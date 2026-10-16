@@ -47,8 +47,8 @@ jobs:
           node --test apps/product-desktop/tests/desktop-release.test.mjs
           node --test apps/product-desktop/tests/acceptance-process.test.mjs
           pnpm exec vitest run apps/product-desktop/tests/close-electron.spec.ts
-          pnpm run build:lib:host
-          pnpm run typecheck:contracts-ready
+          pnpm exec tsx scripts/compile-referenced-projects.ts host-libraries
+          pnpm run typecheck
           pnpm run rescope-vendor:check
           pnpm run verify-package-dependencies
           pnpm run verify-no-unknown-casts

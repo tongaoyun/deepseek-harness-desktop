@@ -1,6 +1,6 @@
 # DeepSeek Harness Electron 产品层
 
-DeepSeek Harness桌面端以 DeepSeek Harness `dsh-v0.2.1-alpha.2` 为唯一桌面、运行时和会话基线。Electron 官方窗口、`apps/desktop-host`、Harness Session、Conversation、Browser、Approval、Question、Tool、历史回放和 Office 由上游实现负责。
+DeepSeek Harness桌面端以 DeepSeek Harness `dsh-v0.2.1-alpha.4` 为唯一桌面、运行时和会话基线。Electron 官方窗口、`apps/desktop-host`、Harness Session、Conversation、Browser、Approval、Question、Tool、历史回放和 Office 由上游实现负责。
 
 [产品子系统](subsystems/deepseek-harness-product.md)定义独立的协议、运行时、桌面和 UI 包。产品 UI 使用 `window.dshDesktop.extensions` 的 `product` 命名空间访问：
 

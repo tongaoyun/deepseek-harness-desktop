@@ -33,7 +33,10 @@ it('continues browser sign-in when a concurrent refresh invalidates an expired s
       if (url.endsWith('/session/refresh')) {
         if (++refreshes === 1) {
           return new Promise<Response>((_resolve, reject) => {
-            init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), { once: true })
+            init?.signal?.addEventListener('abort', () => {
+              const reason: unknown = init.signal?.reason
+              reject(reason instanceof Error ? reason : new DOMException('Request aborted', 'AbortError'))
+            }, { once: true })
           })
         }
         return Response.json({ success: false, errCode: 'EMPLOYEE_UNAUTHORIZED', errMessage: 'Expired session' }, { status: 401 })

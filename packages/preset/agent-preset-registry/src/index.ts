@@ -400,7 +400,9 @@ export class AgentPresetRegistry extends TypertRemoteService {
     return preset
   }
 
-  /** Select a preset before a session starts its first turn.
+  /** Select a preset before a session starts its first turn. A Session whose
+   * log records the preset and whose Agent runs its current revision keeps its
+   * composition; nothing is logged or announced.
    * @param agent Target Agent.
    * @param agentPreset Requested identity.
    * @returns Committed preset identity.
@@ -417,6 +419,9 @@ export class AgentPresetRegistry extends TypertRemoteService {
       if (latest !== undefined && (latest.openTurnStartSeq !== null || latest.lastTurn > 0)) {
         throw new RemoteError('agent-preset/locked', 'This session has already started', { sessionId: agent.id, agentPreset })
       }
+      const current = this.definitions.get(resolved)?.generation
+      if (current !== undefined && this.generationFor(agent.ctx) === current
+        && this.owner.sessionProjections.stateOf(agent.session, 'agentPreset') === resolved) return resolved
       const preset = await this.recompose(agent.ctx, resolved)
       agent.session.append('agent-preset/selected', { agentPreset: preset.id })
       return preset.id

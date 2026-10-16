@@ -478,7 +478,7 @@ index fc19021fa6047bf5ef2a1c5e65c510adda71ee08..e029a607869651a29e663ceb3607ad26
  
  /** Scheme of Desktop-owned application documents. */
 diff --git a/apps/desktop/src/main.ts b/apps/desktop/src/main.ts
-index 1202670a3e0330f2a9ce287ab8d95459fecffa9e..6b742a91ca25b109c96f4d2f7d1653e110153db8 100644
+index 2afdfd71948053aedd65f6a04a9ed9b279e13376..608541a8790af685e940ae53343c679295f47c36 100644
 --- a/apps/desktop/src/main.ts
 +++ b/apps/desktop/src/main.ts
 @@ -1,9 +1,12 @@
@@ -495,7 +495,7 @@ index 1202670a3e0330f2a9ce287ab8d95459fecffa9e..6b742a91ca25b109c96f4d2f7d1653e1
  import { fileURLToPath } from 'node:url'
  import {
    app,
-@@ -163,10 +166,25 @@ function runtimeResources(): RuntimeResources {
+@@ -164,10 +167,25 @@ function runtimeResources(): RuntimeResources {
  
  function developmentPrimaryRuntime(): string {
    const directory = process.env.DSH_DESKTOP_PRIMARY_RUNTIME_DIR
@@ -524,7 +524,7 @@ index 1202670a3e0330f2a9ce287ab8d95459fecffa9e..6b742a91ca25b109c96f4d2f7d1653e1
  }
  
  function developmentHostInspectPort(enabled: boolean): number | undefined {
-@@ -336,10 +354,14 @@ async function main(): Promise<void> {
+@@ -337,10 +355,14 @@ async function main(): Promise<void> {
      for (const failure of result.failures) console.warn(`desktop login shell: ${failure.shell} failed (${failure.reason})`)
      return result.environment
    })
@@ -540,7 +540,7 @@ index 1202670a3e0330f2a9ce287ab8d95459fecffa9e..6b742a91ca25b109c96f4d2f7d1653e1
    let workspaceRecovery: Promise<void> | undefined
    let mainWindow: BrowserWindow | undefined
    let welcomeWindow: BrowserWindow | undefined
-@@ -402,7 +424,14 @@ async function main(): Promise<void> {
+@@ -403,7 +425,14 @@ async function main(): Promise<void> {
    let hostUrl: string | undefined
    let hostCookie: string | undefined
    const browserGuests = new DesktopBrowserGuests(() => hostUrl)
@@ -556,7 +556,7 @@ index 1202670a3e0330f2a9ce287ab8d95459fecffa9e..6b742a91ca25b109c96f4d2f7d1653e1
    let welcomeBackend: DesktopWelcomeBackend | undefined
    let reportedLaunch = false
    let analyticsEnabled = false
-@@ -446,14 +475,17 @@ async function main(): Promise<void> {
+@@ -447,14 +476,17 @@ async function main(): Promise<void> {
      const host = new DesktopHostProcess(resources.node, resources.dsh, activeProject,
        hostInspectPort, { ...hostEnvironment, DSH_CLIENT_VERSION: desktopClientVersion() }, onFailure,
        primaryRuntime,
@@ -576,7 +576,7 @@ index 1202670a3e0330f2a9ce287ab8d95459fecffa9e..6b742a91ca25b109c96f4d2f7d1653e1
          welcomeBackend = await connectDesktopWelcome(ready.url, (input, init) => net.fetch(input, init), async () => (await session.defaultSession.cookies.get({ url: ready.url })).map(cookie => `${cookie.name}=${cookie.value}`).join('; '))
          analyticsEnabled = await welcomeBackend.analyticsEnabled().catch(() => false)
          if (!reportedLaunch) { reportedLaunch = true; void track('desktop_app_launch', {}) }
-@@ -508,6 +540,9 @@ async function main(): Promise<void> {
+@@ -509,6 +541,9 @@ async function main(): Promise<void> {
        },
        updateTasks: (action: 'inspect' | 'lock' | 'unlock') => host.updateTasks(action),
        inspectQuit: () => host.inspectQuit(),
@@ -586,7 +586,7 @@ index 1202670a3e0330f2a9ce287ab8d95459fecffa9e..6b742a91ca25b109c96f4d2f7d1653e1
      }
    }, (state) => {
      if (state.phase === 'error') reportFatal(state.failure, 'host')
-@@ -568,18 +603,32 @@ async function main(): Promise<void> {
+@@ -569,18 +604,32 @@ async function main(): Promise<void> {
  
    const reconcileBackend = (): Promise<void> => {
      startup ??= (async () => {
@@ -623,7 +623,7 @@ index 1202670a3e0330f2a9ce287ab8d95459fecffa9e..6b742a91ca25b109c96f4d2f7d1653e1
      return startup
    }
  
-@@ -640,6 +689,7 @@ async function main(): Promise<void> {
+@@ -643,6 +692,7 @@ async function main(): Promise<void> {
    )
  
    const updateSchedule = new DesktopUpdateSchedule(updates, resolveDesktopUpdateScheduleConfig(process.env))
@@ -631,7 +631,7 @@ index 1202670a3e0330f2a9ce287ab8d95459fecffa9e..6b742a91ca25b109c96f4d2f7d1653e1
  
    const downloadUpdate = async (version: string): Promise<DesktopUpdateState> => {
      void track('desktop_upgrade_click', {})
-@@ -650,8 +700,7 @@ async function main(): Promise<void> {
+@@ -653,8 +703,7 @@ async function main(): Promise<void> {
      // A confirmation on a hidden window would go unseen, so it waits for the next show; the mandatory
      // flow keeps its own taskbar and Dock attention instead.
      if (!isMandatory()) await windowShown()
@@ -641,7 +641,7 @@ index 1202670a3e0330f2a9ce287ab8d95459fecffa9e..6b742a91ca25b109c96f4d2f7d1653e1
      return updates.install(version)
    }
    const windowShown = (): Promise<void> => new Promise((resolve) => {
-@@ -686,9 +735,16 @@ async function main(): Promise<void> {
+@@ -689,9 +738,16 @@ async function main(): Promise<void> {
  
    ipcMain.handle(DESKTOP_IPC.boot, async (event) => {
      assertDesktopSender(event, ['app'])
@@ -661,7 +661,7 @@ index 1202670a3e0330f2a9ce287ab8d95459fecffa9e..6b742a91ca25b109c96f4d2f7d1653e1
    })
  
    ipcMain.handle(DESKTOP_IPC.bootFailed, (event, message: unknown) => {
-@@ -708,6 +764,39 @@ async function main(): Promise<void> {
+@@ -711,6 +767,39 @@ async function main(): Promise<void> {
      assertProductSender(event)
      return browserGuests.release(event.sender, lease)
    })
@@ -701,7 +701,7 @@ index 1202670a3e0330f2a9ce287ab8d95459fecffa9e..6b742a91ca25b109c96f4d2f7d1653e1
  
    session.defaultSession.webRequest.onBeforeSendHeaders({ urls: ['ws://127.0.0.1/*', 'wss://127.0.0.1/*'] }, (details, callback) => {
      if (hostUrl === undefined || hostCookie === undefined || details.webContentsId !== mainWindow?.webContents.id) {
-@@ -926,8 +1015,10 @@ async function main(): Promise<void> {
+@@ -929,8 +1018,10 @@ async function main(): Promise<void> {
      updates.dispose()
    })
  
@@ -713,7 +713,7 @@ index 1202670a3e0330f2a9ce287ab8d95459fecffa9e..6b742a91ca25b109c96f4d2f7d1653e1
    app.setAboutPanelOptions({
      applicationName: 'DeepSeek Harness',
      applicationVersion: app.getVersion(),
-@@ -1072,6 +1163,7 @@ async function main(): Promise<void> {
+@@ -1075,6 +1166,7 @@ async function main(): Promise<void> {
      browserGuests.bind(window, (guest, name) => shortcuts.attachGuest(window, guest, name))
      shortcuts.attach(window)
      window.on('focus', automaticCheck)
@@ -721,7 +721,7 @@ index 1202670a3e0330f2a9ce287ab8d95459fecffa9e..6b742a91ca25b109c96f4d2f7d1653e1
      // Closing hides: the page and the Host keep running, and the next show resumes the same document.
      window.on('close', (event) => {
        if (quitting || shellInstallerOwnsQuit || sessionEnding) return
-@@ -1198,7 +1290,8 @@ async function main(): Promise<void> {
+@@ -1201,7 +1293,8 @@ async function main(): Promise<void> {
      })().finally(() => { openingWelcome = undefined })
      return openingWelcome
    }
@@ -731,7 +731,7 @@ index 1202670a3e0330f2a9ce287ab8d95459fecffa9e..6b742a91ca25b109c96f4d2f7d1653e1
      if (quitting || recovery.active) return
      const state = await readWelcomeState()
      if (isQuitting() || backend.state.phase !== 'ready') return
-@@ -1210,7 +1303,9 @@ async function main(): Promise<void> {
+@@ -1213,7 +1306,9 @@ async function main(): Promise<void> {
        raiseAfterUpdate = false
        await showWelcome()
      } else {
@@ -742,7 +742,7 @@ index 1202670a3e0330f2a9ce287ab8d95459fecffa9e..6b742a91ca25b109c96f4d2f7d1653e1
      }
    }
    focusPrimaryWindow = () => {
-@@ -1223,7 +1318,14 @@ async function main(): Promise<void> {
+@@ -1226,7 +1321,14 @@ async function main(): Promise<void> {
        return
      }
      // Startup and sign-out select the visible window before activation may reveal the workspace.
@@ -758,7 +758,7 @@ index 1202670a3e0330f2a9ce287ab8d95459fecffa9e..6b742a91ca25b109c96f4d2f7d1653e1
      if (window.isMinimized()) window.restore()
      window.show()
      window.focus()
-@@ -1245,6 +1347,8 @@ async function main(): Promise<void> {
+@@ -1248,6 +1350,8 @@ async function main(): Promise<void> {
    const finishQuit = (): void => {
      quitting = true
      shuttingDown = true
@@ -767,7 +767,7 @@ index 1202670a3e0330f2a9ce287ab8d95459fecffa9e..6b742a91ca25b109c96f4d2f7d1653e1
      updateJournal?.action('quit-requested')
      quitConfirmation.dispose()
      backgroundNotice?.dispose()
-@@ -1255,7 +1359,7 @@ async function main(): Promise<void> {
+@@ -1258,7 +1362,7 @@ async function main(): Promise<void> {
      updateSchedule.dispose()
      updateDialog.dispose()
      mandatoryUI?.dispose()

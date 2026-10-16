@@ -1,66 +1,62 @@
 diff --git a/docs/subsystems/slots.md b/docs/subsystems/slots.md
-index c0fa352a4f81d2ae551159ae7ed850f5d590a117..dc5245c041d8af02eebb3e2a64a942da984f28df 100644
+index 0a08dc4f9a96012fc52c497be351b2663ee6d318..67695d77d40ba951f7ad989634f88ffa3eb4b254 100644
 --- a/docs/subsystems/slots.md
 +++ b/docs/subsystems/slots.md
-@@ -179,7 +179,8 @@ root
- │     ├─ conversation.hero.brand.mark
- │     ├─ conversation.hero.workspace
- │     │  └─ conversation.hero.workspace.directoryFlow
--│     └─ conversation.hero.agentPreset
-+│     ├─ conversation.hero.agentPreset
-+│     └─ conversation.hero.actions
- ├─ rightbar
- │  └─ rightbar.session
- │     ├─ sidebar.right.pane.tab
+@@ -172,6 +172,7 @@ Factory: conversation.content [ConversationContent]
+ ├─ conversation.hero.workspace
+ │  └─ conversation.hero.workspace.directoryFlow
+ ├─ conversation.hero.agentPreset
++├─ conversation.hero.actions
+ └─ conversation.hero.options
+ 
+ Factory: conversation.chat.user.content [UserContent]
 diff --git a/docs/subsystems/slots.zh.md b/docs/subsystems/slots.zh.md
-index 3689583543a3c8a0d12dae3854696a6c32c82443..97a33ff5392dbdd6d59df7bdde82d7f4b0f669d5 100644
+index 372f01773c28b2fbc4a1f7c04334d6fc1746a8fa..5ca3d030ab34636020bba514fc97d8ac6d29e662 100644
 --- a/docs/subsystems/slots.zh.md
 +++ b/docs/subsystems/slots.zh.md
-@@ -179,7 +179,8 @@ root
- │     ├─ conversation.hero.brand.mark
- │     ├─ conversation.hero.workspace
- │     │  └─ conversation.hero.workspace.directoryFlow
--│     └─ conversation.hero.agentPreset
-+│     ├─ conversation.hero.agentPreset
-+│     └─ conversation.hero.actions
- ├─ rightbar
- │  └─ rightbar.session
- │     ├─ sidebar.right.pane.tab
+@@ -174,6 +174,7 @@ Factory: conversation.content [ConversationContent]
+ ├─ conversation.hero.workspace
+ │  └─ conversation.hero.workspace.directoryFlow
+ ├─ conversation.hero.agentPreset
++├─ conversation.hero.actions
+ └─ conversation.hero.options
+ 
+ Factory: conversation.chat.user.content [UserContent]
 diff --git a/packages/client/ui-conversation/src/client/apply.ts b/packages/client/ui-conversation/src/client/apply.ts
-index 9994c4e9aed1fdd20bea68e18608eed369e0f811..652559b4edd46a349ecc6b27355868cf2462feac 100644
+index e567bd1a50b42f4a25cf7795afa5afafeb632e8e..8b20949bb92ac9296f61a69dc5c351820c8f95d3 100644
 --- a/packages/client/ui-conversation/src/client/apply.ts
 +++ b/packages/client/ui-conversation/src/client/apply.ts
-@@ -318,6 +318,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
+@@ -345,6 +345,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
        'conversation.hero.brand.mark': { kind: 'single', scope: 'root' },
        'conversation.hero.workspace': { kind: 'single', scope: 'root' },
        'conversation.hero.agentPreset': { kind: 'single', scope: 'session-maybe' },
 +      'conversation.hero.actions': { kind: 'list', scope: 'session-maybe' },
+       'conversation.hero.options': { kind: 'list', scope: 'session' },
      },
      slots: {
-       views: { scope: 'session' },
 diff --git a/packages/client/ui-conversation/src/client/contract/slots.ts b/packages/client/ui-conversation/src/client/contract/slots.ts
-index 5564aea9b6647501d7ad6de2b80b602cca6a7311..adffc9292dcc7872c438f604bf855a96576d3ba2 100644
+index a02f5aa662e47b9de87f424cc6bf54c41502c7c3..3c986edcb12cfd93ee2b6354e36175e34c772621 100644
 --- a/packages/client/ui-conversation/src/client/contract/slots.ts
 +++ b/packages/client/ui-conversation/src/client/contract/slots.ts
-@@ -191,6 +191,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
+@@ -264,6 +264,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      'conversation.hero.brand.mark': { kind: 'single'; scope: 'root'; owner: HeroBrandMarkOwnerProps }
      /** Agent-preset control staged for a New Session. */
      'conversation.hero.agentPreset': { kind: 'single'; scope: 'session-maybe'; owner: HeroAgentPresetOwnerProps }
 +    /** Ordered controls beside the workspace and agent-preset controls on the blank-session Hero. */
 +    'conversation.hero.actions': { kind: 'list'; scope: 'session-maybe' }
+     /** Compact options right-aligned in the New Session row after the workspace and preset controls; rendered only with a Session. */
+     'conversation.hero.options': { kind: 'list'; scope: 'session' }
      /** Full-width entries above the composer card. */
-     'conversation.input.dock': { kind: 'list'; scope: 'session'; owner: InputZone }
-     /** Floating entries rendered inside the resident composer card. */
-@@ -236,6 +238,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
+@@ -311,6 +313,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
          'conversation.hero.brand.mark': { kind: 'single'; scope: 'root' }
          'conversation.hero.workspace': { kind: 'single'; scope: 'root' }
          'conversation.hero.agentPreset': { kind: 'single'; scope: 'session-maybe' }
 +        'conversation.hero.actions': { kind: 'list'; scope: 'session-maybe' }
+         'conversation.hero.options': { kind: 'list'; scope: 'session' }
        }
        inject: ConversationInjected
-       locale: 'conversation'
 diff --git a/packages/client/ui-conversation/src/client/skeleton/ConversationContent.tsx b/packages/client/ui-conversation/src/client/skeleton/ConversationContent.tsx
-index 15bfdd8732f577df9d7f1a7f58274e8eae362000..d43e76d03805576b50d2a5c0e9f156e4bd2a3482 100644
+index 218082ae3155f5f1040c82ca26b17378fbecb175..27c28b378e6b32bb55698d10feaadbfd69e460a1 100644
 --- a/packages/client/ui-conversation/src/client/skeleton/ConversationContent.tsx
 +++ b/packages/client/ui-conversation/src/client/skeleton/ConversationContent.tsx
 @@ -130,6 +130,7 @@ export function ConversationContent(props: ConversationContentProps) {
@@ -68,11 +64,11 @@ index 15bfdd8732f577df9d7f1a7f58274e8eae362000..d43e76d03805576b50d2a5c0e9f156e4
        })}
        {renderSlot('conversation.hero.agentPreset', {})}
 +      {renderSlot('conversation.hero.actions', {})}
+       {sessionId === undefined ? null : <div className={css.heroOptions}>{renderSlot('conversation.hero.options', {})}</div>}
      </div>
    )
- 
 diff --git a/packages/client/ui-conversation/src/client/skeleton/ConversationRoot.module.css b/packages/client/ui-conversation/src/client/skeleton/ConversationRoot.module.css
-index 3aa0a9d1f933651c53851358d0be59f8bef8ca49..d2c719a5d451cc04e28d2fc4d70c9d759f6ea4bb 100644
+index 070cb94a75fb5e15743866a9de1697174cab2bb5..f8a199891269c3fb64c5dba3c85c34ff72988b30 100644
 --- a/packages/client/ui-conversation/src/client/skeleton/ConversationRoot.module.css
 +++ b/packages/client/ui-conversation/src/client/skeleton/ConversationRoot.module.css
 @@ -519,8 +519,10 @@ button.crumb:hover {
@@ -160,19 +156,30 @@ index e4c2a2c037326d9b80c26f96db0ce3986d4b7ddf..d79cc4db3f8dd878417a0fa854835a2d
      const runtime = await SlotTestRuntime.create()
      provideWorkspaceNavigation(runtime)
 diff --git a/packages/client/ui-conversation/tests/skeleton.client.spec.tsx b/packages/client/ui-conversation/tests/skeleton.client.spec.tsx
-index 7f0225ff33a9c47777113a1e4b419ced790c6ec9..001fea37b9416145fc5fa1c04208fcaac85ba3a9 100644
+index bcd1005a30e5c2c78df6f6e130270558eaa68952..13a2bdd9fb5497b904b2da596e5b6ad43e2a4a9b 100644
 --- a/packages/client/ui-conversation/tests/skeleton.client.spec.tsx
 +++ b/packages/client/ui-conversation/tests/skeleton.client.spec.tsx
-@@ -684,6 +684,12 @@ describe('ConversationRoot resident composer', () => {
+@@ -689,14 +689,22 @@ describe('ConversationRoot resident composer', () => {
      // The agent-preset chip sits in the same row, for the same reason: both
      // choices are only open before the first message.
      expect(b.slotCalls).toContain('conversation.hero.agentPreset')
 +    expect(b.slotCalls).toContain('conversation.hero.actions')
-+  })
-+
+     expect(b.slotCalls).toContain('conversation.hero.options')
+   })
+ 
 +  it('omits blank-session Hero controls after a conversation starts', () => {
 +    const b = mount(sessionSnapshotOf({ blank: false }))
 +    expect(b.view.container.querySelector('[class*="heroWorkspaceRow"]')).toBeNull()
-   })
++  })
++
+   it('seats the New Session options after the agent-preset chip, and only for a Session', () => {
+     const b = mount(sessionSnapshotOf({ blank: true }))
+     const preset = within(b.view.container).getByTestId('view-conversation.hero.agentPreset')
+     const options = within(b.view.container).getByTestId('view-conversation.hero.options')
+-    expect(options.parentElement?.previousElementSibling).toBe(preset)
++    const actions = within(b.view.container).getByTestId('view-conversation.hero.actions')
++    expect(actions.previousElementSibling).toBe(preset)
++    expect(options.parentElement?.previousElementSibling).toBe(actions)
  
-   it('prompt failure renders the promptError strip (ordinary failure, no transaction UI)', () => {
+     const cold = mount(sessionSnapshotOf(), [], undefined, { sessionId: undefined })
+     expect(cold.slotCalls).toContain('conversation.hero.agentPreset')

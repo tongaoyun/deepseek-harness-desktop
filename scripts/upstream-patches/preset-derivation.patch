@@ -1,5 +1,5 @@
 diff --git a/docs/subsystems/core.i18n.yaml b/docs/subsystems/core.i18n.yaml
-index c4c106c066488b9f923a6dfb389e908ea8d09a27..0e0ef18a65326e5f1f259b7e806a5244205912ef 100644
+index 94bed7605494446cd4f40a308738b1ffe587c284..4722c6839a5b3608bf12f28119756efdf91eb2a2 100644
 --- a/docs/subsystems/core.i18n.yaml
 +++ b/docs/subsystems/core.i18n.yaml
 @@ -34,4 +34,7 @@
@@ -12,22 +12,22 @@ index c4c106c066488b9f923a6dfb389e908ea8d09a27..0e0ef18a65326e5f1f259b7e806a5244
 +  en: 6e37a40b4992cc7c
 +  zh: caeffe8f8a2b5f3f
 diff --git a/packages/client/ui-agent-preset/README.i18n.yaml b/packages/client/ui-agent-preset/README.i18n.yaml
-index 71819423094b8011229e92fffb36e212ba9b31ab..7c5955bfecb3404813e0ffeb636ef9b24ee636e0 100644
+index 6027efa51f039725b8e25ffdaf992b48ec36b338..1d456a3e197faba408a3263784cd9ead8e699e58 100644
 --- a/packages/client/ui-agent-preset/README.i18n.yaml
 +++ b/packages/client/ui-agent-preset/README.i18n.yaml
 @@ -18,8 +18,8 @@
-   en: d616984e840f036e
-   zh: 3e7c97c7d10669eb
+   en: e015215c32d78b52
+   zh: e8a8029903de7515
  /deepseek-ai-dsh-client-ui-agent-preset/understand-the-implementation:
--  en: b3221ef8bc6d8096
--  zh: 68cb05566249da10
-+  en: 61c7822f639c456a
-+  zh: e40884f8394853ff
+-  en: a90bf7539dbce636
+-  zh: d77c1fecac2c6a4b
++  en: e8b3ee63d981007d
++  zh: b2f4f41bfdb67808
  /deepseek-ai-dsh-client-ui-agent-preset/further-exploration:
    en: bbae8d79844bc481
    zh: 4302107fd1f460e6
 diff --git a/packages/client/ui-agent-preset/README.md b/packages/client/ui-agent-preset/README.md
-index 09df3e46f360198797fc90ae18466131a3c61d97..d63c734e55304e29fa9e43afe437091ea475edb5 100644
+index fdade6a4af4a81ffb9ea61d8c72064a658d61d62..77208dc25daa583beb45f0df7adb3d407bec54a6 100644
 --- a/packages/client/ui-agent-preset/README.md
 +++ b/packages/client/ui-agent-preset/README.md
 @@ -43,7 +43,7 @@ Entering Creator selects `cordis` for the receiving blank Session without changi
@@ -37,10 +37,10 @@ index 09df3e46f360198797fc90ae18466131a3c61d97..d63c734e55304e29fa9e43afe437091e
 -`agentPresets/list` supplies the roster and marks the current default, and `agentPresets/read` one declaration's YAML for the viewer; default changes write the `agent-preset-registry` settings namespace. The picker, blank-session synchronization and read-only session label use recorded preset identities. Connection resets and settings updates refresh the roster.
 +`agentPresets/list` supplies the roster and marks the current default, and `agentPresets/read` one declaration's YAML for the viewer; default changes write the `agent-preset-registry` settings namespace. The native picker and read-only session label resolve a hidden composition's `selectionBase` to display and select its base mode; Session logs retain the actual composition ID. Unknown or broken compositions and invalid base associations show a generic unavailable state without exposing private snapshot IDs or selecting a guessed mode. Hidden definitions never enter the picker. A new composition returned by selection or observed through Session updates refreshes the roster before resolving its display. Rejected selection preserves the current composition, and completed requests for a previous Session do not update another Session's display. Connection resets and settings updates also refresh the roster.
  
- `CreatePluginMenuItem` contributes to `plugins.add.actions` using the shared roster store. Its selection calls the owner's `onDismiss()` before the same `startCreatorDraft` callback exposed to Settings as `creatorDraft`. That callback stages `cordis` through `AgentPresetSeatController` and opens the task through `uiWorkspace.startSession` with explicit draft preservation; it can reuse a blank Session and applies the staged choice when a Session binding becomes available. The choice is consumed once applied. Both Coding Tools states use the same picker and selection store, and `AgentPresetSeat` renders refusals through the shared `Toast` component.
+ `CreatePluginMenuItem` contributes to `plugins.add.actions` using the shared roster store. Its selection calls the owner's `onDismiss()` before the same `startCreatorDraft` callback exposed to Settings as `creatorDraft`. That callback stages `cordis` through `AgentPresetSeatController` and opens the task through `uiWorkspace.startSession` with explicit draft preservation and `agentPreset: 'cordis'`, so the Host composes the reused blank or new Session under Creator; without a target Workspace, the staged choice applies when a Session binding becomes available. The choice is consumed once applied. Both Coding Tools states use the same picker and selection store, and `AgentPresetSeat` renders refusals through the shared `Toast` component.
  
 diff --git a/packages/client/ui-agent-preset/README.zh.md b/packages/client/ui-agent-preset/README.zh.md
-index 7514fc9953be9ee19f15b65d8a09e91aac3bc08f..8640a35d774973a69706a0f8b0686df0f3a4fd53 100644
+index eacce4171240d4df769cb5be7d91b56ba06bd9d3..b52edddab17b65050dce6c0308dbae501bae2cc0 100644
 --- a/packages/client/ui-agent-preset/README.zh.md
 +++ b/packages/client/ui-agent-preset/README.zh.md
 @@ -43,7 +43,7 @@ kind: "package-reference"
@@ -50,7 +50,7 @@ index 7514fc9953be9ee19f15b65d8a09e91aac3bc08f..8640a35d774973a69706a0f8b0686df0
 -`agentPresets/list` 提供列表并标记当前默认值，`agentPresets/read` 为查看器提供一条声明的 YAML；默认值的修改写入 `agent-preset-registry` settings 命名空间。选择器、空白会话同步和只读会话标签使用记录的 preset 标识。连接重置和设置更新会刷新列表。
 +`agentPresets/list` 提供列表并标记当前默认值，`agentPresets/read` 为查看器提供一条声明的 YAML；默认值的修改写入 `agent-preset-registry` settings 命名空间。原生选择器和只读会话标签通过隐藏组合的 `selectionBase` 展示并勾选基础模式，Session 日志保留实际组合 ID。未知或损坏组合及失效基础关联显示通用不可用状态，不暴露私有快照 ID，也不猜测并勾选其他模式。隐藏定义不进入选择器。选择返回或 Session 更新中出现新组合时，先刷新列表再解析展示名称。选择被拒绝时保留当前组合，前一 Session 的请求完成后不会更新另一 Session 的展示。连接重置和设置更新也会刷新列表。
  
- `CreatePluginMenuItem` 使用共享的预设列表 store，向 `plugins.add.actions` 贡献菜单项。选择时先调用页面传入的 `onDismiss()`，再调用与设置页 `creatorDraft` 相同的 `startCreatorDraft` 回调。该回调通过 `AgentPresetSeatController` 暂存 `cordis`，再通过显式保留草稿的 `uiWorkspace.startSession` 调用打开任务；它可以复用空白 Session，并在 Session 绑定可用时应用暂存选择。暂存选择应用后即清除。代码工作工具开启或关闭时均使用同一个选择器和选择 store，`AgentPresetSeat` 通过共享的 `Toast` 组件显示拒绝原因。
+ `CreatePluginMenuItem` 使用共享的预设列表 store，向 `plugins.add.actions` 贡献菜单项。选择时先调用页面传入的 `onDismiss()`，再调用与设置页 `creatorDraft` 相同的 `startCreatorDraft` 回调。该回调通过 `AgentPresetSeatController` 暂存 `cordis`，再通过显式保留草稿并传入 `agentPreset: 'cordis'` 的 `uiWorkspace.startSession` 调用打开任务，由 Host 以创造模式组合被复用的空白 Session 或新 Session；没有目标工作区时，暂存选择在 Session 绑定可用时应用。暂存选择应用后即清除。代码工作工具开启或关闭时均使用同一个选择器和选择 store，`AgentPresetSeat` 通过共享的 `Toast` 组件显示拒绝原因。
  
 diff --git a/packages/client/ui-agent-preset/src/client/AgentPresetLabel.tsx b/packages/client/ui-agent-preset/src/client/AgentPresetLabel.tsx
 index 26fdcfcbf69fc2222aa3007c32f1d1d3e0d9793e..8bf329c50c1699013526868ba22f9b73a533f860 100644
@@ -120,19 +120,19 @@ index 07e4aa84c8a6e06f08d288cddb54309ffbd0a9f1..7d5f4c78b513155b51eea1a9b4478af6
  
    // The introduce cue: the pick was staged from another screen (the settings
 diff --git a/packages/client/ui-agent-preset/src/client/index.ts b/packages/client/ui-agent-preset/src/client/index.ts
-index 184b7fd791c793f3af540074abe1f478802e9df6..91e03e0be743768541d26e3d538243ba9f610871 100644
+index 6fa0e3e4ad31327cc0de0459205ba93bc6a3d64e..21382b6d9ef7d77e8a927825bdae43c819441f5c 100644
 --- a/packages/client/ui-agent-preset/src/client/index.ts
 +++ b/packages/client/ui-agent-preset/src/client/index.ts
-@@ -77,7 +77,7 @@ export function apply(ctx: ClientContext): void {
-   const codingToolsDisabled = (): boolean => active && toolsSettings.getSnapshot().mode === 'host'
-     && toolsSettings.getSnapshot().value?.enabled === false
+@@ -76,7 +76,7 @@ export function apply(ctx: ClientContext): void {
+   // Host preferences start at false before their first accepted document.
+   const codingToolsDisabled = (): boolean => active && toolsSettings.getSnapshot().value?.enabled === false
    const controller = new AgentPresetSettingsController(ctx)
 -  const staged: AgentPresetStage = { id: undefined, introduce: false }
 +  const staged: AgentPresetStage = { revision: 0, id: undefined, introduce: false }
    const seats = new WeakMapWithValues<SessionBinding, AgentPresetSeatController>()
    const boundSeatDisposers = new Set<() => Promise<void>>()
    ctx.effect(() => async () => {
-@@ -112,6 +112,7 @@ export function apply(ctx: ClientContext): void {
+@@ -111,6 +111,7 @@ export function apply(ctx: ClientContext): void {
    const developerTools = ctx.configForms.developerTools.enabled
    ctx.effect(() => developerTools.subscribe(() => {
      if (developerTools.getSnapshot()) return
@@ -141,7 +141,7 @@ index 184b7fd791c793f3af540074abe1f478802e9df6..91e03e0be743768541d26e3d538243ba
      staged.introduce = false
      void unboundSeat.apply()
 diff --git a/packages/client/ui-agent-preset/src/client/locales.ts b/packages/client/ui-agent-preset/src/client/locales.ts
-index 1863c2e108cc4e139a25baaa3bcf4ee11ce8003b..14e07625545ece597db8a4fa84f13b0c2d273e90 100644
+index 49178ca5245540c9e98d3730bd702700e5f9a279..9748597a7b786af320d66957a12b0cc34fec2f66 100644
 --- a/packages/client/ui-agent-preset/src/client/locales.ts
 +++ b/packages/client/ui-agent-preset/src/client/locales.ts
 @@ -9,6 +9,7 @@ export type AgentPresetSettingsKey =
@@ -169,10 +169,10 @@ index 1863c2e108cc4e139a25baaa3bcf4ee11ce8003b..14e07625545ece597db8a4fa84f13b0c
  
    setDefault: '设为新任务默认',
 diff --git a/packages/client/ui-agent-preset/src/client/seat-store.ts b/packages/client/ui-agent-preset/src/client/seat-store.ts
-index dfa2c699456e10159e009423ebaad02743622f12..fc6d9fec08f3da8a759664a3e0692584f5221727 100644
+index 0a1860ba8603852b3ece12236bb77708c8f7cdc7..909bbcb76c57e1becf98304b4f9cd3391c5153db 100644
 --- a/packages/client/ui-agent-preset/src/client/seat-store.ts
 +++ b/packages/client/ui-agent-preset/src/client/seat-store.ts
-@@ -16,8 +16,8 @@ import type {} from '@deepseek-ai/dsh-api-remotes/client'
+@@ -18,8 +18,8 @@ import type {} from '@deepseek-ai/dsh-api-remotes/client'
  import type { SessionSummary } from '@deepseek-ai/dsh-api-session-controller/client'
  import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
  import type {} from '@deepseek-ai/dsh-agent-preset-registry/types'
@@ -183,7 +183,7 @@ index dfa2c699456e10159e009423ebaad02743622f12..fc6d9fec08f3da8a759664a3e0692584
  
  /** Hero-chip snapshot. */
  export interface AgentPresetSeatState {
-@@ -25,6 +25,8 @@ export interface AgentPresetSeatState {
+@@ -27,6 +27,8 @@ export interface AgentPresetSeatState {
    options: readonly AgentPresetOption[]
    /** The staged choice, empty until the roster loads. */
    current: string
@@ -192,7 +192,7 @@ index dfa2c699456e10159e009423ebaad02743622f12..fc6d9fec08f3da8a759664a3e0692584
    /** An error message; explicit selection failures also carry the preset for a Toast. */
    error: string | { readonly preset: AgentPresetOption; readonly reason: string } | null
    busy: boolean
-@@ -37,11 +39,13 @@ export interface AgentPresetSeatState {
+@@ -39,11 +41,13 @@ export interface AgentPresetSeatState {
  }
  
  const INITIAL: AgentPresetSeatState = {
@@ -207,7 +207,7 @@ index dfa2c699456e10159e009423ebaad02743622f12..fc6d9fec08f3da8a759664a3e0692584
    /** Preset awaiting application; absence means no staged choice. */
    id: string | undefined
    /** Whether the receiving chip should announce the applied choice once. */
-@@ -61,6 +65,12 @@ export class AgentPresetSeatController {
+@@ -63,6 +67,12 @@ export class AgentPresetSeatController {
  
    /** Only the newest roster read may publish after overlapping refreshes. */
    private loadGeneration = 0
@@ -220,7 +220,7 @@ index dfa2c699456e10159e009423ebaad02743622f12..fc6d9fec08f3da8a759664a3e0692584
    /** Completion of the active Host selection; Settings choices wait before staging. */
    private pendingSelection: Promise<undefined> | undefined
  
-@@ -71,7 +81,7 @@ export class AgentPresetSeatController {
+@@ -73,7 +83,7 @@ export class AgentPresetSeatController {
        SessionSummary,
        'id' | 'blank' | 'projectionValues'
      > | undefined,
@@ -229,7 +229,7 @@ index dfa2c699456e10159e009423ebaad02743622f12..fc6d9fec08f3da8a759664a3e0692584
    ) {}
  
    private set(patch: Partial<AgentPresetSeatState>): void {
-@@ -79,10 +89,65 @@ export class AgentPresetSeatController {
+@@ -81,10 +91,65 @@ export class AgentPresetSeatController {
    }
  
    private clearStage(): void {
@@ -295,7 +295,7 @@ index dfa2c699456e10159e009423ebaad02743622f12..fc6d9fec08f3da8a759664a3e0692584
    /**
     * Read the roster and open the chip on the Host-effective default.
    * @returns once the snapshot reflects the host.
-@@ -98,17 +163,24 @@ export class AgentPresetSeatController {
+@@ -100,17 +165,24 @@ export class AgentPresetSeatController {
        return
      }
      const { presets } = roster.value
@@ -322,7 +322,7 @@ index dfa2c699456e10159e009423ebaad02743622f12..fc6d9fec08f3da8a759664a3e0692584
        error: typeof error === 'object' ? error : null,
        introduce: this.staged.introduce,
      })
-@@ -142,9 +214,10 @@ export class AgentPresetSeatController {
+@@ -144,9 +216,10 @@ export class AgentPresetSeatController {
     * chip should announce itself on the session it lands on.
     */
    stage(id: string, introduce = false): void {
@@ -334,7 +334,7 @@ index dfa2c699456e10159e009423ebaad02743622f12..fc6d9fec08f3da8a759664a3e0692584
    }
  
    /** Acknowledge a displayed refusal without dismissing a newer attempt.
-@@ -201,18 +274,35 @@ export class AgentPresetSeatController {
+@@ -203,18 +276,35 @@ export class AgentPresetSeatController {
    async apply(): Promise<string | undefined> {
      if (this.store.getSnapshot().busy) return
      const staged = this.staged.id
@@ -374,7 +374,7 @@ index dfa2c699456e10159e009423ebaad02743622f12..fc6d9fec08f3da8a759664a3e0692584
        return
      }
      const completion = Promise.withResolvers<undefined>()
-@@ -221,13 +311,19 @@ export class AgentPresetSeatController {
+@@ -223,13 +313,19 @@ export class AgentPresetSeatController {
      const refuse = (reason: string) => {
        this.set({
          error: { reason, preset: this.store.getSnapshot().options.find(option => option.id === staged) ?? { id: staged } },
@@ -395,7 +395,7 @@ index dfa2c699456e10159e009423ebaad02743622f12..fc6d9fec08f3da8a759664a3e0692584
        if (!result.ok) {
          const { error } = result
          // Prefer the bare cause; the Toast already names the rejected preset.
-@@ -236,8 +332,15 @@ export class AgentPresetSeatController {
+@@ -238,8 +334,15 @@ export class AgentPresetSeatController {
            : error.message
          return refuse(refusal)
        }
@@ -413,7 +413,7 @@ index dfa2c699456e10159e009423ebaad02743622f12..fc6d9fec08f3da8a759664a3e0692584
      } finally {
        this.pendingSelection = undefined
 diff --git a/packages/client/ui-agent-preset/src/client/section-store.ts b/packages/client/ui-agent-preset/src/client/section-store.ts
-index 3ab2bdd2aa4f819e19b9b6d587d8cd96f93da5fb..f2d1bed2e7fe26cb71f0b1023cd9a28260a3860a 100644
+index 317543daf8879663b5b69266b358028c2a8dff99..e7c82355423d10059d8987262dbf1bb0eb6598e8 100644
 --- a/packages/client/ui-agent-preset/src/client/section-store.ts
 +++ b/packages/client/ui-agent-preset/src/client/section-store.ts
 @@ -47,7 +47,11 @@ export class AgentPresetSectionController {
@@ -517,7 +517,7 @@ index 6eb1ff6fd26226207ca4ece75109d09131cebdf8..068d6a80eba777a7b3754bd9ce3f09f6
    }
  
 diff --git a/packages/client/ui-agent-preset/tests/apply.client.spec.ts b/packages/client/ui-agent-preset/tests/apply.client.spec.ts
-index f23bde9a6e417868efb29c15ae434650a41c5cd7..ef844ba7ef48d5f8c55a1ed4eaf98b5768565051 100644
+index c891d1d6d449a970479da3017f194dc3c9532c53..407da1cfa306cb382eb34304346e83c8660b6187 100644
 --- a/packages/client/ui-agent-preset/tests/apply.client.spec.ts
 +++ b/packages/client/ui-agent-preset/tests/apply.client.spec.ts
 @@ -39,7 +39,7 @@ function developerTools(enabled = true): { configForms: { developerTools: { enab
@@ -540,7 +540,7 @@ index f23bde9a6e417868efb29c15ae434650a41c5cd7..ef844ba7ef48d5f8c55a1ed4eaf98b57
      ],
    },
  }
-@@ -59,18 +59,21 @@ const ROSTER_MOVED = {
+@@ -59,25 +59,28 @@ const ROSTER_MOVED = {
    ok: true as const,
    value: {
      presets: [
@@ -563,9 +563,8 @@ index f23bde9a6e417868efb29c15ae434650a41c5cd7..ef844ba7ef48d5f8c55a1ed4eaf98b57
 -  presets?: AgentPresetRow[]
 +  presets?: RowInput[]
    developerToolsEnabled?: boolean
-   memory?: boolean
  } = {}) {
-@@ -78,7 +81,7 @@ async function bench(options: {
+   const ctx = new Context()
    // The host's answer, mutable so a spec can move the default the way the
    // settings surface does and watch who re-reads it.
    let ROSTER: { ok: true; value: { presets: AgentPresetRow[] } } = options.presets === undefined
@@ -574,7 +573,7 @@ index f23bde9a6e417868efb29c15ae434650a41c5cd7..ef844ba7ef48d5f8c55a1ed4eaf98b57
    const moveDefault = (): void => { ROSTER = ROSTER_MOVED }
    await ctx.plugin(SlotRegistry).await()
    const locale = new LocaleRuntime(ctx)
-@@ -428,7 +431,7 @@ describe('ui-agent-preset apply', () => {
+@@ -426,7 +429,7 @@ describe('ui-agent-preset apply', () => {
      await section.load()
      await section.makeDefault('standard')
      expect(section.hooks.agentPresetSection.getSnapshot().rows)
@@ -583,7 +582,7 @@ index f23bde9a6e417868efb29c15ae434650a41c5cd7..ef844ba7ef48d5f8c55a1ed4eaf98b57
      await section.view('standard')
      expect(section.hooks.agentPresetSection.getSnapshot().view)
        .toEqual({ id: 'standard', title: 'standard', content: '# standard\n[]\n' })
-@@ -614,7 +617,7 @@ describe('ui-agent-preset apply', () => {
+@@ -612,7 +615,7 @@ describe('ui-agent-preset apply', () => {
        expect(seat.hooks.agentPresetSeat.getSnapshot().current).toBe('standard')
        state.byId.s1.projectionValues.agentPreset = 'minimal'
        sessions.notify()
@@ -592,7 +591,7 @@ index f23bde9a6e417868efb29c15ae434650a41c5cd7..ef844ba7ef48d5f8c55a1ed4eaf98b57
        expect(calls.filter(call => call.startsWith('select:'))).toEqual([])
  
        const selecting = seat.select('standard')
-@@ -700,7 +703,7 @@ describe('ui-agent-preset apply', () => {
+@@ -698,7 +701,7 @@ describe('ui-agent-preset apply', () => {
        .inject as unknown as () => AgentPresetSectionInjected)()
      await section.load()
      expect(section.hooks.agentPresetSection.getSnapshot().rows)
@@ -601,7 +600,7 @@ index f23bde9a6e417868efb29c15ae434650a41c5cd7..ef844ba7ef48d5f8c55a1ed4eaf98b57
  
      await section.makeDefault('minimal')
  
-@@ -1241,7 +1244,7 @@ describe('AgentPresetSeatController reconciliation', () => {
+@@ -1212,7 +1215,7 @@ describe('AgentPresetSeatController reconciliation', () => {
      requests[1]!.outcome.resolve(refuseLatest ? refusal : { ok: true, value: 'cordis' })
      await expect(settings).resolves.toBe(refuseLatest ? 'selection refused' : undefined)
      expect(controller.store.getSnapshot()).toMatchObject({
@@ -769,7 +768,7 @@ index 79cc930e013a8726b9c8c908bd54e1e2fb46d92e..9e9fc550fc662c46ea613f0f9fd41416
  
    it('renders nothing, and reads no roster, when the session records no preset', async () => {
 diff --git a/packages/client/ui-agent-preset/tests/create-plugin-menu-item.client.spec.tsx b/packages/client/ui-agent-preset/tests/create-plugin-menu-item.client.spec.tsx
-index d1ecedaa66a0a7c3784a66a5f060ea00a71b5be5..c9ad39c0ab4ad766d0e2d02e6795f81b66ea647d 100644
+index 578234c8980a1e174ebdd4c5e5f9e67428aabfaa..1513866ea1521069fccc4a78251f468e88808f51 100644
 --- a/packages/client/ui-agent-preset/tests/create-plugin-menu-item.client.spec.tsx
 +++ b/packages/client/ui-agent-preset/tests/create-plugin-menu-item.client.spec.tsx
 @@ -18,7 +18,8 @@ function unusedHook(): never {
@@ -782,7 +781,7 @@ index d1ecedaa66a0a7c3784a66a5f060ea00a71b5be5..c9ad39c0ab4ad766d0e2d02e6795f81b
    })
    const calls: string[] = []
    const startCreatorDraft = vi.fn(() => { calls.push('start') })
-@@ -81,7 +82,8 @@ describe('Create plugin menu item', () => {
+@@ -82,7 +83,8 @@ describe('Create plugin menu item', () => {
    it('disables the same entry when Creator leaves the roster', () => {
      const actions = view()
      const original = item()
@@ -1161,7 +1160,7 @@ index 0000000000000000000000000000000000000000..d25b161c9b1ca3de6b6471d24147ff39
 +  })
 +})
 diff --git a/packages/client/ui-agent-preset/tests/section-store.client.spec.ts b/packages/client/ui-agent-preset/tests/section-store.client.spec.ts
-index ba2d1841b92cdbf0890484c6ee8dadb072319b92..7762b06eba6462bcf2228c7c69e7970008d6170e 100644
+index f1a88d720a266cb8d11215f41454fe4922f297ae..d3b964909b5bc10f8019fbf4aa3a32b612e34d38 100644
 --- a/packages/client/ui-agent-preset/tests/section-store.client.spec.ts
 +++ b/packages/client/ui-agent-preset/tests/section-store.client.spec.ts
 @@ -5,13 +5,17 @@ import type { ConfigFormSnapshot } from '@deepseek-ai/dsh-client-ui-settings/cli
@@ -1174,7 +1173,7 @@ index ba2d1841b92cdbf0890484c6ee8dadb072319b92..7762b06eba6462bcf2228c7c69e79700
 +
  function fixture() {
    const form = createSnapshotStore<ConfigFormSnapshot<{ selectedDefault: string }>>({
-     status: 'ready', mode: 'host', writable: true, revision: 7, value: { selectedDefault: 'minimal' }, base: {}, user: {},
+     status: 'ready', writable: true, revision: 7, value: { selectedDefault: 'minimal' }, base: {}, user: {},
    })
    const remote = { agentPresets: {
      list: vi.fn(async (): Promise<{ ok: true; value: { presets: AgentPresetRow[] } }> => ({
@@ -1228,11 +1227,11 @@ index ba2d1841b92cdbf0890484c6ee8dadb072319b92..7762b06eba6462bcf2228c7c69e79700
  
    it.each(['ptc', 'minimal'])('saves Standard instead of built-in %s with the accepted revision', async (id) => {
 diff --git a/packages/client/ui-agent-preset/tests/section.client.spec.tsx b/packages/client/ui-agent-preset/tests/section.client.spec.tsx
-index 6505bceb7f16df24dabe9fc54c6946e3ad908815..d2617297cc2cf529be76479804d0013fd0e58c8a 100644
+index 78a4f599e3a4907289b476d7d589e36822346846..d5b1602dd9e6fea3047c423bb4a2586de4132b51 100644
 --- a/packages/client/ui-agent-preset/tests/section.client.spec.tsx
 +++ b/packages/client/ui-agent-preset/tests/section.client.spec.tsx
 @@ -4,6 +4,7 @@ import { afterEach, expect, it, vi } from 'vitest'
- import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
+ import { allowAllAccess, bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
  import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
  import { Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 +import type { AgentPresetRow } from '@deepseek-ai/dsh-agent-preset-registry/types'
@@ -1316,7 +1315,7 @@ index 73f412f564c649395fb29df21847543f71939938..a0a5eb7dc8015913ff0d63bcac327ed9
      },
    }
 diff --git a/packages/client/ui-plugin-manager/tests/browser-plugin.client.spec.tsx b/packages/client/ui-plugin-manager/tests/browser-plugin.client.spec.tsx
-index 8dbe936512d73034dc383c4353c30e77ac6f9ac9..52856522dc0998aec5eda237421cac65de17ad5f 100644
+index 3a5e468c686c5cfd4c0b4c7320868a08ae9af84d..4d2bb94d0b9bd4b6bdd343c2f5ed605c64f22c44 100644
 --- a/packages/client/ui-plugin-manager/tests/browser-plugin.client.spec.tsx
 +++ b/packages/client/ui-plugin-manager/tests/browser-plugin.client.spec.tsx
 @@ -145,7 +145,7 @@ describe('ui-plugin-manager browser plugin', () => {
@@ -1326,13 +1325,13 @@ index 8dbe936512d73034dc383c4353c30e77ac6f9ac9..52856522dc0998aec5eda237421cac65
 -    const glyph = render(<PluginsPanelIcon size={18} active={false}
 +    const glyph = render(<PluginsPanelIcon size={18} active={false} wide={false}
        usePanelInfo={unread} useSessions={unread} useSessionStatus={unread} useSessionRetainInfo={unread}
-       useWorkspaces={unread} useResource={unread} />)
+       useWorkspaces={unread} useResource={unread} {...allowAllAccess} />)
      expect(glyph.container.querySelector('svg')?.getAttribute('width')).toBe('18')
 diff --git a/packages/client/ui-schedule/tests/task-manager-page.client.spec.tsx b/packages/client/ui-schedule/tests/task-manager-page.client.spec.tsx
-index 52158d0ed20bcec92d7151f55c06f35d1173d8c1..7b81d23d2dbb707cfd9f8a61ce586839f9a7d7fe 100644
+index 7f29237374488e683a22d20e0fb69ba831ddf772..e64ba7c157e3c653d1eb53db472900ed7c275a3e 100644
 --- a/packages/client/ui-schedule/tests/task-manager-page.client.spec.tsx
 +++ b/packages/client/ui-schedule/tests/task-manager-page.client.spec.tsx
-@@ -1592,6 +1592,7 @@ describe('Task manager details', () => {
+@@ -1593,6 +1593,7 @@ describe('Task manager details', () => {
      return render(<TaskManagerIcon
        size={size}
        active={false}
@@ -1341,7 +1340,7 @@ index 52158d0ed20bcec92d7151f55c06f35d1173d8c1..7b81d23d2dbb707cfd9f8a61ce586839
        useSessions={unread}
        useWorkspaces={unread}
 diff --git a/packages/client/ui-settings-account/tests/apply.client.spec.ts b/packages/client/ui-settings-account/tests/apply.client.spec.ts
-index 78ebf132c8568f3cae882a53d3e9adcb63b9827b..f32ed50693ded95fbd15b52b8d2b72fd283a0164 100644
+index bff9c03b3e916d7b3d38f167dd553f27fdb2dfae..6437762f72d305ba41851cff8579863ad3b9cf27 100644
 --- a/packages/client/ui-settings-account/tests/apply.client.spec.ts
 +++ b/packages/client/ui-settings-account/tests/apply.client.spec.ts
 @@ -19,6 +19,7 @@ import type { AccountSectionInjected } from '../src/client/AccountSection.tsx'
@@ -1363,17 +1362,16 @@ index 78ebf132c8568f3cae882a53d3e9adcb63b9827b..f32ed50693ded95fbd15b52b8d2b72fd
    return injected as AccountSectionInjected
  }
  /** The account take-over registered into the Chat-owned frame-wide quota notice chain. */
-@@ -69,7 +72,8 @@ it('keeps account UI and account RPC inactive in a plain browser, including afte
+@@ -69,7 +72,7 @@ it('registers account sign-in in a plain browser without the Desktop-only surfac
    for (const reload of [false, true]) {
      if (reload) await c.reload(SELF)
-     await c.flush()
--    expect(c.ctx.slots.entries('settings.launcher')).toHaveLength(0)
-+    expect(c.ctx.slots.entries('settings.launcher')
-+      .some(entry => entry.component === AccountMenu)).toBe(false)
-     expect(c.ctx.slots.entries('settings.models.sign-in')).toHaveLength(0)
-     expect(c.ctx.slots.entries('settings.section').some(entry => entry.options.id === 'account')).toBe(false)
-     expect(quotaNoticeEntry(c)).toBeUndefined()
-@@ -152,7 +156,8 @@ it('shares account actions across seats, publishes dialog ownership, and opens c
+     await c.mock.streams.opened('account/watch', reload ? 2 : 1)
+-    expect(c.ctx.slots.entries('settings.launcher')).toHaveLength(1)
++    expect(c.ctx.slots.entries('settings.launcher').filter(entry => entry.component === AccountMenu)).toHaveLength(1)
+     expect(c.ctx.slots.entries('settings.models.sign-in')).toHaveLength(1)
+     expect(quotaNoticeEntry(c)).toBeDefined()
+     expect(platformHostEntry(c)).toBeUndefined()
+@@ -151,7 +154,8 @@ it('shares account actions across seats, publishes dialog ownership, and opens c
    expect(signedOutAgain.searchParams.has('prefill_uid')).toBe(false)
    expect(signedOutAgain.searchParams.get('hide_uid')).toBe('1')
    await c.unload(SELF)
@@ -1384,7 +1382,7 @@ index 78ebf132c8568f3cae882a53d3e9adcb63b9827b..f32ed50693ded95fbd15b52b8d2b72fd
  
  it('prefills the native device description from the Desktop bridge on every click', async ({ start }) => {
 diff --git a/packages/preset/agent-preset-registry/README.i18n.yaml b/packages/preset/agent-preset-registry/README.i18n.yaml
-index 19984aa48e39e7429959ceb3f6cdee81e26ad0c8..a702d3c8a8f3c4898c95a83bf0a0c1a60312a78a 100644
+index ae11417a4594c4c4303b60f1022e2b79cb2cc7f3..f339128a2a33cf63c717f5ac627067e391fbb077 100644
 --- a/packages/preset/agent-preset-registry/README.i18n.yaml
 +++ b/packages/preset/agent-preset-registry/README.i18n.yaml
 @@ -18,8 +18,8 @@
@@ -1396,10 +1394,10 @@ index 19984aa48e39e7429959ceb3f6cdee81e26ad0c8..a702d3c8a8f3c4898c95a83bf0a0c1a6
 +  en: 920ce74b9b96bd09
 +  zh: 608908188fc4d844
  /deepseek-ai-dsh-agent-preset-registry/understand-the-implementation:
-   en: 1d479971c0adc694
-   zh: abc84b7220c9b5d5
+   en: 7df811c1347b9a94
+   zh: 141a7feb5ca597fe
 diff --git a/packages/preset/agent-preset-registry/README.md b/packages/preset/agent-preset-registry/README.md
-index 9de2a411071531e92d7f13b04cfa53f1750b2899..4227b198f3e484e01b88283bab41c39991ae9f55 100644
+index 02530d05d3fcf28a672b9811cb7092a51ce86516..70d7d0183e019587b8d6d4d922219dac70aa391a 100644
 --- a/packages/preset/agent-preset-registry/README.md
 +++ b/packages/preset/agent-preset-registry/README.md
 @@ -47,6 +47,10 @@ The Web definitions come from the `dsh-web-app` bundle. Definitions are ordinary
@@ -1414,7 +1412,7 @@ index 9de2a411071531e92d7f13b04cfa53f1750b2899..4227b198f3e484e01b88283bab41c399
  ## Understand the implementation
  
 diff --git a/packages/preset/agent-preset-registry/README.zh.md b/packages/preset/agent-preset-registry/README.zh.md
-index 96ce2c18c5a160b116adbdcd1d8355f6fd09c403..2cdb000c909335e161c1a770e18f5cc2c3298b30 100644
+index 334a72fd96ac588705b626523d4aa72b04ad5801..d7dbe7029bd7acd3b4f553055a8241a6bbb9affb 100644
 --- a/packages/preset/agent-preset-registry/README.zh.md
 +++ b/packages/preset/agent-preset-registry/README.zh.md
 @@ -47,6 +47,10 @@ Web 内置定义来自 `dsh-web-app` bundle。定义使用普通插件行；注
@@ -1451,7 +1449,7 @@ index 548ad5623b30e7612c185d5b722c9e9e3a68655f..db42d6790b2b4fda49d09d9f4537932f
  }
  
 diff --git a/packages/preset/agent-preset-registry/src/index.ts b/packages/preset/agent-preset-registry/src/index.ts
-index 050092290485c431bd93f216cf740dad68e3fd84..511de1e99df4de696dd60d8ebda1f49729774c27 100644
+index c76d7bba065247a6de3212c182ffd057f4aeb477..b9701527a2dbdeb1722875005c17af49e46c6e54 100644
 --- a/packages/preset/agent-preset-registry/src/index.ts
 +++ b/packages/preset/agent-preset-registry/src/index.ts
 @@ -23,6 +23,16 @@ export type { AgentPresetInspection } from './composition-inventory.ts'
@@ -1602,16 +1600,21 @@ index 050092290485c431bd93f216cf740dad68e3fd84..511de1e99df4de696dd60d8ebda1f497
    private async retain(id?: string): Promise<Generation> {
      const wanted = id ?? this.defaultId
      while (true) {
-@@ -350,7 +412,12 @@ export class AgentPresetRegistry extends TypertRemoteService {
+@@ -352,10 +414,15 @@ export class AgentPresetRegistry extends TypertRemoteService {
        if (boundary !== undefined && (boundary.openTurnStartSeq !== null || boundary.lastTurn > 0)) {
          throw new RemoteError('agent-preset/locked', 'This session has already started', { sessionId: agent.id, agentPreset })
        }
--      const preset = await this.recompose(agent.ctx, agentPreset)
+-      const current = this.definitions.get(agentPreset)?.generation
 +      const resolved = await this.owner.waterfall('agent-preset/resolve-selection', agent, agentPreset, () => Promise.resolve(agentPreset))
 +      const latest = this.owner.sessionProjections.stateOf(agent.session, 'turnBoundary')
 +      if (latest !== undefined && (latest.openTurnStartSeq !== null || latest.lastTurn > 0)) {
 +        throw new RemoteError('agent-preset/locked', 'This session has already started', { sessionId: agent.id, agentPreset })
 +      }
++      const current = this.definitions.get(resolved)?.generation
+       if (current !== undefined && this.generationFor(agent.ctx) === current
+-        && this.owner.sessionProjections.stateOf(agent.session, 'agentPreset') === agentPreset) return agentPreset
+-      const preset = await this.recompose(agent.ctx, agentPreset)
++        && this.owner.sessionProjections.stateOf(agent.session, 'agentPreset') === resolved) return resolved
 +      const preset = await this.recompose(agent.ctx, resolved)
        agent.session.append('agent-preset/selected', { agentPreset: preset.id })
        return preset.id
@@ -1832,7 +1835,7 @@ index 0000000000000000000000000000000000000000..0e4b29167a613525afe4df4f2654e38d
 +  expect(await ctx.agentPresets.list()).toEqual([])
 +})
 diff --git a/packages/preset/agent-preset-registry/tests/registry.spec.ts b/packages/preset/agent-preset-registry/tests/registry.spec.ts
-index 04ab9c0096219cc76108c2994fb1753bf12ad00c..6ccdf217df4bc7f198274dd96368cb138ee539e1 100644
+index 2456c862f0e62a37df201e7e536594f0b632656e..17e9c544f9db7da73167db1920fc6881b7798a7a 100644
 --- a/packages/preset/agent-preset-registry/tests/registry.spec.ts
 +++ b/packages/preset/agent-preset-registry/tests/registry.spec.ts
 @@ -87,6 +87,27 @@ describe('declarative preset revisions', () => {
@@ -1958,7 +1961,7 @@ index 2e718fa4543e6fe6e0c562044bf20e372000b071..66aebc7c01867c96687d6589b02c8562
      plugins: z.array(z.any()).required(),
    }) as z<Config>
 diff --git a/scripts/type-equiv.manifest.json b/scripts/type-equiv.manifest.json
-index 37f21e08c1f17062c6dc4e7e44ffa72253d08324..9380a6415a3677067377d7c39ee26d4d2b65ecf4 100644
+index 637c9d7bf5018356e19b7f7205fb1fa9027cefc9..e808a8d8bf2f8ee45b9ff74c308e35f643fc0d2f 100644
 --- a/scripts/type-equiv.manifest.json
 +++ b/scripts/type-equiv.manifest.json
 @@ -1,6 +1,16 @@

@@ -26,19 +26,19 @@ baseline: false
 changes:
   - root: "event:agent/inbox/spliced"
     previous: "2026-10-09-product-installed-skill-attribution"
-    after: "71ce9a33cecea3f77cc29c03c7965b350912fcc65029503287e0c02b2239b235"
+    after: "58d07e6499911de16a7b93bc6b9d8487fe5a4f788d2438072e3a137af44deeda"
     decision: same-version
   - root: "event:developer/message"
     previous: "2026-10-09-product-installed-skill-attribution"
-    after: "cb06b76c4ceaa0b3a859c94d7d1256f7c6871049b9be2d84706eb9690274dc16"
+    after: "73fa50c739eb21fca8ca14443699b72090e5bc6ae962fd4d277fffa44da97235"
     decision: same-version
   - root: "event:session/title-llm-request"
     previous: "2026-10-09-product-installed-skill-attribution"
-    after: "8e528afc7b6116c0e76fcf8a222aa8f9754c53e554d20633efa8632d412a77e2"
+    after: "5cce146af6ebad4ca2cafc99ec1852cd323477bfd836fa3539596de9d3a86ab8"
     decision: same-version
   - root: "event:user/message"
     previous: "2026-10-09-product-installed-skill-attribution"
-    after: "fe9edd76dbfb375127cf708914d2b7043f2fb135d884b73b77a65d30153bd618"
+    after: "f3116a318f37233d46978e253374f7964fba7742af47f6579b72f9770fa39096"
     decision: same-version
 ```
 
