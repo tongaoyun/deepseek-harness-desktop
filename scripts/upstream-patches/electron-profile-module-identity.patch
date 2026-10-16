@@ -1,20 +1,20 @@
 diff --git a/packages/boot/app-boot/README.i18n.yaml b/packages/boot/app-boot/README.i18n.yaml
-index 20dc764eec7d11a46e592c22e261f2503f492d07..cccc1085e75f69b7516e6ad02b53e786998f5848 100644
+index c13fb647d12be61a66e2775cf7e893dbb105b91e..fc98421789a9ba68485ce10f0eafcf9ed53ccd96 100644
 --- a/packages/boot/app-boot/README.i18n.yaml
 +++ b/packages/boot/app-boot/README.i18n.yaml
 @@ -24,8 +24,8 @@
    en: 4a424cd401556f20
    zh: 0b34dd18e0db6cea
  /deepseek-ai-dsh-app-boot/use-this-package/profiles:
--  en: d50b0fdaf62353dd
--  zh: 0fccb6968602e5de
-+  en: 2064c26cd771e5ba
-+  zh: 114c5f416f940fbe
+-  en: d2d520668668292c
+-  zh: b7deeab27032a3ad
++  en: 86e225074157a340
++  zh: 7f1d53f09cc74859
  /deepseek-ai-dsh-app-boot/use-this-package/previewing-the-effective-configuration:
    en: 646a0ccdd7881ad1
    zh: e3696acb1573dd7b
 diff --git a/packages/boot/app-boot/README.md b/packages/boot/app-boot/README.md
-index 093c79252b192e5ddeaa674a3f987d3cf163607e..5a505e04f373fdbe8fd60d4f4b283ab59da4af96 100644
+index 59c38476da21b74b0bf18e46c4c2298cd2919cf6..00527c5de68f2561cdb04eef38d682632ce67405 100644
 --- a/packages/boot/app-boot/README.md
 +++ b/packages/boot/app-boot/README.md
 @@ -64,7 +64,7 @@ The enabled `dsh-hmr` plugin watches the profile manifest and both user patch fi
@@ -27,10 +27,10 @@ index 093c79252b192e5ddeaa674a3f987d3cf163607e..5a505e04f373fdbe8fd60d4f4b283ab5
  `sanitizeProfile(binName, profileDir, bundles)` provides filesystem recovery without loading plugins or parsing patches. Desktop uses it for native fatal recovery. Call it only after stopping the profile and excluding concurrent profile writes. It renames the profile’s `cordis.patch.yml` to a unique `.bak-<timestamp>` sibling and restores the supplied bundle list, preserving installed packages and other manifest fields. The timestamp is Unix time in milliseconds; collisions append an ordinal (`-1`, `-2`, …) without changing it. It returns the backup path, or `undefined` when no patch exists; missing profiles remain absent. Profile initialization recreates an empty patch on the next launch. The home-level patch is unchanged. Invalid profile JSON fails before mutation; later errors propagate and retain completed changes for retry.
  
 diff --git a/packages/boot/app-boot/README.zh.md b/packages/boot/app-boot/README.zh.md
-index 379d602176cf56e2586fb461b1cb1d99a766a76b..875ce0363c6c917ff35043f04f35e873a4be484f 100644
+index 73e383e04abae90ac2a0c13f55ddc3376c7a0a95..19f09507fb87cb8815047975a38d2e093e28cfb7 100644
 --- a/packages/boot/app-boot/README.zh.md
 +++ b/packages/boot/app-boot/README.zh.md
-@@ -64,7 +64,7 @@ profile 导入插件前，DSH 会检查其 `peerDependencies` 中对 `@deepseek-
+@@ -64,7 +64,7 @@ profile 导入插件前，DSH 会将其声明的 DSH 版本要求与 `getDshRunt
  
  插入条目的插件名可以是绝对文件系统路径、文件 URL 或包标识符。patch 加载会把 `insert` 条目及其嵌套分组中的绝对路径以及相对于 patch 文件的 `./` 或 `../` 路径转换为文件 URL；对已有条目名称的断言及替换用的 `config` 值保持原样。
  
@@ -40,10 +40,10 @@ index 379d602176cf56e2586fb461b1cb1d99a766a76b..875ce0363c6c917ff35043f04f35e873
  `sanitizeProfile(binName, profileDir, bundles)` 提供文件恢复，无需加载插件或解析 patch。Desktop 在原生致命错误恢复中调用它。调用前必须停止 profile 并排除并发 profile 写入。它将 profile 的 `cordis.patch.yml` 重命名为带唯一 `.bak-<timestamp>` 后缀的同目录备份，并恢复调用方指定的 bundle 列表，保留已安装包和其他 manifest 字段。时间戳为 Unix 毫秒数；同名备份已存在时追加序号（`-1`、`-2`、……），时间戳保持不变。返回值为备份路径；patch 不存在时返回 `undefined`，缺失的 profile 不会被创建。下次启动的 profile 初始化会重新创建空 patch。home 级 patch 不变。无效 profile JSON 在修改前报错；后续错误向调用方抛出，保留已完成的修改供重试。
  
 diff --git a/packages/boot/app-boot/src/profile-resolution/resolver.ts b/packages/boot/app-boot/src/profile-resolution/resolver.ts
-index 85c530665df2e94e0d9c9355daca29da0536d26f..2fe3402d92e17ea7ff1c41abc9fbaf040a29c2ed 100644
+index 60fce4f032709d2702dbe9f2043822484edcd681..30a0bc3a447b630ecbec0a73ac6425b36c4ba1ca 100644
 --- a/packages/boot/app-boot/src/profile-resolution/resolver.ts
 +++ b/packages/boot/app-boot/src/profile-resolution/resolver.ts
-@@ -155,7 +155,7 @@ export function barePackageName(request: string): string | undefined {
+@@ -184,7 +184,7 @@ function realSpellings(path: string): string[] {
  
  function canonicalPath(path: string): string {
    try {
@@ -52,7 +52,7 @@ index 85c530665df2e94e0d9c9355daca29da0536d26f..2fe3402d92e17ea7ff1c41abc9fbaf04
    } catch {
      // A runtime resolution may name a profile scope before that directory is materialized.
      return resolve(path)
-@@ -712,7 +712,21 @@ export function installRuntimeInterception(
+@@ -833,7 +833,21 @@ export function installRuntimeInterception(
    const router = new ResolutionRouter(resolution, directory => cjs._nodeModulePaths(directory))
    let delegatedEsm: { parent: string | undefined; request: string } | undefined
  
@@ -76,10 +76,10 @@ index 85c530665df2e94e0d9c9355daca29da0536d26f..2fe3402d92e17ea7ff1c41abc9fbaf04
        const delegated = delegatedEsm
        /* v8 ignore next -- reentry requires a separate synchronous Node hook; supported launches install none */
 diff --git a/packages/boot/app-boot/tests/profile-resolution.spec.ts b/packages/boot/app-boot/tests/profile-resolution.spec.ts
-index 82cf24b0eaaeb3062702740f81c14206fd4a0396..2810ab515de161e0c1fa54de2e5ab0d82f9fa313 100644
+index b56d1a17748ec7706538d29d717cb0552999ebe4..8d7d4a5acdad2185672b2d49d3902cdc0e23380e 100644
 --- a/packages/boot/app-boot/tests/profile-resolution.spec.ts
 +++ b/packages/boot/app-boot/tests/profile-resolution.spec.ts
-@@ -175,6 +175,32 @@ async function resolutionOf(f: ReturnType<typeof fixture>): Promise<RuntimeResol
+@@ -176,6 +176,32 @@ async function resolutionOf(f: ReturnType<typeof fixture>): Promise<RuntimeResol
    })
  }
  

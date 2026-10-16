@@ -12,7 +12,7 @@ index 4950c70b27ea1fffcc324c64101d01b43d5fa755..1bc6abd969e7b887b0b7936ab82e1cc1
  DSH_DESKTOP_MANDATORY_UPDATE_PROD_ORIGIN=
  # Set approved login origins for test builds; omit allowedAuthOrigins for production.
 diff --git a/apps/desktop/scripts/desktop-auto-update-environment.mjs b/apps/desktop/scripts/desktop-auto-update-environment.mjs
-index 464d079b4dd6aeea5265b731ac2f7b13909f1e4d..1f4f3d07d5732b2b14023af1f4f22ac5026357a0 100644
+index a1973a9c64e28dcfb7313018ef7a8760876e61a0..4a642e77037a2d5cdaed5f998000e2d92cc03622 100644
 --- a/apps/desktop/scripts/desktop-auto-update-environment.mjs
 +++ b/apps/desktop/scripts/desktop-auto-update-environment.mjs
 @@ -1,4 +1,4 @@
@@ -21,7 +21,7 @@ index 464d079b4dd6aeea5265b731ac2f7b13909f1e4d..1f4f3d07d5732b2b14023af1f4f22ac5
  
  import { valid } from 'semver'
  
-@@ -119,6 +119,53 @@ function httpsOrigin(value, name) {
+@@ -132,6 +132,53 @@ function httpsOrigin(value, name) {
    return parsed.origin
  }
  
@@ -75,8 +75,8 @@ index 464d079b4dd6aeea5265b731ac2f7b13909f1e4d..1f4f3d07d5732b2b14023af1f4f22ac5
  /**
   * Resolve the public updater URL and object prefixes for one release target.
   * @param {NodeJS.ProcessEnv} env - Packaging or upload environment.
-@@ -130,6 +177,8 @@ function httpsOrigin(value, name) {
- export function resolveDesktopAutoUpdateConfig(env, platform, arch) {
+@@ -144,6 +191,8 @@ export function resolveDesktopAutoUpdateConfig(env, platform, arch) {
+   const channel = resolveDesktopUpdateChannel(env)
    const environment = resolveDesktopAutoUpdateEnvironment(env)
    const target = resolveDesktopAutoUpdateTarget(platform, arch)
 +  const gitea = resolveGiteaUpdateConfig(env, target, environment)
@@ -84,7 +84,7 @@ index 464d079b4dd6aeea5265b731ac2f7b13909f1e4d..1f4f3d07d5732b2b14023af1f4f22ac5
    const deployment = UPDATE_ENVIRONMENTS[environment]
    let origin = deployment.fixedOrigin
    if (origin === undefined) {
-@@ -165,6 +214,9 @@ export function resolveDesktopAutoUpdateConfig(env, platform, arch) {
+@@ -180,6 +229,9 @@ export function resolveDesktopAutoUpdateConfig(env, platform, arch) {
   * @throws {Error} When the selected deployment lacks a bucket or valid updater configuration.
   */
  export function resolveDesktopUploadConfig(env, platform, arch) {
@@ -95,10 +95,10 @@ index 464d079b4dd6aeea5265b731ac2f7b13909f1e4d..1f4f3d07d5732b2b14023af1f4f22ac5
    const deployment = UPDATE_ENVIRONMENTS[update.environment]
    return {
 diff --git a/apps/desktop/scripts/desktop-package-environment.mjs b/apps/desktop/scripts/desktop-package-environment.mjs
-index 51b878100a0c04a4f7357edbca11445e27dcce07..a346d6aa3ad3b3599f0a965d921744534e37fc53 100644
+index 8116dea2453f955ddb138d2d6e4b631b475f773b..97bb9108132eb9e272c9f3348afe7648caac9d30 100644
 --- a/apps/desktop/scripts/desktop-package-environment.mjs
 +++ b/apps/desktop/scripts/desktop-package-environment.mjs
-@@ -92,7 +92,7 @@ function requireReadableFile(environment, name) {
+@@ -136,7 +136,7 @@ function requireReadableFile(environment, name) {
  export function validateDesktopPackageEnvironment(environment, target, options = {}) {
    resolveDesktopAppId(environment)
    resolveNpmRegistry(environment)
@@ -108,7 +108,7 @@ index 51b878100a0c04a4f7357edbca11445e27dcce07..a346d6aa3ad3b3599f0a965d92174453
    else resolveWindowsPackageSettings(environment)
    if (options.unsigned) return
 diff --git a/apps/desktop/tests/desktop-auto-update-environment.spec.ts b/apps/desktop/tests/desktop-auto-update-environment.spec.ts
-index c33a9384df71ece8d878ad7aba6a802093a2827b..f09c138929f3f70c83933536848297fb9f307997 100644
+index 9fbe629c8950cc3ef4abfe5d43d7ecc12fd943ff..51b531f42ad4dcf27c5799429cac8333d435b5e6 100644
 --- a/apps/desktop/tests/desktop-auto-update-environment.spec.ts
 +++ b/apps/desktop/tests/desktop-auto-update-environment.spec.ts
 @@ -58,6 +58,34 @@ describe('desktop auto-update environment', () => {
@@ -147,7 +147,7 @@ index c33a9384df71ece8d878ad7aba6a802093a2827b..f09c138929f3f70c83933536848297fb
      expect(resolveDesktopAutoUpdateConfig({
        DSH_DESKTOP_AUTO_UPDATE_ENV: 'production',
 diff --git a/apps/desktop/tests/desktop-package-environment.spec.ts b/apps/desktop/tests/desktop-package-environment.spec.ts
-index a892a8548a3c87705420961179ac1426381a6288..d4e43fa02f2a6e030d872958446b1c475c50217b 100644
+index 1c3eb02fc024d836a850f854f328975bb4de1095..48bc89d72678a8df9de61ced2b12dd1445e2b878 100644
 --- a/apps/desktop/tests/desktop-package-environment.spec.ts
 +++ b/apps/desktop/tests/desktop-package-environment.spec.ts
 @@ -137,7 +137,7 @@ describe('Desktop local packaging configuration', () => {

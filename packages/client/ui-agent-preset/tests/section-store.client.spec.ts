@@ -11,7 +11,7 @@ const completeRow = (row: RowInput): AgentPresetRow => ({ selectable: true, defa
 
 function fixture() {
   const form = createSnapshotStore<ConfigFormSnapshot<{ selectedDefault: string }>>({
-    status: 'ready', mode: 'host', writable: true, revision: 7, value: { selectedDefault: 'minimal' }, base: {}, user: {},
+    status: 'ready', writable: true, revision: 7, value: { selectedDefault: 'minimal' }, base: {}, user: {},
   })
   const remote = { agentPresets: {
     list: vi.fn(async (): Promise<{ ok: true; value: { presets: AgentPresetRow[] } }> => ({
@@ -165,7 +165,7 @@ describe('Coding Tools default reconciliation', () => {
 
   it.each([
     { status: 'loading' as const }, { status: 'unavailable' as const },
-    { mode: 'memory' as const }, { writable: false }, { revision: undefined },
+    { writable: false }, { revision: undefined },
   ])('does not write without a writable accepted Host form: %j', async (patch) => {
     const f = setup()
     f.form.set({ ...f.form.getSnapshot(), ...patch })

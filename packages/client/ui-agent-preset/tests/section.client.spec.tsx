@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
-import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
+import { allowAllAccess, bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { AgentPresetRow } from '@deepseek-ai/dsh-agent-preset-registry/types'
@@ -29,6 +29,7 @@ function view(partial: ViewInput = {}, startCreatorDraft?: () => void, outerClos
     ...(startCreatorDraft === undefined ? {} : { startCreatorDraft }),
     usePanelInfo: unusedHook, useSessions: unusedHook, useSessionStatus: unusedHook, useSessionRetainInfo: unusedHook,
     useWorkspaces: unusedHook, useResource: unusedHook,
+    ...allowAllAccess,
     useAgentPresetSection: bindSnapshotSelector(store),
     useDeveloperTools: bindSnapshotSelector(developerTools),
     t: key => translations.get(key) ?? key }

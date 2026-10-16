@@ -21,7 +21,7 @@ index 0000000000000000000000000000000000000000..4a48c874668d2ea14bccf211978ad123
 +  })
 +})
 diff --git a/scripts/markdown.ts b/scripts/markdown.ts
-index f221d1c342b9fe25440b21f9c8583949f5c019f4..09c4daeca527afc7c914a3427db14f209ed4eb08 100644
+index d16d88cc9b0eb1624e6a837eb83df87d2d654a07..57dc01fb5c6ccd6365522a526fcf2abdd9282543 100644
 --- a/scripts/markdown.ts
 +++ b/scripts/markdown.ts
 @@ -44,6 +44,25 @@ export function parseMarkdown(source: string): Nodes {
@@ -150,15 +150,15 @@ index f9bb1549a2395e139e66d2f7e51f1c5df482c97e..d2afc1b99bea41aab89beb9cb2766f98
    ]
  }
 diff --git a/scripts/verify-package-readme-limitations.ts b/scripts/verify-package-readme-limitations.ts
-index 4f640823651d11fd790acc73fe6b607c06943942..d84c739cb5a6aaae819109e259c856dd10258d10 100644
+index 5330165b522e036e4bbb60ab1e7c0666c0aa8822..fc456d62564d6408dc46edd4bc463a31948640d5 100644
 --- a/scripts/verify-package-readme-limitations.ts
 +++ b/scripts/verify-package-readme-limitations.ts
 @@ -8,7 +8,7 @@
  
  import { existsSync, globSync, readFileSync } from 'node:fs'
  import { resolve, sep } from 'node:path'
--import { markdownHeadingLines, markdownProseLines } from './markdown.ts'
-+import { markdownHeadingLines, markdownProseLines, markdownValidationSource } from './markdown.ts'
+-import { markdownHeadingLines, markdownProseLines, parseMarkdown } from './markdown.ts'
++import { markdownHeadingLines, markdownProseLines, markdownValidationSource, parseMarkdown } from './markdown.ts'
  
  const root = resolve(import.meta.dirname, '..')
  
@@ -168,23 +168,23 @@ index 4f640823651d11fd790acc73fe6b607c06943942..d84c739cb5a6aaae819109e259c856dd
    }
 -  const source = readFileSync(resolve(root, readme), 'utf8')
 +  const source = markdownValidationSource(readFileSync(resolve(root, readme), 'utf8'))
-   const lines = markdownProseLines(source)
-   const headings = markdownHeadingLines(source)
-   const limitations = headings.filter(heading => isLimitationsLike(heading.text))
+   const tree = parseMarkdown(source)
+   const lines = markdownProseLines(source, tree)
+   const headings = markdownHeadingLines(source, tree)
 diff --git a/scripts/verify-package-readme-model-experience.ts b/scripts/verify-package-readme-model-experience.ts
-index 5aa525a4d6f8729329337d2b7fcc4fceb2cbd636..4b4aefb7d6584e5cf9de98dd13f6615780485dd5 100644
+index a2056fb597a9b071ac9391a59e257922585935b1..a676cf49c2c1069bd73d1a9a359bc264b57a9aba 100644
 --- a/scripts/verify-package-readme-model-experience.ts
 +++ b/scripts/verify-package-readme-model-experience.ts
 @@ -7,7 +7,7 @@
  
  import { existsSync, globSync, readFileSync } from 'node:fs'
  import { relative, resolve, sep } from 'node:path'
--import { markdownHeadingLines, markdownProseLines, type MarkdownProseLine } from './markdown.ts'
-+import { markdownHeadingLines, markdownProseLines, markdownValidationSource, type MarkdownProseLine } from './markdown.ts'
+-import { markdownHeadingLines, markdownProseLines, parseMarkdown, type MarkdownProseLine } from './markdown.ts'
++import { markdownHeadingLines, markdownProseLines, markdownValidationSource, parseMarkdown, type MarkdownProseLine } from './markdown.ts'
  
  const root = resolve(import.meta.dirname, '..')
  const HEADING = '## Model Experience'
-@@ -301,9 +301,9 @@ function validateNestedVerbatim(raw: readonly string[], fragments: Set<string>):
+@@ -306,9 +306,9 @@ function validateNestedVerbatim(raw: readonly string[], fragments: Set<string>):
    return { blocks }
  }
  
@@ -196,15 +196,15 @@ index 5aa525a4d6f8729329337d2b7fcc4fceb2cbd636..4b4aefb7d6584e5cf9de98dd13f66157
  }
  
  /** A direct stable system-prompt contribution, as named by the README rules. */
-@@ -366,7 +366,7 @@ for (const packageJson of packageJsons) {
+@@ -371,7 +371,7 @@ for (const packageJson of packageJsons) {
      continue
    }
  
 -  const text = readFileSync(abs, 'utf8')
 +  const text = markdownValidationSource(readFileSync(abs, 'utf8'))
    const rawLines = text.split('\n')
-   const lines = markdownProseLines(text)
-   const headings = markdownHeadingLines(text)
+   const tree = parseMarkdown(text)
+   const lines = markdownProseLines(text, tree)
 diff --git a/scripts/verify-package-readme-summaries.ts b/scripts/verify-package-readme-summaries.ts
 index bc96d2b1c74c668219ef2a046c6518c38e35decc..803a5f866088f589d0840f8347e89293a48ae958 100644
 --- a/scripts/verify-package-readme-summaries.ts

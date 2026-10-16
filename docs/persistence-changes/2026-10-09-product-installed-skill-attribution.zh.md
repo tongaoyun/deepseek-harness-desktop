@@ -27,20 +27,20 @@ id: 2026-10-09-product-installed-skill-attribution
 baseline: false
 changes:
   - root: "event:agent/inbox/spliced"
-    previous: "2026-10-05-working-directory-attribution"
-    after: "d5c1cc228b926ba21e6fb7230cb5da5e2086e0730d80195b8751c00d17110d12"
+    previous: "2026-10-13-user-rpc-principal"
+    after: "224e61636c90516cf9c9ec2136db7f6cc62d2252cdc52a6b1069a5e39dfd1d5f"
     decision: same-version
   - root: "event:developer/message"
-    previous: "2026-10-05-working-directory-attribution"
-    after: "81786891009889381850dd6f8b0d23a2451b62a95064adffad9b7afec8bbcc50"
+    previous: "2026-10-13-user-rpc-principal"
+    after: "5ad4fca2c59fa0d91f2e09fc3745110761a81a1645915c9abb258fa1871eae20"
     decision: same-version
   - root: "event:session/title-llm-request"
-    previous: "2026-10-07-title-reasoning-effort"
-    after: "80ee1022d1c5d532a6628de63e527a2aa8a09b58024c8ecb76088c753a92404d"
+    previous: "2026-10-13-user-rpc-principal"
+    after: "45a57e10a22c4ec1d3f40362fcc23ac8f3ec8a09b0cd91806d53b778e65ed965"
     decision: same-version
   - root: "event:user/message"
-    previous: "2026-10-05-working-directory-attribution"
-    after: "d5bcf9c01e88ae180d60abecb1cb5a3a2d466ec6d3af298c4e86d705f1171816"
+    previous: "2026-10-13-user-rpc-principal"
+    after: "62e2b4be0b8a8645f7c274dda007cb54bdfb24db5b404fc4390241cbe06dbadb"
     decision: same-version
 ```
 

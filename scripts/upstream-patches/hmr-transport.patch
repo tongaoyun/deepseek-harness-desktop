@@ -1,5 +1,5 @@
 diff --git a/packages/client/hmr/README.i18n.yaml b/packages/client/hmr/README.i18n.yaml
-index 7bde4169bb56c39f08bea4e45fdb36296131068e..e8f6f9e36a1551ce49c834aa39b0bdd247b9b32b 100644
+index a9c83d55bc0bf2513569b284db9c1e160430d833..af8120fc992ebcaa52a20b50b227880b53d4fcb2 100644
 --- a/packages/client/hmr/README.i18n.yaml
 +++ b/packages/client/hmr/README.i18n.yaml
 @@ -33,8 +33,8 @@
@@ -14,7 +14,7 @@ index 7bde4169bb56c39f08bea4e45fdb36296131068e..e8f6f9e36a1551ce49c834aa39b0bdd2
    en: 269ff43822114dc8
    zh: 8604c39c8050858a
 diff --git a/packages/client/hmr/README.md b/packages/client/hmr/README.md
-index a0c658ea059dbd9f5b7862225baa0831218c4c9f..46a09bd00d12db89e0b4b1a0df801d61a47886ce 100644
+index 92bf0e43f2bca8b549d1f67b5d29fd9286b70c8d..f566d0197df44401c14641f5bcdf77077cf4c863 100644
 --- a/packages/client/hmr/README.md
 +++ b/packages/client/hmr/README.md
 @@ -59,7 +59,7 @@ This section explains how the reload chain is built; observable behavior is cove
@@ -27,7 +27,7 @@ index a0c658ea059dbd9f5b7862225baa0831218c4c9f..46a09bd00d12db89e0b4b1a0df801d61
  ### The browser swap
  
 diff --git a/packages/client/hmr/README.zh.md b/packages/client/hmr/README.zh.md
-index 7f6b7d17b764f7506ae7f203436a648667ac21ab..9ae9b69a77682705ed95fa991cb7befe98cc6036 100644
+index 84ca0a330deb0f95460392719ae3ce910eeb812d..b939dded21c41b1610ed15a7ace1e9178ed9c64d 100644
 --- a/packages/client/hmr/README.zh.md
 +++ b/packages/client/hmr/README.zh.md
 @@ -59,7 +59,7 @@ kind: "package-reference"
@@ -39,23 +39,6 @@ index 7f6b7d17b764f7506ae7f203436a648667ac21ab..9ae9b69a77682705ed95fa991cb7befe
  
  ### 浏览器侧替换
  
-diff --git a/packages/client/hmr/src/client/index.ts b/packages/client/hmr/src/client/index.ts
-index a0db1351e69a758d0bfbe0ed0474d083617a47b3..800d21c3f85ef26480e16aaeceaf6fa9017f5831 100644
---- a/packages/client/hmr/src/client/index.ts
-+++ b/packages/client/hmr/src/client/index.ts
-@@ -25,7 +25,11 @@ export function apply(ctx: Context): void {
-   }
- 
-   ctx.effect(() => {
--    const source = new EventSource(EVENTS_ROUTE)
-+    const transport = globalThis as { __DSH_TRANSPORT__?: { streamBaseUrl?: string } }
-+    const streamBaseUrl = transport.__DSH_TRANSPORT__?.streamBaseUrl
-+    const source = new EventSource(streamBaseUrl === undefined
-+      ? EVENTS_ROUTE
-+      : new URL(EVENTS_ROUTE, streamBaseUrl).href)
-     source.addEventListener('message', (event: MessageEvent<string>) => {
-       let value: unknown
-       try {
 diff --git a/packages/client/hmr/src/index.ts b/packages/client/hmr/src/index.ts
 index 23f5ca00d6bb7e573b1067565922cbcb0bf02b33..fbab19733f9635ca24e11c0207c270ec63819291 100644
 --- a/packages/client/hmr/src/index.ts
@@ -164,55 +147,6 @@ index 7965ca79b3a1c1f4084b9c15efa0f815c549a46a..2d65921bfd3e36da0250b9ae5badf205
 +      serverResponse as ServerResponse)
 +    expect(response.writeHead).toHaveBeenCalledWith(200, expect.any(Object))
 +    expect(response.writeHead.mock.calls[0]?.[1]).not.toHaveProperty('access-control-allow-origin')
-+  } finally {
-+    await fiber.dispose()
-+    await ctx.fiber.dispose()
-+  }
-+})
-diff --git a/packages/client/hmr/tests/transport.client.spec.ts b/packages/client/hmr/tests/transport.client.spec.ts
-index 8b807c92555967f6498c67cd8124204604d42244..6cd7f2af2a66c18ed14e59e63c85e3ea5db7f738 100644
---- a/packages/client/hmr/tests/transport.client.spec.ts
-+++ b/packages/client/hmr/tests/transport.client.spec.ts
-@@ -15,13 +15,17 @@ it('forwards full graphs and rebuilt frames, contains wire errors and closes its
-   const errors = vi.spyOn(ctx.logger, 'error').mockImplementation(() => {})
-   let receive!: (event: { data: string }) => void
-   const close = vi.fn()
-+  const eventUrls: string[] = []
-+  vi.stubGlobal('__DSH_TRANSPORT__', { streamBaseUrl: 'http://127.0.0.1:43123/' })
-   vi.stubGlobal('EventSource', class {
-     close = close
-+    constructor(url: string) { eventUrls.push(url) }
-     addEventListener(_name: string, listener: typeof receive) { receive = listener }
-   })
-   const fiber = ctx.plugin({ apply, inject })
-   try {
-     await fiber.await()
-+    expect(eventUrls).toEqual(['http://127.0.0.1:43123/plugins/events'])
-     const graph = { rev: 'r', entries: [], batches: [] }
-     receive({ data: JSON.stringify({ type: 'graph', graph }) })
-     receive({ data: JSON.stringify({ type: 'rebuilt', id: 'a', rev: 'r1' }) })
-@@ -40,3 +44,26 @@ it('forwards full graphs and rebuilt frames, contains wire errors and closes its
-   }
-   expect(close).toHaveBeenCalledOnce()
- })
-+
-+it('keeps the event route relative outside the desktop transport', async () => {
-+  const ctx = new Context()
-+  const entries: Pick<ClientModuleLoader['entries'], 'sync' | 'reload'> = { sync: vi.fn(), reload: vi.fn() }
-+  const modules: Pick<ClientModuleLoader, 'entries'> = {
-+    entries: entries as ClientModuleLoader['entries'],
-+  }
-+  ctx.provide('modules', modules as ClientModuleLoader)
-+  const eventUrls: string[] = []
-+  vi.stubGlobal('EventSource', class {
-+    constructor(url: string) { eventUrls.push(url) }
-+    addEventListener() {}
-+    close() {}
-+  })
-+  const fiber = ctx.plugin({ apply, inject })
-+  try {
-+    await fiber.await()
-+    expect(eventUrls).toEqual(['plugins/events'])
 +  } finally {
 +    await fiber.dispose()
 +    await ctx.fiber.dispose()

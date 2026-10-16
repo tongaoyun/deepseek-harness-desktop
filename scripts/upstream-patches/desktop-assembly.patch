@@ -1,8 +1,8 @@
 diff --git a/apps/desktop/electron-builder.config.d.mts b/apps/desktop/electron-builder.config.d.mts
-index 4e978ec00fa379ee72643c86da6e2b2c3f194c84..455df981bcca61e7d90f6d7718ebdf239736d8d4 100644
+index 0682e6e9adc28e5a09b5c27810dab0f27b155ef3..379e780bcffc708c7f3929cec3a8117aecc28ff7 100644
 --- a/apps/desktop/electron-builder.config.d.mts
 +++ b/apps/desktop/electron-builder.config.d.mts
-@@ -18,12 +18,9 @@ export interface DesktopElectronBuilderConfig {
+@@ -15,12 +15,9 @@ export interface DesktopElectronBuilderConfig {
    ]
    readonly extraMetadata: { readonly dshDesktopAppId: string }
    readonly asarUnpack: readonly string[]
@@ -17,7 +17,7 @@ index 4e978ec00fa379ee72643c86da6e2b2c3f194c84..455df981bcca61e7d90f6d7718ebdf23
      readonly extendInfo: { readonly NSMicrophoneUsageDescription: string }
      readonly entitlements: string
      readonly entitlementsInherit: string
-@@ -37,6 +34,7 @@ export interface DesktopElectronBuilderConfig {
+@@ -35,6 +32,7 @@ export interface DesktopElectronBuilderConfig {
      readonly writeUpdateInfo: boolean
    }
    readonly win: {
@@ -26,7 +26,7 @@ index 4e978ec00fa379ee72643c86da6e2b2c3f194c84..455df981bcca61e7d90f6d7718ebdf23
      readonly signtoolOptions: {
        readonly publisherName: string | undefined
 diff --git a/apps/desktop/package.json b/apps/desktop/package.json
-index c1009cb57b5259ea56128ed854f147df3d4344b0..e8c2ded193d702754d999eaceebfddb72db7d3ab 100644
+index c7c1246e9a47a98284ad77f4f55a3d617ec126d6..94d839e4216573623a6adf509723467b5a29bb66 100644
 --- a/apps/desktop/package.json
 +++ b/apps/desktop/package.json
 @@ -1,6 +1,6 @@
@@ -34,7 +34,7 @@ index c1009cb57b5259ea56128ed854f147df3d4344b0..e8c2ded193d702754d999eaceebfddb7
    "name": "@deepseek-ai/dsh-desktop",
 -  "description": "Electron desktop shell for a bundled dsh runtime and external plugins",
 +  "description": "Official Harness Electron shell with generic assembly extension hooks",
-   "version": "0.2.1-alpha.2",
+   "version": "0.2.1-alpha.4",
    "private": true,
    "license": "MIT",
 @@ -50,6 +50,7 @@
@@ -92,7 +92,7 @@ index 0000000000000000000000000000000000000000..a75fa56fc9127e32b159f2829921e598
 +    packageDirectories: directories.map(directory => resolve(dirname(path), directory)) }
 +}
 diff --git a/apps/desktop/scripts/dev.ts b/apps/desktop/scripts/dev.ts
-index 1ae2f3e95242b1d0c21c9d7fce561d0b3797f1cd..73d522de68f35e6cbdd2c40f2d9f7cbed2d60f0e 100644
+index 37515c20b0bed448cc3acbc9c632d1b6b4d47786..be9293f2b915899e010d0f73a7921232d550ebf5 100644
 --- a/apps/desktop/scripts/dev.ts
 +++ b/apps/desktop/scripts/dev.ts
 @@ -11,6 +11,7 @@ import { developmentRuntimeDirectory, resolveDesktopBuildTarget } from './deskto
@@ -180,7 +180,7 @@ index ff09b8b783952179ceb1e9bed7e4aee989176005..c371dfaecd180cedc6c0074573044d17
      DSH_DESKTOP_OPEN_DEVTOOLS: options.openDevtools,
      ELECTRON_ENABLE_LOGGING: '1',
 diff --git a/apps/desktop/scripts/electron-builder-config.mjs b/apps/desktop/scripts/electron-builder-config.mjs
-index f08b783865e35563a124a23ef4b6d7fe136bcd7a..47e7f27df0050b89ad8b2ae2151acb55cf94e1cc 100644
+index 4b9cd27a8d5c1eee9219cfc9ca8b60b1c2562deb..b956e741cd8c64427381567958fdfc844fc65af2 100644
 --- a/apps/desktop/scripts/electron-builder-config.mjs
 +++ b/apps/desktop/scripts/electron-builder-config.mjs
 @@ -1,3 +1,4 @@
@@ -197,24 +197,24 @@ index f08b783865e35563a124a23ef4b6d7fe136bcd7a..47e7f27df0050b89ad8b2ae2151acb55
  /**
   * Create electron-builder configuration from one release environment.
   * @param {NodeJS.ProcessEnv} env - Packaging environment.
-@@ -60,7 +63,7 @@ export function createElectronBuilderConfig(
-   const unsigned = env.DSH_DESKTOP_UNSIGNED === '1'
+@@ -65,7 +68,7 @@ export function createElectronBuilderConfig(
+   if (skipNotarization && (unsigned || resolvedPlatform !== 'darwin')) throw new Error('Skipping notarization requires a signed macOS build')
    const packagesMacOS = targetPlatform === 'darwin' || (targetPlatform === undefined && hostPlatform === 'darwin')
    const packagesWindows = resolvedPlatform === 'win32'
 -  const policy = packagesMacOS && unsigned ? undefined : resolveDesktopPolicyEnvironment(env)
 +  const policy = unsigned ? undefined : resolveDesktopPolicyEnvironment(env)
    if (resolvedPlatform === 'win32') installWindowsDirectoryInstaller()
    const macOSSigning = packagesMacOS && !unsigned ? resolveMacOSSigningEnvironment(env) : undefined
-   if (packagesMacOS && !unsigned) resolveMacOSNotarizationEnvironment(env)
-@@ -96,6 +99,7 @@ export function createElectronBuilderConfig(
-   const productVersion = JSON.parse(readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8')).version
+   if (packagesMacOS && !unsigned && !skipNotarization) resolveMacOSNotarizationEnvironment(env)
+@@ -103,6 +106,7 @@ export function createElectronBuilderConfig(
    const buildVersion = resolveDesktopBuildVersion(env, productVersion)
+   if (update?.channel === 'latest' && buildVersion.includes('-')) throw new Error('desktop package: latest requires a stable version')
    const packaged = resolveDesktopBuildCommit(env)
 +  const assembly = readDesktopAssembly(env, resolvedPlatform)
    return {
      appId,
      protocols: [{ name: 'DeepSeek Harness', schemes: ['dsh'] }],
-@@ -142,20 +146,23 @@ export function createElectronBuilderConfig(
+@@ -152,20 +156,23 @@ export function createElectronBuilderConfig(
      asarUnpack: unpack,
      extraResources: [
        { from: buildPaths.runtime, to: 'runtime' },
@@ -243,7 +243,7 @@ index f08b783865e35563a124a23ef4b6d7fe136bcd7a..47e7f27df0050b89ad8b2ae2151acb55
        entitlements: fileURLToPath(new URL('./macos-entitlements.plist', import.meta.url)),
        entitlementsInherit: fileURLToPath(new URL('./macos-entitlements.plist', import.meta.url)),
        // Prepared runtime files retain their signatures; PAK resources are sealed by their enclosing bundle.
-@@ -221,7 +228,7 @@ export function createElectronBuilderConfig(
+@@ -236,7 +243,7 @@ export function createElectronBuilderConfig(
        )
      },
      win: {
@@ -253,7 +253,7 @@ index f08b783865e35563a124a23ef4b6d7fe136bcd7a..47e7f27df0050b89ad8b2ae2151acb55
        signtoolOptions: {
          sign: windowsSigner,
 diff --git a/apps/desktop/scripts/package-target.ts b/apps/desktop/scripts/package-target.ts
-index a133ccdcf869c5ff404343a621e4f6df9a5c709a..ab778a6d62c228bb35f02cc15f8a40d03581c609 100644
+index be2f577e1b25a3905589d339393f7af759bfa4c7..1a94ae62dd7ed44aac76a059e71aff199a92dad8 100644
 --- a/apps/desktop/scripts/package-target.ts
 +++ b/apps/desktop/scripts/package-target.ts
 @@ -1,3 +1,4 @@
@@ -261,7 +261,7 @@ index a133ccdcf869c5ff404343a621e4f6df9a5c709a..ab778a6d62c228bb35f02cc15f8a40d0
  /** Build one release target with matching Electron and dsh architecture. */
  
  import { spawn } from 'node:child_process'
-@@ -456,6 +457,8 @@ export async function packageTarget(
+@@ -474,6 +475,8 @@ export async function packageTarget(
      })
    }
    await execute(['run', 'build:official'], buildEnv, REPOSITORY_ROOT)
@@ -270,7 +270,7 @@ index a133ccdcf869c5ff404343a621e4f6df9a5c709a..ab778a6d62c228bb35f02cc15f8a40d0
    await execute(['run', 'release:pack', '--family', 'dsh', '--out', buildPaths.packedDsh, ...packArguments], buildEnv, REPOSITORY_ROOT)
    await execute([
      '--dir',
-@@ -464,6 +467,9 @@ export async function packageTarget(
+@@ -482,6 +485,9 @@ export async function packageTarget(
      '--pack-destination',
      buildPaths.packedDsh,
    ], buildEnv, REPOSITORY_ROOT)
@@ -370,7 +370,7 @@ index 2f718b7bc5feaebd4e655eb9a878aae6342babbb..1eea2ed64c7d63074016448c499721aa
      '--remote-debugging-port=9222', `--user-data-dir=${join(root, 'browser data')}`, root, '--test-launch-argument'])
  })
 diff --git a/apps/desktop/tests/package-target-stages.spec.ts b/apps/desktop/tests/package-target-stages.spec.ts
-index cde1b0079d99098cbd583073ef0becc2d6bee957..a66618ded84ca5d3f020ccb7ed04c7e4d025abc4 100644
+index 1d8b067390c3e05d245a0b944369dd8e0fdfb114..856cf74e797176325865829023cd74f979008f13 100644
 --- a/apps/desktop/tests/package-target-stages.spec.ts
 +++ b/apps/desktop/tests/package-target-stages.spec.ts
 @@ -176,6 +176,19 @@ it.each([undefined, '2'])('passes macOS pack concurrency %s only to workspace pa

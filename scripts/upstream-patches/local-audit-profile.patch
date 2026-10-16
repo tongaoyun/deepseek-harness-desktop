@@ -50,7 +50,7 @@ index 0000000000000000000000000000000000000000..f24c22e192bf57cd927f1b55a5a22888
 +nodeLinker: hoisted
 +autoInstallPeers: false
 diff --git a/scripts/migrate-sessions-to-v4.spec.ts b/scripts/migrate-sessions-to-v4.spec.ts
-index cf52171feff8a17b62f1afbecd8da4e11755b73d..69dff70bf995364f34368a58104c2467077a5679 100644
+index 78fd5a9cf960689d3a4de536ba4fb4cf9203bcfd..391b5be291bada41c78fc64bf52f4dee7a5ebe2f 100644
 --- a/scripts/migrate-sessions-to-v4.spec.ts
 +++ b/scripts/migrate-sessions-to-v4.spec.ts
 @@ -252,7 +252,7 @@ describe('one-time V4 migration command', () => {

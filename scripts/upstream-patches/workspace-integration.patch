@@ -69,7 +69,7 @@ index 0836489ef8400225b79e2fdad6429842541c8d55..e167e03adc2b8c0870db0deb17b1e762
 +dev-product-desktop:
 +	$(PNPM) run dev:product-desktop $(ARGS)
 diff --git a/apps/web/tsconfig.json b/apps/web/tsconfig.json
-index 7c03df4930ea71fb0145305a58d0afc7e4b106e0..03cc9012d2a0ab5c7e021bb04202e1f7ae6ddf12 100644
+index ff56fc94852fab07a3fa26212e09eef187805420..fcf53a720598b4bf71862bef151a284507544c2a 100644
 --- a/apps/web/tsconfig.json
 +++ b/apps/web/tsconfig.json
 @@ -22,6 +22,7 @@
@@ -78,10 +78,10 @@ index 7c03df4930ea71fb0145305a58d0afc7e4b106e0..03cc9012d2a0ab5c7e021bb04202e1f7
    "exclude": [
 +    "tests/deepseek-harness-catalog.e2e.ts",
      "tests/collapse-timing.e2e.ts",
-     "tests/chat-flow-layout.e2e.ts",
-     "tests/layout-bottom.e2e.ts",
+     "tests/notice-wake-tail.e2e.ts",
+     "tests/fold-blank-matrix.e2e.ts",
 diff --git a/package.json b/package.json
-index 2d76805736259a7b267df42c3128db0433fb133c..942a6d9fede381580ef5f9c87080a84fc83fc68c 100644
+index 042d7eb56bdd40f14b4fffe1c76bb5f26ab11065..e9e38eefe17f2fd06b109d56ea0120d74f9e17c7 100644
 --- a/package.json
 +++ b/package.json
 @@ -18,6 +18,10 @@
@@ -93,9 +93,9 @@ index 2d76805736259a7b267df42c3128db0433fb133c..942a6d9fede381580ef5f9c87080a84f
 +    "verify:upstream": "node scripts/verify-upstream.mjs",
 +    "sync:upstream": "node scripts/sync-upstream.mjs",
      "build": "tsx scripts/build.ts",
-     "build:bench": "npm run build:native-system && npm run build:lib && tsdown --config-loader native --config benchmarks/tsdown.config.ts",
-     "build:official": "tsx scripts/build.ts --profile official",
-@@ -28,6 +32,8 @@
+     "build:artifacts": "tsx scripts/build.ts --scope artifacts",
+     "build:check": "tsx scripts/build.ts --scope check",
+@@ -30,6 +34,8 @@
      "build:desktop": "pnpm --filter @deepseek-ai/dsh-desktop run build",
      "dev:desktop": "pnpm --filter @deepseek-ai/dsh-desktop run dev",
      "start:desktop": "pnpm --filter @deepseek-ai/dsh-desktop run start",
@@ -105,26 +105,10 @@ index 2d76805736259a7b267df42c3128db0433fb133c..942a6d9fede381580ef5f9c87080a84f
      "package:desktop": "pnpm --filter @deepseek-ai/dsh-desktop run package",
      "package:desktop:dir": "pnpm --filter @deepseek-ai/dsh-desktop run package:dir",
 diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
-index dfaa16532d4a9500a31a3995bd0da8d3af579585..d65d97f07336aa95a3beb812ab17f8ff4a5bde07 100644
+index c5de58cc2ed16ae276f253bd4dc6a92fe0c86e1d..fde8652ed30e6c845a2436ebd78de92ece9308ba 100644
 --- a/pnpm-lock.yaml
 +++ b/pnpm-lock.yaml
-@@ -115,12 +115,12 @@ importers:
-       '@types/node':
-         specifier: ^22.20.1
-         version: 22.20.1
--      '@types/semver':
--        specifier: ^7.8.0
--        version: 7.8.0
-       '@types/papaparse':
-         specifier: ^5.5.2
-         version: 5.5.2
-+      '@types/semver':
-+        specifier: ^7.8.0
-+        version: 7.8.0
-       '@types/spdx-expression-parse':
-         specifier: ^4.0.0
-         version: 4.0.0
-@@ -693,6 +693,9 @@ importers:
+@@ -709,6 +709,9 @@ importers:
        '@deepseek-ai/dsh-home-paths':
          specifier: workspace:*
          version: link:../../packages/util/home-paths
@@ -134,9 +118,9 @@ index dfaa16532d4a9500a31a3995bd0da8d3af579585..d65d97f07336aa95a3beb812ab17f8ff
        '@deepseek-ai/node-addon-system':
          specifier: workspace:~
          version: link:../../native/system/packages/entry
-@@ -818,6 +821,22 @@ importers:
-         specifier: workspace:*
-         version: link:../../packages/skill/skill
+@@ -865,6 +868,22 @@ importers:
+         specifier: ^4.22.4
+         version: 4.23.13
  
 +  apps/product-desktop:
 +    dependencies:
@@ -157,7 +141,7 @@ index dfaa16532d4a9500a31a3995bd0da8d3af579585..d65d97f07336aa95a3beb812ab17f8ff
    apps/web:
      devDependencies:
        '@deepseek-ai/cordis-plugin-group':
-@@ -7255,6 +7274,225 @@ importers:
+@@ -7377,6 +7396,225 @@ importers:
          specifier: workspace:*
          version: link:../../host/webserver
  
@@ -383,7 +367,7 @@ index dfaa16532d4a9500a31a3995bd0da8d3af579585..d65d97f07336aa95a3beb812ab17f8ff
    packages/deliverables/tool-present:
      dependencies:
        '@deepseek-ai/schemastery':
-@@ -9562,6 +9800,87 @@ importers:
+@@ -9885,6 +10123,84 @@ importers:
          specifier: ^18.2.0
          version: 18.3.1
  
@@ -458,9 +442,6 @@ index dfaa16532d4a9500a31a3995bd0da8d3af579585..d65d97f07336aa95a3beb812ab17f8ff
 +      '@deepseek-harness/product':
 +        specifier: workspace:~
 +        version: link:../../deepseek-harness-product/product
-+      '@types/react':
-+        specifier: ~18.3.1
-+        version: 18.3.31
 +      react:
 +        specifier: ^18.2.0
 +        version: 18.3.1
@@ -471,18 +452,7 @@ index dfaa16532d4a9500a31a3995bd0da8d3af579585..d65d97f07336aa95a3beb812ab17f8ff
    packages/feedback/command-feedback:
      dependencies:
        zod:
-@@ -15641,10 +15960,6 @@ importers:
- 
- packages:
- 
--  papaparse@5.5.3:
--    resolution: {integrity: sha512-5QvjGxYVjxO59MGU2lHVYpRWBBtKHnlIAcSe1uNFCkkptUh63NFRj0FJQm7nR67puEruUci/ZkjmEFrjCAyP4A==}
--
--
-   '@agentclientprotocol/sdk@1.4.0':
-     resolution: {integrity: sha512-/eufudw+aFY1LKLolT6yFE6UMmYRl7fMJ/DEONSIyR6wI3slHWITBsANRGqXEY8FRzqUxwh7QEaGiZHcJPVThg==}
-     peerDependencies:
-@@ -17293,10 +17608,18 @@ packages:
+@@ -17671,10 +17987,18 @@ packages:
    '@mixmark-io/domino@2.2.0':
      resolution: {integrity: sha512-Y28PR25bHXUg88kCV7nivXrP2Nj2RueZ3/l/jdx6J9f8J4nsEGcgX0Qe6lt7Pa+J79+kPiJU3LguR6O/6zrLOw==}
  
@@ -501,7 +471,7 @@ index dfaa16532d4a9500a31a3995bd0da8d3af579585..d65d97f07336aa95a3beb812ab17f8ff
    '@modelcontextprotocol/core@2.2.0':
      resolution: {integrity: sha512-iLhmprRmWI8EcosOA3wVvww22z02NkgqhV4fBH6f/odQBsi7xnJc0HGmi21yWO+/iKw2yzqVE127Zhna5/+JXw==}
      engines: {node: '>=20'}
-@@ -17329,6 +17652,10 @@ packages:
+@@ -17707,6 +18031,10 @@ packages:
      resolution: {integrity: sha512-kKaFkyAh6oipvc9+EAbJ552JafnMnOq5nzmzWkp1jJdBhTAAGpmIpWihUG1+rfNhmEFM98gUZDdCHCDD4v6a7Q==}
      hasBin: true
  
@@ -512,17 +482,7 @@ index dfaa16532d4a9500a31a3995bd0da8d3af579585..d65d97f07336aa95a3beb812ab17f8ff
    '@modelcontextprotocol/server@2.2.0':
      resolution: {integrity: sha512-qFnltjus6Gk8Lx6J1w2RXmr3YPN22MNT6qD6zjAkaiWIlFIFxWClz0rXHNuJF/KSUyn5YGhkSvXkWDbQHVLFEQ==}
      engines: {node: '>=20'}
-@@ -21701,6 +22028,9 @@ packages:
-   pako@1.0.11:
-     resolution: {integrity: sha512-4hLB8Py4zZce5s4yd9XzopqwVv/yGNhV1Bl8NTmCq1763HeK2+EwVTv+leGeL13Dnh2wfbqowVPXCIO0z4taYw==}
- 
-+  papaparse@5.5.3:
-+    resolution: {integrity: sha512-5QvjGxYVjxO59MGU2lHVYpRWBBtKHnlIAcSe1uNFCkkptUh63NFRj0FJQm7nR67puEruUci/ZkjmEFrjCAyP4A==}
-+
-   papaparse@5.7.0:
-     resolution: {integrity: sha512-qBGxg/7Q3Kl9Wfhrz2Z74UnvnHTXLNG6jmKJFeBvP2+y4lV7So+7SR62+Zd47JvdrCkX+nDcnr0ObPzek/+6RA==}
- 
-@@ -22243,6 +22573,10 @@ packages:
+@@ -22635,6 +22963,10 @@ packages:
      resolution: {integrity: sha512-7++dFhtcx3353uBaq8DDR4NuxBetBzC7ZQOhmTQInHEd6bSrXdiEyzCvG07Z44UYdLShWUyXt5M/yhz8ekcb1A==}
      engines: {node: '>=8'}
  
@@ -533,17 +493,7 @@ index dfaa16532d4a9500a31a3995bd0da8d3af579585..d65d97f07336aa95a3beb812ab17f8ff
    sherpa-onnx-darwin-arm64@1.13.8:
      resolution: {integrity: sha512-FPNgJMgnWVl/KhRTIhG3KL3A4Om63Rn4YKXc9/uHY7SzLcvqLJLc/h7UBWJwduXvv7K18t5NpxHR6XgXn4sjWw==}
      cpu: [arm64]
-@@ -23227,9 +23561,6 @@ packages:
- 
- snapshots:
- 
--  papaparse@5.5.3: {}
--
--
-   '@agentclientprotocol/sdk@1.4.0(zod@4.4.3)':
-     dependencies:
-       zod: 4.4.3
-@@ -24769,6 +25100,16 @@ snapshots:
+@@ -25162,6 +25494,16 @@ snapshots:
  
    '@mixmark-io/domino@2.2.0': {}
  
@@ -560,7 +510,7 @@ index dfaa16532d4a9500a31a3995bd0da8d3af579585..d65d97f07336aa95a3beb812ab17f8ff
    '@modelcontextprotocol/client@2.2.0':
      dependencies:
        '@modelcontextprotocol/core': 2.2.0
-@@ -24779,10 +25120,21 @@ snapshots:
+@@ -25172,10 +25514,21 @@ snapshots:
        pkce-challenge: 5.0.1
        zod: 4.4.3
  
@@ -582,7 +532,7 @@ index dfaa16532d4a9500a31a3995bd0da8d3af579585..d65d97f07336aa95a3beb812ab17f8ff
    '@modelcontextprotocol/node@2.0.0(@modelcontextprotocol/server@2.2.0)(hono@4.13.7)':
      dependencies:
        '@hono/node-server': 1.19.17(hono@4.13.7)
-@@ -24834,6 +25186,11 @@ snapshots:
+@@ -25227,6 +25580,11 @@ snapshots:
        - supports-color
        - zod
  
@@ -594,7 +544,7 @@ index dfaa16532d4a9500a31a3995bd0da8d3af579585..d65d97f07336aa95a3beb812ab17f8ff
    '@modelcontextprotocol/server@2.2.0':
      dependencies:
        '@modelcontextprotocol/core': 2.2.0
-@@ -25944,7 +26301,6 @@ snapshots:
+@@ -26339,7 +26697,6 @@ snapshots:
    '@types/yauzl@2.10.3':
      dependencies:
        '@types/node': 22.20.1
@@ -602,16 +552,7 @@ index dfaa16532d4a9500a31a3995bd0da8d3af579585..d65d97f07336aa95a3beb812ab17f8ff
  
    '@typescript-eslint/types@8.61.0': {}
  
-@@ -29443,6 +29799,8 @@ snapshots:
- 
-   pako@1.0.11: {}
- 
-+  papaparse@5.5.3: {}
-+
-   papaparse@5.7.0: {}
- 
-   parse-ms@4.0.0: {}
-@@ -30047,6 +30405,8 @@ snapshots:
+@@ -30452,6 +30809,8 @@ snapshots:
  
    shebang-regex@3.0.0: {}
  
@@ -621,7 +562,7 @@ index dfaa16532d4a9500a31a3995bd0da8d3af579585..d65d97f07336aa95a3beb812ab17f8ff
      optional: true
  
 diff --git a/scripts/check-workspace-constraints.spec.ts b/scripts/check-workspace-constraints.spec.ts
-index 6ee447873e9c5e836a97090dcc0ae79c9b12de8d..ffb6e07d6554f9c4d42c9cfff778e5ae6fb508d8 100644
+index a69eed0281e9f0fa0197600e56d0750cdeba3713..bbb488694934a36ba5651056b419309cb7dcf64e 100644
 --- a/scripts/check-workspace-constraints.spec.ts
 +++ b/scripts/check-workspace-constraints.spec.ts
 @@ -287,6 +287,19 @@ describe('dsh family version coherence', () => {
@@ -645,10 +586,10 @@ index 6ee447873e9c5e836a97090dcc0ae79c9b12de8d..ffb6e07d6554f9c4d42c9cfff778e5ae
    it.each([
      ['./art/icon.svg', ['art/icon.svg']],
 diff --git a/scripts/check-workspace-constraints.ts b/scripts/check-workspace-constraints.ts
-index 84750fad1c60032cfd6368f55342d768331ff71f..9ce155725fe63aa1eb92384c3997c4c9a9608156 100644
+index cf9493a5d249b85935a2c1a7525d91795099c6e5..960a50a466c7374b56bc5982a720537e07f0363d 100644
 --- a/scripts/check-workspace-constraints.ts
 +++ b/scripts/check-workspace-constraints.ts
-@@ -420,7 +420,11 @@ export function checkWorkspaceManifest({ dir, manifest }: WorkspaceManifest): st
+@@ -441,7 +441,11 @@ export function checkWorkspaceManifest({ dir, manifest }: WorkspaceManifest): st
      && manifest.name !== undefined
      && publicNativePackages.has(manifest.name)
  
@@ -685,10 +626,28 @@ index 0c7466154dec3dc6ec05aeecb54be04a6e2ca1d7..78aca9f7eb26aa5ff3c9d6ec04895eef
      const configPath = resolve(root, 'tsconfig.client.json')
      const read = ts.readConfigFile(configPath, file => ts.sys.readFile(file))
 diff --git a/scripts/verify-repository-references.spec.ts b/scripts/verify-repository-references.spec.ts
-index 8b2f0a9d3cc7894694f63a9c7a78b1c0fb0b5a3c..2f9cdadf9811b1db73c9aedd3a9c4dd794e67e90 100644
+index cb259bdc0735bc7bca3380ce73e286064644fa91..dd1b77a88f12311528843267dbf702cd74fa0b31 100644
 --- a/scripts/verify-repository-references.spec.ts
 +++ b/scripts/verify-repository-references.spec.ts
-@@ -120,12 +120,14 @@ describe('maintained repository reference policy', () => {
+@@ -72,6 +72,17 @@ describe('unique object-name prefix search', () => {
+ })
+ 
+ describe('maintained repository reference policy', () => {
++  it('treats lockfile artifact byte counts as numeric metadata, while still checking references on the same line', () => {
++    const byteCount = [634, 4383].join('')
++    const revision = ['abcdef', 12].join('')
++    const commits = new Set([byteCount, revision])
++    expect(findRepositoryReferences('python/sdk/uv.lock', `{ size = ${byteCount}, hash = "sha256:unrelated" }`, commits)).toEqual([])
++    expect(findRepositoryReferences('python/sdk/uv.lock', `{ size = ${byteCount}, revision = "${revision}" }`, commits)).toEqual([
++      { file: 'python/sdk/uv.lock', line: 1, kind: 'commit-hash' },
++    ])
++    expect(findRepositoryReferences('notes.md', byteCount, commits)).toHaveLength(1)
++  })
++
+   it('permits only the independent kit repository and its source URLs', () => {
+     for (const suffix of ['', '.git', '/tree/main/packages/entry']) {
+       expect(findRepositoryReferences('package.json', `${organizationUrl}/libreoffice-kit${suffix}`, new Set())).toEqual([])
+@@ -161,12 +172,14 @@ describe('maintained repository reference policy', () => {
      expect(scanRepositoryReferences(fixture.root)).toEqual([])
    })
  
@@ -704,7 +663,7 @@ index 8b2f0a9d3cc7894694f63a9c7a78b1c0fb0b5a3c..2f9cdadf9811b1db73c9aedd3a9c4dd7
      fixture.write('tracked-ignore.md', fixture.commit)
      fixture.git(['add', '--force', 'tracked-ignore.md'])
      unlinkSync(join(fixture.root, 'tracked.md'))
-@@ -135,6 +137,14 @@ describe('maintained repository reference policy', () => {
+@@ -176,6 +189,14 @@ describe('maintained repository reference policy', () => {
      ])
    })
  
@@ -720,7 +679,7 @@ index 8b2f0a9d3cc7894694f63a9c7a78b1c0fb0b5a3c..2f9cdadf9811b1db73c9aedd3a9c4dd7
      const fixture = repository(test)
      symlinkSync(`../${fixture.commit}`, join(fixture.root, 'reference-link'))
 diff --git a/scripts/verify-repository-references.ts b/scripts/verify-repository-references.ts
-index 92ad6abacc0115f6dc093a9ff2e5067bf01fdc28..9aafb9db8103311649d81bf2aaa266689279edc5 100644
+index 8e7dae883c9c46f5f80173d17e9db8f5384658ad..4cd00585c1865a02632a6ad95416973e9800cab7 100644
 --- a/scripts/verify-repository-references.ts
 +++ b/scripts/verify-repository-references.ts
 @@ -13,6 +13,7 @@ const organizationUrl = new RegExp(`\\bgithub\\.com/${organization}(?![a-z0-9-])
@@ -729,9 +688,9 @@ index 92ad6abacc0115f6dc093a9ff2e5067bf01fdc28..9aafb9db8103311649d81bf2aaa26668
  const excludedPrefixes = ['vendor/', '.agents/notes/archived/']
 +const excludedFiles = new Set(['UPSTREAM_COMMIT', 'scripts/upstream-patches/manifest.json'])
  const gitOutputLimit = 64 * 1024 * 1024
- 
- /** One prohibited reference in a maintained source file. */
-@@ -26,7 +27,7 @@ export interface RepositoryReference {
+ // One 41-byte line per object; 1.2 million objects produce about 49 MiB.
+ const objectListingLimit = 1024 * 1024 * 1024
+@@ -28,7 +29,7 @@ export interface RepositoryReference {
  }
  
  function isMaintained(file: string): boolean {
@@ -740,8 +699,19 @@ index 92ad6abacc0115f6dc093a9ff2e5067bf01fdc28..9aafb9db8103311649d81bf2aaa26668
  }
  
  /**
+@@ -49,7 +50,9 @@ export function findRepositoryReferences(
+     if (organizationUrl.test(canonicalReferenceText(line).replace(kitRepositoryUrl, ''))) {
+       references.push({ file, line: index + 1, kind: 'organization-url' })
+     }
+-    if ([...line.matchAll(commitCandidate)].some(match => commits.has(match[0].toLowerCase()))) {
++    // Lockfile byte counts can coincide with abbreviated object names.
++    const referenceText = line.replace(/\bsize\s*=\s*\d+(?=\s*[,}])/g, '')
++    if ([...referenceText.matchAll(commitCandidate)].some(match => commits.has(match[0].toLowerCase()))) {
+       references.push({ file, line: index + 1, kind: 'commit-hash' })
+     }
+   }
 diff --git a/tsconfig.base.json b/tsconfig.base.json
-index 4ad99dbb8931b7efab4682d27adc31fda029ab11..e872a5f66b66f80c2410d59bb0cc681e3cc23135 100644
+index 3573f6f8b6d353f917b8ff23d0b612c864c5413d..3b61a49a981bb6b1da95a47949840b5095ee0b49 100644
 --- a/tsconfig.base.json
 +++ b/tsconfig.base.json
 @@ -28,6 +28,21 @@
@@ -767,7 +737,7 @@ index 4ad99dbb8931b7efab4682d27adc31fda029ab11..e872a5f66b66f80c2410d59bb0cc681e
        "@deepseek-ai/dsh-experimental-ralph-bundle": ["./packages/experimental/ralph-bundle/src/index.ts"],
        "@deepseek-ai/dsh-experimental-terminal-bundle": ["./packages/experimental/terminal-bundle/src/index.ts"],
 diff --git a/tsconfig.client.json b/tsconfig.client.json
-index a8f0a9ed96d6d8762a14148b6977e395c11bc9bf..4ea29006836cf6215fbe858e521930f8e9396ec9 100644
+index 053d90af785c8847c20a94b8d8e33a4f6f617b1e..1eed319c0ff367923dc6470678132dc10bdcad0d 100644
 --- a/tsconfig.client.json
 +++ b/tsconfig.client.json
 @@ -20,6 +20,7 @@
@@ -778,7 +748,7 @@ index a8f0a9ed96d6d8762a14148b6977e395c11bc9bf..4ea29006836cf6215fbe858e521930f8
      "apps/desktop/src/update-overlay.ts",
      "apps/desktop/tests/**/*.client.spec.tsx",
      // Source-subpath test imports can arrive through workspace links whose
-@@ -88,6 +89,7 @@
+@@ -91,6 +92,7 @@
      { "path": "./packages/api/remotes/tsconfig.client.json" },
      { "path": "./packages/extensions/cordis-client-runner" },
      { "path": "./packages/extensions/ui-cordis" },
@@ -787,7 +757,7 @@ index a8f0a9ed96d6d8762a14148b6977e395c11bc9bf..4ea29006836cf6215fbe858e521930f8
      { "path": "./packages/test-support/remote-mock" },
      { "path": "./packages/client/shortcuts/tsconfig.client.json" },
 diff --git a/tsconfig.host.json b/tsconfig.host.json
-index af38cdb3419c3c32ce3233319b9cc6a8df8b780b..dc932a17f5707777e7123294b07fa1839fa0f83b 100644
+index 90cb6d8b0b585587488c99534126b64edcd7a50a..37582557fdf6d07929e2e4e4ded7b6abe4bea856 100644
 --- a/tsconfig.host.json
 +++ b/tsconfig.host.json
 @@ -8,6 +8,7 @@
@@ -796,9 +766,9 @@ index af38cdb3419c3c32ce3233319b9cc6a8df8b780b..dc932a17f5707777e7123294b07fa183
    "include": [
 +    "apps/web/tests/deepseek-harness-catalog.e2e.ts",
      "apps/web/tests/collapse-timing.e2e.ts",
-     "apps/web/tests/chat-flow-layout.e2e.ts",
-     "apps/web/product-isolation.ts",
-@@ -221,6 +222,8 @@
+     "apps/web/tests/notice-wake-tail.e2e.ts",
+     "apps/web/tests/fold-blank-matrix.e2e.ts",
+@@ -235,6 +236,8 @@
      "scripts/client-bundle-purity.spec.ts"
    ],
    "references": [
@@ -807,7 +777,7 @@ index af38cdb3419c3c32ce3233319b9cc6a8df8b780b..dc932a17f5707777e7123294b07fa183
      { "path": "./packages/experimental/client-ui-cot-translation/tsconfig.host.json" },
      { "path": "./packages/experimental/cot-translation-bundle" },
      { "path": "./packages/experimental/session-search" },
-@@ -483,6 +486,7 @@
+@@ -503,6 +506,7 @@
      { "path": "./packages/preset/agent-preset-registry" },
      { "path": "./packages/preset/agent-preset" },
      { "path": "./packages/preset/persona" },
@@ -815,24 +785,3 @@ index af38cdb3419c3c32ce3233319b9cc6a8df8b780b..dc932a17f5707777e7123294b07fa183
      { "path": "./packages/guard/repeat-tool-reminder" },
      { "path": "./packages/extensions/cordis-host-runner" },
      { "path": "./packages/extensions/tool-cordis" },
-diff --git a/tsdown.config.ts b/tsdown.config.ts
-index c378de376a065a7cb3e9759040f7662e1c510777..55e3781fdff13e6fc54174a9f832bb6f48c8e5be 100644
---- a/tsdown.config.ts
-+++ b/tsdown.config.ts
-@@ -18,10 +18,14 @@ function isBuildFaceClient(value: unknown): boolean {
-  */
- export default defineConfig(({ env }) => {
-   const client = isBuildFaceClient(env?.DSH_BUILD_FACE)
--  return {
--    workspace: client
-+  const workspace = {
-+    include: client
-       ? ['vendor/*', 'packages/*/*', 'apps/cli']
-       : ['vendor/*', 'packages/*/*', 'apps/cli', 'apps/desktop-host'],
-+    exclude: ['**/node_modules/**'],
-+  }
-+  return {
-+    workspace,
-     entry: client ? '' : ['lib/types/{index,startup}.js'],
-     outDir: 'lib',
-     format: ['esm'],

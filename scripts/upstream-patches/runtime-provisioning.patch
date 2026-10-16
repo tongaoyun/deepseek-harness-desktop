@@ -57,10 +57,10 @@ index 0000000000000000000000000000000000000000..99d2ffd94792a90f4e5bf6ac79609369
 +  return ['add', '--save-prod', '--save-exact', `${engine.packageName}@${engine.versionRange}`]
 +}
 diff --git a/apps/desktop/scripts/prepare-dsh.ts b/apps/desktop/scripts/prepare-dsh.ts
-index 7d290b945a58384fb344359810dd66873d77f46d..d03a9687c031e0e0bd85bb782bee0777be72ff20 100644
+index 9de39d3ff2dce4d63df2729d17b30615987f8102..7ffab21f984fbe6d71d88144bd6f702e734cbe8f 100644
 --- a/apps/desktop/scripts/prepare-dsh.ts
 +++ b/apps/desktop/scripts/prepare-dsh.ts
-@@ -32,7 +32,12 @@ import {
+@@ -33,7 +33,12 @@ import {
  } from './macos-runtime.ts'
  import { desktopTargetPlatform, resolveDesktopBuildTarget, resolveDesktopTargetBuildPaths } from './desktop-build-paths.mjs'
  import { desktopRuntimeFileExclusion } from './runtime-file-policy.ts'
@@ -74,7 +74,7 @@ index 7d290b945a58384fb344359810dd66873d77f46d..d03a9687c031e0e0bd85bb782bee0777
  
  const APP_ROOT = resolve(import.meta.dirname, '..')
  const BUILD_PATHS = resolveDesktopTargetBuildPaths()
-@@ -124,24 +129,37 @@ async function main(): Promise<void> {
+@@ -125,24 +130,37 @@ async function main(): Promise<void> {
        createRuntimeProjectMetadata(BUILD_ROOT, release)
        return prepareRuntimePatches(BUILD_ROOT, resolve(APP_ROOT, '..', '..'))
      })
@@ -117,7 +117,7 @@ index 7d290b945a58384fb344359810dd66873d77f46d..d03a9687c031e0e0bd85bb782bee0777
        })
      })
      writeFileSync(join(DSH_OUTPUT_ROOT, 'package.json'), `${JSON.stringify({
-@@ -153,8 +171,8 @@ async function main(): Promise<void> {
+@@ -154,8 +172,8 @@ async function main(): Promise<void> {
          throw new Error(`desktop runtime: missing private Host file ${file}`)
        }
      }
@@ -127,7 +127,7 @@ index 7d290b945a58384fb344359810dd66873d77f46d..d03a9687c031e0e0bd85bb782bee0777
 +      throw new Error(`desktop runtime: missing required LibreOffice engine ${office.engine}`)
      }
      if (process.platform === 'darwin' && process.env.DSH_DESKTOP_UNSIGNED !== '1') {
-       await packagingStep(process.env.DSH_DESKTOP_PACKAGING_RUN_DIR, 'sign:dsh-native', () => signMacOSRuntime(DSH_OUTPUT_ROOT, resolveDesktopAppId(process.env), resolveMacOSSigningEnvironment(process.env), target.arch, join(BUILD_PATHS.root, 'signature-cache')))
+       const cacheDirectory = resolveMacOSSignatureCacheDirectory(process.env, BUILD_PATHS.root)
 diff --git a/apps/desktop/scripts/prepare-runtime.ts b/apps/desktop/scripts/prepare-runtime.ts
 index ba92fef0e65e025871a33549639b78eedbd70a2b..e906c767bf405c54df5141316cb9de7da29e8d2e 100644
 --- a/apps/desktop/scripts/prepare-runtime.ts

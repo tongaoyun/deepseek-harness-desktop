@@ -1,5 +1,5 @@
 diff --git a/packages/client/ui-sidebar-documentpreview/README.i18n.yaml b/packages/client/ui-sidebar-documentpreview/README.i18n.yaml
-index 6a35e6a8d73a7efecc4326c49f53d9487a2b6cb5..15e232a26eb9192f972f220264ba0dbd61f546c6 100644
+index 67ad419821ea33fbe430026f729245f7d3ffe71c..3271b1f571998bfc2b3d41e37925acea4f4f59dd 100644
 --- a/packages/client/ui-sidebar-documentpreview/README.i18n.yaml
 +++ b/packages/client/ui-sidebar-documentpreview/README.i18n.yaml
 @@ -12,11 +12,14 @@
@@ -11,18 +11,18 @@ index 6a35e6a8d73a7efecc4326c49f53d9487a2b6cb5..15e232a26eb9192f972f220264ba0dbd
 +  en: 47d94332257b6784
 +  zh: f6f44bf5659c997a
  /deepseek-ai-dsh-client-ui-sidebar-documentpreview/what-it-registers:
--  en: a8eaf01a3a3390ee
--  zh: ddea36dbcc4a0159
-+  en: fb8a57b5c19cd873
-+  zh: 5d96f83753db2a74
+-  en: 54a50f4a3a6e4d45
+-  zh: af905ed570812432
++  en: 6e2c1eb76cc57b88
++  zh: 8efc1b895ec7a5ae
 +/deepseek-ai-dsh-client-ui-sidebar-documentpreview/reusable-preview:
 +  en: b3b861a227e133a0
 +  zh: 925c87500df360ec
  /deepseek-ai-dsh-client-ui-sidebar-documentpreview/addresses:
-   en: 949156aa02ec8b07
-   zh: d3675754e2a37b5d
+   en: 57942270e23d3a8e
+   zh: 6617124e652b3f67
 diff --git a/packages/client/ui-sidebar-documentpreview/README.md b/packages/client/ui-sidebar-documentpreview/README.md
-index 588a95a7e090fa4f71098872aedce1fc0242e56b..e4e50c66935a0a8168a02560c4ef3f4709fe4a4d 100644
+index 51e23e220843772ff6a4fe04ae1708e5687df302..7b33c80bc5400407d560ba47ee8c77722961d54c 100644
 --- a/packages/client/ui-sidebar-documentpreview/README.md
 +++ b/packages/client/ui-sidebar-documentpreview/README.md
 @@ -14,6 +14,7 @@ Preview files in the right Sidebar and choose among registered renderers. Markdo
@@ -48,7 +48,7 @@ index 588a95a7e090fa4f71098872aedce1fc0242e56b..e4e50c66935a0a8168a02560c4ef3f47
  ## Addresses
  
 diff --git a/packages/client/ui-sidebar-documentpreview/README.zh.md b/packages/client/ui-sidebar-documentpreview/README.zh.md
-index 89d90091f53ef963b22d7c33a976484468e3ee41..c22b4feebfd58fcab6dbd216f0ff7c030a928e3f 100644
+index 1c5be3fdc3747d8215a1cf52dd5591fd7a25beec..e5ad3db32c8a2c3a1213d0151aa1f9811c97ca2e 100644
 --- a/packages/client/ui-sidebar-documentpreview/README.zh.md
 +++ b/packages/client/ui-sidebar-documentpreview/README.zh.md
 @@ -14,6 +14,7 @@ kind: "package-reference"
