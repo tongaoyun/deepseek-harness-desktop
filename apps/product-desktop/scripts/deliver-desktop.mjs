@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { Readable } from 'node:stream'
 import { collectDesktopRelease, extractBuildArchive, publishDesktopRelease, RELEASE_TARGETS, waitForDesktopBuild } from './desktop-release.mjs'
+import { productSigningMode } from './update-release.mjs'
 
 const repoPattern = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u
 const root = resolve(import.meta.dirname, '../../..')
@@ -145,9 +146,14 @@ export function releaseDestination(name, client, repository, { github = false, t
   return {
     name,
     find,
+    latest: async () => {
+      try { return await client.request('GET', `${prefix}/latest`) }
+      catch (error) { if (error.status !== 404) throw error }
+    },
     create: async release => {
       const payload = { tag_name: release.tag, name: `DeepSeek Harness ${release.version}`, body: release.body,
-        draft: true, prerelease: true, target_commitish: target }
+        draft: true, prerelease: release.prerelease ?? true, target_commitish: target,
+        ...(github ? { make_latest: 'false' } : {}) }
       try { return await client.request('POST', prefix, payload) }
       catch (error) {
         if (error.status && error.status < 500 && ![409, 422].includes(error.status)) throw error
@@ -198,7 +204,8 @@ export function releaseDestination(name, client, repository, { github = false, t
       try { return await (await client.response(url, { method: 'POST', body, headers, timeoutMs: 15 * 60_000 })).json() }
       finally { body.destroy() }
     },
-    finalize: id => client.request('PATCH', `${prefix}/${id}`, { draft: false }),
+    finalize: (id, release) => client.request('PATCH', `${prefix}/${id}`, { draft: false,
+      ...(github ? { make_latest: release?.prerelease === false ? 'true' : 'false' } : {}) }),
   }
 }
 
@@ -211,6 +218,7 @@ export async function stageBuildArchive(client, path, directory, options = {}) {
 }
 
 async function main() {
+  const signing = productSigningMode(process.env.DESKTOP_SIGNING)
   const repository = required('GITHUB_DESKTOP_REPOSITORY')
   const downloads = required('GITHUB_DOWNLOAD_REPOSITORY')
   const internal = required('GITEA_REPOSITORY')
@@ -259,7 +267,8 @@ async function main() {
   console.log(`Delivery code ${head}; desktop source ${commit}`)
   const deliveryId = randomUUID()
   if (!resumed) {
-    execFileSync(process.execPath, [join(import.meta.dirname, 'sync-github.mjs'), '--delivery-id', deliveryId], { cwd: root, stdio: 'inherit' })
+    execFileSync(process.execPath, [join(import.meta.dirname, 'sync-github.mjs'), '--delivery-id', deliveryId,
+      '--signing', signing], { cwd: root, stdio: 'inherit' })
   }
   const run = await waitForDesktopBuild({ request: github.request, repository, commit, deliveryId,
     runId: resumed ? Number(resumed) : undefined })
@@ -273,7 +282,7 @@ async function main() {
   const stage = await mkdtemp(join(tmpdir(), 'harness-desktop-release-'))
   try {
     for (const target of RELEASE_TARGETS) {
-      const name = `harness-${target}-unsigned-${run.run_number}-${run.run_attempt}`
+      const name = `harness-${target}-${signing}-${run.run_number}-${run.run_attempt}`
       const matches = allArtifacts.filter(artifact => artifact.name === name && artifact.expired === false)
       if (matches.length !== 1) throw new Error(`Missing or ambiguous hosted artifact: ${target}`)
       console.log(`Downloading verified build target: ${target}`)
@@ -281,12 +290,12 @@ async function main() {
     }
     const productVersion = JSON.parse(execFileSync('git', ['show', `${commit}:apps/desktop/package.json`],
       { cwd: root, encoding: 'utf8' })).version
-    const release = await collectDesktopRelease(stage, run, commit, productVersion)
+    const release = await collectDesktopRelease(stage, run, commit, productVersion, { signing, downloadRepository: downloads })
     const links = await publishDesktopRelease(release, [
       releaseDestination('Gitea', gitea, internal, { target: commit, base }),
       releaseDestination('GitHub downloads', github, downloads, { github: true, target: publicRepo.default_branch }),
     ])
-    console.log(`Published verified unsigned version ${release.version}\n${links.join('\n')}`)
+    console.log(`Published verified ${signing} version ${release.version}\n${links.join('\n')}`)
     if (process.env.GITHUB_STEP_SUMMARY) {
       const { appendFile } = await import('node:fs/promises')
       await appendFile(process.env.GITHUB_STEP_SUMMARY, `## Desktop Downloads\n\nVersion: ${release.version}\n\nSource: ${commit}\n\n${links.map(url => `- ${url}`).join('\n')}\n`)

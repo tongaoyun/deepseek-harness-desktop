@@ -23,6 +23,17 @@ async function withDirectory(action: (directory: string) => Promise<void>): Prom
 }
 
 describe('Desktop local packaging configuration', () => {
+  it('owns optional update policy and custom feed in the platform file, excluding ambient overrides', async () => {
+    await withDirectory(async (directory) => {
+      const feed = 'https://downloads.example.com/product/'
+      await writeFile(join(directory, '.env.windows'), `DSH_DESKTOP_UPDATE_URL=${feed}\nDSH_DESKTOP_MANDATORY_UPDATE_ENABLED=0\n`)
+      expect(loadDesktopPackageEnvironment('win32', { DSH_DESKTOP_UPDATE_URL: 'https://stale.example.com/',
+        DSH_DESKTOP_MANDATORY_UPDATE_ENABLED: '1' }, directory)).toEqual({ DSH_DESKTOP_UPDATE_URL: feed, DSH_DESKTOP_MANDATORY_UPDATE_ENABLED: '0' })
+      expect(localMacOSPackageEnvironment({ DSH_DESKTOP_UPDATE_URL: feed }).DSH_DESKTOP_UPDATE_URL).toBeUndefined()
+      await writeFile(join(directory, '.env.windows'), '')
+      expect(loadDesktopPackageEnvironment('win32', { DSH_DESKTOP_UPDATE_URL: feed }, directory)).toEqual({})
+    })
+  })
   it('selects macOS local defaults while excluding inherited release settings and retaining build networking', () => {
     const parent = {
       PATH: 'build-tools', HTTPS_PROXY: 'http://proxy.example:8080', DSH_DESKTOP_NPM_REGISTRY: 'https://registry.npmmirror.com',

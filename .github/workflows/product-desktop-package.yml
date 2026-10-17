@@ -12,6 +12,11 @@ on:
         description: Internal delivery correlation ID
         type: string
         required: false
+      signing:
+        description: unsigned development package or signed native update
+        type: choice
+        options: [unsigned, signed]
+        default: unsigned
 
 permissions:
   contents: read
@@ -22,9 +27,27 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: '24'
+      - name: Validate signing machine configuration
+        env:
+          PACKAGE_SIGNING: ${{ inputs.signing }}
+          PACKAGE_DOWNLOAD_REPOSITORY: ${{ vars.DESKTOP_GITHUB_DOWNLOAD_REPOSITORY }}
+          SIGNING_RUNNERS: ${{ vars.DESKTOP_SIGNING_RUNNERS }}
+          SIGNING_CONFIG_DIRS: ${{ vars.DESKTOP_SIGNING_CONFIG_DIRS }}
+        run: node apps/product-desktop/scripts/signing-runners.mjs
   package:
-    name: ${{ matrix.target }} unsigned
-    runs-on: ${{ matrix.runner }}
+    needs: preflight
+    name: ${{ matrix.target }} ${{ inputs.signing }}
+    runs-on: ${{ inputs.signing == 'signed' && fromJSON(vars.DESKTOP_SIGNING_RUNNERS || '{}')[matrix.target] || matrix.runner }}
     timeout-minutes: 120
     strategy:
       fail-fast: false
@@ -47,6 +70,10 @@ jobs:
       NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
       DSH_DESKTOP_NPM_REGISTRY: https://registry.npmjs.org/
       NPM_CONFIG_FETCH_RETRIES: '4'
+      PACKAGE_SIGNING: ${{ inputs.signing }}
+      PACKAGE_DOWNLOAD_REPOSITORY: ${{ vars.DESKTOP_GITHUB_DOWNLOAD_REPOSITORY }}
+      PACKAGE_SIGNING_CONFIG_DIR: ${{ inputs.signing == 'signed' && fromJSON(vars.DESKTOP_SIGNING_CONFIG_DIRS || '{}')[matrix.target] || '' }}
+      DSH_DESKTOP_UPDATE_CHANNEL: nightly
     steps:
       - name: Checkout exact source
         uses: actions/checkout@v7.0.1
@@ -84,6 +111,16 @@ jobs:
         run: pnpm run verify:upstream
       - name: Test product source synchronization
         run: node --test apps/product-desktop/tests/github-delivery.test.mjs
+      - name: Test native product update publication
+        run: node --test apps/product-desktop/tests/product-updates.test.mjs
+      - name: Test native update confirmation and configuration
+        run: >-
+          pnpm exec vitest run
+          apps/desktop/tests/desktop-auto-update-environment.spec.ts
+          apps/desktop/tests/desktop-package-environment.spec.ts
+          apps/desktop/tests/desktop-policy-environment.spec.ts
+          apps/desktop/tests/update-coordinator.spec.ts
+          apps/desktop/tests/update-schedule.spec.ts
       - name: Test acceptance process cleanup
         run: node --test apps/product-desktop/tests/acceptance-process.test.mjs
       - name: Test Electron close lifecycle
@@ -96,13 +133,17 @@ jobs:
         if: matrix.target == 'win-x64'
         shell: pwsh
         run: |
-          pnpm --dir apps/product-desktop run package win-x64 --unsigned --build-version $env:PACKAGE_VERSION
+          $ModeArgs = if ($env:PACKAGE_SIGNING -eq 'signed') { @() } else { @('--unsigned') }
+          pnpm --dir apps/product-desktop run package win-x64 @ModeArgs --build-version $env:PACKAGE_VERSION
           if ($LASTEXITCODE -ne 0) { throw 'Windows packaging failed' }
       - name: Package macOS
         if: matrix.target != 'win-x64'
         env:
           PACKAGE_TARGET: ${{ matrix.target }}
-        run: pnpm --dir apps/product-desktop run package "$PACKAGE_TARGET" --unsigned --build-version "$PACKAGE_VERSION"
+        run: |
+          mode_args=()
+          if [ "$PACKAGE_SIGNING" != signed ]; then mode_args+=(--unsigned); fi
+          pnpm --dir apps/product-desktop run package "$PACKAGE_TARGET" "${mode_args[@]}" --build-version "$PACKAGE_VERSION"
       - name: Test product content retention
         run: >-
           pnpm exec vitest run
@@ -115,15 +156,16 @@ jobs:
         if: matrix.target == 'win-x64'
         shell: pwsh
         run: |
-          $ArtifactRoot = 'apps/desktop/.desktop-build/targets/win-x64/unsigned-artifacts'
+          $ArtifactRoot = "apps/desktop/.desktop-build/targets/win-x64/$env:PACKAGE_ARTIFACT_DIRECTORY"
           $Installers = @(Get-ChildItem -LiteralPath $ArtifactRoot -File -Filter '*.exe')
           if ($Installers.Count -ne 1) { throw 'Expected exactly one Windows installer' }
           $Files = @($Installers[0].FullName,
             (Join-Path $ArtifactRoot 'win-unpacked/DeepSeek Harness.exe'),
             (Join-Path $ArtifactRoot 'win-unpacked/resources/native/deepseek-harness-native.exe'))
           foreach ($File in $Files) {
-            if ((Get-AuthenticodeSignature -LiteralPath $File).Status -ne 'NotSigned') {
-              throw "Expected unsigned artifact: $File"
+            $Expected = if ($env:PACKAGE_SIGNING -eq 'signed') { 'Valid' } else { 'NotSigned' }
+            if ((Get-AuthenticodeSignature -LiteralPath $File).Status -ne $Expected) {
+              throw "Unexpected artifact signature: $File"
             }
           }
           pnpm --dir apps/desktop test:installer -- --headless
@@ -179,13 +221,14 @@ jobs:
       - name: Upload installers
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: harness-${{ matrix.target }}-unsigned-${{ github.run_number }}-${{ github.run_attempt }}
+          name: harness-${{ matrix.target }}-${{ inputs.signing }}-${{ github.run_number }}-${{ github.run_attempt }}
           include-hidden-files: true
           path: |
-            apps/desktop/.desktop-build/targets/${{ matrix.target }}/unsigned-artifacts/*.exe
-            apps/desktop/.desktop-build/targets/${{ matrix.target }}/unsigned-artifacts/*.dmg
-            apps/desktop/.desktop-build/targets/${{ matrix.target }}/unsigned-artifacts/*.zip
-            apps/desktop/.desktop-build/targets/${{ matrix.target }}/unsigned-artifacts/*.blockmap
-            apps/desktop/.desktop-build/targets/${{ matrix.target }}/unsigned-artifacts/build-manifest.json
+            apps/desktop/.desktop-build/targets/${{ matrix.target }}/${{ env.PACKAGE_ARTIFACT_DIRECTORY }}/*.exe
+            apps/desktop/.desktop-build/targets/${{ matrix.target }}/${{ env.PACKAGE_ARTIFACT_DIRECTORY }}/*.dmg
+            apps/desktop/.desktop-build/targets/${{ matrix.target }}/${{ env.PACKAGE_ARTIFACT_DIRECTORY }}/*.zip
+            apps/desktop/.desktop-build/targets/${{ matrix.target }}/${{ env.PACKAGE_ARTIFACT_DIRECTORY }}/*.blockmap
+            apps/desktop/.desktop-build/targets/${{ matrix.target }}/${{ env.PACKAGE_ARTIFACT_DIRECTORY }}/*-nightly.yml
+            apps/desktop/.desktop-build/targets/${{ matrix.target }}/${{ env.PACKAGE_ARTIFACT_DIRECTORY }}/build-manifest.json
           if-no-files-found: error
           retention-days: 1

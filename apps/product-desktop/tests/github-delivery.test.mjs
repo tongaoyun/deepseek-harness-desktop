@@ -237,7 +237,7 @@ test('writes credential-free identities only after all required installers exist
   } finally { rmSync(directory, { recursive: true, force: true }) }
 })
 
-test('uses three native hosted runners and product packaging without publishing or signing credentials', () => {
+test('uses native hosted development runners or explicitly configured signing machines without publishing credentials', () => {
   const source = readFileSync(new URL('../../../.github/workflows/product-desktop-package.yml', import.meta.url), 'utf8')
   const workflow = yaml.load(source)
   assert.deepEqual(Object.keys(workflow.on), ['workflow_dispatch'])
@@ -257,8 +257,13 @@ test('uses three native hosted runners and product packaging without publishing 
   }
   assert.ok(steps.findIndex(step => step.name === 'Fetch stored Harness baseline') < steps.findIndex(step => step.run?.includes('verify:upstream')))
   assert.ok(steps.findIndex(step => step.name === 'Install locked dependencies') < steps.findIndex(step => step.name === 'Verify source and native architecture'))
-  assert.match(steps.find(step => step.name === 'Package Windows').run, /apps\/product-desktop run package win-x64 --unsigned/u)
-  assert.match(steps.find(step => step.name === 'Package macOS').run, /apps\/product-desktop run package.*--unsigned/u)
+  assert.match(steps.find(step => step.name === 'Package Windows').run, /apps\/product-desktop run package win-x64 @ModeArgs/u)
+  assert.match(steps.find(step => step.name === 'Package Windows').run, /PACKAGE_SIGNING -eq 'signed'/u)
+  assert.match(steps.find(step => step.name === 'Package macOS').run, /mode_args\+=\(--unsigned\)/u)
+  assert.equal(workflow.jobs.package.needs, 'preflight')
+  assert.match(workflow.jobs.package['runs-on'], /DESKTOP_SIGNING_RUNNERS/u)
+  assert.deepEqual(workflow.on.workflow_dispatch.inputs.signing.options, ['unsigned', 'signed'])
+  assert.match(steps.find(step => step.name === 'Upload installers').with.path, /\*-nightly\.yml/u)
   const archiveIndex = steps.findIndex(step => step.name === 'Test archived Host startup')
   assert.ok(archiveIndex > steps.findIndex(step => step.name === 'Package Windows'))
   assert.ok(archiveIndex > steps.findIndex(step => step.name === 'Package macOS'))
