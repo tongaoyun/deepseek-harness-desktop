@@ -4,11 +4,12 @@ import {
   connectorServerName,
   connectorToolPolicy,
   parseConnectorCatalog,
+  hydrateConnectors, snapshotConnector, parseConnectorSnapshots,
 } from '../src/deepseek-harness-connector-contract.ts'
 import { publicToolName } from '@deepseek-ai/dsh-mcp-client'
 
 const remote = (overrides: Record<string, unknown> = {}) => ({
-  id: 'erp', name: 'ERP', transport: 'streamable-http', url: 'https://erp.example/mcp',
+  id: 'erp', version: '1.0.0', name: 'ERP', transport: 'streamable-http', url: 'https://erp.example/mcp',
   status: 'ready', authMode: 'none',
   arguments: [], environment: {}, headers: {}, tools: [
     { name: 'orders_read', displayName: '查询订单', description: '读取订单', access: 'READ' },
@@ -17,6 +18,15 @@ const remote = (overrides: Record<string, unknown> = {}) => ({
 })
 
 describe('DeepSeekHarness connector contract', () => {
+  it('pins connector versions and refuses changed or versionless execution snapshots', () => {
+    const [connector] = parseConnectorCatalog([remote()])
+    const snapshot = snapshotConnector(connector!)
+    expect(hydrateConnectors([snapshot], [connector!])[0]?.version).toBe('1.0.0')
+    expect(() => hydrateConnectors([snapshot], parseConnectorCatalog([remote({ version: '1.0.1' })])))
+      .toThrow('Connector version changed')
+    const { version: _version, ...old } = snapshot
+    expect(() => parseConnectorSnapshots([old])).toThrow('version')
+  })
   it('uses only published dependency entry points at runtime', () => {
     const source = readFileSync(new URL('../src/deepseek-harness-connector-contract.ts', import.meta.url), 'utf8')
     expect(source).not.toMatch(/from ['"]@[^'"]+\/src\//)

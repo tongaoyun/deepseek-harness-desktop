@@ -7,6 +7,7 @@ const messageKeys: Readonly<Record<string, DeepSeekHarnessProductKey>> = {
   FEEDBACK_IMAGES_INVALID: 'feedbackImagesInvalid',
   EXTENSION_DRAFT_CHANGED: 'draftChanged',
   EXTENSION_SAVE_PENDING: 'extensionSavePending',
+  EXTENSION_DEPENDENCY_BLOCKED: 'extensionDependenciesBlocked',
   EXTENSION_INSTALL_FAILED: 'extensionInstallFailed',
   EXTENSION_VERSION_CONFLICT: 'resourceConflict',
   EXTENSION_REQUEST_TIMEOUT: 'extensionRequestTimeout',
@@ -38,6 +39,7 @@ const messageKeys: Readonly<Record<string, DeepSeekHarnessProductKey>> = {
   KNOWLEDGE_MANAGEMENT_FORBIDDEN: 'knowledgeManageForbidden',
   KNOWLEDGE_DOCUMENT_CONFLICT: 'knowledgeDocumentChanged',
   IDEMPOTENCY_OPERATION_UNKNOWN: 'knowledgeOperationUnknown',
+  KNOWLEDGE_SAVE_RECOVERY_FAILED: 'knowledgeRecoveryFailed',
   KNOWLEDGE_DOCUMENT_CHANGED: 'knowledgePreviewSourceChanged',
   KNOWLEDGE_DOCUMENT_DUPLICATE: 'knowledgeDocumentDuplicate',
   KNOWLEDGE_FILE_CHANGED: 'knowledgeUploadFileChanged',
@@ -55,6 +57,7 @@ const messageKeys: Readonly<Record<string, DeepSeekHarnessProductKey>> = {
   KNOWLEDGE_PREVIEW_FAILED: 'knowledgePreviewFailed',
   KNOWLEDGE_PARSE_MODE_INVALID: 'knowledgeParseModeInvalid',
   KNOWLEDGE_FOLDER_CONFLICT: 'knowledgeFolderConflict',
+  KNOWLEDGE_FOLDER_CHANGED: 'knowledgeFolderChanged',
   KNOWLEDGE_FOLDER_NOT_EMPTY: 'knowledgeFolderNotEmpty',
 }
 

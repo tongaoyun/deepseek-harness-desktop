@@ -23,7 +23,7 @@ interface Dependencies {
   readonly load: (skill: SkillContent) => Promise<SkillDefinition>
   readonly install: (skill: SkillContent, signal?: AbortSignal) => Promise<void>
   readonly capabilities: (sessionId: string) => Promise<ProductTaskCapabilities>
-  readonly connectors: (signal?: AbortSignal) => Promise<readonly DeepSeekHarnessConnector[]>
+  readonly connectors: (ids: readonly string[], signal?: AbortSignal) => Promise<readonly DeepSeekHarnessConnector[]>
   readonly mountConnectors: (
     agent: Agent, connectors: readonly DeepSeekHarnessConnector[], signal?: AbortSignal,
   ) => Promise<() => Promise<void>>
@@ -150,7 +150,8 @@ export function createInstalledSkills(ctx: Context, deps: Dependencies) {
         return entry as Record<string, unknown>
       })
     }
-    const live = entries.some(skill => skill.connectorRefs.length > 0) ? await deps.connectors(signal) : []
+    const referencedIds = [...new Set(entries.flatMap(skill => skill.connectorRefs))]
+    const live = referencedIds.length > 0 ? await deps.connectors(referencedIds, signal) : []
     const connectors = pinned === undefined ? live : hydrateConnectors(pinned.filter(contract =>
       live.some(connector => connector.id === contract.id && connector.transport === contract.transport)), live)
     const knowledge = new Map<string, Set<string>>()

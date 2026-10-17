@@ -94,7 +94,7 @@ export class AppWebEntry {
       // know that trap. It installs before the first mount, so the surface the
       // renderer draws is the one the first frame measures.
       this.stopDragRecall = installWindowDragRecall({ document: this.container.ownerDocument })
-      await mountClient(ctx, this.container)
+      await mountClient(ctx, this.container, this.modules.entries)
     } catch (reason) {
       console.error(reason)
       if (onFailure !== undefined) onFailure(reason)

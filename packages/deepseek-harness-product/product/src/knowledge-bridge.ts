@@ -10,6 +10,15 @@ export interface KnowledgeUpload {
     folderId: string | null | undefined, api: DeepSeekHarnessApiClient, signal?: AbortSignal): Promise<unknown>
   /** Release a retained native selection without repeating its remote write. */
   discard(baseId: string, operationId: string): void
+  /** Read bounded employee-owned retry information without local paths or hashes. */
+  pending(baseId: string): readonly KnowledgeUploadPending[]
+}
+
+/** Public identity of a native selection retained for an unconfirmed upload. */
+export interface KnowledgeUploadPending {
+  readonly operationId: string
+  readonly pdfParseMode: KnowledgePdfParseMode
+  readonly folderId?: string | null | undefined
 }
 
 /** Dispatch knowledge management without exposing upstream URLs or credentials.
@@ -51,6 +60,10 @@ export async function invokeKnowledge(api: DeepSeekHarnessApiClient, method: str
   const baseId = resource(input, 'knowledgeBaseId')
   const base = `/api/v1/knowledge-bases/${baseId}`
   const documents = `${base}/documents`
+  if (method === 'knowledge.documents.upload.pending') {
+    if (Object.keys(input).some(key => key !== 'knowledgeBaseId')) invalid('pending upload payload')
+    return upload?.pending(decodeURIComponent(baseId)) ?? []
+  }
   if (method === 'knowledge.folders.get') {
     if (Object.keys(input).some(key => !['knowledgeBaseId', 'folderId'].includes(key))) invalid('folder payload')
     return api.request(`${base}/folders/${resource(input, 'folderId')}`, options)
@@ -122,16 +135,20 @@ export async function invokeKnowledge(api: DeepSeekHarnessApiClient, method: str
     return api.request(`${documents}/${resource(input, 'documentId')}`, { ...options, method: 'DELETE', headers: writeHeaders(input) })
   }
   if (method === 'knowledge.documents.move') {
+    if (Object.keys(input).some(key => !['knowledgeBaseId', 'documentId', 'folderId', 'expectedFolderId', 'expectedUpdatedAt', 'operationId'].includes(key))) invalid('move payload')
     if (input.folderId !== null && input.folderId !== undefined) decodedResource(input, 'folderId')
+    if (input.expectedFolderId !== null && input.expectedFolderId !== undefined) decodedResource(input, 'expectedFolderId')
     return api.request(`${documents}/${resource(input, 'documentId')}/location`, {
-      ...options, method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ folderId: input.folderId ?? null }),
+      ...options, method: 'PUT', headers: writeHeaders(input), body: JSON.stringify({ folderId: input.folderId ?? null,
+        expectedFolderId: input.expectedFolderId ?? null, expectedUpdatedAt: field(input, 'expectedUpdatedAt', 80) }),
     })
   }
   if (method === 'knowledge.folders.create' || method === 'knowledge.folders.rename') {
     const updating = method === 'knowledge.folders.rename'
     return api.request(`${base}/folders${updating ? `/${resource(input, 'folderId')}` : ''}`, {
-      ...options, method: updating ? 'PUT' : 'POST', headers: updating ? { 'content-type': 'application/json' } : writeHeaders(input),
+      ...options, method: updating ? 'PUT' : 'POST', headers: writeHeaders(input),
       body: JSON.stringify({ name: field(input, 'name', 80),
+        ...(updating ? { expectedUpdatedAt: field(input, 'expectedUpdatedAt', 80) } : {}),
         ...(!updating ? { parentId: input.parentId == null ? null : decodedResource(input, 'parentId') } : {}),
       }),
     })

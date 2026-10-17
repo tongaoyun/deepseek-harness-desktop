@@ -34,7 +34,7 @@ const skill: SkillContent = {
   connectorRefs: [], requiredTools: [], knowledgeBaseRefs: [], sha256: 'b'.repeat(64),
 }
 const connector = {
-  id: 'erp', name: 'ERP', status: 'ready', authMode: 'none', transport: 'streamable-http',
+  id: 'erp', version: '1.0.0', name: 'ERP', status: 'ready', authMode: 'none', transport: 'streamable-http',
   url: 'https://erp.example/mcp', arguments: [], environment: {}, headers: { Authorization: 'current' },
   toolNames: ['orders_read'], readOnlyTools: ['orders_read'],
   tools: [{ name: 'orders_read', access: 'READ' }],

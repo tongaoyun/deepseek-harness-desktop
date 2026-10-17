@@ -641,6 +641,45 @@ describe('DeepSeekHarness capability navigation', () => {
     expect(screen.queryByText(zh.authRequired)).toBeNull()
   })
 
+  it.each([
+    ['ORGANIZATION_SERVICE_UNAVAILABLE', false],
+    ['ORGANIZATION_SYNC_EXPIRED', false],
+    ['KNOWLEDGE_ACCESS_DENIED', true],
+    ['KNOWLEDGE_ACCESS_REVOKED', true],
+    ['ORGANIZATION_EMPLOYEE_INACTIVE', true],
+    ['ORGANIZATION_EMPLOYEE_UNMAPPED', true],
+    ['ORGANIZATION_SOURCE_INVALID', true],
+  ] as const)('preserves knowledge drafts only for temporary directory failures: %s', async (code, denied) => {
+    let failed = false
+    const invoke = vi.fn(async (method: string) => {
+      if (method === 'knowledge.bases.list') {
+        if (failed) throw new ProductError(code, 'private upstream diagnostic', !denied)
+        return [{ id: 'personal', name: '我的资料', scope: 'PERSONAL', canManage: true }]
+      }
+      return { items: [], page: 1, size: 20, total: 0 }
+    })
+    installProductApi({ invoke, getSession: async () => ({ authenticated: true, employeeId: 'employee' }) })
+    const { container } = render(<KnowledgePanel t={t} {...actions()} />)
+    fireEvent.click(await screen.findByRole('button', { name: zh.knowledgeAddMaterial }))
+    const navigation = within(container.querySelector('[data-knowledge-navigation]') as HTMLElement)
+    const refresh = navigation.getByRole('button', { name: zh.refresh })
+    fireEvent.click(await screen.findByRole('menuitem', { name: zh.knowledgeNewDocument }))
+    const body = screen.getByRole<HTMLTextAreaElement>('textbox', { name: zh.knowledgeMarkdownContent })
+    fireEvent.change(body, { target: { value: '保留编辑内容' } })
+    failed = true
+    fireEvent.click(refresh)
+    await waitFor(() => { expect(screen.getByRole('alert').textContent).toContain(code) })
+    expect(screen.queryByText('private upstream diagnostic')).toBeNull()
+    if (denied) {
+      expect(screen.queryByRole('dialog')).toBeNull()
+      expect(screen.queryByRole('button', { name: '我的资料', exact: true })).toBeNull()
+      expect(invoke.mock.calls.some(([method]) => method === 'knowledge.documents.save')).toBe(false)
+    } else {
+      expect(screen.getByRole('dialog').contains(body)).toBe(true)
+      expect(body.value).toBe('保留编辑内容')
+    }
+  })
+
   it('shows an expired-login action instead of reporting a catalog outage', async () => {
     const getSession = vi.fn()
       .mockResolvedValueOnce({ authenticated: true })

@@ -52,6 +52,8 @@ JSON 请求的网络中断或内部请求期限超时返回 `PRODUCT_NETWORK_UNA
 
 `knowledge.folders.get` 按 ID 读取指定知识库内的一个文件夹，转发取消信号并由服务端检查当前权限。仅接受知识库和文件夹 ID；客户端可独立于已加载目录页解析上级路径。
 
+文件夹响应必须包含 `updatedAt`；重命名要求 `expectedUpdatedAt` 和 `operationId`，桥接发送版本与 `Idempotency-Key`。服务端冲突不会覆盖新版本，同键同内容重试返回原回执。`knowledge.documents.upload.pending` 仅向桌面页面提供当前员工在指定知识库的原生上传恢复信息，不向 Host 或模型开放，也不暴露本地路径。
+
 使用命名空间传输，并由产品协议白名单校验请求。`tasks.capabilities.prepare` 是唯一的套件准备入口，返回能力快照、执行位置及已校验的依赖，官方 Preset 与 Session API 负责执行。
 
 任务能力读取和准备结果包含从固定专家套件解析的 `requiredConnectorIds`。调用方据此锁定任务选择，该选择独立于账号授权和连接器可用状态。
@@ -73,6 +75,8 @@ JSON 请求的网络中断或内部请求期限超时返回 `PRODUCT_NETWORK_UNA
 `extensions.connector.read/update/delete` 通过主进程管理本人创建的个人连接器。读取仅返回公开配置及已配置私密键的空占位值。修改创建不可变的新版本，删除使资源 ID 退役。服务端对每项操作校验所有者。
 
 `extensions.connector.configuration.read/save` 管理本人设备上的连接凭据，适用于当前可访问的非托管、无 OAuth 连接器，无需资源编辑权限。读取返回固定目标、所需字段名、超时和配置状态；保存只接收私密 Header、环境变量与超时，不允许更换目标或提升版本。公开列表仅返回 `canConfigure` 和配置状态；私密值不返回 Renderer 或 Host。配置完成使连接器目录缓存失效。
+
+Host `connectors.list` 可提交 `{ids: string[]}`，在本机工具发现前筛选连接器；省略查询全部，空数组返回空集合。Renderer 目录不做 MCP 工具发现，仅展示服务端元数据与本机配置状态。服务端认证代理的运行时请求附带固定版本 Header；员工令牌与私密 Header 始终由主进程持有。
 
 连接器保存接受 1–600 的整数 `timeoutSeconds`，默认 60 秒。该字段属于本机 MCP 配置，不能写入对话内容草稿。标准 MCP JSON 可提供同一字段。
 

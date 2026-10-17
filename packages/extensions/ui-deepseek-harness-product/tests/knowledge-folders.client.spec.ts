@@ -9,7 +9,7 @@ it('resolves nested stable identities independently of duplicate names and input
     { id: 'other', name: '资料', parentId: null },
     { id: 'root', name: '项目', parentId: null },
     { id: 'leaf', name: '记录', parentId: 'child' },
-  ]
+  ].map(folder => ({ ...folder, updatedAt: '2026-10-17T00:00:00Z' }))
   expect(knowledgeFolderTrail(folders, 'leaf').map(folder => folder.id)).toEqual(['root', 'child', 'leaf'])
   expect(knowledgeFolderTrail(folders, null)).toEqual([])
   expect(knowledgeFolderTrail(folders, undefined)).toEqual([])
@@ -17,8 +17,10 @@ it('resolves nested stable identities independently of duplicate names and input
 })
 
 it('rejects missing parents, cycles and missing hierarchy metadata before rendering paths', () => {
-  expect(() => knowledgeFolderTrail([{ id: 'child', name: '资料', parentId: 'missing' }], 'child')).toThrow('hierarchy')
-  expect(() => knowledgeFolderTrail([{ id: 'cycle', name: '资料', parentId: 'cycle' }], 'cycle')).toThrow('hierarchy')
+  expect(() => knowledgeFolderTrail([{ id: 'child', name: '资料', parentId: 'missing', updatedAt: '2026-10-17T00:00:00Z' }], 'child')).toThrow('hierarchy')
+  expect(() => knowledgeFolderTrail([{ id: 'cycle', name: '资料', parentId: 'cycle', updatedAt: '2026-10-17T00:00:00Z' }], 'cycle')).toThrow('hierarchy')
   expect(() => knowledgeFolder({ id: 'old', name: '旧数据' })).toThrow('response')
-  expect(knowledgeFolder({ id: 'new', name: '资料', parentId: null })).toEqual({ id: 'new', name: '资料', parentId: null })
+  expect(() => knowledgeFolder({ id: 'new', name: '资料', parentId: null })).toThrow('response')
+  expect(knowledgeFolder({ id: 'new', name: '资料', parentId: null, updatedAt: '2026-10-17T00:00:00Z' }))
+    .toEqual({ id: 'new', name: '资料', parentId: null, updatedAt: '2026-10-17T00:00:00Z' })
 })

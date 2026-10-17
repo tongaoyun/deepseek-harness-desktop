@@ -36,7 +36,7 @@ export interface TaskDependencies {
   readonly authorizeKit?: (id: string, signal?: AbortSignal) => Promise<void>
   readonly visibleKnowledge?: (signal?: AbortSignal) => Promise<readonly string[]>
   readonly content: (kind: 'kit', id: string, signal?: AbortSignal, taskId?: string) => Promise<TaskContent>
-  readonly connectors: (signal?: AbortSignal) => Promise<readonly DeepSeekHarnessConnector[]>
+  readonly connectors: (ids: readonly string[], signal?: AbortSignal) => Promise<readonly DeepSeekHarnessConnector[]>
   readonly validateKnowledge: (ids: readonly string[], refs: readonly string[], signal?: AbortSignal) => Promise<readonly string[]>
   readonly connectorPlugin: (connector: DeepSeekHarnessConnector) => PresetDefinition['plugins'][number]
   readonly knowledgePlugins: (refs: readonly string[], ids: readonly string[]) => PresetDefinition['plugins']
@@ -193,7 +193,7 @@ export async function createTaskCapabilities(ctx: Context, deps: TaskDependencie
       }
       // Restored providers may depend on services supplied by this activating Host plugin.
       try { await register(snapshot, hydrateConnectors(snapshot.connectors,
-        snapshot.connectors.length === 0 ? [] : await deps.connectors()), false) }
+        snapshot.connectors.length === 0 ? [] : await deps.connectors(snapshot.connectors.map(connector => connector.id))), false) }
       catch (error) {
         failures.set(id, productFailure(error))
         await registerBlocked(id)
@@ -346,7 +346,7 @@ export async function createTaskCapabilities(ctx: Context, deps: TaskDependencie
         }
         capabilities = { ...capabilities, knowledgeBaseIds: sorted(resolvedKnowledge), requiredKnowledgeBaseIds: sorted(requiredKnowledge) }
         if (capabilities.expertKit !== undefined) await deps.authorizeKit?.(capabilities.expertKit.id, signal)
-        const live = capabilities.connectorIds.length === 0 ? [] : await deps.connectors(signal)
+        const live = capabilities.connectorIds.length === 0 ? [] : await deps.connectors(capabilities.connectorIds, signal)
         dependencyChecks.push(...capabilities.connectorIds.map(reference => ({ kind: 'DATA_CONNECTION' as const, reference,
           status: live.some(row => row.id === reference) ? 'READY' as const : 'UNAUTHORIZED' as const })))
         const connectors = selectedConnectors(capabilities.connectorIds, live).map((connector) => {

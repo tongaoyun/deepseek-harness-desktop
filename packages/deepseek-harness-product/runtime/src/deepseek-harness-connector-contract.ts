@@ -1,9 +1,11 @@
 import { createHash } from 'node:crypto'
 import { publicToolName } from '@deepseek-ai/dsh-mcp-client'
 import { z } from 'zod'
+import { ProductError } from '@deepseek-harness/product/errors'
 
 export interface DeepSeekHarnessConnector {
   readonly id: string
+  readonly version: string
   readonly name: string
   readonly status: 'ready'
   readonly authMode: 'none' | 'employee-bearer' | 'oauth'
@@ -54,6 +56,8 @@ export function hydrateConnectors(contracts: readonly ConnectorSnapshot[], live:
   return contracts.map((contract) => {
     const current = live.find(connector => connector.id === contract.id)
     if (current === undefined) throw new Error(`Connector is unavailable: ${contract.id}`)
+    if (current.version !== contract.version) throw new ProductError('EXTENSION_VERSION_CONFLICT',
+      `Connector version changed: ${contract.id}; prepare a new task`, false, [{ kind: 'connector', id: contract.id }])
     if (current.transport !== contract.transport) throw new Error(`Connector transport changed: ${contract.id}`)
     return { ...contract, ...(current.url === undefined ? {} : { url: current.url }),
       headers: current.headers, environment: current.environment }
@@ -87,7 +91,7 @@ export function parseConnectorCatalog(value: unknown): DeepSeekHarnessConnector[
     const headers = stringMap(record.headers, 'headers')
     validateHeaders(headers)
     const base: Omit<DeepSeekHarnessConnector, 'url' | 'command'> = {
-      id, name: stringField(record, 'name'), status,
+      id, version: stringField(record, 'version'), name: stringField(record, 'name'), status,
       authMode: authMode as DeepSeekHarnessConnector['authMode'], transport,
       arguments: stringList(record.arguments, 'arguments'),
       environment: stringMap(record.environment, 'environment'),

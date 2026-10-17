@@ -2,6 +2,53 @@
   "baseline": "86a402200d95fecef4529d969836f1fe13c6cb0d",
   "patches": [
     {
+      "id": "client-reconciliation-mount",
+      "purpose": "通用客户端挂载跟随 Loader 的插件替换状态：替换前同步卸载 React 根，完成激活后重新挂载，失败保留现有启动页面及插件诊断。相同且健康的插件图仅刷新模块索引，不触发页面重挂载；显式重试仍检查插件。覆盖 Session scope adapter 暂时卸载导致根永久白屏的问题，不修改产品协议或 Session 格式。",
+      "tests": [
+        "packages/client/web/tests/mount.client.spec.ts",
+        "packages/client/web/tests/boot.client.spec.ts",
+        "packages/client/modules/tests/entries.client.spec.ts"
+      ],
+      "files": [
+        {
+          "path": "packages/client/web/src/boot.ts",
+          "before": "643936d66067c2a4f460d04a676c69adbec9ab0edd0a4b864178baa933354e43",
+          "after": "6190652adc8b0cdf2612234123e52c2b3f2b63cc0c40bf927021971cf9a97b73"
+        },
+        {
+          "path": "packages/client/web/src/mount.ts",
+          "before": "45b6e01d0872c3b2b568415425d1e0794e58aee891fa6c6bf5d4e5ac36be8801",
+          "after": "b6fe881945b110df24d6f74dabff0c21e6f2cfd69dede5fab674b224089bdc6e"
+        },
+        {
+          "path": "packages/client/web/tests/mount.client.spec.ts",
+          "before": "d9b432bf778f3207b5e66c06262393d993ec7eec024052a66f58fa36215c86bc",
+          "after": "eace9938a11bead7cf9fb0a44bdccebb7366a45e7903d2faaad551984be27d16"
+        },
+        {
+          "path": "packages/client/web/tests/boot.client.spec.ts",
+          "before": "ad0621c6c1a62a9ef462aad54bbfc6cff3bdf0160f42dee7ec0c037a7a172e4e",
+          "after": "fa4f600c10e0bdd51e4a33492c6b1bc9dc6957666ee972c9a8f53de530bf97b7"
+        },
+        {
+          "path": "packages/test-support/client-runtime/src/assembly/test-client.ts",
+          "before": "64cc3bc20fbbb57c54709dacd5408036bda01d632e2a8af5f8d7718680631d52",
+          "after": "50002d11af328c8ef01092b9e5c80c3ae99aba1abaf309d88849d7df4a3efb70"
+        },
+        {
+          "path": "packages/client/modules/src/client/entries.ts",
+          "before": "a0347ea85e10c19669ea83f24e8faa0e9748343038c6671abce950a802276dbb",
+          "after": "eaebdd9066d2f315baeb6f3c4955ffaafd7be64045f7aba0e61cbdca7a9ad777"
+        },
+        {
+          "path": "packages/client/modules/tests/entries.client.spec.ts",
+          "before": "557f02988c5926820e31278cdb844bad019c44b88fe0b566549fb9e7ea25d382",
+          "after": "5687d12e967a9e6cbeff237094d7ff40487d1c8a101a217a205281e9f02265e4"
+        }
+      ],
+      "diff": "client-reconciliation-mount.patch"
+    },
+    {
       "id": "electron-profile-module-identity",
       "purpose": "Electron profile resolution canonicalizes file-module URLs and lookup directories with archive-aware native realpath. Windows short paths and directory aliases share initial startup module instances; query strings and fragments remain distinct for HMR. Plain Node and packaged executable resolution retain their existing behavior. The real archived Electron regression exercises the built resolver and fails on duplicate identity when canonicalization is removed.",
       "tests": [
@@ -1397,7 +1444,7 @@
         {
           "path": "scripts/translation-pairing.manifest.json",
           "before": "9944a604474c609318ec2793512661aa0dfc67f124d6789df4f285e8c5910153",
-          "after": "aae2d608b074807ad95613370f0b4781f94cae18d2831142e23ebaa29c07e40a"
+          "after": "2f4334367ecc39b4e3d41d8b4821eac805ccfa182183bba32fb052c76426d67b"
         },
         {
           "path": "scripts/verify-package-readme-limitations.ts",

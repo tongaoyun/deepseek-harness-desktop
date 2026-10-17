@@ -7,6 +7,28 @@ import { zh } from '../src/locales.ts'
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
+it('pins the read folder version and retry identity and retains the name on conflict', async () => {
+  const folder = { id: 'folder', name: '原名称', parentId: null, updatedAt: '2026-10-17T00:00:00Z' }
+  const writes: Record<string, unknown>[] = []
+  vi.stubGlobal('dshDesktop', { extensions: { cancel: vi.fn(), invoke: async (_namespace: string, _method: string, payload: Record<string, unknown>) => {
+    writes.push(payload)
+    return { ok: false, failure: productFailure(new ProductError(writes.length === 1 ? 'PRODUCT_NETWORK_UNAVAILABLE' : 'KNOWLEDGE_FOLDER_CHANGED',
+      'Folder save failed', writes.length === 1)) }
+  } } })
+  const saved = vi.fn()
+  render(<KnowledgeEditor knowledgeBaseId="personal" target={{ kind: 'folder', folder }} onClose={vi.fn()} onSaved={saved} t={key => zh[key]} />)
+  fireEvent.change(screen.getByRole('textbox', { name: zh.knowledgeFolderName }), { target: { value: '我的名称' } })
+  fireEvent.click(screen.getByRole('button', { name: zh.knowledgeSave }))
+  await screen.findByRole('alert')
+  fireEvent.click(screen.getByRole('button', { name: zh.knowledgeRetrySave }))
+  await screen.findByText(`${zh.knowledgeFolderChanged} (KNOWLEDGE_FOLDER_CHANGED)`)
+  expect(writes).toHaveLength(2)
+  expect(writes[1]).toEqual(writes[0])
+  expect(writes[0]).toMatchObject({ folderId: 'folder', name: '我的名称', expectedUpdatedAt: folder.updatedAt })
+  expect(screen.getByRole<HTMLInputElement>('textbox', { name: zh.knowledgeFolderName }).value).toBe('我的名称')
+  expect(saved).not.toHaveBeenCalled()
+})
+
 it.each([false, true])('preserves edits through conflict recovery and a latest-read outage: %s', async (failRead) => {
   const original = { id: 'document', knowledgeBaseId: 'personal', filename: 'notes.md', mediaType: 'text/markdown',
     sizeBytes: 10, status: 'READY', chunkCount: 1, updatedAt: '2026-10-10T00:00:00Z', folderId: null,

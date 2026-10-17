@@ -121,7 +121,7 @@ export class ClientEntries {
    */
   retry(): Promise<void> {
     const generation = ++this.generation
-    return this.enqueue(() => this.reconcile(generation))
+    return this.enqueue(() => this.reconcile(generation, true))
   }
 
   /**
@@ -202,11 +202,19 @@ export class ClientEntries {
     this.revisions.set(id, rev)
   }
 
-  private async reconcile(generation: number): Promise<void> {
+  private async reconcile(generation: number, force = false): Promise<void> {
     if (!this.current(generation)) return
     const loader = this.loader
     if (loader === undefined) throw new Error('client-modules: entries have not started')
     const manifest = this.desired
+    if (!force && !this.snapshot.syncing && this.snapshot.failures.length === 0
+      && entryTargets(manifest) === entryTargets(this.modules.manifest)
+      && this.managed.size === manifest.plugins.length
+      && manifest.modules.every(row => this.managed.get(row.id)?.fiber?.state === ACTIVE
+        && this.revisions.get(row.id) === row.rev)) {
+      this.index.update(manifest, this.managed.keys())
+      return
+    }
     this.publish({ syncing: true, failures: [] })
     const failures: { id: string; message: string }[] = []
     this.index.update(manifest, this.managed.keys())

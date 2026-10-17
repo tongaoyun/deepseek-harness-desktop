@@ -3,11 +3,12 @@ import { useEffect, useState } from 'react'
 
 /** Guard every modal dismissal and document unload while a knowledge edit is unresolved.
  * @param dirty Whether the current values differ from the loaded document.
- * @param saving Whether a save is pending or its outcome is unconfirmed.
+ * @param saving Whether a save or local suspension is pending.
  * @param onClose Dismiss the editor after an explicit discard or an unchanged edit.
+ * @param unconfirmed Protect window unload for an unsuspended write; omitted for confirmed edits.
  * @returns Confirmation state and guarded close commands.
  */
-export function useKnowledgeEditorClose(dirty: boolean, saving: boolean, onClose: () => void): {
+export function useKnowledgeEditorClose(dirty: boolean, saving: boolean, onClose: () => void, unconfirmed = false): {
   readonly confirming: boolean
   readonly blocked: boolean
   readonly requestClose: () => void
@@ -17,13 +18,13 @@ export function useKnowledgeEditorClose(dirty: boolean, saving: boolean, onClose
   const [confirming, setConfirming] = useState(false)
   const [blocked, setBlocked] = useState(false)
   useEffect(() => {
-    if (!dirty && !saving) return
+    if (!dirty && !saving && !unconfirmed) return
     const preventUnload = (event: BeforeUnloadEvent): void => {
       event.preventDefault()
     }
     window.addEventListener('beforeunload', preventUnload)
     return () => { window.removeEventListener('beforeunload', preventUnload) }
-  }, [dirty, saving])
+  }, [dirty, saving, unconfirmed])
   return {
     confirming, blocked,
     requestClose: () => {

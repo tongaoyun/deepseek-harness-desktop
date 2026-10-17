@@ -4,8 +4,9 @@ import { DeepSeekHarnessApiClient, DeepSeekHarnessApiError } from './http-client
 import { assertProductMethod, assertProductPayload, type KnowledgeFileMethod, type ProductEvent, type ProductMethod, type ProductRuntimeMethod, type ProductSession } from './protocol.ts'
 import { ProductCatalogManager } from './catalog-manager.ts'
 import { invokeKnowledge, type KnowledgeUpload } from './knowledge-bridge.ts'
-export type { KnowledgeUpload } from './knowledge-bridge.ts'
+export type { KnowledgeUpload, KnowledgeUploadPending } from './knowledge-bridge.ts'
 import { ProductError } from './errors.ts'
+import { z } from 'zod'
 
 /** Main-process-only inference bootstrap. Secrets in this object never cross the preload bridge. */
 export interface ProductRuntimeBootstrap {
@@ -63,7 +64,7 @@ export interface ProductBridgeOptions {
   readonly authoring?: (method: string, payload: Readonly<Record<string, unknown>>, api: DeepSeekHarnessApiClient,
     session: ProductSession, signal?: AbortSignal) => Promise<unknown>
   /** Resolve device-owned MCP configuration in main before projecting a credential-free catalog. */
-  readonly connectorRuntime?: (value: unknown, signal?: AbortSignal) => Promise<unknown>
+  readonly connectorRuntime?: (value: unknown, signal: AbortSignal, discoverTools: boolean) => Promise<unknown>
   /** Main-owned device metadata and employee-initiated feedback; no arbitrary transport is exposed. */
   readonly support?: (method: string, payload: Readonly<Record<string, unknown>>, api: DeepSeekHarnessApiClient,
     session: ProductSession, signal: AbortSignal) => Promise<unknown>
@@ -294,17 +295,34 @@ export class DeepSeekHarnessProductBridge {
     }
     if (method === 'runtime.environment') return { desktopVersion: this.desktopVersion }
     if (method !== 'connectors.list') return this.invoke(method, payload, signal)
+    return this.readRuntimeConnectors(payload, signal, true)
+  }
+
+  private readRuntimeConnectors(payload: unknown, signal: AbortSignal | undefined, discoverTools: boolean): Promise<unknown> {
     return this.withEmployeeSession(signal, async (lifetime) => {
-      const value = await this.catalog.read(method, lifetime)
+      const value = await this.catalog.read('connectors.list', lifetime)
       lifetime.throwIfAborted()
       const api = this.api
       const sessionToken = this.sessionToken
       if (api === undefined || sessionToken === undefined || !Array.isArray(value)) {
         throw new Error('deepseek-harness product: connector runtime requires an employee session')
       }
-      const runtime = value.map(entry => runtimeConnector(entry, api, sessionToken))
-      return this.connectorRuntime ? this.connectorRuntime(runtime, lifetime) : runtime
+      const input = assertProductPayload(payload)
+      const ids = input.ids === undefined ? undefined : z.array(z.string().regex(/^[A-Za-z0-9._-]{1,128}$/)).max(1000).parse(input.ids)
+      const entries: readonly unknown[] = value
+      const selected = ids === undefined ? entries : entries.filter(entry => typeof entry === 'object' && entry !== null && 'id' in entry && ids.includes(String(entry.id)))
+      const runtime = selected.map(entry => runtimeConnector(entry, api, sessionToken))
+      return this.connectorRuntime ? this.connectorRuntime(runtime, lifetime, discoverTools) : runtime
     })
+  }
+
+  /** Resolve transport credentials for main's relay without connecting to MCP servers.
+   * @param ids Connectors addressed by an authenticated relay request.
+   * @param signal Relay request cancellation.
+   * @returns Main-only current configuration; the relay must validate its pinned version before forwarding.
+   */
+  readConnectorTransports(ids: readonly string[], signal: AbortSignal): Promise<unknown> {
+    return this.readRuntimeConnectors({ ids }, signal, false)
   }
 
   private async invokeAuthenticated(
@@ -456,7 +474,7 @@ export class DeepSeekHarnessProductBridge {
       return result
     }
     const value = method === 'connectors.list' && this.connectorRuntime
-      ? await this.invokeRuntime(method, input, signal) : await this.catalog.read(method, freshCatalog ? signal : undefined)
+      ? await this.readRuntimeConnectors(input, signal, false) : await this.catalog.read(method, freshCatalog ? signal : undefined)
     return method === 'connectors.list' && Array.isArray(value) ? value.map(rendererConnector) : value
   }
 
@@ -605,7 +623,8 @@ function runtimeConnector(value: unknown, api: DeepSeekHarnessApiClient, session
   }
   const headers = typeof record.headers === 'object' && record.headers !== null && !Array.isArray(record.headers)
     ? record.headers as Record<string, string> : {}
-  return { ...record, url: endpoint.href, headers: { ...headers, Authorization: `Bearer ${sessionToken}` } }
+  const version = z.string().min(1).max(128).parse(record.version)
+  return { ...record, url: endpoint.href, headers: { ...headers, Authorization: `Bearer ${sessionToken}`, 'X-Harness-Connector-Version': version } }
 }
 
 function rendererConnector(value: unknown): unknown {

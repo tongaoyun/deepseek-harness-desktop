@@ -75,6 +75,7 @@ it('composes kit and skill providers without standard or intermediate Presets, r
   const hanging = new Map<string, string>()
   const cancelled: string[] = []
   let connectorReady = true
+  let connectorVersion = '1.0.0'
   let relayCredential = 'private-relay-one'
   let readAccess = 'READ'
   const mcpCalls: string[] = []
@@ -103,7 +104,7 @@ it('composes kit and skill providers without standard or intermediate Presets, r
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
   const address = server.address()
   if (address === null || typeof address === 'string') throw new Error('Fixture server has no port')
-  const connector = () => ({ id: 'erp', name: 'Orders', status: connectorReady ? 'ready' : 'unavailable', authMode: 'oauth',
+  const connector = () => ({ id: 'erp', version: connectorVersion, name: 'Orders', status: connectorReady ? 'ready' : 'unavailable', authMode: 'oauth',
     timeoutSeconds: 120,
     transport: 'streamable-http', url: `http://127.0.0.1:${address.port}/mcp`, arguments: [], environment: {},
     headers: { Authorization: relayCredential }, tools: [{ name: 'orders_read', access: readAccess }, { name: 'orders_write', access: 'WRITE' }] })
@@ -409,6 +410,10 @@ it('composes kit and skill providers without standard or intermediate Presets, r
   expect(decisions).toContain('ask')
   await execute(undeclared)
   expect(decisions).toContain('deny')
+  connectorVersion = '1.0.1'
+  expect((await execute(ordersRead)).isError).toBe(true)
+  expect(mcpCalls).toEqual(['orders_read'])
+  connectorVersion = '1.0.0'
   connectorReady = false
   expect((await execute(ordersRead)).isError).toBe(true)
   expect(mcpCalls).toEqual(['orders_read'])

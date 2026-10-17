@@ -903,8 +903,29 @@ describe('DeepSeekHarnessProductBridge', () => {
     } finally { gate.resolve(undefined); await bridge.dispose() }
   })
 
+  it('discovers only requested runtime connectors and rejects invalid selection without disclosing credentials', async () => {
+    const connector = { id: 'erp', name: 'ERP', status: 'ready', authMode: 'none', transport: 'streamable-http',
+      url: 'https://example.test/mcp', headers: {}, arguments: [], environment: {}, tools: [{ name: 'read', access: 'READ' }] }
+    const enrich = vi.fn(async (value: unknown) => value)
+    const bridge = new DeepSeekHarnessProductBridge({
+      serverUrl: 'https://deepseek-harness.test', sessionToken: 'employee-secret',
+      initialSession: { authenticated: true, employeeId: 'employee-1' }, connectorRuntime: enrich,
+      fetch: catalogTransport({ ...immutableCatalog, '/api/v1/connectors': [connector, { ...connector, id: 'stalled' }] }),
+    })
+    try {
+      await expect(bridge.invokeRuntime('connectors.list', { ids: ['erp'] })).resolves.toEqual([expect.objectContaining({ id: 'erp' })])
+      expect(enrich).toHaveBeenLastCalledWith([expect.objectContaining({ id: 'erp' })], expect.any(AbortSignal), true)
+      await bridge.invoke('connectors.list')
+      expect(enrich).toHaveBeenLastCalledWith(expect.any(Array), expect.any(AbortSignal), false)
+      await bridge.readConnectorTransports(['erp'], new AbortController().signal)
+      expect(enrich).toHaveBeenLastCalledWith([expect.objectContaining({ id: 'erp' })], expect.any(AbortSignal), false)
+      await expect(bridge.invokeRuntime('connectors.list', { ids: [] })).resolves.toEqual([])
+      await expect(bridge.invokeRuntime('connectors.list', { ids: 'erp' })).rejects.toThrow()
+    } finally { await bridge.dispose() }
+  })
+
   it('adds the employee bearer only to Host runtime connector metadata', async () => {
-    const connector = { id: 'erp', name: 'ERP', status: 'ready', ready: true,
+    const connector = { id: 'erp', version: '1.0.0', name: 'ERP', status: 'ready', ready: true,
       authorizationStatus: 'AUTHORIZED', authMode: 'oauth', transport: 'streamable-http',
       url: '/api/v1/connectors/erp/mcp', headers: { 'x-connector-key': 'private-connector-key' }, arguments: [], environment: {},
       tools: [{ name: 'orders.get', access: 'READ' }] }
@@ -923,7 +944,7 @@ describe('DeepSeekHarnessProductBridge', () => {
     const runtime = await bridge.invokeRuntime('connectors.list')
     expect(runtime).toEqual([{ ...connector, availabilityStatus: 'AVAILABLE',
       url: 'https://deepseek-harness.test/root/api/v1/connectors/erp/mcp',
-      headers: { 'x-connector-key': 'private-connector-key', Authorization: 'Bearer employee-secret' } }])
+      headers: { 'x-connector-key': 'private-connector-key', Authorization: 'Bearer employee-secret', 'X-Harness-Connector-Version': '1.0.0' } }])
     await bridge.dispose()
   })
 

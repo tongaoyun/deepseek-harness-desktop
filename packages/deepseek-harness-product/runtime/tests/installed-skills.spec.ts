@@ -68,7 +68,7 @@ it('discovers installed skills in an unchanged mode, pins versions, restores, de
   let knowledgeCatalog = [{ id: 'manuals', referenceKey: 'company:manuals' }]
   let selectedKnowledgeIds = ['manuals']
   let selectedKnowledgeRefs: string[] = []
-  const connector: DeepSeekHarnessConnector = { id: 'erp', name: 'Orders', status: 'ready', authMode: 'oauth',
+  const connector: DeepSeekHarnessConnector = { id: 'erp', version: '1.0.0', name: 'Orders', status: 'ready', authMode: 'oauth',
     timeoutSeconds: 120,
     transport: 'streamable-http', url: 'http://localhost/mcp', arguments: [], environment: {}, headers: { Authorization: 'private-relay-token' },
     toolNames: ['orders'], readOnlyTools: ['orders'] }

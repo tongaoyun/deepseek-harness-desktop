@@ -7,24 +7,55 @@ import { items } from './catalog-shared.tsx'
 import { useKnowledgeRequests } from './knowledge-data.ts'
 import { isKnowledgeSaveUnconfirmed, productErrorMessage } from './product-errors.ts'
 import { useKnowledgeEditorClose } from './useKnowledgeEditorClose.ts'
+import { useKnowledgeSaveRecovery, type KnowledgeSaveDraft } from './knowledge-save-recovery.ts'
+
+interface KnowledgeBaseEditorProps {
+  readonly onClose: () => void
+  readonly onCreated: (id: string) => void
+  readonly t: (key: DeepSeekHarnessProductKey) => string
+}
 
 /** Preserve the name and request identity after a failed personal-library creation.
  * @param props Dismissal, committed library selection, and locale dictionary.
  * @returns A compact name form with cancellable server creation.
  */
-export function KnowledgeBaseEditor({ onClose, onCreated, t }: {
-  readonly onClose: () => void
-  readonly onCreated: (id: string) => void
-  readonly t: (key: DeepSeekHarnessProductKey) => string
+export function KnowledgeBaseEditor(props: KnowledgeBaseEditorProps): ReactNode {
+  const recovery = useKnowledgeSaveRecovery('personal-library')
+  const { t } = props
+  if (!recovery.ready) return <Modal open title={t('knowledgeRecoveryTitle')} closeLabel={t('close')} onClose={props.onClose}>
+    {recovery.error ? <><p role="alert">{t('knowledgeRecoveryFailed')}</p>
+      <Button onClick={() => { void recovery.reload() }}>{t('retry')}</Button></> : <p role="status">{t('loading')}</p>}
+  </Modal>
+  return <KnowledgeBaseEditorForm {...props} restored={recovery.draft} recovery={recovery.recovery} />
+}
+
+function KnowledgeBaseEditorForm({ onClose, onCreated, t, restored, recovery }: KnowledgeBaseEditorProps & {
+  readonly restored: KnowledgeSaveDraft | undefined
+  readonly recovery: ReturnType<typeof useKnowledgeSaveRecovery>['recovery']
 }): ReactNode {
   const request = useKnowledgeRequests()
-  const [name, setName] = useState('')
+  const [name, setName] = useState(restored?.title ?? '')
   const [pending, setPending] = useState(false)
-  const [unconfirmed, setUnconfirmed] = useState(false)
+  const [unconfirmed, setUnconfirmed] = useState(restored !== undefined)
   const [error, setError] = useState('')
-  const close = useKnowledgeEditorClose(name !== '', pending || unconfirmed, onClose)
+  const suspend = async () => {
+    if (!operation.current.payload) return
+    setPending(true)
+    try {
+      await recovery.suspend({ title: name, content: '', url: '', parentId: null,
+        save: { method: 'knowledge.bases.create', payload: operation.current.payload } }, operation.current.controller.signal)
+      if (!operation.current.controller.signal.aborted) onClose()
+    } catch (failure) { if (!operation.current.controller.signal.aborted) setError(productErrorMessage(failure, t, 'knowledgeRecoveryFailed')) }
+    finally { if (!operation.current.controller.signal.aborted) setPending(false) }
+  }
+  const close = useKnowledgeEditorClose(!unconfirmed && name !== '', pending,
+    () => {
+      if (unconfirmed) { void suspend(); return }
+      try { recovery.clear(); onClose() }
+      catch (failure) { setError(productErrorMessage(failure, t, 'knowledgeRecoveryFailed')) }
+    }, unconfirmed)
   const operation = useRef<{ controller: AbortController; payload?: Readonly<Record<string, unknown>> }>({
-    controller: new AbortController(),
+    controller: new AbortController(), ...restored ? { payload: restored.save.payload } : {},
   })
   useEffect(() => {
     const controller = new AbortController()
@@ -41,6 +72,7 @@ export function KnowledgeBaseEditor({ onClose, onCreated, t }: {
       if (controller.signal.aborted) return
       const base = items([response])[0]
       if (base === undefined) throw new Error('Invalid personal library response')
+      recovery.clear()
       onCreated(base.id)
     } catch (failure) {
       if (!controller.signal.aborted) {
@@ -56,7 +88,7 @@ export function KnowledgeBaseEditor({ onClose, onCreated, t }: {
         <Button variant="ghost" size="sm" onClick={close.keepEditing}>{t('knowledgeKeepEditing')}</Button>
         <Button variant="primary" size="sm" onClick={close.discard}>{t('knowledgeDiscardDraft')}</Button>
       </> : <>
-        <Button variant="ghost" size="sm" disabled={pending || unconfirmed} onClick={close.requestClose}>{t('cancel')}</Button>
+        <Button variant="ghost" size="sm" disabled={pending} onClick={close.requestClose}>{t(unconfirmed ? 'knowledgeSuspendSave' : 'cancel')}</Button>
         <Button variant="primary" size="sm" disabled={pending || name.trim() === ''} onClick={() => { void save() }}>{t(pending ? 'saving' : unconfirmed ? 'knowledgeRetrySave' : 'knowledgeCreate')}</Button>
       </>}
     </>}>{close.confirming ? <p>{t('knowledgeDiscardDraftConfirmation')}</p> : <form className={css.knowledgeEditorForm} onSubmit={(event) => { event.preventDefault(); void save() }}>

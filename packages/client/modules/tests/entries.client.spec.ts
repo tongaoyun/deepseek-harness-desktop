@@ -81,6 +81,22 @@ function visible(id: string, effects: { mounted: number; disposed: number; hits:
 }
 
 describe('client manifest entries', () => {
+  it('does not announce teardown when an identical healthy graph is synchronized', async () => {
+    const effects = { mounted: 0, disposed: 0, hits: 0 }
+    const initial = graph(row('pet'))
+    const b = await bench(initial, { pet: visible('pet', effects) })
+    const changed = vi.fn()
+    const stop = b.modules.entries.state.subscribe(changed)
+    await b.modules.entries.sync(initial)
+    await b.modules.entries.sync(initial)
+    expect(changed).not.toHaveBeenCalled()
+    expect(effects).toEqual({ mounted: 1, disposed: 0, hits: 0 })
+    await b.modules.entries.sync(graph(row('pet', 'r1')))
+    expect(changed).toHaveBeenCalledTimes(2)
+    expect(effects).toEqual({ mounted: 2, disposed: 1, hits: 0 })
+    stop()
+  })
+
   it('adds, drains removal and re-enables one instance with styles; unrelated entries survive', async () => {
     const effects = { mounted: 0, disposed: 0, hits: 0 }
     const cleanup = deferred()

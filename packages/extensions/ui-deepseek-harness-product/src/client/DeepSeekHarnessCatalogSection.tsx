@@ -12,6 +12,7 @@ import { ExpertKitDetailPage } from './ExpertKitView.tsx'
 import { ConnectorDetailModal } from './ConnectorView.tsx'
 import { KnowledgeDetail } from './KnowledgeView.tsx'
 import { KnowledgeWorkspace } from './KnowledgeWorkspace.tsx'
+import { isKnowledgeAccessDenied } from './knowledge-data.ts'
 import { ExtensionPreview } from './ExtensionPreview.tsx'
 import { ConnectorEditor } from './ConnectorEditor.tsx'
 import { ExtensionImporter } from './ExtensionImporter.tsx'
@@ -167,6 +168,7 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
         setEntries([])
         setError(undefined)
       } else {
+        if (catalog === 'knowledge' && isKnowledgeAccessDenied(error)) setEntries([])
         setError(productErrorMessage(error, t, 'loadFailed'))
       }
     } finally {

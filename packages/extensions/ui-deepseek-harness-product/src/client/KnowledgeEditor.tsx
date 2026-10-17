@@ -8,43 +8,82 @@ import { knowledgeDocument, knowledgeFolder, useKnowledgeRequests, type Knowledg
 import { KnowledgeFolderPicker } from './KnowledgeFolderPicker.tsx'
 import { isKnowledgeSaveUnconfirmed, productErrorMessage } from './product-errors.ts'
 import { useKnowledgeEditorClose } from './useKnowledgeEditorClose.ts'
+import { useKnowledgeSaveRecovery, type KnowledgeSaveDraft } from './knowledge-save-recovery.ts'
 
 /** A manager's create or edit action captured before opening the form. */
 export type KnowledgeEditorTarget = { readonly kind: 'markdown'; readonly document?: KnowledgeDocument; readonly folderId?: string | null }
   | { readonly kind: 'url'; readonly folderId?: string | null } | { readonly kind: 'folder'; readonly folder?: KnowledgeFolder; readonly parentId?: string | null }
 
-/** Preserve content and retry identity; unresolved saves prevent dismissal.
- * @param props Current library, editor action, and commit callback.
- * @returns Text or URL editor with guarded manual-document modification.
- */
-export function KnowledgeEditor({ knowledgeBaseId, target, onClose, onSaved, t }: {
+interface KnowledgeEditorProps {
   readonly knowledgeBaseId: string
   readonly target: KnowledgeEditorTarget
   readonly onClose: () => void
   readonly onSaved: (folder?: KnowledgeFolder) => void
   readonly t: (key: DeepSeekHarnessProductKey) => string
+}
+
+/** Restore suspended writes before allowing another save at the same entry.
+ * @param props Current library, editor action, and commit callback.
+ * @returns An employee-scoped editor or a visible recovery failure.
+ */
+export function KnowledgeEditor(props: KnowledgeEditorProps): ReactNode {
+  const { target, knowledgeBaseId, t } = props
+  const editing = target.kind === 'folder' ? target.folder !== undefined : target.kind === 'markdown' && target.document !== undefined
+  const scope = JSON.stringify([knowledgeBaseId, target.kind, editing ? 'edit' : 'create', target.kind === 'folder'
+    ? target.folder?.id ?? target.parentId ?? null : target.kind === 'markdown' ? target.document?.id ?? target.folderId ?? null : target.folderId ?? null])
+  const recovery = useKnowledgeSaveRecovery(scope)
+  if (!recovery.ready) return <Modal open title={t('knowledgeRecoveryTitle')} closeLabel={t('close')} onClose={props.onClose}>
+    {recovery.error ? <><p role="alert">{t('knowledgeRecoveryFailed')}</p>
+      <Button onClick={() => { void recovery.reload() }}>{t('retry')}</Button></> : <p role="status">{t('loading')}</p>}
+  </Modal>
+  return <KnowledgeEditorForm {...props} restored={recovery.draft} recovery={recovery.recovery} />
+}
+
+/** Preserve content and retry identity; suspended saves can be resumed without repeating a new write.
+ * @param props Current library, editor action, and commit callback.
+ * @returns Text or URL editor with guarded manual-document modification.
+ */
+function KnowledgeEditorForm({ knowledgeBaseId, target, onClose, onSaved, t, restored, recovery }: KnowledgeEditorProps & {
+  readonly restored: KnowledgeSaveDraft | undefined
+  readonly recovery: ReturnType<typeof useKnowledgeSaveRecovery>['recovery']
 }): ReactNode {
   const request = useKnowledgeRequests()
-  const [title, setTitle] = useState(target.kind === 'folder' ? target.folder?.name ?? '' : target.kind === 'markdown' ? target.document?.filename.replace(/\.md$/iu, '') ?? '' : '')
-  const [content, setContent] = useState('')
-  const [url, setUrl] = useState('')
-  const [parentId, setParentId] = useState(target.kind === 'folder' ? target.folder?.parentId ?? target.parentId ?? null : null)
+  const [title, setTitle] = useState(restored?.title ?? (target.kind === 'folder' ? target.folder?.name ?? '' : target.kind === 'markdown' ? target.document?.filename.replace(/\.md$/iu, '') ?? '' : ''))
+  const [content, setContent] = useState(restored?.content ?? '')
+  const [url, setUrl] = useState(restored?.url ?? '')
+  const [parentId, setParentId] = useState(restored ? restored.parentId : target.kind === 'folder' ? target.folder?.parentId ?? target.parentId ?? null : null)
   const [parentReady, setParentReady] = useState(false)
-  const [metadata, setMetadata] = useState<KnowledgeDocument>()
+  const [metadata, setMetadata] = useState<KnowledgeDocument | undefined>(restored?.metadata)
   const [conflict, setConflict] = useState(false)
   const [latest, setLatest] = useState<KnowledgeDocument>()
-  const [loading, setLoading] = useState(target.kind === 'markdown' && target.document !== undefined)
+  const [loading, setLoading] = useState(!restored && target.kind === 'markdown' && target.document !== undefined)
   const [pending, setPending] = useState(false)
-  const [unconfirmed, setUnconfirmed] = useState(false)
+  const [unconfirmed, setUnconfirmed] = useState(restored !== undefined)
   const [error, setError] = useState('')
   const [revision, setRevision] = useState(0)
   const baseline = useRef({ title, content, url, parentId })
-  const close = useKnowledgeEditorClose(title !== baseline.current.title || content !== baseline.current.content
-    || url !== baseline.current.url || parentId !== baseline.current.parentId, pending || unconfirmed, onClose)
+  const suspend = async () => {
+    if (!operation.current.save) return
+    setPending(true)
+    try {
+      await recovery.suspend({ title, content, url, parentId, ...metadata ? { metadata } : {}, save: operation.current.save },
+        operation.current.controller.signal)
+      if (!operation.current.controller.signal.aborted) onClose()
+    } catch (failure) { if (!operation.current.controller.signal.aborted) setError(productErrorMessage(failure, t, 'knowledgeRecoveryFailed')) }
+    finally { if (!operation.current.controller.signal.aborted) setPending(false) }
+  }
+  const close = useKnowledgeEditorClose(!unconfirmed && (restored !== undefined || title !== baseline.current.title
+    || content !== baseline.current.content
+    || url !== baseline.current.url || parentId !== baseline.current.parentId), pending,
+  () => {
+    if (unconfirmed) { void suspend(); return }
+    try { recovery.clear(); onClose() }
+    catch (failure) { setError(productErrorMessage(failure, t, 'knowledgeRecoveryFailed')) }
+  }, unconfirmed)
   const operation = useRef<{
     controller: AbortController
     save?: { readonly method: string; readonly payload: Readonly<Record<string, unknown>> }
-  }>({ controller: new AbortController() })
+  }>({ controller: new AbortController(), ...restored ? { save: restored.save } : {} })
   useEffect(() => {
     const controller = new AbortController()
     operation.current.controller = controller
@@ -71,13 +110,13 @@ export function KnowledgeEditor({ knowledgeBaseId, target, onClose, onSaved, t }
     set(value); setError(''); delete operation.current.save
   }
   const save = async (): Promise<void> => {
-    if (pending || loading || conflict || target.kind === 'folder' && !target.folder && !parentReady) return
+    if (pending || loading || conflict || !unconfirmed && target.kind === 'folder' && !target.folder && !parentReady) return
     setPending(true); setError('')
     const operationId = operation.current.save?.payload.operationId ?? globalThis.crypto.randomUUID()
     const saveRequest = operation.current.save ??= target.kind === 'folder'
       ? { method: target.folder ? 'knowledge.folders.rename' : 'knowledge.folders.create', payload: {
         knowledgeBaseId, name: title.trim(), operationId,
-        ...(target.folder ? { folderId: target.folder.id } : { parentId }),
+        ...(target.folder ? { folderId: target.folder.id, expectedUpdatedAt: target.folder.updatedAt } : { parentId }),
       } }
       : target.kind === 'url'
         ? { method: 'knowledge.documents.importUrl', payload: { knowledgeBaseId, url: url.trim(), operationId,
@@ -87,6 +126,7 @@ export function KnowledgeEditor({ knowledgeBaseId, target, onClose, onSaved, t }
     const controller = operation.current.controller
     try {
       const saved = await request(saveRequest.method, saveRequest.payload, controller.signal)
+      recovery.clear()
       if (target.kind === 'folder') {
         if (!controller.signal.aborted) onSaved(knowledgeFolder(saved))
       }
@@ -125,7 +165,7 @@ export function KnowledgeEditor({ knowledgeBaseId, target, onClose, onSaved, t }
       return ['https:', 'http:'].includes(parsed.protocol) && parsed.username === '' && parsed.password === ''
     } catch { return false }
   })()
-  const valid = (target.kind !== 'folder' || target.folder !== undefined || parentReady)
+  const valid = (unconfirmed || target.kind !== 'folder' || target.folder !== undefined || parentReady)
     && (target.kind === 'url' ? validUrl : title.trim() !== '' && (target.kind === 'folder' || content.trim() !== ''))
   const editable = target.kind !== 'markdown' || target.document === undefined || metadata !== undefined
   return <Modal open title={t(titleKey)} closeLabel={t('close')} onClose={close.requestClose}
@@ -135,7 +175,7 @@ export function KnowledgeEditor({ knowledgeBaseId, target, onClose, onSaved, t }
         <Button variant="ghost" size="sm" onClick={close.keepEditing}>{t('knowledgeKeepEditing')}</Button>
         <Button variant="primary" size="sm" onClick={close.discard}>{t('knowledgeDiscardDraft')}</Button>
       </> : <>
-        <Button variant="ghost" size="sm" disabled={pending || unconfirmed} onClick={close.requestClose}>{t('cancel')}</Button>
+        <Button variant="ghost" size="sm" disabled={pending} onClick={close.requestClose}>{t(unconfirmed ? 'knowledgeSuspendSave' : 'cancel')}</Button>
         <Button variant="primary" size="sm" disabled={pending || loading || conflict || !valid || !editable} onClick={() => { void save() }}>{t(pending ? 'saving' : unconfirmed ? 'knowledgeRetrySave' : 'knowledgeSave')}</Button>
       </>}
     </>}>
