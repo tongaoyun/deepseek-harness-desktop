@@ -27,11 +27,30 @@ node apps/product-desktop/scripts/sync-github.mjs --repository OWNER/deepseek-ha
 
 新构建检出 `main` 或明确填写的 `source_sha`，要求该提交的 main CI 成功，校验登记补丁、同步源码，然后等待本次关联的 GitHub 构建。填写 `github_run_id` 恢复发布时，从当前 `main` 获取发布脚本，`source_sha` 仍指向已构建源码；两个提交都必须通过 main CI。版本和产物校验使用已构建源码，不使用发布脚本的提交。三个平台从托管运行的 UTC 开始日期、编号和重试次数生成同一版本。任一平台失败、取消、缺失或身份不符都会停止发布。内网 runner 暂存有界 ZIP，根据中央目录解压普通文件，按清单检查每个安装包，并生成汇总的 `build-manifest.json` 和 `SHA256SUMS.txt`。解压结束清理临时压缩包。公开下载仓库只接收安装文件及这些元数据，不推送源码。
 
-两个目标先创建开发预发布草稿。每个上传文件都重新下载并校验大小及 SHA-256，全部通过后才完成 Release 发布。发布不替换身份或内容不同的文件及 tag，也不删除旧下载。失败时保留已验证的草稿供重试。GitHub 的 tag 接口返回 404 时，草稿恢复检查全部 Release 列表分页，并拒绝重复 tag。两个服务的发布依次执行：第二个发布失败时，第一个完整 Release 可能已经可见。填写 `github_run_id` 和对应的 `source_sha` 可复用同一次成功构建，核对中断上传并完成发布，无需重新打包。托管产物必须尚未过期；产物过期或运行重试次数变化后应重跑全部平台。工作流允许 180 分钟，其中 main CI 最多等待 20 分钟、托管构建最多等待 150 分钟。
+两个目标先创建 Release 草稿。每个上传文件都重新下载并校验大小及 SHA-256，全部通过后才完成发布。发布不替换身份或内容不同的文件及 tag，也不删除旧下载。失败时保留已验证的草稿供重试。GitHub 的 tag 接口返回 404 时，草稿恢复检查全部 Release 列表分页，并拒绝重复 tag。两个服务的发布依次执行：第二个发布失败时，第一个完整 Release 可能已经可见。填写 `github_run_id`、对应的 `source_sha` 和原构建的 `signing` 可复用同一次成功构建，核对中断上传并完成发布，无需重新打包。托管产物必须尚未过期；产物过期或运行重试次数变化后应重跑全部平台。工作流允许 180 分钟，其中 main CI 最多等待 20 分钟、托管构建最多等待 150 分钟。
 
-每个平台使用原生托管 runner 安装锁定依赖、验证基线、测试产品 sidecar，并调用产品打包入口。Windows 验证未签名文件和安装器生命周期；打包包含官方运行时 smoke。runner 先运行已构建的官方及产品 profile，再运行安装后的产品应用：Windows 将 EXE 静默安装到私有目录，结束后卸载；macOS 将 DMG 中的应用复制到私有目录，结束后卸载磁盘映像。安装后验收启动打包的 ASAR、内置 Host、扩展和 sidecar，不使用源码运行时覆盖。仅将临时安装副本的服务地址指向本地测试服务，使用独立数据、测试身份和模拟模型。同一无密钥界面回归覆盖目录、技能与套件安装、连接器状态、知识库原文件预览、任务选择及重启恢复，不登录真实员工，也不验证系统签名提示。截图和 JSON 报告保留十四天，失败时也上传；日志及产物遵循源码仓库可见性。界面失败会阻止安装包发布。成功构建生成未签名安装包、blockmap 和 `build-manifest.json`，记录版本、源码提交、平台、大小及 SHA-256。Actions 安装包产物保留一天；已发布的 Release 下载文件不自动过期。
+每个平台使用原生 runner 安装锁定依赖、验证基线、测试产品 sidecar，并调用产品打包入口。Windows 按所选模式验证签名状态和安装器生命周期；打包包含官方运行时 smoke。runner 先运行已构建的官方及产品 profile，再运行安装后的产品应用：Windows 将 EXE 静默安装到私有目录，结束后卸载；macOS 将 DMG 中的应用复制到私有目录，结束后卸载磁盘映像。安装后验收启动打包的 ASAR、内置 Host、扩展和 sidecar，不使用源码运行时覆盖。仅将临时安装副本的服务地址指向本地测试服务，使用独立数据、测试身份和模拟模型。同一无密钥界面回归覆盖目录、技能与套件安装、连接器状态、知识库原文件预览、任务选择及重启恢复，不登录真实员工，也不验证系统签名提示。截图和 JSON 报告保留十四天，失败时也上传；日志及产物遵循源码仓库可见性。界面失败会阻止安装包发布。成功构建生成安装包、blockmap 和 `build-manifest.json`，记录版本、源码提交、平台、大小及 SHA-256。Actions 安装包产物保留一天；已发布的 Release 下载文件不自动过期。
 
-验收构建产出 Windows EXE 或 macOS DMG；官方管线产出的其他压缩包或 blockmap 也会一并上传。内网交付工作流将已验证的未签名安装包发布到公开 GitHub 和内网 Gitea 预发布。单独运行 GitHub 打包仍只上传 Actions 产物。两种流程均不发布自动更新源、不使用签名证书，也不进行 macOS 公证。两个 macOS 目标沿用官方未签名本地构建的应用标识；Windows 使用配置的产品应用标识。未签名安装包可能需要正常的操作系统确认。Gitea 保留桌面 CI 和手动 GitHub 同步；原生安装包由 GitHub 工作流构建。正式签名分发需要单独配置发布流程。
+默认 `signing=unsigned` 产出 Windows EXE 或 macOS DMG，发布为开发预发布，不提供更新清单，也不改变已有签名版本的 latest 下载。两个 macOS 目标沿用官方未签名本地构建的应用标识；Windows 使用配置的产品应用标识。未签名安装包可能需要操作系统确认。单独运行 GitHub 打包只上传 Actions 产物，正式交付继续使用内网同步工作流。
+
+## 软件版本更新
+
+`signing=signed` 接入这个产品桌面软件的原生更新，使用公开下载仓库的 `releases/latest/download/` 地址，无需 GitHub 登录或员工令牌。应用启动及周期检查沿用官方更新调度，也可从原生菜单检查更新。发现新版后由用户下载，下载完成后再次确认重启安装；取消确认会保留当前应用。任务停止、Host 关闭和安装交给官方更新器处理，不检查或同步 Harness 上游源码。
+
+签名构建必须配置 GitHub 仓库变量 `DESKTOP_GITHUB_DOWNLOAD_REPOSITORY`、`DESKTOP_SIGNING_RUNNERS` 和 `DESKTOP_SIGNING_CONFIG_DIRS`。后两项是按 `win-x64`、`mac-arm64`、`mac-x64` 索引的 JSON 对象，分别保存 runner 标签数组和机器上的绝对配置目录。标签必须包括 `self-hosted`、原生操作系统、原生架构及专用机器标签，例如 Windows 的 `["self-hosted","Windows","X64","product-signing-win"]`。macOS 使用 `macOS` 与 `ARM64` 或 `X64`。缺少任一目标配置时，前置检查失败，不排队签名，也不降级为开发包。签名机仅运行经过审核的本项目提交，配置目录和证书放在 checkout 外。Windows 沿用[官方签名机](../desktop/windows-signing/README.zh.md)，Mac 沿用[官方签名和公证流程](../desktop/packaging/README.zh.md)。
+
+每台签名机的 `presets/production.env` 必须包含以下公开配置；`OWNER/REPO` 与公开下载仓库变量一致。签名凭据仍放在官方定义的 `secrets/windows-signing.env` 或 `secrets/macos-signing.env`，不传给发布机或渲染进程。签名构建提供 nightly 产品版本，强制升级策略显式关闭，不访问官方 DeepSeek 登录或策略服务。
+
+```dotenv
+DSH_DESKTOP_APP_ID=com.instudio.deepseek-harness.desktop
+DSH_DESKTOP_AUTO_UPDATE_ENV=production
+DSH_DESKTOP_UPDATE_URL=https://github.com/OWNER/REPO/releases/latest/download/
+DSH_DESKTOP_MANDATORY_UPDATE_ENABLED=0
+```
+
+更新清单只接受官方签名管线完成记录，检查版本、源码、干净状态、目标和更新地址。Mac 必须产出经过签名及公证的 DMG 与 ZIP；Windows 必须通过签名验证。交付步骤核对原生清单中的大小及 SHA-512，将 Mac 两种架构合并成一份原生清单，由原生更新器选择架构。清单中的安装文件使用固定版本的绝对下载地址，后续发布不影响已发现版本的下载。两个目标的全部产物验证完成后，签名版本才成为公开 latest；恢复旧构建不得将更新源回退到较低版本。这里的 Release 标记控制产品下载入口，源码中的 alpha／beta 版本号和原生 nightly 比较规则不变。开发预发布永不覆盖该入口。
+
+原来的未签名安装版没有更新配置，不能自行发现首个签名版本；首次需要手动安装签名包，之后才进入原生更新流程。Mac 的产品签名包与原未签名包应用标识不同，首次安装应明确检查数据目录及钥匙串授权，不自动复制员工令牌。配置和模拟回归通过不等同于签名成功；启用分发前必须在签名机分别完成 Windows 和两种 Mac 架构的真实 A→B 安装升级验收。
 
 <a id="local-checks"></a>
 ## 本地检查
@@ -47,7 +66,7 @@ node apps/product-desktop/scripts/sync-github.mjs --repository OWNER/deepseek-ha
 上游回归在所有托管平台运行。执行权限位变化在文件系统支持该权限的 macOS 和 Linux 上验证；失效符号链接检查也在 Windows 上运行。
 
 ```sh
-node --test apps/product-desktop/tests/github-delivery.test.mjs apps/product-desktop/tests/desktop-release.test.mjs apps/product-desktop/tests/acceptance-process.test.mjs
+node --test apps/product-desktop/tests/github-delivery.test.mjs apps/product-desktop/tests/desktop-release.test.mjs apps/product-desktop/tests/product-updates.test.mjs apps/product-desktop/tests/acceptance-process.test.mjs
 pnpm exec vitest run scripts/upstream-boundaries.spec.ts scripts/deepseek-harness-electron-workflows.spec.ts
 pnpm exec vitest run apps/product-desktop/tests/close-electron.spec.ts
 pnpm run verify:upstream

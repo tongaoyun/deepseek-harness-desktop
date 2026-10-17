@@ -623,7 +623,7 @@
     },
     {
       "id": "release-environments",
-      "purpose": "Retained release integration supports an explicit internal Gitea feed and unsigned Windows packages without a mandatory-update policy. Signed official package behavior retains its policy checks.",
+      "purpose": "Release integration supports explicit anonymous HTTPS update feeds, Gitea downloads with channel metadata, and an explicit mandatory-policy switch. Native update confirmation and signature checks remain unchanged.",
       "tests": [
         "apps/desktop/tests/desktop-auto-update-environment.spec.ts",
         "apps/desktop/tests/desktop-package-environment.spec.ts",
@@ -638,27 +638,32 @@
         {
           "path": "apps/desktop/scripts/desktop-auto-update-environment.mjs",
           "before": "a0b00d469637147e2c13a320f0eb7c4ddc56b98d08ea8f8ca2b41ae68e49e97f",
-          "after": "1fa67ec003869085e9c2e9be0ba9b9c01b2b6056cec87c6ec4e444fc56d9111a"
+          "after": "89d2cd7d29773651878a9f80db5d0d84ad084a3c00b7b13921e79af9f401c423"
         },
         {
           "path": "apps/desktop/scripts/desktop-package-environment.mjs",
           "before": "6b3e4f5fa97a70161c4ea038ef66f66218dd3961fcc348384cbcbb0f470667dd",
-          "after": "6f71e046464b3f5474414227fb8f03cf06bb02546e7faa377e6deccd38e8a6b9"
+          "after": "bf03df31f1699ef970be89e2812e092d80e57e663c6469953df031caa18b52b0"
+        },
+        {
+          "path": "apps/desktop/scripts/desktop-policy-environment.mjs",
+          "before": "720b9c72557779e4c23363068bc984868cc88d00ed98db23b6281cd2602d8105",
+          "after": "68c03ba3eb2c3285ac88a36ecba6f596492c1496fd82280eeb0aee353b4fe9b8"
         },
         {
           "path": "apps/desktop/tests/desktop-auto-update-environment.spec.ts",
           "before": "1784802d4bf6987475534bdcba0a55c031467016b5693cbbb90acb29e7858a8a",
-          "after": "3f210ca489466c17c9149386432d3f1bc4d8a182ff15a14a62a828664d1a8b43"
+          "after": "6e37f785a8f29546b49f0d3c2356a1a71d7762e676f5fe0fa8619ea587bb6626"
         },
         {
           "path": "apps/desktop/tests/desktop-package-environment.spec.ts",
           "before": "17e4064a8a21fcce62e4d6e429465b66cda0dc511385a4e8e83764eb3d90c5b4",
-          "after": "d54ff40dc4ace43c907256e8616db29ef354d7642a58d6c06d267ba13fe8db1e"
+          "after": "990a03f58b4a539e808dfdfc0697b010d40d63d523ec7061a56f335bf1f7269f"
         },
         {
           "path": "apps/desktop/tests/desktop-policy-environment.spec.ts",
           "before": "bb85d28e7c4f3a333bc92670a3a72caef19a2a76a0031b71f5ceaeb4b5d16349",
-          "after": "141a8dba980168612c14ba64e24d82ad8c67a098357e82b06ed326616ee459df"
+          "after": "42f841f95e24b63a2bfb47efdc73ff4012c77ac9716469d44fae5685b9f8e0a7"
         }
       ],
       "diff": "release-environments.patch"

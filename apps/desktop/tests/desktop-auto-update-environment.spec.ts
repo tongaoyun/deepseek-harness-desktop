@@ -66,6 +66,7 @@ describe('desktop auto-update environment', () => {
     }
     expect(resolveDesktopAutoUpdateConfig(environment, 'darwin', 'x64')).toEqual({
       environment: 'production',
+      channel: 'nightly',
       target: 'mac-x64',
       origin: 'http://192.168.2.66:3300',
       publicUrl: 'http://192.168.2.66:3300/instudio/deepseek-harness-desktop/releases/latest/download/',
@@ -73,6 +74,25 @@ describe('desktop auto-update environment', () => {
       binaryKeyPrefix: 'instudio/deepseek-harness-desktop/releases/latest/download',
     })
     expect(() => resolveDesktopUploadConfig(environment, 'darwin', 'x64')).toThrow(/Gitea releases are published/u)
+  })
+
+  it('uses a custom anonymous HTTPS feed without official download or storage settings', () => {
+    const environment = { DSH_DESKTOP_AUTO_UPDATE_ENV: 'production', DSH_DESKTOP_UPDATE_CHANNEL: 'nightly',
+      DSH_DESKTOP_UPDATE_URL: 'https://downloads.example.com/product/releases/latest/download/' }
+    for (const [platform, arch] of [['win32', 'x64'], ['darwin', 'arm64'], ['darwin', 'x64']] as const) {
+      expect(resolveDesktopAutoUpdateConfig(environment, platform, arch)).toMatchObject({
+        channel: 'nightly', publicUrl: environment.DSH_DESKTOP_UPDATE_URL, origin: 'https://downloads.example.com',
+      })
+    }
+    expect(() => resolveDesktopUploadConfig(environment, 'win32', 'x64')).toThrow(/own release publisher/u)
+    expect(() => resolveDesktopAutoUpdateConfig({ ...environment, GITEA_RELEASE_DOWNLOAD_ORIGIN: 'http://internal.example' }, 'win32', 'x64'))
+      .toThrow(/only one/u)
+  })
+
+  it.each(['', 'not-a-url', 'http://example.com/', 'https://user:secret@example.com/',
+    'https://example.com/feed', 'https://example.com/?key=private', 'https://example.com/#private'])('rejects an unsafe custom update URL %s', (value) => {
+    expect(() => resolveDesktopAutoUpdateConfig({ DSH_DESKTOP_UPDATE_URL: value }, 'win32', 'x64')).toThrow(/DSH_DESKTOP_UPDATE_URL/u)
+    expect(() => resolveDesktopAutoUpdateConfig({ DSH_DESKTOP_UPDATE_URL: value }, 'win32', 'x64')).not.toThrow(/secret|private/u)
   })
 
   it('rejects unsafe internal Gitea origins and repository names', () => {

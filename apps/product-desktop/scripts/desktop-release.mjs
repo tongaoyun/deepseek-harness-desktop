@@ -8,6 +8,8 @@ import { Readable, Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { openPromise } from 'yauzl'
 import { githubBuildVersion } from './github-package.mjs'
+import { gt, valid } from 'semver'
+import { productSigningMode, productUpdateFeeds } from './update-release.mjs'
 
 export const RELEASE_TARGETS = ['win-x64', 'mac-arm64', 'mac-x64']
 const MAX_FILE = 2 * 1024 ** 3
@@ -46,7 +48,7 @@ export async function extractBuildArchive(chunks, directory) {
     for await (const entry of zip.eachEntry()) {
       const name = entry.fileName
       const type = (entry.externalFileAttributes >>> 16) & 0xf000
-      if (!safeName(name) || !(name === 'build-manifest.json' || /\.(?:exe|dmg|zip|blockmap)$/u.test(name))
+      if (!safeName(name) || !(name === 'build-manifest.json' || /\.(?:exe|dmg|zip|blockmap)$/u.test(name) || /^(?:win-x64|mac-arm64|mac-x64)-nightly\.yml$/u.test(name))
         || names.has(name) || names.size >= 16 || ![0, 0x8000].includes(type)
         || entry.isEncrypted() || entry.uncompressedSize > MAX_FILE) throw new Error('Invalid hosted artifact entry')
       names.add(name)
@@ -54,7 +56,7 @@ export async function extractBuildArchive(chunks, directory) {
       await pipeline(await zip.openReadStreamPromise(entry), new Transform({ transform(bytes, encoding, callback) {
         size += bytes.length
         expanded += bytes.length
-        callback(size > MAX_FILE || expanded > MAX_ARCHIVE || name === 'build-manifest.json' && size > 64 * 1024
+        callback(size > MAX_FILE || expanded > MAX_ARCHIVE || (name === 'build-manifest.json' || name.endsWith('.yml')) && size > 64 * 1024
           ? new Error('Hosted artifact exceeds extraction limits') : null, bytes)
       } }), createWriteStream(join(directory, name), { flags: 'wx', mode: 0o600 }))
     }
@@ -78,9 +80,11 @@ export async function extractBuildArchive(chunks, directory) {
  * @param {object} run Successful hosted run identity.
  * @param {string} commit Requested source commit.
  * @param {string} productVersion Source desktop version.
+ * @param {object} options Expected signing mode and public download repository; omitted accepts development installers only.
  * @returns {Promise<object>} Verified files, release identity and aggregate manifest.
  */
-export async function collectDesktopRelease(directory, run, commit, productVersion) {
+export async function collectDesktopRelease(directory, run, commit, productVersion, options = {}) {
+  const signing = productSigningMode(options.signing)
   if (run.status !== 'completed' || run.conclusion !== 'success' || run.head_sha !== commit
     || !/^[a-f0-9]{40}$/u.test(commit) || !Number.isSafeInteger(run.id) || run.id <= 0
     || !Number.isSafeInteger(run.run_number) || !Number.isSafeInteger(run.run_attempt)) {
@@ -94,7 +98,7 @@ export async function collectDesktopRelease(directory, run, commit, productVersi
   for (const target of RELEASE_TARGETS) {
     const folder = join(directory, target)
     const manifest = JSON.parse(await readFile(join(folder, 'build-manifest.json'), 'utf8'))
-    if (manifest.target !== target || manifest.commit !== commit || manifest.signing !== 'unsigned'
+    if (manifest.target !== target || manifest.commit !== commit || manifest.signing !== signing
       || typeof manifest.version !== 'string'
       || !/^\d+\.\d+\.\d+-(?:alpha\.\d+|beta\.\d+|rc\.\d+|test)\.\d{8}\.\d+\.\d+$/u.test(manifest.version)
       || manifest.version !== expectedVersion
@@ -105,7 +109,7 @@ export async function collectDesktopRelease(directory, run, commit, productVersi
     const required = target === 'win-x64' ? '.exe' : '.dmg'
     if (manifest.artifacts.filter(file => file.name?.endsWith(required)).length !== 1) throw new Error(`Missing ${target} installer`)
     for (const artifact of manifest.artifacts) {
-      if (!safeName(artifact.name) || !/\.(?:exe|dmg|zip|blockmap)$/u.test(artifact.name)
+      if (!safeName(artifact.name) || !(/\.(?:exe|dmg|zip|blockmap)$/u.test(artifact.name) || signing === 'signed' && artifact.name === `${target}-nightly.yml`)
         || names.has(artifact.name) || !Number.isSafeInteger(artifact.size) || artifact.size <= 0 || artifact.size > MAX_FILE
         || !/^[a-f0-9]{64}$/u.test(artifact.sha256 ?? '')) throw new Error(`Invalid ${target} artifact`)
       names.add(artifact.name)
@@ -121,7 +125,15 @@ export async function collectDesktopRelease(directory, run, commit, productVersi
     manifests.push(manifest)
   }
   const version = manifests[0].version
-  const aggregate = { version, commit, signing: 'unsigned', githubRunId: run.id, githubRunAttempt: run.run_attempt,
+  if (signing === 'signed') {
+    const feeds = await productUpdateFeeds(manifests, files, options.downloadRepository, version, run.created_at)
+    for (const feed of feeds) {
+      const path = join(directory, feed.name)
+      await writeFile(path, feed.bytes, { mode: 0o600, flag: 'wx' })
+      files.push({ path, name: feed.name, size: Buffer.byteLength(feed.bytes), sha256: digest(feed.bytes) })
+    }
+  }
+  const aggregate = { version, commit, signing, githubRunId: run.id, githubRunAttempt: run.run_attempt,
     targets: manifests }
   const manifestBytes = JSON.stringify(aggregate, null, 2) + '\n'
   const sums = files.map(file => `${file.sha256}  ${file.name}`).sort().join('\n') + '\n'
@@ -130,8 +142,8 @@ export async function collectDesktopRelease(directory, run, commit, productVersi
     await writeFile(path, bytes, { mode: 0o600, flag: 'wx' })
     files.push({ path, name, size: Buffer.byteLength(bytes), sha256: digest(bytes) })
   }
-  return { version, tag: `v${version}`, commit, files,
-    body: `Unsigned development desktop build.\n\nSource: ${commit}\nManifest SHA-256: ${digest(manifestBytes)}\n\nWindows x64, macOS ARM64 and macOS Intel. No automatic update feed.\n` }
+  return { version, tag: `v${version}`, commit, files, prerelease: signing === 'unsigned',
+    body: `${signing === 'signed' ? 'Signed product desktop update.' : 'Unsigned development desktop build.'}\n\nSource: ${commit}\nManifest SHA-256: ${digest(manifestBytes)}\n\nWindows x64, macOS ARM64 and macOS Intel. ${signing === 'signed' ? 'Native updates require download and restart confirmation.' : 'No automatic update feed.'}\n` }
 }
 
 /**
@@ -179,11 +191,19 @@ export async function waitForDesktopBuild({ request, repository, commit, deliver
  * @returns {Promise<string[]>} Published download links.
  */
 export async function publishDesktopRelease(release, destinations) {
+  if (release.prerelease === false) {
+    for (const destination of destinations) {
+      const latest = await destination.latest()
+      if (latest === undefined) continue
+      const version = latest.tag_name?.replace(/^v/u, '')
+      if (valid(version) === null || gt(version, release.version)) throw new Error(`Refusing to move ${destination.name} update feed backwards`)
+    }
+  }
   const staged = []
   for (const destination of destinations) {
     let remote = await destination.find(release.tag)
     if (!remote) remote = await destination.create(release)
-    if (remote.tag_name !== release.tag || remote.body !== release.body || remote.prerelease !== true) {
+    if (remote.tag_name !== release.tag || remote.body !== release.body || remote.prerelease !== (release.prerelease ?? true)) {
       throw new Error(`Release identity conflict at ${destination.name}`)
     }
     const expected = new Map(release.files.map(file => [file.name, file]))
@@ -215,7 +235,7 @@ export async function publishDesktopRelease(release, destinations) {
   }
   const links = []
   for (const { destination, remote } of staged) {
-    if (remote.draft) await destination.finalize(remote.id)
+    if (remote.draft) await destination.finalize(remote.id, release)
     const complete = await destination.find(release.tag)
     if (!complete || complete.draft) throw new Error(`Release finalization failed at ${destination.name}`)
     links.push(complete.html_url)

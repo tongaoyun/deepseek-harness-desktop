@@ -6,6 +6,7 @@ import { join, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import { runAcceptanceProcess } from './acceptance-process.mjs'
 import { stopInstalledProcesses } from './installed-processes.mjs'
+import { productSigningMode } from './update-release.mjs'
 
 const root = resolve(import.meta.dirname, '../../..')
 
@@ -59,7 +60,8 @@ async function main() {
   const nativeTarget = process.platform === 'darwin' ? `mac-${process.arch}` : `win-${process.arch}`
   if (!['mac-arm64', 'mac-x64', 'win-x64'].includes(target) || target !== nativeTarget) throw new Error('Use the native package target')
   const installer = values.installer === undefined
-    ? await selectInstaller(join(root, 'apps/desktop/.desktop-build/targets', target, 'unsigned-artifacts'), process.platform)
+    ? await selectInstaller(join(root, 'apps/desktop/.desktop-build/targets', target,
+      productSigningMode(process.env.PACKAGE_SIGNING) === 'signed' ? 'artifacts' : 'unsigned-artifacts'), process.platform)
     : resolve(values.installer)
   if (!installer.endsWith(process.platform === 'darwin' ? '.dmg' : '.exe')) throw new Error('Use a native installer')
   const stage = await mkdtemp(join(tmpdir(), 'harness-installed-ui-'))

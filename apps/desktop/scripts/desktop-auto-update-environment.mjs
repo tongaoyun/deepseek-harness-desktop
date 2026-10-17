@@ -159,7 +159,7 @@ function internalOrigin(value, name) {
   return parsed.origin
 }
 
-function resolveGiteaUpdateConfig(env, target, environment) {
+function resolveGiteaUpdateConfig(env, target, environment, channel) {
   const originValue = env.GITEA_RELEASE_DOWNLOAD_ORIGIN?.trim()
   if (originValue === undefined || originValue === '') return undefined
   const origin = internalOrigin(originValue, 'GITEA_RELEASE_DOWNLOAD_ORIGIN')
@@ -171,6 +171,7 @@ function resolveGiteaUpdateConfig(env, target, environment) {
   const keyPrefix = `${repository}/releases/latest/download`
   return {
     environment,
+    channel,
     target,
     origin,
     keyPrefix,
@@ -191,7 +192,18 @@ export function resolveDesktopAutoUpdateConfig(env, platform, arch) {
   const channel = resolveDesktopUpdateChannel(env)
   const environment = resolveDesktopAutoUpdateEnvironment(env)
   const target = resolveDesktopAutoUpdateTarget(platform, arch)
-  const gitea = resolveGiteaUpdateConfig(env, target, environment)
+  if (env.DSH_DESKTOP_UPDATE_URL !== undefined) {
+    if (env.GITEA_RELEASE_DOWNLOAD_ORIGIN?.trim()) throw new Error('desktop auto-update: configure only one update destination')
+    let url
+    try { url = new URL(env.DSH_DESKTOP_UPDATE_URL) }
+    catch { throw new Error('desktop auto-update: DSH_DESKTOP_UPDATE_URL requires an absolute HTTPS directory URL') }
+    if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash || !url.pathname.endsWith('/')) {
+      throw new Error('desktop auto-update: DSH_DESKTOP_UPDATE_URL requires an HTTPS directory URL without credentials, query, or fragment')
+    }
+    const keyPrefix = url.pathname.slice(1, -1)
+    return { environment, channel, target, origin: url.origin, publicUrl: url.href, keyPrefix, binaryKeyPrefix: keyPrefix }
+  }
+  const gitea = resolveGiteaUpdateConfig(env, target, environment, channel)
   if (gitea !== undefined) return gitea
   const deployment = UPDATE_ENVIRONMENTS[environment]
   let origin = deployment.fixedOrigin
@@ -229,6 +241,9 @@ export function resolveDesktopAutoUpdateConfig(env, platform, arch) {
  * @throws {Error} When the selected deployment lacks a bucket or valid updater configuration.
  */
 export function resolveDesktopUploadConfig(env, platform, arch) {
+  if (env.DSH_DESKTOP_UPDATE_URL !== undefined) {
+    throw new Error('desktop auto-update: custom update feeds require their own release publisher, not the COS uploader')
+  }
   if (env.GITEA_RELEASE_DOWNLOAD_ORIGIN?.trim()) {
     throw new Error('desktop auto-update: Gitea releases are published by scripts/release/gitea-release.mjs, not the COS uploader')
   }

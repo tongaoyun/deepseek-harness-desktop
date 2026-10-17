@@ -11,6 +11,12 @@ on:
         description: 重试已有 GitHub 构建的发布（留空重新构建）
         required: false
         type: string
+      signing:
+        description: unsigned 为开发包，signed 为可原生更新的签名包（重试须与原构建一致）
+        required: false
+        type: choice
+        options: [unsigned, signed]
+        default: unsigned
 
 concurrency:
   group: github-desktop-sync
@@ -50,6 +56,7 @@ jobs:
           GITEA_PASSWORD: ${{ secrets.RELEASE_CREDENTIAL }}
           DESKTOP_BUILD_RUN_ID: ${{ inputs.github_run_id }}
           DESKTOP_SOURCE_SHA: ${{ inputs.source_sha }}
+          DESKTOP_SIGNING: ${{ inputs.signing || 'unsigned' }}
           HTTPS_PROXY: ${{ secrets.DESKTOP_GITHUB_PROXY_URL }}
           NODE_USE_ENV_PROXY: '1'
           GIT_CONFIG_COUNT: '1'
@@ -59,4 +66,5 @@ jobs:
           pnpm run verify:upstream
           node --test apps/product-desktop/tests/github-delivery.test.mjs
           node --test apps/product-desktop/tests/desktop-release.test.mjs
+          node --test apps/product-desktop/tests/product-updates.test.mjs
           node apps/product-desktop/scripts/deliver-desktop.mjs
