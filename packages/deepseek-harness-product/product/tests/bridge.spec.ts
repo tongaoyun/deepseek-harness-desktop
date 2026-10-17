@@ -836,6 +836,73 @@ describe('DeepSeekHarnessProductBridge', () => {
     await bridge.dispose()
   })
 
+  it('commits healthy catalogs independently and refuses stale dependency availability', async () => {
+    let knowledgeOffline = false
+    const catalog = { ...immutableCatalog, '/api/v1/expert-kits': [{ ...immutableCatalog['/api/v1/expert-kits'][0],
+      knowledgeBaseRefs: ['company:orders'] }], '/api/v1/knowledge-bases': [{ id: 'orders', reference: 'company:orders' }] }
+    const bridge = new DeepSeekHarnessProductBridge({
+      serverUrl: 'https://deepseek-harness.test', sessionToken: 'employee-session',
+      initialSession: { authenticated: true, employeeId: 'employee-1' },
+      fetch: input => knowledgeOffline && requestUrl(input).pathname.endsWith('/knowledge-bases')
+        ? Promise.resolve(Response.json({ success: false, errCode: 'ORGANIZATION_UNAVAILABLE' }, { status: 503 }))
+        : catalogTransport(catalog)(input),
+    })
+    try {
+      await bridge.refreshCatalog()
+      await expect(bridge.invoke('expertKits.list')).resolves.toEqual([expect.objectContaining({ availabilityStatus: 'AVAILABLE' })])
+      knowledgeOffline = true
+      await expect(bridge.refreshCatalog()).rejects.toMatchObject({ code: 'ORGANIZATION_UNAVAILABLE' })
+      await expect(bridge.invoke('skills.list')).resolves.toEqual([expect.objectContaining({ availabilityStatus: 'AVAILABLE' })])
+      await expect(bridge.invoke('connectors.list')).resolves.toEqual([])
+      await expect(bridge.invoke('expertKits.list')).resolves.toEqual([expect.objectContaining({ availabilityStatus: 'UNAVAILABLE' })])
+      await expect(bridge.invoke('knowledge.bases.list')).rejects.toMatchObject({ code: 'ORGANIZATION_UNAVAILABLE' })
+      knowledgeOffline = false
+      await bridge.invoke('knowledge.bases.list')
+      await expect(bridge.invoke('expertKits.list')).resolves.toEqual([expect.objectContaining({ availabilityStatus: 'AVAILABLE' })])
+    } finally { await bridge.dispose() }
+  })
+
+  it('serves a healthy catalog on first read even if another catalog has never loaded', async () => {
+    const bridge = new DeepSeekHarnessProductBridge({
+      serverUrl: 'https://deepseek-harness.test', sessionToken: 'employee-session',
+      initialSession: { authenticated: true, employeeId: 'employee-1' },
+      fetch: input => requestUrl(input).pathname.endsWith('/knowledge-bases')
+        ? Promise.reject(new TypeError('Organization unavailable')) : catalogFetch(input),
+    })
+    try {
+      await expect(bridge.invoke('skills.list')).resolves.toEqual([expect.objectContaining({ id: 'document-insight' })])
+      await expect(bridge.invoke('connectors.list')).resolves.toEqual([])
+    } finally { await bridge.dispose() }
+  })
+
+  it('does not let an older background refresh overwrite a newer directory read', async () => {
+    const gate = Promise.withResolvers<undefined>()
+    const started = Promise.withResolvers<undefined>()
+    let version = 'old'
+    const bridge = new DeepSeekHarnessProductBridge({
+      serverUrl: 'https://deepseek-harness.test', sessionToken: 'employee-session',
+      initialSession: { authenticated: true, employeeId: 'employee-1' },
+      fetch: async (input) => {
+        const path = requestUrl(input).pathname
+        if (path.endsWith('/knowledge-bases')) { started.resolve(undefined); await gate.promise }
+        if (path.endsWith('/skills')) return Response.json({ success: true, data: [{ id: version }],
+          pageIndex: 1, pageSize: 100, totalCount: 1, totalPages: 1 })
+        return catalogFetch(input)
+      },
+    })
+    try {
+      const refreshing = bridge.refreshCatalog()
+      await started.promise
+      version = 'new'
+      await expect(bridge.invoke('skills.list', {}, new AbortController().signal)).resolves.toEqual([
+        expect.objectContaining({ id: 'new' }),
+      ])
+      gate.resolve(undefined)
+      await refreshing
+      await expect(bridge.invoke('skills.list')).resolves.toEqual([expect.objectContaining({ id: 'new' })])
+    } finally { gate.resolve(undefined); await bridge.dispose() }
+  })
+
   it('adds the employee bearer only to Host runtime connector metadata', async () => {
     const connector = { id: 'erp', name: 'ERP', status: 'ready', ready: true,
       authorizationStatus: 'AUTHORIZED', authMode: 'oauth', transport: 'streamable-http',
@@ -886,7 +953,7 @@ describe('DeepSeekHarnessProductBridge', () => {
         })
         expect(events.some(event => event.type === 'catalog.changed')).toBe(true)
         await expect(bridge.invoke('catalog.refresh')).rejects.toMatchObject({ code: 'ORGANIZATION_UNAVAILABLE' })
-        await expect(bridge.invoke('connectors.list')).rejects.toMatchObject({ code: 'ORGANIZATION_UNAVAILABLE' })
+        await expect(bridge.invoke('connectors.list')).resolves.toEqual(expect.any(Array))
       } finally { await bridge.dispose() }
     },
   )

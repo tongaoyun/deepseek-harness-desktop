@@ -82,3 +82,83 @@ it('allows changes and a new request after an authoritative rejection', async ()
   expect(writes[1]?.operationId).not.toBe(writes[0]?.operationId)
   expect(writes[1]?.name).toBe('Revised name')
 })
+
+it.each(['markdown', 'url', 'base', 'folder'] as const)('protects the %s draft through close, Escape, mask and cancel', async (kind) => {
+  vi.stubGlobal('dshDesktop', { extensions: { cancel: vi.fn(), invoke: async () => ({ ok: true,
+    result: { items: [], page: 1, size: 20, total: 0 } }) } })
+  const closed = vi.fn()
+  if (kind === 'base') render(<KnowledgeBaseEditor onClose={closed} onCreated={vi.fn()} t={key => zh[key]} />)
+  else render(<KnowledgeEditor knowledgeBaseId="personal" target={{ kind }} onClose={closed} onSaved={vi.fn()} t={key => zh[key]} />)
+  const dialog = within(await screen.findByRole('dialog'))
+  const label = kind === 'base' ? zh.knowledgeBaseName : kind === 'folder' ? zh.knowledgeFolderName : zh.knowledgeDocumentTitle
+  fireEvent.change(dialog.getByRole('textbox', { name: label }), { target: { value: 'Retained draft' } })
+  const unload = new Event('beforeunload', { cancelable: true })
+  window.dispatchEvent(unload)
+  expect(unload.defaultPrevented).toBe(true)
+  for (const dismiss of [
+    () => { fireEvent.click(dialog.getByRole('button', { name: zh.close })) },
+    () => { fireEvent.keyDown(document, { key: 'Escape' }) },
+    () => { fireEvent.click(screen.getByRole('dialog').previousElementSibling!) },
+    () => { fireEvent.click(dialog.getByRole('button', { name: zh.cancel })) },
+  ]) {
+    dismiss()
+    expect(closed).not.toHaveBeenCalled()
+    await dialog.findByText(zh.knowledgeDiscardDraftConfirmation)
+    fireEvent.click(dialog.getByRole('button', { name: zh.knowledgeKeepEditing }))
+    expect(dialog.getByRole<HTMLInputElement>('textbox', { name: label }).value).toBe('Retained draft')
+  }
+  fireEvent.click(dialog.getByRole('button', { name: zh.close }))
+  fireEvent.click(dialog.getByRole('button', { name: zh.knowledgeDiscardDraft }))
+  expect(closed).toHaveBeenCalledOnce()
+})
+
+it('closes a loaded unchanged document without asking to discard its saved content', async () => {
+  const document = { id: 'document', filename: 'Notes.md', sourceType: 'manual', canManage: true,
+    manualContent: 'Saved contents', updatedAt: '2026-10-17T10:00:00Z', knowledgeBaseId: 'personal',
+    mediaType: 'text/markdown', sizeBytes: 14, status: 'ready', chunkCount: 1 }
+  vi.stubGlobal('dshDesktop', { extensions: { cancel: vi.fn(), invoke: async () => ({ ok: true, result: document }) } })
+  const closed = vi.fn()
+  render(<KnowledgeEditor knowledgeBaseId="personal" target={{ kind: 'markdown', document }} onClose={closed} onSaved={vi.fn()} t={key => zh[key]} />)
+  await screen.findByDisplayValue('Saved contents')
+  fireEvent.click(screen.getByRole('button', { name: zh.close }))
+  expect(closed).toHaveBeenCalledOnce()
+  expect(screen.queryByText(zh.knowledgeDiscardDraftConfirmation)).toBeNull()
+})
+
+it.each(['markdown', 'url', 'base', 'folder'] as const)('retains the %s operation when dismissed during a save or after a lost receipt', async (kind) => {
+  let finish: (() => void) | undefined
+  const gate = new Promise<void>((resolve) => { finish = resolve })
+  const writes: Record<string, unknown>[] = []
+  vi.stubGlobal('dshDesktop', { extensions: { cancel: vi.fn(), invoke: async (_namespace: string, method: string, payload: Record<string, unknown>) => {
+    if (method === 'knowledge.folders.list') return { ok: true, result: { items: [], page: 1, size: 20, total: 0 } }
+    writes.push(payload)
+    await gate
+    return writes.length === 1
+      ? { ok: false, failure: productFailure(new ProductError('PRODUCT_NETWORK_UNAVAILABLE', 'Lost receipt', true)) }
+      : { ok: true, result: { ...payload, id: 'created', name: payload.name ?? payload.title } }
+  } } })
+  const closed = vi.fn()
+  const saved = vi.fn()
+  if (kind === 'base') render(<KnowledgeBaseEditor onClose={closed} onCreated={saved} t={key => zh[key]} />)
+  else render(<KnowledgeEditor knowledgeBaseId="personal" target={{ kind }} onClose={closed} onSaved={saved} t={key => zh[key]} />)
+  const dialog = within(await screen.findByRole('dialog'))
+  fireEvent.change(dialog.getByRole('textbox', { name: kind === 'base' ? zh.knowledgeBaseName
+    : kind === 'folder' ? zh.knowledgeFolderName : zh.knowledgeDocumentTitle }), { target: { value: 'Draft' } })
+  if (kind === 'markdown') fireEvent.change(dialog.getByRole('textbox', { name: zh.knowledgeMarkdownContent }), { target: { value: 'Contents' } })
+  if (kind === 'url') fireEvent.change(dialog.getByRole('textbox', { name: zh.knowledgeWebsiteUrl }), { target: { value: 'https://example.com' } })
+  const save = dialog.getByRole<HTMLButtonElement>('button', { name: kind === 'base' ? zh.knowledgeCreate : zh.knowledgeSave })
+  await vi.waitFor(() => { expect(save.disabled).toBe(false) })
+  fireEvent.click(save)
+  fireEvent.click(dialog.getByRole('button', { name: zh.close }))
+  fireEvent.keyDown(document, { key: 'Escape' })
+  expect(closed).not.toHaveBeenCalled()
+  expect(dialog.getByRole<HTMLButtonElement>('button', { name: zh.cancel }).disabled).toBe(true)
+  finish?.()
+  await dialog.findByRole('alert')
+  fireEvent.click(dialog.getByRole('button', { name: zh.close }))
+  fireEvent.click(screen.getByRole('dialog').previousElementSibling!)
+  expect(closed).not.toHaveBeenCalled()
+  fireEvent.click(dialog.getByRole('button', { name: zh.knowledgeRetrySave }))
+  await vi.waitFor(() => { expect(saved).toHaveBeenCalledOnce() })
+  expect(writes[1]).toEqual(writes[0])
+})

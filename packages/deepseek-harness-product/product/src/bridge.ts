@@ -437,7 +437,7 @@ export class DeepSeekHarnessProductBridge {
         }),
       })
     }
-    if (method === 'knowledge.bases.list') return this.api.listAll('/api/v1/knowledge-bases', 100, signal)
+    if (method === 'knowledge.bases.list') return this.catalog.read(method, signal)
     if (method.startsWith('knowledge.documents.preview.') || method === 'knowledge.documents.download' || method === 'knowledge.documents.openExternal') {
       if (!this.session.authenticated || !this.session.employeeId) throw new ProductError('KNOWLEDGE_ACCESS_DENIED', 'Authenticated employee is required', false)
       if (this.knowledgeFiles === undefined) throw new ProductError('KNOWLEDGE_PREVIEW_UNAVAILABLE', 'File transport is unavailable', true)

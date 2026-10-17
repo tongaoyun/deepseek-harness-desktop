@@ -117,7 +117,7 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
     }
   }
 
-  const refresh = async (force = false): Promise<void> => {
+  const refresh = async (): Promise<void> => {
     const scope = catalogReads.current
     const currentGeneration = cancelReads(scope)
     const api = productApi()
@@ -139,7 +139,6 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
         return
       }
       setAuthRequired(false)
-      if (force) await read(api, 'catalog.refresh', undefined, undefined, scope)
       if (currentGeneration !== scope.generation) return
       const catalogValue = await read(api, METHODS[catalog], undefined, undefined, scope)
       if (currentGeneration !== scope.generation) return
@@ -473,7 +472,7 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
       } else {
         setSelected(previous => previous?.id === target.id ? { ...previous, canSubmit: false, reviewStatus: 'SUBMITTED' } : previous)
       }
-      await refresh(true)
+      await refresh()
     } catch (error) {
       if (lifetime === managementLifetime.current) setManagementError(productErrorMessage(error, t,
         target.action === 'uninstall' ? 'resourceUninstallFailed' : target.action === 'delete' ? 'deleteFailed' : 'saveFailed'))
@@ -556,7 +555,7 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
     {...error === undefined ? {} : { error }}
     renderFactorySlot={props.renderFactorySlot}
     authRequired={authRequired} authPending={authPending} authError={authError} t={t}
-    onRefresh={() => { void refresh(true) }} onSignIn={() => { void signIn() }} />
+    onRefresh={() => { void refresh() }} onSignIn={() => { void signIn() }} />
 
   if (catalog === 'expertKits' && selectedId !== undefined) {
     return <section className={css.catalogPage} aria-label={selected?.name ?? t(labelKey)}>
@@ -645,7 +644,7 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
             </button>} />}
           <Tooltip portal label={t('refresh')} side="bottom" delayMs={500}>
             <button className={css.iconButton} type="button" disabled={loading} aria-label={t('refresh')}
-              onClick={() => { void refresh(true) }}><IconRefreshOutlineRegular size={16} /></button>
+              onClick={() => { void refresh() }}><IconRefreshOutlineRegular size={16} /></button>
           </Tooltip>
         </div>}
         {!loading && error === undefined && !authRequired && <div className={css.resultSummary}>
@@ -703,10 +702,10 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
       onClose={() => { setImporter(false) }} onInspected={(imported) => { setImporter(false); setEditor({ imported }) }} t={t} />}
     {editor?.imported && <ExtensionPreview preview={editor.imported} onClose={() => { setEditor(undefined) }}
       onContinue={() => startAuthoring(editor.imported)}
-      onSaved={() => { setEditor(undefined); setMine(true); void refresh(true) }} t={t} />}
+      onSaved={() => { setEditor(undefined); setMine(true); void refresh() }} t={t} />}
     {editor && catalog === 'connectors' && <ConnectorEditor
       editing={editor.connector}
-      onClose={() => { setEditor(undefined) }} onSaved={() => { setEditor(undefined); setMine(true); void refresh(true) }} t={t} />}
+      onClose={() => { setEditor(undefined) }} onSaved={() => { setEditor(undefined); setMine(true); void refresh() }} t={t} />}
     {managementModal}
   </section>
 }

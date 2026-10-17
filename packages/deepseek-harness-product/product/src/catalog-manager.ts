@@ -27,20 +27,22 @@ export interface ProductCatalogManagerOptions {
   readonly emit: (event: ProductEvent) => void
 }
 
-/** Owns one employee's complete catalog snapshot; knowledge reads always query the server. */
+/** Owns employee-scoped catalog results independently; knowledge reads always query the server. */
 export class ProductCatalogManager {
   private refreshOperation: Promise<void> | undefined
   private refreshTimer: ReturnType<typeof setTimeout> | undefined
   private epoch = 0
   private signature: string | undefined
   private readonly snapshot = new Map<CatalogMethod, unknown>()
+  private readonly failures = new Map<CatalogMethod, unknown>()
+  private readonly revisions = new Map<CatalogMethod, number>()
   private readonly lifecycle = new AbortController()
   private readonly operations = new Set<Promise<void>>()
   private closed = false
 
   constructor(private readonly options: ProductCatalogManagerOptions) {}
 
-  /** Refresh catalogs atomically, preserving the last display snapshot on failure.
+  /** Refresh catalogs independently, preserving each last successful display result on failure.
    * @param signal - Optional caller cancellation; absent callers share a background refresh.
    * @returns Completion after all remote requests settle.
    */
@@ -68,15 +70,32 @@ export class ProductCatalogManager {
     if (!isCatalogMethod(method)) throw new Error(`deepseek-harness product: method ${method} is not available`)
     if (signal !== undefined || method === 'knowledge.bases.list') {
       signal?.throwIfAborted()
-      const value = await this.options.api?.listAll(CATALOG_ROUTES[method], 100, signal)
-      if (value === undefined) throw new Error('Product server is unavailable')
-      return value.map(entry => catalogEntry(method, entry, this.snapshot, this.options.desktopVersion))
+      const epoch = this.epoch
+      const revision = this.nextRevision(method)
+      try {
+        const value = await this.options.api?.listAll(CATALOG_ROUTES[method], 100, signal)
+        if (value === undefined) throw new Error('Product server is unavailable')
+        signal?.throwIfAborted()
+        if (epoch === this.epoch && !this.closed && revision === this.revisions.get(method)) {
+          this.snapshot.set(method, value)
+          this.failures.delete(method)
+        }
+        return value.map(entry => catalogEntry(method, entry, this.availableSnapshot(), this.options.desktopVersion))
+      } catch (error) {
+        if (epoch === this.epoch && !this.closed && !signal?.aborted && revision === this.revisions.get(method)) {
+          this.failures.set(method, error)
+        }
+        throw error
+      }
     }
-    if (!this.snapshot.has(method)) await this.refresh()
+    if (!this.snapshot.has(method)) {
+      try { await this.refresh() }
+      catch (error) { if (!this.snapshot.has(method)) throw this.failures.get(method) ?? error }
+    }
     const value = this.snapshot.get(method) ?? []
     if (!Array.isArray(value)) return value
     return value.map(entry => catalogEntry(
-      method, entry, this.snapshot, this.options.desktopVersion,
+      method, entry, this.availableSnapshot(), this.options.desktopVersion,
     ))
   }
 
@@ -84,6 +103,8 @@ export class ProductCatalogManager {
   reset(): void {
     this.epoch += 1
     this.snapshot.clear()
+    this.failures.clear()
+    this.revisions.clear()
     this.signature = undefined
     this.refreshOperation = undefined
   }
@@ -117,25 +138,38 @@ export class ProductCatalogManager {
     signal.throwIfAborted()
     const epoch = this.epoch
     const employeeId = this.options.getSession().employeeId
-    const controller = new AbortController()
-    const requestSignal = AbortSignal.any([signal, controller.signal])
-    const requests = await Promise.allSettled((Object.entries(CATALOG_ROUTES) as [CatalogMethod, string][])
-      .map(async ([method, route]) => {
-        try { return [method, await api.listAll(route, 100, requestSignal)] as const }
-        catch (error) { controller.abort(error); throw error }
-      }))
-    const entries = requests.map((result) => {
-      if (result.status === 'rejected') throw result.reason
-      return result.value
-    })
+    const routes = Object.entries(CATALOG_ROUTES) as [CatalogMethod, string][]
+    const requests = await Promise.all(routes.map(async ([method, route]) => {
+      const revision = this.nextRevision(method)
+      try { return { method, revision, result: { status: 'fulfilled', value: await api.listAll(route, 100, signal) } as const } }
+      catch (reason) { return { method, revision, result: { status: 'rejected', reason } as const } }
+    }))
+    signal.throwIfAborted()
     const current = this.options.getSession()
     if (this.closed || epoch !== this.epoch || !current.authenticated || employeeId !== current.employeeId) return
-    const nextSignature = JSON.stringify(entries)
+    for (const { method, revision, result } of requests) {
+      if (revision !== this.revisions.get(method)) continue
+      if (result.status === 'fulfilled') {
+        this.snapshot.set(method, result.value)
+        this.failures.delete(method)
+      } else this.failures.set(method, result.reason)
+    }
+    const nextSignature = JSON.stringify([[...this.snapshot], [...this.failures.keys()]])
     const changed = nextSignature !== this.signature
-    this.snapshot.clear()
-    for (const [method, value] of entries) this.snapshot.set(method, value)
     this.signature = nextSignature
-    if (changed) this.emitChanged()
+    if (changed && requests.some(entry => entry.result.status === 'fulfilled')) this.emitChanged()
+    const failure = requests.find(entry => entry.result.status === 'rejected')?.result
+    if (failure?.status === 'rejected') throw failure.reason
+  }
+
+  private availableSnapshot(): ReadonlyMap<CatalogMethod, unknown> {
+    return new Map([...this.snapshot].filter(([method]) => !this.failures.has(method)))
+  }
+
+  private nextRevision(method: CatalogMethod): number {
+    const revision = (this.revisions.get(method) ?? 0) + 1
+    this.revisions.set(method, revision)
+    return revision
   }
 
   private emitChanged(): void {
@@ -158,6 +192,7 @@ function catalogEntry(
 ): unknown {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return value
   const record = value as Record<string, unknown>
+  if (method === 'knowledge.bases.list') return record
   const id = optionalString(record.id)
   if (id === undefined) return record
   if (method === 'connectors.list') {
