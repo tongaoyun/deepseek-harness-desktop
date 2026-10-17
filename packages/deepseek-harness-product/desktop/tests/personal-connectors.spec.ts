@@ -1,9 +1,10 @@
 import { createServer } from 'node:http'
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto'
-import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, it, onTestFinished, vi } from 'vitest'
+import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import { DeepSeekHarnessApiClient } from '@deepseek-harness/product'
 import { ExtensionDraftSchema } from '@deepseek-harness/product/authoring'
 import { PersonalConnectors } from '../src/personal-connectors.ts'
@@ -235,6 +236,82 @@ it('closes discovery and cached stdio children and scrubs ambient credentials', 
   expect(() => process.kill(evidence.pid, 0)).not.toThrow()
   await manager.close()
   expect(() => process.kill(evidence.pid, 0)).toThrow()
+})
+
+it('deletes only the selected connector connections while another connector finishes an in-flight call', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'personal-mcp-delete-'))
+  onTestFinished(() => rm(root, { recursive: true, force: true }))
+  const started = join(root, 'call-started')
+  const released = join(root, 'call-released')
+  const child = `
+    import readline from 'node:readline';
+    import { existsSync, writeFileSync } from 'node:fs';
+    const reply = (id, result) => process.stdout.write(JSON.stringify({jsonrpc:'2.0',id,result})+'\\n');
+    readline.createInterface({input:process.stdin}).on('line', line => {
+      const call = JSON.parse(line);
+      if (call.id === undefined) return;
+      if (call.method === 'tools/call') {
+        writeFileSync(process.env.CALL_STARTED, 'started');
+        const wait = setInterval(() => {
+          if (!existsSync(process.env.CALL_RELEASED)) return;
+          clearInterval(wait);
+          reply(call.id, {content:[{type:'text',text:'completed'}]});
+        }, 10);
+        return;
+      }
+      reply(call.id, call.method === 'initialize' ? {
+        protocolVersion:call.params.protocolVersion,serverInfo:{name:'delete-fixture',version:'1'},capabilities:{tools:{}}
+      } : {tools:[{name:'read',description:String(process.pid),inputSchema:{type:'object'},annotations:{readOnlyHint:true}}]});
+    });`
+  const employee = 'employee-one'
+  const secure = { isEncryptionAvailable: () => true, encryptString: (value: string) => Buffer.from(value),
+    decryptString: (value: Buffer) => value.toString() }
+  const manager = new PersonalConnectors(root, secure, () => employee)
+  onTestFinished(() => manager.close())
+  const drafts = [
+    { id: 'connector-a', version: '1.0.0' }, { id: 'connector-a', version: '1.0.1' }, { id: 'connector-b', version: '1.0.0' },
+  ].map(identity => ExtensionDraftSchema.parse({ ...identity, kind: 'connector', name: identity.id, summary: 'Deletion fixture',
+    category: 'other', transport: 'stdio', command: process.execPath, arguments: ['--input-type=module', '-e', child],
+    environment: { CALL_STARTED: started, CALL_RELEASED: released } }))
+  const entries = drafts.map(draft => ({ ...draft, visibility: 'PERSONAL', ownerEmployeeId: employee, canEdit: true,
+    authMode: 'none', ready: true, status: 'ready', tools: [{ name: 'read' }] }))
+  let rejectDeletion = true
+  const api = new DeepSeekHarnessApiClient({ baseUrl: 'https://product.example', getSessionToken: () => 'fixture-token',
+    fetch: async (_url, init) => {
+      if (init?.method === 'DELETE' && rejectDeletion) return Response.json({ success: false }, { status: 503 })
+      return Response.json({ success: true, data: init?.method ? {} : entries[1] })
+    } })
+  const signal = new AbortController().signal
+  for (const draft of drafts) await manager.save(draft, api, employee, signal)
+  const connections = await manager.enrich(entries, signal) as { tools: { description: string }[] }[]
+  const pids = connections.map(entry => Number(entry.tools[0]!.description))
+  const target = { id: 'connector-a', version: '1.0.1' }
+  await expect(manager.manage('extensions.connector.delete', target, api, employee, signal)).rejects.toThrow()
+  for (const pid of pids) expect(() => process.kill(pid, 0)).not.toThrow()
+
+  const proxy = new ConnectorProxy(async () => [entries[2]], (request, response, entry, signal) =>
+    manager.serveStdio(request, response, entry, signal))
+  onTestFinished(() => proxy.close())
+  await proxy.start()
+  const [relay] = proxy.catalog([entries[2]]) as { url: string; headers: Record<string, string> }[]
+  const client = new Client({ name: 'delete-test', version: '1.0.0' })
+  onTestFinished(() => client.close())
+  await client.connect(new StreamableHTTPClientTransport(new URL(relay!.url), { requestInit: { headers: relay!.headers } }))
+  const completion = client.callTool({ name: 'read', arguments: {} }).then(result => ({ result }), (error: unknown) => ({ error }))
+  await expect.poll(() => readFile(started, 'utf8').catch((error: unknown) => {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return ''
+    throw error
+  })).toBe('started')
+  rejectDeletion = false
+  expect(await manager.manage('extensions.connector.delete', target, api, employee, signal)).toMatchObject({ removed: true })
+  await writeFile(released, 'released')
+  expect(await completion).toMatchObject({ result: { content: [{ type: 'text', text: 'completed' }] } })
+  for (const pid of pids.slice(0, 2)) expect(() => process.kill(pid, 0)).toThrow()
+  expect(() => process.kill(pids[2]!, 0)).not.toThrow()
+  const remaining = await manager.enrich([entries[2]], signal) as { tools: { description: string }[] }[]
+  expect(Number(remaining[0]!.tools[0]!.description)).toBe(pids[2])
+  await manager.resetIdentity(undefined)
+  expect(() => process.kill(pids[2]!, 0)).toThrow()
 })
 
 it.each(['initialize', 'tools/list'])('applies the configured timeout to stalled %s without activating a resource', async (stalledMethod) => {

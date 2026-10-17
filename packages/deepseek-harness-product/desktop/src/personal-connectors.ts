@@ -36,7 +36,7 @@ const PendingMetadata = z.object({ id: z.string(), version: z.string(), name: z.
 /** Owns authenticated personal configuration and SDK connections for the desktop lifetime. */
 export class PersonalConnectors {
   private readonly lifetime = new AbortController()
-  private readonly clients = new Map<string, Promise<Client>>()
+  private readonly clients = new Map<string, { employee: string; id: string; connection: Promise<Client> }>()
   private readonly saves = new Map<string, Promise<void>>()
   private identity: string | undefined
   constructor(private readonly root: string, private readonly secure: SecureStorage, private readonly employee: () => string | undefined,
@@ -97,7 +97,7 @@ export class PersonalConnectors {
         await this.finalize(this.filename(employee, entry.id, entry.version), config)
         const key = this.key(employee, entry.id, entry.version)
         const old = this.clients.get(key); this.clients.delete(key)
-        if (old) await (await old).close()
+        if (old) await (await old.connection).close()
       })
       return { id: entry.id, version: entry.version, configured: true }
     }
@@ -106,7 +106,13 @@ export class PersonalConnectors {
     }
     if (method === 'extensions.connector.delete') {
       await api.request(`/api/v1/connectors/${encodeURIComponent(entry.id)}`, { method: 'DELETE', signal })
-      await this.resetIdentity(undefined)
+      const removed: Promise<Client>[] = []
+      for (const [key, cached] of this.clients) {
+        if (cached.employee !== employee || cached.id !== entry.id) continue
+        this.clients.delete(key)
+        removed.push(cached.connection)
+      }
+      await Promise.allSettled(removed.map(async connection => (await connection).close()))
       await rm(this.filename(employee, entry.id, entry.version), { force: true })
       await rm(`${this.filename(employee, entry.id, entry.version)}.pending`, { force: true })
       return { removed: true, id: entry.id }
@@ -247,7 +253,7 @@ export class PersonalConnectors {
     const key = this.key(employee, draft.id, draft.version)
     const old = this.clients.get(key)
     this.clients.delete(key)
-    if (old) await (await old).close()
+    if (old) await (await old.connection).close()
   }
 
   /** Augment personal runtime data with local configuration and live read-only annotations.
@@ -328,7 +334,7 @@ export class PersonalConnectors {
   async close(): Promise<void> {
     this.lifetime.abort(new Error('Personal connector manager closed'))
     await Promise.allSettled([...this.saves.values()])
-    await Promise.allSettled([...this.clients.values()].map(async client => (await client).close()))
+    await Promise.allSettled([...this.clients.values()].map(async cached => (await cached.connection).close()))
     this.clients.clear()
   }
 
@@ -340,7 +346,7 @@ export class PersonalConnectors {
     this.identity = employee
     const previous = [...this.clients.values()]
     this.clients.clear()
-    await Promise.allSettled(previous.map(async client => (await client).close()))
+    await Promise.allSettled(previous.map(async cached => (await cached.connection).close()))
   }
 
   private key(employee: string, id: string, version: string): string { return createHash('sha256').update(JSON.stringify([employee, id, version])).digest('hex') }
@@ -382,7 +388,7 @@ export class PersonalConnectors {
         const key = this.key(employee, entry.id, entry.version)
         const old = this.clients.get(key)
         this.clients.delete(key)
-        if (old) await (await old).close()
+        if (old) await (await old.connection).close()
       }
       const encrypted = await readFile(filename)
       const config = Configuration.parse(JSON.parse(this.secure.decryptString(encrypted)))
@@ -398,16 +404,15 @@ export class PersonalConnectors {
   }
   private client(entry: PublicConnector, employee: string, config: Configuration, signal: AbortSignal): Promise<Client> {
     const key = this.key(employee, entry.id, entry.version)
-    let client = this.clients.get(key)
-    if (!client) {
-      client = this.connect(config, signal)
-      this.clients.set(key, client)
-      void client.catch(() => { if (this.clients.get(key) === client) this.clients.delete(key) })
-      void client.then((value) => {
-        value.onclose = () => { if (this.clients.get(key) === client) this.clients.delete(key) }
-      }, () => undefined)
-    }
-    return client
+    const existing = this.clients.get(key)
+    if (existing) return existing.connection
+    const cached = { employee, id: entry.id, connection: this.connect(config, signal) }
+    this.clients.set(key, cached)
+    void cached.connection.catch(() => { if (this.clients.get(key) === cached) this.clients.delete(key) })
+    void cached.connection.then((value) => {
+      value.onclose = () => { if (this.clients.get(key) === cached) this.clients.delete(key) }
+    }, () => undefined)
+    return cached.connection
   }
   private async connect(config: Configuration, signal: AbortSignal): Promise<Client> {
     const combined = AbortSignal.any([signal, this.lifetime.signal, AbortSignal.timeout(config.timeoutSeconds * 1000)])

@@ -64,7 +64,13 @@ class KnowledgeSaveRecovery {
  * @param scope Resource and action identity, excluding editable values.
  * @returns Loaded draft, recovery failure, and employee-bound suspension commands.
  */
-export function useKnowledgeSaveRecovery(scope: string) {
+export function useKnowledgeSaveRecovery(scope: string): {
+  ready: boolean
+  draft?: KnowledgeSaveDraft
+  error?: unknown
+  recovery: KnowledgeSaveRecovery
+  reload: () => Promise<void>
+} {
   const [recovery] = useState(() => new KnowledgeSaveRecovery(scope))
   const [state, setState] = useState<{ ready: boolean; draft?: KnowledgeSaveDraft; error?: unknown }>(() => ({
     ready: !Object.keys(sessionStorage).some(key => key.startsWith(prefix)),
