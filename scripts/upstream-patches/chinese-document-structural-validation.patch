@@ -118,10 +118,10 @@ index a35da334b75f698fc56f5ea3b2a9315fa8ff96dc..4e866c3cf668ac7402bffdb0233f48ba
        })
        expect(missing, `${readme} must carry one table row per subsystem page`).toEqual([])
 diff --git a/scripts/translation-pairing.manifest.json b/scripts/translation-pairing.manifest.json
-index f9bb1549a2395e139e66d2f7e51f1c5df482c97e..d2afc1b99bea41aab89beb9cb2766f982249b0bd 100644
+index f9bb1549a2395e139e66d2f7e51f1c5df482c97e..e2f39cfe12f1ae920fd860232d2e1f20ad209c01 100644
 --- a/scripts/translation-pairing.manifest.json
 +++ b/scripts/translation-pairing.manifest.json
-@@ -4,10 +4,26 @@
+@@ -4,10 +4,27 @@
      ".agents/notes/implemented/AGENTS.md",
      ".agents/notes/implemented/CLAUDE.md",
      ".github/review-ownership/README.md",
@@ -141,6 +141,7 @@ index f9bb1549a2395e139e66d2f7e51f1c5df482c97e..d2afc1b99bea41aab89beb9cb2766f98
 +    "docs/upgrade-guide/v0.2.1-alpha.2/expert-kit-shortcut-instructions/guide.md",
 +    "docs/upgrade-guide/v0.2.1-alpha.2/product-knowledge-library/guide.md",
 +    "docs/upgrade-guide/v0.2.1-alpha.2/product-support/guide.md",
++    "docs/upgrade-guide/v0.2.1-alpha.4/product-knowledge-references/guide.md",
 +    "packages/deepseek-harness-product/README.md",
 +    "packages/deepseek-harness-product/desktop/README.md",
 +    "packages/deepseek-harness-product/expert-kit-readme/README.md",

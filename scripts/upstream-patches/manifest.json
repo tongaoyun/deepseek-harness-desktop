@@ -1392,7 +1392,7 @@
         {
           "path": "scripts/translation-pairing.manifest.json",
           "before": "9944a604474c609318ec2793512661aa0dfc67f124d6789df4f285e8c5910153",
-          "after": "f4bcd89816708846487ae3bd43fe878f29c2b98a26df66922c7977eec4f398b2"
+          "after": "aae2d608b074807ad95613370f0b4781f94cae18d2831142e23ebaa29c07e40a"
         },
         {
           "path": "scripts/verify-package-readme-limitations.ts",

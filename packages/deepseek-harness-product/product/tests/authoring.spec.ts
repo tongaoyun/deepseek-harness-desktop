@@ -63,11 +63,30 @@ it('pins copied skill source identities and calculates a sorted dependency union
   const source = { id: skill.id, version: '1.0.0', sha256: 'a'.repeat(64) }
   const generated = extensionFiles(ExtensionDraftSchema.parse({ ...skill, kind: 'expert-kit', id: 'policy-kit',
     connectorRefs: ['ignored-parent'], skills: [
-      { ...skill, source, connectorRefs: ['erp', 'crm'], requiredTools: ['read_policy'], knowledgeBaseRefs: ['organization:policy'] },
+      { ...skill, source, connectorRefs: ['erp', 'crm'], requiredTools: ['read_policy'], knowledgeBaseRefs: ['company:policy'] },
       { ...skill, id: 'policy-summary', connectorRefs: ['erp'], requiredTools: ['read_policy'], knowledgeBaseRefs: [] },
     ] }))
-  expect(generated.release).toMatchObject({ connectorRefs: ['crm', 'erp'], requiredTools: ['read_policy'], knowledgeBaseRefs: ['organization:policy'] })
+  expect(generated.release).toMatchObject({ connectorRefs: ['crm', 'erp'], requiredTools: ['read_policy'], knowledgeBaseRefs: ['company:policy'] })
   expect(JSON.parse(generated.files['.deepseek-harness-kit/kit.json']!)).toMatchObject({ skills: [{ name: skill.name, source }, {}] })
+})
+
+it.each(['personal', 'department', 'company'])('preserves %s knowledge references in standalone and bundled skill artifacts', (scope) => {
+  const knowledgeBaseRefs = [`${scope}:policy`]
+  const standalone = extensionFiles(ExtensionDraftSchema.parse({ ...skill, knowledgeBaseRefs }))
+  expect(standalone.release.knowledgeBaseRefs).toEqual(knowledgeBaseRefs)
+  expect(JSON.parse(standalone.files['.deepseek-harness-skill/skill.json']!)).toMatchObject({ knowledgeBaseRefs })
+  const kit = extensionFiles(ExtensionDraftSchema.parse({ ...skill, kind: 'expert-kit', id: 'policy-kit',
+    skills: [{ ...skill, knowledgeBaseRefs }] }))
+  expect(kit.release.knowledgeBaseRefs).toEqual(knowledgeBaseRefs)
+  expect(JSON.parse(kit.files['.deepseek-harness-kit/kit.json']!)).toMatchObject({ knowledgeBaseRefs,
+    skills: [{ knowledgeBaseRefs }] })
+})
+
+it.each(['team', 'organization'])('rejects the retired %s knowledge prefix instead of translating it', (scope) => {
+  const knowledgeBaseRefs = [`${scope}:policy`]
+  expect(ExtensionDraftSchema.safeParse({ ...skill, knowledgeBaseRefs }).success).toBe(false)
+  expect(ExtensionDraftSchema.safeParse({ ...skill, kind: 'expert-kit', id: 'policy-kit',
+    skills: [{ ...skill, knowledgeBaseRefs }] }).success).toBe(false)
 })
 
 it('rejects unsupported categories, empty kits, owner forgery, malformed YAML and OAuth secret mixing', () => {

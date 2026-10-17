@@ -204,6 +204,44 @@ it('does not save cancelled imports and denies stages from another employee', as
     { authenticated: true, employeeId: 'employee-two' }, signal)).rejects.toThrow('expired')
 })
 
+it.each(['choice', 'failure'])('cancels an import before the native picker returns a late %s', async (late) => {
+  const root = await mkdtemp(join(tmpdir(), 'extension-picker-cancel-test-'))
+  onTestFinished(() => rm(root, { force: true, recursive: true }))
+  const picker = Promise.withResolvers<string | undefined>()
+  const selectImport = vi.fn(() => picker.promise)
+  const fetch = vi.fn<typeof globalThis.fetch>()
+  const installSkill = vi.fn(async () => undefined)
+  const api = new DeepSeekHarnessApiClient({ baseUrl: 'https://product.example', getSessionToken: () => undefined, fetch })
+  const authoring = new ExtensionAuthoring({ directory: root, selectImport, installSkill,
+    saveConnector: async () => undefined })
+  onTestFinished(() => authoring.close())
+  const controller = new AbortController()
+  const result = authoring.invoke('extensions.import.inspect', { kind: 'skill', source: 'directory' }, api, identity, controller.signal)
+  const failure = expect(result).rejects.toThrow('Import cancelled')
+  controller.abort(new Error('Import cancelled'))
+  await failure
+  await authoring.close()
+  if (late === 'choice') picker.resolve(root)
+  else picker.reject(new Error('Picker closed late'))
+  await picker.promise.catch(() => undefined)
+  expect(selectImport).toHaveBeenCalledOnce()
+  expect(fetch).not.toHaveBeenCalled()
+  expect(installSkill).not.toHaveBeenCalled()
+})
+
+it('does not open an import picker for a request cancelled before dispatch', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'extension-picker-aborted-test-'))
+  onTestFinished(() => rm(root, { force: true, recursive: true }))
+  const selectImport = vi.fn(async () => undefined)
+  const authoring = new ExtensionAuthoring({ directory: root, selectImport,
+    installSkill: async () => undefined, saveConnector: async () => undefined })
+  onTestFinished(() => authoring.close())
+  const api = new DeepSeekHarnessApiClient({ baseUrl: 'https://product.example', getSessionToken: () => undefined })
+  await expect(authoring.invoke('extensions.import.inspect', { kind: 'skill', source: 'file' }, api, identity,
+    AbortSignal.abort(new Error('Import cancelled')))).rejects.toThrow('Import cancelled')
+  expect(selectImport).not.toHaveBeenCalled()
+})
+
 it('copies the selected immutable skill version and resources even after the directory changes', async () => {
   const root = await mkdtemp(join(tmpdir(), 'extension-version-test-'))
   onTestFinished(() => rm(root, { force: true, recursive: true }))

@@ -25,6 +25,7 @@ export function productOwned(path) {
     || path.startsWith('docs/upgrade-guide/v0.2.1-alpha.2/product-knowledge-library/')
     || path.startsWith('docs/upgrade-guide/v0.2.1-alpha.2/product-support/')
     || path.startsWith('docs/upgrade-guide/v0.2.1-alpha.2/expert-kit-shortcut-instructions/')
+    || path.startsWith('docs/upgrade-guide/v0.2.1-alpha.4/product-knowledge-references/')
     || path.startsWith('docs/persistence-changes/2026-10-13-product-expert-kit-instructions.')
 }
 

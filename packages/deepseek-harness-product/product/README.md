@@ -58,6 +58,8 @@ JSON 请求的网络中断或内部请求期限超时返回 `PRODUCT_NETWORK_UNA
 
 `extensions.import.inspect`、`extensions.save`、`extensions.submit`、`extensions.delete` 将个人扩展编辑交给主进程，返回预览或业务结果。`extensions.import.release` 清理员工隔离的预览。`extension-draft` 出口提供浏览器可用的表单校验，`authoring` 在主进程解析 YAML，生成标准技能/套件文件和依赖并集。所有者来自服务端认证。目录返回 `visibility`、`ownerEmployeeId`、`canEdit`、`canSubmit`、`canDelete` 和审核状态，个人可用资格独立于共享审核。知识引用解析区分不存在、无权访问、歧义与临时故障。
 
+技能、内置技能与套件的 `knowledgeBaseRefs` 仅接受 `personal:<key>`、`department:<key>`、`company:<key>`，与目录 `reference` 一致。创建、导入和服务端提交均拒绝旧 `team:`、`organization:` 前缀，详情不转换引用。固定任务仍按实际知识库 ID 和实时权限执行。旧扩展须按[知识引用升级说明](../../../docs/upgrade-guide/v0.2.1-alpha.4/product-knowledge-references/guide.md)另建版本。
+
 扩展保存、删除和提交审核结束后立即清空目录缓存并发送目录变更事件，返回原始业务结果，不等待全部目录刷新。后台刷新由目录管理器持有，释放时取消并等待结束；后续目录读取报告刷新故障，不返回过时权限。
 
 连接器授权确认及撤销以服务端响应为准，成功后立即清空展示缓存并发送目录变更事件，不等待四类目录刷新。后台刷新由目录管理器持有并在释放时取消、等待结束；失败由后续目录读取报告。连接器页面重读自身目录，知识库或组织服务故障不会将已成功的授权或撤销显示为失败。
