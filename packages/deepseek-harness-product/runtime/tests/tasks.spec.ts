@@ -29,7 +29,7 @@ async function setup() {
       return { ...definition, plugins: [...definitions.get(base)!.plugins, ...definition.plugins], resolutionBase: 'file:///profile/' }
     } },
   })
-  const connector = { id: 'erp', name: 'ERP', status: 'ready' as const, authMode: 'employee-bearer' as const,
+  const connector = { id: 'erp', version: '1.0.0', name: 'ERP', status: 'ready' as const, authMode: 'employee-bearer' as const,
     timeoutSeconds: 120,
     transport: 'streamable-http' as const, url: 'https://example.test/mcp', arguments: [], toolNames: ['read'], readOnlyTools: ['read'],
     headers: { Authorization: 'Bearer private' }, environment: {} }
@@ -62,6 +62,7 @@ it('enables an independent connector and retains it when adding knowledge', asyn
   expect(first.kind).toBe('CURRENT_SESSION')
   expect(first.capabilities.connectorIds).toEqual(['erp'])
   expect(first.capabilities.requiredConnectorIds).toEqual([])
+  expect(fixture.deps.connectors).toHaveBeenCalledWith(['erp'], undefined)
   expect(fixture.register.mock.calls[0]?.[0].plugins.some(row => row.id === 'product-knowledge')).toBe(false)
   fixture.select(first.presetId)
   const next = await fixture.tasks.prepare({ sessionId: 'session', knowledgeBaseIds: ['manuals'] })

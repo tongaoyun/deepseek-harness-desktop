@@ -6,7 +6,7 @@ import { basename, extname } from 'node:path'
 import type { OpenDialogOptions } from 'electron'
 import type { DeepSeekHarnessApiClient, KnowledgePdfParseMode } from '@deepseek-harness/product'
 import { ProductError } from '@deepseek-harness/product/errors'
-import type { KnowledgeUpload } from '@deepseek-harness/product/bridge'
+import type { KnowledgeUpload, KnowledgeUploadPending } from '@deepseek-harness/product/bridge'
 
 interface Selection {
   readonly baseId: string
@@ -88,6 +88,18 @@ export class KnowledgeUploads implements KnowledgeUpload {
   discard(baseId: string, operationId: string): void {
     const key = `${this.employee()}:${operationId}`
     if (this.selections.get(key)?.baseId === baseId) this.selections.delete(key)
+  }
+
+  /** Recover this employee's prepared uploads after navigation; paths stay in main.
+   * @param baseId Original knowledge library.
+   * @returns At most sixteen retained operation identities in selection order.
+   */
+  pending(baseId: string): readonly KnowledgeUploadPending[] {
+    const employee = this.employee()
+    if (!employee || this.identity !== employee) { this.resetIdentity(); return [] }
+    return [...this.selections].flatMap(([key, selection]) => selection.baseId !== baseId || selection.sha256 === undefined ? []
+      : [{ operationId: key.slice(employee.length + 1), pdfParseMode: selection.mode,
+        ...(selection.folderId === undefined ? {} : { folderId: selection.folderId }) }])
   }
 
   /** Release private file selections when employee identity changes. */

@@ -34,7 +34,12 @@ export interface KnowledgeChunk {
 }
 
 /** Stable product folder identity, distinct from its visible name. */
-export interface KnowledgeFolder { readonly id: string; readonly name: string; readonly parentId: string | null }
+export interface KnowledgeFolder {
+  readonly id: string
+  readonly name: string
+  readonly parentId: string | null
+  readonly updatedAt: string
+}
 
 /** One-based server pagination with a total after filtering. */
 export interface KnowledgePage<T> { readonly items: readonly T[]; readonly page: number; readonly size: number; readonly total: number }
@@ -62,7 +67,7 @@ export interface KnowledgePreviewFile {
  * @returns Whether cached knowledge and resource metadata must be removed.
  */
 export function isKnowledgeAccessDenied(error: unknown): boolean {
-  return ['KNOWLEDGE_ACCESS_REVOKED', 'KNOWLEDGE_ACCESS_DENIED', 'ORGANIZATION_EMPLOYEE_INACTIVE', 'ORGANIZATION_EMPLOYEE_UNMAPPED']
+  return ['KNOWLEDGE_ACCESS_REVOKED', 'KNOWLEDGE_ACCESS_DENIED', 'ORGANIZATION_EMPLOYEE_INACTIVE', 'ORGANIZATION_EMPLOYEE_UNMAPPED', 'ORGANIZATION_SOURCE_INVALID']
     .includes(productFailure(error).code)
 }
 
@@ -167,7 +172,8 @@ export async function readKnowledgeFile(request: ReturnType<typeof useKnowledgeR
  */
 export function knowledgeFolder(value: unknown): KnowledgeFolder {
   const row = record(value)
-  return { id: string(row.id), name: string(row.name), parentId: row.parentId === null ? null : string(row.parentId) }
+  return { id: string(row.id), name: string(row.name), parentId: row.parentId === null ? null : string(row.parentId),
+    updatedAt: string(row.updatedAt) }
 }
 
 /** Read retrieval passages without treating document text as interface configuration.

@@ -17,7 +17,7 @@ it('relays MCP with main-owned credentials, refuses revoked authorization, and c
   const address = upstream.address()
   if (address === null || typeof address === 'string') throw new Error('Fixture did not bind')
   let authorized = true
-  const connector = { id: 'erp', status: 'ready', transport: 'streamable-http', url: `http://127.0.0.1:${address.port}/mcp`,
+  const connector = { id: 'erp', version: '1.0.0', status: 'ready', transport: 'streamable-http', url: `http://127.0.0.1:${address.port}/mcp`,
     headers: { Authorization: 'Bearer employee-token', 'x-connector-secret': 'private' }, environment: { SECRET: 'private' } }
   const catalog = vi.fn(async () => authorized ? [connector] : [])
   const proxy = new ConnectorProxy(catalog)
@@ -32,6 +32,12 @@ it('relays MCP with main-owned credentials, refuses revoked authorization, and c
   expect(result.headers.get('mcp-session-id')).toBe('mcp-session')
   expect(await result.json()).toMatchObject({ result: {} })
   expect(requests).toEqual(['Bearer employee-token'])
+  expect(catalog).toHaveBeenCalledWith(expect.any(AbortSignal), ['erp'])
+  connector.version = '1.0.1'
+  const changed = await fetch(entry.url, { method: 'POST', headers: entry.headers, body: '{}' })
+  expect(changed.status).toBe(409)
+  expect(await changed.text()).toContain('Connector version changed')
+  expect(requests).toHaveLength(1)
   authorized = false
   const revoked = await fetch(entry.url, { method: 'POST', headers: entry.headers, body: '{}' })
   expect(revoked.status).toBe(502)
@@ -49,7 +55,7 @@ it('bounds a stalled upstream request by the response-header timeout', async () 
     await new Promise<void>((resolve, reject) => upstream.close((error) => { if (error) reject(error); else resolve() }))
   })
   const address = upstream.address(); if (!address || typeof address === 'string') throw new Error('No fixture port')
-  const connector = { id: 'slow', status: 'ready', transport: 'streamable-http', timeoutSeconds: 1,
+  const connector = { id: 'slow', version: '1.0.0', status: 'ready', transport: 'streamable-http', timeoutSeconds: 1,
     url: `http://127.0.0.1:${address.port}/mcp`, headers: {} }
   const proxy = new ConnectorProxy(async () => [connector], undefined, { responseTimeoutMs: 1000, streamIdleTimeoutMs: 1000 })
   onTestFinished(() => proxy.close())
@@ -81,7 +87,7 @@ it.each(['idle', 'active'] as const)('bounds idle reads while retaining an %s SS
     await new Promise<void>(resolve => upstream.close(() => { resolve() }))
   })
   const address = upstream.address(); if (!address || typeof address === 'string') throw new Error('No fixture port')
-  const connector = { id: 'stream', status: 'ready', transport: 'streamable-http', timeoutSeconds: 1,
+  const connector = { id: 'stream', version: '1.0.0', status: 'ready', transport: 'streamable-http', timeoutSeconds: 1,
     url: `http://127.0.0.1:${address.port}/mcp`, headers: {} }
   const proxy = new ConnectorProxy(async () => [connector], undefined, { responseTimeoutMs: 1000, streamIdleTimeoutMs: 1000 })
   onTestFinished(() => proxy.close())
@@ -137,7 +143,7 @@ it('waits for in-flight stdio cleanup before closing and rejects new connections
   const entered = Promise.withResolvers<undefined>()
   const cancelled = Promise.withResolvers<undefined>()
   const release = Promise.withResolvers<undefined>()
-  const connector = { id: 'stdio', status: 'ready', transport: 'stdio', visibility: 'PERSONAL' }
+  const connector = { id: 'stdio', version: '1.0.0', status: 'ready', transport: 'stdio', visibility: 'PERSONAL' }
   let cleaned = false
   const proxy = new ConnectorProxy(async () => [connector], async (_request, response, _connector, signal) => {
     signal.addEventListener('abort', () => { cancelled.resolve(undefined) }, { once: true })
@@ -165,7 +171,7 @@ it('waits for in-flight stdio cleanup before closing and rejects new connections
 it('does not start a connector after a cancelled catalog returns late', async () => {
   const entered = Promise.withResolvers<AbortSignal>()
   const release = Promise.withResolvers<undefined>()
-  const connector = { id: 'late', status: 'ready', transport: 'stdio', visibility: 'PERSONAL' }
+  const connector = { id: 'late', version: '1.0.0', status: 'ready', transport: 'stdio', visibility: 'PERSONAL' }
   const serveStdio = vi.fn(async () => undefined)
   const proxy = new ConnectorProxy(async (signal) => {
     entered.resolve(signal)

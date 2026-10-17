@@ -266,6 +266,53 @@ describe('plugin activation', () => {
   })
 })
 
+it('unmounts before a real Loader replaces the Session owner and resumes after activation', async () => {
+  const container = document.createElement('div')
+  document.body.append(container)
+  let modules!: modulesClient.ClientModuleSystem
+  const target = installFacade((options) => {
+    modules = modulesClient.createClientModuleSystem(target, { id: MODULES_ID, exports: moduleFace }, options)
+    return modules
+  })
+  const events: string[] = []
+  let adapterInstalled = false
+  let version = 1
+  const entries: WebBootEntry[] = [
+    { id: MODULES_ID, url: '/modules.js?rev=1', rev: '1' },
+    { id: 'session', url: '/session.js?rev=1', rev: '1' },
+    { id: 'renderer', url: '/renderer.js?rev=1', rev: '1' },
+  ]
+  win.__DSH_BOOT__ = { rev: 'graph', entries,
+    batches: [{ phase: 'application', url: '/application.js', rev: 'batch', entries: entries.map(row => row.id) }] }
+  const session = (): ClientBundleRegistration => ({ id: 'session', factory: () => ({ apply(ctx: Context) {
+    adapterInstalled = true
+    events.push(`session-${version}`)
+    ctx.effect(() => () => { events.push('dispose-session'); adapterInstalled = false })
+  } }) })
+  const entry = new AppWebEntry(container, { loadBundle: async (url) => {
+    if (url.startsWith('/session.js')) { target.load(session()); return }
+    if (url !== '/application.js') throw new Error(`Unexpected bundle ${url}`)
+    target.load(session())
+    target.load({ id: 'renderer', factory: () => ({ apply(ctx: Context) {
+      ctx.reflect.provide('uiRenderer', { mount(element: HTMLElement) {
+        expect(adapterInstalled).toBe(true)
+        events.push('mount')
+        element.textContent = `Session ${version}`
+        return () => { events.push('unmount'); element.replaceChildren() }
+      } })
+    } }) })
+  } })
+  try {
+    await entry.run()
+    expect(container.textContent).toBe('Session 1')
+    version = 2
+    await modules.entries.reload('session', '2')
+    expect(events).toEqual(['session-1', 'mount', 'unmount', 'dispose-session', 'session-2', 'mount'])
+    expect(container.textContent).toBe('Session 2')
+    expect(container.querySelector('[data-dsh-boot]')).toBeNull()
+  } finally { await entry.dispose() }
+})
+
 it('draws the shared boot page before Host injections and resumes without replacing the document', async () => {
   const gate = Promise.withResolvers<undefined>()
   vi.stubGlobal('__DSH_BOOT_READY__', gate)

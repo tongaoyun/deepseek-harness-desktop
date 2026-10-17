@@ -20,6 +20,7 @@ const library = (canManage = false) => detail({ id: 'policy', name: '业务规�
 function transport(handler: (method: string, payload: unknown) => Promise<unknown>) {
   const preview = createPreviewFixture()
   const invoke = vi.fn(async (_namespace: string, method: string, payload: unknown, _requestId?: string) => {
+    if (method === 'knowledge.documents.upload.pending') return { ok: true, result: [] }
     if (method === 'knowledge.documents.previewMetadata') return { ok: true, result: originalMetadata('policy', 'doc-1') }
     return { ok: true, result: await preview(method, payload, handler) }
   })
@@ -198,6 +199,7 @@ it.each(['markdown', 'url'] as const)('preserves %s creation destination and edi
 it('exposes upload and creation only to a library manager and accepts native picker cancellation', async () => {
   const api = transport(async method => method === 'knowledge.documents.upload' ? { cancelled: true } : page([]))
   render(<StrictMode><KnowledgeDetail renderFactorySlot={renderKnowledgePreview} product={library(true)} t={t} /></StrictMode>)
+  await waitFor(() => { expect(screen.getByRole<HTMLButtonElement>('button', { name: zh.knowledgeUpload }).disabled).toBe(false) })
   fireEvent.click(screen.getByRole('button', { name: zh.knowledgeUpload }))
   fireEvent.click(await screen.findByRole('menuitem', { name: zh.knowledgeUploadStandard }))
   await waitFor(() => { expect(screen.getByRole('button', { name: zh.knowledgeUpload }).hasAttribute('disabled')).toBe(false) })
@@ -213,6 +215,7 @@ it('exposes upload and creation only to a library manager and accepts native pic
 it('offers no-OCR PDF extraction without accepting a renderer file path or changing the task', async () => {
   const api = transport(async method => method === 'knowledge.documents.upload' ? { ...document, filename: 'policy.pdf', status: 'QUEUED' } : page([]))
   render(<KnowledgeDetail renderFactorySlot={renderKnowledgePreview} product={library(true)} t={t} />)
+  await waitFor(() => { expect(screen.getByRole<HTMLButtonElement>('button', { name: zh.knowledgeUpload }).disabled).toBe(false) })
   fireEvent.click(screen.getByRole('button', { name: zh.knowledgeUpload }))
   fireEvent.click(await screen.findByRole('menuitem', { name: zh.knowledgeUploadTextPdf }))
   await waitFor(() => { expect(api.invoke).toHaveBeenCalledWith('product', 'knowledge.documents.upload', {
@@ -231,6 +234,7 @@ it.each([
     return page([])
   })
   render(<KnowledgeDetail renderFactorySlot={renderKnowledgePreview} product={library(true)} t={t} />)
+  await waitFor(() => { expect(screen.getByRole<HTMLButtonElement>('button', { name: zh.knowledgeUpload }).disabled).toBe(false) })
   fireEvent.click(screen.getByRole('button', { name: zh.knowledgeUpload }))
   fireEvent.click(await screen.findByRole('menuitem', { name: zh.knowledgeUploadTextPdf }))
   expect((await screen.findByRole('alert')).textContent).toContain(zh[key])
@@ -240,7 +244,7 @@ it.each([
 
 it('keeps folder browsing scoped to stable folder IDs and retains server-side permissions', async () => {
   const api = transport(async (method, payload) => method === 'knowledge.folders.list' && typeof payload === 'object' && payload !== null && 'parentId' in payload && payload.parentId === null
-    ? page([{ id: 'folder-1', name: '业务制度', parentId: null }]) : page([]))
+    ? page([{ id: 'folder-1', name: '业务制度', parentId: null, updatedAt: '2026-10-17T00:00:00Z' }]) : page([]))
   render(<KnowledgeDetail renderFactorySlot={renderKnowledgePreview} product={library()} t={t} />)
   fireEvent.click((await screen.findAllByRole('button', { name: '业务制度' }))[0]!)
   await waitFor(() => { expect(api.invoke).toHaveBeenCalledWith('product', 'knowledge.documents.list', {

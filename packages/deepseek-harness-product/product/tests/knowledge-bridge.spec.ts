@@ -6,6 +6,31 @@ import { isProductRuntimeMethod } from '../src/protocol.ts'
 
 const operationId = 'knowledge-operation-0001'
 
+it('pins document moves to the read location, revision and operation key', async () => {
+  const transport = vi.fn<typeof fetch>(async () => Response.json({ success: true, data: { moved: true } }))
+  const api = client(transport)
+  const input = { knowledgeBaseId: 'base', documentId: 'doc', folderId: 'folder', expectedFolderId: null,
+    expectedUpdatedAt: '2026-10-17T00:00:00Z', operationId }
+  try {
+    await invokeKnowledge(api, 'knowledge.documents.move', input)
+    await invokeKnowledge(api, 'knowledge.documents.move', input)
+    const options = transport.mock.calls.map(call => call[1])
+    expect(options.map(init => new Headers(init?.headers).get('idempotency-key'))).toEqual([operationId, operationId])
+    expect(options.map((init) => {
+      if (typeof init?.body !== 'string') throw new Error('Expected JSON request body')
+      const body: unknown = JSON.parse(init.body)
+      return body
+    })).toEqual(Array.from({ length: 2 }, () => ({
+      folderId: 'folder', expectedFolderId: null, expectedUpdatedAt: input.expectedUpdatedAt,
+    })))
+    for (const invalid of [{ ...input, operationId: '' }, { ...input, expectedUpdatedAt: undefined },
+      { ...input, expectedFolderId: '../other' }, { ...input, employeeId: 'forged' }]) {
+      await expect(invokeKnowledge(api, 'knowledge.documents.move', invalid)).rejects.toMatchObject({ code: 'KNOWLEDGE_REQUEST_INVALID' })
+    }
+    expect(transport).toHaveBeenCalledTimes(2)
+  } finally { api.close() }
+})
+
 it('cancels document processing through an authenticated write without exposing it to the model', async () => {
   const transport = vi.fn<typeof fetch>(async () => Response.json({ success: true, data: { id: 'doc', status: 'CANCELLED' } }))
   const api = client(transport)
@@ -104,8 +129,10 @@ it('creates nested folders with a stable retry key and an explicit parent withou
     expect(init?.body).toBe(JSON.stringify({ name: '资料', parentId }))
     expect(new Headers(init?.headers).get('idempotency-key')).toBe(operationId)
     expect(transport.mock.calls[1]?.[1]?.body).toBe(init?.body)
-    await invokeKnowledge(api, 'knowledge.folders.rename', { ...input, folderId: 'folder', name: '名称' })
-    expect(transport.mock.calls[2]?.[1]?.body).toBe(JSON.stringify({ name: '名称' }))
+    await invokeKnowledge(api, 'knowledge.folders.rename', { ...input, folderId: 'folder', name: '名称', expectedUpdatedAt: '2026-10-17T00:00:00Z' })
+    expect(transport.mock.calls[2]?.[1]?.body).toBe(JSON.stringify({ name: '名称', expectedUpdatedAt: '2026-10-17T00:00:00Z' }))
+    expect(new Headers(transport.mock.calls[2]?.[1]?.headers).get('idempotency-key')).toBe(operationId)
+    await expect(invokeKnowledge(api, 'knowledge.folders.rename', { ...input, folderId: 'folder' })).rejects.toMatchObject({ code: 'KNOWLEDGE_REQUEST_INVALID' })
     await expect(invokeKnowledge(api, 'knowledge.folders.create', { ...input, parentId: '../other' })).rejects.toMatchObject({ code: 'KNOWLEDGE_REQUEST_INVALID' })
     await expect(invokeKnowledge(api, 'knowledge.folders.create', { ...input, name: 'x'.repeat(81) })).rejects.toMatchObject({ code: 'KNOWLEDGE_REQUEST_INVALID' })
     expect(transport).toHaveBeenCalledTimes(3)
@@ -205,7 +232,7 @@ it('returns asynchronous deletion state instead of treating it as completion', a
 it('only lets the main-owned picker supply an upload file', async () => {
   const api = client(async () => { throw new Error('Unexpected HTTP') })
   const send = vi.fn(async () => ({ cancelled: true }))
-  const upload = { send, discard: vi.fn() }
+  const upload = { send, discard: vi.fn(), pending: vi.fn(() => [{ operationId, pdfParseMode: 'STANDARD' as const, folderId: 'folder' }]) }
   try {
     await expect(invokeKnowledge(api, 'knowledge.documents.upload', { knowledgeBaseId: 'base', operationId }, upload))
       .resolves.toEqual({ cancelled: true })
@@ -231,6 +258,12 @@ it('only lets the main-owned picker supply an upload file', async () => {
     expect(send).toHaveBeenCalledTimes(4)
     await invokeKnowledge(api, 'knowledge.documents.upload.discard', { knowledgeBaseId: 'base', operationId }, upload)
     expect(upload.discard).toHaveBeenCalledExactlyOnceWith('base', operationId)
+    await expect(invokeKnowledge(api, 'knowledge.documents.upload.pending', { knowledgeBaseId: 'base' }, upload))
+      .resolves.toEqual([{ operationId, pdfParseMode: 'STANDARD', folderId: 'folder' }])
+    expect(upload.pending).toHaveBeenCalledExactlyOnceWith('base')
+    await expect(invokeKnowledge(api, 'knowledge.documents.upload.pending', { knowledgeBaseId: 'base', employeeId: 'forged' }, upload))
+      .rejects.toMatchObject({ code: 'KNOWLEDGE_REQUEST_INVALID' })
+    expect(isProductRuntimeMethod('knowledge.documents.upload.pending')).toBe(false)
     await expect(invokeKnowledge(api, 'knowledge.documents.upload.discard', { knowledgeBaseId: 'base', operationId, path: '/private/file' }, upload))
       .rejects.toMatchObject({ code: 'KNOWLEDGE_REQUEST_INVALID' })
   } finally { api.close() }

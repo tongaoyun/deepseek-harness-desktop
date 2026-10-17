@@ -253,9 +253,10 @@ export class PersonalConnectors {
   /** Augment personal runtime data with local configuration and live read-only annotations.
    * @param value Main-process catalog after server authorization.
    * @param signal Optional caller cancellation.
+   * @param discoverTools Whether execution requires live annotations; catalog browsing only reads configuration state.
    * @returns Main-only entries, later sanitized by the relay for Host.
    */
-  async enrich(value: unknown, signal = this.lifetime.signal): Promise<unknown> {
+  async enrich(value: unknown, signal = this.lifetime.signal, discoverTools = true): Promise<unknown> {
     if (!Array.isArray(value)) throw new Error('Invalid connector catalog')
     const employee = this.employee()
     await this.resetIdentity(employee)
@@ -268,7 +269,7 @@ export class PersonalConnectors {
       if (!deviceConfiguration && !(entry.authMode === 'oauth' && entry.visibility === 'PERSONAL' && entry.ownerEmployeeId === employee)) return raw
       try {
         if (entry.authMode === 'oauth') {
-          if (entry.ready !== true) return raw
+          if (entry.ready !== true || !discoverTools) return raw
           const client = await this.connect(Configuration.parse({ transport: 'streamable-http', url: entry.url,
             headers: entry.headers, arguments: [], environment: {} }), signal)
           try {
@@ -280,6 +281,7 @@ export class PersonalConnectors {
         }
         const config = await this.configuration(entry, employee)
         if (!config) return { ...entry, status: 'needs-configuration', ready: false, configurationStatus: 'REQUIRED', canConfigure: true, headers: {}, environment: {} }
+        if (!discoverTools) return { ...entry, ...config, canConfigure: true, configurationStatus: 'CONFIGURED' }
         const client = await this.client(entry, employee, config, signal)
         const declared = entry.tools.map(tool => tool.name)
         const tools = (await this.discover(client, signal, config.timeoutSeconds)).filter(tool => declared.includes(tool.name))

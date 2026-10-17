@@ -32,6 +32,13 @@ const record = (value: unknown): Record<string, unknown> => {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error('Invalid extension metadata')
   return value as Record<string, unknown>
 }
+const nextVersion = (version: string): string => {
+  const [major, minor, patch] = version.split('-')[0]?.split('.') ?? []
+  if (major === undefined || minor === undefined || patch === undefined) throw new Error('Invalid resource version')
+  return `${major}.${minor}.${String(BigInt(patch) + 1n)}`
+}
+const isDefiniteRejection = (error: unknown): error is DeepSeekHarnessApiError =>
+  error instanceof DeepSeekHarnessApiError && !error.retryable && [400, 401, 403, 404, 409, 413, 415, 422].includes(error.status)
 
 /** Main-process staging is employee scoped; no selected path crosses IPC. */
 export class ExtensionAuthoring {
@@ -75,9 +82,7 @@ export class ExtensionAuthoring {
           const files = imported?.files ?? new Map<string, Buffer>()
           const initial = imported ? this.inspect(input.kind, files) : {}
           if (imported && input.edit === true && initial.version) {
-            const [major, minor, patch] = initial.version.split('-')[0]?.split('.') ?? []
-            if (major === undefined || minor === undefined || patch === undefined) throw new Error('Invalid resource version')
-            initial.version = `${major}.${minor}.${String(BigInt(patch) + 1n)}`
+            initial.version = nextVersion(initial.version)
           }
           const content = Object.fromEntries(Object.entries(initial)
             .filter(([key]) => Object.hasOwn(ExtensionContentDraftSchema.shape, key)))
@@ -117,18 +122,27 @@ export class ExtensionAuthoring {
           const complete = ExtensionDraftSchema.parse(state.draft)
           const intent = state.pendingSave ?? { author: (session.displayName ?? employee).slice(0, 80) }
           const content = { ...complete, author: intent.author, ...files.size > 0 ? { stageId } : {} }
-          const result = await this.saveContent(content, api, session, signal,
-            async (operation) => {
+          const result = await this.saveContent(content, api, session, signal, {
+            prepare: async (operation) => {
               if (!state.pendingSave) await this.conversations.write(employee, { ...state, pendingSave: intent }, signal)
               try { return await operation() }
               catch (error) {
-                if (!state.pendingSave && error instanceof DeepSeekHarnessApiError && !error.retryable
-                  && error.status >= 400 && error.status < 500) {
+                if (!state.pendingSave && isDefiniteRejection(error)) {
                   await this.conversations.write(employee, state, new AbortController().signal)
                 }
                 throw error
               }
-            })
+            },
+            rejectVersion: async (error) => {
+              // A previous attempt may have activated before losing its receipt.
+              if (state.pendingSave) throw new ProductError('EXTENSION_SAVE_PENDING',
+                'The previous save is unconfirmed; retry the unchanged version before editing', true,
+                error.resources, { cause: error })
+              await this.conversations.write(employee, { ...state, pendingSave: undefined, revision: state.revision + 1,
+                draft: { ...state.draft, version: nextVersion(complete.version) } }, new AbortController().signal)
+              throw error
+            },
+          })
           // Server success is durable even if cancellation or device installation follows.
           await this.conversations.write(employee, { ...state, pendingSave: undefined, revision: state.revision + 1,
             saved: { id: complete.id, version: complete.version } }, new AbortController().signal)
@@ -228,7 +242,10 @@ export class ExtensionAuthoring {
 
   private async saveContent(input: Readonly<Record<string, unknown>>, api: DeepSeekHarnessApiClient,
     session: ProductSession, signal: AbortSignal,
-    prepare?: (operation: () => Promise<unknown>) => Promise<unknown>): Promise<ExtensionSaveResult> {
+    saving?: {
+      readonly prepare: (operation: () => Promise<unknown>) => Promise<unknown>
+      readonly rejectVersion: (error: ProductError) => Promise<never>
+    }): Promise<ExtensionSaveResult> {
     const employee = session.employeeId
     if (!session.authenticated || !employee) throw new Error('Authenticated employee is required')
     let draft = ExtensionDraftSchema.parse(input)
@@ -291,14 +308,31 @@ export class ExtensionAuthoring {
       const sha256 = createHash('sha256').update(bytes).digest('hex')
       const request = () => api.request('/api/v1/extension-submissions/releases', { method: 'POST', signal,
         headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...generated.release, sha256 }) })
-      const prepared = record(await (prepare ? prepare(request) : request()))
-      if (record(prepared.assessment).status === 'BLOCKED') throw new Error('Extension dependencies did not pass server validation')
+      const prepared = record(await (saving ? saving.prepare(request) : request()))
+      const assessment = record(prepared.assessment)
+      if (assessment.status === 'BLOCKED') {
+        const issues = Array.isArray(assessment.issues) ? assessment.issues.map((value: unknown) => {
+          const issue = record(value)
+          if (typeof issue.code !== 'string' || typeof issue.message !== 'string') throw new Error('Invalid dependency issue')
+          return `${issue.code}: ${issue.message}`
+        }) : []
+        const error = new ProductError('EXTENSION_DEPENDENCY_BLOCKED',
+          `Extension dependencies did not pass server validation${issues.length ? ': ' + issues.join('; ') : ''}`,
+          false, [{ kind: draft.kind, id: draft.id }])
+        if (saving) return await saving.rejectVersion(error)
+        throw error
+      }
       if (prepared.uploadUrl !== null) {
         if (typeof prepared.uploadUrl !== 'string') throw new Error('Upload URL is missing')
         const upload = await fetch(prepared.uploadUrl, { method: 'PUT', signal, redirect: 'error', headers: { 'content-type': 'application/gzip' }, body: bytes })
         if (!upload.ok) throw new Error('Extension upload failed')
       }
-      await api.request(`/api/v1/extension-submissions/${draft.kind}/${encodeURIComponent(draft.id)}/versions/${encodeURIComponent(draft.version)}/activations`, { method: 'POST', signal })
+      try {
+        await api.request(`/api/v1/extension-submissions/${draft.kind}/${encodeURIComponent(draft.id)}/versions/${encodeURIComponent(draft.version)}/activations`, { method: 'POST', signal })
+      } catch (error) {
+        if (saving && isDefiniteRejection(error)) return await saving.rejectVersion(error)
+        throw error
+      }
       return { kind: draft.kind, id: draft.id, version: draft.version, visibility: 'PERSONAL', installed: false } satisfies ExtensionSaveResult
     } finally { await rm(work, { recursive: true, force: true }) }
   }

@@ -167,7 +167,7 @@
       "content": [
         {
           "type": "text",
-          "text": "Installed skill content snapshot:\n{\"entries\":[{\"id\":\"policy-review\",\"name\":\"Policy review\",\"version\":\"1\",\"sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"}],\"connectors\":[{\"id\":\"crm\",\"name\":\"Orders\",\"status\":\"ready\",\"authMode\":\"oauth\",\"transport\":\"streamable-http\",\"arguments\":[],\"toolNames\":[\"orders_read\",\"orders_write\"],\"readOnlyTools\":[\"orders_read\"],\"timeoutSeconds\":120,\"url\":\"http://product.invalid/crm\"},{\"id\":\"erp\",\"name\":\"Orders\",\"status\":\"ready\",\"authMode\":\"oauth\",\"transport\":\"streamable-http\",\"arguments\":[],\"toolNames\":[\"orders_read\",\"orders_write\"],\"readOnlyTools\":[\"orders_read\"],\"timeoutSeconds\":120,\"url\":\"http://product.invalid/erp\"}]}"
+          "text": "Installed skill content snapshot:\n{\"entries\":[{\"id\":\"policy-review\",\"name\":\"Policy review\",\"version\":\"1\",\"sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"}],\"connectors\":[{\"id\":\"crm\",\"version\":\"1.0.0\",\"name\":\"Orders\",\"status\":\"ready\",\"authMode\":\"oauth\",\"transport\":\"streamable-http\",\"arguments\":[],\"toolNames\":[\"orders_read\",\"orders_write\"],\"readOnlyTools\":[\"orders_read\"],\"timeoutSeconds\":120,\"url\":\"http://product.invalid/crm\"},{\"id\":\"erp\",\"version\":\"1.0.0\",\"name\":\"Orders\",\"status\":\"ready\",\"authMode\":\"oauth\",\"transport\":\"streamable-http\",\"arguments\":[],\"toolNames\":[\"orders_read\",\"orders_write\"],\"readOnlyTools\":[\"orders_read\"],\"timeoutSeconds\":120,\"url\":\"http://product.invalid/erp\"}]}"
         }
       ]
     }

@@ -75,6 +75,10 @@ it('discovers real MCP annotations without business calls, encrypts secrets, iso
     ownerEmployeeId: owner, visibility: 'PERSONAL', authMode: 'none', status: 'ready', ready: true,
     tools: [{ name: 'read_orders', access: 'WRITE' }, { name: 'destructive_read', access: 'WRITE' }, { name: 'write_orders', access: 'WRITE' }] }
   storedEntry = { ...entry, canEdit: true, name: draft.name, summary: draft.summary, category: draft.category }
+  const discoveryRequests = requests.length
+  expect(await manager.enrich([entry, { ...entry, id: 'missing-config' }], signal, false))
+    .toMatchObject([{ configurationStatus: 'CONFIGURED' }, { configurationStatus: 'REQUIRED' }])
+  expect(requests).toHaveLength(discoveryRequests)
   const enriched = await manager.enrich([entry, { ...entry, id: 'missing-config' }], signal) as Record<string, unknown>[]
   expect(enriched[0]?.tools).toMatchObject([{ name: 'read_orders', access: 'READ' }, { name: 'destructive_read', access: 'WRITE' }, { name: 'write_orders', access: 'WRITE' }])
   expect(enriched[1]).toMatchObject({ status: 'needs-configuration', ready: false })

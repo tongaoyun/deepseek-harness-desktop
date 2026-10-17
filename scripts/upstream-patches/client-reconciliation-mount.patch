@@ -1,0 +1,276 @@
+diff --git a/packages/client/modules/src/client/entries.ts b/packages/client/modules/src/client/entries.ts
+index 587d3ffdd0bd0a34572c89f8195412f084d060ef..93d6449d6bd99b3af17b5c6a41a390180eecfcdb 100644
+--- a/packages/client/modules/src/client/entries.ts
++++ b/packages/client/modules/src/client/entries.ts
+@@ -121,7 +121,7 @@ export class ClientEntries {
+    */
+   retry(): Promise<void> {
+     const generation = ++this.generation
+-    return this.enqueue(() => this.reconcile(generation))
++    return this.enqueue(() => this.reconcile(generation, true))
+   }
+ 
+   /**
+@@ -202,11 +202,19 @@ export class ClientEntries {
+     this.revisions.set(id, rev)
+   }
+ 
+-  private async reconcile(generation: number): Promise<void> {
++  private async reconcile(generation: number, force = false): Promise<void> {
+     if (!this.current(generation)) return
+     const loader = this.loader
+     if (loader === undefined) throw new Error('client-modules: entries have not started')
+     const manifest = this.desired
++    if (!force && !this.snapshot.syncing && this.snapshot.failures.length === 0
++      && entryTargets(manifest) === entryTargets(this.modules.manifest)
++      && this.managed.size === manifest.plugins.length
++      && manifest.modules.every(row => this.managed.get(row.id)?.fiber?.state === ACTIVE
++        && this.revisions.get(row.id) === row.rev)) {
++      this.index.update(manifest, this.managed.keys())
++      return
++    }
+     this.publish({ syncing: true, failures: [] })
+     const failures: { id: string; message: string }[] = []
+     this.index.update(manifest, this.managed.keys())
+diff --git a/packages/client/modules/tests/entries.client.spec.ts b/packages/client/modules/tests/entries.client.spec.ts
+index dc908bea3321496ab8ee9545ab5204a46bef7b82..0532425f89e82cc185d47a64f42666b1b86420f1 100644
+--- a/packages/client/modules/tests/entries.client.spec.ts
++++ b/packages/client/modules/tests/entries.client.spec.ts
+@@ -81,6 +81,22 @@ function visible(id: string, effects: { mounted: number; disposed: number; hits:
+ }
+ 
+ describe('client manifest entries', () => {
++  it('does not announce teardown when an identical healthy graph is synchronized', async () => {
++    const effects = { mounted: 0, disposed: 0, hits: 0 }
++    const initial = graph(row('pet'))
++    const b = await bench(initial, { pet: visible('pet', effects) })
++    const changed = vi.fn()
++    const stop = b.modules.entries.state.subscribe(changed)
++    await b.modules.entries.sync(initial)
++    await b.modules.entries.sync(initial)
++    expect(changed).not.toHaveBeenCalled()
++    expect(effects).toEqual({ mounted: 1, disposed: 0, hits: 0 })
++    await b.modules.entries.sync(graph(row('pet', 'r1')))
++    expect(changed).toHaveBeenCalledTimes(2)
++    expect(effects).toEqual({ mounted: 2, disposed: 1, hits: 0 })
++    stop()
++  })
++
+   it('adds, drains removal and re-enables one instance with styles; unrelated entries survive', async () => {
+     const effects = { mounted: 0, disposed: 0, hits: 0 }
+     const cleanup = deferred()
+diff --git a/packages/client/web/src/boot.ts b/packages/client/web/src/boot.ts
+index 6602223c4ca62a82804f2ac82869335f45e4edfb..915e9088c6ab7314f09703af9274bfd5d43fdf8a 100644
+--- a/packages/client/web/src/boot.ts
++++ b/packages/client/web/src/boot.ts
+@@ -94,7 +94,7 @@ export class AppWebEntry {
+       // know that trap. It installs before the first mount, so the surface the
+       // renderer draws is the one the first frame measures.
+       this.stopDragRecall = installWindowDragRecall({ document: this.container.ownerDocument })
+-      await mountClient(ctx, this.container)
++      await mountClient(ctx, this.container, this.modules.entries)
+     } catch (reason) {
+       console.error(reason)
+       if (onFailure !== undefined) onFailure(reason)
+diff --git a/packages/client/web/src/mount.ts b/packages/client/web/src/mount.ts
+index 4836a92a6d81110d37f738b9fa9d37fe99214db1..703fbdda2a752b5472457a8f1ee1245b466ad733 100644
+--- a/packages/client/web/src/mount.ts
++++ b/packages/client/web/src/mount.ts
+@@ -5,20 +5,40 @@
+  */
+ import type { Context } from '@deepseek-ai/cordis'
+ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
++import type { ClientEntries } from '@deepseek-ai/dsh-client-modules/client'
++import { BootPage } from './boot-page.ts'
+ 
+ /**
+  * Mount the UI renderer into `container` through a dependency fiber on
+- * `uiRenderer`: the mount effect installs when the service is provided and
+- * reinstalls when it is replaced.
++ * `uiRenderer`. Entry reconciliation unmounts the root before plugin teardown
++ * and remounts it after activation; failures remain on the framework-free page.
+  * @param ctx - booted root Context.
+  * @param container - application mount point.
++ * @param entries - Page-owned plugin reconciliation state.
+  * @returns resolves once the dependency fiber exists; with `uiRenderer`
+  * already provided (as after `bootClient`) the mount effect is installed by
+  * then, otherwise it installs when the service arrives.
+  */
+-export async function mountClient(ctx: Context, container: HTMLElement): Promise<void> {
++export async function mountClient(ctx: Context, container: HTMLElement, entries: Pick<ClientEntries, 'state'>): Promise<void> {
+   const mounted = ctx.inject(['uiRenderer'], (scope) => {
+-    scope.effect(() => scope.uiRenderer.mount(container), 'web boot: application mount')
++    scope.effect(() => {
++      let unmount: (() => void) | undefined
++      let page: BootPage | undefined
++      const update = () => {
++        const state = entries.state.getSnapshot()
++        if (state.syncing || state.failures.length > 0) {
++          unmount?.(); unmount = undefined
++          page?.dispose(); page = new BootPage(container)
++          if (state.failures.length > 0) page.fail(state.failures.map(row => `${row.id}: ${row.message}`).join('\n'))
++          return
++        }
++        page?.dispose(); page = undefined
++        unmount ??= scope.uiRenderer.mount(container)
++      }
++      const unsubscribe = entries.state.subscribe(update)
++      try { update() } catch (error) { unsubscribe(); page?.dispose(); throw error }
++      return () => { unsubscribe(); unmount?.(); page?.dispose() }
++    }, 'web boot: application mount')
+   })
+   await mounted
+ }
+diff --git a/packages/client/web/tests/boot.client.spec.ts b/packages/client/web/tests/boot.client.spec.ts
+index e5e632941ae201eb5a908df14c1fcb1ec585cd5b..c8e95e668c1d2b2c8a639325ea92fdb442908794 100644
+--- a/packages/client/web/tests/boot.client.spec.ts
++++ b/packages/client/web/tests/boot.client.spec.ts
+@@ -266,6 +266,53 @@ describe('plugin activation', () => {
+   })
+ })
+ 
++it('unmounts before a real Loader replaces the Session owner and resumes after activation', async () => {
++  const container = document.createElement('div')
++  document.body.append(container)
++  let modules!: modulesClient.ClientModuleSystem
++  const target = installFacade((options) => {
++    modules = modulesClient.createClientModuleSystem(target, { id: MODULES_ID, exports: moduleFace }, options)
++    return modules
++  })
++  const events: string[] = []
++  let adapterInstalled = false
++  let version = 1
++  const entries: WebBootEntry[] = [
++    { id: MODULES_ID, url: '/modules.js?rev=1', rev: '1' },
++    { id: 'session', url: '/session.js?rev=1', rev: '1' },
++    { id: 'renderer', url: '/renderer.js?rev=1', rev: '1' },
++  ]
++  win.__DSH_BOOT__ = { rev: 'graph', entries,
++    batches: [{ phase: 'application', url: '/application.js', rev: 'batch', entries: entries.map(row => row.id) }] }
++  const session = (): ClientBundleRegistration => ({ id: 'session', factory: () => ({ apply(ctx: Context) {
++    adapterInstalled = true
++    events.push(`session-${version}`)
++    ctx.effect(() => () => { events.push('dispose-session'); adapterInstalled = false })
++  } }) })
++  const entry = new AppWebEntry(container, { loadBundle: async (url) => {
++    if (url.startsWith('/session.js')) { target.load(session()); return }
++    if (url !== '/application.js') throw new Error(`Unexpected bundle ${url}`)
++    target.load(session())
++    target.load({ id: 'renderer', factory: () => ({ apply(ctx: Context) {
++      ctx.reflect.provide('uiRenderer', { mount(element: HTMLElement) {
++        expect(adapterInstalled).toBe(true)
++        events.push('mount')
++        element.textContent = `Session ${version}`
++        return () => { events.push('unmount'); element.replaceChildren() }
++      } })
++    } }) })
++  } })
++  try {
++    await entry.run()
++    expect(container.textContent).toBe('Session 1')
++    version = 2
++    await modules.entries.reload('session', '2')
++    expect(events).toEqual(['session-1', 'mount', 'unmount', 'dispose-session', 'session-2', 'mount'])
++    expect(container.textContent).toBe('Session 2')
++    expect(container.querySelector('[data-dsh-boot]')).toBeNull()
++  } finally { await entry.dispose() }
++})
++
+ it('draws the shared boot page before Host injections and resumes without replacing the document', async () => {
+   const gate = Promise.withResolvers<undefined>()
+   vi.stubGlobal('__DSH_BOOT_READY__', gate)
+diff --git a/packages/client/web/tests/mount.client.spec.ts b/packages/client/web/tests/mount.client.spec.ts
+index fbeb5635bd124f555aa6df7eb586514c18192c02..126a808f5db87affbb9ac5661cf2e619729a7604 100644
+--- a/packages/client/web/tests/mount.client.spec.ts
++++ b/packages/client/web/tests/mount.client.spec.ts
+@@ -2,12 +2,25 @@
+ import { Context } from '@deepseek-ai/cordis'
+ import { describe, expect, it, vi } from 'vitest'
+ import { mountClient } from '../src/mount.ts'
++import type { ClientEntryState } from '@deepseek-ai/dsh-client-modules/client'
+ 
+ /** Provide a fake `uiRenderer` from its own plugin fiber so it can be replaced. */
+ function provideRenderer(ctx: Context, mount: (container: HTMLElement) => () => void) {
+   return ctx.plugin({ apply: (scope: Context) => { scope.reflect.provide('uiRenderer', { mount }) } })
+ }
+ 
++function entryState() {
++  let snapshot: ClientEntryState = { syncing: false, failures: [] }
++  const listeners = new Set<() => void>()
++  return {
++    state: { getSnapshot: () => snapshot, subscribe: (listener: () => void) => {
++      listeners.add(listener); return () => { listeners.delete(listener) }
++    } },
++    publish(value: ClientEntryState) { snapshot = value; for (const listener of listeners) listener() },
++    listeners,
++  }
++}
++
+ describe('mountClient', () => {
+   it('mounts into the container and unmounts when the tree is disposed', async () => {
+     const ctx = new Context()
+@@ -16,7 +29,7 @@ describe('mountClient', () => {
+     provideRenderer(ctx, mount)
+     const container = document.createElement('div')
+ 
+-    await mountClient(ctx, container)
++    await mountClient(ctx, container, entryState())
+ 
+     expect(mount).toHaveBeenCalledExactlyOnceWith(container)
+     expect(unmount).not.toHaveBeenCalled()
+@@ -30,7 +43,7 @@ describe('mountClient', () => {
+     const first = { unmount: vi.fn(), mount: vi.fn(() => first.unmount) }
+     const second = { unmount: vi.fn(), mount: vi.fn(() => second.unmount) }
+ 
+-    await mountClient(ctx, container)
++    await mountClient(ctx, container, entryState())
+     expect(first.mount).not.toHaveBeenCalled()
+ 
+     const renderer = provideRenderer(ctx, first.mount)
+@@ -44,4 +57,33 @@ describe('mountClient', () => {
+     await ctx.fiber.dispose()
+     expect(second.unmount).toHaveBeenCalledOnce()
+   })
++
++  it('unmounts before plugin teardown and recovers after successful activation', async () => {
++    const ctx = new Context()
++    const container = document.createElement('div')
++    const events: string[] = []
++    const entries = entryState()
++    let adapterInstalled = true
++    provideRenderer(ctx, () => {
++      expect(adapterInstalled).toBe(true)
++      events.push('mount')
++      container.textContent = 'ready'
++      return () => { events.push('unmount'); container.textContent = '' }
++    })
++    await mountClient(ctx, container, entries)
++    entries.publish({ syncing: true, failures: [] })
++    expect(events).toEqual(['mount', 'unmount'])
++    adapterInstalled = false
++    expect(container.querySelector('[data-dsh-boot]')).not.toBeNull()
++    entries.publish({ syncing: false, failures: [{ id: 'session', message: 'activation failed' }] })
++    expect(container.textContent).toContain('session: activation failed')
++    expect(events).toEqual(['mount', 'unmount'])
++    entries.publish({ syncing: true, failures: [] })
++    adapterInstalled = true
++    entries.publish({ syncing: false, failures: [] })
++    expect(container.textContent).toBe('ready')
++    expect(events).toEqual(['mount', 'unmount', 'mount'])
++    await ctx.fiber.dispose()
++    expect(entries.listeners.size).toBe(0)
++  })
+ })
+diff --git a/packages/test-support/client-runtime/src/assembly/test-client.ts b/packages/test-support/client-runtime/src/assembly/test-client.ts
+index 27fcbfd27b8689f20f7ee4159daa8ce425901cc1..18a6f088721e2a72c0be21e06b53e9dd97df4fce 100644
+--- a/packages/test-support/client-runtime/src/assembly/test-client.ts
++++ b/packages/test-support/client-runtime/src/assembly/test-client.ts
+@@ -252,7 +252,7 @@ export class TestClient {
+         if (ctx.get('uiRenderer') === undefined) {
+           throw new Error('client-test-runtime: mount requested, but the roster provides no `uiRenderer`')
+         }
+-        await mountClient(ctx, mountPoint.element)
++        await mountClient(ctx, mountPoint.element, system.entries)
+       }
+       if (options.awaitConnected !== false) {
+         await awaitConnected(ctx, mock, options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS)

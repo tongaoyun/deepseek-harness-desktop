@@ -205,7 +205,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       if (!Array.isArray(catalog)) throw new Error('Invalid knowledge catalog')
       return catalog.map(row => stringField(objectRecord(row, 'knowledge base'), 'id'))
     },
-    async connectors(signal) { return parseConnectorCatalog(await config.product.invoke('connectors.list', undefined, signal)) },
+    async connectors(ids, signal) { return parseConnectorCatalog(await config.product.invoke('connectors.list', { ids }, signal)) },
     connectorPlugin, knowledgePlugins,
     async validateKnowledge(ids, refs, signal) {
       if (ids.length === 0 && refs.length === 0) return []
@@ -256,7 +256,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     load: skill => loadMarketSkill(ctx, skillsRoot, skill),
     install: (skill, signal) => installSkillArtifact(config.product, skill, skillsRoot, signal).then(() => undefined),
     capabilities: sessionId => tasks.read({ sessionId }),
-    connectors: async signal => parseConnectorCatalog(await config.product.invoke('connectors.list', undefined, signal)),
+    connectors: async (ids, signal) => parseConnectorCatalog(await config.product.invoke('connectors.list', { ids }, signal)),
     async mountConnectors(agent, connectors, signal) {
       const preset = ctx.agentPresets.composedPreset(agent.ctx)
       const inherited = preset === undefined ? [] : connectorsByPreset.get(preset) ?? []
@@ -399,11 +399,14 @@ function installConnectorPolicy(
     const policy = connectorToolPolicy(connectors, exec.name)
     if (policy === 'unrelated') return next()
     const connector = connectors.find(value => connectorToolPolicy([value], exec.name) !== 'unrelated')
-    const live = parseConnectorCatalog(await product.invoke('connectors.list', undefined, exec.signal))
-    const current = live.find(value => value.id === connector?.id && value.transport === connector.transport)
+    if (connector === undefined) return { kind: 'deny' as const, reason: 'Connector definition is missing.' }
+    const live = parseConnectorCatalog(await product.invoke('connectors.list', { ids: [connector.id] }, exec.signal))
+    const current = live.find(value => value.id === connector.id && value.transport === connector.transport)
     if (current === undefined) {
       return { kind: 'deny' as const, reason: 'This connector authorization is unavailable.' }
     }
+    if (current.version !== connector.version) return { kind: 'deny' as const,
+      reason: 'This connector configuration changed. Start a new task to use the updated connector.' }
     const livePolicy = connectorToolPolicy([current], exec.name)
     if (policy === 'undeclared' || livePolicy === 'undeclared' || livePolicy === 'unrelated') return { kind: 'deny' as const,
       reason: 'This connector tool is not declared in the enterprise catalog.' }

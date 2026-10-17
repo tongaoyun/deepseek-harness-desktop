@@ -9,7 +9,7 @@ const request = () => vi.fn(async (_method: string, input: unknown) => {
   return { items: rows.slice((page - 1) * size, page * size), page, size, total: rows.length }
 })
 const folders = (total: number, count: number): KnowledgePage<KnowledgeFolder> => ({
-  items: Array.from({ length: count }, (_, index) => ({ id: `folder-${index}`, name: 'Folder', parentId: null })),
+  items: Array.from({ length: count }, (_, index) => ({ id: `folder-${index}`, name: 'Folder', parentId: null, updatedAt: '2026-10-17T00:00:00Z' })),
   total, page: 1, size: 20,
 })
 

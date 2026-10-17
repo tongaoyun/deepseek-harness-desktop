@@ -8,13 +8,16 @@ import { zh, type DeepSeekHarnessProductKey } from '../src/locales.ts'
 const props = { entries: items([{ id: 'personal', name: '个人库', scope: 'PERSONAL', canManage: true }]),
   loading: false, authRequired: false, authPending: false, authError: false, onRefresh: vi.fn(), onSignIn: vi.fn(),
   renderFactorySlot: () => null, t: (key: DeepSeekHarnessProductKey) => zh[key] }
-const roots = Array.from({ length: 21 }, (_, index) => ({ id: `folder-${index + 1}`, name: `目录${index + 1}`, parentId: null }))
-const child = { id: 'child', name: '子目录', parentId: 'folder-21' }
+const roots = Array.from({ length: 21 }, (_, index) => ({ id: `folder-${index + 1}`, name: `目录${index + 1}`, parentId: null, updatedAt: '2026-10-17T00:00:00Z' }))
+const child = { id: 'child', name: '子目录', parentId: 'folder-21', updatedAt: '2026-10-17T00:00:00Z' }
 const document = { id: 'document', knowledgeBaseId: 'personal', filename: '旧标题.md', mediaType: 'text/markdown',
   sizeBytes: 20, status: 'READY', chunkCount: 1, sourceType: 'manual', canManage: true,
   updatedAt: '2026-10-13T00:00:00Z', folderId: null }
-function transport(getFailure = false, getFolder?: (folderId: string) => Promise<unknown>, cancel = vi.fn()) {
+function transport(getFailure = false, getFolder?: (folderId: string) => Promise<unknown>, cancel = vi.fn(),
+  move?: () => Promise<unknown>) {
   const invoke = vi.fn(async (_namespace: string, method: string, payload: Record<string, unknown>, _requestId?: string) => {
+    if (method === 'knowledge.documents.upload.pending') return { ok: true, result: [] }
+    if (method === 'knowledge.documents.move' && move) return move()
     if (method === 'knowledge.folders.get') {
       if (getFolder) return { ok: true, result: await getFolder(String(payload.folderId)) }
       const folder = [...roots, child].find(row => row.id === payload.folderId)
@@ -30,7 +33,7 @@ function transport(getFailure = false, getFolder?: (folderId: string) => Promise
       ...document, filename: '他人新标题.md', manualContent: '# 新正文', updatedAt: '2026-10-14T00:00:00Z',
     } }
     if (method === 'knowledge.documents.save') return { ok: true, result: document }
-    if (method === 'knowledge.folders.create') return { ok: true, result: { id: 'created', name: payload.name, parentId: payload.parentId } }
+    if (method === 'knowledge.folders.create') return { ok: true, result: { id: 'created', name: payload.name, parentId: payload.parentId, updatedAt: '2026-10-17T00:00:00Z' } }
     return { ok: true, result: { items: [document], page: 1, size: 20, total: 1 } }
   })
   vi.stubGlobal('dshDesktop', { extensions: { invoke, cancel } })
@@ -76,6 +79,34 @@ it('moves to another page and an unexpanded nested destination without preloadin
   expect(navigation.queryByRole('button', { name: '目录21' })).toBeNull()
   fireEvent.click(dialog.getByRole('button', { name: zh.knowledgeMove }))
   await waitFor(() => { expect(invoke.mock.calls.some(call => call[1] === 'knowledge.documents.move' && call[2].folderId === 'child')).toBe(true) })
+  expect(invoke.mock.calls.find(call => call[1] === 'knowledge.documents.move')?.[2]).toMatchObject({
+    expectedFolderId: null, expectedUpdatedAt: document.updatedAt,
+  })
+  expect(typeof invoke.mock.calls.find(call => call[1] === 'knowledge.documents.move')?.[2].operationId).toBe('string')
+})
+
+it('retries a lost move receipt with the original destination and operation identity', async () => {
+  const move = vi.fn().mockRejectedValueOnce(new TypeError('response lost')).mockResolvedValue({ ok: true, result: { moved: true } })
+  const invoke = transport(false, undefined, vi.fn(), move)
+  render(<KnowledgeWorkspace {...props} />)
+  fireEvent.click(screen.getByRole('button', { name: zh.knowledgeAllMaterials }))
+  await screen.findByRole('button', { name: document.filename })
+  fireEvent.click(screen.getByRole('button', { name: zh.knowledgeDocumentActions.replace('{name}', document.filename) }))
+  fireEvent.click(screen.getByRole('menuitem', { name: zh.knowledgeMoveDocument }))
+  const dialog = within(screen.getByRole('dialog'))
+  fireEvent.click(await dialog.findByRole('button', { name: '目录1' }))
+  await waitFor(() => { expect(dialog.getByRole<HTMLButtonElement>('button', { name: zh.knowledgeMove }).disabled).toBe(false) })
+  fireEvent.click(dialog.getByRole('button', { name: zh.knowledgeMove }))
+  await dialog.findByRole('alert')
+  expect(dialog.getByRole('button', { name: zh.knowledgeRootFolder }).matches(':disabled')).toBe(true)
+  fireEvent.click(dialog.getByRole('button', { name: zh.knowledgeMove }))
+  await waitFor(() => { expect(screen.queryByRole('dialog')).toBeNull() })
+  const calls = invoke.mock.calls.filter(call => call[1] === 'knowledge.documents.move')
+  expect(calls).toHaveLength(2)
+  expect(calls[0]?.[2]).toEqual(calls[1]?.[2])
+  expect(calls[0]?.[2]).toMatchObject({ folderId: 'folder-1', expectedFolderId: null,
+    expectedUpdatedAt: document.updatedAt })
+  expect(typeof calls[0]?.[2].operationId).toBe('string')
 })
 
 it('retains the selected path and create location after the sidebar changes pages', async () => {

@@ -22,6 +22,12 @@ type UploadSelection = {
   readonly mode: KnowledgePdfParseMode
   readonly destination: string | null | undefined
 }
+type MoveSelection = {
+  readonly folderId: string | null
+  readonly expectedFolderId: string | null
+  readonly expectedUpdatedAt: string
+  readonly operationId: string
+}
 
 /** Display authorized documents with server-side filters and paginated results.
  * @param props Library permissions, labels, optional workspace navigation, and selection callback.
@@ -67,6 +73,8 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
   const [mutationError, setMutationError] = useState('')
   const [pending, setPending] = useState(false)
   const [uploadRetry, setUploadRetry] = useState<UploadSelection>()
+  const [uploadRecoveryReady, setUploadRecoveryReady] = useState(false)
+  const [uploadRecoveryRevision, setUploadRecoveryRevision] = useState(0)
   const uploadSelection = useRef<UploadSelection>()
   const [accessDenied, setAccessDenied] = useState(false)
   const [reader, setReader] = useState<KnowledgeDocument>()
@@ -84,8 +92,6 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
     operation.current = controller
     return () => {
       controller.abort(); accessOperation.current.abort()
-      const retained = uploadSelection.current
-      if (retained) void request('knowledge.documents.upload.discard', { knowledgeBaseId: product.id, operationId: retained.operationId }).catch(() => undefined)
     }
   }, [request, product.id])
   const denyAccess = useCallback(() => {
@@ -113,6 +119,28 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
   const navigationFolders = [...availableFolders.filter(folder => !location.trail?.some(item => item.id === folder.id)),
     ...location.trail ?? []]
   const canManage = product.canManage === true && !accessDenied
+  const recoverUpload = useCallback(async (signal: AbortSignal) => {
+    const value = await request('knowledge.documents.upload.pending', { knowledgeBaseId: product.id }, signal)
+    signal.throwIfAborted()
+    if (!Array.isArray(value) || value.length > 16) throw new Error('Invalid pending uploads')
+    const selections = value.map((row: unknown): UploadSelection => {
+      if (typeof row !== 'object' || row === null || !('operationId' in row) || typeof row.operationId !== 'string'
+        || !/^[A-Za-z0-9._~-]{16,128}$/u.test(row.operationId) || !('pdfParseMode' in row)
+        || row.pdfParseMode !== 'STANDARD' && row.pdfParseMode !== 'TEXT'
+        || 'folderId' in row && row.folderId !== null && typeof row.folderId !== 'string') throw new Error('Invalid pending upload')
+      return { operationId: row.operationId, mode: row.pdfParseMode, destination: 'folderId' in row ? row.folderId as string | null : undefined }
+    })
+    uploadSelection.current = selections[0]; setUploadRetry(selections[0]); setUploadRecoveryReady(true)
+  }, [request, product.id])
+  useEffect(() => {
+    if (!canManage) return
+    const controller = new AbortController()
+    setUploadRecoveryReady(false)
+    void recoverUpload(controller.signal).catch((failure: unknown) => {
+      if (!controller.signal.aborted) setMutationError(productErrorMessage(failure, t, 'knowledgeUploadRecoveryFailed'))
+    })
+    return () => { controller.abort() }
+  }, [canManage, recoverUpload, t, uploadRecoveryRevision])
   const canOpenExternal = globalThis.location.protocol === 'dsh-app:' && globalThis.location.hostname === 'app'
   const folderSelectionKey = JSON.stringify([folderId === undefined ? 'all-materials' : folderId, page, Boolean(search || format || status), folderRevision, refreshRevision])
   const materialFolders = accessDenied || materialFolderPage?.key !== folderSelectionKey ? undefined : materialFolderPage.value
@@ -196,15 +224,17 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
   }
   const upload = async (pdfParseMode: KnowledgePdfParseMode, destination = folderId, retry?: UploadSelection): Promise<void> => {
     if (pending) return
+    if (!uploadRecoveryReady) { setMutationError(t('knowledgeUploadRecoveryFailed')); return }
     if (uploadSelection.current && retry === undefined) { setMutationError(t('knowledgeUploadPending')); return }
     const controller = operation.current
     const selected = retry ?? { operationId: globalThis.crypto.randomUUID(), mode: pdfParseMode, destination }
     uploadSelection.current = selected
     setPending(true); setMutationError('')
+    let confirmed = false
     try {
       const value = await request('knowledge.documents.upload', { knowledgeBaseId: product.id,
-        operationId: selected.operationId, pdfParseMode,
-        ...(destination === undefined ? {} : { folderId: destination }) }, controller.signal)
+        operationId: selected.operationId, pdfParseMode: selected.mode,
+        ...(selected.destination === undefined ? {} : { folderId: selected.destination }) }, controller.signal)
       if (!controller.signal.aborted) {
         if (!(typeof value === 'object' && value !== null && 'cancelled' in value && value.cancelled === true)) {
           knowledgeDocument(value)
@@ -212,10 +242,16 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
           controller.signal.throwIfAborted()
           setRevision(row => row + 1)
         }
+        confirmed = true
         uploadSelection.current = undefined; setUploadRetry(undefined)
+        setUploadRecoveryReady(false)
+        await recoverUpload(controller.signal)
       }
     } catch (failure) {
-      if (!controller.signal.aborted) { setUploadRetry(selected); setMutationError(productErrorMessage(failure, t, 'knowledgeUploadFailed')) }
+      if (!controller.signal.aborted) {
+        if (!confirmed) setUploadRetry(selected)
+        setMutationError(productErrorMessage(failure, t, confirmed ? 'knowledgeUploadRecoveryFailed' : 'knowledgeUploadFailed'))
+      }
     }
     finally { if (!controller.signal.aborted) setPending(false) }
   }
@@ -225,6 +261,8 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
     try {
       await request('knowledge.documents.upload.discard', { knowledgeBaseId: product.id, operationId: uploadRetry.operationId }, operation.current.signal)
       uploadSelection.current = undefined; setUploadRetry(undefined); setMutationError(''); setRevision(value => value + 1)
+      setUploadRecoveryReady(false)
+      await recoverUpload(operation.current.signal)
     } catch (failure) { if (!operation.current.signal.aborted) setMutationError(productErrorMessage(failure, t, 'knowledgeUploadFailed')) }
     finally { if (!operation.current.signal.aborted) setPending(false) }
   }
@@ -302,7 +340,8 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
     <div className={css.knowledgeMaterialsToolbar}>
       {materialSearch}
       {canManage && <div className={css.knowledgeAddActions}>
-        <KnowledgeUploadMenu disabled={pending || uploadRetry !== undefined} onSelect={(mode) => { void upload(mode) }} t={t} />
+        <KnowledgeUploadMenu disabled={pending || !uploadRecoveryReady || uploadRetry !== undefined}
+          onSelect={(mode) => { void upload(mode) }} t={t} />
         <KnowledgeAddMenu disabled={pending} onSelect={(kind) => {
           beginMutation(); setEditor(kind === 'folder' ? { kind, parentId: folderId ?? null } : { kind, folderId: folderId ?? null })
         }} t={t} />
@@ -324,10 +363,12 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
           accessOperation.current.abort(); accessOperation.current = new AbortController()
           setData(undefined); setFolders([]); setAccessDenied(false); setRevision(value => value + 1)
           setFolderRevision(value => value + 1)
+          setUploadRecoveryRevision(value => value + 1)
         }}><IconRefreshOutlineRegular size={16} /></button></Tooltip>
     </div>
   </>
   const uploadRecovery = uploadRetry && <div className={css.knowledgeAddActions}>
+    <span role="status">{t('knowledgeUploadPending')}</span>
     <Button variant="outline" size="sm" disabled={pending} onClick={() => { void upload(uploadRetry.mode, uploadRetry.destination, uploadRetry) }}>{t('knowledgeRetryUpload')}</Button>
     <Button variant="ghost" size="sm" disabled={pending} onClick={() => { void discardUpload() }}>{t('knowledgeDiscardUpload')}</Button>
   </div>
@@ -459,7 +500,7 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
     </Modal>}
     {move && <KnowledgeMoveDialog knowledgeBaseId={product.id} document={move} pending={pending} error={mutationError}
       onClose={() => { if (!pending) setMove(undefined) }}
-      onMove={(id) => { void mutate('knowledge.documents.move', { knowledgeBaseId: product.id, documentId: move.id, folderId: id }, () => { setMove(undefined); setReader(undefined) }) }} t={t} />}
+      onMove={(selection) => { void mutate('knowledge.documents.move', { knowledgeBaseId: product.id, documentId: move.id, ...selection }, () => { setMove(undefined); setReader(undefined) }) }} t={t} />}
   </>
 }
 
@@ -611,16 +652,21 @@ function KnowledgeMoveDialog({ knowledgeBaseId, document, pending, error, onClos
   readonly pending: boolean
   readonly error: string
   readonly onClose: () => void
-  readonly onMove: (folderId: string | null) => void
+  readonly onMove: (selection: MoveSelection) => void
   readonly t: (key: DeepSeekHarnessProductKey) => string
 }): ReactNode {
   const [destination, setDestination] = useState(document.folderId ?? '')
   const [ready, setReady] = useState(false)
+  const [attempt, setAttempt] = useState<MoveSelection>()
   return <Modal open title={t('knowledgeMoveDocument')} closeLabel={t('close')} onClose={onClose} footer={<>
     <Button variant="ghost" size="sm" disabled={pending} onClick={onClose}>{t('cancel')}</Button>
-    <Button variant="primary" size="sm" disabled={pending || !ready} onClick={() => { onMove(destination || null) }}>{t('knowledgeMove')}</Button>
+    <Button variant="primary" size="sm" disabled={pending || !ready} onClick={() => {
+      const selection = attempt ?? { folderId: destination || null, expectedFolderId: document.folderId ?? null,
+        expectedUpdatedAt: document.updatedAt, operationId: globalThis.crypto.randomUUID() }
+      setAttempt(selection); onMove(selection)
+    }}>{t('knowledgeMove')}</Button>
   </>}><KnowledgeFolderPicker knowledgeBaseId={knowledgeBaseId} label={t('knowledgeDestinationFolder')} value={destination || null}
-      disabled={pending} onReady={setReady} onChange={(id) => { setDestination(id ?? ''); setReady(false) }} t={t} />
+      disabled={pending || attempt !== undefined} onReady={setReady} onChange={(id) => { setDestination(id ?? ''); setReady(false) }} t={t} />
     {error && <p className={css.catalogError} role="alert">{error}</p>}
   </Modal>
 }

@@ -23,6 +23,7 @@ export function resolveConnectorProxyPolicy(value?: unknown): ConnectorProxyPoli
 interface Connector {
   readonly visibility?: string
   readonly id: string
+  readonly version: string
   readonly status: string
   readonly transport: string
   readonly url?: string
@@ -36,9 +37,9 @@ export class ConnectorProxy {
   private readonly operations = new Set<Promise<void>>()
   private readonly key = randomUUID()
   private origin: string | undefined
-  private readonly catalogSource: (signal: AbortSignal) => Promise<unknown>
+  private readonly catalogSource: (signal: AbortSignal, ids: readonly string[]) => Promise<unknown>
 
-  constructor(catalogSource: (signal: AbortSignal) => Promise<unknown>,
+  constructor(catalogSource: (signal: AbortSignal, ids: readonly string[]) => Promise<unknown>,
     serveStdio?: (request: IncomingMessage, response: ServerResponse, connector: unknown, signal: AbortSignal) => Promise<void>,
     policy: ConnectorProxyPolicy = resolveConnectorProxyPolicy()) {
     this.catalogSource = catalogSource
@@ -49,13 +50,21 @@ export class ConnectorProxy {
       const lifetime = AbortSignal.any([abort.signal, this.lifetime.signal])
       const operation = (async () => {
         if (request.headers.authorization !== `Bearer ${this.key}`) throw new Error('Unauthorized relay')
-        const id = decodeURIComponent(new URL(request.url ?? '/', 'http://localhost').pathname.slice(1))
-        const value = await this.catalogSource(lifetime)
+        const parts = new URL(request.url ?? '/', 'http://localhost').pathname.slice(1).split('/')
+        if (parts.length !== 2) throw new Error('Invalid connector relay address')
+        const [id, version] = parts.map(part => decodeURIComponent(part))
+        if (!id || !version) throw new Error('Missing connector version')
+        const value = await this.catalogSource(lifetime, [id])
         lifetime.throwIfAborted()
         if (!Array.isArray(value)) throw new Error('Invalid connector catalog')
         const connector = value.find((entry: Connector) => entry.id === id) as Connector | undefined
         if (connector?.status !== 'ready') {
           throw new Error('Connector authorization is unavailable')
+        }
+        if (connector.version !== version) {
+          response.statusCode = 409
+          response.end('Connector version changed; prepare a new task')
+          return
         }
         if (connector.transport === 'stdio' && serveStdio) {
           await serveStdio(request, response, connector, lifetime)
@@ -143,7 +152,7 @@ export class ConnectorProxy {
   catalog(value: unknown): unknown {
     if (this.origin === undefined || !Array.isArray(value)) throw new Error('Connector relay is unavailable')
     return value.map((entry: Connector) => entry.transport === 'streamable-http' || entry.transport === 'stdio' ? {
-      ...entry, url: `${this.origin}/${encodeURIComponent(entry.id)}`,
+      ...entry, url: `${this.origin}/${encodeURIComponent(entry.id)}/${encodeURIComponent(entry.version)}`,
       transport: 'streamable-http', command: undefined, arguments: [],
       headers: { Authorization: `Bearer ${this.key}` }, environment: {},
     } : entry)

@@ -136,7 +136,7 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
   })
   const personalConnectors = new PersonalConnectors(join(app.getPath('userData'), 'personal-connectors'), safeStorage,
     () => productBridge.getSession().employeeId, async (id, signal) => {
-      const value = await productBridge.invokeRuntime('connectors.list', {}, signal)
+      const value = await productBridge.invokeRuntime('connectors.list', { ids: [id] }, signal)
       const entries: readonly unknown[] = Array.isArray(value) ? value : []
       return entries.find(entry => typeof entry === 'object' && entry !== null && 'id' in entry && entry.id === id)
     })
@@ -181,10 +181,10 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
     installedExpertKits: (method, payload, signal) => context.requestHost('product',
       method === 'read' ? 'expertKits.installed.read' : 'expertKits.' + method, payload, signal),
     authoring: (method, payload, api, session, signal) => authoring.invoke(method, payload, api, session, signal ?? lifecycle.signal),
-    connectorRuntime: (value, signal) => personalConnectors.enrich(value, signal),
+    connectorRuntime: (value, signal, discoverTools) => personalConnectors.enrich(value, signal, discoverTools),
   }
   const productBridge = new DeepSeekHarnessProductBridge(productBridgeOptions)
-  const connectorProxy = new ConnectorProxy(signal => productBridge.invokeRuntime('connectors.list', undefined, signal),
+  const connectorProxy = new ConnectorProxy((signal, ids) => productBridge.readConnectorTransports(ids, signal),
     (request, response, connector, signal) => personalConnectors.serveStdio(request, response, connector, signal),
     resolveDeepSeekHarnessConnectorProxyPolicy({ packaged: app.isPackaged,
       resourcesPath: process.resourcesPath, appPath: app.getAppPath() }))

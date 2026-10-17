@@ -252,7 +252,7 @@ export class TestClient {
         if (ctx.get('uiRenderer') === undefined) {
           throw new Error('client-test-runtime: mount requested, but the roster provides no `uiRenderer`')
         }
-        await mountClient(ctx, mountPoint.element)
+        await mountClient(ctx, mountPoint.element, system.entries)
       }
       if (options.awaitConnected !== false) {
         await awaitConnected(ctx, mock, options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS)

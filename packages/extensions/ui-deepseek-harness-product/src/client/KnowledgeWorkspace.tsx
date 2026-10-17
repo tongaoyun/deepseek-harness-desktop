@@ -60,6 +60,9 @@ export function KnowledgeWorkspace({ entries, loading, refreshRevision = 0, erro
       <Tooltip label={t('refresh')}><button type="button" className={css.iconButton} aria-label={t('refresh')}
         disabled={loading} onClick={onRefresh}><IconRefreshOutlineRegular size={16} /></button></Tooltip>
     </header>
+    {selected && !authRequired && error !== undefined && <div role="alert" className={css.catalogError}>
+      <p>{error}</p><Button variant="outline" size="sm" disabled={loading} onClick={onRefresh}>{t('retry')}</Button>
+    </div>}
     <nav className={css.knowledgeLibraryGroups} aria-label={t('knowledge')} aria-busy={loading}>
       {scopes.map((scope) => {
         const values = entries.filter(entry => scope === 'OTHER'
@@ -117,7 +120,7 @@ export function KnowledgeWorkspace({ entries, loading, refreshRevision = 0, erro
         onClick={() => { setNavigationVisible(value => !value) }}><IconFolderOpenOutlineRegular size={18} /></button></Tooltip>
       <span>{selected?.label ?? t('knowledge')}</span>
     </header>
-    {!authRequired && error === undefined && selected ? <KnowledgeDocuments key={selected.id} product={localDetail(selected)} t={t}
+    {!authRequired && selected ? <KnowledgeDocuments key={selected.id} product={localDetail(selected)} t={t}
       refreshRevision={refreshRevision} renderFactorySlot={renderFactorySlot}
       renderNavigation={navigation} onNavigate={() => { setNavigationVisible(false) }} />
       : <div className={css.knowledgeWorkspace}>

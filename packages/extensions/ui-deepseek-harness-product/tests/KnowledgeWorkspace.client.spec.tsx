@@ -17,15 +17,18 @@ const entries = items([
 const documentRow = (baseId: string) => ({ id: 'shared-document-id', knowledgeBaseId: baseId, filename: '业务规范.md',
   mediaType: 'text/markdown', sizeBytes: 120, status: 'READY', chunkCount: 1, updatedAt: '2026-10-10T00:00:00Z', folderId: null })
 const page = (values: readonly unknown[]) => ({ items: values, page: 1, size: 20, total: values.length })
-const folders = page([{ id: 'stable-folder', name: '业务制度', parentId: null }])
+const folderUpdatedAt = '2026-10-17T00:00:00Z'
+const folders = page([{ id: 'stable-folder', name: '业务制度', parentId: null, updatedAt: folderUpdatedAt }])
 const props = { entries, loading: false, authRequired: false, authPending: false, authError: false,
   onRefresh: vi.fn(), onSignIn: vi.fn(), renderFactorySlot: renderKnowledgePreview, t }
 
-function transport(handler: (method: string, payload: Record<string, unknown>) => Promise<unknown>) {
+function transport(handler: (method: string, payload: Record<string, unknown>) => Promise<unknown>,
+  pendingUploads: (payload: Record<string, unknown>) => Promise<unknown> = async () => []) {
   const preview = createPreviewFixture()
   const folderMetadata = new Map<string, unknown>()
   const invoke = vi.fn(async (_namespace: string, method: string, payload: Record<string, unknown>, _requestId?: string) => {
     try {
+      if (method === 'knowledge.documents.upload.pending') return { ok: true, result: await pendingUploads(payload) }
       if (method === 'knowledge.folders.get') {
         const result = folderMetadata.get(`${payload.knowledgeBaseId}:${payload.folderId}`)
         if (!result) throw new Error('Folder not found')
@@ -70,11 +73,70 @@ function deferred() {
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.clearAllMocks() })
 
+it.each([false, true])('preserves the open document and original save during a catalog outage (unconfirmed: %s)', async (unconfirmed) => {
+  const writes: Record<string, unknown>[] = []
+  const api = transport(async (method, payload) => {
+    if (method === 'knowledge.documents.save') {
+      writes.push(payload)
+      if (writes.length === 1) throw new ProductError('PRODUCT_NETWORK_UNAVAILABLE', 'Lost receipt', true)
+      return documentRow('personal')
+    }
+    return page([])
+  })
+  const view = render(<KnowledgeWorkspace {...props} />)
+  fireEvent.click(await screen.findByRole('button', { name: zh.knowledgeAddMaterial }))
+  fireEvent.click(await screen.findByRole('menuitem', { name: zh.knowledgeNewDocument }))
+  const dialog = within(await screen.findByRole('dialog'))
+  const title = dialog.getByRole<HTMLInputElement>('textbox', { name: zh.knowledgeDocumentTitle })
+  const body = dialog.getByRole<HTMLTextAreaElement>('textbox', { name: zh.knowledgeMarkdownContent })
+  fireEvent.change(title, { target: { value: 'Retained title' } })
+  fireEvent.change(body, { target: { value: 'Retained content' } })
+  if (unconfirmed) {
+    fireEvent.click(dialog.getByRole('button', { name: zh.knowledgeSave }))
+    await dialog.findByRole('alert')
+  }
+  view.rerender(<KnowledgeWorkspace {...props} error="Catalog temporarily unavailable" />)
+  expect(screen.getByRole('dialog').contains(body)).toBe(true)
+  expect(body.value).toBe('Retained content')
+  expect(title.value).toBe('Retained title')
+  expect(title.disabled).toBe(unconfirmed)
+  expect(api.cancel).not.toHaveBeenCalled()
+  expect(screen.getByText('Catalog temporarily unavailable').closest('[role="alert"]')).not.toBeNull()
+  view.rerender(<KnowledgeWorkspace {...props} />)
+  expect(screen.getByRole('dialog').contains(body)).toBe(true)
+  expect(body.value).toBe('Retained content')
+  if (unconfirmed) {
+    fireEvent.click(dialog.getByRole('button', { name: zh.knowledgeRetrySave }))
+    await waitFor(() => { expect(screen.queryByRole('dialog')).toBeNull() })
+    expect(writes).toHaveLength(2)
+    expect(writes[1]).toEqual(writes[0])
+  }
+})
+
+it('settles an in-flight save after a catalog outage without cancelling or repeating it', async () => {
+  const pending = deferred()
+  const api = transport(async method => method === 'knowledge.documents.save' ? pending.promise : page([]))
+  const view = render(<KnowledgeWorkspace {...props} />)
+  fireEvent.click(await screen.findByRole('button', { name: zh.knowledgeAddMaterial }))
+  fireEvent.click(await screen.findByRole('menuitem', { name: zh.knowledgeNewDocument }))
+  const dialog = within(await screen.findByRole('dialog'))
+  fireEvent.change(dialog.getByRole('textbox', { name: zh.knowledgeDocumentTitle }), { target: { value: 'Pending title' } })
+  fireEvent.change(dialog.getByRole('textbox', { name: zh.knowledgeMarkdownContent }), { target: { value: 'Pending content' } })
+  fireEvent.click(dialog.getByRole('button', { name: zh.knowledgeSave }))
+  view.rerender(<KnowledgeWorkspace {...props} error="Catalog temporarily unavailable" />)
+  expect(screen.getByRole('dialog')).not.toBeNull()
+  expect(api.cancel).not.toHaveBeenCalled()
+  await act(async () => { pending.resolve(documentRow('personal')) })
+  await waitFor(() => { expect(screen.queryByRole('dialog')).toBeNull() })
+  expect(api.invoke.mock.calls.filter(call => call[1] === 'knowledge.documents.save')).toHaveLength(1)
+  expect(screen.getByText('Catalog temporarily unavailable')).not.toBeNull()
+})
+
 it('pages folder branches independently and never reloads them during document processing polls', async () => {
   const api = transport(async (method, payload) => {
     if (method === 'knowledge.folders.list') return payload.parentId === null
-      ? { items: [{ id: `parent-${payload.page}`, name: `目录 ${payload.page}`, parentId: null }], page: payload.page, size: 20, total: 21 }
-      : page([{ id: 'child', name: '子目录', parentId: payload.parentId }])
+      ? { items: [{ id: `parent-${payload.page}`, name: `目录 ${payload.page}`, parentId: null, updatedAt: folderUpdatedAt }], page: payload.page, size: 20, total: 21 }
+      : page([{ id: 'child', name: '子目录', parentId: payload.parentId, updatedAt: folderUpdatedAt }])
     return page([{ ...documentRow('personal'), status: 'PROCESSING' }])
   })
   const view = render(<KnowledgeWorkspace {...props} />)
@@ -98,8 +160,8 @@ it('pages folder branches independently and never reloads them during document p
 it('reloads folder branches on explicit refresh and discards externally removed folders', async () => {
   let removed = false
   const api = transport(async method => method === 'knowledge.folders.list'
-    ? page([{ id: 'kept', name: '保留目录', parentId: null },
-      ...removed ? [] : [{ id: 'removed', name: '删除目录', parentId: null }]])
+    ? page([{ id: 'kept', name: '保留目录', parentId: null, updatedAt: folderUpdatedAt },
+      ...removed ? [] : [{ id: 'removed', name: '删除目录', parentId: null, updatedAt: folderUpdatedAt }]])
     : page([documentRow('personal')]))
   const view = render(<KnowledgeWorkspace {...props} />)
   const { navigation, content } = parts(view.container)
@@ -116,15 +178,15 @@ it('reloads folder branches on explicit refresh and discards externally removed 
 
 it('creates nested folders with retained retry input, browses their paths and deletes back to the parent', async () => {
   const values = [
-    { id: 'root', name: '项目资料', parentId: null as string | null },
-    { id: 'other', name: '其他资料', parentId: null as string | null },
+    { id: 'root', name: '项目资料', parentId: null as string | null, updatedAt: folderUpdatedAt },
+    { id: 'other', name: '其他资料', parentId: null as string | null, updatedAt: folderUpdatedAt },
   ]
   let failed = true
   const api = transport(async (method, payload) => {
     if (method === 'knowledge.folders.list') return page([...values])
     if (method === 'knowledge.folders.create') {
       if (failed) throw new Error('Temporary outage')
-      const value = { id: 'child', name: String(payload.name), parentId: String(payload.parentId) }
+      const value = { id: 'child', name: String(payload.name), parentId: String(payload.parentId), updatedAt: folderUpdatedAt }
       values.push(value); return value
     }
     if (method === 'knowledge.folders.delete') {
@@ -172,7 +234,7 @@ it('creates nested folders with retained retry input, browses their paths and de
 it('keeps an unrelated folder selected when another empty folder is deleted', async () => {
   let deleted = false
   transport(async method => method === 'knowledge.folders.list'
-    ? page([{ id: 'current', name: '当前目录', parentId: null }, ...deleted ? [] : [{ id: 'other', name: '其他目录', parentId: null }]])
+    ? page([{ id: 'current', name: '当前目录', parentId: null, updatedAt: folderUpdatedAt }, ...deleted ? [] : [{ id: 'other', name: '其他目录', parentId: null, updatedAt: folderUpdatedAt }]])
     : method === 'knowledge.folders.delete' ? (deleted = true, { deleted: true }) : page([]))
   const view = render(<KnowledgeWorkspace {...props} />)
   const { navigation } = parts(view.container)
@@ -474,6 +536,7 @@ it('ends an unresolved upload without repeating a write and refreshes the materi
   })
   const view = render(<KnowledgeWorkspace {...props} />)
   const { content } = parts(view.container)
+  await waitFor(() => { expect(content.getByRole<HTMLButtonElement>('button', { name: zh.knowledgeUpload }).disabled).toBe(false) })
   fireEvent.click(content.getByRole('button', { name: zh.knowledgeUpload }))
   fireEvent.click(await screen.findByRole('menuitem', { name: zh.knowledgeUploadStandard }))
   await content.findByRole('button', { name: zh.knowledgeRetryUpload })
@@ -485,6 +548,58 @@ it('ends an unresolved upload without repeating a write and refreshes the materi
     .toEqual({ knowledgeBaseId: 'personal', operationId: attempt[2].operationId })
   expect(api.invoke.mock.calls.filter(row => row[1] === 'knowledge.documents.upload')).toHaveLength(1)
   await waitFor(() => { expect(api.invoke.mock.calls.filter(row => row[1] === 'knowledge.documents.list').length).toBeGreaterThan(before) })
+})
+
+it('recovers an unconfirmed upload after switching libraries and leaving the workspace', async () => {
+  let retained: Record<string, unknown> | undefined
+  let succeeded = false
+  const api = transport(async (method, payload) => {
+    if (method === 'knowledge.folders.list') return folders
+    if (method === 'knowledge.documents.upload') {
+      retained = payload
+      if (!succeeded) throw new ProductError('PRODUCT_NETWORK_UNAVAILABLE', 'Receipt lost', true)
+      return documentRow('personal')
+    }
+    if (method === 'knowledge.documents.upload.discard') { retained = undefined; return { discarded: true } }
+    return page([])
+  }, async payload => payload.knowledgeBaseId === 'personal' && retained ? [retained] : [])
+  let view = render(<KnowledgeWorkspace {...props} />)
+  await waitFor(() => { expect(parts(view.container).content.getByRole<HTMLButtonElement>('button', { name: zh.knowledgeUpload }).disabled).toBe(false) })
+  fireEvent.click(parts(view.container).navigation.getByRole('button', { name: zh.knowledgeFolderActions.replace('{name}', '业务制度') }))
+  fireEvent.click(screen.getByRole('menuitem', { name: zh.knowledgeUpload }))
+  await parts(view.container).content.findByRole('button', { name: zh.knowledgeRetryUpload })
+  const original = api.invoke.mock.calls.find(call => call[1] === 'knowledge.documents.upload')![2]
+  fireEvent.click(parts(view.container).navigation.getByRole('button', { name: '公司规范' }))
+  fireEvent.click(parts(view.container).navigation.getByRole('button', { name: '我的资料' }))
+  await parts(view.container).content.findByRole('button', { name: zh.knowledgeRetryUpload })
+  expect(api.invoke.mock.calls.filter(call => call[1] === 'knowledge.documents.upload.discard')).toHaveLength(0)
+  view.unmount()
+  view = render(<KnowledgeWorkspace {...props} />)
+  await parts(view.container).content.findByRole('button', { name: zh.knowledgeRetryUpload })
+  succeeded = true
+  fireEvent.click(parts(view.container).content.getByRole('button', { name: zh.knowledgeRetryUpload }))
+  await waitFor(() => { expect(parts(view.container).content.queryByRole('button', { name: zh.knowledgeRetryUpload })).toBeNull() })
+  const attempts = api.invoke.mock.calls.filter(call => call[1] === 'knowledge.documents.upload')
+  expect(attempts).toHaveLength(2)
+  expect(attempts[1]?.[2]).toEqual(original)
+  expect(original).toMatchObject({ folderId: 'stable-folder', pdfParseMode: 'STANDARD' })
+  expect(api.invoke.mock.calls.filter(call => call[1] === 'knowledge.documents.upload.discard')).toHaveLength(1)
+})
+
+it('blocks new uploads until pending operations are known and allows recovery refresh', async () => {
+  let failed = true
+  const api = transport(async () => page([]), async () => {
+    if (failed) throw new Error('Pending read failed')
+    return []
+  })
+  const view = render(<KnowledgeWorkspace {...props} />)
+  const { content } = parts(view.container)
+  await content.findByText(zh.knowledgeUploadRecoveryFailed)
+  expect(content.getByRole<HTMLButtonElement>('button', { name: zh.knowledgeUpload }).disabled).toBe(true)
+  expect(api.invoke.mock.calls.some(call => call[1] === 'knowledge.documents.upload')).toBe(false)
+  failed = false
+  fireEvent.click(content.getByRole('button', { name: zh.refresh }))
+  await waitFor(() => { expect(content.getByRole<HTMLButtonElement>('button', { name: zh.knowledgeUpload }).disabled).toBe(false) })
 })
 
 it('allows a reader to download an unavailable preview without offering shared material mutation', async () => {
@@ -647,14 +762,14 @@ it('closes mobile navigation after selecting a document and supports an empty co
   expect(within(parts(container).navigation.getByRole('region', { name: zh.scopeCompany })).getByText(zh.empty)).toBeDefined()
 })
 
-it('removes content on directory failure and exposes retry without running a task', async () => {
+it('retains content on directory failure and exposes retry without running a task', async () => {
   transport(async method => method === 'knowledge.folders.list' ? folders : page([documentRow('personal')]))
   const { container, rerender } = render(<KnowledgeWorkspace {...props} />)
   await parts(container).content.findByRole('button', { name: '业务规范.md' })
   rerender(<KnowledgeWorkspace {...props} error="组织目录暂不可用" />)
-  expect(parts(container).content.getByRole('alert').textContent).toBe('组织目录暂不可用')
-  expect(parts(container).content.queryByRole('button', { name: '业务规范.md' })).toBeNull()
-  fireEvent.click(parts(container).content.getByRole('button', { name: zh.retry }))
+  expect(parts(container).navigation.getByRole('alert').textContent).toContain('组织目录暂不可用')
+  expect(parts(container).content.getByRole('button', { name: '业务规范.md' })).toBeDefined()
+  fireEvent.click(parts(container).navigation.getByRole('button', { name: zh.retry }))
   expect(props.onRefresh).toHaveBeenCalledOnce()
 })
 
@@ -723,7 +838,7 @@ it('returns to files and searches the current folder without keeping a pending r
 it('rechecks a same-ID library and its open document after a directory refresh', async () => {
   let generation = 0
   const api = transport(async (method, payload) => {
-    if (method === 'knowledge.folders.list') return page([{ id: 'stable-folder', parentId: null, name: generation === 0 ? '业务制度' : '当前制度' }])
+    if (method === 'knowledge.folders.list') return page([{ id: 'stable-folder', parentId: null, name: generation === 0 ? '业务制度' : '当前制度', updatedAt: folderUpdatedAt }])
     if (method === 'knowledge.documents.preview.open') return page([{ id: 'read', documentId: 'shared-document-id',
       content: generation === 0 ? '# 初始正文' : '# 当前授权正文', locator: '' }])
     return page([documentRow(String(payload.knowledgeBaseId))])

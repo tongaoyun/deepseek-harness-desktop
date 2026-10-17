@@ -9,12 +9,25 @@ import { ExtensionAuthoringSnapshotSchema } from '@deepseek-harness/product/exte
 import { ExtensionDraftSchema, extensionFiles } from '@deepseek-harness/product/authoring'
 import { ExtensionAuthoring } from '../src/extension-authoring.ts'
 import { AuthoringSessions } from '../src/authoring-sessions.ts'
+import { readExtensionTar } from '../src/extension-archives.ts'
+import { Context } from '@deepseek-ai/cordis'
+import Loader from '@deepseek-ai/cordis-plugin-loader'
+import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
+import Tools from '@deepseek-ai/dsh-tools'
+import LlmRuntime, { LlmAdapter, ToolCallId, createUserMessage, type GenerateOptions, type StreamChunk } from '@deepseek-ai/dsh-llm'
+import Sessions, { SessionId } from '@deepseek-ai/dsh-session'
+import SessionProjections from '@deepseek-ai/dsh-session-projection'
+import Agents from '@deepseek-ai/dsh-agent'
+import AgentLoop from '@deepseek-ai/dsh-agent-loop'
+import * as ConversationAuthoring from '@deepseek-harness/product-runtime/conversation-authoring'
 
 const draft = { kind: 'skill' as const, id: 'fact-review', version: '1.0.0', name: 'Fact review',
   summary: 'Check facts.', category: 'knowledge-research', body: '# Review\nCheck facts.', triggers: ['Review claims'] }
 const employee = { authenticated: true, employeeId: 'employee-one', displayName: 'Original author' }
+const kitDraft = { ...draft, kind: 'expert-kit' as const, id: 'fact-review-kit',
+  skills: [{ id: 'review', name: draft.name, summary: draft.summary, body: draft.body, triggers: draft.triggers }] }
 
-async function fixture() {
+async function fixture(content: typeof draft | typeof kitDraft = draft, editing = false) {
   const root = await mkdtemp(join(tmpdir(), 'authoring-recovery-'))
   onTestFinished(() => rm(root, { force: true, recursive: true }))
   const uploads: Buffer[] = []
@@ -26,22 +39,40 @@ async function fixture() {
   const address = server.address()
   if (!address || typeof address === 'string') throw new Error('Missing fixture port')
   const releases: unknown[] = []
+  const versions = new Map<string, unknown>()
   let activated = false
   let loseReceipt = false
-  let rejectPreparation = false
+  let preparationRejectionStatus: number | undefined
+  let blockAssessment = false
+  let activationRejectionStatus: number | undefined
+  let failPreparation = false
   const api = new DeepSeekHarnessApiClient({ baseUrl: 'https://product.example', getSessionToken: () => 'private-token',
     fetch: async (url, init) => {
       const path = typeof url === 'string' ? url : url instanceof URL ? url.href : url.url
       if (path.endsWith('/releases')) {
-        if (rejectPreparation) {
-          rejectPreparation = false
-          return Response.json({ success: false, errCode: 'EXPERT_KIT_RELEASE_CONFLICT', errMessage: 'Resource belongs to another owner' }, { status: 409 })
+        if (failPreparation) { failPreparation = false; throw new Error('Preparation receipt lost') }
+        if (preparationRejectionStatus !== undefined) {
+          const status = preparationRejectionStatus
+          preparationRejectionStatus = undefined
+          return Response.json({ success: false, errCode: 'EXPERT_KIT_RELEASE_CONFLICT', errMessage: 'Preparation rejected' }, { status })
         }
         if (typeof init?.body !== 'string') throw new Error('Missing preparation body')
-        const release: unknown = JSON.parse(init.body)
-        if (releases.length) expect(release).toEqual(releases[0])
+        const release = JSON.parse(init.body) as { id: string; version: string }
+        const coordinate = `${release.id}@${release.version}`
+        if (versions.has(coordinate)) expect(release).toEqual(versions.get(coordinate))
+        versions.set(coordinate, release)
         releases.push(release)
+        if (blockAssessment) {
+          blockAssessment = false
+          return Response.json({ success: true, data: { uploadUrl: `http://127.0.0.1:${address.port}/upload`,
+            assessment: { status: 'BLOCKED', issues: [{ severity: 'ERROR', code: 'CONNECTOR_MISSING', message: 'Missing connector: company-erp' }] } } })
+        }
         return Response.json({ success: true, data: { uploadUrl: `http://127.0.0.1:${address.port}/upload`, assessment: { status: 'READY' } } })
+      }
+      if (activationRejectionStatus !== undefined) {
+        const status = activationRejectionStatus
+        activationRejectionStatus = undefined
+        return Response.json({ success: false, errCode: 'EXPERT_KIT_PACKAGE_INVALID', errMessage: 'Activation rejected' }, { status })
       }
       activated = true
       if (loseReceipt) { loseReceipt = false; throw new Error('Activation receipt lost') }
@@ -57,14 +88,29 @@ async function fixture() {
   const signal = new AbortController().signal
   const read = async () => ExtensionAuthoringSnapshotSchema.parse(await authoring.invoke('extensions.authoring.read',
     { sessionId: 'creation' }, api, employee, signal))
+  let stageId: string | undefined
+  if (editing) {
+    for (const [path, value] of Object.entries(extensionFiles(ExtensionDraftSchema.parse(content)).files)) {
+      await mkdir(join(importedDirectory, path, '..'), { recursive: true })
+      await writeFile(join(importedDirectory, path), value)
+    }
+    await mkdir(join(importedDirectory, 'assets'))
+    await writeFile(join(importedDirectory, 'assets', 'reference.txt'), 'original reference')
+    const imported = await authoring.invoke('extensions.import.inspect', { kind: content.kind, source: 'directory' }, api, employee, signal) as { stageId: string }
+    stageId = imported.stageId
+  }
   const initial = ExtensionAuthoringSnapshotSchema.parse(await authoring.invoke('extensions.authoring.begin',
-    { kind: 'skill', sessionId: 'creation' }, api, employee, signal))
+    { kind: content.kind, sessionId: 'creation', edit: editing, ...stageId ? { stageId } : {} }, api, employee, signal))
   const coordinate = { sessionId: 'creation', authoringId: initial.authoringId }
-  await authoring.invoke('extensions.authoring.update', { ...coordinate, revision: 0, draft }, api, employee, signal)
+  await authoring.invoke('extensions.authoring.update', { ...coordinate, revision: 0,
+    draft: { ...content, version: editing ? initial.draft.version : content.version } }, api, employee, signal)
   return { api, install, uploads, releases, importedDirectory, directory: options.directory, read, coordinate, signal,
     get authoring() { return authoring }, get activated() { return activated },
     loseReceipt: () => { loseReceipt = true },
-    rejectPreparation: () => { rejectPreparation = true },
+    rejectPreparation: (status = 409) => { preparationRejectionStatus = status },
+    blockAssessment: () => { blockAssessment = true },
+    rejectActivation: (status = 422) => { activationRejectionStatus = status },
+    failPreparation: () => { failPreparation = true },
     restart: async () => { await authoring.close(); authoring = new ExtensionAuthoring(options) } }
 }
 
@@ -98,6 +144,182 @@ it('keeps a definitely rejected first preparation editable without marking it sa
     .resolves.toMatchObject({ revision: 2, draft: { id: 'another-review' } })
   expect(test.install).not.toHaveBeenCalled()
   expect(test.uploads).toEqual([])
+})
+
+it.each([draft, kitDraft])('keeps $kind content editable at a new version after blocked dependencies and restart', async (content) => {
+  const test = await fixture(content)
+  test.blockAssessment()
+  const saving = test.authoring.invoke('extensions.authoring.save', { ...test.coordinate, revision: 1 }, test.api, employee, test.signal)
+  await expect(saving).rejects.toMatchObject({ code: 'EXTENSION_DEPENDENCY_BLOCKED', retryable: false })
+  await expect(saving).rejects.toThrow('CONNECTOR_MISSING: Missing connector: company-erp')
+  expect(test.activated).toBe(false)
+  expect(test.uploads).toEqual([])
+  expect(test.install).not.toHaveBeenCalled()
+  await test.restart()
+  const state = await test.read()
+  expect(state).toMatchObject({ revision: 2, draft: { ...content, version: '1.0.1' } })
+  expect(state.pendingSave).toBeUndefined()
+  expect(state.saved).toBeUndefined()
+  await expect(test.authoring.invoke('extensions.authoring.update', { ...test.coordinate, revision: 1, draft: content }, test.api, employee, test.signal))
+    .rejects.toMatchObject({ code: 'EXTENSION_DRAFT_CHANGED' })
+  await test.authoring.invoke('extensions.authoring.update', { ...test.coordinate, revision: 2,
+    draft: { ...state.draft, body: 'Corrected content' } }, test.api, employee, test.signal)
+  await expect(test.authoring.invoke('extensions.authoring.save', { ...test.coordinate, revision: 3 }, test.api, employee, test.signal))
+    .resolves.toMatchObject({ id: content.id, version: '1.0.1', installed: content.kind === 'skill' })
+  expect(test.releases).toMatchObject([{ version: '1.0.0' }, { version: '1.0.1' }])
+  expect(test.uploads).toHaveLength(1)
+})
+
+it('keeps an existing resource ID fixed while recovering a rejected activation to the next editable version', async () => {
+  const test = await fixture(draft, true)
+  test.rejectActivation()
+  await expect(test.authoring.invoke('extensions.authoring.save', { ...test.coordinate, revision: 1 }, test.api, employee, test.signal))
+    .rejects.toMatchObject({ code: 'EXPERT_KIT_PACKAGE_INVALID' })
+  expect(test.activated).toBe(false)
+  expect(test.install).not.toHaveBeenCalled()
+  await test.restart()
+  const state = await test.read()
+  expect(state).toMatchObject({ revision: 2, editing: true, draft: { ...draft, version: '1.0.2' } })
+  expect(state.pendingSave).toBeUndefined()
+  await expect(test.authoring.invoke('extensions.authoring.update', { ...test.coordinate, revision: 2,
+    draft: { ...state.draft, id: 'different-resource' } }, test.api, employee, test.signal)).rejects.toThrow('identity and version are fixed')
+  await test.authoring.invoke('extensions.authoring.update', { ...test.coordinate, revision: 2,
+    draft: { ...state.draft, body: 'Repaired package' } }, test.api, employee, test.signal)
+  await expect(test.authoring.invoke('extensions.authoring.save', { ...test.coordinate, revision: 3 }, test.api, employee, test.signal))
+    .resolves.toMatchObject({ id: draft.id, version: '1.0.2', installed: true })
+  expect(test.releases).toMatchObject([{ version: '1.0.1' }, { version: '1.0.2' }])
+  const files = await readExtensionTar(test.uploads.at(-1)!, test.signal)
+  expect(files.get('assets/reference.txt')?.toString()).toBe('original reference')
+})
+
+it('retains sealed content if persisting editable recovery fails after a blocked preparation', async () => {
+  const test = await fixture()
+  test.blockAssessment()
+  const store = new AuthoringSessions(test.directory)
+  const write = store.write.bind(store)
+  const fault = vi.spyOn(AuthoringSessions.prototype, 'write').mockImplementation(async (owner, state, signal) => {
+    if (state.draft.version === '1.0.1') throw new Error('Recovery disk unavailable')
+    return write(owner, state, signal)
+  })
+  onTestFinished(() => { fault.mockRestore() })
+  await expect(test.authoring.invoke('extensions.authoring.save', { ...test.coordinate, revision: 1 }, test.api, employee, test.signal))
+    .rejects.toThrow('Recovery disk unavailable')
+  fault.mockRestore()
+  await test.restart()
+  expect(await test.read()).toMatchObject({ revision: 1, pendingSave: { author: employee.displayName }, draft })
+  await expect(test.authoring.invoke('extensions.authoring.update', { ...test.coordinate, revision: 1,
+    draft: { ...draft, body: 'Changed' } }, test.api, employee, test.signal)).rejects.toMatchObject({ code: 'EXTENSION_SAVE_PENDING' })
+  expect(test.uploads).toEqual([])
+})
+
+it('uses the recovered draft version through Loader, the official loop and durable tool results', async () => {
+  const test = await fixture()
+  test.blockAssessment()
+  const ctx = new Context()
+  ctx.baseUrl = import.meta.url
+  onTestFinished(() => ctx.fiber.dispose())
+  await ctx.plugin(Loader)
+  await ctx.plugin(SystemPrompt)
+  await ctx.plugin(Tools)
+  await ctx.plugin(LlmRuntime)
+  await ctx.plugin(Sessions)
+  await ctx.plugin(SessionProjections)
+  await ctx.plugin(Agents)
+  await ctx.plugin(AgentLoop, { agents: [] })
+  ctx.loader.builtins['authoring-recovery'] = { name: 'authoring-recovery', inject: ConversationAuthoring.inject,
+    apply: (owner: Context) => { ConversationAuthoring.apply(owner, { product: {
+      invoke: async (method, payload, signal) => test.authoring.invoke(method, payload as Record<string, unknown>,
+        test.api, employee, signal ?? test.signal),
+    } }) } }
+  await ctx.loader.root.update([{ id: 'authoring', name: 'cordis:authoring-recovery' }])
+  await ctx.loader.await()
+  await ctx.loader.resolve('authoring').fiber?.await()
+  const calls = [
+    { name: 'extension_save', arguments: '{"revision":1}' },
+    { name: 'extension_draft', arguments: '{}' },
+    { name: 'extension_draft_update', arguments: JSON.stringify({ revision: 2,
+      content: JSON.stringify({ ...draft, version: '1.0.1', body: 'Corrected content' }) }) },
+    { name: 'extension_save', arguments: '{"revision":3}' },
+  ]
+  class RecoveryAdapter extends LlmAdapter {
+    readonly requests: GenerateOptions[] = []
+    override async resolveModel(provider: string, model: string) { return { provider, id: model, name: model } }
+    override async *stream(request: GenerateOptions): AsyncIterable<StreamChunk> {
+      this.requests.push(request)
+      const call = calls[this.requests.length - 1]
+      if (call) {
+        yield { type: 'block-start', index: 0, blockType: 'tool-call' }
+        yield { type: 'block-end', index: 0, block: { type: 'tool-call', id: ToolCallId(`recovery-${this.requests.length}`), ...call } }
+        yield { type: 'finish', reason: { kind: 'tool-calls' } }
+      } else {
+        yield { type: 'block-start', index: 0, blockType: 'text' }
+        yield { type: 'block-end', index: 0, block: { type: 'text', text: 'Skill corrected, saved and installed.' } }
+        yield { type: 'finish', reason: { kind: 'stop' } }
+      }
+    }
+  }
+  const adapter = new RecoveryAdapter()
+  ctx.llm.registerAdapter(['fixture'], adapter)
+  const handle = await ctx.agents.create({ sessionId: SessionId('creation'), agentOptions: { provider: 'fixture', model: 'fixture' } })
+  onTestFinished(() => handle.dispose())
+  handle.agent.followup(createUserMessage({ content: [{ type: 'text', text: 'Save the skill and correct missing dependencies.' }], source: { kind: 'user' } }))
+  await vi.waitFor(() => { expect(handle.agent.session.snapshotEvents().some(event => event.type === 'turn/end')).toBe(true) })
+  const events = handle.agent.session.snapshotEvents()
+  const recording = {
+    system: events.filter(event => event.type === 'system/message').map(event => event.data.message.content),
+    results: events.filter(event => event.type === 'tool/result').map(event => event.data.message.content),
+    saved: (await test.read()).saved,
+  }
+  expect(recording.saved).toEqual({ id: draft.id, version: '1.0.1' })
+  expect(test.releases).toMatchObject([{ version: '1.0.0' }, { version: '1.0.1' }])
+  expect(JSON.stringify(recording)).not.toContain('private-token')
+  await expect(JSON.stringify(recording, null, 2) + '\n').toMatchFileSnapshot('expected/authoring-validation-recovery.json')
+})
+
+it('does not unlock a lost preparation receipt after a later rejection', async () => {
+  const test = await fixture()
+  test.failPreparation()
+  await expect(test.authoring.invoke('extensions.authoring.save', { ...test.coordinate, revision: 1 }, test.api, employee, test.signal))
+    .rejects.toThrow('Preparation receipt lost')
+  await test.restart()
+  test.rejectPreparation()
+  await expect(test.authoring.invoke('extensions.authoring.save', { ...test.coordinate, revision: 1 }, test.api, employee, test.signal))
+    .rejects.toMatchObject({ code: 'EXPERT_KIT_RELEASE_CONFLICT' })
+  expect(await test.read()).toMatchObject({ revision: 1, pendingSave: { author: employee.displayName }, draft })
+  expect(test.activated).toBe(false)
+})
+
+it.each([408, 429, 500].flatMap(status => (['prepare', 'activate'] as const).map(phase => ({ status, phase }))))(
+  'keeps $phase HTTP $status recoverable only with the unchanged content', async ({ status, phase }) => {
+    const test = await fixture()
+    if (phase === 'prepare') test.rejectPreparation(status)
+    else test.rejectActivation(status)
+    await expect(test.authoring.invoke('extensions.authoring.save', { ...test.coordinate, revision: 1 }, test.api, employee, test.signal))
+      .rejects.toMatchObject({ status })
+    await test.restart()
+    expect(await test.read()).toMatchObject({ revision: 1, pendingSave: { author: employee.displayName }, draft })
+    await expect(test.authoring.invoke('extensions.authoring.update', { ...test.coordinate, revision: 1,
+      draft: { ...draft, body: 'Changed' } }, test.api, employee, test.signal)).rejects.toMatchObject({ code: 'EXTENSION_SAVE_PENDING' })
+    await expect(test.authoring.invoke('extensions.authoring.save', { ...test.coordinate, revision: 1 }, test.api, employee, test.signal))
+      .resolves.toMatchObject({ version: draft.version, installed: true })
+  })
+
+it.each(['assessment', 'activation'] as const)('keeps an uncertain earlier activation fixed when retry receives a rejected %s', async (failure) => {
+  const test = await fixture()
+  test.loseReceipt()
+  await expect(test.authoring.invoke('extensions.authoring.save', { ...test.coordinate, revision: 1 }, test.api, employee, test.signal))
+    .rejects.toThrow('receipt lost')
+  await test.restart()
+  if (failure === 'assessment') test.blockAssessment()
+  else test.rejectActivation()
+  await expect(test.authoring.invoke('extensions.authoring.save', { ...test.coordinate, revision: 1 }, test.api, employee, test.signal))
+    .rejects.toMatchObject({ code: 'EXTENSION_SAVE_PENDING', retryable: true })
+  expect(await test.read()).toMatchObject({ revision: 1, pendingSave: { author: employee.displayName }, draft })
+  await expect(test.authoring.invoke('extensions.authoring.update', { ...test.coordinate, revision: 1,
+    draft: { ...draft, body: 'Changed' } }, test.api, employee, test.signal)).rejects.toMatchObject({ code: 'EXTENSION_SAVE_PENDING' })
+  await expect(test.authoring.invoke('extensions.authoring.save', { ...test.coordinate, revision: 1 }, test.api, employee, test.signal))
+    .resolves.toMatchObject({ version: draft.version, installed: true })
+  expect(test.uploads.every(bytes => bytes.equals(test.uploads[0]!))).toBe(true)
 })
 
 it('seals an uncertain activation and retries identical release bytes across restart and display-name changes', async () => {

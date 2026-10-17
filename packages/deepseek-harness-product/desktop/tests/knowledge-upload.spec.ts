@@ -7,6 +7,43 @@ import { knowledgeUploadDialogOptions, uploadKnowledgeFile, KnowledgeUploads } f
 
 const uploadPolicy = { maxBytes: 50 * 1024 * 1024 }
 
+it('retains a dispatched upload when its page cancels and retries it without another picker', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'knowledge-upload-navigation-'))
+  onTestFinished(() => rm(root, { recursive: true, force: true }))
+  const path = join(root, 'policy.md')
+  await writeFile(path, '# Original')
+  const select = vi.fn(async () => path)
+  const dispatched = Promise.withResolvers<undefined>()
+  const controller = new AbortController()
+  let writes = 0
+  const api = new DeepSeekHarnessApiClient({ baseUrl: 'https://product.test', getSessionToken: () => 'employee',
+    fetch: async (url, init) => {
+      if ((url instanceof Request ? url.url : url.toString()).endsWith('/knowledge-file-limits')) {
+        return Response.json({ success: true, data: { uploadMaxBytes: 1000 } })
+      }
+      writes++
+      if (writes === 1) return new Promise<Response>((_resolve, reject) => {
+        const signal = init?.signal
+        if (!signal) throw new Error('Upload signal is required')
+        signal.addEventListener('abort', () => { reject(new Error('Page left')) }, { once: true })
+        dispatched.resolve(undefined)
+      })
+      expect(new Headers(init?.headers).get('idempotency-key')).toBe('navigation-upload-0001')
+      return Response.json({ success: true, data: { id: 'document', status: 'QUEUED' } })
+    } })
+  const uploads = new KnowledgeUploads(() => 'employee', select, 1000)
+  const first = uploads.send('base', 'navigation-upload-0001', 'STANDARD', null, api, controller.signal)
+  onTestFinished(async () => { controller.abort(); await first.catch(() => undefined); uploads.close(); api.close() })
+  await dispatched.promise
+  const rejected = expect(first).rejects.toThrow()
+  controller.abort(new Error('Page left'))
+  await rejected
+  expect(uploads.pending('base')).toEqual([{ operationId: 'navigation-upload-0001', pdfParseMode: 'STANDARD', folderId: null }])
+  await expect(uploads.send('base', 'navigation-upload-0001', 'STANDARD', null, api)).resolves.toMatchObject({ id: 'document' })
+  expect(select).toHaveBeenCalledOnce()
+  expect(writes).toBe(2)
+})
+
 it('reuses the native file and operation after a lost server or IPC receipt, and refuses changed bytes', async () => {
   const root = await mkdtemp(join(tmpdir(), 'knowledge-upload-retry-'))
   onTestFinished(() => rm(root, { recursive: true, force: true }))
@@ -25,6 +62,9 @@ it('reuses the native file and operation after a lost server or IPC receipt, and
   const uploads = new KnowledgeUploads(() => 'employee', select, 1000)
   onTestFinished(() => { uploads.close(); api.close() })
   await expect(uploads.send('base', 'stable-operation-0001', 'STANDARD', 'folder', api)).rejects.toThrow()
+  expect(uploads.pending('base')).toEqual([{ operationId: 'stable-operation-0001', pdfParseMode: 'STANDARD', folderId: 'folder' }])
+  expect(uploads.pending('other-base')).toEqual([])
+  expect(JSON.stringify(uploads.pending('base'))).not.toContain(root)
   await expect(uploads.send('base', 'stable-operation-0001', 'STANDARD', 'folder', api)).resolves.toEqual({ id: 'document', status: 'QUEUED' })
   // A main-process success is retained until the renderer acknowledges it.
   await uploads.send('base', 'stable-operation-0001', 'STANDARD', 'folder', api)
@@ -35,6 +75,7 @@ it('reuses the native file and operation after a lost server or IPC receipt, and
   await expect(uploads.send('base', 'stable-operation-0001', 'STANDARD', 'folder', api)).rejects.toMatchObject({ code: 'KNOWLEDGE_FILE_CHANGED' })
   expect(keys).toHaveLength(3)
   uploads.discard('base', 'stable-operation-0001')
+  expect(uploads.pending('base')).toEqual([])
   await uploads.send('base', 'stable-operation-0002', 'STANDARD', 'folder', api)
   expect(select).toHaveBeenCalledTimes(2)
 })
@@ -52,10 +93,12 @@ it('drops selections on employee changes and cancels preparation on close', asyn
   const uploads = new KnowledgeUploads(() => employee, select, 1000)
   onTestFinished(() => { uploads.close(); api.close() })
   await expect(uploads.send('base', 'stable-operation-0001', 'STANDARD', null, api)).rejects.toThrow()
-  employee = 'second'; uploads.resetIdentity()
+  employee = 'second'
+  expect(uploads.pending('base')).toEqual([])
   await expect(uploads.send('base', 'stable-operation-0001', 'STANDARD', null, api)).rejects.toThrow()
   expect(select).toHaveBeenCalledTimes(2)
   uploads.close()
+  expect(uploads.pending('base')).toEqual([])
   await expect(uploads.send('base', 'stable-operation-0001', 'STANDARD', null, api)).rejects.toThrow()
   expect(select).toHaveBeenCalledTimes(2)
 })
