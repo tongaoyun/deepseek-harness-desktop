@@ -3,6 +3,10 @@ export const NS = 'deepseekHarnessProduct'
 
 /** Simplified Chinese labels for the DeepSeekHarness product extension. */
 export const zh = {
+  knowledgeKeepEditing: '继续编辑',
+  knowledgeDiscardDraft: '放弃修改',
+  knowledgeDiscardDraftConfirmation: '修改尚未保存，确定放弃吗？',
+  knowledgeWaitForSave: '正在保存，请等待结果后再关闭。',
   feedbackTitle: '反馈',
   feedbackCategory: '反馈类型',
   feedbackBug: '功能问题',
@@ -493,6 +497,10 @@ export const zh = {
 
 /** English labels for the DeepSeekHarness product extension. */
 export const en = {
+  knowledgeKeepEditing: 'Keep editing',
+  knowledgeDiscardDraft: 'Discard changes',
+  knowledgeDiscardDraftConfirmation: 'Discard your unsaved changes?',
+  knowledgeWaitForSave: 'Saving. Wait for the result before closing.',
   feedbackTitle: 'Feedback',
   feedbackCategory: 'Category',
   feedbackBug: 'Bug',

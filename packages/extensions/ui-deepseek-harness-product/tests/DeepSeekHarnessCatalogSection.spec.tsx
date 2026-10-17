@@ -63,6 +63,21 @@ function castClientContext(value: object): ClientContext {
 }
 
 describe('DeepSeekHarness capability navigation', () => {
+  it.each([SkillsPanel, ExpertKitsPanel, ConnectorsPanel])('refreshes only the displayed directory when another directory is unavailable', async (Panel) => {
+    let version = '1.0.0'
+    const invoke = vi.fn(async (method: string) => {
+      if (method === 'catalog.refresh' || method === 'knowledge.bases.list') throw new ProductError('ORGANIZATION_UNAVAILABLE', 'Offline', true)
+      return [{ id: 'entry', name: `Resource ${version}`, version }]
+    })
+    installProductApi({ invoke })
+    render(<Panel t={t} {...actions()} />)
+    await screen.findByText('Resource 1.0.0')
+    version = '1.0.1'
+    fireEvent.click(screen.getByRole('button', { name: zh.refresh }))
+    await screen.findByText('Resource 1.0.1')
+    expect(invoke.mock.calls.some(([method]) => method === 'catalog.refresh')).toBe(false)
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
   it('configures private values for a shared connector without editing its resource or version', async () => {
     const entry = { id: 'shared-orders', name: '共享订单连接器', version: '1.0.0', visibility: 'COMPANY',
       status: 'needs-configuration', ready: false, canEdit: false, canConfigure: true, authMode: 'none', tools: [] }
