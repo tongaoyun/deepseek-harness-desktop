@@ -69,7 +69,7 @@ index 0836489ef8400225b79e2fdad6429842541c8d55..e167e03adc2b8c0870db0deb17b1e762
 +dev-product-desktop:
 +	$(PNPM) run dev:product-desktop $(ARGS)
 diff --git a/apps/web/tsconfig.json b/apps/web/tsconfig.json
-index ff56fc94852fab07a3fa26212e09eef187805420..fcf53a720598b4bf71862bef151a284507544c2a 100644
+index e135be295f3cfd8a1895ce34d2b3387a098d6fe6..d378dde7345541897c99d3df4bec63d1ef4f582d 100644
 --- a/apps/web/tsconfig.json
 +++ b/apps/web/tsconfig.json
 @@ -22,6 +22,7 @@
@@ -81,7 +81,7 @@ index ff56fc94852fab07a3fa26212e09eef187805420..fcf53a720598b4bf71862bef151a2845
      "tests/notice-wake-tail.e2e.ts",
      "tests/fold-blank-matrix.e2e.ts",
 diff --git a/package.json b/package.json
-index 042d7eb56bdd40f14b4fffe1c76bb5f26ab11065..e9e38eefe17f2fd06b109d56ea0120d74f9e17c7 100644
+index a5e45dbf91d13035b4ef1ab2aea79455c544cd0c..d28206fd17e652358645b467844b1e7c15da6767 100644
 --- a/package.json
 +++ b/package.json
 @@ -18,6 +18,10 @@
@@ -105,7 +105,7 @@ index 042d7eb56bdd40f14b4fffe1c76bb5f26ab11065..e9e38eefe17f2fd06b109d56ea0120d7
      "package:desktop": "pnpm --filter @deepseek-ai/dsh-desktop run package",
      "package:desktop:dir": "pnpm --filter @deepseek-ai/dsh-desktop run package:dir",
 diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
-index c5de58cc2ed16ae276f253bd4dc6a92fe0c86e1d..fde8652ed30e6c845a2436ebd78de92ece9308ba 100644
+index 5f38bae3561846058531c3fcc1092df01b012024..4d041cdcf8a3e84104587eef41d0d68b9e15ae1c 100644
 --- a/pnpm-lock.yaml
 +++ b/pnpm-lock.yaml
 @@ -709,6 +709,9 @@ importers:
@@ -141,7 +141,7 @@ index c5de58cc2ed16ae276f253bd4dc6a92fe0c86e1d..fde8652ed30e6c845a2436ebd78de92e
    apps/web:
      devDependencies:
        '@deepseek-ai/cordis-plugin-group':
-@@ -7377,6 +7396,225 @@ importers:
+@@ -7428,6 +7447,225 @@ importers:
          specifier: workspace:*
          version: link:../../host/webserver
  
@@ -367,7 +367,7 @@ index c5de58cc2ed16ae276f253bd4dc6a92fe0c86e1d..fde8652ed30e6c845a2436ebd78de92e
    packages/deliverables/tool-present:
      dependencies:
        '@deepseek-ai/schemastery':
-@@ -9885,6 +10123,84 @@ importers:
+@@ -9936,6 +10174,84 @@ importers:
          specifier: ^18.2.0
          version: 18.3.1
  
@@ -452,7 +452,7 @@ index c5de58cc2ed16ae276f253bd4dc6a92fe0c86e1d..fde8652ed30e6c845a2436ebd78de92e
    packages/feedback/command-feedback:
      dependencies:
        zod:
-@@ -17671,10 +17987,18 @@ packages:
+@@ -17756,10 +18072,18 @@ packages:
    '@mixmark-io/domino@2.2.0':
      resolution: {integrity: sha512-Y28PR25bHXUg88kCV7nivXrP2Nj2RueZ3/l/jdx6J9f8J4nsEGcgX0Qe6lt7Pa+J79+kPiJU3LguR6O/6zrLOw==}
  
@@ -471,7 +471,7 @@ index c5de58cc2ed16ae276f253bd4dc6a92fe0c86e1d..fde8652ed30e6c845a2436ebd78de92e
    '@modelcontextprotocol/core@2.2.0':
      resolution: {integrity: sha512-iLhmprRmWI8EcosOA3wVvww22z02NkgqhV4fBH6f/odQBsi7xnJc0HGmi21yWO+/iKw2yzqVE127Zhna5/+JXw==}
      engines: {node: '>=20'}
-@@ -17707,6 +18031,10 @@ packages:
+@@ -17792,6 +18116,10 @@ packages:
      resolution: {integrity: sha512-kKaFkyAh6oipvc9+EAbJ552JafnMnOq5nzmzWkp1jJdBhTAAGpmIpWihUG1+rfNhmEFM98gUZDdCHCDD4v6a7Q==}
      hasBin: true
  
@@ -482,7 +482,7 @@ index c5de58cc2ed16ae276f253bd4dc6a92fe0c86e1d..fde8652ed30e6c845a2436ebd78de92e
    '@modelcontextprotocol/server@2.2.0':
      resolution: {integrity: sha512-qFnltjus6Gk8Lx6J1w2RXmr3YPN22MNT6qD6zjAkaiWIlFIFxWClz0rXHNuJF/KSUyn5YGhkSvXkWDbQHVLFEQ==}
      engines: {node: '>=20'}
-@@ -22635,6 +22963,10 @@ packages:
+@@ -22720,6 +23048,10 @@ packages:
      resolution: {integrity: sha512-7++dFhtcx3353uBaq8DDR4NuxBetBzC7ZQOhmTQInHEd6bSrXdiEyzCvG07Z44UYdLShWUyXt5M/yhz8ekcb1A==}
      engines: {node: '>=8'}
  
@@ -493,7 +493,7 @@ index c5de58cc2ed16ae276f253bd4dc6a92fe0c86e1d..fde8652ed30e6c845a2436ebd78de92e
    sherpa-onnx-darwin-arm64@1.13.8:
      resolution: {integrity: sha512-FPNgJMgnWVl/KhRTIhG3KL3A4Om63Rn4YKXc9/uHY7SzLcvqLJLc/h7UBWJwduXvv7K18t5NpxHR6XgXn4sjWw==}
      cpu: [arm64]
-@@ -25162,6 +25494,16 @@ snapshots:
+@@ -25247,6 +25579,16 @@ snapshots:
  
    '@mixmark-io/domino@2.2.0': {}
  
@@ -510,7 +510,7 @@ index c5de58cc2ed16ae276f253bd4dc6a92fe0c86e1d..fde8652ed30e6c845a2436ebd78de92e
    '@modelcontextprotocol/client@2.2.0':
      dependencies:
        '@modelcontextprotocol/core': 2.2.0
-@@ -25172,10 +25514,21 @@ snapshots:
+@@ -25257,10 +25599,21 @@ snapshots:
        pkce-challenge: 5.0.1
        zod: 4.4.3
  
@@ -532,7 +532,7 @@ index c5de58cc2ed16ae276f253bd4dc6a92fe0c86e1d..fde8652ed30e6c845a2436ebd78de92e
    '@modelcontextprotocol/node@2.0.0(@modelcontextprotocol/server@2.2.0)(hono@4.13.7)':
      dependencies:
        '@hono/node-server': 1.19.17(hono@4.13.7)
-@@ -25227,6 +25580,11 @@ snapshots:
+@@ -25312,6 +25665,11 @@ snapshots:
        - supports-color
        - zod
  
@@ -544,7 +544,7 @@ index c5de58cc2ed16ae276f253bd4dc6a92fe0c86e1d..fde8652ed30e6c845a2436ebd78de92e
    '@modelcontextprotocol/server@2.2.0':
      dependencies:
        '@modelcontextprotocol/core': 2.2.0
-@@ -26339,7 +26697,6 @@ snapshots:
+@@ -26424,7 +26782,6 @@ snapshots:
    '@types/yauzl@2.10.3':
      dependencies:
        '@types/node': 22.20.1
@@ -552,7 +552,7 @@ index c5de58cc2ed16ae276f253bd4dc6a92fe0c86e1d..fde8652ed30e6c845a2436ebd78de92e
  
    '@typescript-eslint/types@8.61.0': {}
  
-@@ -30452,6 +30809,8 @@ snapshots:
+@@ -30537,6 +30894,8 @@ snapshots:
  
    shebang-regex@3.0.0: {}
  
@@ -711,7 +711,7 @@ index 8e7dae883c9c46f5f80173d17e9db8f5384658ad..4cd00585c1865a02632a6ad95416973e
      }
    }
 diff --git a/tsconfig.base.json b/tsconfig.base.json
-index 3573f6f8b6d353f917b8ff23d0b612c864c5413d..3b61a49a981bb6b1da95a47949840b5095ee0b49 100644
+index 2b3e9aad3777353f2115eb3bd9076302d6f31f23..e0fd7e63c225bd693c62a1304a428025ff275085 100644
 --- a/tsconfig.base.json
 +++ b/tsconfig.base.json
 @@ -28,6 +28,21 @@
@@ -737,7 +737,7 @@ index 3573f6f8b6d353f917b8ff23d0b612c864c5413d..3b61a49a981bb6b1da95a47949840b50
        "@deepseek-ai/dsh-experimental-ralph-bundle": ["./packages/experimental/ralph-bundle/src/index.ts"],
        "@deepseek-ai/dsh-experimental-terminal-bundle": ["./packages/experimental/terminal-bundle/src/index.ts"],
 diff --git a/tsconfig.client.json b/tsconfig.client.json
-index 053d90af785c8847c20a94b8d8e33a4f6f617b1e..1eed319c0ff367923dc6470678132dc10bdcad0d 100644
+index b2f0423c7cdf116f579dc027a90e79393c150e45..0aea0d77d7c1b25aaf160094fe40243287988849 100644
 --- a/tsconfig.client.json
 +++ b/tsconfig.client.json
 @@ -20,6 +20,7 @@
@@ -757,7 +757,7 @@ index 053d90af785c8847c20a94b8d8e33a4f6f617b1e..1eed319c0ff367923dc6470678132dc1
      { "path": "./packages/test-support/remote-mock" },
      { "path": "./packages/client/shortcuts/tsconfig.client.json" },
 diff --git a/tsconfig.host.json b/tsconfig.host.json
-index 90cb6d8b0b585587488c99534126b64edcd7a50a..37582557fdf6d07929e2e4e4ded7b6abe4bea856 100644
+index 6eb4662f88e97ab35f20adfea3a8251cde72280f..721f8c174407282ace6297780d272e83f2dfda63 100644
 --- a/tsconfig.host.json
 +++ b/tsconfig.host.json
 @@ -8,6 +8,7 @@
@@ -768,7 +768,7 @@ index 90cb6d8b0b585587488c99534126b64edcd7a50a..37582557fdf6d07929e2e4e4ded7b6ab
      "apps/web/tests/collapse-timing.e2e.ts",
      "apps/web/tests/notice-wake-tail.e2e.ts",
      "apps/web/tests/fold-blank-matrix.e2e.ts",
-@@ -235,6 +236,8 @@
+@@ -237,6 +238,8 @@
      "scripts/client-bundle-purity.spec.ts"
    ],
    "references": [
@@ -777,7 +777,7 @@ index 90cb6d8b0b585587488c99534126b64edcd7a50a..37582557fdf6d07929e2e4e4ded7b6ab
      { "path": "./packages/experimental/client-ui-cot-translation/tsconfig.host.json" },
      { "path": "./packages/experimental/cot-translation-bundle" },
      { "path": "./packages/experimental/session-search" },
-@@ -503,6 +506,7 @@
+@@ -506,6 +509,7 @@
      { "path": "./packages/preset/agent-preset-registry" },
      { "path": "./packages/preset/agent-preset" },
      { "path": "./packages/preset/persona" },

@@ -67,7 +67,7 @@ const connectors = [
 const kits = [
   { id: 'operations', name: 'Retail operations', summary: 'Investigate orders and inventory with your business data.',
     author: 'Operations team', category: 'ecommerce-retail', version: '1.2.0', availabilityStatus: 'AVAILABLE',
-    skillDetails: skills.slice(0, 2), connectorRefs: ['erp'], knowledgeBaseRefs: ['organization:playbook'],
+    skillDetails: skills.slice(0, 2), connectorRefs: ['erp'], knowledgeBaseRefs: ['company:playbook'],
     commonTasks: [{ id: 'daily-review', name: 'Daily order review', description: 'Check order changes and delivery exceptions.',
       prompt: 'Review today\'s orders and summarize delivery exceptions.', skillIds: ['order-analysis'] }] },
   { id: 'customer-success', name: 'Customer success', summary: 'Prepare customer reviews and follow-up plans.',
@@ -431,7 +431,9 @@ it('keeps native themes and responsive catalogs while using official details and
   let transferSequence = 0
   let largePreview = false
   const newPersonalBases: Record<string, unknown>[] = []
-  const managedFolders: { id: string; name: string; parentId: string | null }[] = [{ id: 'folder-policies', name: 'Policies', parentId: null }]
+  const managedFolders: { id: string; name: string; parentId: string | null; updatedAt: string }[] = [{
+    id: 'folder-policies', name: 'Policies', parentId: null, updatedAt: '2026-10-10T01:00:00Z',
+  }]
   const materialRequests: {
     readonly knowledgeBaseId?: string
     readonly documentId?: string
@@ -609,7 +611,7 @@ it('keeps native themes and responsive catalogs while using official details and
         return { items: folders.slice((page - 1) * size, page * size), page, size, total: folders.length }
       }
       case 'knowledge.folders.create': {
-        const folder = { id: `created-folder${managedFolders.some(folder => folder.id === 'created-folder') ? '-child' : ''}`, name: payload?.name ?? '', parentId: payload?.parentId ?? null }
+        const folder = { id: `created-folder${managedFolders.some(folder => folder.id === 'created-folder') ? '-child' : ''}`, name: payload?.name ?? '', parentId: payload?.parentId ?? null, updatedAt: '2026-10-10T01:00:00Z' }
         managedFolders.push(folder)
         return folder
       }
@@ -625,6 +627,7 @@ it('keeps native themes and responsive catalogs while using official details and
         managedFolders.splice(index, 1)
         return { removed: true }
       }
+      case 'knowledge.documents.upload.pending': return []
       case 'knowledge.documents.upload': uploadModes.push(payload?.pdfParseMode ?? 'STANDARD'); uploadFolders.push(payload?.folderId); return { cancelled: true }
       case 'knowledge.documents.read': return knowledgeContents(payload?.documentId ?? '', payload?.page ?? 1, payload?.size ?? 50)
       case 'knowledge.documents.preview.open': {
@@ -1457,7 +1460,9 @@ for (const { mode, installed } of desktopCarriers) {
       const uploadedFiles: { mode: string; filename: string; folderId?: string }[] = []
       const deviceReports: Record<string, unknown>[] = []
       const feedbackBodies: string[] = []
-      const folderRows: { id: string; name: string; parentId: string | null }[] = [{ id: 'folder-policies', name: 'Policies', parentId: null }]
+      const folderRows: { id: string; name: string; parentId: string | null; updatedAt: string }[] = [{
+        id: 'folder-policies', name: 'Policies', parentId: null, updatedAt: '2026-10-10T01:00:00Z',
+      }]
       let largePreview = false
       const server = createServer((request, response) => {
         const url = new URL(request.url ?? '/', 'http://localhost')
@@ -1539,7 +1544,7 @@ for (const { mode, installed } of desktopCarriers) {
             } else if (request.method === 'POST' || request.method === 'PUT') {
               void fixtureRequestBody(request).then((body) => {
                 if (typeof body.name !== 'string') throw new Error('Missing folder name')
-                const folder = request.method === 'PUT' ? folderRows.find(row => row.id === parts[6]) : { id: `created-folder${folderRows.some(folder => folder.id === 'created-folder') ? '-child' : ''}`, name: body.name, parentId: typeof body.parentId === 'string' ? body.parentId : null }
+                const folder = request.method === 'PUT' ? folderRows.find(row => row.id === parts[6]) : { id: `created-folder${folderRows.some(folder => folder.id === 'created-folder') ? '-child' : ''}`, name: body.name, parentId: typeof body.parentId === 'string' ? body.parentId : null, updatedAt: '2026-10-10T01:00:00Z' }
                 if (folder === undefined) throw new Error('Missing folder')
                 folder.name = body.name
                 if (request.method === 'POST') folderRows.push(folder)

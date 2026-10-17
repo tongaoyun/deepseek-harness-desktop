@@ -101,7 +101,7 @@ index 0000000000000000000000000000000000000000..b898afdfdc395ba34b38e4f945c5e017
 +
 +适配器测试确定性地请求技能，不评估真实模型根据自然语言选择技能的决策质量。
 diff --git a/packages/client/ui-skill/README.i18n.yaml b/packages/client/ui-skill/README.i18n.yaml
-index 8d82e8e675653f93985f6ba98f165dd7be7f9ec6..fd48b4e798abda0d295c62da3ee6d1532f6687a6 100644
+index 59386d4b391377010e0f303b354e8ed2740e3ccd..424932d46813ee222438355203fe93036db920e8 100644
 --- a/packages/client/ui-skill/README.i18n.yaml
 +++ b/packages/client/ui-skill/README.i18n.yaml
 @@ -18,8 +18,8 @@
@@ -113,10 +113,10 @@ index 8d82e8e675653f93985f6ba98f165dd7be7f9ec6..fd48b4e798abda0d295c62da3ee6d153
 +  en: 959a8a3a1ba592ad
 +  zh: 5ed60693a539e7f1
  /deepseek-ai-dsh-client-ui-skill/use-this-package/the-skill-tool-row:
-   en: 975c6cd80af3684a
-   zh: 395c10e51c6a15f6
+   en: 270bc37a226ed247
+   zh: 15a1c4c82c3a1f00
 diff --git a/packages/client/ui-skill/README.md b/packages/client/ui-skill/README.md
-index 4340f3f78e3a104def165abe7bafafacdef275d0..8c297acb92a133a57423edd265e55962628d05ea 100644
+index fcc361b188e0b6a9d4272ab42bc742f51f5b8ba0..65c450e1bc8acb9da140a7f02138591da0a9cd97 100644
 --- a/packages/client/ui-skill/README.md
 +++ b/packages/client/ui-skill/README.md
 @@ -29,6 +29,8 @@ Type `/` in the composer and pick a skill from the suggestions, or type `/name`
@@ -129,7 +129,7 @@ index 4340f3f78e3a104def165abe7bafafacdef275d0..8c297acb92a133a57423edd265e55962
  
  ### The skill tool row
 diff --git a/packages/client/ui-skill/README.zh.md b/packages/client/ui-skill/README.zh.md
-index d18c52f30dc80aba6534e1b812867e441d4c970b..383036f7628d2360677ef5d035df2d710ee5ebfc 100644
+index 6594d3807d185a7b07d63aa51c5a841a5fa6dd85..75a26a7891d8632b850adbd478a7947c207095ed 100644
 --- a/packages/client/ui-skill/README.zh.md
 +++ b/packages/client/ui-skill/README.zh.md
 @@ -29,6 +29,8 @@ kind: "package-reference"
@@ -142,10 +142,10 @@ index d18c52f30dc80aba6534e1b812867e441d4c970b..383036f7628d2360677ef5d035df2d71
  
  ### skill 工具行
 diff --git a/packages/client/ui-skill/src/client/index.ts b/packages/client/ui-skill/src/client/index.ts
-index ee67b91e4cc59e2890367ee81a496031e83cdb73..f8f1672dc3dcca370e9d586673be278913f28ff0 100644
+index c00dc119fd60eccc149f3570912af3b52706640d..5698fe92b7d3b8b606037bae85d81d151464b107 100644
 --- a/packages/client/ui-skill/src/client/index.ts
 +++ b/packages/client/ui-skill/src/client/index.ts
-@@ -33,7 +33,7 @@
+@@ -34,7 +34,7 @@
   */
  // Type-only: the carrier types, the forwarded Host-event face and the ctx.remote merge.
  import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
@@ -153,8 +153,8 @@ index ee67b91e4cc59e2890367ee81a496031e83cdb73..f8f1672dc3dcca370e9d586673be2789
 +import { Service, type Context as ClientContext } from '@deepseek-ai/cordis'
  import type { SkillEntry } from '@deepseek-ai/dsh-api-remotes/client'
  import type {} from '@deepseek-ai/dsh-api-session-controller/client'
- import type { SessionId } from '@deepseek-ai/dsh-session/types'
-@@ -58,6 +58,24 @@ declare module '@deepseek-ai/dsh-api-session-controller/client' {
+ // Type-only: the forwarded `plugin-manager/changed` declaration.
+@@ -61,6 +61,24 @@ declare module '@deepseek-ai/dsh-api-session-controller/client' {
    }
  }
  
@@ -179,7 +179,7 @@ index ee67b91e4cc59e2890367ee81a496031e83cdb73..f8f1672dc3dcca370e9d586673be2789
  declare module '@deepseek-ai/dsh-client-ui-slots' {
    interface LocaleNamespaceMap {
      /** The dedicated skill tool row's copy. */
-@@ -156,6 +174,7 @@ export function apply(ctx: ClientContext): void {
+@@ -159,6 +177,7 @@ export function apply(ctx: ClientContext): void {
    const clearAll = (): void => {
      for (const key of [...fetches.keys()]) invalidate(key)
    }
@@ -188,10 +188,10 @@ index ee67b91e4cc59e2890367ee81a496031e83cdb73..f8f1672dc3dcca370e9d586673be2789
    // The bound translate resolves against the registered dictionaries with the
    // locale service's own fallback ladder; candidate-time reads stay plain text.
 diff --git a/packages/client/ui-skill/tests/browser-plugin.client.spec.ts b/packages/client/ui-skill/tests/browser-plugin.client.spec.ts
-index fa997d86b4b094cdac26ef7802bd63711fc7c196..513cc319ce0cf8ae9073568728e9e5589c2aaf6f 100644
+index b426da40fdf6884e4efb19e6b502d276cf498c2e..d042a5cc4056f4213aa8c45d94df12b6c75c1a25 100644
 --- a/packages/client/ui-skill/tests/browser-plugin.client.spec.ts
 +++ b/packages/client/ui-skill/tests/browser-plugin.client.spec.ts
-@@ -364,6 +364,20 @@ describe('catalog cache', () => {
+@@ -365,6 +365,20 @@ describe('catalog cache', () => {
      expect(payloads[2]).toEqual({ sessionId: 's1' })
    })
  

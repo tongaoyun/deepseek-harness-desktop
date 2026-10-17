@@ -1,8 +1,8 @@
 diff --git a/docs/subsystems/slots.md b/docs/subsystems/slots.md
-index 0a08dc4f9a96012fc52c497be351b2663ee6d318..67695d77d40ba951f7ad989634f88ffa3eb4b254 100644
+index 281d1a61131653d2b82d486b327cbf5920301b13..bf120836f6a87f93e628be14c901f779ef580ed7 100644
 --- a/docs/subsystems/slots.md
 +++ b/docs/subsystems/slots.md
-@@ -172,6 +172,7 @@ Factory: conversation.content [ConversationContent]
+@@ -173,6 +173,7 @@ Factory: conversation.content [ConversationContent]
  ├─ conversation.hero.workspace
  │  └─ conversation.hero.workspace.directoryFlow
  ├─ conversation.hero.agentPreset
@@ -11,10 +11,10 @@ index 0a08dc4f9a96012fc52c497be351b2663ee6d318..67695d77d40ba951f7ad989634f88ffa
  
  Factory: conversation.chat.user.content [UserContent]
 diff --git a/docs/subsystems/slots.zh.md b/docs/subsystems/slots.zh.md
-index 372f01773c28b2fbc4a1f7c04334d6fc1746a8fa..5ca3d030ab34636020bba514fc97d8ac6d29e662 100644
+index 16fccb74960f608f252684b8e0c51d8cefa2cf76..e4c5686f1b5cf37f40d627513ae1984a575517b2 100644
 --- a/docs/subsystems/slots.zh.md
 +++ b/docs/subsystems/slots.zh.md
-@@ -174,6 +174,7 @@ Factory: conversation.content [ConversationContent]
+@@ -175,6 +175,7 @@ Factory: conversation.content [ConversationContent]
  ├─ conversation.hero.workspace
  │  └─ conversation.hero.workspace.directoryFlow
  ├─ conversation.hero.agentPreset
