@@ -1190,16 +1190,20 @@ describe('DeepSeekHarnessProductBridge', () => {
     await second
     expect(events).toEqual(['catalog.changed'])
     const background = bridge.refreshCatalog()
-    const backgroundCancelled = expect(background).rejects.toThrow('closed')
+    // Nested abort signals report either owner's disposal reason across supported Node versions.
+    const backgroundCancelled = expect(background).rejects.toThrow(/^Product (?:bridge closed|catalog has been disposed)$/u)
     await vi.waitFor(() => { expect(pending).toHaveLength(12) })
     let disposed = false
     const disposal = bridge.dispose().then(() => { disposed = true })
     await Promise.resolve()
     expect(disposed).toBe(false)
+    expect(pending.slice(8).every(request => request.signal.aborted)).toBe(true)
     pending.slice(8).forEach((request) => { request.cancel?.() })
     await backgroundCancelled
     await disposal
     expect(disposed).toBe(true)
     expect(events).toEqual(['catalog.changed'])
+    await expect(bridge.refreshCatalog()).rejects.toThrow('Product catalog has been disposed')
+    expect(pending).toHaveLength(12)
   })
 })

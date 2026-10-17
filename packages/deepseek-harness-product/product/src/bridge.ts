@@ -178,9 +178,9 @@ export class DeepSeekHarnessProductBridge {
     return () => { this.listeners.delete(listener) }
   }
 
-  /** Refresh every employee-visible product directory as one immutable snapshot.
+  /** Refresh employee-visible directories independently, committing each successful result.
    * Background callers share one request; cancellable callers own separate requests.
-   * A failed refresh leaves the last successful display snapshot intact.
+   * Failed directories retain their last display result and are excluded from dependency estimates.
    * @param signal - Optional caller cancellation.
    * @returns Completion after all directory requests settle.
    */
