@@ -12,6 +12,7 @@ import { ARCHIVE_LIMITS, readExtensionDirectory, readExtensionMarkdown, readExte
 import { ProductError } from '@deepseek-harness/product/errors'
 import { ExtensionContentDraftSchema } from '@deepseek-harness/product/extension-draft'
 import { AuthoringSessions, assertAuthoringRevision } from './authoring-sessions.ts'
+import { waitForNativeDialog } from './native-dialog.ts'
 
 interface Stage {
   readonly owner: string
@@ -154,7 +155,9 @@ export class ExtensionAuthoring {
         files = await this.download(api, prefix, metadata, signal)
       } else {
         if (input.source !== 'directory' && input.source !== 'zip' && input.source !== 'file') throw new Error('Select a directory or package file')
-        const path = await this.options.selectImport(input.source, input.kind)
+        const source = input.source
+        const kind = input.kind
+        const path = await waitForNativeDialog(() => this.options.selectImport(source, kind), signal)
         signal.throwIfAborted()
         if (!path) return { cancelled: true }
         try {

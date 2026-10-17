@@ -707,7 +707,7 @@ describe('DeepSeekHarnessProductBridge', () => {
     await expect(bridge.invoke('skills.artifact', { id: 'document-insight' })).resolves.toEqual({ ok: true })
     await expect(bridge.invoke('skills.readme', { id: 'document-insight' })).resolves.toEqual({ ok: true })
     await expect(bridge.invoke('knowledge.search', {
-      query: '退款流程', knowledgeBaseRefs: ['organization:refund-sop'], knowledgeBaseIds: [], limit: 6,
+      query: '退款流程', knowledgeBaseRefs: ['company:refund-sop'], knowledgeBaseIds: [], limit: 6,
     })).resolves.toEqual({ ok: true })
     expect(requests.map(request => new URL(request.url).pathname)).toEqual([
       '/api/v1/expert-kits/order-expert/artifacts',
@@ -997,7 +997,7 @@ describe('DeepSeekHarnessProductBridge', () => {
     const installedSkills = vi.fn(() => Promise.resolve({ id: 'order-query', version: '2.0.0', sha256: 'e'.repeat(64) }))
     const skill = { id: 'order-query', version: '2.0.0', sha256: 'e'.repeat(64),
       minimumDesktopVersion: '1.0.0', connectorRefs: ['erp'],
-      requiredTools: ['orders.get'], knowledgeBaseRefs: ['organization:orders'] }
+      requiredTools: ['orders.get'], knowledgeBaseRefs: ['company:orders'] }
     const bridge = new DeepSeekHarnessProductBridge({
       serverUrl: 'https://deepseek-harness.test', sessionToken: 'employee-session', desktopVersion: '2.0.0',
       initialSession: { authenticated: true, employeeId: 'employee-1' }, installedSkills,
@@ -1005,7 +1005,7 @@ describe('DeepSeekHarnessProductBridge', () => {
         ...immutableCatalog,
         '/api/v1/skills': [skill],
         '/api/v1/connectors': [{ id: 'erp', ready: true, tools: [{ name: 'orders.get' }] }],
-        '/api/v1/knowledge-bases': [{ id: 'kb-1', referenceKey: 'organization:orders' }],
+        '/api/v1/knowledge-bases': [{ id: 'kb-1', referenceKey: 'orders', reference: 'company:orders', scope: 'COMPANY' }],
       }),
     })
 

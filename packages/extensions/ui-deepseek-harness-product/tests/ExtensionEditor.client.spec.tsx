@@ -64,9 +64,15 @@ it('orders kit details and does not render startup checks or skill readiness bad
 })
 
 it('resolves stable knowledge references to real IDs and distinguishes denial, absence and network failure', () => {
-  expect(knowledgeReferenceDetails(['organization:policy'], [{ reference: 'company:policy', status: 'RESOLVED',
+  expect(knowledgeReferenceDetails(['company:policy'], [{ reference: 'company:policy', status: 'RESOLVED',
     base: { id: 'actual-base', name: 'Policy', scope: 'COMPANY', companyId: 'company' } }])).toMatchObject([{ id: 'actual-base', name: 'Policy', available: true }])
   expect(knowledgeReferenceDetails(['personal:hidden'], [{ reference: 'personal:hidden', status: 'UNAUTHORIZED' }])).toMatchObject([{ available: false, status: 'UNAUTHORIZED' }])
   expect(knowledgeReferenceDetails(['personal:absent'], [{ reference: 'personal:absent', status: 'NOT_FOUND' }])).toMatchObject([{ available: false, status: 'NOT_FOUND' }])
   expect(knowledgeReferenceDetails(['personal:hidden'], [], true)).toMatchObject([{ available: false, status: 'LOOKUP_FAILED' }])
+  expect(knowledgeReferenceDetails(['department:manual'], [{ reference: 'department:manual', status: 'RESOLVED',
+    base: { id: 'department-base', name: 'Manual', scope: 'DEPARTMENT', ownerName: 'Sales' } }]))
+    .toMatchObject([{ id: 'department-base', available: true, scope: 'DEPARTMENT', ownerName: 'Sales' }])
+  expect(knowledgeReferenceDetails(['organization:policy'], [{ reference: 'company:policy', status: 'RESOLVED',
+    base: { id: 'actual-base', name: 'Policy', scope: 'COMPANY' } }]))
+    .toMatchObject([{ id: 'organization:policy', available: false, status: 'LOOKUP_FAILED' }])
 })

@@ -427,8 +427,7 @@ export function knowledgeReferenceDetails(references: readonly string[], values:
   const rows: readonly unknown[] = values
   const records = rows.filter((entry): entry is Record<string, unknown> => typeof entry === 'object' && entry !== null && !Array.isArray(entry))
   return [...new Set(references)].map((reference) => {
-    const normalized = reference.replace(/^team:/, 'department:').replace(/^organization:/, 'company:')
-    const value = records.find(entry => entry.reference === normalized)
+    const value = records.find(entry => entry.reference === reference)
     if (!value || value.status !== 'RESOLVED') return { id: reference, name: reference, kind: 'knowledge', available: false,
       status: typeof value?.status === 'string' ? value.status : 'LOOKUP_FAILED' }
     const base = items([value.base])[0]

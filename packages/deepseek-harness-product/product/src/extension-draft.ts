@@ -24,7 +24,7 @@ export function skillCatalogSummary(description: string): string {
 const dependencies = {
   connectorRefs: z.array(id).max(128).default([]),
   requiredTools: z.array(z.string().regex(/^[a-z][a-z0-9_.-]+$/)).max(128).default([]),
-  knowledgeBaseRefs: z.array(z.string().regex(/^(personal|team|organization):[a-z][a-z0-9-]{2,63}$/)).max(32).default([]),
+  knowledgeBaseRefs: z.array(z.string().regex(/^(personal|department|company):[a-z][a-z0-9-]{2,63}$/)).max(32).default([]),
 }
 const skill = z.object({ id: fileId, name: z.string().trim().min(1).max(80), summary: z.string().trim().min(1).max(300),
   description: z.string().min(1).max(262_144).optional(),
