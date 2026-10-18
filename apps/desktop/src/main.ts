@@ -361,6 +361,7 @@ async function main(): Promise<void> {
     hostEnvironment = { ...await loginShell, ...extensionHostEnvironment }
   }
   let quitting = false
+  let quitCleanupCompleted = false
   let startup: Promise<void> | undefined
   let hostStartup: Promise<void> | undefined
   let workspaceRecovery: Promise<void> | undefined
@@ -1372,10 +1373,15 @@ async function main(): Promise<void> {
     updateSchedule.dispose()
     updateDialog.dispose()
     mandatoryUI?.dispose()
-    void Promise.all([Promise.resolve(mandatoryPolicy?.dispose()).then(() => policyAuth?.dispose()), backend.close(), extension?.close(),
-      // A Platform cleanup failure is logged without cutting the remaining Host shutdown short.
-      platformView.dispose().catch((error: unknown) => { console.error(error) })])
-      .catch((error: unknown) => { console.error(error) }).finally(() => { app.quit() })
+    const cleanup = async (close: () => void | Promise<void>): Promise<void> => {
+      try { await close() } catch (error: unknown) { console.error(error) }
+    }
+    void Promise.all([
+      cleanup(() => mandatoryPolicy?.dispose()).then(() => cleanup(() => policyAuth?.dispose())),
+      cleanup(() => backend.close()),
+      cleanup(() => extension?.close()),
+      cleanup(() => platformView.dispose()),
+    ]).then(() => { quitCleanupCompleted = true; app.quit() })
   }
   app.on('before-quit', (event) => {
     if (shellInstallerOwnsQuit) {
@@ -1390,7 +1396,10 @@ async function main(): Promise<void> {
       void platformView.dispose().catch((error: unknown) => { console.error(error) })
       return
     }
-    if (quitting) return
+    if (quitting) {
+      if (!quitCleanupCompleted) event.preventDefault()
+      return
+    }
     event.preventDefault()
     if (skipQuitConfirmation || sessionEnding) { finishQuit(); return }
     void quitConfirmation.confirm().then((approved) => {
