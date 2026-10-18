@@ -124,16 +124,20 @@ jobs:
       - name: Test acceptance process cleanup
         run: node --test apps/product-desktop/tests/acceptance-process.test.mjs
       - name: Test Electron close lifecycle
-        run: pnpm exec vitest run apps/product-desktop/tests/close-electron.spec.ts
+        run: pnpm exec vitest run apps/product-desktop/tests/close-electron.spec.ts apps/product-desktop/tests/office-fixture.spec.ts
       - name: Test upstream boundaries
         run: pnpm exec vitest run scripts/upstream-boundaries.spec.ts
       - name: Test product sidecar
         run: cargo test --manifest-path native/deepseek-harness/Cargo.toml
+      - name: Test Windows packaging arguments
+        if: matrix.target == 'win-x64'
+        shell: pwsh
+        run: node --test apps/product-desktop/tests/windows-package-arguments.test.mjs
       - name: Package Windows
         if: matrix.target == 'win-x64'
         shell: pwsh
         run: |
-          $ModeArgs = if ($env:PACKAGE_SIGNING -eq 'signed') { @() } else { @('--unsigned') }
+          [string[]]$ModeArgs = if ($env:PACKAGE_SIGNING -eq 'signed') { @() } else { @('--unsigned') }
           pnpm --dir apps/product-desktop run package win-x64 @ModeArgs --build-version $env:PACKAGE_VERSION
           if ($LASTEXITCODE -ne 0) { throw 'Windows packaging failed' }
       - name: Package macOS

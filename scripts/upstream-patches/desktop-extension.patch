@@ -444,7 +444,7 @@ index 948a88e6b0e3a439a719aea46e3b77843e412abc..043b82bedf049e9bb56888e78c8c3397
      this.readyReject(error)
      for (const request of this.controlRequests.values()) request.reject(error)
 diff --git a/apps/desktop/src/ipc.ts b/apps/desktop/src/ipc.ts
-index fc19021fa6047bf5ef2a1c5e65c510adda71ee08..e029a607869651a29e663ceb3607ad2692bb5a15 100644
+index fc19021fa6047bf5ef2a1c5e65c510adda71ee08..ae6a6ba6a26e6e414cf497500d8538e4943ad533 100644
 --- a/apps/desktop/src/ipc.ts
 +++ b/apps/desktop/src/ipc.ts
 @@ -3,6 +3,7 @@
@@ -455,7 +455,13 @@ index fc19021fa6047bf5ef2a1c5e65c510adda71ee08..e029a607869651a29e663ceb3607ad26
  
  /** IPC channel names kept private to the desktop application bundle. */
  export const DESKTOP_IPC = {
-@@ -31,6 +32,9 @@ export const DESKTOP_IPC = {
+@@ -26,18 +27,22 @@ export const DESKTOP_IPC = {
+   localeChanged: 'dsh-desktop:locale-changed',
+   updatesStatus: 'dsh-desktop:updates-status',
+   updatesOpen: 'dsh-desktop:updates-open',
++  updatesCheck: 'dsh-desktop:updates-check',
+   updatesPresentation: 'dsh-desktop:updates-presentation',
+   nativeThemeSet: 'dsh-desktop:native-theme-set',
    windowFullscreen: 'dsh-desktop:window-fullscreen',
    windowsAppearance: 'dsh-desktop:windows-appearance',
    windowsMenu: 'dsh-desktop:windows-menu',
@@ -465,8 +471,20 @@ index fc19021fa6047bf5ef2a1c5e65c510adda71ee08..e029a607869651a29e663ceb3607ad26
  } as const
  
  /** Desktop release update state rendered by desktop-owned UI. */
-@@ -84,6 +88,11 @@ export interface DshDesktopProductApi {
+ export type DesktopUpdatePreparationFailureKind = 'stop-failed' | 'tasks-changed' | 'tasks-unavailable'
+ 
+ export interface DesktopUpdateState {
+-  readonly phase: 'idle' | 'checking' | 'available' | 'downloading' | 'verifying' | 'installing' | 'ready' | 'error'
++  readonly phase: 'idle' | 'unavailable' | 'checking' | 'available' | 'downloading' | 'verifying' | 'installing' | 'ready' | 'error'
+   readonly version?: string
+   readonly message?: string
+   /** Main-owned diagnostics without subprocess output or credentials; hidden until expanded. */
+@@ -82,8 +87,15 @@ export interface DshDesktopProductApi {
+   readonly updates: {
+     status(): Promise<DesktopUpdatePresentation>
      open(): Promise<void>
++    /** Check release metadata and request download approval before any transfer. */
++    check(): Promise<void>
      subscribe(listener: (state: DesktopUpdatePresentation) => void): () => void
    }
 +  readonly extensions: {
@@ -478,7 +496,7 @@ index fc19021fa6047bf5ef2a1c5e65c510adda71ee08..e029a607869651a29e663ceb3607ad26
  
  /** Scheme of Desktop-owned application documents. */
 diff --git a/apps/desktop/src/main.ts b/apps/desktop/src/main.ts
-index 2afdfd71948053aedd65f6a04a9ed9b279e13376..608541a8790af685e940ae53343c679295f47c36 100644
+index 2afdfd71948053aedd65f6a04a9ed9b279e13376..3040fe429e7370847e8bc31ce9030b7578be4de8 100644
 --- a/apps/desktop/src/main.ts
 +++ b/apps/desktop/src/main.ts
 @@ -1,9 +1,12 @@
@@ -701,7 +719,31 @@ index 2afdfd71948053aedd65f6a04a9ed9b279e13376..608541a8790af685e940ae53343c6792
  
    session.defaultSession.webRequest.onBeforeSendHeaders({ urls: ['ws://127.0.0.1/*', 'wss://127.0.0.1/*'] }, (details, callback) => {
      if (hostUrl === undefined || hostCookie === undefined || details.webContentsId !== mainWindow?.webContents.id) {
-@@ -929,8 +1018,10 @@ async function main(): Promise<void> {
+@@ -796,6 +885,10 @@ async function main(): Promise<void> {
+     assertProductSender(event)
+     await openUpdatePrompt()
+   })
++  ipcMain.handle(DESKTOP_IPC.updatesCheck, async (event) => {
++    assertProductSender(event)
++    await openUpdatePrompt(true)
++  })
+ 
+   let promptOperation: Promise<void> | undefined
+   let policyAuthenticationQueued = false
+@@ -830,6 +923,12 @@ async function main(): Promise<void> {
+         }
+         if (isMandatory()) { mandatoryUI?.focus(); return }
+         if (state.phase === 'error' && state.failedOperation === 'check') { await showUpdateFailure(state); return }
++        if (state.phase === 'unavailable') {
++          await ordinaryMessageBox({ type: 'info', title: locale.messages.updateCheckTitle,
++            message: locale.messages.updateUnavailable,
++            detail: `${formatDesktopMessage(locale.messages.updateCurrentDetail, { version: app.getVersion() })}\n\n${locale.messages.updateUnavailableDetail}` })
++          return
++        }
+         if (state.phase === 'idle') {
+           await ordinaryMessageBox({ type: 'info', title: locale.messages.updateCheckTitle,
+             message: locale.messages.updateCurrent,
+@@ -929,8 +1028,10 @@ async function main(): Promise<void> {
      updates.dispose()
    })
  
@@ -713,7 +755,7 @@ index 2afdfd71948053aedd65f6a04a9ed9b279e13376..608541a8790af685e940ae53343c6792
    app.setAboutPanelOptions({
      applicationName: 'DeepSeek Harness',
      applicationVersion: app.getVersion(),
-@@ -1075,6 +1166,7 @@ async function main(): Promise<void> {
+@@ -1075,6 +1176,7 @@ async function main(): Promise<void> {
      browserGuests.bind(window, (guest, name) => shortcuts.attachGuest(window, guest, name))
      shortcuts.attach(window)
      window.on('focus', automaticCheck)
@@ -721,7 +763,7 @@ index 2afdfd71948053aedd65f6a04a9ed9b279e13376..608541a8790af685e940ae53343c6792
      // Closing hides: the page and the Host keep running, and the next show resumes the same document.
      window.on('close', (event) => {
        if (quitting || shellInstallerOwnsQuit || sessionEnding) return
-@@ -1201,7 +1293,8 @@ async function main(): Promise<void> {
+@@ -1201,7 +1303,8 @@ async function main(): Promise<void> {
      })().finally(() => { openingWelcome = undefined })
      return openingWelcome
    }
@@ -731,7 +773,7 @@ index 2afdfd71948053aedd65f6a04a9ed9b279e13376..608541a8790af685e940ae53343c6792
      if (quitting || recovery.active) return
      const state = await readWelcomeState()
      if (isQuitting() || backend.state.phase !== 'ready') return
-@@ -1213,7 +1306,9 @@ async function main(): Promise<void> {
+@@ -1213,7 +1316,9 @@ async function main(): Promise<void> {
        raiseAfterUpdate = false
        await showWelcome()
      } else {
@@ -742,7 +784,7 @@ index 2afdfd71948053aedd65f6a04a9ed9b279e13376..608541a8790af685e940ae53343c6792
      }
    }
    focusPrimaryWindow = () => {
-@@ -1226,7 +1321,14 @@ async function main(): Promise<void> {
+@@ -1226,7 +1331,14 @@ async function main(): Promise<void> {
        return
      }
      // Startup and sign-out select the visible window before activation may reveal the workspace.
@@ -758,7 +800,7 @@ index 2afdfd71948053aedd65f6a04a9ed9b279e13376..608541a8790af685e940ae53343c6792
      if (window.isMinimized()) window.restore()
      window.show()
      window.focus()
-@@ -1248,6 +1350,8 @@ async function main(): Promise<void> {
+@@ -1248,6 +1360,8 @@ async function main(): Promise<void> {
    const finishQuit = (): void => {
      quitting = true
      shuttingDown = true
@@ -767,7 +809,7 @@ index 2afdfd71948053aedd65f6a04a9ed9b279e13376..608541a8790af685e940ae53343c6792
      updateJournal?.action('quit-requested')
      quitConfirmation.dispose()
      backgroundNotice?.dispose()
-@@ -1258,7 +1362,7 @@ async function main(): Promise<void> {
+@@ -1258,7 +1372,7 @@ async function main(): Promise<void> {
      updateSchedule.dispose()
      updateDialog.dispose()
      mandatoryUI?.dispose()
@@ -777,7 +819,7 @@ index 2afdfd71948053aedd65f6a04a9ed9b279e13376..608541a8790af685e940ae53343c6792
        platformView.dispose().catch((error: unknown) => { console.error(error) })])
        .catch((error: unknown) => { console.error(error) }).finally(() => { app.quit() })
 diff --git a/apps/desktop/src/preload-app.ts b/apps/desktop/src/preload-app.ts
-index f590b8bc8b80a6ee007a0f36249097c77fb0b974..e3df6df6d9bc33099f3a7ef6f3f8d2a7844deb1f 100644
+index f590b8bc8b80a6ee007a0f36249097c77fb0b974..faf3037713a7c15e2c522fa7ec15c63cdcd5505a 100644
 --- a/apps/desktop/src/preload-app.ts
 +++ b/apps/desktop/src/preload-app.ts
 @@ -9,6 +9,7 @@ import { syncNativeTheme } from './preload-theme.ts'
@@ -788,7 +830,14 @@ index f590b8bc8b80a6ee007a0f36249097c77fb0b974..e3df6df6d9bc33099f3a7ef6f3f8d2a7
  
  function createProductApi(): DshDesktopProductApi {
    return {
-@@ -55,6 +56,19 @@ function createProductApi(): DshDesktopProductApi {
+@@ -49,12 +50,26 @@ function createProductApi(): DshDesktopProductApi {
+     updates: {
+       status: () => ipcRenderer.invoke(DESKTOP_IPC.updatesStatus) as Promise<DesktopUpdatePresentation>,
+       open: () => ipcRenderer.invoke(DESKTOP_IPC.updatesOpen) as Promise<void>,
++      check: () => ipcRenderer.invoke(DESKTOP_IPC.updatesCheck) as Promise<void>,
+       subscribe(listener) {
+         const handle = (_event: Electron.IpcRendererEvent, state: DesktopUpdatePresentation): void => { listener(state) }
+         ipcRenderer.on(DESKTOP_IPC.updatesPresentation, handle)
          return () => { ipcRenderer.off(DESKTOP_IPC.updatesPresentation, handle) }
        },
      },
@@ -808,7 +857,7 @@ index f590b8bc8b80a6ee007a0f36249097c77fb0b974..e3df6df6d9bc33099f3a7ef6f3f8d2a7
    }
  }
  
-@@ -97,7 +111,13 @@ markDocumentPlatform()
+@@ -97,7 +112,13 @@ markDocumentPlatform()
  syncWindowFullscreen()
  syncNativeTheme()
  // Main-process IPC also verifies the owning window and top frame.
@@ -1243,7 +1292,7 @@ index daeddc74d0afc1315b0c632f61d2034bd0c9e31a..f0fa8ae67bd7c10d9b6ed8d970773ea7
  
    it.each([
 diff --git a/apps/desktop/tests/main-startup.spec.ts b/apps/desktop/tests/main-startup.spec.ts
-index d9a8f3103b2a963ebf6825c62a86e8ee12064deb..f4ac92943aed5cc7e11f2a49a5bb1df0ff3152ee 100644
+index d9a8f3103b2a963ebf6825c62a86e8ee12064deb..1a1da5838655aa49c4324bc7be1a6ecce2bab53a 100644
 --- a/apps/desktop/tests/main-startup.spec.ts
 +++ b/apps/desktop/tests/main-startup.spec.ts
 @@ -13,6 +13,7 @@ import { en, zh } from '../src/locale.ts'
@@ -1446,7 +1495,41 @@ index d9a8f3103b2a963ebf6825c62a86e8ee12064deb..f4ac92943aed5cc7e11f2a49a5bb1df0
    it.each([
      ['win32', ['--updated'], true],
      ['win32', [], false],
-@@ -2235,9 +2328,13 @@ describe('desktop main startup', () => {
+@@ -1615,6 +1708,33 @@ describe('desktop main startup', () => {
+     expect(harness.updateDownload).not.toHaveBeenCalled()
+   })
+ 
++  it('explains unavailable updates without an error or download', async () => {
++    await readyForUpdate()
++    harness.updateCheck.mockResolvedValueOnce({ phase: 'unavailable' })
++    await invoke(DESKTOP_IPC.updatesCheck, 'app')
++    expect(harness.updateCheck).toHaveBeenLastCalledWith(true)
++    expect(harness.dialog.showMessageBox).toHaveBeenLastCalledWith(expect.objectContaining({
++      type: 'info', title: en.updateCheckTitle, message: en.updateUnavailable,
++      detail: `Current version: 1.0.0\n\n${en.updateUnavailableDetail}`,
++    }))
++    expect(harness.updateDownload).not.toHaveBeenCalled()
++    expect(harness.updateInstall).not.toHaveBeenCalled()
++  })
++
++  it('requires download approval from the explicit check entry and rejects foreign callers', async () => {
++    await readyForUpdate()
++    const handler = harness.handlers.get(DESKTOP_IPC.updatesCheck)!
++    await expect(handler({ senderFrame: { url: 'https://other.example/' } })).rejects.toThrow('unowned renderer')
++    harness.updateCheck.mockResolvedValueOnce({ phase: 'available', version: '1.0.1-nightly.1' })
++    harness.dialog.showMessageBox.mockResolvedValueOnce({ response: 0 }).mockResolvedValueOnce({ response: 1 })
++    await invoke(DESKTOP_IPC.updatesCheck, 'app')
++    expect(harness.dialog.showMessageBox).toHaveBeenLastCalledWith(expect.objectContaining({
++      buttons: [en.updateDownload], cancelId: 1,
++    }))
++    expect(harness.updateDownload).not.toHaveBeenCalled()
++    expect(harness.updateInstall).not.toHaveBeenCalled()
++  })
++
+   it('reports a stale download confirmation as a download failure', async () => {
+     await readyForUpdate()
+     harness.updateCheck.mockResolvedValueOnce({ phase: 'available', version: '1.0.1-nightly.1' })
+@@ -2235,9 +2355,13 @@ describe('desktop main startup', () => {
        primaryRuntime: join('desktop-test-resources', 'runtime', 'primary-runtime'),
        profile: 'desktop-test-profile',
      })
@@ -1462,7 +1545,7 @@ index d9a8f3103b2a963ebf6825c62a86e8ee12064deb..f4ac92943aed5cc7e11f2a49a5bb1df0
      expect(console.warn).toHaveBeenCalledWith('desktop login shell: /account/shell failed (timeout)')
      expect(harness.analytics).toHaveBeenCalledExactlyOnceWith({ eventName: 'desktop_app_launch', timestamp: Date.now(), attributes: {} })
      expect(harness.hosts[0]!.start).toHaveBeenCalledTimes(1)
-@@ -2261,13 +2358,45 @@ describe('desktop main startup', () => {
+@@ -2261,13 +2385,45 @@ describe('desktop main startup', () => {
      expect(harness.dialog.showErrorBox).not.toHaveBeenCalled()
    })
  

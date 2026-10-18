@@ -170,17 +170,17 @@
         {
           "path": "apps/desktop/src/ipc.ts",
           "before": "b7ee202112d7485c524741ffcfe257c5c4f6dca18281aa5ac01c4510b69c6a08",
-          "after": "e88532994252f42b944794a8af1edf08c5dc9251b81b26edd695bd132f95b094"
+          "after": "7f0b53bfa3b50754bcd9ba66bbb8bc3309dcdd51301fa18e4360a1662a539b41"
         },
         {
           "path": "apps/desktop/src/main.ts",
           "before": "e345eda0425f2df795d20413bb87bb9a3ddc46e71ceb1cec0755ad1cca3fb847",
-          "after": "70d283916309b1f655ec42adf558b9c76fab86440aab3cd30b7aed74621bc4db"
+          "after": "ef7459dc814c4f9d5846fe35856d24a1b6f42accbce92e12282b5460829e2607"
         },
         {
           "path": "apps/desktop/src/preload-app.ts",
           "before": "cff269a4f049d276a44974c3c40008ceb9d6a0b35105a54d6605f7dcf59a64eb",
-          "after": "aa7c67c9d1848d3871bdea8b8080d977359540f6f3bf5ea5fb580d92537c4c0b"
+          "after": "17271e8891e38bc08a4c77a2b5e0b01981352458e2ffa4b02935a3bf4af3759a"
         },
         {
           "path": "apps/desktop/tests/extension-transport.spec.ts",
@@ -200,7 +200,7 @@
         {
           "path": "apps/desktop/tests/main-startup.spec.ts",
           "before": "ef37e6257004ae386093afa73e63d16f10ead3421ba9d9982a6286437182fd3f",
-          "after": "5d50ae3769fac7a75c2a9c5a2ab75fa245847945ea7043b5f86d227a995f9d81"
+          "after": "94210c59e076cf7353694528f3af947ec17ccbad60673533971837bb4d85447e"
         },
         {
           "path": "apps/desktop/tests/welcome-startup.spec.ts",
@@ -1310,7 +1310,7 @@
         {
           "path": "packages/client/ui-sidebar-documentpreview/src/client/document/DocumentPreviewSurface.module.css",
           "before": null,
-          "after": "33fe4bddde7e1ca520477346ac90a54e21778d5bbb215939c5d02a31866b6140"
+          "after": "ae1491d9afe29061ae499f0a6202276e963ec074e4f7d40b5c8534978c760535"
         },
         {
           "path": "packages/client/ui-sidebar-documentpreview/src/client/document/DocumentPreviewSurface.tsx",
@@ -1468,6 +1468,123 @@
         }
       ],
       "diff": "chinese-document-structural-validation.patch"
+    },
+    {
+      "id": "desktop-update-availability",
+      "purpose": "通用桌面更新器将缺少打包更新源声明为 unavailable，不作为可重试故障或已是最新版本。侧栏隐藏不可用状态；原生提示说明当前版本及安装要求，使用紧凑横向操作布局。显式检查通过受信 IPC 进入独立下载确认；状态操作与安装确认保持官方生命周期保护。",
+      "tests": [
+        "apps/desktop/tests/update-coordinator.spec.ts",
+        "apps/desktop/tests/preload-app.spec.ts",
+        "apps/desktop/tests/main-startup.spec.ts",
+        "apps/desktop/tests/update-error-renderer.spec.ts",
+        "packages/client/ui-settings-general/tests/desktop-update.client.spec.tsx",
+        "packages/client/ui-settings-general/tests/components.client.spec.tsx",
+        "apps/web/tests/deepseek-harness-catalog.e2e.ts"
+      ],
+      "files": [
+        {
+          "path": "apps/desktop/renderer/update-dialog.css",
+          "before": "a3828fc86b274a6ee31711ecaf721fcf929e389c421d3c3a291f197512d84e91",
+          "after": "a5ed2c0195c9f219af69e3fc5b122ac223292f7a6655761060f7af0203ea29b7"
+        },
+        {
+          "path": "apps/desktop/src/locale.ts",
+          "before": "8426a3943be0dfe81d0f0ecef1d9fe3cc03dc6cd79d3b8177a316f12ac09b242",
+          "after": "f156fd0cbb4cbfcd9f4dba7dbcf9d4aed420a65650a499731fa19d09b43d5cc0"
+        },
+        {
+          "path": "apps/desktop/src/update-coordinator.ts",
+          "before": "5cf1f239f82b8695afa607f36176cb95792d2b61be12aa3e28f0ee5341a95aa7",
+          "after": "2560e3e0cab7a8311ddf78596c54d7801320ca54ed4cc0970baa02c0539ea47f"
+        },
+        {
+          "path": "apps/desktop/tests/README.zh.md",
+          "before": "6cb9c0b39c6db57963fc271d47d0e527a6aa1706075b03e854c29421338d5173",
+          "after": "76529416acbc6cd713450f9561b85bbba66273df1755d318240fa5a63aa1102f"
+        },
+        {
+          "path": "apps/desktop/tests/fixtures/update-dialogs.mjs",
+          "before": "35aadd1b7c15853b6feadb50a1c09f87cf3233791eab3bf8a558cddb3aeaa299",
+          "after": "b976d0a8bec2304493b11f6739b3c5418a94ac98cd3a7d792d9135c51eae7be0"
+        },
+        {
+          "path": "apps/desktop/tests/preload-app.spec.ts",
+          "before": "f57ba38e77d6aa40e3aa61db62812af65af2bf6c3e1a4f3b0222eec26760b2a3",
+          "after": "f8119a61e5625eeffc5fdda512185194229fa8efc9a040c5edf3c5547b4fe2ca"
+        },
+        {
+          "path": "apps/desktop/tests/update-coordinator.spec.ts",
+          "before": "4891cb0647f5afa9dfd1a1426e5511c279674a21a0ce8353e0d1b6b86a56d3a7",
+          "after": "3438f692fd3ccfe77001af188d178240df856cb813a9dc8a9015806fbf06562b"
+        },
+        {
+          "path": "packages/client/ui-settings-general/README.zh.md",
+          "before": "ad4065e982da236937d7c27817ae9ed68fbce62b49ef0b4a45dbaeae801716da",
+          "after": "6c4bf99a06322d045dcfe4fad601e96529bf263f584972d657d3f60abb2a2b6b"
+        },
+        {
+          "path": "packages/client/ui-settings-general/src/client/DesktopUpdateIndicator.module.css",
+          "before": "3d3afea694008e2f9587efed31c419e963297026dd53aef475641dc8d2f5fcfa",
+          "after": "d6585203aa6b1fcd2a97fc45978e7f1ac100ef2bf0f7e6d72580aa27db479c0d"
+        },
+        {
+          "path": "packages/client/ui-settings-general/src/client/DesktopUpdateIndicator.tsx",
+          "before": "c551d302c80252bf7f9a258409427a3d3587da7dc92abb1ef75646ef2623fbe2",
+          "after": "ebd88d0b6de690f6b8ad227d5200a856753c71dfeb5663056499b8b28c82bf3d"
+        },
+        {
+          "path": "packages/client/ui-settings-general/src/types.ts",
+          "before": "a55f2c8088f226afeecde38e75aa348271b01cce00dc1bd7aa1afded625a745f",
+          "after": "a4f9dddb3af2dbe8fdde23f570d06ee0e23374c6faff550ec326140e11c6a7a9"
+        },
+        {
+          "path": "packages/client/ui-settings-general/tests/components.client.spec.tsx",
+          "before": "6a120e68a5d9d69d2fb8d620122b60839ae7113a060f3c34e9e09c3d027a7635",
+          "after": "7277d36bb107c5f6983bae45f6d1b96c292332937d526a62ac0c20cc50fa8e87"
+        },
+        {
+          "path": "packages/client/ui-settings-general/tests/desktop-update.client.spec.tsx",
+          "before": "ed83a495a1180b626bcf99c888b46b0224f08c86a84ea4b74463362d38734bc8",
+          "after": "273e4be9bfc3e809115d5ceb2acf107c876759861480fb5ecf822159865ba064"
+        },
+        {
+          "path": "apps/desktop/tests/README.i18n.yaml",
+          "before": "140b2559a3c807fe4590fee9ea86a675fe21cf9e04abbb22b9094ab7cd62a281",
+          "after": "112212106f835774a57bec9bb349552d887304f183d4e58c771ec11954e57ea2"
+        },
+        {
+          "path": "apps/desktop/tests/README.md",
+          "before": "d691200bfdb57733f09184ba988ecef37d516ef0dca8ea8412f41b1bc1bec34e",
+          "after": "9890af66ab90e74e0252b1f495067890d946e0103fc3b6caa0e74ad3206845cc"
+        },
+        {
+          "path": "packages/client/ui-settings-general/README.i18n.yaml",
+          "before": "ac68023f95af0afb3dde601523d433746e741e78ed417c0da37570e7fe748c79",
+          "after": "5f094c146bbcc7ff69a92edf8b954c5ddf4c8df4210186f88a0f277210dd9fe7"
+        },
+        {
+          "path": "packages/client/ui-settings-general/README.md",
+          "before": "be8ee0063561ac6ade8ec188e4f3941eee8595596dfeeed79d79ab4fa7f6a47c",
+          "after": "a78e0b3f50a87711a7362fe0b7aef40ee5335fb1e2f7910bbc9ba4e85f95a8a8"
+        }
+      ],
+      "diff": "desktop-update-availability.patch"
+    },
+    {
+      "id": "office-fixture-determinism",
+      "purpose": "Office 验收样本使用固定 ZIP 时间戳，确保原文件下载与稍后校验的字节一致，不改变文档预览或转换行为。",
+      "tests": [
+        "apps/product-desktop/tests/office-fixture.spec.ts",
+        "apps/web/tests/deepseek-harness-catalog.e2e.ts"
+      ],
+      "files": [
+        {
+          "path": "apps/web/tests/office-fixture.ts",
+          "before": "e1bd9c76616d6e3168b3ea47220d7589090c1f489e12d89c551c94b1dc32f68d",
+          "after": "4c4db9fbe0e9ee0c463cb4bb21971281613568a8a72e2571fa9f7a00e609e65d"
+        }
+      ],
+      "diff": "office-fixture-determinism.patch"
     }
   ]
 }

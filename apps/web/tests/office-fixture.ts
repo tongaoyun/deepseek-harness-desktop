@@ -50,5 +50,7 @@ export function realOfficeBytes(extension: 'doc' | 'docx' | 'xls' | 'xlsx' | 'pp
   }
   files['_rels/.rels'] = `<Relationships xmlns="${REL_NS}"><Relationship Id="rId1" Type="${OFFICE_REL_NS}/officeDocument" Target="${main}"/></Relationships>`
   files['[Content_Types].xml'] = `<Types xmlns="${CONTENT_NS}"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>${Object.entries(parts).map(([part, type]) => `<Override PartName="/${part}" ContentType="${type}"/>`).join('')}</Types>`
-  return zipSync(Object.fromEntries(Object.entries(files).map(([path, content]) => [path, strToU8(content)])))
+  return zipSync(Object.fromEntries(Object.entries(files).map(([path, content]) => [path, strToU8(content)])), {
+    mtime: new Date(2000, 0, 1),
+  })
 }

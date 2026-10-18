@@ -45,11 +45,14 @@ const PANEL_COMPONENTS = {
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'deepseek-harness-product: dictionaries')
   registerKnowledgeToolResults(ctx)
+  const carrier = (globalThis as { dshDesktop?: { protocolVersion?: number; updates?: { check(): Promise<void> } } }).dshDesktop
+  const updates = carrier?.protocolVersion === 1 ? carrier.updates : undefined
   ctx.slots.inject('settings.launcher', () => ctx.slots.register({
     // The browser slot facade assigns the product's shadowing rank. Supplying
     // a fixed value here bypasses that rank and can leave the official account
     // launcher as the winner when the product package is reloaded.
     name: 'settings.launcher', locale: NS,
+    inject: () => updates === undefined ? {} : { openSoftwareUpdate: () => updates.check() },
   }, DeepSeekHarnessSettingsMenu))
   const t = ctx.locale.bind(NS)
   const actions = createHarnessActions(ctx)

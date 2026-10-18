@@ -1708,6 +1708,33 @@ describe('desktop main startup', () => {
     expect(harness.updateDownload).not.toHaveBeenCalled()
   })
 
+  it('explains unavailable updates without an error or download', async () => {
+    await readyForUpdate()
+    harness.updateCheck.mockResolvedValueOnce({ phase: 'unavailable' })
+    await invoke(DESKTOP_IPC.updatesCheck, 'app')
+    expect(harness.updateCheck).toHaveBeenLastCalledWith(true)
+    expect(harness.dialog.showMessageBox).toHaveBeenLastCalledWith(expect.objectContaining({
+      type: 'info', title: en.updateCheckTitle, message: en.updateUnavailable,
+      detail: `Current version: 1.0.0\n\n${en.updateUnavailableDetail}`,
+    }))
+    expect(harness.updateDownload).not.toHaveBeenCalled()
+    expect(harness.updateInstall).not.toHaveBeenCalled()
+  })
+
+  it('requires download approval from the explicit check entry and rejects foreign callers', async () => {
+    await readyForUpdate()
+    const handler = harness.handlers.get(DESKTOP_IPC.updatesCheck)!
+    await expect(handler({ senderFrame: { url: 'https://other.example/' } })).rejects.toThrow('unowned renderer')
+    harness.updateCheck.mockResolvedValueOnce({ phase: 'available', version: '1.0.1-nightly.1' })
+    harness.dialog.showMessageBox.mockResolvedValueOnce({ response: 0 }).mockResolvedValueOnce({ response: 1 })
+    await invoke(DESKTOP_IPC.updatesCheck, 'app')
+    expect(harness.dialog.showMessageBox).toHaveBeenLastCalledWith(expect.objectContaining({
+      buttons: [en.updateDownload], cancelId: 1,
+    }))
+    expect(harness.updateDownload).not.toHaveBeenCalled()
+    expect(harness.updateInstall).not.toHaveBeenCalled()
+  })
+
   it('reports a stale download confirmation as a download failure', async () => {
     await readyForUpdate()
     harness.updateCheck.mockResolvedValueOnce({ phase: 'available', version: '1.0.1-nightly.1' })

@@ -7,10 +7,10 @@
   height: 28px;
   padding: 0 8px;
   box-sizing: border-box;
-  border: 1px solid color-mix(in srgb, var(--dsw-alias-brand-primary-new-colorprimary-new-color) 20%, transparent);
+  border: 0;
   border-radius: var(--dsw-radius-sm);
   color: var(--dsw-alias-brand-primary-new-colorprimary-new-color);
-  background: color-mix(in srgb, var(--dsw-alias-brand-primary-new-colorprimary-new-color) 8%, transparent);
+  background: transparent;
   font-family: inherit;
   font-size: 12px;
   font-weight: 500;
@@ -18,6 +18,15 @@
   text-align: left;
   white-space: nowrap;
   cursor: pointer;
+}
+
+.indicator:hover {
+  background: color-mix(in srgb, var(--dsw-alias-brand-primary-new-colorprimary-new-color) 8%, transparent);
+}
+
+.indicator:focus-visible {
+  outline: 2px solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
+  outline-offset: 2px;
 }
 
 .icon {
