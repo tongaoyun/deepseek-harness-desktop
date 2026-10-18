@@ -47,12 +47,30 @@ it('fails a stalled Electron close after terminating its real child and grandchi
     catch (error) { if (error instanceof SyntaxError || error instanceof Error && 'code' in error && error.code === 'ENOENT') return; throw error }
   })
   await expect(closeElectronAcceptance({ process: () => child, close: () => new Promise(() => {}) }, 1000))
-    .rejects.toThrow('close timed out after 1000 ms')
+    .rejects.toThrow('close timed out after 1000 ms: {"applicationClosed":false,"processClosed":false,')
   await waitFor(async () => {
     return pids.every(pid => !processIsRunning(pid)) ? true : undefined
   })
   expect(child.listenerCount('close')).toBe(0)
 }, 30_000)
+
+it('distinguishes a completed Playwright close from an owned process still running', async () => {
+  const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore', detached: process.platform !== 'win32' })
+  const exited = once(child, 'close')
+  onTestFinished(async () => { await terminateAcceptanceTree(child); await exited })
+  await expect(closeElectronAcceptance({ process: () => child, close: () => Promise.resolve() }, 1000))
+    .rejects.toThrow('close timed out after 1000 ms: {"applicationClosed":true,"processClosed":false,')
+  expect(child.exitCode !== null || child.signalCode !== null).toBe(true)
+})
+
+it('distinguishes a stopped process from a Playwright close still pending', async () => {
+  const child = spawn(process.execPath, ['-e', ''], { stdio: 'ignore', detached: process.platform !== 'win32' })
+  const exited = once(child, 'close')
+  onTestFinished(async () => { await terminateAcceptanceTree(child); await exited })
+  await exited
+  await expect(closeElectronAcceptance({ process: () => child, close: () => new Promise(() => {}) }, 1000))
+    .rejects.toThrow('close timed out after 1000 ms: {"applicationClosed":false,"processClosed":true,')
+})
 
 it('preserves a close error after joining the owned process', async () => {
   const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore', detached: process.platform !== 'win32' })
