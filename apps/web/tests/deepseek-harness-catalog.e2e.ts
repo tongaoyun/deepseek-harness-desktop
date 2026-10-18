@@ -2356,7 +2356,7 @@ for (const { mode, installed, surface } of desktopCarriers) {
         const pinnedPath = join(home, 'product-capabilities-v1/tasks-v1', `${prepared.presetId}.json`)
         const restart = async (reason: string) => {
           expect(tripwire.pageErrors).toEqual([])
-          await expect.poll(() => page.getByRole('button', { name: /^(Stop generating|停止生成)$/, exact: true }).count()).toBe(0)
+          await expect.poll(() => page.locator('[data-chat-running]').count()).toBe(0)
           const closing = app!
           app = undefined
           diagnostics.push(`Acceptance restart: ${reason}\n`)
