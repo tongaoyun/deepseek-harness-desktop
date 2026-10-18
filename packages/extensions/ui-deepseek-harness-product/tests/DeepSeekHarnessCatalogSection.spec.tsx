@@ -401,7 +401,29 @@ describe('DeepSeekHarness capability navigation', () => {
     expect(openSettings).toHaveBeenCalledOnce()
   })
 
+  it('opens the native software updater from the more menu and permits retry after failure', async () => {
+    const pending = deferred<undefined>()
+    const openSoftwareUpdate = vi.fn().mockRejectedValueOnce(new Error('private updater diagnostic'))
+      .mockImplementationOnce(() => pending.promise)
+    render(<DeepSeekHarnessSettingsMenu t={t} wide settingsOpen={false} openSettings={vi.fn()}
+      openOnboarding={vi.fn()} openSoftwareUpdate={openSoftwareUpdate} />)
+    fireEvent.click(screen.getByRole('button', { name: zh.menu }))
+    expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual([zh.settings, zh.softwareUpdate, zh.feedbackTitle])
+    fireEvent.click(screen.getByRole('menuitem', { name: zh.softwareUpdate }))
+    expect((await screen.findByRole('alert')).textContent).toBe(zh.softwareUpdateFailed)
+    expect(document.body.textContent).not.toContain('private updater diagnostic')
+    fireEvent.click(screen.getByRole('button', { name: zh.menu }))
+    fireEvent.click(screen.getByRole('menuitem', { name: zh.softwareUpdate }))
+    fireEvent.click(screen.getByRole('button', { name: zh.menu }))
+    expect(screen.getByRole('menuitem', { name: zh.softwareUpdate })).toHaveProperty('disabled', true)
+    await act(async () => { pending.resolve(undefined) })
+    expect(openSoftwareUpdate).toHaveBeenCalledTimes(2)
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
   it('registers capability panels in the sidebar and none in Settings', () => {
+    const openUpdate = vi.fn(async () => {})
+    Object.defineProperty(globalThis, 'dshDesktop', { configurable: true, value: { protocolVersion: 1, updates: { check: openUpdate } } })
     const registrations: Array<{ options: Record<string, unknown>; component: unknown }> = []
     const selectPanel = vi.fn()
     const registerCommand = vi.fn((_command: CommandContribution) => () => {})
@@ -433,6 +455,9 @@ describe('DeepSeekHarness capability navigation', () => {
     // Let the browser slot facade allocate the shadowing rank so this product
     // launcher replaces the official account launcher after a reload.
     expect(settingsLaunchers[0]?.options.priority).toBeUndefined()
+    const injectLauncher = settingsLaunchers[0]?.options.inject as () => { openSoftwareUpdate(): Promise<void> }
+    void injectLauncher().openSoftwareUpdate()
+    expect(openUpdate).toHaveBeenCalledOnce()
     expect(registrations.filter(entry => entry.options.name === 'conversation.input.left')
       .map(entry => entry.options.id)).toEqual(['product-knowledge'])
     expect(registrations.filter(entry => entry.options.name === 'conversation.hero.agentPreset')).toEqual([])

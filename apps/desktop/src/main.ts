@@ -885,6 +885,10 @@ async function main(): Promise<void> {
     assertProductSender(event)
     await openUpdatePrompt()
   })
+  ipcMain.handle(DESKTOP_IPC.updatesCheck, async (event) => {
+    assertProductSender(event)
+    await openUpdatePrompt(true)
+  })
 
   let promptOperation: Promise<void> | undefined
   let policyAuthenticationQueued = false
@@ -919,6 +923,12 @@ async function main(): Promise<void> {
         }
         if (isMandatory()) { mandatoryUI?.focus(); return }
         if (state.phase === 'error' && state.failedOperation === 'check') { await showUpdateFailure(state); return }
+        if (state.phase === 'unavailable') {
+          await ordinaryMessageBox({ type: 'info', title: locale.messages.updateCheckTitle,
+            message: locale.messages.updateUnavailable,
+            detail: `${formatDesktopMessage(locale.messages.updateCurrentDetail, { version: app.getVersion() })}\n\n${locale.messages.updateUnavailableDetail}` })
+          return
+        }
         if (state.phase === 'idle') {
           await ordinaryMessageBox({ type: 'info', title: locale.messages.updateCheckTitle,
             message: locale.messages.updateCurrent,

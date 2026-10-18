@@ -1,0 +1,318 @@
+diff --git a/apps/desktop/renderer/update-dialog.css b/apps/desktop/renderer/update-dialog.css
+index 98183989a5a8b027ef460d3bccdd84525410f698..687e6236f9956a4bddd4505f045af2f990e8d7d1 100644
+--- a/apps/desktop/renderer/update-dialog.css
++++ b/apps/desktop/renderer/update-dialog.css
+@@ -7,13 +7,13 @@
+ * { box-sizing: border-box; }
+ body { margin: 0; height: 100vh; display: grid; place-items: center; isolation: isolate; }
+ body::before { content: ""; position: fixed; inset: 0; z-index: -1; background: rgb(0 0 0 / 24%); }
+-main { width: min(380px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto; padding: 22px 24px 24px; border-radius: 24px; background: #fff; box-shadow: 0 0 1px rgb(0 0 0 / 20%), 0 0 4px rgb(0 0 0 / 2%), 0 12px 32px rgb(0 0 0 / 8%); }
++main { width: min(380px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto; padding: 20px 24px; border-radius: 8px; background: #fff; box-shadow: 0 0 1px rgb(0 0 0 / 20%), 0 0 4px rgb(0 0 0 / 2%), 0 12px 32px rgb(0 0 0 / 8%); }
+ header { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
+ main:focus { outline: none; }
+ h1 { margin: 0; min-height: 28px; font-size: 16px; font-weight: 500; line-height: 24px; overflow-wrap: anywhere; }
+ p { margin: 0; font-size: 14px; line-height: 22px; white-space: pre-wrap; overflow-wrap: anywhere; }
+-#actions { display: flex; flex-direction: column; gap: 8px; margin-top: 20px; position: sticky; bottom: 0; background: #fff; }
+-button { min-height: 44px; padding: 9px 16px; border: 0; border-radius: 12px; font-family: inherit; font-size: 14px; font-weight: 500; line-height: 22px; cursor: pointer; }
++#actions { display: flex; flex-direction: row-reverse; flex-wrap: wrap; gap: 8px; margin-top: 24px; position: sticky; bottom: 0; background: #fff; }
++button { min-height: 34px; max-width: 100%; padding: 6px 16px; border: 0; border-radius: 6px; font-family: inherit; font-size: 14px; font-weight: 500; line-height: 22px; overflow-wrap: anywhere; cursor: pointer; }
+ .primary { background: #0f1115; color: #fff; }
+ .secondary { background: #f5f5f5; color: inherit; }
+ .close { display: grid; place-items: center; flex: none; width: 28px; min-height: 28px; padding: 7px; border-radius: 50%; background: transparent; }
+diff --git a/apps/desktop/src/locale.ts b/apps/desktop/src/locale.ts
+index 5d9d4607c7d046006cb91d0ef41e5f7ba193b435..08dfbaf2685494cb0c30b4c86a9a4b2a6832fd0d 100644
+--- a/apps/desktop/src/locale.ts
++++ b/apps/desktop/src/locale.ts
+@@ -111,6 +111,8 @@ export const en = {
+   updateCheckTitle: 'Check for Updates',
+   updateCurrentDetail: 'Current version: {version}',
+   updateCurrent: 'You’re up to date!',
++  updateUnavailable: 'Automatic updates are unavailable in this build',
++  updateUnavailableDetail: 'This build has no update source. Install a release with automatic update support to check for newer versions.',
+   updateChecking: 'Checking for updates…',
+   updateDownload: 'Download update',
+   updateDownloadedTitle: 'Version {version} is ready to install',
+@@ -282,6 +284,8 @@ export const zh = {
+   updateCheckTitle: '检查更新',
+   updateCurrentDetail: '当前版本：{version}',
+   updateCurrent: '已是最新版本',
++  updateUnavailable: '当前版本暂不支持自动更新',
++  updateUnavailableDetail: '此版本未配置更新源，请安装支持自动更新的正式安装包后检查新版。',
+   updateChecking: '正在检查更新…',
+   updateDownload: '下载更新',
+   updateDownloadedTitle: '新版本 {version} 已准备就绪',
+diff --git a/apps/desktop/src/update-coordinator.ts b/apps/desktop/src/update-coordinator.ts
+index 3b83cea08fcd1cedff3d6acf6d43be5621f24324..b660e9c8e72a46cd7d5dc1803e0a695800216fa7 100644
+--- a/apps/desktop/src/update-coordinator.ts
++++ b/apps/desktop/src/update-coordinator.ts
+@@ -184,7 +184,7 @@ export class DesktopUpdateCoordinator {
+   private async doCheck(): Promise<DesktopUpdateState> {
+     try {
+       this.assertLive()
+-      if (!this.enabled()) throw new Error('desktop update: this application has no packaged update source')
++      if (!this.enabled()) return this.setState({ phase: 'unavailable' })
+       const result = await this.updater.checkForUpdates()
+       if (result === null) throw new Error('desktop update: no check result was returned')
+       const version = result.updateInfo.version
+diff --git a/apps/desktop/tests/README.i18n.yaml b/apps/desktop/tests/README.i18n.yaml
+index 601ce4b9f72182fcefc50b13c4ace9baeb44f68e..c7c265baabd83e997a01a4ed0df0aa5b4495c010 100644
+--- a/apps/desktop/tests/README.i18n.yaml
++++ b/apps/desktop/tests/README.i18n.yaml
+@@ -18,8 +18,8 @@
+   en: c4b4ee8763d8464a
+   zh: ee2159bc08966592
+ /desktop-local-update-verification/evidence:
+-  en: 331a6709d0f7d03f
+-  zh: 98499192ef9d3a81
++  en: 313d7937ed8f5766
++  zh: ecb8a86b25c74560
+ /desktop-local-update-verification/open-verification:
+   en: 20e9ea47acb1ff50
+   zh: acce24b56d57e12c
+diff --git a/apps/desktop/tests/README.md b/apps/desktop/tests/README.md
+index c4f628d5969f2a62cedaf3305b7816c136d67021..50edd71f12347eb3cac36e12dbb1ba64361c5f02 100644
+--- a/apps/desktop/tests/README.md
++++ b/apps/desktop/tests/README.md
+@@ -50,7 +50,7 @@ Packaging supervision fixtures control their Git metadata and use real file hash
+ | Mandatory policy | Flattened `40005`, exact release headers, guest requests, no-force validation, failure retention, interval/backoff, timeout, and disposal regressions pass |
+ | Ordinary scheduling | Fake-clock regressions with the real coordinator verify bounded jitter/backoff, manual joins, success reset, no automatic download retry, wall-clock independence, and disposal. Main-entry tests verify focus/resume throttling, immediate explicit checks, and quit cleanup |
+ | Actual mandatory window | Text-only server content, an embedded Windows shell frame with no additional native window and an enabled main window, Escape blocking, direct download, same-modal task confirmation, deferral, recovery-only page actions, navigation/copy feedback, and fresh policy clearance pass; a focused test verifies close-to-exit without clearing policy |
+-| Actual ordinary dialog | Isolated preload, 380px card, 24px corners, black primary button, parent blur, Escape cancellation retaining readiness, and task-warning approval with recorded installation handoff pass |
++| Actual ordinary dialog | Isolated preload, 380px content, 8px corners, bottom-right black primary button, parent blur, Escape cancellation retaining readiness, and task-warning approval with recorded installation handoff pass |
+ | Unlocked Windows interaction | OS-level clicks and screenshots of the actual mandatory renderer confirm Escape blocking, user-started download, readiness, red policy-error feedback, and modal clearance with the parent enabled again. A fixture-provided native task-warning dialog returns to readiness on deferral; task activity is simulated, not a full Host workload |
+ | Main entry | A known block refuses plugin mutations and recovery without stopping the Host; fresh success closes the block; packaged policy ignores environment overrides; installer failure after a clean stop restores the Host before another confirmation and retains mandatory blocking |
+ | Host task protection | The actual controller with substituted composition detects running agents, queued turns/steps, and global and agent jobs; API reads do not warn. Admission locking returns 503 for new requests, drains existing requests, and rechecks tasks; unlock restores admission |
+diff --git a/apps/desktop/tests/README.zh.md b/apps/desktop/tests/README.zh.md
+index 863b297b591029b3427ecd8eb3715ceb4d6c9132..9dd5c316cb1e83ad73b6755c6d8b8f27ed0bd7d0 100644
+--- a/apps/desktop/tests/README.zh.md
++++ b/apps/desktop/tests/README.zh.md
+@@ -50,7 +50,7 @@ Host、客户端与 Desktop 产物构建完成后，在 Windows 仓库根目录
+ | 强更策略 | 扁平化 `40005`、完整发布头、游客请求、无需强更验证、失败保留、间隔／退避、超时和 dispose（资源释放）回归通过 |
+ | 常规调度 | 真实协调器配合模拟时钟的回归验证有上限的抖动／退避、手动复用、成功重置、不自动重试下载、不受系统时钟调整影响，以及 dispose。主入口测试验证聚焦／恢复节流、显式检查立即执行和退出清理 |
+ | 真实强更窗口 | 服务端纯文本内容、Windows 内嵌 shell frame、不创建额外原生窗口且主窗口保持启用、Esc 阻塞、直接下载、同弹窗任务确认、稍后更新、仅恢复态页面操作、导航／复制反馈和新策略解除通过；定向测试验证关闭时退出且不清除策略 |
+-| 真实常规弹窗 | 隔离预加载、380px 卡片、24px 圆角、黑色主按钮、父窗口模糊、Esc 取消后保留就绪，以及任务警告批准后的安装交接记录均通过 |
++| 真实常规弹窗 | 隔离预加载、380px 内容框、8px 圆角、底部靠右的黑色主按钮、父窗口模糊、Esc 取消后保留就绪，以及任务警告批准后的安装交接记录均通过 |
+ | 解锁后的 Windows 交互 | 对真实强更页面执行系统级点击并截图，确认 Esc 阻塞、用户发起下载、就绪、红色策略错误提示，以及弹窗解除后父窗口恢复可用。fixture 提供的原生任务警告弹窗在选择稍后更新后回到就绪态；任务活动为模拟，不是完整 Host 工作负载 |
+ | 主入口 | 已知阻塞拒绝插件修改和恢复，但不停止 Host；新成功响应关闭阻塞；打包策略忽略环境覆盖；正常停止后的安装器失败在下次确认前恢复 Host，并保留强更阻塞 |
+ | Host 任务保护 | 替换组合环境后的真实控制器识别运行中的 agent、排队的 turn／step、全局和 agent job；API 读取不触发警告。请求准入锁定向新请求返回 503，等待已有请求结束并复查任务；解锁恢复准入 |
+diff --git a/apps/desktop/tests/fixtures/update-dialogs.mjs b/apps/desktop/tests/fixtures/update-dialogs.mjs
+index f4fa0a55f6c31878cd711ed1ab84b57ea9378e37..e8fef6cf3e91ccfd9253d3a4c35c3f66d7830de9 100644
+--- a/apps/desktop/tests/fixtures/update-dialogs.mjs
++++ b/apps/desktop/tests/fixtures/update-dialogs.mjs
+@@ -63,7 +63,7 @@ export async function qualifyUpdateDialogs(root, fixture) {
+         focused: document.activeElement.id, isolated: typeof window.require === 'undefined',
+       })`)
+       assert.deepEqual(view, { title: options.message, detail: options.detail, buttons: options.buttons,
+-        width: 380, radius: '24px', primary: 'rgb(15, 17, 21)', focused: 'dialog', isolated: true })
++        width: 380, radius: '8px', primary: 'rgb(15, 17, 21)', focused: 'dialog', isolated: true })
+       assert.equal(await parent.webContents.executeJavaScript('getComputedStyle(document.body).filter'), 'none')
+       assert.equal(f.installations.length, 0)
+       assert.equal(await window.webContents.executeJavaScript(`
+diff --git a/apps/desktop/tests/preload-app.spec.ts b/apps/desktop/tests/preload-app.spec.ts
+index e238f583c1b03e27738df0092d07ddcf2fdcf673..b4a42ca3153fc5b955c0df9dd95ec74809670bf2 100644
+--- a/apps/desktop/tests/preload-app.spec.ts
++++ b/apps/desktop/tests/preload-app.spec.ts
+@@ -43,7 +43,10 @@ it('limits product documents to update status and a native confirmation action',
+   const api = electron.contextBridge.exposeInMainWorld.mock.calls.find(([name]) => name === 'dshDesktop')?.[1] as DshDesktopProductApi
+   await api.updates.status()
+   await api.updates.open()
+-  expect(electron.ipcRenderer.invoke.mock.calls).toEqual([[DESKTOP_IPC.updatesStatus], [DESKTOP_IPC.updatesOpen]])
++  await api.updates.check()
++  expect(electron.ipcRenderer.invoke.mock.calls).toEqual([
++    [DESKTOP_IPC.updatesStatus], [DESKTOP_IPC.updatesOpen], [DESKTOP_IPC.updatesCheck],
++  ])
+   expect(api).not.toHaveProperty('plugins')
+   expect(api).not.toHaveProperty('backend')
+   expect(api.updates).not.toHaveProperty('install')
+diff --git a/apps/desktop/tests/update-coordinator.spec.ts b/apps/desktop/tests/update-coordinator.spec.ts
+index 1c6e9da1c775760dd28373411620b2b8ed57f813..0b27b96d44af5d990adeb1b14acb430a0559c4bd 100644
+--- a/apps/desktop/tests/update-coordinator.spec.ts
++++ b/apps/desktop/tests/update-coordinator.spec.ts
+@@ -47,7 +47,7 @@ describe('desktop release metadata', () => {
+ const coordinators: InstanceType<typeof DesktopUpdateCoordinator>[] = []
+ afterEach(() => { for (const item of coordinators.splice(0)) item.dispose() })
+ 
+-function fixture(channel: 'nightly' | 'latest' = 'nightly', version = '1.1.0-alpha.1') {
++function fixture(channel: 'nightly' | 'latest' = 'nightly', version = '1.1.0-alpha.1', enabled = true) {
+   const events = new EventEmitter()
+   const checkForUpdates = vi.fn(async () => ({
+     isUpdateAvailable: true,
+@@ -66,13 +66,24 @@ function fixture(channel: 'nightly' | 'latest' = 'nightly', version = '1.1.0-alp
+   const updater = Object.assign(events, { checkForUpdates, downloadUpdate, quitAndInstall }) as unknown as AppUpdater
+   const coordinator = new DesktopUpdateCoordinator(
+     (state) => { states.push(state); return state },
+-    beforeRestart, updater, () => true, () => version, downloadResult, channel,
++    beforeRestart, updater, () => enabled, () => version, downloadResult, channel,
+   )
+   coordinators.push(coordinator)
+   return { coordinator, updater, events, states, checkForUpdates, downloadUpdate, quitAndInstall, beforeRestart, downloadResult }
+ }
+ 
+ describe('desktop update coordinator', () => {
++  it('reports an unavailable update source without a network request or retryable failure', async () => {
++    const f = fixture('nightly', '1.1.0-alpha.1', false)
++    expect(await f.coordinator.check()).toEqual({ phase: 'unavailable' })
++    expect(await f.coordinator.check(true)).toEqual({ phase: 'unavailable' })
++    expect(f.coordinator.state).toEqual({ phase: 'unavailable' })
++    expect(f.states.every(state => state.phase === 'unavailable')).toBe(true)
++    expect(f.checkForUpdates).not.toHaveBeenCalled()
++    expect(f.downloadUpdate).not.toHaveBeenCalled()
++    expect(f.quitAndInstall).not.toHaveBeenCalled()
++  })
++
+   it('keeps safe preparation diagnostics separate and clears them on an explicit retry', async () => {
+     const f = fixture()
+     await f.coordinator.check()
+diff --git a/packages/client/ui-settings-general/README.i18n.yaml b/packages/client/ui-settings-general/README.i18n.yaml
+index a458bb8cf072d91ee40a90a31888440344ea75e0..70da070d149bf36289ba68bc2fda12e30d7baabe 100644
+--- a/packages/client/ui-settings-general/README.i18n.yaml
++++ b/packages/client/ui-settings-general/README.i18n.yaml
+@@ -15,8 +15,8 @@
+   en: 2843d46e95311bce
+   zh: ec11bdeb5d3ce818
+ /deepseek-ai-dsh-client-ui-settings-general/use-this-package:
+-  en: 2bc21e57fe17eab9
+-  zh: e441cd313f747b22
++  en: 17ac3d20de1cd0b4
++  zh: 9699b86e8e8dfa6b
+ /deepseek-ai-dsh-client-ui-settings-general/use-this-package/the-general-section:
+   en: 8b8a7c6287bb303b
+   zh: 19535112531aedd5
+diff --git a/packages/client/ui-settings-general/README.md b/packages/client/ui-settings-general/README.md
+index b005515ea409486cbc1cdef525863e3bcbcb67e0..558cbe222eb7c903edb6a6205f4b81dc6bfa395e 100644
+--- a/packages/client/ui-settings-general/README.md
++++ b/packages/client/ui-settings-general/README.md
+@@ -35,7 +35,7 @@ When the page reconnects to a Host running another release, a **Service version
+ 
+ When the section navigation exceeds the panel's available height, the list scrolls independently of the settings content and keeps the Settings title fixed.
+ 
+-In Desktop, the account-row update control shows availability, progress, verification, readiness, and persistent retry feedback. It shares the connection indicator’s 28px height, 8px corners, 14px icon slot, 4px icon gap, and 12px medium text with an 18px line height; update-state border, fill, and text colors remain independently defined. Retry text and its dot use the same brand blue as other update labels; numeric download progress has no ellipsis. The preload carries semantic phase, version, progress, and classified failures; the component resolves every visible and accessible string from the active `settings` locale, including after an in-application language change. Selecting an available update starts downloading; installation requires a separate shell-owned confirmation. A collapsed sidebar shows the same status as a brand-blue dot on its top expand button, including failures. Connection feedback takes priority except during shell-reported installation, when the expected backend disconnect must not hide update status. Failure restores connection feedback. Both controls share one carrier subscription; browser code cannot choose packages or authorize installation. [Desktop updates](../../../apps/desktop/README.md) owns the release workflow. Checking, verifying, and preparing-to-restart tooltips show only the supplied version; without a version, they retain the state label. Desktop update tooltips preserve the complete version and prerelease suffix without adding v or V; their error summaries match the shell update dialogs.
++In Desktop, the account-row update control shows availability, progress, verification, readiness, and retry feedback for actual failures. The `unavailable` phase for builds without an update source hides both the account-row control and collapsed sidebar badge. The control uses a 28px height, 14px icon slot, 4px icon gap, and 12px medium text with an 18px line height; it has no border or fill until hovered. Retry text and its dot use the same brand blue as other update labels; numeric download progress has no ellipsis. The preload carries semantic phase, version, progress, and classified failures; the component resolves every visible and accessible string from the active `settings` locale, including after an in-application language change. Selecting an available update starts downloading; installation requires a separate shell-owned confirmation. A collapsed sidebar shows the same status as a brand-blue dot on its top expand button, including failures. Connection feedback takes priority except during shell-reported installation, when the expected backend disconnect must not hide update status. Failure restores connection feedback. Both controls share one carrier subscription; browser code cannot choose packages or authorize installation. [Desktop updates](../../../apps/desktop/README.md) owns the release workflow. Checking, verifying, and preparing-to-restart tooltips show only the supplied version; without a version, they retain the state label. Desktop update tooltips preserve the complete version and prerelease suffix without adding v or V; their error summaries match the shell update dialogs.
+ 
+ Settings visibility and section selection live in the shell owner store. The shell supplies the effective Settings binding to the contributed launcher for menu keycaps and `aria-keyshortcuts`; the fallback button uses the same binding for hover and keyboard-focus hints and `aria-keyshortcuts`. The Settings command (Desktop: `Mod+,`; Windows/macOS Web: `Mod+Alt+,`) toggles the dialog when Settings is in front or no modal is open; the sidebar control opens the same dialog. The command cannot open or close Settings while the shortcut reference or another modal is in front. Held-key repeats do nothing. Initial focus lands on the selected section in the navigation, or on the title when no sections are available, without drawing a focus outline. Tab and directional navigation retain their visible focus indicators. `Mod+/` can open the shortcut reference above Settings; `Escape` closes the top dialog and restores focus to its invoking control. Return focus omits outlines after shortcut, Escape, or pointer dismissal.
+ 
+diff --git a/packages/client/ui-settings-general/README.zh.md b/packages/client/ui-settings-general/README.zh.md
+index 8628916c7b577df1e9ad001132ebb407ae58f7a0..41cd83c4022553451eb07f812287093a76c580d5 100644
+--- a/packages/client/ui-settings-general/README.zh.md
++++ b/packages/client/ui-settings-general/README.zh.md
+@@ -35,7 +35,7 @@ kind: "package-reference"
+ 
+ 当分区导航超出面板可用高度时，列表独立于设置内容滚动，并保持「设置」标题固定。
+ 
+-在 Desktop 中，账户行更新控件显示可用版本、进度、验证、就绪和持久重试反馈。它与连接指示器共用 28px 高度、8px 圆角、14px 图标占位、4px 图文间距，以及 12px 中等字重文字和 18px 行高；更新状态的边框、填充和文字颜色独立定义。重试文字及其圆点与其他更新文案使用相同的品牌蓝色；数字下载进度不带省略号。预加载仅传递语义化阶段、版本、进度和失败类别；组件从当前 `settings` locale 解析全部可见与无障碍文案，并在应用内语言变化后同步更新。选择可用更新即开始下载；安装需要独立的壳拥有的确认。侧栏收起时，其顶部展开按钮以品牌蓝色圆点显示相同状态，包括失败状态。连接反馈通常优先展示，但壳报告正在安装时，预期的后端断开不能遮盖更新状态；失败后恢复连接反馈。两个控件共用一次载体订阅；浏览器代码不能选择安装包或授权安装。[Desktop 更新](../../../apps/desktop/README.zh.md)负责发布流程。检查中、校验中和准备重启状态的悬浮提示只显示已提供的版本号；没有版本号时保留状态文案。桌面更新提示完整保留版本号及预发布后缀，不额外添加 v 或 V；错误提示与桌面升级弹窗保持一致。
++在 Desktop 中，账户行更新控件显示可用版本、进度、验证、就绪和真实故障的重试反馈。未配置更新源的 `unavailable` 状态不显示账户行控件或收起侧栏的徽标。控件使用 28px 高度、14px 图标占位、4px 图文间距，以及 12px 中等字重文字和 18px 行高；默认无边框、无底色，悬浮时显示浅色背景。重试文字及其圆点与其他更新文案使用相同的品牌蓝色；数字下载进度不带省略号。预加载仅传递语义化阶段、版本、进度和失败类别；组件从当前 `settings` locale 解析全部可见与无障碍文案，并在应用内语言变化后同步更新。选择可用更新即开始下载；安装需要独立的壳拥有的确认。侧栏收起时，其顶部展开按钮以品牌蓝色圆点显示相同状态，包括失败状态。连接反馈通常优先展示，但壳报告正在安装时，预期的后端断开不能遮盖更新状态；失败后恢复连接反馈。两个控件共用一次载体订阅；浏览器代码不能选择安装包或授权安装。[Desktop 更新](../../../apps/desktop/README.zh.md)负责发布流程。检查中、校验中和准备重启状态的悬浮提示只显示已提供的版本号；没有版本号时保留状态文案。桌面更新提示完整保留版本号及预发布后缀，不额外添加 v 或 V；错误提示与桌面升级弹窗保持一致。
+ 
+ 设置的可见状态和分区选择由 shell owner store 保存。外壳将设置命令的有效绑定传给入口贡献，用于菜单键帽和 `aria-keyshortcuts`；回退按钮使用相同绑定提供悬停、键盘聚焦提示和 `aria-keyshortcuts`。设置位于最前方或没有模态弹窗时，设置命令（Desktop 为 `Mod+,`，Windows/macOS Web 为 `Mod+Alt+,`）切换设置弹窗的开关；侧栏控件打开同一弹窗。快捷键速查或其他模态弹窗位于前方时，该命令不能打开或关闭设置。长按产生的重复按键不执行操作。初始焦点落在导航中选中的分区；没有可用分区时落在标题上，均不绘制焦点外轮廓线。Tab 和方向键导航保留可见焦点提示。`Mod+/` 可在设置上方打开快捷键速查；`Escape` 关闭最上层弹窗，焦点返回触发该弹窗的控件。通过快捷键、Esc 或鼠标关闭后的回焦均不绘制外轮廓线。
+ 
+diff --git a/packages/client/ui-settings-general/src/client/DesktopUpdateIndicator.module.css b/packages/client/ui-settings-general/src/client/DesktopUpdateIndicator.module.css
+index b5b0eea65899dcb24da72854d00a1cf9b1a32ae4..00767717f68ccbeda7b356a4ec399b690c8e0c5c 100644
+--- a/packages/client/ui-settings-general/src/client/DesktopUpdateIndicator.module.css
++++ b/packages/client/ui-settings-general/src/client/DesktopUpdateIndicator.module.css
+@@ -7,10 +7,10 @@
+   height: 28px;
+   padding: 0 8px;
+   box-sizing: border-box;
+-  border: 1px solid color-mix(in srgb, var(--dsw-alias-brand-primary-new-colorprimary-new-color) 20%, transparent);
++  border: 0;
+   border-radius: var(--dsw-radius-sm);
+   color: var(--dsw-alias-brand-primary-new-colorprimary-new-color);
+-  background: color-mix(in srgb, var(--dsw-alias-brand-primary-new-colorprimary-new-color) 8%, transparent);
++  background: transparent;
+   font-family: inherit;
+   font-size: 12px;
+   font-weight: 500;
+@@ -20,6 +20,15 @@
+   cursor: pointer;
+ }
+ 
++.indicator:hover {
++  background: color-mix(in srgb, var(--dsw-alias-brand-primary-new-colorprimary-new-color) 8%, transparent);
++}
++
++.indicator:focus-visible {
++  outline: 2px solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
++  outline-offset: 2px;
++}
++
+ .icon {
+   display: grid;
+   place-items: center;
+diff --git a/packages/client/ui-settings-general/src/client/DesktopUpdateIndicator.tsx b/packages/client/ui-settings-general/src/client/DesktopUpdateIndicator.tsx
+index 588b3befdb5f19ed8b401c180f67b4ca9689a8d2..10da08dc8f66aade75c3de4d952a3639a9d5148c 100644
+--- a/packages/client/ui-settings-general/src/client/DesktopUpdateIndicator.tsx
++++ b/packages/client/ui-settings-general/src/client/DesktopUpdateIndicator.tsx
+@@ -14,6 +14,7 @@ const BUSY_PHASES: ReadonlySet<DesktopUpdatePresentation['phase']> = new Set([
+ function updateCopy(state: DesktopUpdatePresentation, t: SettingsTranslate): { label: string; detail: string } {
+   const labels: Readonly<Record<DesktopUpdatePresentation['phase'], string>> = {
+     idle: '',
++    unavailable: '',
+     checking: t('desktop.update.checking'),
+     available: t('desktop.update.available'),
+     downloading: t('desktop.update.progress', { percent: state.percent ?? 0 }),
+@@ -61,7 +62,7 @@ export function DesktopUpdateIndicator({ wide, hidden, t, view, onOpen }: {
+   onOpen: () => void
+ }) {
+   const { presentation: state, failed, opening } = view
+-  if (!wide || hidden || (!failed && (state === undefined || state.phase === 'idle'))) return null
++  if (!wide || hidden || (!failed && (state === undefined || state.phase === 'idle' || state.phase === 'unavailable'))) return null
+   const retryLabel = t('desktop.update.retry')
+   const copy = state === undefined ? { label: retryLabel, detail: retryLabel } : updateCopy(state, t)
+   const label = failed ? retryLabel : copy.label
+@@ -90,7 +91,7 @@ export function DesktopUpdateBadge({ useDesktopUpdate, useConnectionState, t }:
+   const { presentation: state, failed } = useDesktopUpdate(value => value)
+   const connection = useConnectionState(value => value)
+   if (((connection === 'disconnected' || connection === 'connecting') && state?.phase !== 'installing')
+-    || (!failed && (state === undefined || state.phase === 'idle'))) return null
++    || (!failed && (state === undefined || state.phase === 'idle' || state.phase === 'unavailable'))) return null
+   const retryLabel = t('desktop.update.retry')
+   const copy = state === undefined ? { label: retryLabel, detail: retryLabel } : updateCopy(state, t)
+   const label = failed ? retryLabel : copy.label
+diff --git a/packages/client/ui-settings-general/src/types.ts b/packages/client/ui-settings-general/src/types.ts
+index f9dae34f87cfbbc0e45e136082fb8f2e0fbf674e..3b025849fa5ed26076d3df5c5d61cb1f8c618d0b 100644
+--- a/packages/client/ui-settings-general/src/types.ts
++++ b/packages/client/ui-settings-general/src/types.ts
+@@ -14,7 +14,7 @@ export type DesktopUpdateFailureKind =
+ 
+ /** Public semantic preload fields consumed by the settings row. */
+ export interface DesktopUpdatePresentation {
+-  readonly phase: 'idle' | 'checking' | 'available' | 'downloading' | 'verifying' | 'installing' | 'ready' | 'error'
++  readonly phase: 'idle' | 'unavailable' | 'checking' | 'available' | 'downloading' | 'verifying' | 'installing' | 'ready' | 'error'
+   readonly version?: string
+   readonly percent?: number
+   readonly failure?: DesktopUpdateFailureKind
+diff --git a/packages/client/ui-settings-general/tests/components.client.spec.tsx b/packages/client/ui-settings-general/tests/components.client.spec.tsx
+index ce7405affee9a9707c7734d876abc12682560b92..86d362b2f6c3cc2f1fdbf7ad14f498c4340bc4ee 100644
+--- a/packages/client/ui-settings-general/tests/components.client.spec.tsx
++++ b/packages/client/ui-settings-general/tests/components.client.spec.tsx
+@@ -68,6 +68,9 @@ describe('Desktop collapsed update badge', () => {
+     state = { failed: false, opening: false, presentation: { phase: 'error', failure: 'install' } }
+     view.rerender(<DesktopUpdateBadge {...props} />)
+     expect(screen.getByRole('img', { name: en['desktop.update.retry'] })).toBeTruthy()
++    state = { failed: false, opening: false, presentation: { phase: 'unavailable' } }
++    view.rerender(<DesktopUpdateBadge {...props} />)
++    expect(screen.queryByRole('img')).toBeNull()
+     for (const value of ['connecting', 'disconnected'] as const) {
+       connection = value
+       view.rerender(<DesktopUpdateBadge {...props} />)
+diff --git a/packages/client/ui-settings-general/tests/desktop-update.client.spec.tsx b/packages/client/ui-settings-general/tests/desktop-update.client.spec.tsx
+index 505a02d969c91c53cacad61882b090f3c2d5cb4b..61c8246e6d92531b27ced449f88ce84764594f6f 100644
+--- a/packages/client/ui-settings-general/tests/desktop-update.client.spec.tsx
++++ b/packages/client/ui-settings-general/tests/desktop-update.client.spec.tsx
+@@ -50,6 +50,17 @@ function fixture() {
+ 
+ const available = { phase: 'available', version: '1.0.1' } as const
+ 
++it('removes the retry indicator when the build has no update source', async () => {
++  const f = fixture()
++  try {
++    await f.emit({ phase: 'error', failure: 'check' })
++    expect(screen.getByRole('button', { name: '重试更新' })).toBeTruthy()
++    await f.emit({ phase: 'unavailable' })
++    expect(screen.queryByRole('button')).toBeNull()
++    expect(f.open).not.toHaveBeenCalled()
++  } finally { f.view.unmount(); f.status.resolve({ phase: 'unavailable' }) }
++})
++
+ it('renders nothing outside the Desktop carrier', () => {
+   const source = new DesktopUpdateSource(undefined)
+   const view = render(<DesktopUpdateIndicator wide hidden={false} t={translate(zh)}

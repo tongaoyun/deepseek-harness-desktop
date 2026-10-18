@@ -94,7 +94,7 @@ index 898c0eb596a1bee780d088e6ccfa42928a2ae7b5..29a3e26c8ed30b57b02f6f47364d2aa6
        <CodeBlock
 diff --git a/packages/client/ui-sidebar-documentpreview/src/client/document/DocumentPreviewSurface.module.css b/packages/client/ui-sidebar-documentpreview/src/client/document/DocumentPreviewSurface.module.css
 new file mode 100644
-index 0000000000000000000000000000000000000000..ddda4a226bc2c4bc4c61ecc55eb1b106beefb5e4
+index 0000000000000000000000000000000000000000..cf4cc64ad55690aefcc1e183b37b044a6d301d3f
 --- /dev/null
 +++ b/packages/client/ui-sidebar-documentpreview/src/client/document/DocumentPreviewSurface.module.css
 @@ -0,0 +1,68 @@
@@ -114,7 +114,7 @@ index 0000000000000000000000000000000000000000..ddda4a226bc2c4bc4c61ecc55eb1b106
 +  gap: 6px;
 +  flex: none;
 +  padding: 4px 12px;
-+  border-bottom: 1px solid var(--dsw-alias-border-l3);
++  border-bottom: 0.5px solid var(--dsw-alias-border-l3);
 +}
 +
 +.tool {

@@ -1402,12 +1402,15 @@ interface DesktopSmokeBridge {
   extensions: { invoke(namespace: string, method: string, payload?: object): Promise<unknown> }
 }
 
-const desktopCarriers: { mode: 'official' | 'product'; installed?: string }[] = [{ mode: 'official' }, { mode: 'product' }]
+const desktopCarriers: { mode: 'official' | 'product'; installed?: string; surface?: 'support' }[] = [
+  { mode: 'official' }, { mode: 'product' }, { mode: 'product', surface: 'support' },
+]
 if (process.env.DSH_INSTALLED_EXECUTABLE) desktopCarriers.push({ mode: 'product', installed: process.env.DSH_INSTALLED_EXECUTABLE })
-for (const { mode, installed } of desktopCarriers) {
+for (const { mode, installed, surface } of desktopCarriers) {
   const carrier = installed === undefined ? 'built' : 'installed'
   it.skipIf(process.env.DSH_DESKTOP_SMOKE !== '1' || (process.platform !== 'darwin' && process.platform !== 'win32'))(
-    `boots the ${carrier} ${mode} Electron assembly with an isolated profile`, async () => {
+    surface === 'support' ? 'checks updates and submits pasted feedback in the built product desktop'
+      : `boots the ${carrier} ${mode} Electron assembly with an isolated profile`, async () => {
       const root = await mkdtemp(join(tmpdir(), `product-desktop-${mode}-`))
       const home = join(root, 'home')
       const userData = join(root, 'electron')
@@ -1791,11 +1794,38 @@ for (const { mode, installed } of desktopCarriers) {
         expect(JSON.stringify(deviceReports)).not.toContain(secret)
         expect(deviceReports[0]?.deviceId).toMatch(/^[0-9a-f-]{36}$/u)
         await page.getByRole('button', { name: /^(More menu|更多菜单)$/, exact: true }).click()
+        expect(await page.getByRole('menuitem', { name: /^(Check for updates|检查更新)$/, exact: true }).count()).toBe(1)
+        if (installed === undefined) {
+          const [updatePage] = await Promise.all([
+            app.waitForEvent('window'),
+            page.getByRole('menuitem', { name: /^(Check for updates|检查更新)$/, exact: true }).click(),
+          ])
+          await expect.poll(() => updatePage.locator('#title').textContent()).toMatch(/Automatic updates are unavailable|当前版本暂不支持自动更新/u)
+          expect(await updatePage.locator('#technical-details').isHidden()).toBe(true)
+          expect(await updatePage.locator('#detail').textContent()).toMatch(/Current version:|当前版本：/u)
+          for (const width of [1440, 390]) {
+            await updatePage.setViewportSize({ width, height: 900 })
+            expect(await updatePage.locator('main').evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true)
+            await updatePage.screenshot({ path: join(screenshots, `electron-${carrier}-product-update-unavailable-${width}.png`), animations: 'disabled' })
+          }
+          await updatePage.locator('#close').click()
+          await expect.poll(() => app!.windows().length).toBe(1)
+          expect(await page.getByRole('button', { name: /^(Retry update|重试更新)$/ }).count()).toBe(0)
+          await page.getByRole('button', { name: /^(More menu|更多菜单)$/, exact: true }).click()
+        }
         await page.getByRole('menuitem', { name: /^(Feedback|反馈)$/, exact: true }).click()
         const feedbackDialog = page.getByRole('dialog', { name: /^(Feedback|反馈)$/, exact: true })
         await feedbackDialog.getByLabel(/^(Message|反馈内容)$/, { exact: true }).fill('Desktop support acceptance')
-        await feedbackDialog.locator('input[type="file"]').setInputFiles({ name: 'support-screenshot.png', mimeType: 'image/png', buffer: await page.screenshot() })
+        await feedbackDialog.getByRole('textbox').evaluate((element, bytes) => {
+          const clipboardData = new DataTransfer()
+          clipboardData.items.add(new File([new Uint8Array(bytes)], 'support-screenshot.png', { type: 'image/png' }))
+          element.dispatchEvent(new ClipboardEvent('paste', { clipboardData, bubbles: true, cancelable: true }))
+        }, [...await page.screenshot()])
         await feedbackDialog.getByRole('img', { name: 'support-screenshot.png', exact: true }).waitFor()
+        expect(await feedbackDialog.locator('input[type="file"]').count()).toBe(0)
+        expect(await feedbackDialog.getByRole('button', { name: /^(Retry report|重试上报)$/ }).count()).toBe(0)
+        expect(await feedbackDialog.locator('[aria-busy]').evaluate(element => element.querySelector('textarea') !== null
+          && element.querySelector('img') !== null)).toBe(true)
         for (const width of [1440, 390]) {
           await page.setViewportSize({ width, height: 900 })
           const box = await feedbackDialog.boundingBox()
@@ -1813,6 +1843,10 @@ for (const { mode, installed } of desktopCarriers) {
         expect(feedbackBodies[0]).not.toContain(secret)
         expect(await feedbackDialog.getByRole('img').count()).toBe(0)
         await feedbackDialog.getByRole('button', { name: /^(Close|关闭)$/, exact: true }).last().click()
+        if (surface === 'support') {
+          expect(tripwire.pageErrors).toEqual([])
+          return
+        }
         await composer.fill('Keep this task draft')
         const currentSession = async () => page.locator('[data-conversation-session]').last().getAttribute('data-conversation-session')
         const originalSession = await currentSession()
