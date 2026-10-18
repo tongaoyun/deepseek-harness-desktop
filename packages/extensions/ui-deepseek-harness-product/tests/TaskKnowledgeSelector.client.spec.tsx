@@ -79,7 +79,7 @@ it('locks kit requirements and applies multiple optional bases once', async () =
   await waitFor(() => { expect(screen.queryByRole('dialog')).toBeNull() })
 })
 
-it('discards staged changes on cancel and retains them across search filtering', async () => {
+it.each(['cancel', 'Escape'] as const)('discards staged changes on %s and retains them across search filtering', async (action) => {
   const f = fixture()
   render(<TaskKnowledgeSelector {...f} />)
   f.open()
@@ -88,8 +88,11 @@ it('discards staged changes on cancel and retains them across search filtering',
   expect(screen.queryByRole('checkbox', { name: '业务手册' })).toBeNull()
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: '' } })
   expect(screen.getByRole<HTMLInputElement>('checkbox', { name: '业务手册' }).checked).toBe(true)
-  fireEvent.click(screen.getByRole('button', { name: zh.cancel }))
+  if (action === 'Escape') fireEvent.keyDown(screen.getByRole('searchbox'), { key: 'Escape' })
+  else fireEvent.click(screen.getByRole('button', { name: zh.cancel }))
+  expect(screen.queryByRole('dialog')).toBeNull()
   expect(f.setKnowledgeSelection).not.toHaveBeenCalled()
+  expect(f.onApplied).not.toHaveBeenCalled()
   f.open()
   expect((await screen.findByRole<HTMLInputElement>('checkbox', { name: '业务手册' })).checked).toBe(false)
 })

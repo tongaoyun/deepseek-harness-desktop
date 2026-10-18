@@ -57,6 +57,8 @@ DSH_DESKTOP_MANDATORY_UPDATE_ENABLED=0
 
 Office 原文件验收样本使用固定 ZIP 时间戳，下载、系统打开与稍后校验使用相同字节；本地和三平台构建均运行跨时钟回归，避免把测试样本变化误报为文件损坏。产品界面沿用官方主题的细边框、圆形标记和分层滚动条颜色。
 
+知识库分组浏览验收通过弹窗内的取消按钮退出，等待弹窗消失后再操作输入框。组件回归分别验证取消和 Escape 退出均丢弃未提交选择，不修改任务配置。
+
 内部桌面 CI 覆盖制品导入、对话修改、草稿重启和真实 Loader 的技能及套件组合。[工作流回归](../../scripts/deepseek-harness-electron-workflows.spec.ts)要求这些测试保留在实际执行的 CI 命令中。托管打包开始前，精确源码提交必须通过 main CI。
 
 内网同步步骤可从 Gitea Secrets 读取 `DESKTOP_GITHUB_PROXY_URL`。Node 和 Git 仅在该步骤内使用此认证代理，GitHub Git 请求使用 HTTP/1.1。代理 URL 不写入仓库变量或源码；源码获取、依赖安装和托管打包使用各自的网络配置。
