@@ -31,7 +31,7 @@ node apps/product-desktop/scripts/sync-github.mjs --repository OWNER/deepseek-ha
 
 每个平台使用原生 runner 安装锁定依赖、验证基线、测试产品 sidecar，并调用产品打包入口。Windows 按所选模式验证签名状态和安装器生命周期；打包包含官方运行时 smoke。runner 先运行已构建的官方及产品 profile，再运行安装后的产品应用：Windows 将 EXE 静默安装到私有目录，结束后卸载；macOS 将 DMG 中的应用复制到私有目录，结束后卸载磁盘映像。安装后验收启动打包的 ASAR、内置 Host、扩展和 sidecar，不使用源码运行时覆盖。仅将临时安装副本的服务地址指向本地测试服务，使用独立数据、测试身份和模拟模型。同一无密钥界面回归覆盖目录、技能与套件安装、连接器状态、知识库原文件预览、任务选择及重启恢复，不登录真实员工，也不验证系统签名提示。截图和 JSON 报告保留十四天，失败时也上传；日志及产物遵循源码仓库可见性。界面失败会阻止安装包发布。成功构建生成安装包、blockmap 和 `build-manifest.json`，记录版本、源码提交、平台、大小及 SHA-256。Actions 安装包产物保留一天；已发布的 Release 下载文件不自动过期。
 
-默认 `signing=unsigned` 产出 Windows EXE 或 macOS DMG，发布为开发预发布，不提供更新清单，也不改变已有签名版本的 latest 下载。两个 macOS 目标沿用官方未签名本地构建的应用标识；Windows 使用配置的产品应用标识。未签名安装包可能需要操作系统确认。单独运行 GitHub 打包只上传 Actions 产物，正式交付继续使用内网同步工作流。
+默认 `signing=unsigned` 产出 Windows EXE 或 macOS DMG，发布为开发预发布，不提供更新清单，也不改变已有签名版本的 latest 下载。两个 macOS 目标沿用官方未签名本地构建的应用标识；Windows 使用配置的产品应用标识。未签名安装包可能需要操作系统确认。单独运行 GitHub 打包只上传 Actions 产物，正式交付继续使用内网同步工作流。Windows 打包前用 PowerShell 实际执行两种签名模式的命令回归，检查目标、版本和 `--unsigned` 参数完整传递。
 
 ## 软件版本更新
 
