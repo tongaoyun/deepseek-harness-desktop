@@ -57,6 +57,7 @@ const harness = await vi.hoisted(async () => {
   // The native Platform view owns persistent browser storage; Desktop startup tests replace it so
   // each quit can control when that cleanup settles.
   const platformDispose = vi.fn(() => platformDisposeDeferred?.promise ?? Promise.resolve())
+  const extensionClose = vi.fn(async () => {})
   let platformCloseDeferred: ReturnType<typeof deferred> | undefined
   const platformCloseAndWait = vi.fn(() => platformCloseDeferred?.promise ?? Promise.resolve())
   const readLoginShell = async (base: NodeJS.ProcessEnv) => ({
@@ -205,7 +206,7 @@ const harness = await vi.hoisted(async () => {
     windows, hosts, handlers, app, FakeWindow, FakeHost, powerMonitor, nativeTheme, analytics,
     trays, FakeTray, backgroundNotice, shellDialog,
     menu, popup, socketHeaders: vi.fn(), loginShell, readLoginShell, updateCheck, updateDownload, updateInstall,
-    platformDispose,
+    platformDispose, extensionClose,
     platformCloseAndWait,
 
     get analyticsEnabled() { return analyticsEnabled },
@@ -275,6 +276,7 @@ const harness = await vi.hoisted(async () => {
       policyBlocked = deferred()
       embeddedPolicy = undefined
       platformDisposeDeferred = undefined
+      extensionClose.mockReset().mockResolvedValue()
       platformCloseDeferred = undefined
     },
   }
@@ -341,7 +343,7 @@ vi.mock('../src/extensions.ts', () => ({ loadDesktopExtension: async () => ({
   namespace: 'fixture', ownsStartupDocument: false,
   prepareHost: async () => ({ DEEPSEEK_API_KEY: 'fixture-key', DEEPSEEK_BASE_URL: 'https://models.example.test/v1' }),
   invoke: async () => ({}), invokeRuntime: async () => ({}),
-  subscribe: () => () => {}, focus: async () => {}, close: async () => {},
+  subscribe: () => () => {}, focus: async () => {}, close: harness.extensionClose,
 }) }))
 vi.mock('../src/paths.ts', () => ({ resolveDesktopPaths: () => ({ profile: 'desktop-test-profile' }) }))
 vi.mock('../src/project-manager.ts', () => ({
@@ -1566,6 +1568,37 @@ describe('desktop main startup', () => {
     disposal.reject(failure)
     await vi.waitFor(() => { expect(console.error).toHaveBeenCalledWith(failure) })
     expect(harness.app.quit).toHaveBeenCalledOnce()
+    host.exited.resolve()
+    await harness.quitCompleted.promise
+    expect(harness.app.quit).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps repeated quit requests waiting for the owned Host to stop', async () => {
+    const host = await readyForUpdate()
+    let nativeQuitCompleted = false
+    void harness.quitCompleted.promise.then(() => { nativeQuitCompleted = true })
+    harness.app.quit()
+    await host.stopping.promise
+    harness.app.quit()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(nativeQuitCompleted).toBe(false)
+    expect(host.stop).toHaveBeenCalledOnce()
+    host.exited.resolve()
+    await harness.quitCompleted.promise
+    expect(harness.app.quit).toHaveBeenCalledTimes(3)
+  })
+
+  it('joins Host cleanup after a desktop extension fails to close', async () => {
+    const host = await readyForUpdate()
+    const failure = new Error('extension cleanup failed')
+    harness.extensionClose.mockRejectedValueOnce(failure)
+    let nativeQuitCompleted = false
+    void harness.quitCompleted.promise.then(() => { nativeQuitCompleted = true })
+    harness.app.quit()
+    await host.stopping.promise
+    await vi.advanceTimersByTimeAsync(0)
+    expect(console.error).toHaveBeenCalledWith(failure)
+    expect(nativeQuitCompleted).toBe(false)
     host.exited.resolve()
     await harness.quitCompleted.promise
     expect(harness.app.quit).toHaveBeenCalledTimes(2)

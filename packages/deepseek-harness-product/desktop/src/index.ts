@@ -85,7 +85,7 @@ function persistDeepSeekHarnessSession(session: ProductSession, token: string | 
 
 /** Create credential-owning desktop lifecycle hooks.
  * @param context Trusted shell access to its primary window and Host transport.
- * @returns Product extension; close cancels authentication and releases its native sidecar.
+ * @returns Product extension; close joins owned work and releases all resources before reporting cleanup failures.
  */
 export function createExtension(context: ExtensionContext): ProductDesktopExtension {
   const lifecycle = new AbortController()
@@ -355,16 +355,21 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
       closed = true
       if (supportTimer !== undefined) clearInterval(supportTimer)
       lifecycle.abort(new Error('Product extension is closed'))
-      knowledgeUploads.close()
-      await productBridge.dispose()
-      await support.close()
-      await knowledgeFiles.close()
-      await connectorProxy.close()
-      await personalConnectors.close()
-      await authoring.close()
-      await nativeSidecar.stop()
+      const errors: unknown[] = []
+      const cleanup = async (close: () => void | Promise<void>): Promise<void> => {
+        try { await close() } catch (error: unknown) { errors.push(error) }
+      }
+      await cleanup(() => knowledgeUploads.close())
+      await cleanup(() => productBridge.dispose())
+      await cleanup(() => support.close())
+      await cleanup(() => knowledgeFiles.close())
+      await cleanup(() => connectorProxy.close())
+      await cleanup(() => personalConnectors.close())
+      await cleanup(() => authoring.close())
+      await cleanup(() => nativeSidecar.stop())
       await Promise.allSettled([...operations])
       await Promise.allSettled([...authenticationOperations])
+      if (errors.length > 0) throw new AggregateError(errors, 'Product extension cleanup failed')
     },
   }
 }

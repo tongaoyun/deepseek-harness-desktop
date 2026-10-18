@@ -9,7 +9,8 @@ import type { ExtensionAuthoring } from '../src/extension-authoring.ts'
 const fixture = vi.hoisted(() => ({ authenticate: vi.fn<typeof import('@deepseek-harness/product/dingtalk-auth').ensureDingTalkSession>(),
   dialog: vi.fn(async (..._args: unknown[]) => ({ response: 0 })), quit: vi.fn(),
   bootstrap: vi.fn(async () => ({ modelApiKey: 'model-key', endpoints: { litellm: 'https://example.test/v1' }, models: ['deepseek-v4-flash', 'gpt-example'] })),
-  stop: vi.fn(async () => {}), dispose: vi.fn(), writeFile: vi.fn(), bridgeOptions: vi.fn<(options: ProductBridgeOptions) => void>(),
+  stop: vi.fn(async () => {}), dispose: vi.fn(), knowledgeClose: vi.fn(async () => {}), writeFile: vi.fn(),
+  bridgeOptions: vi.fn<(options: ProductBridgeOptions) => void>(),
   invoke: vi.fn(async (..._args: unknown[]) => ({})), refreshCatalog: vi.fn(async () => {}),
   authoringOptions: vi.fn<(options: ConstructorParameters<typeof ExtensionAuthoring>[0]) => void>() }))
 vi.mock('../src/extension-authoring.ts', async (original) => {
@@ -35,7 +36,7 @@ vi.mock('../src/deepseek-harness-native-process.ts', () => ({ DeepSeekHarnessNat
   start = async () => {}; stop = fixture.stop; invoke = async () => ({})
 } }))
 vi.mock('../src/knowledge-files.ts', () => ({ KnowledgeFiles: class {
-  prepare = async () => {}; close = async () => {}; resetIdentity = async () => {}; invoke = async () => ({})
+  prepare = async () => {}; close = fixture.knowledgeClose; resetIdentity = async () => {}; invoke = async () => ({})
 } }))
 vi.mock('@deepseek-harness/product/dingtalk-auth', async original => ({
   ...await original<typeof import('@deepseek-harness/product/dingtalk-auth')>(), ensureDingTalkSession: fixture.authenticate,
@@ -50,6 +51,36 @@ vi.mock('@deepseek-harness/product/bridge', () => ({ DeepSeekHarnessProductBridg
 beforeEach(() => {
   vi.clearAllMocks(); fixture.authenticate.mockResolvedValue({ authenticated: true })
   fixture.invoke.mockReset().mockResolvedValue({}); fixture.refreshCatalog.mockReset().mockResolvedValue()
+  fixture.dispose.mockReset(); fixture.knowledgeClose.mockReset().mockResolvedValue(); fixture.stop.mockReset().mockResolvedValue()
+})
+
+it('releases remaining resources and joins in-flight requests before reporting cleanup failures', async () => {
+  const bridgeFailure = new Error('Bridge cleanup failed')
+  const filesFailure = new Error('Files cleanup failed')
+  fixture.dispose.mockRejectedValueOnce(bridgeFailure)
+  fixture.knowledgeClose.mockRejectedValueOnce(filesFailure)
+  const entered = Promise.withResolvers<undefined>()
+  const release = Promise.withResolvers<undefined>()
+  const stopped = Promise.withResolvers<undefined>()
+  fixture.invoke.mockImplementationOnce(async () => { entered.resolve(undefined); await release.promise; return {} })
+  fixture.stop.mockImplementationOnce(async () => { stopped.resolve(undefined) })
+  const extension = createExtension({ getWindow: () => undefined, isQuitting: () => false, requestHost: async () => ({}) })
+  const operation = extension.invoke('catalog.list')
+  await entered.promise
+  let settled = false
+  const closing = extension.close().then(() => { settled = true; return undefined }, (error: unknown) => { settled = true; return error })
+  try {
+    expect(await Promise.race([stopped.promise.then(() => 'stopped'), closing.then(() => 'closed')])).toBe('stopped')
+    expect(fixture.knowledgeClose).toHaveBeenCalledOnce()
+    expect(settled).toBe(false)
+  } finally {
+    release.resolve(undefined)
+    await operation
+    await closing
+  }
+  expect(await closing).toBeInstanceOf(AggregateError)
+  expect(await closing).toMatchObject({ errors: [bridgeFailure, filesFailure] })
+  expect(fixture.stop).toHaveBeenCalledOnce()
 })
 
 it('installs saved skills through the authenticated skill operation without requiring other catalogs', async () => {

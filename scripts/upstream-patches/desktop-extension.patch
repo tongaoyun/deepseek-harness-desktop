@@ -496,7 +496,7 @@ index fc19021fa6047bf5ef2a1c5e65c510adda71ee08..ae6a6ba6a26e6e414cf497500d8538e4
  
  /** Scheme of Desktop-owned application documents. */
 diff --git a/apps/desktop/src/main.ts b/apps/desktop/src/main.ts
-index 2afdfd71948053aedd65f6a04a9ed9b279e13376..3040fe429e7370847e8bc31ce9030b7578be4de8 100644
+index 2afdfd71948053aedd65f6a04a9ed9b279e13376..30bdee9c01ed86b96292fdba015504cf2da1c5d5 100644
 --- a/apps/desktop/src/main.ts
 +++ b/apps/desktop/src/main.ts
 @@ -1,9 +1,12 @@
@@ -542,7 +542,7 @@ index 2afdfd71948053aedd65f6a04a9ed9b279e13376..3040fe429e7370847e8bc31ce9030b75
  }
  
  function developmentHostInspectPort(enabled: boolean): number | undefined {
-@@ -337,10 +355,14 @@ async function main(): Promise<void> {
+@@ -337,10 +355,15 @@ async function main(): Promise<void> {
      for (const failure of result.failures) console.warn(`desktop login shell: ${failure.shell} failed (${failure.reason})`)
      return result.environment
    })
@@ -553,12 +553,13 @@ index 2afdfd71948053aedd65f6a04a9ed9b279e13376..3040fe429e7370847e8bc31ce9030b75
 +    hostEnvironment = { ...await loginShell, ...extensionHostEnvironment }
 +  }
    let quitting = false
++  let quitCleanupCompleted = false
    let startup: Promise<void> | undefined
 +  let hostStartup: Promise<void> | undefined
    let workspaceRecovery: Promise<void> | undefined
    let mainWindow: BrowserWindow | undefined
    let welcomeWindow: BrowserWindow | undefined
-@@ -403,7 +425,14 @@ async function main(): Promise<void> {
+@@ -403,7 +426,14 @@ async function main(): Promise<void> {
    let hostUrl: string | undefined
    let hostCookie: string | undefined
    const browserGuests = new DesktopBrowserGuests(() => hostUrl)
@@ -574,7 +575,7 @@ index 2afdfd71948053aedd65f6a04a9ed9b279e13376..3040fe429e7370847e8bc31ce9030b75
    let welcomeBackend: DesktopWelcomeBackend | undefined
    let reportedLaunch = false
    let analyticsEnabled = false
-@@ -447,14 +476,17 @@ async function main(): Promise<void> {
+@@ -447,14 +477,17 @@ async function main(): Promise<void> {
      const host = new DesktopHostProcess(resources.node, resources.dsh, activeProject,
        hostInspectPort, { ...hostEnvironment, DSH_CLIENT_VERSION: desktopClientVersion() }, onFailure,
        primaryRuntime,
@@ -594,7 +595,7 @@ index 2afdfd71948053aedd65f6a04a9ed9b279e13376..3040fe429e7370847e8bc31ce9030b75
          welcomeBackend = await connectDesktopWelcome(ready.url, (input, init) => net.fetch(input, init), async () => (await session.defaultSession.cookies.get({ url: ready.url })).map(cookie => `${cookie.name}=${cookie.value}`).join('; '))
          analyticsEnabled = await welcomeBackend.analyticsEnabled().catch(() => false)
          if (!reportedLaunch) { reportedLaunch = true; void track('desktop_app_launch', {}) }
-@@ -509,6 +541,9 @@ async function main(): Promise<void> {
+@@ -509,6 +542,9 @@ async function main(): Promise<void> {
        },
        updateTasks: (action: 'inspect' | 'lock' | 'unlock') => host.updateTasks(action),
        inspectQuit: () => host.inspectQuit(),
@@ -604,7 +605,7 @@ index 2afdfd71948053aedd65f6a04a9ed9b279e13376..3040fe429e7370847e8bc31ce9030b75
      }
    }, (state) => {
      if (state.phase === 'error') reportFatal(state.failure, 'host')
-@@ -569,18 +604,32 @@ async function main(): Promise<void> {
+@@ -569,18 +605,32 @@ async function main(): Promise<void> {
  
    const reconcileBackend = (): Promise<void> => {
      startup ??= (async () => {
@@ -641,7 +642,7 @@ index 2afdfd71948053aedd65f6a04a9ed9b279e13376..3040fe429e7370847e8bc31ce9030b75
      return startup
    }
  
-@@ -643,6 +692,7 @@ async function main(): Promise<void> {
+@@ -643,6 +693,7 @@ async function main(): Promise<void> {
    )
  
    const updateSchedule = new DesktopUpdateSchedule(updates, resolveDesktopUpdateScheduleConfig(process.env))
@@ -649,7 +650,7 @@ index 2afdfd71948053aedd65f6a04a9ed9b279e13376..3040fe429e7370847e8bc31ce9030b75
  
    const downloadUpdate = async (version: string): Promise<DesktopUpdateState> => {
      void track('desktop_upgrade_click', {})
-@@ -653,8 +703,7 @@ async function main(): Promise<void> {
+@@ -653,8 +704,7 @@ async function main(): Promise<void> {
      // A confirmation on a hidden window would go unseen, so it waits for the next show; the mandatory
      // flow keeps its own taskbar and Dock attention instead.
      if (!isMandatory()) await windowShown()
@@ -659,7 +660,7 @@ index 2afdfd71948053aedd65f6a04a9ed9b279e13376..3040fe429e7370847e8bc31ce9030b75
      return updates.install(version)
    }
    const windowShown = (): Promise<void> => new Promise((resolve) => {
-@@ -689,9 +738,16 @@ async function main(): Promise<void> {
+@@ -689,9 +739,16 @@ async function main(): Promise<void> {
  
    ipcMain.handle(DESKTOP_IPC.boot, async (event) => {
      assertDesktopSender(event, ['app'])
@@ -679,7 +680,7 @@ index 2afdfd71948053aedd65f6a04a9ed9b279e13376..3040fe429e7370847e8bc31ce9030b75
    })
  
    ipcMain.handle(DESKTOP_IPC.bootFailed, (event, message: unknown) => {
-@@ -711,6 +767,39 @@ async function main(): Promise<void> {
+@@ -711,6 +768,39 @@ async function main(): Promise<void> {
      assertProductSender(event)
      return browserGuests.release(event.sender, lease)
    })
@@ -719,7 +720,7 @@ index 2afdfd71948053aedd65f6a04a9ed9b279e13376..3040fe429e7370847e8bc31ce9030b75
  
    session.defaultSession.webRequest.onBeforeSendHeaders({ urls: ['ws://127.0.0.1/*', 'wss://127.0.0.1/*'] }, (details, callback) => {
      if (hostUrl === undefined || hostCookie === undefined || details.webContentsId !== mainWindow?.webContents.id) {
-@@ -796,6 +885,10 @@ async function main(): Promise<void> {
+@@ -796,6 +886,10 @@ async function main(): Promise<void> {
      assertProductSender(event)
      await openUpdatePrompt()
    })
@@ -730,7 +731,7 @@ index 2afdfd71948053aedd65f6a04a9ed9b279e13376..3040fe429e7370847e8bc31ce9030b75
  
    let promptOperation: Promise<void> | undefined
    let policyAuthenticationQueued = false
-@@ -830,6 +923,12 @@ async function main(): Promise<void> {
+@@ -830,6 +924,12 @@ async function main(): Promise<void> {
          }
          if (isMandatory()) { mandatoryUI?.focus(); return }
          if (state.phase === 'error' && state.failedOperation === 'check') { await showUpdateFailure(state); return }
@@ -743,7 +744,7 @@ index 2afdfd71948053aedd65f6a04a9ed9b279e13376..3040fe429e7370847e8bc31ce9030b75
          if (state.phase === 'idle') {
            await ordinaryMessageBox({ type: 'info', title: locale.messages.updateCheckTitle,
              message: locale.messages.updateCurrent,
-@@ -929,8 +1028,10 @@ async function main(): Promise<void> {
+@@ -929,8 +1029,10 @@ async function main(): Promise<void> {
      updates.dispose()
    })
  
@@ -755,7 +756,7 @@ index 2afdfd71948053aedd65f6a04a9ed9b279e13376..3040fe429e7370847e8bc31ce9030b75
    app.setAboutPanelOptions({
      applicationName: 'DeepSeek Harness',
      applicationVersion: app.getVersion(),
-@@ -1075,6 +1176,7 @@ async function main(): Promise<void> {
+@@ -1075,6 +1177,7 @@ async function main(): Promise<void> {
      browserGuests.bind(window, (guest, name) => shortcuts.attachGuest(window, guest, name))
      shortcuts.attach(window)
      window.on('focus', automaticCheck)
@@ -763,7 +764,7 @@ index 2afdfd71948053aedd65f6a04a9ed9b279e13376..3040fe429e7370847e8bc31ce9030b75
      // Closing hides: the page and the Host keep running, and the next show resumes the same document.
      window.on('close', (event) => {
        if (quitting || shellInstallerOwnsQuit || sessionEnding) return
-@@ -1201,7 +1303,8 @@ async function main(): Promise<void> {
+@@ -1201,7 +1304,8 @@ async function main(): Promise<void> {
      })().finally(() => { openingWelcome = undefined })
      return openingWelcome
    }
@@ -773,7 +774,7 @@ index 2afdfd71948053aedd65f6a04a9ed9b279e13376..3040fe429e7370847e8bc31ce9030b75
      if (quitting || recovery.active) return
      const state = await readWelcomeState()
      if (isQuitting() || backend.state.phase !== 'ready') return
-@@ -1213,7 +1316,9 @@ async function main(): Promise<void> {
+@@ -1213,7 +1317,9 @@ async function main(): Promise<void> {
        raiseAfterUpdate = false
        await showWelcome()
      } else {
@@ -784,7 +785,7 @@ index 2afdfd71948053aedd65f6a04a9ed9b279e13376..3040fe429e7370847e8bc31ce9030b75
      }
    }
    focusPrimaryWindow = () => {
-@@ -1226,7 +1331,14 @@ async function main(): Promise<void> {
+@@ -1226,7 +1332,14 @@ async function main(): Promise<void> {
        return
      }
      // Startup and sign-out select the visible window before activation may reveal the workspace.
@@ -800,7 +801,7 @@ index 2afdfd71948053aedd65f6a04a9ed9b279e13376..3040fe429e7370847e8bc31ce9030b75
      if (window.isMinimized()) window.restore()
      window.show()
      window.focus()
-@@ -1248,6 +1360,8 @@ async function main(): Promise<void> {
+@@ -1248,6 +1361,8 @@ async function main(): Promise<void> {
    const finishQuit = (): void => {
      quitting = true
      shuttingDown = true
@@ -809,15 +810,38 @@ index 2afdfd71948053aedd65f6a04a9ed9b279e13376..3040fe429e7370847e8bc31ce9030b75
      updateJournal?.action('quit-requested')
      quitConfirmation.dispose()
      backgroundNotice?.dispose()
-@@ -1258,7 +1372,7 @@ async function main(): Promise<void> {
+@@ -1258,10 +1373,15 @@ async function main(): Promise<void> {
      updateSchedule.dispose()
      updateDialog.dispose()
      mandatoryUI?.dispose()
 -    void Promise.all([Promise.resolve(mandatoryPolicy?.dispose()).then(() => policyAuth?.dispose()), backend.close(),
-+    void Promise.all([Promise.resolve(mandatoryPolicy?.dispose()).then(() => policyAuth?.dispose()), backend.close(), extension?.close(),
-       // A Platform cleanup failure is logged without cutting the remaining Host shutdown short.
-       platformView.dispose().catch((error: unknown) => { console.error(error) })])
-       .catch((error: unknown) => { console.error(error) }).finally(() => { app.quit() })
+-      // A Platform cleanup failure is logged without cutting the remaining Host shutdown short.
+-      platformView.dispose().catch((error: unknown) => { console.error(error) })])
+-      .catch((error: unknown) => { console.error(error) }).finally(() => { app.quit() })
++    const cleanup = async (close: () => void | Promise<void>): Promise<void> => {
++      try { await close() } catch (error: unknown) { console.error(error) }
++    }
++    void Promise.all([
++      cleanup(() => mandatoryPolicy?.dispose()).then(() => cleanup(() => policyAuth?.dispose())),
++      cleanup(() => backend.close()),
++      cleanup(() => extension?.close()),
++      cleanup(() => platformView.dispose()),
++    ]).then(() => { quitCleanupCompleted = true; app.quit() })
+   }
+   app.on('before-quit', (event) => {
+     if (shellInstallerOwnsQuit) {
+@@ -1276,7 +1396,10 @@ async function main(): Promise<void> {
+       void platformView.dispose().catch((error: unknown) => { console.error(error) })
+       return
+     }
+-    if (quitting) return
++    if (quitting) {
++      if (!quitCleanupCompleted) event.preventDefault()
++      return
++    }
+     event.preventDefault()
+     if (skipQuitConfirmation || sessionEnding) { finishQuit(); return }
+     void quitConfirmation.confirm().then((approved) => {
 diff --git a/apps/desktop/src/preload-app.ts b/apps/desktop/src/preload-app.ts
 index f590b8bc8b80a6ee007a0f36249097c77fb0b974..faf3037713a7c15e2c522fa7ec15c63cdcd5505a 100644
 --- a/apps/desktop/src/preload-app.ts
@@ -1292,7 +1316,7 @@ index daeddc74d0afc1315b0c632f61d2034bd0c9e31a..f0fa8ae67bd7c10d9b6ed8d970773ea7
  
    it.each([
 diff --git a/apps/desktop/tests/main-startup.spec.ts b/apps/desktop/tests/main-startup.spec.ts
-index d9a8f3103b2a963ebf6825c62a86e8ee12064deb..1a1da5838655aa49c4324bc7be1a6ecce2bab53a 100644
+index d9a8f3103b2a963ebf6825c62a86e8ee12064deb..b15ce64000fa7b723ce5a5637f9acb1f7c472d6d 100644
 --- a/apps/desktop/tests/main-startup.spec.ts
 +++ b/apps/desktop/tests/main-startup.spec.ts
 @@ -13,6 +13,7 @@ import { en, zh } from '../src/locale.ts'
@@ -1311,7 +1335,15 @@ index d9a8f3103b2a963ebf6825c62a86e8ee12064deb..1a1da5838655aa49c4324bc7be1a6ecc
    let dialogShown = deferred()
    let quitCompleted = deferred()
    let policyBlocked = deferred()
-@@ -115,7 +117,10 @@ const harness = await vi.hoisted(async () => {
+@@ -55,6 +57,7 @@ const harness = await vi.hoisted(async () => {
+   // The native Platform view owns persistent browser storage; Desktop startup tests replace it so
+   // each quit can control when that cleanup settles.
+   const platformDispose = vi.fn(() => platformDisposeDeferred?.promise ?? Promise.resolve())
++  const extensionClose = vi.fn(async () => {})
+   let platformCloseDeferred: ReturnType<typeof deferred> | undefined
+   const platformCloseAndWait = vi.fn(() => platformCloseDeferred?.promise ?? Promise.resolve())
+   const readLoginShell = async (base: NodeJS.ProcessEnv) => ({
+@@ -115,7 +118,10 @@ const harness = await vi.hoisted(async () => {
      async loadURL(url: string) {
        this.urls.push(url)
        this.webContents.mainFrame.url = url
@@ -1323,7 +1355,7 @@ index d9a8f3103b2a963ebf6825c62a86e8ee12064deb..1a1da5838655aa49c4324bc7be1a6ecc
      }
      static getAllWindows() { return windows.filter(window => !window.destroyed) }
      setMenu() {}
-@@ -133,11 +138,16 @@ const harness = await vi.hoisted(async () => {
+@@ -133,11 +139,16 @@ const harness = await vi.hoisted(async () => {
      readonly updateTasks = vi.fn(async (_action: 'inspect' | 'lock' | 'unlock') => false)
      readonly inspectQuit = vi.fn(async () => ({ activeTasks: false, scheduledTasks: false }))
      url = 'http://127.0.0.1:3080/?token=test'
@@ -1341,7 +1373,7 @@ index d9a8f3103b2a963ebf6825c62a86e8ee12064deb..1a1da5838655aa49c4324bc7be1a6ecc
      readonly stop = vi.fn(() => {
        this.stopping.resolve()
        this.ready.reject(new Error('child stopped'))
-@@ -160,6 +170,7 @@ const harness = await vi.hoisted(async () => {
+@@ -160,6 +171,7 @@ const harness = await vi.hoisted(async () => {
      getAppPath: (): string => 'desktop-test-app',
      setAppLogsPath: vi.fn(),
      getPath: vi.fn<(name: string) => string>(),
@@ -1349,7 +1381,16 @@ index d9a8f3103b2a963ebf6825c62a86e8ee12064deb..1a1da5838655aa49c4324bc7be1a6ecc
      setAboutPanelOptions: vi.fn<(options: Electron.AboutPanelOptionsOptions) => void>(),
      requestSingleInstanceLock: () => true,
      setAsDefaultProtocolClient: vi.fn(),
-@@ -231,12 +242,15 @@ const harness = await vi.hoisted(async () => {
+@@ -194,7 +206,7 @@ const harness = await vi.hoisted(async () => {
+     windows, hosts, handlers, app, FakeWindow, FakeHost, powerMonitor, nativeTheme, analytics,
+     trays, FakeTray, backgroundNotice, shellDialog,
+     menu, popup, socketHeaders: vi.fn(), loginShell, readLoginShell, updateCheck, updateDownload, updateInstall,
+-    platformDispose,
++    platformDispose, extensionClose,
+     platformCloseAndWait,
+ 
+     get analyticsEnabled() { return analyticsEnabled },
+@@ -231,12 +243,15 @@ const harness = await vi.hoisted(async () => {
      set embeddedPolicy(value: unknown) { embeddedPolicy = value },
      nextNavigation() { navigated = deferred(); return navigated.promise },
      nextHostStart() { hostStarted = deferred(); return hostStarted.promise },
@@ -1365,7 +1406,7 @@ index d9a8f3103b2a963ebf6825c62a86e8ee12064deb..1a1da5838655aa49c4324bc7be1a6ecc
        accountListener = undefined
        windows.length = 0; hosts.length = 0; handlers.clear(); app.removeAllListeners()
        trays.length = 0
-@@ -244,6 +258,7 @@ const harness = await vi.hoisted(async () => {
+@@ -244,6 +259,7 @@ const harness = await vi.hoisted(async () => {
        shellDialog.isOpen = false
        powerMonitor.removeAllListeners()
        app.isPackaged = true
@@ -1373,7 +1414,15 @@ index d9a8f3103b2a963ebf6825c62a86e8ee12064deb..1a1da5838655aa49c4324bc7be1a6ecc
        windowFailure = undefined
        pluginsEnabled = false
        closeWindowsOnQuit = false
-@@ -297,6 +312,11 @@ vi.mock('electron', () => ({
+@@ -260,6 +276,7 @@ const harness = await vi.hoisted(async () => {
+       policyBlocked = deferred()
+       embeddedPolicy = undefined
+       platformDisposeDeferred = undefined
++      extensionClose.mockReset().mockResolvedValue()
+       platformCloseDeferred = undefined
+     },
+   }
+@@ -297,6 +314,11 @@ vi.mock('electron', () => ({
    powerMonitor: harness.powerMonitor,
    Tray: harness.FakeTray,
    nativeImage: { createFromPath: (path: string) => ({ path }) },
@@ -1385,7 +1434,7 @@ index d9a8f3103b2a963ebf6825c62a86e8ee12064deb..1a1da5838655aa49c4324bc7be1a6ecc
  }))
  vi.mock('../src/background-notice.ts', () => ({ DesktopBackgroundNotice: class {
    constructor(options: { markerPath: string }) { harness.backgroundNotice.markerPath = options.markerPath }
-@@ -317,6 +337,12 @@ vi.mock('../src/login-shell-environment.ts', async importOriginal => ({
+@@ -317,6 +339,12 @@ vi.mock('../src/login-shell-environment.ts', async importOriginal => ({
    readDesktopLoginShellEnvironment: harness.loginShell,
  }))
  vi.mock('../src/runtime-tree.ts', () => ({ readDesktopRuntime: () => ({ release: { version: '1.0.0' } }) }))
@@ -1393,12 +1442,12 @@ index d9a8f3103b2a963ebf6825c62a86e8ee12064deb..1a1da5838655aa49c4324bc7be1a6ecc
 +  namespace: 'fixture', ownsStartupDocument: false,
 +  prepareHost: async () => ({ DEEPSEEK_API_KEY: 'fixture-key', DEEPSEEK_BASE_URL: 'https://models.example.test/v1' }),
 +  invoke: async () => ({}), invokeRuntime: async () => ({}),
-+  subscribe: () => () => {}, focus: async () => {}, close: async () => {},
++  subscribe: () => () => {}, focus: async () => {}, close: harness.extensionClose,
 +}) }))
  vi.mock('../src/paths.ts', () => ({ resolveDesktopPaths: () => ({ profile: 'desktop-test-profile' }) }))
  vi.mock('../src/project-manager.ts', () => ({
    DesktopProjectManager: class {
-@@ -505,6 +531,11 @@ describe('desktop main startup', () => {
+@@ -505,6 +533,11 @@ describe('desktop main startup', () => {
      }
    })
  
@@ -1410,7 +1459,7 @@ index d9a8f3103b2a963ebf6825c62a86e8ee12064deb..1a1da5838655aa49c4324bc7be1a6ecc
    it('serves shell dialogs and their assets without forwarding them to the Host', async () => {
      await readyForUpdate()
      const { serveWebDocument, forwardWebRequest } = await import('../src/web-document.ts')
-@@ -547,7 +578,11 @@ describe('desktop main startup', () => {
+@@ -547,7 +580,11 @@ describe('desktop main startup', () => {
      expect({ menu: [{ label: about!.label, role: about!.role }, separator], options: { ...options, iconPath: '<app icon>' } })
        .toEqual(expected[`${platform}:${locale}`])
      expect(options.iconPath).toBe(packaged ? join('desktop-test-resources', 'icon.png')
@@ -1423,7 +1472,7 @@ index d9a8f3103b2a963ebf6825c62a86e8ee12064deb..1a1da5838655aa49c4324bc7be1a6ecc
      if (platform !== 'win32') { expect(about!.click).toBeUndefined(); return }
      // Windows reuses the dimmed update dialog because Electron's fallback is a bare message box.
      harness.dialog.showMessageBox.mockResolvedValueOnce({ response: 0 })
-@@ -1128,6 +1163,48 @@ describe('desktop main startup', () => {
+@@ -1128,6 +1165,48 @@ describe('desktop main startup', () => {
      expect(harness.windows[0]!.urls).toEqual(['dsh-app://app/'])
    })
  
@@ -1472,7 +1521,7 @@ index d9a8f3103b2a963ebf6825c62a86e8ee12064deb..1a1da5838655aa49c4324bc7be1a6ecc
    it('retains macOS native editing actions on right-click and only copy for selected read-only text', async () => {
      vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
      await import('../src/main.ts')
-@@ -1184,6 +1261,22 @@ describe('desktop main startup', () => {
+@@ -1184,6 +1263,22 @@ describe('desktop main startup', () => {
      return harness.hosts[0]!
    }
  
@@ -1495,7 +1544,45 @@ index d9a8f3103b2a963ebf6825c62a86e8ee12064deb..1a1da5838655aa49c4324bc7be1a6ecc
    it.each([
      ['win32', ['--updated'], true],
      ['win32', [], false],
-@@ -1615,6 +1708,33 @@ describe('desktop main startup', () => {
+@@ -1478,6 +1573,37 @@ describe('desktop main startup', () => {
+     expect(harness.app.quit).toHaveBeenCalledTimes(2)
+   })
+ 
++  it('keeps repeated quit requests waiting for the owned Host to stop', async () => {
++    const host = await readyForUpdate()
++    let nativeQuitCompleted = false
++    void harness.quitCompleted.promise.then(() => { nativeQuitCompleted = true })
++    harness.app.quit()
++    await host.stopping.promise
++    harness.app.quit()
++    await vi.advanceTimersByTimeAsync(0)
++    expect(nativeQuitCompleted).toBe(false)
++    expect(host.stop).toHaveBeenCalledOnce()
++    host.exited.resolve()
++    await harness.quitCompleted.promise
++    expect(harness.app.quit).toHaveBeenCalledTimes(3)
++  })
++
++  it('joins Host cleanup after a desktop extension fails to close', async () => {
++    const host = await readyForUpdate()
++    const failure = new Error('extension cleanup failed')
++    harness.extensionClose.mockRejectedValueOnce(failure)
++    let nativeQuitCompleted = false
++    void harness.quitCompleted.promise.then(() => { nativeQuitCompleted = true })
++    harness.app.quit()
++    await host.stopping.promise
++    await vi.advanceTimersByTimeAsync(0)
++    expect(console.error).toHaveBeenCalledWith(failure)
++    expect(nativeQuitCompleted).toBe(false)
++    host.exited.resolve()
++    await harness.quitCompleted.promise
++    expect(harness.app.quit).toHaveBeenCalledTimes(2)
++  })
++
+   it('finishes quitting when the native window is destroyed before its closed listener clears ownership', async () => {
+     const host = await readyForUpdate()
+     const window = harness.windows[0]!
+@@ -1615,6 +1741,33 @@ describe('desktop main startup', () => {
      expect(harness.updateDownload).not.toHaveBeenCalled()
    })
  
@@ -1529,7 +1616,7 @@ index d9a8f3103b2a963ebf6825c62a86e8ee12064deb..1a1da5838655aa49c4324bc7be1a6ecc
    it('reports a stale download confirmation as a download failure', async () => {
      await readyForUpdate()
      harness.updateCheck.mockResolvedValueOnce({ phase: 'available', version: '1.0.1-nightly.1' })
-@@ -2235,9 +2355,13 @@ describe('desktop main startup', () => {
+@@ -2235,9 +2388,13 @@ describe('desktop main startup', () => {
        primaryRuntime: join('desktop-test-resources', 'runtime', 'primary-runtime'),
        profile: 'desktop-test-profile',
      })
@@ -1545,14 +1632,14 @@ index d9a8f3103b2a963ebf6825c62a86e8ee12064deb..1a1da5838655aa49c4324bc7be1a6ecc
      expect(console.warn).toHaveBeenCalledWith('desktop login shell: /account/shell failed (timeout)')
      expect(harness.analytics).toHaveBeenCalledExactlyOnceWith({ eventName: 'desktop_app_launch', timestamp: Date.now(), attributes: {} })
      expect(harness.hosts[0]!.start).toHaveBeenCalledTimes(1)
-@@ -2261,13 +2385,45 @@ describe('desktop main startup', () => {
+@@ -2261,13 +2418,45 @@ describe('desktop main startup', () => {
      expect(harness.dialog.showErrorBox).not.toHaveBeenCalled()
    })
  
 -  it('fails an unpackaged launch that receives no primary runtime directory', async () => {
 +  it('uses the development app descriptor when an unpackaged cold start receives no runtime environment', async () => {
-+    harness.app.isPackaged = false
-+    vi.stubEnv('DSH_DESKTOP_PRIMARY_RUNTIME_DIR', undefined)
+     harness.app.isPackaged = false
+     vi.stubEnv('DSH_DESKTOP_PRIMARY_RUNTIME_DIR', undefined)
 +    const resources = mkdtempSync(join(tmpdir(), 'dsh-main-development-resources-'))
 +    const primaryRuntime = join(resources, 'prepared-primary-runtime')
 +    mkdirSync(primaryRuntime)
@@ -1575,8 +1662,8 @@ index d9a8f3103b2a963ebf6825c62a86e8ee12064deb..1a1da5838655aa49c4324bc7be1a6ecc
 +  })
 +
 +  it('fails an unpackaged cold start with an invalid development descriptor', async () => {
-     harness.app.isPackaged = false
-     vi.stubEnv('DSH_DESKTOP_PRIMARY_RUNTIME_DIR', undefined)
++    harness.app.isPackaged = false
++    vi.stubEnv('DSH_DESKTOP_PRIMARY_RUNTIME_DIR', undefined)
 +    const resources = mkdtempSync(join(tmpdir(), 'dsh-main-development-resources-'))
 +    writeFileSync(join(resources, 'dsh-development.json'), JSON.stringify({
 +      schemaVersion: 1,

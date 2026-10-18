@@ -132,7 +132,7 @@
     },
     {
       "id": "desktop-extension",
-      "purpose": "Generic trusted desktop lifecycle hooks, environment/profile overlays, namespaced bidirectional IPC, validated caller deadlines, sender checks, cancellation, credential-free structured failures, and teardown. Every renderer boot reads current Host index injections through correlated IPC with a bounded deadline and rejects Host replacement rather than reusing stale module revisions. Host startup canonicalizes the runtime with native realpath so entry imports and profile resolution share module identities, including Windows short paths. Archived runtimes resolve the archive file without requiring plain Node to traverse its virtual directories; a real archived Electron child exercises this path. No product protocol is embedded in Electron or Host.",
+      "purpose": "Generic trusted desktop lifecycle hooks, environment/profile overlays, namespaced bidirectional IPC, validated caller deadlines, sender checks, cancellation, credential-free structured failures, and teardown. Every renderer boot reads current Host index injections through correlated IPC with a bounded deadline and rejects Host replacement rather than reusing stale module revisions. Host startup canonicalizes the runtime with native realpath so entry imports and profile resolution share module identities, including Windows short paths. Archived runtimes resolve the archive file without requiring plain Node to traverse its virtual directories; a real archived Electron child exercises this path. No product protocol is embedded in Electron or Host. 普通退出清理期间合并重复退出请求，分别记录清理失败并等待其余资源停止后退出；更新策略先于认证资源释放。",
       "tests": [
         "apps/desktop/tests/main-startup.spec.ts",
         "apps/desktop/tests/host-process.spec.ts",
@@ -175,7 +175,7 @@
         {
           "path": "apps/desktop/src/main.ts",
           "before": "e345eda0425f2df795d20413bb87bb9a3ddc46e71ceb1cec0755ad1cca3fb847",
-          "after": "ef7459dc814c4f9d5846fe35856d24a1b6f42accbce92e12282b5460829e2607"
+          "after": "7672826edc2a60ec0e255e7dfd9ac6288b1dbe989c1c827977411c20e47e1940"
         },
         {
           "path": "apps/desktop/src/preload-app.ts",
@@ -200,7 +200,7 @@
         {
           "path": "apps/desktop/tests/main-startup.spec.ts",
           "before": "ef37e6257004ae386093afa73e63d16f10ead3421ba9d9982a6286437182fd3f",
-          "after": "94210c59e076cf7353694528f3af947ec17ccbad60673533971837bb4d85447e"
+          "after": "036b5b2586c6f789e0c80f7a28e0abea014e88bee73ac873bfa6a2010a453bde"
         },
         {
           "path": "apps/desktop/tests/welcome-startup.spec.ts",
