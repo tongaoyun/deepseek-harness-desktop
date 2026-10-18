@@ -34,6 +34,13 @@ const screenshots = join(REPO_ROOT, '.artifacts/deepseek-harness-catalog')
 async function openTaskKnowledge(page: Page): Promise<void> {
   await page.getByRole('button', { name: /^(Add files or run commands|添加文件或调用指令)$/, exact: true }).click()
   await page.getByRole('option', { name: /^(Reference knowledge bases|引用知识库)/ }).click()
+  await page.getByRole('dialog', { name: /^(Task knowledge bases|任务知识库)$/, exact: true }).waitFor()
+}
+
+async function cancelTaskKnowledge(page: Page): Promise<void> {
+  const dialog = page.getByRole('dialog', { name: /^(Task knowledge bases|任务知识库)$/, exact: true })
+  await dialog.getByRole('button', { name: /^(Cancel|取消)$/, exact: true }).click()
+  await dialog.waitFor({ state: 'hidden' })
 }
 
 async function setCodingView(page: Page, enabled: boolean): Promise<void> {
@@ -1023,7 +1030,7 @@ it('keeps native themes and responsive catalogs while using official details and
     await page.screenshot({ path: join(screenshots, `task-knowledge-${width}.png`) })
   }
   await page.setViewportSize({ width: 1440, height: 900 })
-  await knowledgeDialog.getByRole('button', { name: 'Cancel', exact: true }).click()
+  await cancelTaskKnowledge(page)
   await page.getByRole('button', { name: 'Connectors', exact: true }).click()
   await page.getByRole('button', { name: /Order management Orders/ }).click()
   expect(await connectorDialog.getByRole('checkbox').count()).toBe(0)
@@ -2225,7 +2232,7 @@ for (const { mode, installed, surface } of desktopCarriers) {
         await openTaskKnowledge(page)
         const requiredKnowledge = page.getByRole('checkbox', { name: 'Operations playbook' })
         await expect.poll(() => requiredKnowledge.isDisabled()).toBe(true)
-        await page.keyboard.press('Escape')
+        await cancelTaskKnowledge(page)
         await kitPicker.click()
         await page.getByRole('menuitem', { name: /^(No expert kit|不使用套件)$/ }).click()
         await expect.poll(() => invoke('tasks.capabilities.read', { sessionId }))
@@ -2248,7 +2255,7 @@ for (const { mode, installed, surface } of desktopCarriers) {
         await page.keyboard.press('Escape')
         await openTaskKnowledge(page)
         await page.screenshot({ path: join(screenshots, `electron-${carrier}-product-knowledge-groups.png`), animations: 'disabled' })
-        await page.keyboard.press('Escape')
+        await cancelTaskKnowledge(page)
         await composer.fill('Review enterprise policy')
         await composer.press('Enter')
         await page.locator('p').filter({ hasText: /^Fixture review complete\.$/ }).waitFor()
