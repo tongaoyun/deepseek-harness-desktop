@@ -1470,6 +1470,7 @@ for (const { mode, installed, surface } of desktopCarriers) {
       const uploadedFiles: { mode: string; filename: string; folderId?: string }[] = []
       const deviceReports: Record<string, unknown>[] = []
       const feedbackBodies: string[] = []
+      const feedbackPayloads: unknown[] = []
       const folderRows: { id: string; name: string; parentId: string | null; updatedAt: string }[] = [{
         id: 'folder-policies', name: 'Policies', parentId: null, updatedAt: '2026-10-10T01:00:00Z',
       }]
@@ -1498,7 +1499,14 @@ for (const { mode, installed, surface } of desktopCarriers) {
               if (!Buffer.isBuffer(chunk)) throw new Error('Expected feedback bytes')
               chunks.push(Buffer.from(new Uint8Array(chunk)))
             }
-            feedbackBodies.push(Buffer.concat(chunks).toString('utf8'))
+            const body = Buffer.concat(chunks)
+            feedbackBodies.push(body.toString('utf8'))
+            const multipart = await new Response(new Uint8Array(body), {
+              headers: { 'content-type': request.headers['content-type'] ?? '' },
+            }).formData()
+            const feedback = multipart.get('feedback')
+            if (!(feedback instanceof File)) throw new Error('Expected feedback metadata')
+            feedbackPayloads.push(JSON.parse(await feedback.text()))
             expect(request.headers['idempotency-key']).toMatch(/^[0-9a-f-]{36}$/u)
             expect(request.headers.authorization).toBe(`Bearer ${secret}`)
             response.end(JSON.stringify({ success: true, data: { id: 'feedback-fixture' } }))
@@ -1745,7 +1753,10 @@ for (const { mode, installed, surface } of desktopCarriers) {
         }, timeout: 60_000 }
       app = await _electron.launch(launchOptions)
       expect(await app.evaluate(({ app }) => app.isPackaged)).toBe(installed !== undefined)
+      const applicationVersion = await app.evaluate(({ app }) => app.getVersion())
       if (installed !== undefined) {
+        const expectedVersion = z.string().min(1).parse(process.env.PACKAGE_VERSION)
+        expect(applicationVersion, 'Installed application version must match PACKAGE_VERSION').toBe(expectedVersion)
         const appPath = await app.evaluate(({ app }) => app.getAppPath())
         expect(appPath).toContain('app.asar')
         expect(appPath).not.toContain(REPO_ROOT)
@@ -1800,9 +1811,11 @@ for (const { mode, installed, surface } of desktopCarriers) {
         await expect.poll(() => deviceReports.length).toBeGreaterThan(0)
         expect(JSON.stringify(deviceReports)).not.toContain(secret)
         expect(deviceReports[0]?.deviceId).toMatch(/^[0-9a-f-]{36}$/u)
+        expect(deviceReports[0]?.desktopVersion).toBe(applicationVersion)
         await page.getByRole('button', { name: /^(More menu|更多菜单)$/, exact: true }).click()
         expect(await page.getByRole('menuitem', { name: /^(Check for updates|检查更新)$/, exact: true }).count()).toBe(1)
-        if (installed === undefined) {
+        const signing = z.enum(['signed', 'unsigned']).default('unsigned').parse(process.env.PACKAGE_SIGNING)
+        if (installed === undefined || signing === 'unsigned') {
           const [updatePage] = await Promise.all([
             app.waitForEvent('window'),
             page.getByRole('menuitem', { name: /^(Check for updates|检查更新)$/, exact: true }).click(),
@@ -1810,6 +1823,7 @@ for (const { mode, installed, surface } of desktopCarriers) {
           await expect.poll(() => updatePage.locator('#title').textContent()).toMatch(/Automatic updates are unavailable|当前版本暂不支持自动更新/u)
           expect(await updatePage.locator('#technical-details').isHidden()).toBe(true)
           expect(await updatePage.locator('#detail').textContent()).toMatch(/Current version:|当前版本：/u)
+          expect(await updatePage.locator('#detail').textContent()).toContain(applicationVersion)
           for (const width of [1440, 390]) {
             await updatePage.setViewportSize({ width, height: 900 })
             expect(await updatePage.locator('main').evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true)
@@ -1848,6 +1862,8 @@ for (const { mode, installed, surface } of desktopCarriers) {
         expect(feedbackBodies[0]).toContain('support-screenshot.png')
         expect(feedbackBodies[0]).toContain('image/png')
         expect(feedbackBodies[0]).not.toContain(secret)
+        expect(feedbackPayloads).toEqual([{ message: 'Desktop support acceptance', category: 'BUG',
+          desktopVersion: applicationVersion, deviceId: deviceReports[0]?.deviceId, taskId: '' }])
         expect(await feedbackDialog.getByRole('img').count()).toBe(0)
         await feedbackDialog.getByRole('button', { name: /^(Close|关闭)$/, exact: true }).last().click()
         if (surface === 'support') {
