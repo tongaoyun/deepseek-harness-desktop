@@ -4,11 +4,11 @@
 
 ## DeepSeek Harness 下游桌面端
 
-本仓库扩展 DeepSeek Harness `dsh-v0.2.1-alpha.4`，上游基线固定在 [`UPSTREAM_COMMIT`](UPSTREAM_COMMIT)。`apps/desktop` 运行官方 profile；`apps/product-desktop` 通过同一 Electron 壳组合企业扩展。
+本仓库扩展 DeepSeek Harness `dsh-v0.2.1-rc.2`，上游基线固定在 [`UPSTREAM_COMMIT`](UPSTREAM_COMMIT)。`apps/desktop` 运行官方 profile；`apps/product-desktop` 通过同一 Electron 壳组合企业扩展。
 
 [产品子系统](docs/subsystems/deepseek-harness-product.md)通过独立的协议、运行时、桌面和 UI 包管理认证、目录、任务能力快照及桌面资源。Harness 的 Session、执行、审批和回放 API 是集成入口。[登记补丁](scripts/upstream-patches/manifest.json)记录每项官方差异及验证方式。
 
-Gitea 执行桌面 CI 和向 GitHub 私有构建仓库的手动同步。[产品桌面交付](apps/product-desktop/README.md)等待未签名的 Windows x64、macOS ARM64 和 macOS Intel 构建，校验文件，并向公开 GitHub 下载仓库及内网 Gitea 发布相同的预发布版本。单独运行 GitHub 打包只上传 Actions 产物；两种流程均不发布自动更新 feed。
+Gitea 执行桌面 CI，并将指定提交手动同步到 GitHub 构建仓库。[产品桌面交付](apps/product-desktop/README.md)负责 Windows 和两种 Mac 架构的打包、校验及 GitHub、Gitea 发布；签名配置和软件更新条件见该文档。
 
 DeepSeek Harness（`dsh`）是由 [DeepSeek AI](https://deepseek.com) 开发的开源 agent harness（智能体框架）。
 

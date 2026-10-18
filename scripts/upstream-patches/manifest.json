@@ -848,17 +848,17 @@
         {
           "path": "README.i18n.yaml",
           "before": "700422df48df27704707a6832b7ba7234f1f44c42494ceffb3b8ee2210f989af",
-          "after": "0765f84fa41ef03f2271f45aa5c9281c7d5a4f291186dfa55d4a8d4d47d38869"
+          "after": "c00ef3ff12fbb2418e9e8bcd7d17c98d5d6c45dda5a11f0721b7b55a8e748973"
         },
         {
           "path": "README.md",
           "before": "0f5516be2acde776f05572cbc8c3093c90549afe04ce118e11157d073d5d15f4",
-          "after": "f0df4ef65acbf5aba4fc63ae536a513ddd54e31ef4814a0baa8b2fb1581fe571"
+          "after": "713eadaad691508e74a5d286bfe1eecb3f3a87cedb538e1a72f0926585140f37"
         },
         {
           "path": "README.zh.md",
           "before": "8f19db1b217e8ef30cf413b07056cc791048bc2ba2ec51ba104e383dcfb43c61",
-          "after": "2376450ce07f45c086edf74f140ff875ab587323edd7d7e06a9577819bca2f20"
+          "after": "a7271b83787ecb68d178445168ea611f32816417d2039656a5a0b7f01c8a3c66"
         },
         {
           "path": "THIRD_PARTY_NOTICES.md",
