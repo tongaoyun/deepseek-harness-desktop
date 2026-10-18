@@ -75,10 +75,12 @@ pnpm exec vitest run scripts/upstream-boundaries.spec.ts scripts/deepseek-harnes
 pnpm exec vitest run apps/product-desktop/tests/close-electron.spec.ts
 pnpm exec vitest run apps/product-desktop/tests/office-fixture.spec.ts
 pnpm run verify:upstream
-pnpm --dir apps/product-desktop run test:installed --target mac-arm64
+PACKAGE_VERSION="$INSTALLER_VERSION" PACKAGE_SIGNING=unsigned pnpm --dir apps/product-desktop run test:installed --target mac-arm64
 ```
 
-安装后验收需要原生 Windows 或 macOS runner 及其生成的安装包。使用 `--installer /absolute/path/to/installer.dmg`（或 EXE）可验证已有下载包，无需重新构建。验收使用私有临时目录，结束后清理；不要在 Windows 上与同一产品的其他安装操作同时运行。
+安装后验收需要原生 Windows 或 macOS runner 及其生成的安装包。`PACKAGE_VERSION` 必须为安装包完整版本，`PACKAGE_SIGNING` 为 `unsigned` 或 `signed`；打包工作流自动提供这两个值，手动验收需自行设置。使用 `--installer /absolute/path/to/installer.dmg`（或 EXE）可验证已有下载包，无需重新构建。验收使用私有临时目录，结束后清理；不要在 Windows 上与同一产品的其他安装操作同时运行。
+
+安装后验收核对应用版本、设备上报和反馈元数据一致。未签名安装版还验证检查更新入口、当前完整版本及窄屏提示；签名版的真实下载和重启安装须另行完成上述 A→B 验收。
 
 安装版界面命令使用独立于打包任务的十分钟超时。超时或 SIGINT/SIGTERM 取消会使验收失败，终止正在运行的命令进程树（Windows 使用 `taskkill /T /F`，macOS 使用独立进程组），等待命令关闭后再卸载。进程终止与关闭分别最多等待十秒，清理错误也会使运行失败。原生 runner 使用真实子进程及孙进程验证超时和取消。这限制测试卡住的影响，不会将未完成的验收视为成功构建。
 
