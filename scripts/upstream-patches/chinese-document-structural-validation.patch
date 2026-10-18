@@ -174,7 +174,7 @@ index 5330165b522e036e4bbb60ab1e7c0666c0aa8822..fc456d62564d6408dc46edd4bc463a31
    const lines = markdownProseLines(source, tree)
    const headings = markdownHeadingLines(source, tree)
 diff --git a/scripts/verify-package-readme-model-experience.ts b/scripts/verify-package-readme-model-experience.ts
-index a2056fb597a9b071ac9391a59e257922585935b1..a676cf49c2c1069bd73d1a9a359bc264b57a9aba 100644
+index 2c313a3deab1779ec1676c067bc024459f1db0ff..523df6d1e8de8427f16d211aacee0df4dc8e6998 100644
 --- a/scripts/verify-package-readme-model-experience.ts
 +++ b/scripts/verify-package-readme-model-experience.ts
 @@ -7,7 +7,7 @@
@@ -186,7 +186,7 @@ index a2056fb597a9b071ac9391a59e257922585935b1..a676cf49c2c1069bd73d1a9a359bc264
  
  const root = resolve(import.meta.dirname, '..')
  const HEADING = '## Model Experience'
-@@ -306,9 +306,9 @@ function validateNestedVerbatim(raw: readonly string[], fragments: Set<string>):
+@@ -307,9 +307,9 @@ function validateNestedVerbatim(raw: readonly string[], fragments: Set<string>):
    return { blocks }
  }
  
@@ -198,7 +198,7 @@ index a2056fb597a9b071ac9391a59e257922585935b1..a676cf49c2c1069bd73d1a9a359bc264
  }
  
  /** A direct stable system-prompt contribution, as named by the README rules. */
-@@ -371,7 +371,7 @@ for (const packageJson of packageJsons) {
+@@ -372,7 +372,7 @@ for (const packageJson of packageJsons) {
      continue
    }
  

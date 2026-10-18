@@ -1,5 +1,5 @@
 diff --git a/README.i18n.yaml b/README.i18n.yaml
-index 5ce56b7a613a0709b4ccde53711317f34e5abdb0..3d8bc1de964ff728df5ca1775441afd943b40bd2 100644
+index 5ce56b7a613a0709b4ccde53711317f34e5abdb0..3b7015b4f27a15d30cb7b8920ff4af5e387f7b5d 100644
 --- a/README.i18n.yaml
 +++ b/README.i18n.yaml
 @@ -3,8 +3,11 @@
@@ -11,13 +11,13 @@ index 5ce56b7a613a0709b4ccde53711317f34e5abdb0..3d8bc1de964ff728df5ca1775441afd9
 +  en: 2a567d9e9bf21506
 +  zh: e5f30eff0160234a
 +/deepseek-harness/deepseek-harness-downstream-desktop:
-+  en: 4673c87412b5a20c
-+  zh: 02553af5eac46ef1
++  en: d77fa1f9bacdf169
++  zh: 7e9c5762ebdc8321
  /deepseek-harness/developer-preview:
    en: 4ef4d8a71ac143f0
    zh: 1bfc3149ba8e5543
 diff --git a/README.md b/README.md
-index 7941e30f7bdca9391befe39b9115d211157fa42d..654f8447f44ca20947c8541ced1b018ac15f0133 100644
+index 7941e30f7bdca9391befe39b9115d211157fa42d..be41804562a4e2c8415183950d828ca952e3b72c 100644
 --- a/README.md
 +++ b/README.md
 @@ -2,6 +2,14 @@
@@ -26,17 +26,17 @@ index 7941e30f7bdca9391befe39b9115d211157fa42d..654f8447f44ca20947c8541ced1b018a
  
 +## DeepSeek Harness downstream desktop
 +
-+This repository extends DeepSeek Harness `dsh-v0.2.1-alpha.4`, pinned by [`UPSTREAM_COMMIT`](UPSTREAM_COMMIT). `apps/desktop` runs the official profile; `apps/product-desktop` assembles the enterprise extension through the same Electron shell.
++This repository extends DeepSeek Harness `dsh-v0.2.1-rc.2`, pinned by [`UPSTREAM_COMMIT`](UPSTREAM_COMMIT). `apps/desktop` runs the official profile; `apps/product-desktop` assembles the enterprise extension through the same Electron shell.
 +
 +The [product subsystem](docs/subsystems/deepseek-harness-product.md) owns authentication, catalogs, per-task capability snapshots, and desktop resources in independent protocol, runtime, desktop, and UI packages. Harness Session, execution, approval, and replay APIs remain the integration points. [Registered patches](scripts/upstream-patches/manifest.json) record every official difference and its verification.
 +
-+Gitea runs desktop CI and manual synchronization to the private GitHub build repository. [Product desktop delivery](apps/product-desktop/README.md) waits for unsigned Windows x64, macOS ARM64, and macOS Intel builds, verifies their files, and publishes matching prereleases to public GitHub downloads and internal Gitea. Standalone GitHub packaging only uploads Actions artifacts; neither path publishes automatic update feeds.
++Gitea runs desktop CI and manually synchronizes a selected commit to the GitHub build repository. [Product desktop delivery](apps/product-desktop/README.md) owns Windows and both Mac architecture builds, verification, and GitHub and Gitea publishing; that document also defines signing configuration and software update requirements.
 +
  DeepSeek Harness (`dsh`) is an open-source agent harness developed by [DeepSeek AI](https://deepseek.com).
  
  It is built on an **everything-is-a-plugin** architecture and powered by [Cordis](https://github.com/cordiverse/cordis), whose design is described in [_A Programming Paradigm for Spatiotemporal Composability_](https://arxiv.org/abs/2608.25512).
 diff --git a/README.zh.md b/README.zh.md
-index 3adc57ce89b3c30e6a6dbaa14dc35df944d52926..5930ede0a37b2c4894c9e6c31872ac34b4eadb7f 100644
+index 3adc57ce89b3c30e6a6dbaa14dc35df944d52926..b790aa36360cc4baa170e8fcaa6a1567018c729a 100644
 --- a/README.zh.md
 +++ b/README.zh.md
 @@ -2,6 +2,14 @@
@@ -45,11 +45,11 @@ index 3adc57ce89b3c30e6a6dbaa14dc35df944d52926..5930ede0a37b2c4894c9e6c31872ac34
  
 +## DeepSeek Harness 下游桌面端
 +
-+本仓库扩展 DeepSeek Harness `dsh-v0.2.1-alpha.4`，上游基线固定在 [`UPSTREAM_COMMIT`](UPSTREAM_COMMIT)。`apps/desktop` 运行官方 profile；`apps/product-desktop` 通过同一 Electron 壳组合企业扩展。
++本仓库扩展 DeepSeek Harness `dsh-v0.2.1-rc.2`，上游基线固定在 [`UPSTREAM_COMMIT`](UPSTREAM_COMMIT)。`apps/desktop` 运行官方 profile；`apps/product-desktop` 通过同一 Electron 壳组合企业扩展。
 +
 +[产品子系统](docs/subsystems/deepseek-harness-product.md)通过独立的协议、运行时、桌面和 UI 包管理认证、目录、任务能力快照及桌面资源。Harness 的 Session、执行、审批和回放 API 是集成入口。[登记补丁](scripts/upstream-patches/manifest.json)记录每项官方差异及验证方式。
 +
-+Gitea 执行桌面 CI 和向 GitHub 私有构建仓库的手动同步。[产品桌面交付](apps/product-desktop/README.md)等待未签名的 Windows x64、macOS ARM64 和 macOS Intel 构建，校验文件，并向公开 GitHub 下载仓库及内网 Gitea 发布相同的预发布版本。单独运行 GitHub 打包只上传 Actions 产物；两种流程均不发布自动更新 feed。
++Gitea 执行桌面 CI，并将指定提交手动同步到 GitHub 构建仓库。[产品桌面交付](apps/product-desktop/README.md)负责 Windows 和两种 Mac 架构的打包、校验及 GitHub、Gitea 发布；签名配置和软件更新条件见该文档。
 +
  DeepSeek Harness（`dsh`）是由 [DeepSeek AI](https://deepseek.com) 开发的开源 agent harness（智能体框架）。
  
@@ -486,7 +486,7 @@ index 870fa1c996ba569f882a7cb70e62f0bd655c64af..e4630a876520302e23235f1543bdece6
  
  | 包 | 职责 | `ctx` 键 |
 diff --git a/docs/config-catalog.md b/docs/config-catalog.md
-index 5240eec77a3624c9c7f4593d787a6ff830a1641d..9d834aeb478f595f90db09a4bc91bf3a0bbe8d21 100644
+index 60484ba7953302ab8c0e47f86b203796862fdca7..a8fd4056c1585e03ce71b1266ae2adbfb03f5e55 100644
 --- a/docs/config-catalog.md
 +++ b/docs/config-catalog.md
 @@ -139,7 +139,7 @@ export type Config = PresetDefinition
@@ -525,7 +525,7 @@ index 5240eec77a3624c9c7f4593d787a6ff830a1641d..9d834aeb478f595f90db09a4bc91bf3a
    toolCallTimeoutMs: number
    /** Fail plugin activation when the initial connection or tool synchronization fails. */
    failOnStartupError: boolean
-@@ -4554,6 +4554,39 @@ export interface Config {
+@@ -4583,6 +4583,39 @@ export interface Config {
  ```
  <!-- END GENERATED config-catalog:@deepseek-ai/dsh-workspace-changes -->
  
@@ -565,7 +565,7 @@ index 5240eec77a3624c9c7f4593d787a6ff830a1641d..9d834aeb478f595f90db09a4bc91bf3a
  ## Loadable plugins with no config
  
  These load from a `cordis.yml` entry with no `config:` block; they declare no configuration API.
-@@ -4667,6 +4700,8 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
+@@ -4697,6 +4730,8 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
  | `@deepseek-ai/dsh-user-questions` | — | [`packages/interaction/user-questions/src/index.ts`](../packages/interaction/user-questions/src/index.ts) |
  | `@deepseek-ai/dsh-webhook` | `agents` · `agentDefaultModel` · `agentPresets` · `permissionPresets` · `sessionTitle` · `workspaceRegistry` | [`packages/experimental/webhook/src/index.ts`](../packages/experimental/webhook/src/index.ts) |
  | `@deepseek-ai/dsh-workspace` | `storageDomain` · `sessionPersistence` | [`packages/workspace/workspace/src/index.ts`](../packages/workspace/workspace/src/index.ts) |
@@ -574,7 +574,7 @@ index 5240eec77a3624c9c7f4593d787a6ff830a1641d..9d834aeb478f595f90db09a4bc91bf3a
  <!-- END GENERATED config-catalog:no-config -->
  
  ## Seam packages (not directly loadable)
-@@ -4768,4 +4803,6 @@ Imported as libraries by other packages; a `cordis.yml` cannot load them.
+@@ -4798,4 +4833,6 @@ Imported as libraries by other packages; a `cordis.yml` cannot load them.
  | `@deepseek-ai/dsh-util-values` | — | [`packages/util/values/src/index.ts`](../packages/util/values/src/index.ts) |
  | `@deepseek-ai/dsh-util-workspace-path` | — | [`packages/util/workspace-path/src/index.ts`](../packages/util/workspace-path/src/index.ts) |
  | `@deepseek-ai/dsh-win32-process` | — | [`packages/subprocess/win32-process/src/index.ts`](../packages/subprocess/win32-process/src/index.ts) |
@@ -582,7 +582,7 @@ index 5240eec77a3624c9c7f4593d787a6ff830a1641d..9d834aeb478f595f90db09a4bc91bf3a
 +| `@deepseek-harness/product-desktop` | — | [`packages/deepseek-harness-product/desktop/src/index.ts`](../packages/deepseek-harness-product/desktop/src/index.ts) |
  <!-- END GENERATED config-catalog:library -->
 diff --git a/docs/config-catalog.zh.md b/docs/config-catalog.zh.md
-index bf66626c51d4303bec06a5803e2dde3a5e1b5fc0..984808b3038f358172d477139f490bd08c863f99 100644
+index 846065001058b837f0218fe1d72e3e74acf4ca33..e73e4b6422fe5d65a2a398ce501a05bc69217bf8 100644
 --- a/docs/config-catalog.zh.md
 +++ b/docs/config-catalog.zh.md
 @@ -141,7 +141,7 @@ export type Config = PresetDefinition
@@ -621,7 +621,7 @@ index bf66626c51d4303bec06a5803e2dde3a5e1b5fc0..984808b3038f358172d477139f490bd0
    toolCallTimeoutMs: number
    /** Fail plugin activation when the initial connection or tool synchronization fails. */
    failOnStartupError: boolean
-@@ -4556,6 +4556,39 @@ export interface Config {
+@@ -4585,6 +4585,39 @@ export interface Config {
  ```
  <!-- END GENERATED config-catalog:@deepseek-ai/dsh-workspace-changes -->
  
@@ -661,7 +661,7 @@ index bf66626c51d4303bec06a5803e2dde3a5e1b5fc0..984808b3038f358172d477139f490bd0
  ## 无配置的可加载插件
  
  这些插件通过 `cordis.yml` 中不含 `config:` 块的条目加载；它们未声明任何配置接口。
-@@ -4669,6 +4702,8 @@ export interface Config {
+@@ -4699,6 +4732,8 @@ export interface Config {
  | `@deepseek-ai/dsh-user-questions` | — | [`packages/interaction/user-questions/src/index.ts`](../packages/interaction/user-questions/src/index.ts) |
  | `@deepseek-ai/dsh-webhook` | `agents` · `agentDefaultModel` · `agentPresets` · `permissionPresets` · `sessionTitle` · `workspaceRegistry` | [`packages/experimental/webhook/src/index.ts`](../packages/experimental/webhook/src/index.ts) |
  | `@deepseek-ai/dsh-workspace` | `storageDomain` · `sessionPersistence` | [`packages/workspace/workspace/src/index.ts`](../packages/workspace/workspace/src/index.ts) |
@@ -670,7 +670,7 @@ index bf66626c51d4303bec06a5803e2dde3a5e1b5fc0..984808b3038f358172d477139f490bd0
  <!-- END GENERATED config-catalog:no-config -->
  
  ## Seam 包（不可直接加载）
-@@ -4770,4 +4805,6 @@ export interface Config {
+@@ -4800,4 +4835,6 @@ export interface Config {
  | `@deepseek-ai/dsh-util-values` | — | [`packages/util/values/src/index.ts`](../packages/util/values/src/index.ts) |
  | `@deepseek-ai/dsh-util-workspace-path` | — | [`packages/util/workspace-path/src/index.ts`](../packages/util/workspace-path/src/index.ts) |
  | `@deepseek-ai/dsh-win32-process` | — | [`packages/subprocess/win32-process/src/index.ts`](../packages/subprocess/win32-process/src/index.ts) |
@@ -678,7 +678,7 @@ index bf66626c51d4303bec06a5803e2dde3a5e1b5fc0..984808b3038f358172d477139f490bd0
 +| `@deepseek-harness/product-desktop` | — | [`packages/deepseek-harness-product/desktop/src/index.ts`](../packages/deepseek-harness-product/desktop/src/index.ts) |
  <!-- END GENERATED config-catalog:library -->
 diff --git a/docs/event-producer-consumer.md b/docs/event-producer-consumer.md
-index 659b9d53a55bc6dea3a8b9fc832c318cccdf4c46..284404375ae35c1aeca9b5337705262623ec5ae9 100644
+index 3d1bbaf9878f8f29970d693a4776eb5c1f985128..501728df9ec7aa1839adc2f8ba1015396ad89468 100644
 --- a/docs/event-producer-consumer.md
 +++ b/docs/event-producer-consumer.md
 @@ -9,15 +9,16 @@ This matrix shows which packages dispatch each harness-owned event and which pac
@@ -718,7 +718,7 @@ index 659b9d53a55bc6dea3a8b9fc832c318cccdf4c46..284404375ae35c1aeca9b53377052626
  | `tools/result` | `emit` | [`packages/core/tools/src/index.ts:199`](../packages/core/tools/src/index.ts) | [`tools`](../packages/core/tools) (`events.dispatch`) | [`agent-instructions`](../packages/context/agent-instructions), `claude-code-mods`, [`subagent`](../packages/subagent/subagent), [`tool-present`](../packages/deliverables/tool-present) |
  | `user-questions/request` | `waterfall` | [`packages/interaction/user-questions/src/types.ts:157`](../packages/interaction/user-questions/src/types.ts) | [`user-questions`](../packages/interaction/user-questions) (`waterfall`) | `remotes` |
 diff --git a/docs/event-producer-consumer.zh.md b/docs/event-producer-consumer.zh.md
-index 19d1da24095e666182528129193368504432fe44..dc03cd6b134e4bf883d13d8a8d3a6d65606f8452 100644
+index 213180e82e28bdc61af7b84ad80ef389b641bd4b..bd950d8b1cb2f7e1f90ae55e087fcb01e05d84dc 100644
 --- a/docs/event-producer-consumer.zh.md
 +++ b/docs/event-producer-consumer.zh.md
 @@ -11,15 +11,16 @@
@@ -758,21 +758,21 @@ index 19d1da24095e666182528129193368504432fe44..dc03cd6b134e4bf883d13d8a8d3a6d65
  | `tools/result` | `emit` | [`packages/core/tools/src/index.ts:199`](../packages/core/tools/src/index.ts) | [`tools`](../packages/core/tools) (`events.dispatch`) | [`agent-instructions`](../packages/context/agent-instructions), `claude-code-mods`, [`subagent`](../packages/subagent/subagent), [`tool-present`](../packages/deliverables/tool-present) |
  | `user-questions/request` | `waterfall` | [`packages/interaction/user-questions/src/types.ts:157`](../packages/interaction/user-questions/src/types.ts) | [`user-questions`](../packages/interaction/user-questions) (`waterfall`) | `remotes` |
 diff --git a/docs/persistence-catalog.i18n.yaml b/docs/persistence-catalog.i18n.yaml
-index 7d6496f3b6570504741f894dc2e043be0ed245b1..cc096be496a1c1b13b16227a731b53201732c4c7 100644
+index 5b57d28fca6151f55aa1ebf0ec41df907482ea99..8edcceb92b459fc644ed372f624a6225bf8b9cf7 100644
 --- a/docs/persistence-catalog.i18n.yaml
 +++ b/docs/persistence-catalog.i18n.yaml
 @@ -9,8 +9,8 @@
    en: 1387c4505dde2faf
    zh: 48570fa1c13d6910
  /session-persistence-event-catalog/persistence-type-fingerprints:
--  en: a696c43a89d5fbe8
--  zh: 6855eb0239b8dcb3
-+  en: 1f7cc5de0e87d777
-+  zh: 3de047b059680e33
+-  en: bcff48893d904af8
+-  zh: f82e75c91c39adb1
++  en: e77d74f00a7bb5d8
++  zh: 8b7bf55d02a437cc
  /session-persistence-event-catalog/event-envelope:
    en: 689f781d95689e20
    zh: 602f6a7f0835d698
-@@ -651,8 +651,14 @@
+@@ -654,8 +654,14 @@
    en: e048b2b8f8165011
    zh: e048b2b8f8165011
  /session-persistence-event-catalog/resolved-persistence-types/producer:
@@ -789,14 +789,14 @@ index 7d6496f3b6570504741f894dc2e043be0ed245b1..cc096be496a1c1b13b16227a731b5320
  /session-persistence-event-catalog/resolved-persistence-types/product-interaction:
    en: 05fe435810456683
    zh: 05fe435810456683
-@@ -1002,17 +1008,20 @@
-   en: 586743dfeab78c55
-   zh: 26ccef4a02dd7a58
+@@ -1005,17 +1011,20 @@
+   en: a6a2e38fdd6d127a
+   zh: 1fe82356d89f5769
  /session-persistence-event-catalog/resolved-persistence-types/deepseeksearchllmrequest:
--  en: db71ecccc1e5409e
--  zh: 7b55744e022dc102
-+  en: 51794a4819106080
-+  zh: 09767f52c8c233d6
+-  en: 128c0ecc1897eb68
+-  zh: e4c67c92752bcc2a
++  en: 1cb6844fe609c44e
++  zh: ce0a424cea67a27b
  /session-persistence-event-catalog/resolved-persistence-types/developermessage:
 -  en: 997b5db27df00446
 -  zh: 07e5197ddd7bd59b
@@ -816,7 +816,7 @@ index 7d6496f3b6570504741f894dc2e043be0ed245b1..cc096be496a1c1b13b16227a731b5320
  /session-persistence-event-catalog/resolved-persistence-types/feedbackrecord:
    en: 3b6931556cfe6b9e
    zh: ce5a5b1d92ce9eac
-@@ -1116,11 +1125,11 @@
+@@ -1119,11 +1128,11 @@
    en: 6dbe099c62f7c226
    zh: 6fd788f63c038c91
  /session-persistence-event-catalog/resolved-persistence-types/llmretrystartedeventdata:
@@ -832,7 +832,7 @@ index 7d6496f3b6570504741f894dc2e043be0ed245b1..cc096be496a1c1b13b16227a731b5320
  /session-persistence-event-catalog/resolved-persistence-types/messagefeedbackdelete:
    en: c582953270d4ca44
    zh: 966ccfe2e7660a2a
-@@ -1131,14 +1140,14 @@
+@@ -1134,14 +1143,14 @@
    en: f58575a1fc96df42
    zh: 9f0c6ed9033e5c9d
  /session-persistence-event-catalog/resolved-persistence-types/messagefeedbackrating:
@@ -853,7 +853,7 @@ index 7d6496f3b6570504741f894dc2e043be0ed245b1..cc096be496a1c1b13b16227a731b5320
  /session-persistence-event-catalog/resolved-persistence-types/modelmessagesource:
    en: 3b677f021d7dd4d3
    zh: 2a875742b22879a2
-@@ -1200,11 +1209,11 @@
+@@ -1203,11 +1212,11 @@
    en: 9a54c4478ad3b620
    zh: 02c4c1fd7e252770
  /session-persistence-event-catalog/resolved-persistence-types/sessiontitleeventdata:
@@ -869,7 +869,7 @@ index 7d6496f3b6570504741f894dc2e043be0ed245b1..cc096be496a1c1b13b16227a731b5320
  /session-persistence-event-catalog/resolved-persistence-types/sessiontitlemodelidentity:
    en: 9531468264499498
    zh: 9da23c0ad2776563
-@@ -1311,14 +1320,14 @@
+@@ -1314,14 +1323,14 @@
    en: 4dc89c072fe5d0d1
    zh: 4ed2c9e9e8b4f7e2
  /session-persistence-event-catalog/resolved-persistence-types/turnendreason:
@@ -890,7 +890,7 @@ index 7d6496f3b6570504741f894dc2e043be0ed245b1..cc096be496a1c1b13b16227a731b5320
  /session-persistence-event-catalog/resolved-persistence-types/workflowagentoutcome:
    en: d0a3f9aab18c3de5
    zh: 76ac69a835ca4e29
-@@ -1497,11 +1506,11 @@
+@@ -1500,11 +1509,11 @@
    en: 51af619ed8532a43
    zh: a5ad878c63d0e046
  /session-persistence-event-catalog/resolved-persistence-types/header-reason-startsseries:
@@ -906,7 +906,7 @@ index 7d6496f3b6570504741f894dc2e043be0ed245b1..cc096be496a1c1b13b16227a731b5320
  /session-persistence-event-catalog/resolved-persistence-types/height-width:
    en: a5df50710083ac25
    zh: aad3ccf6f6de70e4
-@@ -1518,11 +1527,11 @@
+@@ -1521,11 +1530,11 @@
    en: 41f73c58a77dfa28
    zh: af77f4aee3cb4a40
  /session-persistence-event-catalog/resolved-persistence-types/inherited:
@@ -922,7 +922,7 @@ index 7d6496f3b6570504741f894dc2e043be0ed245b1..cc096be496a1c1b13b16227a731b5320
  /session-persistence-event-catalog/resolved-persistence-types/interrupted-message-step-stream:
    en: ec10cd8e9c202a81
    zh: e08f859bcb13f0d4
-@@ -1665,8 +1674,11 @@
+@@ -1668,8 +1677,11 @@
    en: 82227ec9729e2a94
    zh: 72fbb89e9ec9123f
  /session-persistence-event-catalog/resolved-persistence-types/kind-plan-mode-form-snapshot:
@@ -936,7 +936,7 @@ index 7d6496f3b6570504741f894dc2e043be0ed245b1..cc096be496a1c1b13b16227a731b5320
  /session-persistence-event-catalog/resolved-persistence-types/kind-provider:
    en: c53129cf7214286c
    zh: 8c5183b6dabbf714
-@@ -1917,11 +1929,11 @@
+@@ -1920,11 +1932,11 @@
    en: c58b89cec274f956
    zh: 056a29ed1ada9690
  /session-persistence-event-catalog/resolved-persistence-types/type-agent-preset-selected:
@@ -952,7 +952,7 @@ index 7d6496f3b6570504741f894dc2e043be0ed245b1..cc096be496a1c1b13b16227a731b5320
  /session-persistence-event-catalog/resolved-persistence-types/type-approval-asked:
    en: 9c77f18b0dad22f0
    zh: 8894cf2878fe90db
-@@ -1965,11 +1977,11 @@
+@@ -1968,11 +1980,11 @@
    en: ba73fb10b7e2ffc9
    zh: 8d5c97e63e5f16da
  /session-persistence-event-catalog/resolved-persistence-types/type-deliverables-presented:
@@ -961,14 +961,14 @@ index 7d6496f3b6570504741f894dc2e043be0ed245b1..cc096be496a1c1b13b16227a731b5320
 +  en: daf5aac34fe2f42b
 +  zh: c919ea7fcfb723fd
  /session-persistence-event-catalog/resolved-persistence-types/type-developer-message:
--  en: ed8c78af3a89ba8f
--  zh: 4f859687aa13c1a3
-+  en: df2b14c86ef7bab3
-+  zh: 5b889d703c7a5828
- /session-persistence-event-catalog/resolved-persistence-types/type-feedback-message-delete:
-   en: 204561e2311db97e
-   zh: 77264396bd5e25c4
-@@ -2040,11 +2052,11 @@
+-  en: a9e6e24b98390923
+-  zh: 65addae898d8aaec
++  en: 7d2919c6154e06b6
++  zh: d5e9e9c6f7945c0f
+ /session-persistence-event-catalog/resolved-persistence-types/type-disabled:
+   en: 585627a50ece4e5f
+   zh: 157837aee3da0ac3
+@@ -2046,11 +2058,11 @@
    en: acf7e21e4d21ebff
    zh: fb83a853634d204a
  /session-persistence-event-catalog/resolved-persistence-types/type-session-title:
@@ -984,7 +984,7 @@ index 7d6496f3b6570504741f894dc2e043be0ed245b1..cc096be496a1c1b13b16227a731b5320
  /session-persistence-event-catalog/resolved-persistence-types/type-step-end:
    en: 7fc233c4a569dae2
    zh: bc2b3fed4a397c00
-@@ -2121,11 +2133,11 @@
+@@ -2127,11 +2139,11 @@
    en: 1b045de96172be4b
    zh: 8a15c6f35b576b37
  /session-persistence-event-catalog/resolved-persistence-types/type-usage:
@@ -993,15 +993,15 @@ index 7d6496f3b6570504741f894dc2e043be0ed245b1..cc096be496a1c1b13b16227a731b5320
 +  en: da49c37a3ec40d86
 +  zh: 5e45c6331ae01671
  /session-persistence-event-catalog/resolved-persistence-types/type-user-message:
--  en: afab869c0592b46c
--  zh: f15874a1e728ab0d
-+  en: e16d3de88ac64ac5
-+  zh: a104924a56984456
+-  en: d6d9401f19a66ee8
+-  zh: 569fdddf887660a2
++  en: 018bfb56d693dd30
++  zh: 3433a326eb131710
  /session-persistence-event-catalog/resolved-persistence-types/type-web-deepseek-search-llm-request:
-   en: f109997e295af37d
-   zh: b2dcfd599f73b61c
+   en: 99c8837344178a47
+   zh: bf746f5678346596
 diff --git a/docs/persistence-catalog.md b/docs/persistence-catalog.md
-index ec7e3240daaff0a6752f7484aea62f87cf2ccc6f..f46defc49959104ead61f9cd37ddb7562ff8391b 100644
+index 5cd37161404b5245b52105d20ed17216428ae9f9..2614f46b34d8f311443a029cd75730bc8cc7d77c 100644
 --- a/docs/persistence-catalog.md
 +++ b/docs/persistence-catalog.md
 @@ -23,7 +23,7 @@ The [format references](persistence-changes/historical-formats/README.md) cover
@@ -1037,10 +1037,10 @@ index ec7e3240daaff0a6752f7484aea62f87cf2ccc6f..f46defc49959104ead61f9cd37ddb756
  | `event:turn/start` | event | `aa0957eca50aeb28bcd2e6930b95809926edacb550c8c340ba526ba6b861b3d8` | [`{ type: "turn/start" }`](#persistence-type-sha256-aa0957eca50aeb28bcd2e6930b95809926edacb550c8c340ba526ba6b861b3d8) |
 -| `event:user/message` | event | `2ae8594a998c9862a597129e782277bcc518266712a703b5c3161bdf552d13b8` | [`{ type: "user/message" }`](#persistence-type-sha256-2ae8594a998c9862a597129e782277bcc518266712a703b5c3161bdf552d13b8) |
 +| `event:user/message` | event | `f3116a318f37233d46978e253374f7964fba7742af47f6579b72f9770fa39096` | [`{ type: "user/message" }`](#persistence-type-sha256-f3116a318f37233d46978e253374f7964fba7742af47f6579b72f9770fa39096) |
- | `event:web/deepseek-search-llm-request` | event | `cf6e3aaf1e2de6480aa0157730a41b9a492108a55304100b0f7e112711dd4331` | [`{ type: "web/deepseek-search-llm-request" }`](#persistence-type-sha256-cf6e3aaf1e2de6480aa0157730a41b9a492108a55304100b0f7e112711dd4331) |
+ | `event:web/deepseek-search-llm-request` | event | `0c556c9b9f2a96238a6b9bbb99e748206cbff2ed6203041c9571f04ae5802f52` | [`{ type: "web/deepseek-search-llm-request" }`](#persistence-type-sha256-0c556c9b9f2a96238a6b9bbb99e748206cbff2ed6203041c9571f04ae5802f52) |
  | `event:working-directory/change` | event | `124aa62078ca3311353b39cc3bf6c75da281338be6bbf672f8b361d828cddca3` | [`{ type: "working-directory/change" }`](#persistence-type-sha256-124aa62078ca3311353b39cc3bf6c75da281338be6bbf672f8b361d828cddca3) |
  | `event:workspace/changes` | event | `e308ccf867a5398e316e0af8cb6ce238a8d33a63b9b384c8250a686786285f72` | [`{ type: "workspace/changes" }`](#persistence-type-sha256-e308ccf867a5398e316e0af8cb6ce238a8d33a63b9b384c8250a686786285f72) |
-@@ -2265,6 +2265,22 @@ SHA-256: `6cf082d0fb6034dea61636787ff0ddf43b6e59aad71e644435a479bc9b83ad65`
+@@ -2273,6 +2273,22 @@ SHA-256: `6cf082d0fb6034dea61636787ff0ddf43b6e59aad71e644435a479bc9b83ad65`
  
  `"producer"`
  
@@ -1063,8 +1063,8 @@ index ec7e3240daaff0a6752f7484aea62f87cf2ccc6f..f46defc49959104ead61f9cd37ddb756
  <a id="persistence-type-sha256-0341d4c3dfcd53253cdc1e789d9130d3cd848b6f8b0706bf92f313a68b39ff23"></a>
  
  ### `"product-interaction"`
-@@ -3357,7 +3373,7 @@ Sources: [`packages/web/web-search-deepseek/src/provider.ts:55`](../packages/web
- | `body` | required | [`{ max_tokens, messages, model, tools }`](#persistence-type-sha256-930a6567a10bb62ddd157bd8abdf4b182810c8c3b49d91309b3b009a5fed9731) |
+@@ -3365,7 +3381,7 @@ Sources: [`packages/web/web-search-deepseek/src/provider.ts:55`](../packages/web
+ | `body` | required | [`{ max_tokens, messages, model, thinking?, … }`](#persistence-type-sha256-9c001ecb5e1d3c3894410db2a1e383842e5f8454fb52182338686158abc1b3ee) |
  | `endpoint` | required | `string` |
  
 -<a id="persistence-type-sha256-0f6265188dae7ba6faa26830a180bb4deb0760561f97ee0c9d399ccf6c9cf1f7"></a>
@@ -1072,7 +1072,7 @@ index ec7e3240daaff0a6752f7484aea62f87cf2ccc6f..f46defc49959104ead61f9cd37ddb756
  
  <a id="persistence-type-developermessage"></a>
  
-@@ -3365,7 +3381,7 @@ Sources: [`packages/web/web-search-deepseek/src/provider.ts:55`](../packages/web
+@@ -3373,7 +3389,7 @@ Sources: [`packages/web/web-search-deepseek/src/provider.ts:55`](../packages/web
  
  ### `DeveloperMessage`
  
@@ -1081,7 +1081,7 @@ index ec7e3240daaff0a6752f7484aea62f87cf2ccc6f..f46defc49959104ead61f9cd37ddb756
  
  Sources: [`packages/llm/llm/src/message.ts:157`](../packages/llm/llm/src/message.ts)
  
-@@ -3374,11 +3390,11 @@ Sources: [`packages/llm/llm/src/message.ts:157`](../packages/llm/llm/src/message
+@@ -3382,11 +3398,11 @@ Sources: [`packages/llm/llm/src/message.ts:157`](../packages/llm/llm/src/message
  | `content` | required | [`ContentBlock[]`](#persistence-type-sha256-b52f215a6cd691058a3413c12f161fa3b563a2f4895adb3df6f744ec4b0a6ef1) |
  | `id` | required | `string` |
  | `role` | required | `"developer"` |
@@ -1095,7 +1095,7 @@ index ec7e3240daaff0a6752f7484aea62f87cf2ccc6f..f46defc49959104ead61f9cd37ddb756
  
  <a id="persistence-type-sha256-9a930283b91d493d6347146f2475bb107294b379415ca02162354f46a64164f7"></a>
  
-@@ -3418,6 +3434,25 @@ Sources: [`packages/schedule/schedule/src/types.ts:244`](../packages/schedule/sc
+@@ -3426,6 +3442,25 @@ Sources: [`packages/schedule/schedule/src/types.ts:244`](../packages/schedule/sc
  | `operation` | required | `"dispatch"` |
  | `version` | required | `1` |
  
@@ -1121,7 +1121,7 @@ index ec7e3240daaff0a6752f7484aea62f87cf2ccc6f..f46defc49959104ead61f9cd37ddb756
  <a id="persistence-type-sha256-7d54a5a5e629e2e7783bfac72683bcc5e969e9f43426b9289826aaf294ff6344"></a>
  
  <a id="persistence-type-feedbackrecord"></a>
-@@ -4073,7 +4108,7 @@ Sources: [`packages/llm/llm-retry/src/types.ts:43`](../packages/llm/llm-retry/sr
+@@ -4081,7 +4116,7 @@ Sources: [`packages/llm/llm-retry/src/types.ts:43`](../packages/llm/llm-retry/sr
  | `step` | required | `number` |
  | `turn` | required | `number` |
  
@@ -1130,7 +1130,7 @@ index ec7e3240daaff0a6752f7484aea62f87cf2ccc6f..f46defc49959104ead61f9cd37ddb756
  
  <a id="persistence-type-message"></a>
  
-@@ -4081,15 +4116,15 @@ Sources: [`packages/llm/llm-retry/src/types.ts:43`](../packages/llm/llm-retry/sr
+@@ -4089,15 +4124,15 @@ Sources: [`packages/llm/llm-retry/src/types.ts:43`](../packages/llm/llm-retry/sr
  
  ### `Message`
  
@@ -1149,7 +1149,7 @@ index ec7e3240daaff0a6752f7484aea62f87cf2ccc6f..f46defc49959104ead61f9cd37ddb756
  - [`AssistantMessage`](#persistence-type-sha256-fa87537f4a9c1e25602990a8bf686b383e9e00352ec8946e16ae24ba7c1625be)
  - [`SystemMessage`](#persistence-type-sha256-09f3f8dc417f278257202714132f98ba7b52957d7b558c4a04456603890eb363)
  
-@@ -4166,7 +4201,7 @@ One of:
+@@ -4174,7 +4209,7 @@ One of:
  - `"negative"`
  - `"positive"`
  
@@ -1158,7 +1158,7 @@ index ec7e3240daaff0a6752f7484aea62f87cf2ccc6f..f46defc49959104ead61f9cd37ddb756
  
  <a id="persistence-type-messagesource"></a>
  
-@@ -4174,7 +4209,7 @@ One of:
+@@ -4182,7 +4217,7 @@ One of:
  
  ### `MessageSource`
  
@@ -1167,7 +1167,7 @@ index ec7e3240daaff0a6752f7484aea62f87cf2ccc6f..f46defc49959104ead61f9cd37ddb756
  
  Sources: [`packages/llm/llm/src/message.ts:136`](../packages/llm/llm/src/message.ts)
  
-@@ -4221,6 +4256,8 @@ Sources: [`packages/llm/llm/src/message.ts:136`](../packages/llm/llm/src/message
+@@ -4229,6 +4264,8 @@ Sources: [`packages/llm/llm/src/message.ts:136`](../packages/llm/llm/src/message
  | `plan-mode` | `"relay"` | none | [`{ kind: "plan-mode", form: "relay" }`](#persistence-type-sha256-deaae5cd30987d4f49398e8f9d994c125907e7f928300745fb1dbf15f145d0e7) |
  | `plan-mode` | `"snapshot"` | `sections`: [`ContextSnapshotSection[]`](#persistence-type-sha256-c748fb42c80a120038a8c587af80ec39924803c401364db11c8974d5bf6d0262) | [`{ kind: "plan-mode", form: "snapshot" }`](#persistence-type-sha256-8c1c4f72755a78ea163523a46565316e36e9b644382eb48e6635c71a6f412dd2) |
  | `plan-mode` | not declared | none | [`{ kind: "plan-mode" }`](#persistence-type-sha256-f4a66f654996c093aae700ea4c434ff2ee3569fea9c0e5813ccf6afdccabd163) |
@@ -1176,7 +1176,7 @@ index ec7e3240daaff0a6752f7484aea62f87cf2ccc6f..f46defc49959104ead61f9cd37ddb756
  | `ptc-mode` | not declared | none | [`{ kind: "ptc-mode" }`](#persistence-type-sha256-dba54c09c6e7aafc9acbed7792ecc920d99f92d0784aeeed10af55f7fe0bc8cd) |
  | `repeat-tool-reminder` | `"catalog"` | none | [`{ kind: "repeat-tool-reminder", form: "catalog" }`](#persistence-type-sha256-d85590a5675c6e2fd8164e5792a6cceac714605b8ac228adae5ee668facb1490) |
  | `repeat-tool-reminder` | `"instructions"` | none | [`{ kind: "repeat-tool-reminder", form: "instructions" }`](#persistence-type-sha256-6f44f32be9bcd9a8bf075c3b575b06c8ed63446386e5b0995c7b73762e68ddae) |
-@@ -4292,13 +4329,13 @@ Sources: [`packages/llm/llm/src/message.ts:136`](../packages/llm/llm/src/message
+@@ -4300,13 +4337,13 @@ Sources: [`packages/llm/llm/src/message.ts:136`](../packages/llm/llm/src/message
  | `webhook` | `"notice"` | `deliveryId`: `string`; `provider`: `string`; `ruleId`: `string`; `source`: `string`; `summary`: `string` | [`{ kind: "webhook", form: "notice" }`](#persistence-type-sha256-9edc162949abf93bd5ff049191b345454ba104f583937ce5580fb50f067d2b94) |
  | `working-directory` | not declared | none | [`{ kind: "working-directory" }`](#persistence-type-sha256-2235d957bf4b7c6cf959231d480f0ba1f3a6d72d82981493fb6c7c963021d3d5) |
  
@@ -1193,7 +1193,7 @@ index ec7e3240daaff0a6752f7484aea62f87cf2ccc6f..f46defc49959104ead61f9cd37ddb756
  
  <a id="persistence-type-sha256-719c51f67074f97034a6c94297fe1f4b5d3c8d392c57586dab732aa5398c7a91"></a>
  
-@@ -4682,7 +4719,7 @@ Sources: [`packages/session/session-title/src/types.ts:41`](../packages/session/
+@@ -4690,7 +4727,7 @@ Sources: [`packages/session/session-title/src/types.ts:41`](../packages/session/
  | `source` | required | [`SessionTitleSource`](#persistence-type-sha256-30d5a537b296685770b1241c4b4bbde19d5a31ff81aa23df73fab5e90b8fc65f) |
  | `title` | required | `string` |
  
@@ -1202,7 +1202,7 @@ index ec7e3240daaff0a6752f7484aea62f87cf2ccc6f..f46defc49959104ead61f9cd37ddb756
  
  <a id="persistence-type-packagessessionsession-title-llmsrcindextssessiontitlellmrequesteventdata"></a>
  
-@@ -4690,7 +4727,7 @@ Sources: [`packages/session/session-title/src/types.ts:41`](../packages/session/
+@@ -4698,7 +4735,7 @@ Sources: [`packages/session/session-title/src/types.ts:41`](../packages/session/
  
  ### `SessionTitleLlmRequestEventData`
  
@@ -1211,7 +1211,7 @@ index ec7e3240daaff0a6752f7484aea62f87cf2ccc6f..f46defc49959104ead61f9cd37ddb756
  
  Sources: [`packages/session/session-title-llm/src/index.ts:37`](../packages/session/session-title-llm/src/index.ts)
  
-@@ -4698,7 +4735,7 @@ Sources: [`packages/session/session-title-llm/src/index.ts:37`](../packages/sess
+@@ -4706,7 +4743,7 @@ Sources: [`packages/session/session-title-llm/src/index.ts:37`](../packages/sess
  |---|---|---|
  | `maxTokens` | required | `number` |
  | `messageSeqs` | required | [`number[]`](#persistence-type-sha256-5d03ba38734809bcbd2a55221bd938b3b3fc34b49bb686c6113e9e4931e3aa78) |
@@ -1220,7 +1220,7 @@ index ec7e3240daaff0a6752f7484aea62f87cf2ccc6f..f46defc49959104ead61f9cd37ddb756
  | `reasoningEffort` | optional | `string` |
  | `route` | required | [`SessionTitleModelIdentity`](#persistence-type-sha256-07e1a58c58b593f507b8e7f25723bb0aa42baae6e00f5ecfddf28cb1e64d3235) |
  | `system` | required | `string` |
-@@ -5354,7 +5391,7 @@ Sources: [`packages/core/session/src/types.ts:233`](../packages/core/session/src
+@@ -5362,7 +5399,7 @@ Sources: [`packages/core/session/src/types.ts:233`](../packages/core/session/src
  | `interrupted` | not declared | none | [`{ kind: "interrupted" }`](#persistence-type-sha256-56b7c047694875a843ba020dfea3c8380d54ae4ff88ab349e72004dc21e07c23) |
  | `max-tokens` | not declared | none | [`{ kind: "max-tokens" }`](#persistence-type-sha256-ab7ec5f9eb2c6dfacca5da4c37cf7ba85d04172053ee6b1ebf1709ffcd99c1a7) |
  
@@ -1229,7 +1229,7 @@ index ec7e3240daaff0a6752f7484aea62f87cf2ccc6f..f46defc49959104ead61f9cd37ddb756
  
  <a id="persistence-type-packagesllmllmsrcmessagetsusermessage"></a>
  
-@@ -5362,7 +5399,7 @@ Sources: [`packages/core/session/src/types.ts:233`](../packages/core/session/src
+@@ -5370,7 +5407,7 @@ Sources: [`packages/core/session/src/types.ts:233`](../packages/core/session/src
  
  ### `UserMessage`
  
@@ -1238,7 +1238,7 @@ index ec7e3240daaff0a6752f7484aea62f87cf2ccc6f..f46defc49959104ead61f9cd37ddb756
  
  Sources: [`packages/llm/llm/src/message.ts:162`](../packages/llm/llm/src/message.ts)
  
-@@ -5371,19 +5408,19 @@ Sources: [`packages/llm/llm/src/message.ts:162`](../packages/llm/llm/src/message
+@@ -5379,19 +5416,19 @@ Sources: [`packages/llm/llm/src/message.ts:162`](../packages/llm/llm/src/message
  | `content` | required | [`ContentBlock[]`](#persistence-type-sha256-b52f215a6cd691058a3413c12f161fa3b563a2f4895adb3df6f744ec4b0a6ef1) |
  | `id` | required | `string` |
  | `role` | required | `"user"` |
@@ -1263,7 +1263,7 @@ index ec7e3240daaff0a6752f7484aea62f87cf2ccc6f..f46defc49959104ead61f9cd37ddb756
  
  <a id="persistence-type-sha256-c2deb7c9183735d4e0fffddf5c623f4e34daa1c8e96b111982e957dfcbbcf896"></a>
  
-@@ -6268,18 +6305,18 @@ Sources: [`packages/core/session/src/types.ts:391`](../packages/core/session/src
+@@ -6276,18 +6313,18 @@ Sources: [`packages/core/session/src/types.ts:391`](../packages/core/session/src
  | `reason` | required | [`RequestHeaderReason`](#persistence-type-sha256-530da6c0267813bb4511af72883cc518834e624e3b3220a7062955fd57a788a6) |
  | `startsSeries` | optional | `true` |
  
@@ -1285,7 +1285,7 @@ index ec7e3240daaff0a6752f7484aea62f87cf2ccc6f..f46defc49959104ead61f9cd37ddb756
  | `step` | required | `number` |
  | `turn` | required | `number` |
  
-@@ -6363,17 +6400,17 @@ Sources: [`packages/core/session/src/types.ts:428`](../packages/core/session/src
+@@ -6371,17 +6408,17 @@ Sources: [`packages/core/session/src/types.ts:428`](../packages/core/session/src
  |---|---|---|
  | `inherited` | optional | `true` |
  
@@ -1306,7 +1306,7 @@ index ec7e3240daaff0a6752f7484aea62f87cf2ccc6f..f46defc49959104ead61f9cd37ddb756
  | `outcome` | optional | `"canceled"` |
  | `removedCount` | optional | `number` |
  | `start` | required | `number` |
-@@ -6932,6 +6969,18 @@ SHA-256: `8c1c4f72755a78ea163523a46565316e36e9b644382eb48e6635c71a6f412dd2`
+@@ -6940,6 +6977,18 @@ SHA-256: `8c1c4f72755a78ea163523a46565316e36e9b644382eb48e6635c71a6f412dd2`
  | `kind` | required | `"plan-mode"` |
  | `sections` | required | [`ContextSnapshotSection[]`](#persistence-type-sha256-c748fb42c80a120038a8c587af80ec39924803c401364db11c8974d5bf6d0262) |
  
@@ -1325,7 +1325,7 @@ index ec7e3240daaff0a6752f7484aea62f87cf2ccc6f..f46defc49959104ead61f9cd37ddb756
  <a id="persistence-type-sha256-b81e9de81a481b24e1e1f9adf038bfc59e57b4f35ce62f8f1e45284186f4f812"></a>
  
  ### `{ kind: "provider" }`
-@@ -7934,17 +7983,17 @@ SHA-256: `a10c17474eaf2ddab7095a099e0fe3d046fc18e56c3e344fc8894c05ff9ef97b`
+@@ -7943,17 +7992,17 @@ SHA-256: `a10c17474eaf2ddab7095a099e0fe3d046fc18e56c3e344fc8894c05ff9ef97b`
  | `time` | required | `number` |
  | `type` | required | `"agent-preset/selected"` |
  
@@ -1346,7 +1346,7 @@ index ec7e3240daaff0a6752f7484aea62f87cf2ccc6f..f46defc49959104ead61f9cd37ddb756
  | `ignorable` | optional | `true` |
  | `seq` | required | `number` |
  | `time` | required | `number` |
-@@ -8185,17 +8234,17 @@ SHA-256: `13d3d180f977bf78081d487ffa0ecb75857349bcab29a5a3fb48189fca2a6176`
+@@ -8194,17 +8243,17 @@ SHA-256: `13d3d180f977bf78081d487ffa0ecb75857349bcab29a5a3fb48189fca2a6176`
  | `time` | required | `number` |
  | `type` | required | `"deliverables/presented"` |
  
@@ -1367,7 +1367,7 @@ index ec7e3240daaff0a6752f7484aea62f87cf2ccc6f..f46defc49959104ead61f9cd37ddb756
  | `ignorable` | optional | `true` |
  | `seq` | required | `number` |
  | `sourceEventSeqs` | optional | [`number[]`](#persistence-type-sha256-5d03ba38734809bcbd2a55221bd938b3b3fc34b49bb686c6113e9e4931e3aa78) |
-@@ -8583,17 +8632,17 @@ SHA-256: `1b912703e2d64f91c99c675b8f805b01076c8325b905c1218ad81ef0b24909d5`
+@@ -8604,17 +8653,17 @@ SHA-256: `1b912703e2d64f91c99c675b8f805b01076c8325b905c1218ad81ef0b24909d5`
  | `time` | required | `number` |
  | `type` | required | `"session/title"` |
  
@@ -1388,7 +1388,7 @@ index ec7e3240daaff0a6752f7484aea62f87cf2ccc6f..f46defc49959104ead61f9cd37ddb756
  | `ignorable` | optional | `true` |
  | `seq` | required | `number` |
  | `time` | required | `number` |
-@@ -9016,17 +9065,17 @@ Sources: [`packages/llm/llm/src/types.ts:476`](../packages/llm/llm/src/types.ts)
+@@ -9037,17 +9086,17 @@ Sources: [`packages/llm/llm/src/types.ts:476`](../packages/llm/llm/src/types.ts)
  | `type` | required | `"usage"` |
  | `usage` | required | [`TokenUsage`](#persistence-type-sha256-fec5442b9ee4122e10514d81d5a43648003fe8bfb7ee2ba50c0cdbdd383ed394) |
  
@@ -1410,7 +1410,7 @@ index ec7e3240daaff0a6752f7484aea62f87cf2ccc6f..f46defc49959104ead61f9cd37ddb756
  | `seq` | required | `number` |
  | `sourceEventSeqs` | optional | [`number[]`](#persistence-type-sha256-5d03ba38734809bcbd2a55221bd938b3b3fc34b49bb686c6113e9e4931e3aa78) |
 diff --git a/docs/persistence-catalog.zh.md b/docs/persistence-catalog.zh.md
-index 15d1af1d5898b4cc968c287cdb0f6c3fafbd45d2..332ac8d08e492a5317a485ef1e404aeff1644a33 100644
+index c12ce2c6ad2aa729f29b84467052dee0743789d9..d7f9b94fdc633d8210ead462804a249de5d31fe6 100644
 --- a/docs/persistence-catalog.zh.md
 +++ b/docs/persistence-catalog.zh.md
 @@ -25,7 +25,7 @@
@@ -1446,10 +1446,10 @@ index 15d1af1d5898b4cc968c287cdb0f6c3fafbd45d2..332ac8d08e492a5317a485ef1e404aef
  | `event:turn/start` | event | `aa0957eca50aeb28bcd2e6930b95809926edacb550c8c340ba526ba6b861b3d8` | [`{ type: "turn/start" }`](#persistence-type-sha256-aa0957eca50aeb28bcd2e6930b95809926edacb550c8c340ba526ba6b861b3d8) |
 -| `event:user/message` | event | `2ae8594a998c9862a597129e782277bcc518266712a703b5c3161bdf552d13b8` | [`{ type: "user/message" }`](#persistence-type-sha256-2ae8594a998c9862a597129e782277bcc518266712a703b5c3161bdf552d13b8) |
 +| `event:user/message` | event | `f3116a318f37233d46978e253374f7964fba7742af47f6579b72f9770fa39096` | [`{ type: "user/message" }`](#persistence-type-sha256-f3116a318f37233d46978e253374f7964fba7742af47f6579b72f9770fa39096) |
- | `event:web/deepseek-search-llm-request` | event | `cf6e3aaf1e2de6480aa0157730a41b9a492108a55304100b0f7e112711dd4331` | [`{ type: "web/deepseek-search-llm-request" }`](#persistence-type-sha256-cf6e3aaf1e2de6480aa0157730a41b9a492108a55304100b0f7e112711dd4331) |
+ | `event:web/deepseek-search-llm-request` | event | `0c556c9b9f2a96238a6b9bbb99e748206cbff2ed6203041c9571f04ae5802f52` | [`{ type: "web/deepseek-search-llm-request" }`](#persistence-type-sha256-0c556c9b9f2a96238a6b9bbb99e748206cbff2ed6203041c9571f04ae5802f52) |
  | `event:working-directory/change` | event | `124aa62078ca3311353b39cc3bf6c75da281338be6bbf672f8b361d828cddca3` | [`{ type: "working-directory/change" }`](#persistence-type-sha256-124aa62078ca3311353b39cc3bf6c75da281338be6bbf672f8b361d828cddca3) |
  | `event:workspace/changes` | event | `e308ccf867a5398e316e0af8cb6ce238a8d33a63b9b384c8250a686786285f72` | [`{ type: "workspace/changes" }`](#persistence-type-sha256-e308ccf867a5398e316e0af8cb6ce238a8d33a63b9b384c8250a686786285f72) |
-@@ -2267,6 +2267,22 @@ SHA-256: `6cf082d0fb6034dea61636787ff0ddf43b6e59aad71e644435a479bc9b83ad65`
+@@ -2275,6 +2275,22 @@ SHA-256: `6cf082d0fb6034dea61636787ff0ddf43b6e59aad71e644435a479bc9b83ad65`
  
  `"producer"`
  
@@ -1472,8 +1472,8 @@ index 15d1af1d5898b4cc968c287cdb0f6c3fafbd45d2..332ac8d08e492a5317a485ef1e404aef
  <a id="persistence-type-sha256-0341d4c3dfcd53253cdc1e789d9130d3cd848b6f8b0706bf92f313a68b39ff23"></a>
  
  ### `"product-interaction"`
-@@ -3359,7 +3375,7 @@ SHA-256: `2517ba143a271508d3ca35126d5aca8f7f1facf5aaddce4adf011832042fa2b9`
- | `body` | 必需 | [`{ max_tokens, messages, model, tools }`](#persistence-type-sha256-930a6567a10bb62ddd157bd8abdf4b182810c8c3b49d91309b3b009a5fed9731) |
+@@ -3367,7 +3383,7 @@ SHA-256: `abd6ca62a5ab166553848324a23fef90eed7f59c8021bd63e7ea5bc6fd666b0c`
+ | `body` | 必需 | [`{ max_tokens, messages, model, thinking?, … }`](#persistence-type-sha256-9c001ecb5e1d3c3894410db2a1e383842e5f8454fb52182338686158abc1b3ee) |
  | `endpoint` | 必需 | `string` |
  
 -<a id="persistence-type-sha256-0f6265188dae7ba6faa26830a180bb4deb0760561f97ee0c9d399ccf6c9cf1f7"></a>
@@ -1481,7 +1481,7 @@ index 15d1af1d5898b4cc968c287cdb0f6c3fafbd45d2..332ac8d08e492a5317a485ef1e404aef
  
  <a id="persistence-type-developermessage"></a>
  
-@@ -3367,7 +3383,7 @@ SHA-256: `2517ba143a271508d3ca35126d5aca8f7f1facf5aaddce4adf011832042fa2b9`
+@@ -3375,7 +3391,7 @@ SHA-256: `abd6ca62a5ab166553848324a23fef90eed7f59c8021bd63e7ea5bc6fd666b0c`
  
  ### `DeveloperMessage`
  
@@ -1490,7 +1490,7 @@ index 15d1af1d5898b4cc968c287cdb0f6c3fafbd45d2..332ac8d08e492a5317a485ef1e404aef
  
  来源：[`packages/llm/llm/src/message.ts:157`](../packages/llm/llm/src/message.ts)
  
-@@ -3376,11 +3392,11 @@ SHA-256: `0f6265188dae7ba6faa26830a180bb4deb0760561f97ee0c9d399ccf6c9cf1f7`
+@@ -3384,11 +3400,11 @@ SHA-256: `0f6265188dae7ba6faa26830a180bb4deb0760561f97ee0c9d399ccf6c9cf1f7`
  | `content` | 必需 | [`ContentBlock[]`](#persistence-type-sha256-b52f215a6cd691058a3413c12f161fa3b563a2f4895adb3df6f744ec4b0a6ef1) |
  | `id` | 必需 | `string` |
  | `role` | 必需 | `"developer"` |
@@ -1504,7 +1504,7 @@ index 15d1af1d5898b4cc968c287cdb0f6c3fafbd45d2..332ac8d08e492a5317a485ef1e404aef
  
  <a id="persistence-type-sha256-9a930283b91d493d6347146f2475bb107294b379415ca02162354f46a64164f7"></a>
  
-@@ -3420,6 +3436,25 @@ SHA-256: `e6063d0451dc02026fd9b54ad3f77c7b1b6392ad3e872a7737ac84e13ca72344`
+@@ -3428,6 +3444,25 @@ SHA-256: `e6063d0451dc02026fd9b54ad3f77c7b1b6392ad3e872a7737ac84e13ca72344`
  | `operation` | 必需 | `"dispatch"` |
  | `version` | 必需 | `1` |
  
@@ -1530,7 +1530,7 @@ index 15d1af1d5898b4cc968c287cdb0f6c3fafbd45d2..332ac8d08e492a5317a485ef1e404aef
  <a id="persistence-type-sha256-7d54a5a5e629e2e7783bfac72683bcc5e969e9f43426b9289826aaf294ff6344"></a>
  
  <a id="persistence-type-feedbackrecord"></a>
-@@ -4075,7 +4110,7 @@ SHA-256: `6f72ece8f317cd080c4f20a93f1bf709965f5b81ac4669528f5a023191cfcf20`
+@@ -4083,7 +4118,7 @@ SHA-256: `6f72ece8f317cd080c4f20a93f1bf709965f5b81ac4669528f5a023191cfcf20`
  | `step` | 必需 | `number` |
  | `turn` | 必需 | `number` |
  
@@ -1539,7 +1539,7 @@ index 15d1af1d5898b4cc968c287cdb0f6c3fafbd45d2..332ac8d08e492a5317a485ef1e404aef
  
  <a id="persistence-type-message"></a>
  
-@@ -4083,15 +4118,15 @@ SHA-256: `6f72ece8f317cd080c4f20a93f1bf709965f5b81ac4669528f5a023191cfcf20`
+@@ -4091,15 +4126,15 @@ SHA-256: `6f72ece8f317cd080c4f20a93f1bf709965f5b81ac4669528f5a023191cfcf20`
  
  ### `Message`
  
@@ -1558,7 +1558,7 @@ index 15d1af1d5898b4cc968c287cdb0f6c3fafbd45d2..332ac8d08e492a5317a485ef1e404aef
  - [`AssistantMessage`](#persistence-type-sha256-fa87537f4a9c1e25602990a8bf686b383e9e00352ec8946e16ae24ba7c1625be)
  - [`SystemMessage`](#persistence-type-sha256-09f3f8dc417f278257202714132f98ba7b52957d7b558c4a04456603890eb363)
  
-@@ -4168,7 +4203,7 @@ SHA-256: `390eed1028aba02774f14408647acec10ec5516e97d4f15ecde2b9989d5a69f2`
+@@ -4176,7 +4211,7 @@ SHA-256: `390eed1028aba02774f14408647acec10ec5516e97d4f15ecde2b9989d5a69f2`
  - `"negative"`
  - `"positive"`
  
@@ -1567,7 +1567,7 @@ index 15d1af1d5898b4cc968c287cdb0f6c3fafbd45d2..332ac8d08e492a5317a485ef1e404aef
  
  <a id="persistence-type-messagesource"></a>
  
-@@ -4176,7 +4211,7 @@ SHA-256: `390eed1028aba02774f14408647acec10ec5516e97d4f15ecde2b9989d5a69f2`
+@@ -4184,7 +4219,7 @@ SHA-256: `390eed1028aba02774f14408647acec10ec5516e97d4f15ecde2b9989d5a69f2`
  
  ### `MessageSource`
  
@@ -1576,7 +1576,7 @@ index 15d1af1d5898b4cc968c287cdb0f6c3fafbd45d2..332ac8d08e492a5317a485ef1e404aef
  
  来源：[`packages/llm/llm/src/message.ts:136`](../packages/llm/llm/src/message.ts)
  
-@@ -4223,6 +4258,8 @@ SHA-256: `5bc2d7f02503fc6b3e1bb7e0b7fa22c0b9e4b9841fa3175b2ad8e607ae3525a8`
+@@ -4231,6 +4266,8 @@ SHA-256: `5bc2d7f02503fc6b3e1bb7e0b7fa22c0b9e4b9841fa3175b2ad8e607ae3525a8`
  | `plan-mode` | `"relay"` | 无 | [`{ kind: "plan-mode", form: "relay" }`](#persistence-type-sha256-deaae5cd30987d4f49398e8f9d994c125907e7f928300745fb1dbf15f145d0e7) |
  | `plan-mode` | `"snapshot"` | `sections`: [`ContextSnapshotSection[]`](#persistence-type-sha256-c748fb42c80a120038a8c587af80ec39924803c401364db11c8974d5bf6d0262) | [`{ kind: "plan-mode", form: "snapshot" }`](#persistence-type-sha256-8c1c4f72755a78ea163523a46565316e36e9b644382eb48e6635c71a6f412dd2) |
  | `plan-mode` | 未声明 | 无 | [`{ kind: "plan-mode" }`](#persistence-type-sha256-f4a66f654996c093aae700ea4c434ff2ee3569fea9c0e5813ccf6afdccabd163) |
@@ -1585,7 +1585,7 @@ index 15d1af1d5898b4cc968c287cdb0f6c3fafbd45d2..332ac8d08e492a5317a485ef1e404aef
  | `ptc-mode` | 未声明 | 无 | [`{ kind: "ptc-mode" }`](#persistence-type-sha256-dba54c09c6e7aafc9acbed7792ecc920d99f92d0784aeeed10af55f7fe0bc8cd) |
  | `repeat-tool-reminder` | `"catalog"` | 无 | [`{ kind: "repeat-tool-reminder", form: "catalog" }`](#persistence-type-sha256-d85590a5675c6e2fd8164e5792a6cceac714605b8ac228adae5ee668facb1490) |
  | `repeat-tool-reminder` | `"instructions"` | 无 | [`{ kind: "repeat-tool-reminder", form: "instructions" }`](#persistence-type-sha256-6f44f32be9bcd9a8bf075c3b575b06c8ed63446386e5b0995c7b73762e68ddae) |
-@@ -4294,13 +4331,13 @@ SHA-256: `5bc2d7f02503fc6b3e1bb7e0b7fa22c0b9e4b9841fa3175b2ad8e607ae3525a8`
+@@ -4302,13 +4339,13 @@ SHA-256: `5bc2d7f02503fc6b3e1bb7e0b7fa22c0b9e4b9841fa3175b2ad8e607ae3525a8`
  | `webhook` | `"notice"` | `deliveryId`: `string`; `provider`: `string`; `ruleId`: `string`; `source`: `string`; `summary`: `string` | [`{ kind: "webhook", form: "notice" }`](#persistence-type-sha256-9edc162949abf93bd5ff049191b345454ba104f583937ce5580fb50f067d2b94) |
  | `working-directory` | 未声明 | 无 | [`{ kind: "working-directory" }`](#persistence-type-sha256-2235d957bf4b7c6cf959231d480f0ba1f3a6d72d82981493fb6c7c963021d3d5) |
  
@@ -1602,7 +1602,7 @@ index 15d1af1d5898b4cc968c287cdb0f6c3fafbd45d2..332ac8d08e492a5317a485ef1e404aef
  
  <a id="persistence-type-sha256-719c51f67074f97034a6c94297fe1f4b5d3c8d392c57586dab732aa5398c7a91"></a>
  
-@@ -4684,7 +4721,7 @@ SHA-256: `b56f6a885da3dc394c69a3e3cc5c0cfc4da15601b63fda4989eee8f40efc5be4`
+@@ -4692,7 +4729,7 @@ SHA-256: `b56f6a885da3dc394c69a3e3cc5c0cfc4da15601b63fda4989eee8f40efc5be4`
  | `source` | 必需 | [`SessionTitleSource`](#persistence-type-sha256-30d5a537b296685770b1241c4b4bbde19d5a31ff81aa23df73fab5e90b8fc65f) |
  | `title` | 必需 | `string` |
  
@@ -1611,7 +1611,7 @@ index 15d1af1d5898b4cc968c287cdb0f6c3fafbd45d2..332ac8d08e492a5317a485ef1e404aef
  
  <a id="persistence-type-packagessessionsession-title-llmsrcindextssessiontitlellmrequesteventdata"></a>
  
-@@ -4692,7 +4729,7 @@ SHA-256: `b56f6a885da3dc394c69a3e3cc5c0cfc4da15601b63fda4989eee8f40efc5be4`
+@@ -4700,7 +4737,7 @@ SHA-256: `b56f6a885da3dc394c69a3e3cc5c0cfc4da15601b63fda4989eee8f40efc5be4`
  
  ### `SessionTitleLlmRequestEventData`
  
@@ -1620,7 +1620,7 @@ index 15d1af1d5898b4cc968c287cdb0f6c3fafbd45d2..332ac8d08e492a5317a485ef1e404aef
  
  来源：[`packages/session/session-title-llm/src/index.ts:37`](../packages/session/session-title-llm/src/index.ts)
  
-@@ -4700,7 +4737,7 @@ SHA-256: `00c054d3018c198d92f459563331edd1385e58345c677bb499791df2da0ade9f`
+@@ -4708,7 +4745,7 @@ SHA-256: `00c054d3018c198d92f459563331edd1385e58345c677bb499791df2da0ade9f`
  |---|---|---|
  | `maxTokens` | 必需 | `number` |
  | `messageSeqs` | 必需 | [`number[]`](#persistence-type-sha256-5d03ba38734809bcbd2a55221bd938b3b3fc34b49bb686c6113e9e4931e3aa78) |
@@ -1629,7 +1629,7 @@ index 15d1af1d5898b4cc968c287cdb0f6c3fafbd45d2..332ac8d08e492a5317a485ef1e404aef
  | `reasoningEffort` | 可选 | `string` |
  | `route` | 必需 | [`SessionTitleModelIdentity`](#persistence-type-sha256-07e1a58c58b593f507b8e7f25723bb0aa42baae6e00f5ecfddf28cb1e64d3235) |
  | `system` | 必需 | `string` |
-@@ -5356,7 +5393,7 @@ SHA-256: `f1687f982fa3d41ef29e159feed154ecd13af4dd209acaee16038f223f2e9402`
+@@ -5364,7 +5401,7 @@ SHA-256: `f1687f982fa3d41ef29e159feed154ecd13af4dd209acaee16038f223f2e9402`
  | `interrupted` | 未声明 | 无 | [`{ kind: "interrupted" }`](#persistence-type-sha256-56b7c047694875a843ba020dfea3c8380d54ae4ff88ab349e72004dc21e07c23) |
  | `max-tokens` | 未声明 | 无 | [`{ kind: "max-tokens" }`](#persistence-type-sha256-ab7ec5f9eb2c6dfacca5da4c37cf7ba85d04172053ee6b1ebf1709ffcd99c1a7) |
  
@@ -1638,7 +1638,7 @@ index 15d1af1d5898b4cc968c287cdb0f6c3fafbd45d2..332ac8d08e492a5317a485ef1e404aef
  
  <a id="persistence-type-packagesllmllmsrcmessagetsusermessage"></a>
  
-@@ -5364,7 +5401,7 @@ SHA-256: `f1687f982fa3d41ef29e159feed154ecd13af4dd209acaee16038f223f2e9402`
+@@ -5372,7 +5409,7 @@ SHA-256: `f1687f982fa3d41ef29e159feed154ecd13af4dd209acaee16038f223f2e9402`
  
  ### `UserMessage`
  
@@ -1647,7 +1647,7 @@ index 15d1af1d5898b4cc968c287cdb0f6c3fafbd45d2..332ac8d08e492a5317a485ef1e404aef
  
  来源：[`packages/llm/llm/src/message.ts:162`](../packages/llm/llm/src/message.ts)
  
-@@ -5373,19 +5410,19 @@ SHA-256: `2cf075b013d363ad743b5a4982900678d108499c721bc11255137402003db711`
+@@ -5381,19 +5418,19 @@ SHA-256: `2cf075b013d363ad743b5a4982900678d108499c721bc11255137402003db711`
  | `content` | 必需 | [`ContentBlock[]`](#persistence-type-sha256-b52f215a6cd691058a3413c12f161fa3b563a2f4895adb3df6f744ec4b0a6ef1) |
  | `id` | 必需 | `string` |
  | `role` | 必需 | `"user"` |
@@ -1672,7 +1672,7 @@ index 15d1af1d5898b4cc968c287cdb0f6c3fafbd45d2..332ac8d08e492a5317a485ef1e404aef
  
  <a id="persistence-type-sha256-c2deb7c9183735d4e0fffddf5c623f4e34daa1c8e96b111982e957dfcbbcf896"></a>
  
-@@ -6270,18 +6307,18 @@ SHA-256: `ad0c38a0adb82a94c925456df41586d9b5f9202fca18593eae2213d4445b4585`
+@@ -6278,18 +6315,18 @@ SHA-256: `ad0c38a0adb82a94c925456df41586d9b5f9202fca18593eae2213d4445b4585`
  | `reason` | 必需 | [`RequestHeaderReason`](#persistence-type-sha256-530da6c0267813bb4511af72883cc518834e624e3b3220a7062955fd57a788a6) |
  | `startsSeries` | 可选 | `true` |
  
@@ -1694,7 +1694,7 @@ index 15d1af1d5898b4cc968c287cdb0f6c3fafbd45d2..332ac8d08e492a5317a485ef1e404aef
  | `step` | 必需 | `number` |
  | `turn` | 必需 | `number` |
  
-@@ -6365,17 +6402,17 @@ SHA-256: `17d1afb770d9941936130996da00dc86782cfef731d8d6526162c301256a4ac3`
+@@ -6373,17 +6410,17 @@ SHA-256: `17d1afb770d9941936130996da00dc86782cfef731d8d6526162c301256a4ac3`
  |---|---|---|
  | `inherited` | 可选 | `true` |
  
@@ -1715,7 +1715,7 @@ index 15d1af1d5898b4cc968c287cdb0f6c3fafbd45d2..332ac8d08e492a5317a485ef1e404aef
  | `outcome` | 可选 | `"canceled"` |
  | `removedCount` | 可选 | `number` |
  | `start` | 必需 | `number` |
-@@ -6934,6 +6971,18 @@ SHA-256: `8c1c4f72755a78ea163523a46565316e36e9b644382eb48e6635c71a6f412dd2`
+@@ -6942,6 +6979,18 @@ SHA-256: `8c1c4f72755a78ea163523a46565316e36e9b644382eb48e6635c71a6f412dd2`
  | `kind` | 必需 | `"plan-mode"` |
  | `sections` | 必需 | [`ContextSnapshotSection[]`](#persistence-type-sha256-c748fb42c80a120038a8c587af80ec39924803c401364db11c8974d5bf6d0262) |
  
@@ -1734,7 +1734,7 @@ index 15d1af1d5898b4cc968c287cdb0f6c3fafbd45d2..332ac8d08e492a5317a485ef1e404aef
  <a id="persistence-type-sha256-b81e9de81a481b24e1e1f9adf038bfc59e57b4f35ce62f8f1e45284186f4f812"></a>
  
  ### `{ kind: "provider" }`
-@@ -7936,17 +7985,17 @@ SHA-256: `a10c17474eaf2ddab7095a099e0fe3d046fc18e56c3e344fc8894c05ff9ef97b`
+@@ -7945,17 +7994,17 @@ SHA-256: `a10c17474eaf2ddab7095a099e0fe3d046fc18e56c3e344fc8894c05ff9ef97b`
  | `time` | 必需 | `number` |
  | `type` | 必需 | `"agent-preset/selected"` |
  
@@ -1755,7 +1755,7 @@ index 15d1af1d5898b4cc968c287cdb0f6c3fafbd45d2..332ac8d08e492a5317a485ef1e404aef
  | `ignorable` | 可选 | `true` |
  | `seq` | 必需 | `number` |
  | `time` | 必需 | `number` |
-@@ -8187,17 +8236,17 @@ SHA-256: `13d3d180f977bf78081d487ffa0ecb75857349bcab29a5a3fb48189fca2a6176`
+@@ -8196,17 +8245,17 @@ SHA-256: `13d3d180f977bf78081d487ffa0ecb75857349bcab29a5a3fb48189fca2a6176`
  | `time` | 必需 | `number` |
  | `type` | 必需 | `"deliverables/presented"` |
  
@@ -1776,7 +1776,7 @@ index 15d1af1d5898b4cc968c287cdb0f6c3fafbd45d2..332ac8d08e492a5317a485ef1e404aef
  | `ignorable` | 可选 | `true` |
  | `seq` | 必需 | `number` |
  | `sourceEventSeqs` | 可选 | [`number[]`](#persistence-type-sha256-5d03ba38734809bcbd2a55221bd938b3b3fc34b49bb686c6113e9e4931e3aa78) |
-@@ -8585,17 +8634,17 @@ SHA-256: `1b912703e2d64f91c99c675b8f805b01076c8325b905c1218ad81ef0b24909d5`
+@@ -8606,17 +8655,17 @@ SHA-256: `1b912703e2d64f91c99c675b8f805b01076c8325b905c1218ad81ef0b24909d5`
  | `time` | 必需 | `number` |
  | `type` | 必需 | `"session/title"` |
  
@@ -1797,7 +1797,7 @@ index 15d1af1d5898b4cc968c287cdb0f6c3fafbd45d2..332ac8d08e492a5317a485ef1e404aef
  | `ignorable` | 可选 | `true` |
  | `seq` | 必需 | `number` |
  | `time` | 必需 | `number` |
-@@ -9018,17 +9067,17 @@ SHA-256: `f1a96afe7503ac1817de769cd0ba13d9b80111c7034c50106b3344ecc14cc515`
+@@ -9039,17 +9088,17 @@ SHA-256: `f1a96afe7503ac1817de769cd0ba13d9b80111c7034c50106b3344ecc14cc515`
  | `type` | 必需 | `"usage"` |
  | `usage` | 必需 | [`TokenUsage`](#persistence-type-sha256-fec5442b9ee4122e10514d81d5a43648003fe8bfb7ee2ba50c0cdbdd383ed394) |
  
@@ -13619,48 +13619,48 @@ index 0000000000000000000000000000000000000000..17faa9dcdf08c58538157e7a760e0e86
 +
 +无。
 diff --git a/docs/persistence-changes/historical-formats/README.i18n.yaml b/docs/persistence-changes/historical-formats/README.i18n.yaml
-index e24f17e991a00f2486eab22d2545f912fe9e1d77..8044776c05b9d8d5160e2079fa3df51e6bf44582 100644
+index 5339de2d2b4a41bfc5dadc746282f3b1a3865bc3..3be7d031b8f7e0d495678d8cf4a37341563acc9e 100644
 --- a/docs/persistence-changes/historical-formats/README.i18n.yaml
 +++ b/docs/persistence-changes/historical-formats/README.i18n.yaml
 @@ -15,8 +15,8 @@
    en: 14c57f30e676f6e3
    zh: b1a0ccf26fab3727
  /session-persistence-formats/format-references:
--  en: 43a4a6600fa37a1a
--  zh: 72174fab8355c344
-+  en: dbf68795396c2d99
-+  zh: 2aa89872c32394f7
+-  en: 17ef09dfc5a89073
+-  zh: 59b8d60acb66c2dc
++  en: bf2ddb4109c0d8d5
++  zh: b7169017316aafab
  /session-persistence-formats/scope-and-evidence:
    en: b220062139ddac1e
    zh: 7c4c0efe05dafa9c
 diff --git a/docs/persistence-changes/historical-formats/README.md b/docs/persistence-changes/historical-formats/README.md
-index 2bc0daa5651b303f7658e2c5c697d0a68946a654..77ef509e63aba29ab49508ea8913021c52f7e209 100644
+index 174c0074233dfd11ece6fd6df89548aedea0f1f6..a228aae0524b539c5d352bcd5605126ea4221c08 100644
 --- a/docs/persistence-changes/historical-formats/README.md
 +++ b/docs/persistence-changes/historical-formats/README.md
 @@ -32,7 +32,7 @@ The index is generated from validated snapshots and the current writer constant.
  | 1 | PR #3349 | [V1](v1.md) | [JSON](v1.schema.json) | 54 / 415 |
  | 2 | `dsh-v0.1.3-alpha.2` | [V2](v2.md) | [JSON](v2.schema.json) | 56 / 435 |
  | 3 | PR #4320 | [V3](v3.md) | [JSON](v3.schema.json) | 60 / 467 |
--| 4 | Current checkout | [Current catalog](../../persistence-catalog.md) | [JSON](../../persistence-schema.json) | 65 / 612 |
-+| 4 | Current checkout | [Current catalog](../../persistence-catalog.md) | [JSON](../../persistence-schema.json) | 65 / 616 |
+-| 4 | Current checkout | [Current catalog](../../persistence-catalog.md) | [JSON](../../persistence-schema.json) | 65 / 614 |
++| 4 | Current checkout | [Current catalog](../../persistence-catalog.md) | [JSON](../../persistence-schema.json) | 65 / 618 |
  
  <!-- persistence-format-index:end -->
  
 diff --git a/docs/persistence-changes/historical-formats/README.zh.md b/docs/persistence-changes/historical-formats/README.zh.md
-index 15b08f318d089b5d8e18ad47ab8cfb8af93ee621..11eaf34014709e05cde199cdbf6c8340cf629c1a 100644
+index 055e07f9544146c366f1c8a28697be85dc4d3271..31029ebb475e1a05afb6a0f6abd49c7efbdb21fe 100644
 --- a/docs/persistence-changes/historical-formats/README.zh.md
 +++ b/docs/persistence-changes/historical-formats/README.zh.md
 @@ -32,7 +32,7 @@ description: "查找从 V0 到工作区写入器版本的每个 Session 格式
  | 1 | PR #3349 | [V1](v1.zh.md) | [JSON](v1.schema.json) | 54 / 415 |
  | 2 | `dsh-v0.1.3-alpha.2` | [V2](v2.zh.md) | [JSON](v2.schema.json) | 56 / 435 |
  | 3 | PR #4320 | [V3](v3.zh.md) | [JSON](v3.schema.json) | 60 / 467 |
--| 4 | 当前工作树 | [当前目录](../../persistence-catalog.zh.md) | [JSON](../../persistence-schema.json) | 65 / 612 |
-+| 4 | 当前工作树 | [当前目录](../../persistence-catalog.zh.md) | [JSON](../../persistence-schema.json) | 65 / 616 |
+-| 4 | 当前工作树 | [当前目录](../../persistence-catalog.zh.md) | [JSON](../../persistence-schema.json) | 65 / 614 |
++| 4 | 当前工作树 | [当前目录](../../persistence-catalog.zh.md) | [JSON](../../persistence-schema.json) | 65 / 618 |
  
  <!-- persistence-format-index:end -->
  
 diff --git a/docs/persistence-schema.json b/docs/persistence-schema.json
-index a77fe9f24bca38aacef76c39a19d9f0429f811a0..2a51c694965415d0fe1649bf77f5b25b73c30f0d 100644
+index 87853fac338a1d463424a2de95db7ef21a24f1ff..7e8bc675782e42dbb2cce45ea1b3f4030cb29271 100644
 --- a/docs/persistence-schema.json
 +++ b/docs/persistence-schema.json
 @@ -406,7 +406,7 @@
@@ -22998,7 +22998,7 @@ index a77fe9f24bca38aacef76c39a19d9f0429f811a0..2a51c694965415d0fe1649bf77f5b25b
                  "optional": false
                },
                {
-@@ -22383,15 +22597,6 @@
+@@ -22403,15 +22617,6 @@
      }
    ],
    "types": [
@@ -23014,7 +23014,7 @@ index a77fe9f24bca38aacef76c39a19d9f0429f811a0..2a51c694965415d0fe1649bf77f5b25b
      {
        "digest": "0116b1f89c05221d56b0ba35c83d302bf4857bc7277d247e9bbaf74b27d2c66e",
        "names": [],
-@@ -22427,12 +22632,12 @@
+@@ -22447,12 +22652,12 @@
        "sources": []
      },
      {
@@ -23030,7 +23030,7 @@ index a77fe9f24bca38aacef76c39a19d9f0429f811a0..2a51c694965415d0fe1649bf77f5b25b
        ]
      },
      {
-@@ -22458,11 +22663,6 @@
+@@ -22478,11 +22683,6 @@
          "packages/core/session/src/types.ts:33"
        ]
      },
@@ -23042,7 +23042,7 @@ index a77fe9f24bca38aacef76c39a19d9f0429f811a0..2a51c694965415d0fe1649bf77f5b25b
      {
        "digest": "07e1a58c58b593f507b8e7f25723bb0aa42baae6e00f5ecfddf28cb1e64d3235",
        "names": [
-@@ -22593,15 +22793,6 @@
+@@ -22623,15 +22823,6 @@
          "packages/attachment/attachment/src/types.ts:28"
        ]
      },
@@ -23058,7 +23058,7 @@ index a77fe9f24bca38aacef76c39a19d9f0429f811a0..2a51c694965415d0fe1649bf77f5b25b
      {
        "digest": "0f8512903d94f57a4748fa1a2092e64342856796684e6b8343db685b192745ce",
        "names": [],
-@@ -22981,6 +23172,11 @@
+@@ -23002,6 +23193,11 @@
        "names": [],
        "sources": []
      },
@@ -23070,7 +23070,7 @@ index a77fe9f24bca38aacef76c39a19d9f0429f811a0..2a51c694965415d0fe1649bf77f5b25b
      {
        "digest": "260523b412c19ad8c2bb00093b07f64245ff8ba6b2f76c5b545303772ac9704c",
        "names": [],
-@@ -23045,11 +23241,6 @@
+@@ -23066,11 +23262,6 @@
          "packages/llm/llm/src/types.ts:473"
        ]
      },
@@ -23082,7 +23082,7 @@ index a77fe9f24bca38aacef76c39a19d9f0429f811a0..2a51c694965415d0fe1649bf77f5b25b
      {
        "digest": "2aed07493b1c65b6d00de5586da1e743cf501684b9ad43a1765fb4007d4ea456",
        "names": [],
-@@ -23065,15 +23256,6 @@
+@@ -23086,15 +23277,6 @@
        "names": [],
        "sources": []
      },
@@ -23098,7 +23098,7 @@ index a77fe9f24bca38aacef76c39a19d9f0429f811a0..2a51c694965415d0fe1649bf77f5b25b
      {
        "digest": "2d11ca7b0d4493e244b74eba093227866b33249841e59a1e9bf56afed38604c3",
        "names": [],
-@@ -23146,6 +23328,15 @@
+@@ -23167,6 +23349,15 @@
        "names": [],
        "sources": []
      },
@@ -23114,7 +23114,7 @@ index a77fe9f24bca38aacef76c39a19d9f0429f811a0..2a51c694965415d0fe1649bf77f5b25b
      {
        "digest": "31907de9563751822af6d9be02bafaf26faa098bbd1cb412524134d577cc1648",
        "names": [
-@@ -23202,6 +23393,13 @@
+@@ -23223,6 +23414,13 @@
        "names": [],
        "sources": []
      },
@@ -23128,7 +23128,7 @@ index a77fe9f24bca38aacef76c39a19d9f0429f811a0..2a51c694965415d0fe1649bf77f5b25b
      {
        "digest": "36d6a9a871d949ea4f3edd919d81d66aa69218bebef38899d2a1282c39420a1f",
        "names": [],
-@@ -23310,6 +23508,11 @@
+@@ -23338,6 +23536,11 @@
        "names": [],
        "sources": []
      },
@@ -23140,7 +23140,7 @@ index a77fe9f24bca38aacef76c39a19d9f0429f811a0..2a51c694965415d0fe1649bf77f5b25b
      {
        "digest": "3cfc3a56502da1f8c6153c2c56657bab4b749056968634dd0991d325ec1c919f",
        "names": [
-@@ -23374,6 +23577,15 @@
+@@ -23402,6 +23605,15 @@
        "names": [],
        "sources": []
      },
@@ -23156,7 +23156,7 @@ index a77fe9f24bca38aacef76c39a19d9f0429f811a0..2a51c694965415d0fe1649bf77f5b25b
      {
        "digest": "42e0916e0dda5f6d1e7bb05d8514717147c036a79c9f36085683469516c1fd3f",
        "names": [],
-@@ -23408,11 +23620,6 @@
+@@ -23436,11 +23648,6 @@
        "names": [],
        "sources": []
      },
@@ -23168,7 +23168,7 @@ index a77fe9f24bca38aacef76c39a19d9f0429f811a0..2a51c694965415d0fe1649bf77f5b25b
      {
        "digest": "45f2a07ea94573123b6ae14db787a40062dec3834f36d8be92c523d40ba28448",
        "names": [],
-@@ -23592,6 +23799,15 @@
+@@ -23620,6 +23827,15 @@
          "packages/web/web-search-deepseek/src/provider.ts:66"
        ]
      },
@@ -23184,7 +23184,7 @@ index a77fe9f24bca38aacef76c39a19d9f0429f811a0..2a51c694965415d0fe1649bf77f5b25b
      {
        "digest": "4e97c3d85c0fc817ee58873c38c25a2474abaaa0af4839311b50b68db3b8cf1a",
        "names": [
-@@ -23758,6 +23974,11 @@
+@@ -23786,6 +24002,11 @@
        "names": [],
        "sources": []
      },
@@ -23196,7 +23196,7 @@ index a77fe9f24bca38aacef76c39a19d9f0429f811a0..2a51c694965415d0fe1649bf77f5b25b
      {
        "digest": "58f94390b982f8a5ac1f4f235ba612557f4a1dc4a995d8b1cec63ce7639decb0",
        "names": [],
-@@ -23785,15 +24006,6 @@
+@@ -23813,15 +24034,6 @@
        "names": [],
        "sources": []
      },
@@ -23212,7 +23212,7 @@ index a77fe9f24bca38aacef76c39a19d9f0429f811a0..2a51c694965415d0fe1649bf77f5b25b
      {
        "digest": "5bc66269cfaf614c0ecda8ecb469f23101a7609793fc2b693ac23c4aecdb575e",
        "names": [],
-@@ -23814,6 +24026,11 @@
+@@ -23842,6 +24054,11 @@
        "names": [],
        "sources": []
      },
@@ -23224,7 +23224,7 @@ index a77fe9f24bca38aacef76c39a19d9f0429f811a0..2a51c694965415d0fe1649bf77f5b25b
      {
        "digest": "5cdbf342b7748d152bc987b68f58e565e5bba4b227e076e2d2120d87662e45cd",
        "names": [],
-@@ -24162,6 +24379,11 @@
+@@ -24190,6 +24407,11 @@
        "names": [],
        "sources": []
      },
@@ -23236,7 +23236,7 @@ index a77fe9f24bca38aacef76c39a19d9f0429f811a0..2a51c694965415d0fe1649bf77f5b25b
      {
        "digest": "750a2b129d67704df675c06823c20c80b65cbae89d5aaa914fd5a72e3df395b5",
        "names": [
-@@ -24208,11 +24430,6 @@
+@@ -24236,11 +24458,6 @@
          "packages/core/session/src/types.ts:213"
        ]
      },
@@ -23248,7 +23248,7 @@ index a77fe9f24bca38aacef76c39a19d9f0429f811a0..2a51c694965415d0fe1649bf77f5b25b
      {
        "digest": "79ddc907312f97cf9553d4841e8b3fc937097bd8d97900a790efad3c05255e99",
        "names": [],
-@@ -24281,6 +24498,13 @@
+@@ -24309,6 +24526,13 @@
        "names": [],
        "sources": []
      },
@@ -23262,7 +23262,7 @@ index a77fe9f24bca38aacef76c39a19d9f0429f811a0..2a51c694965415d0fe1649bf77f5b25b
      {
        "digest": "7eaef7a763ba5b949b8464bc8add8980a3a5ab566014b69787aeba71e5dfe07b",
        "names": [],
-@@ -24534,6 +24758,13 @@
+@@ -24562,6 +24786,13 @@
          "packages/llm/llm/src/types.ts:160"
        ]
      },
@@ -23276,7 +23276,7 @@ index a77fe9f24bca38aacef76c39a19d9f0429f811a0..2a51c694965415d0fe1649bf77f5b25b
      {
        "digest": "8e611bf46821e5003a1605a73560a6f56388295149d449dfe2142d5ec335f29c",
        "names": [
-@@ -24663,11 +24894,6 @@
+@@ -24684,11 +24915,6 @@
          "packages/core/agent/src/types.ts:39"
        ]
      },
@@ -23288,7 +23288,7 @@ index a77fe9f24bca38aacef76c39a19d9f0429f811a0..2a51c694965415d0fe1649bf77f5b25b
      {
        "digest": "9890113e97dd3541787bfe6704f2b223d3a890b5325ca0acae2b0398909b413e",
        "names": [],
-@@ -24837,6 +25063,15 @@
+@@ -24865,6 +25091,15 @@
        "names": [],
        "sources": []
      },
@@ -23304,7 +23304,7 @@ index a77fe9f24bca38aacef76c39a19d9f0429f811a0..2a51c694965415d0fe1649bf77f5b25b
      {
        "digest": "a3c6f1ea38e9a61d7a9706057ba65aabe02dfe6d9dd90d4736aa62325d874531",
        "names": [],
-@@ -24921,11 +25156,6 @@
+@@ -24949,11 +25184,6 @@
          "packages/schedule/schedule/src/types.ts:173"
        ]
      },
@@ -23316,7 +23316,7 @@ index a77fe9f24bca38aacef76c39a19d9f0429f811a0..2a51c694965415d0fe1649bf77f5b25b
      {
        "digest": "a99ec0993c62c058e50af9f68922202a3b54f5e259bc2abf1915a73381d2316d",
        "names": [],
-@@ -25492,6 +25722,11 @@
+@@ -25524,6 +25754,11 @@
          "packages/goal/goal/src/domain.ts:35"
        ]
      },
@@ -23328,7 +23328,7 @@ index a77fe9f24bca38aacef76c39a19d9f0429f811a0..2a51c694965415d0fe1649bf77f5b25b
      {
        "digest": "d0fbb0ca1bbba059830826f33f801da1aced35a2504376d61e020bdfec8d50c0",
        "names": [],
-@@ -25826,6 +26061,11 @@
+@@ -25858,6 +26093,11 @@
          "packages/core/session/src/types.ts:229"
        ]
      },
@@ -23340,7 +23340,7 @@ index a77fe9f24bca38aacef76c39a19d9f0429f811a0..2a51c694965415d0fe1649bf77f5b25b
      {
        "digest": "edbbfff1128099fda7b792c56330d2cb04debc9790988e66d1c3f4026e813e0e",
        "names": [],
-@@ -25946,16 +26186,14 @@
+@@ -25978,16 +26218,14 @@
        ]
      },
      {
@@ -23360,7 +23360,7 @@ index a77fe9f24bca38aacef76c39a19d9f0429f811a0..2a51c694965415d0fe1649bf77f5b25b
      },
      {
        "digest": "f5520c1d261ca86ea03735799c311a0a9ede8babb588cf0a65422576d2ee0ad1",
-@@ -26001,6 +26239,15 @@
+@@ -26033,6 +26271,15 @@
        "names": [],
        "sources": []
      },
@@ -23376,7 +23376,7 @@ index a77fe9f24bca38aacef76c39a19d9f0429f811a0..2a51c694965415d0fe1649bf77f5b25b
      {
        "digest": "f7283223aacdc39b0adca728c8cbd4c090a20006a6fecec74421c30e943b489c",
        "names": [],
-@@ -26043,13 +26290,6 @@
+@@ -26075,13 +26322,6 @@
        "names": [],
        "sources": []
      },
@@ -23704,7 +23704,7 @@ index 1dd6bf22b9f4ee5c58eaf07bec3fd5cbbf49da9d..e4e575131ded9e451b1f50a07b1df9b2
      name: 'RegisterFactory',
      declaration: 'export interface RegisterFactory {\n    <F extends keyof SlotFactoryMap & string>(options: RegisterFactoryOptions<F>, component: SlotComponent<FactoryComponentPropsOf<F>>): () => void;\n}',
 diff --git a/packages/extensions/cordis-client-runner/src/client/slot-catalog.ts b/packages/extensions/cordis-client-runner/src/client/slot-catalog.ts
-index ce9bbd92d8e28b700ec4d1f56a18216289e8b612..4ffd9e85f38e25c0a2f9507c395f667e12a4c867 100644
+index 50bcbe529a7fd300d65688e8854e5da93d8250d4..5e22b3b0394ef8493c361a9b55e71dba34e937f3 100644
 --- a/packages/extensions/cordis-client-runner/src/client/slot-catalog.ts
 +++ b/packages/extensions/cordis-client-runner/src/client/slot-catalog.ts
 @@ -649,7 +649,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
@@ -23848,8 +23848,16 @@ index ce9bbd92d8e28b700ec4d1f56a18216289e8b612..4ffd9e85f38e25c0a2f9507c395f667e
 +    source: 'packages/client/ui-conversation/src/client/contract/slots.ts:300',
    },
    {
-     key: 'conversation.input.overlay',
-@@ -1290,7 +1349,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+     key: 'conversation.input.model.label',
+@@ -1242,6 +1301,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+       '/** Catalog data for a model name inside the composer\'s existing controls. */\nexport interface ModelLabelOwner {\n  /** Provider identity and localized display name; contains no connection configuration. */\n  provider: Pick<ModelProviderGroup, \'id\' | \'name\'>\n  /** The exact provider\'s model catalog entry. */\n  model: ModelCatalogModel\n  /** Trigger caption, root-menu current value, or selectable model row. */\n  placement: \'trigger\' | \'menu\' | \'option\'\n  /** Whether this provider/model pair is the current selection. */\n  selected: boolean\n}',
+     ],
+     ownerPropsReferences: [
++      'Catalog',
+       'ModelCatalogModel',
+       'ModelProviderGroup',
+     ],
+@@ -1335,7 +1395,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
      ],
      replaceRisk: 'none',
      example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.input.overlay\', () => ctx.slots.register(\n      { name: \'conversation.input.overlay\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
@@ -23858,7 +23866,7 @@ index ce9bbd92d8e28b700ec4d1f56a18216289e8b612..4ffd9e85f38e25c0a2f9507c395f667e
    },
    {
      key: 'conversation.input.permission',
-@@ -1332,7 +1391,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+@@ -1377,7 +1437,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
      ],
      replaceRisk: 'shadows-shipped-ui',
      example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.input.permission\', () => ctx.slots.register(\n      { name: \'conversation.input.permission\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
@@ -23867,7 +23875,7 @@ index ce9bbd92d8e28b700ec4d1f56a18216289e8b612..4ffd9e85f38e25c0a2f9507c395f667e
    },
    {
      key: 'conversation.input.plan',
-@@ -1374,7 +1433,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+@@ -1419,7 +1479,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
      ],
      replaceRisk: 'shadows-shipped-ui',
      example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.input.plan\', () => ctx.slots.register(\n      { name: \'conversation.input.plan\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
@@ -23876,7 +23884,7 @@ index ce9bbd92d8e28b700ec4d1f56a18216289e8b612..4ffd9e85f38e25c0a2f9507c395f667e
    },
    {
      key: 'conversation.input.right',
-@@ -1431,7 +1490,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+@@ -1476,7 +1536,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
      occupants: [],
      replaceRisk: 'none',
      example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.input.right\', () => ctx.slots.register(\n      { name: \'conversation.input.right\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
@@ -23885,7 +23893,7 @@ index ce9bbd92d8e28b700ec4d1f56a18216289e8b612..4ffd9e85f38e25c0a2f9507c395f667e
    },
    {
      key: 'conversation.plan-review.actions',
-@@ -1633,6 +1692,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+@@ -1678,6 +1738,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
        'client-ui-jobs JobListAction id \'job-list\'',
        'client-ui-subagent SubagentCatalogAction id \'subagent-catalog\'',
        'experimental-client-ui-agent-team TeamAction id \'agent-team\'',
@@ -23893,7 +23901,7 @@ index ce9bbd92d8e28b700ec4d1f56a18216289e8b612..4ffd9e85f38e25c0a2f9507c395f667e
      ],
      replaceRisk: 'none',
      example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.session.header.actions\', () => ctx.slots.register(\n      { name: \'conversation.session.header.actions\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-@@ -2077,6 +2137,105 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+@@ -2122,6 +2183,105 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
      example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'deliverables.review.file.actions\', () => ctx.slots.register(\n      { name: \'deliverables.review.file.actions\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
      source: 'packages/client/ui-deliverables/src/client/file-actions.ts:21',
    },
@@ -23999,7 +24007,7 @@ index ce9bbd92d8e28b700ec4d1f56a18216289e8b612..4ffd9e85f38e25c0a2f9507c395f667e
    {
      key: 'main',
      kind: 'keyed',
-@@ -2112,6 +2271,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+@@ -2157,6 +2317,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
        'client-ui-conversation ConversationPanel key \'conversation\'',
        'client-ui-plugin-manager PluginManagerPage',
        'client-ui-schedule TaskManagerPage',
@@ -24007,7 +24015,7 @@ index ce9bbd92d8e28b700ec4d1f56a18216289e8b612..4ffd9e85f38e25c0a2f9507c395f667e
      ],
      replaceRisk: 'shadows-shipped-ui',
      example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'main\', () => ctx.slots.register(\n      { name: \'main\', key: \'<one key the owner dispatches>\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-@@ -2917,6 +3077,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+@@ -2962,6 +3123,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
      declaredBy: 'an entry in \'sidebar.settings\' (client-ui-settings-general), so it exists while that entry is mounted',
      occupants: [
        'client-ui-settings-account AccountMenu',
@@ -24015,7 +24023,7 @@ index ce9bbd92d8e28b700ec4d1f56a18216289e8b612..4ffd9e85f38e25c0a2f9507c395f667e
      ],
      replaceRisk: 'shadows-shipped-ui',
      example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'settings.launcher\', () => ctx.slots.register(\n      { name: \'settings.launcher\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-@@ -3590,7 +3751,59 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+@@ -3635,7 +3797,59 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
      ],
      replaceRisk: 'none',
      example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.footer.action\', () => ctx.slots.register(\n      { name: \'sidebar.footer.action\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
@@ -24076,7 +24084,7 @@ index ce9bbd92d8e28b700ec4d1f56a18216289e8b612..4ffd9e85f38e25c0a2f9507c395f667e
    },
    {
      key: 'sidebar.panellist',
-@@ -3619,7 +3832,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+@@ -3664,7 +3878,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
        },
      ],
      ownerProps: [
@@ -24085,7 +24093,7 @@ index ce9bbd92d8e28b700ec4d1f56a18216289e8b612..4ffd9e85f38e25c0a2f9507c395f667e
      ],
      ownerPropsReferences: [],
      standardProps: [
-@@ -3640,10 +3853,11 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+@@ -3685,10 +3899,11 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
      occupants: [
        'client-ui-plugin-manager PluginsPanelIcon',
        'client-ui-schedule TaskManagerIcon',
@@ -24098,7 +24106,7 @@ index ce9bbd92d8e28b700ec4d1f56a18216289e8b612..4ffd9e85f38e25c0a2f9507c395f667e
    },
    {
      key: 'sidebar.right.pane.tab',
-@@ -4385,7 +4599,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+@@ -4430,7 +4645,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
      ],
      replaceRisk: 'shadows-shipped-ui',
      example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.settings\', () => ctx.slots.register(\n      { name: \'sidebar.settings\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
@@ -24107,7 +24115,7 @@ index ce9bbd92d8e28b700ec4d1f56a18216289e8b612..4ffd9e85f38e25c0a2f9507c395f667e
    },
    {
      key: 'sidebar.toggle.badge',
-@@ -4449,7 +4663,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+@@ -4494,7 +4709,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
      ],
      replaceRisk: 'shadows-shipped-ui',
      example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.workspaces\', () => ctx.slots.register(\n      { name: \'sidebar.workspaces\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
@@ -24116,7 +24124,7 @@ index ce9bbd92d8e28b700ec4d1f56a18216289e8b612..4ffd9e85f38e25c0a2f9507c395f667e
    },
    {
      key: 'sidebar.workspaces.directoryFlow',
-@@ -4641,14 +4855,14 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+@@ -4686,14 +4901,14 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
      ],
      replaceRisk: 'shadows-shipped-ui',
      example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'tool.call.images\', () => ctx.slots.register(\n      { name: \'tool.call.images\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
@@ -24134,7 +24142,7 @@ index ce9bbd92d8e28b700ec4d1f56a18216289e8b612..4ffd9e85f38e25c0a2f9507c395f667e
      registerOptions: [
        {
          name: 'key',
-@@ -4749,10 +4963,11 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+@@ -4794,10 +5009,11 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
        'client-ui-cordis CordisRunRow key \'cordis_run\'',
        'client-ui-cordis CordisActionRow key \'cordis_stop\'',
        'client-ui-cordis CordisActionRow key \'cordis_undefine\'',
@@ -24148,7 +24156,7 @@ index ce9bbd92d8e28b700ec4d1f56a18216289e8b612..4ffd9e85f38e25c0a2f9507c395f667e
    {
      key: 'tool.view.cordis',
 diff --git a/packages/extensions/tool-cordis/src/api-catalog.ts b/packages/extensions/tool-cordis/src/api-catalog.ts
-index 97da08813717d294f77cafdf8abb67ad7c2a5d43..8d6bb15bf55a2f0aca5e8c0005f9ebd85339be17 100644
+index be3e31626359ec9607789b83000f7e3128a425ea..03701034c4d4a02f1dbc71cb43c8f0c46780d0f7 100644
 --- a/packages/extensions/tool-cordis/src/api-catalog.ts
 +++ b/packages/extensions/tool-cordis/src/api-catalog.ts
 @@ -171,6 +171,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
@@ -24198,10 +24206,10 @@ index 97da08813717d294f77cafdf8abb67ad7c2a5d43..8d6bb15bf55a2f0aca5e8c0005f9ebd8
    {
      name: 'PresetOption',
 diff --git a/packages/preset/agent-preset/skills/cordis-composition-reference/references/packages.md b/packages/preset/agent-preset/skills/cordis-composition-reference/references/packages.md
-index 87b03eba271b0253d5f73ca5b4167c80486ce8cb..a0abf6734ed91576631c5a284cd3d86fde463698 100644
+index eee345a99c533b7ebb5355acd65509d9055b2ce4..b3e9eaafce85bb52d202bd7de4672e6ba6633f72 100644
 --- a/packages/preset/agent-preset/skills/cordis-composition-reference/references/packages.md
 +++ b/packages/preset/agent-preset/skills/cordis-composition-reference/references/packages.md
-@@ -166,6 +166,13 @@ Every package below exports a Cordis plugin that a bundle patch can name in a Lo
+@@ -167,6 +167,13 @@ Every package below exports a Cordis plugin that a bundle patch can name in a Lo
  | `@deepseek-ai/dsh-credentials-local` | yes | File-backed credentials provider ($DSH_HOME/.env under the live process environment) for the DeepSeek Harness |
  | `@deepseek-ai/dsh-deepseek-account-platform` | yes | Authorize DeepSeek accounts through browser PKCE |
  
@@ -24215,7 +24223,7 @@ index 87b03eba271b0253d5f73ca5b4167c80486ce8cb..a0abf6734ed91576631c5a284cd3d86f
  ## deliverables
  
  | Package | Config | Description |
-@@ -224,6 +231,7 @@ Every package below exports a Cordis plugin that a bundle patch can name in a Lo
+@@ -225,6 +232,7 @@ Every package below exports a Cordis plugin that a bundle patch can name in a Lo
  | `@deepseek-ai/dsh-cordis-client-runner` | no | Browser half of dynamic dual-half plugin packages: event subscription, closure evaluation, guard facade, and loader entries |
  | `@deepseek-ai/dsh-cordis-host-runner` | yes | Dynamic package definition registry, host-half sandbox lifecycle, and invoke handler table for model-mounted dual-half packages |
  | `@deepseek-ai/dsh-tool-cordis` | no | Read-only runtime API inspection for Harness plugin development |

@@ -1340,7 +1340,7 @@ index 7f29237374488e683a22d20e0fb69ba831ddf772..e64ba7c157e3c653d1eb53db472900ed
        useSessions={unread}
        useWorkspaces={unread}
 diff --git a/packages/client/ui-settings-account/tests/apply.client.spec.ts b/packages/client/ui-settings-account/tests/apply.client.spec.ts
-index bff9c03b3e916d7b3d38f167dd553f27fdb2dfae..6437762f72d305ba41851cff8579863ad3b9cf27 100644
+index 0146bbfa4a279313ef099d04ca69ac02e601c494..619d41500c21082e9ab5551a03295fcdd28d4600 100644
 --- a/packages/client/ui-settings-account/tests/apply.client.spec.ts
 +++ b/packages/client/ui-settings-account/tests/apply.client.spec.ts
 @@ -19,6 +19,7 @@ import type { AccountSectionInjected } from '../src/client/AccountSection.tsx'
@@ -1351,7 +1351,7 @@ index bff9c03b3e916d7b3d38f167dd553f27fdb2dfae..6437762f72d305ba41851cff8579863a
  import { AccountQuotaNotice } from '../src/client/AccountQuotaNotice.tsx'
  import type { AccountQuotaNoticeInjected } from '../src/client/AccountQuotaNotice.tsx'
  
-@@ -41,7 +42,9 @@ function bonus(orderId: string, message = 'Awarded 5.00'): AccountBonusBatch {
+@@ -40,7 +41,9 @@ function bonus(orderId: string, message = 'Awarded 5.00'): AccountBonusBatch {
    }
  }
  function operations(c: TestClient): AccountSectionInjected {
@@ -1362,7 +1362,7 @@ index bff9c03b3e916d7b3d38f167dd553f27fdb2dfae..6437762f72d305ba41851cff8579863a
    return injected as AccountSectionInjected
  }
  /** The account take-over registered into the Chat-owned frame-wide quota notice chain. */
-@@ -69,7 +72,7 @@ it('registers account sign-in in a plain browser without the Desktop-only surfac
+@@ -68,7 +71,7 @@ it('registers account sign-in in a plain browser without the Desktop-only surfac
    for (const reload of [false, true]) {
      if (reload) await c.reload(SELF)
      await c.mock.streams.opened('account/watch', reload ? 2 : 1)
@@ -1371,7 +1371,7 @@ index bff9c03b3e916d7b3d38f167dd553f27fdb2dfae..6437762f72d305ba41851cff8579863a
      expect(c.ctx.slots.entries('settings.models.sign-in')).toHaveLength(1)
      expect(quotaNoticeEntry(c)).toBeDefined()
      expect(platformHostEntry(c)).toBeUndefined()
-@@ -151,7 +154,8 @@ it('shares account actions across seats, publishes dialog ownership, and opens c
+@@ -150,7 +153,8 @@ it('shares account actions across seats, publishes dialog ownership, and opens c
    expect(signedOutAgain.searchParams.has('prefill_uid')).toBe(false)
    expect(signedOutAgain.searchParams.get('hide_uid')).toBe('1')
    await c.unload(SELF)

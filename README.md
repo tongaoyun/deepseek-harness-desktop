@@ -4,11 +4,11 @@ English | [中文](README.zh.md)
 
 ## DeepSeek Harness downstream desktop
 
-This repository extends DeepSeek Harness `dsh-v0.2.1-alpha.4`, pinned by [`UPSTREAM_COMMIT`](UPSTREAM_COMMIT). `apps/desktop` runs the official profile; `apps/product-desktop` assembles the enterprise extension through the same Electron shell.
+This repository extends DeepSeek Harness `dsh-v0.2.1-rc.2`, pinned by [`UPSTREAM_COMMIT`](UPSTREAM_COMMIT). `apps/desktop` runs the official profile; `apps/product-desktop` assembles the enterprise extension through the same Electron shell.
 
 The [product subsystem](docs/subsystems/deepseek-harness-product.md) owns authentication, catalogs, per-task capability snapshots, and desktop resources in independent protocol, runtime, desktop, and UI packages. Harness Session, execution, approval, and replay APIs remain the integration points. [Registered patches](scripts/upstream-patches/manifest.json) record every official difference and its verification.
 
-Gitea runs desktop CI and manual synchronization to the private GitHub build repository. [Product desktop delivery](apps/product-desktop/README.md) waits for unsigned Windows x64, macOS ARM64, and macOS Intel builds, verifies their files, and publishes matching prereleases to public GitHub downloads and internal Gitea. Standalone GitHub packaging only uploads Actions artifacts; neither path publishes automatic update feeds.
+Gitea runs desktop CI and manually synchronizes a selected commit to the GitHub build repository. [Product desktop delivery](apps/product-desktop/README.md) owns Windows and both Mac architecture builds, verification, and GitHub and Gitea publishing; that document also defines signing configuration and software update requirements.
 
 DeepSeek Harness (`dsh`) is an open-source agent harness developed by [DeepSeek AI](https://deepseek.com).
 

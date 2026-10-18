@@ -26,17 +26,9 @@ index 0682e6e9adc28e5a09b5c27810dab0f27b155ef3..379e780bcffc708c7f3929cec3a8117a
      readonly signtoolOptions: {
        readonly publisherName: string | undefined
 diff --git a/apps/desktop/package.json b/apps/desktop/package.json
-index c7c1246e9a47a98284ad77f4f55a3d617ec126d6..94d839e4216573623a6adf509723467b5a29bb66 100644
+index 1d44f92b932235d8b83b9c91cbaf8ff96e39b1b5..4a60a393a7e5f91332ac77c2dbfd54703cab9007 100644
 --- a/apps/desktop/package.json
 +++ b/apps/desktop/package.json
-@@ -1,6 +1,6 @@
- {
-   "name": "@deepseek-ai/dsh-desktop",
--  "description": "Electron desktop shell for a bundled dsh runtime and external plugins",
-+  "description": "Official Harness Electron shell with generic assembly extension hooks",
-   "version": "0.2.1-alpha.4",
-   "private": true,
-   "license": "MIT",
 @@ -50,6 +50,7 @@
      "@deepseek-ai/cordis": "workspace:~"
    },
