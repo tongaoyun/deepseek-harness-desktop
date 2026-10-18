@@ -1762,7 +1762,47 @@ for (const { mode, installed, surface } of desktopCarriers) {
         expect(appPath).not.toContain(REPO_ROOT)
       }
       const diagnostics: string[] = []
-      app.process().stderr?.on('data', (chunk: Buffer) => diagnostics.push(chunk.toString()))
+      const observeShutdown = async (application: ElectronApplication) => {
+        const child = application.process()
+        child.stderr?.on('data', (chunk: Buffer) => diagnostics.push(chunk.toString()))
+        child.once('exit', (exitCode, signalCode) => diagnostics.push(
+          `Acceptance child exit: ${JSON.stringify({ pid: child.pid, exitCode, signalCode })}\n`,
+        ))
+        child.once('close', (exitCode, signalCode) => diagnostics.push(
+          `Acceptance child close: ${JSON.stringify({ pid: child.pid, exitCode, signalCode })}\n`,
+        ))
+        await application.evaluate(({ app, BrowserWindow }) => {
+          let deadline: ReturnType<typeof setTimeout> | undefined
+          const report = (phase: string, prevented?: boolean) => {
+            // Node's diagnostic handle API is confined to this disposable acceptance process.
+            const runtime = process as typeof process & { _getActiveHandles(): Array<{
+              constructor: { name: string }
+              pid?: number
+              exitCode?: number | null
+              signalCode?: string | null
+              killed?: boolean
+              connected?: boolean
+              spawnfile?: string
+            }> }
+            process.stderr.write(`Acceptance shutdown: ${JSON.stringify({
+              phase, prevented, pid: process.pid, resources: process.getActiveResourcesInfo(),
+              windows: BrowserWindow.getAllWindows().map(window => ({ visible: window.isVisible() })),
+              children: runtime._getActiveHandles().filter(handle => handle.constructor.name === 'ChildProcess')
+                .map(({ pid, exitCode, signalCode, killed, connected, spawnfile }) =>
+                  ({ pid, exitCode, signalCode, killed, connected, spawnfile })),
+            })}\n`)
+          }
+          app.on('before-quit', (event) => {
+            report('before-quit', event.defaultPrevented)
+            if (deadline !== undefined) return
+            deadline = setTimeout(() => report('still-closing'), 9_000)
+            deadline.unref()
+          })
+          app.on('will-quit', event => report('will-quit', event.defaultPrevented))
+          app.once('quit', () => { clearTimeout(deadline); report('quit') })
+        })
+      }
+      await observeShutdown(app)
       const startupWarnings: string[] = []
       app.context().on('console', (message) => {
         if (message.type() !== 'warning' && message.type() !== 'error') return
@@ -2314,14 +2354,15 @@ for (const { mode, installed, surface } of desktopCarriers) {
         await expect(invoke('tasks.capabilities.read', { sessionId })).resolves.toMatchObject({ knowledgeBaseIds: ['policy'] })
         const prepared = await invoke('tasks.capabilities.prepare', { sessionId: replacementSession }) as { presetId: string }
         const pinnedPath = join(home, 'product-capabilities-v1/tasks-v1', `${prepared.presetId}.json`)
-        const restart = async () => {
+        const restart = async (reason: string) => {
           expect(tripwire.pageErrors).toEqual([])
           await expect.poll(() => page.getByRole('button', { name: /^(Stop generating|停止生成)$/, exact: true }).count()).toBe(0)
           const closing = app!
           app = undefined
+          diagnostics.push(`Acceptance restart: ${reason}\n`)
           await closeElectronAcceptance(closing)
           app = await _electron.launch(launchOptions)
-          app.process().stderr?.on('data', (chunk: Buffer) => diagnostics.push(chunk.toString()))
+          await observeShutdown(app)
           page = await app.firstWindow()
           tripwire = watchConsole(page)
           await page.waitForURL('dsh-app://app/', { timeout: 60_000 })
@@ -2331,7 +2372,7 @@ for (const { mode, installed, surface } of desktopCarriers) {
           await page.locator(`[data-row-key="session:${replacementSession}"]`).click()
           await expect.poll(currentSession).toBe(replacementSession)
         }
-        await restart()
+        await restart('restore prepared task')
         await expect(invoke('tasks.capabilities.read', { sessionId: replacementSession }))
           .resolves.toMatchObject({ knowledgeBaseIds: ['personal-notes', 'policy'] })
         await expect.poll(() => composer.textContent()).toBe('Replacement task draft')
@@ -2348,7 +2389,7 @@ for (const { mode, installed, surface } of desktopCarriers) {
         await expect.poll(() => page.evaluate(id => localStorage.getItem(`dsh.conversation.${id}`), replacementSession))
           .toContain('Replacement task draft')
         await writeFile(pinnedPath, '{broken snapshot')
-        await restart()
+        await restart('isolate damaged snapshot')
         await expect(invoke('tasks.capabilities.read', { sessionId: replacementSession }))
           .resolves.toMatchObject({ unavailable: { code: 'TASK_SNAPSHOT_INVALID', retryable: false } })
         await expect.poll(() => composer.textContent()).toBe('Replacement task draft')

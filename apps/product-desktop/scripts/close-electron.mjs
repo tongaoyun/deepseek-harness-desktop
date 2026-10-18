@@ -9,17 +9,26 @@ import { terminateAcceptanceTree } from './acceptance-process.mjs'
  */
 export async function closeElectronAcceptance(app, timeoutMs = 10_000) {
   const child = app.process()
+  let applicationClosed = false
+  let processClosed = child.exitCode !== null || child.signalCode !== null
   let onClose = () => {}
-  const closed = child.exitCode !== null || child.signalCode !== null
+  const closed = processClosed
     ? Promise.resolve()
-    : new Promise(resolve => { onClose = resolve; child.once('close', onClose) })
+    : new Promise(resolve => {
+        onClose = () => { processClosed = true; resolve() }
+        child.once('close', onClose)
+      })
   let deadline
   let joinDeadline
   try {
     await Promise.race([
-      Promise.all([app.close(), closed]),
+      Promise.all([app.close().then(() => { applicationClosed = true }), closed]),
       new Promise((_, reject) => {
-        deadline = setTimeout(() => reject(new Error(`Electron acceptance close timed out after ${timeoutMs} ms`)), timeoutMs)
+        deadline = setTimeout(() => reject(new Error(
+          `Electron acceptance close timed out after ${timeoutMs} ms: ${JSON.stringify({
+            applicationClosed, processClosed, pid: child.pid, exitCode: child.exitCode, signalCode: child.signalCode,
+          })}`,
+        )), timeoutMs)
       }),
     ])
   } catch (error) {
