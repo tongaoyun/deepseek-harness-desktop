@@ -1,27 +1,24 @@
 /** Paginated library materials and manager actions, independent of task selection. */
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { Button, FileTypeIcon, IconChevronDownOutlineRegular, IconChevronLeftOutlineRegular, IconChevronRightOutlineRegular, IconDownloadOutlineRegular, IconEditOutlineRegular, IconEllipsisOutlineRegular, IconFolderOpenOutlineRegular, IconLinkOutlineRegular, IconPlusOutlineRegular, IconRefreshOutlineRegular, IconSearchOutlineRegular, IconStopFillRegular, IconTrashOutlineRegular, Menu, Modal, SegmentedControl, Tooltip, fileSizeText, type MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { KnowledgeUploadPending } from '@deepseek-harness/product/bridge'
 import type { KnowledgePdfParseMode } from '@deepseek-harness/product/protocol'
 import type { PropsRenderFactories } from '@deepseek-ai/dsh-client-ui-slots'
 import type { DeepSeekHarnessProductKey } from '../locales.ts'
 import css from '../DeepSeekHarnessProduct.module.css'
 import { formatDate, type ProductDetail } from './catalog-shared.tsx'
-import { isKnowledgeAccessDenied, knowledgeDocument, knowledgeFolder, knowledgePage, useKnowledgeRequests, type KnowledgeDocument, type KnowledgeFolder, type KnowledgePage } from './knowledge-data.ts'
+import { isKnowledgeAccessDenied, knowledgeFolder, knowledgePage, useKnowledgeRequests, type KnowledgeDocument, type KnowledgeFolder, type KnowledgePage } from './knowledge-data.ts'
 import { KnowledgeDocumentReader } from './KnowledgeDocumentReader.tsx'
 import { KnowledgeEditor, type KnowledgeEditorTarget } from './KnowledgeEditor.tsx'
 import { useKnowledgeFolderLocation } from './knowledge-folder-location.ts'
 import { KnowledgeFolderPicker } from './KnowledgeFolderPicker.tsx'
+import { KnowledgeUploadDialog } from './KnowledgeUploadDialog.tsx'
 import { KnowledgeBatchDialog, type KnowledgeBatchAction } from './KnowledgeBatchDialog.tsx'
 import { productErrorMessage } from './product-errors.ts'
 import { readMaterialDocuments } from './knowledge-materials.ts'
 
 type Confirmation = { readonly kind: 'document'; readonly document: KnowledgeDocument; readonly operationId: string }
   | { readonly kind: 'folder'; readonly folder: KnowledgeFolder }
-type UploadSelection = {
-  readonly operationId: string
-  readonly mode: KnowledgePdfParseMode
-  readonly destination: string | null | undefined
-}
 type MoveSelection = {
   readonly folderId: string | null
   readonly expectedFolderId: string | null
@@ -71,10 +68,10 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
   const [error, setError] = useState('')
   const [mutationError, setMutationError] = useState('')
   const [pending, setPending] = useState(false)
-  const [uploadRetry, setUploadRetry] = useState<UploadSelection>()
+  const [uploads, setUploads] = useState<readonly KnowledgeUploadPending[]>([])
+  const [uploadsOpen, setUploadsOpen] = useState(false)
   const [uploadRecoveryReady, setUploadRecoveryReady] = useState(false)
   const [uploadRecoveryRevision, setUploadRecoveryRevision] = useState(0)
-  const uploadSelection = useRef<UploadSelection>()
   const [accessDenied, setAccessDenied] = useState(false)
   const [reader, setReader] = useState<KnowledgeDocument>()
   const [editor, setEditor] = useState<KnowledgeEditorTarget>()
@@ -98,7 +95,8 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
   const denyAccess = useCallback(() => {
     accessOperation.current.abort()
     setAccessDenied(true); setData(undefined); setReader(undefined); setLoading(false)
-    setEditor(undefined); setConfirmation(undefined); setMove(undefined); setBatch(undefined); setSelectedIds(new Set())
+    setEditor(undefined); setConfirmation(undefined); setMove(undefined); setBatch(undefined)
+    setUploadsOpen(false); setUploads([]); setSelectedIds(new Set())
   }, [])
   const readAccessDenied = useCallback((failure: unknown) => {
     setError(productErrorMessage(failure, t, 'knowledgeReadFailed')); denyAccess()
@@ -122,15 +120,7 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
   const recoverUpload = useCallback(async (signal: AbortSignal) => {
     const value = await request('knowledge.documents.upload.pending', { knowledgeBaseId: product.id }, signal)
     signal.throwIfAborted()
-    if (!Array.isArray(value) || value.length > 16) throw new Error('Invalid pending uploads')
-    const selections = value.map((row: unknown): UploadSelection => {
-      if (typeof row !== 'object' || row === null || !('operationId' in row) || typeof row.operationId !== 'string'
-        || !/^[A-Za-z0-9._~-]{16,128}$/u.test(row.operationId) || !('pdfParseMode' in row)
-        || row.pdfParseMode !== 'STANDARD' && row.pdfParseMode !== 'TEXT'
-        || 'folderId' in row && row.folderId !== null && typeof row.folderId !== 'string') throw new Error('Invalid pending upload')
-      return { operationId: row.operationId, mode: row.pdfParseMode, destination: 'folderId' in row ? row.folderId as string | null : undefined }
-    })
-    uploadSelection.current = selections[0]; setUploadRetry(selections[0]); setUploadRecoveryReady(true)
+    setUploads(uploadSelections(value)); setUploadRecoveryReady(true)
   }, [request, product.id])
   useEffect(() => {
     if (!canManage) return
@@ -145,7 +135,7 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
   const folderSelectionKey = JSON.stringify([folderId === undefined ? 'all-materials' : folderId, page, Boolean(search || format || status), folderRevision, refreshRevision])
   const materialFolders = accessDenied || materialFolderPage?.key !== folderSelectionKey ? undefined : materialFolderPage.value
   useEffect(() => {
-    if (!canManage) { setEditor(undefined); setConfirmation(undefined); setMove(undefined); setBatch(undefined) }
+    if (!canManage) { setEditor(undefined); setConfirmation(undefined); setMove(undefined); setBatch(undefined); setUploadsOpen(false) }
   }, [canManage])
   useEffect(() => { setSelectedIds(new Set()) }, [folderId, page, search, format, status, refreshRevision])
   useEffect(() => {
@@ -223,49 +213,24 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
     } catch (failure) { if (!controller.signal.aborted) setMutationError(productErrorMessage(failure, t, 'knowledgeChangeFailed')) }
     finally { if (!controller.signal.aborted) setPending(false) }
   }
-  const upload = async (pdfParseMode: KnowledgePdfParseMode, destination = folderId, retry?: UploadSelection): Promise<void> => {
+  const upload = async (pdfParseMode: KnowledgePdfParseMode, destination = folderId): Promise<void> => {
     if (pending) return
     if (!uploadRecoveryReady) { setMutationError(t('knowledgeUploadRecoveryFailed')); return }
-    if (uploadSelection.current && retry === undefined) { setMutationError(t('knowledgeUploadPending')); return }
+    if (uploads.length > 0) { setUploadsOpen(true); return }
     const controller = operation.current
-    const selected = retry ?? { operationId: globalThis.crypto.randomUUID(), mode: pdfParseMode, destination }
-    uploadSelection.current = selected
     setPending(true); setMutationError('')
-    let confirmed = false
     try {
-      const value = await request('knowledge.documents.upload', { knowledgeBaseId: product.id,
-        operationId: selected.operationId, pdfParseMode: selected.mode,
-        ...(selected.destination === undefined ? {} : { folderId: selected.destination }) }, controller.signal)
-      if (!controller.signal.aborted) {
-        if (!(typeof value === 'object' && value !== null && 'cancelled' in value && value.cancelled === true)) {
-          knowledgeDocument(value)
-          await request('knowledge.documents.upload.discard', { knowledgeBaseId: product.id, operationId: selected.operationId }, controller.signal)
-          controller.signal.throwIfAborted()
-          setRevision(row => row + 1)
-        }
-        confirmed = true
-        uploadSelection.current = undefined; setUploadRetry(undefined)
-        setUploadRecoveryReady(false)
-        await recoverUpload(controller.signal)
-      }
+      const value = await request('knowledge.documents.upload.select', { knowledgeBaseId: product.id, pdfParseMode,
+        ...(destination === undefined ? {} : { folderId: destination }) }, controller.signal)
+      controller.signal.throwIfAborted()
+      const selected = uploadSelections(value)
+      setUploads(selected); setUploadsOpen(selected.length > 0)
     } catch (failure) {
       if (!controller.signal.aborted) {
-        if (!confirmed) setUploadRetry(selected)
-        setMutationError(productErrorMessage(failure, t, confirmed ? 'knowledgeUploadRecoveryFailed' : 'knowledgeUploadFailed'))
+        setMutationError(productErrorMessage(failure, t, 'knowledgeUploadFailed'))
+        setUploadRecoveryReady(false); setUploadRecoveryRevision(value => value + 1)
       }
-    }
-    finally { if (!controller.signal.aborted) setPending(false) }
-  }
-  const discardUpload = async (): Promise<void> => {
-    if (pending || uploadRetry === undefined) return
-    setPending(true)
-    try {
-      await request('knowledge.documents.upload.discard', { knowledgeBaseId: product.id, operationId: uploadRetry.operationId }, operation.current.signal)
-      uploadSelection.current = undefined; setUploadRetry(undefined); setMutationError(''); setRevision(value => value + 1)
-      setUploadRecoveryReady(false)
-      await recoverUpload(operation.current.signal)
-    } catch (failure) { if (!operation.current.signal.aborted) setMutationError(productErrorMessage(failure, t, 'knowledgeUploadFailed')) }
-    finally { if (!operation.current.signal.aborted) setPending(false) }
+    } finally { if (!controller.signal.aborted) setPending(false) }
   }
   const selectFolder = (value: string | null | undefined) => {
     setReader(undefined)
@@ -363,7 +328,7 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
     <div className={css.knowledgeMaterialsToolbar}>
       {materialSearch}
       {canManage && <div className={css.knowledgeAddActions}>
-        <KnowledgeUploadMenu disabled={pending || !uploadRecoveryReady || uploadRetry !== undefined}
+        <KnowledgeUploadMenu disabled={pending || !uploadRecoveryReady || uploads.length > 0}
           onSelect={(mode) => { void upload(mode) }} t={t} />
         <KnowledgeAddMenu disabled={pending} onSelect={(kind) => {
           beginMutation(); setEditor(kind === 'folder' ? { kind, parentId: folderId ?? null } : { kind, folderId: folderId ?? null })
@@ -400,10 +365,9 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
       <Button variant="ghost" size="sm" disabled={pending} onClick={() => { setSelectedIds(new Set()) }}>{t('knowledgeClearSelection')}</Button>
     </div>}
   </>
-  const uploadRecovery = uploadRetry && <div className={css.knowledgeAddActions}>
-    <span role="status">{t('knowledgeUploadPending')}</span>
-    <Button variant="outline" size="sm" disabled={pending} onClick={() => { void upload(uploadRetry.mode, uploadRetry.destination, uploadRetry) }}>{t('knowledgeRetryUpload')}</Button>
-    <Button variant="ghost" size="sm" disabled={pending} onClick={() => { void discardUpload() }}>{t('knowledgeDiscardUpload')}</Button>
+  const uploadRecovery = canManage && uploads.length > 0 && <div className={css.knowledgeAddActions}>
+    <span role="status">{t('knowledgeUploadsPending').replace('{count}', String(uploads.length))}</span>
+    <Button variant="outline" size="sm" disabled={pending} onClick={() => { setUploadsOpen(true) }}>{t('knowledgeUploadViewQueue')}</Button>
   </div>
   const materials = <section role="tabpanel" id={`${browseId}-${folderId === undefined ? 'all' : 'folders'}-panel`}
     aria-labelledby={`${browseId}-${folderId === undefined ? 'all' : 'folders'}`}>
@@ -542,6 +506,15 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
     {move && <KnowledgeMoveDialog knowledgeBaseId={product.id} document={move} pending={pending} error={mutationError}
       onClose={() => { if (!pending) setMove(undefined) }}
       onMove={(selection) => { void mutate('knowledge.documents.move', { knowledgeBaseId: product.id, documentId: move.id, ...selection }, () => { setMove(undefined); setReader(undefined) }) }} t={t} />}
+    {uploadsOpen && canManage && <KnowledgeUploadDialog knowledgeBaseId={product.id} selections={uploads}
+      onBusyChange={setPending} onAccepted={() => { setRevision(value => value + 1) }}
+      onDenied={(failure) => {
+        if (isKnowledgeAccessDenied(failure)) readAccessDenied(failure)
+        else { setUploadsOpen(false); setMutationError(productErrorMessage(failure, t, 'knowledgeChangeFailed')) }
+      }}
+      onClose={() => {
+        setUploadsOpen(false); setUploadRecoveryReady(false); setUploadRecoveryRevision(value => value + 1)
+      }} t={t} />}
     {batch && <KnowledgeBatchDialog knowledgeBaseId={product.id} action={batch.action} documents={batch.documents}
       onBusyChange={setPending} onAccessDenied={readAccessDenied}
       onAccepted={(document, action) => {
@@ -729,4 +702,21 @@ export function knowledgeStatus(status: string, t: (key: DeepSeekHarnessProductK
     : status === 'PROCESSING' ? 'knowledgeProcessing' : status === 'FAILED' ? 'knowledgeIndexFailed'
       : status === 'DELETING' ? 'knowledgeDeleting' : status === 'FINALIZING' ? 'knowledgeFinalizing'
         : status === 'CANCELLED' ? 'knowledgeCancelled' : 'statusUnavailable')
+}
+
+function uploadSelections(value: unknown): readonly KnowledgeUploadPending[] {
+  if (!Array.isArray(value) || value.length > 16) throw new Error('Invalid pending uploads')
+  const selections = value.map((row: unknown): KnowledgeUploadPending => {
+    if (typeof row !== 'object' || row === null || !('operationId' in row) || typeof row.operationId !== 'string'
+      || !/^[A-Za-z0-9._~-]{16,128}$/u.test(row.operationId) || !('pdfParseMode' in row)
+      || row.pdfParseMode !== 'STANDARD' && row.pdfParseMode !== 'TEXT'
+      || !('filename' in row) || typeof row.filename !== 'string' || row.filename.length === 0 || /[\\/\0]/u.test(row.filename)
+      || 'folderId' in row && row.folderId !== null && (typeof row.folderId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/u.test(row.folderId))) {
+      throw new Error('Invalid pending upload')
+    }
+    return { operationId: row.operationId, filename: row.filename, pdfParseMode: row.pdfParseMode,
+      ...('folderId' in row ? { folderId: row.folderId as string | null } : {}) }
+  })
+  if (new Set(selections.map(row => row.operationId)).size !== selections.length) throw new Error('Duplicate upload identities')
+  return selections
 }

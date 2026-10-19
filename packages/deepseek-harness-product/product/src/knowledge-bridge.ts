@@ -5,7 +5,10 @@ import type { KnowledgePdfParseMode } from './protocol.ts'
 
 /** Native file selection is owned by the desktop; renderer payloads contain no paths. */
 export interface KnowledgeUpload {
-  /** Select once and retry the same file with the same request identity. */
+  /** Retain native-selected files with fixed destinations; return names and independent operation IDs. */
+  choose(baseId: string, pdfParseMode: KnowledgePdfParseMode, folderId: string | null | undefined,
+    signal?: AbortSignal): Promise<readonly KnowledgeUploadPending[]>
+  /** Upload a retained file with its original request identity and destination. */
   send(baseId: string, operationId: string, pdfParseMode: KnowledgePdfParseMode,
     folderId: string | null | undefined, api: DeepSeekHarnessApiClient, signal?: AbortSignal): Promise<unknown>
   /** Release a retained native selection without repeating its remote write. */
@@ -17,6 +20,7 @@ export interface KnowledgeUpload {
 /** Public identity of a native selection retained for an unconfirmed upload. */
 export interface KnowledgeUploadPending {
   readonly operationId: string
+  readonly filename: string
   readonly pdfParseMode: KnowledgePdfParseMode
   readonly folderId?: string | null | undefined
 }
@@ -92,12 +96,14 @@ export async function invokeKnowledge(api: DeepSeekHarnessApiClient, method: str
     return { items: result.data, page: result.pageIndex, size: result.pageSize, total: result.totalCount }
   }
   if (method === 'knowledge.documents.get') return api.request(`${documents}/${resource(input, 'documentId')}`, options)
-  if (method === 'knowledge.documents.upload') {
-    if (Object.keys(input).some(key => !['knowledgeBaseId', 'operationId', 'pdfParseMode', 'folderId'].includes(key))) invalid('upload payload')
+  if (method === 'knowledge.documents.upload' || method === 'knowledge.documents.upload.select') {
+    const allowed = method === 'knowledge.documents.upload' ? ['knowledgeBaseId', 'operationId', 'pdfParseMode', 'folderId'] : ['knowledgeBaseId', 'pdfParseMode', 'folderId']
+    if (Object.keys(input).some(key => !allowed.includes(key))) invalid('upload payload')
     const pdfParseMode = input.pdfParseMode === undefined ? 'STANDARD' : input.pdfParseMode
     if (pdfParseMode !== 'STANDARD' && pdfParseMode !== 'TEXT') invalid('pdfParseMode')
     if (upload === undefined) throw new ProductError('KNOWLEDGE_UPLOAD_UNAVAILABLE', 'File selection is unavailable', false)
     const folderId = input.folderId === null || input.folderId === undefined ? input.folderId : decodedResource(input, 'folderId')
+    if (method === 'knowledge.documents.upload.select') return upload.choose(decodeURIComponent(baseId), pdfParseMode, folderId, signal)
     return upload.send(decodeURIComponent(baseId), operation(input), pdfParseMode, folderId, api, signal)
   }
   if (method === 'knowledge.documents.upload.discard') {

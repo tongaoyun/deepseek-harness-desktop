@@ -415,9 +415,9 @@ it('uploads into the selected folder and preserves the destination after cancell
   let fail = false
   const api = transport(async (method) => {
     if (method === 'knowledge.folders.list') return folders
-    if (method === 'knowledge.documents.upload') {
+    if (method === 'knowledge.documents.upload.select') {
       if (fail) throw new Error('Temporary outage')
-      return { cancelled: true }
+      return []
     }
     return page([])
   })
@@ -425,7 +425,7 @@ it('uploads into the selected folder and preserves the destination after cancell
   fireEvent.click(await parts(view.container).navigation.findByRole('button', { name: '业务制度' }))
   fireEvent.click(parts(view.container).content.getByRole('button', { name: zh.knowledgeUpload }))
   fireEvent.click(screen.getByRole('menuitem', { name: zh.knowledgeUploadStandard }))
-  await waitFor(() => { expect(api.invoke.mock.calls.some(row => row[1] === 'knowledge.documents.upload')).toBe(true) })
+  await waitFor(() => { expect(api.invoke.mock.calls.some(row => row[1] === 'knowledge.documents.upload.select')).toBe(true) })
   expect(parts(view.container).navigation.getByRole('button', { name: '业务制度' }).getAttribute('aria-current')).toBe('page')
   fail = true
   await waitFor(() => { expect(parts(view.container).content.getByRole('button', { name: zh.knowledgeUpload }).hasAttribute('disabled')).toBe(false) })
@@ -433,7 +433,7 @@ it('uploads into the selected folder and preserves the destination after cancell
   fireEvent.click(screen.getByRole('menuitem', { name: zh.knowledgeUploadStandard }))
   await parts(view.container).content.findByText(zh.knowledgeUploadFailed)
   expect(parts(view.container).navigation.getByRole('button', { name: '业务制度' }).getAttribute('aria-current')).toBe('page')
-  for (const call of api.invoke.mock.calls.filter(row => row[1] === 'knowledge.documents.upload')) {
+  for (const call of api.invoke.mock.calls.filter(row => row[1] === 'knowledge.documents.upload.select')) {
     expect(call[2]).toMatchObject({ knowledgeBaseId: 'personal', folderId: 'stable-folder', pdfParseMode: 'STANDARD' })
   }
   const folderActions = parts(view.container).navigation.getByRole('button', {
@@ -491,99 +491,49 @@ it.each(['cancel', 'close'] as const)('clears a failed folder deletion after %s 
   expect(api.invoke.mock.calls.filter(row => row[1] === 'knowledge.folders.delete')).toHaveLength(1)
 })
 
-it('uploads from another folder menu without replacing the current reader on cancel, failure or success', async () => {
-  let outcome: 'cancel' | 'failure' | 'success' = 'cancel'
+it('selects files from another folder without replacing the current reader, and recovers after navigation', async () => {
+  const selected = { operationId: 'upload-operation-0001', filename: 'upload.md', pdfParseMode: 'STANDARD', folderId: 'stable-folder' }
+  let retained = false
+  let succeeded = false
   const api = transport(async (method) => {
     if (method === 'knowledge.folders.list') return folders
     if (method === 'knowledge.documents.preview.open') return originalPreview('# Current document')
+    if (method === 'knowledge.documents.upload.select') { retained = true; return [selected] }
     if (method === 'knowledge.documents.upload') {
-      if (outcome === 'failure') throw new Error('Temporary outage')
-      return outcome === 'cancel' ? { cancelled: true } : documentRow('personal')
-    }
-    return page([documentRow('personal')])
-  })
-  const view = render(<KnowledgeWorkspace {...props} />)
-  fireEvent.click(await parts(view.container).content.findByRole('button', { name: '业务规范.md' }))
-  await parts(view.container).content.findByRole('heading', { name: 'Current document' })
-  for (const next of ['cancel', 'failure', 'success'] as const) {
-    outcome = next
-    const count = api.invoke.mock.calls.filter(row => row[1] === 'knowledge.documents.upload').length
-    if (next === 'success') fireEvent.click(parts(view.container).content.getByRole('button', { name: zh.knowledgeRetryUpload }))
-    else {
-      fireEvent.click(parts(view.container).navigation.getByRole('button', { name: zh.knowledgeFolderActions.replace('{name}', '业务制度') }))
-      fireEvent.click(screen.getByRole('menuitem', { name: zh.knowledgeUpload }))
-    }
-    await waitFor(() => { expect(api.invoke.mock.calls.filter(row => row[1] === 'knowledge.documents.upload')).toHaveLength(count + 1) })
-    await waitFor(() => { expect(parts(view.container).navigation.getByRole('button', {
-      name: zh.knowledgeFolderActions.replace('{name}', '业务制度'),
-    }).hasAttribute('disabled')).toBe(false) })
-    expect(parts(view.container).navigation.getByRole('button', { name: '业务制度' }).getAttribute('aria-current')).not.toBe('page')
-    await parts(view.container).content.findByRole('heading', { name: 'Current document' })
-  }
-  for (const call of api.invoke.mock.calls.filter(row => row[1] === 'knowledge.documents.upload')) {
-    expect(call[2]).toMatchObject({ knowledgeBaseId: 'personal', folderId: 'stable-folder', pdfParseMode: 'STANDARD' })
-  }
-  const attempts = api.invoke.mock.calls.filter(row => row[1] === 'knowledge.documents.upload')
-  expect(attempts[1]?.[2]).toEqual(attempts[2]?.[2])
-  expect(parts(view.container).content.queryByRole('button', { name: zh.knowledgeRetryUpload })).toBeNull()
-})
-
-it('ends an unresolved upload without repeating a write and refreshes the materials', async () => {
-  const api = transport(async (method) => {
-    if (method === 'knowledge.folders.list') return page([])
-    if (method === 'knowledge.documents.upload') throw new Error('Lost receipt')
-    return page([])
-  })
-  const view = render(<KnowledgeWorkspace {...props} />)
-  const { content } = parts(view.container)
-  await waitFor(() => { expect(content.getByRole<HTMLButtonElement>('button', { name: zh.knowledgeUpload }).disabled).toBe(false) })
-  fireEvent.click(content.getByRole('button', { name: zh.knowledgeUpload }))
-  fireEvent.click(await screen.findByRole('menuitem', { name: zh.knowledgeUploadStandard }))
-  await content.findByRole('button', { name: zh.knowledgeRetryUpload })
-  const attempt = api.invoke.mock.calls.find(row => row[1] === 'knowledge.documents.upload')!
-  const before = api.invoke.mock.calls.filter(row => row[1] === 'knowledge.documents.list').length
-  fireEvent.click(content.getByRole('button', { name: zh.knowledgeDiscardUpload }))
-  await waitFor(() => { expect(content.queryByRole('button', { name: zh.knowledgeRetryUpload })).toBeNull() })
-  expect(api.invoke.mock.calls.find(row => row[1] === 'knowledge.documents.upload.discard')?.[2])
-    .toEqual({ knowledgeBaseId: 'personal', operationId: attempt[2].operationId })
-  expect(api.invoke.mock.calls.filter(row => row[1] === 'knowledge.documents.upload')).toHaveLength(1)
-  await waitFor(() => { expect(api.invoke.mock.calls.filter(row => row[1] === 'knowledge.documents.list').length).toBeGreaterThan(before) })
-})
-
-it('recovers an unconfirmed upload after switching libraries and leaving the workspace', async () => {
-  let retained: Record<string, unknown> | undefined
-  let succeeded = false
-  const api = transport(async (method, payload) => {
-    if (method === 'knowledge.folders.list') return folders
-    if (method === 'knowledge.documents.upload') {
-      retained = payload
-      if (!succeeded) throw new ProductError('PRODUCT_NETWORK_UNAVAILABLE', 'Receipt lost', true)
+      if (!succeeded) throw new ProductError('PRODUCT_NETWORK_UNAVAILABLE', 'Lost receipt', true)
       return documentRow('personal')
     }
-    if (method === 'knowledge.documents.upload.discard') { retained = undefined; return { discarded: true } }
-    return page([])
-  }, async payload => payload.knowledgeBaseId === 'personal' && retained ? [retained] : [])
+    if (method === 'knowledge.documents.upload.discard') { retained = false; return { discarded: true } }
+    return page([documentRow('personal')])
+  }, async payload => payload.knowledgeBaseId === 'personal' && retained ? [selected] : [])
   let view = render(<KnowledgeWorkspace {...props} />)
-  await waitFor(() => { expect(parts(view.container).content.getByRole<HTMLButtonElement>('button', { name: zh.knowledgeUpload }).disabled).toBe(false) })
+  fireEvent.click(await parts(view.container).content.findByRole('button', { name: '业务规范.md' }))
+  await parts(view.container).content.findByRole('heading', { name: 'Current document' })
   fireEvent.click(parts(view.container).navigation.getByRole('button', { name: zh.knowledgeFolderActions.replace('{name}', '业务制度') }))
   fireEvent.click(screen.getByRole('menuitem', { name: zh.knowledgeUpload }))
-  await parts(view.container).content.findByRole('button', { name: zh.knowledgeRetryUpload })
+  let dialog = within(await screen.findByRole('dialog', { name: zh.knowledgeUploadFiles }))
+  expect(api.invoke.mock.calls.some(call => call[1] === 'knowledge.documents.upload')).toBe(false)
+  fireEvent.click(dialog.getByRole('button', { name: zh.knowledgeUpload }))
+  await dialog.findByRole('alert')
   const original = api.invoke.mock.calls.find(call => call[1] === 'knowledge.documents.upload')![2]
+  fireEvent.click(dialog.getAllByRole('button', { name: zh.close }).at(-1)!)
+  await parts(view.container).content.findByRole('heading', { name: 'Current document' })
   fireEvent.click(parts(view.container).navigation.getByRole('button', { name: '公司规范' }))
   fireEvent.click(parts(view.container).navigation.getByRole('button', { name: '我的资料' }))
-  await parts(view.container).content.findByRole('button', { name: zh.knowledgeRetryUpload })
-  expect(api.invoke.mock.calls.filter(call => call[1] === 'knowledge.documents.upload.discard')).toHaveLength(0)
+  await parts(view.container).content.findByRole('button', { name: zh.knowledgeUploadViewQueue })
+  expect(api.invoke.mock.calls.some(call => call[1] === 'knowledge.documents.upload.discard')).toBe(false)
   view.unmount()
   view = render(<KnowledgeWorkspace {...props} />)
-  await parts(view.container).content.findByRole('button', { name: zh.knowledgeRetryUpload })
+  fireEvent.click(await parts(view.container).content.findByRole('button', { name: zh.knowledgeUploadViewQueue }))
+  dialog = within(await screen.findByRole('dialog', { name: zh.knowledgeUploadFiles }))
   succeeded = true
-  fireEvent.click(parts(view.container).content.getByRole('button', { name: zh.knowledgeRetryUpload }))
-  await waitFor(() => { expect(parts(view.container).content.queryByRole('button', { name: zh.knowledgeRetryUpload })).toBeNull() })
+  fireEvent.click(dialog.getByRole('button', { name: zh.knowledgeUpload }))
+  await dialog.findByText(zh.knowledgeUploadAccepted)
   const attempts = api.invoke.mock.calls.filter(call => call[1] === 'knowledge.documents.upload')
   expect(attempts).toHaveLength(2)
   expect(attempts[1]?.[2]).toEqual(original)
   expect(original).toMatchObject({ folderId: 'stable-folder', pdfParseMode: 'STANDARD' })
-  expect(api.invoke.mock.calls.filter(call => call[1] === 'knowledge.documents.upload.discard')).toHaveLength(1)
+  expect(api.invoke.mock.calls.filter(call => call[1] === 'knowledge.documents.upload.select')).toHaveLength(1)
 })
 
 it('blocks new uploads until pending operations are known and allows recovery refresh', async () => {
@@ -987,4 +937,16 @@ it('shows files only in the main list and resolves their folder in the reader br
     knowledgeBaseId: 'personal', folderId: 'stable-folder', page: 1, size: 20,
   }, expect.any(String)) })
   expect(container.querySelector('[data-knowledge-inline-reader]')).toBeNull()
+})
+
+it.each(['duplicate', 'path', 'destination', 'overflow'] as const)('blocks uploads when recovered file metadata contains %s', async (invalid) => {
+  const row = { operationId: 'upload-operation-0001', filename: 'file.md', pdfParseMode: 'STANDARD', folderId: null }
+  const pending = invalid === 'duplicate' ? [row, row] : invalid === 'path' ? [{ ...row, filename: '/private/file.md' }]
+    : invalid === 'destination' ? [{ ...row, folderId: '../outside' }] : Array.from({ length: 17 }, (_, index) => ({ ...row, operationId: `upload-operation-${index}` }))
+  const api = transport(async () => page([]), async () => pending)
+  const view = render(<KnowledgeWorkspace {...props} />)
+  const content = parts(view.container).content
+  await content.findByText(zh.knowledgeUploadRecoveryFailed)
+  expect(content.getByRole<HTMLButtonElement>('button', { name: zh.knowledgeUpload }).disabled).toBe(true)
+  expect(api.invoke.mock.calls.some(call => call[1] === 'knowledge.documents.upload.select' || call[1] === 'knowledge.documents.upload')).toBe(false)
 })

@@ -197,15 +197,15 @@ it.each(['markdown', 'url'] as const)('preserves %s creation destination and edi
 })
 
 it('exposes upload and creation only to a library manager and accepts native picker cancellation', async () => {
-  const api = transport(async method => method === 'knowledge.documents.upload' ? { cancelled: true } : page([]))
+  const api = transport(async method => method === 'knowledge.documents.upload.select' ? [] : page([]))
   render(<StrictMode><KnowledgeDetail renderFactorySlot={renderKnowledgePreview} product={library(true)} t={t} /></StrictMode>)
   await waitFor(() => { expect(screen.getByRole<HTMLButtonElement>('button', { name: zh.knowledgeUpload }).disabled).toBe(false) })
   fireEvent.click(screen.getByRole('button', { name: zh.knowledgeUpload }))
   fireEvent.click(await screen.findByRole('menuitem', { name: zh.knowledgeUploadStandard }))
   await waitFor(() => { expect(screen.getByRole('button', { name: zh.knowledgeUpload }).hasAttribute('disabled')).toBe(false) })
   expect(screen.queryByRole('alert')).toBeNull()
-  expect(api.invoke).toHaveBeenCalledWith('product', 'knowledge.documents.upload', {
-    knowledgeBaseId: 'policy', operationId: expect.any(String) as string, pdfParseMode: 'STANDARD', folderId: null,
+  expect(api.invoke).toHaveBeenCalledWith('product', 'knowledge.documents.upload.select', {
+    knowledgeBaseId: 'policy', pdfParseMode: 'STANDARD', folderId: null,
   }, expect.any(String), 300_000)
   fireEvent.click(screen.getByRole('button', { name: zh.knowledgeAddMaterial }))
   fireEvent.click(await screen.findByRole('menuitem', { name: zh.knowledgeNewDocument }))
@@ -213,11 +213,14 @@ it('exposes upload and creation only to a library manager and accepts native pic
 })
 
 it('offers no-OCR PDF extraction without accepting a renderer file path or changing the task', async () => {
-  const api = transport(async method => method === 'knowledge.documents.upload' ? { ...document, filename: 'policy.pdf', status: 'QUEUED' } : page([]))
+  const api = transport(async method => method === 'knowledge.documents.upload.select'
+    ? [{ operationId: 'pdf-upload-operation-1', filename: 'policy.pdf', pdfParseMode: 'TEXT', folderId: null }]
+    : method === 'knowledge.documents.upload' ? { ...document, filename: 'policy.pdf', status: 'QUEUED' } : page([]))
   render(<KnowledgeDetail renderFactorySlot={renderKnowledgePreview} product={library(true)} t={t} />)
   await waitFor(() => { expect(screen.getByRole<HTMLButtonElement>('button', { name: zh.knowledgeUpload }).disabled).toBe(false) })
   fireEvent.click(screen.getByRole('button', { name: zh.knowledgeUpload }))
   fireEvent.click(await screen.findByRole('menuitem', { name: zh.knowledgeUploadTextPdf }))
+  fireEvent.click(within(await screen.findByRole('dialog', { name: zh.knowledgeUploadFiles })).getByRole('button', { name: zh.knowledgeUpload }))
   await waitFor(() => { expect(api.invoke).toHaveBeenCalledWith('product', 'knowledge.documents.upload', {
     knowledgeBaseId: 'policy', operationId: expect.any(String) as string, pdfParseMode: 'TEXT', folderId: null,
   }, expect.any(String), 300_000) })
@@ -230,7 +233,7 @@ it.each([
   ['KNOWLEDGE_PARSE_MODE_INVALID', 'knowledgeParseModeInvalid'],
 ] as const)('explains %s without suggesting that another upload changes existing parsing', async (code, key) => {
   transport(async (method) => {
-    if (method === 'knowledge.documents.upload') throw new ProductError(code, 'Private upstream response', false)
+    if (method === 'knowledge.documents.upload.select') throw new ProductError(code, 'Private upstream response', false)
     return page([])
   })
   render(<KnowledgeDetail renderFactorySlot={renderKnowledgePreview} product={library(true)} t={t} />)

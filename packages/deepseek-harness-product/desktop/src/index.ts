@@ -119,7 +119,7 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
     const options = knowledgeUploadDialogOptions(mode)
     const selected = await waitForNativeDialog(() => window
       ? dialog.showOpenDialog(window, options) : dialog.showOpenDialog(options), signal)
-    return selected.canceled ? undefined : selected.filePaths[0]
+    return selected.canceled ? undefined : selected.filePaths
   }, knowledgeFilePolicy.uploadMaxBytes)
   const nativeSidecar = new DeepSeekHarnessNativeProcess(
     process.env.DEEPSEEK_HARNESS_NATIVE_BINARY

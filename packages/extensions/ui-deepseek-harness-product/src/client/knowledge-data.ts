@@ -215,7 +215,7 @@ export function useKnowledgeRequests(): (method: string, payload: unknown, signa
     requests.current.set(id, cancel)
     signal?.addEventListener('abort', cancel, { once: true })
     const timeoutMs = ['knowledge.documents.preview.open', 'knowledge.documents.download', 'knowledge.documents.openExternal',
-      'knowledge.documents.upload'].includes(method) ? 300_000 : undefined
+      'knowledge.documents.upload', 'knowledge.documents.upload.select'].includes(method) ? 300_000 : undefined
     try { return await api.invoke(method, payload, id, timeoutMs) }
     finally { signal?.removeEventListener('abort', cancel); requests.current.delete(id) }
   }, [])

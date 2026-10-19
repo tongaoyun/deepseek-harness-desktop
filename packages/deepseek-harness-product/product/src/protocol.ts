@@ -99,6 +99,7 @@ export type ProductMethod =
   | 'knowledge.documents.previewMetadata'
   | Extract<KnowledgeFileMethod, `knowledge.${string}`>
   | 'knowledge.documents.read'
+  | 'knowledge.documents.upload.select'
   | 'knowledge.documents.upload'
   | 'knowledge.documents.upload.discard'
   | 'knowledge.documents.upload.pending'
@@ -293,7 +294,7 @@ export function isProductMethod(value: unknown): value is ProductMethod {
     'skills.artifact', 'skills.install', 'skills.uninstall', 'skills.installed.read', 'connectors.list',
     'connectors.authorization.status', 'connectors.authorization.begin', 'connectors.authorization.revoke',
     'knowledge.bases.list', 'knowledge.bases.create', 'knowledge.bases.delete', 'knowledge.files.limits', 'knowledge.search', 'knowledge.sources.read',
-    'knowledge.documents.list', 'knowledge.documents.get', 'knowledge.documents.previewMetadata', 'knowledge.documents.read', 'knowledge.documents.upload', 'knowledge.documents.upload.discard', 'knowledge.documents.upload.pending',
+    'knowledge.documents.list', 'knowledge.documents.get', 'knowledge.documents.previewMetadata', 'knowledge.documents.read', 'knowledge.documents.upload', 'knowledge.documents.upload.select', 'knowledge.documents.upload.discard', 'knowledge.documents.upload.pending',
     'knowledge.documents.preview.open', 'knowledge.documents.preview.read', 'knowledge.documents.preview.close',
     'knowledge.documents.download', 'knowledge.documents.openExternal',
     'knowledge.documents.save', 'knowledge.documents.importUrl', 'knowledge.documents.delete', 'knowledge.documents.reindex', 'knowledge.documents.cancel',

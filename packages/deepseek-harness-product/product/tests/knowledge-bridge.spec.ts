@@ -231,11 +231,11 @@ it('returns asynchronous deletion state instead of treating it as completion', a
 
 it('only lets the main-owned picker supply an upload file', async () => {
   const api = client(async () => { throw new Error('Unexpected HTTP') })
-  const send = vi.fn(async () => ({ cancelled: true }))
-  const upload = { send, discard: vi.fn(), pending: vi.fn(() => [{ operationId, pdfParseMode: 'STANDARD' as const, folderId: 'folder' }]) }
+  const send = vi.fn(async () => ({ id: 'document' }))
+  const upload = { send, choose: vi.fn(async () => []), discard: vi.fn(), pending: vi.fn(() => [{ operationId, filename: 'policy.md', pdfParseMode: 'STANDARD' as const, folderId: 'folder' }]) }
   try {
     await expect(invokeKnowledge(api, 'knowledge.documents.upload', { knowledgeBaseId: 'base', operationId }, upload))
-      .resolves.toEqual({ cancelled: true })
+      .resolves.toEqual({ id: 'document' })
     await expect(invokeKnowledge(api, 'knowledge.documents.upload', { knowledgeBaseId: 'base', operationId, path: '/private/file' }, upload))
       .rejects.toMatchObject({ code: 'KNOWLEDGE_REQUEST_INVALID' })
     expect(send).toHaveBeenCalledTimes(1)
@@ -259,7 +259,14 @@ it('only lets the main-owned picker supply an upload file', async () => {
     await invokeKnowledge(api, 'knowledge.documents.upload.discard', { knowledgeBaseId: 'base', operationId }, upload)
     expect(upload.discard).toHaveBeenCalledExactlyOnceWith('base', operationId)
     await expect(invokeKnowledge(api, 'knowledge.documents.upload.pending', { knowledgeBaseId: 'base' }, upload))
-      .resolves.toEqual([{ operationId, pdfParseMode: 'STANDARD', folderId: 'folder' }])
+      .resolves.toEqual([{ operationId, filename: 'policy.md', pdfParseMode: 'STANDARD', folderId: 'folder' }])
+    await invokeKnowledge(api, 'knowledge.documents.upload.select', { knowledgeBaseId: 'base', pdfParseMode: 'TEXT', folderId: 'folder' }, upload)
+    expect(upload.choose).toHaveBeenCalledExactlyOnceWith('base', 'TEXT', 'folder', undefined)
+    for (const extra of [{ path: '/private/file' }, { employeeId: 'forged' }, { operationId }]) {
+      await expect(invokeKnowledge(api, 'knowledge.documents.upload.select', { knowledgeBaseId: 'base', ...extra }, upload))
+        .rejects.toMatchObject({ code: 'KNOWLEDGE_REQUEST_INVALID' })
+    }
+    expect(isProductRuntimeMethod('knowledge.documents.upload.select')).toBe(false)
     expect(upload.pending).toHaveBeenCalledExactlyOnceWith('base')
     await expect(invokeKnowledge(api, 'knowledge.documents.upload.pending', { knowledgeBaseId: 'base', employeeId: 'forged' }, upload))
       .rejects.toMatchObject({ code: 'KNOWLEDGE_REQUEST_INVALID' })

@@ -45,85 +45,48 @@ it.each(['dismissed', 'failed', 'aborted'] as const)('counts pending import pick
   expect(selectImport).toHaveBeenCalledTimes(5)
 })
 
-it('keeps prepared uploads in the same capacity budget while allowing their retries', async () => {
+it('counts an entire native selection atomically and preserves existing upload retries at capacity', async () => {
   const root = await mkdtemp(join(tmpdir(), 'knowledge-upload-capacity-'))
-  const path = join(root, 'sample.md')
-  await writeFile(path, '# Sample')
-  const picker = Promise.withResolvers<string | undefined>()
-  const overflowPicker = Promise.withResolvers<'opened'>()
-  const select = vi.fn(() => {
-    if (select.mock.calls.length > 16) overflowPicker.resolve('opened')
-    return select.mock.calls.length <= 15 ? Promise.resolve(path) : picker.promise
-  })
+  onTestFinished(() => rm(root, { recursive: true, force: true }))
+  const paths = Array.from({ length: 17 }, (_, index) => join(root, `sample-${index}.md`))
+  await Promise.all(paths.map(path => writeFile(path, '# Sample')))
+  const select = vi.fn(async () => paths.slice(0, 15))
   const api = new DeepSeekHarnessApiClient({ baseUrl: 'https://product.example', getSessionToken: () => 'employee-token',
-    fetch: async (url) => {
-      if ((url instanceof Request ? url.url : url.toString()).endsWith('/knowledge-file-limits')) return Response.json({ success: true, data: { uploadMaxBytes: 1000 } })
-      throw new Error('Upload receipt lost')
-    } })
+    fetch: async url => (url instanceof Request ? url.url : url.toString()).endsWith('/knowledge-file-limits')
+      ? Response.json({ success: true, data: { uploadMaxBytes: 1000 } }) : Promise.reject(new Error('Upload receipt lost')) })
   const uploads = new KnowledgeUploads(() => identity.employeeId, select, 1000)
-  const operations: Promise<unknown>[] = []
-  onTestFinished(async () => {
-    uploads.close(); picker.resolve(undefined)
-    await Promise.allSettled(operations); api.close()
-    await rm(root, { recursive: true, force: true })
-  })
-  const send = (index: number) => {
-    const operation = uploads.send('base', `retained-upload-${index}`, 'STANDARD', null, api)
-    operations.push(operation)
-    return operation
-  }
-  for (let index = 0; index < 15; index++) await expect(send(index)).rejects.toThrow('receipt lost')
-  const entered = Promise.withResolvers<undefined>()
-  select.mockImplementation(() => { entered.resolve(undefined); return picker.promise })
-  const last = send(15)
-  await entered.promise
-  select.mockImplementation(() => { overflowPicker.resolve('opened'); return picker.promise })
-  const overflow = send(16)
-  expect(await Promise.race([overflow.then(() => 'accepted', () => 'rejected'), overflowPicker.promise])).toBe('rejected')
-  const lastFailure = expect(last).rejects.toThrow('receipt lost')
-  picker.resolve(path)
-  await lastFailure
+  onTestFinished(() => { uploads.close(); api.close() })
+  const initial = await uploads.choose('base', 'STANDARD', null)
+  select.mockResolvedValue(paths.slice(15))
+  await expect(uploads.choose('base', 'STANDARD', null)).rejects.toMatchObject({ code: 'KNOWLEDGE_UPLOAD_PENDING_LIMIT' })
+  expect(uploads.pending('base')).toEqual(initial)
+  select.mockResolvedValue(paths.slice(15, 16))
+  await uploads.choose('base', 'STANDARD', null)
   expect(uploads.pending('base')).toHaveLength(16)
-  await expect(send(0)).rejects.toThrow('receipt lost')
-  expect(select).toHaveBeenCalledTimes(16)
-  await expect(send(17)).rejects.toMatchObject({ code: 'KNOWLEDGE_UPLOAD_PENDING_LIMIT' })
-  uploads.discard('base', 'retained-upload-0')
-  await expect(send(18)).rejects.toThrow('receipt lost')
-  expect(select).toHaveBeenCalledTimes(17)
-  expect(uploads.pending('base')).toHaveLength(16)
+  await expect(uploads.choose('base', 'STANDARD', null)).rejects.toMatchObject({ code: 'KNOWLEDGE_UPLOAD_PENDING_LIMIT' })
+  await expect(uploads.send('base', initial[0]!.operationId, 'STANDARD', null, api)).rejects.toThrow('receipt lost')
+  uploads.discard('base', initial[0]!.operationId)
+  await uploads.choose('other-base', 'STANDARD', null)
+  expect(uploads.pending('base')).toHaveLength(15)
+  expect(uploads.pending('other-base')).toHaveLength(1)
+  expect(select).toHaveBeenCalledTimes(4)
 })
 
-it('reserves native upload selections before concurrent pickers and frees slots after cancellation', async () => {
-  const ready = Promise.withResolvers<undefined>()
-  const picker = Promise.withResolvers<string | undefined>()
-  const overflowPicker = Promise.withResolvers<'opened'>()
-  const select = vi.fn(() => {
-    if (select.mock.calls.length === 16) ready.resolve(undefined)
-    if (select.mock.calls.length > 16) overflowPicker.resolve('opened')
-    return picker.promise
-  })
-  const api = new DeepSeekHarnessApiClient({ baseUrl: 'https://product.example', getSessionToken: () => 'employee-token',
-    fetch: async () => Response.json({ success: true, data: { uploadMaxBytes: 1000 } }) })
+it.each(['cancel', 'failure', 'abort'] as const)('allows one native picker and releases its reservation after %s', async (outcome) => {
+  const picker = Promise.withResolvers<readonly string[] | undefined>()
+  const select = vi.fn(() => picker.promise)
   const uploads = new KnowledgeUploads(() => identity.employeeId, select, 1000)
-  const operations: Promise<unknown>[] = []
-  onTestFinished(async () => {
-    uploads.close(); picker.resolve(undefined)
-    await Promise.allSettled(operations); api.close()
-  })
-  const send = (index: number) => {
-    const operation = uploads.send('base', `upload-operation-${index}`, 'STANDARD', null, api)
-    operations.push(operation)
-    return operation
-  }
-  for (let index = 0; index < 16; index++) void send(index)
-  await ready.promise
-  const overflow = send(16)
-  expect(await Promise.race([overflow.then(() => 'accepted', () => 'rejected'), overflowPicker.promise])).toBe('rejected')
-  await expect(overflow).rejects.toMatchObject({ code: 'KNOWLEDGE_UPLOAD_PENDING_LIMIT' })
-  picker.resolve(undefined)
-  await Promise.all(operations.slice(0, 16))
-  await expect(send(17)).resolves.toEqual({ cancelled: true })
-  expect(select).toHaveBeenCalledTimes(17)
+  const controller = new AbortController()
+  const first = uploads.choose('base', 'STANDARD', null, controller.signal)
+  onTestFinished(async () => { uploads.close(); picker.resolve(undefined); await first.catch(() => undefined) })
+  await expect(uploads.choose('other-base', 'STANDARD', null)).rejects.toMatchObject({ code: 'IDEMPOTENCY_OPERATION_IN_PROGRESS' })
+  const settled = Promise.allSettled([first])
+  if (outcome === 'failure') picker.reject(new Error('Picker failed'))
+  else { if (outcome === 'abort') controller.abort(); picker.resolve(undefined) }
+  expect((await settled)[0]?.status).toBe(outcome === 'cancel' ? 'fulfilled' : 'rejected')
+  select.mockResolvedValue(undefined)
+  await expect(uploads.choose('base', 'STANDARD', null)).resolves.toEqual([])
+  expect(select).toHaveBeenCalledTimes(2)
 })
 
 it('counts completed package previews together with in-flight inspections', async () => {

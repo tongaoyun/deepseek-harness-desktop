@@ -1,6 +1,6 @@
 /** Main-owned knowledge upload from a user-selected regular file. */
 import { constants } from 'node:fs'
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { open } from 'node:fs/promises'
 import { basename, extname } from 'node:path'
 import type { OpenDialogOptions } from 'electron'
@@ -20,12 +20,45 @@ interface Selection {
 export class KnowledgeUploads implements KnowledgeUpload {
   private readonly selections = new Map<string, Selection>()
   private readonly active = new Set<string>()
-  private selecting = 0
+  private selecting = false
+  private identityOperation = new AbortController()
   private readonly lifetime = new AbortController()
   private identity: string | undefined
   constructor(private readonly employee: () => string | undefined,
-    private readonly select: (mode: KnowledgePdfParseMode, signal: AbortSignal) => Promise<string | undefined>,
+    private readonly select: (mode: KnowledgePdfParseMode, signal: AbortSignal) => Promise<readonly string[] | undefined>,
     private readonly maxBytes: number) {}
+
+  /** Capture a bounded native selection without uploading or exposing local paths.
+   * @param baseId Authorized target library.
+   * @param mode Validated PDF parsing mode.
+   * @param folderId Fixed target folder for all selected files.
+   * @param signal Native picker cancellation.
+   * @returns Per-file identities and display names; cancellation returns an empty list.
+   */
+  async choose(baseId: string, mode: KnowledgePdfParseMode, folderId: string | null | undefined,
+    signal?: AbortSignal): Promise<readonly KnowledgeUploadPending[]> {
+    const employee = this.requireEmployee()
+    const combined = AbortSignal.any([this.lifetime.signal, this.identityOperation.signal, ...signal === undefined ? [] : [signal]])
+    combined.throwIfAborted()
+    if (this.selecting) throw new ProductError('IDEMPOTENCY_OPERATION_IN_PROGRESS', 'File selection is already in progress', true)
+    if (this.selections.size >= 16) throw new ProductError('KNOWLEDGE_UPLOAD_PENDING_LIMIT', 'Discard pending uploads before selecting more files', false)
+    this.selecting = true
+    try {
+      const paths = await this.select(mode, combined)
+      combined.throwIfAborted()
+      if (this.employee() !== employee) throw new ProductError('KNOWLEDGE_ACCESS_DENIED', 'Employee changed during selection', false)
+      if (paths === undefined || paths.length === 0) return []
+      const unique = [...new Set(paths)]
+      if (unique.length + this.selections.size > 16) {
+        throw new ProductError('KNOWLEDGE_UPLOAD_PENDING_LIMIT', 'Select at most sixteen pending files', false)
+      }
+      return unique.map((path) => {
+        const operationId = randomUUID()
+        this.selections.set(`${employee}:${operationId}`, { baseId, mode, folderId, path })
+        return { operationId, filename: basename(path), pdfParseMode: mode, ...(folderId === undefined ? {} : { folderId }) }
+      })
+    } finally { this.selecting = false }
+  }
 
   /** Retry a retained file after rechecking employee identity, limits and its exact content.
    * @param baseId Authorized target library.
@@ -34,38 +67,25 @@ export class KnowledgeUploads implements KnowledgeUpload {
    * @param folderId Original target folder.
    * @param api Main-owned employee transport.
    * @param signal Request cancellation; a dispatched upload retains its selection.
-   * @returns Committed document metadata or native picker cancellation.
+   * @returns Committed document metadata; the selection remains until acknowledged.
    */
   async send(baseId: string, operationId: string, mode: KnowledgePdfParseMode, folderId: string | null | undefined,
     api: DeepSeekHarnessApiClient, signal?: AbortSignal): Promise<unknown> {
-    const combined = AbortSignal.any([this.lifetime.signal, ...signal === undefined ? [] : [signal]])
+    const employee = this.requireEmployee()
+    const combined = AbortSignal.any([this.lifetime.signal, this.identityOperation.signal, ...signal === undefined ? [] : [signal]])
     combined.throwIfAborted()
-    const employee = this.employee()
-    if (!employee) throw new ProductError('KNOWLEDGE_ACCESS_DENIED', 'Authenticated employee is required', false)
-    if (this.identity !== employee) this.resetIdentity()
-    this.identity = employee
     const key = `${employee}:${operationId}`
     if (this.active.has(key)) throw new ProductError('IDEMPOTENCY_OPERATION_IN_PROGRESS', 'Upload is already in progress', true)
     this.active.add(key)
-    let selection = this.selections.get(key)
+    const selection = this.selections.get(key)
     try {
-      if (selection && (selection.baseId !== baseId || selection.mode !== mode || selection.folderId !== folderId)) {
+      if (!selection) throw new ProductError('KNOWLEDGE_UPLOAD_SELECTION_MISSING', 'Select the file again before uploading', false)
+      if (selection.baseId !== baseId || selection.mode !== mode || selection.folderId !== folderId) {
         throw new ProductError('IDEMPOTENCY_KEY_REUSED', 'Upload destination cannot change during retry', false)
       }
       const limits = await api.request<Readonly<Record<string, unknown>>>('/api/v1/knowledge-file-limits', { signal: combined })
       if (typeof limits.uploadMaxBytes !== 'number' || !Number.isSafeInteger(limits.uploadMaxBytes) || limits.uploadMaxBytes < 1) {
         throw new Error('Invalid knowledge upload limits')
-      }
-      if (!selection) {
-        if (this.selections.size + this.selecting >= 16) throw new ProductError('KNOWLEDGE_UPLOAD_PENDING_LIMIT', 'Discard an unresolved upload before selecting another file', false)
-        this.selecting += 1
-        try {
-          const path = await this.select(mode, combined)
-          combined.throwIfAborted()
-          if (path === undefined) return { cancelled: true }
-          selection = { baseId, mode, folderId, path }
-          this.selections.set(key, selection)
-        } finally { this.selecting -= 1 }
       }
       const selected = selection
       const result = await uploadKnowledgeFile(selected.path, baseId, operationId, mode, api, combined, {
@@ -79,9 +99,6 @@ export class KnowledgeUploads implements KnowledgeUpload {
         },
       })
       return result
-    } catch (failure) {
-      if (selection?.sha256 === undefined) this.selections.delete(key)
-      throw failure
     } finally { this.active.delete(key) }
   }
 
@@ -101,13 +118,25 @@ export class KnowledgeUploads implements KnowledgeUpload {
   pending(baseId: string): readonly KnowledgeUploadPending[] {
     const employee = this.employee()
     if (!employee || this.identity !== employee) { this.resetIdentity(); return [] }
-    return [...this.selections].flatMap(([key, selection]) => selection.baseId !== baseId || selection.sha256 === undefined ? []
-      : [{ operationId: key.slice(employee.length + 1), pdfParseMode: selection.mode,
+    return [...this.selections].flatMap(([key, selection]) => selection.baseId !== baseId ? []
+      : [{ operationId: key.slice(employee.length + 1), filename: basename(selection.path), pdfParseMode: selection.mode,
         ...(selection.folderId === undefined ? {} : { folderId: selection.folderId }) }])
   }
 
   /** Release private file selections when employee identity changes. */
-  resetIdentity(): void { this.selections.clear(); this.identity = undefined }
+  resetIdentity(): void {
+    this.identityOperation.abort(); this.identityOperation = new AbortController()
+    this.selections.clear(); this.identity = undefined
+  }
+
+  private requireEmployee(): string {
+    this.lifetime.signal.throwIfAborted()
+    const employee = this.employee()
+    if (!employee) throw new ProductError('KNOWLEDGE_ACCESS_DENIED', 'Authenticated employee is required', false)
+    if (this.identity !== employee) this.resetIdentity()
+    this.identity = employee
+    return employee
+  }
 
   /** Cancel pending reads and release selections when the desktop closes. */
   close(): void { this.lifetime.abort(); this.resetIdentity() }
@@ -118,7 +147,7 @@ export class KnowledgeUploads implements KnowledgeUpload {
  * @returns Main-process native picker options.
  */
 export function knowledgeUploadDialogOptions(mode: KnowledgePdfParseMode): OpenDialogOptions {
-  return { properties: ['openFile'], ...(mode === 'TEXT' ? { filters: [{ name: 'PDF', extensions: ['pdf'] }] } : {}) }
+  return { properties: ['openFile', 'multiSelections'], ...(mode === 'TEXT' ? { filters: [{ name: 'PDF', extensions: ['pdf'] }] } : {}) }
 }
 
 /** Upload a selected file without sending local paths to the renderer.
