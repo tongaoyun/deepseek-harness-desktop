@@ -42,10 +42,14 @@ export function KnowledgeWorkspace({ entries, loading, refreshRevision = 0, erro
   const scopes = ['PERSONAL', 'DEPARTMENT', 'COMPANY',
     ...(entries.some(entry => !['PERSONAL', 'DEPARTMENT', 'COMPANY'].includes(entry.scope ?? '')) ? ['OTHER'] : [])]
   const selectLibrary = (id: string): void => { setSelectedId(id); setNavigationVisible(false) }
-  const renderLibrary = (entry: ProductItem, children: ReactNode): ReactNode => <div key={entry.id} className={css.knowledgeLibraryBranch}>
+  const renderLibrary = (entry: ProductItem, children: ReactNode, openLibrary?: () => void): ReactNode => <div key={entry.id}
+    className={css.knowledgeLibraryBranch}>
     <div className={css.knowledgeLibraryHeading}>
       <button type="button" className={css.knowledgeLibraryRow} aria-current={selected?.id === entry.id ? 'page' : undefined}
-        aria-expanded={selected?.id === entry.id} onClick={() => { selectLibrary(entry.id) }} title={entry.label}>
+        aria-expanded={selected?.id === entry.id} onClick={() => {
+          if (selected?.id === entry.id) openLibrary?.()
+          selectLibrary(entry.id)
+        }} title={entry.label}>
         {selected?.id === entry.id ? <IconChevronDownOutlineRegular size={12} /> : <IconChevronRightOutlineRegular size={12} />}
         <IconDatabaseOutlineRegular size={17} /><span>{entry.label}</span>
       </button>
@@ -54,7 +58,7 @@ export function KnowledgeWorkspace({ entries, loading, refreshRevision = 0, erro
     </div>
     {selected?.id === entry.id && <div className={css.knowledgeLibraryMaterials}>{children}</div>}
   </div>
-  const navigation = (children: ReactNode): ReactNode => <>
+  const navigation = (children: ReactNode, openLibrary?: () => void): ReactNode => <>
     <header className={css.knowledgeLibraryHeader}>
       <h1>{t('knowledge')}</h1>
       <Tooltip label={t('refresh')}><button type="button" className={css.iconButton} aria-label={t('refresh')}
@@ -90,7 +94,7 @@ export function KnowledgeWorkspace({ entries, loading, refreshRevision = 0, erro
           {!collapsed.has(scope) && (values.length === 0 ? <p className={css.knowledgeLibraryEmpty}>{loading ? t('loading') : t('empty')}</p>
             : [...groups].map(([name, group]) => <div key={name}>
               {name && <h3 className={css.knowledgeDepartmentHeading}>{name}</h3>}
-              {group.map(entry => renderLibrary(entry, children))}
+              {group.map(entry => renderLibrary(entry, children, openLibrary))}
             </div>))}
         </section>
       })}

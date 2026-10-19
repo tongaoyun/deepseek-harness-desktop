@@ -218,7 +218,7 @@ it('creates nested folders with retained retry input, browses their paths and de
   expect(creates[0]?.[2]).toMatchObject({ parentId: 'root', name: '验收记录' })
   const child = await navigation.findByRole('button', { name: '验收记录' })
   expect(child.getAttribute('aria-current')).toBe('page')
-  const breadcrumb = content.getByRole('navigation', { name: zh.knowledgeAllMaterials })
+  const breadcrumb = content.getByRole('navigation', { name: zh.knowledgeLocation })
   expect(within(breadcrumb).getAllByRole('button').map(button => button.textContent)).toEqual(['我的资料', '项目资料', '验收记录'])
   fireEvent.click(navigation.getByRole('button', { name: zh.knowledgeCollapseFolder.replace('{name}', '项目资料') }))
   expect(navigation.queryByRole('button', { name: '验收记录' })).toBeNull()
@@ -259,12 +259,12 @@ it('clears file filters when entering a different folder and keeps the directory
   }, expect.any(String)) })
   expect(content.getByRole<HTMLInputElement>('searchbox').value).toBe('')
   expect(content.getByRole<HTMLSelectElement>('combobox', { name: zh.knowledgeFormat }).value).toBe('')
-  expect(api.invoke.mock.calls.filter(call => call[1] === 'knowledge.folders.list').map(call => call[2])).toEqual([
+  await waitFor(() => { expect(api.invoke.mock.calls.filter(call => call[1] === 'knowledge.folders.list').map(call => call[2])).toEqual([
     { knowledgeBaseId: 'personal', parentId: null, page: 1, size: 20 },
     { knowledgeBaseId: 'personal', parentId: null, page: 1, size: 20 },
     { knowledgeBaseId: 'personal', parentId: 'stable-folder', page: 1, size: 20 },
     { knowledgeBaseId: 'personal', parentId: 'stable-folder', page: 1, size: 20 },
-  ])
+  ]) })
 })
 
 it('creates a personal library from an empty personal group and selects it after catalog refresh', async () => {
@@ -680,7 +680,7 @@ it('cancels a pending reader when switching folders and never fills the next sco
   await act(async () => { stale.resolve(page([{ id: 'old', documentId: 'shared-document-id', content: '旧资料正文', locator: '' }])) })
   expect(screen.queryByText('旧资料正文')).toBeNull()
   expect(container.querySelector('[data-knowledge-inline-reader]')).toBeNull()
-  fireEvent.click(navigation.getByRole('button', { name: zh.knowledgeRootFolder }))
+  fireEvent.click(navigation.getByRole('button', { name: '我的资料' }))
   await waitFor(() => { expect(api.invoke).toHaveBeenCalledWith('product', 'knowledge.documents.list', {
     knowledgeBaseId: 'personal', folderId: null, page: 1, size: 20,
   }, expect.any(String)) })
@@ -898,7 +898,7 @@ it.each([
   expect(parts(container).content.queryByRole('button', { name: zh.knowledgeUpload })).toBeNull()
   expect(screen.queryByText('private permission diagnostic')).toBeNull()
   const requests = api.invoke.mock.calls.length
-  fireEvent.click(parts(container).navigation.getByRole('button', { name: zh.knowledgeAllMaterials }))
+  fireEvent.click(parts(container).content.getByRole('tab', { name: zh.knowledgeAllMaterials }))
   await act(async () => {})
   expect(api.invoke.mock.calls).toHaveLength(requests)
 })
@@ -922,7 +922,7 @@ it.each(['ORGANIZATION_SERVICE_UNAVAILABLE', 'ORGANIZATION_SYNC_EXPIRED'])(
     await parts(container).content.findByRole('alert')
     expect(parts(container).content.queryByRole('heading', { name: '已读正文' })).toBeNull()
     expect(parts(container).content.getByRole('button', { name: zh.retry })).toBeDefined()
-    expect(within(parts(container).content.getByRole('navigation', { name: zh.knowledgeAllMaterials })).getByText('业务规范.md')).toBeDefined()
+    expect(within(parts(container).content.getByRole('navigation', { name: zh.knowledgeLocation })).getByText('业务规范.md')).toBeDefined()
     expect(container.querySelector('[data-knowledge-inline-reader]')).not.toBeNull()
     expect(screen.queryByText('private temporary organization diagnostic')).toBeNull()
   })
@@ -980,7 +980,7 @@ it('shows files only in the main list and resolves their folder in the reader br
   expect(branch.contains(parts(container).content.getByRole('button', { name: '未归档.md' }))).toBe(false)
   fireEvent.click(document)
   await parts(container).content.findByRole('heading', { name: '文件夹正文' })
-  const breadcrumb = parts(container).content.getByRole('navigation', { name: zh.knowledgeAllMaterials })
+  const breadcrumb = parts(container).content.getByRole('navigation', { name: zh.knowledgeLocation })
   expect(within(breadcrumb).getByRole('button', { name: '业务制度' })).toBeDefined()
   fireEvent.click(within(breadcrumb).getByRole('button', { name: '业务制度' }))
   await waitFor(() => { expect(api.invoke).toHaveBeenCalledWith('product', 'knowledge.documents.list', {
