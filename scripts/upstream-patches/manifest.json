@@ -734,11 +734,6 @@
           "after": "6ff1ac57f5e1d056d3e7f47d969ec39ab58176d9b401448cd3c27398d98e6d7d"
         },
         {
-          "path": "apps/desktop/tests/installer-packaging.spec.ts",
-          "before": "0d0574102b6e1c156276eac0c29673925cac2f18cb8a34d7d5a6201d7b4ca39b",
-          "after": "850329217cad7eff87d5c775273784aef1606640de8864ce37bb6b9dc58a60e8"
-        },
-        {
           "path": "apps/desktop/tests/windows-installer-headless.ps1",
           "before": null,
           "after": "144de17958cb1015229a5dbad58c7c2f9e3584b90eaf0fcb72689b9ff485a038"

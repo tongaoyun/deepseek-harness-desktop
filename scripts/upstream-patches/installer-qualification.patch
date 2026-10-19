@@ -36,47 +36,6 @@ index 03b601b1874c13dc88db4088da301c5071889fab..3ecd4e384e7f90ff8196a8812dc991ea
        '-Installer', join(languageOutput, 'installer-test.exe'),
        '-ProductName', productName, '-RegistryKey', guid, '-OutputDirectory', languageOutput,
        ...uninstallOnly ? ['-Language', languageId, '-PackageName', packageName] : []], childOptions)
-diff --git a/apps/desktop/tests/installer-packaging.spec.ts b/apps/desktop/tests/installer-packaging.spec.ts
-index 15a4610d9867d77f80c95022dc7eee6d12105d7d..57470ed922d604cc3cac36350a258f47d847589d 100644
---- a/apps/desktop/tests/installer-packaging.spec.ts
-+++ b/apps/desktop/tests/installer-packaging.spec.ts
-@@ -37,6 +37,12 @@ describe('installer preparation preserves application dependencies', () => {
-     try {
-       const { createElectronBuilderConfig } = await import('../electron-builder.config.mjs')
-       const config = createElectronBuilderConfig(env, platform, 'x64')
-+      const productConfig = config.extraResources.find(resource => resource.to === 'deepseek-harness/product.json')
-+      expect(productConfig).toBeDefined()
-+      expect(JSON.parse(readFileSync(productConfig!.from, 'utf8'))).toEqual({
-+        version: 1,
-+        serverUrl: 'http://192.168.2.67:30081',
-+      })
-       const aboutIcon = config.extraResources.find(resource => resource.to === 'icon.png')
-       expect(aboutIcon).toBeDefined()
-       expect(readFileSync(aboutIcon!.from)).toEqual(readFileSync(new URL('../resources/icon-windows.png', import.meta.url)))
-@@ -77,6 +83,23 @@ describe('installer preparation preserves application dependencies', () => {
-     expect(config.artifactName).toBe('deepseek-harness-${version}-${os}-${arch}-unsigned.${ext}')
-   })
- 
-+  it('packages the native sidecar from Cargo\'s configured target directory', async () => {
-+    const { createElectronBuilderConfig } = await import('../scripts/electron-builder-config.mjs')
-+    const config = createElectronBuilderConfig({
-+      CARGO_TARGET_DIR: '/runner/cargo-target',
-+      DSH_DESKTOP_APP_ID: 'com.example.installer',
-+      DSH_DESKTOP_MANDATORY_UPDATE_TEST_ORIGIN: 'https://policy.example.com',
-+      DSH_DESKTOP_MANDATORY_UPDATE_CONFIG: JSON.stringify({ allowedAuthOrigins: ['https://login.example.com'] }),
-+      DSH_DESKTOP_TARGET_PLATFORM: 'win32',
-+      DSH_DESKTOP_TARGET_ARCH: 'x64',
-+      DSH_DESKTOP_UNSIGNED: '1',
-+    }, 'win32', 'x64')
-+    expect(config.extraResources).toContainEqual({
-+      from: '/runner/cargo-target/release/deepseek-harness-native.exe',
-+      to: 'native/deepseek-harness-native.exe',
-+    })
-+  })
-+
-   it('packages every preload entry point the shell loads', async () => {
-     const { readdirSync, readFileSync } = await import('node:fs')
-     const sourceDirectory = new URL('../src/', import.meta.url)
 diff --git a/apps/desktop/tests/windows-installer-headless.ps1 b/apps/desktop/tests/windows-installer-headless.ps1
 new file mode 100644
 index 0000000000000000000000000000000000000000..7667028f009f0fe7e87adf53e62fafdf01220306

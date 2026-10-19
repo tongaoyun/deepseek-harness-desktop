@@ -43,6 +43,8 @@ async function runAcceptance(executable, target, installationRoot) {
   try {
     await runAcceptanceProcess(process.execPath, [manager, 'exec', 'vitest', 'run', '--config', 'vitest.web.config.ts',
       'apps/web/tests/deepseek-harness-catalog.e2e.ts', '-t', 'boots the installed product Electron assembly',
+      // Installed qualification includes full-product repackaging and native update/restart; reserve one minute for cleanup.
+      '--testTimeout=480000', '--hookTimeout=60000',
       '--reporter=default', '--reporter=json', `--outputFile=.artifacts/desktop-installed-${target}.json`], {
       cwd: root, timeoutMs: 600_000, signal: cancellation.signal,
       env: { ...process.env, DSH_DESKTOP_SMOKE: '1', DSH_SNAPSHOT: 'replay',

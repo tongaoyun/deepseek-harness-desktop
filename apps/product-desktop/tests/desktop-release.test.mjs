@@ -309,6 +309,50 @@ test('correlates a new dispatch instead of using another successful build', asyn
   assert.ok(calls.at(-1).endsWith('/99'))
 })
 
+test('resumes the same hosted run after a full batch of transient read failures without redispatch', async () => {
+  let time = 0
+  let reads = 0
+  const paths = []
+  const progress = []
+  const client = apiClient('https://api.github.com', 'Bearer fixture', {
+    sleep: async ms => { time += ms }, progress: line => progress.push(line),
+    fetchImpl: async () => {
+      if (++reads <= 4) throw socketFailure()
+      return Response.json(run)
+    },
+  })
+  const result = await waitForDesktopBuild({ repository: 'test/build', commit, runId: 99,
+    timeoutMs: 30_000, pollMs: 1000, now: () => time, sleep: async ms => { time += ms },
+    progress: line => progress.push(line), request: (method, path) => {
+      assert.equal(method, 'GET')
+      paths.push(path)
+      return client.request(method, path)
+    } })
+  assert.equal(result.id, 99)
+  assert.deepEqual(paths, ['/repos/test/build/actions/runs/99', '/repos/test/build/actions/runs/99'])
+  assert.ok(progress.some(line => line.includes('temporarily unavailable')))
+  assert.ok(progress.every(line => !line.includes('synthetic credential')))
+})
+
+test('keeps the original deadline through repeated read outages and rejects permanent failures immediately', async () => {
+  let time = 0
+  let calls = 0
+  await assert.rejects(waitForDesktopBuild({ repository: 'test/build', commit, runId: 99,
+    timeoutMs: 10, pollMs: 4, now: () => time, sleep: async ms => { time += ms }, progress: () => {},
+    request: async () => { calls++; throw Object.assign(new Error('transient'), { retryableReleaseRead: true }) },
+  }), /Timed out.*99/u)
+  assert.equal(time, 10)
+  assert.equal(calls, 3)
+  for (const failure of [Object.assign(new Error('denied'), { status: 403 }), new SyntaxError('malformed')]) {
+    let permanentCalls = 0
+    await assert.rejects(waitForDesktopBuild({ repository: 'test/build', commit, runId: 99,
+      request: async () => { permanentCalls++; throw failure }, progress: () => {},
+      sleep: async () => assert.fail('Permanent failures must not sleep'),
+    }), error => error === failure)
+    assert.equal(permanentCalls, 1)
+  }
+})
+
 test('rejects ambiguous, cancelled, unauthorized-source and timed-out hosted runs', async () => {
   for (const patch of [{ conclusion: 'cancelled' }, { head_sha: 'b'.repeat(40) }, { event: 'push' }, { path: 'unrelated.yml' }]) {
     await assert.rejects(waitForDesktopBuild({ repository: 'test/build', commit, runId: 99,

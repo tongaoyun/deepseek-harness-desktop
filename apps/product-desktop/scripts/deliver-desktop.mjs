@@ -57,6 +57,7 @@ export async function retryReleaseRead(operation, { label, sleep = ms => new Pro
       if (attempt === 3) {
         const exhausted = new Error(`${label} failed after 4 attempts (${failure.detail})`, { cause: error })
         exhausted.status = error.status
+        exhausted.retryableReleaseRead = true
         throw exhausted
       }
       progress(`${label} retry ${attempt + 1}/3 (${failure.detail})`)
@@ -253,7 +254,15 @@ async function main() {
   const deadline = Date.now() + 20 * 60_000
   for (const source of new Set([head, commit])) {
     while (true) {
-      const result = await gitea.request('GET', `/repos/${internal}/actions/runs?limit=50&page=1`)
+      if (Date.now() >= deadline) throw new Error('Timed out waiting for exact source main CI')
+      let result
+      try { result = await gitea.request('GET', `/repos/${internal}/actions/runs?limit=50&page=1`) }
+      catch (error) {
+        if (error.retryableReleaseRead !== true) throw error
+        console.warn('Source CI status temporarily unavailable; continuing within the original deadline')
+        await new Promise(resolve => setTimeout(resolve, Math.min(15_000, Math.max(0, deadline - Date.now()))))
+        continue
+      }
       const ci = result.workflow_runs.find(run => run.head_sha === source && run.event === 'push' && run.path === 'electron-ci.yml@refs/heads/main')
       if (!ci) throw new Error('Exact source main CI is missing')
       if (ci.status === 'completed') {

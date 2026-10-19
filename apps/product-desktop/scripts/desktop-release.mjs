@@ -154,7 +154,8 @@ export async function collectDesktopRelease(directory, run, commit, productVersi
 }
 
 /**
- * Wait for the correlated hosted run; rejected, failed or cancelled builds never publish.
+ * Wait for the correlated hosted run; transient read failures retain the run and original deadline.
+ * Rejected, failed or cancelled builds never publish.
  * @param {object} options Hosted API, source and polling policy.
  * @returns {Promise<object>} Exact successful run.
  */
@@ -166,13 +167,20 @@ export async function waitForDesktopBuild({ request, repository, commit, deliver
   let previous
   while (now() < deadline) {
     let run
-    if (selected) run = await request('GET', `/repos/${repository}/actions/runs/${selected}`)
-    else {
-      const result = await request('GET', `/repos/${repository}/actions/workflows/product-desktop-package.yml/runs?event=workflow_dispatch&head_sha=${commit}&per_page=100`)
-      const matches = result.workflow_runs.filter(item => item.display_title === `Desktop ${commit} / ${deliveryId}`)
-      if (matches.length > 1) throw new Error('Ambiguous delivery build; select an explicit run ID')
-      run = matches[0]
-      selected = run?.id
+    try {
+      if (selected) run = await request('GET', `/repos/${repository}/actions/runs/${selected}`)
+      else {
+        const result = await request('GET', `/repos/${repository}/actions/workflows/product-desktop-package.yml/runs?event=workflow_dispatch&head_sha=${commit}&per_page=100`)
+        const matches = result.workflow_runs.filter(item => item.display_title === `Desktop ${commit} / ${deliveryId}`)
+        if (matches.length > 1) throw new Error('Ambiguous delivery build; select an explicit run ID')
+        run = matches[0]
+        selected = run?.id
+      }
+    } catch (error) {
+      if (error.retryableReleaseRead !== true) throw error
+      progress(`GitHub build${selected ? ` ${selected}` : ''}: status temporarily unavailable; continuing within the original deadline`)
+      await sleep(Math.min(pollMs, Math.max(0, deadline - now())))
+      continue
     }
     if (run) {
       if (run.head_sha !== commit || run.event !== 'workflow_dispatch' || run.path !== '.github/workflows/product-desktop-package.yml') {
