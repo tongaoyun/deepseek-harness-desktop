@@ -54,18 +54,31 @@ async function fixture() {
     decryptString: (value) => { configurationReads += 1; return value.toString() },
   }, () => employee)
   onTestFinished(() => manager.close())
+  let version = '1.0.0'
   const api = new DeepSeekHarnessApiClient({ baseUrl: 'https://product.example', getSessionToken: () => 'fixture-token',
-    fetch: async (_url, init) => Response.json({ success: true, data: init?.method ? {} : {
-      ...draft, visibility: 'PERSONAL', ownerEmployeeId: 'employee', canEdit: true,
-      authMode: 'none', ready: true, status: 'ready', tools: [{ name: 'read' }],
-    } }) })
+    fetch: async (url, init) => {
+      if (init?.method === 'POST' && typeof init.body === 'string') {
+        const saved: unknown = JSON.parse(init.body)
+        if (typeof saved !== 'object' || saved === null || !('version' in saved) || typeof saved.version !== 'string') {
+          throw new Error('Expected a saved connector version')
+        }
+        version = saved.version
+      }
+      const id = (typeof url === 'string' ? url : url instanceof URL ? url.href : url.url).split('/').at(-1)
+      return Response.json({ success: true, data: init?.method ? {} : {
+        ...draft, id, version: id === draft.id ? version : draft.version,
+        visibility: 'PERSONAL', ownerEmployeeId: 'employee', canEdit: true,
+        authMode: 'none', ready: true, status: 'ready', tools: [{ name: 'read' }],
+      } })
+    } })
+  onTestFinished(() => { api.close() })
   const draft = ExtensionDraftSchema.parse({ kind: 'connector', id: 'lifecycle-mcp', version: '1.0.0', name: 'Lifecycle',
     summary: 'Cancellation fixture', category: 'other', transport: 'streamable-http',
     url: `http://127.0.0.1:${address.port}/mcp` })
   await manager.save(draft, api, 'employee', new AbortController().signal)
   const entry = { ...draft, visibility: 'PERSONAL', ownerEmployeeId: 'employee',
     authMode: 'none', ready: true, status: 'ready', tools: [{ name: 'read' }] }
-  return { manager, entry, api, hold: () => { hold = true },
+  return { manager, entry, draft, api, hold: () => { hold = true },
     switchEmployee: async (value: string) => { employee = value; await manager.resetIdentity(value) },
     reads: () => configurationReads, initializations: () => initializations,
     waiting: () => pending !== undefined, disconnected: () => pending?.response.destroyed === true,
@@ -74,6 +87,27 @@ async function fixture() {
       if (pending) { initialize(pending.response, pending.id, pending.protocolVersion); pending = undefined }
     } }
 }
+
+it.each(['read', 'update', 'delete'])('rechecks the version for a queued %s after an in-flight save commits', async (method) => {
+  const test = await fixture()
+  const controller = new AbortController()
+  const pending: Promise<unknown>[] = []
+  onTestFinished(async () => { controller.abort(); test.release(); await Promise.allSettled(pending) })
+  test.hold()
+  const save = test.manager.save({ ...test.draft, version: '1.0.1' }, test.api, 'employee', controller.signal)
+    .then(() => ({ saved: true }), (error: unknown) => ({ error }))
+  pending.push(save)
+  await expect.poll(test.waiting).toBe(true)
+  const queued = test.manager.manage(`extensions.connector.${method}`, {
+    id: test.entry.id, version: '1.0.0', draft: { ...test.draft, version: '1.0.1', name: 'Queued edit' },
+  }, test.api, 'employee', controller.signal).then(value => ({ value }), (error: unknown) => ({ error }))
+  pending.push(queued)
+  expect(await test.manager.manage('extensions.connector.read', { id: 'other-mcp', version: '1.0.0' },
+    test.api, 'employee', controller.signal)).toMatchObject({ draft: { id: 'other-mcp' } })
+  test.release()
+  expect(await save).toEqual({ saved: true })
+  expect(await queued).toMatchObject({ error: { code: 'EXTENSION_VERSION_CONFLICT' } })
+})
 
 it.each(['first', 'second'])('cancels the %s reader without cancelling another reader of the same MCP connection', async (cancelled) => {
   const test = await fixture()

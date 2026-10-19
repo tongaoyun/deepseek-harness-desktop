@@ -46,12 +46,12 @@ interface CachedConnection {
 export class PersonalConnectors {
   private readonly lifetime = new AbortController()
   private readonly clients = new Map<string, CachedConnection>()
-  private readonly saves = new Map<string, Promise<void>>()
+  private readonly operations = new Map<string, Promise<unknown>>()
   private identity: string | undefined
   constructor(private readonly root: string, private readonly secure: SecureStorage, private readonly employee: () => string | undefined,
     private readonly oauthConnector?: (id: string, signal: AbortSignal) => Promise<unknown>) {}
 
-  /** Read public editing fields, save a new version, or remove an owned connector.
+  /** Serialize management per employee and connector; check current access and version after prior operations settle.
    * @param method Product connector management operation.
    * @param input Untrusted resource identity and optional editing form.
    * @param api Authenticated server transport.
@@ -62,8 +62,14 @@ export class PersonalConnectors {
   async manage(method: string, input: Readonly<Record<string, unknown>>, api: DeepSeekHarnessApiClient,
     employee: string, signal: AbortSignal): Promise<unknown> {
     if (typeof input.id !== 'string' || !/^[a-z][a-z0-9-]{2,63}$/.test(input.id)) throw new Error('Invalid connector ID')
+    const id = input.id
+    return this.serialize(employee, id, signal, lifetime => this.manageConnector(method, id, input, api, employee, lifetime))
+  }
+
+  private async manageConnector(method: string, id: string, input: Readonly<Record<string, unknown>>,
+    api: DeepSeekHarnessApiClient, employee: string, signal: AbortSignal): Promise<unknown> {
     const deviceConfiguration = method.startsWith('extensions.connector.configuration.')
-    const entry = PublicConnector.parse(await api.request(`/api/v1/connectors/${encodeURIComponent(input.id)}${deviceConfiguration ? '/configuration-template' : ''}`, { signal }))
+    const entry = PublicConnector.parse(await api.request(`/api/v1/connectors/${encodeURIComponent(id)}${deviceConfiguration ? '/configuration-template' : ''}`, { signal }))
     if (input.version !== entry.version) throw new ProductError('EXTENSION_VERSION_CONFLICT', 'Connector changed; reopen its configuration', true)
     if (deviceConfiguration) {
       if (!this.localConfigurationAllowed(entry) || entry.status !== 'ready') {
@@ -76,38 +82,36 @@ export class PersonalConnectors {
           headers: Object.keys(entry.headers), environment: Object.keys(entry.environment), timeoutSeconds: config?.timeoutSeconds ?? 60 }
       }
       if (method !== 'extensions.connector.configuration.save') throw new Error('Unsupported connector configuration operation')
-      await this.serialSave(employee, entry.id, signal, async (lifetime) => {
-        if (!this.secure.isEncryptionAvailable()) throw new Error('OS credential encryption is unavailable')
-        const values = z.object({ headers: z.record(z.string().min(1).max(200), z.string().max(4000)),
-          environment: z.record(z.string().min(1).max(200), z.string().max(4000)),
-          timeoutSeconds: z.number().int().min(1).max(600) }).strict().parse(input.configuration)
-        const previous = await this.configuration(entry, employee)
-        const requiredValues = (provided: Record<string, string>, required: Record<string, string>, saved: Record<string, string>) => {
-          if (Object.keys(provided).some(key => !Object.hasOwn(required, key))) throw new Error('Unknown private configuration key')
-          return Object.fromEntries(Object.keys(required).map((key) => {
-            const value = provided[key] || saved[key]
-            if (!value) throw new ProductError('CONNECTOR_CONFIGURATION_REQUIRED', 'Enter the required private values', false)
-            return [key, value]
-          }))
+      if (!this.secure.isEncryptionAvailable()) throw new Error('OS credential encryption is unavailable')
+      const values = z.object({ headers: z.record(z.string().min(1).max(200), z.string().max(4000)),
+        environment: z.record(z.string().min(1).max(200), z.string().max(4000)),
+        timeoutSeconds: z.number().int().min(1).max(600) }).strict().parse(input.configuration)
+      const previous = await this.configuration(entry, employee)
+      const requiredValues = (provided: Record<string, string>, required: Record<string, string>, saved: Record<string, string>) => {
+        if (Object.keys(provided).some(key => !Object.hasOwn(required, key))) throw new Error('Unknown private configuration key')
+        return Object.fromEntries(Object.keys(required).map((key) => {
+          const value = provided[key] || saved[key]
+          if (!value) throw new ProductError('CONNECTOR_CONFIGURATION_REQUIRED', 'Enter the required private values', false)
+          return [key, value]
+        }))
+      }
+      const config = Configuration.parse({ transport: entry.transport, url: entry.url, command: entry.command,
+        arguments: entry.arguments, timeoutSeconds: values.timeoutSeconds,
+        headers: requiredValues(values.headers, entry.headers, previous?.headers ?? {}),
+        environment: requiredValues(values.environment, entry.environment, previous?.environment ?? {}) })
+      const client = await this.connect(config, signal)
+      try {
+        const actual = new Set((await this.discover(client, signal, config.timeoutSeconds)).map(tool => tool.name))
+        if (!entry.tools.length || entry.tools.some(tool => !actual.has(tool.name))) {
+          throw new ProductError('CONNECTOR_DISCOVERY_FAILED', 'Declared MCP tools are missing', false)
         }
-        const config = Configuration.parse({ transport: entry.transport, url: entry.url, command: entry.command,
-          arguments: entry.arguments, timeoutSeconds: values.timeoutSeconds,
-          headers: requiredValues(values.headers, entry.headers, previous?.headers ?? {}),
-          environment: requiredValues(values.environment, entry.environment, previous?.environment ?? {}) })
-        const client = await this.connect(config, lifetime)
-        try {
-          const actual = new Set((await this.discover(client, lifetime, config.timeoutSeconds)).map(tool => tool.name))
-          if (!entry.tools.length || entry.tools.some(tool => !actual.has(tool.name))) {
-            throw new ProductError('CONNECTOR_DISCOVERY_FAILED', 'Declared MCP tools are missing', false)
-          }
-        } finally { await client.close() }
-        lifetime.throwIfAborted()
-        await mkdir(this.root, { recursive: true, mode: 0o700 })
-        await this.finalize(this.filename(employee, entry.id, entry.version), config)
-        const key = this.key(employee, entry.id, entry.version)
-        const old = this.clients.get(key); this.clients.delete(key)
-        if (old) await this.disconnect(old)
-      })
+      } finally { await client.close() }
+      signal.throwIfAborted()
+      await mkdir(this.root, { recursive: true, mode: 0o700 })
+      await this.finalize(this.filename(employee, entry.id, entry.version), config)
+      const key = this.key(employee, entry.id, entry.version)
+      const old = this.clients.get(key); this.clients.delete(key)
+      if (old) await this.disconnect(old)
       return { id: entry.id, version: entry.version, configured: true }
     }
     if (entry.visibility !== 'PERSONAL' || entry.ownerEmployeeId !== employee || entry.canEdit !== true) {
@@ -162,7 +166,7 @@ export class PersonalConnectors {
       }))
     edited = { ...edited, headers: retained(edited.headers, config?.headers ?? {}),
       environment: retained(edited.environment, config?.environment ?? {}) }
-    await this.save(edited, api, employee, signal)
+    await this.saveConfiguration(edited, api, employee, signal)
     return { kind: 'connector', id: edited.id, version: edited.version, visibility: 'PERSONAL', installed: false }
   }
 
@@ -174,18 +178,22 @@ export class PersonalConnectors {
    */
   async save(draft: ExtensionDraft, api: DeepSeekHarnessApiClient, employee: string,
     signal: AbortSignal): Promise<void> {
-    await this.serialSave(employee, draft.id, signal, lifetime => this.saveConfiguration(draft, api, employee, lifetime))
+    await this.serialize(employee, draft.id, signal, lifetime => this.saveConfiguration(draft, api, employee, lifetime))
   }
 
-  private async serialSave(employee: string, id: string, signal: AbortSignal,
-    save: (signal: AbortSignal) => Promise<void>): Promise<void> {
+  private async serialize<T>(employee: string, id: string, signal: AbortSignal,
+    operation: (signal: AbortSignal) => Promise<T>): Promise<T> {
     const key = this.key(employee, id, '')
-    const previous = this.saves.get(key)
-    const operation = (previous === undefined ? Promise.resolve() : previous.catch(() => undefined))
-      .then(() => { const lifetime = AbortSignal.any([signal, this.lifetime.signal]); lifetime.throwIfAborted(); return save(lifetime) })
-    this.saves.set(key, operation)
-    try { await operation }
-    finally { if (this.saves.get(key) === operation) this.saves.delete(key) }
+    const previous = this.operations.get(key)
+    const pending = (previous === undefined ? Promise.resolve() : previous.catch(() => undefined))
+      .then(() => {
+        const lifetime = AbortSignal.any([signal, this.lifetime.signal])
+        lifetime.throwIfAborted()
+        return operation(lifetime)
+      })
+    this.operations.set(key, pending)
+    try { return await pending }
+    finally { if (this.operations.get(key) === pending) this.operations.delete(key) }
   }
 
   private async saveConfiguration(draft: ExtensionDraft, api: DeepSeekHarnessApiClient, employee: string,
@@ -344,7 +352,7 @@ export class PersonalConnectors {
   /** Cancel pending connects and close every child process owned by this desktop extension. */
   async close(): Promise<void> {
     this.lifetime.abort(new Error('Personal connector manager closed'))
-    await Promise.allSettled([...this.saves.values()])
+    await Promise.allSettled([...this.operations.values()])
     await Promise.allSettled([...this.clients.values()].map(cached => this.disconnect(cached)))
     this.clients.clear()
   }
