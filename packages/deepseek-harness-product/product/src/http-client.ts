@@ -1,20 +1,20 @@
 /** Minimal COLA API client. Business rules stay on deepseek-harness-server. */
-import { ProductError, isProductFailure } from './errors.ts'
+import { ProductError, isProductFailure, type ProductFailure } from './errors.ts'
 
 /** Minimal COLA envelope returned by DeepSeekHarness server APIs. */
 export interface ColaResponse<T> {
   readonly success: boolean
   readonly data?: T
-  readonly errCode?: string
-  readonly errMessage?: string
+  readonly errCode?: string | null
+  readonly errMessage?: string | null
 }
 
 /** The server's top-level COLA PageResponse contract. */
 export interface PageResponse<T> {
   readonly success: boolean
   readonly data: readonly T[]
-  readonly errCode?: string
-  readonly errMessage?: string
+  readonly errCode?: string | null
+  readonly errMessage?: string | null
   readonly pageIndex: number
   readonly pageSize: number
   readonly totalCount: number
@@ -44,8 +44,10 @@ export interface ProductFileStream {
 
 /** Typed failure returned when a product API request is not successful. */
 export class DeepSeekHarnessApiError extends ProductError {
-  constructor(readonly status: number, code: string, message: string, resources: ProductError['resources'] = []) {
-    super(code, message, status >= 500 || status === 429 || code === 'ORGANIZATION_SYNC_EXPIRED', resources)
+  constructor(readonly status: number, code: string, message: string, resources: ProductError['resources'] = [],
+    diagnostic?: Pick<ProductFailure, 'retryable' | 'dependencyChecks'>) {
+    super(code, message, diagnostic?.retryable ?? (status >= 500 || status === 429 || code === 'ORGANIZATION_SYNC_EXPIRED'),
+      resources, diagnostic)
     this.name = 'DeepSeekHarnessApiError'
   }
 }
@@ -103,23 +105,21 @@ export class DeepSeekHarnessApiClient {
     // DELETE endpoints may intentionally return 204 with no COLA envelope.
     // Treat that status as a successful empty response while preserving the
     // normal envelope validation for every response carrying a body.
-    let body: T
+    let body: unknown
     try {
-      body = response.status === 204 ? { success: true } as T : await response.json() as T
+      body = response.status === 204 ? { success: true } : await response.json()
     } catch (cause) {
       this.lifecycle.signal.throwIfAborted()
       init.signal?.throwIfAborted()
+      if (cause instanceof SyntaxError) throw invalidResponse()
       if (!(cause instanceof TypeError) && !signal.aborted) throw cause
       throw new ProductError('PRODUCT_NETWORK_UNAVAILABLE',
         'Unable to read the product service response. The request outcome is unknown.', true, [], { cause })
     }
     signal.throwIfAborted()
-    if (!response.ok || !body.success) {
-      const failure = { ...typeof body.data === 'object' && body.data !== null ? body.data : {},
-        code: body.errCode ?? 'SERVER_ERROR', message: body.errMessage ?? `HTTP ${String(response.status)}` }
-      throw new DeepSeekHarnessApiError(response.status, failure.code, failure.message, isProductFailure(failure) ? failure.resources : [])
-    }
-    return body
+    if (!isEnvelope(body)) throw invalidResponse()
+    if (!response.ok || !body.success) throw serverError(response.status, body)
+    return body as T
   }
 
   /** Cancel remote work owned by the product bridge and reject later requests. */
@@ -190,15 +190,9 @@ export class DeepSeekHarnessApiClient {
       const data = await readBoundedBody(response, 64 * 1024, lifetime)
       let body: unknown
       try { body = JSON.parse(new TextDecoder().decode(data)) }
-      catch { throw new DeepSeekHarnessApiError(response.status, 'SERVER_ERROR', `HTTP ${String(response.status)}`) }
-      if (typeof body !== 'object' || body === null) {
-        throw new DeepSeekHarnessApiError(response.status, 'INVALID_SERVER_RESPONSE', 'Invalid preview error response')
-      }
-      const code = 'errCode' in body && typeof body.errCode === 'string' ? body.errCode : 'SERVER_ERROR'
-      const message = 'errMessage' in body && typeof body.errMessage === 'string' ? body.errMessage : `HTTP ${String(response.status)}`
-      const details = 'data' in body && typeof body.data === 'object' && body.data !== null ? body.data : {}
-      const failure = { ...details, code, message }
-      throw new DeepSeekHarnessApiError(response.status, code, message, isProductFailure(failure) ? failure.resources : [])
+      catch { throw invalidResponse() }
+      if (!isEnvelope(body)) throw invalidResponse()
+      throw serverError(response.status, body)
     }
     const reader = response.body?.getReader()
     if (reader === undefined) throw new DeepSeekHarnessApiError(502, 'INVALID_SERVER_RESPONSE', 'Original file body is missing')
@@ -310,6 +304,26 @@ export class DeepSeekHarnessApiClient {
     }
     return all
   }
+}
+
+function isEnvelope(value: unknown): value is ColaResponse<unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    && 'success' in value && typeof value.success === 'boolean'
+    && (!('errCode' in value) || value.errCode === null || typeof value.errCode === 'string')
+    && (!('errMessage' in value) || value.errMessage === null || typeof value.errMessage === 'string')
+}
+
+function invalidResponse(): DeepSeekHarnessApiError {
+  return new DeepSeekHarnessApiError(502, 'INVALID_SERVER_RESPONSE', 'Invalid product service response')
+}
+
+function serverError(status: number, body: ColaResponse<unknown>): DeepSeekHarnessApiError {
+  const code = body.errCode ?? 'SERVER_ERROR'
+  const message = body.errMessage ?? `HTTP ${String(status)}`
+  const failure = { ...typeof body.data === 'object' && body.data !== null ? body.data : {}, code, message }
+  return isProductFailure(failure)
+    ? new DeepSeekHarnessApiError(status, code, message, failure.resources, failure)
+    : new DeepSeekHarnessApiError(status, code, message)
 }
 
 async function readBoundedBody(response: Response, maxBytes: number, signal: AbortSignal): Promise<Uint8Array> {
