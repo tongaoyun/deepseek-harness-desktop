@@ -1,10 +1,11 @@
 /** Local product packaging delegates to the official desktop build pipeline. */
 import { execFileSync, spawn } from 'node:child_process'
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { productPackagingAssembly } from './packaging-assembly.mjs'
+import { observeOfficeProcesses } from './office-process-diagnostics.mjs'
 const packageManager = process.env.npm_execpath
 if (packageManager === undefined) throw new Error('Invoke product packaging through pnpm')
 const root = fileURLToPath(new URL('../../..', import.meta.url))
@@ -23,9 +24,17 @@ const temporary = mkdtempSync(join(tmpdir(), 'harness-product-assembly-'))
 try {
   const manifest = join(temporary, 'assembly.json')
   writeFileSync(manifest, JSON.stringify(assembly), { mode: 0o600, flag: 'wx' })
+  const evidenceRoot = join(root, 'apps/desktop/.desktop-build/packaging-runs')
+  if (process.platform === 'darwin') mkdirSync(evidenceRoot, { recursive: true })
+  const officeEvidence = process.platform === 'darwin' ? mkdtempSync(join(evidenceRoot, 'office-')) : undefined
   const child = spawn(process.execPath, [packageManager, '--dir', 'apps/desktop', 'run', 'package', ...process.argv.slice(2)], {
     cwd: root, stdio: 'inherit', env: { ...process.env, DSH_DESKTOP_ASSEMBLY_MANIFEST: manifest },
   })
+  const diagnostics = new AbortController()
+  const observation = officeEvidence !== undefined && child.pid !== undefined
+    ? observeOfficeProcesses(child.pid, officeEvidence, { signal: diagnostics.signal })
+      .catch(() => { console.error('Office process diagnostics unavailable; packaging outcome is unchanged.') })
+    : Promise.resolve()
   const stop = () => { child.kill('SIGTERM') }
   process.once('SIGINT', stop)
   process.once('SIGTERM', stop)
@@ -40,6 +49,8 @@ try {
       })
     })
   } finally {
+    diagnostics.abort()
+    await observation
     process.off('SIGINT', stop)
     process.off('SIGTERM', stop)
   }

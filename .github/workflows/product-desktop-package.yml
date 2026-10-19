@@ -122,7 +122,7 @@ jobs:
           apps/desktop/tests/update-coordinator.spec.ts
           apps/desktop/tests/update-schedule.spec.ts
       - name: Test acceptance process cleanup
-        run: node --test apps/product-desktop/tests/acceptance-process.test.mjs
+        run: node --test apps/product-desktop/tests/acceptance-process.test.mjs apps/product-desktop/tests/office-process-diagnostics.test.mjs
       - name: Test Electron close lifecycle
         run: pnpm exec vitest run apps/product-desktop/tests/close-electron.spec.ts apps/product-desktop/tests/office-fixture.spec.ts
       - name: Test upstream boundaries
