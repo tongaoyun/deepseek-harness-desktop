@@ -9,6 +9,7 @@ import { createRequire } from 'node:module'
 import { homedir } from 'node:os'
 import { basename, dirname, join, posix, resolve } from 'node:path'
 import { Readable } from 'node:stream'
+import { finished } from 'node:stream/promises'
 import { promisify } from 'node:util'
 import { chromium } from 'playwright'
 import { expect } from 'vitest'
@@ -93,7 +94,8 @@ async function rewriteApplication(appPath, version, bootstrap) {
   streams.push({ path: 'internal-update-qualification.mjs', type: 'file', unpacked: false,
     stat: { mode: 0o644, size: boot.length }, streamGenerator: () => Readable.from([boot]) })
   const next = join(resources, 'qualified.asar')
-  await asar.createPackageFromStreams(next, streams)
+  const writer = await asar.createPackageFromStreams(next, streams)
+  await finished(writer)
   asar.uncache(archive)
   await rm(archive)
   await rm(archive + '.unpacked', { recursive: true, force: true })
