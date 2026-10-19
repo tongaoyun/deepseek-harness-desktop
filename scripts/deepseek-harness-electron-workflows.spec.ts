@@ -9,6 +9,7 @@ interface WorkflowStep {
   readonly name?: string
   readonly uses?: string
   readonly run?: string
+  readonly env?: Readonly<Record<string, string>>
 }
 
 interface WorkflowJob {
@@ -113,6 +114,16 @@ describe('DeepSeekHarness Electron workflows', () => {
       const source = readFileSync(resolve(import.meta.dirname, '..', '.gitea', 'workflows', name), 'utf8')
       expect(source).toContain('https://registry.npmjs.org/')
       expect(source).not.toContain('192.168.2.9:4873')
+    }
+  })
+
+  it('limits the existing authenticated proxy to dependency installation and GitHub synchronization', () => {
+    for (const name of ['electron-ci.yml', 'github-desktop-sync.yml']) {
+      const steps = Object.values(workflow(name).jobs)[0]!.steps
+      const install = steps.find(step => step.name === (name === 'electron-ci.yml' ? 'Install dependencies' : 'Install locked dependencies'))!
+      expect(install.env).toEqual({ HTTPS_PROXY: '${{ secrets.DESKTOP_GITHUB_PROXY_URL }}', NODE_USE_ENV_PROXY: '1' })
+      expect(steps.filter(step => step.env?.HTTPS_PROXY !== undefined).map(step => step.name))
+        .toEqual(name === 'electron-ci.yml' ? ['Install dependencies'] : ['Install locked dependencies', 'Verify source and synchronize'])
     }
   })
 

@@ -330,5 +330,6 @@ test('internal synchronization fetches main and its own baseline without disclos
   assert.equal(sync.env.DESKTOP_SOURCE_SHA, '${{ inputs.source_sha }}')
   assert.equal(sync.env.GIT_CONFIG_KEY_0, 'http.https://github.com/.version')
   assert.equal(sync.env.GIT_CONFIG_VALUE_0, 'HTTP/1.1')
-  assert.equal(workflow.jobs.sync.steps.filter(step => step.env?.HTTPS_PROXY !== undefined).length, 1)
+  assert.deepEqual(workflow.jobs.sync.steps.filter(step => step.env?.HTTPS_PROXY !== undefined).map(step => step.name),
+    ['Install locked dependencies', 'Verify source and synchronize'])
 })
