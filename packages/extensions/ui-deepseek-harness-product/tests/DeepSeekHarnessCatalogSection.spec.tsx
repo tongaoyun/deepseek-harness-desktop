@@ -65,6 +65,71 @@ function castClientContext(value: object): ClientContext {
 }
 
 describe('DeepSeekHarness capability navigation', () => {
+  it('keeps import staging after conversation preparation fails and releases it after a successful retry', async () => {
+    const stageId = '00000000-0000-4000-8000-000000000001'
+    const invoke = vi.fn(async (method: string) => method === 'extensions.import.inspect'
+      ? { stageId, missingFields: ['category'], files: [], draft: { kind: 'skill', name: 'Incomplete import' } } : [])
+    const preparing = deferred<undefined>()
+    const startExtensionAuthoring = vi.fn(() => preparing.promise)
+    installProductApi({ invoke })
+    const view = render(<SkillsPanel t={t} {...actions()} startExtensionAuthoring={startExtensionAuthoring} />)
+    fireEvent.click(await screen.findByRole('button', { name: zh.addExtension }))
+    fireEvent.click(screen.getByRole('menuitem', { name: zh.importSkill }))
+    fireEvent.click(screen.getByRole('button', { name: zh.choosePackageFile }))
+    await screen.findByRole('dialog', { name: zh.contentPreview })
+    fireEvent.click(screen.getByRole('button', { name: zh.continueInConversation }))
+    fireEvent.click(screen.getAllByRole('button', { name: zh.close })[0])
+    expect(screen.getByRole('dialog', { name: zh.contentPreview })).toBeTruthy()
+    await act(async () => { preparing.reject(new Error('offline')) })
+    await screen.findByRole('alert')
+    expect(screen.getByText('Incomplete import')).toBeTruthy()
+    expect(invoke.mock.calls.some(([method]) => method === 'extensions.import.release')).toBe(false)
+    startExtensionAuthoring.mockImplementation(async () => undefined)
+    fireEvent.click(screen.getByRole('button', { name: zh.continueInConversation }))
+    await waitFor(() => { expect(screen.queryByRole('dialog', { name: zh.contentPreview })).toBeNull() })
+    view.unmount()
+    expect(invoke.mock.calls.filter(([method]) => method === 'extensions.import.release')).toHaveLength(1)
+  })
+
+  it.each(['close', 'save', 'conversation', 'catalog', 'identity', 'unmount'] as const)(
+    'retains live import staging through StrictMode and releases it once on %s', async (action) => {
+      const stageId = '00000000-0000-4000-8000-000000000001'
+      let employeeId = 'employee-one'
+      let listener: Parameters<ProductApi['subscribe']>[0] | undefined
+      const invoke = vi.fn(async (method: string) => {
+        if (method === 'extensions.import.inspect') return { stageId, missingFields: [], files: [{ path: 'SKILL.md', bytes: 40 }],
+          draft: { kind: 'skill', id: 'review-policy', name: 'Review policy', summary: 'Review facts', version: '1.0.0',
+            category: 'legal', triggers: ['Policy review'], body: 'Retained Markdown' } }
+        if (method === 'extensions.save') return { kind: 'skill', id: 'review-policy', version: '1.0.0', visibility: 'PERSONAL', installed: true }
+        return []
+      })
+      const startExtensionAuthoring = vi.fn(async () => {})
+      installProductApi({ invoke, getSession: async () => ({ authenticated: true, employeeId }),
+        subscribe: (callback) => { listener = callback; return () => { listener = undefined } } })
+      const renderPanel = (catalog: 'skills' | 'expertKits') => <StrictMode><DeepSeekHarnessCatalogSection catalog={catalog}
+        labelKey={catalog === 'skills' ? 'skills' : 'expertKits'} t={t} {...actions()} startExtensionAuthoring={startExtensionAuthoring} /></StrictMode>
+      const view = render(renderPanel('skills'))
+      fireEvent.click(await screen.findByRole('button', { name: zh.addExtension }))
+      fireEvent.click(screen.getByRole('menuitem', { name: zh.importSkill }))
+      fireEvent.click(screen.getByRole('button', { name: zh.choosePackageFile }))
+      await screen.findByRole('dialog', { name: zh.contentPreview })
+      expect(invoke.mock.calls.filter(([method]) => method === 'extensions.import.release')).toHaveLength(0)
+      if (action === 'close') fireEvent.click(screen.getAllByRole('button', { name: zh.close })[0])
+      else if (action === 'save') fireEvent.click(screen.getByRole('button', { name: zh.saveAndInstall }))
+      else if (action === 'conversation') fireEvent.click(screen.getByRole('button', { name: zh.continueInConversation }))
+      else if (action === 'catalog') view.rerender(renderPanel('expertKits'))
+      else if (action === 'identity') {
+        employeeId = 'employee-two'
+        await act(async () => { listener?.({ type: 'session.changed', payload: { authenticated: true, employeeId } }) })
+      } else view.unmount()
+      await waitFor(() => { expect(screen.queryByRole('dialog', { name: zh.contentPreview })).toBeNull() })
+      expect(invoke).toHaveBeenCalledWith('extensions.import.release', { stageId }, expect.any(String))
+      view.unmount()
+      expect(invoke.mock.calls.filter(([method]) => method === 'extensions.import.release')).toHaveLength(1)
+      if (action === 'conversation') expect(startExtensionAuthoring).toHaveBeenCalledWith('skill', expect.objectContaining({ stageId }))
+    },
+  )
+
   it.each([SkillsPanel, ExpertKitsPanel, ConnectorsPanel])('refreshes only the displayed directory when another directory is unavailable', async (Panel) => {
     let version = '1.0.0'
     const invoke = vi.fn(async (method: string) => {

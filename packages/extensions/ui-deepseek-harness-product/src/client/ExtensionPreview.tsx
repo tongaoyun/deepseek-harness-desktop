@@ -1,19 +1,19 @@
-/** Read-only extension preview; content changes belong to the creation conversation. */
+/** Read-only import confirmation; staging belongs to the catalog. */
 import { useEffect, useRef, useState } from 'react'
 import { Button, MarkdownText, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
-import { ExtensionDraftSchema, type ExtensionImportPreview, type ExtensionAuthoringSnapshot } from '@deepseek-harness/product/extension-draft'
+import { ExtensionDraftSchema, ExtensionSaveResultSchema, type ExtensionImportPreview } from '@deepseek-harness/product/extension-draft'
 import type { DeepSeekHarnessProductKey } from '../locales.ts'
 import css from '../DeepSeekHarnessProduct.module.css'
 import { localizedCategory, markdownLabels, nextProductRequestId } from './catalog-shared.tsx'
 import { productApi } from './product-api.ts'
 import { productErrorMessage } from './product-errors.ts'
 
-/** Preview an imported package or the current conversation revision.
+/** Preview an imported package without taking ownership of its staging.
  * @param props Read-only content and explicit save or conversation actions.
  * @returns The content confirmation dialog.
  */
 export function ExtensionPreview({ preview, onClose, onSaved, onContinue, t }: {
-  readonly preview: ExtensionImportPreview | ExtensionAuthoringSnapshot
+  readonly preview: ExtensionImportPreview
   readonly onClose: () => void
   readonly onSaved: () => void
   readonly onContinue: () => Promise<void>
@@ -21,47 +21,46 @@ export function ExtensionPreview({ preview, onClose, onSaved, onContinue, t }: {
 }) {
   const [pending, setPending] = useState<'conversation' | 'save'>()
   const [error, setError] = useState<string>()
-  const requests = useRef(new Set<string>())
-  const active = useRef(true)
-  const imported = 'stageId' in preview
+  const operation = useRef<AbortController | undefined>(undefined)
   const draft = preview.draft
-  const checked = ExtensionDraftSchema.safeParse(draft)
-  const saved = 'saved' in preview && preview.saved !== undefined
-  useEffect(() => {
-    active.current = true
-    return () => {
-      active.current = false
-      const api = productApi()
-      for (const request of requests.current) api?.cancel(request)
-      if ('stageId' in preview) void api?.invoke('extensions.import.release', { stageId: preview.stageId }, nextProductRequestId()).catch(() => undefined)
-    }
-  }, [])
-  const run = async (action: 'conversation' | 'save', operation: () => Promise<void>) => {
+  const checked = ExtensionDraftSchema.safeParse({ ...draft, stageId: preview.stageId })
+  useEffect(() => () => { operation.current?.abort() }, [])
+  const close = () => { if (!operation.current) onClose() }
+  const run = async (action: 'conversation' | 'save', execute: (signal: AbortSignal) => Promise<void>) => {
+    if (operation.current) return
+    const controller = new AbortController()
+    operation.current = controller
     setPending(action); setError(undefined)
-    try { await operation() }
-    catch (error) { if (active.current) setError(productErrorMessage(error, t, action === 'save' ? 'saveFailed' : 'loadFailed')) }
-    finally { if (active.current) setPending(undefined) }
+    try { await execute(controller.signal) }
+    catch (error) { if (!controller.signal.aborted) setError(productErrorMessage(error, t, action === 'save' ? 'saveFailed' : 'loadFailed')) }
+    finally {
+      if (operation.current === controller) operation.current = undefined
+      if (!controller.signal.aborted) setPending(undefined)
+    }
   }
-  const save = async () => {
+  const save = async (signal: AbortSignal) => {
     const api = productApi()
     if (!api || !checked.success) throw new Error(t('unavailable'))
-    const request = nextProductRequestId(); requests.current.add(request)
+    const request = nextProductRequestId()
+    const cancel = () => { api.cancel(request) }
+    signal.addEventListener('abort', cancel, { once: true })
     try {
-      await api.invoke(imported ? 'extensions.save' : 'extensions.authoring.save', imported ? checked.data
-        : { sessionId: preview.sessionId, authoringId: preview.authoringId, revision: preview.revision }, request)
-      if (active.current) onSaved()
-    } finally { requests.current.delete(request) }
+      const receipt = ExtensionSaveResultSchema.parse(await api.invoke('extensions.save', checked.data, request))
+      if (receipt.kind !== checked.data.kind || receipt.id !== checked.data.id || receipt.version !== checked.data.version
+        || receipt.kind === 'skill' && !receipt.installed) throw new Error(t('saveFailed'))
+      if (!signal.aborted) onSaved()
+    } finally { signal.removeEventListener('abort', cancel) }
   }
   const dependencies = [...new Set(draft.kind === 'expert-kit'
     ? (draft.skills ?? []).flatMap(skill => [...skill.connectorRefs, ...skill.requiredTools, ...skill.knowledgeBaseRefs])
     : [...draft.connectorRefs ?? [], ...draft.requiredTools ?? [], ...draft.knowledgeBaseRefs ?? []])]
-  return <Modal open onClose={onClose} title={t('contentPreview')} closeLabel={t('close')}
+  return <Modal open onClose={close} title={t('contentPreview')} closeLabel={t('close')}
     className={css.editorModal as string} contentClassName={css.editorModalContent as string} footer={<>
-      <Button variant="ghost" size="sm" disabled={pending !== undefined} onClick={onClose}>{t('close')}</Button>
-      {!saved && <Button variant="ghost" size="sm" disabled={pending !== undefined} onClick={() => { void run('conversation', onContinue) }}>
-        {t(pending === 'conversation' ? 'starting' : 'continueInConversation')}</Button>}
-      <Button variant="primary" size="sm" disabled={pending !== undefined || !checked.success || saved} onClick={() => { void run('save', save) }}>
-        {pending === 'save' ? t('saving') : saved ? t('extensionSaved') : draft.kind === 'skill' ? t('saveAndInstall') : t('savePersonal')}</Button>
+      <Button variant="ghost" size="sm" disabled={pending !== undefined} onClick={close}>{t('close')}</Button>
+      <Button variant="ghost" size="sm" disabled={pending !== undefined} onClick={() => { void run('conversation', onContinue) }}>
+        {t(pending === 'conversation' ? 'starting' : 'continueInConversation')}</Button>
+      <Button variant="primary" size="sm" disabled={pending !== undefined || !checked.success} onClick={() => { void run('save', save) }}>
+        {pending === 'save' ? t('saving') : draft.kind === 'skill' ? t('saveAndInstall') : t('savePersonal')}</Button>
     </>}>
     {error && <p className={css.catalogError} role="alert">{error}</p>}
     <div className={css.editorPreview}>

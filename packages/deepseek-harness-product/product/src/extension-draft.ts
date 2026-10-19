@@ -120,11 +120,10 @@ export const ExtensionImportPreviewSchema: z.ZodType<ExtensionImportPreview> = z
     context.addIssue({ code: 'custom', path: ['draft'], message: 'Imported content does not match its staging' })
   }
 })
+/** Validate the receipt for a server-owned immutable extension version. */
+export const ExtensionSaveResultSchema = z.object({
+  kind: z.enum(['skill', 'expert-kit', 'connector']), id, version,
+  visibility: z.literal('PERSONAL'), installed: z.boolean(),
+})
 /** Result of saving a server-owned immutable extension version. */
-export interface ExtensionSaveResult {
-  readonly kind: ExtensionDraft['kind']
-  readonly id: string
-  readonly version: string
-  readonly visibility: 'PERSONAL'
-  readonly installed: boolean
-}
+export type ExtensionSaveResult = Readonly<z.infer<typeof ExtensionSaveResultSchema>>

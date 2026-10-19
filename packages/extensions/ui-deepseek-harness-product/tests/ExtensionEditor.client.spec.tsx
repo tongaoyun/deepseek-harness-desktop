@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { ExtensionPreview } from '../src/client/ExtensionPreview.tsx'
 import { ExpertKitDetailPage } from '../src/client/ExpertKitView.tsx'
@@ -8,14 +8,14 @@ import { zh } from '../src/locales.ts'
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
-it('preserves an imported skill preview after save failure and releases staging on close', async () => {
+it('preserves an imported skill preview after a rejected save', async () => {
   const invoke = vi.fn(async (_namespace: string, method: string) => method === 'extensions.save'
     ? { ok: false, error: 'failed', failure: { code: 'EXTENSION_REVIEW_CONFLICT', message: 'private', retryable: false, resources: [] } }
     : { ok: true, result: {} })
   const cancel = vi.fn()
   vi.stubGlobal('dshDesktop', { extensions: { invoke, cancel } })
   const onSaved = vi.fn()
-  const view = render(<ExtensionPreview t={key => zh[key]} onClose={() => undefined} onSaved={onSaved} onContinue={async () => undefined}
+  render(<ExtensionPreview t={key => zh[key]} onClose={() => undefined} onSaved={onSaved} onContinue={async () => undefined}
     preview={{ stageId: '00000000-0000-4000-8000-000000000001', missingFields: [], files: [{ path: 'SKILL.md', bytes: 40 }], draft: {
       kind: 'skill',
       id: 'review-policy', name: 'Review policy', summary: 'Review facts', version: '1.0.0', category: 'legal',
@@ -27,22 +27,6 @@ it('preserves an imported skill preview after save failure and releases staging 
   expect(screen.getByText('Retained Markdown')).toBeTruthy()
   expect(screen.queryByRole('textbox')).toBeNull()
   expect(onSaved).not.toHaveBeenCalled()
-  view.unmount()
-  await waitFor(() => { expect(invoke).toHaveBeenCalledWith('product', 'extensions.import.release', { stageId: '00000000-0000-4000-8000-000000000001' }, expect.any(String)) })
-})
-
-it('saves the displayed conversation revision without sending editable content from the renderer', async () => {
-  const invoke = vi.fn(async () => ({ ok: true, result: {} }))
-  vi.stubGlobal('dshDesktop', { extensions: { invoke, cancel: vi.fn() } })
-  render(<ExtensionPreview t={key => zh[key]} onClose={() => undefined} onSaved={() => undefined} onContinue={async () => undefined}
-    preview={{ authoringId: '00000000-0000-4000-8000-000000000001', sessionId: 'creation', revision: 3, files: [], missingFields: [], draft: {
-      kind: 'skill', id: 'review-policy', name: 'Review policy', summary: 'Review facts', version: '1.0.0', category: 'legal',
-      triggers: ['Policy review'], body: 'Retained Markdown',
-    } }} />)
-  fireEvent.click(screen.getByRole('button', { name: zh.saveAndInstall }))
-  await waitFor(() => { expect(invoke).toHaveBeenCalledWith('product', 'extensions.authoring.save', {
-    authoringId: '00000000-0000-4000-8000-000000000001', sessionId: 'creation', revision: 3,
-  }, expect.any(String)) })
 })
 
 it('orders kit details and does not render startup checks or skill readiness badges', () => {

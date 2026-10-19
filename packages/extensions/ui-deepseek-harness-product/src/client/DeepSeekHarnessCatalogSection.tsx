@@ -55,6 +55,7 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
   const [actionFailure, setActionFailure] = useState<string>()
   const [mine, setMine] = useState(false)
   const [editor, setEditor] = useState<{ imported?: ExtensionImportPreview; connector?: { id: string; version: string } }>()
+  const importPreview = editor?.imported
   const [importer, setImporter] = useState(false)
   const [importMenu, setImportMenu] = useState(false)
   const [reference, setReference] = useState<{ kind: ProductReference['kind']; detail: ProductDetail }>()
@@ -67,9 +68,24 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
   const catalogReads = useRef<ReadScope>({ generation: 0, requests: new Map() })
   const detailReads = useRef<ReadScope>({ generation: 0, requests: new Map() })
   const writes = useRef(new Map<string, ProductApi>())
+  const importStages = useRef(new Map<string, ProductApi>())
   const managementLifetime = useRef(0)
   const employee = useRef<string | undefined>(undefined)
   const [identityRevision, setIdentityRevision] = useState(0)
+
+  const releaseImport = async (api: ProductApi, stageId: string): Promise<void> => {
+    importStages.current.delete(stageId)
+    await api.invoke('extensions.import.release', { stageId }, nextProductRequestId())
+  }
+  const discardImports = (): void => {
+    // Main expires staging if the bridge is unavailable during teardown.
+    for (const [stageId, api] of importStages.current) void releaseImport(api, stageId).catch(() => undefined)
+  }
+  const closeImport = (stageId: string): void => {
+    const api = importStages.current.get(stageId)
+    if (api) void releaseImport(api, stageId).catch(() => undefined)
+    setEditor(undefined)
+  }
 
   const cancelReads = (scope: ReadScope = detailReads.current): number => {
     scope.generation += 1
@@ -82,6 +98,7 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
     const identity = session.authenticated === true ? session.employeeId ?? '' : undefined
     if (employee.current === identity) return
     employee.current = identity
+    discardImports()
     cancelReads()
     managementLifetime.current += 1
     for (const [requestId, api] of writes.current) api.cancel(requestId)
@@ -206,6 +223,7 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
     setManagementError(undefined)
     void refresh()
     return () => {
+      discardImports()
       cancelReads(catalogReads.current)
       cancelReads()
       managementLifetime.current += 1
@@ -381,7 +399,7 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
     finally { if (lifetime === managementLifetime.current) setActionPending(false) }
   }
 
-  const inspectImport = async (source: 'directory' | 'zip' | 'catalog', entry?: Pick<ProductItem, 'id'>): Promise<void> => {
+  const inspectForModification = async (entry: Pick<ProductItem, 'id'>): Promise<void> => {
     const api = productApi()
     if (!api || (catalog !== 'skills' && catalog !== 'expertKits')) return
     const lifetime = managementLifetime.current
@@ -389,8 +407,7 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
     let stageId: string | undefined
     let transferred = false
     try {
-      const result = await read(api, 'extensions.import.inspect', { kind: catalog === 'skills' ? 'skill' : 'expert-kit', source,
-        ...(entry ? { id: entry.id } : {}) })
+      const result = await read(api, 'extensions.import.inspect', { kind: catalog === 'skills' ? 'skill' : 'expert-kit', source: 'catalog', id: entry.id })
       if (typeof result === 'object' && result !== null) {
         if ('cancelled' in result && result.cancelled === true) return
         if ('stageId' in result && typeof result.stageId === 'string') stageId = result.stageId
@@ -398,13 +415,13 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
       if (lifetime !== managementLifetime.current) return
       const imported = ExtensionImportPreviewSchema.parse(result)
       if (imported.draft.kind !== undefined && imported.draft.kind !== (catalog === 'skills' ? 'skill' : 'expert-kit')) throw new Error(t('detailFailed'))
-      if (source === 'catalog') await startAuthoring(imported, true)
-      else setEditor({ imported })
+      importStages.current.set(imported.stageId, api)
+      await startAuthoring(imported, true)
       transferred = true
     } catch (error) { if (lifetime === managementLifetime.current) setActionFailure(productErrorMessage(error, t, 'loadFailed')) }
     finally {
       if (stageId !== undefined && !transferred) {
-        try { await api.invoke('extensions.import.release', { stageId }, nextProductRequestId()) }
+        try { await releaseImport(api, stageId) }
         catch (error) { if (lifetime === managementLifetime.current) setActionFailure(productErrorMessage(error, t, 'loadFailed')) }
       }
       if (lifetime === managementLifetime.current) setActionPending(false)
@@ -427,7 +444,10 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
       ...imported ? { stageId: imported.stageId, edit } : {},
     })
     if (lifetime !== managementLifetime.current) return
-    if (imported) void productApi()?.invoke('extensions.import.release', { stageId: imported.stageId }, nextProductRequestId()).catch(() => undefined)
+    if (imported) {
+      const api = importStages.current.get(imported.stageId)
+      if (api) void releaseImport(api, imported.stageId).catch(() => undefined)
+    }
     setEditor(undefined)
   }
   const createContent = async (): Promise<void> => {
@@ -442,7 +462,7 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
     if (catalog === 'connectors') {
       if (!entry.version) return
       closeDetail(); setEditor({ connector: { id: entry.id, version: entry.version } })
-    } else void inspectImport('catalog', entry)
+    } else void inspectForModification(entry)
   }
   const confirmManagement = (action: 'submit' | 'delete' | 'uninstall', entry: ProductItem | ProductDetail): void => {
     const installations = catalog === 'skills' ? installedSkills : installedExpertKits
@@ -703,10 +723,15 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
       managementActions={selected ? managementActions(selected) : undefined}
       onCatalogChanged={() => { closeDetail(); return refresh() }} t={t} />}
     {importer && (catalog === 'skills' || catalog === 'expertKits') && <ExtensionImporter kind={catalog === 'skills' ? 'skill' : 'expert-kit'}
-      onClose={() => { setImporter(false) }} onInspected={(imported) => { setImporter(false); setEditor({ imported }) }} t={t} />}
-    {editor?.imported && <ExtensionPreview preview={editor.imported} onClose={() => { setEditor(undefined) }}
-      onContinue={() => startAuthoring(editor.imported)}
-      onSaved={() => { setEditor(undefined); setMine(true); void refresh() }} t={t} />}
+      onClose={() => { setImporter(false) }} onInspected={(imported) => {
+        const api = productApi()
+        if (!api) throw new Error(t('unavailable'))
+        importStages.current.set(imported.stageId, api)
+        setImporter(false); setEditor({ imported })
+      }} t={t} />}
+    {importPreview && <ExtensionPreview preview={importPreview} onClose={() => { closeImport(importPreview.stageId) }}
+      onContinue={() => startAuthoring(importPreview)}
+      onSaved={() => { closeImport(importPreview.stageId); setMine(true); void refresh() }} t={t} />}
     {editor && catalog === 'connectors' && <ConnectorEditor
       editing={editor.connector}
       onClose={() => { setEditor(undefined) }} onSaved={() => { setEditor(undefined); setMine(true); void refresh() }} t={t} />}
