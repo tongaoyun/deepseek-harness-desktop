@@ -17,7 +17,7 @@ function transport(getFailure = false, getFolder?: (folderId: string) => Promise
   move?: () => Promise<unknown>) {
   const invoke = vi.fn(async (_namespace: string, method: string, payload: Record<string, unknown>, _requestId?: string) => {
     if (method === 'knowledge.documents.upload.pending') return { ok: true, result: [] }
-    if (method === 'knowledge.documents.move' && move) return move()
+    if (method === 'knowledge.documents.move') return move ? move() : { ok: true, result: { documentId: payload.documentId, folderId: payload.folderId, moved: true } }
     if (method === 'knowledge.folders.get') {
       if (getFolder) return { ok: true, result: await getFolder(String(payload.folderId)) }
       const folder = [...roots, child].find(row => row.id === payload.folderId)
@@ -86,7 +86,7 @@ it('moves to another page and an unexpanded nested destination without preloadin
 })
 
 it('retries a lost move receipt with the original destination and operation identity', async () => {
-  const move = vi.fn().mockRejectedValueOnce(new TypeError('response lost')).mockResolvedValue({ ok: true, result: { moved: true } })
+  const move = vi.fn().mockRejectedValueOnce(new TypeError('response lost')).mockResolvedValue({ ok: true, result: { documentId: document.id, folderId: 'folder-1', moved: true } })
   const invoke = transport(false, undefined, vi.fn(), move)
   render(<KnowledgeWorkspace {...props} />)
   fireEvent.click(screen.getByRole('tab', { name: zh.knowledgeAllMaterials }))
@@ -178,4 +178,26 @@ it('blocks creation in a missing folder and preserves the entered name without s
   expect(name.value).toBe('保留名称')
   expect(dialog.getByRole<HTMLButtonElement>('button', { name: zh.knowledgeSave }).disabled).toBe(true)
   expect(invoke.mock.calls.some(call => call[1] === 'knowledge.folders.create')).toBe(false)
+})
+
+it('keeps the move destination and confirmation when a success receipt names another document', async () => {
+  let valid = false
+  const move = vi.fn(async () => ({ ok: true, result: { documentId: valid ? document.id : 'another-document', folderId: 'folder-1', moved: true } }))
+  const invoke = transport(false, undefined, vi.fn(), move)
+  render(<KnowledgeWorkspace {...props} />)
+  fireEvent.click(screen.getByRole('tab', { name: zh.knowledgeAllMaterials }))
+  fireEvent.click(await screen.findByRole('button', { name: zh.knowledgeDocumentActions.replace('{name}', document.filename) }))
+  fireEvent.click(screen.getByRole('menuitem', { name: zh.knowledgeMoveDocument }))
+  const dialog = within(screen.getByRole('dialog'))
+  fireEvent.click(await dialog.findByRole('button', { name: '目录1' }))
+  await waitFor(() => { expect(dialog.getByRole<HTMLButtonElement>('button', { name: zh.knowledgeMove }).disabled).toBe(false) })
+  fireEvent.click(dialog.getByRole('button', { name: zh.knowledgeMove }))
+  await dialog.findByRole('alert')
+  expect(dialog.getByRole('button', { name: zh.knowledgeRootFolder }).matches(':disabled')).toBe(true)
+  valid = true
+  fireEvent.click(dialog.getByRole('button', { name: zh.knowledgeMove }))
+  await waitFor(() => { expect(screen.queryByRole('dialog')).toBeNull() })
+  const writes = invoke.mock.calls.filter(call => call[1] === 'knowledge.documents.move')
+  expect(writes).toHaveLength(2)
+  expect(writes[0]![2]).toEqual(writes[1]![2])
 })

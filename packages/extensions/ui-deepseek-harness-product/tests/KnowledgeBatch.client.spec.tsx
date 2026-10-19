@@ -77,7 +77,7 @@ it('shows mixed selection and prevents reprocessing a selection that includes ac
 it('keeps files unchanged before confirmation and refreshes the list after a submitted deletion', async () => {
   const deleted = new Set<string>()
   const api = transport(async (method, payload) => {
-    if (method === 'knowledge.documents.delete') { deleted.add(String(payload.documentId)); return { status: 'DELETING' } }
+    if (method === 'knowledge.documents.delete') { deleted.add(String(payload.documentId)); return { documentId: payload.documentId, taskId: `delete-${payload.documentId}`, status: 'DELETING' } }
     return page(files.filter(file => !deleted.has(file.id)))
   })
   const { container } = render(<KnowledgeWorkspace {...props} />)
@@ -104,7 +104,7 @@ it('confirms deletion and retries only a lost receipt with the original write id
   let fail = true
   const api = transport(async (_method, payload) => {
     if (payload.documentId === 'file-2' && fail) throw new Error('Private transport failure')
-    return { status: 'DELETING' }
+    return { documentId: payload.documentId, taskId: `delete-${payload.documentId}`, status: 'DELETING' }
   })
   render(<KnowledgeBatchDialog {...dialogProps} action="delete" />)
   expect(api.writes()).toHaveLength(0)
@@ -127,9 +127,9 @@ it('confirms deletion and retries only a lost receipt with the original write id
 
 it('pins move versions and destination during a retry and skips files already in that folder', async () => {
   let fail = true
-  const api = transport(async () => {
+  const api = transport(async (_method, payload) => {
     if (fail) throw new Error('Response lost')
-    return files[1]
+    return { documentId: payload.documentId, folderId: payload.folderId, moved: true }
   })
   render(<KnowledgeBatchDialog {...dialogProps} documents={[{ ...files[0]!, folderId: folder.id }, files[1]!]} action="move" />)
   fireEvent.click(await screen.findByRole('button', { name: folder.name }))
@@ -191,4 +191,24 @@ it('cancels in-flight work on unload and never starts the next file', async () =
   await act(async () => { resolve!({ status: 'QUEUED' }); await pending })
   expect(api.writes()).toHaveLength(1)
   expect(dialogProps.onAccepted).not.toHaveBeenCalled()
+})
+
+it.each(['move', 'delete', 'reindex'] as const)('keeps an invalid %s receipt unconfirmed and retries the original file request', async (action) => {
+  let valid = false
+  const file = { ...files[0]!, folderId: action === 'move' ? folder.id : null }
+  const receipt = action === 'move' ? { documentId: file.id, folderId: null, moved: true }
+    : action === 'delete' ? { documentId: file.id, taskId: 'deletion-task', status: 'DELETING' } : file
+  const api = transport(async () => valid ? receipt : null)
+  render(<KnowledgeBatchDialog {...dialogProps} documents={[file]} action={action} />)
+  const button = action === 'move' ? zh.knowledgeMove : action === 'delete' ? zh.deleteResource : zh.knowledgeReindex
+  await waitFor(() => { expect(screen.getByRole<HTMLButtonElement>('button', { name: button }).disabled).toBe(false) })
+  fireEvent.click(screen.getByRole('button', { name: button }))
+  await screen.findByRole('alert')
+  expect(dialogProps.onAccepted).not.toHaveBeenCalled()
+  expect(screen.getByRole('list', { name: zh.knowledgeBatchFiles }).textContent).toMatchSnapshot()
+  valid = true
+  fireEvent.click(screen.getByRole('button', { name: zh.knowledgeBatchRetry }))
+  await waitFor(() => { expect(dialogProps.onAccepted).toHaveBeenCalledOnce() })
+  expect(api.writes()).toHaveLength(2)
+  expect(api.writes()[0]![2]).toEqual(api.writes()[1]![2])
 })

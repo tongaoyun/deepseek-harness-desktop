@@ -444,7 +444,7 @@ it('creates nested folders with retained retry input, browses their paths and de
     }
     if (method === 'knowledge.folders.delete') {
       const index = values.findIndex(folder => folder.id === payload.folderId)
-      values.splice(index, 1); return { deleted: true }
+      values.splice(index, 1); return { folderId: payload.folderId, deleted: true }
     }
     return page([])
   })
@@ -488,7 +488,7 @@ it('keeps an unrelated folder selected when another empty folder is deleted', as
   let deleted = false
   transport(async method => method === 'knowledge.folders.list'
     ? page([{ id: 'current', name: '当前目录', parentId: null, updatedAt: folderUpdatedAt }, ...deleted ? [] : [{ id: 'other', name: '其他目录', parentId: null, updatedAt: folderUpdatedAt }]])
-    : method === 'knowledge.folders.delete' ? (deleted = true, { deleted: true }) : page([]))
+    : method === 'knowledge.folders.delete' ? (deleted = true, { folderId: 'other', deleted: true }) : page([]))
   const view = render(<KnowledgeWorkspace {...props} />)
   const { navigation } = parts(view.container)
   fireEvent.click(await navigation.findByRole('button', { name: '当前目录' }))
@@ -1202,4 +1202,24 @@ it.each(['duplicate', 'path', 'destination', 'overflow'] as const)('blocks uploa
   await content.findByText(zh.knowledgeUploadRecoveryFailed)
   expect(content.getByRole<HTMLButtonElement>('button', { name: zh.knowledgeUpload }).disabled).toBe(true)
   expect(api.invoke.mock.calls.some(call => call[1] === 'knowledge.documents.upload.select' || call[1] === 'knowledge.documents.upload')).toBe(false)
+})
+
+it.each([true, false])('keeps a folder deletion unconfirmed until the target is acknowledged, deleted=%s', async (deleted) => {
+  let valid = false
+  const api = transport(async (method, payload) => method === 'knowledge.folders.list'
+    ? page([{ id: 'folder', name: '待删除目录', parentId: null, updatedAt: folderUpdatedAt }])
+    : method === 'knowledge.folders.delete' ? { folderId: valid ? payload.folderId : 'another-folder', deleted } : page([]))
+  const view = render(<KnowledgeWorkspace {...props} />)
+  const { navigation } = parts(view.container)
+  fireEvent.click(await navigation.findByRole('button', { name: zh.knowledgeFolderActions.replace('{name}', '待删除目录') }))
+  fireEvent.click(screen.getByRole('menuitem', { name: zh.knowledgeDeleteFolder }))
+  const dialog = within(screen.getByRole('dialog'))
+  fireEvent.click(dialog.getByRole('button', { name: zh.deleteResource }))
+  await dialog.findByRole('alert')
+  valid = true
+  fireEvent.click(dialog.getByRole('button', { name: zh.deleteResource }))
+  await waitFor(() => { expect(screen.queryByRole('dialog')).toBeNull() })
+  const writes = api.invoke.mock.calls.filter(call => call[1] === 'knowledge.folders.delete')
+  expect(writes).toHaveLength(2)
+  expect(writes[0]![2]).toEqual(writes[1]![2])
 })

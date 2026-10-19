@@ -1,0 +1,7 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`keeps an invalid delete receipt unconfirmed and retries the original file request 1`] = `"资料1.md操作结果尚未确认。请重试原操作，或刷新文件列表核对结果。 (IDEMPOTENCY_OPERATION_UNKNOWN)"`;
+
+exports[`keeps an invalid move receipt unconfirmed and retries the original file request 1`] = `"资料1.md操作结果尚未确认。请重试原操作，或刷新文件列表核对结果。 (IDEMPOTENCY_OPERATION_UNKNOWN)"`;
+
+exports[`keeps an invalid reindex receipt unconfirmed and retries the original file request 1`] = `"资料1.md操作结果尚未确认。请重试原操作，或刷新文件列表核对结果。 (IDEMPOTENCY_OPERATION_UNKNOWN)"`;

@@ -7,6 +7,7 @@ import css from '../DeepSeekHarnessProduct.module.css'
 import { isKnowledgeAccessDenied, useKnowledgeRequests, type KnowledgeDocument } from './knowledge-data.ts'
 import { KnowledgeFolderPicker } from './KnowledgeFolderPicker.tsx'
 import { isKnowledgeSaveUnconfirmed, productErrorMessage } from './product-errors.ts'
+import { confirmKnowledgeDocumentMutation } from './knowledge-mutation-receipts.ts'
 
 /** File operations use the same authenticated, idempotent endpoints as individual actions. */
 export type KnowledgeBatchAction = 'move' | 'delete' | 'reindex'
@@ -64,10 +65,13 @@ export function KnowledgeBatchDialog({ knowledgeBaseId, action, documents, onBus
         try {
           controller.signal.throwIfAborted()
           if (action !== 'move' || (document.folderId ?? null) !== destination) {
-            await request(`knowledge.documents.${action}`, {
+            const target = {
               knowledgeBaseId, documentId: document.id, operationId: entry.operationId,
               ...(action === 'move' ? { folderId: destination, expectedFolderId: document.folderId ?? null, expectedUpdatedAt: document.updatedAt } : {}),
-            }, controller.signal)
+            }
+            const receipt = await request(`knowledge.documents.${action}`, target, controller.signal)
+            controller.signal.throwIfAborted()
+            confirmKnowledgeDocumentMutation(action, receipt, target)
           }
           controller.signal.throwIfAborted()
           update(document.id, { kind: 'accepted' }); onAccepted(document, action)

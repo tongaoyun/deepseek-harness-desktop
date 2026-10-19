@@ -16,6 +16,7 @@ import { KnowledgeUploadDialog } from './KnowledgeUploadDialog.tsx'
 import { KnowledgeBatchDialog, type KnowledgeBatchAction } from './KnowledgeBatchDialog.tsx'
 import { productErrorMessage } from './product-errors.ts'
 import { readMaterialDocuments } from './knowledge-materials.ts'
+import { confirmKnowledgeDocumentMutation, confirmKnowledgeFolderDeletion } from './knowledge-mutation-receipts.ts'
 
 type Confirmation = { readonly kind: 'document'; readonly document: KnowledgeDocument; readonly operationId: string }
   | { readonly kind: 'folder'; readonly folder: KnowledgeFolder }
@@ -222,15 +223,15 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
     const timer = globalThis.setTimeout(() => { setRevision(value => value + 1) }, 3_000)
     return () => { globalThis.clearTimeout(timer) }
   }, [data, deleted, revision, loading, accessDenied, reader?.status, readerChecking])
-  const mutate = async (method: string, payload: unknown, onCommitted?: () => void): Promise<void> => {
+  const mutate = async (method: string, payload: unknown, onCommitted: (receipt: unknown) => void): Promise<void> => {
     if (pending) return
     const controller = operation.current
     const signal = AbortSignal.any([controller.signal, accessOperation.current.signal])
     setPending(true); setMutationError('')
     try {
-      await request(method, payload, signal)
+      const receipt = await request(method, payload, signal)
       if (!signal.aborted) {
-        onCommitted?.(); setRevision(value => value + 1)
+        onCommitted(receipt); setRevision(value => value + 1)
         if (method.startsWith('knowledge.folders.')) setFolderRevision(value => value + 1)
       }
     } catch (failure) {
@@ -309,13 +310,19 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
       const operationId = reindexOperations.current.get(row.id) ?? globalThis.crypto.randomUUID()
       reindexOperations.current.set(row.id, operationId)
       void mutate('knowledge.documents.reindex', { knowledgeBaseId: product.id, documentId: row.id, operationId },
-        () => { reindexOperations.current.delete(row.id); cancelOperations.current.delete(row.id) })
+        (receipt) => {
+          confirmKnowledgeDocumentMutation('reindex', receipt, { knowledgeBaseId: product.id, documentId: row.id })
+          reindexOperations.current.delete(row.id); cancelOperations.current.delete(row.id)
+        })
     }
     else if (id === 'cancel') {
       const operationId = cancelOperations.current.get(row.id) ?? globalThis.crypto.randomUUID()
       cancelOperations.current.set(row.id, operationId)
       void mutate('knowledge.documents.cancel', { knowledgeBaseId: product.id, documentId: row.id, operationId },
-        () => { cancelOperations.current.delete(row.id) })
+        (receipt) => {
+          confirmKnowledgeDocumentMutation('cancel', receipt, { knowledgeBaseId: product.id, documentId: row.id })
+          cancelOperations.current.delete(row.id)
+        })
     }
   }
   const fileAction = async (action: 'download' | 'openExternal', row: KnowledgeDocument): Promise<void> => {
@@ -523,13 +530,15 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
         <Button variant="ghost" size="sm" disabled={pending} onClick={closeConfirmation}>{t('cancel')}</Button>
         <Button variant="primary" className={css.knowledgeDanger} size="sm" disabled={pending} onClick={() => {
           if (confirmation.kind === 'folder') void mutate('knowledge.folders.delete',
-            { knowledgeBaseId: product.id, folderId: confirmation.folder.id }, () => {
+            { knowledgeBaseId: product.id, folderId: confirmation.folder.id }, (receipt) => {
+              confirmKnowledgeFolderDeletion(receipt, confirmation.folder.id)
               setConfirmation(undefined)
               if (folderId === confirmation.folder.id) selectFolder(confirmation.folder.parentId)
             })
           else {
             const id = confirmation.document.id
-            void mutate('knowledge.documents.delete', { knowledgeBaseId: product.id, documentId: id, operationId: confirmation.operationId }, () => {
+            void mutate('knowledge.documents.delete', { knowledgeBaseId: product.id, documentId: id, operationId: confirmation.operationId }, (receipt) => {
+              confirmKnowledgeDocumentMutation('delete', receipt, { knowledgeBaseId: product.id, documentId: id })
               setConfirmation(undefined); setDeleted(value => [...value, id]); setReader(value => value?.id === id ? undefined : value)
             })
           }
@@ -541,7 +550,10 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
     </Modal>}
     {move && <KnowledgeMoveDialog knowledgeBaseId={product.id} document={move} pending={pending} error={mutationError}
       onClose={() => { if (!pending) setMove(undefined) }}
-      onMove={(selection) => { void mutate('knowledge.documents.move', { knowledgeBaseId: product.id, documentId: move.id, ...selection }, () => { setMove(undefined); setReader(undefined) }) }} t={t} />}
+      onMove={(selection) => { void mutate('knowledge.documents.move', { knowledgeBaseId: product.id, documentId: move.id, ...selection }, (receipt) => {
+        confirmKnowledgeDocumentMutation('move', receipt, { knowledgeBaseId: product.id, documentId: move.id, folderId: selection.folderId })
+        setMove(undefined); setReader(undefined)
+      }) }} t={t} />}
     {uploadsOpen && canManage && <KnowledgeUploadDialog knowledgeBaseId={product.id} selections={uploads}
       onBusyChange={setPending} onAccepted={() => { setRevision(value => value + 1) }}
       onDenied={(failure) => {

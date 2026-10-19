@@ -294,3 +294,29 @@ it('rechecks manager permissions before loading editable manual text', async () 
   expect(screen.getByRole('button', { name: zh.knowledgeSave }).hasAttribute('disabled')).toBe(true)
   expect(api.invoke.mock.calls.some(row => row[1] === 'knowledge.documents.save')).toBe(false)
 })
+
+it.each(['delete', 'reindex', 'cancel'] as const)('retains the %s operation identity after a mismatched success receipt', async (action) => {
+  let valid = false
+  const row = { ...document, status: action === 'cancel' ? 'PROCESSING' : 'READY' }
+  const method = `knowledge.documents.${action}`
+  const receipt = action === 'delete' ? { documentId: document.id, taskId: 'deletion-task', status: 'DELETING' }
+    : { ...row, status: action === 'cancel' ? 'CANCELLED' : 'QUEUED' }
+  const api = transport(async name => name === 'knowledge.documents.list' ? page([row]) : name === method
+    ? valid ? receipt : { ...receipt, ...action === 'delete' ? { documentId: 'another-document' } : { id: 'another-document' } } : page([]))
+  render(<KnowledgeDetail renderFactorySlot={renderKnowledgePreview} product={library(true)} t={t} />)
+  const trigger = async () => {
+    fireEvent.click(await screen.findByRole('button', { name: zh.knowledgeDocumentActions.replace('{name}', document.filename) }))
+    fireEvent.click(screen.getByRole('menuitem', { name: action === 'delete' ? zh.deleteResource : action === 'cancel' ? zh.knowledgeStopProcessing : zh.knowledgeReindex }))
+    if (action === 'delete') fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: zh.deleteResource }))
+  }
+  await trigger()
+  const outcome = action === 'delete' ? within(screen.getByRole('dialog')) : screen
+  await outcome.findByRole('alert')
+  valid = true
+  if (action === 'delete') fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: zh.deleteResource }))
+  else await trigger()
+  await waitFor(() => { expect(screen.queryAllByRole('alert')).toHaveLength(0) })
+  const writes = api.invoke.mock.calls.filter(call => call[1] === method)
+  expect(writes).toHaveLength(2)
+  expect(writes[0]![2]).toEqual(writes[1]![2])
+})

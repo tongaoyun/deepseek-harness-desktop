@@ -80,7 +80,8 @@ export function isKnowledgeSaveUnconfirmed(error: unknown): boolean {
 export function productErrorMessage(error: unknown, t: (key: DeepSeekHarnessProductKey) => string,
   fallback: DeepSeekHarnessProductKey): string {
   const failure = productFailure(error)
-  const key = Object.hasOwn(messageKeys, failure.code) ? messageKeys[failure.code] : undefined
+  const key = failure.code === 'IDEMPOTENCY_OPERATION_UNKNOWN' && fallback === 'knowledgeChangeFailed'
+    ? 'knowledgeChangeUnconfirmed' : Object.hasOwn(messageKeys, failure.code) ? messageKeys[failure.code] : undefined
   const checks = failure.dependencyChecks?.filter(value => value.status !== 'READY').map(value => `${value.reference}: ${value.status}`)
   return `${key === undefined ? t(fallback) : `${t(key)} (${failure.code})`}${checks?.length ? ` ${checks.join('; ')}` : ''}`
 }
