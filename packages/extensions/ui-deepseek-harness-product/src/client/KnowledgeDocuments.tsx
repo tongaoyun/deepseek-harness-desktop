@@ -7,7 +7,7 @@ import type { PropsRenderFactories } from '@deepseek-ai/dsh-client-ui-slots'
 import type { DeepSeekHarnessProductKey } from '../locales.ts'
 import css from '../DeepSeekHarnessProduct.module.css'
 import { formatDate, type ProductDetail } from './catalog-shared.tsx'
-import { isKnowledgeAccessDenied, knowledgeFolder, knowledgePage, useKnowledgeRequests, type KnowledgeDocument, type KnowledgeFolder, type KnowledgePage } from './knowledge-data.ts'
+import { isKnowledgeAccessDenied, knowledgeDocument, knowledgeFolder, knowledgePage, useKnowledgeRequests, type KnowledgeDocument, type KnowledgeFolder, type KnowledgePage } from './knowledge-data.ts'
 import { KnowledgeDocumentReader } from './KnowledgeDocumentReader.tsx'
 import { KnowledgeEditor, type KnowledgeEditorTarget } from './KnowledgeEditor.tsx'
 import { useKnowledgeFolderLocation } from './knowledge-folder-location.ts'
@@ -74,6 +74,7 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
   const [uploadRecoveryRevision, setUploadRecoveryRevision] = useState(0)
   const [accessDenied, setAccessDenied] = useState(false)
   const [reader, setReader] = useState<KnowledgeDocument>()
+  const [settledReaderCheck, setSettledReaderCheck] = useState<{ readonly id: string; readonly data: KnowledgePage<KnowledgeDocument> }>()
   const [editor, setEditor] = useState<KnowledgeEditorTarget>()
   const [confirmation, setConfirmation] = useState<Confirmation>()
   const [move, setMove] = useState<KnowledgeDocument>()
@@ -179,11 +180,9 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
       setReader((current) => {
         if (current === undefined) return current
         const latest = result.items.find(row => row.id === current.id)
-        // Pagination can legitimately move the reader's row off the current
-        // page. Only close it when a refresh of the same page no longer
-        // authorizes the document, avoiding stale content after revocation or
-        // deletion while preserving the reader during page navigation.
-        return latest === undefined && previousPage === result.page ? undefined
+        // A filtered page can lose a readable file when its status changes.
+        // Missing filtered rows require an independent authorization read.
+        return latest === undefined && previousPage === result.page && !search && !format && !status ? undefined
           : latest?.status === 'DELETING' ? undefined : latest ?? current
       })
     }).catch((failure: unknown) => {
@@ -194,12 +193,32 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
       .finally(() => { if (!signal.aborted) setLoading(false) })
     return () => { controller.abort() }
   }, [request, product.id, folderId, page, search, format, status, revision, refreshRevision, materialFolders, accessDenied, denyAccess, t])
+  const filteredReaderId = reader && data && (search || format || status) && !data.items.some(row => row.id === reader.id)
+    ? reader.id : undefined
+  const readerChecking = filteredReaderId !== undefined && (settledReaderCheck?.id !== filteredReaderId || settledReaderCheck.data !== data)
   useEffect(() => {
-    if (loading || accessDenied) return
-    if (!data?.items.some(row => ['QUEUED', 'PROCESSING', 'FINALIZING', 'DELETING'].includes(deleted.includes(row.id) ? 'DELETING' : row.status))) return
+    if (filteredReaderId === undefined || data === undefined || accessDenied) return
+    const controller = new AbortController()
+    const signal = AbortSignal.any([controller.signal, accessOperation.current.signal])
+    void request('knowledge.documents.previewMetadata', { knowledgeBaseId: product.id, documentId: filteredReaderId }, signal).then((value) => {
+      if (signal.aborted) return
+      const latest = knowledgeDocument(value)
+      if (latest.id !== filteredReaderId || latest.knowledgeBaseId !== product.id) throw new Error('Knowledge document identity changed')
+      setReader(current => current?.id !== filteredReaderId ? current : latest.status === 'DELETING' ? undefined : latest)
+    }).catch((failure: unknown) => {
+      if (signal.aborted) return
+      setError(productErrorMessage(failure, t, 'knowledgeReadFailed'))
+      if (isKnowledgeAccessDenied(failure)) denyAccess()
+    }).finally(() => { if (!signal.aborted) setSettledReaderCheck({ id: filteredReaderId, data }) })
+    return () => { controller.abort() }
+  }, [request, product.id, filteredReaderId, data, accessDenied, denyAccess, t])
+  useEffect(() => {
+    if (loading || accessDenied || readerChecking) return
+    if (!data?.items.some(row => ['QUEUED', 'PROCESSING', 'FINALIZING', 'DELETING'].includes(deleted.includes(row.id) ? 'DELETING' : row.status))
+      && !(reader && ['QUEUED', 'PROCESSING', 'FINALIZING'].includes(reader.status))) return
     const timer = globalThis.setTimeout(() => { setRevision(value => value + 1) }, 3_000)
     return () => { globalThis.clearTimeout(timer) }
-  }, [data, deleted, revision, loading, accessDenied])
+  }, [data, deleted, revision, loading, accessDenied, reader?.status, readerChecking])
   const mutate = async (method: string, payload: unknown, onCommitted?: () => void): Promise<void> => {
     if (pending) return
     const controller = operation.current
@@ -398,8 +417,7 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
                 onChange={(event) => { selectDocument(row.id, event.currentTarget.checked) }} />}
               <button type="button" className={css.knowledgeDocumentName} disabled={deleting} onClick={() => { openReader(row) }}>
                 <FileTypeIcon path={row.filename} size={18} /><span>{row.filename}</span></button></div></td>
-            <td><span className={css.knowledgeDocumentStatus} data-status={deleting ? 'DELETING' : row.status}
-              title={!deleting && row.sourceType !== 'url' && ['QUEUED', 'PROCESSING', 'FINALIZING'].includes(row.status) ? t('knowledgeProcessingHint') : undefined}>{knowledgeStatus(deleting ? 'DELETING' : row.status, t)}</span></td>
+            <td><KnowledgeDocumentStatus status={deleting ? 'DELETING' : row.status} sourceType={row.sourceType} t={t} /></td>
             <td>{row.sourceType === 'manual' ? t('knowledgeOnlineDocument') : row.sourceType === 'url' ? t('knowledgeWebsite') : row.filename.split('.').at(-1)?.toUpperCase()}</td>
             <td>{fileSizeText(row.sizeBytes)}</td><td>{formatDate(row.updatedAt)}</td>
             <td><KnowledgeDocumentActions document={row} disabled={pending || deleting}
@@ -426,6 +444,7 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
   const documentReader = reader && <KnowledgeDocumentReader key={reader.id} knowledgeBaseId={product.id} documentId={reader.id}
     title={reader.filename} inline={renderNavigation !== undefined} refreshRevision={refreshRevision}
     renderFactorySlot={renderFactorySlot} onAccessDenied={readAccessDenied} onClose={() => { setReader(undefined) }} t={t} />
+  const readerStatusHint = reader && knowledgeStatusHint(reader.status, reader.sourceType, t)
   const tree = <nav className={css.knowledgeWorkspaceTree} aria-label={t('knowledgeFolders')} aria-busy={loading}>
     <div className={css.knowledgeWorkspaceTreeToolbar}><span>{t('knowledgeFolders')}</span>{canManage && <Tooltip label={t('knowledgeCreateFolder')}>
       <button type="button" disabled={pending} className={css.iconButton} aria-label={t('knowledgeCreateFolder')}
@@ -465,7 +484,11 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
             onSelect={(id) => { folderAction(id, currentFolder) }} t={t} />}
         </header>
         <div className={css.knowledgeWorkspaceBody}>
-          {reader ? <>{(folderError || error || mutationError) && <p role="alert" className={css.catalogError}>{folderError || error || mutationError}</p>}{uploadRecovery}{documentReader}</>
+          {reader ? <>{(folderError || error || mutationError) && <p role="alert" className={css.catalogError}>{folderError || error || mutationError}</p>}
+            <div className={css.knowledgeReaderProcessing} role="status">
+              <KnowledgeDocumentStatus status={reader.status} sourceType={reader.sourceType} t={t} />
+              {readerStatusHint && <span>{readerStatusHint}</span>}</div>
+            {uploadRecovery}{documentReader}</>
             : <>{toolbar}{materials}</>}
         </div>
       </main>
@@ -522,6 +545,24 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
         setReader(current => current?.id === document.id ? undefined : current)
       }} onClose={() => { setBatch(undefined); setSelectedIds(new Set()); setRevision(value => value + 1) }} t={t} />}
   </>
+}
+
+function KnowledgeDocumentStatus({ status, sourceType, t }: {
+  readonly status: string
+  readonly sourceType: string | undefined
+  readonly t: (key: DeepSeekHarnessProductKey) => string
+}): ReactNode {
+  return <span className={css.knowledgeDocumentStatus} data-status={status}
+    title={knowledgeStatusHint(status, sourceType, t)}>{knowledgeStatus(status, t)}</span>
+}
+
+function knowledgeStatusHint(status: string, sourceType: string | undefined,
+  t: (key: DeepSeekHarnessProductKey) => string): string | undefined {
+  if (sourceType === 'url') return undefined
+  if (['QUEUED', 'PROCESSING', 'FINALIZING'].includes(status)) return t('knowledgeProcessingHint')
+  if (status === 'FAILED') return t('knowledgeFailedHint')
+  if (status === 'CANCELLED') return t('knowledgeCancelledHint')
+  return undefined
 }
 
 function KnowledgeUploadMenu({ disabled, onSelect, t }: {

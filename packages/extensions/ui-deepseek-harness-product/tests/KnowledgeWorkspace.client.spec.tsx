@@ -23,7 +23,10 @@ const props = { entries, loading: false, authRequired: false, authPending: false
   onRefresh: vi.fn(), onSignIn: vi.fn(), renderFactorySlot: renderKnowledgePreview, t }
 
 function transport(handler: (method: string, payload: Record<string, unknown>) => Promise<unknown>,
-  pendingUploads: (payload: Record<string, unknown>) => Promise<unknown> = async () => []) {
+  pendingUploads: (payload: Record<string, unknown>) => Promise<unknown> = async () => [],
+  metadata: (payload: Record<string, unknown>) => Promise<unknown> = async payload => originalMetadata(
+    String(payload.knowledgeBaseId), String(payload.documentId),
+  )) {
   const preview = createPreviewFixture()
   const folderMetadata = new Map<string, unknown>()
   const invoke = vi.fn(async (_namespace: string, method: string, payload: Record<string, unknown>, _requestId?: string) => {
@@ -34,8 +37,7 @@ function transport(handler: (method: string, payload: Record<string, unknown>) =
         if (!result) throw new Error('Folder not found')
         return { ok: true, result }
       }
-      if (method === 'knowledge.documents.previewMetadata') return { ok: true,
-        result: originalMetadata(String(payload.knowledgeBaseId), String(payload.documentId)) }
+      if (method === 'knowledge.documents.previewMetadata') return { ok: true, result: await metadata(payload) }
       const result = await preview(method, payload, (name, data) => handler(name, data as Record<string, unknown>))
       if (method === 'knowledge.folders.list' && typeof result === 'object' && result !== null && 'items' in result && Array.isArray(result.items)) {
         const folderRows: readonly unknown[] = result.items
@@ -155,6 +157,88 @@ it('pages folder branches independently and never reloads them during document p
     { knowledgeBaseId: 'personal', parentId: null, page: 2, size: 20 },
     { knowledgeBaseId: 'personal', parentId: 'parent-2', page: 1, size: 20 },
   ])
+})
+
+it.each(['READY', 'FAILED', 'CANCELLED'])('keeps reading a file when processing becomes %s and it leaves the active status filter', async (nextStatus) => {
+  let status = 'PROCESSING'
+  const api = transport(async (method, payload) => {
+    if (method === 'knowledge.folders.list') return folders
+    if (method === 'knowledge.documents.preview.open') return page([{ content: '# 阅读中的原文件' }])
+    return page(payload.status && payload.status !== status ? [] : [{ ...documentRow('personal'), status }])
+  }, undefined, async () => ({ ...originalMetadata('personal', 'shared-document-id'), status }))
+  const view = render(<KnowledgeWorkspace {...props} />)
+  await parts(view.container).content.findByRole('button', { name: '业务规范.md' })
+  fireEvent.change(parts(view.container).content.getByRole('combobox', { name: zh.status }), { target: { value: 'PROCESSING' } })
+  fireEvent.click(await parts(view.container).content.findByRole('button', { name: '业务规范.md' }))
+  await parts(view.container).content.findByRole('heading', { name: '阅读中的原文件' })
+  status = nextStatus
+  await waitFor(() => {
+    expect(api.invoke.mock.calls.filter(call => call[1] === 'knowledge.documents.list')).toHaveLength(3)
+  }, { timeout: 5_000 })
+  expect(parts(view.container).content.getByRole('heading', { name: '阅读中的原文件' })).toBeDefined()
+  expect(view.container.querySelector('[data-knowledge-inline-reader]')).not.toBeNull()
+  const label = nextStatus === 'READY' ? zh.knowledgeIndexed : nextStatus === 'FAILED' ? zh.knowledgeIndexFailed : zh.knowledgeCancelled
+  await waitFor(() => { expect(parts(view.container).content.getByRole('status').textContent).toContain(label) })
+  expect(parts(view.container).content.getByRole('status').textContent).toMatchSnapshot()
+  expect(api.invoke.mock.calls.filter(call => call[1] === 'knowledge.documents.preview.open')).toHaveLength(1)
+})
+
+it.each(['KNOWLEDGE_ACCESS_REVOKED', 'ORGANIZATION_SERVICE_UNAVAILABLE'])(
+  'independently rechecks a filtered file that disappears and handles %s', async (code) => {
+    let finished = false
+    const api = transport(async (method, payload) => {
+      if (method === 'knowledge.folders.list') return folders
+      if (method === 'knowledge.documents.preview.open') return page([{ content: '# 阅读中的原文件' }])
+      return page(payload.status && finished ? [] : [{ ...documentRow('personal'), status: 'PROCESSING' }])
+    }, undefined, async () => {
+      if (finished) throw new ProductError(code, 'private parser diagnostic', code === 'ORGANIZATION_SERVICE_UNAVAILABLE')
+      return originalMetadata('personal', 'shared-document-id')
+    })
+    const view = render(<KnowledgeWorkspace {...props} />)
+    await parts(view.container).content.findByRole('button', { name: '业务规范.md' })
+    fireEvent.change(parts(view.container).content.getByRole('combobox', { name: zh.status }), { target: { value: 'PROCESSING' } })
+    fireEvent.click(await parts(view.container).content.findByRole('button', { name: '业务规范.md' }))
+    await parts(view.container).content.findByRole('heading', { name: '阅读中的原文件' })
+    finished = true
+    await waitFor(() => { expect(parts(view.container).content.getByRole('alert').textContent).toContain(
+      code === 'KNOWLEDGE_ACCESS_REVOKED' ? zh.knowledgeAccessRevoked : zh.organizationServiceUnavailable,
+    ) }, { timeout: 5_000 })
+    expect(view.container.querySelector('[data-knowledge-inline-reader]') !== null).toBe(code !== 'KNOWLEDGE_ACCESS_REVOKED')
+    expect(view.container.textContent).not.toContain('private parser diagnostic')
+    expect(api.invoke.mock.calls.filter(call => call[1] === 'knowledge.documents.previewMetadata')).toHaveLength(2)
+  })
+
+it('cancels a missing filtered file recheck when switching libraries and ignores its late result', async () => {
+  let finished = false
+  const pending = deferred()
+  const api = transport(async (method, payload) => {
+    if (method === 'knowledge.folders.list') return folders
+    if (method === 'knowledge.documents.preview.open') return page([{ content: '# 阅读中的原文件' }])
+    return page(payload.status && finished ? [] : [{ ...documentRow(String(payload.knowledgeBaseId)), status: 'PROCESSING' }])
+  }, undefined, async () => finished ? pending.promise : originalMetadata('personal', 'shared-document-id'))
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+  try {
+    const view = await act(async () => render(<KnowledgeWorkspace {...props} />))
+    await act(async () => { fireEvent.change(parts(view.container).content.getByRole('combobox', { name: zh.status }), {
+      target: { value: 'PROCESSING' },
+    }) })
+    await act(async () => { fireEvent.click(parts(view.container).content.getByRole('button', { name: '业务规范.md' })) })
+    expect(parts(view.container).content.getByRole('heading', { name: '阅读中的原文件' })).toBeDefined()
+    finished = true
+    await act(async () => { await vi.advanceTimersByTimeAsync(3_000) })
+    expect(api.invoke.mock.calls.filter(call => call[1] === 'knowledge.documents.previewMetadata')).toHaveLength(2)
+    const recheck = api.invoke.mock.calls.filter(call => call[1] === 'knowledge.documents.previewMetadata')[1]
+    await act(async () => { await vi.advanceTimersByTimeAsync(6_000) })
+    expect(api.invoke.mock.calls.filter(call => call[1] === 'knowledge.documents.list')).toHaveLength(3)
+    expect(api.cancel).not.toHaveBeenCalledWith('product', recheck?.[3])
+    await act(async () => { fireEvent.click(parts(view.container).navigation.getByRole('button', { name: '公司规范' })) })
+    expect(parts(view.container).content.getByRole('button', { name: '业务规范.md' })).toBeDefined()
+    expect(api.cancel).toHaveBeenCalledWith('product', recheck?.[3])
+    await act(async () => { pending.resolve({ ...originalMetadata('personal', 'shared-document-id'), status: 'READY' }) })
+    expect(view.container.querySelector('[data-knowledge-inline-reader]')).toBeNull()
+    expect(parts(view.container).content.queryByRole('heading', { name: '阅读中的原文件' })).toBeNull()
+    expect(parts(view.container).content.queryByRole('alert')).toBeNull()
+  } finally { vi.useRealTimers() }
 })
 
 it('reloads folder branches on explicit refresh and discards externally removed folders', async () => {

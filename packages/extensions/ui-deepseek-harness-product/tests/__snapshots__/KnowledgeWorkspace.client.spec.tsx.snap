@@ -1,0 +1,7 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`keeps reading a file when processing becomes CANCELLED and it leaves the active status filter 1`] = `"已取消已停止建立检索索引，原文件仍可查看"`;
+
+exports[`keeps reading a file when processing becomes FAILED and it leaves the active status filter 1`] = `"处理失败原文件可查看，检索暂不可用；可尝试重新处理，仍失败时请检查原文件"`;
+
+exports[`keeps reading a file when processing becomes READY and it leaves the active status filter 1`] = `"可检索"`;

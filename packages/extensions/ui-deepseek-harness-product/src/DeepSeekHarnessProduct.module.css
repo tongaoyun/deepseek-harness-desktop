@@ -436,6 +436,7 @@
 .knowledgeDocumentStatus { white-space: nowrap; }
 .knowledgeDocumentStatus[data-status='FAILED'] { color: var(--dsw-alias-state-error-primary); }
 .knowledgeDocumentStatus[data-status='READY'] { color: var(--dsw-alias-state-success-primary); }
+.knowledgeReaderProcessing { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 16px; color: var(--dsw-alias-label-secondary); font-size: 12px; }
 .knowledgePagination { display: flex; min-height: 42px; align-items: center; justify-content: space-between; gap: 10px; margin-top: 12px; color: var(--dsw-alias-label-tertiary); font-size: 12px; }
 .knowledgePagination > div { display: flex; align-items: center; gap: 8px; }
 .knowledgeReaderModal.knowledgeReaderModal { width: min(900px, 100%); max-height: 100%; gap: 0; padding: 0; }
