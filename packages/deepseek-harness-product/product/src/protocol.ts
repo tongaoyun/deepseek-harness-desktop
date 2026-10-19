@@ -205,7 +205,6 @@ export interface ProductTaskCapabilities {
   readonly expertKit?: ProductContentIdentity
   /** Shortcut and exact bundled skills selected from the pinned kit artifact. */
   readonly expertKitTask?: { readonly id: string; readonly name: string; readonly skillIds: readonly string[] }
-  readonly skills: readonly ProductContentIdentity[]
   readonly connectorIds: readonly string[]
   /** Connectors required by the pinned Expert Kit and locked against task removal. */
   readonly requiredConnectorIds: readonly string[]

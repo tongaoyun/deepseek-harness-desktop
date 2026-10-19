@@ -34,7 +34,7 @@ async function fixture() {
     source: 'user' as const, invocation: { modelInvocable: true, userInvocable: true }, content: 'Review facts.' }))
   const skills = createInstalledSkills(ctx, {
     root, product: { invoke }, parse: value => value as SkillContent[], install, load,
-    capabilities: async () => ({ skills: [], connectorIds: [], requiredConnectorIds: [], knowledgeBaseIds: [],
+    capabilities: async () => ({ connectorIds: [], requiredConnectorIds: [], knowledgeBaseIds: [],
       requiredKnowledgeBaseIds: [], knowledgeBaseRefs: [] }), connectors: async () => [], mountConnectors: async () => async () => {},
   })
   return { root, skills, install, load, invoke, releases, employee: (value: string) => { employee = value },

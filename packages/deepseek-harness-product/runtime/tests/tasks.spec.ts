@@ -65,7 +65,8 @@ it('enables an independent connector and retains it when adding knowledge', asyn
   expect(fixture.register.mock.calls[0]?.[0].plugins.some(row => row.id === 'product-knowledge')).toBe(false)
   fixture.select(first.presetId)
   const next = await fixture.tasks.prepare({ sessionId: 'session', knowledgeBaseIds: ['manuals'] })
-  expect(next.capabilities).toMatchObject({ connectorIds: ['erp'], knowledgeBaseIds: ['manuals'], skills: [] })
+  expect(next.capabilities).toMatchObject({ connectorIds: ['erp'], knowledgeBaseIds: ['manuals'] })
+  expect(next.capabilities).not.toHaveProperty('skills')
   expect(fixture.register.mock.calls.at(-1)?.[0].plugins.filter(row => row.id === 'base')).toHaveLength(1)
   const files = (await readdir(fixture.root)).filter(name => name.endsWith('.json'))
   const persisted = await Promise.all(files.map(name => readFile(join(fixture.root, name), 'utf8')))
@@ -160,14 +161,15 @@ it.each(['hidden-mode', 'product-task-forged-mode'])('rejects %s as an explicit 
   expect(await f.tasks.read({ sessionId: 'session' })).toEqual(prepared.capabilities)
 })
 
-it.each(['version', 'basePluginKeys', 'requiredTools', 'selectionBase', 'skillInvocations'])(
+it.each(['version', 'basePluginKeys', 'requiredTools', 'selectionBase', 'skillInvocations', 'taskSkills'])(
   'rejects obsolete or incomplete %s metadata without fallback, retains history inputs and allows a replacement', async (field) => {
     const f = await setup()
     const prepared = await f.tasks.prepare({ expertKitId: 'order-expert', knowledgeBaseIds: ['manuals'] })
     const path = join(f.root, `${prepared.presetId}.json`)
-    const snapshot = JSON.parse(await readFile(path, 'utf8')) as Record<string, unknown> & { definition: Record<string, unknown> }
+    const snapshot = JSON.parse(await readFile(path, 'utf8')) as Record<string, unknown> & { definition: Record<string, unknown>; capabilities: Record<string, unknown> }
     if (field === 'version') snapshot.version = 2
     else if (field === 'skillInvocations') snapshot.skillInvocations = {}
+    else if (field === 'taskSkills') snapshot.capabilities.skills = []
     else if (field === 'selectionBase') delete snapshot.definition.selectionBase
     else if (field === 'basePluginKeys') delete snapshot.basePluginKeys
     else delete snapshot.requiredTools

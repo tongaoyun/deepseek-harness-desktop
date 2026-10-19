@@ -46,7 +46,7 @@ export interface TaskDependencies {
 }
 
 const empty: ProductTaskCapabilities = {
-  skills: [], connectorIds: [], requiredConnectorIds: [], knowledgeBaseIds: [], requiredKnowledgeBaseIds: [], knowledgeBaseRefs: [],
+  connectorIds: [], requiredConnectorIds: [], knowledgeBaseIds: [], requiredKnowledgeBaseIds: [], knowledgeBaseRefs: [],
 }
 const prefix = 'product-task-'
 const CAPABILITY_PROMPT = 'cordis:product-task-capabilities'
@@ -57,7 +57,7 @@ const identifiers = z.array(identifier).max(32)
 const contentIdentity = z.object({ id: identifier, name: z.string().optional(), version: identifier,
   sha256: z.string().regex(/^[a-fA-F0-9]{64}$/) }).strict()
 const capabilitySnapshot = z.object({
-  basePresetId: identifier, expertKit: contentIdentity.optional(), skills: z.array(contentIdentity),
+  basePresetId: identifier, expertKit: contentIdentity.optional(),
   expertKitTask: z.object({ id: identifier, name: identifier, skillIds: identifiers.min(1) }).strict().optional(),
   connectorIds: identifiers, requiredConnectorIds: identifiers, knowledgeBaseIds: identifiers,
   requiredKnowledgeBaseIds: identifiers, knowledgeBaseRefs: identifiers,
@@ -80,7 +80,7 @@ export function parseTaskSnapshot(raw: string, filename: string): Snapshot {
   if (value.version !== 3 || `${value.presetId}.json` !== filename || value.definition == null
     || value.capabilities == null || value.definition.id !== value.presetId
     || entryListProblem(value.definition.plugins) !== undefined
-    || !Array.isArray(value.capabilities.skills) || !Array.isArray(value.capabilities.connectorIds)
+    || !Array.isArray(value.capabilities.connectorIds)
     || !Array.isArray(value.capabilities.requiredKnowledgeBaseIds)
     || !Array.isArray(value.capabilities.knowledgeBaseIds) || !Array.isArray(value.capabilities.knowledgeBaseRefs)
     || !Array.isArray(value.requiredConnectorIds) || !Array.isArray(value.connectors)
