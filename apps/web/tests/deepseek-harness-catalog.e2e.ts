@@ -1795,10 +1795,10 @@ for (const { mode, installed, surface } of desktopCarriers) {
           app.on('before-quit', (event) => {
             report('before-quit', event.defaultPrevented)
             if (deadline !== undefined) return
-            deadline = setTimeout(() => report('still-closing'), 9_000)
+            deadline = setTimeout(() => { report('still-closing') }, 9_000)
             deadline.unref()
           })
-          app.on('will-quit', event => report('will-quit', event.defaultPrevented))
+          app.on('will-quit', (event) => { report('will-quit', event.defaultPrevented) })
           app.once('quit', () => { clearTimeout(deadline); report('quit') })
         })
       }
