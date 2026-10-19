@@ -171,6 +171,19 @@ export function releaseDestination(name, client, repository, { github = false, t
         if (rows.length < 50) return assets
       }
     },
+    recoverAsset: async (remote, asset) => {
+      if (!github || asset.state === 'uploaded') return asset
+      if (remote.draft !== true || asset.state !== 'starter' || !Number.isSafeInteger(asset.id) || asset.id <= 0) {
+        throw new Error(`Incomplete release asset at ${name}: ${asset.name}`)
+      }
+      const path = `${prefix}/assets/${asset.id}`
+      const current = await client.request('GET', path)
+      if (current.id !== asset.id || current.name !== asset.name) throw new Error(`Release asset identity changed at ${name}`)
+      if (current.state === 'uploaded') return current
+      if (current.state !== 'starter') throw new Error(`Unexpected release asset state at ${name}`)
+      await client.request('DELETE', path)
+      return undefined
+    },
     hash: asset => retryReleaseRead(async () => {
       console.log(`Verifying ${name} release asset: ${asset.name}`)
       const chunks = github ? await client.download(`${prefix}/assets/${asset.id}`)

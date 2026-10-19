@@ -373,7 +373,7 @@ function destination(name, release, options = {}) {
     calls.push('create')
     remote = { id: 1, tag_name: release.tag, body: release.body, prerelease: true, draft: true, html_url: `https://${name}/release` }
     return remote
-  }, assets: async () => [...assets], upload: async (id, file) => {
+  }, assets: async () => [...assets], recoverAsset: async (_remote, asset) => asset, upload: async (id, file) => {
     calls.push(`upload ${file.name}`)
     const asset = { ...file, id: assets.length + 1 }
     assets.push(asset)
@@ -389,6 +389,81 @@ function destination(name, release, options = {}) {
 const release = { tag: `v${version}`, version, commit, body: 'synthetic release identity', files: [
   { name: 'Harness.exe', size: 10, sha256: 'a'.repeat(64) }, { name: 'build-manifest.json', size: 20, sha256: 'b'.repeat(64) },
 ] }
+
+for (const interruption of ['existing', 'lost', 'exhausted']) test(`recovers ${interruption} GitHub draft uploads within the upload limit`, async () => {
+  const bytes = Buffer.from('installer')
+  const file = { name: 'Harness.exe', size: bytes.length, sha256: hash(bytes) }
+  const pending = { id: 7, name: file.name, size: file.size, state: 'starter' }
+  let asset = interruption === 'existing' ? pending : undefined
+  let uploads = 0
+  const remote = { id: 1, tag_name: release.tag, body: release.body, prerelease: true, draft: true, html_url: 'https://test/release' }
+  const prefix = '/repos/owner/repo/releases'
+  const calls = []
+  const client = { request: async (method, path) => {
+    calls.push(`${method} ${path}`)
+    if (method === 'DELETE' && path === `${prefix}/assets/7`) { asset = undefined; return {} }
+    if (method === 'PATCH') { remote.draft = false; return remote }
+    if (path === `${prefix}/assets/7`) return asset
+    if (path.includes('/assets?')) return asset ? [asset] : []
+    if (path.includes('/tags/')) return remote
+    assert.fail(`Unexpected ${method} ${path}`)
+  }, download: async path => {
+    calls.push(`download ${path}`)
+    if (asset?.state !== 'uploaded') throw Object.assign(new Error('Not found'), { status: 404 })
+    return (async function* () { yield bytes })()
+  } }
+  const target = releaseDestination('GitHub', client, 'owner/repo', { github: true, target: commit })
+  target.upload = async () => {
+    calls.push('upload')
+    uploads++
+    if (interruption === 'exhausted' || interruption === 'lost' && uploads === 1) {
+      asset = pending
+      throw socketFailure()
+    }
+    asset = { id: 8, name: file.name, size: file.size, state: 'uploaded' }
+    return asset
+  }
+  const operation = publishDesktopRelease({ ...release, files: [file] }, [target])
+  if (interruption === 'exhausted') await assert.rejects(operation, /remained incomplete/u)
+  else assert.deepEqual(await operation, ['https://test/release'])
+  assert.equal(calls.filter(call => call === `DELETE ${prefix}/assets/7`).length, interruption === 'exhausted' ? 3 : 1)
+  assert.equal(uploads, { existing: 1, lost: 2, exhausted: 3 }[interruption])
+  assert.equal(calls.includes(`download ${prefix}/assets/7`), false)
+  assert.equal(calls.includes(`download ${prefix}/assets/8`), interruption !== 'exhausted')
+  assert.equal(remote.draft, interruption === 'exhausted')
+})
+
+test('only discards a freshly confirmed incomplete GitHub asset inside a draft', async () => {
+  const asset = { id: 7, name: 'Harness.exe', state: 'starter' }
+  for (const kind of ['published', 'unknown', 'invalid-id', 'changed-id', 'changed-name', 'changed-state', 'denied', 'missing', 'delete-lost']) {
+    const calls = []
+    const client = { request: async (method, path) => {
+      calls.push(method)
+      if (kind === 'denied' || kind === 'missing') throw Object.assign(new Error(kind), { status: kind === 'denied' ? 403 : 404 })
+      if (method === 'DELETE') throw socketFailure()
+      assert.match(path, /\/assets\/7$/u)
+      return { ...asset, ...kind === 'changed-id' ? { id: 8 } : {},
+        ...kind === 'changed-name' ? { name: 'Other.exe' } : {}, ...kind === 'changed-state' ? { state: 'other' } : {} }
+    } }
+    const target = releaseDestination('GitHub', client, 'owner/repo', { github: true, target: commit })
+    await assert.rejects(target.recoverAsset({ draft: kind !== 'published' },
+      { ...asset, ...kind === 'unknown' ? { state: 'other' } : {}, ...kind === 'invalid-id' ? { id: '../other' } : {} }))
+    assert.equal(calls.includes('DELETE'), kind === 'delete-lost', kind)
+  }
+})
+
+test('keeps completed GitHub assets and observes an upload that completed before recovery', async () => {
+  const pending = { id: 7, name: 'Harness.exe', state: 'starter' }
+  const complete = { ...pending, state: 'uploaded' }
+  const calls = []
+  const target = releaseDestination('GitHub', { request: async (method) => { calls.push(method); return complete } },
+    'owner/repo', { github: true, target: commit })
+  assert.equal(await target.recoverAsset({ draft: false }, complete), complete)
+  assert.equal(await target.recoverAsset({ draft: true }, pending), complete)
+  assert.deepEqual(calls, ['GET'])
+  const internal = releaseDestination('Gitea', {}, 'owner/repo', { target: commit, base: 'http://gitea.test' })
+  assert.equal(await internal.recoverAsset({ draft: true }, pending), pending)
+})
 
 test('stages both destinations, reconciles interrupted uploads and repeats without uploading', async () => {
   const internal = destination('gitea', release, { uploadLost: true })
