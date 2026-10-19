@@ -1,5 +1,6 @@
 {
   "runtimePackages": ["@deepseek-harness/product-desktop"],
+  "builderConfig": "../../../apps/product-desktop/electron-builder.config.mjs",
   "buildSteps": [["run", "build:native-product"]],
   "packageDirectories": [".", "../runtime", "../product", "../expert-kit-readme", "../../extensions/ui-deepseek-harness-product"],
   "icons": { "macos": "resources/icon-macos.png", "windows": "resources/icon-windows.png", "tray": "resources/tray-windows.ico", "development": "resources/icon-macos.icns" },

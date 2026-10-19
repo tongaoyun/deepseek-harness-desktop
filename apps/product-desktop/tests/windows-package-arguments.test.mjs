@@ -13,7 +13,7 @@ if (!unavailable) {
   assert.equal(available.status, 0, available.stderr?.toString())
 }
 
-for (const signing of ['signed', 'unsigned']) {
+for (const signing of ['signed', 'unsigned', 'internal']) {
   test(`passes intact ${signing} Windows packaging arguments`, { skip: unavailable ? 'PowerShell is unavailable on this host; the Windows packaging runner executes this regression' : false }, () => {
     const result = spawnSync('pwsh', ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', `
       $ErrorActionPreference = 'Stop'
@@ -28,6 +28,6 @@ for (const signing of ['signed', 'unsigned']) {
     assert.equal(result.signal, null)
     assert.equal(result.status, 0, result.stderr)
     assert.deepEqual(JSON.parse(result.stdout), ['--dir', 'apps/product-desktop', 'run', 'package', 'win-x64',
-      ...signing === 'unsigned' ? ['--unsigned'] : [], '--build-version', '0.2.1-rc.2.20261018.37.1'])
+      ...signing !== 'signed' ? ['--unsigned'] : [], '--build-version', '0.2.1-rc.2.20261018.37.1'])
   })
 }

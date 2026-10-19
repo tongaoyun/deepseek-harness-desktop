@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto'
 import { resolve } from 'node:path'
 import { desktopBuildVersionPrefix } from '../../desktop/scripts/desktop-build-version.mjs'
 import { loadDesktopPackageEnvironment, validateDesktopPackageEnvironment } from '../../desktop/scripts/desktop-package-environment.mjs'
-import { productSigningMode, productUpdateUrl } from './update-release.mjs'
+import { productSigningMode, productUpdateUrl, validateInternalSignature } from './update-release.mjs'
 
 /**
  * Number an unpublished build without querying release storage.
@@ -39,26 +39,34 @@ export function artifactManifest(directory, target, commit, version, options = {
   if (!/^[a-f0-9]{40}$/u.test(commit)) throw new Error('An exact source commit is required')
   const signing = productSigningMode(options.signing)
   let update
-  if (signing === 'signed') {
-    const record = JSON.parse(readFileSync(resolve(directory, `${target}-release.json`), 'utf8'))
+  if (signing !== 'unsigned') {
+    const record = JSON.parse(readFileSync(resolve(directory, `${target}-${signing === 'internal' ? 'internal' : 'release'}.json`), 'utf8'))
     const updateUrl = productUpdateUrl(options.downloadRepository)
     if (record.schemaVersion !== 1 || record.target !== target || record.version !== version || record.commit !== commit
-      || record.dirty !== false || record.environment !== 'production' || record.channel !== 'nightly' || record.publicUrl !== updateUrl) {
+      || record.dirty !== false || signing === 'signed' && record.environment !== 'production'
+      || record.channel !== 'nightly' || record.publicUrl !== updateUrl) {
       throw new Error('Native signed release completion record does not match this build')
+    }
+    if (signing === 'internal') {
+      if (record.signing !== 'internal' || record.notarized !== false) throw new Error('Invalid internal release completion record')
+      validateInternalSignature(target, record.codeSigning, options.internalCertificateSHA256)
     }
     const metadata = readFileSync(resolve(directory, target === 'win-x64' ? 'nightly.yml' : 'nightly-mac.yml'))
     if (metadata.length > 64 * 1024) throw new Error('Native updater metadata exceeds limits')
     writeFileSync(resolve(directory, `${target}-nightly.yml`), metadata, { flag: 'wx' })
-    update = { updateUrl, channel: 'nightly' }
+    update = { updateUrl, channel: 'nightly', ...(signing === 'internal' ? { codeSigning: record.codeSigning, notarized: false } : {}) }
   }
   const names = readdirSync(directory, { withFileTypes: true })
     .filter(entry => entry.isFile() && /\.(?:exe|dmg|zip|blockmap)$/u.test(entry.name)).map(entry => entry.name).sort()
-  if (signing === 'signed') names.push(`${target}-nightly.yml`)
-  const required = target === 'win-x64' ? ['.exe'] : signing === 'signed' ? ['.dmg', '.zip'] : ['.dmg']
+  if (signing !== 'unsigned') names.push(`${target}-nightly.yml`)
+  const required = target === 'win-x64' ? ['.exe'] : signing !== 'unsigned' ? ['.dmg', '.zip'] : ['.dmg']
   for (const extension of required) {
     if (names.filter(name => name.endsWith(extension)).length !== 1) throw new Error(`Expected one ${extension} installer for ${target}`)
   }
   if (signing === 'signed' && names.some(name => /-unsigned\.|-unnotarized\./u.test(name))) throw new Error('Signed release contains development artifacts')
+  if (signing === 'internal' && names.some(name => !name.endsWith('.yml') && !/-internal\.(?:exe|dmg|zip)(?:\.blockmap)?$/u.test(name))) {
+    throw new Error('Internal release contains artifacts from another distribution mode')
+  }
   return { target, commit, version, signing, ...update, artifacts: names.map(name => {
     const bytes = readFileSync(resolve(directory, name))
     if (bytes.length === 0) throw new Error(`Empty installer: ${name}`)
@@ -102,7 +110,7 @@ if (process.argv[1] !== undefined && resolve(process.argv[1]) === import.meta.fi
     const signing = productSigningMode(process.env.PACKAGE_SIGNING)
     const directory = resolve(root, `apps/desktop/.desktop-build/targets/${target}/${signing === 'signed' ? 'artifacts' : 'unsigned-artifacts'}`)
     const manifest = artifactManifest(directory, target, commit, process.env.PACKAGE_VERSION,
-      { signing, downloadRepository: process.env.PACKAGE_DOWNLOAD_REPOSITORY })
+      { signing, downloadRepository: process.env.PACKAGE_DOWNLOAD_REPOSITORY, internalCertificateSHA256: process.env.PACKAGE_INTERNAL_CERTIFICATE_SHA256 })
     writeFileSync(resolve(directory, 'build-manifest.json'), JSON.stringify(manifest, null, 2) + '\n', { flag: 'wx' })
   } else throw new Error('Select prepare or artifacts')
 }

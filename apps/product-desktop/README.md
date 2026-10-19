@@ -31,12 +31,24 @@ node apps/product-desktop/scripts/sync-github.mjs --repository OWNER/deepseek-ha
 
 每个平台使用原生 runner 安装锁定依赖、验证基线、测试产品 sidecar，并调用产品打包入口。Windows 按所选模式验证签名状态和安装器生命周期；打包包含官方运行时 smoke。runner 先运行已构建的官方及产品 profile，再运行安装后的产品应用：Windows 将 EXE 静默安装到私有目录，结束后卸载；macOS 将 DMG 中的应用复制到私有目录，结束后卸载磁盘映像。安装后验收启动打包的 ASAR、内置 Host、扩展和 sidecar，不使用源码运行时覆盖。仅将临时安装副本的服务地址指向本地测试服务，使用独立数据、测试身份和模拟模型。同一无密钥界面回归覆盖目录、技能与套件安装、连接器状态、知识库原文件预览、任务选择及重启恢复，不登录真实员工，也不验证系统签名提示。截图和 JSON 报告保留十四天，失败时也上传；日志及产物遵循源码仓库可见性。界面失败会阻止安装包发布。成功构建生成安装包、blockmap 和 `build-manifest.json`，记录版本、源码提交、平台、大小及 SHA-256。Actions 安装包产物保留一天；已发布的 Release 下载文件不自动过期。
 
-默认 `signing=unsigned` 产出 Windows EXE 或 macOS DMG，发布为开发预发布，不提供更新清单，也不改变已有签名版本的 latest 下载。两个 macOS 目标沿用官方未签名本地构建的应用标识；Windows 使用配置的产品应用标识。未签名安装包可能需要操作系统确认。单独运行 GitHub 打包只上传 Actions 产物，正式交付继续使用内网同步工作流。Windows 打包前用 PowerShell 实际执行两种签名模式的命令回归，检查目标、版本和 `--unsigned` 参数完整传递。
+默认 `signing=unsigned` 产出 Windows EXE 或 macOS DMG，发布为开发预发布，不提供更新清单，也不改变已有签名版本的 latest 下载。两个 macOS 目标沿用官方未签名本地构建的应用标识；Windows 使用配置的产品应用标识。未签名安装包可能需要操作系统确认。单独运行 GitHub 打包只上传 Actions 产物，正式交付继续使用内网同步工作流。Windows 打包前用 PowerShell 实际执行三种分发模式的命令回归，检查目标、版本和 `--unsigned` 参数完整传递。
 
 <a id="native-updates"></a>
 ## 软件版本更新
 
-首次办理账号、证书和签名机器见[签名办理与接入](docs/signing.md)。
+软件更新提供 `internal` 免费内部分发和 `signed` 正式签名分发两种模式，均沿用官方更新器。配置及首次安装限制见[签名与更新接入](docs/signing.md)。产品签名通过 assembly 的可选 `builderConfig` 接入；未选择产品 assembly 时继续使用官方打包配置。
+
+### 免费内部更新
+
+`signing=internal` 使用标准 GitHub 托管 runner。Mac 使用同一张固定自签证书签署应用、Electron 组件和产品 sidecar，不进行 Apple 公证；已准备的 Harness 与 Python 运行时保留原有字节和签名，并由官方清单与应用资源封装验证；Windows 保持未签名 NSIS 安装器。Mac 同时产出 DMG 和更新 ZIP，Windows 产出 EXE；文件名带 `-internal`，清单如实记录签名方式和 `notarized: false`，不能冒充正式签名包。发布仍要求三个平台构建与安装验收全部通过。
+
+GitHub 源码仓库配置 Secrets `DESKTOP_INTERNAL_MAC_CERTIFICATE`（加密 P12 的 Base64）和 `DESKTOP_INTERNAL_MAC_PASSWORD`，以及公开变量 `DESKTOP_INTERNAL_MAC_CERTIFICATE_SHA256`。证书只在 Mac 打包及隔离安装验收步骤传入，导入独立临时钥匙串；打包结束或失败后恢复搜索列表并删除导入的凭据，不修改系统证书信任。P12 输入及密码不传入后续构建子进程、发布机或渲染进程。固定证书的创建与保管见签名说明。
+
+GitHub 和 Gitea 都配置 `DESKTOP_INTERNAL_DOWNLOAD_REPOSITORY` 及相同的公开证书指纹；内部下载仓库必须与正式的 `DESKTOP_GITHUB_DOWNLOAD_REPOSITORY` 分开。发布前核对固定证书指纹、源码、版本、更新清单和实际安装文件的大小及哈希。更新源使用内部下载仓库的匿名 latest 地址，不携带 GitHub 或员工令牌。
+
+自签只提供相同身份间的原生更新校验，不提供 Apple 信任或公证。首次下载安装仍可能被 Gatekeeper 阻止，Windows 仍可能显示未知发布者提示；不能通过关闭系统安全功能解决。旧开发包首次需手动安装内部包，之后可检查新版、下载并确认重启安装。证书必须持续使用，丢失或更换后不能依赖原生更新自动衔接。
+
+### 正式签名更新
 
 `signing=signed` 接入这个产品桌面软件的原生更新，使用公开下载仓库的 `releases/latest/download/` 地址，无需 GitHub 登录或员工令牌。应用启动及周期检查沿用官方更新调度，也可从原生菜单检查更新。发现新版后由用户下载，下载完成后再次确认重启安装；取消确认会保留当前应用。任务停止、Host 关闭和安装交给官方更新器处理，不检查或同步 Harness 上游源码。
 
@@ -83,7 +95,9 @@ pnpm run verify:upstream
 PACKAGE_VERSION="$INSTALLER_VERSION" PACKAGE_SIGNING=unsigned pnpm --dir apps/product-desktop run test:installed --target mac-arm64
 ```
 
-安装后验收需要原生 Windows 或 macOS runner 及其生成的安装包。`PACKAGE_VERSION` 必须为安装包完整版本，`PACKAGE_SIGNING` 为 `unsigned` 或 `signed`；打包工作流自动提供这两个值，手动验收需自行设置。使用 `--installer /absolute/path/to/installer.dmg`（或 EXE）可验证已有下载包，无需重新构建。验收使用私有临时目录，结束后清理；不要在 Windows 上与同一产品的其他安装操作同时运行。
+安装后验收需要原生 Windows 或 macOS runner 及其生成的安装包。`PACKAGE_VERSION` 必须为安装包完整版本，`PACKAGE_SIGNING` 为 `unsigned`、`internal` 或 `signed`；打包工作流自动提供这两个值，手动验收需自行设置。使用 `--installer /absolute/path/to/installer.dmg`（或 EXE）可验证已有下载包，无需重新构建。验收使用私有临时目录，结束后清理；不要在 Windows 上与同一产品的其他安装操作同时运行。
+
+Mac 的 `internal` 安装验收会从真实安装包制作两个固定证书签署的隔离版本，仅替换测试启动入口、版本及服务配置；通过实际“检查更新”界面下载，再由 Squirrel.Mac 替换并重启产品。测试检查取消安装、会话与草稿保留、旧 Host 和原生 sidecar 退出，结果写入 `.artifacts/native-macos-update-*.json`。登录与网络服务使用无密钥 fixture，安装器和更新器保持真实；此验收不代表首次下载后的 Gatekeeper 放行，也不替代 Windows 的升级验收。
 
 安装后验收核对应用版本、设备上报和反馈元数据一致。未签名安装版还验证检查更新入口、当前完整版本及窄屏提示；签名版的真实下载和重启安装须另行完成上述 A→B 验收。
 

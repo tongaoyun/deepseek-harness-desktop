@@ -262,18 +262,20 @@ export function parseDesktopPackageInvocation(
  * @param target - Supported release target.
  * @param directory - Whether to stop at an unpacked application directory.
  * @param artifact - Optional single artifact built from an existing signed application.
+ * @param builderConfig - Application-owned builder configuration; omitted uses the official configuration.
  * @returns Arguments that keep publishing under the separate validated upload command.
  */
 export function desktopElectronBuilderArguments(
   target: DesktopPackageTarget,
   directory: boolean,
   artifact?: DesktopPrepackagedArtifact,
+  builderConfig = 'electron-builder.config.mjs',
 ): readonly string[] {
   return [
     'exec',
     'electron-builder',
     '--config',
-    'electron-builder.config.mjs',
+    builderConfig,
     target.builderPlatform,
     ...(artifact === undefined ? [] : [artifact.format]),
     target.builderArch,
@@ -507,7 +509,7 @@ export async function packageTarget(
   if (invocation.prepareOnly) return
   if (target.platform === 'darwin' && !invocation.unsigned && !invocation.skipNotarization && !invocation.directory) {
     await execute([
-      ...desktopElectronBuilderArguments(target, true),
+      ...desktopElectronBuilderArguments(target, true, undefined, assembly.builderConfig),
       '--config.mac.notarize=false',
     ], electronBuilderEnv)
     await execute(['exec', 'tsx', 'scripts/smoke-packaged-runtime.ts'], targetEnv)
@@ -517,15 +519,16 @@ export async function packageTarget(
       version: resolveDesktopBuildVersion(environment, packageVersion(join(APP_ROOT, 'package.json'), 'desktop package')),
       artifactsRoot: buildPaths.artifacts,
       environment: electronBuilderEnv,
-    }, artifact => execute(desktopElectronBuilderArguments(target, false, artifact), electronBuilderEnv)), undefined, undefined, proxyEvent)
+    }, artifact => execute(desktopElectronBuilderArguments(target, false, artifact, assembly.builderConfig), electronBuilderEnv)),
+    undefined, undefined, proxyEvent)
   } else if (target.platform === 'darwin' && !invocation.unsigned && !invocation.skipNotarization) {
-    await execute([...desktopElectronBuilderArguments(target, true), '--config.mac.notarize=false'], electronBuilderEnv)
+    await execute([...desktopElectronBuilderArguments(target, true, undefined, assembly.builderConfig), '--config.mac.notarize=false'], electronBuilderEnv)
     await execute(['exec', 'tsx', 'scripts/smoke-packaged-runtime.ts'], targetEnv)
     const appPath = join(buildPaths.artifacts, target.arch === 'arm64' ? 'mac-arm64' : 'mac', 'DeepSeek Harness.app')
     await withMacOSNotarizationProxy(mac?.notarizationProxy,
       () => notarizeMacOS({ appPath, ...resolveMacOSNotarizationEnvironment(environment) }), undefined, undefined, proxyEvent)
   } else {
-    await signedStage('artifacts', () => execute(desktopElectronBuilderArguments(target, invocation.directory), electronBuilderEnv))
+    await signedStage('artifacts', () => execute(desktopElectronBuilderArguments(target, invocation.directory, undefined, assembly.builderConfig), electronBuilderEnv))
     await execute(['exec', 'tsx', 'scripts/smoke-packaged-runtime.ts',
       ...(invocation.unsigned ? ['--unsigned'] : []), ...(invocation.skipNotarization ? ['--skip-notarization'] : [])], targetEnv)
   }

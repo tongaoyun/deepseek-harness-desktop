@@ -12,10 +12,10 @@ on:
         required: false
         type: string
       signing:
-        description: unsigned 为开发包，signed 为可原生更新的签名包（重试须与原构建一致）
+        description: unsigned 开发包、internal 免费内部更新、signed 正式签名更新（重试须与原构建一致）
         required: false
         type: choice
-        options: [unsigned, signed]
+        options: [unsigned, internal, signed]
         default: unsigned
 
 concurrency:
@@ -52,7 +52,8 @@ jobs:
         env:
           GITHUB_DESKTOP_REPOSITORY: ${{ vars.DESKTOP_GITHUB_REPOSITORY }}
           GITHUB_DESKTOP_TOKEN: ${{ secrets.DESKTOP_GITHUB_TOKEN }}
-          GITHUB_DOWNLOAD_REPOSITORY: ${{ vars.DESKTOP_GITHUB_DOWNLOAD_REPOSITORY }}
+          GITHUB_DOWNLOAD_REPOSITORY: ${{ inputs.signing == 'internal' && vars.DESKTOP_INTERNAL_DOWNLOAD_REPOSITORY || vars.DESKTOP_GITHUB_DOWNLOAD_REPOSITORY }}
+          DESKTOP_INTERNAL_CERTIFICATE_SHA256: ${{ vars.DESKTOP_INTERNAL_MAC_CERTIFICATE_SHA256 }}
           GITEA_API_URL: http://192.168.2.66:3300/api/v1
           GITEA_REPOSITORY: instudio/deepseek-harness-desktop
           GITEA_USERNAME: ${{ secrets.RELEASE_USERNAME }}
@@ -69,5 +70,5 @@ jobs:
           pnpm run verify:upstream
           node --test apps/product-desktop/tests/github-delivery.test.mjs
           node --test apps/product-desktop/tests/desktop-release.test.mjs
-          node --test apps/product-desktop/tests/product-updates.test.mjs
+          node --test apps/product-desktop/tests/product-updates.test.mjs apps/product-desktop/tests/internal-updates.test.mjs
           node apps/product-desktop/scripts/deliver-desktop.mjs

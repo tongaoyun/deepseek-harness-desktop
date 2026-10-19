@@ -290,7 +290,8 @@ async function main() {
     }
     const productVersion = JSON.parse(execFileSync('git', ['show', `${commit}:apps/desktop/package.json`],
       { cwd: root, encoding: 'utf8' })).version
-    const release = await collectDesktopRelease(stage, run, commit, productVersion, { signing, downloadRepository: downloads })
+    const release = await collectDesktopRelease(stage, run, commit, productVersion, { signing, downloadRepository: downloads,
+      internalCertificateSHA256: process.env.DESKTOP_INTERNAL_CERTIFICATE_SHA256 })
     const links = await publishDesktopRelease(release, [
       releaseDestination('Gitea', gitea, internal, { target: commit, base }),
       releaseDestination('GitHub downloads', github, downloads, { github: true, target: publicRepo.default_branch }),

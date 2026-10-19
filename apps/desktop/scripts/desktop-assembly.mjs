@@ -22,6 +22,10 @@ export function readDesktopAssembly(environment = process.env, platform = proces
     if (!['macos', 'windows', 'tray', 'development'].includes(key) || typeof icon !== 'string') throw new Error('Invalid Desktop assembly icon')
     return [key, resolve(dirname(path), icon)]
   }))
+  if (value.builderConfig !== undefined && (typeof value.builderConfig !== 'string' || value.builderConfig.trim() === '')) {
+    throw new Error('Invalid Desktop assembly builder configuration')
+  }
   return { runtimePackages: value.runtimePackages, resources, buildSteps, icons,
+    ...(value.builderConfig === undefined ? {} : { builderConfig: resolve(dirname(path), value.builderConfig) }),
     packageDirectories: directories.map(directory => resolve(dirname(path), directory)) }
 }

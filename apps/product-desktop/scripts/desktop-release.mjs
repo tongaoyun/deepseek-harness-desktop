@@ -9,7 +9,7 @@ import { pipeline } from 'node:stream/promises'
 import { openPromise } from 'yauzl'
 import { githubBuildVersion } from './github-package.mjs'
 import { gt, valid } from 'semver'
-import { productSigningMode, productUpdateFeeds } from './update-release.mjs'
+import { productSigningMode, productUpdateFeeds, validateInternalSignature } from './update-release.mjs'
 
 export const RELEASE_TARGETS = ['win-x64', 'mac-arm64', 'mac-x64']
 const MAX_FILE = 2 * 1024 ** 3
@@ -106,10 +106,17 @@ export async function collectDesktopRelease(directory, run, commit, productVersi
       throw new Error(`Invalid ${target} build manifest`)
     }
     if (manifests.length && manifest.version !== manifests[0].version) throw new Error('Platform versions differ')
+    if (signing === 'internal') {
+      if (manifest.notarized !== false) throw new Error('Internal artifacts must declare that they are not notarized')
+      validateInternalSignature(target, manifest.codeSigning, options.internalCertificateSHA256)
+    }
     const required = target === 'win-x64' ? '.exe' : '.dmg'
     if (manifest.artifacts.filter(file => file.name?.endsWith(required)).length !== 1) throw new Error(`Missing ${target} installer`)
     for (const artifact of manifest.artifacts) {
-      if (!safeName(artifact.name) || !(/\.(?:exe|dmg|zip|blockmap)$/u.test(artifact.name) || signing === 'signed' && artifact.name === `${target}-nightly.yml`)
+      if (signing === 'internal' && !artifact.name?.endsWith('.yml') && !/-internal\.(?:exe|dmg|zip)(?:\.blockmap)?$/u.test(artifact.name)) {
+        throw new Error('Internal release contains artifacts from another distribution mode')
+      }
+      if (!safeName(artifact.name) || !(/\.(?:exe|dmg|zip|blockmap)$/u.test(artifact.name) || signing !== 'unsigned' && artifact.name === `${target}-nightly.yml`)
         || names.has(artifact.name) || !Number.isSafeInteger(artifact.size) || artifact.size <= 0 || artifact.size > MAX_FILE
         || !/^[a-f0-9]{64}$/u.test(artifact.sha256 ?? '')) throw new Error(`Invalid ${target} artifact`)
       names.add(artifact.name)
@@ -125,7 +132,7 @@ export async function collectDesktopRelease(directory, run, commit, productVersi
     manifests.push(manifest)
   }
   const version = manifests[0].version
-  if (signing === 'signed') {
+  if (signing !== 'unsigned') {
     const feeds = await productUpdateFeeds(manifests, files, options.downloadRepository, version, run.created_at)
     for (const feed of feeds) {
       const path = join(directory, feed.name)
@@ -143,7 +150,7 @@ export async function collectDesktopRelease(directory, run, commit, productVersi
     files.push({ path, name, size: Buffer.byteLength(bytes), sha256: digest(bytes) })
   }
   return { version, tag: `v${version}`, commit, files, prerelease: signing === 'unsigned',
-    body: `${signing === 'signed' ? 'Signed product desktop update.' : 'Unsigned development desktop build.'}\n\nSource: ${commit}\nManifest SHA-256: ${digest(manifestBytes)}\n\nWindows x64, macOS ARM64 and macOS Intel. ${signing === 'signed' ? 'Native updates require download and restart confirmation.' : 'No automatic update feed.'}\n` }
+    body: `${signing === 'internal' ? '内部免费更新版本：macOS 使用固定自签证书，未经过 Apple 公证；Windows 未签名。首次安装可能出现系统安全提示。' : signing === 'signed' ? 'Signed product desktop update.' : 'Unsigned development desktop build.'}\n\nSource: ${commit}\nManifest SHA-256: ${digest(manifestBytes)}\n\nWindows x64, macOS ARM64 and macOS Intel. ${signing !== 'unsigned' ? 'Native updates require download and restart confirmation.' : 'No automatic update feed.'}\n` }
 }
 
 /**

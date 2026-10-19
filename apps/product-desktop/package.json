@@ -3,10 +3,19 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "scripts": { "dev": "node --import tsx/esm scripts/dev.ts", "start": "node --import tsx/esm scripts/dev.ts --skip-build", "package": "tsx scripts/package.ts", "test:installed": "node scripts/test-installed.mjs" },
+  "scripts": {
+    "dev": "node --import tsx/esm scripts/dev.ts",
+    "start": "node --import tsx/esm scripts/dev.ts --skip-build",
+    "package": "tsx scripts/package.ts",
+    "test:installed": "node scripts/test-installed.mjs"
+  },
   "dependencies": {
     "@deepseek-ai/dsh-desktop": "workspace:*",
     "@deepseek-harness/product-desktop": "workspace:*"
   },
-  "devDependencies": { "tsx": "^4.21.0", "yauzl": "^3.4.0" }
+  "devDependencies": {
+    "playwright": "1.61.1",
+    "tsx": "^4.21.0",
+    "yauzl": "^3.4.0"
+  }
 }

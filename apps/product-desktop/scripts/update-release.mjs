@@ -11,10 +11,20 @@ export function productUpdateUrl(repository) {
   return `https://github.com/${repository}/releases/latest/download/`
 }
 
-/** @param {string | undefined} mode Requested signing mode; omitted retains development packaging. @returns {'signed' | 'unsigned'} Validated mode. */
+/** @param {string | undefined} mode Requested distribution mode; omitted retains development packaging. @returns {'signed' | 'unsigned' | 'internal'} Validated mode. */
 export function productSigningMode(mode = 'unsigned') {
-  if (!['signed', 'unsigned'].includes(mode)) throw new Error('Desktop signing mode must be signed or unsigned')
+  if (!['signed', 'unsigned', 'internal'].includes(mode)) throw new Error('Desktop signing mode must be signed, unsigned or internal')
   return mode
+}
+
+/** @param {string} target Native build target. @param {object} signature Actual platform signing facts. @param {string} expectedSHA256 Fixed public macOS certificate pin. @returns {void} Rejects a missing, replaced or wrongly classified internal identity. */
+export function validateInternalSignature(target, signature, expectedSHA256) {
+  if (target === 'win-x64') {
+    if (signature?.type !== 'unsigned' || Object.keys(signature).length !== 1) throw new Error('Internal Windows builds must declare their unsigned status')
+  } else if (!/^[A-F0-9]{64}$/u.test(expectedSHA256 ?? '') || signature?.type !== 'self-signed'
+    || signature.certificateSHA256 !== expectedSHA256 || Object.keys(signature).length !== 2) {
+    throw new Error('Internal macOS builds must use the pinned self-signed identity')
+  }
 }
 
 /**
@@ -32,7 +42,7 @@ export async function productUpdateFeeds(manifests, files, repository, version, 
   const byName = new Map(files.map(file => [file.name, file]))
   const feeds = new Map()
   for (const manifest of manifests) {
-    if (manifest.signing !== 'signed' || manifest.updateUrl !== url || manifest.channel !== 'nightly') {
+    if (!['signed', 'internal'].includes(manifest.signing) || manifest.updateUrl !== url || manifest.channel !== 'nightly') {
       throw new Error(`Invalid ${manifest.target} signed update configuration`)
     }
     const source = byName.get(`${manifest.target}-nightly.yml`)

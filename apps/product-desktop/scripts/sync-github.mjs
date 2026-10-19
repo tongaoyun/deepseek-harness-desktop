@@ -64,7 +64,7 @@ export async function selectPackagingWorkflow(request, repository) {
  * @param {string} options.baseline Exact stored baseline commit.
  * @param {boolean} options.create Whether to create a new private repository.
  * @param {string} [options.deliveryId] Correlation ID for the dispatched build.
- * @param {'signed' | 'unsigned'} [options.signing] Signing mode; omitted retains development packaging.
+ * @param {'signed' | 'unsigned' | 'internal'} [options.signing] Distribution mode; omitted retains development packaging.
  * @param {Function} options.request Authenticated API operation.
  * @param {Function} options.push Pushes only main and the baseline, without force or deletion.
  * @returns {Promise<void>} Resolves after GitHub accepts the build dispatch.

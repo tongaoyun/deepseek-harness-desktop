@@ -212,12 +212,13 @@
     },
     {
       "id": "desktop-assembly",
-      "purpose": "Generic desktop assembly manifests select extra runtime roots, packaging resources, icons, and build steps. Development descriptors persist trusted extension settings across macOS launchers.",
+      "purpose": "通用 desktop assembly 提供运行时根、资源、图标、构建步骤及可选 builderConfig；产品打包策略通过独立配置接入，官方默认打包和签名配置保持原有行为。开发描述符保留受信扩展设置。",
       "tests": [
         "apps/desktop/tests/desktop-assembly.spec.ts",
         "apps/desktop/tests/development-app.spec.ts",
         "apps/desktop/tests/package-target-stages.spec.ts",
-        "apps/desktop/tests/prepare-package-set.spec.ts"
+        "apps/desktop/tests/prepare-package-set.spec.ts",
+        "apps/desktop/tests/package-target.spec.ts"
       ],
       "files": [
         {
@@ -233,12 +234,12 @@
         {
           "path": "apps/desktop/scripts/desktop-assembly.d.mts",
           "before": null,
-          "after": "39b3011ca355924467599279a8fa8b27abca36246e688f9920edaecd286224a3"
+          "after": "4f24d96a83390ca2be5faf7f8a622e8f6abb300caba760994b9fb869785a399b"
         },
         {
           "path": "apps/desktop/scripts/desktop-assembly.mjs",
           "before": null,
-          "after": "8b6a3219f51b2d88bc8c19d23d956d1a51bc3c355143d1235c90921d38cc1016"
+          "after": "fac4f95febb54b888df9440f0125e717db3ceb72f5397495bf259388f83bacac"
         },
         {
           "path": "apps/desktop/scripts/dev.ts",
@@ -258,7 +259,7 @@
         {
           "path": "apps/desktop/scripts/package-target.ts",
           "before": "02e00e96e342b376e05e15bcc56030ff7b7f2dd18fdf2ab556a61393ca7ea63e",
-          "after": "7e65ecf6351cda6341d3d177b3cc6203ea7eef4c67aa7fd0dba13f1fd5a55690"
+          "after": "fc5799c8c64b360db3d69d2c72e2c4694012dbe8be0568b11755a34a6eb38bec"
         },
         {
           "path": "apps/desktop/scripts/prepare-package-set.ts",
@@ -268,7 +269,7 @@
         {
           "path": "apps/desktop/tests/desktop-assembly.spec.ts",
           "before": null,
-          "after": "5732fd5b442cda4c8ddd1977e5be43a1235e39507d00803a2dfab6b75c982e39"
+          "after": "2477529c27c73706c31a91b0865675763d057580ca7c3b51d7ddfe88dfaff9a8"
         },
         {
           "path": "apps/desktop/tests/development-app.spec.ts",
@@ -284,6 +285,11 @@
           "path": "apps/desktop/tests/prepare-package-set.spec.ts",
           "before": "0ad0552f5d64693e37a2c092627e7b84a9d98647303d71f4fb65e5e198159ea4",
           "after": "e0c440f6e2cf4714998b6784d7b8f56db205c64b86f6ddb928f57a477f8f9339"
+        },
+        {
+          "path": "apps/desktop/tests/package-target.spec.ts",
+          "before": "281af4cf16bb29f9cbb5ebc0df989d213ddebb402592a30e8743451c94e55ef6",
+          "after": "9217dfa435534813b4a22d7e3490a36b4e858fc721822cd7f54daeec6653c67f"
         }
       ],
       "diff": "desktop-assembly.patch"
@@ -787,7 +793,7 @@
         {
           "path": "pnpm-lock.yaml",
           "before": "4637cca3b89c4c8d5a147321710e597aa62ec2444a3772ab542be5690893dfe4",
-          "after": "0ced2972b7873a4b52e5b7905e8a7ce4b9fb26caae5bc9c1f4cca15cd180827e"
+          "after": "0ecbf246ce3d4e69d852eecac0116f90953e23a85d1fc2c6184efb44cf0cfd2a"
         },
         {
           "path": "scripts/check-workspace-constraints.spec.ts",

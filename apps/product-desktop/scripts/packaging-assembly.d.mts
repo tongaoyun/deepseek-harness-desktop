@@ -1,5 +1,6 @@
 /** Product-owned inputs for the generic desktop packaging pipeline. */
 export interface ProductAssembly {
+  readonly builderConfig?: string
   readonly runtimePackages: readonly string[]
   readonly buildSteps: readonly (readonly string[])[]
   readonly packageDirectories: readonly string[]

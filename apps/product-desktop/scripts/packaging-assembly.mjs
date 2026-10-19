@@ -13,6 +13,7 @@ export function productPackagingAssembly(manifestPath, cargoTargetDirectory) {
   const base = dirname(manifestPath)
   return {
     ...source,
+    ...(source.builderConfig === undefined ? {} : { builderConfig: resolve(base, source.builderConfig) }),
     packageDirectories: source.packageDirectories.map(path => resolve(base, path)),
     icons: Object.fromEntries(Object.entries(source.icons).map(([key, path]) => [key, resolve(base, path)])),
     resources: source.resources.map(resource => ({ ...resource,
