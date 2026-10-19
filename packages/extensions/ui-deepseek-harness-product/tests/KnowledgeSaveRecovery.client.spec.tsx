@@ -8,6 +8,50 @@ import { zh } from '../src/locales.ts'
 
 afterEach(() => { cleanup(); sessionStorage.clear(); vi.unstubAllGlobals() })
 
+const savedDocumentMetadata = { knowledgeBaseId: 'personal', filename: 'Saved.md', mediaType: 'text/markdown',
+  sizeBytes: 17, status: 'READY', chunkCount: 1 }
+
+it.each(['markdown', 'url', 'edit'] as const)('retains the original %s request until its document receipt is valid', async (kind) => {
+  const document = { id: 'document', knowledgeBaseId: 'personal', filename: 'Retained draft.md', mediaType: 'text/markdown',
+    sizeBytes: 17, status: 'READY', chunkCount: 1, updatedAt: '2026-10-20T00:00:00Z', sourceType: 'manual', canManage: true,
+    manualContent: 'Retained contents', folderId: null }
+  const method = kind === 'url' ? 'knowledge.documents.importUrl' : 'knowledge.documents.save'
+  const payload = { operationId: 'original-operation', knowledgeBaseId: 'personal', title: 'Retained draft',
+    ...(kind === 'url' ? { url: 'https://example.com', folderId: null } : { content: 'Retained contents',
+      ...(kind === 'edit' ? { documentId: document.id, expectedUpdatedAt: document.updatedAt } : { folderId: null }) }) }
+  const scope = JSON.stringify(['personal', kind === 'url' ? 'url' : 'markdown', kind === 'edit' ? 'edit' : 'create', kind === 'edit' ? document.id : null])
+  const key = `product.knowledge.suspended.v1.employee.${scope}`
+  const original = JSON.stringify({ title: 'Retained draft', content: 'Retained contents', url: kind === 'url' ? 'https://example.com' : '', parentId: null,
+    ...(kind === 'edit' ? { metadata: document } : {}), save: { method, payload } })
+  sessionStorage.setItem(key, original)
+  const invalidReceipts = [null, { id: document.id }, { ...document, id: '' }, { ...document, filename: '' },
+    { ...document, updatedAt: '' }, { ...document, knowledgeBaseId: 'another-library' },
+    ...(kind === 'edit' ? [{ ...document, id: 'another-document' }] : [])]
+  let receipt = 0
+  const writes: unknown[] = []
+  const saved = vi.fn()
+  vi.stubGlobal('dshDesktop', { extensions: { cancel: vi.fn(), invoke: async (_namespace: string, name: string, input: unknown) => {
+    if (name === 'auth.getSession') return { ok: true, result: { authenticated: true, employeeId: 'employee' } }
+    writes.push(input)
+    return { ok: true, result: receipt < invalidReceipts.length ? invalidReceipts[receipt] : document }
+  } } })
+  render(<KnowledgeEditor knowledgeBaseId="personal" target={kind === 'url' ? { kind: 'url' } : { kind: 'markdown', ...(kind === 'edit' ? { document } : {}) }}
+    onClose={vi.fn()} onSaved={saved} t={key => zh[key]} />)
+  const title = await screen.findByDisplayValue<HTMLInputElement>('Retained draft')
+  for (; receipt < invalidReceipts.length; receipt++) {
+    fireEvent.click(screen.getByRole('button', { name: zh.knowledgeRetrySave }))
+    await screen.findByRole('alert')
+    expect(title.disabled).toBe(true)
+    expect(saved).not.toHaveBeenCalled()
+    expect(sessionStorage.getItem(key)).toBe(original)
+    if (receipt === 0) expect(screen.getByRole('dialog').textContent).toMatchSnapshot()
+  }
+  fireEvent.click(screen.getByRole('button', { name: zh.knowledgeRetrySave }))
+  await vi.waitFor(() => { expect(saved).toHaveBeenCalledOnce() })
+  expect(writes).toEqual(Array.from({ length: invalidReceipts.length + 1 }, () => payload))
+  expect(sessionStorage.getItem(key)).toBeNull()
+})
+
 it('keeps the suspended folder request when a cancelled editor receives a late success', async () => {
   const scope = JSON.stringify(['personal', 'folder', 'create', null])
   const key = `product.knowledge.suspended.v1.employee.${scope}`
@@ -108,7 +152,8 @@ it.each(['markdown', 'url', 'base', 'folder'] as const)('contains unreadable rec
     }
     if (name === 'knowledge.folders.list') return { ok: true, result: { items: [], page: 1, size: 20, total: 0 } }
     writes.push({ method: name, payload: input })
-    return { ok: true, result: { id: 'created', name: 'Retained draft', parentId: null, updatedAt: '2026-10-20T00:00:00Z' } }
+    return { ok: true, result: { id: 'created', name: 'Retained draft', parentId: null, updatedAt: '2026-10-20T00:00:00Z',
+      ...(kind === 'markdown' || kind === 'url' ? savedDocumentMetadata : {}) } }
   } } })
   const storage = vi.spyOn(window, 'sessionStorage', 'get').mockImplementation(() => { throw new DOMException('Storage blocked', 'SecurityError') })
   try {
@@ -152,7 +197,7 @@ it.each(['markdown', 'url', 'base', 'folder'] as const)('retries the original %s
     writes.push(payload)
     const key = String(payload.operationId)
     if (!committed.has(key)) committed.set(key, { ...payload, id: `created-${committed.size + 1}`, name: payload.name ?? payload.title,
-      updatedAt: '2026-10-17T00:00:00Z' })
+      updatedAt: '2026-10-17T00:00:00Z', ...(kind === 'markdown' || kind === 'url' ? savedDocumentMetadata : {}) })
     if (writes.length === 1) return { ok: false, failure: productFailure(new ProductError('PRODUCT_NETWORK_UNAVAILABLE', 'Receipt lost', true)) }
     return { ok: true, result: committed.get(key) }
   } } })
@@ -272,7 +317,8 @@ it.each(['markdown', 'url', 'base', 'folder'] as const)('suspends and restores t
     await gate
     return writes.length === 1
       ? { ok: false, failure: productFailure(new ProductError('IDEMPOTENCY_OPERATION_UNKNOWN', 'Unknown external outcome')) }
-      : { ok: true, result: { ...payload, id: 'created', name: payload.name ?? payload.title, updatedAt: '2026-10-17T00:00:00Z' } }
+      : { ok: true, result: { ...payload, id: 'created', name: payload.name ?? payload.title, updatedAt: '2026-10-17T00:00:00Z',
+        ...(kind === 'markdown' || kind === 'url' ? savedDocumentMetadata : {}) } }
   } } })
   const closed = vi.fn()
   const saved = vi.fn()

@@ -22,6 +22,15 @@ interface KnowledgeEditorProps {
   readonly t: (key: DeepSeekHarnessProductKey) => string
 }
 
+function editorDocument(value: unknown, knowledgeBaseId: string, documentId?: string): KnowledgeDocument {
+  const document = knowledgeDocument(value)
+  if (document.id.trim() === '' || document.filename.trim() === '' || document.updatedAt.trim() === ''
+    || document.knowledgeBaseId !== knowledgeBaseId || documentId !== undefined && document.id !== documentId) {
+    throw new Error('Knowledge editor document does not match the requested resource')
+  }
+  return document
+}
+
 /** Restore suspended writes before allowing another save at the same entry.
  * @param props Current library, editor action, and commit callback.
  * @returns An employee-scoped editor or a visible recovery failure.
@@ -91,12 +100,13 @@ function KnowledgeEditorForm({ knowledgeBaseId, target, onClose, onSaved, t, res
   }, [])
   useEffect(() => {
     if (target.kind !== 'markdown' || !target.document || operation.current.save) return
+    const documentId = target.document.id
     const controller = new AbortController()
     setLoading(true); setError('')
-    void request('knowledge.documents.get', { knowledgeBaseId, documentId: target.document.id }, controller.signal)
+    void request('knowledge.documents.get', { knowledgeBaseId, documentId }, controller.signal)
       .then((value) => {
         if (controller.signal.aborted) return
-        const document = knowledgeDocument(value)
+        const document = editorDocument(value, knowledgeBaseId, documentId)
         if (document.sourceType !== 'manual' || document.canManage !== true || document.manualContent === undefined) throw new Error('Document is not editable')
         const loadedTitle = document.filename.replace(/\.md$/iu, '')
         baseline.current = { title: loadedTitle, content: document.manualContent, url: '', parentId: null }
@@ -128,14 +138,14 @@ function KnowledgeEditorForm({ knowledgeBaseId, target, onClose, onSaved, t, res
       const saved = await request(saveRequest.method, saveRequest.payload, controller.signal)
       if (controller.signal.aborted) return
       let folder: KnowledgeFolder | undefined
-      if (target.kind === 'folder') {
-        try {
+      try {
+        if (target.kind === 'folder') {
           folder = knowledgeFolder(saved)
           if (folder.id.trim() === '' || folder.name.trim() === '' || folder.updatedAt.trim() === ''
             || target.folder && folder.id !== target.folder.id) throw new Error('Invalid folder save receipt')
-        } catch (_error) {
-          throw new ProductError('IDEMPOTENCY_OPERATION_UNKNOWN', 'Folder save receipt is invalid', true)
-        }
+        } else editorDocument(saved, knowledgeBaseId, target.kind === 'markdown' ? target.document?.id : undefined)
+      } catch (_error) {
+        throw new ProductError('IDEMPOTENCY_OPERATION_UNKNOWN', 'Knowledge save receipt is invalid', true)
       }
       recovery.clear()
       if (folder) onSaved(folder)
@@ -155,9 +165,9 @@ function KnowledgeEditorForm({ knowledgeBaseId, target, onClose, onSaved, t, res
     const controller = operation.current.controller
     setLoading(true); setError(''); setLatest(undefined)
     try {
-      const document = knowledgeDocument(await request('knowledge.documents.get', {
+      const document = editorDocument(await request('knowledge.documents.get', {
         knowledgeBaseId, documentId: metadata.id,
-      }, controller.signal))
+      }, controller.signal), knowledgeBaseId, metadata.id)
       controller.signal.throwIfAborted()
       if (document.sourceType !== 'manual' || document.canManage !== true || document.manualContent === undefined) {
         throw new ProductError('KNOWLEDGE_MANAGEMENT_FORBIDDEN', 'Document is not editable')

@@ -7,6 +7,65 @@ import { zh } from '../src/locales.ts'
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
+it.each(['id', 'knowledgeBaseId'] as const)('does not load another document when its %s differs from the edit target', async (field) => {
+  const original = { id: 'document', knowledgeBaseId: 'personal', filename: 'Notes.md', mediaType: 'text/markdown',
+    sizeBytes: 10, status: 'READY', chunkCount: 1, updatedAt: '2026-10-20T00:00:00Z', sourceType: 'manual', canManage: true }
+  const wrong = { ...original, [field]: 'another-resource', manualContent: 'Other document contents' }
+  const writes: unknown[] = []
+  let matched = false
+  vi.stubGlobal('dshDesktop', { extensions: { cancel: vi.fn(), invoke: async (_namespace: string, method: string, payload: unknown) => {
+    if (method === 'knowledge.documents.get') return { ok: true, result: matched ? { ...original, manualContent: 'Target contents' } : wrong }
+    writes.push(payload)
+    return { ok: true, result: original }
+  } } })
+  render(<KnowledgeEditor knowledgeBaseId="personal" target={{ kind: 'markdown', document: original }} onClose={vi.fn()} onSaved={vi.fn()} t={key => zh[key]} />)
+  await screen.findByRole('alert')
+  expect(screen.queryByDisplayValue(wrong.manualContent)).toBeNull()
+  expect(screen.getByRole<HTMLButtonElement>('button', { name: zh.knowledgeSave }).disabled).toBe(true)
+  fireEvent.click(screen.getByRole('button', { name: zh.knowledgeSave }))
+  expect(writes).toEqual([])
+  matched = true
+  fireEvent.click(screen.getByRole('button', { name: zh.retry }))
+  await screen.findByDisplayValue('Target contents')
+  expect(screen.getByRole<HTMLButtonElement>('button', { name: zh.knowledgeSave }).disabled).toBe(false)
+})
+
+it.each(['id', 'knowledgeBaseId'] as const)('preserves a conflicting draft when the latest read returns another %s', async (field) => {
+  const original = { id: 'document', knowledgeBaseId: 'personal', filename: 'Notes.md', mediaType: 'text/markdown',
+    sizeBytes: 10, status: 'READY', chunkCount: 1, updatedAt: '2026-10-20T00:00:00Z', sourceType: 'manual', canManage: true, manualContent: 'Original contents' }
+  const latest = { ...original, updatedAt: '2026-10-20T00:01:00Z', manualContent: 'Target latest contents' }
+  const writes: Record<string, unknown>[] = []
+  let reads = 0
+  let matched = false
+  const saved = vi.fn()
+  vi.stubGlobal('dshDesktop', { extensions: { cancel: vi.fn(), invoke: async (_namespace: string, method: string, payload: Record<string, unknown>) => {
+    if (method === 'knowledge.documents.get') return { ok: true, result: ++reads === 1 ? original : matched ? latest
+      : { ...latest, [field]: 'another-resource', manualContent: 'Other document contents' } }
+    writes.push(payload)
+    return writes.length === 1 ? { ok: false, failure: productFailure(new ProductError('KNOWLEDGE_DOCUMENT_CONFLICT', 'Conflict')) }
+      : { ok: true, result: latest }
+  } } })
+  render(<KnowledgeEditor knowledgeBaseId="personal" target={{ kind: 'markdown', document: original }} onClose={vi.fn()} onSaved={saved} t={key => zh[key]} />)
+  const content = await screen.findByDisplayValue('Original contents')
+  fireEvent.change(content, { target: { value: 'My draft' } })
+  fireEvent.click(screen.getByRole('button', { name: zh.knowledgeSave }))
+  await screen.findByRole('alert')
+  fireEvent.click(screen.getByRole('button', { name: zh.knowledgeReadLatest }))
+  await screen.findByText(zh.knowledgeReadFailed)
+  expect(screen.queryByDisplayValue('Other document contents')).toBeNull()
+  expect(screen.queryByRole('button', { name: zh.knowledgeContinueDraft })).toBeNull()
+  expect(screen.getByDisplayValue('My draft')).toBe(content)
+  expect(screen.getByRole<HTMLButtonElement>('button', { name: zh.knowledgeSave }).disabled).toBe(true)
+  expect(writes).toHaveLength(1)
+  if (field === 'id') expect(screen.getByRole('dialog').textContent).toMatchSnapshot()
+  matched = true
+  fireEvent.click(screen.getByRole('button', { name: zh.knowledgeReadLatest }))
+  fireEvent.click(await screen.findByRole('button', { name: zh.knowledgeContinueDraft }))
+  fireEvent.click(screen.getByRole('button', { name: zh.knowledgeSave }))
+  await vi.waitFor(() => { expect(saved).toHaveBeenCalledOnce() })
+  expect(writes[1]).toMatchObject({ knowledgeBaseId: 'personal', documentId: original.id, expectedUpdatedAt: latest.updatedAt, content: 'My draft' })
+})
+
 it('pins the read folder version and retry identity and retains the name on conflict', async () => {
   const folder = { id: 'folder', name: '原名称', parentId: null, updatedAt: '2026-10-17T00:00:00Z' }
   const writes: Record<string, unknown>[] = []
