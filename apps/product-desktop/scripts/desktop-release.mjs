@@ -200,7 +200,8 @@ export async function waitForDesktopBuild({ request, repository, commit, deliver
 }
 
 /**
- * Stage both destinations before making complete releases visible; retries never replace mismatched assets.
+ * Stage both destinations before making complete releases visible; recoverAsset may discard only an incomplete draft upload,
+ * never a complete asset with different contents.
  * @param {object} release Verified release identity and files.
  * @param {object[]} destinations Platform-specific release adapters.
  * @returns {Promise<string[]>} Published download links.
@@ -229,6 +230,7 @@ export async function publishDesktopRelease(release, destinations) {
     if (!remote.draft && assets.length !== expected.size) throw new Error(`Published release is incomplete at ${destination.name}`)
     for (const file of release.files) {
       let asset = assets.find(item => item.name === file.name)
+      if (asset) asset = await destination.recoverAsset(remote, asset)
       for (let attempt = 0; !asset && attempt < 3; attempt++) {
         try { asset = await destination.upload(remote.id, file) }
         catch (error) {
@@ -237,7 +239,9 @@ export async function publishDesktopRelease(release, destinations) {
           asset = assets.find(item => item.name === file.name)
           if (!asset && attempt === 2) throw error
         }
+        if (asset) asset = await destination.recoverAsset(remote, asset)
       }
+      if (!asset) throw new Error(`Release upload remained incomplete at ${destination.name}: ${file.name}`)
       if (asset.size !== file.size || await destination.hash(asset) !== file.sha256) {
         throw new Error(`Remote asset checksum mismatch at ${destination.name}: ${file.name}`)
       }

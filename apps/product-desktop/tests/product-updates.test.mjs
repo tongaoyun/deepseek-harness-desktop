@@ -159,7 +159,8 @@ test('a signed release cannot move the update feed backwards or publish before b
         operations.push(`${name}:create`)
         remote = { id: name, tag_name: release.tag, prerelease: false, draft: true, body: release.body, html_url: name }
         return remote
-      }, assets: async () => assets, upload: async (id, file) => { assets.push(file); return file },
+      }, assets: async () => assets, recoverAsset: async (_remote, asset) => asset,
+      upload: async (id, file) => { assets.push(file); return file },
       hash: async asset => badHash ? 'bad' : asset.sha256,
       finalize: async () => { operations.push(`${name}:finalize`); remote.draft = false } }
   }
