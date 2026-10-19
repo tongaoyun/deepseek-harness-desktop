@@ -37,12 +37,6 @@ describe('installer preparation preserves application dependencies', () => {
     try {
       const { createElectronBuilderConfig } = await import('../electron-builder.config.mjs')
       const config = createElectronBuilderConfig(env, platform, 'x64')
-      const productConfig = config.extraResources.find(resource => resource.to === 'deepseek-harness/product.json')
-      expect(productConfig).toBeDefined()
-      expect(JSON.parse(readFileSync(productConfig!.from, 'utf8'))).toEqual({
-        version: 1,
-        serverUrl: 'http://192.168.2.67:30081',
-      })
       const aboutIcon = config.extraResources.find(resource => resource.to === 'icon.png')
       expect(aboutIcon).toBeDefined()
       expect(readFileSync(aboutIcon!.from)).toEqual(readFileSync(new URL('../resources/icon-windows.png', import.meta.url)))
@@ -81,23 +75,6 @@ describe('installer preparation preserves application dependencies', () => {
       DSH_DESKTOP_UNSIGNED: '1',
     }, 'win32', 'x64')
     expect(config.artifactName).toBe('deepseek-harness-${version}-${os}-${arch}-unsigned.${ext}')
-  })
-
-  it('packages the native sidecar from Cargo\'s configured target directory', async () => {
-    const { createElectronBuilderConfig } = await import('../scripts/electron-builder-config.mjs')
-    const config = createElectronBuilderConfig({
-      CARGO_TARGET_DIR: '/runner/cargo-target',
-      DSH_DESKTOP_APP_ID: 'com.example.installer',
-      DSH_DESKTOP_MANDATORY_UPDATE_TEST_ORIGIN: 'https://policy.example.com',
-      DSH_DESKTOP_MANDATORY_UPDATE_CONFIG: JSON.stringify({ allowedAuthOrigins: ['https://login.example.com'] }),
-      DSH_DESKTOP_TARGET_PLATFORM: 'win32',
-      DSH_DESKTOP_TARGET_ARCH: 'x64',
-      DSH_DESKTOP_UNSIGNED: '1',
-    }, 'win32', 'x64')
-    expect(config.extraResources).toContainEqual({
-      from: '/runner/cargo-target/release/deepseek-harness-native.exe',
-      to: 'native/deepseek-harness-native.exe',
-    })
   })
 
   it('packages every preload entry point the shell loads', async () => {

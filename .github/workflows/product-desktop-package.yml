@@ -116,7 +116,7 @@ jobs:
       - name: Test product source synchronization
         run: node --test apps/product-desktop/tests/github-delivery.test.mjs
       - name: Test native product update publication
-        run: node --test apps/product-desktop/tests/product-updates.test.mjs apps/product-desktop/tests/internal-updates.test.mjs
+        run: node --test apps/product-desktop/tests/product-updates.test.mjs apps/product-desktop/tests/internal-updates.test.mjs apps/product-desktop/tests/native-update-integrity.test.mjs apps/product-desktop/tests/packaging-assembly.test.mjs
       - name: Test native update confirmation and configuration
         run: >-
           pnpm exec vitest run
@@ -212,6 +212,7 @@ jobs:
             .artifacts/desktop-ui-${{ matrix.target }}.json
             .artifacts/desktop-installed-${{ matrix.target }}.json
             .artifacts/native-macos-update-*.json
+            .artifacts/native-windows-update-*.json
             .artifacts/deepseek-harness-catalog/electron-*.png
             .artifacts/deepseek-harness-catalog/electron-*-startup.txt
           if-no-files-found: warn

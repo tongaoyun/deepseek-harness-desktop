@@ -1,25 +1,42 @@
-/** Real product application qualification through Squirrel.Mac; only identity and network services use fixtures. */
+/** Real product application qualification through Squirrel.Mac or the production NSIS installer; only identity and network services use fixtures. */
 import assert from 'node:assert/strict'
 import { execFile } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
 import { createReadStream, statSync } from 'node:fs'
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { cp, mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { createRequire } from 'node:module'
-import { dirname, join, posix, resolve } from 'node:path'
+import { homedir } from 'node:os'
+import { basename, dirname, join, posix, resolve } from 'node:path'
 import { Readable } from 'node:stream'
+import { finished } from 'node:stream/promises'
 import { promisify } from 'node:util'
 import { chromium } from 'playwright'
 import { expect } from 'vitest'
 import { verifyRuntimeArchive } from '../../desktop/scripts/verify-runtime-archive.ts'
-import { signInternalApplication, verifyInternalApplication } from '../scripts/internal-package.mjs'
+import { createElectronBuilderConfig } from '../../desktop/scripts/electron-builder-config.mjs'
+import { rewriteWindowsArchiveIntegrity } from './native-update-integrity.mjs'
+import { stopInstalledProcesses } from '../scripts/installed-processes.mjs'
+import { INTERNAL_APP_ID, signInternalApplication, verifyInternalApplication } from '../scripts/internal-package.mjs'
 
 const run = promisify(execFile)
 const require = createRequire(new URL('../../desktop/package.json', import.meta.url))
 const builder = createRequire(require.resolve('electron-builder'))
-const asar = createRequire(builder.resolve('app-builder-lib'))('@electron/asar')
+const packager = createRequire(builder.resolve('app-builder-lib'))
+const asar = packager('@electron/asar')
+const windows = process.platform === 'win32'
 
 async function descendants(parent) {
+  if (windows) {
+    const result = await run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
+      'Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,CommandLine | ConvertTo-Json -Compress'],
+    { timeout: 20_000, windowsHide: true })
+    const rows = JSON.parse(result.stdout).map(row => ({ pid: row.ProcessId, parent: row.ParentProcessId, command: row.CommandLine ?? '' }))
+    const children = []
+    const pending = [parent]
+    for (const pid of pending) for (const row of rows) if (row.parent === pid) { children.push(row); pending.push(row.pid) }
+    return children
+  }
   const rows = (await run('/bin/ps', ['-axo', 'pid=,ppid=,command='])).stdout.trim().split('\n')
     .map(line => /^\s*(\d+)\s+(\d+)\s+(.+)$/u.exec(line))
     .filter(Boolean).map(row => ({ pid: Number(row[1]), parent: Number(row[2]), command: row[3] }))
@@ -46,7 +63,7 @@ async function dialogWithButton(application, name, timeout = 120_000) {
 }
 
 async function rewriteApplication(appPath, version, bootstrap) {
-  const resources = join(appPath, 'Contents/Resources')
+  const resources = join(appPath, windows ? 'resources' : 'Contents/Resources')
   const archive = join(resources, 'app.asar')
   const original = asar.getRawHeader(archive).header
   const manifest = JSON.parse(asar.extractFile(archive, 'package.json'))
@@ -77,13 +94,19 @@ async function rewriteApplication(appPath, version, bootstrap) {
   streams.push({ path: 'internal-update-qualification.mjs', type: 'file', unpacked: false,
     stat: { mode: 0o644, size: boot.length }, streamGenerator: () => Readable.from([boot]) })
   const next = join(resources, 'qualified.asar')
-  await asar.createPackageFromStreams(next, streams)
+  const writer = await asar.createPackageFromStreams(next, streams)
+  await finished(writer)
   asar.uncache(archive)
   await rm(archive)
   await rm(archive + '.unpacked', { recursive: true, force: true })
   await rename(next, archive)
   await rename(next + '.unpacked', archive + '.unpacked')
   await verifyRuntimeArchive(archive, JSON.parse(asar.extractFile(archive, 'dsh/desktop-runtime.json')))
+  if (windows) {
+    await rewriteWindowsArchiveIntegrity(join(appPath, 'DeepSeek Harness.exe'),
+      createHash('sha256').update(asar.getRawHeader(archive).headerString).digest('hex'))
+    return
+  }
   const plist = join(appPath, 'Contents/Info.plist')
   const info = JSON.parse((await run('plutil', ['-convert', 'json', '-o', '-', plist])).stdout)
   const integrity = info.ElectronAsarIntegrity
@@ -95,18 +118,19 @@ async function rewriteApplication(appPath, version, bootstrap) {
 
 /**
  * Prepare two private copies of the actual product, preserving all original files except qualification bootstrap and versions.
- * @param {object} options Private installation, fixture services, data paths and imported fixed certificate.
+ * @param {object} options Private installation, fixture services, data paths and platform signing settings.
  * @returns {Promise<object>} UI upgrade operation and owned fixture cleanup.
  */
-export async function prepareNativeMacUpdate(options) {
+export async function prepareNativeProductUpdate(options) {
   const { installed, root, home, userData, modelUrl, token, environment } = options
-  const appPath = resolve(dirname(installed), '../..')
+  const appPath = windows ? dirname(installed) : resolve(dirname(installed), '../..')
   const directory = join(root, 'native-update')
   await mkdir(directory)
-  const nextApp = join(directory, 'next', 'DeepSeek Harness.app')
+  const nextApp = join(directory, 'next', windows ? 'DeepSeek Harness' : 'DeepSeek Harness.app')
   await mkdir(dirname(nextApp))
-  await run('/bin/cp', ['-cR', appPath, nextApp])
-  const current = JSON.parse(asar.extractFile(join(appPath, 'Contents/Resources/app.asar'), 'package.json'))
+  if (windows) await cp(appPath, nextApp, { recursive: true })
+  else await run('/bin/cp', ['-cR', appPath, nextApp])
+  const current = JSON.parse(asar.extractFile(join(appPath, windows ? 'resources/app.asar' : 'Contents/Resources/app.asar'), 'package.json'))
   const version = current.version
   assert.equal(version, environment.PACKAGE_VERSION, 'Installed update payload must match the requested build version')
   const initialVersion = version.replace(/\.\d{8}\.\d+\.\d+$/u, '.20000101.1.1')
@@ -123,11 +147,12 @@ process.env.DSH_TELEMETRY_DISABLED = '1'
 app.setPath('userData', ${JSON.stringify(userData)})
 app.commandLine.appendSwitch('use-mock-keychain')
 app.commandLine.appendSwitch('remote-debugging-port', '0')
+app.on('browser-window-created', (_event, window) => window.setFocusable(false))
 const watcher = watch(${JSON.stringify(directory)}, (event, file) => { if (file === 'stop') app.quit() })
 app.on('will-quit', () => watcher.close())
 app.whenReady().then(() => writeFileSync(${JSON.stringify(directory)} + '/boot-' + app.getVersion() + '.json', JSON.stringify({pid:process.pid,version:app.getVersion()})))
 `
-  const zipName = `update-${process.arch}.zip`
+  const zipName = `update-${process.arch}.${windows ? 'exe' : 'zip'}`
   const zip = join(directory, zipName)
   let metadata
   let browser
@@ -137,28 +162,51 @@ app.whenReady().then(() => writeFileSync(${JSON.stringify(directory)} + '/boot-'
   const server = createServer((request, response) => {
     const path = new URL(request.url, 'http://localhost').pathname
     requests.push(path)
-    if (path === '/nightly-mac.yml' && metadata) { response.end(JSON.stringify(metadata)); return }
+    if (path === (windows ? '/nightly.yml' : '/nightly-mac.yml') && metadata) { response.end(JSON.stringify(metadata)); return }
     if (path === '/' + zipName) { createReadStream(zip).pipe(response); return }
     response.writeHead(404).end()
   })
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
   const origin = `http://127.0.0.1:${server.address().port}/`
+  let cache
   try {
+    console.log('Native product update: preparing private versions and integrity records')
+    cache = await mkdtemp(join(windows ? environment.LOCALAPPDATA ?? join(homedir(), 'AppData/Local') : join(homedir(), 'Library/Caches'), 'harness-qualification-'))
     for (const [application, selected] of [[appPath, initialVersion], [nextApp, version]]) {
       await rewriteApplication(application, selected, bootstrap)
-      await writeFile(join(application, 'Contents/Resources/app-update.yml'), JSON.stringify({
-        provider: 'generic', url: origin, channel: 'nightly', updaterCacheDirName: `harness-qualification-${randomUUID()}`,
+      await writeFile(join(application, windows ? 'resources/app-update.yml' : 'Contents/Resources/app-update.yml'), JSON.stringify({
+        provider: 'generic', url: origin, channel: 'nightly', updaterCacheDirName: basename(cache),
       }))
-      await signInternalApplication(application, environment)
+      if (!windows) await signInternalApplication(application, environment)
     }
-    await run('/usr/bin/ditto', ['-c', '-k', '--zlibCompressionLevel', '1', '--sequesterRsrc', '--keepParent', nextApp, zip], { timeout: 120_000 })
+    if (windows) {
+      console.log('Native product update: packaging the next version with the production NSIS installer')
+      const { build, Platform, Arch } = require('electron-builder')
+      const project = join(directory, 'packaging')
+      await mkdir(project)
+      await writeFile(join(project, 'package.json'), JSON.stringify({ ...current, version }))
+      const config = createElectronBuilderConfig({ ...environment, DSH_DESKTOP_UNSIGNED: '1',
+        DSH_DESKTOP_BUILD_VERSION: version, DSH_DESKTOP_APP_ID: INTERNAL_APP_ID }, 'win32', 'x64')
+      // Use the shipped directory-staging NSIS adapter, resources and install identity for an already assembled product.
+      await build({ projectDir: project, prepackaged: nextApp, targets: Platform.WINDOWS.createTarget('nsis', Arch.x64), publish: 'never',
+        config: { appId: INTERNAL_APP_ID, productName: config.productName, electronVersion: require('electron/package.json').version,
+          directories: { output: directory }, artifactName: zipName, nsis: config.nsis,
+          win: { ...config.win, signAndEditExecutable: false }, compression: 'normal',
+          detectUpdateChannel: false, publish: [{ provider: 'generic', url: origin, channel: 'nightly' }] } })
+    } else {
+      console.log('Native product update: archiving the signed next version')
+      await run('/usr/bin/ditto', ['-c', '-k', '--zlibCompressionLevel', '1', '--sequesterRsrc', '--keepParent', nextApp, zip], { timeout: 120_000 })
+    }
     const hash = createHash('sha512')
     let size = 0
     for await (const chunk of createReadStream(zip)) { hash.update(chunk); size += chunk.length }
-    metadata = { version, files: [{ url: zipName, sha512: hash.digest('base64'), size }] }
+    const sha512 = hash.digest('base64')
+    metadata = { version, path: zipName, sha512, files: [{ url: zipName, sha512, size }] }
+    console.log('Native product update: private update feed is ready')
   } catch (error) {
     server.closeAllConnections()
     await new Promise(resolve => server.close(resolve))
+    if (cache) await rm(cache, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
     throw error
   }
   const alive = pid => { try { process.kill(pid, 0); return true } catch (error) { if (error.code === 'ESRCH') return false; throw error } }
@@ -196,8 +244,8 @@ app.whenReady().then(() => writeFileSync(${JSON.stringify(directory)} + '/boot-'
       const oldPid = application.process().pid
       initialPid = oldPid
       const previousChildren = await descendants(oldPid)
-      const host = previousChildren.find(child => child.command.includes('/dsh-desktop-host/'))
-      const sidecar = previousChildren.find(child => child.command.includes('/deepseek-harness-native'))
+      const host = previousChildren.find(child => child.command.replaceAll('\\', '/').includes('/dsh-desktop-host/'))
+      const sidecar = previousChildren.find(child => child.command.replaceAll('\\', '/').includes('/deepseek-harness-native'))
       assert.ok(host, 'Product Host must be running before update')
       assert.ok(sidecar, 'Product native sidecar must be running before update')
       const exited = new Promise(resolve => application.process().once('exit', resolve))
@@ -221,12 +269,15 @@ app.whenReady().then(() => writeFileSync(${JSON.stringify(directory)} + '/boot-'
       assert.ok(updated)
       await expect.poll(() => updated.locator('[data-conversation-session]').last().getAttribute('data-conversation-session'), { timeout: 60_000 }).toBe(session)
       await expect.poll(() => updated.locator('[data-composer-input][contenteditable="true"]').last().textContent()).toBe(draft)
-      await verifyInternalApplication(appPath, environment)
+      const updatedArchive = join(appPath, windows ? 'resources/app.asar' : 'Contents/Resources/app.asar')
+      asar.uncache(updatedArchive)
+      assert.equal(JSON.parse(asar.extractFile(updatedArchive, 'package.json')).version, version)
+      if (!windows) await verifyInternalApplication(appPath, environment)
       assert.ok(requests.includes('/' + zipName))
       const evidence = resolve(import.meta.dirname, '../../../.artifacts')
       await mkdir(evidence, { recursive: true })
-      await writeFile(join(evidence, `native-macos-update-${process.arch}.json`), JSON.stringify({ passed: true, from: initialVersion, to: version,
-        nativeInstaller: 'Squirrel.Mac', deferredRestartRetainedVersion: true, sessionAndDraftRetained: true,
+      await writeFile(join(evidence, `native-${windows ? 'windows' : 'macos'}-update-${process.arch}.json`), JSON.stringify({ passed: true, from: initialVersion, to: version,
+        nativeInstaller: windows ? 'NSIS' : 'Squirrel.Mac', deferredRestartRetainedVersion: true, sessionAndDraftRetained: true,
         oldProcessExited: true, hostExited: host.pid, sidecarExited: sidecar.pid,
         oldChildProcessesExited: previousChildren.map(child => child.pid) }) + '\n')
       console.log('Native product update passed:', initialVersion, '→', version)
@@ -245,6 +296,7 @@ app.whenReady().then(() => writeFileSync(${JSON.stringify(directory)} + '/boot-'
           await writeFile(stop, '')
           try { await expect.poll(() => running.filter(alive), { timeout: 20_000 }).toEqual([]) }
           finally {
+            if (windows) stopInstalledProcesses(appPath)
             for (const pid of [...owned.map(child => child.pid).reverse(), ...running]) {
               if (alive(pid)) process.kill(pid, 'SIGKILL')
             }
@@ -255,6 +307,7 @@ app.whenReady().then(() => writeFileSync(${JSON.stringify(directory)} + '/boot-'
       } finally {
         server.closeAllConnections()
         await new Promise(resolve => server.close(resolve))
+        await rm(cache, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
       }
     },
   }

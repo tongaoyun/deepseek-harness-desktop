@@ -26,7 +26,7 @@ import { SESSION_FORMAT_VERSION, Session, SessionId } from '@deepseek-ai/dsh-ses
 import { pdfFixture } from '../../../packages/client/ui-sidebar-documentpreview/tests/pdf-fixture.ts'
 import { realOfficeBytes } from './office-fixture.ts'
 import { closeElectronAcceptance } from '../../product-desktop/scripts/close-electron.mjs'
-import { prepareNativeMacUpdate, type NativeMacUpdateQualification } from '../../product-desktop/tests/native-macos-update.mjs'
+import { prepareNativeProductUpdate, type NativeProductUpdateQualification } from '../../product-desktop/tests/native-product-update.mjs'
 
 const packageDir = join(REPO_ROOT, 'packages/extensions/ui-deepseek-harness-product')
 const expectedDir = fileURLToPath(new URL('./expected/deepseek-harness-catalog', import.meta.url))
@@ -1660,7 +1660,7 @@ for (const { mode, installed, surface } of desktopCarriers) {
       if (address === null || typeof address === 'string') throw new Error('Fixture server has no port')
       const origin = `http://127.0.0.1:${address.port}`
       let app: ElectronApplication | undefined = undefined
-      let nativeUpdate: NativeMacUpdateQualification | undefined
+      let nativeUpdate: NativeProductUpdateQualification | undefined
       onTestFinished(async () => {
         const closing = app
         app = undefined
@@ -1689,8 +1689,8 @@ for (const { mode, installed, surface } of desktopCarriers) {
         const original = await readFile(configPath, 'utf8')
         onTestFinished(() => writeFile(configPath, original))
         await writeFile(configPath, JSON.stringify({ ...JSON.parse(original), serverUrl: origin }))
-        if (process.platform === 'darwin' && process.env.PACKAGE_SIGNING === 'internal') {
-          nativeUpdate = await prepareNativeMacUpdate({ installed, root, home, userData,
+        if (['darwin', 'win32'].includes(process.platform) && process.env.PACKAGE_SIGNING === 'internal') {
+          nativeUpdate = await prepareNativeProductUpdate({ installed, root, home, userData,
             modelUrl: model.baseURL + '/v1', token: secret, environment: process.env })
           onTestFinished(() => nativeUpdate!.dispose())
         }
@@ -1759,6 +1759,10 @@ for (const { mode, installed, surface } of desktopCarriers) {
           },
         }, timeout: 60_000 }
       app = await _electron.launch(launchOptions)
+      if (nativeUpdate !== undefined) {
+        await app.firstWindow()
+        expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().every(window => !window.isFocusable()))).toBe(true)
+      }
       expect(await app.evaluate(({ app }) => app.isPackaged)).toBe(installed !== undefined)
       const applicationVersion = await app.evaluate(({ app }) => app.getVersion())
       if (installed !== undefined) {
