@@ -297,6 +297,8 @@ test('uses native hosted development runners or explicitly configured signing ma
   assert.match(ui.run, /boots the built \.\* Electron assembly/u)
   const evidence = steps.find(step => step.name === 'Upload desktop UI evidence')
   assert.equal(evidence.if, 'always()')
+  assert.equal(evidence.with['include-hidden-files'], true)
+  assert.equal(evidence.with['if-no-files-found'], 'error')
   assert.match(evidence.with.path, /desktop-ui-.*\.json/u)
   assert.match(evidence.with.path, /electron-\*\.png/u)
   assert.equal(evidence.with['retention-days'], 14)
