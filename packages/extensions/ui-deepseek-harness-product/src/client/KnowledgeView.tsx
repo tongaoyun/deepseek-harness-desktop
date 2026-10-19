@@ -1,5 +1,5 @@
 /** Library materials and exact-scope retrieval in the product catalog. */
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Button, IconSearchOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsRenderFactories } from '@deepseek-ai/dsh-client-ui-slots'
 import type { DeepSeekHarnessProductKey } from '../locales.ts'
@@ -7,7 +7,7 @@ import css from '../DeepSeekHarnessProduct.module.css'
 import { type ProductDetail, localizedMetadata } from './catalog-shared.tsx'
 import { KnowledgeDocuments } from './KnowledgeDocuments.tsx'
 import { KnowledgeDocumentReader } from './KnowledgeDocumentReader.tsx'
-import { knowledgeSearchResults, useKnowledgeRequests, type KnowledgeSearchResult } from './knowledge-data.ts'
+import { isKnowledgeAccessDenied, knowledgeSearchResults, useKnowledgeRequests, type KnowledgeSearchResult } from './knowledge-data.ts'
 import { productErrorMessage } from './product-errors.ts'
 
 /** Browse materials separately from retrieval without changing a conversation.
@@ -53,8 +53,14 @@ function KnowledgeSearch({ knowledgeBaseId, renderFactorySlot, t }: PropsRenderF
   const [source, setSource] = useState<KnowledgeSearchResult>()
   const operation = useRef<AbortController>()
   useEffect(() => () => { operation.current?.abort() }, [])
+  const readAccessDenied = useCallback((failure: unknown) => {
+    operation.current?.abort()
+    setResults([]); setSource(undefined); setSearched(false); setSearching(false)
+    setError(productErrorMessage(failure, t, 'knowledgeReadFailed'))
+  }, [t])
   const search = async (): Promise<void> => {
     if (query.trim() === '' || searching) return
+    operation.current?.abort()
     const controller = new AbortController()
     operation.current = controller
     setSearching(true); setError(''); setSearched(false); setResults([]); setSource(undefined)
@@ -64,7 +70,10 @@ function KnowledgeSearch({ knowledgeBaseId, renderFactorySlot, t }: PropsRenderF
       }, controller.signal)
       if (!controller.signal.aborted) { setResults(knowledgeSearchResults(response)); setSearched(true) }
     } catch (failure) {
-      if (!controller.signal.aborted) setError(productErrorMessage(failure, t, 'searchFailed'))
+      if (!controller.signal.aborted) {
+        if (isKnowledgeAccessDenied(failure)) readAccessDenied(failure)
+        else setError(productErrorMessage(failure, t, 'searchFailed'))
+      }
     } finally { if (!controller.signal.aborted) setSearching(false) }
   }
   return <>
@@ -88,6 +97,6 @@ function KnowledgeSearch({ knowledgeBaseId, renderFactorySlot, t }: PropsRenderF
     {searched && !searching && !error && results.length === 0 && <p className={css.catalogStatus}>{t('noSearchResults')}</p>}
     {source?.sourceId && <KnowledgeDocumentReader sourceId={source.sourceId}
       title={source.filename ?? t('knowledgeSource')} knowledgeBaseId={knowledgeBaseId}
-      renderFactorySlot={renderFactorySlot} onClose={() => { setSource(undefined) }} t={t} />}
+      renderFactorySlot={renderFactorySlot} onAccessDenied={readAccessDenied} onClose={() => { setSource(undefined) }} t={t} />}
   </>
 }
