@@ -97,7 +97,7 @@ PACKAGE_VERSION="$INSTALLER_VERSION" PACKAGE_SIGNING=unsigned pnpm --dir apps/pr
 
 安装后验收需要原生 Windows 或 macOS runner 及其生成的安装包。`PACKAGE_VERSION` 必须为安装包完整版本，`PACKAGE_SIGNING` 为 `unsigned`、`internal` 或 `signed`；打包工作流自动提供这两个值，手动验收需自行设置。使用 `--installer /absolute/path/to/installer.dmg`（或 EXE）可验证已有下载包，无需重新构建。验收使用私有临时目录，结束后清理；不要在 Windows 上与同一产品的其他安装操作同时运行。
 
-Mac 的 `internal` 安装验收会从真实安装包制作两个固定证书签署的隔离版本，仅替换测试启动入口、版本及服务配置；通过实际“检查更新”界面下载，再由 Squirrel.Mac 替换并重启产品。测试检查取消安装、会话与草稿保留、旧 Host 和原生 sidecar 退出，结果写入 `.artifacts/native-macos-update-*.json`。登录与网络服务使用无密钥 fixture，安装器和更新器保持真实；此验收不代表首次下载后的 Gatekeeper 放行。安装验收独立使用八分钟测试、一分钟清理预算，并受十分钟父进程期限约束，阶段日志记录重打包和更新进度。Windows 的 `internal` 安装验收从完整产品制作隔离 A/B 版本，使用生产 NSIS 目录安装器完成同样的真实升级流程；保留 ASAR 完整性校验及运行时清单，结果写入 `.artifacts/native-windows-update-*.json`。
+Mac 的 `internal` 安装验收会从真实安装包制作两个固定证书签署的隔离版本，仅替换测试启动入口、版本及服务配置；通过实际“检查更新”界面下载，再由 Squirrel.Mac 替换并重启产品。测试检查取消安装、会话与草稿保留、旧 Host 和原生 sidecar 退出，结果写入 `.artifacts/native-macos-update-*.json`。登录与网络服务使用无密钥 fixture，安装器和更新器保持真实；测试窗口不接收系统键盘焦点，浏览器自动化通过调试协议操作，避免本机输入法和员工输入混入验收；此验收不代表首次下载后的 Gatekeeper 放行。安装验收独立使用八分钟测试、一分钟清理预算，并受十分钟父进程期限约束，阶段日志记录重打包和更新进度。Windows 的 `internal` 安装验收从完整产品制作隔离 A/B 版本，使用生产 NSIS 目录安装器完成同样的真实升级流程；保留 ASAR 完整性校验及运行时清单，结果写入 `.artifacts/native-windows-update-*.json`。
 
 安装后验收核对应用版本、设备上报和反馈元数据一致。未签名安装版还验证检查更新入口、当前完整版本及窄屏提示；签名版的真实下载和重启安装须另行完成上述 A→B 验收。
 

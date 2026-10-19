@@ -145,6 +145,7 @@ process.env.DSH_TELEMETRY_DISABLED = '1'
 app.setPath('userData', ${JSON.stringify(userData)})
 app.commandLine.appendSwitch('use-mock-keychain')
 app.commandLine.appendSwitch('remote-debugging-port', '0')
+app.on('browser-window-created', (_event, window) => window.setFocusable(false))
 const watcher = watch(${JSON.stringify(directory)}, (event, file) => { if (file === 'stop') app.quit() })
 app.on('will-quit', () => watcher.close())
 app.whenReady().then(() => writeFileSync(${JSON.stringify(directory)} + '/boot-' + app.getVersion() + '.json', JSON.stringify({pid:process.pid,version:app.getVersion()})))

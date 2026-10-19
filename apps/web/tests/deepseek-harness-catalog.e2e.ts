@@ -1759,6 +1759,10 @@ for (const { mode, installed, surface } of desktopCarriers) {
           },
         }, timeout: 60_000 }
       app = await _electron.launch(launchOptions)
+      if (nativeUpdate !== undefined) {
+        await app.firstWindow()
+        expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().every(window => !window.isFocusable()))).toBe(true)
+      }
       expect(await app.evaluate(({ app }) => app.isPackaged)).toBe(installed !== undefined)
       const applicationVersion = await app.evaluate(({ app }) => app.getVersion())
       if (installed !== undefined) {
