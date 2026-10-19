@@ -38,7 +38,7 @@ it('uses the same ordered management menu for personal connectors and hides it f
 
 it('loads a personal connector for modification, preserves masked values, and keeps edits after a failed save', async () => {
   const invoke = vi.fn(async (_namespace: string, method: string) => {
-    if (method === 'extensions.connector.read') return { ok: true, result: { draft: { ...draft, version: '1.0.1', headers: { TOKEN: '' } } } }
+    if (method === 'extensions.connector.read') return { ok: true, result: { draft: { ...draft, version: '1.0.1', headers: { TOKEN: '' } }, configured: true, savePending: false } }
     if (method === 'extensions.connector.update') throw new Error('offline')
     return { ok: true, result: [] }
   })
@@ -60,7 +60,7 @@ it('keeps connector editing unavailable after a failed load and allows retry', a
   const invoke = vi.fn(async (_namespace: string, method: string) => {
     if (method !== 'extensions.connector.read') return { ok: true, result: [] }
     if (fail) throw new Error('offline')
-    return { ok: true, result: { draft: { ...draft, version: '1.0.1' } } }
+    return { ok: true, result: { draft: { ...draft, version: '1.0.1' }, configured: true, savePending: false } }
   })
   vi.stubGlobal('dshDesktop', { extensions: { invoke, cancel: vi.fn() } })
   render(<ConnectorEditor editing={{ id: draft.id, version: '1.0.0' }} onClose={close} onSaved={close} t={t} />)
@@ -85,9 +85,9 @@ it('ignores an abandoned connector load after effect reactivation instead of ove
   vi.stubGlobal('dshDesktop', { extensions: { invoke, cancel } })
   render(<StrictMode><ConnectorEditor editing={{ id: draft.id, version: '1.0.0' }} onClose={close} onSaved={close} t={t} /></StrictMode>)
   expect(reads).toBe(2)
-  await act(async () => { finishCurrent({ ok: true, result: { draft: { ...draft, version: '1.0.1' } } }) })
+  await act(async () => { finishCurrent({ ok: true, result: { draft: { ...draft, version: '1.0.1' }, configured: true, savePending: false } }) })
   fireEvent.change(screen.getByLabelText(zh.mcpServerName), { target: { value: 'My retained edit' } })
-  await act(async () => { finishFirst({ ok: true, result: { draft: { ...draft, name: 'Abandoned result', version: '1.0.1' } } }) })
+  await act(async () => { finishFirst({ ok: true, result: { draft: { ...draft, name: 'Abandoned result', version: '1.0.1' }, configured: true, savePending: false } }) })
   expect(screen.getByLabelText<HTMLInputElement>(zh.mcpServerName).value).toBe('My retained edit')
   const firstRead = invoke.mock.calls.find(call => call[1] === 'extensions.connector.read')
   expect(cancel).toHaveBeenCalledWith('product', firstRead?.[3])
@@ -136,7 +136,10 @@ it('parses standard JSON without accepting ambiguous transports, invalid types o
 })
 
 it('keeps invalid JSON, selects one server, and saves private fields only after explicit save', async () => {
-  const invoke = vi.fn(async (_namespace: string, method: string) => ({ ok: true, result: method === 'connectors.list' ? [] : {} }))
+  const invoke = vi.fn(async (_namespace: string, method: string, payload: unknown) => {
+    const value = method === 'extensions.save' ? ExtensionDraftSchema.parse(payload) : undefined
+    return { ok: true, result: value ? { kind: value.kind, id: value.id, version: value.version, visibility: 'PERSONAL', installed: false } : [] }
+  })
   vi.stubGlobal('dshDesktop', { extensions: { invoke, cancel: vi.fn() } })
   render(<ConnectorEditor onClose={close} onSaved={close} t={t} />)
   expect(screen.queryByText(zh.advancedInformation)).toBeNull()
@@ -174,7 +177,10 @@ it('parses literal complete commands and private variables without dropping quot
 })
 
 it('keeps a complete command after errors, pastes environment values and saves a bounded operation timeout', async () => {
-  const invoke = vi.fn(async (_namespace: string, method: string) => ({ ok: true, result: method === 'connectors.list' ? [] : {} }))
+  const invoke = vi.fn(async (_namespace: string, method: string, payload: unknown) => {
+    const value = method === 'extensions.save' ? ExtensionDraftSchema.parse(payload) : undefined
+    return { ok: true, result: value ? { kind: value.kind, id: value.id, version: value.version, visibility: 'PERSONAL', installed: false } : [] }
+  })
   vi.stubGlobal('dshDesktop', { extensions: { invoke, cancel: vi.fn() } })
   vi.stubGlobal('navigator', { clipboard: { readText: vi.fn(async () => 'API_KEY=device-only\nREGION=cn') } })
   const saved = vi.fn()

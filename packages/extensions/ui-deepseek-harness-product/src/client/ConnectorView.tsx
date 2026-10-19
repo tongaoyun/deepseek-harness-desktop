@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { useEffect, useRef, useState } from 'react'
 import { Button, IconChevronRightOutlineRegular, IconLinkOutlineRegular, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
+import { ConnectorConfigurationSaveResultSchema, ConnectorDeviceConfigurationSchema, type ConnectorDeviceConfigurationSnapshot } from '@deepseek-harness/product/extension-draft'
 import { type DeepSeekHarnessProductKey } from '../locales.ts'
 import css from '../DeepSeekHarnessProduct.module.css'
 import { productApi, type ProductApi } from './product-api.ts'
@@ -145,7 +146,11 @@ export function ConnectorDetail({ product, onCatalogChanged, t }: {
       </div>}
     </section>
     {configuring && <ConnectorDeviceConfiguration product={product} onClose={() => { setConfiguring(false) }}
-      onSaved={async () => { await onCatalogChanged(); if (!lifecycle.current.signal.aborted) setConfiguring(false) }} t={t} />}
+      onSaved={async () => {
+        const signal = lifecycle.current.signal
+        await onCatalogChanged()
+        if (!signal.aborted) setConfiguring(false)
+      }} t={t} />}
     <section className={css.connectorSection}>
       <h2>{t('connectorTools')}</h2>
       {product.tools.length > 0 && <div className={css.toolSummary}>
@@ -170,62 +175,59 @@ export function ConnectorDetail({ product, onCatalogChanged, t }: {
   </>
 }
 
-type DeviceConfiguration = {
-  readonly transport: string
-  readonly url?: string
-  readonly command?: string
-  readonly arguments: readonly string[]
-  readonly headers: readonly string[]
-  readonly environment: readonly string[]
-  readonly configured: boolean
-  readonly timeoutSeconds: number
-}
-
 function ConnectorDeviceConfiguration({ product, onClose, onSaved, t }: {
   readonly product: ProductDetail
   readonly onClose: () => void
   readonly onSaved: () => Promise<void>
   readonly t: (key: DeepSeekHarnessProductKey) => string
 }): ReactNode {
-  const [configuration, setConfiguration] = useState<DeviceConfiguration>()
+  const [configuration, setConfiguration] = useState<ConnectorDeviceConfigurationSnapshot>()
   const [headers, setHeaders] = useState<Record<string, string>>({})
   const [environment, setEnvironment] = useState<Record<string, string>>({})
   const [timeout, setTimeout] = useState(60)
   const [error, setError] = useState<string>()
   const [pending, setPending] = useState(false)
-  const lifecycle = useRef({ closed: false, requests: new Map<string, ProductApi>() })
-  const invoke = async (method: string, input: unknown): Promise<unknown> => {
+  const lifecycle = useRef(new AbortController())
+  const invoke = async (method: string, input: unknown, signal: AbortSignal): Promise<unknown> => {
+    signal.throwIfAborted()
     const api = productApi()
     if (!api) throw new Error('Product transport unavailable')
-    const requestId = nextProductRequestId(); lifecycle.current.requests.set(requestId, api)
-    try { return await api.invoke(method, input, requestId, timeout * 2000 + 60_000) }
-    finally { lifecycle.current.requests.delete(requestId) }
+    const requestId = nextProductRequestId()
+    const cancel = () => { api.cancel(requestId) }
+    signal.addEventListener('abort', cancel, { once: true })
+    try {
+      const value = await api.invoke(method, input, requestId, timeout * 2000 + 60_000)
+      signal.throwIfAborted()
+      return value
+    } finally { signal.removeEventListener('abort', cancel) }
   }
-  const load = async (): Promise<void> => {
+  const load = async (signal = lifecycle.current.signal): Promise<void> => {
     setError(undefined)
     try {
-      const value = await invoke('extensions.connector.configuration.read', { id: product.id, version: product.version }) as DeviceConfiguration
-      if (!lifecycle.current.closed) { setConfiguration(value); setTimeout(value.timeoutSeconds) }
-    } catch (error) { if (!lifecycle.current.closed) setError(productErrorMessage(error, t, 'loadFailed')) }
+      const value = ConnectorDeviceConfigurationSchema.parse(await invoke('extensions.connector.configuration.read',
+        { id: product.id, version: product.version }, signal))
+      if (value.id !== product.id || value.version !== product.version) throw new Error(t('loadFailed'))
+      setConfiguration(value); setTimeout(value.timeoutSeconds)
+    } catch (error) { if (!signal.aborted) setError(productErrorMessage(error, t, 'loadFailed')) }
   }
   useEffect(() => {
-    lifecycle.current.closed = false
-    void load()
-    return () => {
-      lifecycle.current.closed = true
-      for (const [id, api] of lifecycle.current.requests) api.cancel(id)
-    }
+    const controller = new AbortController()
+    lifecycle.current = controller
+    void load(controller.signal)
+    return () => { controller.abort() }
   }, [])
   const save = async (): Promise<void> => {
     if (!configuration || pending) return
     if (!Number.isInteger(timeout) || timeout < 1 || timeout > 600) { setError(t('connectorTimeoutInvalid')); return }
+    const signal = lifecycle.current.signal
     setPending(true); setError(undefined)
     try {
-      await invoke('extensions.connector.configuration.save', { id: product.id, version: product.version,
-        configuration: { headers, environment, timeoutSeconds: timeout } })
-      if (!lifecycle.current.closed) await onSaved()
-    } catch (error) { if (!lifecycle.current.closed) setError(productErrorMessage(error, t, 'saveFailed')) }
-    finally { if (!lifecycle.current.closed) setPending(false) }
+      const receipt = ConnectorConfigurationSaveResultSchema.parse(await invoke('extensions.connector.configuration.save',
+        { id: product.id, version: product.version, configuration: { headers, environment, timeoutSeconds: timeout } }, signal))
+      if (receipt.id !== product.id || receipt.version !== product.version) throw new Error(t('saveFailed'))
+      if (!signal.aborted) await onSaved()
+    } catch (error) { if (!signal.aborted) setError(productErrorMessage(error, t, 'saveFailed')) }
+    finally { if (!signal.aborted) setPending(false) }
   }
   const fields = (keys: readonly string[], values: Record<string, string>, set: (values: Record<string, string>) => void,
     label: DeepSeekHarnessProductKey): ReactNode => keys.length > 0 && <section className={css.configurationSection}>
@@ -235,7 +237,7 @@ function ConnectorDeviceConfiguration({ product, onClose, onSaved, t }: {
         placeholder={t(configuration?.configured ? 'privateValueRetained' : 'configurationValue')}
         onChange={(event) => { set({ ...values, [key]: event.currentTarget.value }) }} /></label>)}
   </section>
-  return <Modal open onClose={onClose} title={t('configureDevice')} closeLabel={t('close')}
+  return <Modal open onClose={() => { if (!pending) onClose() }} title={t('configureDevice')} closeLabel={t('close')}
     className={css.connectorDeviceModal as string} contentClassName={css.connectorEditorContent as string}
     footer={<Button variant="primary" disabled={!configuration || pending} onClick={() => { void save() }}>
       {pending ? t('connectingConnector') : t('saveConnector')}</Button>}>
@@ -244,7 +246,7 @@ function ConnectorDeviceConfiguration({ product, onClose, onSaved, t }: {
     {configuration && <div className={`${css.editorForm} ${css.connectorForm}`}>
       <label className={css.editorField}><span>{t(configuration.transport === 'stdio' ? 'connectorExecutable' : 'connectorEndpoint')}</span>
         <input readOnly value={configuration.transport === 'stdio'
-          ? [configuration.command, ...configuration.arguments].join(' ') : configuration.url ?? ''} /></label>
+          ? [configuration.command, ...configuration.arguments].join(' ') : configuration.url} /></label>
       {fields(configuration.headers, headers, setHeaders, 'privateHeaders')}
       {fields(configuration.environment, environment, setEnvironment, 'privateEnvironment')}
       <label className={css.editorField}><span>{t('connectorTimeout')}</span>

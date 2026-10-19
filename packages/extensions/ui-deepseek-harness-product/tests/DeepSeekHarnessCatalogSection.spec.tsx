@@ -1,5 +1,6 @@
 import type { ProductApi } from '../src/client/product-api.ts'
 import { productFailure, ProductError } from '@deepseek-harness/product/errors'
+import { ExtensionDraftSchema } from '@deepseek-harness/product/extension-draft'
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -65,6 +66,27 @@ function castClientContext(value: object): ClientContext {
 }
 
 describe('DeepSeekHarness capability navigation', () => {
+  it('keeps shared connectors visible after saving a personal connector', async () => {
+    const shared = { id: 'shared-mcp', name: 'Shared MCP', version: '1.0.0', visibility: 'COMPANY', canEdit: false }
+    const invoke = vi.fn(async (method: string, payload?: unknown) => {
+      if (method === 'connectors.list') return [shared]
+      const value = ExtensionDraftSchema.parse(payload)
+      return { kind: 'connector', id: value.id, version: value.version, visibility: 'PERSONAL', installed: false }
+    })
+    installProductApi({ invoke })
+    render(<ConnectorsPanel t={t} {...actions()} />)
+    await screen.findByRole('button', { name: shared.name, exact: true })
+    fireEvent.click(screen.getByRole('button', { name: zh.addExtension }))
+    fireEvent.change(screen.getByLabelText(zh.mcpServerName), { target: { value: 'My MCP' } })
+    fireEvent.change(screen.getByLabelText(zh.mcpCommand), { target: { value: 'node server.js' } })
+    fireEvent.click(within(screen.getByRole('dialog', { name: zh.addMcpServer })).getByRole('button', { name: zh.addMcp }))
+    await waitFor(() => { expect(screen.queryByRole('dialog', { name: zh.addMcpServer })).toBeNull() })
+    expect(screen.getByRole('button', { name: shared.name, exact: true })).toBeTruthy()
+    const mine = screen.getByRole('tab', { name: zh.mineExtensions })
+    fireEvent.click(mine)
+    expect(screen.getByRole('tabpanel').getAttribute('aria-labelledby')).toBe(mine.id)
+  })
+
   it('keeps import staging after conversation preparation fails and releases it after a successful retry', async () => {
     const stageId = '00000000-0000-4000-8000-000000000001'
     const invoke = vi.fn(async (method: string) => method === 'extensions.import.inspect'
@@ -151,7 +173,7 @@ describe('DeepSeekHarness capability navigation', () => {
     let fail = true
     const invoke = vi.fn(async (method: string, _payload?: unknown, _requestId?: string) => {
       if (method === 'connectors.list') return [entry]
-      if (method === 'extensions.connector.configuration.read') return { transport: 'streamable-http',
+      if (method === 'extensions.connector.configuration.read') return { id: entry.id, version: entry.version, transport: 'streamable-http',
         url: 'https://mcp.example.test', arguments: [], headers: ['Authorization'], environment: [], configured: false, timeoutSeconds: 60 }
       if (method === 'extensions.connector.configuration.save') {
         if (fail) throw new ProductError('CONNECTOR_DISCOVERY_FAILED', 'Discovery failed', true)

@@ -127,3 +127,23 @@ export const ExtensionSaveResultSchema = z.object({
 })
 /** Result of saving a server-owned immutable extension version. */
 export type ExtensionSaveResult = Readonly<z.infer<typeof ExtensionSaveResultSchema>>
+
+/** Validate masked editing fields returned by the desktop connector manager. */
+export const ConnectorEditorSnapshotSchema = z.object({
+  draft: ExtensionDraftSchema.refine(draft => draft.kind === 'connector'),
+  configured: z.boolean(), savePending: z.boolean(),
+})
+
+const DeviceConfigurationFields = z.object({
+  id, version, arguments: z.array(z.string()), headers: z.array(z.string().min(1)), environment: z.array(z.string().min(1)),
+  configured: z.boolean(), timeoutSeconds: z.number().int().min(1).max(600),
+})
+/** Validate a connector's public connection template without returning private values. */
+export const ConnectorDeviceConfigurationSchema = z.discriminatedUnion('transport', [
+  DeviceConfigurationFields.extend({ transport: z.literal('stdio'), command: z.string().min(1), url: z.undefined().optional() }),
+  DeviceConfigurationFields.extend({ transport: z.literal('streamable-http'), url: z.url({ protocol: /^https?$/ }), command: z.undefined().optional() }),
+])
+/** Public template and local configuration status for a fixed connector version. */
+export type ConnectorDeviceConfigurationSnapshot = Readonly<z.infer<typeof ConnectorDeviceConfigurationSchema>>
+/** Validate confirmation that the selected connector version was configured on this device. */
+export const ConnectorConfigurationSaveResultSchema = z.object({ id, version, configured: z.literal(true) })

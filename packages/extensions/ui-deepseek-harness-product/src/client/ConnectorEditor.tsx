@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
 import { Button, IconCloseOutlineRegular, IconDeliverDocRegular, IconPlusOutlineRegular, Modal, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
-import { ExtensionDraftSchema, type ExtensionDraft } from '@deepseek-harness/product/extension-draft'
+import { ConnectorEditorSnapshotSchema, ExtensionDraftSchema, ExtensionSaveResultSchema, type ExtensionDraft } from '@deepseek-harness/product/extension-draft'
 import type { DeepSeekHarnessProductKey } from '../locales.ts'
 import css from '../DeepSeekHarnessProduct.module.css'
 import { items, nextProductRequestId, type ProductItem } from './catalog-shared.tsx'
@@ -64,8 +64,9 @@ export function ConnectorEditor({ onClose, onSaved, editing, t }: {
     try {
       const value = await invoke('extensions.connector.read', editing, undefined, signal)
       signal.throwIfAborted()
-      const result = value as { draft: unknown; savePending?: boolean }
-      applyJson(ExtensionDraftSchema.parse(result.draft), true)
+      const result = ConnectorEditorSnapshotSchema.parse(value)
+      if (result.draft.id !== editing.id) throw new Error(t('loadFailed'))
+      applyJson(result.draft, true)
       if (result.savePending) setError(t('connectorSavePending'))
       setReady(true)
     } catch (error) { if (!signal.aborted) setError(productErrorMessage(error, t, 'loadFailed')) }
@@ -95,6 +96,7 @@ export function ConnectorEditor({ onClose, onSaved, editing, t }: {
     } catch { setError(t('connectorJsonInvalid')); setParsed([]) }
   }
   const save = async (): Promise<void> => {
+    if (pending || !ready) return
     const signal = lifecycle.current.signal
     setError(undefined)
     let privateValues: { headers: Record<string, string>; environment: Record<string, string> }
@@ -110,8 +112,11 @@ export function ConnectorEditor({ onClose, onSaved, editing, t }: {
     if (!checked.success) { setError(t('connectorFieldsInvalid')); return }
     setPending(true)
     try {
-      await invoke(editing ? 'extensions.connector.update' : 'extensions.save',
-        editing ? { ...editing, draft: checked.data } : checked.data, timeoutSeconds * 2000 + 60_000, signal)
+      const receipt = ExtensionSaveResultSchema.parse(await invoke(editing ? 'extensions.connector.update' : 'extensions.save',
+        editing ? { ...editing, draft: checked.data } : checked.data, timeoutSeconds * 2000 + 60_000, signal))
+      if (receipt.kind !== 'connector' || receipt.id !== checked.data.id || receipt.version !== checked.data.version || receipt.installed) {
+        throw new Error(t('saveFailed'))
+      }
       signal.throwIfAborted()
       onSaved()
     }
@@ -148,7 +153,7 @@ export function ConnectorEditor({ onClose, onSaved, editing, t }: {
       <Button className={css.addVariable} variant="ghost" size="sm" disabled={pending} onClick={() => { set([...rows, { key: '', value: '' }]) }}>
         <IconPlusOutlineRegular size={14} />{t(label === 'privateEnvironment' ? 'addVariable' : 'addConfigurationEntry')}</Button>
     </section>
-  return <Modal open onClose={onClose} title={t(editing ? 'editConnector' : 'addMcpServer')} closeLabel={t('close')} className={css.connectorEditorModal as string}
+  return <Modal open onClose={() => { if (!pending) onClose() }} title={t(editing ? 'editConnector' : 'addMcpServer')} closeLabel={t('close')} className={css.connectorEditorModal as string}
     contentClassName={css.connectorEditorContent as string} footer={<div className={css.connectorFooter}>
       <Button variant="primary" disabled={pending || !ready} onClick={() => {
         if (mode === 'manual') void save()

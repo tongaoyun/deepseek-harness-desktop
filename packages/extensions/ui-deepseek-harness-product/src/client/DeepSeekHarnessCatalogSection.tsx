@@ -681,7 +681,7 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
           {t('itemCount').replace('{count}', String(filteredEntries.length))}
         </div>}
         <div id="deepseek-harness-catalog-results" role={catalog === 'connectors' ? 'tabpanel' : undefined}
-          aria-labelledby={catalog === 'connectors' ? `product-connectors-tab-${connectorFilter}` : undefined}>
+          aria-labelledby={catalog === 'connectors' ? `product-connectors-tab-${mine ? 'mine' : connectorFilter}` : undefined}>
           {loading && <p className={css.catalogStatus} role="status">{t('loading')}</p>}
           {!loading && authRequired && <div className={css.authEmptyState} role="status" aria-live="polite">
             <span className={css.authEmptyIcon} aria-hidden="true"><Icon size={22} /></span>
@@ -734,7 +734,7 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
       onSaved={() => { closeImport(importPreview.stageId); setMine(true); void refresh() }} t={t} />}
     {editor && catalog === 'connectors' && <ConnectorEditor
       editing={editor.connector}
-      onClose={() => { setEditor(undefined) }} onSaved={() => { setEditor(undefined); setMine(true); void refresh() }} t={t} />}
+      onClose={() => { setEditor(undefined) }} onSaved={() => { setEditor(undefined); void refresh() }} t={t} />}
     {managementModal}
   </section>
 }
