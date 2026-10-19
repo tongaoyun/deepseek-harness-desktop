@@ -35,6 +35,9 @@ jobs:
             sleep "$((attempt * 5))"
           done
       - name: Install dependencies
+        env:
+          HTTPS_PROXY: ${{ secrets.DESKTOP_GITHUB_PROXY_URL }}
+          NODE_USE_ENV_PROXY: '1'
         run: |
           npm install -g pnpm@11.7.0 --prefer-offline --no-audit --fund=false \
             --registry=https://registry.npmjs.org/

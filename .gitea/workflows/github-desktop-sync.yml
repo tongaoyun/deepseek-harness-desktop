@@ -41,6 +41,9 @@ jobs:
           tag="$(cat UPSTREAM_TAG)"
           git fetch origin "refs/tags/${tag}:refs/tags/${tag}"
       - name: Install locked dependencies
+        env:
+          HTTPS_PROXY: ${{ secrets.DESKTOP_GITHUB_PROXY_URL }}
+          NODE_USE_ENV_PROXY: '1'
         run: |
           npm install -g pnpm@11.28.5 --prefer-offline --no-audit --fund=false --registry=https://registry.npmjs.org/
           pnpm config set store-dir /pnpm-store
