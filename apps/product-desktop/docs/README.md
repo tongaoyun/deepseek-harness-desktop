@@ -37,9 +37,9 @@
 <a id="knowledge-files"></a>
 ## 知识文件
 
-知识库工作区包含目录树、文件列表和内嵌阅读器。管理者可创建多级文件夹、重命名、上传到目录、移动文件及删除空目录。存在文件或子文件夹时，服务端拒绝删除。文件夹查询仅显示所选目录的直属文件，全部资料跨目录显示。面包屑和目标选择显示完整路径。Markdown 和网页创建保留已选文件夹；位置未确认时保留编辑，提示先检查全部资料再决定是否重新创建。
+知识库工作区包含目录树、文件列表和内嵌阅读器。管理者可创建多级文件夹、重命名、上传、移动资料及删除空目录；非空目录拒绝删除。文件夹只列直属资料，全部资料跨目录展示；新建和导入保留当前位置，位置未确认时提示检查全部资料，不盲目重复创建。
 
-原文件查看使用官方 Harness 预览组件，不依赖索引成功。PDF 展示页面，Excel 展示只读工作簿，Word 和 PowerPoint 使用官方 Office 转 PDF。已有原件也可下载，桌面支持用系统应用打开。解析、索引、检索和来源片段由 WeKnora 负责；未保存原件的网页没有原文件预览。文件限额、转换失败和权限失败均明确提示。见[文件 UI 说明](../../../packages/extensions/ui-deepseek-harness-product/README.md)和[知识库升级说明](../../../docs/upgrade-guide/v0.2.1-alpha.2/product-knowledge-library/guide.md)。
+原件使用官方 Harness 预览组件，不依赖解析成功：PDF 显示页面，Excel 显示只读工作簿，Word 和 PowerPoint 通过官方 Office 转 PDF；也可下载或用系统应用打开。WeKnora 负责解析、索引、检索及来源片段，网页资料不一定有原件。协议与限制见[文件 UI](../../../packages/extensions/ui-deepseek-harness-product/README.md)和[知识库升级说明](../../../docs/upgrade-guide/v0.2.1-alpha.2/product-knowledge-library/guide.md)。
 
 服务端重新检查当前钉钉组织归属，不信任任务快照或客户端部门声明。只有本人、全部直属部门和配置公司授予范围，文件夹不增加权限。空任务范围不注册检索工具，失权和网络失败采用不同恢复方式。[产品子系统](../../../docs/subsystems/deepseek-harness-product.md)定义权限与检索规则。
 
@@ -60,17 +60,17 @@
 
 企业开发使用产品启动入口，其 home 和 Electron profile 与官方桌面分开。[本地启动说明](../README.md#local-development)定义入口和 profile 覆盖方式。凭据留在 Electron 主进程或服务端受控配置，不放进渲染进程变量或提交文件。
 
-Gitea 负责开发评审和桌面 CI。手动 GitHub 同步流水线要求精确源码提交的 CI 成功，将已提交的桌面源码和固定基线推送到构建仓库。原生 Runner 构建 Windows x64、macOS ARM64 和 macOS Intel，校验后的安装包及校验和同步到公开下载仓库和内部 Gitea Release。默认开发包不提供更新订阅；选择签名构建并配置签名机后，复用原生“发现新版、下载、确认重启安装”。公开构建仓库的源码和 Git 历史可公开读取。[桌面交付说明](../README.md)定义流水线参数、凭据、重试和恢复；[签名办理与接入](signing.md)说明所需资质、机器和验收。
+Gitea 负责评审和 CI，GitHub 原生 runner 构建 Windows x64 与两种 Mac 架构，安装包发布到公开下载仓库及内网 Gitea。支持 `unsigned` 开发包、`internal` 免费内部更新和 `signed` 正式签名更新；具体区别见[构建入口](../README.md#native-updates)。[交付说明](delivery.md)维护流水线参数和恢复，[签名接入](signing.md)维护证书要求。公开构建仓库的源码及 Git 历史可公开读取。
 
 服务端通过其 Gitea 流水线、Harbor、GitOps 和 Fleet 部署。构建成功、部署就绪和员工流程验收是独立结果。服务端 `docs/README.md` 索引 API、部署、领域和验收说明。协议迁移先部署服务端，再更新依赖新协议的桌面；[产品升级说明](../../../docs/upgrade-guide/v0.2.1-alpha.2/product-knowledge-library/guide.md)记录受影响行为。
 
 <a id="verification-and-limitations"></a>
 ## 验收与限制
 
-文档使用仓库的内容、链接和结构检查命令验证。行为证据包含定向产品回归、真实 Loader/profile 测试、无密钥模型 fixture、浏览器布局，以及构建后或安装后原生桌面验收。[测试说明](../../../docs/testing.zh.md)和[桌面交付说明](../README.md#local-checks)定义执行的检查，服务端证据由其 `docs/knowledge-acceptance.md` 和 `docs/knowledge-stability.md` 维护。
+文档使用仓库的内容、链接和结构检查命令验证。行为证据包含定向产品回归、真实 Loader/profile 测试、无密钥模型 fixture、浏览器布局，以及构建后或安装后原生桌面验收。[测试说明](../../../docs/testing.zh.md)和[桌面验收说明](acceptance.md)定义执行的检查，服务端证据由其 `docs/knowledge-acceptance.md` 和 `docs/knowledge-stability.md` 维护。
 
 模拟身份和模型可在不使用员工密钥的情况下验证请求、组合、UI 和恢复，但不能证明真实钉钉权限或模型推理效果。真实第二员工隔离仍需单独验收。OCR 和视觉模型不在当前范围内，产品编辑锁不保证与 WeKnora 直接并发修改互斥。当前不提供实时协同编辑或文件夹移动。启动时可回收无引用的有效快照和内容版本，保留 Session 引用及诊断记录；回收条件和失败保护见[运行时说明](../../../packages/deepseek-harness-product/runtime/README.md)。
 
-## 开发期协议清理
+## 开发期协议
 
-产品任务快照只接受第 3 版，执行组合元数据完整后才恢复；旧格式或损坏文件保留并提示显式恢复，不转换旧产品缓存。官方 Session 历史和草稿保留。服务端删除客户端验证报告及退回修改状态，旧记录一次性归为拒绝并保留审核原因。当前版本不提供旧接口降级。任务协议不保留空技能列表，技能由已安装技能 Provider 独立发现。
+产品快照只接受当前协议；旧格式或坏文件保留诊断并提示显式恢复，不转换旧产品缓存或降级执行。官方 Session 历史和草稿保留。具体恢复及快照规则见[运行时](../../../packages/deepseek-harness-product/runtime/README.md)，破坏性变更见对应[升级说明](../../../docs/upgrade-guide/v0.2.1-alpha.2/product-knowledge-library/guide.md)。
