@@ -1,6 +1,7 @@
 /** Create a personal library using ownership computed by the server. */
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Button, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
+import { ProductError } from '@deepseek-harness/product/errors'
 import type { DeepSeekHarnessProductKey } from '../locales.ts'
 import css from '../DeepSeekHarnessProduct.module.css'
 import { items } from './catalog-shared.tsx'
@@ -71,7 +72,10 @@ function KnowledgeBaseEditorForm({ onClose, onCreated, t, restored, recovery }: 
       const response = await request('knowledge.bases.create', payload, controller.signal)
       if (controller.signal.aborted) return
       const base = items([response])[0]
-      if (base === undefined) throw new Error('Invalid personal library response')
+      if (base === undefined || typeof response !== 'object' || response === null || !('id' in response)
+        || typeof response.id !== 'string' || response.id.trim() === '') {
+        throw new ProductError('IDEMPOTENCY_OPERATION_UNKNOWN', 'Personal library save receipt is invalid', true)
+      }
       recovery.clear()
       onCreated(base.id)
     } catch (failure) {

@@ -8,6 +8,84 @@ import { zh } from '../src/locales.ts'
 
 afterEach(() => { cleanup(); sessionStorage.clear(); vi.unstubAllGlobals() })
 
+it('keeps the suspended folder request when a cancelled editor receives a late success', async () => {
+  const scope = JSON.stringify(['personal', 'folder', 'create', null])
+  const key = `product.knowledge.suspended.v1.employee.${scope}`
+  const original = JSON.stringify({ title: 'Retained draft', content: '', url: '', parentId: null,
+    save: { method: 'knowledge.folders.create', payload: { knowledgeBaseId: 'personal', name: 'Retained draft', parentId: null, operationId: 'original-operation' } } })
+  sessionStorage.setItem(key, original)
+  const response = Promise.withResolvers<{ ok: boolean; result: unknown }>()
+  const started = Promise.withResolvers<undefined>()
+  const saved = vi.fn()
+  const cancel = vi.fn()
+  vi.stubGlobal('dshDesktop', { extensions: { cancel, invoke: async (_namespace: string, method: string) => {
+    if (method === 'auth.getSession') return { ok: true, result: { authenticated: true, employeeId: 'employee' } }
+    if (method === 'knowledge.folders.list') return { ok: true, result: { items: [], page: 1, size: 20, total: 0 } }
+    started.resolve(undefined)
+    return response.promise
+  } } })
+  try {
+    const editor = render(<KnowledgeEditor knowledgeBaseId="personal" target={{ kind: 'folder' }} onClose={vi.fn()} onSaved={saved} t={key => zh[key]} />)
+    await screen.findByDisplayValue('Retained draft')
+    fireEvent.click(screen.getByRole('button', { name: zh.knowledgeRetrySave }))
+    await started.promise
+    editor.unmount()
+    expect(cancel).toHaveBeenCalled()
+    await act(async () => {
+      response.resolve({ ok: true, result: { id: 'created', name: 'Retained draft', parentId: null, updatedAt: '2026-10-20T00:00:00Z' } })
+      await response.promise
+    })
+    expect(saved).not.toHaveBeenCalled()
+    expect(sessionStorage.getItem(key)).toBe(original)
+  } finally {
+    await act(async () => { response.resolve({ ok: false, result: null }); await response.promise })
+  }
+})
+
+it.each(['base', 'folder', 'rename'] as const)('retains the original %s save until its receipt is valid', async (kind) => {
+  const method = kind === 'base' ? 'knowledge.bases.create' : kind === 'rename' ? 'knowledge.folders.rename' : 'knowledge.folders.create'
+  const folder = { id: 'folder', name: 'Before', parentId: null, updatedAt: '2026-10-20T00:00:00Z' }
+  const payload = { operationId: 'original-operation', ...(kind === 'base' ? { name: 'Retained draft', description: '' }
+    : { knowledgeBaseId: 'personal', name: 'Retained draft', ...(kind === 'rename'
+      ? { folderId: folder.id, expectedUpdatedAt: folder.updatedAt } : { parentId: null }) }) }
+  const scope = kind === 'base' ? 'personal-library' : JSON.stringify(['personal', 'folder', kind === 'rename' ? 'edit' : 'create', kind === 'rename' ? folder.id : null])
+  const key = `product.knowledge.suspended.v1.employee.${scope}`
+  const original = JSON.stringify({ title: 'Retained draft', content: '', url: '', parentId: null, save: { method, payload } })
+  sessionStorage.setItem(key, original)
+  const writes: unknown[] = []
+  const saved = vi.fn()
+  const invalidReceipts = kind === 'base' ? [{ name: 'Retained draft' }, { id: '', name: 'Retained draft' }, { id: 'created' }]
+    : [{ id: folder.id }, { ...folder, id: '' }, { ...folder, name: '' }, { ...folder, updatedAt: '' },
+      ...(kind === 'rename' ? [{ ...folder, id: 'another-folder' }] : [])]
+  let invalidIndex = 0
+  let validReceipt = false
+  vi.stubGlobal('dshDesktop', { extensions: { cancel: vi.fn(), invoke: async (_namespace: string, name: string, input: unknown) => {
+    if (name === 'auth.getSession') return { ok: true, result: { authenticated: true, employeeId: 'employee' } }
+    if (name === 'knowledge.folders.list') return { ok: true, result: { items: [], page: 1, size: 20, total: 0 } }
+    writes.push(input)
+    return { ok: true, result: validReceipt ? { ...folder, name: 'Retained draft' } : invalidReceipts[invalidIndex] }
+  } } })
+  if (kind === 'base') render(<KnowledgeBaseEditor onClose={vi.fn()} onCreated={saved} t={key => zh[key]} />)
+  else render(<KnowledgeEditor knowledgeBaseId="personal" target={{ kind: 'folder', ...(kind === 'rename' ? { folder } : {}) }} onClose={vi.fn()} onSaved={saved} t={key => zh[key]} />)
+  const title = await screen.findByDisplayValue<HTMLInputElement>('Retained draft')
+  for (; invalidIndex < invalidReceipts.length; invalidIndex++) {
+    fireEvent.click(screen.getByRole('button', { name: zh.knowledgeRetrySave }))
+    await screen.findByRole('alert')
+    expect(title.disabled).toBe(true)
+    expect(saved).not.toHaveBeenCalled()
+    expect(sessionStorage.getItem(key)).toBe(original)
+    if (invalidIndex === 0) expect(screen.getByRole('dialog').textContent).toMatchSnapshot()
+  }
+  fireEvent.change(title, { target: { value: 'Another resource' } })
+  expect(title.value).toBe('Retained draft')
+  validReceipt = true
+  fireEvent.click(screen.getByRole('button', { name: zh.knowledgeRetrySave }))
+  await vi.waitFor(() => { expect(saved).toHaveBeenCalledOnce() })
+  expect(writes).toEqual(Array.from({ length: invalidReceipts.length + 1 }, () => payload))
+  expect(saved).toHaveBeenCalledWith(kind === 'base' ? folder.id : { ...folder, name: 'Retained draft' })
+  expect(sessionStorage.getItem(key)).toBeNull()
+})
+
 it.each(['markdown', 'url', 'base', 'folder'] as const)('contains unreadable recovery storage for %s and restores the original request after retry', async (kind) => {
   const method = kind === 'base' ? 'knowledge.bases.create' : kind === 'folder' ? 'knowledge.folders.create'
     : kind === 'url' ? 'knowledge.documents.importUrl' : 'knowledge.documents.save'

@@ -126,11 +126,20 @@ function KnowledgeEditorForm({ knowledgeBaseId, target, onClose, onSaved, t, res
     const controller = operation.current.controller
     try {
       const saved = await request(saveRequest.method, saveRequest.payload, controller.signal)
-      recovery.clear()
+      if (controller.signal.aborted) return
+      let folder: KnowledgeFolder | undefined
       if (target.kind === 'folder') {
-        if (!controller.signal.aborted) onSaved(knowledgeFolder(saved))
+        try {
+          folder = knowledgeFolder(saved)
+          if (folder.id.trim() === '' || folder.name.trim() === '' || folder.updatedAt.trim() === ''
+            || target.folder && folder.id !== target.folder.id) throw new Error('Invalid folder save receipt')
+        } catch (_error) {
+          throw new ProductError('IDEMPOTENCY_OPERATION_UNKNOWN', 'Folder save receipt is invalid', true)
+        }
       }
-      if (!controller.signal.aborted && target.kind !== 'folder') onSaved()
+      recovery.clear()
+      if (folder) onSaved(folder)
+      else onSaved()
     } catch (failure) {
       if (!controller.signal.aborted) {
         if (productFailure(failure).code === 'KNOWLEDGE_DOCUMENT_CONFLICT') {

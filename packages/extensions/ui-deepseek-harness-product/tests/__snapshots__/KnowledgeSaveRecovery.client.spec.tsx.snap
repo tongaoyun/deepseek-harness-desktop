@@ -1,3 +1,9 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
 exports[`contains unreadable recovery storage for base and restores the original request after retry 1`] = `"恢复未确认的保存无法恢复或保留原保存请求，请重试。草稿尚未丢弃。重试"`;
+
+exports[`retains the original base save until its receipt is valid 1`] = `"新建个人知识库知识库名称操作结果尚未确认，编辑内容已保留。请先在全部文件中检查并确认位置，勿重复创建。 (IDEMPOTENCY_OPERATION_UNKNOWN)上次保存结果尚未确认。可重试原保存，或保留并关闭；本窗口再次打开相同入口会恢复原请求。确认成功前不能修改内容，请勿另行重复创建。保留并关闭重试原保存"`;
+
+exports[`retains the original folder save until its receipt is valid 1`] = `"新建文件夹文件夹名称上级文件夹知识库首页操作结果尚未确认，编辑内容已保留。请先在全部文件中检查并确认位置，勿重复创建。 (IDEMPOTENCY_OPERATION_UNKNOWN)上次保存结果尚未确认。可重试原保存，或保留并关闭；本窗口再次打开相同入口会恢复原请求。确认成功前不能修改内容，请勿另行重复创建。保留并关闭重试原保存"`;
+
+exports[`retains the original rename save until its receipt is valid 1`] = `"重命名文件夹文件夹名称操作结果尚未确认，编辑内容已保留。请先在全部文件中检查并确认位置，勿重复创建。 (IDEMPOTENCY_OPERATION_UNKNOWN)上次保存结果尚未确认。可重试原保存，或保留并关闭；本窗口再次打开相同入口会恢复原请求。确认成功前不能修改内容，请勿另行重复创建。保留并关闭重试原保存"`;
