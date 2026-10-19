@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
+import { pathToFileURL } from 'node:url'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -9,7 +10,7 @@ import { rewriteWindowsArchiveIntegrity } from './native-update-integrity.mjs'
 const desktop = createRequire(new URL('../../desktop/package.json', import.meta.url))
 const builder = createRequire(desktop.resolve('electron-builder'))
 const packager = createRequire(builder.resolve('app-builder-lib'))
-const { NtExecutable, NtExecutableResource } = await import(packager.resolve('resedit'))
+const { NtExecutable, NtExecutableResource } = await import(pathToFileURL(packager.resolve('resedit')).href)
 
 test('rewrites one Windows ASAR integrity record and retains unrelated executable resources', async t => {
   const root = await mkdtemp(join(tmpdir(), 'harness-pe-integrity-'))
