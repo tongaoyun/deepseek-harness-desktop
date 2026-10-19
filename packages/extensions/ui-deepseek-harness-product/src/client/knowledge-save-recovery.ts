@@ -62,7 +62,7 @@ class KnowledgeSaveRecovery {
 
 /** Restore a suspended edit before enabling a new write in the same library and action.
  * @param scope Resource and action identity, excluding editable values.
- * @returns Loaded draft, recovery failure, and employee-bound suspension commands.
+ * @returns Loaded draft or storage/identity failure with explicit retry, and employee-bound suspension commands.
  */
 export function useKnowledgeSaveRecovery(scope: string): {
   ready: boolean
@@ -72,11 +72,13 @@ export function useKnowledgeSaveRecovery(scope: string): {
   reload: () => Promise<void>
 } {
   const [recovery] = useState(() => new KnowledgeSaveRecovery(scope))
-  const [state, setState] = useState<{ ready: boolean; draft?: KnowledgeSaveDraft; error?: unknown }>(() => ({
-    ready: !Object.keys(sessionStorage).some(key => key.startsWith(prefix)),
-  }))
+  const [state, setState] = useState<{ ready: boolean; draft?: KnowledgeSaveDraft; error?: unknown }>(() => {
+    try { return { ready: !Object.keys(sessionStorage).some(key => key.startsWith(prefix)) } }
+    catch (error) { return { ready: false, error } }
+  })
   const lifetime = useRef(true)
   const load = async () => {
+    setState({ ready: false })
     try {
       const draft = await recovery.read()
       if (lifetime.current) setState({ ready: true, ...draft === undefined ? {} : { draft } })
@@ -84,7 +86,7 @@ export function useKnowledgeSaveRecovery(scope: string): {
   }
   useEffect(() => {
     lifetime.current = true
-    if (!state.ready) void load()
+    if (!state.ready && state.error === undefined) void load()
     return () => { lifetime.current = false }
   }, [recovery])
   return { ...state, recovery, reload: load }

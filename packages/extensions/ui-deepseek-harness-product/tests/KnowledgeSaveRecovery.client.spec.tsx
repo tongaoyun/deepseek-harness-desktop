@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { ProductError, productFailure } from '@deepseek-harness/product/errors'
 import { KnowledgeEditor } from '../src/client/KnowledgeEditor.tsx'
@@ -7,6 +7,63 @@ import { KnowledgeBaseEditor } from '../src/client/KnowledgeBaseEditor.tsx'
 import { zh } from '../src/locales.ts'
 
 afterEach(() => { cleanup(); sessionStorage.clear(); vi.unstubAllGlobals() })
+
+it.each(['markdown', 'url', 'base', 'folder'] as const)('contains unreadable recovery storage for %s and restores the original request after retry', async (kind) => {
+  const method = kind === 'base' ? 'knowledge.bases.create' : kind === 'folder' ? 'knowledge.folders.create'
+    : kind === 'url' ? 'knowledge.documents.importUrl' : 'knowledge.documents.save'
+  const payload = { operationId: 'original-operation', ...(kind === 'base' ? { name: 'Retained draft', description: '' }
+    : { knowledgeBaseId: 'personal', ...(kind === 'folder' ? { name: 'Retained draft', parentId: null }
+      : kind === 'url' ? { title: 'Retained draft', url: 'https://example.com', folderId: null }
+        : { title: 'Retained draft', content: 'Retained contents', folderId: null }) }) }
+  const scope = kind === 'base' ? 'personal-library' : JSON.stringify(['personal', kind, 'create', null])
+  const key = `product.knowledge.suspended.v1.employee.${scope}`
+  sessionStorage.setItem(key, JSON.stringify({ title: 'Retained draft', content: kind === 'markdown' ? 'Retained contents' : '',
+    url: kind === 'url' ? 'https://example.com' : '', parentId: null, save: { method, payload } }))
+  const writes: { method: string; payload: unknown }[] = []
+  const identity = Promise.withResolvers<undefined>()
+  let holdIdentity = false
+  const saved = vi.fn()
+  vi.stubGlobal('dshDesktop', { extensions: { cancel: vi.fn(), invoke: async (_namespace: string, name: string, input: unknown) => {
+    if (name === 'auth.getSession') {
+      if (holdIdentity) await identity.promise
+      return { ok: true, result: { authenticated: true, employeeId: 'employee' } }
+    }
+    if (name === 'knowledge.folders.list') return { ok: true, result: { items: [], page: 1, size: 20, total: 0 } }
+    writes.push({ method: name, payload: input })
+    return { ok: true, result: { id: 'created', name: 'Retained draft', parentId: null, updatedAt: '2026-10-20T00:00:00Z' } }
+  } } })
+  const storage = vi.spyOn(window, 'sessionStorage', 'get').mockImplementation(() => { throw new DOMException('Storage blocked', 'SecurityError') })
+  try {
+    if (kind === 'base') render(<KnowledgeBaseEditor onClose={vi.fn()} onCreated={saved} t={key => zh[key]} />)
+    else render(<KnowledgeEditor knowledgeBaseId="personal" target={{ kind }} onClose={vi.fn()} onSaved={saved} t={key => zh[key]} />)
+    await screen.findByText(zh.knowledgeRecoveryFailed)
+    expect(screen.queryByRole('textbox')).toBeNull()
+    expect(writes).toHaveLength(0)
+    if (kind === 'base') expect(screen.getByRole('dialog').textContent).toMatchSnapshot()
+    fireEvent.click(screen.getByRole('button', { name: zh.retry }))
+    await screen.findByText(zh.knowledgeRecoveryFailed)
+    expect(screen.queryByRole('textbox')).toBeNull()
+    storage.mockRestore()
+    expect(sessionStorage.getItem(key)).not.toBeNull()
+    holdIdentity = true
+    fireEvent.click(screen.getByRole('button', { name: zh.retry }))
+    expect(screen.getByRole('status').textContent).toBe(zh.loading)
+    expect(screen.queryByRole('button', { name: zh.retry })).toBeNull()
+    expect(screen.queryByRole('textbox')).toBeNull()
+    expect(writes).toHaveLength(0)
+    await act(async () => { identity.resolve(undefined); await identity.promise })
+    const name = await screen.findByDisplayValue<HTMLInputElement>('Retained draft')
+    expect(name.disabled).toBe(true)
+    if (kind === 'markdown') expect(screen.getByDisplayValue<HTMLTextAreaElement>('Retained contents').disabled).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: zh.knowledgeRetrySave }))
+    await vi.waitFor(() => { expect(saved).toHaveBeenCalledOnce() })
+    expect(writes).toEqual([{ method, payload }])
+    expect(sessionStorage.getItem(key)).toBeNull()
+  } finally {
+    storage.mockRestore()
+    await act(async () => { identity.resolve(undefined); await identity.promise })
+  }
+})
 
 it.each(['markdown', 'url', 'base', 'folder'] as const)('retries the original %s creation after a lost receipt without creating another resource', async (kind) => {
   const writes: Record<string, unknown>[] = []

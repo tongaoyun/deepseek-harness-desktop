@@ -1,0 +1,3 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`contains unreadable recovery storage for base and restores the original request after retry 1`] = `"恢复未确认的保存无法恢复或保留原保存请求，请重试。草稿尚未丢弃。重试"`;
