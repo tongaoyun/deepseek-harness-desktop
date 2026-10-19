@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { objectRecord, stringField, stringList } from './response-fields.ts'
 import { publicToolName } from '@deepseek-ai/dsh-mcp-client'
 import { z } from 'zod'
 import { ProductError } from '@deepseek-harness/product/errors'
@@ -164,26 +165,6 @@ function validateHeaders(headers: Readonly<Record<string, string>>): void {
       throw new Error('deepseek-harness product: connector contains an invalid HTTP header')
     }
   }
-}
-
-function objectRecord(value: unknown, label: string): Record<string, unknown> {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    throw new Error(`deepseek-harness product: invalid ${label}`)
-  }
-  return value as Record<string, unknown>
-}
-
-function stringField(record: Readonly<Record<string, unknown>>, field: string): string {
-  const value = record[field]
-  if (typeof value !== 'string' || value === '') throw new Error(`deepseek-harness product: invalid ${field}`)
-  return value
-}
-
-function stringList(value: unknown, field: string): string[] {
-  if (!Array.isArray(value) || value.some(item => typeof item !== 'string' || item === '')) {
-    throw new Error(`deepseek-harness product: invalid ${field}`)
-  }
-  return value.map(item => String(item))
 }
 
 function stringMap(value: unknown, field: string): Record<string, string> {

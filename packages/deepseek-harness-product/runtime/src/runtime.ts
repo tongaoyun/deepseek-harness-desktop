@@ -1,5 +1,6 @@
 /** Product capabilities mounted on public Harness extension points. */
 
+import { objectRecord, stringField, stringList } from './response-fields.ts'
 import { createHash } from 'node:crypto'
 import { mkdir, open, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join, posix, resolve, sep } from 'node:path'
@@ -695,23 +696,4 @@ function artifactResponse(value: unknown): Artifact {
     sha256: stringField(record, 'sha256'), url: stringField(record, 'url') }
   validateSha256(result.sha256)
   return result
-}
-
-
-function objectRecord(value: unknown, label: string): Record<string, unknown> {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error(`deepseek-harness product: invalid ${label}`)
-  return value as Record<string, unknown>
-}
-
-function stringField(record: Readonly<Record<string, unknown>>, field: string): string {
-  const value = record[field]
-  if (typeof value !== 'string' || value === '') throw new Error(`deepseek-harness product: invalid ${field}`)
-  return value
-}
-
-function stringList(value: unknown, field: string): string[] {
-  if (!Array.isArray(value) || value.some(item => typeof item !== 'string' || item === '')) {
-    throw new Error(`deepseek-harness product: invalid ${field}`)
-  }
-  return value.map(item => String(item))
 }

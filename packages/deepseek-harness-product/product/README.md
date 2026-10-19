@@ -56,6 +56,8 @@ JSON 请求的网络中断或内部请求期限超时返回 `PRODUCT_NETWORK_UNA
 
 使用命名空间传输，并由产品协议白名单校验请求。`tasks.capabilities.prepare` 是唯一的套件准备入口，返回能力快照、执行位置及已校验的依赖，官方 Preset 与 Session API 负责执行。
 
+JSON 与原文件请求统一保留服务端错误的 `retryable`、资源和依赖检查结果。已明确不可重试的配置错误不会因 HTTP 503 变成可重试；缺少结构化错误的网关响应才按 HTTP 状态判断。无法解析的响应或无效 COLA 信封返回 `INVALID_SERVER_RESPONSE`，不把原始响应内容传给界面或模型。
+
 任务能力读取和准备结果包含从固定专家套件解析的 `requiredConnectorIds`。调用方据此锁定任务选择，该选择独立于账号授权和连接器可用状态。
 
 `extensions.import.inspect`、`extensions.save`、`extensions.submit`、`extensions.delete` 将个人扩展编辑交给主进程，返回预览或业务结果。`extensions.import.release` 清理员工隔离的预览。`extension-draft` 出口提供浏览器可用的表单校验，`authoring` 在主进程解析 YAML，生成标准技能/套件文件和依赖并集。所有者来自服务端认证。目录返回 `visibility`、`ownerEmployeeId`、`canEdit`、`canSubmit`、`canDelete` 和审核状态，个人可用资格独立于共享审核。知识引用解析区分不存在、无权访问、歧义与临时故障。
