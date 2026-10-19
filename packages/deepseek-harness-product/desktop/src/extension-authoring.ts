@@ -43,6 +43,7 @@ const isDefiniteRejection = (error: unknown): error is DeepSeekHarnessApiError =
 /** Main-process staging is employee scoped; no selected path crosses IPC. */
 export class ExtensionAuthoring {
   private readonly stages = new Map<string, Stage>()
+  private inspecting = 0
   private readonly conversations: AuthoringSessions
   constructor(private readonly options: AuthoringOptions) { this.conversations = new AuthoringSessions(options.directory) }
 
@@ -159,36 +160,40 @@ export class ExtensionAuthoring {
     }
     if (method === 'extensions.import.inspect') {
       if (input.kind !== 'skill' && input.kind !== 'expert-kit') throw new Error('Select skill or expert kit')
-      if (this.stages.size >= 4) throw new Error('Close another import before importing more packages')
-      let files: Map<string, Buffer>
-      if (input.source === 'catalog') {
-        if (typeof input.id !== 'string' || !/^[a-z][a-z0-9-]{2,63}$/.test(input.id)) throw new Error('Invalid resource identity')
-        const prefix = `/api/v1/${input.kind === 'skill' ? 'skills' : 'expert-kits'}/${encodeURIComponent(input.id)}`
-        const metadata = record(await api.request(prefix, { signal }))
-        if (metadata.canEdit !== true || metadata.ownerEmployeeId !== employee) throw new ProductError('EXTENSION_OWNER_REQUIRED', 'Only the owner may edit', false)
-        files = await this.download(api, prefix, metadata, signal)
-      } else {
-        if (input.source !== 'directory' && input.source !== 'zip' && input.source !== 'file') throw new Error('Select a directory or package file')
-        const source = input.source
-        const kind = input.kind
-        const path = await waitForNativeDialog(() => this.options.selectImport(source, kind), signal)
-        signal.throwIfAborted()
-        if (!path) return { cancelled: true }
-        try {
-          files = input.source === 'directory' ? await readExtensionDirectory(path, signal)
-            : input.source === 'file' && input.kind === 'skill' && extname(path).toLowerCase() === '.md'
-              ? await readExtensionMarkdown(path, signal) : await readExtensionZip(path, signal)
-        }
-        catch (_error) { signal.throwIfAborted(); throw new ProductError('EXTENSION_IMPORT_INVALID', 'Import contains missing, invalid or oversized package files', false) }
-      }
-      files = this.packageRoot(files)
-      const draft = this.inspect(input.kind, files)
       signal.throwIfAborted()
-      const stageId = randomUUID()
-      this.stages.set(stageId, { owner: employee, files, expiresAt: Date.now() + 60 * 60_000 })
-      const checked = ExtensionDraftSchema.safeParse({ ...draft, stageId })
-      return { stageId, draft: { ...draft, stageId }, files: [...files].map(([path, value]) => ({ path, bytes: value.length })),
-        missingFields: checked.success ? [] : [...new Set(checked.error.issues.map(issue => issue.path.join('.')))] } satisfies ExtensionImportPreview
+      if (this.stages.size + this.inspecting >= 4) throw new Error('Close another import before importing more packages')
+      this.inspecting += 1
+      try {
+        let files: Map<string, Buffer>
+        if (input.source === 'catalog') {
+          if (typeof input.id !== 'string' || !/^[a-z][a-z0-9-]{2,63}$/.test(input.id)) throw new Error('Invalid resource identity')
+          const prefix = `/api/v1/${input.kind === 'skill' ? 'skills' : 'expert-kits'}/${encodeURIComponent(input.id)}`
+          const metadata = record(await api.request(prefix, { signal }))
+          if (metadata.canEdit !== true || metadata.ownerEmployeeId !== employee) throw new ProductError('EXTENSION_OWNER_REQUIRED', 'Only the owner may edit', false)
+          files = await this.download(api, prefix, metadata, signal)
+        } else {
+          if (input.source !== 'directory' && input.source !== 'zip' && input.source !== 'file') throw new Error('Select a directory or package file')
+          const source = input.source
+          const kind = input.kind
+          const path = await waitForNativeDialog(() => this.options.selectImport(source, kind), signal)
+          signal.throwIfAborted()
+          if (!path) return { cancelled: true }
+          try {
+            files = input.source === 'directory' ? await readExtensionDirectory(path, signal)
+              : input.source === 'file' && input.kind === 'skill' && extname(path).toLowerCase() === '.md'
+                ? await readExtensionMarkdown(path, signal) : await readExtensionZip(path, signal)
+          }
+          catch (_error) { signal.throwIfAborted(); throw new ProductError('EXTENSION_IMPORT_INVALID', 'Import contains missing, invalid or oversized package files', false) }
+        }
+        files = this.packageRoot(files)
+        const draft = this.inspect(input.kind, files)
+        signal.throwIfAborted()
+        const stageId = randomUUID()
+        this.stages.set(stageId, { owner: employee, files, expiresAt: Date.now() + 60 * 60_000 })
+        const checked = ExtensionDraftSchema.safeParse({ ...draft, stageId })
+        return { stageId, draft: { ...draft, stageId }, files: [...files].map(([path, value]) => ({ path, bytes: value.length })),
+          missingFields: checked.success ? [] : [...new Set(checked.error.issues.map(issue => issue.path.join('.')))] } satisfies ExtensionImportPreview
+      } finally { this.inspecting -= 1 }
     }
     if (method === 'extensions.bundledSkill.read') {
       if (typeof input.id !== 'string' || !/^[a-z][a-z0-9-]{2,63}$/.test(input.id)

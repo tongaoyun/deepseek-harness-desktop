@@ -20,6 +20,7 @@ interface Selection {
 export class KnowledgeUploads implements KnowledgeUpload {
   private readonly selections = new Map<string, Selection>()
   private readonly active = new Set<string>()
+  private selecting = 0
   private readonly lifetime = new AbortController()
   private identity: string | undefined
   constructor(private readonly employee: () => string | undefined,
@@ -56,12 +57,15 @@ export class KnowledgeUploads implements KnowledgeUpload {
         throw new Error('Invalid knowledge upload limits')
       }
       if (!selection) {
-        if (this.selections.size >= 16) throw new ProductError('KNOWLEDGE_UPLOAD_PENDING_LIMIT', 'Discard an unresolved upload before selecting another file', false)
-        const path = await this.select(mode, combined)
-        combined.throwIfAborted()
-        if (path === undefined) return { cancelled: true }
-        selection = { baseId, mode, folderId, path }
-        this.selections.set(key, selection)
+        if (this.selections.size + this.selecting >= 16) throw new ProductError('KNOWLEDGE_UPLOAD_PENDING_LIMIT', 'Discard an unresolved upload before selecting another file', false)
+        this.selecting += 1
+        try {
+          const path = await this.select(mode, combined)
+          combined.throwIfAborted()
+          if (path === undefined) return { cancelled: true }
+          selection = { baseId, mode, folderId, path }
+          this.selections.set(key, selection)
+        } finally { this.selecting -= 1 }
       }
       const selected = selection
       const result = await uploadKnowledgeFile(selected.path, baseId, operationId, mode, api, combined, {
