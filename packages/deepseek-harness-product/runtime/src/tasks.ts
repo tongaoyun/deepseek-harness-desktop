@@ -10,7 +10,6 @@ import { z } from 'zod'
 import { hydrateConnectors, parseConnectorSnapshots, snapshotConnector, type DeepSeekHarnessConnector } from './deepseek-harness-connector-contract.ts'
 
 export interface TaskContent {
-  readonly shortcut?: { readonly id: string; readonly name: string; readonly skillIds: readonly string[]; readonly prompt: string }
   readonly dependencyChecks?: ProductTaskCapabilityResult['dependencyChecks']
   readonly requiredTools?: readonly string[]
   readonly identity: ProductContentIdentity
@@ -34,7 +33,7 @@ export interface TaskDependencies {
   readonly root: string
   readonly authorizeKit?: (id: string, signal?: AbortSignal) => Promise<void>
   readonly visibleKnowledge?: (signal?: AbortSignal) => Promise<readonly string[]>
-  readonly content: (kind: 'kit', id: string, signal?: AbortSignal, taskId?: string) => Promise<TaskContent>
+  readonly content: (kind: 'kit', id: string, signal?: AbortSignal) => Promise<TaskContent>
   readonly connectors: (ids: readonly string[], signal?: AbortSignal) => Promise<readonly DeepSeekHarnessConnector[]>
   readonly validateKnowledge: (ids: readonly string[], refs: readonly string[], signal?: AbortSignal) => Promise<readonly string[]>
   readonly connectorPlugin: (connector: DeepSeekHarnessConnector) => PresetDefinition['plugins'][number]
@@ -58,12 +57,10 @@ const contentIdentity = z.object({ id: identifier, name: z.string().optional(), 
   sha256: z.string().regex(/^[a-fA-F0-9]{64}$/) }).strict()
 const capabilitySnapshot = z.object({
   basePresetId: identifier, expertKit: contentIdentity.optional(),
-  expertKitTask: z.object({ id: identifier, name: identifier, skillIds: identifiers.min(1) }).strict().optional(),
   connectorIds: identifiers, requiredConnectorIds: identifiers, knowledgeBaseIds: identifiers,
   requiredKnowledgeBaseIds: identifiers, knowledgeBaseRefs: identifiers,
 }).strict().refine(value => value.requiredKnowledgeBaseIds.every(id => value.knowledgeBaseIds.includes(id))
-  && value.requiredConnectorIds.every(id => value.connectorIds.includes(id))
-  && (value.expertKitTask === undefined || value.expertKit !== undefined))
+  && value.requiredConnectorIds.every(id => value.connectorIds.includes(id)))
 
 /** Validate a durable task generation before restoring or collecting its content.
  * @param raw Stored JSON, already checked against the snapshot byte limit.
@@ -241,10 +238,6 @@ export async function createTaskCapabilities(ctx: Context, deps: TaskDependencie
       return (await this.prepare({ sessionId, basePresetId: requested })).presetId
     },
     async prepare(request: ProductTaskCapabilityRequest, signal?: AbortSignal): Promise<ProductTaskCapabilityResult> {
-      if (request.expertKitTaskId !== undefined && typeof request.expertKitId !== 'string') {
-        throw new ProductError('KIT_TASK_INVALID', 'Choose an expert kit for this shortcut')
-      }
-      let prompt: string | undefined
       const dependencyChecks: ProductTaskCapabilityResult['dependencyChecks'][number][] = []
       try {
         const current = await inspect(request.sessionId)
@@ -291,20 +284,14 @@ export async function createTaskCapabilities(ctx: Context, deps: TaskDependencie
           capabilities = { ...capabilities, knowledgeBaseRefs: sorted([...capabilities.knowledgeBaseRefs, ...content.knowledgeBaseRefs]) }
         }
         if (request.expertKitId !== undefined) {
-          const content = request.expertKitId === null ? undefined : await deps.content('kit', request.expertKitId, signal, request.expertKitTaskId)
-          if (request.expertKitTaskId !== undefined && content?.shortcut?.id !== request.expertKitTaskId) {
-            throw new ProductError('KIT_TASK_INVALID', 'This shortcut is unavailable in the installed kit')
-          }
-          prompt = content?.shortcut?.prompt
+          const content = request.expertKitId === null ? undefined : await deps.content('kit', request.expertKitId, signal)
           const retainedKnowledge = capabilities.knowledgeBaseIds
           const retainedConnectors = capabilities.connectorIds.filter(id => !requiredConnectorIds.includes(id))
           definition = base
           basePluginKeys = base.plugins.map(rowKey)
           capabilities = { ...empty, basePresetId, knowledgeBaseIds: retainedKnowledge, connectorIds: retainedConnectors,
             ...content === undefined ? {} : { expertKit: content.identity },
-            ...content?.shortcut === undefined ? {} : { expertKitTask: {
-              id: content.shortcut.id, name: content.shortcut.name, skillIds: content.shortcut.skillIds,
-            } } }
+          }
           requiredConnectorIds = []
           requiredTools = []
           if (content !== undefined) mergeContent(content)
@@ -402,7 +389,6 @@ export async function createTaskCapabilities(ctx: Context, deps: TaskDependencie
         failures.delete(presetId)
         const latest = await inspect(request.sessionId)
         return { kind: request.sessionId !== undefined && !latest.started ? 'CURRENT_SESSION' : 'NEW_SESSION', presetId, capabilities,
-          ...prompt === undefined ? {} : { prompt },
           dependencyChecks: [...new Map([
             ...dependencyChecks.filter(check => check.status !== 'NOT_CHECKED'),
             ...requiredTools.map(reference => ({ kind: 'TOOL' as const, reference, status: 'READY' as const })),

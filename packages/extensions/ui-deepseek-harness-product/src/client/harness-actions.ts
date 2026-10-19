@@ -98,12 +98,8 @@ export function createHarnessActions(ctx: Context): DeepSeekHarnessCatalogAction
     if (typeof value !== 'object' || value === null || !('presetId' in value) || typeof value.presetId !== 'string'
       || !('kind' in value) || !['CURRENT_SESSION', 'NEW_SESSION'].includes(String(value.kind))) throw new Error('Invalid task preparation response')
     const result = value as ProductTaskCapabilityResult
-    if (request.expertKitTaskId !== undefined && (typeof result.prompt !== 'string' || result.prompt.trim() === '')) {
-      throw new Error('Shortcut preparation did not return its pinned prompt')
-    }
-    const prompt = result.prompt
     const newSession = () => workspace(current).then(item => ctx.sessions.create({ workspaceId: item.workspaceId }))
-    let sessionId = result.kind === 'CURRENT_SESSION' && current !== undefined && prompt === undefined
+    let sessionId = result.kind === 'CURRENT_SESSION' && current !== undefined
       ? current : await newSession()
     let selected = await ctx.remote.agentPresets.select(sessionId, result.presetId)
     if (!selected.ok && selected.error.code === 'agent-preset/locked') {
@@ -113,8 +109,8 @@ export function createHarnessActions(ctx: Context): DeepSeekHarnessCatalogAction
     if (!selected.ok) throw new Error(selected.error.message)
     await ctx.sessions.using(sessionId, { source: 'gateway' }, (reference) => {
       const input = ctx.conversation.input.for(reference.binding.ctx)
-      if (prompt !== undefined || sessionId !== current) {
-        initializeDraft(reference.binding, prompt ?? draft(current))
+      if (sessionId !== current) {
+        initializeDraft(reference.binding, draft(current))
       }
       if (currentSession() === current && options.navigation?.aborted !== true) {
         ctx.uiWorkspace.openSession(sessionId)
@@ -210,8 +206,7 @@ export function createHarnessActions(ctx: Context): DeepSeekHarnessCatalogAction
         } finally { source.release() }
       })
     },
-    startExpertKit: (id, taskId) => enqueue({ expertKitId: id,
-      ...taskId === undefined ? {} : { expertKitTaskId: taskId } }),
+    startExpertKit: id => enqueue({ expertKitId: id }),
     installSkill: id => serialize(async () => {
       await invoke('skills.install', { id })
       ctx.uiSkills.refresh()

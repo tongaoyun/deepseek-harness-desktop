@@ -388,7 +388,7 @@ export class ExtensionAuthoring {
     const manifestPath = kind === 'skill' ? '.deepseek-harness-skill/skill.json' : '.deepseek-harness-kit/kit.json'
     const metadata = files.get(manifestPath)
     const manifest = metadata ? record(JSON.parse(metadata.toString('utf8'))) : {}
-    if (kind === 'expert-kit' && (!metadata || manifest.schemaVersion !== '3')) throw new Error('A standard expert kit manifest (schema 3) is required')
+    if (kind === 'expert-kit' && (!metadata || manifest.schemaVersion !== '4')) throw new Error('A standard expert kit manifest (schema 4) is required')
     if (metadata && kind === 'skill' && manifest.schemaVersion !== '1') throw new Error('Unsupported skill metadata')
     const markdown = files.get(kind === 'skill' ? 'SKILL.md' : 'README.md')
     if (!markdown) throw new Error(kind === 'skill' ? 'Missing SKILL.md' : 'Missing README.md')

@@ -73,9 +73,6 @@ export function ExtensionPreview({ preview, onClose, onSaved, onContinue, t }: {
         <ul className={css.previewList}>{(draft.skills ?? []).map(skill => <li key={skill.id}>
           <details><summary>{skill.name}</summary><p>{skill.summary}</p>
             <MarkdownText text={skill.body} labels={markdownLabels(t)} /></details></li>)}</ul></section>}
-      {!!draft.commonTasks?.length && <section className={css.detailSection}><h3>{t('commonTasks')}</h3>
-        <ul className={css.previewList}>{draft.commonTasks.map(task =>
-          <li key={task.id}><strong>{task.name}</strong><p>{task.prompt}</p></li>)}</ul></section>}
       {!!dependencies.length && <details className={css.editorAdvanced}><summary>{t('dependencyPreview')}</summary>
         <ul className={css.previewList}>{dependencies.map(value => <li key={value}>{value}</li>)}</ul></details>}
       <details className={css.editorAdvanced}><summary>{t('advancedInformation')}</summary>

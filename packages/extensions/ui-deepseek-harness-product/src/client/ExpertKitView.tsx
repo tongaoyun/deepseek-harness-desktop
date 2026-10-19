@@ -1,16 +1,16 @@
 import type { ReactNode } from 'react'
 import { useState } from 'react'
-import { Button, IconAgentPresetOutlineRegular, IconChevronLeftOutlineRegular, IconChevronRightOutlineRegular, IconBrowseOutlineRegular, IconDeliverDocRegular, IconDownloadOutlineRegular, MarkdownText, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconAgentPresetOutlineRegular, IconChevronLeftOutlineRegular, IconBrowseOutlineRegular, IconDeliverDocRegular, IconDownloadOutlineRegular, MarkdownText, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import { type DeepSeekHarnessProductKey } from '../locales.ts'
 import css from '../DeepSeekHarnessProduct.module.css'
-import { type ProductDetail, type CommonTask, type ProductReference, unavailableForUse, markdownLabels, DetailIdentity, ReferenceList, withoutFrontmatter, withoutDuplicateTitle } from './catalog-shared.tsx'
+import { type ProductDetail, type ProductReference, unavailableForUse, markdownLabels, DetailIdentity, ReferenceList, withoutFrontmatter, withoutDuplicateTitle } from './catalog-shared.tsx'
 
 export function ExpertKitDetailPage({
   actionError, actionPending, installed, installationsKnown, managementActions, detail: product, onBack, onUse, onInstall, onOpen, t,
 }: {
   readonly detail: ProductDetail
   readonly onBack: () => void
-  readonly onUse: (task?: CommonTask) => void
+  readonly onUse: () => void
   readonly actionPending: boolean
   readonly installed: boolean
   readonly installationsKnown: boolean
@@ -41,15 +41,6 @@ export function ExpertKitDetailPage({
     </div>
     {actionError && <p className={css.catalogError} role="alert">{actionError}</p>}
     {product.summary !== undefined && <p className={css.detailSummary}>{product.summary}</p>}
-    <section className={css.detailSection}>
-      <h2>{t('commonTasks')} <span>{product.commonTasks.length}</span></h2>
-      {product.commonTasks.length === 0 ? <p className={css.catalogStatus}>{t('empty')}</p>
-        : <div className={css.commandList}>{product.commonTasks.map(task => <button className={css.commandRow}
-          disabled={disabled} key={task.id} type="button" onClick={() => { onUse(task) }}>
-          <span className={css.commandCopy}><strong>{task.name}</strong><span>{task.description}</span></span>
-          <IconChevronRightOutlineRegular size={16} />
-        </button>)}</div>}
-    </section>
     <section className={css.detailSection}>
       <h2>{t('includedSkills')} <span>{product.skillDetails.length}</span></h2>
       <ReferenceList values={product.skillDetails.map(skill => ({ id: skill.id, name: skill.name,

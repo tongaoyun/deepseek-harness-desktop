@@ -537,9 +537,8 @@ describe('DeepSeekHarness capability navigation', () => {
     const create = vi.fn().mockResolvedValueOnce('expert-session').mockResolvedValueOnce('derived-skill-session')
     const select = vi.fn(async () => ({ ok: true as const }))
     const skillExecution: Record<string, unknown> = { kind: 'NEW_SESSION', skillName: 'writing' }
-    const invoke = vi.fn(async (method: string, payload?: { expertKitTaskId?: string }) => method === 'tasks.capabilities.prepare'
-      ? { ...skillExecution, invocation: skillExecution.skillName, presetId: skillExecution.presetId ?? 'deepseek-harness-expert-kit-orders',
-        ...payload?.expertKitTaskId === undefined ? {} : { prompt: '核对以下订单：' } }
+    const invoke = vi.fn(async (method: string) => method === 'tasks.capabilities.prepare'
+      ? { ...skillExecution, invocation: skillExecution.skillName, presetId: skillExecution.presetId ?? 'deepseek-harness-expert-kit-orders' }
       : { connectorIds: [], requiredConnectorIds: [], knowledgeBaseIds: [], requiredKnowledgeBaseIds: [] })
     installProductApi({ invoke })
     const ctx = {
@@ -583,11 +582,11 @@ describe('DeepSeekHarness capability navigation', () => {
     const expertKitActions = (expertKitRegistration?.options.inject as (() => ReturnType<typeof actions>))()
     const skillActions = (skillRegistration?.options.inject as (() => ReturnType<typeof actions>))()
 
-    await expertKitActions.startExpertKit('orders', 'check-orders')
+    await expertKitActions.startExpertKit('orders')
     await skillActions.installSkill('writing')
     await skillActions.installSkill('order-query')
 
-    expect(invoke).toHaveBeenNthCalledWith(1, 'tasks.capabilities.prepare', { expertKitId: 'orders', expertKitTaskId: 'check-orders', sessionId: 'current-session' }, expect.any(String))
+    expect(invoke).toHaveBeenNthCalledWith(1, 'tasks.capabilities.prepare', { expertKitId: 'orders', sessionId: 'current-session' }, expect.any(String))
     expect(invoke).toHaveBeenNthCalledWith(2, 'skills.install', { id: 'writing' }, expect.any(String))
     expect(invoke).toHaveBeenNthCalledWith(3, 'skills.install', { id: 'order-query' }, expect.any(String))
     expect(create).toHaveBeenNthCalledWith(1, { workspaceId: 'workspace-1' })
@@ -597,7 +596,7 @@ describe('DeepSeekHarness capability navigation', () => {
     expect(openSession).toHaveBeenNthCalledWith(1, 'expert-session')
     expect(openSession).toHaveBeenCalledOnce()
     expect(initializeDraft).toHaveBeenCalledExactlyOnceWith({ ctx: { sessionId: 'expert-session' } },
-      { prompt: '核对以下订单：', clearPreviousDraft: true })
+      { prompt: { text: '继续优化这份内容', references: [] }, clearPreviousDraft: true })
     expect(focus).toHaveBeenCalledOnce()
   })
 
@@ -745,7 +744,7 @@ describe('DeepSeekHarness capability navigation', () => {
     const invoke = vi.fn(async (method: string): Promise<unknown> => {
       if (method === 'skills.list') return [{ id: 'writing', name: 'AI文本优化', summary: '让文本更自然' }]
       if (method === 'skills.get') return { id: 'writing', name: 'AI文本优化', author: 'DeepSeekHarness',
-        version: '1.0.0', summary: '让文本更自然', triggers: ['元数据中的触发场景'], sha256: 'a'.repeat(64), commonTasks: [] }
+        version: '1.0.0', summary: '让文本更自然', triggers: ['元数据中的触发场景'], sha256: 'a'.repeat(64) }
       if (method === 'skills.readme') return { id: 'writing', version: '1.0.0', readme: source }
       throw new Error(`unexpected method: ${method}`)
     })
@@ -786,7 +785,7 @@ describe('DeepSeekHarness capability navigation', () => {
     const invoke = vi.fn(async (method: string): Promise<unknown> => {
       if (method === 'skills.list') return [{ id: 'writing', name: 'AI文本优化', summary: '让文本更自然' }]
       if (method === 'skills.get') return { id: 'writing', name: 'AI文本优化', author: 'DeepSeekHarness',
-        version: '1.0.0', summary: '让文本更自然', sha256: 'a'.repeat(64), commonTasks: [] }
+        version: '1.0.0', summary: '让文本更自然', sha256: 'a'.repeat(64) }
       if (method === 'skills.readme') throw new Error('resource not found')
       throw new Error(`unexpected method: ${method}`)
     })
@@ -803,7 +802,7 @@ describe('DeepSeekHarness capability navigation', () => {
     await waitFor(() => { expect(productActions.installSkill).toHaveBeenCalledExactlyOnceWith('writing') })
   })
 
-  it('starts an expert kit or a common task without exposing slash commands or Skill IDs', async () => {
+  it('starts an expert kit without exposing shortcut commands or Skill IDs', async () => {
     const invoke = vi.fn(async (method: string): Promise<unknown> => {
       if (method === 'expertKits.list') return [{ id: 'product-design', name: '产品设计', summary: '设计师全流程工具箱' }]
       if (method === 'expertKits.get') return {
@@ -812,7 +811,6 @@ describe('DeepSeekHarness capability navigation', () => {
         minimumDesktopVersion: '0.2.0', requiredTools: ['browser_navigate'],
         skillDetails: [{ id: 'accessibility', name: '无障碍审查', summary: '检查界面可访问性' }],
         connectorRefs: ['erp', 'missing-connector'], knowledgeBaseRefs: ['design-guide', 'missing-knowledge'],
-        commonTasks: [{ id: 'access', name: '无障碍检查', description: '检查页面的无障碍问题', prompt: '请检查以下页面：' }],
       }
       if (method === 'expertKits.readme') return { id: 'product-design', version: '1.0.0', readme: '# 套件说明\n\n使用设计流程。' }
       if (method === 'connectors.list') return [{ id: 'erp', displayName: 'ERP 连接器', summary: '订单数据' }]
@@ -834,8 +832,8 @@ describe('DeepSeekHarness capability navigation', () => {
     render(<ExpertKitsPanel t={t} {...productActions} />)
     fireEvent.click(await screen.findByRole('button', { name: /产品设计/ }))
     expect(screen.queryByRole('dialog')).toBeNull()
-    expect(await screen.findByText('无障碍检查')).not.toBeNull()
-    expect(screen.getByText('检查页面的无障碍问题')).not.toBeNull()
+    await screen.findByRole('button', { name: zh.startUsing })
+    expect(screen.queryByText('无障碍检查')).toBeNull()
     expect(screen.queryByText(/accessibility/)).toBeNull()
     expect(screen.queryByText('/ 无障碍检查')).toBeNull()
     expect(screen.getAllByText('ERP 连接器')).toHaveLength(1)
@@ -863,10 +861,9 @@ describe('DeepSeekHarness capability navigation', () => {
     expect(document.activeElement).toBe(reader)
     fireEvent.click(screen.getByRole('button', { name: zh.startUsing }))
     await waitFor(() => { expect(productActions.startExpertKit)
-      .toHaveBeenNthCalledWith(1, 'product-design', undefined) })
-    fireEvent.click(screen.getByRole('button', { name: /无障碍检查/ }))
-    await waitFor(() => { expect(productActions.startExpertKit)
-      .toHaveBeenNthCalledWith(2, 'product-design', 'access') })
+      .toHaveBeenNthCalledWith(1, 'product-design') })
+    expect(productActions.startExpertKit).toHaveBeenCalledOnce()
+    expect(screen.queryByRole('button', { name: /无障碍检查/ })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: zh.backToCatalog }))
     expect(screen.queryByRole('heading', { name: '产品设计' })).toBeNull()
   })
@@ -1013,10 +1010,10 @@ describe('DeepSeekHarness capability navigation', () => {
     expect(productActions.startExpertKit).not.toHaveBeenCalled()
   })
 
-  it('requires an explicit installation before using the kit or its shortcut commands', async () => {
+  it('requires an explicit installation before using the kit', async () => {
     const identity = { id: 'operations', name: '订单专家', version: '1.0.0', sha256: 'a'.repeat(64) }
     const installed: ProductContentIdentity[] = []
-    const entry = { ...identity, commonTasks: [{ id: 'review', name: '核对订单', description: '复核最新订单', prompt: '核对订单。' }] }
+    const entry = identity
     const invoke = vi.fn(async (method: string): Promise<unknown> => {
       if (method === 'expertKits.list') return [entry]
       if (method === 'expertKits.get') return entry
@@ -1031,22 +1028,18 @@ describe('DeepSeekHarness capability navigation', () => {
     installProductApi({ invoke })
     render(<ExpertKitsPanel t={t} {...productActions} />)
     fireEvent.click(await screen.findByRole('button', { name: identity.name, exact: true }))
-    const shortcut = await screen.findByRole('button', { name: /核对订单/ })
-    expect(shortcut.disabled).toBe(true)
     expect(screen.queryByRole('button', { name: zh.startUsing })).toBeNull()
-    fireEvent.click(shortcut)
     expect(productActions.startExpertKit).not.toHaveBeenCalled()
-    fireEvent.click(screen.getByRole('button', { name: zh.installExpertKit }))
+    fireEvent.click(await screen.findByRole('button', { name: zh.installExpertKit }))
     await screen.findByRole('alert')
-    expect(shortcut.disabled).toBe(true)
     expect(screen.queryByRole('button', { name: zh.startUsing })).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: zh.installExpertKit }))
-    await waitFor(() => { expect(shortcut.disabled).toBe(false) })
+    fireEvent.click(await screen.findByRole('button', { name: zh.installExpertKit }))
+    await screen.findByRole('button', { name: zh.startUsing })
     expect(screen.getByRole('button', { name: zh.startUsing }).disabled).toBe(false)
     expect(productActions.startExpertKit).not.toHaveBeenCalled()
     const readsBeforeUse = productActions.readInstalledExpertKits.mock.calls.length
-    fireEvent.click(shortcut)
-    await waitFor(() => { expect(productActions.startExpertKit).toHaveBeenCalledWith(identity.id, 'review') })
+    fireEvent.click(screen.getByRole('button', { name: zh.startUsing }))
+    await waitFor(() => { expect(productActions.startExpertKit).toHaveBeenCalledWith(identity.id) })
     expect(productActions.readInstalledExpertKits).toHaveBeenCalledTimes(readsBeforeUse)
   })
 
@@ -1441,7 +1434,7 @@ describe('DeepSeekHarness capability navigation', () => {
   it('shows a safe error when an Expert Kit Session cannot start', async () => {
     const invoke = vi.fn(async (method: string): Promise<unknown> => {
       if (method === 'expertKits.list') return [{ id: 'orders', name: '订单专家' }]
-      if (method === 'expertKits.get') return { id: 'orders', name: '订单专家', sha256: 'c'.repeat(64), commonTasks: [] }
+      if (method === 'expertKits.get') return { id: 'orders', name: '订单专家', sha256: 'c'.repeat(64) }
       if (method === 'expertKits.readme') return { readme: '订单处理' }
       throw new Error(`unexpected method: ${method}`)
     })

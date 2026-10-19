@@ -6,7 +6,7 @@ import { NS, type DeepSeekHarnessProductKey } from '../locales.ts'
 import css from '../DeepSeekHarnessProduct.module.css'
 import { productApi, type ProductApi } from './product-api.ts'
 import { productErrorMessage } from './product-errors.ts'
-import { type Catalog, type ProductItem, type DeepSeekHarnessCatalogActions, type ProductDetail, type CommonTask, type ProductReference, type CategoryFilter, type ConnectorFilter, METHODS, DESCRIPTION_KEYS, ICONS, AUTHORIZATION_TIMEOUT_MS, nextProductRequestId, items, detail, localizedMetadata, localizedCategory, itemMetadata, referenceDetails, normalizedSearch, classificationValue, groupLabel, localDetail, AvailabilityStatus, ConnectorStatus, isConnectorConnected, isInstalled, unavailableForUse, DetailIdentity } from './catalog-shared.tsx'
+import { type Catalog, type ProductItem, type DeepSeekHarnessCatalogActions, type ProductDetail, type ProductReference, type CategoryFilter, type ConnectorFilter, METHODS, DESCRIPTION_KEYS, ICONS, AUTHORIZATION_TIMEOUT_MS, nextProductRequestId, items, detail, localizedMetadata, localizedCategory, itemMetadata, referenceDetails, normalizedSearch, classificationValue, groupLabel, localDetail, AvailabilityStatus, ConnectorStatus, isConnectorConnected, isInstalled, unavailableForUse, DetailIdentity } from './catalog-shared.tsx'
 import { SkillDetailModal } from './SkillView.tsx'
 import { ExpertKitDetailPage } from './ExpertKitView.tsx'
 import { ConnectorDetailModal } from './ConnectorView.tsx'
@@ -335,7 +335,7 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
     }
   }
 
-  const useProduct = async (product: ProductDetail, task?: CommonTask): Promise<void> => {
+  const useProduct = async (product: ProductDetail): Promise<void> => {
     const lifetime = managementLifetime.current
     setActionPending(true)
     setActionError(false)
@@ -346,7 +346,7 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
         if (lifetime === managementLifetime.current) await rememberInstallation(product, lifetime)
       }
       else if (catalog === 'expertKits') {
-        await props.startExpertKit(product.id, task?.id)
+        await props.startExpertKit(product.id)
       }
     } catch (error) {
       if (lifetime !== managementLifetime.current) return
@@ -575,7 +575,7 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
             onInstall={() => { void installKit(selected) }}
             managementActions={managementActions(selected)}
             actionError={actionFailure} onBack={closeDetail} onOpen={(value) => { void openReference(value) }}
-            onUse={(task) => { void useProduct(selected, task) }} t={t} />}
+            onUse={() => { void useProduct(selected) }} t={t} />}
           {referenceModal}
           {managementModal}
         </div>

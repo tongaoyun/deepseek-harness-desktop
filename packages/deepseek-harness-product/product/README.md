@@ -70,7 +70,7 @@ JSON 与原文件请求统一保留服务端错误的 `retryable`、资源和依
 
 扩展保存可能在服务端提交后于本机安装阶段失败。桥接仍使目录缓存失效并通知创建记录重读，返回原始错误。`EXTENSION_INSTALL_FAILED` 表示已保存但本机安装可重试；`EXTENSION_SAVE_PENDING` 表示提交结果待确认，须重试固定内容。取消或身份切换后不发送旧员工通知。创建快照的 `pendingSave` 固定主进程提供的作者，`saved` 固定资源与版本，两者不包含凭据。
 
-`extensions.authoring.begin/read/update/save/discard` 管理创建对话草稿。受信 Host 可以读取、更新并保存对应创建对话的个人资源。草稿按员工隔离、关联 Session 并校验修订号，仅记录自身 Session 标识。`authoring.changed` 通知已提交的变动，不携带内容。内容草稿校验排除连接器凭据和暂存标识。保存校验只允许专家套件包含内置技能和快捷命令。提交共享仍是所有者的独立操作。
+`extensions.authoring.begin/read/update/save/discard` 管理创建对话草稿。受信 Host 可以读取、更新并保存对应创建对话的个人资源。草稿按员工隔离、关联 Session 并校验修订号，仅记录自身 Session 标识。`authoring.changed` 通知已提交的变动，不携带内容。内容草稿校验排除连接器凭据和暂存标识。保存校验只允许专家套件包含内置技能。提交共享仍是所有者的独立操作。
 
 内置技能草稿通过可选的 `description` 保留完整原生描述，与最多 300 字符的目录 `summary` 分开。简介必须等于描述或其空白归一化投影：首个完整句子能容纳时取该句，否则取前 299 个 UTF-16 单元并追加省略号。内置技能 ID 和导入资源 ID 支持两个字符的名称。`extensionFiles` 从主进程持有的原始 Markdown 保留额外 frontmatter，并按 UTF-8 字节检查完整生成文件：独立技能 64 KiB，内置技能 256 KiB。
 

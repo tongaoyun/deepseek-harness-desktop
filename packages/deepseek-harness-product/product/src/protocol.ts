@@ -204,7 +204,6 @@ export interface ProductTaskCapabilities {
   readonly basePresetId?: string
   readonly expertKit?: ProductContentIdentity
   /** Shortcut and exact bundled skills selected from the pinned kit artifact. */
-  readonly expertKitTask?: { readonly id: string; readonly name: string; readonly skillIds: readonly string[] }
   readonly connectorIds: readonly string[]
   /** Connectors required by the pinned Expert Kit and locked against task removal. */
   readonly requiredConnectorIds: readonly string[]
@@ -234,8 +233,6 @@ export interface ProductTaskCapabilityRequest {
   readonly sessionId?: string
   /** Select a kit, or clear its composition with null while retaining selected knowledge. */
   readonly expertKitId?: string | null
-  /** Shortcut identity resolved by Host from the selected kit's installed artifact. */
-  readonly expertKitTaskId?: string
   readonly connectorIds?: readonly string[]
   readonly knowledgeBaseIds?: readonly string[]
   /** Explicitly exit the kit and remove only resources denied by a successful live query. */
@@ -248,8 +245,6 @@ export interface ProductTaskCapabilityResult {
   readonly presetId: string
   readonly capabilities: ProductTaskCapabilities
   readonly dependencyChecks: readonly ProductDependencyCheck[]
-  /** Authoritative shortcut prompt, prefilled without sending it. */
-  readonly prompt?: string
 }
 
 /** One dependency verified before preparing a product capability. */

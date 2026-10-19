@@ -12,7 +12,7 @@ import type { TaskContent } from './tasks.ts'
 interface Dependencies {
   readonly root: string
   readonly product: Pick<DeepSeekHarnessProductIpc, 'invoke'>
-  readonly prepare: (id: string, signal?: AbortSignal, installed?: ProductContentIdentity, taskId?: string) => Promise<TaskContent>
+  readonly prepare: (id: string, signal?: AbortSignal, installed?: ProductContentIdentity) => Promise<TaskContent>
 }
 
 const identifier = z.string().regex(/^[a-z][a-z0-9-]{2,63}$/)
@@ -82,14 +82,14 @@ export function createInstalledExpertKits(ctx: Context, deps: Dependencies) {
     return entry
   }
   return {
-    prepare(id: string, signal?: AbortSignal, taskId?: string): Promise<TaskContent> {
+    prepare(id: string, signal?: AbortSignal): Promise<TaskContent> {
       return serialize(async () => {
         identifier.parse(id)
         const employee = await account(signal)
         const installed = (await read(employee)).find(entry => entry.id === id)
         if (installed === undefined) throw new ProductError('KIT_NOT_INSTALLED', 'Install this expert kit before selecting it', false,
           [{ kind: 'expert-kit', id }])
-        const content = await deps.prepare(id, signal, installed, taskId)
+        const content = await deps.prepare(id, signal, installed)
         const entry = preparedIdentity(id, content)
         if (entry.version !== installed.version || entry.sha256 !== installed.sha256) {
           throw new ProductError('KIT_INSTALLED_VERSION_CHANGED', 'Install the current expert kit version before selecting it', false,

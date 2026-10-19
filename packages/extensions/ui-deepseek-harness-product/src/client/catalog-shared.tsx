@@ -66,7 +66,7 @@ export type ProductItem = {
 export interface DeepSeekHarnessCatalogActions {
   /** Create a separate official conversation without submitting its initial draft. */
   startExtensionAuthoring?(kind: 'skill' | 'expert-kit', options: { prompt: string; stageId?: string; edit?: boolean }): Promise<void>
-  startExpertKit(id: string, taskId?: string): Promise<void>
+  startExpertKit(id: string): Promise<void>
   installSkill(skillId: string): Promise<void>
   readInstalledSkills?(this: void): Promise<ProductInstalledSkills>
   /** Install on this device without changing tasks or drafts. */
@@ -93,7 +93,6 @@ export type ProductDetail = {
   readonly summary?: string
   readonly category?: string
   readonly sha256?: string
-  readonly commonTasks: readonly CommonTask[]
   readonly readme: string
   readonly sourceAvailable: boolean
   readonly status?: string
@@ -130,13 +129,6 @@ export type ProductReference = {
   readonly scope?: string
   readonly ownerName?: string
   readonly kind?: 'skills' | 'connectors' | 'knowledge'
-}
-
-export type CommonTask = {
-  readonly id: string
-  readonly name: string
-  readonly description: string
-  readonly prompt: string
 }
 
 export type CategoryFilter = string
@@ -292,20 +284,6 @@ export function items(value: unknown): readonly ProductItem[] {
   })
 }
 
-export function commonTasks(value: unknown): readonly CommonTask[] {
-  if (!Array.isArray(value)) return []
-  return value.flatMap((entry) => {
-    if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) return []
-    const record = entry as Record<string, unknown>
-    const id = text(record, 'id')
-    const name = text(record, 'name')
-    const description = text(record, 'description')
-    const prompt = text(record, 'prompt')
-    return id === undefined || name === undefined || description === undefined || prompt === undefined
-      ? [] : [{ id, name, description, prompt }]
-  })
-}
-
 export function detail(value: unknown, readmeValue: unknown): ProductDetail | undefined {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
   const record = value as Record<string, unknown>
@@ -360,7 +338,6 @@ export function detail(value: unknown, readmeValue: unknown): ProductDetail | un
     ...(minimumDesktopVersion === undefined ? {} : { minimumDesktopVersion }),
     ...(createdAt === undefined ? {} : { createdAt }),
     ...(updatedAt === undefined ? {} : { updatedAt }),
-    commonTasks: commonTasks(record.commonTasks),
     readme: text(readmeRecord, 'readme') ?? '', sourceAvailable,
   }
 }
@@ -489,7 +466,7 @@ export function localDetail(item: ProductItem): ProductDetail {
     requiredTools: [], knowledgeBaseRefs: [], knowledgeBaseDetails: [],
     ...(item.createdAt === undefined ? {} : { createdAt: item.createdAt }),
     ...(item.updatedAt === undefined ? {} : { updatedAt: item.updatedAt }),
-    commonTasks: [], readme: '', sourceAvailable: false,
+    readme: '', sourceAvailable: false,
   }
 }
 

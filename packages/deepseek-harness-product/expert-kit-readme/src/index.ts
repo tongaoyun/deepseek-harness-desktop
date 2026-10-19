@@ -5,7 +5,6 @@ import { basename, dirname, isAbsolute } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-agent'
 import { createUserMessage, type MessageSource } from '@deepseek-ai/dsh-llm'
-import { ProductError } from '@deepseek-harness/product/errors'
 import {
   BUNDLED_SKILL_RANK,
   isSkillName,
@@ -35,10 +34,6 @@ export interface Config {
   readonly expertKitId?: string
   /** README entries belonging to the Preset's enabled Expert Kits. */
   readonly entries: readonly ExpertKitReadmeEntry[]
-  /** Exact bundled skill names loaded together with the guide before the first model request. */
-  readonly initialSkillIds?: readonly string[]
-  /** Pinned provider owning the shortcut skills; collisions never substitute another definition. */
-  readonly skillProviderName?: string
 }
 
 /** Selected kit content committed by the official pre-step message pipeline. */
@@ -67,17 +62,12 @@ export const name = 'deepseek-harness-expert-kit-readme'
 /** Harness service required by this provider. */
 export const inject = ['skills']
 
-/** Register pinned kit content and enter its guide and shortcut skills before model execution.
+/** Register pinned kit content and enter its guide before model execution.
  * @param ctx - Preset-scoped Cordis context.
  * @param config - Installed README paths and routing summaries.
  * @returns A promise that settles after every README path is validated and the provider is registered.
  */
 export async function apply(ctx: Context, config: Config): Promise<void> {
-  if ((config.initialSkillIds?.length ?? 0) > 8 || config.initialSkillIds?.some(id => !isSkillName(id))
-    || new Set(config.initialSkillIds).size !== (config.initialSkillIds?.length ?? 0)
-    || ((config.initialSkillIds?.length ?? 0) > 0 && !config.skillProviderName)) {
-    throw new ProductError('KIT_TASK_INVALID', 'Shortcut skill configuration is invalid')
-  }
   const entries = await resolveEntries(config.entries)
   const byName = new Map(entries.map(entry => [entry.name, entry]))
   const candidates = entries.map(candidate)
@@ -106,7 +96,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     const decision = await next()
     if (decision.kind === 'reject') return decision
     await authorize(signal)
-    const names = [...entries.map(entry => entry.name), ...(config.initialSkillIds ?? [])]
+    const names = entries.map(entry => entry.name)
     const loaded = (source: MessageSource) => source.kind === 'product-expert-kit-instructions'
       && source.expertKitId === selectionId && names.every(name => source.names.includes(name))
     if (names.length === 0) return decision
@@ -117,14 +107,6 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       const content = await readFile(entry.path, { encoding: 'utf8', signal })
       if (Buffer.byteLength(content, 'utf8') > MAX_README_BYTES) throw new Error('Expert Kit README exceeds the package limit')
       contents.push(renderSkillContent(definition(entry, content)))
-    }
-    for (const name of config.initialSkillIds ?? []) {
-      const skill = await ctx.skills.get(name, { scope: agent, signal })
-      if (skill === undefined || skill.provider !== config.skillProviderName) {
-        throw new ProductError('KIT_SKILL_MISSING', 'Pinned shortcut skill is unavailable', false,
-          [{ kind: 'skill', id: name }, { kind: 'expert-kit', id: selectionId }])
-      }
-      contents.push(renderSkillContent(skill))
     }
     signal.throwIfAborted()
     return { ...decision, messages: [...decision.messages, createUserMessage({

@@ -50,21 +50,6 @@ describe('DeepSeekHarness Expert Kit README skills', () => {
     await ctx.fiber.dispose()
   })
 
-  it('refuses to load a shortcut skill from an ambient provider with the same name', async () => {
-    const path = await readme('# Orders\n')
-    const ctx = new Context()
-    await ctx.plugin(SkillRegistry)
-    await ctx.plugin(Sessions)
-    await ctx.plugin(ExpertKitReadme, { skillProviderName: 'pinned-kit', initialSkillIds: ['expert-kit-orders'],
-      entries: [{ name: 'expert-kit-orders', description: 'Diagnose orders.', path }] })
-    const session = ctx.sessions.create(SessionId('collision'))
-    const agent = { id: session.id, ctx, session } as Agent
-    await expect(agentEvents(ctx, agent).waterfall('agent/pre-step', { messages: [], turn: 1, step: 1,
-      signal: new AbortController().signal }, () => Promise.resolve({ kind: 'enter' as const, messages: [] })))
-      .rejects.toMatchObject({ code: 'KIT_SKILL_MISSING' })
-    expect(session.snapshotEvents()).toEqual([])
-    await ctx.fiber.dispose()
-  })
 
   it('publishes summaries to the model and loads the original README on demand', async () => {
     const path = await readme('# 订单专家\n\n按照订单排查流程工作。\n')

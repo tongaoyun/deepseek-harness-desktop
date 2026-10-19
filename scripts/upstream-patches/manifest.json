@@ -899,12 +899,12 @@
         {
           "path": "docs/config-catalog.md",
           "before": "1dd99a4488550d8ea6e303adfeb01abc41be7cfffa94708658e32ea5a2c5c015",
-          "after": "1896cb87ba78874d90c4dfa8d65960dd5945d471ad14a39b88b34b48abe644ba"
+          "after": "95313eada5acbf5fe3addf8ac535201e363e06da63f2915471533926ed1b5e98"
         },
         {
           "path": "docs/config-catalog.zh.md",
           "before": "df509dde710b613d454b3ed01f6b76ec3d3f5f96321e1a4c52ab5471ee2d3e2e",
-          "after": "a265b9386c1f24b59f27cfb75f42ec2d45c52597273fcaeef6bb9886ab7c975f"
+          "after": "4b4162271de914a123305aeb49d119e3b702b99b6c74b8ff60b176c5f054ecd8"
         },
         {
           "path": "docs/event-producer-consumer.md",
@@ -919,17 +919,17 @@
         {
           "path": "docs/persistence-catalog.i18n.yaml",
           "before": "ff872250f66e0f037d6e54dfdb1aab819d375810fc79829c73622d9a7b5f47bd",
-          "after": "991f1ba4043c633eb22b86fbcf65bdbf67d674164549f3dc2dc1ad974b6d6336"
+          "after": "da7c027cd724ce1ad854b8e3f7cecd09cbe0d1fdaf27c999ed3b8f2e701e99e8"
         },
         {
           "path": "docs/persistence-catalog.md",
           "before": "f5cac1e8b15c9fddce43eaedb30f10f0d73cef0e28bf3e6a6761a66958a3045b",
-          "after": "e110c04533fdb4cc003a3cc97479ce32228c0ae875a7509196a1f069b181370a"
+          "after": "6c8b0a7ce2a0c02a75cb1ff1f99cb9b5b386a3b139fb25dc80d4c5debd0147ba"
         },
         {
           "path": "docs/persistence-catalog.zh.md",
           "before": "8d3747c2e45cfcedb86d41eab6f7f57b9ece8887b4285f27d506e668d257c818",
-          "after": "8a3715b1bb1e9670d34e290c5c0679703fe244ef4438449482a7f4a1cbc8ec62"
+          "after": "7bfcfda68b3138739232a291e7402c2de9d29a14306f0471a8ac26475a0054ea"
         },
         {
           "path": "docs/persistence-changes/2026-10-09-product-installed-skill-attribution.i18n.yaml",
@@ -969,7 +969,7 @@
         {
           "path": "docs/persistence-schema.json",
           "before": "80983484fe957b42092789f6203b92836b0d2bf235fc54bf557775bd0578561f",
-          "after": "5090c2567548925902618cd9768d3c633f61c4add0ba13007ac55b316c1c52b8"
+          "after": "bd7264196107b692e5d76afc43be9c070eb21aebd2c4b0647939c749e268c8e4"
         },
         {
           "path": "docs/subsystems/README.i18n.yaml",
@@ -1445,7 +1445,7 @@
         {
           "path": "scripts/translation-pairing.manifest.json",
           "before": "9944a604474c609318ec2793512661aa0dfc67f124d6789df4f285e8c5910153",
-          "after": "2f4334367ecc39b4e3d41d8b4821eac805ccfa182183bba32fb052c76426d67b"
+          "after": "2cb9e0cdb3ed7b81d9f850b603b620d2940dbbd32a3d9bf7a7681ecac30fba93"
         },
         {
           "path": "scripts/verify-package-readme-limitations.ts",

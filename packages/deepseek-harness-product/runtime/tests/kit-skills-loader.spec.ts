@@ -30,7 +30,7 @@ class RecordingAdapter extends LlmAdapter {
   }
 }
 
-it('loads an authored large shortcut skill through the official provider before requesting the model and restores its logged content', async () => {
+it('discovers an authored large kit skill without preloading its body and restores the logged guide', async () => {
   const root = await mkdtemp(join(tmpdir(), 'product-kit-skills-loader-'))
   onTestFinished(() => rm(root, { recursive: true, force: true }))
   const description = `Review source evidence. ${'Use detailed source evidence for review. '.repeat(20)}`.trim()
@@ -38,7 +38,6 @@ it('loads an authored large shortcut skill through the official provider before 
   const generated = extensionFiles(ExtensionDraftSchema.parse({ kind: 'expert-kit', id: 'review-kit', version: '1.0.0',
     name: 'Review kit', summary: 'Review source evidence.', category: 'knowledge-research', body: '# Guide\n\nReport only source facts.',
     skills: [{ id: 'qa', name: 'Evidence review', summary: 'Review source evidence.', description, body }],
-    commonTasks: [{ id: 'review', name: 'Review', description: 'Review evidence.', prompt: 'Review the evidence.', skillIds: ['qa'] }],
   }))
   for (const [path, text] of Object.entries(generated.files)) {
     await mkdir(join(root, path, '..'), { recursive: true })
@@ -67,7 +66,7 @@ it('loads an authored large shortcut skill through the official provider before 
       expertKitId: 'review-kit', providerName: 'pinned-kit', directory: join(root, 'skills'),
     } },
     { id: 'kit-readme', name: 'cordis:kit-readme-fixture', config: {
-      expertKitId: 'review-kit', initialSkillIds: ['qa'], skillProviderName: 'pinned-kit',
+      expertKitId: 'review-kit',
       entries: [{ name: 'expert-kit-review', description: 'Review evidence.', path: join(root, 'README.md') }],
     } },
   ])
@@ -77,7 +76,7 @@ it('loads an authored large shortcut skill through the official provider before 
   expect((await ctx.skills.get('qa'))?.content).toBe(body)
   const adapter = new RecordingAdapter()
   ctx.llm.registerAdapter(['fixture'], adapter)
-  const handle = await ctx.agents.create({ sessionId: SessionId('large-shortcut'), agentOptions: { provider: 'fixture', model: 'fixture' } })
+  const handle = await ctx.agents.create({ sessionId: SessionId('large-kit'), agentOptions: { provider: 'fixture', model: 'fixture' } })
   onTestFinished(() => handle.dispose())
   const followup = () => createUserMessage({ content: [{ type: 'text' as const, text: 'Review the evidence.' }], source: { kind: 'user' as const } })
   handle.agent.followup(followup())
@@ -86,7 +85,7 @@ it('loads an authored large shortcut skill through the official provider before 
   const instructions = events.flatMap(event => event.type === 'user/message' && event.data.source.kind === 'product-expert-kit-instructions'
     ? event.data.content.flatMap(block => block.type === 'text' ? [block.text] : []) : [])
   expect(instructions).toHaveLength(1)
-  expect(instructions[0]).toContain(body)
+  expect(instructions[0]).not.toContain(body)
   expect(instructions[0]).toContain('Report only source facts.')
   const firstRequest = adapter.requests[0]?.messages.flatMap(message => message.content).filter(block => block.type === 'text').map(block => block.text)
   expect(firstRequest).toContain(instructions[0])
@@ -94,9 +93,9 @@ it('loads an authored large shortcut skill through the official provider before 
   const recorded = instructions[0]!.replaceAll(await realpath(root), '<HOME>').replaceAll(root, '<HOME>')
   await expect(JSON.stringify({ instructionBytes: Buffer.byteLength(recorded),
     instructionSha256: createHash('sha256').update(recorded).digest('hex'), description }, null, 2) + '\n')
-    .toMatchFileSnapshot('expected/large-shortcut-instructions.json')
+    .toMatchFileSnapshot('expected/large-kit-instructions.json')
   await handle.dispose()
-  const restored = await ctx.agents.create({ sessionId: SessionId('large-shortcut'), seed: events,
+  const restored = await ctx.agents.create({ sessionId: SessionId('large-kit'), seed: events,
     agentOptions: { provider: 'fixture', model: 'fixture' } })
   onTestFinished(() => restored.dispose())
   restored.agent.followup(followup())

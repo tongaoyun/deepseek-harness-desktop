@@ -3454,7 +3454,7 @@ SHA-256: `e6063d0451dc02026fd9b54ad3f77c7b1b6392ad3e872a7737ac84e13ca72344`
 
 SHA-256: `a3c49f5705962cf76ad979cb6c6fe7c018cd005f7e0b10f497a371bfbd202aca`
 
-来源：[`packages/deepseek-harness-product/expert-kit-readme/src/index.ts:45`](../packages/deepseek-harness-product/expert-kit-readme/src/index.ts)
+来源：[`packages/deepseek-harness-product/expert-kit-readme/src/index.ts:40`](../packages/deepseek-harness-product/expert-kit-readme/src/index.ts)
 
 | 属性 | 存在性 | 类型 |
 |---|---|---|

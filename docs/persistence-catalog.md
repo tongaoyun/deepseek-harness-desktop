@@ -3452,7 +3452,7 @@ Sources: [`packages/schedule/schedule/src/types.ts:244`](../packages/schedule/sc
 
 SHA-256: `a3c49f5705962cf76ad979cb6c6fe7c018cd005f7e0b10f497a371bfbd202aca`
 
-Sources: [`packages/deepseek-harness-product/expert-kit-readme/src/index.ts:45`](../packages/deepseek-harness-product/expert-kit-readme/src/index.ts)
+Sources: [`packages/deepseek-harness-product/expert-kit-readme/src/index.ts:40`](../packages/deepseek-harness-product/expert-kit-readme/src/index.ts)
 
 | Property | Presence | Type |
 |---|---|---|

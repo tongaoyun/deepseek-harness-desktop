@@ -33,6 +33,7 @@ class FixtureAdapter extends LlmAdapter {
   override async *stream(request: GenerateOptions): AsyncIterable<StreamChunk> {
     this.requests.push(request)
     const calls = [
+      { id: 'read-kit-skill', name: 'skill', arguments: '{"name":"kit-check"}' },
       { id: 'read-orders', name: ordersRead, arguments: '{}' },
       { id: 'retrieve-policy', name: 'knowledge_search', arguments: '{"query":"policy","limit":2}' },
       { id: 'read-policy-source', name: 'knowledge_read', arguments: '{"sourceId":"source"}' },
@@ -113,10 +114,6 @@ it('composes kit and skill providers without standard or intermediate Presets, r
   await mkdir(join(kitRoot, 'skills/kit-check'), { recursive: true })
   await mkdir(skillRoot, { recursive: true })
   await writeFile(join(kitRoot, 'README.md'), '# Policy kit\n\nUse policy evidence before making a recommendation.\n')
-  await mkdir(join(kitRoot, '.deepseek-harness-kit'))
-  await writeFile(join(kitRoot, '.deepseek-harness-kit/kit.json'), JSON.stringify({ id: kit.id, version: kit.version,
-    commonTasks: [{ id: 'check-policy', name: 'Check policy', description: 'Check policy scope.',
-      prompt: 'Find the policy.', skillIds: ['kit-check'] }] }))
   await writeFile(join(kitRoot, 'skills/kit-check/SKILL.md'), '---\nname: kit-check\ndescription: Check the policy.\n---\nConfirm policy scope.\n')
   await writeFile(join(skillRoot, 'SKILL.md'), '---\nname: policy-review\ndescription: Compare policy evidence.\n---\nCompare the retrieved policy before reporting.\n')
   await writeFile(join(kitRoot, '.deepseek-harness-sha256'), kit.sha256)
@@ -256,6 +253,8 @@ it('composes kit and skill providers without standard or intermediate Presets, r
   expect(responses.get(11)?.error).toBeUndefined()
   selection.id = (responses.get(11)?.result as { presetId: string }).presetId
   const beforeKit = await readdir(join(root, 'product-capabilities-v1/tasks-v1'))
+  expect(await request(60, 'tasks.capabilities.prepare', { expertKitTaskId: 'kit-check' }))
+    .toMatchObject({ failure: { code: 'CAPABILITY_REQUEST_INVALID', retryable: false } })
   expect(await request(51, 'tasks.capabilities.prepare', { sessionId: 'recorded', expertKitId: kit.id }))
     .toMatchObject({ failure: { code: 'KIT_NOT_INSTALLED', retryable: false,
       resources: [{ kind: 'expert-kit', id: kit.id }] } })
@@ -263,11 +262,11 @@ it('composes kit and skill providers without standard or intermediate Presets, r
   expect(await request(52, 'expertKits.installed.read')).toMatchObject({ result: { installed: [] } })
   expect(await request(53, 'expertKits.install', { id: kit.id })).toMatchObject({ result: { id: kit.id } })
   emitMessage({ type: 'extension-control', namespace: 'product', requestId: 1,
-    method: 'tasks.capabilities.prepare', payload: { sessionId: 'recorded', expertKitId: kit.id, expertKitTaskId: 'check-policy' } })
+    method: 'tasks.capabilities.prepare', payload: { sessionId: 'recorded', expertKitId: kit.id } })
   await vi.waitFor(() =>{  expect(responses.has(1)).toBe(true) })
   expect(responses.get(1)?.error).toBeUndefined()
-  expect(responses.get(1)?.result).toMatchObject({ prompt: 'Find the policy.',
-    capabilities: { expertKitTask: { id: 'check-policy', skillIds: ['kit-check'] } } })
+  expect(responses.get(1)?.result).toMatchObject({ capabilities: { expertKit: { id: kit.id } } })
+  expect(responses.get(1)?.result).not.toHaveProperty('prompt')
   const result = responses.get(1)?.result as { presetId: string }
   const selected = result.presetId
   selection.id = selected
@@ -355,7 +354,9 @@ it('composes kit and skill providers without standard or intermediate Presets, r
   expect(events.some(event => event.type === 'working-directory/change' && event.data.cwd === root)).toBe(true)
   expect(JSON.stringify(adapter.requests[0]?.messages)).toContain('Current working directory:')
   expect(JSON.stringify(adapter.requests[0]?.messages)).toContain('Use policy evidence before making a recommendation.')
-  expect(JSON.stringify(adapter.requests[0]?.messages)).toContain('Confirm policy scope.')
+  expect(JSON.stringify(adapter.requests[0]?.messages)).toContain('kit-check')
+  expect(JSON.stringify(adapter.requests[0]?.messages)).not.toContain('Confirm policy scope.')
+  expect(JSON.stringify(adapter.requests[1]?.messages)).toContain('Confirm policy scope.')
   expect(events.filter(event => event.type === 'user/message' && event.data.source.kind === 'product-expert-kit-instructions')).toHaveLength(1)
   expect(events.findIndex(event => event.type === 'user/message' && event.data.source.kind === 'product-expert-kit-instructions'))
     .toBeLessThan(events.findIndex(event => event.type === 'tool/call' && event.data.name === ordersRead))

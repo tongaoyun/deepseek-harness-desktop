@@ -29,7 +29,7 @@ export function ConnectorEditor({ onClose, onSaved, editing, t }: {
   const [draft, setDraft] = useState<ExtensionDraft>(() => ({
     kind: 'connector', id: `connector-${randomUUID().slice(0, 8)}`, version: '1.0.0', name: '', summary: '', category: 'other',
     body: '', triggers: [], minimumDesktopVersion: '0.1.0', connectorRefs: [], requiredTools: [], knowledgeBaseRefs: [], skills: [],
-    commonTasks: [], transport: 'stdio', url: '', arguments: [], headers: {}, environment: {}, timeoutSeconds: 60,
+    transport: 'stdio', url: '', arguments: [], headers: {}, environment: {}, timeoutSeconds: 60,
   }))
   const [mode, setMode] = useState<'manual' | 'json'>('manual')
   const [json, setJson] = useState('')

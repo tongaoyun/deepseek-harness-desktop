@@ -53,7 +53,7 @@ it('orders kit details and does not render startup checks or skill readiness bad
     installed={false} installationsKnown onInstall={() => undefined}
     onBack={() => undefined} onUse={() => undefined} />)
   expect(screen.getAllByRole('heading', { level: 2 }).map(value => value.textContent)).toEqual([
-    `${zh.commonTasks} 0`, `${zh.includedSkills} 1`, `${zh.dataConnections} 0`, `${zh.knowledgeScope} 0`, zh.kitGuide,
+    `${zh.includedSkills} 1`, `${zh.dataConnections} 0`, `${zh.knowledgeScope} 0`, zh.kitGuide,
   ])
   expect(screen.queryByText('就绪')).toBeNull()
   expect(screen.queryByText(zh.startupChecks)).toBeNull()

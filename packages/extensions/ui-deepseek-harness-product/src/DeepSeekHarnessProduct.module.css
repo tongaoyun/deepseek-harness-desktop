@@ -290,13 +290,6 @@
 .knowledgeResult strong { color: var(--dsw-alias-label-primary); font-size: 12px; line-height: 18px; font-weight: 500; }
 .knowledgeResult span { color: var(--dsw-alias-label-tertiary); font-size: 11px; line-height: 16px; }
 .knowledgeResult p { display: -webkit-box; overflow: hidden; margin: 4px 0 0; color: var(--dsw-alias-label-secondary); font-size: 12px; line-height: 18px; -webkit-box-orient: vertical; -webkit-line-clamp: 4; }
-.commandList { overflow: hidden; border-top: 0.5px solid var(--dsw-alias-border-l2); }
-.commandRow { display: flex; width: 100%; min-height: 50px; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 4px; border: 0; border-bottom: 0.5px solid var(--dsw-alias-border-l2); box-sizing: border-box; background: transparent; color: inherit; text-align: left; font: inherit; cursor: pointer; }
-.commandRow:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); }
-.commandRow:disabled { cursor: default; opacity: 0.55; }
-.commandCopy { display: grid; min-width: 0; gap: 2px; }
-.commandCopy strong { color: var(--dsw-alias-label-primary); font-size: 13px; line-height: 19px; font-weight: 500; }
-.commandCopy > span { color: var(--dsw-alias-label-secondary); font-size: 12px; line-height: 18px; }
 .markdown { color: var(--dsw-alias-label-primary); }
 .guideFrame { position: relative; padding: 18px; overflow: hidden; border: 0.5px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--dsw-alias-bg-module-platform); }
 .guideFrame h2 { display: flex; align-items: center; gap: 8px; margin: 0 32px 14px 0; color: var(--dsw-alias-label-secondary); }

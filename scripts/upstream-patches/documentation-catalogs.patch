@@ -486,7 +486,7 @@ index 870fa1c996ba569f882a7cb70e62f0bd655c64af..e4630a876520302e23235f1543bdece6
  
  | 包 | 职责 | `ctx` 键 |
 diff --git a/docs/config-catalog.md b/docs/config-catalog.md
-index 60484ba7953302ab8c0e47f86b203796862fdca7..a8fd4056c1585e03ce71b1266ae2adbfb03f5e55 100644
+index 60484ba7953302ab8c0e47f86b203796862fdca7..59889fb0f25d5a09b8b2c57e4d58b75f4c8a48a6 100644
 --- a/docs/config-catalog.md
 +++ b/docs/config-catalog.md
 @@ -139,7 +139,7 @@ export type Config = PresetDefinition
@@ -525,7 +525,7 @@ index 60484ba7953302ab8c0e47f86b203796862fdca7..a8fd4056c1585e03ce71b1266ae2adbf
    toolCallTimeoutMs: number
    /** Fail plugin activation when the initial connection or tool synchronization fails. */
    failOnStartupError: boolean
-@@ -4583,6 +4583,39 @@ export interface Config {
+@@ -4583,6 +4583,35 @@ export interface Config {
  ```
  <!-- END GENERATED config-catalog:@deepseek-ai/dsh-workspace-changes -->
  
@@ -535,7 +535,7 @@ index 60484ba7953302ab8c0e47f86b203796862fdca7..a8fd4056c1585e03ce71b1266ae2adbf
 +## `@deepseek-harness/product-expert-kit-readme`
 +
 +- `inject`: `skills`
-+- `source`: [`packages/deepseek-harness-product/expert-kit-readme/src/index.ts:33`](../packages/deepseek-harness-product/expert-kit-readme/src/index.ts)
++- `source`: [`packages/deepseek-harness-product/expert-kit-readme/src/index.ts:32`](../packages/deepseek-harness-product/expert-kit-readme/src/index.ts)
 +
 +```ts config-catalog
 +/** Expert Kit README provider configuration for one immutable Agent Preset. */
@@ -544,10 +544,6 @@ index 60484ba7953302ab8c0e47f86b203796862fdca7..a8fd4056c1585e03ce71b1266ae2adbf
 +  readonly expertKitId?: string
 +  /** README entries belonging to the Preset's enabled Expert Kits. */
 +  readonly entries: readonly ExpertKitReadmeEntry[]
-+  /** Exact bundled skill names loaded together with the guide before the first model request. */
-+  readonly initialSkillIds?: readonly string[]
-+  /** Pinned provider owning the shortcut skills; collisions never substitute another definition. */
-+  readonly skillProviderName?: string
 +}
 +
 +/** One enabled Expert Kit README exposed to the model-facing skill catalog. */
@@ -565,7 +561,7 @@ index 60484ba7953302ab8c0e47f86b203796862fdca7..a8fd4056c1585e03ce71b1266ae2adbf
  ## Loadable plugins with no config
  
  These load from a `cordis.yml` entry with no `config:` block; they declare no configuration API.
-@@ -4697,6 +4730,8 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
+@@ -4697,6 +4726,8 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
  | `@deepseek-ai/dsh-user-questions` | — | [`packages/interaction/user-questions/src/index.ts`](../packages/interaction/user-questions/src/index.ts) |
  | `@deepseek-ai/dsh-webhook` | `agents` · `agentDefaultModel` · `agentPresets` · `permissionPresets` · `sessionTitle` · `workspaceRegistry` | [`packages/experimental/webhook/src/index.ts`](../packages/experimental/webhook/src/index.ts) |
  | `@deepseek-ai/dsh-workspace` | `storageDomain` · `sessionPersistence` | [`packages/workspace/workspace/src/index.ts`](../packages/workspace/workspace/src/index.ts) |
@@ -574,7 +570,7 @@ index 60484ba7953302ab8c0e47f86b203796862fdca7..a8fd4056c1585e03ce71b1266ae2adbf
  <!-- END GENERATED config-catalog:no-config -->
  
  ## Seam packages (not directly loadable)
-@@ -4798,4 +4833,6 @@ Imported as libraries by other packages; a `cordis.yml` cannot load them.
+@@ -4798,4 +4829,6 @@ Imported as libraries by other packages; a `cordis.yml` cannot load them.
  | `@deepseek-ai/dsh-util-values` | — | [`packages/util/values/src/index.ts`](../packages/util/values/src/index.ts) |
  | `@deepseek-ai/dsh-util-workspace-path` | — | [`packages/util/workspace-path/src/index.ts`](../packages/util/workspace-path/src/index.ts) |
  | `@deepseek-ai/dsh-win32-process` | — | [`packages/subprocess/win32-process/src/index.ts`](../packages/subprocess/win32-process/src/index.ts) |
@@ -582,7 +578,7 @@ index 60484ba7953302ab8c0e47f86b203796862fdca7..a8fd4056c1585e03ce71b1266ae2adbf
 +| `@deepseek-harness/product-desktop` | — | [`packages/deepseek-harness-product/desktop/src/index.ts`](../packages/deepseek-harness-product/desktop/src/index.ts) |
  <!-- END GENERATED config-catalog:library -->
 diff --git a/docs/config-catalog.zh.md b/docs/config-catalog.zh.md
-index 846065001058b837f0218fe1d72e3e74acf4ca33..e73e4b6422fe5d65a2a398ce501a05bc69217bf8 100644
+index 846065001058b837f0218fe1d72e3e74acf4ca33..6010582d19bec698c4eba5c809c439ace4775b65 100644
 --- a/docs/config-catalog.zh.md
 +++ b/docs/config-catalog.zh.md
 @@ -141,7 +141,7 @@ export type Config = PresetDefinition
@@ -621,7 +617,7 @@ index 846065001058b837f0218fe1d72e3e74acf4ca33..e73e4b6422fe5d65a2a398ce501a05bc
    toolCallTimeoutMs: number
    /** Fail plugin activation when the initial connection or tool synchronization fails. */
    failOnStartupError: boolean
-@@ -4585,6 +4585,39 @@ export interface Config {
+@@ -4585,6 +4585,35 @@ export interface Config {
  ```
  <!-- END GENERATED config-catalog:@deepseek-ai/dsh-workspace-changes -->
  
@@ -631,7 +627,7 @@ index 846065001058b837f0218fe1d72e3e74acf4ca33..e73e4b6422fe5d65a2a398ce501a05bc
 +## `@deepseek-harness/product-expert-kit-readme`
 +
 +- `inject`: `skills`
-+- `source`: [`packages/deepseek-harness-product/expert-kit-readme/src/index.ts:33`](../packages/deepseek-harness-product/expert-kit-readme/src/index.ts)
++- `source`: [`packages/deepseek-harness-product/expert-kit-readme/src/index.ts:32`](../packages/deepseek-harness-product/expert-kit-readme/src/index.ts)
 +
 +```ts config-catalog
 +/** Expert Kit README provider configuration for one immutable Agent Preset. */
@@ -640,10 +636,6 @@ index 846065001058b837f0218fe1d72e3e74acf4ca33..e73e4b6422fe5d65a2a398ce501a05bc
 +  readonly expertKitId?: string
 +  /** README entries belonging to the Preset's enabled Expert Kits. */
 +  readonly entries: readonly ExpertKitReadmeEntry[]
-+  /** Exact bundled skill names loaded together with the guide before the first model request. */
-+  readonly initialSkillIds?: readonly string[]
-+  /** Pinned provider owning the shortcut skills; collisions never substitute another definition. */
-+  readonly skillProviderName?: string
 +}
 +
 +/** One enabled Expert Kit README exposed to the model-facing skill catalog. */
@@ -661,7 +653,7 @@ index 846065001058b837f0218fe1d72e3e74acf4ca33..e73e4b6422fe5d65a2a398ce501a05bc
  ## 无配置的可加载插件
  
  这些插件通过 `cordis.yml` 中不含 `config:` 块的条目加载；它们未声明任何配置接口。
-@@ -4699,6 +4732,8 @@ export interface Config {
+@@ -4699,6 +4728,8 @@ export interface Config {
  | `@deepseek-ai/dsh-user-questions` | — | [`packages/interaction/user-questions/src/index.ts`](../packages/interaction/user-questions/src/index.ts) |
  | `@deepseek-ai/dsh-webhook` | `agents` · `agentDefaultModel` · `agentPresets` · `permissionPresets` · `sessionTitle` · `workspaceRegistry` | [`packages/experimental/webhook/src/index.ts`](../packages/experimental/webhook/src/index.ts) |
  | `@deepseek-ai/dsh-workspace` | `storageDomain` · `sessionPersistence` | [`packages/workspace/workspace/src/index.ts`](../packages/workspace/workspace/src/index.ts) |
@@ -670,7 +662,7 @@ index 846065001058b837f0218fe1d72e3e74acf4ca33..e73e4b6422fe5d65a2a398ce501a05bc
  <!-- END GENERATED config-catalog:no-config -->
  
  ## Seam 包（不可直接加载）
-@@ -4800,4 +4835,6 @@ export interface Config {
+@@ -4800,4 +4831,6 @@ export interface Config {
  | `@deepseek-ai/dsh-util-values` | — | [`packages/util/values/src/index.ts`](../packages/util/values/src/index.ts) |
  | `@deepseek-ai/dsh-util-workspace-path` | — | [`packages/util/workspace-path/src/index.ts`](../packages/util/workspace-path/src/index.ts) |
  | `@deepseek-ai/dsh-win32-process` | — | [`packages/subprocess/win32-process/src/index.ts`](../packages/subprocess/win32-process/src/index.ts) |
@@ -758,7 +750,7 @@ index 213180e82e28bdc61af7b84ad80ef389b641bd4b..bd950d8b1cb2f7e1f90ae55e087fcb01
  | `tools/result` | `emit` | [`packages/core/tools/src/index.ts:199`](../packages/core/tools/src/index.ts) | [`tools`](../packages/core/tools) (`events.dispatch`) | [`agent-instructions`](../packages/context/agent-instructions), `claude-code-mods`, [`subagent`](../packages/subagent/subagent), [`tool-present`](../packages/deliverables/tool-present) |
  | `user-questions/request` | `waterfall` | [`packages/interaction/user-questions/src/types.ts:157`](../packages/interaction/user-questions/src/types.ts) | [`user-questions`](../packages/interaction/user-questions) (`waterfall`) | `remotes` |
 diff --git a/docs/persistence-catalog.i18n.yaml b/docs/persistence-catalog.i18n.yaml
-index 5b57d28fca6151f55aa1ebf0ec41df907482ea99..8edcceb92b459fc644ed372f624a6225bf8b9cf7 100644
+index 5b57d28fca6151f55aa1ebf0ec41df907482ea99..a39e504d19cbbf998f57d8914fa4e47b79809ef9 100644
 --- a/docs/persistence-catalog.i18n.yaml
 +++ b/docs/persistence-catalog.i18n.yaml
 @@ -9,8 +9,8 @@
@@ -811,8 +803,8 @@ index 5b57d28fca6151f55aa1ebf0ec41df907482ea99..8edcceb92b459fc644ed372f624a6225
 +  en: ad447032a6222a17
 +  zh: f6c97ce2b55c67b7
 +/session-persistence-event-catalog/resolved-persistence-types/expertkitinstructionsource:
-+  en: 6b6f7239f7b33e49
-+  zh: 075f41064e668971
++  en: 1b1bd0a6007fb32f
++  zh: 0519131ee2e8bb71
  /session-persistence-event-catalog/resolved-persistence-types/feedbackrecord:
    en: 3b6931556cfe6b9e
    zh: ce5a5b1d92ce9eac
@@ -1001,7 +993,7 @@ index 5b57d28fca6151f55aa1ebf0ec41df907482ea99..8edcceb92b459fc644ed372f624a6225
    en: 99c8837344178a47
    zh: bf746f5678346596
 diff --git a/docs/persistence-catalog.md b/docs/persistence-catalog.md
-index 5cd37161404b5245b52105d20ed17216428ae9f9..2614f46b34d8f311443a029cd75730bc8cc7d77c 100644
+index 5cd37161404b5245b52105d20ed17216428ae9f9..d78429c8e5ebc6feb01765192a2745c377167477 100644
 --- a/docs/persistence-catalog.md
 +++ b/docs/persistence-catalog.md
 @@ -23,7 +23,7 @@ The [format references](persistence-changes/historical-formats/README.md) cover
@@ -1109,7 +1101,7 @@ index 5cd37161404b5245b52105d20ed17216428ae9f9..2614f46b34d8f311443a029cd75730bc
 +
 +SHA-256: `a3c49f5705962cf76ad979cb6c6fe7c018cd005f7e0b10f497a371bfbd202aca`
 +
-+Sources: [`packages/deepseek-harness-product/expert-kit-readme/src/index.ts:45`](../packages/deepseek-harness-product/expert-kit-readme/src/index.ts)
++Sources: [`packages/deepseek-harness-product/expert-kit-readme/src/index.ts:40`](../packages/deepseek-harness-product/expert-kit-readme/src/index.ts)
 +
 +| Property | Presence | Type |
 +|---|---|---|
@@ -1410,7 +1402,7 @@ index 5cd37161404b5245b52105d20ed17216428ae9f9..2614f46b34d8f311443a029cd75730bc
  | `seq` | required | `number` |
  | `sourceEventSeqs` | optional | [`number[]`](#persistence-type-sha256-5d03ba38734809bcbd2a55221bd938b3b3fc34b49bb686c6113e9e4931e3aa78) |
 diff --git a/docs/persistence-catalog.zh.md b/docs/persistence-catalog.zh.md
-index c12ce2c6ad2aa729f29b84467052dee0743789d9..d7f9b94fdc633d8210ead462804a249de5d31fe6 100644
+index c12ce2c6ad2aa729f29b84467052dee0743789d9..ac19e4c074c99e2017cd5e96cd8657e41a6c1085 100644
 --- a/docs/persistence-catalog.zh.md
 +++ b/docs/persistence-catalog.zh.md
 @@ -25,7 +25,7 @@
@@ -1518,7 +1510,7 @@ index c12ce2c6ad2aa729f29b84467052dee0743789d9..d7f9b94fdc633d8210ead462804a249d
 +
 +SHA-256: `a3c49f5705962cf76ad979cb6c6fe7c018cd005f7e0b10f497a371bfbd202aca`
 +
-+来源：[`packages/deepseek-harness-product/expert-kit-readme/src/index.ts:45`](../packages/deepseek-harness-product/expert-kit-readme/src/index.ts)
++来源：[`packages/deepseek-harness-product/expert-kit-readme/src/index.ts:40`](../packages/deepseek-harness-product/expert-kit-readme/src/index.ts)
 +
 +| 属性 | 存在性 | 类型 |
 +|---|---|---|
@@ -13660,7 +13652,7 @@ index 055e07f9544146c366f1c8a28697be85dc4d3271..31029ebb475e1a05afb6a0f6abd49c7e
  <!-- persistence-format-index:end -->
  
 diff --git a/docs/persistence-schema.json b/docs/persistence-schema.json
-index 87853fac338a1d463424a2de95db7ef21a24f1ff..7e8bc675782e42dbb2cce45ea1b3f4030cb29271 100644
+index 87853fac338a1d463424a2de95db7ef21a24f1ff..afbbb5cc79b4847fc7884c54c3279b344425dc86 100644
 --- a/docs/persistence-schema.json
 +++ b/docs/persistence-schema.json
 @@ -406,7 +406,7 @@
@@ -23298,7 +23290,7 @@ index 87853fac338a1d463424a2de95db7ef21a24f1ff..7e8bc675782e42dbb2cce45ea1b3f403
 +        "packages/deepseek-harness-product/expert-kit-readme/src/index.ts#ExpertKitInstructionSource"
 +      ],
 +      "sources": [
-+        "packages/deepseek-harness-product/expert-kit-readme/src/index.ts:45"
++        "packages/deepseek-harness-product/expert-kit-readme/src/index.ts:40"
 +      ]
 +    },
      {

@@ -83,11 +83,14 @@ function sessionId(payload: Record<string, unknown>): string | undefined {
 }
 
 function capabilityRequest(payload: Record<string, unknown>): ProductTaskCapabilityRequest {
+  const fields = new Set(['sessionId', 'basePresetId', 'expertKitId', 'connectorIds', 'recoverCapabilities', 'knowledgeBaseIds'])
+  for (const key of Object.keys(payload)) {
+    if (!fields.has(key)) throw new ProductError('CAPABILITY_REQUEST_INVALID', `Unknown capability field: ${key}`, false)
+  }
   const request: {
     sessionId?: string
     basePresetId?: string
     expertKitId?: string | null
-    expertKitTaskId?: string
     connectorIds?: string[]
     recoverCapabilities?: boolean
     knowledgeBaseIds?: string[]
@@ -106,13 +109,6 @@ function capabilityRequest(payload: Record<string, unknown>): ProductTaskCapabil
     if (payload.expertKitId !== null && (typeof payload.expertKitId !== 'string' || !/^[a-z][a-z0-9-]{2,63}$/.test(payload.expertKitId))) throw new Error('Invalid Expert Kit identity')
     request.expertKitId = payload.expertKitId
   }
-  if (payload.expertKitTaskId !== undefined) {
-    if (typeof payload.expertKitTaskId !== 'string' || !/^[a-z][a-z0-9-]{1,63}$/.test(payload.expertKitTaskId)) {
-      throw new Error('Invalid Expert Kit shortcut identity')
-    }
-    request.expertKitTaskId = payload.expertKitTaskId
-  }
-  if ('addSkillIds' in payload) throw new Error('Install skills with skills.install')
   for (const key of ['connectorIds', 'knowledgeBaseIds'] as const) {
     const values = payload[key]
     if (values === undefined) continue

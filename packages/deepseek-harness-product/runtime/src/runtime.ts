@@ -16,8 +16,6 @@ import { FileSystemSkillProvider } from '@deepseek-ai/dsh-skill-filesystem'
 import type { ProductContentIdentity, ProductInstalledExpertKits, ProductInstalledSkills, ProductTaskCapabilityRequest, ProductTaskCapabilityResult, ProductTaskCapabilities } from '@deepseek-harness/product/protocol'
 import { ProductError } from '@deepseek-harness/product/errors'
 import { compareVersions } from '@deepseek-harness/product/catalog-manager'
-import { ExpertKitCommonTaskSchema } from '@deepseek-harness/product/extension-draft'
-import { z } from 'zod'
 import { createTaskCapabilities, type TaskContent } from './tasks.ts'
 import { createInstalledSkills } from './installed-skills.ts'
 import { createInstalledExpertKits } from './installed-expert-kits.ts'
@@ -122,8 +120,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   const connectorsByPreset = new Map<string, readonly Connector[]>()
   const connectorsByAgent = new Map<Agent, readonly Connector[]>()
   installConnectorPolicy(ctx, connectorsByPreset, connectorsByAgent, config.product)
-  const content = async (id: string, signal?: AbortSignal, installedIdentity?: ProductContentIdentity,
-    taskId?: string): Promise<TaskContent> => {
+  const content = async (id: string, signal?: AbortSignal, installedIdentity?: ProductContentIdentity): Promise<TaskContent> => {
     validateProductId(id)
     const catalog = expertKitCatalog([await config.product.invoke('expertKits.get', { id }, signal)])[0]
     if (catalog === undefined || catalog.id !== id) throw new Error(`Selected kit is unavailable: ${id}`)
@@ -156,23 +153,6 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       knowledgeBaseRefs: catalog.knowledgeBaseRefs, requiredTools: catalog.requiredTools }
     await installExpertKitArtifact(config.product, catalog, kitsRoot, signal)
     const installed = await installedExpertKit(catalog, kitsRoot)
-    let shortcut: TaskContent['shortcut']
-    if (taskId !== undefined) {
-      const path = join(dirname(installed.readmePath), '.deepseek-harness-kit/kit.json')
-      try {
-        if ((await stat(path)).size > 256 * 1024) throw new Error('Kit manifest exceeds the size limit')
-        const manifest = objectRecord(JSON.parse(await readFile(path, { encoding: 'utf8', signal })), 'kit manifest')
-        if (manifest.id !== catalog.id || manifest.version !== catalog.version) throw new Error('Kit manifest identity mismatch')
-        const tasks = z.array(ExpertKitCommonTaskSchema).max(12).parse(manifest.commonTasks)
-        shortcut = tasks.find(task => task.id === taskId)
-        if (new Set(tasks.map(task => task.id)).size !== tasks.length || shortcut === undefined
-          || shortcut.skillIds.some(name => !catalog.skillIds.includes(name))) throw new Error('Invalid shortcut skill binding')
-      } catch (error) {
-        signal?.throwIfAborted()
-        throw new ProductError('KIT_TASK_INVALID', 'Install a kit version with valid shortcut skill bindings', false,
-          [{ kind: 'expert-kit', id }, { kind: 'kit-task', id: taskId }], { cause: error })
-      }
-    }
     const lifecycle = new AbortController()
     const provider = new FileSystemSkillProvider(ctx, { signal: lifecycle.signal, invalidate: () => undefined }, {
       providerName: 'product-kit-validation', includeDefaultRoots: false,
@@ -192,14 +172,14 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     const missing = checks.filter(check => check.status === 'MISSING')
     if (missing.length > 0) throw new ProductError('KIT_SKILL_MISSING', `Kit ${id} has invalid packaged skills`, false,
       [{ kind: 'expert-kit', id }, ...missing.map(check => ({ kind: 'skill', id: check.reference }))], { dependencyChecks: checks })
-    return { ...dependencies, dependencyChecks: checks, ...shortcut === undefined ? {} : { shortcut },
-      plugins: expertKitPlugins(installed, shortcut?.skillIds) }
+    return { ...dependencies, dependencyChecks: checks,
+      plugins: expertKitPlugins(installed) }
   }
   const installedKits = createInstalledExpertKits(ctx, {
     root: join(root, 'installed-expert-kits-v1'), product: config.product, prepare: content,
   })
   const tasks = await createTaskCapabilities(ctx, {
-    root: join(root, 'tasks-v1'), content: (_kind, id, signal, taskId) => installedKits.prepare(id, signal, taskId),
+    root: join(root, 'tasks-v1'), content: (_kind, id, signal) => installedKits.prepare(id, signal),
     authorizeKit: async (id, signal) => { await config.product.invoke('expertKits.get', { id }, signal) },
     visibleKnowledge: async (signal) => {
       const catalog = await config.product.invoke('knowledge.bases.list', undefined, signal)
@@ -298,11 +278,11 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
 }
 
 /** Capability rows contain product providers only; the task owns its base mode and dependencies. */
-function expertKitPlugins(selected: InstalledExpertKit, initialSkillIds: readonly string[] = []): PresetDefinition['plugins'] {
+function expertKitPlugins(selected: InstalledExpertKit): PresetDefinition['plugins'] {
   const key = `${selected.kit.id}-${selected.kit.sha256.toLowerCase()}`
   return [{
     id: `product-kit-readme-${key}`, name: EXPERT_KIT_README_PLUGIN,
-    config: { expertKitId: selected.kit.id, initialSkillIds, skillProviderName: `product-kit-${key}`,
+    config: { expertKitId: selected.kit.id,
       entries: [{ name: `expert-kit-${selected.kit.id}`, description: selected.kit.summary, path: selected.readmePath }] },
   }, ...selected.skillDirectory === undefined ? [] : [{
     id: `product-kit-skills-${key}`, name: KIT_SKILLS_PLUGIN,

@@ -78,8 +78,8 @@ export function extensionFiles(draft: ExtensionDraft, originals: Readonly<Record
   files[draft.kind === 'skill' ? 'SKILL.md' : 'README.md'] = readme
   files[draft.kind === 'skill' ? '.deepseek-harness-skill/skill.json' : '.deepseek-harness-kit/kit.json'] =
     JSON.stringify(draft.kind === 'skill' ? { schemaVersion: '1', ...common, allowImplicitInvocation: true }
-      : { schemaVersion: '3', ...common, skills, commonTasks: draft.commonTasks }, null, 2) + '\n'
-  return { files, release: { kind: draft.kind, ...common, readme, commonTasks: draft.kind === 'skill' ? [] : draft.commonTasks,
+      : { schemaVersion: '4', ...common, skills }, null, 2) + '\n'
+  return { files, release: { kind: draft.kind, ...common, readme,
     skillIds: draft.kind === 'skill' ? [draft.id] : skills.map(value => value.id),
     skillDetails: draft.kind === 'skill' ? [{ id: draft.id, name: draft.name, summary: draft.summary }]
       : draft.skills.map(value => ({ id: value.id, name: value.name, summary: value.summary })) } }
