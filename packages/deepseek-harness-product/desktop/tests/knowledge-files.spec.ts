@@ -84,6 +84,53 @@ it('lets a revoked employee close a file without a fresh permission request', as
   expect(h.calls).toHaveLength(calls)
 })
 
+it.each([
+  ['CON.pdf', '_CON.pdf'],
+  ['con.report.pdf', '_con.report.pdf'],
+  ['PrN.pdf', '_PrN.pdf'],
+  ['AUX.pdf', '_AUX.pdf'],
+  ['NUL.pdf', '_NUL.pdf'],
+  ['COM1.pdf', '_COM1.pdf'],
+  ['lpt9.pdf', '_lpt9.pdf'],
+  ['COM¹.pdf', '_COM¹.pdf'],
+  ['LPT².pdf', '_LPT².pdf'],
+  ['CONIN$.pdf', '_CONIN$.pdf'],
+  ['CONOUT$.pdf', '_CONOUT$.pdf'],
+  ['CON .pdf', '_CON.pdf'],
+  [`CON${' '.repeat(300)}report.pdf`, '_CON.pdf'],
+  [`NUL.${'a'.repeat(300)}.pdf`, `_NUL.${'a'.repeat(231)}.pdf`],
+  ['report.pdf. ', 'report.pdf'],
+  ['报告.pdf ', '报告.pdf'],
+  ['COM0.pdf', 'COM0.pdf'],
+  ['company.pdf', 'company.pdf'],
+])('uses a portable filename for preview, download and external opening: %s', async (filename, expected) => {
+  const data = new Uint8Array([1, 2, 3])
+  const h = await fixture(data)
+  h.filename(filename)
+  const opened = await h.invoke('knowledge.documents.preview.open', identity) as KnowledgeFileTransfer
+  expect(opened.fileName).toBe(expected)
+  expect(Buffer.byteLength(opened.fileName)).toBeLessThanOrEqual(240)
+  const chunk = await h.invoke('knowledge.documents.preview.read', { transferId: opened.transferId, offset: 0 }) as KnowledgeFileChunk
+  expect(chunk.data).toEqual(data)
+  await h.invoke('knowledge.documents.preview.close', { transferId: opened.transferId })
+
+  await h.invoke('knowledge.documents.download', identity)
+  expect(h.saveDialog).toHaveBeenCalledWith(expected)
+  expect(await readFile(join(h.directory, 'saved.pdf'))).toEqual(Buffer.from(data))
+  await h.invoke('knowledge.documents.openExternal', identity)
+  const path = h.openPath.mock.calls[0]?.[0]
+  expect(path).toBeDefined()
+  expect(basename(path!)).toBe(expected)
+  expect(await readFile(path!)).toEqual(Buffer.from(data))
+})
+
+it('removes a trailing dot exposed when an extensionless filename reaches the byte limit', async () => {
+  const h = await fixture(new Uint8Array([1]))
+  h.filename(`${'a'.repeat(239)}.${'b'.repeat(40)}`)
+  const opened = await h.invoke('knowledge.documents.preview.open', identity) as KnowledgeFileTransfer
+  expect(opened.fileName).toBe('a'.repeat(239))
+})
+
 it('keeps reading the same original when indexing changes the document timestamp', async () => {
   const data = new Uint8Array([1, 2, 3])
   const h = await fixture(data)

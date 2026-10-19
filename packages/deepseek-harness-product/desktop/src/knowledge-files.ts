@@ -374,19 +374,22 @@ function chunkBytes(value: unknown): Buffer {
   return data
 }
 function fileName(value: string): string {
-  const sanitized = value.replace(/[\\/\x00-\x1f\x7f<>:"|?*]/gu, '_').replace(/^\.+/u, '_')
+  const sanitized = value.replace(/[\\/\x00-\x1f\x7f<>:"|?*]/gu, '_').replace(/^\.+/u, '_').replace(/[. ]+$/u, '')
+  // Win32 reserves device stems even when a document extension is present.
+  const reserved = /^(?:CON|PRN|AUX|NUL|CONIN\$|CONOUT\$|COM[1-9¹²³]|LPT[1-9¹²³]) *(?:\.|$)/iu
   const extension = extname(sanitized)
   const suffix = Buffer.byteLength(extension) <= 32 ? extension : ''
   const stem = suffix === '' ? sanitized : sanitized.slice(0, -suffix.length)
   let name = ''
-  let remaining = 240 - Buffer.byteLength(suffix)
+  let remaining = 240 - Buffer.byteLength(suffix) - (reserved.test(sanitized) ? 1 : 0)
   for (const character of stem) {
     const size = Buffer.byteLength(character)
     if (size > remaining) break
     name += character
     remaining -= size
   }
-  return `${name || 'document'}${suffix}`
+  const filename = `${name.replace(/[. ]+$/u, '') || 'document'}${suffix}`
+  return reserved.test(filename) ? `_${filename}` : filename
 }
 function office(value: string): boolean { return /\.(?:docx?|xlsx?|pptx?)$/iu.test(value) }
 function invalid(): never { throw new ProductError('KNOWLEDGE_REQUEST_INVALID', 'Invalid file transfer request', false) }
