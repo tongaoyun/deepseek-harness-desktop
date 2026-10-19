@@ -16,7 +16,7 @@ import { isKnowledgeAccessDenied } from './knowledge-data.ts'
 import { ExtensionPreview } from './ExtensionPreview.tsx'
 import { ConnectorEditor } from './ConnectorEditor.tsx'
 import { ExtensionImporter } from './ExtensionImporter.tsx'
-import { EXTENSION_CATEGORIES, ExtensionImportDraftSchema, type ExtensionImportPreview } from '@deepseek-harness/product/extension-draft'
+import { EXTENSION_CATEGORIES, ExtensionImportPreviewSchema, type ExtensionImportPreview } from '@deepseek-harness/product/extension-draft'
 import { knowledgeReferenceDetails } from './catalog-shared.tsx'
 import { IconPlusOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import { ResourceActionsMenu } from './ResourceActionsMenu.tsx'
@@ -386,19 +386,29 @@ export function DeepSeekHarnessCatalogSection(props: CatalogSectionProps): React
     if (!api || (catalog !== 'skills' && catalog !== 'expertKits')) return
     const lifetime = managementLifetime.current
     setImportMenu(false); setActionPending(true); setActionFailure(undefined)
+    let stageId: string | undefined
+    let transferred = false
     try {
       const result = await read(api, 'extensions.import.inspect', { kind: catalog === 'skills' ? 'skill' : 'expert-kit', source,
         ...(entry ? { id: entry.id } : {}) })
+      if (typeof result === 'object' && result !== null) {
+        if ('cancelled' in result && result.cancelled === true) return
+        if ('stageId' in result && typeof result.stageId === 'string') stageId = result.stageId
+      }
       if (lifetime !== managementLifetime.current) return
-      if (typeof result !== 'object' || result === null || !('stageId' in result) || !('draft' in result)) return
-      if (typeof result.stageId !== 'string' || !('files' in result) || !Array.isArray(result.files)) throw new Error(t('detailFailed'))
-      const imported = { stageId: result.stageId, draft: ExtensionImportDraftSchema.parse(result.draft),
-        files: result.files as ExtensionImportPreview['files'], missingFields: 'missingFields' in result && Array.isArray(result.missingFields)
-          ? result.missingFields.filter((value): value is string => typeof value === 'string') : [] }
+      const imported = ExtensionImportPreviewSchema.parse(result)
+      if (imported.draft.kind !== undefined && imported.draft.kind !== (catalog === 'skills' ? 'skill' : 'expert-kit')) throw new Error(t('detailFailed'))
       if (source === 'catalog') await startAuthoring(imported, true)
       else setEditor({ imported })
+      transferred = true
     } catch (error) { if (lifetime === managementLifetime.current) setActionFailure(productErrorMessage(error, t, 'loadFailed')) }
-    finally { if (lifetime === managementLifetime.current) setActionPending(false) }
+    finally {
+      if (stageId !== undefined && !transferred) {
+        try { await api.invoke('extensions.import.release', { stageId }, nextProductRequestId()) }
+        catch (error) { if (lifetime === managementLifetime.current) setActionFailure(productErrorMessage(error, t, 'loadFailed')) }
+      }
+      if (lifetime === managementLifetime.current) setActionPending(false)
+    }
   }
 
   const startAuthoring = async (imported?: ExtensionImportPreview, edit = false): Promise<void> => {

@@ -271,6 +271,27 @@ describe('DeepSeekHarness capability navigation', () => {
     expect(screen.queryByText('旧员工正文')).toBeNull()
     expect(screen.queryByRole('dialog')).toBeNull()
     expect(startExtensionAuthoring).not.toHaveBeenCalled()
+    if (pendingMethod === 'extensions.import.inspect') expect(invoke).toHaveBeenCalledWith('extensions.import.release',
+      { stageId: '00000000-0000-4000-8000-000000000001' }, expect.any(String))
+  })
+
+  it('rejects malformed catalog content before starting modification and releases the unused import', async () => {
+    const stageId = '00000000-0000-4000-8000-000000000001'
+    const invoke = vi.fn(async (method: string) => {
+      if (method === 'skills.list') return [{ id: 'personal', name: '我的技能', version: '1.0.0', canEdit: true }]
+      if (method === 'extensions.import.inspect') return { stageId, draft: { kind: 'skill', name: '我的技能' },
+        files: [null], missingFields: [] }
+      return undefined
+    })
+    const startExtensionAuthoring = vi.fn(async () => {})
+    installProductApi({ invoke })
+    render(<SkillsPanel t={t} {...actions()} startExtensionAuthoring={startExtensionAuthoring} />)
+    fireEvent.click(await screen.findByRole('button', { name: zh.resourceActions }))
+    fireEvent.click(screen.getByRole('menuitem', { name: zh.modifyResource }))
+    await screen.findByRole('alert')
+    expect(startExtensionAuthoring).not.toHaveBeenCalled()
+    expect(invoke).toHaveBeenCalledWith('extensions.import.release', { stageId }, expect.any(String))
+    expect(screen.queryByRole('dialog')).toBeNull()
   })
 
   it('reports an unavailable identity transport without claiming the employee signed out', async () => {

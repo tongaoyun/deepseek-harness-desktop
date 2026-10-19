@@ -72,6 +72,8 @@ JSON 与原文件请求统一保留服务端错误的 `retryable`、资源和依
 
 `extensions.authoring.begin/read/update/save/discard` 管理创建对话草稿。受信 Host 可以读取、更新并保存对应创建对话的个人资源。草稿按员工隔离、关联 Session 并校验修订号，仅记录自身 Session 标识。`authoring.changed` 通知已提交的变动，不携带内容。内容草稿校验排除连接器凭据和暂存标识。保存校验只允许专家套件包含内置技能。提交共享仍是所有者的独立操作。
 
+`ExtensionImportPreviewSchema` 校验跨进程导入回执中的暂存 UUID、内容类型、文件路径、非负整数字节数和缺失字段列表；内容自带的暂存编号必须与回执一致。调用方在校验通过后才转交预览或创建对话；失败或取消时释放未使用的暂存。
+
 内置技能草稿通过可选的 `description` 保留完整原生描述，与最多 300 字符的目录 `summary` 分开。简介必须等于描述或其空白归一化投影：首个完整句子能容纳时取该句，否则取前 299 个 UTF-16 单元并追加省略号。内置技能 ID 和导入资源 ID 支持两个字符的名称。`extensionFiles` 从主进程持有的原始 Markdown 保留额外 frontmatter，并按 UTF-8 字节检查完整生成文件：独立技能 64 KiB，内置技能 256 KiB。
 
 `extensions.connector.read/update/delete` 通过主进程管理本人创建的个人连接器。读取仅返回公开配置及已配置私密键的空占位值。修改创建不可变的新版本，删除使资源 ID 退役。服务端对每项操作校验所有者。

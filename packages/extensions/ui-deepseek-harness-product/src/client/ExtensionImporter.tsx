@@ -1,7 +1,7 @@
 /** File selection precedes authoring; main owns paths, package validation and staging. */
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Button, IconDownloadOutlineRegular, IconFolderOpenOutlineRegular, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
-import { ExtensionImportDraftSchema, type ExtensionImportPreview } from '@deepseek-harness/product/extension-draft'
+import { ExtensionImportPreviewSchema, type ExtensionImportPreview } from '@deepseek-harness/product/extension-draft'
 import type { DeepSeekHarnessProductKey } from '../locales.ts'
 import css from '../DeepSeekHarnessProduct.module.css'
 import { productApi } from './product-api.ts'
@@ -17,37 +17,42 @@ export function ExtensionImporter({ kind, onClose, onInspected, t }: {
 }): ReactNode {
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string>()
-  const controller = useRef<{ closed: boolean; request?: string }>({ closed: false })
+  const lifecycle = useRef(new AbortController())
   useEffect(() => {
-    controller.current.closed = false
-    return () => {
-      controller.current.closed = true
-      if (controller.current.request) productApi()?.cancel(controller.current.request)
-    }
+    const controller = new AbortController()
+    lifecycle.current = controller
+    return () => { controller.abort() }
   }, [])
   const inspect = async (source: 'file' | 'directory'): Promise<void> => {
     const api = productApi()
     if (!api || pending) return
     setPending(true); setError(undefined)
     const request = nextProductRequestId()
-    controller.current.request = request
+    const signal = lifecycle.current.signal
+    const cancel = () => { api.cancel(request) }
+    signal.addEventListener('abort', cancel, { once: true })
+    let stageId: string | undefined
+    let transferred = false
     try {
       const value = await api.invoke('extensions.import.inspect', { kind, source }, request)
-      if (typeof value !== 'object' || value === null || !('stageId' in value)) return
-      if (typeof value.stageId !== 'string' || !('draft' in value) || !('files' in value) || !Array.isArray(value.files)) throw new Error('Invalid import preview')
-      if (controller.current.closed) {
-        await api.invoke('extensions.import.release', { stageId: value.stageId }, nextProductRequestId())
-        return
+      if (typeof value === 'object' && value !== null) {
+        if ('cancelled' in value && value.cancelled === true) return
+        if ('stageId' in value && typeof value.stageId === 'string') stageId = value.stageId
       }
-      onInspected({ stageId: value.stageId, draft: ExtensionImportDraftSchema.parse(value.draft),
-        files: value.files as ExtensionImportPreview['files'],
-        missingFields: 'missingFields' in value && Array.isArray(value.missingFields)
-          ? value.missingFields.filter((field): field is string => typeof field === 'string') : [] })
+      if (signal.aborted) return
+      const preview = ExtensionImportPreviewSchema.parse(value)
+      if (preview.draft.kind !== undefined && preview.draft.kind !== kind) throw new Error('Unexpected import kind')
+      onInspected(preview)
+      transferred = true
     } catch (error) {
-      if (!controller.current.closed) setError(productErrorMessage(error, t, 'importFailed'))
+      if (!signal.aborted) setError(productErrorMessage(error, t, 'importFailed'))
     } finally {
-      delete controller.current.request
-      if (!controller.current.closed) setPending(false)
+      signal.removeEventListener('abort', cancel)
+      if (stageId !== undefined && !transferred) {
+        try { await api.invoke('extensions.import.release', { stageId }, nextProductRequestId()) }
+        catch (error) { if (!signal.aborted) setError(productErrorMessage(error, t, 'importFailed')) }
+      }
+      if (!signal.aborted) setPending(false)
     }
   }
   return <Modal open onClose={onClose} title={t(kind === 'skill' ? 'importSkill' : 'importExpertKit')} closeLabel={t('close')}

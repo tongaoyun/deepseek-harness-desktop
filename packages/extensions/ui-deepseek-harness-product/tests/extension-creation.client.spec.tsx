@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { StrictMode } from 'react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { ExtensionDraftSchema } from '@deepseek-harness/product/extension-draft'
 import { ExtensionImporter } from '../src/client/ExtensionImporter.tsx'
@@ -70,6 +71,55 @@ it('keeps connector editing unavailable after a failed load and allows retry', a
   fireEvent.click(screen.getByRole('button', { name: zh.retry }))
   await screen.findByLabelText(zh.mcpServerName)
   expect(screen.getByRole<HTMLButtonElement>('button', { name: zh.saveConnector }).disabled).toBe(false)
+})
+
+it('ignores an abandoned connector load after effect reactivation instead of overwriting edits', async () => {
+  let finishFirst!: (value: unknown) => void
+  let finishCurrent!: (value: unknown) => void
+  let reads = 0
+  const invoke = vi.fn(async (_namespace: string, method: string, _payload?: unknown, _requestId?: string) => {
+    if (method !== 'extensions.connector.read') return { ok: true, result: [] }
+    return new Promise((resolve) => { if (++reads === 1) finishFirst = resolve; else finishCurrent = resolve })
+  })
+  const cancel = vi.fn()
+  vi.stubGlobal('dshDesktop', { extensions: { invoke, cancel } })
+  render(<StrictMode><ConnectorEditor editing={{ id: draft.id, version: '1.0.0' }} onClose={close} onSaved={close} t={t} /></StrictMode>)
+  expect(reads).toBe(2)
+  await act(async () => { finishCurrent({ ok: true, result: { draft: { ...draft, version: '1.0.1' } } }) })
+  fireEvent.change(screen.getByLabelText(zh.mcpServerName), { target: { value: 'My retained edit' } })
+  await act(async () => { finishFirst({ ok: true, result: { draft: { ...draft, name: 'Abandoned result', version: '1.0.1' } } }) })
+  expect(screen.getByLabelText<HTMLInputElement>(zh.mcpServerName).value).toBe('My retained edit')
+  const firstRead = invoke.mock.calls.find(call => call[1] === 'extensions.connector.read')
+  expect(cancel).toHaveBeenCalledWith('product', firstRead?.[3])
+})
+
+it.each([undefined, {}, { files: [{ path: 'SKILL.md', bytes: -1 }] }, { files: [null] }, { missingFields: [42] },
+  { draft: { kind: 'connector' } }, { draft: { stageId: '00000000-0000-4000-8000-000000000002' } }])(
+  'reports an invalid import response and releases its staging without opening a broken preview: %j', async (invalid) => {
+    const stageId = '00000000-0000-4000-8000-000000000001'
+    const result = invalid === undefined ? undefined : { stageId, draft: { kind: 'skill' }, missingFields: [], ...invalid }
+    const inspected = vi.fn()
+    const invoke = vi.fn(async (_namespace: string, method: string) => ({ ok: true, result: method === 'extensions.import.inspect' ? result : {} }))
+    vi.stubGlobal('dshDesktop', { extensions: { invoke, cancel: vi.fn() } })
+    render(<ExtensionImporter kind="skill" onClose={close} onInspected={inspected} t={t} />)
+    fireEvent.click(screen.getByRole('button', { name: zh.choosePackageFile }))
+    await screen.findByRole('alert')
+    expect(inspected).not.toHaveBeenCalled()
+    if (invalid !== undefined) expect(invoke).toHaveBeenCalledWith('product', 'extensions.import.release', { stageId }, expect.any(String))
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: zh.choosePackageFile }).disabled).toBe(false)
+  },
+)
+
+it('allows cancelling file selection without reporting an import failure', async () => {
+  const invoke = vi.fn(async () => ({ ok: true, result: { cancelled: true } }))
+  const inspected = vi.fn()
+  vi.stubGlobal('dshDesktop', { extensions: { invoke, cancel: vi.fn() } })
+  render(<ExtensionImporter kind="skill" onClose={close} onInspected={inspected} t={t} />)
+  fireEvent.click(screen.getByRole('button', { name: zh.choosePackageFile }))
+  await waitFor(() => { expect(screen.queryByRole('status')).toBeNull() })
+  expect(screen.queryByRole('alert')).toBeNull()
+  expect(inspected).not.toHaveBeenCalled()
+  expect(invoke).toHaveBeenCalledOnce()
 })
 
 it('parses standard JSON without accepting ambiguous transports, invalid types or tool permission overrides', () => {

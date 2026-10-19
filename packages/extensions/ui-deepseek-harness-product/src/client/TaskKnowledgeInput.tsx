@@ -24,15 +24,11 @@ export function TaskKnowledgeInput({
   const presetId = useSessions(state => state.byId[sessionId]?.projectionValues?.agentPreset)
   const [state, setState] = useState<Awaited<ReturnType<TaskModeActions['readMode']>>>()
   const [failure, setFailure] = useState('')
-  const [pending, setPending] = useState(false)
   const [revision, setRevision] = useState(0)
   useEffect(() => productApi()?.subscribe((event) => {
     if (event.type === 'catalog.changed' || event.type === 'session.changed') setRevision(value => value + 1)
   }), [])
-  useEffect(() => {
-    setState(undefined)
-    setPending(false)
-  }, [sessionId, presetId])
+  useEffect(() => { setState(undefined) }, [sessionId, presetId])
   useEffect(() => {
     let active = true
     setFailure('')
@@ -44,8 +40,7 @@ export function TaskKnowledgeInput({
     <TaskKnowledgeSelector sessionId={sessionId} capabilities={state?.capabilities} readKnowledgeCatalog={readKnowledgeCatalog}
       setKnowledgeSelection={setKnowledgeSelection} recoverCapabilities={recoverCapabilities}
       retryCapabilities={retryCapabilities} openCatalog={openCatalog}
-      subscribeOpen={subscribeOpen} onApplied={() => { setRevision(value => value + 1) }} onPendingChange={setPending}
-      disabled={pending} t={t} />
+      subscribeOpen={subscribeOpen} onApplied={() => { setRevision(value => value + 1) }} t={t} />
     {failure && <span role="alert" className={css.catalogError}>{failure}</span>}
   </>
 }

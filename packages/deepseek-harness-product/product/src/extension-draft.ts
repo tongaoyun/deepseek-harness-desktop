@@ -110,6 +110,16 @@ export interface ExtensionImportPreview {
   readonly files: readonly { readonly path: string; readonly bytes: number }[]
   readonly missingFields: readonly string[]
 }
+/** Validate an import preview before displaying files or transferring its staging ownership. */
+export const ExtensionImportPreviewSchema: z.ZodType<ExtensionImportPreview> = z.object({
+  stageId: z.uuid(), draft: ExtensionImportDraftSchema,
+  files: z.array(z.object({ path: z.string().min(1), bytes: z.number().int().nonnegative() })),
+  missingFields: z.array(z.string()),
+}).superRefine((preview, context) => {
+  if (preview.draft.kind === 'connector' || preview.draft.stageId !== undefined && preview.draft.stageId !== preview.stageId) {
+    context.addIssue({ code: 'custom', path: ['draft'], message: 'Imported content does not match its staging' })
+  }
+})
 /** Result of saving a server-owned immutable extension version. */
 export interface ExtensionSaveResult {
   readonly kind: ExtensionDraft['kind']

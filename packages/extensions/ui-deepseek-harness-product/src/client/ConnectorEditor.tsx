@@ -44,37 +44,41 @@ export function ConnectorEditor({ onClose, onSaved, editing, t }: {
   const [pending, setPending] = useState(false)
   const [loading, setLoading] = useState(editing !== undefined)
   const [ready, setReady] = useState(editing === undefined)
-  const lifecycle = useRef({ closed: false, requests: new Set<string>() })
-  const invoke = async (method: string, payload: unknown, timeoutMs?: number): Promise<unknown> => {
+  const lifecycle = useRef(new AbortController())
+  const invoke = async (method: string, payload: unknown, timeoutMs?: number, signal = lifecycle.current.signal): Promise<unknown> => {
+    signal.throwIfAborted()
     const api = productApi()
     if (!api) throw new Error(t('unavailable'))
-    const request = nextProductRequestId(); lifecycle.current.requests.add(request)
-    try { return await api.invoke(method, payload, request, timeoutMs) }
-    finally { lifecycle.current.requests.delete(request) }
+    const request = nextProductRequestId()
+    const cancel = () => { api.cancel(request) }
+    signal.addEventListener('abort', cancel, { once: true })
+    try {
+      const value = await api.invoke(method, payload, request, timeoutMs)
+      signal.throwIfAborted()
+      return value
+    } finally { signal.removeEventListener('abort', cancel) }
   }
-  const load = async (): Promise<void> => {
+  const load = async (signal = lifecycle.current.signal): Promise<void> => {
     if (!editing) return
     setLoading(true); setError(undefined)
     try {
-      const value = await invoke('extensions.connector.read', editing)
-      if (lifecycle.current.closed) return
+      const value = await invoke('extensions.connector.read', editing, undefined, signal)
+      signal.throwIfAborted()
       const result = value as { draft: unknown; savePending?: boolean }
       applyJson(ExtensionDraftSchema.parse(result.draft), true)
       if (result.savePending) setError(t('connectorSavePending'))
       setReady(true)
-    } catch (error) { if (!lifecycle.current.closed) setError(productErrorMessage(error, t, 'loadFailed')) }
-    finally { if (!lifecycle.current.closed) setLoading(false) }
+    } catch (error) { if (!signal.aborted) setError(productErrorMessage(error, t, 'loadFailed')) }
+    finally { if (!signal.aborted) setLoading(false) }
   }
   useEffect(() => {
-    lifecycle.current.closed = false
-    void load()
-    void invoke('connectors.list', {}).then((value) => {
-      if (!lifecycle.current.closed) setProviders(items(value).filter(entry => entry.authMode === 'oauth' && entry.visibility !== 'PERSONAL'))
+    const controller = new AbortController()
+    lifecycle.current = controller
+    void load(controller.signal)
+    void invoke('connectors.list', {}, undefined, controller.signal).then((value) => {
+      if (!controller.signal.aborted) setProviders(items(value).filter(entry => entry.authMode === 'oauth' && entry.visibility !== 'PERSONAL'))
     }).catch(() => undefined)
-    return () => {
-      lifecycle.current.closed = true
-      for (const request of lifecycle.current.requests) productApi()?.cancel(request)
-    }
+    return () => { controller.abort() }
   }, [])
   const update = <K extends keyof ExtensionDraft>(key: K, value: ExtensionDraft[K]): void => {
     setDraft(previous => ({ ...previous, [key]: value }))
@@ -91,6 +95,7 @@ export function ConnectorEditor({ onClose, onSaved, editing, t }: {
     } catch { setError(t('connectorJsonInvalid')); setParsed([]) }
   }
   const save = async (): Promise<void> => {
+    const signal = lifecycle.current.signal
     setError(undefined)
     let privateValues: { headers: Record<string, string>; environment: Record<string, string> }
     try { privateValues = { headers: configuration(headers), environment: configuration(environment) } }
@@ -106,21 +111,23 @@ export function ConnectorEditor({ onClose, onSaved, editing, t }: {
     setPending(true)
     try {
       await invoke(editing ? 'extensions.connector.update' : 'extensions.save',
-        editing ? { ...editing, draft: checked.data } : checked.data, timeoutSeconds * 2000 + 60_000)
-      if (!lifecycle.current.closed) onSaved()
+        editing ? { ...editing, draft: checked.data } : checked.data, timeoutSeconds * 2000 + 60_000, signal)
+      signal.throwIfAborted()
+      onSaved()
     }
-    catch (error) { if (!lifecycle.current.closed) setError(productErrorMessage(error, t, 'saveFailed')) }
-    finally { if (!lifecycle.current.closed) setPending(false) }
+    catch (error) { if (!signal.aborted) setError(productErrorMessage(error, t, 'saveFailed')) }
+    finally { if (!signal.aborted) setPending(false) }
   }
   const field = (key: 'name' | 'url', label: DeepSeekHarnessProductKey, placeholder?: string, required = false): ReactNode =>
     <label className={css.editorField}><span>{t(label)}{required && <span className={css.requiredMark} aria-hidden="true">*</span>}</span><input aria-label={t(label)} required={required} disabled={pending} value={draft[key] ?? ''}
       placeholder={placeholder} onChange={(event) => { update(key, event.currentTarget.value) }} /></label>
   const paste = async (set: (rows: Pair[]) => void, rows: Pair[]): Promise<void> => {
+    const signal = lifecycle.current.signal
     try {
       const text = await navigator.clipboard.readText()
       const value = connectorVariables(text)
-      if (!lifecycle.current.closed) { set(pairs({ ...configuration(rows), ...value })); setError(undefined) }
-    } catch { if (!lifecycle.current.closed) setError(t('connectorPasteFailed')) }
+      if (!signal.aborted) { set(pairs({ ...configuration(rows), ...value })); setError(undefined) }
+    } catch { if (!signal.aborted) setError(t('connectorPasteFailed')) }
   }
   const privateRows = (rows: Pair[], set: (rows: Pair[]) => void, label: DeepSeekHarnessProductKey): ReactNode =>
     <section className={css.configurationSection} aria-label={t(label)}>

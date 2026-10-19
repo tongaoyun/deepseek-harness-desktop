@@ -19,7 +19,7 @@ function fixture() {
       { id: 'manuals', name: '业务手册' }, { id: 'research', name: '调研资料' }])),
     recoverCapabilities: vi.fn(async () => {}), retryCapabilities: vi.fn(async () => {}),
     setKnowledgeSelection: vi.fn(async (_ids: readonly string[]) => {}),
-    openCatalog: vi.fn(), onApplied: vi.fn(), onPendingChange: vi.fn(),
+    openCatalog: vi.fn(), onApplied: vi.fn(),
     subscribeOpen: (listener: () => void) => {
       open = listener
       return () => { open = undefined }

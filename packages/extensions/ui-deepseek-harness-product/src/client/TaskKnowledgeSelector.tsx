@@ -16,7 +16,7 @@ import css from '../DeepSeekHarnessProduct.module.css'
  */
 export function TaskKnowledgeSelector({
   sessionId, recoverCapabilities, retryCapabilities, capabilities, readKnowledgeCatalog, setKnowledgeSelection,
-  openCatalog, onApplied, onPendingChange, subscribeOpen, t, disabled = false,
+  openCatalog, onApplied, subscribeOpen, t,
 }: {
   readonly sessionId?: SessionId | undefined
   readonly recoverCapabilities: TaskModeActions['recoverCapabilities']
@@ -26,10 +26,8 @@ export function TaskKnowledgeSelector({
   readonly setKnowledgeSelection: TaskModeActions['setKnowledgeSelection']
   readonly openCatalog: TaskModeActions['openCatalog']
   readonly onApplied: () => void
-  readonly onPendingChange: (pending: boolean) => void
   readonly subscribeOpen: (listener: () => void) => () => void
   readonly t: (key: DeepSeekHarnessProductKey, params?: Record<string, unknown>) => string
-  readonly disabled?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const [catalog, setCatalog] = useState<readonly ProductItem[]>()
@@ -61,15 +59,15 @@ export function TaskKnowledgeSelector({
   }, [selectionKey])
   useEffect(() => {
     return subscribeOpen(() => {
-      if (disabled || pending) return
+      if (pending) return
       setOpenRequests(value => value + 1)
     })
-  }, [subscribeOpen, disabled, pending])
+  }, [subscribeOpen, pending])
   useEffect(() => {
-    if (capabilities === undefined || consumedRequests.current === openRequests || disabled || pending) return
+    if (capabilities === undefined || consumedRequests.current === openRequests || pending) return
     consumedRequests.current = openRequests
     setSelected([...ids]); setQuery(''); setFailed(''); setOpen(true)
-  }, [openRequests, selectionKey, capabilities === undefined, disabled, pending])
+  }, [openRequests, selectionKey, capabilities === undefined, pending])
   useEffect(() => {
     if (!open && identity === '') return
     let active = true
@@ -97,12 +95,12 @@ export function TaskKnowledgeSelector({
     .map(key => ({ key, rows: filtered.filter(row => (row.scope === 'DEPARTMENT' ? `DEPARTMENT:${row.ownerDepartmentId}` : row.scope ?? 'UNAVAILABLE') === key) }))
   const apply = (operation: Promise<void>) => {
     const captured = selectionKey
-    setPending(true); setFailed(''); onPendingChange(true)
+    setPending(true); setFailed('')
     void operation.then(() => { if (activeKey.current === captured) { setOpen(false); onApplied() } })
       .catch((error: unknown) => { if (activeKey.current === captured) {
         const failure = productFailure(error)
         setFailed(`${productErrorMessage(error, t, 'knowledgeSelectionFailed')} ${failure.resources.map(row => row.id).join(', ')}`.trim())
-      } }).finally(() => { if (activeKey.current === captured) { setPending(false); onPendingChange(false) } })
+      } }).finally(() => { if (activeKey.current === captured) setPending(false) })
   }
   return <>
     {ids.length > 0 && <div className={css.taskKnowledgeReferences} role="group" aria-label={t('taskKnowledge')}>
@@ -111,14 +109,14 @@ export function TaskKnowledgeSelector({
         const locked = capabilities?.requiredKnowledgeBaseIds.includes(id) ?? false
         return <span className={css.taskKnowledgeReference} key={id}>
           <Tooltip label={label} side="top"><button className={css.knowledgeReferenceName} type="button"
-            aria-label={label} aria-haspopup="dialog" aria-expanded={open} disabled={disabled || pending}
+            aria-label={label} aria-haspopup="dialog" aria-expanded={open} disabled={pending}
             onClick={() => { setSelected([...ids]); setQuery(''); setFailed(''); setOpen(true) }}>
             <IconDatabaseOutlineRegular size={14} /><span>{label}</span>
           </button></Tooltip>
           {locked ? <Tooltip label={t('kitRequiredKnowledge')} side="top">
             <span className={css.knowledgeReferenceRequired} aria-label={t('kitRequiredKnowledge')}><IconSparkleRegular size={13} /></span>
           </Tooltip> : <Tooltip label={t('removeKnowledgeReference', { name: label })} side="top">
-            <button className={css.knowledgeReferenceRemove} type="button" disabled={disabled || pending}
+            <button className={css.knowledgeReferenceRemove} type="button" disabled={pending}
               aria-label={t('removeKnowledgeReference', { name: label })} onClick={() => {
                 apply(setKnowledgeSelection(ids.filter(value => value !== id), sessionId))
               }}><IconCloseOutlineRegular size={12} /></button>
@@ -159,7 +157,7 @@ export function TaskKnowledgeSelector({
       <div className={css.knowledgeSelectionFooter}>
         <Button variant="ghost" size="sm" disabled={pending} onClick={() => { setOpen(false); openCatalog('knowledge') }}>{t('knowledgeDirectory')}</Button>
         <div><Button variant="ghost" size="sm" disabled={pending} onClick={() => { setOpen(false) }}>{t('cancel')}</Button>
-          <Button variant="primary" size="sm" disabled={disabled || capabilities === undefined || pending || loading || loadFailed || !changed} onClick={() => {
+          <Button variant="primary" size="sm" disabled={capabilities === undefined || pending || loading || loadFailed || !changed} onClick={() => {
             apply(setKnowledgeSelection(selected, sessionId))
           }}>{t(pending ? 'applyingKnowledge' : 'applyKnowledge')}</Button></div>
       </div>
