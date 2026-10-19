@@ -33,10 +33,19 @@ type PublicConnector = z.infer<typeof PublicConnector>
 const PendingConfiguration = z.object({ employee: z.string(), config: Configuration, body: z.string() })
 const PendingMetadata = z.object({ id: z.string(), version: z.string(), name: z.string(), summary: z.string(), category: z.string() })
 
+interface CachedConnection {
+  readonly employee: string
+  readonly id: string
+  readonly controller: AbortController
+  readonly connection: Promise<Client>
+  waiters: number
+  connected: boolean
+}
+
 /** Owns authenticated personal configuration and SDK connections for the desktop lifetime. */
 export class PersonalConnectors {
   private readonly lifetime = new AbortController()
-  private readonly clients = new Map<string, { employee: string; id: string; connection: Promise<Client> }>()
+  private readonly clients = new Map<string, CachedConnection>()
   private readonly saves = new Map<string, Promise<void>>()
   private identity: string | undefined
   constructor(private readonly root: string, private readonly secure: SecureStorage, private readonly employee: () => string | undefined,
@@ -97,7 +106,7 @@ export class PersonalConnectors {
         await this.finalize(this.filename(employee, entry.id, entry.version), config)
         const key = this.key(employee, entry.id, entry.version)
         const old = this.clients.get(key); this.clients.delete(key)
-        if (old) await (await old.connection).close()
+        if (old) await this.disconnect(old)
       })
       return { id: entry.id, version: entry.version, configured: true }
     }
@@ -106,13 +115,13 @@ export class PersonalConnectors {
     }
     if (method === 'extensions.connector.delete') {
       await api.request(`/api/v1/connectors/${encodeURIComponent(entry.id)}`, { method: 'DELETE', signal })
-      const removed: Promise<Client>[] = []
+      const removed: CachedConnection[] = []
       for (const [key, cached] of this.clients) {
         if (cached.employee !== employee || cached.id !== entry.id) continue
         this.clients.delete(key)
-        removed.push(cached.connection)
+        removed.push(cached)
       }
-      await Promise.allSettled(removed.map(async connection => (await connection).close()))
+      await Promise.allSettled(removed.map(cached => this.disconnect(cached)))
       await rm(this.filename(employee, entry.id, entry.version), { force: true })
       await rm(`${this.filename(employee, entry.id, entry.version)}.pending`, { force: true })
       return { removed: true, id: entry.id }
@@ -253,7 +262,7 @@ export class PersonalConnectors {
     const key = this.key(employee, draft.id, draft.version)
     const old = this.clients.get(key)
     this.clients.delete(key)
-    if (old) await (await old.connection).close()
+    if (old) await this.disconnect(old)
   }
 
   /** Augment personal runtime data with local configuration and live read-only annotations.
@@ -263,6 +272,8 @@ export class PersonalConnectors {
    * @returns Main-only entries, later sanitized by the relay for Host.
    */
   async enrich(value: unknown, signal = this.lifetime.signal, discoverTools = true): Promise<unknown> {
+    signal = AbortSignal.any([signal, this.lifetime.signal])
+    signal.throwIfAborted()
     if (!Array.isArray(value)) throw new Error('Invalid connector catalog')
     const employee = this.employee()
     await this.resetIdentity(employee)
@@ -334,7 +345,7 @@ export class PersonalConnectors {
   async close(): Promise<void> {
     this.lifetime.abort(new Error('Personal connector manager closed'))
     await Promise.allSettled([...this.saves.values()])
-    await Promise.allSettled([...this.clients.values()].map(async cached => (await cached.connection).close()))
+    await Promise.allSettled([...this.clients.values()].map(cached => this.disconnect(cached)))
     this.clients.clear()
   }
 
@@ -346,7 +357,7 @@ export class PersonalConnectors {
     this.identity = employee
     const previous = [...this.clients.values()]
     this.clients.clear()
-    await Promise.allSettled(previous.map(async cached => (await cached.connection).close()))
+    await Promise.allSettled(previous.map(cached => this.disconnect(cached)))
   }
 
   private key(employee: string, id: string, version: string): string { return createHash('sha256').update(JSON.stringify([employee, id, version])).digest('hex') }
@@ -388,7 +399,7 @@ export class PersonalConnectors {
         const key = this.key(employee, entry.id, entry.version)
         const old = this.clients.get(key)
         this.clients.delete(key)
-        if (old) await (await old.connection).close()
+        if (old) await this.disconnect(old)
       }
       const encrypted = await readFile(filename)
       const config = Configuration.parse(JSON.parse(this.secure.decryptString(encrypted)))
@@ -402,17 +413,50 @@ export class PersonalConnectors {
       throw new Error('Private connector settings could not be decrypted')
     }
   }
-  private client(entry: PublicConnector, employee: string, config: Configuration, signal: AbortSignal): Promise<Client> {
+  private async client(entry: PublicConnector, employee: string, config: Configuration, signal: AbortSignal): Promise<Client> {
+    signal.throwIfAborted()
+    this.lifetime.signal.throwIfAborted()
+    if (this.employee() !== employee) throw new ProductError('CONNECTOR_AUTHORIZATION_REQUIRED', 'Employee identity changed', false)
     const key = this.key(employee, entry.id, entry.version)
-    const existing = this.clients.get(key)
-    if (existing) return existing.connection
-    const cached = { employee, id: entry.id, connection: this.connect(config, signal) }
-    this.clients.set(key, cached)
-    void cached.connection.catch(() => { if (this.clients.get(key) === cached) this.clients.delete(key) })
-    void cached.connection.then((value) => {
-      value.onclose = () => { if (this.clients.get(key) === cached) this.clients.delete(key) }
-    }, () => undefined)
-    return cached.connection
+    let cached = this.clients.get(key)
+    if (cached?.controller.signal.aborted) {
+      await cached.connection.catch(() => undefined)
+      return this.client(entry, employee, config, signal)
+    }
+    if (cached === undefined) {
+      const controller = new AbortController()
+      const created: CachedConnection = { employee, id: entry.id, controller, connection: this.connect(config, controller.signal),
+        waiters: 0, connected: false }
+      cached = created
+      this.clients.set(key, created)
+      void created.connection.then((value) => {
+        created.connected = true
+        value.onclose = () => { if (this.clients.get(key) === created) this.clients.delete(key) }
+      }, () => { if (this.clients.get(key) === created) this.clients.delete(key) })
+    }
+    const shared = cached
+    shared.waiters += 1
+    let onAbort: (() => void) | undefined
+    try {
+      return await new Promise<Client>((resolve, reject) => {
+        onAbort = () => { reject(signal.reason instanceof Error ? signal.reason : new Error('MCP connection reader cancelled')) }
+        signal.addEventListener('abort', onAbort, { once: true })
+        void shared.connection.then(resolve, reject)
+        if (signal.aborted) onAbort()
+      })
+    } finally {
+      if (onAbort !== undefined) signal.removeEventListener('abort', onAbort)
+      shared.waiters -= 1
+      if (shared.waiters === 0 && !shared.connected) {
+        shared.controller.abort(new Error('No remaining MCP connection readers'))
+        await shared.connection.catch(() => undefined)
+      }
+    }
+  }
+  private async disconnect(cached: CachedConnection): Promise<void> {
+    cached.controller.abort(new Error('Personal MCP connection released'))
+    const client = await cached.connection.catch(() => undefined)
+    await client?.close()
   }
   private async connect(config: Configuration, signal: AbortSignal): Promise<Client> {
     const combined = AbortSignal.any([signal, this.lifetime.signal, AbortSignal.timeout(config.timeoutSeconds * 1000)])

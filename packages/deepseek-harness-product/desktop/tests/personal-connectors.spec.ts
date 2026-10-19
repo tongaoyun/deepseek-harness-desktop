@@ -199,9 +199,9 @@ it('discovers real MCP annotations without business calls, encrypts secrets, iso
   expect(JSON.stringify(restored)).not.toContain('device-secret')
   expect(await reopened.manage('extensions.connector.delete', { id: draft.id, version: '1.0.3' }, api, owner, signal)).toMatchObject({ removed: true })
   expect(requests).not.toContain('tools/call')
-  await manager.resetIdentity(undefined)
+  await reopened.resetIdentity(undefined)
   owner = 'employee-two'
-  expect(await manager.enrich([{ ...entry, ownerEmployeeId: owner }], signal)).toMatchObject([{ ready: false, configurationStatus: 'REQUIRED' }])
+  expect(await reopened.enrich([{ ...entry, ownerEmployeeId: owner }], signal)).toMatchObject([{ ready: false, configurationStatus: 'REQUIRED' }])
 })
 
 it('closes discovery and cached stdio children and scrubs ambient credentials', async () => {
