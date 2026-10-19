@@ -10,7 +10,7 @@ const asContext = (value: object) => value as Context
 function fixture() {
   let active = 'original'
   let count = 0
-  const capabilities = { skills: [], connectorIds: [] as string[], requiredConnectorIds: [] as string[],
+  const capabilities = { connectorIds: [] as string[], requiredConnectorIds: [] as string[],
     knowledgeBaseIds: [] as string[], requiredKnowledgeBaseIds: [], knowledgeBaseRefs: [] }
   const drafts = new Map([['original', '  unfinished draft  ']])
   const selectedPresets = new Map([['original', 'standard']])

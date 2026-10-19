@@ -95,7 +95,7 @@ it('discovers installed skills in an unchanged mode, pins versions, restores, de
           return { name: entry.id, description: entry.summary, provider: 'fixture', source: 'user',
             invocation: { modelInvocable: true, userInvocable: true }, content: `Use version ${entry.version} instructions.` }
         },
-        capabilities: async () => ({ skills: [], connectorIds: selected ? ['erp'] : [], requiredConnectorIds: [],
+        capabilities: async () => ({ connectorIds: selected ? ['erp'] : [], requiredConnectorIds: [],
           knowledgeBaseIds: selected ? selectedKnowledgeIds : [], requiredKnowledgeBaseIds: [], knowledgeBaseRefs: selectedKnowledgeRefs }),
         connectors: async () => connectorRevoked ? [] : [connector],
         mountConnectors: async () => async () => {},

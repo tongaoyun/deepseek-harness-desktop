@@ -33,7 +33,7 @@ it('reports true main metadata, reuses stable installation identity and sends on
   }
   const f = fixture(transport)
   try {
-    await f.bridge.invoke('support.device.report', { employeeId: 'forged', desktopVersion: '999.0.0', capabilities: [] })
+    const state = await f.bridge.invoke('support.device.report', { employeeId: 'forged', desktopVersion: '999.0.0', capabilities: [] })
     await f.bridge.invoke('support.device.report')
     expect(calls.map(call => new URL(call.path).pathname)).toEqual(['/api/v1/device-capabilities', '/api/v1/device-capabilities/presence'])
     const report = JSON.parse(requestBody(calls[0]!.init)) as Record<string, unknown>
@@ -43,7 +43,6 @@ it('reports true main metadata, reuses stable installation identity and sends on
     expect(presence.deviceId).toEqual(report.deviceId)
     expect(report).not.toHaveProperty('employeeId')
     expect(new Headers(calls[0]!.init?.headers).get('authorization')).toBe('Bearer fixture-private-token')
-    const state = await f.bridge.invoke('support.device.read')
     expect(state).toMatchObject({ status: 'READY', capabilitiesReportedAt: '2026-10-13T00:00:00Z' })
     expect(JSON.stringify([state, report])).not.toMatch(/private-token|private-installation|userData/)
     expect(isProductRuntimeMethod('support.feedback.submit')).toBe(false)
@@ -68,10 +67,8 @@ it('retains degraded state after an outage, retries a full report and aborts and
   const f = fixture(transport)
   try {
     await expect(f.bridge.invoke('support.device.report')).rejects.toThrow()
-    expect(await f.bridge.invoke('support.device.read')).toMatchObject({ status: 'DEGRADED' })
-    expect(JSON.stringify(await f.bridge.invoke('support.device.read'))).not.toContain('private upstream diagnostic')
     fail = false
-    await f.bridge.invoke('support.device.report')
+    expect(await f.bridge.invoke('support.device.report')).toMatchObject({ status: 'READY' })
     waiting = true
     const request = f.bridge.invoke('support.device.report')
     const settled = expect(request).rejects.toThrow()
@@ -110,7 +107,6 @@ it('rejects malformed device receipts and retries rather than caching a successf
   const f = fixture(transport)
   try {
     await expect(f.bridge.invoke('support.device.report')).rejects.toMatchObject({ code: 'INVALID_SERVER_RESPONSE' })
-    expect(await f.bridge.invoke('support.device.read')).toMatchObject({ status: 'DEGRADED' })
     transport.mockResolvedValueOnce(Response.json({ success: true, data: { createdAt: '2026-10-13T00:00:00Z' } }))
     await f.bridge.invoke('support.device.report')
     expect(transport.mock.calls.map(call => requestUrl(call[0]))).toEqual([

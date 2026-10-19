@@ -49,7 +49,7 @@ it('retains a blocked generation for its existing Agent after the same task iden
   await unregister!()
   unregister = await ctx.agentPresets.register({ id: 'task', selectable: false, defaultable: false,
     plugins: [{ id: 'restored', name: 'cordis:capabilities', config: { capabilities: {
-      skills: [], connectorIds: [], requiredConnectorIds: [], knowledgeBaseIds: ['pinned'], requiredKnowledgeBaseIds: [], knowledgeBaseRefs: [],
+      connectorIds: [], requiredConnectorIds: [], knowledgeBaseIds: ['pinned'], requiredKnowledgeBaseIds: [], knowledgeBaseRefs: [],
     } } }] })
   const fresh = await create('replacement')
   class Adapter extends LlmAdapter {

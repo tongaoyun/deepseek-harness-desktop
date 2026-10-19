@@ -22,7 +22,7 @@ function fixture() {
   const ptc = { ...mode, id: 'ptc', name: 'PTC 模式', isDefault: false }
   const readMode = vi.fn<TaskModeActions['readMode']>(async () => ({ mode, options: [mode, ptc], capabilities: {
     basePresetId: 'standard', expertKit: { id: 'design', name: '产品设计', version: '1', sha256: 'a'.repeat(64) },
-    skills: [], connectorIds: ['erp'], requiredConnectorIds: ['erp'], knowledgeBaseIds: [], requiredKnowledgeBaseIds: [], knowledgeBaseRefs: [],
+    connectorIds: ['erp'], requiredConnectorIds: ['erp'], knowledgeBaseIds: [], requiredKnowledgeBaseIds: [], knowledgeBaseRefs: [],
   } }))
   const setExpertKit = vi.fn<TaskModeActions['setExpertKit']>(async () => {})
   const readExpertKits = vi.fn<TaskModeActions['readExpertKits']>(async () => items([

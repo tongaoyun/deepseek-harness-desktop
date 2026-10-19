@@ -65,7 +65,6 @@ export class DesktopSupport {
       this.employeeId = session.employeeId
       this.state = { status: 'PENDING' }; this.reportSignature = undefined; this.lastFullReport = 0
     }
-    if (method === 'support.device.read') return this.state
     if (method === 'support.device.report') {
       this.pendingReport ??= this.report(api, signal).finally(() => { this.pendingReport = undefined })
       await this.pendingReport

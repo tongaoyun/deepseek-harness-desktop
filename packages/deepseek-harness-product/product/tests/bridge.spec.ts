@@ -37,6 +37,11 @@ function catalogTransport(catalog: Readonly<Record<string, readonly unknown[]>>)
 }
 
 describe('DeepSeekHarnessProductBridge', () => {
+  it('does not expose the removed device-state read operation', () => {
+    expect(isProductMethod('support.device.read')).toBe(false)
+    expect(isProductMethod('support.device.report')).toBe(true)
+  })
+
   it.each(['extensions.save', 'extensions.authoring.save', 'extensions.submit', 'extensions.delete',
     'extensions.connector.update', 'extensions.connector.delete'])(
     'returns committed %s without waiting for a stalled knowledge catalog', async (method) => {

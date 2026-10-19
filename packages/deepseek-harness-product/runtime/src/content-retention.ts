@@ -114,7 +114,6 @@ async function contentReferences(root: string, retainedFiles: ReadonlySet<string
     const path = join(root, 'tasks-v1', entry.name)
     const snapshot = parseTaskSnapshot(await boundedFile(path, 2 * 1024 * 1024), entry.name)
     if (retainedFiles.has(path) || taskDiagnostics.has(`${entry.name}.diagnostic.json`)) {
-      retainSkills(snapshot.capabilities.skills)
       if (snapshot.capabilities.expertKit !== undefined) retainKits([snapshot.capabilities.expertKit])
     } else orphanRecords.push(path)
   }

@@ -216,7 +216,7 @@ describe('Product task composition', () => {
     expect(prepared.presetId).toMatch(/^product-task-[a-f0-9]{64}$/)
     expect(prepared.capabilities).toMatchObject({
       basePresetId: 'minimal', expertKit: { id: kit.id, sha256: kit.sha256 },
-      skills: [], connectorIds: ['erp'], knowledgeBaseIds: ['orders'],
+      connectorIds: ['erp'], knowledgeBaseIds: ['orders'],
     })
     const definition = f.definitions.get(prepared.presetId)
     expect(definition?.plugins.map(row => row.name)).toEqual([

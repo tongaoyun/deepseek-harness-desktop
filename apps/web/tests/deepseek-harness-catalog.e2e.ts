@@ -335,7 +335,7 @@ it('keeps a cited XLSX original visible inside the source modal on desktop and n
     switch (method) {
       case 'auth.getSession': return { authenticated: true }
       case 'extensions.authoring.read': return null
-      case 'tasks.capabilities.read': return { skills: [], connectorIds: [], requiredConnectorIds: [], knowledgeBaseIds: [],
+      case 'tasks.capabilities.read': return { connectorIds: [], requiredConnectorIds: [], knowledgeBaseIds: [],
         requiredKnowledgeBaseIds: [], knowledgeBaseRefs: [] }
       case 'expertKits.list': return []
       case 'expertKits.installed.read': return { installed: [] }
@@ -452,9 +452,9 @@ it('keeps native themes and responsive catalogs while using official details and
   }[] = []
   let connectorCatalog: readonly Record<string, unknown>[] = structuredClone(connectors)
   let capabilities: ProductTaskCapabilities = {
-    skills: [], connectorIds: [], requiredConnectorIds: [], knowledgeBaseIds: [], requiredKnowledgeBaseIds: [], knowledgeBaseRefs: [],
+    connectorIds: [], requiredConnectorIds: [], knowledgeBaseIds: [], requiredKnowledgeBaseIds: [], knowledgeBaseRefs: [],
   }
-  const installedSkills: ProductTaskCapabilities['skills'][number][] = []
+  const installedSkills: ProductContentIdentity[] = []
   const installedExpertKits: ProductContentIdentity[] = []
   const personalResources: Record<string, unknown>[] = []
   const creationDrafts = new Map<string, ExtensionAuthoringSnapshot>()

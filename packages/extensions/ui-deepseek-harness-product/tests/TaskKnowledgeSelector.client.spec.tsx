@@ -13,7 +13,7 @@ afterEach(cleanup)
 function fixture() {
   let open: (() => void) | undefined
   const props = {
-    capabilities: { skills: [], connectorIds: [], requiredConnectorIds: [], knowledgeBaseIds: ['policy'],
+    capabilities: { connectorIds: [], requiredConnectorIds: [], knowledgeBaseIds: ['policy'],
       requiredKnowledgeBaseIds: ['policy'] as string[], knowledgeBaseRefs: ['company:policy'] },
     readKnowledgeCatalog: vi.fn(async () => items([{ id: 'policy', name: '业务规范', referenceKey: 'company:policy' },
       { id: 'manuals', name: '业务手册' }, { id: 'research', name: '调研资料' }])),
