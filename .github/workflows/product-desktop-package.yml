@@ -208,6 +208,7 @@ jobs:
         uses: actions/upload-artifact@v7.0.1
         with:
           name: harness-desktop-ui-${{ matrix.target }}-${{ github.run_number }}-${{ github.run_attempt }}
+          include-hidden-files: true
           path: |
             .artifacts/desktop-ui-${{ matrix.target }}.json
             .artifacts/desktop-installed-${{ matrix.target }}.json
@@ -215,7 +216,7 @@ jobs:
             .artifacts/native-windows-update-*.json
             .artifacts/deepseek-harness-catalog/electron-*.png
             .artifacts/deepseek-harness-catalog/electron-*-startup.txt
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 14
       - name: Upload failed packaging diagnostics
         if: failure()
