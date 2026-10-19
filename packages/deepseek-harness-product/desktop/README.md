@@ -111,3 +111,5 @@ description: "认证产品桌面用户，管理凭据、原生操作与产品资
 ### 开发备注
 
 关闭时取消认证轮询、停止产品刷新并结束 sidecar。方法白名单属于产品协议，preload 传输命名空间请求，壳校验请求来源。构建并准备本地 macOS 运行时后，执行 `DSH_DESKTOP_SMOKE=1 DSH_SNAPSHOT=replay pnpm exec vitest run --config vitest.web.config.ts apps/web/tests/deepseek-harness-catalog.e2e.ts`，用独立产品服务夹具验证两种 Electron profile。
+
+设备状态没有独立读取 IPC。`support.device.report` 用主进程元数据上报设备和在线状态，返回无凭据的上报结果；反馈通过 `support.feedback.submit` 发送。

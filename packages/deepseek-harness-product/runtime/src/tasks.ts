@@ -20,15 +20,14 @@ export interface TaskContent {
 }
 
 interface Snapshot {
-  readonly version: 2
+  readonly version: 3
   readonly presetId: string
   readonly definition: PresetDefinition
   readonly capabilities: ProductTaskCapabilities
   readonly requiredConnectorIds: readonly string[]
   readonly connectors: readonly Omit<DeepSeekHarnessConnector, 'headers' | 'environment'>[]
-  readonly skillInvocations: Readonly<Record<string, string>>
-  readonly basePluginKeys?: readonly string[]
-  readonly requiredTools?: readonly string[]
+  readonly basePluginKeys: readonly string[]
+  readonly requiredTools: readonly string[]
 }
 
 export interface TaskDependencies {
@@ -58,7 +57,7 @@ const identifiers = z.array(identifier).max(32)
 const contentIdentity = z.object({ id: identifier, name: z.string().optional(), version: identifier,
   sha256: z.string().regex(/^[a-fA-F0-9]{64}$/) }).strict()
 const capabilitySnapshot = z.object({
-  basePresetId: identifier.optional(), expertKit: contentIdentity.optional(), skills: z.array(contentIdentity),
+  basePresetId: identifier, expertKit: contentIdentity.optional(), skills: z.array(contentIdentity),
   expertKitTask: z.object({ id: identifier, name: identifier, skillIds: identifiers.min(1) }).strict().optional(),
   connectorIds: identifiers, requiredConnectorIds: identifiers, knowledgeBaseIds: identifiers,
   requiredKnowledgeBaseIds: identifiers, knowledgeBaseRefs: identifiers,
@@ -74,26 +73,24 @@ const capabilitySnapshot = z.object({
 export function parseTaskSnapshot(raw: string, filename: string): Snapshot {
   const candidate: unknown = JSON.parse(raw)
   if (typeof candidate !== 'object' || candidate === null) throw new Error(`Invalid task snapshot: ${filename}`)
-  const value = candidate as Omit<Partial<Snapshot>, 'definition' | 'capabilities' | 'skillInvocations'> & {
+  const value = candidate as Omit<Partial<Snapshot>, 'definition' | 'capabilities'> & {
     definition?: PresetDefinition | null
     capabilities?: ProductTaskCapabilities | null
-    skillInvocations?: unknown
   }
-  if (value.version !== 2 || `${value.presetId}.json` !== filename || value.definition == null
+  if (value.version !== 3 || `${value.presetId}.json` !== filename || value.definition == null
     || value.capabilities == null || value.definition.id !== value.presetId
     || entryListProblem(value.definition.plugins) !== undefined
     || !Array.isArray(value.capabilities.skills) || !Array.isArray(value.capabilities.connectorIds)
     || !Array.isArray(value.capabilities.requiredKnowledgeBaseIds)
     || !Array.isArray(value.capabilities.knowledgeBaseIds) || !Array.isArray(value.capabilities.knowledgeBaseRefs)
     || !Array.isArray(value.requiredConnectorIds) || !Array.isArray(value.connectors)
-    || (value.basePluginKeys !== undefined && (!Array.isArray(value.basePluginKeys) || value.basePluginKeys.some(key => typeof key !== 'string')))
-    || (value.requiredTools !== undefined && (!Array.isArray(value.requiredTools) || value.requiredTools.some(key => typeof key !== 'string')))
-    || typeof value.skillInvocations !== 'object' || value.skillInvocations === null
-    || Array.isArray(value.skillInvocations)
-    || Object.values(value.skillInvocations).some(name => typeof name !== 'string')) throw new Error(`Invalid task snapshot: ${filename}`)
+    || !Array.isArray(value.basePluginKeys) || value.basePluginKeys.some(key => typeof key !== 'string')
+    || !Array.isArray(value.requiredTools) || value.requiredTools.some(key => typeof key !== 'string')
+    || Object.keys(candidate).some(key => !['version', 'presetId', 'definition', 'capabilities',
+      'requiredConnectorIds', 'connectors', 'basePluginKeys', 'requiredTools'].includes(key))) throw new Error(`Invalid task snapshot: ${filename}`)
   capabilitySnapshot.parse(value.capabilities)
   if (typeof value.capabilities.basePresetId !== 'string'
-    || (value.definition.selectionBase !== undefined && value.definition.selectionBase !== value.capabilities.basePresetId)
+    || value.definition.selectionBase !== value.capabilities.basePresetId
     || value.definition.selectable !== false || value.definition.defaultable !== false) {
     throw new Error(`Inconsistent task selection base: ${filename}`)
   }
@@ -104,7 +101,7 @@ export function parseTaskSnapshot(raw: string, filename: string): Snapshot {
   }
   const snapshot = value as Snapshot
   const expected = identify(snapshot.definition, snapshot.capabilities,
-    snapshot.requiredConnectorIds, snapshot.connectors, snapshot.skillInvocations, snapshot.basePluginKeys, snapshot.requiredTools)
+    snapshot.requiredConnectorIds, snapshot.connectors, snapshot.basePluginKeys, snapshot.requiredTools)
   if (expected !== snapshot.presetId) throw new Error(`Task snapshot identity mismatch: ${filename}`)
   return snapshot
 }
@@ -134,12 +131,10 @@ export async function createTaskCapabilities(ctx: Context, deps: TaskDependencie
         return connector === undefined ? row : deps.connectorPlugin(connector)
       })
       pending = (async () => {
-        const selectionBase = snapshot.capabilities.basePresetId
-        const dispose = await deps.register({ ...snapshot.definition,
-          ...selectionBase === undefined ? {} : { selectionBase }, plugins }, connectors)
+        const dispose = await deps.register({ ...snapshot.definition, plugins }, connectors)
         disposers.set(snapshot.presetId, dispose)
         try {
-          if (validate) await deps.validateTools(snapshot.presetId, snapshot.requiredTools ?? [])
+          if (validate) await deps.validateTools(snapshot.presetId, snapshot.requiredTools)
         } catch (error) {
           await dispose()
           disposers.delete(snapshot.presetId)
@@ -149,7 +144,7 @@ export async function createTaskCapabilities(ctx: Context, deps: TaskDependencie
       registrations.set(snapshot.presetId, pending)
       pending.catch(() => { registrations.delete(snapshot.presetId) })
     } else if (validate) {
-      return pending.then(() => deps.validateTools(snapshot.presetId, snapshot.requiredTools ?? []))
+      return pending.then(() => deps.validateTools(snapshot.presetId, snapshot.requiredTools))
     }
     return pending
   }
@@ -223,7 +218,7 @@ export async function createTaskCapabilities(ctx: Context, deps: TaskDependencie
       if (snapshot !== undefined) {
         if (snapshot.capabilities.expertKit !== undefined) await deps.authorizeKit?.(snapshot.capabilities.expertKit.id, signal)
         await deps.validateKnowledge(snapshot.capabilities.knowledgeBaseIds, [], signal)
-        await deps.validateTools(snapshot.presetId, snapshot.requiredTools ?? [])
+        await deps.validateTools(snapshot.presetId, snapshot.requiredTools)
       }
     },
     async read(request: ProductTaskCapabilityRequest): Promise<ProductTaskCapabilities> {
@@ -281,13 +276,11 @@ export async function createTaskCapabilities(ctx: Context, deps: TaskDependencie
           ? base
           : { ...structuredClone(previous.definition), id: 'pending-task' }
         if (request.basePresetId !== undefined && previous !== undefined) {
-          if (previous.basePluginKeys === undefined) throw new Error('This task snapshot has no execution mode metadata; create a new task')
           definition = { ...base, plugins: [...base.plugins, ...definition.plugins.filter(row => !basePluginKeys.includes(rowKey(row)))] }
           basePluginKeys = base.plugins.map(rowKey)
         }
         capabilities = { ...capabilities, basePresetId }
         let requiredConnectorIds = [...previous?.requiredConnectorIds ?? []]
-        let skillInvocations = { ...previous?.skillInvocations }
         let requiredTools = [...previous?.requiredTools ?? []]
         const mergeContent = (content: TaskContent) => {
           const keys = new Set(definition.plugins.map(rowKey))
@@ -313,7 +306,6 @@ export async function createTaskCapabilities(ctx: Context, deps: TaskDependencie
               id: content.shortcut.id, name: content.shortcut.name, skillIds: content.shortcut.skillIds,
             } } }
           requiredConnectorIds = []
-          skillInvocations = {}
           requiredTools = []
           if (content !== undefined) mergeContent(content)
         }
@@ -372,9 +364,9 @@ export async function createTaskCapabilities(ctx: Context, deps: TaskDependencie
         }) }
         const contracts = connectors.map(snapshotConnector)
         requiredTools = sorted(requiredTools)
-        const presetId = identify(persisted, capabilities, requiredConnectorIds, contracts, skillInvocations, basePluginKeys, requiredTools)
-        const snapshot: Snapshot = { version: 2, presetId, definition: { ...persisted, id: presetId },
-          capabilities, requiredConnectorIds, connectors: contracts, skillInvocations, basePluginKeys, requiredTools }
+        const presetId = identify(persisted, capabilities, requiredConnectorIds, contracts, basePluginKeys, requiredTools)
+        const snapshot: Snapshot = { version: 3, presetId, definition: { ...persisted, id: presetId },
+          capabilities, requiredConnectorIds, connectors: contracts, basePluginKeys, requiredTools }
         const preceding = committing
         let release!: () => void
         committing = new Promise<void>((resolve) => { release = resolve })
@@ -437,9 +429,9 @@ export async function createTaskCapabilities(ctx: Context, deps: TaskDependencie
 }
 
 function identify(definition: PresetDefinition, capabilities: ProductTaskCapabilities,
-  requiredConnectorIds: readonly string[], connectors: Snapshot['connectors'], skillInvocations: Snapshot['skillInvocations'], basePluginKeys?: readonly string[], requiredTools?: readonly string[]): string {
-  return prefix + createHash('sha256').update(JSON.stringify({ definition: { ...definition, id: '' }, capabilities, requiredConnectorIds, connectors, skillInvocations,
-    ...basePluginKeys === undefined ? {} : { basePluginKeys }, ...requiredTools === undefined ? {} : { requiredTools } })).digest('hex')
+  requiredConnectorIds: readonly string[], connectors: Snapshot['connectors'], basePluginKeys: readonly string[], requiredTools: readonly string[]): string {
+  return prefix + createHash('sha256').update(JSON.stringify({ definition: { ...definition, id: '' }, capabilities,
+    requiredConnectorIds, connectors, basePluginKeys, requiredTools })).digest('hex')
 }
 
 function selectedConnectors(ids: readonly string[], live: readonly DeepSeekHarnessConnector[]) {

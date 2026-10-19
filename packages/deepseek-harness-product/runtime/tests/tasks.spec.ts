@@ -1,7 +1,6 @@
 import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createHash } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import type { PresetDefinition } from '@deepseek-ai/dsh-agent-preset-registry'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -161,26 +160,31 @@ it.each(['hidden-mode', 'product-task-forged-mode'])('rejects %s as an explicit 
   expect(await f.tasks.read({ sessionId: 'session' })).toEqual(prepared.capabilities)
 })
 
-it('projects native mode display from a fixed snapshot base without rewriting existing content or identity', async () => {
-  const f = await setup()
-  const prepared = await f.tasks.prepare({ basePresetId: 'ptc', expertKitId: 'order-expert', knowledgeBaseIds: ['manuals'] })
-  const snapshot = JSON.parse(await readFile(join(f.root, `${prepared.presetId}.json`), 'utf8')) as
-    Record<string, unknown> & { presetId: string; definition: PresetDefinition }
-  const definition = { ...snapshot.definition }
-  delete definition.selectionBase
-  const hashed: Record<string, unknown> = { ...snapshot, definition: { ...definition, id: '' } }
-  delete hashed.version
-  delete hashed.presetId
-  const existingId = 'product-task-' + createHash('sha256').update(JSON.stringify(hashed)).digest('hex')
-  const stored = JSON.stringify({ ...snapshot, presetId: existingId, definition: { ...definition, id: existingId } })
-  await writeFile(join(f.root, `${existingId}.json`), stored)
-  f.select(existingId)
-  const restored = await createTaskCapabilities(f.ctx, f.deps)
-  await expect(restored.validate(existingId)).resolves.toBeUndefined()
-  expect(await restored.read({ sessionId: 'session' })).toEqual(prepared.capabilities)
-  expect(f.register.mock.calls.at(-1)?.[0]).toMatchObject({ id: existingId, selectionBase: 'ptc' })
-  expect(await readFile(join(f.root, `${existingId}.json`), 'utf8')).toBe(stored)
-})
+it.each(['version', 'basePluginKeys', 'requiredTools', 'selectionBase', 'skillInvocations'])(
+  'rejects obsolete or incomplete %s metadata without fallback, retains history inputs and allows a replacement', async (field) => {
+    const f = await setup()
+    const prepared = await f.tasks.prepare({ expertKitId: 'order-expert', knowledgeBaseIds: ['manuals'] })
+    const path = join(f.root, `${prepared.presetId}.json`)
+    const snapshot = JSON.parse(await readFile(path, 'utf8')) as Record<string, unknown> & { definition: Record<string, unknown> }
+    if (field === 'version') snapshot.version = 2
+    else if (field === 'skillInvocations') snapshot.skillInvocations = {}
+    else if (field === 'selectionBase') delete snapshot.definition.selectionBase
+    else if (field === 'basePluginKeys') delete snapshot.basePluginKeys
+    else delete snapshot.requiredTools
+    const stored = JSON.stringify(snapshot)
+    await writeFile(path, stored)
+    f.select(prepared.presetId)
+    const restored = await createTaskCapabilities(f.ctx, f.deps)
+    expect((await restored.read({ sessionId: 'session' })).unavailable?.code).toBe('TASK_SNAPSHOT_INVALID')
+    await expect(restored.validate(prepared.presetId)).rejects.toMatchObject({ code: 'TASK_SNAPSHOT_INVALID' })
+    expect(await readFile(path, 'utf8')).toBe(stored)
+    expect(f.deps.authorizeKit).toHaveBeenCalledTimes(1)
+    const replacement = await restored.prepare({ sessionId: 'session', recoverCapabilities: true, knowledgeBaseIds: ['manuals'] })
+    expect(replacement.capabilities.knowledgeBaseIds).toEqual(['manuals'])
+    expect(replacement.capabilities.expertKit).toBeUndefined()
+    expect(await readFile(path, 'utf8')).toBe(stored)
+  },
+)
 
 it.each(['missing', 'conflicting'])('blocks a task with %s base metadata while retaining raw content', async (kind) => {
   const f = await setup()
