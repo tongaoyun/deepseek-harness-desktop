@@ -11,6 +11,7 @@ import { KnowledgeDocumentReader } from './KnowledgeDocumentReader.tsx'
 import { KnowledgeEditor, type KnowledgeEditorTarget } from './KnowledgeEditor.tsx'
 import { useKnowledgeFolderLocation } from './knowledge-folder-location.ts'
 import { KnowledgeFolderPicker } from './KnowledgeFolderPicker.tsx'
+import { KnowledgeBatchDialog, type KnowledgeBatchAction } from './KnowledgeBatchDialog.tsx'
 import { productErrorMessage } from './product-errors.ts'
 import { readMaterialDocuments } from './knowledge-materials.ts'
 
@@ -79,6 +80,8 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
   const [editor, setEditor] = useState<KnowledgeEditorTarget>()
   const [confirmation, setConfirmation] = useState<Confirmation>()
   const [move, setMove] = useState<KnowledgeDocument>()
+  const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set())
+  const [batch, setBatch] = useState<{ readonly action: KnowledgeBatchAction; readonly documents: readonly KnowledgeDocument[] }>()
   const [deleted, setDeleted] = useState<readonly string[]>([])
   const operation = useRef(new AbortController())
   const accessOperation = useRef(new AbortController())
@@ -95,7 +98,7 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
   const denyAccess = useCallback(() => {
     accessOperation.current.abort()
     setAccessDenied(true); setData(undefined); setReader(undefined); setLoading(false)
-    setEditor(undefined); setConfirmation(undefined); setMove(undefined)
+    setEditor(undefined); setConfirmation(undefined); setMove(undefined); setBatch(undefined); setSelectedIds(new Set())
   }, [])
   const readAccessDenied = useCallback((failure: unknown) => {
     setError(productErrorMessage(failure, t, 'knowledgeReadFailed')); denyAccess()
@@ -142,8 +145,9 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
   const folderSelectionKey = JSON.stringify([folderId === undefined ? 'all-materials' : folderId, page, Boolean(search || format || status), folderRevision, refreshRevision])
   const materialFolders = accessDenied || materialFolderPage?.key !== folderSelectionKey ? undefined : materialFolderPage.value
   useEffect(() => {
-    if (!canManage) { setEditor(undefined); setConfirmation(undefined); setMove(undefined) }
+    if (!canManage) { setEditor(undefined); setConfirmation(undefined); setMove(undefined); setBatch(undefined) }
   }, [canManage])
+  useEffect(() => { setSelectedIds(new Set()) }, [folderId, page, search, format, status, refreshRevision])
   useEffect(() => {
     if (accessDenied) return
     const controller = new AbortController()
@@ -283,6 +287,19 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
   const currentFolder = reader ? undefined : location.trail?.at(-1)
   const breadcrumbTrail = location.trail ?? []
   const childFolders = materialFolders?.items ?? []
+  const selectableDocuments = canManage ? (availableData?.items ?? []).filter(row => row.status !== 'DELETING' && !deleted.includes(row.id)) : []
+  const selectedDocuments = selectableDocuments.filter(row => selectedIds.has(row.id))
+  const allSelected = selectableDocuments.length > 0 && selectedDocuments.length === selectableDocuments.length
+  const canReindexSelection = selectedDocuments.every(row => !['QUEUED', 'PROCESSING', 'FINALIZING'].includes(row.status))
+  const selectDocument = (id: string, checked: boolean) => { setSelectedIds((previous) => {
+    const next = new Set(previous)
+    if (checked) next.add(id)
+    else next.delete(id)
+    return next
+  }) }
+  const beginBatch = (action: KnowledgeBatchAction) => {
+    if (!pending && !loading && selectedDocuments.length > 0) { beginMutation(); setBatch({ action, documents: selectedDocuments }) }
+  }
   const documentAction = (id: string, row: KnowledgeDocument) => {
     if (id === 'read') openReader(row)
     else if (id === 'locate') selectFolder(row.folderId)
@@ -373,6 +390,15 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
           setUploadRecoveryRevision(value => value + 1)
         }}><IconRefreshOutlineRegular size={16} /></button></Tooltip>
     </div>
+    {canManage && selectedDocuments.length > 0 && <div className={css.knowledgeBatchToolbar} role="group" aria-label={t('knowledgeBatchActions')}>
+      <span role="status">{t('knowledgeSelectedCount').replace('{count}', String(selectedDocuments.length))}</span>
+      <Button variant="ghost" size="sm" disabled={pending || loading} onClick={() => { beginBatch('move') }}>{t('knowledgeBatchMove')}</Button>
+      <Tooltip label={t(canReindexSelection ? 'knowledgeReindex' : 'knowledgeBatchProcessingHint')}>
+        <Button variant="ghost" size="sm" disabled={pending || loading || !canReindexSelection} onClick={() => { beginBatch('reindex') }}>{t('knowledgeBatchReindex')}</Button>
+      </Tooltip>
+      <Button variant="ghost" size="sm" disabled={pending || loading} onClick={() => { beginBatch('delete') }}>{t('knowledgeBatchDelete')}</Button>
+      <Button variant="ghost" size="sm" disabled={pending} onClick={() => { setSelectedIds(new Set()) }}>{t('knowledgeClearSelection')}</Button>
+    </div>}
   </>
   const uploadRecovery = uploadRetry && <div className={css.knowledgeAddActions}>
     <span role="status">{t('knowledgeUploadPending')}</span>
@@ -385,20 +411,29 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
     {uploadRecovery}
     <div className={css.knowledgeTableScroll} aria-busy={loading}>
       {(childFolders.length > 0 || (availableData?.items.length ?? 0) > 0) && <table className={css.knowledgeTable}>
-        <thead><tr><th>{t('knowledgeDocumentTitle')}</th><th>{t('status')}</th><th>{t('knowledgeFormat')}</th>
-          <th>{t('knowledgeSize')}</th><th>{t('updatedAt')}</th>
-          <th><span className={css.visuallyHidden}>{t('resourceActions')}</span></th></tr></thead>
+        <thead><tr><th><div className={css.knowledgeSelectableName}>
+          {canManage && <input type="checkbox" aria-label={t('knowledgeSelectPage')} checked={allSelected} disabled={pending || loading || selectableDocuments.length === 0}
+            ref={(node) => { if (node) node.indeterminate = selectedDocuments.length > 0 && !allSelected }}
+            onChange={(event) => { setSelectedIds(new Set(event.currentTarget.checked ? selectableDocuments.map(row => row.id) : [])) }} />}
+          {t('knowledgeDocumentTitle')}</div></th><th>{t('status')}</th><th>{t('knowledgeFormat')}</th>
+        <th>{t('knowledgeSize')}</th><th>{t('updatedAt')}</th>
+        <th><span className={css.visuallyHidden}>{t('resourceActions')}</span></th></tr></thead>
         <tbody>{childFolders.map(folder => <tr key={`folder:${folder.id}`} data-knowledge-child-folder={folder.id}>
-          <td><button type="button" className={css.knowledgeDocumentName} onClick={() => { selectFolder(folder.id) }}>
-            <IconFolderOpenOutlineRegular size={18} /><span>{folder.name}</span></button></td>
+          <td><div className={css.knowledgeSelectableName} data-selectable={canManage}>
+            <button type="button" className={css.knowledgeDocumentName} onClick={() => { selectFolder(folder.id) }}>
+              <IconFolderOpenOutlineRegular size={18} /><span>{folder.name}</span></button></div></td>
           <td></td><td>{t('knowledgeFolderType')}</td><td></td><td></td>
           <td>{canManage && <KnowledgeFolderActions folder={folder} disabled={pending}
             onSelect={(id) => { folderAction(id, folder) }} t={t} />}</td>
         </tr>)}{availableData?.items.map((row) => {
           const deleting = deleted.includes(row.id) || row.status === 'DELETING'
           return <tr key={row.id}>
-            <td><button type="button" className={css.knowledgeDocumentName} disabled={deleting} onClick={() => { openReader(row) }}>
-              <FileTypeIcon path={row.filename} size={18} /><span>{row.filename}</span></button></td>
+            <td><div className={css.knowledgeSelectableName}>
+              {canManage && <input type="checkbox" aria-label={t('knowledgeSelectDocument').replace('{name}', row.filename)}
+                checked={selectedIds.has(row.id) && !deleting} disabled={pending || deleting}
+                onChange={(event) => { selectDocument(row.id, event.currentTarget.checked) }} />}
+              <button type="button" className={css.knowledgeDocumentName} disabled={deleting} onClick={() => { openReader(row) }}>
+                <FileTypeIcon path={row.filename} size={18} /><span>{row.filename}</span></button></div></td>
             <td><span className={css.knowledgeDocumentStatus} data-status={deleting ? 'DELETING' : row.status}
               title={!deleting && row.sourceType !== 'url' && ['QUEUED', 'PROCESSING', 'FINALIZING'].includes(row.status) ? t('knowledgeProcessingHint') : undefined}>{knowledgeStatus(deleting ? 'DELETING' : row.status, t)}</span></td>
             <td>{row.sourceType === 'manual' ? t('knowledgeOnlineDocument') : row.sourceType === 'url' ? t('knowledgeWebsite') : row.filename.split('.').at(-1)?.toUpperCase()}</td>
@@ -507,6 +542,12 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
     {move && <KnowledgeMoveDialog knowledgeBaseId={product.id} document={move} pending={pending} error={mutationError}
       onClose={() => { if (!pending) setMove(undefined) }}
       onMove={(selection) => { void mutate('knowledge.documents.move', { knowledgeBaseId: product.id, documentId: move.id, ...selection }, () => { setMove(undefined); setReader(undefined) }) }} t={t} />}
+    {batch && <KnowledgeBatchDialog knowledgeBaseId={product.id} action={batch.action} documents={batch.documents}
+      onBusyChange={setPending} onAccessDenied={readAccessDenied}
+      onAccepted={(document, action) => {
+        if (action === 'delete') setDeleted(previous => [...previous, document.id])
+        setReader(current => current?.id === document.id ? undefined : current)
+      }} onClose={() => { setBatch(undefined); setSelectedIds(new Set()); setRevision(value => value + 1) }} t={t} />}
   </>
 }
 

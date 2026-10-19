@@ -18,6 +18,7 @@ export interface KnowledgeDocument {
   readonly sourceType?: string
   readonly sourceUrl?: string
   readonly manualContent?: string
+  /** Detail-only permission projection; list actions use the library's management permission. */
   readonly canManage?: boolean
   readonly folderId?: string | null
   readonly previewMaxBytes?: number

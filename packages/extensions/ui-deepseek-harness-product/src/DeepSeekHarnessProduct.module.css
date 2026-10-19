@@ -418,6 +418,16 @@
 .knowledgeTable th:nth-child(5) { width: 20%; }
 .knowledgeTable th:last-child:has(.visuallyHidden) { width: 34px; }
 .knowledgeTable td:not(:first-child) { color: var(--dsw-alias-label-secondary); }
+.knowledgeSelectableName { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
+.knowledgeSelectableName > input { flex: 0 0 auto; width: 14px; height: 14px; margin: 2px 0 0; cursor: pointer; }
+.knowledgeSelectableName[data-selectable='true'] { padding-left: 22px; }
+.knowledgeBatchToolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 0 0 12px; padding: 8px; border: 0.5px solid var(--dsw-alias-border-l2); border-radius: 8px; font-size: 12px; }
+.knowledgeBatchToolbar > span { margin-right: auto; color: var(--dsw-alias-label-secondary); }
+.knowledgeBatchSummary { color: var(--dsw-alias-label-secondary); font-size: 12px; }
+.knowledgeBatchResults { display: grid; gap: 10px; max-height: 280px; padding: 0; margin: 16px 0 0; overflow: auto; list-style: none; font-size: 12px; }
+.knowledgeBatchResults li { display: grid; gap: 4px; padding-bottom: 10px; border-bottom: 0.5px solid var(--dsw-alias-border-l2); color: var(--dsw-alias-label-secondary); overflow-wrap: anywhere; }
+.knowledgeBatchResults li > div { display: flex; align-items: flex-start; gap: 8px; color: var(--dsw-alias-label-primary); }
+.knowledgeBatchResults svg { flex: 0 0 auto; }
 .knowledgeDocumentName { display: flex; min-width: 0; align-items: flex-start; gap: 7px; padding: 0; border: 0; background: transparent; color: var(--dsw-alias-label-primary); font: inherit; text-align: left; cursor: pointer; }
 .knowledgeDocumentName span { overflow-wrap: anywhere; }
 .knowledgeDocumentName svg { flex: 0 0 auto; }
