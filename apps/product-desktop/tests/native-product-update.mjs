@@ -2,20 +2,18 @@
 import assert from 'node:assert/strict'
 import { execFile } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
-import { createReadStream, statSync } from 'node:fs'
+import { createReadStream } from 'node:fs'
 import { cp, mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { createRequire } from 'node:module'
 import { homedir } from 'node:os'
-import { basename, dirname, join, posix, resolve } from 'node:path'
-import { Readable } from 'node:stream'
-import { finished } from 'node:stream/promises'
+import { basename, dirname, join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { chromium } from 'playwright'
 import { expect } from 'vitest'
 import { verifyRuntimeArchive } from '../../desktop/scripts/verify-runtime-archive.ts'
 import { createElectronBuilderConfig } from '../../desktop/scripts/electron-builder-config.mjs'
-import { rewriteWindowsArchiveIntegrity } from './native-update-integrity.mjs'
+import { rewriteWindowsArchiveIntegrity, writeUpdateArchive } from './native-update-integrity.mjs'
 import { stopInstalledProcesses } from '../scripts/installed-processes.mjs'
 import { INTERNAL_APP_ID, signInternalApplication, verifyInternalApplication } from '../scripts/internal-package.mjs'
 
@@ -65,7 +63,6 @@ async function dialogWithButton(application, name, timeout = 120_000) {
 async function rewriteApplication(appPath, version, bootstrap) {
   const resources = join(appPath, windows ? 'resources' : 'Contents/Resources')
   const archive = join(resources, 'app.asar')
-  const original = asar.getRawHeader(archive).header
   const manifest = JSON.parse(asar.extractFile(archive, 'package.json'))
   const entry = manifest.main
   manifest.version = version
@@ -74,34 +71,14 @@ async function rewriteApplication(appPath, version, bootstrap) {
     ['package.json', Buffer.from(JSON.stringify(manifest))],
     ['internal-update-qualification.mjs', Buffer.from(bootstrap + `\nawait import(${JSON.stringify('./' + entry)})\n`)],
   ])
-  const streams = []
-  const add = (path, node, inherited = false) => {
-    const unpacked = inherited || node.unpacked === true
-    if (node.files) {
-      if (path) streams.push({ path, type: 'directory', unpacked })
-      for (const [name, child] of Object.entries(node.files)) add(path ? `${path}/${name}` : name, child, unpacked)
-    } else if (node.link) {
-      streams.push({ path, type: 'link', unpacked, stat: { mode: 0o777 }, symlink: posix.relative(posix.dirname(path), node.link) })
-    } else {
-      const bytes = replacements.get(path)
-      const mode = unpacked ? statSync(join(archive + '.unpacked', path)).mode : node.executable ? 0o755 : 0o644
-      streams.push({ path, type: 'file', unpacked, stat: { mode, size: bytes?.length ?? node.size },
-        streamGenerator: () => Readable.from([bytes ?? asar.extractFile(archive, path)]) })
-    }
-  }
-  add('', original)
-  const boot = replacements.get('internal-update-qualification.mjs')
-  streams.push({ path: 'internal-update-qualification.mjs', type: 'file', unpacked: false,
-    stat: { mode: 0o644, size: boot.length }, streamGenerator: () => Readable.from([boot]) })
   const next = join(resources, 'qualified.asar')
-  const writer = await asar.createPackageFromStreams(next, streams)
-  await finished(writer)
+  await writeUpdateArchive(archive, next, replacements)
   asar.uncache(archive)
   await rm(archive)
   await rm(archive + '.unpacked', { recursive: true, force: true })
   await rename(next, archive)
   await rename(next + '.unpacked', archive + '.unpacked')
-  await verifyRuntimeArchive(archive, JSON.parse(asar.extractFile(archive, 'dsh/desktop-runtime.json')))
+  await verifyRuntimeArchive(archive, JSON.parse(asar.extractFile(archive, join('dsh', 'desktop-runtime.json'))))
   if (windows) {
     await rewriteWindowsArchiveIntegrity(join(appPath, 'DeepSeek Harness.exe'),
       createHash('sha256').update(asar.getRawHeader(archive).headerString).digest('hex'))
