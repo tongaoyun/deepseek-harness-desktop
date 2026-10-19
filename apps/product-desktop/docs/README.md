@@ -60,7 +60,7 @@
 
 企业开发使用产品启动入口，其 home 和 Electron profile 与官方桌面分开。[本地启动说明](../README.md#local-development)定义入口和 profile 覆盖方式。凭据留在 Electron 主进程或服务端受控配置，不放进渲染进程变量或提交文件。
 
-Gitea 负责开发评审和桌面 CI。手动 GitHub 同步流水线要求精确源码提交的 CI 成功，将已提交的桌面源码和固定基线推送到构建仓库。原生 Runner 构建 Windows x64、macOS ARM64 和 macOS Intel，校验后的安装包及校验和同步到公开下载仓库和内部 Gitea Release。默认开发包不提供更新订阅；选择签名构建并配置签名机后，复用原生“发现新版、下载、确认重启安装”。公开构建仓库的源码和 Git 历史可公开读取。[桌面交付说明](../README.md)定义流水线参数、凭据、重试和恢复。
+Gitea 负责开发评审和桌面 CI。手动 GitHub 同步流水线要求精确源码提交的 CI 成功，将已提交的桌面源码和固定基线推送到构建仓库。原生 Runner 构建 Windows x64、macOS ARM64 和 macOS Intel，校验后的安装包及校验和同步到公开下载仓库和内部 Gitea Release。默认开发包不提供更新订阅；选择签名构建并配置签名机后，复用原生“发现新版、下载、确认重启安装”。公开构建仓库的源码和 Git 历史可公开读取。[桌面交付说明](../README.md)定义流水线参数、凭据、重试和恢复；[签名办理与接入](signing.md)说明所需资质、机器和验收。
 
 服务端通过其 Gitea 流水线、Harbor、GitOps 和 Fleet 部署。构建成功、部署就绪和员工流程验收是独立结果。服务端 `docs/README.md` 索引 API、部署、领域和验收说明。协议迁移先部署服务端，再更新依赖新协议的桌面；[产品升级说明](../../../docs/upgrade-guide/v0.2.1-alpha.2/product-knowledge-library/guide.md)记录受影响行为。
 
@@ -69,4 +69,4 @@ Gitea 负责开发评审和桌面 CI。手动 GitHub 同步流水线要求精确
 
 文档使用仓库的内容、链接和结构检查命令验证。行为证据包含定向产品回归、真实 Loader/profile 测试、无密钥模型 fixture、浏览器布局，以及构建后或安装后原生桌面验收。[测试说明](../../../docs/testing.zh.md)和[桌面交付说明](../README.md#local-checks)定义执行的检查，服务端证据由其 `docs/knowledge-acceptance.md` 和 `docs/knowledge-stability.md` 维护。
 
-模拟身份和模型可在不使用员工密钥的情况下验证请求、组合、UI 和恢复，但不能证明真实钉钉权限或模型推理效果。真实第二员工隔离仍需单独验收。OCR 和视觉模型不在当前范围内，产品编辑锁不保证与 WeKnora 直接并发修改互斥。当前不提供实时协同编辑、文件夹移动或自动快照清理。
+模拟身份和模型可在不使用员工密钥的情况下验证请求、组合、UI 和恢复，但不能证明真实钉钉权限或模型推理效果。真实第二员工隔离仍需单独验收。OCR 和视觉模型不在当前范围内，产品编辑锁不保证与 WeKnora 直接并发修改互斥。当前不提供实时协同编辑或文件夹移动。启动时可回收无引用的有效快照和内容版本，保留 Session 引用及诊断记录；回收条件和失败保护见[运行时说明](../../../packages/deepseek-harness-product/runtime/README.md)。

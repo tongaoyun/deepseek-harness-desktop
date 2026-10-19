@@ -15,6 +15,6 @@ it.each([
   const expected = realOfficeBytes(extension)
   expect(Buffer.from(downloaded)).toEqual(Buffer.from(expected))
   const files = unzipSync(downloaded)
-  expect(strFromU8(files[document]!)).toContain('Office preview 中文文档')
+  expect(strFromU8(files[document])).toContain('Office preview 中文文档')
   expect(files['[Content_Types].xml']).toBeDefined()
 })

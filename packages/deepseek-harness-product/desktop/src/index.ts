@@ -359,7 +359,7 @@ export function createExtension(context: ExtensionContext): ProductDesktopExtens
       const cleanup = async (close: () => void | Promise<void>): Promise<void> => {
         try { await close() } catch (error: unknown) { errors.push(error) }
       }
-      await cleanup(() => knowledgeUploads.close())
+      await cleanup(() => { knowledgeUploads.close() })
       await cleanup(() => productBridge.dispose())
       await cleanup(() => support.close())
       await cleanup(() => knowledgeFiles.close())
