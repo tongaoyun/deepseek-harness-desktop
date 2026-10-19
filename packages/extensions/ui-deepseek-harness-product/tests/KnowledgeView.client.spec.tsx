@@ -215,7 +215,8 @@ it('exposes upload and creation only to a library manager and accepts native pic
 it('offers no-OCR PDF extraction without accepting a renderer file path or changing the task', async () => {
   const api = transport(async method => method === 'knowledge.documents.upload.select'
     ? [{ operationId: 'pdf-upload-operation-1', filename: 'policy.pdf', pdfParseMode: 'TEXT', folderId: null }]
-    : method === 'knowledge.documents.upload' ? { ...document, filename: 'policy.pdf', status: 'QUEUED' } : page([]))
+    : method === 'knowledge.documents.upload' ? { ...document, filename: 'policy.pdf', status: 'QUEUED' }
+      : method === 'knowledge.documents.upload.discard' ? { discarded: true } : page([]))
   render(<KnowledgeDetail renderFactorySlot={renderKnowledgePreview} product={library(true)} t={t} />)
   await waitFor(() => { expect(screen.getByRole<HTMLButtonElement>('button', { name: zh.knowledgeUpload }).disabled).toBe(false) })
   fireEvent.click(screen.getByRole('button', { name: zh.knowledgeUpload }))
@@ -224,6 +225,7 @@ it('offers no-OCR PDF extraction without accepting a renderer file path or chang
   await waitFor(() => { expect(api.invoke).toHaveBeenCalledWith('product', 'knowledge.documents.upload', {
     knowledgeBaseId: 'policy', operationId: expect.any(String) as string, pdfParseMode: 'TEXT', folderId: null,
   }, expect.any(String), 300_000) })
+  await screen.findByText(zh.knowledgeUploadAccepted)
   expect(api.invoke.mock.calls.some(row => row[1].startsWith('tasks.'))).toBe(false)
   expect(screen.queryByRole('alert')).toBeNull()
 })

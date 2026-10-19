@@ -11,7 +11,7 @@ const props = { knowledgeBaseId: 'personal', selections,
   onBusyChange: vi.fn(), onAccepted: vi.fn(), onDenied: vi.fn(), onClose: vi.fn(),
   t: (key: DeepSeekHarnessProductKey) => zh[key] }
 const document = { id: 'file', knowledgeBaseId: 'personal', filename: 'file.md', mediaType: 'text/markdown', sizeBytes: 10,
-  status: 'QUEUED', chunkCount: 0, updatedAt: '2026-10-20T00:00:00Z' }
+  status: 'QUEUED', chunkCount: 0, folderId: 'folder', updatedAt: '2026-10-20T00:00:00Z' }
 function transport(handler: (method: string, payload: Record<string, unknown>) => Promise<unknown>) {
   const invoke = vi.fn(async (_namespace: string, method: string, payload: Record<string, unknown>,
     _requestId?: string, _timeout?: number) => {
@@ -98,7 +98,7 @@ it('cancels the in-flight upload on unmount and retains remaining selections wit
   expect(props.onBusyChange).toHaveBeenLastCalledWith(false)
 })
 
-it('retries an unacknowledged success with its original identity after discard fails', async () => {
+it('retries only release with its original identity after discard fails', async () => {
   let fails = true
   const api = transport(async (method) => {
     if (method === 'knowledge.documents.upload') return document
@@ -108,7 +108,96 @@ it('retries an unacknowledged success with its original identity after discard f
   render(<KnowledgeUploadDialog {...props} selections={selections.slice(0, 1)} />)
   fireEvent.click(screen.getByRole('button', { name: zh.knowledgeUpload }))
   await screen.findByRole('alert')
+  fireEvent.click(within(screen.getByRole('listitem')).getByRole('button', { name: zh.retry }))
+  await screen.findByText(zh.knowledgeUploadAccepted)
+  expect(api.uploads()).toHaveLength(1)
+  const releases = api.invoke.mock.calls.filter(call => call[1] === 'knowledge.documents.upload.discard')
+  expect(releases).toHaveLength(2)
+  expect(releases[1]![2]).toEqual(releases[0]![2])
+})
+
+it.each(['library', 'destination', 'identity', 'metadata'] as const)('retains the original selection after an upload receipt has invalid %s', async (invalid) => {
+  let valid = false
+  const receipt = { ...document, folderId: 'folder' }
+  const malformed = invalid === 'library' ? { ...receipt, knowledgeBaseId: 'another-library' }
+    : invalid === 'destination' ? { ...receipt, folderId: 'another-folder' }
+      : invalid === 'identity' ? { ...receipt, id: '' } : { ...receipt, status: '' }
+  const api = transport(async method => method === 'knowledge.documents.upload' ? valid ? receipt : malformed : { discarded: true })
+  render(<KnowledgeUploadDialog {...props} selections={selections.slice(0, 1)} />)
+  fireEvent.click(screen.getByRole('button', { name: zh.knowledgeUpload }))
+  await screen.findByRole('alert')
+  expect(props.onAccepted).not.toHaveBeenCalled()
+  expect(api.invoke.mock.calls.some(call => call[1] === 'knowledge.documents.upload.discard')).toBe(false)
+  expect(screen.getByRole('list', { name: zh.knowledgeUploadFiles }).textContent).toMatchSnapshot()
+  valid = true
   fireEvent.click(within(screen.getByRole('listitem')).getByRole('button', { name: zh.knowledgeRetryUpload }))
   await screen.findByText(zh.knowledgeUploadAccepted)
+  expect(api.uploads()).toHaveLength(2)
   expect(api.uploads()[1]![2]).toEqual(api.uploads()[0]![2])
+})
+
+it('retries release after a lost acknowledgement without uploading the file again', async () => {
+  let released = false
+  const api = transport(async (method) => {
+    if (method === 'knowledge.documents.upload') {
+      if (released) throw new ProductError('KNOWLEDGE_UPLOAD_SELECTION_MISSING', 'Selection already released', false)
+      return { ...document, folderId: 'folder' }
+    }
+    if (!released) { released = true; throw new ProductError('PRODUCT_NETWORK_UNAVAILABLE', 'Release completed but reply lost', true) }
+    return { discarded: true }
+  })
+  render(<KnowledgeUploadDialog {...props} selections={selections.slice(0, 1)} />)
+  fireEvent.click(screen.getByRole('button', { name: zh.knowledgeUpload }))
+  await screen.findByRole('alert')
+  fireEvent.click(within(screen.getByRole('listitem')).getByRole('button', { name: zh.retry }))
+  await screen.findByText(zh.knowledgeUploadAccepted)
+  expect(api.uploads()).toHaveLength(1)
+  const releases = api.invoke.mock.calls.filter(call => call[1] === 'knowledge.documents.upload.discard')
+  expect(releases).toHaveLength(2)
+  expect(releases[1]![2]).toEqual(releases[0]![2])
+  expect(props.onAccepted).toHaveBeenCalledOnce()
+})
+
+it.each(['lost', 'malformed'] as const)('retains removal intent after a %s release acknowledgement', async (failure) => {
+  let first = true
+  const api = transport(async (method) => {
+    if (method === 'knowledge.documents.upload') throw new Error('Removal must not upload')
+    if (first) {
+      first = false
+      if (failure === 'lost') throw new ProductError('PRODUCT_NETWORK_UNAVAILABLE', 'Release reply lost', true)
+      return { discarded: false }
+    }
+    return { discarded: true }
+  })
+  render(<KnowledgeUploadDialog {...props} selections={selections.slice(0, 1)} />)
+  fireEvent.click(screen.getByRole('button', { name: zh.knowledgeUploadRemove }))
+  await screen.findByRole('alert')
+  expect(screen.getByRole('alert').textContent).toContain(zh.knowledgeUploadRemoveFailed)
+  fireEvent.click(within(screen.getByRole('listitem')).getByRole('button', { name: zh.retry }))
+  await screen.findByText(zh.knowledgeUploadRemoved)
+  expect(api.uploads()).toHaveLength(0)
+  expect(api.invoke.mock.calls.map(call => call[2])).toEqual([
+    { knowledgeBaseId: 'personal', operationId: selections[0]!.operationId },
+    { knowledgeBaseId: 'personal', operationId: selections[0]!.operationId },
+  ])
+})
+
+it.each([null, {}, { discarded: false }])('retries only release after an invalid release receipt %j', async (receipt) => {
+  let first = true
+  const api = transport(async (method) => {
+    if (method === 'knowledge.documents.upload') return document
+    if (first) { first = false; return receipt }
+    return { discarded: true }
+  })
+  render(<KnowledgeUploadDialog {...props} selections={selections.slice(0, 1)} />)
+  fireEvent.click(screen.getByRole('button', { name: zh.knowledgeUpload }))
+  await screen.findByRole('alert')
+  expect(screen.queryByText(zh.knowledgeUploadAccepted)).toBeNull()
+  expect(screen.getByRole('alert').textContent).toContain(zh.knowledgeUploadReleaseFailed)
+  expect(screen.getByRole('status').textContent).toBe(zh.knowledgeUploadProgress.replace('{count}', '1').replace('{total}', '1'))
+  fireEvent.click(within(screen.getByRole('listitem')).getByRole('button', { name: zh.retry }))
+  await screen.findByText(zh.knowledgeUploadAccepted)
+  expect(api.uploads()).toHaveLength(1)
+  expect(api.invoke.mock.calls.filter(call => call[1] === 'knowledge.documents.upload.discard')).toHaveLength(2)
+  expect(props.onAccepted).toHaveBeenCalledOnce()
 })

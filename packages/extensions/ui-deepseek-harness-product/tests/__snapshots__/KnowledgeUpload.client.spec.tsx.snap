@@ -1,0 +1,9 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`retains the original selection after an upload receipt has invalid destination 1`] = `"file-0.md上传结果未确认，可重试原文件；移除前请检查资料列表 (IDEMPOTENCY_OPERATION_UNKNOWN)重试上传移除"`;
+
+exports[`retains the original selection after an upload receipt has invalid identity 1`] = `"file-0.md上传结果未确认，可重试原文件；移除前请检查资料列表 (IDEMPOTENCY_OPERATION_UNKNOWN)重试上传移除"`;
+
+exports[`retains the original selection after an upload receipt has invalid library 1`] = `"file-0.md上传结果未确认，可重试原文件；移除前请检查资料列表 (IDEMPOTENCY_OPERATION_UNKNOWN)重试上传移除"`;
+
+exports[`retains the original selection after an upload receipt has invalid metadata 1`] = `"file-0.md上传结果未确认，可重试原文件；移除前请检查资料列表 (IDEMPOTENCY_OPERATION_UNKNOWN)重试上传移除"`;

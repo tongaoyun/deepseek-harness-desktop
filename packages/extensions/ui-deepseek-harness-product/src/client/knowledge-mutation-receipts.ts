@@ -39,3 +39,18 @@ export function confirmKnowledgeFolderDeletion(value: unknown, folderId: string)
   if (typeof value !== 'object' || value === null || !('folderId' in value) || value.folderId !== folderId
     || !('deleted' in value) || typeof value.deleted !== 'boolean') throw unconfirmed()
 }
+
+/** Confirm the uploaded document belongs to the selected library and destination.
+ * @param value Untrusted upload response.
+ * @param target Captured library and upload destination.
+ * @returns Nothing when complete document metadata confirms the selected location.
+ */
+export function confirmKnowledgeDocumentUpload(value: unknown,
+  target: { readonly knowledgeBaseId: string; readonly folderId?: string | null | undefined }): void {
+  try {
+    const document = knowledgeDocument(value)
+    if (document.id.trim() === '' || document.knowledgeBaseId !== target.knowledgeBaseId
+      || (document.folderId ?? null) !== (target.folderId ?? null) || document.filename.trim() === ''
+      || document.updatedAt.trim() === '' || document.status.trim() === '') throw unconfirmed()
+  } catch (_error) { throw unconfirmed() }
+}

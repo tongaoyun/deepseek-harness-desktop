@@ -135,7 +135,7 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
       else setMutationError(productErrorMessage(failure, t, 'knowledgeUploadRecoveryFailed'))
     })
     return () => { controller.abort() }
-  }, [canManage, recoverUpload, readAccessDenied, t, uploadRecoveryRevision])
+  }, [canManage, recoverUpload, readAccessDenied, t, uploadRecoveryRevision, refreshRevision])
   const canOpenExternal = globalThis.location.protocol === 'dsh-app:' && globalThis.location.hostname === 'app'
   const folderSelectionKey = JSON.stringify([folderId === undefined ? 'all-materials' : folderId, page, Boolean(search || format || status), folderRevision, refreshRevision])
   const materialFolders = accessDenied || materialFolderPage?.key !== folderSelectionKey ? undefined : materialFolderPage.value

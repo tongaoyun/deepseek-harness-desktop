@@ -754,7 +754,7 @@ it('selects files from another folder without replacing the current reader, and 
     if (method === 'knowledge.documents.upload.select') { retained = true; return [selected] }
     if (method === 'knowledge.documents.upload') {
       if (!succeeded) throw new ProductError('PRODUCT_NETWORK_UNAVAILABLE', 'Lost receipt', true)
-      return documentRow('personal')
+      return { ...documentRow('personal'), folderId: 'stable-folder' }
     }
     if (method === 'knowledge.documents.upload.discard') { retained = false; return { discarded: true } }
     return page([documentRow('personal')])
@@ -1222,4 +1222,26 @@ it.each([true, false])('keeps a folder deletion unconfirmed until the target is 
   const writes = api.invoke.mock.calls.filter(call => call[1] === 'knowledge.folders.delete')
   expect(writes).toHaveLength(2)
   expect(writes[0]![2]).toEqual(writes[1]![2])
+})
+
+it('restarts pending upload recovery on catalog refresh and ignores its late previous result', async () => {
+  const previous = deferred()
+  let reads = 0
+  const api = transport(async () => page([]), async () => ++reads === 1 ? previous.promise : [])
+  const view = render(<KnowledgeWorkspace {...props} />)
+  try {
+    await waitFor(() => { expect(reads).toBe(1) })
+    const first = api.invoke.mock.calls.find(call => call[1] === 'knowledge.documents.upload.pending')!
+    view.rerender(<KnowledgeWorkspace {...props} refreshRevision={1} />)
+    await waitFor(() => { expect(reads).toBe(2) })
+    expect(api.cancel).toHaveBeenCalledWith('product', first[3])
+    await waitFor(() => { expect(parts(view.container).content.getByRole<HTMLButtonElement>('button', { name: zh.knowledgeUpload }).disabled).toBe(false) })
+    await act(async () => { previous.resolve([{ operationId: 'old-operation-identity', filename: 'old.md', pdfParseMode: 'STANDARD', folderId: null }]) })
+    expect(parts(view.container).content.queryByText('old.md')).toBeNull()
+    expect(parts(view.container).content.queryByRole('button', { name: zh.knowledgeUploadViewQueue })).toBeNull()
+  } finally {
+    view.unmount()
+    previous.resolve([])
+    await Promise.allSettled(api.invoke.mock.results.map((result): unknown => result.value))
+  }
 })
