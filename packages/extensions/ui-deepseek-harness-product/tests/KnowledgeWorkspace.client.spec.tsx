@@ -75,6 +75,175 @@ function deferred() {
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.clearAllMocks() })
 
+it.each(['reindex', 'cancel'] as const)('handles authorization and outage failures during %s without losing retry identity', async (action) => {
+  let failure: string | undefined = 'ORGANIZATION_SERVICE_UNAVAILABLE'
+  let status = action === 'reindex' ? 'FAILED' : 'PROCESSING'
+  const api = transport(async (method, payload) => {
+    if (method === 'knowledge.folders.list') return folders
+    if (method === 'knowledge.documents.preview.open') return page([{ content: '# 当前原文件' }])
+    if (method === `knowledge.documents.${action}`) {
+      if (failure) throw new ProductError(failure, 'private processing diagnostic', failure !== 'KNOWLEDGE_ACCESS_REVOKED')
+      status = action === 'reindex' ? 'QUEUED' : 'CANCELLED'
+      return { ...documentRow('personal'), status }
+    }
+    return page([{ ...documentRow(String(payload.knowledgeBaseId)), status }])
+  })
+  const view = render(<KnowledgeWorkspace {...props} />)
+  fireEvent.click(await parts(view.container).content.findByRole('button', { name: '业务规范.md' }))
+  await parts(view.container).content.findByRole('heading', { name: '当前原文件' })
+  const submit = () => {
+    fireEvent.click(parts(view.container).content.getByRole('button', { name: zh.knowledgeDocumentActions.replace('{name}', '业务规范.md') }))
+    fireEvent.click(screen.getByRole('menuitem', { name: action === 'reindex' ? zh.knowledgeReindex : zh.knowledgeStopProcessing }))
+  }
+  submit()
+  await waitFor(() => { expect(parts(view.container).content.getByRole('alert').textContent).toContain(zh.organizationServiceUnavailable) })
+  expect(parts(view.container).content.getByRole('heading', { name: '当前原文件' })).toBeDefined()
+  failure = undefined
+  submit()
+  await waitFor(() => { expect(parts(view.container).content.queryByRole('alert')).toBeNull() })
+  await waitFor(() => { expect(parts(view.container).content.getByRole('status').textContent).toContain(
+    action === 'reindex' ? zh.knowledgeQueued : zh.knowledgeCancelled,
+  ) })
+  const calls = api.invoke.mock.calls.filter(call => call[1] === `knowledge.documents.${action}`)
+  expect(calls).toHaveLength(2)
+  expect(calls[1]?.[2]).toEqual(calls[0]?.[2])
+  expect(parts(view.container).content.getByRole('heading', { name: '当前原文件' })).toBeDefined()
+  status = action === 'reindex' ? 'FAILED' : 'PROCESSING'
+  fireEvent.click(parts(view.container).content.getByRole('button', { name: zh.knowledgeBackToFolder }))
+  fireEvent.click(parts(view.container).content.getByRole('button', { name: zh.refresh }))
+  fireEvent.click(await parts(view.container).content.findByRole('button', { name: '业务规范.md' }))
+  await parts(view.container).content.findByRole('heading', { name: '当前原文件' })
+  failure = 'KNOWLEDGE_ACCESS_REVOKED'
+  submit()
+  await waitFor(() => { expect(parts(view.container).content.getByRole('alert').textContent).toContain(zh.knowledgeAccessRevoked) })
+  expect(view.container.querySelector('[data-knowledge-inline-reader]')).toBeNull()
+  expect(parts(view.container).content.queryByRole('button', { name: '业务规范.md' })).toBeNull()
+  expect(parts(view.container).navigation.queryByRole('button', { name: '业务制度' })).toBeNull()
+  expect(parts(view.container).content.queryByRole('button', { name: zh.knowledgeAddMaterial })).toBeNull()
+  expect(parts(view.container).content.queryByText(zh.loading)).toBeNull()
+  expect(view.container.textContent).not.toContain('private processing diagnostic')
+  const finalCalls = api.invoke.mock.calls.filter(call => call[1] === `knowledge.documents.${action}`)
+  expect(finalCalls).toHaveLength(3)
+  expect(finalCalls[2]?.[2]).not.toEqual(finalCalls[1]?.[2])
+  expect(parts(view.container).content.getByRole('alert').textContent).toMatchSnapshot()
+})
+
+it.each(['pending', 'select'] as const)('clears cached materials when upload %s authoritatively denies access', async (stage) => {
+  const permission = deferred()
+  const api = transport(async (method, payload) => {
+    if (method === 'knowledge.folders.list') return folders
+    if (method === 'knowledge.documents.preview.open') return page([{ content: '# 当前原文件' }])
+    if (method === 'knowledge.documents.upload.select') throw new ProductError('KNOWLEDGE_ACCESS_REVOKED', 'private upload diagnostic', false)
+    return page([documentRow(String(payload.knowledgeBaseId))])
+  }, async () => {
+    if (stage === 'pending') {
+      await permission.promise
+      throw new ProductError('KNOWLEDGE_ACCESS_REVOKED', 'private upload diagnostic', false)
+    }
+    return []
+  })
+  const view = render(<KnowledgeWorkspace {...props} />)
+  try {
+    fireEvent.click(await parts(view.container).content.findByRole('button', { name: '业务规范.md' }))
+    await parts(view.container).content.findByRole('heading', { name: '当前原文件' })
+    if (stage === 'select') {
+      fireEvent.click(parts(view.container).content.getByRole('button', { name: zh.knowledgeBackToFolder }))
+      fireEvent.click(parts(view.container).content.getByRole('button', { name: zh.knowledgeUpload }))
+      fireEvent.click(screen.getByRole('menuitem', { name: zh.knowledgeUploadStandard }))
+    } else await act(async () => { permission.resolve(undefined) })
+    await waitFor(() => { expect(parts(view.container).content.getByRole('alert').textContent).toContain(zh.knowledgeAccessRevoked) })
+    expect(view.container.querySelector('[data-knowledge-inline-reader]')).toBeNull()
+    expect(parts(view.container).content.queryByRole('button', { name: '业务规范.md' })).toBeNull()
+    expect(parts(view.container).navigation.queryByRole('button', { name: '业务制度' })).toBeNull()
+    expect(parts(view.container).content.queryByRole('button', { name: zh.knowledgeUpload })).toBeNull()
+    expect(parts(view.container).content.queryByText(zh.loading)).toBeNull()
+    expect(api.invoke.mock.calls.filter(call => call[1] === 'knowledge.documents.upload.pending')).toHaveLength(1)
+    expect(view.container.textContent).not.toContain('private upload diagnostic')
+  } finally {
+    view.unmount()
+    await act(async () => { permission.resolve(undefined) })
+    await Promise.allSettled(api.invoke.mock.results.map((result): unknown => result.value))
+  }
+})
+
+it.each(['reindex', 'cancel', 'upload.select'] as const)('cancels %s on library switch and ignores its late access denial', async (action) => {
+  const response = deferred()
+  const method = `knowledge.documents.${action}`
+  const api = transport(async (name, payload) => {
+    if (name === 'knowledge.folders.list') return folders
+    if (name === 'knowledge.documents.preview.open') return page([{ content: `# ${payload.knowledgeBaseId}原文件` }])
+    if (name === method) {
+      await response.promise
+      throw new ProductError('KNOWLEDGE_ACCESS_REVOKED', 'private late diagnostic', false)
+    }
+    return page([{ ...documentRow(String(payload.knowledgeBaseId)), status: action === 'cancel' ? 'PROCESSING' : 'FAILED' }])
+  })
+  const view = render(<KnowledgeWorkspace {...props} />)
+  try {
+    fireEvent.click(await parts(view.container).content.findByRole('button', { name: '业务规范.md' }))
+    await parts(view.container).content.findByRole('heading', { name: 'personal原文件' })
+    if (action === 'upload.select') {
+      fireEvent.click(parts(view.container).content.getByRole('button', { name: zh.knowledgeBackToFolder }))
+      fireEvent.click(parts(view.container).content.getByRole('button', { name: zh.knowledgeUpload }))
+      fireEvent.click(screen.getByRole('menuitem', { name: zh.knowledgeUploadStandard }))
+    } else {
+      fireEvent.click(parts(view.container).content.getByRole('button', { name: zh.knowledgeDocumentActions.replace('{name}', '业务规范.md') }))
+      fireEvent.click(screen.getByRole('menuitem', { name: action === 'reindex' ? zh.knowledgeReindex : zh.knowledgeStopProcessing }))
+    }
+    await waitFor(() => { expect(api.invoke.mock.calls.filter(call => call[1] === method)).toHaveLength(1) })
+    const call = api.invoke.mock.calls.find(call => call[1] === method)
+    fireEvent.click(parts(view.container).navigation.getByRole('button', { name: '公司规范' }))
+    fireEvent.click(await parts(view.container).content.findByRole('button', { name: '业务规范.md' }))
+    await parts(view.container).content.findByRole('heading', { name: 'company原文件' })
+    expect(api.cancel).toHaveBeenCalledWith('product', call?.[3])
+    await act(async () => { response.resolve(undefined) })
+    expect(parts(view.container).content.getByRole('heading', { name: 'company原文件' })).toBeDefined()
+    expect(parts(view.container).content.queryByRole('alert')).toBeNull()
+    expect(view.container.textContent).not.toContain('private late diagnostic')
+    expect(api.invoke.mock.calls.filter(call => call[1] === method)).toHaveLength(1)
+  } finally {
+    view.unmount()
+    await act(async () => { response.resolve(undefined) })
+    await Promise.allSettled(api.invoke.mock.results.map((result): unknown => result.value))
+  }
+})
+
+it('cancels a pending reindex when upload recovery revokes access and ignores its late success', async () => {
+  const permission = deferred()
+  const reindex = deferred()
+  const api = transport(async (method) => {
+    if (method === 'knowledge.folders.list') return folders
+    if (method === 'knowledge.documents.preview.open') return page([{ content: '# 当前原文件' }])
+    if (method === 'knowledge.documents.reindex') return reindex.promise
+    return page([{ ...documentRow('personal'), status: 'FAILED' }])
+  }, async () => {
+    await permission.promise
+    throw new ProductError('KNOWLEDGE_ACCESS_REVOKED', 'private recovery diagnostic', false)
+  })
+  const view = render(<KnowledgeWorkspace {...props} />)
+  try {
+    fireEvent.click(await parts(view.container).content.findByRole('button', { name: '业务规范.md' }))
+    await parts(view.container).content.findByRole('heading', { name: '当前原文件' })
+    fireEvent.click(parts(view.container).content.getByRole('button', { name: zh.knowledgeDocumentActions.replace('{name}', '业务规范.md') }))
+    fireEvent.click(screen.getByRole('menuitem', { name: zh.knowledgeReindex }))
+    await waitFor(() => { expect(api.invoke.mock.calls.filter(call => call[1] === 'knowledge.documents.reindex')).toHaveLength(1) })
+    const call = api.invoke.mock.calls.find(call => call[1] === 'knowledge.documents.reindex')
+    await act(async () => { permission.resolve(undefined) })
+    await waitFor(() => { expect(parts(view.container).content.getByRole('alert').textContent).toContain(zh.knowledgeAccessRevoked) })
+    expect(api.cancel).toHaveBeenCalledWith('product', call?.[3])
+    await act(async () => { reindex.resolve({ ...documentRow('personal'), status: 'QUEUED' }) })
+    expect(view.container.querySelector('[data-knowledge-inline-reader]')).toBeNull()
+    expect(parts(view.container).content.queryByRole('button', { name: '业务规范.md' })).toBeNull()
+    expect(parts(view.container).content.queryByText(zh.loading)).toBeNull()
+    expect(parts(view.container).content.getByRole('button', { name: zh.refresh }).hasAttribute('disabled')).toBe(false)
+    expect(api.invoke.mock.calls.filter(call => call[1] === 'knowledge.documents.list')).toHaveLength(1)
+  } finally {
+    view.unmount()
+    await act(async () => { permission.resolve(undefined); reindex.resolve(undefined) })
+    await Promise.allSettled(api.invoke.mock.results.map((result): unknown => result.value))
+  }
+})
+
 it.each([false, true])('preserves the open document and original save during a catalog outage (unconfirmed: %s)', async (unconfirmed) => {
   const writes: Record<string, unknown>[] = []
   const api = transport(async (method, payload) => {

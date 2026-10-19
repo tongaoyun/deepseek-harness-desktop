@@ -1,5 +1,9 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
+exports[`handles authorization and outage failures during cancel without losing retry identity 1`] = `"所选知识库已失去访问权限，请刷新并重新选择。 (KNOWLEDGE_ACCESS_REVOKED)"`;
+
+exports[`handles authorization and outage failures during reindex without losing retry identity 1`] = `"所选知识库已失去访问权限，请刷新并重新选择。 (KNOWLEDGE_ACCESS_REVOKED)"`;
+
 exports[`keeps reading a file when processing becomes CANCELLED and it leaves the active status filter 1`] = `"已取消已停止建立检索索引，原文件仍可查看"`;
 
 exports[`keeps reading a file when processing becomes FAILED and it leaves the active status filter 1`] = `"处理失败原文件可查看，检索暂不可用；可尝试重新处理，仍失败时请检查原文件"`;

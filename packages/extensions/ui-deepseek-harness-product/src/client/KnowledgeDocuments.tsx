@@ -126,12 +126,15 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
   useEffect(() => {
     if (!canManage) return
     const controller = new AbortController()
+    const signal = AbortSignal.any([controller.signal, accessOperation.current.signal])
     setUploadRecoveryReady(false)
-    void recoverUpload(controller.signal).catch((failure: unknown) => {
-      if (!controller.signal.aborted) setMutationError(productErrorMessage(failure, t, 'knowledgeUploadRecoveryFailed'))
+    void recoverUpload(signal).catch((failure: unknown) => {
+      if (signal.aborted) return
+      if (isKnowledgeAccessDenied(failure)) readAccessDenied(failure)
+      else setMutationError(productErrorMessage(failure, t, 'knowledgeUploadRecoveryFailed'))
     })
     return () => { controller.abort() }
-  }, [canManage, recoverUpload, t, uploadRecoveryRevision])
+  }, [canManage, recoverUpload, readAccessDenied, t, uploadRecoveryRevision])
   const canOpenExternal = globalThis.location.protocol === 'dsh-app:' && globalThis.location.hostname === 'app'
   const folderSelectionKey = JSON.stringify([folderId === undefined ? 'all-materials' : folderId, page, Boolean(search || format || status), folderRevision, refreshRevision])
   const materialFolders = accessDenied || materialFolderPage?.key !== folderSelectionKey ? undefined : materialFolderPage.value
@@ -222,14 +225,19 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
   const mutate = async (method: string, payload: unknown, onCommitted?: () => void): Promise<void> => {
     if (pending) return
     const controller = operation.current
+    const signal = AbortSignal.any([controller.signal, accessOperation.current.signal])
     setPending(true); setMutationError('')
     try {
-      await request(method, payload, controller.signal)
-      if (!controller.signal.aborted) {
+      await request(method, payload, signal)
+      if (!signal.aborted) {
         onCommitted?.(); setRevision(value => value + 1)
         if (method.startsWith('knowledge.folders.')) setFolderRevision(value => value + 1)
       }
-    } catch (failure) { if (!controller.signal.aborted) setMutationError(productErrorMessage(failure, t, 'knowledgeChangeFailed')) }
+    } catch (failure) {
+      if (signal.aborted) return
+      if (isKnowledgeAccessDenied(failure)) readAccessDenied(failure)
+      else setMutationError(productErrorMessage(failure, t, 'knowledgeChangeFailed'))
+    }
     finally { if (!controller.signal.aborted) setPending(false) }
   }
   const upload = async (pdfParseMode: KnowledgePdfParseMode, destination = folderId): Promise<void> => {
@@ -237,17 +245,21 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
     if (!uploadRecoveryReady) { setMutationError(t('knowledgeUploadRecoveryFailed')); return }
     if (uploads.length > 0) { setUploadsOpen(true); return }
     const controller = operation.current
+    const signal = AbortSignal.any([controller.signal, accessOperation.current.signal])
     setPending(true); setMutationError('')
     try {
       const value = await request('knowledge.documents.upload.select', { knowledgeBaseId: product.id, pdfParseMode,
-        ...(destination === undefined ? {} : { folderId: destination }) }, controller.signal)
-      controller.signal.throwIfAborted()
+        ...(destination === undefined ? {} : { folderId: destination }) }, signal)
+      signal.throwIfAborted()
       const selected = uploadSelections(value)
       setUploads(selected); setUploadsOpen(selected.length > 0)
     } catch (failure) {
-      if (!controller.signal.aborted) {
-        setMutationError(productErrorMessage(failure, t, 'knowledgeUploadFailed'))
-        setUploadRecoveryReady(false); setUploadRecoveryRevision(value => value + 1)
+      if (!signal.aborted) {
+        if (isKnowledgeAccessDenied(failure)) readAccessDenied(failure)
+        else {
+          setMutationError(productErrorMessage(failure, t, 'knowledgeUploadFailed'))
+          setUploadRecoveryReady(false); setUploadRecoveryRevision(value => value + 1)
+        }
       }
     } finally { if (!controller.signal.aborted) setPending(false) }
   }
@@ -309,11 +321,12 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
   const fileAction = async (action: 'download' | 'openExternal', row: KnowledgeDocument): Promise<void> => {
     if (pending) return
     const controller = operation.current
+    const signal = AbortSignal.any([controller.signal, accessOperation.current.signal])
     setPending(true); setMutationError('')
     try {
-      await request(`knowledge.documents.${action}`, { knowledgeBaseId: product.id, documentId: row.id }, controller.signal)
+      await request(`knowledge.documents.${action}`, { knowledgeBaseId: product.id, documentId: row.id }, signal)
     } catch (failure) {
-      if (!controller.signal.aborted) {
+      if (!signal.aborted) {
         setMutationError(productErrorMessage(failure, t, action === 'download' ? 'knowledgeDownloadFailed' : 'knowledgeOpenExternalFailed'))
         if (isKnowledgeAccessDenied(failure)) denyAccess()
       }
@@ -426,7 +439,7 @@ function KnowledgeDocumentsScope({ product, renderNavigation, onNavigate, refres
           </tr>
         })}</tbody>
       </table>}
-      {!folderError && (loading || materialFolders === undefined) && availableData === undefined && <p role="status" className={css.catalogStatus}>{t('loading')}</p>}
+      {!accessDenied && !folderError && (loading || materialFolders === undefined) && availableData === undefined && <p role="status" className={css.catalogStatus}>{t('loading')}</p>}
       {!loading && !folderError && !error && availableData?.items.length === 0 && childFolders.length === 0
         && <div className={css.knowledgeMaterialsEmpty}>
           <IconFolderOpenOutlineRegular size={30} /><strong>{t(search || format || status ? 'noSearchResults' : 'knowledgeNoMaterials')}</strong>
